@@ -146,10 +146,16 @@ func fetchLatestVersion(version chan<- semver.Version) {
 	// If we don't have a cached version we can use, fetch one (and cache it)
 	if cachedLatestVersion == nil {
 		log.Print("fetching latest version information for update check")
-
-		res, err := http.Get("https://aka.ms/azure-dev/versions/latest")
+		req, err := http.NewRequest(http.MethodGet, "https://aka.ms/azure-dev/versions/cli/latest", nil)
 		if err != nil {
-			log.Printf("failed to refresh latest version: %v, skipping update check", err)
+			log.Printf("failed to create request object: %v, skipping update check", err)
+		}
+
+		req.Header.Set("User-Agent", internal.FormatUserAgent(nil))
+
+		res, err := http.DefaultClient.Do(req)
+		if err != nil {
+			log.Printf("failed to fetch latest version: %v, skipping update check", err)
 			return
 		}
 		body, err := readToEndAndClose(res.Body)

@@ -7,7 +7,9 @@ version: 0.2
 language: en
 ignorePaths:
     - ./go.mod
-    - go.sum
+    - ./go.sum
+    - ./NOTICE.txt
+    - ./templates/common/NOTICE.txt
 words:
     - opentelemetry
     - bson

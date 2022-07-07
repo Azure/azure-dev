@@ -1,5 +1,5 @@
 # Azure Developer CLI
-
+Test changes
 Latest (daily) builds:
 
 | Package | Version | Download |

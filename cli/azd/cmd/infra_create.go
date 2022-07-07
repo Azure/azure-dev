@@ -19,8 +19,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/spin"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/drone/envsubst"
-	"github.com/fatih/color"
-	"github.com/mattn/go-colorable"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 	"github.com/theckman/yacspin"
@@ -229,11 +227,16 @@ func (ica *infraCreateAction) Run(ctx context.Context, cmd *cobra.Command, args 
 
 	if interactive {
 		deploymentSlug := azure.SubscriptionDeploymentRID(env.GetSubscriptionId(), env.GetEnvName())
-		deploymentURL := color.HiBlueString("https://portal.azure.com/#blade/HubsExtension/DeploymentDetailsBlade/overview/id/%s\n\n", url.PathEscape(deploymentSlug))
-		fmt.Fprintf(colorable.NewColorableStdout(), "Provisioning Azure resources can take some time.\n\nYou can view detailed progress in the Azure Portal:\n%s", deploymentURL)
+		deploymentURL := withLinkFormat(
+			"https://portal.azure.com/#blade/HubsExtension/DeploymentDetailsBlade/overview/id/%s\n\n",
+			url.PathEscape(deploymentSlug))
+		printWithStyling(
+			"Provisioning Azure resources can take some time.\n\nYou can view detailed progress in the Azure Portal:\n%s",
+			deploymentURL)
+		//fmt.Fprintf(colorable.NewColorableStdout(), "Provisioning Azure resources can take some time.\n\nYou can view detailed progress in the Azure Portal:\n%s", deploymentURL)
 
 		err = spin.RunWithUpdater("Creating Azure resources ", deployAndReportProgress,
-			func(s *yacspin.Spinner, deploySuccess bool) {
+			func(s *yacspin.Spinner) {
 				s.StopMessage("Created Azure resources\n")
 			})
 	} else {

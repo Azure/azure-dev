@@ -17,8 +17,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/pkg/spin"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
-	"github.com/fatih/color"
-	"github.com/mattn/go-colorable"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 	"github.com/theckman/yacspin"
@@ -160,10 +158,8 @@ func (d *deployAction) Run(ctx context.Context, cmd *cobra.Command, args []strin
 			err = spin.RunWithUpdater(
 				fmt.Sprintf("Deploying service %s ", svc.Config.Name),
 				deployAndReportProgress,
-				func(s *yacspin.Spinner, successDeploy bool) {
-					if successDeploy {
-						reportServiceDeploymentResultInteractive(s, svc, &svcDeploymentResult)
-					}
+				func(s *yacspin.Spinner) {
+					reportServiceDeploymentResultInteractive(s, svc, &svcDeploymentResult)
 				})
 		} else {
 			err = deployAndReportProgress(nil)
@@ -190,8 +186,14 @@ func (d *deployAction) Run(ctx context.Context, cmd *cobra.Command, args []strin
 	}
 
 	for _, resourceGroup := range resourceGroups {
-		resourcesGroupsURL := color.HiBlueString("https://portal.azure.com/#@/resource/subscriptions/%s/resourceGroups/%s/overview", env.GetSubscriptionId(), resourceGroup)
-		fmt.Fprintf(colorable.NewColorableStdout(), "View the resources created under the resource group %s in Azure Portal:\n%s", color.CyanString(resourceGroup), resourcesGroupsURL)
+		resourcesGroupsURL := withLinkFormat(
+			"https://portal.azure.com/#@/resource/subscriptions/%s/resourceGroups/%s/overview",
+			env.GetSubscriptionId(),
+			resourceGroup)
+		printWithStyling(
+			"View the resources created under the resource group %s in Azure Portal:\n%s",
+			withHighLightFormat(resourceGroup),
+			resourcesGroupsURL)
 	}
 
 	return nil
@@ -201,7 +203,7 @@ func reportServiceDeploymentResultInteractive(s *yacspin.Spinner, svc *project.S
 	var builder strings.Builder
 
 	for _, endpoint := range sdr.Endpoints {
-		builder.WriteString(fmt.Sprintf(" - Endpoint: %s\n", color.HiBlueString(endpoint)))
+		builder.WriteString(fmt.Sprintf(" - Endpoint: %s\n", withLinkFormat(endpoint)))
 	}
 
 	stopMessage := fmt.Sprintf("\nDeployed service %s\n%s", svc.Config.Name, builder.String())

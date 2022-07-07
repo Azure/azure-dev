@@ -1,0 +1,15 @@
+fatih
+ellismg
+joho
+karolz
+sethvargo
+stretchr
+mattn
+isatty
+briandowns
+envsubst
+otiai10
+AlecAivazis
+pbnj
+multierr
+theckman

@@ -1,0 +1,56 @@
+# One way sync wiki from source to target
+
+name: sync-wiki
+
+on:
+  - gollum
+  - workflow_dispatch
+
+env:
+  SOURCE_REPO: ${{ secrets.WIKI_SYNC_SOURCE }}
+  TARGET_REPO: ${{ secrets.WIKI_SYNC_TARGET }}
+
+permissions:
+  # Read secrets
+  id-token: write
+
+jobs:
+  sync-wiki:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Log in with Azure
+        uses: azure/login@v1
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Fetch PAT from Key Vault
+        uses: Azure/get-keyvault-secrets@v1
+        with:
+          keyvault: ${{ secrets.AZ_ENGSYS_KV_NAME }}
+          secrets: 'azuresdk-github-pat'
+        id: EngSysSecrets
+
+      - name: Set Git Configurations and Credentials
+        run: |
+          git config --global user.name "azure-sdk"
+          git config --global user.email "azuresdk@microsoft.com"
+          echo "https://azure-sdk:$GH_PAT_SECRET@github.com" > ~/.git-credentials
+          git config --global credential.helper "store"
+        env:
+          GH_PAT_SECRET: ${{ steps.EngSysSecrets.outputs.azuresdk-github-pat }}
+
+      - name: Sync source repo to target
+        shell: pwsh
+        run: |
+          git clone $env:SOURCE_REPO source --origin source
+          Set-Location source
+          git remote add target $env:TARGET_REPO
+
+          # Get default branch name
+          $defaultTargetBranch = (git remote show target | Out-String) -replace "(?ms).*HEAD branch: (\w+).*", '$1'
+          Write-Host "Default branch for target: $defaultTargetBranch"
+
+          # Overwrite any existing changes in target
+          git push -f target $defaultTargetBranch

@@ -110,6 +110,12 @@ steps:
       env:
         GH_TOKEN: $(azuresdk-github-pat)
 
+  # Write a version.txt file into the `release` folder which we upload to blob storage. The CLI uses
+  # this file to detect if there is a newer version to use
+  - pwsh: |
+      Write-Output $(CLI_VERSION) | Out-File -Encoding utf8 -FilePath ./release/version.txt
+    displayName: Write version.txt file for release
+
   - pwsh: |
       $uploadLocations = "${{ parameters.PublishUploadLocations }}" -split ';'
 

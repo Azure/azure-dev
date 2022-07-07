@@ -1,0 +1,69 @@
+name: vscode-ci
+
+on:
+  pull_request:
+    paths:
+      - "ext/vscode/**"
+      - ".github/workflows/vscode-ci.yml"
+    branches: [main]
+
+permissions:
+  actions: read
+  contents: read
+  id-token: write
+
+jobs:
+  build-test:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        node-version: [14.x]
+        os: [macos-latest, ubuntu-latest, windows-latest]
+        include:
+          - os: ubuntu-latest
+            upload-artifact: true
+
+    steps:
+      - uses: actions/checkout@v2
+
+      - name: Use Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v1
+        with:
+          node-version: ${{ matrix.node-version }}
+
+      # On push to `main` name the file `azure-dev-latest.vsix` instead of
+      # `azure-dev-<version>.vsix`
+      - name: Set package additional arguments
+        id: package-arguments
+        uses: actions/github-script@v5
+        with:
+          result-encoding: string
+          script: |
+            let packageArguments = ''
+            if (context.eventName == 'workflow_dispatch' || context.eventName == 'push') {
+              packageArguments = '--out azure-dev-latest.vsix'
+            }
+            return packageArguments
+
+      - name: Install dependencies
+        run: |
+          npm install -g npm
+          npm ci --no-optional
+        working-directory: ./ext/vscode
+
+      - name: Test
+        run: ./ci-test.ps1
+        shell: pwsh
+        working-directory: ./ext/vscode
+
+      - run: ./ci-package.ps1 -PackageArguments "${{ steps.package-arguments.outputs.result }}"
+        if: matrix.upload-artifact == true
+        shell: pwsh
+        working-directory: ./ext/vscode
+
+      - name: 'Upload azd binary to artifact store (upload-artifact: true only)'
+        if: matrix.upload-artifact == true
+        uses: actions/upload-artifact@v2
+        with:
+          name: package
+          path: ./ext/vscode/azure-dev*.vsix

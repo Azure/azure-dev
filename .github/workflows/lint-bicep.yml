@@ -1,0 +1,11 @@
+on:
+  workflow_call:
+
+jobs:
+  bicep-lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - name: Lint .bicep files
+        run: $ErrorActionPreference='Continue'; eng/scripts/Test-BicepLint.ps1
+        shell: pwsh

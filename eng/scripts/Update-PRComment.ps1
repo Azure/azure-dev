@@ -11,22 +11,33 @@ if ($Tag) {
     # paginated result set returning on a single line with no clear separating
     # sequence (i.e. "[{...}, {...}][{...},{...}]"). The result without --jq is
     # not parsable JSON because of the "][" sequence without a wrapping array.
+    Write-Host @"
+gh api `
+    repos/$Repo/issues/$PrNumber/comments `
+    --paginate `
+    --jq '.[]'
+"@
+
     $commentsJsonRows = gh api `
         repos/$Repo/issues/$PrNumber/comments `
         --paginate `
         --jq '.[]'
-    $comments = @()
-    foreach ($row in $commentsJsonRows) {
-        $comments +=@( ConvertFrom-Json $row )
+
+    if ($commentsJsonRows) { 
+        $comments = @()
+        foreach ($row in $commentsJsonRows) {
+            $comments +=@( ConvertFrom-Json $row )
+        }
+
+        Write-Host "Comments found: $($comments.Length)"
+
+        $commentsToErase = $comments.Where({ $_.body.Contains($Tag) })
+        foreach ($comment in $commentsToErase) {
+            Write-Host "Deleting previous tagged comment $($comment.id)"
+            gh api --method DELETE "repos/$Repo/issues/comments/$($comment.id)"
+        }
     }
 
-    Write-Host "Comments found: $($comments.Length)"
-
-    $commentsToErase = $comments.Where({ $_.body.Contains($Tag) })
-    foreach ($comment in $commentsToErase) {
-        Write-Host "Deleting previous tagged comment $($comment.id)"
-        gh api --method DELETE "repos/$Repo/issues/comments/$($comment.id)"
-    }
 }
 
 Write-Host "Posting comment"

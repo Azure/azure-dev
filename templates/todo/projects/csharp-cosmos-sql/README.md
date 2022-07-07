@@ -98,12 +98,16 @@ The Azure Developer experience includes an Azure Developer CLI VS Code Extension
 
 Here's how to install it:
 
-1. Download the extension from https://aka.ms/azure-dev/vsix
-1. In VS Code:
-    - Open "Extensions" (Ctrl+Shift+X)
-    - Click the ... menu at top of Extensions sidebar
-    - Click "Install from VSIX"
-    - Select location of downloaded file
+#### VS Code
+
+1. Click on the "Extensions" tab in VS Code
+1. Search for "Azure Developer CLI" - authored by Microsoft
+1. Click "Install"
+
+#### Marketplace
+
+1. Go to the [Azure Developer CLI - VS Code Extension](https://marketplace.visualstudio.com/items?itemName=ms-azuretools.azure-dev) page
+1. Click "Install"
 
 Once the extension is installed, you can press `F1`, and type "Azure Developer CLI" to see all of your available options. You can also right click on your project's `azure.yaml` file for a list of commands.
 

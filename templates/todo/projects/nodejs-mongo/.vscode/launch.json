@@ -1,0 +1,47 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Debug Web",
+            "request": "launch",
+            "type": "pwa-msedge",
+            "webRoot": "${workspaceFolder}/src/web/src",
+            "url": "http://localhost:3000",
+            "sourceMapPathOverrides": {
+                "webpack:///src/*": "${webRoot}/*"
+            }, 
+        },
+
+        {
+            "name": "Debug API",
+            "request": "launch",
+            "runtimeArgs": [
+                "run",
+                "start"
+            ],
+            "runtimeExecutable": "npm",
+            "skipFiles": [
+                "<node_internals>/**"
+            ],
+            "type": "pwa-node",
+            "cwd": "${workspaceFolder}/src/api",
+            "envFile": "${input:dotEnvFilePath}",
+            "env": {
+                "NODE_ENV": "development"
+            },
+            "preLaunchTask": "Restore API",
+            "outputCapture": "std"
+        },
+    ],
+
+    "inputs": [
+        {
+            "id": "dotEnvFilePath",
+            "type": "command",
+            "command": "azure-dev.commands.getDotEnvFilePath"
+        }
+    ]
+}

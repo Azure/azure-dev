@@ -1,0 +1,19 @@
+pr: none
+trigger: none
+
+jobs:
+  - job: ResetExpiredInvites
+    pool:
+        name: azsdk-pool-mms-ubuntu-2004-general
+        vmImage: MMSUbuntu20.04
+
+    steps:
+      - checkout: self
+      - task: PowerShell@2
+        inputs:
+          pwsh: true
+          targetType: filePath
+          filePath: eng/scripts/Reset-ExpiredInvites.ps1
+          arguments: -Repo $(Repo)
+        env:
+          GH_TOKEN: $(azuresdk-github-pat)

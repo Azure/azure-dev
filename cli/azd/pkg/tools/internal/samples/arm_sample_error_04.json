@@ -1,0 +1,13 @@
+{
+    "status": "Failed",
+    "error": {
+        "code": "DeploymentFailed",
+        "message": "At least one resource deployment operation failed. Please list deployment operations for details. Please see https://aka.ms/DeployOperations for usage details.",
+        "details": [
+            {
+                "code": "Conflict",
+                "message": "{\r\n  \"status\": \"Failed\",\r\n  \"error\": {\r\n    \"code\": \"ResourceDeploymentFailure\",\r\n    \"message\": \"The resource operation completed with terminal provisioning state 'Failed'.\",\r\n    \"details\": [\r\n      {\r\n        \"code\": \"DeploymentFailed\",\r\n        \"message\": \"At least one resource deployment operation failed. Please list deployment operations for details. Please see https://aka.ms/DeployOperations for usage details.\",\r\n        \"details\": [\r\n          {\r\n            \"code\": \"BadRequest\",\r\n            \"message\": \"{\\r\\n  \\\"error\\\": {\\r\\n    \\\"code\\\": \\\"InternalServerError\\\",\\r\\n    \\\"message\\\": \\\"There was an unexpected InternalServerError.  Please try again later.  x-ms-correlation-request-id: 89ea695c-9786-402b-8d4e-48ce04127a0b\\\"\\r\\n  }\\r\\n}\"\r\n          }\r\n        ]\r\n      }\r\n    ]\r\n  }\r\n}"
+            }
+        ]
+    }
+}

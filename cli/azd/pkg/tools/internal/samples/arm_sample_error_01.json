@@ -1,0 +1,13 @@
+{
+    "status": "Failed",
+    "error": {
+        "code": "DeploymentFailed",
+        "message": "At least one resource deployment operation failed. Please list deployment operations for details. Please see https://aka.ms/DeployOperations for usage details.",
+        "details": [
+            {
+                "code": "Conflict",
+                "message": "{\r\n  \"status\": \"Failed\",\r\n  \"error\": {\r\n    \"code\": \"ResourceDeploymentFailure\",\r\n    \"message\": \"The resource operation completed with terminal provisioning state 'Failed'.\",\r\n    \"details\": [\r\n      {\r\n        \"code\": \"DeploymentFailed\",\r\n        \"message\": \"At least one resource deployment operation failed. Please list deployment operations for details. Please see https://aka.ms/DeployOperations for usage details.\",\r\n        \"details\": [\r\n          {\r\n            \"code\": \"Conflict\",\r\n            \"message\": \"{\\r\\n  \\\"Code\\\": \\\"Conflict\\\",\\r\\n  \\\"Message\\\": \\\"Website with given name devapi already exists.\\\",\\r\\n  \\\"Target\\\": null,\\r\\n  \\\"Details\\\": [\\r\\n    {\\r\\n      \\\"Message\\\": \\\"Website with given name devapi already exists.\\\"\\r\\n    },\\r\\n    {\\r\\n      \\\"Code\\\": \\\"Conflict\\\"\\r\\n    },\\r\\n    {\\r\\n      \\\"ErrorEntity\\\": {\\r\\n        \\\"ExtendedCode\\\": \\\"54001\\\",\\r\\n        \\\"MessageTemplate\\\": \\\"Website with given name {0} already exists.\\\",\\r\\n        \\\"Parameters\\\": [\\r\\n          \\\"devapi\\\"\\r\\n        ],\\r\\n        \\\"Code\\\": \\\"Conflict\\\",\\r\\n        \\\"Message\\\": \\\"Website with given name devapi already exists.\\\"\\r\\n      }\\r\\n    }\\r\\n  ],\\r\\n  \\\"Innererror\\\": null\\r\\n}\"\r\n          },\r\n          {\r\n            \"code\": \"Conflict\",\r\n            \"message\": \"{\\r\\n  \\\"Code\\\": \\\"Conflict\\\",\\r\\n  \\\"Message\\\": \\\"Website with given name devweb already exists.\\\",\\r\\n  \\\"Target\\\": null,\\r\\n  \\\"Details\\\": [\\r\\n    {\\r\\n      \\\"Message\\\": \\\"Website with given name devweb already exists.\\\"\\r\\n    },\\r\\n    {\\r\\n      \\\"Code\\\": \\\"Conflict\\\"\\r\\n    },\\r\\n    {\\r\\n      \\\"ErrorEntity\\\": {\\r\\n        \\\"ExtendedCode\\\": \\\"54001\\\",\\r\\n        \\\"MessageTemplate\\\": \\\"Website with given name {0} already exists.\\\",\\r\\n        \\\"Parameters\\\": [\\r\\n          \\\"devweb\\\"\\r\\n        ],\\r\\n        \\\"Code\\\": \\\"Conflict\\\",\\r\\n        \\\"Message\\\": \\\"Website with given name devweb already exists.\\\"\\r\\n      }\\r\\n    }\\r\\n  ],\\r\\n  \\\"Innererror\\\": null\\r\\n}\"\r\n          }\r\n        ]\r\n      }\r\n    ]\r\n  }\r\n}"
+            }
+        ]
+    }
+}

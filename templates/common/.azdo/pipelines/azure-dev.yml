@@ -1,0 +1,34 @@
+trigger:
+  - main
+  - master
+
+pool:
+  vmImage: ubuntu-latest
+
+container: azdevcliextacr.azurecr.io/azure-dev:latest
+
+steps:
+  - task: AzureCLI@2
+    displayName: Azure Dev Provision
+    inputs:
+      azureSubscription: azconnection
+      scriptType: bash
+      scriptLocation: inlineScript
+      inlineScript: |
+        azd provision --no-prompt
+    env:
+      AZURE_SUBSCRIPTION_ID: ${AZURE_SUBSCRIPTION_ID}
+      AZURE_ENV_NAME: ${AZURE_ENV_NAME}
+      AZURE_LOCATION: ${AZURE_LOCATION}
+  - task: AzureCLI@2
+    displayName: Azure Dev Deploy
+    inputs:
+      azureSubscription: azconnection
+      scriptType: bash
+      scriptLocation: inlineScript
+      inlineScript: |
+        azd deploy --no-prompt
+    env:
+      AZURE_SUBSCRIPTION_ID: ${AZURE_SUBSCRIPTION_ID}
+      AZURE_ENV_NAME: ${AZURE_ENV_NAME}
+      AZURE_LOCATION: ${AZURE_LOCATION}

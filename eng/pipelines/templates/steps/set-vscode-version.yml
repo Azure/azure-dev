@@ -1,0 +1,17 @@
+
+steps:
+  - ${{ if in(variables['Build.Reason'], 'IndividualCI', 'BatchedCI') }}:
+    - pwsh: |
+        $packageJson = Get-Content -Raw ext/vscode/package.json
+        $package = ConvertFrom-Json $packageJson
+        $package.version = "$($package.version)-beta.$(Build.BuildId)"
+        $outputContent = ConvertTo-Json $package -Depth 100
+        Set-Content -Path ext/vscode/package.json -Value $outputContent
+      displayName: Set Dev Version in package.json
+
+  - task: PowerShell@2
+    inputs:
+      pwsh: true
+      targetType: filePath
+      filePath: eng/scripts/Set-VsixVersionVariable.ps1
+    displayName: Set VSIX_VERSION

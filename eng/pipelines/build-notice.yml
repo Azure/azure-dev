@@ -1,0 +1,159 @@
+pr:
+  branches:
+    include: [main]
+
+  paths:
+    include:
+      - eng/pipelines/build-notice.yml
+
+trigger:
+  branches:
+    include: [main]
+
+
+variables:
+  - template: /eng/pipelines/templates/variables/globals.yml
+  - name: EnableGoCliScan
+    value: true
+
+jobs:
+  - job: PoliCheck
+    pool:
+      name: azsdk-pool-mms-win-2019-general
+      vmImage: MMS2019
+    timeoutInMinutes: 120
+    steps:
+      - template: /eng/common/pipelines/templates/steps/policheck.yml
+        parameters:
+          ExclusionDataBaseFileName: AzDevPoliCheckExclusion
+          PublishAnalysisLogs: false
+
+
+  - job: BuildCLI
+    strategy:
+      matrix:
+        Windows:
+          Pool: azsdk-pool-mms-win-2019-general
+          OSVmImage: MMS2019
+          BuildTarget: azd-windows-amd64.exe
+          BuildOutputName: azd.exe
+        Linux:
+          Pool: azsdk-pool-mms-ubuntu-2004-general
+          OSVmImage:  MMSUbuntu20.04
+          BuildTarget: azd-linux-amd64
+          BuildOutputName: azd
+        Mac:
+          Pool: Azure Pipelines
+          OSVmImage: macOS-11
+          BuildTarget: azd-darwin-amd64
+          BuildOutputName: azd
+    pool:
+        name: $(Pool)
+        vmImage: $(OSVmImage)
+
+    variables:
+      CLI_VERSION: 1.0.0-alpha.1
+
+    steps:
+      - checkout: self
+      - template: /eng/pipelines/templates/steps/setup-go.yml
+
+      - task: PowerShell@2
+        inputs:
+          pwsh: true
+          targetType: filePath
+          filePath: cli/azd/ci-build.ps1
+          arguments: >-
+            -Version $(CLI_VERSION)
+            -SourceVersion $(Build.SourceVersion)
+          workingDirectory: cli/azd
+        displayName: Build Go Binary
+
+      - pwsh: Move-Item $(BuildOutputName) $(BuildTarget)
+        workingDirectory: cli/azd
+        displayName: Rename binaries
+
+      - publish: cli/azd/$(BuildTarget)
+        artifact: $(BuildTarget)
+
+      - task: ComponentGovernanceComponentDetection@0
+
+  - job: BuildScanVscode
+    strategy:
+      matrix:
+        # Disable Windows build until packaging fixed on Windows https://github.com/Azure/azure-dev/issues/1336
+        # Windows:
+        #   Pool: azsdk-pool-mms-win-2019-general
+        #   OSVmImage: MMS2019
+        Linux:
+          Pool: azsdk-pool-mms-ubuntu-2004-general
+          OSVmImage:  MMSUbuntu20.04
+        Mac:
+          Pool: Azure Pipelines
+          OSVmImage: macOS-11
+
+    pool:
+      name: $(Pool)
+      vmImage: $(OSVmImage)
+
+    variables:
+      NodeVersion: 14.x
+
+    steps:
+      - task: NodeTool@0
+        inputs:
+          versionSpec: $(NodeVersion)
+
+      - bash: |
+          npm install -g npm vsce
+          npm ci --no-optional
+        workingDirectory: ext/vscode
+
+      - pwsh: ./ci-package.ps1
+        workingDirectory: ext/vscode
+        displayName: Package
+
+      - task: ComponentGovernanceComponentDetection@0
+
+  - job: BuildScanContainer
+    dependsOn: BuildCli
+    pool:
+      name: azsdk-pool-mms-ubuntu-2004-general
+      OSVmImage: MMSUbuntu20.04
+
+    variables:
+      ContainerName: azure-dev:cg-scan
+
+    steps:
+      - checkout: self
+      - task: DownloadPipelineArtifact@2
+        inputs:
+          artifact: azd-linux-amd64
+          path: cli/bin
+
+      - bash: |
+          docker build . -t $(ContainerName) -f cli/Dockerfile
+        displayName: Build container
+
+      - task: ComponentGovernanceComponentDetection@0
+        inputs:
+          dockerImagesToScan: $(ContainerName)
+
+      - task: ComponentGovernanceComponentDetection@0
+
+  - job: GenerateNoticeTxt
+    pool:
+      name: azsdk-pool-mms-ubuntu-2004-general
+      OSVmImage: MMSUbuntu20.04
+
+    steps:
+      - task: ComponentGovernanceComponentDetection@0
+
+      - task: notice@0
+        displayName: Generate NOTICE.txt file
+        inputs:
+          outputfile: $(Build.SourcesDirectory)/NOTICE.txt
+          outputformat: text
+
+      - publish: NOTICE.txt
+        artifact: notice

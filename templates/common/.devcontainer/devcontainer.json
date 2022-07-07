@@ -1,0 +1,39 @@
+{
+    "name": "Azure Dev CLI",
+    "build": {
+        "dockerfile": "Dockerfile",
+        "args": {
+            "VARIANT": "bullseye"
+        }
+    },
+    "features": {
+        "github-cli": "2",
+        "azure-cli": "2.36",
+        "python": "os-provided",
+        "dotnet": "6.0",
+        "docker-from-docker": "20.10",
+        "node": {
+            "version": "16",
+            "nodeGypDependencies": false
+        }
+    },
+    "extensions": [
+        "/extensions/azure-dev.vsix",
+        "dbaeumer.vscode-eslint",
+        "ms-azuretools.vscode-bicep",
+        "eg2.vscode-npm-script",
+        "ms-azuretools.vscode-docker",
+        "ms-vscode.vscode-node-azure-pack",
+        "ms-vscode.js-debug",
+        "ms-azuretools.vscode-azurefunctions",
+        "ms-dotnettools.csharp",
+        "esbenp.prettier-vscode",
+        "ms-dotnettools.vscode-dotnet-runtime"
+    ],
+    "forwardPorts": [
+        3000,
+        3100
+    ],
+    "postCreateCommand": "",
+    "remoteUser": "vscode"
+}

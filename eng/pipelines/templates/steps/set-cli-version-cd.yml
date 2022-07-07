@@ -1,0 +1,8 @@
+steps:
+  # TODO: Handle semver prerelease and GA packages
+  # (this currently only does prerelease)
+  # https://github.com/Azure/azure-dev/issues/878
+  - pwsh: |
+      $version = "$(Get-Content cli/version.txt).$(Build.BuildId)"
+      Set-Content cli/version.txt -Value $version
+    displayName: Set version for CD release

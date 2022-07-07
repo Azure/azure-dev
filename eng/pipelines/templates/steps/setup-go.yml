@@ -1,0 +1,7 @@
+parameters:
+  GoVersion: 1.18
+
+steps:
+  - task: GoTool@0
+    inputs:
+      version: ${{ parameters.GoVersion }}

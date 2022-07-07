@@ -1,0 +1,557 @@
+resources:
+  repositories:
+    - repository: azure-sdk-build-tools
+      type: git
+      name: internal/azure-sdk-build-tools
+      ref: refs/tags/azure-sdk-build-tools_20220329.1
+
+# Continuous deployment trigger
+trigger:
+  branches:
+    include:
+      - main
+  paths:
+    include:
+      - cli/
+      - eng/pipelines/release-cli.yml
+
+variables:
+  - template: /eng/pipelines/templates/variables/globals.yml
+
+stages:
+  - stage: BuildAndTest
+    jobs:
+      - job: BuildCLI
+        strategy:
+          matrix:
+            Windows:
+              Pool: azsdk-pool-mms-win-2019-general
+              OSVmImage: MMS2019
+              BuildTarget: azd-windows-amd64.exe
+              BuildOutputName: azd.exe
+            Linux:
+              Pool: azsdk-pool-mms-ubuntu-2004-general
+              OSVmImage:  MMSUbuntu20.04
+              BuildTarget: azd-linux-amd64
+              BuildOutputName: azd
+              SetExecutableBit: true
+              SetShieldInfo: true
+            Mac:
+              Pool: Azure Pipelines
+              OSVmImage: macOS-11
+              BuildTarget: azd-darwin-amd64
+              BuildOutputName: azd
+              MacLocalSign: false
+              SetExecutableBit: true
+        pool:
+            name: $(Pool)
+            vmImage: $(OSVmImage)
+
+        steps:
+          - checkout: self
+          - template: /eng/pipelines/templates/steps/setup-go.yml
+
+          - ${{ if in(variables['Build.Reason'], 'IndividualCI', 'BatchedCI') }}:
+            - template: /eng/pipelines/templates/steps/set-cli-version-cd.yml
+          - pwsh: |
+              az bicep install --version v0.4.1124
+            displayName: Install bicep
+
+          - task: DockerInstaller@0
+            displayName: Docker Installer
+            condition: and(succeeded(), contains(variables['OSVmImage'], 'macOS'))
+            inputs:
+              dockerVersion: 17.09.0-ce
+              releaseType: stable
+          - task: PowerShell@2
+            inputs:
+              pwsh: true
+              targetType: filePath
+              filePath: eng/scripts/Set-CliVersionVariable.ps1
+            displayName: Set CLI_VERSION
+
+          - task: PowerShell@2
+            inputs:
+              pwsh: true
+              targetType: filePath
+              filePath: cli/azd/ci-build.ps1
+              arguments: >-
+                -Version $(CLI_VERSION)
+                -SourceVersion $(Build.SourceVersion)
+              workingDirectory: cli/azd
+            displayName: Build Go Binary
+
+          # Live testing uses dotnet 6.0.x in the WebApp project deployment
+          - task: UseDotNet@2
+            condition: and(succeeded(), ne(variables['Skip.LiveTest'], 'true'))
+            inputs:
+              version: 6.0.x
+
+          - pwsh: |
+              $subscriptionConfiguration = @'
+                $(sub-config-azure-cloud-test-resources)
+              '@ | ConvertFrom-Json -AsHashtable;
+
+              az login `
+                --service-principal `
+                -u "$($subscriptionConfiguration.TestApplicationId)" `
+                -p "$($subscriptionConfiguration.TestApplicationSecret)" `
+                --tenant "$($subscriptionConfiguration.TenantId)"
+
+              az account set `
+                --subscription "$($subscriptionConfiguration.SubscriptionId)"
+            condition: and(succeeded(), ne(variables['Skip.LiveTest'], 'true'))
+            displayName: Azure Login
+
+          - task: PowerShell@2
+            condition: and(succeeded(), ne(variables['Skip.LiveTest'], 'true'))
+            inputs:
+              pwsh: true
+              targetType: filePath
+              filePath: cli/azd/ci-test.ps1
+              workingDirectory: cli/azd
+            displayName: Test Go Binary
+            env:
+              # Set GITHUB_RUN_NUMBER because cli_test.go is coupled to that
+              # environment variable.
+              GITHUB_RUN_NUMBER: $(Build.BuildId)
+
+          - pwsh: Move-Item $(BuildOutputName) $(BuildTarget)
+            workingDirectory: cli/azd
+            displayName: Rename binaries
+
+          - bash: chmod +x $(BuildTarget)
+            condition: and(succeeded(), eq(variables['SetExecutableBit'], 'true'))
+            workingDirectory: cli/azd
+            displayName: Set executable bit for non-Windows binaries
+
+          - task: PowerShell@2
+            condition: and(succeeded(), eq(variables['SetShieldInfo'], 'true'))
+            inputs:
+              pwsh: true
+              targetType: filePath
+              filePath: eng/scripts/Set-ShieldInfo.ps1
+              arguments: >-
+                -TemplatePath eng/shields/standalone.json
+                -Version "$(CLI_VERSION)"
+            displayName: Set shield info
+
+          - publish: eng/shields/standalone.json
+            condition: and(succeeded(), eq(variables['SetShieldInfo'], 'true'))
+            artifact: shield-standalone
+            displayName: Upload standalone shield json
+
+          - publish: cli/azd/$(BuildTarget)
+            artifact: $(BuildTarget)
+            condition: always()
+            displayName: Upload azd binary to artifact store
+
+      - job: UploadInstallScript
+        pool:
+          name: azsdk-pool-mms-ubuntu-2004-general
+          vmImage: MMSUbuntu20.04
+
+        steps:
+          - checkout: self
+          - pwsh: |
+              New-Item -ItemType Directory -Path installer
+              Copy-Item cli/installer/*install-azd.ps1 installer/
+            displayName: Copy installer scripts (*.ps1) for artifact upload
+          - task: PublishPipelineArtifact@1
+            displayName: Publish install scripts to artifacts for signing
+            inputs:
+              artifactName: install-pwsh
+              targetPath: installer
+
+  - stage: Sign
+    dependsOn: BuildAndTest
+    jobs:
+    - job: Sign
+      pool:
+        name: azsdk-pool-mms-win-2019-general
+        vmImage: MMS2019
+
+      steps:
+        - task: DownloadPipelineArtifact@2
+          inputs:
+            artifact: azd-windows-amd64.exe
+            path: win
+
+        - task: DownloadPipelineArtifact@2
+          inputs:
+            artifact: install-pwsh
+            path: installer
+
+        - pwsh: Copy-Item installer/*.ps1 win
+          displayName: Copy install scripts to win/
+
+        - task: DownloadPipelineArtifact@2
+          inputs:
+            artifact: azd-darwin-amd64
+            path: mac-artifacts
+
+        - pwsh: |
+            New-Item -ItemType Directory -Path mac
+            Compress-Archive `
+            -Path mac-artifacts/azd-darwin-amd64 `
+            -DestinationPath mac/azd-darwin-amd64.zip
+          displayName: Package mac binary for signing
+
+        - ${{ if in(variables['Build.Reason'], 'IndividualCI', 'BatchedCI', 'Manual') }}:
+          - template: pipelines/steps/azd-cli-signing.yml@azure-sdk-build-tools
+            parameters:
+              WinPath:  win
+              WinPattern: '**'
+              MacPath: mac
+
+        - ${{ else }}:
+          - pwsh: Write-Host "Skipping signing. Build reason - $(Build.Reason)"
+            displayName: Signing process skipped for non-release build
+
+        - pwsh: |
+            Expand-Archive -Path mac/azd-darwin-amd64.zip -DestinationPath mac/
+            Remove-Item mac/azd-darwin-amd64.zip
+          displayName: Extract azd-darwin-amd64 from zip and remove zip
+
+        - pwsh: |
+            New-Item -ItemType Directory -Path signed
+            Copy-Item win/ signed/ -Recurse
+            Copy-Item mac/ signed/ -Recurse
+          displayName: Copy signing outputs
+          condition: always()
+
+        - publish: signed/
+          artifact: signed
+          condition: succeeded()
+
+        # TODO: Replace with https://github.com/Azure/azure-sdk-tools/blob/main/eng/common/pipelines/templates/steps/publish-artifact.yml
+        # when the common engsys is imported.
+        # https://github.com/Azure/azure-dev/issues/956
+        - task: PublishPipelineArtifact@1
+          condition: succeeded()
+          displayName: Publish Signed Artifacts
+          inputs:
+            artifactName: signed
+            path: signed/
+
+        - task: PublishPipelineArtifact@1
+          condition: failed()
+          displayName: Publish failed Signed Artifacts
+          inputs:
+            artifactName: signed-FailedAttempt$(System.JobAttempt)
+            path: signed/
+
+  - stage: PublishCLI
+    dependsOn: Sign
+    condition: >-
+      and(
+        succeeded(),
+        ne(variables['Skip.Release'], 'true'),
+        or(
+          eq('Manual', variables['BuildReasonOverride']),
+          and(
+            eq('', variables['BuildReasonOverride']),
+            eq('Manual', variables['Build.Reason'])
+          )
+        )
+      )
+    jobs:
+      - deployment: Publish_Release
+        environment: github
+
+        pool:
+          name: azsdk-pool-mms-ubuntu-2004-general
+          OSVmImage: MMSUbuntu20.04
+
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - checkout: self
+                - task: PowerShell@2
+                  inputs:
+                    pwsh: true
+                    targetType: filePath
+                    filePath: eng/scripts/Set-CliVersionVariable.ps1
+                  displayName: Set CLI_VERSION
+
+                - template: /eng/pipelines/templates/steps/publish-cli.yml
+                  parameters:
+                    CreateGitHubRelease: true
+                    PublishUploadLocations: release/$(CLI_VERSION);release/latest
+                    PublishShield: true
+                    DockerImageTags: $(CLI_VERSION);latest
+                    ReleaseSyndicatedDockerContainer: true
+
+  - stage: PublishIntegration
+    dependsOn: Sign
+    jobs:
+      - job: Publish_Continuous_Deployment
+        condition: >-
+          and(
+            succeeded(),
+            ne(variables['Skip.Release'], 'true'),
+            or(
+              in(variables['BuildReasonOverride'], 'IndividualCI', 'BatchedCI'),
+              and(
+                eq('', variables['BuildReasonOverride']),
+                in(variables['Build.Reason'], 'IndividualCI', 'BatchedCI')
+              )
+            )
+          )
+        pool:
+          name: azsdk-pool-mms-ubuntu-2004-general
+          OSVmImage: MMSUbuntu20.04
+
+        steps:
+          - checkout: self
+          - template: /eng/pipelines/templates/steps/set-cli-version-cd.yml
+
+          - task: PowerShell@2
+            inputs:
+              pwsh: true
+              targetType: filePath
+              filePath: eng/scripts/Set-CliVersionVariable.ps1
+            displayName: Set CLI_VERSION
+
+          - template: /eng/pipelines/templates/steps/publish-cli.yml
+            parameters:
+              CreateGitHubRelease: false
+              PublishUploadLocations: latest;release/daily;daily/archive/$(Build.BuildId)-$(Build.SourceVersion)
+              PublishShield: true
+              DockerImageTags: latest;daily;$(CLI_VERSION)
+              # On Public Preview release, remove this line to stop publishing
+              # incremental changes to `main` to the container.
+              ReleaseSyndicatedDockerContainer: true
+
+      - job: Publish_For_PR
+        condition: >-
+          and(
+            succeeded(),
+            ne(variables['Skip.Release'], 'true'),
+            or(
+              eq('PullRequest', variables['BuildReasonOverride']),
+              and(
+                eq('', variables['BuildReasonOverride']),
+                eq(variables['Build.Reason'], 'PullRequest')
+              )
+            )
+          )
+        pool:
+          name: azsdk-pool-mms-ubuntu-2004-general
+          OSVmImage: MMSUbuntu20.04
+
+        steps:
+          - checkout: self
+          - pwsh: |
+              $PRNumber = "$(System.PullRequest.PullRequestNumber)"
+              if ($env:PRNUMBEROVERRIDE) {
+                Write-Host "PR Number override: $($env:PRNUMBEROVERRIDE)"
+                $PRNumber = "$($env:PRNUMBEROVERRIDE)"
+              }
+              Write-Host "##vso[task.setvariable variable=PRNumber]$PRNumber"
+            displayName: Set PR Number Variable
+
+          - task: PowerShell@2
+            inputs:
+              pwsh: true
+              targetType: filePath
+              filePath: eng/scripts/Set-CliVersionVariable.ps1
+            displayName: Set CLI_VERSION
+
+          - template: /eng/pipelines/templates/steps/publish-cli.yml
+            parameters:
+              CreateGitHubRelease: false
+              PublishUploadLocations: pr/$(PRNumber)
+              UploadInstaller: true
+              DockerImageTags: pr-$(PRNumber)
+
+          - pwsh: |
+              $urlBase = "https://$(azdev-storage-account-name).blob.core.windows.net/azd/standalone/pr/$(PRNumber)"
+              Write-Host "##vso[task.setvariable variable=UrlBase;isOutput=true]$urlBase"
+            name: GenerateUrlBase
+            displayName: Set UrlBase
+
+          - pwsh: |
+              $urlBase = "$(GenerateUrlBase.UrlBase)"
+              $linuxReleaseUrl = "$urlBase/azd-linux-amd64.tar.gz"
+              $macosReleaseUrl = "$urlBase/azd-darwin-amd64.zip"
+              $windowsReleaseUrl = "$urlBase/azd-windows-amd64.zip"
+
+              $content = @"
+              <!-- #comment-cli-pr -->
+              ## Azure Dev CLI Install Instructions
+
+              ### Install scripts
+
+              > Make sure you've uninstalled the npm package if it's still on your system using ``npm uninstall -g @azure/az-dev-cli``
+
+              MacOS/Linux
+
+              > May elevate using ``sudo`` on some platforms and configurations
+
+              ``````
+              curl -fsSL $urlBase/uninstall-azd.sh | bash;
+              curl -fsSL $urlBase/install-azd.sh | bash -s -- --base-url $urlBase --version '' --verbose
+              ``````
+
+              Windows
+              ``````
+              powershell -c "Set-ExecutionPolicy Bypass Process; irm '$urlBase/uninstall-azd.ps1' > uninstall-azd.ps1; ./uninstall-azd.ps1;"
+              powershell -c "Set-ExecutionPolicy Bypass Process; irm '$urlBase/install-azd.ps1' > install-azd.ps1; ./install-azd.ps1 -BaseUrl '$urlBase' -Version '' -Verbose;"
+              ``````
+
+              ### Standalone Binary
+
+              * Linux - $linuxReleaseUrl
+              * MacOS - $macosReleaseUrl
+              * Windows - $windowsReleaseUrl
+
+              ### Container
+              ``````
+              docker run -it $(azdev-acr-host)/azure-dev:pr-$(PRNumber)
+              ``````
+              "@
+              $file = New-TemporaryFile
+              Set-Content -Path $file -Value $content
+              Write-Host "##vso[task.setvariable variable=CommentBodyFile]$file"
+            displayName: Write body content to temporary file
+
+          - task: PowerShell@2
+            displayName: Add PR comment
+            inputs:
+              pwsh: true
+              targetType: filePath
+              filePath: ./eng/scripts/Update-PRComment.ps1
+              arguments: >-
+                -Repo "azure/azure-dev"
+                -PrNumber $(PRNumber)
+                -Tag "<!-- #comment-cli-pr -->"
+                -BodyFile $(CommentBodyFile)
+            env:
+              GH_TOKEN: $(azuresdk-github-pat)
+
+      - job: Verify_Installers
+        condition: >-
+          and(
+            succeeded(),
+            ne(variables['Skip.Release'], 'true'),
+            or(
+              eq('PullRequest', variables['BuildReasonOverride']),
+              and(
+                eq('', variables['BuildReasonOverride']),
+                eq(variables['Build.Reason'], 'PullRequest')
+              )
+            )
+          )
+
+        dependsOn: Publish_For_PR
+
+        variables:
+          BaseUrl: $[ dependencies.Publish_for_PR.outputs['GenerateUrlBase.UrlBase'] ]
+
+        strategy:
+          matrix:
+            Windows:
+              Pool: azsdk-pool-mms-win-2019-general
+              OSVmImage: MMS2019
+              TestShell: cmd
+              TestCommand: >
+                cmd /c test-windows-install.cmd %BASEURL%
+            Linux:
+              Pool: azsdk-pool-mms-ubuntu-2004-general
+              OSVmImage:  MMSUbuntu20.04
+              TestShell: pwsh
+              TestCommand: >
+                ./test-installer-containers.ps1
+                -BaseUrl "$env:BASEURL"
+                -Version ''
+            Mac:
+              Pool: Azure Pipelines
+              OSVmImage: macOS-11
+              TestShell: bash
+              TestCommand: >
+                cat install-azd.sh
+                | bash -s -- --base-url "$BASEURL" --version ''
+                && azd --help
+        pool:
+          name: $(Pool)
+          OSVmImage: $(OSVmImage)
+
+        steps:
+          - pwsh: |
+              $PRNumber = "$(System.PullRequest.PullRequestNumber)"
+              if ($env:PRNUMBEROVERRIDE) {
+                Write-Host "PR Number override: $($env:PRNUMBEROVERRIDE)"
+                $PRNumber = $env:PRNUMBEROVERRIDE
+              }
+              Write-Host "##vso[task.setvariable variable=PRNumber]$PRNumber"
+            displayName: Set PR Number Variable
+
+          - pwsh: $(TestCommand)
+            condition: and(succeeded(), eq('pwsh', variables['TestShell']))
+            workingDirectory: cli/installer/
+            env:
+              BASEURL: $(BaseUrl)
+
+          - task: CmdLine@2
+            condition: and(succeeded(), eq('cmd', variables['TestShell']))
+            inputs:
+              script: $(TestCommand)
+              workingDirectory: cli/installer/
+            env:
+              BASEURL: $(BaseUrl)
+
+          - bash: $(TestCommand)
+            condition: and(succeeded(), eq('bash', variables['TestShell']))
+            workingDirectory: cli/installer/
+            env:
+              BASEURL: $(BaseUrl)
+
+  - stage: Publish_Installers
+    dependsOn: Sign
+    condition: >-
+      and(
+        succeeded(),
+        ne(variables['Skip.Release'], 'true'),
+        or(
+          eq('Manual', variables['BuildReasonOverride']),
+          and(
+            eq('', variables['BuildReasonOverride']),
+            eq('Manual', variables['Build.Reason'])
+          )
+        )
+      )
+    jobs:
+      - deployment: Publish_Installers
+        environment: github
+        pool:
+          name: azsdk-pool-mms-ubuntu-2004-general
+          OSVmImage: MMSUbuntu20.04
+
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - checkout: self
+
+                - task: DownloadPipelineArtifact@2
+                  inputs:
+                    artifact: signed
+                    path: signed
+
+                - pwsh: |
+                    New-Item -ItemType Directory -Path script-release
+                    Copy-Item signed/win/*.ps1 script-release/
+                    Copy-Item cli/installer/*.sh script-release/
+                  displayName: Copy scripts for release upload
+
+                - pwsh: |
+                    az storage blob upload-batch `
+                      --account-name '$(azdev-storage-account-name)' `
+                      --account-key '$(azdev-storage-account-key)' `
+                      --auth-mode key `
+                      -s script-release/ `
+                      -d "azd/standalone/installer" `
+                      --overwrite
+                  displayName: Upload installer to storage location

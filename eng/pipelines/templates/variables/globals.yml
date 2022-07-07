@@ -1,0 +1,4 @@
+variables:
+  # Globally disable Dockerfile scanning which generates alerts for
+  # customer-facing containers.
+  DisableDockerDetector: true

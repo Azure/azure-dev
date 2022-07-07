@@ -1,0 +1,9 @@
+linters:
+  enable:
+    - errorlint
+    - gofmt
+linters-settings:
+  errorlint:
+    errorf: true
+    asserts: true
+    comparison: true

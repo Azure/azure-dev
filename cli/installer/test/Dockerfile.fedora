@@ -1,0 +1,12 @@
+ARG base='fedora:37'
+FROM ${base}
+
+ARG shell='sh'
+ARG baseUrl='must set baseUrl'
+ARG version='must set version'
+
+COPY ./*.sh ./
+RUN cat install-azd.sh \
+    | ${shell} -s -- --verbose --base-url "$baseUrl" --version "$version"  \
+    && azd --help \
+    && cat uninstall-azd.sh | ${shell}

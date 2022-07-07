@@ -1,0 +1,14 @@
+# yaml-language-server: $schema=https://azuresdkreleasepreview.blob.core.windows.net/azd/schema/azure.yaml.json
+
+name: todo-python-mongo-aca
+metadata:
+  template: todo-python-mongo-aca@0.0.1-beta
+services:
+  api:
+    project: src/api
+    language: python
+    host: containerapp
+  web:
+    project: src/web
+    language: js
+    host: containerapp

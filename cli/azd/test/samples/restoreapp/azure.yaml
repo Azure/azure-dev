@@ -1,0 +1,25 @@
+name: restoretestproject
+metadata: 
+  template: azd-test/restoreapp@v1
+services:
+  nodeapptest:
+    project: nodeapp
+    language: js
+    host: appservice
+  pyapptest:
+    project: pyapp
+    language: py
+    host: appservice
+  csharpapptest:
+    project: csharpapp
+    language: csharp
+    host: appservice
+  containerapptest:
+    project: containerapp
+    language: js
+    module: main
+    host: containerapp
+  funcapptest:
+    project: funcapp
+    language: py
+    host: function

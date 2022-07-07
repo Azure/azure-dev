@@ -1,0 +1,15 @@
+# yaml-language-server: $schema=https://azuresdkreleasepreview.blob.core.windows.net/azd/schema/azure.yaml.json
+
+name: todo-python-mongo-swa-func
+metadata:
+  template: todo-python-mongo-swa-func@0.0.1-beta
+services:
+  web:
+    project: ../../web/react-fluent
+    dist: build
+    language: js
+    host: staticwebapp
+  api:
+    project: ../../api/python
+    language: py
+    host: function

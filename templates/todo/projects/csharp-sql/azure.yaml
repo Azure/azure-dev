@@ -1,0 +1,15 @@
+# yaml-language-server: $schema=https://azuresdkreleasepreview.blob.core.windows.net/azd/schema/azure.yaml.json
+
+name: todo-csharp-sql
+metadata:
+  template: todo-csharp-sql@0.0.1-beta
+services:
+  web:
+    project: ../../web/react-fluent
+    dist: build
+    language: js
+    host: appservice
+  api:
+    project: ../../api/csharp-sql
+    language: csharp
+    host: appservice

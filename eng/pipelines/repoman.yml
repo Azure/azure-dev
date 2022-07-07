@@ -1,0 +1,134 @@
+trigger:
+  branches:
+    include:
+      - main
+  paths:
+    include:
+      - generators/
+      - templates/
+      - eng/pipelines/repoman.yml
+
+pr:
+  paths:
+    include:
+      - generators/
+      - templates/
+      - eng/pipelines/repoman.yml
+
+variables:
+  - template: /eng/pipelines/templates/variables/globals.yml
+
+jobs:
+  - job: Generate_Repos
+    pool:
+      name: azsdk-pool-mms-ubuntu-2004-general
+      vmImage: MMSUbuntu20.04
+
+    steps:
+      - checkout: self
+
+      - task: NodeTool@0
+        inputs:
+          versionSpec: 16
+
+      - pwsh: |
+          git config --global user.name "azure-sdk"
+          git config --global user.email "azuresdk@microsoft.com"
+          Set-Content `
+            -Value "https://azure-sdk:$(azuresdk-github-pat)@github.com" `
+            -Path ~/.git-credentials
+          git config --global credential.helper "store"
+        displayName: Set git credentials
+
+      - pwsh: npm install
+        displayName: Install dependencies
+        workingDirectory: generators/repo
+
+      - pwsh: npm run build
+        displayName: Build
+        workingDirectory: generators/repo
+
+      - pwsh: npm link
+        displayName: Install repoman locally
+        workingDirectory: generators/repo
+
+      - pwsh: |
+          $PRNumber = '$(System.PullRequest.PullRequestNumber)'
+          if ($env:PRNUMBEROVERRIDE) {
+            Write-Host "PR Number override: $($env:PRNUMBEROVERRIDE)"
+            $PRNumber = "$($env:PRNUMBEROVERRIDE)"
+          }
+          Write-Host "##vso[task.setvariable variable=PRNumber]$PRNumber"
+        displayName: Set PRNumber
+
+      - pwsh: |
+          $targetBranchName = ''
+          if ('$(Build.Reason)' -eq 'PullRequest' -or $env:BUILDREASONOVERRIDE -eq 'PullRequest') {
+            $targetBranchName = "pr/$(PRNumber)"
+            Write-Host "PR Build, using target branch name: $targetBranchName"
+          }
+          Write-Host "##vso[task.setvariable variable=TargetBranchName]$targetBranchName"
+        displayName: Set TargetBranchName
+
+      - task: PowerShell@2
+        displayName: Generate Azure-Samples repos
+        inputs:
+          pwsh: true
+          targetType: filePath
+          filePath: ./eng/scripts/Invoke-RepomanGenerate.ps1
+          arguments: -TargetBranchName "$(TargetBranchName)"
+
+      - pwsh: |
+          $repomanContent = "No changes detected."
+          $repomanOutputFile = "$([System.IO.Path]::GetTempPath())/repoman.md"
+          if (Test-Path $repomanOutputFile) {
+            $repomanContent = Get-Content $repomanOutputFile -Raw
+          }
+
+          $tag ='<!-- #comment-repoman-generate -->'
+          $content = @"
+          $tag
+          ## Repoman Generation Results
+          Repoman pushed changes to remotes for the following projects:
+          $repomanContent
+          "@
+          $file = New-TemporaryFile
+          Set-Content -Path $file -Value $content
+          Write-Host "##vso[task.setvariable variable=CommentBodyFile]$file"
+        displayName: Set Repoman Content
+        condition: >-
+          and(
+            succeeded(),
+            or(
+              eq('PullRequest', variables['BuildReasonOverride']),
+              and(
+                eq('', variables['BuildReasonOverride']),
+                eq(variables['Build.Reason'], 'PullRequest')
+              )
+            )
+          )
+
+      - task: PowerShell@2
+        displayName: Post PR comment
+        condition: >-
+          and(
+            succeeded(),
+            or(
+              eq('PullRequest', variables['BuildReasonOverride']),
+              and(
+                eq('', variables['BuildReasonOverride']),
+                eq(variables['Build.Reason'], 'PullRequest')
+              )
+            )
+          )
+        inputs:
+          pwsh: true
+          targetType: filePath
+          filePath: ./eng/scripts/Update-PRComment.ps1
+          arguments: >-
+            -Repo 'azure/azure-dev'
+            -PRNumber '$(PRNumber)'
+            -BodyFile '$(CommentBodyFile)'
+            -Tag '<!-- #comment-repoman-generate -->'
+        env:
+          GH_TOKEN: $(azuresdk-github-pat)

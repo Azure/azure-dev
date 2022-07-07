@@ -1,0 +1,46 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Debug Web",
+            "request": "launch",
+            "type": "pwa-msedge",
+            "webRoot": "${workspaceFolder}/src/web/src",
+            "url": "http://localhost:3000",
+            "sourceMapPathOverrides": {
+                "webpack:///src/*": "${webRoot}/*"
+            },
+        },
+
+        {
+            "name": "Debug API",
+            "type": "python",
+            "request": "launch",
+            "module": "uvicorn",
+            "cwd": "${workspaceFolder}/src/api",
+            "args": [
+                "todo.app:app",
+                "--port", "3100",
+                "--reload"
+            ],
+            "justMyCode": true,
+            "python": "${workspaceFolder}/src/api/api_env/bin/python3",
+            "envFile": "${input:dotEnvFilePath}",
+            "windows": {
+                "python": "${workspaceFolder}/src/api/api_env/scripts/python.exe"
+            },
+            "preLaunchTask": "Restore API"
+        }
+    ],
+
+    "inputs": [
+        {
+            "id": "dotEnvFilePath",
+            "type": "command",
+            "command": "azure-dev.commands.getDotEnvFilePath"
+        }
+    ]
+}

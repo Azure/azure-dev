@@ -1,0 +1,14 @@
+ARG base='debian:bullseye'
+FROM ${base}
+
+ARG shell='bash'
+ARG baseUrl='must set baseUrl'
+ARG version='must set version'
+
+RUN apt update && apt install -y curl
+
+COPY ./*.sh ./
+RUN cat install-azd.sh \
+    | ${shell} -s -- --verbose --base-url "$baseUrl" --version "$version"  \
+    && azd --help \
+    && cat uninstall-azd.sh | ${shell}

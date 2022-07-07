@@ -1,0 +1,62 @@
+{
+  "name": "todo-node-ts-express-mongo",
+  "version": "0.1.0",
+  "description": "Express Todo REST API",
+  "main": "dist/index.js",
+  "scripts": {
+    "lint": "eslint src/**/*.ts",
+    "lint:fix": "eslint src/**/*.ts --fix",
+    "prebuild": "npm run lint",
+    "build": "tsc -b .",
+    "prestart": "npm run build",
+    "start": "node .",
+    "test": "jest --coverage"
+  },
+  "author": "",
+  "license": "MIT",
+  "jest": {
+    "testEnvironment": "node",
+    "coveragePathIgnorePatterns": [
+      "/node_modules/"
+    ],
+    "testMatch": [
+      "<rootDir>/**/*.spec.ts"
+    ]
+  },
+  "dependencies": {
+    "@azure/identity": "^2.0.4",
+    "@azure/keyvault-secrets": "^4.4.0",
+    "applicationinsights": "^2.3.3",
+    "config": "^3.3.7",
+    "cors": "^2.8.5",
+    "dotenv": "^16.0.1",
+    "express": "^4.18.1",
+    "mongodb": "^4.7.0",
+    "mongoose": "^6.3.6",
+    "swagger-jsdoc": "^6.2.1",
+    "swagger-ui-express": "^4.4.0",
+    "winston": "^3.7.2",
+    "winston-transport": "^4.5.0",
+    "yamljs": "^0.3.0"
+  },
+  "devDependencies": {
+    "@babel/preset-env": "^7.18.2",
+    "@babel/preset-typescript": "^7.17.12",
+    "@types/config": "^0.0.41",
+    "@types/cors": "^2.8.12",
+    "@types/express": "^4.17.13",
+    "@types/jest": "^28.1.1",
+    "@types/supertest": "^2.0.12",
+    "@types/swagger-jsdoc": "^6.0.1",
+    "@types/swagger-ui-express": "^4.1.3",
+    "@types/uuid": "^8.3.4",
+    "@types/yamljs": "^0.2.31",
+    "@typescript-eslint/eslint-plugin": "^5.27.1",
+    "@typescript-eslint/parser": "^5.27.1",
+    "eslint": "^8.17.0",
+    "jest": "^28.1.1",
+    "supertest": "^6.2.3",
+    "ts-jest": "^28.0.4",
+    "typescript": "^4.7.3"
+  }
+}

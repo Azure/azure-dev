@@ -1,0 +1,8 @@
+fastapi == 0.78.*
+uvicorn == 0.17.*
+beanie == 1.11.*
+python-dotenv == 0.20.*
+azure-identity == 1.10.*
+azure-keyvault-secrets == 4.4.*
+opentelemetry-instrumentation-fastapi == 0.30b1
+azure-monitor-opentelemetry-exporter == 1.0.0b5

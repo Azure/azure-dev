@@ -1,0 +1,84 @@
+{
+    "$schema": "http://json-schema.org/schema#",
+    "$id": "https://raw.githubusercontent.com/Azure/azure-dev/main/schemas/v1.0/azure.yaml.json",
+
+    "type": "object",
+
+    "required": [
+        "name", "services"
+    ],
+
+    "properties": {
+        "name": { 
+            "type": "string", 
+            "minLength": 2,
+            "title": "Name of the application"
+        },
+
+        "metadata": {
+            "type": "object",
+
+            "properties": {
+                "template": { 
+                    "type": "string",
+                    "title": "Identifier of the template from which the application was created. Optional.",
+                    "examples": [
+                        "todo-nodejs-mongo@0.0.1-beta"
+                    ]
+                }
+            }
+        },
+
+        "services": {
+            "type": "object",
+            "title": "Definition of services that comprise the application",
+
+            "additionalProperties": {
+                "type": "object",
+
+                "properties": {
+                    "resourceName": { 
+                        "type": "string",
+                        "title": "Name of the Azure resource that implements the service",
+                        "description": "Optional. If not specified, the resource name will be constructed from current environment name concatenated with service name (<environment-name><resource-name>, for example 'prodapi')."
+                    },
+
+                    "project": { 
+                        "type": "string",
+                        "title": "Path to the service source code directory"
+                    },
+
+                    "host": {
+                        "type": "string",
+                        "title": "Type of Azure resource used for service implementation",
+                        "description": "If omitted, App Service will be assumed.",
+                        "enum": [ "", "appservice", "containerapp", "function", "staticwebapp" ]
+                    },
+
+                    "language": {
+                        "type": "string",
+                        "title": "Service implementation language",
+                        "description": "If omitted, .NET will be assumed.",
+                        "enum": [ "", "dotnet", "csharp", "fsharp", "py", "python", "js", "ts" ]
+                    },
+
+                    "moduleName": {
+                        "type": "string",
+                        "title": "Name of the module used to deploy the service",
+                        "description": "If omitted, the CLI will assume the module name is the same as the service name."
+                    },
+
+                    "dist": {
+                        "type": "string",
+                        "title": "Relative path to service deployment artifacts",
+                        "description": "The CLI will use files under this path to create the deployment artifact (ZIP file). If omitted, all files under service project directory will be included."
+                    }
+                },
+
+                "required": [
+                    "project"
+                ]
+            }
+        }
+    }
+}

@@ -1,0 +1,49 @@
+# Copyright (c) Microsoft Corporation. All rights reserved.
+# Licensed under the MIT License.
+
+# cspell settings azd cli
+
+# Use global config
+import: ../../../.vscode/cspell.global.yaml
+
+# Use words for non-project-specific words only.
+# Use azdProjectDictionary to add project-specific words.
+words:
+  - backoff
+  - Codespace
+  - Codespaces
+  - Retryable
+  - Canonicalize
+dictionaryDefinitions:
+  - name: azdProjectDictionary
+    path: ./cspell-azd-dictionary.txt
+    description: Custom Workspace Dictionary
+    addWords: true
+    scope: workspace
+dictionaries:
+  - azdProjectDictionary
+overrides:
+  - filename: pkg/tools/python.go
+    words:
+      - venv
+  - filename: pkg/spin/run.go
+    words:
+      - errored
+  - filename: pkg/project/framework_service_python.go
+    words:
+      - __pycache__
+      - Venv
+  - filename: pkg/project/project_test.go
+    words:
+      - Aapi
+      - Aweb
+      - Aworker
+      - azdtempl
+  - filename: pkg/executil/executil_windows.go
+    words:
+      - hndl
+      - JOBOBJECT
+  - filename: pkg/environment/azd_context.go
+    words:
+      - ents
+      - unmarshalled

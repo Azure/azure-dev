@@ -1,0 +1,13 @@
+{
+    "status": "Failed",
+    "error": {
+        "code": "DeploymentFailed",
+        "message": "At least one resource deployment operation failed. Please list deployment operations for details. Please see https://aka.ms/DeployOperations for usage details.",
+        "details": [
+            {
+                "code": "Conflict",
+                "message": "{\r\n  \"status\": \"Failed\",\r\n  \"error\": {\r\n    \"code\": \"ResourceDeploymentFailure\",\r\n    \"message\": \"The resource operation completed with terminal provisioning state 'Failed'.\",\r\n    \"details\": [\r\n      {\r\n        \"code\": \"DeploymentFailed\",\r\n        \"message\": \"At least one resource deployment operation failed. Please list deployment operations for details. Please see https://aka.ms/DeployOperations for usage details.\",\r\n        \"details\": [\r\n          {\r\n            \"code\": \"RequestTimeout\",\r\n            \"message\": \"{\\r\\n  \\\"error\\\": {\\r\\n    \\\"code\\\": \\\"ResourceDeploymentFailure\\\",\\r\\n    \\\"message\\\": \\\"The resource provision operation did not complete within the allowed timeout period.\\\"\\r\\n  }\\r\\n}\"\r\n          },\r\n          {\r\n            \"code\": \"BadRequest\",\r\n            \"message\": \"{\\r\\n  \\\"error\\\": {\\r\\n    \\\"code\\\": \\\"ResourceNameInvalid\\\",\\r\\n    \\\"message\\\": \\\"Invalid resource name: 'matell-azdacaacr'. Resource names may contain alpha numeric characters only and must be between 5 and 50 characters.. For more information, please refer resource name requirements at: https://docs.microsoft.com/en-us/rest/api/containerregistry/\\\"\\r\\n  },\\r\\n  \\\"status\\\": \\\"Failed\\\"\\r\\n}\"\r\n          }\r\n        ]\r\n      }\r\n    ]\r\n  }\r\n}"
+            }
+        ]
+    }
+}

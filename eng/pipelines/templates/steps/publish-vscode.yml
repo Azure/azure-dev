@@ -1,0 +1,66 @@
+parameters:
+  TagRepository: false
+  VsixVersion: $(VSIX_VERSION)
+  UpdateShield: false
+  StorageAccountName: $(azdev-storage-account-name)
+  StorageAccountKey: $(azdev-storage-account-key)
+  StorageContainerName: azd
+
+steps:
+  - task: DownloadPipelineArtifact@2
+    inputs:
+      artifact: signed
+      path: signed
+
+  - ${{ if eq('true', parameters.TagRepository) }}:
+    # Perform tag verification before publishing anything
+    - task: PowerShell@2
+      inputs:
+        pwsh: true
+        targetType: filePath
+        filePath: ./eng/scripts/Set-GitHubReleaseTag.ps1
+        arguments: >-
+          -Tag "azure-dev-vscode_${{ parameters.VsixVersion }}"
+          -OutputName "GH_RELEASE_TAG"
+          -DevOpsOutputFormat
+      displayName: Verify and set GitHub Release Tag
+
+  - pwsh: |
+      New-Item -ItemType Directory -Path release -Force
+      Copy-Item signed/vsix/*.vsix release/
+      Write-Host "Signed:"
+      Get-ChildItem signed/
+    displayName: Copy signed vsix to release location
+
+  - pwsh: |
+      $publishLocations = "${{ parameters.PublishLocations }}" -split ';'
+      foreach ($location in $publishLocations) {
+        Write-Host "Publishing to $location"
+        az storage blob upload-batch `
+          --account-name '${{ parameters.StorageAccountName }}' `
+          --account-key '${{ parameters.StorageAccountKey }}' `
+          --auth-mode key `
+          -s release `
+          -d "${{ parameters.StorageContainerName }}/$location" `
+          --overwrite
+      }
+    displayName: Publish files to storage locations
+
+  - ${{ if eq('true', parameters.UpdateShield) }}:
+    - template: /eng/pipelines/templates/steps/publish-shield.yml
+      parameters:
+        ArtifactName: shield-vscode
+        ArtifactDownloadPath: shields/vscode
+        ArtifactFilename: vscode.json
+        StorageAccountName: ${{ parameters.StorageAccountName }}
+        StorageAccountKey: ${{ parameters.StorageAccountKey }}
+        StorageContainerName: ${{ parameters.StorageContainerName }}
+        PublishDestination: vscode/latest
+
+  - ${{ if eq('true', parameters.TagRepository) }}:
+    - pwsh: |
+        gh release create $(GH_RELEASE_TAG)
+        gh release upload $(GH_RELEASE_TAG) release/*
+      displayName: Create GitHub Release and upload artifacts
+      env:
+        GH_TOKEN: $(azuresdk-github-pat)

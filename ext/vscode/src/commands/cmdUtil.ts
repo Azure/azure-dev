@@ -108,7 +108,7 @@ export async function selectApplicationTemplate(context: IActionContext): Promis
         templateUrl = template.data;
     }
 
-    context.telemetry.properties.templateUrlHash = sha256(templateUrl); 
+    context.telemetry.properties.templateUrlHash = sha256(templateUrl.toLowerCase());
     return templateUrl;
 }
 

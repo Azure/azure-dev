@@ -21,7 +21,7 @@ type UserAgent struct {
 	// (Optional) User specified identifier, set from `AZURE_DEV_USER_AGENT` environment variable
 	userSpecifiedIdentifier string
 
-	// (Optional) Identifier for the template used, if applicable. Formatted as `azdevtempl/<version>`
+	// (Optional) Identifier for the template used, if applicable. Formatted as `azdtempl/<version>`
 	templateIdentifier string
 
 	// (Optional) Identifier for GitHub Actions, if applicable

@@ -63,7 +63,7 @@ func TestUserAgentStringScenarios(t *testing.T) {
 	azDevIdentifier := fmt.Sprintf("azdev/%s %s", version, getPlatformInfo())
 
 	// Scenario: default agent
-	require.Equal(t, fmt.Sprintf("%s", azDevIdentifier), MakeUserAgentString(""))
+	require.Equal(t, azDevIdentifier, MakeUserAgentString(""))
 
 	// Scenario: user specifies agent variable
 	os.Setenv(userSpecifiedAgentEnvironmentVariableName, "dev_user_agent")

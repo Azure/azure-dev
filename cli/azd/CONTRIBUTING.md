@@ -28,11 +28,14 @@ Also, you'll want to install Docker (as we use that for some of our tests)
 
 ## Submitting A Change
 
-As part of our pre-check-in validation we run tests that require creating Azure resources. Right now this requires that PRs don't come from Forks.
+We used a fork based workflow for `azd`.
 
-1. Create a branch named `<your-github-user>/<some-description>` (e.g. `ellismg/fix-123` for a bug fix or `ellismg/add-deploy-command`).
-2. Push the branch to `azure/azure-dev` on GitHub.
-3. Open a pull request in GitHub.
+1. Fork `azure/azure-dev` on GitHub.
+2. Create a branch named `<some-description>` (e.g. `fix-123` for a bug fix or `add-deploy-command`).
+3. Push the branch to your fork on GitHub.
+4. Open a pull request in GitHub.
+
+As part of CI validation - we run a series of live tests which provison and deprovision Azure resources. For external contributors, these tests will not run automatically, but someone on the team will be able to run them for your PR on your behalf.
 
 ## Debugging
 

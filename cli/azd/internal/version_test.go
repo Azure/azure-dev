@@ -10,7 +10,7 @@ import (
 )
 
 func TestGetVersionNumber(t *testing.T) {
-	require.Equal(t, "0.0.0-alpha.0", GetVersionNumber())
+	require.Equal(t, "0.0.0-dev.0", GetVersionNumber())
 
 	orig := Version
 	Version = "invalid"

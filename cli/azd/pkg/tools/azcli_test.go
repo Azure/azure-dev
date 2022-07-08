@@ -43,7 +43,7 @@ func TestAzCli(t *testing.T) {
 		require.NoError(t, err)
 
 		require.Equal(t, []string{
-			fmt.Sprintf("AZURE_HTTP_USER_AGENT=%s", azdinternal.MakeUserAgent(nil)),
+			fmt.Sprintf("AZURE_HTTP_USER_AGENT=%s", azdinternal.MakeUserAgentString("")),
 		}, env)
 
 		require.Equal(t, []string{"hello", "--debug"}, commandArgs)

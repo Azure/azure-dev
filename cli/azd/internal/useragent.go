@@ -28,14 +28,6 @@ type UserAgent struct {
 	githubActionsIdentifier string
 }
 
-// String creates a user agent string that contains all necessary product identifiers, in increasing order:
-// - The Azure Developer CLI version, formatted as `azdev/<version>`
-// - The user specified identifier, set from `AZURE_DEV_USER_AGENT` environment variable
-// - The identifier for the template used, if applicable
-// - The identifier for GitHub Actions, if applicable
-// Examples:
-// - `azdev/1.0.0 (Windows NT)`
-// - `azdev/1.0.0 (Windows NT) Custom-foo/1.0.0 azdtempl/my-template@1.0.0 GhActions`
 func (userAgent *UserAgent) String() string {
 	var sb strings.Builder
 	sb.WriteString(userAgent.azDevCliIdentifier)
@@ -52,7 +44,7 @@ func appendIdentifier(sb *strings.Builder, identifier string) {
 	}
 }
 
-func MakeUserAgent(template string) UserAgent {
+func makeUserAgent(template string) UserAgent {
 	userAgent := UserAgent{}
 	userAgent.azDevCliIdentifier = getAzDevCliIdentifier()
 	userAgent.userSpecifiedIdentifier = getUserSpecifiedIdentifier()
@@ -62,8 +54,16 @@ func MakeUserAgent(template string) UserAgent {
 	return userAgent
 }
 
+// MakeUserAgentString creates a user agent string that contains all necessary product identifiers, in increasing order:
+// - The Azure Developer CLI version, formatted as `azdev/<version>`
+// - The user specified identifier, set from `AZURE_DEV_USER_AGENT` environment variable
+// - The identifier for the template used, if applicable
+// - The identifier for GitHub Actions, if applicable
+// Examples (see test `TestUserAgentStringScenarios` for all scenarios ):
+// - `azdev/1.0.0 (Go 1.18; windows/amd64) azdtempl/[none]`
+// - `azdev/1.0.0 (Go 1.18; windows/amd64) Custom-foo/1.0.0 azdtempl/my-template@1.0.0 GhActions`
 func MakeUserAgentString(template string) string {
-	userAgent := MakeUserAgent(template)
+	userAgent := makeUserAgent(template)
 
 	return userAgent.String()
 }
@@ -73,7 +73,7 @@ func getAzDevCliIdentifier() string {
 }
 
 func getPlatformInfo() string {
-	return fmt.Sprintf("(Go %s; %s)", runtime.Version(), runtime.GOOS)
+	return fmt.Sprintf("(Go %s; %s/%s)", runtime.Version(), runtime.GOOS, runtime.GOARCH)
 }
 
 func getUserSpecifiedIdentifier() string {

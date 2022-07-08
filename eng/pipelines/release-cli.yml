@@ -15,6 +15,12 @@ trigger:
       - cli/
       - eng/pipelines/release-cli.yml
 
+pr:
+  paths:
+    include:
+      - cli/
+      - eng/pipelines/release-cli.yml
+
 variables:
   - template: /eng/pipelines/templates/variables/globals.yml
 

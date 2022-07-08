@@ -23,6 +23,7 @@ type GitHubCli interface {
 	ViewRepository(ctx context.Context, name string) (GhCliRepository, error)
 	CreatePrivateRepository(ctx context.Context, name string) error
 	GetGitProtocolType(ctx context.Context) (string, error)
+	GitHubActionsExists(ctx context.Context, repoSlug string) (bool, error)
 }
 
 func NewGitHubCli() GitHubCli {
@@ -154,6 +155,25 @@ func (cli *ghCli) GetGitProtocolType(ctx context.Context) (string, error) {
 	}
 
 	return strings.TrimSpace(res.Stdout), nil
+}
+
+type GitHubActionsResponse struct {
+	TotalCount int `json:"total_count"`
+}
+
+func (cli *ghCli) GitHubActionsExists(ctx context.Context, repoSlug string) (bool, error) {
+	res, err := executil.RunCommand(ctx, "gh", "api", "/repos/"+repoSlug+"/actions/workflows")
+	if err != nil {
+		return false, fmt.Errorf("getting github actions %s: %w", res.String(), err)
+	}
+	var jsonResponse GitHubActionsResponse
+	if err := json.Unmarshal([]byte(res.Stdout), &jsonResponse); err != nil {
+		return false, fmt.Errorf("could not unmarshal output %s as a GhActionsResponse: %w", res.Stdout, err)
+	}
+	if jsonResponse.TotalCount == 0 {
+		return false, nil
+	}
+	return true, nil
 }
 
 var isGhCliNotLoggedInMessageRegex = regexp.MustCompile("(To authenticate, please run `gh auth login`\\.)|(Try authenticating with:  gh auth login)|(To re-authenticate, run: gh auth login)")

@@ -96,8 +96,8 @@ steps:
     - pwsh: |
         $tags = "${{ parameters.DockerImageTags }}" -split ';'
         foreach ($tag in $tags) {
-          Write-Host "docker tag release ${{ parameters.SyndicatedAcrHost }}/unlisted/azure-dev-cli-apps:$tag"
-          docker tag release ${{ parameters.SyndicatedAcrHost }}/unlisted/azure-dev-cli-apps:$tag
+          Write-Host "docker tag release ${{ parameters.SyndicatedAcrHost }}/public/azure-dev-cli-apps:$tag"
+          docker tag release ${{ parameters.SyndicatedAcrHost }}/public/azure-dev-cli-apps:$tag
         }
       displayName: Build and tag release container (Release)
 
@@ -154,5 +154,5 @@ steps:
 
   - ${{ if eq('true', parameters.ReleaseSyndicatedDockerContainer) }}:
     - pwsh: |
-        docker push ${{ parameters.SyndicatedAcrHost }}/unlisted/azure-dev-cli-apps --all-tags
+        docker push ${{ parameters.SyndicatedAcrHost }}/public/azure-dev-cli-apps --all-tags
       displayName: Push container tags (syndicated release)

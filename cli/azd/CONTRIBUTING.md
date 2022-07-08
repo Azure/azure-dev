@@ -28,14 +28,16 @@ Also, you'll want to install Docker (as we use that for some of our tests)
 
 ## Submitting A Change
 
-We used a fork based workflow for `azd`.
+We use a fork based workflow for `azd`. Here are simple steps:
 
 1. Fork `azure/azure-dev` on GitHub.
-2. Create a branch named `<some-description>` (e.g. `fix-123` for a bug fix or `add-deploy-command`).
+2. Create a branch named `<some-description>` (e.g. `fix-123` for a bug fix or `add-deploy-command`) in your forked Git repository.
 3. Push the branch to your fork on GitHub.
 4. Open a pull request in GitHub.
 
-As part of CI validation - we run a series of live tests which provison and deprovision Azure resources. For external contributors, these tests will not run automatically, but someone on the team will be able to run them for your PR on your behalf.
+Here is a more [in-depth guide to forks in GitHub](https://guides.github.com/activities/forking/).
+
+As part of CI validation, we run a series of live tests which provision and deprovision Azure resources. For external contributors, these tests will not run automatically, but someone on the team will be able to run them for your PR on your behalf.
 
 ## Debugging
 

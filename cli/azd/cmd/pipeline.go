@@ -248,8 +248,7 @@ You can view the GitHub Actions here: https://github.com/%s/actions
 	}
 
 	if doPush {
-
-		err, cancelPushing := notifyWhenGitHubActionsAreDisabled(ctx, gitCli, ghCli, azdCtx, repoSlug, p.pipelineRemoteName, currentBranch, askOne)
+		cancelPushing, err := notifyWhenGitHubActionsAreDisabled(ctx, gitCli, ghCli, azdCtx, repoSlug, p.pipelineRemoteName, currentBranch, askOne)
 		if err != nil {
 			return fmt.Errorf("ensure github actions: %w", err)
 		}
@@ -420,7 +419,7 @@ func (selection gitHubActionsEnablingChoice) String() string {
 	case cancelChoice:
 		return "Exit without pushing my changes. I don't need to run GitHub actions right now."
 	}
-	return "???"
+	panic("Tried to convert invalid input gitHubActionsEnablingChoice to string")
 }
 
 // notifyWhenGitHubActionsAreDisabled checks if gh-actions are disabled on the repo
@@ -437,17 +436,17 @@ func notifyWhenGitHubActionsAreDisabled(
 	repoSlug string,
 	origin string,
 	branch string,
-	askOne Asker) (error, bool) {
+	askOne Asker) (bool, error) {
 
 	ghActionsInUpstreamRepo, err := ghCli.GitHubActionsExists(ctx, repoSlug)
 	if err != nil {
-		return err, false
+		return false, err
 	}
 
 	if ghActionsInUpstreamRepo {
 		// upstream is already listing GitHub actions.
 		// There's no need to check if there are local workflows
-		return nil, false
+		return false, nil
 	}
 
 	// Upstream has no GitHub actions listed.
@@ -457,7 +456,7 @@ func notifyWhenGitHubActionsAreDisabled(
 		azdCtx.ProjectDirectory(),
 		".github",
 		"workflows")
-	if err := filepath.WalkDir(defaultGitHubWorkflowPathLocation,
+	err = filepath.WalkDir(defaultGitHubWorkflowPathLocation,
 		func(folderName string, file fs.DirEntry, e error) error {
 			if e != nil {
 				return e
@@ -469,12 +468,13 @@ func notifyWhenGitHubActionsAreDisabled(
 			}
 
 			return nil
-		}); err != nil {
-		return fmt.Errorf("Getting GitHub local workflow files %w", err), false
+		})
+
+	if err != nil {
+		return false, fmt.Errorf("Getting GitHub local workflow files %w", err)
 	}
 
 	if ghLocalWorkflowFiles {
-
 		printWithStyling("\n%s\n"+
 			"This can happen after a template is forked.\n"+
 			"Please enable actions here: %s.\n",
@@ -490,18 +490,18 @@ func notifyWhenGitHubActionsAreDisabled(
 			},
 			Default: manualChoice,
 		}, &rawSelection); err != nil {
-			return fmt.Errorf("prompting to enable github actions: %w", err), false
+			return false, fmt.Errorf("prompting to enable github actions: %w", err)
 		}
 		choice := gitHubActionsEnablingChoice(rawSelection)
 
 		if choice == manualChoice {
-			return nil, false
+			return false, nil
 		}
 
 		if choice == cancelChoice {
-			return nil, true
+			return true, nil
 		}
 	}
 
-	return nil, false
+	return false, nil
 }

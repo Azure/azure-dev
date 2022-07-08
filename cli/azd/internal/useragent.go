@@ -60,7 +60,7 @@ func makeUserAgent(template string) UserAgent {
 // - The identifier for the template used, if applicable
 // - The identifier for GitHub Actions, if applicable
 // Examples (see test `TestUserAgentStringScenarios` for all scenarios ):
-// - `azdev/1.0.0 (Go 1.18; windows/amd64) azdtempl/[none]`
+// - `azdev/1.0.0 (Go 1.18; windows/amd64)`
 // - `azdev/1.0.0 (Go 1.18; windows/amd64) Custom-foo/1.0.0 azdtempl/my-template@1.0.0 GhActions`
 func MakeUserAgentString(template string) string {
 	userAgent := makeUserAgent(template)
@@ -98,7 +98,7 @@ func getGithubActionsIdentifier() string {
 
 func formatTemplateIdentifier(template string) string {
 	if template == "" {
-		template = "[none]"
+		return ""
 	}
 
 	return fmt.Sprintf("%s/%s", templateProductIdentifierKey, template)

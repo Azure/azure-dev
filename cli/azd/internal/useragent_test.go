@@ -45,7 +45,7 @@ func TestGithubActionIdentifier(t *testing.T) {
 }
 
 func TestFormatTemplate(t *testing.T) {
-	require.Equal(t, fmt.Sprintf("%s/[none]", templateProductIdentifierKey), formatTemplateIdentifier(""))
+	require.Equal(t, "", formatTemplateIdentifier(""))
 	require.Equal(t, fmt.Sprintf("%s/todo-python-mongo", templateProductIdentifierKey), formatTemplateIdentifier("todo-python-mongo"))
 	require.Equal(t, fmt.Sprintf("%s/todo-csharp-sql@0.0.1-beta", templateProductIdentifierKey), formatTemplateIdentifier("todo-csharp-sql@0.0.1-beta"))
 }
@@ -63,16 +63,16 @@ func TestUserAgentStringScenarios(t *testing.T) {
 	azDevIdentifier := fmt.Sprintf("azdev/%s %s", version, getPlatformInfo())
 
 	// Scenario: default agent
-	require.Equal(t, fmt.Sprintf("%s azdtempl/[none]", azDevIdentifier), MakeUserAgentString(""))
+	require.Equal(t, fmt.Sprintf("%s", azDevIdentifier), MakeUserAgentString(""))
 
 	// Scenario: user specifies agent variable
 	os.Setenv(userSpecifiedAgentEnvironmentVariableName, "dev_user_agent")
-	require.Equal(t, fmt.Sprintf("%s dev_user_agent azdtempl/[none]", azDevIdentifier), MakeUserAgentString(""))
+	require.Equal(t, fmt.Sprintf("%s dev_user_agent", azDevIdentifier), MakeUserAgentString(""))
 	os.Setenv(userSpecifiedAgentEnvironmentVariableName, "")
 
 	// Scenario: running on github actions
 	os.Setenv(githubActionsEnvironmentVariableName, "true")
-	require.Equal(t, fmt.Sprintf("%s azdtempl/[none] GhActions", azDevIdentifier), MakeUserAgentString(""))
+	require.Equal(t, fmt.Sprintf("%s GhActions", azDevIdentifier), MakeUserAgentString(""))
 	os.Setenv(githubActionsEnvironmentVariableName, "")
 
 	// Scenario: template present

@@ -72,7 +72,7 @@ func TestAzCli(t *testing.T) {
 		require.NoError(t, err)
 
 		require.Equal(t, []string{
-			"AZURE_HTTP_USER_AGENT=azdev/0.0.0-dev.0",
+			fmt.Sprintf("AZURE_HTTP_USER_AGENT=%s", azdinternal.MakeUserAgentString("")),
 			"AZURE_CORE_COLLECT_TELEMETRY=no",
 		}, env)
 
@@ -94,13 +94,6 @@ func TestAZCLIWithUserAgent(t *testing.T) {
 
 	userAgent := runAndCaptureUserAgent(t, azcli, account.Id)
 	require.Contains(t, userAgent, "AZTesting=yes")
-	require.Contains(t, userAgent, "azdev")
-
-	// now disable telemetry, which doesn't appear to affect our user agent
-	azcli.enableTelemetry = false
-
-	userAgentWithTelemetryDisabled := runAndCaptureUserAgent(t, azcli, account.Id)
-	require.Contains(t, userAgentWithTelemetryDisabled, "AZTesting=yes")
 	require.Contains(t, userAgent, "azdev")
 }
 

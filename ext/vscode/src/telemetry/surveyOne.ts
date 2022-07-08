@@ -7,7 +7,7 @@ import { localize } from "../localize";
 import { Survey, SurveyRefusal } from "./surveyScheduler";
 
 const buttons = new Map<string, vscode.Uri | SurveyRefusal>();
-buttons.set(localize("azure-dev.surveys.surveyOne.button.take", "Take survey"), vscode.Uri.parse('https://aka.ms/azure-dev/hats'));
+buttons.set(localize("azure-dev.surveys.surveyOne.button.take", "Take survey"), vscode.Uri.parse(`https://aka.ms/azure-dev/hats?channel=vscode&extensionVersion=${ext.extensionVersion.value}&clientVersion=${vscode.version}`));
 buttons.set(localize("azure-dev.surveys.surveyOne.button.never", "Don't ask again"), SurveyRefusal.NeverAgain);
 buttons.set(localize("azure-dev.surveys.surveyOne.button.later", "Remind me later"), SurveyRefusal.RemindLater);
 

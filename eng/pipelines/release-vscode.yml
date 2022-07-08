@@ -190,7 +190,7 @@ stages:
 
                 - template: /eng/pipelines/templates/steps/publish-vscode.yml
                   parameters:
-                    PublishLocations: vscode/releases/$(VSIX_VERSION)
+                    PublishLocations: vscode/release/$(VSIX_VERSION);vscode/release/latest
                     TagRepository: true
                     UpdateShield: true
 
@@ -222,8 +222,7 @@ stages:
 
           - template: /eng/pipelines/templates/steps/publish-vscode.yml
             parameters:
-              PublishLocations: vscode/latest;vscode/latest/archive/$(Build.BuildId)-$(Build.SourceVersion)
-              UpdateShield: true
+              PublishLocations: vscode/release/daily;vscode/daily/archive/$(Build.BuildId)-$(Build.SourceVersion)
 
       - job: Publish_For_PR
         condition: >-

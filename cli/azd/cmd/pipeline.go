@@ -475,9 +475,11 @@ func notifyWhenGitHubActionsAreDisabled(
 
 	if ghLocalWorkflowFiles {
 
-		fmt.Printf("\nGitHub actions are currently disabled for your repository.\n"+
+		printWithStyling("\n%s\n"+
 			"This can happen after a template is forked.\n"+
-			"Please enable actions here: https://github.com/%s/actions.\n", repoSlug)
+			"Please enable actions here: %s.\n",
+			withHighLightFormat("GitHub actions are currently disabled for your repository."),
+			withHighLightFormat("https://github.com/%s/actions", repoSlug))
 
 		var rawSelection int
 		if err := askOne(&survey.Select{

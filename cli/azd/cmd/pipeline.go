@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"time"
 
@@ -247,6 +248,16 @@ You can view the GitHub Actions here: https://github.com/%s/actions
 	}
 
 	if doPush {
+
+		err, cancelPushing := ensureGitHubActionsEnabled(ctx, gitCli, ghCli, azdCtx, repoSlug, p.pipelineRemoteName, currentBranch, askOne)
+		if err != nil {
+			return fmt.Errorf("ensure github actions: %w", err)
+		}
+		// Abort doing push on user request
+		doPush = !cancelPushing
+	}
+
+	if doPush {
 		if err := gitCli.AddFile(ctx, azdCtx.ProjectDirectory(), "."); err != nil {
 			return fmt.Errorf("adding files: %w", err)
 		}
@@ -393,4 +404,79 @@ func ensureGitHubLogin(ctx context.Context, ghCli tools.GitHubCli, hostname stri
 
 		fmt.Println("There was an issue logging into GitHub.")
 	}
+}
+
+type gitHubActionsEnablingChoice int
+
+const (
+	manualChoice gitHubActionsEnablingChoice = iota
+	cancelChoice
+)
+
+func (selection gitHubActionsEnablingChoice) String() string {
+	switch selection {
+	case manualChoice:
+		return "I have manually enabled GitHub Actions. Continue with pushing my changes."
+	case cancelChoice:
+		return "Exit without pushing my changes. I don't need to run GitHub actions right now."
+	}
+	return "???"
+}
+
+// Check if gh-actions are disabled on the repo
+// This can happen when a template is first forked and user calls `pipeline config`
+// GitHub disables actions by default when a repo is forked.
+// Fix this by adding a commit to rename the current workflow file and re-store it
+// as part of the repo-push
+func ensureGitHubActionsEnabled(
+	ctx context.Context,
+	gitCli tools.GitCli,
+	ghCli tools.GitHubCli,
+	azdCtx *environment.AzdContext,
+	repoSlug string,
+	origin string,
+	branch string,
+	askOne Asker) (error, bool) {
+
+	ghActionsInRepo, err := ghCli.GitHubActionsExists(ctx, repoSlug)
+	if err != nil {
+		return err, false
+	}
+	defaultGitHubWorkflowPathLocation := filepath.Join(
+		azdCtx.ProjectDirectory(),
+		".github",
+		"workflows")
+	defaultGitHubWorkflowFileLocation := filepath.Join(
+		defaultGitHubWorkflowPathLocation,
+		environment.DefaultGitHubWorkflowName)
+
+	if _, err := os.Stat(defaultGitHubWorkflowFileLocation); err == nil && !ghActionsInRepo {
+
+		fmt.Printf("\nGitHub actions are currently disabled for your repository.\n"+
+			"This can happen after a template is forked.\n"+
+			"Please enable actions here: https://github.com/%s/actions.\n", repoSlug)
+
+		var rawSelection int
+		if err := askOne(&survey.Select{
+			Message: "What would you like to do now?",
+			Options: []string{
+				manualChoice.String(),
+				cancelChoice.String(),
+			},
+			Default: manualChoice,
+		}, &rawSelection); err != nil {
+			return fmt.Errorf("prompting to enable github actions: %w", err), false
+		}
+		choice := gitHubActionsEnablingChoice(rawSelection)
+
+		if choice == manualChoice {
+			return nil, false
+		}
+
+		if choice == cancelChoice {
+			return nil, true
+		}
+	}
+
+	return nil, false
 }

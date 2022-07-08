@@ -249,7 +249,7 @@ You can view the GitHub Actions here: https://github.com/%s/actions
 
 	if doPush {
 
-		err, cancelPushing := ensureGitHubActionsEnabled(ctx, gitCli, ghCli, azdCtx, repoSlug, p.pipelineRemoteName, currentBranch, askOne)
+		err, cancelPushing := notifyWhenGitHubActionsAreDisabled(ctx, gitCli, ghCli, azdCtx, repoSlug, p.pipelineRemoteName, currentBranch, askOne)
 		if err != nil {
 			return fmt.Errorf("ensure github actions: %w", err)
 		}
@@ -423,12 +423,13 @@ func (selection gitHubActionsEnablingChoice) String() string {
 	return "???"
 }
 
-// Check if gh-actions are disabled on the repo
+// notifyWhenGitHubActionsAreDisabled checks if gh-actions are disabled on the repo
 // This can happen when a template is first forked and user calls `pipeline config`
 // GitHub disables actions by default when a repo is forked.
 // Fix this by adding a commit to rename the current workflow file and re-store it
 // as part of the repo-push
-func ensureGitHubActionsEnabled(
+// Returns nil, true if user decides to cancel pushing changes.
+func notifyWhenGitHubActionsAreDisabled(
 	ctx context.Context,
 	gitCli tools.GitCli,
 	ghCli tools.GitHubCli,

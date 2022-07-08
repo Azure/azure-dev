@@ -1,0 +1,35 @@
+# Copyright (c) Microsoft Corporation. All rights reserved.
+# Licensed under the MIT License.
+
+# cspell settings for ALL projects in the repo
+
+version: 0.2
+language: en
+ignorePaths:
+    - ./go.mod
+    - ./go.sum
+    - ./NOTICE.txt
+    - ./templates/common/NOTICE.txt
+words:
+    - opentelemetry
+    - bson
+    - azdo
+ignoreWords:
+    - magefile
+useGitignore: true
+dictionaryDefinitions:
+    - name: gitHubUserAliases
+      path: ./cspell-github-user-aliases.txt
+      description: Custom Workspace Dictionary
+      addWords: true
+      scope: workspace
+    - name: noticeMd
+      path: ./cspell-notice.txt
+      description: Custom Notice Dictionary
+      addWords: true
+      scope: workspace
+dictionaries:
+    - powershell
+    - go
+    - gitHubUserAliases
+    - noticeMd

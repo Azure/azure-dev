@@ -6,10 +6,11 @@ import (
 	"strings"
 )
 
-// FormatUserAgent formats the user agent with its base information (azd/<version>), information
-// that's included from the environment (`AZURE_DEV_USER_AGENT`) and any extra text passed
-// via 'extra'.
-func FormatUserAgent(extras []string) string {
+// MakeUserAgent creates a user agent string that contains all necessary product identifiers, in increasing order:
+// - The Azure Developer CLI version, formatted as `azdev/<version>`
+// - The user agent set by the user, from `AZURE_DEV_USER_AGENT` environment variable
+// - Any additional product identifiers specified in `additionalProductIdentifiers`.
+func MakeUserAgent(additionalProductIdentifiers []string) string {
 	// like the Azure CLI (via it's `AZURE_HTTP_USER_AGENT` env variable) we allow for a user to append
 	// information to the UserAgent by setting an environment variable.
 	devUserAgent := os.Getenv("AZURE_DEV_USER_AGENT")
@@ -18,19 +19,19 @@ func FormatUserAgent(extras []string) string {
 		devUserAgent = " " + devUserAgent
 	}
 
-	var appendUA string
+	var remainingProductIdentifiers string
 
-	if len(extras) > 0 {
-		appendUA = " " + strings.Join(extras, " ")
+	if len(additionalProductIdentifiers) > 0 {
+		remainingProductIdentifiers = " " + strings.Join(additionalProductIdentifiers, " ")
 	}
 
 	// and by default we always include azdev and our version number.
 	// Ex: AZURECLI/2.34.1 (DEB) <other things...> azdev/0.0.0-alpha.0 azdtempl/functestapp@v1
-	return fmt.Sprintf("azdev/%s%s%s", GetVersionNumber(), devUserAgent, appendUA)
+	return fmt.Sprintf("azdev/%s%s%s", GetVersionNumber(), devUserAgent, remainingProductIdentifiers)
 }
 
-// FormatTemplateForUserAgent formats the template into a UserAgent value.
-func FormatTemplateForUserAgent(template string) string {
+// FormatTemplateAsProductIdentifier formats the template as a user-agent product identifier.
+func FormatTemplateAsProductIdentifier(template string) string {
 	if template == "" {
 		template = "[none]"
 	}

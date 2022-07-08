@@ -39,7 +39,7 @@ type AzCli interface {
 
 	// SetUserAgent sets the user agent that's sent with each call to the Azure
 	// CLI via the `AZURE_HTTP_USER_AGENT` environment variable.
-	SetUserAgent(extraUserAgentData []string)
+	SetUserAgent(userAgent string)
 
 	// UserAgent gets the currently configured user agent
 	UserAgent() string
@@ -297,7 +297,7 @@ func NewAzCli(args NewAzCliArgs) AzCli {
 	}
 
 	return &azCli{
-		userAgent:       azdinternal.FormatUserAgent(nil),
+		userAgent:       azdinternal.MakeUserAgent(nil),
 		enableDebug:     args.EnableDebug,
 		enableTelemetry: args.EnableTelemetry,
 		runWithResultFn: args.RunWithResultFn,
@@ -327,8 +327,8 @@ func (cli *azCli) CheckInstalled(_ context.Context) (bool, error) {
 
 // SetUserAgent sets the user agent that's sent with each call to the Azure
 // CLI via the `AZURE_HTTP_USER_AGENT` environment variable.
-func (cli *azCli) SetUserAgent(userAgentData []string) {
-	cli.userAgent = azdinternal.FormatUserAgent(userAgentData)
+func (cli *azCli) SetUserAgent(userAgent string) {
+	cli.userAgent = userAgent
 }
 
 func (cli *azCli) UserAgent() string {

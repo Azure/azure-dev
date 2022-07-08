@@ -42,7 +42,7 @@ func TestAzCli(t *testing.T) {
 		require.NoError(t, err)
 
 		require.Equal(t, []string{
-			fmt.Sprintf("AZURE_HTTP_USER_AGENT=%s", azdinternal.FormatUserAgent(nil)),
+			fmt.Sprintf("AZURE_HTTP_USER_AGENT=%s", azdinternal.MakeUserAgent(nil)),
 		}, env)
 
 		require.Equal(t, []string{"hello", "--debug"}, commandArgs)
@@ -85,9 +85,7 @@ func TestAZCLIWithUserAgent(t *testing.T) {
 		EnableDebug:     true,
 	})
 
-	tempAZCLI.SetUserAgent([]string{
-		"AZTesting=yes",
-	})
+	tempAZCLI.SetUserAgent("AZTesting=yes")
 
 	azcli := tempAZCLI.(*azCli)
 

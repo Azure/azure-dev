@@ -17,19 +17,19 @@ func TestGetUserAgent(t *testing.T) {
 
 	os.Setenv("AZURE_DEV_USER_AGENT", "")
 
-	require.Equal(t, fmt.Sprintf("azdev/%s", version), FormatUserAgent([]string{}))
-	require.Equal(t, fmt.Sprintf("azdev/%s", version), FormatUserAgent(nil))
-	require.Equal(t, fmt.Sprintf("azdev/%s extra values", version), FormatUserAgent([]string{"extra", "values"}))
+	require.Equal(t, fmt.Sprintf("azdev/%s", version), MakeUserAgent([]string{}))
+	require.Equal(t, fmt.Sprintf("azdev/%s", version), MakeUserAgent(nil))
+	require.Equal(t, fmt.Sprintf("azdev/%s extra values", version), MakeUserAgent([]string{"extra", "values"}))
 
 	os.Setenv("AZURE_DEV_USER_AGENT", "dev_user_agent")
 
-	require.Equal(t, fmt.Sprintf("azdev/%s dev_user_agent", version), FormatUserAgent([]string{}))
-	require.Equal(t, fmt.Sprintf("azdev/%s dev_user_agent", version), FormatUserAgent(nil))
-	require.Equal(t, fmt.Sprintf("azdev/%s dev_user_agent extra values", version), FormatUserAgent([]string{"extra", "values"}))
+	require.Equal(t, fmt.Sprintf("azdev/%s dev_user_agent", version), MakeUserAgent([]string{}))
+	require.Equal(t, fmt.Sprintf("azdev/%s dev_user_agent", version), MakeUserAgent(nil))
+	require.Equal(t, fmt.Sprintf("azdev/%s dev_user_agent extra values", version), MakeUserAgent([]string{"extra", "values"}))
 }
 
-func TestFormatTemplateForUserAgent(t *testing.T) {
-	require.Equal(t, "azdtempl/[none]", FormatTemplateForUserAgent(""))
-	require.Equal(t, "azdtempl/todo-python-mongo", FormatTemplateForUserAgent("todo-python-mongo"))
-	require.Equal(t, "azdtempl/todo-csharp-sql@0.0.1-beta", FormatTemplateForUserAgent("todo-csharp-sql@0.0.1-beta"))
+func TestFormatTemplateAsProductIdentifier(t *testing.T) {
+	require.Equal(t, "azdtempl/[none]", FormatTemplateAsProductIdentifier(""))
+	require.Equal(t, "azdtempl/todo-python-mongo", FormatTemplateAsProductIdentifier("todo-python-mongo"))
+	require.Equal(t, "azdtempl/todo-csharp-sql@0.0.1-beta", FormatTemplateAsProductIdentifier("todo-csharp-sql@0.0.1-beta"))
 }

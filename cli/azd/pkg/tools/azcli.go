@@ -297,7 +297,7 @@ func NewAzCli(args NewAzCliArgs) AzCli {
 	}
 
 	return &azCli{
-		userAgent:       azdinternal.MakeUserAgent(nil),
+		userAgent:       azdinternal.MakeUserAgentString(""),
 		enableDebug:     args.EnableDebug,
 		enableTelemetry: args.EnableTelemetry,
 		runWithResultFn: args.RunWithResultFn,

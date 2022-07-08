@@ -2,7 +2,6 @@ package commands
 
 import (
 	"context"
-	"os"
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/internal"
@@ -32,24 +31,14 @@ func GetAzCliFromContext(ctx context.Context) tools.AzCli {
 		azCli = tools.NewAzCli(azCliArgs)
 	}
 
-	// List of additional product identifiers that is appended to the User-Agent header
-	productIdentifiers := make([]string, 0)
+	selectedTemplate := ""
 
 	// Set the user agent if a template has been selected
-	template, ok := ctx.Value(environment.TemplateContextKey).(string)
-	if ok && strings.TrimSpace(template) != "" {
-		productIdentifiers = append(productIdentifiers, internal.FormatTemplateAsProductIdentifier(template))
+	if template, ok := ctx.Value(environment.TemplateContextKey).(string); ok && strings.TrimSpace(template) != "" {
+		selectedTemplate = template
 	}
 
-	isRunningInGithubActions := os.Getenv("GITHUB_ACTIONS")
-
-	// Must be set to 'true' if running in GitHub Actions,
-	// see https://docs.github.com/en/actions/learn-github-actions/environment-variables#default-environment-variables
-	if isRunningInGithubActions == "true" {
-		productIdentifiers = append(productIdentifiers, "GhActions")
-	}
-
-	azCli.SetUserAgent(internal.MakeUserAgent(productIdentifiers))
+	azCli.SetUserAgent(internal.MakeUserAgentString(selectedTemplate))
 
 	return azCli
 }

@@ -11,6 +11,7 @@ import (
 	"regexp"
 	"testing"
 
+	"github.com/azure/azure-dev/cli/azd/internal"
 	azdinternal "github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/executil"
 	"github.com/stretchr/testify/assert"
@@ -85,7 +86,7 @@ func TestAZCLIWithUserAgent(t *testing.T) {
 		EnableDebug:     true,
 	})
 
-	tempAZCLI.SetUserAgent("AZTesting=yes")
+	tempAZCLI.SetUserAgent(internal.MakeUserAgentString("AZTesting=yes"))
 
 	azcli := tempAZCLI.(*azCli)
 
@@ -93,12 +94,14 @@ func TestAZCLIWithUserAgent(t *testing.T) {
 
 	userAgent := runAndCaptureUserAgent(t, azcli, account.Id)
 	require.Contains(t, userAgent, "AZTesting=yes")
+	require.Contains(t, userAgent, "azdev")
 
 	// now disable telemetry, which doesn't appear to affect our user agent
 	azcli.enableTelemetry = false
 
 	userAgentWithTelemetryDisabled := runAndCaptureUserAgent(t, azcli, account.Id)
 	require.Contains(t, userAgentWithTelemetryDisabled, "AZTesting=yes")
+	require.Contains(t, userAgent, "azdev")
 }
 
 func mustGetDefaultAccount(t *testing.T, azcli AzCli) AzCliSubscriptionInfo {

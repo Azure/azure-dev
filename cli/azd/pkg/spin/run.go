@@ -26,7 +26,8 @@ func Run(prefix string, runFn RunFunc, finalFuncs ...func(*yacspin.Spinner, bool
 
 // RunWithUpdater runs runFn with a spinner. The prefix of the spinner is set to prefix,
 // and when runFn is complete, each function in finalFuncs is executed in serial, regardless
-// of whether runFn errored.
+// of whether runFn errored, but each finalFunction gets a boolean argument indicating if
+// main function succeeded.
 func RunWithUpdater(prefix string, runFn RunWithUpdateFunc, finalFuncs ...func(*yacspin.Spinner, bool)) error {
 	spin, _ := yacspin.New(yacspin.Config{
 		Frequency: time.Millisecond * 500,

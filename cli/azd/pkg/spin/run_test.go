@@ -11,7 +11,7 @@ import (
 func Test_Run(t *testing.T) {
 	t.Run("FinalFuncs Are Called", func(t *testing.T) {
 		runCount := 0
-		increment := func(s *yacspin.Spinner) {
+		increment := func(s *yacspin.Spinner, noError bool) {
 			assert.NotNil(t, s, "spinner should be passed to final functions")
 			runCount++
 		}

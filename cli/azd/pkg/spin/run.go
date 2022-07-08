@@ -14,7 +14,7 @@ type RunWithUpdateFunc = func(func(string)) error
 type RunFunc func() error
 
 // Run is the equivalent of RunWithUpdater with no updater specified
-func Run(prefix string, runFn RunFunc, finalFuncs ...func(*yacspin.Spinner)) error {
+func Run(prefix string, runFn RunFunc, finalFuncs ...func(*yacspin.Spinner, bool)) error {
 	return RunWithUpdater(
 		prefix,
 		func(func(string)) error {
@@ -27,7 +27,7 @@ func Run(prefix string, runFn RunFunc, finalFuncs ...func(*yacspin.Spinner)) err
 // RunWithUpdater runs runFn with a spinner. The prefix of the spinner is set to prefix,
 // and when runFn is complete, each function in finalFuncs is executed in serial, regardless
 // of whether runFn errored.
-func RunWithUpdater(prefix string, runFn RunWithUpdateFunc, finalFuncs ...func(*yacspin.Spinner)) error {
+func RunWithUpdater(prefix string, runFn RunWithUpdateFunc, finalFuncs ...func(*yacspin.Spinner, bool)) error {
 	spin, _ := yacspin.New(yacspin.Config{
 		Frequency: time.Millisecond * 500,
 		CharSet:   yacspin.CharSets[9],
@@ -48,15 +48,18 @@ func RunWithUpdater(prefix string, runFn RunWithUpdateFunc, finalFuncs ...func(*
 	// When `runFn` completes (which causes this function to return), run
 	// all the final functions. NOTE: Since go processes `defers` in LIFO
 	// order, all of these final functions will run before `Stop` is called.
+	var result error
 	defer func() {
 		for _, finalFunc := range finalFuncs {
-			finalFunc(spin)
+			finalFunc(spin, result == nil)
 		}
 	}()
 
-	return runFn(func(newPrefix string) {
+	result = runFn(func(newPrefix string) {
 		if newPrefix != "" {
 			spin.Prefix(newPrefix)
 		}
 	})
+
+	return result
 }

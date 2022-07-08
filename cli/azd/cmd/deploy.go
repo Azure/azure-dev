@@ -158,8 +158,10 @@ func (d *deployAction) Run(ctx context.Context, cmd *cobra.Command, args []strin
 			err = spin.RunWithUpdater(
 				fmt.Sprintf("Deploying service %s ", svc.Config.Name),
 				deployAndReportProgress,
-				func(s *yacspin.Spinner) {
-					reportServiceDeploymentResultInteractive(s, svc, &svcDeploymentResult)
+				func(s *yacspin.Spinner, successDeploy bool) {
+					if successDeploy {
+						reportServiceDeploymentResultInteractive(s, svc, &svcDeploymentResult)
+					}
 				})
 		} else {
 			err = deployAndReportProgress(nil)

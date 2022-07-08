@@ -236,7 +236,7 @@ func (ica *infraCreateAction) Run(ctx context.Context, cmd *cobra.Command, args 
 		//fmt.Fprintf(colorable.NewColorableStdout(), "Provisioning Azure resources can take some time.\n\nYou can view detailed progress in the Azure Portal:\n%s", deploymentURL)
 
 		err = spin.RunWithUpdater("Creating Azure resources ", deployAndReportProgress,
-			func(s *yacspin.Spinner) {
+			func(s *yacspin.Spinner, deploySuccess bool) {
 				s.StopMessage("Created Azure resources\n")
 			})
 	} else {

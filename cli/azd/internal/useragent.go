@@ -3,6 +3,7 @@ package internal
 import (
 	"fmt"
 	"os"
+	"runtime"
 	"strings"
 )
 
@@ -68,7 +69,11 @@ func MakeUserAgentString(template string) string {
 }
 
 func getAzDevCliIdentifier() string {
-	return fmt.Sprintf("%s/%s", azDevProductIdentifierKey, GetVersionNumber())
+	return fmt.Sprintf("%s/%s %s", azDevProductIdentifierKey, GetVersionNumber(), getPlatformInfo())
+}
+
+func getPlatformInfo() string {
+	return fmt.Sprintf("(Go %s; %s)", runtime.Version(), runtime.GOOS)
 }
 
 func getUserSpecifiedIdentifier() string {

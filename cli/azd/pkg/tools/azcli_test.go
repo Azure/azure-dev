@@ -71,7 +71,7 @@ func TestAzCli(t *testing.T) {
 		require.NoError(t, err)
 
 		require.Equal(t, []string{
-			"AZURE_HTTP_USER_AGENT=azdev/0.0.0-alpha.0",
+			"AZURE_HTTP_USER_AGENT=azdev/0.0.0-dev.0",
 			"AZURE_CORE_COLLECT_TELEMETRY=no",
 		}, env)
 
@@ -134,7 +134,7 @@ func runAndCaptureUserAgent(t *testing.T, azcli *azCli, subscriptionID string) s
 	_, _ = azcli.ListResourceGroupResources(context.Background(), subscriptionID, "ResourceGroupThatDoesNotExist")
 
 	// The outputted line will look like this:
-	// DEBUG: cli.azure.cli.core.sdk.policies:     'User-Agent': 'AZURECLI/2.35.0 (MSI) azsdk-python-azure-mgmt-resource/20.0.0 Python/3.10.3 (Windows-10-10.0.22621-SP0) azdev/0.0.0-alpha.0 AZTesting=yes'
+	// DEBUG: cli.azure.cli.core.sdk.policies:     'User-Agent': 'AZURECLI/2.35.0 (MSI) azsdk-python-azure-mgmt-resource/20.0.0 Python/3.10.3 (Windows-10-10.0.22621-SP0) azdev/0.0.0-dev.0 AZTesting=yes'
 	re := regexp.MustCompile(`'User-Agent':\s+'([^']+)'`)
 
 	matches := re.FindAllStringSubmatch(stderrBuffer.String(), -1)

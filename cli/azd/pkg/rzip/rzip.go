@@ -15,12 +15,12 @@ import (
 func CreateFromDirectory(source string, buf *os.File) error {
 	w := zip.NewWriter(buf)
 	err := filepath.Walk(source, func(path string, info fs.FileInfo, err error) error {
-		if info.IsDir() {
-			return nil
-		}
-
 		if err != nil {
 			return err
+		}
+
+		if info.IsDir() {
+			return nil
 		}
 
 		header := &zip.FileHeader{

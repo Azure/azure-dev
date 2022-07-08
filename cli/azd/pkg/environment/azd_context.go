@@ -16,7 +16,6 @@ const EnvironmentDirectoryName = ".azure"
 const ConfigFileName = "config.json"
 const ConfigFileVersion = 1
 const InfraDirectoryName = "infra"
-const DefaultGitHubWorkflowName = "azure-dev.yml"
 
 type AzdContext struct {
 	projectDirectory string

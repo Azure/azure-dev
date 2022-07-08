@@ -7,7 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
+	"io/fs"
 	"path/filepath"
 	"time"
 
@@ -438,19 +438,41 @@ func ensureGitHubActionsEnabled(
 	branch string,
 	askOne Asker) (error, bool) {
 
-	ghActionsInRepo, err := ghCli.GitHubActionsExists(ctx, repoSlug)
+	ghActionsInUpstreamRepo, err := ghCli.GitHubActionsExists(ctx, repoSlug)
 	if err != nil {
 		return err, false
 	}
+
+	if ghActionsInUpstreamRepo {
+		// upstream is already listing GitHub actions.
+		// There's no need to check if there are local workflows
+		return nil, true
+	}
+
+	// Upstream has no GitHub actions listed.
+	// See if there's at least one workflow file within .github/workflows
+	ghLocalWorkflowFiles := false
 	defaultGitHubWorkflowPathLocation := filepath.Join(
 		azdCtx.ProjectDirectory(),
 		".github",
 		"workflows")
-	defaultGitHubWorkflowFileLocation := filepath.Join(
-		defaultGitHubWorkflowPathLocation,
-		environment.DefaultGitHubWorkflowName)
+	if err := filepath.WalkDir(defaultGitHubWorkflowPathLocation,
+		func(folderName string, file fs.DirEntry, e error) error {
+			if e != nil {
+				return e
+			}
 
-	if _, err := os.Stat(defaultGitHubWorkflowFileLocation); err == nil && !ghActionsInRepo {
+			fileExtension := filepath.Ext(file.Name())
+			if fileExtension == ".yml" || fileExtension == ".yaml" {
+				ghLocalWorkflowFiles = true
+			}
+
+			return nil
+		}); err != nil {
+		return fmt.Errorf("Getting GitHub local workflow files %w", err), false
+	}
+
+	if ghLocalWorkflowFiles {
 
 		fmt.Printf("\nGitHub actions are currently disabled for your repository.\n"+
 			"This can happen after a template is forked.\n"+

@@ -446,7 +446,7 @@ func ensureGitHubActionsEnabled(
 	if ghActionsInUpstreamRepo {
 		// upstream is already listing GitHub actions.
 		// There's no need to check if there are local workflows
-		return nil, true
+		return nil, false
 	}
 
 	// Upstream has no GitHub actions listed.

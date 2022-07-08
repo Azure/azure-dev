@@ -5,8 +5,6 @@ package cmd
 
 import (
 	"fmt"
-	"io"
-	"log"
 	"os"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/commands"
@@ -53,12 +51,6 @@ For more information, please visit the project page: https://aka.ms/azure-dev/de
 
 			if opts.EnvironmentName == "" {
 				opts.EnvironmentName = os.Getenv(environment.EnvNameEnvVarName)
-			}
-
-			log.SetFlags(log.LstdFlags | log.Lshortfile)
-
-			if !opts.EnableDebugLogging {
-				log.SetOutput(io.Discard)
 			}
 
 			return nil

@@ -8,11 +8,13 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/executil"
+	"github.com/blang/semver/v4"
 )
 
 type GitCli interface {
@@ -34,8 +36,31 @@ func NewGitCli() GitCli {
 	return &gitCli{}
 }
 
+func (cli *gitCli) GetToolUpdate() ToolMetaData {
+	return ToolMetaData{
+		MinimumVersion: semver.Version{
+			Major: 2,
+			Minor: 30,
+			Patch: 2},
+		UpdateCommand: "Visit https://git-scm.com/downloads to install newer",
+	}
+}
+
 func (cli *gitCli) CheckInstalled(_ context.Context) (bool, error) {
-	return toolInPath("git")
+	found, err := toolInPath("git")
+	if !found {
+		return false, err
+	}
+	gitRes, _ := exec.Command("git", "--version").Output()
+	gitSemver, err := versionToSemver(gitRes)
+	if err != nil {
+		return false, fmt.Errorf("converting to semver version fails: %w", err)
+	}
+	updateDetail := cli.GetToolUpdate()
+	if gitSemver.Compare(updateDetail.MinimumVersion) == -1 {
+		return false, &ErrSemver{ToolName: cli.Name(), ToolRequire: updateDetail}
+	}
+	return true, nil
 }
 
 func (cli *gitCli) InstallUrl() string {

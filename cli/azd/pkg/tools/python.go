@@ -6,11 +6,13 @@ package tools
 import (
 	"context"
 	"fmt"
+	"os/exec"
 	"path"
 	"path/filepath"
 	"runtime"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/executil"
+	"github.com/blang/semver/v4"
 )
 
 type PythonCli struct{}
@@ -19,8 +21,32 @@ func NewPythonCli() *PythonCli {
 	return &PythonCli{}
 }
 
+// base version number and empty string if there's no pre-request check on version number
+func (cli *PythonCli) GetToolUpdate() ToolMetaData {
+	return ToolMetaData{
+		MinimumVersion: semver.Version{
+			Major: 3,
+			Minor: 7,
+			Patch: 6},
+		UpdateCommand: "Visit https://www.python.org/downloads/ to install newer",
+	}
+}
+
 func (cli *PythonCli) CheckInstalled(_ context.Context) (bool, error) {
-	return toolInPath(pythonExe())
+	found, err := toolInPath(pythonExe())
+	if !found {
+		return false, err
+	}
+	pythonRes, _ := exec.Command("python", "--version").Output()
+	pythonSemver, err := versionToSemver(pythonRes)
+	if err != nil {
+		return false, fmt.Errorf("converting to semver version fails: %w", err)
+	}
+	updateDetail := cli.GetToolUpdate()
+	if pythonSemver.Compare(updateDetail.MinimumVersion) == -1 {
+		return false, &ErrSemver{ToolName: cli.Name(), ToolRequire: updateDetail}
+	}
+	return true, nil
 }
 
 func (cli *PythonCli) InstallUrl() string {

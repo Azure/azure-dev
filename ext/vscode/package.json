@@ -2,7 +2,7 @@
     "name": "azure-dev",
     "displayName": "Azure Developer CLI",
     "description": "Makes it easy to run, provision, and deploy Azure applications using the Azure Developer CLI",
-    "version": "0.1.0",
+    "version": "0.2.0",
     "license": "MIT",
     "icon": "resources/icon.png",
     "preview": true,

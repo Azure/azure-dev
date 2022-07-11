@@ -193,7 +193,7 @@ func (d *deployAction) Run(ctx context.Context, cmd *cobra.Command, args []strin
 			env.GetSubscriptionId(),
 			resourceGroup)
 		printWithStyling(
-			"View the resources created under the resource group %s in Azure Portal:\n%s",
+			"View the resources created under the resource group %s in Azure Portal:\n%s\n",
 			withHighLightFormat(resourceGroup),
 			resourcesGroupsURL)
 	}

@@ -57,7 +57,6 @@ func versionToSemver(CLIOutput []byte) (semver.Version, error) {
 
 	//skip leading zeros
 	versionSplit := strings.Split(ver, ".")
-	fmt.Println(versionSplit) //DEL
 	for key, val := range versionSplit {
 		verInt, err := strconv.Atoi(val)
 		if err != nil {

@@ -37,10 +37,10 @@ func (cli *PythonCli) CheckInstalled(_ context.Context) (bool, error) {
 	if !found {
 		return false, err
 	}
-	pythonRes, _ := exec.Command("python3", "--version").Output() //DEL
+	pythonRes, _ := exec.Command("python3", "--version").Output()
 	pythonSemver, err := versionToSemver(pythonRes)
 	if err != nil {
-		return false, fmt.Errorf("converting to semver version %s fails: %w", pythonSemver, err) //DEL
+		return false, fmt.Errorf("converting to semver version fails: %w", err)
 	}
 	updateDetail := cli.GetToolUpdate()
 	if pythonSemver.Compare(updateDetail.MinimumVersion) == -1 {

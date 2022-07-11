@@ -23,7 +23,7 @@ The following prerequisites are required to use this application. Please ensure 
     ```
     curl -fsSL https://aka.ms/install-azd.sh | bash
     ```
-- [Azure CLI (2.30.0+)](https://docs.microsoft.com/cli/azure/install-azure-cli)
+- [Azure CLI (2.38.0+)](https://docs.microsoft.com/cli/azure/install-azure-cli)
 - [Azure Functions Core Tools (4+)](https://docs.microsoft.com/azure/azure-functions/functions-run-local)
 - [Python (3.8+)](https://www.python.org/downloads/) - for the API backend
 - [Git (2.36.1+)](https://git-scm.com/)

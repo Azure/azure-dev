@@ -8,7 +8,7 @@
     },
     "features": {
         "github-cli": "2",
-        "azure-cli": "2.36",
+        "azure-cli": "2.38",
         "python": "os-provided",
         "dotnet": "6.0",
         "docker-from-docker": "20.10",

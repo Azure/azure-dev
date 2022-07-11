@@ -37,16 +37,16 @@ func EnsureInstalled(ctx context.Context, tools ...ExternalTool) error {
 	for _, tool := range tools {
 		has, err := tool.CheckInstalled(ctx)
 		var errSem *ErrSemver
-		if errors.As(err, &errSem) {
-			allErrors = append(allErrors, err)
-		} else if err != nil {
-			errorMsg := err.Error()
-			if _, hasV := errorsEncountered[errorMsg]; !hasV {
+		errorMsg := err.Error()
+		if _, hasV := errorsEncountered[errorMsg]; !hasV {
+			if errors.As(err, &errSem) {
+				allErrors = append(allErrors, err)
+			} else if err != nil {
 				allErrors = append(allErrors, fmt.Errorf("error checking for external tool %s: %w", tool.Name(), err))
-				errorsEncountered[errorMsg] = struct{}{}
+			} else if !has {
+				allErrors = append(allErrors, fmt.Errorf("%s is not installed, please see %s to install", tool.Name(), tool.InstallUrl()))
 			}
-		} else if !has {
-			allErrors = append(allErrors, fmt.Errorf("%s is not installed, please see %s to install", tool.Name(), tool.InstallUrl()))
+			errorsEncountered[errorMsg] = struct{}{}
 		}
 	}
 

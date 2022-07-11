@@ -56,7 +56,8 @@ func Test_CLI_Version_PrintsVersion(t *testing.T) {
 
 	rn := os.Getenv("GITHUB_RUN_NUMBER")
 	if rn != "" {
-		require.Contains(t, out, "0.0.1-beta")
+		// TODO: This should be read from cli/version.txt (https://github.com/Azure/azure-dev/issues/36)
+		require.Contains(t, out, "0.1.0")
 	} else {
 		require.Contains(t, out, fmt.Sprintf("azd version %s", internal.Version))
 	}

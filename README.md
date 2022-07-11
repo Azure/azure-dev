@@ -1,6 +1,6 @@
 # Azure Developer CLI
 
-Latest (daily) builds:
+Latest builds:
 
 | Package | Version | Download |
 | ------- | ------- | -------- |
@@ -13,11 +13,11 @@ The Azure Developer CLI (**azure-dev**) is a developer-centric command-line inte
 - demonstrate opinionated best practices for Azure development
 - help developers understand core Azure development constructs
 
-To take full advantage of the CLI, code repositories need to conform to a well defined set of [conventions](https://github.com/Azure/azure-dev/wiki/Azure-Developer-CLI-Overview) that will be recognized by the tooling. Please checkout the [wiki](https://github.com/Azure/azure-dev/wiki) for more information and to get started. Use [discussions](https://github.com/Azure/azure-dev/discussions) to participate in the conversation, ask questions, and see the latest announcements.
+To take full advantage of the CLI, code repositories need to conform to a well defined set of conventions that will be recognized by the tooling. Please checkout the [wiki](https://github.com/Azure/azure-dev/wiki) for more information and to get started. Use [discussions](https://github.com/Azure/azure-dev/discussions) to participate in the conversation, ask questions, and see the latest announcements.
 
 ## Install/Upgrade Azure Developer CLI
 
-Install and Upgrade using the following scripts. Re-running the script will install the latest available version (daily)
+Install and Upgrade using the following scripts. Re-running the script will install the latest available version.
 
 ### Windows
 
@@ -30,7 +30,6 @@ powershell -c "Set-ExecutionPolicy Bypass Process -Force; irm 'https://aka.ms/in
 ```
 curl -fsSL https://aka.ms/install-azd.sh | bash
 ```
-
 
 ## Data Collection
 
@@ -56,7 +55,21 @@ Please see our [contributing guide](cli/azd/CONTRIBUTING.md) for complete instru
 
 This project has adopted the [Microsoft Open Source Code of Conduct](https://opensource.microsoft.com/codeofconduct/).
 For more information see the [Code of Conduct FAQ](https://opensource.microsoft.com/codeofconduct/faq/) or
-contact [opencode@microsoft.com](mailto:acceleratorsteam@microsoft.com) with any additional questions or comments.
+contact [opencode@microsoft.com](mailto:opencode@microsoft.com) with any additional questions or comments.
+
+## Uninstall Azure Developer CLI
+
+### Windows
+
+```powershell
+powershell -c "Set-ExecutionPolicy Bypass Process -Force; irm 'https://aka.ms/uninstall-azd.ps1' | iex"
+```
+
+### Linux/MacOS
+
+```
+curl -fsSL https://aka.ms/uninstall-azd.sh | bash
+```
 
 ## Trademark Notice
 

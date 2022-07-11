@@ -29,7 +29,7 @@ Download timeout in seconds. Default is 120 (2 minutes).
 
 param(
     [string] $BaseUrl = "https://azure-dev.azureedge.net/azd/standalone/release",
-    [string] $Version = "daily",
+    [string] $Version = "latest",
     [switch] $DryRun,
     [string] $InstallFolder = "$($env:LocalAppData)\Programs\Azure Dev CLI",
     [switch] $NoPath,

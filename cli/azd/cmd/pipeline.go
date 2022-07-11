@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"path/filepath"
 	"time"
 
@@ -247,6 +248,15 @@ You can view the GitHub Actions here: https://github.com/%s/actions
 	}
 
 	if doPush {
+		cancelPushing, err := notifyWhenGitHubActionsAreDisabled(ctx, gitCli, ghCli, azdCtx, repoSlug, p.pipelineRemoteName, currentBranch, askOne)
+		if err != nil {
+			return fmt.Errorf("ensure github actions: %w", err)
+		}
+		// Abort doing push on user request
+		doPush = !cancelPushing
+	}
+
+	if doPush {
 		if err := gitCli.AddFile(ctx, azdCtx.ProjectDirectory(), "."); err != nil {
 			return fmt.Errorf("adding files: %w", err)
 		}
@@ -393,4 +403,105 @@ func ensureGitHubLogin(ctx context.Context, ghCli tools.GitHubCli, hostname stri
 
 		fmt.Println("There was an issue logging into GitHub.")
 	}
+}
+
+type gitHubActionsEnablingChoice int
+
+const (
+	manualChoice gitHubActionsEnablingChoice = iota
+	cancelChoice
+)
+
+func (selection gitHubActionsEnablingChoice) String() string {
+	switch selection {
+	case manualChoice:
+		return "I have manually enabled GitHub Actions. Continue with pushing my changes."
+	case cancelChoice:
+		return "Exit without pushing my changes. I don't need to run GitHub actions right now."
+	}
+	panic("Tried to convert invalid input gitHubActionsEnablingChoice to string")
+}
+
+// notifyWhenGitHubActionsAreDisabled checks if gh-actions are disabled on the repo
+// This can happen when a template is first forked and user calls `pipeline config`
+// GitHub disables actions by default when a repo is forked.
+// Fix this by adding a commit to rename the current workflow file and re-store it
+// as part of the repo-push
+// Returns nil, true if user decides to cancel pushing changes.
+func notifyWhenGitHubActionsAreDisabled(
+	ctx context.Context,
+	gitCli tools.GitCli,
+	ghCli tools.GitHubCli,
+	azdCtx *environment.AzdContext,
+	repoSlug string,
+	origin string,
+	branch string,
+	askOne Asker) (bool, error) {
+
+	ghActionsInUpstreamRepo, err := ghCli.GitHubActionsExists(ctx, repoSlug)
+	if err != nil {
+		return false, err
+	}
+
+	if ghActionsInUpstreamRepo {
+		// upstream is already listing GitHub actions.
+		// There's no need to check if there are local workflows
+		return false, nil
+	}
+
+	// Upstream has no GitHub actions listed.
+	// See if there's at least one workflow file within .github/workflows
+	ghLocalWorkflowFiles := false
+	defaultGitHubWorkflowPathLocation := filepath.Join(
+		azdCtx.ProjectDirectory(),
+		".github",
+		"workflows")
+	err = filepath.WalkDir(defaultGitHubWorkflowPathLocation,
+		func(folderName string, file fs.DirEntry, e error) error {
+			if e != nil {
+				return e
+			}
+
+			fileExtension := filepath.Ext(file.Name())
+			if fileExtension == ".yml" || fileExtension == ".yaml" {
+				ghLocalWorkflowFiles = true
+			}
+
+			return nil
+		})
+
+	if err != nil {
+		return false, fmt.Errorf("Getting GitHub local workflow files %w", err)
+	}
+
+	if ghLocalWorkflowFiles {
+		printWithStyling("\n%s\n"+
+			"This can happen after a template is forked.\n"+
+			"Please enable actions here: %s.\n",
+			withHighLightFormat("GitHub actions are currently disabled for your repository."),
+			withHighLightFormat("https://github.com/%s/actions", repoSlug))
+
+		var rawSelection int
+		if err := askOne(&survey.Select{
+			Message: "What would you like to do now?",
+			Options: []string{
+				manualChoice.String(),
+				cancelChoice.String(),
+			},
+			Default: manualChoice,
+		}, &rawSelection); err != nil {
+			return false, fmt.Errorf("prompting to enable github actions: %w", err)
+		}
+		choice := gitHubActionsEnablingChoice(rawSelection)
+
+		if choice == manualChoice {
+			return false, nil
+		}
+
+		if choice == cancelChoice {
+			return true, nil
+		}
+	}
+
+	return false, nil
 }

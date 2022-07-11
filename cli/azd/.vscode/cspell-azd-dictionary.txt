@@ -28,6 +28,7 @@ godotenv
 golangci
 ldflags
 mgmt
+mgutz
 nodeapp
 nolint
 omitempty

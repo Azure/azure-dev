@@ -5,7 +5,7 @@ trigger:
 pool:
   vmImage: ubuntu-latest
 
-container: azdevcliextacr.azurecr.io/azure-dev:latest
+container: mcr.microsoft.com/azure-dev-cli-apps:latest
 
 steps:
   - task: AzureCLI@2

@@ -8,7 +8,7 @@ download locations
 
 .PARAMETER BaseUrl
 Specifies the base URL to use when downloading. Default is
-https://azuresdkreleasepreview.blob.core.windows.net/azd/standalone
+https://azure-dev.azureedge.net/azd/standalone
 
 .PARAMETER Version
 Specifies the version to use. Default is `latest`. Valid values include a
@@ -28,7 +28,7 @@ Download timeout in seconds. Default is 120 (2 minutes).
 #>
 
 param(
-    [string] $BaseUrl = "https://azuresdkreleasepreview.blob.core.windows.net/azd/standalone/release",
+    [string] $BaseUrl = "https://azure-dev.azureedge.net/azd/standalone/release",
     [string] $Version = "latest",
     [switch] $DryRun,
     [string] $InstallFolder = "$($env:LocalAppData)\Programs\Azure Dev CLI",

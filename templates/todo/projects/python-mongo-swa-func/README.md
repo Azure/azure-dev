@@ -23,7 +23,7 @@ The following prerequisites are required to use this application. Please ensure 
     ```
     curl -fsSL https://aka.ms/install-azd.sh | bash
     ```
-- [Azure CLI (2.30.0+)](https://docs.microsoft.com/cli/azure/install-azure-cli)
+- [Azure CLI (2.38.0+)](https://docs.microsoft.com/cli/azure/install-azure-cli)
 - [Azure Functions Core Tools (4+)](https://docs.microsoft.com/azure/azure-functions/functions-run-local)
 - [Python (3.8+)](https://www.python.org/downloads/) - for the API backend
 - [Git (2.36.1+)](https://git-scm.com/)
@@ -45,6 +45,16 @@ You will be prompted for the following information:
 - `Environment Name`: This will be used as a prefix for all your Azure resources, make sure it is globally unique and under 15 characters.
 - `Azure Location`: The Azure location where your resources will be deployed.
 - `Azure Subscription`: The Azure Subscription where your resources will be deployed.
+
+> NOTE: This template may only be used with the following Azure locations:
+>
+> - Central US
+> - East Asia
+> - East US 2
+> - West Europe
+> - West US 2
+>
+> If you attempt to use it with another region, the provision step will fail.
 
 > NOTE: This may take a while to complete as it executes three commands: `azd init` (initializes environment), `azd provision` (provisions Azure resources), and `azd deploy` (deploys application code). You will see a progress indicator as it provisions and deploys your application.
 

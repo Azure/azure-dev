@@ -89,6 +89,7 @@ const WellKnownTemplates: IAzureQuickPickItem<string>[] = [
     { label: 'Azure-Samples/todo-nodejs-mongo-aca', detail: 'ToDo Application with a Node.js API and Azure Cosmos DB API for MongoDB on Azure Container Apps', data: 'Azure-Samples/todo-nodejs-mongo-aca' },
     { label: 'Azure-Samples/todo-python-mongo-aca', detail: 'ToDo Application with a Python API and Azure Cosmos DB API for MongoDB on Azure Container Apps', data: 'Azure-Samples/todo-python-mongo-aca' },
     { label: 'Azure-Samples/todo-nodejs-mongo-swa-func', detail: 'ToDo Application with a Node.js API and Azure Cosmos DB API for MongoDB on Static Web Apps and Functions', data: 'Azure-Samples/todo-nodejs-mongo-swa-func' },
+    { label: 'Azure-Samples/todo-python-mongo-swa-func', detail: 'ToDo Application with a Python API and Azure Cosmos DB API for MongoDB on Static Web Apps and Functions', data: 'Azure-Samples/todo-python-mongo-swa-func'},
     { label: localize('azure-dev.commands.util.useAnotherTemplate', 'Use another template...'), data: '', id: UseCustomTemplate }
 ];
 

@@ -31,12 +31,14 @@ func GetAzCliFromContext(ctx context.Context) tools.AzCli {
 		azCli = tools.NewAzCli(azCliArgs)
 	}
 
+	selectedTemplate := ""
+
 	// Set the user agent if a template has been selected
-	template, ok := ctx.Value(environment.TemplateContextKey).(string)
-	if ok && strings.TrimSpace(template) != "" {
-		userAgent := internal.FormatTemplateForUserAgent(template)
-		azCli.SetUserAgent([]string{userAgent})
+	if template, ok := ctx.Value(environment.TemplateContextKey).(string); ok && strings.TrimSpace(template) != "" {
+		selectedTemplate = template
 	}
+
+	azCli.SetUserAgent(internal.MakeUserAgentString(selectedTemplate))
 
 	return azCli
 }

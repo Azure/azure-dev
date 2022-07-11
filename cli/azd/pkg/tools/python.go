@@ -38,7 +38,7 @@ func (cli *PythonCli) CheckInstalled(_ context.Context) (bool, error) {
 		return false, err
 	}
 	pythonRes, _ := exec.Command("python3", "--version").Output()
-	pythonSemver, err := versionToSemver(pythonRes)
+	pythonSemver, err := extractSemver(pythonRes)
 	if err != nil {
 		return false, fmt.Errorf("converting to semver version fails: %w", err)
 	}

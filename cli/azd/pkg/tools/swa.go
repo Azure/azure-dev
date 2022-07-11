@@ -94,7 +94,7 @@ func (cli *swaCli) CheckInstalled(_ context.Context) (bool, error) {
 		return false, err
 	}
 	swaRes, _ := exec.Command("npx", "@azure/static-web-apps-cli", "--version").Output()
-	swaSemver, err := versionToSemver(swaRes)
+	swaSemver, err := extractSemver(swaRes)
 	if err != nil {
 		return false, fmt.Errorf("converting to semver version fails: %w", err)
 	}

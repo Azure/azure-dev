@@ -52,7 +52,7 @@ func (cli *gitCli) CheckInstalled(_ context.Context) (bool, error) {
 		return false, err
 	}
 	gitRes, _ := exec.Command("git", "--version").Output()
-	gitSemver, err := versionToSemver(gitRes)
+	gitSemver, err := extractSemver(gitRes)
 	if err != nil {
 		return false, fmt.Errorf("converting to semver version fails: %w", err)
 	}

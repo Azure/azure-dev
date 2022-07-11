@@ -63,7 +63,7 @@ func (d *Docker) CheckInstalled(_ context.Context) (bool, error) {
 		return false, err
 	}
 	dockerRes, _ := exec.Command("docker", "--version").Output()
-	dockerSemver, err := versionToSemver(dockerRes)
+	dockerSemver, err := extractSemver(dockerRes)
 	if err != nil {
 		return false, fmt.Errorf("converting to semver version fails: %w", err)
 	}

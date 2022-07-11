@@ -327,7 +327,7 @@ func (cli *azCli) GetToolUpdate() ToolMetaData {
 	return ToolMetaData{
 		MinimumVersion: semver.Version{
 			Major: 2,
-			Minor: 28,
+			Minor: 38,
 			Patch: 0},
 		UpdateCommand: "Run \"az upgrade\" to upgrade",
 	}

@@ -58,7 +58,7 @@ func (cli *ghCli) CheckInstalled(_ context.Context) (bool, error) {
 		return false, err
 	}
 	ghRes, _ := exec.Command("gh", "--version").Output()
-	ghSemver, err := versionToSemver(ghRes)
+	ghSemver, err := extractSemver(ghRes)
 	if err != nil {
 		return false, fmt.Errorf("converting to semver version fails: %w", err)
 	}

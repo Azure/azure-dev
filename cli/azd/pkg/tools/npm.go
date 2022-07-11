@@ -42,7 +42,7 @@ func (cli *npmCli) CheckInstalled(_ context.Context) (bool, error) {
 		return false, err
 	}
 	npmRes, _ := exec.Command("npm", "--version").Output()
-	npmSemver, err := versionToSemver(npmRes)
+	npmSemver, err := extractSemver(npmRes)
 	if err != nil {
 		return false, fmt.Errorf("converting to semver version fails: %w", err)
 	}

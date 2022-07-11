@@ -46,7 +46,7 @@ func (cli *dotNetCli) CheckInstalled(_ context.Context) (bool, error) {
 		return false, err
 	}
 	dotnetRes, _ := exec.Command("dotnet", "--version").Output()
-	dotnetSemver, err := versionToSemver(dotnetRes)
+	dotnetSemver, err := extractSemver(dotnetRes)
 	if err != nil {
 		return false, fmt.Errorf("converting to semver version fails: %w", err)
 	}

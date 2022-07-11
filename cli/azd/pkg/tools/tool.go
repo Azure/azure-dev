@@ -52,10 +52,11 @@ func (err *ErrSemver) Error() string {
 		err.ToolRequire.MinimumVersion.String(), err.ToolName, err.ToolRequire.UpdateCommand, err.ToolName)
 }
 
-func versionToSemver(CLIOutput []byte) (semver.Version, error) {
+func extractSemver(CLIOutput []byte) (semver.Version, error) {
 	ver := regexp.MustCompile(`\d+\.\d+\.\d+`).FindString(string(CLIOutput))
 
-	//skip leading zeros
+	// Skip leading zeroes to allow inexact parsing for version formats that are not truly SemVer compliant.
+	// Example: docker has versions like 17.09.0 (non semver) instead of 17.9.0 (semver)
 	versionSplit := strings.Split(ver, ".")
 	for key, val := range versionSplit {
 		verInt, err := strconv.Atoi(val)

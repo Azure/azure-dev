@@ -6,7 +6,6 @@ package tools
 import (
 	"context"
 	"fmt"
-	"os/exec"
 	"path"
 	"path/filepath"
 	"runtime"
@@ -21,30 +20,32 @@ func NewPythonCli() *PythonCli {
 	return &PythonCli{}
 }
 
-// base version number and empty string if there's no pre-request check on version number
-func (cli *PythonCli) GetToolUpdate() ToolMetaData {
-	return ToolMetaData{
+func (cli *PythonCli) versionInfo() VersionInfo {
+	return VersionInfo{
 		MinimumVersion: semver.Version{
 			Major: 3,
 			Minor: 7,
 			Patch: 6},
-		UpdateCommand: "Visit https://www.python.org/downloads/ to install newer",
+		UpdateCommand: "Visit https://www.python.org/downloads/ to upgrade",
 	}
 }
 
-func (cli *PythonCli) CheckInstalled(_ context.Context) (bool, error) {
+func (cli *PythonCli) CheckInstalled(ctx context.Context) (bool, error) {
 	found, err := toolInPath(pythonExe())
 	if !found {
 		return false, err
 	}
-	pythonRes, _ := exec.Command("python3", "--version").Output()
+	pythonRes, err := executeCommand(ctx, "python3", "--version")
+	if err != nil {
+		return false, fmt.Errorf("checking %s version: %w", cli.Name(), err)
+	}
 	pythonSemver, err := extractSemver(pythonRes)
 	if err != nil {
 		return false, fmt.Errorf("converting to semver version fails: %w", err)
 	}
-	updateDetail := cli.GetToolUpdate()
-	if pythonSemver.Compare(updateDetail.MinimumVersion) == -1 {
-		return false, &ErrSemver{ToolName: cli.Name(), ToolRequire: updateDetail}
+	updateDetail := cli.versionInfo()
+	if pythonSemver.LT(updateDetail.MinimumVersion) {
+		return false, &ErrSemver{ToolName: cli.Name(), versionInfo: updateDetail}
 	}
 	return true, nil
 }

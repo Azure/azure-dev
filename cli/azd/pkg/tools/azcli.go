@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os/exec"
 	"regexp"
 	"time"
 
@@ -323,8 +322,8 @@ func (cli *azCli) InstallUrl() string {
 	return "https://aka.ms/azure-dev/azure-cli-install"
 }
 
-func (cli *azCli) GetToolUpdate() ToolMetaData {
-	return ToolMetaData{
+func (cli *azCli) versionInfo() VersionInfo {
+	return VersionInfo{
 		MinimumVersion: semver.Version{
 			Major: 2,
 			Minor: 38,
@@ -333,10 +332,13 @@ func (cli *azCli) GetToolUpdate() ToolMetaData {
 	}
 }
 
-func (cli *azCli) unmarshalCliVersion(component string) (string, error) {
-	azRes, _ := exec.Command("az", "version").Output()
+func (cli *azCli) unmarshalCliVersion(ctx context.Context, component string) (string, error) {
+	azRes, err := executeCommand(ctx, "az", "version")
+	if err != nil {
+		return "", err
+	}
 	var azVerMap map[string]interface{}
-	err := json.Unmarshal(azRes, &azVerMap)
+	err = json.Unmarshal([]byte(azRes), &azVerMap)
 	if err != nil {
 		return "", err
 	}
@@ -347,22 +349,22 @@ func (cli *azCli) unmarshalCliVersion(component string) (string, error) {
 	return version, nil
 }
 
-func (cli *azCli) CheckInstalled(_ context.Context) (bool, error) {
+func (cli *azCli) CheckInstalled(ctx context.Context) (bool, error) {
 	found, err := toolInPath("az")
 	if !found {
 		return false, err
 	}
-	azVer, err := cli.unmarshalCliVersion("azure-cli")
+	azVer, err := cli.unmarshalCliVersion(ctx, "azure-cli")
 	if err != nil {
-		return false, fmt.Errorf("checking Azure CLI version:  %w", err)
+		return false, fmt.Errorf("checking %s version:  %w", cli.Name(), err)
 	}
 	azSemver, err := semver.Parse(azVer)
 	if err != nil {
 		return false, fmt.Errorf("converting to semver version fails: %w", err)
 	}
-	updateDetail := cli.GetToolUpdate()
-	if azSemver.Compare(updateDetail.MinimumVersion) == -1 {
-		return false, &ErrSemver{ToolName: cli.Name(), ToolRequire: updateDetail}
+	updateDetail := cli.versionInfo()
+	if azSemver.LT(updateDetail.MinimumVersion) {
+		return false, &ErrSemver{ToolName: cli.Name(), versionInfo: updateDetail}
 	}
 	return true, nil
 }

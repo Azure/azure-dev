@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
-	"os/exec"
 	"regexp"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/executil"
@@ -44,8 +43,8 @@ func (cli *bicepCli) InstallUrl() string {
 	return "https://aka.ms/azure-dev/bicep-install"
 }
 
-func (cli *bicepCli) GetToolUpdate() ToolMetaData {
-	return ToolMetaData{
+func (cli *bicepCli) versionInfo() VersionInfo {
+	return VersionInfo{
 		MinimumVersion: semver.Version{
 			Major: 0,
 			Minor: 4,
@@ -73,14 +72,17 @@ func (cli *bicepCli) CheckInstalled(ctx context.Context) (bool, error) {
 		)
 	}
 
-	bicepRes, _ := exec.Command("az", "bicep", "version").Output()
+	bicepRes, err := executeCommand(ctx, "az", "bicep", "version")
+	if err != nil {
+		return false, fmt.Errorf("checking %s version: %w", cli.Name(), err)
+	}
 	bicepSemver, err := extractSemver(bicepRes)
 	if err != nil {
 		return false, fmt.Errorf("converting to semver version fails: %w", err)
 	}
-	updateDetail := cli.GetToolUpdate()
-	if bicepSemver.Compare(updateDetail.MinimumVersion) == -1 {
-		return false, &ErrSemver{ToolName: cli.Name(), ToolRequire: updateDetail}
+	updateDetail := cli.versionInfo()
+	if bicepSemver.LT(updateDetail.MinimumVersion) {
+		return false, &ErrSemver{ToolName: cli.Name(), versionInfo: updateDetail}
 	}
 
 	return true, nil

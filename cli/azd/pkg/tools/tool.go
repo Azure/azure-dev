@@ -9,9 +9,8 @@ import (
 	"fmt"
 	"os/exec"
 	"regexp"
-	"strconv"
-	"strings"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/executil"
 	"github.com/blang/semver/v4"
 )
 
@@ -39,36 +38,32 @@ func toolInPath(name string) (bool, error) {
 
 type ErrSemver struct {
 	ToolName    string
-	ToolRequire ToolMetaData
+	versionInfo VersionInfo
 }
 
-type ToolMetaData struct {
+type VersionInfo struct {
 	MinimumVersion semver.Version
 	UpdateCommand  string
 }
 
 func (err *ErrSemver) Error() string {
 	return fmt.Sprintf("need at least version %s or later of %s installed. %s %s version",
-		err.ToolRequire.MinimumVersion.String(), err.ToolName, err.ToolRequire.UpdateCommand, err.ToolName)
+		err.versionInfo.MinimumVersion.String(), err.ToolName, err.versionInfo.UpdateCommand, err.ToolName)
 }
 
-func extractSemver(CLIOutput []byte) (semver.Version, error) {
-	ver := regexp.MustCompile(`\d+\.\d+\.\d+`).FindString(string(CLIOutput))
-
-	// Skip leading zeroes to allow inexact parsing for version formats that are not truly SemVer compliant.
-	// Example: docker has versions like 17.09.0 (non semver) instead of 17.9.0 (semver)
-	versionSplit := strings.Split(ver, ".")
-	for key, val := range versionSplit {
-		verInt, err := strconv.Atoi(val)
-		if err != nil {
-			return semver.Version{}, err
-		}
-		versionSplit[key] = strconv.Itoa(verInt)
-	}
-
-	semver, err := semver.Parse(strings.Join(versionSplit, "."))
+func extractSemver(cliOutput string) (semver.Version, error) {
+	ver := regexp.MustCompile(`\d+\.\d+\.\d+`).FindString(cliOutput)
+	semver, err := semver.Parse(ver)
 	if err != nil {
 		return semver, err
 	}
 	return semver, nil
+}
+
+func executeCommand(ctx context.Context, cmd string, args ...string) (string, error) {
+	runResult, err := executil.RunWithResult(ctx, executil.RunArgs{
+		Cmd:  cmd,
+		Args: args,
+	})
+	return runResult.Stdout, err
 }

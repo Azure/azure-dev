@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"os/exec"
 	"regexp"
 	"strings"
 
@@ -41,30 +40,32 @@ var (
 
 type ghCli struct{}
 
-// base version number and empty string if there's no pre-request check on version number
-func (cli *ghCli) GetToolUpdate() ToolMetaData {
-	return ToolMetaData{
+func (cli *ghCli) versionInfo() VersionInfo {
+	return VersionInfo{
 		MinimumVersion: semver.Version{
 			Major: 2,
 			Minor: 4,
 			Patch: 0},
-		UpdateCommand: "Visit https://github.com/cli/cli/releases to install newer",
+		UpdateCommand: "Visit https://github.com/cli/cli/releases to upgrade",
 	}
 }
 
-func (cli *ghCli) CheckInstalled(_ context.Context) (bool, error) {
+func (cli *ghCli) CheckInstalled(ctx context.Context) (bool, error) {
 	found, err := toolInPath("gh")
 	if !found {
 		return false, err
 	}
-	ghRes, _ := exec.Command("gh", "--version").Output()
+	ghRes, err := executeCommand(ctx, "gh", "--version")
+	if err != nil {
+		return false, fmt.Errorf("checking %s version: %w", cli.Name(), err)
+	}
 	ghSemver, err := extractSemver(ghRes)
 	if err != nil {
 		return false, fmt.Errorf("converting to semver version fails: %w", err)
 	}
-	updateDetail := cli.GetToolUpdate()
-	if ghSemver.Compare(updateDetail.MinimumVersion) == -1 {
-		return false, &ErrSemver{ToolName: cli.Name(), ToolRequire: updateDetail}
+	updateDetail := cli.versionInfo()
+	if ghSemver.LT(updateDetail.MinimumVersion) {
+		return false, &ErrSemver{ToolName: cli.Name(), versionInfo: updateDetail}
 	}
 
 	return true, nil

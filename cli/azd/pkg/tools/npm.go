@@ -6,7 +6,6 @@ package tools
 import (
 	"context"
 	"fmt"
-	"os/exec"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/executil"
 	"github.com/blang/semver/v4"
@@ -25,52 +24,58 @@ func NewNpmCli() NpmCli {
 	return &npmCli{}
 }
 
-func (cli *npmCli) GetToolUpdateNpm() ToolMetaData {
-	return ToolMetaData{
+func (cli *npmCli) versionInfoNpm() VersionInfo {
+	return VersionInfo{
 		MinimumVersion: semver.Version{
-			Major: 8,
-			Minor: 5,
-			Patch: 5},
+			Major: 7,
+			Minor: 10,
+			Patch: 0},
 		UpdateCommand: "Run \"npm update\" to upgrade",
 	}
 }
 
-func (cli *npmCli) GetToolUpdateNode() ToolMetaData {
-	return ToolMetaData{
+func (cli *npmCli) versionInfoNode() VersionInfo {
+	return VersionInfo{
 		MinimumVersion: semver.Version{
 			Major: 16,
-			Minor: 16,
+			Minor: 13,
 			Patch: 0},
-		UpdateCommand: "Visit https://nodejs.org/en/ to install newer",
+		UpdateCommand: "Visit https://nodejs.org/en/ to upgrade",
 	}
 }
 
-func (cli *npmCli) CheckInstalled(_ context.Context) (bool, error) {
+func (cli *npmCli) CheckInstalled(ctx context.Context) (bool, error) {
 	found, err := toolInPath("npm")
 	if !found {
 		return false, err
 	}
 
 	//check npm version
-	npmRes, _ := exec.Command("npm", "--version").Output()
+	npmRes, err := executeCommand(ctx, "npm", "--version")
+	if err != nil {
+		return false, fmt.Errorf("checking %s version: %w", cli.Name(), err)
+	}
 	npmSemver, err := extractSemver(npmRes)
 	if err != nil {
 		return false, fmt.Errorf("converting to semver version fails: %w", err)
 	}
-	updateDetailNpm := cli.GetToolUpdateNpm()
+	updateDetailNpm := cli.versionInfoNpm()
 	if npmSemver.Compare(updateDetailNpm.MinimumVersion) == -1 {
-		return false, &ErrSemver{ToolName: cli.Name(), ToolRequire: updateDetailNpm}
+		return false, &ErrSemver{ToolName: cli.Name(), versionInfo: updateDetailNpm}
 	}
 
 	//check node version
-	nodeRes, _ := exec.Command("node", "--version").Output()
+	nodeRes, err := executeCommand(ctx, "node", "--version")
+	if err != nil {
+		return false, fmt.Errorf("checking %s version: %w", cli.Name(), err)
+	}
 	nodeSemver, err := extractSemver(nodeRes)
 	if err != nil {
 		return false, fmt.Errorf("converting to semver version fails: %w", err)
 	}
-	updateDetailNode := cli.GetToolUpdateNode()
+	updateDetailNode := cli.versionInfoNode()
 	if nodeSemver.Compare(updateDetailNode.MinimumVersion) == -1 {
-		return false, &ErrSemver{ToolName: cli.Name(), ToolRequire: updateDetailNode}
+		return false, &ErrSemver{ToolName: cli.Name(), versionInfo: updateDetailNode}
 	}
 	return true, nil
 }

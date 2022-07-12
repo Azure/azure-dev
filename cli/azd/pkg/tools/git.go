@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -36,29 +35,32 @@ func NewGitCli() GitCli {
 	return &gitCli{}
 }
 
-func (cli *gitCli) GetToolUpdate() ToolMetaData {
-	return ToolMetaData{
+func (cli *gitCli) versionInfo() VersionInfo {
+	return VersionInfo{
 		MinimumVersion: semver.Version{
-			Major: 2,
+			Major: 3,
 			Minor: 30,
 			Patch: 2},
-		UpdateCommand: "Visit https://git-scm.com/downloads to install newer",
+		UpdateCommand: "Visit https://git-scm.com/downloads to upgrade",
 	}
 }
 
-func (cli *gitCli) CheckInstalled(_ context.Context) (bool, error) {
+func (cli *gitCli) CheckInstalled(ctx context.Context) (bool, error) {
 	found, err := toolInPath("git")
 	if !found {
 		return false, err
 	}
-	gitRes, _ := exec.Command("git", "--version").Output()
+	gitRes, err := executeCommand(ctx, "git", "--version")
+	if err != nil {
+		return false, fmt.Errorf("checking %s version: %w", cli.Name(), err)
+	}
 	gitSemver, err := extractSemver(gitRes)
 	if err != nil {
 		return false, fmt.Errorf("converting to semver version fails: %w", err)
 	}
-	updateDetail := cli.GetToolUpdate()
-	if gitSemver.Compare(updateDetail.MinimumVersion) == -1 {
-		return false, &ErrSemver{ToolName: cli.Name(), ToolRequire: updateDetail}
+	updateDetail := cli.versionInfo()
+	if gitSemver.LT(updateDetail.MinimumVersion) {
+		return false, &ErrSemver{ToolName: cli.Name(), versionInfo: updateDetail}
 	}
 	return true, nil
 }

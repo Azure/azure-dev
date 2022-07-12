@@ -77,6 +77,7 @@ type AzCli interface {
 	GetAppServiceProperties(ctx context.Context, subscriptionId string, resourceGroupName string, applicationName string) (AzCliAppServiceProperties, error)
 	GetContainerAppProperties(ctx context.Context, subscriptionId string, resourceGroupName string, applicationName string) (AzCliContainerAppProperties, error)
 	GetStaticWebAppProperties(ctx context.Context, subscriptionID string, resourceGroup string, appName string) (AzCliStaticWebAppProperties, error)
+	GetStaticWebAppApiKey(ctx context.Context, subscriptionID string, resourceGroup string, appName string) (string, error)
 
 	GetSignedInUserId(ctx context.Context) (string, error)
 
@@ -536,6 +537,26 @@ func (cli *azCli) GetStaticWebAppProperties(ctx context.Context, subscriptionID 
 	}
 
 	return staticWebAppProperties, nil
+}
+
+func (cli *azCli) GetStaticWebAppApiKey(ctx context.Context, subscriptionID string, resourceGroup string, appName string) (string, error) {
+	res, err := cli.runAzCommandWithArgs(context.Background(), executil.RunArgs{
+		Args: []string{
+			"staticwebapp", "secrets", "list",
+			"--subscription", subscriptionID,
+			"--resource-group", resourceGroup,
+			"--name", appName,
+			"--query", "properties.apiKey",
+			"--output", "tsv",
+		},
+		EnrichError: true,
+	})
+
+	if err != nil {
+		return "", fmt.Errorf("failed getting staticwebapp api key: %w", err)
+	}
+
+	return res.Stdout, nil
 }
 
 func (cli *azCli) DeployToSubscription(ctx context.Context, subscriptionId string, deploymentName string, templateFile string, parametersFile string, location string) (AzCliDeploymentResult, error) {

@@ -21,7 +21,7 @@ type SwaCli interface {
 
 	Login(ctx context.Context, tenantId string, subscriptionId string, resourceGroup string, appName string) error
 	Build(ctx context.Context, appFolderPath string, outputRelativeFolderPath string) error
-	Deploy(ctx context.Context, tenantId string, subscriptionId string, resourceGroup string, appName string, appFolderPath string, outputRelativeFolderPath string, environment string) (string, error)
+	Deploy(ctx context.Context, tenantId string, subscriptionId string, resourceGroup string, appName string, appFolderPath string, outputRelativeFolderPath string, environment string, deploymentToken string) (string, error)
 }
 
 type swaCli struct {
@@ -56,7 +56,7 @@ func (cli *swaCli) Build(ctx context.Context, appFolderPath string, outputRelati
 	return nil
 }
 
-func (cli *swaCli) Deploy(ctx context.Context, tenantId string, subscriptionId string, resourceGroup string, appName string, appFolderPath string, outputRelativeFolderPath string, environment string) (string, error) {
+func (cli *swaCli) Deploy(ctx context.Context, tenantId string, subscriptionId string, resourceGroup string, appName string, appFolderPath string, outputRelativeFolderPath string, environment string, deploymentToken string) (string, error) {
 	res, err := cli.executeCommand(ctx,
 		appFolderPath, "deploy",
 		"--tenant-id", tenantId,
@@ -65,7 +65,8 @@ func (cli *swaCli) Deploy(ctx context.Context, tenantId string, subscriptionId s
 		"--app-name", appName,
 		"--app-location", ".",
 		"--output-location", outputRelativeFolderPath,
-		"--env", environment)
+		"--env", environment,
+		"--deployment-token", deploymentToken)
 
 	if err != nil {
 		return "", fmt.Errorf("swa deploy: %s: %w", res.String(), err)

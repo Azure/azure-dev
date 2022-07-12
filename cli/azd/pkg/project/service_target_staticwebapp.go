@@ -39,15 +39,16 @@ func (at *staticWebAppTarget) Deploy(ctx context.Context, azdCtx *environment.Az
 	log.Printf("Logging into SWA CLI: TenantId: %s, SubscriptionId: %s, ResourceGroup: %s, ResourceName: %s", at.env.GetTenantId(), at.env.GetSubscriptionId(), at.scope.ResourceGroupName(), at.scope.ResourceName())
 
 	// Login to get the app deployment token
-	progress <- "Generating deployment tokens"
-	if err := at.swa.Login(ctx, at.env.GetTenantId(), at.env.GetSubscriptionId(), at.scope.ResourceGroupName(), at.scope.ResourceName()); err != nil {
-		return ServiceDeploymentResult{}, fmt.Errorf("Failed deploying static web app: %w", err)
+	progress <- "Retrieving deployment tokens"
+	deploymentToken, err := at.cli.GetStaticWebAppApiKey(ctx, at.env.GetSubscriptionId(), at.scope.ResourceGroupName(), at.scope.ResourceName())
+	if err != nil {
+		return ServiceDeploymentResult{}, fmt.Errorf("Failed retrieving static web app deployment token: %w", err)
 	}
 
 	// SWA performs a zip & deploy of the specified output folder and publishes it to the configured environment
 	log.Printf("Deploying SWA app: TenantId: %s, SubscriptionId: %s, ResourceGroup: %s, ResourceName: %s", at.env.GetTenantId(), at.env.GetSubscriptionId(), at.scope.ResourceGroupName(), at.scope.ResourceName())
 	progress <- "Publishing deployment artifacts"
-	res, err := at.swa.Deploy(ctx, at.env.GetTenantId(), at.env.GetSubscriptionId(), at.scope.ResourceGroupName(), at.scope.ResourceName(), at.config.RelativePath, at.config.OutputPath, staticWebAppEnvironmentName)
+	res, err := at.swa.Deploy(ctx, at.env.GetTenantId(), at.env.GetSubscriptionId(), at.scope.ResourceGroupName(), at.scope.ResourceName(), at.config.RelativePath, at.config.OutputPath, staticWebAppEnvironmentName, deploymentToken)
 	if err != nil {
 		return ServiceDeploymentResult{}, fmt.Errorf("Failed deploying static web app: %w", err)
 	}

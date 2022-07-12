@@ -13,6 +13,7 @@ import (
 	"io/ioutil"
 	"net/http"
 	"os"
+	"os/exec"
 	"path"
 	"path/filepath"
 	"regexp"
@@ -376,6 +377,23 @@ func Test_ProjectIsNeeded(t *testing.T) {
 			assert.Regexp(t, "no project exists; to create a new project, run `azd init`", out)
 		})
 	}
+}
+
+func Test_NoDebugSpewWhenHelpPassedWithoutDebug(t *testing.T) {
+	stdErrBuf := bytes.Buffer{}
+
+	cmd := exec.Command(azdcli.GetAzdLocation(), "--help")
+	cmd.Stderr = &stdErrBuf
+
+	// Run the command and wait for it to complete, we don't expect any errors.
+	err := cmd.Start()
+	assert.NoError(t, err)
+
+	err = cmd.Wait()
+	assert.NoError(t, err)
+
+	// Ensure no output was written to stderr
+	assert.Equal(t, "", stdErrBuf.String(), "no output should be written to stderr when --help is passed")
 }
 
 // filterEnviron returns a new copy of os.Environ after removing all specified keys, ignoring case.

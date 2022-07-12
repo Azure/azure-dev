@@ -25,6 +25,7 @@ type GitCli interface {
 	AddFile(ctx context.Context, repositoryPath string, filespec string) error
 	Commit(ctx context.Context, repositoryPath string, message string) error
 	PushUpstream(ctx context.Context, repositoryPath string, origin string, branch string) error
+	IsUntrackedFile(ctx context.Context, repositoryPath string, filePath string) (bool, error)
 }
 
 type gitCli struct {
@@ -69,6 +70,7 @@ var noSuchRemoteRegex = regexp.MustCompile("(fatal|error): No such remote")
 var notGitRepositoryRegex = regexp.MustCompile("(fatal|error): not a git repository")
 var ErrNoSuchRemote = errors.New("no such remote")
 var ErrNotRepository = errors.New("not a git repository")
+var gitUntrackedFileRegex = regexp.MustCompile("untracked files present|new file")
 
 func (cli *gitCli) GetRemoteUrl(ctx context.Context, repositoryPath string, remoteName string) (string, error) {
 	res, err := executil.RunCommand(ctx, "git", "-C", repositoryPath, "remote", "get-url", remoteName)
@@ -137,4 +139,17 @@ func (cli *gitCli) PushUpstream(ctx context.Context, repositoryPath string, orig
 	}
 
 	return nil
+}
+
+func (cli *gitCli) IsUntrackedFile(ctx context.Context, repositoryPath string, filePath string) (bool, error) {
+	res, err := executil.RunCommand(ctx, "git", "-C", repositoryPath, "status", filePath)
+	if err != nil {
+		return false, fmt.Errorf("failed to check status file: %s: %w", res.String(), err)
+	}
+
+	if gitUntrackedFileRegex.MatchString(res.Stdout) {
+		return true, nil
+	}
+
+	return false, nil
 }

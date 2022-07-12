@@ -467,7 +467,12 @@ func promptTemplate(ctx context.Context, message string, askOne Asker) (string, 
 
 // promptLocation asks the user to select a location from a list of supported azure location
 func promptLocation(ctx context.Context, message string, askOne Asker) (string, error) {
+	if err := ensureLoggedIn(ctx); err != nil {
+		return "", fmt.Errorf("listing locations: %w", err)
+	}
+
 	azCli := commands.GetAzCliFromContext(ctx)
+
 	locations, err := azCli.ListAccountLocations(ctx)
 	if err != nil {
 		return "", fmt.Errorf("listing locations: %w", err)

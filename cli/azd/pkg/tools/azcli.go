@@ -21,7 +21,8 @@ import (
 )
 
 var (
-	ErrAzCliNotLoggedIn          = errors.New("cli is not logged in")
+	ErrAzCliNotLoggedIn          = errors.New("cli is not logged in. Try running \"azd login\" to fix")
+	ErrAzCliRefreshTokenExpired  = errors.New("refresh token has expired. Try running \"azd login\" to fix")
 	ErrCurrentPrincipalIsNotUser = errors.New("current principal is not a user principal")
 	ErrClientAssertionExpired    = errors.New("client assertion expired")
 	ErrDeploymentNotFound        = errors.New("deployment not found")
@@ -782,6 +783,8 @@ func (cli *azCli) GetAccessToken(ctx context.Context) (AzCliAccessToken, error) 
 	res, err := cli.runAzCommand(ctx, "account", "get-access-token", "--output", "json")
 	if isNotLoggedInMessage(res.Stderr) {
 		return AzCliAccessToken{}, ErrAzCliNotLoggedIn
+	} else if isRefreshTokenExpiredMessage(res.Stderr) {
+		return AzCliAccessToken{}, ErrAzCliRefreshTokenExpired
 	} else if err != nil {
 		return AzCliAccessToken{}, fmt.Errorf("failed running az account get-access-token: %s: %w", res.String(), err)
 	}
@@ -900,7 +903,13 @@ func (cli *azCli) runAzCommandWithArgs(ctx context.Context, args executil.RunArg
 	return cli.runWithResultFn(ctx, args)
 }
 
+// Azure Active Directory codes can be referenced via https://login.microsoftonline.com/error?code=<ERROR_CODE>,
+// where ERROR_CODE is the digits portion of an AAD error code. Example: AADSTS70043 has error code 70043
+
 var isNotLoggedInMessageRegex = regexp.MustCompile(`Please run ('|")az login('|") to (setup account|access your accounts)\.`)
+
+// AADSTS70043: The refresh token has expired or is invalid due to sign-in frequency checks by conditional access.
+var isRefreshTokenExpiredMessageRegex = regexp.MustCompile(`AADSTS70043`)
 var isResourceSegmentMeNotFoundMessageRegex = regexp.MustCompile(`Resource not found for the segment 'me'.`)
 var isDeploymentNotFoundMessageRegex = regexp.MustCompile(`ERROR: \(DeploymentNotFound\)`)
 var isClientAssertionInvalidMessagedRegex = regexp.MustCompile(`ERROR: AADSTS700024: Client assertion is not within its valid time range.`)
@@ -909,6 +918,10 @@ var isDeploymentErrorRegex = regexp.MustCompile(`ERROR: ({.+})`)
 
 func isNotLoggedInMessage(s string) bool {
 	return isNotLoggedInMessageRegex.MatchString(s)
+}
+
+func isRefreshTokenExpiredMessage(s string) bool {
+	return isRefreshTokenExpiredMessageRegex.MatchString(s)
 }
 
 func isResourceSegmentMeNotFoundMessage(s string) bool {

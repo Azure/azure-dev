@@ -150,7 +150,8 @@ func Test_SwaDeploy(t *testing.T) {
 				"--app-name", "appName",
 				"--app-location", ".",
 				"--output-location", "build",
-				"--env", "production",
+				"--env", "default",
+				"--deployment-token", "deploymentToken",
 			}, args.Args)
 
 			return executil.RunResult{
@@ -163,7 +164,7 @@ func Test_SwaDeploy(t *testing.T) {
 			}, nil
 		}
 
-		_, err := swacli.Deploy(context.Background(), "tenantID", "subscriptionID", "resourceGroupID", "appName", "./appFolderPath", "build", "production")
+		_, err := swacli.Deploy(context.Background(), "tenantID", "subscriptionID", "resourceGroupID", "appName", "./appFolderPath", "build", "default", "deploymentToken")
 		require.NoError(t, err)
 		require.True(t, ran)
 	})
@@ -182,7 +183,8 @@ func Test_SwaDeploy(t *testing.T) {
 				"--app-name", "appName",
 				"--app-location", ".",
 				"--output-location", "build",
-				"--env", "production",
+				"--env", "default",
+				"--deployment-token", "deploymentToken",
 			}, args.Args)
 
 			return executil.RunResult{
@@ -192,7 +194,7 @@ func Test_SwaDeploy(t *testing.T) {
 			}, errors.New("example error message")
 		}
 
-		_, err := swacli.Deploy(context.Background(), "tenantID", "subscriptionID", "resourceGroupID", "appName", "./appFolderPath", "build", "production")
+		_, err := swacli.Deploy(context.Background(), "tenantID", "subscriptionID", "resourceGroupID", "appName", "./appFolderPath", "build", "default", "deploymentToken")
 		require.True(t, ran)
 		require.EqualError(t, err, "swa deploy: exit code: 1, stdout: stdout text, stderr: stderr text: example error message")
 	})

@@ -6,13 +6,17 @@ package project
 import (
 	"context"
 	"fmt"
-	"log"
 	"strings"
+	"time"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 )
+
+// TODO: Enhance for multi-environment support
+// https://github.com/Azure/azure-dev/issues/1152
+const DefaultStaticWebAppEnvironmentName = "default"
 
 type staticWebAppTarget struct {
 	config *ServiceConfig
@@ -31,26 +35,43 @@ func (at *staticWebAppTarget) Deploy(ctx context.Context, azdCtx *environment.Az
 		at.config.OutputPath = "build"
 	}
 
-	staticWebAppEnvironmentName := at.env.GetEnvName()
-	if strings.TrimSpace(staticWebAppEnvironmentName) == "" {
-		staticWebAppEnvironmentName = "production"
-	}
-
-	log.Printf("Logging into SWA CLI: TenantId: %s, SubscriptionId: %s, ResourceGroup: %s, ResourceName: %s", at.env.GetTenantId(), at.env.GetSubscriptionId(), at.scope.ResourceGroupName(), at.scope.ResourceName())
-
-	// Login to get the app deployment token
+	// Get the static webapp deployment token
 	progress <- "Retrieving deployment tokens"
 	deploymentToken, err := at.cli.GetStaticWebAppApiKey(ctx, at.env.GetSubscriptionId(), at.scope.ResourceGroupName(), at.scope.ResourceName())
 	if err != nil {
-		return ServiceDeploymentResult{}, fmt.Errorf("Failed retrieving static web app deployment token: %w", err)
+		return ServiceDeploymentResult{}, fmt.Errorf("failed retrieving static web app deployment token: %w", err)
 	}
 
 	// SWA performs a zip & deploy of the specified output folder and publishes it to the configured environment
-	log.Printf("Deploying SWA app: TenantId: %s, SubscriptionId: %s, ResourceGroup: %s, ResourceName: %s", at.env.GetTenantId(), at.env.GetSubscriptionId(), at.scope.ResourceGroupName(), at.scope.ResourceName())
 	progress <- "Publishing deployment artifacts"
-	res, err := at.swa.Deploy(ctx, at.env.GetTenantId(), at.env.GetSubscriptionId(), at.scope.ResourceGroupName(), at.scope.ResourceName(), at.config.RelativePath, at.config.OutputPath, staticWebAppEnvironmentName, deploymentToken)
+	res, err := at.swa.Deploy(ctx, at.env.GetTenantId(), at.env.GetSubscriptionId(), at.scope.ResourceGroupName(), at.scope.ResourceName(), at.config.RelativePath, at.config.OutputPath, DefaultStaticWebAppEnvironmentName, deploymentToken)
 	if err != nil {
-		return ServiceDeploymentResult{}, fmt.Errorf("Failed deploying static web app: %w", err)
+		return ServiceDeploymentResult{}, fmt.Errorf("failed deploying static web app: %w", err)
+	}
+
+	verifyMsg := "Verifying deployment"
+	retries := 0
+	const maxRetries = 10
+
+	for {
+		progress <- verifyMsg
+		envProps, err := at.cli.GetStaticWebAppEnvironmentProperties(ctx, at.env.GetSubscriptionId(), at.scope.ResourceGroupName(), at.scope.ResourceName(), DefaultStaticWebAppEnvironmentName)
+		if err != nil {
+			return ServiceDeploymentResult{}, fmt.Errorf("failed verifying static web app deployment: %w", err)
+		}
+
+		if envProps.Status == "Ready" {
+			break
+		}
+
+		retries++
+
+		if retries >= maxRetries {
+			return ServiceDeploymentResult{}, fmt.Errorf("failed verifying static web app deployment. Still in %s state", envProps.Status)
+		}
+
+		verifyMsg += "."
+		time.Sleep(2 * time.Second)
 	}
 
 	progress <- "Fetching endpoints for static web app"
@@ -72,11 +93,12 @@ func (at *staticWebAppTarget) Deploy(ctx context.Context, azdCtx *environment.Az
 func (at *staticWebAppTarget) Endpoints(ctx context.Context) ([]string, error) {
 	// TODO: Enhance for multi-environment support
 	// https://github.com/Azure/azure-dev/issues/1152
-	if props, err := at.cli.GetStaticWebAppProperties(ctx, at.env.GetSubscriptionId(), at.scope.ResourceGroupName(), at.scope.ResourceName()); err != nil {
+	envProps, err := at.cli.GetStaticWebAppEnvironmentProperties(ctx, at.env.GetSubscriptionId(), at.scope.ResourceGroupName(), at.scope.ResourceName(), DefaultStaticWebAppEnvironmentName)
+	if err != nil {
 		return nil, fmt.Errorf("fetching service properties: %w", err)
-	} else {
-		return []string{fmt.Sprintf("https://%s/", props.DefaultHostname)}, nil
 	}
+
+	return []string{fmt.Sprintf("https://%s/", envProps.Hostname)}, nil
 }
 
 func NewStaticWebAppTarget(config *ServiceConfig, env *environment.Environment, scope *environment.DeploymentScope, azCli tools.AzCli, swaCli tools.SwaCli) ServiceTarget {

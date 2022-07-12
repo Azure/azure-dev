@@ -6,6 +6,7 @@ package tools
 import (
 	"context"
 	"fmt"
+	"log"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/executil"
 )
@@ -57,6 +58,8 @@ func (cli *swaCli) Build(ctx context.Context, appFolderPath string, outputRelati
 }
 
 func (cli *swaCli) Deploy(ctx context.Context, tenantId string, subscriptionId string, resourceGroup string, appName string, appFolderPath string, outputRelativeFolderPath string, environment string, deploymentToken string) (string, error) {
+	log.Printf("SWA Deploy: TenantId: %s, SubscriptionId: %s, ResourceGroup: %s, ResourceName: %s, Environment: %s", tenantId, subscriptionId, resourceGroup, appName, environment)
+
 	res, err := cli.executeCommand(ctx,
 		appFolderPath, "deploy",
 		"--tenant-id", tenantId,

@@ -78,6 +78,7 @@ type AzCli interface {
 	GetContainerAppProperties(ctx context.Context, subscriptionId string, resourceGroupName string, applicationName string) (AzCliContainerAppProperties, error)
 	GetStaticWebAppProperties(ctx context.Context, subscriptionID string, resourceGroup string, appName string) (AzCliStaticWebAppProperties, error)
 	GetStaticWebAppApiKey(ctx context.Context, subscriptionID string, resourceGroup string, appName string) (string, error)
+	GetStaticWebAppEnvironmentProperties(ctx context.Context, subscriptionID string, resourceGroup string, appName string, environmentName string) (AzCliStaticWebAppEnvironmentProperties, error)
 
 	GetSignedInUserId(ctx context.Context) (string, error)
 
@@ -208,6 +209,11 @@ type AzCliFunctionAppProperties struct {
 
 type AzCliStaticWebAppProperties struct {
 	DefaultHostname string `json:"defaultHostname"`
+}
+
+type AzCliStaticWebAppEnvironmentProperties struct {
+	Hostname string `json:"hostname"`
+	Status   string `json:"status"`
 }
 
 type AzCliLocation struct {
@@ -537,6 +543,31 @@ func (cli *azCli) GetStaticWebAppProperties(ctx context.Context, subscriptionID 
 	}
 
 	return staticWebAppProperties, nil
+}
+
+func (cli *azCli) GetStaticWebAppEnvironmentProperties(ctx context.Context, subscriptionID string, resourceGroup string, appName string, environmentName string) (AzCliStaticWebAppEnvironmentProperties, error) {
+	res, err := cli.runAzCommandWithArgs(context.Background(), executil.RunArgs{
+		Args: []string{
+			"staticwebapp", "environment", "show",
+			"--subscription", subscriptionID,
+			"--resource-group", resourceGroup,
+			"--name", appName,
+			"--environment", environmentName,
+			"--output", "json",
+		},
+		EnrichError: true,
+	})
+
+	if err != nil {
+		return AzCliStaticWebAppEnvironmentProperties{}, fmt.Errorf("failed getting staticwebapp environment properties: %w", err)
+	}
+
+	var environmentProperties AzCliStaticWebAppEnvironmentProperties
+	if err := json.Unmarshal([]byte(res.Stdout), &environmentProperties); err != nil {
+		return AzCliStaticWebAppEnvironmentProperties{}, fmt.Errorf("could not unmarshal output %s as an AzCliStaticWebAppEnvironmentProperties: %w", res.Stdout, err)
+	}
+
+	return environmentProperties, nil
 }
 
 func (cli *azCli) GetStaticWebAppApiKey(ctx context.Context, subscriptionID string, resourceGroup string, appName string) (string, error) {

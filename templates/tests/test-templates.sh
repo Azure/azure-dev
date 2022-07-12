@@ -29,7 +29,7 @@ function usage {
     echo "  -r    Sets the number of retries for playwright tests (default: 1)"
     echo "  -l    Sets the Azure location for the template infrastructure (default: eastus2)"
     echo "  -s    Sets the environment suffix (default: RANDOM)"
-    echo "  -n    When set will only run test commands"
+    echo "  -n    When set will only run test commands (default: false)"
     echo "  -c    when set will clean up resources (default: true)"
     echo ""
     echo "Examples:"

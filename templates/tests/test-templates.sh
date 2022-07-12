@@ -96,7 +96,7 @@ function testTemplate {
     echo "Running template smoke tests for $3..."
     cd "$FOLDER_PATH/$3/tests"
     npm i && npx playwright install
-    npx -y playwright test --retries=$PLAYWRIGHT_RETRIES
+    npx -y playwright test --retries="$PLAYWRIGHT_RETRIES"
 }
 
 # Cleans the specified template
@@ -109,7 +109,7 @@ function cleanupTemplate {
     azd down -e "$3" --force --purge
 
     echo "Cleaning up local project @ '$FOLDER_PATH/$3'..."
-    rm -rf "$FOLDER_PATH/$3"
+    rm -rf "$FOLDER_PATH/${3:?}"
 }
 
 export AZURE_LOCATION="$LOCATION"

@@ -35,9 +35,7 @@ jobs:
         with:
           node-version: "16"
       - run: npm install -g cspell
-      - run: cspell lint '**/*' --config ./.vscode/cspell.yaml --relative --no-progress
       - run: cspell lint '**/*.go' --config ./cli/azd/.vscode/cspell.yaml --root ./cli/azd --no-progress
-      - run: cspell lint '**/*.ts' --config ./ext/vscode/.vscode/cspell.yaml --root ./ext/vscode --no-progress
 
   bicep-lint:
     uses: ./.github/workflows/lint-bicep.yml

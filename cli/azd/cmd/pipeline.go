@@ -99,7 +99,7 @@ func (p *pipelineConfigAction) Run(ctx context.Context, _ *cobra.Command, args [
 
 	// This flag is used later to skip checking GitHub Actions.
 	// For new repositories, there's no need to check
-	var newGitHubRepoCreated = false
+	newGitHubRepoCreated := false
 
 	getSlugOrInit := func() (string, error) {
 		for {

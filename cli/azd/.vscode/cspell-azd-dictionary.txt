@@ -10,6 +10,7 @@ azdtempl
 azdtest
 azsdk
 AZURECLI
+azurestaticapps
 azureutil
 byts
 containerapp

@@ -118,7 +118,7 @@ if [[ -z $TEMPLATE_NAME ]]; then
     declare -A ENV_TEMPLATE_MAP
 
     # If a template is not specified, run for all templates from output of 'azd template list'
-    echo "Getting list of availabe templates..."
+    echo "Getting list of available templates..."
     TEMPLATES_JSON=$(azd template list --output json)
 
     while read -r TEMPLATE; do

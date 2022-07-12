@@ -38,7 +38,7 @@ func NewGitCli() GitCli {
 func (cli *gitCli) versionInfo() VersionInfo {
 	return VersionInfo{
 		MinimumVersion: semver.Version{
-			Major: 3,
+			Major: 2,
 			Minor: 30,
 			Patch: 2},
 		UpdateCommand: "Visit https://git-scm.com/downloads to upgrade",

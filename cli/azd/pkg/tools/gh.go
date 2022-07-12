@@ -8,10 +8,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os/exec"
 	"regexp"
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/executil"
+	"github.com/blang/semver/v4"
 )
 
 type GitHubCli interface {
@@ -39,8 +41,33 @@ var (
 
 type ghCli struct{}
 
+// base version number and empty string if there's no pre-request check on version number
+func (cli *ghCli) GetToolUpdate() ToolMetaData {
+	return ToolMetaData{
+		MinimumVersion: semver.Version{
+			Major: 2,
+			Minor: 4,
+			Patch: 0},
+		UpdateCommand: "Visit https://github.com/cli/cli/releases to install newer",
+	}
+}
+
 func (cli *ghCli) CheckInstalled(_ context.Context) (bool, error) {
-	return toolInPath("gh")
+	found, err := toolInPath("gh")
+	if !found {
+		return false, err
+	}
+	ghRes, _ := exec.Command("gh", "--version").Output()
+	ghSemver, err := versionToSemver(ghRes)
+	if err != nil {
+		return false, fmt.Errorf("converting to semver version fails: %w", err)
+	}
+	updateDetail := cli.GetToolUpdate()
+	if ghSemver.Compare(updateDetail.MinimumVersion) == -1 {
+		return false, &ErrSemver{ToolName: cli.Name(), ToolRequire: updateDetail}
+	}
+
+	return true, nil
 }
 
 func (cli *ghCli) Name() string {

@@ -8,6 +8,11 @@ import (
 	"errors"
 	"fmt"
 	"os/exec"
+	"regexp"
+	"strconv"
+	"strings"
+
+	"github.com/blang/semver/v4"
 )
 
 type ExternalTool interface {
@@ -30,4 +35,39 @@ func toolInPath(name string) (bool, error) {
 	default:
 		return false, fmt.Errorf("failed searching for `%s` on PATH: %w", name, err)
 	}
+}
+
+type ErrSemver struct {
+	ToolName    string
+	ToolRequire ToolMetaData
+}
+
+type ToolMetaData struct {
+	MinimumVersion semver.Version
+	UpdateCommand  string
+}
+
+func (err *ErrSemver) Error() string {
+	return fmt.Sprintf("need at least version %s or later of %s installed. %s %s version",
+		err.ToolRequire.MinimumVersion.String(), err.ToolName, err.ToolRequire.UpdateCommand, err.ToolName)
+}
+
+func versionToSemver(CLIOutput []byte) (semver.Version, error) {
+	ver := regexp.MustCompile(`\d+\.\d+\.\d+`).FindString(string(CLIOutput))
+
+	//skip leading zeros
+	versionSplit := strings.Split(ver, ".")
+	for key, val := range versionSplit {
+		verInt, err := strconv.Atoi(val)
+		if err != nil {
+			return semver.Version{}, err
+		}
+		versionSplit[key] = strconv.Itoa(verInt)
+	}
+
+	semver, err := semver.Parse(strings.Join(versionSplit, "."))
+	if err != nil {
+		return semver, err
+	}
+	return semver, nil
 }

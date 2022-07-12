@@ -3,9 +3,11 @@ package tools
 import (
 	"context"
 	"fmt"
+	"os/exec"
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/executil"
+	"github.com/blang/semver/v4"
 )
 
 func NewDocker() *Docker {
@@ -44,8 +46,32 @@ func (d *Docker) Push(ctx context.Context, tag string) error {
 	return nil
 }
 
+// base version number and empty string if there's no pre-request check on version number
+func (d *Docker) GetToolUpdate() ToolMetaData {
+	return ToolMetaData{
+		MinimumVersion: semver.Version{
+			Major: 17,
+			Minor: 9,
+			Patch: 0},
+		UpdateCommand: "Visit https://docs.docker.com/engine/release-notes/ to install newer ",
+	}
+}
+
 func (d *Docker) CheckInstalled(_ context.Context) (bool, error) {
-	return toolInPath("docker")
+	found, err := toolInPath("docker")
+	if !found {
+		return false, err
+	}
+	dockerRes, _ := exec.Command("docker", "--version").Output()
+	dockerSemver, err := versionToSemver(dockerRes)
+	if err != nil {
+		return false, fmt.Errorf("converting to semver version fails: %w", err)
+	}
+	updateDetail := d.GetToolUpdate()
+	if dockerSemver.Compare(updateDetail.MinimumVersion) == -1 {
+		return false, &ErrSemver{ToolName: d.Name(), ToolRequire: updateDetail}
+	}
+	return true, nil
 }
 
 func (d *Docker) InstallUrl() string {

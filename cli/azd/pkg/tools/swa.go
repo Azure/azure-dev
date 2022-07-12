@@ -6,8 +6,10 @@ package tools
 import (
 	"context"
 	"fmt"
+	"os/exec"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/executil"
+	"github.com/blang/semver/v4"
 )
 
 func NewSwaCli() SwaCli {
@@ -74,8 +76,33 @@ func (cli *swaCli) Deploy(ctx context.Context, tenantId string, subscriptionId s
 	return res.Stdout, nil
 }
 
+// base version number and empty string if there's no pre-request check on version number
+func (cli *swaCli) GetToolUpdate() ToolMetaData {
+	return ToolMetaData{
+		MinimumVersion: semver.Version{
+			Major: 1,
+			Minor: 0,
+			Patch: 0,
+		},
+		UpdateCommand: "Visit https://github.com/Azure/static-web-apps-cli/releases to install newer",
+	}
+}
+
 func (cli *swaCli) CheckInstalled(_ context.Context) (bool, error) {
-	return toolInPath("npx")
+	found, err := toolInPath("npx")
+	if !found {
+		return false, err
+	}
+	swaRes, _ := exec.Command("npx", "@azure/static-web-apps-cli", "--version").Output()
+	swaSemver, err := versionToSemver(swaRes)
+	if err != nil {
+		return false, fmt.Errorf("converting to semver version fails: %w", err)
+	}
+	updateDetail := cli.GetToolUpdate()
+	if swaSemver.Compare(updateDetail.MinimumVersion) == -1 {
+		return false, &ErrSemver{ToolName: cli.Name(), ToolRequire: updateDetail}
+	}
+	return true, nil
 }
 
 func (cli *swaCli) Name() string {

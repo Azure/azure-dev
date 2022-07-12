@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
@@ -21,6 +22,7 @@ func Compile(ctx context.Context, bicepCli tools.BicepCli, bicepPath string) (Co
 	// prompt.
 	var template CompiledTemplate
 	if err := json.Unmarshal([]byte(compiled), &template); err != nil {
+		log.Printf("failed un-marshaling compiled arm template to JSON (err: %v), template contents:\n%s", err, compiled)
 		return CompiledTemplate{}, fmt.Errorf("error un-marshaling arm template from json: %w", err)
 	}
 

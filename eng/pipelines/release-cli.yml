@@ -387,8 +387,6 @@ stages:
 
               ### Install scripts
 
-              > Make sure you've uninstalled the npm package if it's still on your system using ``npm uninstall -g @azure/az-dev-cli``
-
               MacOS/Linux
 
               > May elevate using ``sudo`` on some platforms and configurations

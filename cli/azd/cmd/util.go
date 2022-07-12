@@ -172,6 +172,12 @@ func ensureEnvironmentInitialized(ctx context.Context, environmentName string, e
 		env.SetEnvName(environmentName)
 	}
 
+	if !hasSubID || !hasPrincipalID || !hasLocation {
+		if err := ensureLoggedIn(ctx); err != nil {
+			return fmt.Errorf("logging in: %w", err)
+		}
+	}
+
 	if !hasLocation {
 		var location string
 		location, err := promptLocation(ctx, "Please select an Azure location to use:", askOne)
@@ -180,12 +186,6 @@ func ensureEnvironmentInitialized(ctx context.Context, environmentName string, e
 		}
 
 		env.Values[environment.LocationEnvVarName] = strings.TrimSpace(location)
-	}
-
-	if !hasSubID || !hasPrincipalID {
-		if err := ensureLoggedIn(ctx); err != nil {
-			return fmt.Errorf("logging in: %w", err)
-		}
 	}
 
 	azCli := commands.GetAzCliFromContext(ctx)
@@ -467,10 +467,6 @@ func promptTemplate(ctx context.Context, message string, askOne Asker) (string, 
 
 // promptLocation asks the user to select a location from a list of supported azure location
 func promptLocation(ctx context.Context, message string, askOne Asker) (string, error) {
-	if err := ensureLoggedIn(ctx); err != nil {
-		return "", fmt.Errorf("listing locations: %w", err)
-	}
-
 	azCli := commands.GetAzCliFromContext(ctx)
 
 	locations, err := azCli.ListAccountLocations(ctx)

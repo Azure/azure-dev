@@ -12,66 +12,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func Test_SwaLogin(t *testing.T) {
-	tempSwaCli := NewSwaCli()
-	swacli := tempSwaCli.(*swaCli)
-
-	ran := false
-
-	t.Run("NoErrors", func(t *testing.T) {
-		swacli.runWithResultFn = func(ctx context.Context, args executil.RunArgs) (executil.RunResult, error) {
-			ran = true
-
-			require.Equal(t, []string{
-				"-y", "@azure/static-web-apps-cli",
-				"login",
-				"--tenant-id", "tenantID",
-				"--subscription-id", "subscriptionID",
-				"--resource-group", "resourceGroupID",
-				"--app-name", "appName",
-			}, args.Args)
-
-			return executil.RunResult{
-				Stdout: "",
-				Stderr: "",
-				// if the returned `error` is nil we don't return an error. The underlying 'exec'
-				// returns an error if the command returns a non-zero exit code so we don't actually
-				// need to check it.
-				ExitCode: 1,
-			}, nil
-		}
-
-		err := swacli.Login(context.Background(), "tenantID", "subscriptionID", "resourceGroupID", "appName")
-		require.NoError(t, err)
-		require.True(t, ran)
-	})
-
-	t.Run("Error", func(t *testing.T) {
-		swacli.runWithResultFn = func(ctx context.Context, args executil.RunArgs) (executil.RunResult, error) {
-			ran = true
-
-			require.Equal(t, []string{
-				"-y", "@azure/static-web-apps-cli",
-				"login",
-				"--tenant-id", "tenantID",
-				"--subscription-id", "subscriptionID",
-				"--resource-group", "resourceGroupID",
-				"--app-name", "appName",
-			}, args.Args)
-
-			return executil.RunResult{
-				Stdout:   "stdout text",
-				Stderr:   "stderr text",
-				ExitCode: 1,
-			}, errors.New("example error message")
-		}
-
-		err := swacli.Login(context.Background(), "tenantID", "subscriptionID", "resourceGroupID", "appName")
-		require.True(t, ran)
-		require.EqualError(t, err, "swa login: exit code: 1, stdout: stdout text, stderr: stderr text: example error message")
-	})
-}
-
 func Test_SwaBuild(t *testing.T) {
 	tempSwaCli := NewSwaCli()
 	swacli := tempSwaCli.(*swaCli)
@@ -151,6 +91,7 @@ func Test_SwaDeploy(t *testing.T) {
 				"--app-location", ".",
 				"--output-location", "build",
 				"--env", "default",
+				"--no-use-keychain",
 				"--deployment-token", "deploymentToken",
 			}, args.Args)
 
@@ -184,6 +125,7 @@ func Test_SwaDeploy(t *testing.T) {
 				"--app-location", ".",
 				"--output-location", "build",
 				"--env", "default",
+				"--no-use-keychain",
 				"--deployment-token", "deploymentToken",
 			}, args.Args)
 

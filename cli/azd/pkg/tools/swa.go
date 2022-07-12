@@ -20,7 +20,6 @@ func NewSwaCli() SwaCli {
 type SwaCli interface {
 	ExternalTool
 
-	Login(ctx context.Context, tenantId string, subscriptionId string, resourceGroup string, appName string) error
 	Build(ctx context.Context, appFolderPath string, outputRelativeFolderPath string) error
 	Deploy(ctx context.Context, tenantId string, subscriptionId string, resourceGroup string, appName string, appFolderPath string, outputRelativeFolderPath string, environment string, deploymentToken string) (string, error)
 }
@@ -28,20 +27,6 @@ type SwaCli interface {
 type swaCli struct {
 	// runWithResultFn allows us to stub out the executil.RunWithResult, for testing.
 	runWithResultFn func(ctx context.Context, args executil.RunArgs) (executil.RunResult, error)
-}
-
-func (cli *swaCli) Login(ctx context.Context, tenantId string, subscriptionId string, resourceGroup string, appName string) error {
-	res, err := cli.executeCommand(ctx, ".", "login",
-		"--tenant-id", tenantId,
-		"--subscription-id", subscriptionId,
-		"--resource-group", resourceGroup,
-		"--app-name", appName)
-
-	if err != nil {
-		return fmt.Errorf("swa login: %s: %w", res.String(), err)
-	}
-
-	return nil
 }
 
 func (cli *swaCli) Build(ctx context.Context, appFolderPath string, outputRelativeFolderPath string) error {
@@ -69,6 +54,7 @@ func (cli *swaCli) Deploy(ctx context.Context, tenantId string, subscriptionId s
 		"--app-location", ".",
 		"--output-location", outputRelativeFolderPath,
 		"--env", environment,
+		"--no-use-keychain",
 		"--deployment-token", deploymentToken)
 
 	if err != nil {

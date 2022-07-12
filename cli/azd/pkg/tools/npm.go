@@ -25,8 +25,7 @@ func NewNpmCli() NpmCli {
 	return &npmCli{}
 }
 
-// base version number and empty string if there's no pre-request check on version number
-func (cli *npmCli) GetToolUpdate() ToolMetaData {
+func (cli *npmCli) GetToolUpdateNpm() ToolMetaData {
 	return ToolMetaData{
 		MinimumVersion: semver.Version{
 			Major: 8,
@@ -36,19 +35,42 @@ func (cli *npmCli) GetToolUpdate() ToolMetaData {
 	}
 }
 
+func (cli *npmCli) GetToolUpdateNode() ToolMetaData {
+	return ToolMetaData{
+		MinimumVersion: semver.Version{
+			Major: 16,
+			Minor: 16,
+			Patch: 0},
+		UpdateCommand: "Visit https://nodejs.org/en/ to install newer",
+	}
+}
+
 func (cli *npmCli) CheckInstalled(_ context.Context) (bool, error) {
 	found, err := toolInPath("npm")
 	if !found {
 		return false, err
 	}
+
+	//check npm version
 	npmRes, _ := exec.Command("npm", "--version").Output()
 	npmSemver, err := extractSemver(npmRes)
 	if err != nil {
 		return false, fmt.Errorf("converting to semver version fails: %w", err)
 	}
-	updateDetail := cli.GetToolUpdate()
-	if npmSemver.Compare(updateDetail.MinimumVersion) == -1 {
-		return false, &ErrSemver{ToolName: cli.Name(), ToolRequire: updateDetail}
+	updateDetailNpm := cli.GetToolUpdateNpm()
+	if npmSemver.Compare(updateDetailNpm.MinimumVersion) == -1 {
+		return false, &ErrSemver{ToolName: cli.Name(), ToolRequire: updateDetailNpm}
+	}
+
+	//check node version
+	nodeRes, _ := exec.Command("node", "--version").Output()
+	nodeSemver, err := extractSemver(nodeRes)
+	if err != nil {
+		return false, fmt.Errorf("converting to semver version fails: %w", err)
+	}
+	updateDetailNode := cli.GetToolUpdateNode()
+	if nodeSemver.Compare(updateDetailNode.MinimumVersion) == -1 {
+		return false, &ErrSemver{ToolName: cli.Name(), ToolRequire: updateDetailNode}
 	}
 	return true, nil
 }

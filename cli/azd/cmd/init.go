@@ -101,7 +101,7 @@ func (i *initAction) Run(ctx context.Context, _ *cobra.Command, args []string, a
 		fmt.Printf("Initializing a new project in %s\n\n", wd)
 
 		if i.templateName == "" {
-			templateName, err := promptTemplate(ctx, "Select a project templatesss", askOne)
+			templateName, err := promptTemplate(ctx, "Select a project template", askOne)
 
 			if err != nil {
 				return err

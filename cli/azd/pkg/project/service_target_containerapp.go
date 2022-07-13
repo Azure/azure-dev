@@ -58,7 +58,7 @@ func (at *containerAppTarget) Deploy(ctx context.Context, azdCtx *environment.Az
 	// Tag image.
 	log.Printf("tagging image %s as %s", path, fullTag)
 	progress <- "Tagging image"
-	if err := at.docker.Tag(ctx, path, fullTag); err != nil {
+	if err := at.docker.Tag(ctx, at.config.Path(), path, fullTag); err != nil {
 		return ServiceDeploymentResult{}, fmt.Errorf("tagging image: %w", err)
 	}
 
@@ -66,7 +66,7 @@ func (at *containerAppTarget) Deploy(ctx context.Context, azdCtx *environment.Az
 
 	// Push image.
 	progress <- "Pushing container image"
-	if err := at.docker.Push(ctx, fullTag); err != nil {
+	if err := at.docker.Push(ctx, at.config.Path(), fullTag); err != nil {
 		return ServiceDeploymentResult{}, fmt.Errorf("pushing image: %w", err)
 	}
 

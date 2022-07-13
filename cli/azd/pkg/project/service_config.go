@@ -27,6 +27,8 @@ type ServiceConfig struct {
 	OutputPath string `yaml:"dist"`
 	// The infrastructure module name to use for this project
 	ModuleName string `yaml:"moduleName"`
+	// The custom service type options
+	Options map[string]interface{} `yaml:"options"`
 }
 
 // Path returns the fully qualified path to the project

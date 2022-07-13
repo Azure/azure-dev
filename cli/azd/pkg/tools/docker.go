@@ -17,8 +17,12 @@ type Docker struct {
 
 // Build runs a docker build for a given Dockerfile, forcing the amd64 platform. If successful, it
 // returns the image id of the built image.
-func (d *Docker) Build(ctx context.Context, dockerFilePath string, buildContext string) (string, error) {
-	res, err := d.executeCommand(ctx, buildContext, "build", "-q", "-f", dockerFilePath, "--platform", "amd64", ".")
+func (d *Docker) Build(ctx context.Context, cwd string, dockerFilePath string, platform string, buildContext string) (string, error) {
+	if strings.TrimSpace(platform) == "" {
+		platform = "amd64"
+	}
+
+	res, err := d.executeCommand(ctx, cwd, "build", "-q", "-f", dockerFilePath, "--platform", platform, buildContext)
 	if err != nil {
 		return "", fmt.Errorf("building image: %s: %w", res.String(), err)
 	}
@@ -26,8 +30,8 @@ func (d *Docker) Build(ctx context.Context, dockerFilePath string, buildContext 
 	return strings.TrimSpace(res.Stdout), nil
 }
 
-func (d *Docker) Tag(ctx context.Context, imageName string, tag string) error {
-	res, err := d.executeCommand(ctx, ".", "tag", imageName, tag)
+func (d *Docker) Tag(ctx context.Context, cwd string, imageName string, tag string) error {
+	res, err := d.executeCommand(ctx, cwd, "tag", imageName, tag)
 	if err != nil {
 		return fmt.Errorf("tagging image: %s: %w", res.String(), err)
 	}
@@ -35,8 +39,8 @@ func (d *Docker) Tag(ctx context.Context, imageName string, tag string) error {
 	return nil
 }
 
-func (d *Docker) Push(ctx context.Context, tag string) error {
-	res, err := d.executeCommand(ctx, ".", "push", tag)
+func (d *Docker) Push(ctx context.Context, cwd string, tag string) error {
+	res, err := d.executeCommand(ctx, cwd, "push", tag)
 	if err != nil {
 		return fmt.Errorf("tagging image: %s: %w", res.String(), err)
 	}
@@ -58,8 +62,9 @@ func (d *Docker) Name() string {
 
 func (d *Docker) executeCommand(ctx context.Context, cwd string, args ...string) (executil.RunResult, error) {
 	return executil.RunWithResult(ctx, executil.RunArgs{
-		Cmd:  "docker",
-		Args: args,
-		Cwd:  cwd,
+		Cmd:         "docker",
+		Args:        args,
+		Cwd:         cwd,
+		EnrichError: true,
 	})
 }

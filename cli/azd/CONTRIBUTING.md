@@ -80,3 +80,24 @@ Run `golangci-lint run ./...`
 ## Spell checking
 
 Install [cspell](https://cspell.org/) and then run `cspell lint "**/*.go" --relative --config ./.vscode/cspell.yaml`
+
+## Troubleshooting
+
+### Access is denied
+
+Windows Security may block execution of unsigned .exe files. This may happen when validating unsigned .exe files produced in a PR build.
+
+```
+> azd version
+Access is denied.
+>
+```
+
+To fix: 
+
+1. Run `where azd` (cmd) or `(Get-Command azd).Source` (PowerShell) to get the command path
+1. Click the Start button and type `Windows Security`, select and launch the "Windows Security" application
+1. Select `Virus & threat protection` tab on the left side of the window
+1. Click the `Manage settings` link under `Virus & threat protection settings`
+1. Scroll down in the window to the `Exclusions` heading and click the `Add or remove exclusions link` 
+1. Select `Add an exclusion` and add the path to the exe from step 1

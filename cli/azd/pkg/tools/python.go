@@ -35,7 +35,7 @@ func (cli *PythonCli) CheckInstalled(ctx context.Context) (bool, error) {
 	if !found {
 		return false, err
 	}
-	pythonRes, err := executeCommand(ctx, "python3", "--version")
+	pythonRes, err := executeCommand(ctx, pythonExe(), "--version")
 	if err != nil {
 		return false, fmt.Errorf("checking %s version: %w", cli.Name(), err)
 	}

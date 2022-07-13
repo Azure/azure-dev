@@ -20,6 +20,10 @@ func (tm *TemplateManager) ListTemplates() ([]Template, error) {
 	return templates, nil
 }
 
+func (tm *TemplateManager) EmptyTemplate() Template {
+	return Template{}
+}
+
 func (tm *TemplateManager) GetTemplate(templateName string) (Template, error) {
 	templates, err := tm.ListTemplates()
 

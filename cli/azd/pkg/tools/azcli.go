@@ -11,6 +11,7 @@ import (
 	"io"
 	"net/http"
 	"regexp"
+	"strings"
 	"time"
 
 	azdinternal "github.com/azure/azure-dev/cli/azd/internal"
@@ -587,7 +588,7 @@ func (cli *azCli) GetStaticWebAppApiKey(ctx context.Context, subscriptionID stri
 		return "", fmt.Errorf("failed getting staticwebapp api key: %w", err)
 	}
 
-	return res.Stdout, nil
+	return strings.TrimSpace(res.Stdout), nil
 }
 
 func (cli *azCli) DeployToSubscription(ctx context.Context, subscriptionId string, deploymentName string, templateFile string, parametersFile string, location string) (AzCliDeploymentResult, error) {

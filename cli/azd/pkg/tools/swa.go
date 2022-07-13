@@ -20,8 +20,8 @@ func NewSwaCli() SwaCli {
 type SwaCli interface {
 	ExternalTool
 
-	Build(ctx context.Context, appFolderPath string, outputRelativeFolderPath string) error
-	Deploy(ctx context.Context, tenantId string, subscriptionId string, resourceGroup string, appName string, appFolderPath string, outputRelativeFolderPath string, environment string, deploymentToken string) (string, error)
+	Build(ctx context.Context, cwd string, appFolderPath string, outputRelativeFolderPath string) error
+	Deploy(ctx context.Context, cwd string, tenantId string, subscriptionId string, resourceGroup string, appName string, appFolderPath string, outputRelativeFolderPath string, environment string, deploymentToken string) (string, error)
 }
 
 type swaCli struct {
@@ -29,10 +29,10 @@ type swaCli struct {
 	runWithResultFn func(ctx context.Context, args executil.RunArgs) (executil.RunResult, error)
 }
 
-func (cli *swaCli) Build(ctx context.Context, appFolderPath string, outputRelativeFolderPath string) error {
+func (cli *swaCli) Build(ctx context.Context, cwd string, appFolderPath string, outputRelativeFolderPath string) error {
 	res, err := cli.executeCommand(ctx,
-		appFolderPath, "build",
-		"--app-location", ".",
+		cwd, "build",
+		"--app-location", appFolderPath,
 		"--output-location", outputRelativeFolderPath)
 
 	if err != nil {
@@ -42,16 +42,16 @@ func (cli *swaCli) Build(ctx context.Context, appFolderPath string, outputRelati
 	return nil
 }
 
-func (cli *swaCli) Deploy(ctx context.Context, tenantId string, subscriptionId string, resourceGroup string, appName string, appFolderPath string, outputRelativeFolderPath string, environment string, deploymentToken string) (string, error) {
+func (cli *swaCli) Deploy(ctx context.Context, cwd string, tenantId string, subscriptionId string, resourceGroup string, appName string, appFolderPath string, outputRelativeFolderPath string, environment string, deploymentToken string) (string, error) {
 	log.Printf("SWA Deploy: TenantId: %s, SubscriptionId: %s, ResourceGroup: %s, ResourceName: %s, Environment: %s", tenantId, subscriptionId, resourceGroup, appName, environment)
 
 	res, err := cli.executeCommand(ctx,
-		appFolderPath, "deploy",
+		cwd, "deploy",
 		"--tenant-id", tenantId,
 		"--subscription-id", subscriptionId,
 		"--resource-group", resourceGroup,
 		"--app-name", appName,
-		"--app-location", ".",
+		"--app-location", appFolderPath,
 		"--output-location", outputRelativeFolderPath,
 		"--env", environment,
 		"--no-use-keychain",
@@ -61,7 +61,7 @@ func (cli *swaCli) Deploy(ctx context.Context, tenantId string, subscriptionId s
 		return "", fmt.Errorf("swa deploy: %s: %w", res.String(), err)
 	}
 
-	return res.Stdout, nil
+	return res.Stdout + res.Stderr, nil
 }
 
 func (cli *swaCli) CheckInstalled(_ context.Context) (bool, error) {
@@ -81,8 +81,9 @@ func (cli *swaCli) executeCommand(ctx context.Context, cwd string, args ...strin
 	finalArgs := append(defaultArgs, args...)
 
 	return cli.runWithResultFn(ctx, executil.RunArgs{
-		Cmd:  "npx",
-		Args: finalArgs,
-		Cwd:  cwd,
+		Cmd:         "npx",
+		Args:        finalArgs,
+		Cwd:         cwd,
+		EnrichError: true,
 	})
 }

@@ -22,11 +22,11 @@ func Test_SwaBuild(t *testing.T) {
 		swacli.runWithResultFn = func(ctx context.Context, args executil.RunArgs) (executil.RunResult, error) {
 			ran = true
 
-			require.Equal(t, "./appFolderPath", args.Cwd)
+			require.Equal(t, "./projectPath", args.Cwd)
 			require.Equal(t, []string{
 				"-y", "@azure/static-web-apps-cli",
 				"build",
-				"--app-location", ".",
+				"--app-location", "service/path",
 				"--output-location", "build",
 			}, args.Args)
 
@@ -40,7 +40,7 @@ func Test_SwaBuild(t *testing.T) {
 			}, nil
 		}
 
-		err := swacli.Build(context.Background(), "./appFolderPath", "build")
+		err := swacli.Build(context.Background(), "./projectPath", "service/path", "build")
 		require.NoError(t, err)
 		require.True(t, ran)
 	})
@@ -49,11 +49,11 @@ func Test_SwaBuild(t *testing.T) {
 		swacli.runWithResultFn = func(ctx context.Context, args executil.RunArgs) (executil.RunResult, error) {
 			ran = true
 
-			require.Equal(t, "./appFolderPath", args.Cwd)
+			require.Equal(t, "./projectPath", args.Cwd)
 			require.Equal(t, []string{
 				"-y", "@azure/static-web-apps-cli",
 				"build",
-				"--app-location", ".",
+				"--app-location", "service/path",
 				"--output-location", "build",
 			}, args.Args)
 
@@ -64,7 +64,7 @@ func Test_SwaBuild(t *testing.T) {
 			}, errors.New("example error message")
 		}
 
-		err := swacli.Build(context.Background(), "./appFolderPath", "build")
+		err := swacli.Build(context.Background(), "./projectPath", "service/path", "build")
 		require.True(t, ran)
 		require.EqualError(t, err, "swa build: exit code: 1, stdout: stdout text, stderr: stderr text: example error message")
 	})
@@ -80,7 +80,7 @@ func Test_SwaDeploy(t *testing.T) {
 		swacli.runWithResultFn = func(ctx context.Context, args executil.RunArgs) (executil.RunResult, error) {
 			ran = true
 
-			require.Equal(t, "./appFolderPath", args.Cwd)
+			require.Equal(t, "./projectPath", args.Cwd)
 			require.Equal(t, []string{
 				"-y", "@azure/static-web-apps-cli",
 				"deploy",
@@ -88,7 +88,7 @@ func Test_SwaDeploy(t *testing.T) {
 				"--subscription-id", "subscriptionID",
 				"--resource-group", "resourceGroupID",
 				"--app-name", "appName",
-				"--app-location", ".",
+				"--app-location", "service/path",
 				"--output-location", "build",
 				"--env", "default",
 				"--no-use-keychain",
@@ -105,7 +105,7 @@ func Test_SwaDeploy(t *testing.T) {
 			}, nil
 		}
 
-		_, err := swacli.Deploy(context.Background(), "tenantID", "subscriptionID", "resourceGroupID", "appName", "./appFolderPath", "build", "default", "deploymentToken")
+		_, err := swacli.Deploy(context.Background(), "./projectPath", "tenantID", "subscriptionID", "resourceGroupID", "appName", "service/path", "build", "default", "deploymentToken")
 		require.NoError(t, err)
 		require.True(t, ran)
 	})
@@ -114,7 +114,7 @@ func Test_SwaDeploy(t *testing.T) {
 		swacli.runWithResultFn = func(ctx context.Context, args executil.RunArgs) (executil.RunResult, error) {
 			ran = true
 
-			require.Equal(t, "./appFolderPath", args.Cwd)
+			require.Equal(t, "./projectPath", args.Cwd)
 			require.Equal(t, []string{
 				"-y", "@azure/static-web-apps-cli",
 				"deploy",
@@ -122,7 +122,7 @@ func Test_SwaDeploy(t *testing.T) {
 				"--subscription-id", "subscriptionID",
 				"--resource-group", "resourceGroupID",
 				"--app-name", "appName",
-				"--app-location", ".",
+				"--app-location", "service/path",
 				"--output-location", "build",
 				"--env", "default",
 				"--no-use-keychain",
@@ -136,7 +136,7 @@ func Test_SwaDeploy(t *testing.T) {
 			}, errors.New("example error message")
 		}
 
-		_, err := swacli.Deploy(context.Background(), "tenantID", "subscriptionID", "resourceGroupID", "appName", "./appFolderPath", "build", "default", "deploymentToken")
+		_, err := swacli.Deploy(context.Background(), "./projectPath", "tenantID", "subscriptionID", "resourceGroupID", "appName", "service/path", "build", "default", "deploymentToken")
 		require.True(t, ran)
 		require.EqualError(t, err, "swa deploy: exit code: 1, stdout: stdout text, stderr: stderr text: example error message")
 	})

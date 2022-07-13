@@ -96,8 +96,8 @@ Access is denied.
 To fix: 
 
 1. Run `where azd` (cmd) or `(Get-Command azd).Source` (PowerShell) to get the command path
-2. Click the Start button and type `Windows Security`, select and launch the "Windows Security" application
-3. Select `Virus & threat protection` tab on the left side of the window
-4. Click the `Manage settings` link under `Virus & threat protection settings`
-5. Scroll down in the window to the `Exclusions` heading and click the `Add or remove exclusions link` 
-6. Select `Add an exclusion` and add the path to the exe from step 1
+1. Click the Start button and type `Windows Security`, select and launch the "Windows Security" application
+1. Select `Virus & threat protection` tab on the left side of the window
+1. Click the `Manage settings` link under `Virus & threat protection settings`
+1. Scroll down in the window to the `Exclusions` heading and click the `Add or remove exclusions link` 
+1. Select `Add an exclusion` and add the path to the exe from step 1

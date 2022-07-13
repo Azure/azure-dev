@@ -8,6 +8,9 @@
 
 ### Bugs Fixed
 
+- [[#77]](https://github.com/Azure/azure-dev/issues/77) Use the correct command to log into the GitHub CLI in error messages. Thanks to community member [@TheEskhaton](https://github.com/TheEskhaton) for the fix!
+
+
 ### Other Changes
 
 ## 0.1.0-beta.2 (2022-07-13)

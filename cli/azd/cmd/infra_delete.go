@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/AlecAivazis/survey/v2"
 	"github.com/azure/azure-dev/cli/azd/pkg/azureutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/commands"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
@@ -14,6 +13,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
+	"github.com/vhvb1989/survey/v2"
 )
 
 func infraDeleteCmd(rootOptions *commands.GlobalCommandOptions) *cobra.Command {

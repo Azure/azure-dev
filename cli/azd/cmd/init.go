@@ -14,7 +14,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/AlecAivazis/survey/v2"
 	"github.com/azure/azure-dev/cli/azd/pkg/commands"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
@@ -24,6 +23,7 @@ import (
 	"github.com/otiai10/copy"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
+	"github.com/vhvb1989/survey/v2"
 )
 
 func initCmd(rootOptions *commands.GlobalCommandOptions) *cobra.Command {
@@ -101,7 +101,7 @@ func (i *initAction) Run(ctx context.Context, _ *cobra.Command, args []string, a
 		fmt.Printf("Initializing a new project in %s\n\n", wd)
 
 		if i.templateName == "" {
-			templateName, err := promptTemplate(ctx, "Select a project template", askOne)
+			templateName, err := promptTemplate(ctx, "Select a project templatesss", askOne)
 
 			if err != nil {
 				return err

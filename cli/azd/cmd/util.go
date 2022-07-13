@@ -14,7 +14,6 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/AlecAivazis/survey/v2"
 	"github.com/azure/azure-dev/cli/azd/pkg/azureutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/commands"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
@@ -23,6 +22,7 @@ import (
 	"github.com/fatih/color"
 	"github.com/mattn/go-isatty"
 	"github.com/mgutz/ansi"
+	"github.com/vhvb1989/survey/v2"
 )
 
 type Asker func(p survey.Prompt, response interface{}) error
@@ -449,9 +449,10 @@ func promptTemplate(ctx context.Context, message string, askOne Asker) (string, 
 	var selectedTemplateIndex int
 
 	if err := askOne(&survey.Select{
-		Message: message,
-		Options: templateNames,
-		Default: templateNames[0],
+		Message:    message,
+		Options:    templateNames,
+		Default:    templateNames[0],
+		FooterText: withHighLightFormat("... scroll down to see more options below ..."),
 	}, &selectedTemplateIndex); err != nil {
 		return "", fmt.Errorf("prompting for template: %w", err)
 	}

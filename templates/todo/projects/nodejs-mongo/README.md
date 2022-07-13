@@ -40,7 +40,7 @@ azd up --template todo-nodejs-mongo
 
 You will be prompted for the following information:
 
-- `Environment Name`: This will be used as a prefix for all your Azure resources, make sure it is globally unique and under 15 characters.
+- `Environment Name`: This will be used as a prefix for the resource group that will be created to hold all Azure resources.
 - `Azure Location`: The Azure location where your resources will be deployed.
 - `Azure Subscription`: The Azure Subscription where your resources will be deployed.
 

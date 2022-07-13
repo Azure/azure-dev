@@ -23,7 +23,7 @@ func Test_SwaLogin(t *testing.T) {
 			ran = true
 
 			require.Equal(t, []string{
-				"-y", "@azure/static-web-apps-cli",
+				"-y", "@azure/static-web-apps-cli@1.0.0",
 				"login",
 				"--tenant-id", "tenantID",
 				"--subscription-id", "subscriptionID",
@@ -51,7 +51,7 @@ func Test_SwaLogin(t *testing.T) {
 			ran = true
 
 			require.Equal(t, []string{
-				"-y", "@azure/static-web-apps-cli",
+				"-y", "@azure/static-web-apps-cli@1.0.0",
 				"login",
 				"--tenant-id", "tenantID",
 				"--subscription-id", "subscriptionID",
@@ -84,7 +84,7 @@ func Test_SwaBuild(t *testing.T) {
 
 			require.Equal(t, "./appFolderPath", args.Cwd)
 			require.Equal(t, []string{
-				"-y", "@azure/static-web-apps-cli",
+				"-y", "@azure/static-web-apps-cli@1.0.0",
 				"build",
 				"--app-location", ".",
 				"--output-location", "build",
@@ -111,7 +111,7 @@ func Test_SwaBuild(t *testing.T) {
 
 			require.Equal(t, "./appFolderPath", args.Cwd)
 			require.Equal(t, []string{
-				"-y", "@azure/static-web-apps-cli",
+				"-y", "@azure/static-web-apps-cli@1.0.0",
 				"build",
 				"--app-location", ".",
 				"--output-location", "build",
@@ -142,7 +142,7 @@ func Test_SwaDeploy(t *testing.T) {
 
 			require.Equal(t, "./appFolderPath", args.Cwd)
 			require.Equal(t, []string{
-				"-y", "@azure/static-web-apps-cli",
+				"-y", "@azure/static-web-apps-cli@1.0.0",
 				"deploy",
 				"--tenant-id", "tenantID",
 				"--subscription-id", "subscriptionID",
@@ -174,7 +174,7 @@ func Test_SwaDeploy(t *testing.T) {
 
 			require.Equal(t, "./appFolderPath", args.Cwd)
 			require.Equal(t, []string{
-				"-y", "@azure/static-web-apps-cli",
+				"-y", "@azure/static-web-apps-cli@1.0.0",
 				"deploy",
 				"--tenant-id", "tenantID",
 				"--subscription-id", "subscriptionID",

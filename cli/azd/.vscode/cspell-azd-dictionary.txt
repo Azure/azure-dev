@@ -36,6 +36,7 @@ omitempty
 osutil
 pflag
 pyapp
+keychain
 restoreapp
 rzip
 sstore

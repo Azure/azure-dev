@@ -78,7 +78,7 @@ func (c *AzdContext) BicepParameters(env string, module string) (map[string]inte
 	var unmarshalled map[string]interface{}
 	err = json.Unmarshal(byts, &unmarshalled)
 	if err != nil {
-		return nil, fmt.Errorf("unmarshaling parameters file: %w", err)
+		return nil, fmt.Errorf("unmarshalling parameters file: %w", err)
 	}
 
 	ret := make(map[string]interface{})

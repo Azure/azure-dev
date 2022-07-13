@@ -97,6 +97,10 @@ func (p *pipelineConfigAction) Run(ctx context.Context, _ *cobra.Command, args [
 		return fmt.Errorf("failed to ensure login to GitHub: %w", err)
 	}
 
+	// This flag is used later to skip checking GitHub Actions.
+	// For new repositories, there's no need to check
+	newGitHubRepoCreated := false
+
 	getSlugOrInit := func() (string, error) {
 		for {
 			repoSlug, err := github.EnsureRemote(ctx, azdCtx.ProjectDirectory(), p.pipelineRemoteName, gitCli)
@@ -166,6 +170,7 @@ func (p *pipelineConfigAction) Run(ctx context.Context, _ *cobra.Command, args [
 					if err != nil {
 						return "", fmt.Errorf("getting remote from new repository: %w", err)
 					}
+					newGitHubRepoCreated = true
 					remoteUrl = url
 				// Enter a URL directly.
 				case 2:
@@ -247,7 +252,12 @@ You can view the GitHub Actions here: https://github.com/%s/actions
 		return fmt.Errorf("prompting to push: %w", err)
 	}
 
-	if doPush {
+	// Check if GitHub actions are disabled *Only* when user requested to push changes AND this is NOT a just-created repo
+	//
+	// A repo that is just created would return zero GitHub Actions and might be confused by azd
+	// as a repo where Actions are disabled. Sadly, there's not GitHub API to fetch exact information
+	// to distinguish between disabled-after-fork v/s repo-disabled-actions v/s similar scenarios).
+	if doPush && !newGitHubRepoCreated {
 		cancelPushing, err := notifyWhenGitHubActionsAreDisabled(ctx, gitCli, ghCli, azdCtx, repoSlug, p.pipelineRemoteName, currentBranch, askOne)
 		if err != nil {
 			return fmt.Errorf("ensure github actions: %w", err)
@@ -425,9 +435,12 @@ func (selection gitHubActionsEnablingChoice) String() string {
 // notifyWhenGitHubActionsAreDisabled checks if gh-actions are disabled on the repo
 // This can happen when a template is first forked and user calls `pipeline config`
 // GitHub disables actions by default when a repo is forked.
-// Fix this by adding a commit to rename the current workflow file and re-store it
-// as part of the repo-push
-// Returns nil, true if user decides to cancel pushing changes.
+//
+// A user can also disable Actions from /settings/actions, which is different from
+// what GitHub does after a template is forked. However, for both cases, calling API
+// /repos/<repoSlug>/actions/workflows would return the same.
+//
+// Returns true, nil if user decides to cancel pushing changes.
 func notifyWhenGitHubActionsAreDisabled(
 	ctx context.Context,
 	gitCli tools.GitCli,
@@ -461,10 +474,20 @@ func notifyWhenGitHubActionsAreDisabled(
 			if e != nil {
 				return e
 			}
-
-			fileExtension := filepath.Ext(file.Name())
+			fileName := file.Name()
+			fileExtension := filepath.Ext(fileName)
 			if fileExtension == ".yml" || fileExtension == ".yaml" {
-				ghLocalWorkflowFiles = true
+				// ** workflow file found.
+				// Now check if this file is already tracked by git.
+				// If the file is not tracked, it means this is a new file (never pushed to mainstream)
+				// A git untracked file should not be considered as GitHub workflow until it is pushed.
+				newFile, err := gitCli.IsUntrackedFile(ctx, azdCtx.ProjectDirectory(), folderName)
+				if err != nil {
+					return fmt.Errorf("checking workflow file %w", err)
+				}
+				if !newFile {
+					ghLocalWorkflowFiles = true
+				}
 			}
 
 			return nil
@@ -476,10 +499,11 @@ func notifyWhenGitHubActionsAreDisabled(
 
 	if ghLocalWorkflowFiles {
 		printWithStyling("\n%s\n"+
-			"This can happen after a template is forked.\n"+
-			"Please enable actions here: %s.\n",
+			" - If you forked and cloned a template, please enable actions here: %s.\n"+
+			" - Otherwise, check the GitHub Actions permissions here: %s.\n",
 			withHighLightFormat("GitHub actions are currently disabled for your repository."),
-			withHighLightFormat("https://github.com/%s/actions", repoSlug))
+			withHighLightFormat("https://github.com/%s/actions", repoSlug),
+			withHighLightFormat("https://github.com/%s/settings/actions", repoSlug))
 
 		var rawSelection int
 		if err := askOne(&survey.Select{

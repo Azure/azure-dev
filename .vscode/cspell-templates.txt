@@ -12,6 +12,7 @@ Codespaces
 configfile
 containerapp
 CUSTOMHANDLER
+eastus
 envconfig
 ezfunc
 immer

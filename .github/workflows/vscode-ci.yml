@@ -13,6 +13,17 @@ permissions:
   id-token: write
 
 jobs:
+  cspell-lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - uses: actions/setup-node@v1
+        name: Run spell check azd vscode extension
+        with:
+          node-version: "16"
+      - run: npm install -g cspell
+      - run: cspell lint '**/*.ts' --config ./ext/vscode/.vscode/cspell.yaml --root ./ext/vscode --no-progress
+
   build-test:
     runs-on: ${{ matrix.os }}
     strategy:

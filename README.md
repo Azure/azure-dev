@@ -1,11 +1,12 @@
 # Azure Developer CLI
 
-Latest (daily) builds:
+Latest builds:
 
-| Package | Version | Download |
+| Artifact  | Version | Download |
 | ------- | ------- | -------- |
 | azd | ![azd version](https://img.shields.io/endpoint?url=https%3A%2F%2Fazuresdkreleasepreview.blob.core.windows.net%2Fazd%2Fstandalone%2Flatest%2Fshield.json) | [Windows](https://azuresdkreleasepreview.blob.core.windows.net/azd/standalone/latest/azd-windows-amd64.zip) &vert; [Linux](https://azuresdkreleasepreview.blob.core.windows.net/azd/standalone/latest/azd-linux-amd64.tar.gz) &vert; [Mac](https://azuresdkreleasepreview.blob.core.windows.net/azd/standalone/latest/azd-darwin-amd64.zip) |
-| vscode extension | ![vscode extension version](https://img.shields.io/endpoint?url=https%3A%2F%2Fazuresdkreleasepreview.blob.core.windows.net%2Fazd%2Fvscode%2Flatest%2Fshield.json) | [VSIX](https://azuresdkreleasepreview.blob.core.windows.net/azd/vscode/latest/azure-dev-latest.vsix) |
+| vscode extension | ![vscode extension version](https://img.shields.io/endpoint?url=https%3A%2F%2Fazuresdkreleasepreview.blob.core.windows.net%2Fazd%2Fvscode%2Flatest%2Fshield.json) | [VSIX](https://marketplace.visualstudio.com/items?itemName=ms-azuretools.azure-dev) |
+| docker image | ![azd version](https://img.shields.io/endpoint?url=https%3A%2F%2Fazuresdkreleasepreview.blob.core.windows.net%2Fazd%2Fstandalone%2Flatest%2Fshield.json) | [`mcr.microsoft.com/azure-dev-cli-apps:latest`](https://mcr.microsoft.com/en-us/product/azure-dev-cli-apps/about)
 
 The Azure Developer CLI (**azure-dev**) is a developer-centric command-line interface (CLI) tool for creating Azure applications. The goals of the CLI are to:
 
@@ -13,11 +14,11 @@ The Azure Developer CLI (**azure-dev**) is a developer-centric command-line inte
 - demonstrate opinionated best practices for Azure development
 - help developers understand core Azure development constructs
 
-To take full advantage of the CLI, code repositories need to conform to a well defined set of [conventions](https://github.com/Azure/azure-dev/wiki/Azure-Developer-CLI-Overview) that will be recognized by the tooling. Please checkout the [wiki](https://github.com/Azure/azure-dev/wiki) for more information and to get started. Use [discussions](https://github.com/Azure/azure-dev/discussions) to participate in the conversation, ask questions, and see the latest announcements.
+To take full advantage of the CLI, code repositories need to conform to a well defined set of conventions that will be recognized by the tooling. Please checkout the [wiki](https://github.com/Azure/azure-dev/wiki) for more information and to get started. Use [discussions](https://github.com/Azure/azure-dev/discussions) to participate in the conversation, ask questions, and see the latest announcements.
 
 ## Install/Upgrade Azure Developer CLI
 
-Install and Upgrade using the following scripts. Re-running the script will install the latest available version (daily)
+Install and Upgrade using the following scripts. Re-running the script will install the latest available version.
 
 ### Windows
 
@@ -31,6 +32,19 @@ powershell -c "Set-ExecutionPolicy Bypass Process -Force; irm 'https://aka.ms/in
 curl -fsSL https://aka.ms/install-azd.sh | bash
 ```
 
+## Uninstall Azure Developer CLI
+
+### Windows
+
+```powershell
+powershell -c "Set-ExecutionPolicy Bypass Process -Force; irm 'https://aka.ms/uninstall-azd.ps1' | iex"
+```
+
+### Linux/MacOS
+
+```
+curl -fsSL https://aka.ms/uninstall-azd.sh | bash
+```
 
 ## Data Collection
 
@@ -56,7 +70,7 @@ Please see our [contributing guide](cli/azd/CONTRIBUTING.md) for complete instru
 
 This project has adopted the [Microsoft Open Source Code of Conduct](https://opensource.microsoft.com/codeofconduct/).
 For more information see the [Code of Conduct FAQ](https://opensource.microsoft.com/codeofconduct/faq/) or
-contact [opencode@microsoft.com](mailto:acceleratorsteam@microsoft.com) with any additional questions or comments.
+contact [opencode@microsoft.com](mailto:opencode@microsoft.com) with any additional questions or comments.
 
 ## Trademark Notice
 

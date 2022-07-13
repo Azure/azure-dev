@@ -276,4 +276,5 @@ output AZURE_COSMOS_CONNECTION_STRING_KEY string = 'AZURE-COSMOS-CONNECTION-STRI
 output AZURE_COSMOS_DATABASE_NAME string = cosmos::database.name
 output AZURE_KEY_VAULT_ENDPOINT string = keyVault.properties.vaultUri
 output APPLICATIONINSIGHTS_CONNECTION_STRING string = applicationInsightsResources.outputs.APPLICATIONINSIGHTS_CONNECTION_STRING
+output WEB_URI string = 'https://${web.properties.defaultHostname}'
 output API_URI string = 'https://${api.properties.defaultHostName}'

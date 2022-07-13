@@ -189,6 +189,8 @@ type GitHubActionsResponse struct {
 	TotalCount int `json:"total_count"`
 }
 
+// GitHubActionsExists gets the information from upstream about the workflows and
+// return true if there is at least one workflow in the repo.
 func (cli *ghCli) GitHubActionsExists(ctx context.Context, repoSlug string) (bool, error) {
 	res, err := executil.RunCommand(ctx, "gh", "api", "/repos/"+repoSlug+"/actions/workflows")
 	if err != nil {

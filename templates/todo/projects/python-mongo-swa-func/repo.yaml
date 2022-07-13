@@ -34,6 +34,10 @@ repo:
     - from: ../../common/assets
       to: ./assets
 
+    # Tests common
+    - from: ../../common/tests
+      to: ./tests
+
     # Python API
     - from: ../../api/python
       to: ./src/api

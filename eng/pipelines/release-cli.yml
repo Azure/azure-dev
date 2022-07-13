@@ -323,12 +323,9 @@ stages:
           - template: /eng/pipelines/templates/steps/publish-cli.yml
             parameters:
               CreateGitHubRelease: false
-              PublishUploadLocations: latest;release/daily;daily/archive/$(Build.BuildId)-$(Build.SourceVersion)
-              PublishShield: true
-              DockerImageTags: latest;daily;$(CLI_VERSION)
-              # On Public Preview release, remove this line to stop publishing
-              # incremental changes to `main` to the container.
-              ReleaseSyndicatedDockerContainer: true
+              PublishUploadLocations: release/daily;daily/archive/$(Build.BuildId)-$(Build.SourceVersion)
+              PublishShield: false
+              DockerImageTags: daily;$(CLI_VERSION)
 
       - job: Publish_For_PR
         condition: >-
@@ -389,8 +386,6 @@ stages:
               ## Azure Dev CLI Install Instructions
 
               ### Install scripts
-
-              > Make sure you've uninstalled the npm package if it's still on your system using ``npm uninstall -g @azure/az-dev-cli``
 
               MacOS/Linux
 

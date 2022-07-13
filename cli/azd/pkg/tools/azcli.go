@@ -164,6 +164,10 @@ type AzCliResourceOperationProperties struct {
 	TargetResource        AzCliResourceOperationTargetResource `json:"targetResource"`
 	StatusCode            string                               `json:"statusCode"`
 	StatusMessage         AzCliDeploymentStatusMessage         `json:"statusMessage"`
+	// The documentation on Timestamp simply states "The timestamp of the template deployment"
+	// Based on observation, this field is updated constantly while the deployment is in progress, in which, it means: "InProgressTimestamp"
+	// When the deployment ends, this is effectively "EndTimestamp".
+	Timestamp time.Time `json:"timestamp"`
 }
 
 type AzCliDeploymentStatusMessage struct {

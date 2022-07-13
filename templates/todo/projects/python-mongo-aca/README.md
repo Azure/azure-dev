@@ -47,6 +47,27 @@ You will be prompted for the following information:
 - `Azure Location`: The Azure location where your resources will be deployed.
 - `Azure Subscription`: The Azure Subscription where your resources will be deployed.
 
+> NOTE: This template may only be used with the following Azure locations:
+>
+> - Australia East
+> - Brazil South
+> - Canada Central
+> - Central US
+> - East Asia
+> - East US
+> - East US 2
+> - Germany West Central
+> - Japan East
+> - Korea Central
+> - North Central US
+> - North Europe
+> - South Central US
+> - UK South
+> - West Europe
+> - West US
+>
+> If you attempt to use the template with an unsupported region, the provision step will fail.
+
 > NOTE: This may take a while to complete as it executes three commands: `azd init` (initializes environment), `azd provision` (provisions Azure resources), and `azd deploy` (deploys application code). You will see a progress indicator as it provisions and deploys your application.
 
 When `azd up` is complete it will output the following URLs:

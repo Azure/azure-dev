@@ -4,6 +4,6 @@ All notable changes to the Azure Dev CLI extension will be documented in this fi
 
 Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
 
-## [Unreleased]
+## [0.1.0] 2022-07-11
 
 - Initial release

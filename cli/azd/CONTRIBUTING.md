@@ -95,7 +95,7 @@ Access is denied.
 
 To fix: 
 
-1. Run `where azd` (cmd) or `Get-Command azd` (PowerShell) to get the command path
+1. Run `where azd` (cmd) or `(Get-Command azd).Source` (PowerShell) to get the command path
 2. Click the Start button and type `Windows Security`, select and launch the "Windows Security" application
 3. Select `Virus & threat protection` tab on the left side of the window
 4. Click the `Manage settings` link under `Virus & threat protection settings`

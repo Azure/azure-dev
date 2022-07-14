@@ -34,16 +34,6 @@ func (cli *npmCli) versionInfoNpm() VersionInfo {
 	}
 }
 
-func (cli *npmCli) versionInfoNode() VersionInfo {
-	return VersionInfo{
-		MinimumVersion: semver.Version{
-			Major: 16,
-			Minor: 13,
-			Patch: 0},
-		UpdateCommand: "Visit https://nodejs.org/en/ to upgrade",
-	}
-}
-
 func (cli *npmCli) CheckInstalled(ctx context.Context) (bool, error) {
 	found, err := toolInPath("npm")
 	if !found {
@@ -64,19 +54,6 @@ func (cli *npmCli) CheckInstalled(ctx context.Context) (bool, error) {
 		return false, &ErrSemver{ToolName: cli.Name(), versionInfo: updateDetailNpm}
 	}
 
-	//check node version
-	nodeRes, err := executeCommand(ctx, "node", "--version")
-	if err != nil {
-		return false, fmt.Errorf("checking %s version: %w", cli.Name(), err)
-	}
-	nodeSemver, err := extractSemver(nodeRes)
-	if err != nil {
-		return false, fmt.Errorf("converting to semver version fails: %w", err)
-	}
-	updateDetailNode := cli.versionInfoNode()
-	if nodeSemver.Compare(updateDetailNode.MinimumVersion) == -1 {
-		return false, &ErrSemver{ToolName: cli.Name(), versionInfo: updateDetailNode}
-	}
 	return true, nil
 }
 

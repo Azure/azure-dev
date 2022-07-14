@@ -9,10 +9,13 @@ import (
 )
 
 func NewDocker() *Docker {
-	return &Docker{}
+	return &Docker{
+		runWithResultFn: executil.RunWithResult,
+	}
 }
 
 type Docker struct {
+	runWithResultFn func(ctx context.Context, args executil.RunArgs) (executil.RunResult, error)
 }
 
 // Build runs a docker build for a given Dockerfile, forcing the amd64 platform. If successful, it
@@ -42,7 +45,7 @@ func (d *Docker) Tag(ctx context.Context, cwd string, imageName string, tag stri
 func (d *Docker) Push(ctx context.Context, cwd string, tag string) error {
 	res, err := d.executeCommand(ctx, cwd, "push", tag)
 	if err != nil {
-		return fmt.Errorf("tagging image: %s: %w", res.String(), err)
+		return fmt.Errorf("pushing image: %s: %w", res.String(), err)
 	}
 
 	return nil
@@ -61,7 +64,7 @@ func (d *Docker) Name() string {
 }
 
 func (d *Docker) executeCommand(ctx context.Context, cwd string, args ...string) (executil.RunResult, error) {
-	return executil.RunWithResult(ctx, executil.RunArgs{
+	return d.runWithResultFn(ctx, executil.RunArgs{
 		Cmd:         "docker",
 		Args:        args,
 		Cwd:         cwd,

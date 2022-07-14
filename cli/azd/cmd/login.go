@@ -93,7 +93,7 @@ func (la *loginAction) SetupFlags(persistent *pflag.FlagSet, local *pflag.FlagSe
 func ensureLoggedIn(ctx context.Context) error {
 	azCli := commands.GetAzCliFromContext(ctx)
 	_, err := azCli.GetAccessToken(ctx)
-	if errors.Is(err, tools.ErrAzCliNotLoggedIn) {
+	if errors.Is(err, tools.ErrAzCliNotLoggedIn) || errors.Is(err, tools.ErrAzCliRefreshTokenExpired) {
 		if err := runLogin(ctx, false); err != nil {
 			return fmt.Errorf("logging in: %w", err)
 		}

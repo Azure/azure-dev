@@ -27,8 +27,8 @@ type ServiceConfig struct {
 	OutputPath string `yaml:"dist"`
 	// The infrastructure module name to use for this project
 	ModuleName string `yaml:"moduleName"`
-	// The custom service type options
-	Docker DockerProjectOptions `yaml:"options"`
+	// The optional docker options
+	Docker DockerProjectOptions `yaml:"docker"`
 }
 
 // Path returns the fully qualified path to the project

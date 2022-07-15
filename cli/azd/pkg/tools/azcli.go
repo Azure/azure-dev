@@ -261,7 +261,7 @@ func (tok *AzCliAccessToken) UnmarshalJSON(data []byte) error {
 	}
 
 	if err := json.Unmarshal(data, &wire); err != nil {
-		return fmt.Errorf("unmarshaling json: %w", err)
+		return fmt.Errorf("unmarshalling json: %w", err)
 	}
 
 	tok.AccessToken = wire.AccessToken

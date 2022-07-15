@@ -43,6 +43,6 @@ sstore
 staticwebapp
 structs
 swacli
-unmarshaling
+unmarshalling
 westus2
 yacspin

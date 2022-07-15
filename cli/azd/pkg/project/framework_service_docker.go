@@ -12,6 +12,12 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 )
 
+type DockerProjectOptions struct {
+	Path     string `json:"path"`
+	Context  string `json:"context"`
+	Platform string `json:"platform"`
+}
+
 type dockerProject struct {
 	config    *ServiceConfig
 	env       *environment.Environment
@@ -24,13 +30,15 @@ func (p *dockerProject) RequiredExternalTools() []tools.ExternalTool {
 }
 
 func (p *dockerProject) Package(ctx context.Context, progress chan<- string) (string, error) {
-	log.Printf("building image for service %s (path: %s)", p.config.Name, p.config.Path())
+	dockerOptions := getDockerOptionsWithDefaults(p.config.Docker)
+
+	log.Printf("building image for service %s, cwd: %s, path: %s, context: %s)", p.config.Name, p.config.Path(), dockerOptions.Path, dockerOptions.Context)
 
 	// Build the container
 	progress <- "Building docker image"
-	imageId, err := p.docker.Build(ctx, "./Dockerfile", p.config.Path())
+	imageId, err := p.docker.Build(ctx, p.config.Path(), dockerOptions.Path, dockerOptions.Platform, dockerOptions.Context)
 	if err != nil {
-		return "", fmt.Errorf("building container: %s at %s: %w", p.config.Name, p.config.Path(), err)
+		return "", fmt.Errorf("building container: %s at %s: %w", p.config.Name, dockerOptions.Context, err)
 	}
 
 	log.Printf("built image %s for %s", imageId, p.config.Name)
@@ -50,4 +58,20 @@ func NewDockerProject(config *ServiceConfig, env *environment.Environment, docke
 		docker:    docker,
 		framework: framework,
 	}
+}
+
+func getDockerOptionsWithDefaults(options DockerProjectOptions) DockerProjectOptions {
+	if options.Path == "" {
+		options.Path = "./Dockerfile"
+	}
+
+	if options.Platform == "" {
+		options.Platform = "amd64"
+	}
+
+	if options.Context == "" {
+		options.Context = "."
+	}
+
+	return options
 }

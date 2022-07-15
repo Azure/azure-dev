@@ -3,9 +3,12 @@ package tools
 import (
 	"context"
 	"fmt"
+	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/executil"
+	"github.com/blang/semver/v4"
 )
 
 func NewDocker() *Docker {
@@ -44,8 +47,55 @@ func (d *Docker) Push(ctx context.Context, tag string) error {
 	return nil
 }
 
-func (d *Docker) CheckInstalled(_ context.Context) (bool, error) {
-	return toolInPath("docker")
+func (d *Docker) versionInfo() VersionInfo {
+	return VersionInfo{
+		MinimumVersion: semver.Version{
+			Major: 17,
+			Minor: 9,
+			Patch: 0},
+		UpdateCommand: "Visit https://docs.docker.com/engine/release-notes/ to upgrade",
+	}
+}
+
+func (d *Docker) extractDockerVersionSemVer(cliOutput string) (semver.Version, error) {
+	ver := regexp.MustCompile(`\d+\.\d+\.\d+`).FindString(cliOutput)
+
+	// Skip leading zeroes to allow inexact parsing for version formats that are not truly SemVer compliant.
+	// Example: docker has versions like 17.09.0 (non semver) instead of 17.9.0 (semver)
+	versionSplit := strings.Split(ver, ".")
+	for key, val := range versionSplit {
+		verInt, err := strconv.Atoi(val)
+		if err != nil {
+			return semver.Version{}, err
+		}
+		versionSplit[key] = strconv.Itoa(verInt)
+	}
+
+	semver, err := semver.Parse(strings.Join(versionSplit, "."))
+	if err != nil {
+		return semver, err
+	}
+	return semver, nil
+
+}
+func (d *Docker) CheckInstalled(ctx context.Context) (bool, error) {
+	found, err := toolInPath("docker")
+	if !found {
+		return false, err
+	}
+	dockerRes, err := executeCommand(ctx, "docker", "--version")
+	if err != nil {
+		return false, fmt.Errorf("checking %s version: %w", d.Name(), err)
+	}
+	dockerSemver, err := d.extractDockerVersionSemVer(dockerRes)
+	if err != nil {
+		return false, fmt.Errorf("converting to semver version fails: %w", err)
+	}
+	updateDetail := d.versionInfo()
+	if dockerSemver.LT(updateDetail.MinimumVersion) {
+		return false, &ErrSemver{ToolName: d.Name(), versionInfo: updateDetail}
+	}
+	return true, nil
 }
 
 func (d *Docker) InstallUrl() string {

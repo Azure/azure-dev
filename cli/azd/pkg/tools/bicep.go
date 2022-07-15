@@ -11,6 +11,7 @@ import (
 	"regexp"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/executil"
+	"github.com/blang/semver/v4"
 )
 
 type BicepCli interface {
@@ -42,6 +43,16 @@ func (cli *bicepCli) InstallUrl() string {
 	return "https://aka.ms/azure-dev/bicep-install"
 }
 
+func (cli *bicepCli) versionInfo() VersionInfo {
+	return VersionInfo{
+		MinimumVersion: semver.Version{
+			Major: 0,
+			Minor: 4,
+			Patch: 1008},
+		UpdateCommand: "Run \"az bicep upgrade\"  to upgrade",
+	}
+}
+
 func (cli *bicepCli) CheckInstalled(ctx context.Context) (bool, error) {
 	hasCli, err := cli.cli.CheckInstalled(ctx)
 	if err != nil || !hasCli {
@@ -59,6 +70,19 @@ func (cli *bicepCli) CheckInstalled(ctx context.Context) (bool, error) {
 			res.String(),
 			err,
 		)
+	}
+
+	bicepRes, err := executeCommand(ctx, "az", "bicep", "version")
+	if err != nil {
+		return false, fmt.Errorf("checking %s version: %w", cli.Name(), err)
+	}
+	bicepSemver, err := extractSemver(bicepRes)
+	if err != nil {
+		return false, fmt.Errorf("converting to semver version fails: %w", err)
+	}
+	updateDetail := cli.versionInfo()
+	if bicepSemver.LT(updateDetail.MinimumVersion) {
+		return false, &ErrSemver{ToolName: cli.Name(), versionInfo: updateDetail}
 	}
 
 	return true, nil

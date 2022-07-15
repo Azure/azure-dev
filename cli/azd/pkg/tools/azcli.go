@@ -19,6 +19,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/executil"
 	"github.com/azure/azure-dev/cli/azd/pkg/httpUtil"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/internal"
+	"github.com/blang/semver/v4"
 )
 
 var (
@@ -330,8 +331,51 @@ func (cli *azCli) InstallUrl() string {
 	return "https://aka.ms/azure-dev/azure-cli-install"
 }
 
-func (cli *azCli) CheckInstalled(_ context.Context) (bool, error) {
-	return toolInPath("az")
+func (cli *azCli) versionInfo() VersionInfo {
+	return VersionInfo{
+		MinimumVersion: semver.Version{
+			Major: 2,
+			Minor: 38,
+			Patch: 0},
+		UpdateCommand: "Run \"az upgrade\" to upgrade",
+	}
+}
+
+func (cli *azCli) unmarshalCliVersion(ctx context.Context, component string) (string, error) {
+	azRes, err := executeCommand(ctx, "az", "version")
+	if err != nil {
+		return "", err
+	}
+	var azVerMap map[string]interface{}
+	err = json.Unmarshal([]byte(azRes), &azVerMap)
+	if err != nil {
+		return "", err
+	}
+	version, ok := azVerMap[component].(string)
+	if !ok {
+		return "", fmt.Errorf("reading %s component '%s' version failed", cli.Name(), component)
+	}
+	return version, nil
+}
+
+func (cli *azCli) CheckInstalled(ctx context.Context) (bool, error) {
+	found, err := toolInPath("az")
+	if !found {
+		return false, err
+	}
+	azVer, err := cli.unmarshalCliVersion(ctx, "azure-cli")
+	if err != nil {
+		return false, fmt.Errorf("checking %s version:  %w", cli.Name(), err)
+	}
+	azSemver, err := semver.Parse(azVer)
+	if err != nil {
+		return false, fmt.Errorf("converting to semver version fails: %w", err)
+	}
+	updateDetail := cli.versionInfo()
+	if azSemver.LT(updateDetail.MinimumVersion) {
+		return false, &ErrSemver{ToolName: cli.Name(), versionInfo: updateDetail}
+	}
+	return true, nil
 }
 
 // SetUserAgent sets the user agent that's sent with each call to the Azure

@@ -11,6 +11,7 @@ import (
 	"runtime"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/executil"
+	"github.com/blang/semver/v4"
 )
 
 type PythonCli struct{}
@@ -19,8 +20,34 @@ func NewPythonCli() *PythonCli {
 	return &PythonCli{}
 }
 
-func (cli *PythonCli) CheckInstalled(_ context.Context) (bool, error) {
-	return toolInPath(pythonExe())
+func (cli *PythonCli) versionInfo() VersionInfo {
+	return VersionInfo{
+		MinimumVersion: semver.Version{
+			Major: 3,
+			Minor: 7,
+			Patch: 6},
+		UpdateCommand: "Visit https://www.python.org/downloads/ to upgrade",
+	}
+}
+
+func (cli *PythonCli) CheckInstalled(ctx context.Context) (bool, error) {
+	found, err := toolInPath(pythonExe())
+	if !found {
+		return false, err
+	}
+	pythonRes, err := executeCommand(ctx, pythonExe(), "--version")
+	if err != nil {
+		return false, fmt.Errorf("checking %s version: %w", cli.Name(), err)
+	}
+	pythonSemver, err := extractSemver(pythonRes)
+	if err != nil {
+		return false, fmt.Errorf("converting to semver version fails: %w", err)
+	}
+	updateDetail := cli.versionInfo()
+	if pythonSemver.LT(updateDetail.MinimumVersion) {
+		return false, &ErrSemver{ToolName: cli.Name(), versionInfo: updateDetail}
+	}
+	return true, nil
 }
 
 func (cli *PythonCli) InstallUrl() string {

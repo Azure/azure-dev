@@ -3,6 +3,7 @@ package tools
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 )
 
@@ -31,11 +32,23 @@ func (m *missingToolErrors) Error() string {
 // error if one or more tools are not.
 func EnsureInstalled(ctx context.Context, tools ...ExternalTool) error {
 	var allErrors []error
+	errorsEncountered := map[string]struct{}{}
 
 	for _, tool := range tools {
 		has, err := tool.CheckInstalled(ctx)
-		if err != nil {
-			allErrors = append(allErrors, fmt.Errorf("error checking for external tool %s: %w", tool.Name(), err))
+		var errSem *ErrSemver
+		if errors.As(err, &errSem) {
+			errorMsg := err.Error()
+			if _, hasV := errorsEncountered[errorMsg]; !hasV {
+				allErrors = append(allErrors, err)
+				errorsEncountered[errorMsg] = struct{}{}
+			}
+		} else if err != nil {
+			errorMsg := err.Error()
+			if _, hasV := errorsEncountered[errorMsg]; !hasV {
+				allErrors = append(allErrors, fmt.Errorf("error checking for external tool %s: %w", tool.Name(), err))
+				errorsEncountered[errorMsg] = struct{}{}
+			}
 		} else if !has {
 			allErrors = append(allErrors, fmt.Errorf("%s is not installed, please see %s to install", tool.Name(), tool.InstallUrl()))
 		}

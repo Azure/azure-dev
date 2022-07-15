@@ -65,6 +65,7 @@ func (cli *swaCli) Deploy(ctx context.Context, cwd string, tenantId string, subs
 }
 
 func (cli *swaCli) CheckInstalled(_ context.Context) (bool, error) {
+
 	return toolInPath("npx")
 }
 
@@ -77,7 +78,7 @@ func (cli *swaCli) InstallUrl() string {
 }
 
 func (cli *swaCli) executeCommand(ctx context.Context, cwd string, args ...string) (executil.RunResult, error) {
-	defaultArgs := []string{"-y", "@azure/static-web-apps-cli"}
+	defaultArgs := []string{"-y", "@azure/static-web-apps-cli@1.0.0"}
 	finalArgs := append(defaultArgs, args...)
 
 	return cli.runWithResultFn(ctx, executil.RunArgs{

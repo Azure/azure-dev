@@ -152,13 +152,14 @@ stages:
             condition: always()
             displayName: Upload azd binary to artifact store
 
-      - job: UploadInstallScript
+      - job: GenerateReleaseArtifacts
         pool:
           name: azsdk-pool-mms-ubuntu-2004-general
           vmImage: MMSUbuntu20.04
 
         steps:
           - checkout: self
+          - template: /eng/pipelines/templates/steps/setup-go.yml
           - pwsh: |
               New-Item -ItemType Directory -Path installer
               Copy-Item cli/installer/*install-azd.ps1 installer/
@@ -168,6 +169,13 @@ stages:
             inputs:
               artifactName: install-pwsh
               targetPath: installer
+          - bash: go run docgen.go
+            workingDirectory: cli/azd/docs
+            displayName: Generate CLI documentation
+          - publish: cli/azd/docs/md
+            artifact: docs
+            displayName: Upload generated documentation
+
 
   - stage: Sign
     dependsOn: BuildAndTest

@@ -12,7 +12,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func newRootCmd() *cobra.Command {
+func NewRootCmd() *cobra.Command {
 	prevDir := ""
 	opts := &commands.GlobalCommandOptions{}
 
@@ -68,6 +68,7 @@ For more information, please visit the project page: https://aka.ms/azure-dev/de
 		SilenceUsage: true,
 	}
 
+	cmd.DisableAutoGenTag = true
 	cmd.CompletionOptions.HiddenDefaultCmd = true
 	cmd.Flags().BoolP("help", "h", false, "Help for "+cmd.Name())
 	cmd.PersistentFlags().StringVarP(&opts.EnvironmentName, "environment", "e", "", "The name of the environment to use")
@@ -97,7 +98,7 @@ For more information, please visit the project page: https://aka.ms/azure-dev/de
 }
 
 func Execute(args []string) error {
-	tempRootCmd := newRootCmd()
+	tempRootCmd := NewRootCmd()
 	tempRootCmd.SetArgs(args)
 	return tempRootCmd.Execute()
 }

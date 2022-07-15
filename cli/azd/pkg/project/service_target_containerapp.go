@@ -16,6 +16,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/iac/bicep"
+	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/drone/envsubst"
 )
@@ -33,7 +34,7 @@ func (at *containerAppTarget) RequiredExternalTools() []tools.ExternalTool {
 }
 
 func (at *containerAppTarget) Deploy(ctx context.Context, azdCtx *environment.AzdContext, path string, progress chan<- string) (ServiceDeploymentResult, error) {
-	bicepPath := azdCtx.BicepModulePath(at.config.ModuleName)
+	bicepPath := azdCtx.BicepModulePath(at.config.Module)
 
 	progress <- "Creating deployment template"
 	template, err := bicep.Compile(ctx, tools.NewBicepCli(at.cli), bicepPath)
@@ -83,7 +84,7 @@ func (at *containerAppTarget) Deploy(ctx context.Context, azdCtx *environment.Az
 	log.Print("generating deployment parameters file")
 
 	// Copy the parameter template file to the environment working directory and do substitutions.
-	parametersTemplate := azdCtx.BicepParametersTemplateFilePath(at.config.ModuleName)
+	parametersTemplate := azdCtx.BicepParametersTemplateFilePath(at.config.Module)
 	templateBytes, err := ioutil.ReadFile(parametersTemplate)
 	if err != nil {
 		return ServiceDeploymentResult{}, fmt.Errorf("reading parameter file template: %w", err)
@@ -99,16 +100,16 @@ func (at *containerAppTarget) Deploy(ctx context.Context, azdCtx *environment.Az
 		return ServiceDeploymentResult{}, fmt.Errorf("substituting parameter file: %w", err)
 	}
 
-	parametersFile := azdCtx.BicepParametersFilePath(at.env.GetEnvName(), at.config.ModuleName)
+	parametersFile := azdCtx.BicepParametersFilePath(at.env.GetEnvName(), at.config.Module)
 
 	// If the bicep uses nested modules ensure the full directory tree
 	// is created before copying the parameters file.
 	directoryPath := filepath.Dir(parametersFile)
-	if err := os.MkdirAll(directoryPath, 0750); err != nil {
+	if err := os.MkdirAll(directoryPath, osutil.PermissionDirectory); err != nil {
 		return ServiceDeploymentResult{}, fmt.Errorf("creating directory tree: %w", err)
 	}
 
-	err = ioutil.WriteFile(parametersFile, []byte(replaced), 0644)
+	err = ioutil.WriteFile(parametersFile, []byte(replaced), osutil.PermissionFile)
 	if err != nil {
 		return ServiceDeploymentResult{}, fmt.Errorf("writing parameter file: %w", err)
 	}
@@ -118,7 +119,7 @@ func (at *containerAppTarget) Deploy(ctx context.Context, azdCtx *environment.Az
 	deploymentTarget := bicep.NewResourceGroupDeploymentTarget(at.cli, at.env.GetSubscriptionId(), at.scope.ResourceGroupName(), at.scope.ResourceName())
 
 	progress <- "Updating container app image reference"
-	res, err := bicep.Deploy(ctx, deploymentTarget, azdCtx.BicepModulePath(at.config.ModuleName), parametersFile)
+	res, err := bicep.Deploy(ctx, deploymentTarget, azdCtx.BicepModulePath(at.config.Module), parametersFile)
 	if err != nil {
 		return ServiceDeploymentResult{}, fmt.Errorf("updating infrastructure: %w", err)
 	}

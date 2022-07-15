@@ -21,6 +21,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/cmd"
 	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/blang/semver/v4"
 	"github.com/fatih/color"
 	"github.com/spf13/pflag"
@@ -66,13 +67,6 @@ func main() {
 		os.Exit(1)
 	}
 }
-
-// azdDirectoryPermissions are the permissions to use on the `.azd` folder in the user's home
-// directory.
-const azdDirectoryPermissions = 0755
-
-// updateCheckFilePermissions are the permissions to use on the `update-check.json` file.
-const updateCheckFilePermissions = 0644
 
 // azdConfigDir is the name of the folder where `azd` writes user wide configuration data.
 const azdConfigDir = ".azd"
@@ -183,7 +177,7 @@ func fetchLatestVersion(version chan<- semver.Version) {
 		// eagerly, since we have not yet sent the latest versions across the channel (and we don't want to do that until we've updated
 		// the cache since reader on the other end of the channel will exit the process after it receives this value and finishes
 		// the up to date check, possibly while this go-routine is still running)
-		if err := os.MkdirAll(filepath.Dir(cacheFilePath), azdDirectoryPermissions); err != nil {
+		if err := os.MkdirAll(filepath.Dir(cacheFilePath), osutil.PermissionFile); err != nil {
 			log.Printf("failed to create cache folder '%s': %v", filepath.Dir(cacheFilePath), err)
 		} else {
 			cacheObject := updateCacheFile{
@@ -194,7 +188,7 @@ func fetchLatestVersion(version chan<- semver.Version) {
 			// The marshal call can not fail, so we ignore the error.
 			cacheContents, _ := json.Marshal(cacheObject)
 
-			if err := os.WriteFile(cacheFilePath, cacheContents, updateCheckFilePermissions); err != nil {
+			if err := os.WriteFile(cacheFilePath, cacheContents, osutil.PermissionDirectory); err != nil {
 				log.Printf("failed to write update cache file: %v", err)
 			} else {
 				log.Printf("updated cache file to version %s (expires on: %s)", cacheObject.Version, cacheObject.ExpiresOn)

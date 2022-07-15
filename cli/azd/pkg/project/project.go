@@ -61,7 +61,7 @@ func NewProject(path string, name string) (*Project, error) {
 		return nil, fmt.Errorf("preparing new project file contents: %w", err)
 	}
 
-	err = os.WriteFile(path, projectFileContents.Bytes(), 0644)
+	err = os.WriteFile(path, projectFileContents.Bytes(), osutil.PermissionFile)
 	if err != nil {
 		return nil, fmt.Errorf("writing project file: %w", err)
 	}

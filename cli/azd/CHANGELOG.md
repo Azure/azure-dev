@@ -10,7 +10,6 @@
 
 - Fixed an issue where passing `--help` to `azd` would result in an error message being printed to standard error before the help was printed.
 - [[#71]](https://github.com/Azure/azure-dev/issues/71) Fixed detection for disabled GitHub actions on new created repos.
-- [[#62]](https://github.com/Azure/azure-dev/issues/62) Fixed using template name and repository path.
 
 ### Other Changes
 

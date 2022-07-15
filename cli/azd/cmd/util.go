@@ -433,9 +433,9 @@ func askOnePrompt(p survey.Prompt, response interface{}) error {
 // promptTemplate ask the user to select a template.
 // A template with empty values is returned if the user selects 'Empty Template' from the choices
 func promptTemplate(ctx context.Context, message string, askOne Asker) (templates.Template, error) {
+	var result templates.Template
 	templateManager := templates.NewTemplateManager()
-	templates, err := templateManager.ListTemplates()
-	result := templateManager.EmptyTemplate()
+	templatesSet, err := templateManager.ListTemplates()
 
 	if err != nil {
 		return result, fmt.Errorf("prompting for template: %w", err)
@@ -443,8 +443,8 @@ func promptTemplate(ctx context.Context, message string, askOne Asker) (template
 
 	templateNames := []string{"Empty Template"}
 
-	for _, template := range templates {
-		templateNames = append(templateNames, template.Name)
+	for name := range templatesSet {
+		templateNames = append(templateNames, name)
 	}
 
 	var selectedTemplateIndex int
@@ -464,13 +464,7 @@ func promptTemplate(ctx context.Context, message string, askOne Asker) (template
 	selectedTemplateName := templateNames[selectedTemplateIndex]
 	log.Printf("Selected template: %s", fmt.Sprint(selectedTemplateName))
 
-	for _, template := range templates {
-		if template.Name == selectedTemplateName {
-			return template, nil
-		}
-	}
-
-	panic("Selecting template couldn't match the selection from the source templates")
+	return templatesSet[selectedTemplateName], nil
 }
 
 // promptLocation asks the user to select a location from a list of supported azure location

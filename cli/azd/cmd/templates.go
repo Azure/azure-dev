@@ -41,10 +41,15 @@ func templatesListCmd(rootOptions *commands.GlobalCommandOptions) *cobra.Command
 		Aliases: []string{"ls"},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			templateManager := templates.NewTemplateManager()
-			templateList, err := templateManager.ListTemplates()
+			templateSet, err := templateManager.ListTemplates()
 
 			if err != nil {
 				return err
+			}
+
+			templateList := make([]templates.Template, 0, len(templateSet))
+			for _, template := range templateSet {
+				templateList = append(templateList, template)
 			}
 
 			return formatTemplates(cmd, templateList...)

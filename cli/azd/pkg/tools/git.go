@@ -38,10 +38,13 @@ func NewGitCli() GitCli {
 
 func (cli *gitCli) versionInfo() VersionInfo {
 	return VersionInfo{
+		// Support version from 09-Dec-2018 08:40
+		// https://mirrors.edge.kernel.org/pub/software/scm/git/
+		// 4 years should cover most Linux out of the box version
 		MinimumVersion: semver.Version{
 			Major: 2,
-			Minor: 30,
-			Patch: 2},
+			Minor: 20,
+			Patch: 0},
 		UpdateCommand: "Visit https://git-scm.com/downloads to upgrade",
 	}
 }

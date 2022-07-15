@@ -72,6 +72,38 @@ func main() {
 	fmt.Printf("Generated documentation to %v", filename)
 }
 
+// addCodeFences adds Markdown code fences (i.e. ```) to example commands listed in help
+// text. An example command is a line which begins with a tab character and a dollar sign
+// (which signifies the terminal prompt). Blocks of example commands are preceded and terminated
+// by whitespace only lines.
+func addCodeFencesToSampleCommands(s string) string {
+	lines := strings.Split(s, "\n")
+	newLines := []string{}
+
+	inBlock := false
+	for idx, line := range lines {
+		// blank lines cause possible state changes...
+		if strings.TrimSpace(line) == "" {
+			if inBlock {
+				inBlock = false
+				newLines = append(newLines, "```")
+				newLines = append(newLines, line)
+			} else if !inBlock && idx+1 < len(lines) && strings.HasPrefix(lines[idx+1], "\t$") {
+				inBlock = true
+				newLines = append(newLines, line)
+				newLines = append(newLines, "```")
+			}
+		} else {
+			newLines = append(newLines, line)
+		}
+	}
+	if inBlock {
+		newLines = append(newLines, "```")
+	}
+
+	return strings.Join(newLines, "\n")
+}
+
 // genMarkdownFile writes the help document for a single command (and all sub commands) to an
 // io.Writer. It is similar to GenMarkdownTree from spf13/cobra/docs@v1.3.0 package, with some
 // small tweaks based on the output we want for docs.microsoft.com. The changes we have made:
@@ -114,11 +146,13 @@ func genMarkdownFile(w io.Writer, cmd *cobra.Command) error {
 // genMarkdownCustom is like `GetMarkdownCustom` from the spf13/cobra/docs@v1.3.0 package, with some
 // small tweaks based on the output we want for docs.microsoft.com. The changes we have made:
 //
-// - Don't include a link to the parent command in the "SEE ALSO" section when the parent command
+// - Don't include a link to the parent command in the "See also" section when the parent command
 //   is itself the root command (since the logic below will add the link at the end of the list)
 //
-// - Add a "Back to top" link at the end of every "SEE ALSO" section that links back to the root
+// - Add a "Back to top" link at the end of every "See also" section that links back to the root
 //   command.
+//
+// - We use addCodeFencesToSampleCommands to add code fences to the long help where needed.
 func genMarkdownCustom(cmd *cobra.Command, w io.Writer, linkHandler func(string) string) error {
 	cmd.InitDefaultHelpCmd()
 	cmd.InitDefaultHelpFlag()
@@ -130,7 +164,7 @@ func genMarkdownCustom(cmd *cobra.Command, w io.Writer, linkHandler func(string)
 	buf.WriteString(cmd.Short + "\n\n")
 	if len(cmd.Long) > 0 {
 		buf.WriteString("### Synopsis\n\n")
-		buf.WriteString(cmd.Long + "\n\n")
+		buf.WriteString(addCodeFencesToSampleCommands(cmd.Long) + "\n\n")
 	}
 
 	if cmd.Runnable() {
@@ -146,7 +180,7 @@ func genMarkdownCustom(cmd *cobra.Command, w io.Writer, linkHandler func(string)
 		return err
 	}
 	if hasSeeAlso(cmd) {
-		buf.WriteString("### SEE ALSO\n\n")
+		buf.WriteString("### See also\n\n")
 
 		if cmd.HasParent() {
 			parent := cmd.Parent()

@@ -67,7 +67,7 @@ func (sc *ServiceConfig) GetServiceTarget(ctx context.Context, env *environment.
 	case "", string(AppServiceTarget):
 		target = NewAppServiceTarget(sc, env, scope, azCli)
 	case string(ContainerAppTarget):
-		target = NewContainerAppTarget(sc, env, scope, azCli, tools.NewDocker())
+		target = NewContainerAppTarget(sc, env, scope, azCli, tools.NewDocker(tools.DockerArgs{}))
 	case string(AzureFunctionTarget):
 		target = NewFunctionAppTarget(sc, env, scope, azCli)
 	case string(StaticWebAppTarget):
@@ -97,7 +97,7 @@ func (sc *ServiceConfig) GetFrameworkService(ctx context.Context, env *environme
 	// For containerized applications we use a nested framework service
 	if sc.Host == string(ContainerAppTarget) {
 		sourceFramework := frameworkService
-		frameworkService = NewDockerProject(sc, env, tools.NewDocker(), sourceFramework)
+		frameworkService = NewDockerProject(sc, env, tools.NewDocker(tools.DockerArgs{}), sourceFramework)
 	}
 
 	return &frameworkService, nil

@@ -11,7 +11,7 @@ import (
 )
 
 func Test_DockerBuild(t *testing.T) {
-	docker := NewDocker()
+	docker := NewDocker(DockerArgs{})
 
 	cwd := "."
 	dockerFile := "./Dockerfile"
@@ -83,7 +83,7 @@ func Test_DockerBuild(t *testing.T) {
 }
 
 func Test_DockerBuildEmptyPlatform(t *testing.T) {
-	docker := NewDocker()
+	docker := NewDocker(DockerArgs{})
 
 	ran := false
 	cwd := "."
@@ -119,7 +119,7 @@ func Test_DockerBuildEmptyPlatform(t *testing.T) {
 }
 
 func Test_DockerTag(t *testing.T) {
-	docker := NewDocker()
+	docker := NewDocker(DockerArgs{})
 
 	cwd := "."
 	imageName := "image-name"
@@ -184,7 +184,7 @@ func Test_DockerTag(t *testing.T) {
 }
 
 func Test_DockerPush(t *testing.T) {
-	docker := NewDocker()
+	docker := NewDocker(DockerArgs{})
 
 	cwd := "."
 	tag := "customTag"

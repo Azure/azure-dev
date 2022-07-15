@@ -8,10 +8,18 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/executil"
 )
 
-func NewDocker() *Docker {
-	return &Docker{
-		runWithResultFn: executil.RunWithResult,
+func NewDocker(args DockerArgs) *Docker {
+	if args.RunWithResultFn == nil {
+		args.RunWithResultFn = executil.RunWithResult
 	}
+
+	return &Docker{
+		runWithResultFn: args.RunWithResultFn,
+	}
+}
+
+type DockerArgs struct {
+	RunWithResultFn func(ctx context.Context, args executil.RunArgs) (executil.RunResult, error)
 }
 
 type Docker struct {

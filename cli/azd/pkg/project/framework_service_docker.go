@@ -30,7 +30,7 @@ func (p *dockerProject) RequiredExternalTools() []tools.ExternalTool {
 }
 
 func (p *dockerProject) Package(ctx context.Context, progress chan<- string) (string, error) {
-	dockerOptions := getDockerOptionsWithDefaults(&p.config.Docker)
+	dockerOptions := getDockerOptionsWithDefaults(p.config.Docker)
 
 	log.Printf("building image for service %s, cwd: %s, path: %s, context: %s)", p.config.Name, p.config.Path(), dockerOptions.Path, dockerOptions.Context)
 
@@ -60,7 +60,7 @@ func NewDockerProject(config *ServiceConfig, env *environment.Environment, docke
 	}
 }
 
-func getDockerOptionsWithDefaults(options *DockerProjectOptions) DockerProjectOptions {
+func getDockerOptionsWithDefaults(options DockerProjectOptions) DockerProjectOptions {
 	if options.Path == "" {
 		options.Path = "./Dockerfile"
 	}
@@ -73,5 +73,5 @@ func getDockerOptionsWithDefaults(options *DockerProjectOptions) DockerProjectOp
 		options.Context = "."
 	}
 
-	return *options
+	return options
 }

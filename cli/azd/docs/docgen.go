@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"sort"
@@ -34,6 +35,9 @@ ms.prod: azure
 
 `
 
+// directoryMode is the mode applied to output directory we create.
+const directoryMode fs.FileMode = 0755
+
 func main() {
 	fmt.Println("Generating documentation")
 
@@ -42,25 +46,25 @@ func main() {
 	basename := strings.Replace(cmd.CommandPath(), " ", "_", -1) + ".md"
 	filename := filepath.Join("./md", basename)
 
-	if err := os.MkdirAll(filepath.Dir(filename), 0755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(filename), directoryMode); err != nil {
 		fmt.Printf("Error: %v", err)
 		os.Exit(1)
 	}
 
-	f, err := os.Create(filename)
+	docFile, err := os.Create(filename)
 	if err != nil {
 		fmt.Printf("Error: %v", err)
 		os.Exit(1)
 	}
-	defer f.Close()
+	defer docFile.Close()
 
 	// Write front-matter to the file:
-	if _, err := f.WriteString(fmt.Sprintf(fontMatterFormatString, time.Now().Format("01/02/06"))); err != nil {
+	if _, err := docFile.WriteString(fmt.Sprintf(fontMatterFormatString, time.Now().Format("01/02/06"))); err != nil {
 		fmt.Printf("Error: %v", err)
 		os.Exit(1)
 	}
 
-	if err := genMarkdownFile(f, cmd); err != nil {
+	if err := genMarkdownFile(docFile, cmd); err != nil {
 		fmt.Printf("Error: %v", err)
 		os.Exit(1)
 	}

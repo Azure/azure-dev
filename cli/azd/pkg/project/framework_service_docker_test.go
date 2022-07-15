@@ -44,7 +44,7 @@ services:
 			}, args.Args)
 
 			return executil.RunResult{
-				Stdout:   "",
+				Stdout:   "imageId",
 				Stderr:   "",
 				ExitCode: 0,
 			}, nil
@@ -66,7 +66,10 @@ services:
 	}()
 
 	framework := NewDockerProject(service.Config, &env, docker, internalFramework)
-	framework.Package(ctx, progress)
+	res, err := framework.Package(ctx, progress)
+
+	require.Equal(t, "imageId", res)
+	require.Nil(t, err)
 	require.Equal(t, "Building docker image", status)
 	require.Equal(t, true, ran)
 }
@@ -107,7 +110,7 @@ services:
 			}, args.Args)
 
 			return executil.RunResult{
-				Stdout:   "",
+				Stdout:   "imageId",
 				Stderr:   "",
 				ExitCode: 0,
 			}, nil
@@ -129,7 +132,10 @@ services:
 	}()
 
 	framework := NewDockerProject(service.Config, &env, docker, internalFramework)
-	framework.Package(ctx, progress)
+	res, err := framework.Package(ctx, progress)
+
+	require.Equal(t, "imageId", res)
+	require.Nil(t, err)
 	require.Equal(t, "Building docker image", status)
 	require.Equal(t, true, ran)
 }

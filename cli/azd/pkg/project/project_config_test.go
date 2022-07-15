@@ -39,7 +39,7 @@ services:
 	require.Equal(t, 2, len(projectConfig.Services))
 
 	for key, svc := range projectConfig.Services {
-		require.Equal(t, key, svc.ModuleName)
+		require.Equal(t, key, svc.Module)
 		require.Equal(t, key, svc.Name)
 		require.Equal(t, projectConfig, svc.Project)
 	}

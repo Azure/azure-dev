@@ -9,6 +9,7 @@ import (
 	"io/ioutil"
 	"log"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -99,6 +100,14 @@ func (at *containerAppTarget) Deploy(ctx context.Context, azdCtx *environment.Az
 	}
 
 	parametersFile := azdCtx.BicepParametersFilePath(at.env.GetEnvName(), at.config.ModuleName)
+
+	// If the bicep uses nested modules ensure the full directory tree
+	// is created before copying the parameters file.
+	directoryPath := filepath.Dir(parametersFile)
+	if err := os.MkdirAll(directoryPath, 0750); err != nil {
+		return ServiceDeploymentResult{}, fmt.Errorf("creating directory tree: %w", err)
+	}
+
 	err = ioutil.WriteFile(parametersFile, []byte(replaced), 0644)
 	if err != nil {
 		return ServiceDeploymentResult{}, fmt.Errorf("writing parameter file: %w", err)

@@ -8,6 +8,10 @@ import (
 	"errors"
 	"fmt"
 	"os/exec"
+	"regexp"
+
+	"github.com/azure/azure-dev/cli/azd/pkg/executil"
+	"github.com/blang/semver/v4"
 )
 
 type ExternalTool interface {
@@ -30,4 +34,36 @@ func toolInPath(name string) (bool, error) {
 	default:
 		return false, fmt.Errorf("failed searching for `%s` on PATH: %w", name, err)
 	}
+}
+
+type ErrSemver struct {
+	ToolName    string
+	versionInfo VersionInfo
+}
+
+type VersionInfo struct {
+	MinimumVersion semver.Version
+	UpdateCommand  string
+}
+
+func (err *ErrSemver) Error() string {
+	return fmt.Sprintf("need at least version %s or later of %s installed. %s %s version",
+		err.versionInfo.MinimumVersion.String(), err.ToolName, err.versionInfo.UpdateCommand, err.ToolName)
+}
+
+func extractSemver(cliOutput string) (semver.Version, error) {
+	ver := regexp.MustCompile(`\d+\.\d+\.\d+`).FindString(cliOutput)
+	semver, err := semver.Parse(ver)
+	if err != nil {
+		return semver, err
+	}
+	return semver, nil
+}
+
+func executeCommand(ctx context.Context, cmd string, args ...string) (string, error) {
+	runResult, err := executil.RunWithResult(ctx, executil.RunArgs{
+		Cmd:  cmd,
+		Args: args,
+	})
+	return runResult.Stdout, err
 }

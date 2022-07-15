@@ -113,6 +113,11 @@ func (i *initAction) Run(ctx context.Context, _ *cobra.Command, args []string, a
 	if i.template.Name != "" {
 		var templateUrl string
 
+		if i.template.RepositoryPath == "" {
+			// using template name directly from command line
+			i.template.RepositoryPath = i.template.Name
+		}
+
 		// treat names that start with http or git as full URLs and don't change them
 		if strings.HasPrefix(i.template.RepositoryPath, "git") || strings.HasPrefix(i.template.RepositoryPath, "http") {
 			templateUrl = i.template.RepositoryPath

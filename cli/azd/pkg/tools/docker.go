@@ -26,7 +26,7 @@ type Docker struct {
 	runWithResultFn func(ctx context.Context, args executil.RunArgs) (executil.RunResult, error)
 }
 
-// Build runs a docker build for a given Dockerfile, forcing the amd64 platform. If successful, it
+// Runs a Docker build for a given Dockerfile. If the platform is not specified (empty), it defaults to amd64. If the build is successful, the function
 // returns the image id of the built image.
 func (d *Docker) Build(ctx context.Context, cwd string, dockerFilePath string, platform string, buildContext string) (string, error) {
 	if strings.TrimSpace(platform) == "" {

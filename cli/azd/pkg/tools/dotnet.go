@@ -77,3 +77,19 @@ func (cli *dotNetCli) Restore(ctx context.Context, project string) error {
 func NewDotNetCli() DotNetCli {
 	return &dotNetCli{}
 }
+
+func (cli *dotNetCli) InitializeSecret(ctx context.Context, project string) error {
+	res, err := executil.RunCommandWithShell(ctx, "dotnet", "user-secrets", "init")
+	if err != nil {
+		return fmt.Errorf("failed to initialize secrets at project '%s': %w (%s)", project, err, res.String())
+	}
+	return nil
+}
+
+func (cli *dotNetCli) SetSecret(ctx context.Context, key string, value string, project string) error {
+	res, err := executil.RunCommand(ctx, "dotnet", "user-secrets", "set", key, value, "--project", project)
+	if err != nil {
+		return fmt.Errorf("failed running %s secret set %s: %w", cli.Name(), res.String(), err)
+	}
+	return nil
+}

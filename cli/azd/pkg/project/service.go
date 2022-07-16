@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/commands"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
@@ -88,7 +89,13 @@ func (svc *Service) Deploy(ctx context.Context, azdCtx *environment.AzdContext) 
 // If not found will assume resource name conventions
 func GetServiceResourceName(ctx context.Context, resourceGroupName string, serviceName string, env *environment.Environment) (string, error) {
 	azCli := commands.GetAzCliFromContext(ctx)
-	query := fmt.Sprintf("resources | where resourceGroup == '%s' | where tags['azd-service-name'] == '%s' | project id, name, type, tags, location", resourceGroupName, serviceName)
+	query := fmt.Sprintf(
+		"resources | where resourceGroup == '%s' | where tags['azd-service-name'] == '%s' | "+
+			"project id, name, type, tags, location",
+		// lowercase resource name as using capitals would result in resource group not found
+		// see: https://github.com/Azure/azure-dev/issues/115
+		strings.ToLower(resourceGroupName),
+		serviceName)
 	queryResult, err := azCli.GraphQuery(ctx, query, []string{env.GetSubscriptionId()})
 
 	if err != nil {

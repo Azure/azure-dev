@@ -23,12 +23,12 @@ func envCmd(rootOptions *commands.GlobalCommandOptions) *cobra.Command {
 		Short: "Manage environments.",
 		Long: `Manage environments.
 
-This command group allows you to create a new environment or to get, set and list your application environments. An application can have multiple environments, e.g., dev, test, prod, each with different configuration (i.e., connectivity information) for accessing Azure resources. 
+With this command group, you can create a new environment or get, set, and list your application environments. An application can have multiple environments (for example, dev, test, prod), each with a different configuration (that is, connectivity information) for accessing Azure resources. 
 
-You can find all environment configurations under the .azure\<environment-name> folder(s). The environment name is stored as the AZURE_ENV_NAME environment variable in .azure\<environment-name>\folder\.env. `,
+You can find all environment configurations under the *.azure\<environment-name>* folder. The environment name is stored as the AZURE_ENV_NAME environment variable in the *.azure\<environment-name>\folder\.env* file.`,
 	}
 
-	root.Flags().BoolP("help", "h", false, "Help for "+root.Name())
+	root.Flags().BoolP("help", "h", false, fmt.Sprintf("Gets help for %s.", root.Name()))
 	root.AddCommand(envSetCmd(rootOptions))
 	root.AddCommand(envSelectCmd(rootOptions))
 	root.AddCommand(envNewCmd(rootOptions))
@@ -82,7 +82,7 @@ func envSetCmd(rootOptions *commands.GlobalCommandOptions) *cobra.Command {
 		commands.ActionFunc(actionFn),
 		rootOptions,
 		"set <key> <value>",
-		"Set a value in the environment",
+		"Set a value in the environment.",
 		"",
 	)
 	cmd.Args = cobra.ExactArgs(2)
@@ -107,7 +107,7 @@ func envSelectCmd(rootOptions *commands.GlobalCommandOptions) *cobra.Command {
 		action,
 		rootOptions,
 		"select <environment>",
-		"Set the default environment",
+		"Set the default environment.",
 		"",
 	)
 	cmd.Args = cobra.ExactArgs(1)
@@ -115,9 +115,9 @@ func envSelectCmd(rootOptions *commands.GlobalCommandOptions) *cobra.Command {
 }
 
 func envListCmd(rootOptions *commands.GlobalCommandOptions) *cobra.Command {
-	return &cobra.Command{
+	cmd := &cobra.Command{
 		Use:     "list",
-		Short:   "List environments",
+		Short:   "List environments.",
 		Aliases: []string{"ls"},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx, err := environment.NewAzdContext()
@@ -164,6 +164,8 @@ func envListCmd(rootOptions *commands.GlobalCommandOptions) *cobra.Command {
 			return nil
 		},
 	}
+	cmd.Flags().BoolP("help", "h", false, fmt.Sprintf("Gets help for %s.", cmd.Name()))
+	return cmd
 }
 
 func envNewCmd(rootOptions *commands.GlobalCommandOptions) *cobra.Command {
@@ -197,7 +199,7 @@ func envNewCmd(rootOptions *commands.GlobalCommandOptions) *cobra.Command {
 		commands.ActionFunc(actionFn),
 		rootOptions,
 		"new <environment>",
-		"Create a new environment",
+		"Create a new environment.",
 		"",
 	)
 	cmd.Args = cobra.MaximumNArgs(1)
@@ -262,15 +264,15 @@ func envRefreshCmd(rootOptions *commands.GlobalCommandOptions) *cobra.Command {
 		commands.ActionFunc(actionFn),
 		rootOptions,
 		"refresh",
-		"Refresh environment settings using information from previous infrastructure provision",
+		"Refresh environment settings by using information from a previous infrastructure provision.",
 		"",
 	)
 }
 
 func envGetValuesCmd(rootOptions *commands.GlobalCommandOptions) *cobra.Command {
-	return &cobra.Command{
+	cmd := &cobra.Command{
 		Use:   "get-values",
-		Short: "Get all environment values",
+		Short: "Get all environment values.",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := context.Background()
@@ -310,4 +312,6 @@ func envGetValuesCmd(rootOptions *commands.GlobalCommandOptions) *cobra.Command 
 			return nil
 		},
 	}
+	cmd.Flags().BoolP("help", "h", false, fmt.Sprintf("Gets help for %s.", cmd.Name()))
+	return cmd
 }

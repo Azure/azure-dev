@@ -10,7 +10,7 @@ import (
 
 //Build builds a Cobra command, attaching an action
 func Build(action Action, rootOptions *GlobalCommandOptions, use string, short string, long string) *cobra.Command {
-	cobraCommand := &cobra.Command{
+	cmd := &cobra.Command{
 		Use:   use,
 		Short: short,
 		Long:  long,
@@ -32,9 +32,10 @@ func Build(action Action, rootOptions *GlobalCommandOptions, use string, short s
 			return action.Run(ctx, cmd, args, azdCtx)
 		},
 	}
+	cmd.Flags().BoolP("help", "h", false, fmt.Sprintf("Gets help for %s.", cmd.Name()))
 	action.SetupFlags(
-		cobraCommand.PersistentFlags(),
-		cobraCommand.Flags(),
+		cmd.PersistentFlags(),
+		cmd.Flags(),
 	)
-	return cobraCommand
+	return cmd
 }

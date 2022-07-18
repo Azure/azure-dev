@@ -18,22 +18,22 @@ func NewRootCmd() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "azd",
-		Short: "Azure Developer CLI (azd) - A CLI for developers building Azure solutions",
-		Long: `Azure Developer CLI (azd) - A CLI for developers building Azure solutions​
+		Short: "Azure Developer CLI is a command-line interface for developers who build Azure solutions.",
+		Long: `Azure Developer CLI is a command-line interface for developers who build Azure solutions.
 
-To begin working with azd, run the "azd up" command by supplying a sample template in an empty directory:​
-		
-	$ azd up –-template todo-nodejs-mongo​
-		
-You can pick a template by running "azd template list" and supply the repo name as value to "–-template".​
-		
-The most common commands from there are:​
-		
-	$ azd pipeline config​
+To begin working with Azure Developer CLI, run the ` + "`" + `azd up` + "`" + ` command by supplying a sample template in an empty directory:
+
+	$ azd up –-template todo-nodejs-mongo
+
+You can pick a template by running ` + "`" + `azd template` + "`" + ` list and then supplying the repo name as a value to ` + "`" + `–-template` + "`" + `.
+
+The most common next commands are:
+
+	$ azd pipeline config
 	$ azd deploy
 	$ azd monitor --overview
-		
-For more information, please visit the project page: https://aka.ms/azure-dev/devhub`,
+
+For more information, visit the Azure Developer CLI Dev Hub: https://aka.ms/azure-dev/devhub.`,
 		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 			if opts.Cwd != "" {
 				current, err := os.Getwd()
@@ -70,11 +70,11 @@ For more information, please visit the project page: https://aka.ms/azure-dev/de
 
 	cmd.DisableAutoGenTag = true
 	cmd.CompletionOptions.HiddenDefaultCmd = true
-	cmd.Flags().BoolP("help", "h", false, "Help for "+cmd.Name())
-	cmd.PersistentFlags().StringVarP(&opts.EnvironmentName, "environment", "e", "", "The name of the environment to use")
-	cmd.PersistentFlags().StringVarP(&opts.Cwd, "cwd", "C", "", "Set the current working directory")
-	cmd.PersistentFlags().BoolVar(&opts.EnableDebugLogging, "debug", false, "Enables debug/diagnostic logging")
-	cmd.PersistentFlags().BoolVar(&opts.NoPrompt, "no-prompt", false, "Accept default value instead of prompting, or fail if there is no default")
+	cmd.Flags().BoolP("help", "h", false, fmt.Sprintf("Gets help for %s.", cmd.Name()))
+	cmd.PersistentFlags().StringVarP(&opts.EnvironmentName, "environment", "e", "", "The name of the environment to use.")
+	cmd.PersistentFlags().StringVarP(&opts.Cwd, "cwd", "C", "", "Sets the current working directory.")
+	cmd.PersistentFlags().BoolVar(&opts.EnableDebugLogging, "debug", false, "Enables debugging and diagnostics logging.")
+	cmd.PersistentFlags().BoolVar(&opts.NoPrompt, "no-prompt", false, "Accepts the default value instead of prompting, or it fails if there is no default.")
 	cmd.SetHelpTemplate(fmt.Sprintf("%s\nPlease let us know how we are doing: https://aka.ms/azure-dev/hats\n", cmd.HelpTemplate()))
 
 	// the equivalent of AZURE_CORE_COLLECT_TELEMETRY

@@ -4,6 +4,8 @@
 package cmd
 
 import (
+	"fmt"
+
 	"github.com/azure/azure-dev/cli/azd/pkg/commands"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/spf13/cobra"
@@ -12,8 +14,9 @@ import (
 func infraCmd(rootOptions *commands.GlobalCommandOptions) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "infra",
-		Short: "Manage Azure resources",
+		Short: "Manage Azure resources.",
 	}
+	cmd.Flags().BoolP("help", "h", false, fmt.Sprintf("Gets help for %s.", cmd.Name()))
 
 	cmd.AddCommand(output.AddOutputParam(
 		infraCreateCmd(rootOptions),

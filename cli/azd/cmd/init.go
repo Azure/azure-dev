@@ -33,14 +33,13 @@ func initCmd(rootOptions *commands.GlobalCommandOptions) *cobra.Command {
 		},
 		rootOptions,
 		"init",
-		"Initialize a new application",
-		`Initialize a new application
+		"Initialize a new application.",
+		`Initialize a new application.
 
-When no template is supplied, you can optionally select an azd template for cloning. Otherwise, "azd init" initializes the current directory and creates resources so that your project is compatible with azd.
+When no template is supplied, you can optionally select an Azure Developer CLI template for cloning. Otherwise, `+"`"+`azd init`+"`"+`initializes the current directory and creates resources so that your project is compatible with Azure Developer CLI.
 
 When a template is provided, the sample code is cloned to the current directory.`,
 	)
-	cmd.Flags().BoolP("help", "h", false, "Help for "+cmd.Name())
 	return cmd
 }
 
@@ -60,8 +59,8 @@ func (i *initAction) SetupFlags(
 	persis *pflag.FlagSet,
 	local *pflag.FlagSet,
 ) {
-	local.StringVarP(&i.templateName, "template", "t", "", "Template to use when initializing the project. You can use: 1. Full URI 2. <owner>/<repository> or 3. <repository> - if part of the azure-samples organization ")
-	local.StringVarP(&i.templateBranch, "branch", "b", "", "The template branch to initialize from")
+	local.StringVarP(&i.templateName, "template", "t", "", "The template to use when you initialize the project. You can use Full URI, <owner>/<repository>, or <repository> if it's part of the azure-samples organization.")
+	local.StringVarP(&i.templateBranch, "branch", "b", "", "The template branch to initialize from.")
 }
 
 func (i *initAction) Run(ctx context.Context, _ *cobra.Command, args []string, azdCtx *environment.AzdContext) error {

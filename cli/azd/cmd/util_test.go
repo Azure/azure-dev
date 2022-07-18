@@ -6,11 +6,11 @@ import (
 	"sort"
 	"testing"
 
+	"github.com/AlecAivazis/survey/v2"
 	"github.com/azure/azure-dev/cli/azd/pkg/azureutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/stretchr/testify/require"
-	"github.com/vhvb1989/survey/v2"
 )
 
 func Test_promptEnvironmentName(t *testing.T) {

@@ -14,6 +14,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/AlecAivazis/survey/v2"
 	"github.com/azure/azure-dev/cli/azd/pkg/azureutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/commands"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
@@ -22,7 +23,6 @@ import (
 	"github.com/fatih/color"
 	"github.com/mattn/go-isatty"
 	"github.com/mgutz/ansi"
-	"github.com/vhvb1989/survey/v2"
 )
 
 type Asker func(p survey.Prompt, response interface{}) error

@@ -11,13 +11,13 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/AlecAivazis/survey/v2"
 	"github.com/azure/azure-dev/cli/azd/pkg/commands"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/github"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
-	"github.com/vhvb1989/survey/v2"
 )
 
 func pipelineCmd(rootOptions *commands.GlobalCommandOptions) *cobra.Command {

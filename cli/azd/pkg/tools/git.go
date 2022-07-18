@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/executil"
+	"github.com/blang/semver/v4"
 )
 
 type GitCli interface {
@@ -35,8 +36,37 @@ func NewGitCli() GitCli {
 	return &gitCli{}
 }
 
-func (cli *gitCli) CheckInstalled(_ context.Context) (bool, error) {
-	return toolInPath("git")
+func (cli *gitCli) versionInfo() VersionInfo {
+	return VersionInfo{
+		// Support version from 09-Dec-2018 08:40
+		// https://mirrors.edge.kernel.org/pub/software/scm/git/
+		// 4 years should cover most Linux out of the box version
+		MinimumVersion: semver.Version{
+			Major: 2,
+			Minor: 20,
+			Patch: 0},
+		UpdateCommand: "Visit https://git-scm.com/downloads to upgrade",
+	}
+}
+
+func (cli *gitCli) CheckInstalled(ctx context.Context) (bool, error) {
+	found, err := toolInPath("git")
+	if !found {
+		return false, err
+	}
+	gitRes, err := executeCommand(ctx, "git", "--version")
+	if err != nil {
+		return false, fmt.Errorf("checking %s version: %w", cli.Name(), err)
+	}
+	gitSemver, err := extractSemver(gitRes)
+	if err != nil {
+		return false, fmt.Errorf("converting to semver version fails: %w", err)
+	}
+	updateDetail := cli.versionInfo()
+	if gitSemver.LT(updateDetail.MinimumVersion) {
+		return false, &ErrSemver{ToolName: cli.Name(), versionInfo: updateDetail}
+	}
+	return true, nil
 }
 
 func (cli *gitCli) InstallUrl() string {

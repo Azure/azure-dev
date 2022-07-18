@@ -10,6 +10,7 @@ azdtempl
 azdtest
 azsdk
 AZURECLI
+azurestaticapps
 azureutil
 byts
 containerapp
@@ -35,12 +36,13 @@ omitempty
 osutil
 pflag
 pyapp
+keychain
 restoreapp
 rzip
 sstore
 staticwebapp
 structs
 swacli
-unmarshaling
+unmarshalling
 westus2
 yacspin

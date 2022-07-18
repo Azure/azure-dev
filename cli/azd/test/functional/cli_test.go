@@ -421,7 +421,7 @@ func filterEnviron(toExclude ...string) []string {
 func copySample(targetRoot string, sampleName string) error {
 	sampleRoot := filepath.Join(filepath.Dir(azdcli.GetAzdLocation()), "test", "samples", sampleName)
 
-	return filepath.Walk(sampleRoot, func(name string, info fs.FileInfo, err error) error {
+	return filepath.WalkDir(sampleRoot, func(name string, info fs.DirEntry, err error) error {
 		// If there was some error that was preventing is from walking into the directory, just fail now,
 		// not much we can do to recover.
 		if err != nil {

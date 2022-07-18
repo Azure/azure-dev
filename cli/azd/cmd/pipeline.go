@@ -404,7 +404,7 @@ func ensureGitHubLogin(ctx context.Context, ghCli tools.GitHubCli, hostname stri
 		}
 
 		if !accept {
-			return errors.New("interactive GitHub login declined; use `gh login` to log into GitHub")
+			return errors.New("interactive GitHub login declined; use `gh auth login` to log into GitHub")
 		}
 
 		if err := ghCli.Login(ctx, hostname); err == nil {

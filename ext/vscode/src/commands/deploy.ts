@@ -11,7 +11,7 @@ import { getAzDevTerminalTitle, getWorkingFolder } from './cmdUtil';
 export async function deploy(context: IActionContext, selectedFile?: vscode.Uri): Promise<void> {
     const workingFolder = await getWorkingFolder(context, selectedFile);
 
-    const azureCli = createAzureDevCli();
+    const azureCli = await createAzureDevCli(context);
 
     // Only supporting "deploy all" mode (no support for deploying individual services)
     // until https://github.com/Azure/azure-dev/issues/696 is resolved.

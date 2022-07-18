@@ -58,6 +58,9 @@
     "azure-dev.utils.quickPickWorkspaceFolder.title": "Open Folder",
     "azure-dev.utils.spawn.exited": "Process '{0}' exited with code {1}",
     "azure-dev.utils.spawn.exitError": "\nError: {0}",
+    "azure-dev.utils.azd.notInstalled": "Azure Developer CLI is not installed. Visit {0} to get it.",
+    "azure-dev.utils.azd.goToInstallUrl": "Go to {0}",
+    "azure-dev.utils.azd.later": "Later",
 
     "azure-dev.tasks.dotenv.properties.file": "The .env file to use to populate the target task environment",
     "azure-dev.tasks.dotenv.properties.targetTasks": "Name of the task(s) that will be launched with environment populated from the .env file",

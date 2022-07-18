@@ -10,6 +10,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -23,8 +24,8 @@ import (
 // generate. This string is formatted with a single value, the
 // current date in MM/DD/YY format.
 const fontMatterFormatString = `---
-title: Azure Developer CLI (azd) reference
-description: Reference for Azure Developer CLI (azd).
+title: Azure Developer CLI Preview reference
+description: This article explains the syntax and parameters for the various Azure Developer CLI Preview commands.
 author: puichan
 ms.author: puichan
 ms.date: %v
@@ -32,6 +33,10 @@ ms.topic: conceptual
 ms.custom: devx-track-azdevcli
 ms.prod: azure
 ---
+
+# Azure Developer CLI Preview reference
+
+This article explains the syntax and parameters for the various Azure Developer CLI Preview commands.
 
 `
 
@@ -92,6 +97,8 @@ func addCodeFencesToSampleCommands(s string) string {
 				inBlock = true
 				newLines = append(newLines, line)
 				newLines = append(newLines, "```")
+			} else {
+				newLines = append(newLines, line)
 			}
 		} else {
 			newLines = append(newLines, line)
@@ -143,6 +150,21 @@ func genMarkdownFile(w io.Writer, cmd *cobra.Command) error {
 	return nil
 }
 
+var linkRegexp = regexp.MustCompile(`(https://[^ ]*)`)
+
+func convertLinksToMarkdown(s string) string {
+	return linkRegexp.ReplaceAllStringFunc(s, func(link string) string {
+		// assume a trailing period ends a sentence vs being part of the
+		// url
+		if strings.HasSuffix(link, ".") {
+			link = link[:len(link)-1]
+			return fmt.Sprintf("[%s](%s).", link, link)
+		} else {
+			return fmt.Sprintf("[%s](%s)", link, link)
+		}
+	})
+}
+
 // genMarkdownCustom is like `GetMarkdownCustom` from the spf13/cobra/docs@v1.3.0 package, with some
 // small tweaks based on the output we want for docs.microsoft.com. The changes we have made:
 //
@@ -153,6 +175,8 @@ func genMarkdownFile(w io.Writer, cmd *cobra.Command) error {
 //   command.
 //
 // - We use addCodeFencesToSampleCommands to add code fences to the long help where needed.
+//
+// - We format URLs as markdown links (the text of the link is the URL).
 func genMarkdownCustom(cmd *cobra.Command, w io.Writer, linkHandler func(string) string) error {
 	cmd.InitDefaultHelpCmd()
 	cmd.InitDefaultHelpFlag()
@@ -164,7 +188,7 @@ func genMarkdownCustom(cmd *cobra.Command, w io.Writer, linkHandler func(string)
 	buf.WriteString(cmd.Short + "\n\n")
 	if len(cmd.Long) > 0 {
 		buf.WriteString("### Synopsis\n\n")
-		buf.WriteString(addCodeFencesToSampleCommands(cmd.Long) + "\n\n")
+		buf.WriteString(convertLinksToMarkdown(addCodeFencesToSampleCommands(cmd.Long)) + "\n\n")
 	}
 
 	if cmd.Runnable() {
@@ -191,7 +215,7 @@ func genMarkdownCustom(cmd *cobra.Command, w io.Writer, linkHandler func(string)
 				pname := parent.CommandPath()
 				link := pname + ".md"
 				link = strings.Replace(link, " ", "_", -1)
-				buf.WriteString(fmt.Sprintf("* [%s](%s)\t - %s\n", pname, linkHandler(link), parent.Short))
+				buf.WriteString(fmt.Sprintf("* [%s](%s): %s\n", pname, linkHandler(link), parent.Short))
 			}
 			cmd.VisitParents(func(c *cobra.Command) {
 				if c.DisableAutoGenTag {
@@ -210,7 +234,7 @@ func genMarkdownCustom(cmd *cobra.Command, w io.Writer, linkHandler func(string)
 			cname := name + " " + child.Name()
 			link := cname + ".md"
 			link = strings.Replace(link, " ", "_", -1)
-			buf.WriteString(fmt.Sprintf("* [%s](%s)\t - %s\n", cname, linkHandler(link), child.Short))
+			buf.WriteString(fmt.Sprintf("* [%s](%s): %s\n", cname, linkHandler(link), child.Short))
 		}
 
 		// for child commands, write a link back to the root command with the text "Back to top".

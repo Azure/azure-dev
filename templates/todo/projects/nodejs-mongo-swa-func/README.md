@@ -41,7 +41,7 @@ azd up --template todo-nodejs-mongo-swa-func
 
 You will be prompted for the following information:
 
-- `Environment Name`: This will be used as a prefix for the resource group that will be created to hold all Azure resources.
+- `Environment Name`: This will be used as a prefix for the resource group that will be created to hold all Azure resources. This name should be unique within your Azure subscription.
 - `Azure Location`: The Azure location where your resources will be deployed.
 - `Azure Subscription`: The Azure Subscription where your resources will be deployed.
 

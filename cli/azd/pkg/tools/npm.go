@@ -51,7 +51,7 @@ func (cli *npmCli) CheckInstalled(ctx context.Context) (bool, error) {
 	}
 	updateDetailNode := cli.versionInfoNode()
 	if nodeSemver.Compare(updateDetailNode.MinimumVersion) == -1 {
-		return false, &ErrSemver{ToolName: cli.Name(), versionInfo: updateDetailNode}
+		return false, &ErrSemver{ToolName: "Node.js", versionInfo: updateDetailNode}
 	}
 
 	return true, nil

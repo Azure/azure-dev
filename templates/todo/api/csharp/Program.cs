@@ -9,9 +9,7 @@ builder.Configuration.AddAzureKeyVault(new Uri(builder.Configuration["AZURE_KEY_
 builder.Services.AddSingleton<ListsRepository>();
 builder.Services.AddSingleton(_ => new MongoClient(builder.Configuration[builder.Configuration["AZURE_COSMOS_CONNECTION_STRING_KEY"]]));
 builder.Services.AddControllers();
-
-var options = new ApplicationInsightsServiceOptions { ConnectionString = builder.Configuration["APPLICATIONINSIGHTS_CONNECTION_STRING"] };
-builder.Services.AddApplicationInsightsTelemetry(options);
+builder.Services.AddApplicationInsightsTelemetry(builder.Configuration);
 
 var app = builder.Build();
 

@@ -89,10 +89,10 @@ func (svc *Service) Deploy(ctx context.Context, azdCtx *environment.AzdContext) 
 // If not found will assume resource name conventions
 func GetServiceResourceName(ctx context.Context, resourceGroupName string, serviceName string, env *environment.Environment) (string, error) {
 	azCli := commands.GetAzCliFromContext(ctx)
-	query := fmt.Sprintf(
-		"resources | where resourceGroup == '%s' | where tags['azd-service-name'] == '%s' | "+
-			"project id, name, type, tags, location",
-		// lowercase resource name as using capitals would result in resource group not found
+	query := fmt.Sprintf(`resources | 
+		where resourceGroup == '%s' | where tags['azd-service-name'] == '%s' |
+		project id, name, type, tags, location`,
+		// The Resource Graph queries have resource groups all lower-cased
 		// see: https://github.com/Azure/azure-dev/issues/115
 		strings.ToLower(resourceGroupName),
 		serviceName)

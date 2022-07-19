@@ -135,10 +135,9 @@ stages:
 
           - task: PublishCodeCoverageResults@1
             condition: and(succeeded(), eq(variables['GenerateCoverage'], 'true'))
-            workingDirectory: cli/azd
             inputs:
               codeCoverageTool: Cobertura
-              summaryFileLocation: './coverage.xml'
+              summaryFileLocation: '$(Build.SourcesDirectory)/**/coverage.xml'
             displayName: Publish Code Coverage to DevOps
 
           - pwsh: Move-Item $(BuildOutputName) $(BuildTarget)

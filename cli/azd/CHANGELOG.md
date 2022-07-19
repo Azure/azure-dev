@@ -4,6 +4,8 @@
 
 ### Features Added
 
+- [[#100](https://github.com/Azure/azure-dev/pull/100) Add support for an optional `docker` section in service configuration to control advanced docker options.
+
 ### Breaking Changes
 
 ### Bugs Fixed

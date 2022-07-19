@@ -1,2 +1,6 @@
-*.go text eol=lf 
-*.txt text eol=lf
+**/*.go text eol=lf
+**/*.txt text eol=lf
+**/*.sh text eol=lf
+# use crlf for win-script files like .cmd and .bat
+**/*.{cmd,[cC][mM][dD]} text eol=crlf
+**/*.{bat,[bB][aA][tT]} text eol=crlf

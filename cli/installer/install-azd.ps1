@@ -165,6 +165,10 @@ try {
         if ($LASTEXITCODE) {
             Write-Host "Writing to $InstallFolder/ requires elevated permission. You may be prompted to enter credentials."
             sudo cp "$tempFolder/decompress/$binFilename" $outputFilename
+            if ($LASTEXITCODE) {
+                Write-Error "Could not copy $tempfolder/decompress/$binFilename to $outputFilename"
+                exit 1
+            }
         } else {
             Copy-Item "$tempFolder/decompress/$binFilename" $outputFilename  -ErrorAction Stop| Out-Null
         }

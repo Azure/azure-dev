@@ -27,6 +27,10 @@ if (isLinuxOrMac) {
     if ($LASTEXITCODE) {
         Write-Host "Writing to $InstallFolder/ requires elevated permission. You may be promtped to enter credentials."
         sudo rm $installLocation
+        if ($LASTEXITCODE) {
+            Write-Error "Could not remove azd from $installLocation"
+            exit 1
+        }
     } else {
         Remove-Item $installLocation
     }

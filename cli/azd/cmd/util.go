@@ -572,3 +572,8 @@ func printWithStyling(text string, a ...interface{}) {
 	colorTerminal := color.New()
 	colorTerminal.Printf(text, a...)
 }
+
+// withBackticks wraps text with the backtick (`) character.
+func withBackticks(text string) string {
+	return "`" + text + "`"
+}

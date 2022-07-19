@@ -21,11 +21,11 @@ func NewRootCmd() *cobra.Command {
 		Short: "Azure Developer CLI is a command-line interface for developers who build Azure solutions.",
 		Long: `Azure Developer CLI is a command-line interface for developers who build Azure solutions.
 
-To begin working with Azure Developer CLI, run the ` + "`" + `azd up` + "`" + ` command by supplying a sample template in an empty directory:
+To begin working with Azure Developer CLI, run the ` + withBackticks("azd up") + ` command by supplying a sample template in an empty directory:
 
 	$ azd up –-template todo-nodejs-mongo
 
-You can pick a template by running ` + "`" + `azd template` + "`" + ` list and then supplying the repo name as a value to ` + "`" + `–-template` + "`" + `.
+You can pick a template by running ` + withBackticks("azd template list") + `and then supplying the repo name as a value to ` + withBackticks("--template") + `.
 
 The most common next commands are:
 

@@ -52,8 +52,8 @@ Download the installer and install the "daily" build
 #>
 
 param(
-    [string] $BaseUrl = "https://azuresdkreleasepreview.blob.core.windows.net/azd/standalone/release",
-    [string] $Version = "daily",
+    [string] $BaseUrl = "https://azure-dev.azureedge.net/azd/standalone/release",
+    [string] $Version = "latest",
     [switch] $DryRun,
     [string] $InstallFolder = "$($env:LocalAppData)\Programs\Azure Dev CLI",
     [switch] $NoPath,

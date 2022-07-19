@@ -72,7 +72,8 @@ if (!$InstallFolder) {
 }
 
 $binFilename = 'azd-windows-amd64.exe'
-$packageFilename = 'azd-windows-amd64.zip'
+$extension = 'zip'
+$packageFilename = "azd-windows-amd64.$extension"
 
 if (isLinuxOrMac) {
     $platform = 'linux'

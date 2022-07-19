@@ -16,6 +16,56 @@ words:
     - azdo
 ignoreWords:
     - magefile
+    - afwp
+    - appcs
+    - appi
+    - arck
+    - Bfor
+    - cdne
+    - cdnp
+    - databricks
+    - dedb
+    - dnsz
+    - evgd
+    - evgs
+    - evgt
+    - evhns
+    - fdfp
+    - Frontdoor
+    - ippre
+    - kubernetes
+    - kusto
+    - migr
+    - nsgsr
+    - ntfns
+    - osdisk
+    - pcert
+    - pdnsz
+    - Peerings
+    - provs
+    - psql
+    - pview
+    - sigr
+    - snet
+    - sqldb
+    - sqldw
+    - sqlmi
+    - sqlstrdb
+    - srch
+    - ssimp
+    - stapp
+    - stvm
+    - syndp
+    - synsp
+    - synw
+    - traf
+    - vmss
+    - vnet
+    - vpng
+    - vwan
+    - wafrg
+    - Wans
+    - apim
 useGitignore: true
 dictionaryDefinitions:
     - name: gitHubUserAliases

@@ -3,8 +3,12 @@ param location string
 param tags object
 param workspaceId string
 
+// TODO: This path will need to be updated by future repoman update to do find/replace on paths.
+//var prefixes = loadJsonContent('../../../../common/infra/prefixes.json')
+var prefixes = loadJsonContent('./prefixes.json')
+
 resource applicationInsights 'Microsoft.Insights/components@2020-02-02' = {
-  name: 'appi-${resourceToken}'
+  name: '${prefixes.insightsComponents}${resourceToken}'
   location: location
   tags: tags
   kind: 'web'
@@ -16,7 +20,7 @@ resource applicationInsights 'Microsoft.Insights/components@2020-02-02' = {
 
 // 2020-09-01-preview because that is the latest valid version
 resource applicationInsightsDashboard 'Microsoft.Portal/dashboards@2020-09-01-preview' = {
-  name: 'appid-${resourceToken}'
+  name: '${prefixes.portalDashboards}${resourceToken}'
   location: location
   tags: tags
   properties: {

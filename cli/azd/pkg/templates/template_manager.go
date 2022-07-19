@@ -10,14 +10,20 @@ import (
 type TemplateManager struct {
 }
 
-func (tm *TemplateManager) ListTemplates() ([]Template, error) {
+// Get a set of templates where each key is the name of the template
+func (tm *TemplateManager) ListTemplates() (map[string]Template, error) {
+	result := make(map[string]Template)
 	var templates []Template
 	err := json.Unmarshal(resources.TemplatesJson, &templates)
 	if err != nil {
 		return nil, fmt.Errorf("unable to unmarshal templates JSON %w", err)
 	}
 
-	return templates, nil
+	for _, template := range templates {
+		result[template.Name] = template
+	}
+
+	return result, nil
 }
 
 func (tm *TemplateManager) GetTemplate(templateName string) (Template, error) {
@@ -27,20 +33,11 @@ func (tm *TemplateManager) GetTemplate(templateName string) (Template, error) {
 		return Template{}, fmt.Errorf("unable to list templates: %w", err)
 	}
 
-	var matchingTemplate *Template
-
-	for _, template := range templates {
-		if template.Name == templateName {
-			matchingTemplate = &template
-			break
-		}
+	if matchingTemplate, ok := templates[templateName]; ok {
+		return matchingTemplate, nil
 	}
 
-	if matchingTemplate == nil {
-		return Template{}, fmt.Errorf("template with name '%s' was not found", templateName)
-	}
-
-	return *matchingTemplate, nil
+	return Template{}, fmt.Errorf("template with name '%s' was not found", templateName)
 }
 
 func NewTemplateManager() *TemplateManager {

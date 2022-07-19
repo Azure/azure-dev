@@ -10,5 +10,5 @@ RUN apk add curl libc6-compat tar
 COPY ./*.sh ./
 RUN cat install-azd.sh \
     | ${shell} -s -- --verbose --base-url "$baseUrl" --version "$version"  \
-    && azd --help \
+    && azd version \
     && cat uninstall-azd.sh | ${shell}

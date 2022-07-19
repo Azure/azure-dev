@@ -23,14 +23,14 @@ import (
 func pipelineCmd(rootOptions *commands.GlobalCommandOptions) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "pipeline",
-		Short: "Manage GitHub Actions pipelines",
-		Long: `Manage GitHub Actions pipelines
+		Short: "Manage GitHub Actions pipelines.",
+		Long: `Manage GitHub Actions pipelines.
 
-azd template includes a GitHub Actions pipeline configuration file (find within folder .github/workflows) that will deploy your application whenever code is pushed to the main branch.
-		
-For more information, please visit: https://aka.ms/azure-dev/pipeline`,
+The Azure Developer CLI template includes a GitHub Actions pipeline configuration file (in the *.github/workflows* folder) that deploys your application whenever code is pushed to the main branch.
+
+For more information, go to https://aka.ms/azure-dev/pipeline.`,
 	}
-	cmd.Flags().BoolP("help", "h", false, "Help for "+cmd.Name())
+	cmd.Flags().BoolP("help", "h", false, fmt.Sprintf("Gets help for %s.", cmd.Name()))
 	cmd.AddCommand(pipelineConfigCmd(rootOptions))
 	return cmd
 }
@@ -40,12 +40,11 @@ func pipelineConfigCmd(rootOptions *commands.GlobalCommandOptions) *cobra.Comman
 		&pipelineConfigAction{rootOptions: rootOptions},
 		rootOptions,
 		"config",
-		"Create and configure your deployment pipeline using GitHub Actions",
-		`Create and configure your deployment pipeline using GitHub Actions
-		
-For more information, please visit: https://aka.ms/azure-dev/pipeline`,
+		"Create and configure your deployment pipeline by using GitHub Actions.",
+		`Create and configure your deployment pipeline by using GitHub Actions.
+
+For more information, go to https://aka.ms/azure-dev/pipeline.`,
 	)
-	cmd.Flags().BoolP("help", "h", false, "Help for "+cmd.Name())
 	return cmd
 }
 
@@ -60,9 +59,9 @@ func (p *pipelineConfigAction) SetupFlags(
 	persis *pflag.FlagSet,
 	local *pflag.FlagSet,
 ) {
-	local.StringVar(&p.pipelineServicePrincipalName, "principal-name", "", "The name of the service principal to use to grant access to Azure resources as part of the pipeline")
-	local.StringVar(&p.pipelineRemoteName, "remote-name", "origin", "The name of the git remote to configure the pipeline to run on")
-	local.StringVar(&p.pipelineRoleName, "principal-role", "Contributor", "Role to assign to the service principal")
+	local.StringVar(&p.pipelineServicePrincipalName, "principal-name", "", "The name of the service principal to use to grant access to Azure resources as part of the pipeline.")
+	local.StringVar(&p.pipelineRemoteName, "remote-name", "origin", "The name of the git remote to configure the pipeline to run on.")
+	local.StringVar(&p.pipelineRoleName, "principal-role", "Contributor", "The role to assign to the service principal.")
 }
 
 func (p *pipelineConfigAction) Run(ctx context.Context, _ *cobra.Command, args []string, azdCtx *environment.AzdContext) error {

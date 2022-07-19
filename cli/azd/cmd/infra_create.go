@@ -37,7 +37,7 @@ func infraCreateCmd(rootOptions *commands.GlobalCommandOptions) *cobra.Command {
 		},
 		rootOptions,
 		"create",
-		"Create Azure resources for an application",
+		"Create Azure resources for an application.",
 		"",
 	)
 
@@ -46,7 +46,7 @@ func infraCreateCmd(rootOptions *commands.GlobalCommandOptions) *cobra.Command {
 }
 
 func (ica *infraCreateAction) SetupFlags(persis, local *pflag.FlagSet) {
-	local.BoolVar(&ica.noProgress, "no-progress", false, "Suppress progress information")
+	local.BoolVar(&ica.noProgress, "no-progress", false, "Suppresses progress information.")
 }
 
 func (ica *infraCreateAction) Run(ctx context.Context, cmd *cobra.Command, args []string, azdCtx *environment.AzdContext) error {

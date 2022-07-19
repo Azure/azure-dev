@@ -13,7 +13,7 @@ func downCmd(rootOptions *commands.GlobalCommandOptions) *cobra.Command {
 		},
 		rootOptions,
 		"down",
-		"Delete Azure resources for an application",
+		"Delete Azure resources for an application.",
 		"",
 	)
 

@@ -413,16 +413,24 @@ stages:
 
               ### Install scripts
 
-              MacOS/Linux
+              #### MacOS/Linux
 
               > May elevate using ``sudo`` on some platforms and configurations
 
+              bash:
               ``````
               curl -fsSL $urlBase/uninstall-azd.sh | bash;
               curl -fsSL $urlBase/install-azd.sh | bash -s -- --base-url $urlBase --version '' --verbose
               ``````
 
-              Windows
+              pwsh:
+              ``````
+              Invoke-RestMethod '$urlBase/uninstall-azd.ps1' -OutFile uninstall-azd.ps1; ./uninstall-azd.ps1
+              Invoke-RestMethod '$urlBase/install-azd.ps1' -OutFile install-azd.ps1; ./install-azd.ps1 -BaseUrl '$urlBase' -Version '' -Verbose
+              ``````
+
+
+              #### Windows
               ``````
               powershell -c "Set-ExecutionPolicy Bypass Process; irm '$urlBase/uninstall-azd.ps1' > uninstall-azd.ps1; ./uninstall-azd.ps1;"
               powershell -c "Set-ExecutionPolicy Bypass Process; irm '$urlBase/install-azd.ps1' > install-azd.ps1; ./install-azd.ps1 -BaseUrl '$urlBase' -Version '' -Verbose;"
@@ -512,8 +520,8 @@ stages:
               Pool: Azure Pipelines
               OSVmImage: macOS-11
               TestShell: pwsh
-              TestCommand: > 
-                ./install-azd.ps1 -BaseUrl $env:BASEURL -Version '' 
+              TestCommand: >
+                ./install-azd.ps1 -BaseUrl $env:BASEURL -Version ''
                 && azd version
         pool:
           name: $(Pool)

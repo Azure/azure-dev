@@ -23,6 +23,12 @@ dictionaryDefinitions:
 dictionaries:
   - azdProjectDictionary
 overrides:
+  - filename: docs/docgen.go
+    words:
+      - pname
+      - puichan
+      - devx
+      - azdevcli
   - filename: pkg/tools/python.go
     words:
       - venv

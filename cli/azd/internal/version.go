@@ -18,6 +18,10 @@ const UnknownVersion string = "unknown"
 const UnknownCommit string = "unknown"
 
 type VersionSpec struct {
+	Azd AzdVersionSpec `json:"azd"`
+}
+
+type AzdVersionSpec struct {
 	Version string `json:"version"`
 	Commit  string `json:"commit"`
 }
@@ -37,19 +41,23 @@ func GetVersionNumber() string {
 
 // Non-whitespace (version number), followed by some whitespace, followed by open parenthesis, optional whitespace, and word 'commit',
 // followed by not-whitespace, not-closing-parenthesis (commit hash), followed by optional whitespace and closing parenthesis.
-var versionStrRegex = regexp.MustCompile(`(\S+)\s+\(\s*commit\s+([^)\s]+)\s*\)`)
+var azdVersionStrRegex = regexp.MustCompile(`(\S+)\s+\(\s*commit\s+([^)\s]+)\s*\)`)
 
 func GetVersionSpec() VersionSpec {
-	matches := versionStrRegex.FindStringSubmatch(Version)
+	matches := azdVersionStrRegex.FindStringSubmatch(Version)
 	if matches == nil {
 		return VersionSpec{
-			Version: UnknownVersion,
-			Commit:  UnknownCommit,
+			Azd: AzdVersionSpec{
+				Version: UnknownVersion,
+				Commit:  UnknownCommit,
+			},
 		}
 	} else {
 		return VersionSpec{
-			Version: matches[1],
-			Commit:  matches[2],
+			Azd: AzdVersionSpec{
+				Version: matches[1],
+				Commit:  matches[2],
+			},
 		}
 	}
 }

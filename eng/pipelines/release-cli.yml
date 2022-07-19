@@ -42,6 +42,7 @@ stages:
               BuildOutputName: azd
               SetExecutableBit: true
               SetShieldInfo: true
+              GenerateCoverage: true
             Mac:
               Pool: Azure Pipelines
               OSVmImage: macOS-11
@@ -121,6 +122,24 @@ stages:
               # Set GITHUB_RUN_NUMBER because cli_test.go is coupled to that
               # environment variable.
               GITHUB_RUN_NUMBER: $(Build.BuildId)
+
+          - pwsh: |
+              go install github.com/axw/gocov/gocov@latest
+              if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+              go install github.com/AlekSi/gocov-xml@latest
+              if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+              gocov convert cover.out | gocov-xml > coverage.xml
+            workingDirectory: cli/azd
+            condition: and(succeeded(), eq(variables['GenerateCoverage'], 'true'))
+            displayName: Generate coverage
+
+          - task: PublishCodeCoverageResults@1
+            condition: and(succeeded(), eq(variables['GenerateCoverage'], 'true'))
+            workingDirectory: cli/azd
+            inputs:
+              codeCoverageTool: Cobertura
+              summaryFileLocation: './coverage.xml'
+            displayName: Publish Code Coverage to DevOps
 
           - pwsh: Move-Item $(BuildOutputName) $(BuildTarget)
             workingDirectory: cli/azd

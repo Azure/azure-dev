@@ -128,7 +128,7 @@ stages:
               if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
               go install github.com/AlekSi/gocov-xml@latest
               if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-              gocov convert cover.out | gocov-xml > coverage.xml
+              ~/go/bin/gocov convert cover.out | ~/go/bin/gocov-xml > coverage.xml
             workingDirectory: cli/azd
             condition: and(succeeded(), eq(variables['GenerateCoverage'], 'true'))
             displayName: Generate coverage

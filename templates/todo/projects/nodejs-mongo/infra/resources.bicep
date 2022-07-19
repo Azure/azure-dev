@@ -3,8 +3,12 @@ param principalId string = ''
 param resourceToken string
 param tags object
 
+// TODO: This path will need to be updated by future repoman update to do find/replace on paths.
+// var prefixes = loadJsonContent('../../../../common/infra/prefixes.json')
+var prefixes = loadJsonContent('./prefixes.json')
+
 resource web 'Microsoft.Web/sites@2021-03-01' = {
-  name: 'app-web-${resourceToken}'
+  name: '${prefixes.webSitesAppService}web-${resourceToken}'
   location: location
   tags: union(tags, {
       'azd-service-name': 'web'
@@ -55,7 +59,7 @@ resource web 'Microsoft.Web/sites@2021-03-01' = {
 }
 
 resource api 'Microsoft.Web/sites@2021-03-01' = {
-  name: 'app-api-${resourceToken}'
+  name: '${prefixes.webSitesAppService}api-${resourceToken}'
   location: location
   tags: union(tags, {
       'azd-service-name': 'api'
@@ -112,7 +116,7 @@ resource api 'Microsoft.Web/sites@2021-03-01' = {
 }
 
 resource appServicePlan 'Microsoft.Web/serverfarms@2021-03-01' = {
-  name: 'plan-${resourceToken}'
+  name: '${prefixes.webServerFarms}${resourceToken}'
   location: location
   tags: tags
   sku: {
@@ -124,7 +128,7 @@ resource appServicePlan 'Microsoft.Web/serverfarms@2021-03-01' = {
 }
 
 resource keyVault 'Microsoft.KeyVault/vaults@2021-10-01' = {
-  name: 'keyvault${resourceToken}'
+  name: '${prefixes.keyVaultVaults}${resourceToken}'
   location: location
   tags: tags
   properties: {
@@ -167,7 +171,7 @@ resource keyVault 'Microsoft.KeyVault/vaults@2021-10-01' = {
 }
 
 resource logAnalyticsWorkspace 'Microsoft.OperationalInsights/workspaces@2020-03-01-preview' = {
-  name: 'log-${resourceToken}'
+  name: '${prefixes.operationalInsightsWorkspaces}${resourceToken}'
   location: location
   tags: tags
   properties: any({
@@ -192,7 +196,7 @@ module applicationInsightsResources './applicationinsights.bicep' = {
 }
 
 resource cosmos 'Microsoft.DocumentDB/databaseAccounts@2021-10-15' = {
-  name: 'cosmos-${resourceToken}'
+  name: '${prefixes.documentDBDatabaseAccounts}${resourceToken}'
   kind: 'MongoDB'
   location: location
   tags: tags

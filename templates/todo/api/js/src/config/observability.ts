@@ -45,7 +45,6 @@ export const observability = (config: ObservabilityConfig) => {
         applicationInsights.defaultClient.setAutoPopulateAzureProperties(true);
         applicationInsights.start();
 
-
         const applicationInsightsTransport = new ApplicationInsightsTransport({
             client: applicationInsights.defaultClient,
             level: LogLevel.Information,

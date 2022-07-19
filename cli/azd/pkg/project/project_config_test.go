@@ -109,3 +109,32 @@ services:
 		require.NotNil(t, svc.Scope)
 	}
 }
+
+func TestProjectWithCustomDockerOptions(t *testing.T) {
+	const testProj = `
+name: test-proj
+metadata:
+  template: test-proj-template
+services:
+  web:
+    project: src/web
+    language: js
+    host: containerapp
+    docker:
+      path: ./Dockerfile.dev
+      context: ../
+`
+
+	e := environment.Environment{Values: make(map[string]string)}
+	e.SetEnvName("test-env")
+
+	projectConfig, err := ParseProjectConfig(testProj, &e)
+
+	require.NotNil(t, projectConfig)
+	require.Nil(t, err)
+
+	service := projectConfig.Services["web"]
+
+	require.Equal(t, "./Dockerfile.dev", service.Docker.Path)
+	require.Equal(t, "../", service.Docker.Context)
+}

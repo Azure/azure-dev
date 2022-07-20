@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 )
@@ -83,4 +84,40 @@ func GetHttpUtilFromContext(ctx context.Context) HttpUtil {
 	}
 
 	return client
+}
+
+func DownloadFile(ctx context.Context, url string, authToken string, target string) error {
+	// create the file
+	file, err := os.Create(target)
+	if err != nil {
+		return fmt.Errorf("downloading file: %w", err)
+	}
+
+	// create opens the file, so let's make sure to close it on exit
+	defer file.Close()
+
+	downloadRequest, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return fmt.Errorf("creating request: %w", err)
+	}
+
+	if authToken != "" {
+		downloadRequest.Header.Add("Authorization", fmt.Sprintf("Bearer %s", authToken))
+	}
+
+	response, err := http.DefaultClient.Do(downloadRequest)
+	if err != nil {
+		return fmt.Errorf("sending request: %w", err)
+	}
+
+	// make sure to close the I/O to body
+	defer response.Body.Close()
+
+	// write from network to target file
+	_, err = io.Copy(file, response.Body)
+	if err != nil {
+		return fmt.Errorf("writing file: %w", err)
+	}
+
+	return nil
 }

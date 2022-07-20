@@ -5,9 +5,12 @@ package rzip
 
 import (
 	"archive/zip"
+	"context"
+	"fmt"
 	"io"
 	"io/fs"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 )
@@ -55,4 +58,45 @@ func CreateFromDirectory(source string, buf *os.File) error {
 	}
 
 	return w.Close()
+}
+
+const (
+	permissionDirectory = 0755
+)
+
+func Extract(ctx context.Context, zipFile string, target string) error {
+	zipReader, err := zip.OpenReader(zipFile)
+	if err != nil {
+		return fmt.Errorf("opening zip file %s: %w", zipFile, err)
+	}
+	defer zipReader.Close()
+
+	// loop and create each file (skip directories)
+	for _, zipItemFile := range zipReader.File {
+		if !zipItemFile.Mode().IsDir() {
+			// Create the directory if this is a zip inside some other folders
+			fullPathForFile := path.Join(target, zipItemFile.Name)
+			if err = os.MkdirAll(path.Dir(fullPathForFile), permissionDirectory); err != nil {
+				return fmt.Errorf("extracting zip file: %w", err)
+			}
+
+			// read zip item
+			zipItemReader, err := zipItemFile.Open()
+			if err != nil {
+				return fmt.Errorf("reading zip file: %w", err)
+			}
+
+			// Create file
+			extractedFile, err := os.Create(fullPathForFile)
+			if err != nil {
+				return fmt.Errorf("extracting zip file: %w", err)
+			}
+			defer extractedFile.Close()
+			if _, err := extractedFile.ReadFrom(zipItemReader); err != nil {
+				return fmt.Errorf("extracting zip file: %w", err)
+			}
+		}
+	}
+
+	return nil
 }

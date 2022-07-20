@@ -85,10 +85,6 @@ func (i *initAction) Run(ctx context.Context, _ *cobra.Command, args []string, a
 	azCli := commands.GetAzCliFromContext(ctx)
 	requiredTools := []tools.ExternalTool{azCli}
 
-	// Windows uses `powershell` and linux `wget` for fetching github public repos
-	fetchCodeCli := tools.NewFetchCodeCli()
-	requiredTools = append(requiredTools, fetchCodeCli)
-
 	if err := tools.EnsureInstalled(ctx, requiredTools...); err != nil {
 		return err
 	}
@@ -142,27 +138,15 @@ func (i *initAction) Run(ctx context.Context, _ *cobra.Command, args []string, a
 		log.Printf("fetch template: %s", templateUrl)
 
 		// Try to fetch code w/o git cli. This should work for public repos.
-		// For private repos, the expected error is a 404 not found error
+		// For private repos, user should set env var with PAT to authenticate the request
 		err = spin.Run(
 			"Downloading template ",
 			func() error {
-				return fetchCodeCli.FetchCode(ctx, templateUrl, i.templateBranch, templateStagingDir)
+				return templates.FetchTemplateFromUrl(ctx, templateUrl, i.templateBranch, templateStagingDir)
 			})
 
 		if err != nil {
-			if !errors.Is(err, tools.FetchCodeNotFoundError) {
-				return fmt.Errorf("fetching template: %w", err)
-			}
-
-			log.Printf("received 404 not found error. Check if git cli is installed and try getting repository")
-			// try to use git cli, as this could be a private repo
-			gitCli := tools.NewGitCli()
-			if err := tools.EnsureInstalled(ctx, gitCli); err != nil {
-				return fmt.Errorf("trying to fetch repository as private: %w", err)
-			}
-			if err = gitCli.FetchCode(ctx, templateUrl, i.templateBranch, templateStagingDir); err != nil {
-				return fmt.Errorf("fetching template as private: %w", err)
-			}
+			return fmt.Errorf("fetching template: %w", err)
 		}
 
 		log.Printf("template init, checking for duplicates. source: %s target: %s", templateStagingDir, azdCtx.ProjectDirectory())

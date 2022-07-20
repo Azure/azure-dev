@@ -23,7 +23,7 @@ func TestBicepCompile(t *testing.T) {
 	env.SetEnvName("test-env")
 
 	infraProvider := NewBicepInfraProvider(&env, projectDir, options, bicepCli, azCli)
-	template, err := infraProvider.Compile(context.Background())
+	template, err := infraProvider.Plan(context.Background())
 
 	require.Nil(t, err)
 	require.NotNil(t, *template)
@@ -48,14 +48,14 @@ func TestBicepDeploy(t *testing.T) {
 
 	scope := NewSubscriptionProvisioningScope(azCli, env.Values["AZURE_LOCATION"], env.GetSubscriptionId(), env.GetEnvName())
 	infraProvider := NewBicepInfraProvider(&env, projectDir, options, bicepCli, azCli)
-	template, err := infraProvider.Compile(ctx)
+	template, err := infraProvider.Plan(ctx)
 
 	require.Nil(t, err)
 	require.NotNil(t, *template)
 
 	progressMsg := "Deploying..."
 	fmt.Println(progressMsg)
-	deployChannel, progressChannel := infraProvider.Deploy(ctx, template, scope)
+	deployChannel, progressChannel := infraProvider.Apply(ctx, template, scope)
 
 	go func() {
 		for progressReport := range progressChannel {

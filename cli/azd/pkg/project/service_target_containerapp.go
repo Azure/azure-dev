@@ -78,14 +78,14 @@ func (at *containerAppTarget) Deploy(ctx context.Context, azdCtx *environment.Az
 	}
 
 	progress <- "Creating deployment template"
-	template, err := infraProvider.Compile(ctx)
+	template, err := infraProvider.Plan(ctx)
 	if err != nil {
 		return ServiceDeploymentResult{}, fmt.Errorf("compiling template: %w", err)
 	}
 
 	progress <- "Updating container app image reference"
 	scope := provisioning.NewResourceGroupProvisioningScope(at.cli, at.env.GetSubscriptionId(), at.scope.ResourceGroupName(), at.env.GetEnvName())
-	deployChannel, progressChannel := infraProvider.Deploy(ctx, template, scope)
+	deployChannel, progressChannel := infraProvider.Apply(ctx, template, scope)
 
 	go func() {
 		for progressReport := range progressChannel {

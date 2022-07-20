@@ -237,7 +237,7 @@ func envRefreshCmd(rootOptions *commands.GlobalCommandOptions) *cobra.Command {
 			return fmt.Errorf("creating infrastructure provider: %w", err)
 		}
 
-		template, err := infraProvider.Compile(ctx)
+		template, err := infraProvider.Plan(ctx)
 		if err != nil {
 			return err
 		}

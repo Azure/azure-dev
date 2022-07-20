@@ -20,13 +20,13 @@ import (
 )
 
 type BicepTemplate struct {
-	Schema         string                    `json:"$schema`
-	ContentVersion string                    `json:"contentVersion"`
-	Parameters     map[string]BicepParameter `json:"parameters"`
-	Outputs        map[string]BicepParameter `json:"outputs"`
+	Schema         string                          `json:"$schema`
+	ContentVersion string                          `json:"contentVersion"`
+	Parameters     map[string]BicepInputParameter  `json:"parameters"`
+	Outputs        map[string]BicepOutputParameter `json:"outputs"`
 }
 
-type BicepParameter struct {
+type BicepInputParameter struct {
 	Type         string      `json:"type"`
 	DefaultValue interface{} `json:"defaultValue"`
 	Value        interface{} `json:"value"`
@@ -51,15 +51,15 @@ func (p *BicepInfraProvider) Name() string {
 	return "Bicep"
 }
 
-// Compiles the specified template
-func (p *BicepInfraProvider) Compile(ctx context.Context) (*CompiledTemplate, error) {
+// Plans the infrastructure provisioning
+func (p *BicepInfraProvider) Plan(ctx context.Context) (*ProvisioningPlan, error) {
 	bicepTemplate, err := p.createParametersFile()
 	if err != nil {
 		return nil, fmt.Errorf("creating parameters file: %w", err)
 	}
 
 	modulePath := p.modulePath()
-	template, err := p.createTemplate(ctx, modulePath)
+	template, err := p.createPlan(ctx, modulePath)
 	if err != nil {
 		return nil, fmt.Errorf("creating template: %w", err)
 	}
@@ -75,16 +75,16 @@ func (p *BicepInfraProvider) Compile(ctx context.Context) (*CompiledTemplate, er
 	return template, nil
 }
 
-func (p *BicepInfraProvider) SaveTemplate(ctx context.Context, template CompiledTemplate) error {
+func (p *BicepInfraProvider) SaveTemplate(ctx context.Context, template ProvisioningPlan) error {
 	bicepFile := BicepTemplate{
 		Schema:         "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
 		ContentVersion: "1.0.0.0",
 	}
 
-	parameters := make(map[string]BicepParameter)
+	parameters := make(map[string]BicepInputParameter)
 
 	for key, param := range template.Parameters {
-		parameters[key] = BicepParameter{
+		parameters[key] = BicepInputParameter{
 			Type:         param.Type,
 			DefaultValue: param.DefaultValue,
 			Value:        param.Value,
@@ -108,7 +108,7 @@ func (p *BicepInfraProvider) SaveTemplate(ctx context.Context, template Compiled
 }
 
 // Provisioning the infrastructure within the specified template
-func (p *BicepInfraProvider) Deploy(ctx context.Context, template *CompiledTemplate, scope ProvisioningScope) (<-chan *InfraDeploymentResult, <-chan *InfraDeploymentProgress) {
+func (p *BicepInfraProvider) Apply(ctx context.Context, plan *ProvisioningPlan, scope ProvisioningScope) (<-chan *InfraDeploymentResult, <-chan *InfraDeploymentProgress) {
 	resultChannel := make(chan *InfraDeploymentResult, 1)
 	progressChannel := make(chan *InfraDeploymentProgress)
 
@@ -122,11 +122,11 @@ func (p *BicepInfraProvider) Deploy(ctx context.Context, template *CompiledTempl
 		go func() {
 			modulePath := p.modulePath()
 			parametersFilePath := p.parametersFilePath()
-			deployResult, err := p.deployModule(ctx, scope, modulePath, parametersFilePath)
-			var outputs map[string]CompiledTemplateOutputParameter
+			deployResult, err := p.applyModule(ctx, scope, modulePath, parametersFilePath)
+			var outputs map[string]ProvisioningPlanOutputParameter
 
 			if deployResult != nil {
-				outputs = p.createOutputParameters(template, deployResult.Properties.Outputs)
+				outputs = p.createOutputParameters(plan, deployResult.Properties.Outputs)
 			}
 
 			resultChannel <- &InfraDeploymentResult{
@@ -168,14 +168,18 @@ func (p *BicepInfraProvider) Deploy(ctx context.Context, template *CompiledTempl
 	return resultChannel, progressChannel
 }
 
-func (p *BicepInfraProvider) createOutputParameters(template *CompiledTemplate, azureOutputParams map[string]tools.AzCliDeploymentOutput) map[string]CompiledTemplateOutputParameter {
+func (p *BicepInfraProvider) Destroy(ctx context.Context) error {
+	return nil
+}
+
+func (p *BicepInfraProvider) createOutputParameters(template *ProvisioningPlan, azureOutputParams map[string]tools.AzCliDeploymentOutput) map[string]ProvisioningPlanOutputParameter {
 	canonicalOutputCasings := make(map[string]string, len(template.Outputs))
 
 	for key := range template.Outputs {
 		canonicalOutputCasings[strings.ToLower(key)] = key
 	}
 
-	outputParams := make(map[string]CompiledTemplateOutputParameter, len(azureOutputParams))
+	outputParams := make(map[string]ProvisioningPlanOutputParameter, len(azureOutputParams))
 
 	for key, azureParam := range azureOutputParams {
 		var paramName string
@@ -186,7 +190,7 @@ func (p *BicepInfraProvider) createOutputParameters(template *CompiledTemplate, 
 			paramName = key
 		}
 
-		outputParams[paramName] = CompiledTemplateOutputParameter{
+		outputParams[paramName] = ProvisioningPlanOutputParameter{
 			Type:  azureParam.Type,
 			Value: azureParam.Value,
 		}
@@ -236,7 +240,7 @@ func (p *BicepInfraProvider) createParametersFile() (*BicepTemplate, error) {
 }
 
 // Creates the compiled template from the specified module path
-func (p *BicepInfraProvider) createTemplate(ctx context.Context, modulePath string) (*CompiledTemplate, error) {
+func (p *BicepInfraProvider) createPlan(ctx context.Context, modulePath string) (*ProvisioningPlan, error) {
 	// Compile the bicep file into an ARM template we can create.
 	compiled, err := p.bicep.Build(ctx, modulePath)
 	if err != nil {
@@ -251,7 +255,7 @@ func (p *BicepInfraProvider) createTemplate(ctx context.Context, modulePath stri
 		return nil, fmt.Errorf("error un-marshaling arm template from json: %w", err)
 	}
 
-	compiledTemplate, err := p.convertToCompiledTemplate(bicepTemplate)
+	compiledTemplate, err := p.convertToPlan(bicepTemplate)
 	if err != nil {
 		return nil, fmt.Errorf("converting from bicep to compiled template: %w", err)
 	}
@@ -260,13 +264,13 @@ func (p *BicepInfraProvider) createTemplate(ctx context.Context, modulePath stri
 }
 
 // Converts a Bicep parameters file to a generic provisioning template
-func (p *BicepInfraProvider) convertToCompiledTemplate(bicepTemplate BicepTemplate) (*CompiledTemplate, error) {
-	template := CompiledTemplate{}
-	parameters := make(map[string]CompiledTemplateParameter)
-	outputs := make(map[string]CompiledTemplateOutputParameter)
+func (p *BicepInfraProvider) convertToPlan(bicepTemplate BicepTemplate) (*ProvisioningPlan, error) {
+	template := ProvisioningPlan{}
+	parameters := make(map[string]ProvisioningPlanInputParameter)
+	outputs := make(map[string]ProvisioningPlanOutputParameter)
 
 	for key, param := range bicepTemplate.Parameters {
-		parameters[key] = CompiledTemplateParameter{
+		parameters[key] = ProvisioningPlanInputParameter{
 			Type:         param.Type,
 			Value:        param.Value,
 			DefaultValue: param.DefaultValue,
@@ -274,7 +278,7 @@ func (p *BicepInfraProvider) convertToCompiledTemplate(bicepTemplate BicepTempla
 	}
 
 	for key, param := range bicepTemplate.Outputs {
-		outputs[key] = CompiledTemplateOutputParameter{
+		outputs[key] = ProvisioningPlanOutputParameter{
 			Type:  param.Type,
 			Value: param.Value,
 		}
@@ -287,7 +291,7 @@ func (p *BicepInfraProvider) convertToCompiledTemplate(bicepTemplate BicepTempla
 }
 
 // Deploys the specified Bicep module and parameters with the selected provisioning scope (subscription vs resource group)
-func (p *BicepInfraProvider) deployModule(ctx context.Context, scope ProvisioningScope, bicepPath string, parametersPath string) (*tools.AzCliDeployment, error) {
+func (p *BicepInfraProvider) applyModule(ctx context.Context, scope ProvisioningScope, bicepPath string, parametersPath string) (*tools.AzCliDeployment, error) {
 	// We've seen issues where `Deploy` completes but for a short while after, fetching the deployment fails with a `DeploymentNotFound` error.
 	// Since other commands of ours use the deployment, let's try to fetch it here and if we fail with `DeploymentNotFound`,
 	// ignore this error, wait a short while and retry.

@@ -82,7 +82,7 @@ func (ica *infraCreateAction) Run(ctx context.Context, cmd *cobra.Command, args 
 		return fmt.Errorf("error creating infra provider: %w", err)
 	}
 
-	template, err := infraProvider.Compile(ctx)
+	template, err := infraProvider.Plan(ctx)
 	if err != nil {
 		return fmt.Errorf("compiling infra template: %w", err)
 	}
@@ -170,7 +170,7 @@ func (ica *infraCreateAction) Run(ctx context.Context, cmd *cobra.Command, args 
 
 	deployAndReportProgress := func(showProgress func(string)) error {
 		provisioningScope := provisioning.NewSubscriptionProvisioningScope(azCli, location, env.GetSubscriptionId(), env.GetEnvName())
-		deployChannel, progressChannel := infraProvider.Deploy(ctx, template, provisioningScope)
+		deployChannel, progressChannel := infraProvider.Apply(ctx, template, provisioningScope)
 
 		go func() {
 			for progressReport := range progressChannel {

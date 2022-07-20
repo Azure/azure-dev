@@ -9,6 +9,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/commands"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 )
 
@@ -31,6 +32,8 @@ type ServiceConfig struct {
 	Module string `yaml:"module"`
 	// The optional docker options
 	Docker DockerProjectOptions `yaml:"docker"`
+	// The infrastructure provisioning configuration
+	Infra provisioning.InfrastructureOptions `yaml:"infra"`
 
 	handlers map[Event][]ServiceLifecycleEventHandlerFn
 }

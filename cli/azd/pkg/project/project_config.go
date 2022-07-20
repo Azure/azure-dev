@@ -13,6 +13,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azureutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/drone/envsubst"
 	"gopkg.in/yaml.v3"
 )
@@ -20,11 +21,12 @@ import (
 // ProjectConfig is the top level object serialized into an azure.yaml file.
 // When changing project structure, make sure to update the JSON schema file for azure.yaml (<workspace root>/schemas/vN.M/azure.yaml.json).
 type ProjectConfig struct {
-	Name              string                    `yaml:"name"`
-	ResourceGroupName string                    `yaml:"resourceGroup,omitempty"`
-	Path              string                    `yaml:",omitempty"`
-	Metadata          *ProjectMetadata          `yaml:"metadata,omitempty"`
-	Services          map[string]*ServiceConfig `yaml:",omitempty"`
+	Name              string                             `yaml:"name"`
+	ResourceGroupName string                             `yaml:"resourceGroup,omitempty"`
+	Path              string                             `yaml:",omitempty"`
+	Metadata          *ProjectMetadata                   `yaml:"metadata,omitempty"`
+	Services          map[string]*ServiceConfig          `yaml:",omitempty"`
+	Infra             provisioning.InfrastructureOptions `yaml:"infra"`
 
 	handlers map[Event][]ProjectLifecycleEventHandlerFn
 }

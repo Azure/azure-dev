@@ -3,7 +3,6 @@ package provisioning
 import (
 	"context"
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
@@ -18,25 +17,6 @@ const (
 	Terraform InfrastructureProviderKind = "Terraform"
 	Pulumi    InfrastructureProviderKind = "Pulumi"
 )
-
-type CompiledTemplate struct {
-	Parameters map[string]CompiledTemplateParameter
-	Outputs    []InfraDeploymentOutputParameter
-}
-
-type CompiledTemplateParameter struct {
-	Type         string
-	DefaultValue interface{}
-	Value        interface{}
-}
-
-func (p *CompiledTemplateParameter) HasValue() bool {
-	return strings.TrimSpace(fmt.Sprint(p.Value)) != ""
-}
-
-func (p *CompiledTemplateParameter) HasDefaultValue() bool {
-	return strings.TrimSpace(fmt.Sprint(p.DefaultValue)) != ""
-}
 
 type InfrastructureOptions struct {
 	Provider InfrastructureProviderKind `yaml:"provider"`

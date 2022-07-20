@@ -1,4 +1,4 @@
-package bicep
+package provisioning
 
 import (
 	"context"
@@ -6,15 +6,15 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 )
 
-type DeploymentTarget interface {
+type AzureDeploymentTarget interface {
 	// Deploy a given template with a set of parameters.
 	Deploy(ctx context.Context, templatePath string, parametersPath string) error
 	// GetDeployment fetches the result of the most recent deployment.
 	GetDeployment(ctx context.Context) (tools.AzCliDeployment, error)
 }
 
-// rgTarget is an implementation of `DeploymentTarget` for a resource group.
-type rgTarget struct {
+// resourceGroupTarget is an implementation of `DeploymentTarget` for a resource group.
+type resourceGroupTarget struct {
 	// the CLI to use when deploying
 	azCli tools.AzCli
 	// the subscription the resource group is located in.
@@ -25,8 +25,8 @@ type rgTarget struct {
 	deploymentName string
 }
 
-// subTarget is an implementation of `DeploymentTarget` for a subscription.
-type subTarget struct {
+// subscriptionTarget is an implementation of `DeploymentTarget` for a subscription.
+type subscriptionTarget struct {
 	// the CLI to use when deploying
 	azCli tools.AzCli
 	// the subscription the resource group is located in.
@@ -37,28 +37,28 @@ type subTarget struct {
 	location string
 }
 
-func NewResourceGroupDeploymentTarget(azCli tools.AzCli, subscriptionId string, resourceGroupName string, deploymentName string) DeploymentTarget {
-	return &rgTarget{azCli: azCli, deploymentName: deploymentName, subscriptionId: subscriptionId, resourceGroupName: resourceGroupName}
+func NewResourceGroupDeploymentTarget(azCli tools.AzCli, subscriptionId string, resourceGroupName string, deploymentName string) AzureDeploymentTarget {
+	return &resourceGroupTarget{azCli: azCli, deploymentName: deploymentName, subscriptionId: subscriptionId, resourceGroupName: resourceGroupName}
 }
 
-func NewSubscriptionDeploymentTarget(azCli tools.AzCli, location string, subscriptionId string, deploymentName string) DeploymentTarget {
-	return &subTarget{azCli: azCli, deploymentName: deploymentName, subscriptionId: subscriptionId, location: location}
+func NewSubscriptionDeploymentTarget(azCli tools.AzCli, location string, subscriptionId string, deploymentName string) AzureDeploymentTarget {
+	return &subscriptionTarget{azCli: azCli, deploymentName: deploymentName, subscriptionId: subscriptionId, location: location}
 }
 
-func (target *rgTarget) Deploy(ctx context.Context, bicepPath string, parametersPath string) error {
+func (target *resourceGroupTarget) Deploy(ctx context.Context, bicepPath string, parametersPath string) error {
 	_, err := target.azCli.DeployToResourceGroup(ctx, target.subscriptionId, target.resourceGroupName, target.deploymentName, bicepPath, parametersPath)
 	return err
 }
 
-func (target *rgTarget) GetDeployment(ctx context.Context) (tools.AzCliDeployment, error) {
+func (target *resourceGroupTarget) GetDeployment(ctx context.Context) (tools.AzCliDeployment, error) {
 	return target.azCli.GetResourceGroupDeployment(ctx, target.subscriptionId, target.resourceGroupName, target.deploymentName)
 }
 
-func (target *subTarget) Deploy(ctx context.Context, bicepPath string, parametersPath string) error {
+func (target *subscriptionTarget) Deploy(ctx context.Context, bicepPath string, parametersPath string) error {
 	_, err := target.azCli.DeployToSubscription(ctx, target.subscriptionId, target.deploymentName, bicepPath, parametersPath, target.location)
 	return err
 }
 
-func (target *subTarget) GetDeployment(ctx context.Context) (tools.AzCliDeployment, error) {
+func (target *subscriptionTarget) GetDeployment(ctx context.Context) (tools.AzCliDeployment, error) {
 	return target.azCli.GetSubscriptionDeployment(ctx, target.subscriptionId, target.deploymentName)
 }

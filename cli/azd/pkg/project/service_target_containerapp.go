@@ -6,17 +6,14 @@ package project
 import (
 	"context"
 	"fmt"
-	"io/ioutil"
 	"log"
-	"os"
 	"strings"
 	"time"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
-	"github.com/azure/azure-dev/cli/azd/pkg/iac/bicep"
+	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
-	"github.com/drone/envsubst"
 )
 
 type containerAppTarget struct {
@@ -32,14 +29,6 @@ func (at *containerAppTarget) RequiredExternalTools() []tools.ExternalTool {
 }
 
 func (at *containerAppTarget) Deploy(ctx context.Context, azdCtx *environment.AzdContext, path string, progress chan<- string) (ServiceDeploymentResult, error) {
-	bicepPath := azdCtx.BicepModulePath(at.config.ModuleName)
-
-	progress <- "Creating deployment template"
-	template, err := bicep.Compile(ctx, tools.NewBicepCli(at.cli), bicepPath)
-	if err != nil {
-		return ServiceDeploymentResult{}, err
-	}
-
 	// Login to container registry.
 	loginServer, has := at.env.Values[environment.ContainerRegistryEndpointEnvVarName]
 	if !has {
@@ -80,53 +69,34 @@ func (at *containerAppTarget) Deploy(ctx context.Context, azdCtx *environment.Az
 	}
 
 	log.Print("generating deployment parameters file")
-
-	// Copy the parameter template file to the environment working directory and do substitutions.
-	parametersTemplate := azdCtx.BicepParametersTemplateFilePath(at.config.ModuleName)
-	templateBytes, err := ioutil.ReadFile(parametersTemplate)
+	infraProvider, err := provisioning.NewInfraProvider(at.env, at.config.Path(), at.config.Infra, at.cli)
 	if err != nil {
-		return ServiceDeploymentResult{}, fmt.Errorf("reading parameter file template: %w", err)
+		return ServiceDeploymentResult{}, fmt.Errorf("creating infrastructure provider: %w", err)
 	}
 
-	replaced, err := envsubst.Eval(string(templateBytes), func(name string) string {
-		if val, has := at.env.Values[name]; has {
-			return val
-		}
-		return os.Getenv(name)
-	})
+	progress <- "Creating deployment template"
+	_, err = infraProvider.Compile(ctx)
 	if err != nil {
-		return ServiceDeploymentResult{}, fmt.Errorf("substituting parameter file: %w", err)
+		return ServiceDeploymentResult{}, fmt.Errorf("compiling template: %w", err)
 	}
-
-	parametersFile := azdCtx.BicepParametersFilePath(at.env.GetEnvName(), at.config.ModuleName)
-	err = ioutil.WriteFile(parametersFile, []byte(replaced), 0644)
-	if err != nil {
-		return ServiceDeploymentResult{}, fmt.Errorf("writing parameter file: %w", err)
-	}
-	log.Printf("generated deployment parameters file %s", parametersFile)
-
-	log.Printf("running ARM deployment to update container")
-	deploymentTarget := bicep.NewResourceGroupDeploymentTarget(at.cli, at.env.GetSubscriptionId(), at.scope.ResourceGroupName(), at.scope.ResourceName())
 
 	progress <- "Updating container app image reference"
-	res, err := bicep.Deploy(ctx, deploymentTarget, azdCtx.BicepModulePath(at.config.ModuleName), parametersFile)
-	if err != nil {
+	scope := provisioning.NewResourceGroupProvisioningScope(at.env.GetEnvName(), at.env.GetSubscriptionId(), at.scope.ResourceGroupName())
+	deployChannel, progressChannel := infraProvider.Deploy(ctx, scope)
+
+	go func() {
+		for progressReport := range progressChannel {
+			progress <- createProgressMessage(progressReport)
+		}
+	}()
+
+	deployResult := <-deployChannel
+	if deployResult.Error != nil {
 		return ServiceDeploymentResult{}, fmt.Errorf("updating infrastructure: %w", err)
 	}
 
-	if len(res.Properties.Outputs) > 0 {
-		log.Printf("saving %d deployment outputs", len(res.Properties.Outputs))
-
-		template.CanonicalizeDeploymentOutputs(&res.Properties.Outputs)
-
-		for name, o := range res.Properties.Outputs {
-			at.env.Values[name] = fmt.Sprintf("%v", o.Value)
-		}
-
-		if err := at.env.Save(); err != nil {
-			return ServiceDeploymentResult{}, fmt.Errorf("saving outputs to environment: %w", err)
-		}
-	}
+	progress <- "Updating environment"
+	provisioning.UpdateEnvironment(at.env, &deployResult.Outputs)
 
 	progress <- "Fetching endpoints for container app service"
 	endpoints, err := at.Endpoints(ctx)
@@ -137,7 +107,7 @@ func (at *containerAppTarget) Deploy(ctx context.Context, azdCtx *environment.Az
 	return ServiceDeploymentResult{
 		TargetResourceId: azure.ContainerAppRID(at.env.GetSubscriptionId(), at.scope.ResourceGroupName(), at.scope.ResourceName()),
 		Kind:             ContainerAppTarget,
-		Details:          res,
+		Details:          deployResult,
 		Endpoints:        endpoints,
 	}, nil
 }
@@ -149,6 +119,18 @@ func (at *containerAppTarget) Endpoints(ctx context.Context) ([]string, error) {
 	}
 
 	return []string{fmt.Sprintf("https://%s/", containerAppProperties.Properties.Configuration.Ingress.Fqdn)}, nil
+}
+
+func createProgressMessage(progressReport *provisioning.InfraDeploymentProgress) string {
+	succeededCount := 0
+
+	for _, resourceOperation := range progressReport.Operations {
+		if resourceOperation.Properties.ProvisioningState == "Succeeded" {
+			succeededCount++
+		}
+	}
+
+	return fmt.Sprintf("Creating Azure resources (%d of ~%d completed) ", succeededCount, len(progressReport.Operations))
 }
 
 func NewContainerAppTarget(config *ServiceConfig, env *environment.Environment, scope *environment.DeploymentScope, azCli tools.AzCli, docker *tools.Docker) ServiceTarget {

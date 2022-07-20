@@ -523,20 +523,6 @@ func promptLocation(ctx context.Context, message string, askOne Asker) (string, 
 	return locations[locationSelectionIndex].Name, nil
 }
 
-func saveEnvironmentValues(res tools.AzCliDeployment, env environment.Environment) error {
-	if len(res.Properties.Outputs) > 0 {
-		for name, o := range res.Properties.Outputs {
-			env.Values[name] = fmt.Sprintf("%v", o.Value)
-		}
-
-		if err := env.Save(); err != nil {
-			return fmt.Errorf("writing environment: %w", err)
-		}
-	}
-
-	return nil
-}
-
 var (
 	errNoProject = errors.New("no project exists; to create a new project, run `azd init`.")
 )

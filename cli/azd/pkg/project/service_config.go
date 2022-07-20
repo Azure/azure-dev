@@ -7,6 +7,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/commands"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 )
 
@@ -29,6 +30,8 @@ type ServiceConfig struct {
 	ModuleName string `yaml:"moduleName"`
 	// The optional docker options
 	Docker DockerProjectOptions `yaml:"docker"`
+	// The infrastructure provisioning configuration
+	Infra provisioning.InfrastructureOptions `yaml:"infra"`
 }
 
 // Path returns the fully qualified path to the project

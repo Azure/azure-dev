@@ -7,12 +7,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"path/filepath"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/commands"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
-	"github.com/azure/azure-dev/cli/azd/pkg/iac/bicep"
+	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
+	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/spf13/cobra"
 )
@@ -227,7 +227,17 @@ func envRefreshCmd(rootOptions *commands.GlobalCommandOptions) *cobra.Command {
 			return fmt.Errorf("loading environment: %w", err)
 		}
 
-		template, err := bicep.Compile(ctx, bicepCli, filepath.Join(azdCtx.InfrastructureDirectory(), "main.bicep"))
+		projectConfig, err := project.LoadProjectConfig(azdCtx.ProjectPath(), &env)
+		if err != nil {
+			return fmt.Errorf("loading project: %w", err)
+		}
+
+		infraProvider, err := provisioning.NewInfraProvider(&env, projectConfig.Path, projectConfig.Infra, azCli)
+		if err != nil {
+			return fmt.Errorf("creating infrastructure provider: %w", err)
+		}
+
+		template, err := infraProvider.Compile(ctx)
 		if err != nil {
 			return err
 		}
@@ -239,8 +249,7 @@ func envRefreshCmd(rootOptions *commands.GlobalCommandOptions) *cobra.Command {
 			return fmt.Errorf("fetching latest deployment: %w", err)
 		}
 
-		template.CanonicalizeDeploymentOutputs(&res.Properties.Outputs)
-		if err = saveEnvironmentValues(res, env); err != nil {
+		if err = provisioning.UpdateEnvironment(&env, &template.Outputs); err != nil {
 			return err
 		}
 

@@ -3,22 +3,18 @@ package cmd
 import (
 	"context"
 	"fmt"
-	"io/ioutil"
 	"net/url"
-	"os"
 	"time"
 
 	"github.com/AlecAivazis/survey/v2"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/commands"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
-	"github.com/azure/azure-dev/cli/azd/pkg/iac/bicep"
-	"github.com/azure/azure-dev/cli/azd/pkg/infra"
+	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/pkg/spin"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
-	"github.com/drone/envsubst"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 	"github.com/theckman/yacspin"
@@ -71,39 +67,24 @@ func (ica *infraCreateAction) Run(ctx context.Context, cmd *cobra.Command, args 
 		return fmt.Errorf("loading environment: %w", err)
 	}
 
-	_, err = project.LoadProjectConfig(azdCtx.ProjectPath(), &environment.Environment{})
+	projectConfig, err := project.LoadProjectConfig(azdCtx.ProjectPath(), &environment.Environment{})
 	if err != nil {
 		return fmt.Errorf("loading project: %w", err)
 	}
 
-	const rootModule = "main"
-
-	// Copy the parameter template file to the environment working directory and do substitutions.
-	parametersPath := azdCtx.BicepParametersTemplateFilePath(rootModule)
-	parametersBytes, err := ioutil.ReadFile(parametersPath)
-	if err != nil {
-		return fmt.Errorf("reading parameter file template: %w", err)
-	}
-	replaced, err := envsubst.Eval(string(parametersBytes), func(name string) string {
-		if val, has := env.Values[name]; has {
-			return val
-		}
-		return os.Getenv(name)
-	})
-	if err != nil {
-		return fmt.Errorf("substituting parameter file: %w", err)
-	}
-	err = ioutil.WriteFile(azdCtx.BicepParametersFilePath(ica.rootOptions.EnvironmentName, rootModule), []byte(replaced), 0644)
-	if err != nil {
-		return fmt.Errorf("writing parameter file: %w", err)
+	// Default module name to "main"
+	if projectConfig.Infra.Module == "" {
+		projectConfig.Infra.Module = "main"
 	}
 
-	// Fetch the parameters from the template and ensure we have a value for each one, otherwise
-	// prompt.
-	bicepPath := azdCtx.BicepModulePath(rootModule)
-	template, err := bicep.Compile(ctx, bicepCli, bicepPath)
+	infraProvider, err := provisioning.NewInfraProvider(&env, azdCtx.ProjectPath(), projectConfig.Infra, azCli)
 	if err != nil {
-		return err
+		return fmt.Errorf("error creating infra provider: %w", err)
+	}
+
+	template, err := infraProvider.Compile(ctx)
+	if err != nil {
+		return fmt.Errorf("compiling infra template: %w", err)
 	}
 
 	// When creating a deployment, we need an azure location which is used to store the deployment metadata. This can be
@@ -116,18 +97,13 @@ func (ica *infraCreateAction) Run(ctx context.Context, cmd *cobra.Command, args 
 	var location string
 
 	if len(template.Parameters) > 0 {
-		configuredParameters, err := azdCtx.BicepParameters(ica.rootOptions.EnvironmentName, rootModule)
-		if err != nil {
-			return fmt.Errorf("reading existing parameters: %w", err)
-		}
-
 		updatedParameters := false
-		for parameter, value := range template.Parameters {
+		for _, parameter := range template.Parameters {
 			// If this parameter has a default, then there is no need for us to configure it
-			if _, hasDefault := value["defaultValue"]; hasDefault {
+			if parameter.HasDefaultValue() {
 				continue
 			}
-			if _, has := configuredParameters[parameter]; !has {
+			if !parameter.HasValue() {
 
 				var val string
 				if err := askOne(&survey.Input{
@@ -136,7 +112,7 @@ func (ica *infraCreateAction) Run(ctx context.Context, cmd *cobra.Command, args 
 					return fmt.Errorf("prompting for deployment parameter: %w", err)
 				}
 
-				configuredParameters[parameter] = val
+				parameter.Value = val
 
 				saveParameter := true
 				if err := askOne(&survey.Confirm{
@@ -146,19 +122,19 @@ func (ica *infraCreateAction) Run(ctx context.Context, cmd *cobra.Command, args 
 				}
 
 				if saveParameter {
-					env.Values[parameter] = val
+					env.Values[parameter.Name] = val
 				}
 
 				updatedParameters = true
 			}
 
-			if parameter == "location" {
-				location = configuredParameters[parameter].(string)
+			if parameter.Name == "location" {
+				location = fmt.Sprint(parameter.Value)
 			}
 		}
 
 		if updatedParameters {
-			if err := azdCtx.WriteBicepParameters(ica.rootOptions.EnvironmentName, rootModule, configuredParameters); err != nil {
+			if err := infraProvider.SaveTemplate(ctx, template); err != nil {
 				return fmt.Errorf("saving deployment parameters: %w", err)
 			}
 
@@ -191,38 +167,28 @@ func (ica *infraCreateAction) Run(ctx context.Context, cmd *cobra.Command, args 
 	// which can take a bit, so we typically do some progress indication.
 	// For interactive use (default case, using table formatter), we use a spinner.
 	// With JSON formatter we emit progress information, unless --no-progress option was set.
-	deploymentTarget := bicep.NewSubscriptionDeploymentTarget(azCli, location, env.GetSubscriptionId(), env.GetEnvName())
-
-	type deployFuncResult struct {
-		Result tools.AzCliDeployment
-		Err    error
-	}
-	var res deployFuncResult
+	var provisionResult *provisioning.InfraDeploymentResult
+	provisioningScope := provisioning.NewSubscriptionProvisioningScope(env.GetEnvName(), env.GetSubscriptionId(), location)
 
 	deployAndReportProgress := func(showProgress func(string)) error {
-		deployResChan := make(chan deployFuncResult)
-		go func() {
-			res, err := bicep.Deploy(ctx, deploymentTarget, bicepPath, azdCtx.BicepParametersFilePath(ica.rootOptions.EnvironmentName, "main"))
-			deployResChan <- deployFuncResult{Result: res, Err: err}
-			close(deployResChan)
-		}()
+		deployChannel, progressChannel := infraProvider.Deploy(ctx, provisioningScope)
 
-		for {
-			select {
-			case deployRes := <-deployResChan:
-				res = deployRes
-				return deployRes.Err
-			case <-time.After(10 * time.Second):
-				if ica.noProgress {
-					continue
-				}
+		go func() {
+			for progressReport := range progressChannel {
 				if interactive {
-					reportDeploymentStatusInteractive(ctx, azCli, env, showProgress)
+					reportDeploymentStatusInteractive(*progressReport, showProgress)
 				} else {
-					reportDeploymentStatusJson(ctx, azCli, env, formatter, cmd)
+					reportDeploymentStatusJson(*progressReport, formatter, cmd)
 				}
 			}
+		}()
+
+		provisionResult = <-deployChannel
+		if provisionResult.Error != nil {
+			return provisionResult.Error
 		}
+
+		return nil
 	}
 
 	if interactive {
@@ -258,13 +224,12 @@ func (ica *infraCreateAction) Run(ctx context.Context, cmd *cobra.Command, args 
 		return fmt.Errorf("deployment failed: %w", err)
 	}
 
-	template.CanonicalizeDeploymentOutputs(&res.Result.Properties.Outputs)
-	if err = saveEnvironmentValues(res.Result, env); err != nil {
+	if err = provisioning.UpdateEnvironment(&env, &provisionResult.Outputs); err != nil {
 		return err
 	}
 
 	if formatter.Kind() == output.JsonFormat {
-		if err = formatter.Format(res.Result, cmd.OutOrStdout(), nil); err != nil {
+		if err = formatter.Format(provisionResult, cmd.OutOrStdout(), nil); err != nil {
 			return fmt.Errorf("deployment result could not be displayed: %w", err)
 		}
 	}
@@ -272,24 +237,16 @@ func (ica *infraCreateAction) Run(ctx context.Context, cmd *cobra.Command, args 
 	return nil
 }
 
-func reportDeploymentStatusInteractive(ctx context.Context, azCli tools.AzCli, env environment.Environment, showProgress func(string)) {
-	resourceManager := infra.NewAzureResourceManager(azCli)
-
-	operations, err := resourceManager.GetDeploymentResourceOperations(ctx, env.GetSubscriptionId(), env.GetEnvName())
-	if err != nil {
-		// Status display is best-effort activity.
-		return
-	}
-
+func reportDeploymentStatusInteractive(progressReport provisioning.InfraDeploymentProgress, showProgress func(string)) {
 	succeededCount := 0
 
-	for _, resourceOperation := range *operations {
+	for _, resourceOperation := range progressReport.Operations {
 		if resourceOperation.Properties.ProvisioningState == "Succeeded" {
 			succeededCount++
 		}
 	}
 
-	status := fmt.Sprintf("Creating Azure resources (%d of ~%d completed) ", succeededCount, len(*operations))
+	status := fmt.Sprintf("Creating Azure resources (%d of ~%d completed) ", succeededCount, len(progressReport.Operations))
 	showProgress(status)
 }
 
@@ -298,19 +255,6 @@ type progressReport struct {
 	Operations []tools.AzCliResourceOperation `json:"operations"`
 }
 
-func reportDeploymentStatusJson(ctx context.Context, azCli tools.AzCli, env environment.Environment, formatter output.Formatter, cmd *cobra.Command) {
-	resourceManager := infra.NewAzureResourceManager(azCli)
-
-	ops, err := resourceManager.GetDeploymentResourceOperations(ctx, env.GetSubscriptionId(), env.GetEnvName())
-	if err != nil || len(*ops) == 0 {
-		// Status display is best-effort activity.
-		return
-	}
-
-	report := progressReport{
-		Timestamp:  time.Now(),
-		Operations: *ops,
-	}
-
-	_ = formatter.Format(report, cmd.OutOrStdout(), nil)
+func reportDeploymentStatusJson(progressReport provisioning.InfraDeploymentProgress, formatter output.Formatter, cmd *cobra.Command) {
+	_ = formatter.Format(progressReport, cmd.OutOrStdout(), nil)
 }

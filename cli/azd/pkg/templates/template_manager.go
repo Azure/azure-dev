@@ -57,7 +57,7 @@ type gitRepository struct {
 	branch string
 }
 
-func (repoInfo *gitRepository) DownloadZipUrl() string {
+func (repoInfo *gitRepository) downloadZipUrl() string {
 	return fmt.Sprintf(
 		"https://%s/%s/archive/%s.zip",
 		repoInfo.host,
@@ -153,7 +153,7 @@ func FetchTemplateFromUrl(ctx context.Context, repositoryPath string, branch str
 
 	zipFile := filepath.Join(target, fetchUrl.branch+".zip")
 	authPat := osutil.GetenvOrDefault(gitPath, "")
-	result, err := httpUtil.DownloadFile(ctx, fetchUrl.DownloadZipUrl(), authPat, zipFile)
+	result, err := httpUtil.DownloadFile(ctx, fetchUrl.downloadZipUrl(), authPat, zipFile)
 	if err != nil {
 		return fmt.Errorf("failed to fetch repository %s: %w", repositoryPath, err)
 	}

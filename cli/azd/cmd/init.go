@@ -83,14 +83,11 @@ func (i *initAction) Run(ctx context.Context, _ *cobra.Command, args []string, a
 
 	askOne := makeAskOne(i.rootOptions.NoPrompt)
 	azCli := commands.GetAzCliFromContext(ctx)
-	gitCli := tools.NewGitCli()
-
 	requiredTools := []tools.ExternalTool{azCli}
 
-	// When using a template, we also require `git`, to acquire the template.
-	if i.template.Name != "" {
-		requiredTools = append(requiredTools, gitCli)
-	}
+	// Windows uses `powershell` and linux `wget` for fetching github public repos
+	fetchCodeCli := tools.NewFetchCodeCli()
+	requiredTools = append(requiredTools, fetchCodeCli)
 
 	if err := tools.EnsureInstalled(ctx, requiredTools...); err != nil {
 		return err
@@ -142,14 +139,30 @@ func (i *initAction) Run(ctx context.Context, _ *cobra.Command, args []string, a
 			_ = os.RemoveAll(templateStagingDir)
 		}()
 
-		initFunc := func() error {
-			return gitCli.FetchCode(ctx, templateUrl, i.templateBranch, templateStagingDir)
-		}
-		if err := spin.Run(
+		log.Printf("fetch template: %s", templateUrl)
+
+		// Try to fetch code w/o git cli. This should work for public repos.
+		// For private repos, the expected error is a 404 not found error
+		err = spin.Run(
 			"Downloading template ",
-			initFunc,
-		); err != nil {
-			return fmt.Errorf("fetching template: %w", err)
+			func() error {
+				return fetchCodeCli.FetchCode(ctx, templateUrl, i.templateBranch, templateStagingDir)
+			})
+
+		if err != nil {
+			if !errors.Is(err, tools.FetchCodeNotFoundError) {
+				return fmt.Errorf("fetching template: %w", err)
+			}
+
+			log.Printf("received 404 not found error. Check if git cli is installed and try getting repository")
+			// try to use git cli, as this could be a private repo
+			gitCli := tools.NewGitCli()
+			if err := tools.EnsureInstalled(ctx, gitCli); err != nil {
+				return fmt.Errorf("trying to fetch repository as private: %w", err)
+			}
+			if err = gitCli.FetchCode(ctx, templateUrl, i.templateBranch, templateStagingDir); err != nil {
+				return fmt.Errorf("fetching template as private: %w", err)
+			}
 		}
 
 		log.Printf("template init, checking for duplicates. source: %s target: %s", templateStagingDir, azdCtx.ProjectDirectory())

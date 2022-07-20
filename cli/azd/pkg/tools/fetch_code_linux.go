@@ -45,22 +45,13 @@ func (cli *fetchCodeCli) Name() string {
 }
 
 func (cli *fetchCodeCli) FetchCode(ctx context.Context, repositoryPath string, branch string, target string) error {
-	defaultBranch := "main"
-	if branch != "" {
-		defaultBranch = branch
-	}
-	fetchUrl, err := parseRepoUrl(repositoryPath)
+	fetchUrl, err := parseRepoUrl(repositoryPath, branch)
 	if err != nil {
 		return err
 	}
-	fetchUrlPath := fmt.Sprintf(
-		"https://%s/%s/archive/%s.zip",
-		fetchUrl.host,
-		fetchUrl.slug,
-		defaultBranch,
-	)
-	zipFile := filepath.Join(target, defaultBranch+".zip")
-	res, err := executil.RunCommand(ctx, "wget", fetchUrlPath, "-P", target)
+
+	zipFile := filepath.Join(target, fetchUrl.branch+".zip")
+	res, err := executil.RunCommand(ctx, "wget", fetchUrl.DownloadZipUrl(), "-P", target)
 	if err != nil {
 		return fmt.Errorf("failed to fetch repository %s, %s: %w", repositoryPath, res.String(), err)
 	}
@@ -74,15 +65,8 @@ func (cli *fetchCodeCli) FetchCode(ctx context.Context, repositoryPath string, b
 	_, _ = executil.RunCommand(ctx, "rm", "-rf", zipFile)
 
 	// move content one level up
-	folderNameResult, _ := executil.RunCommand(ctx, "ls", target)
-	folderName := strings.Replace(folderNameResult.Stdout, "\n", "", -1)
-	tmpFolder := target + "tmp"
-	folderPath := filepath.Join(tmpFolder, folderName)
-	if err = os.Rename(target, tmpFolder); err != nil {
-		return fmt.Errorf("failed renaming folder: %w", err)
-	}
-	if err = os.Rename(folderPath, target); err != nil {
-		return fmt.Errorf("failed renaming folder: %w", err)
+	if err = moveFolderContentToParentFolder(ctx, target); err != nil {
+		return err
 	}
 
 	if err := os.RemoveAll(filepath.Join(target, ".git")); err != nil {

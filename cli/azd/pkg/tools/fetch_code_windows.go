@@ -66,15 +66,31 @@ func (cli *fetchCodeCli) Name() string {
 }
 
 func (cli *fetchCodeCli) FetchCode(ctx context.Context, repositoryPath string, branch string, target string) error {
-	args := []string{"clone", "--depth", "1", repositoryPath}
-	if branch != "" {
-		args = append(args, "--branch", branch)
-	}
-	args = append(args, target)
-
-	res, err := executil.RunCommand(ctx, "git", args...)
+	fetchUrl, err := parseRepoUrl(repositoryPath, branch)
 	if err != nil {
-		return fmt.Errorf("failed to clone repository %s, %s: %w", repositoryPath, res.String(), err)
+		return err
+	}
+
+	zipFile := filepath.Join(target, fetchUrl.branch+".zip")
+	res, err := executil.RunCommand(ctx,
+		"pwsh", "-c", "Invoke-WebRequest", fetchUrl.DownloadZipUrl(), "-OutFile", zipFile)
+	if err != nil {
+		return fmt.Errorf("failed to fetch repository %s, %s: %w", repositoryPath, res.String(), err)
+	}
+
+	// unzip
+	res, err = executil.RunCommand(ctx,
+		"pwsh", "-c", "Expand-Archive", "-LiteralPath", zipFile, "-DestinationPath", target)
+	if err != nil {
+		return fmt.Errorf("failed to unzip repository %s, %s: %w", repositoryPath, res.String(), err)
+	}
+	// remove zip
+	_, _ = executil.RunCommand(ctx,
+		"pwsh", "-c", "Remove-Item", zipFile)
+
+	// move content one level up
+	if err = moveFolderContentToParentFolder(ctx, target); err != nil {
+		return err
 	}
 
 	if err := os.RemoveAll(filepath.Join(target, ".git")); err != nil {

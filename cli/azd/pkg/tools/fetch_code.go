@@ -4,16 +4,29 @@
 package tools
 
 import (
+	"context"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 )
 
 var FetchCodeNotFoundError = errors.New("Repository was not found.")
 
 type gitRepo struct {
-	host string
-	slug string
+	host   string
+	slug   string
+	branch string
+}
+
+func (repoInfo *gitRepo) DownloadZipUrl() string {
+	return fmt.Sprintf(
+		"https://%s/%s/archive/%s.zip",
+		repoInfo.host,
+		repoInfo.slug,
+		repoInfo.branch,
+	)
 }
 
 func parseAsGit(url string) (gitRepo, error) {
@@ -34,7 +47,7 @@ func parseAsHttp(url string) (gitRepo, error) {
 	}, nil
 }
 
-func parseRepoUrl(url string) (gitRepo, error) {
+func parseRepoUrl(url string, branch string) (gitRepo, error) {
 	var result gitRepo
 	var err error
 
@@ -47,6 +60,47 @@ func parseRepoUrl(url string) (gitRepo, error) {
 	if err != nil {
 		return result, fmt.Errorf("parsing repo url: %w", err)
 	}
-
+	result.branch = resolveBranchName(branch)
 	return result, nil
+}
+
+// moveFolderContentToParentFolder gets the name of a folder inside the
+// parentFolder and moves its content to the parent folder.
+func moveFolderContentToParentFolder(ctx context.Context, parentFolder string) error {
+	parentDirectory, err := os.Open(parentFolder)
+	if err != nil {
+		return fmt.Errorf("failed renaming folder: %w", err)
+	}
+	parentDirectoryFiles, err := parentDirectory.ReadDir(0)
+	if err != nil {
+		return fmt.Errorf("failed renaming folder: %w", err)
+	}
+
+	var folders []string
+	for _, file := range parentDirectoryFiles {
+		if file.IsDir() {
+			folders = append(folders, file.Name())
+		}
+	}
+
+	for _, folderName := range folders {
+		tmpFolder := parentFolder + "tmp"
+		folderPath := filepath.Join(tmpFolder, folderName)
+
+		if err := os.Rename(parentFolder, tmpFolder); err != nil {
+			return fmt.Errorf("failed renaming folder: %w", err)
+		}
+		if err := os.Rename(folderPath, parentFolder); err != nil {
+			return fmt.Errorf("failed renaming folder: %w", err)
+		}
+	}
+	return nil
+}
+
+func resolveBranchName(branch string) string {
+	defaultBranch := "main"
+	if branch != "" {
+		defaultBranch = branch
+	}
+	return defaultBranch
 }

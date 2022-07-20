@@ -58,7 +58,7 @@
     "azure-dev.utils.quickPickWorkspaceFolder.title": "Open Folder",
     "azure-dev.utils.spawn.exited": "Process '{0}' exited with code {1}",
     "azure-dev.utils.spawn.exitError": "\nError: {0}",
-    "azure-dev.utils.azd.notInstalled": "Azure Developer CLI is not installed. Visit {0} to get it.",
+    "azure-dev.utils.azd.notInstalled": "This extension depends on having the Azure Developer CLI (azd) installed on your computer. Visit {0} to install it.",
     "azure-dev.utils.azd.goToInstallUrl": "Go to {0}",
     "azure-dev.utils.azd.later": "Later",
 

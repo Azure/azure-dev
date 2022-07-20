@@ -68,8 +68,7 @@ func (at *containerAppTarget) Deploy(ctx context.Context, azdCtx *environment.Az
 		return ServiceDeploymentResult{}, fmt.Errorf("saving image name to environment: %w", err)
 	}
 
-	log.Print("generating deployment parameters file")
-	infraProvider, err := provisioning.NewInfraProvider(at.env, at.config.Path(), at.config.Infra, at.cli)
+	infraProvider, err := provisioning.NewInfraProvider(at.env, at.config.Project.Path, at.config.Infra, at.cli)
 	if err != nil {
 		return ServiceDeploymentResult{}, fmt.Errorf("creating infrastructure provider: %w", err)
 	}
@@ -81,7 +80,7 @@ func (at *containerAppTarget) Deploy(ctx context.Context, azdCtx *environment.Az
 	}
 
 	progress <- "Updating container app image reference"
-	scope := provisioning.NewResourceGroupProvisioningScope(at.env.GetEnvName(), at.env.GetSubscriptionId(), at.scope.ResourceGroupName())
+	scope := provisioning.NewResourceGroupProvisioningScope(at.cli, at.env.GetSubscriptionId(), at.scope.ResourceGroupName(), at.env.GetEnvName())
 	deployChannel, progressChannel := infraProvider.Deploy(ctx, scope)
 
 	go func() {

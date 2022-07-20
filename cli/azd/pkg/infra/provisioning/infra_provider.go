@@ -20,12 +20,12 @@ const (
 )
 
 type CompiledTemplate struct {
-	Parameters []CompiledTemplateParameter
+	Parameters map[string]CompiledTemplateParameter
 	Outputs    []InfraDeploymentOutputParameter
 }
 
 type CompiledTemplateParameter struct {
-	Name         string
+	Type         string
 	DefaultValue interface{}
 	Value        interface{}
 }
@@ -61,58 +61,21 @@ type InfraDeploymentProgress struct {
 	Operations []tools.AzCliResourceOperation
 }
 
-type ProvisioningScope struct {
-	name           string
-	subscriptionId string
-	location       string
-	resourceGroup  string
-}
-
-func (s *ProvisioningScope) Name() string {
-	return s.name
-}
-
-func (s *ProvisioningScope) SubscriptionId() string {
-	return s.subscriptionId
-}
-
-func (s *ProvisioningScope) ResourceGroup() string {
-	return s.resourceGroup
-}
-
-func (s *ProvisioningScope) Location() string {
-	return s.location
-}
-
-func NewSubscriptionProvisioningScope(name string, subscriptionId string, location string) *ProvisioningScope {
-	return &ProvisioningScope{
-		name:           name,
-		subscriptionId: subscriptionId,
-		location:       location,
-	}
-}
-
-func NewResourceGroupProvisioningScope(name string, subscriptionId string, resourceGroup string) *ProvisioningScope {
-	return &ProvisioningScope{
-		name:           name,
-		subscriptionId: subscriptionId,
-		resourceGroup:  resourceGroup,
-	}
-}
-
 type InfraProvider interface {
 	Name() string
 	Compile(ctx context.Context) (*CompiledTemplate, error)
-	SaveTemplate(ctx context.Context, template *CompiledTemplate) error
-	Deploy(ctx context.Context, scope *ProvisioningScope) (<-chan *InfraDeploymentResult, <-chan *InfraDeploymentProgress)
+	SaveTemplate(ctx context.Context, template CompiledTemplate) error
+	Deploy(ctx context.Context, scope ProvisioningScope) (<-chan *InfraDeploymentResult, <-chan *InfraDeploymentProgress)
 }
 
 func NewInfraProvider(env *environment.Environment, projectPath string, options InfrastructureOptions, azCli tools.AzCli) (InfraProvider, error) {
 	var provider InfraProvider
 	bicepCli := tools.NewBicepCli(azCli)
 
-	switch options.Module {
-	case string(Bicep):
+	switch options.Provider {
+	case Bicep:
+		provider = NewBicepInfraProvider(env, projectPath, options, bicepCli, azCli)
+	default:
 		provider = NewBicepInfraProvider(env, projectPath, options, bicepCli, azCli)
 	}
 

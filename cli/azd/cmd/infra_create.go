@@ -77,7 +77,7 @@ func (ica *infraCreateAction) Run(ctx context.Context, cmd *cobra.Command, args 
 		projectConfig.Infra.Module = "main"
 	}
 
-	infraProvider, err := provisioning.NewInfraProvider(&env, azdCtx.ProjectPath(), projectConfig.Infra, azCli)
+	infraProvider, err := provisioning.NewInfraProvider(&env, azdCtx.ProjectDirectory(), projectConfig.Infra, azCli)
 	if err != nil {
 		return fmt.Errorf("error creating infra provider: %w", err)
 	}
@@ -98,21 +98,20 @@ func (ica *infraCreateAction) Run(ctx context.Context, cmd *cobra.Command, args 
 
 	if len(template.Parameters) > 0 {
 		updatedParameters := false
-		for _, parameter := range template.Parameters {
+		for key, param := range template.Parameters {
 			// If this parameter has a default, then there is no need for us to configure it
-			if parameter.HasDefaultValue() {
+			if param.HasDefaultValue() {
 				continue
 			}
-			if !parameter.HasValue() {
-
+			if !param.HasValue() {
 				var val string
 				if err := askOne(&survey.Input{
-					Message: fmt.Sprintf("Please enter a value for the '%s' deployment parameter:", parameter),
+					Message: fmt.Sprintf("Please enter a value for the '%s' deployment parameter:", key),
 				}, &val); err != nil {
 					return fmt.Errorf("prompting for deployment parameter: %w", err)
 				}
 
-				parameter.Value = val
+				param.Value = val
 
 				saveParameter := true
 				if err := askOne(&survey.Confirm{
@@ -122,19 +121,19 @@ func (ica *infraCreateAction) Run(ctx context.Context, cmd *cobra.Command, args 
 				}
 
 				if saveParameter {
-					env.Values[parameter.Name] = val
+					env.Values[key] = val
 				}
 
 				updatedParameters = true
 			}
 
-			if parameter.Name == "location" {
-				location = fmt.Sprint(parameter.Value)
+			if key == "location" {
+				location = fmt.Sprint(param.Value)
 			}
 		}
 
 		if updatedParameters {
-			if err := infraProvider.SaveTemplate(ctx, template); err != nil {
+			if err := infraProvider.SaveTemplate(ctx, *template); err != nil {
 				return fmt.Errorf("saving deployment parameters: %w", err)
 			}
 
@@ -168,9 +167,9 @@ func (ica *infraCreateAction) Run(ctx context.Context, cmd *cobra.Command, args 
 	// For interactive use (default case, using table formatter), we use a spinner.
 	// With JSON formatter we emit progress information, unless --no-progress option was set.
 	var provisionResult *provisioning.InfraDeploymentResult
-	provisioningScope := provisioning.NewSubscriptionProvisioningScope(env.GetEnvName(), env.GetSubscriptionId(), location)
 
 	deployAndReportProgress := func(showProgress func(string)) error {
+		provisioningScope := provisioning.NewSubscriptionProvisioningScope(azCli, location, env.GetSubscriptionId(), env.GetEnvName())
 		deployChannel, progressChannel := infraProvider.Deploy(ctx, provisioningScope)
 
 		go func() {

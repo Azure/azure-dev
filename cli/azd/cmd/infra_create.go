@@ -6,10 +6,12 @@ import (
 	"io/ioutil"
 	"net/url"
 	"os"
+	"sort"
 	"time"
 
 	"github.com/AlecAivazis/survey/v2"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
+	"github.com/azure/azure-dev/cli/azd/pkg/azureutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/commands"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/iac/bicep"
@@ -199,13 +201,15 @@ func (ica *infraCreateAction) Run(ctx context.Context, cmd *cobra.Command, args 
 	}
 	var res deployFuncResult
 
-	deployAndReportProgress := func(showProgress func(string)) error {
+	deployAndReportProgress := func(spinnerUpdater *spin.SpinnerUpdater) error {
 		deployResChan := make(chan deployFuncResult)
 		go func() {
 			res, err := bicep.Deploy(ctx, deploymentTarget, bicepPath, azdCtx.BicepParametersFilePath(ica.rootOptions.EnvironmentName, "main"))
 			deployResChan <- deployFuncResult{Result: res, Err: err}
 			close(deployResChan)
 		}()
+
+		loggedResources := map[string]bool{}
 
 		for {
 			select {
@@ -217,7 +221,7 @@ func (ica *infraCreateAction) Run(ctx context.Context, cmd *cobra.Command, args 
 					continue
 				}
 				if interactive {
-					reportDeploymentStatusInteractive(ctx, azCli, env, showProgress)
+					reportDeploymentStatusInteractive(ctx, azCli, env, spinnerUpdater, &loggedResources)
 				} else {
 					reportDeploymentStatusJson(ctx, azCli, env, formatter, cmd)
 				}
@@ -272,25 +276,78 @@ func (ica *infraCreateAction) Run(ctx context.Context, cmd *cobra.Command, args 
 	return nil
 }
 
-func reportDeploymentStatusInteractive(ctx context.Context, azCli tools.AzCli, env environment.Environment, showProgress func(string)) {
+func reportDeploymentStatusInteractive(ctx context.Context, azCli tools.AzCli, env environment.Environment, spinnerUpdater *spin.SpinnerUpdater, loggedResourcesPtr *map[string]bool) {
 	resourceManager := infra.NewAzureResourceManager(azCli)
 
-	operations, err := resourceManager.GetDeploymentResourceOperations(ctx, env.GetSubscriptionId(), env.GetEnvName())
+	resOps, err := resourceManager.GetDeploymentResourceOperations(ctx, env.GetSubscriptionId(), env.GetEnvName())
 	if err != nil {
 		// Status display is best-effort activity.
 		return
 	}
 
+	operations := *resOps
 	succeededCount := 0
+	newlyDeployedResources := []azureutil.DeployedAzureResource{}
+	loggedResources := *loggedResourcesPtr
 
-	for _, resourceOperation := range *operations {
+	for _, resourceOperation := range operations {
 		if resourceOperation.Properties.ProvisioningState == "Succeeded" {
 			succeededCount++
+
+			if !loggedResources[resourceOperation.Properties.TargetResource.Id] {
+				newlyDeployedResources = append(newlyDeployedResources, azureutil.DeployedAzureResource{
+					Id:                resourceOperation.Properties.TargetResource.Id,
+					ResourceName:      resourceOperation.Properties.TargetResource.ResourceName,
+					ResourceType:      resourceOperation.Properties.TargetResource.ResourceType,
+					DeployedTimestamp: resourceOperation.Properties.Timestamp,
+				})
+			}
 		}
 	}
 
-	status := fmt.Sprintf("Creating Azure resources (%d of ~%d completed) ", succeededCount, len(*operations))
-	showProgress(status)
+	sort.Sort(azureutil.DeployedAzureResourceByTimestamp(newlyDeployedResources))
+
+	for i := range newlyDeployedResources {
+		if newlyDeployedResources[i].ResourceType == string(infra.AzureResourceTypeWebSite) {
+			// Web apps have different kinds of resources sharing the same resource type 'Microsoft.Web/sites', i.e. Function app vs. App service
+			// We resolve it by querying the properties of the ARM resource.
+			resourceTypeName, err := resourceManager.GetWebAppResourceTypeDisplayName(ctx, env.GetSubscriptionId(), newlyDeployedResources[i].Id)
+
+			if err != nil {
+				// Best effort -- use static translation 'Web App' if we could not resolve the exact resource type
+				newlyDeployedResources[i].ResourceTypeDisplayName = infra.GetResourceTypeDisplayName(infra.AzureResourceType(newlyDeployedResources[i].ResourceType))
+			} else {
+				newlyDeployedResources[i].ResourceTypeDisplayName = resourceTypeName
+			}
+		} else {
+			resourceTypeName := infra.GetResourceTypeDisplayName(infra.AzureResourceType(newlyDeployedResources[i].ResourceType))
+
+			if resourceTypeName != "" {
+				newlyDeployedResources[i].ResourceTypeDisplayName = resourceTypeName
+			}
+		}
+	}
+
+	for _, newResource := range newlyDeployedResources {
+		// Don't log resource types that are not known to us.
+		// There are two cases:
+		// 1. Resource types that are sub-components. i.e., application settings: "Microsoft.Web/sites/config"
+		// 2. Azure resources that we do not have a translation of the resource type for.
+		if newResource.ResourceTypeDisplayName != "" {
+			spinnerUpdater.LogMessage(fmt.Sprintf("Created - %s: %s - %s", newResource.ResourceTypeDisplayName, newResource.ResourceName, newResource.DeployedTimestamp.Format(time.ANSIC)))
+			loggedResources[newResource.Id] = true
+		}
+	}
+
+	status := ""
+
+	if len(operations) > 0 {
+		status = fmt.Sprintf("Creating Azure resources (%d of ~%d completed) ", succeededCount, len(operations))
+	} else {
+		status = "Creating Azure resources "
+	}
+
+	spinnerUpdater.UpdatePrefix(status)
 }
 
 type progressReport struct {

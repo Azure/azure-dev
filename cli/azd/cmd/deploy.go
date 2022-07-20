@@ -131,13 +131,13 @@ func (d *deployAction) Run(ctx context.Context, cmd *cobra.Command, args []strin
 			continue
 		}
 
-		deployAndReportProgress := func(showProgress func(string)) error {
+		deployAndReportProgress := func(spinnerUpdater *spin.SpinnerUpdater) error {
 			result, progress := svc.Deploy(ctx, azdCtx)
 
 			// Report any progress
 			go func() {
 				for message := range progress {
-					showProgress(fmt.Sprintf("- %s...", message))
+					spinnerUpdater.UpdatePrefix(fmt.Sprintf("- %s...", message))
 				}
 			}()
 

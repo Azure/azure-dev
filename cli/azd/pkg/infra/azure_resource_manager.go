@@ -74,3 +74,19 @@ func (rm *AzureResourceManager) appendDeploymentResourcesRecursive(ctx context.C
 
 	return nil
 }
+
+func (rm *AzureResourceManager) GetWebAppResourceTypeDisplayName(ctx context.Context, subscriptionId string, resourceId string) (string, error) {
+	resource, err := rm.azCli.GetResource(ctx, subscriptionId, resourceId)
+
+	if err != nil {
+		return "", fmt.Errorf("getting web app resource type display names: %w", err)
+	}
+
+	if strings.Contains(resource.Kind, "functionapp") {
+		return "Function App", nil
+	} else if strings.Contains(resource.Kind, "app") {
+		return "App Service", nil
+	} else {
+		return "Web App", nil
+	}
+}

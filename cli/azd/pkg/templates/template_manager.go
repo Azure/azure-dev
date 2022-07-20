@@ -160,10 +160,12 @@ func FetchTemplateFromUrl(ctx context.Context, repositoryPath string, branch str
 	if !result.Success() {
 		return fmt.Errorf(
 			"Repository %s was not found.\n"+
-				"If this is a private repo, set environment variable: %s with auth token.\n"+
-				"You can use a personal access token for GitHub.\n"+
-				"See how to create it here: %s",
+				" - is \"%s\" an existing branch in the repo?\n"+
+				" - is this a \"private\" repository? Set environment variable: %s with auth token.\n"+
+				"    You can use a personal access token for GitHub.\n"+
+				"    See how to create it here: %s",
 			repositoryPath,
+			fetchUrl.branch,
 			gitPath,
 			aboutPat)
 	}

@@ -56,7 +56,7 @@ func main() {
 			fmt.Println(color.YellowString(`To update to the latest version, run:`))
 
 			if runtime.GOOS == "windows" {
-				fmt.Println(color.YellowString(`powershell -c "Set-ExecutionPolicy Bypass Process -Force; irm 'https://aka.ms/install-azd.ps1' | iex"`))
+				fmt.Println(color.YellowString(`powershell -ex AllSigned -c "Invoke-RestMethod 'https://aka.ms/install-azd.ps1' | Invoke-Expression"`))
 			} else {
 				fmt.Println(color.YellowString(`curl -fsSL https://aka.ms/install-azd.sh | bash`))
 			}

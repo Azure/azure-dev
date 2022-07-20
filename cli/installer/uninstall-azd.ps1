@@ -20,6 +20,7 @@ if (isLinuxOrMac) {
     if (!(Test-Path $installLocation)) {
         Write-Host "azd is not installed at $installLocation. To install run:"
         Write-Host "pwsh -c `"Invoke-RestMethod 'https://aka.ms/install-azd.ps1' | Invoke-Expression`"'"
+        exit 0
     }
 
     Write-Host "Removing install: $installLocation"

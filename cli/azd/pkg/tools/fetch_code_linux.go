@@ -37,7 +37,7 @@ func (cli *fetchCodeCli) CheckInstalled(ctx context.Context) (bool, error) {
 }
 
 func (cli *fetchCodeCli) InstallUrl() string {
-	return "apt install wget unzip"
+	return "how to install these tools for your Linux version, for example run: 'apt install wget unzip'"
 }
 
 func (cli *fetchCodeCli) Name() string {

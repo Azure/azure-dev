@@ -37,6 +37,7 @@ pflag
 pyapp
 restoreapp
 rzip
+serverfarms
 sstore
 staticwebapp
 structs

@@ -142,7 +142,8 @@ func resolveBranchName(branch string) string {
 	return defaultBranch
 }
 
-var gitPath string = "AZD_GIT_PAT"
+const gitPath string = "AZD_GIT_PAT"
+const aboutPat string = "https://docs.github.com/authentication/keeping-your-account-and-data-secure/creating-a-personal-access-token"
 
 func FetchTemplateFromUrl(ctx context.Context, repositoryPath string, branch string, target string) error {
 	fetchUrl, err := parseRepoUrl(repositoryPath, branch)
@@ -152,8 +153,19 @@ func FetchTemplateFromUrl(ctx context.Context, repositoryPath string, branch str
 
 	zipFile := filepath.Join(target, fetchUrl.branch+".zip")
 	authPat := osutil.GetenvOrDefault(gitPath, "")
-	if err = httpUtil.DownloadFile(ctx, fetchUrl.DownloadZipUrl(), authPat, zipFile); err != nil {
+	result, err := httpUtil.DownloadFile(ctx, fetchUrl.DownloadZipUrl(), authPat, zipFile)
+	if err != nil {
 		return fmt.Errorf("failed to fetch repository %s: %w", repositoryPath, err)
+	}
+	if !result.Success() {
+		return fmt.Errorf(
+			"Repository %s was not found.\n"+
+				"If this is a private repo, set environment variable: %s with auth token.\n"+
+				"You can use a personal access token for GitHub.\n"+
+				"See how to create it here: %s",
+			repositoryPath,
+			gitPath,
+			aboutPat)
 	}
 
 	// unzip

@@ -86,11 +86,20 @@ func GetHttpUtilFromContext(ctx context.Context) HttpUtil {
 	return client
 }
 
-func DownloadFile(ctx context.Context, url string, authToken string, target string) error {
+type DownloadFileResult struct {
+	statusCode int
+}
+
+func (result *DownloadFileResult) Success() bool {
+	return result.statusCode >= 200 && result.statusCode < 300
+}
+
+func DownloadFile(ctx context.Context, url string, authToken string, target string) (DownloadFileResult, error) {
+	var result DownloadFileResult
 	// create the file
 	file, err := os.Create(target)
 	if err != nil {
-		return fmt.Errorf("downloading file: %w", err)
+		return result, fmt.Errorf("downloading file: %w", err)
 	}
 
 	// create opens the file, so let's make sure to close it on exit
@@ -98,7 +107,7 @@ func DownloadFile(ctx context.Context, url string, authToken string, target stri
 
 	downloadRequest, err := http.NewRequest("GET", url, nil)
 	if err != nil {
-		return fmt.Errorf("creating request: %w", err)
+		return result, fmt.Errorf("creating request: %w", err)
 	}
 
 	if authToken != "" {
@@ -107,17 +116,20 @@ func DownloadFile(ctx context.Context, url string, authToken string, target stri
 
 	response, err := http.DefaultClient.Do(downloadRequest)
 	if err != nil {
-		return fmt.Errorf("sending request: %w", err)
+		return result, fmt.Errorf("sending request: %w", err)
 	}
-
 	// make sure to close the I/O to body
 	defer response.Body.Close()
 
 	// write from network to target file
 	_, err = io.Copy(file, response.Body)
 	if err != nil {
-		return fmt.Errorf("writing file: %w", err)
+		return result, fmt.Errorf("writing file: %w", err)
 	}
 
-	return nil
+	result.statusCode = response.StatusCode
+	if !result.Success() {
+		defer os.Remove(target)
+	}
+	return result, nil
 }

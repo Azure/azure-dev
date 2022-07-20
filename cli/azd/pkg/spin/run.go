@@ -15,6 +15,7 @@ type SpinnerUpdater struct {
 	UpdatePrefix func(string)
 
 	// A function, when invoked, logs a message to standard output and pushes the spinner onto a new line.
+	// Example:
 	// Console output before, with spinner title set to "Doing things...":
 	// > Doing things... X
 	//
@@ -49,6 +50,8 @@ func RunWithUpdater(prefix string, runFn RunWithUpdateFunc, finalFuncs ...func(*
 	spin, _ := yacspin.New(yacspin.Config{
 		Frequency: time.Millisecond * 500,
 		CharSet:   yacspin.CharSets[9],
+		// Do not set a StopMessage.
+		// The current LogMessage functionality depends on the StopMessage being empty.
 	})
 	spin.Prefix(prefix)
 

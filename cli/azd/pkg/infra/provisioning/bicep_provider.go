@@ -23,12 +23,18 @@ type BicepTemplate struct {
 	Schema         string                    `json:"$schema`
 	ContentVersion string                    `json:"contentVersion"`
 	Parameters     map[string]BicepParameter `json:"parameters"`
+	Outputs        map[string]BicepParameter `json:"outputs"`
 }
 
 type BicepParameter struct {
 	Type         string      `json:"type"`
 	DefaultValue interface{} `json:"defaultValue"`
 	Value        interface{} `json:"value"`
+}
+
+type BicepOutputParameter struct {
+	Type  string      `json:"type"`
+	Value interface{} `json:"value"`
 }
 
 // BicepInfraProvider exposes infrastructure provisioning using Azure Bicep templates
@@ -102,61 +108,88 @@ func (p *BicepInfraProvider) SaveTemplate(ctx context.Context, template Compiled
 }
 
 // Provisioning the infrastructure within the specified template
-func (p *BicepInfraProvider) Deploy(ctx context.Context, scope ProvisioningScope) (<-chan *InfraDeploymentResult, <-chan *InfraDeploymentProgress) {
-	result := make(chan *InfraDeploymentResult, 1)
-	progress := make(chan *InfraDeploymentProgress)
+func (p *BicepInfraProvider) Deploy(ctx context.Context, template *CompiledTemplate, scope ProvisioningScope) (<-chan *InfraDeploymentResult, <-chan *InfraDeploymentProgress) {
+	resultChannel := make(chan *InfraDeploymentResult, 1)
+	progressChannel := make(chan *InfraDeploymentProgress)
 
 	go func() {
-		defer close(result)
-		defer close(progress)
+		defer close(resultChannel)
+		defer close(progressChannel)
 
-		// Do the deployment
+		isDeploymentComplete := false
+
+		// Start the deployment
 		go func() {
-			// Do the creating. The call to `DeployToSubscription` blocks until the deployment completes,
-			// which can take a bit, so we typically do some progress indication.
-			// For interactive use (default case, using table formatter), we use a spinner.
-			// With JSON formatter we emit progress information, unless --no-progress option was set.
 			modulePath := p.modulePath()
 			parametersFilePath := p.parametersFilePath()
-
 			deployResult, err := p.deployModule(ctx, scope, modulePath, parametersFilePath)
-			result <- &InfraDeploymentResult{
+			var outputs map[string]CompiledTemplateOutputParameter
+
+			if deployResult != nil {
+				outputs = p.createOutputParameters(template, deployResult.Properties.Outputs)
+			}
+
+			resultChannel <- &InfraDeploymentResult{
 				Error:      err,
 				Operations: nil,
-				Outputs:    p.createOutputParameters((*deployResult).Properties.Outputs),
+				Outputs:    outputs,
 			}
+
+			isDeploymentComplete = true
 		}()
 
+		// Report incremental progress
+		resourceManager := infra.NewAzureResourceManager(p.az)
 		for {
-			resourceManager := infra.NewAzureResourceManager(p.az)
-
-			ops, err := resourceManager.GetDeploymentResourceOperations(ctx, p.env.GetSubscriptionId(), p.env.GetEnvName())
-			if err != nil || len(*ops) == 0 {
-				// Status display is best-effort activity.
-				return
+			if isDeploymentComplete {
+				break
 			}
 
-			progressReport := InfraDeploymentProgress{
-				Timestamp:  time.Now(),
-				Operations: *ops,
-			}
+			select {
+			case <-time.After(10 * time.Second):
+				ops, err := resourceManager.GetDeploymentResourceOperations(ctx, p.env.GetSubscriptionId(), p.env.GetEnvName())
+				if err != nil || len(*ops) == 0 {
+					continue
+				}
 
-			progress <- &progressReport
+				progressReport := InfraDeploymentProgress{
+					Timestamp:  time.Now(),
+					Operations: *ops,
+				}
+
+				// If deployment is already completed don't report status since the channel has been closed
+				if !isDeploymentComplete {
+					progressChannel <- &progressReport
+				}
+			}
 		}
 	}()
 
-	return result, progress
+	return resultChannel, progressChannel
 }
 
-func (p *BicepInfraProvider) createOutputParameters(azureOutputParams map[string]tools.AzCliDeploymentOutput) []InfraDeploymentOutputParameter {
-	outputParams := []InfraDeploymentOutputParameter{}
+func (p *BicepInfraProvider) createOutputParameters(template *CompiledTemplate, azureOutputParams map[string]tools.AzCliDeploymentOutput) map[string]CompiledTemplateOutputParameter {
+	canonicalOutputCasings := make(map[string]string, len(template.Outputs))
 
-	for key, param := range azureOutputParams {
-		outputParams = append(outputParams, InfraDeploymentOutputParameter{
-			Name:  key,
-			Type:  param.Type,
-			Value: param.Value,
-		})
+	for key := range template.Outputs {
+		canonicalOutputCasings[strings.ToLower(key)] = key
+	}
+
+	outputParams := make(map[string]CompiledTemplateOutputParameter, len(azureOutputParams))
+
+	for key, azureParam := range azureOutputParams {
+		var paramName string
+		canonicalCasing, found := canonicalOutputCasings[strings.ToLower(key)]
+		if found {
+			paramName = canonicalCasing
+		} else {
+			paramName = key
+		}
+
+		outputParams[paramName] = CompiledTemplateOutputParameter{
+			Type:  azureParam.Type,
+			Value: azureParam.Value,
+		}
 	}
 
 	return outputParams
@@ -227,11 +260,12 @@ func (p *BicepInfraProvider) createTemplate(ctx context.Context, modulePath stri
 }
 
 // Converts a Bicep parameters file to a generic provisioning template
-func (p *BicepInfraProvider) convertToCompiledTemplate(bicepParamsFile BicepTemplate) (*CompiledTemplate, error) {
+func (p *BicepInfraProvider) convertToCompiledTemplate(bicepTemplate BicepTemplate) (*CompiledTemplate, error) {
 	template := CompiledTemplate{}
 	parameters := make(map[string]CompiledTemplateParameter)
+	outputs := make(map[string]CompiledTemplateOutputParameter)
 
-	for key, param := range bicepParamsFile.Parameters {
+	for key, param := range bicepTemplate.Parameters {
 		parameters[key] = CompiledTemplateParameter{
 			Type:         param.Type,
 			Value:        param.Value,
@@ -239,7 +273,15 @@ func (p *BicepInfraProvider) convertToCompiledTemplate(bicepParamsFile BicepTemp
 		}
 	}
 
+	for key, param := range bicepTemplate.Outputs {
+		outputs[key] = CompiledTemplateOutputParameter{
+			Type:  param.Type,
+			Value: param.Value,
+		}
+	}
+
 	template.Parameters = parameters
+	template.Outputs = outputs
 
 	return &template, nil
 }

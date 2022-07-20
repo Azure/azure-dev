@@ -26,14 +26,8 @@ type InfrastructureOptions struct {
 
 type InfraDeploymentResult struct {
 	Operations []tools.AzCliResourceOperation
-	Outputs    []InfraDeploymentOutputParameter
+	Outputs    map[string]CompiledTemplateOutputParameter
 	Error      error
-}
-
-type InfraDeploymentOutputParameter struct {
-	Name  string
-	Type  string
-	Value interface{}
 }
 
 type InfraDeploymentProgress struct {
@@ -45,7 +39,7 @@ type InfraProvider interface {
 	Name() string
 	Compile(ctx context.Context) (*CompiledTemplate, error)
 	SaveTemplate(ctx context.Context, template CompiledTemplate) error
-	Deploy(ctx context.Context, scope ProvisioningScope) (<-chan *InfraDeploymentResult, <-chan *InfraDeploymentProgress)
+	Deploy(ctx context.Context, template *CompiledTemplate, scope ProvisioningScope) (<-chan *InfraDeploymentResult, <-chan *InfraDeploymentProgress)
 }
 
 func NewInfraProvider(env *environment.Environment, projectPath string, options InfrastructureOptions, azCli tools.AzCli) (InfraProvider, error) {

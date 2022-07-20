@@ -170,7 +170,7 @@ func (ica *infraCreateAction) Run(ctx context.Context, cmd *cobra.Command, args 
 
 	deployAndReportProgress := func(showProgress func(string)) error {
 		provisioningScope := provisioning.NewSubscriptionProvisioningScope(azCli, location, env.GetSubscriptionId(), env.GetEnvName())
-		deployChannel, progressChannel := infraProvider.Deploy(ctx, provisioningScope)
+		deployChannel, progressChannel := infraProvider.Deploy(ctx, template, provisioningScope)
 
 		go func() {
 			for progressReport := range progressChannel {

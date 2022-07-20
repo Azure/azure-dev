@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/executil"
 )
@@ -44,6 +43,7 @@ func (cli *fetchCodeCli) Name() string {
 	return "[wget, unzip]"
 }
 
+// FetchCode uses wget and unzip to download the template code from the repository path
 func (cli *fetchCodeCli) FetchCode(ctx context.Context, repositoryPath string, branch string, target string) error {
 	fetchUrl, err := parseRepoUrl(repositoryPath, branch)
 	if err != nil {

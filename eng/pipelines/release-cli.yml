@@ -130,11 +130,21 @@ stages:
               if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
               ~/go/bin/gocov convert cover.out | ~/go/bin/gocov-xml > coverage.xml
             workingDirectory: cli/azd
-            condition: and(succeeded(), eq(variables['GenerateCoverage'], 'true'))
+            condition: >-
+              and(
+                succeeded(),
+                eq(variables['GenerateCoverage'], 'true'),
+                ne(variables['Skip.LiveTest'], 'true')
+              )
             displayName: Generate coverage
 
           - task: PublishCodeCoverageResults@1
-            condition: and(succeeded(), eq(variables['GenerateCoverage'], 'true'))
+            condition: >-
+              and(
+                succeeded(),
+                eq(variables['GenerateCoverage'], 'true'),
+                ne(variables['Skip.LiveTest'], 'true')
+              )
             inputs:
               codeCoverageTool: Cobertura
               summaryFileLocation: '$(Build.SourcesDirectory)/**/coverage.xml'

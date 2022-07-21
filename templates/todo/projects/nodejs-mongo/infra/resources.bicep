@@ -3,12 +3,10 @@ param principalId string = ''
 param resourceToken string
 param tags object
 
-// TODO: This path will need to be updated by future repoman update to do find/replace on paths.
-// var prefixes = loadJsonContent('../../../../common/infra/prefixes.json')
-var prefixes = loadJsonContent('./prefixes.json')
+var abbrs = loadJsonContent('../../../../common/infra/abbreviations.json')
 
 resource web 'Microsoft.Web/sites@2021-03-01' = {
-  name: '${prefixes.webSitesAppService}web-${resourceToken}'
+  name: '${abbrs.webSitesAppService}web-${resourceToken}'
   location: location
   tags: union(tags, {
       'azd-service-name': 'web'
@@ -59,7 +57,7 @@ resource web 'Microsoft.Web/sites@2021-03-01' = {
 }
 
 resource api 'Microsoft.Web/sites@2021-03-01' = {
-  name: '${prefixes.webSitesAppService}api-${resourceToken}'
+  name: '${abbrs.webSitesAppService}api-${resourceToken}'
   location: location
   tags: union(tags, {
       'azd-service-name': 'api'
@@ -116,7 +114,7 @@ resource api 'Microsoft.Web/sites@2021-03-01' = {
 }
 
 resource appServicePlan 'Microsoft.Web/serverfarms@2021-03-01' = {
-  name: '${prefixes.webServerFarms}${resourceToken}'
+  name: '${abbrs.webServerFarms}${resourceToken}'
   location: location
   tags: tags
   sku: {
@@ -128,7 +126,7 @@ resource appServicePlan 'Microsoft.Web/serverfarms@2021-03-01' = {
 }
 
 resource keyVault 'Microsoft.KeyVault/vaults@2021-10-01' = {
-  name: '${prefixes.keyVaultVaults}${resourceToken}'
+  name: '${abbrs.keyVaultVaults}${resourceToken}'
   location: location
   tags: tags
   properties: {
@@ -171,7 +169,7 @@ resource keyVault 'Microsoft.KeyVault/vaults@2021-10-01' = {
 }
 
 resource logAnalyticsWorkspace 'Microsoft.OperationalInsights/workspaces@2020-03-01-preview' = {
-  name: '${prefixes.operationalInsightsWorkspaces}${resourceToken}'
+  name: '${abbrs.operationalInsightsWorkspaces}${resourceToken}'
   location: location
   tags: tags
   properties: any({
@@ -196,7 +194,7 @@ module applicationInsightsResources './applicationinsights.bicep' = {
 }
 
 resource cosmos 'Microsoft.DocumentDB/databaseAccounts@2021-10-15' = {
-  name: '${prefixes.documentDBDatabaseAccounts}${resourceToken}'
+  name: '${abbrs.documentDBDatabaseAccounts}${resourceToken}'
   kind: 'MongoDB'
   location: location
   tags: tags

@@ -23,6 +23,9 @@ pr:
 
 variables:
   - template: /eng/pipelines/templates/variables/globals.yml
+  # TODO: Remove before merge
+  - name: Skip.LiveTest
+    value: true
 
 stages:
   - stage: BuildAndTest

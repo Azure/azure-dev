@@ -538,6 +538,7 @@ stages:
             displayName: Uninstall
             inputs:
               script: cmd /c test-windows-uninstall.cmd
+              workingDirectory: cli/installer
 
           - pwsh: |
               $regKey = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Environment', $false)

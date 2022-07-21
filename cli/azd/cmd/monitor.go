@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/azureutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/commands"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
@@ -27,13 +26,13 @@ func monitorCmd(rootOptions *commands.GlobalCommandOptions) *cobra.Command {
 		"monitor",
 		"Monitor a deployed application",
 		`Monitor a deployed application
-		
+
 Examples:
 
 	$ azd monitor --overview
 	$ azd monitor -–live
 	$ azd monitor --logs
-		
+
 For more information, please visit: https://aka.ms/azure-dev/monitor`,
 	)
 	cmd.Flags().BoolP("help", "h", false, "Help for "+cmd.Name())
@@ -86,7 +85,8 @@ func (m *monitorAction) Run(ctx context.Context, _ *cobra.Command, args []string
 		return fmt.Errorf("getting tenant id for subscription: %w", err)
 	}
 
-	resourceGroups, err := azureutil.GetResourceGroupsForDeployment(ctx, azCli, env.GetSubscriptionId(), env.GetEnvName())
+	resourceManager := infra.NewAzureResourceManager(azCli)
+	resourceGroups, err := resourceManager.GetResourceGroupsForDeployment(ctx, env.GetSubscriptionId(), env.GetEnvName())
 	if err != nil {
 		return fmt.Errorf("discovering resource groups from deployment: %w", err)
 	}

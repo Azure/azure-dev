@@ -10,9 +10,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/azureutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/commands"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/pkg/spin"
@@ -37,7 +37,7 @@ Examples:
 	$ azd deploy
 	$ azd deploy –-service api
 	$ azd deploy –-service web
-	
+
 Once deployment is complete, the endpoint is printed. Click or copy and paste the endpoint in a browser to launch the service.`,
 	)
 	cmd.Flags().BoolP("help", "h", false, "Help for "+cmd.Name())
@@ -182,7 +182,8 @@ func (d *deployAction) Run(ctx context.Context, cmd *cobra.Command, args []strin
 		}
 	}
 
-	resourceGroups, err := azureutil.GetResourceGroupsForDeployment(ctx, azCli, env.GetSubscriptionId(), env.GetEnvName())
+	resourceManager := infra.NewAzureResourceManager(azCli)
+	resourceGroups, err := resourceManager.GetResourceGroupsForDeployment(ctx, env.GetSubscriptionId(), env.GetEnvName())
 	if err != nil {
 		return fmt.Errorf("discovering resource groups from deployment: %w", err)
 	}

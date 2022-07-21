@@ -166,7 +166,7 @@ func (ica *infraCreateAction) Run(ctx context.Context, cmd *cobra.Command, args 
 	// which can take a bit, so we typically do some progress indication.
 	// For interactive use (default case, using table formatter), we use a spinner.
 	// With JSON formatter we emit progress information, unless --no-progress option was set.
-	var provisionResult *provisioning.InfraDeploymentResult
+	var provisionResult *provisioning.ProvisionApplyResult
 
 	deployAndReportProgress := func(showProgress func(string)) error {
 		provisioningScope := provisioning.NewSubscriptionProvisioningScope(azCli, location, env.GetSubscriptionId(), env.GetEnvName())
@@ -236,7 +236,7 @@ func (ica *infraCreateAction) Run(ctx context.Context, cmd *cobra.Command, args 
 	return nil
 }
 
-func reportDeploymentStatusInteractive(progressReport provisioning.InfraDeploymentProgress, showProgress func(string)) {
+func reportDeploymentStatusInteractive(progressReport provisioning.ProvisionApplyProgress, showProgress func(string)) {
 	succeededCount := 0
 
 	for _, resourceOperation := range progressReport.Operations {
@@ -254,6 +254,6 @@ type progressReport struct {
 	Operations []tools.AzCliResourceOperation `json:"operations"`
 }
 
-func reportDeploymentStatusJson(progressReport provisioning.InfraDeploymentProgress, formatter output.Formatter, cmd *cobra.Command) {
+func reportDeploymentStatusJson(progressReport provisioning.ProvisionApplyProgress, formatter output.Formatter, cmd *cobra.Command) {
 	_ = formatter.Format(progressReport, cmd.OutOrStdout(), nil)
 }

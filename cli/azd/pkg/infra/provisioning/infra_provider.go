@@ -24,23 +24,34 @@ type InfrastructureOptions struct {
 	Module   string                     `yaml:"module"`
 }
 
-type InfraDeploymentResult struct {
+type ProvisionApplyResult struct {
 	Operations []tools.AzCliResourceOperation
 	Outputs    map[string]ProvisioningPlanOutputParameter
 	Error      error
 }
 
-type InfraDeploymentProgress struct {
+type ProvisionDestroyResult struct {
+	Resources []tools.AzCliResource
+	Outputs   map[string]ProvisioningPlanOutputParameter
+	Error     error
+}
+
+type ProvisionApplyProgress struct {
 	Timestamp  time.Time
 	Operations []tools.AzCliResourceOperation
+}
+
+type ProvisionDestroyProgress struct {
+	Message   string
+	Timestamp time.Time
 }
 
 type InfraProvider interface {
 	Name() string
 	Plan(ctx context.Context) (*ProvisioningPlan, error)
-	SaveTemplate(ctx context.Context, template ProvisioningPlan) error
-	Apply(ctx context.Context, template *ProvisioningPlan, scope ProvisioningScope) (<-chan *InfraDeploymentResult, <-chan *InfraDeploymentProgress)
-	Destroy(ctx context.Context) error
+	SaveTemplate(ctx context.Context, plan ProvisioningPlan) error
+	Apply(ctx context.Context, plan *ProvisioningPlan, scope ProvisioningScope) (<-chan *ProvisionApplyResult, <-chan *ProvisionApplyProgress)
+	Destroy(ctx context.Context, plan *ProvisioningPlan) (<-chan *ProvisionDestroyResult, <-chan *ProvisionDestroyProgress)
 }
 
 func NewInfraProvider(env *environment.Environment, projectPath string, options InfrastructureOptions, azCli tools.AzCli) (InfraProvider, error) {

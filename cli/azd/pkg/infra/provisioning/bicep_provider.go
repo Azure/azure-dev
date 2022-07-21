@@ -42,8 +42,8 @@ type BicepInfraProvider struct {
 	env         *environment.Environment
 	projectPath string
 	options     InfrastructureOptions
-	bicep       tools.BicepCli
-	az          tools.AzCli
+	bicepCli    tools.BicepCli
+	azCli       tools.AzCli
 }
 
 // Name gets the name of the infra provider
@@ -108,9 +108,9 @@ func (p *BicepInfraProvider) SaveTemplate(ctx context.Context, template Provisio
 }
 
 // Provisioning the infrastructure within the specified template
-func (p *BicepInfraProvider) Apply(ctx context.Context, plan *ProvisioningPlan, scope ProvisioningScope) (<-chan *InfraDeploymentResult, <-chan *InfraDeploymentProgress) {
-	resultChannel := make(chan *InfraDeploymentResult, 1)
-	progressChannel := make(chan *InfraDeploymentProgress)
+func (p *BicepInfraProvider) Apply(ctx context.Context, plan *ProvisioningPlan, scope ProvisioningScope) (<-chan *ProvisionApplyResult, <-chan *ProvisionApplyProgress) {
+	resultChannel := make(chan *ProvisionApplyResult, 1)
+	progressChannel := make(chan *ProvisionApplyProgress)
 
 	go func() {
 		defer close(resultChannel)
@@ -129,7 +129,7 @@ func (p *BicepInfraProvider) Apply(ctx context.Context, plan *ProvisioningPlan, 
 				outputs = p.createOutputParameters(plan, deployResult.Properties.Outputs)
 			}
 
-			resultChannel <- &InfraDeploymentResult{
+			resultChannel <- &ProvisionApplyResult{
 				Error:      err,
 				Operations: nil,
 				Outputs:    outputs,
@@ -139,7 +139,7 @@ func (p *BicepInfraProvider) Apply(ctx context.Context, plan *ProvisioningPlan, 
 		}()
 
 		// Report incremental progress
-		resourceManager := infra.NewAzureResourceManager(p.az)
+		resourceManager := infra.NewAzureResourceManager(p.azCli)
 		for {
 			if isDeploymentComplete {
 				break
@@ -152,7 +152,7 @@ func (p *BicepInfraProvider) Apply(ctx context.Context, plan *ProvisioningPlan, 
 					continue
 				}
 
-				progressReport := InfraDeploymentProgress{
+				progressReport := ProvisionApplyProgress{
 					Timestamp:  time.Now(),
 					Operations: *ops,
 				}
@@ -168,8 +168,55 @@ func (p *BicepInfraProvider) Apply(ctx context.Context, plan *ProvisioningPlan, 
 	return resultChannel, progressChannel
 }
 
-func (p *BicepInfraProvider) Destroy(ctx context.Context) error {
-	return nil
+func (p *BicepInfraProvider) Destroy(ctx context.Context, plan *ProvisioningPlan) (<-chan *ProvisionDestroyResult, <-chan *ProvisionDestroyProgress) {
+	resultChannel := make(chan *ProvisionDestroyResult, 1)
+	progressChannel := make(chan *ProvisionDestroyProgress)
+
+	go func() {
+		defer close(resultChannel)
+		defer close(progressChannel)
+
+		destroyResult := ProvisionDestroyResult{}
+
+		progressChannel <- &ProvisionDestroyProgress{Message: "Fetching resource groups", Timestamp: time.Now()}
+		resourceManager := infra.NewAzureResourceManager(p.azCli)
+		resourceGroups, err := resourceManager.GetResourceGroupsForDeployment(ctx, p.env.GetSubscriptionId(), p.env.GetEnvName())
+		if err != nil {
+			destroyResult.Error = fmt.Errorf("discovering resource groups from deployment: %w", err)
+		}
+
+		var allResources []tools.AzCliResource
+
+		progressChannel <- &ProvisionDestroyProgress{Message: "Fetching resources", Timestamp: time.Now()}
+		for _, resourceGroup := range resourceGroups {
+			resources, err := p.azCli.ListResourceGroupResources(ctx, p.env.GetSubscriptionId(), resourceGroup)
+			if err != nil {
+				destroyResult.Error = fmt.Errorf("listing resource group %s: %w", resourceGroup, err)
+			}
+
+			allResources = append(allResources, resources...)
+		}
+
+		for _, resourceGroup := range resourceGroups {
+			message := fmt.Sprintf("Deleting resource group '%s'", resourceGroup)
+			progressChannel <- &ProvisionDestroyProgress{Message: message, Timestamp: time.Now()}
+
+			if err := p.azCli.DeleteResourceGroup(ctx, p.env.GetSubscriptionId(), resourceGroup); err != nil {
+				destroyResult.Error = fmt.Errorf("deleting resource group %s: %w", resourceGroup, err)
+			}
+		}
+
+		progressChannel <- &ProvisionDestroyProgress{Message: "Deleting deployment", Timestamp: time.Now()}
+		if err := p.azCli.DeleteSubscriptionDeployment(ctx, p.env.GetSubscriptionId(), p.env.GetEnvName()); err != nil {
+			destroyResult.Error = fmt.Errorf("deleting subscription deployment: %w", err)
+		}
+
+		destroyResult.Resources = allResources
+
+		resultChannel <- &destroyResult
+	}()
+
+	return resultChannel, progressChannel
 }
 
 func (p *BicepInfraProvider) createOutputParameters(template *ProvisioningPlan, azureOutputParams map[string]tools.AzCliDeploymentOutput) map[string]ProvisioningPlanOutputParameter {
@@ -242,7 +289,7 @@ func (p *BicepInfraProvider) createParametersFile() (*BicepTemplate, error) {
 // Creates the compiled template from the specified module path
 func (p *BicepInfraProvider) createPlan(ctx context.Context, modulePath string) (*ProvisioningPlan, error) {
 	// Compile the bicep file into an ARM template we can create.
-	compiled, err := p.bicep.Build(ctx, modulePath)
+	compiled, err := p.bicepCli.Build(ctx, modulePath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to compile bicep template: %w", err)
 	}
@@ -351,7 +398,7 @@ func NewBicepInfraProvider(env *environment.Environment, projectPath string, opt
 		env:         env,
 		projectPath: projectPath,
 		options:     options,
-		bicep:       bicep,
-		az:          az,
+		bicepCli:    bicep,
+		azCli:       az,
 	}
 }

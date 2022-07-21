@@ -124,7 +124,7 @@ func (at *containerAppTarget) Endpoints(ctx context.Context) ([]string, error) {
 	return []string{fmt.Sprintf("https://%s/", containerAppProperties.Properties.Configuration.Ingress.Fqdn)}, nil
 }
 
-func createProgressMessage(progressReport *provisioning.InfraDeploymentProgress) string {
+func createProgressMessage(progressReport *provisioning.ProvisionApplyProgress) string {
 	succeededCount := 0
 
 	for _, resourceOperation := range progressReport.Operations {

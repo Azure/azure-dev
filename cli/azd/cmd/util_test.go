@@ -7,7 +7,6 @@ import (
 	"testing"
 
 	"github.com/AlecAivazis/survey/v2"
-	"github.com/azure/azure-dev/cli/azd/pkg/azureutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/stretchr/testify/require"
@@ -86,7 +85,8 @@ func Test_promptEnvironmentName(t *testing.T) {
 			},
 		}
 
-		groups, err := azureutil.GetResourceGroupsForDeployment(context.Background(), cli, "sub-id", "deployment-name")
+		resourceManager := infra.NewAzureResourceManager(cli)
+		groups, err := resourceManager.GetResourceGroupsForDeployment(context.Background(), "sub-id", "deployment-name")
 		require.NoError(t, err)
 
 		sort.Strings(groups)

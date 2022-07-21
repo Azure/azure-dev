@@ -466,6 +466,60 @@ stages:
             env:
               GH_TOKEN: $(azuresdk-github-pat)
 
+      - job: Verify_Windows_Installer
+        condition: >-
+          and(
+            succeeded(),
+            ne(variables['Skip.Release'], 'true'),
+            or(
+              eq('PullRequest', variables['BuildReasonOverride']),
+              and(
+                eq('', variables['BuildReasonOverride']),
+                eq(variables['Build.Reason'], 'PullRequest')
+              )
+            )
+          )
+
+        dependsOn: Publish_For_PR
+        variables:
+          BaseUrl: $[ dependencies.Publish_for_PR.outputs['GenerateUrlBase.UrlBase'] ]
+
+        pool:
+          name: azsdk-pool-mms-win-2019-general
+          OSVmImage: MMS2019
+
+        steps:
+          - pwsh: |
+              Write-Host "##vso[task.setvariable variable=OriginalPath;]$($env:PATH)"
+            displayName: Record original PATH variable
+
+          - task: CmdLine@2
+            displayName: Install
+            inputs:
+              script: cmd /c test-windows-install.cmd %BASEURL%
+              workingDirectory: cli/installer/
+            env:
+              BASEURL: $(BaseUrl)
+
+          - task: CmdLine@2
+            displayName: Show installed version
+            inputs:
+              script: azd version
+
+          - task: CmdLine@2
+            displayName: Uninstall
+            inputs:
+              script: cmd /c test-windows-uninstall.cmd
+
+          - pwsh: |
+              if ($env:PATH -ne '$(OriginalPath)') {
+                Write-Error "Path does not match after uninstall"
+                Write-Error "Expected: $(OriginalPath)"
+                Write-Error "Actual: $($env:PATH)"
+                exit 1
+              }
+            displayName: Validate PATH cleanup
+
       - job: Verify_Installers
         condition: >-
           and(
@@ -487,17 +541,11 @@ stages:
 
         strategy:
           matrix:
-            Windows:
-              Pool: azsdk-pool-mms-win-2019-general
-              OSVmImage: MMS2019
-              TestShell: cmd
-              TestCommand: >
-                cmd /c test-windows-install.cmd %BASEURL%
             LinuxSh:
               Pool: azsdk-pool-mms-ubuntu-2004-general
               OSVmImage:  MMSUbuntu20.04
               TestShell: pwsh
-              TestCommand: >
+              TestInstallCommand: >
                 ./test-installer-containers.ps1
                 -BaseUrl "$env:BASEURL"
                 -Version ''
@@ -505,7 +553,7 @@ stages:
               Pool: Azure Pipelines
               OSVmImage: macOS-11
               TestShell: bash
-              TestCommand: >
+              TestInstallCommand: >
                 cat install-azd.sh
                 | bash -s -- --base-url "$BASEURL" --version ''
                 && azd version
@@ -513,14 +561,14 @@ stages:
               Pool: azsdk-pool-mms-ubuntu-2004-general
               OSVmImage:  MMSUbuntu20.04
               TestShell: pwsh
-              TestCommand: >
+              TestInstallCommand: >
                 ./install-azd.ps1 -BaseUrl $env:BASEURL -Version ''
                 && azd version
             MacPwsh:
               Pool: Azure Pipelines
               OSVmImage: macOS-11
               TestShell: pwsh
-              TestCommand: >
+              TestInstallCommand: >
                 ./install-azd.ps1 -BaseUrl $env:BASEURL -Version ''
                 && azd version
         pool:
@@ -528,30 +576,13 @@ stages:
           OSVmImage: $(OSVmImage)
 
         steps:
-          - pwsh: |
-              $PRNumber = "$(System.PullRequest.PullRequestNumber)"
-              if ($env:PRNUMBEROVERRIDE) {
-                Write-Host "PR Number override: $($env:PRNUMBEROVERRIDE)"
-                $PRNumber = $env:PRNUMBEROVERRIDE
-              }
-              Write-Host "##vso[task.setvariable variable=PRNumber]$PRNumber"
-            displayName: Set PR Number Variable
-
-          - pwsh: $(TestCommand)
+          - pwsh: $(TestInstallCommand)
             condition: and(succeeded(), eq('pwsh', variables['TestShell']))
             workingDirectory: cli/installer/
             env:
               BASEURL: $(BaseUrl)
 
-          - task: CmdLine@2
-            condition: and(succeeded(), eq('cmd', variables['TestShell']))
-            inputs:
-              script: $(TestCommand)
-              workingDirectory: cli/installer/
-            env:
-              BASEURL: $(BaseUrl)
-
-          - bash: $(TestCommand)
+          - bash: $(TestInstallCommand)
             condition: and(succeeded(), eq('bash', variables['TestShell']))
             workingDirectory: cli/installer/
             env:

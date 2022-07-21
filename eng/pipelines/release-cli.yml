@@ -503,7 +503,9 @@ stages:
 
         steps:
           - pwsh: |
-              Write-Host "##vso[task.setvariable variable=OriginalPath;]$($env:PATH)"
+              $originalPath = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Environment', $false)`
+                .GetValue('PATH', '', [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)
+              Write-Host "##vso[task.setvariable variable=OriginalPath;]$originalPath"
             displayName: Record original PATH variable
 
           - task: CmdLine@2
@@ -513,6 +515,19 @@ stages:
               workingDirectory: cli/installer/
             env:
               BASEURL: $(BaseUrl)
+
+          - pwsh: |
+              $path = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Environment', $false)`
+                .GetValue('PATH', '', [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)
+              $expectedPathEntry = "$($env:LocalAppData)\Programs\Azure Dev CLI"
+
+              if (!$path.Contains($expectedPathEntry)) {
+                Write-Error "Could not find path entry"
+                Write-Error "Expected substring: $expectedPathEntry"
+                Write-Error "Actual: $path"
+                exit 1
+              }
+            displayName: Verify install updates PATH (check the registry)
 
           - task: CmdLine@2
             displayName: Show installed version
@@ -525,13 +540,16 @@ stages:
               script: cmd /c test-windows-uninstall.cmd
 
           - pwsh: |
-              if ($env:PATH -ne '$(OriginalPath)') {
+              $path = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Environment', $false)`
+                .GetValue('PATH', '', [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)
+
+              if ($path -ne '$(OriginalPath)') {
                 Write-Error "Path does not match after uninstall"
                 Write-Error "Expected: $(OriginalPath)"
-                Write-Error "Actual: $($env:PATH)"
+                Write-Error "Actual: $path"
                 exit 1
               }
-            displayName: Validate PATH cleanup
+            displayName: Validate PATH cleanup (check the registry)
 
       - job: Verify_Installers
         condition: >-

@@ -503,9 +503,9 @@ stages:
 
         steps:
           - pwsh: |
-              $originalPath = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Environment', $false)`
-                .GetValue('PATH', '', [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)
-              Write-Host "##vso[task.setvariable variable=OriginalPath;]$originalPath"
+              $regKey = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Environment', $false)
+              $path = $regKey.GetValue('PATH', '', [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)
+              Write-Host "##vso[task.setvariable variable=OriginalPath;]$path"
             displayName: Record original PATH variable
 
           - task: CmdLine@2
@@ -517,8 +517,8 @@ stages:
               BASEURL: $(BaseUrl)
 
           - pwsh: |
-              $path = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Environment', $false)`
-                .GetValue('PATH', '', [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)
+              $regKey = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Environment', $false)
+              $path = $regKey.GetValue('PATH', '', [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)
               $expectedPathEntry = "$($env:LocalAppData)\Programs\Azure Dev CLI"
 
               if (!$path.Contains($expectedPathEntry)) {
@@ -540,8 +540,8 @@ stages:
               script: cmd /c test-windows-uninstall.cmd
 
           - pwsh: |
-              $path = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Environment', $false)`
-                .GetValue('PATH', '', [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)
+              $regKey = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Environment', $false)
+              $path = $regKey.GetValue('PATH', '', [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)
 
               if ($path -ne '$(OriginalPath)') {
                 Write-Error "Path does not match after uninstall"

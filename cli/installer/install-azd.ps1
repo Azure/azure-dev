@@ -191,41 +191,41 @@ Remove-Item $tempFolder -Recurse -Force | Out-Null
 # value back using the non-destructive [Environment]::SetEnvironmentVariable
 # which also broadcasts environment variable changes to Windows.
 if (!$NoPath -and !(isLinuxOrMac)) {
-    # Wrap the Microsoft.Win32.Registry calls in a script block to prevent the
-    # type intializer from attempting to initialize those objects in non-Windows
-    # environments.
-    . {
-        try {
+    try {
+        # Wrap the Microsoft.Win32.Registry calls in a script block to prevent
+        # the type intializer from attempting to initialize those objects in
+        # non-Windows environments.
+        . {
             $registryKey = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Environment', $false)
             $originalPath = $registryKey.GetValue(`
                 'PATH', `
                 '', `
                 [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames `
             )
-            $pathParts = $originalPath -split ';'
-    
-            if (!($pathParts -contains $InstallFolder)) {
-                Write-Host "Adding $InstallFolder to PATH"
-    
-                # SetEnvironmentVariable broadcasts the "Environment" change to
-                # Windows and is NOT destructive (e.g. expanding variables)
-                [Environment]::SetEnvironmentVariable(
-                    'PATH', `
-                    "$originalPath;$InstallFolder", `
-                    [EnvironmentVariableTarget]::User`
-                )
-    
-                # Also add the path to the current session
-                $env:PATH += ";$InstallFolder"
-            } else {
-                Write-Host "An entry for $InstallFolder is already in PATH"
-            }
-        } finally {
-            if ($registryKey) {
-                $registryKey.Close()
-            }
         }
-     }
+        $pathParts = $originalPath -split ';'
+
+        if (!($pathParts -contains $InstallFolder)) {
+            Write-Host "Adding $InstallFolder to PATH"
+
+            # SetEnvironmentVariable broadcasts the "Environment" change to
+            # Windows and is NOT destructive (e.g. expanding variables)
+            [Environment]::SetEnvironmentVariable(
+                'PATH', `
+                "$originalPath;$InstallFolder", `
+                [EnvironmentVariableTarget]::User`
+            )
+
+            # Also add the path to the current session
+            $env:PATH += ";$InstallFolder"
+        } else {
+            Write-Host "An entry for $InstallFolder is already in PATH"
+        }
+    } finally {
+        if ($registryKey) {
+            $registryKey.Close()
+        }
+    }
 }
 
 if (isLinuxOrMac) {

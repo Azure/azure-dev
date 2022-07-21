@@ -9,7 +9,8 @@ export function run(): Promise<void> {
     const opts: Mocha.MochaOptions = {
         ui: 'tdd',
         color: true,
-        timeout: process.env.TEST_TIMEOUT ?? "10s"
+        timeout: process.env.TEST_TIMEOUT ?? "10s",
+        slow: 200
     };
     
     const mocha = new Mocha(opts);

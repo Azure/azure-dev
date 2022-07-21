@@ -77,19 +77,20 @@ steps:
       displayName: Copy install scripts to release (PR only)
 
   # Docker build
-  - pwsh: |
-      # Move the binary to a folder where Docker can pick it up
-      New-Item -ItemType Directory -Path cli/bin
-      Copy-Item release-staging/azd-linux-amd64 cli/bin/
+  # TODO: Re-enable before merge
+  # - pwsh: |
+  #     # Move the binary to a folder where Docker can pick it up
+  #     New-Item -ItemType Directory -Path cli/bin
+  #     Copy-Item release-staging/azd-linux-amd64 cli/bin/
 
-      docker build . -f cli/Dockerfile -t release
+  #     docker build . -f cli/Dockerfile -t release
 
-      $tags = "${{ parameters.DockerImageTags }}" -split ';'
-      foreach ($tag in $tags) {
-        Write-Host "docker tag release ${{ parameters.AcrHost }}/azure-dev:$tag"
-        docker tag release ${{ parameters.AcrHost }}/azure-dev:$tag
-      }
-    displayName: Docker build release container (latest)
+  #     $tags = "${{ parameters.DockerImageTags }}" -split ';'
+  #     foreach ($tag in $tags) {
+  #       Write-Host "docker tag release ${{ parameters.AcrHost }}/azure-dev:$tag"
+  #       docker tag release ${{ parameters.AcrHost }}/azure-dev:$tag
+  #     }
+  #   displayName: Docker build release container (latest)
 
   - ${{ if eq('true', parameters.ReleaseSyndicatedDockerContainer) }}:
     # Syndicated release
@@ -148,9 +149,10 @@ steps:
         StorageContainerName: ${{ parameters.StorageContainerName }}
         PublishDestination: standalone/latest
 
-  - pwsh: |
-      docker push ${{ parameters.AcrHost }}/azure-dev --all-tags
-    displayName: Push container tags (latest)
+  # TODO: Re-enable before merge
+  # - pwsh: |
+  #     docker push ${{ parameters.AcrHost }}/azure-dev --all-tags
+  #   displayName: Push container tags (latest)
 
   - ${{ if eq('true', parameters.ReleaseSyndicatedDockerContainer) }}:
     - pwsh: |

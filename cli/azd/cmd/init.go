@@ -259,12 +259,15 @@ func (i *initAction) Run(ctx context.Context, _ *cobra.Command, args []string, a
 		}
 	}
 
-	_, err = createAndInitEnvironment(ctx, &i.rootOptions.EnvironmentName, azdCtx, askOne)
+	envSpec := environmentSpec{
+		environmentName: i.rootOptions.EnvironmentName,
+	}
+	_, err = createAndInitEnvironment(ctx, &envSpec, azdCtx, askOne)
 	if err != nil {
 		return fmt.Errorf("loading environment: %w", err)
 	}
 
-	if err := azdCtx.SetDefaultEnvironmentName(i.rootOptions.EnvironmentName); err != nil {
+	if err := azdCtx.SetDefaultEnvironmentName(envSpec.environmentName); err != nil {
 		return fmt.Errorf("saving default environment: %w", err)
 	}
 

@@ -1,1 +1,1 @@
-powershell -ex AllSigned -c "./uninstall-azd.ps1 -Verbose"
+powershell -ex Bypass -c "./uninstall-azd.ps1 -Verbose"

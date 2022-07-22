@@ -10,6 +10,7 @@ ignorePaths:
     - ./go.sum
     - ./NOTICE.txt
     - ./templates/common/NOTICE.txt
+    - ./templates/todo/api/java
 words:
     - opentelemetry
     - bson

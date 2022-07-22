@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
@@ -56,30 +57,41 @@ func (p *BicepInfraProvider) RequiredExternalTools() []tools.ExternalTool {
 }
 
 // Plans the infrastructure provisioning
-func (p *BicepInfraProvider) Plan(ctx context.Context) (*ProvisioningPlan, error) {
-	bicepTemplate, err := p.createParametersFile()
-	if err != nil {
-		return nil, fmt.Errorf("creating parameters file: %w", err)
-	}
+func (p *BicepInfraProvider) Plan(ctx context.Context) async.AsyncTaskWithProgress[*ProvisionPlanResult, *ProvisionPlanProgress] {
+	return *async.RunTaskWithProgress(
+		func(runner *async.AsyncTaskWithProgressRunner[*ProvisionPlanResult, *ProvisionPlanProgress]) {
+			runner.SetProgress(&ProvisionPlanProgress{Message: "Generating Bicep parameters file", Timestamp: time.Now()})
+			bicepTemplate, err := p.createParametersFile()
+			if err != nil {
+				runner.SetError(fmt.Errorf("creating parameters file: %w", err))
+				return
+			}
 
-	modulePath := p.modulePath()
-	template, err := p.createPlan(ctx, modulePath)
-	if err != nil {
-		return nil, fmt.Errorf("creating template: %w", err)
-	}
+			modulePath := p.modulePath()
+			runner.SetProgress(&ProvisionPlanProgress{Message: "Compiling Bicep template", Timestamp: time.Now()})
+			template, err := p.createPlan(ctx, modulePath)
+			if err != nil {
+				runner.SetError(fmt.Errorf("creating template: %w", err))
+				return
+			}
 
-	// Merge parameter values from template
-	for key, param := range template.Parameters {
-		if bicepParam, has := bicepTemplate.Parameters[key]; has {
-			param.Value = bicepParam.Value
-			template.Parameters[key] = param
-		}
-	}
+			// Merge parameter values from template
+			for key, param := range template.Parameters {
+				if bicepParam, has := bicepTemplate.Parameters[key]; has {
+					param.Value = bicepParam.Value
+					template.Parameters[key] = param
+				}
+			}
 
-	return template, nil
+			result := ProvisionPlanResult{
+				Plan: *template,
+			}
+
+			runner.SetResult(&result)
+		})
 }
 
-func (p *BicepInfraProvider) SaveTemplate(ctx context.Context, template ProvisioningPlan) error {
+func (p *BicepInfraProvider) UpdatePlan(ctx context.Context, plan ProvisioningPlan) error {
 	bicepFile := BicepTemplate{
 		Schema:         "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
 		ContentVersion: "1.0.0.0",
@@ -87,7 +99,7 @@ func (p *BicepInfraProvider) SaveTemplate(ctx context.Context, template Provisio
 
 	parameters := make(map[string]BicepInputParameter)
 
-	for key, param := range template.Parameters {
+	for key, param := range plan.Parameters {
 		parameters[key] = BicepInputParameter{
 			Type:         param.Type,
 			DefaultValue: param.DefaultValue,
@@ -112,115 +124,103 @@ func (p *BicepInfraProvider) SaveTemplate(ctx context.Context, template Provisio
 }
 
 // Provisioning the infrastructure within the specified template
-func (p *BicepInfraProvider) Apply(ctx context.Context, plan *ProvisioningPlan, scope ProvisioningScope) (<-chan *ProvisionApplyResult, <-chan *ProvisionApplyProgress) {
-	resultChannel := make(chan *ProvisionApplyResult, 1)
-	progressChannel := make(chan *ProvisionApplyProgress)
+func (p *BicepInfraProvider) Apply(ctx context.Context, plan *ProvisioningPlan, scope ProvisioningScope) async.AsyncTaskWithProgress[*ProvisionApplyResult, *ProvisionApplyProgress] {
+	return *async.RunTaskWithProgress(
+		func(runner *async.AsyncTaskWithProgressRunner[*ProvisionApplyResult, *ProvisionApplyProgress]) {
+			isDeploymentComplete := false
 
-	go func() {
-		defer close(resultChannel)
-		defer close(progressChannel)
+			// Start the deployment
+			go func() {
+				modulePath := p.modulePath()
+				parametersFilePath := p.parametersFilePath()
+				deployResult, err := p.applyModule(ctx, scope, modulePath, parametersFilePath)
+				var outputs map[string]ProvisioningPlanOutputParameter
 
-		isDeploymentComplete := false
-
-		// Start the deployment
-		go func() {
-			modulePath := p.modulePath()
-			parametersFilePath := p.parametersFilePath()
-			deployResult, err := p.applyModule(ctx, scope, modulePath, parametersFilePath)
-			var outputs map[string]ProvisioningPlanOutputParameter
-
-			if deployResult != nil {
-				outputs = p.createOutputParameters(plan, deployResult.Properties.Outputs)
-			}
-
-			resultChannel <- &ProvisionApplyResult{
-				Error:      err,
-				Operations: nil,
-				Outputs:    outputs,
-			}
-
-			isDeploymentComplete = true
-		}()
-
-		// Report incremental progress
-		resourceManager := infra.NewAzureResourceManager(p.azCli)
-		for {
-			if isDeploymentComplete {
-				break
-			}
-
-			select {
-			case <-time.After(10 * time.Second):
-				ops, err := resourceManager.GetDeploymentResourceOperations(ctx, p.env.GetSubscriptionId(), p.env.GetEnvName())
-				if err != nil || len(*ops) == 0 {
-					continue
+				if err != nil {
+					runner.SetError(err)
+					isDeploymentComplete = true
+					return
 				}
 
-				progressReport := ProvisionApplyProgress{
-					Timestamp:  time.Now(),
-					Operations: *ops,
+				if deployResult != nil {
+					outputs = p.createOutputParameters(plan, deployResult.Properties.Outputs)
 				}
 
-				// If deployment is already completed don't report status since the channel has been closed
-				if !isDeploymentComplete {
-					progressChannel <- &progressReport
+				result := &ProvisionApplyResult{
+					Operations: nil,
+					Outputs:    outputs,
+				}
+
+				runner.SetResult(result)
+				isDeploymentComplete = true
+			}()
+
+			// Report incremental progress
+			resourceManager := infra.NewAzureResourceManager(p.azCli)
+			for {
+				if isDeploymentComplete {
+					break
+				}
+
+				select {
+				case <-time.After(10 * time.Second):
+					ops, err := resourceManager.GetDeploymentResourceOperations(ctx, p.env.GetSubscriptionId(), p.env.GetEnvName())
+					if err != nil || len(*ops) == 0 {
+						continue
+					}
+
+					progressReport := ProvisionApplyProgress{
+						Timestamp:  time.Now(),
+						Operations: *ops,
+					}
+
+					runner.SetProgress(&progressReport)
 				}
 			}
-		}
-	}()
-
-	return resultChannel, progressChannel
+		})
 }
 
-func (p *BicepInfraProvider) Destroy(ctx context.Context, plan *ProvisioningPlan) (<-chan *ProvisionDestroyResult, <-chan *ProvisionDestroyProgress) {
-	resultChannel := make(chan *ProvisionDestroyResult, 1)
-	progressChannel := make(chan *ProvisionDestroyProgress)
+func (p *BicepInfraProvider) Destroy(ctx context.Context, plan *ProvisioningPlan) async.AsyncTaskWithProgress[*ProvisionDestroyResult, *ProvisionDestroyProgress] {
+	return *async.RunTaskWithProgress(
+		func(runner *async.AsyncTaskWithProgressRunner[*ProvisionDestroyResult, *ProvisionDestroyProgress]) {
+			destroyResult := ProvisionDestroyResult{}
 
-	go func() {
-		defer close(resultChannel)
-		defer close(progressChannel)
-
-		destroyResult := ProvisionDestroyResult{}
-
-		progressChannel <- &ProvisionDestroyProgress{Message: "Fetching resource groups", Timestamp: time.Now()}
-		resourceManager := infra.NewAzureResourceManager(p.azCli)
-		resourceGroups, err := resourceManager.GetResourceGroupsForDeployment(ctx, p.env.GetSubscriptionId(), p.env.GetEnvName())
-		if err != nil {
-			destroyResult.Error = fmt.Errorf("discovering resource groups from deployment: %w", err)
-		}
-
-		var allResources []tools.AzCliResource
-
-		progressChannel <- &ProvisionDestroyProgress{Message: "Fetching resources", Timestamp: time.Now()}
-		for _, resourceGroup := range resourceGroups {
-			resources, err := p.azCli.ListResourceGroupResources(ctx, p.env.GetSubscriptionId(), resourceGroup)
+			runner.SetProgress(&ProvisionDestroyProgress{Message: "Fetching resource groups", Timestamp: time.Now()})
+			resourceManager := infra.NewAzureResourceManager(p.azCli)
+			resourceGroups, err := resourceManager.GetResourceGroupsForDeployment(ctx, p.env.GetSubscriptionId(), p.env.GetEnvName())
 			if err != nil {
-				destroyResult.Error = fmt.Errorf("listing resource group %s: %w", resourceGroup, err)
+				runner.SetError(fmt.Errorf("discovering resource groups from deployment: %w", err))
 			}
 
-			allResources = append(allResources, resources...)
-		}
+			var allResources []tools.AzCliResource
 
-		for _, resourceGroup := range resourceGroups {
-			message := fmt.Sprintf("Deleting resource group '%s'", resourceGroup)
-			progressChannel <- &ProvisionDestroyProgress{Message: message, Timestamp: time.Now()}
+			runner.SetProgress(&ProvisionDestroyProgress{Message: "Fetching resources", Timestamp: time.Now()})
+			for _, resourceGroup := range resourceGroups {
+				resources, err := p.azCli.ListResourceGroupResources(ctx, p.env.GetSubscriptionId(), resourceGroup)
+				if err != nil {
+					runner.SetError(fmt.Errorf("listing resource group %s: %w", resourceGroup, err))
+				}
 
-			if err := p.azCli.DeleteResourceGroup(ctx, p.env.GetSubscriptionId(), resourceGroup); err != nil {
-				destroyResult.Error = fmt.Errorf("deleting resource group %s: %w", resourceGroup, err)
+				allResources = append(allResources, resources...)
 			}
-		}
 
-		progressChannel <- &ProvisionDestroyProgress{Message: "Deleting deployment", Timestamp: time.Now()}
-		if err := p.azCli.DeleteSubscriptionDeployment(ctx, p.env.GetSubscriptionId(), p.env.GetEnvName()); err != nil {
-			destroyResult.Error = fmt.Errorf("deleting subscription deployment: %w", err)
-		}
+			for _, resourceGroup := range resourceGroups {
+				message := fmt.Sprintf("Deleting resource group '%s'", resourceGroup)
+				runner.SetProgress(&ProvisionDestroyProgress{Message: message, Timestamp: time.Now()})
 
-		destroyResult.Resources = allResources
+				if err := p.azCli.DeleteResourceGroup(ctx, p.env.GetSubscriptionId(), resourceGroup); err != nil {
+					runner.SetError(fmt.Errorf("deleting resource group %s: %w", resourceGroup, err))
+				}
+			}
 
-		resultChannel <- &destroyResult
-	}()
+			runner.SetProgress(&ProvisionDestroyProgress{Message: "Deleting deployment", Timestamp: time.Now()})
+			if err := p.azCli.DeleteSubscriptionDeployment(ctx, p.env.GetSubscriptionId(), p.env.GetEnvName()); err != nil {
+				runner.SetError(fmt.Errorf("deleting subscription deployment: %w", err))
+			}
 
-	return resultChannel, progressChannel
+			destroyResult.Resources = allResources
+			runner.SetResult(&destroyResult)
+		})
 }
 
 func (p *BicepInfraProvider) createOutputParameters(template *ProvisioningPlan, azureOutputParams map[string]tools.AzCliDeploymentOutput) map[string]ProvisioningPlanOutputParameter {

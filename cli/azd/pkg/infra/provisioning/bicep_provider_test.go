@@ -22,13 +22,21 @@ func TestBicepCompile(t *testing.T) {
 	env.SetEnvName("test-env")
 
 	infraProvider := NewBicepInfraProvider(&env, projectDir, options, azCli)
-	template, err := infraProvider.Plan(context.Background())
+	planTask := infraProvider.Plan(context.Background())
 
-	require.Nil(t, err)
-	require.NotNil(t, *template)
+	go func() {
+		for progressReport := range planTask.Progress() {
+			fmt.Println(progressReport.Timestamp)
+		}
+	}()
 
-	require.Equal(t, env.Values["AZURE_LOCATION"], template.Parameters["location"].Value)
-	require.Equal(t, env.Values["AZURE_ENV_NAME"], template.Parameters["name"].Value)
+	planResult := planTask.Result()
+
+	require.Nil(t, planTask.Error)
+	require.NotNil(t, planResult.Plan)
+
+	require.Equal(t, env.Values["AZURE_LOCATION"], planResult.Plan.Parameters["location"].Value)
+	require.Equal(t, env.Values["AZURE_ENV_NAME"], planResult.Plan.Parameters["name"].Value)
 }
 
 func TestBicepDeploy(t *testing.T) {
@@ -46,21 +54,28 @@ func TestBicepDeploy(t *testing.T) {
 
 	scope := NewSubscriptionProvisioningScope(azCli, env.Values["AZURE_LOCATION"], env.GetSubscriptionId(), env.GetEnvName())
 	infraProvider := NewBicepInfraProvider(&env, projectDir, options, azCli)
-	template, err := infraProvider.Plan(ctx)
-
-	require.Nil(t, err)
-	require.NotNil(t, *template)
-
-	progressMsg := "Deploying..."
-	fmt.Println(progressMsg)
-	deployChannel, progressChannel := infraProvider.Apply(ctx, template, scope)
+	planTask := infraProvider.Plan(ctx)
 
 	go func() {
-		for progressReport := range progressChannel {
-			fmt.Println(progressReport.Timestamp)
+		for planProgress := range planTask.Progress() {
+			fmt.Println(planProgress.Message)
 		}
 	}()
 
-	result := <-deployChannel
-	require.NotNil(t, result)
+	require.Nil(t, planTask.Error)
+	planResult := planTask.Result()
+	require.NotNil(t, planResult.Plan)
+
+	applyProgressMsg := "Deploying..."
+	fmt.Println(applyProgressMsg)
+	applyTask := infraProvider.Apply(ctx, &planResult.Plan, scope)
+
+	go func() {
+		for applyProgress := range applyTask.Progress() {
+			fmt.Println(applyProgress.Timestamp)
+		}
+	}()
+
+	applyResult := applyTask.Result()
+	require.NotNil(t, applyResult)
 }

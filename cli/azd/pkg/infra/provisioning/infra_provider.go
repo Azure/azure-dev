@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 )
@@ -24,16 +25,23 @@ type InfrastructureOptions struct {
 	Module   string                     `yaml:"module"`
 }
 
+type ProvisionPlanResult struct {
+	Plan ProvisioningPlan
+}
+
+type ProvisionPlanProgress struct {
+	Message   string
+	Timestamp time.Time
+}
+
 type ProvisionApplyResult struct {
 	Operations []tools.AzCliResourceOperation
 	Outputs    map[string]ProvisioningPlanOutputParameter
-	Error      error
 }
 
 type ProvisionDestroyResult struct {
 	Resources []tools.AzCliResource
 	Outputs   map[string]ProvisioningPlanOutputParameter
-	Error     error
 }
 
 type ProvisionApplyProgress struct {
@@ -49,10 +57,10 @@ type ProvisionDestroyProgress struct {
 type InfraProvider interface {
 	Name() string
 	RequiredExternalTools() []tools.ExternalTool
-	SaveTemplate(ctx context.Context, plan ProvisioningPlan) error
-	Plan(ctx context.Context) (*ProvisioningPlan, error)
-	Apply(ctx context.Context, plan *ProvisioningPlan, scope ProvisioningScope) (<-chan *ProvisionApplyResult, <-chan *ProvisionApplyProgress)
-	Destroy(ctx context.Context, plan *ProvisioningPlan) (<-chan *ProvisionDestroyResult, <-chan *ProvisionDestroyProgress)
+	UpdatePlan(ctx context.Context, plan ProvisioningPlan) error
+	Plan(ctx context.Context) async.AsyncTaskWithProgress[*ProvisionPlanResult, *ProvisionPlanProgress]
+	Apply(ctx context.Context, plan *ProvisioningPlan, scope ProvisioningScope) async.AsyncTaskWithProgress[*ProvisionApplyResult, *ProvisionApplyProgress]
+	Destroy(ctx context.Context, plan *ProvisioningPlan) async.AsyncTaskWithProgress[*ProvisionDestroyResult, *ProvisionDestroyProgress]
 }
 
 func NewInfraProvider(env *environment.Environment, projectPath string, options InfrastructureOptions, azCli tools.AzCli) (InfraProvider, error) {

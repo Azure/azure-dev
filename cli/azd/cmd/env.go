@@ -237,8 +237,9 @@ func envRefreshCmd(rootOptions *commands.GlobalCommandOptions) *cobra.Command {
 			return err
 		}
 
-		template, err := infraProvider.Plan(ctx)
-		if err != nil {
+		planTask := infraProvider.Plan(ctx)
+		planResult := planTask.Result()
+		if planTask.Error != nil {
 			return err
 		}
 
@@ -249,7 +250,7 @@ func envRefreshCmd(rootOptions *commands.GlobalCommandOptions) *cobra.Command {
 			return fmt.Errorf("fetching latest deployment: %w", err)
 		}
 
-		if err = provisioning.UpdateEnvironment(&env, &template.Outputs); err != nil {
+		if err = provisioning.UpdateEnvironment(&env, &planResult.Plan.Outputs); err != nil {
 			return err
 		}
 

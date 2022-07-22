@@ -139,22 +139,30 @@ func (a *infraDeleteAction) Run(ctx context.Context, _ *cobra.Command, args []st
 	// Do the deleting. The calls to `DeleteResourceGroup` and `DeleteSubscriptionDeployment` block
 	// until everything has been deleted which can take a bit, so indicate we are working with a spinner.
 	deleteWithProgress := func(showProgress func(string)) error {
-		plan, err := infraProvider.Plan(ctx)
-		if err != nil {
-			return fmt.Errorf("creating destroy plan template: %w", err)
-		}
-
-		resultChannel, progressChannel := infraProvider.Destroy(ctx, plan)
+		planTask := infraProvider.Plan(ctx)
 
 		go func() {
-			for progress := range progressChannel {
-				showProgress(fmt.Sprintf("%s...", progress.Message))
+			for planProgress := range planTask.Progress() {
+				showProgress(fmt.Sprintf("%s...", planProgress.Message))
 			}
 		}()
 
-		deployResult := <-resultChannel
-		if deployResult.Error != nil {
-			return fmt.Errorf("error destroying resources: %w", deployResult.Error)
+		planResult := planTask.Result()
+		if planTask.Error != nil {
+			return fmt.Errorf("creating destroy plan template: %w", err)
+		}
+
+		destroyTask := infraProvider.Destroy(ctx, &planResult.Plan)
+
+		go func() {
+			for destroyProgress := range destroyTask.Progress() {
+				showProgress(fmt.Sprintf("%s...", destroyProgress.Message))
+			}
+		}()
+
+		deployResult := destroyTask.Result()
+		if destroyTask.Error != nil {
+			return fmt.Errorf("error destroying resources: %w", destroyTask.Error)
 		}
 
 		// Remove any outputs from the template from the environment since destroying the infrastructure

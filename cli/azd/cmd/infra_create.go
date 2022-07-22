@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/url"
 	"time"
@@ -82,9 +83,33 @@ func (ica *infraCreateAction) Run(ctx context.Context, cmd *cobra.Command, args 
 		return err
 	}
 
-	template, err := infraProvider.Plan(ctx)
+	var plan provisioning.ProvisioningPlan
+
+	planAndReportProgress := func(showProgress func(string)) error {
+		planTask := infraProvider.Plan(ctx)
+
+		go func() {
+			for progress := range planTask.Progress() {
+				showProgress(fmt.Sprintf("%s...", progress.Message))
+			}
+		}()
+
+		planResult := planTask.Result()
+		if planTask.Error != nil {
+			return fmt.Errorf("compiling infra template: %w", err)
+		}
+
+		plan = planResult.Plan
+		return nil
+	}
+
+	err = spin.RunWithUpdater("Planning infrastructure provisioning", planAndReportProgress,
+		func(s *yacspin.Spinner, deploySuccess bool) {
+			s.StopMessage("Created infrastructure provisioning plan\n")
+		})
+
 	if err != nil {
-		return fmt.Errorf("compiling infra template: %w", err)
+		return err
 	}
 
 	// When creating a deployment, we need an azure location which is used to store the deployment metadata. This can be
@@ -96,9 +121,9 @@ func (ica *infraCreateAction) Run(ctx context.Context, cmd *cobra.Command, args 
 	// but not the resources" is sort of confusing and hard to clearly articulate.
 	var location string
 
-	if len(template.Parameters) > 0 {
+	if len(plan.Parameters) > 0 {
 		updatedParameters := false
-		for key, param := range template.Parameters {
+		for key, param := range plan.Parameters {
 			// If this parameter has a default, then there is no need for us to configure it
 			if param.HasDefaultValue() {
 				continue
@@ -133,7 +158,7 @@ func (ica *infraCreateAction) Run(ctx context.Context, cmd *cobra.Command, args 
 		}
 
 		if updatedParameters {
-			if err := infraProvider.SaveTemplate(ctx, *template); err != nil {
+			if err := infraProvider.UpdatePlan(ctx, plan); err != nil {
 				return fmt.Errorf("saving deployment parameters: %w", err)
 			}
 
@@ -166,14 +191,14 @@ func (ica *infraCreateAction) Run(ctx context.Context, cmd *cobra.Command, args 
 	// which can take a bit, so we typically do some progress indication.
 	// For interactive use (default case, using table formatter), we use a spinner.
 	// With JSON formatter we emit progress information, unless --no-progress option was set.
-	var provisionResult *provisioning.ProvisionApplyResult
+	var applyResult *provisioning.ProvisionApplyResult
 
 	deployAndReportProgress := func(showProgress func(string)) error {
 		provisioningScope := provisioning.NewSubscriptionProvisioningScope(azCli, location, env.GetSubscriptionId(), env.GetEnvName())
-		deployChannel, progressChannel := infraProvider.Apply(ctx, template, provisioningScope)
+		applyTask := infraProvider.Apply(ctx, &plan, provisioningScope)
 
 		go func() {
-			for progressReport := range progressChannel {
+			for progressReport := range applyTask.Progress() {
 				if interactive {
 					reportDeploymentStatusInteractive(*progressReport, showProgress)
 				} else {
@@ -182,9 +207,9 @@ func (ica *infraCreateAction) Run(ctx context.Context, cmd *cobra.Command, args 
 			}
 		}()
 
-		provisionResult = <-deployChannel
-		if provisionResult.Error != nil {
-			return provisionResult.Error
+		applyResult = applyTask.Result()
+		if applyTask.Error != nil {
+			return applyTask.Error
 		}
 
 		return nil
@@ -209,6 +234,10 @@ func (ica *infraCreateAction) Run(ctx context.Context, cmd *cobra.Command, args 
 	}
 
 	if err != nil {
+		return fmt.Errorf("foobar: %w", err)
+	}
+
+	if err != nil {
 		if formatter.Kind() == output.JsonFormat {
 			deploy, deployErr := azCli.GetSubscriptionDeployment(ctx, env.GetSubscriptionId(), env.GetEnvName())
 			if deployErr != nil {
@@ -223,12 +252,16 @@ func (ica *infraCreateAction) Run(ctx context.Context, cmd *cobra.Command, args 
 		return fmt.Errorf("deployment failed: %w", err)
 	}
 
-	if err = provisioning.UpdateEnvironment(&env, &provisionResult.Outputs); err != nil {
+	if applyResult == nil {
+		return errors.New("applyResult is nil")
+	}
+
+	if err = provisioning.UpdateEnvironment(&env, &applyResult.Outputs); err != nil {
 		return err
 	}
 
 	if formatter.Kind() == output.JsonFormat {
-		if err = formatter.Format(provisionResult, cmd.OutOrStdout(), nil); err != nil {
+		if err = formatter.Format(applyResult, cmd.OutOrStdout(), nil); err != nil {
 			return fmt.Errorf("deployment result could not be displayed: %w", err)
 		}
 	}

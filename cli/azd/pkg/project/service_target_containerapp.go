@@ -78,23 +78,32 @@ func (at *containerAppTarget) Deploy(ctx context.Context, azdCtx *environment.Az
 	}
 
 	progress <- "Creating deployment template"
-	template, err := infraProvider.Plan(ctx)
-	if err != nil {
-		return ServiceDeploymentResult{}, fmt.Errorf("compiling template: %w", err)
+	planTask := infraProvider.Plan(ctx)
+
+	go func() {
+		for planProgress := range planTask.Progress() {
+			progress <- fmt.Sprintf("%s...", planProgress.Message)
+		}
+	}()
+
+	planResult := planTask.Result()
+
+	if planTask.Error != nil {
+		return ServiceDeploymentResult{}, fmt.Errorf("planning infrastructure provisioning: %w", err)
 	}
 
 	progress <- "Updating container app image reference"
 	scope := provisioning.NewResourceGroupProvisioningScope(at.cli, at.env.GetSubscriptionId(), at.scope.ResourceGroupName(), at.env.GetEnvName())
-	deployChannel, progressChannel := infraProvider.Apply(ctx, template, scope)
+	applyTask := infraProvider.Apply(ctx, &planResult.Plan, scope)
 
 	go func() {
-		for progressReport := range progressChannel {
-			progress <- createProgressMessage(progressReport)
+		for applyProgress := range applyTask.Progress() {
+			progress <- createProgressMessage(applyProgress)
 		}
 	}()
 
-	deployResult := <-deployChannel
-	if deployResult.Error != nil {
+	deployResult := applyTask.Result()
+	if applyTask.Error != nil {
 		return ServiceDeploymentResult{}, fmt.Errorf("updating infrastructure: %w", err)
 	}
 

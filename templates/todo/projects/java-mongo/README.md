@@ -85,7 +85,7 @@ This will print a URL to the To Do API application and a URL to the To Do web ap
 
 Click the Azure Portal link to view resources provisioned.
 
-!["Application Architecture"](assets/azdevupurls.png)
+!["Application Architecture"](assets/az-cli-url.png)
 
 ### CI/CD
 
@@ -161,7 +161,7 @@ az dev down
 
 >NOTE: This may take a while to complete.
 
-## Working with addtional az dev CLI commands
+## Working with additional az dev CLI commands
 
 The following section will introduce you to additional `az dev` CLI commands that you can leverage.
 

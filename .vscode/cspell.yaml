@@ -39,3 +39,8 @@ overrides:
           - appservice
           - containerapp
           - staticwebapp
+    - filename: templates/todo/projects/java-mongo/docker-compose.yml
+      words:
+          - APPINSIGHTS
+          - INSTRUMENTATIONKEY
+          

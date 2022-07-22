@@ -553,7 +553,7 @@ stages:
             displayName: Validate PATH cleanup (check the registry)
 
           - pwsh: |
-              $azdCommand = Get-Command azd
+              $azdCommand = Get-Command azd -ErrorAction Ignore
               if ($azdCommand) {
                 Write-Error "Command was not removed"
                 Write-Error "Get-Command source: $($azdCommand.Source)"
@@ -603,7 +603,7 @@ stages:
                 ./install-azd.ps1 -BaseUrl $env:BASEURL -Version ''
                 && azd version
                 && ./uninstall-azd.ps1
-                && if (Get-Command 'azd') { Write-Error "azd did not uninstall"; exit 1 }
+                && if (Get-Command 'azd' -ErrorAction Ignore) { Write-Error "azd did not uninstall"; exit 1 }
             MacPwsh:
               Pool: Azure Pipelines
               OSVmImage: macOS-11
@@ -612,7 +612,7 @@ stages:
                 ./install-azd.ps1 -BaseUrl $env:BASEURL -Version ''
                 && azd version 
                 && ./uninstall-azd.ps1 
-                && if (Get-Command 'azd') { Write-Error "azd did not uninstall"; exit 1 }
+                && if (Get-Command 'azd' -ErrorAction Ignore) { Write-Error "azd did not uninstall"; exit 1 }
         pool:
           name: $(Pool)
           OSVmImage: $(OSVmImage)

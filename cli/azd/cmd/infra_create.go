@@ -288,7 +288,7 @@ func reportDeploymentStatusInteractive(ctx context.Context, azCli tools.AzCli, e
 		}
 	}
 
-	status := fmt.Sprintf("Creating Azure resources (%d of ~%d completed) ", succeededCount, len(*operations))
+	status := fmt.Sprintf("Creating Azure resources (%d of ~%d completed)", succeededCount, len(*operations))
 	showProgress(status)
 }
 

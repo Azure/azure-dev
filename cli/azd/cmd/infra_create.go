@@ -236,8 +236,12 @@ func (ica *infraCreateAction) Run(ctx context.Context, cmd *cobra.Command, args 
 
 		spinner := spin.New("Creating Azure resources")
 		_ = spinner.Start()
-		deployAndReportProgress(spinner.Title)
+		err = deployAndReportProgress(spinner.Title)
 		_ = spinner.Stop()
+
+		if err != nil {
+			fmt.Println("Created Azure resources")
+		}
 	} else {
 		err = deployAndReportProgress(nil)
 	}

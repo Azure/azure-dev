@@ -157,7 +157,7 @@ func (d *deployAction) Run(ctx context.Context, cmd *cobra.Command, args []strin
 			err := deployAndReportProgress(spinner.Title)
 			_ = spinner.Stop()
 
-			if err != nil {
+			if err == nil {
 				reportServiceDeploymentResultInteractive(svc, &svcDeploymentResult)
 			}
 		} else {

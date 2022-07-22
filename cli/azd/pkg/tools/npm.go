@@ -8,6 +8,7 @@ import (
 	"fmt"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/executil"
+	"github.com/blang/semver/v4"
 )
 
 type NpmCli interface {
@@ -23,8 +24,37 @@ func NewNpmCli() NpmCli {
 	return &npmCli{}
 }
 
-func (cli *npmCli) CheckInstalled(_ context.Context) (bool, error) {
-	return toolInPath("npm")
+func (cli *npmCli) versionInfoNode() VersionInfo {
+	return VersionInfo{
+		MinimumVersion: semver.Version{
+			Major: 16,
+			Minor: 0,
+			Patch: 0},
+		UpdateCommand: "Visit https://nodejs.org/en/ to upgrade",
+	}
+}
+
+func (cli *npmCli) CheckInstalled(ctx context.Context) (bool, error) {
+	found, err := toolInPath("npm")
+	if !found {
+		return false, err
+	}
+
+	//check node version
+	nodeRes, err := executeCommand(ctx, "node", "--version")
+	if err != nil {
+		return false, fmt.Errorf("checking %s version: %w", cli.Name(), err)
+	}
+	nodeSemver, err := extractSemver(nodeRes)
+	if err != nil {
+		return false, fmt.Errorf("converting to semver version fails: %w", err)
+	}
+	updateDetailNode := cli.versionInfoNode()
+	if nodeSemver.Compare(updateDetailNode.MinimumVersion) == -1 {
+		return false, &ErrSemver{ToolName: "Node.js", versionInfo: updateDetailNode}
+	}
+
+	return true, nil
 }
 
 func (cli *npmCli) InstallUrl() string {

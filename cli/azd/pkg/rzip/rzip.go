@@ -14,7 +14,7 @@ import (
 
 func CreateFromDirectory(source string, buf *os.File) error {
 	w := zip.NewWriter(buf)
-	err := filepath.Walk(source, func(path string, info fs.FileInfo, err error) error {
+	err := filepath.WalkDir(source, func(path string, info fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
@@ -22,13 +22,17 @@ func CreateFromDirectory(source string, buf *os.File) error {
 		if info.IsDir() {
 			return nil
 		}
+		fileInfo, err := info.Info()
+		if err != nil {
+			return err
+		}
 
 		header := &zip.FileHeader{
 			Name: strings.Replace(
 				strings.TrimPrefix(
 					strings.TrimPrefix(path, source),
 					string(filepath.Separator)), "\\", "/", -1),
-			Modified: info.ModTime(),
+			Modified: fileInfo.ModTime(),
 			Method:   zip.Deflate,
 		}
 

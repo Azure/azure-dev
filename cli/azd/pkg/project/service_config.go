@@ -25,8 +25,10 @@ type ServiceConfig struct {
 	Language string `yaml:"language"`
 	// The output path for build artifacts
 	OutputPath string `yaml:"dist"`
-	// The infrastructure module name to use for this project
-	ModuleName string `yaml:"moduleName"`
+	// The infrastructure module path relative to the root infra folder to use for this project
+	Module string `yaml:"module"`
+	// The optional docker options
+	Docker DockerProjectOptions `yaml:"docker"`
 }
 
 // Path returns the fully qualified path to the project
@@ -65,7 +67,7 @@ func (sc *ServiceConfig) GetServiceTarget(ctx context.Context, env *environment.
 	case "", string(AppServiceTarget):
 		target = NewAppServiceTarget(sc, env, scope, azCli)
 	case string(ContainerAppTarget):
-		target = NewContainerAppTarget(sc, env, scope, azCli, tools.NewDocker())
+		target = NewContainerAppTarget(sc, env, scope, azCli, tools.NewDocker(tools.DockerArgs{}))
 	case string(AzureFunctionTarget):
 		target = NewFunctionAppTarget(sc, env, scope, azCli)
 	case string(StaticWebAppTarget):
@@ -95,7 +97,7 @@ func (sc *ServiceConfig) GetFrameworkService(ctx context.Context, env *environme
 	// For containerized applications we use a nested framework service
 	if sc.Host == string(ContainerAppTarget) {
 		sourceFramework := frameworkService
-		frameworkService = NewDockerProject(sc, env, tools.NewDocker(), sourceFramework)
+		frameworkService = NewDockerProject(sc, env, tools.NewDocker(tools.DockerArgs{}), sourceFramework)
 	}
 
 	return &frameworkService, nil

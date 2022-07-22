@@ -11,7 +11,7 @@ import { TelemetryId } from '../telemetry/telemetryId';
 export async function provision(context: IActionContext, selectedFile?: vscode.Uri): Promise<void> {
     const workingFolder = await getWorkingFolder(context, selectedFile);
 
-    const azureCli = createAzureDevCli();
+    const azureCli = await createAzureDevCli(context);
     const command = azureCli.commandBuilder.withArg('provision').build();
 
     // Don't wait

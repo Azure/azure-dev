@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"regexp"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/joho/godotenv"
 )
 
@@ -84,7 +85,7 @@ func (e *Environment) Save() error {
 		return nil
 	}
 
-	err := os.MkdirAll(filepath.Dir(e.File), 0755)
+	err := os.MkdirAll(filepath.Dir(e.File), osutil.PermissionDirectory)
 	if err != nil {
 		return fmt.Errorf("failed to create a directory: %w", err)
 	}

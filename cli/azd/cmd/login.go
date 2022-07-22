@@ -25,7 +25,7 @@ func loginCmd(rootOptions *commands.GlobalCommandOptions) *cobra.Command {
 		},
 		rootOptions,
 		"login",
-		"Log in to Azure",
+		"Log in to Azure.",
 		"",
 	)
 
@@ -85,15 +85,15 @@ func (la *loginAction) Run(ctx context.Context, cmd *cobra.Command, args []strin
 }
 
 func (la *loginAction) SetupFlags(persistent *pflag.FlagSet, local *pflag.FlagSet) {
-	local.BoolVar(&la.onlyCheckStatus, "check-status", false, "Check login status, instead of logging in")
-	local.BoolVar(&la.useDeviceCode, "use-device-code", false, "When true, log on using a device code instead of a browser")
+	local.BoolVar(&la.onlyCheckStatus, "check-status", false, "Checks the log-in status instead of logging in.")
+	local.BoolVar(&la.useDeviceCode, "use-device-code", false, "When true, log in by using a device code instead of a browser.")
 }
 
 // ensureLoggedIn checks to see if the user is currently logged in. If not, the equivalent of `az login` is run.
 func ensureLoggedIn(ctx context.Context) error {
 	azCli := commands.GetAzCliFromContext(ctx)
 	_, err := azCli.GetAccessToken(ctx)
-	if errors.Is(err, tools.ErrAzCliNotLoggedIn) {
+	if errors.Is(err, tools.ErrAzCliNotLoggedIn) || errors.Is(err, tools.ErrAzCliRefreshTokenExpired) {
 		if err := runLogin(ctx, false); err != nil {
 			return fmt.Errorf("logging in: %w", err)
 		}

@@ -16,8 +16,7 @@ import (
 )
 
 const (
-	// TODO: update this to point directly to schema file on GitHub after public preview  for AZD ships.
-	projectSchemaAnnotation = "# yaml-language-server: $schema=https://azuresdkreleasepreview.blob.core.windows.net/azd/schema/azure.yaml.json"
+	projectSchemaAnnotation = "# yaml-language-server: $schema=https://raw.githubusercontent.com/Azure/azure-dev/main/schemas/v1.0/azure.yaml.json"
 )
 
 type Project struct {
@@ -62,7 +61,7 @@ func NewProject(path string, name string) (*Project, error) {
 		return nil, fmt.Errorf("preparing new project file contents: %w", err)
 	}
 
-	err = os.WriteFile(path, projectFileContents.Bytes(), 0644)
+	err = os.WriteFile(path, projectFileContents.Bytes(), osutil.PermissionFile)
 	if err != nil {
 		return nil, fmt.Errorf("writing project file: %w", err)
 	}

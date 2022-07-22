@@ -23,7 +23,7 @@ func infraDeleteCmd(rootOptions *commands.GlobalCommandOptions) *cobra.Command {
 		},
 		rootOptions,
 		"delete",
-		"Delete Azure resources for an application",
+		"Delete Azure resources for an application.",
 		"",
 	)
 }
@@ -38,8 +38,8 @@ func (a *infraDeleteAction) SetupFlags(
 	persis *pflag.FlagSet,
 	local *pflag.FlagSet,
 ) {
-	local.BoolVar(&a.forceDelete, "force", false, "Do not require confirmation before deleting resources")
-	local.BoolVar(&a.purgeDelete, "purge", false, "Permanently delete resources which are soft-deleted by default (e.g. Key Vaults)")
+	local.BoolVar(&a.forceDelete, "force", false, "Does not require confirmation before it deletes resources.")
+	local.BoolVar(&a.purgeDelete, "purge", false, "Permanently deletes resources that are soft-deleted by default (for example, key vaults).")
 }
 
 func (a *infraDeleteAction) Run(ctx context.Context, _ *cobra.Command, args []string, azdCtx *environment.AzdContext) error {
@@ -174,10 +174,8 @@ func (a *infraDeleteAction) Run(ctx context.Context, _ *cobra.Command, args []st
 		return nil
 	}
 
-	if err := spin.Run(
-		"Deleting Azure resources ",
-		deleteFn,
-	); err != nil {
+	spinner := spin.New("Deleting Azure resources")
+	if err := spinner.Run(deleteFn); err != nil {
 		return fmt.Errorf("destroying: %w", err)
 	}
 

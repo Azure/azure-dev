@@ -40,7 +40,7 @@ export async function monitor(context: IActionContext, selectedFile?: vscode.Uri
         throw new UserCancelledError();
     }
 
-    const azureCli = createAzureDevCli();
+    const azureCli = await createAzureDevCli(context);
     let command = azureCli.commandBuilder.withArg('monitor');
     for (const choice of monitorChoices) {
         command = command.withArg(choice.data);

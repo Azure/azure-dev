@@ -33,7 +33,7 @@ export async function infraDelete(context: IActionContext, selectedFile?: vscode
     });
     context.telemetry.properties.purge = purgeChoice ? 'true' : 'false';
 
-    const azureCli = createAzureDevCli();
+    const azureCli = await createAzureDevCli(context);
     let command = azureCli.commandBuilder.withArg('infra').withArg('delete').withArg('--force');
     if (purgeChoice.data) {
         command = command.withArg('--purge');

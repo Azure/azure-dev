@@ -6,7 +6,6 @@ package cmd
 import (
 	"context"
 	"fmt"
-	"log"
 	"strings"
 	"time"
 
@@ -19,7 +18,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
-	"github.com/theckman/yacspin"
 )
 
 func deployCmd(rootOptions *commands.GlobalCommandOptions) *cobra.Command {
@@ -27,10 +25,10 @@ func deployCmd(rootOptions *commands.GlobalCommandOptions) *cobra.Command {
 		&deployAction{rootOptions: rootOptions},
 		rootOptions,
 		"deploy",
-		"Deploy the application's code to Azure",
+		"Deploy the application's code to Azure.",
 		`Deploy the application's code to Azure.
 
-When no "--service" is specified, all services in azure.yaml (found in the root of your project), are deployed.
+When no `+withBackticks("--service")+` value is specified, all services in the *azure.yaml* file (found in the root of your project) are deployed.
 
 Examples:
 
@@ -38,9 +36,8 @@ Examples:
 	$ azd deploy –-service api
 	$ azd deploy –-service web
 	
-Once deployment is complete, the endpoint is printed. Click or copy and paste the endpoint in a browser to launch the service.`,
+After the deployment is complete, the endpoint is printed. To start the service, select the endpoint or paste it in a browser.`,
 	)
-	cmd.Flags().BoolP("help", "h", false, "Help for "+cmd.Name())
 
 	return output.AddOutputParam(
 		cmd,
@@ -62,7 +59,7 @@ func (d *deployAction) SetupFlags(
 	persis *pflag.FlagSet,
 	local *pflag.FlagSet,
 ) {
-	local.StringVar(&d.serviceName, "service", "", "Deploy a specific service (when unset, all services listed in "+environment.ProjectFileName+" are deployed)")
+	local.StringVar(&d.serviceName, "service", "", "Deploys a specific service (when the string is unspecified, all services that are listed in the "+environment.ProjectFileName+" file are deployed).")
 }
 
 func (d *deployAction) Run(ctx context.Context, cmd *cobra.Command, args []string, azdCtx *environment.AzdContext) error {
@@ -153,16 +150,16 @@ func (d *deployAction) Run(ctx context.Context, cmd *cobra.Command, args []strin
 		}
 
 		if interactive {
-			fmt.Printf("Deploying service %s\n", svc.Config.Name)
+			deployMsg := fmt.Sprintf("Deploying service %s", svc.Config.Name)
+			fmt.Println(deployMsg)
+			spinner := spin.New(deployMsg)
+			_ = spinner.Start()
+			err := deployAndReportProgress(spinner.Title)
+			_ = spinner.Stop()
 
-			err = spin.RunWithUpdater(
-				fmt.Sprintf("Deploying service %s ", svc.Config.Name),
-				deployAndReportProgress,
-				func(s *yacspin.Spinner, successDeploy bool) {
-					if successDeploy {
-						reportServiceDeploymentResultInteractive(s, svc, &svcDeploymentResult)
-					}
-				})
+			if err == nil {
+				reportServiceDeploymentResultInteractive(svc, &svcDeploymentResult)
+			}
 		} else {
 			err = deployAndReportProgress(nil)
 		}
@@ -201,16 +198,14 @@ func (d *deployAction) Run(ctx context.Context, cmd *cobra.Command, args []strin
 	return nil
 }
 
-func reportServiceDeploymentResultInteractive(s *yacspin.Spinner, svc *project.Service, sdr *project.ServiceDeploymentResult) {
+func reportServiceDeploymentResultInteractive(svc *project.Service, sdr *project.ServiceDeploymentResult) {
 	var builder strings.Builder
+
+	builder.WriteString(fmt.Sprintf("Deployed service %s\n", svc.Config.Name))
 
 	for _, endpoint := range sdr.Endpoints {
 		builder.WriteString(fmt.Sprintf(" - Endpoint: %s\n", withLinkFormat(endpoint)))
 	}
 
-	stopMessage := fmt.Sprintf("\nDeployed service %s\n%s", svc.Config.Name, builder.String())
-
-	log.Printf("Setting stop message to %s", stopMessage)
-
-	s.StopMessage(stopMessage)
+	fmt.Println(builder.String())
 }

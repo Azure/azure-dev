@@ -24,6 +24,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/cmd"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/test/azdcli"
 	"github.com/joho/godotenv"
@@ -421,7 +422,7 @@ func filterEnviron(toExclude ...string) []string {
 func copySample(targetRoot string, sampleName string) error {
 	sampleRoot := filepath.Join(filepath.Dir(azdcli.GetAzdLocation()), "test", "samples", sampleName)
 
-	return filepath.Walk(sampleRoot, func(name string, info fs.FileInfo, err error) error {
+	return filepath.WalkDir(sampleRoot, func(name string, info fs.DirEntry, err error) error {
 		// If there was some error that was preventing is from walking into the directory, just fail now,
 		// not much we can do to recover.
 		if err != nil {
@@ -430,14 +431,14 @@ func copySample(targetRoot string, sampleName string) error {
 		targetPath := filepath.Join(targetRoot, name[len(sampleRoot):])
 
 		if info.IsDir() {
-			return os.MkdirAll(targetPath, 0755)
+			return os.MkdirAll(targetPath, osutil.PermissionDirectory)
 		}
 
 		contents, err := ioutil.ReadFile(name)
 		if err != nil {
 			return fmt.Errorf("reading sample file: %w", err)
 		}
-		return ioutil.WriteFile(targetPath, contents, 0644)
+		return ioutil.WriteFile(targetPath, contents, osutil.PermissionFile)
 	})
 }
 

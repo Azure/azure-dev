@@ -16,6 +16,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/iac/bicep"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
+	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/pkg/spin"
@@ -23,7 +24,6 @@ import (
 	"github.com/drone/envsubst"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
-	"github.com/theckman/yacspin"
 	"go.uber.org/multierr"
 )
 
@@ -39,7 +39,7 @@ func infraCreateCmd(rootOptions *commands.GlobalCommandOptions) *cobra.Command {
 		},
 		rootOptions,
 		"create",
-		"Create Azure resources for an application",
+		"Create Azure resources for an application.",
 		"",
 	)
 
@@ -48,7 +48,7 @@ func infraCreateCmd(rootOptions *commands.GlobalCommandOptions) *cobra.Command {
 }
 
 func (ica *infraCreateAction) SetupFlags(persis, local *pflag.FlagSet) {
-	local.BoolVar(&ica.noProgress, "no-progress", false, "Suppress progress information")
+	local.BoolVar(&ica.noProgress, "no-progress", false, "Suppresses progress information.")
 }
 
 func (ica *infraCreateAction) Run(ctx context.Context, cmd *cobra.Command, args []string, azdCtx *environment.AzdContext) error {
@@ -95,7 +95,7 @@ func (ica *infraCreateAction) Run(ctx context.Context, cmd *cobra.Command, args 
 	if err != nil {
 		return fmt.Errorf("substituting parameter file: %w", err)
 	}
-	err = ioutil.WriteFile(azdCtx.BicepParametersFilePath(ica.rootOptions.EnvironmentName, rootModule), []byte(replaced), 0644)
+	err = ioutil.WriteFile(azdCtx.BicepParametersFilePath(ica.rootOptions.EnvironmentName, rootModule), []byte(replaced), osutil.PermissionFile)
 	if err != nil {
 		return fmt.Errorf("writing parameter file: %w", err)
 	}
@@ -237,12 +237,15 @@ func (ica *infraCreateAction) Run(ctx context.Context, cmd *cobra.Command, args 
 		printWithStyling(
 			"Provisioning Azure resources can take some time.\n\nYou can view detailed progress in the Azure Portal:\n%s",
 			deploymentURL)
-		//fmt.Fprintf(colorable.NewColorableStdout(), "Provisioning Azure resources can take some time.\n\nYou can view detailed progress in the Azure Portal:\n%s", deploymentURL)
 
-		err = spin.RunWithUpdater("Creating Azure resources ", deployAndReportProgress,
-			func(s *yacspin.Spinner, deploySuccess bool) {
-				s.StopMessage("Created Azure resources\n")
-			})
+		spinner := spin.New("Creating Azure resources")
+		_ = spinner.Start()
+		err = deployAndReportProgress(spinner.Title)
+		_ = spinner.Stop()
+
+		if err == nil {
+			fmt.Println("Created Azure resources")
+		}
 	} else {
 		err = deployAndReportProgress(nil)
 	}

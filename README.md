@@ -8,7 +8,7 @@ Latest builds:
 | vscode extension | ![vscode extension version](https://img.shields.io/endpoint?url=https%3A%2F%2Fazuresdkreleasepreview.blob.core.windows.net%2Fazd%2Fvscode%2Flatest%2Fshield.json) | [VSIX](https://marketplace.visualstudio.com/items?itemName=ms-azuretools.azure-dev) |
 | docker image | ![azd version](https://img.shields.io/endpoint?url=https%3A%2F%2Fazuresdkreleasepreview.blob.core.windows.net%2Fazd%2Fstandalone%2Flatest%2Fshield.json) | [`mcr.microsoft.com/azure-dev-cli-apps:latest`](https://mcr.microsoft.com/en-us/product/azure-dev-cli-apps/about)
 
-The Azure Developer CLI (**azure-dev**) is a developer-centric command-line interface (CLI) tool for creating Azure applications. The goals of the CLI are to:
+The Azure Developer CLI (`azd`) is a developer-centric command-line interface (CLI) tool for creating Azure applications. The goals of the CLI are to:
 
 - reduce the time required for a developer to be productive
 - demonstrate opinionated best practices for Azure development
@@ -20,10 +20,12 @@ To take full advantage of the CLI, code repositories need to conform to a well d
 
 Install and Upgrade using the following scripts. Re-running the script will install the latest available version.
 
+For advanced install scenarios see [Azure Developer CLI Installer Scripts](cli/installer/README.md).
+
 ### Windows
 
 ```powershell
-powershell -c "Set-ExecutionPolicy Bypass Process -Force; irm 'https://aka.ms/install-azd.ps1' | iex"
+powershell -ex AllSigned -c "Invoke-RestMethod 'https://aka.ms/install-azd.ps1' | Invoke-Expression"
 ```
 
 ### Linux/MacOS
@@ -37,7 +39,7 @@ curl -fsSL https://aka.ms/install-azd.sh | bash
 ### Windows
 
 ```powershell
-powershell -c "Set-ExecutionPolicy Bypass Process -Force; irm 'https://aka.ms/uninstall-azd.ps1' | iex"
+powershell -ex AllSigned -c "Invoke-RestMethod 'https://aka.ms/uninstall-azd.ps1' | Invoke-Expression"
 ```
 
 ### Linux/MacOS
@@ -52,7 +54,7 @@ The software may collect information about you and your use of the software and 
 
 ### Telemetry Configuration
 
-Telemetry collection is on by default. 
+Telemetry collection is on by default.
 
 To opt out, set the environment variable `AZURE_DEV_COLLECT_TELEMETRY` to `no` in your environment.
 

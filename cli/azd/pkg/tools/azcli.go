@@ -11,6 +11,7 @@ import (
 	"io"
 	"net/http"
 	"regexp"
+	"strings"
 	"time"
 
 	azdinternal "github.com/azure/azure-dev/cli/azd/internal"
@@ -18,10 +19,12 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/executil"
 	"github.com/azure/azure-dev/cli/azd/pkg/httpUtil"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/internal"
+	"github.com/blang/semver/v4"
 )
 
 var (
-	ErrAzCliNotLoggedIn          = errors.New("cli is not logged in")
+	ErrAzCliNotLoggedIn          = errors.New("cli is not logged in. Try running \"azd login\" to fix")
+	ErrAzCliRefreshTokenExpired  = errors.New("refresh token has expired. Try running \"azd login\" to fix")
 	ErrCurrentPrincipalIsNotUser = errors.New("current principal is not a user principal")
 	ErrClientAssertionExpired    = errors.New("client assertion expired")
 	ErrDeploymentNotFound        = errors.New("deployment not found")
@@ -78,6 +81,8 @@ type AzCli interface {
 	GetAppServiceProperties(ctx context.Context, subscriptionId string, resourceGroupName string, applicationName string) (AzCliAppServiceProperties, error)
 	GetContainerAppProperties(ctx context.Context, subscriptionId string, resourceGroupName string, applicationName string) (AzCliContainerAppProperties, error)
 	GetStaticWebAppProperties(ctx context.Context, subscriptionID string, resourceGroup string, appName string) (AzCliStaticWebAppProperties, error)
+	GetStaticWebAppApiKey(ctx context.Context, subscriptionID string, resourceGroup string, appName string) (string, error)
+	GetStaticWebAppEnvironmentProperties(ctx context.Context, subscriptionID string, resourceGroup string, appName string, environmentName string) (AzCliStaticWebAppEnvironmentProperties, error)
 
 	GetSignedInUserId(ctx context.Context) (string, error)
 
@@ -218,6 +223,11 @@ type AzCliStaticWebAppProperties struct {
 	DefaultHostname string `json:"defaultHostname"`
 }
 
+type AzCliStaticWebAppEnvironmentProperties struct {
+	Hostname string `json:"hostname"`
+	Status   string `json:"status"`
+}
+
 type AzCliLocation struct {
 	// The human friendly name of the location (e.g. "West US 2")
 	DisplayName string `json:"displayName"`
@@ -260,7 +270,7 @@ func (tok *AzCliAccessToken) UnmarshalJSON(data []byte) error {
 	}
 
 	if err := json.Unmarshal(data, &wire); err != nil {
-		return fmt.Errorf("unmarshaling json: %w", err)
+		return fmt.Errorf("unmarshalling json: %w", err)
 	}
 
 	tok.AccessToken = wire.AccessToken
@@ -330,8 +340,51 @@ func (cli *azCli) InstallUrl() string {
 	return "https://aka.ms/azure-dev/azure-cli-install"
 }
 
-func (cli *azCli) CheckInstalled(_ context.Context) (bool, error) {
-	return toolInPath("az")
+func (cli *azCli) versionInfo() VersionInfo {
+	return VersionInfo{
+		MinimumVersion: semver.Version{
+			Major: 2,
+			Minor: 38,
+			Patch: 0},
+		UpdateCommand: "Run \"az upgrade\" to upgrade",
+	}
+}
+
+func (cli *azCli) unmarshalCliVersion(ctx context.Context, component string) (string, error) {
+	azRes, err := executeCommand(ctx, "az", "version")
+	if err != nil {
+		return "", err
+	}
+	var azVerMap map[string]interface{}
+	err = json.Unmarshal([]byte(azRes), &azVerMap)
+	if err != nil {
+		return "", err
+	}
+	version, ok := azVerMap[component].(string)
+	if !ok {
+		return "", fmt.Errorf("reading %s component '%s' version failed", cli.Name(), component)
+	}
+	return version, nil
+}
+
+func (cli *azCli) CheckInstalled(ctx context.Context) (bool, error) {
+	found, err := toolInPath("az")
+	if !found {
+		return false, err
+	}
+	azVer, err := cli.unmarshalCliVersion(ctx, "azure-cli")
+	if err != nil {
+		return false, fmt.Errorf("checking %s version:  %w", cli.Name(), err)
+	}
+	azSemver, err := semver.Parse(azVer)
+	if err != nil {
+		return false, fmt.Errorf("converting to semver version fails: %w", err)
+	}
+	updateDetail := cli.versionInfo()
+	if azSemver.LT(updateDetail.MinimumVersion) {
+		return false, &ErrSemver{ToolName: cli.Name(), versionInfo: updateDetail}
+	}
+	return true, nil
 }
 
 // SetUserAgent sets the user agent that's sent with each call to the Azure
@@ -545,6 +598,51 @@ func (cli *azCli) GetStaticWebAppProperties(ctx context.Context, subscriptionID 
 	}
 
 	return staticWebAppProperties, nil
+}
+
+func (cli *azCli) GetStaticWebAppEnvironmentProperties(ctx context.Context, subscriptionID string, resourceGroup string, appName string, environmentName string) (AzCliStaticWebAppEnvironmentProperties, error) {
+	res, err := cli.runAzCommandWithArgs(context.Background(), executil.RunArgs{
+		Args: []string{
+			"staticwebapp", "environment", "show",
+			"--subscription", subscriptionID,
+			"--resource-group", resourceGroup,
+			"--name", appName,
+			"--environment", environmentName,
+			"--output", "json",
+		},
+		EnrichError: true,
+	})
+
+	if err != nil {
+		return AzCliStaticWebAppEnvironmentProperties{}, fmt.Errorf("failed getting staticwebapp environment properties: %w", err)
+	}
+
+	var environmentProperties AzCliStaticWebAppEnvironmentProperties
+	if err := json.Unmarshal([]byte(res.Stdout), &environmentProperties); err != nil {
+		return AzCliStaticWebAppEnvironmentProperties{}, fmt.Errorf("could not unmarshal output %s as an AzCliStaticWebAppEnvironmentProperties: %w", res.Stdout, err)
+	}
+
+	return environmentProperties, nil
+}
+
+func (cli *azCli) GetStaticWebAppApiKey(ctx context.Context, subscriptionID string, resourceGroup string, appName string) (string, error) {
+	res, err := cli.runAzCommandWithArgs(context.Background(), executil.RunArgs{
+		Args: []string{
+			"staticwebapp", "secrets", "list",
+			"--subscription", subscriptionID,
+			"--resource-group", resourceGroup,
+			"--name", appName,
+			"--query", "properties.apiKey",
+			"--output", "tsv",
+		},
+		EnrichError: true,
+	})
+
+	if err != nil {
+		return "", fmt.Errorf("failed getting staticwebapp api key: %w", err)
+	}
+
+	return strings.TrimSpace(res.Stdout), nil
 }
 
 func (cli *azCli) DeployToSubscription(ctx context.Context, subscriptionId string, deploymentName string, templateFile string, parametersFile string, location string) (AzCliDeploymentResult, error) {
@@ -808,6 +906,8 @@ func (cli *azCli) GetAccessToken(ctx context.Context) (AzCliAccessToken, error) 
 	res, err := cli.runAzCommand(ctx, "account", "get-access-token", "--output", "json")
 	if isNotLoggedInMessage(res.Stderr) {
 		return AzCliAccessToken{}, ErrAzCliNotLoggedIn
+	} else if isRefreshTokenExpiredMessage(res.Stderr) {
+		return AzCliAccessToken{}, ErrAzCliRefreshTokenExpired
 	} else if err != nil {
 		return AzCliAccessToken{}, fmt.Errorf("failed running az account get-access-token: %s: %w", res.String(), err)
 	}
@@ -926,7 +1026,13 @@ func (cli *azCli) runAzCommandWithArgs(ctx context.Context, args executil.RunArg
 	return cli.runWithResultFn(ctx, args)
 }
 
+// Azure Active Directory codes can be referenced via https://login.microsoftonline.com/error?code=<ERROR_CODE>,
+// where ERROR_CODE is the digits portion of an AAD error code. Example: AADSTS70043 has error code 70043
+
 var isNotLoggedInMessageRegex = regexp.MustCompile(`Please run ('|")az login('|") to (setup account|access your accounts)\.`)
+
+// AADSTS70043: The refresh token has expired or is invalid due to sign-in frequency checks by conditional access.
+var isRefreshTokenExpiredMessageRegex = regexp.MustCompile(`AADSTS70043`)
 var isResourceSegmentMeNotFoundMessageRegex = regexp.MustCompile(`Resource not found for the segment 'me'.`)
 var isDeploymentNotFoundMessageRegex = regexp.MustCompile(`ERROR: \(DeploymentNotFound\)`)
 var isClientAssertionInvalidMessagedRegex = regexp.MustCompile(`ERROR: AADSTS700024: Client assertion is not within its valid time range.`)
@@ -935,6 +1041,10 @@ var isDeploymentErrorRegex = regexp.MustCompile(`ERROR: ({.+})`)
 
 func isNotLoggedInMessage(s string) bool {
 	return isNotLoggedInMessageRegex.MatchString(s)
+}
+
+func isRefreshTokenExpiredMessage(s string) bool {
+	return isRefreshTokenExpiredMessageRegex.MatchString(s)
 }
 
 func isResourceSegmentMeNotFoundMessage(s string) bool {

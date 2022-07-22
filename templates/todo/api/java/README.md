@@ -4,7 +4,7 @@
 
 ### Prerequisites
 
-- Java 11 or later
+- Java 17 or later
 
 ### Local Environment
 

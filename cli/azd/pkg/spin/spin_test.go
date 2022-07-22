@@ -48,7 +48,7 @@ func Test_Println(t *testing.T) {
 	title := "Spinning"
 	spinner := New(title)
 
-	spinner.Start()
+	_ = spinner.Start()
 
 	message := "First update"
 	spinner.Println(message)
@@ -58,5 +58,5 @@ func Test_Println(t *testing.T) {
 	spinner.Println(message)
 	assert.Contains(t, buf.String(), message)
 
-	spinner.Stop()
+	_ = spinner.Stop()
 }

@@ -68,10 +68,12 @@ func (s *Spinner) Run(runFn func() error) error {
 	return runFn()
 }
 
+// Starts the spinner. Only possible error is if the spinner is already running.
 func (s *Spinner) Start() error {
 	return s.spinner.Start()
 }
 
+// Stops the spinner. Only possible error is if the spinner is already stopped.
 func (s *Spinner) Stop() error {
 	return s.spinner.Stop()
 }

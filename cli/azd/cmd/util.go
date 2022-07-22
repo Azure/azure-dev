@@ -230,7 +230,7 @@ func ensureEnvironmentInitialized(ctx context.Context, envSpec environmentSpec, 
 				if err != nil {
 					return fmt.Errorf("reading subscription id: %w", err)
 				}
-				if subscriptionSelection == "Other (enter manually)" {
+				if subscriptionSelection == manualSubscriptionEntryOption {
 					err = askOne(&survey.Input{
 						Message: "Enter an Azure Subscription to use:",
 					}, &subscriptionId)

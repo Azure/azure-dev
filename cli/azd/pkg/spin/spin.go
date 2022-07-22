@@ -57,6 +57,7 @@ func (s *Spinner) Println(message string) error {
 
 // Run renders the spinner while runFn is executing,
 // returning the error from executing runFn.
+// The spinner message is erased when the spinner is stopped.
 func (s *Spinner) Run(runFn func() error) error {
 	err := s.spinner.Start()
 	if err != nil {
@@ -74,6 +75,7 @@ func (s *Spinner) Start() error {
 }
 
 // Stops the spinner. Only possible error is if the spinner is already stopped.
+// The spinning message is erased when the spinner is stopped.
 func (s *Spinner) Stop() error {
 	return s.spinner.Stop()
 }

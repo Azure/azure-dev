@@ -64,6 +64,8 @@ func (s *Spinner) Run(runFn func() error) error {
 		return fmt.Errorf("starting spinner: %w", err)
 	}
 
+	// Can only error if the spinner is already stopped.
+	// nolint:errcheck
 	defer s.spinner.Stop()
 
 	return runFn()

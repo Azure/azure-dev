@@ -47,14 +47,9 @@ func (ica *infraCreateAction) SetupFlags(persis, local *pflag.FlagSet) {
 
 func (ica *infraCreateAction) Run(ctx context.Context, cmd *cobra.Command, args []string, azdCtx *environment.AzdContext) error {
 	azCli := commands.GetAzCliFromContext(ctx)
-	bicepCli := tools.NewBicepCli(azCli)
 	askOne := makeAskOne(ica.rootOptions.NoPrompt)
 
 	if err := ensureProject(azdCtx.ProjectPath()); err != nil {
-		return err
-	}
-
-	if err := tools.EnsureInstalled(ctx, azCli, bicepCli); err != nil {
 		return err
 	}
 
@@ -80,6 +75,11 @@ func (ica *infraCreateAction) Run(ctx context.Context, cmd *cobra.Command, args 
 	infraProvider, err := provisioning.NewInfraProvider(&env, azdCtx.ProjectDirectory(), projectConfig.Infra, azCli)
 	if err != nil {
 		return fmt.Errorf("error creating infra provider: %w", err)
+	}
+
+	requiredTools := infraProvider.RequiredExternalTools()
+	if err := tools.EnsureInstalled(ctx, requiredTools...); err != nil {
+		return err
 	}
 
 	template, err := infraProvider.Plan(ctx)

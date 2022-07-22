@@ -51,6 +51,10 @@ func (p *BicepInfraProvider) Name() string {
 	return "Bicep"
 }
 
+func (p *BicepInfraProvider) RequiredExternalTools() []tools.ExternalTool {
+	return []tools.ExternalTool{p.bicepCli, p.azCli}
+}
+
 // Plans the infrastructure provisioning
 func (p *BicepInfraProvider) Plan(ctx context.Context) (*ProvisioningPlan, error) {
 	bicepTemplate, err := p.createParametersFile()
@@ -393,12 +397,14 @@ func (p *BicepInfraProvider) modulePath() string {
 }
 
 // NewBicepInfraProvider creates a new instance of a Bicep Infra provider
-func NewBicepInfraProvider(env *environment.Environment, projectPath string, options InfrastructureOptions, bicep tools.BicepCli, az tools.AzCli) InfraProvider {
+func NewBicepInfraProvider(env *environment.Environment, projectPath string, options InfrastructureOptions, azCli tools.AzCli) InfraProvider {
+	bicepCli := tools.NewBicepCli(azCli)
+
 	return &BicepInfraProvider{
 		env:         env,
 		projectPath: projectPath,
 		options:     options,
-		bicepCli:    bicep,
-		azCli:       az,
+		bicepCli:    bicepCli,
+		azCli:       azCli,
 	}
 }

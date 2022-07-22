@@ -48,21 +48,21 @@ type ProvisionDestroyProgress struct {
 
 type InfraProvider interface {
 	Name() string
-	Plan(ctx context.Context) (*ProvisioningPlan, error)
+	RequiredExternalTools() []tools.ExternalTool
 	SaveTemplate(ctx context.Context, plan ProvisioningPlan) error
+	Plan(ctx context.Context) (*ProvisioningPlan, error)
 	Apply(ctx context.Context, plan *ProvisioningPlan, scope ProvisioningScope) (<-chan *ProvisionApplyResult, <-chan *ProvisionApplyProgress)
 	Destroy(ctx context.Context, plan *ProvisioningPlan) (<-chan *ProvisionDestroyResult, <-chan *ProvisionDestroyProgress)
 }
 
 func NewInfraProvider(env *environment.Environment, projectPath string, options InfrastructureOptions, azCli tools.AzCli) (InfraProvider, error) {
 	var provider InfraProvider
-	bicepCli := tools.NewBicepCli(azCli)
 
 	switch options.Provider {
 	case Bicep:
-		provider = NewBicepInfraProvider(env, projectPath, options, bicepCli, azCli)
+		provider = NewBicepInfraProvider(env, projectPath, options, azCli)
 	default:
-		provider = NewBicepInfraProvider(env, projectPath, options, bicepCli, azCli)
+		provider = NewBicepInfraProvider(env, projectPath, options, azCli)
 	}
 
 	if provider != nil {

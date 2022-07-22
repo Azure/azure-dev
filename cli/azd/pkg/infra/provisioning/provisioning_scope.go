@@ -20,8 +20,8 @@ type ResourceGroupProvisioningScope struct {
 	resourceGroup  string
 }
 
-func (s *ResourceGroupProvisioningScope) Deploy(ctx context.Context, bicepPath string, parametersPath string) error {
-	_, err := s.azCli.DeployToResourceGroup(ctx, s.subscriptionId, s.resourceGroup, s.name, bicepPath, parametersPath)
+func (s *ResourceGroupProvisioningScope) Deploy(ctx context.Context, modulePath string, parametersPath string) error {
+	_, err := s.azCli.DeployToResourceGroup(ctx, s.subscriptionId, s.resourceGroup, s.name, modulePath, parametersPath)
 	return err
 }
 

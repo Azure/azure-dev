@@ -207,14 +207,9 @@ func envNewCmd(rootOptions *commands.GlobalCommandOptions) *cobra.Command {
 func envRefreshCmd(rootOptions *commands.GlobalCommandOptions) *cobra.Command {
 	actionFn := func(ctx context.Context, cmd *cobra.Command, args []string, azdCtx *environment.AzdContext) error {
 		azCli := commands.GetAzCliFromContext(ctx)
-		bicepCli := tools.NewBicepCli(azCli)
 		askOne := makeAskOne(rootOptions.NoPrompt)
 
 		if err := ensureProject(azdCtx.ProjectPath()); err != nil {
-			return err
-		}
-
-		if err := tools.EnsureInstalled(ctx, azCli, bicepCli); err != nil {
 			return err
 		}
 
@@ -235,6 +230,11 @@ func envRefreshCmd(rootOptions *commands.GlobalCommandOptions) *cobra.Command {
 		infraProvider, err := provisioning.NewInfraProvider(&env, projectConfig.Path, projectConfig.Infra, azCli)
 		if err != nil {
 			return fmt.Errorf("creating infrastructure provider: %w", err)
+		}
+
+		requiredTools := infraProvider.RequiredExternalTools()
+		if err := tools.EnsureInstalled(ctx, requiredTools...); err != nil {
+			return err
 		}
 
 		template, err := infraProvider.Plan(ctx)

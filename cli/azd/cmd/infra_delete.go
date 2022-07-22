@@ -43,14 +43,9 @@ func (a *infraDeleteAction) SetupFlags(
 
 func (a *infraDeleteAction) Run(ctx context.Context, _ *cobra.Command, args []string, azdCtx *environment.AzdContext) error {
 	azCli := commands.GetAzCliFromContext(ctx)
-	bicepCli := tools.NewBicepCli(azCli)
 	askOne := makeAskOne(a.rootOptions.NoPrompt)
 
 	if err := ensureProject(azdCtx.ProjectPath()); err != nil {
-		return err
-	}
-
-	if err := tools.EnsureInstalled(ctx, azCli, bicepCli); err != nil {
 		return err
 	}
 
@@ -76,6 +71,11 @@ func (a *infraDeleteAction) Run(ctx context.Context, _ *cobra.Command, args []st
 	infraProvider, err := provisioning.NewInfraProvider(&env, azdCtx.ProjectDirectory(), projectConfig.Infra, azCli)
 	if err != nil {
 		return fmt.Errorf("error creating infra provider: %w", err)
+	}
+
+	requiredTools := infraProvider.RequiredExternalTools()
+	if err := tools.EnsureInstalled(ctx, requiredTools...); err != nil {
+		return err
 	}
 
 	// TODO: Purge keyvaults & confirmation

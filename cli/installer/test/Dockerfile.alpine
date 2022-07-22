@@ -1,14 +1,11 @@
 ARG base='alpine:3.15'
 FROM ${base}
 
-ARG shell='sh'
+ARG shell="bash"
 ARG baseUrl='must set baseUrl'
 ARG version='must set version'
 
-RUN apk add curl libc6-compat tar
+RUN apk add curl libc6-compat tar bash
 
 COPY ./*.sh ./
-RUN cat install-azd.sh \
-    | ${shell} -s -- --verbose --base-url "$baseUrl" --version "$version"  \
-    && azd version \
-    && cat uninstall-azd.sh | ${shell}
+RUN ./test-sh-install.sh "${shell}" "${baseUrl}" "${version}"

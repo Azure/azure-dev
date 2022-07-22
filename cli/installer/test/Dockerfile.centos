@@ -1,13 +1,10 @@
 ARG base='centos:8'
 FROM ${base}
 
-ARG shell='sh'
+ARG shell='bash'
 ARG baseUrl='must set baseUrl'
 ARG version='must set version'
 
 COPY ./*.sh ./
 
-RUN cat install-azd.sh \
-    | ${shell} -s -- --verbose --base-url "$baseUrl" --version "$version"  \
-    && azd version \
-    && cat uninstall-azd.sh | ${shell}
+RUN ./test-sh-install.sh "${shell}" "${baseUrl}" "${version}"

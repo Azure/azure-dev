@@ -8,7 +8,4 @@ ARG version='must set version'
 RUN apt update && apt install -y curl
 
 COPY ./*.sh ./
-RUN cat install-azd.sh \
-    | ${shell} -s -- --verbose --base-url "$baseUrl" --version "$version"  \
-    && azd version \
-    && cat uninstall-azd.sh | ${shell}
+RUN ./test-sh-install.sh "${shell}" "${baseUrl}" "${version}"

@@ -11,6 +11,11 @@ repo:
     - name: azure-samples
       url: git@github.com:Azure-Samples/todo-nodejs-mongo.git
 
+  rewrite:
+    patterns:
+      - "**/*.@(yml|yaml)"
+      - "**/*.bicep"
+
   assets:
     # Common assets
 
@@ -29,11 +34,6 @@ repo:
     # Template common
     - from: ../../../common
       to: ./
-
-    - from: ../../../common/infra
-      to: ./infra
-      patterns:
-        - abbreviations.json
 
     # Assets common
     - from: ../../common/assets

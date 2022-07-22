@@ -573,13 +573,12 @@ stages:
                     Copy-Item cli/installer/*.sh script-release/
                   displayName: Copy scripts for release upload
 
-                # TODO: Remove `test` before merge
                 - pwsh: |
                     az storage blob upload-batch `
-                      --account-name '$(azdev-storage-account-name-test)' `
-                      --account-key '$(azdev-storage-account-key-test)' `
+                      --account-name '$(azdev-storage-account-name)' `
+                      --account-key '$(azdev-storage-account-key)' `
                       --auth-mode key `
                       -s script-release/ `
-                      -d "azd-test/standalone/installer" `
+                      -d "azd/standalone/installer" `
                       --overwrite
                   displayName: Upload installer to storage location

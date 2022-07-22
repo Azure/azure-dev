@@ -10,7 +10,7 @@ import (
 	"github.com/theckman/yacspin"
 )
 
-// Default writer to std.out, with possibility to mock
+// Default writer to std.out, with possibility to mock for tests
 var writer io.Writer = colorable.NewColorableStdout()
 
 // Spinner is a type representing an animated CLi terminal spinner.
@@ -19,11 +19,10 @@ type Spinner struct {
 	logMutex sync.Mutex
 }
 
-// Updates the prefix portion of the spinner's title
-// Example: Invoking UpdatePrefix("Uploading files ") sets the spinner to look like: "Uploading files <spinner char>"
-func (s *Spinner) Prefix(prefix string) {
-	if prefix != "" {
-		s.spinner.Prefix(prefix)
+// Sets the title of the spinner.
+func (s *Spinner) Title(title string) {
+	if title != "" {
+		s.spinner.Message(title)
 	}
 }
 
@@ -35,24 +34,29 @@ func (s *Spinner) Prefix(prefix string) {
 // Console output after LogMessage("Step 1 completed."):
 // > Step 1 completed.
 // > Doing things... X
-func (s *Spinner) LogMessage(message string) {
+func (s *Spinner) Println(message string) error {
 	if message != "" {
 		defer s.logMutex.Unlock()
 
 		s.logMutex.Lock()
-		// Ignore error returned (which can only happen if spinner is not running)
-		// We control the spinner's state, so the spinner is guaranteed to be running
-		// nolint:errcheck
-		s.spinner.Stop()
+		err := s.spinner.Stop()
+		if err != nil {
+			return err
+		}
+
 		fmt.Fprintln(writer, message)
 
-		// Ignore error returned (which can only happen if spinner is running)
-		// We control the spinner's state, so the spinner is guaranteed not to be running
-		// nolint:errcheck
-		s.spinner.Start()
+		err = s.spinner.Start()
+		if err != nil {
+			return err
+		}
 	}
+
+	return nil
 }
 
+// Run renders the spinner while runFn is executing,
+// returning the error from executing runFn.
 func (s *Spinner) Run(runFn func() error) error {
 	err := s.spinner.Start()
 	if err != nil {
@@ -65,22 +69,28 @@ func (s *Spinner) Run(runFn func() error) error {
 }
 
 func (s *Spinner) Start() error {
-	return s.Start()
+	return s.spinner.Start()
 }
 
 func (s *Spinner) Stop() error {
-	return s.Stop()
+	return s.spinner.Stop()
 }
 
-func New(prefix string) *Spinner {
-	spinner, _ := yacspin.New(yacspin.Config{
-		Frequency: time.Millisecond * 500,
-		CharSet:   yacspin.CharSets[9],
-		Prefix:    prefix,
-		Writer:    writer,
+func New(title string) *Spinner {
+	config := yacspin.Config{
+		Frequency:    time.Millisecond * 500,
+		CharSet:      yacspin.CharSets[9],
+		SpinnerAtEnd: true,
+		Message:      title,
+		// Set prefix to empty space to always append a space between the spinner title and the spinner itself.
+		// From yacspin.Spinner: if SpinnerAtEnd is set to true, the printed line will instead look like: <message><prefix><spinner><suffix>
+		Prefix: " ",
+		Writer: writer,
 		// Do not set a StopMessage.
 		// The current LogMessage functionality depends on the StopMessage being empty.
-	})
+	}
+
+	spinner, _ := yacspin.New(config)
 
 	return &Spinner{
 		spinner: spinner,

@@ -140,7 +140,7 @@ func (i *initAction) Run(ctx context.Context, _ *cobra.Command, args []string, a
 			return gitCli.FetchCode(ctx, templateUrl, i.templateBranch, templateStagingDir)
 		}
 
-		spinner := spin.New("Downloading template ")
+		spinner := spin.New("Downloading template")
 		if err := spinner.Run(
 			initFunc,
 		); err != nil {

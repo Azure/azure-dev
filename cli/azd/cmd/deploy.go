@@ -154,7 +154,7 @@ func (d *deployAction) Run(ctx context.Context, cmd *cobra.Command, args []strin
 			fmt.Println(deployMsg)
 			spinner := spin.New(deployMsg)
 			spinner.Start()
-			err := deployAndReportProgress(spinner.Prefix)
+			err := deployAndReportProgress(spinner.Title)
 			spinner.Stop()
 
 			if err != nil {

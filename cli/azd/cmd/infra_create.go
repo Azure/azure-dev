@@ -14,6 +14,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/iac/bicep"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
+	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/pkg/spin"
@@ -93,7 +94,7 @@ func (ica *infraCreateAction) Run(ctx context.Context, cmd *cobra.Command, args 
 	if err != nil {
 		return fmt.Errorf("substituting parameter file: %w", err)
 	}
-	err = ioutil.WriteFile(azdCtx.BicepParametersFilePath(ica.rootOptions.EnvironmentName, rootModule), []byte(replaced), 0644)
+	err = ioutil.WriteFile(azdCtx.BicepParametersFilePath(ica.rootOptions.EnvironmentName, rootModule), []byte(replaced), osutil.PermissionFile)
 	if err != nil {
 		return fmt.Errorf("writing parameter file: %w", err)
 	}

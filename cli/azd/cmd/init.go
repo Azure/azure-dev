@@ -50,12 +50,6 @@ type initAction struct {
 	rootOptions    *commands.GlobalCommandOptions
 }
 
-//constant enums for file mode
-const (
-	permissionDirectory   = 0755
-	permissionRegularFile = 0644
-)
-
 func (i *initAction) SetupFlags(
 	persis *pflag.FlagSet,
 	local *pflag.FlagSet,
@@ -230,13 +224,13 @@ func (i *initAction) Run(ctx context.Context, _ *cobra.Command, args []string, a
 	}
 
 	//create .azure when running azd init
-	err = os.MkdirAll(filepath.Join(azdCtx.ProjectDirectory(), environment.EnvironmentDirectoryName), permissionDirectory)
+	err = os.MkdirAll(filepath.Join(azdCtx.ProjectDirectory(), environment.EnvironmentDirectoryName), osutil.PermissionDirectory)
 	if err != nil {
 		return fmt.Errorf("failed to create a directory: %w", err)
 	}
 
 	//create .gitignore or open existing .gitignore file, and contains .azure
-	gitignoreFile, err := os.OpenFile(filepath.Join(azdCtx.ProjectDirectory(), ".gitignore"), os.O_APPEND|os.O_RDWR|os.O_CREATE, permissionRegularFile)
+	gitignoreFile, err := os.OpenFile(filepath.Join(azdCtx.ProjectDirectory(), ".gitignore"), os.O_APPEND|os.O_RDWR|os.O_CREATE, osutil.PermissionFile)
 	if err != nil {
 		return fmt.Errorf("fail to create or open .gitignore: %w", err)
 	}

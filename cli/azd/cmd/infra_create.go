@@ -22,7 +22,6 @@ import (
 	"github.com/drone/envsubst"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
-	"github.com/theckman/yacspin"
 	"go.uber.org/multierr"
 )
 
@@ -234,12 +233,11 @@ func (ica *infraCreateAction) Run(ctx context.Context, cmd *cobra.Command, args 
 		printWithStyling(
 			"Provisioning Azure resources can take some time.\n\nYou can view detailed progress in the Azure Portal:\n%s",
 			deploymentURL)
-		//fmt.Fprintf(colorable.NewColorableStdout(), "Provisioning Azure resources can take some time.\n\nYou can view detailed progress in the Azure Portal:\n%s", deploymentURL)
 
-		err = spin.RunWithUpdater("Creating Azure resources ", deployAndReportProgress,
-			func(s *yacspin.Spinner, deploySuccess bool) {
-				s.StopMessage("Created Azure resources\n")
-			})
+		spinner := spin.New("Creating Azure resources")
+		spinner.Start()
+		deployAndReportProgress(spinner.Prefix)
+		spinner.Stop()
 	} else {
 		err = deployAndReportProgress(nil)
 	}

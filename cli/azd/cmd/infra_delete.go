@@ -174,10 +174,8 @@ func (a *infraDeleteAction) Run(ctx context.Context, _ *cobra.Command, args []st
 		return nil
 	}
 
-	if err := spin.Run(
-		"Deleting Azure resources ",
-		deleteFn,
-	); err != nil {
+	spinner := spin.New("Deleting Azure resources ")
+	if err := spinner.Run(deleteFn); err != nil {
 		return fmt.Errorf("destroying: %w", err)
 	}
 

@@ -2,65 +2,87 @@ package spin
 
 import (
 	"fmt"
+	"io"
+	"sync"
 	"time"
 
+	"github.com/mattn/go-colorable"
 	"github.com/theckman/yacspin"
 )
 
-// RunWithUpdateFunc is the function signature that RunWithUpdater expects
-type RunWithUpdateFunc = func(func(string)) error
+// Default writer to std.out, with possibility to mock
+var writer io.Writer = colorable.NewColorableStdout()
 
-// RunFunc is the function signature that Run expects
-type RunFunc func() error
-
-// Run is the equivalent of RunWithUpdater with no updater specified
-func Run(prefix string, runFn RunFunc, finalFuncs ...func(*yacspin.Spinner, bool)) error {
-	return RunWithUpdater(
-		prefix,
-		func(func(string)) error {
-			return runFn()
-		},
-		finalFuncs...,
-	)
+// Spinner is a type representing an animated CLi terminal spinner.
+type Spinner struct {
+	spinner  *yacspin.Spinner
+	logMutex sync.Mutex
 }
 
-// RunWithUpdater runs runFn with a spinner. The prefix of the spinner is set to prefix,
-// and when runFn is complete, each function in finalFuncs is executed in serial, regardless
-// of whether runFn errored, but each finalFunction gets a boolean argument indicating if
-// main function succeeded.
-func RunWithUpdater(prefix string, runFn RunWithUpdateFunc, finalFuncs ...func(*yacspin.Spinner, bool)) error {
-	spin, _ := yacspin.New(yacspin.Config{
-		Frequency: time.Millisecond * 500,
-		CharSet:   yacspin.CharSets[9],
-	})
-	spin.Prefix(prefix)
+// Updates the prefix portion of the spinner's title
+// Example: Invoking UpdatePrefix("Uploading files ") sets the spinner to look like: "Uploading files <spinner char>"
+func (s *Spinner) Prefix(prefix string) {
+	if prefix != "" {
+		s.spinner.Prefix(prefix)
+	}
+}
 
-	err := spin.Start()
+// Logs a message to standard output and pushes the spinner onto a new line.
+// Example:
+// Console output before, with spinner title set to "Doing things...":
+// > Doing things... X
+//
+// Console output after LogMessage("Step 1 completed."):
+// > Step 1 completed.
+// > Doing things... X
+func (s *Spinner) LogMessage(message string) {
+	if message != "" {
+		defer s.logMutex.Unlock()
+
+		s.logMutex.Lock()
+		// Ignore error returned (which can only happen if spinner is not running)
+		// We control the spinner's state, so the spinner is guaranteed to be running
+		// nolint:errcheck
+		s.spinner.Stop()
+		fmt.Fprintln(writer, message)
+
+		// Ignore error returned (which can only happen if spinner is running)
+		// We control the spinner's state, so the spinner is guaranteed not to be running
+		// nolint:errcheck
+		s.spinner.Start()
+	}
+}
+
+func (s *Spinner) Run(runFn func() error) error {
+	err := s.spinner.Start()
 	if err != nil {
 		return fmt.Errorf("starting spinner: %w", err)
 	}
 
-	// When `runFn` completes and this function returns, strop the spinner. We ignore
-	// the error because Stop only returns an error if the spinner is not running and
-	// we know that it is running.
-	// nolint:errcheck
-	defer spin.Stop()
+	defer s.spinner.Stop()
 
-	// When `runFn` completes (which causes this function to return), run
-	// all the final functions. NOTE: Since go processes `defers` in LIFO
-	// order, all of these final functions will run before `Stop` is called.
-	var result error
-	defer func() {
-		for _, finalFunc := range finalFuncs {
-			finalFunc(spin, result == nil)
-		}
-	}()
+	return runFn()
+}
 
-	result = runFn(func(newPrefix string) {
-		if newPrefix != "" {
-			spin.Prefix(newPrefix)
-		}
+func (s *Spinner) Start() error {
+	return s.Start()
+}
+
+func (s *Spinner) Stop() error {
+	return s.Stop()
+}
+
+func New(prefix string) *Spinner {
+	spinner, _ := yacspin.New(yacspin.Config{
+		Frequency: time.Millisecond * 500,
+		CharSet:   yacspin.CharSets[9],
+		Prefix:    prefix,
+		Writer:    writer,
+		// Do not set a StopMessage.
+		// The current LogMessage functionality depends on the StopMessage being empty.
 	})
 
-	return result
+	return &Spinner{
+		spinner: spinner,
+	}
 }

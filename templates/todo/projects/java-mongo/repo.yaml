@@ -1,0 +1,37 @@
+templateApi: 1.0.0
+metadata:
+  type: repo
+  name: todo-java-mongo
+  description: Mongo DB backend with Java REST API
+
+repo:
+  includeProjectAssets: true
+  
+  remotes:
+    - name: azure-samples
+      url: git@github.com:Azure-Samples/todo-java-mongo.git
+    - name: azdevux
+      url: git@github.com:azdevux/todo-java-mongo.git
+
+  assets:
+    # Common assets
+    - from: ../../api/common
+      to: ./
+      patterns:
+        - swagger.yaml
+
+    - from: ../../../common
+      to: ./
+
+    # Java API
+    - from: ../../api/java
+      to: ./src/api
+      ignore:
+        - "target/**/*"
+
+    # React Frontend
+    - from: ../../web/react-fluent
+      to: ./src/web
+      ignore:
+        - "build/**/*"
+        - "node_modules/**/*"

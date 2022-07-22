@@ -1,0 +1,28 @@
+on:
+  workflow_dispatch:
+    branches:
+      - main
+      - master
+  push:
+    branches:
+      - main
+      - master
+  pull_request:
+    branches:
+      - main
+      - master
+env:
+  AZURE_CREDENTIALS: ${{ secrets.AZURE_CREDENTIALS }}
+  BASENAME: ${{ secrets.BASENAME }}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    container:
+      image: azdevcliextacr.azurecr.io/azure-dev:latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+
+      - name: Azure Dev Deploy
+        run: az dev deploy --debug

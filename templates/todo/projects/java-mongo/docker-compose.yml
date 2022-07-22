@@ -1,0 +1,20 @@
+version: "2"
+services:
+  webui:
+    container_name: todo-js-web-react
+    build:
+      context: ../../web/react-fluent
+    ports:
+      - 3000:80
+    environment:
+      NODE_ENV: ${NODE_ENV}
+      REACT_APP_API_BASE_URL: ${REACT_APP_API_BASE_URL}
+      REACT_APP_APPINSIGHTS_INSTRUMENTATIONKEY: ${REACT_APP_APPINSIGHTS_INSTRUMENTATIONKEY}
+  api:
+    container_name: azure/azure-dev-todo-java
+    build:
+      context: ../../api/java
+    ports:
+      - 8080:8080
+    environment:
+      SPRING_DATA_MONGODB_URI: ${COSMOS_CONNECTION_STRING}

@@ -14,11 +14,6 @@ repo:
   assets:
     # Common assets
 
-    - from: ../../../common/infra
-      to: ./infra
-      patterns:
-        - abbreviations.json
-
     # openapi.yaml to root
     - from: ../../api/common
       to: ./
@@ -34,6 +29,11 @@ repo:
     # Template common
     - from: ../../../common
       to: ./
+
+    - from: ../../../common/infra
+      to: ./infra
+      patterns:
+        - abbreviations.json
 
     # Assets common
     - from: ../../common/assets

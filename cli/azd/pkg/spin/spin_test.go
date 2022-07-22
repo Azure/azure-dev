@@ -1,25 +1,62 @@
 package spin
 
 import (
+	"bytes"
+	"errors"
+	"io"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
 )
 
 func Test_Run(t *testing.T) {
-	t.Run("FinalFuncs Are Called", func(t *testing.T) {
-		// runCount := 0
-		// increment := func(s *yacspin.Spinner, noError bool) {
-		// 	assert.NotNil(t, s, "spinner should be passed to final functions")
-		// 	runCount++
-		// }
+	t.Run("Run executes runFn", func(t *testing.T) {
+		var buf bytes.Buffer
+		title := "Spinning"
+		writer = io.Writer(&buf)
+		spinner := New(title)
+		hasRun := false
 
-		// // FinalFuncs are called when the worker function succeeds.
-		// spinner := spin.New("prefix")
-		// _ = spinner.Run(func() error { return nil }, increment, increment)
-		// assert.Equal(t, 2, runCount, "final functions should be called on success")
-
-		// // And FinalFuncs are also called when the worker function fails.
-		// runCount = 0
-		// _ = Run("prefix", func() error { return errors.New("oh no") }, increment, increment)
-		// assert.Equal(t, 2, runCount, "final functions should be called on error")
+		err := spinner.Run(func() error {
+			hasRun = true
+			return nil
+		})
+		assert.True(t, hasRun)
+		assert.Nil(t, err)
 	})
+
+	t.Run("Run returns err if runFn errs", func(t *testing.T) {
+		var buf bytes.Buffer
+		title := "Spinning"
+		writer = io.Writer(&buf)
+		spinner := New(title)
+		hasRun := false
+
+		err := spinner.Run(func() error {
+			hasRun = true
+			return errors.New("oh no")
+		})
+		assert.True(t, hasRun)
+		assert.Error(t, err)
+	})
+}
+
+func Test_Println(t *testing.T) {
+	var buf bytes.Buffer
+	writer = io.Writer(&buf)
+
+	title := "Spinning"
+	spinner := New(title)
+
+	spinner.Start()
+
+	message := "First update"
+	spinner.Println(message)
+	assert.Contains(t, buf.String(), message)
+
+	message = "Second update"
+	spinner.Println(message)
+	assert.Contains(t, buf.String(), message)
+
+	spinner.Stop()
 }

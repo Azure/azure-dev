@@ -11,7 +11,7 @@ import { getAzDevTerminalTitle, getWorkingFolder } from './cmdUtil';
 export async function restore(context: IActionContext, selectedFile?: vscode.Uri): Promise<void> {
     const workingFolder = await getWorkingFolder(context, selectedFile);
 
-    const azureCli = createAzureDevCli();
+    const azureCli = await createAzureDevCli(context);
 
     const command = azureCli.commandBuilder.withArg('restore').build();
 

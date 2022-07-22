@@ -12,7 +12,7 @@ if (Test-Path $InstallFolder) {
     Remove-Item $InstallFolder -Recurse -Force
 } else {
     Write-Host "azd is not installed at $InstallFolder. To install run:"
-    Write-Host "powershell -c `"if ((Get-ExecutionPolicy) -ne 'Unrestricted') { Set-ExecutionPolicy -ExecutionPolicy 'Unrestricted' -Scope 'Process' }; Invoke-WebRequest -Uri 'https://aka.ms/install-azd.ps1' -OutFile install-azd.ps1; ./install-azd.ps1`"`n"
+    Write-Host "powershell -ex AllSigned -c `"Invoke-RestMethod 'https://aka.ms/install-azd.ps1' | Invoke-Expression`""
 }
 
 # $env:Path, [Environment]::GetEnvironmentVariable('PATH'), and setx all expand

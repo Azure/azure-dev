@@ -37,7 +37,7 @@ export async function selectEnvironment(context: IActionContext, selectedFile?: 
         title: localize('azure-dev.commands.cli.env-select.choose-environment', 'What environment should be set as default?')
     });
 
-    const azureCli = createAzureDevCli();
+    const azureCli = await createAzureDevCli(context);
     azureCli.commandBuilder.withArg('env').withArg('select').withQuotedArg(selectedEnv.data.Name);
     await spawnAsync(azureCli.commandBuilder.build(), azureCli.spawnOptions(cwd));
     await vscode.window.showInformationMessage(
@@ -50,7 +50,7 @@ export async function newEnvironment(context: IActionContext, selectedFile?: vsc
         folder = await quickPickWorkspaceFolder(context, localize('azure-dev.commands.util.needWorkspaceFolder', "To run '{0}' command you must first open a folder or workspace in VS Code", 'env new'));
     }
 
-    const azureCli = createAzureDevCli();
+    const azureCli = await createAzureDevCli(context);
     const command = azureCli.commandBuilder.withArg('env').withArg('new');
     const options: vscode.TerminalOptions = {
         name: getAzDevTerminalTitle(),
@@ -68,7 +68,7 @@ export async function refreshEnvironment(context: IActionContext, selectedFile?:
     }
     const cwd = folder.uri.fsPath;
 
-    const azureCli = createAzureDevCli();
+    const azureCli = await createAzureDevCli(context);
     const progressOptions: vscode.ProgressOptions = {
         location: vscode.ProgressLocation.Notification,
         title: localize('azure-dev.commands.cli.env-refresh.refreshing', 'Refreshing environment values...'),

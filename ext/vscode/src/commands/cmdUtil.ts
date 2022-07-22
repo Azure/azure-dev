@@ -120,7 +120,7 @@ export type EnvironmentInfo = {
 };
 
 export async function getEnvironments(context: IActionContext, cwd: string): Promise<EnvironmentInfo[]> {
-    const azureCli = createAzureDevCli();
+    const azureCli = await createAzureDevCli(context);
     const command = azureCli.commandBuilder
         .withArg('env').withArg('list')
         .withArg('--output').withArg('json')

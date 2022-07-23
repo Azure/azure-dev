@@ -335,7 +335,11 @@ func reportDeploymentStatusInteractive(ctx context.Context, azCli tools.AzCli, e
 		// 1. Resource types that are sub-components. i.e., application settings: "Microsoft.Web/sites/config"
 		// 2. Azure resources that we do not have a translation of the resource type for.
 		if newResource.ResourceTypeDisplayName != "" {
-			spinner.Println(fmt.Sprintf("Created - %s: %s - %s", newResource.ResourceTypeDisplayName, newResource.ResourceName, newResource.DeployedTimestamp.Format(time.ANSIC)))
+			spinner.Println(fmt.Sprintf(
+				"%s - Created %s: %s",
+				newResource.DeployedTimestamp.Local().Format("2006-01-02 15:04:05"),
+				newResource.ResourceTypeDisplayName,
+				newResource.ResourceName))
 			loggedResources[newResource.Id] = true
 		}
 	}

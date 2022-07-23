@@ -18,7 +18,7 @@ func NewAzureResourceManager(azCli tools.AzCli) *AzureResourceManager {
 	}
 }
 
-func (rm *AzureResourceManager) GetDeploymentResourceOperations(ctx context.Context, subscriptionId string, deploymentName string) (*[]tools.AzCliResourceOperation, error) {
+func (rm *AzureResourceManager) GetDeploymentResourceOperations(ctx context.Context, subscriptionId string, deploymentName string) ([]tools.AzCliResourceOperation, error) {
 	// Gets all the subscription level deployments
 	subOperations, err := rm.azCli.ListSubscriptionDeploymentOperations(ctx, subscriptionId, deploymentName)
 	if err != nil {
@@ -38,7 +38,7 @@ func (rm *AzureResourceManager) GetDeploymentResourceOperations(ctx context.Cont
 	resourceOperations := []tools.AzCliResourceOperation{}
 
 	if strings.TrimSpace(resourceGroupName) == "" {
-		return &resourceOperations, nil
+		return resourceOperations, nil
 	}
 
 	// Find all resource group deployments within the subscription operations
@@ -52,7 +52,7 @@ func (rm *AzureResourceManager) GetDeploymentResourceOperations(ctx context.Cont
 		}
 	}
 
-	return &resourceOperations, nil
+	return resourceOperations, nil
 }
 
 func (rm *AzureResourceManager) appendDeploymentResourcesRecursive(ctx context.Context, subscriptionId string, resourceGroupName string, deploymentName string, resourceOperations *[]tools.AzCliResourceOperation) error {

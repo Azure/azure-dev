@@ -201,7 +201,7 @@ func (ica *infraCreateAction) Run(ctx context.Context, cmd *cobra.Command, args 
 	}
 	var res deployFuncResult
 
-	deployAndReportProgress := func(spinnerUpdater *spin.SpinnerUpdater) error {
+	deployAndReportProgress := func(spinner *spin.Spinner) error {
 		deployResChan := make(chan deployFuncResult)
 		go func() {
 			res, err := bicep.Deploy(ctx, deploymentTarget, bicepPath, azdCtx.BicepParametersFilePath(ica.rootOptions.EnvironmentName, "main"))
@@ -221,7 +221,7 @@ func (ica *infraCreateAction) Run(ctx context.Context, cmd *cobra.Command, args 
 					continue
 				}
 				if interactive {
-					reportDeploymentStatusInteractive(ctx, azCli, env, spinnerUpdater, &loggedResources)
+					reportDeploymentStatusInteractive(ctx, azCli, env, spinner, loggedResources)
 				} else {
 					reportDeploymentStatusJson(ctx, azCli, env, formatter, cmd)
 				}
@@ -240,7 +240,7 @@ func (ica *infraCreateAction) Run(ctx context.Context, cmd *cobra.Command, args 
 
 		spinner := spin.New("Creating Azure resources")
 		_ = spinner.Start()
-		err = deployAndReportProgress(spinner.Title)
+		err = deployAndReportProgress(spinner)
 		_ = spinner.Stop()
 
 		if err == nil {
@@ -279,19 +279,17 @@ func (ica *infraCreateAction) Run(ctx context.Context, cmd *cobra.Command, args 
 	return nil
 }
 
-func reportDeploymentStatusInteractive(ctx context.Context, azCli tools.AzCli, env environment.Environment, spinnerUpdater *spin.SpinnerUpdater, loggedResourcesPtr *map[string]bool) {
+func reportDeploymentStatusInteractive(ctx context.Context, azCli tools.AzCli, env environment.Environment, spinner *spin.Spinner, loggedResources map[string]bool) {
 	resourceManager := infra.NewAzureResourceManager(azCli)
 
-	resOps, err := resourceManager.GetDeploymentResourceOperations(ctx, env.GetSubscriptionId(), env.GetEnvName())
+	operations, err := resourceManager.GetDeploymentResourceOperations(ctx, env.GetSubscriptionId(), env.GetEnvName())
 	if err != nil {
 		// Status display is best-effort activity.
 		return
 	}
 
-	operations := *resOps
 	succeededCount := 0
 	newlyDeployedResources := []azureutil.DeployedAzureResource{}
-	loggedResources := *loggedResourcesPtr
 
 	for _, resourceOperation := range operations {
 		if resourceOperation.Properties.ProvisioningState == "Succeeded" {
@@ -337,7 +335,7 @@ func reportDeploymentStatusInteractive(ctx context.Context, azCli tools.AzCli, e
 		// 1. Resource types that are sub-components. i.e., application settings: "Microsoft.Web/sites/config"
 		// 2. Azure resources that we do not have a translation of the resource type for.
 		if newResource.ResourceTypeDisplayName != "" {
-			spinnerUpdater.LogMessage(fmt.Sprintf("Created - %s: %s - %s", newResource.ResourceTypeDisplayName, newResource.ResourceName, newResource.DeployedTimestamp.Format(time.ANSIC)))
+			spinner.Println(fmt.Sprintf("Created - %s: %s - %s", newResource.ResourceTypeDisplayName, newResource.ResourceName, newResource.DeployedTimestamp.Format(time.ANSIC)))
 			loggedResources[newResource.Id] = true
 		}
 	}
@@ -350,7 +348,7 @@ func reportDeploymentStatusInteractive(ctx context.Context, azCli tools.AzCli, e
 		status = "Creating Azure resources "
 	}
 
-	spinnerUpdater.UpdatePrefix(status)
+	spinner.Title(status)
 }
 
 type progressReport struct {
@@ -362,14 +360,14 @@ func reportDeploymentStatusJson(ctx context.Context, azCli tools.AzCli, env envi
 	resourceManager := infra.NewAzureResourceManager(azCli)
 
 	ops, err := resourceManager.GetDeploymentResourceOperations(ctx, env.GetSubscriptionId(), env.GetEnvName())
-	if err != nil || len(*ops) == 0 {
+	if err != nil || len(ops) == 0 {
 		// Status display is best-effort activity.
 		return
 	}
 
 	report := progressReport{
 		Timestamp:  time.Now(),
-		Operations: *ops,
+		Operations: ops,
 	}
 
 	_ = formatter.Format(report, cmd.OutOrStdout(), nil)

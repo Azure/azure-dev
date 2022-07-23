@@ -296,38 +296,39 @@ func reportDeploymentStatusInteractive(ctx context.Context, azCli tools.AzCli, e
 			succeededCount++
 
 			if !loggedResources[resourceOperation.Properties.TargetResource.Id] {
+				resourceTypeDisplayName := ""
+
+				if resourceOperation.Properties.TargetResource.ResourceType == string(infra.AzureResourceTypeWebSite) {
+					// Web apps have different kinds of resources sharing the same resource type 'Microsoft.Web/sites', i.e. Function app vs. App service
+					// We resolve it by querying the properties of the ARM resource.
+					resourceTypeName, err := resourceManager.GetWebAppResourceTypeDisplayName(ctx, env.GetSubscriptionId(), resourceOperation.Properties.TargetResource.Id)
+
+					if err != nil {
+						// Best effort -- use static translation 'Web App' if we could not resolve the exact resource type
+						resourceTypeDisplayName = infra.GetResourceTypeDisplayName(infra.AzureResourceType(resourceOperation.Properties.TargetResource.ResourceType))
+					} else {
+						resourceTypeDisplayName = resourceTypeName
+					}
+				} else {
+					resourceTypeName := infra.GetResourceTypeDisplayName(infra.AzureResourceType(resourceOperation.Properties.TargetResource.ResourceType))
+
+					if resourceTypeName != "" {
+						resourceTypeDisplayName = resourceTypeName
+					}
+				}
+
 				newlyDeployedResources = append(newlyDeployedResources, azureutil.DeployedAzureResource{
-					Id:                resourceOperation.Properties.TargetResource.Id,
-					ResourceName:      resourceOperation.Properties.TargetResource.ResourceName,
-					ResourceType:      resourceOperation.Properties.TargetResource.ResourceType,
-					DeployedTimestamp: resourceOperation.Properties.Timestamp,
+					Id:                      resourceOperation.Properties.TargetResource.Id,
+					ResourceName:            resourceOperation.Properties.TargetResource.ResourceName,
+					ResourceType:            resourceOperation.Properties.TargetResource.ResourceType,
+					ResourceTypeDisplayName: resourceTypeDisplayName,
+					DeployedTimestamp:       resourceOperation.Properties.Timestamp,
 				})
 			}
 		}
 	}
 
 	sort.Sort(azureutil.DeployedAzureResourceByTimestamp(newlyDeployedResources))
-
-	for i := range newlyDeployedResources {
-		if newlyDeployedResources[i].ResourceType == string(infra.AzureResourceTypeWebSite) {
-			// Web apps have different kinds of resources sharing the same resource type 'Microsoft.Web/sites', i.e. Function app vs. App service
-			// We resolve it by querying the properties of the ARM resource.
-			resourceTypeName, err := resourceManager.GetWebAppResourceTypeDisplayName(ctx, env.GetSubscriptionId(), newlyDeployedResources[i].Id)
-
-			if err != nil {
-				// Best effort -- use static translation 'Web App' if we could not resolve the exact resource type
-				newlyDeployedResources[i].ResourceTypeDisplayName = infra.GetResourceTypeDisplayName(infra.AzureResourceType(newlyDeployedResources[i].ResourceType))
-			} else {
-				newlyDeployedResources[i].ResourceTypeDisplayName = resourceTypeName
-			}
-		} else {
-			resourceTypeName := infra.GetResourceTypeDisplayName(infra.AzureResourceType(newlyDeployedResources[i].ResourceType))
-
-			if resourceTypeName != "" {
-				newlyDeployedResources[i].ResourceTypeDisplayName = resourceTypeName
-			}
-		}
-	}
 
 	for _, newResource := range newlyDeployedResources {
 		// Don't log resource types that are not known to us.
@@ -347,9 +348,9 @@ func reportDeploymentStatusInteractive(ctx context.Context, azCli tools.AzCli, e
 	status := ""
 
 	if len(operations) > 0 {
-		status = fmt.Sprintf("Creating Azure resources (%d of ~%d completed) ", succeededCount, len(operations))
+		status = fmt.Sprintf("Creating Azure resources (%d of ~%d completed)", succeededCount, len(operations))
 	} else {
-		status = "Creating Azure resources "
+		status = "Creating Azure resources"
 	}
 
 	spinner.Title(status)

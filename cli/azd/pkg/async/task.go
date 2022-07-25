@@ -93,3 +93,34 @@ func RunTaskWithProgress[R any, P any](runFn TaskWithProgressRunFunc[R, P]) *Tas
 
 	return task
 }
+
+type InteractiveTaskWithProgress[R any, P any] struct {
+	TaskWithProgress[R, P]
+	interactiveChannel chan bool
+}
+
+func (t *InteractiveTaskWithProgress[R, P]) Run(taskFn InteractiveTaskWithProgressRunFunc[R, P]) {
+	go func() {
+		context := InteractiveTaskContextWithProgress[R, P]{
+			task: t,
+		}
+
+		taskFn(&context)
+		t.complete(context.result, context.error)
+		close(t.progressChannel)
+	}()
+}
+
+func NewInteractiveTaskWithProgress[R any, P any]() *InteractiveTaskWithProgress[R, P] {
+	return &InteractiveTaskWithProgress[R, P]{
+		TaskWithProgress:   *NewTaskWithProgress[R, P](),
+		interactiveChannel: make(chan bool),
+	}
+}
+
+func RunInteractiveTaskWithProgress[R any, P any](runFn InteractiveTaskWithProgressRunFunc[R, P]) *InteractiveTaskWithProgress[R, P] {
+	task := NewInteractiveTaskWithProgress[R, P]()
+	task.Run(runFn)
+
+	return task
+}

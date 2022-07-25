@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/AlecAivazis/survey/v2"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/spin"
@@ -14,10 +13,11 @@ import (
 )
 
 type Manager struct {
-	azCli    tools.AzCli
-	asker    input.Asker
-	env      environment.Environment
-	provider Provider
+	azCli       tools.AzCli
+	env         environment.Environment
+	provider    Provider
+	interactive bool
+	console     input.Console
 }
 
 // Creates the Azure infrastructure for the specified project
@@ -223,7 +223,7 @@ func (pm *Manager) ensureLocation(ctx context.Context, plan *Plan) (string, erro
 		// user on every deployment if they don't have a `location` parameter in their bicep file.
 		// When we store it, we should store it /per environment/ not as a property of the entire
 		// project.
-		selected, err := input.PromptLocation(ctx, "Please select an Azure location to use to store deployment metadata:", pm.asker)
+		selected, err := pm.console.PromptLocation(ctx, "Please select an Azure location to use to store deployment metadata:")
 		if err != nil {
 			return "", fmt.Errorf("prompting for deployment metadata region: %w", err)
 		}
@@ -247,24 +247,26 @@ func (pm *Manager) ensureParameters(ctx context.Context, plan *Plan) (bool, erro
 			continue
 		}
 		if !param.HasValue() {
-			var val string
-			if err := pm.asker(&survey.Input{
+			userValue, err := pm.console.Prompt(ctx, input.ConsoleOptions{
 				Message: fmt.Sprintf("Please enter a value for the '%s' deployment parameter:", key),
-			}, &val); err != nil {
+			})
+
+			if err != nil {
 				return false, fmt.Errorf("prompting for deployment parameter: %w", err)
 			}
 
-			param.Value = val
+			param.Value = userValue
 
-			saveParameter := true
-			if err := pm.asker(&survey.Confirm{
+			saveParameter, err := pm.console.Confirm(ctx, input.ConsoleOptions{
 				Message: "Save the value in the environment for future use",
-			}, &saveParameter); err != nil {
+			})
+
+			if err != nil {
 				return false, fmt.Errorf("prompting to save deployment parameter: %w", err)
 			}
 
 			if saveParameter {
-				pm.env.Values[key] = val
+				pm.env.Values[key] = userValue
 			}
 
 			updatedParameters = true
@@ -275,7 +277,7 @@ func (pm *Manager) ensureParameters(ctx context.Context, plan *Plan) (bool, erro
 }
 
 // Creates a new instance of the Provisioning Manager
-func NewManager(ctx context.Context, env environment.Environment, projectPath string, options Options, azCli tools.AzCli) (*Manager, error) {
+func NewManager(ctx context.Context, env environment.Environment, projectPath string, options Options, interactive bool, azCli tools.AzCli) (*Manager, error) {
 	infraProvider, err := NewProvider(&env, projectPath, options, azCli)
 	if err != nil {
 		return nil, fmt.Errorf("error creating infra provider: %w", err)
@@ -287,8 +289,10 @@ func NewManager(ctx context.Context, env environment.Environment, projectPath st
 	}
 
 	return &Manager{
-		azCli:    azCli,
-		env:      env,
-		provider: infraProvider,
+		azCli:       azCli,
+		env:         env,
+		provider:    infraProvider,
+		interactive: interactive,
+		console:     input.NewAskerConsole(interactive),
 	}, nil
 }

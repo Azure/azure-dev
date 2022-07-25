@@ -8,14 +8,17 @@ import (
 	"io/ioutil"
 	"log"
 	"math"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
+	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
+	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/drone/envsubst"
 )
@@ -57,9 +60,9 @@ func (p *BicepProvider) RequiredExternalTools() []tools.ExternalTool {
 }
 
 // Plans the infrastructure provisioning
-func (p *BicepProvider) Plan(ctx context.Context) async.TaskWithProgress[*PlanResult, *PlanProgress] {
-	return *async.RunTaskWithProgress(
-		func(asyncContext *async.TaskContextWithProgress[*PlanResult, *PlanProgress]) {
+func (p *BicepProvider) Plan(ctx context.Context) async.InteractiveTaskWithProgress[*PlanResult, *PlanProgress] {
+	return *async.RunInteractiveTaskWithProgress(
+		func(asyncContext *async.InteractiveTaskContextWithProgress[*PlanResult, *PlanProgress]) {
 			asyncContext.SetProgress(&PlanProgress{Message: "Generating Bicep parameters file", Timestamp: time.Now()})
 			bicepTemplate, err := p.createParametersFile()
 			if err != nil {
@@ -124,10 +127,24 @@ func (p *BicepProvider) UpdatePlan(ctx context.Context, plan Plan) error {
 }
 
 // Provisioning the infrastructure within the specified template
-func (p *BicepProvider) Apply(ctx context.Context, plan *Plan, scope Scope) async.TaskWithProgress[*ApplyResult, *ApplyProgress] {
-	return *async.RunTaskWithProgress(
-		func(asyncContext *async.TaskContextWithProgress[*ApplyResult, *ApplyProgress]) {
+func (p *BicepProvider) Apply(ctx context.Context, plan *Plan, scope Scope) async.InteractiveTaskWithProgress[*ApplyResult, *ApplyProgress] {
+	return *async.RunInteractiveTaskWithProgress(
+		func(asyncContext *async.InteractiveTaskContextWithProgress[*ApplyResult, *ApplyProgress]) {
 			isDeploymentComplete := false
+
+			err := asyncContext.Interact(func() error {
+
+				deploymentSlug := azure.SubscriptionDeploymentRID(p.env.GetSubscriptionId(), p.env.GetEnvName())
+				deploymentUrl := fmt.Sprintf("https://portal.azure.com/#blade/HubsExtension/DeploymentDetailsBlade/overview/id/%s\n\n", url.PathEscape(deploymentSlug))
+				asyncContext.Console.Message(ctx, fmt.Sprintf("Provisioning Azure resources can take some time.\n\nYou can view detailed progress in the Azure Portal:\n%s", deploymentUrl))
+
+				return nil
+			})
+
+			if err != nil {
+				asyncContext.SetError(err)
+				return
+			}
 
 			// Start the deployment
 			go func() {
@@ -180,9 +197,9 @@ func (p *BicepProvider) Apply(ctx context.Context, plan *Plan, scope Scope) asyn
 		})
 }
 
-func (p *BicepProvider) Destroy(ctx context.Context, plan *Plan) async.TaskWithProgress[*DestroyResult, *DestroyProgress] {
-	return *async.RunTaskWithProgress(
-		func(asyncContext *async.TaskContextWithProgress[*DestroyResult, *DestroyProgress]) {
+func (p *BicepProvider) Destroy(ctx context.Context, plan *Plan) async.InteractiveTaskWithProgress[*DestroyResult, *DestroyProgress] {
+	return *async.RunInteractiveTaskWithProgress(
+		func(asyncContext *async.InteractiveTaskContextWithProgress[*DestroyResult, *DestroyProgress]) {
 			destroyResult := DestroyResult{}
 
 			asyncContext.SetProgress(&DestroyProgress{Message: "Fetching resource groups", Timestamp: time.Now()})
@@ -202,6 +219,27 @@ func (p *BicepProvider) Destroy(ctx context.Context, plan *Plan) async.TaskWithP
 				}
 
 				allResources = append(allResources, resources...)
+			}
+
+			err = asyncContext.Interact(func() error {
+				confirmDestroy, err := asyncContext.Console.Confirm(ctx, input.ConsoleOptions{
+					Message:      fmt.Sprintf("This will delete %d resources, are you sure you want to continue?", len(allResources)),
+					DefaultValue: false,
+				})
+
+				if err != nil {
+					return err
+				}
+
+				if !confirmDestroy {
+					return errors.New("user denied confirmation")
+				}
+
+				return nil
+			})
+
+			if err != nil {
+				return
 			}
 
 			for _, resourceGroup := range resourceGroups {

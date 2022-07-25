@@ -2,21 +2,13 @@ package input
 
 import (
 	"bytes"
-	"context"
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"os"
-	"sort"
 	"strings"
 
 	"github.com/AlecAivazis/survey/v2"
-	"github.com/azure/azure-dev/cli/azd/pkg/azureutil"
-	"github.com/azure/azure-dev/cli/azd/pkg/commands"
-	"github.com/azure/azure-dev/cli/azd/pkg/environment"
-	"github.com/azure/azure-dev/cli/azd/pkg/templates"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/mattn/go-isatty"
 )
 
@@ -184,97 +176,4 @@ func askOnePrompt(p survey.Prompt, response interface{}) error {
 	default:
 		panic(fmt.Sprintf("don't know how to prompt for type %T", p))
 	}
-}
-
-// PromptTemplate ask the user to select a template.
-// An empty string is returned if the user selects 'Empty Template' from the choices
-func PromptTemplate(ctx context.Context, message string, askOne Asker) (string, error) {
-	templateManager := templates.NewTemplateManager()
-	templates, err := templateManager.ListTemplates()
-
-	if err != nil {
-		return "", fmt.Errorf("prompting for template: %w", err)
-	}
-
-	templateNames := []string{"Empty Template"}
-
-	for _, template := range templates {
-		templateNames = append(templateNames, template.Name)
-	}
-
-	var selectedTemplateIndex int
-
-	if err := askOne(&survey.Select{
-		Message: message,
-		Options: templateNames,
-		Default: templateNames[0],
-	}, &selectedTemplateIndex); err != nil {
-		return "", fmt.Errorf("prompting for template: %w", err)
-	}
-
-	if selectedTemplateIndex == 0 {
-		return "", nil
-	}
-
-	log.Printf("Selected template: %s", fmt.Sprint(templateNames[selectedTemplateIndex]))
-
-	return templateNames[selectedTemplateIndex], nil
-}
-
-// PromptLocation asks the user to select a location from a list of supported azure location
-func PromptLocation(ctx context.Context, message string, askOne Asker) (string, error) {
-	azCli := commands.GetAzCliFromContext(ctx)
-
-	locations, err := azCli.ListAccountLocations(ctx)
-	if err != nil {
-		return "", fmt.Errorf("listing locations: %w", err)
-	}
-
-	sort.Sort(azureutil.Locs(locations))
-
-	// Allow the environment variable `AZURE_LOCATION` to control the default value for the location
-	// selection.
-	defaultLocation := os.Getenv(environment.LocationEnvVarName)
-
-	// If no location is set in the process environment, see what the CLI default is.
-	if defaultLocation == "" {
-		defaultLocationConfig, err := azCli.GetCliConfigValue(ctx, "defaults.location")
-		if errors.Is(err, tools.ErrNoConfigurationValue) {
-			// If no value has been configured, that's okay we just won't have a default
-			// in our list.
-		} else if err != nil {
-			return "", fmt.Errorf("detecting default location: %w", err)
-		} else {
-			defaultLocation = defaultLocationConfig.Value
-		}
-	}
-
-	// If we still couldn't figure out a default location, offer eastus2 as a default
-	if defaultLocation == "" {
-		defaultLocation = "eastus2"
-	}
-
-	var defaultOption string
-
-	locationOptions := make([]string, len(locations))
-	for index, location := range locations {
-		locationOptions[index] = fmt.Sprintf("%2d. %s (%s)", index+1, location.RegionalDisplayName, location.Name)
-
-		if strings.EqualFold(defaultLocation, location.Name) ||
-			strings.EqualFold(defaultLocation, location.DisplayName) {
-			defaultOption = locationOptions[index]
-		}
-	}
-
-	var locationSelectionIndex int
-
-	if err := askOne(&survey.Select{
-		Message: message,
-		Options: locationOptions,
-		Default: defaultOption,
-	}, &locationSelectionIndex); err != nil {
-		return "", fmt.Errorf("prompting for location: %w", err)
-	}
-
-	return locations[locationSelectionIndex].Name, nil
 }

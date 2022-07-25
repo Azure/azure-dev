@@ -1,0 +1,66 @@
+variables:
+  - template: /eng/pipelines/templates/variables/globals.yml
+  - name: NodeVersion
+    value: 16
+
+jobs:
+  - job: CreateMatrix
+    pool:
+      name: azsdk-pool-mms-ubuntu-2004-general
+      vmImage: MMSUbuntu20.04
+
+    steps:
+      - checkout: self
+
+      - bash: curl -fsSL https://aka.ms/install-azd.sh | bash
+        displayName: Install azd
+
+      - pwsh: |
+          $templateNames = (azd template list --output json | ConvertFrom-Json).name
+          $matrix = @{}
+          foreach ($template in $templateNames) {
+            $jobName = $template.Replace('/', '_')
+            $matrix[$jobName] = @{ TemplateName = $template }
+          }
+          Write-Host "Matrix:"
+          Write-Host $matrix
+
+          $matrixJson = ConvertTo-Json $matrix -Depth 100 -Compress
+          Write-Host "##vso[task.setvariable variable=Matrix;isOutput=true]$matrixJson"
+        name: Generate
+        displayName: Generate matrix
+
+  - job: TestTemplates
+    dependsOn: CreateMatrix
+
+    strategy:
+      matrix: $[ dependencies.CreateMatrix.outputs['Generate.Matrix'] ]
+      maxParallel: 10
+
+    pool:
+      name: azsdk-pool-mms-ubuntu-2004-general
+      vmImage: MMSUbuntu20.04
+
+    steps:
+      - checkout: self
+
+      - template: /eng/pipelines/templates/steps/az-login.yml
+
+      - bash: curl -fsSL https://aka.ms/install-azd.sh | bash
+        displayName: Install azd
+
+      - pwsh: |
+          Write-Host "##vso[task.setvariable variable=ResourceGroupName]azd-template-verification-$(Build.BuildId)"
+
+      - task: Bash@3
+        inputs:
+          targetType: filePath
+          filePath: templates/tests/test-templates.sh
+          arguments: -e 'azd-test' -t '$(TemplateName)'
+          workingDirectory: templates/tests
+        displayName: Test templates
+        env:
+          AZURE_RESOURCE_GROUP: $(ResourceGroupName)
+
+      # - pwsh: |
+      #     az tag create --resource-id /subscriptions/subscription-id/

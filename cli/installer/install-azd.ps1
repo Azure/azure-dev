@@ -236,3 +236,5 @@ if (isLinuxOrMac) {
     Write-Host "- For Windows Terminal, start a new Windows Terminal instance."
     Write-Host "- For VSCode, close all instances of VSCode and then restart it."
 }
+
+exit 0

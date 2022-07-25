@@ -9,7 +9,7 @@ repo:
 
   remotes:
     - name: azure-samples
-      url: git@github.com:Azure-Samples/todo-nodejs-mongo.git
+      url: git@github.com:kaizentm/todo-nodejs-mongo.git
 
   assets:
     # Common assets

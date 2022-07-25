@@ -9,7 +9,7 @@ repo:
 
   remotes:
     - name: azure-samples
-      url: git@github.com:Azure-Samples/todo-csharp-cosmos-sql.git
+      url: git@github.com:kaizentm/todo-csharp-cosmos-sql.git
 
   assets:
     # Common assets

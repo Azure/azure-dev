@@ -15,6 +15,8 @@ type DotNetCli interface {
 	ExternalTool
 	Publish(ctx context.Context, project string, output string) error
 	Restore(ctx context.Context, project string) error
+	InitializeSecret(ctx context.Context, project string) error
+	SetSecret(ctx context.Context, key string, value string, project string) error
 }
 
 type dotNetCli struct {
@@ -74,12 +76,8 @@ func (cli *dotNetCli) Restore(ctx context.Context, project string) error {
 	return nil
 }
 
-func NewDotNetCli() DotNetCli {
-	return &dotNetCli{}
-}
-
 func (cli *dotNetCli) InitializeSecret(ctx context.Context, project string) error {
-	res, err := executil.RunCommandWithShell(ctx, "dotnet", "user-secrets", "init")
+	res, err := executil.RunCommandWithShell(ctx, "dotnet", "user-secrets", "init", "--project", project)
 	if err != nil {
 		return fmt.Errorf("failed to initialize secrets at project '%s': %w (%s)", project, err, res.String())
 	}
@@ -92,4 +90,8 @@ func (cli *dotNetCli) SetSecret(ctx context.Context, key string, value string, p
 		return fmt.Errorf("failed running %s secret set %s: %w", cli.Name(), res.String(), err)
 	}
 	return nil
+}
+
+func NewDotNetCli() DotNetCli {
+	return &dotNetCli{}
 }

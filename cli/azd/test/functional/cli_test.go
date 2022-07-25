@@ -24,6 +24,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/cmd"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/executil"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/test/azdcli"
 	"github.com/joho/godotenv"
@@ -164,8 +165,6 @@ func Test_CLI_InfraCreateAndDelete(t *testing.T) {
 }
 
 func Test_CLI_InfraCreateAndDeleteWebApp(t *testing.T) {
-	t.Skip("flakiness in app service preventing infrastructure creation")
-
 	ctx, cancel := newTestContext(t)
 	defer cancel()
 
@@ -198,6 +197,13 @@ func Test_CLI_InfraCreateAndDeleteWebApp(t *testing.T) {
 
 	url, has := env["WEBSITE_URL"]
 	require.True(t, has, "WEBSITE_URL should be in environment after infra create")
+
+	output, err := executil.RunCommandWithShell(ctx, "dotnet", "user-secrets", "list", "--project", `C:\Users\hemarina\OneDrive - Microsoft\Documents\VSCode\azure-dev\cli\azd\test\samples\webapp\src\dotnet`)
+	t.Log("!!!", output)
+	if err != nil {
+		fmt.Errorf("failed to list secrets at project: %w (%s)", err, output.String())
+	}
+	require.NoError(t, err)
 
 	res, err := http.Get(url)
 	require.NoError(t, err)

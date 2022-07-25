@@ -71,7 +71,7 @@ func (ica *infraCreateAction) Run(ctx context.Context, cmd *cobra.Command, args 
 		return fmt.Errorf("loading environment: %w", err)
 	}
 
-	_, err = project.LoadProjectConfig(azdCtx.ProjectPath(), &environment.Environment{})
+	proj, err := project.LoadProjectConfig(azdCtx.ProjectPath(), &environment.Environment{})
 	if err != nil {
 		return fmt.Errorf("loading project: %w", err)
 	}
@@ -258,7 +258,37 @@ func (ica *infraCreateAction) Run(ctx context.Context, cmd *cobra.Command, args 
 		return fmt.Errorf("deployment failed: %w", err)
 	}
 
+	dotnetCli := tools.NewDotNetCli()
+	if err := tools.EnsureInstalled(ctx, dotnetCli); err != nil {
+		return err
+	}
+
+	dotnetProj := false
+	for _, svc := range proj.Services {
+		if svc.Language == "dotnet" {
+			dotnetProj = true
+			fmt.Println(svc.Path())
+			fmt.Println(parametersPath)
+			//parametersPath = `C:\Users\hemarina\OneDrive - Microsoft\Documents\VSCode\azure-dev\cli\azd\test\samples\webapp\src\dotnet`
+			err := dotnetCli.InitializeSecret(ctx, parametersPath)
+			if err != nil {
+				return err
+			}
+		}
+	}
+
 	template.CanonicalizeDeploymentOutputs(&res.Result.Properties.Outputs)
+
+	if dotnetProj {
+		for key, val := range res.Result.Properties.Outputs {
+			err := dotnetCli.SetSecret(ctx, key, fmt.Sprint(val.Value), proj.Path)
+			fmt.Println(proj.Path)
+			if err != nil {
+				return err
+			}
+		}
+	}
+
 	if err = saveEnvironmentValues(res.Result, env); err != nil {
 		return err
 	}

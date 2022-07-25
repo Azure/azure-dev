@@ -1,6 +1,6 @@
-parm(
-    [string] $BaseUrl,
-    [string] $Version = ''
+param(
+    [string] $BaseUrl = 'https://azure-dev.azureedge.net/azd/standalone/release',
+    [string] $Version = 'latest'
 )
 
 & $PSScriptRoot/install-azd.ps1 -BaseUrl $BaseUrl -Version $Version
@@ -28,3 +28,6 @@ if (Get-Command 'azd' -ErrorAction Ignore) {
     Write-Error "azd command still accessible"
     exit 1
 }
+
+Write-Host "Test succeeded"
+exit 0

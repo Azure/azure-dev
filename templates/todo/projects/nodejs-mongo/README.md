@@ -17,7 +17,7 @@ The following prerequisites are required to use this application. Please ensure 
 - [Azure Developer CLI](https://aka.ms/azure-dev/install)
   - Windows:
     ```powershell
-    powershell -c "Set-ExecutionPolicy Bypass Process -Force; irm 'https://aka.ms/install-azd.ps1' | iex"
+    powershell -ex AllSigned -c "Invoke-RestMethod 'https://aka.ms/install-azd.ps1' | Invoke-Expression"
     ```
   - Linux/MacOS:
     ```
@@ -40,7 +40,7 @@ azd up --template todo-nodejs-mongo
 
 You will be prompted for the following information:
 
-- `Environment Name`: This will be used as a prefix for all your Azure resources, make sure it is globally unique and under 15 characters.
+- `Environment Name`: This will be used as a prefix for the resource group that will be created to hold all Azure resources. This name should be unique within your Azure subscription.
 - `Azure Location`: The Azure location where your resources will be deployed.
 - `Azure Subscription`: The Azure Subscription where your resources will be deployed.
 
@@ -195,7 +195,7 @@ To uninstall the Azure Developer CLI:
 Windows:
 
 ```
-powershell -c "Set-ExecutionPolicy Bypass Process -Force; irm 'https://aka.ms/uninstall-azd.ps1' | iex"
+powershell -ex AllSigned -c "Invoke-RestMethod 'https://aka.ms/uninstall-azd.ps1' | Invoke-Expression"
 ```
 
 Linux/MacOS:

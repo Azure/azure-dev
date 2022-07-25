@@ -9,6 +9,8 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+
+	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 )
 
 const ProjectFileName = "azure.yaml"
@@ -120,7 +122,7 @@ func (c *AzdContext) WriteBicepParameters(env string, module string, parameters 
 		return fmt.Errorf("marshaling parameters: %w", err)
 	}
 
-	err = ioutil.WriteFile(c.BicepParametersFilePath(env, module), byts, 0644)
+	err = ioutil.WriteFile(c.BicepParametersFilePath(env, module), byts, osutil.PermissionFile)
 	if err != nil {
 		return fmt.Errorf("writing parameters file: %w", err)
 	}
@@ -195,7 +197,7 @@ func (c *AzdContext) SetDefaultEnvironmentName(name string) error {
 		return fmt.Errorf("serializing config file: %w", err)
 	}
 
-	if err := ioutil.WriteFile(path, byts, 0644); err != nil {
+	if err := ioutil.WriteFile(path, byts, osutil.PermissionFile); err != nil {
 		return fmt.Errorf("writing config file: %w", err)
 	}
 
@@ -205,11 +207,11 @@ func (c *AzdContext) SetDefaultEnvironmentName(name string) error {
 var ErrEnvironmentExists = errors.New("environment already exists")
 
 func (c *AzdContext) NewEnvironment(name string) error {
-	if err := os.MkdirAll(c.EnvironmentDirectory(), 0755); err != nil {
+	if err := os.MkdirAll(c.EnvironmentDirectory(), osutil.PermissionDirectory); err != nil {
 		return fmt.Errorf("creating environment root: %w", err)
 	}
 
-	if err := os.Mkdir(filepath.Join(c.EnvironmentDirectory(), name), 0755); err != nil {
+	if err := os.Mkdir(filepath.Join(c.EnvironmentDirectory(), name), osutil.PermissionDirectory); err != nil {
 		if errors.Is(err, os.ErrExist) {
 			return ErrEnvironmentExists
 		}

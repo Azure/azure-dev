@@ -20,10 +20,12 @@ To take full advantage of the CLI, code repositories need to conform to a well d
 
 Install and Upgrade using the following scripts. Re-running the script will install the latest available version.
 
+For advanced install scenarios see [Azure Developer CLI Installer Scripts](cli/installer/README.md).
+
 ### Windows
 
 ```powershell
-powershell -c "Set-ExecutionPolicy Bypass Process -Force; irm 'https://aka.ms/install-azd.ps1' | iex"
+powershell -ex AllSigned -c "Invoke-RestMethod 'https://aka.ms/install-azd.ps1' | Invoke-Expression"
 ```
 
 ### Linux/MacOS
@@ -37,7 +39,7 @@ curl -fsSL https://aka.ms/install-azd.sh | bash
 ### Windows
 
 ```powershell
-powershell -c "Set-ExecutionPolicy Bypass Process -Force; irm 'https://aka.ms/uninstall-azd.ps1' | iex"
+powershell -ex AllSigned -c "Invoke-RestMethod 'https://aka.ms/uninstall-azd.ps1' | Invoke-Expression"
 ```
 
 ### Linux/MacOS
@@ -52,7 +54,7 @@ The software may collect information about you and your use of the software and 
 
 ### Telemetry Configuration
 
-Telemetry collection is on by default. 
+Telemetry collection is on by default.
 
 To opt out, set the environment variable `AZURE_DEV_COLLECT_TELEMETRY` to `no` in your environment.
 

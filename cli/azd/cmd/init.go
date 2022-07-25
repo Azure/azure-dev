@@ -20,6 +20,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/pkg/spin"
+	"github.com/azure/azure-dev/cli/azd/pkg/templates"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/otiai10/copy"
 	"github.com/spf13/cobra"
@@ -33,35 +34,28 @@ func initCmd(rootOptions *commands.GlobalCommandOptions) *cobra.Command {
 		},
 		rootOptions,
 		"init",
-		"Initialize a new application",
-		`Initialize a new application
+		"Initialize a new application.",
+		`Initialize a new application.
 
-When no template is supplied, you can optionally select an azd template for cloning. Otherwise, "azd init" initializes the current directory and creates resources so that your project is compatible with azd.
+When no template is supplied, you can optionally select an Azure Developer CLI template for cloning. Otherwise, `+withBackticks("azd init")+` initializes the current directory and creates resources so that your project is compatible with Azure Developer CLI.
 
 When a template is provided, the sample code is cloned to the current directory.`,
 	)
-	cmd.Flags().BoolP("help", "h", false, "Help for "+cmd.Name())
 	return cmd
 }
 
 type initAction struct {
-	templateName   string
+	template       templates.Template
 	templateBranch string
 	rootOptions    *commands.GlobalCommandOptions
 }
-
-//constant enums for file mode
-const (
-	permissionDirectory   = 0755
-	permissionRegularFile = 0644
-)
 
 func (i *initAction) SetupFlags(
 	persis *pflag.FlagSet,
 	local *pflag.FlagSet,
 ) {
-	local.StringVarP(&i.templateName, "template", "t", "", "Template to use when initializing the project. You can use: 1. Full URI 2. <owner>/<repository> or 3. <repository> - if part of the azure-samples organization ")
-	local.StringVarP(&i.templateBranch, "branch", "b", "", "The template branch to initialize from")
+	local.StringVarP(&i.template.Name, "template", "t", "", "The template to use when you initialize the project. You can use Full URI, <owner>/<repository>, or <repository> if it's part of the azure-samples organization.")
+	local.StringVarP(&i.templateBranch, "branch", "b", "", "The template branch to initialize from.")
 }
 
 func (i *initAction) Run(ctx context.Context, _ *cobra.Command, args []string, azdCtx *environment.AzdContext) error {
@@ -77,7 +71,7 @@ func (i *initAction) Run(ctx context.Context, _ *cobra.Command, args []string, a
 	log.Printf("forcing project directory to %s", wd)
 	azdCtx.SetProjectDirectory(wd)
 
-	if i.templateBranch != "" && i.templateName == "" {
+	if i.templateBranch != "" && i.template.Name == "" {
 		return errors.New("template name required when specifying a branch name")
 	}
 
@@ -88,7 +82,7 @@ func (i *initAction) Run(ctx context.Context, _ *cobra.Command, args []string, a
 	requiredTools := []tools.ExternalTool{azCli}
 
 	// When using a template, we also require `git`, to acquire the template.
-	if i.templateName != "" {
+	if i.template.Name != "" {
 		requiredTools = append(requiredTools, gitCli)
 	}
 
@@ -100,31 +94,34 @@ func (i *initAction) Run(ctx context.Context, _ *cobra.Command, args []string, a
 	if _, err := os.Stat(azdCtx.ProjectPath()); err != nil && errors.Is(err, os.ErrNotExist) {
 		fmt.Printf("Initializing a new project in %s\n\n", wd)
 
-		if i.templateName == "" {
-			templateName, err := promptTemplate(ctx, "Select a project template", askOne)
+		if i.template.Name == "" {
+			i.template, err = promptTemplate(ctx, "Select a project template", askOne)
 
 			if err != nil {
 				return err
 			}
-
-			i.templateName = templateName
 		}
 	}
 
-	if i.templateName != "" {
+	if i.template.Name != "" {
 		var templateUrl string
 
+		if i.template.RepositoryPath == "" {
+			// using template name directly from command line
+			i.template.RepositoryPath = i.template.Name
+		}
+
 		// treat names that start with http or git as full URLs and don't change them
-		if strings.HasPrefix(i.templateName, "git") || strings.HasPrefix(i.templateName, "http") {
-			templateUrl = i.templateName
+		if strings.HasPrefix(i.template.RepositoryPath, "git") || strings.HasPrefix(i.template.RepositoryPath, "http") {
+			templateUrl = i.template.RepositoryPath
 		} else {
-			switch strings.Count(i.templateName, "/") {
+			switch strings.Count(i.template.RepositoryPath, "/") {
 			case 0:
-				templateUrl = fmt.Sprintf("https://github.com/Azure-Samples/%s", i.templateName)
+				templateUrl = fmt.Sprintf("https://github.com/Azure-Samples/%s", i.template.RepositoryPath)
 			case 1:
-				templateUrl = fmt.Sprintf("https://github.com/%s", i.templateName)
+				templateUrl = fmt.Sprintf("https://github.com/%s", i.template.RepositoryPath)
 			default:
-				return fmt.Errorf("template '%s' should be either <repository> or <repo>/<repository>", i.templateName)
+				return fmt.Errorf("template '%s' should be either <repository> or <repo>/<repository>", i.template.RepositoryPath)
 			}
 		}
 
@@ -227,13 +224,13 @@ func (i *initAction) Run(ctx context.Context, _ *cobra.Command, args []string, a
 	}
 
 	//create .azure when running azd init
-	err = os.MkdirAll(filepath.Join(azdCtx.ProjectDirectory(), environment.EnvironmentDirectoryName), permissionDirectory)
+	err = os.MkdirAll(filepath.Join(azdCtx.ProjectDirectory(), environment.EnvironmentDirectoryName), osutil.PermissionDirectory)
 	if err != nil {
 		return fmt.Errorf("failed to create a directory: %w", err)
 	}
 
 	//create .gitignore or open existing .gitignore file, and contains .azure
-	gitignoreFile, err := os.OpenFile(filepath.Join(azdCtx.ProjectDirectory(), ".gitignore"), os.O_APPEND|os.O_RDWR|os.O_CREATE, permissionRegularFile)
+	gitignoreFile, err := os.OpenFile(filepath.Join(azdCtx.ProjectDirectory(), ".gitignore"), os.O_APPEND|os.O_RDWR|os.O_CREATE, osutil.PermissionFile)
 	if err != nil {
 		return fmt.Errorf("fail to create or open .gitignore: %w", err)
 	}

@@ -431,19 +431,20 @@ func askOnePrompt(p survey.Prompt, response interface{}) error {
 }
 
 // promptTemplate ask the user to select a template.
-// An empty string is returned if the user selects 'Empty Template' from the choices
-func promptTemplate(ctx context.Context, message string, askOne Asker) (string, error) {
+// A template with empty values is returned if the user selects 'Empty Template' from the choices
+func promptTemplate(ctx context.Context, message string, askOne Asker) (templates.Template, error) {
+	var result templates.Template
 	templateManager := templates.NewTemplateManager()
-	templates, err := templateManager.ListTemplates()
+	templatesSet, err := templateManager.ListTemplates()
 
 	if err != nil {
-		return "", fmt.Errorf("prompting for template: %w", err)
+		return result, fmt.Errorf("prompting for template: %w", err)
 	}
 
 	templateNames := []string{"Empty Template"}
 
-	for _, template := range templates {
-		templateNames = append(templateNames, template.Name)
+	for name := range templatesSet {
+		templateNames = append(templateNames, name)
 	}
 
 	var selectedTemplateIndex int
@@ -453,16 +454,17 @@ func promptTemplate(ctx context.Context, message string, askOne Asker) (string, 
 		Options: templateNames,
 		Default: templateNames[0],
 	}, &selectedTemplateIndex); err != nil {
-		return "", fmt.Errorf("prompting for template: %w", err)
+		return result, fmt.Errorf("prompting for template: %w", err)
 	}
 
 	if selectedTemplateIndex == 0 {
-		return "", nil
+		return result, nil
 	}
 
-	log.Printf("Selected template: %s", fmt.Sprint(templateNames[selectedTemplateIndex]))
+	selectedTemplateName := templateNames[selectedTemplateIndex]
+	log.Printf("Selected template: %s", fmt.Sprint(selectedTemplateName))
 
-	return templateNames[selectedTemplateIndex], nil
+	return templatesSet[selectedTemplateName], nil
 }
 
 // promptLocation asks the user to select a location from a list of supported azure location
@@ -571,4 +573,9 @@ func withHighLightFormat(text string, a ...interface{}) string {
 func printWithStyling(text string, a ...interface{}) {
 	colorTerminal := color.New()
 	colorTerminal.Printf(text, a...)
+}
+
+// withBackticks wraps text with the backtick (`) character.
+func withBackticks(text string) string {
+	return "`" + text + "`"
 }

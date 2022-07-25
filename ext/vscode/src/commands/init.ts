@@ -18,7 +18,7 @@ export async function init(context: IActionContext, selectedFile?: vscode.Uri, a
 
     const templateUrl = await selectApplicationTemplate(context);
 
-    const azureCli = createAzureDevCli();
+    const azureCli = await createAzureDevCli(context);
     const command = azureCli.commandBuilder
         .withArg('init')
         .withNamedArg('-t', {value: templateUrl, quoting: vscode.ShellQuoting.Strong});

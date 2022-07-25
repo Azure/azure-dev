@@ -61,9 +61,9 @@ func (cli *dotNetCli) CheckInstalled(ctx context.Context) (bool, error) {
 }
 
 func (cli *dotNetCli) Publish(ctx context.Context, project string, output string) error {
-	_, err := executil.RunCommandWithShell(ctx, "dotnet", "publish", project, "-c", "Release", "--output", output)
+	res, err := executil.RunCommandWithShell(ctx, "dotnet", "publish", project, "-c", "Release", "--output", output)
 	if err != nil {
-		return fmt.Errorf("failed to publish project %s (%w)", project, err)
+		return fmt.Errorf("dotnet publish on project '%s' failed: %s: %w", project, res.String(), err)
 	}
 	return nil
 }
@@ -71,7 +71,7 @@ func (cli *dotNetCli) Publish(ctx context.Context, project string, output string
 func (cli *dotNetCli) Restore(ctx context.Context, project string) error {
 	res, err := executil.RunCommandWithShell(ctx, "dotnet", "restore", project)
 	if err != nil {
-		return fmt.Errorf("failed to restore project '%s': %w (%s)", project, err, res.String())
+		return fmt.Errorf("dotnet restore on project '%s' failed: %s: %w", project, res.String(), err)
 	}
 	return nil
 }

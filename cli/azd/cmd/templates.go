@@ -5,6 +5,7 @@ package cmd
 
 import (
 	"context"
+	"fmt"
 	"log"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/commands"
@@ -17,7 +18,7 @@ import (
 func templatesCmd(rootOptions *commands.GlobalCommandOptions) *cobra.Command {
 	root := &cobra.Command{
 		Use:   "template",
-		Short: "Manage templates",
+		Short: "Manage templates.",
 	}
 
 	root.AddCommand(output.AddOutputParam(
@@ -30,26 +31,34 @@ func templatesCmd(rootOptions *commands.GlobalCommandOptions) *cobra.Command {
 		[]output.Format{output.JsonFormat, output.TableFormat},
 		output.TableFormat,
 	))
+	root.Flags().BoolP("help", "h", false, fmt.Sprintf("Gets help for %s.", root.Name()))
 
 	return root
 }
 
 func templatesListCmd(rootOptions *commands.GlobalCommandOptions) *cobra.Command {
-	return &cobra.Command{
+	cmd := &cobra.Command{
 		Use:     "list",
-		Short:   "List templates",
+		Short:   "List templates.",
 		Aliases: []string{"ls"},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			templateManager := templates.NewTemplateManager()
-			templateList, err := templateManager.ListTemplates()
+			templateSet, err := templateManager.ListTemplates()
 
 			if err != nil {
 				return err
 			}
 
+			templateList := make([]templates.Template, 0, len(templateSet))
+			for _, template := range templateSet {
+				templateList = append(templateList, template)
+			}
+
 			return formatTemplates(cmd, templateList...)
 		},
 	}
+	cmd.Flags().BoolP("help", "h", false, fmt.Sprintf("Gets help for %s.", cmd.Name()))
+	return cmd
 }
 
 func templatesShowCmd(rootOptions *commands.GlobalCommandOptions) *cobra.Command {
@@ -72,7 +81,7 @@ func templatesShowCmd(rootOptions *commands.GlobalCommandOptions) *cobra.Command
 		action,
 		rootOptions,
 		"show <template>",
-		"Show the template details",
+		"Show the template details.",
 		"",
 	)
 	cmd.Args = cobra.ExactArgs(1)

@@ -42,6 +42,7 @@ stages:
               BuildOutputName: azd
               SetExecutableBit: true
               SetShieldInfo: true
+              GenerateCoverage: true
             Mac:
               Pool: Azure Pipelines
               OSVmImage: macOS-11
@@ -122,6 +123,23 @@ stages:
               # environment variable.
               GITHUB_RUN_NUMBER: $(Build.BuildId)
 
+          - pwsh: |
+              go install github.com/axw/gocov/gocov@latest
+              if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+              go install github.com/AlekSi/gocov-xml@latest
+              if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+              ~/go/bin/gocov convert cover.out | ~/go/bin/gocov-xml > coverage.xml
+            workingDirectory: cli/azd
+            condition: and(succeeded(), eq(variables['GenerateCoverage'], 'true'))
+            displayName: Generate coverage
+
+          - task: PublishCodeCoverageResults@1
+            condition: and(succeeded(), eq(variables['GenerateCoverage'], 'true'))
+            inputs:
+              codeCoverageTool: Cobertura
+              summaryFileLocation: '$(Build.SourcesDirectory)/**/coverage.xml'
+            displayName: Publish Code Coverage to DevOps
+
           - pwsh: Move-Item $(BuildOutputName) $(BuildTarget)
             workingDirectory: cli/azd
             displayName: Rename binaries
@@ -152,13 +170,14 @@ stages:
             condition: always()
             displayName: Upload azd binary to artifact store
 
-      - job: UploadInstallScript
+      - job: GenerateReleaseArtifacts
         pool:
           name: azsdk-pool-mms-ubuntu-2004-general
           vmImage: MMSUbuntu20.04
 
         steps:
           - checkout: self
+          - template: /eng/pipelines/templates/steps/setup-go.yml
           - pwsh: |
               New-Item -ItemType Directory -Path installer
               Copy-Item cli/installer/*install-azd.ps1 installer/
@@ -168,6 +187,13 @@ stages:
             inputs:
               artifactName: install-pwsh
               targetPath: installer
+          - bash: go run docgen.go
+            workingDirectory: cli/azd/docs
+            displayName: Generate CLI documentation
+          - publish: cli/azd/docs/md
+            artifact: docs
+            displayName: Upload generated documentation
+
 
   - stage: Sign
     dependsOn: BuildAndTest

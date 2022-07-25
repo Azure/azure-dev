@@ -21,7 +21,7 @@ func AddOutputParam(cmd *cobra.Command, supportedFormats []Format, defaultFormat
 		formatNames[i] = string(f)
 	}
 
-	description := fmt.Sprintf("Output format (supported formats are %s)", strings.Join(formatNames, ", "))
+	description := fmt.Sprintf("The output format (the supported formats are %s).", strings.Join(formatNames, ", "))
 	cmd.Flags().StringP(outputFlagName, "o", string(defaultFormat), description)
 
 	// Only error that can occur is "flag not found", which is not possible given we just added the flag on the previous line

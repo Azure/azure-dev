@@ -39,7 +39,7 @@ services:
 	require.Equal(t, 2, len(projectConfig.Services))
 
 	for key, svc := range projectConfig.Services {
-		require.Equal(t, key, svc.ModuleName)
+		require.Equal(t, key, svc.Module)
 		require.Equal(t, key, svc.Name)
 		require.Equal(t, projectConfig, svc.Project)
 	}
@@ -137,4 +137,30 @@ services:
 
 	require.Equal(t, "./Dockerfile.dev", service.Docker.Path)
 	require.Equal(t, "../", service.Docker.Context)
+}
+
+func TestProjectWithCustomModule(t *testing.T) {
+	const testProj = `
+name: test-proj
+metadata:
+  template: test-proj-template
+services:
+  api:
+    project: src/api
+    language: js
+    host: containerapp
+    module: ./api/api
+`
+
+	e := environment.Environment{Values: make(map[string]string)}
+	e.SetEnvName("test-env")
+
+	projectConfig, err := ParseProjectConfig(testProj, &e)
+
+	require.NotNil(t, projectConfig)
+	require.Nil(t, err)
+
+	service := projectConfig.Services["api"]
+
+	require.Equal(t, "./api/api", service.Module)
 }

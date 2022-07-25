@@ -24,6 +24,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/cmd"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/test/azdcli"
 	"github.com/joho/godotenv"
@@ -428,14 +429,14 @@ func copySample(targetRoot string, sampleName string) error {
 		targetPath := filepath.Join(targetRoot, name[len(sampleRoot):])
 
 		if info.IsDir() {
-			return os.MkdirAll(targetPath, 0755)
+			return os.MkdirAll(targetPath, osutil.PermissionDirectory)
 		}
 
 		contents, err := ioutil.ReadFile(name)
 		if err != nil {
 			return fmt.Errorf("reading sample file: %w", err)
 		}
-		return ioutil.WriteFile(targetPath, contents, 0644)
+		return ioutil.WriteFile(targetPath, contents, osutil.PermissionFile)
 	})
 }
 

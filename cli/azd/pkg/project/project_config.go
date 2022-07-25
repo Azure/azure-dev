@@ -132,9 +132,9 @@ func ParseProjectConfig(yamlContent string, env *environment.Environment) (*Proj
 		svc.Project = &projectFile
 
 		// By convention, the name of the infrastructure module to use when doing an IaC based deployment is the friendly
-		// name of the service. This may be overridden by the `moduleName` property of `azure.yaml`
-		if svc.ModuleName == "" {
-			svc.ModuleName = key
+		// name of the service. This may be overridden by the `module` property of `azure.yaml`
+		if svc.Module == "" {
+			svc.Module = key
 		}
 	}
 

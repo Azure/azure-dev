@@ -25,8 +25,8 @@ func monitorCmd(rootOptions *commands.GlobalCommandOptions) *cobra.Command {
 		},
 		rootOptions,
 		"monitor",
-		"Monitor a deployed application",
-		`Monitor a deployed application
+		"Monitor a deployed application.",
+		`Monitor a deployed application.
 		
 Examples:
 
@@ -34,9 +34,8 @@ Examples:
 	$ azd monitor -–live
 	$ azd monitor --logs
 		
-For more information, please visit: https://aka.ms/azure-dev/monitor`,
+For more information, go to https://aka.ms/azure-dev/monitor.`,
 	)
-	cmd.Flags().BoolP("help", "h", false, "Help for "+cmd.Name())
 	return cmd
 }
 
@@ -51,9 +50,9 @@ func (m *monitorAction) SetupFlags(
 	persis *pflag.FlagSet,
 	local *pflag.FlagSet,
 ) {
-	persis.BoolVar(&m.monitorLive, "live", false, "Open a browser to Application Insights Live Metrics. Live Metrics is currently not supported for Python app")
-	persis.BoolVar(&m.monitorLogs, "logs", false, "Open a browser to Application Insights Logs")
-	persis.BoolVar(&m.monitorOverview, "overview", false, "Open a browser to Application Insights Overview Dashboard")
+	persis.BoolVar(&m.monitorLive, "live", false, "Open a browser to Application Insights Live Metrics. Live Metrics is currently not supported for Python applications.")
+	persis.BoolVar(&m.monitorLogs, "logs", false, "Open a browser to Application Insights Logs.")
+	persis.BoolVar(&m.monitorOverview, "overview", false, "Open a browser to Application Insights Overview Dashboard.")
 }
 
 func (m *monitorAction) Run(ctx context.Context, _ *cobra.Command, args []string, azdCtx *environment.AzdContext) error {

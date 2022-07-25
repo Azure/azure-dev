@@ -23,14 +23,13 @@ func restoreCmd(rootOptions *commands.GlobalCommandOptions) *cobra.Command {
 		},
 		rootOptions,
 		"restore",
-		"Restore application dependencies",
-		`Restore application dependencies
+		"Restore application dependencies.",
+		`Restore application dependencies.
 
-Run this command to install/download all the required libraries so that you can build, run, and debug the application locally.
+Run this command to download and install all the required libraries so that you can build, run, and debug the application locally.
 
-For best local run and debug experience, refer to https://aka.ms/azure-dev/vscode to leverage the VS Code extension.`,
+For the best local run and debug experience, go to https://aka.ms/azure-dev/vscode to learn how to use the Visual Studio Code extension.`,
 	)
-	cmd.Flags().BoolP("help", "h", false, "Help for "+cmd.Name())
 	return cmd
 }
 
@@ -40,7 +39,7 @@ type restoreAction struct {
 }
 
 func (r *restoreAction) SetupFlags(persis, local *pflag.FlagSet) {
-	local.StringVar(&r.serviceName, "service", "", "Restores dependencies for a specific service (when unset, dependencies for all services listed in "+environment.ProjectFileName+" are restored)")
+	local.StringVar(&r.serviceName, "service", "", "Restores a specific service (when the string is unspecified, all services that are listed in the "+environment.ProjectFileName+" file are restored).")
 }
 
 func (r *restoreAction) Run(ctx context.Context, _ *cobra.Command, args []string, azdCtx *environment.AzdContext) error {

@@ -13,17 +13,16 @@ func provisionCmd(rootOptions *commands.GlobalCommandOptions) *cobra.Command {
 		},
 		rootOptions,
 		"provision",
-		"Provision the Azure resources for an application",
-		`Provision the Azure resources for an application
+		"Provision the Azure resources for an application.",
+		`Provision the Azure resources for an application.
 
 The command prompts you for the following:
-	- Environment Name: Name of your environment.
-	- Azure Location: The Azure location where your resources will be deployed.
-	- Azure Subscription: The Azure Subscription where your resources will be deployed.
-	
-Depending on what Azure resources are created, this may take a while. To view progress, go to Azure portal and search for the resource group that contains your environment name.`,
+- Environment name: The name of your environment.
+- Azure location: The Azure location where your resources will be deployed.
+- Azure subscription: The Azure subscription where your resources will be deployed.
+
+Depending on what Azure resources are created, running this command might take a while. To view progress, go to the Azure portal and search for the resource group that contains your environment name.`,
 	)
-	cmd.Flags().BoolP("help", "h", false, "Help for "+cmd.Name())
 
 	return output.AddOutputParam(
 		cmd,

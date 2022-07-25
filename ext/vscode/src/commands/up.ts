@@ -17,7 +17,7 @@ export async function up(context: IActionContext, selectedFile?: vscode.Uri): Pr
         folder = await quickPickWorkspaceFolder(context, localize('azure-dev.commands.cli.init.needWorkspaceFolder', "To run '{0}' command you must first open a folder or workspace in VS Code", 'up'));
     }
 
-    const azureCli = createAzureDevCli();
+    const azureCli = await createAzureDevCli(context);
     let command = azureCli.commandBuilder
         .withArg('up');
     let workingDir = folder.uri;

@@ -13,3 +13,4 @@ webpack.config.js
 **/tslint.json
 **/*.map
 **/*.ts
+**/*.ps1

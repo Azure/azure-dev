@@ -4,7 +4,7 @@ Download and install azd on the local machine.
 
 .DESCRIPTION
 Downloads and installs azd on the local machine. Includes ability to configure
-download locations
+download and install locations.
 
 .PARAMETER BaseUrl
 Specifies the base URL to use when downloading. Default is
@@ -12,10 +12,10 @@ https://azure-dev.azureedge.net/azd/standalone
 
 .PARAMETER Version
 Specifies the version to use. Default is `latest`. Valid values include a
-SemVer version number (e.g. 1.0.0 or 1.1.0-beta.1), `latest`, `GA`, `daily`
+SemVer version number (e.g. 1.0.0 or 1.1.0-beta.1), `latest`, `daily`
 
 .PARAMETER DryRun
-Print the download URL and quit. Dooes not download or install.
+Print the download URL and quit. Does not download or install.
 
 .PARAMETER InstallFolder
 Location to install azd.
@@ -25,6 +25,30 @@ Do not update the PATH environment variable with the location of azd.
 
 .PARAMETER DownloadTimeoutSeconds
 Download timeout in seconds. Default is 120 (2 minutes).
+
+.EXAMPLE
+powershell -ex AllSigned -c "Invoke-RestMethod 'https://aka.ms/install-azd.ps1' | Invoke-Expression"
+
+Install the azd CLI from a Windows shell
+
+The use of `-ex AllSigned` is intended to handle the scenario where a machine's
+default execution policy is restricted such that modules used by
+`install-azd.ps1` cannot be loaded. Because this syntax is piping output from
+`Invoke-RestMethod` to `Invoke-Expression` there is no direct valication of the
+`install-azd.ps1` script's signature. Validation of the script can be
+accomplished by downloading the script to a file and executing the script file.
+
+.EXAMPLE
+Invoke-RestMethod 'https://aka.ms/install-azd.ps1' -OutFile 'install-azd.ps1'
+PS > ./install-azd.ps1
+
+Download the installer and execute from PowerShell
+
+.EXAMPLE
+Invoke-RestMethod 'https://aka.ms/install-azd.ps1' -OutFile 'install-azd.ps1'
+PS > ./install-azd.ps1 -Version daily
+
+Download the installer and install the "daily" build
 #>
 
 param(

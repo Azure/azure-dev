@@ -126,7 +126,7 @@ jobs:
           targetType: filePath
           filePath: ./eng/scripts/Update-PRComment.ps1
           arguments: >-
-            -Repo 'azure/azure-dev'
+            -Repo 'kaizentm/azure-dev'
             -PRNumber '$(PRNumber)'
             -BodyFile '$(CommentBodyFile)'
             -Tag '<!-- #comment-repoman-generate -->'

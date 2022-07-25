@@ -5,5 +5,7 @@ ARG shell='bash'
 ARG baseUrl='must set baseUrl'
 ARG version='must set version'
 
+RUN yum install -y which
+
 COPY ./*.sh ./
 RUN ./test-sh-install.sh "${shell}" "${baseUrl}" "${version}"

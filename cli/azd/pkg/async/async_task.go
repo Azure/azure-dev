@@ -10,12 +10,12 @@ type AsyncTask[R any] struct {
 
 func (t *AsyncTask[R]) Run(taskFn AsyncTaskRunFunc[R]) {
 	go func() {
-		runner := AsyncTaskRunner[R]{
+		context := AsyncTaskContext[R]{
 			task: t,
 		}
 
-		taskFn(&runner)
-		t.complete(runner.result, runner.error)
+		taskFn(&context)
+		t.complete(context.result, context.error)
 	}()
 }
 
@@ -68,12 +68,12 @@ func (t *AsyncTaskWithProgress[R, P]) Progress() <-chan P {
 
 func (t *AsyncTaskWithProgress[R, P]) Run(taskFn AsyncTaskWithProgressRunFunc[R, P]) {
 	go func() {
-		runner := AsyncTaskWithProgressRunner[R, P]{
+		context := AsyncTaskContextWithProgress[R, P]{
 			task: t,
 		}
 
-		taskFn(&runner)
-		t.complete(runner.result, runner.error)
+		taskFn(&context)
+		t.complete(context.result, context.error)
 		close(t.progressChannel)
 	}()
 }

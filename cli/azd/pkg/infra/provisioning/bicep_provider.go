@@ -59,19 +59,19 @@ func (p *BicepInfraProvider) RequiredExternalTools() []tools.ExternalTool {
 // Plans the infrastructure provisioning
 func (p *BicepInfraProvider) Plan(ctx context.Context) async.AsyncTaskWithProgress[*ProvisionPlanResult, *ProvisionPlanProgress] {
 	return *async.RunTaskWithProgress(
-		func(runner *async.AsyncTaskWithProgressRunner[*ProvisionPlanResult, *ProvisionPlanProgress]) {
-			runner.SetProgress(&ProvisionPlanProgress{Message: "Generating Bicep parameters file", Timestamp: time.Now()})
+		func(asyncContext *async.AsyncTaskContextWithProgress[*ProvisionPlanResult, *ProvisionPlanProgress]) {
+			asyncContext.SetProgress(&ProvisionPlanProgress{Message: "Generating Bicep parameters file", Timestamp: time.Now()})
 			bicepTemplate, err := p.createParametersFile()
 			if err != nil {
-				runner.SetError(fmt.Errorf("creating parameters file: %w", err))
+				asyncContext.SetError(fmt.Errorf("creating parameters file: %w", err))
 				return
 			}
 
 			modulePath := p.modulePath()
-			runner.SetProgress(&ProvisionPlanProgress{Message: "Compiling Bicep template", Timestamp: time.Now()})
+			asyncContext.SetProgress(&ProvisionPlanProgress{Message: "Compiling Bicep template", Timestamp: time.Now()})
 			template, err := p.createPlan(ctx, modulePath)
 			if err != nil {
-				runner.SetError(fmt.Errorf("creating template: %w", err))
+				asyncContext.SetError(fmt.Errorf("creating template: %w", err))
 				return
 			}
 
@@ -87,7 +87,7 @@ func (p *BicepInfraProvider) Plan(ctx context.Context) async.AsyncTaskWithProgre
 				Plan: *template,
 			}
 
-			runner.SetResult(&result)
+			asyncContext.SetResult(&result)
 		})
 }
 
@@ -126,7 +126,7 @@ func (p *BicepInfraProvider) UpdatePlan(ctx context.Context, plan ProvisioningPl
 // Provisioning the infrastructure within the specified template
 func (p *BicepInfraProvider) Apply(ctx context.Context, plan *ProvisioningPlan, scope ProvisioningScope) async.AsyncTaskWithProgress[*ProvisionApplyResult, *ProvisionApplyProgress] {
 	return *async.RunTaskWithProgress(
-		func(runner *async.AsyncTaskWithProgressRunner[*ProvisionApplyResult, *ProvisionApplyProgress]) {
+		func(asyncContext *async.AsyncTaskContextWithProgress[*ProvisionApplyResult, *ProvisionApplyProgress]) {
 			isDeploymentComplete := false
 
 			// Start the deployment
@@ -137,7 +137,7 @@ func (p *BicepInfraProvider) Apply(ctx context.Context, plan *ProvisioningPlan, 
 				var outputs map[string]ProvisioningPlanOutputParameter
 
 				if err != nil {
-					runner.SetError(err)
+					asyncContext.SetError(err)
 					isDeploymentComplete = true
 					return
 				}
@@ -151,7 +151,7 @@ func (p *BicepInfraProvider) Apply(ctx context.Context, plan *ProvisioningPlan, 
 					Outputs:    outputs,
 				}
 
-				runner.SetResult(result)
+				asyncContext.SetResult(result)
 				isDeploymentComplete = true
 			}()
 
@@ -174,7 +174,7 @@ func (p *BicepInfraProvider) Apply(ctx context.Context, plan *ProvisioningPlan, 
 						Operations: *ops,
 					}
 
-					runner.SetProgress(&progressReport)
+					asyncContext.SetProgress(&progressReport)
 				}
 			}
 		})
@@ -182,23 +182,23 @@ func (p *BicepInfraProvider) Apply(ctx context.Context, plan *ProvisioningPlan, 
 
 func (p *BicepInfraProvider) Destroy(ctx context.Context, plan *ProvisioningPlan) async.AsyncTaskWithProgress[*ProvisionDestroyResult, *ProvisionDestroyProgress] {
 	return *async.RunTaskWithProgress(
-		func(runner *async.AsyncTaskWithProgressRunner[*ProvisionDestroyResult, *ProvisionDestroyProgress]) {
+		func(asyncContext *async.AsyncTaskContextWithProgress[*ProvisionDestroyResult, *ProvisionDestroyProgress]) {
 			destroyResult := ProvisionDestroyResult{}
 
-			runner.SetProgress(&ProvisionDestroyProgress{Message: "Fetching resource groups", Timestamp: time.Now()})
+			asyncContext.SetProgress(&ProvisionDestroyProgress{Message: "Fetching resource groups", Timestamp: time.Now()})
 			resourceManager := infra.NewAzureResourceManager(p.azCli)
 			resourceGroups, err := resourceManager.GetResourceGroupsForDeployment(ctx, p.env.GetSubscriptionId(), p.env.GetEnvName())
 			if err != nil {
-				runner.SetError(fmt.Errorf("discovering resource groups from deployment: %w", err))
+				asyncContext.SetError(fmt.Errorf("discovering resource groups from deployment: %w", err))
 			}
 
 			var allResources []tools.AzCliResource
 
-			runner.SetProgress(&ProvisionDestroyProgress{Message: "Fetching resources", Timestamp: time.Now()})
+			asyncContext.SetProgress(&ProvisionDestroyProgress{Message: "Fetching resources", Timestamp: time.Now()})
 			for _, resourceGroup := range resourceGroups {
 				resources, err := p.azCli.ListResourceGroupResources(ctx, p.env.GetSubscriptionId(), resourceGroup)
 				if err != nil {
-					runner.SetError(fmt.Errorf("listing resource group %s: %w", resourceGroup, err))
+					asyncContext.SetError(fmt.Errorf("listing resource group %s: %w", resourceGroup, err))
 				}
 
 				allResources = append(allResources, resources...)
@@ -206,20 +206,20 @@ func (p *BicepInfraProvider) Destroy(ctx context.Context, plan *ProvisioningPlan
 
 			for _, resourceGroup := range resourceGroups {
 				message := fmt.Sprintf("Deleting resource group '%s'", resourceGroup)
-				runner.SetProgress(&ProvisionDestroyProgress{Message: message, Timestamp: time.Now()})
+				asyncContext.SetProgress(&ProvisionDestroyProgress{Message: message, Timestamp: time.Now()})
 
 				if err := p.azCli.DeleteResourceGroup(ctx, p.env.GetSubscriptionId(), resourceGroup); err != nil {
-					runner.SetError(fmt.Errorf("deleting resource group %s: %w", resourceGroup, err))
+					asyncContext.SetError(fmt.Errorf("deleting resource group %s: %w", resourceGroup, err))
 				}
 			}
 
-			runner.SetProgress(&ProvisionDestroyProgress{Message: "Deleting deployment", Timestamp: time.Now()})
+			asyncContext.SetProgress(&ProvisionDestroyProgress{Message: "Deleting deployment", Timestamp: time.Now()})
 			if err := p.azCli.DeleteSubscriptionDeployment(ctx, p.env.GetSubscriptionId(), p.env.GetEnvName()); err != nil {
-				runner.SetError(fmt.Errorf("deleting subscription deployment: %w", err))
+				asyncContext.SetError(fmt.Errorf("deleting subscription deployment: %w", err))
 			}
 
 			destroyResult.Resources = allResources
-			runner.SetResult(&destroyResult)
+			asyncContext.SetResult(&destroyResult)
 		})
 }
 

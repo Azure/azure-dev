@@ -1,28 +1,28 @@
 package async
 
-type AsyncTaskRunFunc[R any] func(runner *AsyncTaskRunner[R])
+type AsyncTaskRunFunc[R any] func(asyncContext *AsyncTaskContext[R])
 
-type AsyncTaskRunner[R any] struct {
+type AsyncTaskContext[R any] struct {
 	task   *AsyncTask[R]
 	error  error
 	result R
 }
 
-func (r *AsyncTaskRunner[R]) SetError(err error) {
+func (r *AsyncTaskContext[R]) SetError(err error) {
 	r.error = err
 }
 
-func (r *AsyncTaskRunner[R]) SetResult(result R) {
+func (r *AsyncTaskContext[R]) SetResult(result R) {
 	r.result = result
 }
 
-type AsyncTaskWithProgressRunFunc[R any, P any] func(runner *AsyncTaskWithProgressRunner[R, P])
+type AsyncTaskWithProgressRunFunc[R any, P any] func(asyncContext *AsyncTaskContextWithProgress[R, P])
 
-type AsyncTaskWithProgressRunner[R any, P any] struct {
+type AsyncTaskContextWithProgress[R any, P any] struct {
 	task *AsyncTaskWithProgress[R, P]
-	AsyncTaskRunner[R]
+	AsyncTaskContext[R]
 }
 
-func (r *AsyncTaskWithProgressRunner[R, P]) SetProgress(progress P) {
+func (r *AsyncTaskContextWithProgress[R, P]) SetProgress(progress P) {
 	r.task.progressChannel <- progress
 }

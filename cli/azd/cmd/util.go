@@ -195,6 +195,16 @@ func ensureEnvironmentInitialized(ctx context.Context, envSpec environmentSpec, 
 		}
 	}
 
+	if !hasLocation && envSpec.location != "" {
+		env.SetLocation(envSpec.location)
+	} else {
+		location, err := promptLocation(ctx, "Please select an Azure location to use:", askOne)
+		if err != nil {
+			return fmt.Errorf("prompting for location: %w", err)
+		}
+		env.SetLocation(strings.TrimSpace(location))
+	}
+
 	if !hasSubID && envSpec.subscription != "" {
 		env.SetSubscriptionId(envSpec.subscription)
 	} else {
@@ -228,16 +238,6 @@ func ensureEnvironmentInitialized(ctx context.Context, envSpec environmentSpec, 
 		}
 
 		env.SetSubscriptionId(strings.TrimSpace(subscriptionId))
-	}
-
-	if !hasLocation && envSpec.location != "" {
-		env.SetLocation(envSpec.location)
-	} else {
-		location, err := promptLocation(ctx, "Please select an Azure location to use:", askOne)
-		if err != nil {
-			return fmt.Errorf("prompting for location: %w", err)
-		}
-		env.SetLocation(location)
 	}
 
 	if !hasPrincipalID {

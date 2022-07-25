@@ -1,5 +1,7 @@
 package infra
 
+import "strings"
+
 type AzureResourceType string
 
 const (
@@ -17,6 +19,8 @@ const (
 	AzureResourceTypeCosmosDb              AzureResourceType = "Microsoft.DocumentDB/databaseAccounts"
 	AzureResourceTypeContainerApp          AzureResourceType = "Microsoft.App/containerApps"
 )
+
+const resourceLevelSeparator = "/"
 
 // GetResourceTypeDisplayName retrieves the display name for the given resource type.
 // If the display name was not found for the given resource type, an empty string is returned instead.
@@ -50,4 +54,20 @@ func GetResourceTypeDisplayName(resourceType AzureResourceType) string {
 	}
 
 	return ""
+}
+
+// IsTopLevelResourceType returns true if the resource type is a top-level resource type, otherwise false.
+// A top-level resource type is of the format of: {ResourceProvider}/{TopLevelResourceType}, i.e. Microsoft.DocumentDB/databaseAccounts
+func IsTopLevelResourceType(resourceType AzureResourceType) bool {
+	resType := string(resourceType)
+	firstIndex := strings.Index(resType, resourceLevelSeparator)
+
+	if firstIndex == -1 ||
+		firstIndex == 0 ||
+		firstIndex == len(resType)-1 {
+		return false
+	}
+
+	secondIndex := strings.Index(resType[firstIndex+1:], resourceLevelSeparator)
+	return secondIndex == -1
 }

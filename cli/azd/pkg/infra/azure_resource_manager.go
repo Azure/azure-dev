@@ -75,6 +75,23 @@ func (rm *AzureResourceManager) appendDeploymentResourcesRecursive(ctx context.C
 	return nil
 }
 
+func (rm *AzureResourceManager) GetResourceTypeDisplayName(ctx context.Context, subscriptionId string, resourceId string, resourceType AzureResourceType) (string, error) {
+	if resourceType == AzureResourceTypeWebSite {
+		// Web apps have different kinds of resources sharing the same resource type 'Microsoft.Web/sites', i.e. Function app vs. App service
+		// It is extremely important that we display the right one, thus we resolve it by querying the properties of the ARM resource.
+		resourceTypeDisplayName, err := rm.GetWebAppResourceTypeDisplayName(ctx, subscriptionId, resourceId)
+
+		if err != nil {
+			return "", err
+		} else {
+			return resourceTypeDisplayName, nil
+		}
+	} else {
+		resourceTypeDisplayName := GetResourceTypeDisplayName(resourceType)
+		return resourceTypeDisplayName, nil
+	}
+}
+
 func (rm *AzureResourceManager) GetWebAppResourceTypeDisplayName(ctx context.Context, subscriptionId string, resourceId string) (string, error) {
 	resource, err := rm.azCli.GetResource(ctx, subscriptionId, resourceId)
 

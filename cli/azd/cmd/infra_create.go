@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io/ioutil"
+	"log"
 	"net/url"
 	"os"
 	"sort"
@@ -11,7 +12,6 @@ import (
 
 	"github.com/AlecAivazis/survey/v2"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
-	"github.com/azure/azure-dev/cli/azd/pkg/azureutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/commands"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/iac/bicep"
@@ -289,60 +289,50 @@ func reportDeploymentStatusInteractive(ctx context.Context, azCli tools.AzCli, e
 	}
 
 	succeededCount := 0
-	newlyDeployedResources := []azureutil.DeployedAzureResource{}
+	newlyDeployedResources := []*tools.AzCliResourceOperation{}
 
-	for _, resourceOperation := range operations {
-		if resourceOperation.Properties.ProvisioningState == "Succeeded" {
+	for i := range operations {
+		if operations[i].Properties.ProvisioningState == "Succeeded" {
 			succeededCount++
 
-			if !loggedResources[resourceOperation.Properties.TargetResource.Id] {
-				resourceTypeDisplayName := ""
-
-				if resourceOperation.Properties.TargetResource.ResourceType == string(infra.AzureResourceTypeWebSite) {
-					// Web apps have different kinds of resources sharing the same resource type 'Microsoft.Web/sites', i.e. Function app vs. App service
-					// We resolve it by querying the properties of the ARM resource.
-					resourceTypeName, err := resourceManager.GetWebAppResourceTypeDisplayName(ctx, env.GetSubscriptionId(), resourceOperation.Properties.TargetResource.Id)
-
-					if err != nil {
-						// Best effort -- use static translation 'Web App' if we could not resolve the exact resource type
-						resourceTypeDisplayName = infra.GetResourceTypeDisplayName(infra.AzureResourceType(resourceOperation.Properties.TargetResource.ResourceType))
-					} else {
-						resourceTypeDisplayName = resourceTypeName
-					}
-				} else {
-					resourceTypeName := infra.GetResourceTypeDisplayName(infra.AzureResourceType(resourceOperation.Properties.TargetResource.ResourceType))
-
-					if resourceTypeName != "" {
-						resourceTypeDisplayName = resourceTypeName
-					}
-				}
-
-				newlyDeployedResources = append(newlyDeployedResources, azureutil.DeployedAzureResource{
-					Id:                      resourceOperation.Properties.TargetResource.Id,
-					ResourceName:            resourceOperation.Properties.TargetResource.ResourceName,
-					ResourceType:            resourceOperation.Properties.TargetResource.ResourceType,
-					ResourceTypeDisplayName: resourceTypeDisplayName,
-					DeployedTimestamp:       resourceOperation.Properties.Timestamp,
-				})
+			if !loggedResources[operations[i].Properties.TargetResource.Id] &&
+				infra.IsTopLevelResourceType(infra.AzureResourceType(operations[i].Properties.TargetResource.ResourceType)) {
+				newlyDeployedResources = append(newlyDeployedResources, &operations[i])
 			}
 		}
 	}
 
-	sort.Sort(azureutil.DeployedAzureResourceByTimestamp(newlyDeployedResources))
+	sort.Slice(newlyDeployedResources, func(i int, j int) bool {
+		return time.Time.Before(newlyDeployedResources[i].Properties.Timestamp, newlyDeployedResources[j].Properties.Timestamp)
+	})
 
 	for _, newResource := range newlyDeployedResources {
-		// Don't log resource types that are not known to us.
-		// There are two cases:
-		// 1. Resource types that are sub-components. i.e., application settings: "Microsoft.Web/sites/config"
-		// 2. Azure resources that we do not have a translation of the resource type for.
-		if newResource.ResourceTypeDisplayName != "" {
-			spinner.Println(fmt.Sprintf(
-				"%s - Created %s: %s",
-				newResource.DeployedTimestamp.Local().Format("2006-01-02 15:04:05"),
-				newResource.ResourceTypeDisplayName,
-				newResource.ResourceName))
-			loggedResources[newResource.Id] = true
+		resourceTypeDisplayName, err := resourceManager.GetResourceTypeDisplayName(ctx, env.GetSubscriptionId(), newResource.Properties.TargetResource.Id, infra.AzureResourceType(newResource.Properties.TargetResource.ResourceType))
+
+		if err != nil {
+			// Dynamic resource type translation failed -- fallback to static translation
+			resourceTypeDisplayName = infra.GetResourceTypeDisplayName(infra.AzureResourceType(newResource.Properties.TargetResource.ResourceType))
 		}
+
+		resourceTypeName := newResource.Properties.TargetResource.ResourceType
+
+		// Don't log resource types for Azure resources that we do not have a translation of the resource type for.
+		// This will be improved on in a future iteration.
+		if resourceTypeDisplayName != "" {
+			spinner.Println(fmt.Sprintf(
+				"Created %s: %s",
+				resourceTypeDisplayName,
+				newResource.Properties.TargetResource.Id))
+			resourceTypeName = resourceTypeDisplayName
+		}
+
+		log.Printf(
+			"%s - Created %s: %s",
+			newResource.Properties.Timestamp.Local().Format("2006-01-02 15:04:05"),
+			resourceTypeName,
+			newResource.Properties.TargetResource.Id)
+
+		loggedResources[newResource.Id] = true
 	}
 
 	status := ""

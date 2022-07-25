@@ -32,10 +32,10 @@ jobs:
           versionSpec: 16
 
       - pwsh: |
-          git config --global user.name "azure-sdk"
-          git config --global user.email "azuresdk@microsoft.com"
+          git config --global user.name "$(azuresdk-github-user)"
+          git config --global user.email "$(azuresdk-github-email)"
           Set-Content `
-            -Value "https://azure-sdk:$(azuresdk-github-pat)@github.com" `
+            -Value "https://$(azuresdk-github-user):$(azuresdk-github-pat)@github.com" `
             -Path ~/.git-credentials
           git config --global credential.helper "store"
         displayName: Set git credentials

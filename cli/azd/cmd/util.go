@@ -59,7 +59,6 @@ type environmentSpec struct {
 	environmentName string
 	subscription    string
 	location        string
-	principalID     string
 }
 
 // createEnvironment creates a new named environment. If an environment with this name already
@@ -185,78 +184,68 @@ func ensureEnvironmentInitialized(ctx context.Context, envSpec environmentSpec, 
 		return nil
 	}
 
-	if !hasEnvName {
+	if !hasEnvName && envSpec.environmentName != "" {
 		env.SetEnvName(envSpec.environmentName)
 	}
 
-	needAzureInteraction := (!hasSubID && envSpec.subscription == "") ||
-		(!hasPrincipalID && envSpec.principalID == "") ||
-		(!hasLocation && envSpec.location == "")
+	needAzureInteraction := !hasSubID || !hasLocation || !hasPrincipalID
 	if needAzureInteraction {
 		if err := ensureLoggedIn(ctx); err != nil {
 			return fmt.Errorf("logging in: %w", err)
 		}
 	}
 
-	if !hasLocation {
-		var location = envSpec.location
-		if location == "" {
-			var err error
-			location, err = promptLocation(ctx, "Please select an Azure location to use:", askOne)
-			if err != nil {
-				return fmt.Errorf("prompting for location: %w", err)
-			}
+	if !hasSubID && envSpec.subscription != "" {
+		env.SetSubscriptionId(envSpec.subscription)
+	} else {
+		subscriptionOptions, defaultSubscription, err := getSubscriptionOptions(ctx)
+		if err != nil {
+			return err
 		}
 
-		env.Values[environment.LocationEnvVarName] = strings.TrimSpace(location)
-	}
-
-	if !hasSubID {
-		var subscriptionId string = envSpec.subscription
-
-		if subscriptionId == "" {
-			subscriptionOptions, defaultSubscription, err := getSubscriptionOptions(ctx)
+		var subscriptionId = ""
+		for subscriptionId == "" {
+			var subscriptionSelection string
+			err := askOne(&survey.Select{
+				Message: "Please select an Azure Subscription to use:",
+				Options: subscriptionOptions,
+				Default: defaultSubscription,
+			}, &subscriptionSelection)
 			if err != nil {
-				return err
+				return fmt.Errorf("reading subscription id: %w", err)
 			}
 
-			for subscriptionId == "" {
-				var subscriptionSelection string
-				err := askOne(&survey.Select{
-					Message: "Please select an Azure Subscription to use:",
-					Options: subscriptionOptions,
-					Default: defaultSubscription,
-				}, &subscriptionSelection)
+			if subscriptionSelection == manualSubscriptionEntryOption {
+				err = askOne(&survey.Input{
+					Message: "Enter an Azure Subscription to use:",
+				}, &subscriptionId)
 				if err != nil {
 					return fmt.Errorf("reading subscription id: %w", err)
 				}
-				if subscriptionSelection == manualSubscriptionEntryOption {
-					err = askOne(&survey.Input{
-						Message: "Enter an Azure Subscription to use:",
-					}, &subscriptionId)
-					if err != nil {
-						return fmt.Errorf("reading subscription id: %w", err)
-					}
-				} else {
-					subscriptionId = subscriptionSelection[len(subscriptionSelection)-len("(059cdffa-0e5b-47d8-ad4b-f13fd9099f21)")+1 : len(subscriptionSelection)-1]
-				}
+			} else {
+				subscriptionId = subscriptionSelection[len(subscriptionSelection)-len("(00000000-0000-0000-0000-000000000000)")+1 : len(subscriptionSelection)-1]
 			}
 		}
 
-		env.Values[environment.SubscriptionIdEnvVarName] = strings.TrimSpace(subscriptionId)
+		env.SetSubscriptionId(strings.TrimSpace(subscriptionId))
+	}
+
+	if !hasLocation && envSpec.location != "" {
+		env.SetLocation(envSpec.location)
+	} else {
+		location, err := promptLocation(ctx, "Please select an Azure location to use:", askOne)
+		if err != nil {
+			return fmt.Errorf("prompting for location: %w", err)
+		}
+		env.SetLocation(location)
 	}
 
 	if !hasPrincipalID {
-		principalID := envSpec.principalID
-		if principalID == "" {
-			var err error
-			principalID, err = azureutil.GetCurrentPrincipalId(ctx)
-			if err != nil {
-				return fmt.Errorf("fetching current user information: %w", err)
-			}
+		principalID, err := azureutil.GetCurrentPrincipalId(ctx)
+		if err != nil {
+			return fmt.Errorf("fetching current user information: %w", err)
 		}
-
-		env.Values[environment.PrincipalIdEnvVarName] = principalID
+		env.SetPrincipalId(principalID)
 	}
 
 	if err := env.Save(); err != nil {

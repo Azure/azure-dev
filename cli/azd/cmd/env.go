@@ -184,13 +184,11 @@ type envNewAction struct {
 	rootOptions  *commands.GlobalCommandOptions
 	subscription string
 	location     string
-	principalID  string
 }
 
 func (en *envNewAction) SetupFlags(persis *pflag.FlagSet, local *pflag.FlagSet) {
 	local.StringVar(&en.subscription, "subscription", "", "Name or ID of an Azure subscription to use for the new environment")
 	local.StringVarP(&en.location, "location", "l", "", "Azure location for the new environment")
-	local.StringVar(&en.principalID, "principal", "", "Azure Active Directory principal name or ID to use for the new environment")
 }
 
 func (en *envNewAction) Run(ctx context.Context, _ *cobra.Command, args []string, azdCtx *environment.AzdContext) error {
@@ -208,7 +206,6 @@ func (en *envNewAction) Run(ctx context.Context, _ *cobra.Command, args []string
 		environmentName: en.rootOptions.EnvironmentName,
 		subscription:    en.subscription,
 		location:        en.location,
-		principalID:     en.principalID,
 	}
 	if _, err := createAndInitEnvironment(ctx, &envSpec, azdCtx, askOne); err != nil {
 		return fmt.Errorf("creating new environment: %w", err)

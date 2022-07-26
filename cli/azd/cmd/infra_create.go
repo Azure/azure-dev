@@ -266,7 +266,7 @@ func (ica *infraCreateAction) Run(ctx context.Context, cmd *cobra.Command, args 
 
 	for _, svc := range proj.Services {
 		if svc.Language == "dotnet" {
-			err := dotnetCli.InitializeSecret(ctx, parametersPath)
+			err := dotnetCli.InitializeSecret(ctx, svc.Path())
 			if err != nil {
 				return err
 			}
@@ -276,12 +276,10 @@ func (ica *infraCreateAction) Run(ctx context.Context, cmd *cobra.Command, args 
 	template.CanonicalizeDeploymentOutputs(&res.Result.Properties.Outputs)
 
 	for _, svc := range proj.Services {
-		{
-			for key, val := range res.Result.Properties.Outputs {
-				err := dotnetCli.SetSecret(ctx, key, fmt.Sprint(val.Value), svc.Path())
-				if err != nil {
-					return err
-				}
+		for key, val := range res.Result.Properties.Outputs {
+			err := dotnetCli.SetSecret(ctx, key, fmt.Sprint(val.Value), svc.Path())
+			if err != nil {
+				return err
 			}
 		}
 	}

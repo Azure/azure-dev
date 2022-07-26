@@ -24,6 +24,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/cmd"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/executil"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/test/azdcli"
@@ -199,6 +200,9 @@ func Test_CLI_InfraCreateAndDeleteWebApp(t *testing.T) {
 	require.True(t, has, "WEBSITE_URL should be in environment after infra create")
 
 	res, err := http.Get(url)
+	require.NoError(t, err)
+
+	_, err = executil.RunCommandWithShell(ctx, "dotnet", "user-secrets", "list", "--project", path.Join(dir, "/src/dotnet/webapp.csproj"))
 	require.NoError(t, err)
 
 	var buf bytes.Buffer

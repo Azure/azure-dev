@@ -77,6 +77,8 @@ func (ica *infraCreateAction) Run(ctx context.Context, cmd *cobra.Command, args 
 		return fmt.Errorf("loading project: %w", err)
 	}
 
+	dotnetCli := tools.NewDotNetCli()
+
 	const rootModule = "main"
 
 	// Copy the parameter template file to the environment working directory and do substitutions.
@@ -259,15 +261,12 @@ func (ica *infraCreateAction) Run(ctx context.Context, cmd *cobra.Command, args 
 		return fmt.Errorf("deployment failed: %w", err)
 	}
 
-	dotnetCli := tools.NewDotNetCli()
-	if err := tools.EnsureInstalled(ctx, dotnetCli); err != nil {
-		return err
-	}
-
 	for _, svc := range proj.Services {
 		if svc.Language == "dotnet" {
-			err := dotnetCli.InitializeSecret(ctx, svc.Path())
-			if err != nil {
+			if err := tools.EnsureInstalled(ctx, dotnetCli); err != nil {
+				return err
+			}
+			if err := dotnetCli.InitializeSecret(ctx, svc.Path()); err != nil {
 				return err
 			}
 		}
@@ -276,10 +275,11 @@ func (ica *infraCreateAction) Run(ctx context.Context, cmd *cobra.Command, args 
 	template.CanonicalizeDeploymentOutputs(&res.Result.Properties.Outputs)
 
 	for _, svc := range proj.Services {
-		for key, val := range res.Result.Properties.Outputs {
-			err := dotnetCli.SetSecret(ctx, key, fmt.Sprint(val.Value), svc.Path())
-			if err != nil {
-				return err
+		if svc.Language == "dotnet" {
+			for key, val := range res.Result.Properties.Outputs {
+				if err := dotnetCli.SetSecret(ctx, key, fmt.Sprint(val.Value), svc.Path()); err != nil {
+					return err
+				}
 			}
 		}
 	}

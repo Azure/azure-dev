@@ -156,8 +156,8 @@ func Test_CLI_InfraCreateAndDelete(t *testing.T) {
 	require.NoError(t, err)
 
 	// AZURE_STORAGE_ACCOUNT_NAME is an output of the template, make sure it was added to the .env file.
-	// (the name of the resource is ${replace(envName, '-', '')}sa).
-	require.Regexp(t, regexp.MustCompile(fmt.Sprintf(`AZURE_STORAGE_ACCOUNT_NAME="%sstore"`, strings.ReplaceAll(envName, "-", ""))), string(file))
+	// the name should start with 'st'
+	require.Regexp(t, `AZURE_STORAGE_ACCOUNT_NAME="st\S*"`, string(file))
 
 	// Using `down` here to test the down alias to infra delete
 	_, err = cli.RunCommand(ctx, "down", "--force", "--purge")

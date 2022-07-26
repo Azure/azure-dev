@@ -11,19 +11,22 @@ param deleteAfterTime string = dateTimeAdd(utcNow('o'), 'PT1H')
 
 targetScope = 'subscription'
 
+var resourceToken = toLower(uniqueString(subscription().id, name, location))
+var tags = { 'azd-env-name': name, DeleteAfter: deleteAfterTime }
+var abbrs = loadJsonContent('../../../../../../common/infra/abbreviations.json')
+
 resource resourceGroup 'Microsoft.Resources/resourceGroups@2021-04-01' = {
-  name: '${name}-rg'
+  name: '${abbrs.resourcesResourceGroups}${name}'
   location: location
-  tags: {
-    DeleteAfter: deleteAfterTime
-  }
+  tags: tags
 }
 
-module resources './resources.bicep' = {
-  name: '${resourceGroup.name}res'
+module resources 'resources.bicep' = {
+  name: 'resources'
   scope: resourceGroup
   params: {
-    name: toLower(name)
-    location: resourceGroup.location
+    location: location
+    resourceToken: resourceToken
+    tags: tags
   }
 }

@@ -31,6 +31,10 @@ repo:
       patterns:
         - openapi.yaml
 
+    # Root common
+    - from: ../../../../common
+      to: ./
+
     # Template common
     - from: ../../../common
       to: ./

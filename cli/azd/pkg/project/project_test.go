@@ -217,7 +217,7 @@ services:
 func TestResourceGroupOverrideFromProjectFile(t *testing.T) {
 	const testProj = `
 name: test-proj
-resourceGroup: custom-group-rg
+resourceGroup: rg-custom-group
 metadata:
   template: test-proj-template
 services:
@@ -244,13 +244,13 @@ services:
 
 	assertHasService(t,
 		project.Services,
-		func(s *Service) bool { return s.Scope.ResourceGroupName() == "custom-group-rg" },
+		func(s *Service) bool { return s.Scope.ResourceGroupName() == "rg-custom-group" },
 		"api service does not have expected resource group name",
 	)
 
 	assertHasService(t,
 		project.Services,
-		func(s *Service) bool { return s.Scope.ResourceGroupName() == "custom-group-rg" },
+		func(s *Service) bool { return s.Scope.ResourceGroupName() == "rg-custom-group" },
 		"web service does not have expected resource group name",
 	)
 }

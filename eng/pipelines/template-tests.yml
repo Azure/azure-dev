@@ -63,6 +63,7 @@ jobs:
             -t '$(TemplateName)'
             -s '$(Build.BuildId)'
             -l 'centralus'
+            -p 'list'
           workingDirectory: templates/tests
         displayName: Test templates
         env:

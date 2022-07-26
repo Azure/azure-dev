@@ -51,6 +51,10 @@ func (p *dockerProject) InstallDependencies(ctx context.Context) error {
 	return p.framework.InstallDependencies(ctx)
 }
 
+func (p *dockerProject) Initialize(ctx context.Context) error {
+	return nil
+}
+
 func NewDockerProject(config *ServiceConfig, env *environment.Environment, docker *tools.Docker, framework FrameworkService) FrameworkService {
 	return &dockerProject{
 		config:    config,

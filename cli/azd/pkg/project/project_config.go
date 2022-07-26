@@ -136,9 +136,26 @@ func ParseProjectConfig(yamlContent string, env *environment.Environment) (*Proj
 		if svc.Module == "" {
 			svc.Module = key
 		}
+
+		if svc.Language == "" || svc.Language == "csharp" || svc.Language == "fsharp" {
+			svc.Language = "dotnet"
+		}
 	}
 
 	return &projectFile, nil
+}
+
+func Initialize(ctx context.Context, p *ProjectConfig) error {
+	for _, svc := range p.Services {
+		frameworkService, err := svc.GetFrameworkService(ctx, &environment.Environment{})
+		if err != nil {
+			return fmt.Errorf("getting framework services: %w", err)
+		}
+		if err = (*frameworkService).Initialize(ctx); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // LoadProjectConfig loads the azure.yaml configuring into an viewable structure

@@ -49,6 +49,19 @@ func (dp *dotnetProject) InstallDependencies(ctx context.Context) error {
 	return nil
 }
 
+func (dp *dotnetProject) Initialize(ctx context.Context) error {
+	dotnetCli := tools.NewDotNetCli()
+	if err := tools.EnsureInstalled(ctx, dotnetCli); err != nil {
+		return err
+	}
+
+	//fmt.Println("!!!!!", dp.config.Path())
+	if err := dotnetCli.InitializeSecret(ctx, dp.config.Path()); err != nil {
+		return err
+	}
+	return nil
+}
+
 func NewDotNetProject(config *ServiceConfig, env *environment.Environment) FrameworkService {
 	return &dotnetProject{
 		config: config,

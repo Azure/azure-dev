@@ -64,16 +64,29 @@ func (display *ProvisioningProgressDisplay) ReportProgress(ctx context.Context, 
 		return time.Time.Before(newlyDeployedResources[i].Properties.Timestamp, newlyDeployedResources[j].Properties.Timestamp)
 	})
 
-	for _, newResource := range newlyDeployedResources {
+	display.logNewlyCreatedResources(ctx, newlyDeployedResources, logProgress)
+
+	status := ""
+
+	if len(operations) > 0 {
+		status = formatProgressTitle(succeededCount, len(operations))
+	} else {
+		status = defaultProgressTitle
+	}
+
+	setOperationTitle(status)
+}
+
+func (display *ProvisioningProgressDisplay) logNewlyCreatedResources(ctx context.Context, resources []*tools.AzCliResourceOperation, logProgress func(string)) {
+	for _, newResource := range resources {
+		resourceTypeName := newResource.Properties.TargetResource.ResourceType
 		resourceTypeDisplayName, err := display.resourceManager.GetResourceTypeDisplayName(
-			ctx, display.subscriptionId, newResource.Properties.TargetResource.Id, infra.AzureResourceType(newResource.Properties.TargetResource.ResourceType))
+			ctx, display.subscriptionId, newResource.Properties.TargetResource.Id, infra.AzureResourceType(resourceTypeName))
 
 		if err != nil {
 			// Dynamic resource type translation failed -- fallback to static translation
-			resourceTypeDisplayName = infra.GetResourceTypeDisplayName(infra.AzureResourceType(newResource.Properties.TargetResource.ResourceType))
+			resourceTypeDisplayName = infra.GetResourceTypeDisplayName(infra.AzureResourceType(resourceTypeName))
 		}
-
-		resourceTypeName := newResource.Properties.TargetResource.ResourceType
 
 		// Don't log resource types for Azure resources that we do not have a translation of the resource type for.
 		// This will be improved on in a future iteration.
@@ -90,16 +103,6 @@ func (display *ProvisioningProgressDisplay) ReportProgress(ctx context.Context, 
 
 		display.createdResources[newResource.Properties.TargetResource.Id] = true
 	}
-
-	status := ""
-
-	if len(operations) > 0 {
-		status = formatProgressTitle(succeededCount, len(operations))
-	} else {
-		status = defaultProgressTitle
-	}
-
-	setOperationTitle(status)
 }
 
 func formatCreatedResourceLog(resourceTypeDisplayName string, resourceName string) string {

@@ -264,14 +264,9 @@ func (ica *infraCreateAction) Run(ctx context.Context, cmd *cobra.Command, args 
 		return err
 	}
 
-	dotnetProj := false
 	for _, svc := range proj.Services {
 		if svc.Language == "dotnet" {
-			dotnetProj = true
-			// fmt.Println(svc.Path())
-			// fmt.Println(parametersPath)
-			//parametersPath = `C:\Users\hemarina\OneDrive - Microsoft\Documents\VSCode\azure-dev\cli\azd\test\samples\webapp\src\dotnet`
-			err := dotnetCli.InitializeSecret(ctx, svc.Path())
+			err := dotnetCli.InitializeSecret(ctx, parametersPath)
 			if err != nil {
 				return err
 			}
@@ -280,12 +275,13 @@ func (ica *infraCreateAction) Run(ctx context.Context, cmd *cobra.Command, args 
 
 	template.CanonicalizeDeploymentOutputs(&res.Result.Properties.Outputs)
 
-	if dotnetProj {
-		for key, val := range res.Result.Properties.Outputs {
-			err := dotnetCli.SetSecret(ctx, key, fmt.Sprint(val.Value), proj.Path)
-			// fmt.Println(proj.Path)
-			if err != nil {
-				return err
+	for _, svc := range proj.Services {
+		{
+			for key, val := range res.Result.Properties.Outputs {
+				err := dotnetCli.SetSecret(ctx, key, fmt.Sprint(val.Value), svc.Path())
+				if err != nil {
+					return err
+				}
 			}
 		}
 	}

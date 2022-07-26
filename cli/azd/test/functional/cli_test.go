@@ -198,10 +198,6 @@ func Test_CLI_InfraCreateAndDeleteWebApp(t *testing.T) {
 	url, has := env["WEBSITE_URL"]
 	require.True(t, has, "WEBSITE_URL should be in environment after infra create")
 
-	// output, err := executil.RunCommandWithShell(ctx, "dotnet", "user-secrets", "list", "--project", `C:\Users\hemarina\OneDrive - Microsoft\Documents\VSCode\azure-dev\cli\azd\test\samples\webapp\src\dotnet`)
-	// t.Log("!!!", output)
-	// require.NoError(t, err)
-
 	res, err := http.Get(url)
 	require.NoError(t, err)
 

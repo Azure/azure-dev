@@ -62,7 +62,7 @@ jobs:
             -e 'azd-test'
             -t '$(TemplateName)'
             -s '$(Build.BuildId)'
-            -l 'eastus'
+            -l 'centralus'
           workingDirectory: templates/tests
         displayName: Test templates
         env:
@@ -74,7 +74,7 @@ jobs:
             --query id
 
           if ($LASTEXITCODE) {
-            Write-Host "Could not get information for resource group: $(ResourceGroup)"
+            Write-Host "Could not get information for resource group: $(ResourceGroupName)"
             exit 0
           }
 

@@ -41,7 +41,7 @@ export async function activateInternal(vscodeCtx: vscode.ExtensionContext, loadS
 
         // Now do all actual activation tasks.
         ext.userAgent = `${ext.azureDevExtensionNamespace}/v${vscodeCtx.extension.packageJSON.version}`;
-        ext.experimentationSvc = await createExperimentationService(vscodeCtx, tas.TargetPopulation.Team);
+        ext.experimentationSvc = await createExperimentationService(vscodeCtx, undefined);
         ext.activitySvc = new ActivityStatisticsService(vscodeCtx.globalState);
         registerUIExtensionVariables(ext);
         registerCommands();

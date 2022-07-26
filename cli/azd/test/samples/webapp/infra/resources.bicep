@@ -27,11 +27,11 @@ resource appServicePlan 'Microsoft.Web/serverfarms@2021-03-01' = {
   name: '${name}plan'
   location: location
   sku: {
-    name: 'B1'    
+    name: 'B1'
   }
   properties: {
     reserved: true
-    zoneRedundant: false    
+    zoneRedundant: false
   }
 }
 

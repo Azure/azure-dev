@@ -183,7 +183,7 @@ stages:
       )
     jobs:
       - deployment: Publish_Release
-        environment: github
+        environment: azure-dev
         pool:
           name: azsdk-pool-mms-ubuntu-2004-general
           OSVmImage: MMSUbuntu20.04

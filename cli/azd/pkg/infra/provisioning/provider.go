@@ -7,6 +7,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 )
 
@@ -58,19 +59,19 @@ type Provider interface {
 	Name() string
 	RequiredExternalTools() []tools.ExternalTool
 	UpdatePlan(ctx context.Context, plan Plan) error
-	Plan(ctx context.Context) async.TaskWithProgress[*PlanResult, *PlanProgress]
-	Apply(ctx context.Context, plan *Plan, scope Scope) async.TaskWithProgress[*ApplyResult, *ApplyProgress]
-	Destroy(ctx context.Context, plan *Plan) async.TaskWithProgress[*DestroyResult, *DestroyProgress]
+	Plan(ctx context.Context) async.InteractiveTaskWithProgress[*PlanResult, *PlanProgress]
+	Apply(ctx context.Context, plan *Plan, scope Scope) async.InteractiveTaskWithProgress[*ApplyResult, *ApplyProgress]
+	Destroy(ctx context.Context, plan *Plan) async.InteractiveTaskWithProgress[*DestroyResult, *DestroyProgress]
 }
 
-func NewProvider(env *environment.Environment, projectPath string, options Options, azCli tools.AzCli) (Provider, error) {
+func NewProvider(env *environment.Environment, projectPath string, options Options, console input.Console, azCli tools.AzCli) (Provider, error) {
 	var provider Provider
 
 	switch options.Provider {
 	case Bicep:
-		provider = NewBicepProvider(env, projectPath, options, azCli)
+		provider = NewBicepProvider(env, projectPath, options, console, azCli)
 	default:
-		provider = NewBicepProvider(env, projectPath, options, azCli)
+		provider = NewBicepProvider(env, projectPath, options, console, azCli)
 	}
 
 	if provider != nil {

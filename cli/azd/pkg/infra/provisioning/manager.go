@@ -277,8 +277,8 @@ func (pm *Manager) ensureParameters(ctx context.Context, plan *Plan) (bool, erro
 }
 
 // Creates a new instance of the Provisioning Manager
-func NewManager(ctx context.Context, env environment.Environment, projectPath string, options Options, interactive bool, azCli tools.AzCli) (*Manager, error) {
-	infraProvider, err := NewProvider(&env, projectPath, options, azCli)
+func NewManager(ctx context.Context, env environment.Environment, projectPath string, options Options, interactive bool, azCli tools.AzCli, console input.Console) (*Manager, error) {
+	infraProvider, err := NewProvider(&env, projectPath, options, console, azCli)
 	if err != nil {
 		return nil, fmt.Errorf("error creating infra provider: %w", err)
 	}
@@ -288,11 +288,15 @@ func NewManager(ctx context.Context, env environment.Environment, projectPath st
 		return nil, err
 	}
 
+	if console == nil {
+		console = input.NewAskerConsole(interactive)
+	}
+
 	return &Manager{
 		azCli:       azCli,
 		env:         env,
 		provider:    infraProvider,
 		interactive: interactive,
-		console:     input.NewAskerConsole(interactive),
+		console:     console,
 	}, nil
 }

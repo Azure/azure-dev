@@ -46,6 +46,7 @@ type BicepProvider struct {
 	env         *environment.Environment
 	projectPath string
 	options     Options
+	console     input.Console
 	bicepCli    tools.BicepCli
 	azCli       tools.AzCli
 }
@@ -136,7 +137,7 @@ func (p *BicepProvider) Apply(ctx context.Context, plan *Plan, scope Scope) asyn
 
 				deploymentSlug := azure.SubscriptionDeploymentRID(p.env.GetSubscriptionId(), p.env.GetEnvName())
 				deploymentUrl := fmt.Sprintf("https://portal.azure.com/#blade/HubsExtension/DeploymentDetailsBlade/overview/id/%s\n\n", url.PathEscape(deploymentSlug))
-				asyncContext.Console.Message(ctx, fmt.Sprintf("Provisioning Azure resources can take some time.\n\nYou can view detailed progress in the Azure Portal:\n%s", deploymentUrl))
+				p.console.Message(ctx, fmt.Sprintf("Provisioning Azure resources can take some time.\n\nYou can view detailed progress in the Azure Portal:\n%s", deploymentUrl))
 
 				return nil
 			})
@@ -222,7 +223,7 @@ func (p *BicepProvider) Destroy(ctx context.Context, plan *Plan) async.Interacti
 			}
 
 			err = asyncContext.Interact(func() error {
-				confirmDestroy, err := asyncContext.Console.Confirm(ctx, input.ConsoleOptions{
+				confirmDestroy, err := p.console.Confirm(ctx, input.ConsoleOptions{
 					Message:      fmt.Sprintf("This will delete %d resources, are you sure you want to continue?", len(allResources)),
 					DefaultValue: false,
 				})
@@ -435,13 +436,14 @@ func (p *BicepProvider) modulePath() string {
 }
 
 // NewBicepProvider creates a new instance of a Bicep Infra provider
-func NewBicepProvider(env *environment.Environment, projectPath string, options Options, azCli tools.AzCli) Provider {
+func NewBicepProvider(env *environment.Environment, projectPath string, options Options, console input.Console, azCli tools.AzCli) Provider {
 	bicepCli := tools.NewBicepCli(azCli)
 
 	return &BicepProvider{
 		env:         env,
 		projectPath: projectPath,
 		options:     options,
+		console:     console,
 		bicepCli:    bicepCli,
 		azCli:       azCli,
 	}

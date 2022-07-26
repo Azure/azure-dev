@@ -34,25 +34,17 @@ func (s *Spinner) Title(title string) {
 // Console output after LogMessage("Step 1 completed."):
 // > Step 1 completed.
 // > Doing things... X
-func (s *Spinner) Println(message string) error {
+func (s *Spinner) Println(message string) {
 	if message != "" {
 		defer s.logMutex.Unlock()
 
 		s.logMutex.Lock()
-		err := s.spinner.Stop()
-		if err != nil {
-			return err
-		}
+		_ = s.spinner.Stop()
 
 		fmt.Fprintln(writer, message)
 
-		err = s.spinner.Start()
-		if err != nil {
-			return err
-		}
+		_ = s.spinner.Start()
 	}
-
-	return nil
 }
 
 // Run renders the spinner while runFn is executing,

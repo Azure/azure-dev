@@ -4,10 +4,8 @@ import (
 	"context"
 	"fmt"
 	"io/ioutil"
-	"log"
 	"net/url"
 	"os"
-	"sort"
 	"time"
 
 	"github.com/AlecAivazis/survey/v2"
@@ -16,6 +14,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/iac/bicep"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
+	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
@@ -209,7 +208,8 @@ func (ica *infraCreateAction) Run(ctx context.Context, cmd *cobra.Command, args 
 			close(deployResChan)
 		}()
 
-		loggedResources := map[string]bool{}
+		resourceManager := infra.NewAzureResourceManager(azCli)
+		progressDisplay := provisioning.NewProvisioningProgressDisplay(resourceManager, env.GetSubscriptionId(), env.GetEnvName())
 
 		for {
 			select {
@@ -221,7 +221,7 @@ func (ica *infraCreateAction) Run(ctx context.Context, cmd *cobra.Command, args 
 					continue
 				}
 				if interactive {
-					reportDeploymentStatusInteractive(ctx, azCli, env, spinner, loggedResources)
+					progressDisplay.ReportProgress(ctx, spinner.Title, spinner.Println)
 				} else {
 					reportDeploymentStatusJson(ctx, azCli, env, formatter, cmd)
 				}
@@ -277,73 +277,6 @@ func (ica *infraCreateAction) Run(ctx context.Context, cmd *cobra.Command, args 
 	}
 
 	return nil
-}
-
-func reportDeploymentStatusInteractive(ctx context.Context, azCli tools.AzCli, env environment.Environment, spinner *spin.Spinner, loggedResources map[string]bool) {
-	resourceManager := infra.NewAzureResourceManager(azCli)
-
-	operations, err := resourceManager.GetDeploymentResourceOperations(ctx, env.GetSubscriptionId(), env.GetEnvName())
-	if err != nil {
-		// Status display is best-effort activity.
-		return
-	}
-
-	succeededCount := 0
-	newlyDeployedResources := []*tools.AzCliResourceOperation{}
-
-	for i := range operations {
-		if operations[i].Properties.ProvisioningState == "Succeeded" {
-			succeededCount++
-
-			if !loggedResources[operations[i].Properties.TargetResource.Id] &&
-				infra.IsTopLevelResourceType(infra.AzureResourceType(operations[i].Properties.TargetResource.ResourceType)) {
-				newlyDeployedResources = append(newlyDeployedResources, &operations[i])
-			}
-		}
-	}
-
-	sort.Slice(newlyDeployedResources, func(i int, j int) bool {
-		return time.Time.Before(newlyDeployedResources[i].Properties.Timestamp, newlyDeployedResources[j].Properties.Timestamp)
-	})
-
-	for _, newResource := range newlyDeployedResources {
-		resourceTypeDisplayName, err := resourceManager.GetResourceTypeDisplayName(ctx, env.GetSubscriptionId(), newResource.Properties.TargetResource.Id, infra.AzureResourceType(newResource.Properties.TargetResource.ResourceType))
-
-		if err != nil {
-			// Dynamic resource type translation failed -- fallback to static translation
-			resourceTypeDisplayName = infra.GetResourceTypeDisplayName(infra.AzureResourceType(newResource.Properties.TargetResource.ResourceType))
-		}
-
-		resourceTypeName := newResource.Properties.TargetResource.ResourceType
-
-		// Don't log resource types for Azure resources that we do not have a translation of the resource type for.
-		// This will be improved on in a future iteration.
-		if resourceTypeDisplayName != "" {
-			spinner.Println(fmt.Sprintf(
-				"Created %s: %s",
-				resourceTypeDisplayName,
-				newResource.Properties.TargetResource.Id))
-			resourceTypeName = resourceTypeDisplayName
-		}
-
-		log.Printf(
-			"%s - Created %s: %s",
-			newResource.Properties.Timestamp.Local().Format("2006-01-02 15:04:05"),
-			resourceTypeName,
-			newResource.Properties.TargetResource.Id)
-
-		loggedResources[newResource.Id] = true
-	}
-
-	status := ""
-
-	if len(operations) > 0 {
-		status = fmt.Sprintf("Creating Azure resources (%d of ~%d completed)", succeededCount, len(operations))
-	} else {
-		status = "Creating Azure resources"
-	}
-
-	spinner.Title(status)
 }
 
 type progressReport struct {

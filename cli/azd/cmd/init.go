@@ -47,6 +47,8 @@ When a template is provided, the sample code is cloned to the current directory.
 type initAction struct {
 	template       templates.Template
 	templateBranch string
+	subscription   string
+	location       string
 	rootOptions    *commands.GlobalCommandOptions
 }
 
@@ -56,6 +58,8 @@ func (i *initAction) SetupFlags(
 ) {
 	local.StringVarP(&i.template.Name, "template", "t", "", "The template to use when you initialize the project. You can use Full URI, <owner>/<repository>, or <repository> if it's part of the azure-samples organization.")
 	local.StringVarP(&i.templateBranch, "branch", "b", "", "The template branch to initialize from.")
+	local.StringVar(&i.subscription, "subscription", "", "Name or ID of an Azure subscription to use for the new environment")
+	local.StringVarP(&i.location, "location", "l", "", "Azure location for the new environment")
 }
 
 func (i *initAction) Run(ctx context.Context, _ *cobra.Command, args []string, azdCtx *environment.AzdContext) error {
@@ -254,12 +258,17 @@ func (i *initAction) Run(ctx context.Context, _ *cobra.Command, args []string, a
 		}
 	}
 
-	_, err = createAndInitEnvironment(ctx, &i.rootOptions.EnvironmentName, azdCtx, askOne)
+	envSpec := environmentSpec{
+		environmentName: i.rootOptions.EnvironmentName,
+		subscription:    i.subscription,
+		location:        i.location,
+	}
+	_, err = createAndInitEnvironment(ctx, &envSpec, azdCtx, askOne)
 	if err != nil {
 		return fmt.Errorf("loading environment: %w", err)
 	}
 
-	if err := azdCtx.SetDefaultEnvironmentName(i.rootOptions.EnvironmentName); err != nil {
+	if err := azdCtx.SetDefaultEnvironmentName(envSpec.environmentName); err != nil {
 		return fmt.Errorf("saving default environment: %w", err)
 	}
 

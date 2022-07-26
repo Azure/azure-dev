@@ -7,7 +7,7 @@ import ext from '../ext';
 import { TelemetryId } from './telemetryId';
 
 const surveyRespondedKeyPrefix = `${ext.azureDevExtensionNamespace}/surveys/response`;
-const surveyFlightPrefix = `${ext.azureDevExtensionNamespace}/surveys/flights`;
+const surveyFlightPrefix = `azure-dev_`;
 const lastSurveySessionKey = `${ext.azureDevExtensionNamespace}/surveys/lastSession`;
 
 // A random value between 0 and jitterTime will be added to- or subtracted from the activation delay
@@ -44,6 +44,10 @@ export function scheduleSurveys(persistentStore: vscode.Memento, surveys: Survey
     }
 }
 
+export function getSurveyFlightName(s: Survey) {
+    return `${surveyFlightPrefix}${s.id}`;
+}
+
 async function executeSurvey(persistentStore: vscode.Memento, survey: Survey): Promise<void> {
     try {
         const shouldPrompt = await callWithTelemetryAndErrorHandling(TelemetryId.SurveyCheck, (context: IActionContext) => surveyCheck(persistentStore, context, survey));
@@ -62,7 +66,7 @@ async function surveyCheck(persistentStore: vscode.Memento, context: IActionCont
     const promptedDuringCurrentSession = persistentStore.get<string>(lastSurveySessionKey) === vscode.env.sessionId;
     const alreadyResponded = persistentStore.get<boolean>(`${surveyRespondedKeyPrefix}/${survey.id}`, false);
     const eligible = await survey.isEligible();
-    const flighted: boolean = await ext.experimentationSvc?.isCachedFlightEnabled(`${surveyFlightPrefix}/${survey.id}`) ?? false;
+    const flighted: boolean = await ext.experimentationSvc?.isCachedFlightEnabled(getSurveyFlightName(survey)) ?? false;
 
     context.telemetry.properties.promptedDuringCurrentSession = promptedDuringCurrentSession.toString();
     context.telemetry.properties.alreadyResponded = alreadyResponded.toString();

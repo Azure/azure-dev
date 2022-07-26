@@ -9,9 +9,9 @@ import { registerCommands } from './commands/registerCommands';
 import { DotEnvTaskProvider } from './tasks/dotEnvTaskProvider';
 import { TelemetryId } from './telemetry/telemetryId';
 import { scheduleSurveys } from './telemetry/surveyScheduler';
-import { SurveyOne } from './telemetry/surveyOne';
 import { ActivityStatisticsService } from './telemetry/activityStatisticsService';
 import { scheduleAzdInstalledCheck } from './utils/azureDevCli';
+import { activeSurveys } from './telemetry/activeSurveys';
 
 type LoadStats = {
     // Both are the values returned by Date.now()==milliseconds since Unix epoch.
@@ -41,12 +41,12 @@ export async function activateInternal(vscodeCtx: vscode.ExtensionContext, loadS
 
         // Now do all actual activation tasks.
         ext.userAgent = `${ext.azureDevExtensionNamespace}/v${vscodeCtx.extension.packageJSON.version}`;
-        ext.experimentationSvc = await createExperimentationService(vscodeCtx, tas.TargetPopulation.Team);
+        ext.experimentationSvc = await createExperimentationService(vscodeCtx, undefined);
         ext.activitySvc = new ActivityStatisticsService(vscodeCtx.globalState);
         registerUIExtensionVariables(ext);
         registerCommands();
         registerDisposable(vscode.tasks.registerTaskProvider('dotenv', new DotEnvTaskProvider()));
-        scheduleSurveys(vscodeCtx.globalState, [SurveyOne]);
+        scheduleSurveys(vscodeCtx.globalState, activeSurveys);
         scheduleAzdInstalledCheck();
     });
 }

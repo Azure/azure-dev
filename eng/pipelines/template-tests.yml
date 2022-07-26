@@ -50,17 +50,36 @@ jobs:
         displayName: Install azd
 
       - pwsh: |
-          Write-Host "##vso[task.setvariable variable=ResourceGroupName]azd-template-verification-$(Build.BuildId)"
+          $resourceGroupName = "azd-template-verification-$(Build.BuildId)"
+          Write-Host "Resource group name: $resourceGroupName"
+          Write-Host "##vso[task.setvariable variable=ResourceGroupName]$resourceGroupName"
 
       - task: Bash@3
         inputs:
           targetType: filePath
           filePath: templates/tests/test-templates.sh
-          arguments: -e 'azd-test' -t '$(TemplateName)'
+          arguments: >
+            -e 'azd-test'
+            -t '$(TemplateName)'
+            -s '$(Build.BuildId)'
+            -l 'eastus'
           workingDirectory: templates/tests
         displayName: Test templates
         env:
           AZURE_RESOURCE_GROUP: $(ResourceGroupName)
 
-      # - pwsh: |
-      #     az tag create --resource-id /subscriptions/subscription-id/
+      - pwsh: |
+          $resourceGroupId = az group show `
+            --resource-group '$(ResourceGroupName)' `
+            --query id
+
+          if ($LASTEXITCODE) {
+            Write-Host "Could not get information for resource group: $(ResourceGroup)"
+            exit 0
+          }
+
+          az tag create `
+            --resource-id $resourceGroupId `
+            --tags DeleteAfter="$(Get-Date -AsUTC).ToString('o')"
+        condition: always()
+        displayName: Tag resource group for deletion

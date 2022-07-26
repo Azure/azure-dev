@@ -14,7 +14,7 @@ func Test_Run(t *testing.T) {
 		var buf bytes.Buffer
 		title := "Spinning"
 		writer = io.Writer(&buf)
-		spinner := New(title)
+		spinner := NewSpinner(title)
 		hasRun := false
 
 		err := spinner.Run(func() error {
@@ -29,7 +29,7 @@ func Test_Run(t *testing.T) {
 		var buf bytes.Buffer
 		title := "Spinning"
 		writer = io.Writer(&buf)
-		spinner := New(title)
+		spinner := NewSpinner(title)
 		hasRun := false
 
 		err := spinner.Run(func() error {
@@ -46,9 +46,9 @@ func Test_Println(t *testing.T) {
 	writer = io.Writer(&buf)
 
 	title := "Spinning"
-	spinner := New(title)
+	spinner := NewSpinner(title)
 
-	_ = spinner.Start()
+	spinner.Start()
 
 	message := "First update"
 	spinner.Println(message)
@@ -58,5 +58,5 @@ func Test_Println(t *testing.T) {
 	spinner.Println(message)
 	assert.Contains(t, buf.String(), message)
 
-	_ = spinner.Stop()
+	spinner.Stop()
 }

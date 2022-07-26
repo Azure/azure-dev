@@ -234,10 +234,10 @@ func (ica *infraCreateAction) Run(ctx context.Context, cmd *cobra.Command, args 
 			"Provisioning Azure resources can take some time.\n\nYou can view detailed progress in the Azure Portal:\n%s",
 			deploymentURL)
 
-		spinner := spin.New("Creating Azure resources")
-		_ = spinner.Start()
+		spinner := spin.NewSpinner("Creating Azure resources")
+		spinner.Start()
 		err = deployAndReportProgress(spinner.Title)
-		_ = spinner.Stop()
+		spinner.Stop()
 
 		if err == nil {
 			fmt.Println("Created Azure resources")

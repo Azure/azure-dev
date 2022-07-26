@@ -165,8 +165,6 @@ func Test_CLI_InfraCreateAndDelete(t *testing.T) {
 }
 
 func Test_CLI_InfraCreateAndDeleteWebApp(t *testing.T) {
-	t.Skip("flakiness in app service preventing infrastructure creation")
-
 	ctx, cancel := newTestContext(t)
 	defer cancel()
 

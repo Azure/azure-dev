@@ -34,6 +34,22 @@ Both the PowerShell and Linux/MacOS scripts can be downloaded and executed local
 
 These scripts can be used, for example, to ensure a particular version of azd is installed in a CI/CD environment.
 
+### Download from daily builds 
+
+The `daily` feed is periodically updated with the latest azd builds. Use the `version` parameter to download the latest daily release.
+
+#### Windows
+
+```pwsh
+powershell -ex AllSigned -c "Invoke-RestMethod 'https://aka.ms/install-azd.ps1' -OutFile 'install-azd.ps1'; ./install-azd.ps1 -Version 'daily'"
+```
+
+#### Linux/MacOS
+
+```bash
+curl -fsSL https://aka.ms/install-azd.sh | bash -s -- --version daily
+```
+
 ### Download Windows installer (PowerShell)
 
 To download the script, use the same URL and send the output to a file.

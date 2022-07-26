@@ -45,41 +45,39 @@ func (mock *mockResourceManager) MarkComplete(i int) {
 }
 
 func TestReportProgress(t *testing.T) {
-	t.Run("operations", func(t *testing.T) {
-		mockResourceManager := mockResourceManager{}
-		progressDisplay := NewProvisioningProgressDisplay(&mockResourceManager, "", "")
-		logOutput := []string{}
-		progressTitle := ""
-		progressDisplay.reportProgress(&progressTitle, &logOutput)
-		assert.Empty(t, logOutput)
+	mockResourceManager := mockResourceManager{}
+	progressDisplay := NewProvisioningProgressDisplay(&mockResourceManager, "", "")
+	logOutput := []string{}
+	progressTitle := ""
+	progressDisplay.reportProgress(&progressTitle, &logOutput)
+	assert.Empty(t, logOutput)
 
-		mockResourceManager.AddInProgressOperation()
-		progressDisplay.reportProgress(&progressTitle, &logOutput)
-		assert.Empty(t, logOutput)
-		assert.Equal(t, formatProgressTitle(0, 1), progressTitle)
+	mockResourceManager.AddInProgressOperation()
+	progressDisplay.reportProgress(&progressTitle, &logOutput)
+	assert.Empty(t, logOutput)
+	assert.Equal(t, formatProgressTitle(0, 1), progressTitle)
 
-		mockResourceManager.AddInProgressOperation()
-		progressDisplay.reportProgress(&progressTitle, &logOutput)
-		assert.Empty(t, logOutput)
-		assert.Equal(t, formatProgressTitle(0, 2), progressTitle)
+	mockResourceManager.AddInProgressOperation()
+	progressDisplay.reportProgress(&progressTitle, &logOutput)
+	assert.Empty(t, logOutput)
+	assert.Equal(t, formatProgressTitle(0, 2), progressTitle)
 
-		mockResourceManager.MarkComplete(0)
-		progressDisplay.reportProgress(&progressTitle, &logOutput)
-		assertOperationLogged(t, 0, mockResourceManager.operations, logOutput)
-		assert.Equal(t, formatProgressTitle(1, 2), progressTitle)
+	mockResourceManager.MarkComplete(0)
+	progressDisplay.reportProgress(&progressTitle, &logOutput)
+	assertOperationLogged(t, 0, mockResourceManager.operations, logOutput)
+	assert.Equal(t, formatProgressTitle(1, 2), progressTitle)
 
-		mockResourceManager.MarkComplete(1)
-		progressDisplay.reportProgress(&progressTitle, &logOutput)
-		assertOperationLogged(t, 1, mockResourceManager.operations, logOutput)
-		assert.Equal(t, formatProgressTitle(2, 2), progressTitle)
+	mockResourceManager.MarkComplete(1)
+	progressDisplay.reportProgress(&progressTitle, &logOutput)
+	assertOperationLogged(t, 1, mockResourceManager.operations, logOutput)
+	assert.Equal(t, formatProgressTitle(2, 2), progressTitle)
 
-		// Verify display does not repeat logging for resources already logged.
-		oldLogOutput := make([]string, len(logOutput))
-		copy(logOutput, oldLogOutput)
-		progressDisplay.reportProgress(&progressTitle, &logOutput)
-		assert.Equal(t, oldLogOutput, logOutput)
-		assert.Equal(t, formatProgressTitle(2, 2), progressTitle)
-	})
+	// Verify display does not repeat logging for resources already logged.
+	oldLogOutput := make([]string, len(logOutput))
+	copy(logOutput, oldLogOutput)
+	progressDisplay.reportProgress(&progressTitle, &logOutput)
+	assert.Equal(t, oldLogOutput, logOutput)
+	assert.Equal(t, formatProgressTitle(2, 2), progressTitle)
 }
 
 func (display *ProvisioningProgressDisplay) reportProgress(captureTitle *string, captureLogOutput *[]string) {

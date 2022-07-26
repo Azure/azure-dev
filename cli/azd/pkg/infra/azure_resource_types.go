@@ -5,19 +5,20 @@ import "strings"
 type AzureResourceType string
 
 const (
-	AzureResourceTypeResourceGroup         AzureResourceType = "Microsoft.Resources/resourceGroups"
-	AzureResourceTypeDeployment            AzureResourceType = "Microsoft.Resources/deployments"
-	AzureResourceTypeStorageAccount        AzureResourceType = "Microsoft.Storage/storageAccounts"
-	AzureResourceTypeKeyVault              AzureResourceType = "Microsoft.KeyVault/vaults"
-	AzureResourceTypePortalDashboard       AzureResourceType = "Microsoft.Portal/dashboards"
-	AzureResourceTypeAppInsightComponent   AzureResourceType = "Microsoft.Insights/components"
-	AzureResourceTypeLogAnalyticsWorkspace AzureResourceType = "Microsoft.OperationalInsights/workspaces"
-	AzureResourceTypeWebSite               AzureResourceType = "Microsoft.Web/sites"
-	AzureResourceTypeStaticWebSite         AzureResourceType = "Microsoft.Web/staticSites"
-	AzureResourceTypeServicePlan           AzureResourceType = "Microsoft.Web/serverfarms"
-	AzureResourceTypeSqlDatabase           AzureResourceType = "Microsoft.Sql/servers"
-	AzureResourceTypeCosmosDb              AzureResourceType = "Microsoft.DocumentDB/databaseAccounts"
-	AzureResourceTypeContainerApp          AzureResourceType = "Microsoft.App/containerApps"
+	AzureResourceTypeResourceGroup           AzureResourceType = "Microsoft.Resources/resourceGroups"
+	AzureResourceTypeDeployment              AzureResourceType = "Microsoft.Resources/deployments"
+	AzureResourceTypeStorageAccount          AzureResourceType = "Microsoft.Storage/storageAccounts"
+	AzureResourceTypeKeyVault                AzureResourceType = "Microsoft.KeyVault/vaults"
+	AzureResourceTypePortalDashboard         AzureResourceType = "Microsoft.Portal/dashboards"
+	AzureResourceTypeAppInsightComponent     AzureResourceType = "Microsoft.Insights/components"
+	AzureResourceTypeLogAnalyticsWorkspace   AzureResourceType = "Microsoft.OperationalInsights/workspaces"
+	AzureResourceTypeWebSite                 AzureResourceType = "Microsoft.Web/sites"
+	AzureResourceTypeStaticWebSite           AzureResourceType = "Microsoft.Web/staticSites"
+	AzureResourceTypeServicePlan             AzureResourceType = "Microsoft.Web/serverfarms"
+	AzureResourceTypeSqlDatabase             AzureResourceType = "Microsoft.Sql/servers"
+	AzureResourceTypeCosmosDb                AzureResourceType = "Microsoft.DocumentDB/databaseAccounts"
+	AzureResourceTypeContainerApp            AzureResourceType = "Microsoft.App/containerApps"
+	AzureResourceTypeContainerAppEnvironment AzureResourceType = "Microsoft.App/managedEnvironments"
 )
 
 const resourceLevelSeparator = "/"
@@ -47,6 +48,8 @@ func GetResourceTypeDisplayName(resourceType AzureResourceType) string {
 		return "Static Web App"
 	case AzureResourceTypeContainerApp:
 		return "Container App"
+	case AzureResourceTypeContainerAppEnvironment:
+		return "Container Apps Environment"
 	case AzureResourceTypeServicePlan:
 		return "App Service plan"
 	case AzureResourceTypeCosmosDb:

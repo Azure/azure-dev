@@ -175,8 +175,8 @@ type AzCliResourceOperationProperties struct {
 	TargetResource        AzCliResourceOperationTargetResource `json:"targetResource"`
 	StatusCode            string                               `json:"statusCode"`
 	StatusMessage         AzCliDeploymentStatusMessage         `json:"statusMessage"`
-	// While the deployment is in progress, this timestamp effectively represents "InProgressTimestamp".
-	// When the deployment ends, this timestamp effectively represents "EndTimestamp".
+	// While the operation is in progress, this timestamp effectively represents "InProgressTimestamp".
+	// When the operation ends, this timestamp effectively represents "EndTimestamp".
 	Timestamp time.Time `json:"timestamp"`
 }
 

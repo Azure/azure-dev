@@ -2,6 +2,8 @@
     "go.testTimeout": "10m",
     "go.lintTool": "golangci-lint",
     "go.lintOnSave": "package",
-    "cSpell.import": ["cspell.yaml"]
+    "cSpell.import": [
+        "${workspaceFolder}/.vscode/cspell.yaml"
+    ]
 }
 

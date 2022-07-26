@@ -34,10 +34,10 @@ resource function 'Microsoft.Web/sites@2021-03-01' = {
     name: 'appsettings'
     // https://docs.microsoft.com/azure/azure-functions/functions-app-settings
     properties: {
-      'FUNCTIONS_EXTENSION_VERSION': '~3'
-      'FUNCTIONS_WORKER_RUNTIME': 'python'
-      'AzureWebJobsStorage': 'DefaultEndpointsProtocol=https;AccountName=${storage.name};EndpointSuffix=${environment().suffixes.storage};AccountKey=${storage.listKeys().keys[0].value}'
-      'SCM_DO_BUILD_DURING_DEPLOYMENT': 'true'
+      FUNCTIONS_EXTENSION_VERSION: '~3'
+      FUNCTIONS_WORKER_RUNTIME: 'python'
+      AzureWebJobsStorage: 'DefaultEndpointsProtocol=https;AccountName=${storage.name};EndpointSuffix=${environment().suffixes.storage};AccountKey=${storage.listKeys().keys[0].value}'
+      SCM_DO_BUILD_DURING_DEPLOYMENT: 'true'
     }
   }
 }

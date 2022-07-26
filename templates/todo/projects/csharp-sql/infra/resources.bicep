@@ -2,12 +2,12 @@ param location string
 param resourceToken string
 param tags object
 
+var abbrs = loadJsonContent('../../../../common/infra/abbreviations.json')
+
 resource web 'Microsoft.Web/sites@2021-03-01' = {
-  name: 'app-web-${resourceToken}'
+  name: '${abbrs.webSitesAppService}web-${resourceToken}'
   location: location
-  tags: union(tags, {
-      'azd-service-name': 'web'
-    })
+  tags: union(tags, { 'azd-service-name': 'web' })
   properties: {
     serverFarmId: appServicePlan.id
     siteConfig: {
@@ -20,8 +20,8 @@ resource web 'Microsoft.Web/sites@2021-03-01' = {
   resource appSettings 'config' = {
     name: 'appsettings'
     properties: {
-      'SCM_DO_BUILD_DURING_DEPLOYMENT': 'false'
-      'APPLICATIONINSIGHTS_CONNECTION_STRING': applicationInsightsResources.outputs.APPLICATIONINSIGHTS_CONNECTION_STRING
+      SCM_DO_BUILD_DURING_DEPLOYMENT: 'false'
+      APPLICATIONINSIGHTS_CONNECTION_STRING: applicationInsightsResources.outputs.APPLICATIONINSIGHTS_CONNECTION_STRING
     }
   }
 
@@ -51,11 +51,9 @@ resource web 'Microsoft.Web/sites@2021-03-01' = {
 }
 
 resource api 'Microsoft.Web/sites@2021-03-01' = {
-  name: 'app-api-${resourceToken}'
+  name: '${abbrs.webSitesAppService}api-${resourceToken}'
   location: location
-  tags: union(tags, {
-      'azd-service-name': 'api'
-    })
+  tags: union(tags, { 'azd-service-name': 'api' })
   kind: 'app,linux'
   properties: {
     serverFarmId: appServicePlan.id
@@ -73,8 +71,8 @@ resource api 'Microsoft.Web/sites@2021-03-01' = {
   resource appSettings 'config' = {
     name: 'appsettings'
     properties: {
-      'AZURE_SQL_CONNECTION_STRING': AZURE_SQL_CONNECTION_STRING
-      'APPLICATIONINSIGHTS_CONNECTION_STRING': applicationInsightsResources.outputs.APPLICATIONINSIGHTS_CONNECTION_STRING
+      AZURE_SQL_CONNECTION_STRING: AZURE_SQL_CONNECTION_STRING
+      APPLICATIONINSIGHTS_CONNECTION_STRING: applicationInsightsResources.outputs.APPLICATIONINSIGHTS_CONNECTION_STRING
     }
   }
 
@@ -104,7 +102,7 @@ resource api 'Microsoft.Web/sites@2021-03-01' = {
 }
 
 resource appServicePlan 'Microsoft.Web/serverfarms@2021-03-01' = {
-  name: 'plan-${resourceToken}'
+  name: '${abbrs.webServerFarms}${resourceToken}'
   location: location
   tags: tags
   sku: {
@@ -113,7 +111,7 @@ resource appServicePlan 'Microsoft.Web/serverfarms@2021-03-01' = {
 }
 
 resource logAnalyticsWorkspace 'Microsoft.OperationalInsights/workspaces@2020-03-01-preview' = {
-  name: 'log-${resourceToken}'
+  name: '${abbrs.operationalInsightsWorkspaces}${resourceToken}'
   location: location
   tags: tags
   properties: any({
@@ -127,8 +125,8 @@ resource logAnalyticsWorkspace 'Microsoft.OperationalInsights/workspaces@2020-03
   })
 }
 
-module applicationInsightsResources './applicationinsights.bicep' = {
-  name: 'applicationinsights-${resourceToken}'
+module applicationInsightsResources '../../../../common/infra/applicationinsights.bicep' = {
+  name: 'applicationinsights-resources'
   params: {
     resourceToken: resourceToken
     location: location
@@ -139,7 +137,7 @@ module applicationInsightsResources './applicationinsights.bicep' = {
 
 // 2021-11-01-preview because that is latest valid version
 resource sqlServer 'Microsoft.Sql/servers@2021-11-01-preview' = {
-  name: 'sql-${resourceToken}'
+  name: '${abbrs.sqlServers}${resourceToken}'
   location: location
   tags: tags
   properties: {

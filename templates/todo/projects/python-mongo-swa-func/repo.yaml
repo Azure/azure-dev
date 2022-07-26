@@ -11,6 +11,11 @@ repo:
     - name: azure-samples
       url: git@github.com:Azure-Samples/todo-python-mongo-swa-func.git
 
+  rewrite:
+    patterns:
+      - "**/azure.@(yml|yaml)"
+      - "**/*.bicep"
+      
   assets:
     # Common assets
 

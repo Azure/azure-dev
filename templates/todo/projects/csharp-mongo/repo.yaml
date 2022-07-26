@@ -10,6 +10,11 @@ repo:
   remotes:
     - name: azure-samples
       url: git@github.com:Azure-Samples/todo-csharp-mongo.git
+  
+  rewrite:
+    patterns:
+      - "**/azure.@(yml|yaml)"
+      - "**/*.bicep"
 
   assets:
     # Common assets

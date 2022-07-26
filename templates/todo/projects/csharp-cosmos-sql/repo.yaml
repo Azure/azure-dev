@@ -11,6 +11,11 @@ repo:
     - name: azure-samples
       url: git@github.com:Azure-Samples/todo-csharp-cosmos-sql.git
 
+  rewrite:
+    patterns:
+      - "**/azure.@(yml|yaml)"
+      - "**/*.bicep"
+      
   assets:
     # Common assets
 

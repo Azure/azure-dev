@@ -105,7 +105,7 @@
     "powerBIDedicatedCapacities": "pbi-",
     "purviewAccounts": "pview-",
     "recoveryServicesVaults": "rsv-",
-    "resourcesResourceGroups": "rg-",
+    "resourcesResourceGroups": "-rg",
     "searchSearchServices": "srch-",
     "serviceBusNamespaces": "sb-",
     "serviceBusNamespacesQueues": "sbq-",

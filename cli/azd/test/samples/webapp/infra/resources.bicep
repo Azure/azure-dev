@@ -18,7 +18,7 @@ resource web 'Microsoft.Web/sites@2021-03-01' = {
   resource appSettings 'config' = {
     name: 'appsettings'
     properties: {
-      'WEBSITE_RUN_FROM_PACKAGE': '1'
+      WEBSITE_RUN_FROM_PACKAGE: '1'
     }
   }
 }

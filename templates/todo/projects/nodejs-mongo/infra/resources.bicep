@@ -8,9 +8,7 @@ var abbrs = loadJsonContent('../../../../common/infra/abbreviations.json')
 resource web 'Microsoft.Web/sites@2021-03-01' = {
   name: '${abbrs.webSitesAppService}web-${resourceToken}'
   location: location
-  tags: union(tags, {
-      'azd-service-name': 'web'
-    })
+  tags: union(tags, { 'azd-service-name': 'web' })
   kind: 'app,linux'
   properties: {
     serverFarmId: appServicePlan.id
@@ -26,8 +24,8 @@ resource web 'Microsoft.Web/sites@2021-03-01' = {
   resource appSettings 'config' = {
     name: 'appsettings'
     properties: {
-      'SCM_DO_BUILD_DURING_DEPLOYMENT': 'false'
-      'APPLICATIONINSIGHTS_CONNECTION_STRING': applicationInsightsResources.outputs.APPLICATIONINSIGHTS_CONNECTION_STRING
+      SCM_DO_BUILD_DURING_DEPLOYMENT: 'false'
+      APPLICATIONINSIGHTS_CONNECTION_STRING: applicationInsightsResources.outputs.APPLICATIONINSIGHTS_CONNECTION_STRING
     }
   }
 
@@ -59,9 +57,7 @@ resource web 'Microsoft.Web/sites@2021-03-01' = {
 resource api 'Microsoft.Web/sites@2021-03-01' = {
   name: '${abbrs.webSitesAppService}api-${resourceToken}'
   location: location
-  tags: union(tags, {
-      'azd-service-name': 'api'
-    })
+  tags: union(tags, { 'azd-service-name': 'api' })
   kind: 'app,linux'
   properties: {
     serverFarmId: appServicePlan.id
@@ -80,11 +76,11 @@ resource api 'Microsoft.Web/sites@2021-03-01' = {
   resource appSettings 'config' = {
     name: 'appsettings'
     properties: {
-      'AZURE_COSMOS_CONNECTION_STRING_KEY': 'AZURE-COSMOS-CONNECTION-STRING'
-      'AZURE_COSMOS_DATABASE_NAME': cosmos::database.name
-      'SCM_DO_BUILD_DURING_DEPLOYMENT': 'true'
-      'AZURE_KEY_VAULT_ENDPOINT': keyVault.properties.vaultUri
-      'APPLICATIONINSIGHTS_CONNECTION_STRING': applicationInsightsResources.outputs.APPLICATIONINSIGHTS_CONNECTION_STRING
+      AZURE_COSMOS_CONNECTION_STRING_KEY: 'AZURE-COSMOS-CONNECTION-STRING'
+      AZURE_COSMOS_DATABASE_NAME: cosmos::database.name
+      SCM_DO_BUILD_DURING_DEPLOYMENT: 'true'
+      AZURE_KEY_VAULT_ENDPOINT: keyVault.properties.vaultUri
+      APPLICATIONINSIGHTS_CONNECTION_STRING: applicationInsightsResources.outputs.APPLICATIONINSIGHTS_CONNECTION_STRING
     }
   }
 
@@ -183,8 +179,8 @@ resource logAnalyticsWorkspace 'Microsoft.OperationalInsights/workspaces@2020-03
   })
 }
 
-module applicationInsightsResources './applicationinsights.bicep' = {
-  name: 'applicationinsights-${resourceToken}'
+module applicationInsightsResources '../../../../common/infra/applicationinsights.bicep' = {
+  name: 'applicationinsights-resources'
   params: {
     resourceToken: resourceToken
     location: location

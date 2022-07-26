@@ -36,7 +36,7 @@ These scripts can be used, for example, to ensure a particular version of azd is
 
 ### Download from daily builds 
 
-The `daily` feed is periodically updated with the latest azd builds. Use the `version` parameter to download the latest daily release.
+The `daily` feed is periodically updated with builds from the latest source code in the `main` branch. Use the `version` parameter to download the latest daily release.
 
 #### Windows
 

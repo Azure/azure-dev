@@ -39,11 +39,10 @@ func (s *Spinner) Println(message string) {
 		defer s.logMutex.Unlock()
 
 		s.logMutex.Lock()
-		_ = s.spinner.Stop()
 
+		s.spinner.Stop()
 		fmt.Fprintln(writer, message)
-
-		_ = s.spinner.Start()
+		s.spinner.Start()
 	}
 }
 
@@ -51,30 +50,29 @@ func (s *Spinner) Println(message string) {
 // returning the error from executing runFn.
 // The spinner message is erased when the spinner is stopped.
 func (s *Spinner) Run(runFn func() error) error {
-	err := s.spinner.Start()
-	if err != nil {
-		return fmt.Errorf("starting spinner: %w", err)
-	}
-
-	// Can only error if the spinner is already stopped.
-	// nolint:errcheck
-	defer s.spinner.Stop()
+	s.Start()
+	defer s.Stop()
 
 	return runFn()
 }
 
-// Starts the spinner. Only possible error is if the spinner is already running.
-func (s *Spinner) Start() error {
-	return s.spinner.Start()
+// Starts the spinner.
+func (s *Spinner) Start() {
+	// Only possible error is if the spinner is already running.
+	// We ignore the error since the error indicates the spinner is running,
+	// which simply reasserts the state of the spinner.
+	_ = s.spinner.Start()
 }
 
-// Stops the spinner. Only possible error is if the spinner is already stopped.
-// The spinning message is erased when the spinner is stopped.
-func (s *Spinner) Stop() error {
-	return s.spinner.Stop()
+// Stops the spinner. The spinning message is erased when the spinner is stopped.
+func (s *Spinner) Stop() {
+	// Only possible error is if the spinner is already stopped.
+	// We ignore the error since the error indicates the spinner is stopped,
+	// which simply reasserts the state of the spinner.
+	_ = s.spinner.Stop()
 }
 
-func New(title string) *Spinner {
+func NewSpinner(title string) *Spinner {
 	config := yacspin.Config{
 		Frequency:    time.Millisecond * 500,
 		CharSet:      yacspin.CharSets[9],

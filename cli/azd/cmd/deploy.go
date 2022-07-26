@@ -152,10 +152,10 @@ func (d *deployAction) Run(ctx context.Context, cmd *cobra.Command, args []strin
 		if interactive {
 			deployMsg := fmt.Sprintf("Deploying service %s", svc.Config.Name)
 			fmt.Println(deployMsg)
-			spinner := spin.New(deployMsg)
-			_ = spinner.Start()
+			spinner := spin.NewSpinner(deployMsg)
+			spinner.Start()
 			err := deployAndReportProgress(spinner.Title)
-			_ = spinner.Stop()
+			spinner.Stop()
 
 			if err == nil {
 				reportServiceDeploymentResultInteractive(svc, &svcDeploymentResult)

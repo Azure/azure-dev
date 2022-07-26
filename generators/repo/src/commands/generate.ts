@@ -394,7 +394,7 @@ export class GenerateCommand implements RepomanCommand {
                 if (this.options.debug) {
                     console.debug(chalk.white(`- Processing ${rule.from} => ${rule.to}`));
                 }
-                contents = contents.replace(rule.from, rule.to);
+                contents = contents.replaceAll(rule.from, rule.to);
             }
 
             // Normalize transformed paths
@@ -408,7 +408,7 @@ export class GenerateCommand implements RepomanCommand {
                     // Finally convert the path back to a POSIX compatible path
                     relativePath = relativePath.split(path.sep).join(path.posix.sep)
 
-                    contents = contents.replace(match, relativePath);
+                    contents = contents.replaceAll(match, relativePath);
 
                     if (this.options.debug) {
                         console.log(chalk.grey(` -> Rewriting relative path ${match} => ${relativePath}`));

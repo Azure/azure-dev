@@ -208,8 +208,7 @@ func (ica *infraCreateAction) Run(ctx context.Context, cmd *cobra.Command, args 
 			close(deployResChan)
 		}()
 
-		resourceManager := infra.NewAzureResourceManager(azCli)
-		progressDisplay := provisioning.NewProvisioningProgressDisplay(resourceManager, env.GetSubscriptionId(), env.GetEnvName())
+		progressDisplay := provisioning.NewProvisioningProgressDisplay(infra.NewAzureResourceManager(azCli), env.GetSubscriptionId(), env.GetEnvName())
 
 		for {
 			select {

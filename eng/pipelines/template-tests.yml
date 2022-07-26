@@ -50,7 +50,8 @@ jobs:
         displayName: Install azd
 
       - pwsh: |
-          $resourceGroupName = "azd-template-verification-$(Build.BuildId)"
+          $templateName = '$(TemplateName)'.Substring(14)
+          $resourceGroupName = "azd-template-test-$templateName-$(Build.BuildId)"
           Write-Host "Resource group name: $resourceGroupName"
           Write-Host "##vso[task.setvariable variable=ResourceGroupName]$resourceGroupName"
 
@@ -59,15 +60,13 @@ jobs:
           targetType: filePath
           filePath: templates/tests/test-templates.sh
           arguments: >
-            -e 'azd-test'
+            -e 'azd-template-test'
             -t '$(TemplateName)'
             -s '$(Build.BuildId)'
             -l 'centralus'
             -p 'list'
           workingDirectory: templates/tests
         displayName: Test templates
-        env:
-          AZURE_RESOURCE_GROUP: $(ResourceGroupName)
 
       - pwsh: |
           $resourceGroupId = az group show `

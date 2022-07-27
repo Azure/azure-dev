@@ -53,7 +53,6 @@ func (dp *dotnetProject) Initialize(ctx context.Context) error {
 		return err
 	}
 
-	fmt.Println("!!!!!", dp.config.Path())
 	if err := dp.dotnetCli.InitializeSecret(ctx, dp.config.Path()); err != nil {
 		return err
 	}

@@ -71,6 +71,6 @@ func IsTopLevelResourceType(resourceType AzureResourceType) bool {
 		return false
 	}
 
-	secondIndex := strings.Index(resType[firstIndex+1:], resourceLevelSeparator)
-	return secondIndex == -1
+	// Should not contain second separator
+	return !strings.Contains(resType[firstIndex+1:], resourceLevelSeparator)
 }

@@ -67,6 +67,7 @@ ignoreWords:
     - Wans
     - apim
     - Retryable
+    - httptrigger
 useGitignore: true
 dictionaryDefinitions:
     - name: gitHubUserAliases

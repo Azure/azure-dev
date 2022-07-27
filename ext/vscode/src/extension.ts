@@ -30,7 +30,8 @@ export async function activateInternal(vscodeCtx: vscode.ExtensionContext, loadS
     // The following is necessary for telemetry to work, so do this before callWithTelemetryAndErrorHandling()
     ext.context = vscodeCtx;
     ext.ignoreBundle = false;
-    ext.outputChannel = registerDisposable(createAzExtOutputChannel('Azure Developer', 'az dev'));
+    ext.outputChannel = registerDisposable(createAzExtOutputChannel('Azure Developer', "azure-dev"));
+    registerUIExtensionVariables(ext);
     
     await callWithTelemetryAndErrorHandling(TelemetryId.Activation, async (activationCtx: IActionContext) => {
         activationCtx.errorHandling.rethrow = true;
@@ -42,7 +43,6 @@ export async function activateInternal(vscodeCtx: vscode.ExtensionContext, loadS
         ext.userAgent = `${ext.azureDevExtensionNamespace}/v${vscodeCtx.extension.packageJSON.version}`;
         ext.experimentationSvc = await createExperimentationService(vscodeCtx, undefined);
         ext.activitySvc = new ActivityStatisticsService(vscodeCtx.globalState);
-        registerUIExtensionVariables(ext);
         registerCommands();
         registerDisposable(vscode.tasks.registerTaskProvider('dotenv', new DotEnvTaskProvider()));
         scheduleSurveys(vscodeCtx.globalState, activeSurveys);

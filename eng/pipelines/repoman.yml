@@ -64,7 +64,7 @@ jobs:
           echo "------------------ENV    --------------------------"
           env
           echo "---------------------------------------------------"
-          echo $(gh api /repos/kaizentm/sandbox/commits/$(BUILD_SOURCEVERSION)/pulls | jq -r '.[].number')
+          echo $(gh api /repos/kaizentm/sandbox/commits/'$(BUILD_SOURCEVERSION)'/pulls | jq -r '.[].number')
           echo "---------------------------------------------------"
         displayName: Set PRNumber
 

@@ -2,7 +2,6 @@
 // Licensed under the MIT License.
 
 import * as vscode from 'vscode';
-import * as tas from 'vscode-tas-client';
 import { registerUIExtensionVariables, createAzExtOutputChannel, callWithTelemetryAndErrorHandling, IActionContext, createExperimentationService } from '@microsoft/vscode-azext-utils';
 import ext from './ext';
 import { registerCommands } from './commands/registerCommands';

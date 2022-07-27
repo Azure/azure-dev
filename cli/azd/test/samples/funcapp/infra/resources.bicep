@@ -2,7 +2,7 @@ param location string
 param resourceToken string
 param tags object
 
-resource function 'Microsoft.Web/sites@2021-03-01' = {
+resource function 'Microsoft.Web/sites@2022-03-01' = {
   name: 'func-${resourceToken}'
   location: location
   kind: 'functionapp,linux'
@@ -53,7 +53,7 @@ resource storage 'Microsoft.Storage/storageAccounts@2021-09-01' = {
   kind: 'Storage'
 }
 
-resource appServicePlan 'Microsoft.Web/serverfarms@2021-03-01' = {
+resource appServicePlan 'Microsoft.Web/serverfarms@2022-03-01' = {
   // https://docs.microsoft.com/azure/templates/microsoft.web/2020-06-01/serverfarms?tabs=bicep
   name: 'plan-${resourceToken}'
   location: location

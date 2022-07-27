@@ -2,7 +2,7 @@ param location string
 param resourceToken string
 param tags object
 
-resource web 'Microsoft.Web/sites@2021-03-01' = {
+resource web 'Microsoft.Web/sites@2022-03-01' = {
   name: 'app-${resourceToken}'
   location: location
   tags: union(tags, { 'azd-service-name': 'web' })
@@ -25,7 +25,7 @@ resource web 'Microsoft.Web/sites@2021-03-01' = {
   }
 }
 
-resource appServicePlan 'Microsoft.Web/serverfarms@2021-03-01' = {
+resource appServicePlan 'Microsoft.Web/serverfarms@2022-03-01' = {
   name: 'plan-${resourceToken}'
   location: location
   tags: tags

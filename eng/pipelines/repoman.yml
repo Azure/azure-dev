@@ -59,6 +59,11 @@ jobs:
             $PRNumber = "$($env:PRNUMBEROVERRIDE)"
           }
           Write-Host "##vso[task.setvariable variable=PRNumber]$PRNumber"
+          echo " --------------------------------------------------"
+          echo $PRNumber
+          echo "------------------ENV    --------------------------"
+          env
+          echo "---------------------------------------------------"
         displayName: Set PRNumber
 
       - pwsh: |

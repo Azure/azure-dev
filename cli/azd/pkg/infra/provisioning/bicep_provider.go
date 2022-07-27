@@ -38,29 +38,29 @@ type BicepOutputParameter struct {
 	Value interface{} `json:"value"`
 }
 
-// BicepInfraProvider exposes infrastructure provisioning using Azure Bicep templates
-type BicepInfraProvider struct {
+// BicepProvider exposes infrastructure provisioning using Azure Bicep templates
+type BicepProvider struct {
 	env         *environment.Environment
 	projectPath string
-	options     InfrastructureOptions
+	options     Options
 	bicepCli    tools.BicepCli
 	azCli       tools.AzCli
 }
 
 // Name gets the name of the infra provider
-func (p *BicepInfraProvider) Name() string {
+func (p *BicepProvider) Name() string {
 	return "Bicep"
 }
 
-func (p *BicepInfraProvider) RequiredExternalTools() []tools.ExternalTool {
+func (p *BicepProvider) RequiredExternalTools() []tools.ExternalTool {
 	return []tools.ExternalTool{p.bicepCli, p.azCli}
 }
 
 // Plans the infrastructure provisioning
-func (p *BicepInfraProvider) Plan(ctx context.Context) async.AsyncTaskWithProgress[*ProvisionPlanResult, *ProvisionPlanProgress] {
+func (p *BicepProvider) Plan(ctx context.Context) async.TaskWithProgress[*PlanResult, *PlanProgress] {
 	return *async.RunTaskWithProgress(
-		func(asyncContext *async.AsyncTaskContextWithProgress[*ProvisionPlanResult, *ProvisionPlanProgress]) {
-			asyncContext.SetProgress(&ProvisionPlanProgress{Message: "Generating Bicep parameters file", Timestamp: time.Now()})
+		func(asyncContext *async.TaskContextWithProgress[*PlanResult, *PlanProgress]) {
+			asyncContext.SetProgress(&PlanProgress{Message: "Generating Bicep parameters file", Timestamp: time.Now()})
 			bicepTemplate, err := p.createParametersFile()
 			if err != nil {
 				asyncContext.SetError(fmt.Errorf("creating parameters file: %w", err))
@@ -68,7 +68,7 @@ func (p *BicepInfraProvider) Plan(ctx context.Context) async.AsyncTaskWithProgre
 			}
 
 			modulePath := p.modulePath()
-			asyncContext.SetProgress(&ProvisionPlanProgress{Message: "Compiling Bicep template", Timestamp: time.Now()})
+			asyncContext.SetProgress(&PlanProgress{Message: "Compiling Bicep template", Timestamp: time.Now()})
 			template, err := p.createPlan(ctx, modulePath)
 			if err != nil {
 				asyncContext.SetError(fmt.Errorf("creating template: %w", err))
@@ -83,7 +83,7 @@ func (p *BicepInfraProvider) Plan(ctx context.Context) async.AsyncTaskWithProgre
 				}
 			}
 
-			result := ProvisionPlanResult{
+			result := PlanResult{
 				Plan: *template,
 			}
 
@@ -91,7 +91,7 @@ func (p *BicepInfraProvider) Plan(ctx context.Context) async.AsyncTaskWithProgre
 		})
 }
 
-func (p *BicepInfraProvider) UpdatePlan(ctx context.Context, plan ProvisioningPlan) error {
+func (p *BicepProvider) UpdatePlan(ctx context.Context, plan Plan) error {
 	bicepFile := BicepTemplate{
 		Schema:         "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
 		ContentVersion: "1.0.0.0",
@@ -124,9 +124,9 @@ func (p *BicepInfraProvider) UpdatePlan(ctx context.Context, plan ProvisioningPl
 }
 
 // Provisioning the infrastructure within the specified template
-func (p *BicepInfraProvider) Apply(ctx context.Context, plan *ProvisioningPlan, scope ProvisioningScope) async.AsyncTaskWithProgress[*ProvisionApplyResult, *ProvisionApplyProgress] {
+func (p *BicepProvider) Apply(ctx context.Context, plan *Plan, scope Scope) async.TaskWithProgress[*ApplyResult, *ApplyProgress] {
 	return *async.RunTaskWithProgress(
-		func(asyncContext *async.AsyncTaskContextWithProgress[*ProvisionApplyResult, *ProvisionApplyProgress]) {
+		func(asyncContext *async.TaskContextWithProgress[*ApplyResult, *ApplyProgress]) {
 			isDeploymentComplete := false
 
 			// Start the deployment
@@ -134,7 +134,7 @@ func (p *BicepInfraProvider) Apply(ctx context.Context, plan *ProvisioningPlan, 
 				modulePath := p.modulePath()
 				parametersFilePath := p.parametersFilePath()
 				deployResult, err := p.applyModule(ctx, scope, modulePath, parametersFilePath)
-				var outputs map[string]ProvisioningPlanOutputParameter
+				var outputs map[string]PlanOutputParameter
 
 				if err != nil {
 					asyncContext.SetError(err)
@@ -146,7 +146,7 @@ func (p *BicepInfraProvider) Apply(ctx context.Context, plan *ProvisioningPlan, 
 					outputs = p.createOutputParameters(plan, deployResult.Properties.Outputs)
 				}
 
-				result := &ProvisionApplyResult{
+				result := &ApplyResult{
 					Operations: nil,
 					Outputs:    outputs,
 				}
@@ -169,7 +169,7 @@ func (p *BicepInfraProvider) Apply(ctx context.Context, plan *ProvisioningPlan, 
 						continue
 					}
 
-					progressReport := ProvisionApplyProgress{
+					progressReport := ApplyProgress{
 						Timestamp:  time.Now(),
 						Operations: *ops,
 					}
@@ -180,12 +180,12 @@ func (p *BicepInfraProvider) Apply(ctx context.Context, plan *ProvisioningPlan, 
 		})
 }
 
-func (p *BicepInfraProvider) Destroy(ctx context.Context, plan *ProvisioningPlan) async.AsyncTaskWithProgress[*ProvisionDestroyResult, *ProvisionDestroyProgress] {
+func (p *BicepProvider) Destroy(ctx context.Context, plan *Plan) async.TaskWithProgress[*DestroyResult, *DestroyProgress] {
 	return *async.RunTaskWithProgress(
-		func(asyncContext *async.AsyncTaskContextWithProgress[*ProvisionDestroyResult, *ProvisionDestroyProgress]) {
-			destroyResult := ProvisionDestroyResult{}
+		func(asyncContext *async.TaskContextWithProgress[*DestroyResult, *DestroyProgress]) {
+			destroyResult := DestroyResult{}
 
-			asyncContext.SetProgress(&ProvisionDestroyProgress{Message: "Fetching resource groups", Timestamp: time.Now()})
+			asyncContext.SetProgress(&DestroyProgress{Message: "Fetching resource groups", Timestamp: time.Now()})
 			resourceManager := infra.NewAzureResourceManager(p.azCli)
 			resourceGroups, err := resourceManager.GetResourceGroupsForDeployment(ctx, p.env.GetSubscriptionId(), p.env.GetEnvName())
 			if err != nil {
@@ -194,7 +194,7 @@ func (p *BicepInfraProvider) Destroy(ctx context.Context, plan *ProvisioningPlan
 
 			var allResources []tools.AzCliResource
 
-			asyncContext.SetProgress(&ProvisionDestroyProgress{Message: "Fetching resources", Timestamp: time.Now()})
+			asyncContext.SetProgress(&DestroyProgress{Message: "Fetching resources", Timestamp: time.Now()})
 			for _, resourceGroup := range resourceGroups {
 				resources, err := p.azCli.ListResourceGroupResources(ctx, p.env.GetSubscriptionId(), resourceGroup)
 				if err != nil {
@@ -206,14 +206,14 @@ func (p *BicepInfraProvider) Destroy(ctx context.Context, plan *ProvisioningPlan
 
 			for _, resourceGroup := range resourceGroups {
 				message := fmt.Sprintf("Deleting resource group '%s'", resourceGroup)
-				asyncContext.SetProgress(&ProvisionDestroyProgress{Message: message, Timestamp: time.Now()})
+				asyncContext.SetProgress(&DestroyProgress{Message: message, Timestamp: time.Now()})
 
 				if err := p.azCli.DeleteResourceGroup(ctx, p.env.GetSubscriptionId(), resourceGroup); err != nil {
 					asyncContext.SetError(fmt.Errorf("deleting resource group %s: %w", resourceGroup, err))
 				}
 			}
 
-			asyncContext.SetProgress(&ProvisionDestroyProgress{Message: "Deleting deployment", Timestamp: time.Now()})
+			asyncContext.SetProgress(&DestroyProgress{Message: "Deleting deployment", Timestamp: time.Now()})
 			if err := p.azCli.DeleteSubscriptionDeployment(ctx, p.env.GetSubscriptionId(), p.env.GetEnvName()); err != nil {
 				asyncContext.SetError(fmt.Errorf("deleting subscription deployment: %w", err))
 			}
@@ -223,14 +223,14 @@ func (p *BicepInfraProvider) Destroy(ctx context.Context, plan *ProvisioningPlan
 		})
 }
 
-func (p *BicepInfraProvider) createOutputParameters(template *ProvisioningPlan, azureOutputParams map[string]tools.AzCliDeploymentOutput) map[string]ProvisioningPlanOutputParameter {
+func (p *BicepProvider) createOutputParameters(template *Plan, azureOutputParams map[string]tools.AzCliDeploymentOutput) map[string]PlanOutputParameter {
 	canonicalOutputCasings := make(map[string]string, len(template.Outputs))
 
 	for key := range template.Outputs {
 		canonicalOutputCasings[strings.ToLower(key)] = key
 	}
 
-	outputParams := make(map[string]ProvisioningPlanOutputParameter, len(azureOutputParams))
+	outputParams := make(map[string]PlanOutputParameter, len(azureOutputParams))
 
 	for key, azureParam := range azureOutputParams {
 		var paramName string
@@ -241,7 +241,7 @@ func (p *BicepInfraProvider) createOutputParameters(template *ProvisioningPlan, 
 			paramName = key
 		}
 
-		outputParams[paramName] = ProvisioningPlanOutputParameter{
+		outputParams[paramName] = PlanOutputParameter{
 			Type:  azureParam.Type,
 			Value: azureParam.Value,
 		}
@@ -251,7 +251,7 @@ func (p *BicepInfraProvider) createOutputParameters(template *ProvisioningPlan, 
 }
 
 // Copies the Bicep parameters file from the project template into the .azure environment folder
-func (p *BicepInfraProvider) createParametersFile() (*BicepTemplate, error) {
+func (p *BicepProvider) createParametersFile() (*BicepTemplate, error) {
 	// Copy the parameter template file to the environment working directory and do substitutions.
 	parametersTemplateFilePath := p.parametersTemplateFilePath()
 	log.Printf("Reading parameters template file from: %s", parametersTemplateFilePath)
@@ -291,7 +291,7 @@ func (p *BicepInfraProvider) createParametersFile() (*BicepTemplate, error) {
 }
 
 // Creates the compiled template from the specified module path
-func (p *BicepInfraProvider) createPlan(ctx context.Context, modulePath string) (*ProvisioningPlan, error) {
+func (p *BicepProvider) createPlan(ctx context.Context, modulePath string) (*Plan, error) {
 	// Compile the bicep file into an ARM template we can create.
 	compiled, err := p.bicepCli.Build(ctx, modulePath)
 	if err != nil {
@@ -315,13 +315,13 @@ func (p *BicepInfraProvider) createPlan(ctx context.Context, modulePath string) 
 }
 
 // Converts a Bicep parameters file to a generic provisioning template
-func (p *BicepInfraProvider) convertToPlan(bicepTemplate BicepTemplate) (*ProvisioningPlan, error) {
-	template := ProvisioningPlan{}
-	parameters := make(map[string]ProvisioningPlanInputParameter)
-	outputs := make(map[string]ProvisioningPlanOutputParameter)
+func (p *BicepProvider) convertToPlan(bicepTemplate BicepTemplate) (*Plan, error) {
+	template := Plan{}
+	parameters := make(map[string]PlanInputParameter)
+	outputs := make(map[string]PlanOutputParameter)
 
 	for key, param := range bicepTemplate.Parameters {
-		parameters[key] = ProvisioningPlanInputParameter{
+		parameters[key] = PlanInputParameter{
 			Type:         param.Type,
 			Value:        param.Value,
 			DefaultValue: param.DefaultValue,
@@ -329,7 +329,7 @@ func (p *BicepInfraProvider) convertToPlan(bicepTemplate BicepTemplate) (*Provis
 	}
 
 	for key, param := range bicepTemplate.Outputs {
-		outputs[key] = ProvisioningPlanOutputParameter{
+		outputs[key] = PlanOutputParameter{
 			Type:  param.Type,
 			Value: param.Value,
 		}
@@ -342,7 +342,7 @@ func (p *BicepInfraProvider) convertToPlan(bicepTemplate BicepTemplate) (*Provis
 }
 
 // Deploys the specified Bicep module and parameters with the selected provisioning scope (subscription vs resource group)
-func (p *BicepInfraProvider) applyModule(ctx context.Context, scope ProvisioningScope, bicepPath string, parametersPath string) (*tools.AzCliDeployment, error) {
+func (p *BicepProvider) applyModule(ctx context.Context, scope Scope, bicepPath string, parametersPath string) (*tools.AzCliDeployment, error) {
 	// We've seen issues where `Deploy` completes but for a short while after, fetching the deployment fails with a `DeploymentNotFound` error.
 	// Since other commands of ours use the deployment, let's try to fetch it here and if we fail with `DeploymentNotFound`,
 	// ignore this error, wait a short while and retry.
@@ -369,7 +369,7 @@ func (p *BicepInfraProvider) applyModule(ctx context.Context, scope Provisioning
 }
 
 // Gets the path to the project parameters file path
-func (p *BicepInfraProvider) parametersTemplateFilePath() string {
+func (p *BicepProvider) parametersTemplateFilePath() string {
 	infraPath := p.options.Path
 	if strings.TrimSpace(infraPath) == "" {
 		infraPath = "infra"
@@ -380,13 +380,13 @@ func (p *BicepInfraProvider) parametersTemplateFilePath() string {
 }
 
 // Gets the path to the staging .azure parameters file path
-func (p *BicepInfraProvider) parametersFilePath() string {
+func (p *BicepProvider) parametersFilePath() string {
 	parametersFilename := fmt.Sprintf("%s.parameters.json", p.options.Module)
 	return filepath.Join(p.projectPath, ".azure", p.env.GetEnvName(), p.options.Path, parametersFilename)
 }
 
 // Gets the folder path to the specified module
-func (p *BicepInfraProvider) modulePath() string {
+func (p *BicepProvider) modulePath() string {
 	infraPath := p.options.Path
 	if strings.TrimSpace(infraPath) == "" {
 		infraPath = "infra"
@@ -396,11 +396,11 @@ func (p *BicepInfraProvider) modulePath() string {
 	return filepath.Join(p.projectPath, infraPath, moduleFilename)
 }
 
-// NewBicepInfraProvider creates a new instance of a Bicep Infra provider
-func NewBicepInfraProvider(env *environment.Environment, projectPath string, options InfrastructureOptions, azCli tools.AzCli) InfraProvider {
+// NewBicepProvider creates a new instance of a Bicep Infra provider
+func NewBicepProvider(env *environment.Environment, projectPath string, options Options, azCli tools.AzCli) Provider {
 	bicepCli := tools.NewBicepCli(azCli)
 
-	return &BicepInfraProvider{
+	return &BicepProvider{
 		env:         env,
 		projectPath: projectPath,
 		options:     options,

@@ -33,7 +33,7 @@ type ServiceConfig struct {
 	// The optional docker options
 	Docker DockerProjectOptions `yaml:"docker"`
 	// The infrastructure provisioning configuration
-	Infra provisioning.InfrastructureOptions `yaml:"infra"`
+	Infra provisioning.Options `yaml:"infra"`
 
 	handlers map[Event][]ServiceLifecycleEventHandlerFn
 }

@@ -8,7 +8,7 @@ import (
 
 func TestParameterHasDefaultValue(t *testing.T) {
 	t.Run("WithNilValue", func(t *testing.T) {
-		param := ProvisioningPlanInputParameter{
+		param := PlanInputParameter{
 			Type:         "string",
 			DefaultValue: nil,
 		}
@@ -18,7 +18,7 @@ func TestParameterHasDefaultValue(t *testing.T) {
 	})
 
 	t.Run("WithEmptyString", func(t *testing.T) {
-		param := ProvisioningPlanInputParameter{
+		param := PlanInputParameter{
 			Type:         "string",
 			DefaultValue: "",
 		}
@@ -30,7 +30,7 @@ func TestParameterHasDefaultValue(t *testing.T) {
 
 func TestParameterHasValue(t *testing.T) {
 	t.Run("WithNilValue", func(t *testing.T) {
-		param := ProvisioningPlanInputParameter{
+		param := PlanInputParameter{
 			Type:  "string",
 			Value: nil,
 		}
@@ -40,7 +40,7 @@ func TestParameterHasValue(t *testing.T) {
 	})
 
 	t.Run("WithEmptyString", func(t *testing.T) {
-		param := ProvisioningPlanInputParameter{
+		param := PlanInputParameter{
 			Type:  "string",
 			Value: "",
 		}

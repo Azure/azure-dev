@@ -13,7 +13,7 @@ import (
 func TestBicepCompile(t *testing.T) {
 	azCli := tools.NewAzCli(tools.NewAzCliArgs{})
 	projectDir := "../../../test/samples/webapp"
-	options := InfrastructureOptions{
+	options := Options{
 		Module: "main",
 	}
 
@@ -21,7 +21,7 @@ func TestBicepCompile(t *testing.T) {
 	env.Values["AZURE_LOCATION"] = "eastus2"
 	env.SetEnvName("test-env")
 
-	infraProvider := NewBicepInfraProvider(&env, projectDir, options, azCli)
+	infraProvider := NewBicepProvider(&env, projectDir, options, azCli)
 	planTask := infraProvider.Plan(context.Background())
 
 	go func() {
@@ -43,7 +43,7 @@ func TestBicepDeploy(t *testing.T) {
 	ctx := context.Background()
 	azCli := tools.NewAzCli(tools.NewAzCliArgs{})
 	projectDir := "../../../test/samples/webapp"
-	options := InfrastructureOptions{
+	options := Options{
 		Module: "main",
 	}
 
@@ -53,7 +53,7 @@ func TestBicepDeploy(t *testing.T) {
 	env.SetEnvName("wabrez-test-env2")
 
 	scope := NewSubscriptionProvisioningScope(azCli, env.Values["AZURE_LOCATION"], env.GetSubscriptionId(), env.GetEnvName())
-	infraProvider := NewBicepInfraProvider(&env, projectDir, options, azCli)
+	infraProvider := NewBicepProvider(&env, projectDir, options, azCli)
 	planTask := infraProvider.Plan(ctx)
 
 	go func() {

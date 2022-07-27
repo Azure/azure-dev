@@ -13,15 +13,15 @@ import (
 	"github.com/theckman/yacspin"
 )
 
-type ProvisioningManager struct {
+type Manager struct {
 	azCli    tools.AzCli
 	asker    input.Asker
 	env      environment.Environment
-	provider InfraProvider
+	provider Provider
 }
 
 // Creates the Azure infrastructure for the specified project
-func (pm *ProvisioningManager) Create(ctx context.Context, interactive bool) (*ProvisionApplyResult, error) {
+func (pm *Manager) Create(ctx context.Context, interactive bool) (*ApplyResult, error) {
 	planResult, err := pm.plan(ctx, interactive)
 	if err != nil {
 		return nil, err
@@ -56,7 +56,7 @@ func (pm *ProvisioningManager) Create(ctx context.Context, interactive bool) (*P
 }
 
 // Destroys the Azure infrastructure for the specified project
-func (pm *ProvisioningManager) Destroy(ctx context.Context, interactive bool) (*ProvisionDestroyResult, error) {
+func (pm *Manager) Destroy(ctx context.Context, interactive bool) (*DestroyResult, error) {
 	planResult, err := pm.plan(ctx, interactive)
 	if err != nil {
 		return nil, err
@@ -83,8 +83,8 @@ func (pm *ProvisioningManager) Destroy(ctx context.Context, interactive bool) (*
 }
 
 // Plans the infrastructure provisioning and orchestrates interactive terminal operations
-func (pm *ProvisioningManager) plan(ctx context.Context, interactive bool) (*ProvisionPlanResult, error) {
-	var planResult *ProvisionPlanResult
+func (pm *Manager) plan(ctx context.Context, interactive bool) (*PlanResult, error) {
+	var planResult *PlanResult
 
 	planAndReportProgress := func(showProgress func(string)) error {
 		planTask := pm.provider.Plan(ctx)
@@ -116,8 +116,8 @@ func (pm *ProvisioningManager) plan(ctx context.Context, interactive bool) (*Pro
 }
 
 // Applies the specified infrastructure provisioning and orchestrates the interactive terminal operations
-func (pm *ProvisioningManager) apply(ctx context.Context, location string, plan *ProvisioningPlan, interactive bool) (*ProvisionApplyResult, error) {
-	var applyResult *ProvisionApplyResult
+func (pm *Manager) apply(ctx context.Context, location string, plan *Plan, interactive bool) (*ApplyResult, error) {
+	var applyResult *ApplyResult
 
 	deployAndReportProgress := func(showProgress func(string)) error {
 		provisioningScope := NewSubscriptionProvisioningScope(pm.azCli, location, pm.env.GetSubscriptionId(), pm.env.GetEnvName())
@@ -152,8 +152,8 @@ func (pm *ProvisioningManager) apply(ctx context.Context, location string, plan 
 }
 
 // Destroys the specified infrastructure provisioning and orchestrates the interactive terminal operations
-func (pm *ProvisioningManager) destroy(ctx context.Context, plan *ProvisioningPlan, interactive bool) (*ProvisionDestroyResult, error) {
-	var destroyResult *ProvisionDestroyResult
+func (pm *Manager) destroy(ctx context.Context, plan *Plan, interactive bool) (*DestroyResult, error) {
+	var destroyResult *DestroyResult
 
 	deleteWithProgress := func(showProgress func(string)) error {
 		destroyTask := pm.provider.Destroy(ctx, plan)
@@ -192,7 +192,7 @@ func (pm *ProvisioningManager) destroy(ctx context.Context, plan *ProvisioningPl
 }
 
 // Creates a progress message from the provisioning progress report
-func (pm *ProvisioningManager) showApplyProgress(progressReport ProvisionApplyProgress, showProgress func(string)) {
+func (pm *Manager) showApplyProgress(progressReport ApplyProgress, showProgress func(string)) {
 	succeededCount := 0
 
 	for _, resourceOperation := range progressReport.Operations {
@@ -206,7 +206,7 @@ func (pm *ProvisioningManager) showApplyProgress(progressReport ProvisionApplyPr
 }
 
 // Ensures a provisioning location has been identified within the plan or prompts the user for input
-func (pm *ProvisioningManager) ensureLocation(ctx context.Context, plan *ProvisioningPlan) (string, error) {
+func (pm *Manager) ensureLocation(ctx context.Context, plan *Plan) (string, error) {
 	var location string
 
 	for key, param := range plan.Parameters {
@@ -235,7 +235,7 @@ func (pm *ProvisioningManager) ensureLocation(ctx context.Context, plan *Provisi
 }
 
 // Ensures the provisioning parameters are valid and prompts the user for input as needed
-func (pm *ProvisioningManager) ensureParameters(ctx context.Context, plan *ProvisioningPlan) (bool, error) {
+func (pm *Manager) ensureParameters(ctx context.Context, plan *Plan) (bool, error) {
 	if len(plan.Parameters) == 0 {
 		return false, nil
 	}
@@ -275,8 +275,8 @@ func (pm *ProvisioningManager) ensureParameters(ctx context.Context, plan *Provi
 }
 
 // Creates a new instance of the Provisioning Manager
-func NewProvisioningManager(ctx context.Context, env environment.Environment, projectPath string, options InfrastructureOptions, azCli tools.AzCli) (*ProvisioningManager, error) {
-	infraProvider, err := NewInfraProvider(&env, projectPath, options, azCli)
+func NewManager(ctx context.Context, env environment.Environment, projectPath string, options Options, azCli tools.AzCli) (*Manager, error) {
+	infraProvider, err := NewProvider(&env, projectPath, options, azCli)
 	if err != nil {
 		return nil, fmt.Errorf("error creating infra provider: %w", err)
 	}
@@ -286,7 +286,7 @@ func NewProvisioningManager(ctx context.Context, env environment.Environment, pr
 		return nil, err
 	}
 
-	return &ProvisioningManager{
+	return &Manager{
 		azCli:    azCli,
 		env:      env,
 		provider: infraProvider,

@@ -145,9 +145,9 @@ func ParseProjectConfig(yamlContent string, env *environment.Environment) (*Proj
 	return &projectFile, nil
 }
 
-func Initialize(ctx context.Context, p *ProjectConfig) error {
+func (p *ProjectConfig) Initialize(ctx context.Context, env *environment.Environment) error {
 	for _, svc := range p.Services {
-		frameworkService, err := svc.GetFrameworkService(ctx, &environment.Environment{})
+		frameworkService, err := svc.GetFrameworkService(ctx, env)
 		if err != nil {
 			return fmt.Errorf("getting framework services: %w", err)
 		}

@@ -77,7 +77,7 @@ func (ica *infraCreateAction) Run(ctx context.Context, cmd *cobra.Command, args 
 		return fmt.Errorf("loading project: %w", err)
 	}
 
-	if err = project.Initialize(ctx, proj); err != nil {
+	if err = proj.Initialize(ctx, &env); err != nil {
 		return err
 	}
 

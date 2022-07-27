@@ -14,23 +14,23 @@ import (
 )
 
 type dotnetProject struct {
-	config *ServiceConfig
-	env    *environment.Environment
+	config    *ServiceConfig
+	env       *environment.Environment
+	dotnetCli tools.DotNetCli
 }
 
 func (dp *dotnetProject) RequiredExternalTools() []tools.ExternalTool {
-	return []tools.ExternalTool{tools.NewDotNetCli()}
+	return []tools.ExternalTool{dp.dotnetCli}
 }
 
 func (dp *dotnetProject) Package(ctx context.Context, progress chan<- string) (string, error) {
-	dotnetCli := tools.NewDotNetCli()
 	publishRoot, err := os.MkdirTemp("", "azd")
 	if err != nil {
 		return "", fmt.Errorf("creating package directory for %s: %w", dp.config.Name, err)
 	}
 
 	progress <- "Creating deployment package"
-	if err := dotnetCli.Publish(ctx, dp.config.Path(), publishRoot); err != nil {
+	if err := dp.dotnetCli.Publish(ctx, dp.config.Path(), publishRoot); err != nil {
 		return "", err
 	}
 
@@ -42,21 +42,19 @@ func (dp *dotnetProject) Package(ctx context.Context, progress chan<- string) (s
 }
 
 func (dp *dotnetProject) InstallDependencies(ctx context.Context) error {
-	dotnetCli := tools.NewDotNetCli()
-	if err := dotnetCli.Restore(ctx, dp.config.Path()); err != nil {
+	if err := dp.dotnetCli.Restore(ctx, dp.config.Path()); err != nil {
 		return err
 	}
 	return nil
 }
 
 func (dp *dotnetProject) Initialize(ctx context.Context) error {
-	dotnetCli := tools.NewDotNetCli()
-	if err := tools.EnsureInstalled(ctx, dotnetCli); err != nil {
+	if err := tools.EnsureInstalled(ctx, dp.dotnetCli); err != nil {
 		return err
 	}
 
-	//fmt.Println("!!!!!", dp.config.Path())
-	if err := dotnetCli.InitializeSecret(ctx, dp.config.Path()); err != nil {
+	fmt.Println("!!!!!", dp.config.Path())
+	if err := dp.dotnetCli.InitializeSecret(ctx, dp.config.Path()); err != nil {
 		return err
 	}
 	return nil
@@ -64,7 +62,8 @@ func (dp *dotnetProject) Initialize(ctx context.Context) error {
 
 func NewDotNetProject(config *ServiceConfig, env *environment.Environment) FrameworkService {
 	return &dotnetProject{
-		config: config,
-		env:    env,
+		config:    config,
+		env:       env,
+		dotnetCli: tools.NewDotNetCli(),
 	}
 }

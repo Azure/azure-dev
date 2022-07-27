@@ -6,12 +6,13 @@ import (
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/stretchr/testify/require"
 )
 
-func TestBicepCompile(t *testing.T) {
+func TestBicepPlan(t *testing.T) {
 	azCli := tools.NewAzCli(tools.NewAzCliArgs{})
 	projectDir := "../../../test/samples/webapp"
 	options := Options{
@@ -41,7 +42,7 @@ func TestBicepCompile(t *testing.T) {
 	require.Equal(t, env.Values["AZURE_ENV_NAME"], planResult.Plan.Parameters["name"].Value)
 }
 
-func TestBicepDeploy(t *testing.T) {
+func TestBicepApply(t *testing.T) {
 	ctx := context.Background()
 	azCli := tools.NewAzCli(tools.NewAzCliArgs{})
 	projectDir := "../../../test/samples/webapp"
@@ -52,9 +53,9 @@ func TestBicepDeploy(t *testing.T) {
 	console := &mocks.MockConsole{}
 	console.WhenPromptLocation().Respond("eastus")
 	console.WhenPromptTemplate().Respond("Azure-Samples/todo-nodejs-mongo")
-	// console.WhenPrompt(func(options input.ConsoleOptions) bool {
-	// 	return options.Message == "Delete the things?"
-	// }).Respond(true)
+	console.WhenPrompt(func(options input.ConsoleOptions) bool {
+		return options.Message == "Delete the things?"
+	}).Respond(true)
 
 	env := environment.Environment{Values: make(map[string]string)}
 	env.Values["AZURE_LOCATION"] = "westus2"

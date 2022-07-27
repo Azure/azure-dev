@@ -4,41 +4,80 @@ import (
 	"fmt"
 )
 
-type TaskRunFunc[R any] func(asyncContext *TaskContext[R])
+// Task function definition
+type TaskRunFunc[R comparable] func(ctx *TaskContext[R])
 
-type TaskContext[R any] struct {
+// The context available to the executing Task
+type TaskContext[R comparable] struct {
 	task   *Task[R]
 	error  error
 	result R
 }
 
+// Creates a new Task context
+func NewTaskContext[R comparable](task *Task[R]) *TaskContext[R] {
+	return &TaskContext[R]{
+		task: task,
+	}
+}
+
+// Sets the specified error for the task
 func (c *TaskContext[R]) SetError(err error) {
+	if c.result != *new(R) {
+		panic("Task result has already been set! Task cannot have both a result and an error.")
+	}
 	c.error = err
 }
 
+// Sets the result of the Task
 func (c *TaskContext[R]) SetResult(result R) {
+	if c.error != nil {
+		panic("Task error has already been set! Task cannot have both a result and an error.")
+	}
 	c.result = result
 }
 
-type TaskWithProgressRunFunc[R any, P any] func(asyncContext *TaskContextWithProgress[R, P])
+// Task with progress function definition
+type TaskWithProgressRunFunc[R comparable, P comparable] func(ctx *TaskContextWithProgress[R, P])
 
-type TaskContextWithProgress[R any, P any] struct {
+// The context available to the executing Task
+type TaskContextWithProgress[R comparable, P comparable] struct {
 	task *TaskWithProgress[R, P]
 	TaskContext[R]
 }
 
+// Creates a new Task context with progress reporting
+func NewTaskContextWithProgress[R comparable, P comparable](task *TaskWithProgress[R, P]) *TaskContextWithProgress[R, P] {
+	return &TaskContextWithProgress[R, P]{
+		task:        task,
+		TaskContext: TaskContext[R]{},
+	}
+}
+
+// Write a new progress value to the underlying progress channel
 func (c *TaskContextWithProgress[R, P]) SetProgress(progress P) {
 	c.task.progressChannel <- progress
 }
 
-type InteractiveTaskWithProgressRunFunc[R any, P any] func(asyncContext *InteractiveTaskContextWithProgress[R, P])
+// Task with progress function definition
+type InteractiveTaskWithProgressRunFunc[R comparable, P comparable] func(ctx *InteractiveTaskContextWithProgress[R, P])
 
-type InteractiveTaskContextWithProgress[R any, P any] struct {
+// The context available to the executing Task
+type InteractiveTaskContextWithProgress[R comparable, P comparable] struct {
 	task *InteractiveTaskWithProgress[R, P]
 	TaskContextWithProgress[R, P]
 	interactive bool
 }
 
+func NewInteractiveTaskContextWithProgress[R comparable, P comparable](task *InteractiveTaskWithProgress[R, P]) *InteractiveTaskContextWithProgress[R, P] {
+	return &InteractiveTaskContextWithProgress[R, P]{
+		task:                    task,
+		TaskContextWithProgress: TaskContextWithProgress[R, P]{},
+	}
+}
+
+// Sends a signal to the CLI that the task wants to interact with the terminal
+// This will pause any special console spinners, etc.
 func (c *InteractiveTaskContextWithProgress[R, P]) Interact(interactFn func() error) error {
 	c.task.interactiveChannel <- true
 	err := interactFn()

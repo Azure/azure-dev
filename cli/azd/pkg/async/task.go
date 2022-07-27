@@ -1,6 +1,7 @@
 package async
 
-type Task[R any] struct {
+// Task represents a long running async operation
+type Task[R comparable] struct {
 	isComplete    bool
 	hasResult     bool
 	result        R
@@ -8,21 +9,22 @@ type Task[R any] struct {
 	Error         error
 }
 
+// Runs the specified taskFn as a go routine
 func (t *Task[R]) Run(taskFn TaskRunFunc[R]) {
 	go func() {
-		context := TaskContext[R]{
-			task: t,
-		}
+		context := NewTaskContext(t)
 
-		taskFn(&context)
+		taskFn(context)
 		t.complete(context.result, context.error)
 	}()
 }
 
+// Checks whether or not the Task has completed
 func (t *Task[R]) IsCompleted() bool {
 	return t.isComplete
 }
 
+// Waits for a result to become available and returns the task value
 func (t *Task[R]) Result() R {
 	if t.hasResult {
 		return t.result
@@ -34,6 +36,7 @@ func (t *Task[R]) Result() R {
 	return t.result
 }
 
+// Marks the current task as complete and sets internal error/result state and cleans up channels
 func (t *Task[R]) complete(result R, err error) {
 	t.Error = err
 	if t.Error == nil {
@@ -44,41 +47,45 @@ func (t *Task[R]) complete(result R, err error) {
 	close(t.resultChannel)
 }
 
-func NewTask[R any]() *Task[R] {
+// Creates a new instance of a Task
+func NewTask[R comparable]() *Task[R] {
 	return &Task[R]{
 		resultChannel: make(chan R, 1),
 	}
 }
 
-func RunTask[R any](taskFn TaskRunFunc[R]) *Task[R] {
+// Creates and schedules the task function and returns a task instance that holds the future result
+func RunTask[R comparable](taskFn TaskRunFunc[R]) *Task[R] {
 	task := NewTask[R]()
 	task.Run(taskFn)
 
 	return task
 }
 
-type TaskWithProgress[R any, P any] struct {
+// Represents an async Task operation that support progress reporting
+type TaskWithProgress[R comparable, P comparable] struct {
 	Task[R]
 	progressChannel chan P
 }
 
+// Gets the go channel that represents the task progress
 func (t *TaskWithProgress[R, P]) Progress() <-chan P {
 	return t.progressChannel
 }
 
+// Runs the specified taskFn as a go routine
 func (t *TaskWithProgress[R, P]) Run(taskFn TaskWithProgressRunFunc[R, P]) {
 	go func() {
-		context := TaskContextWithProgress[R, P]{
-			task: t,
-		}
+		context := NewTaskContextWithProgress(t)
 
-		taskFn(&context)
+		taskFn(context)
 		t.complete(context.result, context.error)
 		close(t.progressChannel)
 	}()
 }
 
-func NewTaskWithProgress[R any, P any]() *TaskWithProgress[R, P] {
+// Creates a new Task instance with progress reporting
+func NewTaskWithProgress[R comparable, P comparable]() *TaskWithProgress[R, P] {
 	return &TaskWithProgress[R, P]{
 		Task: Task[R]{
 			resultChannel: make(chan R, 1),
@@ -87,38 +94,41 @@ func NewTaskWithProgress[R any, P any]() *TaskWithProgress[R, P] {
 	}
 }
 
-func RunTaskWithProgress[R any, P any](runFn TaskWithProgressRunFunc[R, P]) *TaskWithProgress[R, P] {
+// Creates and schedules the task function and returns a task instance that holds the future result
+func RunTaskWithProgress[R comparable, P comparable](runFn TaskWithProgressRunFunc[R, P]) *TaskWithProgress[R, P] {
 	task := NewTaskWithProgress[R, P]()
 	task.Run(runFn)
 
 	return task
 }
 
-type InteractiveTaskWithProgress[R any, P any] struct {
+// Represents an async task operation that supports progress reporting and interactive console status
+type InteractiveTaskWithProgress[R comparable, P comparable] struct {
 	TaskWithProgress[R, P]
 	interactiveChannel chan bool
 }
 
+// Runs the specified taskFn as a go routine
 func (t *InteractiveTaskWithProgress[R, P]) Run(taskFn InteractiveTaskWithProgressRunFunc[R, P]) {
 	go func() {
-		context := InteractiveTaskContextWithProgress[R, P]{
-			task: t,
-		}
+		context := NewInteractiveTaskContextWithProgress(t)
 
-		taskFn(&context)
+		taskFn(context)
 		t.complete(context.result, context.error)
 		close(t.progressChannel)
 	}()
 }
 
-func NewInteractiveTaskWithProgress[R any, P any]() *InteractiveTaskWithProgress[R, P] {
+// Creates a new Task instance with progress reporting and interactive console
+func NewInteractiveTaskWithProgress[R comparable, P comparable]() *InteractiveTaskWithProgress[R, P] {
 	return &InteractiveTaskWithProgress[R, P]{
 		TaskWithProgress:   *NewTaskWithProgress[R, P](),
 		interactiveChannel: make(chan bool),
 	}
 }
 
-func RunInteractiveTaskWithProgress[R any, P any](runFn InteractiveTaskWithProgressRunFunc[R, P]) *InteractiveTaskWithProgress[R, P] {
+// Creates and schedules the task function and returns a task instance that holds the future result
+func RunInteractiveTaskWithProgress[R comparable, P comparable](runFn InteractiveTaskWithProgressRunFunc[R, P]) *InteractiveTaskWithProgress[R, P] {
 	task := NewInteractiveTaskWithProgress[R, P]()
 	task.Run(runFn)
 

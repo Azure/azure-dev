@@ -13,10 +13,9 @@ targetScope = 'subscription'
 
 var resourceToken = toLower(uniqueString(subscription().id, name, location))
 var tags = { 'azd-env-name': name, DeleteAfter: deleteAfterTime }
-var abbrs = loadJsonContent('../../../../../../common/infra/abbreviations.json')
 
 resource resourceGroup 'Microsoft.Resources/resourceGroups@2021-04-01' = {
-  name: '${abbrs.resourcesResourceGroups}${name}'
+  name: 'rg-${name}'
   location: location
   tags: tags
 }
@@ -30,3 +29,5 @@ module resources 'resources.bicep' = {
     tags: tags
   }
 }
+
+output AZURE_FUNCTION_URI string = resources.outputs.AZURE_FUNCTION_URI

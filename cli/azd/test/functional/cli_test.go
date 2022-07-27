@@ -8,6 +8,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"io/fs"
 	"io/ioutil"
@@ -322,8 +323,14 @@ func Test_CLI_InfraCreateAndDeleteFuncApp(t *testing.T) {
 	err = cmd.Execute([]string{"deploy", "--cwd", dir})
 	require.NoError(t, err)
 
-	fnName := envName + "func"
-	url := fmt.Sprintf("https://%s.azurewebsites.net/api/httptrigger", fnName)
+	out, err := cli.RunCommand(ctx, "env", "get-values", "-o", "json", "--cwd", dir)
+	require.NoError(t, err)
+
+	var envValues map[string]interface{}
+	err = json.Unmarshal([]byte(out), &envValues)
+	require.NoError(t, err)
+
+	url := fmt.Sprintf("%s/api/httptrigger", envValues["AZURE_FUNCTION_URI"])
 
 	t.Logf("Issuing GET request to function\n")
 

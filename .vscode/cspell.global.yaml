@@ -66,6 +66,7 @@ ignoreWords:
     - wafrg
     - Wans
     - apim
+    - Retryable
 useGitignore: true
 dictionaryDefinitions:
     - name: gitHubUserAliases

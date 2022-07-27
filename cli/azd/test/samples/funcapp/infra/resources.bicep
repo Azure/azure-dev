@@ -2,10 +2,8 @@ param location string
 param resourceToken string
 param tags object
 
-var abbrs = loadJsonContent('../../../../../../common/infra/abbreviations.json')
-
 resource function 'Microsoft.Web/sites@2021-03-01' = {
-  name: '${abbrs.webSitesFunctions}${resourceToken}'
+  name: 'func-${resourceToken}'
   location: location
   kind: 'functionapp,linux'
   tags: union(tags, { 'azd-service-name': 'func' })
@@ -46,7 +44,7 @@ resource function 'Microsoft.Web/sites@2021-03-01' = {
 }
 
 resource storage 'Microsoft.Storage/storageAccounts@2021-09-01' = {
-  name: '${abbrs.storageStorageAccounts}${resourceToken}'
+  name: 'st${resourceToken}'
   location: location
   tags: tags
   sku: {
@@ -57,9 +55,10 @@ resource storage 'Microsoft.Storage/storageAccounts@2021-09-01' = {
 
 resource appServicePlan 'Microsoft.Web/serverfarms@2021-03-01' = {
   // https://docs.microsoft.com/azure/templates/microsoft.web/2020-06-01/serverfarms?tabs=bicep
-  name: '${abbrs.webServerFarms}${resourceToken}'
+  name: 'plan-${resourceToken}'
   location: location
   tags: tags
+  kind: 'functionapp'
   sku: {
     name: 'Y1'
     tier: 'Dynamic'
@@ -70,8 +69,7 @@ resource appServicePlan 'Microsoft.Web/serverfarms@2021-03-01' = {
   properties: {
     reserved: true
   }
-  kind: 'functionapp'
 }
 
 
-output AZURE_FUNCTION_NAME string = function.name
+output AZURE_FUNCTION_URI string = 'https://${function.properties.defaultHostName}'

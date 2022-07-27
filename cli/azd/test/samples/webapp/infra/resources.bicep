@@ -2,11 +2,8 @@ param location string
 param resourceToken string
 param tags object
 
-var abbrs = loadJsonContent('../../../../../../common/infra/abbreviations.json')
-
-
 resource web 'Microsoft.Web/sites@2021-03-01' = {
-  name: '${abbrs.webSitesAppService}${resourceToken}'
+  name: 'app-${resourceToken}'
   location: location
   tags: union(tags, { 'azd-service-name': 'web' })
   properties: {
@@ -29,7 +26,7 @@ resource web 'Microsoft.Web/sites@2021-03-01' = {
 }
 
 resource appServicePlan 'Microsoft.Web/serverfarms@2021-03-01' = {
-  name: '${abbrs.webServerFarms}${resourceToken}'
+  name: 'plan-${resourceToken}'
   location: location
   tags: tags
   sku: {

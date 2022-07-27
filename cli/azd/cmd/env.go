@@ -15,6 +15,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 )
 
 func envCmd(rootOptions *commands.GlobalCommandOptions) *cobra.Command {
@@ -169,41 +170,52 @@ func envListCmd(rootOptions *commands.GlobalCommandOptions) *cobra.Command {
 }
 
 func envNewCmd(rootOptions *commands.GlobalCommandOptions) *cobra.Command {
-	actionFn := func(ctx context.Context, _ *cobra.Command, args []string, azdCtx *environment.AzdContext) error {
-		askOne := makeAskOne(rootOptions.NoPrompt)
-		azCli := commands.GetAzCliFromContext(ctx)
-
-		if err := ensureProject(azdCtx.ProjectPath()); err != nil {
-			return err
-		}
-
-		if err := tools.EnsureInstalled(ctx, azCli); err != nil {
-			return err
-		}
-
-		if len(args) == 1 {
-			rootOptions.EnvironmentName = args[0]
-		}
-
-		if _, err := createAndInitEnvironment(ctx, &rootOptions.EnvironmentName, azdCtx, askOne); err != nil {
-			return fmt.Errorf("creating new environment: %w", err)
-		}
-
-		if err := azdCtx.SetDefaultEnvironmentName(rootOptions.EnvironmentName); err != nil {
-			return fmt.Errorf("saving default environment: %w", err)
-		}
-
-		return nil
-	}
 	cmd := commands.Build(
-		commands.ActionFunc(actionFn),
+		&envNewAction{rootOptions: rootOptions},
 		rootOptions,
 		"new <environment>",
 		"Create a new environment.",
 		"",
 	)
-	cmd.Args = cobra.MaximumNArgs(1)
 	return cmd
+}
+
+type envNewAction struct {
+	rootOptions  *commands.GlobalCommandOptions
+	subscription string
+	location     string
+}
+
+func (en *envNewAction) SetupFlags(persis *pflag.FlagSet, local *pflag.FlagSet) {
+	local.StringVar(&en.subscription, "subscription", "", "Name or ID of an Azure subscription to use for the new environment")
+	local.StringVarP(&en.location, "location", "l", "", "Azure location for the new environment")
+}
+
+func (en *envNewAction) Run(ctx context.Context, _ *cobra.Command, args []string, azdCtx *environment.AzdContext) error {
+	if err := ensureProject(azdCtx.ProjectPath()); err != nil {
+		return err
+	}
+
+	azCli := commands.GetAzCliFromContext(ctx)
+	if err := tools.EnsureInstalled(ctx, azCli); err != nil {
+		return err
+	}
+
+	askOne := makeAskOne(en.rootOptions.NoPrompt)
+	envSpec := environmentSpec{
+		environmentName: en.rootOptions.EnvironmentName,
+		subscription:    en.subscription,
+		location:        en.location,
+	}
+	if _, err := createAndInitEnvironment(ctx, &envSpec, azdCtx, askOne); err != nil {
+		return fmt.Errorf("creating new environment: %w", err)
+	}
+
+	if err := azdCtx.SetDefaultEnvironmentName(envSpec.environmentName); err != nil {
+		return fmt.Errorf("saving default environment: %w", err)
+	}
+
+	return nil
 }
 
 func envRefreshCmd(rootOptions *commands.GlobalCommandOptions) *cobra.Command {

@@ -65,11 +65,11 @@ as usual. You'll want to pass a larger `-timeout` since these tests deploy live 
 
 ### Run all the tests
 
-`go test -timeout 15m -v ./...`
+`go test -timeout 20m -v ./...`
 
 ### Run a specific test
 
-`go test -timeout 15m -v ./... -run Test_CLI_RestoreCommand`
+`go test -timeout 20m -v ./... -run Test_CLI_RestoreCommand`
 
 ## Linting
 

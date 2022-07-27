@@ -7,6 +7,9 @@ resource web 'Microsoft.Web/sites@2021-03-01' = {
   properties: {
     serverFarmId: appServicePlan.id
     httpsOnly: true
+    siteConfig: {
+      linuxFxVersion: 'DOTNETCORE|6.0'
+    }
   }
   identity: {
     type: 'SystemAssigned'
@@ -24,7 +27,11 @@ resource appServicePlan 'Microsoft.Web/serverfarms@2021-03-01' = {
   name: '${name}plan'
   location: location
   sku: {
-    name: 'D1'
+    name: 'B1'
+  }
+  properties: {
+    reserved: true
+    zoneRedundant: false
   }
 }
 

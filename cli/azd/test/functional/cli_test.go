@@ -24,6 +24,8 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/cmd"
 	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/pkg/azureutil"
+	"github.com/azure/azure-dev/cli/azd/pkg/commands"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
@@ -496,9 +498,12 @@ func getTestEnvPath(dir string, envName string) string {
 // the provided `testing.T` has a deadline applied, the returned context
 // respects the deadline.
 func newTestContext(t *testing.T) (context.Context, context.CancelFunc) {
+	ctx := context.Background()
+	ctx = context.WithValue(ctx, environment.OptionsContextKey, &commands.GlobalCommandOptions{})
+
 	if deadline, ok := t.Deadline(); ok {
-		return context.WithDeadline(context.Background(), deadline)
+		return context.WithDeadline(ctx, deadline)
 	}
 
-	return context.WithCancel(context.Background())
+	return context.WithCancel(ctx)
 }

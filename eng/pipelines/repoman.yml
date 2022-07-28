@@ -67,6 +67,8 @@ jobs:
           echo $(gh api /repos/kaizentm/sandbox/commits/'$(BUILD_SOURCEVERSION)'/pulls | jq -r '.[].number')
           echo "---------------------------------------------------"
         displayName: Set PRNumber
+        env:
+          GH_TOKEN: $(azuresdk-github-pat)
 
       - pwsh: |
           $targetBranchName = ''

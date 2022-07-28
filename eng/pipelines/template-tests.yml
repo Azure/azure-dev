@@ -12,8 +12,6 @@ jobs:
     steps:
       - checkout: self
 
-      - template: /eng/pipelines/templates/steps/install-bicep.yml
-
       - bash: curl -fsSL https://aka.ms/install-azd.sh | bash
         displayName: Install azd
 
@@ -45,6 +43,8 @@ jobs:
 
     steps:
       - checkout: self
+
+      - template: /eng/pipelines/templates/steps/install-bicep.yml
 
       - template: /eng/pipelines/templates/steps/az-login.yml
 

@@ -47,7 +47,7 @@ jobs:
       - template: /eng/pipelines/templates/steps/az-login.yml
 
       - pwsh: |
-          if (!"$(AzdVersion)") {
+          if (!$env:AZDVERSION) {
             Write-Host "AzdVersion variable not set. Using 'daily'"
             Write-Host "##vso[task.setvariable variable=AzdVersion]daily"
           } else {

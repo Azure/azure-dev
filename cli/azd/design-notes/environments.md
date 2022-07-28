@@ -13,7 +13,7 @@ This document outlines what an environment is in `azd` today and outlines a chan
 
 The concept on an environment has been present in `azd` for a long while, but the way it has been used has changed over time. In addition, the ties between an environment name and provisioned resources has changed over time.
 
-Every command in `azd` today runs in the context of an environment. The name of the environment can be provided by the `-e` flag which is command to all `azd` commands and when not set, the *default environment* is used. The name of the currently selected environment is stored in `.azure/config.json` file, under the `defaultEnvironment`. The *default environment* can set with `azd env select [environment-name]`. If no environment name is passed and no default environment has been selected then the user is prompted to create a new environment before the operation can proceed.
+Every command in `azd` today runs in the context of an environment. The name of the environment can be provided by the `-e` flag which is passed to all `azd` commands and when not set, the *default environment* is used. The name of the currently selected environment is stored in `.azure/config.json` file, under the `defaultEnvironment`. The *default environment* can set with `azd env select [environment-name]`. If no environment name is passed and no default environment has been selected then the user is prompted to create a new environment before the operation can proceed.
 
 During environment creation the user is prompted for the following pieces of information:
 

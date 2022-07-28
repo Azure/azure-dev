@@ -58,6 +58,7 @@ type AzCli interface {
 	GetSubscriptionTenant(ctx context.Context, subscriptionId string) (string, error)
 	GetSubscriptionDeployment(ctx context.Context, subscriptionId string, deploymentName string) (AzCliDeployment, error)
 	GetResourceGroupDeployment(ctx context.Context, subscriptionId string, resourceGroupName string, deploymentName string) (AzCliDeployment, error)
+	GetResource(ctx context.Context, subscriptionId string, resourceId string) (AzCliResourceExtended, error)
 	GetKeyVault(ctx context.Context, subscriptionId string, vaultName string) (AzCliKeyVault, error)
 	PurgeKeyVault(ctx context.Context, subscriptionId string, vaultName string) error
 	DeployAppServiceZip(ctx context.Context, subscriptionId string, resourceGroup string, appName string, deployZipPath string) (string, error)
@@ -153,6 +154,11 @@ type AzCliResource struct {
 	Location string `json:"location"`
 }
 
+type AzCliResourceExtended struct {
+	AzCliResource
+	Kind string `json:"kind"`
+}
+
 type AzCliDeploymentResourceReference struct {
 	Id string `json:"id"`
 }
@@ -169,6 +175,9 @@ type AzCliResourceOperationProperties struct {
 	TargetResource        AzCliResourceOperationTargetResource `json:"targetResource"`
 	StatusCode            string                               `json:"statusCode"`
 	StatusMessage         AzCliDeploymentStatusMessage         `json:"statusMessage"`
+	// While the operation is in progress, this timestamp effectively represents "InProgressTimestamp".
+	// When the operation ends, this timestamp effectively represents "EndTimestamp".
+	Timestamp time.Time `json:"timestamp"`
 }
 
 type AzCliDeploymentStatusMessage struct {
@@ -713,6 +722,23 @@ func (cli *azCli) ListResourceGroupResources(ctx context.Context, subscriptionId
 		return nil, fmt.Errorf("could not unmarshal output %s as a []AzCliResource: %w", res.Stdout, err)
 	}
 	return resources, nil
+}
+
+func (cli *azCli) GetResource(ctx context.Context, subscriptionId string, resourceId string) (AzCliResourceExtended, error) {
+	res, err := cli.runAzCommand(ctx, "resource", "show", "--ids", resourceId, "--output", "json")
+	if isNotLoggedInMessage(res.Stderr) {
+		return AzCliResourceExtended{}, ErrAzCliNotLoggedIn
+	} else if err != nil {
+		return AzCliResourceExtended{}, fmt.Errorf("failed running az resource show --ids: %s: %w", res.String(), err)
+	}
+
+	var resource AzCliResourceExtended
+
+	if err := json.Unmarshal([]byte(res.Stdout), &resource); err != nil {
+		return AzCliResourceExtended{}, fmt.Errorf("could not unmarshal output %s as a AzCliResourceExtended: %w", res.Stdout, err)
+	}
+
+	return resource, nil
 }
 
 func (cli *azCli) ListSubscriptionDeploymentOperations(ctx context.Context, subscriptionId string, deploymentName string) ([]AzCliResourceOperation, error) {

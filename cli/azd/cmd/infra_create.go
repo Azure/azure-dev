@@ -14,6 +14,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/iac/bicep"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
+	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
@@ -199,13 +200,15 @@ func (ica *infraCreateAction) Run(ctx context.Context, cmd *cobra.Command, args 
 	}
 	var res deployFuncResult
 
-	deployAndReportProgress := func(showProgress func(string)) error {
+	deployAndReportProgress := func(spinner *spin.Spinner) error {
 		deployResChan := make(chan deployFuncResult)
 		go func() {
 			res, err := bicep.Deploy(ctx, deploymentTarget, bicepPath, azdCtx.BicepParametersFilePath(ica.rootOptions.EnvironmentName, "main"))
 			deployResChan <- deployFuncResult{Result: res, Err: err}
 			close(deployResChan)
 		}()
+
+		progressDisplay := provisioning.NewProvisioningProgressDisplay(infra.NewAzureResourceManager(azCli), env.GetSubscriptionId(), env.GetEnvName())
 
 		for {
 			select {
@@ -217,7 +220,7 @@ func (ica *infraCreateAction) Run(ctx context.Context, cmd *cobra.Command, args 
 					continue
 				}
 				if interactive {
-					reportDeploymentStatusInteractive(ctx, azCli, env, showProgress)
+					progressDisplay.ReportProgress(ctx, spinner.Title, spinner.Println)
 				} else {
 					reportDeploymentStatusJson(ctx, azCli, env, formatter, cmd)
 				}
@@ -236,7 +239,7 @@ func (ica *infraCreateAction) Run(ctx context.Context, cmd *cobra.Command, args 
 
 		spinner := spin.NewSpinner("Creating Azure resources")
 		spinner.Start()
-		err = deployAndReportProgress(spinner.Title)
+		err = deployAndReportProgress(spinner)
 		spinner.Stop()
 
 		if err == nil {
@@ -275,27 +278,6 @@ func (ica *infraCreateAction) Run(ctx context.Context, cmd *cobra.Command, args 
 	return nil
 }
 
-func reportDeploymentStatusInteractive(ctx context.Context, azCli tools.AzCli, env environment.Environment, showProgress func(string)) {
-	resourceManager := infra.NewAzureResourceManager(azCli)
-
-	operations, err := resourceManager.GetDeploymentResourceOperations(ctx, env.GetSubscriptionId(), env.GetEnvName())
-	if err != nil {
-		// Status display is best-effort activity.
-		return
-	}
-
-	succeededCount := 0
-
-	for _, resourceOperation := range *operations {
-		if resourceOperation.Properties.ProvisioningState == "Succeeded" {
-			succeededCount++
-		}
-	}
-
-	status := fmt.Sprintf("Creating Azure resources (%d of ~%d completed)", succeededCount, len(*operations))
-	showProgress(status)
-}
-
 type progressReport struct {
 	Timestamp  time.Time                      `json:"timestamp"`
 	Operations []tools.AzCliResourceOperation `json:"operations"`
@@ -305,14 +287,14 @@ func reportDeploymentStatusJson(ctx context.Context, azCli tools.AzCli, env envi
 	resourceManager := infra.NewAzureResourceManager(azCli)
 
 	ops, err := resourceManager.GetDeploymentResourceOperations(ctx, env.GetSubscriptionId(), env.GetEnvName())
-	if err != nil || len(*ops) == 0 {
+	if err != nil || len(ops) == 0 {
 		// Status display is best-effort activity.
 		return
 	}
 
 	report := progressReport{
 		Timestamp:  time.Now(),
-		Operations: *ops,
+		Operations: ops,
 	}
 
 	_ = formatter.Format(report, cmd.OutOrStdout(), nil)

@@ -60,9 +60,8 @@ stages:
 
           - ${{ if in(variables['Build.Reason'], 'IndividualCI', 'BatchedCI') }}:
             - template: /eng/pipelines/templates/steps/set-cli-version-cd.yml
-          - pwsh: |
-              az bicep install --version v0.8.9
-            displayName: Install bicep
+
+          - template: /eng/pipelines/templates/steps/install-bicep.yml
 
           - task: DockerInstaller@0
             displayName: Docker Installer

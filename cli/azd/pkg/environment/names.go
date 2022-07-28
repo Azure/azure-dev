@@ -14,3 +14,12 @@ func DefaultResourceGroupName(env *Environment) string {
 
 	return "rg-" + env.GetEnvName()
 }
+
+
+func GetResourceGroupNameFromEnvVar(env *Environment) string {
+	resourceGroupName, ok := env.Values[ResourceGroupEnvVarName]
+	if ok {
+		return resourceGroupName
+	}
+	return ""
+}

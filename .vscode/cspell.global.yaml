@@ -68,6 +68,7 @@ ignoreWords:
     - apim
     - Retryable
     - httptrigger
+    - resourcegroups
 useGitignore: true
 dictionaryDefinitions:
     - name: gitHubUserAliases

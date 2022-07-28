@@ -153,12 +153,20 @@ func Test_CLI_InfraCreateAndDelete(t *testing.T) {
 	_, err = cli.RunCommand(ctx, "infra", "create")
 	require.NoError(t, err)
 
-	file, err := ioutil.ReadFile(filepath.Join(dir, environment.EnvironmentDirectoryName, envName, ".env"))
+	envFilePath := filepath.Join(dir, environment.EnvironmentDirectoryName, envName, ".env")
+	env, err := environment.FromFile(envFilePath)
 	require.NoError(t, err)
 
 	// AZURE_STORAGE_ACCOUNT_NAME is an output of the template, make sure it was added to the .env file.
 	// the name should start with 'st'
-	require.Regexp(t, `AZURE_STORAGE_ACCOUNT_NAME="st\S*"`, string(file))
+	accountName, ok := env.Values["AZURE_STORAGE_ACCOUNT_NAME"]
+	require.True(t, ok)
+	require.Regexp(t, `st\S*`, accountName)
+
+	// Verify that resource groups are created with tag
+	rgs, err := azureutil.GetResourceGroupsForEnvironment(ctx, &env)
+	require.NoError(t, err)
+	require.NotNil(t, rgs)
 
 	// Using `down` here to test the down alias to infra delete
 	_, err = cli.RunCommand(ctx, "down", "--force", "--purge")

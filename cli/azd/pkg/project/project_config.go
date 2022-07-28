@@ -124,7 +124,7 @@ func ParseProjectConfig(yamlContent string, env *environment.Environment) (*Proj
 
 	// Get default resource group name if not override in the azure.yaml project file
 	if strings.TrimSpace(projectFile.ResourceGroupName) == "" {
-		projectFile.ResourceGroupName = environment.DefaultResourceGroupName(env)
+		projectFile.ResourceGroupName = environment.GetResourceGroupNameFromEnvVar(env)
 	}
 
 	for key, svc := range projectFile.Services {

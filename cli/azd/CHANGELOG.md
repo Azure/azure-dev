@@ -17,6 +17,7 @@
 - [[#115]](https://github.com/Azure/azure-dev/issues/115) Fix deploy error when using a resource name with capital letters.
 
 ### Other Changes
+- [[#188]](https://github.com/Azure/azure-dev/issues/188) Update the minimum bicep version to `v0.8.9`.
 
 ## 0.1.0-beta.2 (2022-07-13)
 

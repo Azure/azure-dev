@@ -45,7 +45,7 @@ output WEBSITE_URL string = resources.outputs.WEBSITE_URL
 
 Then the value of `resources.outputs.WEBSITE_URL` will be written into the `.env` file with the key `WEBSITE_URL`. Loading this `.env` file allows 12-factor style applications to pull configuration information from their deployment (e.g., we use this in our templates to set values like `AZURE_COSMOS_DATABASE_NAME` and `AZURE_COSMOS_CONNECTION_STRING_KEY`). 
 
-In addition, `azd` will pull values from the environment directly in a few cases (e.g., when using container applications, it expects that a `AZURE_CONTAINER_REGISTRY_ENDPOINT` value is set in the environment, which is the registry to log into) and write values into the environment (e.g., when using container applications the name of the docker image to deploy is set in the environment with the key `SERVICE_<NAME>_IMAGE_NAME`)
+In addition, `azd` will pull values from the environment directly in a few cases (e.g., when using container applications, it expects that a `AZURE_CONTAINER_REGISTRY_ENDPOINT` value is set in the environment, which is the registry to log into) and write values into the environment (e.g., when using container applications, the name of the docker image to deploy is set in the environment with the key `SERVICE_<NAME>_IMAGE_NAME`)
 
 Users can also add keys into the `.env` file by using `azd env set`.
 

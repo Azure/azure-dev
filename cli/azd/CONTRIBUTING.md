@@ -53,7 +53,7 @@ In VS Code you can create a launch.json that runs the tool with a specified set 
     "args": [
         "restore"
     ],
-    "cwd": "/Users/karolz/code/scratch/azd-devel/src/api"
+    "cwd": "${workspaceFolder}"
 },
 ```
 

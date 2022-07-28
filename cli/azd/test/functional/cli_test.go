@@ -198,14 +198,30 @@ func Test_CLI_InfraCreateAndDeleteWebApp(t *testing.T) {
 	url, has := env["WEBSITE_URL"]
 	require.True(t, has, "WEBSITE_URL should be in environment after infra create")
 
-	res, err := http.Get(url)
-	require.NoError(t, err)
+	// Add a retry here because appService deployment can take time
+	err = retry.Do(ctx, retry.WithMaxRetries(10, retry.NewConstant(5*time.Second)), func(ctx context.Context) error {
+		t.Logf("Attempting to Get URL: %s", url)
 
-	var buf bytes.Buffer
-	_, err = buf.ReadFrom(res.Body)
-	require.NoError(t, err)
+		res, err := http.Get(url)
+		if err != nil {
+			return retry.RetryableError(err)
+		}
 
-	assert.Equal(t, "Hello, `azd`.", buf.String())
+		var buf bytes.Buffer
+		_, err = buf.ReadFrom(res.Body)
+		require.NoError(t, err)
+
+		testString := "Hello, `azd`."
+		bodyString := buf.String()
+
+		if bodyString != testString {
+			return retry.RetryableError(fmt.Errorf("expected %s but got %s for request to %s", testString, bodyString, url))
+		} else {
+			assert.Equal(t, testString, bodyString)
+			return nil
+		}
+	})
+	require.NoError(t, err)
 
 	// Ensure `env refresh` works by removing an output parameter from the .env file and ensure that `env refresh`
 	// brings it back.

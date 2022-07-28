@@ -61,7 +61,7 @@ stages:
           - ${{ if in(variables['Build.Reason'], 'IndividualCI', 'BatchedCI') }}:
             - template: /eng/pipelines/templates/steps/set-cli-version-cd.yml
           - pwsh: |
-              az bicep install --version v0.4.1124
+              az bicep install --version v0.8.9
             displayName: Install bicep
 
           - task: DockerInstaller@0
@@ -94,21 +94,7 @@ stages:
             inputs:
               version: 6.0.x
 
-          - pwsh: |
-              $subscriptionConfiguration = @'
-                $(sub-config-azure-cloud-test-resources)
-              '@ | ConvertFrom-Json -AsHashtable;
-
-              az login `
-                --service-principal `
-                -u "$($subscriptionConfiguration.TestApplicationId)" `
-                -p "$($subscriptionConfiguration.TestApplicationSecret)" `
-                --tenant "$($subscriptionConfiguration.TenantId)"
-
-              az account set `
-                --subscription "$($subscriptionConfiguration.SubscriptionId)"
-            condition: and(succeeded(), ne(variables['Skip.LiveTest'], 'true'))
-            displayName: Azure Login
+          - template: /eng/pipelines/templates/steps/az-login.yml
 
           - task: PowerShell@2
             condition: and(succeeded(), ne(variables['Skip.LiveTest'], 'true'))

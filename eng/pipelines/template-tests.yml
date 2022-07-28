@@ -1,0 +1,85 @@
+variables:
+  - template: /eng/pipelines/templates/variables/globals.yml
+  - name: NodeVersion
+    value: 16
+
+jobs:
+  - job: CreateMatrix
+    pool:
+      name: azsdk-pool-mms-ubuntu-2004-general
+      vmImage: MMSUbuntu20.04
+
+    steps:
+      - checkout: self
+
+      - bash: curl -fsSL https://aka.ms/install-azd.sh | bash
+        displayName: Install azd
+
+      - pwsh: |
+          $templateNames = (azd template list --output json | ConvertFrom-Json).name
+          $matrix = @{}
+          foreach ($template in $templateNames) {
+            $jobName = $template.Replace('/', '_')
+            $matrix[$jobName] = @{ TemplateName = $template }
+          }
+          Write-Host "Matrix:"
+          Write-Host $matrix
+
+          $matrixJson = ConvertTo-Json $matrix -Depth 100 -Compress
+          Write-Host "##vso[task.setvariable variable=Matrix;isOutput=true]$matrixJson"
+        name: Generate
+        displayName: Generate matrix
+
+  - job: TestTemplates
+    dependsOn: CreateMatrix
+
+    strategy:
+      matrix: $[ dependencies.CreateMatrix.outputs['Generate.Matrix'] ]
+      maxParallel: 10
+
+    pool:
+      name: azsdk-pool-mms-ubuntu-2004-general
+      vmImage: MMSUbuntu20.04
+
+    steps:
+      - checkout: self
+
+      - template: /eng/pipelines/templates/steps/az-login.yml
+
+      - bash: curl -fsSL https://aka.ms/install-azd.sh | bash
+        displayName: Install azd
+
+      - pwsh: |
+          $templateName = '$(TemplateName)'.Substring(14)
+          $resourceGroupName = "azd-template-test-$templateName-$(Build.BuildId)"
+          Write-Host "Resource group name: $resourceGroupName"
+          Write-Host "##vso[task.setvariable variable=ResourceGroupName]$resourceGroupName"
+
+      - task: Bash@3
+        inputs:
+          targetType: filePath
+          filePath: templates/tests/test-templates.sh
+          arguments: >
+            -e 'azd-template-test'
+            -t '$(TemplateName)'
+            -s '$(Build.BuildId)'
+            -l 'centralus'
+            -p 'list'
+          workingDirectory: templates/tests
+        displayName: Test templates
+
+      - pwsh: |
+          $resourceGroupId = az group show `
+            --resource-group '$(ResourceGroupName)' `
+            --query id
+
+          if ($LASTEXITCODE) {
+            Write-Host "Could not get information for resource group: $(ResourceGroupName)"
+            exit 0
+          }
+
+          az tag create `
+            --resource-id $resourceGroupId `
+            --tags DeleteAfter="$(Get-Date -AsUTC).ToString('o')"
+        condition: always()
+        displayName: Tag resource group for deletion

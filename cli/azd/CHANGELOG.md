@@ -1,5 +1,7 @@
 # Release History
 
+## 0.1.0-beta.4 (Unreleased)
+
 ## 0.1.0-beta.3 (2022-07-28)
 
 ### Features Added
@@ -10,7 +12,6 @@
 ### Breaking Changes
 
 - [[#117]](https://github.com/Azure/azure-dev/issues/117) When specifying a custom module within a service the configuration key has been changed from `moduleName` to `module` and accepts a relative path to the infra module.
-- [[#188]](https://github.com/Azure/azure-dev/issues/188) Update the minimum Bicep version to `v0.8.9`.
 
 ### Bugs Fixed
 
@@ -18,6 +19,7 @@
 - [[#115]](https://github.com/Azure/azure-dev/issues/115) Fix deploy error when using a resource name with capital letters.
 
 ### Other Changes
+- [[#188]](https://github.com/Azure/azure-dev/issues/188) Update the minimum Bicep version to `v0.8.9`.
 
 ## 0.1.0-beta.2 (2022-07-13)
 

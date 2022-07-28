@@ -94,7 +94,7 @@ During `azd provision` the following steps happen:
 5. An ARM Deployment is created to deploy the bicep template with the `main.parameters.json` file from step 4. The name of this deployment matches the environment name and the target subscription is pulled from the `AZURE_SUBSCRIPTION_ID` environment variable.
 6. As described earlier, when the deployment completes, all outputs are merged in to the `.env` file for the environment.
 
-By convention, our templates also tag resources with `azd-env-name` and there has been discussion about `azd` using that tag when running queries to discover resources. We've done something similar with `azd-service-name` (container apps, again) and that pattern has worked out well for us and plays nicely in the infrastructure as code world.
+By convention, our templates also tag resources with `azd-env-name` and there has been discussion about `azd` using that tag when running queries to discover resources. We've done something similar with `azd-service-name` and that pattern has worked out well for us and plays nicely in the infrastructure as code world.
 
 This system allows you to create a multiple environments, each with a different name, and provision a unique copy of the infrastructure for the application.
 

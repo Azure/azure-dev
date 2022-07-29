@@ -120,6 +120,11 @@ func (t *InteractiveTaskWithProgress[R, P]) Run(taskFn InteractiveTaskWithProgre
 	}()
 }
 
+// Gets the go channel that represents the task progress
+func (t *InteractiveTaskWithProgress[R, P]) Interactive() <-chan bool {
+	return t.interactiveChannel
+}
+
 // Creates a new Task instance with progress reporting and interactive console
 func NewInteractiveTaskWithProgress[R comparable, P comparable]() *InteractiveTaskWithProgress[R, P] {
 	return &InteractiveTaskWithProgress[R, P]{

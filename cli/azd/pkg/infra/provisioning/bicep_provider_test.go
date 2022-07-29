@@ -6,7 +6,6 @@ import (
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
-	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/stretchr/testify/require"
@@ -33,6 +32,12 @@ func TestBicepPlan(t *testing.T) {
 		}
 	}()
 
+	go func() {
+		for planInteractive := range planTask.Interactive() {
+			fmt.Println(planInteractive)
+		}
+	}()
+
 	planResult := planTask.Result()
 
 	require.Nil(t, planTask.Error)
@@ -51,11 +56,6 @@ func TestBicepApply(t *testing.T) {
 	}
 
 	console := &mocks.MockConsole{}
-	console.WhenPromptLocation().Respond("eastus")
-	console.WhenPromptTemplate().Respond("Azure-Samples/todo-nodejs-mongo")
-	console.WhenPrompt(func(options input.ConsoleOptions) bool {
-		return options.Message == "Delete the things?"
-	}).Respond(true)
 
 	env := environment.Environment{Values: make(map[string]string)}
 	env.Values["AZURE_LOCATION"] = "westus2"
@@ -72,6 +72,12 @@ func TestBicepApply(t *testing.T) {
 		}
 	}()
 
+	go func() {
+		for planInteractive := range planTask.Interactive() {
+			fmt.Println(planInteractive)
+		}
+	}()
+
 	require.Nil(t, planTask.Error)
 	planResult := planTask.Result()
 	require.NotNil(t, planResult.Plan)
@@ -83,6 +89,12 @@ func TestBicepApply(t *testing.T) {
 	go func() {
 		for applyProgress := range applyTask.Progress() {
 			fmt.Println(applyProgress.Timestamp)
+		}
+	}()
+
+	go func() {
+		for applyInteractive := range applyTask.Interactive() {
+			fmt.Println(applyInteractive)
 		}
 	}()
 

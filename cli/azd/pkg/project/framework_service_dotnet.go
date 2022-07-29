@@ -49,10 +49,6 @@ func (dp *dotnetProject) InstallDependencies(ctx context.Context) error {
 }
 
 func (dp *dotnetProject) Initialize(ctx context.Context) error {
-	if err := tools.EnsureInstalled(ctx, dp.dotnetCli); err != nil {
-		return err
-	}
-
 	if err := dp.dotnetCli.InitializeSecret(ctx, dp.config.Path()); err != nil {
 		return err
 	}

@@ -53,6 +53,7 @@ func (ica *infraCreateAction) SetupFlags(persis, local *pflag.FlagSet) {
 func (ica *infraCreateAction) Run(ctx context.Context, cmd *cobra.Command, args []string, azdCtx *environment.AzdContext) error {
 	azCli := commands.GetAzCliFromContext(ctx)
 	bicepCli := tools.NewBicepCli(azCli)
+	dotnetCli := tools.NewDotNetCli()
 	askOne := makeAskOne(ica.rootOptions.NoPrompt)
 
 	if err := ensureProject(azdCtx.ProjectPath()); err != nil {
@@ -75,6 +76,16 @@ func (ica *infraCreateAction) Run(ctx context.Context, cmd *cobra.Command, args 
 	proj, err := project.LoadProjectConfig(azdCtx.ProjectPath(), &environment.Environment{})
 	if err != nil {
 		return fmt.Errorf("loading project: %w", err)
+	}
+
+	for _, svc := range proj.Services {
+		if svc.Language == "dotnet" {
+			if err := tools.EnsureInstalled(ctx, dotnetCli); err != nil {
+				return err
+			} else {
+				break
+			}
+		}
 	}
 
 	if err = proj.Initialize(ctx, &env); err != nil {

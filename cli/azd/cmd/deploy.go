@@ -207,5 +207,6 @@ func reportServiceDeploymentResultInteractive(svc *project.Service, sdr *project
 		builder.WriteString(fmt.Sprintf(" - Endpoint: %s\n", withLinkFormat(endpoint)))
 	}
 
-	fmt.Println(builder.String())
+	printWithStyling(builder.String())
+	fmt.Println()
 }

@@ -11,12 +11,12 @@ type WhenPredicate func(options input.ConsoleOptions) bool
 var truePredicateFn WhenPredicate = func(_ input.ConsoleOptions) bool { return true }
 
 type MockConsole struct {
-	expressions []MockConsoleExpression
+	expressions []*MockConsoleExpression
 }
 
 func NewMockConsole() *MockConsole {
 	return &MockConsole{
-		expressions: []MockConsoleExpression{},
+		expressions: []*MockConsoleExpression{},
 	}
 }
 
@@ -52,7 +52,7 @@ func (c *MockConsole) PromptTemplate(ctx context.Context, message string) (strin
 func (c *MockConsole) findMatchingExpression(command string, options input.ConsoleOptions) *MockConsoleExpression {
 	for _, expr := range c.expressions {
 		if expr.Command == command && expr.predicateFn(options) {
-			return &expr
+			return expr
 		}
 	}
 
@@ -75,7 +75,7 @@ func (c *MockConsole) WhenPrompt(predicate WhenPredicate) *MockConsoleExpression
 		predicateFn: predicate,
 	}
 
-	c.expressions = append(c.expressions, expr)
+	c.expressions = append(c.expressions, &expr)
 	return &expr
 }
 
@@ -86,7 +86,7 @@ func (c *MockConsole) WhenConfirm(predicate WhenPredicate) *MockConsoleExpressio
 		predicateFn: predicate,
 	}
 
-	c.expressions = append(c.expressions, expr)
+	c.expressions = append(c.expressions, &expr)
 	return &expr
 }
 
@@ -97,7 +97,7 @@ func (c *MockConsole) WhenSelect(predicate WhenPredicate) *MockConsoleExpression
 		predicateFn: predicate,
 	}
 
-	c.expressions = append(c.expressions, expr)
+	c.expressions = append(c.expressions, &expr)
 	return &expr
 }
 
@@ -108,7 +108,7 @@ func (c *MockConsole) WhenPromptLocation() *MockConsoleExpression {
 		predicateFn: truePredicateFn,
 	}
 
-	c.expressions = append(c.expressions, expr)
+	c.expressions = append(c.expressions, &expr)
 	return &expr
 }
 

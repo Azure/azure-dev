@@ -116,6 +116,7 @@ func (t *InteractiveTaskWithProgress[R, P]) Run(taskFn InteractiveTaskWithProgre
 		taskFn(context)
 		t.complete(context.result, context.error)
 		close(t.progressChannel)
+		close(t.interactiveChannel)
 	}()
 }
 

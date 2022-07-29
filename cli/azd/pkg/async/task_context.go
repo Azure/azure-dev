@@ -7,6 +7,25 @@ import (
 // Task function definition
 type TaskRunFunc[R comparable] func(ctx *TaskContext[R])
 
+type A struct {
+}
+
+type B struct {
+	A
+}
+
+func start() {
+	a := A{}
+	b := B{}
+
+	hello(a)
+	hello(b.A)
+}
+
+func hello(value A) {
+
+}
+
 // The context available to the executing Task
 type TaskContext[R comparable] struct {
 	task   *Task[R]
@@ -26,6 +45,11 @@ func (c *TaskContext[R]) SetError(err error) {
 	if c.result != *new(R) {
 		panic("Task result has already been set! Task cannot have both a result and an error.")
 	}
+
+	if c.error != nil {
+		panic("Task error has already been set! Ensure your task error is only ever set one time.")
+	}
+
 	c.error = err
 }
 
@@ -34,6 +58,11 @@ func (c *TaskContext[R]) SetResult(result R) {
 	if c.error != nil {
 		panic("Task error has already been set! Task cannot have both a result and an error.")
 	}
+
+	if c.result != *new(R) {
+		panic("Task result has already been set! Ensure your task result is only ever set one time.")
+	}
+
 	c.result = result
 }
 
@@ -48,9 +77,11 @@ type TaskContextWithProgress[R comparable, P comparable] struct {
 
 // Creates a new Task context with progress reporting
 func NewTaskContextWithProgress[R comparable, P comparable](task *TaskWithProgress[R, P]) *TaskContextWithProgress[R, P] {
+	innerTask := NewTaskContext[R](&task.Task)
+
 	return &TaskContextWithProgress[R, P]{
 		task:        task,
-		TaskContext: TaskContext[R]{},
+		TaskContext: *innerTask,
 	}
 }
 
@@ -70,9 +101,11 @@ type InteractiveTaskContextWithProgress[R comparable, P comparable] struct {
 }
 
 func NewInteractiveTaskContextWithProgress[R comparable, P comparable](task *InteractiveTaskWithProgress[R, P]) *InteractiveTaskContextWithProgress[R, P] {
+	innerTask := NewTaskContextWithProgress(&task.TaskWithProgress)
+
 	return &InteractiveTaskContextWithProgress[R, P]{
 		task:                    task,
-		TaskContextWithProgress: TaskContextWithProgress[R, P]{},
+		TaskContextWithProgress: *innerTask,
 	}
 }
 

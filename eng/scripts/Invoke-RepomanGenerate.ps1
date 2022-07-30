@@ -1,9 +1,13 @@
 param(
     [string] $TargetBranchName,
-    [string] $ResultsFileLocation = "$([System.IO.Path]::GetTempPath())/repoman.md",
+    [string] $ResultsFileLocation = "$([System.IO.Path]::GetTempPath())/repoman.json",
     [string] $RunnerTemp = [System.IO.Path]::GetTempPath(),
     [switch] $WhatIf
 )
+
+if (Test-Path $ResultsFileLocation) {
+    Remove-Item $ResultsFileLocation
+}
 
 $projectsJson = repoman list --format json | Out-String
 $projects = ConvertFrom-Json $projectsJson

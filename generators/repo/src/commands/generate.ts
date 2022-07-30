@@ -3,6 +3,7 @@ import { IOptions } from "glob";
 import path from "path";
 import os from "os";
 import fs from "fs/promises";
+import { existsSync } from "fs";
 import ansiEscapes from "ansi-escapes";
 import chalk from "chalk";
 import { cleanDirectoryPath, copyFile, createRepoUrlFromRemote, ensureDirectoryPath, getGlobFiles, getRepoPropsFromRemote, isStringNullOrEmpty, RepoProps, writeHeader } from "../common/util";
@@ -291,35 +292,59 @@ export class GenerateCommand implements RepomanCommand {
             }
 
             const resultsFilePath = path.resolve(path.normalize(this.options.resultsFile));
-            const resultsFile = await fs.open(resultsFilePath, "a+");
+
+            let fileContent=[];
+            if(existsSync(resultsFilePath)){
+                const fileReadBuffer = await fs.readFile(resultsFilePath);
+                const fileContentJson = fileReadBuffer.toString();
+                if(fileContentJson){
+                    fileContent = JSON.parse(fileContentJson); 
+                }
+            }
+
+            const resultsFile = await fs.open(resultsFilePath, "w+");
             const resultsStream = resultsFile.createWriteStream();
 
             try {
 
-                const output: string[] = [];
-                output.push(`### Project: **${this.manifest.metadata.name}**`);
-
-                for (const result of pushedResults) {
-                    output.push(`#### Remote: **${result.remote}**`);
-                    output.push(`##### Branch: **${result.branch}**`);
-                    output.push('');
-                    output.push('You can initialize this project with:');
-                    output.push('```bash');
-                    output.push(`azd init -t ${result.org}/${result.repo} -b ${result.branch}`);
-                    output.push('```');
-                    output.push('');
-                    output.push(`[View Changes](${result.branchUrl}) | [Compare Changes](${result.compareUrl})`);
-                    output.push('');
-                    output.push('---');
-                    output.push('');
+                //const output: string[] = [];
+                const generatedResults = {
+                    metadataName:  this.manifest.metadata.name,
+                    results: results
                 }
+                
+                fileContent.push(generatedResults);
+                const output = JSON.stringify(fileContent)
+                
+                //tmp
+                console.log(chalk.grey("RESULTS OUTPUT"))
+                console.log(chalk.grey(output));
+                //end tmp    
+                //output.push(`### Project: **${this.manifest.metadata.name}**`);
+
+                // for (const result of pushedResults) {
+                //     output.push(`#### Remote: **${result.remote}**`);
+                //     output.push(`##### Branch: **${result.branch}**`);
+                //     output.push('');
+                //     output.push('You can initialize this project with:');
+                //     output.push('```bash');
+                //     output.push(`azd init -t ${result.org}/${result.repo} -b ${result.branch}`);
+                //     output.push('```');
+                //     output.push('');
+                //     output.push(`[View Changes](${result.branchUrl}) | [Compare Changes](${result.compareUrl})`);
+                //     output.push('');
+                //     output.push('---');
+                //     output.push('');
+                // }
 
                 if (this.options.debug) {
                     console.debug(chalk.grey("RESULTS OUTPUT"))
-                    console.debug(chalk.grey(output.join(os.EOL)));
+                    //console.debug(chalk.grey(output.join(os.EOL)));
+                    console.debug(chalk.grey(output));
                 }
+                
 
-                resultsStream.write(output.join(os.EOL), (error) => {
+                resultsStream.write(output, (error) => {
                     if (error) {
                         return reject(error);
                     }

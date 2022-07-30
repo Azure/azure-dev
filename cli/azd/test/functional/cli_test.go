@@ -206,7 +206,7 @@ func Internal_Test_CLI_ResourceGroupsName(t *testing.T, envName string, rgName s
 
 	// Verify that resource group is found or not found correctly
 	foundRg, err := azureutil.FindResourceGroupForEnvironment(ctx, &env)
-	
+
 	if createResources {
 		if createMultipleResourceGroups {
 			// We have multiple resource groups, so we expect an error
@@ -224,7 +224,6 @@ func Internal_Test_CLI_ResourceGroupsName(t *testing.T, envName string, rgName s
 		// We didn't create the resources, so we expect an error
 		require.Error(t, err)
 	}
-
 
 }
 

@@ -287,6 +287,7 @@ export class GenerateCommand implements RepomanCommand {
         return new Promise<void>(async (resolve, reject) => {
             const pushedResults = results.filter(r => r.hasChangesFromBase);
 
+            console.log(`writeResultsFile ->  pushedResults.length ${pushedResults.length}`)
             if (pushedResults.length === 0 || !this.options.resultsFile) {
                 return resolve();
             }

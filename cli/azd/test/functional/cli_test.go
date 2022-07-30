@@ -132,6 +132,102 @@ func Test_CLI_Init_CanUseTemplate(t *testing.T) {
 	require.FileExists(t, filepath.Join(dir, "README.md"))
 }
 
+// Test when we have multiple resource group matches. More than one rg has azd-env-name set
+func Test_CLI_ResourceGroupNameWithMultipleMatches(t *testing.T) {
+	envName := randomEnvName()
+	Internal_Test_CLI_ResourceGroupsName(t, envName, fmt.Sprintf("rg-%s", envName), true, true, true)
+}
+
+// Test when we can't find any resource group matches
+func Test_CLI_ResourceGroupNameWithoutMatch(t *testing.T) {
+	envName := randomEnvName()
+	Internal_Test_CLI_ResourceGroupsName(t, envName, fmt.Sprintf("rg-%s", envName), true, false, false)
+}
+
+// Test when resource group uses rg- prefix
+func Test_CLI_ResourceGroupNameWithPrefix(t *testing.T) {
+	envName := randomEnvName()
+	Internal_Test_CLI_ResourceGroupsName(t, envName, fmt.Sprintf("rg-%s", envName), true, true, false)
+}
+
+// Test when resource group uses -rg suffix
+func Test_CLI_ResourceGroupNameWithSuffix(t *testing.T) {
+	envName := randomEnvName()
+	Internal_Test_CLI_ResourceGroupsName(t, envName, fmt.Sprintf("%s-rg", envName), true, true, false)
+}
+
+// Test when we don't have any resource groups with azd-env-name tag
+func Test_CLI_ResourceGroupNameWithoutEnvNameTag(t *testing.T) {
+	envName := randomEnvName()
+	Internal_Test_CLI_ResourceGroupsName(t, envName, fmt.Sprintf("rg-%s", envName), false, true, false)
+}
+
+func Internal_Test_CLI_ResourceGroupsName(t *testing.T, envName string, rgName string, includeEnvNameTag bool, createResources bool, createMultipleResourceGroups bool) {
+	ctx, cancel := newTestContext(t)
+	defer cancel()
+
+	dir := t.TempDir()
+	t.Logf("DIR: %s", dir)
+
+	//envName := randomEnvName()
+	t.Logf("AZURE_ENV_NAME: %s", envName)
+
+	cli := azdcli.NewCLI(t)
+	cli.WorkingDirectory = dir
+	cli.Env = append(os.Environ(), "AZURE_LOCATION=eastus2")
+
+	// Store the original environment to be used later
+	originalEnvironment := cli.Env
+
+	err := copySample(dir, "resourcegroups")
+	require.NoError(t, err, "failed expanding sample")
+
+	cli.Env = append(originalEnvironment, fmt.Sprintf("TEST_RESOURCE_GROUP_NAME=%s", rgName))
+
+	if includeEnvNameTag {
+		cli.Env = append(cli.Env, "TEST_INCLUDE_ENV_NAME_TAG=true")
+	}
+
+	if createMultipleResourceGroups {
+		cli.Env = append(cli.Env, "TEST_CREATE_MULTIPLE_RESOURCE_GROUPS=true")
+	}
+
+	_, err = cli.RunCommandWithStdIn(ctx, stdinForTests(envName), "init")
+	require.NoError(t, err)
+
+	if createResources {
+		_, err = cli.RunCommand(ctx, "infra", "create")
+		require.NoError(t, err)
+	}
+
+	envFilePath := filepath.Join(dir, environment.EnvironmentDirectoryName, envName, ".env")
+	env, err := environment.FromFile(envFilePath)
+	require.NoError(t, err)
+
+	// Verify that resource group is found or not found correctly
+	foundRg, err := azureutil.FindResourceGroupForEnvironment(ctx, &env)
+	
+	if createResources {
+		if createMultipleResourceGroups {
+			// We have multiple resource groups, so we expect an error
+			require.Error(t, err)
+		} else {
+			// We found a single resource group, so we do not expect an error
+			require.NoError(t, err)
+			require.Equal(t, foundRg, rgName)
+		}
+
+		// Using `down` here to test the down alias to infra delete
+		_, err = cli.RunCommand(ctx, "down", "--force", "--purge")
+		require.NoError(t, err)
+	} else {
+		// We didn't create the resources, so we expect an error
+		require.Error(t, err)
+	}
+
+
+}
+
 func Test_CLI_InfraCreateAndDelete(t *testing.T) {
 	ctx, cancel := newTestContext(t)
 	defer cancel()

@@ -15,6 +15,7 @@ func TestProjectConfigDefaults(t *testing.T) {
 name: test-proj
 metadata:
   template: test-proj-template
+resourceGroup: rg-test-env
 services:
   web:
     project: src/web
@@ -50,6 +51,7 @@ func TestProjectConfigHasService(t *testing.T) {
 name: test-proj
 metadata:
   template: test-proj-template
+resourceGroup: rg-test
 services:
   web:
     project: src/web
@@ -77,6 +79,7 @@ func TestProjectConfigGetProject(t *testing.T) {
 name: test-proj
 metadata:
   template: test-proj-template
+resourceGroup: rg-test
 services:
   web:
     project: src/web
@@ -115,6 +118,7 @@ func TestProjectWithCustomDockerOptions(t *testing.T) {
 name: test-proj
 metadata:
   template: test-proj-template
+resourceGroup: rg-test
 services:
   web:
     project: src/web
@@ -144,6 +148,7 @@ func TestProjectWithCustomModule(t *testing.T) {
 name: test-proj
 metadata:
   template: test-proj-template
+resourceGroup: rg-test
 services:
   api:
     project: src/api

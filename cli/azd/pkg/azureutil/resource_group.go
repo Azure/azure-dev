@@ -12,7 +12,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
-
 )
 
 // GetResourceGroupsForDeployment returns the names of all the resource groups from a subscription level deployment.
@@ -59,4 +58,62 @@ func GetResourceGroupsForEnvironment(ctx context.Context, env *environment.Envir
 	}
 
 	return queryResult.Data, nil
+}
+
+// GetDefaultResourceGroups gets the default resource groups regardless of azd-env-name setting
+// azd initially released with {envname}-rg for a default resource group name.  We now don't hardcode the default
+// We search graph for them instead using the rg- prefix or -rg suffix
+func GetDefaultResourceGroups(ctx context.Context, env *environment.Environment) ([]tools.AzCliResource, error) {
+	azCli := commands.GetAzCliFromContext(ctx)
+	query := fmt.Sprintf(`resourceContainers 
+		| where type == "microsoft.resources/subscriptions/resourcegroups" 
+		| where name in('rg-%[1]s','%[1]s-rg')
+		| project id, name, type, tags, location`,
+		strings.ToLower(env.GetEnvName()))
+
+	queryResult, err := azCli.GraphQuery(ctx, query, []string{env.GetSubscriptionId()})
+
+	if err != nil {
+		return nil, fmt.Errorf("executing graph query: %s:%w", query, err)
+	}
+
+	return queryResult.Data, nil
+}
+
+// FindResourceGroupForEnvironment will search for the resource group associated with an environment
+// It will first try to find a resource group tagged with azd-env-name
+// Then it will try to find a resource group that defaults to either {envname}-rg or rg-{envname}
+// If it finds exactly one resource group, then it will use it
+// If it finds more than one or zero resource groups, then it will prompt the user to update azure.yaml or AZURE_RESOURCE_GROUP
+// with the resource group to use.
+func FindResourceGroupForEnvironment(ctx context.Context, env *environment.Environment) (string, error) {
+	// Let's first try to find the resource group by environment name tag (azd-env-name)
+	rgs, err := GetResourceGroupsForEnvironment(ctx, env)
+	if err != nil {
+		return "", fmt.Errorf("getting resource group for environment: %s: %w", env.GetEnvName(), err)
+	}
+
+	if len(rgs) == 0 {
+		// We didn't find any Resource Groups for the environment, now let's try to find Resource Groups with the rg-{envname} prefix or {envname}-rg suffix
+		rgs, err = GetDefaultResourceGroups(ctx, env)
+		if err != nil {
+			return "", fmt.Errorf("getting default resource groups for environment: %s: %w", env.GetEnvName(), err)
+		}
+	}
+
+	if len(rgs) == 1 && len(rgs[0].Name) > 0 {
+		// We found one and only one RG, so we'll use it.
+		return rgs[0].Name, nil
+	} else {
+		var msg string
+
+		if len(rgs) > 1 {
+			// We found more than one RG
+			msg = "more than one possible resource group was found."
+		} else {
+			// We didn't find any RGs
+			msg = "unable to find the environment resource group."
+		}
+		return "", fmt.Errorf(msg + " please explicitly specify your resource group in azure.yaml or the AZURE_RESOURCE_GROUP environment variable")
+	}
 }

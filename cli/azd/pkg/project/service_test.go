@@ -15,6 +15,7 @@ var (
 name: test-proj
 metadata:
   template: test-project
+resourceGroup: test-resource-group-name
 services:
   api:
     project: src/api

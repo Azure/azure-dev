@@ -1,5 +1,6 @@
 AADSTS
 appinsights
+appinsightsexporter
 appservice
 AZCLI
 azdcli
@@ -37,7 +38,9 @@ mgutz
 nodeapp
 nolint
 omitempty
+opentelemetry
 osutil
+otel
 pflag
 pyapp
 restoreapp
@@ -49,6 +52,7 @@ staticwebapp
 STRINGSLICE
 structs
 swacli
+tracesdk
 tracetest
 unmarshalling
 westus2

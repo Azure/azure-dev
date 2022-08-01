@@ -99,7 +99,7 @@ func GetServiceResourceName(ctx context.Context, resourceGroupName string, servi
 	queryResult, err := azCli.GraphQuery(ctx, query, []string{env.GetSubscriptionId()})
 
 	if err != nil {
-		return "", fmt.Errorf("executing graph query: %s:%w", query, err)
+		return "", fmt.Errorf("executing graph query: %s: %w", query, err)
 	}
 
 	// If the graph query result did not return a single result

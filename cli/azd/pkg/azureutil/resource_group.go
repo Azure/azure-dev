@@ -54,7 +54,7 @@ func GetResourceGroupsForEnvironment(ctx context.Context, env *environment.Envir
 	queryResult, err := azCli.GraphQuery(ctx, query, []string{env.GetSubscriptionId()})
 
 	if err != nil {
-		return nil, fmt.Errorf("executing graph query: %s:%w", query, err)
+		return nil, fmt.Errorf("executing graph query: %s: %w", query, err)
 	}
 
 	return queryResult.Data, nil
@@ -74,7 +74,7 @@ func GetDefaultResourceGroups(ctx context.Context, env *environment.Environment)
 	queryResult, err := azCli.GraphQuery(ctx, query, []string{env.GetSubscriptionId()})
 
 	if err != nil {
-		return nil, fmt.Errorf("executing graph query: %s:%w", query, err)
+		return nil, fmt.Errorf("executing graph query: %s: %w", query, err)
 	}
 
 	return queryResult.Data, nil

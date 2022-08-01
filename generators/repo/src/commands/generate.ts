@@ -285,12 +285,20 @@ export class GenerateCommand implements RepomanCommand {
 
     private writeResultsFile = async (results: RemotePushResult[]) => {
         return new Promise<void>(async (resolve, reject) => {
-            const pushedResults = results.filter(r => r.hasChangesFromBase);
+            //pushedResults
+           var comittedResults: RemotePushResult[] = results.filter(r => r.hasChangesFromBase);
+           var mergedResults: RemotePushResult[] = results.filter(r => r.hasChanges);
 
-            console.log(`writeResultsFile ->  pushedResults.length ${pushedResults.length}`)
-            if (pushedResults.length === 0 || !this.options.resultsFile) {
+            console.log(`writeResultsFile ->  comittedResults.length ${comittedResults.length}`);
+            console.log(`writeResultsFile ->  mergedResults.length ${mergedResults.length}`);
+
+
+            if (comittedResults.length === 0 && mergedResults.length === 0 || !this.options.resultsFile) {                
                 return resolve();
             }
+
+            const pushedResults = comittedResults.length === 0 ? mergedResults:comittedResults;
+            console.log(`writeResultsFile ->  pushedResults.length ${pushedResults.length}`);
 
             const resultsFilePath = path.resolve(path.normalize(this.options.resultsFile));
 
@@ -311,7 +319,7 @@ export class GenerateCommand implements RepomanCommand {
                 //const output: string[] = [];
                 const generatedResults = {
                     metadataName:  this.manifest.metadata.name,
-                    results: results
+                    results: pushedResults
                 }
                 
                 fileContent.push(generatedResults);

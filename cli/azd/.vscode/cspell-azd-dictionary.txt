@@ -35,6 +35,7 @@ nolint
 omitempty
 osutil
 pflag
+pulumi
 pyapp
 keychain
 restoreapp

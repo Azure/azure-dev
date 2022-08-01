@@ -19,7 +19,8 @@ if (Test-Path $BodyFile) {
 
             Write-host "Delete PR Branch : /repos/$orgName/$repo/git/refs/heads/$branchName"
          
-            gh api --method Delete /repos/$orgName/$repo/git/refs/heads/$branchName | jq
+            gh api --method DELETE /repos/$orgName/$repo/git/refs/heads/$branchName | jq
+            
         }
     }
 }

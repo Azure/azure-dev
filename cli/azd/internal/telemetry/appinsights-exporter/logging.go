@@ -12,7 +12,7 @@ type logger struct {
 }
 
 // Process-wide logger
-var diagLog logger
+var diagLog logger = logger{listen: func(string) {}}
 
 // Sets the diagnostics logging listener for telemetry related warnings.
 // This is NOT thread-safe, and thus should be set once, early in application lifecycle.

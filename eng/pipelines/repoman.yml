@@ -154,3 +154,20 @@ jobs:
             -Tag '<!-- #comment-repoman-generate -->'
         env:
           GH_TOKEN: $(azuresdk-github-pat)
+
+      - task: PowerShell@2
+        displayName: Repoman Delete Template PR Branch(s)
+        condition: >-
+          and(
+            succeeded(),
+            eq(variables['Build.SourceBranch'], 'refs/heads/main')
+          )
+        inputs:
+          pwsh: true
+          targetType: filePath
+          filePath: ./eng/scripts/Remove-PRBranch.ps1
+          arguments: >-
+            -PRNumber '$(PRNumber)'
+            -BodyFile  "$([System.IO.Path]::GetTempPath())/repoman.json"
+        env:
+          GH_TOKEN: $(azuresdk-github-pat)

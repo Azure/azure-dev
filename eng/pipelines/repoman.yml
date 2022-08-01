@@ -167,7 +167,8 @@ jobs:
           targetType: filePath
           filePath: ./eng/scripts/Remove-PRBranch.ps1
           arguments: >-
-            -PRNumber '$(PRNumber)'
+            -CommitId '$(Build.SourceVersion)'
+            -Repo "kaizentm/azure-dev"
             -BodyFile  "$([System.IO.Path]::GetTempPath())/repoman.json"
         env:
           GH_TOKEN: $(azuresdk-github-pat)

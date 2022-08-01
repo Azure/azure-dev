@@ -1,11 +1,13 @@
 param(
-    [string] $PRNumber,
+    [string] $Repo,
+    [string] $CommitId,
     [string] $BodyFile
 )
 
 if (Test-Path $BodyFile) {
     $repomanContent = Get-Content $BodyFile -Raw | ConvertFrom-Json
     $itemCount = $repomanContent.count
+    $PRNumber = gh api "/repos/$Repo/commits/$CommitId/pulls"  | jq -r '.[].number'
     $branchName =  "pr/$PRNumber"
     for ($j = 0; $j -lt $repomanContent.count; $j++) { 
         $metaDataName = $($repomanContent[$j].metadataName)
@@ -20,4 +22,7 @@ if (Test-Path $BodyFile) {
             gh api --method Delete /repos/$orgName/$repo/git/refs/heads/$branchName | jq
         }
     }
+}
+else {
+    Write-Error "Error: Repoman json file $BodyFile not found!"
 }

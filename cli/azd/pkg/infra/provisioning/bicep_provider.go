@@ -436,8 +436,8 @@ func (p *BicepProvider) modulePath() string {
 }
 
 // NewBicepProvider creates a new instance of a Bicep Infra provider
-func NewBicepProvider(env *environment.Environment, projectPath string, options Options, console input.Console, azCli tools.AzCli) Provider {
-	bicepCli := tools.NewBicepCli(azCli)
+func NewBicepProvider(env *environment.Environment, projectPath string, options Options, console input.Console, bicepArgs tools.NewBicepCliArgs) Provider {
+	bicepCli := tools.NewBicepCli(bicepArgs)
 
 	return &BicepProvider{
 		env:         env,
@@ -445,6 +445,6 @@ func NewBicepProvider(env *environment.Environment, projectPath string, options 
 		options:     options,
 		console:     console,
 		bicepCli:    bicepCli,
-		azCli:       azCli,
+		azCli:       bicepArgs.AzCli,
 	}
 }

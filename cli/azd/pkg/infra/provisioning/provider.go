@@ -64,14 +64,14 @@ type Provider interface {
 	Destroy(ctx context.Context, plan *Plan) async.InteractiveTaskWithProgress[*DestroyResult, *DestroyProgress]
 }
 
-func NewProvider(env *environment.Environment, projectPath string, options Options, console input.Console, azCli tools.AzCli) (Provider, error) {
+func NewProvider(env *environment.Environment, projectPath string, options Options, console input.Console, bicepArgs tools.NewBicepCliArgs) (Provider, error) {
 	var provider Provider
 
 	switch options.Provider {
 	case Bicep:
-		provider = NewBicepProvider(env, projectPath, options, console, azCli)
+		provider = NewBicepProvider(env, projectPath, options, console, bicepArgs)
 	default:
-		provider = NewBicepProvider(env, projectPath, options, console, azCli)
+		provider = NewBicepProvider(env, projectPath, options, console, bicepArgs)
 	}
 
 	if provider != nil {

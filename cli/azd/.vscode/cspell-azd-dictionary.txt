@@ -1,4 +1,5 @@
 AADSTS
+appinsights
 appservice
 AZCLI
 azdcli
@@ -12,6 +13,8 @@ azsdk
 AZURECLI
 azurestaticapps
 azureutil
+Backticks
+BOOLSLICE
 byts
 containerapp
 csharpapp
@@ -27,6 +30,7 @@ functionapp
 GOARCH
 godotenv
 golangci
+keychain
 ldflags
 mgmt
 mgutz
@@ -36,15 +40,16 @@ omitempty
 osutil
 pflag
 pyapp
-keychain
 restoreapp
 rzip
+semconv
 serverfarms
 sstore
 staticwebapp
+STRINGSLICE
 structs
 swacli
+tracetest
 unmarshalling
 westus2
 yacspin
-Backticks

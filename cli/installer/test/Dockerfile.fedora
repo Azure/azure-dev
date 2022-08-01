@@ -1,5 +1,6 @@
+ARG prefix=''
 ARG base='fedora:37'
-FROM ${base}
+FROM ${prefix}${base}
 
 ARG shell='bash'
 ARG baseUrl='must set baseUrl'

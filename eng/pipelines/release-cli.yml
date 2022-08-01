@@ -497,7 +497,7 @@ stages:
 
         strategy:
           matrix:
-            LinuxSh:
+            LinuxDockerSh:
               Pool: azsdk-pool-mms-ubuntu-2004-general
               OSVmImage:  MMSUbuntu20.04
               TestShell: pwsh
@@ -505,6 +505,7 @@ stages:
                 ./test-installer-containers.ps1
                 -BaseUrl "$env:BASEURL"
                 -Version ''
+                -Prefix '$(docker-mirror-tag-prefix)/'
             MacSh:
               Pool: Azure Pipelines
               OSVmImage: macOS-11

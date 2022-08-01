@@ -1,5 +1,6 @@
+ARG prefix=''
 ARG base='ubuntu:20.04'
-FROM ${base}
+FROM ${prefix}${base}
 
 ARG shell='bash'
 ARG baseUrl='must set baseUrl'

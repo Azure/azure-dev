@@ -1,10 +1,12 @@
-ARG base='centos:8'
-FROM ${base}
+ARG prefix=''
+ARG base='centos:7'
+FROM ${prefix}${base}
 
 ARG shell='bash'
 ARG baseUrl='must set baseUrl'
 ARG version='must set version'
 
-COPY ./*.sh ./
+RUN yum install -y which
 
+COPY ./*.sh ./
 RUN ./test-sh-install.sh "${shell}" "${baseUrl}" "${version}"

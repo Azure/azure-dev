@@ -325,30 +325,8 @@ export class GenerateCommand implements RepomanCommand {
                 fileContent.push(generatedResults);
                 const output = JSON.stringify(fileContent)
                 
-                //tmp
-                console.log(chalk.grey("RESULTS OUTPUT"))
-                console.log(chalk.grey(output));
-                //end tmp    
-                //output.push(`### Project: **${this.manifest.metadata.name}**`);
-
-                // for (const result of pushedResults) {
-                //     output.push(`#### Remote: **${result.remote}**`);
-                //     output.push(`##### Branch: **${result.branch}**`);
-                //     output.push('');
-                //     output.push('You can initialize this project with:');
-                //     output.push('```bash');
-                //     output.push(`azd init -t ${result.org}/${result.repo} -b ${result.branch}`);
-                //     output.push('```');
-                //     output.push('');
-                //     output.push(`[View Changes](${result.branchUrl}) | [Compare Changes](${result.compareUrl})`);
-                //     output.push('');
-                //     output.push('---');
-                //     output.push('');
-                // }
-
                 if (this.options.debug) {
                     console.debug(chalk.grey("RESULTS OUTPUT"))
-                    //console.debug(chalk.grey(output.join(os.EOL)));
                     console.debug(chalk.grey(output));
                 }
                 

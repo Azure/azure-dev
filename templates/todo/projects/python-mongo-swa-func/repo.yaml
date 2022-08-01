@@ -9,7 +9,7 @@ repo:
 
   remotes:
     - name: azure-samples
-      url: git@github.com:kaizentm/todo-python-mongo-swa-func.git
+      url: git@github.com:Azure-Samples/todo-python-mongo-swa-func.git
 
   assets:
     # Common assets

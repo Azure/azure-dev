@@ -114,7 +114,7 @@ jobs:
           $output
           "@
           $file = New-TemporaryFile
-          write-host "Content Temp file path $file"
+
           Set-Content -Path $file -Value $content
           Write-Host "##vso[task.setvariable variable=CommentBodyFile]$file"
         displayName: Set Repoman Content
@@ -160,7 +160,7 @@ jobs:
         condition: >-
           and(
             succeeded(),
-            eq(variables['Build.SourceBranch'], 'refs/heads/cse_main')
+            eq(variables['Build.SourceBranch'], 'refs/heads/main')
           )
         inputs:
           pwsh: true

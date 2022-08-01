@@ -36,6 +36,12 @@ func (t *Task[R]) Result() R {
 	return t.result
 }
 
+// Awaits the async execution and returns the result and error status
+func (t *Task[R]) Await() (R, error) {
+	result := t.Result()
+	return result, t.Error
+}
+
 // Marks the current task as complete and sets internal error/result state and cleans up channels
 func (t *Task[R]) complete(result R, err error) {
 	t.Error = err

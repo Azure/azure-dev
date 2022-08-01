@@ -26,6 +26,21 @@ func TestTaskWithResult(t *testing.T) {
 	require.Nil(t, task.Error)
 }
 
+func TestTaskWithAwait(t *testing.T) {
+	expectedResult := "result"
+
+	task := NewTask[string]()
+	task.Run(func(ctx *TaskContext[string]) {
+		time.Sleep(250 * time.Millisecond)
+		ctx.SetResult(expectedResult)
+	})
+
+	actualResult, err := task.Await()
+
+	require.Equal(t, expectedResult, actualResult)
+	require.Nil(t, err)
+}
+
 func TestTaskWithError(t *testing.T) {
 	expectedError := errors.New("example error")
 

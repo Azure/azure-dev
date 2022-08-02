@@ -32,12 +32,12 @@ The following prerequisites are required to use this application. Please ensure 
 
 The fastest way for you to get this application up and running on Azure is to use the `azd up` command. This single command will create and configure all necessary Azure resources - including access policies and roles for your account and service-to-service communication with Managed Identities.
 
-1. Open a terminal, create a new empty folder, and change into it.
+1. Open a terminal and clone this repo locally with `git clone https://github.com/azure-samples/todo-python-mongo`.
 1. Create a new [Python virtual environment](https://docs.python.org/3/library/venv.html).
 1. Run the following command to initialize the project, provision Azure resources, and deploy the application code.
 
 ```bash
-azd up --template todo-python-mongo
+azd up
 ```
 
 You will be prompted for the following information:
@@ -61,8 +61,8 @@ Click the web application URL to launch the ToDo app. Create a new collection an
 > NOTE:
 >
 > - The `azd up` command will create Azure resources that will incur costs to your Azure subscription. You can clean up those resources manually via the Azure portal or with the `azd down` command.
-> - You can call `azd up` as many times as you like to both provision and deploy your solution, but you only need to provide the `--template` parameter the first time you call it to get the code locally. Subsequent `azd up` calls do not require the template parameter. If you do provide the parameter, all your local source code will be overwritten if you agree to overwrite when prompted.
-> - You can always create a new environment with `azd env new`.
+> - You can call `azd up` as many times as you like to both provision Azure resources and deploy your application code.
+> - You can create new environments with the `azd env new` command, such as an environment for dev, staging, and production.
 
 ### Application Architecture
 

@@ -1,10 +1,12 @@
-param name string
 param location string
+param resourceToken string
+param tags object
 
 resource storage 'Microsoft.Storage/storageAccounts@2021-09-01' = {
-  kind: 'StorageV2'
+  name: 'st${resourceToken}'
   location: location
-  name: '${replace(name, '-', '')}store'
+  tags: tags
+  kind: 'StorageV2'
   sku: {
     name: 'Standard_LRS'
   }

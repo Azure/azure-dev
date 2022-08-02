@@ -16,6 +16,7 @@ func TestDefaultDockerOptions(t *testing.T) {
 name: test-proj
 metadata:
   template: test-proj-template
+resourceGroup: rg-test
 services:
   web:
     project: src/web
@@ -79,6 +80,7 @@ func TestCustomDockerOptions(t *testing.T) {
 name: test-proj
 metadata:
   template: test-proj-template
+resourceGroup: rg-test
 services:
   web:
     project: src/web

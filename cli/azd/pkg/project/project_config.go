@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/azureutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/drone/envsubst"
 	"gopkg.in/yaml.v3"
@@ -59,6 +60,16 @@ func (pc *ProjectConfig) GetProject(ctx context.Context, env *environment.Enviro
 	// The context is then used when the AzCli is instantiated to set the correct user agent
 	if project.Metadata != nil && strings.TrimSpace(project.Metadata.Template) != "" {
 		ctx = context.WithValue(ctx, environment.TemplateContextKey, project.Metadata.Template)
+	}
+
+	if pc.ResourceGroupName == "" {
+		// We won't have a ResourceGroupName yet if it hasn't been set in either azure.yaml or AZURE_RESOURCE_GROUP env var
+		// Let's try to find the right resource group for this environment
+		resourceGroupName, err := azureutil.FindResourceGroupForEnvironment(ctx, env)
+		if err != nil {
+			return nil, err
+		}
+		pc.ResourceGroupName = resourceGroupName
 	}
 
 	for key, serviceConfig := range pc.Services {
@@ -122,9 +133,9 @@ func ParseProjectConfig(yamlContent string, env *environment.Environment) (*Proj
 		return nil, fmt.Errorf("unable to parse azure.yaml file. Please check the format of the file, and also verify you have the latest version of the CLI: %w", err)
 	}
 
-	// Get default resource group name if not override in the azure.yaml project file
+	// If ResourceGroupName not set in azure.yaml, then look for it in the AZURE_RESOURCE_GROUP env var
 	if strings.TrimSpace(projectFile.ResourceGroupName) == "" {
-		projectFile.ResourceGroupName = environment.DefaultResourceGroupName(env)
+		projectFile.ResourceGroupName = environment.GetResourceGroupNameFromEnvVar(env)
 	}
 
 	for key, svc := range projectFile.Services {

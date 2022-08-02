@@ -79,7 +79,9 @@ Run `golangci-lint run ./...`
 
 ## Spell checking
 
-Install [cspell](https://cspell.org/) and then run `cspell lint "**/*.go" --relative --config ./.vscode/cspell.yaml`
+1. Install [cspell](https://cspell.org/)
+2. CD to /cli/azd
+3. Run `cspell lint "**/*.go" --relative --config ./.vscode/cspell.yaml`
 
 ## Troubleshooting
 

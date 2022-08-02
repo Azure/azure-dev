@@ -104,16 +104,17 @@ func FindResourceGroupForEnvironment(ctx context.Context, env *environment.Envir
 	if len(rgs) == 1 && len(rgs[0].Name) > 0 {
 		// We found one and only one RG, so we'll use it.
 		return rgs[0].Name, nil
-	} else {
-		var msg string
-
-		if len(rgs) > 1 {
-			// We found more than one RG
-			msg = "more than one possible resource group was found."
-		} else {
-			// We didn't find any RGs
-			msg = "unable to find the environment resource group."
-		}
-		return "", fmt.Errorf(msg + " please explicitly specify your resource group in azure.yaml or the AZURE_RESOURCE_GROUP environment variable")
 	}
+
+	var msg string
+
+	if len(rgs) > 1 {
+		// We found more than one RG
+		msg = "more than one possible resource group was found."
+	} else {
+		// We didn't find any RGs
+		msg = "unable to find the environment resource group."
+	}
+
+	return "", fmt.Errorf("%s please explicitly specify your resource group in azure.yaml or the AZURE_RESOURCE_GROUP environment variable", msg)
 }

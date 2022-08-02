@@ -1,25 +1,25 @@
 package provisioning
 
-type Plan struct {
-	Parameters map[string]PlanInputParameter
-	Outputs    map[string]PlanOutputParameter
+type Preview struct {
+	Parameters map[string]PreviewInputParameter
+	Outputs    map[string]PreviewOutputParameter
 }
 
-type PlanInputParameter struct {
+type PreviewInputParameter struct {
 	Type         string
 	DefaultValue interface{}
 	Value        interface{}
 }
 
-type PlanOutputParameter struct {
+type PreviewOutputParameter struct {
 	Type  string
 	Value interface{}
 }
 
-func (p *PlanInputParameter) HasValue() bool {
+func (p *PreviewInputParameter) HasValue() bool {
 	return p.Value != nil
 }
 
-func (p *PlanInputParameter) HasDefaultValue() bool {
+func (p *PreviewInputParameter) HasDefaultValue() bool {
 	return p.DefaultValue != nil
 }

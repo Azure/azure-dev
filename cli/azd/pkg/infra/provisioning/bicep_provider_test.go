@@ -14,7 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// Sets up all the mocks required for the bicep plan & apply operation
+// Sets up all the mocks required for the bicep preview & deploy operation
 func setupExecUtilWithMocks(template *BicepTemplate, deployResult *tools.AzCliDeployment) *mocks.MockExecUtil {
 	execUtil := &mocks.MockExecUtil{}
 
@@ -77,7 +77,7 @@ func setupExecUtilWithMocks(template *BicepTemplate, deployResult *tools.AzCliDe
 	return execUtil
 }
 
-func TestBicepPlan(t *testing.T) {
+func TestBicepPreview(t *testing.T) {
 	bicepInputParams := make(map[string]BicepInputParameter)
 	bicepInputParams["name"] = BicepInputParameter{Value: "${AZURE_ENV_NAME}"}
 	bicepInputParams["location"] = BicepInputParameter{Value: "${AZURE_LOCATION}"}
@@ -103,30 +103,30 @@ func TestBicepPlan(t *testing.T) {
 	bicepArgs := tools.NewBicepCliArgs{AzCli: azCli, RunWithResultFn: execUtil.RunWithResult}
 	console := &mocks.MockConsole{}
 	infraProvider := NewBicepProvider(&env, projectDir, options, console, bicepArgs)
-	planTask := infraProvider.Plan(context.Background())
+	previewTask := infraProvider.Preview(context.Background())
 
 	go func() {
-		for progressReport := range planTask.Progress() {
+		for progressReport := range previewTask.Progress() {
 			fmt.Println(progressReport.Timestamp)
 		}
 	}()
 
 	go func() {
-		for planInteractive := range planTask.Interactive() {
-			fmt.Println(planInteractive)
+		for previewInteractive := range previewTask.Interactive() {
+			fmt.Println(previewInteractive)
 		}
 	}()
 
-	planResult := planTask.Result()
+	previewResult, err := previewTask.Await()
 
-	require.Nil(t, planTask.Error)
-	require.NotNil(t, planResult.Plan)
+	require.Nil(t, err)
+	require.NotNil(t, previewResult.Preview)
 
-	require.Equal(t, env.Values["AZURE_LOCATION"], planResult.Plan.Parameters["location"].Value)
-	require.Equal(t, env.Values["AZURE_ENV_NAME"], planResult.Plan.Parameters["name"].Value)
+	require.Equal(t, env.Values["AZURE_LOCATION"], previewResult.Preview.Parameters["location"].Value)
+	require.Equal(t, env.Values["AZURE_ENV_NAME"], previewResult.Preview.Parameters["name"].Value)
 }
 
-func TestBicepApply(t *testing.T) {
+func TestBicepDeploy(t *testing.T) {
 	expectedWebsiteUrl := "http://myapp.azurewebsites.net"
 	bicepInputParams := make(map[string]BicepInputParameter)
 	bicepInputParams["name"] = BicepInputParameter{Value: "${AZURE_ENV_NAME}"}
@@ -141,7 +141,7 @@ func TestBicepApply(t *testing.T) {
 
 	deployOutputs := make(map[string]tools.AzCliDeploymentOutput)
 	deployOutputs["WEBSITE_URL"] = tools.AzCliDeploymentOutput{Value: expectedWebsiteUrl}
-	deployResult := tools.AzCliDeployment{
+	azDeployment := tools.AzCliDeployment{
 		Id:   "DEPLOYMENT_ID",
 		Name: "DEPLOYMENT_NAME",
 		Properties: tools.AzCliDeploymentProperties{
@@ -149,7 +149,7 @@ func TestBicepApply(t *testing.T) {
 		},
 	}
 
-	execUtil := setupExecUtilWithMocks(&bicepTemplate, &deployResult)
+	execUtil := setupExecUtilWithMocks(&bicepTemplate, &azDeployment)
 	ctx := context.Background()
 	azCli := tools.NewAzCli(tools.NewAzCliArgs{RunWithResultFn: execUtil.RunWithResult})
 	projectDir := "../../../test/samples/webapp"
@@ -166,41 +166,41 @@ func TestBicepApply(t *testing.T) {
 
 	scope := NewSubscriptionProvisioningScope(azCli, env.Values["AZURE_LOCATION"], env.GetSubscriptionId(), env.GetEnvName())
 	infraProvider := NewBicepProvider(&env, projectDir, options, console, bicepArgs)
-	planTask := infraProvider.Plan(ctx)
+	previewTask := infraProvider.Preview(ctx)
 
 	go func() {
-		for planProgress := range planTask.Progress() {
-			fmt.Println(planProgress.Message)
+		for previewProgress := range previewTask.Progress() {
+			fmt.Println(previewProgress.Message)
 		}
 	}()
 
 	go func() {
-		for planInteractive := range planTask.Interactive() {
-			fmt.Println(planInteractive)
+		for previewInteractive := range previewTask.Interactive() {
+			fmt.Println(previewInteractive)
 		}
 	}()
 
-	require.Nil(t, planTask.Error)
-	planResult := planTask.Result()
-	require.NotNil(t, planResult.Plan)
+	require.Nil(t, previewTask.Error)
+	previewResult := previewTask.Result()
+	require.NotNil(t, previewResult.Preview)
 
-	applyProgressMsg := "Deploying..."
-	fmt.Println(applyProgressMsg)
-	applyTask := infraProvider.Apply(ctx, &planResult.Plan, scope)
+	deployProgressMsg := "Deploying..."
+	fmt.Println(deployProgressMsg)
+	deployTask := infraProvider.Deploy(ctx, &previewResult.Preview, scope)
 
 	go func() {
-		for applyProgress := range applyTask.Progress() {
-			fmt.Println(applyProgress.Timestamp)
+		for deployProgress := range deployTask.Progress() {
+			fmt.Println(deployProgress.Timestamp)
 		}
 	}()
 
 	go func() {
-		for applyInteractive := range applyTask.Interactive() {
-			fmt.Println(applyInteractive)
+		for deployInteractive := range deployTask.Interactive() {
+			fmt.Println(deployInteractive)
 		}
 	}()
 
-	applyResult := applyTask.Result()
-	require.NotNil(t, applyResult)
-	require.Equal(t, applyResult.Outputs["WEBSITE_URL"].Value, expectedWebsiteUrl)
+	deployResult := deployTask.Result()
+	require.NotNil(t, deployResult)
+	require.Equal(t, deployResult.Outputs["WEBSITE_URL"].Value, expectedWebsiteUrl)
 }

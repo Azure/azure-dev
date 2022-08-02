@@ -60,11 +60,11 @@ func (p *BicepProvider) RequiredExternalTools() []tools.ExternalTool {
 	return []tools.ExternalTool{p.bicepCli, p.azCli}
 }
 
-// Plans the infrastructure provisioning
-func (p *BicepProvider) Plan(ctx context.Context) async.InteractiveTaskWithProgress[*PlanResult, *PlanProgress] {
+// Previews the infrastructure provisioning
+func (p *BicepProvider) Preview(ctx context.Context) async.InteractiveTaskWithProgress[*PreviewResult, *PreviewProgress] {
 	return *async.RunInteractiveTaskWithProgress(
-		func(asyncContext *async.InteractiveTaskContextWithProgress[*PlanResult, *PlanProgress]) {
-			asyncContext.SetProgress(&PlanProgress{Message: "Generating Bicep parameters file", Timestamp: time.Now()})
+		func(asyncContext *async.InteractiveTaskContextWithProgress[*PreviewResult, *PreviewProgress]) {
+			asyncContext.SetProgress(&PreviewProgress{Message: "Generating Bicep parameters file", Timestamp: time.Now()})
 			bicepTemplate, err := p.createParametersFile()
 			if err != nil {
 				asyncContext.SetError(fmt.Errorf("creating parameters file: %w", err))
@@ -72,8 +72,8 @@ func (p *BicepProvider) Plan(ctx context.Context) async.InteractiveTaskWithProgr
 			}
 
 			modulePath := p.modulePath()
-			asyncContext.SetProgress(&PlanProgress{Message: "Compiling Bicep template", Timestamp: time.Now()})
-			template, err := p.createPlan(ctx, modulePath)
+			asyncContext.SetProgress(&PreviewProgress{Message: "Compiling Bicep template", Timestamp: time.Now()})
+			template, err := p.createPreview(ctx, modulePath)
 			if err != nil {
 				asyncContext.SetError(fmt.Errorf("creating template: %w", err))
 				return
@@ -87,15 +87,15 @@ func (p *BicepProvider) Plan(ctx context.Context) async.InteractiveTaskWithProgr
 				}
 			}
 
-			result := PlanResult{
-				Plan: *template,
+			result := PreviewResult{
+				Preview: *template,
 			}
 
 			asyncContext.SetResult(&result)
 		})
 }
 
-func (p *BicepProvider) UpdatePlan(ctx context.Context, plan Plan) error {
+func (p *BicepProvider) UpdatePlan(ctx context.Context, preview Preview) error {
 	bicepFile := BicepTemplate{
 		Schema:         "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
 		ContentVersion: "1.0.0.0",
@@ -103,7 +103,7 @@ func (p *BicepProvider) UpdatePlan(ctx context.Context, plan Plan) error {
 
 	parameters := make(map[string]BicepInputParameter)
 
-	for key, param := range plan.Parameters {
+	for key, param := range preview.Parameters {
 		parameters[key] = BicepInputParameter{
 			Type:         param.Type,
 			DefaultValue: param.DefaultValue,
@@ -128,9 +128,9 @@ func (p *BicepProvider) UpdatePlan(ctx context.Context, plan Plan) error {
 }
 
 // Provisioning the infrastructure within the specified template
-func (p *BicepProvider) Apply(ctx context.Context, plan *Plan, scope Scope) async.InteractiveTaskWithProgress[*ApplyResult, *ApplyProgress] {
+func (p *BicepProvider) Deploy(ctx context.Context, preview *Preview, scope Scope) async.InteractiveTaskWithProgress[*DeployResult, *DeployProgress] {
 	return *async.RunInteractiveTaskWithProgress(
-		func(asyncContext *async.InteractiveTaskContextWithProgress[*ApplyResult, *ApplyProgress]) {
+		func(asyncContext *async.InteractiveTaskContextWithProgress[*DeployResult, *DeployProgress]) {
 			isDeploymentComplete := false
 
 			err := asyncContext.Interact(func() error {
@@ -151,8 +151,8 @@ func (p *BicepProvider) Apply(ctx context.Context, plan *Plan, scope Scope) asyn
 			go func() {
 				modulePath := p.modulePath()
 				parametersFilePath := p.parametersFilePath()
-				deployResult, err := p.applyModule(ctx, scope, modulePath, parametersFilePath)
-				var outputs map[string]PlanOutputParameter
+				deployResult, err := p.deployModule(ctx, scope, modulePath, parametersFilePath)
+				var outputs map[string]PreviewOutputParameter
 
 				if err != nil {
 					asyncContext.SetError(err)
@@ -161,10 +161,10 @@ func (p *BicepProvider) Apply(ctx context.Context, plan *Plan, scope Scope) asyn
 				}
 
 				if deployResult != nil {
-					outputs = p.createOutputParameters(plan, deployResult.Properties.Outputs)
+					outputs = p.createOutputParameters(preview, deployResult.Properties.Outputs)
 				}
 
-				result := &ApplyResult{
+				result := &DeployResult{
 					Operations: nil,
 					Outputs:    outputs,
 				}
@@ -187,7 +187,7 @@ func (p *BicepProvider) Apply(ctx context.Context, plan *Plan, scope Scope) asyn
 						continue
 					}
 
-					progressReport := ApplyProgress{
+					progressReport := DeployProgress{
 						Timestamp:  time.Now(),
 						Operations: *ops,
 					}
@@ -198,7 +198,7 @@ func (p *BicepProvider) Apply(ctx context.Context, plan *Plan, scope Scope) asyn
 		})
 }
 
-func (p *BicepProvider) Destroy(ctx context.Context, plan *Plan) async.InteractiveTaskWithProgress[*DestroyResult, *DestroyProgress] {
+func (p *BicepProvider) Destroy(ctx context.Context, preview *Preview) async.InteractiveTaskWithProgress[*DestroyResult, *DestroyProgress] {
 	return *async.RunInteractiveTaskWithProgress(
 		func(asyncContext *async.InteractiveTaskContextWithProgress[*DestroyResult, *DestroyProgress]) {
 			destroyResult := DestroyResult{}
@@ -262,14 +262,14 @@ func (p *BicepProvider) Destroy(ctx context.Context, plan *Plan) async.Interacti
 		})
 }
 
-func (p *BicepProvider) createOutputParameters(template *Plan, azureOutputParams map[string]tools.AzCliDeploymentOutput) map[string]PlanOutputParameter {
+func (p *BicepProvider) createOutputParameters(template *Preview, azureOutputParams map[string]tools.AzCliDeploymentOutput) map[string]PreviewOutputParameter {
 	canonicalOutputCasings := make(map[string]string, len(template.Outputs))
 
 	for key := range template.Outputs {
 		canonicalOutputCasings[strings.ToLower(key)] = key
 	}
 
-	outputParams := make(map[string]PlanOutputParameter, len(azureOutputParams))
+	outputParams := make(map[string]PreviewOutputParameter, len(azureOutputParams))
 
 	for key, azureParam := range azureOutputParams {
 		var paramName string
@@ -280,7 +280,7 @@ func (p *BicepProvider) createOutputParameters(template *Plan, azureOutputParams
 			paramName = key
 		}
 
-		outputParams[paramName] = PlanOutputParameter{
+		outputParams[paramName] = PreviewOutputParameter{
 			Type:  azureParam.Type,
 			Value: azureParam.Value,
 		}
@@ -330,7 +330,7 @@ func (p *BicepProvider) createParametersFile() (*BicepTemplate, error) {
 }
 
 // Creates the compiled template from the specified module path
-func (p *BicepProvider) createPlan(ctx context.Context, modulePath string) (*Plan, error) {
+func (p *BicepProvider) createPreview(ctx context.Context, modulePath string) (*Preview, error) {
 	// Compile the bicep file into an ARM template we can create.
 	compiled, err := p.bicepCli.Build(ctx, modulePath)
 	if err != nil {
@@ -345,7 +345,7 @@ func (p *BicepProvider) createPlan(ctx context.Context, modulePath string) (*Pla
 		return nil, fmt.Errorf("error un-marshaling arm template from json: %w", err)
 	}
 
-	compiledTemplate, err := p.convertToPlan(bicepTemplate)
+	compiledTemplate, err := p.convertToPreview(bicepTemplate)
 	if err != nil {
 		return nil, fmt.Errorf("converting from bicep to compiled template: %w", err)
 	}
@@ -354,13 +354,13 @@ func (p *BicepProvider) createPlan(ctx context.Context, modulePath string) (*Pla
 }
 
 // Converts a Bicep parameters file to a generic provisioning template
-func (p *BicepProvider) convertToPlan(bicepTemplate BicepTemplate) (*Plan, error) {
-	template := Plan{}
-	parameters := make(map[string]PlanInputParameter)
-	outputs := make(map[string]PlanOutputParameter)
+func (p *BicepProvider) convertToPreview(bicepTemplate BicepTemplate) (*Preview, error) {
+	template := Preview{}
+	parameters := make(map[string]PreviewInputParameter)
+	outputs := make(map[string]PreviewOutputParameter)
 
 	for key, param := range bicepTemplate.Parameters {
-		parameters[key] = PlanInputParameter{
+		parameters[key] = PreviewInputParameter{
 			Type:         param.Type,
 			Value:        param.Value,
 			DefaultValue: param.DefaultValue,
@@ -368,7 +368,7 @@ func (p *BicepProvider) convertToPlan(bicepTemplate BicepTemplate) (*Plan, error
 	}
 
 	for key, param := range bicepTemplate.Outputs {
-		outputs[key] = PlanOutputParameter{
+		outputs[key] = PreviewOutputParameter{
 			Type:  param.Type,
 			Value: param.Value,
 		}
@@ -381,7 +381,7 @@ func (p *BicepProvider) convertToPlan(bicepTemplate BicepTemplate) (*Plan, error
 }
 
 // Deploys the specified Bicep module and parameters with the selected provisioning scope (subscription vs resource group)
-func (p *BicepProvider) applyModule(ctx context.Context, scope Scope, bicepPath string, parametersPath string) (*tools.AzCliDeployment, error) {
+func (p *BicepProvider) deployModule(ctx context.Context, scope Scope, bicepPath string, parametersPath string) (*tools.AzCliDeployment, error) {
 	// We've seen issues where `Deploy` completes but for a short while after, fetching the deployment fails with a `DeploymentNotFound` error.
 	// Since other commands of ours use the deployment, let's try to fetch it here and if we fail with `DeploymentNotFound`,
 	// ignore this error, wait a short while and retry.

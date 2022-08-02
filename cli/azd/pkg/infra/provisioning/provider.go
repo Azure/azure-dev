@@ -26,26 +26,26 @@ type Options struct {
 	Module   string       `yaml:"module"`
 }
 
-type PlanResult struct {
-	Plan Plan
+type PreviewResult struct {
+	Preview Preview
 }
 
-type PlanProgress struct {
+type PreviewProgress struct {
 	Message   string
 	Timestamp time.Time
 }
 
-type ApplyResult struct {
+type DeployResult struct {
 	Operations []tools.AzCliResourceOperation
-	Outputs    map[string]PlanOutputParameter
+	Outputs    map[string]PreviewOutputParameter
 }
 
 type DestroyResult struct {
 	Resources []tools.AzCliResource
-	Outputs   map[string]PlanOutputParameter
+	Outputs   map[string]PreviewOutputParameter
 }
 
-type ApplyProgress struct {
+type DeployProgress struct {
 	Timestamp  time.Time
 	Operations []tools.AzCliResourceOperation
 }
@@ -58,10 +58,10 @@ type DestroyProgress struct {
 type Provider interface {
 	Name() string
 	RequiredExternalTools() []tools.ExternalTool
-	UpdatePlan(ctx context.Context, plan Plan) error
-	Plan(ctx context.Context) async.InteractiveTaskWithProgress[*PlanResult, *PlanProgress]
-	Apply(ctx context.Context, plan *Plan, scope Scope) async.InteractiveTaskWithProgress[*ApplyResult, *ApplyProgress]
-	Destroy(ctx context.Context, plan *Plan) async.InteractiveTaskWithProgress[*DestroyResult, *DestroyProgress]
+	UpdatePlan(ctx context.Context, preview Preview) error
+	Preview(ctx context.Context) async.InteractiveTaskWithProgress[*PreviewResult, *PreviewProgress]
+	Deploy(ctx context.Context, preview *Preview, scope Scope) async.InteractiveTaskWithProgress[*DeployResult, *DeployProgress]
+	Destroy(ctx context.Context, preview *Preview) async.InteractiveTaskWithProgress[*DestroyResult, *DestroyProgress]
 }
 
 func NewProvider(env *environment.Environment, projectPath string, options Options, console input.Console, bicepArgs tools.NewBicepCliArgs) (Provider, error) {

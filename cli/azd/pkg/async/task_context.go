@@ -1,3 +1,4 @@
+//nolint:all
 package async
 
 import (
@@ -6,25 +7,6 @@ import (
 
 // Task function definition
 type TaskRunFunc[R comparable] func(ctx *TaskContext[R])
-
-type A struct {
-}
-
-type B struct {
-	A
-}
-
-func start() {
-	a := A{}
-	b := B{}
-
-	hello(a)
-	hello(b.A)
-}
-
-func hello(value A) {
-
-}
 
 // The context available to the executing Task
 type TaskContext[R comparable] struct {

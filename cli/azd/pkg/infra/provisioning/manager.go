@@ -21,24 +21,24 @@ type Manager struct {
 }
 
 // Creates the Azure infrastructure for the specified project
-func (pm *Manager) Create(ctx context.Context, interactive bool) (*ApplyResult, error) {
-	planResult, err := pm.plan(ctx, interactive)
+func (pm *Manager) Create(ctx context.Context, interactive bool) (*DeployResult, error) {
+	previewResult, err := pm.preview(ctx, interactive)
 	if err != nil {
 		return nil, err
 	}
 
-	updated, err := pm.ensureParameters(ctx, &planResult.Plan)
+	updated, err := pm.ensureParameters(ctx, &previewResult.Preview)
 	if err != nil {
 		return nil, err
 	}
 
-	location, err := pm.ensureLocation(ctx, &planResult.Plan)
+	location, err := pm.ensureLocation(ctx, &previewResult.Preview)
 	if err != nil {
 		return nil, err
 	}
 
 	if updated {
-		if err := pm.provider.UpdatePlan(ctx, planResult.Plan); err != nil {
+		if err := pm.provider.UpdatePlan(ctx, previewResult.Preview); err != nil {
 			return nil, fmt.Errorf("updating deployment parameters: %w", err)
 		}
 
@@ -47,23 +47,23 @@ func (pm *Manager) Create(ctx context.Context, interactive bool) (*ApplyResult, 
 		}
 	}
 
-	applyResult, err := pm.apply(ctx, location, &planResult.Plan, interactive)
+	deployResult, err := pm.deploy(ctx, location, &previewResult.Preview, interactive)
 	if err != nil {
 		return nil, err
 	}
 
-	return applyResult, nil
+	return deployResult, nil
 }
 
 // Destroys the Azure infrastructure for the specified project
 func (pm *Manager) Destroy(ctx context.Context, interactive bool) (*DestroyResult, error) {
-	planResult, err := pm.plan(ctx, interactive)
+	previewResult, err := pm.preview(ctx, interactive)
 	if err != nil {
 		return nil, err
 	}
 
 	// Call provisioning provider to destroy the infrastructure
-	destroyResult, err := pm.destroy(ctx, &planResult.Plan, interactive)
+	destroyResult, err := pm.destroy(ctx, &previewResult.Preview, interactive)
 	if err != nil {
 		return nil, err
 	}
@@ -82,58 +82,58 @@ func (pm *Manager) Destroy(ctx context.Context, interactive bool) (*DestroyResul
 	return destroyResult, nil
 }
 
-// Plans the infrastructure provisioning and orchestrates interactive terminal operations
-func (pm *Manager) plan(ctx context.Context, interactive bool) (*PlanResult, error) {
-	var planResult *PlanResult
+// Previews the infrastructure provisioning and orchestrates interactive terminal operations
+func (pm *Manager) preview(ctx context.Context, interactive bool) (*PreviewResult, error) {
+	var previewResult *PreviewResult
 
-	planAndReportProgress := func(showProgress func(string)) error {
-		planTask := pm.provider.Plan(ctx)
+	previewAndReportProgress := func(showProgress func(string)) error {
+		previewTask := pm.provider.Preview(ctx)
 
 		go func() {
-			for progress := range planTask.Progress() {
+			for progress := range previewTask.Progress() {
 				showProgress(fmt.Sprintf("%s...", progress.Message))
 			}
 		}()
 
-		planResult = planTask.Result()
-		if planTask.Error != nil {
-			return fmt.Errorf("compiling infra template: %w", planTask.Error)
+		previewResult = previewTask.Result()
+		if previewTask.Error != nil {
+			return fmt.Errorf("compiling infra template: %w", previewTask.Error)
 		}
 
 		return nil
 	}
 
-	err := spin.RunWithUpdater("Planning infrastructure provisioning", planAndReportProgress,
+	err := spin.RunWithUpdater("Previewing infrastructure provisioning", previewAndReportProgress,
 		func(s *yacspin.Spinner, deploySuccess bool) {
-			s.StopMessage("Created infrastructure provisioning plan\n")
+			s.StopMessage("Created infrastructure provisioning preview\n")
 		})
 
 	if err != nil {
-		return nil, fmt.Errorf("error planning infrastructure deployment: %w", err)
+		return nil, fmt.Errorf("error previewing infrastructure deployment: %w", err)
 	}
 
-	return planResult, nil
+	return previewResult, nil
 }
 
 // Applies the specified infrastructure provisioning and orchestrates the interactive terminal operations
-func (pm *Manager) apply(ctx context.Context, location string, plan *Plan, interactive bool) (*ApplyResult, error) {
-	var applyResult *ApplyResult
+func (pm *Manager) deploy(ctx context.Context, location string, preview *Preview, interactive bool) (*DeployResult, error) {
+	var deployResult *DeployResult
 
 	deployAndReportProgress := func(showProgress func(string)) error {
 		provisioningScope := NewSubscriptionProvisioningScope(pm.azCli, location, pm.env.GetSubscriptionId(), pm.env.GetEnvName())
-		applyTask := pm.provider.Apply(ctx, plan, provisioningScope)
+		deployTask := pm.provider.Deploy(ctx, preview, provisioningScope)
 
 		go func() {
-			for progressReport := range applyTask.Progress() {
+			for progressReport := range deployTask.Progress() {
 				if interactive {
-					pm.showApplyProgress(*progressReport, showProgress)
+					pm.showDeployProgress(*progressReport, showProgress)
 				}
 			}
 		}()
 
-		applyResult = applyTask.Result()
-		if applyTask.Error != nil {
-			return applyTask.Error
+		deployResult = deployTask.Result()
+		if deployTask.Error != nil {
+			return deployTask.Error
 		}
 
 		return nil
@@ -145,18 +145,18 @@ func (pm *Manager) apply(ctx context.Context, location string, plan *Plan, inter
 		})
 
 	if err != nil {
-		return nil, fmt.Errorf("error applying infrastructure: %w", err)
+		return nil, fmt.Errorf("error deploying infrastructure: %w", err)
 	}
 
-	return applyResult, nil
+	return deployResult, nil
 }
 
 // Destroys the specified infrastructure provisioning and orchestrates the interactive terminal operations
-func (pm *Manager) destroy(ctx context.Context, plan *Plan, interactive bool) (*DestroyResult, error) {
+func (pm *Manager) destroy(ctx context.Context, preview *Preview, interactive bool) (*DestroyResult, error) {
 	var destroyResult *DestroyResult
 
 	deleteWithProgress := func(showProgress func(string)) error {
-		destroyTask := pm.provider.Destroy(ctx, plan)
+		destroyTask := pm.provider.Destroy(ctx, preview)
 
 		go func() {
 			for destroyProgress := range destroyTask.Progress() {
@@ -192,7 +192,7 @@ func (pm *Manager) destroy(ctx context.Context, plan *Plan, interactive bool) (*
 }
 
 // Creates a progress message from the provisioning progress report
-func (pm *Manager) showApplyProgress(progressReport ApplyProgress, showProgress func(string)) {
+func (pm *Manager) showDeployProgress(progressReport DeployProgress, showProgress func(string)) {
 	succeededCount := 0
 
 	for _, resourceOperation := range progressReport.Operations {
@@ -205,11 +205,11 @@ func (pm *Manager) showApplyProgress(progressReport ApplyProgress, showProgress 
 	showProgress(status)
 }
 
-// Ensures a provisioning location has been identified within the plan or prompts the user for input
-func (pm *Manager) ensureLocation(ctx context.Context, plan *Plan) (string, error) {
+// Ensures a provisioning location has been identified within the preview or prompts the user for input
+func (pm *Manager) ensureLocation(ctx context.Context, preview *Preview) (string, error) {
 	var location string
 
-	for key, param := range plan.Parameters {
+	for key, param := range preview.Parameters {
 		if key == "location" {
 			location = fmt.Sprint(param.Value)
 			if strings.TrimSpace(location) != "" {
@@ -235,13 +235,13 @@ func (pm *Manager) ensureLocation(ctx context.Context, plan *Plan) (string, erro
 }
 
 // Ensures the provisioning parameters are valid and prompts the user for input as needed
-func (pm *Manager) ensureParameters(ctx context.Context, plan *Plan) (bool, error) {
-	if len(plan.Parameters) == 0 {
+func (pm *Manager) ensureParameters(ctx context.Context, preview *Preview) (bool, error) {
+	if len(preview.Parameters) == 0 {
 		return false, nil
 	}
 
 	updatedParameters := false
-	for key, param := range plan.Parameters {
+	for key, param := range preview.Parameters {
 		// If this parameter has a default, then there is no need for us to configure it
 		if param.HasDefaultValue() {
 			continue

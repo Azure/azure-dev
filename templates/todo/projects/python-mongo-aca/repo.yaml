@@ -11,6 +11,11 @@ repo:
     - name: azure-samples
       url: git@github.com:Azure-Samples/todo-python-mongo-aca.git
 
+  rewrite:
+    patterns:
+      - "**/azure.@(yml|yaml)"
+      - "**/*.bicep"
+      
   assets:
     # Common assets
 
@@ -25,7 +30,7 @@ repo:
       to: ./src/api
       patterns:
         - openapi.yaml
-
+     
     # Template common
     - from: ../../../common
       to: ./

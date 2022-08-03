@@ -44,9 +44,20 @@ jobs:
     steps:
       - checkout: self
 
+      - template: /eng/pipelines/templates/steps/install-bicep.yml
+
       - template: /eng/pipelines/templates/steps/az-login.yml
 
-      - bash: curl -fsSL https://aka.ms/install-azd.sh | bash
+      - pwsh: |
+          if (!$env:AZDVERSION) {
+            Write-Host "AzdVersion variable not set. Using 'daily'"
+            Write-Host "##vso[task.setvariable variable=AzdVersion]daily"
+          } else {
+            Write-Host "Using specified azd version: $(AzdVersion)"
+          }
+        displayName: Ensure $(AzdVersion) is set
+
+      - bash: curl -fsSL https://aka.ms/install-azd.sh | bash -s -- --version '$(AzdVersion)' --verbose
         displayName: Install azd
 
       - pwsh: |

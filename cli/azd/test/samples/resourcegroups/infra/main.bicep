@@ -8,27 +8,23 @@ param name string
 @description('Primary location for all resources')
 param location string
 
+param resourceGroupName string
+param includeEnvNameTag string = 'false'
+param createMultipleResourceGroups string = 'false'
+
 @description('A time to mark on created resource groups, so they can be cleaned up via an automated process.')
 param deleteAfterTime string = dateTimeAdd(utcNow('o'), 'PT1H')
 
-var resourceToken = toLower(uniqueString(subscription().id, name, location))
-var tags = { 'azd-env-name': name, DeleteAfter: deleteAfterTime }
+var tags = { 'azd-env-name': includeEnvNameTag == 'true' ? name : '', DeleteAfter: deleteAfterTime }
 
 resource resourceGroup 'Microsoft.Resources/resourceGroups@2021-04-01' = {
-  name: 'rg-${name}'
+  name: resourceGroupName
   location: location
   tags: tags
 }
 
-module resources 'resources.bicep' = {
-  name: 'resources'
-  scope: resourceGroup
-  params: {
-    location: location
-    resourceToken: resourceToken
-    tags: tags
-  }
+resource resourceGroup2 'Microsoft.Resources/resourceGroups@2021-04-01' = if (createMultipleResourceGroups == 'true') {
+  name: '${resourceGroupName}2'
+  location: location
+  tags: tags
 }
-
-output AZURE_STORAGE_ACCOUNT_ID string = resources.outputs.AZURE_STORAGE_ACCOUNT_ID
-output AZURE_STORAGE_ACCOUNT_NAME string = resources.outputs.AZURE_STORAGE_ACCOUNT_NAME

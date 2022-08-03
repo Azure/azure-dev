@@ -10,33 +10,30 @@ param location string
 param imageName string
 
 var resourceToken = toLower(uniqueString(subscription().id, name, location))
-var tags = {
-  'azd-env-name': name
-}
+var tags = { 'azd-env-name': name }
+var abbrs = loadJsonContent('../../../../common/infra/abbreviations.json')
 
 resource containerAppsEnvironment 'Microsoft.App/managedEnvironments@2022-03-01' existing = {
-  name: 'cae-${resourceToken}'
+  name: '${abbrs.appManagedEnvironments}${resourceToken}'
 }
 
 // 2022-02-01-preview needed for anonymousPullEnabled
 resource containerRegistry 'Microsoft.ContainerRegistry/registries@2022-02-01-preview' existing = {
-  name: 'contreg${resourceToken}'
+  name: '${abbrs.containerRegistryRegistries}${resourceToken}'
 }
 
 resource applicationInsights 'Microsoft.Insights/components@2020-02-02' existing = {
-  name: 'appi-${resourceToken}'
+  name: '${abbrs.insightsComponents}${resourceToken}'
 }
 
 resource api 'Microsoft.App/containerApps@2022-03-01' existing = {
-  name: 'ca-api-${resourceToken}'
+  name: '${abbrs.appContainerApps}api-${resourceToken}'
 }
 
 resource web 'Microsoft.App/containerApps@2022-03-01' = {
-  name: 'ca-web-${resourceToken}'
+  name: '${abbrs.appContainerApps}web-${resourceToken}'
   location: location
-  tags: union(tags, {
-      'azd-service-name': 'web'
-    })
+  tags: union(tags, { 'azd-service-name': 'web' })
   identity: {
     type: 'SystemAssigned'
   }

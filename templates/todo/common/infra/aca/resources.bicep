@@ -6,8 +6,10 @@ param tags object
 param apiImageName string = ''
 param webImageName string = ''
 
+var abbrs = loadJsonContent('../../../../common/infra/abbreviations.json')
+
 resource containerAppsEnvironment 'Microsoft.App/managedEnvironments@2022-03-01' = {
-  name: 'cae-${resourceToken}'
+  name: '${abbrs.appManagedEnvironments}${resourceToken}'
   location: location
   tags: tags
   properties: {
@@ -23,7 +25,7 @@ resource containerAppsEnvironment 'Microsoft.App/managedEnvironments@2022-03-01'
 
 // 2022-02-01-preview needed for anonymousPullEnabled
 resource containerRegistry 'Microsoft.ContainerRegistry/registries@2022-02-01-preview' = {
-  name: 'contreg${resourceToken}'
+  name: '${abbrs.containerRegistryRegistries}${resourceToken}'
   location: location
   tags: tags
   sku: {
@@ -43,7 +45,7 @@ resource containerRegistry 'Microsoft.ContainerRegistry/registries@2022-02-01-pr
 }
 
 resource keyVault 'Microsoft.KeyVault/vaults@2021-10-01' = {
-  name: 'keyvault${resourceToken}'
+  name: '${abbrs.keyVaultVaults}${resourceToken}'
   location: location
   tags: tags
   properties: {
@@ -81,8 +83,8 @@ resource keyVaultAccessPolicies 'Microsoft.KeyVault/vaults/accessPolicies@2021-1
   }
 }
 
-module applicationInsightsResources './applicationinsights.bicep' = {
-  name: 'applicationinsights-${resourceToken}'
+module applicationInsightsResources '../../../../common/infra/applicationinsights.bicep' = {
+  name: 'applicationinsights-resources'
   params: {
     resourceToken: resourceToken
     location: location
@@ -91,8 +93,8 @@ module applicationInsightsResources './applicationinsights.bicep' = {
   }
 }
 
-module api './api.bicep' = {
-  name: 'api-resources-${resourceToken}'
+module api 'api.bicep' = {
+  name: 'api-resources'
   params: {
     name: name
     location: location
@@ -106,8 +108,8 @@ module api './api.bicep' = {
   ]
 }
 
-module web './web.bicep' = {
-  name: 'web-resources-${resourceToken}'
+module web 'web.bicep' = {
+  name: 'web-resources'
   params: {
     name: name
     location: location
@@ -123,7 +125,7 @@ module web './web.bicep' = {
 }
 
 resource logAnalyticsWorkspace 'Microsoft.OperationalInsights/workspaces@2021-06-01' = {
-  name: 'log-${resourceToken}'
+  name: '${abbrs.operationalInsightsWorkspaces}${resourceToken}'
   location: location
   tags: tags
   properties: any({
@@ -138,7 +140,7 @@ resource logAnalyticsWorkspace 'Microsoft.OperationalInsights/workspaces@2021-06
 }
 
 resource cosmos 'Microsoft.DocumentDB/databaseAccounts@2021-10-15' = {
-  name: 'cosmos-${resourceToken}'
+  name: '${abbrs.documentDBDatabaseAccounts}${resourceToken}'
   kind: 'MongoDB'
   location: location
   tags: tags

@@ -14,10 +14,11 @@ import (
 type ProviderKind string
 
 const (
-	Bicep     ProviderKind = "Bicep"
-	Arm       ProviderKind = "Arm"
-	Terraform ProviderKind = "Terraform"
-	Pulumi    ProviderKind = "Pulumi"
+	Bicep     ProviderKind = "bicep"
+	Arm       ProviderKind = "arm"
+	Terraform ProviderKind = "terraform"
+	Pulumi    ProviderKind = "pulumi"
+	Test      ProviderKind = "test"
 )
 
 type Options struct {
@@ -59,18 +60,22 @@ type Provider interface {
 	Name() string
 	RequiredExternalTools() []tools.ExternalTool
 	UpdatePlan(ctx context.Context, preview Preview) error
-	Preview(ctx context.Context) async.InteractiveTaskWithProgress[*PreviewResult, *PreviewProgress]
-	Deploy(ctx context.Context, preview *Preview, scope Scope) async.InteractiveTaskWithProgress[*DeployResult, *DeployProgress]
-	Destroy(ctx context.Context, preview *Preview) async.InteractiveTaskWithProgress[*DestroyResult, *DestroyProgress]
+	Preview(ctx context.Context) *async.InteractiveTaskWithProgress[*PreviewResult, *PreviewProgress]
+	Deploy(ctx context.Context, preview *Preview, scope Scope) *async.InteractiveTaskWithProgress[*DeployResult, *DeployProgress]
+	Destroy(ctx context.Context, preview *Preview) *async.InteractiveTaskWithProgress[*DestroyResult, *DestroyProgress]
 }
 
-func NewProvider(env *environment.Environment, projectPath string, options Options, console input.Console, bicepArgs tools.NewBicepCliArgs) (Provider, error) {
+func NewProvider(env *environment.Environment, projectPath string, options Options, console input.Console, cliArgs tools.NewCliToolArgs) (Provider, error) {
 	var provider Provider
 
 	switch options.Provider {
 	case Bicep:
+		bicepArgs := tools.NewBicepCliArgs{AzCli: cliArgs.AzCli, RunWithResultFn: cliArgs.RunWithResultFn}
 		provider = NewBicepProvider(env, projectPath, options, console, bicepArgs)
+	case Test:
+		provider = NewTestProvider(env, projectPath, options, console)
 	default:
+		bicepArgs := tools.NewBicepCliArgs{AzCli: cliArgs.AzCli, RunWithResultFn: cliArgs.RunWithResultFn}
 		provider = NewBicepProvider(env, projectPath, options, console, bicepArgs)
 	}
 

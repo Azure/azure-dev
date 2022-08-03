@@ -1,10 +1,6 @@
 //nolint:all
 package async
 
-import (
-	"fmt"
-)
-
 // Task function definition
 type TaskRunFunc[R comparable] func(ctx *TaskContext[R])
 
@@ -59,7 +55,7 @@ type TaskContextWithProgress[R comparable, P comparable] struct {
 
 // Creates a new Task context with progress reporting
 func NewTaskContextWithProgress[R comparable, P comparable](task *TaskWithProgress[R, P]) *TaskContextWithProgress[R, P] {
-	innerTask := NewTaskContext[R](&task.Task)
+	innerTask := NewTaskContext(&task.Task)
 
 	return &TaskContextWithProgress[R, P]{
 		task:        task,
@@ -79,7 +75,6 @@ type InteractiveTaskWithProgressRunFunc[R comparable, P comparable] func(ctx *In
 type InteractiveTaskContextWithProgress[R comparable, P comparable] struct {
 	task *InteractiveTaskWithProgress[R, P]
 	TaskContextWithProgress[R, P]
-	interactive bool
 }
 
 func NewInteractiveTaskContextWithProgress[R comparable, P comparable](task *InteractiveTaskWithProgress[R, P]) *InteractiveTaskContextWithProgress[R, P] {
@@ -96,9 +91,6 @@ func NewInteractiveTaskContextWithProgress[R comparable, P comparable](task *Int
 func (c *InteractiveTaskContextWithProgress[R, P]) Interact(interactFn func() error) error {
 	c.task.interactiveChannel <- true
 	err := interactFn()
-	if err != nil {
-		c.SetError(fmt.Errorf("interaction error: %w", err))
-	}
 	c.task.interactiveChannel <- false
 
 	return err

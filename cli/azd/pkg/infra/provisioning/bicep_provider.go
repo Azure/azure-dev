@@ -61,8 +61,8 @@ func (p *BicepProvider) RequiredExternalTools() []tools.ExternalTool {
 }
 
 // Previews the infrastructure provisioning
-func (p *BicepProvider) Preview(ctx context.Context) async.InteractiveTaskWithProgress[*PreviewResult, *PreviewProgress] {
-	return *async.RunInteractiveTaskWithProgress(
+func (p *BicepProvider) Preview(ctx context.Context) *async.InteractiveTaskWithProgress[*PreviewResult, *PreviewProgress] {
+	return async.RunInteractiveTaskWithProgress(
 		func(asyncContext *async.InteractiveTaskContextWithProgress[*PreviewResult, *PreviewProgress]) {
 			asyncContext.SetProgress(&PreviewProgress{Message: "Generating Bicep parameters file", Timestamp: time.Now()})
 			bicepTemplate, err := p.createParametersFile()
@@ -128,13 +128,12 @@ func (p *BicepProvider) UpdatePlan(ctx context.Context, preview Preview) error {
 }
 
 // Provisioning the infrastructure within the specified template
-func (p *BicepProvider) Deploy(ctx context.Context, preview *Preview, scope Scope) async.InteractiveTaskWithProgress[*DeployResult, *DeployProgress] {
-	return *async.RunInteractiveTaskWithProgress(
+func (p *BicepProvider) Deploy(ctx context.Context, preview *Preview, scope Scope) *async.InteractiveTaskWithProgress[*DeployResult, *DeployProgress] {
+	return async.RunInteractiveTaskWithProgress(
 		func(asyncContext *async.InteractiveTaskContextWithProgress[*DeployResult, *DeployProgress]) {
 			isDeploymentComplete := false
 
 			err := asyncContext.Interact(func() error {
-
 				deploymentSlug := azure.SubscriptionDeploymentRID(p.env.GetSubscriptionId(), p.env.GetEnvName())
 				deploymentUrl := fmt.Sprintf("https://portal.azure.com/#blade/HubsExtension/DeploymentDetailsBlade/overview/id/%s\n\n", url.PathEscape(deploymentSlug))
 				p.console.Message(ctx, fmt.Sprintf("Provisioning Azure resources can take some time.\n\nYou can view detailed progress in the Azure Portal:\n%s", deploymentUrl))
@@ -198,8 +197,8 @@ func (p *BicepProvider) Deploy(ctx context.Context, preview *Preview, scope Scop
 		})
 }
 
-func (p *BicepProvider) Destroy(ctx context.Context, preview *Preview) async.InteractiveTaskWithProgress[*DestroyResult, *DestroyProgress] {
-	return *async.RunInteractiveTaskWithProgress(
+func (p *BicepProvider) Destroy(ctx context.Context, preview *Preview) *async.InteractiveTaskWithProgress[*DestroyResult, *DestroyProgress] {
+	return async.RunInteractiveTaskWithProgress(
 		func(asyncContext *async.InteractiveTaskContextWithProgress[*DestroyResult, *DestroyProgress]) {
 			destroyResult := DestroyResult{}
 
@@ -240,6 +239,7 @@ func (p *BicepProvider) Destroy(ctx context.Context, preview *Preview) async.Int
 			})
 
 			if err != nil {
+				asyncContext.SetError(err)
 				return
 			}
 

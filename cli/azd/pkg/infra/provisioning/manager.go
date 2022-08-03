@@ -20,34 +20,38 @@ type Manager struct {
 	console     input.Console
 }
 
-// Creates the Azure infrastructure for the specified project
-func (pm *Manager) Create(ctx context.Context, interactive bool) (*DeployResult, error) {
-	previewResult, err := pm.preview(ctx, interactive)
+func (m *Manager) Preview(ctx context.Context, interactive bool) (*PreviewResult, error) {
+	previewResult, err := m.preview(ctx, interactive)
 	if err != nil {
 		return nil, err
 	}
 
-	updated, err := pm.ensureParameters(ctx, &previewResult.Preview)
-	if err != nil {
-		return nil, err
-	}
-
-	location, err := pm.ensureLocation(ctx, &previewResult.Preview)
+	updated, err := m.ensureParameters(ctx, &previewResult.Preview)
 	if err != nil {
 		return nil, err
 	}
 
 	if updated {
-		if err := pm.provider.UpdatePlan(ctx, previewResult.Preview); err != nil {
+		if err := m.provider.UpdatePlan(ctx, previewResult.Preview); err != nil {
 			return nil, fmt.Errorf("updating deployment parameters: %w", err)
 		}
 
-		if err := pm.env.Save(); err != nil {
+		if err := m.env.Save(); err != nil {
 			return nil, fmt.Errorf("saving env file: %w", err)
 		}
 	}
 
-	deployResult, err := pm.deploy(ctx, location, &previewResult.Preview, interactive)
+	return previewResult, nil
+}
+
+// Deploys the Azure infrastructure for the specified project
+func (m *Manager) Deploy(ctx context.Context, preview *Preview, interactive bool) (*DeployResult, error) {
+	location, err := m.ensureLocation(ctx, preview)
+	if err != nil {
+		return nil, err
+	}
+
+	deployResult, err := m.deploy(ctx, location, preview, interactive)
 	if err != nil {
 		return nil, err
 	}
@@ -56,14 +60,9 @@ func (pm *Manager) Create(ctx context.Context, interactive bool) (*DeployResult,
 }
 
 // Destroys the Azure infrastructure for the specified project
-func (pm *Manager) Destroy(ctx context.Context, interactive bool) (*DestroyResult, error) {
-	previewResult, err := pm.preview(ctx, interactive)
-	if err != nil {
-		return nil, err
-	}
-
+func (m *Manager) Destroy(ctx context.Context, preview *Preview, interactive bool) (*DestroyResult, error) {
 	// Call provisioning provider to destroy the infrastructure
-	destroyResult, err := pm.destroy(ctx, &previewResult.Preview, interactive)
+	destroyResult, err := m.destroy(ctx, preview, interactive)
 	if err != nil {
 		return nil, err
 	}
@@ -71,11 +70,11 @@ func (pm *Manager) Destroy(ctx context.Context, interactive bool) (*DestroyResul
 	// Remove any outputs from the template from the environment since destroying the infrastructure
 	// invalidated them all.
 	for outputName := range destroyResult.Outputs {
-		delete(pm.env.Values, outputName)
+		delete(m.env.Values, outputName)
 	}
 
 	// Update environment files to remove invalid infrastructure parameters
-	if err := pm.env.Save(); err != nil {
+	if err := m.env.Save(); err != nil {
 		return nil, fmt.Errorf("saving environment: %w", err)
 	}
 
@@ -83,11 +82,11 @@ func (pm *Manager) Destroy(ctx context.Context, interactive bool) (*DestroyResul
 }
 
 // Previews the infrastructure provisioning and orchestrates interactive terminal operations
-func (pm *Manager) preview(ctx context.Context, interactive bool) (*PreviewResult, error) {
+func (m *Manager) preview(ctx context.Context, interactive bool) (*PreviewResult, error) {
 	var previewResult *PreviewResult
 
 	previewAndReportProgress := func(showProgress func(string)) error {
-		previewTask := pm.provider.Preview(ctx)
+		previewTask := m.provider.Preview(ctx)
 
 		go func() {
 			for progress := range previewTask.Progress() {
@@ -95,10 +94,12 @@ func (pm *Manager) preview(ctx context.Context, interactive bool) (*PreviewResul
 			}
 		}()
 
-		previewResult = previewTask.Result()
-		if previewTask.Error != nil {
-			return fmt.Errorf("compiling infra template: %w", previewTask.Error)
+		result, err := previewTask.Await()
+		if err != nil {
+			return err
 		}
+
+		previewResult = result
 
 		return nil
 	}
@@ -116,25 +117,27 @@ func (pm *Manager) preview(ctx context.Context, interactive bool) (*PreviewResul
 }
 
 // Applies the specified infrastructure provisioning and orchestrates the interactive terminal operations
-func (pm *Manager) deploy(ctx context.Context, location string, preview *Preview, interactive bool) (*DeployResult, error) {
+func (m *Manager) deploy(ctx context.Context, location string, preview *Preview, interactive bool) (*DeployResult, error) {
 	var deployResult *DeployResult
 
 	deployAndReportProgress := func(showProgress func(string)) error {
-		provisioningScope := NewSubscriptionProvisioningScope(pm.azCli, location, pm.env.GetSubscriptionId(), pm.env.GetEnvName())
-		deployTask := pm.provider.Deploy(ctx, preview, provisioningScope)
+		provisioningScope := NewSubscriptionProvisioningScope(m.azCli, location, m.env.GetSubscriptionId(), m.env.GetEnvName())
+		deployTask := m.provider.Deploy(ctx, preview, provisioningScope)
 
 		go func() {
 			for progressReport := range deployTask.Progress() {
 				if interactive {
-					pm.showDeployProgress(*progressReport, showProgress)
+					m.showDeployProgress(*progressReport, showProgress)
 				}
 			}
 		}()
 
-		deployResult = deployTask.Result()
-		if deployTask.Error != nil {
-			return deployTask.Error
+		result, err := deployTask.Await()
+		if err != nil {
+			return err
 		}
+
+		deployResult = result
 
 		return nil
 	}
@@ -152,11 +155,11 @@ func (pm *Manager) deploy(ctx context.Context, location string, preview *Preview
 }
 
 // Destroys the specified infrastructure provisioning and orchestrates the interactive terminal operations
-func (pm *Manager) destroy(ctx context.Context, preview *Preview, interactive bool) (*DestroyResult, error) {
+func (m *Manager) destroy(ctx context.Context, preview *Preview, interactive bool) (*DestroyResult, error) {
 	var destroyResult *DestroyResult
 
 	deleteWithProgress := func(showProgress func(string)) error {
-		destroyTask := pm.provider.Destroy(ctx, preview)
+		destroyTask := m.provider.Destroy(ctx, preview)
 
 		go func() {
 			for destroyProgress := range destroyTask.Progress() {
@@ -164,10 +167,18 @@ func (pm *Manager) destroy(ctx context.Context, preview *Preview, interactive bo
 			}
 		}()
 
-		destroyResult = destroyTask.Result()
-		if destroyTask.Error != nil {
-			return fmt.Errorf("error destroying resources: %w", destroyTask.Error)
+		go func() {
+			for interactive := range destroyTask.Interactive() {
+				fmt.Println(interactive)
+			}
+		}()
+
+		result, err := destroyTask.Await()
+		if err != nil {
+			return err
 		}
+
+		destroyResult = result
 
 		return nil
 	}
@@ -192,7 +203,7 @@ func (pm *Manager) destroy(ctx context.Context, preview *Preview, interactive bo
 }
 
 // Creates a progress message from the provisioning progress report
-func (pm *Manager) showDeployProgress(progressReport DeployProgress, showProgress func(string)) {
+func (m *Manager) showDeployProgress(progressReport DeployProgress, showProgress func(string)) {
 	succeededCount := 0
 
 	for _, resourceOperation := range progressReport.Operations {
@@ -206,7 +217,7 @@ func (pm *Manager) showDeployProgress(progressReport DeployProgress, showProgres
 }
 
 // Ensures a provisioning location has been identified within the preview or prompts the user for input
-func (pm *Manager) ensureLocation(ctx context.Context, preview *Preview) (string, error) {
+func (m *Manager) ensureLocation(ctx context.Context, preview *Preview) (string, error) {
 	var location string
 
 	for key, param := range preview.Parameters {
@@ -223,7 +234,7 @@ func (pm *Manager) ensureLocation(ctx context.Context, preview *Preview) (string
 		// user on every deployment if they don't have a `location` parameter in their bicep file.
 		// When we store it, we should store it /per environment/ not as a property of the entire
 		// project.
-		selected, err := pm.console.PromptLocation(ctx, "Please select an Azure location to use to store deployment metadata:")
+		selected, err := m.console.PromptLocation(ctx, "Please select an Azure location to use to store deployment metadata:")
 		if err != nil {
 			return "", fmt.Errorf("prompting for deployment metadata region: %w", err)
 		}
@@ -235,7 +246,7 @@ func (pm *Manager) ensureLocation(ctx context.Context, preview *Preview) (string
 }
 
 // Ensures the provisioning parameters are valid and prompts the user for input as needed
-func (pm *Manager) ensureParameters(ctx context.Context, preview *Preview) (bool, error) {
+func (m *Manager) ensureParameters(ctx context.Context, preview *Preview) (bool, error) {
 	if len(preview.Parameters) == 0 {
 		return false, nil
 	}
@@ -247,7 +258,7 @@ func (pm *Manager) ensureParameters(ctx context.Context, preview *Preview) (bool
 			continue
 		}
 		if !param.HasValue() {
-			userValue, err := pm.console.Prompt(ctx, input.ConsoleOptions{
+			userValue, err := m.console.Prompt(ctx, input.ConsoleOptions{
 				Message: fmt.Sprintf("Please enter a value for the '%s' deployment parameter:", key),
 			})
 
@@ -257,7 +268,7 @@ func (pm *Manager) ensureParameters(ctx context.Context, preview *Preview) (bool
 
 			param.Value = userValue
 
-			saveParameter, err := pm.console.Confirm(ctx, input.ConsoleOptions{
+			saveParameter, err := m.console.Confirm(ctx, input.ConsoleOptions{
 				Message: "Save the value in the environment for future use",
 			})
 
@@ -266,7 +277,7 @@ func (pm *Manager) ensureParameters(ctx context.Context, preview *Preview) (bool
 			}
 
 			if saveParameter {
-				pm.env.Values[key] = userValue
+				m.env.Values[key] = userValue
 			}
 
 			updatedParameters = true
@@ -277,8 +288,8 @@ func (pm *Manager) ensureParameters(ctx context.Context, preview *Preview) (bool
 }
 
 // Creates a new instance of the Provisioning Manager
-func NewManager(ctx context.Context, env environment.Environment, projectPath string, options Options, interactive bool, bicepArgs tools.NewBicepCliArgs, console input.Console) (*Manager, error) {
-	infraProvider, err := NewProvider(&env, projectPath, options, console, bicepArgs)
+func NewManager(ctx context.Context, env environment.Environment, projectPath string, options Options, interactive bool, console input.Console, cliArgs tools.NewCliToolArgs) (*Manager, error) {
+	infraProvider, err := NewProvider(&env, projectPath, options, console, cliArgs)
 	if err != nil {
 		return nil, fmt.Errorf("error creating infra provider: %w", err)
 	}
@@ -293,7 +304,7 @@ func NewManager(ctx context.Context, env environment.Environment, projectPath st
 	}
 
 	return &Manager{
-		azCli:       bicepArgs.AzCli,
+		azCli:       cliArgs.AzCli,
 		env:         env,
 		provider:    infraProvider,
 		interactive: interactive,

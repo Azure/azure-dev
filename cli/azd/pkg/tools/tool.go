@@ -20,6 +20,11 @@ type ExternalTool interface {
 	Name() string
 }
 
+type NewCliToolArgs struct {
+	AzCli           AzCli
+	RunWithResultFn func(ctx context.Context, args executil.RunArgs) (executil.RunResult, error)
+}
+
 // toolInPath checks to see if a program can be found on the PATH, as exec.LookPath
 // does, but returns "(false, nil)" in the case where os.LookPath would return
 // exec.ErrNotFound.

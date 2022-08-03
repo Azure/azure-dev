@@ -14,6 +14,12 @@ type MockExecUtil struct {
 	expressions []*CommandExpression
 }
 
+func NewMockExecUtil() *MockExecUtil {
+	return &MockExecUtil{
+		expressions: []*CommandExpression{},
+	}
+}
+
 func (m *MockExecUtil) RunWithResult(ctx context.Context, args executil.RunArgs) (executil.RunResult, error) {
 	var match *CommandExpression
 
@@ -28,7 +34,7 @@ func (m *MockExecUtil) RunWithResult(ctx context.Context, args executil.RunArgs)
 		panic(fmt.Sprintf("No mock found for command: '%s %s'", args.Cmd, strings.Join(args.Args, " ")))
 	}
 
-	return match.Response, match.Error
+	return match.response, match.error
 }
 
 func (m *MockExecUtil) When(predicate ExecUtilWhenPredicate) *CommandExpression {
@@ -43,18 +49,18 @@ func (m *MockExecUtil) When(predicate ExecUtilWhenPredicate) *CommandExpression 
 
 type CommandExpression struct {
 	Command     string
-	Response    executil.RunResult
-	Error       error
+	response    executil.RunResult
+	error       error
 	executil    *MockExecUtil
 	predicateFn ExecUtilWhenPredicate
 }
 
 func (e *CommandExpression) Respond(response executil.RunResult) *MockExecUtil {
-	e.Response = response
+	e.response = response
 	return e.executil
 }
 
 func (e *CommandExpression) SetError(err error) *MockExecUtil {
-	e.Error = err
+	e.error = err
 	return e.executil
 }

@@ -2,6 +2,7 @@ package mocks
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 )
@@ -25,33 +26,33 @@ func (c *MockConsole) Message(ctx context.Context, message string) error {
 }
 
 func (c *MockConsole) Confirm(ctx context.Context, options input.ConsoleOptions) (bool, error) {
-	value := c.respond("Confirm", options)
-	return value.(bool), nil
+	value, err := c.respond("Confirm", options)
+	return value.(bool), err
 }
 
 func (c *MockConsole) Prompt(ctx context.Context, options input.ConsoleOptions) (string, error) {
-	value := c.respond("Prompt", options)
-	return value.(string), nil
+	value, err := c.respond("Prompt", options)
+	return value.(string), err
 }
 
 func (c *MockConsole) Select(ctx context.Context, options input.ConsoleOptions) (string, error) {
-	value := c.respond("Select", options)
-	return value.(string), nil
+	value, err := c.respond("Select", options)
+	return value.(string), err
 }
 
 func (c *MockConsole) PromptLocation(ctx context.Context, message string) (string, error) {
-	value := c.respond("PromptLocation", input.ConsoleOptions{})
-	return value.(string), nil
+	value, err := c.respond("PromptLocation", input.ConsoleOptions{})
+	return value.(string), err
 }
 
 func (c *MockConsole) PromptTemplate(ctx context.Context, message string) (string, error) {
-	value := c.respond("PromptTemplate", input.ConsoleOptions{})
-	return value.(string), nil
+	value, err := c.respond("PromptTemplate", input.ConsoleOptions{})
+	return value.(string), err
 }
 
 func (c *MockConsole) findMatchingExpression(command string, options input.ConsoleOptions) *MockConsoleExpression {
 	for _, expr := range c.expressions {
-		if expr.Command == command && expr.predicateFn(options) {
+		if expr.command == command && expr.predicateFn(options) {
 			return expr
 		}
 	}
@@ -59,18 +60,26 @@ func (c *MockConsole) findMatchingExpression(command string, options input.Conso
 	return nil
 }
 
-func (c *MockConsole) respond(command string, options input.ConsoleOptions) any {
-	expr := c.findMatchingExpression(command, options)
-	if expr == nil {
-		return nil
+func (c *MockConsole) respond(command string, options input.ConsoleOptions) (any, error) {
+	var match *MockConsoleExpression
+
+	for _, expr := range c.expressions {
+		if expr.predicateFn(options) {
+			match = expr
+			break
+		}
 	}
 
-	return expr.Response
+	if match == nil {
+		panic(fmt.Sprintf("No mock found for command: '%s'", command))
+	}
+
+	return match.response, match.error
 }
 
 func (c *MockConsole) WhenPrompt(predicate WhenPredicate) *MockConsoleExpression {
 	expr := MockConsoleExpression{
-		Command:     "Prompt",
+		command:     "Prompt",
 		console:     c,
 		predicateFn: predicate,
 	}
@@ -81,7 +90,7 @@ func (c *MockConsole) WhenPrompt(predicate WhenPredicate) *MockConsoleExpression
 
 func (c *MockConsole) WhenConfirm(predicate WhenPredicate) *MockConsoleExpression {
 	expr := MockConsoleExpression{
-		Command:     "Confirm",
+		command:     "Confirm",
 		console:     c,
 		predicateFn: predicate,
 	}
@@ -92,7 +101,7 @@ func (c *MockConsole) WhenConfirm(predicate WhenPredicate) *MockConsoleExpressio
 
 func (c *MockConsole) WhenSelect(predicate WhenPredicate) *MockConsoleExpression {
 	expr := MockConsoleExpression{
-		Command:     "Select",
+		command:     "Select",
 		console:     c,
 		predicateFn: predicate,
 	}
@@ -103,7 +112,7 @@ func (c *MockConsole) WhenSelect(predicate WhenPredicate) *MockConsoleExpression
 
 func (c *MockConsole) WhenPromptLocation() *MockConsoleExpression {
 	expr := MockConsoleExpression{
-		Command:     "PromptLocation",
+		command:     "PromptLocation",
 		console:     c,
 		predicateFn: truePredicateFn,
 	}
@@ -114,7 +123,7 @@ func (c *MockConsole) WhenPromptLocation() *MockConsoleExpression {
 
 func (c *MockConsole) WhenPromptTemplate() *MockConsoleExpression {
 	expression := &MockConsoleExpression{
-		Command:     "PromptTemplate",
+		command:     "PromptTemplate",
 		console:     c,
 		predicateFn: truePredicateFn,
 	}
@@ -123,13 +132,19 @@ func (c *MockConsole) WhenPromptTemplate() *MockConsoleExpression {
 }
 
 type MockConsoleExpression struct {
-	Command     string
-	Response    any
+	command     string
+	response    any
+	error       error
 	console     *MockConsole
 	predicateFn WhenPredicate
 }
 
 func (e *MockConsoleExpression) Respond(value any) *MockConsole {
-	e.Response = value
+	e.response = value
+	return e.console
+}
+
+func (e *MockConsoleExpression) SetError(err error) *MockConsole {
+	e.error = err
 	return e.console
 }

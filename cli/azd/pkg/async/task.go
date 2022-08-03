@@ -6,7 +6,7 @@ type Task[R comparable] struct {
 	hasResult     bool
 	result        R
 	resultChannel chan R
-	Error         error
+	error         error
 }
 
 // Runs the specified taskFn as a go routine
@@ -39,13 +39,13 @@ func (t *Task[R]) Result() R {
 // Awaits the async execution and returns the result and error status
 func (t *Task[R]) Await() (R, error) {
 	result := t.Result()
-	return result, t.Error
+	return result, t.error
 }
 
 // Marks the current task as complete and sets internal error/result state and cleans up channels
 func (t *Task[R]) complete(result R, err error) {
-	t.Error = err
-	if t.Error == nil {
+	t.error = err
+	if t.error == nil {
 		t.resultChannel <- result
 	}
 
@@ -120,6 +120,7 @@ func (t *InteractiveTaskWithProgress[R, P]) Run(taskFn InteractiveTaskWithProgre
 		context := NewInteractiveTaskContextWithProgress(t)
 
 		taskFn(context)
+
 		t.complete(context.result, context.error)
 		close(t.progressChannel)
 		close(t.interactiveChannel)

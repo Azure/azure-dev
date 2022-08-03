@@ -20,10 +20,10 @@ func TestTaskWithResult(t *testing.T) {
 		ctx.SetResult(expectedResult)
 	})
 
-	actualResult := task.Result()
+	actualResult, err := task.Await()
 
 	require.Equal(t, expectedResult, actualResult)
-	require.Nil(t, task.Error)
+	require.Nil(t, err)
 }
 
 func TestTaskWithAwait(t *testing.T) {
@@ -50,10 +50,10 @@ func TestTaskWithError(t *testing.T) {
 		ctx.SetError(expectedError)
 	})
 
-	actualResult := task.Result()
+	actualResult, err := task.Await()
 
 	require.Equal(t, "", actualResult)
-	require.Equal(t, expectedError, task.Error)
+	require.Equal(t, expectedError, err)
 }
 
 func TestTaskWithInvalidUsage(t *testing.T) {
@@ -65,7 +65,7 @@ func TestTaskWithInvalidUsage(t *testing.T) {
 			ctx.SetResult("value")
 		})
 
-		_ = task.Result()
+		task.Await()
 	})
 }
 
@@ -88,9 +88,9 @@ func TestTaskWithProgressWithResult(t *testing.T) {
 		ctx.SetResult(expectedResult)
 	})
 
-	actualResult := task.Result()
+	actualResult, err := task.Await()
 	require.Equal(t, expectedResult, actualResult)
-	require.Nil(t, task.Error)
+	require.Nil(t, err)
 	require.Equal(t, 2, len(progress))
 	require.Equal(t, "thing 1", progress[0])
 	require.Equal(t, "thing 2", progress[1])
@@ -117,9 +117,9 @@ func TestTaskWithProgressWithError(t *testing.T) {
 		ctx.SetError(expectedError)
 	})
 
-	actualResult := task.Result()
+	actualResult, err := task.Await()
 	require.Equal(t, "", actualResult)
-	require.Equal(t, expectedError, task.Error)
+	require.Equal(t, expectedError, err)
 	require.Equal(t, 2, len(progress))
 	require.Equal(t, "thing 1", progress[0])
 	require.Equal(t, "thing 2", progress[1])
@@ -196,10 +196,10 @@ func TestInteractiveTaskWithResult(t *testing.T) {
 		}
 	}()
 
-	actualResult := task.Result()
+	actualResult, err := task.Await()
 	// Result still expected
 	require.Equal(t, expectedResult, actualResult)
-	require.Nil(t, task.Error)
+	require.Nil(t, err)
 	// Progress still reported
 	require.Equal(t, 2, len(progress))
 	require.Equal(t, "thing 1", progress[0])
@@ -261,6 +261,7 @@ func TestInteractiveTaskWithError(t *testing.T) {
 		})
 
 		if err != nil {
+			taskContext.SetError(err)
 			return
 		}
 
@@ -279,10 +280,10 @@ func TestInteractiveTaskWithError(t *testing.T) {
 		}
 	}()
 
-	actualResult := task.Result()
+	actualResult, err := task.Await()
 	// Err expected
 	require.Equal(t, "", actualResult)
-	require.Contains(t, task.Error.Error(), expectedError.Error())
+	require.Contains(t, err.Error(), expectedError.Error())
 	// Progress still reported
 	require.Equal(t, 2, len(progress))
 	require.Equal(t, "thing 1", progress[0])

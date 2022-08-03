@@ -180,8 +180,8 @@ func TestBicepDeploy(t *testing.T) {
 		}
 	}()
 
-	require.Nil(t, previewTask.Error)
-	previewResult := previewTask.Result()
+	previewResult, err := previewTask.Await()
+	require.Nil(t, err)
 	require.NotNil(t, previewResult.Preview)
 
 	deployProgressMsg := "Deploying..."
@@ -200,7 +200,8 @@ func TestBicepDeploy(t *testing.T) {
 		}
 	}()
 
-	deployResult := deployTask.Result()
+	deployResult, err := deployTask.Await()
+	require.Nil(t, err)
 	require.NotNil(t, deployResult)
 	require.Equal(t, deployResult.Outputs["WEBSITE_URL"].Value, expectedWebsiteUrl)
 }

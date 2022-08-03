@@ -505,7 +505,7 @@ stages:
                 ./test-installer-containers.ps1
                 -BaseUrl "$env:BASEURL"
                 -Version ''
-                -Prefix '$(docker-mirror-tag-prefix)/'
+                -ContainerPrefix '$(docker-mirror-tag-prefix)/'
             MacSh:
               Pool: Azure Pipelines
               OSVmImage: macOS-11

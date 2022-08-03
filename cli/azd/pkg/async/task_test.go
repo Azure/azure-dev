@@ -65,7 +65,7 @@ func TestTaskWithInvalidUsage(t *testing.T) {
 			ctx.SetResult("value")
 		})
 
-		task.Await()
+		_, _ = task.Await()
 	})
 }
 

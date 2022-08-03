@@ -136,7 +136,11 @@ func (p *BicepProvider) Deploy(ctx context.Context, preview *Preview, scope Scop
 			err := asyncContext.Interact(func() error {
 				deploymentSlug := azure.SubscriptionDeploymentRID(p.env.GetSubscriptionId(), p.env.GetEnvName())
 				deploymentUrl := fmt.Sprintf("https://portal.azure.com/#blade/HubsExtension/DeploymentDetailsBlade/overview/id/%s\n\n", url.PathEscape(deploymentSlug))
-				p.console.Message(ctx, fmt.Sprintf("Provisioning Azure resources can take some time.\n\nYou can view detailed progress in the Azure Portal:\n%s", deploymentUrl))
+				err := p.console.Message(ctx, fmt.Sprintf("Provisioning Azure resources can take some time.\n\nYou can view detailed progress in the Azure Portal:\n%s", deploymentUrl))
+
+				if err != nil {
+					return err
+				}
 
 				return nil
 			})

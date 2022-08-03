@@ -5,6 +5,9 @@
 *.so
 *.dylib
 
+# Temp path for testing repoman generation
+/.tmp
+
 # Test binary, built with `go test -c`
 *.test
 

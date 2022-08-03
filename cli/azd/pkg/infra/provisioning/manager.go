@@ -9,7 +9,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/spin"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
-	"github.com/theckman/yacspin"
 )
 
 type Manager struct {
@@ -20,6 +19,7 @@ type Manager struct {
 	console     input.Console
 }
 
+// Prepares for an infrastructure provision operation
 func (m *Manager) Preview(ctx context.Context, interactive bool) (*PreviewResult, error) {
 	previewResult, err := m.preview(ctx, interactive)
 	if err != nil {
@@ -46,11 +46,13 @@ func (m *Manager) Preview(ctx context.Context, interactive bool) (*PreviewResult
 
 // Deploys the Azure infrastructure for the specified project
 func (m *Manager) Deploy(ctx context.Context, preview *Preview, interactive bool) (*DeployResult, error) {
+	// Ensure that a location has been set prior to provisioning
 	location, err := m.ensureLocation(ctx, preview)
 	if err != nil {
 		return nil, err
 	}
 
+	// Apply the infrastructure deployment
 	deployResult, err := m.deploy(ctx, location, preview, interactive)
 	if err != nil {
 		return nil, err
@@ -85,14 +87,16 @@ func (m *Manager) Destroy(ctx context.Context, preview *Preview, interactive boo
 func (m *Manager) preview(ctx context.Context, interactive bool) (*PreviewResult, error) {
 	var previewResult *PreviewResult
 
-	previewAndReportProgress := func(showProgress func(string)) error {
+	previewAndReportProgress := func(spinner *spin.Spinner) error {
 		previewTask := m.provider.Preview(ctx)
 
 		go func() {
 			for progress := range previewTask.Progress() {
-				showProgress(fmt.Sprintf("%s...", progress.Message))
+				spinner.Println(fmt.Sprintf("%s...", progress.Message))
 			}
 		}()
+
+		go monitorInteraction(spinner, previewTask.Interactive())
 
 		result, err := previewTask.Await()
 		if err != nil {
@@ -104,14 +108,16 @@ func (m *Manager) preview(ctx context.Context, interactive bool) (*PreviewResult
 		return nil
 	}
 
-	err := spin.RunWithUpdater("Previewing infrastructure provisioning", previewAndReportProgress,
-		func(s *yacspin.Spinner, deploySuccess bool) {
-			s.StopMessage("Created infrastructure provisioning preview\n")
-		})
+	spinner := spin.NewSpinner("Preparing infrastructure provisioning")
+	defer spinner.Stop()
+
+	err := previewAndReportProgress(spinner)
 
 	if err != nil {
-		return nil, fmt.Errorf("error previewing infrastructure deployment: %w", err)
+		return nil, fmt.Errorf("previewing infrastructure: %w", err)
 	}
+
+	spinner.Println("Prepared infrastructure provisioning")
 
 	return previewResult, nil
 }
@@ -120,17 +126,19 @@ func (m *Manager) preview(ctx context.Context, interactive bool) (*PreviewResult
 func (m *Manager) deploy(ctx context.Context, location string, preview *Preview, interactive bool) (*DeployResult, error) {
 	var deployResult *DeployResult
 
-	deployAndReportProgress := func(showProgress func(string)) error {
+	deployAndReportProgress := func(spinner *spin.Spinner) error {
 		provisioningScope := NewSubscriptionProvisioningScope(m.azCli, location, m.env.GetSubscriptionId(), m.env.GetEnvName())
 		deployTask := m.provider.Deploy(ctx, preview, provisioningScope)
 
 		go func() {
 			for progressReport := range deployTask.Progress() {
 				if interactive {
-					m.showDeployProgress(*progressReport, showProgress)
+					m.showDeployProgress(*progressReport, spinner)
 				}
 			}
 		}()
+
+		go monitorInteraction(spinner, deployTask.Interactive())
 
 		result, err := deployTask.Await()
 		if err != nil {
@@ -142,14 +150,16 @@ func (m *Manager) deploy(ctx context.Context, location string, preview *Preview,
 		return nil
 	}
 
-	err := spin.RunWithUpdater("Creating Azure resources ", deployAndReportProgress,
-		func(s *yacspin.Spinner, deploySuccess bool) {
-			s.StopMessage("Created Azure resources\n")
-		})
+	spinner := spin.NewSpinner("Deploying Azure Resources")
+	defer spinner.Stop()
+
+	err := deployAndReportProgress(spinner)
 
 	if err != nil {
 		return nil, fmt.Errorf("error deploying infrastructure: %w", err)
 	}
+
+	spinner.Println("Azure resource deployment complete")
 
 	return deployResult, nil
 }
@@ -158,20 +168,16 @@ func (m *Manager) deploy(ctx context.Context, location string, preview *Preview,
 func (m *Manager) destroy(ctx context.Context, preview *Preview, interactive bool) (*DestroyResult, error) {
 	var destroyResult *DestroyResult
 
-	deleteWithProgress := func(showProgress func(string)) error {
+	destroyWithProgress := func(spinner *spin.Spinner) error {
 		destroyTask := m.provider.Destroy(ctx, preview)
 
 		go func() {
 			for destroyProgress := range destroyTask.Progress() {
-				showProgress(fmt.Sprintf("%s...", destroyProgress.Message))
+				spinner.Title(fmt.Sprintf("%s...", destroyProgress.Message))
 			}
 		}()
 
-		go func() {
-			for interactive := range destroyTask.Interactive() {
-				fmt.Println(interactive)
-			}
-		}()
+		go monitorInteraction(spinner, destroyTask.Interactive())
 
 		result, err := destroyTask.Await()
 		if err != nil {
@@ -183,27 +189,22 @@ func (m *Manager) destroy(ctx context.Context, preview *Preview, interactive boo
 		return nil
 	}
 
-	err := spin.RunWithUpdater("Destroying Azure resources ", deleteWithProgress,
-		func(s *yacspin.Spinner, success bool) {
-			var stopMessage string
-			if success {
-				stopMessage = "Destroyed Azure resources"
-			} else {
-				stopMessage = "Error while destroying Azure resources"
-			}
+	spinner := spin.NewSpinner("Destroying Azure resources")
+	defer spinner.Stop()
 
-			s.StopMessage(stopMessage)
-		})
+	err := destroyWithProgress(spinner)
 
 	if err != nil {
 		return nil, fmt.Errorf("error destroying Azure resources: %w", err)
 	}
 
+	spinner.Println("Destroyed Azure resources")
+
 	return destroyResult, nil
 }
 
 // Creates a progress message from the provisioning progress report
-func (m *Manager) showDeployProgress(progressReport DeployProgress, showProgress func(string)) {
+func (m *Manager) showDeployProgress(progressReport DeployProgress, spinner *spin.Spinner) {
 	succeededCount := 0
 
 	for _, resourceOperation := range progressReport.Operations {
@@ -213,7 +214,7 @@ func (m *Manager) showDeployProgress(progressReport DeployProgress, showProgress
 	}
 
 	status := fmt.Sprintf("Creating Azure resources (%d of ~%d completed) ", succeededCount, len(progressReport.Operations))
-	showProgress(status)
+	spinner.Title(status)
 }
 
 // Ensures a provisioning location has been identified within the preview or prompts the user for input
@@ -310,4 +311,14 @@ func NewManager(ctx context.Context, env environment.Environment, projectPath st
 		interactive: interactive,
 		console:     console,
 	}, nil
+}
+
+func monitorInteraction(spinner *spin.Spinner, interactiveChannel <-chan bool) {
+	for isInteractive := range interactiveChannel {
+		if isInteractive {
+			spinner.Stop()
+		} else {
+			spinner.Start()
+		}
+	}
 }

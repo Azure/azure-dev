@@ -86,6 +86,7 @@ func TestInfraDestroyWithPositiveConfirmation(t *testing.T) {
 
 	require.NotNil(t, destroyResult)
 	require.Nil(t, err)
+	require.Contains(t, console.Output(), "Are you sure")
 }
 
 func TestInfraDestroyWithNegativeConfirmation(t *testing.T) {
@@ -114,4 +115,5 @@ func TestInfraDestroyWithNegativeConfirmation(t *testing.T) {
 
 	require.Nil(t, destroyResult)
 	require.NotNil(t, err)
+	require.Contains(t, console.Output(), "Are you sure")
 }

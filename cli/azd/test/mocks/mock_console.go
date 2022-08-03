@@ -13,6 +13,7 @@ var truePredicateFn WhenPredicate = func(_ input.ConsoleOptions) bool { return t
 
 type MockConsole struct {
 	expressions []*MockConsoleExpression
+	log         []string
 }
 
 func NewMockConsole() *MockConsole {
@@ -21,31 +22,41 @@ func NewMockConsole() *MockConsole {
 	}
 }
 
+func (c *MockConsole) Output() []string {
+	return c.log
+}
+
 func (c *MockConsole) Message(ctx context.Context, message string) error {
+	c.log = append(c.log, message)
 	return nil
 }
 
 func (c *MockConsole) Confirm(ctx context.Context, options input.ConsoleOptions) (bool, error) {
+	c.log = append(c.log, options.Message)
 	value, err := c.respond("Confirm", options)
 	return value.(bool), err
 }
 
 func (c *MockConsole) Prompt(ctx context.Context, options input.ConsoleOptions) (string, error) {
+	c.log = append(c.log, options.Message)
 	value, err := c.respond("Prompt", options)
 	return value.(string), err
 }
 
 func (c *MockConsole) Select(ctx context.Context, options input.ConsoleOptions) (string, error) {
+	c.log = append(c.log, options.Message)
 	value, err := c.respond("Select", options)
 	return value.(string), err
 }
 
 func (c *MockConsole) PromptLocation(ctx context.Context, message string) (string, error) {
+	c.log = append(c.log, message)
 	value, err := c.respond("PromptLocation", input.ConsoleOptions{})
 	return value.(string), err
 }
 
 func (c *MockConsole) PromptTemplate(ctx context.Context, message string) (string, error) {
+	c.log = append(c.log, message)
 	value, err := c.respond("PromptTemplate", input.ConsoleOptions{})
 	return value.(string), err
 }

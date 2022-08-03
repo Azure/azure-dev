@@ -174,25 +174,23 @@ func (p *BicepProvider) Deploy(ctx context.Context, preview *Preview, scope Scop
 
 			// Report incremental progress
 			resourceManager := infra.NewAzureResourceManager(p.azCli)
-			for {
+
+			for range time.After(10 * time.Second) {
 				if isDeploymentComplete {
 					break
 				}
 
-				select {
-				case <-time.After(10 * time.Second):
-					ops, err := resourceManager.GetDeploymentResourceOperations(ctx, p.env.GetSubscriptionId(), p.env.GetEnvName())
-					if err != nil || len(*ops) == 0 {
-						continue
-					}
-
-					progressReport := DeployProgress{
-						Timestamp:  time.Now(),
-						Operations: *ops,
-					}
-
-					asyncContext.SetProgress(&progressReport)
+				ops, err := resourceManager.GetDeploymentResourceOperations(ctx, p.env.GetSubscriptionId(), p.env.GetEnvName())
+				if err != nil || len(ops) == 0 {
+					continue
 				}
+
+				progressReport := DeployProgress{
+					Timestamp:  time.Now(),
+					Operations: ops,
+				}
+
+				asyncContext.SetProgress(&progressReport)
 			}
 		})
 }

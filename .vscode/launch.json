@@ -1,0 +1,50 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "type": "node",
+            "request": "launch",
+            "name": "Repoman Generate - Python Mongo",
+            "program": "${workspaceFolder}/generators/repo/src/index.ts",
+            "preLaunchTask": "tsc: build",
+            "outFiles": ["${workspaceFolder}/generators/repo/dist/**/*.js"],   
+            "args" : [
+                "generate",
+                "-s",
+                "${workspaceFolder}/templates/todo/projects/python-mongo",
+                "-o",
+                "${workspaceFolder}/.tmp/python-mongo",
+                "--branch",
+                "pr-debug-test",
+                "--https",
+                "--fail-on-update-error",
+                "--resultsFile",
+                "--update"
+            ]   
+          },
+          {
+            "type": "node",
+            "request": "launch",
+            "name": "Repoman Generate - NodeJs Mongo",
+            "program": "${workspaceFolder}/generators/repo/src/index.ts",
+            "preLaunchTask": "tsc: build",
+            "outFiles": ["${workspaceFolder}/generators/repo/dist/**/*.js"],   
+            "args" : [
+                "generate",
+                "-s",
+                "${workspaceFolder}/templates/todo/projects/nodejs-mongo",
+                "-o",
+                "${workspaceFolder}/.tmp/nodejs-mongo",
+                "--branch",
+                "pr-debug-test",
+                "--https",
+                "--fail-on-update-error",
+                "--resultsFile",
+                "--update"
+            ]   
+          },
+    ]
+}

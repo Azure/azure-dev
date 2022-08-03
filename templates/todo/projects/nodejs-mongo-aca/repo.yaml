@@ -9,7 +9,7 @@ repo:
 
   remotes:
     - name: azure-samples
-      url: git@github.com:Azure-Samples/todo-nodejs-mongo-aca.git
+      url: git@github.com:kaizentm/todo-nodejs-mongo-aca.git
 
   rewrite:
     patterns:

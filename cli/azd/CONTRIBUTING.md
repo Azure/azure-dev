@@ -53,7 +53,7 @@ In VS Code you can create a launch.json that runs the tool with a specified set 
     "args": [
         "restore"
     ],
-    "cwd": "/Users/karolz/code/scratch/azd-devel/src/api"
+    "cwd": "${workspaceFolder}"
 },
 ```
 
@@ -65,11 +65,11 @@ as usual. You'll want to pass a larger `-timeout` since these tests deploy live 
 
 ### Run all the tests
 
-`go test -timeout 15m -v ./...`
+`go test -timeout 20m -v ./...`
 
 ### Run a specific test
 
-`go test -timeout 15m -v ./... -run Test_CLI_RestoreCommand`
+`go test -timeout 20m -v ./... -run Test_CLI_RestoreCommand`
 
 ## Linting
 
@@ -79,7 +79,9 @@ Run `golangci-lint run ./...`
 
 ## Spell checking
 
-Install [cspell](https://cspell.org/) and then run `cspell lint "**/*.go" --relative --config ./.vscode/cspell.yaml`
+1. Install [cspell](https://cspell.org/)
+2. CD to /cli/azd
+3. Run `cspell lint "**/*.go" --relative --config ./.vscode/cspell.yaml`
 
 ## Troubleshooting
 

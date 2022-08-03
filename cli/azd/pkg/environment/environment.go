@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"regexp"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/joho/godotenv"
 )
 
@@ -84,7 +85,7 @@ func (e *Environment) Save() error {
 		return nil
 	}
 
-	err := os.MkdirAll(filepath.Dir(e.File), 0755)
+	err := os.MkdirAll(filepath.Dir(e.File), osutil.PermissionDirectory)
 	if err != nil {
 		return fmt.Errorf("failed to create a directory: %w", err)
 	}
@@ -115,4 +116,12 @@ func (e *Environment) GetTenantId() string {
 
 func (e *Environment) SetSubscriptionId(id string) {
 	e.Values[SubscriptionIdEnvVarName] = id
+}
+
+func (e *Environment) SetLocation(location string) {
+	e.Values[LocationEnvVarName] = location
+}
+
+func (e *Environment) SetPrincipalId(principalID string) {
+	e.Values[PrincipalIdEnvVarName] = principalID
 }

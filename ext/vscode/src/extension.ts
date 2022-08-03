@@ -2,16 +2,15 @@
 // Licensed under the MIT License.
 
 import * as vscode from 'vscode';
-import * as tas from 'vscode-tas-client';
 import { registerUIExtensionVariables, createAzExtOutputChannel, callWithTelemetryAndErrorHandling, IActionContext, createExperimentationService } from '@microsoft/vscode-azext-utils';
 import ext from './ext';
 import { registerCommands } from './commands/registerCommands';
 import { DotEnvTaskProvider } from './tasks/dotEnvTaskProvider';
 import { TelemetryId } from './telemetry/telemetryId';
 import { scheduleSurveys } from './telemetry/surveyScheduler';
-import { SurveyOne } from './telemetry/surveyOne';
 import { ActivityStatisticsService } from './telemetry/activityStatisticsService';
 import { scheduleAzdInstalledCheck } from './utils/azureDevCli';
+import { activeSurveys } from './telemetry/activeSurveys';
 
 type LoadStats = {
     // Both are the values returned by Date.now()==milliseconds since Unix epoch.
@@ -31,7 +30,8 @@ export async function activateInternal(vscodeCtx: vscode.ExtensionContext, loadS
     // The following is necessary for telemetry to work, so do this before callWithTelemetryAndErrorHandling()
     ext.context = vscodeCtx;
     ext.ignoreBundle = false;
-    ext.outputChannel = registerDisposable(createAzExtOutputChannel('Azure Developer', 'az dev'));
+    ext.outputChannel = registerDisposable(createAzExtOutputChannel('Azure Developer', "azure-dev"));
+    registerUIExtensionVariables(ext);
     
     await callWithTelemetryAndErrorHandling(TelemetryId.Activation, async (activationCtx: IActionContext) => {
         activationCtx.errorHandling.rethrow = true;
@@ -41,12 +41,11 @@ export async function activateInternal(vscodeCtx: vscode.ExtensionContext, loadS
 
         // Now do all actual activation tasks.
         ext.userAgent = `${ext.azureDevExtensionNamespace}/v${vscodeCtx.extension.packageJSON.version}`;
-        ext.experimentationSvc = await createExperimentationService(vscodeCtx, tas.TargetPopulation.Team);
+        ext.experimentationSvc = await createExperimentationService(vscodeCtx, undefined);
         ext.activitySvc = new ActivityStatisticsService(vscodeCtx.globalState);
-        registerUIExtensionVariables(ext);
         registerCommands();
         registerDisposable(vscode.tasks.registerTaskProvider('dotenv', new DotEnvTaskProvider()));
-        scheduleSurveys(vscodeCtx.globalState, [SurveyOne]);
+        scheduleSurveys(vscodeCtx.globalState, activeSurveys);
         scheduleAzdInstalledCheck();
     });
 }

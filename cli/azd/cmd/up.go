@@ -23,6 +23,22 @@ func upCmd(rootOptions *commands.GlobalCommandOptions) *cobra.Command {
 			&infraCreateAction{
 				rootOptions: rootOptions,
 			},
+			// Print an additional newline to separate provision from deploy
+			commands.ActionFunc(
+				func(ctx context.Context, cmd *cobra.Command, args []string, azdCtx *environment.AzdContext) error {
+					formatter, err := output.GetFormatter(cmd)
+					if err != nil {
+						return err
+					}
+
+					interactive := formatter.Kind() == output.NoneFormat
+					if interactive {
+						fmt.Println()
+					}
+
+					return nil
+				},
+			),
 			&deployAction{rootOptions: rootOptions},
 		),
 		rootOptions,

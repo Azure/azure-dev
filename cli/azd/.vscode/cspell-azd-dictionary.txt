@@ -39,6 +39,7 @@ pyapp
 keychain
 restoreapp
 rzip
+serverfarms
 sstore
 staticwebapp
 structs

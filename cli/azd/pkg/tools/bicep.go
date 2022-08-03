@@ -47,8 +47,8 @@ func (cli *bicepCli) versionInfo() VersionInfo {
 	return VersionInfo{
 		MinimumVersion: semver.Version{
 			Major: 0,
-			Minor: 4,
-			Patch: 1008},
+			Minor: 8,
+			Patch: 9},
 		UpdateCommand: "Run \"az bicep upgrade\"  to upgrade",
 	}
 }

@@ -1,0 +1,7 @@
+parameters:
+  BicepVersion: v0.8.9
+
+steps:
+  - pwsh: |
+      az bicep install --version ${{ parameters.BicepVersion }}
+    displayName: Install bicep

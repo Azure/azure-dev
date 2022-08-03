@@ -15,6 +15,7 @@ func TestProjectConfigDefaults(t *testing.T) {
 name: test-proj
 metadata:
   template: test-proj-template
+resourceGroup: rg-test-env
 services:
   web:
     project: src/web
@@ -35,11 +36,11 @@ services:
 
 	require.Equal(t, "test-proj", projectConfig.Name)
 	require.Equal(t, "test-proj-template", projectConfig.Metadata.Template)
-	require.Equal(t, fmt.Sprintf("%s-rg", e.GetEnvName()), projectConfig.ResourceGroupName)
+	require.Equal(t, fmt.Sprintf("rg-%s", e.GetEnvName()), projectConfig.ResourceGroupName)
 	require.Equal(t, 2, len(projectConfig.Services))
 
 	for key, svc := range projectConfig.Services {
-		require.Equal(t, key, svc.ModuleName)
+		require.Equal(t, key, svc.Module)
 		require.Equal(t, key, svc.Name)
 		require.Equal(t, projectConfig, svc.Project)
 	}
@@ -50,6 +51,7 @@ func TestProjectConfigHasService(t *testing.T) {
 name: test-proj
 metadata:
   template: test-proj-template
+resourceGroup: rg-test
 services:
   web:
     project: src/web
@@ -77,6 +79,7 @@ func TestProjectConfigGetProject(t *testing.T) {
 name: test-proj
 metadata:
   template: test-proj-template
+resourceGroup: rg-test
 services:
   web:
     project: src/web
@@ -115,6 +118,7 @@ func TestProjectWithCustomDockerOptions(t *testing.T) {
 name: test-proj
 metadata:
   template: test-proj-template
+resourceGroup: rg-test
 services:
   web:
     project: src/web
@@ -137,4 +141,31 @@ services:
 
 	require.Equal(t, "./Dockerfile.dev", service.Docker.Path)
 	require.Equal(t, "../", service.Docker.Context)
+}
+
+func TestProjectWithCustomModule(t *testing.T) {
+	const testProj = `
+name: test-proj
+metadata:
+  template: test-proj-template
+resourceGroup: rg-test
+services:
+  api:
+    project: src/api
+    language: js
+    host: containerapp
+    module: ./api/api
+`
+
+	e := environment.Environment{Values: make(map[string]string)}
+	e.SetEnvName("test-env")
+
+	projectConfig, err := ParseProjectConfig(testProj, &e)
+
+	require.NotNil(t, projectConfig)
+	require.Nil(t, err)
+
+	service := projectConfig.Services["api"]
+
+	require.Equal(t, "./api/api", service.Module)
 }

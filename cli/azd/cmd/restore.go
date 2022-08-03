@@ -88,7 +88,8 @@ func (r *restoreAction) Run(ctx context.Context, _ *cobra.Command, args []string
 			return fmt.Errorf("getting framework services: %w", err)
 		}
 
-		if err = spin.Run(installMsg, func() error { return (*frameworkService).InstallDependencies(ctx) }); err != nil {
+		spinner := spin.NewSpinner(installMsg)
+		if err = spinner.Run(func() error { return (*frameworkService).InstallDependencies(ctx) }); err != nil {
 			return err
 		}
 

@@ -47,14 +47,10 @@ When a template is provided, the sample code is cloned to the current directory.
 type initAction struct {
 	template       templates.Template
 	templateBranch string
+	subscription   string
+	location       string
 	rootOptions    *commands.GlobalCommandOptions
 }
-
-//constant enums for file mode
-const (
-	permissionDirectory   = 0755
-	permissionRegularFile = 0644
-)
 
 func (i *initAction) SetupFlags(
 	persis *pflag.FlagSet,
@@ -62,6 +58,8 @@ func (i *initAction) SetupFlags(
 ) {
 	local.StringVarP(&i.template.Name, "template", "t", "", "The template to use when you initialize the project. You can use Full URI, <owner>/<repository>, or <repository> if it's part of the azure-samples organization.")
 	local.StringVarP(&i.templateBranch, "branch", "b", "", "The template branch to initialize from.")
+	local.StringVar(&i.subscription, "subscription", "", "Name or ID of an Azure subscription to use for the new environment")
+	local.StringVarP(&i.location, "location", "l", "", "Azure location for the new environment")
 }
 
 func (i *initAction) Run(ctx context.Context, _ *cobra.Command, args []string, azdCtx *environment.AzdContext) error {
@@ -145,8 +143,9 @@ func (i *initAction) Run(ctx context.Context, _ *cobra.Command, args []string, a
 		initFunc := func() error {
 			return gitCli.FetchCode(ctx, templateUrl, i.templateBranch, templateStagingDir)
 		}
-		if err := spin.Run(
-			"Downloading template ",
+
+		spinner := spin.NewSpinner("Downloading template")
+		if err := spinner.Run(
 			initFunc,
 		); err != nil {
 			return fmt.Errorf("fetching template: %w", err)
@@ -230,13 +229,13 @@ func (i *initAction) Run(ctx context.Context, _ *cobra.Command, args []string, a
 	}
 
 	//create .azure when running azd init
-	err = os.MkdirAll(filepath.Join(azdCtx.ProjectDirectory(), environment.EnvironmentDirectoryName), permissionDirectory)
+	err = os.MkdirAll(filepath.Join(azdCtx.ProjectDirectory(), environment.EnvironmentDirectoryName), osutil.PermissionDirectory)
 	if err != nil {
 		return fmt.Errorf("failed to create a directory: %w", err)
 	}
 
 	//create .gitignore or open existing .gitignore file, and contains .azure
-	gitignoreFile, err := os.OpenFile(filepath.Join(azdCtx.ProjectDirectory(), ".gitignore"), os.O_APPEND|os.O_RDWR|os.O_CREATE, permissionRegularFile)
+	gitignoreFile, err := os.OpenFile(filepath.Join(azdCtx.ProjectDirectory(), ".gitignore"), os.O_APPEND|os.O_RDWR|os.O_CREATE, osutil.PermissionFile)
 	if err != nil {
 		return fmt.Errorf("fail to create or open .gitignore: %w", err)
 	}
@@ -259,12 +258,17 @@ func (i *initAction) Run(ctx context.Context, _ *cobra.Command, args []string, a
 		}
 	}
 
-	_, err = createAndInitEnvironment(ctx, &i.rootOptions.EnvironmentName, azdCtx, askOne)
+	envSpec := environmentSpec{
+		environmentName: i.rootOptions.EnvironmentName,
+		subscription:    i.subscription,
+		location:        i.location,
+	}
+	_, err = createAndInitEnvironment(ctx, &envSpec, azdCtx, askOne)
 	if err != nil {
 		return fmt.Errorf("loading environment: %w", err)
 	}
 
-	if err := azdCtx.SetDefaultEnvironmentName(i.rootOptions.EnvironmentName); err != nil {
+	if err := azdCtx.SetDefaultEnvironmentName(envSpec.environmentName); err != nil {
 		return fmt.Errorf("saving default environment: %w", err)
 	}
 

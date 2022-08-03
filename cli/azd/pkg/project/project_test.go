@@ -66,6 +66,7 @@ func TestResourceNameDefaultValues(t *testing.T) {
 name: test-proj
 metadata:
   template: test-proj-template
+resourceGroup: rg-test
 services:
   web:
     project: src/web
@@ -114,6 +115,7 @@ func TestResourceNameOverrideFromProjectFile(t *testing.T) {
 name: test-proj
 metadata:
   template: test-proj-template
+resourceGroup: rg-test
 services:
   web:
     project: src/web
@@ -189,6 +191,7 @@ func TestResourceNameOverrideFromResourceTag(t *testing.T) {
 name: test-proj
 metadata:
   template: test-proj-template
+resourceGroup: rg-test
 services:
   api:
     project: src/api
@@ -217,9 +220,9 @@ services:
 func TestResourceGroupOverrideFromProjectFile(t *testing.T) {
 	const testProj = `
 name: test-proj
-resourceGroup: custom-group-rg
 metadata:
   template: test-proj-template
+resourceGroup: rg-custom-group
 services:
   web:
     project: src/web
@@ -244,13 +247,13 @@ services:
 
 	assertHasService(t,
 		project.Services,
-		func(s *Service) bool { return s.Scope.ResourceGroupName() == "custom-group-rg" },
+		func(s *Service) bool { return s.Scope.ResourceGroupName() == "rg-custom-group" },
 		"api service does not have expected resource group name",
 	)
 
 	assertHasService(t,
 		project.Services,
-		func(s *Service) bool { return s.Scope.ResourceGroupName() == "custom-group-rg" },
+		func(s *Service) bool { return s.Scope.ResourceGroupName() == "rg-custom-group" },
 		"web service does not have expected resource group name",
 	)
 }

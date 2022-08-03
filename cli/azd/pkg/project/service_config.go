@@ -25,8 +25,8 @@ type ServiceConfig struct {
 	Language string `yaml:"language"`
 	// The output path for build artifacts
 	OutputPath string `yaml:"dist"`
-	// The infrastructure module name to use for this project
-	ModuleName string `yaml:"moduleName"`
+	// The infrastructure module path relative to the root infra folder to use for this project
+	Module string `yaml:"module"`
 	// The optional docker options
 	Docker DockerProjectOptions `yaml:"docker"`
 }

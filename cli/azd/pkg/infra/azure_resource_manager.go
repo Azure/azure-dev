@@ -18,7 +18,7 @@ func NewAzureResourceManager(azCli tools.AzCli) *AzureResourceManager {
 	}
 }
 
-func (rm *AzureResourceManager) GetDeploymentResourceOperations(ctx context.Context, subscriptionId string, deploymentName string) (*[]tools.AzCliResourceOperation, error) {
+func (rm *AzureResourceManager) GetDeploymentResourceOperations(ctx context.Context, subscriptionId string, deploymentName string) ([]tools.AzCliResourceOperation, error) {
 	// Gets all the subscription level deployments
 	subOperations, err := rm.azCli.ListSubscriptionDeploymentOperations(ctx, subscriptionId, deploymentName)
 	if err != nil {
@@ -38,7 +38,7 @@ func (rm *AzureResourceManager) GetDeploymentResourceOperations(ctx context.Cont
 	resourceOperations := []tools.AzCliResourceOperation{}
 
 	if strings.TrimSpace(resourceGroupName) == "" {
-		return &resourceOperations, nil
+		return resourceOperations, nil
 	}
 
 	// Find all resource group deployments within the subscription operations
@@ -52,7 +52,7 @@ func (rm *AzureResourceManager) GetDeploymentResourceOperations(ctx context.Cont
 		}
 	}
 
-	return &resourceOperations, nil
+	return resourceOperations, nil
 }
 
 func (rm *AzureResourceManager) appendDeploymentResourcesRecursive(ctx context.Context, subscriptionId string, resourceGroupName string, deploymentName string, resourceOperations *[]tools.AzCliResourceOperation) error {
@@ -73,4 +73,37 @@ func (rm *AzureResourceManager) appendDeploymentResourcesRecursive(ctx context.C
 	}
 
 	return nil
+}
+
+func (rm *AzureResourceManager) GetResourceTypeDisplayName(ctx context.Context, subscriptionId string, resourceId string, resourceType AzureResourceType) (string, error) {
+	if resourceType == AzureResourceTypeWebSite {
+		// Web apps have different kinds of resources sharing the same resource type 'Microsoft.Web/sites', i.e. Function app vs. App service
+		// It is extremely important that we display the right one, thus we resolve it by querying the properties of the ARM resource.
+		resourceTypeDisplayName, err := rm.GetWebAppResourceTypeDisplayName(ctx, subscriptionId, resourceId)
+
+		if err != nil {
+			return "", err
+		} else {
+			return resourceTypeDisplayName, nil
+		}
+	} else {
+		resourceTypeDisplayName := GetResourceTypeDisplayName(resourceType)
+		return resourceTypeDisplayName, nil
+	}
+}
+
+func (rm *AzureResourceManager) GetWebAppResourceTypeDisplayName(ctx context.Context, subscriptionId string, resourceId string) (string, error) {
+	resource, err := rm.azCli.GetResource(ctx, subscriptionId, resourceId)
+
+	if err != nil {
+		return "", fmt.Errorf("getting web app resource type display names: %w", err)
+	}
+
+	if strings.Contains(resource.Kind, "functionapp") {
+		return "Function App", nil
+	} else if strings.Contains(resource.Kind, "app") {
+		return "App Service", nil
+	} else {
+		return "Web App", nil
+	}
 }

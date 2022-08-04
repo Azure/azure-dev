@@ -39,7 +39,7 @@ func (a *infraDeleteAction) SetupFlags(
 	local *pflag.FlagSet,
 ) {
 	local.BoolVar(&a.forceDelete, "force", false, "Does not require confirmation before it deletes resources.")
-	local.BoolVar(&a.purgeDelete, "purge", false, "Does not require confirmation before permanently deletes resources that are soft-deleted by default (for example, key vaults).")
+	local.BoolVar(&a.purgeDelete, "purge", false, "Does not require confirmation before it permanently deletes resources that are soft-deleted by default (for example, key vaults).")
 }
 
 func (a *infraDeleteAction) Run(ctx context.Context, _ *cobra.Command, args []string, azdCtx *environment.AzdContext) error {

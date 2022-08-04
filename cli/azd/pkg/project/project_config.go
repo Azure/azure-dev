@@ -33,10 +33,22 @@ type ProjectConfig struct {
 type Event string
 
 const (
-	Init      Event = "init"
-	Provision Event = "provision"
-	Deploy    Event = "deploy"
-	Destroy   Event = "destroy"
+	// Raised before project is initialized
+	Initializing Event = "initializing"
+	// Raised after project is initialized
+	Initialized Event = "initialized"
+	// Raised before project is provisioned
+	Provisioning Event = "provisioning"
+	// Raised after project is provisioned
+	Provisioned Event = "provisioned"
+	// Raised before project is deployed
+	Deploying Event = "deploying"
+	// Raised after project is deployed
+	Deployed Event = "deployed"
+	// Raised before project is destroyed
+	Destroying Event = "destroying"
+	// Raised after project is destroyed
+	Destroyed Event = "destroyed"
 )
 
 // Project lifecycle event arguments

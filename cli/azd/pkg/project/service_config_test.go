@@ -26,7 +26,8 @@ func TestServiceConfigAddHandler(t *testing.T) {
 	err = service.AddHandler(Deployed, handler)
 	require.NotNil(t, err)
 
-	service.RaiseEvent(ctx, Deployed)
+	err = service.RaiseEvent(ctx, Deployed)
+	require.Nil(t, err)
 	require.True(t, handlerCalled)
 }
 
@@ -58,7 +59,8 @@ func TestServiceConfigRemoveHandler(t *testing.T) {
 	require.NotNil(t, err)
 
 	// No events are registered at the time event was raised
-	service.RaiseEvent(ctx, Deployed)
+	err = service.RaiseEvent(ctx, Deployed)
+	require.Nil(t, err)
 	require.False(t, handler1Called)
 	require.False(t, handler2Called)
 }
@@ -88,7 +90,8 @@ func TestServiceConfigWithMultipleEventHandlers(t *testing.T) {
 	err = service.AddHandler(Deployed, handler2)
 	require.Nil(t, err)
 
-	service.RaiseEvent(ctx, Deployed)
+	err = service.RaiseEvent(ctx, Deployed)
+	require.Nil(t, err)
 	require.True(t, handlerCalled1)
 	require.True(t, handlerCalled2)
 }

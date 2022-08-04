@@ -188,7 +188,8 @@ func TestProjectConfigAddHandler(t *testing.T) {
 	err = project.AddHandler(Deployed, handler)
 	require.NotNil(t, err)
 
-	project.RaiseEvent(ctx, Deployed)
+	err = project.RaiseEvent(ctx, Deployed)
+	require.Nil(t, err)
 	require.True(t, handlerCalled)
 }
 
@@ -220,7 +221,8 @@ func TestProjectConfigRemoveHandler(t *testing.T) {
 	require.NotNil(t, err)
 
 	// No events are registered at the time event was raised
-	project.RaiseEvent(ctx, Deployed)
+	err = project.RaiseEvent(ctx, Deployed)
+	require.Nil(t, err)
 	require.False(t, handler1Called)
 	require.False(t, handler2Called)
 }
@@ -248,7 +250,8 @@ func TestProjectConfigWithMultipleEventHandlers(t *testing.T) {
 	err = project.AddHandler(Deployed, handler2)
 	require.Nil(t, err)
 
-	project.RaiseEvent(ctx, Deployed)
+	err = project.RaiseEvent(ctx, Deployed)
+	require.Nil(t, err)
 	require.True(t, handlerCalled1)
 	require.True(t, handlerCalled2)
 }

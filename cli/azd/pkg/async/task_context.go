@@ -2,7 +2,7 @@
 package async
 
 // Task function definition
-type TaskRunFunc[R comparable] func(ctx *TaskContext[R])
+type TaskRunFunc[R comparable] func(taskContext *TaskContext[R])
 
 // The context available to the executing Task
 type TaskContext[R comparable] struct {

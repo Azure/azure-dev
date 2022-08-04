@@ -51,6 +51,52 @@
           {
             "type": "node",
             "request": "launch",
+            "name": "Repoman Generate - Python Mongo-aca",
+            "program": "${workspaceFolder}/generators/repo/src/index.ts",
+            "preLaunchTask": "tsc: build",
+            "outFiles": ["${workspaceFolder}/generators/repo/dist/**/*.js"],   
+            "args" : [
+                "generate",
+                "-t",
+                "repo.yaml",
+                "-s",
+                "${workspaceFolder}/templates/todo/projects/python-mongo-aca",
+                "-o",
+                "${workspaceFolder}/.tmp/python-mongo-aca",
+                "--branch",
+                "pr-debug-test",
+                "--https",
+                "--fail-on-update-error",
+                "--resultsFile",
+                "--update"
+            ]   
+          },
+          {
+            "type": "node",
+            "request": "launch",
+            "name": "Repoman Generate - NodeJs Mongo-aca",
+            "program": "${workspaceFolder}/generators/repo/src/index.ts",
+            "preLaunchTask": "tsc: build",
+            "outFiles": ["${workspaceFolder}/generators/repo/dist/**/*.js"],   
+            "args" : [
+                "generate",
+                "-s",
+                "${workspaceFolder}/templates/todo/projects/nodejs-mongo-aca",
+                "-t",
+                "repo.yaml",
+                "-o",
+                "${workspaceFolder}/.tmp/nodejs-mongo-aca",
+                "--branch",
+                "pr-debug-test",
+                "--https",
+                "--fail-on-update-error",
+                "--resultsFile",
+                "--update"
+            ]   
+          },
+          {
+            "type": "node",
+            "request": "launch",
             "name": "Repoman List",
             "program": "${workspaceFolder}/generators/repo/src/index.ts",
             "preLaunchTask": "tsc: build",

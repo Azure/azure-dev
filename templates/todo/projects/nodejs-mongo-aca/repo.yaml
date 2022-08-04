@@ -44,7 +44,7 @@ repo:
       to: ./tests
       
     # ACA infra common
-    - from: ../../common/infra/aca
+    - from: ../../common/infra/aca/bicep
       to: ./infra
 
     # Node JS API

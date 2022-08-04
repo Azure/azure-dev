@@ -2,6 +2,7 @@ package project
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
@@ -119,6 +120,29 @@ func TestServiceConfigWithMultipleEvents(t *testing.T) {
 
 	require.True(t, provisionHandlerCalled)
 	require.False(t, deployHandlerCalled)
+}
+
+func TestServiceConfigWithEventHandlerErrors(t *testing.T) {
+	ctx := context.Background()
+	service := getServiceConfig()
+
+	handler1 := func(ctx context.Context, args ServiceLifecycleEventArgs) error {
+		return errors.New("sample error 1")
+	}
+
+	handler2 := func(ctx context.Context, args ServiceLifecycleEventArgs) error {
+		return errors.New("sample error 2")
+	}
+
+	err := service.AddHandler(Provisioned, handler1)
+	require.Nil(t, err)
+	err = service.AddHandler(Provisioned, handler2)
+	require.Nil(t, err)
+
+	err = service.RaiseEvent(ctx, Provisioned)
+	require.NotNil(t, err)
+	require.Contains(t, err.Error(), "sample error 1")
+	require.Contains(t, err.Error(), "sample error 2")
 }
 
 func getServiceConfig() *ServiceConfig {

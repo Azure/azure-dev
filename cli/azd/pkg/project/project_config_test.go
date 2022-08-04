@@ -2,6 +2,7 @@ package project
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"testing"
 
@@ -279,6 +280,29 @@ func TestProjectConfigWithMultipleEvents(t *testing.T) {
 
 	require.True(t, provisionHandlerCalled)
 	require.False(t, deployHandlerCalled)
+}
+
+func TestProjectConfigWithEventHandlerErrors(t *testing.T) {
+	ctx := context.Background()
+	project := getProjectConfig()
+
+	handler1 := func(ctx context.Context, args ProjectLifecycleEventArgs) error {
+		return errors.New("sample error 1")
+	}
+
+	handler2 := func(ctx context.Context, args ProjectLifecycleEventArgs) error {
+		return errors.New("sample error 2")
+	}
+
+	err := project.AddHandler(Provisioned, handler1)
+	require.Nil(t, err)
+	err = project.AddHandler(Provisioned, handler2)
+	require.Nil(t, err)
+
+	err = project.RaiseEvent(ctx, Provisioned)
+	require.NotNil(t, err)
+	require.Contains(t, err.Error(), "sample error 1")
+	require.Contains(t, err.Error(), "sample error 2")
 }
 
 func getProjectConfig() *ProjectConfig {

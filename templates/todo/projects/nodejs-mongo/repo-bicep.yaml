@@ -5,7 +5,7 @@ metadata:
   description: ToDo Application with a Node.js API and Azure Cosmos DB API for MongoDB
 
 repo:
-  includeProjectAssets: true
+  includeProjectAssets: false
 
   remotes:
     - name: azure-samples
@@ -18,6 +18,12 @@ repo:
 
   assets:
     # Common assets
+    - from: ./
+      to: ./
+      ignore: 
+        - "repo-*.y[a]ml"
+        - "infra/**/*"
+        - "azure-*.y[a]ml"
 
     # openapi.yaml to root
     - from: ../../api/common
@@ -34,6 +40,11 @@ repo:
     # Template common
     - from: ../../../common
       to: ./
+      ignore: 
+      - "infra/**/*"
+
+    - from: ../../../common/infra/bicep
+      to: ./infra
 
     # Assets common
     - from: ../../common/assets
@@ -58,3 +69,11 @@ repo:
       ignore:
         - "build/**/*"
         - "node_modules/**/*"
+
+    # Infra 
+    - from: ./infra/bicep
+      to: ./infra
+
+    # Azure.yml
+    - from: ./azure-bicep.yaml
+      to: ./azure.yaml

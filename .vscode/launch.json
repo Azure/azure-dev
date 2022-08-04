@@ -13,6 +13,8 @@
             "outFiles": ["${workspaceFolder}/generators/repo/dist/**/*.js"],   
             "args" : [
                 "generate",
+                "-t",
+                "repo-terraform.yaml",
                 "-s",
                 "${workspaceFolder}/templates/todo/projects/python-mongo",
                 "-o",
@@ -44,6 +46,19 @@
                 "--fail-on-update-error",
                 "--resultsFile",
                 "--update"
+            ]   
+          },
+          {
+            "type": "node",
+            "request": "launch",
+            "name": "Repoman List",
+            "program": "${workspaceFolder}/generators/repo/src/index.ts",
+            "preLaunchTask": "tsc: build",
+            "outFiles": ["${workspaceFolder}/generators/repo/dist/**/*.js"],   
+            "args" : [
+                "list",
+                "--format",
+                "json",
             ]   
           },
     ]

@@ -30,7 +30,7 @@ export class ListCommand implements RepomanCommand {
             console.info();
         }
 
-        const files = await getGlobFiles("**/repo.yaml", { cwd: this.sourcePath });
+        const files = await getGlobFiles("**/repo*.yaml", { cwd: this.sourcePath });
 
         if (!isJsonFormat) {
             console.info(chalk.cyan(`Found ${files.length} templates within search path`));

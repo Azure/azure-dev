@@ -180,14 +180,14 @@ func TestProjectConfigAddHandler(t *testing.T) {
 		return nil
 	}
 
-	err := project.AddHandler(Deploy, handler)
+	err := project.AddHandler(Deployed, handler)
 	require.Nil(t, err)
 
 	// Expected error if attempting to register the same handler more than 1 time
-	err = project.AddHandler(Deploy, handler)
+	err = project.AddHandler(Deployed, handler)
 	require.NotNil(t, err)
 
-	project.RaiseEvent(ctx, Deploy)
+	project.RaiseEvent(ctx, Deployed)
 	require.True(t, handlerCalled)
 }
 
@@ -208,18 +208,18 @@ func TestProjectConfigRemoveHandler(t *testing.T) {
 	}
 
 	// Only handler 1 was registered
-	err := project.AddHandler(Deploy, handler1)
+	err := project.AddHandler(Deployed, handler1)
 	require.Nil(t, err)
 
-	err = project.RemoveHandler(Deploy, handler1)
+	err = project.RemoveHandler(Deployed, handler1)
 	require.Nil(t, err)
 
 	// Handler 2 wasn't registered so should error on remove
-	err = project.RemoveHandler(Deploy, handler2)
+	err = project.RemoveHandler(Deployed, handler2)
 	require.NotNil(t, err)
 
 	// No events are registered at the time event was raised
-	project.RaiseEvent(ctx, Deploy)
+	project.RaiseEvent(ctx, Deployed)
 	require.False(t, handler1Called)
 	require.False(t, handler2Called)
 }
@@ -242,12 +242,12 @@ func TestProjectConfigWithMultipleEventHandlers(t *testing.T) {
 		return nil
 	}
 
-	err := project.AddHandler(Deploy, handler1)
+	err := project.AddHandler(Deployed, handler1)
 	require.Nil(t, err)
-	err = project.AddHandler(Deploy, handler2)
+	err = project.AddHandler(Deployed, handler2)
 	require.Nil(t, err)
 
-	project.RaiseEvent(ctx, Deploy)
+	project.RaiseEvent(ctx, Deployed)
 	require.True(t, handlerCalled1)
 	require.True(t, handlerCalled2)
 }
@@ -269,12 +269,12 @@ func TestProjectConfigWithMultipleEvents(t *testing.T) {
 		return nil
 	}
 
-	err := project.AddHandler(Provision, provisionHandler)
+	err := project.AddHandler(Provisioned, provisionHandler)
 	require.Nil(t, err)
-	err = project.AddHandler(Deploy, deployHandler)
+	err = project.AddHandler(Deployed, deployHandler)
 	require.Nil(t, err)
 
-	err = project.RaiseEvent(ctx, Provision)
+	err = project.RaiseEvent(ctx, Provisioned)
 	require.Nil(t, err)
 
 	require.True(t, provisionHandlerCalled)

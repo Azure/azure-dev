@@ -23,6 +23,7 @@ repo:
       ignore: 
         - "repo-*.y[a]ml"
         - "infra/**/*"
+        - "azure-*.y[a]ml"
 
     # openapi.yaml to root
     - from: ../../api/common
@@ -67,3 +68,7 @@ repo:
     # Infra 
     - from: ./infra/terraform
       to: ./infra
+
+    # Azure.yml
+    - from: ./azure-bicep.yaml
+      to: ./azure.yaml

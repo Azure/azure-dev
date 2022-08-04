@@ -37,6 +37,14 @@ if (!$currentPath.Contains($expectedPathEntry)) {
   exit 1
 }
 
+$afterInstallPathType = $regKey.GetValueKind('PATH')
+if ($originalPathType -ne $afterInstallPathType) {
+    Write-Error "Path registry key type does not match"
+    Write-Error "Expected: $originalPathType"
+    Write-Error "Actual: $afterInstallPathType"
+    exit 1
+}
+
 & $InstallFolder/azd version
 
 if ($LASTEXITCODE) {
@@ -56,7 +64,7 @@ $currentPath = $regKey.GetValue( `
     '', `
     [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames `
 )
-$currentPathType = $regKey.GetValueKind('PATH')
+$afterUninstallPathType = $regKey.GetValueKind('PATH')
 
 if ($currentPath -ne $originalPath) {
     Write-Error "Path does not match original path after uninstall"
@@ -65,10 +73,10 @@ if ($currentPath -ne $originalPath) {
     exit 1
 }
 
-if ($originalPathType -ne $currentPathType) {
+if ($originalPathType -ne $afterUninstallPathType) {
     Write-Error "Path registry key type does not match"
     Write-Error "Expected: $originalPathType"
-    Write-Error "Actual: $currentPathType"
+    Write-Error "Actual: $afterUninstallPathType"
     exit 1
 }
 

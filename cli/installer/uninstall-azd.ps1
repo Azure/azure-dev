@@ -44,12 +44,11 @@ if (isLinuxOrMac) {
         Write-Host "powershell -ex AllSigned -c `"Invoke-RestMethod 'https://aka.ms/install-azd.ps1' | Invoke-Expression`"`n"
     }
 
-    # $env:Path, [Environment]::GetEnvironmentVariable('PATH'), and setx all expand
-    # variables (e.g. %JAVA_HOME%) in the value. Writing the expanded paths back
-    # into the environment would be destructive so instead, read the path directly
-    # from the registry with the DoNotExpandEnvironmentNames option and write that
-    # value back using the non-destructive [Environment]::SetEnvironmentVariable
-    # which also broadcasts environment variable changes to Windows.
+    # $env:Path, [Environment]::GetEnvironmentVariable('PATH'), Get-ItemProperty,
+    # and setx all expand variables (e.g. %JAVA_HOME%) in the value. Writing the
+    # expanded paths back into the environment would be destructive so instead, read
+    # the PATH entry directly from the registry with the DoNotExpandEnvironmentNames
+    # option and update the PATH entry using Set-ItemProperty
     try {
         . {
             # Wrap the Microsoft.Win32.Registry calls in a script block to
@@ -61,6 +60,7 @@ if (isLinuxOrMac) {
                 '', `
                 [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames `
             )
+            $originalValueKind = $registryKey.GetValueKind('PATH')
         }
         $pathParts = $originalPath -split ';'
 
@@ -69,13 +69,13 @@ if (isLinuxOrMac) {
             $newPathParts = $pathParts.Where({ $_ -ne $InstallFolder })
             $newPath = $newPathParts -join ';'
 
-            # SetEnvironmentVariable broadcasts the "Environment" change to Windows
-            # and is NOT destructive (e.g. expanding variables)
-            [Environment]::SetEnvironmentVariable(
-                'PATH', `
-                $newPath, `
-                [EnvironmentVariableTarget]::User `
-            )
+            # Set-ItemProperty preserves value type and also broadcasts the
+            # environment variable change to Windows.
+            Set-ItemProperty `
+                -Path HKCU:\Environment\ `
+                -Name 'PATH' `
+                -Value $newPath `
+                -Type $originalValueKind
         } else {
             Write-Host "Could not find an entry for $InstallFolder in PATH"
         }

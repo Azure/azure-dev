@@ -184,12 +184,11 @@ try {
 Write-Verbose "Cleaning temporary install directory: $tempFolder" -Verbose:$Verbose
 Remove-Item $tempFolder -Recurse -Force | Out-Null
 
-# $env:Path, [Environment]::GetEnvironmentVariable('PATH'), and setx all expand
-# variables (e.g. %JAVA_HOME%) in the value. Writing the expanded paths back
-# into the environment would be destructive so instead, read the path directly
-# from the registry with the DoNotExpandEnvironmentNames option and write that
-# value back using the non-destructive [Environment]::SetEnvironmentVariable
-# which also broadcasts environment variable changes to Windows.
+# $env:Path, [Environment]::GetEnvironmentVariable('PATH'), Get-ItemProperty,
+# and setx all expand variables (e.g. %JAVA_HOME%) in the value. Writing the
+# expanded paths back into the environment would be destructive so instead, read
+# the PATH entry directly from the registry with the DoNotExpandEnvironmentNames
+# option and update the PATH entry using Set-ItemProperty
 if (!$NoPath -and !(isLinuxOrMac)) {
     try {
         # Wrap the Microsoft.Win32.Registry calls in a script block to prevent
@@ -202,19 +201,20 @@ if (!$NoPath -and !(isLinuxOrMac)) {
                 '', `
                 [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames `
             )
+            $originalValueKind = $registryKey.GetValueKind('PATH')
         }
         $pathParts = $originalPath -split ';'
 
         if (!($pathParts -contains $InstallFolder)) {
             Write-Host "Adding $InstallFolder to PATH"
 
-            # SetEnvironmentVariable broadcasts the "Environment" change to
-            # Windows and is NOT destructive (e.g. expanding variables)
-            [Environment]::SetEnvironmentVariable(
-                'PATH', `
-                "$originalPath;$InstallFolder", `
-                [EnvironmentVariableTarget]::User`
-            )
+            # Set-ItemProperty preserves value type and also broadcasts the
+            # environment variable change to Windows.
+            Set-ItemProperty `
+                -Path HKCU:\Environment\ `
+                -Name 'PATH' `
+                -Value "$originalPath;$InstallFolder" `
+                -Type $originalValueKind
 
             # Also add the path to the current session
             $env:PATH += ";$InstallFolder"

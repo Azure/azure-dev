@@ -18,14 +18,14 @@ func TestServiceConfigAddHandler(t *testing.T) {
 		return nil
 	}
 
-	err := service.AddHandler(Deploy, handler)
+	err := service.AddHandler(Deployed, handler)
 	require.Nil(t, err)
 
 	// Expected error if attempting to register the same handler more than 1 time
-	err = service.AddHandler(Deploy, handler)
+	err = service.AddHandler(Deployed, handler)
 	require.NotNil(t, err)
 
-	service.RaiseEvent(ctx, Deploy)
+	service.RaiseEvent(ctx, Deployed)
 	require.True(t, handlerCalled)
 }
 
@@ -46,18 +46,18 @@ func TestServiceConfigRemoveHandler(t *testing.T) {
 	}
 
 	// Only handler 1 was registered
-	err := service.AddHandler(Deploy, handler1)
+	err := service.AddHandler(Deployed, handler1)
 	require.Nil(t, err)
 
-	err = service.RemoveHandler(Deploy, handler1)
+	err = service.RemoveHandler(Deployed, handler1)
 	require.Nil(t, err)
 
 	// Handler 2 wasn't registered so should error on remove
-	err = service.RemoveHandler(Deploy, handler2)
+	err = service.RemoveHandler(Deployed, handler2)
 	require.NotNil(t, err)
 
 	// No events are registered at the time event was raised
-	service.RaiseEvent(ctx, Deploy)
+	service.RaiseEvent(ctx, Deployed)
 	require.False(t, handler1Called)
 	require.False(t, handler2Called)
 }
@@ -82,12 +82,12 @@ func TestServiceConfigWithMultipleEventHandlers(t *testing.T) {
 		return nil
 	}
 
-	err := service.AddHandler(Deploy, handler1)
+	err := service.AddHandler(Deployed, handler1)
 	require.Nil(t, err)
-	err = service.AddHandler(Deploy, handler2)
+	err = service.AddHandler(Deployed, handler2)
 	require.Nil(t, err)
 
-	service.RaiseEvent(ctx, Deploy)
+	service.RaiseEvent(ctx, Deployed)
 	require.True(t, handlerCalled1)
 	require.True(t, handlerCalled2)
 }
@@ -109,12 +109,12 @@ func TestServiceConfigWithMultipleEvents(t *testing.T) {
 		return nil
 	}
 
-	err := service.AddHandler(Provision, provisionHandler)
+	err := service.AddHandler(Provisioned, provisionHandler)
 	require.Nil(t, err)
-	err = service.AddHandler(Deploy, deployHandler)
+	err = service.AddHandler(Deployed, deployHandler)
 	require.Nil(t, err)
 
-	err = service.RaiseEvent(ctx, Provision)
+	err = service.RaiseEvent(ctx, Provisioned)
 	require.Nil(t, err)
 
 	require.True(t, provisionHandlerCalled)

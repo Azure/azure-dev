@@ -1,3 +1,4 @@
+#!/usr/bin/env pwsh
 <#
 .SYNOPSIS
 Download and install azd on the local machine.
@@ -55,17 +56,53 @@ param(
     [string] $BaseUrl = "https://azure-dev.azureedge.net/azd/standalone/release",
     [string] $Version = "latest",
     [switch] $DryRun,
-    [string] $InstallFolder = "$($env:LocalAppData)\Programs\Azure Dev CLI",
+    [string] $InstallFolder,
     [switch] $NoPath,
     [int] $DownloadTimeoutSeconds = 120
 )
 
-if ($IsLinux -or $IsMacOS) {
-    Write-Error "This bootstrap script is intended to run on Windows. Use the install-azd.sh instead."
-    exit 1
+function isLinuxOrMac {
+    return $IsLinux -or $IsMacOS
 }
 
-$packageFilename = 'azd-windows-amd64.zip'
+if (!$InstallFolder) {
+    $InstallFolder = "$($env:LocalAppData)\Programs\Azure Dev CLI"
+    if (isLinuxOrMac) {
+        $InstallFolder = "/usr/local/bin"
+    }
+}
+
+$binFilename = 'azd-windows-amd64.exe'
+$extension = 'zip'
+$packageFilename = "azd-windows-amd64.$extension"
+
+if (isLinuxOrMac) {
+    $platform = 'linux'
+    $extension = 'tar.gz'
+    if ($IsMacOS) {
+        $platform = 'darwin'
+        $extension = 'zip'
+    }
+
+    $architecture = 'amd64'
+    $rawArchitecture = uname -m
+    if ($rawArchitecture -eq 'arm64' -and $IsMacOS) {
+        # In the case of Apple silicon, use amd64
+        $architecture = 'amd64'
+    }
+
+    if ($architecture -ne 'amd64') {
+        Write-Error "Architecture not supported: $rawArchitecture on platform: $platform"
+    }
+
+    Write-Verbose "Platform: $platform"
+    Write-Verbose "Architecture: $architecture"
+    Write-Verbose "Extension: $extension"
+
+    $binFilename = "azd-$platform-$architecture"
+    $packageFilename = "$binFilename.$extension"
+}
+
 $downloadUrl = "$BaseUrl/$packageFilename"
 if ($Version) {
     $downloadUrl = "$BaseUrl/$Version/$packageFilename"
@@ -76,33 +113,68 @@ if ($DryRun) {
     exit 0
 }
 
-New-Item -ItemType Directory -Path $InstallFolder -Force | Out-Null
+if (!(Test-Path $InstallFolder)) {
+    New-Item -ItemType Directory -Path $InstallFolder -Force | Out-Null
+}
 
 $tempFolder = "$([System.IO.Path]::GetTempPath())$([System.IO.Path]::GetRandomFileName())"
+Write-Verbose "Creating temporary folder for downloading and extracting binary: $tempFolder"
 New-Item -ItemType Directory -Path $tempFolder | Out-Null
 
 Write-Verbose "Downloading latest build from $downloadUrl" -Verbose:$Verbose
-$zipFileName = "$tempFolder\azd-windows-amd64.zip"
+$releaseArchiveFileName = "$tempFolder/$packageFilename"
 try {
-    Invoke-WebRequest -Uri $downloadUrl -OutFile $zipFileName -TimeoutSec $DownloadTimeoutSeconds
+    Invoke-WebRequest -Uri $downloadUrl -OutFile $releaseArchiveFileName -TimeoutSec $DownloadTimeoutSeconds
 } catch {
     Write-Error "Error downloading $downloadUrl"
     Write-Error $_
     exit 1
 }
 
-Write-Verbose "Unzipping artifacts" -Verbose:$Verbose
-try {
-    Expand-Archive -Path $zipFileName -DestinationPath $tempFolder/unzip
-} catch {
-    Write-Error "Cannot expand $zipFileName"
-    Write-Error $_
-    exit 1
+Write-Verbose "Decompressing artifacts" -Verbose:$Verbose
+if ($extension -eq 'zip') {
+    try {
+        Expand-Archive -Path $releaseArchiveFileName -DestinationPath $tempFolder/decompress
+    } catch {
+        Write-Error "Cannot expand $releaseArchiveFileName"
+        Write-Error $_
+        exit 1
+    }
+} elseif ($extension -eq 'tar.gz') {
+    Write-Verbose "Extracting to $tempFolder/decompress"
+    New-Item -ItemType Directory -Path "$tempFolder/decompress" | Out-Null
+    Write-Host "tar -zxvf $releaseArchiveFileName -C `"$tempFolder/decompress`" $binFilename"
+    tar -zxvf $releaseArchiveFileName -C "$tempFolder/decompress" $binFilename
+
+    if ($LASTEXITCODE) {
+        Write-Error "Cannot expand $releaseArchiveFileName"
+        exit $LASTEXITCODE
+    }
 }
 
 Write-Verbose "Installing azd in $InstallFolder" -Verbose:$Verbose
+
+$outputFilename = "$InstallFolder/azd.exe"
+if (isLinuxOrMac) {
+    $outputFilename = "$InstallFolder/azd"
+}
+
 try {
-    Copy-Item "$tempFolder/unzip/azd-windows-amd64.exe" "$InstallFolder/azd.exe" | Out-Null
+    if (isLinuxOrMac) {
+        test -w "$InstallFolder/"
+        if ($LASTEXITCODE) {
+            Write-Host "Writing to $InstallFolder/ requires elevated permission. You may be prompted to enter credentials."
+            sudo cp "$tempFolder/decompress/$binFilename" $outputFilename
+            if ($LASTEXITCODE) {
+                Write-Error "Could not copy $tempfolder/decompress/$binFilename to $outputFilename"
+                exit 1
+            }
+        } else {
+            Copy-Item "$tempFolder/decompress/$binFilename" $outputFilename  -ErrorAction Stop| Out-Null
+        }
+    } else {
+        Copy-Item "$tempFolder/decompress/$binFilename" $outputFilename  -ErrorAction Stop| Out-Null
+    }
 } catch {
     Write-Error "Could not copy to $InstallFolder"
     Write-Error $_
@@ -118,14 +190,19 @@ Remove-Item $tempFolder -Recurse -Force | Out-Null
 # from the registry with the DoNotExpandEnvironmentNames option and write that
 # value back using the non-destructive [Environment]::SetEnvironmentVariable
 # which also broadcasts environment variable changes to Windows.
-if (!$NoPath) {
+if (!$NoPath -and !(isLinuxOrMac)) {
     try {
-        $registryKey = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Environment', $false)
-        $originalPath = $registryKey.GetValue(`
-            'PATH', `
-            '', `
-            [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames `
-        )
+        # Wrap the Microsoft.Win32.Registry calls in a script block to prevent
+        # the type intializer from attempting to initialize those objects in
+        # non-Windows environments.
+        . {
+            $registryKey = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Environment', $false)
+            $originalPath = $registryKey.GetValue(`
+                'PATH', `
+                '', `
+                [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames `
+            )
+        }
         $pathParts = $originalPath -split ';'
 
         if (!($pathParts -contains $InstallFolder)) {
@@ -151,6 +228,13 @@ if (!$NoPath) {
     }
 }
 
-Write-Host "Azure Developer CLI (azd) installed successfully. You may need to restart running programs for installation to take effect."
-Write-Host "- For Windows Terminal, start a new Windows Terminal instance."
-Write-Host "- For VSCode, close all instances of VSCode and then restart it."
+if (isLinuxOrMac) {
+    Write-Host "Successfully installed to $InstallFolder"
+} else {
+    # Installed on Windows
+    Write-Host "Azure Developer CLI (azd) installed successfully. You may need to restart running programs for installation to take effect."
+    Write-Host "- For Windows Terminal, start a new Windows Terminal instance."
+    Write-Host "- For VSCode, close all instances of VSCode and then restart it."
+}
+
+exit 0

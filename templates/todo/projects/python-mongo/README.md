@@ -32,7 +32,9 @@ The following prerequisites are required to use this application. Please ensure 
 
 The fastest way for you to get this application up and running on Azure is to use the `azd up` command. This single command will create and configure all necessary Azure resources - including access policies and roles for your account and service-to-service communication with Managed Identities.
 
-1. Open a terminal and clone this repo locally with `git clone https://github.com/azure-samples/todo-python-mongo`.
+1. Open a terminal
+1. Clone this repo locally with `git clone https://github.com/azure-samples/todo-python-mongo`. You could also open in the included DevContainer or GitHub Codespaces.
+1. Change your terminal's directory to the root of the project you just cloned or opened. i.e. `cd todo-python-mongo`
 1. Create a new [Python virtual environment](https://docs.python.org/3/library/venv.html).
 1. Run the following command to initialize the project, provision Azure resources, and deploy the application code.
 

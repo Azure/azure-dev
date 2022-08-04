@@ -2,8 +2,10 @@ package project
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"path/filepath"
+	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/commands"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
@@ -29,7 +31,17 @@ type ServiceConfig struct {
 	Module string `yaml:"module"`
 	// The optional docker options
 	Docker DockerProjectOptions `yaml:"docker"`
+
+	handlers map[Event][]ServiceLifecycleEventHandlerFn
 }
+
+type ServiceLifecycleEventArgs struct {
+	Project *ProjectConfig
+	Service *ServiceConfig
+}
+
+// Function definition for project events
+type ServiceLifecycleEventHandlerFn func(ctx context.Context, args ServiceLifecycleEventArgs) error
 
 // Path returns the fully qualified path to the project
 func (sc *ServiceConfig) Path() string {
@@ -101,4 +113,71 @@ func (sc *ServiceConfig) GetFrameworkService(ctx context.Context, env *environme
 	}
 
 	return &frameworkService, nil
+}
+
+// Adds an event handler for the specified event name
+func (sc *ServiceConfig) AddHandler(name Event, handler ServiceLifecycleEventHandlerFn) error {
+	newHandler := fmt.Sprintf("%v", handler)
+	events := sc.handlers[name]
+
+	for _, ref := range events {
+		existingHandler := fmt.Sprintf("%v", ref)
+
+		if newHandler == existingHandler {
+			return fmt.Errorf("event handler has already been registered for %s event", name)
+		}
+	}
+
+	events = append(events, handler)
+	sc.handlers[name] = events
+
+	return nil
+}
+
+// Removes the event handler for the specified event name
+func (sc *ServiceConfig) RemoveHandler(name Event, handler ServiceLifecycleEventHandlerFn) error {
+	newHandler := fmt.Sprintf("%v", handler)
+	events := sc.handlers[name]
+	for i, ref := range events {
+		existingHandler := fmt.Sprintf("%v", ref)
+
+		if newHandler == existingHandler {
+			sc.handlers[name] = append(events[:i], events[i+1:]...)
+			return nil
+		}
+	}
+
+	return fmt.Errorf("specified handler was not found in %s event registrations", name)
+}
+
+// Raises the specified event and calls any registered event handlers
+func (sc *ServiceConfig) RaiseEvent(ctx context.Context, name Event) error {
+	handlerErrors := []error{}
+
+	eventArgs := ServiceLifecycleEventArgs{
+		Project: sc.Project,
+		Service: sc,
+	}
+
+	handlers := sc.handlers[name]
+
+	// TODO: Opportunity to dispatch these event handlers in parallel if needed
+	for _, handler := range handlers {
+		err := handler(ctx, eventArgs)
+		if err != nil {
+			handlerErrors = append(handlerErrors, err)
+		}
+	}
+
+	// Build final error string if their are any failures
+	if len(handlerErrors) > 0 {
+		lines := make([]string, len(handlerErrors))
+		for i, err := range handlerErrors {
+			lines[i] = err.Error()
+		}
+
+		return errors.New(strings.Join(lines, ","))
+	}
+
+	return nil
 }

@@ -70,12 +70,12 @@ func NewProvider(env *environment.Environment, projectPath string, options Optio
 
 	switch options.Provider {
 	case Bicep:
-		bicepArgs := tools.NewBicepCliArgs{AzCli: cliArgs.AzCli, RunWithResultFn: cliArgs.RunWithResultFn}
+		bicepArgs := tools.NewBicepCliArgs(cliArgs)
 		provider = NewBicepProvider(env, projectPath, options, console, bicepArgs)
 	case Test:
 		provider = NewTestProvider(env, projectPath, options, console)
 	default:
-		bicepArgs := tools.NewBicepCliArgs{AzCli: cliArgs.AzCli, RunWithResultFn: cliArgs.RunWithResultFn}
+		bicepArgs := tools.NewBicepCliArgs(cliArgs)
 		provider = NewBicepProvider(env, projectPath, options, console, bicepArgs)
 	}
 

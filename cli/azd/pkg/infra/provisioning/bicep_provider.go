@@ -24,6 +24,7 @@ import (
 )
 
 type BicepTemplate struct {
+	//nolint:all
 	Schema         string                          `json:"$schema`
 	ContentVersion string                          `json:"contentVersion"`
 	Parameters     map[string]BicepInputParameter  `json:"parameters"`
@@ -104,11 +105,7 @@ func (p *BicepProvider) UpdatePlan(ctx context.Context, preview Preview) error {
 	parameters := make(map[string]BicepInputParameter)
 
 	for key, param := range preview.Parameters {
-		parameters[key] = BicepInputParameter{
-			Type:         param.Type,
-			DefaultValue: param.DefaultValue,
-			Value:        param.Value,
-		}
+		parameters[key] = BicepInputParameter(param)
 	}
 
 	bicepFile.Parameters = parameters
@@ -362,18 +359,11 @@ func (p *BicepProvider) convertToPreview(bicepTemplate BicepTemplate) (*Preview,
 	outputs := make(map[string]PreviewOutputParameter)
 
 	for key, param := range bicepTemplate.Parameters {
-		parameters[key] = PreviewInputParameter{
-			Type:         param.Type,
-			Value:        param.Value,
-			DefaultValue: param.DefaultValue,
-		}
+		parameters[key] = PreviewInputParameter(param)
 	}
 
 	for key, param := range bicepTemplate.Outputs {
-		outputs[key] = PreviewOutputParameter{
-			Type:  param.Type,
-			Value: param.Value,
-		}
+		outputs[key] = PreviewOutputParameter(param)
 	}
 
 	template.Parameters = parameters

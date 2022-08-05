@@ -1,12 +1,4 @@
-trigger:
-  branches:
-    include:
-      - cse_main
-  paths:
-    include:
-      - generators/
-      - templates/
-      - eng/pipelines/repoman.yml
+trigger: none
 
 pr:
   paths:
@@ -22,7 +14,7 @@ jobs:
   - job: Generate_Repos
     pool:
       name: azsdk-pool-mms-ubuntu-2004-general
-      #vmImage: MMSUbuntu20.04
+      vmImage: MMSUbuntu20.04
 
     steps:
       - checkout: self
@@ -32,10 +24,10 @@ jobs:
           versionSpec: 16
 
       - pwsh: |
-          git config --global user.name "$(azuresdk-github-user)"
-          git config --global user.email "$(azuresdk-github-email)"
+          git config --global user.name "azure-sdk"
+          git config --global user.email "azuresdk@microsoft.com"
           Set-Content `
-            -Value "https://$(azuresdk-github-user):$(azuresdk-github-pat)@github.com" `
+            -Value "https://azure-sdk:$(azuresdk-github-pat)@github.com" `
             -Path ~/.git-credentials
           git config --global credential.helper "store"
         displayName: Set git credentials
@@ -126,7 +118,7 @@ jobs:
           targetType: filePath
           filePath: ./eng/scripts/Update-PRComment.ps1
           arguments: >-
-            -Repo 'kaizentm/azure-dev'
+            -Repo 'azure/azure-dev'
             -PRNumber '$(PRNumber)'
             -BodyFile '$(CommentBodyFile)'
             -Tag '<!-- #comment-repoman-generate -->'

@@ -110,13 +110,13 @@ func TestUserAgentString(t *testing.T) {
 // EnvironmentVariablesSetter sets the provided environment variables,
 // returning a function that restores the environment variables to their original values.
 // Example usage:
-// fn test(t *testing.T) {
-//   closer := helpers.EnvironmentVariablesSetter(map[string]string { "FOO_ENV": "Bar", "OTHER_FOO_ENV": "Bar2"})
-//   require.Equal(t, os.GetEnv("FOO_ENV"), "Bar")
-//   require.Equal(t, os.GetEnv("OTHER_FOO_ENV"), "Bar2")
-//   t.Cleanup(closer)
-// }
 //
+//	fn test(t *testing.T) {
+//	  closer := helpers.EnvironmentVariablesSetter(map[string]string { "FOO_ENV": "Bar", "OTHER_FOO_ENV": "Bar2"})
+//	  require.Equal(t, os.GetEnv("FOO_ENV"), "Bar")
+//	  require.Equal(t, os.GetEnv("OTHER_FOO_ENV"), "Bar2")
+//	  t.Cleanup(closer)
+//	}
 func EnvironmentVariablesSetter(envContext map[string]string) func() {
 	restoreContext := map[string]string{}
 	for key, value := range envContext {

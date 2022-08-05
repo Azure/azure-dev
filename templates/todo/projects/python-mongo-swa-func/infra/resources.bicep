@@ -3,7 +3,7 @@ param principalId string = ''
 param resourceToken string
 param tags object
 
-var abbrs = loadJsonContent('../../../../common/infra/abbreviations.json')
+var abbrs = loadJsonContent('../../../../common/infra/bicep/abbreviations.json')
 
 resource web 'Microsoft.Web/staticSites@2021-03-01' = {
   name: '${abbrs.webStaticSites}web-${resourceToken}'
@@ -158,7 +158,7 @@ resource logAnalyticsWorkspace 'Microsoft.OperationalInsights/workspaces@2020-03
   })
 }
 
-module applicationInsightsResources '../../../../common/infra/applicationinsights.bicep' = {
+module applicationInsightsResources '../../../../common/infra/bicep/applicationinsights.bicep' = {
   name: 'applicationinsights-resources'
   params: {
     resourceToken: resourceToken

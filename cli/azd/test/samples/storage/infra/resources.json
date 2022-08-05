@@ -1,0 +1,45 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "metadata": {
+    "_generator": {
+      "name": "bicep",
+      "version": "0.4.1318.3566",
+      "templateHash": "11825518782068023226"
+    }
+  },
+  "parameters": {
+    "location": {
+      "type": "string"
+    },
+    "resourceToken": {
+      "type": "string"
+    },
+    "tags": {
+      "type": "object"
+    }
+  },
+  "resources": [
+    {
+      "type": "Microsoft.Storage/storageAccounts",
+      "apiVersion": "2021-09-01",
+      "name": "[format('st{0}', parameters('resourceToken'))]",
+      "location": "[parameters('location')]",
+      "tags": "[parameters('tags')]",
+      "kind": "StorageV2",
+      "sku": {
+        "name": "Standard_LRS"
+      }
+    }
+  ],
+  "outputs": {
+    "AZURE_STORAGE_ACCOUNT_ID": {
+      "type": "string",
+      "value": "[resourceId('Microsoft.Storage/storageAccounts', format('st{0}', parameters('resourceToken')))]"
+    },
+    "AZURE_STORAGE_ACCOUNT_NAME": {
+      "type": "string",
+      "value": "[format('st{0}', parameters('resourceToken'))]"
+    }
+  }
+}

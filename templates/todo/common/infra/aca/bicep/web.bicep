@@ -11,7 +11,7 @@ param imageName string
 
 var resourceToken = toLower(uniqueString(subscription().id, name, location))
 var tags = { 'azd-env-name': name }
-var abbrs = loadJsonContent('../../../../common/infra/abbreviations.json')
+var abbrs = loadJsonContent('../../../../../common/infra/bicep/abbreviations.json')
 
 resource containerAppsEnvironment 'Microsoft.App/managedEnvironments@2022-03-01' existing = {
   name: '${abbrs.appManagedEnvironments}${resourceToken}'

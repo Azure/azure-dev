@@ -18,7 +18,7 @@
             "minLength": 3,
             "maxLength": 64,
             "title": "Name of the Azure resource group",
-            "description": "When specified will override the resource group name used for infrastructure provisioning."
+            "description": "When specified will override the resource group name used for infrastructure deployment."
         },
         "metadata": {
             "type": "object",

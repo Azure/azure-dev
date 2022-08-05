@@ -16,9 +16,9 @@ import (
 	"github.com/spf13/pflag"
 )
 
-func restoreCmd(rootOptions *commands.GlobalCommandOptions) *cobra.Command {
+func appRestoreCmd(rootOptions *commands.GlobalCommandOptions) *cobra.Command {
 	cmd := commands.Build(
-		&restoreAction{
+		&appRestoreAction{
 			rootOptions: rootOptions,
 		},
 		rootOptions,
@@ -33,16 +33,16 @@ For the best local run and debug experience, go to https://aka.ms/azure-dev/vsco
 	return cmd
 }
 
-type restoreAction struct {
+type appRestoreAction struct {
 	rootOptions *commands.GlobalCommandOptions
 	serviceName string
 }
 
-func (r *restoreAction) SetupFlags(persis, local *pflag.FlagSet) {
+func (r *appRestoreAction) SetupFlags(persis, local *pflag.FlagSet) {
 	local.StringVar(&r.serviceName, "service", "", "Restores a specific service (when the string is unspecified, all services that are listed in the "+environment.ProjectFileName+" file are restored).")
 }
 
-func (r *restoreAction) Run(ctx context.Context, _ *cobra.Command, args []string, azdCtx *environment.AzdContext) error {
+func (r *appRestoreAction) Run(ctx context.Context, _ *cobra.Command, args []string, azdCtx *environment.AzdContext) error {
 	proj, err := project.LoadProjectConfig(azdCtx.ProjectPath(), &environment.Environment{})
 	if err := ensureProject(azdCtx.ProjectPath()); err != nil {
 		return err

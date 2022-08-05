@@ -1,7 +1,7 @@
 {
     "name": "azure-dev",
     "displayName": "Azure Developer CLI",
-    "description": "Makes it easy to run, provision, and deploy Azure applications using the Azure Developer CLI",
+    "description": "Easily run and deploy Azure applications using the Azure Developer CLI",
     "version": "0.3.0-alpha",
     "license": "MIT",
     "icon": "resources/icon.png",
@@ -20,12 +20,12 @@
     },
     "activationEvents": [
       "onCommand:azure-dev.commands.cli.init",
-      "onCommand:azure-dev.commands.cli.provision",
-      "onCommand:azure-dev.commands.cli.deploy",
-      "onCommand:azure-dev.commands.cli.restore",
+      "onCommand:azure-dev.commands.cli.infra-deploy",
+      "onCommand:azure-dev.commands.cli.app-deploy",
+      "onCommand:azure-dev.commands.cli.app-restore",
       "onCommand:azure-dev.commands.cli.infra-delete",
       "onCommand:azure-dev.commands.cli.up",
-      "onCommand:azure-dev.commands.cli.monitor",
+      "onCommand:azure-dev.commands.cli.app-monitor",
       "onCommand:azure-dev.commands.cli.env-select",
       "onCommand:azure-dev.commands.cli.env-new",
       "onCommand:azure-dev.commands.cli.env-refresh",
@@ -43,18 +43,18 @@
         },
         {
           "category": "%azure-dev.commands_category%",
-          "command": "azure-dev.commands.cli.provision",
-          "title": "%azure-dev.commands.cli.provision.title%"
+          "command": "azure-dev.commands.cli.infra-deploy",
+          "title": "%azure-dev.commands.cli.infra-deploy.title%"
         },
         {
           "category": "%azure-dev.commands_category%",
-          "command": "azure-dev.commands.cli.deploy",
-          "title": "%azure-dev.commands.cli.deploy.title%"
+          "command": "azure-dev.commands.cli.app-deploy",
+          "title": "%azure-dev.commands.cli.app-deploy.title%"
         },
         {
           "category": "%azure-dev.commands_category%",
-          "command": "azure-dev.commands.cli.restore",
-          "title": "%azure-dev.commands.cli.restore.title%"
+          "command": "azure-dev.commands.cli.app-restore",
+          "title": "%azure-dev.commands.cli.app-restore.title%"
         },
         {
           "category": "%azure-dev.commands_category%",
@@ -68,8 +68,8 @@
         },
         {
           "category": "%azure-dev.commands_category%",
-          "command": "azure-dev.commands.cli.monitor",
-          "title": "%azure-dev.commands.cli.monitor.title%"
+          "command": "azure-dev.commands.cli.app-monitor",
+          "title": "%azure-dev.commands.cli.app-monitor.title%"
         },
         {
           "category": "%azure-dev.commands_category%",
@@ -104,17 +104,17 @@
         "explorer/context": [
           {
             "when": "resourceFilename =~ /azure.yaml/i",
-            "command": "azure-dev.commands.cli.provision",
+            "command": "azure-dev.commands.cli.infra-deploy",
             "group": "azure-dev"
           },
           {
             "when": "resourceFilename =~ /azure.yaml/i",
-            "command": "azure-dev.commands.cli.deploy",
+            "command": "azure-dev.commands.cli.app-deploy",
             "group": "azure-dev"
           },
           {
             "when": "resourceFilename =~ /azure.yaml/i",
-            "command": "azure-dev.commands.cli.restore",
+            "command": "azure-dev.commands.cli.app-restore",
             "group": "azure-dev"
           },
           {
@@ -129,7 +129,7 @@
           },
           {
             "when": "resourceFilename =~ /azure.yaml/i",
-            "command": "azure-dev.commands.cli.monitor",
+            "command": "azure-dev.commands.cli.app-monitor",
             "group": "azure-dev"
           },
           {

@@ -10,15 +10,15 @@ import { spawnAsync } from '../utils/process';
 
 const MonitorChoices: IAzureQuickPickItem<string>[] = [
     {
-        label: localize('azure-dev.commands.cli.monitor.open-live-metrics', 'Application Insights Live Metrics'),
+        label: localize('azure-dev.commands.cli.app-monitor.open-live-metrics', 'Application Insights Live Metrics'),
         data: '--live', suppressPersistence: true
     },
     {
-        label: localize('azure-dev.commands.cli.monitor.open-logs', 'Application Insights Logs'),
+        label: localize('azure-dev.commands.cli.app-monitor.open-logs', 'Application Insights Logs'),
         data: '--logs', suppressPersistence: true
     },
     {
-        label: localize('azure-dev.commands.cli.monitor.open-overview', 'Application Insights Overview Dashboard'),
+        label: localize('azure-dev.commands.cli.app-monitor.open-overview', 'Application Insights Overview Dashboard'),
         data: '--overview', suppressPersistence: true,
         picked: true
     }
@@ -33,7 +33,7 @@ export async function monitor(context: IActionContext, selectedFile?: vscode.Uri
 
     const monitorChoices  = await context.ui.showQuickPick(MonitorChoices, {
         canPickMany: true,
-        placeHolder: localize('azure-dev.commands.cli.monitor.choose-pages', 'What monitoring page(s) do you want to open?'),
+        placeHolder: localize('azure-dev.commands.cli.app-monitor.choose-pages', 'What monitoring page(s) do you want to open?'),
         isPickSelected: choice => !!choice.picked 
     });
     if (!monitorChoices || monitorChoices.length === 0) {
@@ -48,7 +48,7 @@ export async function monitor(context: IActionContext, selectedFile?: vscode.Uri
 
     const progressOptions: vscode.ProgressOptions = {
         location: vscode.ProgressLocation.Notification,
-        title: localize('azure-dev.commands.cli.monitor.opening-pages', 'Opening monitoring page(s)...'),
+        title: localize('azure-dev.commands.cli.app-monitor.opening-pages', 'Opening monitoring page(s)...'),
     };
     try {
         await vscode.window.withProgress(progressOptions, async () => {

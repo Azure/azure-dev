@@ -4,12 +4,12 @@
 import { IActionContext, CommandCallback, registerCommand as registerCommandAzUI } from '@microsoft/vscode-azext-utils';
 
 import { init } from './init';
-import { provision } from './provision';
-import { deploy } from './deploy';
-import { restore } from './restore';
-import { infraDelete } from './infra';
+import { infraDeploy } from './infraDeploy';
+import { deploy } from './appDeploy';
+import { restore } from './appRestore';
+import { infraDelete } from './infraDelete';
 import { up } from './up';
-import { monitor } from './monitor';
+import { monitor } from './appMonitor';
 import { selectEnvironment, newEnvironment, refreshEnvironment } from './env';
 import { pipelineConfig } from './pipeline';
 import { getDotEnvFilePath } from './getDotEnvFilePath';
@@ -17,12 +17,12 @@ import ext from '../ext';
 
 export function registerCommands(): void {
     registerActivityCommand('azure-dev.commands.cli.init', init);
-    registerActivityCommand('azure-dev.commands.cli.provision', provision);
-    registerActivityCommand('azure-dev.commands.cli.deploy', deploy);
-    registerActivityCommand('azure-dev.commands.cli.restore', restore);
+    registerActivityCommand('azure-dev.commands.cli.infra-deploy', infraDeploy);
+    registerActivityCommand('azure-dev.commands.cli.app-deploy', deploy);
+    registerActivityCommand('azure-dev.commands.cli.app-restore', restore);
     registerActivityCommand('azure-dev.commands.cli.infra-delete', infraDelete);
     registerActivityCommand('azure-dev.commands.cli.up', up);
-    registerActivityCommand('azure-dev.commands.cli.monitor', monitor);
+    registerActivityCommand('azure-dev.commands.cli.app-monitor', monitor);
     registerActivityCommand('azure-dev.commands.cli.env-select', selectEnvironment);
     registerActivityCommand('azure-dev.commands.cli.env-new', newEnvironment);
     registerActivityCommand('azure-dev.commands.cli.env-refresh', refreshEnvironment);

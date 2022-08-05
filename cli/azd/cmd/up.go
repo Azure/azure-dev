@@ -20,7 +20,7 @@ func upCmd(rootOptions *commands.GlobalCommandOptions) *cobra.Command {
 					rootOptions: rootOptions,
 				},
 			},
-			&infraCreateAction{
+			&infraDeployAction{
 				rootOptions: rootOptions,
 			},
 			// Print an additional newline to separate provision from deploy
@@ -39,18 +39,18 @@ func upCmd(rootOptions *commands.GlobalCommandOptions) *cobra.Command {
 					return nil
 				},
 			),
-			&deployAction{rootOptions: rootOptions},
+			&appDeployAction{rootOptions: rootOptions},
 		),
 		rootOptions,
 		"up",
-		"Initialize application, provision Azure resources, and deploy your project with a single command.",
-		`Initialize the project (if the project folder has not been initialized or cloned from a template), provision Azure resources, and deploy your project with a single command.
+		"Initialize application, deploy Azure resources, and deploy your project with a single command.",
+		`Initialize the project (if the project folder has not been initialized or cloned from a template), deploy Azure resources, and deploy your project with a single command.
 
 This command executes the following in one step:
 
 	$ azd init
-	$ azd provision
-	$ azd deploy
+	$ azd infra deploy
+	$ azd app deploy
 
 When no template is supplied, you can optionally select an Azure Developer CLI template for cloning. Otherwise, running `+withBackticks("azd up")+` initializes the current directory so that your project is compatible with Azure Developer CLI.`,
 	)

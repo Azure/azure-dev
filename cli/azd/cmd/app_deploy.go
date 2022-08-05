@@ -20,9 +20,9 @@ import (
 	"github.com/spf13/pflag"
 )
 
-func deployCmd(rootOptions *commands.GlobalCommandOptions) *cobra.Command {
+func appDeployCmd(rootOptions *commands.GlobalCommandOptions) *cobra.Command {
 	cmd := commands.Build(
-		&deployAction{rootOptions: rootOptions},
+		&appDeployAction{rootOptions: rootOptions},
 		rootOptions,
 		"deploy",
 		"Deploy the application's code to Azure.",
@@ -32,20 +32,17 @@ When no `+withBackticks("--service")+` value is specified, all services in the *
 
 Examples:
 
-	$ azd deploy
-	$ azd deploy –-service api
-	$ azd deploy –-service web
+	$ azd app deploy
+	$ azd app deploy –-service api
+	$ azd app deploy –-service web
 	
 After the deployment is complete, the endpoint is printed. To start the service, select the endpoint or paste it in a browser.`,
 	)
 
-	return output.AddOutputParam(
-		cmd,
-		[]output.Format{output.JsonFormat, output.NoneFormat},
-		output.NoneFormat)
+	return cmd
 }
 
-type deployAction struct {
+type appDeployAction struct {
 	serviceName string
 	rootOptions *commands.GlobalCommandOptions
 }
@@ -55,14 +52,11 @@ type DeploymentResult struct {
 	Services  []project.ServiceDeploymentResult `json:"services"`
 }
 
-func (d *deployAction) SetupFlags(
-	persis *pflag.FlagSet,
-	local *pflag.FlagSet,
-) {
+func (d *appDeployAction) SetupFlags(persis *pflag.FlagSet, local *pflag.FlagSet) {
 	local.StringVar(&d.serviceName, "service", "", "Deploys a specific service (when the string is unspecified, all services that are listed in the "+environment.ProjectFileName+" file are deployed).")
 }
 
-func (d *deployAction) Run(ctx context.Context, cmd *cobra.Command, args []string, azdCtx *environment.AzdContext) error {
+func (d *appDeployAction) Run(ctx context.Context, cmd *cobra.Command, args []string, azdCtx *environment.AzdContext) error {
 	azCli := commands.GetAzCliFromContext(ctx)
 	askOne := makeAskOne(d.rootOptions.NoPrompt)
 

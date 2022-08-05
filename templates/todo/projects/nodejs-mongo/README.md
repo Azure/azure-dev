@@ -44,7 +44,7 @@ You will be prompted for the following information:
 - `Azure Location`: The Azure location where your resources will be deployed.
 - `Azure Subscription`: The Azure Subscription where your resources will be deployed.
 
-> NOTE: This may take a while to complete as it executes three commands: `azd init` (initializes environment), `azd provision` (provisions Azure resources), and `azd deploy` (deploys application code). You will see a progress indicator as it provisions and deploys your application.
+> NOTE: This may take a while to complete as it executes three commands: `azd init` (initializes environment), `azd infra deploy` (provisions Azure resources), and `azd app deploy` (deploys application code). You will see a progress indicator as it provisions and deploys your application.
 
 When `azd up` is complete it will output the following URLs:
 
@@ -54,7 +54,7 @@ When `azd up` is complete it will output the following URLs:
 
 !["azd up output"](assets/urls.png)
 
-Click the web application URL to launch the ToDo app. Create a new collection and add some items. This will create monitoring activity in the application that you will be able to see later when you run `azd monitor`.
+Click the web application URL to launch the ToDo app. Create a new collection and add some items. This will create monitoring activity in the application that you will be able to see later when you run `azd app monitor`.
 
 > NOTE:
 >
@@ -132,14 +132,14 @@ azd pipeline config
 
 > Support for Azure DevOps Pipelines is coming soon to `azd pipeline config`. In the meantime, you can follow the instructions found here: [.azdo/pipelines/README.md](./.azdo/pipelines/README.md) to set it up manually.
 
-#### Monitor the application using `azd monitor`
+#### Monitor the application using `azd app monitor`
 
 To help with monitoring applications, the Azure Dev CLI provides a `monitor` command to help you get to the various Application Insights dashboards.
 
 - Run the following command to open the "Overview" dashboard:
 
   ```bash
-  azd monitor --overview
+  azd app monitor --overview
   ```
 
 - Live Metrics Dashboard
@@ -147,7 +147,7 @@ To help with monitoring applications, the Azure Dev CLI provides a `monitor` com
   Run the following command to open the "Live Metrics" dashboard:
 
   ```bash
-  azd monitor --live
+  azd app monitor --live
   ```
 
 - Logs Dashboard
@@ -155,7 +155,7 @@ To help with monitoring applications, the Azure Dev CLI provides a `monitor` com
   Run the following command to open the "Logs" dashboard:
 
   ```bash
-  azd monitor --logs
+  azd app monitor --logs
   ```
 
 #### Run and Debug Locally

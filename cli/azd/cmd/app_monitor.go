@@ -18,9 +18,9 @@ import (
 	"github.com/spf13/pflag"
 )
 
-func monitorCmd(rootOptions *commands.GlobalCommandOptions) *cobra.Command {
+func appMonitorCmd(rootOptions *commands.GlobalCommandOptions) *cobra.Command {
 	cmd := commands.Build(
-		&monitorAction{
+		&appMonitorAction{
 			rootOptions: rootOptions,
 		},
 		rootOptions,
@@ -30,23 +30,23 @@ func monitorCmd(rootOptions *commands.GlobalCommandOptions) *cobra.Command {
 		
 Examples:
 
-	$ azd monitor --overview
-	$ azd monitor -–live
-	$ azd monitor --logs
+	$ azd app monitor --overview
+	$ azd app monitor -–live
+	$ azd app monitor --logs
 		
 For more information, go to https://aka.ms/azure-dev/monitor.`,
 	)
 	return cmd
 }
 
-type monitorAction struct {
+type appMonitorAction struct {
 	monitorLive     bool
 	monitorLogs     bool
 	monitorOverview bool
 	rootOptions     *commands.GlobalCommandOptions
 }
 
-func (m *monitorAction) SetupFlags(
+func (m *appMonitorAction) SetupFlags(
 	persis *pflag.FlagSet,
 	local *pflag.FlagSet,
 ) {
@@ -55,7 +55,7 @@ func (m *monitorAction) SetupFlags(
 	persis.BoolVar(&m.monitorOverview, "overview", false, "Open a browser to Application Insights Overview Dashboard.")
 }
 
-func (m *monitorAction) Run(ctx context.Context, _ *cobra.Command, args []string, azdCtx *environment.AzdContext) error {
+func (m *appMonitorAction) Run(ctx context.Context, _ *cobra.Command, args []string, azdCtx *environment.AzdContext) error {
 	azCli := commands.GetAzCliFromContext(ctx)
 	askOne := makeAskOne(m.rootOptions.NoPrompt)
 

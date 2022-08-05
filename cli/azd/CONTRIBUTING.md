@@ -51,6 +51,7 @@ In VS Code you can create a launch.json that runs the tool with a specified set 
     "mode": "debug",
     "program": "${workspaceFolder}",
     "args": [
+        "app",
         "restore"
     ],
     "cwd": "${workspaceFolder}"

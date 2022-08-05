@@ -13,7 +13,7 @@
         {
             "label": "Restore Web",
             "type": "shell",
-            "command": "azd restore --service web",
+            "command": "azd app restore --service web",
             "presentation": {
                 "reveal": "silent"
             },
@@ -49,7 +49,7 @@
         {
             "label": "Restore API",
             "type": "shell",
-            "command": "azd restore --service api",
+            "command": "azd app restore --service api",
             "presentation": {
                 "reveal": "silent"
             },

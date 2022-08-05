@@ -26,31 +26,28 @@ import (
 	"go.uber.org/multierr"
 )
 
-type infraCreateAction struct {
+type infraDeployAction struct {
 	noProgress  bool
 	rootOptions *commands.GlobalCommandOptions
 }
 
-func infraCreateCmd(rootOptions *commands.GlobalCommandOptions) *cobra.Command {
+func infraDeployCmd(rootOptions *commands.GlobalCommandOptions) *cobra.Command {
 	cmd := commands.Build(
-		&infraCreateAction{
-			rootOptions: rootOptions,
-		},
+		&infraDeployAction{rootOptions: rootOptions},
 		rootOptions,
-		"create",
-		"Create Azure resources for an application.",
+		"deploy",
+		"Create or update Azure resources for an application.",
 		"",
 	)
 
-	cmd.Aliases = []string{"provision"}
 	return cmd
 }
 
-func (ica *infraCreateAction) SetupFlags(persis, local *pflag.FlagSet) {
+func (ica *infraDeployAction) SetupFlags(persis, local *pflag.FlagSet) {
 	local.BoolVar(&ica.noProgress, "no-progress", false, "Suppresses progress information.")
 }
 
-func (ica *infraCreateAction) Run(ctx context.Context, cmd *cobra.Command, args []string, azdCtx *environment.AzdContext) error {
+func (ica *infraDeployAction) Run(ctx context.Context, cmd *cobra.Command, args []string, azdCtx *environment.AzdContext) error {
 	azCli := commands.GetAzCliFromContext(ctx)
 	bicepCli := tools.NewBicepCli(azCli)
 	askOne := makeAskOne(ica.rootOptions.NoPrompt)
@@ -234,7 +231,7 @@ func (ica *infraCreateAction) Run(ctx context.Context, cmd *cobra.Command, args 
 			"https://portal.azure.com/#blade/HubsExtension/DeploymentDetailsBlade/overview/id/%s\n\n",
 			url.PathEscape(deploymentSlug))
 		printWithStyling(
-			"Provisioning Azure resources can take some time.\n\nYou can view detailed progress in the Azure Portal:\n%s",
+			"Deploying Azure resources can take some time.\n\nYou can view detailed progress in the Azure Portal:\n%s",
 			deploymentURL)
 
 		spinner := spin.NewSpinner("Creating Azure resources")

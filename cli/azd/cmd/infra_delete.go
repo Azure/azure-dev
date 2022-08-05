@@ -112,7 +112,7 @@ func (a *infraDeleteAction) Run(ctx context.Context, _ *cobra.Command, args []st
 	// such that when it is deleted it can be recovered for a period of time. During that time, the name may
 	// not be reused.
 	//
-	// This means that running `az dev provision`, then `az dev infra delete` and finally `az dev provision`
+	// This means that running `azd infra deploy`, then `azd infra delete` and finally `azd infra deploy`
 	// again would lead to a deployment error since the vault name is in use.
 	//
 	// Since that's behavior we'd like to support, we run a purge operation for each KeyVault after

@@ -30,8 +30,8 @@ You can pick a template by running ` + withBackticks("azd template list") + `and
 The most common next commands are:
 
 	$ azd pipeline config
-	$ azd deploy
-	$ azd monitor --overview
+	$ azd app deploy
+	$ azd app monitor --overview
 
 For more information, visit the Azure Developer CLI Dev Hub: https://aka.ms/azure-dev/devhub.`,
 		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
@@ -80,16 +80,13 @@ For more information, visit the Azure Developer CLI Dev Hub: https://aka.ms/azur
 	// the equivalent of AZURE_CORE_COLLECT_TELEMETRY
 	opts.EnableTelemetry = os.Getenv("AZURE_DEV_COLLECT_TELEMETRY") != "no"
 
-	cmd.AddCommand(deployCmd(opts))
+	cmd.AddCommand(appCmd(opts))
 	cmd.AddCommand(downCmd(opts))
 	cmd.AddCommand(envCmd(opts))
 	cmd.AddCommand(infraCmd(opts))
 	cmd.AddCommand(initCmd(opts))
 	cmd.AddCommand(loginCmd(opts))
-	cmd.AddCommand(monitorCmd(opts))
 	cmd.AddCommand(pipelineCmd(opts))
-	cmd.AddCommand(provisionCmd(opts))
-	cmd.AddCommand(restoreCmd(opts))
 	cmd.AddCommand(upCmd(opts))
 	cmd.AddCommand(templatesCmd(opts))
 	cmd.AddCommand(versionCmd(opts))

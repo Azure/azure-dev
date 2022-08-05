@@ -85,7 +85,7 @@ export async function refreshEnvironment(context: IActionContext, selectedFile?:
     });
     if (errorMsg) {
         await promptCreateNewEnvironment(
-            localize('azure-dev.commands.cli.env-refresh.failure', 'Environment values could not be refreshed. Infrastructure might have never been provisioned in Azure, or there might be no environments. Would you like to create one?'), errorMsg);
+            localize('azure-dev.commands.cli.env-refresh.failure', 'Environment values could not be refreshed. Infrastructure might have never been deployed in Azure, or there might be no environments. Would you like to create one?'), errorMsg);
     }
 }
 

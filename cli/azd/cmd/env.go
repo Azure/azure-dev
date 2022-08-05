@@ -276,7 +276,7 @@ func envRefreshCmd(rootOptions *commands.GlobalCommandOptions) *cobra.Command {
 		commands.ActionFunc(actionFn),
 		rootOptions,
 		"refresh",
-		"Refresh environment settings by using information from a previous infrastructure provision.",
+		"Refresh environment settings by using information from a previous infrastructure deployment.",
 		"",
 	)
 }

@@ -19,7 +19,7 @@ TEST_ONLY=false
 CLEANUP=true
 
 function usage {
-    echo "Tests azd template init, provision & deploy"
+    echo "Tests azd template init, infra deploy & app deploy"
     echo ""
     echo "Usage: test-templates -t <template> -b <branch> -e <env_prefix>" 2>&1
     echo ""
@@ -84,11 +84,11 @@ function deployTemplate {
     echo "Initializing template '$1' with branch '$2'"
     azd init -t "$1" -b "$2" -e "$3" --no-prompt
 
-    echo "Provisioning infrastructure for $3..."
-    azd provision -e "$3"
+    echo "Deploying infrastructure for $3..."
+    azd infra deploy -e "$3"
 
     echo "Deploying apps for $3..."
-    azd deploy -e "$3"
+    azd app deploy -e "$3"
 }
 
 # Tests the specified template
@@ -107,7 +107,7 @@ function testTemplate {
 # $2 - The branch name
 # $3 - The environment name
 function cleanupTemplate {
-    echo "Deprovisioning infrastructure for $3..."
+    echo "Cleaning up infrastructure for $3..."
     cd "$FOLDER_PATH/$3"
     azd down -e "$3" --force --purge
 

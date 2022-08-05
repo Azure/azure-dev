@@ -2,7 +2,7 @@
 
 This document will show you how to configure an Azure DevOps pipeline that uses the Azure Developer CLI. This logic will eventually be integrated into the `azd pipeline config` command.
 
-You will find a default Azure DevOps pipeline file in `./.azdo/pipelines/azure-dev.yml`. It will provision your Azure resources and deploy your code upon pushes and pull requests.
+You will find a default Azure DevOps pipeline file in `./.azdo/pipelines/azure-dev.yml`. It will deploy your Azure resources and deploy your code upon pushes and pull requests.
 
 You are welcome to use that file as-is or modify it to suit your needs.
 

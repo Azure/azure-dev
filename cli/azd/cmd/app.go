@@ -11,18 +11,19 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func infraCmd(rootOptions *commands.GlobalCommandOptions) *cobra.Command {
+func appCmd(rootOptions *commands.GlobalCommandOptions) *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "infra",
-		Short: "Manage Azure resources.",
+		Use:   "app",
+		Short: "Manage Azure application.",
 	}
 	cmd.Flags().BoolP("help", "h", false, fmt.Sprintf("Gets help for %s.", cmd.Name()))
 
 	cmd.AddCommand(output.AddOutputParam(
-		infraDeployCmd(rootOptions),
+		appDeployCmd(rootOptions),
 		[]output.Format{output.JsonFormat, output.NoneFormat},
 		output.NoneFormat,
 	))
-	cmd.AddCommand(infraDeleteCmd(rootOptions))
+	cmd.AddCommand(appMonitorCmd(rootOptions))
+	cmd.AddCommand(appRestoreCmd(rootOptions))
 	return cmd
 }

@@ -9,25 +9,25 @@ container: mcr.microsoft.com/azure-dev-cli-apps:latest
 
 steps:
   - task: AzureCLI@2
-    displayName: Azure Dev Provision
+    displayName: Azure Dev Infrastructure Deployment
     inputs:
       azureSubscription: azconnection
       scriptType: bash
       scriptLocation: inlineScript
       inlineScript: |
-        azd provision --no-prompt
+        azd infra deploy --no-prompt
     env:
       AZURE_SUBSCRIPTION_ID: ${AZURE_SUBSCRIPTION_ID}
       AZURE_ENV_NAME: ${AZURE_ENV_NAME}
       AZURE_LOCATION: ${AZURE_LOCATION}
   - task: AzureCLI@2
-    displayName: Azure Dev Deploy
+    displayName: Azure Dev Application Code Deploy
     inputs:
       azureSubscription: azconnection
       scriptType: bash
       scriptLocation: inlineScript
       inlineScript: |
-        azd deploy --no-prompt
+        azd app deploy --no-prompt
     env:
       AZURE_SUBSCRIPTION_ID: ${AZURE_SUBSCRIPTION_ID}
       AZURE_ENV_NAME: ${AZURE_ENV_NAME}

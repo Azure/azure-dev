@@ -196,7 +196,7 @@ func Internal_Test_CLI_ResourceGroupsName(t *testing.T, envName string, rgName s
 	require.NoError(t, err)
 
 	if createResources {
-		_, err = cli.RunCommand(ctx, "infra", "create")
+		_, err = cli.RunCommand(ctx, "infra", "deploy")
 		require.NoError(t, err)
 	}
 
@@ -227,7 +227,7 @@ func Internal_Test_CLI_ResourceGroupsName(t *testing.T, envName string, rgName s
 
 }
 
-func Test_CLI_InfraCreateAndDelete(t *testing.T) {
+func Test_CLI_InfraDeployAndDelete(t *testing.T) {
 	ctx, cancel := newTestContext(t)
 	defer cancel()
 
@@ -247,7 +247,7 @@ func Test_CLI_InfraCreateAndDelete(t *testing.T) {
 	_, err = cli.RunCommandWithStdIn(ctx, stdinForTests(envName), "init")
 	require.NoError(t, err)
 
-	_, err = cli.RunCommand(ctx, "infra", "create")
+	_, err = cli.RunCommand(ctx, "infra", "deploy")
 	require.NoError(t, err)
 
 	envFilePath := filepath.Join(dir, environment.EnvironmentDirectoryName, envName, ".env")
@@ -270,7 +270,7 @@ func Test_CLI_InfraCreateAndDelete(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func Test_CLI_InfraCreateAndDeleteWebApp(t *testing.T) {
+func Test_CLI_InfraDeployAndDeleteWebApp(t *testing.T) {
 	ctx, cancel := newTestContext(t)
 	defer cancel()
 
@@ -290,10 +290,10 @@ func Test_CLI_InfraCreateAndDeleteWebApp(t *testing.T) {
 	_, err = cli.RunCommandWithStdIn(ctx, stdinForTests(envName), "init")
 	require.NoError(t, err)
 
-	_, err = cli.RunCommand(ctx, "infra", "create")
+	_, err = cli.RunCommand(ctx, "infra", "deploy")
 	require.NoError(t, err)
 
-	_, err = cli.RunCommand(ctx, "deploy")
+	_, err = cli.RunCommand(ctx, "app", "deploy")
 	require.NoError(t, err)
 
 	// The sample hosts a small application that just responds with a 200 OK with a body of "Hello, `azd`."
@@ -348,7 +348,7 @@ func Test_CLI_InfraCreateAndDeleteWebApp(t *testing.T) {
 	require.NoError(t, err)
 }
 
-// test for azd deploy, azd deploy --service
+// test for azd app deploy, azd app deploy --service
 func Test_CLI_DeployInvalidName(t *testing.T) {
 	ctx, cancel := newTestContext(t)
 	defer cancel()
@@ -390,7 +390,7 @@ func Test_CLI_RestoreCommand(t *testing.T) {
 	err := copySample(dir, "restoreapp")
 	require.NoError(t, err, "failed expanding sample")
 
-	_, err = cli.RunCommandWithStdIn(ctx, stdinForTests(envName), "restore")
+	_, err = cli.RunCommandWithStdIn(ctx, stdinForTests(envName), "app", "restore")
 	require.NoError(t, err)
 
 	require.DirExists(t, path.Join(dir, "nodeapp", "node_modules", "chalk"), "nodeapp not restored")
@@ -400,7 +400,7 @@ func Test_CLI_RestoreCommand(t *testing.T) {
 	require.DirExists(t, path.Join(dir, "funcapp", "funcapp_env"), "funcapp not restored")
 }
 
-func Test_CLI_InfraCreateAndDeleteFuncApp(t *testing.T) {
+func Test_CLI_InfraDeployAndDeleteFuncApp(t *testing.T) {
 	ctx, cancel := newTestContext(t)
 	defer cancel()
 
@@ -421,11 +421,11 @@ func Test_CLI_InfraCreateAndDeleteFuncApp(t *testing.T) {
 	require.NoError(t, err)
 
 	t.Logf("Starting infra create\n")
-	err = cmd.Execute([]string{"infra", "create", "--cwd", dir})
+	err = cmd.Execute([]string{"infra", "deploy", "--cwd", dir})
 	require.NoError(t, err)
 
 	t.Logf("Starting deploy\n")
-	err = cmd.Execute([]string{"deploy", "--cwd", dir})
+	err = cmd.Execute([]string{"app", "deploy", "--cwd", dir})
 	require.NoError(t, err)
 
 	out, err := cli.RunCommand(ctx, "env", "get-values", "-o", "json", "--cwd", dir)
@@ -475,7 +475,9 @@ func Test_ProjectIsNeeded(t *testing.T) {
 		command string
 		args    []string
 	}{
-		{command: "deploy"},
+		{command: "app monitor"},
+		{command: "app restore"},
+		{command: "app deploy"},
 		{command: "down"},
 		{command: "env get-values"},
 		{command: "env list"},
@@ -483,12 +485,9 @@ func Test_ProjectIsNeeded(t *testing.T) {
 		{command: "env refresh"},
 		{command: "env select", args: []string{"testEnvironmentName"}},
 		{command: "env set", args: []string{"testKey", "testValue"}},
-		{command: "infra create"},
 		{command: "infra delete"},
-		{command: "monitor"},
+		{command: "infra deploy"},
 		{command: "pipeline config"},
-		{command: "provision"},
-		{command: "restore"},
 	}
 
 	for _, test := range tests {

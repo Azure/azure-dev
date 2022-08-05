@@ -22,7 +22,7 @@ export enum TelemetryId {
     DotEnvTask = 'azure-dev.tasks.dotenv',
 
     // Reported when 'deploy' CLI command is invoked.
-    DeployCli = 'azure-dev.commands.cli.deploy.task',
+    DeployCli = 'azure-dev.commands.cli.app-deploy.task',
 
     // Reported when 'infra delete' CLI command is invoked.
     // Extra data captured: whether the "purge" option was used.
@@ -31,11 +31,11 @@ export enum TelemetryId {
     // Reported when 'pipeline config' CLI command is invoked.
     PipelineConfigCli = 'azure-dev.commands.cli.pipeline-config.task',
 
-    // Reported when 'provision' CLI command is invoked.
-    ProvisionCli = 'azure-dev.commands.cli.provision.task',
+    // Reported when 'infra deploy' CLI command is invoked.
+    InfraDeployCli = 'azure-dev.commands.cli.infra-deploy.task',
 
-    // Reported when 'restore' CLI command is invoked.
-    RestoreCli = 'azure-dev.commands.cli.restore.task',
+    // Reported when 'app restore' CLI command is invoked.
+    RestoreCli = 'azure-dev.commands.cli.app-restore.task',
 
     // Reported when 'up' CLI command is invoked.
     UpCli = 'azure-dev.commands.cli.up.task',

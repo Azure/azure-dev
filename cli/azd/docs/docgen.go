@@ -115,14 +115,14 @@ func addCodeFencesToSampleCommands(s string) string {
 // io.Writer. It is similar to GenMarkdownTree from spf13/cobra/docs@v1.3.0 package, with some
 // small tweaks based on the output we want for docs.microsoft.com. The changes we have made:
 //
-// - Instead of emitting a file per command, we emit the help text for all commands into the
-//   same unified writer (so they all appear in the same file)
+//   - Instead of emitting a file per command, we emit the help text for all commands into the
+//     same unified writer (so they all appear in the same file)
 //
-// - For a command with children, we emit the documentation for the parent command before
-//   visiting any child commands. This ensures the parent help text is in the combined
+//   - For a command with children, we emit the documentation for the parent command before
+//     visiting any child commands. This ensures the parent help text is in the combined
 //
-// - Since we are writing to a single file, we fix up the markdown links to refer to anchors
-//   in the current file instead of separate files on disk.
+//   - Since we are writing to a single file, we fix up the markdown links to refer to anchors
+//     in the current file instead of separate files on disk.
 func genMarkdownFile(w io.Writer, cmd *cobra.Command) error {
 	// Cobra's GenMarkdownCustom provides a way to control the target of a link. Since
 	// we put all commands into a single markdown file, we change the link target
@@ -168,11 +168,11 @@ func convertLinksToMarkdown(s string) string {
 // genMarkdownCustom is like `GetMarkdownCustom` from the spf13/cobra/docs@v1.3.0 package, with some
 // small tweaks based on the output we want for docs.microsoft.com. The changes we have made:
 //
-// - Don't include a link to the parent command in the "See also" section when the parent command
-//   is itself the root command (since the logic below will add the link at the end of the list)
+//   - Don't include a link to the parent command in the "See also" section when the parent command
+//     is itself the root command (since the logic below will add the link at the end of the list)
 //
-// - Add a "Back to top" link at the end of every "See also" section that links back to the root
-//   command.
+//   - Add a "Back to top" link at the end of every "See also" section that links back to the root
+//     command.
 //
 // - We use addCodeFencesToSampleCommands to add code fences to the long help where needed.
 //

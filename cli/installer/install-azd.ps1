@@ -188,7 +188,7 @@ Remove-Item $tempFolder -Recurse -Force | Out-Null
 # and setx all expand variables (e.g. %JAVA_HOME%) in the value. Writing the
 # expanded paths back into the environment would be destructive so instead, read
 # the PATH entry directly from the registry with the DoNotExpandEnvironmentNames
-# option and update the PATH entry using Set-ItemProperty
+# option and update the PATH entry in the registry.
 if (!$NoPath -and !(isLinuxOrMac)) {
     try {
         # Wrap the Microsoft.Win32.Registry calls in a script block to prevent

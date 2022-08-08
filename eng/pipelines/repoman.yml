@@ -10,39 +10,19 @@ pr:
 variables:
   - template: /eng/pipelines/templates/variables/globals.yml
 
-jobs:
-  - job: Generate_Repos
+stages:
+  - job: Generate_Repos_For_PR
+    condition: >-
+      and(
+        succeeded(),
+        eq(variables['Build.Reason'], 'PullRequest')
+      )
     pool:
       name: azsdk-pool-mms-ubuntu-2004-general
       vmImage: MMSUbuntu20.04
 
     steps:
       - checkout: self
-
-      - task: NodeTool@0
-        inputs:
-          versionSpec: 16
-
-      - pwsh: |
-          git config --global user.name "azure-sdk"
-          git config --global user.email "azuresdk@microsoft.com"
-          Set-Content `
-            -Value "https://azure-sdk:$(azuresdk-github-pat)@github.com" `
-            -Path ~/.git-credentials
-          git config --global credential.helper "store"
-        displayName: Set git credentials
-
-      - pwsh: npm install
-        displayName: Install dependencies
-        workingDirectory: generators/repo
-
-      - pwsh: npm run build
-        displayName: Build
-        workingDirectory: generators/repo
-
-      - pwsh: npm link
-        displayName: Install repoman locally
-        workingDirectory: generators/repo
 
       - pwsh: |
           $PRNumber = '$(System.PullRequest.PullRequestNumber)'
@@ -62,13 +42,7 @@ jobs:
           Write-Host "##vso[task.setvariable variable=TargetBranchName]$targetBranchName"
         displayName: Set TargetBranchName
 
-      - task: PowerShell@2
-        displayName: Generate Azure-Samples repos
-        inputs:
-          pwsh: true
-          targetType: filePath
-          filePath: ./eng/scripts/Invoke-RepomanGenerate.ps1
-          arguments: -TargetBranchName "$(TargetBranchName)"
+      - template: /eng/pipelines/templates/steps/repoman-generate.yml
 
       - pwsh: |
           $repomanContent = "No changes detected."
@@ -88,31 +62,9 @@ jobs:
           Set-Content -Path $file -Value $content
           Write-Host "##vso[task.setvariable variable=CommentBodyFile]$file"
         displayName: Set Repoman Content
-        condition: >-
-          and(
-            succeeded(),
-            or(
-              eq('PullRequest', variables['BuildReasonOverride']),
-              and(
-                eq('', variables['BuildReasonOverride']),
-                eq(variables['Build.Reason'], 'PullRequest')
-              )
-            )
-          )
 
       - task: PowerShell@2
         displayName: Post PR comment
-        condition: >-
-          and(
-            succeeded(),
-            or(
-              eq('PullRequest', variables['BuildReasonOverride']),
-              and(
-                eq('', variables['BuildReasonOverride']),
-                eq(variables['Build.Reason'], 'PullRequest')
-              )
-            )
-          )
         inputs:
           pwsh: true
           targetType: filePath
@@ -124,3 +76,29 @@ jobs:
             -Tag '<!-- #comment-repoman-generate -->'
         env:
           GH_TOKEN: $(azuresdk-github-pat)
+
+  - deployment: Publish_Repos
+    condition: >-
+      and(
+        succeeded(),
+        eq('Manual', variables['Build.Reason'])
+      )
+    environment: azure-dev
+    pool:
+      name: azsdk-pool-mms-ubuntu-2004-general
+      vmImage: MMSUbuntu20.04
+
+    steps:
+      - checkout: self
+
+      - pwsh: |
+          $targetBranchName = ''
+          if ($env:TARGETBRANCHNAMEOVERRIDE) {
+            Write-Host "Target branch override $($env:TARGETBRANCHNAMEOVERRIDE)"
+            $targetBranchName = $env:TARGETBRANCHNAMEOVERRIDE
+          }
+          Write-Host "##vso[task.setvariable variable=TargetBranchName]$targetBranchName"
+        displayName: Set $(TargetBranchName)
+      - template: /eng/pipelines/templates/steps/repoman-generate.yml
+        parameters:
+          TargetBranchName: $(TargetBranchName)

@@ -10,9 +10,7 @@ pr:
 variables:
   - template: /eng/pipelines/templates/variables/globals.yml
   - name: StagingBranchName
-    # TODO: Use "staging" before merge
-    # value: staging
-    value: djurek-staging-test
+    value: staging
 
 stages:
   - stage: Validation

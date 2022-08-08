@@ -14,11 +14,11 @@ import (
 func TestTaskWithResult(t *testing.T) {
 	expectedResult := "result"
 
-	task := NewTask[string]()
-	task.Run(func(ctx *TaskContext[string]) {
+	task := NewTask(func(ctx *TaskContext[string]) {
 		time.Sleep(250 * time.Millisecond)
 		ctx.SetResult(expectedResult)
 	})
+	task.Run()
 
 	actualResult, err := task.Await()
 
@@ -29,11 +29,11 @@ func TestTaskWithResult(t *testing.T) {
 func TestTaskWithAwait(t *testing.T) {
 	expectedResult := "result"
 
-	task := NewTask[string]()
-	task.Run(func(ctx *TaskContext[string]) {
+	task := NewTask(func(ctx *TaskContext[string]) {
 		time.Sleep(250 * time.Millisecond)
 		ctx.SetResult(expectedResult)
 	})
+	task.Run()
 
 	actualResult, err := task.Await()
 
@@ -44,11 +44,11 @@ func TestTaskWithAwait(t *testing.T) {
 func TestTaskWithError(t *testing.T) {
 	expectedError := errors.New("example error")
 
-	task := NewTask[string]()
-	task.Run(func(ctx *TaskContext[string]) {
+	task := NewTask(func(ctx *TaskContext[string]) {
 		time.Sleep(250 * time.Millisecond)
 		ctx.SetError(expectedError)
 	})
+	task.Run()
 
 	actualResult, err := task.Await()
 
@@ -58,12 +58,12 @@ func TestTaskWithError(t *testing.T) {
 
 func TestTaskWithInvalidUsage(t *testing.T) {
 	require.Panics(t, func() {
-		task := NewTask[string]()
-		task.Run(func(ctx *TaskContext[string]) {
+		task := NewTask(func(ctx *TaskContext[string]) {
 			time.Sleep(250 * time.Millisecond)
 			ctx.SetError(errors.New("error"))
 			ctx.SetResult("value")
 		})
+		task.Run()
 
 		_, _ = task.Await()
 	})
@@ -73,7 +73,12 @@ func TestTaskWithProgressWithResult(t *testing.T) {
 	expectedResult := "result"
 	progress := []string{}
 
-	task := NewTaskWithProgress[string, string]()
+	task := NewTaskWithProgress(func(ctx *TaskContextWithProgress[string, string]) {
+		ctx.SetProgress("thing 1")
+		time.Sleep(250 * time.Millisecond)
+		ctx.SetProgress("thing 2")
+		ctx.SetResult(expectedResult)
+	})
 
 	go func() {
 		for status := range task.Progress() {
@@ -81,12 +86,7 @@ func TestTaskWithProgressWithResult(t *testing.T) {
 		}
 	}()
 
-	task.Run(func(ctx *TaskContextWithProgress[string, string]) {
-		ctx.SetProgress("thing 1")
-		time.Sleep(250 * time.Millisecond)
-		ctx.SetProgress("thing 2")
-		ctx.SetResult(expectedResult)
-	})
+	task.Run()
 
 	actualResult, err := task.Await()
 	require.Equal(t, expectedResult, actualResult)
@@ -100,15 +100,7 @@ func TestTaskWithProgressWithError(t *testing.T) {
 	expectedError := errors.New("example error")
 	progress := []string{}
 
-	task := NewTaskWithProgress[string, string]()
-
-	go func() {
-		for status := range task.Progress() {
-			progress = append(progress, status)
-		}
-	}()
-
-	task.Run(func(ctx *TaskContextWithProgress[string, string]) {
+	task := NewTaskWithProgress(func(ctx *TaskContextWithProgress[string, string]) {
 		ctx.SetProgress("thing 1")
 		time.Sleep(250 * time.Millisecond)
 		ctx.SetProgress("thing 2")
@@ -116,6 +108,14 @@ func TestTaskWithProgressWithError(t *testing.T) {
 		// Something bad happens but previous project goes through
 		ctx.SetError(expectedError)
 	})
+
+	go func() {
+		for status := range task.Progress() {
+			progress = append(progress, status)
+		}
+	}()
+
+	task.Run()
 
 	actualResult, err := task.Await()
 	require.Equal(t, "", actualResult)
@@ -140,8 +140,7 @@ func TestInteractiveTaskWithResult(t *testing.T) {
 		return options.Message == "Are you sure?"
 	}).Respond(true)
 
-	task := NewInteractiveTaskWithProgress[string, string]()
-	task.Run(func(taskContext *InteractiveTaskContextWithProgress[string, string]) {
+	task := NewInteractiveTaskWithProgress(func(taskContext *InteractiveTaskContextWithProgress[string, string]) {
 		var selectedLocation string
 
 		taskContext.SetProgress("thing 1")
@@ -183,6 +182,8 @@ func TestInteractiveTaskWithResult(t *testing.T) {
 
 		taskContext.SetResult(selectedLocation)
 	})
+
+	task.Run()
 
 	go func() {
 		for status := range task.Progress() {
@@ -226,8 +227,7 @@ func TestInteractiveTaskWithError(t *testing.T) {
 		return options.Message == "Are you sure?"
 	}).Respond(false)
 
-	task := NewInteractiveTaskWithProgress[string, string]()
-	task.Run(func(taskContext *InteractiveTaskContextWithProgress[string, string]) {
+	task := NewInteractiveTaskWithProgress(func(taskContext *InteractiveTaskContextWithProgress[string, string]) {
 		var selectedLocation string
 
 		taskContext.SetProgress("thing 1")
@@ -268,6 +268,8 @@ func TestInteractiveTaskWithError(t *testing.T) {
 		taskContext.SetResult(selectedLocation)
 	})
 
+	task.Run()
+
 	go func() {
 		for status := range task.Progress() {
 			progress = append(progress, status)
@@ -292,4 +294,50 @@ func TestInteractiveTaskWithError(t *testing.T) {
 	require.Equal(t, 2, len(interactiveStatus))
 	require.Equal(t, true, interactiveStatus[0])
 	require.Equal(t, false, interactiveStatus[1])
+}
+
+func TestTaskCannotRunAgain(t *testing.T) {
+	task := NewTask(func(ctx *TaskContext[string]) {
+		time.Sleep(250 * time.Millisecond)
+		ctx.SetResult("result")
+	})
+
+	err := task.Run()
+	require.NoError(t, err)
+
+	_, _ = task.Await()
+
+	// Second run call should fail
+	err = task.Run()
+	require.Error(t, err)
+}
+
+func TestTaskStatusWithSuccess(t *testing.T) {
+	task := NewTask(func(ctx *TaskContext[string]) {
+		time.Sleep(250 * time.Millisecond)
+		ctx.SetResult("result")
+	})
+
+	require.Equal(t, Created, task.Status())
+
+	task.Run()
+	require.Equal(t, Running, task.Status())
+
+	_, _ = task.Await()
+	require.Equal(t, RanToCompletion, task.Status())
+}
+
+func TestTaskStatusWithError(t *testing.T) {
+	task := NewTask(func(ctx *TaskContext[string]) {
+		time.Sleep(250 * time.Millisecond)
+		ctx.SetError(errors.New("error"))
+	})
+
+	require.Equal(t, Created, task.Status())
+
+	task.Run()
+	require.Equal(t, Running, task.Status())
+
+	_, _ = task.Await()
+	require.Equal(t, Faulted, task.Status())
 }

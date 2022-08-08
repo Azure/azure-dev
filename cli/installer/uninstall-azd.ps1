@@ -3,51 +3,6 @@ param(
     [string] $InstallFolder = ""
 )
 
-
-# Windows specific:
-# This functions sends a WM_SETTINGCHANGE message which causes new processes to
-# pick up the updates to environment variables. Not calling this funciton after
-# updating environment variables means that new processes will use an older view
-# of the environment variables.
-function broadcastSettingChange {
-    $SEND_MESSAGE_TIMEOUT_DEFINITION = @"
-    [DllImport("user32.dll")]public static extern IntPtr SendMessageTimeout(
-        IntPtr hWnd,
-        uint Msg,
-        UIntPtr wParam,
-        string lParam,
-        uint fuFlags,
-        uint uTimeout,
-        out UIntPtr lpdwResult
-    );
-"@
-
-    # Broadcast environment variable change to Windows. Processes launched after
-    # this broadcast will use the new PATH environment variable.
-    # Use "Environment" as the lParam
-    # https://docs.microsoft.com/en-us/windows/win32/winmsg/wm-settingchange
-    Write-Verbose "Broadcasting environment variable change to Windows"
-    $sendMessageTimeout = Add-Type `
-        -MemberDefinition $SEND_MESSAGE_TIMEOUT_DEFINITION `
-        -Name 'Win322SendMessageTimeout' `
-        -Namespace Win32Functions `
-        -PassThru
-    $messageResult = [UIntPtr]::Zero
-    $result = $sendMessageTimeout::SendMessageTimeout(
-        [IntPtr] 0xffff,        # HWND_BROADCAST
-        0x001A,                 # WM_SETTINGCHANGE
-        [UIntPtr]::Zero,
-        "Environment",
-        0x0002,                 # SMTO_ABORTIFHUNG
-        1000,                   # Wait 1000ms per window
-        [ref] $messageResult
-    )
-
-    if ($result -eq 0) {
-        Write-Error "Windows runtime environment variable update did not succeed. To use azd, log out of Windows and log back in."
-    }
-}
-
 function isLinuxOrMac {
     return $IsLinux -or $IsMacOS
 }
@@ -99,7 +54,7 @@ if (isLinuxOrMac) {
             # Wrap the Microsoft.Win32.Registry calls in a script block to
             # prevent the type intializer from attempting to initialize those
             # objects in non-Windows environments.
-            $registryKey = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Environment', $false)
+            $registryKey = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Environment', $true)
             $originalPath = $registryKey.GetValue(`
                 'PATH', `
                 '', `
@@ -119,7 +74,15 @@ if (isLinuxOrMac) {
                 $newPath, `
                 $originalValueKind `
             )
-            broadcastSettingChange
+
+            # Calling this method ensures that a WM_SETTINGCHANGE message is
+            # sent to top level windows without having to pinvoke from
+            # PowerShell. Setting to $null deletes the variable if it exists.
+            [Environment]::SetEnvironmentVariable( `
+                'AZD_INSTALLER_NOOP', `
+                $null, `
+                [EnvironmentVariableTarget]::User `
+            )
         } else {
             Write-Host "Could not find an entry for $InstallFolder in PATH"
         }

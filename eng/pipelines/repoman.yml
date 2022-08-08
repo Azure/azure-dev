@@ -10,7 +10,7 @@ pr:
 variables:
   - template: /eng/pipelines/templates/variables/globals.yml
 
-stages:
+jobs:
   - job: Generate_Repos_For_PR
     condition: >-
       and(

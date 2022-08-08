@@ -5,13 +5,17 @@ package project
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"strings"
+	"time"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/azureutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/commands"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
+	"github.com/sethvargo/go-retry"
 )
 
 type Service struct {
@@ -96,18 +100,33 @@ func GetServiceResourceName(ctx context.Context, resourceGroupName string, servi
 		// see: https://github.com/Azure/azure-dev/issues/115
 		strings.ToLower(resourceGroupName),
 		serviceName)
-	queryResult, err := azCli.GraphQuery(ctx, query, []string{env.GetSubscriptionId()})
+
+	var graphQueryResults *tools.AzCliGraphQuery
+	err := retry.Do(ctx, retry.WithMaxRetries(10, retry.NewConstant(5*time.Second)), func(ctx context.Context) error {
+		queryResult, err := azCli.GraphQuery(ctx, query, []string{env.GetSubscriptionId()})
+		if err != nil {
+			return fmt.Errorf("executing graph query: %s: %w", query, err)
+		}
+
+		if queryResult.Count == 0 {
+			notFoundError := azureutil.ResourceNotFound(errors.New("azure graph query returned 0 results"))
+			return retry.RetryableError(notFoundError)
+		}
+
+		graphQueryResults = queryResult
+		return nil
+	})
 
 	if err != nil {
-		return "", fmt.Errorf("executing graph query: %s: %w", query, err)
+		return "", err
 	}
 
 	// If the graph query result did not return a single result
 	// Fallback to default envName + serviceName
-	if queryResult.TotalRecords != 1 {
-		log.Printf("Expecting only '1' resource match to override resource name but found '%d'", queryResult.TotalRecords)
+	if graphQueryResults.TotalRecords != 1 {
+		log.Printf("Expecting only '1' resource match to override resource name but found '%d'", graphQueryResults.TotalRecords)
 		return fmt.Sprintf("%s%s", env.GetEnvName(), serviceName), nil
 	}
 
-	return queryResult.Data[0].Name, nil
+	return graphQueryResults.Data[0].Name, nil
 }

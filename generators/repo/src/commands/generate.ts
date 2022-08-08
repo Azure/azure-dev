@@ -212,7 +212,7 @@ export class GenerateCommand implements RepomanCommand {
         await cleanDirectoryPath(this.outputPath);
 
         console.info(chalk.white(`Cloning repo for remote...`));
-        await repo.clone(remote.name, remote.url);
+        await repo.clone(remote.name, remote.url, defaultBranch);
 
         const isEmptyRepo = await repo.isEmptyRepo(remote.name);
 

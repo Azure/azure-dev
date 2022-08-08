@@ -12,13 +12,13 @@ variables:
 
 stages:
   - stage: PR_Validation
+    condition: >-
+      and(
+        succeeded(),
+        eq(variables['Build.Reason'], 'PullRequest')
+      )
     jobs:
       - job: Generate_Repos_For_PR
-        condition: >-
-          and(
-            succeeded(),
-            eq(variables['Build.Reason'], 'PullRequest')
-          )
         pool:
           name: azsdk-pool-mms-ubuntu-2004-general
           vmImage: MMSUbuntu20.04
@@ -83,13 +83,13 @@ stages:
 
 
   - stage: Publish_Repos
+    condition: >-
+      and(
+        succeeded(),
+        eq('Manual', variables['Build.Reason'])
+      )
     jobs:
     - deployment: Publish_Repos
-      condition: >-
-        and(
-          succeeded(),
-          eq('Manual', variables['Build.Reason'])
-        )
       environment: azure-dev
       pool:
         name: azsdk-pool-mms-ubuntu-2004-general

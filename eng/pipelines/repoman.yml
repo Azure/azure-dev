@@ -112,8 +112,8 @@ stages:
 
           - pwsh: |
               $targetBranchName = '$(StagingBranchName)'
-              if ($env:STAGINGBRANCHOVERRIDE) {
-                $targetBranchName = $env:STAGINGBRANCHOVERRIDE
+              if ($env:TARGETBRANCHNAMEOVERRIDE) {
+                $targetBranchName = $env:TARGETBRANCHNAMEOVERRIDE
                 Write-Host "PR Build, using target branch name: $targetBranchName"
               }
               Write-Host "##vso[task.setvariable variable=TargetBranchName]$targetBranchName"

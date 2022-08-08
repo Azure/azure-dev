@@ -43,6 +43,8 @@ jobs:
         displayName: Set TargetBranchName
 
       - template: /eng/pipelines/templates/steps/repoman-generate.yml
+        parameters:
+          TargetBranchName: $(TargetBranchName)
 
       - pwsh: |
           $repomanContent = "No changes detected."
@@ -102,6 +104,7 @@ jobs:
                 }
                 Write-Host "##vso[task.setvariable variable=TargetBranchName]$targetBranchName"
               displayName: Set $(TargetBranchName)
+
             - template: /eng/pipelines/templates/steps/repoman-generate.yml
               parameters:
                 TargetBranchName: $(TargetBranchName)

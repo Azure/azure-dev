@@ -22,7 +22,6 @@ services:
     project: src/web
     language: js
     host: containerapp
-    resourceName: webapp
 `
 
 	ctx := helpers.CreateTestContext(context.Background(), gblCmdOptions, azCli, mockHttpClient)
@@ -88,7 +87,6 @@ services:
     project: src/web
     language: js
     host: containerapp
-    resourceName: webapp
     docker:
       path: ./Dockerfile.dev
       context: ../

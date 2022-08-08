@@ -102,23 +102,25 @@ func GetServiceResourceName(ctx context.Context, resourceGroupName string, servi
 		serviceName)
 
 	var graphQueryResults *tools.AzCliGraphQuery
-	err := retry.Do(ctx, retry.WithMaxRetries(10, retry.NewConstant(5*time.Second)), func(ctx context.Context) error {
+	err := retry.Do(ctx, retry.WithMaxRetries(5, retry.NewConstant(2*time.Second)), func(ctx context.Context) error {
 		queryResult, err := azCli.GraphQuery(ctx, query, []string{env.GetSubscriptionId()})
 		if err != nil {
 			return fmt.Errorf("executing graph query: %s: %w", query, err)
 		}
 
-		if queryResult.Count == 0 {
+		graphQueryResults = queryResult
+
+		if graphQueryResults.Count == 0 {
 			notFoundError := azureutil.ResourceNotFound(errors.New("azure graph query returned 0 results"))
 			return retry.RetryableError(notFoundError)
 		}
 
-		graphQueryResults = queryResult
 		return nil
 	})
 
-	if err != nil {
-		return "", err
+	var notFoundError *azureutil.ResourceNotFoundError
+	if err != nil && !errors.As(err, &notFoundError) {
+		return "", fmt.Errorf("executing graph query: %s: %w", query, err)
 	}
 
 	// If the graph query result did not return a single result

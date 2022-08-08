@@ -88,6 +88,7 @@ services:
     project: src/web
     language: js
     host: containerapp
+    resourceName: webapp
     docker:
       path: ./Dockerfile.dev
       context: ../

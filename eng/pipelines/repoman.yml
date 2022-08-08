@@ -132,7 +132,7 @@ stages:
           - template: /eng/pipelines/templates/steps/repoman-generate.yml
             parameters:
               TargetBranchName: $(TargetBranchName)
-              BaseBranchName: ""
+              BaseBranchName: main
 
 
   - stage: Publish_Repos

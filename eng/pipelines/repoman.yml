@@ -16,19 +16,19 @@ variables:
 
 stages:
   - stage: Validation
-    condition: >-
-      and(
-        succeeded(),
-        or(
-          eq(variables['BuildReasonOverride'], 'PullRequest'),
-          and(
-            eq('', variables['BuildReasonOverride']),
-            eq(variables['Build.Reason'], 'PullRequest')
-          )
-        )
-      )
     jobs:
       - job: Generate_Repos_For_PR
+        condition:  >-
+          and(
+            succeeded(),
+            or(
+              eq(variables['BuildReasonOverride'], 'PullRequest'),
+              and(
+                eq('', variables['BuildReasonOverride']),
+                eq(variables['Build.Reason'], 'PullRequest')
+              )
+            )
+          )
         pool:
           name: azsdk-pool-mms-ubuntu-2004-general
           vmImage: MMSUbuntu20.04

@@ -2,6 +2,7 @@ package project
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io/ioutil"
 	"log"
@@ -10,6 +11,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/azureutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/drone/envsubst"
 	"gopkg.in/yaml.v3"
@@ -23,7 +25,39 @@ type ProjectConfig struct {
 	Path              string                    `yaml:",omitempty"`
 	Metadata          *ProjectMetadata          `yaml:"metadata,omitempty"`
 	Services          map[string]*ServiceConfig `yaml:",omitempty"`
+
+	handlers map[Event][]ProjectLifecycleEventHandlerFn
 }
+
+// Project lifecycle events
+type Event string
+
+const (
+	// Raised before project is initialized
+	Initializing Event = "initializing"
+	// Raised after project is initialized
+	Initialized Event = "initialized"
+	// Raised before project is provisioned
+	Provisioning Event = "provisioning"
+	// Raised after project is provisioned
+	Provisioned Event = "provisioned"
+	// Raised before project is deployed
+	Deploying Event = "deploying"
+	// Raised after project is deployed
+	Deployed Event = "deployed"
+	// Raised before project is destroyed
+	Destroying Event = "destroying"
+	// Raised after project is destroyed
+	Destroyed Event = "destroyed"
+)
+
+// Project lifecycle event arguments
+type ProjectLifecycleEventArgs struct {
+	Project *ProjectConfig
+}
+
+// Function definition for project events
+type ProjectLifecycleEventHandlerFn func(ctx context.Context, args ProjectLifecycleEventArgs) error
 
 type ProjectMetadata struct {
 	// Template is a slug that identifies the template and a version. This attribute should be
@@ -59,6 +93,16 @@ func (pc *ProjectConfig) GetProject(ctx context.Context, env *environment.Enviro
 	// The context is then used when the AzCli is instantiated to set the correct user agent
 	if project.Metadata != nil && strings.TrimSpace(project.Metadata.Template) != "" {
 		ctx = context.WithValue(ctx, environment.TemplateContextKey, project.Metadata.Template)
+	}
+
+	if pc.ResourceGroupName == "" {
+		// We won't have a ResourceGroupName yet if it hasn't been set in either azure.yaml or AZURE_RESOURCE_GROUP env var
+		// Let's try to find the right resource group for this environment
+		resourceGroupName, err := azureutil.FindResourceGroupForEnvironment(ctx, env)
+		if err != nil {
+			return nil, err
+		}
+		pc.ResourceGroupName = resourceGroupName
 	}
 
 	for key, serviceConfig := range pc.Services {
@@ -97,6 +141,72 @@ func (pc *ProjectConfig) GetProject(ctx context.Context, env *environment.Enviro
 	return &project, nil
 }
 
+// Adds an event handler for the specified event name
+func (pc *ProjectConfig) AddHandler(name Event, handler ProjectLifecycleEventHandlerFn) error {
+	newHandler := fmt.Sprintf("%v", handler)
+	events := pc.handlers[name]
+
+	for _, ref := range events {
+		existingHandler := fmt.Sprintf("%v", ref)
+
+		if newHandler == existingHandler {
+			return fmt.Errorf("event handler has already been registered for %s event", name)
+		}
+	}
+
+	events = append(events, handler)
+	pc.handlers[name] = events
+
+	return nil
+}
+
+// Removes the event handler for the specified event name
+func (pc *ProjectConfig) RemoveHandler(name Event, handler ProjectLifecycleEventHandlerFn) error {
+	newHandler := fmt.Sprintf("%v", handler)
+	events := pc.handlers[name]
+	for i, ref := range events {
+		existingHandler := fmt.Sprintf("%v", ref)
+
+		if newHandler == existingHandler {
+			pc.handlers[name] = append(events[:i], events[i+1:]...)
+			return nil
+		}
+	}
+
+	return fmt.Errorf("specified handler was not found in %s event registrations", name)
+}
+
+// Raises the specified event and calls any registered event handlers
+func (pc *ProjectConfig) RaiseEvent(ctx context.Context, name Event) error {
+	handlerErrors := []error{}
+
+	eventArgs := ProjectLifecycleEventArgs{
+		Project: pc,
+	}
+
+	handlers := pc.handlers[name]
+
+	// TODO: Opportunity to dispatch these event handlers in parallel if needed
+	for _, handler := range handlers {
+		err := handler(ctx, eventArgs)
+		if err != nil {
+			handlerErrors = append(handlerErrors, err)
+		}
+	}
+
+	// Build final error string if their are any failures
+	if len(handlerErrors) > 0 {
+		lines := make([]string, len(handlerErrors))
+		for i, err := range handlerErrors {
+			lines[i] = err.Error()
+		}
+
+		return errors.New(strings.Join(lines, ","))
+	}
+
+	return nil
+}
+
 // ParseProjectConfig will parse a project from a yaml string and return the project configuration
 func ParseProjectConfig(yamlContent string, env *environment.Environment) (*ProjectConfig, error) {
 	log.Printf("Parsing file contents, %s\n", yamlContent)
@@ -122,12 +232,15 @@ func ParseProjectConfig(yamlContent string, env *environment.Environment) (*Proj
 		return nil, fmt.Errorf("unable to parse azure.yaml file. Please check the format of the file, and also verify you have the latest version of the CLI: %w", err)
 	}
 
-	// Get default resource group name if not override in the azure.yaml project file
+	projectFile.handlers = make(map[Event][]ProjectLifecycleEventHandlerFn)
+
+	// If ResourceGroupName not set in azure.yaml, then look for it in the AZURE_RESOURCE_GROUP env var
 	if strings.TrimSpace(projectFile.ResourceGroupName) == "" {
-		projectFile.ResourceGroupName = environment.DefaultResourceGroupName(env)
+		projectFile.ResourceGroupName = environment.GetResourceGroupNameFromEnvVar(env)
 	}
 
 	for key, svc := range projectFile.Services {
+		svc.handlers = make(map[Event][]ServiceLifecycleEventHandlerFn)
 		svc.Name = key
 		svc.Project = &projectFile
 

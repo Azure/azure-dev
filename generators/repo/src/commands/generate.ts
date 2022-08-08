@@ -379,13 +379,14 @@ export class GenerateCommand implements RepomanCommand {
         const pathRegex = new RegExp(/((?:\.{1,2}[\/\\]{1,2})+[^'"\s]*)/gm);
 
         for (const filePath of files) {
-            const destPath = path.join(this.generatePath, filePath);
+            const destFilePath = path.join(this.generatePath, filePath);
+            const destFolderPath = path.dirname(destFilePath)
 
             if (this.options.debug) {
-                console.debug(chalk.whiteBright(`Processing file: ${destPath}`));
+                console.debug(chalk.whiteBright(`Processing file: ${destFilePath}`));
             }
 
-            const buffer = await fs.readFile(destPath);
+            const buffer = await fs.readFile(destFilePath);
             let contents = buffer.toString('utf8');
 
             // Replace relative path updates
@@ -393,24 +394,29 @@ export class GenerateCommand implements RepomanCommand {
                 if (this.options.debug) {
                     console.debug(chalk.white(`- Processing ${rule.from} => ${rule.to}`));
                 }
-                contents = contents.replace(rule.from, rule.to);
+                contents = contents.replaceAll(rule.from, rule.to);
             }
 
             // Normalize transformed paths
             const matches = contents.match(pathRegex);
             if (matches && matches.length > 0) {
                 for (const match of matches) {
-                    // We intentionally want to normalize generated output on POSIX file system
-                    const updatedPath = path.posix.normalize(match);
-                    contents = contents.replace(match, updatedPath);
+                    // Generate the absolute path to the referenced match
+                    let refPath = path.resolve(destFolderPath, path.normalize(match))
+                    // Generate the relative path between the current processed file dir path & the referenced match path
+                    let relativePath = path.relative(destFolderPath, refPath)
+                    // Finally convert the path back to a POSIX compatible path
+                    relativePath = relativePath.split(path.sep).join(path.posix.sep)
+
+                    contents = contents.replaceAll(match, relativePath);
 
                     if (this.options.debug) {
-                        console.log(chalk.grey(` -> Rewriting relative path ${match} => ${updatedPath}`));
+                        console.log(chalk.grey(` -> Rewriting relative path ${match} => ${relativePath}`));
                     }
                 }
             }
 
-            await fs.writeFile(destPath, contents);
+            await fs.writeFile(destFilePath, contents);
         }
     }
 }

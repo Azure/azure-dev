@@ -1,12 +1,12 @@
+ARG prefix=''
 ARG base='fedora:37'
-FROM ${base}
+FROM ${prefix}${base}
 
-ARG shell='sh'
+ARG shell='bash'
 ARG baseUrl='must set baseUrl'
 ARG version='must set version'
 
+RUN yum install -y which
+
 COPY ./*.sh ./
-RUN cat install-azd.sh \
-    | ${shell} -s -- --verbose --base-url "$baseUrl" --version "$version"  \
-    && azd --help \
-    && cat uninstall-azd.sh | ${shell}
+RUN ./test-sh-install.sh "${shell}" "${baseUrl}" "${version}"

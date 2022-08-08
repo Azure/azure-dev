@@ -1,0 +1,19 @@
+parameters:
+  SubscriptionConfiguration: $(sub-config-azure-cloud-test-resources)
+
+steps:
+  - pwsh: |
+      $subscriptionConfiguration = @'
+        ${{ parameters.SubscriptionConfiguration }}
+      '@ | ConvertFrom-Json -AsHashtable;
+
+      az login `
+        --service-principal `
+        -u "$($subscriptionConfiguration.TestApplicationId)" `
+        -p "$($subscriptionConfiguration.TestApplicationSecret)" `
+        --tenant "$($subscriptionConfiguration.TenantId)"
+
+      az account set `
+        --subscription "$($subscriptionConfiguration.SubscriptionId)"
+    condition: and(succeeded(), ne(variables['Skip.LiveTest'], 'true'))
+    displayName: Azure Login

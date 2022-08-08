@@ -158,7 +158,7 @@ func TestGetDeploymentResourceOperationsSuccess(t *testing.T) {
 	require.NotNil(t, operations)
 	require.Nil(t, err)
 
-	require.Len(t, *operations, 2)
+	require.Len(t, operations, 2)
 	require.Equal(t, 1, subCalls)
 	require.Equal(t, 1, groupCalls)
 }
@@ -220,7 +220,7 @@ func TestGetDeploymentResourceOperationsNoResourceGroup(t *testing.T) {
 
 	require.NotNil(t, operations)
 	require.Nil(t, err)
-	require.Len(t, *operations, 0)
+	require.Len(t, operations, 0)
 	require.Equal(t, 1, subCalls)
 	require.Equal(t, 0, groupCalls)
 }
@@ -260,7 +260,7 @@ func TestGetDeploymentResourceOperationsWithNestedDeployments(t *testing.T) {
 
 	require.NotNil(t, operations)
 	require.Nil(t, err)
-	require.Len(t, *operations, 4)
+	require.Len(t, operations, 4)
 	require.Equal(t, 1, subCalls)
 	require.Equal(t, 2, groupCalls)
 }

@@ -8,7 +8,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-//Build builds a Cobra command, attaching an action
+// Build builds a Cobra command, attaching an action
 func Build(action Action, rootOptions *GlobalCommandOptions, use string, short string, long string) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   use,

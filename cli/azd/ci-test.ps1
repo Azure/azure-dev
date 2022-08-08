@@ -1,5 +1,5 @@
 param(
-    [string] $Timeout = '20m',
+    [string] $Timeout = '30m',
     [string] $CoverageFileOut = 'cover.out'
 )
 

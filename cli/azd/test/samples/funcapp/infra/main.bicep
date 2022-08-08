@@ -11,19 +11,23 @@ param deleteAfterTime string = dateTimeAdd(utcNow('o'), 'PT1H')
 
 targetScope = 'subscription'
 
+var resourceToken = toLower(uniqueString(subscription().id, name, location))
+var tags = { 'azd-env-name': name, DeleteAfter: deleteAfterTime }
+
 resource resourceGroup 'Microsoft.Resources/resourceGroups@2021-04-01' = {
-  name: '${name}-rg'
+  name: 'rg-${name}'
   location: location
-  tags: {
-    DeleteAfter: deleteAfterTime
+  tags: tags
+}
+
+module resources 'resources.bicep' = {
+  name: 'resources'
+  scope: resourceGroup
+  params: {
+    location: location
+    resourceToken: resourceToken
+    tags: tags
   }
 }
 
-module resources './resources.bicep' = {
-  name: '${resourceGroup.name}res'
-  scope: resourceGroup
-  params: {
-    name: toLower(name)
-    location: resourceGroup.location
-  }
-}
+output AZURE_FUNCTION_URI string = resources.outputs.AZURE_FUNCTION_URI

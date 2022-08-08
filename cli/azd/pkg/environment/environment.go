@@ -117,3 +117,11 @@ func (e *Environment) GetTenantId() string {
 func (e *Environment) SetSubscriptionId(id string) {
 	e.Values[SubscriptionIdEnvVarName] = id
 }
+
+func (e *Environment) SetLocation(location string) {
+	e.Values[LocationEnvVarName] = location
+}
+
+func (e *Environment) SetPrincipalId(principalID string) {
+	e.Values[PrincipalIdEnvVarName] = principalID
+}

@@ -281,14 +281,9 @@ func (ica *infraCreateAction) Run(ctx context.Context, cmd *cobra.Command, args 
 
 	template.CanonicalizeDeploymentOutputs(&res.Result.Properties.Outputs)
 
+	project.BicepOutput = res.Result.Properties.Outputs
 	for _, svc := range proj.Services {
-		if svc.Language == "dotnet" {
-			for key, val := range res.Result.Properties.Outputs {
-				if err := tools.NewDotNetCli().SetSecret(ctx, key, fmt.Sprint(val.Value), svc.Path()); err != nil {
-					return err
-				}
-			}
-		}
+		svc.RaiseEvent(ctx, project.Deployed)
 	}
 
 	if err = saveEnvironmentValues(res.Result, env); err != nil {

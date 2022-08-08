@@ -9,13 +9,23 @@ pr:
 
 variables:
   - template: /eng/pipelines/templates/variables/globals.yml
+  - name: StagingBranchName
+    # TODO: Use "staging" before merge
+    # value: staging
+    value: djurek-staging-test
 
 stages:
-  - stage: PR_Validation
+  - stage: Validation
     condition: >-
       and(
         succeeded(),
-        eq(variables['Build.Reason'], 'PullRequest')
+        or(
+          eq(variables['BuildReasonOverride'], 'PullRequest'),
+          and(
+            eq('', variables['BuildReasonOverride']),
+            eq(variables['Build.Reason'], 'PullRequest')
+          )
+        )
       )
     jobs:
       - job: Generate_Repos_For_PR
@@ -36,7 +46,7 @@ stages:
             displayName: Set PRNumber
 
           - pwsh: |
-              $targetBranchName = ''
+              $targetBranchName = '$(StagingBranchName)'
               if ('$(Build.Reason)' -eq 'PullRequest' -or $env:BUILDREASONOVERRIDE -eq 'PullRequest') {
                 $targetBranchName = "pr/$(PRNumber)"
                 Write-Host "PR Build, using target branch name: $targetBranchName"
@@ -81,12 +91,50 @@ stages:
             env:
               GH_TOKEN: $(azuresdk-github-pat)
 
+      - job: Publish_Staging
+        condition: >-
+          and(
+            succeeded(),
+            or(
+              in(variables['BuildReasonOverride'], 'IndividualCI', 'BatchedCI'),
+              and(
+                eq('', variables['BuildReasonOverride']),
+                in(variables['Build.Reason'], 'IndividualCI', 'BatchedCI')
+              )
+            )
+          )
+        pool:
+          name: azsdk-pool-mms-ubuntu-2004-general
+          vmImage: MMSUbuntu20.04
+
+        steps:
+          - checkout: self
+
+          - pwsh: |
+              $targetBranchName = '$(StagingBranchName)'
+              if ($env:STAGINGBRANCHOVERRIDE) {
+                $targetBranchName = $env:STAGINGBRANCHOVERRIDE
+                Write-Host "PR Build, using target branch name: $targetBranchName"
+              }
+              Write-Host "##vso[task.setvariable variable=TargetBranchName]$targetBranchName"
+            displayName: Set TargetBranchName
+
+          - template: /eng/pipelines/templates/steps/repoman-generate.yml
+            parameters:
+              TargetBranchName: $(TargetBranchName)
+
 
   - stage: Publish_Repos
     condition: >-
       and(
         succeeded(),
-        eq('Manual', variables['Build.Reason'])
+        or(
+          eq(variables['BuildReasonOverride'], 'Manual'),
+          and(
+            eq('', variables['BuildReasonOverride']),
+            eq(variables['Build.Reason'], 'Manual')
+          )
+        )
       )
     jobs:
     - deployment: Publish_Repos

@@ -10,101 +10,106 @@ pr:
 variables:
   - template: /eng/pipelines/templates/variables/globals.yml
 
-jobs:
-  - job: Generate_Repos_For_PR
-    condition: >-
-      and(
-        succeeded(),
-        eq(variables['Build.Reason'], 'PullRequest')
-      )
-    pool:
-      name: azsdk-pool-mms-ubuntu-2004-general
-      vmImage: MMSUbuntu20.04
+stages:
+  - stage: PR_Validation
+    jobs:
+      - job: Generate_Repos_For_PR
+        condition: >-
+          and(
+            succeeded(),
+            eq(variables['Build.Reason'], 'PullRequest')
+          )
+        pool:
+          name: azsdk-pool-mms-ubuntu-2004-general
+          vmImage: MMSUbuntu20.04
 
-    steps:
-      - checkout: self
+        steps:
+          - checkout: self
 
-      - pwsh: |
-          $PRNumber = '$(System.PullRequest.PullRequestNumber)'
-          if ($env:PRNUMBEROVERRIDE) {
-            Write-Host "PR Number override: $($env:PRNUMBEROVERRIDE)"
-            $PRNumber = "$($env:PRNUMBEROVERRIDE)"
-          }
-          Write-Host "##vso[task.setvariable variable=PRNumber]$PRNumber"
-        displayName: Set PRNumber
+          - pwsh: |
+              $PRNumber = '$(System.PullRequest.PullRequestNumber)'
+              if ($env:PRNUMBEROVERRIDE) {
+                Write-Host "PR Number override: $($env:PRNUMBEROVERRIDE)"
+                $PRNumber = "$($env:PRNUMBEROVERRIDE)"
+              }
+              Write-Host "##vso[task.setvariable variable=PRNumber]$PRNumber"
+            displayName: Set PRNumber
 
-      - pwsh: |
-          $targetBranchName = ''
-          if ('$(Build.Reason)' -eq 'PullRequest' -or $env:BUILDREASONOVERRIDE -eq 'PullRequest') {
-            $targetBranchName = "pr/$(PRNumber)"
-            Write-Host "PR Build, using target branch name: $targetBranchName"
-          }
-          Write-Host "##vso[task.setvariable variable=TargetBranchName]$targetBranchName"
-        displayName: Set TargetBranchName
+          - pwsh: |
+              $targetBranchName = ''
+              if ('$(Build.Reason)' -eq 'PullRequest' -or $env:BUILDREASONOVERRIDE -eq 'PullRequest') {
+                $targetBranchName = "pr/$(PRNumber)"
+                Write-Host "PR Build, using target branch name: $targetBranchName"
+              }
+              Write-Host "##vso[task.setvariable variable=TargetBranchName]$targetBranchName"
+            displayName: Set TargetBranchName
 
-      - template: /eng/pipelines/templates/steps/repoman-generate.yml
-        parameters:
-          TargetBranchName: $(TargetBranchName)
+          - template: /eng/pipelines/templates/steps/repoman-generate.yml
+            parameters:
+              TargetBranchName: $(TargetBranchName)
 
-      - pwsh: |
-          $repomanContent = "No changes detected."
-          $repomanOutputFile = "$([System.IO.Path]::GetTempPath())/repoman.md"
-          if (Test-Path $repomanOutputFile) {
-            $repomanContent = Get-Content $repomanOutputFile -Raw
-          }
+          - pwsh: |
+              $repomanContent = "No changes detected."
+              $repomanOutputFile = "$([System.IO.Path]::GetTempPath())/repoman.md"
+              if (Test-Path $repomanOutputFile) {
+                $repomanContent = Get-Content $repomanOutputFile -Raw
+              }
 
-          $tag ='<!-- #comment-repoman-generate -->'
-          $content = @"
-          $tag
-          ## Repoman Generation Results
-          Repoman pushed changes to remotes for the following projects:
-          $repomanContent
-          "@
-          $file = New-TemporaryFile
-          Set-Content -Path $file -Value $content
-          Write-Host "##vso[task.setvariable variable=CommentBodyFile]$file"
-        displayName: Set Repoman Content
+              $tag ='<!-- #comment-repoman-generate -->'
+              $content = @"
+              $tag
+              ## Repoman Generation Results
+              Repoman pushed changes to remotes for the following projects:
+              $repomanContent
+              "@
+              $file = New-TemporaryFile
+              Set-Content -Path $file -Value $content
+              Write-Host "##vso[task.setvariable variable=CommentBodyFile]$file"
+            displayName: Set Repoman Content
 
-      - task: PowerShell@2
-        displayName: Post PR comment
-        inputs:
-          pwsh: true
-          targetType: filePath
-          filePath: ./eng/scripts/Update-PRComment.ps1
-          arguments: >-
-            -Repo 'azure/azure-dev'
-            -PRNumber '$(PRNumber)'
-            -BodyFile '$(CommentBodyFile)'
-            -Tag '<!-- #comment-repoman-generate -->'
-        env:
-          GH_TOKEN: $(azuresdk-github-pat)
+          - task: PowerShell@2
+            displayName: Post PR comment
+            inputs:
+              pwsh: true
+              targetType: filePath
+              filePath: ./eng/scripts/Update-PRComment.ps1
+              arguments: >-
+                -Repo 'azure/azure-dev'
+                -PRNumber '$(PRNumber)'
+                -BodyFile '$(CommentBodyFile)'
+                -Tag '<!-- #comment-repoman-generate -->'
+            env:
+              GH_TOKEN: $(azuresdk-github-pat)
 
-  - deployment: Publish_Repos
-    condition: >-
-      and(
-        succeeded(),
-        eq('Manual', variables['Build.Reason'])
-      )
-    environment: azure-dev
-    pool:
-      name: azsdk-pool-mms-ubuntu-2004-general
-      vmImage: MMSUbuntu20.04
 
-    strategy:
-      runOnce:
-        deploy:
-          steps:
-            - checkout: self
+  - stage: Publish_Repos
+    jobs:
+    - deployment: Publish_Repos
+      condition: >-
+        and(
+          succeeded(),
+          eq('Manual', variables['Build.Reason'])
+        )
+      environment: azure-dev
+      pool:
+        name: azsdk-pool-mms-ubuntu-2004-general
+        vmImage: MMSUbuntu20.04
 
-            - pwsh: |
-                $targetBranchName = ''
-                if ($env:TARGETBRANCHNAMEOVERRIDE) {
-                  Write-Host "Target branch override $($env:TARGETBRANCHNAMEOVERRIDE)"
-                  $targetBranchName = $env:TARGETBRANCHNAMEOVERRIDE
-                }
-                Write-Host "##vso[task.setvariable variable=TargetBranchName]$targetBranchName"
-              displayName: Set $(TargetBranchName)
+      strategy:
+        runOnce:
+          deploy:
+            steps:
+              - checkout: self
 
-            - template: /eng/pipelines/templates/steps/repoman-generate.yml
-              parameters:
-                TargetBranchName: $(TargetBranchName)
+              - pwsh: |
+                  $targetBranchName = ''
+                  if ($env:TARGETBRANCHNAMEOVERRIDE) {
+                    Write-Host "Target branch override $($env:TARGETBRANCHNAMEOVERRIDE)"
+                    $targetBranchName = $env:TARGETBRANCHNAMEOVERRIDE
+                  }
+                  Write-Host "##vso[task.setvariable variable=TargetBranchName]$targetBranchName"
+                displayName: Set $(TargetBranchName)
+
+              - template: /eng/pipelines/templates/steps/repoman-generate.yml
+                parameters:
+                  TargetBranchName: $(TargetBranchName)

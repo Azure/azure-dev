@@ -88,17 +88,20 @@ jobs:
       name: azsdk-pool-mms-ubuntu-2004-general
       vmImage: MMSUbuntu20.04
 
-    steps:
-      - checkout: self
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+            - checkout: self
 
-      - pwsh: |
-          $targetBranchName = ''
-          if ($env:TARGETBRANCHNAMEOVERRIDE) {
-            Write-Host "Target branch override $($env:TARGETBRANCHNAMEOVERRIDE)"
-            $targetBranchName = $env:TARGETBRANCHNAMEOVERRIDE
-          }
-          Write-Host "##vso[task.setvariable variable=TargetBranchName]$targetBranchName"
-        displayName: Set $(TargetBranchName)
-      - template: /eng/pipelines/templates/steps/repoman-generate.yml
-        parameters:
-          TargetBranchName: $(TargetBranchName)
+            - pwsh: |
+                $targetBranchName = ''
+                if ($env:TARGETBRANCHNAMEOVERRIDE) {
+                  Write-Host "Target branch override $($env:TARGETBRANCHNAMEOVERRIDE)"
+                  $targetBranchName = $env:TARGETBRANCHNAMEOVERRIDE
+                }
+                Write-Host "##vso[task.setvariable variable=TargetBranchName]$targetBranchName"
+              displayName: Set $(TargetBranchName)
+            - template: /eng/pipelines/templates/steps/repoman-generate.yml
+              parameters:
+                TargetBranchName: $(TargetBranchName)

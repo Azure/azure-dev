@@ -46,17 +46,27 @@ stages:
             displayName: Set PRNumber
 
           - pwsh: |
-              $targetBranchName = '$(StagingBranchName)'
-              if ('$(Build.Reason)' -eq 'PullRequest' -or $env:BUILDREASONOVERRIDE -eq 'PullRequest') {
+              $targetBranchName = ''
+              if ('$(Build.Reason)' -eq 'PullRequest') {
                 $targetBranchName = "pr/$(PRNumber)"
                 Write-Host "PR Build, using target branch name: $targetBranchName"
               }
               Write-Host "##vso[task.setvariable variable=TargetBranchName]$targetBranchName"
             displayName: Set TargetBranchName
 
+          - pwsh: |
+              $baseBranchName = '$(StagingBranchName)'
+              if ($env:BaseBranchOverride) {
+                $baseBranchName = "$($env:BaseBranchOverride)"
+                Write-Host "PR Number override: $baseBranchName"
+              }
+              Write-Host "##vso[task.setvariable variable=BaseBranchName]$baseBranchName"
+            displayName: Set $(BaseBranchName)
+
           - template: /eng/pipelines/templates/steps/repoman-generate.yml
             parameters:
               TargetBranchName: $(TargetBranchName)
+              BaseBranchName: $(BaseBranchName)
 
           - pwsh: |
               $repomanContent = "No changes detected."

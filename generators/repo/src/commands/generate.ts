@@ -18,6 +18,7 @@ export interface GenerateCommandOptions extends RepomanCommandOptions {
     failOnUpdateError?: boolean
     remote?: string
     branch?: string
+    baseBranch?: string
     message?: string
     resultsFile?: string
 }
@@ -129,7 +130,7 @@ export class GenerateCommand implements RepomanCommand {
     }
 
     private updateRemote = async (repo: GitRepo, remote: GitRemote): Promise<RemotePushResult> => {
-        const defaultBranch = remote.branch || "main";
+        const defaultBranch = this.options.baseBranch || remote.branch || "main";
         const targetBranch = this.options.branch || defaultBranch;
         const repoProps = getRepoPropsFromRemote(remote.url);
 

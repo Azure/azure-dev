@@ -1,5 +1,6 @@
 parameters:
   TargetBranchName: $(TargetBranchName)
+  BaseBranchName: $(BaseBranchName)
   GitHubPat: $(azuresdk-github-pat)
 
 steps:
@@ -34,4 +35,6 @@ steps:
       pwsh: true
       targetType: filePath
       filePath: ./eng/scripts/Invoke-RepomanGenerate.ps1
-      arguments: -TargetBranchName "${{ parameters.TargetBranchName }}"
+      arguments: >-
+        -TargetBranchName "${{ parameters.TargetBranchName }}"
+        -BaseBranchName "${{ parameters.BaseBranchName }}"

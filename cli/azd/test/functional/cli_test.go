@@ -283,7 +283,7 @@ func Test_CLI_InfraCreateAndDeleteWebApp(t *testing.T) {
 
 	cli := azdcli.NewCLI(t)
 	cli.WorkingDirectory = dir
-	cli.Env = append(os.Environ(), "AZURE_LOCATION=eastus2")
+	cli.Env = append(os.Environ(), "AZURE_LOCATION=westus3")
 
 	err := copySample(dir, "webapp")
 	require.NoError(t, err, "failed expanding sample")
@@ -333,7 +333,7 @@ func Test_CLI_InfraCreateAndDeleteWebApp(t *testing.T) {
 	secrets, err := executil.RunCommandWithShell(ctx, "dotnet", "user-secrets", "list", "--project", filepath.Join(dir, "/src/dotnet/webapp.csproj"))
 	require.NoError(t, err)
 
-	contain := strings.Contains(secrets.Stdout, fmt.Sprintf("WEBSITE_URL = https://%s.azurewebsites.net/", envName))
+	contain := strings.Contains(secrets.Stdout, fmt.Sprintf("WEBSITE_URL = %s", url))
 	require.True(t, contain)
 
 	// Ensure `env refresh` works by removing an output parameter from the .env file and ensure that `env refresh`

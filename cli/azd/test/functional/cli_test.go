@@ -12,7 +12,6 @@ import (
 	"fmt"
 	"io/fs"
 	"io/ioutil"
-	"log"
 	"net/http"
 	"os"
 	"os/exec"
@@ -332,8 +331,8 @@ func Test_CLI_InfraCreateAndDeleteWebApp(t *testing.T) {
 	require.NoError(t, err)
 
 	secrets, err := executil.RunCommandWithShell(ctx, "dotnet", "user-secrets", "list", "--project", filepath.Join(dir, "/src/dotnet/webapp.csproj"))
-	log.Fatal("!!!!!", secrets)
 	require.NoError(t, err)
+
 	contain := strings.Contains(secrets.Stdout, fmt.Sprintf("WEBSITE_URL = https://%s.azurewebsites.net/", envName))
 	require.True(t, contain)
 

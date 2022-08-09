@@ -1,6 +1,10 @@
 # Release History
 
-## 0.1.0-beta.4 (Unreleased)
+## 0.1.0-beta.4 (2022-08-10)
+
+### Features Added
+
+- [[#140]](https://github.com/Azure/azure-dev/pull/140) Add consistent resource abbreviations.
 
 ## 0.1.0-beta.3 (2022-07-28)
 

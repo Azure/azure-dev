@@ -215,11 +215,8 @@ func RedactSensitiveData(msg string) string {
 	}
 
 	for _, val := range regexpRedact {
-		// fmt.Println("!!!", val)
-		// fmt.Println("!!!", val.matchString.FindString(msg))
-		// fmt.Println("!!!", msg)
 		regMatchString := val.matchString.FindString(msg)
-		if strings.Contains(msg, regMatchString) {
+		if regMatchString != "" && strings.Contains(msg, regMatchString) {
 			return strings.Replace(msg, regMatchString, val.replaceString, -1)
 		}
 	}
@@ -284,6 +281,8 @@ func RunWithResult(ctx context.Context, args RunArgs) (RunResult, error) {
 
 	if args.Debug {
 		log.Printf("Exit Code:%d\nOut:%s\nErr:%s\n", cmd.ProcessState.ExitCode(), RedactSensitiveData(stdout.String()), stderr.String())
+
+		//log.Printf("Exit Code:%d\nOut:%s\nErr:%s\n", cmd.ProcessState.ExitCode(), stdout.String(), stderr.String())
 	}
 
 	rr := RunResult{

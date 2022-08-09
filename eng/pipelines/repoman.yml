@@ -1,4 +1,12 @@
-trigger: none
+trigger:
+  paths:
+    include: 
+      - generators/
+      - templates/
+      - eng/pipelines/repoman.yml
+  branches: 
+    include:
+      - main
 
 pr:
   paths:

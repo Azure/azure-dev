@@ -281,8 +281,6 @@ func RunWithResult(ctx context.Context, args RunArgs) (RunResult, error) {
 
 	if args.Debug {
 		log.Printf("Exit Code:%d\nOut:%s\nErr:%s\n", cmd.ProcessState.ExitCode(), RedactSensitiveData(stdout.String()), stderr.String())
-
-		//log.Printf("Exit Code:%d\nOut:%s\nErr:%s\n", cmd.ProcessState.ExitCode(), stdout.String(), stderr.String())
 	}
 
 	rr := RunResult{

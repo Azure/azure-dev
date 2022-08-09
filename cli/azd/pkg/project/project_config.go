@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io/ioutil"
 	"log"
 	"os"
 	"path/filepath"
@@ -275,7 +274,7 @@ func (p *ProjectConfig) Initialize(ctx context.Context, env *environment.Environ
 // This does not evaluate any tooling
 func LoadProjectConfig(projectPath string, env *environment.Environment) (*ProjectConfig, error) {
 	log.Printf("Reading project from file '%s'\n", projectPath)
-	bytes, err := ioutil.ReadFile(projectPath)
+	bytes, err := os.ReadFile(projectPath)
 	if err != nil {
 		return nil, fmt.Errorf("reading project file: %w", err)
 	}

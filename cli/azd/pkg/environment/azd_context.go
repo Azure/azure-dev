@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"sort"
@@ -69,7 +68,7 @@ func (c *AzdContext) BicepModulePath(module string) string {
 // BicepParameters reads the parameters from the deployment parameter file for a module in
 // an environment.
 func (c *AzdContext) BicepParameters(env string, module string) (map[string]interface{}, error) {
-	byts, err := ioutil.ReadFile(c.BicepParametersFilePath(env, module))
+	byts, err := os.ReadFile(c.BicepParametersFilePath(env, module))
 	switch {
 	case errors.Is(err, os.ErrNotExist):
 		return make(map[string]interface{}), nil
@@ -122,7 +121,7 @@ func (c *AzdContext) WriteBicepParameters(env string, module string, parameters 
 		return fmt.Errorf("marshaling parameters: %w", err)
 	}
 
-	err = ioutil.WriteFile(c.BicepParametersFilePath(env, module), byts, osutil.PermissionFile)
+	err = os.WriteFile(c.BicepParametersFilePath(env, module), byts, osutil.PermissionFile)
 	if err != nil {
 		return fmt.Errorf("writing parameters file: %w", err)
 	}
@@ -171,7 +170,7 @@ func (c *AzdContext) ListEnvironments() ([]EnvironmentView, error) {
 // an empty string if a default environment has not been set.
 func (c *AzdContext) GetDefaultEnvironmentName() (string, error) {
 	path := filepath.Join(c.EnvironmentDirectory(), ConfigFileName)
-	file, err := ioutil.ReadFile(path)
+	file, err := os.ReadFile(path)
 	switch {
 	case errors.Is(err, os.ErrNotExist):
 		return "", nil
@@ -197,7 +196,7 @@ func (c *AzdContext) SetDefaultEnvironmentName(name string) error {
 		return fmt.Errorf("serializing config file: %w", err)
 	}
 
-	if err := ioutil.WriteFile(path, byts, osutil.PermissionFile); err != nil {
+	if err := os.WriteFile(path, byts, osutil.PermissionFile); err != nil {
 		return fmt.Errorf("writing config file: %w", err)
 	}
 

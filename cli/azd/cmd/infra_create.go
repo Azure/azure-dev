@@ -283,7 +283,9 @@ func (ica *infraCreateAction) Run(ctx context.Context, cmd *cobra.Command, args 
 
 	project.BicepOutput = res.Result.Properties.Outputs
 	for _, svc := range proj.Services {
-		svc.RaiseEvent(ctx, project.Deployed)
+		if err := svc.RaiseEvent(ctx, project.Deployed); err != nil {
+			return err
+		}
 	}
 
 	if err = saveEnvironmentValues(res.Result, env); err != nil {

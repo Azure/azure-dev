@@ -55,7 +55,6 @@ services:
 	docker := tools.NewDocker(dockerArgs)
 
 	progress := make(chan string)
-	done := make(chan struct{})
 
 	internalFramework := NewNpmProject(service.Config, &env)
 	progressMessages := []string{}
@@ -64,13 +63,11 @@ services:
 		for value := range progress {
 			progressMessages = append(progressMessages, value)
 		}
-		done <- struct{}{}
 	}()
 
 	framework := NewDockerProject(service.Config, &env, docker, internalFramework)
 	res, err := framework.Package(ctx, progress)
-	close(progress)
-	<-done
+	defer close(progress)
 
 	require.Equal(t, "imageId", res)
 	require.Nil(t, err)

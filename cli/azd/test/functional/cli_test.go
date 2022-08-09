@@ -283,7 +283,7 @@ func Test_CLI_InfraCreateAndDeleteWebApp(t *testing.T) {
 
 	cli := azdcli.NewCLI(t)
 	cli.WorkingDirectory = dir
-	cli.Env = append(os.Environ(), "AZURE_LOCATION=westus3")
+	cli.Env = append(os.Environ(), "AZURE_LOCATION=eastus2")
 
 	err := copySample(dir, "webapp")
 	require.NoError(t, err, "failed expanding sample")

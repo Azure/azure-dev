@@ -142,7 +142,6 @@ func (t *TaskWithProgress[R, P]) Run() error {
 
 		t.taskFn(context)
 		t.complete(context.result, context.error)
-		close(t.progressChannel)
 	}()
 
 	return nil
@@ -186,8 +185,6 @@ func (t *InteractiveTaskWithProgress[R, P]) Run() error {
 
 		t.taskFn(context)
 		t.complete(context.result, context.error)
-		close(t.progressChannel)
-		close(t.interactiveChannel)
 	}()
 
 	return nil

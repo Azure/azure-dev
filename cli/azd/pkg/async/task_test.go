@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"testing"
-	"time"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
@@ -15,7 +14,6 @@ func TestTaskWithResult(t *testing.T) {
 	expectedResult := "result"
 
 	task := NewTask(func(ctx *TaskContext[string]) {
-		time.Sleep(250 * time.Millisecond)
 		ctx.SetResult(expectedResult)
 	})
 	err := task.Run()
@@ -31,7 +29,6 @@ func TestTaskWithAwait(t *testing.T) {
 	expectedResult := "result"
 
 	task := NewTask(func(ctx *TaskContext[string]) {
-		time.Sleep(250 * time.Millisecond)
 		ctx.SetResult(expectedResult)
 	})
 	err := task.Run()
@@ -47,7 +44,6 @@ func TestTaskWithError(t *testing.T) {
 	expectedError := errors.New("example error")
 
 	task := NewTask(func(ctx *TaskContext[string]) {
-		time.Sleep(250 * time.Millisecond)
 		ctx.SetError(expectedError)
 	})
 	err := task.Run()
@@ -65,8 +61,8 @@ func TestTaskWithProgressWithResult(t *testing.T) {
 
 	task := NewTaskWithProgress(func(ctx *TaskContextWithProgress[string, string]) {
 		ctx.SetProgress("thing 1")
-		time.Sleep(250 * time.Millisecond)
 		ctx.SetProgress("thing 2")
+		ctx.SetProgress("thing 3")
 		ctx.SetResult(expectedResult)
 	})
 
@@ -82,9 +78,10 @@ func TestTaskWithProgressWithResult(t *testing.T) {
 	actualResult, err := task.Await()
 	require.Equal(t, expectedResult, actualResult)
 	require.Nil(t, err)
-	require.Equal(t, 2, len(progress))
+	require.Equal(t, 3, len(progress))
 	require.Equal(t, "thing 1", progress[0])
 	require.Equal(t, "thing 2", progress[1])
+	require.Equal(t, "thing 3", progress[2])
 }
 
 func TestTaskWithProgressWithError(t *testing.T) {
@@ -93,7 +90,6 @@ func TestTaskWithProgressWithError(t *testing.T) {
 
 	task := NewTaskWithProgress(func(ctx *TaskContextWithProgress[string, string]) {
 		ctx.SetProgress("thing 1")
-		time.Sleep(250 * time.Millisecond)
 		ctx.SetProgress("thing 2")
 
 		// Something bad happens but previous project goes through
@@ -136,7 +132,6 @@ func TestInteractiveTaskWithResult(t *testing.T) {
 		var selectedLocation string
 
 		taskContext.SetProgress("thing 1")
-		time.Sleep(250 * time.Millisecond)
 		taskContext.SetProgress("thing 2")
 
 		err := taskContext.Interact(func() error {
@@ -224,7 +219,6 @@ func TestInteractiveTaskWithError(t *testing.T) {
 		var selectedLocation string
 
 		taskContext.SetProgress("thing 1")
-		time.Sleep(250 * time.Millisecond)
 		taskContext.SetProgress("thing 2")
 
 		err := taskContext.Interact(func() error {
@@ -292,7 +286,6 @@ func TestInteractiveTaskWithError(t *testing.T) {
 
 func TestTaskCannotRunAgain(t *testing.T) {
 	task := NewTask(func(ctx *TaskContext[string]) {
-		time.Sleep(250 * time.Millisecond)
 		ctx.SetResult("result")
 	})
 
@@ -308,7 +301,6 @@ func TestTaskCannotRunAgain(t *testing.T) {
 
 func TestTaskStatusWithSuccess(t *testing.T) {
 	task := NewTask(func(ctx *TaskContext[string]) {
-		time.Sleep(250 * time.Millisecond)
 		ctx.SetResult("result")
 	})
 
@@ -324,7 +316,6 @@ func TestTaskStatusWithSuccess(t *testing.T) {
 
 func TestTaskStatusWithError(t *testing.T) {
 	task := NewTask(func(ctx *TaskContext[string]) {
-		time.Sleep(250 * time.Millisecond)
 		ctx.SetError(errors.New("error"))
 	})
 

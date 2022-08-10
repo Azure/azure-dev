@@ -71,7 +71,7 @@ func TestInfraDestroyWithPositiveConfirmation(t *testing.T) {
 	console := mocks.NewMockConsole()
 
 	console.WhenConfirm(func(options input.ConsoleOptions) bool {
-		return strings.Contains(options.Message, "Are you sure")
+		return strings.Contains(options.Message, "Are you sure you want to destroy?")
 	}).Respond(true)
 
 	cliArgs := tools.NewCliToolArgs{
@@ -86,7 +86,7 @@ func TestInfraDestroyWithPositiveConfirmation(t *testing.T) {
 
 	require.NotNil(t, destroyResult)
 	require.Nil(t, err)
-	require.Contains(t, console.Output(), "Are you sure")
+	require.Contains(t, console.Output(), "Are you sure you want to destroy?")
 }
 
 func TestInfraDestroyWithNegativeConfirmation(t *testing.T) {
@@ -100,7 +100,7 @@ func TestInfraDestroyWithNegativeConfirmation(t *testing.T) {
 	console := mocks.NewMockConsole()
 
 	console.WhenConfirm(func(options input.ConsoleOptions) bool {
-		return strings.Contains(options.Message, "Are you sure")
+		return strings.Contains(options.Message, "Are you sure you want to destroy?")
 	}).Respond(false)
 
 	cliArgs := tools.NewCliToolArgs{
@@ -115,5 +115,5 @@ func TestInfraDestroyWithNegativeConfirmation(t *testing.T) {
 
 	require.Nil(t, destroyResult)
 	require.NotNil(t, err)
-	require.Contains(t, console.Output(), "Are you sure")
+	require.Contains(t, console.Output(), "Are you sure you want to destroy?")
 }

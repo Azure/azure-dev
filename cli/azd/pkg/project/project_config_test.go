@@ -188,7 +188,7 @@ func TestProjectConfigAddHandler(t *testing.T) {
 	err = project.AddHandler(Deployed, handler)
 	require.NotNil(t, err)
 
-	err = project.RaiseEvent(ctx, Deployed)
+	err = project.RaiseEvent(ctx, Deployed, nil)
 	require.Nil(t, err)
 	require.True(t, handlerCalled)
 }
@@ -221,7 +221,7 @@ func TestProjectConfigRemoveHandler(t *testing.T) {
 	require.NotNil(t, err)
 
 	// No events are registered at the time event was raised
-	err = project.RaiseEvent(ctx, Deployed)
+	err = project.RaiseEvent(ctx, Deployed, nil)
 	require.Nil(t, err)
 	require.False(t, handler1Called)
 	require.False(t, handler2Called)
@@ -250,7 +250,7 @@ func TestProjectConfigWithMultipleEventHandlers(t *testing.T) {
 	err = project.AddHandler(Deployed, handler2)
 	require.Nil(t, err)
 
-	err = project.RaiseEvent(ctx, Deployed)
+	err = project.RaiseEvent(ctx, Deployed, nil)
 	require.Nil(t, err)
 	require.True(t, handlerCalled1)
 	require.True(t, handlerCalled2)
@@ -278,7 +278,7 @@ func TestProjectConfigWithMultipleEvents(t *testing.T) {
 	err = project.AddHandler(Deployed, deployHandler)
 	require.Nil(t, err)
 
-	err = project.RaiseEvent(ctx, Provisioned)
+	err = project.RaiseEvent(ctx, Provisioned, nil)
 	require.Nil(t, err)
 
 	require.True(t, provisionHandlerCalled)
@@ -302,7 +302,7 @@ func TestProjectConfigWithEventHandlerErrors(t *testing.T) {
 	err = project.AddHandler(Provisioned, handler2)
 	require.Nil(t, err)
 
-	err = project.RaiseEvent(ctx, Provisioned)
+	err = project.RaiseEvent(ctx, Provisioned, nil)
 	require.NotNil(t, err)
 	require.Contains(t, err.Error(), "sample error 1")
 	require.Contains(t, err.Error(), "sample error 2")
@@ -328,4 +328,52 @@ services:
 	projectConfig, _ := ParseProjectConfig(testProj, &e)
 
 	return projectConfig
+}
+
+func TestProjectConfigRaiseEventWithoutArgs(t *testing.T) {
+	ctx := context.Background()
+	project := getProjectConfig()
+	handlerCalled := false
+
+	handler := func(ctx context.Context, args ProjectLifecycleEventArgs) error {
+		handlerCalled = true
+		require.Empty(t, args.Args)
+		return nil
+	}
+
+	err := project.AddHandler(Deployed, handler)
+	require.Nil(t, err)
+
+	// Expected error if attempting to register the same handler more than 1 time
+	err = project.AddHandler(Deployed, handler)
+	require.NotNil(t, err)
+
+	err = project.RaiseEvent(ctx, Deployed, nil)
+	require.Nil(t, err)
+	require.True(t, handlerCalled)
+}
+
+func TestProjectConfigRaiseEventWithArgs(t *testing.T) {
+	ctx := context.Background()
+	project := getProjectConfig()
+	handlerCalled := false
+	eventArgs := make(map[string]any)
+	eventArgs["foo"] = "bar"
+
+	handler := func(ctx context.Context, args ProjectLifecycleEventArgs) error {
+		handlerCalled = true
+		require.Equal(t, args.Args["foo"], "bar")
+		return nil
+	}
+
+	err := project.AddHandler(Deployed, handler)
+	require.Nil(t, err)
+
+	// Expected error if attempting to register the same handler more than 1 time
+	err = project.AddHandler(Deployed, handler)
+	require.NotNil(t, err)
+
+	err = project.RaiseEvent(ctx, Deployed, eventArgs)
+	require.Nil(t, err)
+	require.True(t, handlerCalled)
 }

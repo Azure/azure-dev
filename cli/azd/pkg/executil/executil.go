@@ -198,7 +198,7 @@ type RunArgs struct {
 	EnrichError bool
 }
 
-type RedactData struct {
+type redactData struct {
 	matchString   *regexp.Regexp
 	replaceString string
 }

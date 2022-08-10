@@ -8,8 +8,12 @@ repo:
   includeProjectAssets: true
 
   remotes:
-    - name: azure-samples
+    - name: azure-samples-main
       url: git@github.com:Azure-Samples/todo-python-mongo-swa-func.git
+    - name: azure-samples-staging
+      url: git@github.com:Azure-Samples/todo-python-mongo-swa-func.git
+      # TODO: Set to "staging"
+      branch: djurek-staging-test-remote
 
   rewrite:
     patterns:

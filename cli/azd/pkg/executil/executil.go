@@ -207,17 +207,17 @@ func (rr RunResult) String() string {
 	return fmt.Sprintf("exit code: %d, stdout: %s, stderr: %s", rr.ExitCode, rr.Stdout, rr.Stderr)
 }
 
-func RedactSensitiveData(msg string) string {
-	regexpRedact := make(map[string]RedactData)
-	regexpRedact["access token"] = RedactData{
+func redactSensitiveData(msg string) string {
+	regexpRedactRules := make(map[string]redactData)
+	regexpRedactRules["access token"] = redactData{
 		matchString:   regexp.MustCompile("\"accessToken\": \".*\""),
 		replaceString: "\"accessToken\": \"redact to prevent sensitive data\"",
 	}
 
-	for _, val := range regexpRedact {
-		regMatchString := val.matchString.FindString(msg)
+	for _, redactRule := range regexpRedactRules {
+		regMatchString := redactRule.matchString.FindString(msg)
 		if regMatchString != "" && strings.Contains(msg, regMatchString) {
-			return strings.Replace(msg, regMatchString, val.replaceString, -1)
+			return strings.Replace(msg, regMatchString, redactRule.replaceString, -1)
 		}
 	}
 	return msg
@@ -280,7 +280,7 @@ func RunWithResult(ctx context.Context, args RunArgs) (RunResult, error) {
 	err = cmd.Wait()
 
 	if args.Debug {
-		log.Printf("Exit Code:%d\nOut:%s\nErr:%s\n", cmd.ProcessState.ExitCode(), RedactSensitiveData(stdout.String()), stderr.String())
+		log.Printf("Exit Code:%d\nOut:%s\nErr:%s\n", cmd.ProcessState.ExitCode(), redactSensitiveData(stdout.String()), stderr.String())
 	}
 
 	rr := RunResult{

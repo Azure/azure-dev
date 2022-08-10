@@ -5,8 +5,8 @@ Generates azure-sample style repositories for applications based on a repo templ
 ## Usage
 
 ```
-  _ __ ___ _ __   ___  _ __ ___   __ _ _ __  
- | '__/ _ \ '_ \ / _ \| '_ ` _ \ / _` | '_ \ 
+  _ __ ___ _ __   ___  _ __ ___   __ _ _ __
+ | '__/ _ \ '_ \ / _ \| '_ ` _ \ / _` | '_ \
  | | |  __/ |_) | (_) | | | | | | (_| | | | |
  |_|  \___| .__/ \___/|_| |_| |_|\__,_|_| |_|
           |_|
@@ -20,14 +20,10 @@ Options:
   -s, --source <source>         The template source location (default: ".")
   -t --templateFile <template>  The repo template manifest location (default: "./repo.yaml")
   -u --update                   When set will commit and push changes to the specified remotes & branches (default: false)
-  -h --https                    When set will generate HTTPS remote URLs for GitHub repos (useful for using a HTTPS PAT when updating) (default: false)
-  -e --fail-on-update-error     When set will fail on remote update errors (default: false)
   -r --remote <targetRemote>    The remote name used while committing back to the target repos
   -b --branch <targetBranch>    The target branch name for committing back to the target repos
-  -a --baseBranch <baseBranch>  Base branch used for comparing changes
   -m --message <message>        Custom commit message used for committing back to the target repos
-  --resultsFile <resultsFile>   When specified writes markdown results to a file
-  --help                        display help for command
+  -h, --help                    display help for command
 ```
 
 ## Examples

@@ -29,8 +29,8 @@ export class GitRepo {
         await executeCommand("git init", this.execOptions);
     }
 
-    public clone = async (name: string, url: string, branch: string) => {
-        await executeCommand(`git clone -o ${name} -b ${branch} ${url} .`, this.execOptions);
+    public clone = async (name: string, url: string) => {
+        await executeCommand(`git clone -o ${name} ${url} .`, this.execOptions);
     }
 
     public fetch = async (remote: string) => {

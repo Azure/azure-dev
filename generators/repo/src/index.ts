@@ -34,7 +34,6 @@ export const main = async () => {
         .option("-e --fail-on-update-error", "When set will fail on remote update errors", false)
         .option("-r --remote <targetRemote>", "The remote name used while committing back to the target repos")
         .option("-b --branch <targetBranch>", "The target branch name for committing back to the target repos")
-        .option("-a --baseBranch <baseBranch>", "Base branch used for comparing changes")
         .option("-m --message <message>", "Custom commit message used for committing back to the target repos")
         .option("--resultsFile <resultsFile>", "When specified writes markdown results to a file")
         .action(async (options: GenerateCommandOptions) => {

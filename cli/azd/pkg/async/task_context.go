@@ -1,4 +1,3 @@
-//nolint:all
 package async
 
 // Task function definition

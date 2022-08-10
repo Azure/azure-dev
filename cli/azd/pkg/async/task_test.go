@@ -18,7 +18,8 @@ func TestTaskWithResult(t *testing.T) {
 		time.Sleep(250 * time.Millisecond)
 		ctx.SetResult(expectedResult)
 	})
-	task.Run()
+	err := task.Run()
+	require.NoError(t, err)
 
 	actualResult, err := task.Await()
 
@@ -33,7 +34,8 @@ func TestTaskWithAwait(t *testing.T) {
 		time.Sleep(250 * time.Millisecond)
 		ctx.SetResult(expectedResult)
 	})
-	task.Run()
+	err := task.Run()
+	require.NoError(t, err)
 
 	actualResult, err := task.Await()
 
@@ -48,7 +50,8 @@ func TestTaskWithError(t *testing.T) {
 		time.Sleep(250 * time.Millisecond)
 		ctx.SetError(expectedError)
 	})
-	task.Run()
+	err := task.Run()
+	require.NoError(t, err)
 
 	actualResult, err := task.Await()
 
@@ -63,7 +66,8 @@ func TestTaskWithInvalidUsage(t *testing.T) {
 			ctx.SetError(errors.New("error"))
 			ctx.SetResult("value")
 		})
-		task.Run()
+		err := task.Run()
+		require.NoError(t, err)
 
 		_, _ = task.Await()
 	})
@@ -86,7 +90,8 @@ func TestTaskWithProgressWithResult(t *testing.T) {
 		}
 	}()
 
-	task.Run()
+	err := task.Run()
+	require.NoError(t, err)
 
 	actualResult, err := task.Await()
 	require.Equal(t, expectedResult, actualResult)
@@ -115,7 +120,8 @@ func TestTaskWithProgressWithError(t *testing.T) {
 		}
 	}()
 
-	task.Run()
+	err := task.Run()
+	require.NoError(t, err)
 
 	actualResult, err := task.Await()
 	require.Equal(t, "", actualResult)
@@ -183,7 +189,8 @@ func TestInteractiveTaskWithResult(t *testing.T) {
 		taskContext.SetResult(selectedLocation)
 	})
 
-	task.Run()
+	err := task.Run()
+	require.NoError(t, err)
 
 	go func() {
 		for status := range task.Progress() {
@@ -268,7 +275,8 @@ func TestInteractiveTaskWithError(t *testing.T) {
 		taskContext.SetResult(selectedLocation)
 	})
 
-	task.Run()
+	err := task.Run()
+	require.NoError(t, err)
 
 	go func() {
 		for status := range task.Progress() {
@@ -320,7 +328,8 @@ func TestTaskStatusWithSuccess(t *testing.T) {
 
 	require.Equal(t, Created, task.Status())
 
-	task.Run()
+	err := task.Run()
+	require.NoError(t, err)
 	require.Equal(t, Running, task.Status())
 
 	_, _ = task.Await()
@@ -335,7 +344,8 @@ func TestTaskStatusWithError(t *testing.T) {
 
 	require.Equal(t, Created, task.Status())
 
-	task.Run()
+	err := task.Run()
+	require.NoError(t, err)
 	require.Equal(t, Running, task.Status())
 
 	_, _ = task.Await()

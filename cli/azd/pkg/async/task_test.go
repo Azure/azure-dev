@@ -59,20 +59,6 @@ func TestTaskWithError(t *testing.T) {
 	require.Equal(t, expectedError, err)
 }
 
-func TestTaskWithInvalidUsage(t *testing.T) {
-	require.Panics(t, func() {
-		task := NewTask(func(ctx *TaskContext[string]) {
-			time.Sleep(250 * time.Millisecond)
-			ctx.SetError(errors.New("error"))
-			ctx.SetResult("value")
-		})
-		err := task.Run()
-		require.NoError(t, err)
-
-		_, _ = task.Await()
-	})
-}
-
 func TestTaskWithProgressWithResult(t *testing.T) {
 	expectedResult := "result"
 	progress := []string{}

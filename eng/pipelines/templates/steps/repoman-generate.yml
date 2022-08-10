@@ -37,4 +37,4 @@ steps:
       filePath: ./eng/scripts/Invoke-RepomanGenerate.ps1
       arguments: >-
         -TargetBranchName "${{ parameters.TargetBranchName }}"
-        -BaseBranchName "${{ parameters.BaseBranchName }}"
+        -RemoteName "azure-samples-staging"

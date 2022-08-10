@@ -8,7 +8,6 @@
 
 ### Bugs Fixed
 
-<<<<<<< HEAD
 - [[#245]](https://github.com/Azure/azure-dev/issues/245) Fix Windows installer script modifying `PATH` environment variable to `REG_SZ` (reported by [@alexandair](https://github.com/alexandair))
 
 ## 0.1.0-beta.3 (2022-07-28)

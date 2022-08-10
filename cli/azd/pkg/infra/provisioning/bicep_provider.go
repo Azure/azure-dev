@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io/ioutil"
 	"log"
 	"math"
 	"net/url"
@@ -116,7 +115,7 @@ func (p *BicepProvider) UpdatePlan(ctx context.Context, preview Preview) error {
 	}
 
 	parametersFilePath := p.parametersFilePath()
-	err = ioutil.WriteFile(parametersFilePath, bytes, 0644)
+	err = os.WriteFile(parametersFilePath, bytes, 0644)
 	if err != nil {
 		return fmt.Errorf("writing parameters file: %w", err)
 	}
@@ -295,7 +294,7 @@ func (p *BicepProvider) createParametersFile() (*BicepTemplate, error) {
 	// Copy the parameter template file to the environment working directory and do substitutions.
 	parametersTemplateFilePath := p.parametersTemplateFilePath()
 	log.Printf("Reading parameters template file from: %s", parametersTemplateFilePath)
-	parametersBytes, err := ioutil.ReadFile(parametersTemplateFilePath)
+	parametersBytes, err := os.ReadFile(parametersTemplateFilePath)
 	if err != nil {
 		return nil, fmt.Errorf("reading parameter file template: %w", err)
 	}
@@ -317,7 +316,7 @@ func (p *BicepProvider) createParametersFile() (*BicepTemplate, error) {
 	}
 
 	log.Printf("Writing parameters file to: %s", parametersFilePath)
-	err = ioutil.WriteFile(parametersFilePath, []byte(replaced), 0644)
+	err = os.WriteFile(parametersFilePath, []byte(replaced), 0644)
 	if err != nil {
 		return nil, fmt.Errorf("writing parameter file: %w", err)
 	}

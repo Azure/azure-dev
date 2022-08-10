@@ -149,6 +149,10 @@ func (p *BicepProvider) Deploy(ctx context.Context, preview *Preview, scope Scop
 
 			// Start the deployment
 			go func() {
+				defer func() {
+					isDeploymentComplete = true
+				}()
+
 				modulePath := p.modulePath()
 				parametersFilePath := p.parametersFilePath()
 				deployResult, err := p.deployModule(ctx, scope, modulePath, parametersFilePath)
@@ -156,7 +160,6 @@ func (p *BicepProvider) Deploy(ctx context.Context, preview *Preview, scope Scop
 
 				if err != nil {
 					asyncContext.SetError(err)
-					isDeploymentComplete = true
 					return
 				}
 
@@ -170,7 +173,6 @@ func (p *BicepProvider) Deploy(ctx context.Context, preview *Preview, scope Scop
 				}
 
 				asyncContext.SetResult(result)
-				isDeploymentComplete = true
 			}()
 
 			// Report incremental progress

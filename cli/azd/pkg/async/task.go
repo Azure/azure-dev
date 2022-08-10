@@ -102,7 +102,9 @@ func (t *Task[R]) complete(result R, err error) {
 // Creates and schedules the task function and returns a task instance that holds the future result
 func RunTask[R comparable](taskFn TaskRunFunc[R]) *Task[R] {
 	task := NewTask(taskFn)
-	task.Run()
+	if err := task.Run(); err != nil {
+		panic(err)
+	}
 
 	return task
 }
@@ -149,7 +151,9 @@ func (t *TaskWithProgress[R, P]) Run() error {
 // Creates and schedules the task function and returns a task instance that holds the future result
 func RunTaskWithProgress[R comparable, P comparable](taskFn TaskWithProgressRunFunc[R, P]) *TaskWithProgress[R, P] {
 	task := NewTaskWithProgress(taskFn)
-	task.Run()
+	if err := task.Run(); err != nil {
+		panic(err)
+	}
 
 	return task
 }
@@ -197,7 +201,9 @@ func (t *InteractiveTaskWithProgress[R, P]) Interactive() <-chan bool {
 // Creates and schedules the task function and returns a task instance that holds the future result
 func RunInteractiveTaskWithProgress[R comparable, P comparable](taskFn InteractiveTaskWithProgressRunFunc[R, P]) *InteractiveTaskWithProgress[R, P] {
 	task := NewInteractiveTaskWithProgress(taskFn)
-	task.Run()
+	if err := task.Run(); err != nil {
+		panic(err)
+	}
 
 	return task
 }

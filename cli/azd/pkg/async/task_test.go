@@ -58,7 +58,7 @@ func TestTaskWithError(t *testing.T) {
 func TestTaskWithProgressWithResult(t *testing.T) {
 	expectedResult := "result"
 	progress := []string{}
-	done := make(chan bool)
+	progressDone := make(chan bool)
 
 	task := NewTaskWithProgress(func(ctx *TaskContextWithProgress[string, string]) {
 		ctx.SetProgress("thing 1")
@@ -71,14 +71,14 @@ func TestTaskWithProgressWithResult(t *testing.T) {
 		for status := range task.Progress() {
 			progress = append(progress, status)
 		}
-		done <- true
+		progressDone <- true
 	}()
 
 	err := task.Run()
 	require.NoError(t, err)
 
 	actualResult, err := task.Await()
-	<-done
+	<-progressDone
 
 	require.Equal(t, expectedResult, actualResult)
 	require.Nil(t, err)
@@ -91,7 +91,7 @@ func TestTaskWithProgressWithResult(t *testing.T) {
 func TestTaskWithProgressWithError(t *testing.T) {
 	expectedError := errors.New("example error")
 	progress := []string{}
-	done := make(chan bool, 1)
+	progressDone := make(chan bool, 1)
 
 	task := NewTaskWithProgress(func(ctx *TaskContextWithProgress[string, string]) {
 		ctx.SetProgress("thing 1")
@@ -105,14 +105,14 @@ func TestTaskWithProgressWithError(t *testing.T) {
 		for status := range task.Progress() {
 			progress = append(progress, status)
 		}
-		done <- true
+		progressDone <- true
 	}()
 
 	err := task.Run()
 	require.NoError(t, err)
 
 	actualResult, err := task.Await()
-	<-done
+	<-progressDone
 
 	require.Equal(t, "", actualResult)
 	require.Equal(t, expectedError, err)
@@ -127,6 +127,9 @@ func TestInteractiveTaskWithResult(t *testing.T) {
 	progress := []string{}
 	interactiveStatus := []bool{}
 	expectedResult := "westus2"
+
+	progressDone := make(chan bool)
+	interactiveDone := make(chan bool)
 
 	console.WhenPrompt(func(options input.ConsoleOptions) bool {
 		return options.Message == "What location?"
@@ -185,15 +188,20 @@ func TestInteractiveTaskWithResult(t *testing.T) {
 		for status := range task.Progress() {
 			progress = append(progress, status)
 		}
+		progressDone <- true
 	}()
 
 	go func() {
 		for isInteractive := range task.interactiveChannel {
 			interactiveStatus = append(interactiveStatus, isInteractive)
 		}
+		interactiveDone <- true
 	}()
 
 	actualResult, err := task.Await()
+	<-progressDone
+	<-interactiveDone
+
 	// Result still expected
 	require.Equal(t, expectedResult, actualResult)
 	require.Nil(t, err)
@@ -212,6 +220,10 @@ func TestInteractiveTaskWithError(t *testing.T) {
 	console := mocks.NewMockConsole()
 	progress := []string{}
 	interactiveStatus := []bool{}
+
+	progressDone := make(chan bool)
+	interactiveDone := make(chan bool)
+
 	expectedError := errors.New("User did not confirm")
 
 	console.WhenPrompt(func(options input.ConsoleOptions) bool {
@@ -270,15 +282,20 @@ func TestInteractiveTaskWithError(t *testing.T) {
 		for status := range task.Progress() {
 			progress = append(progress, status)
 		}
+		progressDone <- true
 	}()
 
 	go func() {
 		for isInteractive := range task.interactiveChannel {
 			interactiveStatus = append(interactiveStatus, isInteractive)
 		}
+		interactiveDone <- true
 	}()
 
 	actualResult, err := task.Await()
+	<-progressDone
+	<-interactiveDone
+
 	// Err expected
 	require.Equal(t, "", actualResult)
 	require.Contains(t, err.Error(), expectedError.Error())

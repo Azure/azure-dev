@@ -55,7 +55,6 @@ services:
 	docker := tools.NewDocker(dockerArgs)
 
 	progress := make(chan string)
-	defer close(progress)
 	done := make(chan bool)
 
 	internalFramework := NewNpmProject(service.Config, &env)
@@ -70,6 +69,7 @@ services:
 
 	framework := NewDockerProject(service.Config, &env, docker, internalFramework)
 	res, err := framework.Package(ctx, progress)
+	close(progress)
 	<-done
 
 	require.Equal(t, "imageId", res)
@@ -126,7 +126,6 @@ services:
 	docker := tools.NewDocker(dockerArgs)
 
 	progress := make(chan string)
-	defer close(progress)
 	done := make(chan bool)
 
 	internalFramework := NewNpmProject(service.Config, &env)
@@ -141,6 +140,7 @@ services:
 
 	framework := NewDockerProject(service.Config, &env, docker, internalFramework)
 	res, err := framework.Package(ctx, progress)
+	close(progress)
 	<-done
 
 	require.Equal(t, "imageId", res)

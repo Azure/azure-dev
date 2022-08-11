@@ -163,52 +163,56 @@ func TestRunEnrichError(t *testing.T) {
 }
 
 func TestRedactSensitiveData(t *testing.T) {
-	//When msg contains an access token
-	msg1 := `"accessToken": "eyJ0eX",
+	tests := []struct {
+		scenario string
+		input    string
+		expected string
+	}{
+		{scenario: "Basic",
+			input: `"accessToken": "eyJ0eX",
 "expiresOn": "2022-08-11 10:33:39.000000",
 "subscription": "2cd61",
 "tenant": "72f988bf",
 "tokenType": "Bearer"
-}`
-	expectMsg := `"accessToken": "redact to prevent sensitive data",
+}`,
+			expected: `"accessToken": "<redacted>",
 "expiresOn": "2022-08-11 10:33:39.000000",
 "subscription": "2cd61",
 "tenant": "72f988bf",
 "tokenType": "Bearer"
-}`
-	res := redactSensitiveData(msg1)
-	require.Equal(t, expectMsg, res)
-
-	//When msg does not contain access token
-	msg2 := `"expiresOn": "2022-08-11 10:33:39.000000",
+}`},
+		{scenario: "NoReplacement",
+			input: `"expiresOn": "2022-08-11 10:33:39.000000",
 "subscription": "2cd61",
 "tenant": "72f988bf",
 "tokenType": "Bearer"
-}`
-	expectMsg = `"expiresOn": "2022-08-11 10:33:39.000000",
+}`,
+			expected: `"expiresOn": "2022-08-11 10:33:39.000000",
 "subscription": "2cd61",
 "tenant": "72f988bf",
 "tokenType": "Bearer"
-}`
-	res = redactSensitiveData(msg2)
-	require.Equal(t, expectMsg, res)
-
-	//When the msg contains more than one access token
-	msg3 := `"accessToken": "eyJ0eX",
+}`},
+		{scenario: "MultipleReplacement",
+			input: `"accessToken": "eyJ0eX",
 "expiresOn": "2022-08-11 10:33:39.000000",
 "subscription": "2cd61",
 "tenant": "72f988bf",
 "tokenType": "Bearer",
 "accessToken": "skJ02wsfK"
-}`
-	expectMsg = `"accessToken": "redact to prevent sensitive data",
+}`,
+			expected: `"accessToken": "<redacted>",
 "expiresOn": "2022-08-11 10:33:39.000000",
 "subscription": "2cd61",
 "tenant": "72f988bf",
 "tokenType": "Bearer",
-"accessToken": "redact to prevent sensitive data"
-}`
-	res = redactSensitiveData(msg3)
-	require.Equal(t, expectMsg, res)
+"accessToken": "<redacted>"
+}`},
+	}
 
+	for _, test := range tests {
+		t.Run(test.scenario, func(t *testing.T) {
+			actual := redactSensitiveData(test.input)
+			require.Equal(t, test.expected, actual)
+		})
+	}
 }

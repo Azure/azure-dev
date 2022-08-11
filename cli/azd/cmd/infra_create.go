@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"io/ioutil"
 	"net/url"
 	"os"
 	"time"
@@ -80,7 +81,7 @@ func (ica *infraCreateAction) Run(ctx context.Context, cmd *cobra.Command, args 
 
 	// Copy the parameter template file to the environment working directory and do substitutions.
 	parametersPath := azdCtx.BicepParametersTemplateFilePath(rootModule)
-	parametersBytes, err := os.ReadFile(parametersPath)
+	parametersBytes, err := ioutil.ReadFile(parametersPath)
 	if err != nil {
 		return fmt.Errorf("reading parameter file template: %w", err)
 	}

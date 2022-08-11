@@ -26,7 +26,7 @@ func TestServiceConfigAddHandler(t *testing.T) {
 	err = service.AddHandler(Deployed, handler)
 	require.NotNil(t, err)
 
-	err = service.RaiseEvent(ctx, Deployed)
+	err = service.RaiseEvent(ctx, Deployed, nil)
 	require.Nil(t, err)
 	require.True(t, handlerCalled)
 }
@@ -59,7 +59,7 @@ func TestServiceConfigRemoveHandler(t *testing.T) {
 	require.NotNil(t, err)
 
 	// No events are registered at the time event was raised
-	err = service.RaiseEvent(ctx, Deployed)
+	err = service.RaiseEvent(ctx, Deployed, nil)
 	require.Nil(t, err)
 	require.False(t, handler1Called)
 	require.False(t, handler2Called)
@@ -90,7 +90,7 @@ func TestServiceConfigWithMultipleEventHandlers(t *testing.T) {
 	err = service.AddHandler(Deployed, handler2)
 	require.Nil(t, err)
 
-	err = service.RaiseEvent(ctx, Deployed)
+	err = service.RaiseEvent(ctx, Deployed, nil)
 	require.Nil(t, err)
 	require.True(t, handlerCalled1)
 	require.True(t, handlerCalled2)
@@ -118,7 +118,7 @@ func TestServiceConfigWithMultipleEvents(t *testing.T) {
 	err = service.AddHandler(Deployed, deployHandler)
 	require.Nil(t, err)
 
-	err = service.RaiseEvent(ctx, Provisioned)
+	err = service.RaiseEvent(ctx, Provisioned, nil)
 	require.Nil(t, err)
 
 	require.True(t, provisionHandlerCalled)
@@ -142,7 +142,7 @@ func TestServiceConfigWithEventHandlerErrors(t *testing.T) {
 	err = service.AddHandler(Provisioned, handler2)
 	require.Nil(t, err)
 
-	err = service.RaiseEvent(ctx, Provisioned)
+	err = service.RaiseEvent(ctx, Provisioned, nil)
 	require.NotNil(t, err)
 	require.Contains(t, err.Error(), "sample error 1")
 	require.Contains(t, err.Error(), "sample error 2")
@@ -168,4 +168,52 @@ services:
 	projectConfig, _ := ParseProjectConfig(testProj, &e)
 
 	return projectConfig.Services["api"]
+}
+
+func TestServiceConfigRaiseEventWithoutArgs(t *testing.T) {
+	ctx := context.Background()
+	service := getServiceConfig()
+	handlerCalled := false
+
+	handler := func(ctx context.Context, args ServiceLifecycleEventArgs) error {
+		handlerCalled = true
+		require.Empty(t, args.Args)
+		return nil
+	}
+
+	err := service.AddHandler(Deployed, handler)
+	require.Nil(t, err)
+
+	// Expected error if attempting to register the same handler more than 1 time
+	err = service.AddHandler(Deployed, handler)
+	require.NotNil(t, err)
+
+	err = service.RaiseEvent(ctx, Deployed, nil)
+	require.Nil(t, err)
+	require.True(t, handlerCalled)
+}
+
+func TestServiceConfigRaiseEventWithArgs(t *testing.T) {
+	ctx := context.Background()
+	service := getServiceConfig()
+	handlerCalled := false
+	eventArgs := make(map[string]any)
+	eventArgs["foo"] = "bar"
+
+	handler := func(ctx context.Context, args ServiceLifecycleEventArgs) error {
+		handlerCalled = true
+		require.Equal(t, args.Args["foo"], "bar")
+		return nil
+	}
+
+	err := service.AddHandler(Deployed, handler)
+	require.Nil(t, err)
+
+	// Expected error if attempting to register the same handler more than 1 time
+	err = service.AddHandler(Deployed, handler)
+	require.NotNil(t, err)
+
+	err = service.RaiseEvent(ctx, Deployed, eventArgs)
+	require.Nil(t, err)
+	require.True(t, handlerCalled)
 }

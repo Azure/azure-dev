@@ -41,6 +41,7 @@ type ServiceConfig struct {
 type ServiceLifecycleEventArgs struct {
 	Project *ProjectConfig
 	Service *ServiceConfig
+	Args    map[string]any
 }
 
 // Function definition for project events
@@ -154,12 +155,17 @@ func (sc *ServiceConfig) RemoveHandler(name Event, handler ServiceLifecycleEvent
 }
 
 // Raises the specified event and calls any registered event handlers
-func (sc *ServiceConfig) RaiseEvent(ctx context.Context, name Event) error {
+func (sc *ServiceConfig) RaiseEvent(ctx context.Context, name Event, args map[string]any) error {
 	handlerErrors := []error{}
+
+	if args == nil {
+		args = make(map[string]any)
+	}
 
 	eventArgs := ServiceLifecycleEventArgs{
 		Project: sc.Project,
 		Service: sc,
+		Args:    args,
 	}
 
 	handlers := sc.handlers[name]

@@ -12,8 +12,7 @@ repo:
       url: git@github.com:Azure-Samples/todo-python-mongo.git
     - name: azure-samples-main-staging
       url: git@github.com:Azure-Samples/todo-python-mongo.git
-      # TODO: Set to "staging"
-      branch: djurek-staging-test-remote
+      branch: staging
 
   rewrite:
     patterns:

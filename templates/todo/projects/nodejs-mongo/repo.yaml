@@ -12,8 +12,7 @@ repo:
       url: git@github.com:Azure-Samples/todo-nodejs-mongo.git
     - name: azure-samples-staging
       url: git@github.com:Azure-Samples/todo-nodejs-mongo.git
-      # TODO: Set to "staging"
-      branch: djurek-staging-test-remote
+      branch: staging
 
   rewrite:
     patterns:

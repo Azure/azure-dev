@@ -13,8 +13,7 @@ repo:
       branch: main
     - name: azure-samples-staging
       url: git@github.com:Azure-Samples/todo-csharp-sql.git
-      # TODO: Set to "staging"
-      branch: djurek-staging-test-remote
+      branch: staging
 
   rewrite:
     patterns:

@@ -351,7 +351,7 @@ func (cli *azCli) versionInfo() VersionInfo {
 }
 
 func (cli *azCli) unmarshalCliVersion(ctx context.Context, component string) (string, error) {
-	azRes, err := executeCommand(ctx, "az", "version")
+	azRes, err := executeCommand(ctx, "az", "version", "--output", "json")
 	if err != nil {
 		return "", err
 	}
@@ -414,7 +414,7 @@ func (cli *azCli) ListAccounts(ctx context.Context) ([]AzCliSubscriptionInfo, er
 }
 
 func (cli *azCli) ListExtensions(ctx context.Context) ([]AzCliExtensionInfo, error) {
-	res, err := cli.runAzCommand(ctx, "extension", "list")
+	res, err := cli.runAzCommand(ctx, "extension", "list", "--output", "json")
 
 	if err != nil {
 		return nil, fmt.Errorf("failed running az extension list: %s: %w", res.String(), err)

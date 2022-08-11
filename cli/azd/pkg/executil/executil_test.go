@@ -161,3 +161,58 @@ func TestRunEnrichError(t *testing.T) {
 	// themselves in checking the ExitCode.
 	require.EqualError(t, err, fmt.Sprintf("%s: exit status 2", res.String()))
 }
+
+func TestRedactSensitiveData(t *testing.T) {
+	tests := []struct {
+		scenario string
+		input    string
+		expected string
+	}{
+		{scenario: "Basic",
+			input: `"accessToken": "eyJ0eX",
+"expiresOn": "2022-08-11 10:33:39.000000",
+"subscription": "2cd61",
+"tenant": "72f988bf",
+"tokenType": "Bearer"
+}`,
+			expected: `"accessToken": "<redacted>",
+"expiresOn": "2022-08-11 10:33:39.000000",
+"subscription": "2cd61",
+"tenant": "72f988bf",
+"tokenType": "Bearer"
+}`},
+		{scenario: "NoReplacement",
+			input: `"expiresOn": "2022-08-11 10:33:39.000000",
+"subscription": "2cd61",
+"tenant": "72f988bf",
+"tokenType": "Bearer"
+}`,
+			expected: `"expiresOn": "2022-08-11 10:33:39.000000",
+"subscription": "2cd61",
+"tenant": "72f988bf",
+"tokenType": "Bearer"
+}`},
+		{scenario: "MultipleReplacement",
+			input: `"accessToken": "eyJ0eX",
+"expiresOn": "2022-08-11 10:33:39.000000",
+"subscription": "2cd61",
+"tenant": "72f988bf",
+"tokenType": "Bearer",
+"accessToken": "skJ02wsfK"
+}`,
+			expected: `"accessToken": "<redacted>",
+"expiresOn": "2022-08-11 10:33:39.000000",
+"subscription": "2cd61",
+"tenant": "72f988bf",
+"tokenType": "Bearer",
+"accessToken": "<redacted>"
+}`},
+	}
+
+	for _, test := range tests {
+		t.Run(test.scenario, func(t *testing.T) {
+			actual := redactSensitiveData(test.input)
+			require.Equal(t, test.expected, actual)
+		})
+	}
+}

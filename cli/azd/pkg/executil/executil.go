@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strings"
 )
@@ -197,8 +198,27 @@ type RunArgs struct {
 	EnrichError bool
 }
 
+type redactData struct {
+	matchString   *regexp.Regexp
+	replaceString string
+}
+
 func (rr RunResult) String() string {
 	return fmt.Sprintf("exit code: %d, stdout: %s, stderr: %s", rr.ExitCode, rr.Stdout, rr.Stderr)
+}
+
+func redactSensitiveData(msg string) string {
+	var regexpRedactRules = map[string]redactData{
+		"access token": {
+			regexp.MustCompile("\"accessToken\": \".*\""),
+			"\"accessToken\": \"<redacted>\"",
+		}}
+
+	for _, redactRule := range regexpRedactRules {
+		regMatchString := redactRule.matchString
+		return regMatchString.ReplaceAllString(msg, redactRule.replaceString)
+	}
+	return msg
 }
 
 // RunWithResult runs the command specified in 'args'.
@@ -258,7 +278,7 @@ func RunWithResult(ctx context.Context, args RunArgs) (RunResult, error) {
 	err = cmd.Wait()
 
 	if args.Debug {
-		log.Printf("Exit Code:%d\nOut:%s\nErr:%s\n", cmd.ProcessState.ExitCode(), stdout.String(), stderr.String())
+		log.Printf("Exit Code:%d\nOut:%s\nErr:%s\n", cmd.ProcessState.ExitCode(), redactSensitiveData(stdout.String()), redactSensitiveData(stderr.String()))
 	}
 
 	rr := RunResult{

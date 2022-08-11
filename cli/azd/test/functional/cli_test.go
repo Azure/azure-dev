@@ -11,7 +11,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/fs"
-	"io/ioutil"
 	"net/http"
 	"os"
 	"os/exec"
@@ -98,7 +97,7 @@ func Test_CLI_Init_AsksForSubscriptionIdAndCreatesEnvAndProjectFile(t *testing.T
 	_, err := cli.RunCommandWithStdIn(ctx, "Empty Template\nTESTENV\n\nOther (enter manually)\nMY_SUB_ID\n", "init")
 	require.NoError(t, err)
 
-	file, err := ioutil.ReadFile(getTestEnvPath(dir, "TESTENV"))
+	file, err := os.ReadFile(getTestEnvPath(dir, "TESTENV"))
 
 	require.NoError(t, err)
 
@@ -564,11 +563,11 @@ func copySample(targetRoot string, sampleName string) error {
 			return os.MkdirAll(targetPath, osutil.PermissionDirectory)
 		}
 
-		contents, err := ioutil.ReadFile(name)
+		contents, err := os.ReadFile(name)
 		if err != nil {
 			return fmt.Errorf("reading sample file: %w", err)
 		}
-		return ioutil.WriteFile(targetPath, contents, osutil.PermissionFile)
+		return os.WriteFile(targetPath, contents, osutil.PermissionFile)
 	})
 }
 

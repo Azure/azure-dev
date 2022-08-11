@@ -51,19 +51,9 @@ stages:
               Write-Host "##vso[task.setvariable variable=PRNumber]$PRNumber"
             displayName: Set PRNumber
 
-          # TODO: Refactor
-          - pwsh: |
-              $targetBranchName = ''
-              if ('$(Build.Reason)' -eq 'PullRequest') {
-                $targetBranchName = "pr/$(PRNumber)"
-                Write-Host "PR Build, using target branch name: $targetBranchName"
-              }
-              Write-Host "##vso[task.setvariable variable=TargetBranchName]$targetBranchName"
-            displayName: Set TargetBranchName
-
           - template: /eng/pipelines/templates/steps/repoman-generate.yml
             parameters:
-              TargetBranchName: $(TargetBranchName)
+              TargetBranchName: pr/$(PRNumber)
               RemoteName: $(StagingRemoteName)
 
           - pwsh: |
@@ -118,11 +108,19 @@ stages:
         steps:
           - checkout: self
 
+          - pwsh: |
+              $targetBranchName = 'staging'
+              if ($env:TARGETBRANCHNAMEOVERRIDE) {
+                Write-Host "Target branch override $($env:TARGETBRANCHNAMEOVERRIDE)"
+                $targetBranchName = $env:TARGETBRANCHNAMEOVERRIDE
+              }
+              Write-Host "##vso[task.setvariable variable=TargetBranchName]$targetBranchName"
+            displayName: Set TargetBranchName
+
           - template: /eng/pipelines/templates/steps/repoman-generate.yml
             parameters:
               TargetBranchName: $(TargetBranchName)
               RemoteName: $(StagingRemoteName)
-
 
   - stage: Publish_Repos
     condition: >-
@@ -156,7 +154,7 @@ stages:
                     $targetBranchName = $env:TARGETBRANCHNAMEOVERRIDE
                   }
                   Write-Host "##vso[task.setvariable variable=TargetBranchName]$targetBranchName"
-                displayName: Set $(TargetBranchName)
+                displayName: Set TargetBranchName
 
               - template: /eng/pipelines/templates/steps/repoman-generate.yml
                 parameters:

@@ -55,7 +55,7 @@ jobs:
           } else {
             Write-Host "Using specified azd version: $(AzdVersion)"
           }
-        displayName: Ensure $(AzdVersion) is set
+        displayName: Ensure AzdVersion is set
 
       - pwsh: |
           if (!$env:TEMPLATEBRANCHNAME) {
@@ -64,7 +64,7 @@ jobs:
           } else {
             Write-Host "Using specified azd version: $(TemplateBranchName)"
           }
-        displayName: Ensure $(TemplateBranchName) is set
+        displayName: Ensure TemplateBranchName is set
 
       - pwsh: |
           if (!$env:DEPLOYLOCATION) {
@@ -73,7 +73,7 @@ jobs:
           } else {
             Write-Host "Using specified azd version: $(DeployLocation)"
           }
-        displayName: Ensure $(DeployLocation) is set
+        displayName: Ensure DeployLocation is set
 
       - bash: curl -fsSL https://aka.ms/install-azd.sh | bash -s -- --version '$(AzdVersion)' --verbose
         displayName: Install azd

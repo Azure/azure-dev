@@ -58,6 +58,7 @@ func TestTaskWithError(t *testing.T) {
 func TestTaskWithProgressWithResult(t *testing.T) {
 	expectedResult := "result"
 	progress := []string{}
+	done := make(chan bool)
 
 	task := NewTaskWithProgress(func(ctx *TaskContextWithProgress[string, string]) {
 		ctx.SetProgress("thing 1")
@@ -70,12 +71,15 @@ func TestTaskWithProgressWithResult(t *testing.T) {
 		for status := range task.Progress() {
 			progress = append(progress, status)
 		}
+		done <- true
 	}()
 
 	err := task.Run()
 	require.NoError(t, err)
 
 	actualResult, err := task.Await()
+	<-done
+
 	require.Equal(t, expectedResult, actualResult)
 	require.Nil(t, err)
 	require.Equal(t, 3, len(progress))
@@ -87,6 +91,7 @@ func TestTaskWithProgressWithResult(t *testing.T) {
 func TestTaskWithProgressWithError(t *testing.T) {
 	expectedError := errors.New("example error")
 	progress := []string{}
+	done := make(chan bool, 1)
 
 	task := NewTaskWithProgress(func(ctx *TaskContextWithProgress[string, string]) {
 		ctx.SetProgress("thing 1")
@@ -100,12 +105,15 @@ func TestTaskWithProgressWithError(t *testing.T) {
 		for status := range task.Progress() {
 			progress = append(progress, status)
 		}
+		done <- true
 	}()
 
 	err := task.Run()
 	require.NoError(t, err)
 
 	actualResult, err := task.Await()
+	<-done
+
 	require.Equal(t, "", actualResult)
 	require.Equal(t, expectedError, err)
 	require.Equal(t, 2, len(progress))

@@ -138,6 +138,7 @@ func (t *TaskWithProgress[R, P]) Run() error {
 	}
 
 	go func() {
+		defer close(t.progressChannel)
 		context := NewTaskContextWithProgress(t)
 
 		t.taskFn(context)
@@ -181,6 +182,8 @@ func (t *InteractiveTaskWithProgress[R, P]) Run() error {
 	}
 
 	go func() {
+		defer close(t.progressChannel)
+		defer close(t.interactiveChannel)
 		context := NewInteractiveTaskContextWithProgress(t)
 
 		t.taskFn(context)

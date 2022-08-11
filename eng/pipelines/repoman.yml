@@ -17,8 +17,8 @@ pr:
 
 variables:
   - template: /eng/pipelines/templates/variables/globals.yml
-  - name: StagingBranchName
-    value: staging
+  - name: StagingRemoteName
+    value: azure-samples-staging
 
 stages:
   - stage: Validation
@@ -60,19 +60,10 @@ stages:
               Write-Host "##vso[task.setvariable variable=TargetBranchName]$targetBranchName"
             displayName: Set TargetBranchName
 
-          - pwsh: |
-              $baseBranchName = '$(StagingBranchName)'
-              if ($env:BaseBranchOverride) {
-                $baseBranchName = "$($env:BaseBranchOverride)"
-                Write-Host "PR Number override: $baseBranchName"
-              }
-              Write-Host "##vso[task.setvariable variable=BaseBranchName]$baseBranchName"
-            displayName: Set $(BaseBranchName)
-
           - template: /eng/pipelines/templates/steps/repoman-generate.yml
             parameters:
               TargetBranchName: $(TargetBranchName)
-              BaseBranchName: $(BaseBranchName)
+              BaseBranchName: $(StagingRemoteName)
 
           - pwsh: |
               $repomanContent = "No changes detected."
@@ -126,19 +117,10 @@ stages:
         steps:
           - checkout: self
 
-          - pwsh: |
-              $targetBranchName = '$(StagingBranchName)'
-              if ($env:TARGETBRANCHNAMEOVERRIDE) {
-                $targetBranchName = $env:TARGETBRANCHNAMEOVERRIDE
-                Write-Host "PR Build, using target branch name: $targetBranchName"
-              }
-              Write-Host "##vso[task.setvariable variable=TargetBranchName]$targetBranchName"
-            displayName: Set TargetBranchName
-
           - template: /eng/pipelines/templates/steps/repoman-generate.yml
             parameters:
               TargetBranchName: $(TargetBranchName)
-              BaseBranchName: main
+              RemoteName: $(StagingRemoteName)
 
 
   - stage: Publish_Repos
@@ -178,3 +160,4 @@ stages:
               - template: /eng/pipelines/templates/steps/repoman-generate.yml
                 parameters:
                   TargetBranchName: $(TargetBranchName)
+                  RemoteName: azure-samples-main

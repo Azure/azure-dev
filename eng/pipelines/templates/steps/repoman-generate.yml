@@ -1,6 +1,6 @@
 parameters:
   TargetBranchName: $(TargetBranchName)
-  BaseBranchName: $(BaseBranchName)
+  RemoteName: azure-samples-main
   GitHubPat: $(azuresdk-github-pat)
 
 steps:
@@ -37,4 +37,4 @@ steps:
       filePath: ./eng/scripts/Invoke-RepomanGenerate.ps1
       arguments: >-
         -TargetBranchName "${{ parameters.TargetBranchName }}"
-        -RemoteName "azure-samples-staging"
+        -RemoteName "${{ parameters.RemoteName }}"

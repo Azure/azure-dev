@@ -222,6 +222,7 @@ export class GenerateCommand implements RepomanCommand {
             await repo.commit("Initial Commit", { empty: true });
             await repo.push(remote.name, defaultBranch);
         } else {
+            await repo.checkoutBranch(defaultBranch);
             const pullBranchExists = await repo.remoteBranchExists(remote.name, defaultBranch);
             if (pullBranchExists) {
                 console.info(chalk.cyan(`Pulling changes from branch ${chalk.cyanBright(defaultBranch)}...`));

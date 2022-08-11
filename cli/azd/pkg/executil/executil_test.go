@@ -170,14 +170,14 @@ func TestRedactSensitiveData(t *testing.T) {
 "tenant": "72f988bf",
 "tokenType": "Bearer"
 }`
-	expectmsg := `"accessToken": "redact to prevent sensitive data",
+	expectMsg := `"accessToken": "redact to prevent sensitive data",
 "expiresOn": "2022-08-11 10:33:39.000000",
 "subscription": "2cd61",
 "tenant": "72f988bf",
 "tokenType": "Bearer"
 }`
 	res := redactSensitiveData(msg1)
-	require.Equal(t, expectmsg, res)
+	require.Equal(t, expectMsg, res)
 
 	//When msg does not contain access token
 	msg2 := `"expiresOn": "2022-08-11 10:33:39.000000",
@@ -185,13 +185,13 @@ func TestRedactSensitiveData(t *testing.T) {
 "tenant": "72f988bf",
 "tokenType": "Bearer"
 }`
-	expectmsg = `"expiresOn": "2022-08-11 10:33:39.000000",
+	expectMsg = `"expiresOn": "2022-08-11 10:33:39.000000",
 "subscription": "2cd61",
 "tenant": "72f988bf",
 "tokenType": "Bearer"
 }`
 	res = redactSensitiveData(msg2)
-	require.Equal(t, expectmsg, res)
+	require.Equal(t, expectMsg, res)
 
 	//When the msg contains more than one access token
 	msg3 := `"accessToken": "eyJ0eX",
@@ -201,7 +201,7 @@ func TestRedactSensitiveData(t *testing.T) {
 "tokenType": "Bearer",
 "accessToken": "skJ02wsfK"
 }`
-	expectmsg = `"accessToken": "redact to prevent sensitive data",
+	expectMsg = `"accessToken": "redact to prevent sensitive data",
 "expiresOn": "2022-08-11 10:33:39.000000",
 "subscription": "2cd61",
 "tenant": "72f988bf",
@@ -209,6 +209,6 @@ func TestRedactSensitiveData(t *testing.T) {
 "accessToken": "redact to prevent sensitive data"
 }`
 	res = redactSensitiveData(msg3)
-	require.Equal(t, expectmsg, res)
+	require.Equal(t, expectMsg, res)
 
 }

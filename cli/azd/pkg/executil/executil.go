@@ -208,11 +208,9 @@ func (rr RunResult) String() string {
 }
 
 func redactSensitiveData(msg string) string {
-	regexpRedactRules := make(map[string]redactData)
-	regexpRedactRules["access token"] = redactData{
-		matchString:   regexp.MustCompile("\"accessToken\": \".*\""),
-		replaceString: "\"accessToken\": \"redact to prevent sensitive data\"",
-	}
+	var regexpRedactRules = map[string]redactData{"access token": {
+		regexp.MustCompile("\"accessToken\": \".*\""), "\"accessToken\": \"redact to prevent sensitive data\"",
+	}}
 
 	for _, redactRule := range regexpRedactRules {
 		regMatchString := redactRule.matchString
@@ -278,7 +276,7 @@ func RunWithResult(ctx context.Context, args RunArgs) (RunResult, error) {
 	err = cmd.Wait()
 
 	if args.Debug {
-		log.Printf("Exit Code:%d\nOut:%s\nErr:%s\n", cmd.ProcessState.ExitCode(), redactSensitiveData(stdout.String()), stderr.String())
+		log.Printf("Exit Code:%d\nOut:%s\nErr:%s\n", cmd.ProcessState.ExitCode(), redactSensitiveData(stdout.String()), redactSensitiveData(stderr.String()))
 	}
 
 	rr := RunResult{

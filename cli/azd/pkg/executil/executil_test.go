@@ -161,3 +161,54 @@ func TestRunEnrichError(t *testing.T) {
 	// themselves in checking the ExitCode.
 	require.EqualError(t, err, fmt.Sprintf("%s: exit status 2", res.String()))
 }
+
+func TestRedactSensitiveData(t *testing.T) {
+	//When msg contains an access token
+	msg1 := `"accessToken": "eyJ0eX",
+"expiresOn": "2022-08-11 10:33:39.000000",
+"subscription": "2cd61",
+"tenant": "72f988bf",
+"tokenType": "Bearer"
+}`
+	expectmsg := `"accessToken": "redact to prevent sensitive data",
+"expiresOn": "2022-08-11 10:33:39.000000",
+"subscription": "2cd61",
+"tenant": "72f988bf",
+"tokenType": "Bearer"
+}`
+	res := redactSensitiveData(msg1)
+	require.Equal(t, expectmsg, res)
+
+	//When msg does not contain access token
+	msg2 := `"expiresOn": "2022-08-11 10:33:39.000000",
+"subscription": "2cd61",
+"tenant": "72f988bf",
+"tokenType": "Bearer"
+}`
+	expectmsg = `"expiresOn": "2022-08-11 10:33:39.000000",
+"subscription": "2cd61",
+"tenant": "72f988bf",
+"tokenType": "Bearer"
+}`
+	res = redactSensitiveData(msg2)
+	require.Equal(t, expectmsg, res)
+
+	//When the msg contains more than one access token
+	msg3 := `"accessToken": "eyJ0eX",
+"expiresOn": "2022-08-11 10:33:39.000000",
+"subscription": "2cd61",
+"tenant": "72f988bf",
+"tokenType": "Bearer",
+"accessToken": "skJ02wsfK"
+}`
+	expectmsg = `"accessToken": "redact to prevent sensitive data",
+"expiresOn": "2022-08-11 10:33:39.000000",
+"subscription": "2cd61",
+"tenant": "72f988bf",
+"tokenType": "Bearer",
+"accessToken": "redact to prevent sensitive data"
+}`
+	res = redactSensitiveData(msg3)
+	require.Equal(t, expectmsg, res)
+
+}

@@ -215,10 +215,8 @@ func redactSensitiveData(msg string) string {
 	}
 
 	for _, redactRule := range regexpRedactRules {
-		regMatchString := redactRule.matchString.FindString(msg)
-		if regMatchString != "" && strings.Contains(msg, regMatchString) {
-			return strings.Replace(msg, regMatchString, redactRule.replaceString, -1)
-		}
+		regMatchString := redactRule.matchString
+		return regMatchString.ReplaceAllString(msg, redactRule.replaceString)
 	}
 	return msg
 }

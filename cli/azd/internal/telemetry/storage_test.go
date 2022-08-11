@@ -148,6 +148,54 @@ func TestCleanup(t *testing.T) {
 	folder := filepath.Join(os.TempDir(), "azdtrx")
 	os.RemoveAll(folder)
 
+	invalidFiles := []string{
+		"invalid_file",
+		"invalid_file.txt",
+		"invalid_file.log",
+		"invalidformat.trn",
+		"notadate_1.trn",
+		transmissionFileFormat + "_notanumber.trn",
+	}
+
+	validFiles := []string{
+		fmt.Sprintf("%s_0.trn", getUtcTime().Format(transmissionFileFormat)),
+		fmt.Sprintf("%s_0.trn", getLocalTime().Format(transmissionFileFormat)),
+		fmt.Sprintf("%s_0.trn", getNonLocalTime().Format(transmissionFileFormat)),
+		fmt.Sprintf("%s_1.trn", getLocalTime().Format(transmissionFileFormat)),
+		fmt.Sprintf("%s_1_1234.trn", getLocalTime().Format(transmissionFileFormat)),
+		fmt.Sprintf("%s_3_unique.trn", getLocalTime().Format(transmissionFileFormat)),
+	}
+
+	files := append(invalidFiles, validFiles...)
+
 	storage := NewStorage(folder)
 
+	for _, file := range files {
+		_, err := os.Create(filepath.Join(folder, file))
+		assert.NoError(t, err)
+	}
+
+	storage.cleanup()
+
+	remainingFiles, err := os.ReadDir(storage.folder)
+	assert.NoError(t, err)
+	assert.Len(t, remainingFiles, len(validFiles))
+	for _, remainingFile := range remainingFiles {
+		assert.Contains(t, validFiles, remainingFile.Name())
+	}
+}
+
+func getUtcTime() time.Time {
+	return time.Date(2006, 1, 2, 13, 4, 5, 0, time.UTC)
+}
+
+func getLocalTime() time.Time {
+	return time.Date(2006, 1, 2, 13, 4, 5, 0, time.Local)
+}
+
+func getNonLocalTime() time.Time {
+	_, offset := time.Now().Zone()
+	fixedZone := time.FixedZone("Offset", offset+int(1*time.Hour/time.Second))
+
+	return time.Date(2006, 1, 2, 13, 4, 5, 0, fixedZone)
 }

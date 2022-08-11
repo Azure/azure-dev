@@ -60,32 +60,37 @@ func (stg *Storage) init() error {
 }
 
 func (stg *Storage) StartCleanup() {
-	go stg.cleanup()
+	go stg.runCleanup()
 }
 
 func (stg *Storage) StopCleanup() {
 	stg.abortChan <- struct{}{}
 }
 
-func (stg *Storage) cleanup() {
+func (stg *Storage) runCleanup() {
 	for {
 		select {
 		case <-time.After(stg.cleanUpInterval):
-			files, err := os.ReadDir(stg.folder)
-			if err != nil {
-				continue
-			}
-
-			for _, file := range files {
-				if !file.IsDir() && !strings.HasSuffix(file.Name(), "."+fileExtension) {
-					_ = os.Remove(file.Name())
-				}
-			}
-
+			stg.cleanup()
 			time.Sleep(stg.cleanUpInterval)
 
 		case <-stg.abortChan:
 			return
+		}
+	}
+}
+
+func (stg *Storage) cleanup() {
+	files, err := os.ReadDir(stg.folder)
+	if err != nil {
+		return
+	}
+
+	for _, file := range files {
+		if !file.IsDir() {
+			if _, ok := stg.parseFilename(file.Name()); !ok {
+				_ = os.Remove(file.Name())
+			}
 		}
 	}
 }
@@ -153,32 +158,41 @@ func (stg *Storage) getAllFiles() ([]transmissionFileEntry, error) {
 	for _, entry := range dirEntries {
 		name := entry.Name()
 
-		if strings.HasSuffix(name, "."+fileExtension) {
-			sections := strings.Split(name, "_")
-			if len(sections) < 2 {
-				// Invalid file, remove
-				os.Remove(filepath.Join(stg.folder, name))
-			}
+		entry, ok := stg.parseFilename(name)
 
-			timestamp, err := time.Parse(transmissionFileFormat, sections[0])
-			if err != nil {
-				// Invalid file, remove
-				os.Remove(filepath.Join(stg.folder, name))
-			}
-
-			retryCount, err := strconv.Atoi(sections[1])
-			if err != nil {
-				// Invalid file, remove
-				os.Remove(filepath.Join(stg.folder, name))
-			}
-
-			files = append(files, transmissionFileEntry{
-				name:       filepath.Join(stg.folder, name),
-				timestamp:  timestamp.Local(),
-				retryCount: retryCount,
-			})
+		if !ok {
+			os.Remove(filepath.Join(stg.folder, name))
+		} else {
+			files = append(files, *entry)
 		}
 	}
 
 	return files, nil
+}
+
+func (stg *Storage) parseFilename(name string) (*transmissionFileEntry, bool) {
+	if !strings.HasSuffix(name, "."+fileExtension) {
+		return nil, false
+	}
+
+	sections := strings.Split(name, "_")
+	if len(sections) < 2 {
+		return nil, false
+	}
+
+	timestamp, err := time.Parse(transmissionFileFormat, sections[0])
+	if err != nil {
+		return nil, false
+	}
+
+	retryCount, err := strconv.Atoi(sections[1])
+	if err != nil {
+		return nil, false
+	}
+
+	return &transmissionFileEntry{
+		name:       filepath.Join(stg.folder, name),
+		timestamp:  timestamp.Local(),
+		retryCount: retryCount,
+	}, true
 }

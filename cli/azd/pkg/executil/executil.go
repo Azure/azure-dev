@@ -208,9 +208,11 @@ func (rr RunResult) String() string {
 }
 
 func redactSensitiveData(msg string) string {
-	var regexpRedactRules = map[string]redactData{"access token": {
-		regexp.MustCompile("\"accessToken\": \".*\""), "\"accessToken\": \"redact to prevent sensitive data\"",
-	}}
+	var regexpRedactRules = map[string]redactData{
+		"access token": {
+			regexp.MustCompile("\"accessToken\": \".*\""),
+			"\"accessToken\": \"redact to prevent sensitive data\"",
+		}}
 
 	for _, redactRule := range regexpRedactRules {
 		regMatchString := redactRule.matchString

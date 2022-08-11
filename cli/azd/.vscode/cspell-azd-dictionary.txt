@@ -42,6 +42,7 @@ opentelemetry
 osutil
 otel
 pflag
+pulumi
 pyapp
 restoreapp
 rzip

@@ -12,6 +12,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azureutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/drone/envsubst"
 	"gopkg.in/yaml.v3"
 )
@@ -24,6 +25,7 @@ type ProjectConfig struct {
 	Path              string                    `yaml:",omitempty"`
 	Metadata          *ProjectMetadata          `yaml:"metadata,omitempty"`
 	Services          map[string]*ServiceConfig `yaml:",omitempty"`
+	Infra             provisioning.Options      `yaml:"infra"`
 
 	handlers map[Event][]ProjectLifecycleEventHandlerFn
 }
@@ -53,6 +55,7 @@ const (
 // Project lifecycle event arguments
 type ProjectLifecycleEventArgs struct {
 	Project *ProjectConfig
+	Args    map[string]any
 }
 
 // Function definition for project events
@@ -176,10 +179,15 @@ func (pc *ProjectConfig) RemoveHandler(name Event, handler ProjectLifecycleEvent
 }
 
 // Raises the specified event and calls any registered event handlers
-func (pc *ProjectConfig) RaiseEvent(ctx context.Context, name Event) error {
+func (pc *ProjectConfig) RaiseEvent(ctx context.Context, name Event, args map[string]any) error {
 	handlerErrors := []error{}
 
+	if args == nil {
+		args = make(map[string]any)
+	}
+
 	eventArgs := ProjectLifecycleEventArgs{
+		Args:    args,
 		Project: pc,
 	}
 

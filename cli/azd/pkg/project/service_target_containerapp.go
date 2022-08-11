@@ -36,7 +36,7 @@ func (at *containerAppTarget) Deploy(ctx context.Context, azdCtx *environment.Az
 	bicepPath := azdCtx.BicepModulePath(at.config.Module)
 
 	progress <- "Creating deployment template"
-	template, err := bicep.Compile(ctx, tools.NewBicepCli(at.cli), bicepPath)
+	template, err := bicep.Compile(ctx, tools.NewBicepCli(tools.NewBicepCliArgs{AzCli: at.cli}), bicepPath)
 	if err != nil {
 		return ServiceDeploymentResult{}, err
 	}

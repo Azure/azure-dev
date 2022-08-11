@@ -221,7 +221,7 @@ func (en *envNewAction) Run(ctx context.Context, _ *cobra.Command, args []string
 func envRefreshCmd(rootOptions *commands.GlobalCommandOptions) *cobra.Command {
 	actionFn := func(ctx context.Context, cmd *cobra.Command, args []string, azdCtx *environment.AzdContext) error {
 		azCli := commands.GetAzCliFromContext(ctx)
-		bicepCli := tools.NewBicepCli(azCli)
+		bicepCli := tools.NewBicepCli(tools.NewBicepCliArgs{AzCli: azCli})
 		askOne := makeAskOne(rootOptions.NoPrompt)
 
 		if err := ensureProject(azdCtx.ProjectPath()); err != nil {

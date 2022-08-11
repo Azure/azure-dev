@@ -39,12 +39,12 @@ func (a *infraDeleteAction) SetupFlags(
 	local *pflag.FlagSet,
 ) {
 	local.BoolVar(&a.forceDelete, "force", false, "Does not require confirmation before it deletes resources.")
-	local.BoolVar(&a.purgeDelete, "purge", false, "Permanently deletes resources that are soft-deleted by default (for example, key vaults).")
+	local.BoolVar(&a.purgeDelete, "purge", false, "Does not require confirmation before it permanently deletes resources that are soft-deleted by default (for example, key vaults).")
 }
 
 func (a *infraDeleteAction) Run(ctx context.Context, _ *cobra.Command, args []string, azdCtx *environment.AzdContext) error {
 	azCli := commands.GetAzCliFromContext(ctx)
-	bicepCli := tools.NewBicepCli(azCli)
+	bicepCli := tools.NewBicepCli(tools.NewBicepCliArgs{AzCli: azCli})
 	askOne := makeAskOne(a.rootOptions.NoPrompt)
 
 	if err := ensureProject(azdCtx.ProjectPath()); err != nil {
@@ -97,7 +97,10 @@ func (a *infraDeleteAction) Run(ctx context.Context, _ *cobra.Command, args []st
 	if len(allResources) > 0 && !a.forceDelete {
 		var ok bool
 		err := askOne(&survey.Confirm{
-			Message: fmt.Sprintf("This will delete %d resources, are you sure you want to continue?", len(allResources)),
+			Message: fmt.Sprintf(
+				"This will delete %d resources, are you sure you want to continue?\n"+
+					"You can use --force to skip this confirmation.",
+				len(allResources)),
 			Default: false,
 		}, &ok)
 		if err != nil {
@@ -138,8 +141,9 @@ func (a *infraDeleteAction) Run(ctx context.Context, _ *cobra.Command, args []st
 
 	if len(keyVaultsToPurge) > 0 && !purgeDelete {
 		fmt.Printf(""+
-			"This operation will delete %d Key Vaults. These Key Vaults have soft delete enabled allowing them to be recovered for a period \n"+
-			"of time after deletion. During this period, their names may not be reused.\n",
+			"This operation will delete and purge %d Key Vaults. These Key Vaults have soft delete enabled allowing them to be recovered for a period \n"+
+			"of time after deletion. During this period, their names may not be reused.\n"+
+			"You can use argument --purge to skip this confirmation.\n",
 			len(keyVaultsToPurge))
 		err := askOne(&survey.Confirm{
 			Message: "Would you like to *permanently* delete these Key Vaults instead, allowing their names to be reused?",

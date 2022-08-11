@@ -51,6 +51,7 @@ stages:
               Write-Host "##vso[task.setvariable variable=PRNumber]$PRNumber"
             displayName: Set PRNumber
 
+          # TODO: Refactor
           - pwsh: |
               $targetBranchName = ''
               if ('$(Build.Reason)' -eq 'PullRequest') {
@@ -63,7 +64,7 @@ stages:
           - template: /eng/pipelines/templates/steps/repoman-generate.yml
             parameters:
               TargetBranchName: $(TargetBranchName)
-              BaseBranchName: $(StagingRemoteName)
+              RemoteName: $(StagingRemoteName)
 
           - pwsh: |
               $repomanContent = "No changes detected."

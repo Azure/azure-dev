@@ -77,7 +77,7 @@ func TestFifoQueue(t *testing.T) {
 	// Assert head unchanged
 	item, err := storage.Peek()
 	assert.NoError(t, err)
-	assert.Equal(t, messages[2], item.message)
+	assert.Equal(t, messages[2], string(item.Message()))
 
 	// Remove the head
 	err = storage.Remove(item3)
@@ -86,7 +86,7 @@ func TestFifoQueue(t *testing.T) {
 	// Assert head moved
 	item, err = storage.Peek()
 	assert.NoError(t, err)
-	assert.Equal(t, messages[1], item.message)
+	assert.Equal(t, messages[1], string(item.Message()))
 
 	// Remove remaining
 	err = storage.Remove(item2)
@@ -108,7 +108,7 @@ func TestEnqueueWithDelay(t *testing.T) {
 
 	message := "any"
 	retryCount := 2
-	err := storage.EnqueueWithDelay(message, time.Duration(1)*time.Hour, retryCount)
+	err := storage.EnqueueWithDelay([]byte(message), time.Duration(1)*time.Hour, retryCount)
 	assert.NoError(t, err)
 
 	item, err := storage.Peek()
@@ -120,8 +120,8 @@ func TestEnqueueWithDelay(t *testing.T) {
 	item, err = storage.Peek()
 	assert.NoError(t, err)
 	assert.NotNil(t, item)
-	assert.Equal(t, message, item.message)
-	assert.Equal(t, retryCount, item.retryCount)
+	assert.Equal(t, message, string(item.Message()))
+	assert.Equal(t, retryCount, item.RetryCount())
 }
 
 func TestEnqueueWithDelay_ZeroDelay(t *testing.T) {
@@ -134,24 +134,24 @@ func TestEnqueueWithDelay_ZeroDelay(t *testing.T) {
 
 	message := "any"
 	retryCount := 1
-	err := storage.EnqueueWithDelay(message, time.Duration(0), retryCount)
+	err := storage.EnqueueWithDelay([]byte(message), time.Duration(0), retryCount)
 	assert.NoError(t, err)
 
 	item, err := storage.Peek()
 	assert.NoError(t, err)
 	assert.NotNil(t, item)
-	assert.Equal(t, message, item.message)
-	assert.Equal(t, retryCount, item.retryCount)
+	assert.Equal(t, message, string(item.Message()))
+	assert.Equal(t, retryCount, item.RetryCount())
 }
 
 func enqueueAndAssert(storage *StorageQueue, message string, t *testing.T) *StoredItem {
-	err := storage.Enqueue(message)
+	err := storage.Enqueue([]byte(message))
 	assert.NoError(t, err)
 
 	item, err := storage.Peek()
 	assert.NoError(t, err)
 	assert.NotNil(t, item)
-	assert.Equal(t, message, item.message, "Message '%s' was queued, but '%s' was returned after peeking.", message, item.message)
+	assert.Equal(t, message, string(item.Message()), "Message '%s' was queued, but '%s' was returned after peeking.", message, string(item.Message()))
 
 	return item
 }
@@ -175,7 +175,7 @@ func TestRemoveInvalidItem(t *testing.T) {
 
 	err := storage.Remove(&StoredItem{
 		retryCount: 0,
-		message:    "",
+		message:    []byte{},
 		fileName:   "doesnotexist",
 	})
 	assert.NoError(t, err)

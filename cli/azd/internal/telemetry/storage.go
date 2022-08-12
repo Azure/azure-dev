@@ -20,8 +20,8 @@ const fsTimeLayout = "20060102T150405"
 const tempFileTtl = time.Duration(5) * time.Minute
 
 type Queue interface {
-	Enqueue(message string) error
-	EnqueueWithDelay(message string, delayDuration time.Duration, retryCount int)
+	Enqueue(message []byte) error
+	EnqueueWithDelay(message []byte, delayDuration time.Duration, retryCount int)
 	Peek() (*StoredItem, error)
 	Remove(item *StoredItem) error
 }
@@ -48,7 +48,7 @@ type StoredItem struct {
 	retryCount int
 
 	// Message in the item
-	message string
+	message []byte
 
 	// File name of the stored item
 	fileName string
@@ -58,7 +58,7 @@ func (itm *StoredItem) RetryCount() int {
 	return itm.retryCount
 }
 
-func (itm *StoredItem) Message() string {
+func (itm *StoredItem) Message() []byte {
 	return itm.message
 }
 
@@ -88,22 +88,22 @@ func NewStorageQueue(folder string, itemFileExtension string) (*StorageQueue, er
 }
 
 // Queues a message.
-func (stg *StorageQueue) Enqueue(message string) error {
+func (stg *StorageQueue) Enqueue(message []byte) error {
 	return stg.save(time.Duration(0), 0, message)
 }
 
 // Queues a message with delay.
-func (stg *StorageQueue) EnqueueWithDelay(message string, delayDuration time.Duration, retryCount int) error {
+func (stg *StorageQueue) EnqueueWithDelay(message []byte, delayDuration time.Duration, retryCount int) error {
 	return stg.save(delayDuration, retryCount, message)
 }
 
-func (stg *StorageQueue) save(delayDuration time.Duration, retryCount int, message string) error {
+func (stg *StorageQueue) save(delayDuration time.Duration, retryCount int, message []byte) error {
 	file, err := os.CreateTemp(stg.folder, "*_itm.tmp")
 	if err != nil {
 		return fmt.Errorf("failed to create temp file :%v", err)
 	}
 
-	err = os.WriteFile(file.Name(), []byte(message), osutil.PermissionFile)
+	err = os.WriteFile(file.Name(), message, osutil.PermissionFile)
 	if err != nil {
 		return fmt.Errorf("failed to write file: %v", err)
 	}
@@ -154,7 +154,7 @@ func (stg *StorageQueue) Peek() (*StoredItem, error) {
 	return &StoredItem{
 		fileName:   fileName,
 		retryCount: item.retryCount,
-		message:    string(message),
+		message:    message,
 	}, nil
 }
 

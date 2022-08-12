@@ -3,6 +3,7 @@ package mocks
 import (
 	"context"
 	"fmt"
+	"io"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/templates"
@@ -25,14 +26,17 @@ func NewMockConsole() *MockConsole {
 	}
 }
 
+func (c *MockConsole) SetWriter(writer io.Writer) {
+
+}
+
 func (c *MockConsole) Output() []string {
 	return c.log
 }
 
 // Prints a message to the console
-func (c *MockConsole) Message(ctx context.Context, message string) error {
+func (c *MockConsole) Message(ctx context.Context, message string) {
 	c.log = append(c.log, message)
-	return nil
 }
 
 // Prints a confirmation message to the console for the user to confirm
@@ -68,6 +72,10 @@ func (c *MockConsole) PromptTemplate(ctx context.Context, message string) (templ
 	c.log = append(c.log, message)
 	value, err := c.respond("PromptTemplate", input.ConsoleOptions{})
 	return value.(templates.Template), err
+}
+
+// Writes messages to the underlying writer
+func (c *MockConsole) Flush() {
 }
 
 // Finds a matching mock expression and returns the configured value

@@ -5,18 +5,18 @@ package cmd
 
 import (
 	"context"
-	"errors"
 	"fmt"
-	"path/filepath"
+	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/commands"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
-	"github.com/azure/azure-dev/cli/azd/pkg/iac/bicep"
+	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
+	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
-	bicepTool "github.com/azure/azure-dev/cli/azd/pkg/tools/bicep"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/bicep"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
@@ -224,14 +224,13 @@ func (en *envNewAction) Run(ctx context.Context, _ *cobra.Command, args []string
 func envRefreshCmd(rootOptions *commands.GlobalCommandOptions) *cobra.Command {
 	actionFn := func(ctx context.Context, cmd *cobra.Command, args []string, azdCtx *azdcontext.AzdContext) error {
 		azCli := commands.GetAzCliFromContext(ctx)
-		bicepCli := bicepTool.NewBicepCli(bicepTool.NewBicepCliArgs{AzCli: azCli})
 		console := input.NewConsole(!rootOptions.NoPrompt)
 
 		if err := ensureProject(azdCtx.ProjectPath()); err != nil {
 			return err
 		}
 
-		if err := tools.EnsureInstalled(ctx, azCli, bicepCli); err != nil {
+		if err := tools.EnsureInstalled(ctx, azCli); err != nil {
 			return err
 		}
 
@@ -244,20 +243,27 @@ func envRefreshCmd(rootOptions *commands.GlobalCommandOptions) *cobra.Command {
 			return fmt.Errorf("loading environment: %w", err)
 		}
 
-		template, err := bicep.Compile(ctx, bicepCli, filepath.Join(azdCtx.InfrastructureDirectory(), "main.bicep"))
+		prj, err := project.LoadProjectConfig(azdCtx.ProjectPath(), &environment.Environment{})
 		if err != nil {
-			return err
+			return fmt.Errorf("loading project: %w", err)
 		}
 
-		res, err := azCli.GetSubscriptionDeployment(ctx, env.GetSubscriptionId(), env.GetEnvName())
-		if errors.Is(err, azcli.ErrDeploymentNotFound) {
-			return fmt.Errorf("no deployment for environment '%s' found. Have you run `infra create`?", rootOptions.EnvironmentName)
-		} else if err != nil {
-			return fmt.Errorf("fetching latest deployment: %w", err)
+		if strings.TrimSpace(prj.Infra.Module) == "" {
+			prj.Infra.Module = "main"
 		}
 
-		template.CanonicalizeDeploymentOutputs(&res.Properties.Outputs)
-		if err = saveEnvironmentValues(res, env); err != nil {
+		infraManager, err := provisioning.NewManager(ctx, env, prj.Path, prj.Infra, !rootOptions.NoPrompt, console, bicep.NewBicepCliArgs{AzCli: azCli})
+		if err != nil {
+			return fmt.Errorf("creating provisioning manager: %w", err)
+		}
+
+		scope := provisioning.NewSubscriptionScope(azCli, env.GetLocation(), env.GetSubscriptionId(), env.GetEnvName())
+		getDeploymentResult, err := infraManager.GetDeployment(ctx, scope, !rootOptions.NoPrompt)
+		if err != nil {
+			return fmt.Errorf("getting deployment: %w", err)
+		}
+
+		if err := provisioning.UpdateEnvironment(&env, &getDeploymentResult.Deployment.Outputs); err != nil {
 			return err
 		}
 
@@ -265,8 +271,9 @@ func envRefreshCmd(rootOptions *commands.GlobalCommandOptions) *cobra.Command {
 		if err != nil {
 			return err
 		}
+
 		if formatter.Kind() == output.JsonFormat {
-			err = formatter.Format(res, cmd.OutOrStdout(), nil)
+			err = formatter.Format(getDeploymentResult.Deployment, cmd.OutOrStdout(), nil)
 			if err != nil {
 				return fmt.Errorf("writing deployment result in JSON format: %w", err)
 			}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"sort"
@@ -15,19 +16,23 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/templates"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
+	"github.com/mattn/go-colorable"
 )
 
 type Console interface {
-	Message(ctx context.Context, message string) error
+	Message(ctx context.Context, message string)
 	Prompt(ctx context.Context, options ConsoleOptions) (string, error)
 	Select(ctx context.Context, options ConsoleOptions) (int, error)
 	Confirm(ctx context.Context, options ConsoleOptions) (bool, error)
 	PromptLocation(ctx context.Context, message string) (string, error)
 	PromptTemplate(ctx context.Context, message string) (templates.Template, error)
+	SetWriter(writer io.Writer)
 }
 
 type AskerConsole struct {
-	asker Asker
+	interactive bool
+	asker       Asker
+	writer      io.Writer
 }
 
 type ConsoleOptions struct {
@@ -36,13 +41,20 @@ type ConsoleOptions struct {
 	DefaultValue any
 }
 
-func (c *AskerConsole) Message(ctx context.Context, message string) error {
-	_, err := fmt.Println(message)
-	if err != nil {
-		return fmt.Errorf("error printing line: %w", err)
+func (c *AskerConsole) SetWriter(writer io.Writer) {
+	if writer == nil {
+		writer = colorable.NewColorableStdout()
 	}
 
-	return nil
+	c.writer = writer
+}
+
+func (c *AskerConsole) Message(ctx context.Context, message string) {
+	if c.interactive {
+		fmt.Fprintln(c.writer, message)
+	} else {
+		log.Println(message)
+	}
 }
 
 func (c *AskerConsole) Prompt(ctx context.Context, options ConsoleOptions) (string, error) {
@@ -200,6 +212,8 @@ func NewConsole(interactive bool) Console {
 	asker := NewAsker(!interactive)
 
 	return &AskerConsole{
-		asker: asker,
+		interactive: interactive,
+		asker:       asker,
+		writer:      colorable.NewColorableStdout(),
 	}
 }

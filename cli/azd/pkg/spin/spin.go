@@ -41,9 +41,17 @@ func (s *Spinner) Println(message string) {
 		s.logMutex.Lock()
 
 		s.Stop()
-		fmt.Fprintln(writer, message)
+		fmt.Fprint(writer, message)
 		s.Start()
 	}
+}
+
+// Implements the standard io.Writer interface
+func (s *Spinner) Write(p []byte) (int, error) {
+	message := string(p)
+	s.Println(message)
+
+	return len(p), nil
 }
 
 // Run renders the spinner while runFn is executing,

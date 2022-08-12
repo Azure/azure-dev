@@ -13,7 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestInfraPreview(t *testing.T) {
+func TestManagerPreview(t *testing.T) {
 	ctx := context.Background()
 	env := environment.Environment{Values: make(map[string]string)}
 	env.Values["AZURE_LOCATION"] = "eastus2"
@@ -34,10 +34,34 @@ func TestInfraPreview(t *testing.T) {
 
 	require.NotNil(t, previewResult)
 	require.Nil(t, err)
-	require.Equal(t, previewResult.Preview.Parameters["location"].Value, env.Values["AZURE_LOCATION"])
+	require.Equal(t, previewResult.Deployment.Parameters["location"].Value, env.Values["AZURE_LOCATION"])
 }
 
-func TestInfraDeploy(t *testing.T) {
+func TestManagerGetDeployment(t *testing.T) {
+	ctx := context.Background()
+	env := environment.Environment{Values: make(map[string]string)}
+	env.Values["AZURE_LOCATION"] = "eastus2"
+	env.SetEnvName("test-env")
+	options := Options{Provider: "test"}
+	interactive := false
+	execUtil := mocks.NewMockExecUtil()
+	console := mocks.NewMockConsole()
+
+	cliArgs := bicep.NewBicepCliArgs{
+		AzCli:           azcli.NewAzCli(azcli.NewAzCliArgs{RunWithResultFn: execUtil.RunWithResult}),
+		RunWithResultFn: execUtil.RunWithResult,
+	}
+
+	mgr, _ := NewManager(ctx, env, "", options, interactive, console, cliArgs)
+
+	provisioningScope := NewSubscriptionScope(cliArgs.AzCli, "eastus2", env.GetSubscriptionId(), env.GetEnvName())
+	getResult, err := mgr.GetDeployment(ctx, provisioningScope, true)
+
+	require.NotNil(t, getResult)
+	require.Nil(t, err)
+}
+
+func TestManagerDeploy(t *testing.T) {
 	ctx := context.Background()
 	env := environment.Environment{Values: make(map[string]string)}
 	env.Values["AZURE_LOCATION"] = "eastus2"
@@ -55,13 +79,15 @@ func TestInfraDeploy(t *testing.T) {
 	mgr, _ := NewManager(ctx, env, "", options, interactive, console, cliArgs)
 
 	previewResult, _ := mgr.Preview(ctx, false)
-	deployResult, err := mgr.Deploy(ctx, &previewResult.Preview, false)
+	deployOptions := DeployOptions{Interactive: true}
+	provisioningScope := NewSubscriptionScope(cliArgs.AzCli, "eastus2", env.GetSubscriptionId(), env.GetEnvName())
+	deployResult, err := mgr.Deploy(ctx, &previewResult.Deployment, provisioningScope, deployOptions)
 
 	require.NotNil(t, deployResult)
 	require.Nil(t, err)
 }
 
-func TestInfraDestroyWithPositiveConfirmation(t *testing.T) {
+func TestManagerDestroyWithPositiveConfirmation(t *testing.T) {
 	ctx := context.Background()
 	env := environment.Environment{Values: make(map[string]string)}
 	env.Values["AZURE_LOCATION"] = "eastus2"
@@ -83,14 +109,17 @@ func TestInfraDestroyWithPositiveConfirmation(t *testing.T) {
 	mgr, _ := NewManager(ctx, env, "", options, interactive, console, cliArgs)
 
 	previewResult, _ := mgr.Preview(ctx, false)
-	destroyResult, err := mgr.Destroy(ctx, &previewResult.Preview, true)
+	destroyOptions := DestroyOptions{
+		Interactive: true,
+	}
+	destroyResult, err := mgr.Destroy(ctx, &previewResult.Deployment, destroyOptions)
 
 	require.NotNil(t, destroyResult)
 	require.Nil(t, err)
 	require.Contains(t, console.Output(), "Are you sure you want to destroy?")
 }
 
-func TestInfraDestroyWithNegativeConfirmation(t *testing.T) {
+func TestManagerDestroyWithNegativeConfirmation(t *testing.T) {
 	ctx := context.Background()
 	env := environment.Environment{Values: make(map[string]string)}
 	env.Values["AZURE_LOCATION"] = "eastus2"
@@ -112,7 +141,10 @@ func TestInfraDestroyWithNegativeConfirmation(t *testing.T) {
 	mgr, _ := NewManager(ctx, env, "", options, interactive, console, cliArgs)
 
 	previewResult, _ := mgr.Preview(ctx, false)
-	destroyResult, err := mgr.Destroy(ctx, &previewResult.Preview, true)
+	destroyOptions := DestroyOptions{
+		Interactive: true,
+	}
+	destroyResult, err := mgr.Destroy(ctx, &previewResult.Deployment, destroyOptions)
 
 	require.Nil(t, destroyResult)
 	require.NotNil(t, err)

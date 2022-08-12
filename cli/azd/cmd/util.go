@@ -17,7 +17,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/fatih/color"
 	"github.com/mgutz/ansi"
 )
@@ -290,20 +289,6 @@ func getSubscriptionOptions(ctx context.Context) ([]string, string, error) {
 
 	subscriptionOptions[len(subscriptionOptions)-1] = manualSubscriptionEntryOption
 	return subscriptionOptions, defaultSubscription, nil
-}
-
-func saveEnvironmentValues(res azcli.AzCliDeployment, env environment.Environment) error {
-	if len(res.Properties.Outputs) > 0 {
-		for name, o := range res.Properties.Outputs {
-			env.Values[name] = fmt.Sprintf("%v", o.Value)
-		}
-
-		if err := env.Save(); err != nil {
-			return fmt.Errorf("writing environment: %w", err)
-		}
-	}
-
-	return nil
 }
 
 var (

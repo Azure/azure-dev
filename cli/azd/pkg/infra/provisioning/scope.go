@@ -29,7 +29,7 @@ func (s *ResourceGroupScope) GetDeployment(ctx context.Context) (azcli.AzCliDepl
 	return s.azCli.GetResourceGroupDeployment(ctx, s.subscriptionId, s.resourceGroup, s.name)
 }
 
-func NewResourceGroupProvisioningScope(azCli azcli.AzCli, subscriptionId string, resourceGroup string, deploymentName string) Scope {
+func NewResourceGroupScope(azCli azcli.AzCli, subscriptionId string, resourceGroup string, deploymentName string) Scope {
 	return &ResourceGroupScope{
 		azCli:          azCli,
 		name:           deploymentName,
@@ -66,7 +66,7 @@ func (s *SubscriptionScope) GetDeployment(ctx context.Context) (azcli.AzCliDeplo
 	return s.azCli.GetSubscriptionDeployment(ctx, s.subscriptionId, s.name)
 }
 
-func NewSubscriptionProvisioningScope(azCli azcli.AzCli, location string, subscriptionId string, deploymentName string) Scope {
+func NewSubscriptionScope(azCli azcli.AzCli, location string, subscriptionId string, deploymentName string) Scope {
 	return &SubscriptionScope{
 		azCli:          azCli,
 		name:           deploymentName,

@@ -4,32 +4,28 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"sort"
 	"strconv"
 	"strings"
 	"time"
 )
 
 const logDirectoryPermissions = 0755
-const fileExtension = "trn"
+const transmissionFileExtension = ".azdtel"
 const transmissionFileFormat = "20060102T150405"
-const defaultCleanupIntervalSeconds = 10
 
 type Storage struct {
-	folder          string
-	cleanUpInterval time.Duration
-	abortChan       chan (struct{})
+	folder string
 }
 
-type Transmission struct {
-	// Timestamp after which the transmission can be transmitted
-	timestamp time.Time
-
+type StoredTransmission struct {
 	// Number of retries attempted
 	retryCount int
 
 	// Payload of the transmission
 	payload string
+
+	// File name of the stored transmission
+	fileName string
 }
 
 type transmissionFileEntry struct {
@@ -38,49 +34,19 @@ type transmissionFileEntry struct {
 	retryCount int
 }
 
-func NewStorage(folder string) *Storage {
+func NewStorage(folder string) (*Storage, error) {
+	if err := os.MkdirAll(folder, logDirectoryPermissions); err != nil {
+		return nil, fmt.Errorf("failed to create telemetry storage folder: %v", err)
+	}
+
 	storage := Storage{
-		folder:          folder,
-		cleanUpInterval: defaultCleanupIntervalSeconds * time.Second,
+		folder: folder,
 	}
-	storage.init()
-	return &storage
+	return &storage, nil
 }
 
-func (stg *Storage) init() error {
-	if err := os.MkdirAll(filepath.Dir(stg.folder), logDirectoryPermissions); err != nil {
-		return fmt.Errorf("failed to create telemetry storage folder: %v", err)
-	}
-
-	go func() {
-		stg.cleanup()
-	}()
-
-	return nil
-}
-
-func (stg *Storage) StartCleanup() {
-	go stg.runCleanup()
-}
-
-func (stg *Storage) StopCleanup() {
-	stg.abortChan <- struct{}{}
-}
-
-func (stg *Storage) runCleanup() {
-	for {
-		select {
-		case <-time.After(stg.cleanUpInterval):
-			stg.cleanup()
-			time.Sleep(stg.cleanUpInterval)
-
-		case <-stg.abortChan:
-			return
-		}
-	}
-}
-
-func (stg *Storage) cleanup() {
+// Scans the storage directory for any obsoleted transmission or temp files.
+func (stg *Storage) Cleanup() {
 	files, err := os.ReadDir(stg.folder)
 	if err != nil {
 		return
@@ -88,28 +54,44 @@ func (stg *Storage) cleanup() {
 
 	for _, file := range files {
 		if !file.IsDir() {
-			if _, ok := stg.parseFilename(file.Name()); !ok {
-				_ = os.Remove(file.Name())
+			if strings.HasSuffix(file.Name(), ".tmp") {
+				info, err := file.Info()
+				if err == nil && time.Since(info.ModTime()) > time.Duration(5)*time.Minute {
+					_ = os.Remove(file.Name())
+				}
+			} else if strings.HasSuffix(file.Name(), transmissionFileExtension) {
+				if _, ok := stg.parseFilename(file.Name()); !ok {
+					_ = os.Remove(file.Name())
+				}
 			}
 		}
 	}
 }
 
-// Saves the transmission on storage.
-func (stg *Storage) SaveTransmission(trn *Transmission) error {
+func (stg *Storage) Save(payload string) error {
+	return stg.save(time.Duration(0), 0, payload)
+}
+
+func (stg *Storage) SaveRetry(payload string, delayDuration time.Duration, retryCount int) error {
+	return stg.save(delayDuration, retryCount, payload)
+}
+
+func (stg *Storage) save(delayDuration time.Duration, retryCount int, payload string) error {
 	file, err := os.CreateTemp(stg.folder, "*_azdtrans.tmp")
 	if err != nil {
 		return fmt.Errorf("failed to create transmission file :%v", err)
 	}
 
-	err = os.WriteFile(file.Name(), []byte(trn.payload), 0644)
+	err = os.WriteFile(file.Name(), []byte(payload), 0644)
 	if err != nil {
 		return fmt.Errorf("failed to write file: %v", err)
 	}
+	file.Close()
 
 	generatedFileName := filepath.Base(file.Name())
-	randomPrefix := generatedFileName[:strings.Index(generatedFileName, "_")]
-	fileName := fmt.Sprintf("%s_%d_%s.trn", trn.timestamp.Local().Format(transmissionFileFormat), trn.retryCount, randomPrefix)
+	randomSuffix := generatedFileName[:strings.LastIndex(generatedFileName, "_")]
+	transmitTime := time.Now().Add(delayDuration)
+	fileName := fmt.Sprintf("%s_%d_%s.trn", transmitTime.Format(transmissionFileFormat), retryCount, randomSuffix)
 	err = os.Rename(file.Name(), filepath.Join(stg.folder, fileName))
 	if err != nil {
 		return fmt.Errorf("failed to rename file: %v", err)
@@ -118,37 +100,53 @@ func (stg *Storage) SaveTransmission(trn *Transmission) error {
 	return nil
 }
 
-// Gets the latest stored transmission.
+func (stg *Storage) Remove(transmission *StoredTransmission) error {
+	err := os.Remove(transmission.fileName)
+	if err != nil {
+		return fmt.Errorf("failed to remove stored trx: %v", err)
+	}
+
+	return nil
+}
+
+// Gets the latest stored transmission ready for transmission.
 // Returns nil if no transmissions exist.
 // Returns error if an error occurs while reading storage.
-func (stg *Storage) GetLatestTransmission() (*Transmission, error) {
+func (stg *Storage) GetLatestTransmission() (*StoredTransmission, error) {
 	files, err := stg.getAllFiles()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get trx files: %v", err)
 	}
 
-	if len(files) == 0 {
+	latestTime := time.Time{}
+	latestIndex := -1
+	now := time.Now()
+	for i, file := range files {
+		if file.timestamp.After(now) && file.timestamp.After(latestTime) {
+			latestTime = file.timestamp
+			latestIndex = i
+		}
+	}
+
+	if latestIndex == -1 {
 		return nil, nil
 	}
 
-	sort.Slice(files, func(i, j int) bool {
-		return files[i].timestamp.Before(files[j].timestamp)
-	})
-
-	payload, err := os.ReadFile(files[0].name)
+	file := files[latestIndex]
+	payload, err := os.ReadFile(file.name)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read trx file: %v", err)
 	}
 
-	return &Transmission{
-		timestamp:  files[0].timestamp,
-		retryCount: files[0].retryCount,
+	return &StoredTransmission{
+		fileName:   file.name,
+		retryCount: file.retryCount,
 		payload:    string(payload),
 	}, nil
 }
 
 func (stg *Storage) getAllFiles() ([]transmissionFileEntry, error) {
-	dirEntries, err := os.ReadDir(stg.folder)
+	dirEntries, err := readDir(stg.folder)
 	if err != nil {
 		return nil, fmt.Errorf("error reading folder: %v", err)
 	}
@@ -156,22 +154,33 @@ func (stg *Storage) getAllFiles() ([]transmissionFileEntry, error) {
 	files := []transmissionFileEntry{}
 
 	for _, entry := range dirEntries {
-		name := entry.Name()
+		if !entry.IsDir() && strings.HasSuffix(entry.Name(), transmissionFileExtension) {
+			name := entry.Name()
+			entry, ok := stg.parseFilename(name)
 
-		entry, ok := stg.parseFilename(name)
-
-		if !ok {
-			os.Remove(filepath.Join(stg.folder, name))
-		} else {
-			files = append(files, *entry)
+			if ok {
+				files = append(files, *entry)
+			}
 		}
 	}
 
 	return files, nil
 }
 
+// readDir is os.ReadDir except it returns entries in directory order instead of by name order
+func readDir(name string) ([]os.DirEntry, error) {
+	f, err := os.Open(name)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+
+	dirs, err := f.ReadDir(-1)
+	return dirs, err
+}
+
 func (stg *Storage) parseFilename(name string) (*transmissionFileEntry, bool) {
-	if !strings.HasSuffix(name, "."+fileExtension) {
+	if !strings.HasSuffix(name, transmissionFileExtension) {
 		return nil, false
 	}
 
@@ -192,7 +201,7 @@ func (stg *Storage) parseFilename(name string) (*transmissionFileEntry, bool) {
 
 	return &transmissionFileEntry{
 		name:       filepath.Join(stg.folder, name),
-		timestamp:  timestamp.Local(),
+		timestamp:  timestamp,
 		retryCount: retryCount,
 	}, true
 }

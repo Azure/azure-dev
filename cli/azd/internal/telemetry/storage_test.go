@@ -18,7 +18,8 @@ func TestNewStorage(t *testing.T) {
 		err := os.RemoveAll(folder)
 		assert.NoError(t, err)
 
-		storage := NewStorage(folder)
+		storage, err := NewStorage(folder)
+		assert.NoError(t, err)
 		assert.DirExists(t, storage.folder)
 		os.RemoveAll(folder)
 	})
@@ -27,7 +28,8 @@ func TestNewStorage(t *testing.T) {
 		err := os.Mkdir(folder, 644)
 		assert.NoError(t, err)
 
-		storage := NewStorage(folder)
+		storage, err := NewStorage(folder)
+		assert.NoError(t, err)
 		assert.DirExists(t, storage.folder)
 
 		os.RemoveAll(folder)
@@ -49,7 +51,7 @@ func TestSaveTransmission(t *testing.T) {
 			trn: &Transmission{
 				timestamp:  timeUtc,
 				retryCount: 0,
-				payload:    "SOME_DATA_HERE",
+				payload:    "SOME_DATA_HERE\r\n",
 			},
 		},
 		{
@@ -84,8 +86,8 @@ func TestSaveTransmission(t *testing.T) {
 			assert.Len(t, trxs, 1)
 
 			prefix := fmt.Sprintf("%s_%d", test.trn.timestamp.Format(transmissionFileFormat), test.trn.retryCount)
-			assert.Regexp(t, regexp.MustCompile(prefix+"\\d+\\.trn"), filepath.Base(trxs[0].name))
-			assert.Equal(t, test.trn.timestamp, trxs[0].timestamp)
+			assert.Regexp(t, regexp.MustCompile(prefix+"_\\d+\\.trn"), filepath.Base(trxs[0].name))
+			assert.Equal(t, test.trn.timestamp.Unix(), trxs[0].timestamp.Unix())
 			assert.Equal(t, test.trn.retryCount, trxs[0].retryCount)
 
 			bytes, err := os.ReadFile(trxs[0].name)
@@ -94,9 +96,9 @@ func TestSaveTransmission(t *testing.T) {
 
 			storage.GetLatestTransmission()
 
-			os.RemoveAll(folder)
 		})
 	}
+	os.RemoveAll(folder)
 }
 
 func TestGetLatestTransmissionNoTransmissionExists(t *testing.T) {

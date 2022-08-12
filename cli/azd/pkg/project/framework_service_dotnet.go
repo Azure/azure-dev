@@ -23,8 +23,6 @@ func (dp *dotnetProject) RequiredExternalTools() []tools.ExternalTool {
 	return []tools.ExternalTool{dp.dotnetCli}
 }
 
-var BicepOutput map[string]tools.AzCliDeploymentOutput
-
 func (dp *dotnetProject) Package(ctx context.Context, progress chan<- string) (string, error) {
 	publishRoot, err := os.MkdirTemp("", "azd")
 	if err != nil {
@@ -56,7 +54,8 @@ func (dp *dotnetProject) Initialize(ctx context.Context) error {
 	}
 
 	handler := func(ctx context.Context, args ServiceLifecycleEventArgs) error {
-		for key, val := range BicepOutput {
+		bicepOutput := args.Args["bicepOutput"].(map[string]tools.AzCliDeploymentOutput)
+		for key, val := range bicepOutput {
 			if err := tools.NewDotNetCli().SetSecret(ctx, key, fmt.Sprint(val.Value), dp.config.Path()); err != nil {
 				return err
 			}

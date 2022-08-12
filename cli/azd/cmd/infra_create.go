@@ -51,7 +51,7 @@ func (ica *infraCreateAction) SetupFlags(persis, local *pflag.FlagSet) {
 
 func (ica *infraCreateAction) Run(ctx context.Context, cmd *cobra.Command, args []string, azdCtx *environment.AzdContext) error {
 	azCli := commands.GetAzCliFromContext(ctx)
-	bicepCli := tools.NewBicepCli(azCli)
+	bicepCli := tools.NewBicepCli(tools.NewBicepCliArgs{AzCli: azCli})
 	dotnetCli := tools.NewDotNetCli()
 	askOne := makeAskOne(ica.rootOptions.NoPrompt)
 
@@ -280,9 +280,8 @@ func (ica *infraCreateAction) Run(ctx context.Context, cmd *cobra.Command, args 
 
 	template.CanonicalizeDeploymentOutputs(&res.Result.Properties.Outputs)
 
-	project.BicepOutput = res.Result.Properties.Outputs
 	for _, svc := range proj.Services {
-		if err := svc.RaiseEvent(ctx, project.Deployed); err != nil {
+		if err := svc.RaiseEvent(ctx, project.Deployed, map[string]any{"bicepOutput": res.Result.Properties.Outputs}); err != nil {
 			return err
 		}
 	}

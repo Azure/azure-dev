@@ -149,6 +149,10 @@ func (p *pipelineConfigAction) Run(ctx context.Context, _ *cobra.Command, args [
 					DefaultValue: "Create a new private GitHub repository",
 				})
 
+				if err != nil {
+					return "", fmt.Errorf("prompting for remote configuration type: %w", err)
+				}
+
 				var remoteUrl string
 
 				switch idx {
@@ -288,13 +292,15 @@ func (p *pipelineConfigAction) getRemoteUrlFromPrompt(ctx context.Context, conso
 	remoteUrl := ""
 
 	for remoteUrl == "" {
-		remoteUrl, err := console.Prompt(ctx, input.ConsoleOptions{
+		promptValue, err := console.Prompt(ctx, input.ConsoleOptions{
 			Message: fmt.Sprintf("Please enter the url to use for remote %s:", p.pipelineRemoteName),
 		})
 
 		if err != nil {
 			return "", fmt.Errorf("prompting for remote url: %w", err)
 		}
+
+		remoteUrl = promptValue
 
 		if _, err := github.GetSlugForRemote(remoteUrl); errors.Is(err, github.ErrRemoteHostIsNotGitHub) {
 			fmt.Printf("error: \"%s\" is not a valid GitHub URL.\n", remoteUrl)

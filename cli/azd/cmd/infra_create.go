@@ -7,13 +7,13 @@ import (
 	"os"
 	"time"
 
-	"github.com/AlecAivazis/survey/v2"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/commands"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/iac/bicep"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
+	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
@@ -52,7 +52,7 @@ func (ica *infraCreateAction) SetupFlags(persis, local *pflag.FlagSet) {
 func (ica *infraCreateAction) Run(ctx context.Context, cmd *cobra.Command, args []string, azdCtx *environment.AzdContext) error {
 	azCli := commands.GetAzCliFromContext(ctx)
 	bicepCli := tools.NewBicepCli(tools.NewBicepCliArgs{AzCli: azCli})
-	askOne := makeAskOne(ica.rootOptions.NoPrompt)
+	console := input.NewAskerConsole(ica.rootOptions.NoPrompt)
 
 	if err := ensureProject(azdCtx.ProjectPath()); err != nil {
 		return err
@@ -66,7 +66,7 @@ func (ica *infraCreateAction) Run(ctx context.Context, cmd *cobra.Command, args 
 		return fmt.Errorf("failed to ensure login: %w", err)
 	}
 
-	env, err := loadOrInitEnvironment(ctx, &ica.rootOptions.EnvironmentName, azdCtx, askOne)
+	env, err := loadOrInitEnvironment(ctx, &ica.rootOptions.EnvironmentName, azdCtx, console)
 	if err != nil {
 		return fmt.Errorf("loading environment: %w", err)
 	}
@@ -129,19 +129,19 @@ func (ica *infraCreateAction) Run(ctx context.Context, cmd *cobra.Command, args 
 			}
 			if _, has := configuredParameters[parameter]; !has {
 
-				var val string
-				if err := askOne(&survey.Input{
+				val, err := console.Prompt(ctx, input.ConsoleOptions{
 					Message: fmt.Sprintf("Please enter a value for the '%s' deployment parameter:", parameter),
-				}, &val); err != nil {
+				})
+				if err != nil {
 					return fmt.Errorf("prompting for deployment parameter: %w", err)
 				}
 
 				configuredParameters[parameter] = val
 
-				saveParameter := true
-				if err := askOne(&survey.Confirm{
+				saveParameter, err := console.Confirm(ctx, input.ConsoleOptions{
 					Message: "Save the value in the environment for future use",
-				}, &saveParameter); err != nil {
+				})
+				if err != nil {
 					return fmt.Errorf("prompting to save deployment parameter: %w", err)
 				}
 
@@ -173,7 +173,7 @@ func (ica *infraCreateAction) Run(ctx context.Context, cmd *cobra.Command, args 
 		// user on every deployment if they don't have a `location` parameter in their bicep file.
 		// When we store it, we should store it /per environment/ not as a property of the entire
 		// project.
-		selected, err := promptLocation(ctx, "Please select an Azure location to use to store deployment metadata:", askOne)
+		selected, err := console.PromptLocation(ctx, "Please select an Azure location to use to store deployment metadata:")
 		if err != nil {
 			return fmt.Errorf("prompting for deployment metadata region: %w", err)
 		}

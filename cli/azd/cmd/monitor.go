@@ -12,6 +12,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/commands"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
+	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/pbnj/go-open"
 	"github.com/spf13/cobra"
@@ -57,7 +58,7 @@ func (m *monitorAction) SetupFlags(
 
 func (m *monitorAction) Run(ctx context.Context, _ *cobra.Command, args []string, azdCtx *environment.AzdContext) error {
 	azCli := commands.GetAzCliFromContext(ctx)
-	askOne := makeAskOne(m.rootOptions.NoPrompt)
+	console := input.NewAskerConsole(m.rootOptions.NoPrompt)
 
 	if err := ensureProject(azdCtx.ProjectPath()); err != nil {
 		return err
@@ -75,7 +76,7 @@ func (m *monitorAction) Run(ctx context.Context, _ *cobra.Command, args []string
 		m.monitorLive = true
 	}
 
-	env, err := loadOrInitEnvironment(ctx, &m.rootOptions.EnvironmentName, azdCtx, askOne)
+	env, err := loadOrInitEnvironment(ctx, &m.rootOptions.EnvironmentName, azdCtx, console)
 	if err != nil {
 		return fmt.Errorf("loading environment: %w", err)
 	}

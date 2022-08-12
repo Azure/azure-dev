@@ -1,183 +1,232 @@
 package telemetry
 
 import (
-	"fmt"
 	"os"
 	"path/filepath"
-	"regexp"
 	"testing"
 	"time"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
+	"github.com/benbjohnson/clock"
 	"github.com/stretchr/testify/assert"
 )
 
-func TestNewStorage(t *testing.T) {
+// The tests in this file intentionally interacts with the filesystem (important implementation detail).
+// As such, it might be susceptible to filesystem related failures and also general slowness.
+
+const fileExtension = ".itm"
+
+type tempFolder struct {
+	name string
+}
+
+func newTempDir(t *testing.T, name string) tempFolder {
+	dirname, err := os.MkdirTemp("", name)
+	assert.NoError(t, err)
+	return tempFolder{dirname}
+}
+
+func (t *tempFolder) close() {
+	_ = os.RemoveAll(t.name)
+}
+
+func TestNewStorageQueue(t *testing.T) {
 	folder := filepath.Join(os.TempDir(), "azdnewstg")
+	defer os.RemoveAll(folder)
 
 	t.Run("CreatesFolder", func(t *testing.T) {
 		err := os.RemoveAll(folder)
 		assert.NoError(t, err)
 
-		storage, err := NewStorage(folder)
+		storage, err := NewStorageQueue(folder, fileExtension)
 		assert.NoError(t, err)
 		assert.DirExists(t, storage.folder)
-		os.RemoveAll(folder)
 	})
 
 	t.Run("HandlesExistingFolder", func(t *testing.T) {
-		err := os.Mkdir(folder, 644)
+		err := os.MkdirAll(folder, osutil.PermissionDirectory)
 		assert.NoError(t, err)
 
-		storage, err := NewStorage(folder)
+		storage, err := NewStorageQueue(folder, fileExtension)
 		assert.NoError(t, err)
 		assert.DirExists(t, storage.folder)
-
-		os.RemoveAll(folder)
 	})
 }
 
-func TestSaveTransmission(t *testing.T) {
-	folder := filepath.Join(os.TempDir(), "azdsave")
-	timeUtc, _ := time.Parse(time.RFC3339, "2006-01-02T15:04:05Z")
-	_, offset := time.Now().Zone()
-	fixedZone := time.FixedZone("Offset", offset+int(1*time.Hour/time.Second))
+func TestFifoQueue(t *testing.T) {
+	dir := newTempDir(t, "azdq")
+	defer dir.close()
 
-	tests := []struct {
-		title string
-		trn   *Transmission
-	}{
-		{
-			title: "Basic",
-			trn: &Transmission{
-				timestamp:  timeUtc,
-				retryCount: 0,
-				payload:    "SOME_DATA_HERE\r\n",
-			},
-		},
-		{
-			title: "Timezone",
-			trn: &Transmission{
-				timestamp:  time.Date(2006, 1, 2, 13, 4, 5, 0, fixedZone),
-				retryCount: 0,
-				payload:    "SOME_DATA_HERE",
-			},
-		},
-		{
-			title: "Extended",
-			trn: &Transmission{
-				timestamp:  timeUtc,
-				retryCount: 15,
-				payload:    "Line1\nLine2\nLine3",
-			},
-		},
+	messages := []string{
+		"Message1",
+		"Message2",
+		"Message3",
 	}
 
-	for _, test := range tests {
-		t.Run(test.title, func(t *testing.T) {
-			setupErr := os.RemoveAll(folder)
-			assert.NoError(t, setupErr)
+	storage := setupStorageQueue(t, dir)
+	// Queue 3 items, asserting each one is stored
+	item1 := enqueueAndAssert(storage, messages[0], t)
+	item2 := enqueueAndAssert(storage, messages[1], t)
+	item3 := enqueueAndAssert(storage, messages[2], t)
 
-			storage := NewStorage(folder)
-			err := storage.SaveTransmission(test.trn)
-			assert.NoError(t, err)
+	// Remove a non-head entry. This is only possible
+	// since we Peek the head as we queue each item.
+	err := storage.Remove(item1)
+	assert.NoError(t, err)
 
-			trxs, err := storage.getAllFiles()
-			assert.NoError(t, err)
-			assert.Len(t, trxs, 1)
+	// Assert head unchanged
+	item, err := storage.Peek()
+	assert.NoError(t, err)
+	assert.Equal(t, messages[2], item.message)
 
-			prefix := fmt.Sprintf("%s_%d", test.trn.timestamp.Format(transmissionFileFormat), test.trn.retryCount)
-			assert.Regexp(t, regexp.MustCompile(prefix+"_\\d+\\.trn"), filepath.Base(trxs[0].name))
-			assert.Equal(t, test.trn.timestamp.Unix(), trxs[0].timestamp.Unix())
-			assert.Equal(t, test.trn.retryCount, trxs[0].retryCount)
+	// Remove the head
+	err = storage.Remove(item3)
+	assert.NoError(t, err)
 
-			bytes, err := os.ReadFile(trxs[0].name)
-			assert.NoError(t, err)
-			assert.Equal(t, test.trn.payload, string(bytes))
+	// Assert head moved
+	item, err = storage.Peek()
+	assert.NoError(t, err)
+	assert.Equal(t, messages[1], item.message)
 
-			storage.GetLatestTransmission()
+	// Remove remaining
+	err = storage.Remove(item2)
+	assert.NoError(t, err)
 
-		})
-	}
-	os.RemoveAll(folder)
+	// Assert nothing remains
+	itm, err := storage.Peek()
+	assert.NoError(t, err)
+	assert.Nil(t, itm)
 }
 
-func TestGetLatestTransmissionNoTransmissionExists(t *testing.T) {
-	folder := filepath.Join(os.TempDir(), "azdnotrx")
-	os.RemoveAll(folder)
+func TestEnqueueWithDelay(t *testing.T) {
+	dir := newTempDir(t, "azdqd")
+	defer dir.close()
+	mockClock := clock.NewMock()
 
-	storage := NewStorage(folder)
-	trn, err := storage.GetLatestTransmission()
+	storage := setupStorageQueue(t, dir)
+	storage.clock = mockClock
+
+	message := "any"
+	retryCount := 2
+	err := storage.EnqueueWithDelay(message, time.Duration(1)*time.Hour, retryCount)
 	assert.NoError(t, err)
-	assert.Nil(t, trn)
+
+	item, err := storage.Peek()
+	assert.NoError(t, err)
+	assert.Nil(t, item, "")
+
+	// Advance the clock. Item should now be visible.
+	mockClock.Add(time.Duration(2) * time.Hour)
+	item, err = storage.Peek()
+	assert.NoError(t, err)
+	assert.NotNil(t, item)
+	assert.Equal(t, message, item.message)
+	assert.Equal(t, retryCount, item.retryCount)
 }
 
-func TestGetLatestTransmission(t *testing.T) {
-	timeSnapshot := time.Date(2006, 1, 2, 13, 4, 5, 0, time.UTC)
-	trx := []Transmission{
-		{
-			timestamp:  timeSnapshot.Add(time.Duration(2) * time.Second),
-			retryCount: 0,
-			payload:    "Latest",
-		},
-		{
-			timestamp:  timeSnapshot.Add(time.Duration(1) * time.Second),
-			retryCount: 0,
-			payload:    "Later",
-		},
-		{
-			timestamp:  timeSnapshot,
-			retryCount: 0,
-			payload:    "Earliest",
-		},
-	}
+func TestEnqueueWithDelay_ZeroDelay(t *testing.T) {
+	dir := newTempDir(t, "azdqdz")
+	defer dir.close()
+	mockClock := clock.NewMock()
 
-	folder := filepath.Join(os.TempDir(), "azdtrx")
-	os.RemoveAll(folder)
+	storage := setupStorageQueue(t, dir)
+	storage.clock = mockClock
 
-	storage := NewStorage(folder)
-	for _, trn := range trx {
-		storage.SaveTransmission(&trn)
-	}
-
-	trn, err := storage.GetLatestTransmission()
+	message := "any"
+	retryCount := 1
+	err := storage.EnqueueWithDelay(message, time.Duration(0), retryCount)
 	assert.NoError(t, err)
-	assert.Equal(t, trx[0], trn)
-	os.RemoveAll(folder)
 
+	item, err := storage.Peek()
+	assert.NoError(t, err)
+	assert.NotNil(t, item)
+	assert.Equal(t, message, item.message)
+	assert.Equal(t, retryCount, item.retryCount)
+}
+
+func enqueueAndAssert(storage *StorageQueue, message string, t *testing.T) *StoredItem {
+	err := storage.Enqueue(message)
+	assert.NoError(t, err)
+
+	item, err := storage.Peek()
+	assert.NoError(t, err)
+	assert.NotNil(t, item)
+	assert.Equal(t, message, item.message, "Message '%s' was queued, but '%s' was returned after peeking.", message, item.message)
+
+	return item
+}
+
+func TestPeekWhenNoItemsExist(t *testing.T) {
+	dir := newTempDir(t, "azdpk")
+	defer dir.close()
+
+	storage := setupStorageQueue(t, dir)
+
+	itm, err := storage.Peek()
+	assert.NoError(t, err)
+	assert.Nil(t, itm)
+}
+
+func TestRemoveInvalidItem(t *testing.T) {
+	dir := newTempDir(t, "azdriv")
+	defer dir.close()
+
+	storage := setupStorageQueue(t, dir)
+
+	err := storage.Remove(&StoredItem{
+		retryCount: 0,
+		message:    "",
+		fileName:   "doesnotexist",
+	})
+	assert.NoError(t, err)
 }
 
 func TestCleanup(t *testing.T) {
-	folder := filepath.Join(os.TempDir(), "azdtrx")
-	os.RemoveAll(folder)
+	dir := newTempDir(t, "azdcln")
+	defer dir.close()
 
 	invalidFiles := []string{
-		"invalid_file",
-		"invalid_file.txt",
-		"invalid_file.log",
-		"invalidformat.trn",
-		"notadate_1.trn",
-		transmissionFileFormat + "_notanumber.trn",
+		"invalidformat" + fileExtension,
+		"notadate_1" + fileExtension,
+		fsTimeLayout + "_notanumber" + fileExtension,
+	}
+
+	staleFiles := []string{
+		"stale1.tmp",
+		"stale2.tmp",
+		"stale3.tmp",
 	}
 
 	validFiles := []string{
-		fmt.Sprintf("%s_0.trn", getUtcTime().Format(transmissionFileFormat)),
-		fmt.Sprintf("%s_0.trn", getLocalTime().Format(transmissionFileFormat)),
-		fmt.Sprintf("%s_0.trn", getNonLocalTime().Format(transmissionFileFormat)),
-		fmt.Sprintf("%s_1.trn", getLocalTime().Format(transmissionFileFormat)),
-		fmt.Sprintf("%s_1_1234.trn", getLocalTime().Format(transmissionFileFormat)),
-		fmt.Sprintf("%s_3_unique.trn", getLocalTime().Format(transmissionFileFormat)),
+		fsTimeLayout + "_1_100" + fileExtension,
+		fsTimeLayout + "_1_101" + fileExtension,
+		fsTimeLayout + "_1_102" + fileExtension,
 	}
 
-	files := append(invalidFiles, validFiles...)
+	filesToCreate := append(invalidFiles, staleFiles...)
+	filesToCreate = append(filesToCreate, validFiles...)
 
-	storage := NewStorage(folder)
-
-	for _, file := range files {
-		_, err := os.Create(filepath.Join(folder, file))
+	for _, file := range filesToCreate {
+		f, err := os.Create(filepath.Join(dir.name, file))
 		assert.NoError(t, err)
+
+		f.Close()
 	}
 
-	storage.cleanup()
+	mockClock := clock.NewMock()
+	// Set current time to be greater than TTL for stale files to be deleted
+	mockClock.Set(time.Now().Add(tempFileTtl + time.Duration(5)*time.Hour))
+
+	storage := setupStorageQueue(t, dir)
+	storage.clock = mockClock
+
+	item1 := enqueueAndAssert(storage, "item1", t)
+	validFiles = append(validFiles, filepath.Base(item1.fileName))
+
+	item2 := enqueueAndAssert(storage, "item2", t)
+	validFiles = append(validFiles, filepath.Base(item2.fileName))
+
+	storage.Cleanup()
 
 	remainingFiles, err := os.ReadDir(storage.folder)
 	assert.NoError(t, err)
@@ -187,17 +236,8 @@ func TestCleanup(t *testing.T) {
 	}
 }
 
-func getUtcTime() time.Time {
-	return time.Date(2006, 1, 2, 13, 4, 5, 0, time.UTC)
-}
-
-func getLocalTime() time.Time {
-	return time.Date(2006, 1, 2, 13, 4, 5, 0, time.Local)
-}
-
-func getNonLocalTime() time.Time {
-	_, offset := time.Now().Zone()
-	fixedZone := time.FixedZone("Offset", offset+int(1*time.Hour/time.Second))
-
-	return time.Date(2006, 1, 2, 13, 4, 5, 0, fixedZone)
+func setupStorageQueue(t *testing.T, tempDir tempFolder) *StorageQueue {
+	storage, err := NewStorageQueue(tempDir.name, fileExtension)
+	assert.NoError(t, err)
+	return storage
 }

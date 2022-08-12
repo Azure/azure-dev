@@ -13,7 +13,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"time"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/commands"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
@@ -68,8 +67,6 @@ func (i *initAction) Run(ctx context.Context, _ *cobra.Command, args []string, a
 	// current ProjectDirectory will be set to that folder. That's not what we want here. We want
 	// to force using the current working directory as a project root (since we are initializing a
 	// new project).
-	time.Sleep(10 * time.Second)
-
 	wd, err := os.Getwd()
 	if err != nil {
 		return fmt.Errorf("getting cwd: %w", err)
@@ -82,7 +79,7 @@ func (i *initAction) Run(ctx context.Context, _ *cobra.Command, args []string, a
 		return errors.New("template name required when specifying a branch name")
 	}
 
-	console := input.NewAskerConsole(i.rootOptions.NoPrompt)
+	console := input.NewAskerConsole(!i.rootOptions.NoPrompt)
 	azCli := commands.GetAzCliFromContext(ctx)
 	gitCli := tools.NewGitCli()
 

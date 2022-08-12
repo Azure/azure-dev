@@ -68,6 +68,7 @@ func (c *AskerConsole) Prompt(ctx context.Context, options ConsoleOptions) (stri
 func (c *AskerConsole) Select(ctx context.Context, options ConsoleOptions) (int, error) {
 	survey := &survey.Select{
 		Message: options.Message,
+		Options: options.Options,
 		Default: options.DefaultValue,
 	}
 

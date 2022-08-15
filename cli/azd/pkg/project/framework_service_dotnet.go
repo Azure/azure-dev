@@ -56,9 +56,14 @@ func (dp *dotnetProject) Initialize(ctx context.Context) error {
 	handler := func(ctx context.Context, args ServiceLifecycleEventArgs) error {
 		bicepOutputArgs := args.Args["bicepOutput"]
 		if bicepOutputArgs == nil {
-			return fmt.Errorf("unable to get value from map")
+			return fmt.Errorf("fail on interface conversion: interface {} is nil")
 		}
-		bicepOutput := bicepOutputArgs.(map[string]tools.AzCliDeploymentOutput)
+
+		bicepOutput, ok := bicepOutputArgs.(map[string]tools.AzCliDeploymentOutput)
+		if !ok {
+			return fmt.Errorf("fail on interface conversion: no type in map")
+		}
+
 		for key, val := range bicepOutput {
 			if err := dp.dotnetCli.SetSecret(ctx, key, fmt.Sprint(val.Value), dp.config.Path()); err != nil {
 				return err

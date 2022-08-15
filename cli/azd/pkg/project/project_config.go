@@ -13,6 +13,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azureutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/drone/envsubst"
 	"gopkg.in/yaml.v3"
 )
@@ -266,15 +267,26 @@ func ParseProjectConfig(yamlContent string, env *environment.Environment) (*Proj
 }
 
 func (p *ProjectConfig) Initialize(ctx context.Context, env *environment.Environment) error {
+	var allTools []tools.ExternalTool
+	var frameworkService *FrameworkService
 	for _, svc := range p.Services {
 		frameworkService, err := svc.GetFrameworkService(ctx, env)
 		if err != nil {
 			return fmt.Errorf("getting framework services: %w", err)
 		}
-		if err = (*frameworkService).Initialize(ctx); err != nil {
-			return err
-		}
+
+		requiredTools := (*frameworkService).RequiredExternalTools()
+		allTools = append(allTools, requiredTools...)
 	}
+
+	if err := tools.EnsureInstalled(ctx, tools.Unique(allTools)...); err != nil {
+		return err
+	}
+
+	if err := (*frameworkService).Initialize(ctx); err != nil {
+		return err
+	}
+
 	return nil
 }
 

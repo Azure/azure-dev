@@ -54,9 +54,13 @@ func (dp *dotnetProject) Initialize(ctx context.Context) error {
 	}
 
 	handler := func(ctx context.Context, args ServiceLifecycleEventArgs) error {
-		bicepOutput := args.Args["bicepOutput"].(map[string]tools.AzCliDeploymentOutput)
+		bicepOutputArgs := args.Args["bicepOutput"]
+		if bicepOutputArgs == nil {
+			return fmt.Errorf("unable to get value from map")
+		}
+		bicepOutput := bicepOutputArgs.(map[string]tools.AzCliDeploymentOutput)
 		for key, val := range bicepOutput {
-			if err := tools.NewDotNetCli().SetSecret(ctx, key, fmt.Sprint(val.Value), dp.config.Path()); err != nil {
+			if err := dp.dotnetCli.SetSecret(ctx, key, fmt.Sprint(val.Value), dp.config.Path()); err != nil {
 				return err
 			}
 		}

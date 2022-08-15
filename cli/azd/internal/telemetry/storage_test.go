@@ -1,6 +1,7 @@
 package telemetry
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -9,6 +10,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/benbjohnson/clock"
 	"github.com/stretchr/testify/assert"
+	"golang.org/x/exp/maps"
 )
 
 // The tests in this file intentionally interacts with the filesystem (important implementation detail).
@@ -64,32 +66,29 @@ func TestFifoQueue(t *testing.T) {
 	}
 
 	storage := setupStorageQueue(t, dir)
-	// Queue 3 items, asserting each one is stored
-	item1 := enqueueAndAssert(storage, messages[0], t)
-	item2 := enqueueAndAssert(storage, messages[1], t)
-	item3 := enqueueAndAssert(storage, messages[2], t)
 
-	// Remove a non-head entry. This is only possible
-	// since we Peek the head as we queue each item.
-	err := storage.Remove(item1)
-	assert.NoError(t, err)
+	// Queue 3 items
+	enqueueAndAssert(storage, messages[0], t)
+	enqueueAndAssert(storage, messages[1], t)
+	enqueueAndAssert(storage, messages[2], t)
 
-	// Assert head unchanged
+	// Pop all items sequentially
 	item, err := storage.Peek()
 	assert.NoError(t, err)
-	assert.Equal(t, messages[2], string(item.Message()))
-
-	// Remove the head
-	err = storage.Remove(item3)
+	assert.Equal(t, messages[0], string(item.Message()))
+	err = storage.Remove(item)
 	assert.NoError(t, err)
 
-	// Assert head moved
 	item, err = storage.Peek()
 	assert.NoError(t, err)
 	assert.Equal(t, messages[1], string(item.Message()))
+	err = storage.Remove(item)
+	assert.NoError(t, err)
 
-	// Remove remaining
-	err = storage.Remove(item2)
+	item, err = storage.Peek()
+	assert.NoError(t, err)
+	assert.Equal(t, messages[2], string(item.Message()))
+	err = storage.Remove(item)
 	assert.NoError(t, err)
 
 	// Assert nothing remains
@@ -144,16 +143,9 @@ func TestEnqueueWithDelay_ZeroDelay(t *testing.T) {
 	assert.Equal(t, retryCount, item.RetryCount())
 }
 
-func enqueueAndAssert(storage *StorageQueue, message string, t *testing.T) *StoredItem {
+func enqueueAndAssert(storage *StorageQueue, message string, t *testing.T) {
 	err := storage.Enqueue([]byte(message))
 	assert.NoError(t, err)
-
-	item, err := storage.Peek()
-	assert.NoError(t, err)
-	assert.NotNil(t, item)
-	assert.Equal(t, message, string(item.Message()), "Message '%s' was queued, but '%s' was returned after peeking.", message, string(item.Message()))
-
-	return item
 }
 
 func TestPeekWhenNoItemsExist(t *testing.T) {
@@ -197,14 +189,15 @@ func TestCleanup(t *testing.T) {
 		"stale3.tmp",
 	}
 
-	validFiles := []string{
-		fsTimeLayout + "_1_100" + fileExtension,
-		fsTimeLayout + "_1_101" + fileExtension,
-		fsTimeLayout + "_1_102" + fileExtension,
+	validFilesByName := map[string]struct{}{
+		fsTimeLayout + "_1_100" + fileExtension: {},
+		fsTimeLayout + "_1_101" + fileExtension: {},
+		fsTimeLayout + "_1_102" + fileExtension: {},
 	}
+	validFileNames := maps.Keys(validFilesByName)
 
 	filesToCreate := append(invalidFiles, staleFiles...)
-	filesToCreate = append(filesToCreate, validFiles...)
+	filesToCreate = append(filesToCreate, validFileNames...)
 
 	for _, file := range filesToCreate {
 		f, err := os.Create(filepath.Join(dir.name, file))
@@ -220,19 +213,30 @@ func TestCleanup(t *testing.T) {
 	storage := setupStorageQueue(t, dir)
 	storage.clock = mockClock
 
-	item1 := enqueueAndAssert(storage, "item1", t)
-	validFiles = append(validFiles, filepath.Base(item1.fileName))
-
-	item2 := enqueueAndAssert(storage, "item2", t)
-	validFiles = append(validFiles, filepath.Base(item2.fileName))
+	validFilesByContent := map[string]struct{}{
+		"item1": {},
+		"item2": {},
+	}
+	validContent := maps.Keys(validFilesByContent)
+	enqueueAndAssert(storage, validContent[0], t)
+	enqueueAndAssert(storage, validContent[1], t)
 
 	storage.Cleanup()
 
 	remainingFiles, err := os.ReadDir(storage.folder)
 	assert.NoError(t, err)
-	assert.Len(t, remainingFiles, len(validFiles))
+	assert.Len(t, remainingFiles, len(validFilesByName)+len(validFilesByContent))
 	for _, remainingFile := range remainingFiles {
-		assert.Contains(t, validFiles, remainingFile.Name())
+		// Validate for a known filename
+		if _, ok := validFilesByName[remainingFile.Name()]; !ok {
+			// Validate for a known file item
+			content, err := os.ReadFile(filepath.Join(storage.folder, remainingFile.Name()))
+			assert.NoError(t, err)
+
+			if _, ok := validFilesByContent[string(content)]; !ok {
+				assert.Fail(t, fmt.Sprintf("Unknown remaining file found. Filename: %s, content: %s. Expected filenames: %v, expected content: %v. ", remainingFile.Name(), string(content), validFileNames, validContent))
+			}
+		}
 	}
 }
 

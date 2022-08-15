@@ -130,13 +130,15 @@ func (stg *StorageQueue) Peek() (*StoredItem, error) {
 		return nil, fmt.Errorf("failed to get stored files: %v", err)
 	}
 
-	latestTime := time.Time{}
+	leastRecentTime := time.Time{}
 	latestIndex := -1
 	now := stg.clock.Now()
 	for i, item := range items {
-		if now.Sub(item.readyTime) >= 0 && item.fileModTime.After(latestTime) {
-			latestTime = item.fileModTime
-			latestIndex = i
+		if now.Sub(item.readyTime) >= 0 {
+			if latestIndex == -1 || item.fileModTime.Before(leastRecentTime) {
+				leastRecentTime = item.fileModTime
+				latestIndex = i
+			}
 		}
 	}
 

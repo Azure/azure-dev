@@ -18,23 +18,8 @@ import (
 
 const fileExtension = ".itm"
 
-type tempFolder struct {
-	name string
-}
-
-func newTempDir(t *testing.T, name string) tempFolder {
-	dirname, err := os.MkdirTemp("", name)
-	assert.NoError(t, err)
-	return tempFolder{dirname}
-}
-
-func (t *tempFolder) close() {
-	_ = os.RemoveAll(t.name)
-}
-
 func TestNewStorageQueue(t *testing.T) {
-	folder := filepath.Join(os.TempDir(), "azdnewstg")
-	defer os.RemoveAll(folder)
+	folder := t.TempDir()
 
 	t.Run("CreatesFolder", func(t *testing.T) {
 		err := os.RemoveAll(folder)
@@ -56,9 +41,7 @@ func TestNewStorageQueue(t *testing.T) {
 }
 
 func TestFifoQueue(t *testing.T) {
-	dir := newTempDir(t, "azdq")
-	defer dir.close()
-
+	dir := t.TempDir()
 	messages := []string{
 		"Message1",
 		"Message2",
@@ -98,8 +81,7 @@ func TestFifoQueue(t *testing.T) {
 }
 
 func TestEnqueueWithDelay(t *testing.T) {
-	dir := newTempDir(t, "azdqd")
-	defer dir.close()
+	dir := t.TempDir()
 	mockClock := clock.NewMock()
 
 	storage := setupStorageQueue(t, dir)
@@ -124,8 +106,7 @@ func TestEnqueueWithDelay(t *testing.T) {
 }
 
 func TestEnqueueWithDelay_ZeroDelay(t *testing.T) {
-	dir := newTempDir(t, "azdqdz")
-	defer dir.close()
+	dir := t.TempDir()
 	mockClock := clock.NewMock()
 
 	storage := setupStorageQueue(t, dir)
@@ -149,9 +130,7 @@ func enqueueAndAssert(storage *StorageQueue, message string, t *testing.T) {
 }
 
 func TestPeekWhenNoItemsExist(t *testing.T) {
-	dir := newTempDir(t, "azdpk")
-	defer dir.close()
-
+	dir := t.TempDir()
 	storage := setupStorageQueue(t, dir)
 
 	itm, err := storage.Peek()
@@ -160,9 +139,7 @@ func TestPeekWhenNoItemsExist(t *testing.T) {
 }
 
 func TestRemoveInvalidItem(t *testing.T) {
-	dir := newTempDir(t, "azdriv")
-	defer dir.close()
-
+	dir := t.TempDir()
 	storage := setupStorageQueue(t, dir)
 
 	err := storage.Remove(&StoredItem{
@@ -174,8 +151,7 @@ func TestRemoveInvalidItem(t *testing.T) {
 }
 
 func TestCleanup(t *testing.T) {
-	dir := newTempDir(t, "azdcln")
-	defer dir.close()
+	dir := t.TempDir()
 
 	invalidFiles := []string{
 		"invalidformat" + fileExtension,
@@ -200,7 +176,7 @@ func TestCleanup(t *testing.T) {
 	filesToCreate = append(filesToCreate, validFileNames...)
 
 	for _, file := range filesToCreate {
-		f, err := os.Create(filepath.Join(dir.name, file))
+		f, err := os.Create(filepath.Join(dir, file))
 		assert.NoError(t, err)
 
 		f.Close()
@@ -240,8 +216,8 @@ func TestCleanup(t *testing.T) {
 	}
 }
 
-func setupStorageQueue(t *testing.T, tempDir tempFolder) *StorageQueue {
-	storage, err := NewStorageQueue(tempDir.name, fileExtension)
+func setupStorageQueue(t *testing.T, tempDir string) *StorageQueue {
+	storage, err := NewStorageQueue(tempDir, fileExtension)
 	assert.NoError(t, err)
 	return storage
 }

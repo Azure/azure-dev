@@ -72,7 +72,7 @@ type itemEntry struct {
 // Creates the storage-based queue.
 func NewStorageQueue(folder string, itemFileExtension string) (*StorageQueue, error) {
 	if err := os.MkdirAll(folder, osutil.PermissionDirectory); err != nil {
-		return nil, fmt.Errorf("failed to create storage queue folder: %v", err)
+		return nil, fmt.Errorf("failed to create storage queue folder: %w", err)
 	}
 
 	if !strings.HasPrefix(itemFileExtension, ".") {
@@ -100,22 +100,25 @@ func (stg *StorageQueue) EnqueueWithDelay(message []byte, delayDuration time.Dur
 func (stg *StorageQueue) save(delayDuration time.Duration, retryCount int, message []byte) error {
 	file, err := os.CreateTemp(stg.folder, "*_itm.tmp")
 	if err != nil {
-		return fmt.Errorf("failed to create temp file :%v", err)
+		return fmt.Errorf("failed to create temp file: %w", err)
 	}
 
-	err = os.WriteFile(file.Name(), message, osutil.PermissionFile)
+	tempFileName := file.Name()
+	err = os.WriteFile(tempFileName, message, osutil.PermissionFile)
 	if err != nil {
-		return fmt.Errorf("failed to write file: %v", err)
+		_ = removeIfExists(tempFileName)
+		return fmt.Errorf("failed to write file: %w", err)
 	}
 	file.Close()
 
-	generatedFileName := filepath.Base(file.Name())
+	generatedFileName := filepath.Base(tempFileName)
 	randomSuffix := generatedFileName[:strings.LastIndex(generatedFileName, "_")]
 	readyTime := stg.clock.Now().Add(delayDuration)
 	fileName := formatFileName(readyTime, retryCount, randomSuffix, stg.itemFileExtension)
-	err = os.Rename(file.Name(), filepath.Join(stg.folder, fileName))
+	err = os.Rename(tempFileName, filepath.Join(stg.folder, fileName))
 	if err != nil {
-		return fmt.Errorf("failed to rename file: %v", err)
+		_ = removeIfExists(tempFileName)
+		return fmt.Errorf("failed to rename file: %w", err)
 	}
 
 	return nil
@@ -127,7 +130,7 @@ func (stg *StorageQueue) save(delayDuration time.Duration, retryCount int, messa
 func (stg *StorageQueue) Peek() (*StoredItem, error) {
 	items, err := stg.getAllItems()
 	if err != nil {
-		return nil, fmt.Errorf("failed to get stored files: %v", err)
+		return nil, fmt.Errorf("failed to get stored files: %w", err)
 	}
 
 	leastRecentTime := time.Time{}
@@ -150,7 +153,7 @@ func (stg *StorageQueue) Peek() (*StoredItem, error) {
 	fileName := filepath.Join(stg.folder, item.name)
 	message, err := os.ReadFile(fileName)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read latest stored item: %v", err)
+		return nil, fmt.Errorf("failed to read latest stored item: %w", err)
 	}
 
 	return &StoredItem{
@@ -169,10 +172,19 @@ func (stg *StorageQueue) Remove(item *StoredItem) error {
 	}
 
 	if err != nil {
-		return fmt.Errorf("failed to remove stored item: %v", err)
+		return fmt.Errorf("failed to remove stored item: %w", err)
 	}
 
 	return nil
+}
+
+func removeIfExists(filename string) error {
+	err := os.Remove(filename)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+
+	return err
 }
 
 // Scans the storage directory for any obsoleted items or temp files.
@@ -202,7 +214,7 @@ func (stg *StorageQueue) Cleanup() {
 func (stg *StorageQueue) getAllItems() ([]itemEntry, error) {
 	dirEntries, err := readDir(stg.folder)
 	if err != nil {
-		return nil, fmt.Errorf("error reading folder: %v", err)
+		return nil, fmt.Errorf("error reading folder: %w", err)
 	}
 
 	items := []itemEntry{}

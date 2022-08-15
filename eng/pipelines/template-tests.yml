@@ -68,8 +68,8 @@ jobs:
 
       - pwsh: |
           if (!$env:DEPLOYLOCATION) {
-            Write-Host "DeployLocation variable not set. Using 'eastus'"
-            Write-Host "##vso[task.setvariable variable=DeployLocation]eastus"
+            Write-Host "DeployLocation variable not set. Using 'eastus2'"
+            Write-Host "##vso[task.setvariable variable=DeployLocation]eastus2"
           } else {
             Write-Host "Using specified azd version: $(DeployLocation)"
           }

@@ -81,6 +81,10 @@ export class GitRepo {
         await executeCommand(`git checkout -b ${branchName}`, this.execOptions);
     }
 
+    public deleteRemoteBranch = async (remoteName: string, branchName: string): Promise<void> => {
+        await executeCommand(`git push ${remoteName} --delete ${branchName}`, this.execOptions);
+    }
+
     public status = async (): Promise<string[]> => {
         return await spawnCommand("git", ["status", "-s"], this.spawnOptions);
     }

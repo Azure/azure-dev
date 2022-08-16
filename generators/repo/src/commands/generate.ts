@@ -285,14 +285,14 @@ export class GenerateCommand implements RepomanCommand {
 
     private writeResultsFile = async (results: RemotePushResult[]) => {
         return new Promise<void>(async (resolve, reject) => {
-            var comittedResults: RemotePushResult[] = results.filter(r => r.hasChangesFromBase);
+            var committedResults: RemotePushResult[] = results.filter(r => r.hasChangesFromBase);
             var mergedResults: RemotePushResult[] = results.filter(r => r.hasChanges);
 
-            if (comittedResults.length === 0 && mergedResults.length === 0 || !this.options.resultsFile) {                
+            if (committedResults.length === 0 && mergedResults.length === 0 || !this.options.resultsFile) {                
                 return resolve();
             }
 
-            const pushedResults = comittedResults.length === 0 ? mergedResults:comittedResults;
+            const pushedResults = committedResults.length === 0 ? mergedResults:committedResults;
             const resultsFilePath = path.resolve(path.normalize(this.options.resultsFile));
 
             let fileContent=[];

@@ -2,6 +2,7 @@ import chalk from 'chalk';
 import figlet from 'figlet';
 import { ProgramCommand } from './commands/command';
 import { GenerateCommand, GenerateCommandOptions } from './commands/generate';
+import { CleanCommand, CleanCommandOptions } from './commands/clean';
 import { ListCommand, ListCommandOptions } from './commands/list';
 
 export const main = async () => {
@@ -40,6 +41,19 @@ export const main = async () => {
             await new GenerateCommand(options).execute();
         });
 
+            // Generate
+    program
+    .command("clean")
+    .description("Remove generated target template branch.")
+    .requiredOption("-s, --source <source>", "The template source location", ".")
+    .requiredOption("-t --templateFile <template>", "The repo template manifest location", "./repo.yaml")
+    .requiredOption("-b --branch <targetBranch>", "The target branch name to be deleted")
+    .requiredOption("-o --output <output>", "The temporary output path for the template")
+    .option("-h --https", "When set will generate HTTPS remote URLs for GitHub repos (useful for using a HTTPS PAT when updating)", false)
+    .option("-e --fail-on-clean-error", "When set will fail on clean errors", false)
+    .action(async (options: CleanCommandOptions) => {
+        await new CleanCommand(options).execute();
+    });
     await program.parseAsync(process.argv);
 };
 

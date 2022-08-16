@@ -68,7 +68,7 @@ func GetResourceGroupsForEnvironment(ctx context.Context, env *environment.Envir
 		| where type == "microsoft.resources/subscriptions/resourcegroups" 
 		| where tags['azd-env-name'] == '%s' 
 		| project id, name, type, tags, location`,
-		strings.ToLower(env.GetEnvName()))
+		strings.ToLower(env.GetEnvName())) // Need to do toLower() when querying the tags field
 
 	var graphQueryResults *tools.AzCliGraphQuery
 
@@ -103,7 +103,7 @@ func GetDefaultResourceGroups(ctx context.Context, env *environment.Environment)
 		| where type == "microsoft.resources/subscriptions/resourcegroups" 
 		| where name in('rg-%[1]s','%[1]s-rg')
 		| project id, name, type, tags, location`,
-		strings.ToLower(env.GetEnvName()))
+		env.GetEnvName()) // no need to do toLower() for querying the field name
 
 	var graphQueryResults *tools.AzCliGraphQuery
 

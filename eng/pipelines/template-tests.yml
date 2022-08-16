@@ -18,12 +18,16 @@ jobs:
       - pwsh: |
           $templateNames = (azd template list --output json | ConvertFrom-Json).name
           $matrix = @{}
-          foreach ($template in $templateNames) {
-            $jobName = $template.Replace('/', '_')
-            $matrix[$jobName] = @{ TemplateName = $template }
-          }
+          # foreach ($template in $templateNames) {
+          #   $jobName = $template.Replace('/', '_')
+          #   $matrix[$jobName] = @{ TemplateName = $template }
+          # }
+          # Adding extra test for capitals letters support. Using first template
+          $capitalsTest = ($($templateNames)[0]).Replace('/', '_') + "-Upper-case-test"
+          $matrix[$capitalsTest] = @{ TemplateName = $template; UseUpperCase = true }
+
           Write-Host "Matrix:"
-          Write-Host $matrix
+          Write-Host ($matrix | Format-List | Out-String)
 
           $matrixJson = ConvertTo-Json $matrix -Depth 100 -Compress
           Write-Host "##vso[task.setvariable variable=Matrix;isOutput=true]$matrixJson"
@@ -80,9 +84,15 @@ jobs:
 
       - pwsh: |
           $templateName = '$(TemplateName)'.Substring(14)
-          $resourceGroupName = "azd-template-test-$templateName-$(Build.BuildId)-rg"
+          $useUpperCaseName = '$(UseUpperCase)'
+          if($useUpperCaseName -eq "true") {
+            $resourceGroupName = "AZD-TEMPLATE-TEST-$TEMPLATENAME-$(Build.BuildId)-rg"
+          } else {
+            $resourceGroupName = "azd-template-test-$templateName-$(Build.BuildId)-rg"
+          }
           Write-Host "Resource group name: $resourceGroupName"
           Write-Host "##vso[task.setvariable variable=ResourceGroupName]$resourceGroupName"
+        displayName: Set Resource Group Name
 
       - task: Bash@3
         inputs:

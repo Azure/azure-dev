@@ -6,6 +6,8 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/spf13/cobra"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/codes"
 )
 
 // Build builds a Cobra command, attaching an action
@@ -29,7 +31,15 @@ func Build(action Action, rootOptions *GlobalCommandOptions, use string, short s
 			azCli := GetAzCliFromContext(ctx)
 			ctx = context.WithValue(ctx, environment.AzdCliContextKey, azCli)
 
-			return action.Run(ctx, cmd, args, azdCtx)
+			ctx, span := otel.Tracer("azd").Start(ctx, "azd.cmd."+cmd.Name())
+			defer span.End()
+
+			err = action.Run(ctx, cmd, args, azdCtx)
+			if err != nil {
+				span.SetStatus(codes.Error, "UnknownError")
+			}
+
+			return err
 		},
 	}
 	cmd.Flags().BoolP("help", "h", false, fmt.Sprintf("Gets help for %s.", cmd.Name()))

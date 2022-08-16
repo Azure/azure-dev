@@ -8,7 +8,6 @@ import (
 	"os/user"
 	"path/filepath"
 	"sync"
-	"time"
 
 	appinsightsexporter "github.com/azure/azure-dev/cli/azd/internal/telemetry/appinsights-exporter"
 	"go.opentelemetry.io/otel"
@@ -20,7 +19,7 @@ import (
 const telemetryItemExtension = ".trn"
 
 type TelemetrySystem struct {
-	storageQueue   StorageQueue
+	storageQueue   *StorageQueue
 	tracerProvider *trace.TracerProvider
 }
 
@@ -72,7 +71,7 @@ func initialize() (*TelemetrySystem, error) {
 	}
 
 	appinsightsexporter.SetListener(func(msg string) {
-		fmt.Printf("[%s] %s\n", time.Now().Format(time.UnixDate), msg)
+		log.Println(msg)
 	})
 
 	storageDirectory, err := getStorageDirectory()
@@ -92,14 +91,17 @@ func initialize() (*TelemetrySystem, error) {
 		trace.WithResource(newResource()),
 	)
 	otel.SetTracerProvider(tp)
-	// downloadOperation(context.Background())
 
 	return &TelemetrySystem{
-		storageQueue:   *storageQueue,
+		storageQueue:   storageQueue,
 		tracerProvider: tp,
 	}, nil
 }
 
 func (ts *TelemetrySystem) Shutdown(ctx context.Context) {
 	instance.tracerProvider.Shutdown(ctx)
+}
+
+func (ts *TelemetrySystem) GetStorageQueue() *StorageQueue {
+	return instance.storageQueue
 }

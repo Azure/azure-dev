@@ -4,10 +4,6 @@
 package cmd
 
 import (
-	"fmt"
-	"os/user"
-	"path/filepath"
-
 	"github.com/azure/azure-dev/cli/azd/internal/telemetry"
 	"github.com/azure/azure-dev/cli/azd/pkg/commands"
 	"github.com/spf13/cobra"
@@ -31,22 +27,13 @@ func uploadCmd(rootOptions *commands.GlobalCommandOptions) *cobra.Command {
 		Long:   "Upload telemetry",
 		Hidden: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if !rootOptions.EnableTelemetry {
+			telemetrySystem := telemetry.GetTelemetrySystem()
+
+			if telemetrySystem == nil {
 				return nil
 			}
 
-			user, err := user.Current()
-			if err != nil {
-				return fmt.Errorf("could not determine current user: %w", err)
-			}
-
-			telemetryDir := filepath.Join(user.HomeDir, ".azd", "telemetry")
-			storageQueue, err := telemetry.NewStorageQueue(telemetryDir, "trn")
-			if err != nil {
-				return fmt.Errorf("could not initialize storage %w", err)
-			}
-
-			uploader := telemetry.NewUploader(storageQueue, "d3b9c006-3680-4300-9862-35fce9ac66c7", nil)
+			uploader := telemetry.NewUploader(telemetrySystem.GetStorageQueue(), "d3b9c006-3680-4300-9862-35fce9ac66c7", nil)
 			uploader.Upload()
 
 			return nil

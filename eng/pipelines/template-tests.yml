@@ -18,10 +18,10 @@ jobs:
       - pwsh: |
           $templateNames = (azd template list --output json | ConvertFrom-Json).name
           $matrix = @{}
-          # foreach ($template in $templateNames) {
-          #   $jobName = $template.Replace('/', '_')
-          #   $matrix[$jobName] = @{ TemplateName = $template }
-          # }
+          foreach ($template in $templateNames) {
+            $jobName = $template.Replace('/', '_')
+            $matrix[$jobName] = @{ TemplateName = $template }
+          }
           # Adding extra test for capitals letters support. Using first template
           $firstTemplate = $($templateNames)[0]
           $capitalsTest = $firstTemplate.Replace('/', '_') + "-Upper-case-test"

@@ -128,7 +128,7 @@ func (stg *StorageQueue) save(delayDuration time.Duration, retryCount int, messa
 // Returns nil if no items exist.
 // Returns error if an error occurs while reading storage.
 func (stg *StorageQueue) Peek() (*StoredItem, error) {
-	items, err := stg.getAllItems()
+	items, err := stg.getAllItemsUnordered()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get stored files: %w", err)
 	}
@@ -211,8 +211,8 @@ func (stg *StorageQueue) Cleanup() {
 	}
 }
 
-func (stg *StorageQueue) getAllItems() ([]itemEntry, error) {
-	dirEntries, err := readDir(stg.folder)
+func (stg *StorageQueue) getAllItemsUnordered() ([]itemEntry, error) {
+	dirEntries, err := readDirUnordered(stg.folder)
 	if err != nil {
 		return nil, fmt.Errorf("error reading folder: %w", err)
 	}
@@ -232,8 +232,8 @@ func (stg *StorageQueue) getAllItems() ([]itemEntry, error) {
 	return items, nil
 }
 
-// readDir is os.ReadDir except it returns entries in directory order instead of by name order
-func readDir(name string) ([]os.DirEntry, error) {
+// readDirUnordered is os.ReadDir except it returns entries unordered instead of by name order
+func readDirUnordered(name string) ([]os.DirEntry, error) {
 	f, err := os.Open(name)
 	if err != nil {
 		return nil, err

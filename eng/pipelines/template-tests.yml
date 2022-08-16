@@ -96,6 +96,7 @@ jobs:
         displayName: Set Resource Group Name
 
       - task: Bash@3
+        displayName: Test templates
         inputs:
           targetType: filePath
           filePath: templates/tests/test-templates.sh
@@ -107,7 +108,9 @@ jobs:
             -l '$(DeployLocation)'
             -p 'list'
           workingDirectory: templates/tests
-        displayName: Test templates
+        env:
+          AZURE_RESOURCE_GROUP: $(ResourceGroupName)
+        
 
       - pwsh: |
           $resourceGroupId = az group show `

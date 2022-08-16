@@ -6,6 +6,7 @@ package project
 import (
 	"context"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 
@@ -56,7 +57,8 @@ func (dp *dotnetProject) Initialize(ctx context.Context) error {
 	handler := func(ctx context.Context, args ServiceLifecycleEventArgs) error {
 		bicepOutputArgs := args.Args["bicepOutput"]
 		if bicepOutputArgs == nil {
-			return fmt.Errorf("fail on interface conversion: interface {} is nil")
+			log.Println("no bicep outputs set as secrets to dotnet project, map args.Args doesn't contain key \"bicepOutput\"")
+			return nil
 		}
 
 		bicepOutput, ok := bicepOutputArgs.(map[string]tools.AzCliDeploymentOutput)

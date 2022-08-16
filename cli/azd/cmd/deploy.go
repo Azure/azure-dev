@@ -65,7 +65,7 @@ func (d *deployAction) SetupFlags(
 
 func (d *deployAction) Run(ctx context.Context, cmd *cobra.Command, args []string, azdCtx *environment.AzdContext) error {
 	azCli := commands.GetAzCliFromContext(ctx)
-	console := input.NewAskerConsole(!d.rootOptions.NoPrompt)
+	console := input.NewConsole(!d.rootOptions.NoPrompt)
 
 	if err := ensureProject(azdCtx.ProjectPath()); err != nil {
 		return err

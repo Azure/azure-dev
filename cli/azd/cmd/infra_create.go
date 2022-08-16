@@ -52,7 +52,7 @@ func (ica *infraCreateAction) SetupFlags(persis, local *pflag.FlagSet) {
 func (ica *infraCreateAction) Run(ctx context.Context, cmd *cobra.Command, args []string, azdCtx *environment.AzdContext) error {
 	azCli := commands.GetAzCliFromContext(ctx)
 	bicepCli := tools.NewBicepCli(tools.NewBicepCliArgs{AzCli: azCli})
-	console := input.NewAskerConsole(!ica.rootOptions.NoPrompt)
+	console := input.NewConsole(!ica.rootOptions.NoPrompt)
 
 	if err := ensureProject(azdCtx.ProjectPath()); err != nil {
 		return err

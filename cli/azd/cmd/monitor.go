@@ -58,7 +58,7 @@ func (m *monitorAction) SetupFlags(
 
 func (m *monitorAction) Run(ctx context.Context, _ *cobra.Command, args []string, azdCtx *environment.AzdContext) error {
 	azCli := commands.GetAzCliFromContext(ctx)
-	console := input.NewAskerConsole(!m.rootOptions.NoPrompt)
+	console := input.NewConsole(!m.rootOptions.NoPrompt)
 
 	if err := ensureProject(azdCtx.ProjectPath()); err != nil {
 		return err

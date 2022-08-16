@@ -55,7 +55,7 @@ You can find all environment configurations under the *.azure\<environment-name>
 
 func envSetCmd(rootOptions *commands.GlobalCommandOptions) *cobra.Command {
 	actionFn := func(ctx context.Context, _ *cobra.Command, args []string, azdCtx *environment.AzdContext) error {
-		console := input.NewAskerConsole(!rootOptions.NoPrompt)
+		console := input.NewConsole(!rootOptions.NoPrompt)
 		azCli := commands.GetAzCliFromContext(ctx)
 
 		if err := ensureProject(azdCtx.ProjectPath()); err != nil {
@@ -202,7 +202,7 @@ func (en *envNewAction) Run(ctx context.Context, _ *cobra.Command, args []string
 		return err
 	}
 
-	console := input.NewAskerConsole(!en.rootOptions.NoPrompt)
+	console := input.NewConsole(!en.rootOptions.NoPrompt)
 	envSpec := environmentSpec{
 		environmentName: en.rootOptions.EnvironmentName,
 		subscription:    en.subscription,
@@ -223,7 +223,7 @@ func envRefreshCmd(rootOptions *commands.GlobalCommandOptions) *cobra.Command {
 	actionFn := func(ctx context.Context, cmd *cobra.Command, args []string, azdCtx *environment.AzdContext) error {
 		azCli := commands.GetAzCliFromContext(ctx)
 		bicepCli := tools.NewBicepCli(tools.NewBicepCliArgs{AzCli: azCli})
-		console := input.NewAskerConsole(!rootOptions.NoPrompt)
+		console := input.NewConsole(!rootOptions.NoPrompt)
 
 		if err := ensureProject(azdCtx.ProjectPath()); err != nil {
 			return err
@@ -291,7 +291,7 @@ func envGetValuesCmd(rootOptions *commands.GlobalCommandOptions) *cobra.Command 
 			ctx := context.Background()
 			ctx = context.WithValue(ctx, environment.OptionsContextKey, rootOptions)
 
-			console := input.NewAskerConsole(!rootOptions.NoPrompt)
+			console := input.NewConsole(!rootOptions.NoPrompt)
 			azCli := commands.GetAzCliFromContext(ctx)
 
 			azdCtx, err := environment.NewAzdContext()

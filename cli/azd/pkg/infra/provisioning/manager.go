@@ -301,7 +301,7 @@ func NewManager(ctx context.Context, env environment.Environment, projectPath st
 	}
 
 	if console == nil {
-		console = input.NewAskerConsole(interactive)
+		console = input.NewConsole(interactive)
 	}
 
 	return &Manager{

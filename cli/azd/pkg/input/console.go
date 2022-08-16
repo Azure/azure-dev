@@ -102,7 +102,7 @@ func (c *AskerConsole) Confirm(ctx context.Context, options ConsoleOptions) (boo
 }
 
 // PromptTemplate ask the user to select a template.
-// An empty string is returned if the user selects 'Empty Template' from the choices
+// An empty Template with default values is returned if the user selects 'Empty Template' from the choices
 func (c *AskerConsole) PromptTemplate(ctx context.Context, message string) (templates.Template, error) {
 	var result templates.Template
 	templateManager := templates.NewTemplateManager()
@@ -196,7 +196,7 @@ func (c *AskerConsole) PromptLocation(ctx context.Context, message string) (stri
 	return locations[locationSelectionIndex].Name, nil
 }
 
-func NewAskerConsole(interactive bool) Console {
+func NewConsole(interactive bool) Console {
 	asker := NewAsker(!interactive)
 
 	return &AskerConsole{

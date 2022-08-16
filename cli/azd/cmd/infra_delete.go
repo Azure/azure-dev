@@ -45,7 +45,7 @@ func (a *infraDeleteAction) SetupFlags(
 func (a *infraDeleteAction) Run(ctx context.Context, _ *cobra.Command, args []string, azdCtx *environment.AzdContext) error {
 	azCli := commands.GetAzCliFromContext(ctx)
 	bicepCli := tools.NewBicepCli(tools.NewBicepCliArgs{AzCli: azCli})
-	console := input.NewAskerConsole(!a.rootOptions.NoPrompt)
+	console := input.NewConsole(!a.rootOptions.NoPrompt)
 
 	if err := ensureProject(azdCtx.ProjectPath()); err != nil {
 		return err

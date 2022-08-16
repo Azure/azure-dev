@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/templates"
 )
 
 // A predicate function definition for registering expressions
@@ -49,10 +50,10 @@ func (c *MockConsole) Prompt(ctx context.Context, options input.ConsoleOptions) 
 }
 
 // Writes a multiple choice selection to the console for the user to choose
-func (c *MockConsole) Select(ctx context.Context, options input.ConsoleOptions) (string, error) {
+func (c *MockConsole) Select(ctx context.Context, options input.ConsoleOptions) (int, error) {
 	c.log = append(c.log, options.Message)
 	value, err := c.respond("Select", options)
-	return value.(string), err
+	return value.(int), err
 }
 
 // Writes a location selection choice to the console for the user to choose
@@ -63,10 +64,10 @@ func (c *MockConsole) PromptLocation(ctx context.Context, message string) (strin
 }
 
 // Writes a template selection choice to the console for the user to choose
-func (c *MockConsole) PromptTemplate(ctx context.Context, message string) (string, error) {
+func (c *MockConsole) PromptTemplate(ctx context.Context, message string) (templates.Template, error) {
 	c.log = append(c.log, message)
 	value, err := c.respond("PromptTemplate", input.ConsoleOptions{})
-	return value.(string), err
+	return value.(templates.Template), err
 }
 
 // Finds a matching mock expression and returns the configured value

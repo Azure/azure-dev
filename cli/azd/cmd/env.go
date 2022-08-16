@@ -12,6 +12,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/commands"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/iac/bicep"
+	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/spf13/cobra"
@@ -54,7 +55,7 @@ You can find all environment configurations under the *.azure\<environment-name>
 
 func envSetCmd(rootOptions *commands.GlobalCommandOptions) *cobra.Command {
 	actionFn := func(ctx context.Context, _ *cobra.Command, args []string, azdCtx *environment.AzdContext) error {
-		askOne := makeAskOne(rootOptions.NoPrompt)
+		console := input.NewConsole(!rootOptions.NoPrompt)
 		azCli := commands.GetAzCliFromContext(ctx)
 
 		if err := ensureProject(azdCtx.ProjectPath()); err != nil {
@@ -65,7 +66,7 @@ func envSetCmd(rootOptions *commands.GlobalCommandOptions) *cobra.Command {
 			return err
 		}
 
-		env, err := loadOrInitEnvironment(ctx, &rootOptions.EnvironmentName, azdCtx, askOne)
+		env, err := loadOrInitEnvironment(ctx, &rootOptions.EnvironmentName, azdCtx, console)
 		if err != nil {
 			return fmt.Errorf("loading environment: %w", err)
 		}
@@ -201,13 +202,13 @@ func (en *envNewAction) Run(ctx context.Context, _ *cobra.Command, args []string
 		return err
 	}
 
-	askOne := makeAskOne(en.rootOptions.NoPrompt)
+	console := input.NewConsole(!en.rootOptions.NoPrompt)
 	envSpec := environmentSpec{
 		environmentName: en.rootOptions.EnvironmentName,
 		subscription:    en.subscription,
 		location:        en.location,
 	}
-	if _, err := createAndInitEnvironment(ctx, &envSpec, azdCtx, askOne); err != nil {
+	if _, err := createAndInitEnvironment(ctx, &envSpec, azdCtx, console); err != nil {
 		return fmt.Errorf("creating new environment: %w", err)
 	}
 
@@ -222,7 +223,7 @@ func envRefreshCmd(rootOptions *commands.GlobalCommandOptions) *cobra.Command {
 	actionFn := func(ctx context.Context, cmd *cobra.Command, args []string, azdCtx *environment.AzdContext) error {
 		azCli := commands.GetAzCliFromContext(ctx)
 		bicepCli := tools.NewBicepCli(tools.NewBicepCliArgs{AzCli: azCli})
-		askOne := makeAskOne(rootOptions.NoPrompt)
+		console := input.NewConsole(!rootOptions.NoPrompt)
 
 		if err := ensureProject(azdCtx.ProjectPath()); err != nil {
 			return err
@@ -236,7 +237,7 @@ func envRefreshCmd(rootOptions *commands.GlobalCommandOptions) *cobra.Command {
 			return fmt.Errorf("failed to ensure login: %w", err)
 		}
 
-		env, err := loadOrInitEnvironment(ctx, &rootOptions.EnvironmentName, azdCtx, askOne)
+		env, err := loadOrInitEnvironment(ctx, &rootOptions.EnvironmentName, azdCtx, console)
 		if err != nil {
 			return fmt.Errorf("loading environment: %w", err)
 		}
@@ -290,7 +291,7 @@ func envGetValuesCmd(rootOptions *commands.GlobalCommandOptions) *cobra.Command 
 			ctx := context.Background()
 			ctx = context.WithValue(ctx, environment.OptionsContextKey, rootOptions)
 
-			askOne := makeAskOne(rootOptions.NoPrompt)
+			console := input.NewConsole(!rootOptions.NoPrompt)
 			azCli := commands.GetAzCliFromContext(ctx)
 
 			azdCtx, err := environment.NewAzdContext()
@@ -311,7 +312,7 @@ func envGetValuesCmd(rootOptions *commands.GlobalCommandOptions) *cobra.Command 
 				return err
 			}
 
-			env, err := loadOrInitEnvironment(ctx, &rootOptions.EnvironmentName, azdCtx, askOne)
+			env, err := loadOrInitEnvironment(ctx, &rootOptions.EnvironmentName, azdCtx, console)
 			if err != nil {
 				return err
 			}

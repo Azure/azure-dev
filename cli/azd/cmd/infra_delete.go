@@ -4,12 +4,12 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/AlecAivazis/survey/v2"
 	"github.com/azure/azure-dev/cli/azd/pkg/azureutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/commands"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/iac/bicep"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
+	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/spin"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/spf13/cobra"
@@ -45,7 +45,7 @@ func (a *infraDeleteAction) SetupFlags(
 func (a *infraDeleteAction) Run(ctx context.Context, _ *cobra.Command, args []string, azdCtx *environment.AzdContext) error {
 	azCli := commands.GetAzCliFromContext(ctx)
 	bicepCli := tools.NewBicepCli(tools.NewBicepCliArgs{AzCli: azCli})
-	askOne := makeAskOne(a.rootOptions.NoPrompt)
+	console := input.NewConsole(!a.rootOptions.NoPrompt)
 
 	if err := ensureProject(azdCtx.ProjectPath()); err != nil {
 		return err
@@ -59,7 +59,7 @@ func (a *infraDeleteAction) Run(ctx context.Context, _ *cobra.Command, args []st
 		return fmt.Errorf("failed to ensure login: %w", err)
 	}
 
-	env, err := loadOrInitEnvironment(ctx, &a.rootOptions.EnvironmentName, azdCtx, askOne)
+	env, err := loadOrInitEnvironment(ctx, &a.rootOptions.EnvironmentName, azdCtx, console)
 	if err != nil {
 		return fmt.Errorf("loading environment: %w", err)
 	}
@@ -95,14 +95,13 @@ func (a *infraDeleteAction) Run(ctx context.Context, _ *cobra.Command, args []st
 	}
 
 	if len(allResources) > 0 && !a.forceDelete {
-		var ok bool
-		err := askOne(&survey.Confirm{
+		ok, err := console.Confirm(ctx, input.ConsoleOptions{
 			Message: fmt.Sprintf(
 				"This will delete %d resources, are you sure you want to continue?\n"+
 					"You can use --force to skip this confirmation.",
 				len(allResources)),
-			Default: false,
-		}, &ok)
+			DefaultValue: false,
+		})
 		if err != nil {
 			return fmt.Errorf("prompting for confirmation: %w", err)
 		}
@@ -145,10 +144,11 @@ func (a *infraDeleteAction) Run(ctx context.Context, _ *cobra.Command, args []st
 			"of time after deletion. During this period, their names may not be reused.\n"+
 			"You can use argument --purge to skip this confirmation.\n",
 			len(keyVaultsToPurge))
-		err := askOne(&survey.Confirm{
-			Message: "Would you like to *permanently* delete these Key Vaults instead, allowing their names to be reused?",
-			Default: false,
-		}, &purgeDelete)
+		purgeDelete, err = console.Confirm(ctx, input.ConsoleOptions{
+			Message:      "Would you like to *permanently* delete these Key Vaults instead, allowing their names to be reused?",
+			DefaultValue: false,
+		})
+
 		if err != nil {
 			return fmt.Errorf("prompting for purge confirmation: %w", err)
 		}

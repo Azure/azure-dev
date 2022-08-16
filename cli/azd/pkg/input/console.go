@@ -20,10 +20,10 @@ import (
 type Console interface {
 	Message(ctx context.Context, message string) error
 	Prompt(ctx context.Context, options ConsoleOptions) (string, error)
-	Select(ctx context.Context, options ConsoleOptions) (string, error)
+	Select(ctx context.Context, options ConsoleOptions) (int, error)
 	Confirm(ctx context.Context, options ConsoleOptions) (bool, error)
 	PromptLocation(ctx context.Context, message string) (string, error)
-	PromptTemplate(ctx context.Context, message string) (string, error)
+	PromptTemplate(ctx context.Context, message string) (templates.Template, error)
 }
 
 type AskerConsole struct {
@@ -65,16 +65,17 @@ func (c *AskerConsole) Prompt(ctx context.Context, options ConsoleOptions) (stri
 	return response, nil
 }
 
-func (c *AskerConsole) Select(ctx context.Context, options ConsoleOptions) (string, error) {
+func (c *AskerConsole) Select(ctx context.Context, options ConsoleOptions) (int, error) {
 	survey := &survey.Select{
 		Message: options.Message,
+		Options: options.Options,
 		Default: options.DefaultValue,
 	}
 
-	var response string
+	var response int
 
 	if err := c.asker(survey, &response); err != nil {
-		return "", err
+		return -1, err
 	}
 
 	return response, nil
@@ -101,19 +102,20 @@ func (c *AskerConsole) Confirm(ctx context.Context, options ConsoleOptions) (boo
 }
 
 // PromptTemplate ask the user to select a template.
-// An empty string is returned if the user selects 'Empty Template' from the choices
-func (c *AskerConsole) PromptTemplate(ctx context.Context, message string) (string, error) {
+// An empty Template with default values is returned if the user selects 'Empty Template' from the choices
+func (c *AskerConsole) PromptTemplate(ctx context.Context, message string) (templates.Template, error) {
+	var result templates.Template
 	templateManager := templates.NewTemplateManager()
-	templates, err := templateManager.ListTemplates()
+	templatesSet, err := templateManager.ListTemplates()
 
 	if err != nil {
-		return "", fmt.Errorf("prompting for template: %w", err)
+		return result, fmt.Errorf("prompting for template: %w", err)
 	}
 
 	templateNames := []string{"Empty Template"}
 
-	for _, template := range templates {
-		templateNames = append(templateNames, template.Name)
+	for name := range templatesSet {
+		templateNames = append(templateNames, name)
 	}
 
 	var selectedTemplateIndex int
@@ -123,16 +125,17 @@ func (c *AskerConsole) PromptTemplate(ctx context.Context, message string) (stri
 		Options: templateNames,
 		Default: templateNames[0],
 	}, &selectedTemplateIndex); err != nil {
-		return "", fmt.Errorf("prompting for template: %w", err)
+		return result, fmt.Errorf("prompting for template: %w", err)
 	}
 
 	if selectedTemplateIndex == 0 {
-		return "", nil
+		return result, nil
 	}
 
-	log.Printf("Selected template: %s", fmt.Sprint(templateNames[selectedTemplateIndex]))
+	selectedTemplateName := templateNames[selectedTemplateIndex]
+	log.Printf("Selected template: %s", fmt.Sprint(selectedTemplateName))
 
-	return templateNames[selectedTemplateIndex], nil
+	return templatesSet[selectedTemplateName], nil
 }
 
 // PromptLocation asks the user to select a location from a list of supported azure location
@@ -193,7 +196,7 @@ func (c *AskerConsole) PromptLocation(ctx context.Context, message string) (stri
 	return locations[locationSelectionIndex].Name, nil
 }
 
-func NewAskerConsole(interactive bool) Console {
+func NewConsole(interactive bool) Console {
 	asker := NewAsker(!interactive)
 
 	return &AskerConsole{

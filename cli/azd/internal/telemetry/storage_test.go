@@ -51,8 +51,16 @@ func TestFifoQueue(t *testing.T) {
 	storage := setupStorageQueue(t, dir)
 
 	// Queue 3 items
+	// Milliseconds of sleep is added between each queue attempt to ensure that no item shares the same
+	// file modification time (which is used for ordering) on filesystems that have granularity of milliseconds.
+	// This is only for determinism in assertions. In practice, the ordering of two messages delivered at the same millisecond
+	// is not important.
 	enqueueAndAssert(storage, messages[0], t)
+	time.Sleep(time.Millisecond * 1)
+
 	enqueueAndAssert(storage, messages[1], t)
+	time.Sleep(time.Millisecond * 1)
+
 	enqueueAndAssert(storage, messages[2], t)
 
 	// Pop all items sequentially

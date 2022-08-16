@@ -21,7 +21,7 @@ const tempFileTtl = time.Duration(5) * time.Minute
 
 type Queue interface {
 	Enqueue(message []byte) error
-	EnqueueWithDelay(message []byte, delayDuration time.Duration, retryCount int)
+	EnqueueWithDelay(message []byte, delayDuration time.Duration, retryCount int) error
 	Peek() (*StoredItem, error)
 	Remove(item *StoredItem) error
 }

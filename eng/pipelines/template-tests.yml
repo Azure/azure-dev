@@ -23,8 +23,8 @@ jobs:
           #   $matrix[$jobName] = @{ TemplateName = $template }
           # }
           # Adding extra test for capitals letters support. Using first template
-          $firstTemplate = ($($templateNames)[0]).Replace('/', '_')
-          $capitalsTest = $firstTemplate + "-Upper-case-test"
+          $firstTemplate = $($templateNames)[0]
+          $capitalsTest = $firstTemplate.Replace('/', '_') + "-Upper-case-test"
           $matrix[$capitalsTest] = @{ TemplateName = $firstTemplate; UseUpperCase = "true" }
 
           Write-Host "Matrix:"

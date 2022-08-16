@@ -93,6 +93,7 @@ For more information, visit the Azure Developer CLI Dev Hub: https://aka.ms/azur
 	cmd.AddCommand(upCmd(opts))
 	cmd.AddCommand(templatesCmd(opts))
 	cmd.AddCommand(versionCmd(opts))
+	cmd.AddCommand(telemetryCmd(opts))
 
 	return cmd
 }

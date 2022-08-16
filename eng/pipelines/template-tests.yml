@@ -86,13 +86,15 @@ jobs:
       - pwsh: |
           $templateName = '$(TemplateName)'.Substring(14)
           $useUpperCaseName = '$(UseUpperCase)'
+          $envPrefixName = "azd-template-test"
           if($useUpperCaseName -eq "true") {
-            $resourceGroupName = "AZD-TEMPLATE-TEST-$TEMPLATENAME-$(Build.BuildId)-rg"
-          } else {
-            $resourceGroupName = "azd-template-test-$templateName-$(Build.BuildId)-rg"
-          }
+            # Use upper case name for env prefix name
+            $envPrefixName = "AZD-TEMPLATE-TEST"
+          } 
+          $resourceGroupName = "$envPrefixName-$templateName-$(Build.BuildId)-rg"
           Write-Host "Resource group name: $resourceGroupName"
           Write-Host "##vso[task.setvariable variable=ResourceGroupName]$resourceGroupName"
+          Write-Host "##vso[task.setvariable variable=EnvPrefixName]$envPrefixName"
         displayName: Set Resource Group Name
 
       - task: Bash@3
@@ -101,16 +103,13 @@ jobs:
           targetType: filePath
           filePath: templates/tests/test-templates.sh
           arguments: >
-            -e 'azd-template-test'
+            -e  $(EnvPrefixName)
             -t '$(TemplateName)'
             -b '$(TemplateBranchName)'
             -s '$(Build.BuildId)'
             -l '$(DeployLocation)'
             -p 'list'
           workingDirectory: templates/tests
-        env:
-          AZURE_RESOURCE_GROUP: $(ResourceGroupName)
-        
 
       - pwsh: |
           $resourceGroupId = az group show `

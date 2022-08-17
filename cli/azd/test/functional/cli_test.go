@@ -276,7 +276,7 @@ func Test_CLI_InfraCreateAndDeleteUpperCase(t *testing.T) {
 	dir := t.TempDir()
 	t.Logf("DIR: %s", dir)
 
-	envName := "UpperCaseEnvName"
+	envName := "UpperCase" + randomEnvName()
 	t.Logf("AZURE_ENV_NAME: %s", envName)
 
 	cli := azdcli.NewCLI(t)

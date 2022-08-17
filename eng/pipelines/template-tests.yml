@@ -91,7 +91,7 @@ jobs:
             # Use upper case name for env prefix name
             $envPrefixName = "AZD-TEMPLATE-TEST"
           } 
-          $resourceGroupName = "$envPrefixName-$templateName-$(Build.BuildId)-rg"
+          $resourceGroupName = "rg-$envPrefixName-$templateName-$(Build.BuildId)"
           Write-Host "Resource group name: $resourceGroupName"
           Write-Host "##vso[task.setvariable variable=ResourceGroupName]$resourceGroupName"
           Write-Host "##vso[task.setvariable variable=EnvPrefixName]$envPrefixName"

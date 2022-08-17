@@ -71,9 +71,13 @@ func (ica *infraCreateAction) Run(ctx context.Context, cmd *cobra.Command, args 
 		return fmt.Errorf("loading environment: %w", err)
 	}
 
-	_, err = project.LoadProjectConfig(azdCtx.ProjectPath(), &environment.Environment{})
+	proj, err := project.LoadProjectConfig(azdCtx.ProjectPath(), &environment.Environment{})
 	if err != nil {
 		return fmt.Errorf("loading project: %w", err)
+	}
+
+	if err = proj.Initialize(ctx, &env); err != nil {
+		return err
 	}
 
 	const rootModule = "main"
@@ -264,6 +268,13 @@ func (ica *infraCreateAction) Run(ctx context.Context, cmd *cobra.Command, args 
 	}
 
 	template.CanonicalizeDeploymentOutputs(&res.Result.Properties.Outputs)
+
+	for _, svc := range proj.Services {
+		if err := svc.RaiseEvent(ctx, project.Deployed, map[string]any{"bicepOutput": res.Result.Properties.Outputs}); err != nil {
+			return err
+		}
+	}
+
 	if err = saveEnvironmentValues(res.Result, env); err != nil {
 		return err
 	}

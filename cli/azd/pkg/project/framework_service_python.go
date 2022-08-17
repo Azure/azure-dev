@@ -84,6 +84,10 @@ func (pp *pythonProject) Config() *ServiceConfig {
 	return pp.config
 }
 
+func (pp *pythonProject) Initialize(ctx context.Context) error {
+	return nil
+}
+
 // skipPatterns returns a `copy.Options` which will skip any files
 // that match a given pattern. Matching is done with `filepath.Match`.
 func skipPatterns(patterns ...string) copy.Options {

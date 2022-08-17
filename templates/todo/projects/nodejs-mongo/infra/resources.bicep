@@ -77,7 +77,7 @@ resource api 'Microsoft.Web/sites@2021-03-01' = {
     name: 'appsettings'
     properties: {
       AZURE_COSMOS_CONNECTION_STRING_KEY: 'AZURE-COSMOS-CONNECTION-STRING'
-      AZURE_COSMOS_DATABASE_NAME: cosmos::database.name
+      AZURE_COSMOS_DATABASE_NAME: cosmosResources.outputs.AZURE_COSMOS_DATABASE_NAME
       SCM_DO_BUILD_DURING_DEPLOYMENT: 'true'
       AZURE_KEY_VAULT_ENDPOINT: keyVault.properties.vaultUri
       APPLICATIONINSIGHTS_CONNECTION_STRING: applicationInsightsResources.outputs.APPLICATIONINSIGHTS_CONNECTION_STRING
@@ -155,13 +155,6 @@ resource keyVault 'Microsoft.KeyVault/vaults@2021-10-01' = {
         }
       ] : [])
   }
-
-  resource cosmosConnectionString 'secrets' = {
-    name: 'AZURE-COSMOS-CONNECTION-STRING'
-    properties: {
-      value: cosmos.listConnectionStrings().connectionStrings[0].connectionString
-    }
-  }
 }
 
 resource logAnalyticsWorkspace 'Microsoft.OperationalInsights/workspaces@2020-03-01-preview' = {
@@ -189,89 +182,17 @@ module applicationInsightsResources '../../../../common/infra/applicationinsight
   }
 }
 
-resource cosmos 'Microsoft.DocumentDB/databaseAccounts@2021-10-15' = {
-  name: '${abbrs.documentDBDatabaseAccounts}${resourceToken}'
-  kind: 'MongoDB'
-  location: location
-  tags: tags
-  properties: {
-    consistencyPolicy: {
-      defaultConsistencyLevel: 'Session'
-    }
-    locations: [
-      {
-        locationName: location
-        failoverPriority: 0
-        isZoneRedundant: false
-      }
-    ]
-    databaseAccountOfferType: 'Standard'
-    enableAutomaticFailover: false
-    enableMultipleWriteLocations: false
-    apiProperties: {
-      serverVersion: '4.0'
-    }
-    capabilities: [
-      {
-        name: 'EnableServerless'
-      }
-    ]
-  }
-
-  resource database 'mongodbDatabases' = {
-    name: 'Todo'
-    properties: {
-      resource: {
-        id: 'Todo'
-      }
-    }
-
-    resource list 'collections' = {
-      name: 'TodoList'
-      properties: {
-        resource: {
-          id: 'TodoList'
-          shardKey: {
-            _id: 'Hash'
-          }
-          indexes: [
-            {
-              key: {
-                keys: [
-                  '_id'
-                ]
-              }
-            }
-          ]
-        }
-      }
-    }
-
-    resource item 'collections' = {
-      name: 'TodoItem'
-      properties: {
-        resource: {
-          id: 'TodoItem'
-          shardKey: {
-            _id: 'Hash'
-          }
-          indexes: [
-            {
-              key: {
-                keys: [
-                  '_id'
-                ]
-              }
-            }
-          ]
-        }
-      }
-    }
+module cosmosResources '../../../common/infra/modules/cosmos.bicep' = {
+  name: 'cosmos-resources'
+  params: {
+    resourceToken: resourceToken
+    location: location
+    tags: tags
   }
 }
 
-output AZURE_COSMOS_CONNECTION_STRING_KEY string = 'AZURE-COSMOS-CONNECTION-STRING'
-output AZURE_COSMOS_DATABASE_NAME string = cosmos::database.name
+output AZURE_COSMOS_CONNECTION_STRING_KEY string = cosmosResources.outputs.AZURE_COSMOS_CONNECTION_STRING_KEY
+output AZURE_COSMOS_DATABASE_NAME string = cosmosResources.outputs.AZURE_COSMOS_DATABASE_NAME
 output AZURE_KEY_VAULT_ENDPOINT string = keyVault.properties.vaultUri
 output APPLICATIONINSIGHTS_CONNECTION_STRING string = applicationInsightsResources.outputs.APPLICATIONINSIGHTS_CONNECTION_STRING
 output WEB_URI string = 'https://${web.properties.defaultHostName}'

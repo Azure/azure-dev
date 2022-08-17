@@ -43,6 +43,12 @@ repo:
     - from: ../../common/tests
       to: ./tests
 
+    # Bicep module
+    - from: ../../common/infra/modules
+      to: ./infra/modules
+      patterns:
+        - cosmos.bicep
+
     # Node JS API
     - from: ../../api/js
       to: ./src/api

@@ -269,6 +269,49 @@ func Test_CLI_InfraCreateAndDelete(t *testing.T) {
 	require.NoError(t, err)
 }
 
+func Test_CLI_InfraCreateAndDeleteUpperCase(t *testing.T) {
+	ctx, cancel := newTestContext(t)
+	defer cancel()
+
+	dir := t.TempDir()
+	t.Logf("DIR: %s", dir)
+
+	envName := "UpperCaseEnvName"
+	t.Logf("AZURE_ENV_NAME: %s", envName)
+
+	cli := azdcli.NewCLI(t)
+	cli.WorkingDirectory = dir
+	cli.Env = append(os.Environ(), "AZURE_LOCATION=eastus2")
+
+	err := copySample(dir, "storage")
+	require.NoError(t, err, "failed expanding sample")
+
+	_, err = cli.RunCommandWithStdIn(ctx, stdinForTests(envName), "init")
+	require.NoError(t, err)
+
+	_, err = cli.RunCommand(ctx, "infra", "create")
+	require.NoError(t, err)
+
+	envFilePath := filepath.Join(dir, environment.EnvironmentDirectoryName, envName, ".env")
+	env, err := environment.FromFile(envFilePath)
+	require.NoError(t, err)
+
+	// AZURE_STORAGE_ACCOUNT_NAME is an output of the template, make sure it was added to the .env file.
+	// the name should start with 'st'
+	accountName, ok := env.Values["AZURE_STORAGE_ACCOUNT_NAME"]
+	require.True(t, ok)
+	require.Regexp(t, `st\S*`, accountName)
+
+	// Verify that resource groups are created with tag
+	rgs, err := azureutil.GetResourceGroupsForEnvironment(ctx, &env)
+	require.NoError(t, err)
+	require.NotNil(t, rgs)
+
+	// Using `down` here to test the down alias to infra delete
+	_, err = cli.RunCommand(ctx, "down", "--force", "--purge")
+	require.NoError(t, err)
+}
+
 func Test_CLI_InfraCreateAndDeleteWebApp(t *testing.T) {
 	ctx, cancel := newTestContext(t)
 	defer cancel()

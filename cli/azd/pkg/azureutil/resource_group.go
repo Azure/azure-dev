@@ -7,7 +7,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/commands"
@@ -68,7 +67,7 @@ func GetResourceGroupsForEnvironment(ctx context.Context, env *environment.Envir
 		| where type == "microsoft.resources/subscriptions/resourcegroups" 
 		| where tags['azd-env-name'] == '%s' 
 		| project id, name, type, tags, location`,
-		strings.ToLower(env.GetEnvName())) // Need to do toLower() when querying the tags field
+		env.GetEnvName())
 
 	var graphQueryResults *tools.AzCliGraphQuery
 

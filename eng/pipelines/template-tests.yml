@@ -103,7 +103,7 @@ jobs:
           targetType: filePath
           filePath: templates/tests/test-templates.sh
           arguments: >
-            -e  $(EnvPrefixName)
+            -e '$(EnvPrefixName)'
             -t '$(TemplateName)'
             -b '$(TemplateBranchName)'
             -s '$(Build.BuildId)'

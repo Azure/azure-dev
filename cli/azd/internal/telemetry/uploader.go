@@ -14,15 +14,17 @@ var maxRetryCount = 5
 type Uploader struct {
 	transmitter    appinsightsexporter.Transmitter
 	telemetryQueue Queue
+	isDebugMode    bool
 }
 
-func NewUploader(telemetryQueue Queue, instrumentationKey string, client *http.Client) *Uploader {
+func NewUploader(telemetryQueue Queue, instrumentationKey string, isDebugMode bool, client *http.Client) *Uploader {
 	config := appinsights.NewTelemetryConfiguration(instrumentationKey)
 	transmitter := appinsightsexporter.NewTransmitter(config.EndpointUrl, client)
 
 	return &Uploader{
 		transmitter:    transmitter,
 		telemetryQueue: telemetryQueue,
+		isDebugMode:    isDebugMode,
 	}
 }
 
@@ -38,7 +40,6 @@ func (u *Uploader) Upload() {
 
 func (u *Uploader) uploadItem() bool {
 	item, err := u.telemetryQueue.Peek()
-	defer u.telemetryQueue.Remove(item)
 	if err != nil {
 		log.Printf("Error reading item: %v\n", err)
 		return false
@@ -49,12 +50,19 @@ func (u *Uploader) uploadItem() bool {
 	}
 
 	u.transmit(item)
+	u.telemetryQueue.Remove(item)
+
 	return false
 }
 
 func (u *Uploader) transmit(item *StoredItem) {
 	payload := item.Message()
-	result, err := u.transmitter.Transmit(payload, appinsightsexporter.TelemetryItems{})
+	var telemetryItems appinsightsexporter.TelemetryItems
+	if u.isDebugMode {
+		// Always deserialize so we can get better error messages
+		telemetryItems.Deserialize(payload)
+	}
+	result, err := u.transmitter.Transmit(payload, telemetryItems)
 
 	if err != nil {
 		retryAttempts := item.RetryCount() + 1

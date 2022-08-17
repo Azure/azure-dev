@@ -12,12 +12,14 @@ type simpleQueue interface {
 }
 
 type Exporter struct {
-	queue simpleQueue
+	queue              simpleQueue
+	instrumentationKey string
 }
 
-func NewExporter(queue simpleQueue) *Exporter {
+func NewExporter(queue simpleQueue, instrumentationKey string) *Exporter {
 	return &Exporter{
-		queue: queue,
+		queue:              queue,
+		instrumentationKey: instrumentationKey,
 	}
 }
 
@@ -25,6 +27,8 @@ func (e *Exporter) ExportSpans(ctx context.Context, spans []trace.ReadOnlySpan) 
 	var items appinsightsexporter.TelemetryItems
 	for _, span := range spans {
 		envelope := appinsightsexporter.SpanToEnvelope(span)
+		envelope.IKey = e.instrumentationKey
+
 		items = append(items, *envelope)
 	}
 

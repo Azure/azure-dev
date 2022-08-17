@@ -4,6 +4,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -21,6 +22,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/cmd"
 	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/internal/telemetry"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/blang/semver/v4"
 	"github.com/fatih/color"
@@ -33,6 +35,8 @@ func main() {
 	if !isDebugEnabled() {
 		log.SetOutput(io.Discard)
 	}
+
+	ts := telemetry.GetTelemetrySystem()
 
 	latest := make(chan semver.Version)
 	go fetchLatestVersion(latest)
@@ -63,6 +67,11 @@ func main() {
 			}
 		}
 	}
+
+	if ts != nil {
+		ts.Shutdown(context.Background())
+	}
+
 	if cmdErr != nil {
 		os.Exit(1)
 	}

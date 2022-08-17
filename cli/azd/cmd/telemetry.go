@@ -33,7 +33,7 @@ func uploadCmd(rootOptions *commands.GlobalCommandOptions) *cobra.Command {
 				return nil
 			}
 
-			uploader := telemetry.NewUploader(telemetrySystem.GetStorageQueue(), "d3b9c006-3680-4300-9862-35fce9ac66c7", nil)
+			uploader := telemetrySystem.NewUploader(rootOptions.EnableDebugLogging)
 			uploader.Upload()
 
 			return nil

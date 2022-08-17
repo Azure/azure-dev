@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"sync"
 
+	"github.com/azure/azure-dev/cli/azd/internal"
 	appinsightsexporter "github.com/azure/azure-dev/cli/azd/internal/telemetry/appinsights-exporter"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/sdk/resource"
@@ -17,10 +18,13 @@ import (
 )
 
 const telemetryItemExtension = ".trn"
+const devInstrumentationKey = "d3b9c006-3680-4300-9862-35fce9ac66c7"
+const prodInstrumentationKey = ""
 
 type TelemetrySystem struct {
-	storageQueue   *StorageQueue
-	tracerProvider *trace.TracerProvider
+	storageQueue       *StorageQueue
+	tracerProvider     *trace.TracerProvider
+	instrumentationKey string
 }
 
 var once sync.Once
@@ -65,6 +69,12 @@ func GetTelemetrySystem() *TelemetrySystem {
 }
 
 func initialize() (*TelemetrySystem, error) {
+	// Feature guard: To be enabled once dependencies are met for production
+	isDev := internal.IsDevVersion()
+	if !isDev {
+		return nil, nil
+	}
+
 	if !IsTelemetryEnabled() {
 		log.Println("telemetry is disabled by user and will not be initialized.")
 		return nil, nil
@@ -84,7 +94,14 @@ func initialize() (*TelemetrySystem, error) {
 		return nil, fmt.Errorf("failed to initialize storage queue: %w", err)
 	}
 
-	exporter := NewExporter(storageQueue)
+	var instrumentationKey string
+	if isDev {
+		instrumentationKey = devInstrumentationKey
+	} else {
+		instrumentationKey = prodInstrumentationKey
+	}
+
+	exporter := NewExporter(storageQueue, instrumentationKey)
 
 	tp := trace.NewTracerProvider(
 		trace.WithBatcher(exporter),
@@ -93,8 +110,9 @@ func initialize() (*TelemetrySystem, error) {
 	otel.SetTracerProvider(tp)
 
 	return &TelemetrySystem{
-		storageQueue:   storageQueue,
-		tracerProvider: tp,
+		storageQueue:       storageQueue,
+		tracerProvider:     tp,
+		instrumentationKey: instrumentationKey,
 	}, nil
 }
 
@@ -104,4 +122,9 @@ func (ts *TelemetrySystem) Shutdown(ctx context.Context) {
 
 func (ts *TelemetrySystem) GetStorageQueue() *StorageQueue {
 	return instance.storageQueue
+}
+
+func (ts *TelemetrySystem) NewUploader(enableDebugLogging bool) *Uploader {
+	uploader := NewUploader(ts.GetStorageQueue(), ts.instrumentationKey, enableDebugLogging, nil)
+	return uploader
 }

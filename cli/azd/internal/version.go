@@ -15,6 +15,7 @@ import (
 //	-ldflags="-X 'github.com/azure/azure-dev/cli/azd/internal.Version=0.0.1-alpha.1 (commit 8a49ae5ae9ab13beeade35f91ad4b4611c2f5574)'"
 var Version = "0.0.0-dev.0 (commit 0000000000000000000000000000000000000000)"
 
+const DevVersion string = "0.0.0-dev.0"
 const UnknownVersion string = "unknown"
 const UnknownCommit string = "unknown"
 
@@ -25,6 +26,11 @@ type VersionSpec struct {
 type AzdVersionSpec struct {
 	Version string `json:"version"`
 	Commit  string `json:"commit"`
+}
+
+// IsDevVersion returns true if the current version of azd is an unreleased, developer version.
+func IsDevVersion() bool {
+	return GetVersionNumber() == DevVersion
 }
 
 // GetVersionNumber splits the cmd.Version string to get the

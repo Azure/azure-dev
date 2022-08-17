@@ -1,5 +1,5 @@
 {
-    "name": "Azure Dev CLI",
+    "name": "Azure Developer CLI",
     "build": {
         "dockerfile": "Dockerfile",
         "args": {

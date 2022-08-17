@@ -1,5 +1,7 @@
 package appinsightsexporter
 
+// Forked implementation from github.com/microsoft/ApplicationInsights-Go
+
 import (
 	"bytes"
 	"compress/gzip"

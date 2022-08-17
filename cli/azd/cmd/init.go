@@ -14,9 +14,9 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/AlecAivazis/survey/v2"
 	"github.com/azure/azure-dev/cli/azd/pkg/commands"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/pkg/spin"
@@ -79,7 +79,7 @@ func (i *initAction) Run(ctx context.Context, _ *cobra.Command, args []string, a
 		return errors.New("template name required when specifying a branch name")
 	}
 
-	askOne := makeAskOne(i.rootOptions.NoPrompt)
+	console := input.NewConsole(!i.rootOptions.NoPrompt)
 	azCli := commands.GetAzCliFromContext(ctx)
 	gitCli := tools.NewGitCli()
 
@@ -99,7 +99,7 @@ func (i *initAction) Run(ctx context.Context, _ *cobra.Command, args []string, a
 		fmt.Printf("Initializing a new project in %s\n\n", wd)
 
 		if i.template.Name == "" {
-			i.template, err = promptTemplate(ctx, "Select a project template", askOne)
+			i.template, err = console.PromptTemplate(ctx, "Select a project template")
 
 			if err != nil {
 				return err
@@ -188,12 +188,12 @@ func (i *initAction) Run(ctx context.Context, _ *cobra.Command, args []string, a
 				fmt.Printf(" * %s\n", file)
 			}
 
-			var overwrite bool
+			overwrite, err := console.Confirm(ctx, input.ConsoleOptions{
+				Message:      "Overwrite files with versions from template?",
+				DefaultValue: false,
+			})
 
-			if err := askOne(&survey.Confirm{
-				Message: "Overwrite files with versions from template?",
-				Default: false,
-			}, &overwrite); err != nil {
+			if err != nil {
 				return fmt.Errorf("prompting to overwrite: %w", err)
 			}
 
@@ -263,7 +263,7 @@ func (i *initAction) Run(ctx context.Context, _ *cobra.Command, args []string, a
 		subscription:    i.subscription,
 		location:        i.location,
 	}
-	_, err = createAndInitEnvironment(ctx, &envSpec, azdCtx, askOne)
+	_, err = createAndInitEnvironment(ctx, &envSpec, azdCtx, console)
 	if err != nil {
 		return fmt.Errorf("loading environment: %w", err)
 	}

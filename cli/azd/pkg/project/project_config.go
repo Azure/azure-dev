@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io/ioutil"
 	"log"
 	"os"
 	"path/filepath"
@@ -13,6 +12,8 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azureutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/drone/envsubst"
 	"gopkg.in/yaml.v3"
 )
@@ -25,6 +26,7 @@ type ProjectConfig struct {
 	Path              string                    `yaml:",omitempty"`
 	Metadata          *ProjectMetadata          `yaml:"metadata,omitempty"`
 	Services          map[string]*ServiceConfig `yaml:",omitempty"`
+	Infra             provisioning.Options      `yaml:"infra"`
 
 	handlers map[Event][]ProjectLifecycleEventHandlerFn
 }
@@ -54,6 +56,7 @@ const (
 // Project lifecycle event arguments
 type ProjectLifecycleEventArgs struct {
 	Project *ProjectConfig
+	Args    map[string]any
 }
 
 // Function definition for project events
@@ -177,10 +180,15 @@ func (pc *ProjectConfig) RemoveHandler(name Event, handler ProjectLifecycleEvent
 }
 
 // Raises the specified event and calls any registered event handlers
-func (pc *ProjectConfig) RaiseEvent(ctx context.Context, name Event) error {
+func (pc *ProjectConfig) RaiseEvent(ctx context.Context, name Event, args map[string]any) error {
 	handlerErrors := []error{}
 
+	if args == nil {
+		args = make(map[string]any)
+	}
+
 	eventArgs := ProjectLifecycleEventArgs{
+		Args:    args,
 		Project: pc,
 	}
 
@@ -249,16 +257,42 @@ func ParseProjectConfig(yamlContent string, env *environment.Environment) (*Proj
 		if svc.Module == "" {
 			svc.Module = key
 		}
+
+		if svc.Language == "" || svc.Language == "csharp" || svc.Language == "fsharp" {
+			svc.Language = "dotnet"
+		}
 	}
 
 	return &projectFile, nil
+}
+
+func (p *ProjectConfig) Initialize(ctx context.Context, env *environment.Environment) error {
+	var allTools []tools.ExternalTool
+	for _, svc := range p.Services {
+		frameworkService, err := svc.GetFrameworkService(ctx, env)
+		if err != nil {
+			return fmt.Errorf("getting framework services: %w", err)
+		}
+		if err := (*frameworkService).Initialize(ctx); err != nil {
+			return err
+		}
+
+		requiredTools := (*frameworkService).RequiredExternalTools()
+		allTools = append(allTools, requiredTools...)
+	}
+
+	if err := tools.EnsureInstalled(ctx, tools.Unique(allTools)...); err != nil {
+		return err
+	}
+
+	return nil
 }
 
 // LoadProjectConfig loads the azure.yaml configuring into an viewable structure
 // This does not evaluate any tooling
 func LoadProjectConfig(projectPath string, env *environment.Environment) (*ProjectConfig, error) {
 	log.Printf("Reading project from file '%s'\n", projectPath)
-	bytes, err := ioutil.ReadFile(projectPath)
+	bytes, err := os.ReadFile(projectPath)
 	if err != nil {
 		return nil, fmt.Errorf("reading project file: %w", err)
 	}

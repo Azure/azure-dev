@@ -13,6 +13,7 @@ type FrameworkService interface {
 	RequiredExternalTools() []tools.ExternalTool
 	Package(ctx context.Context, progress chan<- string) (string, error)
 	InstallDependencies(ctx context.Context) error
+	Initialize(ctx context.Context) error
 }
 
 var _ FrameworkService = &dotnetProject{}

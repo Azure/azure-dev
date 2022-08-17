@@ -51,8 +51,16 @@ func TestFifoQueue(t *testing.T) {
 	storage := setupStorageQueue(t, dir)
 
 	// Queue 3 items
+	// Milliseconds of sleep is added between each queue attempt to ensure that no item shares the same
+	// file modification time (which is used for ordering) on certain file systems that have granularity of milliseconds.
+	// This is only for determinism in assertions. In practice, the ordering of two messages delivered around the same millisecond intervals
+	// is not important.
 	enqueueAndAssert(storage, messages[0], t)
+	time.Sleep(time.Millisecond * 10)
+
 	enqueueAndAssert(storage, messages[1], t)
+	time.Sleep(time.Millisecond * 10)
+
 	enqueueAndAssert(storage, messages[2], t)
 
 	// Pop all items sequentially
@@ -145,7 +153,7 @@ func TestRemoveInvalidItem(t *testing.T) {
 	err := storage.Remove(&StoredItem{
 		retryCount: 0,
 		message:    []byte{},
-		fileName:   "doesnotexist",
+		fileName:   "DoesNotExist",
 	})
 	assert.NoError(t, err)
 }
@@ -154,9 +162,9 @@ func TestCleanup(t *testing.T) {
 	dir := t.TempDir()
 
 	invalidFiles := []string{
-		"invalidformat" + fileExtension,
-		"notadate_1" + fileExtension,
-		fsTimeLayout + "_notanumber" + fileExtension,
+		"InvalidFormat" + fileExtension,
+		"NotADate_1" + fileExtension,
+		fsTimeLayout + "_NotANumber" + fileExtension,
 	}
 
 	staleFiles := []string{

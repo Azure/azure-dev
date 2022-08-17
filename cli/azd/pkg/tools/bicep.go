@@ -19,14 +19,25 @@ type BicepCli interface {
 	Build(ctx context.Context, file string) (string, error)
 }
 
-func NewBicepCli(cli AzCli) BicepCli {
+func NewBicepCli(args NewBicepCliArgs) BicepCli {
+	if args.RunWithResultFn == nil {
+		args.RunWithResultFn = executil.RunWithResult
+	}
+
 	return &bicepCli{
-		cli: cli,
+		cli:             args.AzCli,
+		runWithResultFn: args.RunWithResultFn,
 	}
 }
 
+type NewBicepCliArgs struct {
+	AzCli           AzCli
+	RunWithResultFn func(ctx context.Context, args executil.RunArgs) (executil.RunResult, error)
+}
+
 type bicepCli struct {
-	cli AzCli
+	cli             AzCli
+	runWithResultFn func(ctx context.Context, args executil.RunArgs) (executil.RunResult, error)
 }
 
 var isBicepNotFoundRegex = regexp.MustCompile(`Bicep CLI not found\.`)
@@ -60,7 +71,7 @@ func (cli *bicepCli) CheckInstalled(ctx context.Context) (bool, error) {
 	}
 
 	// When installed, `az bicep install` is a no-op, otherwise it installs the latest version.
-	res, err := executil.RunCommandWithShell(ctx, "az", "bicep", "install")
+	res, err := cli.runCommand(ctx, "bicep", "install")
 	switch {
 	case isBicepNotFoundMessage(res.Stderr):
 		return false, nil
@@ -90,7 +101,7 @@ func (cli *bicepCli) CheckInstalled(ctx context.Context) (bool, error) {
 
 func (cli *bicepCli) Build(ctx context.Context, file string) (string, error) {
 	sniffCliVersion := func() (string, error) {
-		verRes, err := executil.RunCommandWithShell(ctx, "az", "version", "--out", "json")
+		verRes, err := cli.runCommand(ctx, "version", "--out", "json")
 		if err != nil {
 			return "", fmt.Errorf("failing running az version: %s (%w)", verRes.String(), err)
 		}
@@ -117,7 +128,7 @@ func (cli *bicepCli) Build(ctx context.Context, file string) (string, error) {
 		args = append(args, "--no-restore")
 	}
 
-	buildRes, err := executil.RunCommandWithShell(ctx, "az", args...)
+	buildRes, err := cli.runCommand(ctx, args...)
 	if err != nil {
 		return "", fmt.Errorf(
 			"failed running az bicep build: %s (%w)",
@@ -126,4 +137,13 @@ func (cli *bicepCli) Build(ctx context.Context, file string) (string, error) {
 		)
 	}
 	return buildRes.Stdout, nil
+}
+
+func (cli *bicepCli) runCommand(ctx context.Context, args ...string) (executil.RunResult, error) {
+	runArgs := executil.RunArgs{
+		Cmd:  "az",
+		Args: args,
+	}
+
+	return cli.runWithResultFn(ctx, runArgs)
 }

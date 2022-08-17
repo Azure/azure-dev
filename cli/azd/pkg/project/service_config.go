@@ -9,6 +9,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/commands"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 )
 
@@ -31,6 +32,8 @@ type ServiceConfig struct {
 	Module string `yaml:"module"`
 	// The optional docker options
 	Docker DockerProjectOptions `yaml:"docker"`
+	// The infrastructure provisioning configuration
+	Infra provisioning.Options `yaml:"infra"`
 
 	handlers map[Event][]ServiceLifecycleEventHandlerFn
 }
@@ -38,6 +41,7 @@ type ServiceConfig struct {
 type ServiceLifecycleEventArgs struct {
 	Project *ProjectConfig
 	Service *ServiceConfig
+	Args    map[string]any
 }
 
 // Function definition for project events
@@ -151,12 +155,17 @@ func (sc *ServiceConfig) RemoveHandler(name Event, handler ServiceLifecycleEvent
 }
 
 // Raises the specified event and calls any registered event handlers
-func (sc *ServiceConfig) RaiseEvent(ctx context.Context, name Event) error {
+func (sc *ServiceConfig) RaiseEvent(ctx context.Context, name Event, args map[string]any) error {
 	handlerErrors := []error{}
+
+	if args == nil {
+		args = make(map[string]any)
+	}
 
 	eventArgs := ServiceLifecycleEventArgs{
 		Project: sc.Project,
 		Service: sc,
+		Args:    args,
 	}
 
 	handlers := sc.handlers[name]

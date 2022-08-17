@@ -11,7 +11,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/fs"
-	"io/ioutil"
 	"net/http"
 	"os"
 	"os/exec"
@@ -27,6 +26,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azureutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/commands"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/executil"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/test/azdcli"
@@ -98,7 +98,7 @@ func Test_CLI_Init_AsksForSubscriptionIdAndCreatesEnvAndProjectFile(t *testing.T
 	_, err := cli.RunCommandWithStdIn(ctx, "Empty Template\nTESTENV\n\nOther (enter manually)\nMY_SUB_ID\n", "init")
 	require.NoError(t, err)
 
-	file, err := ioutil.ReadFile(getTestEnvPath(dir, "TESTENV"))
+	file, err := os.ReadFile(getTestEnvPath(dir, "TESTENV"))
 
 	require.NoError(t, err)
 
@@ -328,6 +328,12 @@ func Test_CLI_InfraCreateAndDeleteWebApp(t *testing.T) {
 		}
 	})
 	require.NoError(t, err)
+
+	secrets, err := executil.RunCommandWithShell(ctx, "dotnet", "user-secrets", "list", "--project", filepath.Join(dir, "/src/dotnet/webapp.csproj"))
+	require.NoError(t, err)
+
+	contain := strings.Contains(secrets.Stdout, fmt.Sprintf("WEBSITE_URL = %s", url))
+	require.True(t, contain)
 
 	// Ensure `env refresh` works by removing an output parameter from the .env file and ensure that `env refresh`
 	// brings it back.
@@ -560,11 +566,11 @@ func copySample(targetRoot string, sampleName string) error {
 			return os.MkdirAll(targetPath, osutil.PermissionDirectory)
 		}
 
-		contents, err := ioutil.ReadFile(name)
+		contents, err := os.ReadFile(name)
 		if err != nil {
 			return fmt.Errorf("reading sample file: %w", err)
 		}
-		return ioutil.WriteFile(targetPath, contents, osutil.PermissionFile)
+		return os.WriteFile(targetPath, contents, osutil.PermissionFile)
 	})
 }
 

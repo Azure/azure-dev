@@ -6,7 +6,6 @@ package project
 import (
 	"context"
 	"fmt"
-	"io/ioutil"
 	"log"
 	"os"
 	"path/filepath"
@@ -37,7 +36,7 @@ func (at *containerAppTarget) Deploy(ctx context.Context, azdCtx *environment.Az
 	bicepPath := azdCtx.BicepModulePath(at.config.Module)
 
 	progress <- "Creating deployment template"
-	template, err := bicep.Compile(ctx, tools.NewBicepCli(at.cli), bicepPath)
+	template, err := bicep.Compile(ctx, tools.NewBicepCli(tools.NewBicepCliArgs{AzCli: at.cli}), bicepPath)
 	if err != nil {
 		return ServiceDeploymentResult{}, err
 	}
@@ -85,7 +84,7 @@ func (at *containerAppTarget) Deploy(ctx context.Context, azdCtx *environment.Az
 
 	// Copy the parameter template file to the environment working directory and do substitutions.
 	parametersTemplate := azdCtx.BicepParametersTemplateFilePath(at.config.Module)
-	templateBytes, err := ioutil.ReadFile(parametersTemplate)
+	templateBytes, err := os.ReadFile(parametersTemplate)
 	if err != nil {
 		return ServiceDeploymentResult{}, fmt.Errorf("reading parameter file template: %w", err)
 	}
@@ -109,7 +108,7 @@ func (at *containerAppTarget) Deploy(ctx context.Context, azdCtx *environment.Az
 		return ServiceDeploymentResult{}, fmt.Errorf("creating directory tree: %w", err)
 	}
 
-	err = ioutil.WriteFile(parametersFile, []byte(replaced), osutil.PermissionFile)
+	err = os.WriteFile(parametersFile, []byte(replaced), osutil.PermissionFile)
 	if err != nil {
 		return ServiceDeploymentResult{}, fmt.Errorf("writing parameter file: %w", err)
 	}

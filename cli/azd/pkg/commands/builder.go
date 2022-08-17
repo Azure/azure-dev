@@ -33,7 +33,7 @@ func Build(action Action, rootOptions *GlobalCommandOptions, use string, short s
 
 			// This is done to simply mock behavior. We could either get the full command invocation path
 			// using GetCommandPath, or more than likely, ask for the event name as a Builder argument
-			ctx, span := otel.Tracer("azd").Start(ctx, "azure-dev.commands."+cmd.Name())
+			ctx, span := otel.Tracer("azd").Start(ctx, "azure-dev.commands."+use)
 			defer span.End()
 
 			err = action.Run(ctx, cmd, args, azdCtx)

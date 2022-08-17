@@ -11,6 +11,7 @@ type simpleQueue interface {
 	Enqueue(message []byte) error
 }
 
+// Exporter is an implementation of trace.SpanSyncer that writes spans into a storage queue in ApplicationInsights format.
 type Exporter struct {
 	queue              simpleQueue
 	instrumentationKey string
@@ -23,6 +24,7 @@ func NewExporter(queue simpleQueue, instrumentationKey string) *Exporter {
 	}
 }
 
+// ExportSpans writes spans to the storage queue in AppInsights format.
 func (e *Exporter) ExportSpans(ctx context.Context, spans []trace.ReadOnlySpan) error {
 	var items appinsightsexporter.TelemetryItems
 	for _, span := range spans {
@@ -37,6 +39,7 @@ func (e *Exporter) ExportSpans(ctx context.Context, spans []trace.ReadOnlySpan) 
 	return nil
 }
 
+// Shutdown is called to stop the exporter, it performs no action.
 func (e *Exporter) Shutdown(ctx context.Context) error {
 	return nil
 }
@@ -46,6 +49,6 @@ func (e *Exporter) MarshalLog() interface{} {
 	return struct {
 		Type string
 	}{
-		Type: "appinsights",
+		Type: "appinsightsstorage",
 	}
 }

@@ -34,9 +34,19 @@ repo:
       patterns:
         - openapi.yaml
 
-    # Template common
+    # Templates common
     - from: ../../../common
       to: ./
+      ignore:
+        - .devcontainer/**/*
+
+    # .devcontainer common (devcontainer.json)
+    - from: ../../../common/.devcontainer/devcontainer.json/nodejs
+      to: ./.devcontainer
+
+    # .devcontainer common (Dockerfile)
+    - from: ../../../common/.devcontainer/Dockerfile/base
+      to: ./.devcontainer
 
     # Assets common
     - from: ../../common/assets

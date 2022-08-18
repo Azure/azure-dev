@@ -31,17 +31,18 @@ repo:
       patterns:
         - openapi.yaml
 
-    # Template common
+    # Templates common (templates/common)
     - from: ../../../common
       to: ./
 
-    # Assets common
-    - from: ../../common/assets
-      to: ./assets
-
-    # Tests common
-    - from: ../../common/tests
-      to: ./tests
+    # Todo common (templates/todo/common)
+    - from: ../../common
+      to: ./
+      patterns:
+        - assets/**/*
+        - tests/**/*
+      ignore:
+        - infra/**/*
 
     # Bicep module
     - from: ../../common/infra/modules

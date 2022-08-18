@@ -3,7 +3,7 @@ param location string
 param tags object
 param workspaceId string
 
-var abbrs = loadJsonContent('abbreviations.json')
+var abbrs = loadJsonContent('../abbreviations.json')
 
 resource applicationInsights 'Microsoft.Insights/components@2020-02-02' = {
   name: '${abbrs.insightsComponents}${resourceToken}'

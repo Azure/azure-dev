@@ -43,6 +43,10 @@ func (st *mockFrameworkService) InstallDependencies(ctx context.Context) error {
 	return nil
 }
 
+func (st *mockFrameworkService) Initialize(ctx context.Context) error {
+	return nil
+}
+
 type mockServiceTarget struct {
 }
 

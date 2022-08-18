@@ -26,6 +26,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azureutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/commands"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/executil"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/test/azdcli"
@@ -370,6 +371,12 @@ func Test_CLI_InfraCreateAndDeleteWebApp(t *testing.T) {
 		}
 	})
 	require.NoError(t, err)
+
+	secrets, err := executil.RunCommandWithShell(ctx, "dotnet", "user-secrets", "list", "--project", filepath.Join(dir, "/src/dotnet/webapp.csproj"))
+	require.NoError(t, err)
+
+	contain := strings.Contains(secrets.Stdout, fmt.Sprintf("WEBSITE_URL = %s", url))
+	require.True(t, contain)
 
 	// Ensure `env refresh` works by removing an output parameter from the .env file and ensure that `env refresh`
 	// brings it back.

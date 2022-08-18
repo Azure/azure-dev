@@ -71,6 +71,10 @@ func (np *npmProject) InstallDependencies(ctx context.Context) error {
 	return nil
 }
 
+func (np *npmProject) Initialize(ctx context.Context) error {
+	return nil
+}
+
 func NewNpmProject(config *ServiceConfig, env *environment.Environment) FrameworkService {
 	return &npmProject{
 		config: config,

@@ -7,7 +7,7 @@
         {
             "name": "Debug Web",
             "request": "launch",
-            "type": "pwa-msedge",
+            "type": "msedge",
             "webRoot": "${workspaceFolder}/src/web/src",
             "url": "http://localhost:3000",
             "sourceMapPathOverrides": {

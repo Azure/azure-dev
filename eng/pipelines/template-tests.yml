@@ -22,8 +22,13 @@ jobs:
             $jobName = $template.Replace('/', '_')
             $matrix[$jobName] = @{ TemplateName = $template }
           }
+          # Adding extra test for capitals letters support. Using first template
+          $firstTemplate = $($templateNames)[0]
+          $capitalsTest = $firstTemplate.Replace('/', '_') + "-Upper-case-test"
+          $matrix[$capitalsTest] = @{ TemplateName = $firstTemplate; UseUpperCase = "true" }
+
           Write-Host "Matrix:"
-          Write-Host $matrix
+          Write-Host ($matrix | Format-List | Out-String)
 
           $matrixJson = ConvertTo-Json $matrix -Depth 100 -Compress
           Write-Host "##vso[task.setvariable variable=Matrix;isOutput=true]$matrixJson"
@@ -80,23 +85,31 @@ jobs:
 
       - pwsh: |
           $templateName = '$(TemplateName)'.Substring(14)
-          $resourceGroupName = "azd-template-test-$templateName-$(Build.BuildId)-rg"
+          $useUpperCaseName = '$(UseUpperCase)'
+          $envPrefixName = "azd-template-test"
+          if($useUpperCaseName -eq "true") {
+            # Use upper case name for env prefix name
+            $envPrefixName = "AZD-TEMPLATE-TEST"
+          } 
+          $resourceGroupName = "rg-$envPrefixName-$templateName-$(Build.BuildId)"
           Write-Host "Resource group name: $resourceGroupName"
           Write-Host "##vso[task.setvariable variable=ResourceGroupName]$resourceGroupName"
+          Write-Host "##vso[task.setvariable variable=EnvPrefixName]$envPrefixName"
+        displayName: Set Resource Group Name
 
       - task: Bash@3
+        displayName: Test templates
         inputs:
           targetType: filePath
           filePath: templates/tests/test-templates.sh
           arguments: >
-            -e 'azd-template-test'
+            -e '$(EnvPrefixName)'
             -t '$(TemplateName)'
             -b '$(TemplateBranchName)'
             -s '$(Build.BuildId)'
             -l '$(DeployLocation)'
             -p 'list'
           workingDirectory: templates/tests
-        displayName: Test templates
 
       - pwsh: |
           $resourceGroupId = az group show `

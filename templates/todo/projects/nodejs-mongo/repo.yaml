@@ -36,19 +36,18 @@ repo:
       to: ./
 
     # Todo common (templates/todo/common)
-    - from: ../../common
-      to: ./
-      patterns:
-        - assets/**/*
-        - tests/**/*
-      ignore:
-        - infra/**/*
-
-    # Bicep module
     - from: ../../common/infra/modules
       to: ./infra/modules
       patterns:
         - cosmos.bicep
+
+    # Assets common
+    - from: ../../common/assets
+      to: ./assets
+
+    # Tests common
+    - from: ../../common/tests
+      to: ./tests
 
     # Node JS API
     - from: ../../api/js

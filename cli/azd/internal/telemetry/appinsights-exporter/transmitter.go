@@ -1,4 +1,6 @@
-package appinsights
+package appinsightsexporter
+
+// Forked implementation from github.com/microsoft/ApplicationInsights-Go
 
 import (
 	"bytes"
@@ -10,8 +12,8 @@ import (
 	"time"
 )
 
-type transmitter interface {
-	Transmit(payload []byte, items telemetryBufferItems) (*transmissionResult, error)
+type Transmitter interface {
+	Transmit(payload []byte, items TelemetryItems) (*TransmissionResult, error)
 }
 
 type httpTransmitter struct {
@@ -19,7 +21,7 @@ type httpTransmitter struct {
 	client   *http.Client
 }
 
-type transmissionResult struct {
+type TransmissionResult struct {
 	statusCode int
 	retryAfter *time.Time
 	response   *backendResponse
@@ -51,29 +53,28 @@ const (
 	serviceUnavailableResponse              = 503
 )
 
-func newTransmitter(endpointAddress string, client *http.Client) transmitter {
+func NewTransmitter(endpointAddress string, client *http.Client) Transmitter {
 	if client == nil {
 		client = http.DefaultClient
 	}
 	return &httpTransmitter{endpointAddress, client}
 }
 
-func (transmitter *httpTransmitter) Transmit(payload []byte, items telemetryBufferItems) (*transmissionResult, error) {
-	diagnosticsWriter.Printf("--------- Transmitting %d items ---------", len(items))
+func (transmitter *httpTransmitter) Transmit(payload []byte, items TelemetryItems) (*TransmissionResult, error) {
 	startTime := time.Now()
 
 	// Compress the payload
 	var postBody bytes.Buffer
 	gzipWriter := gzip.NewWriter(&postBody)
 	if _, err := gzipWriter.Write(payload); err != nil {
-		diagnosticsWriter.Printf("Failed to compress the payload: %s", err.Error())
+		diagLog.Printf("Failed to compress the payload: %s", err.Error())
 		gzipWriter.Close()
 		return nil, err
 	}
 
 	gzipWriter.Close()
 
-	req, err := http.NewRequest("POST", transmitter.endpoint, &postBody)
+	req, err := http.NewRequest(http.MethodPost, transmitter.endpoint, &postBody)
 	if err != nil {
 		return nil, err
 	}
@@ -84,7 +85,7 @@ func (transmitter *httpTransmitter) Transmit(payload []byte, items telemetryBuff
 
 	resp, err := transmitter.client.Do(req)
 	if err != nil {
-		diagnosticsWriter.Printf("Failed to transmit telemetry: %s", err.Error())
+		diagLog.Printf("Failed to transmit telemetry: %s", err.Error())
 		return nil, err
 	}
 
@@ -92,13 +93,12 @@ func (transmitter *httpTransmitter) Transmit(payload []byte, items telemetryBuff
 
 	body, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
-		diagnosticsWriter.Printf("Failed to read response from server: %s", err.Error())
+		diagLog.Printf("Failed to read response from server: %s", err.Error())
 		return nil, err
 	}
 
 	duration := time.Since(startTime)
-
-	result := &transmissionResult{statusCode: resp.StatusCode}
+	result := &TransmissionResult{statusCode: resp.StatusCode}
 
 	// Grab Retry-After header
 	if retryAfterValue, ok := resp.Header[http.CanonicalHeaderKey("Retry-After")]; ok && len(retryAfterValue) == 1 {
@@ -114,18 +114,15 @@ func (transmitter *httpTransmitter) Transmit(payload []byte, items telemetryBuff
 	}
 
 	// Write diagnostics
-	if diagnosticsWriter.hasListeners() {
-		diagnosticsWriter.Printf("Telemetry transmitted in %s", duration)
-		diagnosticsWriter.Printf("Response: %d", result.statusCode)
-		if result.response != nil {
-			diagnosticsWriter.Printf("Items accepted/received: %d/%d", result.response.ItemsAccepted, result.response.ItemsReceived)
-			if len(result.response.Errors) > 0 {
-				diagnosticsWriter.Printf("Errors:")
-				for _, err := range result.response.Errors {
-					if err.Index < len(items) {
-						diagnosticsWriter.Printf("#%d - %d %s", err.Index, err.StatusCode, err.Message)
-						diagnosticsWriter.Printf("Telemetry item:\n\t%s", string(items[err.Index:err.Index+1].serialize()))
-					}
+	diagLog.Printf("Telemetry transmitted in %s, statusCode: %d", duration, result.statusCode)
+	if result.response != nil {
+		diagLog.Printf("Items accepted/received: %d/%d", result.response.ItemsAccepted, result.response.ItemsReceived)
+		if len(result.response.Errors) > 0 {
+			diagLog.Printf("Errors:")
+			for _, err := range result.response.Errors {
+				if err.Index < len(items) {
+					diagLog.Printf("#%d - %d %s", err.Index, err.StatusCode, err.Message)
+					diagLog.Printf("Telemetry item:\n\t%s", string(items[err.Index:err.Index+1].Serialize()))
 				}
 			}
 		}
@@ -134,7 +131,7 @@ func (transmitter *httpTransmitter) Transmit(payload []byte, items telemetryBuff
 	return result, nil
 }
 
-func (result *transmissionResult) IsSuccess() bool {
+func (result *TransmissionResult) IsSuccess() bool {
 	return result.statusCode == successResponse ||
 		// Partial response but all items accepted
 		(result.statusCode == partialSuccessResponse &&
@@ -142,11 +139,11 @@ func (result *transmissionResult) IsSuccess() bool {
 			result.response.ItemsReceived == result.response.ItemsAccepted)
 }
 
-func (result *transmissionResult) IsFailure() bool {
+func (result *TransmissionResult) IsFailure() bool {
 	return result.statusCode != successResponse && result.statusCode != partialSuccessResponse
 }
 
-func (result *transmissionResult) CanRetry() bool {
+func (result *TransmissionResult) CanRetry() bool {
 	if result.IsSuccess() {
 		return false
 	}
@@ -160,13 +157,13 @@ func (result *transmissionResult) CanRetry() bool {
 			result.statusCode == tooManyRequestsOverExtendedTimeResponse)
 }
 
-func (result *transmissionResult) IsPartialSuccess() bool {
+func (result *TransmissionResult) IsPartialSuccess() bool {
 	return result.statusCode == partialSuccessResponse &&
 		result.response != nil &&
 		result.response.ItemsReceived != result.response.ItemsAccepted
 }
 
-func (result *transmissionResult) IsThrottled() bool {
+func (result *TransmissionResult) IsThrottled() bool {
 	return result.statusCode == tooManyRequestsResponse ||
 		result.statusCode == tooManyRequestsOverExtendedTimeResponse ||
 		result.retryAfter != nil
@@ -180,13 +177,21 @@ func (result *itemTransmissionResult) CanRetry() bool {
 		result.StatusCode == tooManyRequestsOverExtendedTimeResponse
 }
 
-func (result *transmissionResult) GetRetryItems(payload []byte, items telemetryBufferItems) ([]byte, telemetryBufferItems) {
+func (result *TransmissionResult) RetryAfter() *time.Time {
+	return result.retryAfter
+}
+
+func (result *TransmissionResult) StatusCode() int {
+	return result.statusCode
+}
+
+func (result *TransmissionResult) GetRetryItems(payload []byte, items TelemetryItems) ([]byte, TelemetryItems) {
 	if result.statusCode == partialSuccessResponse && result.response != nil {
 		// Make sure errors are ordered by index
 		sort.Sort(result.response.Errors)
 
 		var resultPayload bytes.Buffer
-		resultItems := make(telemetryBufferItems, 0)
+		resultItems := make(TelemetryItems, 0)
 		ptr := 0
 		idx := 0
 
@@ -201,7 +206,6 @@ func (result *transmissionResult) GetRetryItems(payload []byte, items telemetryB
 				}
 
 				startPtr := ptr
-
 				// Read to end of line
 				for ; idx == responseResult.Index && ptr < len(payload); ptr++ {
 					if payload[ptr] == '\n' {

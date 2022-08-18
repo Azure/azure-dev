@@ -1,4 +1,4 @@
-package appinsights
+package appinsightsexporter
 
 import (
 	"bytes"
@@ -7,11 +7,8 @@ import (
 	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"testing"
 	"time"
-
-	"github.com/microsoft/ApplicationInsights-Go/appinsights/contracts"
 )
 
 type testServer struct {
@@ -62,11 +59,11 @@ func (server *testServer) waitForRequest(t *testing.T) *testRequest {
 
 type nullTransmitter struct{}
 
-func (transmitter *nullTransmitter) Transmit(payload []byte, items telemetryBufferItems) (*transmissionResult, error) {
-	return &transmissionResult{statusCode: successResponse}, nil
+func (transmitter *nullTransmitter) Transmit(payload []byte, items TelemetryItems) (*TransmissionResult, error) {
+	return &TransmissionResult{statusCode: successResponse}, nil
 }
 
-func newTestClientServer() (transmitter, *testServer) {
+func newTestClientServer() (Transmitter, *testServer) {
 	server := &testServer{}
 	server.server = httptest.NewServer(server)
 	server.notify = make(chan *testRequest, 1)
@@ -74,12 +71,12 @@ func newTestClientServer() (transmitter, *testServer) {
 	server.responseData = make([]byte, 0)
 	server.responseHeaders = make(map[string]string)
 
-	client := newTransmitter(fmt.Sprintf("http://%s/v2/track", server.server.Listener.Addr().String()), nil)
+	client := NewTransmitter(fmt.Sprintf("http://%s/v2/track", server.server.Listener.Addr().String()), nil)
 
 	return client, server
 }
 
-func newTestTlsClientServer(t *testing.T) (transmitter, *testServer) {
+func newTestTlsClientServer(t *testing.T) (Transmitter, *testServer) {
 	server := &testServer{}
 	server.server = httptest.NewTLSServer(server)
 	server.notify = make(chan *testRequest, 1)
@@ -87,7 +84,7 @@ func newTestTlsClientServer(t *testing.T) (transmitter, *testServer) {
 	server.responseData = make([]byte, 0)
 	server.responseHeaders = make(map[string]string)
 
-	client := newTransmitter(fmt.Sprintf("https://%s/v2/track", server.server.Listener.Addr().String()), server.server.Client())
+	client := NewTransmitter(fmt.Sprintf("https://%s/v2/track", server.server.Listener.Addr().String()), server.server.Client())
 
 	return client, server
 }
@@ -104,12 +101,12 @@ func TestBasicTransmit(t *testing.T) {
 	doBasicTransmit(client, server, t)
 }
 
-func doBasicTransmit(client transmitter, server *testServer, t *testing.T) {
+func doBasicTransmit(client Transmitter, server *testServer, t *testing.T) {
 	defer server.Close()
 
 	server.responseData = []byte(`{"itemsReceived":3, "itemsAccepted":5, "errors":[]}`)
 	server.responseHeaders["Content-type"] = "application/json"
-	result, err := client.Transmit([]byte("foobar"), make(telemetryBufferItems, 0))
+	result, err := client.Transmit([]byte("foobar"), make(TelemetryItems, 0))
 	if err != nil {
 		fmt.Println(err.Error())
 	}
@@ -186,7 +183,7 @@ func TestFailedTransmit(t *testing.T) {
 	server.responseCode = errorResponse
 	server.responseData = []byte(`{"itemsReceived":3, "itemsAccepted":0, "errors":[{"index": 2, "statusCode": 500, "message": "Hello"}]}`)
 	server.responseHeaders["Content-type"] = "application/json"
-	result, err := client.Transmit([]byte("foobar"), make(telemetryBufferItems, 0))
+	result, err := client.Transmit([]byte("foobar"), make(TelemetryItems, 0))
 	server.waitForRequest(t)
 
 	if err != nil {
@@ -238,7 +235,7 @@ func TestThrottledTransmit(t *testing.T) {
 	server.responseData = make([]byte, 0)
 	server.responseHeaders["Content-type"] = "application/json"
 	server.responseHeaders["retry-after"] = "Wed, 09 Aug 2017 23:43:57 UTC"
-	result, err := client.Transmit([]byte("foobar"), make(telemetryBufferItems, 0))
+	result, err := client.Transmit([]byte("foobar"), make(TelemetryItems, 0))
 	server.waitForRequest(t)
 
 	if err != nil {
@@ -262,70 +259,6 @@ func TestThrottledTransmit(t *testing.T) {
 	}
 }
 
-func TestTransmitDiagnostics(t *testing.T) {
-	client, server := newTestClientServer()
-	defer server.Close()
-
-	var msgs []string
-	notify := make(chan bool, 1)
-
-	NewDiagnosticsMessageListener(func(message string) error {
-		if message == "PING" {
-			notify <- true
-		} else {
-			msgs = append(msgs, message)
-		}
-
-		return nil
-	})
-
-	defer resetDiagnosticsListeners()
-
-	server.responseCode = errorResponse
-	server.responseData = []byte(`{"itemsReceived":1, "itemsAccepted":0, "errors":[{"index": 0, "statusCode": 500, "message": "Hello"}]}`)
-	server.responseHeaders["Content-type"] = "application/json"
-	_, err := client.Transmit([]byte("foobar"), make(telemetryBufferItems, 0))
-	server.waitForRequest(t)
-
-	// Wait for diagnostics to catch up.
-	diagnosticsWriter.Write("PING")
-	<-notify
-
-	if err != nil {
-		t.Errorf("err: %s", err.Error())
-	}
-
-	// The last line should say "Errors:" and not include the error because the telemetry item wasn't submitted.
-	if !strings.Contains(msgs[len(msgs)-1], "Errors:") {
-		t.Errorf("Last line should say 'Errors:', with no errors listed.  Instead: %s", msgs[len(msgs)-1])
-	}
-
-	// Go again but include telemetry items this time.
-	server.responseCode = errorResponse
-	server.responseData = []byte(`{"itemsReceived":1, "itemsAccepted":0, "errors":[{"index": 0, "statusCode": 500, "message": "Hello"}]}`)
-	server.responseHeaders["Content-type"] = "application/json"
-	_, err = client.Transmit([]byte("foobar"), telemetryBuffer(NewTraceTelemetry("World", Warning)))
-	server.waitForRequest(t)
-
-	// Wait for diagnostics to catch up.
-	diagnosticsWriter.Write("PING")
-	<-notify
-
-	if err != nil {
-		t.Errorf("err: %s", err.Error())
-	}
-
-	if !strings.Contains(msgs[len(msgs)-2], "500 Hello") {
-		t.Error("Telemetry error should be prefaced with result code and message")
-	}
-
-	if !strings.Contains(msgs[len(msgs)-1], "World") {
-		t.Error("Raw telemetry item should be found on last line")
-	}
-
-	close(notify)
-}
-
 type resultProperties struct {
 	isSuccess        bool
 	isFailure        bool
@@ -335,7 +268,7 @@ type resultProperties struct {
 	retryableErrors  bool
 }
 
-func checkTransmitResult(t *testing.T, result *transmissionResult, expected *resultProperties) {
+func checkTransmitResult(t *testing.T, result *TransmissionResult, expected *resultProperties) {
 	retryAfter := "<nil>"
 	if result.retryAfter != nil {
 		retryAfter = (*result.retryAfter).String()
@@ -344,7 +277,7 @@ func checkTransmitResult(t *testing.T, result *transmissionResult, expected *res
 	if result.response != nil {
 		response = fmt.Sprintf("%v", *result.response)
 	}
-	id := fmt.Sprintf("%d, retryAfter:%s, response:%s", result.statusCode, retryAfter, response)
+	id := fmt.Sprintf("%d, retryAfter:%s, response:%s", result.StatusCode, retryAfter, response)
 
 	if result.IsSuccess() != expected.isSuccess {
 		t.Errorf("Expected IsSuccess() == %t [%s]", expected.isSuccess, id)
@@ -419,46 +352,43 @@ func TestTransmitResults(t *testing.T) {
 		Errors:        make([]*itemTransmissionResult, 0),
 	}
 
-	checkTransmitResult(t, &transmissionResult{200, nil, allAccepted},
+	checkTransmitResult(t, &TransmissionResult{200, nil, allAccepted},
 		&resultProperties{isSuccess: true})
-	checkTransmitResult(t, &transmissionResult{206, nil, partialSomeRetries},
+	checkTransmitResult(t, &TransmissionResult{206, nil, partialSomeRetries},
 		&resultProperties{isPartialSuccess: true, canRetry: true, retryableErrors: true})
-	checkTransmitResult(t, &transmissionResult{206, nil, partialNoRetries},
+	checkTransmitResult(t, &TransmissionResult{206, nil, partialNoRetries},
 		&resultProperties{isPartialSuccess: true, canRetry: true})
-	checkTransmitResult(t, &transmissionResult{206, nil, noneAccepted},
+	checkTransmitResult(t, &TransmissionResult{206, nil, noneAccepted},
 		&resultProperties{isPartialSuccess: true, canRetry: true, retryableErrors: true})
-	checkTransmitResult(t, &transmissionResult{206, nil, allAccepted},
+	checkTransmitResult(t, &TransmissionResult{206, nil, allAccepted},
 		&resultProperties{isSuccess: true})
-	checkTransmitResult(t, &transmissionResult{400, nil, nil},
+	checkTransmitResult(t, &TransmissionResult{400, nil, nil},
 		&resultProperties{isFailure: true})
-	checkTransmitResult(t, &transmissionResult{408, nil, nil},
+	checkTransmitResult(t, &TransmissionResult{408, nil, nil},
 		&resultProperties{isFailure: true, canRetry: true})
-	checkTransmitResult(t, &transmissionResult{408, &retryAfter, nil},
+	checkTransmitResult(t, &TransmissionResult{408, &retryAfter, nil},
 		&resultProperties{isFailure: true, canRetry: true, isThrottled: true})
-	checkTransmitResult(t, &transmissionResult{429, nil, nil},
+	checkTransmitResult(t, &TransmissionResult{429, nil, nil},
 		&resultProperties{isFailure: true, canRetry: true, isThrottled: true})
-	checkTransmitResult(t, &transmissionResult{429, &retryAfter, nil},
+	checkTransmitResult(t, &TransmissionResult{429, &retryAfter, nil},
 		&resultProperties{isFailure: true, canRetry: true, isThrottled: true})
-	checkTransmitResult(t, &transmissionResult{500, nil, nil},
+	checkTransmitResult(t, &TransmissionResult{500, nil, nil},
 		&resultProperties{isFailure: true, canRetry: true})
-	checkTransmitResult(t, &transmissionResult{503, nil, nil},
+	checkTransmitResult(t, &TransmissionResult{503, nil, nil},
 		&resultProperties{isFailure: true, canRetry: true})
-	checkTransmitResult(t, &transmissionResult{401, nil, nil},
+	checkTransmitResult(t, &TransmissionResult{401, nil, nil},
 		&resultProperties{isFailure: true})
-	checkTransmitResult(t, &transmissionResult{408, nil, partialSomeRetries},
+	checkTransmitResult(t, &TransmissionResult{408, nil, partialSomeRetries},
 		&resultProperties{isFailure: true, canRetry: true, retryableErrors: true})
-	checkTransmitResult(t, &transmissionResult{500, nil, partialSomeRetries},
+	checkTransmitResult(t, &TransmissionResult{500, nil, partialSomeRetries},
 		&resultProperties{isFailure: true, canRetry: true, retryableErrors: true})
 }
 
 func TestGetRetryItems(t *testing.T) {
-	mockClock()
-	defer resetClock()
-
 	// Keep a pristine copy.
 	originalPayload, originalItems := makePayload()
 
-	res1 := &transmissionResult{
+	res1 := &TransmissionResult{
 		statusCode: 200,
 		response:   &backendResponse{ItemsReceived: 7, ItemsAccepted: 7},
 	}
@@ -468,14 +398,14 @@ func TestGetRetryItems(t *testing.T) {
 		t.Error("GetRetryItems shouldn't return anything")
 	}
 
-	res2 := &transmissionResult{statusCode: 408}
+	res2 := &TransmissionResult{statusCode: 408}
 
 	payload2, items2 := res2.GetRetryItems(makePayload())
 	if string(originalPayload) != string(payload2) || len(items2) != 7 {
 		t.Error("GetRetryItems shouldn't return anything")
 	}
 
-	res3 := &transmissionResult{
+	res3 := &TransmissionResult{
 		statusCode: 206,
 		response: &backendResponse{
 			ItemsReceived: 7,
@@ -490,19 +420,17 @@ func TestGetRetryItems(t *testing.T) {
 	}
 
 	payload3, items3 := res3.GetRetryItems(makePayload())
-	expected3 := telemetryBufferItems{originalItems[5], originalItems[6]}
-	if string(payload3) != string(expected3.serialize()) || len(items3) != 2 {
+	expected3 := TelemetryItems{originalItems[5], originalItems[6]}
+	if string(payload3) != string(expected3.Serialize()) || len(items3) != 2 {
 		t.Error("Unexpected result")
 	}
 }
 
-func makePayload() ([]byte, telemetryBufferItems) {
-	buffer := telemetryBuffer()
+func makePayload() ([]byte, TelemetryItems) {
+	var buffer TelemetryItems
 	for i := 0; i < 7; i++ {
-		tr := NewTraceTelemetry(fmt.Sprintf("msg%d", i+1), contracts.SeverityLevel(i%5))
-		tr.Tags.Operation().SetId(fmt.Sprintf("op%d", i))
-		buffer.add(tr)
+		buffer = append(buffer, *SpanToEnvelope(getDefaultSpanStub().Snapshot()))
 	}
 
-	return buffer.serialize(), buffer
+	return buffer.Serialize(), buffer
 }

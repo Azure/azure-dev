@@ -6,7 +6,7 @@ import * as path from 'path';
 import { IActionContext } from "@microsoft/vscode-azext-utils";
 import { localize } from '../localize';
 import { quickPickWorkspaceFolder } from '../utils/quickPickWorkspaceFolder';
-import { getAzDevTerminalTitle, pickAzureYamlFile, selectApplicationTemplate } from './cmdUtil';
+import { getAzDevTerminalTitle, pickAzureYamlFile, selectApplicationTemplate, showReadmeFile } from './cmdUtil';
 import { createAzureDevCli } from '../utils/azureDevCli';
 import { executeAsTask } from '../utils/executeAsTask';
 import { TelemetryId } from '../telemetry/telemetryId';
@@ -36,5 +36,7 @@ export async function up(context: IActionContext, selectedFile?: vscode.Uri): Pr
         alwaysRunNew: true,
         cwd: workingDir.fsPath,
         env: azureCli.env
-    }, TelemetryId.UpCli);
+    }, TelemetryId.UpCli).then(() => {
+        void showReadmeFile(workingDir.fsPath);
+    });
 }

@@ -39,7 +39,7 @@ func (server *testServer) ServeHTTP(writer http.ResponseWriter, req *http.Reques
 	}
 
 	writer.WriteHeader(server.responseCode)
-	writer.Write(server.responseData)
+	_, _ = writer.Write(server.responseData)
 
 	server.notify <- &testRequest{
 		request: req,
@@ -55,12 +55,6 @@ func (server *testServer) waitForRequest(t *testing.T) *testRequest {
 		t.Fatal("Server did not receive request within a second")
 		return nil /* not reached */
 	}
-}
-
-type nullTransmitter struct{}
-
-func (transmitter *nullTransmitter) Transmit(payload []byte, items TelemetryItems) (*TransmissionResult, error) {
-	return &TransmissionResult{statusCode: successResponse}, nil
 }
 
 func newTestClientServer() (Transmitter, *testServer) {
@@ -120,9 +114,9 @@ func doBasicTransmit(client Transmitter, server *testServer, t *testing.T) {
 		t.Error("request.Method")
 	}
 
-	cencoding := req.request.Header[http.CanonicalHeaderKey("Content-Encoding")]
-	if len(cencoding) != 1 || cencoding[0] != "gzip" {
-		t.Errorf("Content-encoding: %q", cencoding)
+	encoding := req.request.Header[http.CanonicalHeaderKey("Content-Encoding")]
+	if len(encoding) != 1 || encoding[0] != "gzip" {
+		t.Errorf("Content-encoding: %q", encoding)
 	}
 
 	// Check for gzip magic number
@@ -146,9 +140,9 @@ func doBasicTransmit(client Transmitter, server *testServer, t *testing.T) {
 		t.Error("body")
 	}
 
-	ctype := req.request.Header[http.CanonicalHeaderKey("Content-Type")]
-	if len(ctype) != 1 || ctype[0] != "application/x-json-stream" {
-		t.Errorf("Content-type: %q", ctype)
+	contentType := req.request.Header[http.CanonicalHeaderKey("Content-Type")]
+	if len(contentType) != 1 || contentType[0] != "application/x-json-stream" {
+		t.Errorf("Content-type: %q", contentType)
 	}
 
 	if result.statusCode != 200 {
@@ -277,7 +271,7 @@ func checkTransmitResult(t *testing.T, result *TransmissionResult, expected *res
 	if result.response != nil {
 		response = fmt.Sprintf("%v", *result.response)
 	}
-	id := fmt.Sprintf("%d, retryAfter:%s, response:%s", result.StatusCode, retryAfter, response)
+	id := fmt.Sprintf("%d, retryAfter:%s, response:%s", result.StatusCode(), retryAfter, response)
 
 	if result.IsSuccess() != expected.isSuccess {
 		t.Errorf("Expected IsSuccess() == %t [%s]", expected.isSuccess, id)
@@ -320,8 +314,8 @@ func TestTransmitResults(t *testing.T) {
 		ItemsAccepted: 3,
 		ItemsReceived: 5,
 		Errors: []*itemTransmissionResult{
-			&itemTransmissionResult{Index: 2, StatusCode: 400, Message: "Bad 1"},
-			&itemTransmissionResult{Index: 4, StatusCode: 400, Message: "Bad 2"},
+			{Index: 2, StatusCode: 400, Message: "Bad 1"},
+			{Index: 4, StatusCode: 400, Message: "Bad 2"},
 		},
 	}
 
@@ -329,8 +323,8 @@ func TestTransmitResults(t *testing.T) {
 		ItemsAccepted: 2,
 		ItemsReceived: 4,
 		Errors: []*itemTransmissionResult{
-			&itemTransmissionResult{Index: 2, StatusCode: 400, Message: "Bad 1"},
-			&itemTransmissionResult{Index: 4, StatusCode: 408, Message: "OK Later"},
+			{Index: 2, StatusCode: 400, Message: "Bad 1"},
+			{Index: 4, StatusCode: 408, Message: "OK Later"},
 		},
 	}
 
@@ -338,11 +332,11 @@ func TestTransmitResults(t *testing.T) {
 		ItemsAccepted: 0,
 		ItemsReceived: 5,
 		Errors: []*itemTransmissionResult{
-			&itemTransmissionResult{Index: 0, StatusCode: 500, Message: "Bad 1"},
-			&itemTransmissionResult{Index: 1, StatusCode: 500, Message: "Bad 2"},
-			&itemTransmissionResult{Index: 2, StatusCode: 500, Message: "Bad 3"},
-			&itemTransmissionResult{Index: 3, StatusCode: 500, Message: "Bad 4"},
-			&itemTransmissionResult{Index: 4, StatusCode: 500, Message: "Bad 5"},
+			{Index: 0, StatusCode: 500, Message: "Bad 1"},
+			{Index: 1, StatusCode: 500, Message: "Bad 2"},
+			{Index: 2, StatusCode: 500, Message: "Bad 3"},
+			{Index: 3, StatusCode: 500, Message: "Bad 4"},
+			{Index: 4, StatusCode: 500, Message: "Bad 5"},
 		},
 	}
 
@@ -411,10 +405,10 @@ func TestGetRetryItems(t *testing.T) {
 			ItemsReceived: 7,
 			ItemsAccepted: 4,
 			Errors: []*itemTransmissionResult{
-				&itemTransmissionResult{Index: 1, StatusCode: 200, Message: "OK"},
-				&itemTransmissionResult{Index: 3, StatusCode: 400, Message: "Bad"},
-				&itemTransmissionResult{Index: 5, StatusCode: 408, Message: "Later"},
-				&itemTransmissionResult{Index: 6, StatusCode: 500, Message: "Oops"},
+				{Index: 1, StatusCode: 200, Message: "OK"},
+				{Index: 3, StatusCode: 400, Message: "Bad"},
+				{Index: 5, StatusCode: 408, Message: "Later"},
+				{Index: 6, StatusCode: 500, Message: "Oops"},
 			},
 		},
 	}

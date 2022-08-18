@@ -116,6 +116,7 @@ func initialize() (*TelemetrySystem, error) {
 	}, nil
 }
 
+// Flushes all ongoing telemetry and shuts down
 func (ts *TelemetrySystem) Shutdown(ctx context.Context) {
 	instance.tracerProvider.Shutdown(ctx)
 }

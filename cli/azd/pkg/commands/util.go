@@ -6,16 +6,16 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 )
 
-func GetAzCliFromContext(ctx context.Context) tools.AzCli {
+func GetAzCliFromContext(ctx context.Context) azcli.AzCli {
 	// Check to see if we already have an az cli in the context
-	azCli, ok := ctx.Value(environment.AzdCliContextKey).(tools.AzCli)
+	azCli, ok := ctx.Value(environment.AzdCliContextKey).(azcli.AzCli)
 
 	// We don't have one - create a new one
 	if !ok {
-		azCliArgs := tools.NewAzCliArgs{
+		azCliArgs := azcli.NewAzCliArgs{
 			EnableDebug:     false,
 			EnableTelemetry: true,
 		}
@@ -28,7 +28,7 @@ func GetAzCliFromContext(ctx context.Context) tools.AzCli {
 		azCliArgs.EnableDebug = options.EnableDebugLogging
 		azCliArgs.EnableTelemetry = options.EnableTelemetry
 
-		azCli = tools.NewAzCli(azCliArgs)
+		azCli = azcli.NewAzCli(azCliArgs)
 	}
 
 	selectedTemplate := ""

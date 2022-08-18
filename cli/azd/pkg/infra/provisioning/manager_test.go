@@ -7,7 +7,8 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/bicep"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/stretchr/testify/require"
 )
@@ -22,8 +23,8 @@ func TestInfraPreview(t *testing.T) {
 	execUtil := mocks.NewMockExecUtil()
 	console := mocks.NewMockConsole()
 
-	cliArgs := tools.NewCliToolArgs{
-		AzCli:           tools.NewAzCli(tools.NewAzCliArgs{RunWithResultFn: execUtil.RunWithResult}),
+	cliArgs := bicep.NewBicepCliArgs{
+		AzCli:           azcli.NewAzCli(azcli.NewAzCliArgs{RunWithResultFn: execUtil.RunWithResult}),
 		RunWithResultFn: execUtil.RunWithResult,
 	}
 
@@ -46,8 +47,8 @@ func TestInfraDeploy(t *testing.T) {
 	execUtil := mocks.NewMockExecUtil()
 	console := mocks.NewMockConsole()
 
-	cliArgs := tools.NewCliToolArgs{
-		AzCli:           tools.NewAzCli(tools.NewAzCliArgs{RunWithResultFn: execUtil.RunWithResult}),
+	cliArgs := bicep.NewBicepCliArgs{
+		AzCli:           azcli.NewAzCli(azcli.NewAzCliArgs{RunWithResultFn: execUtil.RunWithResult}),
 		RunWithResultFn: execUtil.RunWithResult,
 	}
 
@@ -74,8 +75,8 @@ func TestInfraDestroyWithPositiveConfirmation(t *testing.T) {
 		return strings.Contains(options.Message, "Are you sure you want to destroy?")
 	}).Respond(true)
 
-	cliArgs := tools.NewCliToolArgs{
-		AzCli:           tools.NewAzCli(tools.NewAzCliArgs{RunWithResultFn: execUtil.RunWithResult}),
+	cliArgs := bicep.NewBicepCliArgs{
+		AzCli:           azcli.NewAzCli(azcli.NewAzCliArgs{RunWithResultFn: execUtil.RunWithResult}),
 		RunWithResultFn: execUtil.RunWithResult,
 	}
 
@@ -103,8 +104,8 @@ func TestInfraDestroyWithNegativeConfirmation(t *testing.T) {
 		return strings.Contains(options.Message, "Are you sure you want to destroy?")
 	}).Respond(false)
 
-	cliArgs := tools.NewCliToolArgs{
-		AzCli:           tools.NewAzCli(tools.NewAzCliArgs{RunWithResultFn: execUtil.RunWithResult}),
+	cliArgs := bicep.NewBicepCliArgs{
+		AzCli:           azcli.NewAzCli(azcli.NewAzCliArgs{RunWithResultFn: execUtil.RunWithResult}),
 		RunWithResultFn: execUtil.RunWithResult,
 	}
 

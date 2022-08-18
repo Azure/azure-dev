@@ -9,7 +9,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azureutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/stretchr/testify/require"
 )
@@ -45,14 +45,14 @@ func Test_promptEnvironmentName(t *testing.T) {
 	t.Run("duplicate resource groups ignored", func(t *testing.T) {
 		cli := &fakeAZCLI{
 			GetSubscriptionDeploymentResult: struct {
-				Dep tools.AzCliDeployment
+				Dep azcli.AzCliDeployment
 				Err error
 			}{
-				Dep: tools.AzCliDeployment{
-					Properties: tools.AzCliDeploymentProperties{
-						Dependencies: []tools.AzCliDeploymentPropertiesDependency{
+				Dep: azcli.AzCliDeployment{
+					Properties: azcli.AzCliDeploymentProperties{
+						Dependencies: []azcli.AzCliDeploymentPropertiesDependency{
 							{
-								DependsOn: []tools.AzCliDeploymentPropertiesBasicDependency{
+								DependsOn: []azcli.AzCliDeploymentPropertiesBasicDependency{
 									{
 										ResourceName: "groupA",
 										ResourceType: string(infra.AzureResourceTypeResourceGroup),
@@ -68,7 +68,7 @@ func Test_promptEnvironmentName(t *testing.T) {
 								},
 							},
 							{
-								DependsOn: []tools.AzCliDeploymentPropertiesBasicDependency{
+								DependsOn: []azcli.AzCliDeploymentPropertiesBasicDependency{
 									{
 										ResourceName: "groupA",
 										ResourceType: string(infra.AzureResourceTypeResourceGroup),
@@ -98,14 +98,14 @@ func Test_promptEnvironmentName(t *testing.T) {
 }
 
 type fakeAZCLI struct {
-	tools.AzCli
+	azcli.AzCli
 
 	GetSubscriptionDeploymentResult struct {
-		Dep tools.AzCliDeployment
+		Dep azcli.AzCliDeployment
 		Err error
 	}
 }
 
-func (cli *fakeAZCLI) GetSubscriptionDeployment(_ context.Context, subscriptionId string, deploymentName string) (tools.AzCliDeployment, error) {
+func (cli *fakeAZCLI) GetSubscriptionDeployment(_ context.Context, subscriptionId string, deploymentName string) (azcli.AzCliDeployment, error) {
 	return cli.GetSubscriptionDeploymentResult.Dep, cli.GetSubscriptionDeploymentResult.Err
 }

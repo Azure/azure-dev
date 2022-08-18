@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
-package tools
+package bicep
 
 import (
 	"context"
@@ -11,11 +11,14 @@ import (
 	"regexp"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/executil"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/internal"
 	"github.com/blang/semver/v4"
 )
 
 type BicepCli interface {
-	ExternalTool
+	tools.ExternalTool
 	Build(ctx context.Context, file string) (string, error)
 }
 
@@ -31,12 +34,12 @@ func NewBicepCli(args NewBicepCliArgs) BicepCli {
 }
 
 type NewBicepCliArgs struct {
-	AzCli           AzCli
+	AzCli           azcli.AzCli
 	RunWithResultFn func(ctx context.Context, args executil.RunArgs) (executil.RunResult, error)
 }
 
 type bicepCli struct {
-	cli             AzCli
+	cli             azcli.AzCli
 	runWithResultFn func(ctx context.Context, args executil.RunArgs) (executil.RunResult, error)
 }
 
@@ -54,8 +57,8 @@ func (cli *bicepCli) InstallUrl() string {
 	return "https://aka.ms/azure-dev/bicep-install"
 }
 
-func (cli *bicepCli) versionInfo() VersionInfo {
-	return VersionInfo{
+func (cli *bicepCli) versionInfo() tools.VersionInfo {
+	return tools.VersionInfo{
 		MinimumVersion: semver.Version{
 			Major: 0,
 			Minor: 8,
@@ -83,17 +86,17 @@ func (cli *bicepCli) CheckInstalled(ctx context.Context) (bool, error) {
 		)
 	}
 
-	bicepRes, err := executeCommand(ctx, "az", "bicep", "version")
+	bicepRes, err := internal.ExecuteCommand(ctx, "az", "bicep", "version")
 	if err != nil {
 		return false, fmt.Errorf("checking %s version: %w", cli.Name(), err)
 	}
-	bicepSemver, err := extractSemver(bicepRes)
+	bicepSemver, err := internal.ExtractSemver(bicepRes)
 	if err != nil {
 		return false, fmt.Errorf("converting to semver version fails: %w", err)
 	}
 	updateDetail := cli.versionInfo()
 	if bicepSemver.LT(updateDetail.MinimumVersion) {
-		return false, &ErrSemver{ToolName: cli.Name(), versionInfo: updateDetail}
+		return false, &tools.ErrSemver{ToolName: cli.Name(), VersionInfo: updateDetail}
 	}
 
 	return true, nil

@@ -22,6 +22,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/spin"
 	"github.com/azure/azure-dev/cli/azd/pkg/templates"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/git"
 	"github.com/otiai10/copy"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
@@ -81,7 +82,7 @@ func (i *initAction) Run(ctx context.Context, _ *cobra.Command, args []string, a
 
 	console := input.NewConsole(!i.rootOptions.NoPrompt)
 	azCli := commands.GetAzCliFromContext(ctx)
-	gitCli := tools.NewGitCli()
+	gitCli := git.NewGitCli()
 
 	requiredTools := []tools.ExternalTool{azCli}
 

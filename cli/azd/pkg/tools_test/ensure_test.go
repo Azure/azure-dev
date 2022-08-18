@@ -1,18 +1,21 @@
-package tools
+package tools_test
 
 import (
 	"context"
 	"regexp"
 	"testing"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/tools"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/npm"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/python"
 	"github.com/stretchr/testify/assert"
 )
 
 func Test_Unique(t *testing.T) {
-	npmCli := NewNpmCli()
-	pythonCli := NewPythonCli()
+	npmCli := npm.NewNpmCli()
+	pythonCli := python.NewPythonCli()
 
-	uniqueTools := Unique([]ExternalTool{npmCli, pythonCli, npmCli})
+	uniqueTools := tools.Unique([]tools.ExternalTool{npmCli, pythonCli, npmCli})
 	assert.Equal(t, 2, len(uniqueTools))
 	assert.Equal(t, npmCli, uniqueTools[0])
 	assert.Equal(t, pythonCli, uniqueTools[1])
@@ -44,19 +47,19 @@ func Test_EnsureInstalled(t *testing.T) {
 	}
 
 	t.Run("HaveAll", func(t *testing.T) {
-		err := EnsureInstalled(context.Background(), installedToolOne, installedToolTwo)
+		err := tools.EnsureInstalled(context.Background(), installedToolOne, installedToolTwo)
 		assert.NoError(t, err)
 	})
 
 	t.Run("MissingOne", func(t *testing.T) {
-		err := EnsureInstalled(context.Background(), installedToolOne, missingToolOne)
+		err := tools.EnsureInstalled(context.Background(), installedToolOne, missingToolOne)
 		assert.Error(t, err)
 		assert.Regexp(t, regexp.MustCompile(regexp.QuoteMeta(missingToolOne.Name())), err.Error())
 		assert.Regexp(t, regexp.MustCompile(regexp.QuoteMeta(missingToolOne.InstallUrl())), err.Error())
 	})
 
 	t.Run("MissingMany", func(t *testing.T) {
-		err := EnsureInstalled(context.Background(), installedToolOne, missingToolOne, missingToolTwo)
+		err := tools.EnsureInstalled(context.Background(), installedToolOne, missingToolOne, missingToolTwo)
 		assert.Error(t, err)
 		assert.Regexp(t, regexp.MustCompile(regexp.QuoteMeta(missingToolOne.Name())), err.Error())
 		assert.Regexp(t, regexp.MustCompile(regexp.QuoteMeta(missingToolOne.InstallUrl())), err.Error())
@@ -71,7 +74,7 @@ type mockTool struct {
 	name             string
 }
 
-var _ ExternalTool = &mockTool{}
+var _ tools.ExternalTool = &mockTool{}
 
 func (m *mockTool) CheckInstalled(ctx context.Context) (bool, error) {
 	return m.checkInstalledFn(ctx)

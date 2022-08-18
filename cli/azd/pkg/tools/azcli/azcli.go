@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
-package tools
+package azcli
 
 import (
 	"context"
@@ -18,6 +18,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/executil"
 	"github.com/azure/azure-dev/cli/azd/pkg/httpUtil"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/internal"
 	"github.com/blang/semver/v4"
 )
@@ -38,7 +39,7 @@ const (
 )
 
 type AzCli interface {
-	ExternalTool
+	tools.ExternalTool
 
 	// SetUserAgent sets the user agent that's sent with each call to the Azure
 	// CLI via the `AZURE_HTTP_USER_AGENT` environment variable.
@@ -340,8 +341,8 @@ func (cli *azCli) InstallUrl() string {
 	return "https://aka.ms/azure-dev/azure-cli-install"
 }
 
-func (cli *azCli) versionInfo() VersionInfo {
-	return VersionInfo{
+func (cli *azCli) versionInfo() tools.VersionInfo {
+	return tools.VersionInfo{
 		MinimumVersion: semver.Version{
 			Major: 2,
 			Minor: 38,
@@ -351,7 +352,7 @@ func (cli *azCli) versionInfo() VersionInfo {
 }
 
 func (cli *azCli) unmarshalCliVersion(ctx context.Context, component string) (string, error) {
-	azRes, err := executeCommand(ctx, "az", "version", "--output", "json")
+	azRes, err := internal.ExecuteCommand(ctx, "az", "version", "--output", "json")
 	if err != nil {
 		return "", err
 	}
@@ -368,7 +369,7 @@ func (cli *azCli) unmarshalCliVersion(ctx context.Context, component string) (st
 }
 
 func (cli *azCli) CheckInstalled(ctx context.Context) (bool, error) {
-	found, err := toolInPath("az")
+	found, err := internal.ToolInPath("az")
 	if !found {
 		return false, err
 	}
@@ -382,7 +383,7 @@ func (cli *azCli) CheckInstalled(ctx context.Context) (bool, error) {
 	}
 	updateDetail := cli.versionInfo()
 	if azSemver.LT(updateDetail.MinimumVersion) {
-		return false, &ErrSemver{ToolName: cli.Name(), versionInfo: updateDetail}
+		return false, &tools.ErrSemver{ToolName: cli.Name(), VersionInfo: updateDetail}
 	}
 	return true, nil
 }

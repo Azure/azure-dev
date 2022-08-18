@@ -12,13 +12,14 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/project/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 )
 
 type appServiceTarget struct {
 	config *ServiceConfig
 	env    *environment.Environment
 	scope  *environment.DeploymentScope
-	cli    tools.AzCli
+	cli    azcli.AzCli
 }
 
 func (st *appServiceTarget) RequiredExternalTools() []tools.ExternalTool {
@@ -70,7 +71,7 @@ func (st *appServiceTarget) Endpoints(ctx context.Context) ([]string, error) {
 	return endpoints, nil
 }
 
-func NewAppServiceTarget(config *ServiceConfig, env *environment.Environment, scope *environment.DeploymentScope, azCli tools.AzCli) ServiceTarget {
+func NewAppServiceTarget(config *ServiceConfig, env *environment.Environment, scope *environment.DeploymentScope, azCli azcli.AzCli) ServiceTarget {
 	return &appServiceTarget{
 		config: config,
 		env:    env,

@@ -13,6 +13,8 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/swa"
 )
 
 // TODO: Enhance for multi-environment support
@@ -23,8 +25,8 @@ type staticWebAppTarget struct {
 	config *ServiceConfig
 	env    *environment.Environment
 	scope  *environment.DeploymentScope
-	cli    tools.AzCli
-	swa    tools.SwaCli
+	cli    azcli.AzCli
+	swa    swa.SwaCli
 }
 
 func (at *staticWebAppTarget) RequiredExternalTools() []tools.ExternalTool {
@@ -122,7 +124,7 @@ func (at *staticWebAppTarget) verifyDeployment(ctx context.Context, progress cha
 	return nil
 }
 
-func NewStaticWebAppTarget(config *ServiceConfig, env *environment.Environment, scope *environment.DeploymentScope, azCli tools.AzCli, swaCli tools.SwaCli) ServiceTarget {
+func NewStaticWebAppTarget(config *ServiceConfig, env *environment.Environment, scope *environment.DeploymentScope, azCli azcli.AzCli, swaCli swa.SwaCli) ServiceTarget {
 	return &staticWebAppTarget{
 		config: config,
 		env:    env,

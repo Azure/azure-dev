@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
-package tools
+package github
 
 import (
 	"context"
@@ -12,11 +12,13 @@ import (
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/executil"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/internal"
 	"github.com/blang/semver/v4"
 )
 
 type GitHubCli interface {
-	ExternalTool
+	tools.ExternalTool
 	CheckAuth(ctx context.Context, hostname string) (bool, error)
 	SetSecret(ctx context.Context, repo string, name string, value string) error
 	Login(ctx context.Context, hostname string) error
@@ -40,8 +42,8 @@ var (
 
 type ghCli struct{}
 
-func (cli *ghCli) versionInfo() VersionInfo {
-	return VersionInfo{
+func (cli *ghCli) versionInfo() tools.VersionInfo {
+	return tools.VersionInfo{
 		MinimumVersion: semver.Version{
 			Major: 2,
 			Minor: 4,
@@ -51,21 +53,21 @@ func (cli *ghCli) versionInfo() VersionInfo {
 }
 
 func (cli *ghCli) CheckInstalled(ctx context.Context) (bool, error) {
-	found, err := toolInPath("gh")
+	found, err := internal.ToolInPath("gh")
 	if !found {
 		return false, err
 	}
-	ghRes, err := executeCommand(ctx, "gh", "--version")
+	ghRes, err := internal.ExecuteCommand(ctx, "gh", "--version")
 	if err != nil {
 		return false, fmt.Errorf("checking %s version: %w", cli.Name(), err)
 	}
-	ghSemver, err := extractSemver(ghRes)
+	ghSemver, err := internal.ExtractSemver(ghRes)
 	if err != nil {
 		return false, fmt.Errorf("converting to semver version fails: %w", err)
 	}
 	updateDetail := cli.versionInfo()
 	if ghSemver.LT(updateDetail.MinimumVersion) {
-		return false, &ErrSemver{ToolName: cli.Name(), versionInfo: updateDetail}
+		return false, &tools.ErrSemver{ToolName: cli.Name(), VersionInfo: updateDetail}
 	}
 
 	return true, nil

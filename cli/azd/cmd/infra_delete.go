@@ -12,6 +12,8 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/spin"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
+	bicepTool "github.com/azure/azure-dev/cli/azd/pkg/tools/bicep"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
@@ -44,7 +46,7 @@ func (a *infraDeleteAction) SetupFlags(
 
 func (a *infraDeleteAction) Run(ctx context.Context, _ *cobra.Command, args []string, azdCtx *environment.AzdContext) error {
 	azCli := commands.GetAzCliFromContext(ctx)
-	bicepCli := tools.NewBicepCli(tools.NewBicepCliArgs{AzCli: azCli})
+	bicepCli := bicepTool.NewBicepCli(bicepTool.NewBicepCliArgs{AzCli: azCli})
 	console := input.NewConsole(!a.rootOptions.NoPrompt)
 
 	if err := ensureProject(azdCtx.ProjectPath()); err != nil {
@@ -83,7 +85,7 @@ func (a *infraDeleteAction) Run(ctx context.Context, _ *cobra.Command, args []st
 		return fmt.Errorf("discovering resource groups from deployment: %w", err)
 	}
 
-	var allResources []tools.AzCliResource
+	var allResources []azcli.AzCliResource
 
 	for _, resourceGroup := range resourceGroups {
 		resources, err := azCli.ListResourceGroupResources(ctx, env.GetSubscriptionId(), resourceGroup)

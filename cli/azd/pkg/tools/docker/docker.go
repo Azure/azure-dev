@@ -1,4 +1,4 @@
-package tools
+package docker
 
 import (
 	"context"
@@ -8,6 +8,8 @@ import (
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/executil"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/internal"
 	"github.com/blang/semver/v4"
 )
 
@@ -62,8 +64,8 @@ func (d *Docker) Push(ctx context.Context, cwd string, tag string) error {
 	return nil
 }
 
-func (d *Docker) versionInfo() VersionInfo {
-	return VersionInfo{
+func (d *Docker) versionInfo() tools.VersionInfo {
+	return tools.VersionInfo{
 		MinimumVersion: semver.Version{
 			Major: 17,
 			Minor: 9,
@@ -94,11 +96,11 @@ func (d *Docker) extractDockerVersionSemVer(cliOutput string) (semver.Version, e
 
 }
 func (d *Docker) CheckInstalled(ctx context.Context) (bool, error) {
-	found, err := toolInPath("docker")
+	found, err := internal.ToolInPath("docker")
 	if !found {
 		return false, err
 	}
-	dockerRes, err := executeCommand(ctx, "docker", "--version")
+	dockerRes, err := internal.ExecuteCommand(ctx, "docker", "--version")
 	if err != nil {
 		return false, fmt.Errorf("checking %s version: %w", d.Name(), err)
 	}
@@ -108,7 +110,7 @@ func (d *Docker) CheckInstalled(ctx context.Context) (bool, error) {
 	}
 	updateDetail := d.versionInfo()
 	if dockerSemver.LT(updateDetail.MinimumVersion) {
-		return false, &ErrSemver{ToolName: d.Name(), versionInfo: updateDetail}
+		return false, &tools.ErrSemver{ToolName: d.Name(), VersionInfo: updateDetail}
 	}
 	return true, nil
 }

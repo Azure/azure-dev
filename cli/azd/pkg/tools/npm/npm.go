@@ -1,18 +1,20 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
-package tools
+package npm
 
 import (
 	"context"
 	"fmt"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/executil"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/internal"
 	"github.com/blang/semver/v4"
 )
 
 type NpmCli interface {
-	ExternalTool
+	tools.ExternalTool
 	Install(ctx context.Context, project string, onlyProduction bool) error
 	Build(ctx context.Context, project string, env []string) error
 }
@@ -24,8 +26,8 @@ func NewNpmCli() NpmCli {
 	return &npmCli{}
 }
 
-func (cli *npmCli) versionInfoNode() VersionInfo {
-	return VersionInfo{
+func (cli *npmCli) versionInfoNode() tools.VersionInfo {
+	return tools.VersionInfo{
 		MinimumVersion: semver.Version{
 			Major: 16,
 			Minor: 0,
@@ -35,23 +37,23 @@ func (cli *npmCli) versionInfoNode() VersionInfo {
 }
 
 func (cli *npmCli) CheckInstalled(ctx context.Context) (bool, error) {
-	found, err := toolInPath("npm")
+	found, err := internal.ToolInPath("npm")
 	if !found {
 		return false, err
 	}
 
 	//check node version
-	nodeRes, err := executeCommand(ctx, "node", "--version")
+	nodeRes, err := internal.ExecuteCommand(ctx, "node", "--version")
 	if err != nil {
 		return false, fmt.Errorf("checking %s version: %w", cli.Name(), err)
 	}
-	nodeSemver, err := extractSemver(nodeRes)
+	nodeSemver, err := internal.ExtractSemver(nodeRes)
 	if err != nil {
 		return false, fmt.Errorf("converting to semver version fails: %w", err)
 	}
 	updateDetailNode := cli.versionInfoNode()
 	if nodeSemver.Compare(updateDetailNode.MinimumVersion) == -1 {
-		return false, &ErrSemver{ToolName: "Node.js", versionInfo: updateDetailNode}
+		return false, &tools.ErrSemver{ToolName: "Node.js", VersionInfo: updateDetailNode}
 	}
 
 	return true, nil

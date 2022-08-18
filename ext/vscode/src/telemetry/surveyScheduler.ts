@@ -23,7 +23,7 @@ export interface Survey {
     prompt: string;
     buttons: Map<string, vscode.Uri | SurveyRefusal>;
     activationDelayMs: number;
-    isEligible(): Promise<boolean>;
+    isEligible(context: IActionContext): Promise<boolean>;
 }
 
 export function scheduleSurveys(persistentStore: vscode.Memento, surveys: Survey[]) {
@@ -65,7 +65,7 @@ async function surveyCheck(persistentStore: vscode.Memento, context: IActionCont
 
     const promptedDuringCurrentSession = persistentStore.get<string>(lastSurveySessionKey) === vscode.env.sessionId;
     const alreadyResponded = persistentStore.get<boolean>(`${surveyRespondedKeyPrefix}/${survey.id}`, false);
-    const eligible = await survey.isEligible();
+    const eligible = await survey.isEligible(context);
     const flighted: boolean = await ext.experimentationSvc?.isCachedFlightEnabled(getSurveyFlightName(survey)) ?? false;
 
     context.telemetry.properties.promptedDuringCurrentSession = promptedDuringCurrentSession.toString();

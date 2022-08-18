@@ -121,6 +121,7 @@ func (ts *TelemetrySystem) Shutdown(ctx context.Context) {
 	instance.tracerProvider.Shutdown(ctx)
 }
 
+// Returns the storage queue instance
 func (ts *TelemetrySystem) GetStorageQueue() *StorageQueue {
 	return instance.storageQueue
 }

@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -31,7 +31,7 @@ func (server *testServer) Close() {
 }
 
 func (server *testServer) ServeHTTP(writer http.ResponseWriter, req *http.Request) {
-	body, _ := ioutil.ReadAll(req.Body)
+	body, _ := io.ReadAll(req.Body)
 
 	hdr := writer.Header()
 	for k, v := range server.responseHeaders {
@@ -130,7 +130,7 @@ func doBasicTransmit(client Transmitter, server *testServer, t *testing.T) {
 		t.Fatalf("Couldn't create gzip reader: %s", err.Error())
 	}
 
-	body, err := ioutil.ReadAll(reader)
+	body, err := io.ReadAll(reader)
 	reader.Close()
 	if err != nil {
 		t.Fatalf("Couldn't read compressed data: %s", err.Error())

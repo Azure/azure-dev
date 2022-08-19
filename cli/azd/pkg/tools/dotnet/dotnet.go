@@ -1,18 +1,19 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
-package tools
+package dotnet
 
 import (
 	"context"
 	"fmt"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/executil"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/blang/semver/v4"
 )
 
 type DotNetCli interface {
-	ExternalTool
+	tools.ExternalTool
 	Publish(ctx context.Context, project string, output string) error
 	Restore(ctx context.Context, project string) error
 	InitializeSecret(ctx context.Context, project string) error
@@ -30,8 +31,8 @@ func (cli *dotNetCli) InstallUrl() string {
 	return "https://dotnet.microsoft.com/download"
 }
 
-func (cli *dotNetCli) versionInfo() VersionInfo {
-	return VersionInfo{
+func (cli *dotNetCli) versionInfo() tools.VersionInfo {
+	return tools.VersionInfo{
 		MinimumVersion: semver.Version{
 			Major: 6,
 			Minor: 0,
@@ -41,21 +42,21 @@ func (cli *dotNetCli) versionInfo() VersionInfo {
 }
 
 func (cli *dotNetCli) CheckInstalled(ctx context.Context) (bool, error) {
-	found, err := toolInPath("dotnet")
+	found, err := tools.ToolInPath("dotnet")
 	if !found {
 		return false, err
 	}
-	dotnetRes, err := executeCommand(ctx, "dotnet", "--version")
+	dotnetRes, err := tools.ExecuteCommand(ctx, "dotnet", "--version")
 	if err != nil {
 		return false, fmt.Errorf("checking %s version: %w", cli.Name(), err)
 	}
-	dotnetSemver, err := extractSemver(dotnetRes)
+	dotnetSemver, err := tools.ExtractSemver(dotnetRes)
 	if err != nil {
 		return false, fmt.Errorf("converting to semver version fails: %w", err)
 	}
 	updateDetail := cli.versionInfo()
 	if dotnetSemver.LT(updateDetail.MinimumVersion) {
-		return false, &ErrSemver{ToolName: cli.Name(), versionInfo: updateDetail}
+		return false, &tools.ErrSemver{ToolName: cli.Name(), VersionInfo: updateDetail}
 	}
 	return true, nil
 }

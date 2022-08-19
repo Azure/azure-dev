@@ -14,6 +14,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/pbnj/go-open"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
@@ -91,8 +92,8 @@ func (m *monitorAction) Run(ctx context.Context, _ *cobra.Command, args []string
 		return fmt.Errorf("discovering resource groups from deployment: %w", err)
 	}
 
-	var insightsResources []tools.AzCliResource
-	var portalResources []tools.AzCliResource
+	var insightsResources []azcli.AzCliResource
+	var portalResources []azcli.AzCliResource
 
 	for _, resourceGroup := range resourceGroups {
 		resources, err := azCli.ListResourceGroupResources(ctx, env.GetSubscriptionId(), resourceGroup)

@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
-package tools
+package python
 
 import (
 	"context"
@@ -11,6 +11,7 @@ import (
 	"runtime"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/executil"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/blang/semver/v4"
 )
 
@@ -20,8 +21,8 @@ func NewPythonCli() *PythonCli {
 	return &PythonCli{}
 }
 
-func (cli *PythonCli) versionInfo() VersionInfo {
-	return VersionInfo{
+func (cli *PythonCli) versionInfo() tools.VersionInfo {
+	return tools.VersionInfo{
 		MinimumVersion: semver.Version{
 			Major: 3,
 			Minor: 7,
@@ -31,21 +32,21 @@ func (cli *PythonCli) versionInfo() VersionInfo {
 }
 
 func (cli *PythonCli) CheckInstalled(ctx context.Context) (bool, error) {
-	found, err := toolInPath(pythonExe())
+	found, err := tools.ToolInPath(pythonExe())
 	if !found {
 		return false, err
 	}
-	pythonRes, err := executeCommand(ctx, pythonExe(), "--version")
+	pythonRes, err := tools.ExecuteCommand(ctx, pythonExe(), "--version")
 	if err != nil {
 		return false, fmt.Errorf("checking %s version: %w", cli.Name(), err)
 	}
-	pythonSemver, err := extractSemver(pythonRes)
+	pythonSemver, err := tools.ExtractSemver(pythonRes)
 	if err != nil {
 		return false, fmt.Errorf("converting to semver version fails: %w", err)
 	}
 	updateDetail := cli.versionInfo()
 	if pythonSemver.LT(updateDetail.MinimumVersion) {
-		return false, &ErrSemver{ToolName: cli.Name(), versionInfo: updateDetail}
+		return false, &tools.ErrSemver{ToolName: cli.Name(), VersionInfo: updateDetail}
 	}
 	return true, nil
 }
@@ -108,5 +109,3 @@ func pythonExe() string {
 		return "python3"
 	}
 }
-
-var _ ExternalTool = &PythonCli{}

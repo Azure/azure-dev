@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
-package tools
+package swa
 
 import (
 	"context"
@@ -9,6 +9,7 @@ import (
 	"log"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/executil"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 )
 
 func NewSwaCli() SwaCli {
@@ -18,7 +19,7 @@ func NewSwaCli() SwaCli {
 }
 
 type SwaCli interface {
-	ExternalTool
+	tools.ExternalTool
 
 	Build(ctx context.Context, cwd string, appFolderPath string, outputRelativeFolderPath string) error
 	Deploy(ctx context.Context, cwd string, tenantId string, subscriptionId string, resourceGroup string, appName string, appFolderPath string, outputRelativeFolderPath string, environment string, deploymentToken string) (string, error)
@@ -66,7 +67,7 @@ func (cli *swaCli) Deploy(ctx context.Context, cwd string, tenantId string, subs
 
 func (cli *swaCli) CheckInstalled(_ context.Context) (bool, error) {
 
-	return toolInPath("npx")
+	return tools.ToolInPath("npx")
 }
 
 func (cli *swaCli) Name() string {

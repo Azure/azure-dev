@@ -3,18 +3,18 @@ package provisioning
 import (
 	"context"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/tools"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 )
 
 type Scope interface {
 	// Deploy a given template with a set of parameters.
 	Deploy(ctx context.Context, templatePath string, parametersPath string) error
 	// GetDeployment fetches the result of the most recent deployment.
-	GetDeployment(ctx context.Context) (tools.AzCliDeployment, error)
+	GetDeployment(ctx context.Context) (azcli.AzCliDeployment, error)
 }
 
 type ResourceGroupScope struct {
-	azCli          tools.AzCli
+	azCli          azcli.AzCli
 	name           string
 	subscriptionId string
 	resourceGroup  string
@@ -25,11 +25,11 @@ func (s *ResourceGroupScope) Deploy(ctx context.Context, modulePath string, para
 	return err
 }
 
-func (s *ResourceGroupScope) GetDeployment(ctx context.Context) (tools.AzCliDeployment, error) {
+func (s *ResourceGroupScope) GetDeployment(ctx context.Context) (azcli.AzCliDeployment, error) {
 	return s.azCli.GetResourceGroupDeployment(ctx, s.subscriptionId, s.resourceGroup, s.name)
 }
 
-func NewResourceGroupProvisioningScope(azCli tools.AzCli, subscriptionId string, resourceGroup string, deploymentName string) Scope {
+func NewResourceGroupProvisioningScope(azCli azcli.AzCli, subscriptionId string, resourceGroup string, deploymentName string) Scope {
 	return &ResourceGroupScope{
 		azCli:          azCli,
 		name:           deploymentName,
@@ -39,7 +39,7 @@ func NewResourceGroupProvisioningScope(azCli tools.AzCli, subscriptionId string,
 }
 
 type SubscriptionScope struct {
-	azCli          tools.AzCli
+	azCli          azcli.AzCli
 	name           string
 	subscriptionId string
 	location       string
@@ -62,11 +62,11 @@ func (s *SubscriptionScope) Deploy(ctx context.Context, bicepPath string, parame
 	return err
 }
 
-func (s *SubscriptionScope) GetDeployment(ctx context.Context) (tools.AzCliDeployment, error) {
+func (s *SubscriptionScope) GetDeployment(ctx context.Context) (azcli.AzCliDeployment, error) {
 	return s.azCli.GetSubscriptionDeployment(ctx, s.subscriptionId, s.name)
 }
 
-func NewSubscriptionProvisioningScope(azCli tools.AzCli, location string, subscriptionId string, deploymentName string) Scope {
+func NewSubscriptionProvisioningScope(azCli azcli.AzCli, location string, subscriptionId string, deploymentName string) Scope {
 	return &SubscriptionScope{
 		azCli:          azCli,
 		name:           deploymentName,

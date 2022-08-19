@@ -19,6 +19,8 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/pkg/spin"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
+	bicepTool "github.com/azure/azure-dev/cli/azd/pkg/tools/bicep"
 	"github.com/drone/envsubst"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
@@ -51,7 +53,7 @@ func (ica *infraCreateAction) SetupFlags(persis, local *pflag.FlagSet) {
 
 func (ica *infraCreateAction) Run(ctx context.Context, cmd *cobra.Command, args []string, azdCtx *environment.AzdContext) error {
 	azCli := commands.GetAzCliFromContext(ctx)
-	bicepCli := tools.NewBicepCli(tools.NewBicepCliArgs{AzCli: azCli})
+	bicepCli := bicepTool.NewBicepCli(bicepTool.NewBicepCliArgs{AzCli: azCli})
 	console := input.NewConsole(!ica.rootOptions.NoPrompt)
 
 	if err := ensureProject(azdCtx.ProjectPath()); err != nil {
@@ -198,7 +200,7 @@ func (ica *infraCreateAction) Run(ctx context.Context, cmd *cobra.Command, args 
 	deploymentTarget := bicep.NewSubscriptionDeploymentTarget(azCli, location, env.GetSubscriptionId(), env.GetEnvName())
 
 	type deployFuncResult struct {
-		Result tools.AzCliDeployment
+		Result azcli.AzCliDeployment
 		Err    error
 	}
 	var res deployFuncResult
@@ -290,10 +292,10 @@ func (ica *infraCreateAction) Run(ctx context.Context, cmd *cobra.Command, args 
 
 type progressReport struct {
 	Timestamp  time.Time                      `json:"timestamp"`
-	Operations []tools.AzCliResourceOperation `json:"operations"`
+	Operations []azcli.AzCliResourceOperation `json:"operations"`
 }
 
-func reportDeploymentStatusJson(ctx context.Context, azCli tools.AzCli, env environment.Environment, formatter output.Formatter, cmd *cobra.Command) {
+func reportDeploymentStatusJson(ctx context.Context, azCli azcli.AzCli, env environment.Environment, formatter output.Formatter, cmd *cobra.Command) {
 	resourceManager := infra.NewAzureResourceManager(azCli)
 
 	ops, err := resourceManager.GetDeploymentResourceOperations(ctx, env.GetSubscriptionId(), env.GetEnvName())

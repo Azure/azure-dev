@@ -15,6 +15,8 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
+	bicepTool "github.com/azure/azure-dev/cli/azd/pkg/tools/bicep"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
@@ -222,7 +224,7 @@ func (en *envNewAction) Run(ctx context.Context, _ *cobra.Command, args []string
 func envRefreshCmd(rootOptions *commands.GlobalCommandOptions) *cobra.Command {
 	actionFn := func(ctx context.Context, cmd *cobra.Command, args []string, azdCtx *environment.AzdContext) error {
 		azCli := commands.GetAzCliFromContext(ctx)
-		bicepCli := tools.NewBicepCli(tools.NewBicepCliArgs{AzCli: azCli})
+		bicepCli := bicepTool.NewBicepCli(bicepTool.NewBicepCliArgs{AzCli: azCli})
 		console := input.NewConsole(!rootOptions.NoPrompt)
 
 		if err := ensureProject(azdCtx.ProjectPath()); err != nil {
@@ -248,7 +250,7 @@ func envRefreshCmd(rootOptions *commands.GlobalCommandOptions) *cobra.Command {
 		}
 
 		res, err := azCli.GetSubscriptionDeployment(ctx, env.GetSubscriptionId(), env.GetEnvName())
-		if errors.Is(err, tools.ErrDeploymentNotFound) {
+		if errors.Is(err, azcli.ErrDeploymentNotFound) {
 			return fmt.Errorf("no deployment for environment '%s' found. Have you run `infra create`?", rootOptions.EnvironmentName)
 		} else if err != nil {
 			return fmt.Errorf("fetching latest deployment: %w", err)

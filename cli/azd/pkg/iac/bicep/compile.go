@@ -7,11 +7,12 @@ import (
 	"log"
 	"strings"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/tools"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/bicep"
 )
 
 // Compile a template using a given CLI.
-func Compile(ctx context.Context, bicepCli tools.BicepCli, bicepPath string) (CompiledTemplate, error) {
+func Compile(ctx context.Context, bicepCli bicep.BicepCli, bicepPath string) (CompiledTemplate, error) {
 	// Compile the bicep file into an ARM template we can create.
 	compiled, err := bicepCli.Build(ctx, bicepPath)
 	if err != nil {
@@ -37,9 +38,9 @@ type CompiledTemplate struct {
 // CanonicalizeDeploymentOutputs constructs a new map based on the value of `deploymentOutputs`, correcting the case
 // of output names to match what is in the template (since an ARM Deployment does not preserve the casing of output names). The
 // new map is assigned to to the pointer.
-func (template *CompiledTemplate) CanonicalizeDeploymentOutputs(deploymentOutputs *map[string]tools.AzCliDeploymentOutput) {
+func (template *CompiledTemplate) CanonicalizeDeploymentOutputs(deploymentOutputs *map[string]azcli.AzCliDeploymentOutput) {
 	canonicalOutputCasings := make(map[string]string, len(template.Outputs))
-	newOutputs := make(map[string]tools.AzCliDeploymentOutput, len(*deploymentOutputs))
+	newOutputs := make(map[string]azcli.AzCliDeploymentOutput, len(*deploymentOutputs))
 
 	for k := range template.Outputs {
 		canonicalOutputCasings[strings.ToLower(k)] = k

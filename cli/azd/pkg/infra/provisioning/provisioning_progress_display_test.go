@@ -7,15 +7,15 @@ import (
 	"time"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/stretchr/testify/assert"
 )
 
 type mockResourceManager struct {
-	operations []tools.AzCliResourceOperation
+	operations []azcli.AzCliResourceOperation
 }
 
-func (mock *mockResourceManager) GetDeploymentResourceOperations(ctx context.Context, subscriptionId string, deploymentName string) ([]tools.AzCliResourceOperation, error) {
+func (mock *mockResourceManager) GetDeploymentResourceOperations(ctx context.Context, subscriptionId string, deploymentName string) ([]azcli.AzCliResourceOperation, error) {
 	return mock.operations, nil
 }
 
@@ -28,10 +28,10 @@ func (mock *mockResourceManager) GetWebAppResourceTypeDisplayName(ctx context.Co
 }
 
 func (mock *mockResourceManager) AddInProgressSubResourceOperation() {
-	mock.operations = append(mock.operations, tools.AzCliResourceOperation{Id: "website-deploy-id",
-		Properties: tools.AzCliResourceOperationProperties{
+	mock.operations = append(mock.operations, azcli.AzCliResourceOperation{Id: "website-deploy-id",
+		Properties: azcli.AzCliResourceOperationProperties{
 			ProvisioningOperation: "Create",
-			TargetResource: tools.AzCliResourceOperationTargetResource{
+			TargetResource: azcli.AzCliResourceOperationTargetResource{
 				ResourceType:  string(infra.AzureResourceTypeWebSite) + "/config",
 				Id:            fmt.Sprintf("website-resource-id-%d", len(mock.operations)),
 				ResourceName:  fmt.Sprintf("website-resource-name-%d", len(mock.operations)),
@@ -41,10 +41,10 @@ func (mock *mockResourceManager) AddInProgressSubResourceOperation() {
 }
 
 func (mock *mockResourceManager) AddInProgressOperation() {
-	mock.operations = append(mock.operations, tools.AzCliResourceOperation{Id: "website-deploy-id",
-		Properties: tools.AzCliResourceOperationProperties{
+	mock.operations = append(mock.operations, azcli.AzCliResourceOperation{Id: "website-deploy-id",
+		Properties: azcli.AzCliResourceOperationProperties{
 			ProvisioningOperation: "Create",
-			TargetResource: tools.AzCliResourceOperationTargetResource{
+			TargetResource: azcli.AzCliResourceOperationTargetResource{
 				ResourceType:  string(infra.AzureResourceTypeWebSite),
 				Id:            fmt.Sprintf("website-resource-id-%d", len(mock.operations)),
 				ResourceName:  fmt.Sprintf("website-resource-name-%d", len(mock.operations)),
@@ -114,7 +114,7 @@ func (display *ProvisioningProgressDisplay) reportProgress(captureTitle *string,
 	display.ReportProgress(context.Background(), titleCapturer(captureTitle), logOutputCapturer(captureLogOutput))
 }
 
-func assertOperationLogged(t *testing.T, i int, operations []tools.AzCliResourceOperation, logOutput []string) {
+func assertOperationLogged(t *testing.T, i int, operations []azcli.AzCliResourceOperation, logOutput []string) {
 	assert.True(t, len(logOutput) > i)
 	assert.Equal(t, formatCreatedResourceLog(operations[i].Properties.TargetResource.ResourceType, operations[i].Properties.TargetResource.ResourceName), logOutput[i])
 }

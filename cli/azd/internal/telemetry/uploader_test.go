@@ -14,13 +14,6 @@ import (
 	"golang.org/x/exp/slices"
 )
 
-type SQueue interface {
-	Enqueue(message []byte) error
-	EnqueueWithDelay(message []byte, delayDuration time.Duration, retryCount int) error
-	Peek() (*StoredItem, error)
-	Remove(item *StoredItem) error
-}
-
 type InMemoryItem struct {
 	StoredItem
 
@@ -70,9 +63,8 @@ func (tq *InMemoryTelemetryQueue) save(message []byte, delayDuration time.Durati
 
 func (tq *InMemoryTelemetryQueue) Peek() (*StoredItem, error) {
 	now := tq.clock.Now()
-	for i := len(tq.itemQueue) - 1; i > 0; i-- {
-		if now.Sub(tq.itemQueue[i].readyTime) >= 0 {
-			item := tq.itemQueue[i]
+	for _, item := range tq.itemQueue {
+		if now.Sub(item.readyTime) >= 0 {
 			return &StoredItem{
 				retryCount: item.retryCount,
 				message:    item.message,
@@ -94,23 +86,26 @@ func (tq *InMemoryTelemetryQueue) Remove(item *StoredItem) error {
 		}
 	}
 
-	tq.itemQueue = slices.Delete(tq.itemQueue, indexToRemove, indexToRemove)
+	if indexToRemove != -1 {
+		tq.itemQueue = slices.Delete(tq.itemQueue, indexToRemove, indexToRemove+1)
+	}
 	return nil
 }
 
 type TransmitterStub struct {
-	seen           [][]byte
-	mockResponse   *appinsightsexporter.TransmissionResult
-	mockError      error
-	mockStatusCode *int
+	seen         [][]byte
+	mockResponse *appinsightsexporter.TransmissionResult
+	mockError    error
 }
 
 func NewTransmitterStub() *TransmitterStub {
 	return &TransmitterStub{
-		seen:           [][]byte{},
-		mockResponse:   nil,
-		mockStatusCode: nil,
-		mockError:      nil,
+		seen: [][]byte{},
+		// By default return 200
+		mockResponse: &appinsightsexporter.TransmissionResult{
+			StatusCode: 200,
+		},
+		mockError: nil,
 	}
 }
 
@@ -121,20 +116,7 @@ func (tr *TransmitterStub) Transmit(payload []byte, items appinsightsexporter.Te
 		return nil, tr.mockError
 	}
 
-	if tr.mockStatusCode != nil {
-		return &appinsightsexporter.TransmissionResult{
-			StatusCode: *tr.mockStatusCode,
-		}, nil
-	}
-
-	if tr.mockResponse != nil {
-		return tr.mockResponse, nil
-	}
-
-	// By default, return 200
-	return &appinsightsexporter.TransmissionResult{
-		StatusCode: 200,
-	}, nil
+	return tr.mockResponse, nil
 }
 
 func TestUploadEmpty(t *testing.T) {
@@ -161,11 +143,10 @@ func TestUpload_HttpCompleteFailure(t *testing.T) {
 	transmitter, queue, uploader := setupUploader(clock)
 	messages := addMessages(queue)
 
-	errorStatusCode := 400
-	transmitter.mockStatusCode = &errorStatusCode
+	transmitter.mockResponse.StatusCode = 400
 
 	err := syncUpload(uploader)
-	assert.Error(t, err)
+	assert.NoError(t, err)
 	assert.Equal(t, messages, transmitter.seen)
 	assert.Empty(t, queue.itemQueue)
 }
@@ -178,7 +159,7 @@ func TestUpload_RequeueOnNetworkError(t *testing.T) {
 	transmitter.mockError = fmt.Errorf("network error")
 
 	err := syncUpload(uploader)
-	assert.Error(t, err)
+	assert.NoError(t, err)
 	assert.Equal(t, messages, transmitter.seen)
 	assert.Len(t, queue.itemQueue, len(messages))
 	assertRetryCountOnAllItems(t, queue, 1)
@@ -189,11 +170,10 @@ func TestUpload_RequeueOnHttpError(t *testing.T) {
 	transmitter, queue, uploader := setupUploader(clock)
 	messages := addMessages(queue)
 
-	errorStatusCode := 503
-	transmitter.mockStatusCode = &errorStatusCode
+	transmitter.mockResponse.StatusCode = 503
 
 	err := syncUpload(uploader)
-	assert.Error(t, err)
+	assert.NoError(t, err)
 	assert.Equal(t, messages, transmitter.seen)
 	assert.Len(t, queue.itemQueue, len(messages))
 	assertRetryCountOnAllItems(t, queue, 1)
@@ -205,12 +185,11 @@ func TestUpload_RequeueOnHttpError_WithRetryAfter(t *testing.T) {
 	messages := addMessages(queue)
 
 	retryAfter := clock.Now().Add(time.Duration(3) * time.Second)
-	errorStatusCode := 429
-	transmitter.mockStatusCode = &errorStatusCode
+	transmitter.mockResponse.StatusCode = 429
 	transmitter.mockResponse.RetryAfter = &retryAfter
 
 	err := syncUpload(uploader)
-	assert.Error(t, err)
+	assert.NoError(t, err)
 	assert.Equal(t, messages, transmitter.seen)
 	assert.Len(t, queue.itemQueue, len(messages))
 	assertRetryCountOnAllItems(t, queue, 1)
@@ -221,19 +200,14 @@ func TestUpload_RequeueOnPartialHttpError(t *testing.T) {
 	clock := clock.NewMock()
 	transmitter, queue, uploader := setupUploader(clock)
 
-	payload, _ := makeTelemetryPayload()
-	messages := [][]byte{
-		payload,
-		payload,
-		payload,
-		payload,
-	}
+	items := 6
+	payload, _ := makeTelemetryPayload(items)
+	queue.Enqueue(payload)
 
-	errorStatusCode := 206
-	transmitter.mockStatusCode = &errorStatusCode
+	transmitter.mockResponse.StatusCode = 206
 	transmitter.mockResponse.Response = &appinsightsexporter.BackendResponse{
-		ItemsAccepted: 2,
-		ItemsReceived: 4,
+		ItemsAccepted: 4,
+		ItemsReceived: items,
 		Errors: []*appinsightsexporter.ItemTransmissionResult{
 			{Index: 1, StatusCode: 400, Message: "Bad 1"},
 			{Index: 3, StatusCode: 408, Message: "OK Later"},
@@ -241,32 +215,38 @@ func TestUpload_RequeueOnPartialHttpError(t *testing.T) {
 	}
 
 	err := syncUpload(uploader)
-	assert.Error(t, err)
-	assert.Equal(t, messages, transmitter.seen)
-	assert.Len(t, queue.itemQueue, len(messages)-transmitter.mockResponse.Response.ItemsAccepted)
+	assert.NoError(t, err)
+	assert.Len(t, transmitter.seen, 1)
+	assert.Equal(t, payload, transmitter.seen[0])
+	assert.Len(t, queue.itemQueue, 1)
 	assertRetryCountOnAllItems(t, queue, 1)
+
+	requeuedItem := queue.itemQueue[0]
+	oneItem, _ := makeTelemetryPayload(1)
+	assert.Equal(t, oneItem, requeuedItem.message, "Exactly one telemetry item should be requeued.")
 }
 
 func setupUploader(clock clock.Clock) (*TransmitterStub, *InMemoryTelemetryQueue, *Uploader) {
 	transmitter := NewTransmitterStub()
 	queue := NewInMemoryTelemetryQueue(clock)
-	uploader := NewUploader(queue, transmitter, true)
+	uploader := NewUploader(queue, transmitter, clock, true)
 
 	return transmitter, queue, uploader
 }
 
 func syncUpload(uploader *Uploader) error {
-	result := make(chan error)
+	result := make(chan error, 1)
 	uploader.Upload(context.Background(), result)
 	err := <-result
+	close(result)
 	return err
 }
 
 func addMessages(queue *InMemoryTelemetryQueue) [][]byte {
 	messages := [][]byte{
-		[]byte("hello, world"),
-		[]byte("hello, world 2"),
-		[]byte("hello, world 3"),
+		[]byte("1"),
+		[]byte("2"),
+		[]byte("3"),
 	}
 
 	for _, message := range messages {
@@ -288,9 +268,9 @@ func assertRetryDelayOnAllItems(t *testing.T, queue *InMemoryTelemetryQueue, ret
 	}
 }
 
-func makeTelemetryPayload() ([]byte, appinsightsexporter.TelemetryItems) {
+func makeTelemetryPayload(count int) ([]byte, appinsightsexporter.TelemetryItems) {
 	var buffer appinsightsexporter.TelemetryItems
-	for i := 0; i < 7; i++ {
+	for i := 0; i < count; i++ {
 		buffer = append(buffer, *appinsightsexporter.SpanToEnvelope(GetSpanStub().Snapshot()))
 	}
 

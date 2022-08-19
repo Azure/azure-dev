@@ -6,6 +6,7 @@ import (
 	"time"
 
 	appinsightsexporter "github.com/azure/azure-dev/cli/azd/internal/telemetry/appinsights-exporter"
+	"github.com/benbjohnson/clock"
 	"github.com/sethvargo/go-retry"
 )
 
@@ -16,14 +17,16 @@ const maxRemoveFailCount = 5
 type Uploader struct {
 	transmitter    appinsightsexporter.Transmitter
 	telemetryQueue Queue
+	clock          clock.Clock
 
 	isDebugMode bool
 }
 
-func NewUploader(telemetryQueue Queue, transmitter appinsightsexporter.Transmitter, isDebugMode bool) *Uploader {
+func NewUploader(telemetryQueue Queue, transmitter appinsightsexporter.Transmitter, clock clock.Clock, isDebugMode bool) *Uploader {
 	return &Uploader{
 		transmitter:    transmitter,
 		telemetryQueue: telemetryQueue,
+		clock:          clock,
 		isDebugMode:    isDebugMode,
 	}
 }
@@ -126,7 +129,7 @@ func (u *Uploader) transmit(item *StoredItem) {
 		}
 
 		if result.RetryAfter != nil {
-			delayDuration = time.Until(*result.RetryAfter)
+			delayDuration = u.clock.Until(*result.RetryAfter)
 		} else {
 			delayDuration = time.Duration(500) * time.Millisecond
 		}

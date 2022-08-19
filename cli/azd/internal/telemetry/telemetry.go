@@ -11,6 +11,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/internal"
 	appinsightsexporter "github.com/azure/azure-dev/cli/azd/internal/telemetry/appinsights-exporter"
+	"github.com/benbjohnson/clock"
 	"github.com/gofrs/flock"
 	"github.com/microsoft/ApplicationInsights-Go/appinsights"
 	"go.opentelemetry.io/otel"
@@ -135,7 +136,7 @@ func (ts *TelemetrySystem) NewUploader(enableDebugLogging bool) *Uploader {
 	config := appinsights.NewTelemetryConfiguration(ts.instrumentationKey)
 	transmitter := appinsightsexporter.NewTransmitter(config.EndpointUrl, nil)
 
-	uploader := NewUploader(ts.GetStorageQueue(), transmitter, enableDebugLogging)
+	uploader := NewUploader(ts.GetStorageQueue(), transmitter, clock.New(), enableDebugLogging)
 	return uploader
 }
 

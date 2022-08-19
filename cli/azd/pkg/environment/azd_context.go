@@ -275,3 +275,21 @@ type configFile struct {
 	Version            int    `json:"version"`
 	DefaultEnvironment string `json:"defaultEnvironment"`
 }
+
+type contextKey string
+
+const (
+	azdContextKey contextKey = "azd"
+)
+
+func WithAzdContext(ctx context.Context, azContext AzdContext) context.Context {
+	return context.WithValue(ctx, azdContextKey, azContext)
+}
+
+func AzdContextFromContext(ctx context.Context) AzdContext {
+	options, ok := ctx.Value(azdContextKey).(AzdContext)
+	if !ok {
+		panic("GlobalCommandOptions were not found in the context")
+	}
+	return options
+}

@@ -145,27 +145,27 @@ func doBasicTransmit(client Transmitter, server *testServer, t *testing.T) {
 		t.Errorf("Content-type: %q", contentType)
 	}
 
-	if result.statusCode != 200 {
+	if result.StatusCode != 200 {
 		t.Error("statusCode")
 	}
 
-	if result.retryAfter != nil {
+	if result.RetryAfter != nil {
 		t.Error("retryAfter")
 	}
 
-	if result.response == nil {
+	if result.Response == nil {
 		t.Fatal("response")
 	}
 
-	if result.response.ItemsReceived != 3 {
+	if result.Response.ItemsReceived != 3 {
 		t.Error("ItemsReceived")
 	}
 
-	if result.response.ItemsAccepted != 5 {
+	if result.Response.ItemsAccepted != 5 {
 		t.Error("ItemsAccepted")
 	}
 
-	if len(result.response.Errors) != 0 {
+	if len(result.Response.Errors) != 0 {
 		t.Error("response.Errors")
 	}
 }
@@ -184,39 +184,39 @@ func TestFailedTransmit(t *testing.T) {
 		t.Errorf("err: %s", err.Error())
 	}
 
-	if result.statusCode != errorResponse {
+	if result.StatusCode != errorResponse {
 		t.Error("statusCode")
 	}
 
-	if result.retryAfter != nil {
+	if result.RetryAfter != nil {
 		t.Error("retryAfter")
 	}
 
-	if result.response == nil {
+	if result.Response == nil {
 		t.Fatal("response")
 	}
 
-	if result.response.ItemsReceived != 3 {
+	if result.Response.ItemsReceived != 3 {
 		t.Error("ItemsReceived")
 	}
 
-	if result.response.ItemsAccepted != 0 {
+	if result.Response.ItemsAccepted != 0 {
 		t.Error("ItemsAccepted")
 	}
 
-	if len(result.response.Errors) != 1 {
+	if len(result.Response.Errors) != 1 {
 		t.Fatal("len(Errors)")
 	}
 
-	if result.response.Errors[0].Index != 2 {
+	if result.Response.Errors[0].Index != 2 {
 		t.Error("Errors[0].index")
 	}
 
-	if result.response.Errors[0].StatusCode != errorResponse {
+	if result.Response.Errors[0].StatusCode != errorResponse {
 		t.Error("Errors[0].statusCode")
 	}
 
-	if result.response.Errors[0].Message != "Hello" {
+	if result.Response.Errors[0].Message != "Hello" {
 		t.Error("Errors[0].message")
 	}
 }
@@ -236,19 +236,19 @@ func TestThrottledTransmit(t *testing.T) {
 		t.Errorf("err: %s", err.Error())
 	}
 
-	if result.statusCode != errorResponse {
+	if result.StatusCode != errorResponse {
 		t.Error("statusCode")
 	}
 
-	if result.response != nil {
+	if result.Response != nil {
 		t.Fatal("response")
 	}
 
-	if result.retryAfter == nil {
+	if result.RetryAfter == nil {
 		t.Fatal("retryAfter")
 	}
 
-	if (*result.retryAfter).Unix() != 1502322237 {
+	if (*result.RetryAfter).Unix() != 1502322237 {
 		t.Error("retryAfter.Unix")
 	}
 }
@@ -264,14 +264,14 @@ type resultProperties struct {
 
 func checkTransmitResult(t *testing.T, result *TransmissionResult, expected *resultProperties) {
 	retryAfter := "<nil>"
-	if result.retryAfter != nil {
-		retryAfter = (*result.retryAfter).String()
+	if result.RetryAfter != nil {
+		retryAfter = (*result.RetryAfter).String()
 	}
 	response := "<nil>"
-	if result.response != nil {
-		response = fmt.Sprintf("%v", *result.response)
+	if result.Response != nil {
+		response = fmt.Sprintf("%v", *result.Response)
 	}
-	id := fmt.Sprintf("%d, retryAfter:%s, response:%s", result.StatusCode(), retryAfter, response)
+	id := fmt.Sprintf("%d, retryAfter:%s, response:%s", result.StatusCode, retryAfter, response)
 
 	if result.IsSuccess() != expected.isSuccess {
 		t.Errorf("Expected IsSuccess() == %t [%s]", expected.isSuccess, id)
@@ -295,8 +295,8 @@ func checkTransmitResult(t *testing.T, result *TransmissionResult, expected *res
 
 	// retryableErrors is true if CanRetry() and any error is recoverable
 	retryableErrors := false
-	if result.CanRetry() && result.response != nil {
-		for _, err := range result.response.Errors {
+	if result.CanRetry() && result.Response != nil {
+		for _, err := range result.Response.Errors {
 			if err.CanRetry() {
 				retryableErrors = true
 			}
@@ -310,28 +310,28 @@ func checkTransmitResult(t *testing.T, result *TransmissionResult, expected *res
 
 func TestTransmitResults(t *testing.T) {
 	retryAfter := time.Unix(1502322237, 0)
-	partialNoRetries := &backendResponse{
+	partialNoRetries := &BackendResponse{
 		ItemsAccepted: 3,
 		ItemsReceived: 5,
-		Errors: []*itemTransmissionResult{
+		Errors: []*ItemTransmissionResult{
 			{Index: 2, StatusCode: 400, Message: "Bad 1"},
 			{Index: 4, StatusCode: 400, Message: "Bad 2"},
 		},
 	}
 
-	partialSomeRetries := &backendResponse{
+	partialSomeRetries := &BackendResponse{
 		ItemsAccepted: 2,
 		ItemsReceived: 4,
-		Errors: []*itemTransmissionResult{
+		Errors: []*ItemTransmissionResult{
 			{Index: 2, StatusCode: 400, Message: "Bad 1"},
 			{Index: 4, StatusCode: 408, Message: "OK Later"},
 		},
 	}
 
-	noneAccepted := &backendResponse{
+	noneAccepted := &BackendResponse{
 		ItemsAccepted: 0,
 		ItemsReceived: 5,
-		Errors: []*itemTransmissionResult{
+		Errors: []*ItemTransmissionResult{
 			{Index: 0, StatusCode: 500, Message: "Bad 1"},
 			{Index: 1, StatusCode: 500, Message: "Bad 2"},
 			{Index: 2, StatusCode: 500, Message: "Bad 3"},
@@ -340,10 +340,10 @@ func TestTransmitResults(t *testing.T) {
 		},
 	}
 
-	allAccepted := &backendResponse{
+	allAccepted := &BackendResponse{
 		ItemsAccepted: 6,
 		ItemsReceived: 6,
-		Errors:        make([]*itemTransmissionResult, 0),
+		Errors:        make([]*ItemTransmissionResult, 0),
 	}
 
 	checkTransmitResult(t, &TransmissionResult{200, nil, allAccepted},
@@ -383,8 +383,8 @@ func TestGetRetryItems(t *testing.T) {
 	originalPayload, originalItems := makePayload()
 
 	res1 := &TransmissionResult{
-		statusCode: 200,
-		response:   &backendResponse{ItemsReceived: 7, ItemsAccepted: 7},
+		StatusCode: 200,
+		Response:   &BackendResponse{ItemsReceived: 7, ItemsAccepted: 7},
 	}
 
 	payload1, items1 := res1.GetRetryItems(makePayload())
@@ -392,7 +392,7 @@ func TestGetRetryItems(t *testing.T) {
 		t.Error("GetRetryItems shouldn't return anything")
 	}
 
-	res2 := &TransmissionResult{statusCode: 408}
+	res2 := &TransmissionResult{StatusCode: 408}
 
 	payload2, items2 := res2.GetRetryItems(makePayload())
 	if string(originalPayload) != string(payload2) || len(items2) != 7 {
@@ -400,11 +400,11 @@ func TestGetRetryItems(t *testing.T) {
 	}
 
 	res3 := &TransmissionResult{
-		statusCode: 206,
-		response: &backendResponse{
+		StatusCode: 206,
+		Response: &BackendResponse{
 			ItemsReceived: 7,
 			ItemsAccepted: 4,
-			Errors: []*itemTransmissionResult{
+			Errors: []*ItemTransmissionResult{
 				{Index: 1, StatusCode: 200, Message: "OK"},
 				{Index: 3, StatusCode: 400, Message: "Bad"},
 				{Index: 5, StatusCode: 408, Message: "Later"},

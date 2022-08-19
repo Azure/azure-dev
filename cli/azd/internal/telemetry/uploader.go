@@ -28,10 +28,6 @@ func NewUploader(telemetryQueue Queue, transmitter appinsightsexporter.Transmitt
 	}
 }
 
-func (u *Uploader) TryLock() bool {
-	return true
-}
-
 func (u *Uploader) Upload(ctx context.Context, result chan (error)) {
 	for {
 		select {
@@ -39,7 +35,7 @@ func (u *Uploader) Upload(ctx context.Context, result chan (error)) {
 			result <- ctx.Err()
 			return
 		default:
-			done, err := u.uploadItem()
+			done, err := u.uploadNextItem()
 
 			if done {
 				result <- err
@@ -49,7 +45,7 @@ func (u *Uploader) Upload(ctx context.Context, result chan (error)) {
 	}
 }
 
-func (u *Uploader) uploadItem() (bool, error) {
+func (u *Uploader) uploadNextItem() (bool, error) {
 	ctx := context.Background()
 	item, err := u.reliablePeek(ctx)
 
@@ -129,8 +125,8 @@ func (u *Uploader) transmit(item *StoredItem) {
 			return
 		}
 
-		if result.RetryAfter() != nil {
-			delayDuration = time.Until(*result.RetryAfter())
+		if result.RetryAfter != nil {
+			delayDuration = time.Until(*result.RetryAfter)
 		} else {
 			delayDuration = time.Duration(500) * time.Millisecond
 		}
@@ -145,7 +141,7 @@ func (u *Uploader) transmit(item *StoredItem) {
 		}
 	} else {
 		if result.IsFailure() {
-			log.Printf("Failed to transmit item %s with non-retriable status code %d\n", item.fileName, result.StatusCode())
+			log.Printf("Failed to transmit item %s with non-retriable status code %d\n", item.fileName, result.StatusCode)
 		}
 	}
 }

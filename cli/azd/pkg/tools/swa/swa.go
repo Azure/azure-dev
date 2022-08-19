@@ -10,7 +10,6 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/executil"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/internal"
 )
 
 func NewSwaCli() SwaCli {
@@ -68,7 +67,7 @@ func (cli *swaCli) Deploy(ctx context.Context, cwd string, tenantId string, subs
 
 func (cli *swaCli) CheckInstalled(_ context.Context) (bool, error) {
 
-	return internal.ToolInPath("npx")
+	return tools.ToolInPath("npx")
 }
 
 func (cli *swaCli) Name() string {

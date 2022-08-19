@@ -9,7 +9,6 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/executil"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/internal"
 	"github.com/blang/semver/v4"
 )
 
@@ -43,15 +42,15 @@ func (cli *dotNetCli) versionInfo() tools.VersionInfo {
 }
 
 func (cli *dotNetCli) CheckInstalled(ctx context.Context) (bool, error) {
-	found, err := internal.ToolInPath("dotnet")
+	found, err := tools.ToolInPath("dotnet")
 	if !found {
 		return false, err
 	}
-	dotnetRes, err := internal.ExecuteCommand(ctx, "dotnet", "--version")
+	dotnetRes, err := tools.ExecuteCommand(ctx, "dotnet", "--version")
 	if err != nil {
 		return false, fmt.Errorf("checking %s version: %w", cli.Name(), err)
 	}
-	dotnetSemver, err := internal.ExtractSemver(dotnetRes)
+	dotnetSemver, err := tools.ExtractSemver(dotnetRes)
 	if err != nil {
 		return false, fmt.Errorf("converting to semver version fails: %w", err)
 	}

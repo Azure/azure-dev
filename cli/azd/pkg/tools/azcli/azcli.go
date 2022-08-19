@@ -352,7 +352,7 @@ func (cli *azCli) versionInfo() tools.VersionInfo {
 }
 
 func (cli *azCli) unmarshalCliVersion(ctx context.Context, component string) (string, error) {
-	azRes, err := internal.ExecuteCommand(ctx, "az", "version", "--output", "json")
+	azRes, err := tools.ExecuteCommand(ctx, "az", "version", "--output", "json")
 	if err != nil {
 		return "", err
 	}
@@ -369,7 +369,7 @@ func (cli *azCli) unmarshalCliVersion(ctx context.Context, component string) (st
 }
 
 func (cli *azCli) CheckInstalled(ctx context.Context) (bool, error) {
-	found, err := internal.ToolInPath("az")
+	found, err := tools.ToolInPath("az")
 	if !found {
 		return false, err
 	}

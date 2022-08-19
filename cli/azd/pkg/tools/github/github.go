@@ -13,7 +13,6 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/executil"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/internal"
 	"github.com/blang/semver/v4"
 )
 
@@ -53,15 +52,15 @@ func (cli *ghCli) versionInfo() tools.VersionInfo {
 }
 
 func (cli *ghCli) CheckInstalled(ctx context.Context) (bool, error) {
-	found, err := internal.ToolInPath("gh")
+	found, err := tools.ToolInPath("gh")
 	if !found {
 		return false, err
 	}
-	ghRes, err := internal.ExecuteCommand(ctx, "gh", "--version")
+	ghRes, err := tools.ExecuteCommand(ctx, "gh", "--version")
 	if err != nil {
 		return false, fmt.Errorf("checking %s version: %w", cli.Name(), err)
 	}
-	ghSemver, err := internal.ExtractSemver(ghRes)
+	ghSemver, err := tools.ExtractSemver(ghRes)
 	if err != nil {
 		return false, fmt.Errorf("converting to semver version fails: %w", err)
 	}

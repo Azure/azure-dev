@@ -13,7 +13,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/executil"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/internal"
 	"github.com/blang/semver/v4"
 )
 
@@ -86,11 +85,11 @@ func (cli *bicepCli) CheckInstalled(ctx context.Context) (bool, error) {
 		)
 	}
 
-	bicepRes, err := internal.ExecuteCommand(ctx, "az", "bicep", "version")
+	bicepRes, err := tools.ExecuteCommand(ctx, "az", "bicep", "version")
 	if err != nil {
 		return false, fmt.Errorf("checking %s version: %w", cli.Name(), err)
 	}
-	bicepSemver, err := internal.ExtractSemver(bicepRes)
+	bicepSemver, err := tools.ExtractSemver(bicepRes)
 	if err != nil {
 		return false, fmt.Errorf("converting to semver version fails: %w", err)
 	}

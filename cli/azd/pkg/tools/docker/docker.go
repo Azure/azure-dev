@@ -9,7 +9,6 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/executil"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/internal"
 	"github.com/blang/semver/v4"
 )
 
@@ -96,11 +95,11 @@ func (d *Docker) extractDockerVersionSemVer(cliOutput string) (semver.Version, e
 
 }
 func (d *Docker) CheckInstalled(ctx context.Context) (bool, error) {
-	found, err := internal.ToolInPath("docker")
+	found, err := tools.ToolInPath("docker")
 	if !found {
 		return false, err
 	}
-	dockerRes, err := internal.ExecuteCommand(ctx, "docker", "--version")
+	dockerRes, err := tools.ExecuteCommand(ctx, "docker", "--version")
 	if err != nil {
 		return false, fmt.Errorf("checking %s version: %w", d.Name(), err)
 	}

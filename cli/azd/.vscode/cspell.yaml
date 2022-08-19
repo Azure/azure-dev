@@ -29,7 +29,7 @@ overrides:
       - puichan
       - devx
       - azdevcli
-  - filename: pkg/tools/python.go
+  - filename: pkg/tools/python/python.go
     words:
       - venv
   - filename: pkg/spin/run.go

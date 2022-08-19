@@ -12,7 +12,6 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/executil"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/internal"
 	"github.com/blang/semver/v4"
 )
 
@@ -33,15 +32,15 @@ func (cli *PythonCli) versionInfo() tools.VersionInfo {
 }
 
 func (cli *PythonCli) CheckInstalled(ctx context.Context) (bool, error) {
-	found, err := internal.ToolInPath(pythonExe())
+	found, err := tools.ToolInPath(pythonExe())
 	if !found {
 		return false, err
 	}
-	pythonRes, err := internal.ExecuteCommand(ctx, pythonExe(), "--version")
+	pythonRes, err := tools.ExecuteCommand(ctx, pythonExe(), "--version")
 	if err != nil {
 		return false, fmt.Errorf("checking %s version: %w", cli.Name(), err)
 	}
-	pythonSemver, err := internal.ExtractSemver(pythonRes)
+	pythonSemver, err := tools.ExtractSemver(pythonRes)
 	if err != nil {
 		return false, fmt.Errorf("converting to semver version fails: %w", err)
 	}

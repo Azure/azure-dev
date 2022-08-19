@@ -9,7 +9,6 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/executil"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/internal"
 	"github.com/blang/semver/v4"
 )
 
@@ -37,17 +36,17 @@ func (cli *npmCli) versionInfoNode() tools.VersionInfo {
 }
 
 func (cli *npmCli) CheckInstalled(ctx context.Context) (bool, error) {
-	found, err := internal.ToolInPath("npm")
+	found, err := tools.ToolInPath("npm")
 	if !found {
 		return false, err
 	}
 
 	//check node version
-	nodeRes, err := internal.ExecuteCommand(ctx, "node", "--version")
+	nodeRes, err := tools.ExecuteCommand(ctx, "node", "--version")
 	if err != nil {
 		return false, fmt.Errorf("checking %s version: %w", cli.Name(), err)
 	}
-	nodeSemver, err := internal.ExtractSemver(nodeRes)
+	nodeSemver, err := tools.ExtractSemver(nodeRes)
 	if err != nil {
 		return false, fmt.Errorf("converting to semver version fails: %w", err)
 	}

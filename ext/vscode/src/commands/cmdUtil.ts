@@ -82,21 +82,20 @@ export function getAzDevTerminalTitle(): string {
 
 const UseCustomTemplate: string = 'azure-dev:/template/custom';
 
-const WellKnownTemplates: IAzureQuickPickItem<string>[] = [
-    { label: 'Azure-Samples/todo-nodejs-mongo', detail: 'ToDo Application with a Node.js API and Azure Cosmos DB API for MongoDB', data: 'Azure-Samples/todo-nodejs-mongo' },
-    { label: 'Azure-Samples/todo-python-mongo', detail: 'ToDo Application with a Python API and Azure Cosmos DB API for MongoDB', data: 'Azure-Samples/todo-python-mongo' },
-    { label: 'Azure-Samples/todo-csharp-cosmos-sql', detail: 'ToDo Application with a C# API and Azure Cosmos DB SQL API', data: 'Azure-Samples/todo-csharp-cosmos-sql' },
-    { label: 'Azure-Samples/todo-nodejs-mongo-aca', detail: 'ToDo Application with a Node.js API and Azure Cosmos DB API for MongoDB on Azure Container Apps', data: 'Azure-Samples/todo-nodejs-mongo-aca' },
-    { label: 'Azure-Samples/todo-python-mongo-aca', detail: 'ToDo Application with a Python API and Azure Cosmos DB API for MongoDB on Azure Container Apps', data: 'Azure-Samples/todo-python-mongo-aca' },
-    { label: 'Azure-Samples/todo-nodejs-mongo-swa-func', detail: 'ToDo Application with a Node.js API and Azure Cosmos DB API for MongoDB on Static Web Apps and Functions', data: 'Azure-Samples/todo-nodejs-mongo-swa-func' },
-    { label: 'Azure-Samples/todo-python-mongo-swa-func', detail: 'ToDo Application with a Python API and Azure Cosmos DB API for MongoDB on Static Web Apps and Functions', data: 'Azure-Samples/todo-python-mongo-swa-func'},
-    { label: localize('azure-dev.commands.util.useAnotherTemplate', 'Use another template...'), data: '', id: UseCustomTemplate }
-];
-
 export async function selectApplicationTemplate(context: IActionContext): Promise<string> {
     let templateUrl: string = '';
 
-    const template = await context.ui.showQuickPick(WellKnownTemplates, {
+    const azureCli = await createAzureDevCli(context);
+    const command = azureCli.commandBuilder
+        .withArg('template').withArg('list')
+        .withArg('--output').withArg('json')
+        .build();
+    const result = await execAsync(command);
+    const templates = JSON.parse(result.stdout) as { name: string, description: string, repositoryPath: string }[];
+    const choices = templates.map(t => { return { label: t.name, detail: t.description, data: t.repositoryPath } as IAzureQuickPickItem<string>; });
+    choices.push({ label: localize('azure-dev.commands.util.useAnotherTemplate', 'Use another template...'), data: '', id: UseCustomTemplate });
+
+    const template = await context.ui.showQuickPick(choices, {
         canPickMany: false,
         title: localize('azure-dev.commands.util.selectTemplate', 'Select application template')
     });

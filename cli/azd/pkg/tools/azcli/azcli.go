@@ -969,7 +969,7 @@ func (cli *azCli) GraphQuery(ctx context.Context, query string, subscriptions []
 		return nil, fmt.Errorf("getting access token: %w", err)
 	}
 
-	client := httpUtil.GetHttpUtilFromContext(ctx)
+	client := httpUtil.GetHttpClientFromContext(ctx)
 	headers := map[string]string{
 		"Authorization": fmt.Sprintf("Bearer %s", token.AccessToken),
 	}

@@ -20,10 +20,7 @@ func GetAzCliFromContext(ctx context.Context) azcli.AzCli {
 			EnableTelemetry: true,
 		}
 
-		options, ok := ctx.Value(environment.OptionsContextKey).(*GlobalCommandOptions)
-		if !ok {
-			panic("GlobalCommandOptions were not found in the context")
-		}
+		options := globalCommandOptionsFromContext(ctx)
 
 		azCliArgs.EnableDebug = options.EnableDebugLogging
 		azCliArgs.EnableTelemetry = options.EnableTelemetry

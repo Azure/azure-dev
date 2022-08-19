@@ -643,7 +643,7 @@ func getTestEnvPath(dir string, envName string) string {
 // respects the deadline.
 func newTestContext(t *testing.T) (context.Context, context.CancelFunc) {
 	ctx := context.Background()
-	ctx = context.WithValue(ctx, environment.OptionsContextKey, &commands.GlobalCommandOptions{})
+	ctx = commands.WithGlobalCommandOptions(ctx, &commands.GlobalCommandOptions{})
 
 	if deadline, ok := t.Deadline(); ok {
 		return context.WithDeadline(ctx, deadline)

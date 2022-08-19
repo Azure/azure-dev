@@ -23,7 +23,7 @@ func Build(action Action, rootOptions *GlobalCommandOptions, use string, short s
 
 			// Set the global options in the go context
 			ctx = context.WithValue(ctx, environment.AzdContextKey, azdCtx)
-			ctx = context.WithValue(ctx, environment.OptionsContextKey, rootOptions)
+			ctx = WithGlobalCommandOptions(ctx, rootOptions)
 
 			// Create and set the AzCli that will be used for the command
 			azCli := GetAzCliFromContext(ctx)

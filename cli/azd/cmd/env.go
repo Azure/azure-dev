@@ -291,7 +291,7 @@ func envGetValuesCmd(rootOptions *commands.GlobalCommandOptions) *cobra.Command 
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := context.Background()
-			ctx = context.WithValue(ctx, environment.OptionsContextKey, rootOptions)
+			ctx = commands.WithGlobalCommandOptions(ctx, rootOptions)
 
 			console := input.NewConsole(!rootOptions.NoPrompt)
 			azCli := commands.GetAzCliFromContext(ctx)

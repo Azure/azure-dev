@@ -1083,7 +1083,8 @@ func getDeploymentErrorJson(s string) string {
 type contextKey string
 
 const (
-	azdCliContextKey contextKey = "azdcli"
+	azdCliContextKey   contextKey = "azdcli"
+	templateContextKey contextKey = "template"
 )
 
 func WithAzCli(ctx context.Context, azCli AzCli) context.Context {
@@ -1093,4 +1094,13 @@ func WithAzCli(ctx context.Context, azCli AzCli) context.Context {
 func AzCliFromContext(ctx context.Context) (AzCli, bool) {
 	azCli, ok := ctx.Value(azdCliContextKey).(AzCli)
 	return azCli, ok
+}
+
+func WithTemplateName(ctx context.Context, templateName string) context.Context {
+	return context.WithValue(ctx, templateContextKey, templateName)
+}
+
+func TemplateNameFromContext(ctx context.Context) (string, bool) {
+	templateName, ok := ctx.Value(templateContextKey).(string)
+	return templateName, ok
 }

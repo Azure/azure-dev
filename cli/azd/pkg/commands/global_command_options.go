@@ -38,7 +38,7 @@ func WithGlobalCommandOptions(ctx context.Context, options *GlobalCommandOptions
 	return context.WithValue(ctx, optionsContextKey, options)
 }
 
-func globalCommandOptionsFromContext(ctx context.Context) *GlobalCommandOptions {
+func GlobalCommandOptionsFromContext(ctx context.Context) *GlobalCommandOptions {
 	options, ok := ctx.Value(optionsContextKey).(*GlobalCommandOptions)
 	if !ok {
 		panic("GlobalCommandOptions were not found in the context")

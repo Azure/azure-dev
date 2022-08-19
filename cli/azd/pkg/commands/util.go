@@ -5,7 +5,6 @@ import (
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/internal"
-	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 )
 
@@ -20,7 +19,7 @@ func GetAzCliFromContext(ctx context.Context) azcli.AzCli {
 			EnableTelemetry: true,
 		}
 
-		options := globalCommandOptionsFromContext(ctx)
+		options := GlobalCommandOptionsFromContext(ctx)
 
 		azCliArgs.EnableDebug = options.EnableDebugLogging
 		azCliArgs.EnableTelemetry = options.EnableTelemetry
@@ -31,7 +30,7 @@ func GetAzCliFromContext(ctx context.Context) azcli.AzCli {
 	selectedTemplate := ""
 
 	// Set the user agent if a template has been selected
-	if template, ok := ctx.Value(environment.TemplateContextKey).(string); ok && strings.TrimSpace(template) != "" {
+	if template, ok := azcli.TemplateNameFromContext(ctx); ok && strings.TrimSpace(template) != "" {
 		selectedTemplate = template
 	}
 

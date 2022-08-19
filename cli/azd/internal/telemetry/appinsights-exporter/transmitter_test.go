@@ -313,7 +313,7 @@ func TestTransmitResults(t *testing.T) {
 	partialNoRetries := &BackendResponse{
 		ItemsAccepted: 3,
 		ItemsReceived: 5,
-		Errors: []*itemTransmissionResult{
+		Errors: []*ItemTransmissionResult{
 			{Index: 2, StatusCode: 400, Message: "Bad 1"},
 			{Index: 4, StatusCode: 400, Message: "Bad 2"},
 		},
@@ -322,7 +322,7 @@ func TestTransmitResults(t *testing.T) {
 	partialSomeRetries := &BackendResponse{
 		ItemsAccepted: 2,
 		ItemsReceived: 4,
-		Errors: []*itemTransmissionResult{
+		Errors: []*ItemTransmissionResult{
 			{Index: 2, StatusCode: 400, Message: "Bad 1"},
 			{Index: 4, StatusCode: 408, Message: "OK Later"},
 		},
@@ -331,7 +331,7 @@ func TestTransmitResults(t *testing.T) {
 	noneAccepted := &BackendResponse{
 		ItemsAccepted: 0,
 		ItemsReceived: 5,
-		Errors: []*itemTransmissionResult{
+		Errors: []*ItemTransmissionResult{
 			{Index: 0, StatusCode: 500, Message: "Bad 1"},
 			{Index: 1, StatusCode: 500, Message: "Bad 2"},
 			{Index: 2, StatusCode: 500, Message: "Bad 3"},
@@ -343,7 +343,7 @@ func TestTransmitResults(t *testing.T) {
 	allAccepted := &BackendResponse{
 		ItemsAccepted: 6,
 		ItemsReceived: 6,
-		Errors:        make([]*itemTransmissionResult, 0),
+		Errors:        make([]*ItemTransmissionResult, 0),
 	}
 
 	checkTransmitResult(t, &TransmissionResult{200, nil, allAccepted},
@@ -404,7 +404,7 @@ func TestGetRetryItems(t *testing.T) {
 		Response: &BackendResponse{
 			ItemsReceived: 7,
 			ItemsAccepted: 4,
-			Errors: []*itemTransmissionResult{
+			Errors: []*ItemTransmissionResult{
 				{Index: 1, StatusCode: 200, Message: "OK"},
 				{Index: 3, StatusCode: 400, Message: "Bad"},
 				{Index: 5, StatusCode: 408, Message: "Later"},

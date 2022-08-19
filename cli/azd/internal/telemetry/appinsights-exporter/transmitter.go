@@ -1,5 +1,7 @@
 package appinsightsexporter
 
+// Forked implementation from github.com/microsoft/ApplicationInsights-Go
+
 import (
 	"bytes"
 	"compress/gzip"
@@ -29,13 +31,13 @@ type TransmissionResult struct {
 type BackendResponse struct {
 	ItemsReceived int                     `json:"itemsReceived"`
 	ItemsAccepted int                     `json:"itemsAccepted"`
-	Errors        itemTransmissionResults `json:"errors"`
+	Errors        ItemTransmissionResults `json:"errors"`
 }
 
 // This needs to be its own type because it implements sort.Interface
-type itemTransmissionResults []*itemTransmissionResult
+type ItemTransmissionResults []*ItemTransmissionResult
 
-type itemTransmissionResult struct {
+type ItemTransmissionResult struct {
 	Index      int    `json:"index"`
 	StatusCode int    `json:"statusCode"`
 	Message    string `json:"message"`
@@ -167,7 +169,7 @@ func (result *TransmissionResult) IsThrottled() bool {
 		result.RetryAfter != nil
 }
 
-func (result *itemTransmissionResult) CanRetry() bool {
+func (result *ItemTransmissionResult) CanRetry() bool {
 	return result.StatusCode == requestTimeoutResponse ||
 		result.StatusCode == serviceUnavailableResponse ||
 		result.StatusCode == errorResponse ||
@@ -219,15 +221,15 @@ func (result *TransmissionResult) GetRetryItems(payload []byte, items TelemetryI
 
 // sort.Interface implementation for Errors[] list
 
-func (results itemTransmissionResults) Len() int {
+func (results ItemTransmissionResults) Len() int {
 	return len(results)
 }
 
-func (results itemTransmissionResults) Less(i, j int) bool {
+func (results ItemTransmissionResults) Less(i, j int) bool {
 	return results[i].Index < results[j].Index
 }
 
-func (results itemTransmissionResults) Swap(i, j int) {
+func (results ItemTransmissionResults) Swap(i, j int) {
 	tmp := results[i]
 	results[i] = results[j]
 	results[j] = tmp

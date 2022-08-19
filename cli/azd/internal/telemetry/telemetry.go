@@ -139,12 +139,8 @@ func (ts *TelemetrySystem) NewUploader(enableDebugLogging bool) *Uploader {
 	return uploader
 }
 
-func (ts *TelemetrySystem) RunBackgroundUpload(enableDebugLogging bool) error {
-	uploader := ts.NewUploader(enableDebugLogging)
-	queue := ts.GetStorageQueue()
-	upload := make(chan error)
+func (ts *TelemetrySystem) RunBackgroundUpload(ctx context.Context, enableDebugLogging bool) error {
 	fileLock := flock.New(filepath.Join(ts.telemetryDirectory, "upload.lock"))
-
 	locked, err := fileLock.TryLock()
 
 	if err != nil {
@@ -152,16 +148,21 @@ func (ts *TelemetrySystem) RunBackgroundUpload(enableDebugLogging bool) error {
 	}
 
 	if locked {
-		go uploader.Upload(upload)
-		go queue.Cleanup()
+		uploader := ts.NewUploader(enableDebugLogging)
+		queue := ts.GetStorageQueue()
+		upload := make(chan error)
+
+		go uploader.Upload(ctx, upload)
+
+		ctx, cancelCleanup := context.WithCancel(ctx)
+		go queue.Cleanup(ctx)
 
 		err := <-upload
+		cancelCleanup()
 
-		// Cancel Cleanup
-		if err != nil {
-			return err
-		}
+		return err
 	}
 
+	log.Println("Upload already in progress. Exiting.")
 	return nil
 }

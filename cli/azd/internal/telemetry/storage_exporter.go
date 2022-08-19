@@ -2,9 +2,12 @@ package telemetry
 
 import (
 	"context"
+	"time"
 
 	appinsightsexporter "github.com/azure/azure-dev/cli/azd/internal/telemetry/appinsights-exporter"
+	"github.com/sethvargo/go-retry"
 	"go.opentelemetry.io/otel/sdk/trace"
+	"go.uber.org/atomic"
 )
 
 type simpleQueue interface {
@@ -13,7 +16,9 @@ type simpleQueue interface {
 
 // Exporter is an implementation of trace.SpanSyncer that writes spans into a storage queue in ApplicationInsights format.
 type Exporter struct {
-	queue              simpleQueue
+	queue simpleQueue
+
+	anyExported        *atomic.Bool
 	instrumentationKey string
 }
 
@@ -21,6 +26,7 @@ func NewExporter(queue simpleQueue, instrumentationKey string) *Exporter {
 	return &Exporter{
 		queue:              queue,
 		instrumentationKey: instrumentationKey,
+		anyExported:        atomic.NewBool(false),
 	}
 }
 
@@ -28,13 +34,29 @@ func NewExporter(queue simpleQueue, instrumentationKey string) *Exporter {
 func (e *Exporter) ExportSpans(ctx context.Context, spans []trace.ReadOnlySpan) error {
 	var items appinsightsexporter.TelemetryItems
 	for _, span := range spans {
-		envelope := appinsightsexporter.SpanToEnvelope(span)
-		envelope.IKey = e.instrumentationKey
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+			envelope := appinsightsexporter.SpanToEnvelope(span)
+			envelope.IKey = e.instrumentationKey
 
-		items = append(items, *envelope)
+			items = append(items, *envelope)
+		}
 	}
 
-	return e.queue.Enqueue(items.Serialize())
+	if len(items) > 0 {
+		err := retry.Do(ctx, retry.WithMaxRetries(5, retry.NewConstant(time.Duration(500)*time.Millisecond)), func(ctx context.Context) error {
+			return retry.RetryableError(e.queue.Enqueue(items.Serialize()))
+		})
+
+		if err == nil {
+			e.anyExported.Store(true)
+		}
+		return err
+	}
+
+	return nil
 }
 
 // Shutdown is called to stop the exporter, it performs no action.
@@ -49,4 +71,8 @@ func (e *Exporter) MarshalLog() interface{} {
 	}{
 		Type: "appinsightsstorage",
 	}
+}
+
+func (e *Exporter) ExportedAny() bool {
+	return e.anyExported.Load()
 }

@@ -1,6 +1,7 @@
 package telemetry
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -205,7 +206,7 @@ func TestCleanup(t *testing.T) {
 	enqueueAndAssert(storage, validContent[0], t)
 	enqueueAndAssert(storage, validContent[1], t)
 
-	storage.Cleanup()
+	storage.Cleanup(context.Background())
 
 	remainingFiles, err := os.ReadDir(storage.folder)
 	assert.NoError(t, err)

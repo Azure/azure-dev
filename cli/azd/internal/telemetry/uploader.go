@@ -32,19 +32,25 @@ func (u *Uploader) TryLock() bool {
 	return true
 }
 
-func (u *Uploader) Upload(result chan (error)) {
+func (u *Uploader) Upload(ctx context.Context, result chan (error)) {
 	for {
-		done, err := u.uploadItem()
-
-		if done {
-			result <- err
+		select {
+		case <-ctx.Done():
+			result <- ctx.Err()
 			return
+		default:
+			done, err := u.uploadItem()
+
+			if done {
+				result <- err
+				return
+			}
 		}
 	}
 }
 
 func (u *Uploader) uploadItem() (bool, error) {
-	ctx := context.TODO()
+	ctx := context.Background()
 	item, err := u.reliablePeek(ctx)
 
 	if err != nil {
@@ -69,7 +75,7 @@ func (u *Uploader) uploadItem() (bool, error) {
 
 func (u *Uploader) reliablePeek(ctx context.Context) (*StoredItem, error) {
 	var item *StoredItem
-	err := retry.Do(context.Background(), retry.WithMaxRetries(maxReadFailCount, retry.NewConstant(time.Duration(300)*time.Millisecond)), func(ctx context.Context) error {
+	err := retry.Do(ctx, retry.WithMaxRetries(maxReadFailCount, retry.NewConstant(time.Duration(300)*time.Millisecond)), func(ctx context.Context) error {
 		peekItem, err := u.telemetryQueue.Peek()
 
 		if err != nil {
@@ -80,7 +86,7 @@ func (u *Uploader) reliablePeek(ctx context.Context) (*StoredItem, error) {
 		return nil
 	})
 
-	if err != nil {
+	if err != nil && ctx.Err() != nil {
 		// Attempt fallback - remove and retry Peek
 		err = u.reliableRemove(ctx, item)
 
@@ -93,7 +99,7 @@ func (u *Uploader) reliablePeek(ctx context.Context) (*StoredItem, error) {
 }
 
 func (u *Uploader) reliableRemove(ctx context.Context, item *StoredItem) error {
-	return retry.Do(context.Background(), retry.WithMaxRetries(maxRemoveFailCount, retry.NewConstant(time.Duration(300)*time.Millisecond)), func(ctx context.Context) error {
+	return retry.Do(ctx, retry.WithMaxRetries(maxRemoveFailCount, retry.NewConstant(time.Duration(300)*time.Millisecond)), func(ctx context.Context) error {
 		return retry.RetryableError(u.telemetryQueue.Remove(item))
 	})
 }

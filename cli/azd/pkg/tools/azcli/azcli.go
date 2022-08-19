@@ -1079,3 +1079,21 @@ func getDeploymentErrorJson(s string) string {
 
 	return s
 }
+
+type contextKey string
+
+const (
+	azdCliContextKey contextKey = "azdcli"
+)
+
+func WithAzCli(ctx context.Context, azCli AzCli) context.Context {
+	return context.WithValue(ctx, azdCliContextKey, azCli)
+}
+
+func AzCliFromContext(ctx context.Context) AzCli {
+	cli, ok := ctx.Value(azdCliContextKey).(AzCli)
+	if !ok {
+		panic("GlobalCommandOptions were not found in the context")
+	}
+	return cli
+}

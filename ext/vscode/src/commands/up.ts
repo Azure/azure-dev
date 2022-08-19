@@ -37,6 +37,9 @@ export async function up(context: IActionContext, selectedFile?: vscode.Uri): Pr
         cwd: workingDir.fsPath,
         env: azureCli.env
     }, TelemetryId.UpCli).then(() => {
-        void showReadmeFile(workingDir.fsPath);
+        // Only show README if we are initializing a new workspace/application
+        if (!azureYamlFile) {
+            void showReadmeFile(workingDir.fsPath);
+        }
     });
 }

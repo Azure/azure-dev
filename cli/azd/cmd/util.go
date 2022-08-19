@@ -15,6 +15,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azureutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/commands"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment/azd_context"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/fatih/color"
@@ -61,7 +62,7 @@ type environmentSpec struct {
 
 // createEnvironment creates a new named environment. If an environment with this name already
 // exists, and error is return.
-func createAndInitEnvironment(ctx context.Context, envSpec *environmentSpec, azdCtx *environment.AzdContext, console input.Console) (environment.Environment, error) {
+func createAndInitEnvironment(ctx context.Context, envSpec *environmentSpec, azdCtx *azd_context.AzdContext, console input.Console) (environment.Environment, error) {
 	if envSpec.environmentName != "" && !environment.IsValidEnvironmentName(envSpec.environmentName) {
 		errMsg := invalidEnvironmentNameMsg(envSpec.environmentName)
 		fmt.Print(errMsg)
@@ -73,7 +74,7 @@ func createAndInitEnvironment(ctx context.Context, envSpec *environmentSpec, azd
 	}
 
 	// Ensure the environment does not already exist:
-	env, err := azdCtx.GetEnvironment(envSpec.environmentName)
+	env, err := environment.GetEnvironment(azdCtx, envSpec.environmentName)
 	switch {
 	case errors.Is(err, os.ErrNotExist):
 	case err != nil:
@@ -89,7 +90,7 @@ func createAndInitEnvironment(ctx context.Context, envSpec *environmentSpec, azd
 	return env, nil
 }
 
-func loadOrInitEnvironment(ctx context.Context, environmentName *string, azdCtx *environment.AzdContext, console input.Console) (environment.Environment, error) {
+func loadOrInitEnvironment(ctx context.Context, environmentName *string, azdCtx *azd_context.AzdContext, console input.Console) (environment.Environment, error) {
 	loadOrCreateEnvironment := func() (environment.Environment, bool, error) {
 		// If there's a default environment, use that
 		if *environmentName == "" {
@@ -101,7 +102,7 @@ func loadOrInitEnvironment(ctx context.Context, environmentName *string, azdCtx 
 		}
 
 		if *environmentName != "" {
-			env, err := azdCtx.GetEnvironment(*environmentName)
+			env, err := environment.GetEnvironment(azdCtx, *environmentName)
 			switch {
 			case errors.Is(err, os.ErrNotExist):
 				msg := fmt.Sprintf("Environment '%s' does not exist, would you like to create it?", *environmentName)

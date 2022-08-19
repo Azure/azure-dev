@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/commands"
-	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment/azd_context"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
@@ -45,7 +45,7 @@ type loginAction struct {
 
 var _ commands.Action = &loginAction{}
 
-func (la *loginAction) Run(ctx context.Context, cmd *cobra.Command, args []string, azdCtx *environment.AzdContext) error {
+func (la *loginAction) Run(ctx context.Context, cmd *cobra.Command, args []string, azdCtx *azd_context.AzdContext) error {
 	formatter, err := output.GetFormatter(cmd)
 	if err != nil {
 		return err

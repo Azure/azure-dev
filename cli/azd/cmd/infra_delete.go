@@ -6,7 +6,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azureutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/commands"
-	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment/azd_context"
 	"github.com/azure/azure-dev/cli/azd/pkg/iac/bicep"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
@@ -44,7 +44,7 @@ func (a *infraDeleteAction) SetupFlags(
 	local.BoolVar(&a.purgeDelete, "purge", false, "Does not require confirmation before it permanently deletes resources that are soft-deleted by default (for example, key vaults).")
 }
 
-func (a *infraDeleteAction) Run(ctx context.Context, _ *cobra.Command, args []string, azdCtx *environment.AzdContext) error {
+func (a *infraDeleteAction) Run(ctx context.Context, _ *cobra.Command, args []string, azdCtx *azd_context.AzdContext) error {
 	azCli := commands.GetAzCliFromContext(ctx)
 	bicepCli := bicepTool.NewBicepCli(bicepTool.NewBicepCliArgs{AzCli: azCli})
 	console := input.NewConsole(!a.rootOptions.NoPrompt)

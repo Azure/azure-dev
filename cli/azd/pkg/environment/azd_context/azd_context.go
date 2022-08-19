@@ -1,4 +1,4 @@
-package environment
+package azd_context
 
 import (
 	"context"
@@ -54,10 +54,6 @@ func (c *AzdContext) GetDefaultProjectName() string {
 
 func (c *AzdContext) GetEnvironmentFilePath(name string) string {
 	return filepath.Join(c.EnvironmentDirectory(), name, ".env")
-}
-
-func (c *AzdContext) GetEnvironment(name string) (Environment, error) {
-	return FromFile(c.GetEnvironmentFilePath(name))
 }
 
 // BicepModulePath gets the path to the bicep file for a given module.
@@ -221,16 +217,6 @@ func (c *AzdContext) NewEnvironment(name string) error {
 	return nil
 }
 
-// GetAzdContext attempts to retrieve the AzdContext from the go context
-func GetAzdContext(ctx context.Context) (*AzdContext, error) {
-	azdCtx, ok := ctx.Value(AzdContextKey).(*AzdContext)
-	if !ok {
-		return nil, errors.New("cannot find AzdContext on go context")
-	}
-
-	return azdCtx, nil
-}
-
 func NewAzdContext() (*AzdContext, error) {
 	wd, err := os.Getwd()
 	if err != nil {
@@ -282,14 +268,16 @@ const (
 	azdContextKey contextKey = "azd"
 )
 
-func WithAzdContext(ctx context.Context, azContext AzdContext) context.Context {
+func WithAzdContext(ctx context.Context, azContext *AzdContext) context.Context {
 	return context.WithValue(ctx, azdContextKey, azContext)
 }
 
-func AzdContextFromContext(ctx context.Context) AzdContext {
-	options, ok := ctx.Value(azdContextKey).(AzdContext)
+// GetAzdContext attempts to retrieve the AzdContext from the go context
+func GetAzdContext(ctx context.Context) (*AzdContext, error) {
+	azdCtx, ok := ctx.Value(azdContextKey).(*AzdContext)
 	if !ok {
-		panic("GlobalCommandOptions were not found in the context")
+		return nil, errors.New("cannot find AzdContext on go context")
 	}
-	return options
+
+	return azdCtx, nil
 }

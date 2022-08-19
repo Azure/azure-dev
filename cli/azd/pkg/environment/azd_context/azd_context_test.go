@@ -1,4 +1,4 @@
-package environment
+package azd_context
 
 import (
 	"context"
@@ -18,7 +18,7 @@ func TestGetAzdContextFails(t *testing.T) {
 func TestGetAzdContextSuccess(t *testing.T) {
 	expectedContext, _ := NewAzdContext()
 	ctx := context.Background()
-	ctx = context.WithValue(ctx, AzdContextKey, expectedContext)
+	ctx = WithAzdContext(ctx, expectedContext)
 
 	actualContext, err := GetAzdContext(ctx)
 	assert.Nil(t, err)

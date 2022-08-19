@@ -14,6 +14,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment/azd_context"
 	"github.com/azure/azure-dev/cli/azd/pkg/iac/bicep"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
@@ -35,7 +36,7 @@ func (at *containerAppTarget) RequiredExternalTools() []tools.ExternalTool {
 	return []tools.ExternalTool{at.cli, at.docker}
 }
 
-func (at *containerAppTarget) Deploy(ctx context.Context, azdCtx *environment.AzdContext, path string, progress chan<- string) (ServiceDeploymentResult, error) {
+func (at *containerAppTarget) Deploy(ctx context.Context, azdCtx *azd_context.AzdContext, path string, progress chan<- string) (ServiceDeploymentResult, error) {
 	bicepPath := azdCtx.BicepModulePath(at.config.Module)
 
 	progress <- "Creating deployment template"

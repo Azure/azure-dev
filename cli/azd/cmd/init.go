@@ -16,6 +16,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/commands"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment/azd_context"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
@@ -63,7 +64,7 @@ func (i *initAction) SetupFlags(
 	local.StringVarP(&i.location, "location", "l", "", "Azure location for the new environment")
 }
 
-func (i *initAction) Run(ctx context.Context, _ *cobra.Command, args []string, azdCtx *environment.AzdContext) error {
+func (i *initAction) Run(ctx context.Context, _ *cobra.Command, args []string, azdCtx *azd_context.AzdContext) error {
 	// In the case where `init` is run and a parent folder already has an `azure.yaml` file, the
 	// current ProjectDirectory will be set to that folder. That's not what we want here. We want
 	// to force using the current working directory as a project root (since we are initializing a
@@ -220,7 +221,7 @@ func (i *initAction) Run(ctx context.Context, _ *cobra.Command, args []string, a
 	_, err = project.LoadProjectConfig(azdCtx.ProjectPath(), &environment.Environment{})
 
 	if errors.Is(err, os.ErrNotExist) {
-		fmt.Printf("Creating a new %s file.\n", environment.ProjectFileName)
+		fmt.Printf("Creating a new %s file.\n", azd_context.ProjectFileName)
 
 		_, err = project.NewProject(azdCtx.ProjectPath(), azdCtx.GetDefaultProjectName())
 
@@ -230,7 +231,7 @@ func (i *initAction) Run(ctx context.Context, _ *cobra.Command, args []string, a
 	}
 
 	//create .azure when running azd init
-	err = os.MkdirAll(filepath.Join(azdCtx.ProjectDirectory(), environment.EnvironmentDirectoryName), osutil.PermissionDirectory)
+	err = os.MkdirAll(filepath.Join(azdCtx.ProjectDirectory(), azd_context.EnvironmentDirectoryName), osutil.PermissionDirectory)
 	if err != nil {
 		return fmt.Errorf("failed to create a directory: %w", err)
 	}
@@ -246,16 +247,16 @@ func (i *initAction) Run(ctx context.Context, _ *cobra.Command, args []string, a
 	//bufio scanner splits on new lines by default
 	scanner := bufio.NewScanner(gitignoreFile)
 	for scanner.Scan() {
-		if environment.EnvironmentDirectoryName == scanner.Text() {
+		if azd_context.EnvironmentDirectoryName == scanner.Text() {
 			writeGitignoreFile = false
 		}
 	}
 
 	if writeGitignoreFile {
 		newLine := osutil.GetNewLineSeparator()
-		_, err := gitignoreFile.WriteString(newLine + environment.EnvironmentDirectoryName + newLine)
+		_, err := gitignoreFile.WriteString(newLine + azd_context.EnvironmentDirectoryName + newLine)
 		if err != nil {
-			return fmt.Errorf("fail to write '%s' in .gitignore: %w", environment.EnvironmentDirectoryName, err)
+			return fmt.Errorf("fail to write '%s' in .gitignore: %w", azd_context.EnvironmentDirectoryName, err)
 		}
 	}
 

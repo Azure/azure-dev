@@ -14,6 +14,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azureutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/commands"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment/azd_context"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/sethvargo/go-retry"
@@ -47,7 +48,7 @@ func (svc *Service) RequiredExternalTools() []tools.ExternalTool {
 	return requiredTools
 }
 
-func (svc *Service) Deploy(ctx context.Context, azdCtx *environment.AzdContext) (<-chan *ServiceDeploymentChannelResponse, <-chan string) {
+func (svc *Service) Deploy(ctx context.Context, azdCtx *azd_context.AzdContext) (<-chan *ServiceDeploymentChannelResponse, <-chan string) {
 	result := make(chan *ServiceDeploymentChannelResponse, 1)
 	progress := make(chan string)
 

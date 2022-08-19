@@ -10,7 +10,7 @@ import (
 	"path/filepath"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/commands"
-	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment/azd_context"
 	"github.com/azure/azure-dev/cli/azd/pkg/iac/bicep"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
@@ -56,7 +56,7 @@ You can find all environment configurations under the *.azure\<environment-name>
 }
 
 func envSetCmd(rootOptions *commands.GlobalCommandOptions) *cobra.Command {
-	actionFn := func(ctx context.Context, _ *cobra.Command, args []string, azdCtx *environment.AzdContext) error {
+	actionFn := func(ctx context.Context, _ *cobra.Command, args []string, azdCtx *azd_context.AzdContext) error {
 		console := input.NewConsole(!rootOptions.NoPrompt)
 		azCli := commands.GetAzCliFromContext(ctx)
 
@@ -95,7 +95,7 @@ func envSetCmd(rootOptions *commands.GlobalCommandOptions) *cobra.Command {
 
 func envSelectCmd(rootOptions *commands.GlobalCommandOptions) *cobra.Command {
 	action := commands.ActionFunc(
-		func(_ context.Context, _ *cobra.Command, args []string, azdCtx *environment.AzdContext) error {
+		func(_ context.Context, _ *cobra.Command, args []string, azdCtx *azd_context.AzdContext) error {
 			if err := ensureProject(azdCtx.ProjectPath()); err != nil {
 				return err
 			}
@@ -124,7 +124,7 @@ func envListCmd(rootOptions *commands.GlobalCommandOptions) *cobra.Command {
 		Short:   "List environments.",
 		Aliases: []string{"ls"},
 		RunE: func(cmd *cobra.Command, args []string) error {
-			ctx, err := environment.NewAzdContext()
+			ctx, err := azd_context.NewAzdContext()
 			if err != nil {
 				return fmt.Errorf("failed to get the current directory: %w", err)
 			}
@@ -194,7 +194,7 @@ func (en *envNewAction) SetupFlags(persis *pflag.FlagSet, local *pflag.FlagSet) 
 	local.StringVarP(&en.location, "location", "l", "", "Azure location for the new environment")
 }
 
-func (en *envNewAction) Run(ctx context.Context, _ *cobra.Command, args []string, azdCtx *environment.AzdContext) error {
+func (en *envNewAction) Run(ctx context.Context, _ *cobra.Command, args []string, azdCtx *azd_context.AzdContext) error {
 	if err := ensureProject(azdCtx.ProjectPath()); err != nil {
 		return err
 	}
@@ -222,7 +222,7 @@ func (en *envNewAction) Run(ctx context.Context, _ *cobra.Command, args []string
 }
 
 func envRefreshCmd(rootOptions *commands.GlobalCommandOptions) *cobra.Command {
-	actionFn := func(ctx context.Context, cmd *cobra.Command, args []string, azdCtx *environment.AzdContext) error {
+	actionFn := func(ctx context.Context, cmd *cobra.Command, args []string, azdCtx *azd_context.AzdContext) error {
 		azCli := commands.GetAzCliFromContext(ctx)
 		bicepCli := bicepTool.NewBicepCli(bicepTool.NewBicepCliArgs{AzCli: azCli})
 		console := input.NewConsole(!rootOptions.NoPrompt)
@@ -296,7 +296,7 @@ func envGetValuesCmd(rootOptions *commands.GlobalCommandOptions) *cobra.Command 
 			console := input.NewConsole(!rootOptions.NoPrompt)
 			azCli := commands.GetAzCliFromContext(ctx)
 
-			azdCtx, err := environment.NewAzdContext()
+			azdCtx, err := azd_context.NewAzdContext()
 			if err != nil {
 				return fmt.Errorf("failed to get the current directory: %w", err)
 			}

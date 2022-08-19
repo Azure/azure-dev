@@ -11,7 +11,7 @@ import (
 
 func GetAzCliFromContext(ctx context.Context) azcli.AzCli {
 	// Check to see if we already have an az cli in the context
-	azCli, ok := ctx.Value(environment.AzdCliContextKey).(azcli.AzCli)
+	azCli, ok := azcli.AzCliFromContext(ctx)
 
 	// We don't have one - create a new one
 	if !ok {

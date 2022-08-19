@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azd_context"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/spf13/cobra"
 )
 
@@ -28,7 +28,7 @@ func Build(action Action, rootOptions *GlobalCommandOptions, use string, short s
 
 			// Create and set the AzCli that will be used for the command
 			azCli := GetAzCliFromContext(ctx)
-			ctx = context.WithValue(ctx, environment.AzdCliContextKey, azCli)
+			ctx = azcli.WithAzCli(ctx, azCli)
 
 			return action.Run(ctx, cmd, args, azdCtx)
 		},

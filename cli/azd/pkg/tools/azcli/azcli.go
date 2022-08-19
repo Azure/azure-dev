@@ -1090,10 +1090,7 @@ func WithAzCli(ctx context.Context, azCli AzCli) context.Context {
 	return context.WithValue(ctx, azdCliContextKey, azCli)
 }
 
-func AzCliFromContext(ctx context.Context) AzCli {
-	cli, ok := ctx.Value(azdCliContextKey).(AzCli)
-	if !ok {
-		panic("GlobalCommandOptions were not found in the context")
-	}
-	return cli
+func AzCliFromContext(ctx context.Context) (AzCli, bool) {
+	azCli, ok := ctx.Value(azdCliContextKey).(AzCli)
+	return azCli, ok
 }

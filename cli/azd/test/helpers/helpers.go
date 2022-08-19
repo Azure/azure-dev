@@ -13,7 +13,7 @@ import (
 
 func CreateTestContext(ctx context.Context, options *commands.GlobalCommandOptions, azCli azcli.AzCli, httpClient httpUtil.HttpUtil) context.Context {
 	newContext := commands.WithGlobalCommandOptions(ctx, options)
-	newContext = context.WithValue(newContext, environment.AzdCliContextKey, azCli)
+	newContext = azcli.WithAzCli(newContext, azCli)
 	newContext = context.WithValue(newContext, environment.HttpUtilContextKey, httpClient)
 
 	return newContext

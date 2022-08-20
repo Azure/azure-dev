@@ -14,6 +14,8 @@ const maxRetryCount = 3
 const maxReadFailCount = 5
 const maxRemoveFailCount = 5
 
+var defaultTransmitRetryDelay = time.Duration(500) * time.Millisecond
+
 type Uploader struct {
 	transmitter    appinsightsexporter.Transmitter
 	telemetryQueue Queue
@@ -31,6 +33,9 @@ func NewUploader(telemetryQueue Queue, transmitter appinsightsexporter.Transmitt
 	}
 }
 
+// Uploads all items that are currently in the telemetry queue.
+// This function returns when no items remain in the queue.
+// An error is only returned if there is a fatal, persistent error with reading the queue.
 func (u *Uploader) Upload(ctx context.Context, result chan (error)) {
 	for {
 		select {
@@ -107,44 +112,58 @@ func (u *Uploader) transmit(item *StoredItem) {
 	payload := item.Message()
 	var telemetryItems appinsightsexporter.TelemetryItems
 	if u.isDebugMode {
-		// Always deserialize so we can get better error messages
+		// Deserialize so we can get better error messages
 		telemetryItems.Deserialize(payload)
 	}
+	log.Printf("Sending %v...", item.fileName)
 	result, err := u.transmitter.Transmit(payload, telemetryItems)
+	if err == nil && result != nil && result.IsSuccess() {
+		return
+	}
 
-	if err != nil {
-		retryAttempts := item.RetryCount() + 1
-		if retryAttempts <= maxRetryCount {
-			u.telemetryQueue.EnqueueWithDelay(payload, time.Duration(retryAttempts*500)*time.Millisecond, retryAttempts)
-		} else {
-			log.Printf("Failed to send %v after %d attempts.\n", item.fileName, retryAttempts)
-		}
-	} else if result.CanRetry() {
-		retryAttempts := item.RetryCount() + 1
-		var delayDuration time.Duration
+	attempts := item.RetryCount() + 1
 
-		if retryAttempts > maxRetryCount {
-			log.Printf("Failed to send %v after %d attempts.\n", item.fileName, retryAttempts)
+	if err != nil || result == nil {
+		if attempts > maxRetryCount {
+			log.Printf("Failed to send %v after %d attempts.\n", item.fileName, attempts)
 			return
 		}
 
+		u.telemetryQueue.EnqueueWithDelay(payload, defaultTransmitRetryDelay, attempts)
+	} else if result.CanRetry() {
+		if attempts > maxRetryCount {
+			log.Printf("Failed to send %v after %d attempts.\n", item.fileName, attempts)
+			return
+		}
+
+		if result.IsThrottled() {
+			var throttleDuration time.Duration
+			if result.RetryAfter != nil {
+				throttleDuration = u.clock.Until(*result.RetryAfter)
+			} else {
+				throttleDuration = time.Duration(5) * time.Second
+			}
+
+			log.Printf("Upload is being throttled. Resuming upload in %v.", throttleDuration)
+			time.Sleep(throttleDuration)
+		}
+
+		var retryDelay time.Duration
 		if result.RetryAfter != nil {
-			delayDuration = u.clock.Until(*result.RetryAfter)
+			retryDelay = u.clock.Until(*result.RetryAfter)
 		} else {
-			delayDuration = time.Duration(500) * time.Millisecond
+			retryDelay = defaultTransmitRetryDelay
 		}
 
 		if result.IsPartialSuccess() {
 			var telemetryItems appinsightsexporter.TelemetryItems
 			telemetryItems.Deserialize(payload)
 			newPayload, _ := result.GetRetryItems(payload, telemetryItems)
-			u.telemetryQueue.EnqueueWithDelay(newPayload, delayDuration, retryAttempts)
+			u.telemetryQueue.EnqueueWithDelay(newPayload, retryDelay, attempts)
 		} else {
-			u.telemetryQueue.EnqueueWithDelay(payload, delayDuration, retryAttempts)
+			u.telemetryQueue.EnqueueWithDelay(payload, retryDelay, attempts)
 		}
 	} else {
-		if result.IsFailure() {
-			log.Printf("Failed to transmit item %s with non-retriable status code %d\n", item.fileName, result.StatusCode)
-		}
+		log.Printf("Failed to transmit item %s with non-retriable status code %d\n", item.fileName, result.StatusCode)
 	}
 }

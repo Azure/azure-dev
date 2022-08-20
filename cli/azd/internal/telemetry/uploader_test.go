@@ -138,7 +138,7 @@ func TestUploadSuccess(t *testing.T) {
 	assert.Empty(t, queue.itemQueue)
 }
 
-func TestUpload_HttpCompleteFailure(t *testing.T) {
+func TestUpload_OnHttpCompleteFailure_DiscardItem(t *testing.T) {
 	clock := clock.NewMock()
 	transmitter, queue, uploader := setupUploader(clock)
 	messages := addMessages(queue)
@@ -151,7 +151,7 @@ func TestUpload_HttpCompleteFailure(t *testing.T) {
 	assert.Empty(t, queue.itemQueue)
 }
 
-func TestUpload_RequeueOnNetworkError(t *testing.T) {
+func TestUpload_OnNetworkError_Requeue(t *testing.T) {
 	clock := clock.NewMock()
 	transmitter, queue, uploader := setupUploader(clock)
 	messages := addMessages(queue)
@@ -165,7 +165,7 @@ func TestUpload_RequeueOnNetworkError(t *testing.T) {
 	assertRetryCountOnAllItems(t, queue, 1)
 }
 
-func TestUpload_RequeueOnHttpError(t *testing.T) {
+func TestUpload_OnHttpError_Requeue(t *testing.T) {
 	clock := clock.NewMock()
 	transmitter, queue, uploader := setupUploader(clock)
 	messages := addMessages(queue)
@@ -179,13 +179,13 @@ func TestUpload_RequeueOnHttpError(t *testing.T) {
 	assertRetryCountOnAllItems(t, queue, 1)
 }
 
-func TestUpload_RequeueOnHttpError_WithRetryAfter(t *testing.T) {
+func TestUpload_OnHttpErrorWithRetryAfter_Requeue(t *testing.T) {
 	clock := clock.NewMock()
 	transmitter, queue, uploader := setupUploader(clock)
 	messages := addMessages(queue)
 
-	retryAfter := clock.Now().Add(time.Duration(3) * time.Second)
-	transmitter.mockResponse.StatusCode = 429
+	retryAfter := clock.Now().Add(time.Duration(100) * time.Millisecond)
+	transmitter.mockResponse.StatusCode = 503
 	transmitter.mockResponse.RetryAfter = &retryAfter
 
 	err := syncUpload(uploader)
@@ -196,7 +196,7 @@ func TestUpload_RequeueOnHttpError_WithRetryAfter(t *testing.T) {
 	assertRetryDelayOnAllItems(t, queue, retryAfter)
 }
 
-func TestUpload_RequeueOnPartialHttpError(t *testing.T) {
+func TestUpload_OnPartialHttpError_RequeueIndividualItem(t *testing.T) {
 	clock := clock.NewMock()
 	transmitter, queue, uploader := setupUploader(clock)
 
@@ -221,9 +221,34 @@ func TestUpload_RequeueOnPartialHttpError(t *testing.T) {
 	assert.Len(t, queue.itemQueue, 1)
 	assertRetryCountOnAllItems(t, queue, 1)
 
+	// Examine the queue for the partial item requeued
 	requeuedItem := queue.itemQueue[0]
 	oneItem, _ := makeTelemetryPayload(1)
 	assert.Equal(t, oneItem, requeuedItem.message, "Exactly one telemetry item should be requeued.")
+}
+
+func TestUpload_OnPersistentFailure_DiscardItem(t *testing.T) {
+	clock := clock.NewMock()
+	transmitter, queue, uploader := setupUploader(clock)
+	messages := addMessages(queue)
+
+	transmitter.mockResponse.StatusCode = 503
+	defaultTransmitRetryDelay = time.Duration(1) * time.Second
+
+	for i := 0; i < maxRetryCount; i++ {
+		err := syncUpload(uploader)
+		assert.NoError(t, err)
+		assert.Len(t, transmitter.seen, len(messages)*(i+1))
+		assert.Len(t, queue.itemQueue, len(messages))
+		assertRetryCountOnAllItems(t, queue, i+1)
+
+		clock.Add(defaultTransmitRetryDelay)
+	}
+
+	// Last retry attempt -- items should be discarded
+	err := syncUpload(uploader)
+	assert.NoError(t, err)
+	assert.Len(t, queue.itemQueue, 0)
 }
 
 func setupUploader(clock clock.Clock) (*TransmitterStub, *InMemoryTelemetryQueue, *Uploader) {

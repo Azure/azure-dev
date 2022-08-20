@@ -1,4 +1,4 @@
-package azd_context
+package azdcontext
 
 import (
 	"context"

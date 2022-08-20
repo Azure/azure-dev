@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/environment/azd_context"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
 )
@@ -12,7 +12,7 @@ import (
 func TestBasicBuild(t *testing.T) {
 
 	testAction := ActionFunc(
-		func(context.Context, *cobra.Command, []string, *azd_context.AzdContext) error {
+		func(context.Context, *cobra.Command, []string, *azdcontext.AzdContext) error {
 			return nil
 		},
 	)

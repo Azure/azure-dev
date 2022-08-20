@@ -9,7 +9,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/commands"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
-	"github.com/azure/azure-dev/cli/azd/pkg/environment/azd_context"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/pkg/spin"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
@@ -40,10 +40,10 @@ type restoreAction struct {
 }
 
 func (r *restoreAction) SetupFlags(persis, local *pflag.FlagSet) {
-	local.StringVar(&r.serviceName, "service", "", "Restores a specific service (when the string is unspecified, all services that are listed in the "+azd_context.ProjectFileName+" file are restored).")
+	local.StringVar(&r.serviceName, "service", "", "Restores a specific service (when the string is unspecified, all services that are listed in the "+azdcontext.ProjectFileName+" file are restored).")
 }
 
-func (r *restoreAction) Run(ctx context.Context, _ *cobra.Command, args []string, azdCtx *azd_context.AzdContext) error {
+func (r *restoreAction) Run(ctx context.Context, _ *cobra.Command, args []string, azdCtx *azdcontext.AzdContext) error {
 	proj, err := project.LoadProjectConfig(azdCtx.ProjectPath(), &environment.Environment{})
 	if err := ensureProject(azdCtx.ProjectPath()); err != nil {
 		return err

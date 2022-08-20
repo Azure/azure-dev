@@ -13,7 +13,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/commands"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
-	"github.com/azure/azure-dev/cli/azd/pkg/environment/azd_context"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/github"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
@@ -67,7 +67,7 @@ func (p *pipelineConfigAction) SetupFlags(
 	local.StringVar(&p.pipelineRoleName, "principal-role", "Contributor", "The role to assign to the service principal.")
 }
 
-func (p *pipelineConfigAction) Run(ctx context.Context, _ *cobra.Command, args []string, azdCtx *azd_context.AzdContext) error {
+func (p *pipelineConfigAction) Run(ctx context.Context, _ *cobra.Command, args []string, azdCtx *azdcontext.AzdContext) error {
 	azCli := commands.GetAzCliFromContext(ctx)
 	console := input.NewConsole(!p.rootOptions.NoPrompt)
 
@@ -316,7 +316,7 @@ func (p *pipelineConfigAction) getRemoteUrlFromPrompt(ctx context.Context, conso
 	return remoteUrl, nil
 }
 
-func getRemoteUrlFromNewRepository(ctx context.Context, ghCli githubTool.GitHubCli, azdCtx *azd_context.AzdContext, console input.Console) (string, error) {
+func getRemoteUrlFromNewRepository(ctx context.Context, ghCli githubTool.GitHubCli, azdCtx *azdcontext.AzdContext, console input.Console) (string, error) {
 	var repoName string
 
 	currentPathName := azdCtx.ProjectDirectory()
@@ -454,7 +454,7 @@ func notifyWhenGitHubActionsAreDisabled(
 	ctx context.Context,
 	gitCli git.GitCli,
 	ghCli githubTool.GitHubCli,
-	azdCtx *azd_context.AzdContext,
+	azdCtx *azdcontext.AzdContext,
 	repoSlug string,
 	origin string,
 	branch string,

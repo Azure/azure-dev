@@ -9,7 +9,7 @@ import (
 	"path/filepath"
 	"regexp"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/environment/azd_context"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/joho/godotenv"
 )
@@ -70,7 +70,7 @@ func FromFile(file string) (Environment, error) {
 	return env, nil
 }
 
-func GetEnvironment(azdContext *azd_context.AzdContext, name string) (Environment, error) {
+func GetEnvironment(azdContext *azdcontext.AzdContext, name string) (Environment, error) {
 	return FromFile(azdContext.GetEnvironmentFilePath(name))
 }
 

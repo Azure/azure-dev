@@ -49,7 +49,7 @@ overrides:
     words:
       - hndl
       - JOBOBJECT
-  - filename: pkg/environment/azd_context/azd_context.go
+  - filename: pkg/environment/azdcontext/azdcontext.go
     words:
       - ents
       - unmarshalled

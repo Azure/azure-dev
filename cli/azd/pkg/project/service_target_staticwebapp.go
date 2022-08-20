@@ -12,7 +12,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
-	"github.com/azure/azure-dev/cli/azd/pkg/environment/azd_context"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/swa"
@@ -34,7 +34,7 @@ func (at *staticWebAppTarget) RequiredExternalTools() []tools.ExternalTool {
 	return []tools.ExternalTool{at.cli, at.swa}
 }
 
-func (at *staticWebAppTarget) Deploy(ctx context.Context, azdCtx *azd_context.AzdContext, path string, progress chan<- string) (ServiceDeploymentResult, error) {
+func (at *staticWebAppTarget) Deploy(ctx context.Context, azdCtx *azdcontext.AzdContext, path string, progress chan<- string) (ServiceDeploymentResult, error) {
 	if strings.TrimSpace(at.config.OutputPath) == "" {
 		at.config.OutputPath = "build"
 	}

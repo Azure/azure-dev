@@ -10,11 +10,18 @@ import (
 	"github.com/sethvargo/go-retry"
 )
 
-const maxRetryCount = 3
-const maxReadFailCount = 5
-const maxRemoveFailCount = 5
+const (
+	maxRetryCount      = 3
+	maxReadFailCount   = 5
+	maxRemoveFailCount = 5
+)
 
-var defaultTransmitRetryDelay = time.Duration(500) * time.Millisecond
+var (
+	// Optimistic first retry delay
+	firstTransmitRetryDelay   = time.Duration(100) * time.Millisecond
+	defaultTransmitRetryDelay = time.Duration(2) * time.Second
+	defaultThrottleDuration   = time.Duration(5) * time.Second
+)
 
 type Uploader struct {
 	transmitter    appinsightsexporter.Transmitter
@@ -115,7 +122,6 @@ func (u *Uploader) transmit(item *StoredItem) {
 		// Deserialize so we can get better error messages
 		telemetryItems.Deserialize(payload)
 	}
-	log.Printf("Sending %v...", item.fileName)
 	result, err := u.transmitter.Transmit(payload, telemetryItems)
 	if err == nil && result != nil && result.IsSuccess() {
 		return
@@ -125,14 +131,14 @@ func (u *Uploader) transmit(item *StoredItem) {
 
 	if err != nil || result == nil {
 		if attempts > maxRetryCount {
-			log.Printf("Failed to send %v after %d attempts.\n", item.fileName, attempts)
+			log.Printf("Failed to send %v after %d attempts.\n", item.fileName, maxRetryCount)
 			return
 		}
 
 		u.telemetryQueue.EnqueueWithDelay(payload, defaultTransmitRetryDelay, attempts)
 	} else if result.CanRetry() {
 		if attempts > maxRetryCount {
-			log.Printf("Failed to send %v after %d attempts.\n", item.fileName, attempts)
+			log.Printf("Failed to send %v after %d attempts.\n", item.fileName, maxRetryCount)
 			return
 		}
 
@@ -141,19 +147,14 @@ func (u *Uploader) transmit(item *StoredItem) {
 			if result.RetryAfter != nil {
 				throttleDuration = u.clock.Until(*result.RetryAfter)
 			} else {
-				throttleDuration = time.Duration(5) * time.Second
+				throttleDuration = defaultThrottleDuration
 			}
 
 			log.Printf("Upload is being throttled. Resuming upload in %v.", throttleDuration)
 			time.Sleep(throttleDuration)
 		}
 
-		var retryDelay time.Duration
-		if result.RetryAfter != nil {
-			retryDelay = u.clock.Until(*result.RetryAfter)
-		} else {
-			retryDelay = defaultTransmitRetryDelay
-		}
+		retryDelay := u.calculateRetryDelay(result.RetryAfter, attempts)
 
 		if result.IsPartialSuccess() {
 			var telemetryItems appinsightsexporter.TelemetryItems
@@ -165,5 +166,15 @@ func (u *Uploader) transmit(item *StoredItem) {
 		}
 	} else {
 		log.Printf("Failed to transmit item %s with non-retriable status code %d\n", item.fileName, result.StatusCode)
+	}
+}
+
+func (u *Uploader) calculateRetryDelay(retryAfter *time.Time, attempts int) time.Duration {
+	if retryAfter != nil {
+		return u.clock.Until(*retryAfter)
+	} else if attempts == 1 {
+		return firstTransmitRetryDelay
+	} else {
+		return defaultTransmitRetryDelay
 	}
 }

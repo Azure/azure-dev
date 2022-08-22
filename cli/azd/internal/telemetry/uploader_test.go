@@ -283,7 +283,7 @@ func addMessages(queue *InMemoryTelemetryQueue) [][]byte {
 
 func assertRetryCountOnAllItems(t *testing.T, queue *InMemoryTelemetryQueue, retryCount int) {
 	for _, item := range queue.itemQueue {
-		assert.Equal(t, item.retryCount, retryCount)
+		assert.Equal(t, retryCount, item.retryCount)
 	}
 }
 

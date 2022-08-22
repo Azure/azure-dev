@@ -136,3 +136,21 @@ function sha256(s: string): string {
     const retval = hash.update(s).digest('hex');
     return retval;
 }
+
+export async function showReadmeFile(folder: string | undefined): Promise<void> {
+    // The whole action is "best effort" -- if folder/file do not exist, just do nothing.
+
+    if (!folder) {
+        return;
+    }
+
+    const candidates: string[] = ["README.md", "README.MD", "readme.md"];
+
+    for (const fname of candidates) {
+        const fullPath = path.join(folder, fname);
+        if (await fse.pathExists(fullPath)) {
+            void vscode.commands.executeCommand('markdown.showPreview', vscode.Uri.file(fullPath), { 'sideBySide': false });
+            return;
+        }
+    }
+}

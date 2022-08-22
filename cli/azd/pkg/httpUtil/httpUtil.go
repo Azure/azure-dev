@@ -6,8 +6,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-
-	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 )
 
 type HttpRequestMessage struct {
@@ -72,10 +70,16 @@ func NewHttpUtil() HttpUtil {
 	return &httpUtil{}
 }
 
-// GetHttpUtilFromContext attempts to retrieve a HttpUtil instance from the specified context.
+type contextKey string
+
+const (
+	httpUtilContextKey contextKey = "httputil"
+)
+
+// GetHttpClientFromContext attempts to retrieve a HttpUtil instance from the specified context.
 // Will return the context if found or create a new instance
-func GetHttpUtilFromContext(ctx context.Context) HttpUtil {
-	value := ctx.Value(environment.HttpUtilContextKey)
+func GetHttpClientFromContext(ctx context.Context) HttpUtil {
+	value := ctx.Value(httpUtilContextKey)
 	client, ok := value.(HttpUtil)
 
 	if !ok {
@@ -83,4 +87,8 @@ func GetHttpUtilFromContext(ctx context.Context) HttpUtil {
 	}
 
 	return client
+}
+
+func WithHttpClient(ctx context.Context, httpClient HttpUtil) context.Context {
+	return context.WithValue(ctx, httpUtilContextKey, httpClient)
 }

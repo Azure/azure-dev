@@ -969,7 +969,7 @@ func (cli *azCli) GraphQuery(ctx context.Context, query string, subscriptions []
 		return nil, fmt.Errorf("getting access token: %w", err)
 	}
 
-	client := httpUtil.GetHttpUtilFromContext(ctx)
+	client := httpUtil.GetHttpClientFromContext(ctx)
 	headers := map[string]string{
 		"Authorization": fmt.Sprintf("Bearer %s", token.AccessToken),
 	}
@@ -1078,4 +1078,29 @@ func getDeploymentErrorJson(s string) string {
 	}
 
 	return s
+}
+
+type contextKey string
+
+const (
+	azdCliContextKey   contextKey = "azdcli"
+	templateContextKey contextKey = "template"
+)
+
+func WithAzCli(ctx context.Context, azCli AzCli) context.Context {
+	return context.WithValue(ctx, azdCliContextKey, azCli)
+}
+
+func AzCliFromContext(ctx context.Context) (AzCli, bool) {
+	azCli, ok := ctx.Value(azdCliContextKey).(AzCli)
+	return azCli, ok
+}
+
+func WithTemplateName(ctx context.Context, templateName string) context.Context {
+	return context.WithValue(ctx, templateContextKey, templateName)
+}
+
+func TemplateNameFromContext(ctx context.Context) (string, bool) {
+	templateName, ok := ctx.Value(templateContextKey).(string)
+	return templateName, ok
 }

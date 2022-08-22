@@ -14,6 +14,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/drone/envsubst"
 	"gopkg.in/yaml.v3"
 )
@@ -95,7 +96,7 @@ func (pc *ProjectConfig) GetProject(ctx context.Context, env *environment.Enviro
 	// This sets the current template within the go context
 	// The context is then used when the AzCli is instantiated to set the correct user agent
 	if project.Metadata != nil && strings.TrimSpace(project.Metadata.Template) != "" {
-		ctx = context.WithValue(ctx, environment.TemplateContextKey, project.Metadata.Template)
+		ctx = azcli.WithTemplateName(ctx, project.Metadata.Template)
 	}
 
 	if pc.ResourceGroupName == "" {

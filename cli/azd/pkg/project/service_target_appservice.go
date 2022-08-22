@@ -10,6 +10,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/project/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
@@ -26,7 +27,7 @@ func (st *appServiceTarget) RequiredExternalTools() []tools.ExternalTool {
 	return []tools.ExternalTool{st.cli}
 }
 
-func (st *appServiceTarget) Deploy(ctx context.Context, _ *environment.AzdContext, path string, progress chan<- string) (ServiceDeploymentResult, error) {
+func (st *appServiceTarget) Deploy(ctx context.Context, _ *azdcontext.AzdContext, path string, progress chan<- string) (ServiceDeploymentResult, error) {
 	progress <- "Compressing deployment artifacts"
 	zipFilePath, err := internal.CreateDeployableZip(st.config.Name, path)
 

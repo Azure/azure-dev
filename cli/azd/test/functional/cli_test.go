@@ -26,6 +26,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azureutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/commands"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/executil"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
@@ -105,7 +106,7 @@ func Test_CLI_Init_AsksForSubscriptionIdAndCreatesEnvAndProjectFile(t *testing.T
 	require.Regexp(t, regexp.MustCompile(`AZURE_SUBSCRIPTION_ID="MY_SUB_ID"`+"\n"), string(file))
 	require.Regexp(t, regexp.MustCompile(`AZURE_ENV_NAME="TESTENV"`+"\n"), string(file))
 
-	proj, err := project.LoadProjectConfig(filepath.Join(dir, environment.ProjectFileName), &environment.Environment{})
+	proj, err := project.LoadProjectConfig(filepath.Join(dir, azdcontext.ProjectFileName), &environment.Environment{})
 	require.NoError(t, err)
 
 	require.Equal(t, filepath.Base(dir), proj.Name)
@@ -200,7 +201,7 @@ func Internal_Test_CLI_ResourceGroupsName(t *testing.T, envName string, rgName s
 		require.NoError(t, err)
 	}
 
-	envFilePath := filepath.Join(dir, environment.EnvironmentDirectoryName, envName, ".env")
+	envFilePath := filepath.Join(dir, azdcontext.EnvironmentDirectoryName, envName, ".env")
 	env, err := environment.FromFile(envFilePath)
 	require.NoError(t, err)
 
@@ -250,7 +251,7 @@ func Test_CLI_InfraCreateAndDelete(t *testing.T) {
 	_, err = cli.RunCommand(ctx, "infra", "create")
 	require.NoError(t, err)
 
-	envFilePath := filepath.Join(dir, environment.EnvironmentDirectoryName, envName, ".env")
+	envFilePath := filepath.Join(dir, azdcontext.EnvironmentDirectoryName, envName, ".env")
 	env, err := environment.FromFile(envFilePath)
 	require.NoError(t, err)
 
@@ -293,7 +294,7 @@ func Test_CLI_InfraCreateAndDeleteUpperCase(t *testing.T) {
 	_, err = cli.RunCommand(ctx, "infra", "create")
 	require.NoError(t, err)
 
-	envFilePath := filepath.Join(dir, environment.EnvironmentDirectoryName, envName, ".env")
+	envFilePath := filepath.Join(dir, azdcontext.EnvironmentDirectoryName, envName, ".env")
 	env, err := environment.FromFile(envFilePath)
 	require.NoError(t, err)
 
@@ -341,7 +342,7 @@ func Test_CLI_InfraCreateAndDeleteWebApp(t *testing.T) {
 
 	// The sample hosts a small application that just responds with a 200 OK with a body of "Hello, `azd`."
 	// (without the quotes). Validate that the application is working.
-	env, err := godotenv.Read(filepath.Join(dir, environment.EnvironmentDirectoryName, envName, ".env"))
+	env, err := godotenv.Read(filepath.Join(dir, azdcontext.EnvironmentDirectoryName, envName, ".env"))
 	require.NoError(t, err)
 
 	url, has := env["WEBSITE_URL"]
@@ -381,13 +382,13 @@ func Test_CLI_InfraCreateAndDeleteWebApp(t *testing.T) {
 	// Ensure `env refresh` works by removing an output parameter from the .env file and ensure that `env refresh`
 	// brings it back.
 	delete(env, "WEBSITE_URL")
-	err = godotenv.Write(env, filepath.Join(dir, environment.EnvironmentDirectoryName, envName, ".env"))
+	err = godotenv.Write(env, filepath.Join(dir, azdcontext.EnvironmentDirectoryName, envName, ".env"))
 	require.NoError(t, err)
 
 	_, err = cli.RunCommand(ctx, "env", "refresh")
 	require.NoError(t, err)
 
-	env, err = godotenv.Read(filepath.Join(dir, environment.EnvironmentDirectoryName, envName, ".env"))
+	env, err = godotenv.Read(filepath.Join(dir, azdcontext.EnvironmentDirectoryName, envName, ".env"))
 	require.NoError(t, err)
 
 	_, has = env["WEBSITE_URL"]
@@ -635,7 +636,7 @@ func stdinForTests(envName string) string {
 }
 
 func getTestEnvPath(dir string, envName string) string {
-	return filepath.Join(dir, environment.EnvironmentDirectoryName, envName, ".env")
+	return filepath.Join(dir, azdcontext.EnvironmentDirectoryName, envName, ".env")
 }
 
 // newTestContext returns a new empty context, suitable for use in tests. If a
@@ -643,7 +644,7 @@ func getTestEnvPath(dir string, envName string) string {
 // respects the deadline.
 func newTestContext(t *testing.T) (context.Context, context.CancelFunc) {
 	ctx := context.Background()
-	ctx = context.WithValue(ctx, environment.OptionsContextKey, &commands.GlobalCommandOptions{})
+	ctx = commands.WithGlobalCommandOptions(ctx, &commands.GlobalCommandOptions{})
 
 	if deadline, ok := t.Deadline(); ok {
 		return context.WithDeadline(ctx, deadline)

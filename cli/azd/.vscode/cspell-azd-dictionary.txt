@@ -4,6 +4,7 @@ appinsightsexporter
 appservice
 AZCLI
 azdcli
+azdcontext
 azddeploy
 azdev
 azdinternal

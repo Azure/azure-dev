@@ -10,6 +10,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/commands"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/iac/bicep"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
@@ -51,7 +52,7 @@ func (ica *infraCreateAction) SetupFlags(persis, local *pflag.FlagSet) {
 	local.BoolVar(&ica.noProgress, "no-progress", false, "Suppresses progress information.")
 }
 
-func (ica *infraCreateAction) Run(ctx context.Context, cmd *cobra.Command, args []string, azdCtx *environment.AzdContext) error {
+func (ica *infraCreateAction) Run(ctx context.Context, cmd *cobra.Command, args []string, azdCtx *azdcontext.AzdContext) error {
 	azCli := commands.GetAzCliFromContext(ctx)
 	bicepCli := bicepTool.NewBicepCli(bicepTool.NewBicepCliArgs{AzCli: azCli})
 	console := input.NewConsole(!ica.rootOptions.NoPrompt)

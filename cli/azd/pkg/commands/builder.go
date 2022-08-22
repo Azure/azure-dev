@@ -4,7 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/spf13/cobra"
 )
 
@@ -16,18 +17,18 @@ func Build(action Action, rootOptions *GlobalCommandOptions, use string, short s
 		Long:  long,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := context.Background()
-			azdCtx, err := environment.NewAzdContext()
+			azdCtx, err := azdcontext.NewAzdContext()
 			if err != nil {
 				return fmt.Errorf("creating context: %w", err)
 			}
 
 			// Set the global options in the go context
-			ctx = context.WithValue(ctx, environment.AzdContextKey, azdCtx)
-			ctx = context.WithValue(ctx, environment.OptionsContextKey, rootOptions)
+			ctx = azdcontext.WithAzdContext(ctx, azdCtx)
+			ctx = WithGlobalCommandOptions(ctx, rootOptions)
 
 			// Create and set the AzCli that will be used for the command
 			azCli := GetAzCliFromContext(ctx)
-			ctx = context.WithValue(ctx, environment.AzdCliContextKey, azCli)
+			ctx = azcli.WithAzCli(ctx, azCli)
 
 			return action.Run(ctx, cmd, args, azdCtx)
 		},

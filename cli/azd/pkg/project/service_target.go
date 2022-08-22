@@ -7,7 +7,7 @@ import (
 	"context"
 	"encoding/json"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 )
 
@@ -33,7 +33,7 @@ type ServiceTarget interface {
 	// target.
 	RequiredExternalTools() []tools.ExternalTool
 	// Deploy deploys the given deployment artifact to the target resource
-	Deploy(ctx context.Context, azdCtx *environment.AzdContext, path string, progress chan<- string) (ServiceDeploymentResult, error)
+	Deploy(ctx context.Context, azdCtx *azdcontext.AzdContext, path string, progress chan<- string) (ServiceDeploymentResult, error)
 	// Endpoints gets the endpoints a service exposes.
 	Endpoints(ctx context.Context) ([]string, error)
 }

@@ -13,6 +13,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"os/exec"
 	"os/user"
 	"path/filepath"
 	"runtime"
@@ -70,6 +71,15 @@ func main() {
 
 	if ts != nil {
 		ts.Shutdown(context.Background())
+
+		if ts.EmittedAnyTelemetry() {
+			err := ScheduleBackgroundUploadProcess()
+			if err != nil {
+				fmt.Printf("error scheduling telemetry upload: %v\n", err)
+			} else {
+				fmt.Println("Scheduled background upload.")
+			}
+		}
 	}
 
 	if cmdErr != nil {
@@ -249,4 +259,26 @@ func readToEndAndClose(r io.ReadCloser) (string, error) {
 	var buf strings.Builder
 	_, err := io.Copy(&buf, r)
 	return buf.String(), err
+}
+
+func ScheduleBackgroundUploadProcess() error {
+	// The background upload process executable is ourself
+	execPath, err := os.Executable()
+	if err != nil {
+		return fmt.Errorf("failed to get current executable path: %w", err)
+	}
+
+	cmd := exec.Command(execPath, cmd.TelemetryCommandFlag, cmd.TelemetryUploadCommandFlag, "--debug")
+	f, err := os.Create("upload.out")
+	if err != nil {
+		fmt.Printf("error opening file: %v", err)
+	}
+	defer f.Close()
+
+	cmd.Stderr = f
+	cmd.Stdout = f
+
+	err = cmd.Start()
+	fmt.Printf("Scheduled upload with pid %d\n", cmd.Process.Pid)
+	return err
 }

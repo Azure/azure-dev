@@ -28,6 +28,7 @@ const prodInstrumentationKey = ""
 type TelemetrySystem struct {
 	storageQueue   *StorageQueue
 	tracerProvider *trace.TracerProvider
+	exporter       *Exporter
 
 	instrumentationKey string
 	telemetryDirectory string
@@ -118,6 +119,7 @@ func initialize() (*TelemetrySystem, error) {
 	return &TelemetrySystem{
 		storageQueue:       storageQueue,
 		tracerProvider:     tp,
+		exporter:           exporter,
 		instrumentationKey: instrumentationKey,
 		telemetryDirectory: storageDirectory,
 	}, nil
@@ -133,23 +135,16 @@ func (ts *TelemetrySystem) GetTelemetryQueue() Queue {
 	return instance.storageQueue
 }
 
+func (ts *TelemetrySystem) EmittedAnyTelemetry() bool {
+	return ts.exporter.ExportedAny()
+}
+
 func (ts *TelemetrySystem) NewUploader(enableDebugLogging bool) Uploader {
 	config := appinsights.NewTelemetryConfiguration(ts.instrumentationKey)
 	transmitter := appinsightsexporter.NewTransmitter(config.EndpointUrl, nil)
 
 	uploader := NewUploader(ts.GetTelemetryQueue(), transmitter, clock.New(), enableDebugLogging)
 	return uploader
-}
-
-func ScheduleBackgroundUploadProcess() error {
-	// The background upload process executable is ourself
-	execPath, error := os.Executable()
-	if error != nil {
-		return fmt.Errorf("failed to get current executable path: %w", execPath)
-	}
-
-	//TODO: Add impl
-	return nil
 }
 
 func (ts *TelemetrySystem) RunBackgroundUpload(ctx context.Context, enableDebugLogging bool) error {

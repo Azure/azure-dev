@@ -21,16 +21,19 @@ repo:
       
   assets:
     # Common assets
-    - from: ./
-      to: ./
-      ignore: 
-        - ".repo/**/*"
 
     # Rule for Path Rewrite Only
     - from: ../../../../../../common/infra/bicep
       to: ./
       ignore: 
         - ".repo/**/*"
+
+    - from: ./../../
+      to: ./
+      ignore: 
+        - ".repo/**/*"
+        - "repo.y[a]ml"
+        - "azure.y[a]ml"
         
     # openapi.yaml to root
     - from: ../../../../api/common

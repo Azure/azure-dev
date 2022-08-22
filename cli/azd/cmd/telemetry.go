@@ -20,6 +20,8 @@ func telemetryCmd(rootOptions *commands.GlobalCommandOptions) *cobra.Command {
 	return cmd
 }
 
+const UploadCommandPath = "telemetry upload"
+
 func uploadCmd(rootOptions *commands.GlobalCommandOptions) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:    "upload",
@@ -33,10 +35,7 @@ func uploadCmd(rootOptions *commands.GlobalCommandOptions) *cobra.Command {
 				return nil
 			}
 
-			uploader := telemetrySystem.NewUploader(rootOptions.EnableDebugLogging)
-			uploader.Upload()
-
-			return nil
+			return telemetrySystem.RunBackgroundUpload(cmd.Context(), rootOptions.EnableDebugLogging)
 		},
 	}
 	return cmd

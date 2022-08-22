@@ -141,6 +141,17 @@ func (ts *TelemetrySystem) NewUploader(enableDebugLogging bool) Uploader {
 	return uploader
 }
 
+func ScheduleBackgroundUploadProcess() error {
+	// The background upload process executable is ourself
+	execPath, error := os.Executable()
+	if error != nil {
+		return fmt.Errorf("failed to get current executable path: %w", execPath)
+	}
+
+	//TODO: Add impl
+	return nil
+}
+
 func (ts *TelemetrySystem) RunBackgroundUpload(ctx context.Context, enableDebugLogging bool) error {
 	fileLock, locked, err := ts.tryUploadLock()
 	if err != nil {

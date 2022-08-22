@@ -2,10 +2,8 @@ package telemetry
 
 import (
 	"context"
-	"time"
 
 	appinsightsexporter "github.com/azure/azure-dev/cli/azd/internal/telemetry/appinsights-exporter"
-	"github.com/sethvargo/go-retry"
 	"go.opentelemetry.io/otel/sdk/trace"
 	"go.uber.org/atomic"
 )
@@ -46,9 +44,17 @@ func (e *Exporter) ExportSpans(ctx context.Context, spans []trace.ReadOnlySpan) 
 	}
 
 	if len(items) > 0 {
-		err := retry.Do(ctx, retry.WithMaxRetries(5, retry.NewConstant(time.Duration(500)*time.Millisecond)), func(ctx context.Context) error {
-			return retry.RetryableError(e.queue.Enqueue(items.Serialize()))
-		})
+		message := items.Serialize()
+
+		// Add a small, immediate retry loop in case of transient failures with disk storage.
+		// To avoid any delay while telemetry is flushed during application exit, no backoff is added.
+		var err error
+		for i := 0; i < 3; i++ {
+			err = e.queue.Enqueue(message)
+			if err == nil {
+				break
+			}
+		}
 
 		if err == nil {
 			e.anyExported.Store(true)

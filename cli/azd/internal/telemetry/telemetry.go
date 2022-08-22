@@ -37,7 +37,7 @@ type TelemetrySystem struct {
 var once sync.Once
 var instance *TelemetrySystem
 
-func getStorageDirectory() (string, error) {
+func getTelemetryDirectory() (string, error) {
 	user, err := user.Current()
 	if err != nil {
 		return "", fmt.Errorf("could not determine current user: %w", err)
@@ -52,6 +52,8 @@ func newResource() *resource.Resource {
 		resource.Default(),
 		resource.NewWithAttributes(
 			semconv.SchemaURL,
+			semconv.ServiceNameKey.String("azd"),
+			semconv.ServiceVersionKey.String(internal.GetVersionNumber()),
 		),
 	)
 	return r
@@ -68,7 +70,7 @@ func GetTelemetrySystem() *TelemetrySystem {
 	once.Do(func() {
 		telemetrySystem, err := initialize()
 		if err != nil {
-			fmt.Printf("failed to initialize telemetry: %v\n", err)
+			log.Printf("failed to initialize telemetry: %v\n", err)
 		} else {
 			instance = telemetrySystem
 		}
@@ -78,7 +80,7 @@ func GetTelemetrySystem() *TelemetrySystem {
 }
 
 func initialize() (*TelemetrySystem, error) {
-	// Feature guard: To be enabled once dependencies are met for production
+	// Feature guard: Disable for production until dependencies are met in production
 	isDev := internal.IsDevVersion()
 	if !isDev {
 		return nil, nil
@@ -93,12 +95,12 @@ func initialize() (*TelemetrySystem, error) {
 		log.Println(msg)
 	})
 
-	storageDirectory, err := getStorageDirectory()
+	telemetryDir, err := getTelemetryDirectory()
 	if err != nil {
-		return nil, fmt.Errorf("failed to retrieve storage directory: %w", err)
+		return nil, fmt.Errorf("failed to determine storage directory: %w", err)
 	}
 
-	storageQueue, err := NewStorageQueue(storageDirectory, telemetryItemExtension)
+	storageQueue, err := NewStorageQueue(telemetryDir, telemetryItemExtension)
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize storage queue: %w", err)
 	}
@@ -123,20 +125,21 @@ func initialize() (*TelemetrySystem, error) {
 		tracerProvider:     tp,
 		exporter:           exporter,
 		instrumentationKey: instrumentationKey,
-		telemetryDirectory: storageDirectory,
+		telemetryDirectory: telemetryDir,
 	}, nil
 }
 
-// Flushes all ongoing telemetry and shuts down
+// Flushes all ongoing telemetry and shuts down telemetry
 func (ts *TelemetrySystem) Shutdown(ctx context.Context) {
 	instance.tracerProvider.Shutdown(ctx)
 }
 
-// Returns the telemetry queue instance
+// Returns the telemetry queue instance.
 func (ts *TelemetrySystem) GetTelemetryQueue() Queue {
 	return instance.storageQueue
 }
 
+// Returns true if any telemetry was emitted.
 func (ts *TelemetrySystem) EmittedAnyTelemetry() bool {
 	return ts.exporter.ExportedAny()
 }
@@ -177,6 +180,9 @@ func (ts *TelemetrySystem) RunBackgroundUpload(ctx context.Context, enableDebugL
 		}
 		cancelCleanup()
 
+		if err != nil {
+			log.Printf("failed to upload telemetry: %v", err)
+		}
 		return err
 	}
 

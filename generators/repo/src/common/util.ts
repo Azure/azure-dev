@@ -47,13 +47,14 @@ export const ensureDirectoryPath = async (directoryPath: string) => {
     }
 }
 
-export const ensureFilePath = async (filePath: string) => {
+export const isFilePath = async (filePath: string) => {
     try {
         const link = await fs.lstat(filePath);
         return link.isFile()
     }
-    catch (err) {
-        console.error(chalk.red(`- ${err}`));
+    catch (err: any) 
+    {
+        console.warn(chalk.yellowBright(`- ${err.message}`));
     }
 }
 

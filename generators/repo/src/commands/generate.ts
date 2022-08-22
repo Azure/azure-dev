@@ -5,7 +5,7 @@ import os from "os";
 import fs from "fs/promises";
 import ansiEscapes from "ansi-escapes";
 import chalk from "chalk";
-import { cleanDirectoryPath, copyFile, createRepoUrlFromRemote, ensureDirectoryPath, getGlobFiles, getRepoPropsFromRemote, isStringNullOrEmpty, RepoProps, writeHeader,ensureFilePath } from "../common/util";
+import { cleanDirectoryPath, copyFile, createRepoUrlFromRemote, ensureDirectoryPath, getGlobFiles, getRepoPropsFromRemote, isStringNullOrEmpty, RepoProps, writeHeader,isFilePath } from "../common/util";
 import { AssetRule, GitRemote, RepomanCommand, RepomanCommandOptions, RepoManifest } from "../models";
 import { GitRepo } from "../tools/git";
 
@@ -340,7 +340,7 @@ export class GenerateCommand implements RepomanCommand {
         const absoluteDestPath = path.join(this.generatePath, rule.to);
         console.info(chalk.white(`Copying asset(s) from ${chalk.cyan(rule.from)} to ${chalk.cyan(rule.to)}...`));
         // check if this is filepath
-        if (await ensureFilePath(absoluteSourcePath)) {
+        if (await isFilePath(absoluteSourcePath)) {
             await copyFile(absoluteSourcePath, absoluteDestPath);
             return;
         }

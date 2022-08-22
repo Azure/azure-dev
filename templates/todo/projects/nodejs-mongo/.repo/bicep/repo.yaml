@@ -21,41 +21,45 @@ repo:
     - from: ./
       to: ./
       ignore: 
-        - "repo-*.y[a]ml"
-        - "infra/**/*"
-        - "azure-*.y[a]ml"
+        - ".repo/**/*"
+
+    # Rule for Path Rewrite Only
+    - from: ../../../../../../common/infra/bicep
+      to: ./
+      ignore: 
+        - ".repo/**/*"
 
     # openapi.yaml to root
-    - from: ../../api/common
+    - from: ../../../../api/common
       to: ./
       patterns:
         - openapi.yaml
 
     # openapi.yaml to api root
-    - from: ../../api/common
+    - from: ../../../../api/common
       to: ./src/api
       patterns:
         - openapi.yaml
 
     # Template common
-    - from: ../../../common
+    - from: ../../../../../common
       to: ./
       ignore: 
       - "infra/**/*"
 
-    - from: ../../../common/infra/bicep
+    - from: ../../../../../common/infra/bicep
       to: ./infra
 
     # Assets common
-    - from: ../../common/assets
+    - from: ../../../../common/assets
       to: ./assets
 
     # Tests common
-    - from: ../../common/tests
+    - from: ../../../../common/tests
       to: ./tests
 
     # Node JS API
-    - from: ../../api/js
+    - from: ../../../../api/js
       to: ./src/api
       ignore:
         - "dist/**/*"
@@ -64,16 +68,18 @@ repo:
         - "**/*.log"
 
     # React Frontend
-    - from: ../../web/react-fluent
+    - from: ../../../../web/react-fluent
       to: ./src/web
       ignore:
         - "build/**/*"
         - "node_modules/**/*"
 
     # Infra 
-    - from: ./infra/bicep
+    - from: ./infra/
       to: ./infra
 
     # Azure.yml
-    - from: ./azure-bicep.yaml
+    - from: ./azure.yaml
       to: ./azure.yaml
+
+    

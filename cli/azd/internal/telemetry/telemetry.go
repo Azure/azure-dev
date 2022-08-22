@@ -8,9 +8,13 @@ import (
 	"os/user"
 	"path/filepath"
 	"sync"
+	"time"
 
 	"github.com/azure/azure-dev/cli/azd/internal"
 	appinsightsexporter "github.com/azure/azure-dev/cli/azd/internal/telemetry/appinsights-exporter"
+	"github.com/benbjohnson/clock"
+	"github.com/gofrs/flock"
+	"github.com/microsoft/ApplicationInsights-Go/appinsights"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/sdk/resource"
 	"go.opentelemetry.io/otel/sdk/trace"
@@ -22,9 +26,11 @@ const devInstrumentationKey = "d3b9c006-3680-4300-9862-35fce9ac66c7"
 const prodInstrumentationKey = ""
 
 type TelemetrySystem struct {
-	storageQueue       *StorageQueue
-	tracerProvider     *trace.TracerProvider
+	storageQueue   *StorageQueue
+	tracerProvider *trace.TracerProvider
+
 	instrumentationKey string
+	telemetryDirectory string
 }
 
 var once sync.Once
@@ -113,6 +119,7 @@ func initialize() (*TelemetrySystem, error) {
 		storageQueue:       storageQueue,
 		tracerProvider:     tp,
 		instrumentationKey: instrumentationKey,
+		telemetryDirectory: storageDirectory,
 	}, nil
 }
 
@@ -121,12 +128,56 @@ func (ts *TelemetrySystem) Shutdown(ctx context.Context) {
 	instance.tracerProvider.Shutdown(ctx)
 }
 
-// Returns the storage queue instance
-func (ts *TelemetrySystem) GetStorageQueue() *StorageQueue {
+// Returns the telemetry queue instance
+func (ts *TelemetrySystem) GetTelemetryQueue() Queue {
 	return instance.storageQueue
 }
 
-func (ts *TelemetrySystem) NewUploader(enableDebugLogging bool) *Uploader {
-	uploader := NewUploader(ts.GetStorageQueue(), ts.instrumentationKey, enableDebugLogging, nil)
+func (ts *TelemetrySystem) NewUploader(enableDebugLogging bool) Uploader {
+	config := appinsights.NewTelemetryConfiguration(ts.instrumentationKey)
+	transmitter := appinsightsexporter.NewTransmitter(config.EndpointUrl, nil)
+
+	uploader := NewUploader(ts.GetTelemetryQueue(), transmitter, clock.New(), enableDebugLogging)
 	return uploader
+}
+
+func (ts *TelemetrySystem) RunBackgroundUpload(ctx context.Context, enableDebugLogging bool) error {
+	fileLock, locked, err := ts.tryUploadLock()
+	if err != nil {
+		return fmt.Errorf("failed to acquire upload lock %w", err)
+	}
+
+	if locked {
+		defer fileLock.Unlock()
+		uploader := ts.NewUploader(enableDebugLogging)
+		queue := ts.storageQueue
+		uploadResult := make(chan error)
+		cleanupDone := make(chan struct{})
+
+		go uploader.Upload(ctx, uploadResult)
+
+		ctx, cancelCleanup := context.WithCancel(ctx)
+		go queue.Cleanup(ctx, cleanupDone)
+
+		err := <-uploadResult
+
+		// Provide some minimum guarantee of cleanup running
+		c := clock.New()
+		select {
+		case <-c.After(time.Duration(5) * time.Second):
+		case <-cleanupDone:
+		}
+		cancelCleanup()
+
+		return err
+	}
+
+	log.Println("Upload already in progress. Exiting.")
+	return nil
+}
+
+func (ts *TelemetrySystem) tryUploadLock() (*flock.Flock, bool, error) {
+	fileLock := flock.New(filepath.Join(ts.telemetryDirectory, "upload.lock"))
+	locked, err := fileLock.TryLock()
+	return fileLock, locked, err
 }

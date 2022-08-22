@@ -1,6 +1,7 @@
 package telemetry
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -188,23 +189,29 @@ func removeIfExists(filename string) error {
 }
 
 // Scans the storage directory for any obsoleted items or temp files.
-func (stg *StorageQueue) Cleanup() {
+func (stg *StorageQueue) Cleanup(ctx context.Context, done chan (struct{})) {
+	defer func() { done <- struct{}{} }()
 	files, err := os.ReadDir(stg.folder)
 	if err != nil {
 		return
 	}
 
 	for _, file := range files {
-		if !file.IsDir() {
-			name := file.Name()
-			if strings.HasSuffix(name, ".tmp") {
-				info, err := file.Info()
-				if err == nil && stg.clock.Since(info.ModTime()) > tempFileTtl {
-					_ = os.Remove(filepath.Join(stg.folder, name))
-				}
-			} else if strings.HasSuffix(name, stg.itemFileExtension) {
-				if _, ok := parseFileName(name); !ok {
-					_ = os.Remove(filepath.Join(stg.folder, name))
+		select {
+		case <-ctx.Done():
+			return
+		default:
+			if !file.IsDir() {
+				name := file.Name()
+				if strings.HasSuffix(name, ".tmp") {
+					info, err := file.Info()
+					if err == nil && stg.clock.Since(info.ModTime()) > tempFileTtl {
+						_ = os.Remove(filepath.Join(stg.folder, name))
+					}
+				} else if strings.HasSuffix(name, stg.itemFileExtension) {
+					if _, ok := parseFileName(name); !ok {
+						_ = os.Remove(filepath.Join(stg.folder, name))
+					}
 				}
 			}
 		}

@@ -189,7 +189,8 @@ func removeIfExists(filename string) error {
 }
 
 // Scans the storage directory for any obsoleted items or temp files.
-func (stg *StorageQueue) Cleanup(ctx context.Context) {
+func (stg *StorageQueue) Cleanup(ctx context.Context, done chan (struct{})) {
+	defer func() { done <- struct{}{} }()
 	files, err := os.ReadDir(stg.folder)
 	if err != nil {
 		return

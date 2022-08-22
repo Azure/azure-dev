@@ -23,7 +23,11 @@ var (
 	defaultThrottleDuration   = time.Duration(5) * time.Second
 )
 
-type Uploader struct {
+type Uploader interface {
+	Upload(ctx context.Context, result chan (error))
+}
+
+type TelemetryUploader struct {
 	transmitter    appinsightsexporter.Transmitter
 	telemetryQueue Queue
 	clock          clock.Clock
@@ -31,8 +35,8 @@ type Uploader struct {
 	isDebugMode bool
 }
 
-func NewUploader(telemetryQueue Queue, transmitter appinsightsexporter.Transmitter, clock clock.Clock, isDebugMode bool) *Uploader {
-	return &Uploader{
+func NewUploader(telemetryQueue Queue, transmitter appinsightsexporter.Transmitter, clock clock.Clock, isDebugMode bool) *TelemetryUploader {
+	return &TelemetryUploader{
 		transmitter:    transmitter,
 		telemetryQueue: telemetryQueue,
 		clock:          clock,
@@ -43,7 +47,7 @@ func NewUploader(telemetryQueue Queue, transmitter appinsightsexporter.Transmitt
 // Uploads all items that are currently in the telemetry queue.
 // This function returns when no items remain in the queue.
 // An error is only returned if there is a fatal, persistent error with reading the queue.
-func (u *Uploader) Upload(ctx context.Context, result chan (error)) {
+func (u *TelemetryUploader) Upload(ctx context.Context, result chan (error)) {
 	for {
 		select {
 		case <-ctx.Done():
@@ -60,7 +64,7 @@ func (u *Uploader) Upload(ctx context.Context, result chan (error)) {
 	}
 }
 
-func (u *Uploader) uploadNextItem() (bool, error) {
+func (u *TelemetryUploader) uploadNextItem() (bool, error) {
 	ctx := context.Background()
 	item, err := u.reliablePeek(ctx)
 
@@ -84,7 +88,7 @@ func (u *Uploader) uploadNextItem() (bool, error) {
 	return false, nil
 }
 
-func (u *Uploader) reliablePeek(ctx context.Context) (*StoredItem, error) {
+func (u *TelemetryUploader) reliablePeek(ctx context.Context) (*StoredItem, error) {
 	var item *StoredItem
 	err := retry.Do(ctx, retry.WithMaxRetries(maxReadFailCount, retry.NewConstant(time.Duration(300)*time.Millisecond)), func(ctx context.Context) error {
 		peekItem, err := u.telemetryQueue.Peek()
@@ -109,13 +113,13 @@ func (u *Uploader) reliablePeek(ctx context.Context) (*StoredItem, error) {
 	return item, err
 }
 
-func (u *Uploader) reliableRemove(ctx context.Context, item *StoredItem) error {
+func (u *TelemetryUploader) reliableRemove(ctx context.Context, item *StoredItem) error {
 	return retry.Do(ctx, retry.WithMaxRetries(maxRemoveFailCount, retry.NewConstant(time.Duration(300)*time.Millisecond)), func(ctx context.Context) error {
 		return retry.RetryableError(u.telemetryQueue.Remove(item))
 	})
 }
 
-func (u *Uploader) transmit(item *StoredItem) {
+func (u *TelemetryUploader) transmit(item *StoredItem) {
 	payload := item.Message()
 	var telemetryItems appinsightsexporter.TelemetryItems
 	if u.isDebugMode {
@@ -169,7 +173,7 @@ func (u *Uploader) transmit(item *StoredItem) {
 	}
 }
 
-func (u *Uploader) calculateRetryDelay(retryAfter *time.Time, attempts int) time.Duration {
+func (u *TelemetryUploader) calculateRetryDelay(retryAfter *time.Time, attempts int) time.Duration {
 	if retryAfter != nil {
 		return u.clock.Until(*retryAfter)
 	} else if attempts == 1 {

@@ -251,15 +251,15 @@ func TestUpload_OnPersistentFailure_DiscardItem(t *testing.T) {
 	assert.Len(t, queue.itemQueue, 0)
 }
 
-func setupUploader(clock clock.Clock) (*TransmitterStub, *InMemoryTelemetryQueue, *Uploader) {
+func setupUploader(clock clock.Clock) (*TransmitterStub, *InMemoryTelemetryQueue, *TelemetryUploader) {
 	transmitter := NewTransmitterStub()
 	queue := NewInMemoryTelemetryQueue(clock)
-	uploader := NewUploader(queue, transmitter, clock, true)
+	uploader := NewUploader(queue, transmitter, clock, false)
 
 	return transmitter, queue, uploader
 }
 
-func syncUpload(uploader *Uploader) error {
+func syncUpload(uploader *TelemetryUploader) error {
 	result := make(chan error, 1)
 	uploader.Upload(context.Background(), result)
 	err := <-result

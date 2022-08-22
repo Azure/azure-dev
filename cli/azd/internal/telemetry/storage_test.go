@@ -206,7 +206,7 @@ func TestCleanup(t *testing.T) {
 	enqueueAndAssert(storage, validContent[0], t)
 	enqueueAndAssert(storage, validContent[1], t)
 
-	storage.Cleanup(context.Background())
+	storage.Cleanup(context.Background(), make(chan struct{}, 1))
 
 	remainingFiles, err := os.ReadDir(storage.folder)
 	assert.NoError(t, err)

@@ -28,6 +28,7 @@ const prodInstrumentationKey = ""
 type TelemetrySystem struct {
 	storageQueue   *StorageQueue
 	tracerProvider *trace.TracerProvider
+	exporter       *Exporter
 
 	instrumentationKey string
 	telemetryDirectory string
@@ -61,6 +62,8 @@ func IsTelemetryEnabled() bool {
 	return os.Getenv("AZURE_DEV_COLLECT_TELEMETRY") != "no"
 }
 
+// Returns the singleton TelemetrySystem instance.
+// Returns nil if telemetry failed to initialize, or user has disabled telemetry.
 func GetTelemetrySystem() *TelemetrySystem {
 	once.Do(func() {
 		telemetrySystem, err := initialize()
@@ -118,6 +121,7 @@ func initialize() (*TelemetrySystem, error) {
 	return &TelemetrySystem{
 		storageQueue:       storageQueue,
 		tracerProvider:     tp,
+		exporter:           exporter,
 		instrumentationKey: instrumentationKey,
 		telemetryDirectory: storageDirectory,
 	}, nil
@@ -131,6 +135,10 @@ func (ts *TelemetrySystem) Shutdown(ctx context.Context) {
 // Returns the telemetry queue instance
 func (ts *TelemetrySystem) GetTelemetryQueue() Queue {
 	return instance.storageQueue
+}
+
+func (ts *TelemetrySystem) EmittedAnyTelemetry() bool {
+	return ts.exporter.ExportedAny()
 }
 
 func (ts *TelemetrySystem) NewUploader(enableDebugLogging bool) Uploader {

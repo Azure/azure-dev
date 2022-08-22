@@ -89,7 +89,7 @@ jobs:
           $envPrefixName = "azd-template-test"
           if($useUpperCaseName -eq "true") {
             # Use upper case name for env prefix name
-            $envPrefixName = "AZD-TEMPLATE-TEST"
+            $envPrefixName = "AZD-TEMPLATE-UPPER-TEST"
           } 
           $resourceGroupName = "rg-$envPrefixName-$templateName-$(Build.BuildId)"
           Write-Host "Resource group name: $resourceGroupName"

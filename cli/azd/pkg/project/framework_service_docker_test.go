@@ -6,7 +6,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/executil"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/docker"
 	"github.com/azure/azure-dev/cli/azd/test/helpers"
 	"github.com/stretchr/testify/require"
 )
@@ -33,7 +33,7 @@ services:
 	service := prj.Services[0]
 	ran := false
 
-	dockerArgs := tools.DockerArgs{
+	dockerArgs := docker.DockerArgs{
 		RunWithResultFn: func(ctx context.Context, args executil.RunArgs) (executil.RunResult, error) {
 			ran = true
 
@@ -52,7 +52,7 @@ services:
 		},
 	}
 
-	docker := tools.NewDocker(dockerArgs)
+	docker := docker.NewDocker(dockerArgs)
 
 	progress := make(chan string)
 	done := make(chan bool)
@@ -104,7 +104,7 @@ services:
 	service := prj.Services[0]
 	ran := false
 
-	dockerArgs := tools.DockerArgs{
+	dockerArgs := docker.DockerArgs{
 		RunWithResultFn: func(ctx context.Context, args executil.RunArgs) (executil.RunResult, error) {
 			ran = true
 
@@ -123,7 +123,7 @@ services:
 		},
 	}
 
-	docker := tools.NewDocker(dockerArgs)
+	docker := docker.NewDocker(dockerArgs)
 
 	progress := make(chan string)
 	done := make(chan bool)

@@ -9,13 +9,14 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/executil"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/bicep"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/stretchr/testify/require"
 )
 
 // Sets up all the mocks required for the bicep preview & deploy operation
-func setupExecUtilWithMocks(template *BicepTemplate, deployResult *tools.AzCliDeployment) *mocks.MockExecUtil {
+func setupExecUtilWithMocks(template *BicepTemplate, deployResult *azcli.AzCliDeployment) *mocks.MockExecUtil {
 	execUtil := &mocks.MockExecUtil{}
 
 	bicepBytes, _ := json.Marshal(template)
@@ -90,7 +91,7 @@ func TestBicepPreview(t *testing.T) {
 	}
 
 	execUtil := setupExecUtilWithMocks(&bicepTemplate, nil)
-	azCli := tools.NewAzCli(tools.NewAzCliArgs{RunWithResultFn: execUtil.RunWithResult})
+	azCli := azcli.NewAzCli(azcli.NewAzCliArgs{RunWithResultFn: execUtil.RunWithResult})
 	projectDir := "../../../test/samples/webapp"
 	options := Options{
 		Module: "main",
@@ -100,7 +101,7 @@ func TestBicepPreview(t *testing.T) {
 	env.Values["AZURE_LOCATION"] = "eastus2"
 	env.SetEnvName("test-env")
 
-	bicepArgs := tools.NewBicepCliArgs{AzCli: azCli, RunWithResultFn: execUtil.RunWithResult}
+	bicepArgs := bicep.NewBicepCliArgs{AzCli: azCli, RunWithResultFn: execUtil.RunWithResult}
 	console := &mocks.MockConsole{}
 	infraProvider := NewBicepProvider(&env, projectDir, options, console, bicepArgs)
 	previewTask := infraProvider.Preview(context.Background())
@@ -139,25 +140,25 @@ func TestBicepDeploy(t *testing.T) {
 		Outputs:    bicepOutputParams,
 	}
 
-	deployOutputs := make(map[string]tools.AzCliDeploymentOutput)
-	deployOutputs["WEBSITE_URL"] = tools.AzCliDeploymentOutput{Value: expectedWebsiteUrl}
-	azDeployment := tools.AzCliDeployment{
+	deployOutputs := make(map[string]azcli.AzCliDeploymentOutput)
+	deployOutputs["WEBSITE_URL"] = azcli.AzCliDeploymentOutput{Value: expectedWebsiteUrl}
+	azDeployment := azcli.AzCliDeployment{
 		Id:   "DEPLOYMENT_ID",
 		Name: "DEPLOYMENT_NAME",
-		Properties: tools.AzCliDeploymentProperties{
+		Properties: azcli.AzCliDeploymentProperties{
 			Outputs: deployOutputs,
 		},
 	}
 
 	execUtil := setupExecUtilWithMocks(&bicepTemplate, &azDeployment)
 	ctx := context.Background()
-	azCli := tools.NewAzCli(tools.NewAzCliArgs{RunWithResultFn: execUtil.RunWithResult})
+	azCli := azcli.NewAzCli(azcli.NewAzCliArgs{RunWithResultFn: execUtil.RunWithResult})
 	projectDir := "../../../test/samples/webapp"
 	options := Options{
 		Module: "main",
 	}
 
-	bicepArgs := tools.NewBicepCliArgs{AzCli: azCli, RunWithResultFn: execUtil.RunWithResult}
+	bicepArgs := bicep.NewBicepCliArgs{AzCli: azCli, RunWithResultFn: execUtil.RunWithResult}
 	console := &mocks.MockConsole{}
 
 	env := environment.Environment{Values: make(map[string]string)}

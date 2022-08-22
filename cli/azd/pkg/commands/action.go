@@ -3,7 +3,7 @@ package commands
 import (
 	"context"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
@@ -11,10 +11,10 @@ import (
 // ActionFunc is an Action implementation. Use this when
 // you only need to execute a function with no need for
 // any other accompanying data or to set up any flags.
-type ActionFunc func(context.Context, *cobra.Command, []string, *environment.AzdContext) error
+type ActionFunc func(context.Context, *cobra.Command, []string, *azdcontext.AzdContext) error
 
 // Run implements the Action interface
-func (a ActionFunc) Run(ctx context.Context, cmd *cobra.Command, args []string, azdCtx *environment.AzdContext) error {
+func (a ActionFunc) Run(ctx context.Context, cmd *cobra.Command, args []string, azdCtx *azdcontext.AzdContext) error {
 	return a(ctx, cmd, args, azdCtx)
 }
 
@@ -26,7 +26,7 @@ func (a ActionFunc) SetupFlags(*pflag.FlagSet, *pflag.FlagSet) {
 // command. It describes a Cobra action which is injected
 // with a context and a list of arguments.
 type Action interface {
-	Run(ctx context.Context, cmd *cobra.Command, args []string, azdCtx *environment.AzdContext) error
+	Run(ctx context.Context, cmd *cobra.Command, args []string, azdCtx *azdcontext.AzdContext) error
 	SetupFlags(
 		persistent *pflag.FlagSet,
 		local *pflag.FlagSet,
@@ -46,7 +46,7 @@ type compositeAction struct {
 	actions []Action
 }
 
-func (a *compositeAction) Run(ctx context.Context, cmd *cobra.Command, args []string, azdCtx *environment.AzdContext) error {
+func (a *compositeAction) Run(ctx context.Context, cmd *cobra.Command, args []string, azdCtx *azdcontext.AzdContext) error {
 	for _, a := range a.actions {
 		if err := a.Run(ctx, cmd, args, azdCtx); err != nil {
 			return err

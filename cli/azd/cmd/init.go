@@ -16,12 +16,14 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/commands"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/pkg/spin"
 	"github.com/azure/azure-dev/cli/azd/pkg/templates"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/git"
 	"github.com/otiai10/copy"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
@@ -62,7 +64,7 @@ func (i *initAction) SetupFlags(
 	local.StringVarP(&i.location, "location", "l", "", "Azure location for the new environment")
 }
 
-func (i *initAction) Run(ctx context.Context, _ *cobra.Command, args []string, azdCtx *environment.AzdContext) error {
+func (i *initAction) Run(ctx context.Context, _ *cobra.Command, args []string, azdCtx *azdcontext.AzdContext) error {
 	// In the case where `init` is run and a parent folder already has an `azure.yaml` file, the
 	// current ProjectDirectory will be set to that folder. That's not what we want here. We want
 	// to force using the current working directory as a project root (since we are initializing a
@@ -81,7 +83,7 @@ func (i *initAction) Run(ctx context.Context, _ *cobra.Command, args []string, a
 
 	console := input.NewConsole(!i.rootOptions.NoPrompt)
 	azCli := commands.GetAzCliFromContext(ctx)
-	gitCli := tools.NewGitCli()
+	gitCli := git.NewGitCli()
 
 	requiredTools := []tools.ExternalTool{azCli}
 
@@ -219,7 +221,7 @@ func (i *initAction) Run(ctx context.Context, _ *cobra.Command, args []string, a
 	_, err = project.LoadProjectConfig(azdCtx.ProjectPath(), &environment.Environment{})
 
 	if errors.Is(err, os.ErrNotExist) {
-		fmt.Printf("Creating a new %s file.\n", environment.ProjectFileName)
+		fmt.Printf("Creating a new %s file.\n", azdcontext.ProjectFileName)
 
 		_, err = project.NewProject(azdCtx.ProjectPath(), azdCtx.GetDefaultProjectName())
 
@@ -229,7 +231,7 @@ func (i *initAction) Run(ctx context.Context, _ *cobra.Command, args []string, a
 	}
 
 	//create .azure when running azd init
-	err = os.MkdirAll(filepath.Join(azdCtx.ProjectDirectory(), environment.EnvironmentDirectoryName), osutil.PermissionDirectory)
+	err = os.MkdirAll(filepath.Join(azdCtx.ProjectDirectory(), azdcontext.EnvironmentDirectoryName), osutil.PermissionDirectory)
 	if err != nil {
 		return fmt.Errorf("failed to create a directory: %w", err)
 	}
@@ -245,16 +247,16 @@ func (i *initAction) Run(ctx context.Context, _ *cobra.Command, args []string, a
 	//bufio scanner splits on new lines by default
 	scanner := bufio.NewScanner(gitignoreFile)
 	for scanner.Scan() {
-		if environment.EnvironmentDirectoryName == scanner.Text() {
+		if azdcontext.EnvironmentDirectoryName == scanner.Text() {
 			writeGitignoreFile = false
 		}
 	}
 
 	if writeGitignoreFile {
 		newLine := osutil.GetNewLineSeparator()
-		_, err := gitignoreFile.WriteString(newLine + environment.EnvironmentDirectoryName + newLine)
+		_, err := gitignoreFile.WriteString(newLine + azdcontext.EnvironmentDirectoryName + newLine)
 		if err != nil {
-			return fmt.Errorf("fail to write '%s' in .gitignore: %w", environment.EnvironmentDirectoryName, err)
+			return fmt.Errorf("fail to write '%s' in .gitignore: %w", azdcontext.EnvironmentDirectoryName, err)
 		}
 	}
 

@@ -11,7 +11,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azureutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/commands"
-	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
@@ -60,10 +60,10 @@ func (d *deployAction) SetupFlags(
 	persis *pflag.FlagSet,
 	local *pflag.FlagSet,
 ) {
-	local.StringVar(&d.serviceName, "service", "", "Deploys a specific service (when the string is unspecified, all services that are listed in the "+environment.ProjectFileName+" file are deployed).")
+	local.StringVar(&d.serviceName, "service", "", "Deploys a specific service (when the string is unspecified, all services that are listed in the "+azdcontext.ProjectFileName+" file are deployed).")
 }
 
-func (d *deployAction) Run(ctx context.Context, cmd *cobra.Command, args []string, azdCtx *environment.AzdContext) error {
+func (d *deployAction) Run(ctx context.Context, cmd *cobra.Command, args []string, azdCtx *azdcontext.AzdContext) error {
 	azCli := commands.GetAzCliFromContext(ctx)
 	console := input.NewConsole(!d.rootOptions.NoPrompt)
 

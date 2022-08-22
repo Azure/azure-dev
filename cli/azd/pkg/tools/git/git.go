@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
-package tools
+package git
 
 import (
 	"context"
@@ -13,11 +13,12 @@ import (
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/executil"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/blang/semver/v4"
 )
 
 type GitCli interface {
-	ExternalTool
+	tools.ExternalTool
 	GetRemoteUrl(ctx context.Context, string, remoteName string) (string, error)
 	FetchCode(ctx context.Context, repositoryPath string, branch string, target string) error
 	InitRepo(ctx context.Context, repositoryPath string) error
@@ -36,8 +37,8 @@ func NewGitCli() GitCli {
 	return &gitCli{}
 }
 
-func (cli *gitCli) versionInfo() VersionInfo {
-	return VersionInfo{
+func (cli *gitCli) versionInfo() tools.VersionInfo {
+	return tools.VersionInfo{
 		// Support version from 09-Dec-2018 08:40
 		// https://mirrors.edge.kernel.org/pub/software/scm/git/
 		// 4 years should cover most Linux out of the box version
@@ -50,21 +51,21 @@ func (cli *gitCli) versionInfo() VersionInfo {
 }
 
 func (cli *gitCli) CheckInstalled(ctx context.Context) (bool, error) {
-	found, err := toolInPath("git")
+	found, err := tools.ToolInPath("git")
 	if !found {
 		return false, err
 	}
-	gitRes, err := executeCommand(ctx, "git", "--version")
+	gitRes, err := tools.ExecuteCommand(ctx, "git", "--version")
 	if err != nil {
 		return false, fmt.Errorf("checking %s version: %w", cli.Name(), err)
 	}
-	gitSemver, err := extractSemver(gitRes)
+	gitSemver, err := tools.ExtractSemver(gitRes)
 	if err != nil {
 		return false, fmt.Errorf("converting to semver version fails: %w", err)
 	}
 	updateDetail := cli.versionInfo()
 	if gitSemver.LT(updateDetail.MinimumVersion) {
-		return false, &ErrSemver{ToolName: cli.Name(), versionInfo: updateDetail}
+		return false, &tools.ErrSemver{ToolName: cli.Name(), VersionInfo: updateDetail}
 	}
 	return true, nil
 }

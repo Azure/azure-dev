@@ -9,6 +9,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 )
 
 type TestProvider struct {
@@ -55,14 +56,14 @@ func (p *TestProvider) UpdatePlan(ctx context.Context, preview Preview) error {
 func (p *TestProvider) Deploy(ctx context.Context, preview *Preview, scope Scope) *async.InteractiveTaskWithProgress[*DeployResult, *DeployProgress] {
 	return async.RunInteractiveTaskWithProgress(
 		func(asyncContext *async.InteractiveTaskContextWithProgress[*DeployResult, *DeployProgress]) {
-			asyncContext.SetProgress(&DeployProgress{Operations: []tools.AzCliResourceOperation{}, Timestamp: time.Now()})
+			asyncContext.SetProgress(&DeployProgress{Operations: []azcli.AzCliResourceOperation{}, Timestamp: time.Now()})
 
 			deployResult := DeployResult{
-				Operations: []tools.AzCliResourceOperation{},
+				Operations: []azcli.AzCliResourceOperation{},
 				Outputs:    preview.Outputs,
 			}
 
-			asyncContext.SetProgress(&DeployProgress{Operations: []tools.AzCliResourceOperation{}, Timestamp: time.Now()})
+			asyncContext.SetProgress(&DeployProgress{Operations: []azcli.AzCliResourceOperation{}, Timestamp: time.Now()})
 			asyncContext.SetResult(&deployResult)
 		})
 }
@@ -73,7 +74,7 @@ func (p *TestProvider) Destroy(ctx context.Context, preview *Preview) *async.Int
 			asyncContext.SetProgress(&DestroyProgress{Message: "Starting destroy", Timestamp: time.Now()})
 
 			destroyResult := DestroyResult{
-				Resources: []tools.AzCliResource{},
+				Resources: []azcli.AzCliResource{},
 				Outputs:   preview.Outputs,
 			}
 

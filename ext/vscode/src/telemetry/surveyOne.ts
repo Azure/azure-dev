@@ -1,6 +1,7 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
+import { IActionContext } from '@microsoft/vscode-azext-utils';
 import * as vscode from 'vscode';
 import ext from '../ext';
 import { localize } from "../localize";
@@ -16,8 +17,12 @@ export const SurveyOne: Survey = {
     prompt: localize("azure-dev.surveys.surveyOne.prompt", "Can you please take 2 minutes to tell us how the Azure Developer CLI is working for you?"),
     buttons: buttons,
     activationDelayMs: 60 * 1000,
-    isEligible: () => {
+    isEligible: (context: IActionContext) => {
         const stats = ext.activitySvc.getStats();
+
+        // The "is eligible or not" telemetry will be captured by the caller (survey scheduler).
+        context.telemetry.properties.totalUserActiveDays = stats.totalActiveDays.toFixed();
+
         return Promise.resolve(stats.totalActiveDays >= 3);
     }
 };

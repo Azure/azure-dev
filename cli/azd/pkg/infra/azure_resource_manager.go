@@ -5,20 +5,20 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/tools"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 )
 
 type AzureResourceManager struct {
-	azCli tools.AzCli
+	azCli azcli.AzCli
 }
 
-func NewAzureResourceManager(azCli tools.AzCli) *AzureResourceManager {
+func NewAzureResourceManager(azCli azcli.AzCli) *AzureResourceManager {
 	return &AzureResourceManager{
 		azCli: azCli,
 	}
 }
 
-func (rm *AzureResourceManager) GetDeploymentResourceOperations(ctx context.Context, subscriptionId string, deploymentName string) ([]tools.AzCliResourceOperation, error) {
+func (rm *AzureResourceManager) GetDeploymentResourceOperations(ctx context.Context, subscriptionId string, deploymentName string) ([]azcli.AzCliResourceOperation, error) {
 	// Gets all the subscription level deployments
 	subOperations, err := rm.azCli.ListSubscriptionDeploymentOperations(ctx, subscriptionId, deploymentName)
 	if err != nil {
@@ -35,7 +35,7 @@ func (rm *AzureResourceManager) GetDeploymentResourceOperations(ctx context.Cont
 		}
 	}
 
-	resourceOperations := []tools.AzCliResourceOperation{}
+	resourceOperations := []azcli.AzCliResourceOperation{}
 
 	if strings.TrimSpace(resourceGroupName) == "" {
 		return resourceOperations, nil
@@ -83,7 +83,7 @@ func (rm *AzureResourceManager) GetResourceGroupsForDeployment(ctx context.Conte
 	return keys, nil
 }
 
-func (rm *AzureResourceManager) appendDeploymentResourcesRecursive(ctx context.Context, subscriptionId string, resourceGroupName string, deploymentName string, resourceOperations *[]tools.AzCliResourceOperation) error {
+func (rm *AzureResourceManager) appendDeploymentResourcesRecursive(ctx context.Context, subscriptionId string, resourceGroupName string, deploymentName string, resourceOperations *[]azcli.AzCliResourceOperation) error {
 	operations, err := rm.azCli.ListResourceGroupDeploymentOperations(ctx, subscriptionId, resourceGroupName, deploymentName)
 	if err != nil {
 		return fmt.Errorf("getting subscription deployment operations: %w", err)

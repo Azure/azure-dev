@@ -549,7 +549,7 @@ stages:
 
         pool:
           name: $(Pool)
-          OSVmImage: $(OSVmImage)
+          vmImage: $(OSVmImage)
 
         steps:
           - pwsh: $(TestInstallCommand)

@@ -14,9 +14,13 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/iac/bicep"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
+	bicepTool "github.com/azure/azure-dev/cli/azd/pkg/tools/bicep"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/docker"
 	"github.com/drone/envsubst"
 )
 
@@ -24,19 +28,19 @@ type containerAppTarget struct {
 	config *ServiceConfig
 	env    *environment.Environment
 	scope  *environment.DeploymentScope
-	cli    tools.AzCli
-	docker *tools.Docker
+	cli    azcli.AzCli
+	docker *docker.Docker
 }
 
 func (at *containerAppTarget) RequiredExternalTools() []tools.ExternalTool {
 	return []tools.ExternalTool{at.cli, at.docker}
 }
 
-func (at *containerAppTarget) Deploy(ctx context.Context, azdCtx *environment.AzdContext, path string, progress chan<- string) (ServiceDeploymentResult, error) {
+func (at *containerAppTarget) Deploy(ctx context.Context, azdCtx *azdcontext.AzdContext, path string, progress chan<- string) (ServiceDeploymentResult, error) {
 	bicepPath := azdCtx.BicepModulePath(at.config.Module)
 
 	progress <- "Creating deployment template"
-	template, err := bicep.Compile(ctx, tools.NewBicepCli(tools.NewBicepCliArgs{AzCli: at.cli}), bicepPath)
+	template, err := bicep.Compile(ctx, bicepTool.NewBicepCli(bicepTool.NewBicepCliArgs{AzCli: at.cli}), bicepPath)
 	if err != nil {
 		return ServiceDeploymentResult{}, err
 	}
@@ -160,7 +164,7 @@ func (at *containerAppTarget) Endpoints(ctx context.Context) ([]string, error) {
 	return []string{fmt.Sprintf("https://%s/", containerAppProperties.Properties.Configuration.Ingress.Fqdn)}, nil
 }
 
-func NewContainerAppTarget(config *ServiceConfig, env *environment.Environment, scope *environment.DeploymentScope, azCli tools.AzCli, docker *tools.Docker) ServiceTarget {
+func NewContainerAppTarget(config *ServiceConfig, env *environment.Environment, scope *environment.DeploymentScope, azCli azcli.AzCli, docker *docker.Docker) ServiceTarget {
 	return &containerAppTarget{
 		config: config,
 		env:    env,

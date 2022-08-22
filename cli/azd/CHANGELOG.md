@@ -1,5 +1,11 @@
 # Release History
 
+## 0.1.0-beta.5 (Unreleased)
+
+### Bugs Fixed
+
+- [[#480]](https://github.com/Azure/azure-dev/pull/480) Fix deploy error when using an environment name with capital letters.
+
 ## 0.1.0-beta.4 (2022-08-10)
 
 ### Features Added

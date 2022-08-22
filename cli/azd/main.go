@@ -73,11 +73,9 @@ func main() {
 		ts.Shutdown(context.Background())
 
 		if ts.EmittedAnyTelemetry() {
-			err := ScheduleBackgroundUploadProcess()
+			err := startBackgroundUploadProcess()
 			if err != nil {
-				fmt.Printf("error scheduling telemetry upload: %v\n", err)
-			} else {
-				fmt.Println("Scheduled background upload.")
+				log.Printf("failed to start background telemetry upload: %v\n", err)
 			}
 		}
 	}
@@ -261,24 +259,14 @@ func readToEndAndClose(r io.ReadCloser) (string, error) {
 	return buf.String(), err
 }
 
-func ScheduleBackgroundUploadProcess() error {
+func startBackgroundUploadProcess() error {
 	// The background upload process executable is ourself
 	execPath, err := os.Executable()
 	if err != nil {
 		return fmt.Errorf("failed to get current executable path: %w", err)
 	}
 
-	cmd := exec.Command(execPath, cmd.TelemetryCommandFlag, cmd.TelemetryUploadCommandFlag, "--debug")
-	f, err := os.Create("upload.out")
-	if err != nil {
-		fmt.Printf("error opening file: %v", err)
-	}
-	defer f.Close()
-
-	cmd.Stderr = f
-	cmd.Stdout = f
-
+	cmd := exec.Command(execPath, cmd.TelemetryCommandFlag, cmd.TelemetryUploadCommandFlag)
 	err = cmd.Start()
-	fmt.Printf("Scheduled upload with pid %d\n", cmd.Process.Pid)
 	return err
 }

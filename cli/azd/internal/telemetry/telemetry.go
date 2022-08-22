@@ -62,6 +62,8 @@ func IsTelemetryEnabled() bool {
 	return os.Getenv("AZURE_DEV_COLLECT_TELEMETRY") != "no"
 }
 
+// Returns the singleton TelemetrySystem instance.
+// Returns nil if telemetry failed to initialize, or user has disabled telemetry.
 func GetTelemetrySystem() *TelemetrySystem {
 	once.Do(func() {
 		telemetrySystem, err := initialize()

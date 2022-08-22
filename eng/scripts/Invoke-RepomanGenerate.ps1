@@ -1,5 +1,6 @@
 param(
     [string] $TargetBranchName,
+    [string] $RemoteName,
     [string] $ResultsFileLocation = "$([System.IO.Path]::GetTempPath())/repoman.md",
     [string] $RunnerTemp = [System.IO.Path]::GetTempPath(),
     [switch] $WhatIf
@@ -23,6 +24,7 @@ repoman generate `
     -o $RunnerTemp `
     -t $templatePath `
     --branch "$TargetBranchName" `
+    --remote "$RemoteName" `
     --https `
     --fail-on-update-error `
     --resultsFile $ResultsFileLocation `
@@ -34,6 +36,7 @@ repoman generate `
         -o $RunnerTemp `
         -t $templatePath `
         --branch `"$TargetBranchName`" `
+        --remote "$RemoteName" `
         --https `
         --fail-on-update-error `
         --resultsFile $ResultsFileLocation `

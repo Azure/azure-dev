@@ -7,6 +7,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/commands"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
@@ -25,7 +26,7 @@ func upCmd(rootOptions *commands.GlobalCommandOptions) *cobra.Command {
 			},
 			// Print an additional newline to separate provision from deploy
 			commands.ActionFunc(
-				func(ctx context.Context, cmd *cobra.Command, args []string, azdCtx *environment.AzdContext) error {
+				func(ctx context.Context, cmd *cobra.Command, args []string, azdCtx *azdcontext.AzdContext) error {
 					formatter, err := output.GetFormatter(cmd)
 					if err != nil {
 						return err
@@ -67,7 +68,7 @@ type ignoreInitErrorAction struct {
 	action commands.Action
 }
 
-func (a *ignoreInitErrorAction) Run(ctx context.Context, cmd *cobra.Command, args []string, azdCtx *environment.AzdContext) error {
+func (a *ignoreInitErrorAction) Run(ctx context.Context, cmd *cobra.Command, args []string, azdCtx *azdcontext.AzdContext) error {
 	err := a.action.Run(ctx, cmd, args, azdCtx)
 	var envInitError *environment.EnvironmentInitError
 	if errors.As(err, &envInitError) {

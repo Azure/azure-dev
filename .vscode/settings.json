@@ -1,3 +1,4 @@
 {
-    "cSpell.import": ["cspell.yaml"],
+  "cSpell.import": ["cspell.yaml"],
+  "go.testFlags": ["-timeout", "5m"]
 }

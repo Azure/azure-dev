@@ -29,7 +29,7 @@ overrides:
       - puichan
       - devx
       - azdevcli
-  - filename: pkg/tools/python.go
+  - filename: pkg/tools/python/python.go
     words:
       - venv
   - filename: pkg/spin/run.go
@@ -49,7 +49,7 @@ overrides:
     words:
       - hndl
       - JOBOBJECT
-  - filename: pkg/environment/azd_context.go
+  - filename: pkg/environment/azdcontext/azdcontext.go
     words:
       - ents
       - unmarshalled

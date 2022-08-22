@@ -172,23 +172,50 @@ stages:
 
         steps:
           - checkout: self
+
           - template: /eng/pipelines/templates/steps/setup-go.yml
+
+          # Install scripts
           - pwsh: |
               New-Item -ItemType Directory -Path installer
               Copy-Item cli/installer/*install-azd.ps1 installer/
             displayName: Copy installer scripts (*.ps1) for artifact upload
+
           - task: PublishPipelineArtifact@1
             displayName: Publish install scripts to artifacts for signing
             inputs:
               artifactName: install-pwsh
               targetPath: installer
-          - bash: go run docgen.go
+
+          # CLI ref docs
+          - pwsh: New-Item -ItemType Directory -Path docs
+            displayName: Create docs artifact folder
+
+          - pwsh: go run docgen.go
             workingDirectory: cli/azd/docs
             displayName: Generate CLI documentation
-          - publish: cli/azd/docs/md
+
+          - pwsh: Copy-Item cli/azd/docs/md/* docs/ -Recurse
+            displayName: Copy CLI docs for pipeline artifact staging
+
+          # azure.yaml.json schema docs
+          - task: UsePythonVersion@0
+            inputs:
+              versionSpec: 3.x
+
+          - pwsh: pip install jsonschema2md
+            displayName: Install jsonschema2md
+
+          - pwsh: jsonschema2md schemas/v1.0/azure.yaml.json docs/azure.yaml.schema.md
+            displayName: Generate azure.yaml schema
+
+          # Upload docs for CLI ref and azure.yaml schema
+          - pwsh: Get-ChildItem docs
+            displayName: Show doc artifacts to publish
+
+          - publish: docs/
             artifact: docs
             displayName: Upload generated documentation
-
 
   - stage: Sign
     dependsOn: BuildAndTest
@@ -522,7 +549,7 @@ stages:
 
         pool:
           name: $(Pool)
-          OSVmImage: $(OSVmImage)
+          vmImage: $(OSVmImage)
 
         steps:
           - pwsh: $(TestInstallCommand)

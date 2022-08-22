@@ -6,15 +6,14 @@ import (
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/commands"
-	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/httpUtil"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 )
 
-func CreateTestContext(ctx context.Context, options *commands.GlobalCommandOptions, azCli tools.AzCli, httpClient httpUtil.HttpUtil) context.Context {
-	newContext := context.WithValue(ctx, environment.OptionsContextKey, options)
-	newContext = context.WithValue(newContext, environment.AzdCliContextKey, azCli)
-	newContext = context.WithValue(newContext, environment.HttpUtilContextKey, httpClient)
+func CreateTestContext(ctx context.Context, options *commands.GlobalCommandOptions, azCli azcli.AzCli, httpClient httpUtil.HttpUtil) context.Context {
+	newContext := commands.WithGlobalCommandOptions(ctx, options)
+	newContext = azcli.WithAzCli(newContext, azCli)
+	newContext = httpUtil.WithHttpClient(newContext, httpClient)
 
 	return newContext
 }

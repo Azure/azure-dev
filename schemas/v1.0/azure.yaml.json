@@ -2,10 +2,7 @@
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "$id": "https://raw.githubusercontent.com/Azure/azure-dev/main/schemas/v1.0/azure.yaml.json",
     "type": "object",
-    "required": [
-        "name",
-        "services"
-    ],
+    "required": ["name", "services"],
     "additionalProperties": false,
     "properties": {
         "name": {
@@ -26,9 +23,7 @@
                 "template": {
                     "type": "string",
                     "title": "Identifier of the template from which the application was created. Optional.",
-                    "examples": [
-                        "todo-nodejs-mongo@0.0.1-beta"
-                    ]
+                    "examples": ["todo-nodejs-mongo@0.0.1-beta"]
                 }
             }
         },
@@ -36,104 +31,95 @@
             "type": "object",
             "title": "Definition of services that comprise the application",
             "additionalProperties": {
-                "$ref": "#/$defs/service"
-            }
-        }
-    },
-    "$defs": {
-        "service": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {
-                "resourceName": {
-                    "type": "string",
-                    "title": "Name of the Azure resource that implements the service",
-                    "description": "Optional. If not specified, the resource name will be constructed from current environment name concatenated with service name (<environment-name><resource-name>, for example 'prodapi')."
-                },
-                "project": {
-                    "type": "string",
-                    "title": "Path to the service source code directory"
-                },
-                "host": {
-                    "type": "string",
-                    "title": "Type of Azure resource used for service implementation",
-                    "description": "If omitted, App Service will be assumed.",
-                    "enum": [
-                        "",
-                        "appservice",
-                        "containerapp",
-                        "function",
-                        "staticwebapp"
-                    ]
-                },
-                "language": {
-                    "type": "string",
-                    "title": "Service implementation language",
-                    "description": "If omitted, .NET will be assumed.",
-                    "enum": [
-                        "",
-                        "dotnet",
-                        "csharp",
-                        "fsharp",
-                        "py",
-                        "python",
-                        "js",
-                        "ts"
-                    ]
-                },
-                "module": {
-                    "type": "string",
-                    "title": "Path of the infrastructure module used to deploy the service relative to the root infra folder",
-                    "description": "If omitted, the CLI will assume the module name is the same as the service name."
-                },
-                "dist": {
-                    "type": "string",
-                    "title": "Relative path to service deployment artifacts",
-                    "description": "The CLI will use files under this path to create the deployment artifact (ZIP file). If omitted, all files under service project directory will be included."
-                },
-                "docker": {
-                    "$ref": "#/$defs/dockerOptions"
-                }
-            },
-            "if": {
-                "not": {
-                    "properties": {
-                        "host": {
-                            "const": "containerapp"
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                    "resourceName": {
+                        "type": "string",
+                        "title": "Name of the Azure resource that implements the service",
+                        "description": "Optional. If not specified, the resource name will be constructed from current environment name concatenated with service name (<environment-name><resource-name>, for example 'prodapi')."
+                    },
+                    "project": {
+                        "type": "string",
+                        "title": "Path to the service source code directory"
+                    },
+                    "host": {
+                        "type": "string",
+                        "title": "Type of Azure resource used for service implementation",
+                        "description": "If omitted, App Service will be assumed.",
+                        "enum": [
+                            "",
+                            "appservice",
+                            "containerapp",
+                            "function",
+                            "staticwebapp"
+                        ]
+                    },
+                    "language": {
+                        "type": "string",
+                        "title": "Service implementation language",
+                        "description": "If omitted, .NET will be assumed.",
+                        "enum": [
+                            "",
+                            "dotnet",
+                            "csharp",
+                            "fsharp",
+                            "py",
+                            "python",
+                            "js",
+                            "ts"
+                        ]
+                    },
+                    "module": {
+                        "type": "string",
+                        "title": "Path of the infrastructure module used to deploy the service relative to the root infra folder",
+                        "description": "If omitted, the CLI will assume the module name is the same as the service name."
+                    },
+                    "dist": {
+                        "type": "string",
+                        "title": "Relative path to service deployment artifacts",
+                        "description": "The CLI will use files under this path to create the deployment artifact (ZIP file). If omitted, all files under service project directory will be included."
+                    },
+                    "docker": {
+                        "type": "object",
+                        "description": "This is only applicable when `host` is `containerapp`",
+                        "additionalProperties": false,
+                        "properties": {
+                            "path": {
+                                "type": "string",
+                                "title": "The path to the Dockerfile",
+                                "description": "Path to the Dockerfile is relative to your service",
+                                "default": "./Dockerfile"
+                            },
+                            "context": {
+                                "type": "string",
+                                "title": "The docker build context",
+                                "description": "When specified overrides the default context",
+                                "default": "."
+                            },
+                            "platform": {
+                                "type": "string",
+                                "title": "The platform target",
+                                "default": "amd64"
+                            }
                         }
                     }
-                }
-            },
-            "then": {
-                "properties": {
-                    "docker": false
-                }
-            },
-            "required": [
-                "project"
-            ]
-        },
-        "dockerOptions": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {
-                "path": {
-                    "type": "string",
-                    "title": "The path to the Dockerfile",
-                    "description": "Path to the Dockerfile is relative to your service",
-                    "default": "./Dockerfile"
                 },
-                "context": {
-                    "type": "string",
-                    "title": "The docker build context",
-                    "description": "When specified overrides the default context",
-                    "default": "."
+                "if": {
+                    "not": {
+                        "properties": {
+                            "host": {
+                                "const": "containerapp"
+                            }
+                        }
+                    }
                 },
-                "platform": {
-                    "type": "string",
-                    "title": "The platform target",
-                    "default": "amd64"
-                }
+                "then": {
+                    "properties": {
+                        "docker": false
+                    }
+                },
+                "required": ["project"]
             }
         }
     }

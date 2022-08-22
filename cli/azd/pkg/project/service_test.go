@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/test/helpers"
 	"github.com/stretchr/testify/require"
@@ -43,6 +44,10 @@ func (st *mockFrameworkService) InstallDependencies(ctx context.Context) error {
 	return nil
 }
 
+func (st *mockFrameworkService) Initialize(ctx context.Context) error {
+	return nil
+}
+
 type mockServiceTarget struct {
 }
 
@@ -50,7 +55,7 @@ func (st *mockServiceTarget) RequiredExternalTools() []tools.ExternalTool {
 	return []tools.ExternalTool{}
 }
 
-func (st *mockServiceTarget) Deploy(_ context.Context, _ *environment.AzdContext, _ string, progress chan<- string) (ServiceDeploymentResult, error) {
+func (st *mockServiceTarget) Deploy(_ context.Context, _ *azdcontext.AzdContext, _ string, progress chan<- string) (ServiceDeploymentResult, error) {
 	progress <- "mock deploy progress"
 	return ServiceDeploymentResult{
 		TargetResourceId: "target-resource-id",
@@ -69,7 +74,7 @@ func TestDeployProgressMessages(t *testing.T) {
 
 	projectConfig, _ := ParseProjectConfig(projectYaml, env)
 	project, _ := projectConfig.GetProject(ctx, env)
-	azdContext, _ := environment.NewAzdContext()
+	azdContext, _ := azdcontext.NewAzdContext()
 
 	mockFramework := &mockFrameworkService{}
 	mockTarget := &mockServiceTarget{}

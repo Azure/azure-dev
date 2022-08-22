@@ -213,15 +213,16 @@ export class GenerateCommand implements RepomanCommand {
         console.info(chalk.white(`Cloning repo for remote...`));
         await repo.clone(remote.name, remote.url);
 
-        const isEmptyRepo = await repo.isEmptyRepo(remote.name);
+        const defaultBranchExists = await repo.remoteBranchExists(remote.name, defaultBranch);
 
-        if (isEmptyRepo) {
-            console.warn(chalk.yellowBright(`Remote is empty!`));
+        if (!defaultBranchExists) {
+            console.warn(chalk.yellowBright(`Remote does not have branch ${chalk.cyan(defaultBranch)}`));
             console.info(`Creating default branch ${chalk.cyan(defaultBranch)}...`);
             await repo.createBranch(defaultBranch);
             await repo.commit("Initial Commit", { empty: true });
             await repo.push(remote.name, defaultBranch);
         } else {
+            await repo.checkoutBranch(defaultBranch);
             const pullBranchExists = await repo.remoteBranchExists(remote.name, defaultBranch);
             if (pullBranchExists) {
                 console.info(chalk.cyan(`Pulling changes from branch ${chalk.cyanBright(defaultBranch)}...`));

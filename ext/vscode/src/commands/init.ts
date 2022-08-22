@@ -7,7 +7,7 @@ import { localize } from '../localize';
 import { createAzureDevCli } from '../utils/azureDevCli';
 import { quickPickWorkspaceFolder } from '../utils/quickPickWorkspaceFolder';
 import { executeAsTask } from '../utils/executeAsTask';
-import { getAzDevTerminalTitle, selectApplicationTemplate } from './cmdUtil';
+import { getAzDevTerminalTitle, selectApplicationTemplate, showReadmeFile } from './cmdUtil';
 import { TelemetryId } from '../telemetry/telemetryId';
 
 export async function init(context: IActionContext, selectedFile?: vscode.Uri, allSelectedFiles?: vscode.Uri): Promise<void> {
@@ -22,11 +22,14 @@ export async function init(context: IActionContext, selectedFile?: vscode.Uri, a
     const command = azureCli.commandBuilder
         .withArg('init')
         .withNamedArg('-t', {value: templateUrl, quoting: vscode.ShellQuoting.Strong});
+    const workspacePath = folder?.uri.fsPath;
 
     // Don't wait
     void executeAsTask(command.build(), getAzDevTerminalTitle(), {
         alwaysRunNew: true,
-        cwd: folder?.uri.fsPath,
+        cwd: workspacePath,
         env: azureCli.env
-    }, TelemetryId.InitCli);
+    }, TelemetryId.InitCli).then(() => {
+        void showReadmeFile(workspacePath);
+    });
 }

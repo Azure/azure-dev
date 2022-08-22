@@ -20,10 +20,25 @@ type ExternalTool interface {
 	Name() string
 }
 
+type ErrSemver struct {
+	ToolName    string
+	VersionInfo VersionInfo
+}
+
+type VersionInfo struct {
+	MinimumVersion semver.Version
+	UpdateCommand  string
+}
+
+func (err *ErrSemver) Error() string {
+	return fmt.Sprintf("need at least version %s or later of %s installed. %s %s version",
+		err.VersionInfo.MinimumVersion.String(), err.ToolName, err.VersionInfo.UpdateCommand, err.ToolName)
+}
+
 // toolInPath checks to see if a program can be found on the PATH, as exec.LookPath
 // does, but returns "(false, nil)" in the case where os.LookPath would return
 // exec.ErrNotFound.
-func toolInPath(name string) (bool, error) {
+func ToolInPath(name string) (bool, error) {
 	_, err := exec.LookPath(name)
 
 	switch {
@@ -36,34 +51,19 @@ func toolInPath(name string) (bool, error) {
 	}
 }
 
-type ErrSemver struct {
-	ToolName    string
-	versionInfo VersionInfo
+func ExecuteCommand(ctx context.Context, cmd string, args ...string) (string, error) {
+	runResult, err := executil.RunWithResult(ctx, executil.RunArgs{
+		Cmd:  cmd,
+		Args: args,
+	})
+	return runResult.Stdout, err
 }
 
-type VersionInfo struct {
-	MinimumVersion semver.Version
-	UpdateCommand  string
-}
-
-func (err *ErrSemver) Error() string {
-	return fmt.Sprintf("need at least version %s or later of %s installed. %s %s version",
-		err.versionInfo.MinimumVersion.String(), err.ToolName, err.versionInfo.UpdateCommand, err.ToolName)
-}
-
-func extractSemver(cliOutput string) (semver.Version, error) {
+func ExtractSemver(cliOutput string) (semver.Version, error) {
 	ver := regexp.MustCompile(`\d+\.\d+\.\d+`).FindString(cliOutput)
 	semver, err := semver.Parse(ver)
 	if err != nil {
 		return semver, err
 	}
 	return semver, nil
-}
-
-func executeCommand(ctx context.Context, cmd string, args ...string) (string, error) {
-	runResult, err := executil.RunWithResult(ctx, executil.RunArgs{
-		Cmd:  cmd,
-		Args: args,
-	})
-	return runResult.Stdout, err
 }

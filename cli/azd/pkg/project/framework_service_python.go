@@ -13,6 +13,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/python"
 	"github.com/otiai10/copy"
 )
 
@@ -22,7 +23,7 @@ type pythonProject struct {
 }
 
 func (pp *pythonProject) RequiredExternalTools() []tools.ExternalTool {
-	return []tools.ExternalTool{tools.NewPythonCli()}
+	return []tools.ExternalTool{python.NewPythonCli()}
 }
 
 func (pp *pythonProject) Package(_ context.Context, progress chan<- string) (string, error) {
@@ -46,7 +47,7 @@ func (pp *pythonProject) Package(_ context.Context, progress chan<- string) (str
 }
 
 func (pp *pythonProject) InstallDependencies(ctx context.Context) error {
-	pythonCli := tools.NewPythonCli()
+	pythonCli := python.NewPythonCli()
 
 	vEnvName := pp.getVenvName()
 	vEnvPath := path.Join(pp.config.Path(), vEnvName)
@@ -82,6 +83,10 @@ func (pp *pythonProject) getVenvName() string {
 
 func (pp *pythonProject) Config() *ServiceConfig {
 	return pp.config
+}
+
+func (pp *pythonProject) Initialize(ctx context.Context) error {
+	return nil
 }
 
 // skipPatterns returns a `copy.Options` which will skip any files

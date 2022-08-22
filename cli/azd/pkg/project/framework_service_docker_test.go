@@ -6,7 +6,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/executil"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/docker"
 	"github.com/azure/azure-dev/cli/azd/test/helpers"
 	"github.com/stretchr/testify/require"
 )
@@ -33,7 +33,7 @@ services:
 	service := prj.Services[0]
 	ran := false
 
-	dockerArgs := tools.DockerArgs{
+	dockerArgs := docker.DockerArgs{
 		RunWithResultFn: func(ctx context.Context, args executil.RunArgs) (executil.RunResult, error) {
 			ran = true
 
@@ -52,10 +52,10 @@ services:
 		},
 	}
 
-	docker := tools.NewDocker(dockerArgs)
+	docker := docker.NewDocker(dockerArgs)
 
 	progress := make(chan string)
-	done := make(chan struct{})
+	done := make(chan bool)
 
 	internalFramework := NewNpmProject(service.Config, &env)
 	progressMessages := []string{}
@@ -64,7 +64,7 @@ services:
 		for value := range progress {
 			progressMessages = append(progressMessages, value)
 		}
-		done <- struct{}{}
+		done <- true
 	}()
 
 	framework := NewDockerProject(service.Config, &env, docker, internalFramework)
@@ -104,7 +104,7 @@ services:
 	service := prj.Services[0]
 	ran := false
 
-	dockerArgs := tools.DockerArgs{
+	dockerArgs := docker.DockerArgs{
 		RunWithResultFn: func(ctx context.Context, args executil.RunArgs) (executil.RunResult, error) {
 			ran = true
 
@@ -123,10 +123,10 @@ services:
 		},
 	}
 
-	docker := tools.NewDocker(dockerArgs)
+	docker := docker.NewDocker(dockerArgs)
 
 	progress := make(chan string)
-	defer close(progress)
+	done := make(chan bool)
 
 	internalFramework := NewNpmProject(service.Config, &env)
 	status := ""
@@ -135,10 +135,13 @@ services:
 		for value := range progress {
 			status = value
 		}
+		done <- true
 	}()
 
 	framework := NewDockerProject(service.Config, &env, docker, internalFramework)
 	res, err := framework.Package(ctx, progress)
+	close(progress)
+	<-done
 
 	require.Equal(t, "imageId", res)
 	require.Nil(t, err)

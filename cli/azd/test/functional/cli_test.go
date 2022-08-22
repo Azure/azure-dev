@@ -11,7 +11,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/fs"
-	"io/ioutil"
 	"net/http"
 	"os"
 	"os/exec"
@@ -27,6 +26,8 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azureutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/commands"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
+	"github.com/azure/azure-dev/cli/azd/pkg/executil"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/test/azdcli"
@@ -98,14 +99,14 @@ func Test_CLI_Init_AsksForSubscriptionIdAndCreatesEnvAndProjectFile(t *testing.T
 	_, err := cli.RunCommandWithStdIn(ctx, "Empty Template\nTESTENV\n\nOther (enter manually)\nMY_SUB_ID\n", "init")
 	require.NoError(t, err)
 
-	file, err := ioutil.ReadFile(getTestEnvPath(dir, "TESTENV"))
+	file, err := os.ReadFile(getTestEnvPath(dir, "TESTENV"))
 
 	require.NoError(t, err)
 
 	require.Regexp(t, regexp.MustCompile(`AZURE_SUBSCRIPTION_ID="MY_SUB_ID"`+"\n"), string(file))
 	require.Regexp(t, regexp.MustCompile(`AZURE_ENV_NAME="TESTENV"`+"\n"), string(file))
 
-	proj, err := project.LoadProjectConfig(filepath.Join(dir, environment.ProjectFileName), &environment.Environment{})
+	proj, err := project.LoadProjectConfig(filepath.Join(dir, azdcontext.ProjectFileName), &environment.Environment{})
 	require.NoError(t, err)
 
 	require.Equal(t, filepath.Base(dir), proj.Name)
@@ -200,7 +201,7 @@ func Internal_Test_CLI_ResourceGroupsName(t *testing.T, envName string, rgName s
 		require.NoError(t, err)
 	}
 
-	envFilePath := filepath.Join(dir, environment.EnvironmentDirectoryName, envName, ".env")
+	envFilePath := filepath.Join(dir, azdcontext.EnvironmentDirectoryName, envName, ".env")
 	env, err := environment.FromFile(envFilePath)
 	require.NoError(t, err)
 
@@ -250,7 +251,50 @@ func Test_CLI_InfraCreateAndDelete(t *testing.T) {
 	_, err = cli.RunCommand(ctx, "infra", "create")
 	require.NoError(t, err)
 
-	envFilePath := filepath.Join(dir, environment.EnvironmentDirectoryName, envName, ".env")
+	envFilePath := filepath.Join(dir, azdcontext.EnvironmentDirectoryName, envName, ".env")
+	env, err := environment.FromFile(envFilePath)
+	require.NoError(t, err)
+
+	// AZURE_STORAGE_ACCOUNT_NAME is an output of the template, make sure it was added to the .env file.
+	// the name should start with 'st'
+	accountName, ok := env.Values["AZURE_STORAGE_ACCOUNT_NAME"]
+	require.True(t, ok)
+	require.Regexp(t, `st\S*`, accountName)
+
+	// Verify that resource groups are created with tag
+	rgs, err := azureutil.GetResourceGroupsForEnvironment(ctx, &env)
+	require.NoError(t, err)
+	require.NotNil(t, rgs)
+
+	// Using `down` here to test the down alias to infra delete
+	_, err = cli.RunCommand(ctx, "down", "--force", "--purge")
+	require.NoError(t, err)
+}
+
+func Test_CLI_InfraCreateAndDeleteUpperCase(t *testing.T) {
+	ctx, cancel := newTestContext(t)
+	defer cancel()
+
+	dir := t.TempDir()
+	t.Logf("DIR: %s", dir)
+
+	envName := "UpperCase" + randomEnvName()
+	t.Logf("AZURE_ENV_NAME: %s", envName)
+
+	cli := azdcli.NewCLI(t)
+	cli.WorkingDirectory = dir
+	cli.Env = append(os.Environ(), "AZURE_LOCATION=eastus2")
+
+	err := copySample(dir, "storage")
+	require.NoError(t, err, "failed expanding sample")
+
+	_, err = cli.RunCommandWithStdIn(ctx, stdinForTests(envName), "init")
+	require.NoError(t, err)
+
+	_, err = cli.RunCommand(ctx, "infra", "create")
+	require.NoError(t, err)
+
+	envFilePath := filepath.Join(dir, azdcontext.EnvironmentDirectoryName, envName, ".env")
 	env, err := environment.FromFile(envFilePath)
 	require.NoError(t, err)
 
@@ -298,7 +342,7 @@ func Test_CLI_InfraCreateAndDeleteWebApp(t *testing.T) {
 
 	// The sample hosts a small application that just responds with a 200 OK with a body of "Hello, `azd`."
 	// (without the quotes). Validate that the application is working.
-	env, err := godotenv.Read(filepath.Join(dir, environment.EnvironmentDirectoryName, envName, ".env"))
+	env, err := godotenv.Read(filepath.Join(dir, azdcontext.EnvironmentDirectoryName, envName, ".env"))
 	require.NoError(t, err)
 
 	url, has := env["WEBSITE_URL"]
@@ -329,16 +373,22 @@ func Test_CLI_InfraCreateAndDeleteWebApp(t *testing.T) {
 	})
 	require.NoError(t, err)
 
+	secrets, err := executil.RunCommandWithShell(ctx, "dotnet", "user-secrets", "list", "--project", filepath.Join(dir, "/src/dotnet/webapp.csproj"))
+	require.NoError(t, err)
+
+	contain := strings.Contains(secrets.Stdout, fmt.Sprintf("WEBSITE_URL = %s", url))
+	require.True(t, contain)
+
 	// Ensure `env refresh` works by removing an output parameter from the .env file and ensure that `env refresh`
 	// brings it back.
 	delete(env, "WEBSITE_URL")
-	err = godotenv.Write(env, filepath.Join(dir, environment.EnvironmentDirectoryName, envName, ".env"))
+	err = godotenv.Write(env, filepath.Join(dir, azdcontext.EnvironmentDirectoryName, envName, ".env"))
 	require.NoError(t, err)
 
 	_, err = cli.RunCommand(ctx, "env", "refresh")
 	require.NoError(t, err)
 
-	env, err = godotenv.Read(filepath.Join(dir, environment.EnvironmentDirectoryName, envName, ".env"))
+	env, err = godotenv.Read(filepath.Join(dir, azdcontext.EnvironmentDirectoryName, envName, ".env"))
 	require.NoError(t, err)
 
 	_, has = env["WEBSITE_URL"]
@@ -560,11 +610,11 @@ func copySample(targetRoot string, sampleName string) error {
 			return os.MkdirAll(targetPath, osutil.PermissionDirectory)
 		}
 
-		contents, err := ioutil.ReadFile(name)
+		contents, err := os.ReadFile(name)
 		if err != nil {
 			return fmt.Errorf("reading sample file: %w", err)
 		}
-		return ioutil.WriteFile(targetPath, contents, osutil.PermissionFile)
+		return os.WriteFile(targetPath, contents, osutil.PermissionFile)
 	})
 }
 
@@ -586,7 +636,7 @@ func stdinForTests(envName string) string {
 }
 
 func getTestEnvPath(dir string, envName string) string {
-	return filepath.Join(dir, environment.EnvironmentDirectoryName, envName, ".env")
+	return filepath.Join(dir, azdcontext.EnvironmentDirectoryName, envName, ".env")
 }
 
 // newTestContext returns a new empty context, suitable for use in tests. If a
@@ -594,7 +644,7 @@ func getTestEnvPath(dir string, envName string) string {
 // respects the deadline.
 func newTestContext(t *testing.T) (context.Context, context.CancelFunc) {
 	ctx := context.Background()
-	ctx = context.WithValue(ctx, environment.OptionsContextKey, &commands.GlobalCommandOptions{})
+	ctx = commands.WithGlobalCommandOptions(ctx, &commands.GlobalCommandOptions{})
 
 	if deadline, ok := t.Deadline(); ok {
 		return context.WithDeadline(ctx, deadline)

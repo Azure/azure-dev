@@ -11,6 +11,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/npm"
 	"github.com/otiai10/copy"
 )
 
@@ -20,11 +21,11 @@ type npmProject struct {
 }
 
 func (np *npmProject) RequiredExternalTools() []tools.ExternalTool {
-	return []tools.ExternalTool{tools.NewNpmCli()}
+	return []tools.ExternalTool{npm.NewNpmCli()}
 }
 
 func (np *npmProject) Package(ctx context.Context, progress chan<- string) (string, error) {
-	npmCli := tools.NewNpmCli()
+	npmCli := npm.NewNpmCli()
 	publishRoot, err := os.MkdirTemp("", "azd")
 	if err != nil {
 		return "", fmt.Errorf("creating package directory for %s: %w", np.config.Name, err)
@@ -64,10 +65,14 @@ func (np *npmProject) Package(ctx context.Context, progress chan<- string) (stri
 }
 
 func (np *npmProject) InstallDependencies(ctx context.Context) error {
-	npmCli := tools.NewNpmCli()
+	npmCli := npm.NewNpmCli()
 	if err := npmCli.Install(ctx, np.config.Path(), false); err != nil {
 		return err
 	}
+	return nil
+}
+
+func (np *npmProject) Initialize(ctx context.Context) error {
 	return nil
 }
 

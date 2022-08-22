@@ -10,9 +10,11 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azureutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/commands"
-	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
+	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/pbnj/go-open"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
@@ -55,9 +57,9 @@ func (m *monitorAction) SetupFlags(
 	persis.BoolVar(&m.monitorOverview, "overview", false, "Open a browser to Application Insights Overview Dashboard.")
 }
 
-func (m *monitorAction) Run(ctx context.Context, _ *cobra.Command, args []string, azdCtx *environment.AzdContext) error {
+func (m *monitorAction) Run(ctx context.Context, _ *cobra.Command, args []string, azdCtx *azdcontext.AzdContext) error {
 	azCli := commands.GetAzCliFromContext(ctx)
-	askOne := makeAskOne(m.rootOptions.NoPrompt)
+	console := input.NewConsole(!m.rootOptions.NoPrompt)
 
 	if err := ensureProject(azdCtx.ProjectPath()); err != nil {
 		return err
@@ -75,7 +77,7 @@ func (m *monitorAction) Run(ctx context.Context, _ *cobra.Command, args []string
 		m.monitorLive = true
 	}
 
-	env, err := loadOrInitEnvironment(ctx, &m.rootOptions.EnvironmentName, azdCtx, askOne)
+	env, err := loadOrInitEnvironment(ctx, &m.rootOptions.EnvironmentName, azdCtx, console)
 	if err != nil {
 		return fmt.Errorf("loading environment: %w", err)
 	}
@@ -90,8 +92,8 @@ func (m *monitorAction) Run(ctx context.Context, _ *cobra.Command, args []string
 		return fmt.Errorf("discovering resource groups from deployment: %w", err)
 	}
 
-	var insightsResources []tools.AzCliResource
-	var portalResources []tools.AzCliResource
+	var insightsResources []azcli.AzCliResource
+	var portalResources []azcli.AzCliResource
 
 	for _, resourceGroup := range resourceGroups {
 		resources, err := azCli.ListResourceGroupResources(ctx, env.GetSubscriptionId(), resourceGroup)

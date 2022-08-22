@@ -8,8 +8,11 @@ repo:
   includeProjectAssets: false
 
   remotes:
-    - name: azure-samples
+    - name: azure-samples-main
       url: git@github.com:Azure-Samples/todo-nodejs-mongo.git
+    - name: azure-samples-staging
+      url: git@github.com:Azure-Samples/todo-nodejs-mongo.git
+      branch: staging
 
   rewrite:
     patterns:

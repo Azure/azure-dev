@@ -6,20 +6,24 @@ import (
 	"sort"
 	"testing"
 
-	"github.com/AlecAivazis/survey/v2"
 	"github.com/azure/azure-dev/cli/azd/pkg/azureutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools"
+	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
+	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/stretchr/testify/require"
 )
 
 func Test_promptEnvironmentName(t *testing.T) {
 	t.Run("valid name", func(t *testing.T) {
+		mockConsole := mocks.NewMockConsole()
+		mockConsole.WhenPrompt(func(options input.ConsoleOptions) bool {
+			return true
+		}).SetError(errors.New("prompt should not be called for valid environment name"))
+
 		environmentName := "hello"
 
-		err := ensureValidEnvironmentName(&environmentName, func(p survey.Prompt, response interface{}) error {
-			return errors.New("prompt should not be called for valid environment name")
-		})
+		err := ensureValidEnvironmentName(context.Background(), &environmentName, mockConsole)
 
 		require.NoError(t, err)
 	})
@@ -27,13 +31,12 @@ func Test_promptEnvironmentName(t *testing.T) {
 	t.Run("empty name gets prompted", func(t *testing.T) {
 		environmentName := ""
 
-		err := ensureValidEnvironmentName(&environmentName, func(p survey.Prompt, response interface{}) error {
-			ptr, ok := response.(*string)
-			require.True(t, ok)
+		mockConsole := mocks.NewMockConsole()
+		mockConsole.WhenPrompt(func(options input.ConsoleOptions) bool {
+			return true
+		}).Respond("someEnv")
 
-			*ptr = "someEnv"
-			return nil
-		})
+		err := ensureValidEnvironmentName(context.Background(), &environmentName, mockConsole)
 
 		require.NoError(t, err)
 		require.Equal(t, "someEnv", environmentName)
@@ -42,14 +45,14 @@ func Test_promptEnvironmentName(t *testing.T) {
 	t.Run("duplicate resource groups ignored", func(t *testing.T) {
 		cli := &fakeAZCLI{
 			GetSubscriptionDeploymentResult: struct {
-				Dep tools.AzCliDeployment
+				Dep azcli.AzCliDeployment
 				Err error
 			}{
-				Dep: tools.AzCliDeployment{
-					Properties: tools.AzCliDeploymentProperties{
-						Dependencies: []tools.AzCliDeploymentPropertiesDependency{
+				Dep: azcli.AzCliDeployment{
+					Properties: azcli.AzCliDeploymentProperties{
+						Dependencies: []azcli.AzCliDeploymentPropertiesDependency{
 							{
-								DependsOn: []tools.AzCliDeploymentPropertiesBasicDependency{
+								DependsOn: []azcli.AzCliDeploymentPropertiesBasicDependency{
 									{
 										ResourceName: "groupA",
 										ResourceType: string(infra.AzureResourceTypeResourceGroup),
@@ -65,7 +68,7 @@ func Test_promptEnvironmentName(t *testing.T) {
 								},
 							},
 							{
-								DependsOn: []tools.AzCliDeploymentPropertiesBasicDependency{
+								DependsOn: []azcli.AzCliDeploymentPropertiesBasicDependency{
 									{
 										ResourceName: "groupA",
 										ResourceType: string(infra.AzureResourceTypeResourceGroup),
@@ -95,14 +98,14 @@ func Test_promptEnvironmentName(t *testing.T) {
 }
 
 type fakeAZCLI struct {
-	tools.AzCli
+	azcli.AzCli
 
 	GetSubscriptionDeploymentResult struct {
-		Dep tools.AzCliDeployment
+		Dep azcli.AzCliDeployment
 		Err error
 	}
 }
 
-func (cli *fakeAZCLI) GetSubscriptionDeployment(_ context.Context, subscriptionId string, deploymentName string) (tools.AzCliDeployment, error) {
+func (cli *fakeAZCLI) GetSubscriptionDeployment(_ context.Context, subscriptionId string, deploymentName string) (azcli.AzCliDeployment, error) {
 	return cli.GetSubscriptionDeploymentResult.Dep, cli.GetSubscriptionDeploymentResult.Err
 }

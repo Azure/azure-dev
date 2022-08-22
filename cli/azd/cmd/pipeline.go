@@ -11,11 +11,14 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/AlecAivazis/survey/v2"
 	"github.com/azure/azure-dev/cli/azd/pkg/commands"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/github"
+	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/git"
+	githubTool "github.com/azure/azure-dev/cli/azd/pkg/tools/github"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
@@ -64,15 +67,15 @@ func (p *pipelineConfigAction) SetupFlags(
 	local.StringVar(&p.pipelineRoleName, "principal-role", "Contributor", "The role to assign to the service principal.")
 }
 
-func (p *pipelineConfigAction) Run(ctx context.Context, _ *cobra.Command, args []string, azdCtx *environment.AzdContext) error {
-	askOne := makeAskOne(p.rootOptions.NoPrompt)
+func (p *pipelineConfigAction) Run(ctx context.Context, _ *cobra.Command, args []string, azdCtx *azdcontext.AzdContext) error {
 	azCli := commands.GetAzCliFromContext(ctx)
+	console := input.NewConsole(!p.rootOptions.NoPrompt)
 
 	if err := ensureProject(azdCtx.ProjectPath()); err != nil {
 		return err
 	}
 
-	env, err := loadOrInitEnvironment(ctx, &p.rootOptions.EnvironmentName, azdCtx, askOne)
+	env, err := loadOrInitEnvironment(ctx, &p.rootOptions.EnvironmentName, azdCtx, console)
 	if err != nil {
 		return fmt.Errorf("loading environment: %w", err)
 	}
@@ -81,8 +84,8 @@ func (p *pipelineConfigAction) Run(ctx context.Context, _ *cobra.Command, args [
 		return fmt.Errorf("loading environment: %w", err)
 	}
 
-	gitCli := tools.NewGitCli()
-	ghCli := tools.NewGitHubCli()
+	gitCli := git.NewGitCli()
+	ghCli := githubTool.NewGitHubCli()
 
 	if err := tools.EnsureInstalled(ctx, azCli, gitCli, ghCli); err != nil {
 		return err
@@ -92,7 +95,7 @@ func (p *pipelineConfigAction) Run(ctx context.Context, _ *cobra.Command, args [
 		return fmt.Errorf("failed to ensure login: %w", err)
 	}
 
-	if err := ensureGitHubLogin(ctx, ghCli, tools.GitHubHostName, askOne); err != nil {
+	if err := ensureGitHubLogin(ctx, ghCli, githubTool.GitHubHostName, console); err != nil {
 		return fmt.Errorf("failed to ensure login to GitHub: %w", err)
 	}
 
@@ -104,18 +107,18 @@ func (p *pipelineConfigAction) Run(ctx context.Context, _ *cobra.Command, args [
 		for {
 			repoSlug, err := github.EnsureRemote(ctx, azdCtx.ProjectDirectory(), p.pipelineRemoteName, gitCli)
 			switch {
-			case errors.Is(err, tools.ErrNotRepository):
+			case errors.Is(err, git.ErrNotRepository):
 				// Offer the user a chance to init a new repository if one does not exist.
-				initRepo := false
-				if askErr := askOne(&survey.Confirm{
-					Message: "Initialize a new git repository?",
-					Default: true,
-				}, &initRepo); askErr != nil {
+				initRepo, err := console.Confirm(ctx, input.ConsoleOptions{
+					Message:      "Initialize a new git repository?",
+					DefaultValue: true,
+				})
+				if err != nil {
 					return "", fmt.Errorf("prompting for git init: %w", err)
 				}
 
 				if !initRepo {
-					return "", err
+					return "", errors.New("confirmation declined")
 				}
 
 				if err := gitCli.InitRepo(ctx, azdCtx.ProjectDirectory()); err != nil {
@@ -124,13 +127,13 @@ func (p *pipelineConfigAction) Run(ctx context.Context, _ *cobra.Command, args [
 
 				// Recovered from this error, try again
 				continue
-			case errors.Is(err, tools.ErrNoSuchRemote):
+			case errors.Is(err, git.ErrNoSuchRemote):
 				// Offer the user a chance to create the remote if one does not exist.
-				addRemote := false
-				if err := askOne(&survey.Confirm{
-					Message: fmt.Sprintf("A remote named \"%s\" was not found. Would you like to configure one?", p.pipelineRemoteName),
-					Default: true,
-				}, &addRemote); err != nil {
+				addRemote, err := console.Confirm(ctx, input.ConsoleOptions{
+					Message:      fmt.Sprintf("A remote named \"%s\" was not found. Would you like to configure one?", p.pipelineRemoteName),
+					DefaultValue: true,
+				})
+				if err != nil {
 					return "", fmt.Errorf("prompting for remote init: %w", err)
 				}
 
@@ -139,17 +142,17 @@ func (p *pipelineConfigAction) Run(ctx context.Context, _ *cobra.Command, args [
 				}
 
 				// There are a few ways to configure the remote so offer a choice to the user.
-				var idx int
-
-				if err := askOne(&survey.Select{
+				idx, err := console.Select(ctx, input.ConsoleOptions{
 					Message: "How would you like to configure your remote?",
 					Options: []string{
 						"Select an existing GitHub project",
 						"Create a new private GitHub repository",
 						"Enter a remote URL directly",
 					},
-					Default: "Create a new private GitHub repository",
-				}, &idx); err != nil {
+					DefaultValue: "Create a new private GitHub repository",
+				})
+
+				if err != nil {
 					return "", fmt.Errorf("prompting for remote configuration type: %w", err)
 				}
 
@@ -158,14 +161,14 @@ func (p *pipelineConfigAction) Run(ctx context.Context, _ *cobra.Command, args [
 				switch idx {
 				// Select from an existing GitHub project
 				case 0:
-					url, err := getRemoteUrlFromExisting(ctx, ghCli, askOne)
+					url, err := getRemoteUrlFromExisting(ctx, ghCli, console)
 					if err != nil {
 						return "", fmt.Errorf("getting remote from existing repository: %w", err)
 					}
 					remoteUrl = url
 				// Create a new project
 				case 1:
-					url, err := getRemoteUrlFromNewRepository(ctx, ghCli, azdCtx, askOne)
+					url, err := getRemoteUrlFromNewRepository(ctx, ghCli, azdCtx, console)
 					if err != nil {
 						return "", fmt.Errorf("getting remote from new repository: %w", err)
 					}
@@ -173,7 +176,7 @@ func (p *pipelineConfigAction) Run(ctx context.Context, _ *cobra.Command, args [
 					remoteUrl = url
 				// Enter a URL directly.
 				case 2:
-					url, err := p.getRemoteUrlFromPrompt(askOne)
+					url, err := p.getRemoteUrlFromPrompt(ctx, console)
 					if err != nil {
 						return "", fmt.Errorf("getting remote from prompt: %w", err)
 					}
@@ -242,12 +245,12 @@ func (p *pipelineConfigAction) Run(ctx context.Context, _ *cobra.Command, args [
 You can view the GitHub Actions here: https://github.com/%s/actions
 `, repoSlug)
 
-	var doPush bool
+	doPush, err := console.Confirm(ctx, input.ConsoleOptions{
+		Message:      "Would you like to commit and push your local changes to start a new GitHub Actions run?",
+		DefaultValue: true,
+	})
 
-	if err := askOne(&survey.Confirm{
-		Message: "Would you like to commit and push your local changes to start a new GitHub Actions run?",
-		Default: true,
-	}, &doPush); err != nil {
+	if err != nil {
 		return fmt.Errorf("prompting to push: %w", err)
 	}
 
@@ -257,7 +260,7 @@ You can view the GitHub Actions here: https://github.com/%s/actions
 	// as a repo where Actions are disabled. Sadly, there's not GitHub API to fetch exact information
 	// to distinguish between disabled-after-fork v/s repo-disabled-actions v/s similar scenarios).
 	if doPush && !newGitHubRepoCreated {
-		cancelPushing, err := notifyWhenGitHubActionsAreDisabled(ctx, gitCli, ghCli, azdCtx, repoSlug, p.pipelineRemoteName, currentBranch, askOne)
+		cancelPushing, err := notifyWhenGitHubActionsAreDisabled(ctx, gitCli, ghCli, azdCtx, repoSlug, p.pipelineRemoteName, currentBranch, console)
 		if err != nil {
 			return fmt.Errorf("ensure github actions: %w", err)
 		}
@@ -288,15 +291,19 @@ You can view the GitHub Actions here: https://github.com/%s/actions
 
 // getRemoteUrlFromPrompt interactively prompts the user for a URL for a GitHub repository. It validates
 // that the URL is well formed and is in the correct format for a GitHub repository.
-func (p *pipelineConfigAction) getRemoteUrlFromPrompt(askOne Asker) (string, error) {
+func (p *pipelineConfigAction) getRemoteUrlFromPrompt(ctx context.Context, console input.Console) (string, error) {
 	remoteUrl := ""
 
 	for remoteUrl == "" {
-		if err := askOne(&survey.Input{
+		promptValue, err := console.Prompt(ctx, input.ConsoleOptions{
 			Message: fmt.Sprintf("Please enter the url to use for remote %s:", p.pipelineRemoteName),
-		}, &remoteUrl); err != nil {
+		})
+
+		if err != nil {
 			return "", fmt.Errorf("prompting for remote url: %w", err)
 		}
+
+		remoteUrl = promptValue
 
 		if _, err := github.GetSlugForRemote(remoteUrl); errors.Is(err, github.ErrRemoteHostIsNotGitHub) {
 			fmt.Printf("error: \"%s\" is not a valid GitHub URL.\n", remoteUrl)
@@ -309,22 +316,23 @@ func (p *pipelineConfigAction) getRemoteUrlFromPrompt(askOne Asker) (string, err
 	return remoteUrl, nil
 }
 
-func getRemoteUrlFromNewRepository(ctx context.Context, ghCli tools.GitHubCli, azdCtx *environment.AzdContext, askOne Asker) (string, error) {
+func getRemoteUrlFromNewRepository(ctx context.Context, ghCli githubTool.GitHubCli, azdCtx *azdcontext.AzdContext, console input.Console) (string, error) {
 	var repoName string
 
 	currentPathName := azdCtx.ProjectDirectory()
 	currentFolderName := filepath.Base(currentPathName)
 
 	for {
-		if err := askOne(&survey.Input{
-			Message: "Enter the name for your new repository OR Hit enter to use this name:",
-			Default: currentFolderName,
-		}, &repoName); err != nil {
+		repoName, err := console.Prompt(ctx, input.ConsoleOptions{
+			Message:      "Enter the name for your new repository OR Hit enter to use this name:",
+			DefaultValue: currentFolderName,
+		})
+		if err != nil {
 			return "", fmt.Errorf("asking for new repository name: %w", err)
 		}
 
-		err := ghCli.CreatePrivateRepository(ctx, repoName)
-		if errors.Is(err, tools.ErrRepositoryNameInUse) {
+		err = ghCli.CreatePrivateRepository(ctx, repoName)
+		if errors.Is(err, githubTool.ErrRepositoryNameInUse) {
 			fmt.Printf("error: the repository name '%s' is already in use\n", repoName)
 			continue // try again
 		} else if err != nil {
@@ -343,7 +351,7 @@ func getRemoteUrlFromNewRepository(ctx context.Context, ghCli tools.GitHubCli, a
 
 }
 
-func getRemoteUrlFromExisting(ctx context.Context, ghCli tools.GitHubCli, askOne Asker) (string, error) {
+func getRemoteUrlFromExisting(ctx context.Context, ghCli githubTool.GitHubCli, console input.Console) (string, error) {
 	repos, err := ghCli.ListRepositories(ctx)
 	if err != nil {
 		return "", fmt.Errorf("listing existing repositories: %w", err)
@@ -354,27 +362,28 @@ func getRemoteUrlFromExisting(ctx context.Context, ghCli tools.GitHubCli, askOne
 		options[idx] = repo.NameWithOwner
 	}
 
-	var repoIdx int
-	if err := askOne(&survey.Select{
+	repoIdx, err := console.Select(ctx, input.ConsoleOptions{
 		Message: "Please choose an existing GitHub repository",
 		Options: options,
-	}, &repoIdx); err != nil {
+	})
+
+	if err != nil {
 		return "", fmt.Errorf("prompting for repository: %w", err)
 	}
 
 	return selectRemoteUrl(ctx, ghCli, repos[repoIdx])
 }
 
-func selectRemoteUrl(ctx context.Context, ghCli tools.GitHubCli, repo tools.GhCliRepository) (string, error) {
+func selectRemoteUrl(ctx context.Context, ghCli githubTool.GitHubCli, repo githubTool.GhCliRepository) (string, error) {
 	protocolType, err := ghCli.GetGitProtocolType(ctx)
 	if err != nil {
 		return "", fmt.Errorf("detecting default protocol: %w", err)
 	}
 
 	switch protocolType {
-	case tools.GitHttpsProtocolType:
+	case githubTool.GitHttpsProtocolType:
 		return repo.HttpsUrl, nil
-	case tools.GitSshProtocolType:
+	case githubTool.GitSshProtocolType:
 		return repo.SshUrl, nil
 	default:
 		panic(fmt.Sprintf("unexpected protocol type: %s", protocolType))
@@ -383,7 +392,7 @@ func selectRemoteUrl(ctx context.Context, ghCli tools.GitHubCli, repo tools.GhCl
 
 // ensureGitHubLogin ensures the user is logged into the GitHub CLI. If not, it prompt the user
 // if they would like to log in and if so runs `gh auth login` interactively.
-func ensureGitHubLogin(ctx context.Context, ghCli tools.GitHubCli, hostname string, askOne Asker) error {
+func ensureGitHubLogin(ctx context.Context, ghCli githubTool.GitHubCli, hostname string, console input.Console) error {
 	loggedIn, err := ghCli.CheckAuth(ctx, hostname)
 	if err != nil {
 		return err
@@ -395,10 +404,11 @@ func ensureGitHubLogin(ctx context.Context, ghCli tools.GitHubCli, hostname stri
 
 	for {
 		var accept bool
-		if err := askOne(&survey.Confirm{
-			Message: "This command requires you to be logged into GitHub. Log in using the GitHub CLI?",
-			Default: true,
-		}, &accept); err != nil {
+		accept, err := console.Confirm(ctx, input.ConsoleOptions{
+			Message:      "This command requires you to be logged into GitHub. Log in using the GitHub CLI?",
+			DefaultValue: true,
+		})
+		if err != nil {
 			return fmt.Errorf("prompting to log in to github: %w", err)
 		}
 
@@ -442,13 +452,13 @@ func (selection gitHubActionsEnablingChoice) String() string {
 // Returns true, nil if user decides to cancel pushing changes.
 func notifyWhenGitHubActionsAreDisabled(
 	ctx context.Context,
-	gitCli tools.GitCli,
-	ghCli tools.GitHubCli,
-	azdCtx *environment.AzdContext,
+	gitCli git.GitCli,
+	ghCli githubTool.GitHubCli,
+	azdCtx *azdcontext.AzdContext,
 	repoSlug string,
 	origin string,
 	branch string,
-	askOne Asker) (bool, error) {
+	console input.Console) (bool, error) {
 
 	ghActionsInUpstreamRepo, err := ghCli.GitHubActionsExists(ctx, repoSlug)
 	if err != nil {
@@ -504,15 +514,16 @@ func notifyWhenGitHubActionsAreDisabled(
 			withHighLightFormat("https://github.com/%s/actions", repoSlug),
 			withHighLightFormat("https://github.com/%s/settings/actions", repoSlug))
 
-		var rawSelection int
-		if err := askOne(&survey.Select{
+		rawSelection, err := console.Select(ctx, input.ConsoleOptions{
 			Message: "What would you like to do now?",
 			Options: []string{
 				manualChoice.String(),
 				cancelChoice.String(),
 			},
-			Default: manualChoice,
-		}, &rawSelection); err != nil {
+			DefaultValue: manualChoice,
+		})
+
+		if err != nil {
 			return false, fmt.Errorf("prompting to enable github actions: %w", err)
 		}
 		choice := gitHubActionsEnablingChoice(rawSelection)

@@ -22,8 +22,13 @@ jobs:
             $jobName = $template.Replace('/', '_')
             $matrix[$jobName] = @{ TemplateName = $template }
           }
+          # Adding extra test for capitals letters support. Using first template
+          $firstTemplate = $($templateNames)[0]
+          $capitalsTest = $firstTemplate.Replace('/', '_') + "-Upper-case-test"
+          $matrix[$capitalsTest] = @{ TemplateName = $firstTemplate; UseUpperCase = "true" }
+
           Write-Host "Matrix:"
-          Write-Host $matrix
+          Write-Host ($matrix | Format-List | Out-String)
 
           $matrixJson = ConvertTo-Json $matrix -Depth 100 -Compress
           Write-Host "##vso[task.setvariable variable=Matrix;isOutput=true]$matrixJson"
@@ -55,29 +60,56 @@ jobs:
           } else {
             Write-Host "Using specified azd version: $(AzdVersion)"
           }
-        displayName: Ensure $(AzdVersion) is set
+        displayName: Ensure AzdVersion is set
+
+      - pwsh: |
+          if (!$env:TEMPLATEBRANCHNAME) {
+            Write-Host "TemplateBranchName variable not set. Using 'staging'"
+            Write-Host "##vso[task.setvariable variable=TemplateBranchName]staging"
+          } else {
+            Write-Host "Using specified azd version: $(TemplateBranchName)"
+          }
+        displayName: Ensure TemplateBranchName is set
+
+      - pwsh: |
+          if (!$env:DEPLOYLOCATION) {
+            Write-Host "DeployLocation variable not set. Using 'eastus2'"
+            Write-Host "##vso[task.setvariable variable=DeployLocation]eastus2"
+          } else {
+            Write-Host "Using specified azd version: $(DeployLocation)"
+          }
+        displayName: Ensure DeployLocation is set
 
       - bash: curl -fsSL https://aka.ms/install-azd.sh | bash -s -- --version '$(AzdVersion)' --verbose
         displayName: Install azd
 
       - pwsh: |
           $templateName = '$(TemplateName)'.Substring(14)
-          $resourceGroupName = "azd-template-test-$templateName-$(Build.BuildId)"
+          $useUpperCaseName = '$(UseUpperCase)'
+          $envPrefixName = "azd-template-test"
+          if($useUpperCaseName -eq "true") {
+            # Use upper case name for env prefix name
+            $envPrefixName = "AZD-TEMPLATE-UPPER-TEST"
+          } 
+          $resourceGroupName = "rg-$envPrefixName-$templateName-$(Build.BuildId)"
           Write-Host "Resource group name: $resourceGroupName"
           Write-Host "##vso[task.setvariable variable=ResourceGroupName]$resourceGroupName"
+          Write-Host "##vso[task.setvariable variable=EnvPrefixName]$envPrefixName"
+        displayName: Set Resource Group Name
 
       - task: Bash@3
+        displayName: Test templates
         inputs:
           targetType: filePath
           filePath: templates/tests/test-templates.sh
           arguments: >
-            -e 'azd-template-test'
+            -e '$(EnvPrefixName)'
             -t '$(TemplateName)'
+            -b '$(TemplateBranchName)'
             -s '$(Build.BuildId)'
-            -l 'centralus'
+            -l '$(DeployLocation)'
             -p 'list'
           workingDirectory: templates/tests
-        displayName: Test templates
 
       - pwsh: |
           $resourceGroupId = az group show `

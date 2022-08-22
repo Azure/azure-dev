@@ -6,10 +6,10 @@ package azureutil
 import (
 	"strings"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/tools"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 )
 
-type Locs []tools.AzCliLocation
+type Locs []azcli.AzCliLocation
 
 func (s Locs) Len() int { return len(s) }
 func (s Locs) Less(i, j int) bool {

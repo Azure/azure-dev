@@ -2,12 +2,16 @@ package project
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"path/filepath"
+	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/commands"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools"
+	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/docker"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/swa"
 )
 
 type ServiceConfig struct {
@@ -29,7 +33,20 @@ type ServiceConfig struct {
 	Module string `yaml:"module"`
 	// The optional docker options
 	Docker DockerProjectOptions `yaml:"docker"`
+	// The infrastructure provisioning configuration
+	Infra provisioning.Options `yaml:"infra"`
+
+	handlers map[Event][]ServiceLifecycleEventHandlerFn
 }
+
+type ServiceLifecycleEventArgs struct {
+	Project *ProjectConfig
+	Service *ServiceConfig
+	Args    map[string]any
+}
+
+// Function definition for project events
+type ServiceLifecycleEventHandlerFn func(ctx context.Context, args ServiceLifecycleEventArgs) error
 
 // Path returns the fully qualified path to the project
 func (sc *ServiceConfig) Path() string {
@@ -67,11 +84,11 @@ func (sc *ServiceConfig) GetServiceTarget(ctx context.Context, env *environment.
 	case "", string(AppServiceTarget):
 		target = NewAppServiceTarget(sc, env, scope, azCli)
 	case string(ContainerAppTarget):
-		target = NewContainerAppTarget(sc, env, scope, azCli, tools.NewDocker(tools.DockerArgs{}))
+		target = NewContainerAppTarget(sc, env, scope, azCli, docker.NewDocker(docker.DockerArgs{}))
 	case string(AzureFunctionTarget):
 		target = NewFunctionAppTarget(sc, env, scope, azCli)
 	case string(StaticWebAppTarget):
-		target = NewStaticWebAppTarget(sc, env, scope, azCli, tools.NewSwaCli())
+		target = NewStaticWebAppTarget(sc, env, scope, azCli, swa.NewSwaCli())
 	default:
 		return nil, fmt.Errorf("unsupported host '%s' for service '%s'", sc.Host, sc.Name)
 	}
@@ -97,8 +114,80 @@ func (sc *ServiceConfig) GetFrameworkService(ctx context.Context, env *environme
 	// For containerized applications we use a nested framework service
 	if sc.Host == string(ContainerAppTarget) {
 		sourceFramework := frameworkService
-		frameworkService = NewDockerProject(sc, env, tools.NewDocker(tools.DockerArgs{}), sourceFramework)
+		frameworkService = NewDockerProject(sc, env, docker.NewDocker(docker.DockerArgs{}), sourceFramework)
 	}
 
 	return &frameworkService, nil
+}
+
+// Adds an event handler for the specified event name
+func (sc *ServiceConfig) AddHandler(name Event, handler ServiceLifecycleEventHandlerFn) error {
+	newHandler := fmt.Sprintf("%v", handler)
+	events := sc.handlers[name]
+
+	for _, ref := range events {
+		existingHandler := fmt.Sprintf("%v", ref)
+
+		if newHandler == existingHandler {
+			return fmt.Errorf("event handler has already been registered for %s event", name)
+		}
+	}
+
+	events = append(events, handler)
+	sc.handlers[name] = events
+
+	return nil
+}
+
+// Removes the event handler for the specified event name
+func (sc *ServiceConfig) RemoveHandler(name Event, handler ServiceLifecycleEventHandlerFn) error {
+	newHandler := fmt.Sprintf("%v", handler)
+	events := sc.handlers[name]
+	for i, ref := range events {
+		existingHandler := fmt.Sprintf("%v", ref)
+
+		if newHandler == existingHandler {
+			sc.handlers[name] = append(events[:i], events[i+1:]...)
+			return nil
+		}
+	}
+
+	return fmt.Errorf("specified handler was not found in %s event registrations", name)
+}
+
+// Raises the specified event and calls any registered event handlers
+func (sc *ServiceConfig) RaiseEvent(ctx context.Context, name Event, args map[string]any) error {
+	handlerErrors := []error{}
+
+	if args == nil {
+		args = make(map[string]any)
+	}
+
+	eventArgs := ServiceLifecycleEventArgs{
+		Project: sc.Project,
+		Service: sc,
+		Args:    args,
+	}
+
+	handlers := sc.handlers[name]
+
+	// TODO: Opportunity to dispatch these event handlers in parallel if needed
+	for _, handler := range handlers {
+		err := handler(ctx, eventArgs)
+		if err != nil {
+			handlerErrors = append(handlerErrors, err)
+		}
+	}
+
+	// Build final error string if their are any failures
+	if len(handlerErrors) > 0 {
+		lines := make([]string, len(handlerErrors))
+		for i, err := range handlerErrors {
+			lines[i] = err.Error()
+		}
+
+		return errors.New(strings.Join(lines, ","))
+	}
+
+	return nil
 }

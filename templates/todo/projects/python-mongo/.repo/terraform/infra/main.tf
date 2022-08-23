@@ -27,7 +27,7 @@ resource "random_string" "resource_token" {
 }
 
 module "applicationinsights" {
-  source         = "../../../../../common/infra/terraform"
+  source         = "../../../../../../common/infra/terraform"
   location       = var.location
   rg_name        = azurerm_resource_group.rg.name
   env_name       = var.name

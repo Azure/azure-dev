@@ -69,6 +69,7 @@ ignoreWords:
     - Retryable
     - httptrigger
     - resourcegroups
+    - devcontainer
 useGitignore: true
 dictionaryDefinitions:
     - name: gitHubUserAliases

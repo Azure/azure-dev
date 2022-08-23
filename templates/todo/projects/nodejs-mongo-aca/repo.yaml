@@ -18,7 +18,7 @@ repo:
     patterns:
       - "**/azure.@(yml|yaml)"
       - "**/*.bicep"
-      
+
   assets:
     # Common assets
     # Rule for Path Rewrite Only
@@ -38,15 +38,24 @@ repo:
       to: ./src/api
       patterns:
         - openapi.yaml
-     
-    # Template common
+
+    # Templates common
     - from: ../../../common
       to: ./
-      ignore: 
-      - "infra/**/*"
+      ignore:
+        - .devcontainer/**/*
+        - "infra/**/*"
 
     - from: ../../../common/infra/bicep
       to: ./infra
+
+    # .devcontainer common (devcontainer.json)
+    - from: ../../../common/.devcontainer/devcontainer.json/nodejs
+      to: ./.devcontainer
+
+    # .devcontainer common (Dockerfile)
+    - from: ../../../common/.devcontainer/Dockerfile/base
+      to: ./.devcontainer
 
     # Assets common
     - from: ../../common/assets
@@ -55,7 +64,7 @@ repo:
     # Tests common
     - from: ../../common/tests
       to: ./tests
-      
+
     # ACA infra common
     - from: ../../common/infra/aca/bicep
       to: ./infra
@@ -75,5 +84,3 @@ repo:
       ignore:
         - "build/**/*"
         - "node_modules/**/*"
-
-

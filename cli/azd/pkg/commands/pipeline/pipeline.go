@@ -5,6 +5,7 @@ package pipeline
 
 import (
 	"context"
+	"encoding/json"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/commands"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
@@ -16,14 +17,30 @@ import (
 
 type subareaProvider interface {
 	requiredTools() []tools.ExternalTool
+	preConfigureCheck(ctx context.Context) error
+	name() string
 }
 
 type scmProvider interface {
 	subareaProvider
+	configureGitRemote(branchName string) (string, error)
+	preventGitPush(
+		ctx context.Context,
+		repoSlug string,
+		remoteName string,
+		branchName string,
+		console input.Console) (bool, error)
 }
 
 type ciProvider interface {
 	subareaProvider
+	configureConnection(
+		ctx context.Context,
+		repoSlug string,
+		environmentName string,
+		location string,
+		subscriptionId string,
+		credential json.RawMessage) error
 }
 
 // pipelineConfigAction defines the action for pipeline config command

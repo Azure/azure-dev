@@ -236,7 +236,10 @@ func (manager *pipelineManager) configure(ctx context.Context) error {
 			return err
 		}
 	} else {
-		fmt.Printf("To fully enable GitHub Actions you need to push this repo to GitHub using 'git push --set-upstream %s %s'.\n", p.pipelineRemoteName, currentBranch)
+		fmt.Printf(
+			"To fully enable GitHub Actions you need to push this repo to GitHub using 'git push --set-upstream %s %s'.\n",
+			manager.pipelineRemoteName,
+			currentBranch)
 	}
 
 	return nil

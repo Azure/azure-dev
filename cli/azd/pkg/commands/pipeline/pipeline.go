@@ -6,8 +6,8 @@ package pipeline
 import (
 	"context"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/azd_context"
-	"github.com/azure/azure-dev/cli/azd/pkg/commands/global_command_options"
+	"github.com/azure/azure-dev/cli/azd/pkg/commands"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/spf13/cobra"
@@ -32,10 +32,9 @@ type pipelineConfigAction struct {
 }
 
 // NewConfigAction creates an instance of pipelineConfigAction
-func NewConfigAction(rootOptions *global_command_options.GlobalCommandOptions) *pipelineConfigAction {
+func NewConfigAction(rootOptions *commands.GlobalCommandOptions) *pipelineConfigAction {
 	return &pipelineConfigAction{
 		manager: &pipelineManager{
-			askOne:      input.NewAsker(rootOptions.NoPrompt),
 			rootOptions: rootOptions,
 		},
 	}
@@ -53,7 +52,7 @@ func (p *pipelineConfigAction) SetupFlags(
 
 // Run implements action interface
 func (p *pipelineConfigAction) Run(
-	ctx context.Context, _ *cobra.Command, args []string, azdCtx *azd_context.AzdContext) error {
+	ctx context.Context, _ *cobra.Command, args []string, azdCtx *azdcontext.AzdContext) error {
 
 	// TODO: Providers can be init at this point either from azure.yaml or from command args
 	// Using GitHub by default for now. To be updated to either GitHub or Azdo.
@@ -63,6 +62,7 @@ func (p *pipelineConfigAction) Run(
 	p.manager.ciProvider = &gitHubCiProvider{}
 
 	// set context for manager
+	p.manager.console = input.NewConsole(!p.manager.rootOptions.NoPrompt)
 	p.manager.azdCtx = azdCtx
 
 	return p.manager.configure(ctx)

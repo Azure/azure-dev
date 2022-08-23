@@ -8,12 +8,9 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/application_context"
-	"github.com/azure/azure-dev/cli/azd/pkg/azd_context"
-	"github.com/azure/azure-dev/cli/azd/pkg/commands/global_command_options"
-	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/commands"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
-	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 )
 
@@ -22,9 +19,9 @@ import (
 type pipelineManager struct {
 	scmProvider
 	ciProvider
-	askOne                       input.Asker
-	azdCtx                       *azd_context.AzdContext
-	rootOptions                  *global_command_options.GlobalCommandOptions
+	console                      input.Console
+	azdCtx                       *azdcontext.AzdContext
+	rootOptions                  *commands.GlobalCommandOptions
 	pipelineServicePrincipalName string
 	pipelineRemoteName           string
 	pipelineRoleName             string
@@ -55,12 +52,12 @@ func (manager *pipelineManager) configure(ctx context.Context) error {
 	// check that scm and ci providers are set
 	validateDependencyInjection(manager)
 
-	if err := project.EnsureProject(manager.azdCtx.ProjectPath()); err != nil {
+	if err := ensureProject(manager.azdCtx.ProjectPath()); err != nil {
 		return err
 	}
 
 	// check all required tools are installed
-	azCli := application_context.GetAzCliFromContext(ctx)
+	azCli := commands.GetAzCliFromContext(ctx)
 	requiredTools := manager.requiredTools()
 	requiredTools = append(requiredTools, azCli)
 	if err := tools.EnsureInstalled(ctx, requiredTools...); err != nil {
@@ -68,7 +65,7 @@ func (manager *pipelineManager) configure(ctx context.Context) error {
 	}
 
 	// Read or init env
-	_, err := environment.LoadOrInitEnvironment(ctx, &manager.rootOptions.EnvironmentName, manager.azdCtx, manager.askOne)
+	_, err := loadOrInitEnvironment(ctx, &manager.rootOptions.EnvironmentName, manager.azdCtx, manager.console)
 	if err != nil {
 		return fmt.Errorf("loading environment: %w", err)
 	}

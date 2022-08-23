@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/commands"
+	"github.com/azure/azure-dev/cli/azd/pkg/commands/pipeline"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/github"
@@ -40,7 +41,7 @@ For more information, go to https://aka.ms/azure-dev/pipeline.`,
 
 func pipelineConfigCmd(rootOptions *commands.GlobalCommandOptions) *cobra.Command {
 	cmd := commands.Build(
-		&pipelineConfigAction{rootOptions: rootOptions},
+		pipeline.NewConfigAction(rootOptions),
 		rootOptions,
 		"config",
 		"Create and configure your deployment pipeline by using GitHub Actions.",

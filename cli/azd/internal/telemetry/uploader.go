@@ -12,9 +12,8 @@ import (
 )
 
 const (
-	maxRetryCount      = 3
-	maxReadFailCount   = 5
-	maxRemoveFailCount = 5
+	maxRetryCount       = 3
+	maxStorageFailCount = 5
 )
 
 var (
@@ -71,18 +70,18 @@ func (u *TelemetryUploader) uploadNextItem(ctx context.Context) (bool, error) {
 	item, err := u.reliablePeek(ctx)
 
 	if err != nil {
-		return true, fmt.Errorf("failed to peek after %d attempts: %w", maxReadFailCount, err)
+		return true, fmt.Errorf("failed to peek after %d attempts: %w", maxStorageFailCount, err)
 	}
 
 	if item == nil {
 		return true, nil
 	}
 
-	u.transmit(item)
+	u.transmit(ctx, item)
 	err = u.reliableRemove(ctx, item)
 
 	if err != nil {
-		return true, fmt.Errorf("failed to remove after %d attempts: %v", maxRemoveFailCount, err)
+		return true, fmt.Errorf("failed to remove after %d attempts: %v", maxStorageFailCount, err)
 	}
 
 	return false, nil
@@ -90,7 +89,7 @@ func (u *TelemetryUploader) uploadNextItem(ctx context.Context) (bool, error) {
 
 func (u *TelemetryUploader) reliablePeek(ctx context.Context) (*StoredItem, error) {
 	var item *StoredItem
-	err := retry.Do(ctx, retry.WithMaxRetries(maxReadFailCount, retry.NewConstant(storageQueueRetryDelay)), func(ctx context.Context) error {
+	err := retry.Do(ctx, retry.WithMaxRetries(maxStorageFailCount, retry.NewConstant(storageQueueRetryDelay)), func(ctx context.Context) error {
 		peekItem, err := u.telemetryQueue.Peek()
 
 		if err != nil {
@@ -114,12 +113,22 @@ func (u *TelemetryUploader) reliablePeek(ctx context.Context) (*StoredItem, erro
 }
 
 func (u *TelemetryUploader) reliableRemove(ctx context.Context, item *StoredItem) error {
-	return retry.Do(ctx, retry.WithMaxRetries(maxRemoveFailCount, retry.NewConstant(storageQueueRetryDelay)), func(ctx context.Context) error {
+	return retry.Do(ctx, retry.WithMaxRetries(maxStorageFailCount, retry.NewConstant(storageQueueRetryDelay)), func(ctx context.Context) error {
 		return retry.RetryableError(u.telemetryQueue.Remove(item))
 	})
 }
 
-func (u *TelemetryUploader) transmit(item *StoredItem) {
+func (u *TelemetryUploader) reliableEnqueueWithDelay(ctx context.Context, itemName string, payload []byte, delayDuration time.Duration, attempts int) {
+	err := retry.Do(ctx, retry.WithMaxRetries(maxStorageFailCount, retry.NewConstant(storageQueueRetryDelay)), func(ctx context.Context) error {
+		return retry.RetryableError(u.telemetryQueue.EnqueueWithDelay(payload, delayDuration, attempts))
+	})
+
+	if err != nil {
+		log.Printf("unable to requeue item %v after %d attempts", itemName, attempts)
+	}
+}
+
+func (u *TelemetryUploader) transmit(ctx context.Context, item *StoredItem) {
 	payload := item.Message()
 	var telemetryItems appinsightsexporter.TelemetryItems
 	if u.isDebugMode {
@@ -139,7 +148,7 @@ func (u *TelemetryUploader) transmit(item *StoredItem) {
 			return
 		}
 
-		u.telemetryQueue.EnqueueWithDelay(payload, defaultTransmitRetryDelay, attempts)
+		u.reliableEnqueueWithDelay(ctx, item.fileName, payload, defaultTransmitRetryDelay, attempts)
 	} else if result.CanRetry() {
 		if attempts > maxRetryCount {
 			log.Printf("failed to send %v after %d attempts, statusCode: %d\n", item.fileName, maxRetryCount, result.StatusCode)
@@ -164,9 +173,9 @@ func (u *TelemetryUploader) transmit(item *StoredItem) {
 			var telemetryItems appinsightsexporter.TelemetryItems
 			telemetryItems.Deserialize(payload)
 			newPayload, _ := result.GetRetryItems(payload, telemetryItems)
-			u.telemetryQueue.EnqueueWithDelay(newPayload, retryDelay, attempts)
+			u.reliableEnqueueWithDelay(ctx, item.fileName, newPayload, retryDelay, attempts)
 		} else {
-			u.telemetryQueue.EnqueueWithDelay(payload, retryDelay, attempts)
+			u.reliableEnqueueWithDelay(ctx, item.fileName, payload, retryDelay, attempts)
 		}
 	} else {
 		log.Printf("failed to transmit item %s with non-retriable status code %d\n", item.fileName, result.StatusCode)

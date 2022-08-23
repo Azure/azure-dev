@@ -130,8 +130,8 @@ func initialize() (*TelemetrySystem, error) {
 }
 
 // Flushes all ongoing telemetry and shuts down telemetry
-func (ts *TelemetrySystem) Shutdown(ctx context.Context) {
-	instance.tracerProvider.Shutdown(ctx)
+func (ts *TelemetrySystem) Shutdown(ctx context.Context) error {
+	return instance.tracerProvider.Shutdown(ctx)
 }
 
 // Returns the telemetry queue instance.
@@ -159,7 +159,7 @@ func (ts *TelemetrySystem) RunBackgroundUpload(ctx context.Context, enableDebugL
 	}
 
 	if locked {
-		defer fileLock.Unlock()
+		defer func() { _ = fileLock.Unlock() }()
 		uploader := ts.NewUploader(enableDebugLogging)
 		queue := ts.storageQueue
 		uploadResult := make(chan error)

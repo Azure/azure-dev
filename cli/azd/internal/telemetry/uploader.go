@@ -81,7 +81,7 @@ func (u *TelemetryUploader) uploadNextItem(ctx context.Context) (bool, error) {
 	err = u.reliableRemove(ctx, item)
 
 	if err != nil {
-		return true, fmt.Errorf("failed to remove after %d attempts: %v", maxStorageFailCount, err)
+		return true, fmt.Errorf("failed to remove after %d attempts: %w", maxStorageFailCount, err)
 	}
 
 	return false, nil

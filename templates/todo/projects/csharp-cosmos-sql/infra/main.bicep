@@ -16,7 +16,7 @@ var resourceToken = toLower(uniqueString(subscription().id, name, location))
 var tags = { 'azd-env-name': name }
 var abbrs = loadJsonContent('../../../../common/infra/abbreviations.json')
 
-resource resourceGroup 'Microsoft.Resources/resourceGroups@2021-04-01' = {
+resource rg 'Microsoft.Resources/resourceGroups@2021-04-01' = {
   name: '${abbrs.resourcesResourceGroups}${name}'
   location: location
   tags: tags
@@ -24,7 +24,7 @@ resource resourceGroup 'Microsoft.Resources/resourceGroups@2021-04-01' = {
 
 module resources 'resources.bicep' = {
   name: 'resources'
-  scope: resourceGroup
+  scope: rg
   params: {
     location: location
     principalId: principalId

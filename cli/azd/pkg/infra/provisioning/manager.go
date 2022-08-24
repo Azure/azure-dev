@@ -271,7 +271,10 @@ func (m *Manager) updateSpinnerTitle(spinner *spin.Spinner, message string) {
 }
 
 func (m *Manager) writeJsonOutput(ctx context.Context, output any) {
-	m.formatter.Format(output, m.writer, nil)
+	err := m.formatter.Format(output, m.writer, nil)
+	if err != nil {
+		log.Printf("error formatting output: %s", err.Error())
+	}
 
 	jsonBytes, err := json.Marshal(output)
 	if err != nil {

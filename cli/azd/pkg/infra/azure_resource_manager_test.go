@@ -135,100 +135,102 @@ func TestGetDeploymentResourceOperationsSuccess(t *testing.T) {
 	require.Equal(t, 1, groupCalls)
 }
 
-// func TestGetDeploymentResourceOperationsFail(t *testing.T) {
-// 	subCalls := 0
-// 	groupCalls := 0
+func TestGetDeploymentResourceOperationsFail(t *testing.T) {
+	subCalls := 0
+	groupCalls := 0
 
-// 	mockContext := mocks.NewMockContext(context.Background())
-// 	mockContext.ExecUtil.When(func(args executil.RunArgs, command string) bool {
-// 		return strings.Contains(command, "az deployment operation sub list")
-// 	}).RespondFn(func(args executil.RunArgs) (executil.RunResult, error) {
-// 		subCalls++
+	mockContext := mocks.NewMockContext(context.Background())
+	mockContext.ExecUtil.When(func(args executil.RunArgs, command string) bool {
+		return strings.Contains(command, "az deployment operation sub list")
+	}).RespondFn(func(args executil.RunArgs) (executil.RunResult, error) {
+		subCalls++
 
-// 		return executil.NewRunResult(1, "", "error getting resource operations"), nil
-// 	})
+		return executil.NewRunResult(1, "", "error getting resource operations"), nil
+	})
 
-// 	mockContext.ExecUtil.When(func(args executil.RunArgs, command string) bool {
-// 		return strings.Contains(command, "az deployment operation group list")
-// 	}).RespondFn(func(args executil.RunArgs) (executil.RunResult, error) {
-// 		groupCalls++
+	mockContext.ExecUtil.When(func(args executil.RunArgs, command string) bool {
+		return strings.Contains(command, "az deployment operation group list")
+	}).RespondFn(func(args executil.RunArgs) (executil.RunResult, error) {
+		groupCalls++
 
-// 		return executil.NewRunResult(0, "[]", ""), nil
-// 	})
+		return executil.NewRunResult(0, "[]", ""), nil
+	})
 
-// 	arm := NewAzureResourceManager(*mockContext.Context)
-// 	operations, err := arm.GetDeploymentResourceOperations(*mockContext.Context, "subscription-id", "deployment-name")
+	arm := NewAzureResourceManager(*mockContext.Context)
+	operations, err := arm.GetDeploymentResourceOperations(*mockContext.Context, "subscription-id", "deployment-name")
 
-// 	require.Nil(t, operations)
-// 	require.NotNil(t, err)
-// 	require.True(t, strings.HasPrefix(err.Error(), "getting subscription deployment"))
-// 	require.Equal(t, 1, subCalls)
-// 	require.Equal(t, 0, groupCalls)
-// }
+	require.Nil(t, operations)
+	require.NotNil(t, err)
+	require.True(t, strings.HasPrefix(err.Error(), "getting subscription deployment"))
+	require.Equal(t, 1, subCalls)
+	require.Equal(t, 0, groupCalls)
+}
 
-// func TestGetDeploymentResourceOperationsNoResourceGroup(t *testing.T) {
-// 	subCalls := 0
-// 	groupCalls := 0
+func TestGetDeploymentResourceOperationsNoResourceGroup(t *testing.T) {
+	subCalls := 0
+	groupCalls := 0
 
-// 	mockContext := mocks.NewMockContext(context.Background())
-// 	mockContext.ExecUtil.When(func(args executil.RunArgs, command string) bool {
-// 		return strings.Contains(command, "az deployment operation sub list")
-// 	}).RespondFn(func(args executil.RunArgs) (executil.RunResult, error) {
-// 		subCalls++
+	mockContext := mocks.NewMockContext(context.Background())
+	mockContext.ExecUtil.When(func(args executil.RunArgs, command string) bool {
+		return strings.Contains(command, "az deployment operation sub list")
+	}).RespondFn(func(args executil.RunArgs) (executil.RunResult, error) {
+		subCalls++
 
-// 		return executil.NewRunResult(0, "[]", ""), nil
-// 	})
+		return executil.NewRunResult(0, "[]", ""), nil
+	})
 
-// 	mockContext.ExecUtil.When(func(args executil.RunArgs, command string) bool {
-// 		return strings.Contains(command, "az deployment operation group list")
-// 	}).RespondFn(func(args executil.RunArgs) (executil.RunResult, error) {
-// 		groupCalls++
+	mockContext.ExecUtil.When(func(args executil.RunArgs, command string) bool {
+		return strings.Contains(command, "az deployment operation group list")
+	}).RespondFn(func(args executil.RunArgs) (executil.RunResult, error) {
+		groupCalls++
 
-// 		return executil.NewRunResult(0, "[]", ""), nil
-// 	})
+		return executil.NewRunResult(0, "[]", ""), nil
+	})
 
-// 	arm := NewAzureResourceManager(*mockContext.Context)
-// 	operations, err := arm.GetDeploymentResourceOperations(*mockContext.Context, "subscription-id", "deployment-name")
+	arm := NewAzureResourceManager(*mockContext.Context)
+	operations, err := arm.GetDeploymentResourceOperations(*mockContext.Context, "subscription-id", "deployment-name")
 
-// 	require.NotNil(t, operations)
-// 	require.Nil(t, err)
-// 	require.Len(t, operations, 0)
-// 	require.Equal(t, 1, subCalls)
-// 	require.Equal(t, 0, groupCalls)
-// }
+	require.NotNil(t, operations)
+	require.Nil(t, err)
+	require.Len(t, operations, 0)
+	require.Equal(t, 1, subCalls)
+	require.Equal(t, 0, groupCalls)
+}
 
-// func TestGetDeploymentResourceOperationsWithNestedDeployments(t *testing.T) {
-// 	subCalls := 0
-// 	groupCalls := 0
+func TestGetDeploymentResourceOperationsWithNestedDeployments(t *testing.T) {
+	subCalls := 0
+	groupCalls := 0
 
-// 	mockContext := mocks.NewMockContext(context.Background())
-// 	mockContext.ExecUtil.When(func(args executil.RunArgs, command string) bool {
-// 		return strings.Contains(command, "az deployment operation sub list")
-// 	}).RespondFn(func(args executil.RunArgs) (executil.RunResult, error) {
-// 		subJsonBytes, _ := json.Marshal(mockSubDeploymentOperations)
-// 		return executil.NewRunResult(0, string(subJsonBytes), ""), nil
-// 	})
+	mockContext := mocks.NewMockContext(context.Background())
+	mockContext.ExecUtil.When(func(args executil.RunArgs, command string) bool {
+		return strings.Contains(command, "az deployment operation sub list")
+	}).RespondFn(func(args executil.RunArgs) (executil.RunResult, error) {
+		subCalls++
 
-// 	mockContext.ExecUtil.When(func(args executil.RunArgs, command string) bool {
-// 		return strings.Contains(command, "az deployment operation group list")
-// 	}).RespondFn(func(args executil.RunArgs) (executil.RunResult, error) {
-// 		groupCalls++
+		subJsonBytes, _ := json.Marshal(mockSubDeploymentOperations)
+		return executil.NewRunResult(0, string(subJsonBytes), ""), nil
+	})
 
-// 		if groupCalls == 1 {
-// 			nestedGroupJsonBytes, _ := json.Marshal(mockNestedGroupDeploymentOperations)
-// 			return executil.NewRunResult(0, string(nestedGroupJsonBytes), ""), nil
-// 		} else {
-// 			groupJsonBytes, _ := json.Marshal(mockGroupDeploymentOperations)
-// 			return executil.NewRunResult(0, string(groupJsonBytes), ""), nil
-// 		}
-// 	})
+	mockContext.ExecUtil.When(func(args executil.RunArgs, command string) bool {
+		return strings.Contains(command, "az deployment operation group list")
+	}).RespondFn(func(args executil.RunArgs) (executil.RunResult, error) {
+		groupCalls++
 
-// 	arm := NewAzureResourceManager(*mockContext.Context)
-// 	operations, err := arm.GetDeploymentResourceOperations(*mockContext.Context, "subscription-id", "deployment-name")
+		if groupCalls == 1 {
+			nestedGroupJsonBytes, _ := json.Marshal(mockNestedGroupDeploymentOperations)
+			return executil.NewRunResult(0, string(nestedGroupJsonBytes), ""), nil
+		} else {
+			groupJsonBytes, _ := json.Marshal(mockGroupDeploymentOperations)
+			return executil.NewRunResult(0, string(groupJsonBytes), ""), nil
+		}
+	})
 
-// 	require.NotNil(t, operations)
-// 	require.Nil(t, err)
-// 	require.Len(t, operations, 4)
-// 	require.Equal(t, 1, subCalls)
-// 	require.Equal(t, 2, groupCalls)
-// }
+	arm := NewAzureResourceManager(*mockContext.Context)
+	operations, err := arm.GetDeploymentResourceOperations(*mockContext.Context, "subscription-id", "deployment-name")
+
+	require.NotNil(t, operations)
+	require.Nil(t, err)
+	require.Len(t, operations, 4)
+	require.Equal(t, 1, subCalls)
+	require.Equal(t, 2, groupCalls)
+}

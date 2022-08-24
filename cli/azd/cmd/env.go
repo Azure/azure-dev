@@ -122,19 +122,13 @@ func envSelectCmd(rootOptions *internal.GlobalCommandOptions) *cobra.Command {
 func envListCmd(rootOptions *internal.GlobalCommandOptions) *cobra.Command {
 	action := commands.ActionFunc(
 		func(ctx context.Context, cmd *cobra.Command, args []string, azdCtx *azdcontext.AzdContext) error {
-
-			azdCtx, err := azdcontext.NewAzdContext()
-			if err != nil {
-				return fmt.Errorf("failed to get the current directory: %w", err)
-			}
-
 			if err := ensureProject(azdCtx.ProjectPath()); err != nil {
 				return err
 			}
 
 			formatter := output.GetFormatter(ctx)
-
 			envs, err := azdCtx.ListEnvironments()
+
 			if err != nil {
 				return fmt.Errorf("listing environments: %w", err)
 			}

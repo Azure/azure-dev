@@ -44,6 +44,7 @@ type contextKey string
 
 const (
 	formatterContextKey contextKey = "formatter"
+	writerContextKey    contextKey = "writer"
 )
 
 func WithFormatter(ctx context.Context, formatter Formatter) context.Context {
@@ -60,11 +61,11 @@ func GetFormatter(ctx context.Context) Formatter {
 }
 
 func WithWriter(ctx context.Context, writer io.Writer) context.Context {
-	return context.WithValue(ctx, "writer", writer)
+	return context.WithValue(ctx, writerContextKey, writer)
 }
 
 func GetWriter(ctx context.Context) io.Writer {
-	writer, ok := ctx.Value("writer").(io.Writer)
+	writer, ok := ctx.Value(writerContextKey).(io.Writer)
 	if !ok {
 		return colorable.NewColorableStdout()
 	}

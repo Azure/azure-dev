@@ -24,7 +24,7 @@ repo:
 
     # Rules for Path Rewrite Only
     - from: ../../../../../../common/infra/terraform
-      to: ./../../infra/modules
+      to: ./modules
       ignore: 
         - ".repo/**/*"
 

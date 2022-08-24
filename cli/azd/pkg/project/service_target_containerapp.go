@@ -17,7 +17,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/bicep"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/docker"
 )
 
@@ -40,13 +39,13 @@ func (at *containerAppTarget) Deploy(ctx context.Context, azdCtx *azdcontext.Azd
 		at.config.Infra.Module = at.config.Name
 	}
 
-	infraManager, err := provisioning.NewManager(ctx, *at.env, at.config.Path(), at.config.Infra, true, at.console, bicep.NewBicepCliArgs{AzCli: at.cli})
+	infraManager, err := provisioning.NewManager(ctx, *at.env, at.config.Path(), at.config.Infra, false)
 	if err != nil {
 		return ServiceDeploymentResult{}, fmt.Errorf("creating provisioning manager: %w", err)
 	}
 
 	progress <- "Creating deployment template"
-	previewResult, err := infraManager.Preview(ctx, true)
+	previewResult, err := infraManager.Preview(ctx)
 	if err != nil {
 		return ServiceDeploymentResult{}, fmt.Errorf("previewing provisioning: %w", err)
 	}
@@ -91,9 +90,8 @@ func (at *containerAppTarget) Deploy(ctx context.Context, azdCtx *azdcontext.Azd
 	}
 
 	progress <- "Updating container app image reference"
-	scope := provisioning.NewResourceGroupScope(at.cli, at.env.GetEnvName(), at.scope.ResourceGroupName(), at.env.GetEnvName())
-	deployOptions := provisioning.DeployOptions{Interactive: true}
-	deployResult, err := infraManager.Deploy(ctx, &previewResult.Deployment, scope, deployOptions)
+	scope := provisioning.NewResourceGroupScope(ctx, at.env.GetEnvName(), at.scope.ResourceGroupName(), at.env.GetEnvName())
+	deployResult, err := infraManager.Deploy(ctx, &previewResult.Deployment, scope)
 
 	if err != nil {
 		return ServiceDeploymentResult{}, fmt.Errorf("provisioning infrastructure for app deployment: %w", err)

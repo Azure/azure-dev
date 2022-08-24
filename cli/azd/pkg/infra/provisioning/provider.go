@@ -7,10 +7,8 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
-	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/bicep"
 )
 
 type ProviderKind string
@@ -68,25 +66,23 @@ type Provider interface {
 	Destroy(ctx context.Context, deployment *Deployment, options DestroyOptions) *async.InteractiveTaskWithProgress[*DestroyResult, *DestroyProgress]
 }
 
-func NewProvider(env *environment.Environment, projectPath string, options Options, console input.Console, cliArgs bicep.NewBicepCliArgs) (Provider, error) {
+func NewProvider(ctx context.Context, env *environment.Environment, projectPath string, infraOptions Options) (Provider, error) {
 	var provider Provider
 
-	switch options.Provider {
+	switch infraOptions.Provider {
 	case Bicep:
-		bicepArgs := bicep.NewBicepCliArgs(cliArgs)
-		provider = NewBicepProvider(env, projectPath, options, console, bicepArgs)
+		provider = NewBicepProvider(ctx, env, projectPath, infraOptions)
 	case Test:
-		provider = NewTestProvider(env, projectPath, options, console)
+		provider = NewTestProvider(ctx, env, projectPath, infraOptions)
 	default:
-		bicepArgs := bicep.NewBicepCliArgs(cliArgs)
-		provider = NewBicepProvider(env, projectPath, options, console, bicepArgs)
+		provider = NewBicepProvider(ctx, env, projectPath, infraOptions)
 	}
 
 	if provider != nil {
 		return provider, nil
 	}
 
-	return nil, fmt.Errorf("provider '%s' is not supported", options.Provider)
+	return nil, fmt.Errorf("provider '%s' is not supported", infraOptions.Provider)
 }
 
 var _ BicepProvider = BicepProvider{}

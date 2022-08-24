@@ -17,23 +17,17 @@ import (
 const defaultProgressTitle string = "🚀 Provisioning Azure resources"
 const succeededProvisioningState string = "Succeeded"
 
-type ResourceManager interface {
-	GetDeploymentResourceOperations(ctx context.Context, subscriptionId string, deploymentName string) ([]azcli.AzCliResourceOperation, error)
-	GetResourceTypeDisplayName(ctx context.Context, subscriptionId string, resourceId string, resourceType infra.AzureResourceType) (string, error)
-	GetWebAppResourceTypeDisplayName(ctx context.Context, subscriptionId string, resourceId string) (string, error)
-}
-
 // ProvisioningProgressDisplay displays interactive progress for an ongoing Azure provisioning operation.
 type ProvisioningProgressDisplay struct {
 	// Keeps track of created resources
 	createdResources map[string]bool
 	subscriptionId   string
 	deploymentName   string
-	resourceManager  ResourceManager
+	resourceManager  infra.ResourceManager
 	console          input.Console
 }
 
-func NewProvisioningProgressDisplay(rm ResourceManager, console input.Console, subscriptionId string, deploymentName string) ProvisioningProgressDisplay {
+func NewProvisioningProgressDisplay(rm infra.ResourceManager, console input.Console, subscriptionId string, deploymentName string) ProvisioningProgressDisplay {
 	return ProvisioningProgressDisplay{
 		createdResources: map[string]bool{},
 		subscriptionId:   subscriptionId,

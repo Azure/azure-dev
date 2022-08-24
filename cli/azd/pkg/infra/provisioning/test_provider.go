@@ -135,11 +135,11 @@ func (p *TestProvider) Destroy(ctx context.Context, deployment *Deployment, opti
 		})
 }
 
-func NewTestProvider(env *environment.Environment, projectPath string, options Options, console input.Console) Provider {
+func NewTestProvider(ctx context.Context, env *environment.Environment, projectPath string, options Options) Provider {
 	return &TestProvider{
 		env:         env,
 		projectPath: projectPath,
 		options:     options,
-		console:     console,
+		console:     input.GetConsole(ctx),
 	}
 }

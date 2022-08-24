@@ -13,10 +13,11 @@ import (
 
 	"github.com/AlecAivazis/survey/v2"
 	"github.com/azure/azure-dev/cli/azd/pkg/azureutil"
-	"github.com/azure/azure-dev/cli/azd/pkg/commands"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/input/inputhelper"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/fatih/color"
 	"github.com/mgutz/ansi"
 )
@@ -195,7 +196,7 @@ func ensureEnvironmentInitialized(ctx context.Context, envSpec environmentSpec, 
 	if !hasLocation && envSpec.location != "" {
 		env.SetLocation(envSpec.location)
 	} else {
-		location, err := console.PromptLocation(ctx, "Please select an Azure location to use:")
+		location, err := inputhelper.PromptLocation(ctx, "Please select an Azure location to use:")
 		if err != nil {
 			return fmt.Errorf("prompting for location: %w", err)
 		}
@@ -256,7 +257,7 @@ func ensureEnvironmentInitialized(ctx context.Context, envSpec environmentSpec, 
 }
 
 func getSubscriptionOptions(ctx context.Context) ([]string, string, error) {
-	azCli := commands.GetAzCliFromContext(ctx)
+	azCli := azcli.GetAzCli(ctx)
 	subscriptionInfos, err := azCli.ListAccounts(ctx)
 	if err != nil {
 		return nil, "", fmt.Errorf("listing accounts: %w", err)

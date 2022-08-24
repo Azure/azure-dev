@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log"
 
+	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/commands"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
@@ -15,7 +16,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func templatesCmd(rootOptions *commands.GlobalCommandOptions) *cobra.Command {
+func templatesCmd(rootOptions *internal.GlobalCommandOptions) *cobra.Command {
 	root := &cobra.Command{
 		Use:   "template",
 		Short: "Manage templates.",
@@ -36,34 +37,35 @@ func templatesCmd(rootOptions *commands.GlobalCommandOptions) *cobra.Command {
 	return root
 }
 
-func templatesListCmd(rootOptions *commands.GlobalCommandOptions) *cobra.Command {
-	cmd := &cobra.Command{
-		Use:     "list",
-		Short:   "List templates.",
-		Aliases: []string{"ls"},
-		RunE: func(cmd *cobra.Command, args []string) error {
-			templateManager := templates.NewTemplateManager()
-			templateSet, err := templateManager.ListTemplates()
+func templatesListCmd(rootOptions *internal.GlobalCommandOptions) *cobra.Command {
+	action := commands.ActionFunc(func(ctx context.Context, cmd *cobra.Command, args []string, azdCtx *azdcontext.AzdContext) error {
+		templateManager := templates.NewTemplateManager()
+		templateSet, err := templateManager.ListTemplates()
 
-			if err != nil {
-				return err
-			}
+		if err != nil {
+			return err
+		}
 
-			templateList := make([]templates.Template, 0, len(templateSet))
-			for _, template := range templateSet {
-				templateList = append(templateList, template)
-			}
+		templateList := make([]templates.Template, 0, len(templateSet))
+		for _, template := range templateSet {
+			templateList = append(templateList, template)
+		}
 
-			return formatTemplates(cmd, templateList...)
-		},
-	}
-	cmd.Flags().BoolP("help", "h", false, fmt.Sprintf("Gets help for %s.", cmd.Name()))
-	return cmd
+		return formatTemplates(ctx, cmd, templateList...)
+	})
+
+	return commands.Build(
+		action,
+		rootOptions,
+		"list",
+		"List templates.",
+		"",
+	)
 }
 
-func templatesShowCmd(rootOptions *commands.GlobalCommandOptions) *cobra.Command {
+func templatesShowCmd(rootOptions *internal.GlobalCommandOptions) *cobra.Command {
 	action := commands.ActionFunc(
-		func(_ context.Context, cmd *cobra.Command, args []string, azdCtx *azdcontext.AzdContext) error {
+		func(ctx context.Context, cmd *cobra.Command, args []string, azdCtx *azdcontext.AzdContext) error {
 			templateName := args[0]
 			templateManager := templates.NewTemplateManager()
 			matchingTemplate, err := templateManager.GetTemplate(templateName)
@@ -74,7 +76,7 @@ func templatesShowCmd(rootOptions *commands.GlobalCommandOptions) *cobra.Command
 				return err
 			}
 
-			return formatTemplates(cmd, matchingTemplate)
+			return formatTemplates(ctx, cmd, matchingTemplate)
 		},
 	)
 	cmd := commands.Build(
@@ -88,11 +90,9 @@ func templatesShowCmd(rootOptions *commands.GlobalCommandOptions) *cobra.Command
 	return cmd
 }
 
-func formatTemplates(cmd *cobra.Command, templates ...templates.Template) error {
-	formatter, err := output.GetFormatter(cmd)
-	if err != nil {
-		return err
-	}
+func formatTemplates(ctx context.Context, cmd *cobra.Command, templates ...templates.Template) error {
+	var err error
+	formatter := output.GetFormatter(ctx)
 
 	if formatter.Kind() == output.TableFormat {
 		columns := []output.Column{

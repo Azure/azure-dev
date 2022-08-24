@@ -7,14 +7,14 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/commands"
+	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/spf13/cobra"
 )
 
 func NewRootCmd() *cobra.Command {
 	prevDir := ""
-	opts := &commands.GlobalCommandOptions{}
+	opts := &internal.GlobalCommandOptions{}
 
 	cmd := &cobra.Command{
 		Use:   "azd",

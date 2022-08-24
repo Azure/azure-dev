@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azureutil"
-	"github.com/azure/azure-dev/cli/azd/pkg/commands"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
@@ -94,7 +93,7 @@ func (svc *Service) Deploy(ctx context.Context, azdCtx *azdcontext.AzdContext) (
 // GetServiceResourceName attempts to query the azure resource graph and find the resource with the 'azd-service-name' tag set to the service key
 // If not found will assume resource name conventions
 func GetServiceResourceName(ctx context.Context, resourceGroupName string, serviceName string, env *environment.Environment) (string, error) {
-	azCli := commands.GetAzCliFromContext(ctx)
+	azCli := azcli.GetAzCli(ctx)
 	query := fmt.Sprintf(`resources | 
 		where resourceGroup == '%s' | where tags['azd-service-name'] == '%s' |
 		project id, name, type, tags, location`,

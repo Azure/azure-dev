@@ -11,8 +11,8 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/bicep"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
+	execmock "github.com/azure/azure-dev/cli/azd/test/mocks/executil"
 	"github.com/stretchr/testify/require"
 )
 
@@ -21,14 +21,12 @@ func TestBicepPreview(t *testing.T) {
 	interactiveLog := []bool{}
 	progressDone := make(chan bool)
 
-	execUtil := mocks.NewMockExecUtil()
-	prepareGenericMocks(execUtil)
-	preparePreviewMocks(execUtil)
+	mockContext := mocks.NewMockContext(context.Background())
+	prepareGenericMocks(mockContext.ExecUtil)
+	preparePreviewMocks(mockContext.ExecUtil)
 
-	console := &mocks.MockConsole{}
-	infraProvider := createBicepProvider(execUtil, console)
-
-	previewTask := infraProvider.Preview(context.Background())
+	infraProvider := createBicepProvider(*mockContext.Context)
+	previewTask := infraProvider.Preview(*mockContext.Context)
 
 	go func() {
 		for progressReport := range previewTask.Progress() {
@@ -63,15 +61,14 @@ func TestBicepGetDeploymentPreview(t *testing.T) {
 	progressDone := make(chan bool)
 	expectedWebsiteUrl := "http://myapp.azurewebsites.net"
 
-	execUtil := mocks.NewMockExecUtil()
-	prepareGenericMocks(execUtil)
-	preparePreviewMocks(execUtil)
-	prepareDeployMocks(execUtil)
+	mockContext := mocks.NewMockContext(context.Background())
+	prepareGenericMocks(mockContext.ExecUtil)
+	preparePreviewMocks(mockContext.ExecUtil)
+	prepareDeployMocks(mockContext.ExecUtil)
 
-	console := &mocks.MockConsole{}
-	infraProvider := createBicepProvider(execUtil, console)
-	scope := NewSubscriptionScope(infraProvider.azCli, infraProvider.env.Values["AZURE_LOCATION"], infraProvider.env.GetSubscriptionId(), infraProvider.env.GetEnvName())
-	getDeploymentTask := infraProvider.GetDeployment(context.Background(), scope)
+	infraProvider := createBicepProvider(*mockContext.Context)
+	scope := NewSubscriptionScope(*mockContext.Context, infraProvider.env.Values["AZURE_LOCATION"], infraProvider.env.GetSubscriptionId(), infraProvider.env.GetEnvName())
+	getDeploymentTask := infraProvider.GetDeployment(*mockContext.Context, scope)
 
 	go func() {
 		for progressReport := range getDeploymentTask.Progress() {
@@ -105,17 +102,16 @@ func TestBicepDeploy(t *testing.T) {
 	interactiveLog := []bool{}
 	progressDone := make(chan bool)
 
-	execUtil := mocks.NewMockExecUtil()
-	prepareGenericMocks(execUtil)
-	preparePreviewMocks(execUtil)
-	prepareDeployMocks(execUtil)
+	mockContext := mocks.NewMockContext(context.Background())
+	prepareGenericMocks(mockContext.ExecUtil)
+	preparePreviewMocks(mockContext.ExecUtil)
+	prepareDeployMocks(mockContext.ExecUtil)
 
-	console := mocks.NewMockConsole()
-	infraProvider := createBicepProvider(execUtil, console)
+	infraProvider := createBicepProvider(*mockContext.Context)
 	deployment := Deployment{}
 
-	scope := NewSubscriptionScope(infraProvider.azCli, infraProvider.env.Values["AZURE_LOCATION"], infraProvider.env.GetSubscriptionId(), infraProvider.env.GetEnvName())
-	deployTask := infraProvider.Deploy(context.Background(), &deployment, scope)
+	scope := NewSubscriptionScope(*mockContext.Context, infraProvider.env.Values["AZURE_LOCATION"], infraProvider.env.GetSubscriptionId(), infraProvider.env.GetEnvName())
+	deployTask := infraProvider.Deploy(*mockContext.Context, &deployment, scope)
 
 	go func() {
 		for deployProgress := range deployTask.Progress() {
@@ -136,36 +132,35 @@ func TestBicepDeploy(t *testing.T) {
 	require.Nil(t, err)
 	require.NotNil(t, deployResult)
 	require.Equal(t, deployResult.Deployment.Outputs["WEBSITE_URL"].Value, expectedWebsiteUrl)
-	require.Equal(t, 1, len(console.Output()))
-	require.True(t, strings.Contains(console.Output()[0], "Provisioning Azure resources"))
+	require.Equal(t, 1, len(mockContext.Console.Output()))
+	require.True(t, strings.Contains(mockContext.Console.Output()[0], "Provisioning Azure resources"))
 }
 
 func TestBicepDestroy(t *testing.T) {
-	execUtil := mocks.NewMockExecUtil()
-	prepareGenericMocks(execUtil)
-	preparePreviewMocks(execUtil)
-	prepareDestroyMocks(execUtil)
-
 	t.Run("Interactive", func(t *testing.T) {
+		mockContext := mocks.NewMockContext(context.Background())
+		prepareGenericMocks(mockContext.ExecUtil)
+		preparePreviewMocks(mockContext.ExecUtil)
+		prepareDestroyMocks(mockContext.ExecUtil)
+
 		progressLog := []string{}
 		interactiveLog := []bool{}
 		progressDone := make(chan bool)
 
 		// Setup console mocks
-		console := mocks.NewMockConsole()
-		console.WhenConfirm(func(options input.ConsoleOptions) bool {
+		mockContext.Console.WhenConfirm(func(options input.ConsoleOptions) bool {
 			return strings.Contains(options.Message, "This will delete")
 		}).Respond(true)
 
-		console.WhenConfirm(func(options input.ConsoleOptions) bool {
+		mockContext.Console.WhenConfirm(func(options input.ConsoleOptions) bool {
 			return strings.Contains(options.Message, "Would you like to permanently delete these Key Vaults")
 		}).Respond(true)
 
-		infraProvider := createBicepProvider(execUtil, console)
+		infraProvider := createBicepProvider(*mockContext.Context)
 		deployment := Deployment{}
 
-		destroyOptions := DestroyOptions{Interactive: true}
-		destroyTask := infraProvider.Destroy(context.Background(), &deployment, destroyOptions)
+		destroyOptions := NewDestroyOptions(false, false)
+		destroyTask := infraProvider.Destroy(*mockContext.Context, &deployment, destroyOptions)
 
 		go func() {
 			for destroyProgress := range destroyTask.Progress() {
@@ -187,7 +182,7 @@ func TestBicepDestroy(t *testing.T) {
 		require.NotNil(t, destroyResult)
 
 		// Verify console prompts
-		consoleOutput := console.Output()
+		consoleOutput := mockContext.Console.Output()
 		require.Len(t, consoleOutput, 6)
 		require.Contains(t, consoleOutput[0], "This will delete")
 		require.Contains(t, consoleOutput[1], "Deleted resource group")
@@ -206,18 +201,20 @@ func TestBicepDestroy(t *testing.T) {
 	})
 
 	t.Run("InteractiveForceAndPurge", func(t *testing.T) {
+		mockContext := mocks.NewMockContext(context.Background())
+		prepareGenericMocks(mockContext.ExecUtil)
+		preparePreviewMocks(mockContext.ExecUtil)
+		prepareDestroyMocks(mockContext.ExecUtil)
+
 		progressLog := []string{}
 		interactiveLog := []bool{}
 		progressDone := make(chan bool)
 
-		// Setup console mocks
-		console := mocks.NewMockConsole()
-
-		infraProvider := createBicepProvider(execUtil, console)
+		infraProvider := createBicepProvider(*mockContext.Context)
 		deployment := Deployment{}
 
-		destroyOptions := DestroyOptions{Interactive: true, Force: true, Purge: true}
-		destroyTask := infraProvider.Destroy(context.Background(), &deployment, destroyOptions)
+		destroyOptions := NewDestroyOptions(true, true)
+		destroyTask := infraProvider.Destroy(*mockContext.Context, &deployment, destroyOptions)
 
 		go func() {
 			for destroyProgress := range destroyTask.Progress() {
@@ -239,7 +236,7 @@ func TestBicepDestroy(t *testing.T) {
 		require.NotNil(t, destroyResult)
 
 		// Verify console prompts
-		consoleOutput := console.Output()
+		consoleOutput := mockContext.Console.Output()
 		require.Len(t, consoleOutput, 3)
 		require.Contains(t, consoleOutput[0], "Deleted resource group")
 		require.Contains(t, consoleOutput[1], "Purged key vault")
@@ -255,26 +252,23 @@ func TestBicepDestroy(t *testing.T) {
 	})
 }
 
-func createBicepProvider(execUtil *mocks.MockExecUtil, console input.Console) *BicepProvider {
-	azCli := azcli.NewAzCli(azcli.NewAzCliArgs{RunWithResultFn: execUtil.RunWithResult})
+func createBicepProvider(ctx context.Context) *BicepProvider {
 	projectDir := "../../../test/samples/webapp"
 	options := Options{
 		Module: "main",
 	}
 
-	bicepArgs := bicep.NewBicepCliArgs{AzCli: azCli, RunWithResultFn: execUtil.RunWithResult}
-
 	env := environment.Environment{Values: make(map[string]string)}
 	env.SetLocation("westus2")
 	env.SetEnvName("test-env")
 
-	return NewBicepProvider(&env, projectDir, options, console, bicepArgs)
+	return NewBicepProvider(ctx, &env, projectDir, options)
 }
 
-func prepareGenericMocks(execUtil *mocks.MockExecUtil) {
+func prepareGenericMocks(execUtil *execmock.MockExecUtil) {
 	// Setup expected values for executil
-	execUtil.When(func(args executil.RunArgs) bool {
-		return args.Cmd == "az" && args.Args[0] == "version"
+	execUtil.When(func(args executil.RunArgs, command string) bool {
+		return strings.Contains(command, "az version")
 	}).Respond(executil.RunResult{
 		Stdout: `{"azure-cli": "2.38.0"}`,
 		Stderr: "",
@@ -282,28 +276,26 @@ func prepareGenericMocks(execUtil *mocks.MockExecUtil) {
 }
 
 // Sets up all the mocks required for the bicep preview & deploy operation
-func prepareDeployMocks(execUtil *mocks.MockExecUtil) {
+func prepareDeployMocks(execUtil *execmock.MockExecUtil) {
 	// Gets deployment progress
 	execUtil.When(
-		func(args executil.RunArgs) bool {
-			fullArgs := strings.Join(args.Args, " ")
-			return args.Cmd == "az" && strings.Contains(fullArgs, "deployment operation sub list")
+		func(args executil.RunArgs, command string) bool {
+			return strings.Contains(command, "az deployment operation sub list")
 		}).Respond(executil.RunResult{
 		Stdout: "",
 		Stderr: "",
 	})
 
 	// Gets deployment progress
-	execUtil.When(func(args executil.RunArgs) bool {
-		fullArgs := strings.Join(args.Args, " ")
-		return args.Cmd == "az" && strings.Contains(fullArgs, "deployment operation group list")
+	execUtil.When(func(args executil.RunArgs, command string) bool {
+		return strings.Contains(command, "deployment operation group list")
 	}).Respond(executil.RunResult{
 		Stdout: "",
 		Stderr: "",
 	})
 }
 
-func preparePreviewMocks(execUtil *mocks.MockExecUtil) {
+func preparePreviewMocks(execUtil *execmock.MockExecUtil) {
 	expectedWebsiteUrl := "http://myapp.azurewebsites.net"
 	bicepInputParams := make(map[string]BicepInputParameter)
 	bicepInputParams["name"] = BicepInputParameter{Value: "${AZURE_ENV_NAME}"}
@@ -340,34 +332,31 @@ func preparePreviewMocks(execUtil *mocks.MockExecUtil) {
 	bicepBytes, _ := json.Marshal(bicepTemplate)
 	deployResultBytes, _ := json.Marshal(azDeployment)
 
-	execUtil.When(func(args executil.RunArgs) bool {
-		fullArgs := strings.Join(args.Args, " ")
-		return args.Cmd == "az" && strings.Contains(fullArgs, "bicep build")
+	execUtil.When(func(args executil.RunArgs, command string) bool {
+		return strings.Contains(command, "az bicep build")
 	}).Respond(executil.RunResult{
 		Stdout: string(bicepBytes),
 		Stderr: "",
 	})
 
 	// ARM deployment
-	execUtil.When(func(args executil.RunArgs) bool {
-		fullArgs := strings.Join(args.Args, " ")
-		return args.Cmd == "az" && strings.Contains(fullArgs, "deployment sub create")
+	execUtil.When(func(args executil.RunArgs, command string) bool {
+		return strings.Contains(command, "az deployment sub create")
 	}).Respond(executil.RunResult{
 		Stdout: string(deployResultBytes),
 		Stderr: "",
 	})
 
 	// Get deployment result
-	execUtil.When(func(args executil.RunArgs) bool {
-		fullArgs := strings.Join(args.Args, " ")
-		return args.Cmd == "az" && strings.Contains(fullArgs, "deployment sub show")
+	execUtil.When(func(args executil.RunArgs, command string) bool {
+		return strings.Contains(command, "az deployment sub show")
 	}).Respond(executil.RunResult{
 		Stdout: string(deployResultBytes),
 		Stderr: "",
 	})
 }
 
-func prepareDestroyMocks(execUtil *mocks.MockExecUtil) {
+func prepareDestroyMocks(execUtil *execmock.MockExecUtil) {
 	resourceList := []azcli.AzCliResource{
 		{
 			Id:   "webapp",
@@ -398,45 +387,40 @@ func prepareDestroyMocks(execUtil *mocks.MockExecUtil) {
 	keyVaultBytes, _ := json.Marshal(keyVault)
 
 	// Get list of resources to delete
-	execUtil.When(func(args executil.RunArgs) bool {
-		fullArgs := strings.Join(args.Args, " ")
-		return args.Cmd == "az" && strings.Contains(fullArgs, "resource list")
+	execUtil.When(func(args executil.RunArgs, command string) bool {
+		return strings.Contains(command, "az resource list")
 	}).Respond(executil.RunResult{
 		Stdout: string(resourceListBytes),
 		Stderr: "",
 	})
 
 	// Get Key Vault
-	execUtil.When(func(args executil.RunArgs) bool {
-		fullArgs := strings.Join(args.Args, " ")
-		return args.Cmd == "az" && strings.Contains(fullArgs, "keyvault show")
+	execUtil.When(func(args executil.RunArgs, command string) bool {
+		return strings.Contains(command, "az keyvault show")
 	}).Respond(executil.RunResult{
 		Stdout: string(keyVaultBytes),
 		Stderr: "",
 	})
 
 	// Delete resource group
-	execUtil.When(func(args executil.RunArgs) bool {
-		fullArgs := strings.Join(args.Args, " ")
-		return args.Cmd == "az" && strings.Contains(fullArgs, "group delete")
+	execUtil.When(func(args executil.RunArgs, command string) bool {
+		return strings.Contains(command, "az group delete")
 	}).Respond(executil.RunResult{
 		Stdout: "",
 		Stderr: "",
 	})
 
 	// Purge Key vault
-	execUtil.When(func(args executil.RunArgs) bool {
-		fullArgs := strings.Join(args.Args, " ")
-		return args.Cmd == "az" && strings.Contains(fullArgs, "keyvault purge")
+	execUtil.When(func(args executil.RunArgs, command string) bool {
+		return strings.Contains(command, "az keyvault purge")
 	}).Respond(executil.RunResult{
 		Stdout: "",
 		Stderr: "",
 	})
 
 	// Delete deployment
-	execUtil.When(func(args executil.RunArgs) bool {
-		fullArgs := strings.Join(args.Args, " ")
-		return args.Cmd == "az" && strings.Contains(fullArgs, "deployment sub delete")
+	execUtil.When(func(args executil.RunArgs, command string) bool {
+		return strings.Contains(command, "az deployment sub delete")
 	}).Respond(executil.RunResult{
 		Stdout: "",
 		Stderr: "",

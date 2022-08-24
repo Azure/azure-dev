@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/commands"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
@@ -12,12 +13,12 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/bicep"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
 
-func infraDeleteCmd(rootOptions *commands.GlobalCommandOptions) *cobra.Command {
+func infraDeleteCmd(rootOptions *internal.GlobalCommandOptions) *cobra.Command {
 	return commands.Build(
 		&infraDeleteAction{
 			rootOptions: rootOptions,
@@ -32,7 +33,7 @@ func infraDeleteCmd(rootOptions *commands.GlobalCommandOptions) *cobra.Command {
 type infraDeleteAction struct {
 	forceDelete bool
 	purgeDelete bool
-	rootOptions *commands.GlobalCommandOptions
+	rootOptions *internal.GlobalCommandOptions
 }
 
 func (a *infraDeleteAction) SetupFlags(
@@ -43,9 +44,9 @@ func (a *infraDeleteAction) SetupFlags(
 	local.BoolVar(&a.purgeDelete, "purge", false, "Does not require confirmation before it permanently deletes resources that are soft-deleted by default (for example, key vaults).")
 }
 
-func (a *infraDeleteAction) Run(ctx context.Context, _ *cobra.Command, args []string, azdCtx *azdcontext.AzdContext) error {
-	azCli := commands.GetAzCliFromContext(ctx)
-	console := input.NewConsole(!a.rootOptions.NoPrompt)
+func (a *infraDeleteAction) Run(ctx context.Context, cmd *cobra.Command, args []string, azdCtx *azdcontext.AzdContext) error {
+	azCli := azcli.GetAzCli(ctx)
+	console := input.NewConsole(!a.rootOptions.NoPrompt, cmd.OutOrStdout())
 
 	if err := ensureProject(azdCtx.ProjectPath()); err != nil {
 		return err
@@ -73,22 +74,17 @@ func (a *infraDeleteAction) Run(ctx context.Context, _ *cobra.Command, args []st
 		prj.Infra.Module = "main"
 	}
 
-	infraManager, err := provisioning.NewManager(ctx, env, prj.Path, prj.Infra, !a.rootOptions.NoPrompt, console, bicep.NewBicepCliArgs{AzCli: azCli})
+	infraManager, err := provisioning.NewManager(ctx, env, prj.Path, prj.Infra, !a.rootOptions.NoPrompt)
 	if err != nil {
 		return fmt.Errorf("creating provisioning manager: %w", err)
 	}
 
-	previewResult, err := infraManager.Preview(ctx, !a.rootOptions.NoPrompt)
+	previewResult, err := infraManager.Preview(ctx)
 	if err != nil {
 		return fmt.Errorf("preparing destroy: %w", err)
 	}
 
-	destroyOptions := provisioning.DestroyOptions{
-		Interactive: !a.rootOptions.NoPrompt,
-		Force:       a.forceDelete,
-		Purge:       a.purgeDelete,
-	}
-
+	destroyOptions := provisioning.NewDestroyOptions(a.forceDelete, a.purgeDelete)
 	destroyResult, err := infraManager.Destroy(ctx, &previewResult.Deployment, destroyOptions)
 	if err != nil {
 		return fmt.Errorf("destroying infrastructure: %w", err)

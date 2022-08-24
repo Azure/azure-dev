@@ -18,6 +18,26 @@ import (
 	"strings"
 )
 
+type RunWithResultFn func(ctx context.Context, args RunArgs) (RunResult, error)
+type contextKey string
+
+const (
+	execFnContextKey contextKey = "execfn"
+)
+
+func WithExecUtil(ctx context.Context, execFn RunWithResultFn) context.Context {
+	return context.WithValue(ctx, execFnContextKey, execFn)
+}
+
+func GetExecUtil(ctx context.Context) RunWithResultFn {
+	execFn, ok := ctx.Value(execFnContextKey).(RunWithResultFn)
+	if !ok {
+		return RunWithResult
+	}
+
+	return execFn
+}
+
 // Settings to modify the way CmdTree is executed
 type CmdTreeOptions struct {
 	Interactive bool

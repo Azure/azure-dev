@@ -2,15 +2,19 @@ package provisioning
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
+	"log"
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/input/inputhelper"
+	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/spin"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/bicep"
 )
 
 // Manages the orchestration of infrastructure provisioning
@@ -18,29 +22,15 @@ type Manager struct {
 	azCli       azcli.AzCli
 	env         environment.Environment
 	provider    Provider
-	interactive bool
+	formatter   output.Formatter
+	writer      io.Writer
 	console     input.Console
-}
-
-// Infrastructure deployment options
-type DeployOptions struct {
-	// Whether or not the session supports interactive user input
-	Interactive bool
-}
-
-// Infrastructure destroy options
-type DestroyOptions struct {
-	// Whether or not the session supports interactive user input
-	Interactive bool
-	// Whether or not to force the deletion of resources without prompting the user
-	Force bool
-	// Whether or not to purge any key vaults associated with the deployment
-	Purge bool
+	interactive bool
 }
 
 // Prepares for an infrastructure provision operation
-func (m *Manager) Preview(ctx context.Context, interactive bool) (*PreviewResult, error) {
-	previewResult, err := m.preview(ctx, interactive)
+func (m *Manager) Preview(ctx context.Context) (*PreviewResult, error) {
+	previewResult, err := m.preview(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -49,10 +39,10 @@ func (m *Manager) Preview(ctx context.Context, interactive bool) (*PreviewResult
 }
 
 // Gets the latest deployment details for the specified scope
-func (m *Manager) GetDeployment(ctx context.Context, scope Scope, interactive bool) (*DeployResult, error) {
+func (m *Manager) GetDeployment(ctx context.Context, scope Scope) (*DeployResult, error) {
 	var deployResult *DeployResult
 
-	err := m.runAction("Retrieving Azure Deployment", interactive, func(spinner *spin.Spinner) error {
+	err := m.runAction("Retrieving Azure Deployment", m.interactive, func(spinner *spin.Spinner) error {
 		queryTask := m.provider.GetDeployment(ctx, scope)
 
 		go func() {
@@ -83,7 +73,7 @@ func (m *Manager) GetDeployment(ctx context.Context, scope Scope, interactive bo
 }
 
 // Deploys the Azure infrastructure for the specified project
-func (m *Manager) Deploy(ctx context.Context, deployment *Deployment, scope Scope, options DeployOptions) (*DeployResult, error) {
+func (m *Manager) Deploy(ctx context.Context, deployment *Deployment, scope Scope) (*DeployResult, error) {
 	// Ensure that a location has been set prior to provisioning
 	location, err := m.ensureLocation(ctx, deployment)
 	if err != nil {
@@ -91,7 +81,7 @@ func (m *Manager) Deploy(ctx context.Context, deployment *Deployment, scope Scop
 	}
 
 	// Apply the infrastructure deployment
-	deployResult, err := m.deploy(ctx, location, deployment, scope, options)
+	deployResult, err := m.deploy(ctx, location, deployment, scope)
 	if err != nil {
 		return nil, err
 	}
@@ -122,10 +112,10 @@ func (m *Manager) Destroy(ctx context.Context, deployment *Deployment, options D
 }
 
 // Previews the infrastructure provisioning and orchestrates interactive terminal operations
-func (m *Manager) preview(ctx context.Context, interactive bool) (*PreviewResult, error) {
+func (m *Manager) preview(ctx context.Context) (*PreviewResult, error) {
 	var previewResult *PreviewResult
 
-	err := m.runAction("Preparing infrastructure provisioning", interactive, func(spinner *spin.Spinner) error {
+	err := m.runAction("Preparing infrastructure provisioning", m.interactive, func(spinner *spin.Spinner) error {
 		previewTask := m.provider.Preview(ctx)
 
 		go func() {
@@ -156,15 +146,19 @@ func (m *Manager) preview(ctx context.Context, interactive bool) (*PreviewResult
 }
 
 // Applies the specified infrastructure provisioning and orchestrates the interactive terminal operations
-func (m *Manager) deploy(ctx context.Context, location string, deployment *Deployment, scope Scope, options DeployOptions) (*DeployResult, error) {
+func (m *Manager) deploy(ctx context.Context, location string, deployment *Deployment, scope Scope) (*DeployResult, error) {
 	var deployResult *DeployResult
 
-	err := m.runAction("🚀 Provisioning Azure resources", options.Interactive, func(spinner *spin.Spinner) error {
+	err := m.runAction("🚀 Provisioning Azure resources", m.interactive, func(spinner *spin.Spinner) error {
 		deployTask := m.provider.Deploy(ctx, deployment, scope)
 
 		go func() {
 			for progress := range deployTask.Progress() {
 				m.updateSpinnerTitle(spinner, progress.Message)
+
+				if m.formatter.Kind() == output.JsonFormat {
+					m.writeJsonOutput(ctx, progress.Operations)
+				}
 			}
 		}()
 
@@ -193,7 +187,7 @@ func (m *Manager) deploy(ctx context.Context, location string, deployment *Deplo
 func (m *Manager) destroy(ctx context.Context, deployment *Deployment, options DestroyOptions) (*DestroyResult, error) {
 	var destroyResult *DestroyResult
 
-	err := m.runAction("Destroying Azure resources", options.Interactive, func(spinner *spin.Spinner) error {
+	err := m.runAction("Destroying Azure resources", m.interactive, func(spinner *spin.Spinner) error {
 		destroyTask := m.provider.Destroy(ctx, deployment, options)
 
 		go func() {
@@ -241,7 +235,7 @@ func (m *Manager) ensureLocation(ctx context.Context, deployment *Deployment) (s
 		// user on every deployment if they don't have a `location` parameter in their bicep file.
 		// When we store it, we should store it /per environment/ not as a property of the entire
 		// project.
-		selected, err := m.console.PromptLocation(ctx, "Please select an Azure location to use to store deployment metadata:")
+		selected, err := inputhelper.PromptLocation(ctx, "Please select an Azure location to use to store deployment metadata:")
 		if err != nil {
 			return "", fmt.Errorf("prompting for deployment metadata region: %w", err)
 		}
@@ -276,6 +270,18 @@ func (m *Manager) updateSpinnerTitle(spinner *spin.Spinner, message string) {
 	spinner.Title(fmt.Sprintf("%s...", message))
 }
 
+func (m *Manager) writeJsonOutput(ctx context.Context, output any) {
+	m.formatter.Format(output, m.writer, nil)
+
+	jsonBytes, err := json.Marshal(output)
+	if err != nil {
+		log.Printf("Error marshalling JSON output: %s", err.Error())
+		return
+	}
+
+	m.console.Message(ctx, string(jsonBytes))
+}
+
 // Monitors the interactive channel and starts/stops the terminal spinner as needed
 func (m *Manager) monitorInteraction(spinner *spin.Spinner, interactiveChannel <-chan bool) {
 	for isInteractive := range interactiveChannel {
@@ -292,8 +298,8 @@ func (m *Manager) monitorInteraction(spinner *spin.Spinner, interactiveChannel <
 }
 
 // Creates a new instance of the Provisioning Manager
-func NewManager(ctx context.Context, env environment.Environment, projectPath string, options Options, interactive bool, console input.Console, cliArgs bicep.NewBicepCliArgs) (*Manager, error) {
-	infraProvider, err := NewProvider(&env, projectPath, options, console, cliArgs)
+func NewManager(ctx context.Context, env environment.Environment, projectPath string, infraOptions Options, interactive bool) (*Manager, error) {
+	infraProvider, err := NewProvider(ctx, &env, projectPath, infraOptions)
 	if err != nil {
 		return nil, fmt.Errorf("error creating infra provider: %w", err)
 	}
@@ -303,15 +309,19 @@ func NewManager(ctx context.Context, env environment.Environment, projectPath st
 		return nil, err
 	}
 
-	if console == nil {
-		console = input.NewConsole(interactive)
-	}
+	azCli := azcli.GetAzCli(ctx)
+	console := input.GetConsole(ctx)
+	formatter := output.GetFormatter(ctx)
+	writer := output.GetWriter(ctx)
+	interactive = interactive && formatter.Kind() == output.NoneFormat
 
 	return &Manager{
-		azCli:       cliArgs.AzCli,
+		azCli:       azCli,
 		env:         env,
 		provider:    infraProvider,
-		interactive: interactive,
+		formatter:   formatter,
+		writer:      writer,
 		console:     console,
+		interactive: interactive,
 	}, nil
 }

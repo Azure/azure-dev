@@ -4,8 +4,11 @@
 package output
 
 import (
+	"context"
 	"fmt"
 	"io"
+
+	"github.com/mattn/go-colorable"
 )
 
 type Format string
@@ -35,4 +38,36 @@ func NewFormatter(format string) (Formatter, error) {
 	default:
 		return nil, fmt.Errorf("unsupported format %v", format)
 	}
+}
+
+type contextKey string
+
+const (
+	formatterContextKey contextKey = "formatter"
+)
+
+func WithFormatter(ctx context.Context, formatter Formatter) context.Context {
+	return context.WithValue(ctx, formatterContextKey, formatter)
+}
+
+func GetFormatter(ctx context.Context) Formatter {
+	formatter, ok := ctx.Value(formatterContextKey).(Formatter)
+	if !ok {
+		return &NoneFormatter{}
+	}
+
+	return formatter
+}
+
+func WithWriter(ctx context.Context, writer io.Writer) context.Context {
+	return context.WithValue(ctx, "writer", writer)
+}
+
+func GetWriter(ctx context.Context) io.Writer {
+	writer, ok := ctx.Value("writer").(io.Writer)
+	if !ok {
+		return colorable.NewColorableStdout()
+	}
+
+	return writer
 }

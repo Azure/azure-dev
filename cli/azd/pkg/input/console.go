@@ -2,20 +2,11 @@ package input
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"log"
-	"os"
-	"sort"
-	"strings"
 
 	"github.com/AlecAivazis/survey/v2"
-	"github.com/azure/azure-dev/cli/azd/pkg/azureutil"
-	"github.com/azure/azure-dev/cli/azd/pkg/commands"
-	"github.com/azure/azure-dev/cli/azd/pkg/environment"
-	"github.com/azure/azure-dev/cli/azd/pkg/templates"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/mattn/go-colorable"
 )
 
@@ -24,8 +15,6 @@ type Console interface {
 	Prompt(ctx context.Context, options ConsoleOptions) (string, error)
 	Select(ctx context.Context, options ConsoleOptions) (int, error)
 	Confirm(ctx context.Context, options ConsoleOptions) (bool, error)
-	PromptLocation(ctx context.Context, message string) (string, error)
-	PromptTemplate(ctx context.Context, message string) (templates.Template, error)
 	SetWriter(writer io.Writer)
 }
 
@@ -113,107 +102,35 @@ func (c *AskerConsole) Confirm(ctx context.Context, options ConsoleOptions) (boo
 	return response, nil
 }
 
-// PromptTemplate ask the user to select a template.
-// An empty Template with default values is returned if the user selects 'Empty Template' from the choices
-func (c *AskerConsole) PromptTemplate(ctx context.Context, message string) (templates.Template, error) {
-	var result templates.Template
-	templateManager := templates.NewTemplateManager()
-	templatesSet, err := templateManager.ListTemplates()
-
-	if err != nil {
-		return result, fmt.Errorf("prompting for template: %w", err)
-	}
-
-	templateNames := []string{"Empty Template"}
-
-	for name := range templatesSet {
-		templateNames = append(templateNames, name)
-	}
-
-	var selectedTemplateIndex int
-
-	if err := c.asker(&survey.Select{
-		Message: message,
-		Options: templateNames,
-		Default: templateNames[0],
-	}, &selectedTemplateIndex); err != nil {
-		return result, fmt.Errorf("prompting for template: %w", err)
-	}
-
-	if selectedTemplateIndex == 0 {
-		return result, nil
-	}
-
-	selectedTemplateName := templateNames[selectedTemplateIndex]
-	log.Printf("Selected template: %s", fmt.Sprint(selectedTemplateName))
-
-	return templatesSet[selectedTemplateName], nil
+func (c *AskerConsole) Writer() io.Writer {
+	return c.writer
 }
 
-// PromptLocation asks the user to select a location from a list of supported azure location
-func (c *AskerConsole) PromptLocation(ctx context.Context, message string) (string, error) {
-	azCli := commands.GetAzCliFromContext(ctx)
-
-	locations, err := azCli.ListAccountLocations(ctx)
-	if err != nil {
-		return "", fmt.Errorf("listing locations: %w", err)
-	}
-
-	sort.Sort(azureutil.Locs(locations))
-
-	// Allow the environment variable `AZURE_LOCATION` to control the default value for the location
-	// selection.
-	defaultLocation := os.Getenv(environment.LocationEnvVarName)
-
-	// If no location is set in the process environment, see what the CLI default is.
-	if defaultLocation == "" {
-		defaultLocationConfig, err := azCli.GetCliConfigValue(ctx, "defaults.location")
-		if errors.Is(err, azcli.ErrNoConfigurationValue) {
-			// If no value has been configured, that's okay we just won't have a default
-			// in our list.
-		} else if err != nil {
-			return "", fmt.Errorf("detecting default location: %w", err)
-		} else {
-			defaultLocation = defaultLocationConfig.Value
-		}
-	}
-
-	// If we still couldn't figure out a default location, offer eastus2 as a default
-	if defaultLocation == "" {
-		defaultLocation = "eastus2"
-	}
-
-	var defaultOption string
-
-	locationOptions := make([]string, len(locations))
-	for index, location := range locations {
-		locationOptions[index] = fmt.Sprintf("%2d. %s (%s)", index+1, location.RegionalDisplayName, location.Name)
-
-		if strings.EqualFold(defaultLocation, location.Name) ||
-			strings.EqualFold(defaultLocation, location.DisplayName) {
-			defaultOption = locationOptions[index]
-		}
-	}
-
-	var locationSelectionIndex int
-
-	if err := c.asker(&survey.Select{
-		Message: message,
-		Options: locationOptions,
-		Default: defaultOption,
-	}, &locationSelectionIndex); err != nil {
-		return "", fmt.Errorf("prompting for location: %w", err)
-	}
-
-	return locations[locationSelectionIndex].Name, nil
-}
-
-func NewConsole(interactive bool) Console {
+func NewConsole(interactive bool, writer io.Writer) Console {
 	asker := NewAsker(!interactive)
 
 	return &AskerConsole{
 		interactive: interactive,
 		asker:       asker,
-		writer:      colorable.NewColorableStdout(),
+		writer:      writer,
 	}
+}
+
+type contextKey string
+
+const (
+	consoleContextKey contextKey = "console"
+)
+
+func WithConsole(ctx context.Context, console Console) context.Context {
+	return context.WithValue(ctx, consoleContextKey, console)
+}
+
+func GetConsole(ctx context.Context) Console {
+	console, ok := ctx.Value(consoleContextKey).(Console)
+	if !ok {
+		return nil
+	}
+
+	return console
 }

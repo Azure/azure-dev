@@ -30,7 +30,7 @@ func AddOutputParam(cmd *cobra.Command, supportedFormats []Format, defaultFormat
 	return cmd
 }
 
-func GetFormatter(cmd *cobra.Command) (Formatter, error) {
+func GetCommandFormatter(cmd *cobra.Command) (Formatter, error) {
 	outputVal, err := cmd.Flags().GetString(outputFlagName)
 	if err != nil {
 		return nil, err

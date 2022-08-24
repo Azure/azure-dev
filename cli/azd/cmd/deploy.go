@@ -9,19 +9,21 @@ import (
 	"strings"
 	"time"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/azureutil"
+	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/commands"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
+	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/pkg/spin"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
 
-func deployCmd(rootOptions *commands.GlobalCommandOptions) *cobra.Command {
+func deployCmd(rootOptions *internal.GlobalCommandOptions) *cobra.Command {
 	cmd := commands.Build(
 		&deployAction{rootOptions: rootOptions},
 		rootOptions,
@@ -48,7 +50,7 @@ After the deployment is complete, the endpoint is printed. To start the service,
 
 type deployAction struct {
 	serviceName string
-	rootOptions *commands.GlobalCommandOptions
+	rootOptions *internal.GlobalCommandOptions
 }
 
 type DeploymentResult struct {
@@ -64,8 +66,8 @@ func (d *deployAction) SetupFlags(
 }
 
 func (d *deployAction) Run(ctx context.Context, cmd *cobra.Command, args []string, azdCtx *azdcontext.AzdContext) error {
-	azCli := commands.GetAzCliFromContext(ctx)
-	console := input.NewConsole(!d.rootOptions.NoPrompt)
+	azCli := azcli.GetAzCli(ctx)
+	console := input.NewConsole(!d.rootOptions.NoPrompt, cmd.OutOrStdout())
 
 	if err := ensureProject(azdCtx.ProjectPath()); err != nil {
 		return err
@@ -93,7 +95,7 @@ func (d *deployAction) Run(ctx context.Context, cmd *cobra.Command, args []strin
 		return fmt.Errorf("service name '%s' doesn't exist", d.serviceName)
 	}
 
-	proj, err := projConfig.GetProject(ctx, &env)
+	proj, err := projConfig.GetProject(&ctx, &env)
 	if err != nil {
 		return fmt.Errorf("creating project: %w", err)
 	}
@@ -112,10 +114,7 @@ func (d *deployAction) Run(ctx context.Context, cmd *cobra.Command, args []strin
 		return err
 	}
 
-	formatter, err := output.GetFormatter(cmd)
-	if err != nil {
-		return err
-	}
+	formatter := output.GetFormatter(ctx)
 	interactive := formatter.Kind() == output.NoneFormat
 
 	var svcDeploymentResult project.ServiceDeploymentResult
@@ -180,7 +179,8 @@ func (d *deployAction) Run(ctx context.Context, cmd *cobra.Command, args []strin
 		}
 	}
 
-	resourceGroups, err := azureutil.GetResourceGroupsForDeployment(ctx, azCli, env.GetSubscriptionId(), env.GetEnvName())
+	resourceManager := infra.NewAzureResourceManager(ctx)
+	resourceGroups, err := resourceManager.GetResourceGroupsForDeployment(ctx, env.GetSubscriptionId(), env.GetEnvName())
 	if err != nil {
 		return fmt.Errorf("discovering resource groups from deployment: %w", err)
 	}

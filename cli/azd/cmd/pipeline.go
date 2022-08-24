@@ -11,19 +11,21 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/commands"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/github"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/git"
 	githubTool "github.com/azure/azure-dev/cli/azd/pkg/tools/github"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
 
-func pipelineCmd(rootOptions *commands.GlobalCommandOptions) *cobra.Command {
+func pipelineCmd(rootOptions *internal.GlobalCommandOptions) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "pipeline",
 		Short: "Manage GitHub Actions pipelines.",
@@ -38,7 +40,7 @@ For more information, go to https://aka.ms/azure-dev/pipeline.`,
 	return cmd
 }
 
-func pipelineConfigCmd(rootOptions *commands.GlobalCommandOptions) *cobra.Command {
+func pipelineConfigCmd(rootOptions *internal.GlobalCommandOptions) *cobra.Command {
 	cmd := commands.Build(
 		&pipelineConfigAction{rootOptions: rootOptions},
 		rootOptions,
@@ -55,7 +57,7 @@ type pipelineConfigAction struct {
 	pipelineServicePrincipalName string
 	pipelineRemoteName           string
 	pipelineRoleName             string
-	rootOptions                  *commands.GlobalCommandOptions
+	rootOptions                  *internal.GlobalCommandOptions
 }
 
 func (p *pipelineConfigAction) SetupFlags(
@@ -67,9 +69,9 @@ func (p *pipelineConfigAction) SetupFlags(
 	local.StringVar(&p.pipelineRoleName, "principal-role", "Contributor", "The role to assign to the service principal.")
 }
 
-func (p *pipelineConfigAction) Run(ctx context.Context, _ *cobra.Command, args []string, azdCtx *azdcontext.AzdContext) error {
-	azCli := commands.GetAzCliFromContext(ctx)
-	console := input.NewConsole(!p.rootOptions.NoPrompt)
+func (p *pipelineConfigAction) Run(ctx context.Context, cmd *cobra.Command, args []string, azdCtx *azdcontext.AzdContext) error {
+	azCli := azcli.GetAzCli(ctx)
+	console := input.NewConsole(!p.rootOptions.NoPrompt, cmd.OutOrStdout())
 
 	if err := ensureProject(azdCtx.ProjectPath()); err != nil {
 		return err

@@ -155,7 +155,7 @@ func (p *BicepProvider) Deploy(ctx context.Context, deployment *Deployment, scop
 
 			// Report incremental progress
 			go func() {
-				resourceManager := infra.NewAzureResourceManager(p.azCli)
+				resourceManager := infra.NewAzureResourceManager(ctx)
 				progressDisplay := NewProvisioningProgressDisplay(resourceManager, p.console, p.env.GetSubscriptionId(), p.env.GetEnvName())
 
 				for {
@@ -248,7 +248,7 @@ func (p *BicepProvider) Destroy(ctx context.Context, deployment *Deployment, opt
 func (p *BicepProvider) getResourceGroups(ctx context.Context, asyncContext *async.InteractiveTaskContextWithProgress[*DestroyResult, *DestroyProgress]) ([]string, error) {
 	asyncContext.SetProgress(&DestroyProgress{Message: "Fetching resource groups", Timestamp: time.Now()})
 
-	resourceManager := infra.NewAzureResourceManager(p.azCli)
+	resourceManager := infra.NewAzureResourceManager(ctx)
 	resourceGroups, err := resourceManager.GetResourceGroupsForDeployment(ctx, p.env.GetSubscriptionId(), p.env.GetEnvName())
 	if err != nil {
 		return []string{}, err
@@ -275,7 +275,7 @@ func (p *BicepProvider) getAllResources(ctx context.Context, asyncContext *async
 
 // Deletes the azure resources within the deployment
 func (p *BicepProvider) destroyResourceGroups(ctx context.Context, asyncContext *async.InteractiveTaskContextWithProgress[*DestroyResult, *DestroyProgress], options DestroyOptions, resourceGroups []string, allResources []azcli.AzCliResource) error {
-	if !options.Force {
+	if !options.Force() {
 		err := asyncContext.Interact(func() error {
 			confirmDestroy, err := p.console.Confirm(ctx, input.ConsoleOptions{
 				Message:      fmt.Sprintf("This will delete %d resources, are you sure you want to continue?", len(allResources)),
@@ -343,7 +343,7 @@ func (p *BicepProvider) getKeyVaultsToPurge(ctx context.Context, asyncContext *a
 // See https://docs.microsoft.com/azure/key-vault/general/key-vault-recovery?tabs=azure-portal#what-are-soft-delete-and-purge-protection
 // for more information on this feature.
 func (p *BicepProvider) purgeKeyVaults(ctx context.Context, asyncContext *async.InteractiveTaskContextWithProgress[*DestroyResult, *DestroyProgress], keyVaults []azcli.AzCliKeyVault, options DestroyOptions) error {
-	if len(keyVaults) > 0 && !options.Purge {
+	if len(keyVaults) > 0 && !options.Purge() {
 		keyVaultWarning := fmt.Sprintf(""+
 			"\nThis operation will delete and purge %d Key Vaults. These Key Vaults have soft delete enabled allowing them to be recovered for a period \n"+
 			"of time after deletion. During this period, their names may not be reused.\n"+
@@ -647,15 +647,17 @@ func (p *BicepProvider) ensureParameters(ctx context.Context, deployment *Deploy
 }
 
 // NewBicepProvider creates a new instance of a Bicep Infra provider
-func NewBicepProvider(env *environment.Environment, projectPath string, options Options, console input.Console, bicepArgs bicep.NewBicepCliArgs) *BicepProvider {
-	bicepCli := bicep.NewBicepCli(bicepArgs)
+func NewBicepProvider(ctx context.Context, env *environment.Environment, projectPath string, infraOptions Options) *BicepProvider {
+	azCli := azcli.GetAzCli(ctx)
+	bicepCli := bicep.GetBicepCli(ctx)
+	console := input.GetConsole(ctx)
 
 	return &BicepProvider{
 		env:         env,
 		projectPath: projectPath,
-		options:     options,
+		options:     infraOptions,
 		console:     console,
 		bicepCli:    bicepCli,
-		azCli:       bicepArgs.AzCli,
+		azCli:       azCli,
 	}
 }

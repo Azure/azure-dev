@@ -61,7 +61,7 @@ func (mock *mockResourceManager) MarkComplete(i int) {
 }
 
 func TestReportProgress(t *testing.T) {
-	mockConsole := mocks.NewMockConsole()
+	mockContext := mocks.NewMockContext(context.Background())
 	interactiveLog := []bool{}
 
 	asyncTask := async.NewInteractiveTaskWithProgress(func(asyncContext *async.InteractiveTaskContextWithProgress[*DeployResult, *DeployProgress]) {
@@ -78,50 +78,50 @@ func TestReportProgress(t *testing.T) {
 	asyncContext := async.NewInteractiveTaskContextWithProgress(asyncTask)
 
 	mockResourceManager := mockResourceManager{}
-	progressDisplay := NewProvisioningProgressDisplay(&mockResourceManager, mockConsole, "SUBSCRIPTION_ID", "DEPLOYMENT_NAME")
+	progressDisplay := NewProvisioningProgressDisplay(&mockResourceManager, mockContext.Console, "SUBSCRIPTION_ID", "DEPLOYMENT_NAME")
 	progressReport, _ := progressDisplay.ReportProgress(context.Background(), asyncContext)
-	assert.Empty(t, mockConsole.Output())
+	assert.Empty(t, mockContext.Console.Output())
 	assert.Equal(t, defaultProgressTitle, progressReport.Message)
 
 	mockResourceManager.AddInProgressOperation()
 	progressReport, _ = progressDisplay.ReportProgress(context.Background(), asyncContext)
-	assert.Empty(t, mockConsole.Output())
+	assert.Empty(t, mockContext.Console.Output())
 	assert.Equal(t, formatProgressTitle(0, 1), progressReport.Message)
 
 	mockResourceManager.AddInProgressOperation()
 	progressReport, _ = progressDisplay.ReportProgress(context.Background(), asyncContext)
-	assert.Empty(t, mockConsole.Output())
+	assert.Empty(t, mockContext.Console.Output())
 	assert.Equal(t, formatProgressTitle(0, 2), progressReport.Message)
 
 	mockResourceManager.AddInProgressSubResourceOperation()
 	progressReport, _ = progressDisplay.ReportProgress(context.Background(), asyncContext)
-	assert.Empty(t, mockConsole.Output())
+	assert.Empty(t, mockContext.Console.Output())
 	assert.Equal(t, formatProgressTitle(0, 3), progressReport.Message)
 
 	mockResourceManager.MarkComplete(0)
 	progressReport, _ = progressDisplay.ReportProgress(context.Background(), asyncContext)
-	assert.Len(t, mockConsole.Output(), 1)
-	assertOperationLogged(t, 0, mockResourceManager.operations, mockConsole.Output())
+	assert.Len(t, mockContext.Console.Output(), 1)
+	assertOperationLogged(t, 0, mockResourceManager.operations, mockContext.Console.Output())
 	assert.Equal(t, formatProgressTitle(1, 3), progressReport.Message)
 
 	mockResourceManager.MarkComplete(1)
 	progressReport, _ = progressDisplay.ReportProgress(context.Background(), asyncContext)
-	assert.Len(t, mockConsole.Output(), 2)
-	assertOperationLogged(t, 1, mockResourceManager.operations, mockConsole.Output())
+	assert.Len(t, mockContext.Console.Output(), 2)
+	assertOperationLogged(t, 1, mockResourceManager.operations, mockContext.Console.Output())
 	assert.Equal(t, formatProgressTitle(2, 3), progressReport.Message)
 
 	// Verify display does not log sub resource types
-	oldLogOutput := make([]string, len(mockConsole.Output()))
-	copy(mockConsole.Output(), oldLogOutput)
+	oldLogOutput := make([]string, len(mockContext.Console.Output()))
+	copy(mockContext.Console.Output(), oldLogOutput)
 	mockResourceManager.MarkComplete(2)
 	progressReport, _ = progressDisplay.ReportProgress(context.Background(), asyncContext)
-	assert.Equal(t, oldLogOutput, mockConsole.Output())
+	assert.Equal(t, oldLogOutput, mockContext.Console.Output())
 	assert.Equal(t, formatProgressTitle(3, 3), progressReport.Message)
 
 	// Verify display does not repeat logging for resources already logged.
-	copy(mockConsole.Output(), oldLogOutput)
+	copy(mockContext.Console.Output(), oldLogOutput)
 	progressReport, _ = progressDisplay.ReportProgress(context.Background(), asyncContext)
-	assert.Equal(t, oldLogOutput, mockConsole.Output())
+	assert.Equal(t, oldLogOutput, mockContext.Console.Output())
 	assert.Equal(t, formatProgressTitle(3, 3), progressReport.Message)
 }
 

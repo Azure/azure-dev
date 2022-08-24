@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/commands"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
@@ -13,7 +14,7 @@ import (
 	"github.com/spf13/pflag"
 )
 
-func upCmd(rootOptions *commands.GlobalCommandOptions) *cobra.Command {
+func upCmd(rootOptions *internal.GlobalCommandOptions) *cobra.Command {
 	cmd := commands.Build(
 		commands.CompositeAction(
 			&ignoreInitErrorAction{
@@ -27,11 +28,7 @@ func upCmd(rootOptions *commands.GlobalCommandOptions) *cobra.Command {
 			// Print an additional newline to separate provision from deploy
 			commands.ActionFunc(
 				func(ctx context.Context, cmd *cobra.Command, args []string, azdCtx *azdcontext.AzdContext) error {
-					formatter, err := output.GetFormatter(cmd)
-					if err != nil {
-						return err
-					}
-
+					formatter := output.GetFormatter(ctx)
 					interactive := formatter.Kind() == output.NoneFormat
 					if interactive {
 						fmt.Println()

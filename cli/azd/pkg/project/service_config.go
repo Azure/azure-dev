@@ -7,12 +7,13 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/commands"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/docker"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/swa"
+	"github.com/mattn/go-colorable"
 )
 
 type ServiceConfig struct {
@@ -79,13 +80,13 @@ func (sc *ServiceConfig) GetService(ctx context.Context, project *Project, env *
 func (sc *ServiceConfig) GetServiceTarget(ctx context.Context, env *environment.Environment, scope *environment.DeploymentScope) (*ServiceTarget, error) {
 	var target ServiceTarget
 
-	azCli := commands.GetAzCliFromContext(ctx)
+	azCli := azcli.GetAzCli(ctx)
 
 	switch sc.Host {
 	case "", string(AppServiceTarget):
 		target = NewAppServiceTarget(sc, env, scope, azCli)
 	case string(ContainerAppTarget):
-		target = NewContainerAppTarget(sc, env, scope, azCli, docker.NewDocker(docker.DockerArgs{}), input.NewConsole(true))
+		target = NewContainerAppTarget(sc, env, scope, azCli, docker.NewDocker(docker.DockerArgs{}), input.NewConsole(true, colorable.NewColorableStdout()))
 	case string(AzureFunctionTarget):
 		target = NewFunctionAppTarget(sc, env, scope, azCli)
 	case string(StaticWebAppTarget):

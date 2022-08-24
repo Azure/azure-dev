@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/commands"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
@@ -13,7 +14,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/bicep"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 	"go.uber.org/multierr"
@@ -21,10 +22,10 @@ import (
 
 type infraCreateAction struct {
 	noProgress  bool
-	rootOptions *commands.GlobalCommandOptions
+	rootOptions *internal.GlobalCommandOptions
 }
 
-func infraCreateCmd(rootOptions *commands.GlobalCommandOptions) *cobra.Command {
+func infraCreateCmd(rootOptions *internal.GlobalCommandOptions) *cobra.Command {
 	cmd := commands.Build(
 		&infraCreateAction{
 			rootOptions: rootOptions,
@@ -44,8 +45,8 @@ func (ica *infraCreateAction) SetupFlags(persis, local *pflag.FlagSet) {
 }
 
 func (ica *infraCreateAction) Run(ctx context.Context, cmd *cobra.Command, args []string, azdCtx *azdcontext.AzdContext) error {
-	azCli := commands.GetAzCliFromContext(ctx)
-	console := input.NewConsole(!ica.rootOptions.NoPrompt)
+	azCli := azcli.GetAzCli(ctx)
+	console := input.GetConsole(ctx)
 
 	if err := ensureProject(azdCtx.ProjectPath()); err != nil {
 		return err
@@ -73,30 +74,26 @@ func (ica *infraCreateAction) Run(ctx context.Context, cmd *cobra.Command, args 
 		return err
 	}
 
+	formatter := output.GetFormatter(ctx)
+
 	if strings.TrimSpace(prj.Infra.Module) == "" {
 		prj.Infra.Module = "main"
 	}
 
-	infraManager, err := provisioning.NewManager(ctx, env, prj.Path, prj.Infra, !ica.rootOptions.NoPrompt, console, bicep.NewBicepCliArgs{AzCli: azCli})
+	infraManager, err := provisioning.NewManager(ctx, env, prj.Path, prj.Infra, !ica.rootOptions.NoPrompt)
 	if err != nil {
 		return fmt.Errorf("creating provisioning manager: %w", err)
 	}
 
-	previewResult, err := infraManager.Preview(ctx, !ica.rootOptions.NoPrompt)
+	previewResult, err := infraManager.Preview(ctx)
 	if err != nil {
 		return fmt.Errorf("previewing deployment: %w", err)
 	}
 
-	deployOptions := provisioning.DeployOptions{Interactive: !ica.rootOptions.NoPrompt}
-	provisioningScope := provisioning.NewSubscriptionScope(azCli, env.GetLocation(), env.GetSubscriptionId(), env.GetEnvName())
-	deployResult, err := infraManager.Deploy(ctx, &previewResult.Deployment, provisioningScope, deployOptions)
+	provisioningScope := provisioning.NewSubscriptionScope(ctx, env.GetLocation(), env.GetSubscriptionId(), env.GetEnvName())
+	deployResult, err := infraManager.Deploy(ctx, &previewResult.Deployment, provisioningScope)
 	if err != nil {
 		return fmt.Errorf("deploying infrastructure: %w", err)
-	}
-
-	formatter, err := output.GetFormatter(cmd)
-	if err != nil {
-		return err
 	}
 
 	if err != nil {

@@ -14,7 +14,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func versionCmd(rootOptions *commands.GlobalCommandOptions) *cobra.Command {
+func versionCmd(rootOptions *internal.GlobalCommandOptions) *cobra.Command {
 	cmd := commands.Build(
 		commands.ActionFunc(versionAction),
 		rootOptions,
@@ -30,18 +30,15 @@ func versionCmd(rootOptions *commands.GlobalCommandOptions) *cobra.Command {
 	)
 }
 
-func versionAction(_ context.Context, cmd *cobra.Command, _ []string, _ *azdcontext.AzdContext) error {
-	formatter, err := output.GetFormatter(cmd)
-	if err != nil {
-		return err
-	}
+func versionAction(ctx context.Context, cmd *cobra.Command, _ []string, _ *azdcontext.AzdContext) error {
+	formatter := output.GetFormatter(ctx)
 
 	switch formatter.Kind() {
 	case output.NoneFormat:
 		fmt.Printf("azd version %s\n", internal.Version)
 	case output.JsonFormat:
 		versionSpec := internal.GetVersionSpec()
-		err = formatter.Format(versionSpec, cmd.OutOrStdout(), nil)
+		err := formatter.Format(versionSpec, cmd.OutOrStdout(), nil)
 		if err != nil {
 			return err
 		}

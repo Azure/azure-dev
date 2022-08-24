@@ -115,6 +115,7 @@ func (d *deployAction) Run(ctx context.Context, cmd *cobra.Command, args []strin
 	}
 
 	formatter := output.GetFormatter(ctx)
+	writer := output.GetWriter(ctx)
 	interactive := formatter.Kind() == output.NoneFormat
 
 	var svcDeploymentResult project.ServiceDeploymentResult
@@ -174,7 +175,7 @@ func (d *deployAction) Run(ctx context.Context, cmd *cobra.Command, args []strin
 			Services:  deploymentResults,
 		}
 
-		if fmtErr := formatter.Format(aggregateDeploymentResult, cmd.OutOrStdout(), nil); fmtErr != nil {
+		if fmtErr := formatter.Format(aggregateDeploymentResult, writer, nil); fmtErr != nil {
 			return fmt.Errorf("deployment result could not be displayed: %w", fmtErr)
 		}
 	}

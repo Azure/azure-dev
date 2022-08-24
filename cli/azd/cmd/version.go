@@ -32,13 +32,14 @@ func versionCmd(rootOptions *internal.GlobalCommandOptions) *cobra.Command {
 
 func versionAction(ctx context.Context, cmd *cobra.Command, _ []string, _ *azdcontext.AzdContext) error {
 	formatter := output.GetFormatter(ctx)
+	writer := output.GetWriter(ctx)
 
 	switch formatter.Kind() {
 	case output.NoneFormat:
 		fmt.Printf("azd version %s\n", internal.Version)
 	case output.JsonFormat:
 		versionSpec := internal.GetVersionSpec()
-		err := formatter.Format(versionSpec, cmd.OutOrStdout(), nil)
+		err := formatter.Format(versionSpec, writer, nil)
 		if err != nil {
 			return err
 		}

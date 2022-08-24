@@ -93,6 +93,7 @@ func templatesShowCmd(rootOptions *internal.GlobalCommandOptions) *cobra.Command
 func formatTemplates(ctx context.Context, cmd *cobra.Command, templates ...templates.Template) error {
 	var err error
 	formatter := output.GetFormatter(ctx)
+	writer := output.GetWriter(ctx)
 
 	if formatter.Kind() == output.TableFormat {
 		columns := []output.Column{
@@ -106,11 +107,11 @@ func formatTemplates(ctx context.Context, cmd *cobra.Command, templates ...templ
 			},
 		}
 
-		err = formatter.Format(templates, cmd.OutOrStdout(), output.TableFormatterOptions{
+		err = formatter.Format(templates, writer, output.TableFormatterOptions{
 			Columns: columns,
 		})
 	} else {
-		err = formatter.Format(templates, cmd.OutOrStdout(), nil)
+		err = formatter.Format(templates, writer, nil)
 	}
 
 	if err != nil {

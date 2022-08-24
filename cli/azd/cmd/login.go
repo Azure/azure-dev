@@ -48,6 +48,8 @@ var _ commands.Action = &loginAction{}
 
 func (la *loginAction) Run(ctx context.Context, cmd *cobra.Command, args []string, azdCtx *azdcontext.AzdContext) error {
 	formatter := output.GetFormatter(ctx)
+	writer := output.GetWriter(ctx)
+
 	azCli := azcli.GetAzCli(ctx)
 	if err := tools.EnsureInstalled(ctx, azCli); err != nil {
 		return err
@@ -79,7 +81,7 @@ func (la *loginAction) Run(ctx context.Context, cmd *cobra.Command, args []strin
 	res.Status = "success"
 	res.ExpiresOn = token.ExpiresOn
 
-	return formatter.Format(res, cmd.OutOrStdout(), nil)
+	return formatter.Format(res, writer, nil)
 }
 
 func (la *loginAction) SetupFlags(persistent *pflag.FlagSet, local *pflag.FlagSet) {

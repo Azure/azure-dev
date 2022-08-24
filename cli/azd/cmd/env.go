@@ -127,6 +127,7 @@ func envListCmd(rootOptions *internal.GlobalCommandOptions) *cobra.Command {
 			}
 
 			formatter := output.GetFormatter(ctx)
+			writer := output.GetWriter(ctx)
 			envs, err := azdCtx.ListEnvironments()
 
 			if err != nil {
@@ -145,11 +146,11 @@ func envListCmd(rootOptions *internal.GlobalCommandOptions) *cobra.Command {
 					},
 				}
 
-				err = formatter.Format(envs, cmd.OutOrStdout(), output.TableFormatterOptions{
+				err = formatter.Format(envs, writer, output.TableFormatterOptions{
 					Columns: columns,
 				})
 			} else {
-				err = formatter.Format(envs, cmd.OutOrStdout(), nil)
+				err = formatter.Format(envs, writer, nil)
 			}
 			if err != nil {
 				return err
@@ -243,6 +244,7 @@ func envRefreshCmd(rootOptions *internal.GlobalCommandOptions) *cobra.Command {
 		}
 
 		formatter := output.GetFormatter(ctx)
+		writer := output.GetWriter(ctx)
 
 		if strings.TrimSpace(prj.Infra.Module) == "" {
 			prj.Infra.Module = "main"
@@ -265,7 +267,7 @@ func envRefreshCmd(rootOptions *internal.GlobalCommandOptions) *cobra.Command {
 		}
 
 		if formatter.Kind() == output.JsonFormat {
-			err = formatter.Format(getDeploymentResult.Deployment, cmd.OutOrStdout(), nil)
+			err = formatter.Format(getDeploymentResult.Deployment, writer, nil)
 			if err != nil {
 				return fmt.Errorf("writing deployment result in JSON format: %w", err)
 			}
@@ -284,20 +286,10 @@ func envRefreshCmd(rootOptions *internal.GlobalCommandOptions) *cobra.Command {
 }
 
 func envGetValuesCmd(rootOptions *internal.GlobalCommandOptions) *cobra.Command {
-	cmd := &cobra.Command{
-		Use:   "get-values",
-		Short: "Get all environment values.",
-		Args:  cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			ctx := internal.WithCommandOptions(context.Background(), *rootOptions)
-
+	actionFn := commands.ActionFunc(
+		func(ctx context.Context, cmd *cobra.Command, args []string, azdCtx *azdcontext.AzdContext) error {
 			console := input.GetConsole(ctx)
 			azCli := azcli.GetAzCli(ctx)
-
-			azdCtx, err := azdcontext.NewAzdContext()
-			if err != nil {
-				return fmt.Errorf("failed to get the current directory: %w", err)
-			}
 
 			if err := ensureProject(azdCtx.ProjectPath()); err != nil {
 				return err
@@ -308,20 +300,28 @@ func envGetValuesCmd(rootOptions *internal.GlobalCommandOptions) *cobra.Command 
 			}
 
 			formatter := output.GetFormatter(ctx)
+			writer := output.GetWriter(ctx)
 
 			env, err := loadOrInitEnvironment(ctx, &rootOptions.EnvironmentName, azdCtx, console)
 			if err != nil {
 				return err
 			}
 
-			err = formatter.Format(env.Values, cmd.OutOrStdout(), nil)
+			err = formatter.Format(env.Values, writer, nil)
 			if err != nil {
 				return err
 			}
 
 			return nil
-		},
-	}
-	cmd.Flags().BoolP("help", "h", false, fmt.Sprintf("Gets help for %s.", cmd.Name()))
+		})
+
+	cmd := commands.Build(
+		actionFn,
+		rootOptions,
+		"get-values",
+		"Get all environment values.",
+		"",
+	)
+
 	return cmd
 }

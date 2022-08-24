@@ -84,7 +84,7 @@ func (i *initAction) Run(ctx context.Context, cmd *cobra.Command, args []string,
 		return errors.New("template name required when specifying a branch name")
 	}
 
-	console := input.NewConsole(!i.rootOptions.NoPrompt, cmd.OutOrStdout())
+	console := input.GetConsole(ctx)
 	azCli := azcli.GetAzCli(ctx)
 	gitCli := git.NewGitCli()
 

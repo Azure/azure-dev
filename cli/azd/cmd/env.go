@@ -58,8 +58,8 @@ You can find all environment configurations under the *.azure\<environment-name>
 
 func envSetCmd(rootOptions *internal.GlobalCommandOptions) *cobra.Command {
 	actionFn := func(ctx context.Context, cmd *cobra.Command, args []string, azdCtx *azdcontext.AzdContext) error {
-		console := input.NewConsole(!rootOptions.NoPrompt, cmd.OutOrStdout())
 		azCli := azcli.GetAzCli(ctx)
+		console := input.GetConsole(ctx)
 
 		if err := ensureProject(azdCtx.ProjectPath()); err != nil {
 			return err
@@ -204,7 +204,7 @@ func (en *envNewAction) Run(ctx context.Context, cmd *cobra.Command, args []stri
 		return err
 	}
 
-	console := input.NewConsole(!en.rootOptions.NoPrompt, cmd.OutOrStdout())
+	console := input.GetConsole(ctx)
 	envSpec := environmentSpec{
 		environmentName: en.rootOptions.EnvironmentName,
 		subscription:    en.subscription,
@@ -224,7 +224,7 @@ func (en *envNewAction) Run(ctx context.Context, cmd *cobra.Command, args []stri
 func envRefreshCmd(rootOptions *internal.GlobalCommandOptions) *cobra.Command {
 	actionFn := func(ctx context.Context, cmd *cobra.Command, args []string, azdCtx *azdcontext.AzdContext) error {
 		azCli := azcli.GetAzCli(ctx)
-		console := input.NewConsole(!rootOptions.NoPrompt, cmd.OutOrStdout())
+		console := input.GetConsole(ctx)
 
 		if err := ensureProject(azdCtx.ProjectPath()); err != nil {
 			return err
@@ -295,10 +295,9 @@ func envGetValuesCmd(rootOptions *internal.GlobalCommandOptions) *cobra.Command 
 		Short: "Get all environment values.",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			ctx := context.Background()
-			ctx = internal.WithCommandOptions(ctx, *rootOptions)
+			ctx := internal.WithCommandOptions(context.Background(), *rootOptions)
 
-			console := input.NewConsole(!rootOptions.NoPrompt, cmd.OutOrStdout())
+			console := input.GetConsole(ctx)
 			azCli := azcli.GetAzCli(ctx)
 
 			azdCtx, err := azdcontext.NewAzdContext()

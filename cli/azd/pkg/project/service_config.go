@@ -13,7 +13,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/docker"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/swa"
-	"github.com/mattn/go-colorable"
 )
 
 type ServiceConfig struct {
@@ -86,7 +85,7 @@ func (sc *ServiceConfig) GetServiceTarget(ctx context.Context, env *environment.
 	case "", string(AppServiceTarget):
 		target = NewAppServiceTarget(sc, env, scope, azCli)
 	case string(ContainerAppTarget):
-		target = NewContainerAppTarget(sc, env, scope, azCli, docker.NewDocker(docker.DockerArgs{}), input.NewConsole(true, colorable.NewColorableStdout()))
+		target = NewContainerAppTarget(sc, env, scope, azCli, docker.NewDocker(docker.DockerArgs{}), input.GetConsole(ctx))
 	case string(AzureFunctionTarget):
 		target = NewFunctionAppTarget(sc, env, scope, azCli)
 	case string(StaticWebAppTarget):

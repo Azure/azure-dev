@@ -3,6 +3,7 @@ package commands
 import (
 	"context"
 	"fmt"
+	"log"
 
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
@@ -40,7 +41,8 @@ func Build(action Action, rootOptions *internal.GlobalCommandOptions, use string
 
 			formatter, err := output.GetCommandFormatter(cmd)
 			if err != nil {
-				return fmt.Errorf("getting formatter: %w", err)
+				log.Printf("getting formatter: %s", err.Error())
+				formatter, _ = output.NewFormatter(string(output.NoneFormat))
 			}
 
 			ctx = output.WithFormatter(ctx, formatter)
@@ -48,7 +50,7 @@ func Build(action Action, rootOptions *internal.GlobalCommandOptions, use string
 			writer := cmd.OutOrStdout()
 			ctx = output.WithWriter(ctx, writer)
 
-			console := input.NewConsole(!rootOptions.NoPrompt, writer)
+			console := input.NewConsole(!rootOptions.NoPrompt, writer, formatter)
 			ctx = input.WithConsole(ctx, console)
 
 			return action.Run(ctx, cmd, args, azdCtx)

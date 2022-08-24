@@ -2,7 +2,6 @@ package provisioning
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"log"
@@ -84,6 +83,10 @@ func (m *Manager) Deploy(ctx context.Context, deployment *Deployment, scope Scop
 	deployResult, err := m.deploy(ctx, location, deployment, scope)
 	if err != nil {
 		return nil, err
+	}
+
+	if err := UpdateEnvironment(&m.env, &deployResult.Deployment.Outputs); err != nil {
+		return nil, fmt.Errorf("updating environment with deployment outputs: %w", err)
 	}
 
 	return deployResult, nil
@@ -176,6 +179,10 @@ func (m *Manager) deploy(ctx context.Context, location string, deployment *Deplo
 
 	if err != nil {
 		return nil, fmt.Errorf("error deploying infrastructure: %w", err)
+	}
+
+	if m.formatter.Kind() == output.JsonFormat {
+		m.writeJsonOutput(ctx, deployResult.Operations)
 	}
 
 	m.console.Message(ctx, "\nAzure resource provisioning completed successfully 👍")
@@ -275,14 +282,6 @@ func (m *Manager) writeJsonOutput(ctx context.Context, output any) {
 	if err != nil {
 		log.Printf("error formatting output: %s", err.Error())
 	}
-
-	jsonBytes, err := json.Marshal(output)
-	if err != nil {
-		log.Printf("Error marshalling JSON output: %s", err.Error())
-		return
-	}
-
-	m.console.Message(ctx, string(jsonBytes))
 }
 
 // Monitors the interactive channel and starts/stops the terminal spinner as needed

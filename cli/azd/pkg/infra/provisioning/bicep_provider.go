@@ -150,7 +150,7 @@ func (p *BicepProvider) Deploy(ctx context.Context, deployment *Deployment, scop
 			var operations []azcli.AzCliResourceOperation
 
 			deploymentSlug := azure.SubscriptionDeploymentRID(p.env.GetSubscriptionId(), p.env.GetEnvName())
-			deploymentUrl := fmt.Sprintf(color.CyanString("https://portal.azure.com/#blade/HubsExtension/DeploymentDetailsBlade/overview/id/%s\n"), url.PathEscape(deploymentSlug))
+			deploymentUrl := fmt.Sprintf(color.HiCyanString("https://portal.azure.com/#blade/HubsExtension/DeploymentDetailsBlade/overview/id/%s\n"), url.PathEscape(deploymentSlug))
 			p.console.Message(ctx, fmt.Sprintf("Provisioning Azure resources can take some time.\n\nYou can view detailed progress in the Azure Portal:\n%s", deploymentUrl))
 
 			// Report incremental progress

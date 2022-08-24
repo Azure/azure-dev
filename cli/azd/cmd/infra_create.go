@@ -75,6 +75,7 @@ func (ica *infraCreateAction) Run(ctx context.Context, cmd *cobra.Command, args 
 	}
 
 	formatter := output.GetFormatter(ctx)
+	writer := output.GetWriter(ctx)
 
 	if strings.TrimSpace(prj.Infra.Module) == "" {
 		prj.Infra.Module = "main"
@@ -98,32 +99,22 @@ func (ica *infraCreateAction) Run(ctx context.Context, cmd *cobra.Command, args 
 
 	if err != nil {
 		if formatter.Kind() == output.JsonFormat {
-			deploy, deployErr := azCli.GetSubscriptionDeployment(ctx, env.GetSubscriptionId(), env.GetEnvName())
-			if deployErr != nil {
-				return fmt.Errorf("deployment failed and the deployment result is unavailable: %w", multierr.Combine(err, deployErr))
+			deployment, err := infraManager.GetDeployment(ctx, provisioningScope)
+			if err != nil {
+				return fmt.Errorf("deployment failed and the deployment result is unavailable: %w", multierr.Combine(err, err))
 			}
 
-			if fmtErr := formatter.Format(deploy, cmd.OutOrStdout(), nil); fmtErr != nil {
-				return fmt.Errorf("deployment failed and the deployment result could not be displayed: %w", multierr.Combine(err, fmtErr))
+			if err := formatter.Format(deployment, writer, nil); err != nil {
+				return fmt.Errorf("deployment failed and the deployment result could not be displayed: %w", multierr.Combine(err, err))
 			}
 		}
 
 		return fmt.Errorf("deployment failed: %w", err)
 	}
 
-	if err := provisioning.UpdateEnvironment(&env, &deployResult.Deployment.Outputs); err != nil {
-		return fmt.Errorf("updating environment with deployment outputs: %w", err)
-	}
-
 	for _, svc := range prj.Services {
 		if err := svc.RaiseEvent(ctx, project.Deployed, map[string]any{"bicepOutput": deployResult.Deployment.Outputs}); err != nil {
 			return err
-		}
-	}
-
-	if formatter.Kind() == output.JsonFormat {
-		if err = formatter.Format(deployResult.Operations, cmd.OutOrStdout(), nil); err != nil {
-			return fmt.Errorf("deployment result could not be displayed: %w", err)
 		}
 	}
 

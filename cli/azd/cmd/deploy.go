@@ -31,7 +31,7 @@ func deployCmd(rootOptions *internal.GlobalCommandOptions) *cobra.Command {
 		"Deploy the application's code to Azure.",
 		`Deploy the application's code to Azure.
 
-When no `+withBackticks("--service")+` value is specified, all services in the *azure.yaml* file (found in the root of your project) are deployed.
+When no `+output.WithBackticks("--service")+` value is specified, all services in the *azure.yaml* file (found in the root of your project) are deployed.
 
 Examples:
 
@@ -159,7 +159,7 @@ func (d *deployAction) Run(ctx context.Context, cmd *cobra.Command, args []strin
 			spinner.Stop()
 
 			if err == nil {
-				reportServiceDeploymentResultInteractive(svc, &svcDeploymentResult)
+				reportServiceDeploymentResultInteractive(ctx, console, svc, &svcDeploymentResult)
 			}
 		} else {
 			err = deployAndReportProgress(nil)
@@ -187,28 +187,30 @@ func (d *deployAction) Run(ctx context.Context, cmd *cobra.Command, args []strin
 	}
 
 	for _, resourceGroup := range resourceGroups {
-		resourcesGroupsURL := withLinkFormat(
+		resourcesGroupsURL := output.WithLinkFormat(
 			"https://portal.azure.com/#@/resource/subscriptions/%s/resourceGroups/%s/overview",
 			env.GetSubscriptionId(),
 			resourceGroup)
-		printWithStyling(
+
+		message := fmt.Sprintf(
 			"View the resources created under the resource group %s in Azure Portal:\n%s\n",
-			withHighLightFormat(resourceGroup),
-			resourcesGroupsURL)
+			output.WithHighLightFormat(resourceGroup),
+			output.WithLinkFormat(resourcesGroupsURL),
+		)
+		console.Message(ctx, message)
 	}
 
 	return nil
 }
 
-func reportServiceDeploymentResultInteractive(svc *project.Service, sdr *project.ServiceDeploymentResult) {
+func reportServiceDeploymentResultInteractive(ctx context.Context, console input.Console, svc *project.Service, sdr *project.ServiceDeploymentResult) {
 	var builder strings.Builder
 
 	builder.WriteString(fmt.Sprintf("Deployed service %s\n", svc.Config.Name))
 
 	for _, endpoint := range sdr.Endpoints {
-		builder.WriteString(fmt.Sprintf(" - Endpoint: %s\n", withLinkFormat(endpoint)))
+		builder.WriteString(fmt.Sprintf(" - Endpoint: %s\n", output.WithLinkFormat(endpoint)))
 	}
 
-	printWithStyling(builder.String())
-	fmt.Println()
+	console.Message(ctx, builder.String())
 }

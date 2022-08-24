@@ -21,6 +21,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/input/inputhelper"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
+	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/pkg/spin"
 	"github.com/azure/azure-dev/cli/azd/pkg/templates"
@@ -42,7 +43,7 @@ func initCmd(rootOptions *internal.GlobalCommandOptions) *cobra.Command {
 		"Initialize a new application.",
 		`Initialize a new application.
 
-When no template is supplied, you can optionally select an Azure Developer CLI template for cloning. Otherwise, `+withBackticks("azd init")+` initializes the current directory and creates resources so that your project is compatible with Azure Developer CLI.
+When no template is supplied, you can optionally select an Azure Developer CLI template for cloning. Otherwise, `+output.WithBackticks("azd init")+` initializes the current directory and creates resources so that your project is compatible with Azure Developer CLI.
 
 When a template is provided, the sample code is cloned to the current directory.`,
 	)

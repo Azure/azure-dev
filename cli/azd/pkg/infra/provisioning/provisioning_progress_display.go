@@ -10,8 +10,8 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
-	"github.com/fatih/color"
 )
 
 const defaultProgressTitle string = "🚀 Provisioning Azure resources"
@@ -124,9 +124,9 @@ func (display *ProvisioningProgressDisplay) logNewlyCreatedResources(ctx context
 func formatCreatedResourceLog(resourceTypeDisplayName string, resourceName string) string {
 	return fmt.Sprintf(
 		"✅ %s %s: %s",
-		color.GreenString("Created"),
+		output.WithSuccessFormat("Created"),
 		resourceTypeDisplayName,
-		color.CyanString(resourceName))
+		output.WithHighLightFormat(resourceName))
 }
 
 func formatProgressTitle(succeededCount int, totalCount int) string {

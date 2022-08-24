@@ -18,8 +18,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/input/inputhelper"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
-	"github.com/fatih/color"
-	"github.com/mgutz/ansi"
 )
 
 type Asker func(p survey.Prompt, response interface{}) error
@@ -307,28 +305,4 @@ func ensureProject(path string) error {
 	}
 
 	return nil
-}
-
-// withLinkFormat creates string with hyperlink-looking color
-func withLinkFormat(link string, a ...interface{}) string {
-	// See ansi colors: https://en.wikipedia.org/wiki/ANSI_escape_code#Colors
-	// ansi code `30` is the one that matches the survey selection
-	return ansi.Color(fmt.Sprintf(link, a...), "30")
-}
-
-// withHighLightFormat creates string with highlight-looking color
-func withHighLightFormat(text string, a ...interface{}) string {
-	return color.CyanString(text, a...)
-}
-
-// printWithStyling prints text to stdout and handles Windows terminals to support
-// escape chars from the text for adding style (color, font, etc)
-func printWithStyling(text string, a ...interface{}) {
-	colorTerminal := color.New()
-	colorTerminal.Printf(text, a...)
-}
-
-// withBackticks wraps text with the backtick (`) character.
-func withBackticks(text string) string {
-	return "`" + text + "`"
 }

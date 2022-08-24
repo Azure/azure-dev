@@ -17,6 +17,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/github"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/git"
@@ -509,12 +510,14 @@ func notifyWhenGitHubActionsAreDisabled(
 	}
 
 	if ghLocalWorkflowFiles {
-		printWithStyling("\n%s\n"+
+		message := fmt.Sprintf("\n%s\n"+
 			" - If you forked and cloned a template, please enable actions here: %s.\n"+
 			" - Otherwise, check the GitHub Actions permissions here: %s.\n",
-			withHighLightFormat("GitHub actions are currently disabled for your repository."),
-			withHighLightFormat("https://github.com/%s/actions", repoSlug),
-			withHighLightFormat("https://github.com/%s/settings/actions", repoSlug))
+			output.WithHighLightFormat("GitHub actions are currently disabled for your repository."),
+			output.WithHighLightFormat("https://github.com/%s/actions", repoSlug),
+			output.WithHighLightFormat("https://github.com/%s/settings/actions", repoSlug))
+
+		console.Message(ctx, message)
 
 		rawSelection, err := console.Select(ctx, input.ConsoleOptions{
 			Message: "What would you like to do now?",

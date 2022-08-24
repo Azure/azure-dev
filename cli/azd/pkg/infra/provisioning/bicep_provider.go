@@ -18,11 +18,11 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/bicep"
 	"github.com/drone/envsubst"
-	"github.com/fatih/color"
 )
 
 type BicepTemplate struct {
@@ -150,7 +150,7 @@ func (p *BicepProvider) Deploy(ctx context.Context, deployment *Deployment, scop
 			var operations []azcli.AzCliResourceOperation
 
 			deploymentSlug := azure.SubscriptionDeploymentRID(p.env.GetSubscriptionId(), p.env.GetEnvName())
-			deploymentUrl := fmt.Sprintf(color.HiCyanString("https://portal.azure.com/#blade/HubsExtension/DeploymentDetailsBlade/overview/id/%s\n"), url.PathEscape(deploymentSlug))
+			deploymentUrl := fmt.Sprintf(output.WithLinkFormat("https://portal.azure.com/#blade/HubsExtension/DeploymentDetailsBlade/overview/id/%s\n"), url.PathEscape(deploymentSlug))
 			p.console.Message(ctx, fmt.Sprintf("Provisioning Azure resources can take some time.\n\nYou can view detailed progress in the Azure Portal:\n%s", deploymentUrl))
 
 			// Report incremental progress
@@ -299,14 +299,14 @@ func (p *BicepProvider) destroyResourceGroups(ctx context.Context, asyncContext 
 	}
 
 	for _, resourceGroup := range resourceGroups {
-		message := fmt.Sprintf("%s resource group %s", color.RedString("Deleting"), color.CyanString(resourceGroup))
+		message := fmt.Sprintf("%s resource group %s", output.WithErrorFormat("Deleting"), output.WithHighLightFormat(resourceGroup))
 		asyncContext.SetProgress(&DestroyProgress{Message: message, Timestamp: time.Now()})
 
 		if err := p.azCli.DeleteResourceGroup(ctx, p.env.GetSubscriptionId(), resourceGroup); err != nil {
 			return err
 		}
 
-		p.console.Message(ctx, fmt.Sprintf("💀 %s resource group %s", color.RedString("Deleted"), color.CyanString(resourceGroup)))
+		p.console.Message(ctx, fmt.Sprintf("💀 %s resource group %s", output.WithErrorFormat("Deleted"), output.WithHighLightFormat(resourceGroup)))
 	}
 
 	return nil
@@ -350,11 +350,11 @@ func (p *BicepProvider) purgeKeyVaults(ctx context.Context, asyncContext *async.
 			"You can use argument --purge to skip this confirmation.\n\n",
 			len(keyVaults))
 
-		p.console.Message(ctx, color.YellowString(keyVaultWarning))
+		p.console.Message(ctx, output.WithWarningFormat(keyVaultWarning))
 
 		err := asyncContext.Interact(func() error {
 			purgeKeyVaults, err := p.console.Confirm(ctx, input.ConsoleOptions{
-				Message:      fmt.Sprintf("Would you like to %s delete these Key Vaults instead, allowing their names to be reused?", color.HiRedString("permanently")),
+				Message:      fmt.Sprintf("Would you like to %s delete these Key Vaults instead, allowing their names to be reused?", output.WithErrorFormat("permanently")),
 				DefaultValue: false,
 			})
 
@@ -377,7 +377,7 @@ func (p *BicepProvider) purgeKeyVaults(ctx context.Context, asyncContext *async.
 	for _, keyVault := range keyVaults {
 		progressReport := DestroyProgress{
 			Timestamp: time.Now(),
-			Message:   fmt.Sprintf("%s key vault %s", color.RedString("Purging"), color.CyanString(keyVault.Name)),
+			Message:   fmt.Sprintf("%s key vault %s", output.WithErrorFormat("Purging"), output.WithHighLightFormat(keyVault.Name)),
 		}
 
 		asyncContext.SetProgress(&progressReport)
@@ -387,7 +387,7 @@ func (p *BicepProvider) purgeKeyVaults(ctx context.Context, asyncContext *async.
 			return fmt.Errorf("purging key vault %s: %w", keyVault.Name, err)
 		}
 
-		p.console.Message(ctx, fmt.Sprintf("💀 %s key vault %s", color.RedString("Purged"), color.CyanString(keyVault.Name)))
+		p.console.Message(ctx, fmt.Sprintf("💀 %s key vault %s", output.WithErrorFormat("Purged"), output.WithHighLightFormat(keyVault.Name)))
 	}
 
 	return nil
@@ -403,7 +403,7 @@ func (p *BicepProvider) deleteDeployment(ctx context.Context, asyncContext *asyn
 		return err
 	}
 
-	p.console.Message(ctx, fmt.Sprintf("💀 %s deployment %s", color.RedString("Deleted"), color.CyanString(deploymentName)))
+	p.console.Message(ctx, fmt.Sprintf("💀 %s deployment %s", output.WithErrorFormat("Deleted"), output.WithHighLightFormat(deploymentName)))
 
 	return nil
 }

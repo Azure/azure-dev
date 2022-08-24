@@ -57,14 +57,23 @@ repo:
       patterns:
         - openapi.yaml
 
-    # Template common
+    # Templates common
     - from: ../../../../../common
       to: ./
-      ignore: 
+      ignore:
+      - .devcontainer/**/*
       - "infra/**/*"
-
+    
     - from: ../../../../../common/infra/bicep
       to: ./infra
+
+    # .devcontainer common (devcontainer.json)
+    - from: ../../../../../common/.devcontainer/devcontainer.json/nodejs
+      to: ./.devcontainer
+
+    # .devcontainer common (Dockerfile)
+    - from: ../../../../../common/.devcontainer/Dockerfile/base
+      to: ./.devcontainer
 
     # Assets common
     - from: ../../../../common/assets
@@ -97,5 +106,3 @@ repo:
     # Azure.yml
     - from: ./azure.yaml
       to: ./azure.yaml
-
-    

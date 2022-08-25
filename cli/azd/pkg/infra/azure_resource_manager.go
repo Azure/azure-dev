@@ -9,12 +9,14 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azureutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/sethvargo/go-retry"
 )
 
 type AzureResourceManager struct {
-	azCli azcli.AzCli
+	azCli         azcli.AzCli
+	retryStrategy *osutil.RetryStrategy
 }
 
 type ResourceManager interface {
@@ -27,7 +29,8 @@ func NewAzureResourceManager(ctx context.Context) *AzureResourceManager {
 	azCli := azcli.GetAzCli(ctx)
 
 	return &AzureResourceManager{
-		azCli: azCli,
+		azCli:         azCli,
+		retryStrategy: osutil.NewRetryStrategy(10, time.Second*5),
 	}
 }
 
@@ -107,7 +110,7 @@ func (rm *AzureResourceManager) GetResourceGroupsForEnvironment(ctx context.Cont
 
 	var graphQueryResults *azcli.AzCliGraphQuery
 
-	err := retry.Do(ctx, retry.WithMaxRetries(10, retry.NewConstant(5*time.Second)), func(ctx context.Context) error {
+	err := retry.Do(ctx, retry.WithMaxRetries(rm.retryStrategy.MaxRetries, retry.NewConstant(rm.retryStrategy.RetryBackoff)), func(ctx context.Context) error {
 		queryResult, err := azCli.GraphQuery(ctx, query, []string{env.GetSubscriptionId()})
 		if err != nil {
 			return fmt.Errorf("executing graph query: %s: %w", query, err)
@@ -142,7 +145,7 @@ func (rm *AzureResourceManager) GetDefaultResourceGroups(ctx context.Context, en
 
 	var graphQueryResults *azcli.AzCliGraphQuery
 
-	err := retry.Do(ctx, retry.WithMaxRetries(10, retry.NewConstant(5*time.Second)), func(ctx context.Context) error {
+	err := retry.Do(ctx, retry.WithMaxRetries(rm.retryStrategy.MaxRetries, retry.NewConstant(rm.retryStrategy.RetryBackoff)), func(ctx context.Context) error {
 		queryResult, err := azCli.GraphQuery(ctx, query, []string{env.GetSubscriptionId()})
 		if err != nil {
 			return fmt.Errorf("executing graph query: %s: %w", query, err)

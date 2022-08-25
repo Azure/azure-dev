@@ -178,6 +178,8 @@ func Internal_Test_CLI_ResourceGroupsName(t *testing.T, envName string, rgName s
 	ctx, cancel := newTestContext(t)
 	defer cancel()
 
+	os.Setenv("AZD_FUNC_TEST", "TRUE")
+
 	dir := t.TempDir()
 	t.Logf("DIR: %s", dir)
 

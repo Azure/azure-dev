@@ -66,6 +66,7 @@ ignoreWords:
     - syndp
     - synsp
     - synw
+    - TEAMPROJECTID
     - traf
     - vmss
     - vnet

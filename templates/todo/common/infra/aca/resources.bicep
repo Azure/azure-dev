@@ -44,7 +44,7 @@ resource containerRegistry 'Microsoft.ContainerRegistry/registries@2022-02-01-pr
   }
 }
 
-resource keyVault 'Microsoft.KeyVault/vaults@2021-10-01' = {
+resource keyVault 'Microsoft.KeyVault/vaults@2022-07-01' = {
   name: '${abbrs.keyVaultVaults}${resourceToken}'
   location: location
   tags: tags
@@ -65,7 +65,7 @@ resource keyVault 'Microsoft.KeyVault/vaults@2021-10-01' = {
   }
 }
 
-resource keyVaultAccessPolicies 'Microsoft.KeyVault/vaults/accessPolicies@2021-10-01' = if (!empty(principalId)) {
+resource keyVaultAccessPolicies 'Microsoft.KeyVault/vaults/accessPolicies@2022-07-01' = if (!empty(principalId)) {
   name: '${keyVault.name}/add'
   properties: {
     accessPolicies: [
@@ -139,7 +139,7 @@ resource logAnalyticsWorkspace 'Microsoft.OperationalInsights/workspaces@2021-06
   })
 }
 
-resource cosmos 'Microsoft.DocumentDB/databaseAccounts@2021-10-15' = {
+resource cosmos 'Microsoft.DocumentDB/databaseAccounts@2022-05-15' = {
   name: '${abbrs.documentDBDatabaseAccounts}${resourceToken}'
   kind: 'MongoDB'
   location: location

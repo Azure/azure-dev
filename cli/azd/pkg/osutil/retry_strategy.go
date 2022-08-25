@@ -7,7 +7,7 @@ import (
 )
 
 type RetryStrategy struct {
-	// The maximum number of retries before faling
+	// The maximum number of retries before failing
 	MaxRetries uint64
 	// The time between each retry attempt
 	RetryBackoff time.Duration

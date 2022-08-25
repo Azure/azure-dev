@@ -97,8 +97,6 @@ func GetServiceResourceName(ctx context.Context, resourceGroupName string, servi
 	query := fmt.Sprintf(`resources | 
 		where resourceGroup == '%s' | where tags['azd-service-name'] == '%s' |
 		project id, name, type, tags, location`,
-		// The Resource Graph queries have resource groups all lower-cased
-		// see: https://github.com/Azure/azure-dev/issues/115
 		resourceGroupName,
 		serviceName)
 

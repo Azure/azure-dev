@@ -17,16 +17,23 @@ import (
 
 type subareaProvider interface {
 	requiredTools() []tools.ExternalTool
-	preConfigureCheck(ctx context.Context) error
+	preConfigureCheck(ctx context.Context, console input.Console) error
 	name() string
+}
+
+type gitRepositoryDetails struct {
+	owner    string
+	repoName string
 }
 
 type scmProvider interface {
 	subareaProvider
-	configureGitRemote(branchName string) (string, error)
+	gitRepoDetails(ctx context.Context, remoteUrl *string) (*gitRepositoryDetails, error)
+	// configureGitRemote returns the git repository url after setting it
+	configureGitRemote(ctx context.Context, repoPath string, remoteName string, console input.Console) (*string, error)
 	preventGitPush(
 		ctx context.Context,
-		repoSlug string,
+		gitRepo *gitRepositoryDetails,
 		remoteName string,
 		branchName string,
 		console input.Console) (bool, error)
@@ -36,7 +43,7 @@ type ciProvider interface {
 	subareaProvider
 	configureConnection(
 		ctx context.Context,
-		repoSlug string,
+		gitRepo *gitRepositoryDetails,
 		environmentName string,
 		location string,
 		subscriptionId string,

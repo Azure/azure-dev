@@ -13,7 +13,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/commands"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
-	"github.com/azure/azure-dev/cli/azd/pkg/github"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/git"
@@ -43,21 +42,36 @@ func (i *pipelineManager) preConfigureCheck(ctx context.Context) error {
 	if err := ensureLoggedIn(ctx); err != nil {
 		return fmt.Errorf("failed to ensure login: %w", err)
 	}
-	if err := i.scmProvider.preConfigureCheck(ctx); err != nil {
+	if err := i.scmProvider.preConfigureCheck(ctx, i.console); err != nil {
 		return fmt.Errorf("pre-config check error from %s provider: %w", i.scmProvider.name(), err)
 	}
-	if err := i.ciProvider.preConfigureCheck(ctx); err != nil {
+	if err := i.ciProvider.preConfigureCheck(ctx, i.console); err != nil {
 		return fmt.Errorf("pre-config check error from %s provider: %w", i.ciProvider.name(), err)
 	}
 
 	return nil
 }
 
-func (i *pipelineManager) getSlugOrInit(ctx context.Context) (string, error) {
+func (i *pipelineManager) ensureRemote(ctx context.Context, repositoryPath string, remoteName string) (*gitRepositoryDetails, error) {
 	gitCli := git.NewGitCli()
+	remoteUrl, err := gitCli.GetRemoteUrl(ctx, repositoryPath, remoteName)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get remote url: %w", err)
+	}
 
+	gitRepoDetails, err := i.scmProvider.gitRepoDetails(ctx, &remoteUrl)
+	if err != nil {
+		return nil, err
+	}
+
+	return gitRepoDetails, nil
+}
+
+func (i *pipelineManager) getGitRepoDetails(ctx context.Context) (*gitRepositoryDetails, error) {
+	gitCli := git.NewGitCli()
+	repoPath := i.azdCtx.ProjectDirectory()
 	for {
-		repoSlug, err := github.EnsureRemote(ctx, i.azdCtx.ProjectDirectory(), i.pipelineRemoteName, gitCli)
+		repoRemoteDetails, err := i.ensureRemote(ctx, repoPath, i.pipelineRemoteName)
 		switch {
 		case errors.Is(err, git.ErrNotRepository):
 			// Offer the user a chance to init a new repository if one does not exist.
@@ -66,15 +80,15 @@ func (i *pipelineManager) getSlugOrInit(ctx context.Context) (string, error) {
 				DefaultValue: true,
 			})
 			if err != nil {
-				return repoSlug, fmt.Errorf("prompting for git init: %w", err)
+				return nil, fmt.Errorf("prompting for git init: %w", err)
 			}
 
 			if !initRepo {
-				return repoSlug, errors.New("confirmation declined")
+				return nil, errors.New("confirmation declined")
 			}
 
-			if err := gitCli.InitRepo(ctx, i.azdCtx.ProjectDirectory()); err != nil {
-				return repoSlug, fmt.Errorf("initializing repository: %w", err)
+			if err := gitCli.InitRepo(ctx, repoPath); err != nil {
+				return nil, fmt.Errorf("initializing repository: %w", err)
 			}
 
 			// Recovered from this error, try again
@@ -86,23 +100,29 @@ func (i *pipelineManager) getSlugOrInit(ctx context.Context) (string, error) {
 				DefaultValue: true,
 			})
 			if err != nil {
-				return repoSlug, fmt.Errorf("prompting for remote init: %w", err)
+				return nil, fmt.Errorf("prompting for remote init: %w", err)
 			}
 
 			if !addRemote {
-				return repoSlug, errors.New("confirmation declined")
+				return nil, errors.New("confirmation declined")
 			}
 
-			repoSlug, err = i.scmProvider.configureGitRemote(i.pipelineRemoteName)
+			// the scm provider returns the repo url that is used as git remote
+			remoteUrl, err := i.scmProvider.configureGitRemote(ctx, repoPath, i.pipelineRemoteName, i.console)
 			if err != nil {
-				return repoSlug, err
+				return nil, err
 			}
-			// Recovered from this error, try again
+
+			// set the git remote for local git project
+			if err := gitCli.AddRemote(ctx, repoPath, i.pipelineRemoteName, *remoteUrl); err != nil {
+				return nil, fmt.Errorf("initializing repository: %w", err)
+			}
+
 			continue
 		case err != nil:
-			return repoSlug, err
+			return nil, err
 		default:
-			return repoSlug, nil
+			return repoRemoteDetails, nil
 		}
 	}
 }
@@ -145,7 +165,6 @@ func (manager *pipelineManager) configure(ctx context.Context) error {
 
 	// check that scm and ci providers are set
 	validateDependencyInjection(manager)
-
 	if err := ensureProject(manager.azdCtx.ProjectPath()); err != nil {
 		return err
 	}
@@ -158,6 +177,8 @@ func (manager *pipelineManager) configure(ctx context.Context) error {
 		return err
 	}
 
+	// run pre-config validations. manager will check az cli is logged in and
+	// will invoke the per-provider validations.
 	if errorsFromPreConfig := manager.preConfigureCheck(ctx); errorsFromPreConfig != nil {
 		return errorsFromPreConfig
 	}
@@ -184,16 +205,24 @@ func (manager *pipelineManager) configure(ctx context.Context) error {
 		return fmt.Errorf("failed to create or update service principal: %w", err)
 	}
 
-	// Get owner and repo name
-	repoSlug, err := manager.getSlugOrInit(ctx)
+	// Get git repo details
+	gitRepoInfo, err := manager.getGitRepoDetails(ctx)
 	if err != nil {
 		return fmt.Errorf("ensuring github remote: %w", err)
 	}
 
+	// config pipeline
+	// err = manager.ciProvider.configurePipeline(
+	// 	ctx,
+	// 	TBD)
+	// if err != nil {
+	// 	return err
+	// }
+
 	// Config CI provider using credential
 	err = manager.ciProvider.configureConnection(
 		ctx,
-		repoSlug,
+		gitRepoInfo,
 		env.Values[environment.EnvNameEnvVarName],
 		env.Values[environment.LocationEnvVarName],
 		env.Values[environment.SubscriptionIdEnvVarName],
@@ -202,6 +231,8 @@ func (manager *pipelineManager) configure(ctx context.Context) error {
 		return err
 	}
 
+	// The CI pipeline should be set-up and ready at this point.
+	// azd offers to push changes to the scm to start a new pipeline run
 	doPush, err := manager.console.Confirm(ctx, input.ConsoleOptions{
 		Message:      "Would you like to commit and push your local changes to start the configured CI pipeline?",
 		DefaultValue: true,
@@ -210,16 +241,18 @@ func (manager *pipelineManager) configure(ctx context.Context) error {
 		return fmt.Errorf("prompting to push: %w", err)
 	}
 
-	gitCli := git.NewGitCli()
-	currentBranch, err := gitCli.GetCurrentBranch(ctx, manager.azdCtx.ProjectDirectory())
+	currentBranch, err := git.NewGitCli().GetCurrentBranch(ctx, manager.azdCtx.ProjectDirectory())
 	if err != nil {
 		return fmt.Errorf("getting current branch: %w", err)
 	}
+
+	// scm provider can prevent from pushing changes and/or use the
+	// interactive console for setting up any missing details.
+	// For example, GitHub provider would check if GH-actions are disabled.
 	if doPush {
-		// scm provider can prevent from pushing changes after user choice
 		preventPush, err := manager.scmProvider.preventGitPush(
 			ctx,
-			repoSlug,
+			gitRepoInfo,
 			manager.pipelineRemoteName,
 			currentBranch,
 			manager.console)
@@ -237,7 +270,7 @@ func (manager *pipelineManager) configure(ctx context.Context) error {
 		}
 	} else {
 		fmt.Printf(
-			"To fully enable GitHub Actions you need to push this repo to GitHub using 'git push --set-upstream %s %s'.\n",
+			"To fully enable pipeline you need to push this repo to the upstream using 'git push --set-upstream %s %s'.\n",
 			manager.pipelineRemoteName,
 			currentBranch)
 	}

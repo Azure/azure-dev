@@ -117,7 +117,7 @@ func (rm *AzureResourceManager) GetResourceGroupsForEnvironment(ctx context.Cont
 		}
 
 		if queryResult.Count == 0 {
-			notFoundError := azureutil.ResourceNotFound(errors.New("azure graph query returned 0 results"))
+			notFoundError := azureutil.ResourceNotFound(fmt.Errorf("azure graph query returned 0 results for resource groups with azd-env-name with value: '%s'", env.GetEnvName()))
 			return retry.RetryableError(notFoundError)
 		}
 
@@ -152,7 +152,7 @@ func (rm *AzureResourceManager) GetDefaultResourceGroups(ctx context.Context, en
 		}
 
 		if queryResult.Count == 0 {
-			notFoundError := azureutil.ResourceNotFound(errors.New("azure graph query returned 0 results"))
+			notFoundError := azureutil.ResourceNotFound(fmt.Errorf("azure graph query returned 0 results for resource groups with prefix or suffix with value: '%s'", env.GetEnvName()))
 			return retry.RetryableError(notFoundError)
 		}
 

@@ -112,7 +112,7 @@ func GetServiceResourceName(ctx context.Context, resourceGroupName string, servi
 		graphQueryResults = queryResult
 
 		if graphQueryResults.Count == 0 {
-			notFoundError := azureutil.ResourceNotFound(errors.New("azure graph query returned 0 results"))
+			notFoundError := azureutil.ResourceNotFound(fmt.Errorf("azure graph query returned 0 results for resources with group name '%s' and azd-service-name '%s'", resourceGroupName, serviceName))
 			return retry.RetryableError(notFoundError)
 		}
 

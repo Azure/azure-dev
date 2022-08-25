@@ -3,6 +3,7 @@ package commands
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/spf13/cobra"
@@ -35,6 +36,11 @@ func Build(action Action, rootOptions *GlobalCommandOptions, use string, short s
 			// using GetCommandPath, or more than likely, ask for the event name as a Builder argument
 			ctx, span := otel.Tracer("azd").Start(ctx, "azure-dev.commands."+use)
 			defer span.End()
+
+			// inner trace
+			ctx, inner := otel.Tracer("azd").Start(ctx, "azure-dev.commands.inner."+use)
+			time.Sleep(time.Duration(200) * time.Millisecond)
+			inner.End()
 
 			err = action.Run(ctx, cmd, args, azdCtx)
 			if err != nil {

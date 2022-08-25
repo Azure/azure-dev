@@ -16,9 +16,7 @@ import (
 	"github.com/gofrs/flock"
 	"github.com/microsoft/ApplicationInsights-Go/appinsights"
 	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/sdk/resource"
 	"go.opentelemetry.io/otel/sdk/trace"
-	semconv "go.opentelemetry.io/otel/semconv/v1.10.0"
 )
 
 const telemetryItemExtension = ".trn"
@@ -45,16 +43,6 @@ func getStorageDirectory() (string, error) {
 
 	telemetryDir := filepath.Join(user.HomeDir, ".azd", "telemetry")
 	return telemetryDir, nil
-}
-
-func newResource() *resource.Resource {
-	r, _ := resource.Merge(
-		resource.Default(),
-		resource.NewWithAttributes(
-			semconv.SchemaURL,
-		),
-	)
-	return r
 }
 
 func IsTelemetryEnabled() bool {

@@ -16,7 +16,6 @@ import (
 
 type AzureResourceManager struct {
 	azCli         azcli.AzCli
-	maxRetries    int
 	retryStrategy *osutil.RetryStrategy
 }
 

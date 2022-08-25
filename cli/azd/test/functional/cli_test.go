@@ -113,6 +113,8 @@ func Test_CLI_Init_AsksForSubscriptionIdAndCreatesEnvAndProjectFile(t *testing.T
 }
 
 func Test_CLI_Init_CanUseTemplate(t *testing.T) {
+	// running this test in parallel is ok as it uses a t.TempDir()
+	t.Parallel()
 	ctx, cancel := newTestContext(t)
 	defer cancel()
 
@@ -135,30 +137,40 @@ func Test_CLI_Init_CanUseTemplate(t *testing.T) {
 
 // Test when we have multiple resource group matches. More than one rg has azd-env-name set
 func Test_CLI_ResourceGroupNameWithMultipleMatches(t *testing.T) {
+	// running this test in parallel is ok as it uses a t.TempDir()
+	t.Parallel()
 	envName := randomEnvName()
 	Internal_Test_CLI_ResourceGroupsName(t, envName, fmt.Sprintf("rg-%s", envName), true, true, true)
 }
 
 // Test when we can't find any resource group matches
 func Test_CLI_ResourceGroupNameWithoutMatch(t *testing.T) {
+	// running this test in parallel is ok as it uses a t.TempDir()
+	t.Parallel()
 	envName := randomEnvName()
 	Internal_Test_CLI_ResourceGroupsName(t, envName, fmt.Sprintf("rg-%s", envName), true, false, false)
 }
 
 // Test when resource group uses rg- prefix
 func Test_CLI_ResourceGroupNameWithPrefix(t *testing.T) {
+	// running this test in parallel is ok as it uses a t.TempDir()
+	t.Parallel()
 	envName := randomEnvName()
 	Internal_Test_CLI_ResourceGroupsName(t, envName, fmt.Sprintf("rg-%s", envName), true, true, false)
 }
 
 // Test when resource group uses -rg suffix
 func Test_CLI_ResourceGroupNameWithSuffix(t *testing.T) {
+	// running this test in parallel is ok as it uses a t.TempDir()
+	t.Parallel()
 	envName := randomEnvName()
 	Internal_Test_CLI_ResourceGroupsName(t, envName, fmt.Sprintf("%s-rg", envName), true, true, false)
 }
 
 // Test when we don't have any resource groups with azd-env-name tag
 func Test_CLI_ResourceGroupNameWithoutEnvNameTag(t *testing.T) {
+	// running this test in parallel is ok as it uses a t.TempDir()
+	t.Parallel()
 	envName := randomEnvName()
 	Internal_Test_CLI_ResourceGroupsName(t, envName, fmt.Sprintf("rg-%s", envName), false, true, false)
 }
@@ -229,6 +241,8 @@ func Internal_Test_CLI_ResourceGroupsName(t *testing.T, envName string, rgName s
 }
 
 func Test_CLI_InfraCreateAndDelete(t *testing.T) {
+	// running this test in parallel is ok as it uses a t.TempDir()
+	t.Parallel()
 	ctx, cancel := newTestContext(t)
 	defer cancel()
 
@@ -272,6 +286,8 @@ func Test_CLI_InfraCreateAndDelete(t *testing.T) {
 }
 
 func Test_CLI_InfraCreateAndDeleteUpperCase(t *testing.T) {
+	// running this test in parallel is ok as it uses a t.TempDir()
+	t.Parallel()
 	ctx, cancel := newTestContext(t)
 	defer cancel()
 
@@ -315,6 +331,8 @@ func Test_CLI_InfraCreateAndDeleteUpperCase(t *testing.T) {
 }
 
 func Test_CLI_InfraCreateAndDeleteWebApp(t *testing.T) {
+	// running this test in parallel is ok as it uses a t.TempDir()
+	t.Parallel()
 	ctx, cancel := newTestContext(t)
 	defer cancel()
 
@@ -400,6 +418,8 @@ func Test_CLI_InfraCreateAndDeleteWebApp(t *testing.T) {
 
 // test for azd deploy, azd deploy --service
 func Test_CLI_DeployInvalidName(t *testing.T) {
+	// running this test in parallel is ok as it uses a t.TempDir()
+	t.Parallel()
 	ctx, cancel := newTestContext(t)
 	defer cancel()
 
@@ -424,6 +444,8 @@ func Test_CLI_DeployInvalidName(t *testing.T) {
 }
 
 func Test_CLI_RestoreCommand(t *testing.T) {
+	// running this test in parallel is ok as it uses a t.TempDir()
+	t.Parallel()
 	ctx, cancel := newTestContext(t)
 	defer cancel()
 
@@ -451,6 +473,8 @@ func Test_CLI_RestoreCommand(t *testing.T) {
 }
 
 func Test_CLI_InfraCreateAndDeleteFuncApp(t *testing.T) {
+	// running this test in parallel is ok as it uses a t.TempDir()
+	t.Parallel()
 	ctx, cancel := newTestContext(t)
 	defer cancel()
 

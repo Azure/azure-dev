@@ -54,7 +54,6 @@ resource storage 'Microsoft.Storage/storageAccounts@2021-09-01' = {
 }
 
 resource appServicePlan 'Microsoft.Web/serverfarms@2022-03-01' = {
-  // https://docs.microsoft.com/azure/templates/microsoft.web/2020-06-01/serverfarms?tabs=bicep
   name: 'plan-${resourceToken}'
   location: location
   tags: tags

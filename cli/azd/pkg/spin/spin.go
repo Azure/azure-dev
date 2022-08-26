@@ -6,12 +6,12 @@ import (
 	"sync"
 	"time"
 
-	"github.com/mattn/go-colorable"
+	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/theckman/yacspin"
 )
 
 // Default writer to std.out, with possibility to mock for tests
-var writer io.Writer = colorable.NewColorableStdout()
+var writer io.Writer = output.GetDefaultWriter()
 
 // Spinner is a type representing an animated CLi terminal spinner.
 type Spinner struct {

@@ -8,7 +8,6 @@ import (
 
 	"github.com/AlecAivazis/survey/v2"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
-	"github.com/mattn/go-colorable"
 )
 
 type Console interface {
@@ -40,7 +39,7 @@ type ConsoleOptions struct {
 // Sets the underlying writer for the console
 func (c *AskerConsole) SetWriter(writer io.Writer) {
 	if writer == nil {
-		writer = colorable.NewColorableStdout()
+		writer = output.GetDefaultWriter()
 	}
 
 	c.writer = writer

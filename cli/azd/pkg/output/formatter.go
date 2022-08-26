@@ -7,8 +7,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-
-	"github.com/mattn/go-colorable"
 )
 
 type Format string
@@ -67,7 +65,7 @@ func WithWriter(ctx context.Context, writer io.Writer) context.Context {
 func GetWriter(ctx context.Context) io.Writer {
 	writer, ok := ctx.Value(writerContextKey).(io.Writer)
 	if !ok {
-		return colorable.NewColorableStdout()
+		return GetDefaultWriter()
 	}
 
 	return writer

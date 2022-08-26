@@ -187,7 +187,7 @@ func (d *deployAction) Run(ctx context.Context, cmd *cobra.Command, args []strin
 	}
 
 	for _, resourceGroup := range resourceGroups {
-		resourcesGroupsURL := output.WithLinkFormat(
+		resourcesGroupsURL := fmt.Sprintf(
 			"https://portal.azure.com/#@/resource/subscriptions/%s/resourceGroups/%s/overview",
 			env.GetSubscriptionId(),
 			resourceGroup)

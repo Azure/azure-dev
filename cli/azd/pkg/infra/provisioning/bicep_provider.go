@@ -660,6 +660,11 @@ func NewBicepProvider(ctx context.Context, env *environment.Environment, project
 	bicepCli := bicep.GetBicepCli(ctx)
 	console := input.GetConsole(ctx)
 
+	// Default to a module named "main" if not specified.
+	if strings.TrimSpace(infraOptions.Module) == "" {
+		infraOptions.Module = "main"
+	}
+
 	return &BicepProvider{
 		env:         env,
 		projectPath: projectPath,

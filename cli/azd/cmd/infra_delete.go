@@ -3,7 +3,6 @@ package cmd
 import (
 	"context"
 	"fmt"
-	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/commands"
@@ -68,10 +67,6 @@ func (a *infraDeleteAction) Run(ctx context.Context, cmd *cobra.Command, args []
 	prj, err := project.LoadProjectConfig(azdCtx.ProjectPath(), &environment.Environment{})
 	if err != nil {
 		return fmt.Errorf("loading project: %w", err)
-	}
-
-	if strings.TrimSpace(prj.Infra.Module) == "" {
-		prj.Infra.Module = "main"
 	}
 
 	infraManager, err := provisioning.NewManager(ctx, env, prj.Path, prj.Infra, !a.rootOptions.NoPrompt)

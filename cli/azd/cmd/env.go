@@ -6,7 +6,6 @@ package cmd
 import (
 	"context"
 	"fmt"
-	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/commands"
@@ -249,10 +248,6 @@ func envRefreshCmd(rootOptions *internal.GlobalCommandOptions) *cobra.Command {
 		formatter := output.GetFormatter(ctx)
 		writer := output.GetWriter(ctx)
 
-		if strings.TrimSpace(prj.Infra.Module) == "" {
-			prj.Infra.Module = "main"
-		}
-
 		infraManager, err := provisioning.NewManager(ctx, env, prj.Path, prj.Infra, !rootOptions.NoPrompt)
 		if err != nil {
 			return fmt.Errorf("creating provisioning manager: %w", err)
@@ -268,6 +263,8 @@ func envRefreshCmd(rootOptions *internal.GlobalCommandOptions) *cobra.Command {
 		if err := provisioning.UpdateEnvironment(&env, &getDeploymentResult.Deployment.Outputs); err != nil {
 			return err
 		}
+
+		console.Message(ctx, "Azure env refresh completed")
 
 		if formatter.Kind() == output.JsonFormat {
 			err = formatter.Format(getDeploymentResult.Deployment, writer, nil)

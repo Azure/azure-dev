@@ -34,8 +34,9 @@ func (at *containerAppTarget) RequiredExternalTools() []tools.ExternalTool {
 }
 
 func (at *containerAppTarget) Deploy(ctx context.Context, azdCtx *azdcontext.AzdContext, path string, progress chan<- string) (ServiceDeploymentResult, error) {
+	// If the infra module has not been specified default to a module with the same name as the service.
 	at.config.Infra.Module = at.config.Module
-	if at.config.Infra.Module == "" {
+	if strings.TrimSpace(at.config.Infra.Module) == "" {
 		at.config.Infra.Module = at.config.Name
 	}
 

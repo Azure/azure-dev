@@ -3,7 +3,6 @@ package cmd
 import (
 	"context"
 	"fmt"
-	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/commands"
@@ -76,10 +75,6 @@ func (ica *infraCreateAction) Run(ctx context.Context, cmd *cobra.Command, args 
 
 	formatter := output.GetFormatter(ctx)
 	writer := output.GetWriter(ctx)
-
-	if strings.TrimSpace(prj.Infra.Module) == "" {
-		prj.Infra.Module = "main"
-	}
 
 	infraManager, err := provisioning.NewManager(ctx, env, prj.Path, prj.Infra, !ica.rootOptions.NoPrompt)
 	if err != nil {

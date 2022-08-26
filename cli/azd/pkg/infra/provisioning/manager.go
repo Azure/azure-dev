@@ -69,8 +69,6 @@ func (m *Manager) GetDeployment(ctx context.Context, scope Scope) (*DeployResult
 		return nil, fmt.Errorf("error retrieving deployment: %w", err)
 	}
 
-	m.console.Message(ctx, "Azure env refresh completed 👍")
-
 	return deployResult, nil
 }
 
@@ -146,7 +144,7 @@ func (m *Manager) preview(ctx context.Context) (*PreviewResult, error) {
 		return nil, fmt.Errorf("previewing infrastructure: %w", err)
 	}
 
-	m.console.Message(ctx, "\nPrepared infrastructure provisioning 👍")
+	m.console.Message(ctx, "\nPrepared infrastructure provisioning")
 
 	return previewResult, nil
 }
@@ -188,7 +186,7 @@ func (m *Manager) deploy(ctx context.Context, location string, deployment *Deplo
 		m.writeJsonOutput(ctx, deployResult.Operations)
 	}
 
-	m.console.Message(ctx, "\nAzure resource provisioning completed successfully 👍")
+	m.console.Message(ctx, "\nAzure resource provisioning completed successfully")
 
 	return deployResult, nil
 }
@@ -222,7 +220,7 @@ func (m *Manager) destroy(ctx context.Context, deployment *Deployment, options D
 		return nil, fmt.Errorf("error destroying Azure resources: %w", err)
 	}
 
-	m.console.Message(ctx, "\nDestroyed Azure resources 👍")
+	m.console.Message(ctx, "\nDestroyed Azure resources")
 
 	return destroyResult, nil
 }

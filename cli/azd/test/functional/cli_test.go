@@ -509,6 +509,8 @@ func Test_CLI_InfraCreateAndDeleteFuncApp(t *testing.T) {
 	out, err := cli.RunCommand(ctx, "env", "get-values", "-o", "json", "--cwd", dir)
 	require.NoError(t, err)
 
+	t.Logf("env get-values command output: %s\n", out)
+
 	var envValues map[string]interface{}
 	err = json.Unmarshal([]byte(out), &envValues)
 	require.NoError(t, err)

@@ -26,7 +26,7 @@ resource applicationInsights 'Microsoft.Insights/components@2020-02-02' existing
   name: '${abbrs.insightsComponents}${resourceToken}'
 }
 
-resource keyVault 'Microsoft.KeyVault/vaults@2021-10-01' existing = {
+resource keyVault 'Microsoft.KeyVault/vaults@2022-07-01' existing = {
   name: '${abbrs.keyVaultVaults}${resourceToken}'
 }
 
@@ -81,7 +81,7 @@ resource api 'Microsoft.App/containerApps@2022-03-01' = {
   }
 }
 
-resource keyVaultAccessPolicies 'Microsoft.KeyVault/vaults/accessPolicies@2021-10-01' = {
+resource keyVaultAccessPolicies 'Microsoft.KeyVault/vaults/accessPolicies@2022-07-01' = {
   name: '${keyVault.name}/add'
   properties: {
     accessPolicies: [

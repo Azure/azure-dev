@@ -1,9 +1,10 @@
 # Release History
 
-## 0.1.0-beta.5 (Unreleased)
+## 0.1.0-beta.5 (2022-08-25)
 
 ### Bugs Fixed
 
+- [[#461]](https://github.com/Azure/azure-dev/pull/461) Fix for using a command output other than JSON.
 - [[#480]](https://github.com/Azure/azure-dev/pull/480) Fix deploy error when using an environment name with capital letters.
 
 ## 0.1.0-beta.4 (2022-08-10)

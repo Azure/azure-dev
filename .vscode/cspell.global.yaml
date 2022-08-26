@@ -70,6 +70,9 @@ ignoreWords:
     - httptrigger
     - resourcegroups
     - devcontainer
+    - azurecaf
+    - azurerm
+    - menuid
 useGitignore: true
 dictionaryDefinitions:
     - name: gitHubUserAliases

@@ -9,7 +9,7 @@ variable "rg_name" {
 }
 
 variable "env_name" {
-  description = "The name of the evnironemnt to be deployed"
+  description = "The name of the environment to be deployed"
   type        = string
 }
 

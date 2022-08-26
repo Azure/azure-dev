@@ -5,7 +5,7 @@ metadata:
   description: ToDo Application with a Node.js API and Azure Cosmos DB API for MongoDB
 
 repo:
-  includeProjectAssets: true
+  includeProjectAssets: false
 
   remotes:
     - name: azure-samples-main
@@ -21,43 +21,70 @@ repo:
 
   assets:
     # Common assets
+    # Rules for Path Rewrite Only
+    - from: ../../../../../../common/infra/bicep
+      to: ./
+      ignore: 
+        - ".repo/**/*"
+    
+    - from: ../../api/js
+      to: ./src/api
+      ignore: 
+        - ".repo/**/*"
+
+    - from: ../../web/react-fluent
+      to: ./src/web
+      ignore: 
+        - ".repo/**/*"
+    # End Path Rewrite Rules
+
+    - from: ./../../
+      to: ./
+      ignore: 
+        - ".repo/**/*"
+        - "repo.y[a]ml"
+        - "azure.y[a]ml"
 
     # openapi.yaml to root
-    - from: ../../api/common
+    - from: ../../../../api/common
       to: ./
       patterns:
         - openapi.yaml
 
     # openapi.yaml to api root
-    - from: ../../api/common
+    - from: ../../../../api/common
       to: ./src/api
       patterns:
         - openapi.yaml
 
     # Templates common
-    - from: ../../../common
+    - from: ../../../../../common
       to: ./
       ignore:
-        - .devcontainer/**/*
+      - .devcontainer/**/*
+      - "infra/**/*"
+    
+    - from: ../../../../../common/infra/bicep
+      to: ./infra
 
     # .devcontainer common (devcontainer.json)
-    - from: ../../../common/.devcontainer/devcontainer.json/nodejs
+    - from: ../../../../../common/.devcontainer/devcontainer.json/nodejs
       to: ./.devcontainer
 
     # .devcontainer common (Dockerfile)
-    - from: ../../../common/.devcontainer/Dockerfile/base
+    - from: ../../../../../common/.devcontainer/Dockerfile/base
       to: ./.devcontainer
 
     # Assets common
-    - from: ../../common/assets
+    - from: ../../../../common/assets
       to: ./assets
 
     # Tests common
-    - from: ../../common/tests
+    - from: ../../../../common/tests
       to: ./tests
 
     # Node JS API
-    - from: ../../api/js
+    - from: ../../../../api/js
       to: ./src/api
       ignore:
         - "dist/**/*"
@@ -66,8 +93,16 @@ repo:
         - "**/*.log"
 
     # React Frontend
-    - from: ../../web/react-fluent
+    - from: ../../../../web/react-fluent
       to: ./src/web
       ignore:
         - "build/**/*"
         - "node_modules/**/*"
+
+    # Infra 
+    - from: ./infra/
+      to: ./infra
+
+    # Azure.yml
+    - from: ./azure.yaml
+      to: ./azure.yaml

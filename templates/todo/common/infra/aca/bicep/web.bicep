@@ -11,7 +11,7 @@ param imageName string
 
 var resourceToken = toLower(uniqueString(subscription().id, name, location))
 var tags = { 'azd-env-name': name }
-var abbrs = loadJsonContent('../../../../common/infra/abbreviations.json')
+var abbrs = loadJsonContent('../../../../../common/infra/bicep/abbreviations.json')
 
 resource containerAppsEnvironment 'Microsoft.App/managedEnvironments@2022-03-01' existing = {
   name: '${abbrs.appManagedEnvironments}${resourceToken}'
@@ -26,14 +26,14 @@ resource applicationInsights 'Microsoft.Insights/components@2020-02-02' existing
   name: '${abbrs.insightsComponents}${resourceToken}'
 }
 
-resource keyVault 'Microsoft.KeyVault/vaults@2022-07-01' existing = {
-  name: '${abbrs.keyVaultVaults}${resourceToken}'
+resource api 'Microsoft.App/containerApps@2022-03-01' existing = {
+  name: '${abbrs.appContainerApps}api-${resourceToken}'
 }
 
-resource api 'Microsoft.App/containerApps@2022-03-01' = {
-  name: '${abbrs.appContainerApps}api-${resourceToken}'
+resource web 'Microsoft.App/containerApps@2022-03-01' = {
+  name: '${abbrs.appContainerApps}web-${resourceToken}'
   location: location
-  tags: union(tags, { 'azd-service-name': 'api' })
+  tags: union(tags, { 'azd-service-name': 'web' })
   identity: {
     type: 'SystemAssigned'
   }
@@ -43,7 +43,7 @@ resource api 'Microsoft.App/containerApps@2022-03-01' = {
       activeRevisionsMode: 'single'
       ingress: {
         external: true
-        targetPort: 3100
+        targetPort: 80
         transport: 'auto'
       }
       secrets: [
@@ -67,12 +67,12 @@ resource api 'Microsoft.App/containerApps@2022-03-01' = {
           name: 'main'
           env: [
             {
-              name: 'APPLICATIONINSIGHTS_CONNECTION_STRING'
+              name: 'REACT_APP_APPLICATIONINSIGHTS_CONNECTION_STRING'
               value: applicationInsights.properties.ConnectionString
             }
             {
-              name: 'AZURE_KEY_VAULT_ENDPOINT'
-              value: keyVault.properties.vaultUri
+              name: 'REACT_APP_API_BASE_URL'
+              value: 'https://${api.properties.configuration.ingress.fqdn}'
             }
           ]
         }
@@ -81,22 +81,4 @@ resource api 'Microsoft.App/containerApps@2022-03-01' = {
   }
 }
 
-resource keyVaultAccessPolicies 'Microsoft.KeyVault/vaults/accessPolicies@2022-07-01' = {
-  name: '${keyVault.name}/add'
-  properties: {
-    accessPolicies: [
-      {
-        objectId: api.identity.principalId
-        permissions: {
-          secrets: [
-            'get'
-            'list'
-          ]
-        }
-        tenantId: subscription().tenantId
-      }
-    ]
-  }
-}
-
-output API_URI string = 'https://${api.properties.configuration.ingress.fqdn}'
+output WEB_URI string = 'https://${web.properties.configuration.ingress.fqdn}'

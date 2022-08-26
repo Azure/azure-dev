@@ -47,6 +47,17 @@ export const ensureDirectoryPath = async (directoryPath: string) => {
     }
 }
 
+export const isFilePath = async (filePath: string) => {
+    try {
+        const link = await fs.lstat(filePath);
+        return link.isFile()
+    }
+    catch (err: any) 
+    {
+        console.warn(chalk.yellowBright(`- ${err.message}`));
+    }
+}
+
 export const cleanDirectoryPath = async (directoryPath: string, cleanGit: boolean = true) => {
     if (isDebug()) {
         console.debug(chalk.yellow(`Cleaning output directory: ${directoryPath}`));

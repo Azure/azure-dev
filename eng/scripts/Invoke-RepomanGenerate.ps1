@@ -9,18 +9,20 @@ param(
 $projectsJson = repoman list --format json | Out-String
 $projects = ConvertFrom-Json $projectsJson
 
-$projectPaths = $projects.projectPath
-
-foreach ($projectPath in $projectPaths) {
+foreach ($project in $projects) {
     $additionalParameters = '--update'
     if ($WhatIf) {
         $additionalParameters = ''
     }
 
+    $projectPath = $project.projectPath
+    $templatePath = $project.templatePath.Replace($projectPath, "")
+
     Write-Host @"
 repoman generate `
     -s $projectPath `
     -o $RunnerTemp `
+    -t $templatePath `
     --branch "$TargetBranchName" `
     --remote "$RemoteName" `
     --https `
@@ -32,6 +34,7 @@ repoman generate `
     repoman generate `
         -s $projectPath `
         -o $RunnerTemp `
+        -t $templatePath `
         --branch `"$TargetBranchName`" `
         --remote "$RemoteName" `
         --https `

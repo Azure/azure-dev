@@ -4,8 +4,6 @@
 package cmd
 
 import (
-	"time"
-
 	"github.com/azure/azure-dev/cli/azd/internal/telemetry"
 	"github.com/azure/azure-dev/cli/azd/pkg/commands"
 	"github.com/spf13/cobra"
@@ -17,8 +15,8 @@ const TelemetryUploadCommandFlag = "upload"
 func telemetryCmd(rootOptions *commands.GlobalCommandOptions) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:    TelemetryCommandFlag,
-		Short:  "Telemetry command",
-		Long:   "Telemetry command",
+		Short:  "Manage telemetry",
+		Long:   "Manage telemetry",
 		Hidden: true,
 	}
 	cmd.AddCommand(uploadCmd(rootOptions))
@@ -32,7 +30,6 @@ func uploadCmd(rootOptions *commands.GlobalCommandOptions) *cobra.Command {
 		Long:   "Upload telemetry",
 		Hidden: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			time.Sleep(time.Duration(10) * time.Second)
 			telemetrySystem := telemetry.GetTelemetrySystem()
 
 			if telemetrySystem == nil {

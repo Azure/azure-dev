@@ -18,12 +18,14 @@ import (
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/sdk/resource"
 	"go.opentelemetry.io/otel/sdk/trace"
+
 	semconv "go.opentelemetry.io/otel/semconv/v1.10.0"
 )
 
 const telemetryItemExtension = ".trn"
 const devInstrumentationKey = "d3b9c006-3680-4300-9862-35fce9ac66c7"
 const prodInstrumentationKey = ""
+const appInsightsMaxIngestionDelay = time.Duration(48) * time.Hour
 
 type TelemetrySystem struct {
 	storageQueue   *StorageQueue
@@ -100,7 +102,7 @@ func initialize() (*TelemetrySystem, error) {
 		return nil, fmt.Errorf("failed to determine storage directory: %w", err)
 	}
 
-	storageQueue, err := NewStorageQueue(telemetryDir, telemetryItemExtension)
+	storageQueue, err := NewStorageQueue(telemetryDir, telemetryItemExtension, appInsightsMaxIngestionDelay)
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize storage queue: %w", err)
 	}

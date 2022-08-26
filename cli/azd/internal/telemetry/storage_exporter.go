@@ -12,7 +12,7 @@ type simpleQueue interface {
 	Enqueue(message []byte) error
 }
 
-// Exporter is an implementation of trace.SpanSyncer that writes spans into a storage queue in ApplicationInsights format.
+// Exporter is an implementation of trace.SpanExporter that writes spans into a storage queue in ApplicationInsights format.
 type Exporter struct {
 	queue simpleQueue
 
@@ -43,26 +43,26 @@ func (e *Exporter) ExportSpans(ctx context.Context, spans []trace.ReadOnlySpan) 
 		}
 	}
 
-	if len(items) > 0 {
-		message := items.Serialize()
-
-		// Add a small, immediate retry loop in case of transient failures with disk storage.
-		// To avoid any delay while telemetry is flushed during application exit, no backoff is added.
-		var err error
-		for i := 0; i < 3; i++ {
-			err = e.queue.Enqueue(message)
-			if err == nil {
-				break
-			}
-		}
-
-		if err == nil {
-			e.anyExported.Store(true)
-		}
-		return err
+	if len(items) == 0 {
+		return nil
 	}
 
-	return nil
+	message := items.Serialize()
+
+	// Add a small, immediate retry loop in case of transient failures with disk storage.
+	// To avoid any delay while telemetry is flushed during application exit, no backoff is added.
+	var err error
+	for i := 0; i < 3; i++ {
+		err = e.queue.Enqueue(message)
+		if err == nil {
+			break
+		}
+	}
+
+	if err == nil {
+		e.anyExported.Store(true)
+	}
+	return err
 }
 
 // Shutdown is called to stop the exporter, it performs no action.

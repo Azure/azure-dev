@@ -42,12 +42,11 @@ func Build(action Action, rootOptions *internal.GlobalCommandOptions, use string
 			formatter, err := output.GetCommandFormatter(cmd)
 			if err != nil {
 				log.Printf("getting formatter: %s", err.Error())
-				formatter, _ = output.NewFormatter(string(output.NoneFormat))
+			} else {
+				ctx = output.WithFormatter(ctx, formatter)
 			}
 
-			ctx = output.WithFormatter(ctx, formatter)
-
-			writer := cmd.OutOrStdout()
+			writer := output.GetDefaultWriter()
 			ctx = output.WithWriter(ctx, writer)
 
 			console := input.NewConsole(!rootOptions.NoPrompt, writer, formatter)

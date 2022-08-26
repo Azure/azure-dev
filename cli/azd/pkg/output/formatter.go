@@ -45,10 +45,13 @@ const (
 	writerContextKey    contextKey = "writer"
 )
 
+// Sets the output formatter that will be used to format data back to std out
 func WithFormatter(ctx context.Context, formatter Formatter) context.Context {
 	return context.WithValue(ctx, formatterContextKey, formatter)
 }
 
+// Gets the formatter that had been previously specified.
+// If not found will default to `None` formatter.
 func GetFormatter(ctx context.Context) Formatter {
 	formatter, ok := ctx.Value(formatterContextKey).(Formatter)
 	if !ok {
@@ -58,10 +61,13 @@ func GetFormatter(ctx context.Context) Formatter {
 	return formatter
 }
 
+// Sets the io.Writer implementation used for printing to std out
 func WithWriter(ctx context.Context, writer io.Writer) context.Context {
 	return context.WithValue(ctx, writerContextKey, writer)
 }
 
+// Gets the io.Writer implementation previously specified.
+// If not found will return a default writer implementation.
 func GetWriter(ctx context.Context) io.Writer {
 	writer, ok := ctx.Value(writerContextKey).(io.Writer)
 	if !ok {

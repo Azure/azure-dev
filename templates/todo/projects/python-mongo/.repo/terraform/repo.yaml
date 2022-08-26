@@ -9,9 +9,9 @@ repo:
 
   remotes:
     - name: azure-samples-main
-      url: git@github.com:kaizentm/todo-python-mongo-terraform.git
+      url: git@github.com:Azure-Samples/todo-python-mongo-terraform.git
     - name: azure-samples-staging
-      url: git@github.com:kaizentm/todo-python-mongo-terraform.git
+      url: git@github.com:Azure-Samples/todo-python-mongo-terraform.git
       branch: staging
 
   rewrite:

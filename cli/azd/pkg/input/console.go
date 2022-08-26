@@ -14,7 +14,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/commands"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/templates"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 )
 
 type Console interface {
@@ -156,7 +156,7 @@ func (c *AskerConsole) PromptLocation(ctx context.Context, message string) (stri
 	// If no location is set in the process environment, see what the CLI default is.
 	if defaultLocation == "" {
 		defaultLocationConfig, err := azCli.GetCliConfigValue(ctx, "defaults.location")
-		if errors.Is(err, tools.ErrNoConfigurationValue) {
+		if errors.Is(err, azcli.ErrNoConfigurationValue) {
 			// If no value has been configured, that's okay we just won't have a default
 			// in our list.
 		} else if err != nil {

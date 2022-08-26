@@ -1,0 +1,40 @@
+parameters:
+  TargetBranchName: $(TargetBranchName)
+  RemoteName: azure-samples-main
+  GitHubPat: $(azuresdk-github-pat)
+
+steps:
+  - task: NodeTool@0
+    inputs:
+      versionSpec: 16
+
+  - pwsh: |
+      git config --global user.name "azure-sdk"
+      git config --global user.email "azuresdk@microsoft.com"
+      Set-Content `
+        -Value "https://azure-sdk:${{ parameters.GitHubPat }}@github.com" `
+        -Path ~/.git-credentials
+      git config --global credential.helper "store"
+    displayName: Set git credentials
+
+  - pwsh: npm install
+    displayName: Install dependencies
+    workingDirectory: generators/repo
+
+  - pwsh: npm run build
+    displayName: Build
+    workingDirectory: generators/repo
+
+  - pwsh: npm link
+    displayName: Install repoman locally
+    workingDirectory: generators/repo
+
+  - task: PowerShell@2
+    displayName: Generate Azure-Samples repos
+    inputs:
+      pwsh: true
+      targetType: filePath
+      filePath: ./eng/scripts/Invoke-RepomanGenerate.ps1
+      arguments: >-
+        -TargetBranchName "${{ parameters.TargetBranchName }}"
+        -RemoteName "${{ parameters.RemoteName }}"

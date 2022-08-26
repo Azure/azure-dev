@@ -9,6 +9,8 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/bicep"
 )
 
 type ProviderKind string
@@ -37,18 +39,18 @@ type PreviewProgress struct {
 }
 
 type DeployResult struct {
-	Operations []tools.AzCliResourceOperation
+	Operations []azcli.AzCliResourceOperation
 	Outputs    map[string]PreviewOutputParameter
 }
 
 type DestroyResult struct {
-	Resources []tools.AzCliResource
+	Resources []azcli.AzCliResource
 	Outputs   map[string]PreviewOutputParameter
 }
 
 type DeployProgress struct {
 	Timestamp  time.Time
-	Operations []tools.AzCliResourceOperation
+	Operations []azcli.AzCliResourceOperation
 }
 
 type DestroyProgress struct {
@@ -65,17 +67,17 @@ type Provider interface {
 	Destroy(ctx context.Context, preview *Preview) *async.InteractiveTaskWithProgress[*DestroyResult, *DestroyProgress]
 }
 
-func NewProvider(env *environment.Environment, projectPath string, options Options, console input.Console, cliArgs tools.NewCliToolArgs) (Provider, error) {
+func NewProvider(env *environment.Environment, projectPath string, options Options, console input.Console, cliArgs bicep.NewBicepCliArgs) (Provider, error) {
 	var provider Provider
 
 	switch options.Provider {
 	case Bicep:
-		bicepArgs := tools.NewBicepCliArgs(cliArgs)
+		bicepArgs := bicep.NewBicepCliArgs(cliArgs)
 		provider = NewBicepProvider(env, projectPath, options, console, bicepArgs)
 	case Test:
 		provider = NewTestProvider(env, projectPath, options, console)
 	default:
-		bicepArgs := tools.NewBicepCliArgs(cliArgs)
+		bicepArgs := bicep.NewBicepCliArgs(cliArgs)
 		provider = NewBicepProvider(env, projectPath, options, console, bicepArgs)
 	}
 

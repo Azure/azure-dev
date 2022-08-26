@@ -1,9 +1,11 @@
 AADSTS
 appinsights
 appinsightsexporter
+appinsightsstorage
 appservice
 AZCLI
 azdcli
+azdcontext
 azddeploy
 azdev
 azdinternal
@@ -45,6 +47,7 @@ pflag
 pulumi
 pyapp
 restoreapp
+retriable
 rzip
 semconv
 serverfarms
@@ -52,6 +55,7 @@ sstore
 staticwebapp
 STRINGSLICE
 structs
+Syncer
 swacli
 tracesdk
 tracetest

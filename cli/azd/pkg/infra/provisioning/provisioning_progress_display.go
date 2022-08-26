@@ -8,14 +8,14 @@ import (
 	"time"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 )
 
 const defaultProgressTitle string = "Creating Azure resources"
 const succeededProvisioningState string = "Succeeded"
 
 type ResourceManager interface {
-	GetDeploymentResourceOperations(ctx context.Context, subscriptionId string, deploymentName string) ([]tools.AzCliResourceOperation, error)
+	GetDeploymentResourceOperations(ctx context.Context, subscriptionId string, deploymentName string) ([]azcli.AzCliResourceOperation, error)
 	GetResourceTypeDisplayName(ctx context.Context, subscriptionId string, resourceId string, resourceType infra.AzureResourceType) (string, error)
 	GetWebAppResourceTypeDisplayName(ctx context.Context, subscriptionId string, resourceId string) (string, error)
 }
@@ -47,7 +47,7 @@ func (display *ProvisioningProgressDisplay) ReportProgress(ctx context.Context, 
 	}
 
 	succeededCount := 0
-	newlyDeployedResources := []*tools.AzCliResourceOperation{}
+	newlyDeployedResources := []*azcli.AzCliResourceOperation{}
 
 	for i := range operations {
 		if operations[i].Properties.ProvisioningState == succeededProvisioningState {
@@ -77,7 +77,7 @@ func (display *ProvisioningProgressDisplay) ReportProgress(ctx context.Context, 
 	setOperationTitle(status)
 }
 
-func (display *ProvisioningProgressDisplay) logNewlyCreatedResources(ctx context.Context, resources []*tools.AzCliResourceOperation, logProgress func(string)) {
+func (display *ProvisioningProgressDisplay) logNewlyCreatedResources(ctx context.Context, resources []*azcli.AzCliResourceOperation, logProgress func(string)) {
 	for _, newResource := range resources {
 		resourceTypeName := newResource.Properties.TargetResource.ResourceType
 		resourceTypeDisplayName, err := display.resourceManager.GetResourceTypeDisplayName(

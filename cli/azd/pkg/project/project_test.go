@@ -17,7 +17,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/executil"
 	"github.com/azure/azure-dev/cli/azd/pkg/httpUtil"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/test/helpers"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -29,7 +29,7 @@ var gblCmdOptions = &commands.GlobalCommandOptions{
 	EnableTelemetry:    true,
 }
 
-var azCli = tools.NewAzCli(tools.NewAzCliArgs{
+var azCli = azcli.NewAzCli(azcli.NewAzCliArgs{
 	EnableDebug:     false,
 	EnableTelemetry: true,
 	RunWithResultFn: func(ctx context.Context, args executil.RunArgs) (executil.RunResult, error) {
@@ -153,10 +153,10 @@ services:
 }
 
 func TestResourceNameOverrideFromResourceTag(t *testing.T) {
-	graphQueryResult := &tools.AzCliGraphQuery{
+	graphQueryResult := &azcli.AzCliGraphQuery{
 		Count:        1,
 		TotalRecords: 1,
-		Data: []tools.AzCliResource{
+		Data: []azcli.AzCliResource{
 			{
 				Id:       "random",
 				Name:     "app-api-abc123",

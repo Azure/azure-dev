@@ -19,6 +19,8 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/bicep"
 	"github.com/drone/envsubst"
 )
 
@@ -47,8 +49,8 @@ type BicepProvider struct {
 	projectPath string
 	options     Options
 	console     input.Console
-	bicepCli    tools.BicepCli
-	azCli       tools.AzCli
+	bicepCli    bicep.BicepCli
+	azCli       azcli.AzCli
 }
 
 // Name gets the name of the infra provider
@@ -209,7 +211,7 @@ func (p *BicepProvider) Destroy(ctx context.Context, preview *Preview) *async.In
 				asyncContext.SetError(fmt.Errorf("discovering resource groups from deployment: %w", err))
 			}
 
-			var allResources []tools.AzCliResource
+			var allResources []azcli.AzCliResource
 
 			asyncContext.SetProgress(&DestroyProgress{Message: "Fetching resources", Timestamp: time.Now()})
 			for _, resourceGroup := range resourceGroups {
@@ -262,7 +264,7 @@ func (p *BicepProvider) Destroy(ctx context.Context, preview *Preview) *async.In
 		})
 }
 
-func (p *BicepProvider) createOutputParameters(template *Preview, azureOutputParams map[string]tools.AzCliDeploymentOutput) map[string]PreviewOutputParameter {
+func (p *BicepProvider) createOutputParameters(template *Preview, azureOutputParams map[string]azcli.AzCliDeploymentOutput) map[string]PreviewOutputParameter {
 	canonicalOutputCasings := make(map[string]string, len(template.Outputs))
 
 	for key := range template.Outputs {
@@ -374,7 +376,7 @@ func (p *BicepProvider) convertToPreview(bicepTemplate BicepTemplate) (*Preview,
 }
 
 // Deploys the specified Bicep module and parameters with the selected provisioning scope (subscription vs resource group)
-func (p *BicepProvider) deployModule(ctx context.Context, scope Scope, bicepPath string, parametersPath string) (*tools.AzCliDeployment, error) {
+func (p *BicepProvider) deployModule(ctx context.Context, scope Scope, bicepPath string, parametersPath string) (*azcli.AzCliDeployment, error) {
 	// We've seen issues where `Deploy` completes but for a short while after, fetching the deployment fails with a `DeploymentNotFound` error.
 	// Since other commands of ours use the deployment, let's try to fetch it here and if we fail with `DeploymentNotFound`,
 	// ignore this error, wait a short while and retry.
@@ -382,13 +384,13 @@ func (p *BicepProvider) deployModule(ctx context.Context, scope Scope, bicepPath
 		return nil, fmt.Errorf("failed deploying: %w", err)
 	}
 
-	var deployment tools.AzCliDeployment
+	var deployment azcli.AzCliDeployment
 	var err error
 
 	for i := 0; i < 10; i++ {
 		time.Sleep(time.Duration(math.Min(float64(i), 3)*10) * time.Second)
 		deployment, err = scope.GetDeployment(ctx)
-		if errors.Is(err, tools.ErrDeploymentNotFound) {
+		if errors.Is(err, azcli.ErrDeploymentNotFound) {
 			continue
 		} else if err != nil {
 			return nil, fmt.Errorf("failed waiting for deployment: %w", err)
@@ -429,8 +431,8 @@ func (p *BicepProvider) modulePath() string {
 }
 
 // NewBicepProvider creates a new instance of a Bicep Infra provider
-func NewBicepProvider(env *environment.Environment, projectPath string, options Options, console input.Console, bicepArgs tools.NewBicepCliArgs) Provider {
-	bicepCli := tools.NewBicepCli(bicepArgs)
+func NewBicepProvider(env *environment.Environment, projectPath string, options Options, console input.Console, bicepArgs bicep.NewBicepCliArgs) Provider {
+	bicepCli := bicep.NewBicepCli(bicepArgs)
 
 	return &BicepProvider{
 		env:         env,

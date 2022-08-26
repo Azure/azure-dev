@@ -35,7 +35,9 @@ func TestGetTelemetrySystem(t *testing.T) {
 				assert.Equal(t, tt.instrumentationKey, ts.instrumentationKey)
 				assert.NotNil(t, ts.GetTelemetryQueue())
 				assert.NotNil(t, ts.NewUploader(true))
-				ts.Shutdown(context.Background())
+
+				err := ts.Shutdown(context.Background())
+				assert.NoError(t, err)
 			}
 
 			once = sync.Once{}
@@ -66,7 +68,7 @@ func TestTelemetrySystem_RunBackgroundUpload(t *testing.T) {
 				fl, locked, err := ts.tryUploadLock()
 				assert.NoError(t, err)
 				assert.True(t, locked)
-				defer fl.Unlock()
+				defer func() { require.NoError(t, fl.Unlock()) }()
 			}
 
 			err := ts.RunBackgroundUpload(tt.args.ctx, tt.args.enableDebugLogging)

@@ -10,11 +10,13 @@ import (
 	"path/filepath"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/commands"
-	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/iac/bicep"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
+	bicepTool "github.com/azure/azure-dev/cli/azd/pkg/tools/bicep"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
@@ -54,7 +56,7 @@ You can find all environment configurations under the *.azure\<environment-name>
 }
 
 func envSetCmd(rootOptions *commands.GlobalCommandOptions) *cobra.Command {
-	actionFn := func(ctx context.Context, _ *cobra.Command, args []string, azdCtx *environment.AzdContext) error {
+	actionFn := func(ctx context.Context, _ *cobra.Command, args []string, azdCtx *azdcontext.AzdContext) error {
 		console := input.NewConsole(!rootOptions.NoPrompt)
 		azCli := commands.GetAzCliFromContext(ctx)
 
@@ -93,7 +95,7 @@ func envSetCmd(rootOptions *commands.GlobalCommandOptions) *cobra.Command {
 
 func envSelectCmd(rootOptions *commands.GlobalCommandOptions) *cobra.Command {
 	action := commands.ActionFunc(
-		func(_ context.Context, _ *cobra.Command, args []string, azdCtx *environment.AzdContext) error {
+		func(_ context.Context, _ *cobra.Command, args []string, azdCtx *azdcontext.AzdContext) error {
 			if err := ensureProject(azdCtx.ProjectPath()); err != nil {
 				return err
 			}
@@ -122,7 +124,7 @@ func envListCmd(rootOptions *commands.GlobalCommandOptions) *cobra.Command {
 		Short:   "List environments.",
 		Aliases: []string{"ls"},
 		RunE: func(cmd *cobra.Command, args []string) error {
-			ctx, err := environment.NewAzdContext()
+			ctx, err := azdcontext.NewAzdContext()
 			if err != nil {
 				return fmt.Errorf("failed to get the current directory: %w", err)
 			}
@@ -192,7 +194,7 @@ func (en *envNewAction) SetupFlags(persis *pflag.FlagSet, local *pflag.FlagSet) 
 	local.StringVarP(&en.location, "location", "l", "", "Azure location for the new environment")
 }
 
-func (en *envNewAction) Run(ctx context.Context, _ *cobra.Command, args []string, azdCtx *environment.AzdContext) error {
+func (en *envNewAction) Run(ctx context.Context, _ *cobra.Command, args []string, azdCtx *azdcontext.AzdContext) error {
 	if err := ensureProject(azdCtx.ProjectPath()); err != nil {
 		return err
 	}
@@ -220,9 +222,9 @@ func (en *envNewAction) Run(ctx context.Context, _ *cobra.Command, args []string
 }
 
 func envRefreshCmd(rootOptions *commands.GlobalCommandOptions) *cobra.Command {
-	actionFn := func(ctx context.Context, cmd *cobra.Command, args []string, azdCtx *environment.AzdContext) error {
+	actionFn := func(ctx context.Context, cmd *cobra.Command, args []string, azdCtx *azdcontext.AzdContext) error {
 		azCli := commands.GetAzCliFromContext(ctx)
-		bicepCli := tools.NewBicepCli(tools.NewBicepCliArgs{AzCli: azCli})
+		bicepCli := bicepTool.NewBicepCli(bicepTool.NewBicepCliArgs{AzCli: azCli})
 		console := input.NewConsole(!rootOptions.NoPrompt)
 
 		if err := ensureProject(azdCtx.ProjectPath()); err != nil {
@@ -248,7 +250,7 @@ func envRefreshCmd(rootOptions *commands.GlobalCommandOptions) *cobra.Command {
 		}
 
 		res, err := azCli.GetSubscriptionDeployment(ctx, env.GetSubscriptionId(), env.GetEnvName())
-		if errors.Is(err, tools.ErrDeploymentNotFound) {
+		if errors.Is(err, azcli.ErrDeploymentNotFound) {
 			return fmt.Errorf("no deployment for environment '%s' found. Have you run `infra create`?", rootOptions.EnvironmentName)
 		} else if err != nil {
 			return fmt.Errorf("fetching latest deployment: %w", err)
@@ -289,12 +291,12 @@ func envGetValuesCmd(rootOptions *commands.GlobalCommandOptions) *cobra.Command 
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := context.Background()
-			ctx = context.WithValue(ctx, environment.OptionsContextKey, rootOptions)
+			ctx = commands.WithGlobalCommandOptions(ctx, rootOptions)
 
 			console := input.NewConsole(!rootOptions.NoPrompt)
 			azCli := commands.GetAzCliFromContext(ctx)
 
-			azdCtx, err := environment.NewAzdContext()
+			azdCtx, err := azdcontext.NewAzdContext()
 			if err != nil {
 				return fmt.Errorf("failed to get the current directory: %w", err)
 			}

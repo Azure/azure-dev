@@ -1,5 +1,9 @@
 package commands
 
+import (
+	"context"
+)
+
 type GlobalCommandOptions struct {
 	EnvironmentName string
 
@@ -22,4 +26,22 @@ type GlobalCommandOptions struct {
 	// AZURE_DEV_COLLECT_TELEMETRY is set to 'no'.
 	// Defaults to true.
 	EnableTelemetry bool
+}
+
+type contextKey string
+
+const (
+	optionsContextKey contextKey = "options"
+)
+
+func WithGlobalCommandOptions(ctx context.Context, options *GlobalCommandOptions) context.Context {
+	return context.WithValue(ctx, optionsContextKey, options)
+}
+
+func GlobalCommandOptionsFromContext(ctx context.Context) *GlobalCommandOptions {
+	options, ok := ctx.Value(optionsContextKey).(*GlobalCommandOptions)
+	if !ok {
+		panic("GlobalCommandOptions were not found in the context")
+	}
+	return options
 }

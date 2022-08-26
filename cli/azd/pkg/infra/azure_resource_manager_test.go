@@ -12,7 +12,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/commands"
 	"github.com/azure/azure-dev/cli/azd/pkg/executil"
 	"github.com/azure/azure-dev/cli/azd/pkg/httpUtil"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/test/helpers"
 	"github.com/stretchr/testify/require"
 )
@@ -22,11 +22,11 @@ var gblCmdOptions = &commands.GlobalCommandOptions{
 	EnableTelemetry:    true,
 }
 
-var mockSubDeploymentOperations = []tools.AzCliResourceOperation{
+var mockSubDeploymentOperations = []azcli.AzCliResourceOperation{
 	{
 		Id: "resource-group-id",
-		Properties: tools.AzCliResourceOperationProperties{
-			TargetResource: tools.AzCliResourceOperationTargetResource{
+		Properties: azcli.AzCliResourceOperationProperties{
+			TargetResource: azcli.AzCliResourceOperationTargetResource{
 				ResourceType:  string(AzureResourceTypeResourceGroup),
 				Id:            "resource-group-id",
 				ResourceName:  "resource-group-name",
@@ -36,8 +36,8 @@ var mockSubDeploymentOperations = []tools.AzCliResourceOperation{
 	},
 	{
 		Id: "deployment-id",
-		Properties: tools.AzCliResourceOperationProperties{
-			TargetResource: tools.AzCliResourceOperationTargetResource{
+		Properties: azcli.AzCliResourceOperationProperties{
+			TargetResource: azcli.AzCliResourceOperationTargetResource{
 				ResourceType:  string(AzureResourceTypeDeployment),
 				Id:            "group-deployment-id",
 				ResourceName:  "group-deployment-name",
@@ -47,12 +47,12 @@ var mockSubDeploymentOperations = []tools.AzCliResourceOperation{
 	},
 }
 
-var mockGroupDeploymentOperations = []tools.AzCliResourceOperation{
+var mockGroupDeploymentOperations = []azcli.AzCliResourceOperation{
 	{
 		Id: "website-resource-id",
-		Properties: tools.AzCliResourceOperationProperties{
+		Properties: azcli.AzCliResourceOperationProperties{
 			ProvisioningOperation: "Create",
-			TargetResource: tools.AzCliResourceOperationTargetResource{
+			TargetResource: azcli.AzCliResourceOperationTargetResource{
 				ResourceType:  string(AzureResourceTypeWebSite),
 				Id:            "website-resource-id",
 				ResourceName:  "website-resource-name",
@@ -62,9 +62,9 @@ var mockGroupDeploymentOperations = []tools.AzCliResourceOperation{
 	},
 	{
 		Id: "storage-resource-id",
-		Properties: tools.AzCliResourceOperationProperties{
+		Properties: azcli.AzCliResourceOperationProperties{
 			ProvisioningOperation: "Create",
-			TargetResource: tools.AzCliResourceOperationTargetResource{
+			TargetResource: azcli.AzCliResourceOperationTargetResource{
 				ResourceType:  string(AzureResourceTypeStorageAccount),
 				Id:            "storage-resource-id",
 				ResourceName:  "storage-resource-name",
@@ -73,12 +73,12 @@ var mockGroupDeploymentOperations = []tools.AzCliResourceOperation{
 		},
 	},
 }
-var mockNestedGroupDeploymentOperations = []tools.AzCliResourceOperation{
+var mockNestedGroupDeploymentOperations = []azcli.AzCliResourceOperation{
 	{
 		Id: "website-resource-id",
-		Properties: tools.AzCliResourceOperationProperties{
+		Properties: azcli.AzCliResourceOperationProperties{
 			ProvisioningOperation: "Create",
-			TargetResource: tools.AzCliResourceOperationTargetResource{
+			TargetResource: azcli.AzCliResourceOperationTargetResource{
 				ResourceType:  string(AzureResourceTypeWebSite),
 				Id:            "website-resource-id",
 				ResourceName:  "website-resource-name",
@@ -88,9 +88,9 @@ var mockNestedGroupDeploymentOperations = []tools.AzCliResourceOperation{
 	},
 	{
 		Id: "storage-resource-id",
-		Properties: tools.AzCliResourceOperationProperties{
+		Properties: azcli.AzCliResourceOperationProperties{
 			ProvisioningOperation: "Create",
-			TargetResource: tools.AzCliResourceOperationTargetResource{
+			TargetResource: azcli.AzCliResourceOperationTargetResource{
 				ResourceType:  string(AzureResourceTypeStorageAccount),
 				Id:            "storage-resource-id",
 				ResourceName:  "storage-resource-name",
@@ -100,8 +100,8 @@ var mockNestedGroupDeploymentOperations = []tools.AzCliResourceOperation{
 	},
 	{
 		Id: "nested-deployment-id",
-		Properties: tools.AzCliResourceOperationProperties{
-			TargetResource: tools.AzCliResourceOperationTargetResource{
+		Properties: azcli.AzCliResourceOperationProperties{
+			TargetResource: azcli.AzCliResourceOperationTargetResource{
 				ResourceType:  string(AzureResourceTypeDeployment),
 				Id:            "nested-group-deployment-id",
 				ResourceName:  "nested-group-deployment-name",
@@ -265,8 +265,8 @@ func TestGetDeploymentResourceOperationsWithNestedDeployments(t *testing.T) {
 	require.Equal(t, 2, groupCalls)
 }
 
-func createTestAzCli(execFunc func(ctx context.Context, args executil.RunArgs) (executil.RunResult, error)) tools.AzCli {
-	return tools.NewAzCli(tools.NewAzCliArgs{
+func createTestAzCli(execFunc func(ctx context.Context, args executil.RunArgs) (executil.RunResult, error)) azcli.AzCli {
+	return azcli.NewAzCli(azcli.NewAzCliArgs{
 		EnableDebug:     false,
 		EnableTelemetry: true,
 		RunWithResultFn: execFunc,

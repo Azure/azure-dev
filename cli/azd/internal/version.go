@@ -28,9 +28,8 @@ type AzdVersionSpec struct {
 	Commit  string `json:"commit"`
 }
 
-// IsDevVersion returns true if the current version of azd is an unreleased, developer version.
 func IsDevVersion() bool {
-	return GetVersionNumber() == DevVersion
+	return GetVersionNumber() == "0.0.0-dev.0"
 }
 
 // GetVersionNumber splits the cmd.Version string to get the

@@ -202,7 +202,7 @@ func TestUpload_OnPartialHttpError_RequeueIndividualItem(t *testing.T) {
 
 	items := 6
 	payload, _ := makeTelemetryPayload(items)
-	queue.Enqueue(payload)
+	_ = queue.Enqueue(payload)
 
 	transmitter.mockResponse.StatusCode = 206
 	transmitter.mockResponse.Response = &appinsightsexporter.BackendResponse{
@@ -275,7 +275,7 @@ func addMessages(queue *InMemoryTelemetryQueue) [][]byte {
 	}
 
 	for _, message := range messages {
-		queue.Enqueue(message)
+		_ = queue.Enqueue(message)
 	}
 
 	return messages

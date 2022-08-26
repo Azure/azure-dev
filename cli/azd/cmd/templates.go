@@ -9,7 +9,7 @@ import (
 	"log"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/commands"
-	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/templates"
 	"github.com/spf13/cobra"
@@ -63,7 +63,7 @@ func templatesListCmd(rootOptions *commands.GlobalCommandOptions) *cobra.Command
 
 func templatesShowCmd(rootOptions *commands.GlobalCommandOptions) *cobra.Command {
 	action := commands.ActionFunc(
-		func(_ context.Context, cmd *cobra.Command, args []string, azdCtx *environment.AzdContext) error {
+		func(_ context.Context, cmd *cobra.Command, args []string, azdCtx *azdcontext.AzdContext) error {
 			templateName := args[0]
 			templateManager := templates.NewTemplateManager()
 			matchingTemplate, err := templateManager.GetTemplate(templateName)

@@ -7,13 +7,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/commands"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/sethvargo/go-retry"
 )
 
@@ -34,7 +33,7 @@ func ResourceNotFound(err error) error {
 }
 
 // GetResourceGroupsForDeployment returns the names of all the resource groups from a subscription level deployment.
-func GetResourceGroupsForDeployment(ctx context.Context, azCli tools.AzCli, subscriptionId string, deploymentName string) ([]string, error) {
+func GetResourceGroupsForDeployment(ctx context.Context, azCli azcli.AzCli, subscriptionId string, deploymentName string) ([]string, error) {
 	deployment, err := azCli.GetSubscriptionDeployment(ctx, subscriptionId, deploymentName)
 	if err != nil {
 		return nil, fmt.Errorf("fetching current deployment: %w", err)
@@ -62,15 +61,15 @@ func GetResourceGroupsForDeployment(ctx context.Context, azCli tools.AzCli, subs
 }
 
 // GetResourceGroupsForEnvironment gets all resources groups for a given environment
-func GetResourceGroupsForEnvironment(ctx context.Context, env *environment.Environment) ([]tools.AzCliResource, error) {
+func GetResourceGroupsForEnvironment(ctx context.Context, env *environment.Environment) ([]azcli.AzCliResource, error) {
 	azCli := commands.GetAzCliFromContext(ctx)
 	query := fmt.Sprintf(`resourceContainers 
 		| where type == "microsoft.resources/subscriptions/resourcegroups" 
 		| where tags['azd-env-name'] == '%s' 
 		| project id, name, type, tags, location`,
-		strings.ToLower(env.GetEnvName()))
+		env.GetEnvName())
 
-	var graphQueryResults *tools.AzCliGraphQuery
+	var graphQueryResults *azcli.AzCliGraphQuery
 
 	err := retry.Do(ctx, retry.WithMaxRetries(10, retry.NewConstant(5*time.Second)), func(ctx context.Context) error {
 		queryResult, err := azCli.GraphQuery(ctx, query, []string{env.GetSubscriptionId()})
@@ -97,15 +96,15 @@ func GetResourceGroupsForEnvironment(ctx context.Context, env *environment.Envir
 // GetDefaultResourceGroups gets the default resource groups regardless of azd-env-name setting
 // azd initially released with {envname}-rg for a default resource group name.  We now don't hardcode the default
 // We search graph for them instead using the rg- prefix or -rg suffix
-func GetDefaultResourceGroups(ctx context.Context, env *environment.Environment) ([]tools.AzCliResource, error) {
+func GetDefaultResourceGroups(ctx context.Context, env *environment.Environment) ([]azcli.AzCliResource, error) {
 	azCli := commands.GetAzCliFromContext(ctx)
 	query := fmt.Sprintf(`resourceContainers 
 		| where type == "microsoft.resources/subscriptions/resourcegroups" 
 		| where name in('rg-%[1]s','%[1]s-rg')
 		| project id, name, type, tags, location`,
-		strings.ToLower(env.GetEnvName()))
+		env.GetEnvName())
 
-	var graphQueryResults *tools.AzCliGraphQuery
+	var graphQueryResults *azcli.AzCliGraphQuery
 
 	err := retry.Do(ctx, retry.WithMaxRetries(10, retry.NewConstant(5*time.Second)), func(ctx context.Context) error {
 		queryResult, err := azCli.GraphQuery(ctx, query, []string{env.GetSubscriptionId()})

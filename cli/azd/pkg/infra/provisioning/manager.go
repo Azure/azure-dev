@@ -9,10 +9,12 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/spin"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/bicep"
 )
 
 type Manager struct {
-	azCli       tools.AzCli
+	azCli       azcli.AzCli
 	env         environment.Environment
 	provider    Provider
 	interactive bool
@@ -289,7 +291,7 @@ func (m *Manager) ensureParameters(ctx context.Context, preview *Preview) (bool,
 }
 
 // Creates a new instance of the Provisioning Manager
-func NewManager(ctx context.Context, env environment.Environment, projectPath string, options Options, interactive bool, console input.Console, cliArgs tools.NewCliToolArgs) (*Manager, error) {
+func NewManager(ctx context.Context, env environment.Environment, projectPath string, options Options, interactive bool, console input.Console, cliArgs bicep.NewBicepCliArgs) (*Manager, error) {
 	infraProvider, err := NewProvider(&env, projectPath, options, console, cliArgs)
 	if err != nil {
 		return nil, fmt.Errorf("error creating infra provider: %w", err)

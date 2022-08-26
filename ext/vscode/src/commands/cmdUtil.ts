@@ -82,21 +82,20 @@ export function getAzDevTerminalTitle(): string {
 
 const UseCustomTemplate: string = 'azure-dev:/template/custom';
 
-const WellKnownTemplates: IAzureQuickPickItem<string>[] = [
-    { label: 'Azure-Samples/todo-nodejs-mongo', detail: 'ToDo Application with a Node.js API and Azure Cosmos DB API for MongoDB', data: 'Azure-Samples/todo-nodejs-mongo' },
-    { label: 'Azure-Samples/todo-python-mongo', detail: 'ToDo Application with a Python API and Azure Cosmos DB API for MongoDB', data: 'Azure-Samples/todo-python-mongo' },
-    { label: 'Azure-Samples/todo-csharp-cosmos-sql', detail: 'ToDo Application with a C# API and Azure Cosmos DB SQL API', data: 'Azure-Samples/todo-csharp-cosmos-sql' },
-    { label: 'Azure-Samples/todo-nodejs-mongo-aca', detail: 'ToDo Application with a Node.js API and Azure Cosmos DB API for MongoDB on Azure Container Apps', data: 'Azure-Samples/todo-nodejs-mongo-aca' },
-    { label: 'Azure-Samples/todo-python-mongo-aca', detail: 'ToDo Application with a Python API and Azure Cosmos DB API for MongoDB on Azure Container Apps', data: 'Azure-Samples/todo-python-mongo-aca' },
-    { label: 'Azure-Samples/todo-nodejs-mongo-swa-func', detail: 'ToDo Application with a Node.js API and Azure Cosmos DB API for MongoDB on Static Web Apps and Functions', data: 'Azure-Samples/todo-nodejs-mongo-swa-func' },
-    { label: 'Azure-Samples/todo-python-mongo-swa-func', detail: 'ToDo Application with a Python API and Azure Cosmos DB API for MongoDB on Static Web Apps and Functions', data: 'Azure-Samples/todo-python-mongo-swa-func'},
-    { label: localize('azure-dev.commands.util.useAnotherTemplate', 'Use another template...'), data: '', id: UseCustomTemplate }
-];
-
 export async function selectApplicationTemplate(context: IActionContext): Promise<string> {
     let templateUrl: string = '';
 
-    const template = await context.ui.showQuickPick(WellKnownTemplates, {
+    const azureCli = await createAzureDevCli(context);
+    const command = azureCli.commandBuilder
+        .withArg('template').withArg('list')
+        .withArg('--output').withArg('json')
+        .build();
+    const result = await execAsync(command);
+    const templates = JSON.parse(result.stdout) as { name: string, description: string, repositoryPath: string }[];
+    const choices = templates.map(t => { return { label: t.name, detail: t.description, data: t.repositoryPath } as IAzureQuickPickItem<string>; });
+    choices.push({ label: localize('azure-dev.commands.util.useAnotherTemplate', 'Use another template...'), data: '', id: UseCustomTemplate });
+
+    const template = await context.ui.showQuickPick(choices, {
         canPickMany: false,
         title: localize('azure-dev.commands.util.selectTemplate', 'Select application template')
     });
@@ -136,4 +135,22 @@ function sha256(s: string): string {
     const hash = createHash('sha256');
     const retval = hash.update(s).digest('hex');
     return retval;
+}
+
+export async function showReadmeFile(folder: string | undefined): Promise<void> {
+    // The whole action is "best effort" -- if folder/file do not exist, just do nothing.
+
+    if (!folder) {
+        return;
+    }
+
+    const candidates: string[] = ["README.md", "README.MD", "readme.md"];
+
+    for (const fname of candidates) {
+        const fullPath = path.join(folder, fname);
+        if (await fse.pathExists(fullPath)) {
+            void vscode.commands.executeCommand('markdown.showPreview', vscode.Uri.file(fullPath), { 'sideBySide': false });
+            return;
+        }
+    }
 }

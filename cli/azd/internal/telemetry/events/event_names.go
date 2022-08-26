@@ -19,9 +19,11 @@ func GetCommandEventName(cmdPath string) string {
 	return CommandEventPrefix + getCommandPath(cmdPath)
 }
 
-// Removes `azd` from command path.
-// Replaces spaces with dot.
-// Example: `azd infra create` -> infra.create
+// getCommandPath reformats the command path suitable for telemetry emission.
+//
+// It removes "azd" from command path and replaces spaces with dot.
+//
+// Example: "azd infra create" -> "infra.create"
 func getCommandPath(cmdPath string) string {
 	cmdPathElements := strings.Split(cmdPath, " ")
 	// exclude first element, which is always `azd`

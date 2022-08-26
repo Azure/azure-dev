@@ -156,6 +156,11 @@ func (p *BicepProvider) Deploy(ctx context.Context, deployment *Deployment, scop
 			deploymentUrl := fmt.Sprintf(output.WithLinkFormat("https://portal.azure.com/#blade/HubsExtension/DeploymentDetailsBlade/overview/id/%s\n"), url.PathEscape(deploymentSlug))
 			p.console.Message(ctx, fmt.Sprintf("Provisioning Azure resources can take some time.\n\nYou can view detailed progress in the Azure Portal:\n%s", deploymentUrl))
 
+			// Ensure the done marker channel is sent in all conditions
+			defer func() {
+				done <- true
+			}()
+
 			// Report incremental progress
 			go func() {
 				resourceManager := infra.NewAzureResourceManager(ctx)
@@ -166,10 +171,11 @@ func (p *BicepProvider) Deploy(ctx context.Context, deployment *Deployment, scop
 					case <-done:
 						return
 					case <-time.After(10 * time.Second):
-						progressReport, err := progressDisplay.ReportProgress(ctx, asyncContext)
+						progressReport, err := progressDisplay.ReportProgress(ctx)
 						if err != nil {
-							asyncContext.SetError(err)
-							return
+							// We don't want to fail the whole deployment if a progress reporting error occurs
+							log.Printf("error while reporting progress: %s", err.Error())
+							continue
 						}
 
 						operations = progressReport.Operations
@@ -197,7 +203,6 @@ func (p *BicepProvider) Deploy(ctx context.Context, deployment *Deployment, scop
 				Deployment: deployment,
 			}
 
-			done <- true
 			asyncContext.SetResult(result)
 		})
 }

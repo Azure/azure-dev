@@ -9,7 +9,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
@@ -65,50 +64,36 @@ func (mock *mockResourceManager) MarkComplete(i int) {
 
 func TestReportProgress(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
-	interactiveLog := []bool{}
-
-	asyncTask := async.NewInteractiveTaskWithProgress(func(asyncContext *async.InteractiveTaskContextWithProgress[*DeployResult, *DeployProgress]) {
-		result := DeployResult{}
-		asyncContext.SetResult(&result)
-	})
-
-	go func() {
-		for status := range asyncTask.Interactive() {
-			interactiveLog = append(interactiveLog, status)
-		}
-	}()
-
-	asyncContext := async.NewInteractiveTaskContextWithProgress(asyncTask)
 
 	mockResourceManager := mockResourceManager{}
 	progressDisplay := NewProvisioningProgressDisplay(&mockResourceManager, mockContext.Console, "SUBSCRIPTION_ID", "DEPLOYMENT_NAME")
-	progressReport, _ := progressDisplay.ReportProgress(context.Background(), asyncContext)
+	progressReport, _ := progressDisplay.ReportProgress(*mockContext.Context)
 	assert.Empty(t, mockContext.Console.Output())
 	assert.Equal(t, defaultProgressTitle, progressReport.Message)
 
 	mockResourceManager.AddInProgressOperation()
-	progressReport, _ = progressDisplay.ReportProgress(context.Background(), asyncContext)
+	progressReport, _ = progressDisplay.ReportProgress(*mockContext.Context)
 	assert.Empty(t, mockContext.Console.Output())
 	assert.Equal(t, formatProgressTitle(0, 1), progressReport.Message)
 
 	mockResourceManager.AddInProgressOperation()
-	progressReport, _ = progressDisplay.ReportProgress(context.Background(), asyncContext)
+	progressReport, _ = progressDisplay.ReportProgress(*mockContext.Context)
 	assert.Empty(t, mockContext.Console.Output())
 	assert.Equal(t, formatProgressTitle(0, 2), progressReport.Message)
 
 	mockResourceManager.AddInProgressSubResourceOperation()
-	progressReport, _ = progressDisplay.ReportProgress(context.Background(), asyncContext)
+	progressReport, _ = progressDisplay.ReportProgress(*mockContext.Context)
 	assert.Empty(t, mockContext.Console.Output())
 	assert.Equal(t, formatProgressTitle(0, 3), progressReport.Message)
 
 	mockResourceManager.MarkComplete(0)
-	progressReport, _ = progressDisplay.ReportProgress(context.Background(), asyncContext)
+	progressReport, _ = progressDisplay.ReportProgress(*mockContext.Context)
 	assert.Len(t, mockContext.Console.Output(), 1)
 	assertOperationLogged(t, 0, mockResourceManager.operations, mockContext.Console.Output())
 	assert.Equal(t, formatProgressTitle(1, 3), progressReport.Message)
 
 	mockResourceManager.MarkComplete(1)
-	progressReport, _ = progressDisplay.ReportProgress(context.Background(), asyncContext)
+	progressReport, _ = progressDisplay.ReportProgress(*mockContext.Context)
 	assert.Len(t, mockContext.Console.Output(), 2)
 	assertOperationLogged(t, 1, mockResourceManager.operations, mockContext.Console.Output())
 	assert.Equal(t, formatProgressTitle(2, 3), progressReport.Message)
@@ -117,13 +102,13 @@ func TestReportProgress(t *testing.T) {
 	oldLogOutput := make([]string, len(mockContext.Console.Output()))
 	copy(mockContext.Console.Output(), oldLogOutput)
 	mockResourceManager.MarkComplete(2)
-	progressReport, _ = progressDisplay.ReportProgress(context.Background(), asyncContext)
+	progressReport, _ = progressDisplay.ReportProgress(*mockContext.Context)
 	assert.Equal(t, oldLogOutput, mockContext.Console.Output())
 	assert.Equal(t, formatProgressTitle(3, 3), progressReport.Message)
 
 	// Verify display does not repeat logging for resources already logged.
 	copy(mockContext.Console.Output(), oldLogOutput)
-	progressReport, _ = progressDisplay.ReportProgress(context.Background(), asyncContext)
+	progressReport, _ = progressDisplay.ReportProgress(*mockContext.Context)
 	assert.Equal(t, oldLogOutput, mockContext.Console.Output())
 	assert.Equal(t, formatProgressTitle(3, 3), progressReport.Message)
 }

@@ -35,16 +35,14 @@ func (at *containerAppTarget) RequiredExternalTools() []tools.ExternalTool {
 
 func (at *containerAppTarget) Deploy(ctx context.Context, azdCtx *azdcontext.AzdContext, path string, progress chan<- string) (ServiceDeploymentResult, error) {
 	// If the infra module has not been specified default to a module with the same name as the service.
-	at.config.Infra.Module = at.config.Module
+	if strings.TrimSpace(at.config.Infra.Module) == "" {
+		at.config.Infra.Module = at.config.Module
+	}
 	if strings.TrimSpace(at.config.Infra.Module) == "" {
 		at.config.Infra.Module = at.config.Name
 	}
 
-	if strings.TrimSpace(at.config.Infra.Path) == "" {
-		at.config.Infra.Path = at.config.Name
-	}
-
-	infraManager, err := provisioning.NewManager(ctx, *at.env, at.config.Path(), at.config.Infra, false)
+	infraManager, err := provisioning.NewManager(ctx, *at.env, at.config.Project.Path, at.config.Infra, false)
 	if err != nil {
 		return ServiceDeploymentResult{}, fmt.Errorf("creating provisioning manager: %w", err)
 	}
@@ -95,7 +93,7 @@ func (at *containerAppTarget) Deploy(ctx context.Context, azdCtx *azdcontext.Azd
 	}
 
 	progress <- "Updating container app image reference"
-	scope := provisioning.NewResourceGroupScope(ctx, at.env.GetEnvName(), at.scope.ResourceGroupName(), at.env.GetEnvName())
+	scope := provisioning.NewResourceGroupScope(ctx, at.env.GetSubscriptionId(), at.scope.ResourceGroupName(), at.env.GetEnvName())
 	deployResult, err := infraManager.Deploy(ctx, &previewResult.Deployment, scope)
 
 	if err != nil {

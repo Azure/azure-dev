@@ -51,7 +51,7 @@ func (c *AskerConsole) SetWriter(writer io.Writer) {
 // Prints out a message to the underlying console write
 func (c *AskerConsole) Message(ctx context.Context, message string) {
 	// Only write to the console during interactive & non-formatted responses.
-	if c.interactive && c.formatter.Kind() == output.NoneFormat {
+	if c.interactive && (c.formatter == nil || c.formatter.Kind() == output.NoneFormat) {
 		fmt.Fprintln(c.writer, message)
 	} else {
 		log.Println(message)

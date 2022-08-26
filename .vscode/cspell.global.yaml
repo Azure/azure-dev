@@ -68,6 +68,7 @@ ignoreWords:
     - synw
     - TEAMPROJECTID
     - traf
+    - useragent
     - vmss
     - vnet
     - vpng

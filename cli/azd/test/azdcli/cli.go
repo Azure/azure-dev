@@ -39,7 +39,6 @@ func NewCLI(t *testing.T) *CLI {
 func (cli *CLI) RunCommandWithStdIn(ctx context.Context, stdin string, args ...string) (string, error) {
 	description := "azd " + strings.Join(args, " ") + " in " + cli.WorkingDirectory
 
-	args = append(args, "--debug")
 	cmd := exec.CommandContext(ctx, GetAzdLocation(), args...)
 	if cli.WorkingDirectory != "" {
 		cmd.Dir = cli.WorkingDirectory

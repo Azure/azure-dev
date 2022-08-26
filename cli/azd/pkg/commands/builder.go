@@ -42,6 +42,7 @@ func Build(action Action, rootOptions *internal.GlobalCommandOptions, use string
 			formatter, err := output.GetCommandFormatter(cmd)
 			if err != nil {
 				log.Printf("getting formatter: %s", err.Error())
+				formatter = output.GetFormatter(ctx)
 			} else {
 				ctx = output.WithFormatter(ctx, formatter)
 			}

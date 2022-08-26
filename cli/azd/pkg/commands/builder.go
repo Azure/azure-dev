@@ -4,10 +4,11 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/azure/azure-dev/cli/azd/internal/telemetry"
+	"github.com/azure/azure-dev/cli/azd/internal/telemetry/events"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/spf13/cobra"
-	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/codes"
 )
 
@@ -32,9 +33,10 @@ func Build(action Action, rootOptions *GlobalCommandOptions, use string, short s
 			azCli := GetAzCliFromContext(ctx)
 			ctx = azcli.WithAzCli(ctx, azCli)
 
-			// This is done to simply mock behavior. We could either get the full command invocation path
-			// using GetCommandPath, or more than likely, ask for the event name as a Builder argument
-			ctx, span := otel.Tracer("azd").Start(ctx, "azure-dev.commands."+use)
+			// Note: CommandPath is constructed using the command.Use member on each command up to the root.
+			// It does not contain user input, and is safe for telemetry emission.
+			cmdPath := cmd.CommandPath()
+			ctx, span := telemetry.GetTracer().Start(ctx, events.GetCommandEventName(cmdPath))
 			defer span.End()
 
 			err = action.Run(ctx, cmd, args, azdCtx)

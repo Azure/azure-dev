@@ -1,3 +1,7 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
+// Package telemetry provides functionality for emitting telemetry in azd.
 package telemetry
 
 import (
@@ -20,6 +24,8 @@ import (
 	"go.opentelemetry.io/otel/sdk/trace"
 	semconv "go.opentelemetry.io/otel/semconv/v1.10.0"
 )
+
+const azdAppName = "azd"
 
 const telemetryItemExtension = ".trn"
 const devInstrumentationKey = "d3b9c006-3680-4300-9862-35fce9ac66c7"
@@ -53,7 +59,7 @@ func newResource() *resource.Resource {
 		resource.Default(),
 		resource.NewWithAttributes(
 			semconv.SchemaURL,
-			semconv.ServiceNameKey.String("azd"),
+			semconv.ServiceNameKey.String(azdAppName),
 			semconv.ServiceVersionKey.String(internal.GetVersionNumber()),
 		),
 	)

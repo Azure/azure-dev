@@ -33,7 +33,7 @@ func Build(action Action, rootOptions *GlobalCommandOptions, use string, short s
 			azCli := GetAzCliFromContext(ctx)
 			ctx = azcli.WithAzCli(ctx, azCli)
 
-			// Note: CommandPath is constructed using the command.Use member on each command up to the root.
+			// Note: CommandPath is constructed using the Use member on each command up to the root.
 			// It does not contain user input, and is safe for telemetry emission.
 			cmdPath := cmd.CommandPath()
 			ctx, span := telemetry.GetTracer().Start(ctx, events.GetCommandEventName(cmdPath))

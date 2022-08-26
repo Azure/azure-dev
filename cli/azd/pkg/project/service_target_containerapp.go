@@ -40,6 +40,10 @@ func (at *containerAppTarget) Deploy(ctx context.Context, azdCtx *azdcontext.Azd
 		at.config.Infra.Module = at.config.Name
 	}
 
+	if strings.TrimSpace(at.config.Infra.Path) == "" {
+		at.config.Infra.Path = at.config.Name
+	}
+
 	infraManager, err := provisioning.NewManager(ctx, *at.env, at.config.Path(), at.config.Infra, false)
 	if err != nil {
 		return ServiceDeploymentResult{}, fmt.Errorf("creating provisioning manager: %w", err)

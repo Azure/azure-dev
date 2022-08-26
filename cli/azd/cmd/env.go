@@ -264,7 +264,7 @@ func envRefreshCmd(rootOptions *internal.GlobalCommandOptions) *cobra.Command {
 			return err
 		}
 
-		console.Message(ctx, "Azure env refresh completed")
+		console.Message(ctx, "Environments setting refresh completed")
 
 		if formatter.Kind() == output.JsonFormat {
 			err = formatter.Format(getDeploymentResult.Deployment, writer, nil)

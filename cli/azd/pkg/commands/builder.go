@@ -3,7 +3,6 @@ package commands
 import (
 	"context"
 	"fmt"
-	"log"
 
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
@@ -41,11 +40,9 @@ func Build(action Action, rootOptions *internal.GlobalCommandOptions, use string
 			ctx = azcli.WithAzCli(ctx, azCli)
 
 			// Attempt to get the user specified formatter from the command args
-			// If the command does not support formatting then default to the `None` formatter
 			formatter, err := output.GetCommandFormatter(cmd)
 			if err != nil {
-				log.Printf("getting formatter: %s", err.Error())
-				formatter = &output.NoneFormatter{}
+				return err
 			}
 
 			ctx = output.WithFormatter(ctx, formatter)

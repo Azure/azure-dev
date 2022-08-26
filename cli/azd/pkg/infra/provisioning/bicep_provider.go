@@ -314,7 +314,7 @@ func (p *BicepProvider) destroyResourceGroups(ctx context.Context, asyncContext 
 			return err
 		}
 
-		p.console.Message(ctx, fmt.Sprintf("💀 %s resource group %s", output.WithErrorFormat("Deleted"), output.WithHighLightFormat(resourceGroup)))
+		p.console.Message(ctx, fmt.Sprintf("%s resource group %s", output.WithErrorFormat("Deleted"), output.WithHighLightFormat(resourceGroup)))
 	}
 
 	return nil
@@ -395,7 +395,7 @@ func (p *BicepProvider) purgeKeyVaults(ctx context.Context, asyncContext *async.
 			return fmt.Errorf("purging key vault %s: %w", keyVault.Name, err)
 		}
 
-		p.console.Message(ctx, fmt.Sprintf("💀 %s key vault %s", output.WithErrorFormat("Purged"), output.WithHighLightFormat(keyVault.Name)))
+		p.console.Message(ctx, fmt.Sprintf("%s key vault %s", output.WithErrorFormat("Purged"), output.WithHighLightFormat(keyVault.Name)))
 	}
 
 	return nil
@@ -411,7 +411,7 @@ func (p *BicepProvider) deleteDeployment(ctx context.Context, asyncContext *asyn
 		return err
 	}
 
-	p.console.Message(ctx, fmt.Sprintf("💀 %s deployment %s", output.WithErrorFormat("Deleted"), output.WithHighLightFormat(deploymentName)))
+	p.console.Message(ctx, fmt.Sprintf("%s deployment %s", output.WithErrorFormat("Deleted"), output.WithHighLightFormat(deploymentName)))
 
 	return nil
 }

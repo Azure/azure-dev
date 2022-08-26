@@ -41,11 +41,7 @@ func WithCommandOptions(ctx context.Context, options GlobalCommandOptions) conte
 func GetCommandOptions(ctx context.Context) GlobalCommandOptions {
 	options, ok := ctx.Value(optionsContextKey).(GlobalCommandOptions)
 	if !ok {
-		return GlobalCommandOptions{
-			EnableDebugLogging: false,
-			EnableTelemetry:    true,
-			NoPrompt:           false,
-		}
+		panic("GlobalCommandOptions were not found in the context.")
 	}
 
 	return options

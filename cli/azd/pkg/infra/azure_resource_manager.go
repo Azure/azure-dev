@@ -103,6 +103,7 @@ func (rm *AzureResourceManager) GetResourceGroupsForDeployment(ctx context.Conte
 }
 
 // GetResourceGroupsForEnvironment gets all resources groups for a given environment
+// The resource graph may not be immediately up to date and if not initially found will attempt to retry causing delays in retrieval.
 func (rm *AzureResourceManager) GetResourceGroupsForEnvironment(ctx context.Context, env *environment.Environment) ([]azcli.AzCliResource, error) {
 	azCli := azcli.GetAzCli(ctx)
 	query := fmt.Sprintf(`resourceContainers 
@@ -138,6 +139,7 @@ func (rm *AzureResourceManager) GetResourceGroupsForEnvironment(ctx context.Cont
 // GetDefaultResourceGroups gets the default resource groups regardless of azd-env-name setting
 // azd initially released with {envname}-rg for a default resource group name.  We now don't hardcode the default
 // We search graph for them instead using the rg- prefix or -rg suffix
+// The resource graph may not be immediately up to date and if not initially found will attempt to retry causing delays in retrieval.
 func (rm *AzureResourceManager) GetDefaultResourceGroups(ctx context.Context, env *environment.Environment) ([]azcli.AzCliResource, error) {
 	azCli := azcli.GetAzCli(ctx)
 	query := fmt.Sprintf(`resourceContainers 

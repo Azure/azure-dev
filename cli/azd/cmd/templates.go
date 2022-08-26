@@ -54,13 +54,16 @@ func templatesListCmd(rootOptions *internal.GlobalCommandOptions) *cobra.Command
 		return formatTemplates(ctx, cmd, templateList...)
 	})
 
-	return commands.Build(
+	cmd := commands.Build(
 		action,
 		rootOptions,
 		"list",
 		"List templates.",
 		"",
 	)
+	cmd.Aliases = []string{"ls"}
+
+	return cmd
 }
 
 func templatesShowCmd(rootOptions *internal.GlobalCommandOptions) *cobra.Command {

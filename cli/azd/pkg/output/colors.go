@@ -1,11 +1,11 @@
 package output
 
-import "github.com/fatih/color"
+import (
+	"github.com/fatih/color"
+)
 
 // withLinkFormat creates string with hyperlink-looking color
 func WithLinkFormat(link string, a ...interface{}) string {
-	// See ansi colors: https://en.wikipedia.org/wiki/ANSI_escape_code#Colors
-	// ansi code `30` is the one that matches the survey selection
 	return color.HiCyanString(link, a...)
 }
 

@@ -16,7 +16,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 )
 
-const defaultProgressTitle string = "🚀 Provisioning Azure resources"
+const defaultProgressTitle string = "Provisioning Azure resources"
 const succeededProvisioningState string = "Succeeded"
 
 // ProvisioningProgressDisplay displays interactive progress for an ongoing Azure provisioning operation.
@@ -73,12 +73,7 @@ func (display *ProvisioningProgressDisplay) ReportProgress(ctx context.Context) 
 		return time.Time.Before(newlyDeployedResources[i].Properties.Timestamp, newlyDeployedResources[j].Properties.Timestamp)
 	})
 
-	err = display.logNewlyCreatedResources(ctx, newlyDeployedResources)
-
-	if err != nil {
-		return nil, fmt.Errorf("reporting progress: %w", err)
-	}
-
+	display.logNewlyCreatedResources(ctx, newlyDeployedResources)
 	status := ""
 
 	if len(operations) > 0 {
@@ -93,7 +88,7 @@ func (display *ProvisioningProgressDisplay) ReportProgress(ctx context.Context) 
 	return &progress, nil
 }
 
-func (display *ProvisioningProgressDisplay) logNewlyCreatedResources(ctx context.Context, resources []*azcli.AzCliResourceOperation) error {
+func (display *ProvisioningProgressDisplay) logNewlyCreatedResources(ctx context.Context, resources []*azcli.AzCliResourceOperation) {
 	for _, newResource := range resources {
 		resourceTypeName := newResource.Properties.TargetResource.ResourceType
 		resourceTypeDisplayName, err := display.resourceManager.GetResourceTypeDisplayName(
@@ -119,18 +114,16 @@ func (display *ProvisioningProgressDisplay) logNewlyCreatedResources(ctx context
 
 		display.createdResources[newResource.Properties.TargetResource.Id] = true
 	}
-
-	return nil
 }
 
 func formatCreatedResourceLog(resourceTypeDisplayName string, resourceName string) string {
 	return fmt.Sprintf(
-		"✅ %s %s: %s",
+		"%s %s: %s",
 		output.WithSuccessFormat("Created"),
 		resourceTypeDisplayName,
 		output.WithHighLightFormat(resourceName))
 }
 
 func formatProgressTitle(succeededCount int, totalCount int) string {
-	return fmt.Sprintf("🚀 Provisioning Azure resources (%d of ~%d completed)", succeededCount, totalCount)
+	return fmt.Sprintf("Provisioning Azure resources (%d of ~%d completed)", succeededCount, totalCount)
 }

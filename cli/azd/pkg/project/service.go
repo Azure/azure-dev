@@ -92,6 +92,7 @@ func (svc *Service) Deploy(ctx context.Context, azdCtx *azdcontext.AzdContext) (
 
 // GetServiceResourceName attempts to query the azure resource graph and find the resource with the 'azd-service-name' tag set to the service key
 // If not found will assume resource name conventions
+// The resource graph may not be immediately up to date and if not initially found will attempt to retry causing delays in retrieval.
 func GetServiceResourceName(ctx context.Context, resourceGroupName string, serviceName string, env *environment.Environment) (string, error) {
 	azCli := azcli.GetAzCli(ctx)
 	query := fmt.Sprintf(`resources | 

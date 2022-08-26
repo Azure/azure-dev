@@ -159,13 +159,16 @@ func envListCmd(rootOptions *internal.GlobalCommandOptions) *cobra.Command {
 			return nil
 		})
 
-	return commands.Build(
+	cmd := commands.Build(
 		action,
 		rootOptions,
 		"list",
 		"List environments",
 		"",
 	)
+	cmd.Aliases = []string{"ls"}
+
+	return cmd
 }
 
 func envNewCmd(rootOptions *internal.GlobalCommandOptions) *cobra.Command {

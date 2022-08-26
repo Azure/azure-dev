@@ -157,7 +157,7 @@ const (
 )
 
 func GetBicepCli(ctx context.Context) BicepCli {
-	execUtilFn := executil.GetExecUtil(ctx)
+	execUtilFn := executil.GetCommandRunner(ctx)
 	cli, ok := ctx.Value(bicepContextKey).(BicepCli)
 	if !ok {
 		args := NewBicepCliArgs{

@@ -31,7 +31,7 @@ func deployCmd(rootOptions *internal.GlobalCommandOptions) *cobra.Command {
 		"Deploy the application's code to Azure.",
 		`Deploy the application's code to Azure.
 
-When no `+output.WithBackticks("--service")+` value is specified, all services in the *azure.yaml* file (found in the root of your project) are deployed.
+When no `+output.WithBackticks("--service")+` value is specified, all services in the `+output.WithBackticks("azure.yaml")+` file (found in the root of your project) are deployed.
 
 Examples:
 

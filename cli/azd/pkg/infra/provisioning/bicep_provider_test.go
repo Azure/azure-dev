@@ -25,8 +25,8 @@ func TestBicepPreview(t *testing.T) {
 	progressDone := make(chan bool)
 
 	mockContext := mocks.NewMockContext(context.Background())
-	prepareGenericMocks(mockContext.ExecUtil)
-	preparePreviewMocks(mockContext.ExecUtil)
+	prepareGenericMocks(mockContext.CommandRunner)
+	preparePreviewMocks(mockContext.CommandRunner)
 
 	infraProvider := createBicepProvider(*mockContext.Context)
 	previewTask := infraProvider.Preview(*mockContext.Context)
@@ -65,9 +65,9 @@ func TestBicepGetDeploymentPreview(t *testing.T) {
 	expectedWebsiteUrl := "http://myapp.azurewebsites.net"
 
 	mockContext := mocks.NewMockContext(context.Background())
-	prepareGenericMocks(mockContext.ExecUtil)
-	preparePreviewMocks(mockContext.ExecUtil)
-	prepareDeployMocks(mockContext.ExecUtil)
+	prepareGenericMocks(mockContext.CommandRunner)
+	preparePreviewMocks(mockContext.CommandRunner)
+	prepareDeployMocks(mockContext.CommandRunner)
 
 	infraProvider := createBicepProvider(*mockContext.Context)
 	scope := NewSubscriptionScope(*mockContext.Context, infraProvider.env.Values["AZURE_LOCATION"], infraProvider.env.GetSubscriptionId(), infraProvider.env.GetEnvName())
@@ -106,9 +106,9 @@ func TestBicepDeploy(t *testing.T) {
 	progressDone := make(chan bool)
 
 	mockContext := mocks.NewMockContext(context.Background())
-	prepareGenericMocks(mockContext.ExecUtil)
-	preparePreviewMocks(mockContext.ExecUtil)
-	prepareDeployMocks(mockContext.ExecUtil)
+	prepareGenericMocks(mockContext.CommandRunner)
+	preparePreviewMocks(mockContext.CommandRunner)
+	prepareDeployMocks(mockContext.CommandRunner)
 
 	infraProvider := createBicepProvider(*mockContext.Context)
 	deployment := Deployment{}
@@ -142,9 +142,9 @@ func TestBicepDeploy(t *testing.T) {
 func TestBicepDestroy(t *testing.T) {
 	t.Run("Interactive", func(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
-		prepareGenericMocks(mockContext.ExecUtil)
-		preparePreviewMocks(mockContext.ExecUtil)
-		prepareDestroyMocks(mockContext.ExecUtil)
+		prepareGenericMocks(mockContext.CommandRunner)
+		preparePreviewMocks(mockContext.CommandRunner)
+		prepareDestroyMocks(mockContext.CommandRunner)
 
 		progressLog := []string{}
 		interactiveLog := []bool{}
@@ -205,9 +205,9 @@ func TestBicepDestroy(t *testing.T) {
 
 	t.Run("InteractiveForceAndPurge", func(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
-		prepareGenericMocks(mockContext.ExecUtil)
-		preparePreviewMocks(mockContext.ExecUtil)
-		prepareDestroyMocks(mockContext.ExecUtil)
+		prepareGenericMocks(mockContext.CommandRunner)
+		preparePreviewMocks(mockContext.CommandRunner)
+		prepareDestroyMocks(mockContext.CommandRunner)
 
 		progressLog := []string{}
 		interactiveLog := []bool{}
@@ -268,7 +268,7 @@ func createBicepProvider(ctx context.Context) *BicepProvider {
 	return NewBicepProvider(ctx, &env, projectDir, options)
 }
 
-func prepareGenericMocks(execUtil *execmock.MockExecUtil) {
+func prepareGenericMocks(execUtil *execmock.MockCommandRunner) {
 	// Setup expected values for executil
 	execUtil.When(func(args executil.RunArgs, command string) bool {
 		return strings.Contains(command, "az version")
@@ -279,7 +279,7 @@ func prepareGenericMocks(execUtil *execmock.MockExecUtil) {
 }
 
 // Sets up all the mocks required for the bicep preview & deploy operation
-func prepareDeployMocks(execUtil *execmock.MockExecUtil) {
+func prepareDeployMocks(execUtil *execmock.MockCommandRunner) {
 	// Gets deployment progress
 	execUtil.When(
 		func(args executil.RunArgs, command string) bool {
@@ -298,7 +298,7 @@ func prepareDeployMocks(execUtil *execmock.MockExecUtil) {
 	})
 }
 
-func preparePreviewMocks(execUtil *execmock.MockExecUtil) {
+func preparePreviewMocks(execUtil *execmock.MockCommandRunner) {
 	expectedWebsiteUrl := "http://myapp.azurewebsites.net"
 	bicepInputParams := make(map[string]BicepInputParameter)
 	bicepInputParams["name"] = BicepInputParameter{Value: "${AZURE_ENV_NAME}"}
@@ -359,7 +359,7 @@ func preparePreviewMocks(execUtil *execmock.MockExecUtil) {
 	})
 }
 
-func prepareDestroyMocks(execUtil *execmock.MockExecUtil) {
+func prepareDestroyMocks(execUtil *execmock.MockCommandRunner) {
 	resourceList := []azcli.AzCliResource{
 		{
 			Id:   "webapp",

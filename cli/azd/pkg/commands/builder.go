@@ -14,6 +14,7 @@ import (
 )
 
 // Build builds a Cobra command, attaching an action
+// All command should be built with this command builder vs manually instantiating cobra commands.
 func Build(action Action, rootOptions *internal.GlobalCommandOptions, use string, short string, long string) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   use,
@@ -39,13 +40,15 @@ func Build(action Action, rootOptions *internal.GlobalCommandOptions, use string
 			azCli := azcli.NewAzCli(azCliArgs)
 			ctx = azcli.WithAzCli(ctx, azCli)
 
+			// Attempt to get the user specified formatter from the command args
+			// If the command does not support formatting then default to the `None` formatter
 			formatter, err := output.GetCommandFormatter(cmd)
 			if err != nil {
 				log.Printf("getting formatter: %s", err.Error())
-				formatter = output.GetFormatter(ctx)
-			} else {
-				ctx = output.WithFormatter(ctx, formatter)
+				formatter = &output.NoneFormatter{}
 			}
+
+			ctx = output.WithFormatter(ctx, formatter)
 
 			writer := output.GetDefaultWriter()
 			ctx = output.WithWriter(ctx, writer)

@@ -9,25 +9,25 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/executil"
 )
 
-type ExecUtilWhenPredicate func(args executil.RunArgs, command string) bool
+type CommandWhenPredicate func(args executil.RunArgs, command string) bool
 
 type ResponseFn func(args executil.RunArgs) (executil.RunResult, error)
 
-// MockExecUtil is used to register and implement mock calls and responses out to dependent CLI applications
-type MockExecUtil struct {
+// MockCommandRunner is used to register and implement mock calls and responses out to dependent CLI applications
+type MockCommandRunner struct {
 	expressions []*CommandExpression
 }
 
 // Creates a new instance of a mock executil
-func NewMockExecUtil() *MockExecUtil {
-	return &MockExecUtil{
+func NewMockCommandRunner() *MockCommandRunner {
+	return &MockCommandRunner{
 		expressions: []*CommandExpression{},
 	}
 }
 
 // The executil RunWithResult definition that matches the real function definition
 // This implementation will find the first matching mocked expression and return the configured response or error
-func (m *MockExecUtil) RunWithResult(ctx context.Context, args executil.RunArgs) (executil.RunResult, error) {
+func (m *MockCommandRunner) RunWithResult(ctx context.Context, args executil.RunArgs) (executil.RunResult, error) {
 	var match *CommandExpression
 
 	cmdArgs := []string{args.Cmd}
@@ -54,7 +54,7 @@ func (m *MockExecUtil) RunWithResult(ctx context.Context, args executil.RunArgs)
 }
 
 // Registers a mock expression against the mock executil
-func (m *MockExecUtil) When(predicate ExecUtilWhenPredicate) *CommandExpression {
+func (m *MockCommandRunner) When(predicate CommandWhenPredicate) *CommandExpression {
 	expr := CommandExpression{
 		executil:    m,
 		predicateFn: predicate,
@@ -70,29 +70,29 @@ type CommandExpression struct {
 	response    executil.RunResult
 	responseFn  ResponseFn
 	error       error
-	executil    *MockExecUtil
-	predicateFn ExecUtilWhenPredicate
+	executil    *MockCommandRunner
+	predicateFn CommandWhenPredicate
 }
 
 // Sets the response that will be returned for the current expression
-func (e *CommandExpression) Respond(response executil.RunResult) *MockExecUtil {
+func (e *CommandExpression) Respond(response executil.RunResult) *MockCommandRunner {
 	e.response = response
 	return e.executil
 }
 
 // Sets the response that will be returned for the current expression
-func (e *CommandExpression) RespondFn(responseFn ResponseFn) *MockExecUtil {
+func (e *CommandExpression) RespondFn(responseFn ResponseFn) *MockCommandRunner {
 	e.responseFn = responseFn
 	return e.executil
 }
 
 // Sets the error that will be returned for the current expression
-func (e *CommandExpression) SetError(err error) *MockExecUtil {
+func (e *CommandExpression) SetError(err error) *MockCommandRunner {
 	e.error = err
 	return e.executil
 }
 
-func AddAzLoginMocks(execUtil *MockExecUtil) {
+func AddAzLoginMocks(execUtil *MockCommandRunner) {
 	execUtil.When(func(args executil.RunArgs, command string) bool {
 		return strings.Contains(command, "az account get-access-token")
 	}).RespondFn(func(args executil.RunArgs) (executil.RunResult, error) {

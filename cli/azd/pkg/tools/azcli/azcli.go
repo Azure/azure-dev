@@ -1096,7 +1096,7 @@ func GetAzCli(ctx context.Context) AzCli {
 	if !ok {
 		options := azdinternal.GetCommandOptions(ctx)
 
-		execFn := executil.GetExecUtil(ctx)
+		execFn := executil.GetCommandRunner(ctx)
 		args := NewAzCliArgs{
 			EnableDebug:     options.EnableDebugLogging,
 			EnableTelemetry: options.EnableTelemetry,

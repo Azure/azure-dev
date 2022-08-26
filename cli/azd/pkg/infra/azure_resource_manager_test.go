@@ -110,7 +110,7 @@ func TestGetDeploymentResourceOperationsSuccess(t *testing.T) {
 	groupCalls := 0
 
 	mockContext := mocks.NewMockContext(context.Background())
-	mockContext.ExecUtil.When(func(args executil.RunArgs, command string) bool {
+	mockContext.CommandRunner.When(func(args executil.RunArgs, command string) bool {
 		return strings.Contains(command, "az deployment operation sub list")
 	}).RespondFn(func(args executil.RunArgs) (executil.RunResult, error) {
 		subCalls++
@@ -119,7 +119,7 @@ func TestGetDeploymentResourceOperationsSuccess(t *testing.T) {
 		return executil.NewRunResult(0, string(subJsonBytes), ""), nil
 	})
 
-	mockContext.ExecUtil.When(func(args executil.RunArgs, command string) bool {
+	mockContext.CommandRunner.When(func(args executil.RunArgs, command string) bool {
 		return strings.Contains(command, "az deployment operation group list")
 	}).RespondFn(func(args executil.RunArgs) (executil.RunResult, error) {
 		groupCalls++
@@ -143,7 +143,7 @@ func TestGetDeploymentResourceOperationsFail(t *testing.T) {
 	groupCalls := 0
 
 	mockContext := mocks.NewMockContext(context.Background())
-	mockContext.ExecUtil.When(func(args executil.RunArgs, command string) bool {
+	mockContext.CommandRunner.When(func(args executil.RunArgs, command string) bool {
 		return strings.Contains(command, "az deployment operation sub list")
 	}).RespondFn(func(args executil.RunArgs) (executil.RunResult, error) {
 		subCalls++
@@ -151,7 +151,7 @@ func TestGetDeploymentResourceOperationsFail(t *testing.T) {
 		return executil.NewRunResult(1, "", "error getting resource operations"), nil
 	})
 
-	mockContext.ExecUtil.When(func(args executil.RunArgs, command string) bool {
+	mockContext.CommandRunner.When(func(args executil.RunArgs, command string) bool {
 		return strings.Contains(command, "az deployment operation group list")
 	}).RespondFn(func(args executil.RunArgs) (executil.RunResult, error) {
 		groupCalls++
@@ -174,7 +174,7 @@ func TestGetDeploymentResourceOperationsNoResourceGroup(t *testing.T) {
 	groupCalls := 0
 
 	mockContext := mocks.NewMockContext(context.Background())
-	mockContext.ExecUtil.When(func(args executil.RunArgs, command string) bool {
+	mockContext.CommandRunner.When(func(args executil.RunArgs, command string) bool {
 		return strings.Contains(command, "az deployment operation sub list")
 	}).RespondFn(func(args executil.RunArgs) (executil.RunResult, error) {
 		subCalls++
@@ -182,7 +182,7 @@ func TestGetDeploymentResourceOperationsNoResourceGroup(t *testing.T) {
 		return executil.NewRunResult(0, "[]", ""), nil
 	})
 
-	mockContext.ExecUtil.When(func(args executil.RunArgs, command string) bool {
+	mockContext.CommandRunner.When(func(args executil.RunArgs, command string) bool {
 		return strings.Contains(command, "az deployment operation group list")
 	}).RespondFn(func(args executil.RunArgs) (executil.RunResult, error) {
 		groupCalls++
@@ -205,7 +205,7 @@ func TestGetDeploymentResourceOperationsWithNestedDeployments(t *testing.T) {
 	groupCalls := 0
 
 	mockContext := mocks.NewMockContext(context.Background())
-	mockContext.ExecUtil.When(func(args executil.RunArgs, command string) bool {
+	mockContext.CommandRunner.When(func(args executil.RunArgs, command string) bool {
 		return strings.Contains(command, "az deployment operation sub list")
 	}).RespondFn(func(args executil.RunArgs) (executil.RunResult, error) {
 		subCalls++
@@ -214,7 +214,7 @@ func TestGetDeploymentResourceOperationsWithNestedDeployments(t *testing.T) {
 		return executil.NewRunResult(0, string(subJsonBytes), ""), nil
 	})
 
-	mockContext.ExecUtil.When(func(args executil.RunArgs, command string) bool {
+	mockContext.CommandRunner.When(func(args executil.RunArgs, command string) bool {
 		return strings.Contains(command, "az deployment operation group list")
 	}).RespondFn(func(args executil.RunArgs) (executil.RunResult, error) {
 		groupCalls++

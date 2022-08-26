@@ -155,7 +155,7 @@ func (m *Manager) preview(ctx context.Context) (*PreviewResult, error) {
 func (m *Manager) deploy(ctx context.Context, location string, deployment *Deployment, scope Scope) (*DeployResult, error) {
 	var deployResult *DeployResult
 
-	err := m.runAction("🚀 Provisioning Azure resources", m.interactive, func(spinner *spin.Spinner) error {
+	err := m.runAction("Provisioning Azure resources", m.interactive, func(spinner *spin.Spinner) error {
 		deployTask := m.provider.Deploy(ctx, deployment, scope)
 
 		go func() {

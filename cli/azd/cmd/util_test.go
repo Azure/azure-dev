@@ -85,7 +85,7 @@ func Test_promptEnvironmentName(t *testing.T) {
 		}
 
 		mockContext := mocks.NewMockContext(context.Background())
-		mockContext.ExecUtil.When(func(args executil.RunArgs, command string) bool {
+		mockContext.CommandRunner.When(func(args executil.RunArgs, command string) bool {
 			return strings.Contains(command, "az deployment sub show")
 		}).RespondFn(func(args executil.RunArgs) (executil.RunResult, error) {
 			jsonBytes, _ := json.Marshal(mockDeployment)

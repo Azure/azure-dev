@@ -30,7 +30,7 @@ services:
 	env.SetEnvName("test-env")
 
 	mockContext := mocks.NewMockContext(context.Background())
-	mockContext.ExecUtil.When(func(args executil.RunArgs, command string) bool {
+	mockContext.CommandRunner.When(func(args executil.RunArgs, command string) bool {
 		return strings.Contains(command, "docker build")
 	}).RespondFn(func(args executil.RunArgs) (executil.RunResult, error) {
 		ran = true
@@ -53,7 +53,7 @@ services:
 	prj, _ := projectConfig.GetProject(mockContext.Context, &env)
 	service := prj.Services[0]
 
-	dockerArgs := docker.DockerArgs{RunWithResultFn: mockContext.ExecUtil.RunWithResult}
+	dockerArgs := docker.DockerArgs{RunWithResultFn: mockContext.CommandRunner.RunWithResult}
 	docker := docker.NewDocker(dockerArgs)
 
 	progress := make(chan string)
@@ -104,7 +104,7 @@ services:
 
 	ran := false
 
-	mockContext.ExecUtil.When(func(args executil.RunArgs, command string) bool {
+	mockContext.CommandRunner.When(func(args executil.RunArgs, command string) bool {
 		return strings.Contains(command, "docker build")
 	}).RespondFn(func(args executil.RunArgs) (executil.RunResult, error) {
 		ran = true
@@ -123,7 +123,7 @@ services:
 		}, nil
 	})
 
-	dockerArgs := docker.DockerArgs{RunWithResultFn: mockContext.ExecUtil.RunWithResult}
+	dockerArgs := docker.DockerArgs{RunWithResultFn: mockContext.CommandRunner.RunWithResult}
 	docker := docker.NewDocker(dockerArgs)
 
 	projectConfig, _ := ParseProjectConfig(testProj, &env)

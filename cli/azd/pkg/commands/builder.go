@@ -20,38 +20,10 @@ func Build(action Action, rootOptions *internal.GlobalCommandOptions, use string
 		Short: short,
 		Long:  long,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			ctx := context.Background()
-			azdCtx, err := azdcontext.NewAzdContext()
-			if err != nil {
-				return fmt.Errorf("creating context: %w", err)
-			}
-
-			// Set the global options in the go context
-			ctx = azdcontext.WithAzdContext(ctx, azdCtx)
-			ctx = internal.WithCommandOptions(ctx, *rootOptions)
-
-			azCliArgs := azcli.NewAzCliArgs{
-				EnableDebug:     rootOptions.EnableDebugLogging,
-				EnableTelemetry: rootOptions.EnableTelemetry,
-			}
-
-			// Create and set the AzCli that will be used for the command
-			azCli := azcli.NewAzCli(azCliArgs)
-			ctx = azcli.WithAzCli(ctx, azCli)
-
-			// Attempt to get the user specified formatter from the command args
-			formatter, err := output.GetCommandFormatter(cmd)
+			ctx, azdCtx, err := createRootContext(context.Background(), cmd, rootOptions)
 			if err != nil {
 				return err
 			}
-
-			ctx = output.WithFormatter(ctx, formatter)
-
-			writer := output.GetDefaultWriter()
-			ctx = output.WithWriter(ctx, writer)
-
-			console := input.NewConsole(!rootOptions.NoPrompt, writer, formatter)
-			ctx = input.WithConsole(ctx, console)
 
 			return action.Run(ctx, cmd, args, azdCtx)
 		},
@@ -62,4 +34,44 @@ func Build(action Action, rootOptions *internal.GlobalCommandOptions, use string
 		cmd.Flags(),
 	)
 	return cmd
+}
+
+// Create the core context for use in all Azd commands
+// Registers context values for azCli, formatter, writer, console and more.
+func createRootContext(ctx context.Context, cmd *cobra.Command, rootOptions *internal.GlobalCommandOptions) (context.Context, *azdcontext.AzdContext, error) {
+	azdCtx, err := azdcontext.NewAzdContext()
+	if err != nil {
+		return ctx, nil, fmt.Errorf("creating context: %w", err)
+	}
+
+	// Set the global options in the go context
+	ctx = azdcontext.WithAzdContext(ctx, azdCtx)
+	ctx = internal.WithCommandOptions(ctx, *rootOptions)
+
+	azCliArgs := azcli.NewAzCliArgs{
+		EnableDebug:     rootOptions.EnableDebugLogging,
+		EnableTelemetry: rootOptions.EnableTelemetry,
+	}
+
+	// Create and set the AzCli that will be used for the command
+	azCli := azcli.NewAzCli(azCliArgs)
+	ctx = azcli.WithAzCli(ctx, azCli)
+
+	// Attempt to get the user specified formatter from the command args
+	formatter, err := output.GetCommandFormatter(cmd)
+	if err != nil {
+		return ctx, nil, err
+	}
+
+	if formatter != nil {
+		ctx = output.WithFormatter(ctx, formatter)
+	}
+
+	writer := output.GetDefaultWriter()
+	ctx = output.WithWriter(ctx, writer)
+
+	console := input.NewConsole(!rootOptions.NoPrompt, writer, formatter)
+	ctx = input.WithConsole(ctx, console)
+
+	return ctx, azdCtx, nil
 }

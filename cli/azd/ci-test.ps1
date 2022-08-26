@@ -1,6 +1,7 @@
 param(
     [string] $Timeout = '90m',
-    [string] $CoverageFileOut = 'cover.out'
+    [string] $CoverageFileOut = 'cover.out',
+    [string] $Package = './...'
 )
 
-go test -timeout $Timeout -v -coverprofile $CoverageFileOut ./...
+Invoke-Expression "$(go env GOPATH)/bin/gotestsum -- -coverprofile='$CoverageFileOut' $Package"

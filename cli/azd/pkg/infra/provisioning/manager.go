@@ -7,9 +7,9 @@ import (
 	"log"
 	"strings"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/azureutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
-	"github.com/azure/azure-dev/cli/azd/pkg/input/inputhelper"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/spin"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
@@ -242,7 +242,7 @@ func (m *Manager) ensureLocation(ctx context.Context, deployment *Deployment) (s
 		// user on every deployment if they don't have a `location` parameter in their bicep file.
 		// When we store it, we should store it /per environment/ not as a property of the entire
 		// project.
-		selected, err := inputhelper.PromptLocation(ctx, "Please select an Azure location to use to store deployment metadata:")
+		selected, err := azureutil.PromptLocation(ctx, "Please select an Azure location to use to store deployment metadata:")
 		if err != nil {
 			return "", fmt.Errorf("prompting for deployment metadata region: %w", err)
 		}

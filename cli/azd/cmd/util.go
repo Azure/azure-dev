@@ -16,7 +16,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
-	"github.com/azure/azure-dev/cli/azd/pkg/input/inputhelper"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 )
 
@@ -194,7 +193,7 @@ func ensureEnvironmentInitialized(ctx context.Context, envSpec environmentSpec, 
 	if !hasLocation && envSpec.location != "" {
 		env.SetLocation(envSpec.location)
 	} else {
-		location, err := inputhelper.PromptLocation(ctx, "Please select an Azure location to use:")
+		location, err := azureutil.PromptLocation(ctx, "Please select an Azure location to use:")
 		if err != nil {
 			return fmt.Errorf("prompting for location: %w", err)
 		}

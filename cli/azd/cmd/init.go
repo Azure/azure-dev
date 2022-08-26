@@ -19,7 +19,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
-	"github.com/azure/azure-dev/cli/azd/pkg/input/inputhelper"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
@@ -105,7 +104,7 @@ func (i *initAction) Run(ctx context.Context, cmd *cobra.Command, args []string,
 		fmt.Printf("Initializing a new project in %s\n\n", wd)
 
 		if i.template.Name == "" {
-			i.template, err = inputhelper.PromptTemplate(ctx, "Select a project template")
+			i.template, err = templates.PromptTemplate(ctx, "Select a project template")
 
 			if err != nil {
 				return err

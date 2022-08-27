@@ -123,6 +123,10 @@ func (e *Environment) SetSubscriptionId(id string) {
 	e.Values[SubscriptionIdEnvVarName] = id
 }
 
+func (e *Environment) GetLocation() string {
+	return e.Values[LocationEnvVarName]
+}
+
 func (e *Environment) SetLocation(location string) {
 	e.Values[LocationEnvVarName] = location
 }

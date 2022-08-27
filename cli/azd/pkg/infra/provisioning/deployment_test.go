@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 package provisioning
 
 import (
@@ -8,7 +11,7 @@ import (
 
 func TestParameterHasDefaultValue(t *testing.T) {
 	t.Run("WithNilValue", func(t *testing.T) {
-		param := PreviewInputParameter{
+		param := InputParameter{
 			Type:         "string",
 			DefaultValue: nil,
 		}
@@ -18,7 +21,7 @@ func TestParameterHasDefaultValue(t *testing.T) {
 	})
 
 	t.Run("WithEmptyString", func(t *testing.T) {
-		param := PreviewInputParameter{
+		param := InputParameter{
 			Type:         "string",
 			DefaultValue: "",
 		}
@@ -30,7 +33,7 @@ func TestParameterHasDefaultValue(t *testing.T) {
 
 func TestParameterHasValue(t *testing.T) {
 	t.Run("WithNilValue", func(t *testing.T) {
-		param := PreviewInputParameter{
+		param := InputParameter{
 			Type:  "string",
 			Value: nil,
 		}
@@ -40,7 +43,7 @@ func TestParameterHasValue(t *testing.T) {
 	})
 
 	t.Run("WithEmptyString", func(t *testing.T) {
-		param := PreviewInputParameter{
+		param := InputParameter{
 			Type:  "string",
 			Value: "",
 		}

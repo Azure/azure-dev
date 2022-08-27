@@ -149,3 +149,23 @@ func (cli *bicepCli) runCommand(ctx context.Context, args ...string) (executil.R
 
 	return cli.runWithResultFn(ctx, runArgs)
 }
+
+type contextKey string
+
+const (
+	bicepContextKey contextKey = "bicepcli"
+)
+
+func GetBicepCli(ctx context.Context) BicepCli {
+	execUtilFn := executil.GetCommandRunner(ctx)
+	cli, ok := ctx.Value(bicepContextKey).(BicepCli)
+	if !ok {
+		args := NewBicepCliArgs{
+			AzCli:           azcli.GetAzCli(ctx),
+			RunWithResultFn: execUtilFn,
+		}
+		cli = NewBicepCli(args)
+	}
+
+	return cli
+}

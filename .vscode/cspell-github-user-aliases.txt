@@ -5,6 +5,7 @@ briandowns
 ellismg
 envsubst
 fatih
+gofrs
 isatty
 joho
 karolz

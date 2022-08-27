@@ -2,7 +2,7 @@ param location string
 param resourceToken string
 param tags object
 
-var abbrs = loadJsonContent('../../../../common/infra/abbreviations.json')
+var abbrs = loadJsonContent('../../../../common/infra/bicep/abbreviations.json')
 
 resource web 'Microsoft.Web/sites@2022-03-01' = {
   name: '${abbrs.webSitesAppService}web-${resourceToken}'
@@ -126,7 +126,7 @@ resource logAnalyticsWorkspace 'Microsoft.OperationalInsights/workspaces@2021-12
   })
 }
 
-module applicationInsightsResources '../../../../common/infra/applicationinsights.bicep' = {
+module applicationInsightsResources '../../../../common/infra/bicep/applicationinsights.bicep' = {
   name: 'applicationinsights-resources'
   params: {
     resourceToken: resourceToken

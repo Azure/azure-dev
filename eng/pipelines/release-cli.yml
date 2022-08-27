@@ -51,9 +51,9 @@ stages:
               MacLocalSign: false
               SetExecutableBit: true
         pool:
-          name: $(Pool)
-          vmImage: $(OSVmImage)
-
+            name: $(Pool)
+            vmImage: $(OSVmImage)
+        timeoutInMinutes: 180
         steps:
           - checkout: self
           - template: /eng/pipelines/templates/steps/setup-go.yml

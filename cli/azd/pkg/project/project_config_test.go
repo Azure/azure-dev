@@ -7,7 +7,7 @@ import (
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
-	"github.com/azure/azure-dev/cli/azd/test/helpers"
+	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/stretchr/testify/require"
 )
 
@@ -91,15 +91,15 @@ services:
     language: js
     host: appservice
 `
+	mockContext := mocks.NewMockContext(context.Background())
 
-	ctx := helpers.CreateTestContext(context.Background(), gblCmdOptions, azCli, mockHttpClient)
 	e := environment.Environment{Values: make(map[string]string)}
 	e.SetEnvName("test-env")
 
 	projectConfig, err := ParseProjectConfig(testProj, &e)
 	require.Nil(t, err)
 
-	project, err := projectConfig.GetProject(ctx, &e)
+	project, err := projectConfig.GetProject(mockContext.Context, &e)
 	require.Nil(t, err)
 	require.NotNil(t, project)
 
@@ -129,7 +129,6 @@ services:
       path: ./Dockerfile.dev
       context: ../
 `
-
 	e := environment.Environment{Values: make(map[string]string)}
 	e.SetEnvName("test-env")
 
@@ -172,7 +171,7 @@ services:
 }
 
 func TestProjectConfigAddHandler(t *testing.T) {
-	ctx := context.Background()
+	mockContext := mocks.NewMockContext(context.Background())
 	project := getProjectConfig()
 	handlerCalled := false
 
@@ -188,13 +187,13 @@ func TestProjectConfigAddHandler(t *testing.T) {
 	err = project.AddHandler(Deployed, handler)
 	require.NotNil(t, err)
 
-	err = project.RaiseEvent(ctx, Deployed, nil)
+	err = project.RaiseEvent(*mockContext.Context, Deployed, nil)
 	require.Nil(t, err)
 	require.True(t, handlerCalled)
 }
 
 func TestProjectConfigRemoveHandler(t *testing.T) {
-	ctx := context.Background()
+	mockContext := mocks.NewMockContext(context.Background())
 	project := getProjectConfig()
 	handler1Called := false
 	handler2Called := false
@@ -221,14 +220,14 @@ func TestProjectConfigRemoveHandler(t *testing.T) {
 	require.NotNil(t, err)
 
 	// No events are registered at the time event was raised
-	err = project.RaiseEvent(ctx, Deployed, nil)
+	err = project.RaiseEvent(*mockContext.Context, Deployed, nil)
 	require.Nil(t, err)
 	require.False(t, handler1Called)
 	require.False(t, handler2Called)
 }
 
 func TestProjectConfigWithMultipleEventHandlers(t *testing.T) {
-	ctx := context.Background()
+	mockContext := mocks.NewMockContext(context.Background())
 	project := getProjectConfig()
 	handlerCalled1 := false
 	handlerCalled2 := false
@@ -250,14 +249,14 @@ func TestProjectConfigWithMultipleEventHandlers(t *testing.T) {
 	err = project.AddHandler(Deployed, handler2)
 	require.Nil(t, err)
 
-	err = project.RaiseEvent(ctx, Deployed, nil)
+	err = project.RaiseEvent(*mockContext.Context, Deployed, nil)
 	require.Nil(t, err)
 	require.True(t, handlerCalled1)
 	require.True(t, handlerCalled2)
 }
 
 func TestProjectConfigWithMultipleEvents(t *testing.T) {
-	ctx := context.Background()
+	mockContext := mocks.NewMockContext(context.Background())
 	project := getProjectConfig()
 
 	provisionHandlerCalled := false
@@ -278,7 +277,7 @@ func TestProjectConfigWithMultipleEvents(t *testing.T) {
 	err = project.AddHandler(Deployed, deployHandler)
 	require.Nil(t, err)
 
-	err = project.RaiseEvent(ctx, Provisioned, nil)
+	err = project.RaiseEvent(*mockContext.Context, Provisioned, nil)
 	require.Nil(t, err)
 
 	require.True(t, provisionHandlerCalled)
@@ -286,7 +285,7 @@ func TestProjectConfigWithMultipleEvents(t *testing.T) {
 }
 
 func TestProjectConfigWithEventHandlerErrors(t *testing.T) {
-	ctx := context.Background()
+	mockContext := mocks.NewMockContext(context.Background())
 	project := getProjectConfig()
 
 	handler1 := func(ctx context.Context, args ProjectLifecycleEventArgs) error {
@@ -302,7 +301,7 @@ func TestProjectConfigWithEventHandlerErrors(t *testing.T) {
 	err = project.AddHandler(Provisioned, handler2)
 	require.Nil(t, err)
 
-	err = project.RaiseEvent(ctx, Provisioned, nil)
+	err = project.RaiseEvent(*mockContext.Context, Provisioned, nil)
 	require.NotNil(t, err)
 	require.Contains(t, err.Error(), "sample error 1")
 	require.Contains(t, err.Error(), "sample error 2")
@@ -354,7 +353,7 @@ func TestProjectConfigRaiseEventWithoutArgs(t *testing.T) {
 }
 
 func TestProjectConfigRaiseEventWithArgs(t *testing.T) {
-	ctx := context.Background()
+	mockContext := mocks.NewMockContext(context.Background())
 	project := getProjectConfig()
 	handlerCalled := false
 	eventArgs := make(map[string]any)
@@ -373,7 +372,7 @@ func TestProjectConfigRaiseEventWithArgs(t *testing.T) {
 	err = project.AddHandler(Deployed, handler)
 	require.NotNil(t, err)
 
-	err = project.RaiseEvent(ctx, Deployed, eventArgs)
+	err = project.RaiseEvent(*mockContext.Context, Deployed, eventArgs)
 	require.Nil(t, err)
 	require.True(t, handlerCalled)
 }

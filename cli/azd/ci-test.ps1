@@ -4,4 +4,4 @@ param(
     [string] $Package = './...'
 )
 
-Invoke-Expression "$(go env GOPATH)/bin/gotestsum -- -coverprofile='$CoverageFileOut' $Package"
+Invoke-Expression "$(go env GOPATH)/bin/gotestsum -- -timeout $Timeout -v -coverprofile='$CoverageFileOut' $Package"

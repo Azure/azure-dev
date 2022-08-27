@@ -1,7 +1,7 @@
 templateApi: 1.0.0
 metadata:
   type: repo
-  name: todo-python-mongo
+  name: todo-python-mongo-terraform
   description: ToDo Application with a Python API and Azure Cosmos DB API for MongoDB
 
 repo:

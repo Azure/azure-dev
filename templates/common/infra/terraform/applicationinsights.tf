@@ -32,10 +32,10 @@ resource "azurerm_application_insights" "applicationinsights" {
 data "azurerm_subscription" "current" {}
 
 resource "azurerm_portal_dashboard" "board" {
-  name                = "dash-${var.resource_token}"
-  resource_group_name = var.rg_name
-  location            = var.location
-  tags                = var.tags
+  name                 = "dash-${var.resource_token}"
+  resource_group_name  = var.rg_name
+  location             = var.location
+  tags                 = var.tags
   dashboard_properties = <<DASH
 {
     "lenses": {

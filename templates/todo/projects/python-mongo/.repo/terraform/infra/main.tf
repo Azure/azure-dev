@@ -42,7 +42,7 @@ module "applicationinsights" {
 # ------------------------------------------------------------------------------------------------------
 
 resource "azurecaf_name" "kv_name" {
-  name          = random_string.resource_token.result #revert me
+  name          = random_string.resource_token.result
   resource_type = "azurerm_key_vault"
   random_length = 0
   clean_input   = true
@@ -130,12 +130,13 @@ resource "azurerm_linux_web_app" "web" {
   tags                = merge(local.tags, { azd-service-name : "web" })
 
   site_config {
-    #linux_fx_version = "NODE|16-lts"
     always_on        = true
     ftps_state       = "FtpsOnly"
     app_command_line = "pm2 serve /home/site/wwwroot --no-daemon --spa"
+    application_stack {
+      node_version = "16-lts"
+    }
   }
-
 
   app_settings = {
     "SCM_DO_BUILD_DURING_DEPLOYMENT"        = "false"
@@ -178,10 +179,12 @@ resource "azurerm_linux_web_app" "api" {
   tags                = merge(local.tags, { "azd-service-name" : "api" })
 
   site_config {
-    #linux_fx_version = "PYTHON|3.8"
     always_on        = true
     ftps_state       = "FtpsOnly"
     app_command_line = local.api_command_line
+    application_stack {
+      python_version = "3.8"
+    }
   }
 
   identity {

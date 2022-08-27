@@ -1,4 +1,4 @@
-package commands
+package internal
 
 import (
 	"context"
@@ -34,14 +34,15 @@ const (
 	optionsContextKey contextKey = "options"
 )
 
-func WithGlobalCommandOptions(ctx context.Context, options *GlobalCommandOptions) context.Context {
+func WithCommandOptions(ctx context.Context, options GlobalCommandOptions) context.Context {
 	return context.WithValue(ctx, optionsContextKey, options)
 }
 
-func GlobalCommandOptionsFromContext(ctx context.Context) *GlobalCommandOptions {
-	options, ok := ctx.Value(optionsContextKey).(*GlobalCommandOptions)
+func GetCommandOptions(ctx context.Context) GlobalCommandOptions {
+	options, ok := ctx.Value(optionsContextKey).(GlobalCommandOptions)
 	if !ok {
-		panic("GlobalCommandOptions were not found in the context")
+		panic("GlobalCommandOptions were not found in the context.")
 	}
+
 	return options
 }

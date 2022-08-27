@@ -17,7 +17,7 @@ import (
 	azdinternal "github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/executil"
-	"github.com/azure/azure-dev/cli/azd/pkg/httpUtil"
+	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/internal"
 	"github.com/blang/semver/v4"
@@ -969,12 +969,12 @@ func (cli *azCli) GraphQuery(ctx context.Context, query string, subscriptions []
 		return nil, fmt.Errorf("getting access token: %w", err)
 	}
 
-	client := httpUtil.GetHttpClientFromContext(ctx)
+	client := httputil.GetHttpClient(ctx)
 	headers := map[string]string{
 		"Authorization": fmt.Sprintf("Bearer %s", token.AccessToken),
 	}
 
-	request := &httpUtil.HttpRequestMessage{
+	request := &httputil.HttpRequestMessage{
 		Url:     url,
 		Method:  "POST",
 		Headers: headers,
@@ -1083,24 +1083,32 @@ func getDeploymentErrorJson(s string) string {
 type contextKey string
 
 const (
-	azdCliContextKey   contextKey = "azdcli"
-	templateContextKey contextKey = "template"
+	azCliContextKey contextKey = "azcli"
 )
 
 func WithAzCli(ctx context.Context, azCli AzCli) context.Context {
-	return context.WithValue(ctx, azdCliContextKey, azCli)
+	return context.WithValue(ctx, azCliContextKey, azCli)
 }
 
-func AzCliFromContext(ctx context.Context) (AzCli, bool) {
-	azCli, ok := ctx.Value(azdCliContextKey).(AzCli)
-	return azCli, ok
-}
+func GetAzCli(ctx context.Context) AzCli {
+	// Check to see if we already have an az cli in the context
+	azCli, ok := ctx.Value(azCliContextKey).(AzCli)
+	if !ok {
+		options := azdinternal.GetCommandOptions(ctx)
 
-func WithTemplateName(ctx context.Context, templateName string) context.Context {
-	return context.WithValue(ctx, templateContextKey, templateName)
-}
+		execFn := executil.GetCommandRunner(ctx)
+		args := NewAzCliArgs{
+			EnableDebug:     options.EnableDebugLogging,
+			EnableTelemetry: options.EnableTelemetry,
+			RunWithResultFn: execFn,
+		}
+		azCli = NewAzCli(args)
+	}
 
-func TemplateNameFromContext(ctx context.Context) (string, bool) {
-	templateName, ok := ctx.Value(templateContextKey).(string)
-	return templateName, ok
+	// Set the user agent if a template has been selected
+	template := azdinternal.GetTemplate(ctx)
+	userAgent := azdinternal.MakeUserAgentString(template)
+	azCli.SetUserAgent(userAgent)
+
+	return azCli
 }

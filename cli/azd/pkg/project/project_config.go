@@ -10,11 +10,11 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/azureutil"
+	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/drone/envsubst"
 	"gopkg.in/yaml.v3"
 )
@@ -83,7 +83,7 @@ func (p *ProjectConfig) HasService(name string) bool {
 
 // GetProject constructs a Project from the project configuration
 // This also performs project validation
-func (pc *ProjectConfig) GetProject(ctx context.Context, env *environment.Environment) (*Project, error) {
+func (pc *ProjectConfig) GetProject(ctx *context.Context, env *environment.Environment) (*Project, error) {
 	serviceMap := map[string]*Service{}
 
 	project := Project{
@@ -96,13 +96,14 @@ func (pc *ProjectConfig) GetProject(ctx context.Context, env *environment.Enviro
 	// This sets the current template within the go context
 	// The context is then used when the AzCli is instantiated to set the correct user agent
 	if project.Metadata != nil && strings.TrimSpace(project.Metadata.Template) != "" {
-		ctx = azcli.WithTemplateName(ctx, project.Metadata.Template)
+		*ctx = internal.WithTemplate(*ctx, project.Metadata.Template)
 	}
 
 	if pc.ResourceGroupName == "" {
 		// We won't have a ResourceGroupName yet if it hasn't been set in either azure.yaml or AZURE_RESOURCE_GROUP env var
 		// Let's try to find the right resource group for this environment
-		resourceGroupName, err := azureutil.FindResourceGroupForEnvironment(ctx, env)
+		resourceManager := infra.NewAzureResourceManager(*ctx)
+		resourceGroupName, err := resourceManager.FindResourceGroupForEnvironment(*ctx, env)
 		if err != nil {
 			return nil, err
 		}
@@ -113,7 +114,7 @@ func (pc *ProjectConfig) GetProject(ctx context.Context, env *environment.Enviro
 		// If the 'resourceName' was not overridden in the project yaml
 		// Retrieve the resource name from the provisioned resources if available
 		if strings.TrimSpace(serviceConfig.ResourceName) == "" {
-			resolvedResourceName, err := GetServiceResourceName(ctx, pc.ResourceGroupName, serviceConfig.Name, env)
+			resolvedResourceName, err := GetServiceResourceName(*ctx, pc.ResourceGroupName, serviceConfig.Name, env)
 			if err != nil {
 				return nil, fmt.Errorf("getting resource name: %w", err)
 			}
@@ -122,7 +123,7 @@ func (pc *ProjectConfig) GetProject(ctx context.Context, env *environment.Enviro
 		}
 
 		deploymentScope := environment.NewDeploymentScope(env.GetSubscriptionId(), pc.ResourceGroupName, serviceConfig.ResourceName)
-		service, err := serviceConfig.GetService(ctx, &project, env, deploymentScope)
+		service, err := serviceConfig.GetService(*ctx, &project, env, deploymentScope)
 
 		if err != nil {
 			return nil, fmt.Errorf("creating service %s: %w", key, err)

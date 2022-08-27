@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 package provisioning
 
 import (
@@ -7,10 +10,8 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
-	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/bicep"
 )
 
 type ProviderKind string
@@ -30,7 +31,7 @@ type Options struct {
 }
 
 type PreviewResult struct {
-	Preview Preview
+	Deployment Deployment
 }
 
 type PreviewProgress struct {
@@ -40,15 +41,16 @@ type PreviewProgress struct {
 
 type DeployResult struct {
 	Operations []azcli.AzCliResourceOperation
-	Outputs    map[string]PreviewOutputParameter
+	Deployment *Deployment
 }
 
 type DestroyResult struct {
 	Resources []azcli.AzCliResource
-	Outputs   map[string]PreviewOutputParameter
+	Outputs   map[string]OutputParameter
 }
 
 type DeployProgress struct {
+	Message    string
 	Timestamp  time.Time
 	Operations []azcli.AzCliResourceOperation
 }
@@ -61,31 +63,29 @@ type DestroyProgress struct {
 type Provider interface {
 	Name() string
 	RequiredExternalTools() []tools.ExternalTool
-	UpdatePlan(ctx context.Context, preview Preview) error
+	GetDeployment(ctx context.Context, scope Scope) *async.InteractiveTaskWithProgress[*DeployResult, *DeployProgress]
 	Preview(ctx context.Context) *async.InteractiveTaskWithProgress[*PreviewResult, *PreviewProgress]
-	Deploy(ctx context.Context, preview *Preview, scope Scope) *async.InteractiveTaskWithProgress[*DeployResult, *DeployProgress]
-	Destroy(ctx context.Context, preview *Preview) *async.InteractiveTaskWithProgress[*DestroyResult, *DestroyProgress]
+	Deploy(ctx context.Context, deployment *Deployment, scope Scope) *async.InteractiveTaskWithProgress[*DeployResult, *DeployProgress]
+	Destroy(ctx context.Context, deployment *Deployment, options DestroyOptions) *async.InteractiveTaskWithProgress[*DestroyResult, *DestroyProgress]
 }
 
-func NewProvider(env *environment.Environment, projectPath string, options Options, console input.Console, cliArgs bicep.NewBicepCliArgs) (Provider, error) {
+func NewProvider(ctx context.Context, env *environment.Environment, projectPath string, infraOptions Options) (Provider, error) {
 	var provider Provider
 
-	switch options.Provider {
+	switch infraOptions.Provider {
 	case Bicep:
-		bicepArgs := bicep.NewBicepCliArgs(cliArgs)
-		provider = NewBicepProvider(env, projectPath, options, console, bicepArgs)
+		provider = NewBicepProvider(ctx, env, projectPath, infraOptions)
 	case Test:
-		provider = NewTestProvider(env, projectPath, options, console)
+		provider = NewTestProvider(ctx, env, projectPath, infraOptions)
 	default:
-		bicepArgs := bicep.NewBicepCliArgs(cliArgs)
-		provider = NewBicepProvider(env, projectPath, options, console, bicepArgs)
+		provider = NewBicepProvider(ctx, env, projectPath, infraOptions)
 	}
 
 	if provider != nil {
 		return provider, nil
 	}
 
-	return nil, fmt.Errorf("provider '%s' is not supported", options.Provider)
+	return nil, fmt.Errorf("provider '%s' is not supported", infraOptions.Provider)
 }
 
 var _ BicepProvider = BicepProvider{}

@@ -7,7 +7,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
-	"github.com/azure/azure-dev/cli/azd/test/helpers"
+	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/stretchr/testify/require"
 )
 
@@ -70,10 +70,10 @@ func (st *mockServiceTarget) Endpoints(_ context.Context) ([]string, error) {
 }
 
 func TestDeployProgressMessages(t *testing.T) {
-	ctx := helpers.CreateTestContext(context.Background(), gblCmdOptions, azCli, mockHttpClient)
+	mockContext := mocks.NewMockContext(context.Background())
 
 	projectConfig, _ := ParseProjectConfig(projectYaml, env)
-	project, _ := projectConfig.GetProject(ctx, env)
+	project, _ := projectConfig.GetProject(mockContext.Context, env)
 	azdContext, _ := azdcontext.NewAzdContext()
 
 	mockFramework := &mockFrameworkService{}
@@ -87,7 +87,7 @@ func TestDeployProgressMessages(t *testing.T) {
 		Scope:     deploymentScope,
 	}
 
-	result, progress := service.Deploy(ctx, azdContext)
+	result, progress := service.Deploy(*mockContext.Context, azdContext)
 	progressMessages := []string{}
 
 	go func() {

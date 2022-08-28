@@ -5,7 +5,7 @@ import os from "os";
 import fs from "fs/promises";
 import ansiEscapes from "ansi-escapes";
 import chalk from "chalk";
-import { cleanDirectoryPath, copyFile, createRepoUrlFromRemote, ensureDirectoryPath, getGlobFiles, getRepoPropsFromRemote, isStringNullOrEmpty, RepoProps, writeHeader,isFilePath } from "../common/util";
+import { cleanDirectoryPath, ensureRelativeBasePath, copyFile, createRepoUrlFromRemote, ensureDirectoryPath, getGlobFiles, getRepoPropsFromRemote, isStringNullOrEmpty, RepoProps, writeHeader,isFilePath } from "../common/util";
 import { AssetRule, GitRemote, RepomanCommand, RepomanCommandOptions, RepoManifest } from "../models";
 import { GitRepo } from "../tools/git";
 
@@ -411,6 +411,7 @@ export class GenerateCommand implements RepomanCommand {
                     let refPath = path.resolve(destFolderPath, path.normalize(match))
                     // Generate the relative path between the current processed file dir path & the referenced match path
                     let relativePath = path.relative(destFolderPath, refPath)
+                    relativePath = ensureRelativeBasePath(relativePath);
                     // Finally convert the path back to a POSIX compatible path
                     relativePath = relativePath.split(path.sep).join(path.posix.sep)
 

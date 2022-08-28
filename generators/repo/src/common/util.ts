@@ -66,6 +66,16 @@ export const cleanDirectoryPath = async (directoryPath: string, cleanGit: boolea
     await del(patterns, { cwd: directoryPath, force: true, dot: true });
 }
 
+export const ensureRelativeBasePath  = (input : string) => {
+    if(!input.startsWith("./") && !input.startsWith("../")) {
+        input = `.${path.sep}${input}`
+    }
+    else{
+        console.warn(chalk.yellowBright(` - ${input} already contains a relative base path.`));
+    }
+    return input
+}
+
 export const toArray = (data: Buffer): string[] => {
     if (!(data instanceof Buffer)) {
         throw new Error("Not an instance of buffer");

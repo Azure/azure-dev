@@ -67,13 +67,14 @@ export const cleanDirectoryPath = async (directoryPath: string, cleanGit: boolea
 }
 
 export const ensureRelativeBasePath  = (input : string) => {
-    if(!input.startsWith("./") && !input.startsWith("../")) {
-        input = `.${path.sep}${input}`
+    const basePath =`.${path.sep}`
+    if(!input.startsWith(basePath) && !input.startsWith(`.${basePath}`)) {
+        input = `${basePath}${input}`
     }
     else{
         console.warn(chalk.yellowBright(` - ${input} already contains a relative base path.`));
     }
-    return input
+    return input;
 }
 
 export const toArray = (data: Buffer): string[] => {

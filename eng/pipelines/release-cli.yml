@@ -35,6 +35,7 @@ stages:
               OSVmImage: MMS2019
               BuildTarget: azd-windows-amd64.exe
               BuildOutputName: azd.exe
+              AZURE_DEV_CI_OS: win
             Linux:
               Pool: azsdk-pool-mms-ubuntu-2004-general
               OSVmImage:  MMSUbuntu20.04
@@ -43,6 +44,7 @@ stages:
               SetExecutableBit: true
               SetShieldInfo: true
               GenerateCoverage: true
+              AZURE_DEV_CI_OS: lin
             Mac:
               Pool: Azure Pipelines
               OSVmImage: macOS-11
@@ -50,6 +52,7 @@ stages:
               BuildOutputName: azd
               MacLocalSign: false
               SetExecutableBit: true
+              AZURE_DEV_CI_OS: mac
         pool:
             name: $(Pool)
             vmImage: $(OSVmImage)
@@ -107,6 +110,18 @@ stages:
               # Set GITHUB_RUN_NUMBER because cli_test.go is coupled to that
               # environment variable.
               GITHUB_RUN_NUMBER: $(Build.BuildId)
+              # Generate junit report to publish results
+              GOTESTSUM_JUNITFILE: junitTestReport.xml
+
+          - task: PublishTestResults@2
+            inputs:
+              testResultsFormat: JUnit
+              testResultsFiles: '**/junitTestReport.xml'
+              testRunTitle: $(Agent.JobName)
+              searchFolder: cli/azd
+              publishRunAttachments: true
+            displayName: Publish test results
+            condition: succeededOrFailed()
 
           - pwsh: |
               go install github.com/axw/gocov/gocov@latest

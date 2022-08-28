@@ -655,7 +655,10 @@ func randomEnvName() string {
 		panic(fmt.Errorf("could not read random bytes: %w", err))
 	}
 
-	return ("azdtest-" + hex.EncodeToString(bytes))[0:15]
+	// Adding the name of the OS for CI to avoid name collisions and fail tests
+	osNameOnCI := os.Getenv("AZURE_DEV_CI_OS")
+
+	return ("azdtest-" + osNameOnCI + "-" + hex.EncodeToString(bytes))[0:15]
 }
 
 // stdinForTests is just enough stdin to bypass all the prompts or choose defaults.

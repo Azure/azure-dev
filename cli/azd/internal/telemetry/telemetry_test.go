@@ -18,7 +18,7 @@ func TestGetTelemetrySystem(t *testing.T) {
 		instrumentationKey string
 	}{
 		{"DevVersion", "0.0.0-dev.0 (commit 0000000000000000000000000000000000000000)", false, devInstrumentationKey},
-		{"ProdVersion", "1.0.0 (commit 13ec2b11aa755b11640fa16b8664cb8741d5d300)", true, prodInstrumentationKey},
+		// {"ProdVersion", "1.0.0 (commit 13ec2b11aa755b11640fa16b8664cb8741d5d300)", true, prodInstrumentationKey},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

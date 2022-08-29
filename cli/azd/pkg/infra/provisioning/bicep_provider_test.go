@@ -70,7 +70,7 @@ func TestBicepGetDeploymentPreview(t *testing.T) {
 	prepareDeployMocks(mockContext.CommandRunner)
 
 	infraProvider := createBicepProvider(*mockContext.Context)
-	scope := NewSubscriptionScope(*mockContext.Context, infraProvider.env.Values["AZURE_LOCATION"], infraProvider.env.GetSubscriptionId(), infraProvider.env.GetEnvName())
+	scope := infra.NewSubscriptionScope(*mockContext.Context, infraProvider.env.Values["AZURE_LOCATION"], infraProvider.env.GetSubscriptionId(), infraProvider.env.GetEnvName())
 	getDeploymentTask := infraProvider.GetDeployment(*mockContext.Context, scope)
 
 	go func() {
@@ -113,7 +113,7 @@ func TestBicepDeploy(t *testing.T) {
 	infraProvider := createBicepProvider(*mockContext.Context)
 	deployment := Deployment{}
 
-	scope := NewSubscriptionScope(*mockContext.Context, infraProvider.env.Values["AZURE_LOCATION"], infraProvider.env.GetSubscriptionId(), infraProvider.env.GetEnvName())
+	scope := infra.NewSubscriptionScope(*mockContext.Context, infraProvider.env.Values["AZURE_LOCATION"], infraProvider.env.GetSubscriptionId(), infraProvider.env.GetEnvName())
 	deployTask := infraProvider.Deploy(*mockContext.Context, &deployment, scope)
 
 	go func() {

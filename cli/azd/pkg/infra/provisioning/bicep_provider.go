@@ -17,7 +17,6 @@ import (
 	"time"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
-	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
@@ -67,7 +66,7 @@ func (p *BicepProvider) RequiredExternalTools() []tools.ExternalTool {
 }
 
 // Gets the latest deployment details for the specified scope
-func (p *BicepProvider) GetDeployment(ctx context.Context, scope Scope) *async.InteractiveTaskWithProgress[*DeployResult, *DeployProgress] {
+func (p *BicepProvider) GetDeployment(ctx context.Context, scope infra.Scope) *async.InteractiveTaskWithProgress[*DeployResult, *DeployProgress] {
 	return async.RunInteractiveTaskWithProgress(
 		func(asyncContext *async.InteractiveTaskContextWithProgress[*DeployResult, *DeployProgress]) {
 			asyncContext.SetProgress(&DeployProgress{Message: "Loading Bicep template", Timestamp: time.Now()})
@@ -146,14 +145,13 @@ func (p *BicepProvider) Preview(ctx context.Context) *async.InteractiveTaskWithP
 }
 
 // Provisioning the infrastructure within the specified template
-func (p *BicepProvider) Deploy(ctx context.Context, deployment *Deployment, scope Scope) *async.InteractiveTaskWithProgress[*DeployResult, *DeployProgress] {
+func (p *BicepProvider) Deploy(ctx context.Context, deployment *Deployment, scope infra.Scope) *async.InteractiveTaskWithProgress[*DeployResult, *DeployProgress] {
 	return async.RunInteractiveTaskWithProgress(
 		func(asyncContext *async.InteractiveTaskContextWithProgress[*DeployResult, *DeployProgress]) {
 			done := make(chan bool)
 			var operations []azcli.AzCliResourceOperation
 
-			deploymentSlug := azure.SubscriptionDeploymentRID(p.env.GetSubscriptionId(), p.env.GetEnvName())
-			deploymentUrl := fmt.Sprintf(output.WithLinkFormat("https://portal.azure.com/#blade/HubsExtension/DeploymentDetailsBlade/overview/id/%s\n"), url.PathEscape(deploymentSlug))
+			deploymentUrl := fmt.Sprintf(output.WithLinkFormat("https://portal.azure.com/#blade/HubsExtension/DeploymentDetailsBlade/overview/id/%s\n"), url.PathEscape(scope.DeploymentUrl()))
 			p.console.Message(ctx, fmt.Sprintf("Provisioning Azure resources can take some time.\n\nYou can view detailed progress in the Azure Portal:\n%s", deploymentUrl))
 
 			// Ensure the done marker channel is sent in all conditions
@@ -164,14 +162,14 @@ func (p *BicepProvider) Deploy(ctx context.Context, deployment *Deployment, scop
 			// Report incremental progress
 			go func() {
 				resourceManager := infra.NewAzureResourceManager(ctx)
-				progressDisplay := NewProvisioningProgressDisplay(resourceManager, p.console, p.env.GetSubscriptionId(), p.env.GetEnvName())
+				progressDisplay := NewProvisioningProgressDisplay(resourceManager, p.console, scope)
 
 				for {
 					select {
 					case <-done:
 						return
 					case <-time.After(10 * time.Second):
-						progressReport, err := progressDisplay.ReportProgress(ctx)
+						progressReport, err := progressDisplay.ReportProgress(ctx, scope)
 						if err != nil {
 							// We don't want to fail the whole deployment if a progress reporting error occurs
 							log.Printf("error while reporting progress: %s", err.Error())
@@ -558,7 +556,7 @@ func (p *BicepProvider) convertToDeployment(bicepTemplate BicepTemplate) (*Deplo
 }
 
 // Deploys the specified Bicep module and parameters with the selected provisioning scope (subscription vs resource group)
-func (p *BicepProvider) deployModule(ctx context.Context, scope Scope, bicepPath string, parametersPath string) (*azcli.AzCliDeployment, error) {
+func (p *BicepProvider) deployModule(ctx context.Context, scope infra.Scope, bicepPath string, parametersPath string) (*azcli.AzCliDeployment, error) {
 	// We've seen issues where `Deploy` completes but for a short while after, fetching the deployment fails with a `DeploymentNotFound` error.
 	// Since other commands of ours use the deployment, let's try to fetch it here and if we fail with `DeploymentNotFound`,
 	// ignore this error, wait a short while and retry.

@@ -23,7 +23,7 @@ type AzureResourceManager struct {
 }
 
 type ResourceManager interface {
-	GetDeploymentResourceOperations(ctx context.Context, subscriptionId string, deploymentName string) ([]azcli.AzCliResourceOperation, error)
+	GetDeploymentResourceOperations(ctx context.Context, scope Scope) ([]azcli.AzCliResourceOperation, error)
 	GetResourceTypeDisplayName(ctx context.Context, subscriptionId string, resourceId string, resourceType AzureResourceType) (string, error)
 	GetWebAppResourceTypeDisplayName(ctx context.Context, subscriptionId string, resourceId string) (string, error)
 }
@@ -37,9 +37,9 @@ func NewAzureResourceManager(ctx context.Context) *AzureResourceManager {
 	}
 }
 
-func (rm *AzureResourceManager) GetDeploymentResourceOperations(ctx context.Context, subscriptionId string, deploymentName string) ([]azcli.AzCliResourceOperation, error) {
+func (rm *AzureResourceManager) GetDeploymentResourceOperations(ctx context.Context, scope Scope) ([]azcli.AzCliResourceOperation, error) {
 	// Gets all the subscription level deployments
-	subOperations, err := rm.azCli.ListSubscriptionDeploymentOperations(ctx, subscriptionId, deploymentName)
+	subOperations, err := scope.GetResourceOperations(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("getting subscription deployment: %w", err)
 	}
@@ -54,6 +54,13 @@ func (rm *AzureResourceManager) GetDeploymentResourceOperations(ctx context.Cont
 		}
 	}
 
+	if resourceGroupName == "" {
+		for _, operation := range subOperations {
+			resourceGroupName = operation.Properties.TargetResource.ResourceGroup
+			break
+		}
+	}
+
 	resourceOperations := []azcli.AzCliResourceOperation{}
 
 	if strings.TrimSpace(resourceGroupName) == "" {
@@ -64,11 +71,15 @@ func (rm *AzureResourceManager) GetDeploymentResourceOperations(ctx context.Cont
 	// Recursively append any resource group deployments that are found
 	for _, operation := range subOperations {
 		if operation.Properties.TargetResource.ResourceType == string(AzureResourceTypeDeployment) {
-			err = rm.appendDeploymentResourcesRecursive(ctx, subscriptionId, resourceGroupName, operation.Properties.TargetResource.ResourceName, &resourceOperations)
+			err = rm.appendDeploymentResourcesRecursive(ctx, scope.SubscriptionId(), resourceGroupName, operation.Properties.TargetResource.ResourceName, &resourceOperations)
 			if err != nil {
 				return nil, fmt.Errorf("appending deployment resources: %w", err)
 			}
 		}
+	}
+
+	if len(resourceOperations) == 0 {
+		resourceOperations = subOperations
 	}
 
 	return resourceOperations, nil

@@ -32,10 +32,11 @@ func infraCreateCmd(rootOptions *internal.GlobalCommandOptions) *cobra.Command {
 		rootOptions,
 		"create",
 		"Create Azure resources for an application.",
-		"",
+		&commands.BuildOptions{
+			Aliases: []string{"provision"},
+		},
 	)
 
-	cmd.Aliases = []string{"provision"}
 	return cmd
 }
 

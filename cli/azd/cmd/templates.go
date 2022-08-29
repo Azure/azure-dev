@@ -59,9 +59,10 @@ func templatesListCmd(rootOptions *internal.GlobalCommandOptions) *cobra.Command
 		rootOptions,
 		"list",
 		"List templates.",
-		"",
+		&commands.BuildOptions{
+			Aliases: []string{"ls"},
+		},
 	)
-	cmd.Aliases = []string{"ls"}
 
 	return cmd
 }
@@ -87,7 +88,7 @@ func templatesShowCmd(rootOptions *internal.GlobalCommandOptions) *cobra.Command
 		rootOptions,
 		"show <template>",
 		"Show the template details.",
-		"",
+		nil,
 	)
 	cmd.Args = cobra.ExactArgs(1)
 	return cmd

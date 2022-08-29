@@ -29,9 +29,10 @@ func deployCmd(rootOptions *internal.GlobalCommandOptions) *cobra.Command {
 		rootOptions,
 		"deploy",
 		"Deploy the application's code to Azure.",
-		`Deploy the application's code to Azure.
+		&commands.BuildOptions{
+			Long: `Deploy the application's code to Azure.
 
-When no `+output.WithBackticks("--service")+` value is specified, all services in the `+output.WithBackticks("azure.yaml")+` file (found in the root of your project) are deployed.
+When no ` + output.WithBackticks("--service") + ` value is specified, all services in the ` + output.WithBackticks("azure.yaml") + ` file (found in the root of your project) are deployed.
 
 Examples:
 
@@ -40,7 +41,7 @@ Examples:
 	$ azd deploy –-service web
 	
 After the deployment is complete, the endpoint is printed. To start the service, select the endpoint or paste it in a browser.`,
-	)
+		})
 
 	return output.AddOutputParam(
 		cmd,

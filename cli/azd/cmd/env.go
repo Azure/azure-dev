@@ -87,7 +87,7 @@ func envSetCmd(rootOptions *internal.GlobalCommandOptions) *cobra.Command {
 		rootOptions,
 		"set <key> <value>",
 		"Set a value in the environment.",
-		"",
+		nil,
 	)
 	cmd.Args = cobra.ExactArgs(2)
 	return cmd
@@ -112,7 +112,7 @@ func envSelectCmd(rootOptions *internal.GlobalCommandOptions) *cobra.Command {
 		rootOptions,
 		"select <environment>",
 		"Set the default environment.",
-		"",
+		nil,
 	)
 	cmd.Args = cobra.ExactArgs(1)
 	return cmd
@@ -163,9 +163,10 @@ func envListCmd(rootOptions *internal.GlobalCommandOptions) *cobra.Command {
 		rootOptions,
 		"list",
 		"List environments",
-		"",
+		&commands.BuildOptions{
+			Aliases: []string{"ls"},
+		},
 	)
-	cmd.Aliases = []string{"ls"}
 
 	return cmd
 }
@@ -176,7 +177,7 @@ func envNewCmd(rootOptions *internal.GlobalCommandOptions) *cobra.Command {
 		rootOptions,
 		"new <environment>",
 		"Create a new environment.",
-		"",
+		nil,
 	)
 }
 
@@ -281,7 +282,7 @@ func envRefreshCmd(rootOptions *internal.GlobalCommandOptions) *cobra.Command {
 		rootOptions,
 		"refresh",
 		"Refresh environment settings by using information from a previous infrastructure provision.",
-		"",
+		nil,
 	)
 }
 
@@ -320,7 +321,7 @@ func envGetValuesCmd(rootOptions *internal.GlobalCommandOptions) *cobra.Command 
 		rootOptions,
 		"get-values",
 		"Get all environment values.",
-		"",
+		nil,
 	)
 
 	return cmd

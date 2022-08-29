@@ -38,7 +38,7 @@ func ReadProject(ctx context.Context, projectPath string, env *environment.Envir
 	}
 
 	// Evaluate project
-	project, err := projectConfig.GetProject(ctx, env)
+	project, err := projectConfig.GetProject(&ctx, env)
 	if err != nil {
 		return nil, fmt.Errorf("reading project: %w", err)
 	}

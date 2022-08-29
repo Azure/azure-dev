@@ -21,6 +21,7 @@ ignoreWords:
     - appi
     - arck
     - Bfor
+    - bicepcli
     - cdne
     - cdnp
     - databricks
@@ -30,12 +31,19 @@ ignoreWords:
     - evgs
     - evgt
     - evhns
+    - execfn
+    - execmock
     - fdfp
     - Frontdoor
+    - httpclient
+    - inputhelper
     - ippre
     - kubernetes
     - kusto
     - migr
+    - mockconsole
+    - mockexec
+    - mockhttp
     - nsgsr
     - ntfns
     - osdisk
@@ -58,7 +66,9 @@ ignoreWords:
     - syndp
     - synsp
     - synw
+    - TEAMPROJECTID
     - traf
+    - useragent
     - vmss
     - vnet
     - vpng

@@ -14,7 +14,7 @@ param deleteAfterTime string = dateTimeAdd(utcNow('o'), 'PT1H')
 var resourceToken = toLower(uniqueString(subscription().id, name, location))
 var tags = { 'azd-env-name': name, DeleteAfter: deleteAfterTime }
 
-resource resourceGroup 'Microsoft.Resources/resourceGroups@2021-04-01' = {
+resource rg 'Microsoft.Resources/resourceGroups@2021-04-01' = {
   name: 'rg-${name}'
   location: location
   tags: tags
@@ -22,7 +22,7 @@ resource resourceGroup 'Microsoft.Resources/resourceGroups@2021-04-01' = {
 
 module resources 'resources.bicep' = {
   name: 'resources'
-  scope: resourceGroup
+  scope: rg
   params: {
     location: location
     resourceToken: resourceToken

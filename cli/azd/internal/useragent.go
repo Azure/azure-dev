@@ -1,6 +1,7 @@
 package internal
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"runtime"
@@ -36,6 +37,27 @@ func (userAgent *UserAgent) String() string {
 	appendIdentifier(&sb, userAgent.githubActionsIdentifier)
 
 	return sb.String()
+}
+
+const (
+	templateContextKey contextKey = "template"
+)
+
+// Sets the azd template that is in use
+// This value typically comes from the metadata section of the azure.yaml
+// The template value is then used in the custom useragent generation
+func WithTemplate(ctx context.Context, template string) context.Context {
+	return context.WithValue(ctx, templateContextKey, template)
+}
+
+// Gets the azd template name for the running command
+func GetTemplate(ctx context.Context) string {
+	template, ok := ctx.Value(templateContextKey).(string)
+	if !ok {
+		return ""
+	}
+
+	return template
 }
 
 func appendIdentifier(sb *strings.Builder, identifier string) {

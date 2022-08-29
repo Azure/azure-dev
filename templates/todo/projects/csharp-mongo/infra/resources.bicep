@@ -3,9 +3,9 @@ param principalId string = ''
 param resourceToken string
 param tags object
 
-var abbrs = loadJsonContent('../../../../common/infra/abbreviations.json')
+var abbrs = loadJsonContent('../../../../common/infra/bicep/abbreviations.json')
 
-resource web 'Microsoft.Web/sites@2021-03-01' = {
+resource web 'Microsoft.Web/sites@2022-03-01' = {
   name: '${abbrs.webSitesAppService}web-${resourceToken}'
   location: location
   tags: union(tags, { 'azd-service-name': 'web' })
@@ -51,7 +51,7 @@ resource web 'Microsoft.Web/sites@2021-03-01' = {
   }
 }
 
-resource api 'Microsoft.Web/sites@2021-01-15' = {
+resource api 'Microsoft.Web/sites@2022-03-01' = {
   name: '${abbrs.webSitesAppService}api-${resourceToken}'
   location: location
   tags: union(tags, { 'azd-service-name': 'api' })
@@ -104,16 +104,17 @@ resource api 'Microsoft.Web/sites@2021-01-15' = {
   }
 }
 
-resource appServicePlan 'Microsoft.Web/serverfarms@2021-03-01' = {
+resource appServicePlan 'Microsoft.Web/serverfarms@2022-03-01' = {
   name: '${abbrs.webServerFarms}${resourceToken}'
   location: location
   tags: tags
   sku: {
     name: 'B1'
   }
+  properties: {}
 }
 
-resource keyVault 'Microsoft.KeyVault/vaults@2021-10-01' = {
+resource keyVault 'Microsoft.KeyVault/vaults@2022-07-01' = {
   name: '${abbrs.keyVaultVaults}${resourceToken}'
   location: location
   tags: tags
@@ -156,7 +157,7 @@ resource keyVault 'Microsoft.KeyVault/vaults@2021-10-01' = {
   }
 }
 
-resource logAnalyticsWorkspace 'Microsoft.OperationalInsights/workspaces@2020-03-01-preview' = {
+resource logAnalyticsWorkspace 'Microsoft.OperationalInsights/workspaces@2021-12-01-preview' = {
   name: '${abbrs.operationalInsightsWorkspaces}${resourceToken}'
   location: location
   tags: tags
@@ -171,7 +172,7 @@ resource logAnalyticsWorkspace 'Microsoft.OperationalInsights/workspaces@2020-03
   })
 }
 
-module applicationInsightsResources '../../../../common/infra/applicationinsights.bicep' = {
+module applicationInsightsResources '../../../../common/infra/bicep/applicationinsights.bicep' = {
   name: 'applicationinsights-resources'
   params: {
     resourceToken: resourceToken
@@ -181,7 +182,7 @@ module applicationInsightsResources '../../../../common/infra/applicationinsight
   }
 }
 
-resource cosmos 'Microsoft.DocumentDB/databaseAccounts@2021-10-15' = {
+resource cosmos 'Microsoft.DocumentDB/databaseAccounts@2022-05-15' = {
   name: '${abbrs.documentDBDatabaseAccounts}${resourceToken}'
   kind: 'MongoDB'
   location: location

@@ -1,12 +1,13 @@
 package cmd
 
 import (
+	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/commands"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/spf13/cobra"
 )
 
-func provisionCmd(rootOptions *commands.GlobalCommandOptions) *cobra.Command {
+func provisionCmd(rootOptions *internal.GlobalCommandOptions) *cobra.Command {
 	cmd := commands.Build(
 		&infraCreateAction{
 			rootOptions: rootOptions,

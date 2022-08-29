@@ -23,11 +23,10 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/cmd"
 	"github.com/azure/azure-dev/cli/azd/internal"
-	"github.com/azure/azure-dev/cli/azd/pkg/azureutil"
-	"github.com/azure/azure-dev/cli/azd/pkg/commands"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/executil"
+	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/test/azdcli"
@@ -113,6 +112,8 @@ func Test_CLI_Init_AsksForSubscriptionIdAndCreatesEnvAndProjectFile(t *testing.T
 }
 
 func Test_CLI_Init_CanUseTemplate(t *testing.T) {
+	// running this test in parallel is ok as it uses a t.TempDir()
+	t.Parallel()
 	ctx, cancel := newTestContext(t)
 	defer cancel()
 
@@ -135,30 +136,40 @@ func Test_CLI_Init_CanUseTemplate(t *testing.T) {
 
 // Test when we have multiple resource group matches. More than one rg has azd-env-name set
 func Test_CLI_ResourceGroupNameWithMultipleMatches(t *testing.T) {
+	// running this test in parallel is ok as it uses a t.TempDir()
+	t.Parallel()
 	envName := randomEnvName()
 	Internal_Test_CLI_ResourceGroupsName(t, envName, fmt.Sprintf("rg-%s", envName), true, true, true)
 }
 
 // Test when we can't find any resource group matches
 func Test_CLI_ResourceGroupNameWithoutMatch(t *testing.T) {
+	// running this test in parallel is ok as it uses a t.TempDir()
+	t.Parallel()
 	envName := randomEnvName()
 	Internal_Test_CLI_ResourceGroupsName(t, envName, fmt.Sprintf("rg-%s", envName), true, false, false)
 }
 
 // Test when resource group uses rg- prefix
 func Test_CLI_ResourceGroupNameWithPrefix(t *testing.T) {
+	// running this test in parallel is ok as it uses a t.TempDir()
+	t.Parallel()
 	envName := randomEnvName()
 	Internal_Test_CLI_ResourceGroupsName(t, envName, fmt.Sprintf("rg-%s", envName), true, true, false)
 }
 
 // Test when resource group uses -rg suffix
 func Test_CLI_ResourceGroupNameWithSuffix(t *testing.T) {
+	// running this test in parallel is ok as it uses a t.TempDir()
+	t.Parallel()
 	envName := randomEnvName()
 	Internal_Test_CLI_ResourceGroupsName(t, envName, fmt.Sprintf("%s-rg", envName), true, true, false)
 }
 
 // Test when we don't have any resource groups with azd-env-name tag
 func Test_CLI_ResourceGroupNameWithoutEnvNameTag(t *testing.T) {
+	// running this test in parallel is ok as it uses a t.TempDir()
+	t.Parallel()
 	envName := randomEnvName()
 	Internal_Test_CLI_ResourceGroupsName(t, envName, fmt.Sprintf("rg-%s", envName), false, true, false)
 }
@@ -166,6 +177,8 @@ func Test_CLI_ResourceGroupNameWithoutEnvNameTag(t *testing.T) {
 func Internal_Test_CLI_ResourceGroupsName(t *testing.T, envName string, rgName string, includeEnvNameTag bool, createResources bool, createMultipleResourceGroups bool) {
 	ctx, cancel := newTestContext(t)
 	defer cancel()
+
+	os.Setenv("AZD_FUNC_TEST", "TRUE")
 
 	dir := t.TempDir()
 	t.Logf("DIR: %s", dir)
@@ -206,7 +219,8 @@ func Internal_Test_CLI_ResourceGroupsName(t *testing.T, envName string, rgName s
 	require.NoError(t, err)
 
 	// Verify that resource group is found or not found correctly
-	foundRg, err := azureutil.FindResourceGroupForEnvironment(ctx, &env)
+	resourceManager := infra.NewAzureResourceManager(ctx)
+	foundRg, err := resourceManager.FindResourceGroupForEnvironment(ctx, &env)
 
 	if createResources {
 		if createMultipleResourceGroups {
@@ -229,6 +243,8 @@ func Internal_Test_CLI_ResourceGroupsName(t *testing.T, envName string, rgName s
 }
 
 func Test_CLI_InfraCreateAndDelete(t *testing.T) {
+	// running this test in parallel is ok as it uses a t.TempDir()
+	t.Parallel()
 	ctx, cancel := newTestContext(t)
 	defer cancel()
 
@@ -262,7 +278,8 @@ func Test_CLI_InfraCreateAndDelete(t *testing.T) {
 	require.Regexp(t, `st\S*`, accountName)
 
 	// Verify that resource groups are created with tag
-	rgs, err := azureutil.GetResourceGroupsForEnvironment(ctx, &env)
+	resourceManager := infra.NewAzureResourceManager(ctx)
+	rgs, err := resourceManager.GetResourceGroupsForEnvironment(ctx, &env)
 	require.NoError(t, err)
 	require.NotNil(t, rgs)
 
@@ -272,6 +289,8 @@ func Test_CLI_InfraCreateAndDelete(t *testing.T) {
 }
 
 func Test_CLI_InfraCreateAndDeleteUpperCase(t *testing.T) {
+	// running this test in parallel is ok as it uses a t.TempDir()
+	t.Parallel()
 	ctx, cancel := newTestContext(t)
 	defer cancel()
 
@@ -305,7 +324,8 @@ func Test_CLI_InfraCreateAndDeleteUpperCase(t *testing.T) {
 	require.Regexp(t, `st\S*`, accountName)
 
 	// Verify that resource groups are created with tag
-	rgs, err := azureutil.GetResourceGroupsForEnvironment(ctx, &env)
+	resourceManager := infra.NewAzureResourceManager(ctx)
+	rgs, err := resourceManager.GetResourceGroupsForEnvironment(ctx, &env)
 	require.NoError(t, err)
 	require.NotNil(t, rgs)
 
@@ -315,6 +335,8 @@ func Test_CLI_InfraCreateAndDeleteUpperCase(t *testing.T) {
 }
 
 func Test_CLI_InfraCreateAndDeleteWebApp(t *testing.T) {
+	// running this test in parallel is ok as it uses a t.TempDir()
+	t.Parallel()
 	ctx, cancel := newTestContext(t)
 	defer cancel()
 
@@ -400,6 +422,8 @@ func Test_CLI_InfraCreateAndDeleteWebApp(t *testing.T) {
 
 // test for azd deploy, azd deploy --service
 func Test_CLI_DeployInvalidName(t *testing.T) {
+	// running this test in parallel is ok as it uses a t.TempDir()
+	t.Parallel()
 	ctx, cancel := newTestContext(t)
 	defer cancel()
 
@@ -424,6 +448,8 @@ func Test_CLI_DeployInvalidName(t *testing.T) {
 }
 
 func Test_CLI_RestoreCommand(t *testing.T) {
+	// running this test in parallel is ok as it uses a t.TempDir()
+	t.Parallel()
 	ctx, cancel := newTestContext(t)
 	defer cancel()
 
@@ -451,6 +477,8 @@ func Test_CLI_RestoreCommand(t *testing.T) {
 }
 
 func Test_CLI_InfraCreateAndDeleteFuncApp(t *testing.T) {
+	// running this test in parallel is ok as it uses a t.TempDir()
+	t.Parallel()
 	ctx, cancel := newTestContext(t)
 	defer cancel()
 
@@ -480,6 +508,8 @@ func Test_CLI_InfraCreateAndDeleteFuncApp(t *testing.T) {
 
 	out, err := cli.RunCommand(ctx, "env", "get-values", "-o", "json", "--cwd", dir)
 	require.NoError(t, err)
+
+	t.Logf("env get-values command output: %s\n", out)
 
 	var envValues map[string]interface{}
 	err = json.Unmarshal([]byte(out), &envValues)
@@ -625,7 +655,10 @@ func randomEnvName() string {
 		panic(fmt.Errorf("could not read random bytes: %w", err))
 	}
 
-	return ("azdtest-" + hex.EncodeToString(bytes))[0:15]
+	// Adding the name of the OS for CI to avoid name collisions and fail tests
+	osNameOnCI := os.Getenv("AZURE_DEV_CI_OS")
+
+	return ("azdtest-" + osNameOnCI + "-" + hex.EncodeToString(bytes))[0:15]
 }
 
 // stdinForTests is just enough stdin to bypass all the prompts or choose defaults.
@@ -644,7 +677,7 @@ func getTestEnvPath(dir string, envName string) string {
 // respects the deadline.
 func newTestContext(t *testing.T) (context.Context, context.CancelFunc) {
 	ctx := context.Background()
-	ctx = commands.WithGlobalCommandOptions(ctx, &commands.GlobalCommandOptions{})
+	ctx = internal.WithCommandOptions(ctx, internal.GlobalCommandOptions{})
 
 	if deadline, ok := t.Deadline(); ok {
 		return context.WithDeadline(ctx, deadline)

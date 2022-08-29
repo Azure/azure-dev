@@ -18,6 +18,30 @@ import (
 	"strings"
 )
 
+type RunCommandFn func(ctx context.Context, args RunArgs) (RunResult, error)
+type contextKey string
+
+const (
+	execFnContextKey contextKey = "execfn"
+)
+
+// Gets the exec util implementation used for executing CLI commands on the host machine
+// This override should ONLY be called during unit testing, otherwise the default implementation is used.
+func WithCommandRunner(ctx context.Context, execFn RunCommandFn) context.Context {
+	return context.WithValue(ctx, execFnContextKey, execFn)
+}
+
+// Gets the exec util implementation used for executing cLI commands on the host machine
+// If a value is not found in the context the default implementation will be used.
+func GetCommandRunner(ctx context.Context) RunCommandFn {
+	execFn, ok := ctx.Value(execFnContextKey).(RunCommandFn)
+	if !ok {
+		return RunWithResult
+	}
+
+	return execFn
+}
+
 // Settings to modify the way CmdTree is executed
 type CmdTreeOptions struct {
 	Interactive bool

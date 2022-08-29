@@ -158,7 +158,7 @@ resource logAnalyticsWorkspace 'Microsoft.OperationalInsights/workspaces@2021-12
   })
 }
 
-module applicationInsightsResources '../../../../common/infra/bicep/applicationinsights.bicep' = {
+module applicationInsightsResources '../../../../common/infra/bicep/modules/applicationinsights.bicep' = {
   name: 'applicationinsights-resources'
   params: {
     resourceToken: resourceToken

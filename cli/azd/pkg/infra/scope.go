@@ -32,10 +32,12 @@ type ResourceGroupScope struct {
 	resourceGroup  string
 }
 
+// Gets the Azure subscription id
 func (s *ResourceGroupScope) SubscriptionId() string {
 	return s.subscriptionId
 }
 
+// Gets the deployment name
 func (s *ResourceGroupScope) Name() string {
 	return s.name
 }
@@ -45,14 +47,17 @@ func (s *ResourceGroupScope) Deploy(ctx context.Context, modulePath string, para
 	return err
 }
 
+// GetDeployment fetches the result of the most recent deployment.
 func (s *ResourceGroupScope) GetDeployment(ctx context.Context) (azcli.AzCliDeployment, error) {
 	return s.azCli.GetResourceGroupDeployment(ctx, s.subscriptionId, s.resourceGroup, s.name)
 }
 
+// Gets the resource deployment operations for the current scope
 func (s *ResourceGroupScope) GetResourceOperations(ctx context.Context) ([]azcli.AzCliResourceOperation, error) {
 	return s.azCli.ListResourceGroupDeploymentOperations(ctx, s.subscriptionId, s.resourceGroup, s.name)
 }
 
+// Gets the url to check deployment progress
 func (s *ResourceGroupScope) DeploymentUrl() string {
 	return azure.ResourceGroupDeploymentRID(s.subscriptionId, s.resourceGroup, s.name)
 }
@@ -73,31 +78,38 @@ type SubscriptionScope struct {
 	location       string
 }
 
+// Gets the deployment name
 func (s *SubscriptionScope) Name() string {
 	return s.name
 }
 
+// Gets the Azure subscription id
 func (s *SubscriptionScope) SubscriptionId() string {
 	return s.subscriptionId
 }
 
+// Gets the url to check deployment progress
 func (s *SubscriptionScope) DeploymentUrl() string {
 	return azure.SubscriptionDeploymentRID(s.subscriptionId, s.name)
 }
 
+// Gets the Azure location for the subscription deployment
 func (s *SubscriptionScope) Location() string {
 	return s.location
 }
 
+// Deploy a given template with a set of parameters.
 func (s *SubscriptionScope) Deploy(ctx context.Context, bicepPath string, parametersPath string) error {
 	_, err := s.azCli.DeployToSubscription(ctx, s.subscriptionId, s.name, bicepPath, parametersPath, s.location)
 	return err
 }
 
+// GetDeployment fetches the result of the most recent deployment.
 func (s *SubscriptionScope) GetDeployment(ctx context.Context) (azcli.AzCliDeployment, error) {
 	return s.azCli.GetSubscriptionDeployment(ctx, s.subscriptionId, s.name)
 }
 
+// Gets the resource deployment operations for the current scope
 func (s *SubscriptionScope) GetResourceOperations(ctx context.Context) ([]azcli.AzCliResourceOperation, error) {
 	return s.azCli.ListSubscriptionDeploymentOperations(ctx, s.subscriptionId, s.name)
 }

@@ -17,6 +17,7 @@ func SubscriptionDeploymentRID(subscriptionId, deploymentId string) string {
 	return returnValue
 }
 
+// Creates resource group level deployment resource ID
 func ResourceGroupDeploymentRID(subscriptionId string, resourceGroupName string, deploymentId string) string {
 	returnValue := fmt.Sprintf("%s/providers/Microsoft.Resources/deployments/%s", ResourceGroupRID(subscriptionId, resourceGroupName), deploymentId)
 	return returnValue

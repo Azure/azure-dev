@@ -10,11 +10,12 @@ import (
 	"log"
 	"time"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/commands"
+	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/git"
 )
 
@@ -25,7 +26,7 @@ type pipelineManager struct {
 	ciProvider
 	console                      input.Console
 	azdCtx                       *azdcontext.AzdContext
-	rootOptions                  *commands.GlobalCommandOptions
+	rootOptions                  *internal.GlobalCommandOptions
 	pipelineServicePrincipalName string
 	pipelineRemoteName           string
 	pipelineRoleName             string
@@ -170,7 +171,7 @@ func (manager *pipelineManager) configure(ctx context.Context) error {
 	}
 
 	// check all required tools are installed
-	azCli := commands.GetAzCliFromContext(ctx)
+	azCli := azcli.GetAzCli(ctx)
 	requiredTools := manager.requiredTools()
 	requiredTools = append(requiredTools, azCli)
 	if err := tools.EnsureInstalled(ctx, requiredTools...); err != nil {

@@ -16,7 +16,6 @@ import (
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azureutil"
-	"github.com/azure/azure-dev/cli/azd/pkg/commands"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
@@ -73,14 +72,14 @@ const (
 // runLogin runs an interactive login. When running in a Codespace or Remote Container, a device code based is
 // preformed since the default browser login needs UI. A device code login can be forced with `forceDeviceCode`.
 func runLogin(ctx context.Context, forceDeviceCode bool) error {
-	azCli := commands.GetAzCliFromContext(ctx)
+	azCli := azcli.GetAzCli(ctx)
 	useDeviceCode := forceDeviceCode || os.Getenv(codespacesEnvVarName) == "true" || os.Getenv(remoteContainersEnvVarName) == "true"
 
 	return azCli.Login(ctx, useDeviceCode, os.Stdout)
 }
 
 func ensureLoggedIn(ctx context.Context) error {
-	azCli := commands.GetAzCliFromContext(ctx)
+	azCli := azcli.GetAzCli(ctx)
 	_, err := azCli.GetAccessToken(ctx)
 	if errors.Is(err, azcli.ErrAzCliNotLoggedIn) || errors.Is(err, azcli.ErrAzCliRefreshTokenExpired) {
 		if err := runLogin(ctx, false); err != nil {
@@ -98,7 +97,7 @@ const (
 )
 
 func getSubscriptionOptions(ctx context.Context) ([]string, string, error) {
-	azCli := commands.GetAzCliFromContext(ctx)
+	azCli := azcli.GetAzCli(ctx)
 	subscriptionInfos, err := azCli.ListAccounts(ctx)
 	if err != nil {
 		return nil, "", fmt.Errorf("listing accounts: %w", err)
@@ -166,7 +165,7 @@ func ensureEnvironmentInitialized(ctx context.Context, envSpec environmentSpec, 
 	if !hasLocation && envSpec.location != "" {
 		env.SetLocation(envSpec.location)
 	} else {
-		location, err := console.PromptLocation(ctx, "Please select an Azure location to use:")
+		location, err := azureutil.PromptLocation(ctx, "Please select an Azure location to use:")
 		if err != nil {
 			return fmt.Errorf("prompting for location: %w", err)
 		}

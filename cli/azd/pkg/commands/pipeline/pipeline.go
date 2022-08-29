@@ -7,7 +7,7 @@ import (
 	"context"
 	"encoding/json"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/commands"
+	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
@@ -56,7 +56,7 @@ type pipelineConfigAction struct {
 }
 
 // NewConfigAction creates an instance of pipelineConfigAction
-func NewConfigAction(rootOptions *commands.GlobalCommandOptions) *pipelineConfigAction {
+func NewConfigAction(rootOptions *internal.GlobalCommandOptions) *pipelineConfigAction {
 	return &pipelineConfigAction{
 		manager: &pipelineManager{
 			rootOptions: rootOptions,
@@ -86,7 +86,7 @@ func (p *pipelineConfigAction) Run(
 	p.manager.ciProvider = &gitHubCiProvider{}
 
 	// set context for manager
-	p.manager.console = input.NewConsole(!p.manager.rootOptions.NoPrompt)
+	p.manager.console = input.GetConsole(ctx)
 	p.manager.azdCtx = azdCtx
 
 	return p.manager.configure(ctx)

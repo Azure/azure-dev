@@ -23,11 +23,10 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/cmd"
 	"github.com/azure/azure-dev/cli/azd/internal"
-	"github.com/azure/azure-dev/cli/azd/pkg/azureutil"
-	"github.com/azure/azure-dev/cli/azd/pkg/commands"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/executil"
+	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/test/azdcli"
@@ -179,6 +178,8 @@ func Internal_Test_CLI_ResourceGroupsName(t *testing.T, envName string, rgName s
 	ctx, cancel := newTestContext(t)
 	defer cancel()
 
+	os.Setenv("AZD_FUNC_TEST", "TRUE")
+
 	dir := t.TempDir()
 	t.Logf("DIR: %s", dir)
 
@@ -218,7 +219,8 @@ func Internal_Test_CLI_ResourceGroupsName(t *testing.T, envName string, rgName s
 	require.NoError(t, err)
 
 	// Verify that resource group is found or not found correctly
-	foundRg, err := azureutil.FindResourceGroupForEnvironment(ctx, &env)
+	resourceManager := infra.NewAzureResourceManager(ctx)
+	foundRg, err := resourceManager.FindResourceGroupForEnvironment(ctx, &env)
 
 	if createResources {
 		if createMultipleResourceGroups {
@@ -276,7 +278,8 @@ func Test_CLI_InfraCreateAndDelete(t *testing.T) {
 	require.Regexp(t, `st\S*`, accountName)
 
 	// Verify that resource groups are created with tag
-	rgs, err := azureutil.GetResourceGroupsForEnvironment(ctx, &env)
+	resourceManager := infra.NewAzureResourceManager(ctx)
+	rgs, err := resourceManager.GetResourceGroupsForEnvironment(ctx, &env)
 	require.NoError(t, err)
 	require.NotNil(t, rgs)
 
@@ -321,7 +324,8 @@ func Test_CLI_InfraCreateAndDeleteUpperCase(t *testing.T) {
 	require.Regexp(t, `st\S*`, accountName)
 
 	// Verify that resource groups are created with tag
-	rgs, err := azureutil.GetResourceGroupsForEnvironment(ctx, &env)
+	resourceManager := infra.NewAzureResourceManager(ctx)
+	rgs, err := resourceManager.GetResourceGroupsForEnvironment(ctx, &env)
 	require.NoError(t, err)
 	require.NotNil(t, rgs)
 
@@ -505,6 +509,8 @@ func Test_CLI_InfraCreateAndDeleteFuncApp(t *testing.T) {
 	out, err := cli.RunCommand(ctx, "env", "get-values", "-o", "json", "--cwd", dir)
 	require.NoError(t, err)
 
+	t.Logf("env get-values command output: %s\n", out)
+
 	var envValues map[string]interface{}
 	err = json.Unmarshal([]byte(out), &envValues)
 	require.NoError(t, err)
@@ -649,7 +655,10 @@ func randomEnvName() string {
 		panic(fmt.Errorf("could not read random bytes: %w", err))
 	}
 
-	return ("azdtest-" + hex.EncodeToString(bytes))[0:15]
+	// Adding the name of the OS for CI to avoid name collisions and fail tests
+	osNameOnCI := os.Getenv("AZURE_DEV_CI_OS")
+
+	return ("azdtest-" + osNameOnCI + "-" + hex.EncodeToString(bytes))[0:15]
 }
 
 // stdinForTests is just enough stdin to bypass all the prompts or choose defaults.
@@ -668,7 +677,7 @@ func getTestEnvPath(dir string, envName string) string {
 // respects the deadline.
 func newTestContext(t *testing.T) (context.Context, context.CancelFunc) {
 	ctx := context.Background()
-	ctx = commands.WithGlobalCommandOptions(ctx, &commands.GlobalCommandOptions{})
+	ctx = internal.WithCommandOptions(ctx, internal.GlobalCommandOptions{})
 
 	if deadline, ok := t.Deadline(); ok {
 		return context.WithDeadline(ctx, deadline)

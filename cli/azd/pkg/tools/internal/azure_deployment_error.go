@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/fatih/color"
+	"github.com/azure/azure-dev/cli/azd/pkg/output"
 )
 
 type errorLine struct {
@@ -42,10 +42,10 @@ func (e *AzureDeploymentError) Error() string {
 
 	var sb strings.Builder
 	sb.WriteString(fmt.Sprintln())
-	sb.WriteString(fmt.Sprintln(color.HiRedString("Deployment Error Details:")))
+	sb.WriteString(fmt.Sprintln(output.WithErrorFormat("Deployment Error Details:")))
 
 	for _, line := range lines {
-		sb.WriteString(fmt.Sprintln(color.RedString(line)))
+		sb.WriteString(fmt.Sprintln(output.WithErrorFormat(line)))
 	}
 
 	return sb.String()

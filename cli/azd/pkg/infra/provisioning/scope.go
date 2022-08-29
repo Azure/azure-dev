@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 package provisioning
 
 import (
@@ -29,9 +32,9 @@ func (s *ResourceGroupScope) GetDeployment(ctx context.Context) (azcli.AzCliDepl
 	return s.azCli.GetResourceGroupDeployment(ctx, s.subscriptionId, s.resourceGroup, s.name)
 }
 
-func NewResourceGroupProvisioningScope(azCli azcli.AzCli, subscriptionId string, resourceGroup string, deploymentName string) Scope {
+func NewResourceGroupScope(ctx context.Context, subscriptionId string, resourceGroup string, deploymentName string) Scope {
 	return &ResourceGroupScope{
-		azCli:          azCli,
+		azCli:          azcli.GetAzCli(ctx),
 		name:           deploymentName,
 		subscriptionId: subscriptionId,
 		resourceGroup:  resourceGroup,
@@ -66,9 +69,9 @@ func (s *SubscriptionScope) GetDeployment(ctx context.Context) (azcli.AzCliDeplo
 	return s.azCli.GetSubscriptionDeployment(ctx, s.subscriptionId, s.name)
 }
 
-func NewSubscriptionProvisioningScope(azCli azcli.AzCli, location string, subscriptionId string, deploymentName string) Scope {
+func NewSubscriptionScope(ctx context.Context, location string, subscriptionId string, deploymentName string) Scope {
 	return &SubscriptionScope{
-		azCli:          azCli,
+		azCli:          azcli.GetAzCli(ctx),
 		name:           deploymentName,
 		subscriptionId: subscriptionId,
 		location:       location,

@@ -1,4 +1,7 @@
-package httpUtil
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
+package httputil
 
 import (
 	"bytes"
@@ -21,14 +24,14 @@ type HttpResponseMessage struct {
 	Body    []byte
 }
 
-type HttpUtil interface {
+type HttpClient interface {
 	Send(req *HttpRequestMessage) (*HttpResponseMessage, error)
 }
 
-type httpUtil struct {
+type httpClient struct {
 }
 
-func (hu *httpUtil) Send(req *HttpRequestMessage) (*HttpResponseMessage, error) {
+func (hu *httpClient) Send(req *HttpRequestMessage) (*HttpResponseMessage, error) {
 	requestBytes := []byte(req.Body)
 	requestReader := bytes.NewReader(requestBytes)
 
@@ -66,29 +69,29 @@ func (hu *httpUtil) Send(req *HttpRequestMessage) (*HttpResponseMessage, error) 
 	return responseMessage, nil
 }
 
-func NewHttpUtil() HttpUtil {
-	return &httpUtil{}
+func NewHttpClient() HttpClient {
+	return &httpClient{}
 }
 
 type contextKey string
 
 const (
-	httpUtilContextKey contextKey = "httputil"
+	httpClientContextKey contextKey = "httpclient"
 )
 
-// GetHttpClientFromContext attempts to retrieve a HttpUtil instance from the specified context.
+// GetHttpClient attempts to retrieve a HttpUtil instance from the specified context.
 // Will return the context if found or create a new instance
-func GetHttpClientFromContext(ctx context.Context) HttpUtil {
-	value := ctx.Value(httpUtilContextKey)
-	client, ok := value.(HttpUtil)
+func GetHttpClient(ctx context.Context) HttpClient {
+	value := ctx.Value(httpClientContextKey)
+	client, ok := value.(HttpClient)
 
 	if !ok {
-		return NewHttpUtil()
+		return NewHttpClient()
 	}
 
 	return client
 }
 
-func WithHttpClient(ctx context.Context, httpClient HttpUtil) context.Context {
-	return context.WithValue(ctx, httpUtilContextKey, httpClient)
+func WithHttpClient(ctx context.Context, httpClient HttpClient) context.Context {
+	return context.WithValue(ctx, httpClientContextKey, httpClient)
 }

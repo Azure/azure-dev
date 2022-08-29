@@ -4,15 +4,15 @@
 package cmd
 
 import (
+	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/telemetry"
-	"github.com/azure/azure-dev/cli/azd/pkg/commands"
 	"github.com/spf13/cobra"
 )
 
 const TelemetryCommandFlag = "telemetry"
 const TelemetryUploadCommandFlag = "upload"
 
-func telemetryCmd(rootOptions *commands.GlobalCommandOptions) *cobra.Command {
+func telemetryCmd(rootOptions *internal.GlobalCommandOptions) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:    TelemetryCommandFlag,
 		Short:  "Manage telemetry",
@@ -23,7 +23,7 @@ func telemetryCmd(rootOptions *commands.GlobalCommandOptions) *cobra.Command {
 	return cmd
 }
 
-func uploadCmd(rootOptions *commands.GlobalCommandOptions) *cobra.Command {
+func uploadCmd(rootOptions *internal.GlobalCommandOptions) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:    TelemetryUploadCommandFlag,
 		Short:  "Upload telemetry",

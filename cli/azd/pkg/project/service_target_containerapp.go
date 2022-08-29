@@ -51,9 +51,9 @@ func (at *containerAppTarget) Deploy(ctx context.Context, azdCtx *azdcontext.Azd
 	}
 
 	progress <- "Creating deployment template"
-	previewResult, err := infraManager.Preview(ctx)
+	deploymentPlan, err := infraManager.Plan(ctx)
 	if err != nil {
-		return ServiceDeploymentResult{}, fmt.Errorf("previewing provisioning: %w", err)
+		return ServiceDeploymentResult{}, fmt.Errorf("planning provisioning: %w", err)
 	}
 
 	// Login to container registry.
@@ -98,7 +98,7 @@ func (at *containerAppTarget) Deploy(ctx context.Context, azdCtx *azdcontext.Azd
 	progress <- "Updating container app image reference"
 	deploymentName := fmt.Sprintf("%s-%s", at.env.GetEnvName(), at.config.Name)
 	scope := infra.NewResourceGroupScope(ctx, at.env.GetSubscriptionId(), at.scope.ResourceGroupName(), deploymentName)
-	deployResult, err := infraManager.Deploy(ctx, &previewResult.Deployment, scope)
+	deployResult, err := infraManager.Deploy(ctx, deploymentPlan, scope)
 
 	if err != nil {
 		return ServiceDeploymentResult{}, fmt.Errorf("provisioning infrastructure for app deployment: %w", err)

@@ -10,6 +10,7 @@ import (
 	"io"
 	"io/fs"
 	"log"
+	"math/rand"
 	"net/http"
 	"os"
 	"os/user"
@@ -29,6 +30,9 @@ import (
 )
 
 func main() {
+	// Ensure random numbers from default random number generator are unpredictable
+	rand.Seed(time.Now().UTC().UnixNano())
+
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
 
 	if !isDebugEnabled() {

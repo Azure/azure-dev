@@ -53,7 +53,7 @@ func getOidClaimFromAccessToken(token string) (string, error) {
 		return "", errors.New("malformed access token")
 	}
 
-	byts, err := base64.RawURLEncoding.DecodeString(matches[1])
+	bytes, err := base64.RawURLEncoding.DecodeString(matches[1])
 	if err != nil {
 		return "", err
 	}
@@ -62,7 +62,7 @@ func getOidClaimFromAccessToken(token string) (string, error) {
 		Oid *string
 	}
 
-	if err := json.Unmarshal(byts, &claims); err != nil {
+	if err := json.Unmarshal(bytes, &claims); err != nil {
 		return "", err
 	}
 

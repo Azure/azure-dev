@@ -37,14 +37,16 @@ func initCmd(rootOptions *internal.GlobalCommandOptions) *cobra.Command {
 		&initAction{
 			rootOptions: rootOptions,
 		},
-		rootOptions,
-		"init",
-		"Initialize a new application.",
-		`Initialize a new application.
+		commands.BuildOptions{
+			GlobalOptions: rootOptions,
+			Use:           "init",
+			Short:         "Initialize a new application.",
+			Long: `Initialize a new application.
 
-When no template is supplied, you can optionally select an Azure Developer CLI template for cloning. Otherwise, `+output.WithBackticks("azd init")+` initializes the current directory and creates resources so that your project is compatible with Azure Developer CLI.
+When no template is supplied, you can optionally select an Azure Developer CLI template for cloning. Otherwise, ` + output.WithBackticks("azd init") + ` initializes the current directory and creates resources so that your project is compatible with Azure Developer CLI.
 
 When a template is provided, the sample code is cloned to the current directory.`,
+		},
 	)
 	return cmd
 }

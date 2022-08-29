@@ -84,10 +84,11 @@ func envSetCmd(rootOptions *internal.GlobalCommandOptions) *cobra.Command {
 
 	cmd := commands.Build(
 		commands.ActionFunc(actionFn),
-		rootOptions,
-		"set <key> <value>",
-		"Set a value in the environment.",
-		"",
+		commands.BuildOptions{
+			GlobalOptions: rootOptions,
+			Use:           "set <key> <value>",
+			Short:         "Set a value in the environment.",
+			Long:          ""},
 	)
 	cmd.Args = cobra.ExactArgs(2)
 	return cmd
@@ -109,10 +110,11 @@ func envSelectCmd(rootOptions *internal.GlobalCommandOptions) *cobra.Command {
 	)
 	cmd := commands.Build(
 		action,
-		rootOptions,
-		"select <environment>",
-		"Set the default environment.",
-		"",
+		commands.BuildOptions{
+			GlobalOptions: rootOptions,
+			Use:           "select <environment>",
+			Short:         "Set the default environment.",
+			Long:          ""},
 	)
 	cmd.Args = cobra.ExactArgs(1)
 	return cmd
@@ -160,10 +162,12 @@ func envListCmd(rootOptions *internal.GlobalCommandOptions) *cobra.Command {
 
 	cmd := commands.Build(
 		action,
-		rootOptions,
-		"list",
-		"List environments",
-		"",
+		commands.BuildOptions{
+			GlobalOptions: rootOptions,
+			Use:           "list",
+			Short:         "List environments",
+			Long:          "",
+		},
 	)
 	cmd.Aliases = []string{"ls"}
 
@@ -173,10 +177,12 @@ func envListCmd(rootOptions *internal.GlobalCommandOptions) *cobra.Command {
 func envNewCmd(rootOptions *internal.GlobalCommandOptions) *cobra.Command {
 	return commands.Build(
 		&envNewAction{rootOptions: rootOptions},
-		rootOptions,
-		"new <environment>",
-		"Create a new environment.",
-		"",
+		commands.BuildOptions{
+			GlobalOptions: rootOptions,
+			Use:           "new <environment>",
+			Short:         "Create a new environment.",
+			Long:          "",
+		},
 	)
 }
 
@@ -278,10 +284,12 @@ func envRefreshCmd(rootOptions *internal.GlobalCommandOptions) *cobra.Command {
 
 	return commands.Build(
 		commands.ActionFunc(actionFn),
-		rootOptions,
-		"refresh",
-		"Refresh environment settings by using information from a previous infrastructure provision.",
-		"",
+		commands.BuildOptions{
+			GlobalOptions: rootOptions,
+			Use:           "refresh",
+			Short:         "Refresh environment settings by using information from a previous infrastructure provision.",
+			Long:          "",
+		},
 	)
 }
 
@@ -317,10 +325,12 @@ func envGetValuesCmd(rootOptions *internal.GlobalCommandOptions) *cobra.Command 
 
 	cmd := commands.Build(
 		actionFn,
-		rootOptions,
-		"get-values",
-		"Get all environment values.",
-		"",
+		commands.BuildOptions{
+			GlobalOptions: rootOptions,
+			Use:           "get-values",
+			Short:         "Get all environment values.",
+			Long:          "",
+		},
 	)
 
 	return cmd

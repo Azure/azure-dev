@@ -25,10 +25,12 @@ func TestBasicBuild(t *testing.T) {
 
 	cmd := Build(
 		testAction,
-		rootOptions,
-		"test2",
-		"This is a test of the builder",
-		"lorem")
+		BuildOptions{
+			GlobalOptions: rootOptions,
+			Use:           "test2",
+			Short:         "This is a test of the builder",
+			Long:          "lorem",
+		})
 
 	assert.Equal(t, cmd.Short, "This is a test of the builder")
 	assert.Equal(t, cmd.Long, "lorem")

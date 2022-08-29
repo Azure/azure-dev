@@ -22,10 +22,12 @@ func infraDeleteCmd(rootOptions *internal.GlobalCommandOptions) *cobra.Command {
 		&infraDeleteAction{
 			rootOptions: rootOptions,
 		},
-		rootOptions,
-		"delete",
-		"Delete Azure resources for an application.",
-		"",
+		commands.BuildOptions{
+			GlobalOptions: rootOptions,
+			Use:           "delete",
+			Short:         "Delete Azure resources for an application.",
+			Long:          "",
+		},
 	)
 }
 

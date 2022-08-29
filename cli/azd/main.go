@@ -70,7 +70,10 @@ func main() {
 	}
 
 	if ts != nil {
-		ts.Shutdown(context.Background())
+		err := ts.Shutdown(context.Background())
+		if err != nil {
+			log.Printf("non-graceful telemetry shutdown: %v\n", err)
+		}
 
 		if ts.EmittedAnyTelemetry() {
 			err := startBackgroundUploadProcess()

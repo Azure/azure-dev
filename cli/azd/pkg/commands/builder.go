@@ -45,7 +45,7 @@ func Build(action Action, rootOptions *internal.GlobalCommandOptions, use string
 				span.SetStatus(codes.Error, "UnknownError")
 			}
 
-			return action.Run(ctx, cmd, args, azdCtx)
+			return err
 		},
 	}
 	cmd.Flags().BoolP("help", "h", false, fmt.Sprintf("Gets help for %s.", cmd.Name()))

@@ -21,6 +21,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/cmd"
 	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning/bicep"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/blang/semver/v4"
@@ -33,6 +34,8 @@ func main() {
 	if !isDebugEnabled() {
 		log.SetOutput(io.Discard)
 	}
+
+	registerProviders()
 
 	latest := make(chan semver.Version)
 	go fetchLatestVersion(latest)
@@ -240,4 +243,8 @@ func readToEndAndClose(r io.ReadCloser) (string, error) {
 	var buf strings.Builder
 	_, err := io.Copy(&buf, r)
 	return buf.String(), err
+}
+
+func registerProviders() {
+	bicep.Register()
 }

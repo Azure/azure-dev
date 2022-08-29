@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
-package provisioning
+package bicep
 
 import (
 	"context"
@@ -12,6 +12,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/executil"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
+	. "github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
@@ -256,7 +257,7 @@ func TestBicepDestroy(t *testing.T) {
 }
 
 func createBicepProvider(ctx context.Context) *BicepProvider {
-	projectDir := "../../../test/samples/webapp"
+	projectDir := "../../../../test/samples/webapp"
 	options := Options{
 		Module: "main",
 	}

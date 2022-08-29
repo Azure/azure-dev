@@ -11,6 +11,7 @@ resource "azurecaf_name" "rg_name" {
   random_length = 0
   clean_input   = true
 }
+
 resource "azurerm_resource_group" "rg" {
   name     = azurecaf_name.rg_name.result
   location = var.location

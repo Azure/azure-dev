@@ -33,10 +33,10 @@ resource "azurerm_key_vault_access_policy" "app" {
 }
 
 resource "azurerm_key_vault_access_policy" "user" {
-  count        = var.principalId == "" ? 0 : 1
+  count        = var.principal_id == "" ? 0 : 1
   key_vault_id = azurerm_key_vault.kv.id
   tenant_id    = data.azurerm_client_config.current.tenant_id
-  object_id    = var.principalId
+  object_id    = var.principal_id
 
   secret_permissions = [
     "Get",

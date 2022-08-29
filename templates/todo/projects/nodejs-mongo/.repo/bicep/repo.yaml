@@ -15,29 +15,24 @@ repo:
       branch: staging
 
   rewrite:
-    patterns:
-      - "**/azure.@(yml|yaml)"
-      - "**/*.bicep"
+    rules:
+      - from: ../../../../../../common/infra/bicep
+        to: ./
+        patterns:
+          - "**/*.bicep"
+      
+      - from: ../../api/js
+        to: ./src/api
+        patterns:
+          - "**/azure.@(yml|yaml)"
+
+      - from: ../../web/react-fluent
+        to: ./src/web
+        patterns:
+          - "**/azure.@(yml|yaml)"
 
   assets:
     # Common assets
-    # Rules for Path Rewrite Only
-    - from: ../../../../../../common/infra/bicep
-      to: ./
-      ignore: 
-        - ".repo/**/*"
-    
-    - from: ../../api/js
-      to: ./src/api
-      ignore: 
-        - ".repo/**/*"
-
-    - from: ../../web/react-fluent
-      to: ./src/web
-      ignore: 
-        - ".repo/**/*"
-    # End Path Rewrite Rules
-
     - from: ./../../
       to: ./
       ignore: 

@@ -27,6 +27,7 @@ func newResource() *resource.Resource {
 			semconv.OSVersionKey.String(getOsVersion()),
 			semconv.HostArchKey.String(runtime.GOARCH),
 			semconv.ProcessRuntimeVersionKey.String(runtime.Version()),
+			attribute.String(executionEnvironment, getExecutionEnvironment()),
 			attribute.String(machineIdKey, getMachineId()),
 		),
 	)
@@ -35,19 +36,17 @@ func newResource() *resource.Resource {
 }
 
 const (
-	machineIdKey      = "machineId"
-	osTypeKey         = "osType"
-	osVersionKey      = "osVersion"
-	runtimeVersionKey = "runtimeVersion"
-	terminalTypeKey   = "terminalType"
-	objectIdKey       = "objectId"
-	tenantIdKey       = "tenantId"
+	machineIdKey         = "machineId"
+	executionEnvironment = "executionEnvironment"
+	terminalTypeKey      = "terminalType"
+	objectIdKey          = "objectId"
+	tenantIdKey          = "tenantId"
 
 	subscriptionIdKey = "subscriptionId"
 	templateIdKey     = "templateId"
 )
 
-var invalidMadAddresses = map[string]struct{}{
+var invalidMacAddresses = map[string]struct{}{
 	"00:00:00:00:00:00": {},
 	"ff:ff:ff:ff:ff:ff": {},
 	"ac:de:48:00:11:22": {},
@@ -84,7 +83,7 @@ func getMacAddressHash() (string, bool) {
 }
 
 func isValidMacAddress(addr string) bool {
-	_, invalidAddr := invalidMadAddresses[addr]
+	_, invalidAddr := invalidMacAddresses[addr]
 	return !invalidAddr
 }
 
@@ -98,24 +97,78 @@ func getOsVersion() string {
 	return ver
 }
 
-var boolDetectors = map[string]string{
-	"TF_BUILD":       "Azure DevOps",
-	"GITHUB_ACTIONS": "Github Actions",
+// All possible enumerations of Execution Environment
+const (
+	// desktop environments
+	desktop          = "Desktop"
+	visualStudio     = "Visual Studio"
+	visualStudioCode = "Visual Studio Code"
+
+	// Continuous Integration environments
+	unknownCI        = "UnknownCI"
+	azurePipelines   = "Azure Pipelines"
+	gitHubActions    = "GitHub Actions"
+	appVeyor         = "AppVeyor"
+	travisCI         = "Travis CI"
+	circleCI         = "Circle CI"
+	gitLabCI         = "GitLab CI"
+	jenkins          = "Jenkins"
+	awsCodeBuild     = "AWS CodeBuild"
+	googleCloudBuild = "Google Cloud Build"
+	teamCity         = "TeamCity"
+	jetBrainsSpace   = "JetBrains Space"
+)
+
+var booleanEnvVarRules = []struct {
+	envVar      string
+	environment string
+}{
+	// Azure Pipelines - https://docs.microsoft.com/en-us/azure/devops/pipelines/build/variables#system-variables-devops-servicesQ
+	{"TF_BUILD", azurePipelines},
+	// GitHub Actions, https://docs.github.com/en/actions/learn-github-actions/environment-variables#default-environment-variables
+	{"GITHUB_ACTIONS", gitHubActions},
+	// AppVeyor - https://www.appveyor.com/docs/environment-variables/
+	{"APPVEYOR", appVeyor},
+	// Travis CI - https://docs.travis-ci.com/user/environment-variables/#default-environment-variables
+	{"TRAVIS", travisCI},
+	// Circle CI - https://circleci.com/docs/env-vars#built-in-environment-variables
+	{"CIRCLECI", circleCI},
+	// GitLab CI
+	{"GITLAB_CI", gitLabCI},
+}
+
+var nonNullEnvVarRules = []struct {
+	envVar      string
+	environment string
+}{
+	// AWS CodeBuild - https://docs.aws.amazon.com/codebuild/latest/userguide/build-env-ref-env-vars.html
+	{"CODEBUILD_BUILD_ID", awsCodeBuild},
+	// Jenkins - https://github.com/jenkinsci/jenkins/blob/master/core/src/main/resources/jenkins/model/CoreEnvironmentContributor/buildEnv.groovy
+	{"JENKINS_URL", jenkins},
+	// TeamCity - https://www.jetbrains.com/help/teamcity/predefined-build-parameters.html#Predefined+Server+Build+Parameters
+	{"TEAMCITY_VERSION", teamCity},
+	// https://www.jetbrains.com/help/space/automation-environment-variables.html#when-does-automation-resolve-its-environment-variables
+	{"JB_SPACE_API_URL", jetBrainsSpace},
+
+	// Unknown CI cases
+	{"CI", unknownCI},
+	{"BUILD_ID", unknownCI},
 }
 
 func getExecutionEnvironment() string {
-	//TODO: add detectors
-	return "Desktop"
-}
-
-func isRunningInGitHubActions() bool {
-	// `GITHUB_ACTIONS` must be set to 'true' if running in GitHub Actions,
-	// see https://docs.github.com/en/actions/learn-github-actions/environment-variables#default-environment-variables
-	if isRunningInGithubActions := os.Getenv("GITHUB_ACTIONS"); isRunningInGithubActions == "true" {
-		return true
+	for _, rule := range booleanEnvVarRules {
+		if os.Getenv(rule.envVar) == "true" {
+			return rule.environment
+		}
 	}
 
-	return false
+	for _, rule := range nonNullEnvVarRules {
+		if _, ok := os.LookupEnv(rule.envVar); ok {
+			return rule.environment
+		}
+	}
+
+	return desktop
 }
 
 func WithTelemetryContext(ctx context.Context) context.Context {

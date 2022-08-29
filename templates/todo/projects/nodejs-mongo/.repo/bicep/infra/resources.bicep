@@ -3,276 +3,87 @@ param principalId string = ''
 param resourceToken string
 param tags object
 
-var abbrs = loadJsonContent('../../../../../../common/infra/bicep/abbreviations.json')
-
-resource web 'Microsoft.Web/sites@2022-03-01' = {
-  name: '${abbrs.webSitesAppService}web-${resourceToken}'
-  location: location
-  tags: union(tags, { 'azd-service-name': 'web' })
-  kind: 'app,linux'
-  properties: {
-    serverFarmId: appServicePlan.id
-    siteConfig: {
-      linuxFxVersion: 'NODE|16-lts'
-      alwaysOn: true
-      ftpsState: 'FtpsOnly'
-      appCommandLine: 'pm2 serve /home/site/wwwroot --no-daemon --spa'
-    }
-    httpsOnly: true
-  }
-
-  resource appSettings 'config' = {
-    name: 'appsettings'
-    properties: {
-      SCM_DO_BUILD_DURING_DEPLOYMENT: 'false'
-      APPLICATIONINSIGHTS_CONNECTION_STRING: applicationInsightsResources.outputs.APPLICATIONINSIGHTS_CONNECTION_STRING
-    }
-  }
-
-  resource logs 'config' = {
-    name: 'logs'
-    properties: {
-      applicationLogs: {
-        fileSystem: {
-          level: 'Verbose'
-        }
-      }
-      detailedErrorMessages: {
-        enabled: true
-      }
-      failedRequestsTracing: {
-        enabled: true
-      }
-      httpLogs: {
-        fileSystem: {
-          enabled: true
-          retentionInDays: 1
-          retentionInMb: 35
-        }
-      }
-    }
+module appServicePlanResources '../../../../../../common/infra/bicep/modules/appserviceplan.bicep' = {
+  name: 'appserviceplan-resources'
+  params: {
+    location: location
+    resourceToken: resourceToken
+    tags: tags
   }
 }
 
-resource api 'Microsoft.Web/sites@2022-03-01' = {
-  name: '${abbrs.webSitesAppService}api-${resourceToken}'
-  location: location
-  tags: union(tags, { 'azd-service-name': 'api' })
-  kind: 'app,linux'
-  properties: {
-    serverFarmId: appServicePlan.id
-    siteConfig: {
-      alwaysOn: true
-      linuxFxVersion: 'NODE|16-lts'
-      ftpsState: 'FtpsOnly'
-    }
-    httpsOnly: true
+module webResources 'modules/web.bicep' = {
+  name: 'web-resources'
+  params: {
+    location: location
+    resourceToken: resourceToken
+    tags: tags
   }
+  dependsOn: [
+    applicationInsightsResources
+    appServicePlanResources
+  ]
+}
 
-  identity: {
-    type: 'SystemAssigned'
+module apiResources 'modules/api.bicep' = {
+  name: 'api-resources'
+  params: {
+    cosmosDatabaseName: cosmosResources.outputs.AZURE_COSMOS_DATABASE_NAME
+    location: location
+    resourceToken: resourceToken
+    tags: tags
   }
+  dependsOn: [
+    applicationInsightsResources
+    keyVaultResources
+    appServicePlanResources
+  ]
+}
 
-  resource appSettings 'config' = {
-    name: 'appsettings'
-    properties: {
-      AZURE_COSMOS_CONNECTION_STRING_KEY: 'AZURE-COSMOS-CONNECTION-STRING'
-      AZURE_COSMOS_DATABASE_NAME: cosmos::database.name
-      SCM_DO_BUILD_DURING_DEPLOYMENT: 'true'
-      AZURE_KEY_VAULT_ENDPOINT: keyVault.properties.vaultUri
-      APPLICATIONINSIGHTS_CONNECTION_STRING: applicationInsightsResources.outputs.APPLICATIONINSIGHTS_CONNECTION_STRING
-    }
-  }
-
-  resource logs 'config' = {
-    name: 'logs'
-    properties: {
-      applicationLogs: {
-        fileSystem: {
-          level: 'Verbose'
-        }
-      }
-      detailedErrorMessages: {
-        enabled: true
-      }
-      failedRequestsTracing: {
-        enabled: true
-      }
-      httpLogs: {
-        fileSystem: {
-          enabled: true
-          retentionInDays: 1
-          retentionInMb: 35
-        }
-      }
-    }
+module keyVaultResources '../../../../../../common/infra/bicep/modules/keyvault.bicep' = {
+  name: 'keyvault-resources'
+  params: {
+    location: location
+    principalId: principalId
+    resourceToken: resourceToken
+    tags: tags
   }
 }
 
-resource appServicePlan 'Microsoft.Web/serverfarms@2022-03-01' = {
-  name: '${abbrs.webServerFarms}${resourceToken}'
-  location: location
-  tags: tags
-  sku: {
-    name: 'B1'
+module cosmosResources '../../../../../common/infra/modules/cosmos.bicep' = {
+  name: 'cosmos-resources'
+  params: {
+    location: location
+    resourceToken: resourceToken
+    tags: tags
   }
-  properties: {
-    reserved: true
+  dependsOn: [
+    keyVaultResources
+  ]
+}
+
+module logAnalyticsWorkspaceResources '../../../../../../common/infra/bicep/modules/loganalytics.bicep' = {
+  name: 'loganalytics-resources'
+  params: {
+    location: location
+    resourceToken: resourceToken
+    tags: tags
   }
 }
 
-resource keyVault 'Microsoft.KeyVault/vaults@2022-07-01' = {
-  name: '${abbrs.keyVaultVaults}${resourceToken}'
-  location: location
-  tags: tags
-  properties: {
-    tenantId: subscription().tenantId
-    sku: {
-      family: 'A'
-      name: 'standard'
-    }
-    accessPolicies: concat([
-        {
-          objectId: api.identity.principalId
-          permissions: {
-            secrets: [
-              'get'
-              'list'
-            ]
-          }
-          tenantId: subscription().tenantId
-        }
-      ], !empty(principalId) ? [
-        {
-          objectId: principalId
-          permissions: {
-            secrets: [
-              'get'
-              'list'
-            ]
-          }
-          tenantId: subscription().tenantId
-        }
-      ] : [])
-  }
-
-  resource cosmosConnectionString 'secrets' = {
-    name: 'AZURE-COSMOS-CONNECTION-STRING'
-    properties: {
-      value: cosmos.listConnectionStrings().connectionStrings[0].connectionString
-    }
-  }
-}
-
-resource logAnalyticsWorkspace 'Microsoft.OperationalInsights/workspaces@2021-12-01-preview' = {
-  name: '${abbrs.operationalInsightsWorkspaces}${resourceToken}'
-  location: location
-  tags: tags
-  properties: any({
-    retentionInDays: 30
-    features: {
-      searchVersion: 1
-    }
-    sku: {
-      name: 'PerGB2018'
-    }
-  })
-}
-
-module applicationInsightsResources '../../../../../../common/infra/bicep/applicationinsights.bicep' = {
+module applicationInsightsResources '../../../../../../common/infra/bicep/modules/applicationinsights.bicep' = {
   name: 'applicationinsights-resources'
   params: {
-    resourceToken: resourceToken
     location: location
+    resourceToken: resourceToken
     tags: tags
-    workspaceId: logAnalyticsWorkspace.id
+    workspaceId: logAnalyticsWorkspaceResources.outputs.AZURE_LOG_ANALYTICS_WORKSPACE_ID
   }
 }
 
-resource cosmos 'Microsoft.DocumentDB/databaseAccounts@2022-05-15' = {
-  name: '${abbrs.documentDBDatabaseAccounts}${resourceToken}'
-  kind: 'MongoDB'
-  location: location
-  tags: tags
-  properties: {
-    consistencyPolicy: {
-      defaultConsistencyLevel: 'Session'
-    }
-    locations: [
-      {
-        locationName: location
-        failoverPriority: 0
-        isZoneRedundant: false
-      }
-    ]
-    databaseAccountOfferType: 'Standard'
-    enableAutomaticFailover: false
-    enableMultipleWriteLocations: false
-    apiProperties: {
-      serverVersion: '4.0'
-    }
-    capabilities: [
-      {
-        name: 'EnableServerless'
-      }
-    ]
-  }
-
-  resource database 'mongodbDatabases' = {
-    name: 'Todo'
-    properties: {
-      resource: {
-        id: 'Todo'
-      }
-    }
-
-    resource list 'collections' = {
-      name: 'TodoList'
-      properties: {
-        resource: {
-          id: 'TodoList'
-          shardKey: {
-            _id: 'Hash'
-          }
-          indexes: [
-            {
-              key: {
-                keys: [
-                  '_id'
-                ]
-              }
-            }
-          ]
-        }
-      }
-    }
-
-    resource item 'collections' = {
-      name: 'TodoItem'
-      properties: {
-        resource: {
-          id: 'TodoItem'
-          shardKey: {
-            _id: 'Hash'
-          }
-          indexes: [
-            {
-              key: {
-                keys: [
-                  '_id'
-                ]
-              }
-            }
-          ]
-        }
-      }
-    }
-  }
-}
-
-output AZURE_COSMOS_CONNECTION_STRING_KEY string = 'AZURE-COSMOS-CONNECTION-STRING'
-output AZURE_COSMOS_DATABASE_NAME string = cosmos::database.name
-output AZURE_KEY_VAULT_ENDPOINT string = keyVault.properties.vaultUri
+output AZURE_COSMOS_CONNECTION_STRING_KEY string = cosmosResources.outputs.AZURE_COSMOS_CONNECTION_STRING_KEY
+output AZURE_COSMOS_DATABASE_NAME string = cosmosResources.outputs.AZURE_COSMOS_DATABASE_NAME
+output AZURE_KEY_VAULT_ENDPOINT string = keyVaultResources.outputs.AZURE_KEY_VAULT_ENDPOINT
 output APPLICATIONINSIGHTS_CONNECTION_STRING string = applicationInsightsResources.outputs.APPLICATIONINSIGHTS_CONNECTION_STRING
-output WEB_URI string = 'https://${web.properties.defaultHostName}'
-output API_URI string = 'https://${api.properties.defaultHostName}'
+output WEB_URI string = webResources.outputs.WEB_URI
+output API_URI string = apiResources.outputs.API_URI

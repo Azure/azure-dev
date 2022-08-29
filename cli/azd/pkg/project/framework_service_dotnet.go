@@ -11,13 +11,15 @@ import (
 	"path/filepath"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/dotnet"
 )
 
 type dotnetProject struct {
 	config    *ServiceConfig
 	env       *environment.Environment
-	dotnetCli tools.DotNetCli
+	dotnetCli dotnet.DotNetCli
 }
 
 func (dp *dotnetProject) RequiredExternalTools() []tools.ExternalTool {
@@ -61,7 +63,7 @@ func (dp *dotnetProject) Initialize(ctx context.Context) error {
 			return nil
 		}
 
-		bicepOutput, ok := bicepOutputArgs.(map[string]tools.AzCliDeploymentOutput)
+		bicepOutput, ok := bicepOutputArgs.(map[string]provisioning.OutputParameter)
 		if !ok {
 			return fmt.Errorf("fail on interface conversion: no type in map")
 		}
@@ -84,6 +86,6 @@ func NewDotNetProject(config *ServiceConfig, env *environment.Environment) Frame
 	return &dotnetProject{
 		config:    config,
 		env:       env,
-		dotnetCli: tools.NewDotNetCli(),
+		dotnetCli: dotnet.NewDotNetCli(),
 	}
 }

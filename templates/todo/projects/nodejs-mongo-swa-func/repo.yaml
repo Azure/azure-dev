@@ -8,16 +8,24 @@ repo:
   includeProjectAssets: true
 
   remotes:
-    - name: azure-samples
+    - name: azure-samples-main
       url: git@github.com:Azure-Samples/todo-nodejs-mongo-swa-func.git
+    - name: azure-samples-staging
+      url: git@github.com:Azure-Samples/todo-nodejs-mongo-swa-func.git
+      branch: staging
 
   rewrite:
     patterns:
       - "**/azure.@(yml|yaml)"
       - "**/*.bicep"
-      
+
   assets:
     # Common assets
+    # Rule for Path Rewrite Only
+    - from: ../../../../common/infra/bicep
+      to: ./
+      ignore: 
+        - "**/*"
 
     # openapi.yaml to root
     - from: ../../api/common
@@ -30,10 +38,24 @@ repo:
       to: ./src/api
       patterns:
         - openapi.yaml
-     
-    # Template common
+
+    # Templates common
     - from: ../../../common
       to: ./
+      ignore:
+        - .devcontainer/**/*
+        - "infra/**/*"
+
+    - from: ../../../common/infra/bicep
+      to: ./infra
+
+    # .devcontainer common (devcontainer.json)
+    - from: ../../../common/.devcontainer/devcontainer.json/nodejs
+      to: ./.devcontainer
+
+    # .devcontainer common (Dockerfile)
+    - from: ../../../common/.devcontainer/Dockerfile/func
+      to: ./.devcontainer
 
     # Assets common
     - from: ../../common/assets
@@ -42,7 +64,7 @@ repo:
     # Tests common
     - from: ../../common/tests
       to: ./tests
-    
+
     # Node JS API
     - from: ../../api/js
       to: ./src/api

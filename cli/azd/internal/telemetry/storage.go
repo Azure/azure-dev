@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
+	"log"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -37,8 +39,9 @@ type Queue interface {
 // Items can be read by Peek, which will read the next available item.
 // Once the item is processed, consumers are responsible for calling Remove to remove the item from the queue.
 type StorageQueue struct {
-	folder            string
-	itemFileExtension string
+	folder              string
+	itemFileExtension   string
+	itemFileMaxTimeKept time.Duration
 
 	// Standard time library clock, unless mocked in tests
 	clock clock.Clock
@@ -71,7 +74,7 @@ type itemEntry struct {
 }
 
 // Creates the storage-based queue.
-func NewStorageQueue(folder string, itemFileExtension string) (*StorageQueue, error) {
+func NewStorageQueue(folder string, itemFileExtension string, itemFileMaxTimeKept time.Duration) (*StorageQueue, error) {
 	if err := os.MkdirAll(folder, osutil.PermissionDirectory); err != nil {
 		return nil, fmt.Errorf("failed to create storage queue folder: %w", err)
 	}
@@ -81,9 +84,10 @@ func NewStorageQueue(folder string, itemFileExtension string) (*StorageQueue, er
 	}
 
 	storage := StorageQueue{
-		folder:            folder,
-		itemFileExtension: itemFileExtension,
-		clock:             clock.New(),
+		folder:              folder,
+		itemFileExtension:   itemFileExtension,
+		itemFileMaxTimeKept: itemFileMaxTimeKept,
+		clock:               clock.New(),
 	}
 	return &storage, nil
 }
@@ -138,7 +142,8 @@ func (stg *StorageQueue) Peek() (*StoredItem, error) {
 	latestIndex := -1
 	now := stg.clock.Now()
 	for i, item := range items {
-		if now.Sub(item.readyTime) >= 0 {
+		timeSinceReady := now.Sub(item.readyTime)
+		if timeSinceReady >= 0 && timeSinceReady < stg.itemFileMaxTimeKept {
 			if latestIndex == -1 || item.fileModTime.Before(leastRecentTime) {
 				leastRecentTime = item.fileModTime
 				latestIndex = i
@@ -201,20 +206,54 @@ func (stg *StorageQueue) Cleanup(ctx context.Context, done chan (struct{})) {
 		case <-ctx.Done():
 			return
 		default:
-			if !file.IsDir() {
-				name := file.Name()
-				if strings.HasSuffix(name, ".tmp") {
-					info, err := file.Info()
-					if err == nil && stg.clock.Since(info.ModTime()) > tempFileTtl {
-						_ = os.Remove(filepath.Join(stg.folder, name))
-					}
-				} else if strings.HasSuffix(name, stg.itemFileExtension) {
-					if _, ok := parseFileName(name); !ok {
-						_ = os.Remove(filepath.Join(stg.folder, name))
-					}
-				}
+			if file.IsDir() {
+				continue
 			}
+
+			stg.checkFileForCleanup(file)
 		}
+	}
+}
+
+func (stg *StorageQueue) checkFileForCleanup(file fs.DirEntry) {
+	name := file.Name()
+	if strings.HasSuffix(name, ".tmp") {
+		stg.checkTempFileForCleanup(file)
+	} else if strings.HasSuffix(name, stg.itemFileExtension) {
+		stg.checkItemFileForCleanup(file)
+	}
+}
+
+func (stg *StorageQueue) checkTempFileForCleanup(file fs.DirEntry) {
+	info, err := file.Info()
+	if err != nil {
+		log.Printf("failed to retrieve old tmp file info for %s: %s", file.Name(), err)
+		return
+	}
+
+	if stg.clock.Since(info.ModTime()) >= tempFileTtl {
+		stg.cleanupItem(file, "old tmp")
+	}
+}
+
+func (stg *StorageQueue) checkItemFileForCleanup(file fs.DirEntry) {
+	item, ok := parseFileName(file.Name())
+
+	if !ok {
+		stg.cleanupItem(file, "unparsable item")
+		return
+	}
+
+	if stg.clock.Since(item.readyTime) >= stg.itemFileMaxTimeKept {
+		stg.cleanupItem(file, "old item")
+	}
+}
+
+func (stg *StorageQueue) cleanupItem(file fs.DirEntry, itemType string) {
+	err := removeIfExists(filepath.Join(stg.folder, file.Name()))
+
+	if err != nil {
+		log.Printf("failed to remove %s file: %s", itemType, err)
 	}
 }
 

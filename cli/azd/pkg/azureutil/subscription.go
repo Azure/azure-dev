@@ -6,10 +6,10 @@ package azureutil
 import (
 	"strings"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/tools"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 )
 
-type Subs []tools.AzCliSubscriptionInfo
+type Subs []azcli.AzCliSubscriptionInfo
 
 func (s Subs) Len() int { return len(s) }
 func (s Subs) Less(i, j int) bool {

@@ -7,10 +7,12 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/commands"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools"
+	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/docker"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/swa"
 )
 
 type ServiceConfig struct {
@@ -77,17 +79,17 @@ func (sc *ServiceConfig) GetService(ctx context.Context, project *Project, env *
 func (sc *ServiceConfig) GetServiceTarget(ctx context.Context, env *environment.Environment, scope *environment.DeploymentScope) (*ServiceTarget, error) {
 	var target ServiceTarget
 
-	azCli := commands.GetAzCliFromContext(ctx)
+	azCli := azcli.GetAzCli(ctx)
 
 	switch sc.Host {
 	case "", string(AppServiceTarget):
 		target = NewAppServiceTarget(sc, env, scope, azCli)
 	case string(ContainerAppTarget):
-		target = NewContainerAppTarget(sc, env, scope, azCli, tools.NewDocker(tools.DockerArgs{}))
+		target = NewContainerAppTarget(sc, env, scope, azCli, docker.NewDocker(docker.DockerArgs{}), input.GetConsole(ctx))
 	case string(AzureFunctionTarget):
 		target = NewFunctionAppTarget(sc, env, scope, azCli)
 	case string(StaticWebAppTarget):
-		target = NewStaticWebAppTarget(sc, env, scope, azCli, tools.NewSwaCli())
+		target = NewStaticWebAppTarget(sc, env, scope, azCli, swa.NewSwaCli())
 	default:
 		return nil, fmt.Errorf("unsupported host '%s' for service '%s'", sc.Host, sc.Name)
 	}
@@ -113,7 +115,7 @@ func (sc *ServiceConfig) GetFrameworkService(ctx context.Context, env *environme
 	// For containerized applications we use a nested framework service
 	if sc.Host == string(ContainerAppTarget) {
 		sourceFramework := frameworkService
-		frameworkService = NewDockerProject(sc, env, tools.NewDocker(tools.DockerArgs{}), sourceFramework)
+		frameworkService = NewDockerProject(sc, env, docker.NewDocker(docker.DockerArgs{}), sourceFramework)
 	}
 
 	return &frameworkService, nil

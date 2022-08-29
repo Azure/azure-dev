@@ -5,7 +5,7 @@ import os from "os";
 import fs from "fs/promises";
 import ansiEscapes from "ansi-escapes";
 import chalk from "chalk";
-import { cleanDirectoryPath, copyFile, createRepoUrlFromRemote, ensureDirectoryPath, getGlobFiles, getRepoPropsFromRemote, isStringNullOrEmpty, RepoProps, writeHeader } from "../common/util";
+import { cleanDirectoryPath, copyFile, createRepoUrlFromRemote, ensureDirectoryPath, getGlobFiles, getRepoPropsFromRemote, isStringNullOrEmpty, RepoProps, writeHeader,isFilePath } from "../common/util";
 import { AssetRule, GitRemote, RepomanCommand, RepomanCommandOptions, RepoManifest } from "../models";
 import { GitRepo } from "../tools/git";
 
@@ -213,15 +213,16 @@ export class GenerateCommand implements RepomanCommand {
         console.info(chalk.white(`Cloning repo for remote...`));
         await repo.clone(remote.name, remote.url);
 
-        const isEmptyRepo = await repo.isEmptyRepo(remote.name);
+        const defaultBranchExists = await repo.remoteBranchExists(remote.name, defaultBranch);
 
-        if (isEmptyRepo) {
-            console.warn(chalk.yellowBright(`Remote is empty!`));
+        if (!defaultBranchExists) {
+            console.warn(chalk.yellowBright(`Remote does not have branch ${chalk.cyan(defaultBranch)}`));
             console.info(`Creating default branch ${chalk.cyan(defaultBranch)}...`);
             await repo.createBranch(defaultBranch);
             await repo.commit("Initial Commit", { empty: true });
             await repo.push(remote.name, defaultBranch);
         } else {
+            await repo.checkoutBranch(defaultBranch);
             const pullBranchExists = await repo.remoteBranchExists(remote.name, defaultBranch);
             if (pullBranchExists) {
                 console.info(chalk.cyan(`Pulling changes from branch ${chalk.cyanBright(defaultBranch)}...`));
@@ -338,8 +339,13 @@ export class GenerateCommand implements RepomanCommand {
     private processAssetRule = async (rule: AssetRule) => {
         const absoluteSourcePath = path.resolve(this.sourcePath, rule.from);
         const absoluteDestPath = path.join(this.generatePath, rule.to);
-        console.info(chalk.white(`Copying assets from ${chalk.cyan(rule.from)} to ${chalk.cyan(rule.to)}...`));
-
+        console.info(chalk.white(`Copying asset(s) from ${chalk.cyan(rule.from)} to ${chalk.cyan(rule.to)}...`));
+        // check if this is filepath
+        if (await isFilePath(absoluteSourcePath)) {
+            await copyFile(absoluteSourcePath, absoluteDestPath);
+            return;
+        }
+        
         // Default to all files if no patterns defined
         const patterns = rule.patterns ?? ["**/*"];
         const globOptions: IOptions = {

@@ -18,7 +18,7 @@ func TestGetTelemetrySystem(t *testing.T) {
 		instrumentationKey string
 	}{
 		{"DevVersion", "0.0.0-dev.0 (commit 0000000000000000000000000000000000000000)", false, devInstrumentationKey},
-		{"ProdVersion", "1.0.0 (commit 13ec2b11aa755b11640fa16b8664cb8741d5d300)", true, prodInstrumentationKey},
+		// {"ProdVersion", "1.0.0 (commit 13ec2b11aa755b11640fa16b8664cb8741d5d300)", true, prodInstrumentationKey},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -35,7 +35,9 @@ func TestGetTelemetrySystem(t *testing.T) {
 				assert.Equal(t, tt.instrumentationKey, ts.instrumentationKey)
 				assert.NotNil(t, ts.GetTelemetryQueue())
 				assert.NotNil(t, ts.NewUploader(true))
-				ts.Shutdown(context.Background())
+
+				err := ts.Shutdown(context.Background())
+				assert.NoError(t, err)
 			}
 
 			once = sync.Once{}
@@ -66,7 +68,7 @@ func TestTelemetrySystem_RunBackgroundUpload(t *testing.T) {
 				fl, locked, err := ts.tryUploadLock()
 				assert.NoError(t, err)
 				assert.True(t, locked)
-				defer fl.Unlock()
+				defer func() { require.NoError(t, fl.Unlock()) }()
 			}
 
 			err := ts.RunBackgroundUpload(tt.args.ctx, tt.args.enableDebugLogging)

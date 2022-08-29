@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 package provisioning
 
 import (
@@ -8,17 +11,13 @@ import (
 	"time"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools"
+	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/output"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 )
 
-const defaultProgressTitle string = "Creating Azure resources"
+const defaultProgressTitle string = "Provisioning Azure resources"
 const succeededProvisioningState string = "Succeeded"
-
-type ResourceManager interface {
-	GetDeploymentResourceOperations(ctx context.Context, subscriptionId string, deploymentName string) ([]tools.AzCliResourceOperation, error)
-	GetResourceTypeDisplayName(ctx context.Context, subscriptionId string, resourceId string, resourceType infra.AzureResourceType) (string, error)
-	GetWebAppResourceTypeDisplayName(ctx context.Context, subscriptionId string, resourceId string) (string, error)
-}
 
 // ProvisioningProgressDisplay displays interactive progress for an ongoing Azure provisioning operation.
 type ProvisioningProgressDisplay struct {
@@ -26,28 +25,38 @@ type ProvisioningProgressDisplay struct {
 	createdResources map[string]bool
 	subscriptionId   string
 	deploymentName   string
-	resourceManager  ResourceManager
+	resourceManager  infra.ResourceManager
+	console          input.Console
 }
 
-func NewProvisioningProgressDisplay(rm ResourceManager, subscriptionId string, deploymentName string) ProvisioningProgressDisplay {
+func NewProvisioningProgressDisplay(rm infra.ResourceManager, console input.Console, subscriptionId string, deploymentName string) ProvisioningProgressDisplay {
 	return ProvisioningProgressDisplay{
 		createdResources: map[string]bool{},
 		subscriptionId:   subscriptionId,
 		deploymentName:   deploymentName,
 		resourceManager:  rm,
+		console:          console,
 	}
 }
 
 // ReportProgress reports the current deployment progress, setting the currently executing operation title and logging progress.
-func (display *ProvisioningProgressDisplay) ReportProgress(ctx context.Context, setOperationTitle func(string), logProgress func(string)) {
+func (display *ProvisioningProgressDisplay) ReportProgress(ctx context.Context) (*DeployProgress, error) {
+	progress := DeployProgress{
+		Timestamp:  time.Now(),
+		Message:    defaultProgressTitle,
+		Operations: nil,
+	}
+
 	operations, err := display.resourceManager.GetDeploymentResourceOperations(ctx, display.subscriptionId, display.deploymentName)
 	if err != nil {
 		// Status display is best-effort activity.
-		return
+		return &progress, err
 	}
 
+	progress.Operations = operations
+
 	succeededCount := 0
-	newlyDeployedResources := []*tools.AzCliResourceOperation{}
+	newlyDeployedResources := []*azcli.AzCliResourceOperation{}
 
 	for i := range operations {
 		if operations[i].Properties.ProvisioningState == succeededProvisioningState {
@@ -64,8 +73,7 @@ func (display *ProvisioningProgressDisplay) ReportProgress(ctx context.Context, 
 		return time.Time.Before(newlyDeployedResources[i].Properties.Timestamp, newlyDeployedResources[j].Properties.Timestamp)
 	})
 
-	display.logNewlyCreatedResources(ctx, newlyDeployedResources, logProgress)
-
+	display.logNewlyCreatedResources(ctx, newlyDeployedResources)
 	status := ""
 
 	if len(operations) > 0 {
@@ -74,10 +82,13 @@ func (display *ProvisioningProgressDisplay) ReportProgress(ctx context.Context, 
 		status = defaultProgressTitle
 	}
 
-	setOperationTitle(status)
+	progress.Timestamp = time.Now()
+	progress.Message = status
+
+	return &progress, nil
 }
 
-func (display *ProvisioningProgressDisplay) logNewlyCreatedResources(ctx context.Context, resources []*tools.AzCliResourceOperation, logProgress func(string)) {
+func (display *ProvisioningProgressDisplay) logNewlyCreatedResources(ctx context.Context, resources []*azcli.AzCliResourceOperation) {
 	for _, newResource := range resources {
 		resourceTypeName := newResource.Properties.TargetResource.ResourceType
 		resourceTypeDisplayName, err := display.resourceManager.GetResourceTypeDisplayName(
@@ -91,7 +102,7 @@ func (display *ProvisioningProgressDisplay) logNewlyCreatedResources(ctx context
 		// Don't log resource types for Azure resources that we do not have a translation of the resource type for.
 		// This will be improved on in a future iteration.
 		if resourceTypeDisplayName != "" {
-			logProgress(formatCreatedResourceLog(resourceTypeDisplayName, newResource.Properties.TargetResource.ResourceName))
+			display.console.Message(ctx, formatCreatedResourceLog(resourceTypeDisplayName, newResource.Properties.TargetResource.ResourceName))
 			resourceTypeName = resourceTypeDisplayName
 		}
 
@@ -107,11 +118,12 @@ func (display *ProvisioningProgressDisplay) logNewlyCreatedResources(ctx context
 
 func formatCreatedResourceLog(resourceTypeDisplayName string, resourceName string) string {
 	return fmt.Sprintf(
-		"Created %s: %s",
+		"%s %s: %s",
+		output.WithSuccessFormat("Created"),
 		resourceTypeDisplayName,
-		resourceName)
+		output.WithHighLightFormat(resourceName))
 }
 
 func formatProgressTitle(succeededCount int, totalCount int) string {
-	return fmt.Sprintf("Creating Azure resources (%d of ~%d completed)", succeededCount, totalCount)
+	return fmt.Sprintf("Provisioning Azure resources (%d of ~%d completed)", succeededCount, totalCount)
 }

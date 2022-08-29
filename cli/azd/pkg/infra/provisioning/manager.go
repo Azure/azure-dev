@@ -1,70 +1,102 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 package provisioning
 
 import (
 	"context"
 	"fmt"
+	"io"
+	"log"
 	"strings"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/azureutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/spin"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 )
 
+// Manages the orchestration of infrastructure provisioning
 type Manager struct {
-	azCli       tools.AzCli
+	azCli       azcli.AzCli
 	env         environment.Environment
 	provider    Provider
-	interactive bool
+	formatter   output.Formatter
+	writer      io.Writer
 	console     input.Console
+	interactive bool
 }
 
 // Prepares for an infrastructure provision operation
-func (m *Manager) Preview(ctx context.Context, interactive bool) (*PreviewResult, error) {
-	previewResult, err := m.preview(ctx, interactive)
+func (m *Manager) Preview(ctx context.Context) (*PreviewResult, error) {
+	previewResult, err := m.preview(ctx)
 	if err != nil {
 		return nil, err
-	}
-
-	updated, err := m.ensureParameters(ctx, &previewResult.Preview)
-	if err != nil {
-		return nil, err
-	}
-
-	if updated {
-		if err := m.provider.UpdatePlan(ctx, previewResult.Preview); err != nil {
-			return nil, fmt.Errorf("updating deployment parameters: %w", err)
-		}
-
-		if err := m.env.Save(); err != nil {
-			return nil, fmt.Errorf("saving env file: %w", err)
-		}
 	}
 
 	return previewResult, nil
 }
 
+// Gets the latest deployment details for the specified scope
+func (m *Manager) GetDeployment(ctx context.Context, scope Scope) (*DeployResult, error) {
+	var deployResult *DeployResult
+
+	err := m.runAction("Retrieving Azure Deployment", m.interactive, func(spinner *spin.Spinner) error {
+		queryTask := m.provider.GetDeployment(ctx, scope)
+
+		go func() {
+			for progress := range queryTask.Progress() {
+				m.updateSpinnerTitle(spinner, progress.Message)
+			}
+		}()
+
+		go m.monitorInteraction(spinner, queryTask.Interactive())
+
+		result, err := queryTask.Await()
+		if err != nil {
+			return err
+		}
+
+		deployResult = result
+
+		return nil
+	})
+
+	if err != nil {
+		return nil, fmt.Errorf("error retrieving deployment: %w", err)
+	}
+
+	return deployResult, nil
+}
+
 // Deploys the Azure infrastructure for the specified project
-func (m *Manager) Deploy(ctx context.Context, preview *Preview, interactive bool) (*DeployResult, error) {
+func (m *Manager) Deploy(ctx context.Context, deployment *Deployment, scope Scope) (*DeployResult, error) {
 	// Ensure that a location has been set prior to provisioning
-	location, err := m.ensureLocation(ctx, preview)
+	location, err := m.ensureLocation(ctx, deployment)
 	if err != nil {
 		return nil, err
 	}
 
 	// Apply the infrastructure deployment
-	deployResult, err := m.deploy(ctx, location, preview, interactive)
+	deployResult, err := m.deploy(ctx, location, deployment, scope)
 	if err != nil {
 		return nil, err
+	}
+
+	if err := UpdateEnvironment(&m.env, &deployResult.Deployment.Outputs); err != nil {
+		return nil, fmt.Errorf("updating environment with deployment outputs: %w", err)
 	}
 
 	return deployResult, nil
 }
 
 // Destroys the Azure infrastructure for the specified project
-func (m *Manager) Destroy(ctx context.Context, preview *Preview, interactive bool) (*DestroyResult, error) {
+func (m *Manager) Destroy(ctx context.Context, deployment *Deployment, options DestroyOptions) (*DestroyResult, error) {
 	// Call provisioning provider to destroy the infrastructure
-	destroyResult, err := m.destroy(ctx, preview, interactive)
+	destroyResult, err := m.destroy(ctx, deployment, options)
 	if err != nil {
 		return nil, err
 	}
@@ -84,19 +116,19 @@ func (m *Manager) Destroy(ctx context.Context, preview *Preview, interactive boo
 }
 
 // Previews the infrastructure provisioning and orchestrates interactive terminal operations
-func (m *Manager) preview(ctx context.Context, interactive bool) (*PreviewResult, error) {
+func (m *Manager) preview(ctx context.Context) (*PreviewResult, error) {
 	var previewResult *PreviewResult
 
-	previewAndReportProgress := func(spinner *spin.Spinner) error {
+	err := m.runAction("Preparing infrastructure provisioning", m.interactive, func(spinner *spin.Spinner) error {
 		previewTask := m.provider.Preview(ctx)
 
 		go func() {
 			for progress := range previewTask.Progress() {
-				spinner.Println(fmt.Sprintf("%s...", progress.Message))
+				m.updateSpinnerTitle(spinner, progress.Message)
 			}
 		}()
 
-		go monitorInteraction(spinner, previewTask.Interactive())
+		go m.monitorInteraction(spinner, previewTask.Interactive())
 
 		result, err := previewTask.Await()
 		if err != nil {
@@ -106,39 +138,35 @@ func (m *Manager) preview(ctx context.Context, interactive bool) (*PreviewResult
 		previewResult = result
 
 		return nil
-	}
-
-	spinner := spin.NewSpinner("Preparing infrastructure provisioning")
-	defer spinner.Stop()
-
-	err := previewAndReportProgress(spinner)
+	})
 
 	if err != nil {
 		return nil, fmt.Errorf("previewing infrastructure: %w", err)
 	}
 
-	spinner.Println("Prepared infrastructure provisioning")
+	m.console.Message(ctx, "\nPrepared infrastructure provisioning")
 
 	return previewResult, nil
 }
 
 // Applies the specified infrastructure provisioning and orchestrates the interactive terminal operations
-func (m *Manager) deploy(ctx context.Context, location string, preview *Preview, interactive bool) (*DeployResult, error) {
+func (m *Manager) deploy(ctx context.Context, location string, deployment *Deployment, scope Scope) (*DeployResult, error) {
 	var deployResult *DeployResult
 
-	deployAndReportProgress := func(spinner *spin.Spinner) error {
-		provisioningScope := NewSubscriptionProvisioningScope(m.azCli, location, m.env.GetSubscriptionId(), m.env.GetEnvName())
-		deployTask := m.provider.Deploy(ctx, preview, provisioningScope)
+	err := m.runAction("Provisioning Azure resources", m.interactive, func(spinner *spin.Spinner) error {
+		deployTask := m.provider.Deploy(ctx, deployment, scope)
 
 		go func() {
-			for progressReport := range deployTask.Progress() {
-				if interactive {
-					m.showDeployProgress(*progressReport, spinner)
+			for progress := range deployTask.Progress() {
+				m.updateSpinnerTitle(spinner, progress.Message)
+
+				if m.formatter.Kind() == output.JsonFormat {
+					m.writeJsonOutput(ctx, progress.Operations)
 				}
 			}
 		}()
 
-		go monitorInteraction(spinner, deployTask.Interactive())
+		go m.monitorInteraction(spinner, deployTask.Interactive())
 
 		result, err := deployTask.Await()
 		if err != nil {
@@ -148,36 +176,35 @@ func (m *Manager) deploy(ctx context.Context, location string, preview *Preview,
 		deployResult = result
 
 		return nil
-	}
-
-	spinner := spin.NewSpinner("Deploying Azure Resources")
-	defer spinner.Stop()
-
-	err := deployAndReportProgress(spinner)
+	})
 
 	if err != nil {
 		return nil, fmt.Errorf("error deploying infrastructure: %w", err)
 	}
 
-	spinner.Println("Azure resource deployment complete")
+	if m.formatter.Kind() == output.JsonFormat {
+		m.writeJsonOutput(ctx, deployResult.Operations)
+	}
+
+	m.console.Message(ctx, "\nAzure resource provisioning completed successfully")
 
 	return deployResult, nil
 }
 
 // Destroys the specified infrastructure provisioning and orchestrates the interactive terminal operations
-func (m *Manager) destroy(ctx context.Context, preview *Preview, interactive bool) (*DestroyResult, error) {
+func (m *Manager) destroy(ctx context.Context, deployment *Deployment, options DestroyOptions) (*DestroyResult, error) {
 	var destroyResult *DestroyResult
 
-	destroyWithProgress := func(spinner *spin.Spinner) error {
-		destroyTask := m.provider.Destroy(ctx, preview)
+	err := m.runAction("Destroying Azure resources", m.interactive, func(spinner *spin.Spinner) error {
+		destroyTask := m.provider.Destroy(ctx, deployment, options)
 
 		go func() {
-			for destroyProgress := range destroyTask.Progress() {
-				spinner.Title(fmt.Sprintf("%s...", destroyProgress.Message))
+			for progress := range destroyTask.Progress() {
+				m.updateSpinnerTitle(spinner, progress.Message)
 			}
 		}()
 
-		go monitorInteraction(spinner, destroyTask.Interactive())
+		go m.monitorInteraction(spinner, destroyTask.Interactive())
 
 		result, err := destroyTask.Await()
 		if err != nil {
@@ -187,41 +214,22 @@ func (m *Manager) destroy(ctx context.Context, preview *Preview, interactive boo
 		destroyResult = result
 
 		return nil
-	}
-
-	spinner := spin.NewSpinner("Destroying Azure resources")
-	defer spinner.Stop()
-
-	err := destroyWithProgress(spinner)
+	})
 
 	if err != nil {
 		return nil, fmt.Errorf("error destroying Azure resources: %w", err)
 	}
 
-	spinner.Println("Destroyed Azure resources")
+	m.console.Message(ctx, "\nDestroyed Azure resources")
 
 	return destroyResult, nil
 }
 
-// Creates a progress message from the provisioning progress report
-func (m *Manager) showDeployProgress(progressReport DeployProgress, spinner *spin.Spinner) {
-	succeededCount := 0
-
-	for _, resourceOperation := range progressReport.Operations {
-		if resourceOperation.Properties.ProvisioningState == "Succeeded" {
-			succeededCount++
-		}
-	}
-
-	status := fmt.Sprintf("Creating Azure resources (%d of ~%d completed) ", succeededCount, len(progressReport.Operations))
-	spinner.Title(status)
-}
-
-// Ensures a provisioning location has been identified within the preview or prompts the user for input
-func (m *Manager) ensureLocation(ctx context.Context, preview *Preview) (string, error) {
+// Ensures a provisioning location has been identified within the deployment or prompts the user for input
+func (m *Manager) ensureLocation(ctx context.Context, deployment *Deployment) (string, error) {
 	var location string
 
-	for key, param := range preview.Parameters {
+	for key, param := range deployment.Parameters {
 		if key == "location" {
 			location = fmt.Sprint(param.Value)
 			if strings.TrimSpace(location) != "" {
@@ -235,7 +243,7 @@ func (m *Manager) ensureLocation(ctx context.Context, preview *Preview) (string,
 		// user on every deployment if they don't have a `location` parameter in their bicep file.
 		// When we store it, we should store it /per environment/ not as a property of the entire
 		// project.
-		selected, err := m.console.PromptLocation(ctx, "Please select an Azure location to use to store deployment metadata:")
+		selected, err := azureutil.PromptLocation(ctx, "Please select an Azure location to use to store deployment metadata:")
 		if err != nil {
 			return "", fmt.Errorf("prompting for deployment metadata region: %w", err)
 		}
@@ -246,51 +254,55 @@ func (m *Manager) ensureLocation(ctx context.Context, preview *Preview) (string,
 	return location, nil
 }
 
-// Ensures the provisioning parameters are valid and prompts the user for input as needed
-func (m *Manager) ensureParameters(ctx context.Context, preview *Preview) (bool, error) {
-	if len(preview.Parameters) == 0 {
-		return false, nil
+func (m *Manager) runAction(title string, interactive bool, action func(spinner *spin.Spinner) error) error {
+	var spinner *spin.Spinner
+
+	if interactive {
+		spinner = spin.NewSpinner(title)
+		defer spinner.Stop()
+		defer m.console.SetWriter(nil)
+
+		spinner.Start()
+		m.console.SetWriter(spinner)
 	}
 
-	updatedParameters := false
-	for key, param := range preview.Parameters {
-		// If this parameter has a default, then there is no need for us to configure it
-		if param.HasDefaultValue() {
+	return action(spinner)
+}
+
+// Updates the spinner title during interactive console session
+func (m *Manager) updateSpinnerTitle(spinner *spin.Spinner, message string) {
+	if spinner == nil {
+		return
+	}
+
+	spinner.Title(fmt.Sprintf("%s...", message))
+}
+
+func (m *Manager) writeJsonOutput(ctx context.Context, output any) {
+	err := m.formatter.Format(output, m.writer, nil)
+	if err != nil {
+		log.Printf("error formatting output: %s", err.Error())
+	}
+}
+
+// Monitors the interactive channel and starts/stops the terminal spinner as needed
+func (m *Manager) monitorInteraction(spinner *spin.Spinner, interactiveChannel <-chan bool) {
+	for isInteractive := range interactiveChannel {
+		if spinner == nil {
 			continue
 		}
-		if !param.HasValue() {
-			userValue, err := m.console.Prompt(ctx, input.ConsoleOptions{
-				Message: fmt.Sprintf("Please enter a value for the '%s' deployment parameter:", key),
-			})
 
-			if err != nil {
-				return false, fmt.Errorf("prompting for deployment parameter: %w", err)
-			}
-
-			param.Value = userValue
-
-			saveParameter, err := m.console.Confirm(ctx, input.ConsoleOptions{
-				Message: "Save the value in the environment for future use",
-			})
-
-			if err != nil {
-				return false, fmt.Errorf("prompting to save deployment parameter: %w", err)
-			}
-
-			if saveParameter {
-				m.env.Values[key] = userValue
-			}
-
-			updatedParameters = true
+		if isInteractive {
+			spinner.Stop()
+		} else {
+			spinner.Start()
 		}
 	}
-
-	return updatedParameters, nil
 }
 
 // Creates a new instance of the Provisioning Manager
-func NewManager(ctx context.Context, env environment.Environment, projectPath string, options Options, interactive bool, console input.Console, cliArgs tools.NewCliToolArgs) (*Manager, error) {
-	infraProvider, err := NewProvider(&env, projectPath, options, console, cliArgs)
+func NewManager(ctx context.Context, env environment.Environment, projectPath string, infraOptions Options, interactive bool) (*Manager, error) {
+	infraProvider, err := NewProvider(ctx, &env, projectPath, infraOptions)
 	if err != nil {
 		return nil, fmt.Errorf("error creating infra provider: %w", err)
 	}
@@ -300,25 +312,19 @@ func NewManager(ctx context.Context, env environment.Environment, projectPath st
 		return nil, err
 	}
 
-	if console == nil {
-		console = input.NewConsole(interactive)
-	}
+	azCli := azcli.GetAzCli(ctx)
+	console := input.GetConsole(ctx)
+	formatter := output.GetFormatter(ctx)
+	writer := output.GetWriter(ctx)
+	interactive = interactive && formatter.Kind() == output.NoneFormat
 
 	return &Manager{
-		azCli:       cliArgs.AzCli,
+		azCli:       azCli,
 		env:         env,
 		provider:    infraProvider,
-		interactive: interactive,
+		formatter:   formatter,
+		writer:      writer,
 		console:     console,
+		interactive: interactive,
 	}, nil
-}
-
-func monitorInteraction(spinner *spin.Spinner, interactiveChannel <-chan bool) {
-	for isInteractive := range interactiveChannel {
-		if isInteractive {
-			spinner.Stop()
-		} else {
-			spinner.Start()
-		}
-	}
 }

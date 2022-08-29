@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 package provisioning
 
 import (
@@ -9,6 +12,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 )
 
 type TestProvider struct {
@@ -30,51 +34,82 @@ func (p *TestProvider) RequiredExternalTools() []tools.ExternalTool {
 func (p *TestProvider) Preview(ctx context.Context) *async.InteractiveTaskWithProgress[*PreviewResult, *PreviewProgress] {
 	return async.RunInteractiveTaskWithProgress(
 		func(asyncContext *async.InteractiveTaskContextWithProgress[*PreviewResult, *PreviewProgress]) {
-			asyncContext.SetProgress(&PreviewProgress{Message: "Starting preview", Timestamp: time.Now()})
+			asyncContext.SetProgress(&PreviewProgress{Message: "Preparing deployment", Timestamp: time.Now()})
 
-			params := make(map[string]PreviewInputParameter)
-			params["location"] = PreviewInputParameter{Value: p.env.Values["AZURE_LOCATION"]}
+			params := make(map[string]InputParameter)
+			params["location"] = InputParameter{Value: p.env.Values["AZURE_LOCATION"]}
 
 			previewResult := PreviewResult{
-				Preview: Preview{
+				Deployment: Deployment{
 					Parameters: params,
-					Outputs:    make(map[string]PreviewOutputParameter),
+					Outputs:    make(map[string]OutputParameter),
 				},
 			}
 
-			asyncContext.SetProgress(&PreviewProgress{Message: "Finishing preview", Timestamp: time.Now()})
+			asyncContext.SetProgress(&PreviewProgress{Message: "Deployment preparation completed", Timestamp: time.Now()})
 			asyncContext.SetResult(&previewResult)
 		})
 }
 
-func (p *TestProvider) UpdatePlan(ctx context.Context, preview Preview) error {
-	return nil
-}
-
-// Provisioning the infrastructure within the specified template
-func (p *TestProvider) Deploy(ctx context.Context, preview *Preview, scope Scope) *async.InteractiveTaskWithProgress[*DeployResult, *DeployProgress] {
+func (p *TestProvider) GetDeployment(ctx context.Context, scope Scope) *async.InteractiveTaskWithProgress[*DeployResult, *DeployProgress] {
 	return async.RunInteractiveTaskWithProgress(
 		func(asyncContext *async.InteractiveTaskContextWithProgress[*DeployResult, *DeployProgress]) {
-			asyncContext.SetProgress(&DeployProgress{Operations: []tools.AzCliResourceOperation{}, Timestamp: time.Now()})
+			asyncContext.SetProgress(&DeployProgress{
+				Message:    "Looking up deployment",
+				Operations: []azcli.AzCliResourceOperation{},
+				Timestamp:  time.Now(),
+			})
 
-			deployResult := DeployResult{
-				Operations: []tools.AzCliResourceOperation{},
-				Outputs:    preview.Outputs,
+			deployment := Deployment{
+				Parameters: make(map[string]InputParameter),
+				Outputs:    make(map[string]OutputParameter),
 			}
 
-			asyncContext.SetProgress(&DeployProgress{Operations: []tools.AzCliResourceOperation{}, Timestamp: time.Now()})
+			deployResult := DeployResult{
+				Operations: []azcli.AzCliResourceOperation{},
+				Deployment: &deployment,
+			}
+
 			asyncContext.SetResult(&deployResult)
 		})
 }
 
-func (p *TestProvider) Destroy(ctx context.Context, preview *Preview) *async.InteractiveTaskWithProgress[*DestroyResult, *DestroyProgress] {
+// Provisioning the infrastructure within the specified template
+func (p *TestProvider) Deploy(ctx context.Context, deployment *Deployment, scope Scope) *async.InteractiveTaskWithProgress[*DeployResult, *DeployProgress] {
+	return async.RunInteractiveTaskWithProgress(
+		func(asyncContext *async.InteractiveTaskContextWithProgress[*DeployResult, *DeployProgress]) {
+			asyncContext.SetProgress(&DeployProgress{
+				Message:    "Deploying azure resources",
+				Operations: []azcli.AzCliResourceOperation{},
+				Timestamp:  time.Now(),
+			})
+
+			deployment := Deployment{
+				Parameters: make(map[string]InputParameter),
+				Outputs:    make(map[string]OutputParameter),
+			}
+
+			deployResult := DeployResult{
+				Operations: []azcli.AzCliResourceOperation{},
+				Deployment: &deployment,
+			}
+
+			asyncContext.SetProgress(&DeployProgress{Operations: []azcli.AzCliResourceOperation{}, Timestamp: time.Now()})
+			asyncContext.SetResult(&deployResult)
+		})
+}
+
+func (p *TestProvider) Destroy(ctx context.Context, deployment *Deployment, options DestroyOptions) *async.InteractiveTaskWithProgress[*DestroyResult, *DestroyProgress] {
 	return async.RunInteractiveTaskWithProgress(
 		func(asyncContext *async.InteractiveTaskContextWithProgress[*DestroyResult, *DestroyProgress]) {
-			asyncContext.SetProgress(&DestroyProgress{Message: "Starting destroy", Timestamp: time.Now()})
+			asyncContext.SetProgress(&DestroyProgress{
+				Message:   "Starting destroy",
+				Timestamp: time.Now(),
+			})
 
 			destroyResult := DestroyResult{
-				Resources: []tools.AzCliResource{},
-				Outputs:   preview.Outputs,
+				Resources: []azcli.AzCliResource{},
+				Outputs:   deployment.Outputs,
 			}
 
 			err := asyncContext.Interact(func() error {
@@ -103,11 +138,11 @@ func (p *TestProvider) Destroy(ctx context.Context, preview *Preview) *async.Int
 		})
 }
 
-func NewTestProvider(env *environment.Environment, projectPath string, options Options, console input.Console) Provider {
+func NewTestProvider(ctx context.Context, env *environment.Environment, projectPath string, options Options) Provider {
 	return &TestProvider{
 		env:         env,
 		projectPath: projectPath,
 		options:     options,
-		console:     console,
+		console:     input.GetConsole(ctx),
 	}
 }

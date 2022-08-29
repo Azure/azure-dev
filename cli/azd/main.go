@@ -25,8 +25,8 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/telemetry"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
+	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/blang/semver/v4"
-	"github.com/fatih/color"
 	"github.com/spf13/pflag"
 )
 
@@ -57,14 +57,14 @@ func main() {
 			// This is a dev build (i.e. built using `go install without setting a version`) - don't print a warning in this case
 			log.Printf("eliding update message for dev build")
 		} else if latestVersion.GT(curVersion) {
-			fmt.Printf(color.YellowString("warning: your version of azd is out of date, you have %s and the latest version is %s\n"), curVersion.String(), latestVersion.String())
+			fmt.Printf(output.WithWarningFormat("warning: your version of azd is out of date, you have %s and the latest version is %s\n"), curVersion.String(), latestVersion.String())
 			fmt.Println()
-			fmt.Println(color.YellowString(`To update to the latest version, run:`))
+			fmt.Println(output.WithWarningFormat(`To update to the latest version, run:`))
 
 			if runtime.GOOS == "windows" {
-				fmt.Println(color.YellowString(`powershell -ex AllSigned -c "Invoke-RestMethod 'https://aka.ms/install-azd.ps1' | Invoke-Expression"`))
+				fmt.Println(output.WithWarningFormat(`powershell -ex AllSigned -c "Invoke-RestMethod 'https://aka.ms/install-azd.ps1' | Invoke-Expression"`))
 			} else {
-				fmt.Println(color.YellowString(`curl -fsSL https://aka.ms/install-azd.sh | bash`))
+				fmt.Println(output.WithWarningFormat(`curl -fsSL https://aka.ms/install-azd.sh | bash`))
 			}
 		}
 	}

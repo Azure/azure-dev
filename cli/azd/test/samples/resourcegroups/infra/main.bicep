@@ -17,13 +17,13 @@ param deleteAfterTime string = dateTimeAdd(utcNow('o'), 'PT1H')
 
 var tags = { 'azd-env-name': includeEnvNameTag == 'true' ? name : '', DeleteAfter: deleteAfterTime }
 
-resource resourceGroup 'Microsoft.Resources/resourceGroups@2021-04-01' = {
+resource rg 'Microsoft.Resources/resourceGroups@2021-04-01' = {
   name: resourceGroupName
   location: location
   tags: tags
 }
 
-resource resourceGroup2 'Microsoft.Resources/resourceGroups@2021-04-01' = if (createMultipleResourceGroups == 'true') {
+resource rg2 'Microsoft.Resources/resourceGroups@2021-04-01' = if (createMultipleResourceGroups == 'true') {
   name: '${resourceGroupName}2'
   location: location
   tags: tags

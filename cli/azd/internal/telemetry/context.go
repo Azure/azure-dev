@@ -9,7 +9,6 @@ import (
 	"runtime"
 
 	"github.com/azure/azure-dev/cli/azd/internal"
-	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil/osversion"
 	"github.com/google/uuid"
 	"go.opentelemetry.io/otel/attribute"
@@ -120,6 +119,5 @@ func isRunningInGitHubActions() bool {
 }
 
 func WithTelemetryContext(ctx context.Context) context.Context {
-	ctx = context.WithValue(ctx, environment.AzdContextKey, "test")
 	return ctx
 }

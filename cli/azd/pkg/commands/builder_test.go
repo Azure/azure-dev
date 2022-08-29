@@ -4,20 +4,20 @@ import (
 	"context"
 	"testing"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
 )
 
 func TestBasicBuild(t *testing.T) {
-
 	testAction := ActionFunc(
-		func(context.Context, *cobra.Command, []string, *environment.AzdContext) error {
+		func(context.Context, *cobra.Command, []string, *azdcontext.AzdContext) error {
 			return nil
 		},
 	)
 
-	rootOptions := &GlobalCommandOptions{
+	rootOptions := &internal.GlobalCommandOptions{
 		EnvironmentName:    "test",
 		EnableDebugLogging: false,
 		EnableTelemetry:    true,

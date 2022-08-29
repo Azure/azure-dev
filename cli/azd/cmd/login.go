@@ -10,15 +10,17 @@ import (
 	"os"
 	"time"
 
+	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/commands"
-	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
 
-func loginCmd(rootOptions *commands.GlobalCommandOptions) *cobra.Command {
+func loginCmd(rootOptions *internal.GlobalCommandOptions) *cobra.Command {
 	cmd := commands.Build(
 		&loginAction{
 			rootOptions: rootOptions,
@@ -37,20 +39,18 @@ func loginCmd(rootOptions *commands.GlobalCommandOptions) *cobra.Command {
 }
 
 type loginAction struct {
-	rootOptions     *commands.GlobalCommandOptions
+	rootOptions     *internal.GlobalCommandOptions
 	onlyCheckStatus bool
 	useDeviceCode   bool
 }
 
 var _ commands.Action = &loginAction{}
 
-func (la *loginAction) Run(ctx context.Context, cmd *cobra.Command, args []string, azdCtx *environment.AzdContext) error {
-	formatter, err := output.GetFormatter(cmd)
-	if err != nil {
-		return err
-	}
+func (la *loginAction) Run(ctx context.Context, cmd *cobra.Command, args []string, azdCtx *azdcontext.AzdContext) error {
+	formatter := output.GetFormatter(ctx)
+	writer := output.GetWriter(ctx)
 
-	azCli := commands.GetAzCliFromContext(ctx)
+	azCli := azcli.GetAzCli(ctx)
 	if err := tools.EnsureInstalled(ctx, azCli); err != nil {
 		return err
 	}
@@ -62,8 +62,8 @@ func (la *loginAction) Run(ctx context.Context, cmd *cobra.Command, args []strin
 	}
 
 	token, err := azCli.GetAccessToken(ctx)
-	if errors.Is(err, tools.ErrAzCliNotLoggedIn) {
-		return tools.ErrAzCliNotLoggedIn
+	if errors.Is(err, azcli.ErrAzCliNotLoggedIn) {
+		return azcli.ErrAzCliNotLoggedIn
 	} else if err != nil {
 		return fmt.Errorf("checking auth status: %w", err)
 	}
@@ -81,7 +81,7 @@ func (la *loginAction) Run(ctx context.Context, cmd *cobra.Command, args []strin
 	res.Status = "success"
 	res.ExpiresOn = token.ExpiresOn
 
-	return formatter.Format(res, cmd.OutOrStdout(), nil)
+	return formatter.Format(res, writer, nil)
 }
 
 func (la *loginAction) SetupFlags(persistent *pflag.FlagSet, local *pflag.FlagSet) {
@@ -91,9 +91,9 @@ func (la *loginAction) SetupFlags(persistent *pflag.FlagSet, local *pflag.FlagSe
 
 // ensureLoggedIn checks to see if the user is currently logged in. If not, the equivalent of `az login` is run.
 func ensureLoggedIn(ctx context.Context) error {
-	azCli := commands.GetAzCliFromContext(ctx)
+	azCli := azcli.GetAzCli(ctx)
 	_, err := azCli.GetAccessToken(ctx)
-	if errors.Is(err, tools.ErrAzCliNotLoggedIn) || errors.Is(err, tools.ErrAzCliRefreshTokenExpired) {
+	if errors.Is(err, azcli.ErrAzCliNotLoggedIn) || errors.Is(err, azcli.ErrAzCliRefreshTokenExpired) {
 		if err := runLogin(ctx, false); err != nil {
 			return fmt.Errorf("logging in: %w", err)
 		}
@@ -107,7 +107,7 @@ func ensureLoggedIn(ctx context.Context) error {
 // runLogin runs an interactive login. When running in a Codespace or Remote Container, a device code based is
 // preformed since the default browser login needs UI. A device code login can be forced with `forceDeviceCode`.
 func runLogin(ctx context.Context, forceDeviceCode bool) error {
-	azCli := commands.GetAzCliFromContext(ctx)
+	azCli := azcli.GetAzCli(ctx)
 	useDeviceCode := forceDeviceCode || os.Getenv(CodespacesEnvVarName) == "true" || os.Getenv(RemoteContainersEnvVarName) == "true"
 
 	return azCli.Login(ctx, useDeviceCode, os.Stdout)

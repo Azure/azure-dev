@@ -5,40 +5,38 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/internal/telemetry"
+	"github.com/azure/azure-dev/cli/azd/internal/telemetry/events"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
+	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/output"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/spf13/cobra"
-	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/codes"
 )
 
 // Build builds a Cobra command, attaching an action
-func Build(action Action, rootOptions *GlobalCommandOptions, use string, short string, long string) *cobra.Command {
+// All command should be built with this command builder vs manually instantiating cobra commands.
+func Build(action Action, rootOptions *internal.GlobalCommandOptions, use string, short string, long string) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   use,
 		Short: short,
 		Long:  long,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			ctx := context.Background()
-			azdCtx, err := environment.NewAzdContext()
+			ctx, azdCtx, err := createRootContext(context.Background(), cmd, rootOptions)
 			if err != nil {
-				return fmt.Errorf("creating context: %w", err)
+				return err
 			}
 
-			// Set the global options in the go context
-			ctx = context.WithValue(ctx, environment.AzdContextKey, azdCtx)
-			ctx = context.WithValue(ctx, environment.OptionsContextKey, rootOptions)
-
-			// Create and set the AzCli that will be used for the command
-			azCli := GetAzCliFromContext(ctx)
-			ctx = context.WithValue(ctx, environment.AzdCliContextKey, azCli)
-
-			// This is done to simply mock behavior. We could either get the full command invocation path
-			// using GetCommandPath, or more than likely, ask for the event name as a Builder argument
-			ctx, span := otel.Tracer("azd").Start(ctx, "azure-dev.commands."+use)
+			// Note: CommandPath is constructed using the Use member on each command up to the root.
+			// It does not contain user input, and is safe for telemetry emission.
+			cmdPath := cmd.CommandPath()
+			ctx, span := telemetry.GetTracer().Start(ctx, events.GetCommandEventName(cmdPath))
 			defer span.End()
 
 			// inner trace
-			ctx, inner := otel.Tracer("azd").Start(ctx, "azure-dev.commands.inner."+use)
+			ctx, inner := telemetry.GetTracer().Start(ctx, "azure-dev.commands.inner."+use)
 			time.Sleep(time.Duration(200) * time.Millisecond)
 			inner.End()
 
@@ -47,7 +45,7 @@ func Build(action Action, rootOptions *GlobalCommandOptions, use string, short s
 				span.SetStatus(codes.Error, "UnknownError")
 			}
 
-			return err
+			return action.Run(ctx, cmd, args, azdCtx)
 		},
 	}
 	cmd.Flags().BoolP("help", "h", false, fmt.Sprintf("Gets help for %s.", cmd.Name()))
@@ -56,4 +54,44 @@ func Build(action Action, rootOptions *GlobalCommandOptions, use string, short s
 		cmd.Flags(),
 	)
 	return cmd
+}
+
+// Create the core context for use in all Azd commands
+// Registers context values for azCli, formatter, writer, console and more.
+func createRootContext(ctx context.Context, cmd *cobra.Command, rootOptions *internal.GlobalCommandOptions) (context.Context, *azdcontext.AzdContext, error) {
+	azdCtx, err := azdcontext.NewAzdContext()
+	if err != nil {
+		return ctx, nil, fmt.Errorf("creating context: %w", err)
+	}
+
+	// Set the global options in the go context
+	ctx = azdcontext.WithAzdContext(ctx, azdCtx)
+	ctx = internal.WithCommandOptions(ctx, *rootOptions)
+
+	azCliArgs := azcli.NewAzCliArgs{
+		EnableDebug:     rootOptions.EnableDebugLogging,
+		EnableTelemetry: rootOptions.EnableTelemetry,
+	}
+
+	// Create and set the AzCli that will be used for the command
+	azCli := azcli.NewAzCli(azCliArgs)
+	ctx = azcli.WithAzCli(ctx, azCli)
+
+	// Attempt to get the user specified formatter from the command args
+	formatter, err := output.GetCommandFormatter(cmd)
+	if err != nil {
+		return ctx, nil, err
+	}
+
+	if formatter != nil {
+		ctx = output.WithFormatter(ctx, formatter)
+	}
+
+	writer := output.GetDefaultWriter()
+	ctx = output.WithWriter(ctx, writer)
+
+	console := input.NewConsole(!rootOptions.NoPrompt, writer, formatter)
+	ctx = input.WithConsole(ctx, console)
+
+	return ctx, azdCtx, nil
 }

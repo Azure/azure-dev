@@ -1,32 +1,25 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 package infra
 
 import (
 	"context"
 	"encoding/json"
-	"errors"
-	"fmt"
-	"net/http"
 	"strings"
 	"testing"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/commands"
 	"github.com/azure/azure-dev/cli/azd/pkg/executil"
-	"github.com/azure/azure-dev/cli/azd/pkg/httpUtil"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools"
-	"github.com/azure/azure-dev/cli/azd/test/helpers"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
+	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/stretchr/testify/require"
 )
 
-var gblCmdOptions = &commands.GlobalCommandOptions{
-	EnableDebugLogging: false,
-	EnableTelemetry:    true,
-}
-
-var mockSubDeploymentOperations = []tools.AzCliResourceOperation{
+var mockSubDeploymentOperations = []azcli.AzCliResourceOperation{
 	{
 		Id: "resource-group-id",
-		Properties: tools.AzCliResourceOperationProperties{
-			TargetResource: tools.AzCliResourceOperationTargetResource{
+		Properties: azcli.AzCliResourceOperationProperties{
+			TargetResource: azcli.AzCliResourceOperationTargetResource{
 				ResourceType:  string(AzureResourceTypeResourceGroup),
 				Id:            "resource-group-id",
 				ResourceName:  "resource-group-name",
@@ -36,8 +29,8 @@ var mockSubDeploymentOperations = []tools.AzCliResourceOperation{
 	},
 	{
 		Id: "deployment-id",
-		Properties: tools.AzCliResourceOperationProperties{
-			TargetResource: tools.AzCliResourceOperationTargetResource{
+		Properties: azcli.AzCliResourceOperationProperties{
+			TargetResource: azcli.AzCliResourceOperationTargetResource{
 				ResourceType:  string(AzureResourceTypeDeployment),
 				Id:            "group-deployment-id",
 				ResourceName:  "group-deployment-name",
@@ -47,12 +40,12 @@ var mockSubDeploymentOperations = []tools.AzCliResourceOperation{
 	},
 }
 
-var mockGroupDeploymentOperations = []tools.AzCliResourceOperation{
+var mockGroupDeploymentOperations = []azcli.AzCliResourceOperation{
 	{
 		Id: "website-resource-id",
-		Properties: tools.AzCliResourceOperationProperties{
+		Properties: azcli.AzCliResourceOperationProperties{
 			ProvisioningOperation: "Create",
-			TargetResource: tools.AzCliResourceOperationTargetResource{
+			TargetResource: azcli.AzCliResourceOperationTargetResource{
 				ResourceType:  string(AzureResourceTypeWebSite),
 				Id:            "website-resource-id",
 				ResourceName:  "website-resource-name",
@@ -62,9 +55,9 @@ var mockGroupDeploymentOperations = []tools.AzCliResourceOperation{
 	},
 	{
 		Id: "storage-resource-id",
-		Properties: tools.AzCliResourceOperationProperties{
+		Properties: azcli.AzCliResourceOperationProperties{
 			ProvisioningOperation: "Create",
-			TargetResource: tools.AzCliResourceOperationTargetResource{
+			TargetResource: azcli.AzCliResourceOperationTargetResource{
 				ResourceType:  string(AzureResourceTypeStorageAccount),
 				Id:            "storage-resource-id",
 				ResourceName:  "storage-resource-name",
@@ -73,12 +66,13 @@ var mockGroupDeploymentOperations = []tools.AzCliResourceOperation{
 		},
 	},
 }
-var mockNestedGroupDeploymentOperations = []tools.AzCliResourceOperation{
+
+var mockNestedGroupDeploymentOperations = []azcli.AzCliResourceOperation{
 	{
 		Id: "website-resource-id",
-		Properties: tools.AzCliResourceOperationProperties{
+		Properties: azcli.AzCliResourceOperationProperties{
 			ProvisioningOperation: "Create",
-			TargetResource: tools.AzCliResourceOperationTargetResource{
+			TargetResource: azcli.AzCliResourceOperationTargetResource{
 				ResourceType:  string(AzureResourceTypeWebSite),
 				Id:            "website-resource-id",
 				ResourceName:  "website-resource-name",
@@ -88,9 +82,9 @@ var mockNestedGroupDeploymentOperations = []tools.AzCliResourceOperation{
 	},
 	{
 		Id: "storage-resource-id",
-		Properties: tools.AzCliResourceOperationProperties{
+		Properties: azcli.AzCliResourceOperationProperties{
 			ProvisioningOperation: "Create",
-			TargetResource: tools.AzCliResourceOperationTargetResource{
+			TargetResource: azcli.AzCliResourceOperationTargetResource{
 				ResourceType:  string(AzureResourceTypeStorageAccount),
 				Id:            "storage-resource-id",
 				ResourceName:  "storage-resource-name",
@@ -100,8 +94,8 @@ var mockNestedGroupDeploymentOperations = []tools.AzCliResourceOperation{
 	},
 	{
 		Id: "nested-deployment-id",
-		Properties: tools.AzCliResourceOperationProperties{
-			TargetResource: tools.AzCliResourceOperationTargetResource{
+		Properties: azcli.AzCliResourceOperationProperties{
+			TargetResource: azcli.AzCliResourceOperationTargetResource{
 				ResourceType:  string(AzureResourceTypeDeployment),
 				Id:            "nested-group-deployment-id",
 				ResourceName:  "nested-group-deployment-name",
@@ -111,50 +105,31 @@ var mockNestedGroupDeploymentOperations = []tools.AzCliResourceOperation{
 	},
 }
 
-var mockHttpClient = &helpers.MockHttpUtil{
-	SendRequestFn: func(req *httpUtil.HttpRequestMessage) (*httpUtil.HttpResponseMessage, error) {
-		if req.Method == http.MethodPost && strings.Contains(req.Url, "providers/Microsoft.ResourceGraph/resources") {
-			jsonResponse := `{"data": [], "total_records": 0}`
-
-			response := &httpUtil.HttpResponseMessage{
-				Status: 200,
-				Body:   []byte(jsonResponse),
-			}
-
-			return response, nil
-		}
-
-		return nil, fmt.Errorf("Mock not registered for request")
-	},
-}
-
 func TestGetDeploymentResourceOperationsSuccess(t *testing.T) {
 	subCalls := 0
 	groupCalls := 0
 
-	execFunc := func(ctx context.Context, args executil.RunArgs) (executil.RunResult, error) {
-		if helpers.CallStackContains("ListSubscriptionDeploymentOperations") {
-			subCalls++
+	mockContext := mocks.NewMockContext(context.Background())
+	mockContext.CommandRunner.When(func(args executil.RunArgs, command string) bool {
+		return strings.Contains(command, "az deployment operation sub list")
+	}).RespondFn(func(args executil.RunArgs) (executil.RunResult, error) {
+		subCalls++
 
-			subJsonBytes, _ := json.Marshal(mockSubDeploymentOperations)
-			return executil.NewRunResult(0, string(subJsonBytes), ""), nil
-		}
+		subJsonBytes, _ := json.Marshal(mockSubDeploymentOperations)
+		return executil.NewRunResult(0, string(subJsonBytes), ""), nil
+	})
 
-		if helpers.CallStackContains("ListResourceGroupDeploymentOperations") {
-			groupCalls++
+	mockContext.CommandRunner.When(func(args executil.RunArgs, command string) bool {
+		return strings.Contains(command, "az deployment operation group list")
+	}).RespondFn(func(args executil.RunArgs) (executil.RunResult, error) {
+		groupCalls++
 
-			groupJsonBytes, _ := json.Marshal(mockGroupDeploymentOperations)
-			return executil.NewRunResult(0, string(groupJsonBytes), ""), nil
-		}
+		groupJsonBytes, _ := json.Marshal(mockGroupDeploymentOperations)
+		return executil.NewRunResult(0, string(groupJsonBytes), ""), nil
+	})
 
-		return executil.NewRunResult(0, "", ""), nil
-	}
-
-	azCli := createTestAzCli(execFunc)
-	ctx := helpers.CreateTestContext(context.Background(), gblCmdOptions, azCli, mockHttpClient)
-
-	arm := NewAzureResourceManager(azCli)
-	operations, err := arm.GetDeploymentResourceOperations(ctx, "subscription-id", "deployment-name")
+	arm := NewAzureResourceManager(*mockContext.Context)
+	operations, err := arm.GetDeploymentResourceOperations(*mockContext.Context, "subscription-id", "deployment-name")
 	require.NotNil(t, operations)
 	require.Nil(t, err)
 
@@ -167,25 +142,25 @@ func TestGetDeploymentResourceOperationsFail(t *testing.T) {
 	subCalls := 0
 	groupCalls := 0
 
-	execFunc := func(ctx context.Context, args executil.RunArgs) (executil.RunResult, error) {
-		if helpers.CallStackContains("ListSubscriptionDeploymentOperations") {
-			subCalls++
-			return executil.NewRunResult(1, "", "error getting resource operations"), nil
-		}
+	mockContext := mocks.NewMockContext(context.Background())
+	mockContext.CommandRunner.When(func(args executil.RunArgs, command string) bool {
+		return strings.Contains(command, "az deployment operation sub list")
+	}).RespondFn(func(args executil.RunArgs) (executil.RunResult, error) {
+		subCalls++
 
-		if helpers.CallStackContains("ListResourceGroupDeploymentOperations") {
-			groupCalls++
-			return executil.NewRunResult(0, "[]", ""), nil
-		}
+		return executil.NewRunResult(1, "", "error getting resource operations"), nil
+	})
 
-		return executil.RunResult{}, errors.New("No matching mock found")
-	}
+	mockContext.CommandRunner.When(func(args executil.RunArgs, command string) bool {
+		return strings.Contains(command, "az deployment operation group list")
+	}).RespondFn(func(args executil.RunArgs) (executil.RunResult, error) {
+		groupCalls++
 
-	azCli := createTestAzCli(execFunc)
-	ctx := helpers.CreateTestContext(context.Background(), gblCmdOptions, azCli, mockHttpClient)
+		return executil.NewRunResult(0, "[]", ""), nil
+	})
 
-	arm := NewAzureResourceManager(azCli)
-	operations, err := arm.GetDeploymentResourceOperations(ctx, "subscription-id", "deployment-name")
+	arm := NewAzureResourceManager(*mockContext.Context)
+	operations, err := arm.GetDeploymentResourceOperations(*mockContext.Context, "subscription-id", "deployment-name")
 
 	require.Nil(t, operations)
 	require.NotNil(t, err)
@@ -198,25 +173,25 @@ func TestGetDeploymentResourceOperationsNoResourceGroup(t *testing.T) {
 	subCalls := 0
 	groupCalls := 0
 
-	execFunc := func(ctx context.Context, args executil.RunArgs) (executil.RunResult, error) {
-		if helpers.CallStackContains("ListSubscriptionDeploymentOperations") {
-			subCalls++
-			return executil.NewRunResult(0, "[]", ""), nil
-		}
+	mockContext := mocks.NewMockContext(context.Background())
+	mockContext.CommandRunner.When(func(args executil.RunArgs, command string) bool {
+		return strings.Contains(command, "az deployment operation sub list")
+	}).RespondFn(func(args executil.RunArgs) (executil.RunResult, error) {
+		subCalls++
 
-		if helpers.CallStackContains("ListResourceGroupDeploymentOperations") {
-			groupCalls++
-			return executil.NewRunResult(0, "[]", ""), nil
-		}
+		return executil.NewRunResult(0, "[]", ""), nil
+	})
 
-		return executil.RunResult{}, errors.New("No matching mock found")
-	}
+	mockContext.CommandRunner.When(func(args executil.RunArgs, command string) bool {
+		return strings.Contains(command, "az deployment operation group list")
+	}).RespondFn(func(args executil.RunArgs) (executil.RunResult, error) {
+		groupCalls++
 
-	azCli := createTestAzCli(execFunc)
-	ctx := helpers.CreateTestContext(context.Background(), gblCmdOptions, azCli, mockHttpClient)
+		return executil.NewRunResult(0, "[]", ""), nil
+	})
 
-	arm := NewAzureResourceManager(azCli)
-	operations, err := arm.GetDeploymentResourceOperations(ctx, "subscription-id", "deployment-name")
+	arm := NewAzureResourceManager(*mockContext.Context)
+	operations, err := arm.GetDeploymentResourceOperations(*mockContext.Context, "subscription-id", "deployment-name")
 
 	require.NotNil(t, operations)
 	require.Nil(t, err)
@@ -229,46 +204,36 @@ func TestGetDeploymentResourceOperationsWithNestedDeployments(t *testing.T) {
 	subCalls := 0
 	groupCalls := 0
 
-	execFunc := func(ctx context.Context, args executil.RunArgs) (executil.RunResult, error) {
-		if helpers.CallStackContains("ListSubscriptionDeploymentOperations") {
-			subCalls++
+	mockContext := mocks.NewMockContext(context.Background())
+	mockContext.CommandRunner.When(func(args executil.RunArgs, command string) bool {
+		return strings.Contains(command, "az deployment operation sub list")
+	}).RespondFn(func(args executil.RunArgs) (executil.RunResult, error) {
+		subCalls++
 
-			subJsonBytes, _ := json.Marshal(mockSubDeploymentOperations)
-			return executil.NewRunResult(0, string(subJsonBytes), ""), nil
+		subJsonBytes, _ := json.Marshal(mockSubDeploymentOperations)
+		return executil.NewRunResult(0, string(subJsonBytes), ""), nil
+	})
+
+	mockContext.CommandRunner.When(func(args executil.RunArgs, command string) bool {
+		return strings.Contains(command, "az deployment operation group list")
+	}).RespondFn(func(args executil.RunArgs) (executil.RunResult, error) {
+		groupCalls++
+
+		if groupCalls == 1 {
+			nestedGroupJsonBytes, _ := json.Marshal(mockNestedGroupDeploymentOperations)
+			return executil.NewRunResult(0, string(nestedGroupJsonBytes), ""), nil
+		} else {
+			groupJsonBytes, _ := json.Marshal(mockGroupDeploymentOperations)
+			return executil.NewRunResult(0, string(groupJsonBytes), ""), nil
 		}
+	})
 
-		if helpers.CallStackContains("ListResourceGroupDeploymentOperations") {
-			groupCalls++
-
-			if groupCalls == 1 {
-				nestedGroupJsonBytes, _ := json.Marshal(mockNestedGroupDeploymentOperations)
-				return executil.NewRunResult(0, string(nestedGroupJsonBytes), ""), nil
-			} else {
-				groupJsonBytes, _ := json.Marshal(mockGroupDeploymentOperations)
-				return executil.NewRunResult(0, string(groupJsonBytes), ""), nil
-			}
-		}
-
-		return executil.RunResult{}, errors.New("No matching mock found")
-	}
-
-	azCli := createTestAzCli(execFunc)
-	ctx := helpers.CreateTestContext(context.Background(), gblCmdOptions, azCli, mockHttpClient)
-
-	arm := NewAzureResourceManager(azCli)
-	operations, err := arm.GetDeploymentResourceOperations(ctx, "subscription-id", "deployment-name")
+	arm := NewAzureResourceManager(*mockContext.Context)
+	operations, err := arm.GetDeploymentResourceOperations(*mockContext.Context, "subscription-id", "deployment-name")
 
 	require.NotNil(t, operations)
 	require.Nil(t, err)
 	require.Len(t, operations, 4)
 	require.Equal(t, 1, subCalls)
 	require.Equal(t, 2, groupCalls)
-}
-
-func createTestAzCli(execFunc func(ctx context.Context, args executil.RunArgs) (executil.RunResult, error)) tools.AzCli {
-	return tools.NewAzCli(tools.NewAzCliArgs{
-		EnableDebug:     false,
-		EnableTelemetry: true,
-		RunWithResultFn: execFunc,
-	})
 }

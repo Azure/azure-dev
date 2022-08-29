@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"regexp"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/joho/godotenv"
 )
@@ -69,6 +70,10 @@ func FromFile(file string) (Environment, error) {
 	return env, nil
 }
 
+func GetEnvironment(azdContext *azdcontext.AzdContext, name string) (Environment, error) {
+	return FromFile(azdContext.GetEnvironmentFilePath(name))
+}
+
 // Empty returns an empty environment, which will be persisted
 // to a given file when saved.
 func Empty(file string) Environment {
@@ -116,6 +121,10 @@ func (e *Environment) GetTenantId() string {
 
 func (e *Environment) SetSubscriptionId(id string) {
 	e.Values[SubscriptionIdEnvVarName] = id
+}
+
+func (e *Environment) GetLocation() string {
+	return e.Values[LocationEnvVarName]
 }
 
 func (e *Environment) SetLocation(location string) {

@@ -8,13 +8,14 @@ import (
 	"errors"
 	"fmt"
 	"log"
-	"strings"
 	"time"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azureutil"
-	"github.com/azure/azure-dev/cli/azd/pkg/commands"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
+	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/sethvargo/go-retry"
 )
 
@@ -46,7 +47,7 @@ func (svc *Service) RequiredExternalTools() []tools.ExternalTool {
 	return requiredTools
 }
 
-func (svc *Service) Deploy(ctx context.Context, azdCtx *environment.AzdContext) (<-chan *ServiceDeploymentChannelResponse, <-chan string) {
+func (svc *Service) Deploy(ctx context.Context, azdCtx *azdcontext.AzdContext) (<-chan *ServiceDeploymentChannelResponse, <-chan string) {
 	result := make(chan *ServiceDeploymentChannelResponse, 1)
 	progress := make(chan string)
 
@@ -91,18 +92,19 @@ func (svc *Service) Deploy(ctx context.Context, azdCtx *environment.AzdContext) 
 
 // GetServiceResourceName attempts to query the azure resource graph and find the resource with the 'azd-service-name' tag set to the service key
 // If not found will assume resource name conventions
+// The resource graph may not be immediately up to date and if not initially found will attempt to retry causing delays in retrieval.
 func GetServiceResourceName(ctx context.Context, resourceGroupName string, serviceName string, env *environment.Environment) (string, error) {
-	azCli := commands.GetAzCliFromContext(ctx)
+	azCli := azcli.GetAzCli(ctx)
 	query := fmt.Sprintf(`resources | 
 		where resourceGroup == '%s' | where tags['azd-service-name'] == '%s' |
 		project id, name, type, tags, location`,
-		// The Resource Graph queries have resource groups all lower-cased
-		// see: https://github.com/Azure/azure-dev/issues/115
-		strings.ToLower(resourceGroupName),
+		resourceGroupName,
 		serviceName)
 
-	var graphQueryResults *tools.AzCliGraphQuery
-	err := retry.Do(ctx, retry.WithMaxRetries(5, retry.NewConstant(2*time.Second)), func(ctx context.Context) error {
+	retryStrategy := osutil.NewRetryStrategy(5, time.Second*2)
+
+	var graphQueryResults *azcli.AzCliGraphQuery
+	err := retry.Do(ctx, retry.WithMaxRetries(retryStrategy.MaxRetries, retry.NewConstant(retryStrategy.RetryBackoff)), func(ctx context.Context) error {
 		queryResult, err := azCli.GraphQuery(ctx, query, []string{env.GetSubscriptionId()})
 		if err != nil {
 			return fmt.Errorf("executing graph query: %s: %w", query, err)
@@ -111,7 +113,7 @@ func GetServiceResourceName(ctx context.Context, resourceGroupName string, servi
 		graphQueryResults = queryResult
 
 		if graphQueryResults.Count == 0 {
-			notFoundError := azureutil.ResourceNotFound(errors.New("azure graph query returned 0 results"))
+			notFoundError := azureutil.ResourceNotFound(fmt.Errorf("azure graph query returned 0 results for resources with group name '%s' and azd-service-name '%s'", resourceGroupName, serviceName))
 			return retry.RetryableError(notFoundError)
 		}
 

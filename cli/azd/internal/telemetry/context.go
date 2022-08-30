@@ -1,7 +1,6 @@
 package telemetry
 
 import (
-	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"net"
@@ -9,9 +8,10 @@ import (
 	"runtime"
 
 	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/internal/telemetry/events"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil/osversion"
 	"github.com/google/uuid"
-	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/sdk/resource"
 	semconv "go.opentelemetry.io/otel/semconv/v1.4.0"
 )
@@ -27,24 +27,13 @@ func newResource() *resource.Resource {
 			semconv.OSVersionKey.String(getOsVersion()),
 			semconv.HostArchKey.String(runtime.GOARCH),
 			semconv.ProcessRuntimeVersionKey.String(runtime.Version()),
-			attribute.String(executionEnvironment, getExecutionEnvironment()),
-			attribute.String(machineIdKey, getMachineId()),
+			events.ExecutionEnvironmentKey.String(getExecutionEnvironment()),
+			events.MachineIdKey.String(getMachineId()),
 		),
 	)
 
 	return r
 }
-
-const (
-	machineIdKey         = "machineId"
-	executionEnvironment = "executionEnvironment"
-	terminalTypeKey      = "terminalType"
-	objectIdKey          = "objectId"
-	tenantIdKey          = "tenantId"
-
-	subscriptionIdKey = "subscriptionId"
-	templateIdKey     = "templateId"
-)
 
 var invalidMacAddresses = map[string]struct{}{
 	"00:00:00:00:00:00": {},
@@ -171,6 +160,9 @@ func getExecutionEnvironment() string {
 	return desktop
 }
 
-func WithTelemetryContext(ctx context.Context) context.Context {
-	return ctx
+// PropagateEnvironmentToSpan propagates the environment values to the given span.
+func PropagateEnvironmentToSpan(env *environment.Environment, span Span) {
+	span.SetAttributes(events.ObjectIdKey.String(env.GetPrincipalId()))
+	span.SetAttributes(events.SubscriptionIdKey.String(env.GetSubscriptionId()))
+	span.SetAttributes(events.TenantIdKey.String(env.GetTenantId()))
 }

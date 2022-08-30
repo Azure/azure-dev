@@ -9,7 +9,6 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/telemetry/events"
-	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil/osversion"
 	"github.com/google/uuid"
 	"go.opentelemetry.io/otel/sdk/resource"
@@ -41,13 +40,17 @@ var invalidMacAddresses = map[string]struct{}{
 	"ac:de:48:00:11:22": {},
 }
 
+func sha256Hash(val string) string {
+	sha := sha256.Sum256([]byte(val))
+	hash := hex.EncodeToString(sha[:])
+	return hash
+}
+
 func getMachineId() string {
 	mac, ok := getMacAddressHash()
 
 	if ok {
-		sha := sha256.Sum256([]byte(mac))
-		hash := hex.EncodeToString(sha[:])
-		return hash
+		return sha256Hash(mac)
 	} else {
 		// No valid mac address, return a GUID instead.
 		return uuid.NewString()
@@ -158,11 +161,4 @@ func getExecutionEnvironment() string {
 	}
 
 	return desktop
-}
-
-// PropagateEnvironmentToSpan propagates the environment values to the given span.
-func PropagateEnvironmentToSpan(env *environment.Environment, span Span) {
-	span.SetAttributes(events.ObjectIdKey.String(env.GetPrincipalId()))
-	span.SetAttributes(events.SubscriptionIdKey.String(env.GetSubscriptionId()))
-	span.SetAttributes(events.TenantIdKey.String(env.GetTenantId()))
 }

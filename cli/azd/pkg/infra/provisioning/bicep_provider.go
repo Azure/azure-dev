@@ -169,7 +169,7 @@ func (p *BicepProvider) Deploy(ctx context.Context, deployment *Deployment, scop
 					case <-done:
 						return
 					case <-time.After(10 * time.Second):
-						progressReport, err := progressDisplay.ReportProgress(ctx, scope)
+						progressReport, err := progressDisplay.ReportProgress(ctx)
 						if err != nil {
 							// We don't want to fail the whole deployment if a progress reporting error occurs
 							log.Printf("error while reporting progress: %s", err.Error())

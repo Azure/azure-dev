@@ -42,6 +42,11 @@ func (s *ResourceGroupScope) Name() string {
 	return s.name
 }
 
+// Gets the resource group name
+func (s *ResourceGroupScope) ResourceGroup() string {
+	return s.resourceGroup
+}
+
 func (s *ResourceGroupScope) Deploy(ctx context.Context, modulePath string, parametersPath string) error {
 	_, err := s.azCli.DeployToResourceGroup(ctx, s.subscriptionId, s.resourceGroup, s.name, modulePath, parametersPath)
 	return err

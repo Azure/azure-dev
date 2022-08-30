@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
@@ -43,7 +44,8 @@ func (at *containerAppTarget) Deploy(ctx context.Context, azdCtx *azdcontext.Azd
 		at.config.Infra.Module = at.config.Name
 	}
 
-	infraManager, err := provisioning.NewManager(ctx, *at.env, at.config.Project.Path, at.config.Infra, true)
+	commandOptions := internal.GetCommandOptions(ctx)
+	infraManager, err := provisioning.NewManager(ctx, *at.env, at.config.Project.Path, at.config.Infra, !commandOptions.NoPrompt)
 	if err != nil {
 		return ServiceDeploymentResult{}, fmt.Errorf("creating provisioning manager: %w", err)
 	}

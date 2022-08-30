@@ -38,14 +38,14 @@ func NewProvisioningProgressDisplay(rm infra.ResourceManager, console input.Cons
 }
 
 // ReportProgress reports the current deployment progress, setting the currently executing operation title and logging progress.
-func (display *ProvisioningProgressDisplay) ReportProgress(ctx context.Context, scope infra.Scope) (*DeployProgress, error) {
+func (display *ProvisioningProgressDisplay) ReportProgress(ctx context.Context) (*DeployProgress, error) {
 	progress := DeployProgress{
 		Timestamp:  time.Now(),
 		Message:    defaultProgressTitle,
 		Operations: nil,
 	}
 
-	operations, err := display.resourceManager.GetDeploymentResourceOperations(ctx, scope)
+	operations, err := display.resourceManager.GetDeploymentResourceOperations(ctx, display.scope)
 	if err != nil {
 		// Status display is best-effort activity.
 		return &progress, err

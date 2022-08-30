@@ -54,6 +54,7 @@ func TestGetTelemetrySystem(t *testing.T) {
 				assert.NoError(t, err)
 			}
 
+			os.Unsetenv(collectTelemetryEnvVar)
 			once = sync.Once{}
 		})
 	}

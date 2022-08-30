@@ -20,6 +20,7 @@ inprogress
 INPROGRESS
 Instrumentor
 mkdir
+networkidle
 OPTARG
 prestart
 printenv

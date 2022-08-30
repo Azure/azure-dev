@@ -15,40 +15,42 @@ import (
 	"go.opentelemetry.io/otel/codes"
 )
 
+// BuildOptions contains the optional parameters for the Build function.
 type BuildOptions struct {
-	// Global options that all commands inherit from rootCmd.
-	GlobalOptions *internal.GlobalCommandOptions
-
-	// Use is the one-line usage message.
-	// Recommended syntax is as follow:
-	//   [ ] identifies an optional argument. Arguments that are not enclosed in brackets are required.
-	//   ... indicates that you can specify multiple values for the previous argument.
-	//   |   indicates mutually exclusive information. You can use the argument to the left of the separator or the
-	//       argument to the right of the separator. You cannot use both arguments in a single use of the command.
-	//   { } delimits a set of mutually exclusive arguments when one of the arguments is required. If the arguments are
-	//       optional, they are enclosed in brackets ([ ]).
-	// Example: add [-F file | -D dir]... [-f format] profile
-	Use string
-
-	// Short is the short description shown in the 'help' output.
-	Short string
-
-	// Long is the long message shown in the 'help <this-command>' output.
+	// Long is the long message shown in the 'help <this-command>' output. If Long is not provided, the Short message is used instead.
 	Long string
 
-	// Disables the telemetry that tracks the command invocation.
-	DisableCommandEventTelemetry bool
+	// Aliases is an array of aliases that can be used instead of the first word in Use.
+	Aliases []string
 }
 
-// Build builds a Cobra command, attaching an action
-// All command should be built with this command builder vs manually instantiating cobra commands.
-func Build(action Action, buildOptions BuildOptions) *cobra.Command {
+// Build builds a Cobra command, attaching an action.
+//
+// All commands should be built with this command builder vs manually instantiating cobra commands.
+//
+// Use is the one-line usage message.
+// Recommended syntax is as follow:
+//
+//	[ ] identifies an optional argument. Arguments that are not enclosed in brackets are required.
+//	... indicates that you can specify multiple values for the previous argument.
+//	|   indicates mutually exclusive information. You can use the argument to the left of the separator or the
+//	    argument to the right of the separator. You cannot use both arguments in a single use of the command.
+//	{ } delimits a set of mutually exclusive arguments when one of the arguments is required. If the arguments are
+//	    optional, they are enclosed in brackets ([ ]).
+//
+// Example: add [-F file | -D dir]... [-f format] profile
+func Build(action Action, rootOptions *internal.GlobalCommandOptions, use string, short string, buildOptions *BuildOptions) *cobra.Command {
+	if buildOptions == nil {
+		buildOptions = &BuildOptions{}
+	}
+
 	cmd := &cobra.Command{
-		Use:   buildOptions.Use,
-		Short: buildOptions.Short,
-		Long:  buildOptions.Long,
+		Use:     use,
+		Short:   short,
+		Long:    buildOptions.Long,
+		Aliases: buildOptions.Aliases,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			ctx, azdCtx, err := createRootContext(context.Background(), cmd, buildOptions.GlobalOptions)
+			ctx, azdCtx, err := createRootContext(context.Background(), cmd, rootOptions)
 			if err != nil {
 				return err
 			}

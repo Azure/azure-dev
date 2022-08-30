@@ -10,6 +10,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
@@ -51,7 +52,7 @@ func (p *TestProvider) Preview(ctx context.Context) *async.InteractiveTaskWithPr
 		})
 }
 
-func (p *TestProvider) GetDeployment(ctx context.Context, scope Scope) *async.InteractiveTaskWithProgress[*DeployResult, *DeployProgress] {
+func (p *TestProvider) GetDeployment(ctx context.Context, scope infra.Scope) *async.InteractiveTaskWithProgress[*DeployResult, *DeployProgress] {
 	return async.RunInteractiveTaskWithProgress(
 		func(asyncContext *async.InteractiveTaskContextWithProgress[*DeployResult, *DeployProgress]) {
 			asyncContext.SetProgress(&DeployProgress{
@@ -75,7 +76,7 @@ func (p *TestProvider) GetDeployment(ctx context.Context, scope Scope) *async.In
 }
 
 // Provisioning the infrastructure within the specified template
-func (p *TestProvider) Deploy(ctx context.Context, deployment *Deployment, scope Scope) *async.InteractiveTaskWithProgress[*DeployResult, *DeployProgress] {
+func (p *TestProvider) Deploy(ctx context.Context, deployment *Deployment, scope infra.Scope) *async.InteractiveTaskWithProgress[*DeployResult, *DeployProgress] {
 	return async.RunInteractiveTaskWithProgress(
 		func(asyncContext *async.InteractiveTaskContextWithProgress[*DeployResult, *DeployProgress]) {
 			asyncContext.SetProgress(&DeployProgress{

@@ -23,17 +23,15 @@ const succeededProvisioningState string = "Succeeded"
 type ProvisioningProgressDisplay struct {
 	// Keeps track of created resources
 	createdResources map[string]bool
-	subscriptionId   string
-	deploymentName   string
 	resourceManager  infra.ResourceManager
 	console          input.Console
+	scope            infra.Scope
 }
 
-func NewProvisioningProgressDisplay(rm infra.ResourceManager, console input.Console, subscriptionId string, deploymentName string) ProvisioningProgressDisplay {
+func NewProvisioningProgressDisplay(rm infra.ResourceManager, console input.Console, scope infra.Scope) ProvisioningProgressDisplay {
 	return ProvisioningProgressDisplay{
 		createdResources: map[string]bool{},
-		subscriptionId:   subscriptionId,
-		deploymentName:   deploymentName,
+		scope:            scope,
 		resourceManager:  rm,
 		console:          console,
 	}
@@ -47,7 +45,7 @@ func (display *ProvisioningProgressDisplay) ReportProgress(ctx context.Context) 
 		Operations: nil,
 	}
 
-	operations, err := display.resourceManager.GetDeploymentResourceOperations(ctx, display.subscriptionId, display.deploymentName)
+	operations, err := display.resourceManager.GetDeploymentResourceOperations(ctx, display.scope)
 	if err != nil {
 		// Status display is best-effort activity.
 		return &progress, err
@@ -92,7 +90,7 @@ func (display *ProvisioningProgressDisplay) logNewlyCreatedResources(ctx context
 	for _, newResource := range resources {
 		resourceTypeName := newResource.Properties.TargetResource.ResourceType
 		resourceTypeDisplayName, err := display.resourceManager.GetResourceTypeDisplayName(
-			ctx, display.subscriptionId, newResource.Properties.TargetResource.Id, infra.AzureResourceType(resourceTypeName))
+			ctx, display.scope.SubscriptionId(), newResource.Properties.TargetResource.Id, infra.AzureResourceType(resourceTypeName))
 
 		if err != nil {
 			// Dynamic resource type translation failed -- fallback to static translation

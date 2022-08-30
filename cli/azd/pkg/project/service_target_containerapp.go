@@ -10,9 +10,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
+	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
@@ -42,7 +44,8 @@ func (at *containerAppTarget) Deploy(ctx context.Context, azdCtx *azdcontext.Azd
 		at.config.Infra.Module = at.config.Name
 	}
 
-	infraManager, err := provisioning.NewManager(ctx, *at.env, at.config.Project.Path, at.config.Infra, false)
+	commandOptions := internal.GetCommandOptions(ctx)
+	infraManager, err := provisioning.NewManager(ctx, *at.env, at.config.Project.Path, at.config.Infra, !commandOptions.NoPrompt)
 	if err != nil {
 		return ServiceDeploymentResult{}, fmt.Errorf("creating provisioning manager: %w", err)
 	}
@@ -93,7 +96,8 @@ func (at *containerAppTarget) Deploy(ctx context.Context, azdCtx *azdcontext.Azd
 	}
 
 	progress <- "Updating container app image reference"
-	scope := provisioning.NewResourceGroupScope(ctx, at.env.GetSubscriptionId(), at.scope.ResourceGroupName(), at.env.GetEnvName())
+	deploymentName := fmt.Sprintf("%s-%s", at.env.GetEnvName(), at.config.Name)
+	scope := infra.NewResourceGroupScope(ctx, at.env.GetSubscriptionId(), at.scope.ResourceGroupName(), deploymentName)
 	deployResult, err := infraManager.Deploy(ctx, &previewResult.Deployment, scope)
 
 	if err != nil {

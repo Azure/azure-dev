@@ -151,7 +151,11 @@ func NewTestProvider(ctx context.Context, env *environment.Environment, projectP
 
 // Registers the Test provider with the provisioning module
 func RegisterTestProvider() {
-	RegisterProvider(Test, func(ctx context.Context, env *environment.Environment, projectPath string, options Options) (Provider, error) {
+	err := RegisterProvider(Test, func(ctx context.Context, env *environment.Environment, projectPath string, options Options) (Provider, error) {
 		return NewTestProvider(ctx, env, projectPath, options), nil
 	})
+
+	if err != nil {
+		panic(err)
+	}
 }

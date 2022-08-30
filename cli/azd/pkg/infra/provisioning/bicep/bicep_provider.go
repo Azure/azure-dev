@@ -676,7 +676,11 @@ func NewBicepProvider(ctx context.Context, env *environment.Environment, project
 
 // Registers the Bicep provider with the provisioning module
 func Register() {
-	RegisterProvider(Bicep, func(ctx context.Context, env *environment.Environment, projectPath string, options Options) (Provider, error) {
+	err := RegisterProvider(Bicep, func(ctx context.Context, env *environment.Environment, projectPath string, options Options) (Provider, error) {
 		return NewBicepProvider(ctx, env, projectPath, options), nil
 	})
+
+	if err != nil {
+		panic(err)
+	}
 }

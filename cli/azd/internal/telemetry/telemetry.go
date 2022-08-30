@@ -27,9 +27,15 @@ import (
 
 const azdAppName = "azd"
 
+// the equivalent of AZURE_CORE_COLLECT_TELEMETRY
+const collectTelemetryEnvVar = "AZURE_DEV_COLLECT_TELEMETRY"
+
 const telemetryItemExtension = ".trn"
-const devInstrumentationKey = "d3b9c006-3680-4300-9862-35fce9ac66c7"
-const prodInstrumentationKey = ""
+const (
+	devInstrumentationKey  = "d3b9c006-3680-4300-9862-35fce9ac66c7"
+	prodInstrumentationKey = ""
+)
+
 const appInsightsMaxIngestionDelay = time.Duration(48) * time.Hour
 
 type TelemetrySystem struct {
@@ -67,8 +73,7 @@ func newResource() *resource.Resource {
 }
 
 func IsTelemetryEnabled() bool {
-	// the equivalent of AZURE_CORE_COLLECT_TELEMETRY
-	return os.Getenv("AZURE_DEV_COLLECT_TELEMETRY") != "no"
+	return os.Getenv(collectTelemetryEnvVar) != "no"
 }
 
 // Returns the singleton TelemetrySystem instance.

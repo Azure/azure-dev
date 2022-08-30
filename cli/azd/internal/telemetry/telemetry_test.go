@@ -2,6 +2,7 @@ package telemetry
 
 import (
 	"context"
+	"os"
 	"sync"
 	"testing"
 
@@ -11,20 +12,33 @@ import (
 )
 
 func TestGetTelemetrySystem(t *testing.T) {
+	type args struct {
+		version                     string
+		disableTelemetryEnvVarValue string
+	}
 	tests := []struct {
-		name               string
-		azdVersion         string
-		expectNil          bool
-		instrumentationKey string
+		name       string
+		args       args
+		expectNil  bool
+		expectIKey string
 	}{
-		{"DevVersion", "0.0.0-dev.0 (commit 0000000000000000000000000000000000000000)", false, devInstrumentationKey},
+		{"DevVersion", args{"0.0.0-dev.0 (commit 0000000000000000000000000000000000000000)", "unset"}, false, devInstrumentationKey},
+		{"DevVersionTelemetryEnabled", args{"0.0.0-dev.0 (commit 0000000000000000000000000000000000000000)", "yes"}, false, devInstrumentationKey},
+		{"DevVersionTelemetryDisabled", args{"0.0.0-dev.0 (commit 0000000000000000000000000000000000000000)", "no"}, true, devInstrumentationKey},
+		//{"ProdVersion", args{"1.0.0 (commit 13ec2b11aa755b11640fa16b8664cb8741d5d300)", "no"}, true, prodInstrumentationKey},
 		// {"ProdVersion", "1.0.0 (commit 13ec2b11aa755b11640fa16b8664cb8741d5d300)", true, prodInstrumentationKey},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			orig := internal.Version
 			defer func() { internal.Version = orig }()
-			internal.Version = tt.azdVersion
+			internal.Version = tt.args.version
+
+			if tt.args.disableTelemetryEnvVarValue == "unset" {
+				os.Unsetenv(collectTelemetryEnvVar)
+			} else {
+				os.Setenv(collectTelemetryEnvVar, tt.args.disableTelemetryEnvVarValue)
+			}
 
 			ts := GetTelemetrySystem()
 
@@ -32,7 +46,7 @@ func TestGetTelemetrySystem(t *testing.T) {
 				assert.Nil(t, ts)
 			} else {
 				require.NotNil(t, ts)
-				assert.Equal(t, tt.instrumentationKey, ts.instrumentationKey)
+				assert.Equal(t, tt.expectIKey, ts.instrumentationKey)
 				assert.NotNil(t, ts.GetTelemetryQueue())
 				assert.NotNil(t, ts.NewUploader(true))
 

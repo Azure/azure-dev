@@ -511,31 +511,16 @@ stages:
         steps: 
           - checkout: self
 
-          - bash: nohup npx -y http-server &
-            displayName: Start server in hosting/ (bash)
-            condition: and(succeeded(), not(contains(variables['Agent.OS'], 'Windows')))
-            workingDirectory: hosting
-
-          - pwsh: |
-              Start-Process npx.cmd `
-                -ArgumentList @('-y', 'http-server') `
-                -NoNewWindow `
-                -PassThru `
-                -RedirectStandardOutput ../server.log
-              Write-Host "Server started, waiting for server to initialize"
-              Start-Sleep -Seconds 15
-            displayName: Start server in hosting/ (pwsh)
-            condition: and(succeeded(), contains(variables['Agent.OS'], 'Windows'))
-            workingDirectory: hosting
-
-          - bash: curl -fsSL http://127.0.0.1:8080/install-azd.sh | bash -s -- --version daily --verbose
+          - bash: ./install-azd.sh --version daily --verbose
             displayName: Install "daily" version
+            workingDirectory: cli/installer/
 
           - pwsh: azd version
             displayName: Run azd version
 
-          - bash: curl -fsSL http://127.0.0.1:8080/install-azd.sh | bash -s -- --version latest --verbose
+          - bash: ./install-azd.sh --version latest --verbose
             displayName: Install "latest" version
+            workingDirectory: cli/installer/
 
           - pwsh: azd version
             displayName: Run azd version (expect no failure)

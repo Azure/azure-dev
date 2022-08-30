@@ -29,7 +29,7 @@ app.UseCors(policy =>
 });
     
 GlobalConfiguration.Configuration  
-.EnableSwagger(c => c.SingleApiVersion("v1", "TS_EF_API"))  
+.EnableSwagger(c => c.SingleApiVersion("v1", "./openapi.yaml"))  
 .EnableSwaggerUi();  
 
 app.MapControllers();

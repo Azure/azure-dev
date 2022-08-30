@@ -41,6 +41,7 @@ type scmProvider interface {
 
 type ciProvider interface {
 	subareaProvider
+	configurePipeline(ctx context.Context) error
 	configureConnection(
 		ctx context.Context,
 		gitRepo *gitRepositoryDetails,

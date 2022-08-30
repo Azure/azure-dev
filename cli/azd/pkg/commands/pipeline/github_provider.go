@@ -9,6 +9,8 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"regexp"
+	"strings"
 
 	githubRemote "github.com/azure/azure-dev/cli/azd/pkg/github"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
@@ -85,9 +87,26 @@ func (p *gitHubScmProvider) configureGitRemote(ctx context.Context, repoPath str
 	return remoteUrl, nil
 }
 
-func (p *gitHubScmProvider) gitRepoDetails(ctx context.Context, remoteUrl string) (*gitRepositoryDetails, error) {
+var gitHubRemoteGitUrlRegex = regexp.MustCompile(`^git@github\.com:(.*?)(?:\.git)?$`)
+var gitHubRemoteHttpsUrlRegex = regexp.MustCompile(`^https://(?:www\.)?github\.com/(.*?)(?:\.git)?$`)
+var ErrRemoteHostIsNotGitHub = errors.New("not a github host")
 
-	return nil, nil
+func (p *gitHubScmProvider) gitRepoDetails(ctx context.Context, remoteUrl string) (*gitRepositoryDetails, error) {
+	slug := ""
+	for _, r := range []*regexp.Regexp{gitHubRemoteGitUrlRegex, gitHubRemoteHttpsUrlRegex} {
+		captures := r.FindStringSubmatch(remoteUrl)
+		if captures != nil {
+			slug = captures[1]
+		}
+	}
+	if slug == "" {
+		return nil, ErrRemoteHostIsNotGitHub
+	}
+	slugParts := strings.Split(slug, "/")
+	return &gitRepositoryDetails{
+		owner:    slugParts[0],
+		repoName: slugParts[1],
+	}, nil
 }
 
 func (p *gitHubScmProvider) preventGitPush(
@@ -124,6 +143,10 @@ func (p *gitHubCiProvider) configureConnection(
 	location string,
 	subscriptionId string,
 	credential json.RawMessage) error {
+	return nil
+}
+
+func (p *gitHubCiProvider) configurePipeline(ctx context.Context) error {
 	return nil
 }
 

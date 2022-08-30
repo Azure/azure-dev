@@ -213,13 +213,11 @@ func (manager *pipelineManager) configure(ctx context.Context) error {
 		return fmt.Errorf("ensuring github remote: %w", err)
 	}
 
-	// config pipeline
-	// err = manager.ciProvider.configurePipeline(
-	// 	ctx,
-	// 	TBD)
-	// if err != nil {
-	// 	return err
-	// }
+	// config pipeline handles setting or creating the provider pipeline to be used
+	err = manager.ciProvider.configurePipeline(ctx)
+	if err != nil {
+		return err
+	}
 
 	// Config CI provider using credential
 	err = manager.ciProvider.configureConnection(

@@ -22,6 +22,9 @@ type BuildOptions struct {
 
 	// Aliases is an array of aliases that can be used instead of the first word in Use.
 	Aliases []string
+
+	// Disables the usage event telemetry associated to the command.
+	DisableCmdUsageEvent bool
 }
 
 // Build builds a Cobra command, attaching an action.
@@ -55,18 +58,21 @@ func Build(action Action, rootOptions *internal.GlobalCommandOptions, use string
 				return err
 			}
 
-			// Note: CommandPath is constructed using the Use member on each command up to the root.
-			// It does not contain user input, and is safe for telemetry emission.
-			cmdPath := cmd.CommandPath()
-			ctx, span := telemetry.GetTracer().Start(ctx, events.GetCommandEventName(cmdPath))
-			defer span.End()
+			if !buildOptions.DisableCmdUsageEvent {
+				// Note: CommandPath is constructed using the Use member on each command up to the root.
+				// It does not contain user input, and is safe for telemetry emission.
+				spanCtx, span := telemetry.GetTracer().Start(ctx, events.GetCommandEventName(cmd.CommandPath()))
+				ctx = spanCtx
+				defer func() {
+					if err != nil {
+						span.SetStatus(codes.Error, "UnknownError")
+					}
 
-			err = action.Run(ctx, cmd, args, azdCtx)
-			if err != nil {
-				span.SetStatus(codes.Error, "UnknownError")
+					span.End()
+				}()
 			}
 
-			return err
+			return action.Run(ctx, cmd, args, azdCtx)
 		},
 	}
 	cmd.Flags().BoolP("help", "h", false, fmt.Sprintf("Gets help for %s.", cmd.Name()))

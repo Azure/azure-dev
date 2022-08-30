@@ -8,13 +8,17 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/fs"
 	"path/filepath"
 	"regexp"
 	"strings"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	githubRemote "github.com/azure/azure-dev/cli/azd/pkg/github"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/git"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/github"
 )
 
@@ -115,6 +119,121 @@ func (p *gitHubScmProvider) preventGitPush(
 	remoteName string,
 	branchName string,
 	console input.Console) (bool, error) {
+	// Don't need to check for preventing push on new created repos
+	// Only check when using an existing repo in case github actions are disabled
+	if !p.newGitHubRepoCreated {
+		slug := gitRepo.owner + "/" + gitRepo.repoName
+		return notifyWhenGitHubActionsAreDisabled(ctx, gitRepo.gitProjectPath, slug, remoteName, branchName, console)
+	}
+	return false, nil
+}
+
+type gitHubActionsEnablingChoice int
+
+const (
+	manualChoice gitHubActionsEnablingChoice = iota
+	cancelChoice
+)
+
+func (selection gitHubActionsEnablingChoice) String() string {
+	switch selection {
+	case manualChoice:
+		return "I have manually enabled GitHub Actions. Continue with pushing my changes."
+	case cancelChoice:
+		return "Exit without pushing my changes. I don't need to run GitHub actions right now."
+	}
+	panic("Tried to convert invalid input gitHubActionsEnablingChoice to string")
+}
+
+func notifyWhenGitHubActionsAreDisabled(
+	ctx context.Context,
+	gitProjectPath,
+	repoSlug string,
+	origin string,
+	branch string,
+	console input.Console) (bool, error) {
+
+	ghCli := github.NewGitHubCli()
+	gitCli := git.NewGitCli()
+	ghActionsInUpstreamRepo, err := ghCli.GitHubActionsExists(ctx, repoSlug)
+	if err != nil {
+		return false, err
+	}
+
+	if ghActionsInUpstreamRepo {
+		// upstream is already listing GitHub actions.
+		// There's no need to check if there are local workflows
+		return false, nil
+	}
+
+	// Upstream has no GitHub actions listed.
+	// See if there's at least one workflow file within .github/workflows
+	ghLocalWorkflowFiles := false
+	defaultGitHubWorkflowPathLocation := filepath.Join(
+		gitProjectPath,
+		".github",
+		"workflows")
+	err = filepath.WalkDir(defaultGitHubWorkflowPathLocation,
+		func(folderName string, file fs.DirEntry, e error) error {
+			if e != nil {
+				return e
+			}
+			fileName := file.Name()
+			fileExtension := filepath.Ext(fileName)
+			if fileExtension == ".yml" || fileExtension == ".yaml" {
+				// ** workflow file found.
+				// Now check if this file is already tracked by git.
+				// If the file is not tracked, it means this is a new file (never pushed to mainstream)
+				// A git untracked file should not be considered as GitHub workflow until it is pushed.
+				newFile, err := gitCli.IsUntrackedFile(ctx, gitProjectPath, folderName)
+				if err != nil {
+					return fmt.Errorf("checking workflow file %w", err)
+				}
+				if !newFile {
+					ghLocalWorkflowFiles = true
+				}
+			}
+
+			return nil
+		})
+
+	if err != nil {
+		return false, fmt.Errorf("Getting GitHub local workflow files %w", err)
+	}
+
+	if ghLocalWorkflowFiles {
+		message := fmt.Sprintf("\n%s\n"+
+			" - If you forked and cloned a template, please enable actions here: %s.\n"+
+			" - Otherwise, check the GitHub Actions permissions here: %s.\n",
+			output.WithHighLightFormat("GitHub actions are currently disabled for your repository."),
+			output.WithHighLightFormat("https://github.com/%s/actions", repoSlug),
+			output.WithHighLightFormat("https://github.com/%s/settings/actions", repoSlug))
+
+		console.Message(ctx, message)
+
+		rawSelection, err := console.Select(ctx, input.ConsoleOptions{
+			Message: "What would you like to do now?",
+			Options: []string{
+				manualChoice.String(),
+				cancelChoice.String(),
+			},
+			DefaultValue: manualChoice,
+		})
+
+		if err != nil {
+			return false, fmt.Errorf("prompting to enable github actions: %w", err)
+		}
+		choice := gitHubActionsEnablingChoice(rawSelection)
+
+		if choice == manualChoice {
+			return false, nil
+		}
+
+		if choice == cancelChoice {
+			return true, nil
+		}
+	}
+
 	return false, nil
 }
 
@@ -138,11 +257,35 @@ func (p *gitHubCiProvider) name() string {
 // ***  ciProvider implementation ******
 func (p *gitHubCiProvider) configureConnection(
 	ctx context.Context,
-	repoSlug *gitRepositoryDetails,
-	environmentName string,
-	location string,
-	subscriptionId string,
-	credential json.RawMessage) error {
+	azdEnvironment environment.Environment,
+	repoDetails *gitRepositoryDetails,
+	credentials json.RawMessage) error {
+
+	repoSlug := repoDetails.owner + "/" + repoDetails.repoName
+	fmt.Printf("Configuring repository %s.\n", repoSlug)
+	fmt.Printf("Setting AZURE_CREDENTIALS GitHub repo secret.\n")
+
+	ghCli := github.NewGitHubCli()
+	if err := ghCli.SetSecret(ctx, repoSlug, "AZURE_CREDENTIALS", string(credentials)); err != nil {
+		return fmt.Errorf("failed setting AZURE_CREDENTIALS secret: %w", err)
+	}
+
+	fmt.Printf("Configuring repository environment.\n")
+
+	for _, envName := range []string{environment.EnvNameEnvVarName, environment.LocationEnvVarName, environment.SubscriptionIdEnvVarName} {
+		fmt.Printf("Setting %s GitHub repo secret.\n", envName)
+
+		if err := ghCli.SetSecret(ctx, repoSlug, envName, azdEnvironment.Values[envName]); err != nil {
+			return fmt.Errorf("failed setting %s secret: %w", envName, err)
+		}
+	}
+
+	fmt.Println()
+	fmt.Printf(
+		`GitHub Action secrets are now configured.
+		See your .github/workflows folder for details on which actions will be enabled.
+		You can view the GitHub Actions here: https://github.com/%s/actions`, repoSlug)
+
 	return nil
 }
 

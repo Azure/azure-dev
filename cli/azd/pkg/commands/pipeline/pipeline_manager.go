@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/azure/azure-dev/cli/azd/internal"
-	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
@@ -65,7 +64,7 @@ func (i *pipelineManager) ensureRemote(ctx context.Context, repositoryPath strin
 	if err != nil {
 		return nil, err
 	}
-
+	gitRepoDetails.gitProjectPath = i.azdCtx.ProjectDirectory()
 	return gitRepoDetails, nil
 }
 
@@ -222,10 +221,8 @@ func (manager *pipelineManager) configure(ctx context.Context) error {
 	// Config CI provider using credential
 	err = manager.ciProvider.configureConnection(
 		ctx,
+		env,
 		gitRepoInfo,
-		env.Values[environment.EnvNameEnvVarName],
-		env.Values[environment.LocationEnvVarName],
-		env.Values[environment.SubscriptionIdEnvVarName],
 		credentials)
 	if err != nil {
 		return err
@@ -259,7 +256,7 @@ func (manager *pipelineManager) configure(ctx context.Context) error {
 		if err != nil {
 			return fmt.Errorf("check git push prevent: %w", err)
 		}
-		// revert user's choice
+		// revert user's choice when prevent git push returns true
 		doPush = !preventPush
 	}
 

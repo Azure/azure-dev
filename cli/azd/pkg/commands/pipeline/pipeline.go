@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 
 	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
@@ -22,8 +23,9 @@ type subareaProvider interface {
 }
 
 type gitRepositoryDetails struct {
-	owner    string
-	repoName string
+	owner          string
+	repoName       string
+	gitProjectPath string
 }
 
 type scmProvider interface {
@@ -44,10 +46,8 @@ type ciProvider interface {
 	configurePipeline(ctx context.Context) error
 	configureConnection(
 		ctx context.Context,
+		azdEnvironment environment.Environment,
 		gitRepo *gitRepositoryDetails,
-		environmentName string,
-		location string,
-		subscriptionId string,
 		credential json.RawMessage) error
 }
 

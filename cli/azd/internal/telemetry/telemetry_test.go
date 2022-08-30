@@ -25,8 +25,11 @@ func TestGetTelemetrySystem(t *testing.T) {
 		{"DevVersion", args{"0.0.0-dev.0 (commit 0000000000000000000000000000000000000000)", "unset"}, false, devInstrumentationKey},
 		{"DevVersionTelemetryEnabled", args{"0.0.0-dev.0 (commit 0000000000000000000000000000000000000000)", "yes"}, false, devInstrumentationKey},
 		{"DevVersionTelemetryDisabled", args{"0.0.0-dev.0 (commit 0000000000000000000000000000000000000000)", "no"}, true, devInstrumentationKey},
-		//{"ProdVersion", args{"1.0.0 (commit 13ec2b11aa755b11640fa16b8664cb8741d5d300)", "no"}, true, prodInstrumentationKey},
-		// {"ProdVersion", "1.0.0 (commit 13ec2b11aa755b11640fa16b8664cb8741d5d300)", true, prodInstrumentationKey},
+
+		// Currently, prod version should always be disabled.
+		{"ProdVersion", args{"1.0.0 (commit 13ec2b11aa755b11640fa16b8664cb8741d5d300)", "no"}, true, prodInstrumentationKey},
+		{"ProdVersion", args{"1.0.0 (commit 13ec2b11aa755b11640fa16b8664cb8741d5d300)", "unset"}, true, prodInstrumentationKey},
+		{"ProdVersion", args{"1.0.0 (commit 13ec2b11aa755b11640fa16b8664cb8741d5d300)", "yes"}, true, prodInstrumentationKey},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

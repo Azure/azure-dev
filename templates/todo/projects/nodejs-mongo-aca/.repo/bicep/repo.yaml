@@ -1,0 +1,141 @@
+templateApi: 1.0.0
+metadata:
+  type: repo
+  name: todo-nodejs-mongo-aca
+  description: ToDo Application with a Node.js API and Azure Cosmos DB API for MongoDB on Azure Container Apps
+
+repo:
+  includeProjectAssets: false
+
+  remotes:
+    - name: azure-samples-main
+      url: git@github.com:Azure-Samples/todo-nodejs-mongo-aca.git
+    - name: azure-samples-staging
+      url: git@github.com:Azure-Samples/todo-nodejs-mongo-aca.git
+      branch: staging
+
+  rewrite:
+    patterns:
+      - "**/azure.@(yml|yaml)"
+      - "**/*.bicep"
+
+  assets:
+    # # Common assets
+    # # Rules for Path Rewrite Only
+    - from: ../../../../../common/infra/bicep
+      to: ./
+      ignore:
+        - "**/*"
+
+    - from: ../../../../../common/infra/bicep/modules
+      to: ./modules
+      ignore:
+        - "**/*"
+
+    - from: ../../../../../../templates/todo/common/infra/modules
+      to: ./modules
+      ignore:
+        - "**/*"
+
+    - from: ../../../../../../common/infra/bicep
+      to: ../
+      ignore:
+        - "**/*"
+
+    - from: ../../../../common/infra/bicep
+      to: ../
+      ignore:
+        - "**/*"
+
+    - from: ../../api/js
+      to: ./src/api
+      ignore: 
+        - "**/*"
+
+    - from: ../../web/react-fluent
+      to: ./src/web
+      ignore: 
+        - "**/*"
+        
+    # End Path Rewrite Rules
+    - from: ../../../../../common/infra/bicep
+      to: ./infra
+      patterns:
+        - aca.bicep
+        - acr.bicep
+        - applicationinsights.bicep
+        - keyvault.bicep
+        - loganalytics.bicep
+        - abbreviations.json
+
+    # ACA infra common
+    - from: ../../../../common/infra/aca/bicep
+      to: ./infra
+
+    - from: ../../../../common/infra/modules
+      to: ./infra/modules
+      patterns:
+        - cosmos.bicep
+
+    - from: ./../../
+      to: ./
+      ignore: 
+        - ".repo/**/*"
+        - "repo.y[a]ml"
+        - "azure.y[a]ml"
+
+    # openapi.yaml to root
+    - from: ../../../../api/common
+      to: ./
+      patterns:
+        - openapi.yaml
+
+    # openapi.yaml to api root
+    - from: ../../../../api/common
+      to: ./src/api
+      patterns:
+        - openapi.yaml
+
+    # Templates common
+    - from: ../../../../../common
+      to: ./
+      ignore:
+        - .devcontainer/**/*
+        - "infra/**/*"
+    
+
+    # .devcontainer common (devcontainer.json)
+    - from: ../../../../../common/.devcontainer/devcontainer.json/nodejs
+      to: ./.devcontainer
+
+    # .devcontainer common (Dockerfile)
+    - from: ../../../../../common/.devcontainer/Dockerfile/base
+      to: ./.devcontainer
+
+    # Assets common
+    - from: ../../../../common/assets
+      to: ./assets
+
+    # Tests common
+    - from: ../../../../common/tests
+      to: ./tests
+
+    # Node JS API
+    - from: ../../../../api/js
+      to: ./src/api
+      ignore:
+        - "dist/**/*"
+        - "coverage/**/*"
+        - "node_modules/**/*"
+        - "**/*.log"
+
+    # React Frontend
+    - from: ../../../../web/react-fluent
+      to: ./src/web
+      ignore:
+        - "build/**/*"
+        - "node_modules/**/*"
+      
+    # Azure.yml
+    - from: ./azure.yaml
+      to: ./azure.yaml

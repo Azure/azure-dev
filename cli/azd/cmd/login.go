@@ -25,12 +25,10 @@ func loginCmd(rootOptions *internal.GlobalCommandOptions) *cobra.Command {
 		&loginAction{
 			rootOptions: rootOptions,
 		},
-		commands.BuildOptions{
-			GlobalOptions: rootOptions,
-			Use:           "login",
-			Short:         "Log in to Azure.",
-			Long:          "",
-		},
+		rootOptions,
+		"login",
+		"Log in to Azure.",
+		nil,
 	)
 
 	return output.AddOutputParam(

@@ -39,10 +39,10 @@ func upCmd(rootOptions *internal.GlobalCommandOptions) *cobra.Command {
 			),
 			&deployAction{rootOptions: rootOptions},
 		),
-		commands.BuildOptions{
-			GlobalOptions: rootOptions,
-			Use:           "up",
-			Short:         "Initialize application, provision Azure resources, and deploy your project with a single command.",
+		rootOptions,
+		"up",
+		"Initialize application, provision Azure resources, and deploy your project with a single command.",
+		&commands.BuildOptions{
 			Long: `Initialize the project (if the project folder has not been initialized or cloned from a template), provision Azure resources, and deploy your project with a single command.
 
 This command executes the following in one step:

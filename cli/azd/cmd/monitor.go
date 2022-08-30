@@ -25,10 +25,10 @@ func monitorCmd(rootOptions *internal.GlobalCommandOptions) *cobra.Command {
 		&monitorAction{
 			rootOptions: rootOptions,
 		},
-		commands.BuildOptions{
-			GlobalOptions: rootOptions,
-			Use:           "monitor",
-			Short:         "Monitor a deployed application.",
+		rootOptions,
+		"monitor",
+		"Monitor a deployed application.",
+		&commands.BuildOptions{
 			Long: `Monitor a deployed application.
 		
 Examples:
@@ -38,8 +38,7 @@ Examples:
 	$ azd monitor --logs
 		
 For more information, go to https://aka.ms/azure-dev/monitor.`,
-		},
-	)
+		})
 	return cmd
 }
 

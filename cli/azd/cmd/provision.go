@@ -12,10 +12,10 @@ func provisionCmd(rootOptions *internal.GlobalCommandOptions) *cobra.Command {
 		&infraCreateAction{
 			rootOptions: rootOptions,
 		},
-		commands.BuildOptions{
-			GlobalOptions: rootOptions,
-			Use:           "provision",
-			Short:         "Provision the Azure resources for an application.",
+		rootOptions,
+		"provision",
+		"Provision the Azure resources for an application.",
+		&commands.BuildOptions{
 			Long: `Provision the Azure resources for an application.
 
 The command prompts you for the following:

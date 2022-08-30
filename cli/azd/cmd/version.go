@@ -17,12 +17,10 @@ import (
 func versionCmd(rootOptions *internal.GlobalCommandOptions) *cobra.Command {
 	cmd := commands.Build(
 		commands.ActionFunc(versionAction),
-		commands.BuildOptions{
-			GlobalOptions: rootOptions,
-			Use:           "version",
-			Short:         "Print the version number of Azure Developer CLI.",
-			Long:          "",
-		},
+		rootOptions,
+		"version",
+		"Print the version number of Azure Developer CLI.",
+		nil,
 	)
 
 	return output.AddOutputParam(

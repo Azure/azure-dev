@@ -11,6 +11,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/commands"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
+	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
@@ -84,11 +85,10 @@ func envSetCmd(rootOptions *internal.GlobalCommandOptions) *cobra.Command {
 
 	cmd := commands.Build(
 		commands.ActionFunc(actionFn),
-		commands.BuildOptions{
-			GlobalOptions: rootOptions,
-			Use:           "set <key> <value>",
-			Short:         "Set a value in the environment.",
-			Long:          ""},
+		rootOptions,
+		"set <key> <value>",
+		"Set a value in the environment.",
+		nil,
 	)
 	cmd.Args = cobra.ExactArgs(2)
 	return cmd
@@ -110,11 +110,10 @@ func envSelectCmd(rootOptions *internal.GlobalCommandOptions) *cobra.Command {
 	)
 	cmd := commands.Build(
 		action,
-		commands.BuildOptions{
-			GlobalOptions: rootOptions,
-			Use:           "select <environment>",
-			Short:         "Set the default environment.",
-			Long:          ""},
+		rootOptions,
+		"select <environment>",
+		"Set the default environment.",
+		nil,
 	)
 	cmd.Args = cobra.ExactArgs(1)
 	return cmd
@@ -162,14 +161,13 @@ func envListCmd(rootOptions *internal.GlobalCommandOptions) *cobra.Command {
 
 	cmd := commands.Build(
 		action,
-		commands.BuildOptions{
-			GlobalOptions: rootOptions,
-			Use:           "list",
-			Short:         "List environments",
-			Long:          "",
+		rootOptions,
+		"list",
+		"List environments",
+		&commands.BuildOptions{
+			Aliases: []string{"ls"},
 		},
 	)
-	cmd.Aliases = []string{"ls"}
 
 	return cmd
 }
@@ -177,12 +175,10 @@ func envListCmd(rootOptions *internal.GlobalCommandOptions) *cobra.Command {
 func envNewCmd(rootOptions *internal.GlobalCommandOptions) *cobra.Command {
 	return commands.Build(
 		&envNewAction{rootOptions: rootOptions},
-		commands.BuildOptions{
-			GlobalOptions: rootOptions,
-			Use:           "new <environment>",
-			Short:         "Create a new environment.",
-			Long:          "",
-		},
+		rootOptions,
+		"new <environment>",
+		"Create a new environment.",
+		nil,
 	)
 }
 
@@ -259,7 +255,7 @@ func envRefreshCmd(rootOptions *internal.GlobalCommandOptions) *cobra.Command {
 			return fmt.Errorf("creating provisioning manager: %w", err)
 		}
 
-		scope := provisioning.NewSubscriptionScope(ctx, env.GetLocation(), env.GetSubscriptionId(), env.GetEnvName())
+		scope := infra.NewSubscriptionScope(ctx, env.GetLocation(), env.GetSubscriptionId(), env.GetEnvName())
 
 		getDeploymentResult, err := infraManager.GetDeployment(ctx, scope)
 		if err != nil {
@@ -284,12 +280,10 @@ func envRefreshCmd(rootOptions *internal.GlobalCommandOptions) *cobra.Command {
 
 	return commands.Build(
 		commands.ActionFunc(actionFn),
-		commands.BuildOptions{
-			GlobalOptions: rootOptions,
-			Use:           "refresh",
-			Short:         "Refresh environment settings by using information from a previous infrastructure provision.",
-			Long:          "",
-		},
+		rootOptions,
+		"refresh",
+		"Refresh environment settings by using information from a previous infrastructure provision.",
+		nil,
 	)
 }
 
@@ -325,12 +319,10 @@ func envGetValuesCmd(rootOptions *internal.GlobalCommandOptions) *cobra.Command 
 
 	cmd := commands.Build(
 		actionFn,
-		commands.BuildOptions{
-			GlobalOptions: rootOptions,
-			Use:           "get-values",
-			Short:         "Get all environment values.",
-			Long:          "",
-		},
+		rootOptions,
+		"get-values",
+		"Get all environment values.",
+		nil,
 	)
 
 	return cmd

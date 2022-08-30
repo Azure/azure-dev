@@ -2,7 +2,7 @@ param location string
 param resourceToken string
 param tags object
 
-var abbrs = loadJsonContent('../../../../../../../common/infra/bicep/abbreviations.json')
+var abbrs = loadJsonContent('../../../../../../common/infra/bicep/abbreviations.json')
 
 resource applicationInsights 'Microsoft.Insights/components@2020-02-02' existing = {
   name: '${abbrs.insightsComponents}${resourceToken}'

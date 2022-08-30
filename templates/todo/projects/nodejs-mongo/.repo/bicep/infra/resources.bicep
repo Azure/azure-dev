@@ -12,7 +12,7 @@ module appServicePlanResources '../../../../../../common/infra/bicep/modules/app
   }
 }
 
-module webResources 'modules/web.bicep' = {
+module webResources '../../../../../common/infra/appservice/bicep/modules/web.bicep' = {
   name: 'web-resources'
   params: {
     location: location
@@ -25,13 +25,15 @@ module webResources 'modules/web.bicep' = {
   ]
 }
 
-module apiResources 'modules/api.bicep' = {
+module apiResources '../../../../../common/infra/appservice/bicep/modules/api.bicep' = {
   name: 'api-resources'
   params: {
-    cosmosDatabaseName: cosmosResources.outputs.AZURE_COSMOS_DATABASE_NAME
     location: location
     resourceToken: resourceToken
     tags: tags
+    cosmosDatabaseName: cosmosResources.outputs.AZURE_COSMOS_DATABASE_NAME
+    cosmosConnectionStringKey: cosmosResources.outputs.AZURE_COSMOS_CONNECTION_STRING_KEY
+    linuxFxVersion: 'NODE|16-lts'
   }
   dependsOn: [
     applicationInsightsResources

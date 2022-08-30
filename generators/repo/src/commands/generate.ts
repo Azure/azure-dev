@@ -382,9 +382,10 @@ export class GenerateCommand implements RepomanCommand {
         const globOptions: IOptions = { 
             cwd: this.generatePath, 
             ignore: rule.ignore,
-            matchBase: true 
+            matchBase: true,
+            nodir: true
         };
-        const patterns = rule.patterns ?? [];
+        const patterns = rule.patterns ?? ["**/**"];
         for (const pattern of patterns) {
             const files = await getGlobFiles(pattern, globOptions);
             for (const filePath of files) {
@@ -398,32 +399,33 @@ export class GenerateCommand implements RepomanCommand {
         const destFolderPath = path.dirname(destFilePath);
         const buffer = await fs.readFile(destFilePath);
         let contents = buffer.toString('utf8');
-        if(contents.indexOf(rule.from) > -1) {
-            console.info(chalk.cyan(` -> Rewriting relative paths ${rule.from} => ${rule.to} for file "${filePath}"`));
-            contents = contents.replaceAll(rule.from, rule.to);
-        
-            // Normalize transformed paths
-            const pathRegex = new RegExp(/((?:\.{1,2}[\/\\]{1,2})+[^'"\s]*)/gm);
-            const matches = contents.match(pathRegex);
-            if (matches && matches.length > 0) {
-                for (const match of matches) {
-                    if(match.indexOf(rule.to) > -1){
-                        // Generate the absolute path to the referenced match
-                        let refPath = path.resolve(destFolderPath, path.normalize(match))
-                        // Generate the relative path between the current processed file dir path & the referenced match path
-                        let relativePath = path.relative(destFolderPath, refPath)
-                        // Finally convert the path back to a POSIX compatible path
-                        relativePath = relativePath.split(path.sep).join(path.posix.sep)
+        if(contents.indexOf(rule.from) == -1) return;
 
-                        contents = contents.replaceAll(match, relativePath);
+        console.info(chalk.cyan(` -> Rewriting relative paths ${rule.from} => ${rule.to} for file "${filePath}"`));
+        contents = contents.replaceAll(rule.from, rule.to);
 
-                        if (this.options.debug) {
-                            console.log(chalk.grey(` -> Rewriting relative path ${match} => ${relativePath} in ${destFilePath}`));
-                        }
+        // Normalize transformed paths
+        const pathRegex = new RegExp(/((?:\.{1,2}[\/\\]{1,2})+[^'"\s]*)/gm);
+        const matches = contents.match(pathRegex);
+        if (matches && matches.length > 0) {
+            for (const match of matches) {
+                if(match.indexOf(rule.to) > -1){
+                    // Generate the absolute path to the referenced match
+                    let refPath = path.resolve(destFolderPath, path.normalize(match))
+                    // Generate the relative path between the current processed file dir path & the referenced match path
+                    let relativePath = path.relative(destFolderPath, refPath)
+                    // Finally convert the path back to a POSIX compatible path
+                    relativePath = relativePath.split(path.sep).join(path.posix.sep)
+
+                    contents = contents.replaceAll(match, relativePath);
+
+                    if (this.options.debug) {
+                        console.log(chalk.grey(` -> Rewriting relative path ${match} => ${relativePath} in ${destFilePath}`));
                     }
                 }
             }
-            await fs.writeFile(destFilePath, contents);
         }
+        await fs.writeFile(destFilePath, contents);
+        
     }
 }

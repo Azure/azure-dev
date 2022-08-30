@@ -27,6 +27,10 @@ app.UseCors(policy =>
     policy.AllowAnyHeader();
     policy.AllowAnyMethod();
 });
+    
+GlobalConfiguration.Configuration  
+.EnableSwagger(c => c.SingleApiVersion("v1", "TS_EF_API"))  
+.EnableSwaggerUi();  
 
 app.MapControllers();
 app.Run();

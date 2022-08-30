@@ -10,7 +10,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/internal/telemetry"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
@@ -93,10 +93,9 @@ func (pc *ProjectConfig) GetProject(ctx *context.Context, env *environment.Envir
 		Services: make([]*Service, 0),
 	}
 
-	// This sets the current template within the go context
-	// The context is then used when the AzCli is instantiated to set the correct user agent
+	// This sets the current running template within the go context
 	if project.Metadata != nil && strings.TrimSpace(project.Metadata.Template) != "" {
-		*ctx = internal.WithTemplate(*ctx, project.Metadata.Template)
+		*ctx = telemetry.ContextWithTemplate(*ctx, project.Metadata.Template)
 	}
 
 	if pc.ResourceGroupName == "" {

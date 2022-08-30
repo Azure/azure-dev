@@ -1,15 +1,17 @@
-package internal
+package telemetry
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"testing"
 
+	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/stretchr/testify/require"
 )
 
 func TestGetAzDevCliIdentifier(t *testing.T) {
-	version := GetVersionNumber()
+	version := internal.GetVersionNumber()
 	require.NotEmpty(t, version)
 
 	require.Equal(t, fmt.Sprintf("%s/%s %s", azDevProductIdentifierKey, version, getPlatformInfo()), getAzDevCliIdentifier())
@@ -57,31 +59,33 @@ func TestUserAgentStringScenarios(t *testing.T) {
 		githubActionsEnvironmentVariableName:      "",
 	})
 
-	version := GetVersionNumber()
+	version := internal.GetVersionNumber()
 	require.NotEmpty(t, version)
 
 	azDevIdentifier := fmt.Sprintf("azdev/%s %s", version, getPlatformInfo())
+	ctx := context.Background()
 
 	// Scenario: default agent
-	require.Equal(t, azDevIdentifier, MakeUserAgentString(""))
+	require.Equal(t, azDevIdentifier, MakeUserAgentString(ctx))
 
 	// Scenario: user specifies agent variable
 	os.Setenv(userSpecifiedAgentEnvironmentVariableName, "dev_user_agent")
-	require.Equal(t, fmt.Sprintf("%s dev_user_agent", azDevIdentifier), MakeUserAgentString(""))
+	require.Equal(t, fmt.Sprintf("%s dev_user_agent", azDevIdentifier), MakeUserAgentString(ctx))
 	os.Setenv(userSpecifiedAgentEnvironmentVariableName, "")
 
 	// Scenario: running on github actions
 	os.Setenv(githubActionsEnvironmentVariableName, "true")
-	require.Equal(t, fmt.Sprintf("%s GhActions", azDevIdentifier), MakeUserAgentString(""))
+	require.Equal(t, fmt.Sprintf("%s GhActions", azDevIdentifier), MakeUserAgentString(ctx))
 	os.Setenv(githubActionsEnvironmentVariableName, "")
 
 	// Scenario: template present
-	require.Equal(t, fmt.Sprintf("%s azdtempl/template@0.0.1", azDevIdentifier), MakeUserAgentString("template@0.0.1"))
+	ctx = ContextWithTemplate(ctx, "template@0.0.1")
+	require.Equal(t, fmt.Sprintf("%s azdtempl/template@0.0.1", azDevIdentifier), MakeUserAgentString(ctx))
 
 	// Scenario: full combination
 	os.Setenv(userSpecifiedAgentEnvironmentVariableName, "dev_user_agent")
 	os.Setenv(githubActionsEnvironmentVariableName, "true")
-	require.Equal(t, fmt.Sprintf("%s dev_user_agent azdtempl/template@0.0.1 GhActions", azDevIdentifier), MakeUserAgentString("template@0.0.1"))
+	require.Equal(t, fmt.Sprintf("%s dev_user_agent azdtempl/template@0.0.1 GhActions", azDevIdentifier), MakeUserAgentString(ctx))
 
 	t.Cleanup(restorer)
 }

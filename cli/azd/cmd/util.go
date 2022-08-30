@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/AlecAivazis/survey/v2"
+	"github.com/azure/azure-dev/cli/azd/internal/telemetry"
 	"github.com/azure/azure-dev/cli/azd/pkg/azureutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
@@ -59,14 +60,14 @@ type environmentSpec struct {
 
 // createEnvironment creates a new named environment. If an environment with this name already
 // exists, and error is return.
-func createAndInitEnvironment(ctx context.Context, envSpec *environmentSpec, azdCtx *azdcontext.AzdContext, console input.Console) (environment.Environment, error) {
+func createAndInitEnvironment(ctx *context.Context, envSpec *environmentSpec, azdCtx *azdcontext.AzdContext, console input.Console) (environment.Environment, error) {
 	if envSpec.environmentName != "" && !environment.IsValidEnvironmentName(envSpec.environmentName) {
 		errMsg := invalidEnvironmentNameMsg(envSpec.environmentName)
 		fmt.Print(errMsg)
 		return environment.Environment{}, fmt.Errorf(errMsg)
 	}
 
-	if err := ensureValidEnvironmentName(ctx, &envSpec.environmentName, console); err != nil {
+	if err := ensureValidEnvironmentName(*ctx, &envSpec.environmentName, console); err != nil {
 		return environment.Environment{}, err
 	}
 
@@ -87,7 +88,7 @@ func createAndInitEnvironment(ctx context.Context, envSpec *environmentSpec, azd
 	return env, nil
 }
 
-func loadOrInitEnvironment(ctx context.Context, environmentName *string, azdCtx *azdcontext.AzdContext, console input.Console) (environment.Environment, error) {
+func loadOrInitEnvironment(ctx *context.Context, environmentName *string, azdCtx *azdcontext.AzdContext, console input.Console) (environment.Environment, error) {
 	loadOrCreateEnvironment := func() (environment.Environment, bool, error) {
 		// If there's a default environment, use that
 		if *environmentName == "" {
@@ -103,7 +104,7 @@ func loadOrInitEnvironment(ctx context.Context, environmentName *string, azdCtx 
 			switch {
 			case errors.Is(err, os.ErrNotExist):
 				msg := fmt.Sprintf("Environment '%s' does not exist, would you like to create it?", *environmentName)
-				shouldCreate, promptErr := console.Confirm(ctx, input.ConsoleOptions{
+				shouldCreate, promptErr := console.Confirm(*ctx, input.ConsoleOptions{
 					Message:      msg,
 					DefaultValue: true,
 				})
@@ -129,7 +130,7 @@ func loadOrInitEnvironment(ctx context.Context, environmentName *string, azdCtx 
 			return environment.Environment{}, false, fmt.Errorf("environment name '%s' is invalid (it should contain only alphanumeric characters and hyphens)", *environmentName)
 		}
 
-		if err := ensureValidEnvironmentName(ctx, environmentName, console); err != nil {
+		if err := ensureValidEnvironmentName(*ctx, environmentName, console); err != nil {
 			return environment.Environment{}, false, err
 		}
 
@@ -160,7 +161,7 @@ func loadOrInitEnvironment(ctx context.Context, environmentName *string, azdCtx 
 // ensureEnvironmentInitialized ensures the environment is initialized, i.e. it contains values for `AZURE_ENV_NAME`, `AZURE_LOCATION`, `AZURE_SUBSCRIPTION_ID` and `AZURE_PRINCIPAL_ID`.
 // It will use the values from the "environment spec" passed in, and prompt for any missing values as necessary.
 // Existing environment value are left unchanged, even if the "spec" has different values.
-func ensureEnvironmentInitialized(ctx context.Context, envSpec environmentSpec, env *environment.Environment, console input.Console) error {
+func ensureEnvironmentInitialized(ctx *context.Context, envSpec environmentSpec, env *environment.Environment, console input.Console) error {
 	if env.Values == nil {
 		env.Values = make(map[string]string)
 	}
@@ -185,7 +186,7 @@ func ensureEnvironmentInitialized(ctx context.Context, envSpec environmentSpec, 
 
 	needAzureInteraction := !hasSubID || !hasLocation || !hasPrincipalID
 	if needAzureInteraction {
-		if err := ensureLoggedIn(ctx); err != nil {
+		if err := ensureLoggedIn(*ctx); err != nil {
 			return fmt.Errorf("logging in: %w", err)
 		}
 	}
@@ -193,7 +194,7 @@ func ensureEnvironmentInitialized(ctx context.Context, envSpec environmentSpec, 
 	if !hasLocation && envSpec.location != "" {
 		env.SetLocation(envSpec.location)
 	} else {
-		location, err := azureutil.PromptLocation(ctx, "Please select an Azure location to use:")
+		location, err := azureutil.PromptLocation(*ctx, "Please select an Azure location to use:")
 		if err != nil {
 			return fmt.Errorf("prompting for location: %w", err)
 		}
@@ -203,14 +204,14 @@ func ensureEnvironmentInitialized(ctx context.Context, envSpec environmentSpec, 
 	if !hasSubID && envSpec.subscription != "" {
 		env.SetSubscriptionId(envSpec.subscription)
 	} else {
-		subscriptionOptions, defaultSubscription, err := getSubscriptionOptions(ctx)
+		subscriptionOptions, defaultSubscription, err := getSubscriptionOptions(*ctx)
 		if err != nil {
 			return err
 		}
 
 		var subscriptionId = ""
 		for subscriptionId == "" {
-			subscriptionSelectionIndex, err := console.Select(ctx, input.ConsoleOptions{
+			subscriptionSelectionIndex, err := console.Select(*ctx, input.ConsoleOptions{
 				Message:      "Please select an Azure Subscription to use:",
 				Options:      subscriptionOptions,
 				DefaultValue: defaultSubscription,
@@ -223,7 +224,7 @@ func ensureEnvironmentInitialized(ctx context.Context, envSpec environmentSpec, 
 			subscriptionSelection := subscriptionOptions[subscriptionSelectionIndex]
 
 			if subscriptionSelection == manualSubscriptionEntryOption {
-				subscriptionId, err = console.Prompt(ctx, input.ConsoleOptions{
+				subscriptionId, err = console.Prompt(*ctx, input.ConsoleOptions{
 					Message: "Enter an Azure Subscription to use:",
 				})
 
@@ -239,12 +240,15 @@ func ensureEnvironmentInitialized(ctx context.Context, envSpec environmentSpec, 
 	}
 
 	if !hasPrincipalID {
-		principalID, err := azureutil.GetCurrentPrincipalId(ctx)
+		principalID, err := azureutil.GetCurrentPrincipalId(*ctx)
 		if err != nil {
 			return fmt.Errorf("fetching current user information: %w", err)
 		}
 		env.SetPrincipalId(principalID)
 	}
+
+	savedContext := telemetry.ContextWithEnvironment(*ctx, env)
+	*ctx = savedContext
 
 	if err := env.Save(); err != nil {
 		return fmt.Errorf("saving environment: %w", err)

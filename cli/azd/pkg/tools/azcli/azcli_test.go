@@ -11,7 +11,7 @@ import (
 	"regexp"
 	"testing"
 
-	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/internal/telemetry"
 	"github.com/azure/azure-dev/cli/azd/pkg/executil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -38,11 +38,13 @@ func TestAzCli(t *testing.T) {
 			return executil.RunResult{}, nil
 		}
 
-		_, err := cli.runAzCommand(context.Background(), "hello")
+		ctx := context.Background()
+		ctx = telemetry.ContextWithTemplate(ctx, "TemplateSelected")
+		_, err := cli.runAzCommand(ctx, "hello")
 		require.NoError(t, err)
 
 		require.Equal(t, []string{
-			fmt.Sprintf("AZURE_HTTP_USER_AGENT=%s", internal.MakeUserAgentString("")),
+			fmt.Sprintf("AZURE_HTTP_USER_AGENT=%s", telemetry.MakeUserAgentString(ctx)),
 		}, env)
 
 		require.Equal(t, []string{"hello", "--debug"}, commandArgs)
@@ -67,11 +69,13 @@ func TestAzCli(t *testing.T) {
 			return executil.RunResult{}, nil
 		}
 
-		_, err := cli.runAzCommand(context.Background(), "hello")
+		ctx := context.Background()
+		ctx = telemetry.ContextWithTemplate(ctx, "TemplateSelected")
+		_, err := cli.runAzCommand(ctx, "hello")
 		require.NoError(t, err)
 
 		require.Equal(t, []string{
-			fmt.Sprintf("AZURE_HTTP_USER_AGENT=%s", internal.MakeUserAgentString("")),
+			fmt.Sprintf("AZURE_HTTP_USER_AGENT=%s", telemetry.MakeUserAgentString(ctx)),
 			"AZURE_CORE_COLLECT_TELEMETRY=no",
 		}, env)
 
@@ -85,15 +89,14 @@ func TestAZCLIWithUserAgent(t *testing.T) {
 		EnableDebug:     true,
 	})
 
-	tempAZCLI.SetUserAgent(internal.MakeUserAgentString("AZTesting=yes"))
+	tempAZCLI.SetUserAgent("AZTesting=yes")
 
 	azcli := tempAZCLI.(*azCli)
 
 	account := mustGetDefaultAccount(t, azcli)
 
 	userAgent := runAndCaptureUserAgent(t, azcli, account.Id)
-	require.Contains(t, userAgent, "AZTesting=yes")
-	require.Contains(t, userAgent, "azdev")
+	require.Equal(t, userAgent, "AZTesting=yes")
 }
 
 func mustGetDefaultAccount(t *testing.T, azcli AzCli) AzCliSubscriptionInfo {

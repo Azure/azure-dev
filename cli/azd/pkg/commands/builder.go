@@ -3,7 +3,6 @@ package commands
 import (
 	"context"
 	"fmt"
-	"time"
 
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/telemetry"
@@ -59,11 +58,6 @@ func Build(action Action, buildOptions BuildOptions) *cobra.Command {
 			cmdPath := cmd.CommandPath()
 			ctx, span := telemetry.GetTracer().Start(ctx, events.GetCommandEventName(cmdPath))
 			defer span.End()
-
-			// inner trace
-			ctx, inner := telemetry.GetTracer().Start(ctx, "azure-dev.commands.inner."+use)
-			time.Sleep(time.Duration(200) * time.Millisecond)
-			inner.End()
 
 			err = action.Run(ctx, cmd, args, azdCtx)
 			if err != nil {

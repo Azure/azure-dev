@@ -83,7 +83,7 @@ func (d *deployAction) Run(ctx context.Context, cmd *cobra.Command, args []strin
 		return fmt.Errorf("failed to ensure login: %w", err)
 	}
 
-	env, err := loadOrInitEnvironment(ctx, &d.rootOptions.EnvironmentName, azdCtx, console)
+	env, err := loadOrInitEnvironment(&ctx, &d.rootOptions.EnvironmentName, azdCtx, console)
 	if err != nil {
 		return fmt.Errorf("loading environment: %w", err)
 	}

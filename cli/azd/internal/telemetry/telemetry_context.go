@@ -29,6 +29,11 @@ func ContextWithTemplate(ctx context.Context, templateName string) context.Conte
 	return setAttributesInContext(ctx, events.TemplateIdKey.String(sha256Hash(templateName)))
 }
 
+func templateFromContext(ctx context.Context) string {
+	baggage := baggage.BaggageFromContext(ctx)
+	return baggage.Get(events.TemplateIdKey).AsString()
+}
+
 func setAttributesInContext(ctx context.Context, attributes ...attribute.KeyValue) context.Context {
 	// Set the attributes in the current running span so that they are immediately available
 	runningSpan := trace.SpanFromContext(ctx)

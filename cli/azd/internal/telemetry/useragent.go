@@ -1,4 +1,4 @@
-package internal
+package telemetry
 
 import (
 	"context"
@@ -6,6 +6,8 @@ import (
 	"os"
 	"runtime"
 	"strings"
+
+	"github.com/azure/azure-dev/cli/azd/internal"
 )
 
 const userSpecifiedAgentEnvironmentVariableName = "AZURE_DEV_USER_AGENT"
@@ -39,27 +41,6 @@ func (userAgent *UserAgent) String() string {
 	return sb.String()
 }
 
-const (
-	templateContextKey contextKey = "template"
-)
-
-// Sets the azd template that is in use
-// This value typically comes from the metadata section of the azure.yaml
-// The template value is then used in the custom useragent generation
-func WithTemplate(ctx context.Context, template string) context.Context {
-	return context.WithValue(ctx, templateContextKey, template)
-}
-
-// Gets the azd template name for the running command
-func GetTemplate(ctx context.Context) string {
-	template, ok := ctx.Value(templateContextKey).(string)
-	if !ok {
-		return ""
-	}
-
-	return template
-}
-
 func appendIdentifier(sb *strings.Builder, identifier string) {
 	if identifier != "" {
 		sb.WriteString(" " + identifier)
@@ -76,22 +57,28 @@ func makeUserAgent(template string) UserAgent {
 	return userAgent
 }
 
-// MakeUserAgentString creates a user agent string that contains all necessary product identifiers, in increasing order:
-// - The Azure Developer CLI version, formatted as `azdev/<version>`
-// - The user specified identifier, set from `AZURE_DEV_USER_AGENT` environment variable
-// - The identifier for the template used, if applicable
-// - The identifier for GitHub Actions, if applicable
-// Examples (see test `TestUserAgentStringScenarios` for all scenarios ):
-// - `azdev/1.0.0 (Go 1.18; windows/amd64)`
-// - `azdev/1.0.0 (Go 1.18; windows/amd64) Custom-foo/1.0.0 azdtempl/my-template@1.0.0 GhActions`
-func MakeUserAgentString(template string) string {
-	userAgent := makeUserAgent(template)
+func NewUserAgentString() string {
+	userAgent := makeUserAgent("")
+	return userAgent.String()
+}
 
+// MakeUserAgentString creates a user agent string that contains all necessary product identifiers, in increasing order:
+//   - The Azure Developer CLI version, formatted as `azdev/<version>`
+//   - The user specified identifier, set from `AZURE_DEV_USER_AGENT` environment variable
+//   - The identifier for the template used, if applicable
+//   - The identifier for GitHub Actions, if applicable
+//
+// Examples (see test `TestUserAgentStringScenarios` for all scenarios ):
+//
+//   - `azdev/1.0.0 (Go 1.18; windows/amd64)`
+//   - `azdev/1.0.0 (Go 1.18; windows/amd64) Custom-foo/1.0.0 azdtempl/my-template@1.0.0 GhActions`
+func MakeUserAgentString(ctx context.Context) string {
+	userAgent := makeUserAgent(templateFromContext(ctx))
 	return userAgent.String()
 }
 
 func getAzDevCliIdentifier() string {
-	return fmt.Sprintf("%s/%s %s", azDevProductIdentifierKey, GetVersionNumber(), getPlatformInfo())
+	return fmt.Sprintf("%s/%s %s", azDevProductIdentifierKey, internal.GetVersionNumber(), getPlatformInfo())
 }
 
 func getPlatformInfo() string {

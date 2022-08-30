@@ -80,7 +80,7 @@ func (p *pipelineConfigAction) Run(ctx context.Context, cmd *cobra.Command, args
 		return err
 	}
 
-	env, err := loadOrInitEnvironment(ctx, &p.rootOptions.EnvironmentName, azdCtx, console)
+	env, err := loadOrInitEnvironment(&ctx, &p.rootOptions.EnvironmentName, azdCtx, console)
 	if err != nil {
 		return fmt.Errorf("loading environment: %w", err)
 	}

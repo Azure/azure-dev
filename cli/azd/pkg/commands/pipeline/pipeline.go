@@ -28,9 +28,9 @@ type gitRepositoryDetails struct {
 
 type scmProvider interface {
 	subareaProvider
-	gitRepoDetails(ctx context.Context, remoteUrl *string) (*gitRepositoryDetails, error)
+	gitRepoDetails(ctx context.Context, remoteUrl string) (*gitRepositoryDetails, error)
 	// configureGitRemote returns the git repository url after setting it
-	configureGitRemote(ctx context.Context, repoPath string, remoteName string, console input.Console) (*string, error)
+	configureGitRemote(ctx context.Context, repoPath string, remoteName string, console input.Console) (string, error)
 	preventGitPush(
 		ctx context.Context,
 		gitRepo *gitRepositoryDetails,

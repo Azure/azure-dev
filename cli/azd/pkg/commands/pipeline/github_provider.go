@@ -36,7 +36,7 @@ func (p *gitHubScmProvider) name() string {
 }
 
 // ***  scmProvider implementation ******
-func (p *gitHubScmProvider) configureGitRemote(ctx context.Context, repoPath string, remoteName string, console input.Console) (*string, error) {
+func (p *gitHubScmProvider) configureGitRemote(ctx context.Context, repoPath string, remoteName string, console input.Console) (string, error) {
 	// used to detect when the GitHub has created a new repo
 	p.newGitHubRepoCreated = false
 
@@ -52,7 +52,7 @@ func (p *gitHubScmProvider) configureGitRemote(ctx context.Context, repoPath str
 	})
 
 	if err != nil {
-		return nil, fmt.Errorf("prompting for remote configuration type: %w", err)
+		return "", fmt.Errorf("prompting for remote configuration type: %w", err)
 	}
 
 	var remoteUrl string
@@ -63,29 +63,29 @@ func (p *gitHubScmProvider) configureGitRemote(ctx context.Context, repoPath str
 	case 0:
 		remoteUrl, err = getRemoteUrlFromExisting(ctx, ghCli, console)
 		if err != nil {
-			return nil, fmt.Errorf("getting remote from existing repository: %w", err)
+			return "", fmt.Errorf("getting remote from existing repository: %w", err)
 		}
 	// Create a new project
 	case 1:
 		remoteUrl, err = getRemoteUrlFromNewRepository(ctx, ghCli, repoPath, console)
 		if err != nil {
-			return nil, fmt.Errorf("getting remote from new repository: %w", err)
+			return "", fmt.Errorf("getting remote from new repository: %w", err)
 		}
 		p.newGitHubRepoCreated = true
 	// Enter a URL directly.
 	case 2:
 		remoteUrl, err = getRemoteUrlFromPrompt(ctx, remoteName, console)
 		if err != nil {
-			return nil, fmt.Errorf("getting remote from prompt: %w", err)
+			return "", fmt.Errorf("getting remote from prompt: %w", err)
 		}
 	default:
 		panic(fmt.Sprintf("unexpected selection index %d", idx))
 	}
 
-	return &remoteUrl, nil
+	return remoteUrl, nil
 }
 
-func (p *gitHubScmProvider) gitRepoDetails(ctx context.Context, remoteUrl *string) (*gitRepositoryDetails, error) {
+func (p *gitHubScmProvider) gitRepoDetails(ctx context.Context, remoteUrl string) (*gitRepositoryDetails, error) {
 
 	return nil, nil
 }

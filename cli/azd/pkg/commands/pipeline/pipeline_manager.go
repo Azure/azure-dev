@@ -60,7 +60,8 @@ func (i *pipelineManager) ensureRemote(ctx context.Context, repositoryPath strin
 		return nil, fmt.Errorf("failed to get remote url: %w", err)
 	}
 
-	gitRepoDetails, err := i.scmProvider.gitRepoDetails(ctx, &remoteUrl)
+	// each provider knows how to extract the Owner and repo name from a remoteUrl
+	gitRepoDetails, err := i.scmProvider.gitRepoDetails(ctx, remoteUrl)
 	if err != nil {
 		return nil, err
 	}
@@ -115,7 +116,7 @@ func (i *pipelineManager) getGitRepoDetails(ctx context.Context) (*gitRepository
 			}
 
 			// set the git remote for local git project
-			if err := gitCli.AddRemote(ctx, repoPath, i.pipelineRemoteName, *remoteUrl); err != nil {
+			if err := gitCli.AddRemote(ctx, repoPath, i.pipelineRemoteName, remoteUrl); err != nil {
 				return nil, fmt.Errorf("initializing repository: %w", err)
 			}
 

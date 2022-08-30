@@ -26,7 +26,6 @@ repo:
         patterns: 
             - "**/azure.@(yml|yaml)"
 
-
       - from: ../../web/react-fluent
         to: ./src/web
         patterns: 

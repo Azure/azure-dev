@@ -19,7 +19,7 @@ type mockResourceManager struct {
 	operations []azcli.AzCliResourceOperation
 }
 
-func (mock *mockResourceManager) GetDeploymentResourceOperations(ctx context.Context, subscriptionId string, deploymentName string) ([]azcli.AzCliResourceOperation, error) {
+func (mock *mockResourceManager) GetDeploymentResourceOperations(ctx context.Context, scope infra.Scope) ([]azcli.AzCliResourceOperation, error) {
 	return mock.operations, nil
 }
 
@@ -64,9 +64,10 @@ func (mock *mockResourceManager) MarkComplete(i int) {
 
 func TestReportProgress(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
+	scope := infra.NewSubscriptionScope(*mockContext.Context, "eastus2", "SUBSCRIPTION_ID", "DEPLOYMENT_NAME")
 
 	mockResourceManager := mockResourceManager{}
-	progressDisplay := NewProvisioningProgressDisplay(&mockResourceManager, mockContext.Console, "SUBSCRIPTION_ID", "DEPLOYMENT_NAME")
+	progressDisplay := NewProvisioningProgressDisplay(&mockResourceManager, mockContext.Console, scope)
 	progressReport, _ := progressDisplay.ReportProgress(*mockContext.Context)
 	assert.Empty(t, mockContext.Console.Output())
 	assert.Equal(t, defaultProgressTitle, progressReport.Message)

@@ -12,6 +12,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azureutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/spin"
@@ -41,7 +42,7 @@ func (m *Manager) Preview(ctx context.Context) (*PreviewResult, error) {
 }
 
 // Gets the latest deployment details for the specified scope
-func (m *Manager) GetDeployment(ctx context.Context, scope Scope) (*DeployResult, error) {
+func (m *Manager) GetDeployment(ctx context.Context, scope infra.Scope) (*DeployResult, error) {
 	var deployResult *DeployResult
 
 	err := m.runAction("Retrieving Azure Deployment", m.interactive, func(spinner *spin.Spinner) error {
@@ -73,7 +74,7 @@ func (m *Manager) GetDeployment(ctx context.Context, scope Scope) (*DeployResult
 }
 
 // Deploys the Azure infrastructure for the specified project
-func (m *Manager) Deploy(ctx context.Context, deployment *Deployment, scope Scope) (*DeployResult, error) {
+func (m *Manager) Deploy(ctx context.Context, deployment *Deployment, scope infra.Scope) (*DeployResult, error) {
 	// Ensure that a location has been set prior to provisioning
 	location, err := m.ensureLocation(ctx, deployment)
 	if err != nil {
@@ -150,7 +151,7 @@ func (m *Manager) preview(ctx context.Context) (*PreviewResult, error) {
 }
 
 // Applies the specified infrastructure provisioning and orchestrates the interactive terminal operations
-func (m *Manager) deploy(ctx context.Context, location string, deployment *Deployment, scope Scope) (*DeployResult, error) {
+func (m *Manager) deploy(ctx context.Context, location string, deployment *Deployment, scope infra.Scope) (*DeployResult, error) {
 	var deployResult *DeployResult
 
 	err := m.runAction("Provisioning Azure resources", m.interactive, func(spinner *spin.Spinner) error {

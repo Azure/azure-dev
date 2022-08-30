@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/stretchr/testify/require"
@@ -41,7 +42,7 @@ func TestManagerGetDeployment(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
 	mgr, _ := NewManager(*mockContext.Context, env, "", options, interactive)
 
-	provisioningScope := NewSubscriptionScope(*mockContext.Context, "eastus2", env.GetSubscriptionId(), env.GetEnvName())
+	provisioningScope := infra.NewSubscriptionScope(*mockContext.Context, "eastus2", env.GetSubscriptionId(), env.GetEnvName())
 	getResult, err := mgr.GetDeployment(*mockContext.Context, provisioningScope)
 
 	require.NotNil(t, getResult)
@@ -59,7 +60,7 @@ func TestManagerDeploy(t *testing.T) {
 	mgr, _ := NewManager(*mockContext.Context, env, "", options, interactive)
 
 	previewResult, _ := mgr.Preview(*mockContext.Context)
-	provisioningScope := NewSubscriptionScope(*mockContext.Context, "eastus2", env.GetSubscriptionId(), env.GetEnvName())
+	provisioningScope := infra.NewSubscriptionScope(*mockContext.Context, "eastus2", env.GetSubscriptionId(), env.GetEnvName())
 	deployResult, err := mgr.Deploy(*mockContext.Context, &previewResult.Deployment, provisioningScope)
 
 	require.NotNil(t, deployResult)

@@ -1,0 +1,54 @@
+templateApi: 1.0.0
+metadata:
+  type: repo
+  name: todo-csharp-cosmos-sql
+  description: To Do application with a ReactJS frontend, C# API Azure Functions, and Cosmos DB.
+
+repo:
+  includeProjectAssets: true
+
+  remotes:
+    - name: azure-samples
+      url: git@github.com:Azure-Samples/todo-csharp-cosmos-sql-func.git
+
+  assets:
+    # Common assets
+
+    # openapi.yaml to root
+    - from: ../../api/common
+      to: ./
+      patterns:
+        - openapi.yaml
+
+    # openapi.yaml to api root
+    - from: ../../api/common
+      to: ./src/api
+      patterns:
+        - openapi.yaml
+
+    # Template common
+    - from: ../../../common
+      to: ./
+
+    # Assets common
+    - from: ../../common/assets
+      to: ./assets
+
+    # Tests common
+    - from: ../../common/tests
+      to: ./tests
+
+    # C# API
+    - from: ../../api/csharp-cosmos-sql-func
+      to: ./src/api
+      ignore:
+        - bin
+        - obj
+        - .vs
+
+    # React Frontend
+    - from: ../../web/react-fluent
+      to: ./src/web
+      ignore:
+        - "build/**/*"
+        - "node_modules/**/*"

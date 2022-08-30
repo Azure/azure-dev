@@ -19,7 +19,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
-	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	. "github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
@@ -52,7 +51,7 @@ type BicepOutputParameter struct {
 type BicepProvider struct {
 	env         *environment.Environment
 	projectPath string
-	options     provisioning.Options
+	options     Options
 	console     input.Console
 	bicepCli    bicep.BicepCli
 	azCli       azcli.AzCli

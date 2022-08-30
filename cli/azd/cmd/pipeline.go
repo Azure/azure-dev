@@ -47,10 +47,11 @@ func pipelineConfigCmd(rootOptions *internal.GlobalCommandOptions) *cobra.Comman
 		rootOptions,
 		"config",
 		"Create and configure your deployment pipeline by using GitHub Actions.",
-		`Create and configure your deployment pipeline by using GitHub Actions.
+		&commands.BuildOptions{
+			Long: `Create and configure your deployment pipeline by using GitHub Actions.
 
 For more information, go to https://aka.ms/azure-dev/pipeline.`,
-	)
+		})
 	return cmd
 }
 

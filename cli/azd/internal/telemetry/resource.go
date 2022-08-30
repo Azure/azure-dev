@@ -3,6 +3,7 @@ package telemetry
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"log"
 	"net"
 	"os"
 	"runtime"
@@ -12,7 +13,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil/osversion"
 	"github.com/google/uuid"
 	"go.opentelemetry.io/otel/sdk/resource"
-	semconv "go.opentelemetry.io/otel/semconv/v1.4.0"
+	semconv "go.opentelemetry.io/otel/semconv/v1.10.0"
 )
 
 func newResource() *resource.Resource {
@@ -28,7 +29,7 @@ func newResource() *resource.Resource {
 			semconv.ProcessRuntimeVersionKey.String(runtime.Version()),
 			events.ExecutionEnvironmentKey.String(getExecutionEnvironment()),
 			events.MachineIdKey.String(getMachineId()),
-		),
+		)
 	)
 
 	return r
@@ -60,13 +61,15 @@ func getMachineId() string {
 func getMacAddressHash() (string, bool) {
 	interfaces, _ := net.Interfaces()
 	for _, ift := range interfaces {
-		if len(ift.HardwareAddr) > 0 {
+		if len(ift.HardwareAddr) > 0 && ift.Flags&net.FlagUp != 0 && ift.Flags&net.FlagLoopback == 0 {
 			hwAddr, err := net.ParseMAC(ift.HardwareAddr.String())
 			if err != nil {
-				mac := hwAddr.String()
-				if isValidMacAddress(mac) {
-					return mac, true
-				}
+				continue
+			}
+
+			mac := hwAddr.String()
+			if isValidMacAddress(mac) {
+				return mac, true
 			}
 		}
 	}

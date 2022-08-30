@@ -2,7 +2,6 @@ package commands
 
 import (
 	"context"
-	"reflect"
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/internal"

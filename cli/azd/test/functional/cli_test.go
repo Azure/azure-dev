@@ -23,6 +23,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/cmd"
 	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/pkg/container"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/executil"
@@ -676,6 +677,8 @@ func getTestEnvPath(dir string, envName string) string {
 // the provided `testing.T` has a deadline applied, the returned context
 // respects the deadline.
 func newTestContext(t *testing.T) (context.Context, context.CancelFunc) {
+	container.RegisterDependencies()
+
 	ctx := context.Background()
 	ctx = internal.WithCommandOptions(ctx, internal.GlobalCommandOptions{})
 

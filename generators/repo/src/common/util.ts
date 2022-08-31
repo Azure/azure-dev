@@ -72,7 +72,9 @@ export const ensureRelativeBasePath  = (input : string) => {
         input = `${basePath}${input}`
     }
     else{
-        console.warn(chalk.yellowBright(` - ${input} already contains a relative base path.`));
+        if (isDebug()) {
+            console.warn(chalk.yellowBright(` - ${input} already contains a relative base path.`));
+        }
     }
     return input;
 }

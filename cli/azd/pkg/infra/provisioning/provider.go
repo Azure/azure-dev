@@ -5,6 +5,7 @@ package provisioning
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -78,8 +79,11 @@ type Provider interface {
 
 // Registers a provider creation function for the specified provider kind
 func RegisterProvider(kind ProviderKind, newFn NewProviderFn) error {
-	providers[kind] = newFn
+	if newFn == nil {
+		return errors.New("NewProviderFn is required")
+	}
 
+	providers[kind] = newFn
 	return nil
 }
 
@@ -97,7 +101,7 @@ func NewProvider(ctx context.Context, env *environment.Environment, projectPath 
 
 	provider, err := newProviderFn(ctx, env, projectPath, infraOptions)
 	if err != nil {
-		return nil, fmt.Errorf("error creating provider for type '%s'", infraOptions.Provider)
+		return nil, fmt.Errorf("error creating provider for type '%s' : %w", infraOptions.Provider, err)
 	}
 
 	return provider, nil

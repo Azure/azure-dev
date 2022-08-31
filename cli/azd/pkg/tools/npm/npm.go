@@ -72,7 +72,7 @@ func (cli *npmCli) Name() string {
 func (cli *npmCli) Install(ctx context.Context, project string, onlyProduction bool) error {
 	res, err := executil.
 		NewBuilder("npm", "install", "--production", fmt.Sprintf("%t", onlyProduction)).
-		WithCmd(project).
+		WithCwd(project).
 		Exec(ctx, cli.runCommandFn)
 
 	if err != nil {

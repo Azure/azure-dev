@@ -4,7 +4,7 @@ import (
 	"context"
 
 	"github.com/azure/azure-dev/cli/azd/internal/telemetry/baggage"
-	"github.com/azure/azure-dev/cli/azd/internal/telemetry/events"
+	"github.com/azure/azure-dev/cli/azd/internal/telemetry/fields"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
@@ -12,9 +12,9 @@ import (
 
 func getEnvironmentAttributes(env *environment.Environment) []attribute.KeyValue {
 	return []attribute.KeyValue{
-		events.ObjectIdKey.String(env.GetPrincipalId()),
-		events.SubscriptionIdKey.String(env.GetSubscriptionId()),
-		events.TenantIdKey.String(env.GetTenantId()),
+		fields.ObjectIdKey.String(env.GetPrincipalId()),
+		fields.SubscriptionIdKey.String(env.GetSubscriptionId()),
+		fields.TenantIdKey.String(env.GetTenantId()),
 	}
 }
 
@@ -26,12 +26,12 @@ func ContextWithEnvironment(ctx context.Context, env *environment.Environment) c
 
 // ContextWithTemplate sets the template in context for telemetry purposes.
 func ContextWithTemplate(ctx context.Context, templateName string) context.Context {
-	return setAttributesInContext(ctx, events.TemplateIdKey.String(sha256Hash(templateName)))
+	return setAttributesInContext(ctx, fields.TemplateIdKey.String(sha256Hash(templateName)))
 }
 
 func templateFromContext(ctx context.Context) string {
 	baggage := baggage.BaggageFromContext(ctx)
-	return baggage.Get(events.TemplateIdKey).AsString()
+	return baggage.Get(fields.TemplateIdKey).AsString()
 }
 
 func setAttributesInContext(ctx context.Context, attributes ...attribute.KeyValue) context.Context {

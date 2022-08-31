@@ -93,7 +93,7 @@ func GetTelemetrySystem() *TelemetrySystem {
 
 func initialize() (*TelemetrySystem, error) {
 	// Feature guard: Disable for production until dependencies are met in production
-	isDev := true
+	isDev := internal.IsDevVersion()
 	if !isDev {
 		return nil, nil
 	}

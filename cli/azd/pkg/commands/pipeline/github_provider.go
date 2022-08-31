@@ -372,7 +372,7 @@ func getRemoteUrlFromNewRepository(ctx context.Context, ghCli github.GitHubCli, 
 	currentFolderName := filepath.Base(currentPathName)
 
 	for {
-		repoName, err := console.Prompt(ctx, input.ConsoleOptions{
+		name, err := console.Prompt(ctx, input.ConsoleOptions{
 			Message:      "Enter the name for your new repository OR Hit enter to use this name:",
 			DefaultValue: currentFolderName,
 		})
@@ -380,13 +380,14 @@ func getRemoteUrlFromNewRepository(ctx context.Context, ghCli github.GitHubCli, 
 			return "", fmt.Errorf("asking for new repository name: %w", err)
 		}
 
-		err = ghCli.CreatePrivateRepository(ctx, repoName)
+		err = ghCli.CreatePrivateRepository(ctx, name)
 		if errors.Is(err, github.ErrRepositoryNameInUse) {
-			fmt.Printf("error: the repository name '%s' is already in use\n", repoName)
+			fmt.Printf("error: the repository name '%s' is already in use\n", name)
 			continue // try again
 		} else if err != nil {
 			return "", fmt.Errorf("creating repository: %w", err)
 		} else {
+			repoName = name
 			break
 		}
 	}

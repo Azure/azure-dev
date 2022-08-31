@@ -194,15 +194,6 @@ func NewRunArgs(cmd string, args ...string) RunArgs {
 	}
 }
 
-func NewRunArgsWithCwdAndEnv(cwd string, env []string, cmd string, args ...string) RunArgs {
-	return RunArgs{
-		Cwd:  cwd,
-		Env:  env,
-		Cmd:  cmd,
-		Args: args,
-	}
-}
-
 type redactData struct {
 	matchString   *regexp.Regexp
 	replaceString string

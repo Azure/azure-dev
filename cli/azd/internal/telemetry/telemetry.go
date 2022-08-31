@@ -14,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/azure/azure-dev/cli/azd/internal"
 	appinsightsexporter "github.com/azure/azure-dev/cli/azd/internal/telemetry/appinsights-exporter"
 	"github.com/benbjohnson/clock"
 	"github.com/gofrs/flock"

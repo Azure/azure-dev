@@ -3,7 +3,6 @@ package telemetry
 import (
 	"crypto/sha256"
 	"encoding/hex"
-	"log"
 	"net"
 	"os"
 	"runtime"
@@ -29,7 +28,7 @@ func newResource() *resource.Resource {
 			semconv.ProcessRuntimeVersionKey.String(runtime.Version()),
 			events.ExecutionEnvironmentKey.String(getExecutionEnvironment()),
 			events.MachineIdKey.String(getMachineId()),
-		)
+		),
 	)
 
 	return r
@@ -61,7 +60,7 @@ func getMachineId() string {
 func getMacAddressHash() (string, bool) {
 	interfaces, _ := net.Interfaces()
 	for _, ift := range interfaces {
-		if len(ift.HardwareAddr) > 0 && ift.Flags&net.FlagUp != 0 && ift.Flags&net.FlagLoopback == 0 {
+		if len(ift.HardwareAddr) > 0 && ift.Flags&net.FlagLoopback == 0 {
 			hwAddr, err := net.ParseMAC(ift.HardwareAddr.String())
 			if err != nil {
 				continue

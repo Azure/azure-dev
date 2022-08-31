@@ -8,6 +8,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/commands"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
+	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
@@ -29,15 +30,14 @@ func infraCreateCmd(rootOptions *internal.GlobalCommandOptions) *cobra.Command {
 		&infraCreateAction{
 			rootOptions: rootOptions,
 		},
-		commands.BuildOptions{
-			GlobalOptions: rootOptions,
-			Use:           "create",
-			Short:         "Create Azure resources for an application.",
-			Long:          "",
+		rootOptions,
+		"create",
+		"Create Azure resources for an application.",
+		&commands.BuildOptions{
+			Aliases: []string{"provision"},
 		},
 	)
 
-	cmd.Aliases = []string{"provision"}
 	return cmd
 }
 
@@ -88,7 +88,7 @@ func (ica *infraCreateAction) Run(ctx context.Context, cmd *cobra.Command, args 
 		return fmt.Errorf("previewing deployment: %w", err)
 	}
 
-	provisioningScope := provisioning.NewSubscriptionScope(ctx, env.GetLocation(), env.GetSubscriptionId(), env.GetEnvName())
+	provisioningScope := infra.NewSubscriptionScope(ctx, env.GetLocation(), env.GetSubscriptionId(), env.GetEnvName())
 	deployResult, err := infraManager.Deploy(ctx, &previewResult.Deployment, provisioningScope)
 	if err != nil {
 		return fmt.Errorf("deploying infrastructure: %w", err)

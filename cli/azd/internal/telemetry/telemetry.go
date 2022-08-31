@@ -24,9 +24,15 @@ import (
 
 const azdAppName = "azd"
 
+// the equivalent of AZURE_CORE_COLLECT_TELEMETRY
+const collectTelemetryEnvVar = "AZURE_DEV_COLLECT_TELEMETRY"
+
 const telemetryItemExtension = ".trn"
-const devInstrumentationKey = "d3b9c006-3680-4300-9862-35fce9ac66c7"
-const prodInstrumentationKey = ""
+const (
+	devInstrumentationKey  = "d3b9c006-3680-4300-9862-35fce9ac66c7"
+	prodInstrumentationKey = ""
+)
+
 const appInsightsMaxIngestionDelay = time.Duration(48) * time.Hour
 
 type TelemetrySystem struct {
@@ -52,8 +58,7 @@ func getTelemetryDirectory() (string, error) {
 }
 
 func IsTelemetryEnabled() bool {
-	// the equivalent of AZURE_CORE_COLLECT_TELEMETRY
-	return os.Getenv("AZURE_DEV_COLLECT_TELEMETRY") != "no"
+	return os.Getenv(collectTelemetryEnvVar) != "no"
 }
 
 // Returns the singleton TelemetrySystem instance.
@@ -73,10 +78,10 @@ func GetTelemetrySystem() *TelemetrySystem {
 
 func initialize() (*TelemetrySystem, error) {
 	// Feature guard: Disable for production until dependencies are met in production
-	isDev := true
-	// if !isDev {
-	// 	return nil, nil
-	// }
+	isDev := internal.IsDevVersion()
+	if !isDev {
+		return nil, nil
+	}
 
 	if !IsTelemetryEnabled() {
 		log.Println("telemetry is disabled by user and will not be initialized.")

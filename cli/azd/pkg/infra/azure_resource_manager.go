@@ -23,7 +23,7 @@ type AzureResourceManager struct {
 }
 
 type ResourceManager interface {
-	GetDeploymentResourceOperations(ctx context.Context, subscriptionId string, deploymentName string) ([]azcli.AzCliResourceOperation, error)
+	GetDeploymentResourceOperations(ctx context.Context, scope Scope) ([]azcli.AzCliResourceOperation, error)
 	GetResourceTypeDisplayName(ctx context.Context, subscriptionId string, resourceId string, resourceType AzureResourceType) (string, error)
 	GetWebAppResourceTypeDisplayName(ctx context.Context, subscriptionId string, resourceId string) (string, error)
 }
@@ -37,24 +37,28 @@ func NewAzureResourceManager(ctx context.Context) *AzureResourceManager {
 	}
 }
 
-func (rm *AzureResourceManager) GetDeploymentResourceOperations(ctx context.Context, subscriptionId string, deploymentName string) ([]azcli.AzCliResourceOperation, error) {
-	// Gets all the subscription level deployments
-	subOperations, err := rm.azCli.ListSubscriptionDeploymentOperations(ctx, subscriptionId, deploymentName)
+func (rm *AzureResourceManager) GetDeploymentResourceOperations(ctx context.Context, scope Scope) ([]azcli.AzCliResourceOperation, error) {
+	// Gets all the scope level resource operations
+	resourceOperations, err := scope.GetResourceOperations(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("getting subscription deployment: %w", err)
 	}
 
 	var resourceGroupName string
+	resourceGroupScope, ok := scope.(*ResourceGroupScope)
 
-	// Find the resource group
-	for _, operation := range subOperations {
-		if operation.Properties.TargetResource.ResourceType == string(AzureResourceTypeResourceGroup) {
-			resourceGroupName = operation.Properties.TargetResource.ResourceName
-			break
+	if ok {
+		// If the scope is a resource group scope get the resource group directly
+		resourceGroupName = resourceGroupScope.ResourceGroup()
+	} else {
+		// Otherwise find the resource group within the deployment operations
+		for _, operation := range resourceOperations {
+			if operation.Properties.TargetResource.ResourceType == string(AzureResourceTypeResourceGroup) {
+				resourceGroupName = operation.Properties.TargetResource.ResourceName
+				break
+			}
 		}
 	}
-
-	resourceOperations := []azcli.AzCliResourceOperation{}
 
 	if strings.TrimSpace(resourceGroupName) == "" {
 		return resourceOperations, nil
@@ -62,9 +66,9 @@ func (rm *AzureResourceManager) GetDeploymentResourceOperations(ctx context.Cont
 
 	// Find all resource group deployments within the subscription operations
 	// Recursively append any resource group deployments that are found
-	for _, operation := range subOperations {
+	for _, operation := range resourceOperations {
 		if operation.Properties.TargetResource.ResourceType == string(AzureResourceTypeDeployment) {
-			err = rm.appendDeploymentResourcesRecursive(ctx, subscriptionId, resourceGroupName, operation.Properties.TargetResource.ResourceName, &resourceOperations)
+			err = rm.appendDeploymentResourcesRecursive(ctx, scope.SubscriptionId(), resourceGroupName, operation.Properties.TargetResource.ResourceName, &resourceOperations)
 			if err != nil {
 				return nil, fmt.Errorf("appending deployment resources: %w", err)
 			}

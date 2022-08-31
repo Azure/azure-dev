@@ -10,6 +10,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 )
@@ -63,9 +64,9 @@ type DestroyProgress struct {
 type Provider interface {
 	Name() string
 	RequiredExternalTools() []tools.ExternalTool
-	GetDeployment(ctx context.Context, scope Scope) *async.InteractiveTaskWithProgress[*DeployResult, *DeployProgress]
+	GetDeployment(ctx context.Context, scope infra.Scope) *async.InteractiveTaskWithProgress[*DeployResult, *DeployProgress]
 	Preview(ctx context.Context) *async.InteractiveTaskWithProgress[*PreviewResult, *PreviewProgress]
-	Deploy(ctx context.Context, deployment *Deployment, scope Scope) *async.InteractiveTaskWithProgress[*DeployResult, *DeployProgress]
+	Deploy(ctx context.Context, deployment *Deployment, scope infra.Scope) *async.InteractiveTaskWithProgress[*DeployResult, *DeployProgress]
 	Destroy(ctx context.Context, deployment *Deployment, options DestroyOptions) *async.InteractiveTaskWithProgress[*DestroyResult, *DestroyProgress]
 }
 

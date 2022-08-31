@@ -110,6 +110,8 @@ func TestGetDeploymentResourceOperationsSuccess(t *testing.T) {
 	groupCalls := 0
 
 	mockContext := mocks.NewMockContext(context.Background())
+	scope := NewSubscriptionScope(*mockContext.Context, "eastus2", "SUBSCRIPTION_ID", "DEPLOYMENT_NAME")
+
 	mockContext.CommandRunner.When(func(args executil.RunArgs, command string) bool {
 		return strings.Contains(command, "az deployment operation sub list")
 	}).RespondFn(func(args executil.RunArgs) (executil.RunResult, error) {
@@ -129,11 +131,11 @@ func TestGetDeploymentResourceOperationsSuccess(t *testing.T) {
 	})
 
 	arm := NewAzureResourceManager(*mockContext.Context)
-	operations, err := arm.GetDeploymentResourceOperations(*mockContext.Context, "subscription-id", "deployment-name")
+	operations, err := arm.GetDeploymentResourceOperations(*mockContext.Context, scope)
 	require.NotNil(t, operations)
 	require.Nil(t, err)
 
-	require.Len(t, operations, 2)
+	require.Len(t, operations, 4)
 	require.Equal(t, 1, subCalls)
 	require.Equal(t, 1, groupCalls)
 }
@@ -143,6 +145,8 @@ func TestGetDeploymentResourceOperationsFail(t *testing.T) {
 	groupCalls := 0
 
 	mockContext := mocks.NewMockContext(context.Background())
+	scope := NewSubscriptionScope(*mockContext.Context, "eastus2", "SUBSCRIPTION_ID", "DEPLOYMENT_NAME")
+
 	mockContext.CommandRunner.When(func(args executil.RunArgs, command string) bool {
 		return strings.Contains(command, "az deployment operation sub list")
 	}).RespondFn(func(args executil.RunArgs) (executil.RunResult, error) {
@@ -160,7 +164,7 @@ func TestGetDeploymentResourceOperationsFail(t *testing.T) {
 	})
 
 	arm := NewAzureResourceManager(*mockContext.Context)
-	operations, err := arm.GetDeploymentResourceOperations(*mockContext.Context, "subscription-id", "deployment-name")
+	operations, err := arm.GetDeploymentResourceOperations(*mockContext.Context, scope)
 
 	require.Nil(t, operations)
 	require.NotNil(t, err)
@@ -174,6 +178,8 @@ func TestGetDeploymentResourceOperationsNoResourceGroup(t *testing.T) {
 	groupCalls := 0
 
 	mockContext := mocks.NewMockContext(context.Background())
+	scope := NewSubscriptionScope(*mockContext.Context, "eastus2", "SUBSCRIPTION_ID", "DEPLOYMENT_NAME")
+
 	mockContext.CommandRunner.When(func(args executil.RunArgs, command string) bool {
 		return strings.Contains(command, "az deployment operation sub list")
 	}).RespondFn(func(args executil.RunArgs) (executil.RunResult, error) {
@@ -191,7 +197,7 @@ func TestGetDeploymentResourceOperationsNoResourceGroup(t *testing.T) {
 	})
 
 	arm := NewAzureResourceManager(*mockContext.Context)
-	operations, err := arm.GetDeploymentResourceOperations(*mockContext.Context, "subscription-id", "deployment-name")
+	operations, err := arm.GetDeploymentResourceOperations(*mockContext.Context, scope)
 
 	require.NotNil(t, operations)
 	require.Nil(t, err)
@@ -205,6 +211,8 @@ func TestGetDeploymentResourceOperationsWithNestedDeployments(t *testing.T) {
 	groupCalls := 0
 
 	mockContext := mocks.NewMockContext(context.Background())
+	scope := NewSubscriptionScope(*mockContext.Context, "eastus2", "SUBSCRIPTION_ID", "DEPLOYMENT_NAME")
+
 	mockContext.CommandRunner.When(func(args executil.RunArgs, command string) bool {
 		return strings.Contains(command, "az deployment operation sub list")
 	}).RespondFn(func(args executil.RunArgs) (executil.RunResult, error) {
@@ -229,11 +237,11 @@ func TestGetDeploymentResourceOperationsWithNestedDeployments(t *testing.T) {
 	})
 
 	arm := NewAzureResourceManager(*mockContext.Context)
-	operations, err := arm.GetDeploymentResourceOperations(*mockContext.Context, "subscription-id", "deployment-name")
+	operations, err := arm.GetDeploymentResourceOperations(*mockContext.Context, scope)
 
 	require.NotNil(t, operations)
 	require.Nil(t, err)
-	require.Len(t, operations, 4)
+	require.Len(t, operations, 6)
 	require.Equal(t, 1, subCalls)
 	require.Equal(t, 2, groupCalls)
 }

@@ -26,23 +26,22 @@ import (
 func deployCmd(rootOptions *internal.GlobalCommandOptions) *cobra.Command {
 	cmd := commands.Build(
 		&deployAction{rootOptions: rootOptions},
-		commands.BuildOptions{
-			GlobalOptions: rootOptions,
-			Use:           "deploy",
-			Short:         "Deploy the application's code to Azure.",
+		rootOptions,
+		"deploy",
+		"Deploy the application's code to Azure.",
+		&commands.BuildOptions{
 			Long: `Deploy the application's code to Azure.
 
-			When no ` + output.WithBackticks("--service") + ` value is specified, all services in the ` + output.WithBackticks("azure.yaml") + ` file (found in the root of your project) are deployed.
-			
-			Examples:
-			
-				$ azd deploy
-				$ azd deploy –-service api
-				$ azd deploy –-service web
-				
-			After the deployment is complete, the endpoint is printed. To start the service, select the endpoint or paste it in a browser.`,
-		},
-	)
+When no ` + output.WithBackticks("--service") + ` value is specified, all services in the ` + output.WithBackticks("azure.yaml") + ` file (found in the root of your project) are deployed.
+
+Examples:
+
+	$ azd deploy
+	$ azd deploy –-service api
+	$ azd deploy –-service web
+	
+After the deployment is complete, the endpoint is printed. To start the service, select the endpoint or paste it in a browser.`,
+		})
 
 	return output.AddOutputParam(
 		cmd,

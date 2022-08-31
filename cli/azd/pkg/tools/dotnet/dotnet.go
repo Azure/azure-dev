@@ -21,6 +21,7 @@ type DotNetCli interface {
 }
 
 type dotNetCli struct {
+	runCommandFn executil.RunCommandFn
 }
 
 func (cli *dotNetCli) Name() string {
@@ -62,7 +63,8 @@ func (cli *dotNetCli) CheckInstalled(ctx context.Context) (bool, error) {
 }
 
 func (cli *dotNetCli) Publish(ctx context.Context, project string, output string) error {
-	res, err := executil.RunCommandWithShell(ctx, "dotnet", "publish", project, "-c", "Release", "--output", output)
+	runArgs := executil.NewRunArgs("dotnet", "publish", project, "-c", "Release", "--output", output)
+	res, err := cli.runCommandFn(ctx, runArgs)
 	if err != nil {
 		return fmt.Errorf("dotnet publish on project '%s' failed: %s: %w", project, res.String(), err)
 	}
@@ -70,7 +72,8 @@ func (cli *dotNetCli) Publish(ctx context.Context, project string, output string
 }
 
 func (cli *dotNetCli) Restore(ctx context.Context, project string) error {
-	res, err := executil.RunCommandWithShell(ctx, "dotnet", "restore", project)
+	runArgs := executil.NewRunArgs("dotnet", "restore", project)
+	res, err := cli.runCommandFn(ctx, runArgs)
 	if err != nil {
 		return fmt.Errorf("dotnet restore on project '%s' failed: %s: %w", project, res.String(), err)
 	}
@@ -78,7 +81,8 @@ func (cli *dotNetCli) Restore(ctx context.Context, project string) error {
 }
 
 func (cli *dotNetCli) InitializeSecret(ctx context.Context, project string) error {
-	res, err := executil.RunCommandWithShell(ctx, "dotnet", "user-secrets", "init", "--project", project)
+	runArgs := executil.NewRunArgs("dotnet", "user-secrets", "init", "--project", project)
+	res, err := cli.runCommandFn(ctx, runArgs)
 	if err != nil {
 		return fmt.Errorf("failed to initialize secrets at project '%s': %w (%s)", project, err, res.String())
 	}
@@ -86,13 +90,16 @@ func (cli *dotNetCli) InitializeSecret(ctx context.Context, project string) erro
 }
 
 func (cli *dotNetCli) SetSecret(ctx context.Context, key string, value string, project string) error {
-	res, err := executil.RunCommand(ctx, "dotnet", "user-secrets", "set", key, value, "--project", project)
+	runArgs := executil.NewRunArgs("dotnet", "user-secrets", "set", key, value, "--project", project)
+	res, err := cli.runCommandFn(ctx, runArgs)
 	if err != nil {
 		return fmt.Errorf("failed running %s secret set %s: %w", cli.Name(), res.String(), err)
 	}
 	return nil
 }
 
-func NewDotNetCli() DotNetCli {
-	return &dotNetCli{}
+func NewDotNetCli(ctx context.Context) DotNetCli {
+	return &dotNetCli{
+		runCommandFn: executil.GetCommandRunner(ctx),
+	}
 }

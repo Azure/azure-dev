@@ -15,10 +15,14 @@ import (
 	"github.com/blang/semver/v4"
 )
 
-type PythonCli struct{}
+type PythonCli struct {
+	runCommandFn executil.RunCommandFn
+}
 
-func NewPythonCli() *PythonCli {
-	return &PythonCli{}
+func NewPythonCli(ctx context.Context) *PythonCli {
+	return &PythonCli{
+		runCommandFn: executil.GetCommandRunner(ctx),
+	}
 }
 
 func (cli *PythonCli) versionInfo() tools.VersionInfo {
@@ -75,9 +79,8 @@ func (cli *PythonCli) InstallRequirements(ctx context.Context, workingDir, envir
 
 		vEnvSetting := fmt.Sprintf("VIRTUAL_ENV=%s", path.Join(absWorkingDir, environment))
 
-		res, err = executil.RunCommandWithShellAndEnvAndCwd(ctx, pythonExe(), []string{
-			"-m", "pip", "install", "-r", requirementFile,
-		}, []string{vEnvSetting}, workingDir)
+		runArgs := executil.NewRunArgsWithCwdAndEnv(workingDir, []string{vEnvSetting}, pythonExe(), "-m", "pip", "install", "-r", requirementFile)
+		res, err = cli.runCommandFn(ctx, runArgs)
 	} else {
 		envActivation := ". " + path.Join(environment, "bin", "activate")
 		installCmd := fmt.Sprintf("%s -m pip install -r %s", pythonExe(), requirementFile)
@@ -93,9 +96,9 @@ func (cli *PythonCli) InstallRequirements(ctx context.Context, workingDir, envir
 }
 
 func (cli *PythonCli) CreateVirtualEnv(ctx context.Context, workingDir, name string) error {
-	res, err := executil.RunCommandWithShellAndEnvAndCwd(ctx, pythonExe(), []string{
-		"-m", "venv", name,
-	}, nil, workingDir)
+	runArgs := executil.NewRunArgsWithCwdAndEnv(workingDir, nil, pythonExe(), "-m", "venv", name)
+	res, err := cli.runCommandFn(ctx, runArgs)
+
 	if err != nil {
 		return fmt.Errorf("failed to create virtual Python environment for project '%s': %w (%s)", workingDir, err, res.String())
 	}

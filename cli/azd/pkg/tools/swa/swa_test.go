@@ -13,13 +13,13 @@ import (
 )
 
 func Test_SwaBuild(t *testing.T) {
-	tempSwaCli := NewSwaCli()
+	tempSwaCli := NewSwaCli(context.Background())
 	swacli := tempSwaCli.(*swaCli)
 
 	ran := false
 
 	t.Run("NoErrors", func(t *testing.T) {
-		swacli.runWithResultFn = func(ctx context.Context, args executil.RunArgs) (executil.RunResult, error) {
+		swacli.runCommandFn = func(ctx context.Context, args executil.RunArgs) (executil.RunResult, error) {
 			ran = true
 
 			require.Equal(t, "./projectPath", args.Cwd)
@@ -46,7 +46,7 @@ func Test_SwaBuild(t *testing.T) {
 	})
 
 	t.Run("Error", func(t *testing.T) {
-		swacli.runWithResultFn = func(ctx context.Context, args executil.RunArgs) (executil.RunResult, error) {
+		swacli.runCommandFn = func(ctx context.Context, args executil.RunArgs) (executil.RunResult, error) {
 			ran = true
 
 			require.Equal(t, "./projectPath", args.Cwd)
@@ -71,13 +71,13 @@ func Test_SwaBuild(t *testing.T) {
 }
 
 func Test_SwaDeploy(t *testing.T) {
-	tempSwaCli := NewSwaCli()
+	tempSwaCli := NewSwaCli(context.Background())
 	swacli := tempSwaCli.(*swaCli)
 
 	ran := false
 
 	t.Run("NoErrors", func(t *testing.T) {
-		swacli.runWithResultFn = func(ctx context.Context, args executil.RunArgs) (executil.RunResult, error) {
+		swacli.runCommandFn = func(ctx context.Context, args executil.RunArgs) (executil.RunResult, error) {
 			ran = true
 
 			require.Equal(t, "./projectPath", args.Cwd)
@@ -111,7 +111,7 @@ func Test_SwaDeploy(t *testing.T) {
 	})
 
 	t.Run("Error", func(t *testing.T) {
-		swacli.runWithResultFn = func(ctx context.Context, args executil.RunArgs) (executil.RunResult, error) {
+		swacli.runCommandFn = func(ctx context.Context, args executil.RunArgs) (executil.RunResult, error) {
 			ran = true
 
 			require.Equal(t, "./projectPath", args.Cwd)

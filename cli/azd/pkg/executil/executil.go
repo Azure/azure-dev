@@ -42,39 +42,31 @@ func GetCommandRunner(ctx context.Context) RunCommandFn {
 	return execFn
 }
 
-// Settings to modify the way CmdTree is executed
-type CmdTreeOptions struct {
-	Interactive bool
-}
-
 // RunCommand runs a specific command with a given set of arguments.
-func RunCommand(ctx context.Context, cmd string, args ...string) (RunResult, error) {
-	process := CmdTree{Cmd: exec.CommandContext(ctx, cmd, args...)}
-	return execCmdTree(process)
-}
+func RunCommand(ctx context.Context, args RunArgs) (RunResult, error) {
+	process := CmdTree{Cmd: exec.CommandContext(ctx, args.Cmd, args.Args...)}
 
-// RunCommandWithCurrentStdio runs a command, reusing the current stdout, stderr and stdin of the
-// current process. Since output is not captures, the `Stdout` and `Stderr` properties of `RunResult`
-// will be empty strings. This is useful when the command you want to run is "interactive", like
-// logging into GitHub.
-func RunCommandWithCurrentStdio(ctx context.Context, cmd string, args ...string) (RunResult, error) {
-	process := CmdTree{Cmd: exec.CommandContext(ctx, cmd, args...), CmdTreeOptions: CmdTreeOptions{Interactive: true}}
-	process.Cmd.Stdin = os.Stdin
-	process.Cmd.Stdout = os.Stdout
-	process.Cmd.Stderr = os.Stderr
+	if strings.TrimSpace(args.Cwd) == "" {
+		process.Cmd.Dir = args.Cwd
+	}
+
+	if args.Env != nil && len(args.Env) > 0 {
+		process.Env = appendEnv(args.Env)
+	}
+
 	return execCmdTree(process)
 }
 
 // RunCommandWithShellAndEnvAndCwd runs your command, with a custom 'env' and 'cwd'.
 // Returns the exit code of the program, the stdout, the stderr and any error, if applicable.
-func RunCommandWithShellAndEnvAndCwd(ctx context.Context, cmd string, args []string, env []string, cwd string) (RunResult, error) {
-	process, err := newCmdTree(ctx, cmd, args, true)
+func RunCommandWithShellAndEnvAndCwd(ctx context.Context, args RunArgs) (RunResult, error) {
+	process, err := newCmdTree(ctx, args.Cmd, args.Args, true)
 	if err != nil {
 		return NewRunResult(-1, "", ""), err
 	}
 
-	process.Cmd.Dir = cwd
-	process.Env = appendEnv(env)
+	process.Cmd.Dir = args.Cwd
+	process.Env = appendEnv(args.Env)
 
 	return execCmdTree(process)
 }
@@ -184,8 +176,8 @@ func newCmdTree(ctx context.Context, cmd string, args []string, useShell bool) (
 	return CmdTree{Cmd: exec.Command(shellName, allArgs...)}, nil
 }
 
-func RunCommandWithShell(ctx context.Context, cmd string, args ...string) (RunResult, error) {
-	return RunCommandWithShellAndEnvAndCwd(ctx, cmd, args, nil, "")
+func RunCommandWithShell(ctx context.Context, args RunArgs) (RunResult, error) {
+	return RunCommandWithShellAndEnvAndCwd(ctx, args)
 }
 
 type RunResult struct {
@@ -220,6 +212,25 @@ type RunArgs struct {
 	// and output is available.
 	// This is off by default.
 	EnrichError bool
+
+	// When set will attach commands to std input/output
+	Interactive bool
+}
+
+func NewRunArgs(cmd string, args ...string) RunArgs {
+	return RunArgs{
+		Cmd:  cmd,
+		Args: args,
+	}
+}
+
+func NewRunArgsWithCwdAndEnv(cwd string, env []string, cmd string, args ...string) RunArgs {
+	return RunArgs{
+		Cwd:  cwd,
+		Env:  env,
+		Cmd:  cmd,
+		Args: args,
+	}
 }
 
 type redactData struct {
@@ -264,19 +275,24 @@ func RunWithResult(ctx context.Context, args RunArgs) (RunResult, error) {
 		return RunResult{}, err
 	}
 
-	var stderr, stdout bytes.Buffer
-
 	cmd.Dir = args.Cwd
 
-	if args.Stderr != nil {
-		cmd.Stderr = io.MultiWriter(args.Stderr, &stderr)
-	} else {
-		cmd.Stderr = &stderr
-	}
+	var stdin, stdout, stderr bytes.Buffer
 
-	cmd.Stdout = &stdout
-	cmd.Stdin = &bytes.Buffer{}
 	cmd.Env = appendEnv(args.Env)
+
+	if args.Interactive {
+		cmd.Stdin = os.Stdin
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+	} else {
+		cmd.Stdin = &stdin
+		cmd.Stdout = &stdout
+
+		if args.Stderr != nil {
+			cmd.Stderr = io.MultiWriter(args.Stderr, &stderr)
+		}
+	}
 
 	log.Printf("RunWithResult exec: '%s %s'", args.Cmd, strings.Join(args.Args, " "))
 
@@ -301,19 +317,29 @@ func RunWithResult(ctx context.Context, args RunArgs) (RunResult, error) {
 
 	err = cmd.Wait()
 
-	if args.Debug {
-		log.Printf("Exit Code:%d\nOut:%s\nErr:%s\n", cmd.ProcessState.ExitCode(), redactSensitiveData(stdout.String()), redactSensitiveData(stderr.String()))
-	}
+	var result RunResult
 
-	rr := RunResult{
-		ExitCode: cmd.ProcessState.ExitCode(),
-		Stdout:   stdout.String(),
-		Stderr:   stderr.String(),
+	if args.Interactive {
+		result = RunResult{
+			ExitCode: cmd.ProcessState.ExitCode(),
+			Stdout:   "",
+			Stderr:   "",
+		}
+	} else {
+		if args.Debug {
+			log.Printf("Exit Code:%d\nOut:%s\nErr:%s\n", cmd.ProcessState.ExitCode(), redactSensitiveData(stdout.String()), redactSensitiveData(stderr.String()))
+		}
+
+		result = RunResult{
+			ExitCode: cmd.ProcessState.ExitCode(),
+			Stdout:   stdout.String(),
+			Stderr:   stderr.String(),
+		}
 	}
 
 	if err != nil && args.EnrichError {
-		err = fmt.Errorf("%s: %w", rr, err)
+		err = fmt.Errorf("%s: %w", result, err)
 	}
 
-	return rr, err
+	return result, err
 }

@@ -21,25 +21,16 @@ type BicepCli interface {
 	Build(ctx context.Context, file string) (string, error)
 }
 
-func NewBicepCli(args NewBicepCliArgs) BicepCli {
-	if args.RunWithResultFn == nil {
-		args.RunWithResultFn = executil.RunWithResult
-	}
-
+func NewBicepCli(ctx context.Context) BicepCli {
 	return &bicepCli{
-		cli:             args.AzCli,
-		runWithResultFn: args.RunWithResultFn,
+		cli:          azcli.GetAzCli(ctx),
+		runCommandFn: executil.GetCommandRunner(ctx),
 	}
-}
-
-type NewBicepCliArgs struct {
-	AzCli           azcli.AzCli
-	RunWithResultFn func(ctx context.Context, args executil.RunArgs) (executil.RunResult, error)
 }
 
 type bicepCli struct {
-	cli             azcli.AzCli
-	runWithResultFn func(ctx context.Context, args executil.RunArgs) (executil.RunResult, error)
+	cli          azcli.AzCli
+	runCommandFn executil.RunCommandFn
 }
 
 var isBicepNotFoundRegex = regexp.MustCompile(`Bicep CLI not found\.`)
@@ -147,7 +138,7 @@ func (cli *bicepCli) runCommand(ctx context.Context, args ...string) (executil.R
 		Args: args,
 	}
 
-	return cli.runWithResultFn(ctx, runArgs)
+	return cli.runCommandFn(ctx, runArgs)
 }
 
 type contextKey string
@@ -157,14 +148,9 @@ const (
 )
 
 func GetBicepCli(ctx context.Context) BicepCli {
-	execUtilFn := executil.GetCommandRunner(ctx)
 	cli, ok := ctx.Value(bicepContextKey).(BicepCli)
 	if !ok {
-		args := NewBicepCliArgs{
-			AzCli:           azcli.GetAzCli(ctx),
-			RunWithResultFn: execUtilFn,
-		}
-		cli = NewBicepCli(args)
+		cli = NewBicepCli(ctx)
 	}
 
 	return cli

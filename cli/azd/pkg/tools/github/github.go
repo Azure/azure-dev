@@ -28,8 +28,10 @@ type GitHubCli interface {
 	GitHubActionsExists(ctx context.Context, repoSlug string) (bool, error)
 }
 
-func NewGitHubCli() GitHubCli {
-	return &ghCli{}
+func NewGitHubCli(ctx context.Context) GitHubCli {
+	return &ghCli{
+		runCommandFn: executil.GetCommandRunner(ctx),
+	}
 }
 
 var (
@@ -39,7 +41,9 @@ var (
 	GitHubHostName = "github.com"
 )
 
-type ghCli struct{}
+type ghCli struct {
+	runCommandFn executil.RunCommandFn
+}
 
 func (cli *ghCli) versionInfo() tools.VersionInfo {
 	return tools.VersionInfo{
@@ -81,7 +85,8 @@ func (cli *ghCli) InstallUrl() string {
 }
 
 func (cli *ghCli) CheckAuth(ctx context.Context, hostname string) (bool, error) {
-	res, err := executil.RunCommand(ctx, "gh", "auth", "status", "--hostname", hostname)
+	runArgs := executil.NewRunArgs("gh", "auth", "status", "--hostname", hostname)
+	res, err := cli.runCommandFn(ctx, runArgs)
 	if res.ExitCode == 0 {
 		return true, nil
 	} else if isGhCliNotLoggedInMessageRegex.MatchString(res.Stderr) {
@@ -96,7 +101,10 @@ func (cli *ghCli) CheckAuth(ctx context.Context, hostname string) (bool, error) 
 }
 
 func (cli *ghCli) Login(ctx context.Context, hostname string) error {
-	res, err := executil.RunCommandWithCurrentStdio(ctx, "gh", "auth", "login", "--hostname", hostname)
+	runArgs := executil.NewRunArgs("gh", "auth", "login", "--hostname", hostname)
+	runArgs.Interactive = true
+
+	res, err := cli.runCommandFn(ctx, runArgs)
 	if err != nil {
 		return fmt.Errorf("failed running gh auth login %s: %w", res.String(), err)
 	}
@@ -105,7 +113,8 @@ func (cli *ghCli) Login(ctx context.Context, hostname string) error {
 }
 
 func (cli *ghCli) SetSecret(ctx context.Context, repoSlug string, name string, value string) error {
-	res, err := executil.RunCommand(ctx, "gh", "-R", repoSlug, "secret", "set", name, "--body", value)
+	runArgs := executil.NewRunArgs("gh", "-R", repoSlug, "secret", "set", name, "--body", value)
+	res, err := cli.runCommandFn(ctx, runArgs)
 	if isGhCliNotLoggedInMessageRegex.MatchString(res.Stderr) {
 		return ErrGitHubCliNotLoggedIn
 	} else if err != nil {
@@ -124,7 +133,8 @@ type GhCliRepository struct {
 }
 
 func (cli *ghCli) ListRepositories(ctx context.Context) ([]GhCliRepository, error) {
-	res, err := executil.RunCommand(ctx, "gh", "repo", "list", "--no-archived", "--json", "nameWithOwner,url,sshUrl")
+	runArgs := executil.NewRunArgs("gh", "repo", "list", "--no-archived", "--json", "nameWithOwner,url,sshUrl")
+	res, err := cli.runCommandFn(ctx, runArgs)
 	if isGhCliNotLoggedInMessageRegex.MatchString(res.Stderr) {
 		return nil, ErrGitHubCliNotLoggedIn
 	} else if err != nil {
@@ -141,7 +151,8 @@ func (cli *ghCli) ListRepositories(ctx context.Context) ([]GhCliRepository, erro
 }
 
 func (cli *ghCli) ViewRepository(ctx context.Context, name string) (GhCliRepository, error) {
-	res, err := executil.RunCommand(ctx, "gh", "repo", "view", name, "--json", "nameWithOwner,url,sshUrl")
+	runArgs := executil.NewRunArgs("gh", "repo", "view", name, "--json", "nameWithOwner,url,sshUrl")
+	res, err := cli.runCommandFn(ctx, runArgs)
 	if isGhCliNotLoggedInMessageRegex.MatchString(res.Stderr) {
 		return GhCliRepository{}, ErrGitHubCliNotLoggedIn
 	} else if err != nil {
@@ -158,7 +169,8 @@ func (cli *ghCli) ViewRepository(ctx context.Context, name string) (GhCliReposit
 }
 
 func (cli *ghCli) CreatePrivateRepository(ctx context.Context, name string) error {
-	res, err := executil.RunCommand(ctx, "gh", "repo", "create", name, "--private")
+	runArgs := executil.NewRunArgs("gh", "repo", "create", name, "--private")
+	res, err := cli.runCommandFn(ctx, runArgs)
 	if isGhCliNotLoggedInMessageRegex.MatchString(res.Stderr) {
 		return ErrGitHubCliNotLoggedIn
 	} else if repositoryNameInUseRegex.MatchString(res.Stderr) {
@@ -176,7 +188,8 @@ const (
 )
 
 func (cli *ghCli) GetGitProtocolType(ctx context.Context) (string, error) {
-	res, err := executil.RunCommand(ctx, "gh", "config", "get", "git_protocol")
+	runArgs := executil.NewRunArgs("gh", "config", "get", "git_protocol")
+	res, err := cli.runCommandFn(ctx, runArgs)
 	if isGhCliNotLoggedInMessageRegex.MatchString(res.Stderr) {
 		return "", ErrGitHubCliNotLoggedIn
 	} else if err != nil {
@@ -193,7 +206,8 @@ type GitHubActionsResponse struct {
 // GitHubActionsExists gets the information from upstream about the workflows and
 // return true if there is at least one workflow in the repo.
 func (cli *ghCli) GitHubActionsExists(ctx context.Context, repoSlug string) (bool, error) {
-	res, err := executil.RunCommand(ctx, "gh", "api", "/repos/"+repoSlug+"/actions/workflows")
+	runArgs := executil.NewRunArgs("gh", "api", "/repos/"+repoSlug+"/actions/workflows")
+	res, err := cli.runCommandFn(ctx, runArgs)
 	if err != nil {
 		return false, fmt.Errorf("getting github actions %s: %w", res.String(), err)
 	}

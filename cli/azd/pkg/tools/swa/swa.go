@@ -12,9 +12,9 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 )
 
-func NewSwaCli() SwaCli {
+func NewSwaCli(ctx context.Context) SwaCli {
 	return &swaCli{
-		runWithResultFn: executil.RunWithResult,
+		runCommandFn: executil.GetCommandRunner(ctx),
 	}
 }
 
@@ -26,8 +26,8 @@ type SwaCli interface {
 }
 
 type swaCli struct {
-	// runWithResultFn allows us to stub out the executil.RunWithResult, for testing.
-	runWithResultFn func(ctx context.Context, args executil.RunArgs) (executil.RunResult, error)
+	// runCommandFn allows us to stub out the executil.RunWithResult, for testing.
+	runCommandFn executil.RunCommandFn
 }
 
 func (cli *swaCli) Build(ctx context.Context, cwd string, appFolderPath string, outputRelativeFolderPath string) error {
@@ -82,7 +82,7 @@ func (cli *swaCli) executeCommand(ctx context.Context, cwd string, args ...strin
 	defaultArgs := []string{"-y", "@azure/static-web-apps-cli@1.0.0"}
 	finalArgs := append(defaultArgs, args...)
 
-	return cli.runWithResultFn(ctx, executil.RunArgs{
+	return cli.runCommandFn(ctx, executil.RunArgs{
 		Cmd:         "npx",
 		Args:        finalArgs,
 		Cwd:         cwd,

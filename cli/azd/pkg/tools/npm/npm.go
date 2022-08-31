@@ -19,10 +19,13 @@ type NpmCli interface {
 }
 
 type npmCli struct {
+	runCommandFn executil.RunCommandFn
 }
 
-func NewNpmCli() NpmCli {
-	return &npmCli{}
+func NewNpmCli(ctx context.Context) NpmCli {
+	return &npmCli{
+		runCommandFn: executil.GetCommandRunner(ctx),
+	}
 }
 
 func (cli *npmCli) versionInfoNode() tools.VersionInfo {
@@ -67,7 +70,8 @@ func (cli *npmCli) Name() string {
 }
 
 func (cli *npmCli) Install(ctx context.Context, project string, onlyProduction bool) error {
-	res, err := executil.RunCommandWithShellAndEnvAndCwd(ctx, "npm", []string{"install", "--production", fmt.Sprintf("%t", onlyProduction)}, nil, project)
+	runArgs := executil.NewRunArgsWithCwdAndEnv(project, nil, "npm", "install", "--production", fmt.Sprintf("%t", onlyProduction))
+	res, err := cli.runCommandFn(ctx, runArgs)
 	if err != nil {
 		return fmt.Errorf("failed to install project %s, %s: %w", project, res.String(), err)
 	}
@@ -75,7 +79,8 @@ func (cli *npmCli) Install(ctx context.Context, project string, onlyProduction b
 }
 
 func (cli *npmCli) Build(ctx context.Context, project string, env []string) error {
-	res, err := executil.RunCommandWithShellAndEnvAndCwd(ctx, "npm", []string{"run", "build", "--if-present", "--production", "true"}, env, project)
+	runArgs := executil.NewRunArgsWithCwdAndEnv(project, env, "npm", "run", "build", "--if-present", "--production", "true")
+	res, err := cli.runCommandFn(ctx, runArgs)
 	if err != nil {
 		return fmt.Errorf("failed to build project %s, %s: %w", project, res.String(), err)
 	}

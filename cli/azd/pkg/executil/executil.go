@@ -42,6 +42,11 @@ func GetCommandRunner(ctx context.Context) RunCommandFn {
 	return execFn
 }
 
+// Settings to modify the way CmdTree is executed
+type CmdTreeOptions struct {
+	Interactive bool
+}
+
 // RunCommandList runs a list of commands in shell.
 // The command list is constructed using '&&' operator, so the first failing command causes the whole list run to fail.
 func RunCommandList(ctx context.Context, commands []string, env []string, cwd string) (RunResult, error) {

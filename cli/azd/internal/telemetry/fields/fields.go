@@ -38,10 +38,14 @@ const (
 	// A unique ID associated to the machine the application is installed on.
 	//
 	// This shares implementation with VSCode's machineId and can match exactly on a given device, although there are no guarantees.
-	MachineIdKey = attribute.Key("machine_id")
+	MachineIdKey = attribute.Key("machine.id")
 
 	// An enumeration of possible environments that the application is running on.
-	ExecutionEnvironmentKey = attribute.Key("execution_environment")
+	//
+	// Example: Desktop, Azure Pipelines, Visual Studio.
+	//
+	// See EnvDesktop for complete set of values.
+	ExecutionEnvironmentKey = attribute.Key("execution.environment")
 )
 
 // Context level fields. Availability depends on the command running.

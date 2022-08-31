@@ -33,7 +33,7 @@ func sha256Hash(val string) string {
 // getMachineId returns a unique ID for the machine.
 func getMachineId() string {
 	// We store the machine ID on the filesystem not due to performance,
-	// but to increase the stability of the ID constant across factors like changing mac addresses, NICs.
+	// but to increase the stability of the ID to be constant across factors like changing mac addresses, NICs.
 	return loadOrCalculate(calculateMachineId, machineIdCacheFileName)
 }
 
@@ -48,26 +48,25 @@ func calculateMachineId() string {
 	}
 }
 
-func loadOrCalculate(valueFunc func() string, cacheFileName string) string {
+func loadOrCalculate(calc func() string, cacheFileName string) string {
 	configDir, err := config.GetUserConfigDir()
-	cacheFile := filepath.Join(configDir, cacheFileName)
-
 	if err != nil {
-		log.Printf("could not load machineId from cache, returning default: %s", err)
-		return valueFunc()
+		log.Printf("could not load machineId from cache. returning calculated value: %s", err)
+		return calc()
 	}
 
+	cacheFile := filepath.Join(configDir, cacheFileName)
 	bytes, err := os.ReadFile(configDir)
 	if err == nil {
 		return string(bytes)
 	}
 
-	err = os.WriteFile(cacheFile, []byte(valueFunc()), osutil.PermissionFile)
+	err = os.WriteFile(cacheFile, []byte(calc()), osutil.PermissionFile)
 	if err != nil {
-		log.Printf("could not write machineId to cache, returning default: %s", err)
+		log.Printf("could not write machineId to cache. returning calculated value: %s", err)
 	}
 
-	return valueFunc()
+	return calc()
 }
 
 func getMacAddress() (string, bool) {

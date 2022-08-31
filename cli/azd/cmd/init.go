@@ -15,7 +15,6 @@ import (
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/internal"
-	"github.com/azure/azure-dev/cli/azd/internal/telemetry"
 	"github.com/azure/azure-dev/cli/azd/pkg/commands"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
@@ -221,9 +220,7 @@ func (i *initAction) Run(ctx context.Context, cmd *cobra.Command, args []string,
 		return environment.NewEnvironmentInitError(envName)
 	}
 
-	pc, err := project.LoadProjectConfig(azdCtx.ProjectPath(), &environment.Environment{})
-	ctx = telemetry.ContextWithTemplate(ctx, pc.Metadata.Template)
-
+	_, err = project.LoadProjectConfig(azdCtx.ProjectPath(), &environment.Environment{})
 	if errors.Is(err, os.ErrNotExist) {
 		fmt.Printf("Creating a new %s file.\n", azdcontext.ProjectFileName)
 

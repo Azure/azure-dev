@@ -6,24 +6,25 @@ package osversion
 #import <Foundation/Foundation.h>
 #import <Foundation/NSProcessInfo.h>
 
-int toInt(NSNumber i) {
+int toInt(NSNumber* i) {
+	if (i == NULL) { return 0; }
     return i.intValue;
 }
 
 NSOperatingSystemVersion getVersion() {
-	NSProcessInfo *pinfo = [NSProcessInfo processInfo];
+	NSProcessInfo *pInfo = [NSProcessInfo processInfo];
 	// check availability of the property operatingSystemVersion (10.10+) at runtime
-    if ([processInfo respondsToSelector:@selector(operatingSystemVersion)])
+    if ([pInfo respondsToSelector:@selector(operatingSystemVersion)])
     {
 		return [pInfo operatingSystemVersion];
 	}
 	else
 	{
-		struct Result NSOperatingSystemVersion;
-		Result.majorVersion = 10;
-		Result.minorVersion = 9;
-		Result.patchVersion = 0;
-		return Result;
+		version NSOperatingSystemVersion;
+		version.majorVersion = 10;
+		version.minorVersion = 9;
+		version.patchVersion = 0;
+		return version;
 	}
 }
 */

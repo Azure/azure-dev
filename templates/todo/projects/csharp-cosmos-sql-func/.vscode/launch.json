@@ -15,7 +15,8 @@
             "name": "Debug API",
             "type": "coreclr",
             "request": "attach",
-            "processId": "${command:azureFunctions.pickProcess}"
+            "processId": "",
+          
         },
         {
             "name": ".NET Core Attach",

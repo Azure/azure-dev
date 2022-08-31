@@ -24,7 +24,7 @@ func TestNewBuilder(t *testing.T) {
 
 	t.Run("WithOverrides", func(t *testing.T) {
 		runArgs := NewBuilder("az", "login").
-			WithCmd("anothercmd").
+			WithCmd("gh").
 			WithCwd("cwd").
 			WithEnv([]string{"foo", "bar"}).
 			WithInteractive(true).
@@ -33,7 +33,7 @@ func TestNewBuilder(t *testing.T) {
 			WithParams("param1", "param2").
 			Build()
 
-		require.Equal(t, "anothercmd", runArgs.Cmd)
+		require.Equal(t, "gh", runArgs.Cmd)
 		require.Len(t, runArgs.Args, 2)
 		require.Equal(t, []string{"param1", "param2"}, runArgs.Args)
 		require.Equal(t, true, runArgs.Interactive)

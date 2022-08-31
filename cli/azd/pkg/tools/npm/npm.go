@@ -70,8 +70,11 @@ func (cli *npmCli) Name() string {
 }
 
 func (cli *npmCli) Install(ctx context.Context, project string, onlyProduction bool) error {
-	runArgs := executil.NewRunArgsWithCwdAndEnv(project, nil, "npm", "install", "--production", fmt.Sprintf("%t", onlyProduction))
-	res, err := cli.runCommandFn(ctx, runArgs)
+	res, err := executil.
+		NewBuilder("npm", "install", "--production", fmt.Sprintf("%t", onlyProduction)).
+		WithCmd(project).
+		Exec(ctx, cli.runCommandFn)
+
 	if err != nil {
 		return fmt.Errorf("failed to install project %s, %s: %w", project, res.String(), err)
 	}
@@ -79,8 +82,11 @@ func (cli *npmCli) Install(ctx context.Context, project string, onlyProduction b
 }
 
 func (cli *npmCli) Build(ctx context.Context, project string, env []string) error {
-	runArgs := executil.NewRunArgsWithCwdAndEnv(project, env, "npm", "run", "build", "--if-present", "--production", "true")
-	res, err := cli.runCommandFn(ctx, runArgs)
+	res, err := executil.NewBuilder("npm", "run", "build", "--if-present", "--production", "true").
+		WithCwd(project).
+		WithEnv(env).
+		Exec(ctx, cli.runCommandFn)
+
 	if err != nil {
 		return fmt.Errorf("failed to build project %s, %s: %w", project, res.String(), err)
 	}

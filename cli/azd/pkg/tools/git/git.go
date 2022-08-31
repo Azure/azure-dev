@@ -174,10 +174,11 @@ func (cli *gitCli) Commit(ctx context.Context, repositoryPath string, message st
 }
 
 func (cli *gitCli) PushUpstream(ctx context.Context, repositoryPath string, origin string, branch string) error {
-	runArgs := executil.NewRunArgs("git", "-C", repositoryPath, "push", "--set-upstream", origin, branch)
-	runArgs.Interactive = true
+	res, err := executil.
+		NewBuilder("git", "-C", repositoryPath, "push", "--set-upstream", origin, branch).
+		WithInteractive(true).
+		Exec(ctx, cli.runCommandFn)
 
-	res, err := cli.runCommandFn(ctx, runArgs)
 	if err != nil {
 		return fmt.Errorf("failed to push: %s: %w", res.String(), err)
 	}

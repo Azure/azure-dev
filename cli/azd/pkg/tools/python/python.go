@@ -79,8 +79,10 @@ func (cli *PythonCli) InstallRequirements(ctx context.Context, workingDir, envir
 
 		vEnvSetting := fmt.Sprintf("VIRTUAL_ENV=%s", path.Join(absWorkingDir, environment))
 
-		runArgs := executil.NewRunArgsWithCwdAndEnv(workingDir, []string{vEnvSetting}, pythonExe(), "-m", "pip", "install", "-r", requirementFile)
-		res, err = cli.runCommandFn(ctx, runArgs)
+		res, err = executil.NewBuilder(pythonExe(), "-m", "pip", "install", "-r", requirementFile).
+			WithCwd(workingDir).
+			WithEnv([]string{vEnvSetting}).
+			Exec(ctx, cli.runCommandFn)
 	} else {
 		envActivation := ". " + path.Join(environment, "bin", "activate")
 		installCmd := fmt.Sprintf("%s -m pip install -r %s", pythonExe(), requirementFile)
@@ -96,8 +98,9 @@ func (cli *PythonCli) InstallRequirements(ctx context.Context, workingDir, envir
 }
 
 func (cli *PythonCli) CreateVirtualEnv(ctx context.Context, workingDir, name string) error {
-	runArgs := executil.NewRunArgsWithCwdAndEnv(workingDir, nil, pythonExe(), "-m", "venv", name)
-	res, err := cli.runCommandFn(ctx, runArgs)
+	res, err := executil.NewBuilder(pythonExe(), "-m", "venv", name).
+		WithCwd(workingDir).
+		Exec(ctx, cli.runCommandFn)
 
 	if err != nil {
 		return fmt.Errorf("failed to create virtual Python environment for project '%s': %w (%s)", workingDir, err, res.String())

@@ -18,8 +18,9 @@ import (
 )
 
 func TestRunCommandWithShell(t *testing.T) {
-	runArgs := NewRunArgs("az", "--version")
-	res, err := RunCommandWithShell(context.Background(), runArgs)
+	res, err := NewBuilder("az", "--version").
+		WithShell(true).
+		Exec(context.Background(), RunWithResult)
 
 	if err != nil {
 		t.Errorf("failed to launch process: %v", err)
@@ -43,7 +44,7 @@ func TestRunCommand(t *testing.T) {
 		Cmd:  "git",
 		Args: []string{"--version"},
 	}
-	res, err := RunCommand(context.Background(), args)
+	res, err := RunWithResult(context.Background(), args)
 
 	if err != nil {
 		t.Errorf("failed to launch process: %v", err)

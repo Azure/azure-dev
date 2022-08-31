@@ -101,10 +101,11 @@ func (cli *ghCli) CheckAuth(ctx context.Context, hostname string) (bool, error) 
 }
 
 func (cli *ghCli) Login(ctx context.Context, hostname string) error {
-	runArgs := executil.NewRunArgs("gh", "auth", "login", "--hostname", hostname)
-	runArgs.Interactive = true
+	res, err := executil.
+		NewBuilder("gh", "auth", "login", "--hostname", hostname).
+		WithInteractive(true).
+		Exec(ctx, cli.runCommandFn)
 
-	res, err := cli.runCommandFn(ctx, runArgs)
 	if err != nil {
 		return fmt.Errorf("failed running gh auth login %s: %w", res.String(), err)
 	}

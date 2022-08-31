@@ -42,35 +42,6 @@ func GetCommandRunner(ctx context.Context) RunCommandFn {
 	return execFn
 }
 
-// RunCommand runs a specific command with a given set of arguments.
-func RunCommand(ctx context.Context, args RunArgs) (RunResult, error) {
-	process := CmdTree{Cmd: exec.CommandContext(ctx, args.Cmd, args.Args...)}
-
-	if strings.TrimSpace(args.Cwd) == "" {
-		process.Cmd.Dir = args.Cwd
-	}
-
-	if args.Env != nil && len(args.Env) > 0 {
-		process.Env = appendEnv(args.Env)
-	}
-
-	return execCmdTree(process)
-}
-
-// RunCommandWithShellAndEnvAndCwd runs your command, with a custom 'env' and 'cwd'.
-// Returns the exit code of the program, the stdout, the stderr and any error, if applicable.
-func RunCommandWithShellAndEnvAndCwd(ctx context.Context, args RunArgs) (RunResult, error) {
-	process, err := newCmdTree(ctx, args.Cmd, args.Args, true)
-	if err != nil {
-		return NewRunResult(-1, "", ""), err
-	}
-
-	process.Cmd.Dir = args.Cwd
-	process.Env = appendEnv(args.Env)
-
-	return execCmdTree(process)
-}
-
 // RunCommandList runs a list of commands in shell.
 // The command list is constructed using '&&' operator, so the first failing command causes the whole list run to fail.
 func RunCommandList(ctx context.Context, commands []string, env []string, cwd string) (RunResult, error) {
@@ -176,10 +147,6 @@ func newCmdTree(ctx context.Context, cmd string, args []string, useShell bool) (
 	return CmdTree{Cmd: exec.Command(shellName, allArgs...)}, nil
 }
 
-func RunCommandWithShell(ctx context.Context, args RunArgs) (RunResult, error) {
-	return RunCommandWithShellAndEnvAndCwd(ctx, args)
-}
-
 type RunResult struct {
 	ExitCode int
 	Stdout   string
@@ -212,6 +179,9 @@ type RunArgs struct {
 	// and output is available.
 	// This is off by default.
 	EnrichError bool
+
+	// When set will run the command within a shell
+	UseShell bool
 
 	// When set will attach commands to std input/output
 	Interactive bool
@@ -269,7 +239,7 @@ func RunWithResult(ctx context.Context, args RunArgs) (RunResult, error) {
 	// use the shell on Windows since most commands are actually just batch files wrapping
 	// real commands. And even if they're not, this will work fine without having to do any
 	// probing or checking.
-	cmd, err := newCmdTree(ctx, args.Cmd, args.Args, runtime.GOOS == "windows")
+	cmd, err := newCmdTree(ctx, args.Cmd, args.Args, args.UseShell || runtime.GOOS == "windows")
 
 	if err != nil {
 		return RunResult{}, err
@@ -288,6 +258,7 @@ func RunWithResult(ctx context.Context, args RunArgs) (RunResult, error) {
 	} else {
 		cmd.Stdin = &stdin
 		cmd.Stdout = &stdout
+		cmd.Stderr = &stderr
 
 		if args.Stderr != nil {
 			cmd.Stderr = io.MultiWriter(args.Stderr, &stderr)

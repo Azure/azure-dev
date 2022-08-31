@@ -58,21 +58,15 @@ func Build(action Action, rootOptions *internal.GlobalCommandOptions, use string
 				return err
 			}
 
-			if !buildOptions.DisableCmdUsageEvent {
-				// Note: CommandPath is constructed using the Use member on each command up to the root.
-				// It does not contain user input, and is safe for telemetry emission.
-				spanCtx, span := telemetry.GetTracer().Start(ctx, events.GetCommandEventName(cmd.CommandPath()))
-				ctx = spanCtx
-				defer func() {
-					if err != nil {
-						span.SetStatus(codes.Error, "UnknownError")
-					}
-
-					span.End()
-				}()
+			runCmd := func(cmdCtx context.Context) error {
+				return action.Run(cmdCtx, cmd, args, azdCtx)
 			}
 
-			return action.Run(ctx, cmd, args, azdCtx)
+			if buildOptions.DisableCmdUsageEvent {
+				return runCmd(ctx)
+			} else {
+				return runCmdWithTelemetry(ctx, cmd, runCmd)
+			}
 		},
 	}
 	cmd.Flags().BoolP("help", "h", false, fmt.Sprintf("Gets help for %s.", cmd.Name()))
@@ -81,6 +75,20 @@ func Build(action Action, rootOptions *internal.GlobalCommandOptions, use string
 		cmd.Flags(),
 	)
 	return cmd
+}
+
+func runCmdWithTelemetry(ctx context.Context, cmd *cobra.Command, runCmd func(ctx context.Context) error) error {
+	// Note: CommandPath is constructed using the Use member on each command up to the root.
+	// It does not contain user input, and is safe for telemetry emission.
+	spanCtx, span := telemetry.GetTracer().Start(ctx, events.GetCommandEventName(cmd.CommandPath()))
+	defer span.End()
+
+	err := runCmd(spanCtx)
+	if err != nil {
+		span.SetStatus(codes.Error, "UnknownError")
+	}
+
+	return err
 }
 
 // Create the core context for use in all Azd commands

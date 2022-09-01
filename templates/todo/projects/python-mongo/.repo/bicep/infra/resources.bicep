@@ -1,23 +1,20 @@
-param location string
+param environmentName string
+param location string = resourceGroup().location
 param principalId string = ''
-param resourceToken string
-param tags object
 
-module appServicePlanResources '../../../../../../common/infra/bicep/modules/appserviceplan.bicep' = {
+module appServicePlanResources '../../../../../../common/infra/bicep/modules/appserviceplan-site.bicep' = {
   name: 'appserviceplan-resources'
   params: {
+    environmentName: environmentName
     location: location
-    resourceToken: resourceToken
-    tags: tags
   }
 }
 
 module webResources '../../../../../../todo/common/infra/appservice/bicep/modules/web.bicep' = {
   name: 'web-resources'
   params: {
+    environmentName: environmentName
     location: location
-    resourceToken: resourceToken
-    tags: tags
   }
   dependsOn: [
     applicationInsightsResources
@@ -25,16 +22,11 @@ module webResources '../../../../../../todo/common/infra/appservice/bicep/module
   ]
 }
 
-module apiResources '../../../../../../todo/common/infra/appservice/bicep/modules/api.bicep' = {
+module apiResources '../../../../../../todo/common/infra/appservice/bicep/modules/api-python.bicep' = {
   name: 'api-resources'
   params: {
+    environmentName: environmentName
     location: location
-    resourceToken: resourceToken
-    tags: tags
-    cosmosDatabaseName: cosmosResources.outputs.AZURE_COSMOS_DATABASE_NAME
-    cosmosConnectionStringKey: cosmosResources.outputs.AZURE_COSMOS_CONNECTION_STRING_KEY
-    linuxFxVersion: 'PYTHON|3.8'
-    appCommandLine: 'gunicorn --workers 4 --threads 2 --timeout 60 --access-logfile "-" --error-logfile "-" --bind=0.0.0.0:8000 -k uvicorn.workers.UvicornWorker todo.app:app'
   }
   dependsOn: [
     applicationInsightsResources
@@ -46,19 +38,17 @@ module apiResources '../../../../../../todo/common/infra/appservice/bicep/module
 module keyVaultResources '../../../../../../common/infra/bicep/modules/keyvault.bicep' = {
   name: 'keyvault-resources'
   params: {
+    environmentName: environmentName
     location: location
     principalId: principalId
-    resourceToken: resourceToken
-    tags: tags
   }
 }
 
 module cosmosResources '../../../../../common/infra/modules/cosmos.bicep' = {
   name: 'cosmos-resources'
   params: {
+    environmentName: environmentName
     location: location
-    resourceToken: resourceToken
-    tags: tags
   }
   dependsOn: [
     keyVaultResources
@@ -68,18 +58,16 @@ module cosmosResources '../../../../../common/infra/modules/cosmos.bicep' = {
 module logAnalyticsWorkspaceResources '../../../../../../common/infra/bicep/modules/loganalytics.bicep' = {
   name: 'loganalytics-resources'
   params: {
+    environmentName: environmentName
     location: location
-    resourceToken: resourceToken
-    tags: tags
   }
 }
 
 module applicationInsightsResources '../../../../../../common/infra/bicep/modules/applicationinsights.bicep' = {
   name: 'applicationinsights-resources'
   params: {
+    environmentName: environmentName
     location: location
-    resourceToken: resourceToken
-    tags: tags
     workspaceId: logAnalyticsWorkspaceResources.outputs.AZURE_LOG_ANALYTICS_WORKSPACE_ID
   }
 }

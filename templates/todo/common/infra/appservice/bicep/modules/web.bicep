@@ -1,7 +1,11 @@
-param location string
-param resourceToken string
-param tags object
+param environmentName string
+param location string = resourceGroup().location
+param kind string = 'app,linux'
+param appCommandLine string = 'pm2 serve /home/site/wwwroot --no-daemon --spa'
+param linuxFxVersion string = 'NODE|16-lts'
 
+var resourceToken = toLower(uniqueString(subscription().id, environmentName, location))
+var tags = { 'azd-env-name': environmentName }
 var abbrs = loadJsonContent('../../../../../../common/infra/bicep/abbreviations.json')
 
 resource applicationInsights 'Microsoft.Insights/components@2020-02-02' existing = {
@@ -16,14 +20,14 @@ resource web 'Microsoft.Web/sites@2022-03-01' = {
   name: '${abbrs.webSitesAppService}web-${resourceToken}'
   location: location
   tags: union(tags, { 'azd-service-name': 'web' })
-  kind: 'app,linux'
+  kind: kind
   properties: {
     serverFarmId: appServicePlan.id
     siteConfig: {
-      linuxFxVersion: 'NODE|16-lts'
+      linuxFxVersion: linuxFxVersion
       alwaysOn: true
       ftpsState: 'FtpsOnly'
-      appCommandLine: 'pm2 serve /home/site/wwwroot --no-daemon --spa'
+      appCommandLine: appCommandLine
     }
     httpsOnly: true
   }
@@ -42,13 +46,7 @@ resource web 'Microsoft.Web/sites@2022-03-01' = {
       applicationLogs: { fileSystem: { level: 'Verbose' } }
       detailedErrorMessages: { enabled: true }
       failedRequestsTracing: { enabled: true }
-      httpLogs: {
-        fileSystem: {
-          enabled: true
-          retentionInDays: 1
-          retentionInMb: 35
-        }
-      }
+      httpLogs: { fileSystem: { enabled: true, retentionInDays: 1, retentionInMb: 35 } }
     }
   }
 }

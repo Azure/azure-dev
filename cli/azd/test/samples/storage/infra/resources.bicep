@@ -1,6 +1,5 @@
-param location string
-param resourceToken string
-param tags object
+param environmentName string
+param location string = resourceGroup().location
 
 resource storage 'Microsoft.Storage/storageAccounts@2021-09-01' = {
   name: 'st${resourceToken}'

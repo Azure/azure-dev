@@ -1,8 +1,9 @@
-param resourceToken string
-param location string
-param tags object
+param environmentName string
+param location string = resourceGroup().location
 param workspaceId string
 
+var resourceToken = toLower(uniqueString(subscription().id, environmentName, location))
+var tags = { 'azd-env-name': environmentName }
 var abbrs = loadJsonContent('../abbreviations.json')
 
 resource applicationInsights 'Microsoft.Insights/components@2020-02-02' = {

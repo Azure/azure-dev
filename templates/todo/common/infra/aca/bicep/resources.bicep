@@ -1,17 +1,14 @@
-param name string
-param location string
+param environmentName string
+param location string = resourceGroup().location
 param principalId string = ''
-param resourceToken string
-param tags object
 param apiImageName string = ''
 param webImageName string = ''
 
 module acaResources '../../../../../common/infra/bicep/modules/aca.bicep' = {
   name: 'aca-resources'
   params: {
+    environmentName: environmentName
     location: location
-    resourceToken: resourceToken
-    tags: tags
   }
   dependsOn: [
     logAnalyticsWorkspaceResources
@@ -21,16 +18,15 @@ module acaResources '../../../../../common/infra/bicep/modules/aca.bicep' = {
 module acrResources '../../../../../common/infra/bicep/modules/acr.bicep' = {
   name: 'acr-resources'
   params: {
+    environmentName: environmentName
     location: location
-    resourceToken: resourceToken
-    tags: tags
   }
 }
 
 module apiResources 'modules/api.bicep' = {
   name: 'api-resources'
   params: {
-    name: name
+    environmentName: environmentName
     location: location
     imageName: apiImageName != '' ? apiImageName : 'nginx:latest'
   }
@@ -45,7 +41,7 @@ module apiResources 'modules/api.bicep' = {
 module webResources 'modules/web.bicep' = {
   name: 'web-resources'
   params: {
-    name: name
+    environmentName: environmentName
     location: location
     imageName: webImageName != '' ? webImageName : 'nginx:latest'
   }
@@ -61,19 +57,17 @@ module webResources 'modules/web.bicep' = {
 module keyVaultResources '../../../../../common/infra/bicep/modules/keyvault.bicep' = {
   name: 'keyvault-resources'
   params: {
+    environmentName: environmentName
     location: location
     principalId: principalId
-    resourceToken: resourceToken
-    tags: tags
   }
 }
 
 module applicationInsightsResources '../../../../../common/infra/bicep/modules/applicationinsights.bicep' = {
   name: 'applicationinsights-resources'
   params: {
+    environmentName: environmentName
     location: location
-    resourceToken: resourceToken
-    tags: tags
     workspaceId: logAnalyticsWorkspaceResources.outputs.AZURE_LOG_ANALYTICS_WORKSPACE_ID
   }
 }
@@ -81,18 +75,16 @@ module applicationInsightsResources '../../../../../common/infra/bicep/modules/a
 module logAnalyticsWorkspaceResources '../../../../../common/infra/bicep/modules/loganalytics.bicep' = {
   name: 'loganalytics-resources'
   params: {
+    environmentName: environmentName
     location: location
-    resourceToken: resourceToken
-    tags: tags
   }
 }
 
 module cosmosResources '../../../../../../templates/todo/common/infra/modules/cosmos.bicep' = {
   name: 'cosmos-resources'
   params: {
+    environmentName: environmentName
     location: location
-    resourceToken: resourceToken
-    tags: tags
   }
   dependsOn: [
     keyVaultResources

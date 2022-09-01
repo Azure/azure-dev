@@ -22,11 +22,12 @@ module webResources '../../../../../common/infra/appservice/bicep/modules/web.bi
   ]
 }
 
-module apiResources '../../../../../common/infra/appservice/bicep/modules/api-node.bicep' = {
+module apiResources '../../../../../common/infra/appservice/bicep/modules/api-dotnet.bicep' = {
   name: 'api-resources'
   params: {
     environmentName: environmentName
     location: location
+    cosmosEndpoint: cosmosResources.outputs.AZURE_COSMOS_ENDPOINT
   }
   dependsOn: [
     applicationInsightsResources
@@ -44,15 +45,26 @@ module keyVaultResources '../../../../../../common/infra/bicep/modules/keyvault.
   }
 }
 
-module cosmosResources '../../../../../common/infra/modules/cosmos.bicep' = {
+module cosmosResources '../../../../../common/infra/modules/cosmos-sql.bicep' = {
   name: 'cosmos-resources'
   params: {
     environmentName: environmentName
     location: location
+    principalId: principalId
   }
   dependsOn: [
     keyVaultResources
   ]
+}
+
+module apiCosmosSqlRoleResources '../../../../../common/infra/modules/cosmos-sql-role-assign.bicep' = {
+  name: 'api-cosmos-sql-role-resources'
+  params: {
+    environmentName: environmentName
+    location: location
+    cosmosRoleDefinitionId: cosmosResources.outputs.AZURE_COSMOS_SQL_ROLE_DEFINITION_ID
+    principalId: apiResources.outputs.API_PRINCIPAL_ID
+  }
 }
 
 module logAnalyticsWorkspaceResources '../../../../../../common/infra/bicep/modules/loganalytics.bicep' = {
@@ -72,6 +84,7 @@ module applicationInsightsResources '../../../../../../common/infra/bicep/module
   }
 }
 
+output AZURE_COSMOS_ENDPOINT string = cosmosResources.outputs.AZURE_COSMOS_ENDPOINT
 output AZURE_COSMOS_CONNECTION_STRING_KEY string = cosmosResources.outputs.AZURE_COSMOS_CONNECTION_STRING_KEY
 output AZURE_COSMOS_DATABASE_NAME string = cosmosResources.outputs.AZURE_COSMOS_DATABASE_NAME
 output AZURE_KEY_VAULT_ENDPOINT string = keyVaultResources.outputs.AZURE_KEY_VAULT_ENDPOINT

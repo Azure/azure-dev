@@ -1,7 +1,7 @@
 @minLength(1)
 @maxLength(64)
 @description('Name of the the environment which is used to generate a short unique hash used in all resources.')
-param name string
+param environmentName string
 
 @minLength(1)
 @description('Primary location for all resources')
@@ -9,8 +9,8 @@ param location string
 
 param imageName string
 
-var resourceToken = toLower(uniqueString(subscription().id, name, location))
-var tags = { 'azd-env-name': name }
+var resourceToken = toLower(uniqueString(subscription().id, environmentName, location))
+var tags = { 'azd-env-name': environmentName }
 var abbrs = loadJsonContent('../../../../../../common/infra/bicep/abbreviations.json')
 
 resource containerAppsEnvironment 'Microsoft.App/managedEnvironments@2022-03-01' existing = {
@@ -87,12 +87,7 @@ resource keyVaultAccessPolicies 'Microsoft.KeyVault/vaults/accessPolicies@2022-0
     accessPolicies: [
       {
         objectId: api.identity.principalId
-        permissions: {
-          secrets: [
-            'get'
-            'list'
-          ]
-        }
+        permissions: { secrets: [ 'get', 'list' ] }
         tenantId: subscription().tenantId
       }
     ]

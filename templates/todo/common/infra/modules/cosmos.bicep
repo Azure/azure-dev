@@ -1,8 +1,10 @@
-param location string
-param resourceToken string
-param tags object
-param connectionStringKey string = 'AZURE-COSMOS-CONNECTION-STRING'
+param environmentName string
+param location string = resourceGroup().location
+param cosmosConnectionStringKey string = 'AZURE-COSMOS-CONNECTION-STRING'
+param kind string = 'MongoDB'
 
+var resourceToken = toLower(uniqueString(subscription().id, environmentName, location))
+var tags = { 'azd-env-name': environmentName }
 var abbrs = loadJsonContent('../../../../common/infra/bicep/abbreviations.json')
 
 resource keyVault 'Microsoft.KeyVault/vaults@2022-07-01' existing = {
@@ -11,7 +13,7 @@ resource keyVault 'Microsoft.KeyVault/vaults@2022-07-01' existing = {
 
 resource cosmos 'Microsoft.DocumentDB/databaseAccounts@2022-05-15' = {
   name: '${abbrs.documentDBDatabaseAccounts}${resourceToken}'
-  kind: 'MongoDB'
+  kind: kind
   location: location
   tags: tags
   properties: {
@@ -26,47 +28,20 @@ resource cosmos 'Microsoft.DocumentDB/databaseAccounts@2022-05-15' = {
     databaseAccountOfferType: 'Standard'
     enableAutomaticFailover: false
     enableMultipleWriteLocations: false
-    apiProperties: { serverVersion: '4.0' }
+    apiProperties: (kind == 'MongoDB') ? { serverVersion: '4.0' } : {   }
     capabilities: [ { name: 'EnableServerless' } ]
   }
 
-  resource database 'mongodbDatabases' = {
-    name: 'Todo'
-    properties: {
-      resource: { id: 'Todo' }
-    }
-
-    resource list 'collections' = {
-      name: 'TodoList'
-      properties: {
-        resource: {
-          id: 'TodoList'
-          shardKey: { _id: 'Hash' }
-          indexes: [ { key: { keys: [ '_id' ] } } ]
-        }
-      }
-    }
-
-    resource item 'collections' = {
-      name: 'TodoItem'
-      properties: {
-        resource: {
-          id: 'TodoItem'
-          shardKey: { _id: 'Hash' }
-          indexes: [ { key: { keys: [ '_id' ] } } ]
-        }
-      }
-    }
-  }
 }
 
 resource cosmosConnectionString 'Microsoft.KeyVault/vaults/secrets@2022-07-01' = {
   parent: keyVault
-  name: connectionStringKey
+  name: cosmosConnectionStringKey
   properties: {
     value: cosmos.listConnectionStrings().connectionStrings[0].connectionString
   }
 }
 
-output AZURE_COSMOS_DATABASE_NAME string = cosmos::database.name
-output AZURE_COSMOS_CONNECTION_STRING_KEY string = connectionStringKey
+output AZURE_COSMOS_RESOURCE_ID string = cosmos.id
+output AZURE_COSMOS_ENDPOINT string = cosmos.properties.documentEndpoint
+output AZURE_COSMOS_CONNECTION_STRING_KEY string = cosmosConnectionStringKey

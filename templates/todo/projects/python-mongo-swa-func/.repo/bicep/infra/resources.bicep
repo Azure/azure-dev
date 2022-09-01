@@ -2,7 +2,7 @@ param environmentName string
 param location string = resourceGroup().location
 param principalId string = ''
 
-module appServicePlanResources '../../../../../../common/infra/bicep/modules/appserviceplan-site.bicep' = {
+module appServicePlanResources '../../../../../../common/infra/bicep/modules/appserviceplan-functionapp.bicep' = {
   name: 'appserviceplan-resources'
   params: {
     environmentName: environmentName
@@ -10,29 +10,29 @@ module appServicePlanResources '../../../../../../common/infra/bicep/modules/app
   }
 }
 
-module webResources '../../../../../common/infra/appservice/bicep/modules/web.bicep' = {
+module webResources '../../../../../common/infra/modules/swa.bicep' = {
   name: 'web-resources'
   params: {
     environmentName: environmentName
     location: location
   }
-  dependsOn: [
-    applicationInsightsResources
-    appServicePlanResources
-  ]
 }
 
-module apiResources '../../../../../common/infra/appservice/bicep/modules/api-node.bicep' = {
+module apiResources '../../../../../common/infra/modules/function-python.bicep' = {
   name: 'api-resources'
   params: {
     environmentName: environmentName
     location: location
+    allowedOrigins: [ webResources.outputs.WEB_URI ]
   }
-  dependsOn: [
-    applicationInsightsResources
-    keyVaultResources
-    appServicePlanResources
-  ]
+}
+
+module storageResources '../../../../../../common/infra/bicep/modules/storage.bicep' = {
+  name: 'storage-resources'
+  params: {
+    environmentName: environmentName
+    location: location
+  }
 }
 
 module keyVaultResources '../../../../../../common/infra/bicep/modules/keyvault.bicep' = {

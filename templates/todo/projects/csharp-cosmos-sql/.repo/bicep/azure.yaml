@@ -1,8 +1,8 @@
 # yaml-language-server: $schema=https://raw.githubusercontent.com/Azure/azure-dev/main/schemas/v1.0/azure.yaml.json
 
-name: todo-csharp-mongo
+name: todo-csharp-cosmos-sql
 metadata:
-  template: todo-csharp-mongo@0.0.1-beta
+  template: todo-csharp-cosmos-sql@0.0.1-beta
 services:
   web:
     project: ../../web/react-fluent

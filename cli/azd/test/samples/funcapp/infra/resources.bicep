@@ -1,6 +1,5 @@
-param location string
-param resourceToken string
-param tags object
+param environmentName string
+param location string = resourceGroup().location
 
 resource function 'Microsoft.Web/sites@2022-03-01' = {
   name: 'func-${resourceToken}'

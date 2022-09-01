@@ -1,12 +1,15 @@
-param location string
-param resourceToken string
-param tags object
-param cosmosDatabaseName string
-param cosmosConnectionStringKey string
+param environmentName string
+param location string = resourceGroup().location
+param cosmosDatabaseName string = 'Todo'
+param cosmosConnectionStringKey string = 'AZURE-COSMOS-CONNECTION-STRING'
+param cosmosEndpoint string = ''
+param scmDoBuildDuringDeployment bool = true
 
 param linuxFxVersion string
 param appCommandLine string = ''
 
+var resourceToken = toLower(uniqueString(subscription().id, environmentName, location))
+var tags = { 'azd-env-name': environmentName }
 var abbrs = loadJsonContent('../../../../../../common/infra/bicep/abbreviations.json')
 
 resource applicationInsights 'Microsoft.Insights/components@2020-02-02' existing = {
@@ -42,9 +45,10 @@ resource api 'Microsoft.Web/sites@2022-03-01' = {
   resource appSettings 'config' = {
     name: 'appsettings'
     properties: {
+      AZURE_COSMOS_ENDPOINT: cosmosEndpoint
       AZURE_COSMOS_CONNECTION_STRING_KEY: cosmosConnectionStringKey
       AZURE_COSMOS_DATABASE_NAME: cosmosDatabaseName
-      SCM_DO_BUILD_DURING_DEPLOYMENT: 'true'
+      SCM_DO_BUILD_DURING_DEPLOYMENT: scmDoBuildDuringDeployment
       AZURE_KEY_VAULT_ENDPOINT: keyVault.properties.vaultUri
       APPLICATIONINSIGHTS_CONNECTION_STRING: applicationInsights.properties.ConnectionString
     }
@@ -56,13 +60,7 @@ resource api 'Microsoft.Web/sites@2022-03-01' = {
       applicationLogs: { fileSystem: { level: 'Verbose' } }
       detailedErrorMessages: { enabled: true }
       failedRequestsTracing: { enabled: true }
-      httpLogs: {
-        fileSystem: {
-          enabled: true
-          retentionInDays: 1
-          retentionInMb: 35
-        }
-      }
+      httpLogs: { fileSystem: { enabled: true, retentionInDays: 1, retentionInMb: 35 } }
     }
   }
 }
@@ -79,4 +77,8 @@ resource keyVaultAccessPolicies 'Microsoft.KeyVault/vaults/accessPolicies@2022-0
   }
 }
 
+
+
+
 output API_URI string = 'https://${api.properties.defaultHostName}'
+output API_PRINCIPAL_ID string = api.identity.principalId

@@ -1,7 +1,6 @@
-param location string
+param environmentName string
+param location string = resourceGroup().location
 param principalId string = ''
-param resourceToken string
-param tags object
 
 var abbrs = loadJsonContent('../../../../common/infra/bicep/abbreviations.json')
 
@@ -164,9 +163,7 @@ resource logAnalyticsWorkspace 'Microsoft.OperationalInsights/workspaces@2021-12
 module applicationInsightsResources '../../../../common/infra/bicep/modules/applicationinsights.bicep' = {
   name: 'applicationinsights-resources'
   params: {
-    resourceToken: resourceToken
     location: location
-    tags: tags
     workspaceId: logAnalyticsWorkspace.id
   }
 }

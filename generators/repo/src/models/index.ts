@@ -10,7 +10,7 @@ export interface RepoManifest {
 
         assets: AssetRule[]
         rewrite?: {
-            patterns: string[]
+            rules: RewriteRule[]
         }
     }
 }
@@ -27,6 +27,8 @@ export interface AssetRule {
     patterns?: string[]
     ignore?: string[]
 }
+
+export type RewriteRule = AssetRule;
 
 export interface RepomanCommandOptions {
     debug: true

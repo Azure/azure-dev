@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
-package provisioning
+package bicep
 
 import (
 	"context"
@@ -19,6 +19,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
+	. "github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
@@ -670,5 +671,16 @@ func NewBicepProvider(ctx context.Context, env *environment.Environment, project
 		console:     console,
 		bicepCli:    bicepCli,
 		azCli:       azCli,
+	}
+}
+
+// Registers the Bicep provider with the provisioning module
+func Register() {
+	err := RegisterProvider(Bicep, func(ctx context.Context, env *environment.Environment, projectPath string, options Options) (Provider, error) {
+		return NewBicepProvider(ctx, env, projectPath, options), nil
+	})
+
+	if err != nil {
+		panic(err)
 	}
 }

@@ -36,7 +36,7 @@ func (m *MockCommandRunner) RunWithResult(ctx context.Context, args executil.Run
 	cmdArgs = append(cmdArgs, args.Args...)
 	command := strings.Join(cmdArgs, " ")
 
-	for i := len(m.expressions) - 1; i >= 0; i++ {
+	for i := len(m.expressions) - 1; i >= 0; i-- {
 		if m.expressions[i].predicateFn(args, command) {
 			match = m.expressions[i]
 			break

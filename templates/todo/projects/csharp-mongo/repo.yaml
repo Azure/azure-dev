@@ -30,7 +30,7 @@ repo:
 
     # openapi.yaml to api root
     - from: ../../api/common
-      to: ./src/api
+      to: ./src/api/wwwroot/
       patterns:
         - openapi.yaml
 

@@ -25,7 +25,7 @@ func infraDeleteCmd(rootOptions *internal.GlobalCommandOptions) *cobra.Command {
 		rootOptions,
 		"delete",
 		"Delete Azure resources for an application.",
-		"",
+		nil,
 	)
 }
 
@@ -74,13 +74,13 @@ func (a *infraDeleteAction) Run(ctx context.Context, cmd *cobra.Command, args []
 		return fmt.Errorf("creating provisioning manager: %w", err)
 	}
 
-	previewResult, err := infraManager.Preview(ctx)
+	deploymentPlan, err := infraManager.Plan(ctx)
 	if err != nil {
-		return fmt.Errorf("preparing destroy: %w", err)
+		return fmt.Errorf("planning destroy: %w", err)
 	}
 
 	destroyOptions := provisioning.NewDestroyOptions(a.forceDelete, a.purgeDelete)
-	destroyResult, err := infraManager.Destroy(ctx, &previewResult.Deployment, destroyOptions)
+	destroyResult, err := infraManager.Destroy(ctx, &deploymentPlan.Deployment, destroyOptions)
 	if err != nil {
 		return fmt.Errorf("destroying infrastructure: %w", err)
 	}

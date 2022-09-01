@@ -28,7 +28,7 @@ func loginCmd(rootOptions *internal.GlobalCommandOptions) *cobra.Command {
 		rootOptions,
 		"login",
 		"Log in to Azure.",
-		"",
+		nil,
 	)
 
 	return output.AddOutputParam(

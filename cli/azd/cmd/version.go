@@ -20,7 +20,7 @@ func versionCmd(rootOptions *internal.GlobalCommandOptions) *cobra.Command {
 		rootOptions,
 		"version",
 		"Print the version number of Azure Developer CLI.",
-		"",
+		nil,
 	)
 
 	return output.AddOutputParam(

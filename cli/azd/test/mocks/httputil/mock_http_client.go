@@ -32,9 +32,9 @@ func NewMockHttpUtil() *MockHttpClient {
 func (http *MockHttpClient) Send(req *httputil.HttpRequestMessage) (*httputil.HttpResponseMessage, error) {
 	var match *HttpExpression
 
-	for _, expr := range http.expressions {
-		if expr.predicateFn(req) {
-			match = expr
+	for i := len(http.expressions) - 1; i >= 0; i++ {
+		if http.expressions[i].predicateFn(req) {
+			match = http.expressions[i]
 			break
 		}
 	}

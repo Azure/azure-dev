@@ -682,3 +682,36 @@ func newTestContext(t *testing.T) (context.Context, context.CancelFunc) {
 
 	return context.WithCancel(ctx)
 }
+
+func Test_CLI_InfraCreateAndDeleteResourceTf(t *testing.T) {
+	// running this test in parallel is ok as it uses a t.TempDir()
+	t.Parallel()
+	ctx, cancel := newTestContext(t)
+	defer cancel()
+
+	dir := t.TempDir()
+	t.Logf("DIR: %s", dir)
+
+	envName := randomEnvName()
+	t.Logf("AZURE_ENV_NAME: %s", envName)
+
+	cli := azdcli.NewCLI(t)
+	cli.WorkingDirectory = dir
+	cli.Env = append(os.Environ(), "AZURE_LOCATION=eastus2")
+
+	err := copySample(dir, "resourcegroupterraform")
+	require.NoError(t, err, "failed expanding sample")
+
+	_, err = cli.RunCommandWithStdIn(ctx, stdinForTests(envName), "init")
+	require.NoError(t, err)
+
+	t.Logf("Starting infra create\n")
+	err = cmd.Execute([]string{"infra", "create", "--cwd", dir})
+	require.NoError(t, err)
+
+	t.Logf("Starting infra delete\n")
+	err = cmd.Execute([]string{"infra", "delete", "--cwd", dir, "--force", "--purge"})
+	require.NoError(t, err)
+
+	t.Logf("Done\n")
+}

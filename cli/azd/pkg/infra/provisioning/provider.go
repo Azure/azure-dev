@@ -75,6 +75,8 @@ func NewProvider(ctx context.Context, env *environment.Environment, projectPath 
 	switch infraOptions.Provider {
 	case Bicep:
 		provider = NewBicepProvider(ctx, env, projectPath, infraOptions)
+	case Terraform:
+		provider = NewTerraformProvider(ctx, env, projectPath, infraOptions)
 	case Test:
 		provider = NewTestProvider(ctx, env, projectPath, infraOptions)
 	default:
@@ -89,3 +91,4 @@ func NewProvider(ctx context.Context, env *environment.Environment, projectPath 
 }
 
 var _ BicepProvider = BicepProvider{}
+var _ TerraformProvider = TerraformProvider{}

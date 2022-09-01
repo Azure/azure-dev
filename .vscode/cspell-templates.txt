@@ -39,3 +39,4 @@ virtuals
 VSIX
 webfonts
 webui
+wwwroot

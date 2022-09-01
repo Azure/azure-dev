@@ -14,7 +14,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
-	"github.com/sethvargo/go-retry"
 )
 
 type AzureResourceManager struct {
@@ -107,37 +106,20 @@ func (rm *AzureResourceManager) GetResourceGroupsForDeployment(ctx context.Conte
 }
 
 // GetResourceGroupsForEnvironment gets all resources groups for a given environment
-// The resource graph may not be immediately up to date and if not initially found will attempt to retry causing delays in retrieval.
 func (rm *AzureResourceManager) GetResourceGroupsForEnvironment(ctx context.Context, env *environment.Environment) ([]azcli.AzCliResource, error) {
 	azCli := azcli.GetAzCli(ctx)
-	query := fmt.Sprintf(`resourceContainers 
-		| where type == "microsoft.resources/subscriptions/resourcegroups" 
-		| where tags['azd-env-name'] == '%s' 
-		| project id, name, type, tags, location`,
-		env.GetEnvName())
-
-	var graphQueryResults *azcli.AzCliGraphQuery
-
-	err := retry.Do(ctx, retry.WithMaxRetries(rm.retryStrategy.MaxRetries, retry.NewConstant(rm.retryStrategy.RetryBackoff)), func(ctx context.Context) error {
-		queryResult, err := azCli.GraphQuery(ctx, query, []string{env.GetSubscriptionId()})
-		if err != nil {
-			return fmt.Errorf("executing graph query: %s: %w", query, err)
-		}
-
-		if queryResult.Count == 0 {
-			notFoundError := azureutil.ResourceNotFound(fmt.Errorf("azure graph query returned 0 results for resource groups with azd-env-name with value: '%s'", env.GetEnvName()))
-			return retry.RetryableError(notFoundError)
-		}
-
-		graphQueryResults = queryResult
-		return nil
+	res, err := azCli.ListResourceGroup(ctx, env.GetSubscriptionId(), &azcli.ListResourceGroupOptions{
+		TagFilter: &azcli.Filter{Key: "azd-env-name", Value: env.GetEnvName()},
 	})
-
 	if err != nil {
 		return nil, err
 	}
 
-	return graphQueryResults.Data, nil
+	if len(res) == 0 {
+		return nil, azureutil.ResourceNotFound(fmt.Errorf("0 results for resource groups with azd-env-name with value: '%s'", env.GetEnvName()))
+	}
+
+	return res, nil
 }
 
 // GetDefaultResourceGroups gets the default resource groups regardless of azd-env-name setting
@@ -146,34 +128,20 @@ func (rm *AzureResourceManager) GetResourceGroupsForEnvironment(ctx context.Cont
 // The resource graph may not be immediately up to date and if not initially found will attempt to retry causing delays in retrieval.
 func (rm *AzureResourceManager) GetDefaultResourceGroups(ctx context.Context, env *environment.Environment) ([]azcli.AzCliResource, error) {
 	azCli := azcli.GetAzCli(ctx)
-	query := fmt.Sprintf(`resourceContainers 
-		| where type == "microsoft.resources/subscriptions/resourcegroups" 
-		| where name in('rg-%[1]s','%[1]s-rg')
-		| project id, name, type, tags, location`,
-		env.GetEnvName())
-
-	var graphQueryResults *azcli.AzCliGraphQuery
-
-	err := retry.Do(ctx, retry.WithMaxRetries(rm.retryStrategy.MaxRetries, retry.NewConstant(rm.retryStrategy.RetryBackoff)), func(ctx context.Context) error {
-		queryResult, err := azCli.GraphQuery(ctx, query, []string{env.GetSubscriptionId()})
-		if err != nil {
-			return fmt.Errorf("executing graph query: %s: %w", query, err)
-		}
-
-		if queryResult.Count == 0 {
-			notFoundError := azureutil.ResourceNotFound(fmt.Errorf("azure graph query returned 0 results for resource groups with prefix or suffix with value: '%s'", env.GetEnvName()))
-			return retry.RetryableError(notFoundError)
-		}
-
-		graphQueryResults = queryResult
-		return nil
+	query := fmt.Sprintf("[?name=='rg-%[1]s' || name=='%[1]s-rg']", env.GetEnvName())
+	res, err := azCli.ListResourceGroup(ctx, env.GetSubscriptionId(), &azcli.ListResourceGroupOptions{
+		JmesPathQuery: &query,
 	})
 
 	if err != nil {
 		return nil, err
 	}
 
-	return graphQueryResults.Data, nil
+	if len(res) == 0 {
+		return nil, azureutil.ResourceNotFound(fmt.Errorf("0 results for resource groups with azd-env-name with value: '%s'", env.GetEnvName()))
+	}
+
+	return res, nil
 }
 
 // FindResourceGroupForEnvironment will search for the resource group associated with an environment

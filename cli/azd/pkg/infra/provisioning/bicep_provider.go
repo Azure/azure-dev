@@ -268,7 +268,7 @@ func (p *BicepProvider) getAllResources(ctx context.Context, asyncContext *async
 	asyncContext.SetProgress(&DestroyProgress{Message: "Fetching resources", Timestamp: time.Now()})
 
 	for _, resourceGroup := range resourceGroups {
-		resources, err := p.azCli.ListResourceGroupResources(ctx, p.env.GetSubscriptionId(), resourceGroup)
+		resources, err := p.azCli.ListResourceGroupResources(ctx, p.env.GetSubscriptionId(), resourceGroup, nil)
 		if err != nil {
 			return []azcli.AzCliResource{}, nil
 		}

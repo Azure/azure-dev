@@ -5,18 +5,14 @@ package project
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"log"
-	"time"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azureutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
-	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
-	"github.com/sethvargo/go-retry"
 )
 
 type Service struct {
@@ -95,42 +91,20 @@ func (svc *Service) Deploy(ctx context.Context, azdCtx *azdcontext.AzdContext) (
 // The resource graph may not be immediately up to date and if not initially found will attempt to retry causing delays in retrieval.
 func GetServiceResourceName(ctx context.Context, resourceGroupName string, serviceName string, env *environment.Environment) (string, error) {
 	azCli := azcli.GetAzCli(ctx)
-	query := fmt.Sprintf(`resources | 
-		where resourceGroup == '%s' | where tags['azd-service-name'] == '%s' |
-		project id, name, type, tags, location`,
-		resourceGroupName,
-		serviceName)
-
-	retryStrategy := osutil.NewRetryStrategy(5, time.Second*2)
-
-	var graphQueryResults *azcli.AzCliGraphQuery
-	err := retry.Do(ctx, retry.WithMaxRetries(retryStrategy.MaxRetries, retry.NewConstant(retryStrategy.RetryBackoff)), func(ctx context.Context) error {
-		queryResult, err := azCli.GraphQuery(ctx, query, []string{env.GetSubscriptionId()})
-		if err != nil {
-			return fmt.Errorf("executing graph query: %s: %w", query, err)
-		}
-
-		graphQueryResults = queryResult
-
-		if graphQueryResults.Count == 0 {
-			notFoundError := azureutil.ResourceNotFound(fmt.Errorf("azure graph query returned 0 results for resources with group name '%s' and azd-service-name '%s'", resourceGroupName, serviceName))
-			return retry.RetryableError(notFoundError)
-		}
-
-		return nil
+	res, err := azCli.ListResourceGroupResources(ctx, env.GetSubscriptionId(), resourceGroupName, &azcli.ListResourceGroupResourcesOptions{
+		TagFilter: &azcli.Filter{Key: "azd-env-name", Value: env.GetEnvName()},
 	})
 
-	var notFoundError *azureutil.ResourceNotFoundError
-	if err != nil && !errors.As(err, &notFoundError) {
-		return "", fmt.Errorf("executing graph query: %s: %w", query, err)
+	if err != nil {
+		return "", err
 	}
 
-	// If the graph query result did not return a single result
-	// Fallback to default envName + serviceName
-	if graphQueryResults.TotalRecords != 1 {
-		log.Printf("Expecting only '1' resource match to override resource name but found '%d'", graphQueryResults.TotalRecords)
+	if len(res) == 0 {
+		return "", azureutil.ResourceNotFound(fmt.Errorf("0 results for resources with group name '%s' and azd-service-name '%s'", resourceGroupName, serviceName))
+	} else if len(res) != 1 {
+		log.Printf("Expecting only '1' resource match to override resource name but found '%d'", len(res))
 		return fmt.Sprintf("%s%s", env.GetEnvName(), serviceName), nil
 	}
 
-	return graphQueryResults.Data[0].Name, nil
+	return res[0].Name, nil
 }

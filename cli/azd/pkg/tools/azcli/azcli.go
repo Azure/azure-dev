@@ -69,7 +69,8 @@ type AzCli interface {
 	DeployToResourceGroup(ctx context.Context, subscriptionId string, resourceGroup string, deploymentName string, templatePath string, parametersPath string) (AzCliDeploymentResult, error)
 	DeleteSubscriptionDeployment(ctx context.Context, subscriptionId string, deploymentName string) error
 	DeleteResourceGroup(ctx context.Context, subscriptionId string, resourceGroupName string) error
-	ListResourceGroupResources(ctx context.Context, subscriptionId string, resourceGroupName string) ([]AzCliResource, error)
+	ListResourceGroup(ctx context.Context, subscriptionId string, listOptions *ListResourceGroupOptions) ([]AzCliResource, error)
+	ListResourceGroupResources(ctx context.Context, subscriptionId string, resourceGroupName string, listOptions *ListResourceGroupResourcesOptions) ([]AzCliResource, error)
 	ListSubscriptionDeploymentOperations(ctx context.Context, subscriptionId string, deploymentName string) ([]AzCliResourceOperation, error)
 	ListResourceGroupDeploymentOperations(ctx context.Context, subscriptionId string, resourceGroupName string, deploymentName string) ([]AzCliResourceOperation, error)
 	// ListAccountLocations lists the physical locations in Azure.
@@ -262,6 +263,27 @@ type AzCliGraphQuery struct {
 	Data         []AzCliResource `json:"data"`
 	SkipToken    string          `json:"skipToken"`
 	TotalRecords int             `json:"totalRecords"`
+}
+
+// Optional list parameters for resource group listing.
+type ListResourceGroupOptions struct {
+	// An optional tag filter
+	TagFilter *Filter
+	// An optional JMES path query
+	JmesPathQuery *string
+}
+
+// Optional list parameters for resource group resources listing.
+type ListResourceGroupResourcesOptions struct {
+	// An optional tag filter
+	TagFilter *Filter
+	// An optional JMES path query
+	JmesPathQuery *string
+}
+
+type Filter struct {
+	Key   string
+	Value string
 }
 
 func (tok *AzCliAccessToken) UnmarshalJSON(data []byte) error {
@@ -710,8 +732,46 @@ func (cli *azCli) DeleteResourceGroup(ctx context.Context, subscriptionId string
 	return nil
 }
 
-func (cli *azCli) ListResourceGroupResources(ctx context.Context, subscriptionId string, resourceGroupName string) ([]AzCliResource, error) {
-	res, err := cli.runAzCommand(ctx, "resource", "list", "--subscription", subscriptionId, "--resource-group", resourceGroupName, "--output", "json")
+func (cli *azCli) ListResourceGroup(ctx context.Context, subscriptionId string, listOptions *ListResourceGroupOptions) ([]AzCliResource, error) {
+	args := []string{"group", "list", "--subscription", subscriptionId, "--output", "json"}
+	if listOptions != nil {
+		if listOptions.TagFilter != nil {
+			args = append(args, "--tag", fmt.Sprintf("%s=%s", listOptions.TagFilter.Key, listOptions.TagFilter.Value))
+		}
+
+		if listOptions.JmesPathQuery != nil {
+			args = append(args, "--query", *listOptions.JmesPathQuery)
+		}
+	}
+
+	res, err := cli.runAzCommand(ctx, args...)
+	if isNotLoggedInMessage(res.Stderr) {
+		return nil, ErrAzCliNotLoggedIn
+	} else if err != nil {
+		return nil, fmt.Errorf("failed running az group list: %s: %w", res.String(), err)
+	}
+
+	var resources []AzCliResource
+	if err := json.Unmarshal([]byte(res.Stdout), &resources); err != nil {
+		return nil, fmt.Errorf("could not unmarshal output %s as a []AzCliResource: %w", res.Stdout, err)
+	}
+	return resources, nil
+}
+
+func (cli *azCli) ListResourceGroupResources(ctx context.Context, subscriptionId string, resourceGroupName string, listOptions *ListResourceGroupResourcesOptions) ([]AzCliResource, error) {
+	args := []string{"resource", "list", "--subscription", subscriptionId, "--resource-group", resourceGroupName, "--output", "json"}
+	if listOptions != nil {
+		if listOptions.TagFilter != nil {
+			args = append(args, "--tag", fmt.Sprintf("%s=%s", listOptions.TagFilter.Key, listOptions.TagFilter.Value))
+		}
+
+		if listOptions.JmesPathQuery != nil {
+			args = append(args, "--query", *listOptions.JmesPathQuery)
+		}
+	}
+
+	res, err := cli.runAzCommand(ctx, args...)
+
 	if isNotLoggedInMessage(res.Stderr) {
 		return nil, ErrAzCliNotLoggedIn
 	} else if err != nil {

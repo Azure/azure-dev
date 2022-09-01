@@ -80,7 +80,7 @@ func (e *HttpExpression) SetError(err error) *MockHttpClient {
 	return e.http
 }
 
-func AddDefaultMocks(mock *MockHttpClient) {
+func MockResourceGraphEmptyResources(mock *MockHttpClient) {
 	mock.When(func(req *httputil.HttpRequestMessage) bool {
 		return req.Method == http.MethodPost && strings.Contains(req.Url, "providers/Microsoft.ResourceGraph/resources")
 	}).RespondFn(func(request httputil.HttpRequestMessage) (*httputil.HttpResponseMessage, error) {

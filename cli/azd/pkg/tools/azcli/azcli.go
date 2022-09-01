@@ -89,6 +89,11 @@ type AzCli interface {
 	GetSignedInUserId(ctx context.Context) (string, error)
 
 	GetAccessToken(ctx context.Context) (AzCliAccessToken, error)
+
+	// GraphQuery performs a query against Azure Resource Graph.
+	//
+	// This allows free-form querying of resources by any attribute, which is powerful.
+	// However, results may be delayed for multiple minutes. Ensure that your this fits your use-case.
 	GraphQuery(ctx context.Context, query string, subscriptions []string) (*AzCliGraphQuery, error)
 }
 
@@ -265,17 +270,17 @@ type AzCliGraphQuery struct {
 	TotalRecords int             `json:"totalRecords"`
 }
 
-// Optional list parameters for resource group listing.
+// Optional parameters for resource group listing.
 type ListResourceGroupOptions struct {
 	// An optional tag filter
 	TagFilter *Filter
-	// An optional JMES path query
+	// An optional JMES path query to filter or project the result
 	JmesPathQuery *string
 }
 
-// Optional list parameters for resource group resources listing.
+// Optional parameters for resource group resources listing.
 type ListResourceGroupResourcesOptions struct {
-	// An optional JMES path query
+	// An optional JMES path query to filter or project the result
 	JmesPathQuery *string
 }
 
@@ -1089,9 +1094,9 @@ var isNotLoggedInMessageRegex = regexp.MustCompile(`Please run ('|")az login('|"
 // AADSTS70043: The refresh token has expired or is invalid due to sign-in frequency checks by conditional access.
 var isRefreshTokenExpiredMessageRegex = regexp.MustCompile(`AADSTS70043`)
 var isResourceSegmentMeNotFoundMessageRegex = regexp.MustCompile(`Resource not found for the segment 'me'.`)
-var isDeploymentNotFoundMessageRegex = regexp.MustCompile(`ERROR: \(DeploymentNotFound\)`)
-var isClientAssertionInvalidMessagedRegex = regexp.MustCompile(`ERROR: AADSTS700024: Client assertion is not within its valid time range.`)
-var isConfigurationIsNotSetMessageRegex = regexp.MustCompile(`ERROR: Configuration '.*' is not set\.`)
+var isDeploymentNotFoundMessageRegex = regexp.MustCompile(`\(DeploymentNotFound\)`)
+var isClientAssertionInvalidMessagedRegex = regexp.MustCompile(`AADSTS700024`)
+var isConfigurationIsNotSetMessageRegex = regexp.MustCompile(`Configuration '.*' is not set\.`)
 var isDeploymentErrorRegex = regexp.MustCompile(`ERROR: ({.+})`)
 
 func isNotLoggedInMessage(s string) bool {

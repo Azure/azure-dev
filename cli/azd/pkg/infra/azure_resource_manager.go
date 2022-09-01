@@ -111,12 +111,13 @@ func (rm *AzureResourceManager) GetResourceGroupsForEnvironment(ctx context.Cont
 	res, err := azCli.ListResourceGroup(ctx, env.GetSubscriptionId(), &azcli.ListResourceGroupOptions{
 		TagFilter: &azcli.Filter{Key: "azd-env-name", Value: env.GetEnvName()},
 	})
+
 	if err != nil {
 		return nil, err
 	}
 
 	if len(res) == 0 {
-		return nil, azureutil.ResourceNotFound(fmt.Errorf("0 results for resource groups with azd-env-name with value: '%s'", env.GetEnvName()))
+		return nil, azureutil.ResourceNotFound(fmt.Errorf("0 resource groups with azd-env-name with value: '%s'", env.GetEnvName()))
 	}
 
 	return res, nil
@@ -138,7 +139,7 @@ func (rm *AzureResourceManager) GetDefaultResourceGroups(ctx context.Context, en
 	}
 
 	if len(res) == 0 {
-		return nil, azureutil.ResourceNotFound(fmt.Errorf("0 results for resource groups with azd-env-name with value: '%s'", env.GetEnvName()))
+		return nil, azureutil.ResourceNotFound(fmt.Errorf("0 resource groups with prefix or suffix with value: '%s'", env.GetEnvName()))
 	}
 
 	return res, nil

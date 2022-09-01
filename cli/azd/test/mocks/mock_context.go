@@ -25,7 +25,6 @@ func NewMockContext(ctx context.Context) *MockContext {
 	http := mockhttp.NewMockHttpUtil()
 
 	mockexec.AddAzLoginMocks(execUtil)
-	mockhttp.AddDefaultMocks(http)
 
 	ctx = internal.WithCommandOptions(ctx, internal.GlobalCommandOptions{})
 	ctx = input.WithConsole(ctx, mockConsole)

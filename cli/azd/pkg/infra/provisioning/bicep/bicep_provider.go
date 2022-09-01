@@ -29,8 +29,7 @@ import (
 )
 
 type BicepTemplate struct {
-	//nolint:all
-	Schema         string                          `json:"$schema`
+	Schema         string                          `json:"$schema"`
 	ContentVersion string                          `json:"contentVersion"`
 	Parameters     map[string]BicepInputParameter  `json:"parameters"`
 	Outputs        map[string]BicepOutputParameter `json:"outputs"`

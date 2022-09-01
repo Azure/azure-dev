@@ -30,6 +30,7 @@ reactd
 ROLENAME
 Serializers
 staticwebapp
+Swashbuckle
 tsbuildinfo
 TTFB
 uuidv

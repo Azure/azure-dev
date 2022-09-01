@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
-package provisioning
+package bicep
 
 import (
 	"context"
@@ -17,9 +17,12 @@ import (
 	"time"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
+	"github.com/azure/azure-dev/cli/azd/pkg/cmdsubst"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
+	. "github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
@@ -28,8 +31,7 @@ import (
 )
 
 type BicepTemplate struct {
-	//nolint:all
-	Schema         string                          `json:"$schema`
+	Schema         string                          `json:"$schema"`
 	ContentVersion string                          `json:"contentVersion"`
 	Parameters     map[string]BicepInputParameter  `json:"parameters"`
 	Outputs        map[string]BicepOutputParameter `json:"outputs"`
@@ -44,6 +46,10 @@ type BicepInputParameter struct {
 type BicepOutputParameter struct {
 	Type  string      `json:"type"`
 	Value interface{} `json:"value"`
+}
+
+type BicepDeploymentDetails struct {
+	ParameterFilePath string
 }
 
 // BicepProvider exposes infrastructure provisioning using Azure Bicep templates
@@ -96,19 +102,19 @@ func (p *BicepProvider) GetDeployment(ctx context.Context, scope infra.Scope) *a
 		})
 }
 
-// Previews the infrastructure provisioning
-func (p *BicepProvider) Preview(ctx context.Context) *async.InteractiveTaskWithProgress[*PreviewResult, *PreviewProgress] {
+// Plans the infrastructure provisioning
+func (p *BicepProvider) Plan(ctx context.Context) *async.InteractiveTaskWithProgress[*DeploymentPlan, *DeploymentPlanningProgress] {
 	return async.RunInteractiveTaskWithProgress(
-		func(asyncContext *async.InteractiveTaskContextWithProgress[*PreviewResult, *PreviewProgress]) {
-			asyncContext.SetProgress(&PreviewProgress{Message: "Generating Bicep parameters file", Timestamp: time.Now()})
-			bicepTemplate, err := p.createParametersFile()
+		func(asyncContext *async.InteractiveTaskContextWithProgress[*DeploymentPlan, *DeploymentPlanningProgress]) {
+			asyncContext.SetProgress(&DeploymentPlanningProgress{Message: "Generating Bicep parameters file", Timestamp: time.Now()})
+			bicepTemplate, parameterFilePath, err := p.createParametersFile(ctx, asyncContext)
 			if err != nil {
 				asyncContext.SetError(fmt.Errorf("creating parameters file: %w", err))
 				return
 			}
 
 			modulePath := p.modulePath()
-			asyncContext.SetProgress(&PreviewProgress{Message: "Compiling Bicep template", Timestamp: time.Now()})
+			asyncContext.SetProgress(&DeploymentPlanningProgress{Message: "Compiling Bicep template", Timestamp: time.Now()})
 			deployment, err := p.createDeployment(ctx, modulePath)
 			if err != nil {
 				asyncContext.SetError(fmt.Errorf("creating template: %w", err))
@@ -130,14 +136,17 @@ func (p *BicepProvider) Preview(ctx context.Context) *async.InteractiveTaskWithP
 			}
 
 			if updated {
-				if err := p.updateParametersFile(ctx, deployment); err != nil {
+				if err := p.updateParametersFile(ctx, deployment, parameterFilePath); err != nil {
 					asyncContext.SetError(fmt.Errorf("updating deployment parameters: %w", err))
 					return
 				}
 			}
 
-			result := PreviewResult{
+			result := DeploymentPlan{
 				Deployment: *deployment,
+				Details: BicepDeploymentDetails{
+					ParameterFilePath: parameterFilePath,
+				},
 			}
 
 			asyncContext.SetResult(&result)
@@ -145,7 +154,7 @@ func (p *BicepProvider) Preview(ctx context.Context) *async.InteractiveTaskWithP
 }
 
 // Provisioning the infrastructure within the specified template
-func (p *BicepProvider) Deploy(ctx context.Context, deployment *Deployment, scope infra.Scope) *async.InteractiveTaskWithProgress[*DeployResult, *DeployProgress] {
+func (p *BicepProvider) Deploy(ctx context.Context, pd *DeploymentPlan, scope infra.Scope) *async.InteractiveTaskWithProgress[*DeployResult, *DeployProgress] {
 	return async.RunInteractiveTaskWithProgress(
 		func(asyncContext *async.InteractiveTaskContextWithProgress[*DeployResult, *DeployProgress]) {
 			done := make(chan bool)
@@ -184,21 +193,22 @@ func (p *BicepProvider) Deploy(ctx context.Context, deployment *Deployment, scop
 
 			// Start the deployment
 			modulePath := p.modulePath()
-			parametersFilePath := p.parametersFilePath()
-			deployResult, err := p.deployModule(ctx, scope, modulePath, parametersFilePath)
+			bicepDeploymentData := pd.Details.(BicepDeploymentDetails)
+			deployResult, err := p.deployModule(ctx, scope, modulePath, bicepDeploymentData.ParameterFilePath)
 
 			if err != nil {
 				asyncContext.SetError(err)
 				return
 			}
 
+			deployment := pd.Deployment
 			if deployResult != nil {
-				deployment.Outputs = p.createOutputParameters(deployment, deployResult.Properties.Outputs)
+				deployment.Outputs = p.createOutputParameters(&pd.Deployment, deployResult.Properties.Outputs)
 			}
 
 			result := &DeployResult{
 				Operations: operations,
-				Deployment: deployment,
+				Deployment: &deployment,
 			}
 
 			asyncContext.SetResult(result)
@@ -209,19 +219,22 @@ func (p *BicepProvider) Deploy(ctx context.Context, deployment *Deployment, scop
 func (p *BicepProvider) Destroy(ctx context.Context, deployment *Deployment, options DestroyOptions) *async.InteractiveTaskWithProgress[*DestroyResult, *DestroyProgress] {
 	return async.RunInteractiveTaskWithProgress(
 		func(asyncContext *async.InteractiveTaskContextWithProgress[*DestroyResult, *DestroyProgress]) {
-			resourceGroups, err := p.getResourceGroups(ctx, asyncContext)
+			asyncContext.SetProgress(&DestroyProgress{Message: "Fetching resource groups", Timestamp: time.Now()})
+			resourceGroups, err := p.getResourceGroups(ctx)
 			if err != nil {
 				asyncContext.SetError(err)
 				return
 			}
 
-			allResources, err := p.getAllResources(ctx, asyncContext, resourceGroups)
+			asyncContext.SetProgress(&DestroyProgress{Message: "Fetching resources", Timestamp: time.Now()})
+			allResources, err := p.getAllResources(ctx, resourceGroups)
 			if err != nil {
 				asyncContext.SetError(fmt.Errorf("getting resources to delete: %w", err))
 				return
 			}
 
-			keyVaults, err := p.getKeyVaultsToPurge(ctx, asyncContext, allResources)
+			asyncContext.SetProgress(&DestroyProgress{Message: "Getting KeyVaults to purge", Timestamp: time.Now()})
+			keyVaults, err := p.getKeyVaultsToPurge(ctx, allResources)
 			if err != nil {
 				asyncContext.SetError(fmt.Errorf("getting key vaults to purge: %w", err))
 				return
@@ -251,9 +264,7 @@ func (p *BicepProvider) Destroy(ctx context.Context, deployment *Deployment, opt
 		})
 }
 
-func (p *BicepProvider) getResourceGroups(ctx context.Context, asyncContext *async.InteractiveTaskContextWithProgress[*DestroyResult, *DestroyProgress]) ([]string, error) {
-	asyncContext.SetProgress(&DestroyProgress{Message: "Fetching resource groups", Timestamp: time.Now()})
-
+func (p *BicepProvider) getResourceGroups(ctx context.Context) ([]string, error) {
 	resourceManager := infra.NewAzureResourceManager(ctx)
 	resourceGroups, err := resourceManager.GetResourceGroupsForDeployment(ctx, p.env.GetSubscriptionId(), p.env.GetEnvName())
 	if err != nil {
@@ -263,9 +274,8 @@ func (p *BicepProvider) getResourceGroups(ctx context.Context, asyncContext *asy
 	return resourceGroups, nil
 }
 
-func (p *BicepProvider) getAllResources(ctx context.Context, asyncContext *async.InteractiveTaskContextWithProgress[*DestroyResult, *DestroyProgress], resourceGroups []string) ([]azcli.AzCliResource, error) {
+func (p *BicepProvider) getAllResources(ctx context.Context, resourceGroups []string) ([]azcli.AzCliResource, error) {
 	allResources := []azcli.AzCliResource{}
-	asyncContext.SetProgress(&DestroyProgress{Message: "Fetching resources", Timestamp: time.Now()})
 
 	for _, resourceGroup := range resourceGroups {
 		resources, err := p.azCli.ListResourceGroupResources(ctx, p.env.GetSubscriptionId(), resourceGroup)
@@ -318,8 +328,8 @@ func (p *BicepProvider) destroyResourceGroups(ctx context.Context, asyncContext 
 	return nil
 }
 
-func (p *BicepProvider) getKeyVaultsToPurge(ctx context.Context, asyncContext *async.InteractiveTaskContextWithProgress[*DestroyResult, *DestroyProgress], resources []azcli.AzCliResource) ([]azcli.AzCliKeyVault, error) {
-	keyVaultsToPurge := []azcli.AzCliKeyVault{}
+func (p *BicepProvider) getKeyVaults(ctx context.Context, resources []azcli.AzCliResource) ([]azcli.AzCliKeyVault, error) {
+	vaults := []azcli.AzCliKeyVault{}
 
 	for _, resource := range resources {
 		if resource.Type == string(infra.AzureResourceTypeKeyVault) {
@@ -327,13 +337,27 @@ func (p *BicepProvider) getKeyVaultsToPurge(ctx context.Context, asyncContext *a
 			if err != nil {
 				return []azcli.AzCliKeyVault{}, fmt.Errorf("listing key vault %s properties: %w", resource.Name, err)
 			}
-			if vault.Properties.EnableSoftDelete && !vault.Properties.EnablePurgeProtection {
-				keyVaultsToPurge = append(keyVaultsToPurge, vault)
-			}
+			vaults = append(vaults, vault)
 		}
 	}
 
-	return keyVaultsToPurge, nil
+	return vaults, nil
+}
+
+func (p *BicepProvider) getKeyVaultsToPurge(ctx context.Context, resources []azcli.AzCliResource) ([]azcli.AzCliKeyVault, error) {
+	vaults, err := p.getKeyVaults(ctx, resources)
+	if err != nil {
+		return []azcli.AzCliKeyVault{}, err
+	}
+
+	vaultsToPurge := []azcli.AzCliKeyVault{}
+	for _, v := range vaults {
+		if v.Properties.EnableSoftDelete && !v.Properties.EnablePurgeProtection {
+			vaultsToPurge = append(vaultsToPurge, v)
+		}
+	}
+
+	return vaultsToPurge, nil
 }
 
 // Azure KeyVaults have a "soft delete" functionality (now enabled by default) where a vault may be marked
@@ -415,7 +439,7 @@ func (p *BicepProvider) deleteDeployment(ctx context.Context, asyncContext *asyn
 }
 
 // Converts the specified deployment to a bicep template parameters file and writes the file to disk.
-func (p *BicepProvider) updateParametersFile(ctx context.Context, deployment *Deployment) error {
+func (p *BicepProvider) updateParametersFile(ctx context.Context, deployment *Deployment, parameterFilePath string) error {
 	bicepFile := BicepTemplate{
 		Schema:         "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
 		ContentVersion: "1.0.0.0",
@@ -434,8 +458,7 @@ func (p *BicepProvider) updateParametersFile(ctx context.Context, deployment *De
 		return fmt.Errorf("marshaling parameters: %w", err)
 	}
 
-	parametersFilePath := p.parametersFilePath()
-	err = os.WriteFile(parametersFilePath, bytes, 0644)
+	err = os.WriteFile(parameterFilePath, bytes, osutil.PermissionFile)
 	if err != nil {
 		return fmt.Errorf("writing parameters file: %w", err)
 	}
@@ -471,44 +494,54 @@ func (p *BicepProvider) createOutputParameters(template *Deployment, azureOutput
 	return outputParams
 }
 
-// Copies the Bicep parameters file from the project template into the .azure environment folder
-func (p *BicepProvider) createParametersFile() (*BicepTemplate, error) {
-	// Copy the parameter template file to the environment working directory and do substitutions.
+// createParametersFile will read the parameters file template for environment/module specified by Options,
+// do environment and command substitutions, and write out the result into a temporary file.
+//
+// The caller of the method is responsible for deleting the file when it is no longer necessary.
+func (p *BicepProvider) createParametersFile(ctx context.Context, asyncContext *async.InteractiveTaskContextWithProgress[*DeploymentPlan, *DeploymentPlanningProgress]) (*BicepTemplate, string, error) {
 	parametersTemplateFilePath := p.parametersTemplateFilePath()
 	log.Printf("Reading parameters template file from: %s", parametersTemplateFilePath)
 	parametersBytes, err := os.ReadFile(parametersTemplateFilePath)
 	if err != nil {
-		return nil, fmt.Errorf("reading parameter file template: %w", err)
+		return nil, "", fmt.Errorf("reading parameter file template: %w", err)
 	}
+
 	replaced, err := envsubst.Eval(string(parametersBytes), func(name string) string {
 		if val, has := p.env.Values[name]; has {
 			return val
 		}
 		return os.Getenv(name)
 	})
-
 	if err != nil {
-		return nil, fmt.Errorf("substituting parameter file: %w", err)
+		return nil, "", fmt.Errorf("substituting environment variables inside parameter file: %w", err)
 	}
 
-	parametersFilePath := p.parametersFilePath()
-	writeDir := filepath.Dir(parametersFilePath)
-	if err := os.MkdirAll(writeDir, 0755); err != nil {
-		return nil, fmt.Errorf("creating directory structure: %w", err)
-	}
-
-	log.Printf("Writing parameters file to: %s", parametersFilePath)
-	err = os.WriteFile(parametersFilePath, []byte(replaced), 0644)
-	if err != nil {
-		return nil, fmt.Errorf("writing parameter file: %w", err)
+	if cmdsubst.ContainsCommandInvocation(replaced, cmdsubst.SecretOrRandomPasswordCommandName) {
+		cmdExecutor := cmdsubst.NewSecretOrRandomPasswordExecutor(ctx, p.azCli, p.env.GetSubscriptionId())
+		replaced, err = cmdsubst.Eval(replaced, cmdExecutor)
+		if err != nil {
+			return nil, "", fmt.Errorf("substituting command output inside parameter file: %w", err)
+		}
 	}
 
 	var bicepTemplate BicepTemplate
 	if err := json.Unmarshal([]byte(replaced), &bicepTemplate); err != nil {
-		return nil, fmt.Errorf("error unmarshalling Bicep template parameters: %w", err)
+		return nil, "", fmt.Errorf("error unmarshalling Bicep template parameters: %w", err)
 	}
 
-	return &bicepTemplate, nil
+	file, err := os.CreateTemp("", "deploymentParameters")
+	if err != nil {
+		return nil, "", err
+	}
+
+	_, err = file.Write([]byte(replaced))
+	file.Close() // Errors OK to ignore (see the docs) and we need to close the file whether Write() succeeded or not.
+	if err != nil {
+		os.Remove(file.Name()) // Error OK to ignore as well.
+		return nil, "", err
+	}
+
+	return &bicepTemplate, file.Name(), nil
 }
 
 // Creates the compiled template from the specified module path
@@ -593,12 +626,6 @@ func (p *BicepProvider) parametersTemplateFilePath() string {
 	return filepath.Join(p.projectPath, infraPath, parametersFilename)
 }
 
-// Gets the path to the staging .azure parameters file path
-func (p *BicepProvider) parametersFilePath() string {
-	parametersFilename := fmt.Sprintf("%s.parameters.json", p.options.Module)
-	return filepath.Join(p.projectPath, ".azure", p.env.GetEnvName(), p.options.Path, parametersFilename)
-}
-
 // Gets the folder path to the specified module
 func (p *BicepProvider) modulePath() string {
 	infraPath := p.options.Path
@@ -670,5 +697,16 @@ func NewBicepProvider(ctx context.Context, env *environment.Environment, project
 		console:     console,
 		bicepCli:    bicepCli,
 		azCli:       azCli,
+	}
+}
+
+// Registers the Bicep provider with the provisioning module
+func Register() {
+	err := RegisterProvider(Bicep, func(ctx context.Context, env *environment.Environment, projectPath string, options Options) (Provider, error) {
+		return NewBicepProvider(ctx, env, projectPath, options), nil
+	})
+
+	if err != nil {
+		panic(err)
 	}
 }

@@ -11,6 +11,7 @@ import (
 	"io"
 	"io/fs"
 	"log"
+	"math/rand"
 	"net/http"
 	"os"
 	"os/exec"
@@ -24,6 +25,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/cmd"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/telemetry"
+	"github.com/azure/azure-dev/cli/azd/pkg/container"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/blang/semver/v4"
@@ -31,6 +33,9 @@ import (
 )
 
 func main() {
+	// Ensure random numbers from default random number generator are unpredictable
+	rand.Seed(time.Now().UTC().UnixNano())
+
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
 
 	if !isDebugEnabled() {
@@ -38,6 +43,7 @@ func main() {
 	}
 
 	ts := telemetry.GetTelemetrySystem()
+	container.RegisterDependencies()
 
 	latest := make(chan semver.Version)
 	go fetchLatestVersion(latest)

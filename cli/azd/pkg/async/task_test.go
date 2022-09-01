@@ -122,8 +122,7 @@ func TestTaskWithProgressWithError(t *testing.T) {
 }
 
 func TestInteractiveTaskWithResult(t *testing.T) {
-	ctx := context.Background()
-	console := mocks.NewMockConsole()
+	mockContext := mocks.NewMockContext(context.Background())
 	progress := []string{}
 	interactiveStatus := []bool{}
 	expectedResult := "westus2"
@@ -131,11 +130,11 @@ func TestInteractiveTaskWithResult(t *testing.T) {
 	progressDone := make(chan bool)
 	interactiveDone := make(chan bool)
 
-	console.WhenPrompt(func(options input.ConsoleOptions) bool {
+	mockContext.Console.WhenPrompt(func(options input.ConsoleOptions) bool {
 		return options.Message == "What location?"
 	}).Respond(expectedResult)
 
-	console.WhenConfirm(func(options input.ConsoleOptions) bool {
+	mockContext.Console.WhenConfirm(func(options input.ConsoleOptions) bool {
 		return options.Message == "Are you sure?"
 	}).Respond(true)
 
@@ -146,7 +145,7 @@ func TestInteractiveTaskWithResult(t *testing.T) {
 		taskContext.SetProgress("thing 2")
 
 		err := taskContext.Interact(func() error {
-			location, err := console.Prompt(ctx, input.ConsoleOptions{
+			location, err := mockContext.Console.Prompt(*mockContext.Context, input.ConsoleOptions{
 				Message:      "What location?",
 				DefaultValue: "eastus2",
 			})
@@ -155,7 +154,7 @@ func TestInteractiveTaskWithResult(t *testing.T) {
 				return err
 			}
 
-			confirm, err := console.Confirm(ctx, input.ConsoleOptions{
+			confirm, err := mockContext.Console.Confirm(*mockContext.Context, input.ConsoleOptions{
 				Message:      "Are you sure?",
 				DefaultValue: true,
 			})
@@ -216,8 +215,7 @@ func TestInteractiveTaskWithResult(t *testing.T) {
 }
 
 func TestInteractiveTaskWithError(t *testing.T) {
-	ctx := context.Background()
-	console := mocks.NewMockConsole()
+	mockContext := mocks.NewMockContext(context.Background())
 	progress := []string{}
 	interactiveStatus := []bool{}
 
@@ -226,12 +224,12 @@ func TestInteractiveTaskWithError(t *testing.T) {
 
 	expectedError := errors.New("User did not confirm")
 
-	console.WhenPrompt(func(options input.ConsoleOptions) bool {
+	mockContext.Console.WhenPrompt(func(options input.ConsoleOptions) bool {
 		return options.Message == "What location?"
 	}).Respond("westus2")
 
 	// This time the user will not confirm
-	console.WhenConfirm(func(options input.ConsoleOptions) bool {
+	mockContext.Console.WhenConfirm(func(options input.ConsoleOptions) bool {
 		return options.Message == "Are you sure?"
 	}).Respond(false)
 
@@ -242,7 +240,7 @@ func TestInteractiveTaskWithError(t *testing.T) {
 		taskContext.SetProgress("thing 2")
 
 		err := taskContext.Interact(func() error {
-			_, err := console.Prompt(ctx, input.ConsoleOptions{
+			_, err := mockContext.Console.Prompt(*mockContext.Context, input.ConsoleOptions{
 				Message:      "What location?",
 				DefaultValue: "eastus2",
 			})
@@ -251,7 +249,7 @@ func TestInteractiveTaskWithError(t *testing.T) {
 				return err
 			}
 
-			confirm, err := console.Confirm(ctx, input.ConsoleOptions{
+			confirm, err := mockContext.Console.Confirm(*mockContext.Context, input.ConsoleOptions{
 				Message:      "Are you sure?",
 				DefaultValue: true,
 			})

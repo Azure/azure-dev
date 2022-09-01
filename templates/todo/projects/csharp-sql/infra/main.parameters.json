@@ -7,6 +7,15 @@
     },
     "location": {
       "value": "${AZURE_LOCATION}"
+    },
+    "principalId": {
+      "value": "${AZURE_PRINCIPAL_ID}"
+    },
+    "sqlAdminPassword" : {
+      "value": "$(secretOrRandomPassword ${KEYVAULT_NAME} sqlAdminPassword)"
+    },
+    "appUserPassword" : {
+      "value": "$(secretOrRandomPassword ${KEYVAULT_NAME} appUserPassword)"
     }
   }
 }

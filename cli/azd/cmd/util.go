@@ -13,13 +13,10 @@ import (
 
 	"github.com/AlecAivazis/survey/v2"
 	"github.com/azure/azure-dev/cli/azd/pkg/azureutil"
-	"github.com/azure/azure-dev/cli/azd/pkg/commands"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
-	"github.com/fatih/color"
-	"github.com/mgutz/ansi"
 )
 
 type Asker func(p survey.Prompt, response interface{}) error
@@ -196,7 +193,7 @@ func ensureEnvironmentInitialized(ctx context.Context, envSpec environmentSpec, 
 	if !hasLocation && envSpec.location != "" {
 		env.SetLocation(envSpec.location)
 	} else {
-		location, err := console.PromptLocation(ctx, "Please select an Azure location to use:")
+		location, err := azureutil.PromptLocation(ctx, "Please select an Azure location to use:")
 		if err != nil {
 			return fmt.Errorf("prompting for location: %w", err)
 		}
@@ -257,7 +254,7 @@ func ensureEnvironmentInitialized(ctx context.Context, envSpec environmentSpec, 
 }
 
 func getSubscriptionOptions(ctx context.Context) ([]string, string, error) {
-	azCli := commands.GetAzCliFromContext(ctx)
+	azCli := azcli.GetAzCli(ctx)
 	subscriptionInfos, err := azCli.ListAccounts(ctx)
 	if err != nil {
 		return nil, "", fmt.Errorf("listing accounts: %w", err)
@@ -292,20 +289,6 @@ func getSubscriptionOptions(ctx context.Context) ([]string, string, error) {
 	return subscriptionOptions, defaultSubscription, nil
 }
 
-func saveEnvironmentValues(res azcli.AzCliDeployment, env environment.Environment) error {
-	if len(res.Properties.Outputs) > 0 {
-		for name, o := range res.Properties.Outputs {
-			env.Values[name] = fmt.Sprintf("%v", o.Value)
-		}
-
-		if err := env.Save(); err != nil {
-			return fmt.Errorf("writing environment: %w", err)
-		}
-	}
-
-	return nil
-}
-
 var (
 	errNoProject = errors.New("no project exists; to create a new project, run `azd init`.")
 )
@@ -321,28 +304,4 @@ func ensureProject(path string) error {
 	}
 
 	return nil
-}
-
-// withLinkFormat creates string with hyperlink-looking color
-func withLinkFormat(link string, a ...interface{}) string {
-	// See ansi colors: https://en.wikipedia.org/wiki/ANSI_escape_code#Colors
-	// ansi code `30` is the one that matches the survey selection
-	return ansi.Color(fmt.Sprintf(link, a...), "30")
-}
-
-// withHighLightFormat creates string with highlight-looking color
-func withHighLightFormat(text string, a ...interface{}) string {
-	return color.CyanString(text, a...)
-}
-
-// printWithStyling prints text to stdout and handles Windows terminals to support
-// escape chars from the text for adding style (color, font, etc)
-func printWithStyling(text string, a ...interface{}) {
-	colorTerminal := color.New()
-	colorTerminal.Printf(text, a...)
-}
-
-// withBackticks wraps text with the backtick (`) character.
-func withBackticks(text string) string {
-	return "`" + text + "`"
 }

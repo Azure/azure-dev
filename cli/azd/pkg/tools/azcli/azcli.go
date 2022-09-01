@@ -17,7 +17,7 @@ import (
 	azdinternal "github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/executil"
-	"github.com/azure/azure-dev/cli/azd/pkg/httpUtil"
+	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/internal"
 	"github.com/blang/semver/v4"
@@ -30,6 +30,7 @@ var (
 	ErrClientAssertionExpired    = errors.New("client assertion expired")
 	ErrDeploymentNotFound        = errors.New("deployment not found")
 	ErrNoConfigurationValue      = errors.New("no value configured")
+	ErrAzCliSecretNotFound       = errors.New("secret not fount")
 )
 
 const (
@@ -61,6 +62,7 @@ type AzCli interface {
 	GetResourceGroupDeployment(ctx context.Context, subscriptionId string, resourceGroupName string, deploymentName string) (AzCliDeployment, error)
 	GetResource(ctx context.Context, subscriptionId string, resourceId string) (AzCliResourceExtended, error)
 	GetKeyVault(ctx context.Context, subscriptionId string, vaultName string) (AzCliKeyVault, error)
+	GetKeyVaultSecret(ctx context.Context, subscriptionId string, vaultName string, secretName string) (AzCliKeyVaultSecret, error)
 	PurgeKeyVault(ctx context.Context, subscriptionId string, vaultName string) error
 	DeployAppServiceZip(ctx context.Context, subscriptionId string, resourceGroup string, appName string, deployZipPath string) (string, error)
 	DeployFunctionAppUsingZipFile(ctx context.Context, subscriptionID string, resourceGroup string, funcName string, deployZipPath string) (string, error)
@@ -200,6 +202,12 @@ type AzCliKeyVault struct {
 		EnableSoftDelete      bool `json:"enableSoftDelete"`
 		EnablePurgeProtection bool `json:"enablePurgeProtection"`
 	} `json:"properties"`
+}
+
+type AzCliKeyVaultSecret struct {
+	Id    string `json:"id"`
+	Name  string `json:"name"`
+	Value string `json:"value"`
 }
 
 type AzCliAppServiceProperties struct {
@@ -935,6 +943,23 @@ func (cli *azCli) GetKeyVault(ctx context.Context, subscriptionId string, vaultN
 	return props, nil
 }
 
+func (cli *azCli) GetKeyVaultSecret(ctx context.Context, subscriptionId string, vaultName string, secretName string) (AzCliKeyVaultSecret, error) {
+	res, err := cli.runAzCommand(ctx, "keyvault", "secret", "show", "--subscription", subscriptionId, "--vault-name", vaultName, "--name", secretName, "--output", "json")
+	if isNotLoggedInMessage(res.Stderr) {
+		return AzCliKeyVaultSecret{}, ErrAzCliNotLoggedIn
+	} else if isSecretNotFoundError(res.Stderr) {
+		return AzCliKeyVaultSecret{}, ErrAzCliSecretNotFound
+	} else if err != nil {
+		return AzCliKeyVaultSecret{}, fmt.Errorf("failed running az keyvault secret show: %s: %w", res.String(), err)
+	}
+
+	var props AzCliKeyVaultSecret
+	if err := json.Unmarshal([]byte(res.Stdout), &props); err != nil {
+		return AzCliKeyVaultSecret{}, fmt.Errorf("could not unmarshal output %s as an AzCliKeyVaultSecret: %w", res.Stdout, err)
+	}
+	return props, nil
+}
+
 func (cli *azCli) PurgeKeyVault(ctx context.Context, subscriptionId string, vaultName string) error {
 	res, err := cli.runAzCommand(ctx, "keyvault", "purge", "--subscription", subscriptionId, "--name", vaultName, "--output", "json")
 	if isNotLoggedInMessage(res.Stderr) {
@@ -969,12 +994,12 @@ func (cli *azCli) GraphQuery(ctx context.Context, query string, subscriptions []
 		return nil, fmt.Errorf("getting access token: %w", err)
 	}
 
-	client := httpUtil.GetHttpClientFromContext(ctx)
+	client := httputil.GetHttpClient(ctx)
 	headers := map[string]string{
 		"Authorization": fmt.Sprintf("Bearer %s", token.AccessToken),
 	}
 
-	request := &httpUtil.HttpRequestMessage{
+	request := &httputil.HttpRequestMessage{
 		Url:     url,
 		Method:  "POST",
 		Headers: headers,
@@ -1039,6 +1064,7 @@ var isDeploymentNotFoundMessageRegex = regexp.MustCompile(`ERROR: \(DeploymentNo
 var isClientAssertionInvalidMessagedRegex = regexp.MustCompile(`ERROR: AADSTS700024: Client assertion is not within its valid time range.`)
 var isConfigurationIsNotSetMessageRegex = regexp.MustCompile(`ERROR: Configuration '.*' is not set\.`)
 var isDeploymentErrorRegex = regexp.MustCompile(`ERROR: ({.+})`)
+var isSecretNotFoundMessageRegex = regexp.MustCompile(`ERROR: \(SecretNotFound\)`)
 
 func isNotLoggedInMessage(s string) bool {
 	return isNotLoggedInMessageRegex.MatchString(s)
@@ -1068,6 +1094,10 @@ func isDeploymentError(s string) bool {
 	return isDeploymentErrorRegex.MatchString(s)
 }
 
+func isSecretNotFoundError(s string) bool {
+	return isSecretNotFoundMessageRegex.MatchString(s)
+}
+
 func getDeploymentErrorJson(s string) string {
 	matches := isDeploymentErrorRegex.FindStringSubmatch(s)
 
@@ -1083,24 +1113,32 @@ func getDeploymentErrorJson(s string) string {
 type contextKey string
 
 const (
-	azdCliContextKey   contextKey = "azdcli"
-	templateContextKey contextKey = "template"
+	azCliContextKey contextKey = "azcli"
 )
 
 func WithAzCli(ctx context.Context, azCli AzCli) context.Context {
-	return context.WithValue(ctx, azdCliContextKey, azCli)
+	return context.WithValue(ctx, azCliContextKey, azCli)
 }
 
-func AzCliFromContext(ctx context.Context) (AzCli, bool) {
-	azCli, ok := ctx.Value(azdCliContextKey).(AzCli)
-	return azCli, ok
-}
+func GetAzCli(ctx context.Context) AzCli {
+	// Check to see if we already have an az cli in the context
+	azCli, ok := ctx.Value(azCliContextKey).(AzCli)
+	if !ok {
+		options := azdinternal.GetCommandOptions(ctx)
 
-func WithTemplateName(ctx context.Context, templateName string) context.Context {
-	return context.WithValue(ctx, templateContextKey, templateName)
-}
+		execFn := executil.GetCommandRunner(ctx)
+		args := NewAzCliArgs{
+			EnableDebug:     options.EnableDebugLogging,
+			EnableTelemetry: options.EnableTelemetry,
+			RunWithResultFn: execFn,
+		}
+		azCli = NewAzCli(args)
+	}
 
-func TemplateNameFromContext(ctx context.Context) (string, bool) {
-	templateName, ok := ctx.Value(templateContextKey).(string)
-	return templateName, ok
+	// Set the user agent if a template has been selected
+	template := azdinternal.GetTemplate(ctx)
+	userAgent := azdinternal.MakeUserAgentString(template)
+	azCli.SetUserAgent(userAgent)
+
+	return azCli
 }

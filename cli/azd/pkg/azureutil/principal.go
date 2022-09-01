@@ -11,7 +11,7 @@ import (
 	"fmt"
 	"regexp"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/commands"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 )
 
 // GetCurrentPrincipalId returns the object id of the current
@@ -20,7 +20,7 @@ import (
 // `oid` claim from an access token a principal can not be
 // obtained in this way.
 func GetCurrentPrincipalId(ctx context.Context) (string, error) {
-	azCli := commands.GetAzCliFromContext(ctx)
+	azCli := azcli.GetAzCli(ctx)
 	principalId, err := azCli.GetSignedInUserId(ctx)
 	if err == nil {
 		return principalId, nil
@@ -53,7 +53,7 @@ func getOidClaimFromAccessToken(token string) (string, error) {
 		return "", errors.New("malformed access token")
 	}
 
-	byts, err := base64.RawURLEncoding.DecodeString(matches[1])
+	bytes, err := base64.RawURLEncoding.DecodeString(matches[1])
 	if err != nil {
 		return "", err
 	}
@@ -62,7 +62,7 @@ func getOidClaimFromAccessToken(token string) (string, error) {
 		Oid *string
 	}
 
-	if err := json.Unmarshal(byts, &claims); err != nil {
+	if err := json.Unmarshal(bytes, &claims); err != nil {
 		return "", err
 	}
 

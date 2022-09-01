@@ -1,41 +1,64 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 package infra
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
+	"time"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/azureutil"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
+	"github.com/sethvargo/go-retry"
 )
 
 type AzureResourceManager struct {
-	azCli azcli.AzCli
+	azCli         azcli.AzCli
+	retryStrategy *osutil.RetryStrategy
 }
 
-func NewAzureResourceManager(azCli azcli.AzCli) *AzureResourceManager {
+type ResourceManager interface {
+	GetDeploymentResourceOperations(ctx context.Context, scope Scope) ([]azcli.AzCliResourceOperation, error)
+	GetResourceTypeDisplayName(ctx context.Context, subscriptionId string, resourceId string, resourceType AzureResourceType) (string, error)
+	GetWebAppResourceTypeDisplayName(ctx context.Context, subscriptionId string, resourceId string) (string, error)
+}
+
+func NewAzureResourceManager(ctx context.Context) *AzureResourceManager {
+	azCli := azcli.GetAzCli(ctx)
+
 	return &AzureResourceManager{
-		azCli: azCli,
+		azCli:         azCli,
+		retryStrategy: osutil.NewRetryStrategy(10, time.Second*5),
 	}
 }
 
-func (rm *AzureResourceManager) GetDeploymentResourceOperations(ctx context.Context, subscriptionId string, deploymentName string) ([]azcli.AzCliResourceOperation, error) {
-	// Gets all the subscription level deployments
-	subOperations, err := rm.azCli.ListSubscriptionDeploymentOperations(ctx, subscriptionId, deploymentName)
+func (rm *AzureResourceManager) GetDeploymentResourceOperations(ctx context.Context, scope Scope) ([]azcli.AzCliResourceOperation, error) {
+	// Gets all the scope level resource operations
+	resourceOperations, err := scope.GetResourceOperations(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("getting subscription deployment: %w", err)
 	}
 
 	var resourceGroupName string
+	resourceGroupScope, ok := scope.(*ResourceGroupScope)
 
-	// Find the resource group
-	for _, operation := range subOperations {
-		if operation.Properties.TargetResource.ResourceType == string(AzureResourceTypeResourceGroup) {
-			resourceGroupName = operation.Properties.TargetResource.ResourceName
-			break
+	if ok {
+		// If the scope is a resource group scope get the resource group directly
+		resourceGroupName = resourceGroupScope.ResourceGroup()
+	} else {
+		// Otherwise find the resource group within the deployment operations
+		for _, operation := range resourceOperations {
+			if operation.Properties.TargetResource.ResourceType == string(AzureResourceTypeResourceGroup) {
+				resourceGroupName = operation.Properties.TargetResource.ResourceName
+				break
+			}
 		}
 	}
-
-	resourceOperations := []azcli.AzCliResourceOperation{}
 
 	if strings.TrimSpace(resourceGroupName) == "" {
 		return resourceOperations, nil
@@ -43,9 +66,9 @@ func (rm *AzureResourceManager) GetDeploymentResourceOperations(ctx context.Cont
 
 	// Find all resource group deployments within the subscription operations
 	// Recursively append any resource group deployments that are found
-	for _, operation := range subOperations {
+	for _, operation := range resourceOperations {
 		if operation.Properties.TargetResource.ResourceType == string(AzureResourceTypeDeployment) {
-			err = rm.appendDeploymentResourcesRecursive(ctx, subscriptionId, resourceGroupName, operation.Properties.TargetResource.ResourceName, &resourceOperations)
+			err = rm.appendDeploymentResourcesRecursive(ctx, scope.SubscriptionId(), resourceGroupName, operation.Properties.TargetResource.ResourceName, &resourceOperations)
 			if err != nil {
 				return nil, fmt.Errorf("appending deployment resources: %w", err)
 			}
@@ -83,24 +106,114 @@ func (rm *AzureResourceManager) GetResourceGroupsForDeployment(ctx context.Conte
 	return keys, nil
 }
 
-func (rm *AzureResourceManager) appendDeploymentResourcesRecursive(ctx context.Context, subscriptionId string, resourceGroupName string, deploymentName string, resourceOperations *[]azcli.AzCliResourceOperation) error {
-	operations, err := rm.azCli.ListResourceGroupDeploymentOperations(ctx, subscriptionId, resourceGroupName, deploymentName)
+// GetResourceGroupsForEnvironment gets all resources groups for a given environment
+// The resource graph may not be immediately up to date and if not initially found will attempt to retry causing delays in retrieval.
+func (rm *AzureResourceManager) GetResourceGroupsForEnvironment(ctx context.Context, env *environment.Environment) ([]azcli.AzCliResource, error) {
+	azCli := azcli.GetAzCli(ctx)
+	query := fmt.Sprintf(`resourceContainers 
+		| where type == "microsoft.resources/subscriptions/resourcegroups" 
+		| where tags['azd-env-name'] == '%s' 
+		| project id, name, type, tags, location`,
+		env.GetEnvName())
+
+	var graphQueryResults *azcli.AzCliGraphQuery
+
+	err := retry.Do(ctx, retry.WithMaxRetries(rm.retryStrategy.MaxRetries, retry.NewConstant(rm.retryStrategy.RetryBackoff)), func(ctx context.Context) error {
+		queryResult, err := azCli.GraphQuery(ctx, query, []string{env.GetSubscriptionId()})
+		if err != nil {
+			return fmt.Errorf("executing graph query: %s: %w", query, err)
+		}
+
+		if queryResult.Count == 0 {
+			notFoundError := azureutil.ResourceNotFound(fmt.Errorf("azure graph query returned 0 results for resource groups with azd-env-name with value: '%s'", env.GetEnvName()))
+			return retry.RetryableError(notFoundError)
+		}
+
+		graphQueryResults = queryResult
+		return nil
+	})
+
 	if err != nil {
-		return fmt.Errorf("getting subscription deployment operations: %w", err)
+		return nil, err
 	}
 
-	for _, operation := range operations {
-		if operation.Properties.TargetResource.ResourceType == string(AzureResourceTypeDeployment) {
-			err := rm.appendDeploymentResourcesRecursive(ctx, subscriptionId, resourceGroupName, operation.Properties.TargetResource.ResourceName, resourceOperations)
-			if err != nil {
-				return fmt.Errorf("appending deployment resources: %w", err)
-			}
-		} else if operation.Properties.ProvisioningOperation == "Create" && strings.TrimSpace(operation.Properties.TargetResource.ResourceType) != "" {
-			*resourceOperations = append(*resourceOperations, operation)
+	return graphQueryResults.Data, nil
+}
+
+// GetDefaultResourceGroups gets the default resource groups regardless of azd-env-name setting
+// azd initially released with {envname}-rg for a default resource group name.  We now don't hardcode the default
+// We search graph for them instead using the rg- prefix or -rg suffix
+// The resource graph may not be immediately up to date and if not initially found will attempt to retry causing delays in retrieval.
+func (rm *AzureResourceManager) GetDefaultResourceGroups(ctx context.Context, env *environment.Environment) ([]azcli.AzCliResource, error) {
+	azCli := azcli.GetAzCli(ctx)
+	query := fmt.Sprintf(`resourceContainers 
+		| where type == "microsoft.resources/subscriptions/resourcegroups" 
+		| where name in('rg-%[1]s','%[1]s-rg')
+		| project id, name, type, tags, location`,
+		env.GetEnvName())
+
+	var graphQueryResults *azcli.AzCliGraphQuery
+
+	err := retry.Do(ctx, retry.WithMaxRetries(rm.retryStrategy.MaxRetries, retry.NewConstant(rm.retryStrategy.RetryBackoff)), func(ctx context.Context) error {
+		queryResult, err := azCli.GraphQuery(ctx, query, []string{env.GetSubscriptionId()})
+		if err != nil {
+			return fmt.Errorf("executing graph query: %s: %w", query, err)
+		}
+
+		if queryResult.Count == 0 {
+			notFoundError := azureutil.ResourceNotFound(fmt.Errorf("azure graph query returned 0 results for resource groups with prefix or suffix with value: '%s'", env.GetEnvName()))
+			return retry.RetryableError(notFoundError)
+		}
+
+		graphQueryResults = queryResult
+		return nil
+	})
+
+	if err != nil {
+		return nil, err
+	}
+
+	return graphQueryResults.Data, nil
+}
+
+// FindResourceGroupForEnvironment will search for the resource group associated with an environment
+// It will first try to find a resource group tagged with azd-env-name
+// Then it will try to find a resource group that defaults to either {envname}-rg or rg-{envname}
+// If it finds exactly one resource group, then it will use it
+// If it finds more than one or zero resource groups, then it will prompt the user to update azure.yaml or AZURE_RESOURCE_GROUP
+// with the resource group to use.
+func (rm *AzureResourceManager) FindResourceGroupForEnvironment(ctx context.Context, env *environment.Environment) (string, error) {
+	// Let's first try to find the resource group by environment name tag (azd-env-name)
+	rgs, err := rm.GetResourceGroupsForEnvironment(ctx, env)
+	var notFoundError *azureutil.ResourceNotFoundError
+	if err != nil && !errors.As(err, &notFoundError) {
+		return "", fmt.Errorf("getting resource group for environment: %s: %w", env.GetEnvName(), err)
+	}
+
+	if len(rgs) == 0 {
+		// We didn't find any Resource Groups for the environment, now let's try to find Resource Groups with the rg-{envname} prefix or {envname}-rg suffix
+		rgs, err = rm.GetDefaultResourceGroups(ctx, env)
+		if err != nil {
+			return "", fmt.Errorf("getting default resource groups for environment: %s: %w", env.GetEnvName(), err)
 		}
 	}
 
-	return nil
+	if len(rgs) == 1 && len(rgs[0].Name) > 0 {
+		// We found one and only one RG, so we'll use it.
+		return rgs[0].Name, nil
+	}
+
+	var msg string
+
+	if len(rgs) > 1 {
+		// We found more than one RG
+		msg = "more than one possible resource group was found."
+	} else {
+		// We didn't find any RGs
+		msg = "unable to find the environment resource group."
+	}
+
+	return "", fmt.Errorf("%s please explicitly specify your resource group in azure.yaml or the AZURE_RESOURCE_GROUP environment variable", msg)
 }
 
 func (rm *AzureResourceManager) GetResourceTypeDisplayName(ctx context.Context, subscriptionId string, resourceId string, resourceType AzureResourceType) (string, error) {
@@ -134,4 +247,24 @@ func (rm *AzureResourceManager) GetWebAppResourceTypeDisplayName(ctx context.Con
 	} else {
 		return "Web App", nil
 	}
+}
+
+func (rm *AzureResourceManager) appendDeploymentResourcesRecursive(ctx context.Context, subscriptionId string, resourceGroupName string, deploymentName string, resourceOperations *[]azcli.AzCliResourceOperation) error {
+	operations, err := rm.azCli.ListResourceGroupDeploymentOperations(ctx, subscriptionId, resourceGroupName, deploymentName)
+	if err != nil {
+		return fmt.Errorf("getting subscription deployment operations: %w", err)
+	}
+
+	for _, operation := range operations {
+		if operation.Properties.TargetResource.ResourceType == string(AzureResourceTypeDeployment) {
+			err := rm.appendDeploymentResourcesRecursive(ctx, subscriptionId, resourceGroupName, operation.Properties.TargetResource.ResourceName, resourceOperations)
+			if err != nil {
+				return fmt.Errorf("appending deployment resources: %w", err)
+			}
+		} else if operation.Properties.ProvisioningOperation == "Create" && strings.TrimSpace(operation.Properties.TargetResource.ResourceType) != "" {
+			*resourceOperations = append(*resourceOperations, operation)
+		}
+	}
+
+	return nil
 }

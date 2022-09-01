@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 package provisioning
 
 import (
@@ -8,6 +11,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
+	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -15,7 +19,7 @@ type mockResourceManager struct {
 	operations []azcli.AzCliResourceOperation
 }
 
-func (mock *mockResourceManager) GetDeploymentResourceOperations(ctx context.Context, subscriptionId string, deploymentName string) ([]azcli.AzCliResourceOperation, error) {
+func (mock *mockResourceManager) GetDeploymentResourceOperations(ctx context.Context, scope infra.Scope) ([]azcli.AzCliResourceOperation, error) {
 	return mock.operations, nil
 }
 
@@ -59,74 +63,58 @@ func (mock *mockResourceManager) MarkComplete(i int) {
 }
 
 func TestReportProgress(t *testing.T) {
-	t.Run("Displays progress correctly", func(t *testing.T) {
-		mockResourceManager := mockResourceManager{}
-		progressDisplay := NewProvisioningProgressDisplay(&mockResourceManager, "", "")
-		logOutput := []string{}
-		progressTitle := ""
-		progressDisplay.reportProgress(&progressTitle, &logOutput)
-		assert.Empty(t, logOutput)
+	mockContext := mocks.NewMockContext(context.Background())
+	scope := infra.NewSubscriptionScope(*mockContext.Context, "eastus2", "SUBSCRIPTION_ID", "DEPLOYMENT_NAME")
 
-		mockResourceManager.AddInProgressOperation()
-		progressDisplay.reportProgress(&progressTitle, &logOutput)
-		assert.Empty(t, logOutput)
-		assert.Equal(t, formatProgressTitle(0, 1), progressTitle)
+	mockResourceManager := mockResourceManager{}
+	progressDisplay := NewProvisioningProgressDisplay(&mockResourceManager, mockContext.Console, scope)
+	progressReport, _ := progressDisplay.ReportProgress(*mockContext.Context)
+	assert.Empty(t, mockContext.Console.Output())
+	assert.Equal(t, defaultProgressTitle, progressReport.Message)
 
-		mockResourceManager.AddInProgressOperation()
-		progressDisplay.reportProgress(&progressTitle, &logOutput)
-		assert.Empty(t, logOutput)
-		assert.Equal(t, formatProgressTitle(0, 2), progressTitle)
+	mockResourceManager.AddInProgressOperation()
+	progressReport, _ = progressDisplay.ReportProgress(*mockContext.Context)
+	assert.Empty(t, mockContext.Console.Output())
+	assert.Equal(t, formatProgressTitle(0, 1), progressReport.Message)
 
-		mockResourceManager.AddInProgressSubResourceOperation()
-		progressDisplay.reportProgress(&progressTitle, &logOutput)
-		assert.Empty(t, logOutput)
-		assert.Equal(t, formatProgressTitle(0, 3), progressTitle)
+	mockResourceManager.AddInProgressOperation()
+	progressReport, _ = progressDisplay.ReportProgress(*mockContext.Context)
+	assert.Empty(t, mockContext.Console.Output())
+	assert.Equal(t, formatProgressTitle(0, 2), progressReport.Message)
 
-		mockResourceManager.MarkComplete(0)
-		progressDisplay.reportProgress(&progressTitle, &logOutput)
-		assert.Len(t, logOutput, 1)
-		assertOperationLogged(t, 0, mockResourceManager.operations, logOutput)
-		assert.Equal(t, formatProgressTitle(1, 3), progressTitle)
+	mockResourceManager.AddInProgressSubResourceOperation()
+	progressReport, _ = progressDisplay.ReportProgress(*mockContext.Context)
+	assert.Empty(t, mockContext.Console.Output())
+	assert.Equal(t, formatProgressTitle(0, 3), progressReport.Message)
 
-		mockResourceManager.MarkComplete(1)
-		progressDisplay.reportProgress(&progressTitle, &logOutput)
-		assert.Len(t, logOutput, 2)
-		assertOperationLogged(t, 1, mockResourceManager.operations, logOutput)
-		assert.Equal(t, formatProgressTitle(2, 3), progressTitle)
+	mockResourceManager.MarkComplete(0)
+	progressReport, _ = progressDisplay.ReportProgress(*mockContext.Context)
+	assert.Len(t, mockContext.Console.Output(), 1)
+	assertOperationLogged(t, 0, mockResourceManager.operations, mockContext.Console.Output())
+	assert.Equal(t, formatProgressTitle(1, 3), progressReport.Message)
 
-		// Verify display does not log sub resource types
-		oldLogOutput := make([]string, len(logOutput))
-		copy(logOutput, oldLogOutput)
-		mockResourceManager.MarkComplete(2)
-		progressDisplay.reportProgress(&progressTitle, &logOutput)
-		assert.Equal(t, oldLogOutput, logOutput)
-		assert.Equal(t, formatProgressTitle(3, 3), progressTitle)
+	mockResourceManager.MarkComplete(1)
+	progressReport, _ = progressDisplay.ReportProgress(*mockContext.Context)
+	assert.Len(t, mockContext.Console.Output(), 2)
+	assertOperationLogged(t, 1, mockResourceManager.operations, mockContext.Console.Output())
+	assert.Equal(t, formatProgressTitle(2, 3), progressReport.Message)
 
-		// Verify display does not repeat logging for resources already logged.
-		copy(logOutput, oldLogOutput)
-		progressDisplay.reportProgress(&progressTitle, &logOutput)
-		assert.Equal(t, oldLogOutput, logOutput)
-		assert.Equal(t, formatProgressTitle(3, 3), progressTitle)
-	})
-}
+	// Verify display does not log sub resource types
+	oldLogOutput := make([]string, len(mockContext.Console.Output()))
+	copy(mockContext.Console.Output(), oldLogOutput)
+	mockResourceManager.MarkComplete(2)
+	progressReport, _ = progressDisplay.ReportProgress(*mockContext.Context)
+	assert.Equal(t, oldLogOutput, mockContext.Console.Output())
+	assert.Equal(t, formatProgressTitle(3, 3), progressReport.Message)
 
-func (display *ProvisioningProgressDisplay) reportProgress(captureTitle *string, captureLogOutput *[]string) {
-	display.ReportProgress(context.Background(), titleCapturer(captureTitle), logOutputCapturer(captureLogOutput))
+	// Verify display does not repeat logging for resources already logged.
+	copy(mockContext.Console.Output(), oldLogOutput)
+	progressReport, _ = progressDisplay.ReportProgress(*mockContext.Context)
+	assert.Equal(t, oldLogOutput, mockContext.Console.Output())
+	assert.Equal(t, formatProgressTitle(3, 3), progressReport.Message)
 }
 
 func assertOperationLogged(t *testing.T, i int, operations []azcli.AzCliResourceOperation, logOutput []string) {
 	assert.True(t, len(logOutput) > i)
 	assert.Equal(t, formatCreatedResourceLog(operations[i].Properties.TargetResource.ResourceType, operations[i].Properties.TargetResource.ResourceName), logOutput[i])
-}
-
-func titleCapturer(title *string) func(string) {
-	return func(s string) {
-		*title = s
-	}
-}
-
-func logOutputCapturer(logOutput *[]string) func(string) {
-	return func(s string) {
-		*logOutput = append(*logOutput, s)
-	}
 }

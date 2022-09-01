@@ -1,9 +1,12 @@
 package templates
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/resources"
 )
 
@@ -42,4 +45,43 @@ func (tm *TemplateManager) GetTemplate(templateName string) (Template, error) {
 
 func NewTemplateManager() *TemplateManager {
 	return &TemplateManager{}
+}
+
+// PromptTemplate ask the user to select a template.
+// An empty Template with default values is returned if the user selects 'Empty Template' from the choices
+func PromptTemplate(ctx context.Context, message string) (Template, error) {
+	console := input.GetConsole(ctx)
+
+	var result Template
+	templateManager := NewTemplateManager()
+	templatesSet, err := templateManager.ListTemplates()
+
+	if err != nil {
+		return result, fmt.Errorf("prompting for template: %w", err)
+	}
+
+	templateNames := []string{"Empty Template"}
+
+	for name := range templatesSet {
+		templateNames = append(templateNames, name)
+	}
+
+	selectedIndex, err := console.Select(ctx, input.ConsoleOptions{
+		Message:      message,
+		Options:      templateNames,
+		DefaultValue: templateNames[0],
+	})
+
+	if err != nil {
+		return result, fmt.Errorf("prompting for template: %w", err)
+	}
+
+	if selectedIndex == 0 {
+		return result, nil
+	}
+
+	selectedTemplateName := templateNames[selectedIndex]
+	log.Printf("Selected template: %s", fmt.Sprint(selectedTemplateName))
+
+	return templatesSet[selectedTemplateName], nil
 }

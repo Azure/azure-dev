@@ -15,30 +15,24 @@ repo:
       branch: staging
 
   rewrite:
-    patterns:
-      - "**/azure.@(yml|yaml)"
-      - "**/*.tf"
+    rules:
+      - from: ../../../../../../common/infra/terraform/applicationinsights
+        to: ./modules/applicationinsights
+        patterns:
+          - "**/*.tf"
+      
+      - from: ../../api/python
+        to: ./src/api
+        patterns: 
+          - "**/azure.@(yml|yaml)"
+
+      - from: ../../web/react-fluent
+        to: ./src/web
+        patterns: 
+          - "**/azure.@(yml|yaml)"
       
   assets:
-    # Common assets
-
-    # Rules for Path Rewrite Only
-    - from: ../../../../../../common/infra/terraform
-      to: ./modules
-      ignore: 
-        - ".repo/**/*"
-
-    - from: ../../api/python
-      to: ./src/api
-      ignore: 
-        - ".repo/**/*"
-
-    - from: ../../web/react-fluent
-      to: ./src/web
-      ignore: 
-        - ".repo/**/*"
-    # End Path Rewrite Rules
-    
+    # Common assets   
     - from: ./../../
       to: ./
       ignore: 
@@ -64,8 +58,8 @@ repo:
       ignore: 
       - "infra/**/*"
 
-    - from: ../../../../../common/infra/terraform
-      to: ./infra/modules
+    - from: ../../../../../common/infra/terraform/applicationinsights
+      to: ./infra/modules/applicationinsights
 
     # Assets common
     - from: ../../../../common/assets

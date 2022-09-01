@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
-package provisioning
+package test
 
 import (
 	"context"
@@ -11,6 +11,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
+	. "github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
@@ -145,5 +146,16 @@ func NewTestProvider(ctx context.Context, env *environment.Environment, projectP
 		projectPath: projectPath,
 		options:     options,
 		console:     input.GetConsole(ctx),
+	}
+}
+
+// Registers the Test provider with the provisioning module
+func RegisterTestProvider() {
+	err := RegisterProvider(Test, func(ctx context.Context, env *environment.Environment, projectPath string, options Options) (Provider, error) {
+		return NewTestProvider(ctx, env, projectPath, options), nil
+	})
+
+	if err != nil {
+		panic(err)
 	}
 }

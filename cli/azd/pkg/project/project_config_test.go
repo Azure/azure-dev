@@ -7,9 +7,7 @@ import (
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
-	"github.com/azure/azure-dev/cli/azd/test/mocks/executil"
 	"github.com/stretchr/testify/require"
 )
 
@@ -93,19 +91,7 @@ services:
     language: js
     host: appservice
 `
-	rg := "rg-test"
 	mockContext := mocks.NewMockContext(context.Background())
-	mockContext.CommandRunner.AddAzResourceListMock(&executil.AzResourceListMockOptions{
-		MatchResourceGroup: &rg,
-	},
-		[]azcli.AzCliResource{
-			{
-				Id:       "any",
-				Name:     "any",
-				Type:     "any",
-				Location: "any",
-			},
-		})
 
 	e := environment.Environment{Values: make(map[string]string)}
 	e.SetEnvName("test-env")

@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/azureutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
@@ -99,9 +98,7 @@ func GetServiceResourceName(ctx context.Context, resourceGroupName string, servi
 		return "", err
 	}
 
-	if len(res) == 0 {
-		return "", azureutil.ResourceNotFound(fmt.Errorf("0 results for resources with group name '%s' and azd-service-name '%s'", resourceGroupName, serviceName))
-	} else if len(res) != 1 {
+	if len(res) != 1 {
 		log.Printf("Expecting only '1' resource match to override resource name but found '%d'", len(res))
 		return fmt.Sprintf("%s%s", env.GetEnvName(), serviceName), nil
 	}

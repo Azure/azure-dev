@@ -2,11 +2,13 @@ package executil
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/executil"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 )
 
 type CommandWhenPredicate func(args executil.RunArgs, command string) bool
@@ -99,5 +101,29 @@ func AddAzLoginMocks(execUtil *MockCommandRunner) {
 		now := time.Now().UTC().Format(time.RFC3339)
 		requestJson := fmt.Sprintf(`{"AccessToken": "abc123", "ExpiresOn": "%s"}`, now)
 		return executil.NewRunResult(0, requestJson, ""), nil
+	})
+}
+
+type AzResourceListMockOptions struct {
+	MatchResourceGroup *string
+}
+
+func (r *MockCommandRunner) AddAzResourceListMock(options *AzResourceListMockOptions, result []azcli.AzCliResource) {
+	r.When(func(args executil.RunArgs, command string) bool {
+		if options == nil {
+			options = &AzResourceListMockOptions{}
+		}
+		isMatch := strings.Contains(command, "az resource list")
+		if options.MatchResourceGroup != nil {
+			isMatch = isMatch && strings.Contains(command, fmt.Sprintf("--resource-group %s", *options.MatchResourceGroup))
+		}
+
+		return isMatch
+	}).RespondFn(func(args executil.RunArgs) (executil.RunResult, error) {
+		bytes, err := json.Marshal(result)
+		if err != nil {
+			panic(err)
+		}
+		return executil.NewRunResult(0, string(bytes), ""), nil
 	})
 }

@@ -516,32 +516,8 @@ func (p *BicepProvider) createParametersFile(ctx context.Context, asyncContext *
 		return nil, "", fmt.Errorf("substituting environment variables inside parameter file: %w", err)
 	}
 
-	cmdExecutor := cmdsubst.SecretOrRandomPasswordCommandExecutor{}
-	if cmdExecutor.ContainsCommandInvocation(replaced) {
-		keyVaults := []azcli.AzCliKeyVault{}
-
-		asyncContext.SetProgress(&DeploymentPlanningProgress{Message: "Fetching existing resource groups", Timestamp: time.Now()})
-		resourceGroups, err := p.getResourceGroups(ctx)
-		if err != nil {
-			if !errors.Is(err, azcli.ErrDeploymentNotFound) {
-				return nil, "", err
-			}
-			// We are fine--there is no existing deployments, so we can pass empty KeyVaults slice to command executor
-		} else {
-			asyncContext.SetProgress(&DeploymentPlanningProgress{Message: "Fetching existing resources", Timestamp: time.Now()})
-			allResources, err := p.getAllResources(ctx, resourceGroups)
-			if err != nil {
-				return nil, "", err
-			}
-
-			asyncContext.SetProgress(&DeploymentPlanningProgress{Message: "Fetching existing KeyVaults", Timestamp: time.Now()})
-			keyVaults, err = p.getKeyVaults(ctx, allResources)
-			if err != nil {
-				return nil, "", err
-			}
-		}
-
-		cmdExecutor.SetRunContext(ctx, p.azCli, keyVaults, p.env.GetSubscriptionId())
+	if cmdsubst.ContainsCommandInvocation(replaced, cmdsubst.SecretOrRandomPasswordCommandName) {
+		cmdExecutor := cmdsubst.NewSecretOrRandomPasswordExecutor(ctx, p.azCli, p.env.GetSubscriptionId())
 		replaced, err = cmdsubst.Eval(replaced, cmdExecutor)
 		if err != nil {
 			return nil, "", fmt.Errorf("substituting command output inside parameter file: %w", err)

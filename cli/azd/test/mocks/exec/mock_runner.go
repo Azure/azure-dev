@@ -1,4 +1,4 @@
-package executil
+package exec
 
 import (
 	"context"
@@ -7,29 +7,29 @@ import (
 	"strings"
 	"time"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/executil"
+	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 )
 
-type CommandWhenPredicate func(args executil.RunArgs, command string) bool
+type CommandWhenPredicate func(args exec.RunArgs, command string) bool
 
-type ResponseFn func(args executil.RunArgs) (executil.RunResult, error)
+type ResponseFn func(args exec.RunArgs) (exec.RunResult, error)
 
 // MockCommandRunner is used to register and implement mock calls and responses out to dependent CLI applications
 type MockCommandRunner struct {
 	expressions []*CommandExpression
 }
 
-// Creates a new instance of a mock executil
+// Creates a new instance of a mock exec
 func NewMockCommandRunner() *MockCommandRunner {
 	return &MockCommandRunner{
 		expressions: []*CommandExpression{},
 	}
 }
 
-// The executil RunWithResult definition that matches the real function definition
+// The exec RunWithResult definition that matches the real function definition
 // This implementation will find the first matching, most recent mocked expression and return the configured response or error
-func (m *MockCommandRunner) RunWithResult(ctx context.Context, args executil.RunArgs) (executil.RunResult, error) {
+func (m *MockCommandRunner) Run(ctx context.Context, args exec.RunArgs) (exec.RunResult, error) {
 	var match *CommandExpression
 
 	cmdArgs := []string{args.Cmd}
@@ -55,10 +55,10 @@ func (m *MockCommandRunner) RunWithResult(ctx context.Context, args executil.Run
 	return match.response, match.error
 }
 
-// Registers a mock expression against the mock executil
+// Registers a mock expression against the mock exec
 func (m *MockCommandRunner) When(predicate CommandWhenPredicate) *CommandExpression {
 	expr := CommandExpression{
-		executil:    m,
+		exec:        m,
 		predicateFn: predicate,
 	}
 
@@ -69,39 +69,39 @@ func (m *MockCommandRunner) When(predicate CommandWhenPredicate) *CommandExpress
 // Represents an mocked expression against a dependent tool command
 type CommandExpression struct {
 	Command    string
-	response   executil.RunResult
+	response   exec.RunResult
 	responseFn ResponseFn
 
 	error       error
-	executil    *MockCommandRunner
+	exec        *MockCommandRunner
 	predicateFn CommandWhenPredicate
 }
 
 // Sets the response that will be returned for the current expression
-func (e *CommandExpression) Respond(response executil.RunResult) *MockCommandRunner {
+func (e *CommandExpression) Respond(response exec.RunResult) *MockCommandRunner {
 	e.response = response
-	return e.executil
+	return e.exec
 }
 
 // Sets the response that will be returned for the current expression
 func (e *CommandExpression) RespondFn(responseFn ResponseFn) *MockCommandRunner {
 	e.responseFn = responseFn
-	return e.executil
+	return e.exec
 }
 
 // Sets the error that will be returned for the current expression
 func (e *CommandExpression) SetError(err error) *MockCommandRunner {
 	e.error = err
-	return e.executil
+	return e.exec
 }
 
-func (r *MockCommandRunner) AddAzLoginMocks() {
-	r.When(func(args executil.RunArgs, command string) bool {
+func AddAzLoginMocks(commandRunner *MockCommandRunner) {
+	commandRunner.When(func(args exec.RunArgs, command string) bool {
 		return strings.Contains(command, "az account get-access-token")
-	}).RespondFn(func(args executil.RunArgs) (executil.RunResult, error) {
+	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
 		now := time.Now().UTC().Format(time.RFC3339)
 		requestJson := fmt.Sprintf(`{"AccessToken": "abc123", "ExpiresOn": "%s"}`, now)
-		return executil.NewRunResult(0, requestJson, ""), nil
+		return exec.NewRunResult(0, requestJson, ""), nil
 	})
 }
 
@@ -118,7 +118,7 @@ func (r *MockCommandRunner) AddDefaultMocks() {
 }
 
 func (r *MockCommandRunner) AddAzResourceListMock(options *AzResourceListMatchOptions, result []azcli.AzCliResource) {
-	r.When(func(args executil.RunArgs, command string) bool {
+	r.When(func(args exec.RunArgs, command string) bool {
 		if options == nil {
 			options = &AzResourceListMatchOptions{}
 		}
@@ -128,11 +128,11 @@ func (r *MockCommandRunner) AddAzResourceListMock(options *AzResourceListMatchOp
 		}
 
 		return isMatch
-	}).RespondFn(func(args executil.RunArgs) (executil.RunResult, error) {
+	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
 		bytes, err := json.Marshal(result)
 		if err != nil {
 			panic(err)
 		}
-		return executil.NewRunResult(0, string(bytes), ""), nil
+		return exec.NewRunResult(0, string(bytes), ""), nil
 	})
 }

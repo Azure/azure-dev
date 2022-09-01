@@ -12,7 +12,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/executil"
+	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/blang/semver/v4"
 )
@@ -31,12 +31,12 @@ type GitCli interface {
 }
 
 type gitCli struct {
-	runCommandFn executil.RunCommandFn
+	commandRunner exec.CommandRunner
 }
 
 func NewGitCli(ctx context.Context) GitCli {
 	return &gitCli{
-		runCommandFn: executil.GetCommandRunner(ctx),
+		commandRunner: exec.GetCommandRunner(ctx),
 	}
 }
 
@@ -88,8 +88,8 @@ func (cli *gitCli) FetchCode(ctx context.Context, repositoryPath string, branch 
 	}
 	args = append(args, target)
 
-	runArgs := executil.NewRunArgs("git", args...)
-	res, err := cli.runCommandFn(ctx, runArgs)
+	runArgs := exec.NewRunArgs("git", args...)
+	res, err := cli.commandRunner.Run(ctx, runArgs)
 	if err != nil {
 		return fmt.Errorf("failed to clone repository %s, %s: %w", repositoryPath, res.String(), err)
 	}
@@ -108,8 +108,8 @@ var ErrNotRepository = errors.New("not a git repository")
 var gitUntrackedFileRegex = regexp.MustCompile("untracked files present|new file")
 
 func (cli *gitCli) GetRemoteUrl(ctx context.Context, repositoryPath string, remoteName string) (string, error) {
-	runArgs := executil.NewRunArgs("git", "-C", repositoryPath, "remote", "get-url", remoteName)
-	res, err := cli.runCommandFn(ctx, runArgs)
+	runArgs := exec.NewRunArgs("git", "-C", repositoryPath, "remote", "get-url", remoteName)
+	res, err := cli.commandRunner.Run(ctx, runArgs)
 	if noSuchRemoteRegex.MatchString(res.Stderr) {
 		return "", ErrNoSuchRemote
 	} else if notGitRepositoryRegex.MatchString(res.Stderr) {
@@ -122,8 +122,8 @@ func (cli *gitCli) GetRemoteUrl(ctx context.Context, repositoryPath string, remo
 }
 
 func (cli *gitCli) GetCurrentBranch(ctx context.Context, repositoryPath string) (string, error) {
-	runArgs := executil.NewRunArgs("git", "-C", repositoryPath, "branch", "--show-current")
-	res, err := cli.runCommandFn(ctx, runArgs)
+	runArgs := exec.NewRunArgs("git", "-C", repositoryPath, "branch", "--show-current")
+	res, err := cli.commandRunner.Run(ctx, runArgs)
 	if notGitRepositoryRegex.MatchString(res.Stderr) {
 		return "", ErrNotRepository
 	} else if err != nil {
@@ -134,8 +134,8 @@ func (cli *gitCli) GetCurrentBranch(ctx context.Context, repositoryPath string) 
 }
 
 func (cli *gitCli) InitRepo(ctx context.Context, repositoryPath string) error {
-	runArgs := executil.NewRunArgs("git", "-C", repositoryPath, "init")
-	res, err := cli.runCommandFn(ctx, runArgs)
+	runArgs := exec.NewRunArgs("git", "-C", repositoryPath, "init")
+	res, err := cli.commandRunner.Run(ctx, runArgs)
 	if err != nil {
 		return fmt.Errorf("failed to init repository: %s: %w", res.String(), err)
 	}
@@ -144,8 +144,8 @@ func (cli *gitCli) InitRepo(ctx context.Context, repositoryPath string) error {
 }
 
 func (cli *gitCli) AddRemote(ctx context.Context, repositoryPath string, remoteName string, remoteUrl string) error {
-	runArgs := executil.NewRunArgs("git", "-C", repositoryPath, "remote", "add", remoteName, remoteUrl)
-	res, err := cli.runCommandFn(ctx, runArgs)
+	runArgs := exec.NewRunArgs("git", "-C", repositoryPath, "remote", "add", remoteName, remoteUrl)
+	res, err := cli.commandRunner.Run(ctx, runArgs)
 	if err != nil {
 		return fmt.Errorf("failed to add remote: %s: %w", res.String(), err)
 	}
@@ -154,8 +154,8 @@ func (cli *gitCli) AddRemote(ctx context.Context, repositoryPath string, remoteN
 }
 
 func (cli *gitCli) AddFile(ctx context.Context, repositoryPath string, filespec string) error {
-	runArgs := executil.NewRunArgs("git", "-C", repositoryPath, "add", filespec)
-	res, err := cli.runCommandFn(ctx, runArgs)
+	runArgs := exec.NewRunArgs("git", "-C", repositoryPath, "add", filespec)
+	res, err := cli.commandRunner.Run(ctx, runArgs)
 	if err != nil {
 		return fmt.Errorf("failed to add files: %s: %w", res.String(), err)
 	}
@@ -164,8 +164,8 @@ func (cli *gitCli) AddFile(ctx context.Context, repositoryPath string, filespec 
 }
 
 func (cli *gitCli) Commit(ctx context.Context, repositoryPath string, message string) error {
-	runArgs := executil.NewRunArgs("git", "-C", repositoryPath, "commit", "--allow-empty", "-m", message)
-	res, err := cli.runCommandFn(ctx, runArgs)
+	runArgs := exec.NewRunArgs("git", "-C", repositoryPath, "commit", "--allow-empty", "-m", message)
+	res, err := cli.commandRunner.Run(ctx, runArgs)
 	if err != nil {
 		return fmt.Errorf("failed to commit: %s: %w", res.String(), err)
 	}
@@ -174,10 +174,11 @@ func (cli *gitCli) Commit(ctx context.Context, repositoryPath string, message st
 }
 
 func (cli *gitCli) PushUpstream(ctx context.Context, repositoryPath string, origin string, branch string) error {
-	res, err := executil.
-		NewBuilder("git", "-C", repositoryPath, "push", "--set-upstream", origin, branch).
-		WithInteractive(true).
-		Exec(ctx, cli.runCommandFn)
+	runArgs := exec.
+		NewRunArgs("git", "-C", repositoryPath, "push", "--set-upstream", origin, branch).
+		WithInteractive(true)
+
+	res, err := cli.commandRunner.Run(ctx, runArgs)
 
 	if err != nil {
 		return fmt.Errorf("failed to push: %s: %w", res.String(), err)
@@ -187,8 +188,8 @@ func (cli *gitCli) PushUpstream(ctx context.Context, repositoryPath string, orig
 }
 
 func (cli *gitCli) IsUntrackedFile(ctx context.Context, repositoryPath string, filePath string) (bool, error) {
-	runArgs := executil.NewRunArgs("git", "-C", repositoryPath, "status", filePath)
-	res, err := cli.runCommandFn(ctx, runArgs)
+	runArgs := exec.NewRunArgs("git", "-C", repositoryPath, "status", filePath)
+	res, err := cli.commandRunner.Run(ctx, runArgs)
 	if err != nil {
 		return false, fmt.Errorf("failed to check status file: %s: %w", res.String(), err)
 	}

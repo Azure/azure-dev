@@ -13,7 +13,7 @@ import (
 	"io/fs"
 	"net/http"
 	"os"
-	"os/exec"
+	osexec "os/exec"
 	"path"
 	"path/filepath"
 	"regexp"
@@ -26,7 +26,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/container"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
-	"github.com/azure/azure-dev/cli/azd/pkg/executil"
+	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
@@ -396,8 +396,9 @@ func Test_CLI_InfraCreateAndDeleteWebApp(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	runArgs := executil.NewRunArgs("dotnet", "user-secrets", "list", "--project", filepath.Join(dir, "/src/dotnet/webapp.csproj"))
-	secrets, err := executil.RunWithResult(ctx, runArgs)
+	commandRunner := exec.NewCommandRunner()
+	runArgs := exec.NewRunArgs("dotnet", "user-secrets", "list", "--project", filepath.Join(dir, "/src/dotnet/webapp.csproj"))
+	secrets, err := commandRunner.Run(ctx, runArgs)
 	require.NoError(t, err)
 
 	contain := strings.Contains(secrets.Stdout, fmt.Sprintf("WEBSITE_URL = %s", url))
@@ -591,7 +592,7 @@ func Test_ProjectIsNeeded(t *testing.T) {
 func Test_NoDebugSpewWhenHelpPassedWithoutDebug(t *testing.T) {
 	stdErrBuf := bytes.Buffer{}
 
-	cmd := exec.Command(azdcli.GetAzdLocation(), "--help")
+	cmd := osexec.Command(azdcli.GetAzdLocation(), "--help")
 	cmd.Stderr = &stdErrBuf
 
 	// Run the command and wait for it to complete, we don't expect any errors.

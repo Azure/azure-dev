@@ -8,13 +8,13 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/executil"
+	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 )
 
 func NewSwaCli(ctx context.Context) SwaCli {
 	return &swaCli{
-		runCommandFn: executil.GetCommandRunner(ctx),
+		commandRunner: exec.GetCommandRunner(ctx),
 	}
 }
 
@@ -26,8 +26,8 @@ type SwaCli interface {
 }
 
 type swaCli struct {
-	// runCommandFn allows us to stub out the executil.RunWithResult, for testing.
-	runCommandFn executil.RunCommandFn
+	// runCommandFn allows us to stub out the exec.RunWithResult, for testing.
+	commandRunner exec.CommandRunner
 }
 
 func (cli *swaCli) Build(ctx context.Context, cwd string, appFolderPath string, outputRelativeFolderPath string) error {
@@ -78,14 +78,12 @@ func (cli *swaCli) InstallUrl() string {
 	return "https://azure.github.io/static-web-apps-cli/docs/use/install"
 }
 
-func (cli *swaCli) executeCommand(ctx context.Context, cwd string, args ...string) (executil.RunResult, error) {
-	defaultArgs := []string{"-y", "@azure/static-web-apps-cli@1.0.0"}
-	finalArgs := append(defaultArgs, args...)
+func (cli *swaCli) executeCommand(ctx context.Context, cwd string, args ...string) (exec.RunResult, error) {
+	runArgs := exec.
+		NewRunArgs("npx", "-y", "@azure/static-web-apps-cli@1.0.0").
+		AppendParams(args...).
+		WithCwd(cwd).
+		WithEnrichError(true)
 
-	return cli.runCommandFn(ctx, executil.RunArgs{
-		Cmd:         "npx",
-		Args:        finalArgs,
-		Cwd:         cwd,
-		EnrichError: true,
-	})
+	return cli.commandRunner.Run(ctx, runArgs)
 }

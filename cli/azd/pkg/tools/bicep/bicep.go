@@ -10,7 +10,7 @@ import (
 	"log"
 	"regexp"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/executil"
+	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/blang/semver/v4"
@@ -23,14 +23,14 @@ type BicepCli interface {
 
 func NewBicepCli(ctx context.Context) BicepCli {
 	return &bicepCli{
-		cli:          azcli.GetAzCli(ctx),
-		runCommandFn: executil.GetCommandRunner(ctx),
+		cli:           azcli.GetAzCli(ctx),
+		commandRunner: exec.GetCommandRunner(ctx),
 	}
 }
 
 type bicepCli struct {
-	cli          azcli.AzCli
-	runCommandFn executil.RunCommandFn
+	cli           azcli.AzCli
+	commandRunner exec.CommandRunner
 }
 
 var isBicepNotFoundRegex = regexp.MustCompile(`Bicep CLI not found\.`)
@@ -132,13 +132,9 @@ func (cli *bicepCli) Build(ctx context.Context, file string) (string, error) {
 	return buildRes.Stdout, nil
 }
 
-func (cli *bicepCli) runCommand(ctx context.Context, args ...string) (executil.RunResult, error) {
-	runArgs := executil.RunArgs{
-		Cmd:  "az",
-		Args: args,
-	}
-
-	return cli.runCommandFn(ctx, runArgs)
+func (cli *bicepCli) runCommand(ctx context.Context, args ...string) (exec.RunResult, error) {
+	runArgs := exec.NewRunArgs("az", args...)
+	return cli.commandRunner.Run(ctx, runArgs)
 }
 
 type contextKey string

@@ -1,15 +1,14 @@
-package executil
+package exec
 
 import (
-	"context"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 )
 
-func TestNewBuilder(t *testing.T) {
+func TestNewRunArgs(t *testing.T) {
 	t.Run("WithDefaults", func(t *testing.T) {
-		runArgs := NewBuilder("az", "login").Build()
+		runArgs := NewRunArgs("az", "login")
 
 		require.Equal(t, "az", runArgs.Cmd)
 		require.Len(t, runArgs.Args, 1)
@@ -23,19 +22,17 @@ func TestNewBuilder(t *testing.T) {
 	})
 
 	t.Run("WithOverrides", func(t *testing.T) {
-		runArgs := NewBuilder("az", "login").
-			WithCmd("gh").
+		runArgs := NewRunArgs("az", "login").
 			WithCwd("cwd").
 			WithEnv([]string{"foo", "bar"}).
 			WithInteractive(true).
 			WithShell(true).
 			WithEnrichError(true).
-			WithParams("param1", "param2").
-			Build()
+			AppendParams("param1", "param2")
 
-		require.Equal(t, "gh", runArgs.Cmd)
-		require.Len(t, runArgs.Args, 2)
-		require.Equal(t, []string{"param1", "param2"}, runArgs.Args)
+		require.Equal(t, "az", runArgs.Cmd)
+		require.Len(t, runArgs.Args, 3)
+		require.Equal(t, []string{"login", "param1", "param2"}, runArgs.Args)
 		require.Equal(t, true, runArgs.Interactive)
 		require.Equal(t, true, runArgs.UseShell)
 		require.Equal(t, true, runArgs.EnrichError)
@@ -44,22 +41,4 @@ func TestNewBuilder(t *testing.T) {
 		require.Len(t, runArgs.Env, 2)
 		require.Equal(t, runArgs.Env, []string{"foo", "bar"})
 	})
-}
-
-func TestExec(t *testing.T) {
-	ranCommand := false
-	builder := NewBuilder("az", "login")
-	expectedArgs := builder.Build()
-
-	commandRunner := func(ctx context.Context, runArgs RunArgs) (RunResult, error) {
-		ranCommand = true
-		require.Equal(t, expectedArgs, runArgs)
-		return NewRunResult(0, "", ""), nil
-	}
-
-	res, err := builder.Exec(context.Background(), commandRunner)
-
-	require.NotNil(t, res)
-	require.NoError(t, err)
-	require.True(t, ranCommand)
 }

@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
-	"github.com/azure/azure-dev/cli/azd/pkg/executil"
+	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/docker"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/stretchr/testify/require"
@@ -31,9 +31,9 @@ services:
 	env.SetEnvName("test-env")
 
 	mockContext := mocks.NewMockContext(context.Background())
-	mockContext.CommandRunner.When(func(args executil.RunArgs, command string) bool {
+	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 		return strings.Contains(command, "docker build")
-	}).RespondFn(func(args executil.RunArgs) (executil.RunResult, error) {
+	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
 		ran = true
 
 		require.Equal(t, []string{
@@ -43,7 +43,7 @@ services:
 			".",
 		}, args.Args)
 
-		return executil.RunResult{
+		return exec.RunResult{
 			Stdout:   "imageId",
 			Stderr:   "",
 			ExitCode: 0,
@@ -108,9 +108,9 @@ services:
 
 	ran := false
 
-	mockContext.CommandRunner.When(func(args executil.RunArgs, command string) bool {
+	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 		return strings.Contains(command, "docker build")
-	}).RespondFn(func(args executil.RunArgs) (executil.RunResult, error) {
+	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
 		ran = true
 
 		require.Equal(t, []string{
@@ -120,7 +120,7 @@ services:
 			"../",
 		}, args.Args)
 
-		return executil.RunResult{
+		return exec.RunResult{
 			Stdout:   "imageId",
 			Stderr:   "",
 			ExitCode: 0,

@@ -1091,10 +1091,14 @@ func (cli *azCli) runAzCommandWithArgs(ctx context.Context, args executil.RunArg
 
 var isNotLoggedInMessageRegex = regexp.MustCompile(`Please run ('|")az login('|") to (setup account|access your accounts)\.`)
 
-// AADSTS70043: The refresh token has expired or is invalid due to sign-in frequency checks by conditional access.
+// Regex for "AADSTS70043: The refresh token has expired or is invalid due to sign-in frequency checks by conditional access."
 var isRefreshTokenExpiredMessageRegex = regexp.MustCompile(`AADSTS70043`)
 var isResourceSegmentMeNotFoundMessageRegex = regexp.MustCompile(`Resource not found for the segment 'me'.`)
+
+// Regex for "(DeploymentNotFound) Deployment '<name>' could not be found."
 var isDeploymentNotFoundMessageRegex = regexp.MustCompile(`\(DeploymentNotFound\)`)
+
+// Regex for "AADSTS700024: Client assertion is not within its valid time range."
 var isClientAssertionInvalidMessagedRegex = regexp.MustCompile(`AADSTS700024`)
 var isConfigurationIsNotSetMessageRegex = regexp.MustCompile(`Configuration '.*' is not set\.`)
 var isDeploymentErrorRegex = regexp.MustCompile(`ERROR: ({.+})`)

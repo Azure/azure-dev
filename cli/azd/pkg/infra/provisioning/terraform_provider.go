@@ -37,7 +37,6 @@ func (p *TerraformProvider) RequiredExternalTools() []tools.ExternalTool {
 }
 
 // NewTerraformProvider creates a new instance of a Terraform Infra provider
-// infraOptions Options
 func NewTerraformProvider(ctx context.Context, env *environment.Environment, projectPath string, infraOptions Options) Provider {
 	terraformCli := terraform.GetTerraformCli(ctx)
 	console := input.GetConsole(ctx)
@@ -62,9 +61,9 @@ func (t *TerraformProvider) Preview(ctx context.Context) *async.InteractiveTaskW
 		func(asyncContext *async.InteractiveTaskContextWithProgress[*PreviewResult, *PreviewProgress]) {
 			asyncContext.SetProgress(&PreviewProgress{Message: "Initialize terraform", Timestamp: time.Now()})
 
-			os.Setenv("TF_DATA_DIR", t.dataDirPath()) //t.envFilePath())
-			//t.Init(ctx, "-upgrade").Await()
+			os.Setenv("TF_DATA_DIR", t.dataDirPath())
 			t.init(ctx, "-upgrade")
+
 			asyncContext.SetProgress(&PreviewProgress{Message: "Generating terraform parameters", Timestamp: time.Now()})
 			err := t.createParametersFile()
 			if err != nil {
@@ -84,9 +83,19 @@ func (t *TerraformProvider) Preview(ctx context.Context) *async.InteractiveTaskW
 
 			// discuss: -input=false arg force the cmd to fail in inputs for module variables were missing
 			asyncContext.SetProgress(&PreviewProgress{Message: "Plan terraform template", Timestamp: time.Now()})
-			// todo : explore moving -chdir= and -input=false to be a part of the RumCommand function
-			runResult, err := t.terraformCli.RunCommand(ctx, fmt.Sprintf("-chdir=%s", modulePath),
-				"plan", fmt.Sprintf("-state=%s", t.localStateFilePath()), fmt.Sprintf("-var-file=%s", t.parametersFilePath()), fmt.Sprintf("-out=%s", t.planFilePath()), "-input=false", "-lock=false")
+
+			cmd := []string{
+				fmt.Sprintf("-chdir=%s", modulePath), "plan",
+				fmt.Sprintf("-var-file=%s", t.parametersFilePath()),
+				fmt.Sprintf("-out=%s", t.planFilePath()),
+				"-input=false", "-lock=false"}
+
+			//check if local vs remote state file :
+			if !t.isRemoteBackendConfig() {
+				cmd = append(cmd, fmt.Sprintf("-state=%s", t.localStateFilePath()))
+			}
+
+			runResult, err := t.terraformCli.RunCommand(ctx, cmd...)
 			if err != nil {
 				asyncContext.SetError(fmt.Errorf("template preview failed: %w", err))
 				return
@@ -119,11 +128,6 @@ func (t *TerraformProvider) Deploy(ctx context.Context, deployment *Deployment, 
 			parametersFilePath := t.parametersFilePath()
 			planFilePath := t.planFilePath()
 
-			var stateArgs strings.Builder
-			//check if local vs remote state file :
-			if !t.isRemoteBackendConfig() {
-				stateArgs.WriteString(fmt.Sprintf("-state=%s", t.localStateFilePath()))
-			}
 			var cmdArgs strings.Builder
 			if _, err := os.Stat(planFilePath); err == nil {
 				cmdArgs.WriteString(t.planFilePath())
@@ -138,17 +142,23 @@ func (t *TerraformProvider) Deploy(ctx context.Context, deployment *Deployment, 
 						return
 					}
 				}
-				//use parameter file content
 				cmdArgs.WriteString(fmt.Sprintf("-var-file=%s", t.parametersFilePath()))
 			}
 
-			//run the deploy  pass variable to write to a file. and set progress for the file link
+			//run the deploy cmd
 			asyncContext.SetProgress(&DeployProgress{Message: "Deploy terraform template", Timestamp: time.Now()})
-			// todo : explore moving -chdir= and -input=false to be a part of the RumCommand function
-			runResult, err := t.terraformCli.RunCommand(ctx, fmt.Sprintf("-chdir=%s", modulePath),
-				"apply", "-lock=false", "-input=false", "-auto-approve", stateArgs.String(), cmdArgs.String())
+			cmd := []string{fmt.Sprintf("-chdir=%s", modulePath), "apply", "-lock=false", "-input=false", "-auto-approve"}
+			if !t.isRemoteBackendConfig() {
+				cmd = append(cmd, fmt.Sprintf("-state=%s", t.localStateFilePath()))
+			}
+
+			if cmdArgs.Len() > 0 {
+				cmd = append(cmd, cmdArgs.String())
+			}
+
+			runResult, err := t.terraformCli.RunCommand(ctx, cmd...)
 			if err != nil {
-				asyncContext.SetError(fmt.Errorf("template Deploy failed: %s", runResult.Stderr)) //err))
+				asyncContext.SetError(fmt.Errorf("template Deploy failed: %s", runResult.Stderr))
 				return
 			}
 
@@ -173,9 +183,6 @@ func (t *TerraformProvider) Destroy(ctx context.Context, deployment *Deployment,
 	return async.RunInteractiveTaskWithProgress(
 		func(asyncContext *async.InteractiveTaskContextWithProgress[*DestroyResult, *DestroyProgress]) {
 			// discuss : check if you want to set auto-destroy . CAN WE PASS VALUES BACK AND FORTH BETWEEN THE AZD CONTEXT AND PROCESS
-			// agreed on adding a prompt for confirmation, but keep the auto-approve
-			// keep the auto approve for now
-
 			os.Setenv("TF_DATA_DIR", t.dataDirPath())
 			t.init(ctx, "-upgrade")
 
@@ -194,12 +201,6 @@ func (t *TerraformProvider) Destroy(ctx context.Context, deployment *Deployment,
 			}
 			cmdArgs.WriteString(fmt.Sprintf("-var-file=%s", t.parametersFilePath()))
 
-			var stateArgs strings.Builder
-			if !t.isRemoteBackendConfig() {
-				asyncContext.SetProgress(&DestroyProgress{Message: "Locating state file...", Timestamp: time.Now()})
-				stateArgs.WriteString(fmt.Sprintf("-state=%s", t.localStateFilePath()))
-			}
-
 			//load the deployment result
 			outputs, err := t.createOutputParameters(ctx, modulePath)
 			if err != nil {
@@ -208,10 +209,14 @@ func (t *TerraformProvider) Destroy(ctx context.Context, deployment *Deployment,
 			}
 
 			asyncContext.SetProgress(&DestroyProgress{Message: "Destroy terraform deployment", Timestamp: time.Now()})
-			// todo : explore moving -chdir= and -input=false to be a part of the RumCommand function
+			cmd := []string{fmt.Sprintf("-chdir=%s", modulePath), "destroy", "-input=false", "-auto-approve", cmdArgs.String()}
 
-			runResult, err := t.terraformCli.RunCommand(ctx, fmt.Sprintf("-chdir=%s", modulePath),
-				"destroy", cmdArgs.String(), stateArgs.String(), "-input=false", "-auto-approve")
+			if !t.isRemoteBackendConfig() {
+				asyncContext.SetProgress(&DestroyProgress{Message: "Locating state file...", Timestamp: time.Now()})
+				cmd = append(cmd, fmt.Sprintf("-state=%s", t.localStateFilePath()))
+			}
+
+			runResult, err := t.terraformCli.RunCommand(ctx, cmd...)
 			if err != nil {
 				asyncContext.SetError(fmt.Errorf("template Deploy failed: %w", err))
 				return
@@ -232,14 +237,14 @@ func (t *TerraformProvider) GetDeployment(ctx context.Context, scope Scope) *asy
 			modulePath := t.modulePath()
 			deployment, err := t.createDeployment(ctx, modulePath)
 			if err != nil {
-				asyncContext.SetError(fmt.Errorf("compiling terraform template: %w", err))
+				asyncContext.SetError(fmt.Errorf("compiling terraform deployment: %w", err))
 				return
 			}
 
 			asyncContext.SetProgress(&DeployProgress{Message: "Retrieving deployment output", Timestamp: time.Now()})
 			outputs, err := t.createOutputParameters(ctx, modulePath)
 			if err != nil {
-				asyncContext.SetError(fmt.Errorf("create terraform template failed: %w", err))
+				asyncContext.SetError(fmt.Errorf("create terraform output failed: %w", err))
 				return
 			}
 
@@ -252,29 +257,44 @@ func (t *TerraformProvider) GetDeployment(ctx context.Context, scope Scope) *asy
 }
 
 //initialize terraform
-func (t *TerraformProvider) init(ctx context.Context, initArgs ...string) {
+func (t *TerraformProvider) init(ctx context.Context, initArgs ...string) error {
+
 	modulePath := t.modulePath()
-	//Run terraform init.
+	cmd := []string{fmt.Sprintf("-chdir=%s", modulePath), "init", "-input=false"}
+
 	t.console.Message(ctx, "initialize terraform...")
-	runResult, err := t.terraformCli.RunCommand(ctx, fmt.Sprintf("-chdir=%s", modulePath), "init", "-input=false", strings.Join(initArgs, " "))
+	if t.isRemoteBackendConfig() {
+		t.console.Message(ctx, "Generating terraform backend config file")
+
+		err := t.createBackendConfigFile()
+		if err != nil {
+			t.console.Message(ctx, fmt.Sprintf("creating terraform backend config file: %w", err))
+			return err
+		}
+		cmd = append(cmd, fmt.Sprintf("--backend-config=%s", t.backendConfigFilePath()))
+	}
+	cmd = append(cmd, initArgs...)
+	runResult, err := t.terraformCli.RunCommand(ctx, cmd...)
 	if err != nil {
-		t.console.Message(ctx, fmt.Sprintf("template terraform init failed: %s", runResult.Stderr))
-		return
+		t.console.Message(ctx, fmt.Sprintf("terraform init failed: %s", runResult.Stderr))
+		return err
 	}
 	t.console.Message(ctx, runResult.Stdout)
+	return nil
 }
 
 // Creates a normalized view of the terraform output.
 func (t *TerraformProvider) createOutputParameters(ctx context.Context, modulePath string) (map[string]OutputParameter, error) {
 
-	//Run terraform show
-	var cmdArgs strings.Builder
+	cmd := []string{
+		fmt.Sprintf("-chdir=%s", modulePath),
+		"output", "-json"}
+
 	if !t.isRemoteBackendConfig() {
-		cmdArgs.WriteString(fmt.Sprintf("-state=%s", t.localStateFilePath()))
+		cmd = append(cmd, fmt.Sprintf("-state=%s", t.localStateFilePath()))
 	}
 
-	runResult, err := t.terraformCli.RunCommand(ctx, fmt.Sprintf("-chdir=%s", modulePath),
-		"output", cmdArgs.String(), "-json")
+	runResult, err := t.terraformCli.RunCommand(ctx, cmd...)
 	if err != nil {
 		return nil, fmt.Errorf("reading deployment output failed: %s", runResult.Stderr)
 	}
@@ -326,7 +346,7 @@ func (t *TerraformProvider) createDeployment(ctx context.Context, modulePath str
 	return &template, nil
 }
 
-// Copies the Bicep parameters file from the project template into the .azure environment folder
+// Copies the Terraform parameters file from the project template into the .azure environment folder
 func (t *TerraformProvider) createParametersFile() error {
 	// Copy the parameter template file to the environment working directory and do substitutions.
 	parametersTemplateFilePath := t.parametersTemplateFilePath()
@@ -362,6 +382,42 @@ func (t *TerraformProvider) createParametersFile() error {
 	return nil
 }
 
+// Copies the Terraform backend file from the project template into the .azure environment folder
+func (t *TerraformProvider) createBackendConfigFile() error {
+	// Copy the parameter template file to the environment working directory and do substitutions.
+	backendTemplateFilePath := t.backendConfigTemplateFilePath()
+
+	log.Printf("Reading backend config template file from: %s", backendTemplateFilePath)
+	backendBytes, err := os.ReadFile(backendTemplateFilePath)
+	if err != nil {
+		return fmt.Errorf("reading backend config file template: %w", err)
+	}
+	replaced, err := envsubst.Eval(string(backendBytes), func(name string) string {
+		if val, has := t.env.Values[name]; has {
+			return val
+		}
+		return os.Getenv(name)
+	})
+
+	if err != nil {
+		return fmt.Errorf("substituting backend config file: %w", err)
+	}
+
+	backendConfigFilePath := t.backendConfigFilePath()
+	writeDir := filepath.Dir(backendConfigFilePath)
+	if err := os.MkdirAll(writeDir, 0755); err != nil {
+		return fmt.Errorf("creating directory structure: %w", err)
+	}
+
+	log.Printf("Writing backend config file to: %s", backendConfigFilePath)
+	err = os.WriteFile(backendConfigFilePath, []byte(replaced), 0644)
+	if err != nil {
+		return fmt.Errorf("writing backend config file: %w", err)
+	}
+
+	return nil
+}
+
 // Gets the path to the project parameters file path
 func (t *TerraformProvider) parametersTemplateFilePath() string {
 	infraPath := t.options.Path
@@ -371,6 +427,16 @@ func (t *TerraformProvider) parametersTemplateFilePath() string {
 
 	parametersFilename := fmt.Sprintf("%s.tfvars.json", t.options.Module)
 	return filepath.Join(t.projectPath, infraPath, parametersFilename)
+}
+
+// Gets the path to the project backend config file path
+func (t *TerraformProvider) backendConfigTemplateFilePath() string {
+	infraPath := t.options.Path
+	if strings.TrimSpace(infraPath) == "" {
+		infraPath = "infra"
+	}
+
+	return filepath.Join(t.projectPath, infraPath, "provider.conf.json")
 }
 
 // Gets the folder path to the specified module
@@ -395,6 +461,12 @@ func (t *TerraformProvider) localStateFilePath() string {
 }
 
 // Gets the path to the staging .azure parameters file path
+func (t *TerraformProvider) backendConfigFilePath() string {
+	backendConfigFilename := fmt.Sprintf("%s.conf.json", t.env.GetEnvName())
+	return filepath.Join(t.projectPath, ".azure", t.env.GetEnvName(), t.options.Path, backendConfigFilename)
+}
+
+// Gets the path to the staging .azure backend config file path
 func (t *TerraformProvider) parametersFilePath() string {
 	parametersFilename := fmt.Sprintf("%s.tfvars.json", t.options.Module)
 	return filepath.Join(t.projectPath, ".azure", t.env.GetEnvName(), t.options.Path, parametersFilename)
@@ -423,7 +495,9 @@ func (t *TerraformProvider) isRemoteBackendConfig() bool {
 				fmt.Println(fmt.Errorf("error reading .tf files: %w", err))
 			}
 
-			return strings.Contains(string(fileContent), `backend "azurerm"`)
+			if found := strings.Contains(string(fileContent), `backend "azurerm"`); found {
+				return true
+			}
 		}
 	}
 	return false

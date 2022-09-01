@@ -20,9 +20,13 @@ export async function getDotEnvFilePath(context: IActionContext, args: string[] 
         }
     }
 
-    const envData = await getEnvironments(context, cwd);
+    let envData: EnvironmentInfo[] = [];
+    try {
+        envData = await getEnvironments(context, cwd);
+    } catch { }
     if (envData.length === 0) {
-        throw new Error(localize('azure-dev.commands.getDotEnvFilePath.noEnvironments', 'No Azure developer environments found'));
+        context.errorHandling.suppressReportIssue = true;
+        throw new Error(localize('azure-dev.commands.getDotEnvFilePath.noEnvironments', "No Azure developer environments found. You can create one by running 'azd env new' in the terminal."));
     }
 
     const byName: (ei: EnvironmentInfo) => boolean = environmentName ? 

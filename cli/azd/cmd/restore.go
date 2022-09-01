@@ -26,12 +26,13 @@ func restoreCmd(rootOptions *internal.GlobalCommandOptions) *cobra.Command {
 		rootOptions,
 		"restore",
 		"Restore application dependencies.",
-		`Restore application dependencies.
+		&commands.BuildOptions{
+			Long: `Restore application dependencies.
 
 Run this command to download and install all the required libraries so that you can build, run, and debug the application locally.
 
 For the best local run and debug experience, go to https://aka.ms/azure-dev/vscode to learn how to use the Visual Studio Code extension.`,
-	)
+		})
 	return cmd
 }
 

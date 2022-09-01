@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
-package provisioning
+package bicep
 
 import (
 	"context"
@@ -12,6 +12,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/executil"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
+	. "github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
@@ -19,46 +20,46 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestBicepPreview(t *testing.T) {
+func TestBicepPlan(t *testing.T) {
 	progressLog := []string{}
 	interactiveLog := []bool{}
 	progressDone := make(chan bool)
 
 	mockContext := mocks.NewMockContext(context.Background())
 	prepareGenericMocks(mockContext.CommandRunner)
-	preparePreviewMocks(mockContext.CommandRunner)
+	preparePlanningMocks(mockContext.CommandRunner)
 
 	infraProvider := createBicepProvider(*mockContext.Context)
-	previewTask := infraProvider.Preview(*mockContext.Context)
+	planningTask := infraProvider.Plan(*mockContext.Context)
 
 	go func() {
-		for progressReport := range previewTask.Progress() {
+		for progressReport := range planningTask.Progress() {
 			progressLog = append(progressLog, progressReport.Message)
 		}
 		progressDone <- true
 	}()
 
 	go func() {
-		for previewInteractive := range previewTask.Interactive() {
-			interactiveLog = append(interactiveLog, previewInteractive)
+		for planningInteractive := range planningTask.Interactive() {
+			interactiveLog = append(interactiveLog, planningInteractive)
 		}
 	}()
 
-	previewResult, err := previewTask.Await()
+	deploymentPlan, err := planningTask.Await()
 	<-progressDone
 
 	require.Nil(t, err)
-	require.NotNil(t, previewResult.Deployment)
+	require.NotNil(t, deploymentPlan.Deployment)
 
 	require.Len(t, progressLog, 2)
 	require.Contains(t, progressLog[0], "Generating Bicep parameters file")
 	require.Contains(t, progressLog[1], "Compiling Bicep template")
 
-	require.Equal(t, infraProvider.env.Values["AZURE_LOCATION"], previewResult.Deployment.Parameters["location"].Value)
-	require.Equal(t, infraProvider.env.Values["AZURE_ENV_NAME"], previewResult.Deployment.Parameters["name"].Value)
+	require.Equal(t, infraProvider.env.Values["AZURE_LOCATION"], deploymentPlan.Deployment.Parameters["location"].Value)
+	require.Equal(t, infraProvider.env.Values["AZURE_ENV_NAME"], deploymentPlan.Deployment.Parameters["name"].Value)
 }
 
-func TestBicepGetDeploymentPreview(t *testing.T) {
+func TestBicepGetDeploymentPlan(t *testing.T) {
 	progressLog := []string{}
 	interactiveLog := []bool{}
 	progressDone := make(chan bool)
@@ -66,11 +67,11 @@ func TestBicepGetDeploymentPreview(t *testing.T) {
 
 	mockContext := mocks.NewMockContext(context.Background())
 	prepareGenericMocks(mockContext.CommandRunner)
-	preparePreviewMocks(mockContext.CommandRunner)
+	preparePlanningMocks(mockContext.CommandRunner)
 	prepareDeployMocks(mockContext.CommandRunner)
 
 	infraProvider := createBicepProvider(*mockContext.Context)
-	scope := NewSubscriptionScope(*mockContext.Context, infraProvider.env.Values["AZURE_LOCATION"], infraProvider.env.GetSubscriptionId(), infraProvider.env.GetEnvName())
+	scope := infra.NewSubscriptionScope(*mockContext.Context, infraProvider.env.Values["AZURE_LOCATION"], infraProvider.env.GetSubscriptionId(), infraProvider.env.GetEnvName())
 	getDeploymentTask := infraProvider.GetDeployment(*mockContext.Context, scope)
 
 	go func() {
@@ -81,8 +82,8 @@ func TestBicepGetDeploymentPreview(t *testing.T) {
 	}()
 
 	go func() {
-		for previewInteractive := range getDeploymentTask.Interactive() {
-			interactiveLog = append(interactiveLog, previewInteractive)
+		for deploymentInteractive := range getDeploymentTask.Interactive() {
+			interactiveLog = append(interactiveLog, deploymentInteractive)
 		}
 	}()
 
@@ -107,14 +108,18 @@ func TestBicepDeploy(t *testing.T) {
 
 	mockContext := mocks.NewMockContext(context.Background())
 	prepareGenericMocks(mockContext.CommandRunner)
-	preparePreviewMocks(mockContext.CommandRunner)
+	preparePlanningMocks(mockContext.CommandRunner)
 	prepareDeployMocks(mockContext.CommandRunner)
 
 	infraProvider := createBicepProvider(*mockContext.Context)
-	deployment := Deployment{}
+	deploymentPlan := DeploymentPlan{
+		Details: BicepDeploymentDetails{
+			ParameterFilePath: "",
+		},
+	}
 
-	scope := NewSubscriptionScope(*mockContext.Context, infraProvider.env.Values["AZURE_LOCATION"], infraProvider.env.GetSubscriptionId(), infraProvider.env.GetEnvName())
-	deployTask := infraProvider.Deploy(*mockContext.Context, &deployment, scope)
+	scope := infra.NewSubscriptionScope(*mockContext.Context, infraProvider.env.Values["AZURE_LOCATION"], infraProvider.env.GetSubscriptionId(), infraProvider.env.GetEnvName())
+	deployTask := infraProvider.Deploy(*mockContext.Context, &deploymentPlan, scope)
 
 	go func() {
 		for deployProgress := range deployTask.Progress() {
@@ -143,7 +148,7 @@ func TestBicepDestroy(t *testing.T) {
 	t.Run("Interactive", func(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
 		prepareGenericMocks(mockContext.CommandRunner)
-		preparePreviewMocks(mockContext.CommandRunner)
+		preparePlanningMocks(mockContext.CommandRunner)
 		prepareDestroyMocks(mockContext.CommandRunner)
 
 		progressLog := []string{}
@@ -195,18 +200,19 @@ func TestBicepDestroy(t *testing.T) {
 		require.Contains(t, consoleOutput[5], "Deleted deployment")
 
 		// Verify progress output
-		require.Len(t, progressLog, 5)
+		require.Len(t, progressLog, 6)
 		require.Contains(t, progressLog[0], "Fetching resource groups")
 		require.Contains(t, progressLog[1], "Fetching resources")
-		require.Contains(t, progressLog[2], "Deleting resource group")
-		require.Contains(t, progressLog[3], "Purging key vault")
-		require.Contains(t, progressLog[4], "Deleting deployment")
+		require.Contains(t, progressLog[2], "Getting KeyVaults to purge")
+		require.Contains(t, progressLog[3], "Deleting resource group")
+		require.Contains(t, progressLog[4], "Purging key vault")
+		require.Contains(t, progressLog[5], "Deleting deployment")
 	})
 
 	t.Run("InteractiveForceAndPurge", func(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
 		prepareGenericMocks(mockContext.CommandRunner)
-		preparePreviewMocks(mockContext.CommandRunner)
+		preparePlanningMocks(mockContext.CommandRunner)
 		prepareDestroyMocks(mockContext.CommandRunner)
 
 		progressLog := []string{}
@@ -246,17 +252,18 @@ func TestBicepDestroy(t *testing.T) {
 		require.Contains(t, consoleOutput[2], "Deleted deployment")
 
 		// Verify progress output
-		require.Len(t, progressLog, 5)
+		require.Len(t, progressLog, 6)
 		require.Contains(t, progressLog[0], "Fetching resource groups")
 		require.Contains(t, progressLog[1], "Fetching resources")
-		require.Contains(t, progressLog[2], "Deleting resource group")
-		require.Contains(t, progressLog[3], "Purging key vault")
-		require.Contains(t, progressLog[4], "Deleting deployment")
+		require.Contains(t, progressLog[2], "Getting KeyVaults to purge")
+		require.Contains(t, progressLog[3], "Deleting resource group")
+		require.Contains(t, progressLog[4], "Purging key vault")
+		require.Contains(t, progressLog[5], "Deleting deployment")
 	})
 }
 
 func createBicepProvider(ctx context.Context) *BicepProvider {
-	projectDir := "../../../test/samples/webapp"
+	projectDir := "../../../../test/samples/webapp"
 	options := Options{
 		Module: "main",
 	}
@@ -278,7 +285,7 @@ func prepareGenericMocks(execUtil *execmock.MockCommandRunner) {
 	})
 }
 
-// Sets up all the mocks required for the bicep preview & deploy operation
+// Sets up all the mocks required for the bicep plan & deploy operation
 func prepareDeployMocks(execUtil *execmock.MockCommandRunner) {
 	// Gets deployment progress
 	execUtil.When(
@@ -298,7 +305,7 @@ func prepareDeployMocks(execUtil *execmock.MockCommandRunner) {
 	})
 }
 
-func preparePreviewMocks(execUtil *execmock.MockCommandRunner) {
+func preparePlanningMocks(execUtil *execmock.MockCommandRunner) {
 	expectedWebsiteUrl := "http://myapp.azurewebsites.net"
 	bicepInputParams := make(map[string]BicepInputParameter)
 	bicepInputParams["name"] = BicepInputParameter{Value: "${AZURE_ENV_NAME}"}

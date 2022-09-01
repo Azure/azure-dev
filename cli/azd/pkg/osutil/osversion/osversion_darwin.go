@@ -20,7 +20,7 @@ NSOperatingSystemVersion getVersion() {
 	}
 	else
 	{
-		struct NSOperatingSystemVersion version;
+		NSOperatingSystemVersion version;
 		version.majorVersion = 10;
 		version.minorVersion = 9;
 		version.patchVersion = 0;

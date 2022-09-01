@@ -8,17 +8,14 @@ import (
 	"errors"
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azureutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
-	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 )
 
 type AzureResourceManager struct {
-	azCli         azcli.AzCli
-	retryStrategy *osutil.RetryStrategy
+	azCli azcli.AzCli
 }
 
 type ResourceManager interface {
@@ -31,8 +28,7 @@ func NewAzureResourceManager(ctx context.Context) *AzureResourceManager {
 	azCli := azcli.GetAzCli(ctx)
 
 	return &AzureResourceManager{
-		azCli:         azCli,
-		retryStrategy: osutil.NewRetryStrategy(10, time.Second*5),
+		azCli: azCli,
 	}
 }
 

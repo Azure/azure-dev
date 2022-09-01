@@ -15,44 +15,54 @@ repo:
       branch: staging
 
   rewrite:
-    patterns:
-      - "**/azure.@(yml|yaml)"
-      - "**/*.bicep"
-
-  assets:
-    # # Common assets
-    # # Rules for Path Rewrite Only
+    rules:
     - from: ../../../../../common/infra/appservice/bicep/modules
       to: ./modules
-      ignore:
-        - "**/*"
+      patterns:
+        - "**/*.bicep"
 
     - from: ../../../../../../common/infra/bicep/modules
       to: ./modules
-      ignore:
-        - "**/*"
+      patterns:
+        - "**/*.bicep"
 
+    - from: ../../../../../common/infra/modules
+      to: ./modules
+      patterns:
+        - "**/*.bicep"   
+
+    # app service modules
     - from: ../../../../../../common/infra/bicep
       to: ../
+      patterns:
+        - "**/*.bicep"
       ignore:
-        - "**/*"   
+        - "**/main.bicep"
+
+    # main.bicep
+    - from: ../../../../../../common/infra/bicep
+      to: ./
+      patterns:
+        - "**/main.bicep"
 
     - from: ../../../../common/infra/bicep
       to: ../
-      ignore:
-        - "**/*"
-  
+      patterns:
+        - "**/*.bicep"
+
     - from: ../../api/csharp-cosmos-sql
       to: ./src/api
-      ignore: 
-        - "**/*"
+      patterns:
+        - "**/azure.@(yml|yaml)"
 
     - from: ../../web/react-fluent
       to: ./src/web
-      ignore: 
-        - "**/*"
+      patterns:
+        - "**/azure.@(yml|yaml)"
         
-    # End Path Rewrite Rules
+  assets:
+    # # Common assets
+
     # Infra 
     - from: ./infra/
       to: ./infra

@@ -583,7 +583,49 @@ stages:
         )
       )
     jobs:
+      - deployment: Increment_Version
+        condition: >-
+          and(
+            succeeded(),
+            ne('true', variables['Skip.IncrementVersion'])
+          )
+        environment: azure-dev
+
+        pool:
+          name: azsdk-pool-mms-ubuntu-2004-general
+          OSVmImage: MMSUbuntu20.04
+
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - checkout: self
+
+                - task: PowerShell@2
+                  inputs:
+                    pwsh: true
+                    targetType: filePath
+                    filePath: eng/scripts/Update-CliVersion.ps1
+                  displayName: Increment CLI version
+
+                - pwsh: |
+                    $branchName = "cli-version-increment-$(Build.BuildId)"
+                    git checkout -b $branchName
+                    git add .
+                    git commit -m "Increment version after release"
+
+                    gh pr create `
+                      --base main `
+                      --fill `
+
+
+
       - deployment: Publish_Release
+        condition: >-
+          and(
+            succeeded(),
+            ne('true', variables['Skip.Publish'])
+          )
         environment: azure-dev
 
         pool:

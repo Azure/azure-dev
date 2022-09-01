@@ -38,11 +38,14 @@ type Options struct {
 	Module   string       `yaml:"module"`
 }
 
-type PreviewResult struct {
+type DeploymentPlan struct {
 	Deployment Deployment
+
+	// Additional information about deployment, provider-specific.
+	Details interface{}
 }
 
-type PreviewProgress struct {
+type DeploymentPlanningProgress struct {
 	Message   string
 	Timestamp time.Time
 }
@@ -72,8 +75,8 @@ type Provider interface {
 	Name() string
 	RequiredExternalTools() []tools.ExternalTool
 	GetDeployment(ctx context.Context, scope infra.Scope) *async.InteractiveTaskWithProgress[*DeployResult, *DeployProgress]
-	Preview(ctx context.Context) *async.InteractiveTaskWithProgress[*PreviewResult, *PreviewProgress]
-	Deploy(ctx context.Context, deployment *Deployment, scope infra.Scope) *async.InteractiveTaskWithProgress[*DeployResult, *DeployProgress]
+	Plan(ctx context.Context) *async.InteractiveTaskWithProgress[*DeploymentPlan, *DeploymentPlanningProgress]
+	Deploy(ctx context.Context, plan *DeploymentPlan, scope infra.Scope) *async.InteractiveTaskWithProgress[*DeployResult, *DeployProgress]
 	Destroy(ctx context.Context, deployment *Deployment, options DestroyOptions) *async.InteractiveTaskWithProgress[*DestroyResult, *DestroyProgress]
 }
 

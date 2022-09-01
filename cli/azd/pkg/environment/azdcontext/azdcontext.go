@@ -115,7 +115,7 @@ func (c *AzdContext) GetDefaultEnvironmentName() (string, error) {
 
 func (c *AzdContext) SetDefaultEnvironmentName(name string) error {
 	path := filepath.Join(c.EnvironmentDirectory(), ConfigFileName)
-	byts, err := json.Marshal(configFile{
+	bytes, err := json.Marshal(configFile{
 		Version:            ConfigFileVersion,
 		DefaultEnvironment: name,
 	})
@@ -123,7 +123,7 @@ func (c *AzdContext) SetDefaultEnvironmentName(name string) error {
 		return fmt.Errorf("serializing config file: %w", err)
 	}
 
-	if err := os.WriteFile(path, byts, osutil.PermissionFile); err != nil {
+	if err := os.WriteFile(path, bytes, osutil.PermissionFile); err != nil {
 		return fmt.Errorf("writing config file: %w", err)
 	}
 

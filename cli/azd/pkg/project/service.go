@@ -91,8 +91,10 @@ func (svc *Service) Deploy(ctx context.Context, azdCtx *azdcontext.AzdContext) (
 // The resource graph may not be immediately up to date and if not initially found will attempt to retry causing delays in retrieval.
 func GetServiceResourceName(ctx context.Context, resourceGroupName string, serviceName string, env *environment.Environment) (string, error) {
 	azCli := azcli.GetAzCli(ctx)
+	query := fmt.Sprintf(`"[?tags.\"azd-service-name\" =='%s']"`, serviceName)
+
 	res, err := azCli.ListResourceGroupResources(ctx, env.GetSubscriptionId(), resourceGroupName, &azcli.ListResourceGroupResourcesOptions{
-		TagFilter: &azcli.Filter{Key: "azd-env-name", Value: env.GetEnvName()},
+		JmesPathQuery: &query,
 	})
 
 	if err != nil {

@@ -275,8 +275,6 @@ type ListResourceGroupOptions struct {
 
 // Optional list parameters for resource group resources listing.
 type ListResourceGroupResourcesOptions struct {
-	// An optional tag filter
-	TagFilter *Filter
 	// An optional JMES path query
 	JmesPathQuery *string
 }
@@ -761,10 +759,6 @@ func (cli *azCli) ListResourceGroup(ctx context.Context, subscriptionId string, 
 func (cli *azCli) ListResourceGroupResources(ctx context.Context, subscriptionId string, resourceGroupName string, listOptions *ListResourceGroupResourcesOptions) ([]AzCliResource, error) {
 	args := []string{"resource", "list", "--subscription", subscriptionId, "--resource-group", resourceGroupName, "--output", "json"}
 	if listOptions != nil {
-		if listOptions.TagFilter != nil {
-			args = append(args, "--tag", fmt.Sprintf("%s=%s", listOptions.TagFilter.Key, listOptions.TagFilter.Value))
-		}
-
 		if listOptions.JmesPathQuery != nil {
 			args = append(args, "--query", *listOptions.JmesPathQuery)
 		}

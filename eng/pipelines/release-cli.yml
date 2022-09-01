@@ -604,17 +604,12 @@ stages:
                     filePath: eng/scripts/Update-CliVersion.ps1
                   displayName: Increment CLI version
 
-                - pwsh: |
-                    $branchName = "cli-version-increment-$(Build.BuildId)"
-                    git checkout -b $branchName
-                    git add .
-                    git commit -m "Increment version after release"
-
-                    gh pr create `
-                      --base main `
-                      --fill `
-
-
+                - template: /eng/common/pipelines/templates/steps/create-pull-request.yml
+                  PRBranchName: cli-version-increment-$(Build.BuildId)
+                  CommitMsg: Increment CLI version after release
+                  PRTitle: Increment CLI version after release
+                  # TODO: Remove before merge
+                  OpenAsDraft: true
 
       - deployment: Publish_Release
         condition: >-

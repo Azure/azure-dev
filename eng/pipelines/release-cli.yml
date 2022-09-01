@@ -612,11 +612,12 @@ stages:
                   displayName: Increment CLI version
 
                 - template: /eng/common/pipelines/templates/steps/create-pull-request.yml
-                  PRBranchName: cli-version-increment-$(Build.BuildId)
-                  CommitMsg: Increment CLI version after release
-                  PRTitle: Increment CLI version after release
-                  # TODO: Remove before merge
-                  OpenAsDraft: true
+                  parameters:
+                    PRBranchName: cli-version-increment-$(Build.BuildId)
+                    CommitMsg: Increment CLI version after release
+                    PRTitle: Increment CLI version after release
+                    # TODO: Remove before merge
+                    OpenAsDraft: true
 
       # TODO: Re-enable before merge
       # - deployment: Publish_Release

@@ -5,11 +5,14 @@ import (
 	"fmt"
 
 	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/internal/telemetry"
+	"github.com/azure/azure-dev/cli/azd/internal/telemetry/events"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/spf13/cobra"
+	"go.opentelemetry.io/otel/codes"
 )
 
 // BuildOptions contains the optional parameters for the Build function.
@@ -19,6 +22,9 @@ type BuildOptions struct {
 
 	// Aliases is an array of aliases that can be used instead of the first word in Use.
 	Aliases []string
+
+	// Disables the usage event telemetry associated to the command.
+	DisableCmdUsageEvent bool
 }
 
 // Build builds a Cobra command, attaching an action.
@@ -52,7 +58,15 @@ func Build(action Action, rootOptions *internal.GlobalCommandOptions, use string
 				return err
 			}
 
-			return action.Run(ctx, cmd, args, azdCtx)
+			runCmd := func(cmdCtx context.Context) error {
+				return action.Run(cmdCtx, cmd, args, azdCtx)
+			}
+
+			if buildOptions.DisableCmdUsageEvent {
+				return runCmd(ctx)
+			} else {
+				return runCmdWithTelemetry(ctx, cmd, runCmd)
+			}
 		},
 	}
 	cmd.Flags().BoolP("help", "h", false, fmt.Sprintf("Gets help for %s.", cmd.Name()))
@@ -61,6 +75,20 @@ func Build(action Action, rootOptions *internal.GlobalCommandOptions, use string
 		cmd.Flags(),
 	)
 	return cmd
+}
+
+func runCmdWithTelemetry(ctx context.Context, cmd *cobra.Command, runCmd func(ctx context.Context) error) error {
+	// Note: CommandPath is constructed using the Use member on each command up to the root.
+	// It does not contain user input, and is safe for telemetry emission.
+	spanCtx, span := telemetry.GetTracer().Start(ctx, events.GetCommandEventName(cmd.CommandPath()))
+	defer span.End()
+
+	err := runCmd(spanCtx)
+	if err != nil {
+		span.SetStatus(codes.Error, "UnknownError")
+	}
+
+	return err
 }
 
 // Create the core context for use in all Azd commands

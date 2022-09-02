@@ -8,6 +8,7 @@ import (
 	"os"
 
 	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/internal/telemetry"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/spf13/cobra"
@@ -78,8 +79,7 @@ For more information, visit the Azure Developer CLI Dev Hub: https://aka.ms/azur
 	cmd.PersistentFlags().BoolVar(&opts.NoPrompt, "no-prompt", false, "Accepts the default value instead of prompting, or it fails if there is no default.")
 	cmd.SetHelpTemplate(fmt.Sprintf("%s\nPlease let us know how we are doing: https://aka.ms/azure-dev/hats\n", cmd.HelpTemplate()))
 
-	// the equivalent of AZURE_CORE_COLLECT_TELEMETRY
-	opts.EnableTelemetry = os.Getenv("AZURE_DEV_COLLECT_TELEMETRY") != "no"
+	opts.EnableTelemetry = telemetry.IsTelemetryEnabled()
 
 	cmd.AddCommand(deployCmd(opts))
 	cmd.AddCommand(downCmd(opts))
@@ -94,6 +94,7 @@ For more information, visit the Azure Developer CLI Dev Hub: https://aka.ms/azur
 	cmd.AddCommand(upCmd(opts))
 	cmd.AddCommand(templatesCmd(opts))
 	cmd.AddCommand(versionCmd(opts))
+	cmd.AddCommand(telemetryCmd(opts))
 
 	return cmd
 }

@@ -22,27 +22,27 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/github"
 )
 
-type gitHubScmProvider struct {
+type GitHubScmProvider struct {
 	newGitHubRepoCreated bool
 }
 
 // ***  subareaProvider implementation ******
-func (p *gitHubScmProvider) requiredTools() []tools.ExternalTool {
+func (p *GitHubScmProvider) requiredTools() []tools.ExternalTool {
 	return []tools.ExternalTool{
 		github.NewGitHubCli(),
 	}
 }
 
-func (p *gitHubScmProvider) preConfigureCheck(ctx context.Context, console input.Console) error {
+func (p *GitHubScmProvider) preConfigureCheck(ctx context.Context, console input.Console) error {
 	return ensureGitHubLogin(ctx, github.GitHubHostName, console)
 }
 
-func (p *gitHubScmProvider) name() string {
+func (p *GitHubScmProvider) name() string {
 	return "GitHub"
 }
 
 // ***  scmProvider implementation ******
-func (p *gitHubScmProvider) configureGitRemote(ctx context.Context, repoPath string, remoteName string, console input.Console) (string, error) {
+func (p *GitHubScmProvider) configureGitRemote(ctx context.Context, repoPath string, remoteName string, console input.Console) (string, error) {
 	// used to detect when the GitHub has created a new repo
 	p.newGitHubRepoCreated = false
 
@@ -95,7 +95,7 @@ var gitHubRemoteGitUrlRegex = regexp.MustCompile(`^git@github\.com:(.*?)(?:\.git
 var gitHubRemoteHttpsUrlRegex = regexp.MustCompile(`^https://(?:www\.)?github\.com/(.*?)(?:\.git)?$`)
 var ErrRemoteHostIsNotGitHub = errors.New("not a github host")
 
-func (p *gitHubScmProvider) gitRepoDetails(ctx context.Context, remoteUrl string) (*gitRepositoryDetails, error) {
+func (p *GitHubScmProvider) gitRepoDetails(ctx context.Context, remoteUrl string) (*gitRepositoryDetails, error) {
 	slug := ""
 	for _, r := range []*regexp.Regexp{gitHubRemoteGitUrlRegex, gitHubRemoteHttpsUrlRegex} {
 		captures := r.FindStringSubmatch(remoteUrl)
@@ -113,7 +113,7 @@ func (p *gitHubScmProvider) gitRepoDetails(ctx context.Context, remoteUrl string
 	}, nil
 }
 
-func (p *gitHubScmProvider) preventGitPush(
+func (p *GitHubScmProvider) preventGitPush(
 	ctx context.Context,
 	gitRepo *gitRepositoryDetails,
 	remoteName string,
@@ -237,25 +237,25 @@ func notifyWhenGitHubActionsAreDisabled(
 	return false, nil
 }
 
-type gitHubCiProvider struct {
+type GitHubCiProvider struct {
 }
 
 // ***  subareaProvider implementation ******
-func (p *gitHubCiProvider) requiredTools() []tools.ExternalTool {
+func (p *GitHubCiProvider) requiredTools() []tools.ExternalTool {
 	return []tools.ExternalTool{
 		github.NewGitHubCli(),
 	}
 }
 
-func (p *gitHubCiProvider) preConfigureCheck(ctx context.Context, console input.Console) error {
+func (p *GitHubCiProvider) preConfigureCheck(ctx context.Context, console input.Console) error {
 	return ensureGitHubLogin(ctx, github.GitHubHostName, console)
 }
-func (p *gitHubCiProvider) name() string {
+func (p *GitHubCiProvider) name() string {
 	return "GitHub"
 }
 
 // ***  ciProvider implementation ******
-func (p *gitHubCiProvider) configureConnection(
+func (p *GitHubCiProvider) configureConnection(
 	ctx context.Context,
 	azdEnvironment environment.Environment,
 	repoDetails *gitRepositoryDetails,
@@ -289,7 +289,7 @@ func (p *gitHubCiProvider) configureConnection(
 	return nil
 }
 
-func (p *gitHubCiProvider) configurePipeline(ctx context.Context) error {
+func (p *GitHubCiProvider) configurePipeline(ctx context.Context) error {
 	return nil
 }
 

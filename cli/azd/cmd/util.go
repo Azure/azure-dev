@@ -19,18 +19,33 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 )
 
+/*
+* defines a function signature used by /pkg/input
+* /pkg re-defines this in asker.go
+* this definition can be removed without affecting build
+ */
 type Asker func(p survey.Prompt, response interface{}) error
 
+/*
+* constant used from `ensureEnvironmentInitialized` and `getSubscriptionOptions`
+ */
 const (
 	manualSubscriptionEntryOption = "Other (enter manually)"
 )
 
+/*
+* used from 'ensureValidEnvironmentName' and 'createAndInitEnvironment'
+ */
 func invalidEnvironmentNameMsg(environmentName string) string {
 	return fmt.Sprintf("environment name '%s' is invalid (it should contain only alphanumeric characters and hyphens)\n", environmentName)
 }
 
 // ensureValidEnvironmentName ensures the environment name is valid, if it is not, an error is printed
 // and the user is prompted for a new name.
+/*
+* used from 'loadOrInitEnvironment' and 'createAndInitEnvironment'
+* uses input.Console defined on /pkg
+ */
 func ensureValidEnvironmentName(ctx context.Context, environmentName *string, console input.Console) error {
 	for !environment.IsValidEnvironmentName(*environmentName) {
 		userInput, err := console.Prompt(ctx, input.ConsoleOptions{
@@ -51,6 +66,14 @@ func ensureValidEnvironmentName(ctx context.Context, environmentName *string, co
 	return nil
 }
 
+/*
+* defines or wraps the properties from an azd env??
+* why is cmd extending/introducing components on top of `environment.Environment`
+* does it means this is an azd-cli-cobra specific env???
+
+* used by 'env' and 'init' for writing input args and later calling
+* 'createAndInitEnvironment'  or 'loadOrInitEnvironment' or 'ensureEnvironmentInitialized'
+ */
 type environmentSpec struct {
 	environmentName string
 	subscription    string
@@ -59,6 +82,11 @@ type environmentSpec struct {
 
 // createEnvironment creates a new named environment. If an environment with this name already
 // exists, and error is return.
+/*
+* used by `env` and `init`
+* requires `environmentSpec`
+* why `environment.Environment` pkg not providing this function instead???
+ */
 func createAndInitEnvironment(ctx context.Context, envSpec *environmentSpec, azdCtx *azdcontext.AzdContext, console input.Console) (environment.Environment, error) {
 	if envSpec.environmentName != "" && !environment.IsValidEnvironmentName(envSpec.environmentName) {
 		errMsg := invalidEnvironmentNameMsg(envSpec.environmentName)
@@ -87,6 +115,16 @@ func createAndInitEnvironment(ctx context.Context, envSpec *environmentSpec, azd
 	return env, nil
 }
 
+/*
+	* used by `deploy`, `env`, `infra_create`, `infra_delete`, `monitor`, `pipeline`
+	* wrapper on top of
+	  * `azdCtx.GetDefaultEnvironmentName`
+	  * `environment.GetEnvironment(azdCtx, *environmentName)`
+	  * input.Console (prompt for name)
+	  * check for valid env name
+	* why `environment.Environment` pkg not providing this function instead???
+	* similar to `createAndInitEnvironment`, what's the benefit from having this on `cmd` ???
+*/
 func loadOrInitEnvironment(ctx context.Context, environmentName *string, azdCtx *azdcontext.AzdContext, console input.Console) (environment.Environment, error) {
 	loadOrCreateEnvironment := func() (environment.Environment, bool, error) {
 		// If there's a default environment, use that
@@ -160,6 +198,16 @@ func loadOrInitEnvironment(ctx context.Context, environmentName *string, azdCtx 
 // ensureEnvironmentInitialized ensures the environment is initialized, i.e. it contains values for `AZURE_ENV_NAME`, `AZURE_LOCATION`, `AZURE_SUBSCRIPTION_ID` and `AZURE_PRINCIPAL_ID`.
 // It will use the values from the "environment spec" passed in, and prompt for any missing values as necessary.
 // Existing environment value are left unchanged, even if the "spec" has different values.
+
+/*
+* Defines what a initialized env is
+* why is cmd defining this and not `environment.Environment` ????
+* this is wrapper for input.Console to populate the env
+* If a new value is at some point added to `environment.Environment`, is it `cmd` the one who decides if it is part of the init?
+* why `environment.Environment` pkg not providing this function instead ??????
+* `environment.Environment` has the getter/setter for each supported value
+* this function is actually using the constants defined on `environment`
+ */
 func ensureEnvironmentInitialized(ctx context.Context, envSpec environmentSpec, env *environment.Environment, console input.Console) error {
 	if env.Values == nil {
 		env.Values = make(map[string]string)
@@ -253,6 +301,12 @@ func ensureEnvironmentInitialized(ctx context.Context, envSpec environmentSpec, 
 	return nil
 }
 
+/*
+* This function is a wrapper of azcli to list subscriptions
+* it is used by `ensureEnvironmentInitialized` to init the subscription value
+* `environment` package has direct access to /pkg/cli and to a given console
+* it can directly get the list of subscriptions to choose
+ */
 func getSubscriptionOptions(ctx context.Context) ([]string, string, error) {
 	azCli := azcli.GetAzCli(ctx)
 	subscriptionInfos, err := azCli.ListAccounts(ctx)
@@ -295,6 +349,10 @@ var (
 
 // ensureProject ensures that a project file exists, using the given
 // context. If a project is missing, errNoProject is returned.
+
+/*
+* used from all commands to validate the `cwd` exists
+ */
 func ensureProject(path string) error {
 	_, err := os.Stat(path)
 	if errors.Is(err, os.ErrNotExist) {

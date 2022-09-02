@@ -12,7 +12,7 @@ import (
 
 func Test_getRepoDetails(t *testing.T) {
 	t.Run("https", func(t *testing.T) {
-		provider := &gitHubScmProvider{}
+		provider := &GitHubScmProvider{}
 		ctx := context.Background()
 		details, e := provider.gitRepoDetails(ctx, "https://github.com/Azure/azure-dev.git")
 		require.NoError(t, e)
@@ -20,7 +20,7 @@ func Test_getRepoDetails(t *testing.T) {
 		require.Equal(t, "azure-dev", details.repoName)
 	})
 	t.Run("ssh", func(t *testing.T) {
-		provider := &gitHubScmProvider{}
+		provider := &GitHubScmProvider{}
 		ctx := context.Background()
 		details, e := provider.gitRepoDetails(ctx, "git@github.com:Azure/azure-dev.git")
 		require.NoError(t, e)
@@ -28,7 +28,7 @@ func Test_getRepoDetails(t *testing.T) {
 		require.EqualValues(t, "azure-dev", details.repoName)
 	})
 	t.Run("error", func(t *testing.T) {
-		provider := &gitHubScmProvider{}
+		provider := &GitHubScmProvider{}
 		ctx := context.Background()
 		details, e := provider.gitRepoDetails(ctx, "git@other.com:Azure/azure-dev.git")
 		require.Error(t, e, ErrRemoteHostIsNotGitHub)

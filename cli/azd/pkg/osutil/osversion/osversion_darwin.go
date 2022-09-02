@@ -6,24 +6,39 @@ package osversion
 #import <Foundation/Foundation.h>
 #import <Foundation/NSProcessInfo.h>
 
+typedef struct _OsVersion {
+	int major;
+	int minor;
+	int patch;
+} OsVersion
+
+OsVersion toOsVer(NSOperatingSystemVersion ver) {
+	OsVersion v;
+	v.major = toInt(ver.majorVersion);
+	v.minor = toInt(ver.minorVersion);
+	v.patch = toInt(ver.patchVersion);
+
+	return v;
+}
+
 int toInt(NSNumber* i) {
 	if (i == NULL) { return 0; }
     return i.intValue;
 }
 
-NSOperatingSystemVersion getVersion() {
+OsVersion c_getVersion() {
 	NSProcessInfo *pInfo = [NSProcessInfo processInfo];
 	// check availability of the property operatingSystemVersion (10.10+) at runtime
     if ([pInfo respondsToSelector:@selector(operatingSystemVersion)])
     {
-		return [pInfo operatingSystemVersion];
+		return toOsVer([pInfo operatingSystemVersion]);
 	}
 	else
 	{
 		NSOperatingSystemVersion version;
-		version.majorVersion = 10;
-		version.minorVersion = 9;
-		version.patchVersion = 0;
+		version.majorVersion = [NSNumber numberWithInt: 10];
+		version.minorVersion = [NSNumber numberWithInt: 9];
+		version.patchVersion = [NSNumber numberWithInt: 0];
 		return version;
 	}
 }
@@ -31,7 +46,6 @@ NSOperatingSystemVersion getVersion() {
 import "C"
 
 import (
-	"errors"
 	"fmt"
 )
 
@@ -41,12 +55,11 @@ func verToStr(ver C.NSOperatingSystemVersion) string {
 	patch := C.toInt(ver.patchVersion)
 
 	res := fmt.Sprintf("%d.%d.%d", major, minor, patch)
-	log.Printf("MacOS version is %s\n", res)
 	return res
 }
 
-func doGetVersion() {
-	return verToStr(C.getVersion())
+func doGetVersion() string {
+	return verToStr(C.c_getVersion())
 }
 
 func GetVersion() (string, error) {

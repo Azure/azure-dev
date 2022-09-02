@@ -12,7 +12,6 @@ import (
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/internal"
-	azdinternal "github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/executil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -43,7 +42,7 @@ func TestAzCli(t *testing.T) {
 		require.NoError(t, err)
 
 		require.Equal(t, []string{
-			fmt.Sprintf("AZURE_HTTP_USER_AGENT=%s", azdinternal.MakeUserAgentString("")),
+			fmt.Sprintf("AZURE_HTTP_USER_AGENT=%s", internal.MakeUserAgentString("")),
 		}, env)
 
 		require.Equal(t, []string{"hello", "--debug"}, commandArgs)
@@ -72,7 +71,7 @@ func TestAzCli(t *testing.T) {
 		require.NoError(t, err)
 
 		require.Equal(t, []string{
-			fmt.Sprintf("AZURE_HTTP_USER_AGENT=%s", azdinternal.MakeUserAgentString("")),
+			fmt.Sprintf("AZURE_HTTP_USER_AGENT=%s", internal.MakeUserAgentString("")),
 			"AZURE_CORE_COLLECT_TELEMETRY=no",
 		}, env)
 
@@ -127,7 +126,7 @@ func runAndCaptureUserAgent(t *testing.T, azcli *azCli, subscriptionID string) s
 
 	// the result doesn't matter here since we just want to see what the User-Agent is that we sent, which will
 	// happen regardless of whether the request succeeds or fails.
-	_, _ = azcli.ListResourceGroupResources(context.Background(), subscriptionID, "ResourceGroupThatDoesNotExist")
+	_, _ = azcli.ListResourceGroupResources(context.Background(), subscriptionID, "ResourceGroupThatDoesNotExist", nil)
 
 	// The outputted line will look like this:
 	// DEBUG: cli.azure.cli.core.sdk.policies:     'User-Agent': 'AZURECLI/2.35.0 (MSI) azsdk-python-azure-mgmt-resource/20.0.0 Python/3.10.3 (Windows-10-10.0.22621-SP0) azdev/0.0.0-dev.0 AZTesting=yes'

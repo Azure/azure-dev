@@ -1,4 +1,4 @@
-#Set the terraform required version, and Configure the Azure Provider.Use remote storage
+#Set the terraform required version, and Configure the Azure Provider.Use local storage
 
 # Configure the Azure Provider
 terraform {
@@ -10,7 +10,7 @@ terraform {
     }
     azurecaf = {
       source  = "aztfmod/azurecaf"
-      version = "1.2.15"
+      version = "~>1.2.15"
     }
   }
 }

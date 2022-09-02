@@ -14,22 +14,25 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/commands"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
+	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/pkg/spin"
 	"github.com/azure/azure-dev/cli/azd/pkg/templates"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/git"
 	"github.com/otiai10/copy"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
 
-func initCmd(rootOptions *commands.GlobalCommandOptions) *cobra.Command {
+func initCmd(rootOptions *internal.GlobalCommandOptions) *cobra.Command {
 	cmd := commands.Build(
 		&initAction{
 			rootOptions: rootOptions,
@@ -37,12 +40,13 @@ func initCmd(rootOptions *commands.GlobalCommandOptions) *cobra.Command {
 		rootOptions,
 		"init",
 		"Initialize a new application.",
-		`Initialize a new application.
+		&commands.BuildOptions{
+			Long: `Initialize a new application.
 
-When no template is supplied, you can optionally select an Azure Developer CLI template for cloning. Otherwise, `+withBackticks("azd init")+` initializes the current directory and creates resources so that your project is compatible with Azure Developer CLI.
+When no template is supplied, you can optionally select an Azure Developer CLI template for cloning. Otherwise, ` + output.WithBackticks("azd init") + ` initializes the current directory and creates resources so that your project is compatible with Azure Developer CLI.
 
 When a template is provided, the sample code is cloned to the current directory.`,
-	)
+		})
 	return cmd
 }
 
@@ -51,7 +55,7 @@ type initAction struct {
 	templateBranch string
 	subscription   string
 	location       string
-	rootOptions    *commands.GlobalCommandOptions
+	rootOptions    *internal.GlobalCommandOptions
 }
 
 func (i *initAction) SetupFlags(
@@ -64,7 +68,7 @@ func (i *initAction) SetupFlags(
 	local.StringVarP(&i.location, "location", "l", "", "Azure location for the new environment")
 }
 
-func (i *initAction) Run(ctx context.Context, _ *cobra.Command, args []string, azdCtx *azdcontext.AzdContext) error {
+func (i *initAction) Run(ctx context.Context, cmd *cobra.Command, args []string, azdCtx *azdcontext.AzdContext) error {
 	// In the case where `init` is run and a parent folder already has an `azure.yaml` file, the
 	// current ProjectDirectory will be set to that folder. That's not what we want here. We want
 	// to force using the current working directory as a project root (since we are initializing a
@@ -81,8 +85,8 @@ func (i *initAction) Run(ctx context.Context, _ *cobra.Command, args []string, a
 		return errors.New("template name required when specifying a branch name")
 	}
 
-	console := input.NewConsole(!i.rootOptions.NoPrompt)
-	azCli := commands.GetAzCliFromContext(ctx)
+	console := input.GetConsole(ctx)
+	azCli := azcli.GetAzCli(ctx)
 	gitCli := git.NewGitCli()
 
 	requiredTools := []tools.ExternalTool{azCli}
@@ -101,7 +105,7 @@ func (i *initAction) Run(ctx context.Context, _ *cobra.Command, args []string, a
 		fmt.Printf("Initializing a new project in %s\n\n", wd)
 
 		if i.template.Name == "" {
-			i.template, err = console.PromptTemplate(ctx, "Select a project template")
+			i.template, err = templates.PromptTemplate(ctx, "Select a project template")
 
 			if err != nil {
 				return err
@@ -142,14 +146,12 @@ func (i *initAction) Run(ctx context.Context, _ *cobra.Command, args []string, a
 			_ = os.RemoveAll(templateStagingDir)
 		}()
 
-		initFunc := func() error {
-			return gitCli.FetchCode(ctx, templateUrl, i.templateBranch, templateStagingDir)
-		}
-
 		spinner := spin.NewSpinner("Downloading template")
-		if err := spinner.Run(
-			initFunc,
-		); err != nil {
+		err = spinner.Run(func() error {
+			return gitCli.FetchCode(ctx, templateUrl, i.templateBranch, templateStagingDir)
+		})
+
+		if err != nil {
 			return fmt.Errorf("fetching template: %w", err)
 		}
 

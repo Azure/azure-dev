@@ -56,75 +56,6 @@ func (c *AzdContext) GetEnvironmentFilePath(name string) string {
 	return filepath.Join(c.EnvironmentDirectory(), name, ".env")
 }
 
-// BicepModulePath gets the path to the bicep file for a given module.
-func (c *AzdContext) BicepModulePath(module string) string {
-	return filepath.Join(c.InfrastructureDirectory(), module+".bicep")
-}
-
-// BicepParameters reads the parameters from the deployment parameter file for a module in
-// an environment.
-func (c *AzdContext) BicepParameters(env string, module string) (map[string]interface{}, error) {
-	byts, err := os.ReadFile(c.BicepParametersFilePath(env, module))
-	switch {
-	case errors.Is(err, os.ErrNotExist):
-		return make(map[string]interface{}), nil
-	case err != nil:
-		return nil, fmt.Errorf("reading parameters file: %w", err)
-	}
-
-	var unmarshalled map[string]interface{}
-	err = json.Unmarshal(byts, &unmarshalled)
-	if err != nil {
-		return nil, fmt.Errorf("unmarshalling parameters file: %w", err)
-	}
-
-	ret := make(map[string]interface{})
-	for key, value := range unmarshalled["parameters"].(map[string]interface{}) {
-		ret[key] = (value.(map[string]interface{}))["value"]
-	}
-
-	return ret, nil
-}
-
-// BicepParametersTemplateFilePath gets the path to the deployment parameter file template for
-// a module.
-func (c *AzdContext) BicepParametersTemplateFilePath(module string) string {
-	return filepath.Join(c.InfrastructureDirectory(), module+".parameters.json")
-}
-
-// BicepParametersFilePath gets the path to the deployment parameter files for a module in
-// an environment.
-func (c *AzdContext) BicepParametersFilePath(env string, module string) string {
-	return filepath.Join(c.EnvironmentDirectory(), env, module+".parameters.json")
-}
-
-// WriteBicepParameters creates a deployment parameters file which may be passed to the az CLI to
-// set parameters for a deployment. The file is scoped to a given environment.
-func (c *AzdContext) WriteBicepParameters(env string, module string, parameters map[string]interface{}) error {
-	doc := make(map[string]interface{})
-	doc["$schema"] = "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#"
-	doc["contentVersion"] = "1.0.0.0"
-
-	doc["parameters"] = make(map[string]interface{})
-	for name, value := range parameters {
-		valueObj := make(map[string]interface{})
-		valueObj["value"] = value
-		(doc["parameters"].(map[string]interface{}))[name] = valueObj
-	}
-
-	byts, err := json.MarshalIndent(doc, "", "  ")
-	if err != nil {
-		return fmt.Errorf("marshaling parameters: %w", err)
-	}
-
-	err = os.WriteFile(c.BicepParametersFilePath(env, module), byts, osutil.PermissionFile)
-	if err != nil {
-		return fmt.Errorf("writing parameters file: %w", err)
-	}
-
-	return nil
-}
-
 func (c *AzdContext) GetEnvironmentWorkDirectory(name string) string {
 	return filepath.Join(c.GetEnvironmentFilePath(name), "wd")
 }
@@ -184,7 +115,7 @@ func (c *AzdContext) GetDefaultEnvironmentName() (string, error) {
 
 func (c *AzdContext) SetDefaultEnvironmentName(name string) error {
 	path := filepath.Join(c.EnvironmentDirectory(), ConfigFileName)
-	byts, err := json.Marshal(configFile{
+	bytes, err := json.Marshal(configFile{
 		Version:            ConfigFileVersion,
 		DefaultEnvironment: name,
 	})
@@ -192,7 +123,7 @@ func (c *AzdContext) SetDefaultEnvironmentName(name string) error {
 		return fmt.Errorf("serializing config file: %w", err)
 	}
 
-	if err := os.WriteFile(path, byts, osutil.PermissionFile); err != nil {
+	if err := os.WriteFile(path, bytes, osutil.PermissionFile); err != nil {
 		return fmt.Errorf("writing config file: %w", err)
 	}
 

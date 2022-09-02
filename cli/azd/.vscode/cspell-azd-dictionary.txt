@@ -1,6 +1,7 @@
 AADSTS
 appinsights
 appinsightsexporter
+appinsightsstorage
 appservice
 AZCLI
 azdcli
@@ -17,7 +18,7 @@ azurestaticapps
 azureutil
 Backticks
 BOOLSLICE
-byts
+cmdsubst
 containerapp
 csharpapp
 devel
@@ -32,6 +33,7 @@ functionapp
 GOARCH
 godotenv
 golangci
+jmes
 keychain
 ldflags
 mgmt
@@ -46,6 +48,7 @@ pflag
 pulumi
 pyapp
 restoreapp
+retriable
 rzip
 semconv
 serverfarms
@@ -53,6 +56,7 @@ sstore
 staticwebapp
 STRINGSLICE
 structs
+Syncer
 swacli
 tracesdk
 tracetest

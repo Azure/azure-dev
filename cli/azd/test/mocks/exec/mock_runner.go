@@ -27,7 +27,7 @@ func NewMockCommandRunner() *MockCommandRunner {
 	}
 }
 
-// The exec RunWithResult definition that matches the real function definition
+// The Run definition that matches the real function definition
 // This implementation will find the first matching, most recent mocked expression and return the configured response or error
 func (m *MockCommandRunner) Run(ctx context.Context, args exec.RunArgs) (exec.RunResult, error) {
 	var match *CommandExpression

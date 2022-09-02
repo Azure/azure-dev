@@ -340,7 +340,7 @@ func (tok *AzCliAccessToken) UnmarshalJSON(data []byte) error {
 type NewAzCliArgs struct {
 	EnableDebug     bool
 	EnableTelemetry bool
-	// RunWithResultFn allows us to stub out the command execution for testing
+	// CommandRunner allows us to stub out the command execution for testing
 	CommandRunner exec.CommandRunner
 }
 

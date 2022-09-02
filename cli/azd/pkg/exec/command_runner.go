@@ -92,7 +92,7 @@ func (r *commandRunner) Run(ctx context.Context, args RunArgs) (RunResult, error
 		}
 	}
 
-	log.Printf("RunWithResult exec: '%s %s'", args.Cmd, strings.Join(args.Args, " "))
+	log.Printf("Run exec: '%s %s'", args.Cmd, strings.Join(args.Args, " "))
 
 	if args.Debug && len(args.Env) > 0 {
 		log.Println("Additional env:")

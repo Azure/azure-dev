@@ -26,7 +26,7 @@ type SwaCli interface {
 }
 
 type swaCli struct {
-	// runCommandFn allows us to stub out the exec.RunWithResult, for testing.
+	// commandRunner allows us to stub out the CommandRunner, for testing.
 	commandRunner exec.CommandRunner
 }
 

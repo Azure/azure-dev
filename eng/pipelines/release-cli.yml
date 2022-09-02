@@ -61,8 +61,7 @@ stages:
           - checkout: self
           - template: /eng/pipelines/templates/steps/setup-go.yml
 
-          - ${{ if in(variables['Build.Reason'], 'IndividualCI', 'BatchedCI') }}:
-            - template: /eng/pipelines/templates/steps/set-cli-version-cd.yml
+          - template: /eng/pipelines/templates/steps/set-cli-version-cd.yml
 
           - template: /eng/pipelines/templates/steps/install-bicep.yml
 

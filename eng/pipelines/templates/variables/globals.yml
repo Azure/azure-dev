@@ -2,3 +2,19 @@ variables:
   # Globally disable Dockerfile scanning which generates alerts for
   # customer-facing containers.
   DisableDockerDetector: true
+
+  # Prerelease version categories to be used for tagging.
+  # Adding additional categories here currently requires
+  # updates to non-production detection in version.go due to azd being in preview
+  ${{ if eq(variables['Build.Reason'], 'PullRequest') }}:
+    AZURE_DEV_PRERELEASE_CATEGORY: pr
+  ${{ elseif eq(variables['Build.Reason'], 'IndividualCI' ) }}:
+    AZURE_DEV_PRERELEASE_CATEGORY: ci
+  ${{ elseif eq(variables['Build.Reason'], 'BatchedCI' ) }}:
+    AZURE_DEV_PRERELEASE_CATEGORY: ci 
+  ${{ elseif eq(variables['Build.Reason'], 'Schedule' ) }}:
+    AZURE_DEV_PRERELEASE_CATEGORY: daily
+  ${{ elseif eq(variables['Build.Reason'], 'Manual' ) }}:
+    AZURE_DEV_PRERELEASE_CATEGORY: ''
+  ${{ else }}:
+    AZURE_DEV_PRERELEASE_CATEGORY: ci

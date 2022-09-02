@@ -1,8 +1,15 @@
 steps:
-  # TODO: Handle semver prerelease and GA packages
-  # (this currently only does prerelease)
-  # https://github.com/Azure/azure-dev/issues/878
   - pwsh: |
-      $version = "$(Get-Content cli/version.txt).$(Build.BuildId)"
-      Set-Content cli/version.txt -Value $version
+      $prereleaseCategory = "$env:AZURE_DEV_PRERELEASE_CATEGORY"
+      if ($prereleaseCategory -ne "") {
+        # Examples: .pr-123, .ci-456, .daily-555
+        $prereleaseTag = "." + $prereleaseCategory + "-" + "$(Build.BuildId)"
+
+        $version = "$(Get-Content cli/version.txt)" + $prereleaseTag
+        Set-Content cli/version.txt -Value $version
+
+        Write-Host "Set version.txt to: $version"
+      } else {
+        Write-Host "Release build detected. version.txt left unmodified."
+      }
     displayName: Set version for CD release

@@ -31,6 +31,15 @@ func IsDevVersion() bool {
 	return GetVersionNumber() == "0.0.0-dev.0"
 }
 
+func IsNonProdVersion() bool {
+	if IsDevVersion() {
+		return true
+	}
+
+	ver := GetVersionNumber()
+	return strings.Contains(ver, "ci") || strings.Contains(ver, "pr") || strings.Contains(ver, "daily")
+}
+
 // GetVersionNumber splits the cmd.Version string to get the
 // semver for the command.
 // Returns a version string like `0.0.1-alpha.1`.

@@ -254,6 +254,10 @@ func (t *TerraformProvider) GetDeployment(ctx context.Context, scope infra.Scope
 	return async.RunInteractiveTaskWithProgress(
 		func(asyncContext *async.InteractiveTaskContextWithProgress[*DeployResult, *DeployProgress]) {
 			asyncContext.SetProgress(&DeployProgress{Message: "Loading terraform module", Timestamp: time.Now()})
+
+			os.Setenv("TF_DATA_DIR", t.dataDirPath())
+			t.init(ctx, "-upgrade")
+
 			modulePath := t.modulePath()
 			deployment, err := t.createDeployment(ctx, modulePath)
 			if err != nil {

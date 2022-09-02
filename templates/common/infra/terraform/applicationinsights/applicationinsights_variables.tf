@@ -8,7 +8,7 @@ variable "rg_name" {
   type        = string
 }
 
-variable "env_name" {
+variable "environment_name" {
   description = "The name of the environment to be deployed"
   type        = string
 }

@@ -3,7 +3,7 @@ variable "location" {
   type        = string
 }
 
-variable "name" {
+variable "environment_name" {
   description = "The name of the azd environment to be deployed"
   type        = string
 }

@@ -1,12 +1,12 @@
 locals {
-  tags             = { azd-env-name : var.name }
+  tags             = { azd-env-name : var.environment_name }
   api_command_line = "gunicorn --workers 4 --threads 2 --timeout 60 --access-logfile \"-\" --error-logfile \"-\" --bind=0.0.0.0:8000 -k uvicorn.workers.UvicornWorker todo.app:app"
 }
 # ------------------------------------------------------------------------------------------------------
 # Deploy resource Group
 # ------------------------------------------------------------------------------------------------------
 resource "azurecaf_name" "rg_name" {
-  name          = var.name
+  name          = var.environment_name
   resource_type = "azurerm_resource_group"
   random_length = 0
   clean_input   = true
@@ -31,11 +31,11 @@ resource "random_string" "resource_token" {
 # Deploy application insights
 # ------------------------------------------------------------------------------------------------------
 module "applicationinsights" {
-  source         = "../../../../../../common/infra/terraform/applicationinsights"
-  location       = var.location
-  rg_name        = azurerm_resource_group.rg.name
-  env_name       = var.name
-  workspace_id   = azurerm_log_analytics_workspace.workspace.id
-  tags           = azurerm_resource_group.rg.tags
-  resource_token = random_string.resource_token.result
+  source           = "../../../../../../common/infra/terraform/applicationinsights"
+  location         = var.location
+  rg_name          = azurerm_resource_group.rg.name
+  environment_name = var.environment_name
+  workspace_id     = azurerm_log_analytics_workspace.workspace.id
+  tags             = azurerm_resource_group.rg.tags
+  resource_token   = random_string.resource_token.result
 }

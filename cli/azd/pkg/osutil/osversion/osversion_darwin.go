@@ -30,7 +30,8 @@ OsVersion c_getVersion() {
 	// check availability of the property operatingSystemVersion (10.10+) at runtime
 	if ([pInfo respondsToSelector:@selector(operatingSystemVersion)])
 	{
-		return toOsVer([pInfo operatingSystemVersion]);
+		NSOperatingSystemVersion ver = [pInfo operatingSystemVersion]
+		return toOsVer(ver);
 	}
 	else
 	{

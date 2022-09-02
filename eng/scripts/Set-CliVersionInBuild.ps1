@@ -1,4 +1,4 @@
- <#
+<#
     .SYNOPSIS
     Set-CliVersionInBuild sets the CLI version defined in version.txt.
 
@@ -8,21 +8,21 @@
     .PARAMETER BuildId
     A unique build ID supplied from the CI provider. In Azure Pipelines, this would be "Build.BuildId".
  #>
- param(
+param(
     [string]$BuildReason,
     [string]$BuildId
- )
+)
 
- $prereleaseCategory = ""
+$prereleaseCategory = ""
 
-# TODO: Update prerelease tagging logic for GA
-# https://github.com/Azure/azure-dev-pr/issues/878
- if ($BuildReason -eq "Manual") {
+if ($BuildReason -eq "Manual") {
     Write-Host "Skipping prerelease tagging for release build."
     exit 0
- } elseif ($BuildReason -eq "PullRequest") {
+}
+elseif ($BuildReason -eq "PullRequest") {
     $prereleaseCategory = "pr"
-} else {
+}
+else {
     $prereleaseCategory = "daily"
 }
 

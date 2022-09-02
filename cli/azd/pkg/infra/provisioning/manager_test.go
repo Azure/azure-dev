@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
-package provisioning
+package provisioning_test
 
 import (
 	"context"
@@ -10,12 +10,14 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
+	. "github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
+	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning/test"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/stretchr/testify/require"
 )
 
-func TestManagerPreview(t *testing.T) {
+func TestManagerPlan(t *testing.T) {
 	env := environment.Environment{Values: make(map[string]string)}
 	env.Values["AZURE_LOCATION"] = "eastus2"
 	env.SetEnvName("test-env")
@@ -23,13 +25,14 @@ func TestManagerPreview(t *testing.T) {
 	interactive := false
 
 	mockContext := mocks.NewMockContext(context.Background())
+	test.RegisterTestProvider()
 	mgr, _ := NewManager(*mockContext.Context, env, "", options, interactive)
 
-	previewResult, err := mgr.Preview(*mockContext.Context)
+	deploymentPlan, err := mgr.Plan(*mockContext.Context)
 
-	require.NotNil(t, previewResult)
+	require.NotNil(t, deploymentPlan)
 	require.Nil(t, err)
-	require.Equal(t, previewResult.Deployment.Parameters["location"].Value, env.Values["AZURE_LOCATION"])
+	require.Equal(t, deploymentPlan.Deployment.Parameters["location"].Value, env.Values["AZURE_LOCATION"])
 }
 
 func TestManagerGetDeployment(t *testing.T) {
@@ -40,6 +43,7 @@ func TestManagerGetDeployment(t *testing.T) {
 	interactive := false
 
 	mockContext := mocks.NewMockContext(context.Background())
+	test.RegisterTestProvider()
 	mgr, _ := NewManager(*mockContext.Context, env, "", options, interactive)
 
 	provisioningScope := infra.NewSubscriptionScope(*mockContext.Context, "eastus2", env.GetSubscriptionId(), env.GetEnvName())
@@ -57,11 +61,12 @@ func TestManagerDeploy(t *testing.T) {
 	interactive := false
 
 	mockContext := mocks.NewMockContext(context.Background())
+	test.RegisterTestProvider()
 	mgr, _ := NewManager(*mockContext.Context, env, "", options, interactive)
 
-	previewResult, _ := mgr.Preview(*mockContext.Context)
+	deploymentPlan, _ := mgr.Plan(*mockContext.Context)
 	provisioningScope := infra.NewSubscriptionScope(*mockContext.Context, "eastus2", env.GetSubscriptionId(), env.GetEnvName())
-	deployResult, err := mgr.Deploy(*mockContext.Context, &previewResult.Deployment, provisioningScope)
+	deployResult, err := mgr.Deploy(*mockContext.Context, deploymentPlan, provisioningScope)
 
 	require.NotNil(t, deployResult)
 	require.Nil(t, err)
@@ -79,11 +84,12 @@ func TestManagerDestroyWithPositiveConfirmation(t *testing.T) {
 		return strings.Contains(options.Message, "Are you sure you want to destroy?")
 	}).Respond(true)
 
+	test.RegisterTestProvider()
 	mgr, _ := NewManager(*mockContext.Context, env, "", options, interactive)
 
-	previewResult, _ := mgr.Preview(*mockContext.Context)
+	deploymentPlan, _ := mgr.Plan(*mockContext.Context)
 	destroyOptions := NewDestroyOptions(false, false)
-	destroyResult, err := mgr.Destroy(*mockContext.Context, &previewResult.Deployment, destroyOptions)
+	destroyResult, err := mgr.Destroy(*mockContext.Context, &deploymentPlan.Deployment, destroyOptions)
 
 	require.NotNil(t, destroyResult)
 	require.Nil(t, err)
@@ -102,11 +108,12 @@ func TestManagerDestroyWithNegativeConfirmation(t *testing.T) {
 		return strings.Contains(options.Message, "Are you sure you want to destroy?")
 	}).Respond(false)
 
+	test.RegisterTestProvider()
 	mgr, _ := NewManager(*mockContext.Context, env, "", options, interactive)
 
-	previewResult, _ := mgr.Preview(*mockContext.Context)
+	deploymentPlan, _ := mgr.Plan(*mockContext.Context)
 	destroyOptions := NewDestroyOptions(false, false)
-	destroyResult, err := mgr.Destroy(*mockContext.Context, &previewResult.Deployment, destroyOptions)
+	destroyResult, err := mgr.Destroy(*mockContext.Context, &deploymentPlan.Deployment, destroyOptions)
 
 	require.Nil(t, destroyResult)
 	require.NotNil(t, err)

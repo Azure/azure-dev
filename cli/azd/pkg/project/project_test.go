@@ -5,16 +5,13 @@ package project
 
 import (
 	"context"
-	"encoding/json"
-	"net/http"
-	"strings"
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
-	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
+	"github.com/azure/azure-dev/cli/azd/test/mocks/executil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/exp/slices"
@@ -114,19 +111,6 @@ services:
 }
 
 func TestResourceNameOverrideFromResourceTag(t *testing.T) {
-	graphQueryResult := &azcli.AzCliGraphQuery{
-		Count:        1,
-		TotalRecords: 1,
-		Data: []azcli.AzCliResource{
-			{
-				Id:       "random",
-				Name:     "app-api-abc123",
-				Type:     string(infra.AzureResourceTypeWebSite),
-				Location: "westus2",
-			},
-		},
-	}
-
 	const testProj = `
 name: test-proj
 metadata:
@@ -138,24 +122,19 @@ services:
     language: js
     host: appservice
 `
+	rg := "rg-test"
+	resourceName := "app-api-abc123"
 	mockContext := mocks.NewMockContext(context.Background())
-	mockContext.HttpClient.Reset()
-	mockContext.HttpClient.When(func(req *httputil.HttpRequestMessage) bool {
-		return req.Method == http.MethodPost && strings.Contains(req.Url, "providers/Microsoft.ResourceGraph/resources")
-	}).RespondFn(func(request httputil.HttpRequestMessage) (*httputil.HttpResponseMessage, error) {
-		var jsonResponse string
-		bytes, err := json.Marshal(graphQueryResult)
-		if err == nil {
-			jsonResponse = string(bytes)
-		}
-
-		response := &httputil.HttpResponseMessage{
-			Status: 200,
-			Body:   []byte(jsonResponse),
-		}
-
-		return response, nil
-	})
+	mockContext.CommandRunner.AddAzResourceListMock(&executil.AzResourceListMatchOptions{
+		MatchResourceGroup: &rg,
+	},
+		[]azcli.AzCliResource{
+			{
+				Id:       "random",
+				Name:     resourceName,
+				Type:     string(infra.AzureResourceTypeWebSite),
+				Location: "westus2",
+			}})
 
 	e := environment.Environment{Values: make(map[string]string)}
 	e.SetEnvName("envA")
@@ -168,7 +147,7 @@ services:
 	// Deployment resource name comes from the found tag on the graph query request
 	assertHasService(t,
 		project.Services,
-		func(s *Service) bool { return s.Scope.ResourceName() == graphQueryResult.Data[0].Name },
+		func(s *Service) bool { return s.Scope.ResourceName() == resourceName },
 		"api service does not have expected resource name",
 	)
 }

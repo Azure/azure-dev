@@ -98,7 +98,7 @@ func (m *monitorAction) Run(ctx context.Context, cmd *cobra.Command, args []stri
 	var portalResources []azcli.AzCliResource
 
 	for _, resourceGroup := range resourceGroups {
-		resources, err := azCli.ListResourceGroupResources(ctx, env.GetSubscriptionId(), resourceGroup)
+		resources, err := azCli.ListResourceGroupResources(ctx, env.GetSubscriptionId(), resourceGroup, nil)
 		if err != nil {
 			return fmt.Errorf("listing resources: %w", err)
 		}

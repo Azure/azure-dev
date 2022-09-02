@@ -32,9 +32,9 @@ func NewMockHttpUtil() *MockHttpClient {
 func (http *MockHttpClient) Send(req *httputil.HttpRequestMessage) (*httputil.HttpResponseMessage, error) {
 	var match *HttpExpression
 
-	for _, expr := range http.expressions {
-		if expr.predicateFn(req) {
-			match = expr
+	for i := len(http.expressions) - 1; i >= 0; i-- {
+		if http.expressions[i].predicateFn(req) {
+			match = http.expressions[i]
 			break
 		}
 	}
@@ -80,7 +80,7 @@ func (e *HttpExpression) SetError(err error) *MockHttpClient {
 	return e.http
 }
 
-func AddDefaultMocks(mock *MockHttpClient) {
+func MockResourceGraphEmptyResources(mock *MockHttpClient) {
 	mock.When(func(req *httputil.HttpRequestMessage) bool {
 		return req.Method == http.MethodPost && strings.Contains(req.Url, "providers/Microsoft.ResourceGraph/resources")
 	}).RespondFn(func(request httputil.HttpRequestMessage) (*httputil.HttpResponseMessage, error) {

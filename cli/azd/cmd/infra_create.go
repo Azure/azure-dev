@@ -83,13 +83,13 @@ func (ica *infraCreateAction) Run(ctx context.Context, cmd *cobra.Command, args 
 		return fmt.Errorf("creating provisioning manager: %w", err)
 	}
 
-	previewResult, err := infraManager.Preview(ctx)
+	deploymentPlan, err := infraManager.Plan(ctx)
 	if err != nil {
-		return fmt.Errorf("previewing deployment: %w", err)
+		return fmt.Errorf("planning deployment: %w", err)
 	}
 
 	provisioningScope := infra.NewSubscriptionScope(ctx, env.GetLocation(), env.GetSubscriptionId(), env.GetEnvName())
-	deployResult, err := infraManager.Deploy(ctx, &previewResult.Deployment, provisioningScope)
+	deployResult, err := infraManager.Deploy(ctx, deploymentPlan, provisioningScope)
 	if err != nil {
 		return fmt.Errorf("deploying infrastructure: %w", err)
 	}

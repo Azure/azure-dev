@@ -55,7 +55,11 @@
         "eqeqeq": "warn", // Should use `===`, not `==`, nearly 100% of the time
         "no-extra-boolean-cast": "off", // We !!flatten a lot of things into booleans this way
         "no-throw-literal": "warn", // Elevate this from suggestion to warning
-        "semi": "off" // Covered by @typescript-eslint/semi
+        "semi": "off", // Covered by @typescript-eslint/semi
+        "no-empty": [
+            "error",
+            { "allowEmptyCatch": true }
+        ]
     },
     "ignorePatterns": [
         "out",

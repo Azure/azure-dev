@@ -11,6 +11,7 @@ import (
 	"io"
 	"io/fs"
 	"log"
+	"math/rand"
 	"net/http"
 	"os"
 	"os/exec"
@@ -31,13 +32,14 @@ import (
 )
 
 func main() {
+	// Ensure random numbers from default random number generator are unpredictable
+	rand.Seed(time.Now().UTC().UnixNano())
+
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
 
 	if !isDebugEnabled() {
 		log.SetOutput(io.Discard)
 	}
-
-	ts := telemetry.GetTelemetrySystem()
 
 	latest := make(chan semver.Version)
 	go fetchLatestVersion(latest)

@@ -18,7 +18,7 @@ azurestaticapps
 azureutil
 Backticks
 BOOLSLICE
-byts
+cmdsubst
 containerapp
 csharpapp
 devel
@@ -33,6 +33,7 @@ functionapp
 GOARCH
 godotenv
 golangci
+jmes
 keychain
 ldflags
 mgmt

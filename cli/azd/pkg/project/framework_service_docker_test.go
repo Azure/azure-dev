@@ -23,6 +23,7 @@ services:
     project: src/web
     language: js
     host: containerapp
+    resourceName: test-containerapp-web
 `
 	ran := false
 
@@ -49,8 +50,11 @@ services:
 		}, nil
 	})
 
-	projectConfig, _ := ParseProjectConfig(testProj, &env)
-	prj, _ := projectConfig.GetProject(mockContext.Context, &env)
+	projectConfig, err := ParseProjectConfig(testProj, &env)
+	require.NoError(t, err)
+	prj, err := projectConfig.GetProject(mockContext.Context, &env)
+	require.NoError(t, err)
+
 	service := prj.Services[0]
 
 	dockerArgs := docker.DockerArgs{RunWithResultFn: mockContext.CommandRunner.RunWithResult}
@@ -92,6 +96,7 @@ services:
     project: src/web
     language: js
     host: containerapp
+    resourceName: test-containerapp-web
     docker:
       path: ./Dockerfile.dev
       context: ../
@@ -126,8 +131,12 @@ services:
 	dockerArgs := docker.DockerArgs{RunWithResultFn: mockContext.CommandRunner.RunWithResult}
 	docker := docker.NewDocker(dockerArgs)
 
-	projectConfig, _ := ParseProjectConfig(testProj, &env)
-	prj, _ := projectConfig.GetProject(mockContext.Context, &env)
+	projectConfig, err := ParseProjectConfig(testProj, &env)
+	require.NoError(t, err)
+
+	prj, err := projectConfig.GetProject(mockContext.Context, &env)
+	require.NoError(t, err)
+
 	service := prj.Services[0]
 
 	progress := make(chan string)

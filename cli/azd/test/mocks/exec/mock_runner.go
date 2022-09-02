@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 )
 
 type CommandWhenPredicate func(args exec.RunArgs, command string) bool
@@ -68,7 +67,6 @@ func (m *MockCommandRunner) When(predicate CommandWhenPredicate) *CommandExpress
 
 // Represents an mocked expression against a dependent tool command
 type CommandExpression struct {
-	Command    string
 	response   exec.RunResult
 	responseFn ResponseFn
 
@@ -105,26 +103,19 @@ func AddAzLoginMocks(commandRunner *MockCommandRunner) {
 	})
 }
 
-type AzResourceListMatchOptions struct {
-	MatchResourceGroup *string
-}
-
 func (r *MockCommandRunner) AddDefaultMocks() {
 	// This is harmless but should be removed long-term.
 	// By default, mock returning an empty list of azure resources instead of crashing.
 	// This is an unfortunate mock required due to the side-effect of
 	// running "az resource list" as part of loading a project in project.GetProject.
-	r.AddAzResourceListMock(nil, []azcli.AzCliResource{})
+	r.AddAzResourceListMock(nil, []string{})
 }
 
-func (r *MockCommandRunner) AddAzResourceListMock(options *AzResourceListMatchOptions, result []azcli.AzCliResource) {
+func (r *MockCommandRunner) AddAzResourceListMock(matchResourceGroupName *string, result any) {
 	r.When(func(args exec.RunArgs, command string) bool {
-		if options == nil {
-			options = &AzResourceListMatchOptions{}
-		}
 		isMatch := strings.Contains(command, "az resource list")
-		if options.MatchResourceGroup != nil {
-			isMatch = isMatch && strings.Contains(command, fmt.Sprintf("--resource-group %s", *options.MatchResourceGroup))
+		if matchResourceGroupName != nil {
+			isMatch = isMatch && strings.Contains(command, fmt.Sprintf("--resource-group %s", *matchResourceGroupName))
 		}
 
 		return isMatch

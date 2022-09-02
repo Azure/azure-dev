@@ -109,16 +109,14 @@ func TestAZCLIWithUserAgent(t *testing.T) {
 	require.Contains(t, userAgent, "azdev")
 }
 
-func mustGetDefaultAccount(t *testing.T, azcli AzCli) AzCliSubscriptionInfo {
-	accounts, err := azcli.ListAccounts(context.Background())
+func mustGetDefaultAccount(t *testing.T, azCli AzCli) AzCliSubscriptionInfo {
+	accounts, err := azCli.ListAccounts(context.Background())
 	require.NoError(t, err)
-
 	for _, account := range accounts {
 		if account.IsDefault {
 			return account
 		}
 	}
-
 	assert.Fail(t, "No default account set")
 	return AzCliSubscriptionInfo{}
 }
@@ -154,7 +152,7 @@ func runAndCaptureUserAgent(t *testing.T, subscriptionID string) string {
 
 	// the result doesn't matter here since we just want to see what the User-Agent is that we sent, which will
 	// happen regardless of whether the request succeeds or fails.
-	_, _ = azCli.ListResourceGroupResources(context.Background(), subscriptionID, "ResourceGroupThatDoesNotExist")
+	_, _ = azCli.ListResourceGroupResources(context.Background(), subscriptionID, "ResourceGroupThatDoesNotExist", nil)
 
 	// The outputted line will look like this:
 	// DEBUG: cli.azure.cli.core.sdk.policies:     'User-Agent': 'AZURECLI/2.35.0 (MSI) azsdk-python-azure-mgmt-resource/20.0.0 Python/3.10.3 (Windows-10-10.0.22621-SP0) azdev/0.0.0-dev.0 AZTesting=yes'

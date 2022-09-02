@@ -70,10 +70,14 @@ func (t *TerraformProvider) Plan(ctx context.Context) *async.InteractiveTaskWith
 			asyncContext.SetProgress(&DeploymentPlanningProgress{Message: "Initialize terraform", Timestamp: time.Now()})
 
 			os.Setenv("TF_DATA_DIR", t.dataDirPath())
-			t.init(ctx, "-upgrade")
+			err := t.init(ctx, "-upgrade")
+			if err != nil {
+				asyncContext.SetError(fmt.Errorf("terraform init failed: %w", err))
+				return
+			}
 
 			asyncContext.SetProgress(&DeploymentPlanningProgress{Message: "Generating terraform parameters", Timestamp: time.Now()})
-			err := t.createParametersFile()
+			err = t.createParametersFile()
 			if err != nil {
 				asyncContext.SetError(fmt.Errorf("creating parameters file: %w", err))
 				return
@@ -204,7 +208,11 @@ func (t *TerraformProvider) Destroy(ctx context.Context, deployment *Deployment,
 		func(asyncContext *async.InteractiveTaskContextWithProgress[*DestroyResult, *DestroyProgress]) {
 			// discuss : check if you want to set auto-destroy . CAN WE PASS VALUES BACK AND FORTH BETWEEN THE AZD CONTEXT AND PROCESS
 			os.Setenv("TF_DATA_DIR", t.dataDirPath())
-			t.init(ctx, "-upgrade")
+			err := t.init(ctx, "-upgrade")
+			if err != nil {
+				asyncContext.SetError(fmt.Errorf("terraform init failed: %w", err))
+				return
+			}
 
 			asyncContext.SetProgress(&DestroyProgress{Message: "locating parameters file", Timestamp: time.Now()})
 			var cmdArgs strings.Builder
@@ -256,7 +264,11 @@ func (t *TerraformProvider) GetDeployment(ctx context.Context, scope infra.Scope
 			asyncContext.SetProgress(&DeployProgress{Message: "Loading terraform module", Timestamp: time.Now()})
 
 			os.Setenv("TF_DATA_DIR", t.dataDirPath())
-			t.init(ctx, "-upgrade")
+			err := t.init(ctx, "-upgrade")
+			if err != nil {
+				asyncContext.SetError(fmt.Errorf("terraform init failed: %w", err))
+				return
+			}
 
 			modulePath := t.modulePath()
 			deployment, err := t.createDeployment(ctx, modulePath)

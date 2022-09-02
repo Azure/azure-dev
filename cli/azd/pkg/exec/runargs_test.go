@@ -18,6 +18,7 @@ func TestNewRunArgs(t *testing.T) {
 		require.Equal(t, false, runArgs.EnrichError)
 		require.Equal(t, "", runArgs.Cwd)
 		require.Equal(t, false, runArgs.EnrichError)
+		require.Equal(t, false, runArgs.Debug)
 		require.Len(t, runArgs.Env, 0)
 	})
 
@@ -28,6 +29,7 @@ func TestNewRunArgs(t *testing.T) {
 			WithInteractive(true).
 			WithShell(true).
 			WithEnrichError(true).
+			WithDebug(true).
 			AppendParams("param1", "param2")
 
 		require.Equal(t, "az", runArgs.Cmd)
@@ -38,6 +40,7 @@ func TestNewRunArgs(t *testing.T) {
 		require.Equal(t, true, runArgs.EnrichError)
 		require.Equal(t, "cwd", runArgs.Cwd)
 		require.Equal(t, true, runArgs.EnrichError)
+		require.Equal(t, true, runArgs.Debug)
 		require.Len(t, runArgs.Env, 2)
 		require.Equal(t, runArgs.Env, []string{"foo", "bar"})
 	})

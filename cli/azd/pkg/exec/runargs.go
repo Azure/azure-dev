@@ -4,6 +4,7 @@ import (
 	"io"
 )
 
+// RunArgs exposes the command, arguments and other options when running console/shell commands
 type RunArgs struct {
 	Cmd  string
 	Args []string
@@ -30,6 +31,7 @@ type RunArgs struct {
 	Interactive bool
 }
 
+// NewRunArgs creates a new instance with the specified cmd and args
 func NewRunArgs(cmd string, args ...string) RunArgs {
 	return RunArgs{
 		Cmd:  cmd,
@@ -37,7 +39,7 @@ func NewRunArgs(cmd string, args ...string) RunArgs {
 	}
 }
 
-// Updates the command params that will get set
+// Appends additional command params
 func (b RunArgs) AppendParams(params ...string) RunArgs {
 	b.Args = append(b.Args, params...)
 	return b
@@ -71,5 +73,11 @@ func (b RunArgs) WithShell(useShell bool) RunArgs {
 // Updates whether or not errors will be enriched
 func (b RunArgs) WithEnrichError(enrichError bool) RunArgs {
 	b.EnrichError = enrichError
+	return b
+}
+
+// Updates whether or not debug output will be written to default logger
+func (b RunArgs) WithDebug(debug bool) RunArgs {
+	b.Debug = debug
 	return b
 }

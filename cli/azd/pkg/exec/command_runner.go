@@ -15,13 +15,12 @@ import (
 	"strings"
 )
 
+// CommandRunner exposes the contract for executing console/shell commands for the specified runArgs
 type CommandRunner interface {
 	Run(ctx context.Context, args RunArgs) (RunResult, error)
 }
 
-type commandRunner struct {
-}
-
+// Creates a new default instance of the CommandRunner
 func NewCommandRunner() CommandRunner {
 	return &commandRunner{}
 }
@@ -47,6 +46,11 @@ func GetCommandRunner(ctx context.Context) CommandRunner {
 	}
 
 	return execFn
+}
+
+// commandRunner is the default private implementation of the CommandRunner interface
+// This implementation executes actual commands on the underlying console/shell
+type commandRunner struct {
 }
 
 // Run runs the command specified in 'args'.

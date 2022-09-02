@@ -38,9 +38,9 @@ func IsNonProdVersion() bool {
 
 	// This currently relies on checking for specific internal release tags.
 	// This can be improved to instead check for any presence of prerelease versioning
-	// once the product is fully released.
+	// once the product is GA.
 	ver := GetVersionNumber()
-	return strings.Contains(ver, "ci") || strings.Contains(ver, "pr") || strings.Contains(ver, "daily")
+	return strings.Contains(ver, "pr") || strings.Contains(ver, "daily")
 }
 
 // GetVersionNumber splits the cmd.Version string to get the

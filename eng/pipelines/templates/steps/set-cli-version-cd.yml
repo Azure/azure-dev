@@ -1,15 +1,11 @@
 steps:
-  - pwsh: |
-      $prereleaseCategory = "$env:AZURE_DEV_PRERELEASE_CATEGORY"
-      if ($prereleaseCategory -ne "") {
-        # Examples: .pr-123, .ci-456, .daily-555
-        $prereleaseTag = "." + $prereleaseCategory + "-" + "$(Build.BuildId)"
-
-        $version = "$(Get-Content cli/version.txt)" + $prereleaseTag
-        Set-Content cli/version.txt -Value $version
-
-        Write-Host "Set version.txt to: $version"
-      } else {
-        Write-Host "Release build detected. version.txt left unmodified."
-      }
+  - task: PowerShell@2
     displayName: Set version for CD release
+    inputs:
+      pwsh: true
+      targetType: filePath
+      filePath: eng/scripts/Set-CliVersionInBuild.ps1
+      arguments: >-
+                -BuildReason $(Build.Reason)
+                -BuildId $(Build.BuildId)
+

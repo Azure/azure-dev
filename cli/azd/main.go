@@ -89,27 +89,10 @@ func main() {
 		}
 	}
 
-	if ts != nil {
-		err := ts.Shutdown(context.Background())
-		if err != nil {
-			log.Printf("non-graceful telemetry shutdown: %v\n", err)
-		}
-
-		if ts.EmittedAnyTelemetry() {
-			err := startBackgroundUploadProcess()
-			if err != nil {
-				log.Printf("failed to start background telemetry upload: %v\n", err)
-			}
-		}
-	}
-
 	if cmdErr != nil {
 		os.Exit(1)
 	}
 }
-
-// azdConfigDir is the name of the folder where `azd` writes user wide configuration data.
-const azdConfigDir = ".azd"
 
 // updateCheckCacheFileName is the name of the file created in the azd configuration directory
 // which is used to cache version information for our up to date check.

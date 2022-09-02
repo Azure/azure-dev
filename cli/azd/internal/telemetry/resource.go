@@ -1,7 +1,6 @@
 package telemetry
 
 import (
-	"log"
 	"os"
 	"runtime"
 
@@ -28,7 +27,6 @@ func newResource() *resource.Resource {
 			fields.MachineIdKey.String(getMachineId()),
 		),
 	)
-	log.Printf("OS version is %s\n", getOsVersion())
 
 	return r
 }

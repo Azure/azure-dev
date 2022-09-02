@@ -43,6 +43,7 @@ nolint
 omitempty
 opentelemetry
 osutil
+osversion
 otel
 pflag
 pulumi

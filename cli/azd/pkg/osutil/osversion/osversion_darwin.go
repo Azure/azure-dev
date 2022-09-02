@@ -10,7 +10,7 @@ typedef struct _OsVersion {
 	int major;
 	int minor;
 	int patch;
-} OsVersion
+} OsVersion;
 
 OsVersion toOsVer(NSOperatingSystemVersion ver) {
 	OsVersion v;

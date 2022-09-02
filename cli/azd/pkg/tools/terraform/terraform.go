@@ -6,17 +6,11 @@ package terraform
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/executil"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/blang/semver/v4"
-)
-
-var (
-	//Fix me
-	ErrTerraformNotInitialized = errors.New("cli is not logged in. Try running \"azd login\" to fix")
 )
 
 type TerraformCli interface {

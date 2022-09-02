@@ -82,6 +82,7 @@ ignoreWords:
     - devcontainer
     - azurecaf
     - azurerm
+    - aztfmod
     - menuid
 useGitignore: true
 dictionaryDefinitions:

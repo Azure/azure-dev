@@ -2,7 +2,7 @@ param environmentName string
 param location string = resourceGroup().location
 
 module appServicePlanFunctionAppResources 'appserviceplan.bicep' = {
-  name: 'appserviceplanfunctionapp-resources'
+  name: 'appserviceplan-functions-resources'
   params: {
     environmentName: environmentName
     location: location

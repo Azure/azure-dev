@@ -2,7 +2,7 @@ param environmentName string
 param location string = resourceGroup().location
 param principalId string = ''
 
-module appServicePlanResources '../../../../../../common/infra/bicep/modules/appserviceplan-site.bicep' = {
+module appServicePlanResources '../../../../../../common/infra/bicep/modules/appserviceplan-sites.bicep' = {
   name: 'appserviceplan-resources'
   params: {
     environmentName: environmentName

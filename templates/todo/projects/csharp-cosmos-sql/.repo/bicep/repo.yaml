@@ -67,23 +67,21 @@ repo:
     - from: ./infra/
       to: ./infra
 
-    # AppService infra common
-    - from: ../../../../common/infra/appservice/bicep
-      to: ./infra
-      patterns:
-        - api-dotnet.bicep
-        - api.bicep
-        - web.bicep
-
     - from: ../../../../../common/infra/bicep
       to: ./infra
       patterns:
-        - applicationinsights.bicep
-        - appserviceplan.bicep
-        - appserviceplan-site.bicep
-        - keyvault.bicep
-        - loganalytics.bicep
         - abbreviations.json
+        - applicationinsights.bicep
+        - applicationinsights-dashboard.bicep
+        - appserviceplan.bicep
+        - appserviceplan-sites.bicep
+        - keyvault.bicep
+        - keyvault-access.bicep
+        - loganalytics.bicep
+        - website-config*.bicep
+        - website-dotnet.bicep
+        - website-node.bicep
+        - website.bicep
 
     - from: ../../../../common/infra/modules
       to: ./infra/modules

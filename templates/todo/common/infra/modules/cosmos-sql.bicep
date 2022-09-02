@@ -1,7 +1,7 @@
 param environmentName string
 param location string = resourceGroup().location
 param cosmosDatabaseName string = 'Todo'
-param principalId string = ''
+param principalIds array = []
 
 var resourceToken = toLower(uniqueString(subscription().id, environmentName, location))
 var abbrs = loadJsonContent('../../../../common/infra/bicep/abbreviations.json')
@@ -48,29 +48,29 @@ resource database 'Microsoft.DocumentDB/databaseAccounts/sqlDatabases@2022-05-15
   ]
 }
 
-module roleDefintionResources 'cosmos-sql-role-def.bicep' =  {
+module roleDefintionResources 'cosmos-sql-role-def.bicep' = {
   name: 'cosmos-sql-role-def-resources'
   params: {
     environmentName: environmentName
     location: location
   }
-  dependsOn:  [
+  dependsOn: [
     cosmosAccountResources
   ]
 }
 
-module userRoleResources 'cosmos-sql-role-assign.bicep' = if (!empty(principalId)) {
-  name: 'cosmos-sql-user-role-resources'
+module userRoleResources 'cosmos-sql-role-assign.bicep' = [for principalId in principalIds: if (!empty(principalId)) {
+  name: 'cosmos-sql-user-role-resources-${uniqueString(principalId)}'
   params: {
     environmentName: environmentName
     location: location
     cosmosRoleDefinitionId: roleDefintionResources.outputs.AZURE_COSMOS_SQL_ROLE_DEFINITION_ID
     principalId: principalId
   }
-  dependsOn:  [
+  dependsOn: [
     cosmosAccountResources
   ]
-}
+}]
 
 output AZURE_COSMOS_RESOURCE_ID string = cosmosAccountResources.outputs.AZURE_COSMOS_RESOURCE_ID
 output AZURE_COSMOS_SQL_ROLE_DEFINITION_ID string = roleDefintionResources.outputs.AZURE_COSMOS_SQL_ROLE_DEFINITION_ID

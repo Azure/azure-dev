@@ -1,8 +1,8 @@
 package osversion
 
 import (
+	"fmt"
 	"golang.org/x/sys/unix"
-    "fmt"
 )
 
 func GetVersion() (string, error) {
@@ -10,10 +10,10 @@ func GetVersion() (string, error) {
 	err := unix.Uname(&uname)
 
 	if err != nil {
-		return string(uname.Release[:cStringLen(uname.Release[:])]), nil
+		return "", fmt.Errorf("unix.Uname returned error: %s", err)
 	}
 
-	return "", fmt.Errorf("unix.Uname returned error: %s", err)
+	return string(uname.Release[:cStringLen(uname.Release[:])]), nil
 }
 
 func cStringLen(s []byte) int {

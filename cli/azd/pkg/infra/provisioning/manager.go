@@ -12,6 +12,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azureutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/spin"
@@ -31,17 +32,17 @@ type Manager struct {
 }
 
 // Prepares for an infrastructure provision operation
-func (m *Manager) Preview(ctx context.Context) (*PreviewResult, error) {
-	previewResult, err := m.preview(ctx)
+func (m *Manager) Plan(ctx context.Context) (*DeploymentPlan, error) {
+	deploymentPlan, err := m.plan(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	return previewResult, nil
+	return deploymentPlan, nil
 }
 
 // Gets the latest deployment details for the specified scope
-func (m *Manager) GetDeployment(ctx context.Context, scope Scope) (*DeployResult, error) {
+func (m *Manager) GetDeployment(ctx context.Context, scope infra.Scope) (*DeployResult, error) {
 	var deployResult *DeployResult
 
 	err := m.runAction("Retrieving Azure Deployment", m.interactive, func(spinner *spin.Spinner) error {
@@ -73,15 +74,15 @@ func (m *Manager) GetDeployment(ctx context.Context, scope Scope) (*DeployResult
 }
 
 // Deploys the Azure infrastructure for the specified project
-func (m *Manager) Deploy(ctx context.Context, deployment *Deployment, scope Scope) (*DeployResult, error) {
+func (m *Manager) Deploy(ctx context.Context, plan *DeploymentPlan, scope infra.Scope) (*DeployResult, error) {
 	// Ensure that a location has been set prior to provisioning
-	location, err := m.ensureLocation(ctx, deployment)
+	location, err := m.ensureLocation(ctx, &plan.Deployment)
 	if err != nil {
 		return nil, err
 	}
 
 	// Apply the infrastructure deployment
-	deployResult, err := m.deploy(ctx, location, deployment, scope)
+	deployResult, err := m.deploy(ctx, location, plan, scope)
 	if err != nil {
 		return nil, err
 	}
@@ -115,46 +116,46 @@ func (m *Manager) Destroy(ctx context.Context, deployment *Deployment, options D
 	return destroyResult, nil
 }
 
-// Previews the infrastructure provisioning and orchestrates interactive terminal operations
-func (m *Manager) preview(ctx context.Context) (*PreviewResult, error) {
-	var previewResult *PreviewResult
+// Plans the infrastructure provisioning and orchestrates interactive terminal operations
+func (m *Manager) plan(ctx context.Context) (*DeploymentPlan, error) {
+	var deploymentPlan *DeploymentPlan
 
-	err := m.runAction("Preparing infrastructure provisioning", m.interactive, func(spinner *spin.Spinner) error {
-		previewTask := m.provider.Preview(ctx)
+	err := m.runAction("Planning infrastructure provisioning", m.interactive, func(spinner *spin.Spinner) error {
+		planningTask := m.provider.Plan(ctx)
 
 		go func() {
-			for progress := range previewTask.Progress() {
+			for progress := range planningTask.Progress() {
 				m.updateSpinnerTitle(spinner, progress.Message)
 			}
 		}()
 
-		go m.monitorInteraction(spinner, previewTask.Interactive())
+		go m.monitorInteraction(spinner, planningTask.Interactive())
 
-		result, err := previewTask.Await()
+		result, err := planningTask.Await()
 		if err != nil {
 			return err
 		}
 
-		previewResult = result
+		deploymentPlan = result
 
 		return nil
 	})
 
 	if err != nil {
-		return nil, fmt.Errorf("previewing infrastructure: %w", err)
+		return nil, fmt.Errorf("planning infrastructure provisioning: %w", err)
 	}
 
-	m.console.Message(ctx, "\nPrepared infrastructure provisioning")
+	m.console.Message(ctx, "\nInfrastructure provisioning planned")
 
-	return previewResult, nil
+	return deploymentPlan, nil
 }
 
 // Applies the specified infrastructure provisioning and orchestrates the interactive terminal operations
-func (m *Manager) deploy(ctx context.Context, location string, deployment *Deployment, scope Scope) (*DeployResult, error) {
+func (m *Manager) deploy(ctx context.Context, location string, plan *DeploymentPlan, scope infra.Scope) (*DeployResult, error) {
 	var deployResult *DeployResult
 
 	err := m.runAction("Provisioning Azure resources", m.interactive, func(spinner *spin.Spinner) error {
-		deployTask := m.provider.Deploy(ctx, deployment, scope)
+		deployTask := m.provider.Deploy(ctx, plan, scope)
 
 		go func() {
 			for progress := range deployTask.Progress() {

@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
-package provisioning
+package test
 
 import (
 	"context"
@@ -10,6 +10,8 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/infra"
+	. "github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
@@ -31,27 +33,27 @@ func (p *TestProvider) RequiredExternalTools() []tools.ExternalTool {
 	return []tools.ExternalTool{}
 }
 
-func (p *TestProvider) Preview(ctx context.Context) *async.InteractiveTaskWithProgress[*PreviewResult, *PreviewProgress] {
+func (p *TestProvider) Plan(ctx context.Context) *async.InteractiveTaskWithProgress[*DeploymentPlan, *DeploymentPlanningProgress] {
 	return async.RunInteractiveTaskWithProgress(
-		func(asyncContext *async.InteractiveTaskContextWithProgress[*PreviewResult, *PreviewProgress]) {
-			asyncContext.SetProgress(&PreviewProgress{Message: "Preparing deployment", Timestamp: time.Now()})
+		func(asyncContext *async.InteractiveTaskContextWithProgress[*DeploymentPlan, *DeploymentPlanningProgress]) {
+			asyncContext.SetProgress(&DeploymentPlanningProgress{Message: "Planning deployment", Timestamp: time.Now()})
 
 			params := make(map[string]InputParameter)
 			params["location"] = InputParameter{Value: p.env.Values["AZURE_LOCATION"]}
 
-			previewResult := PreviewResult{
+			deploymentPlan := DeploymentPlan{
 				Deployment: Deployment{
 					Parameters: params,
 					Outputs:    make(map[string]OutputParameter),
 				},
 			}
 
-			asyncContext.SetProgress(&PreviewProgress{Message: "Deployment preparation completed", Timestamp: time.Now()})
-			asyncContext.SetResult(&previewResult)
+			asyncContext.SetProgress(&DeploymentPlanningProgress{Message: "Deployment planning completed", Timestamp: time.Now()})
+			asyncContext.SetResult(&deploymentPlan)
 		})
 }
 
-func (p *TestProvider) GetDeployment(ctx context.Context, scope Scope) *async.InteractiveTaskWithProgress[*DeployResult, *DeployProgress] {
+func (p *TestProvider) GetDeployment(ctx context.Context, scope infra.Scope) *async.InteractiveTaskWithProgress[*DeployResult, *DeployProgress] {
 	return async.RunInteractiveTaskWithProgress(
 		func(asyncContext *async.InteractiveTaskContextWithProgress[*DeployResult, *DeployProgress]) {
 			asyncContext.SetProgress(&DeployProgress{
@@ -75,7 +77,7 @@ func (p *TestProvider) GetDeployment(ctx context.Context, scope Scope) *async.In
 }
 
 // Provisioning the infrastructure within the specified template
-func (p *TestProvider) Deploy(ctx context.Context, deployment *Deployment, scope Scope) *async.InteractiveTaskWithProgress[*DeployResult, *DeployProgress] {
+func (p *TestProvider) Deploy(ctx context.Context, pd *DeploymentPlan, scope infra.Scope) *async.InteractiveTaskWithProgress[*DeployResult, *DeployProgress] {
 	return async.RunInteractiveTaskWithProgress(
 		func(asyncContext *async.InteractiveTaskContextWithProgress[*DeployResult, *DeployProgress]) {
 			asyncContext.SetProgress(&DeployProgress{
@@ -144,5 +146,16 @@ func NewTestProvider(ctx context.Context, env *environment.Environment, projectP
 		projectPath: projectPath,
 		options:     options,
 		console:     input.GetConsole(ctx),
+	}
+}
+
+// Registers the Test provider with the provisioning module
+func RegisterTestProvider() {
+	err := RegisterProvider(Test, func(ctx context.Context, env *environment.Environment, projectPath string, options Options) (Provider, error) {
+		return NewTestProvider(ctx, env, projectPath, options), nil
+	})
+
+	if err != nil {
+		panic(err)
 	}
 }

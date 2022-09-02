@@ -10,7 +10,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestBasicBuild(t *testing.T) {
+func TestBuild(t *testing.T) {
 	testAction := ActionFunc(
 		func(context.Context, *cobra.Command, []string, *azdcontext.AzdContext) error {
 			return nil
@@ -23,14 +23,45 @@ func TestBasicBuild(t *testing.T) {
 		EnableTelemetry:    true,
 	}
 
-	cmd := Build(
-		testAction,
-		rootOptions,
-		"test2",
-		"This is a test of the builder",
-		"lorem")
+	type args struct {
+		use          string
+		short        string
+		buildOptions *BuildOptions
+	}
+	tests := []struct {
+		name string
+		args args
+		want *cobra.Command
+	}{
+		{name: "RequiredOnly",
+			args: args{
+				"basic",
+				"basic-short",
+				nil,
+			},
+		},
+		{name: "Extended",
+			args: args{
+				"ext",
+				"ext-short",
+				&BuildOptions{
+					Long:    "lorem",
+					Aliases: []string{"alias1", "alias2"},
+				},
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cmd := Build(testAction, rootOptions, tt.args.use, tt.args.short, tt.args.buildOptions)
 
-	assert.Equal(t, cmd.Short, "This is a test of the builder")
-	assert.Equal(t, cmd.Long, "lorem")
-	assert.Equal(t, cmd.Use, "test2")
+			assert.Equal(t, cmd.Short, tt.args.short)
+			assert.Equal(t, cmd.Use, tt.args.use)
+
+			if tt.args.buildOptions != nil {
+				assert.Equal(t, cmd.Long, tt.args.buildOptions.Long)
+				assert.Equal(t, cmd.Aliases, tt.args.buildOptions.Aliases)
+			}
+		})
+	}
 }

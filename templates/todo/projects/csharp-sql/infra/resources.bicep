@@ -1,7 +1,13 @@
 param location string
+param principalId string = ''
 param resourceToken string
 param tags object
+@secure()
+param sqlAdminPassword string
+@secure()
+param appUserPassword string
 
+var sqlConnectionStringSecretName = 'AZURE-SQL-CONNECTION-STRING'
 var abbrs = loadJsonContent('../../../../common/infra/bicep/abbreviations.json')
 
 resource web 'Microsoft.Web/sites@2022-03-01' = {
@@ -71,8 +77,9 @@ resource api 'Microsoft.Web/sites@2022-03-01' = {
   resource appSettings 'config' = {
     name: 'appsettings'
     properties: {
-      AZURE_SQL_CONNECTION_STRING: AZURE_SQL_CONNECTION_STRING
+      AZURE_SQL_CONNECTION_STRING_KEY: sqlConnectionStringSecretName
       APPLICATIONINSIGHTS_CONNECTION_STRING: applicationInsightsResources.outputs.APPLICATIONINSIGHTS_CONNECTION_STRING
+      AZURE_KEY_VAULT_ENDPOINT: keyVault.properties.vaultUri
     }
   }
 
@@ -136,44 +143,77 @@ module applicationInsightsResources '../../../../common/infra/bicep/applicationi
   }
 }
 
-// 2021-11-01-preview because that is latest valid version
-resource sqlServer 'Microsoft.Sql/servers@2022-02-01-preview' = {
-  name: '${abbrs.sqlServers}${resourceToken}'
+resource keyVault 'Microsoft.KeyVault/vaults@2021-10-01' = {
+  name: '${abbrs.keyVaultVaults}${resourceToken}'
   location: location
   tags: tags
   properties: {
-    version: '12.0'
-    minimalTlsVersion: '1.2'
-    publicNetworkAccess: 'Enabled'
-    administrators: {
-      administratorType: 'ActiveDirectory'
-      principalType: 'User'
-      sid: api.identity.principalId
-      login: 'activedirectoryadmin'
-      tenantId: api.identity.tenantId
-      azureADOnlyAuthentication: true
+  tenantId: subscription().tenantId
+  sku: {
+    family: 'A'
+    name: 'standard'
+  }
+  accessPolicies: concat([
+      {
+        objectId: api.identity.principalId
+        permissions: {
+          secrets: [
+            'get'
+            'list'
+          ]
+        }
+        tenantId: subscription().tenantId
+      }
+    ], !empty(principalId) ? [
+      {
+        objectId: principalId
+        permissions: {
+          secrets: [
+            'get'
+            'list'
+          ]
+        }
+        tenantId: subscription().tenantId
+      }
+    ] : [])
+  }
+
+  resource sqlAdminPasswordSecret 'secrets' = {
+    name: 'sqlAdminPassword'
+    properties: {
+      value: sqlAdminPassword
     }
   }
 
-  resource database 'databases' = {
-    name: 'ToDo'
-    location: location
+  resource appUserPasswordSecret 'secrets' = {
+    name: 'appUserPassword'
+    properties: {
+      value: appUserPassword
+    }
   }
 
-  resource firewall 'firewallRules' = {
-    name: 'Azure Services'
+  resource sqlAzureConnectionStringSercret 'secrets' = {
+    name: sqlConnectionStringSecretName
     properties: {
-      startIpAddress: '0.0.0.0'
-      endIpAddress: '0.0.0.0'
+      value: '${db.outputs.AZURE_SQL_CONNECTION_STRING}; Password=${appUserPassword}'
     }
   }
 }
 
-// Defined as a var here because it is used above
+module db './db.bicep' = {
+  name: 'db-${resourceToken}'
+  params: {
+    location: location
+    resourceToken: resourceToken
+    tags: tags
+    sqlAdminPassword: sqlAdminPassword
+    appUserPassword: appUserPassword
+  }
+}
 
-var AZURE_SQL_CONNECTION_STRING = 'Server=${sqlServer.properties.fullyQualifiedDomainName}; Authentication=Active Directory Default; Database=${sqlServer::database.name};'
-
-output AZURE_SQL_CONNECTION_STRING string = AZURE_SQL_CONNECTION_STRING
+output AZURE_KEY_VAULT_ENDPOINT string = keyVault.properties.vaultUri
 output APPLICATIONINSIGHTS_CONNECTION_STRING string = applicationInsightsResources.outputs.APPLICATIONINSIGHTS_CONNECTION_STRING
 output WEB_URI string = 'https://${web.properties.defaultHostName}'
 output API_URI string = 'https://${api.properties.defaultHostName}'
+output AZURE_SQL_CONNECTION_STRING_KEY string = sqlConnectionStringSecretName
+output KEYVAULT_NAME string = keyVault.name

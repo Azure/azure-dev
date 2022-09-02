@@ -23,6 +23,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/cmd"
 	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/pkg/container"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/executil"
@@ -655,7 +656,10 @@ func randomEnvName() string {
 		panic(fmt.Errorf("could not read random bytes: %w", err))
 	}
 
-	return ("azdtest-" + hex.EncodeToString(bytes))[0:15]
+	// Adding the name of the OS for CI to avoid name collisions and fail tests
+	osNameOnCI := os.Getenv("AZURE_DEV_CI_OS")
+
+	return ("azdtest-" + osNameOnCI + "-" + hex.EncodeToString(bytes))[0:15]
 }
 
 // stdinForTests is just enough stdin to bypass all the prompts or choose defaults.
@@ -673,6 +677,8 @@ func getTestEnvPath(dir string, envName string) string {
 // the provided `testing.T` has a deadline applied, the returned context
 // respects the deadline.
 func newTestContext(t *testing.T) (context.Context, context.CancelFunc) {
+	container.RegisterDependencies()
+
 	ctx := context.Background()
 	ctx = internal.WithCommandOptions(ctx, internal.GlobalCommandOptions{})
 

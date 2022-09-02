@@ -42,7 +42,8 @@ func upCmd(rootOptions *internal.GlobalCommandOptions) *cobra.Command {
 		rootOptions,
 		"up",
 		"Initialize application, provision Azure resources, and deploy your project with a single command.",
-		`Initialize the project (if the project folder has not been initialized or cloned from a template), provision Azure resources, and deploy your project with a single command.
+		&commands.BuildOptions{
+			Long: `Initialize the project (if the project folder has not been initialized or cloned from a template), provision Azure resources, and deploy your project with a single command.
 
 This command executes the following in one step:
 
@@ -50,8 +51,8 @@ This command executes the following in one step:
 	$ azd provision
 	$ azd deploy
 
-When no template is supplied, you can optionally select an Azure Developer CLI template for cloning. Otherwise, running `+output.WithBackticks("azd up")+` initializes the current directory so that your project is compatible with Azure Developer CLI.`,
-	)
+When no template is supplied, you can optionally select an Azure Developer CLI template for cloning. Otherwise, running ` + output.WithBackticks("azd up") + ` initializes the current directory so that your project is compatible with Azure Developer CLI.`,
+		})
 
 	output.AddOutputParam(cmd,
 		[]output.Format{output.JsonFormat, output.NoneFormat},

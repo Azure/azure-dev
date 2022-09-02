@@ -5,16 +5,24 @@ package provisioning
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 )
 
 type ProviderKind string
+
+type NewProviderFn func(ctx context.Context, env *environment.Environment, projectPath string, infraOptions Options) (Provider, error)
+
+var (
+	providers map[ProviderKind]NewProviderFn = make(map[ProviderKind]NewProviderFn)
+)
 
 const (
 	Bicep     ProviderKind = "bicep"
@@ -30,11 +38,14 @@ type Options struct {
 	Module   string       `yaml:"module"`
 }
 
-type PreviewResult struct {
+type DeploymentPlan struct {
 	Deployment Deployment
+
+	// Additional information about deployment, provider-specific.
+	Details interface{}
 }
 
-type PreviewProgress struct {
+type DeploymentPlanningProgress struct {
 	Message   string
 	Timestamp time.Time
 }
@@ -63,32 +74,38 @@ type DestroyProgress struct {
 type Provider interface {
 	Name() string
 	RequiredExternalTools() []tools.ExternalTool
-	GetDeployment(ctx context.Context, scope Scope) *async.InteractiveTaskWithProgress[*DeployResult, *DeployProgress]
-	Preview(ctx context.Context) *async.InteractiveTaskWithProgress[*PreviewResult, *PreviewProgress]
-	Deploy(ctx context.Context, deployment *Deployment, scope Scope) *async.InteractiveTaskWithProgress[*DeployResult, *DeployProgress]
+	GetDeployment(ctx context.Context, scope infra.Scope) *async.InteractiveTaskWithProgress[*DeployResult, *DeployProgress]
+	Plan(ctx context.Context) *async.InteractiveTaskWithProgress[*DeploymentPlan, *DeploymentPlanningProgress]
+	Deploy(ctx context.Context, plan *DeploymentPlan, scope infra.Scope) *async.InteractiveTaskWithProgress[*DeployResult, *DeployProgress]
 	Destroy(ctx context.Context, deployment *Deployment, options DestroyOptions) *async.InteractiveTaskWithProgress[*DestroyResult, *DestroyProgress]
+}
+
+// Registers a provider creation function for the specified provider kind
+func RegisterProvider(kind ProviderKind, newFn NewProviderFn) error {
+	if newFn == nil {
+		return errors.New("NewProviderFn is required")
+	}
+
+	providers[kind] = newFn
+	return nil
 }
 
 func NewProvider(ctx context.Context, env *environment.Environment, projectPath string, infraOptions Options) (Provider, error) {
 	var provider Provider
 
-	switch infraOptions.Provider {
-	case Bicep:
-		provider = NewBicepProvider(ctx, env, projectPath, infraOptions)
-	case Terraform:
-		provider = NewTerraformProvider(ctx, env, projectPath, infraOptions)
-	case Test:
-		provider = NewTestProvider(ctx, env, projectPath, infraOptions)
-	default:
-		provider = NewBicepProvider(ctx, env, projectPath, infraOptions)
+	if infraOptions.Provider == "" {
+		infraOptions.Provider = Bicep
 	}
 
-	if provider != nil {
-		return provider, nil
+	newProviderFn, ok := providers[infraOptions.Provider]
+	if !ok {
+		return nil, fmt.Errorf("provider '%s' is not supported", infraOptions.Provider)
 	}
 
-	return nil, fmt.Errorf("provider '%s' is not supported", infraOptions.Provider)
+	provider, err := newProviderFn(ctx, env, projectPath, infraOptions)
+	if err != nil {
+		return nil, fmt.Errorf("error creating provider for type '%s' : %w", infraOptions.Provider, err)
+	}
+
+	return provider, nil
 }
-
-var _ BicepProvider = BicepProvider{}
-var _ TerraformProvider = TerraformProvider{}

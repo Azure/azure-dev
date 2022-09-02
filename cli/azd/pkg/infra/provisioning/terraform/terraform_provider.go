@@ -1,4 +1,4 @@
-package provisioning
+package terraform
 
 import (
 	"context"
@@ -12,6 +12,8 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/infra"
+	. "github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/terraform"
@@ -56,15 +58,15 @@ func NewTerraformProvider(ctx context.Context, env *environment.Environment, pro
 }
 
 // Previews the infrastructure through terraform plan
-func (t *TerraformProvider) Preview(ctx context.Context) *async.InteractiveTaskWithProgress[*PreviewResult, *PreviewProgress] {
+func (t *TerraformProvider) Plan(ctx context.Context) *async.InteractiveTaskWithProgress[*DeploymentPlan, *DeploymentPlanningProgress] {
 	return async.RunInteractiveTaskWithProgress(
-		func(asyncContext *async.InteractiveTaskContextWithProgress[*PreviewResult, *PreviewProgress]) {
-			asyncContext.SetProgress(&PreviewProgress{Message: "Initialize terraform", Timestamp: time.Now()})
+		func(asyncContext *async.InteractiveTaskContextWithProgress[*DeploymentPlan, *DeploymentPlanningProgress]) {
+			asyncContext.SetProgress(&DeploymentPlanningProgress{Message: "Initialize terraform", Timestamp: time.Now()})
 
 			os.Setenv("TF_DATA_DIR", t.dataDirPath())
 			t.init(ctx, "-upgrade")
 
-			asyncContext.SetProgress(&PreviewProgress{Message: "Generating terraform parameters", Timestamp: time.Now()})
+			asyncContext.SetProgress(&DeploymentPlanningProgress{Message: "Generating terraform parameters", Timestamp: time.Now()})
 			err := t.createParametersFile()
 			if err != nil {
 				asyncContext.SetError(fmt.Errorf("creating parameters file: %w", err))
@@ -72,17 +74,17 @@ func (t *TerraformProvider) Preview(ctx context.Context) *async.InteractiveTaskW
 			}
 
 			modulePath := t.modulePath()
-			asyncContext.SetProgress(&PreviewProgress{Message: "Validate terraform template", Timestamp: time.Now()})
+			asyncContext.SetProgress(&DeploymentPlanningProgress{Message: "Validate terraform template", Timestamp: time.Now()})
 			//validate the terraform template
 			validated, err := t.terraformCli.Validate(ctx, modulePath)
 			if err != nil {
 				asyncContext.SetError(fmt.Errorf("failed to validate terraform template: %w", err))
 				return
 			}
-			asyncContext.SetProgress(&PreviewProgress{Message: fmt.Sprintf("terraform validate result : %s", validated), Timestamp: time.Now()})
+			asyncContext.SetProgress(&DeploymentPlanningProgress{Message: fmt.Sprintf("terraform validate result : %s", validated), Timestamp: time.Now()})
 
 			// discuss: -input=false arg force the cmd to fail in inputs for module variables were missing
-			asyncContext.SetProgress(&PreviewProgress{Message: "Plan terraform template", Timestamp: time.Now()})
+			asyncContext.SetProgress(&DeploymentPlanningProgress{Message: "Plan terraform template", Timestamp: time.Now()})
 
 			cmd := []string{
 				fmt.Sprintf("-chdir=%s", modulePath), "plan",
@@ -101,17 +103,17 @@ func (t *TerraformProvider) Preview(ctx context.Context) *async.InteractiveTaskW
 				return
 			}
 
-			asyncContext.SetProgress(&PreviewProgress{Message: fmt.Sprintf("terraform plan result : %s", runResult.Stdout), Timestamp: time.Now()})
+			asyncContext.SetProgress(&DeploymentPlanningProgress{Message: fmt.Sprintf("terraform plan result : %s", runResult.Stdout), Timestamp: time.Now()})
 
 			//create deployment object to respect the function signature in the contract
-			asyncContext.SetProgress(&PreviewProgress{Message: "create terraform template", Timestamp: time.Now()})
+			asyncContext.SetProgress(&DeploymentPlanningProgress{Message: "create terraform template", Timestamp: time.Now()})
 			deployment, err := t.createDeployment(ctx, modulePath)
 			if err != nil {
 				asyncContext.SetError(fmt.Errorf("create terraform template failed: %w", err))
 				return
 			}
 
-			result := PreviewResult{
+			result := DeploymentPlan{
 				Deployment: *deployment,
 			}
 			asyncContext.SetResult(&result)
@@ -119,7 +121,7 @@ func (t *TerraformProvider) Preview(ctx context.Context) *async.InteractiveTaskW
 }
 
 // Provisioning the infrastructure within the specified template
-func (t *TerraformProvider) Deploy(ctx context.Context, deployment *Deployment, scope Scope) *async.InteractiveTaskWithProgress[*DeployResult, *DeployProgress] {
+func (t *TerraformProvider) Deploy(ctx context.Context, deployment *DeploymentPlan, scope infra.Scope) *async.InteractiveTaskWithProgress[*DeployResult, *DeployProgress] {
 	return async.RunInteractiveTaskWithProgress(
 		func(asyncContext *async.InteractiveTaskContextWithProgress[*DeployResult, *DeployProgress]) {
 			asyncContext.SetProgress(&DeployProgress{Message: "Locating plan file...", Timestamp: time.Now()})
@@ -171,9 +173,10 @@ func (t *TerraformProvider) Deploy(ctx context.Context, deployment *Deployment, 
 				return
 			}
 
-			deployment.Outputs = outputs
+			currentDeployment := deployment.Deployment
+			currentDeployment.Outputs = outputs
 			result := &DeployResult{
-				Deployment: deployment,
+				Deployment: &currentDeployment,
 			}
 			asyncContext.SetResult(result)
 		})
@@ -230,7 +233,7 @@ func (t *TerraformProvider) Destroy(ctx context.Context, deployment *Deployment,
 }
 
 // Gets the latest deployment details for the specified scope
-func (t *TerraformProvider) GetDeployment(ctx context.Context, scope Scope) *async.InteractiveTaskWithProgress[*DeployResult, *DeployProgress] {
+func (t *TerraformProvider) GetDeployment(ctx context.Context, scope infra.Scope) *async.InteractiveTaskWithProgress[*DeployResult, *DeployProgress] {
 	return async.RunInteractiveTaskWithProgress(
 		func(asyncContext *async.InteractiveTaskContextWithProgress[*DeployResult, *DeployProgress]) {
 			asyncContext.SetProgress(&DeployProgress{Message: "Loading terraform module", Timestamp: time.Now()})
@@ -501,4 +504,15 @@ func (t *TerraformProvider) isRemoteBackendConfig() bool {
 		}
 	}
 	return false
+}
+
+// Registers the Terraform provider with the provisioning module
+func Register() {
+	err := RegisterProvider(Terraform, func(ctx context.Context, env *environment.Environment, projectPath string, options Options) (Provider, error) {
+		return NewTerraformProvider(ctx, env, projectPath, options), nil
+	})
+
+	if err != nil {
+		panic(err)
+	}
 }

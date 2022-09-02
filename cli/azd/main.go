@@ -89,6 +89,20 @@ func main() {
 		}
 	}
 
+	if ts != nil {
+		err := ts.Shutdown(context.Background())
+		if err != nil {
+			log.Printf("non-graceful telemetry shutdown: %v\n", err)
+		}
+
+		if ts.EmittedAnyTelemetry() {
+			err := startBackgroundUploadProcess()
+			if err != nil {
+				log.Printf("failed to start background telemetry upload: %v\n", err)
+			}
+		}
+	}
+
 	if cmdErr != nil {
 		os.Exit(1)
 	}
@@ -266,6 +280,18 @@ func readToEndAndClose(r io.ReadCloser) (string, error) {
 	var buf strings.Builder
 	_, err := io.Copy(&buf, r)
 	return buf.String(), err
+}
+
+func startBackgroundUploadProcess() error {
+	// The background upload process executable is ourself
+	execPath, err := os.Executable()
+	if err != nil {
+		return fmt.Errorf("failed to get current executable path: %w", err)
+	}
+
+	cmd := exec.Command(execPath, cmd.TelemetryCommandFlag, cmd.TelemetryUploadCommandFlag)
+	err = cmd.Start()
+	return err
 }
 
 func startBackgroundUploadProcess() error {

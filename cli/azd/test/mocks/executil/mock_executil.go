@@ -2,11 +2,13 @@ package executil
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/executil"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 )
 
 type CommandWhenPredicate func(args executil.RunArgs, command string) bool
@@ -26,7 +28,7 @@ func NewMockCommandRunner() *MockCommandRunner {
 }
 
 // The executil RunWithResult definition that matches the real function definition
-// This implementation will find the first matching mocked expression and return the configured response or error
+// This implementation will find the first matching, most recent mocked expression and return the configured response or error
 func (m *MockCommandRunner) RunWithResult(ctx context.Context, args executil.RunArgs) (executil.RunResult, error) {
 	var match *CommandExpression
 
@@ -34,9 +36,9 @@ func (m *MockCommandRunner) RunWithResult(ctx context.Context, args executil.Run
 	cmdArgs = append(cmdArgs, args.Args...)
 	command := strings.Join(cmdArgs, " ")
 
-	for _, expr := range m.expressions {
-		if expr.predicateFn(args, command) {
-			match = expr
+	for i := len(m.expressions) - 1; i >= 0; i-- {
+		if m.expressions[i].predicateFn(args, command) {
+			match = m.expressions[i]
 			break
 		}
 	}
@@ -66,9 +68,10 @@ func (m *MockCommandRunner) When(predicate CommandWhenPredicate) *CommandExpress
 
 // Represents an mocked expression against a dependent tool command
 type CommandExpression struct {
-	Command     string
-	response    executil.RunResult
-	responseFn  ResponseFn
+	Command    string
+	response   executil.RunResult
+	responseFn ResponseFn
+
 	error       error
 	executil    *MockCommandRunner
 	predicateFn CommandWhenPredicate
@@ -92,12 +95,44 @@ func (e *CommandExpression) SetError(err error) *MockCommandRunner {
 	return e.executil
 }
 
-func AddAzLoginMocks(execUtil *MockCommandRunner) {
-	execUtil.When(func(args executil.RunArgs, command string) bool {
+func (r *MockCommandRunner) AddAzLoginMocks() {
+	r.When(func(args executil.RunArgs, command string) bool {
 		return strings.Contains(command, "az account get-access-token")
 	}).RespondFn(func(args executil.RunArgs) (executil.RunResult, error) {
 		now := time.Now().UTC().Format(time.RFC3339)
 		requestJson := fmt.Sprintf(`{"AccessToken": "abc123", "ExpiresOn": "%s"}`, now)
 		return executil.NewRunResult(0, requestJson, ""), nil
+	})
+}
+
+type AzResourceListMatchOptions struct {
+	MatchResourceGroup *string
+}
+
+func (r *MockCommandRunner) AddDefaultMocks() {
+	// This is harmless but should be removed long-term.
+	// By default, mock returning an empty list of azure resources instead of crashing.
+	// This is an unfortunate mock required due to the side-effect of
+	// running "az resource list" as part of loading a project in project.GetProject.
+	r.AddAzResourceListMock(nil, []azcli.AzCliResource{})
+}
+
+func (r *MockCommandRunner) AddAzResourceListMock(options *AzResourceListMatchOptions, result []azcli.AzCliResource) {
+	r.When(func(args executil.RunArgs, command string) bool {
+		if options == nil {
+			options = &AzResourceListMatchOptions{}
+		}
+		isMatch := strings.Contains(command, "az resource list")
+		if options.MatchResourceGroup != nil {
+			isMatch = isMatch && strings.Contains(command, fmt.Sprintf("--resource-group %s", *options.MatchResourceGroup))
+		}
+
+		return isMatch
+	}).RespondFn(func(args executil.RunArgs) (executil.RunResult, error) {
+		bytes, err := json.Marshal(result)
+		if err != nil {
+			panic(err)
+		}
+		return executil.NewRunResult(0, string(bytes), ""), nil
 	})
 }

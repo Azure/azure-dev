@@ -71,7 +71,8 @@ type AzCli interface {
 	DeployToResourceGroup(ctx context.Context, subscriptionId string, resourceGroup string, deploymentName string, templatePath string, parametersPath string) (AzCliDeploymentResult, error)
 	DeleteSubscriptionDeployment(ctx context.Context, subscriptionId string, deploymentName string) error
 	DeleteResourceGroup(ctx context.Context, subscriptionId string, resourceGroupName string) error
-	ListResourceGroupResources(ctx context.Context, subscriptionId string, resourceGroupName string) ([]AzCliResource, error)
+	ListResourceGroup(ctx context.Context, subscriptionId string, listOptions *ListResourceGroupOptions) ([]AzCliResource, error)
+	ListResourceGroupResources(ctx context.Context, subscriptionId string, resourceGroupName string, listOptions *ListResourceGroupResourcesOptions) ([]AzCliResource, error)
 	ListSubscriptionDeploymentOperations(ctx context.Context, subscriptionId string, deploymentName string) ([]AzCliResourceOperation, error)
 	ListResourceGroupDeploymentOperations(ctx context.Context, subscriptionId string, resourceGroupName string, deploymentName string) ([]AzCliResourceOperation, error)
 	// ListAccountLocations lists the physical locations in Azure.
@@ -90,6 +91,11 @@ type AzCli interface {
 	GetSignedInUserId(ctx context.Context) (string, error)
 
 	GetAccessToken(ctx context.Context) (AzCliAccessToken, error)
+
+	// GraphQuery performs a query against Azure Resource Graph.
+	//
+	// This allows free-form querying of resources by any attribute, which is powerful.
+	// However, results may be delayed for multiple minutes. Ensure that your this fits your use-case.
 	GraphQuery(ctx context.Context, query string, subscriptions []string) (*AzCliGraphQuery, error)
 }
 
@@ -270,6 +276,25 @@ type AzCliGraphQuery struct {
 	Data         []AzCliResource `json:"data"`
 	SkipToken    string          `json:"skipToken"`
 	TotalRecords int             `json:"totalRecords"`
+}
+
+// Optional parameters for resource group listing.
+type ListResourceGroupOptions struct {
+	// An optional tag filter
+	TagFilter *Filter
+	// An optional JMES path query to filter or project the result
+	JmesPathQuery *string
+}
+
+// Optional parameters for resource group resources listing.
+type ListResourceGroupResourcesOptions struct {
+	// An optional JMES path query to filter or project the result
+	JmesPathQuery *string
+}
+
+type Filter struct {
+	Key   string
+	Value string
 }
 
 func (tok *AzCliAccessToken) UnmarshalJSON(data []byte) error {
@@ -718,8 +743,42 @@ func (cli *azCli) DeleteResourceGroup(ctx context.Context, subscriptionId string
 	return nil
 }
 
-func (cli *azCli) ListResourceGroupResources(ctx context.Context, subscriptionId string, resourceGroupName string) ([]AzCliResource, error) {
-	res, err := cli.runAzCommand(ctx, "resource", "list", "--subscription", subscriptionId, "--resource-group", resourceGroupName, "--output", "json")
+func (cli *azCli) ListResourceGroup(ctx context.Context, subscriptionId string, listOptions *ListResourceGroupOptions) ([]AzCliResource, error) {
+	args := []string{"group", "list", "--subscription", subscriptionId, "--output", "json"}
+	if listOptions != nil {
+		if listOptions.TagFilter != nil {
+			args = append(args, "--tag", fmt.Sprintf("%s=%s", listOptions.TagFilter.Key, listOptions.TagFilter.Value))
+		}
+
+		if listOptions.JmesPathQuery != nil {
+			args = append(args, "--query", *listOptions.JmesPathQuery)
+		}
+	}
+
+	res, err := cli.runAzCommand(ctx, args...)
+	if isNotLoggedInMessage(res.Stderr) {
+		return nil, ErrAzCliNotLoggedIn
+	} else if err != nil {
+		return nil, fmt.Errorf("failed running az group list: %s: %w", res.String(), err)
+	}
+
+	var resources []AzCliResource
+	if err := json.Unmarshal([]byte(res.Stdout), &resources); err != nil {
+		return nil, fmt.Errorf("could not unmarshal output %s as a []AzCliResource: %w", res.Stdout, err)
+	}
+	return resources, nil
+}
+
+func (cli *azCli) ListResourceGroupResources(ctx context.Context, subscriptionId string, resourceGroupName string, listOptions *ListResourceGroupResourcesOptions) ([]AzCliResource, error) {
+	args := []string{"resource", "list", "--subscription", subscriptionId, "--resource-group", resourceGroupName, "--output", "json"}
+	if listOptions != nil {
+		if listOptions.JmesPathQuery != nil {
+			args = append(args, "--query", *listOptions.JmesPathQuery)
+		}
+	}
+
+	res, err := cli.runAzCommand(ctx, args...)
+
 	if isNotLoggedInMessage(res.Stderr) {
 		return nil, ErrAzCliNotLoggedIn
 	} else if err != nil {
@@ -1057,12 +1116,16 @@ func (cli *azCli) runAzCommandWithArgs(ctx context.Context, args executil.RunArg
 
 var isNotLoggedInMessageRegex = regexp.MustCompile(`Please run ('|")az login('|") to (setup account|access your accounts)\.`)
 
-// AADSTS70043: The refresh token has expired or is invalid due to sign-in frequency checks by conditional access.
+// Regex for "AADSTS70043: The refresh token has expired or is invalid due to sign-in frequency checks by conditional access."
 var isRefreshTokenExpiredMessageRegex = regexp.MustCompile(`AADSTS70043`)
 var isResourceSegmentMeNotFoundMessageRegex = regexp.MustCompile(`Resource not found for the segment 'me'.`)
-var isDeploymentNotFoundMessageRegex = regexp.MustCompile(`ERROR: \(DeploymentNotFound\)`)
-var isClientAssertionInvalidMessagedRegex = regexp.MustCompile(`ERROR: AADSTS700024: Client assertion is not within its valid time range.`)
-var isConfigurationIsNotSetMessageRegex = regexp.MustCompile(`ERROR: Configuration '.*' is not set\.`)
+
+// Regex for "(DeploymentNotFound) Deployment '<name>' could not be found."
+var isDeploymentNotFoundMessageRegex = regexp.MustCompile(`\(DeploymentNotFound\)`)
+
+// Regex for "AADSTS700024: Client assertion is not within its valid time range."
+var isClientAssertionInvalidMessagedRegex = regexp.MustCompile(`AADSTS700024`)
+var isConfigurationIsNotSetMessageRegex = regexp.MustCompile(`Configuration '.*' is not set\.`)
 var isDeploymentErrorRegex = regexp.MustCompile(`ERROR: ({.+})`)
 var isSecretNotFoundMessageRegex = regexp.MustCompile(`ERROR: \(SecretNotFound\)`)
 

@@ -4,6 +4,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -13,6 +14,7 @@ import (
 	"math/rand"
 	"net/http"
 	"os"
+	"os/exec"
 	"os/user"
 	"path/filepath"
 	"runtime"
@@ -22,6 +24,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/cmd"
 	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/internal/telemetry"
 	"github.com/azure/azure-dev/cli/azd/pkg/container"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
@@ -39,6 +42,7 @@ func main() {
 		log.SetOutput(io.Discard)
 	}
 
+	ts := telemetry.GetTelemetrySystem()
 	container.RegisterDependencies()
 
 	latest := make(chan semver.Version)
@@ -70,6 +74,21 @@ func main() {
 			}
 		}
 	}
+
+	if ts != nil {
+		err := ts.Shutdown(context.Background())
+		if err != nil {
+			log.Printf("non-graceful telemetry shutdown: %v\n", err)
+		}
+
+		if ts.EmittedAnyTelemetry() {
+			err := startBackgroundUploadProcess()
+			if err != nil {
+				log.Printf("failed to start background telemetry upload: %v\n", err)
+			}
+		}
+	}
+
 	if cmdErr != nil {
 		os.Exit(1)
 	}
@@ -247,4 +266,16 @@ func readToEndAndClose(r io.ReadCloser) (string, error) {
 	var buf strings.Builder
 	_, err := io.Copy(&buf, r)
 	return buf.String(), err
+}
+
+func startBackgroundUploadProcess() error {
+	// The background upload process executable is ourself
+	execPath, err := os.Executable()
+	if err != nil {
+		return fmt.Errorf("failed to get current executable path: %w", err)
+	}
+
+	cmd := exec.Command(execPath, cmd.TelemetryCommandFlag, cmd.TelemetryUploadCommandFlag)
+	err = cmd.Start()
+	return err
 }

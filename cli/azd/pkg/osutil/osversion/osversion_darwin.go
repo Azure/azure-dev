@@ -35,10 +35,10 @@ OsVersion c_getVersion() {
 	}
 	else
 	{
-		NSOperatingSystemVersion version;
-		version.majorVersion = [NSNumber numberWithInt: 10];
-		version.minorVersion = [NSNumber numberWithInt: 9];
-		version.patchVersion = [NSNumber numberWithInt: 0];
+		OsVersion version;
+		version.major = 10;
+		version.minor = 9;
+		version.patch = 0;
 		return version;
 	}
 }

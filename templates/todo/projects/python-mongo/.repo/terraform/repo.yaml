@@ -52,14 +52,23 @@ repo:
       patterns:
         - openapi.yaml
      
-    # Template common
+    # Templates common
     - from: ../../../../../common
       to: ./
       ignore: 
       - "infra/**/*"
+      - .devcontainer/**/*
 
     - from: ../../../../../common/infra/terraform/applicationinsights
       to: ./infra/modules/applicationinsights
+
+    # .devcontainer common (devcontainer.json)
+    - from: ../../../../../common/.devcontainer/devcontainer.json/python
+      to: ./.devcontainer
+
+    # .devcontainer common (Dockerfile)
+    - from: ../../../../../common/.devcontainer/Dockerfile/base
+      to: ./.devcontainer
 
     # Assets common
     - from: ../../../../common/assets

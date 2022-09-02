@@ -28,7 +28,7 @@ type AzdVersionSpec struct {
 }
 
 func IsDevVersion() bool {
-	return GetVersionNumber() == "0.0.0-dev.0"
+	return true
 }
 
 // GetVersionNumber splits the cmd.Version string to get the

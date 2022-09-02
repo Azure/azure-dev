@@ -16,7 +16,7 @@ module cosmosAccountResources 'cosmos.bicep' = {
 }
 
 resource database 'Microsoft.DocumentDB/databaseAccounts/sqlDatabases@2022-05-15' = {
-  name: '${abbrs.documentDBDatabaseAccounts}${resourceToken}}/${cosmosDatabaseName}'
+  name: '${abbrs.documentDBDatabaseAccounts}${resourceToken}/${cosmosDatabaseName}'
   properties: {
     resource: { id: 'Todo' }
   }
@@ -67,6 +67,9 @@ module userRoleResources 'cosmos-sql-role-assign.bicep' = if (!empty(principalId
     cosmosRoleDefinitionId: roleDefintionResources.outputs.AZURE_COSMOS_SQL_ROLE_DEFINITION_ID
     principalId: principalId
   }
+  dependsOn:  [
+    cosmosAccountResources
+  ]
 }
 
 output AZURE_COSMOS_RESOURCE_ID string = cosmosAccountResources.outputs.AZURE_COSMOS_RESOURCE_ID

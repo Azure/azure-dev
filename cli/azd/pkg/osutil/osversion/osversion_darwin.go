@@ -12,6 +12,11 @@ typedef struct _OsVersion {
 	int patch;
 } OsVersion;
 
+int toInt(NSNumber* i) {
+	if (i == NULL) { return 0; }
+	return i.intValue;
+}
+
 OsVersion toOsVer(NSOperatingSystemVersion ver) {
 	OsVersion v;
 	v.major = toInt(ver.majorVersion);
@@ -20,17 +25,11 @@ OsVersion toOsVer(NSOperatingSystemVersion ver) {
 
 	return v;
 }
-
-int toInt(NSNumber* i) {
-	if (i == NULL) { return 0; }
-    return i.intValue;
-}
-
 OsVersion c_getVersion() {
 	NSProcessInfo *pInfo = [NSProcessInfo processInfo];
 	// check availability of the property operatingSystemVersion (10.10+) at runtime
-    if ([pInfo respondsToSelector:@selector(operatingSystemVersion)])
-    {
+	if ([pInfo respondsToSelector:@selector(operatingSystemVersion)])
+	{
 		return toOsVer([pInfo operatingSystemVersion]);
 	}
 	else
@@ -49,12 +48,8 @@ import (
 	"fmt"
 )
 
-func verToStr(ver C.NSOperatingSystemVersion) string {
-	major := C.toInt(ver.majorVersion)
-	minor := C.toInt(ver.minorVersion)
-	patch := C.toInt(ver.patchVersion)
-
-	res := fmt.Sprintf("%d.%d.%d", major, minor, patch)
+func verToStr(ver C.OsVersion) string {
+	res := fmt.Sprintf("%d.%d.%d", int(ver.major), int(ver.minor), int(ver.patch))
 	return res
 }
 

@@ -293,15 +293,3 @@ func startBackgroundUploadProcess() error {
 	err = cmd.Start()
 	return err
 }
-
-func startBackgroundUploadProcess() error {
-	// The background upload process executable is ourself
-	execPath, err := os.Executable()
-	if err != nil {
-		return fmt.Errorf("failed to get current executable path: %w", err)
-	}
-
-	cmd := exec.Command(execPath, cmd.TelemetryCommandFlag, cmd.TelemetryUploadCommandFlag)
-	err = cmd.Start()
-	return err
-}

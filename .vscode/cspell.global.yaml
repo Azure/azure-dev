@@ -80,6 +80,10 @@ ignoreWords:
     - httptrigger
     - resourcegroups
     - devcontainer
+    - azurecaf
+    - azurerm
+    - aztfmod
+    - menuid
 useGitignore: true
 dictionaryDefinitions:
     - name: gitHubUserAliases

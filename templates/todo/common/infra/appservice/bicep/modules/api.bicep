@@ -48,7 +48,7 @@ resource api 'Microsoft.Web/sites@2022-03-01' = {
       AZURE_COSMOS_ENDPOINT: cosmosEndpoint
       AZURE_COSMOS_CONNECTION_STRING_KEY: cosmosConnectionStringKey
       AZURE_COSMOS_DATABASE_NAME: cosmosDatabaseName
-      SCM_DO_BUILD_DURING_DEPLOYMENT: scmDoBuildDuringDeployment
+      SCM_DO_BUILD_DURING_DEPLOYMENT: string(scmDoBuildDuringDeployment)
       AZURE_KEY_VAULT_ENDPOINT: keyVault.properties.vaultUri
       APPLICATIONINSIGHTS_CONNECTION_STRING: applicationInsights.properties.ConnectionString
     }

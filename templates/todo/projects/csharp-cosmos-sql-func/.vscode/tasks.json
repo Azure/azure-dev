@@ -4,54 +4,56 @@
         {
             "label": "Start API",
             "type": "dotenv",
-            "targetTasks": ["API Functions run"],
+            "targetTasks": "API Functions Run",
             "file": "${input:dotEnvFilePath}"
         },
         {
-			"label": "clean (functions)",
-			"command": "dotnet",
-			"args": [
-				"clean",
-				"${workspaceFolder}/src/api/Todo.Api.csproj",
-                "/property:GenerateFullPaths=true",
-                "/consoleloggerparameters:NoSummary"
-			],
-            "options": {
-                "cwd": "${workspaceFolder}/src/api/"
-            },
-			"type": "process",
-			"problemMatcher": "$msCompile"
-		},
-        {
-			"label": "build (functions)",
-			"command": "dotnet",
-			"args": [
-				"build",
+            "label": "clean (functions)",
+            "command": "dotnet",
+            "args": [
+                "clean",
                 "${workspaceFolder}/src/api/Todo.Api.csproj",
                 "/property:GenerateFullPaths=true",
                 "/consoleloggerparameters:NoSummary"
-			],
-			"type": "process",
-			"dependsOn": "clean (functions)",
-			"group": {
-				"kind": "build",
-				"isDefault": true
-			},
-			"problemMatcher": "$msCompile"
-		},
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}/src/api/"
+            },
+            "type": "process",
+            "problemMatcher": "$msCompile"
+        },
         {
-            "label": "API Functions run",
+            "label": "build (functions)",
+            "command": "dotnet",
+            "args": [
+                "build",
+                "${workspaceFolder}/src/api/Todo.Api.csproj",
+                "/property:GenerateFullPaths=true",
+                "/consoleloggerparameters:NoSummary"
+            ],
+            "type": "process",
+            "dependsOn": "clean (functions)",
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
+            "problemMatcher": "$msCompile"
+        },
+        {
+            "label": "API Functions Run",
             "detail": "Helper task--use 'Start API' task to ensure environment is set up correctly",
             "type": "func",
-            "dependsOn":"build (functions)",
-            "command": "host start --port 3100 --cors *",
+            "dependsOn": "build (functions)",
+            "command": "host start",
             "options": {
                 "cwd": "${workspaceFolder}/src/api/"
             },
             "presentation": {
                 "panel": "dedicated",
             },
-            "problemMatcher": ["$func-dotnet-watch"]
+            "problemMatcher": [
+                "$func-dotnet-watch"
+            ]
         },
         {
             "label": "Watch API",
@@ -100,17 +102,15 @@
             },
             "problemMatcher": []
         },
-
         {
             "label": "Start API and Web",
-            "dependsOn":[
+            "dependsOn": [
                 "Start API",
                 "Start Web"
             ],
             "problemMatcher": []
         }
     ],
-
     "inputs": [
         {
             "id": "dotEnvFilePath",

@@ -7,5 +7,9 @@
         "AZURE_COSMOS_DATABASE_NAME":"",
         "APPLICATIONINSIGHTS_CONNECTION_STRING":""
         
-    }
+    },
+    "Host": {
+        "LocalHttpPort": 3100,
+        "CORS": "*"
+      }
 }

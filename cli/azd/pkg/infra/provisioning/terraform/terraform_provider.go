@@ -358,7 +358,15 @@ func (t *TerraformProvider) createDeployment(ctx context.Context, modulePath str
 	parameters := make(map[string]any)
 	parametersFilePath := t.parametersFilePath()
 
+	// check if the file does not exist to create it --> for env refresh scenario
 	log.Printf("Reading parameters template file from: %s", parametersFilePath)
+	if _, err := os.Stat(parametersFilePath); err != nil {
+		err = t.createParametersFile()
+		if err != nil {
+			return nil, fmt.Errorf("creating parameters file: %w", err)
+		}
+	}
+
 	parametersBytes, err := os.ReadFile(parametersFilePath)
 	if err != nil {
 		return nil, fmt.Errorf("reading parameter file template: %w", err)

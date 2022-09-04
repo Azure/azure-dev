@@ -58,7 +58,7 @@ module keyVault '../../../../../../common/infra/bicep/modules/keyvault.bicep' = 
   }
 }
 
-module cosmos '../../../../../common/infra/modules/cosmos-sql.bicep' = {
+module cosmos '../../../../../common/infra/modules/cosmos-sql-db.bicep' = {
   name: 'cosmos-resources'
   params: {
     environmentName: environmentName

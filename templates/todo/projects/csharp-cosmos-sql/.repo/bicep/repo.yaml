@@ -75,6 +75,8 @@ repo:
         - applicationinsights-dashboard.bicep
         - appserviceplan.bicep
         - appserviceplan-sites.bicep
+        - cosmos.bicep
+        - cosmos-sql*.bicep
         - keyvault.bicep
         - keyvault-access.bicep
         - loganalytics.bicep
@@ -86,8 +88,7 @@ repo:
     - from: ../../../../common/infra/modules
       to: ./infra/modules
       patterns:
-        - cosmos.bicep
-        - cosmos-sql*.bicep
+        - cosmos-sql-db.bicep
 
     - from: ./../../
       to: ./

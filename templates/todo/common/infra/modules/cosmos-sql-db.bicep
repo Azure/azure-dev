@@ -6,12 +6,11 @@ param principalIds array = []
 var resourceToken = toLower(uniqueString(subscription().id, environmentName, location))
 var abbrs = loadJsonContent('../../../../common/infra/bicep/abbreviations.json')
 
-module cosmosAccount 'cosmos.bicep' = {
-  name: 'cosmos-account-resources'
+module cosmos '../../../../common/infra/bicep/modules/cosmos-sql.bicep' = {
+  name: 'cosmos-sql-account-resources'
   params: {
     environmentName: environmentName
     location: location
-    kind: 'GlobalDocumentDB'
   }
 }
 
@@ -44,11 +43,11 @@ resource database 'Microsoft.DocumentDB/databaseAccounts/sqlDatabases@2022-05-15
   }
 
   dependsOn: [
-    cosmosAccount
+    cosmos
   ]
 }
 
-module roleDefintion 'cosmos-sql-role-def.bicep' = {
+module roleDefintion '../../../../common/infra/bicep/modules/cosmos-sql-role-def.bicep' = {
   name: 'cosmos-sql-role-def-resources'
   params: {
     environmentName: environmentName
@@ -56,13 +55,13 @@ module roleDefintion 'cosmos-sql-role-def.bicep' = {
   }
   dependsOn: [
     database
-    cosmosAccount
+    cosmos
   ]
 }
 
 // We need batchSize(1) here because sql role assignments have to be done sequentially
 @batchSize(1)
-module userRole 'cosmos-sql-role-assign.bicep' = [for principalId in principalIds: if (!empty(principalId)) {
+module userRole '../../../../common/infra/bicep/modules/cosmos-sql-role-assign.bicep' = [for principalId in principalIds: if (!empty(principalId)) {
   name: 'cosmos-sql-user-role-resources-${uniqueString(principalId)}'
   params: {
     environmentName: environmentName
@@ -71,14 +70,14 @@ module userRole 'cosmos-sql-role-assign.bicep' = [for principalId in principalId
     principalId: principalId
   }
   dependsOn: [
-    cosmosAccount
+    cosmos
     database
     roleDefintion
   ]
 }]
 
-output AZURE_COSMOS_RESOURCE_ID string = cosmosAccount.outputs.AZURE_COSMOS_RESOURCE_ID
+output AZURE_COSMOS_RESOURCE_ID string = cosmos.outputs.AZURE_COSMOS_RESOURCE_ID
 output AZURE_COSMOS_SQL_ROLE_DEFINITION_ID string = roleDefintion.outputs.AZURE_COSMOS_SQL_ROLE_DEFINITION_ID
-output AZURE_COSMOS_ENDPOINT string = cosmosAccount.outputs.AZURE_COSMOS_ENDPOINT
-output AZURE_COSMOS_DATABASE_NAME string = database.name
-output AZURE_COSMOS_CONNECTION_STRING_KEY string = cosmosAccount.outputs.AZURE_COSMOS_CONNECTION_STRING_KEY
+output AZURE_COSMOS_ENDPOINT string = cosmos.outputs.AZURE_COSMOS_ENDPOINT
+output AZURE_COSMOS_DATABASE_NAME string = cosmosDatabaseName
+output AZURE_COSMOS_CONNECTION_STRING_KEY string = cosmos.outputs.AZURE_COSMOS_CONNECTION_STRING_KEY

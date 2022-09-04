@@ -4,7 +4,7 @@ param serviceName string
 param kind string = 'app,linux'
 param linuxFxVersion string = ''
 param appCommandLine string = ''
-param scmDoBuildDuringDeployment bool = true
+param scmDoBuildDuringDeployment bool = false
 param managedIdentity bool = useKeyVault
 param appSettings object = {}
 param useKeyVault bool = false

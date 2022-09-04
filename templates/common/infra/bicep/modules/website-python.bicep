@@ -4,7 +4,7 @@ param serviceName string
 param linuxFxVersion string = 'PYTHON|3.8'
 param appCommandLine string = ''
 param managedIdentity bool = useKeyVault
-param scmDoBuildDuringDeployment bool = true
+param scmDoBuildDuringDeployment bool = false
 param appSettings object = {}
 param useKeyVault bool = false
 

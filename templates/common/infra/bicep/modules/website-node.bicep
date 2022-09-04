@@ -4,7 +4,7 @@ param serviceName string
 param linuxFxVersion string = 'NODE|16-lts'
 param appCommandLine string = 'pm2 serve /home/site/wwwroot --no-daemon --spa'
 param managedIdentity bool = useKeyVault
-param scmDoBuildDuringDeployment bool = true
+param scmDoBuildDuringDeployment bool = false
 param appSettings object = {}
 param useKeyVault bool = false
 

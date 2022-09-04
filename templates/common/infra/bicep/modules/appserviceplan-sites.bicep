@@ -1,7 +1,7 @@
 param environmentName string
 param location string = resourceGroup().location
 
-module appServicePlanSiteResources 'appserviceplan.bicep' = {
+module appServicePlanSite 'appserviceplan.bicep' = {
   name: 'appserviceplansite-resources'
   params: {
     environmentName: environmentName
@@ -10,4 +10,4 @@ module appServicePlanSiteResources 'appserviceplan.bicep' = {
   }
 }
 
-output AZURE_APP_SERVICE_PLAN_ID string = appServicePlanSiteResources.outputs.AZURE_APP_SERVICE_PLAN_ID
+output AZURE_APP_SERVICE_PLAN_ID string = appServicePlanSite.outputs.AZURE_APP_SERVICE_PLAN_ID

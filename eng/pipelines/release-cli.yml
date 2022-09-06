@@ -12,12 +12,14 @@ trigger:
       - main
   paths:
     include:
+      - go.mod
       - cli/
       - eng/pipelines/release-cli.yml
 
 pr:
   paths:
     include:
+      - go.mod
       - cli/
       - eng/pipelines/release-cli.yml
 

@@ -2,8 +2,8 @@
 // Licensed under the MIT License.
 
 // Package baggage provides an implementation of storing trace-level context data, i.e. baggage.
-// Unlike OpenTelemetry's implementation of baggage, this baggage is only propagated for the current local process
-// and is not propagated with external calls.
+// Unlike OpenTelemetry's implementation of baggage, this baggage is only propagated to child spans of the current local process.
+// Information is not propagated with any external calls.
 package baggage
 
 import (
@@ -16,7 +16,7 @@ type contextKey string
 
 const baggageKey contextKey = "baggageState"
 
-// ContextWithBaggage returns a copy of ctx with attributes set.
+// ContextWithAttributes returns a copy of ctx with attributes set.
 func ContextWithAttributes(ctx context.Context, attributes []attribute.KeyValue) context.Context {
 	bg := BaggageFromContext(ctx)
 	bg.Set(attributes...)

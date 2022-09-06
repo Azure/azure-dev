@@ -11,6 +11,7 @@ import (
 // An immutable object safe for concurrent use.
 type Baggage struct {
 	// Use a map to avoid duplicates as OpenTelemetry does not allow for duplicate attributes
+
 	m map[attribute.Key]attribute.Value
 }
 

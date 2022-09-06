@@ -15,6 +15,7 @@ import (
 	"time"
 
 	azdinternal "github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/internal/telemetry"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/executil"
 	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
@@ -1199,7 +1200,7 @@ func GetAzCli(ctx context.Context) AzCli {
 	}
 
 	// Set the user agent if a template has been selected
-	template := azdinternal.GetTemplate(ctx)
+	template := telemetry.TemplateFromContext(ctx)
 	userAgent := azdinternal.MakeUserAgentString(template)
 	azCli.SetUserAgent(userAgent)
 

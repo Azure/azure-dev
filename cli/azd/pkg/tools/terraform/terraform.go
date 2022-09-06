@@ -8,7 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/executil"
+	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/blang/semver/v4"
 )
@@ -16,27 +16,27 @@ import (
 type TerraformCli interface {
 	tools.ExternalTool
 	Validate(ctx context.Context, file string) (string, error)
-	RunCommand(ctx context.Context, args ...string) (executil.RunResult, error)
+	RunCommand(ctx context.Context, args ...string) (exec.RunResult, error)
 }
 
 type terraformCli struct {
-	cli             TerraformCli
-	runWithResultFn func(ctx context.Context, args executil.RunArgs) (executil.RunResult, error)
+	cli           TerraformCli
+	commandRunner exec.CommandRunner
 }
 
 type NewTerraformCliArgs struct {
-	cli             TerraformCli
-	RunWithResultFn func(ctx context.Context, args executil.RunArgs) (executil.RunResult, error)
+	cli           TerraformCli
+	commandRunner exec.CommandRunner
 }
 
 func NewTerraformCli(args NewTerraformCliArgs) TerraformCli {
-	if args.RunWithResultFn == nil {
-		args.RunWithResultFn = executil.RunWithResult
+	if args.commandRunner == nil {
+		args.commandRunner = exec.NewCommandRunner()
 	}
 
 	return &terraformCli{
-		cli:             args.cli,
-		runWithResultFn: args.RunWithResultFn,
+		cli:           args.cli,
+		commandRunner: args.commandRunner,
 	}
 }
 
@@ -79,13 +79,9 @@ func (cli *terraformCli) CheckInstalled(ctx context.Context) (bool, error) {
 	return true, nil
 }
 
-func (cli *terraformCli) RunCommand(ctx context.Context, args ...string) (executil.RunResult, error) {
-	runArgs := executil.RunArgs{
-		Cmd:  "terraform",
-		Args: args,
-	}
-
-	return cli.runWithResultFn(ctx, runArgs)
+func (cli *terraformCli) RunCommand(ctx context.Context, args ...string) (exec.RunResult, error) {
+	runArgs := exec.NewRunArgs("terraform", args...)
+	return cli.commandRunner.Run(ctx, runArgs)
 }
 
 func (cli *terraformCli) unmarshalCliVersion(ctx context.Context, component string) (string, error) {
@@ -128,10 +124,11 @@ const (
 func GetTerraformCli(ctx context.Context) TerraformCli {
 	cli, ok := ctx.Value(terraformContextKey).(TerraformCli)
 	if !ok {
-		execUtilFn := executil.GetCommandRunner(ctx)
+		newCommandRunner := exec.GetCommandRunner(ctx)
 		args := NewTerraformCliArgs{
-			RunWithResultFn: execUtilFn,
+			commandRunner: newCommandRunner,
 		}
+
 		cli = NewTerraformCli(args)
 	}
 

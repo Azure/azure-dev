@@ -15,6 +15,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	. "github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/terraform"
 	"github.com/drone/envsubst"
@@ -413,7 +414,7 @@ func (t *TerraformProvider) createParametersFile() error {
 
 	parametersFilePath := t.parametersFilePath()
 	writeDir := filepath.Dir(parametersFilePath)
-	if err := os.MkdirAll(writeDir, 0755); err != nil {
+	if err := os.MkdirAll(writeDir, osutil.PermissionDirectory); err != nil {
 		return fmt.Errorf("creating directory structure: %w", err)
 	}
 
@@ -449,7 +450,7 @@ func (t *TerraformProvider) createBackendConfigFile() error {
 
 	backendConfigFilePath := t.backendConfigFilePath()
 	writeDir := filepath.Dir(backendConfigFilePath)
-	if err := os.MkdirAll(writeDir, 0755); err != nil {
+	if err := os.MkdirAll(writeDir, osutil.PermissionDirectory); err != nil {
 		return fmt.Errorf("creating directory structure: %w", err)
 	}
 

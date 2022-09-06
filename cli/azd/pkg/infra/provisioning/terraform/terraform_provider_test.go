@@ -8,11 +8,12 @@ import (
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
-	"github.com/azure/azure-dev/cli/azd/pkg/executil"
+	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	. "github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
-	execmock "github.com/azure/azure-dev/cli/azd/test/mocks/executil"
+
+	execmock "github.com/azure/azure-dev/cli/azd/test/mocks/exec"
 	"github.com/stretchr/testify/require"
 )
 
@@ -207,88 +208,88 @@ func createTerraformProvider(ctx context.Context) *TerraformProvider {
 	return NewTerraformProvider(ctx, &env, projectDir, options)
 }
 
-func prepareGenericMocks(execUtil *execmock.MockCommandRunner) {
+func prepareGenericMocks(commandRunner *execmock.MockCommandRunner) {
 
-	execUtil.When(func(args executil.RunArgs, command string) bool {
+	commandRunner.When(func(args exec.RunArgs, command string) bool {
 		return strings.Contains(command, "terraform version")
-	}).Respond(executil.RunResult{
+	}).Respond(exec.RunResult{
 		Stdout: `{"terraform_version": "1.1.7"}`,
 		Stderr: "",
 	})
 }
 
-func preparePlanningMocks(execUtil *execmock.MockCommandRunner) {
+func preparePlanningMocks(commandRunner *execmock.MockCommandRunner) {
 	modulePath := "..\\..\\..\\..\\test\\samples\\resourcegroupterraform\\infra"
 
-	execUtil.When(func(args executil.RunArgs, command string) bool {
+	commandRunner.When(func(args exec.RunArgs, command string) bool {
 		return strings.Contains(command, fmt.Sprintf("terraform -chdir=%s init", modulePath))
-	}).Respond(executil.RunResult{
+	}).Respond(exec.RunResult{
 		Stdout: string("Terraform has been successfully initialized!"),
 		Stderr: "",
 	})
 
-	execUtil.When(func(args executil.RunArgs, command string) bool {
+	commandRunner.When(func(args exec.RunArgs, command string) bool {
 		return strings.Contains(command, fmt.Sprintf("terraform -chdir=%s validate", modulePath))
-	}).Respond(executil.RunResult{
+	}).Respond(exec.RunResult{
 		Stdout: string("Success! The configuration is valid."),
 		Stderr: "",
 	})
 
-	execUtil.When(func(args executil.RunArgs, command string) bool {
+	commandRunner.When(func(args exec.RunArgs, command string) bool {
 		return strings.Contains(command, fmt.Sprintf("terraform -chdir=%s plan", modulePath))
-	}).Respond(executil.RunResult{
+	}).Respond(exec.RunResult{
 		Stdout: string("To perform exactly these actions, run the following command to apply:terraform apply"),
 		Stderr: "",
 	})
 }
 
-func prepareDeployMocks(execUtil *execmock.MockCommandRunner) {
+func prepareDeployMocks(commandRunner *execmock.MockCommandRunner) {
 	modulePath := "..\\..\\..\\..\\test\\samples\\resourcegroupterraform\\infra"
 
-	execUtil.When(func(args executil.RunArgs, command string) bool {
+	commandRunner.When(func(args exec.RunArgs, command string) bool {
 		return strings.Contains(command, fmt.Sprintf("terraform -chdir=%s validate", modulePath))
-	}).Respond(executil.RunResult{
+	}).Respond(exec.RunResult{
 		Stdout: string("Success! The configuration is valid."),
 		Stderr: "",
 	})
 
-	execUtil.When(func(args executil.RunArgs, command string) bool {
+	commandRunner.When(func(args exec.RunArgs, command string) bool {
 		return strings.Contains(command, fmt.Sprintf("terraform -chdir=%s apply", modulePath))
-	}).Respond(executil.RunResult{
+	}).Respond(exec.RunResult{
 		Stdout: string(""),
 		Stderr: "",
 	})
 
 	output := fmt.Sprintf("{\"AZURE_LOCATION\": {\"sensitive\": false,\"type\": \"string\",\"value\": \"westus2\"},\"RG_NAME\":{\"sensitive\": false,\"type\": \"string\",\"value\": \"rg-test-env\"}}")
-	execUtil.When(func(args executil.RunArgs, command string) bool {
+	commandRunner.When(func(args exec.RunArgs, command string) bool {
 		return strings.Contains(command, fmt.Sprintf("terraform -chdir=%s output", modulePath))
-	}).Respond(executil.RunResult{
+	}).Respond(exec.RunResult{
 		Stdout: output,
 		Stderr: "",
 	})
 }
 
-func prepareDestroyMocks(execUtil *execmock.MockCommandRunner) {
+func prepareDestroyMocks(commandRunner *execmock.MockCommandRunner) {
 	modulePath := "..\\..\\..\\..\\test\\samples\\resourcegroupterraform\\infra"
 
-	execUtil.When(func(args executil.RunArgs, command string) bool {
+	commandRunner.When(func(args exec.RunArgs, command string) bool {
 		return strings.Contains(command, fmt.Sprintf("terraform -chdir=%s init", modulePath))
-	}).Respond(executil.RunResult{
+	}).Respond(exec.RunResult{
 		Stdout: string("Terraform has been successfully initialized!"),
 		Stderr: "",
 	})
 
 	output := fmt.Sprintf("{\"AZURE_LOCATION\": {\"sensitive\": false,\"type\": \"string\",\"value\": \"westus2\"},\"RG_NAME\":{\"sensitive\": false,\"type\": \"string\",\"value\": \"rg-test-env\"}}")
-	execUtil.When(func(args executil.RunArgs, command string) bool {
+	commandRunner.When(func(args exec.RunArgs, command string) bool {
 		return strings.Contains(command, fmt.Sprintf("terraform -chdir=%s output", modulePath))
-	}).Respond(executil.RunResult{
+	}).Respond(exec.RunResult{
 		Stdout: output,
 		Stderr: "",
 	})
 
-	execUtil.When(func(args executil.RunArgs, command string) bool {
+	commandRunner.When(func(args exec.RunArgs, command string) bool {
 		return strings.Contains(command, fmt.Sprintf("terraform -chdir=%s destroy", modulePath))
-	}).Respond(executil.RunResult{
+	}).Respond(exec.RunResult{
 		Stdout: string(""),
 		Stderr: "",
 	})

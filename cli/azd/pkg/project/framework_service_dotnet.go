@@ -82,10 +82,10 @@ func (dp *dotnetProject) Initialize(ctx context.Context) error {
 	return nil
 }
 
-func NewDotNetProject(config *ServiceConfig, env *environment.Environment) FrameworkService {
+func NewDotNetProject(ctx context.Context, config *ServiceConfig, env *environment.Environment) FrameworkService {
 	return &dotnetProject{
 		config:    config,
 		env:       env,
-		dotnetCli: dotnet.NewDotNetCli(),
+		dotnetCli: dotnet.NewDotNetCli(ctx),
 	}
 }

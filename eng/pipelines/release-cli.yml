@@ -12,12 +12,14 @@ trigger:
       - main
   paths:
     include:
+      - go.mod
       - cli/
       - eng/pipelines/release-cli.yml
 
 pr:
   paths:
     include:
+      - go.mod
       - cli/
       - eng/pipelines/release-cli.yml
 
@@ -501,6 +503,28 @@ stages:
                 -BodyFile $(CommentBodyFile)
             env:
               GH_TOKEN: $(azuresdk-github-pat)
+
+      - job: Verify_Mac_InstallOver
+        pool: 
+          name: Azure Pipelines
+          vmImage: macOS-12
+        
+        steps: 
+          - checkout: self
+
+          - bash: ./install-azd.sh --version daily --verbose
+            displayName: Install "daily" version
+            workingDirectory: cli/installer/
+
+          - pwsh: azd version
+            displayName: Run azd version
+
+          - bash: ./install-azd.sh --version latest --verbose
+            displayName: Install "latest" version
+            workingDirectory: cli/installer/
+
+          - pwsh: azd version
+            displayName: Run azd version (expect no failure)
 
       - job: Verify_Installers
         condition: >-

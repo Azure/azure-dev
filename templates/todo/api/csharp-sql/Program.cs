@@ -29,6 +29,17 @@ app.UseCors(policy =>
     policy.AllowAnyHeader();
     policy.AllowAnyMethod();
 });
+    
+// Swagger UI
+app.UseSwaggerUI(options => {
+    options.SwaggerEndpoint("./openapi.yaml", "v1");
+    options.RoutePrefix = "";
+});
+
+app.UseStaticFiles(new StaticFileOptions{
+    // Serve openapi.yaml file
+    ServeUnknownFileTypes = true,
+});
 
 app.MapControllers();
 app.Run();

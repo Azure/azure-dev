@@ -134,3 +134,7 @@ func (e *Environment) SetLocation(location string) {
 func (e *Environment) SetPrincipalId(principalID string) {
 	e.Values[PrincipalIdEnvVarName] = principalID
 }
+
+func (e *Environment) GetPrincipalId() string {
+	return e.Values[PrincipalIdEnvVarName]
+}

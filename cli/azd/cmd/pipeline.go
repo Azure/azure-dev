@@ -88,8 +88,8 @@ func (p *pipelineConfigAction) Run(ctx context.Context, cmd *cobra.Command, args
 		return fmt.Errorf("loading environment: %w", err)
 	}
 
-	gitCli := git.NewGitCli()
-	ghCli := githubTool.NewGitHubCli()
+	gitCli := git.NewGitCli(ctx)
+	ghCli := githubTool.NewGitHubCli(ctx)
 
 	if err := tools.EnsureInstalled(ctx, azCli, gitCli, ghCli); err != nil {
 		return err
@@ -327,13 +327,15 @@ func getRemoteUrlFromNewRepository(ctx context.Context, ghCli githubTool.GitHubC
 	currentFolderName := filepath.Base(currentPathName)
 
 	for {
-		repoName, err := console.Prompt(ctx, input.ConsoleOptions{
+		userValue, err := console.Prompt(ctx, input.ConsoleOptions{
 			Message:      "Enter the name for your new repository OR Hit enter to use this name:",
 			DefaultValue: currentFolderName,
 		})
 		if err != nil {
 			return "", fmt.Errorf("asking for new repository name: %w", err)
 		}
+
+		repoName = userValue
 
 		err = ghCli.CreatePrivateRepository(ctx, repoName)
 		if errors.Is(err, githubTool.ErrRepositoryNameInUse) {

@@ -4,7 +4,7 @@
 //go:build windows
 // +build windows
 
-package executil
+package exec
 
 import (
 	"fmt"

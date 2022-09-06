@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/executil"
+	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/stretchr/testify/require"
@@ -28,9 +28,9 @@ func TestScopeGetDeployment(t *testing.T) {
 
 	t.Run("SubscriptionScopeSuccess", func(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
-		mockContext.CommandRunner.When(func(args executil.RunArgs, command string) bool {
+		mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 			return strings.Contains(command, "az deployment sub show")
-		}).Respond(executil.NewRunResult(0, string(deploymentBytes), ""))
+		}).Respond(exec.NewRunResult(0, string(deploymentBytes), ""))
 
 		scope := NewSubscriptionScope(*mockContext.Context, "eastus2", "SUBSCRIPTION_ID", "DEPLOYMENT_NAME")
 
@@ -41,9 +41,9 @@ func TestScopeGetDeployment(t *testing.T) {
 
 	t.Run("ResourceGroupScopeSuccess", func(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
-		mockContext.CommandRunner.When(func(args executil.RunArgs, command string) bool {
+		mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 			return strings.Contains(command, "az deployment group show")
-		}).Respond(executil.NewRunResult(0, string(deploymentBytes), ""))
+		}).Respond(exec.NewRunResult(0, string(deploymentBytes), ""))
 
 		scope := NewResourceGroupScope(*mockContext.Context, "SUBSCRIPTION_ID", "RESOURCE_GROUP", "DEPLOYMENT_NAME")
 
@@ -59,9 +59,9 @@ func TestScopeDeploy(t *testing.T) {
 
 	t.Run("SubscriptionScopeSuccess", func(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
-		mockContext.CommandRunner.When(func(args executil.RunArgs, command string) bool {
+		mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 			return strings.Contains(command, "az deployment sub create")
-		}).Respond(executil.NewRunResult(0, string(deploymentBytes), ""))
+		}).Respond(exec.NewRunResult(0, string(deploymentBytes), ""))
 
 		scope := NewSubscriptionScope(*mockContext.Context, "eastus2", "SUBSCRIPTION_ID", "DEPLOYMENT_NAME")
 
@@ -71,9 +71,9 @@ func TestScopeDeploy(t *testing.T) {
 
 	t.Run("ResourceGroupScopeSuccess", func(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
-		mockContext.CommandRunner.When(func(args executil.RunArgs, command string) bool {
+		mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 			return strings.Contains(command, "az deployment group create")
-		}).Respond(executil.NewRunResult(0, string(deploymentBytes), ""))
+		}).Respond(exec.NewRunResult(0, string(deploymentBytes), ""))
 
 		scope := NewResourceGroupScope(*mockContext.Context, "SUBSCRIPTION_ID", "RESOURCE_GROUP", "DEPLOYMENT_NAME")
 
@@ -88,9 +88,9 @@ func TestScopeGetResourceOperations(t *testing.T) {
 
 	t.Run("SubscriptionScopeSuccess", func(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
-		mockContext.CommandRunner.When(func(args executil.RunArgs, command string) bool {
+		mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 			return strings.Contains(command, "az deployment operation sub list")
-		}).Respond(executil.NewRunResult(0, string(deploymentBytes), ""))
+		}).Respond(exec.NewRunResult(0, string(deploymentBytes), ""))
 
 		scope := NewSubscriptionScope(*mockContext.Context, "eastus2", "SUBSCRIPTION_ID", "DEPLOYMENT_NAME")
 
@@ -101,9 +101,9 @@ func TestScopeGetResourceOperations(t *testing.T) {
 
 	t.Run("ResourceGroupScopeSuccess", func(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
-		mockContext.CommandRunner.When(func(args executil.RunArgs, command string) bool {
+		mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 			return strings.Contains(command, "az deployment operation group list")
-		}).Respond(executil.NewRunResult(0, string(deploymentBytes), ""))
+		}).Respond(exec.NewRunResult(0, string(deploymentBytes), ""))
 
 		scope := NewResourceGroupScope(*mockContext.Context, "SUBSCRIPTION_ID", "RESOURCE_GROUP", "DEPLOYMENT_NAME")
 

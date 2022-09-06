@@ -7,7 +7,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/executil"
+	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/blang/semver/v4"
 )
@@ -19,10 +19,13 @@ type NpmCli interface {
 }
 
 type npmCli struct {
+	commandRunner exec.CommandRunner
 }
 
-func NewNpmCli() NpmCli {
-	return &npmCli{}
+func NewNpmCli(ctx context.Context) NpmCli {
+	return &npmCli{
+		commandRunner: exec.GetCommandRunner(ctx),
+	}
 }
 
 func (cli *npmCli) versionInfoNode() tools.VersionInfo {
@@ -67,7 +70,12 @@ func (cli *npmCli) Name() string {
 }
 
 func (cli *npmCli) Install(ctx context.Context, project string, onlyProduction bool) error {
-	res, err := executil.RunCommandWithShellAndEnvAndCwd(ctx, "npm", []string{"install", "--production", fmt.Sprintf("%t", onlyProduction)}, nil, project)
+	runArgs := exec.
+		NewRunArgs("npm", "install", "--production", fmt.Sprintf("%t", onlyProduction)).
+		WithCwd(project)
+
+	res, err := cli.commandRunner.Run(ctx, runArgs)
+
 	if err != nil {
 		return fmt.Errorf("failed to install project %s, %s: %w", project, res.String(), err)
 	}
@@ -75,7 +83,13 @@ func (cli *npmCli) Install(ctx context.Context, project string, onlyProduction b
 }
 
 func (cli *npmCli) Build(ctx context.Context, project string, env []string) error {
-	res, err := executil.RunCommandWithShellAndEnvAndCwd(ctx, "npm", []string{"run", "build", "--if-present", "--production", "true"}, env, project)
+	runArgs := exec.
+		NewRunArgs("npm", "run", "build", "--if-present", "--production", "true").
+		WithCwd(project).
+		WithEnv(env)
+
+	res, err := cli.commandRunner.Run(ctx, runArgs)
+
 	if err != nil {
 		return fmt.Errorf("failed to build project %s, %s: %w", project, res.String(), err)
 	}

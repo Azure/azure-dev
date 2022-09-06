@@ -16,7 +16,7 @@ import (
 
 	azdinternal "github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
-	"github.com/azure/azure-dev/cli/azd/pkg/executil"
+	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/internal"
@@ -340,20 +340,20 @@ func (tok *AzCliAccessToken) UnmarshalJSON(data []byte) error {
 type NewAzCliArgs struct {
 	EnableDebug     bool
 	EnableTelemetry bool
-	// RunWithResultFn allows us to stub out the command execution for testing
-	RunWithResultFn func(ctx context.Context, args executil.RunArgs) (executil.RunResult, error)
+	// CommandRunner allows us to stub out the command execution for testing
+	CommandRunner exec.CommandRunner
 }
 
 func NewAzCli(args NewAzCliArgs) AzCli {
-	if args.RunWithResultFn == nil {
-		args.RunWithResultFn = executil.RunWithResult
+	if args.CommandRunner == nil {
+		args.CommandRunner = exec.NewCommandRunner()
 	}
 
 	return &azCli{
 		userAgent:       azdinternal.MakeUserAgentString(""),
 		enableDebug:     args.EnableDebug,
 		enableTelemetry: args.EnableTelemetry,
-		runWithResultFn: args.RunWithResultFn,
+		commandRunner:   args.CommandRunner,
 	}
 }
 
@@ -362,8 +362,8 @@ type azCli struct {
 	enableDebug     bool
 	enableTelemetry bool
 
-	// runWithResultFn allows us to stub out the executil.RunWithResult, for testing.
-	runWithResultFn func(ctx context.Context, args executil.RunArgs) (executil.RunResult, error)
+	// commandRunner allows us to stub out the exec.CommandRunner, for testing.
+	commandRunner exec.CommandRunner
 }
 
 func (cli *azCli) Name() string {
@@ -484,7 +484,7 @@ func (cli *azCli) Login(ctx context.Context, useDeviceCode bool, deviceCodeWrite
 		writer = deviceCodeWriter
 	}
 
-	res, err := cli.runAzCommandWithArgs(ctx, executil.RunArgs{
+	res, err := cli.runAzCommandWithArgs(ctx, exec.RunArgs{
 		Args:   args,
 		Stderr: writer,
 	})
@@ -534,7 +534,7 @@ func (cli *azCli) DeployAppServiceZip(ctx context.Context, subscriptionId string
 
 func (cli *azCli) DeployFunctionAppUsingZipFile(ctx context.Context, subscriptionID string, resourceGroup string, funcName string, deployZipPath string) (string, error) {
 	// eg: az functionapp deployment source config-zip -g <resource_group> -n <app_name> --src <zip_file_path>
-	res, err := cli.runAzCommandWithArgs(context.Background(), executil.RunArgs{
+	res, err := cli.runAzCommandWithArgs(context.Background(), exec.RunArgs{
 		Args: []string{
 			"functionapp", "deployment", "source", "config-zip",
 			"--subscription", subscriptionID,
@@ -587,7 +587,7 @@ func (cli *azCli) GetContainerAppProperties(ctx context.Context, subscriptionId,
 }
 
 func (cli *azCli) GetFunctionAppProperties(ctx context.Context, subscriptionID string, resourceGroup string, funcName string) (AzCliFunctionAppProperties, error) {
-	res, err := cli.runAzCommandWithArgs(context.Background(), executil.RunArgs{
+	res, err := cli.runAzCommandWithArgs(context.Background(), exec.RunArgs{
 		Args: []string{
 			"functionapp", "show",
 			"--subscription", subscriptionID,
@@ -611,7 +611,7 @@ func (cli *azCli) GetFunctionAppProperties(ctx context.Context, subscriptionID s
 }
 
 func (cli *azCli) GetStaticWebAppProperties(ctx context.Context, subscriptionID string, resourceGroup string, appName string) (AzCliStaticWebAppProperties, error) {
-	res, err := cli.runAzCommandWithArgs(context.Background(), executil.RunArgs{
+	res, err := cli.runAzCommandWithArgs(context.Background(), exec.RunArgs{
 		Args: []string{
 			"staticwebapp", "show",
 			"--subscription", subscriptionID,
@@ -635,7 +635,7 @@ func (cli *azCli) GetStaticWebAppProperties(ctx context.Context, subscriptionID 
 }
 
 func (cli *azCli) GetStaticWebAppEnvironmentProperties(ctx context.Context, subscriptionID string, resourceGroup string, appName string, environmentName string) (AzCliStaticWebAppEnvironmentProperties, error) {
-	res, err := cli.runAzCommandWithArgs(context.Background(), executil.RunArgs{
+	res, err := cli.runAzCommandWithArgs(context.Background(), exec.RunArgs{
 		Args: []string{
 			"staticwebapp", "environment", "show",
 			"--subscription", subscriptionID,
@@ -660,7 +660,7 @@ func (cli *azCli) GetStaticWebAppEnvironmentProperties(ctx context.Context, subs
 }
 
 func (cli *azCli) GetStaticWebAppApiKey(ctx context.Context, subscriptionID string, resourceGroup string, appName string) (string, error) {
-	res, err := cli.runAzCommandWithArgs(context.Background(), executil.RunArgs{
+	res, err := cli.runAzCommandWithArgs(context.Background(), exec.RunArgs{
 		Args: []string{
 			"staticwebapp", "secrets", "list",
 			"--subscription", subscriptionID,
@@ -1086,15 +1086,15 @@ func (cli *azCli) GraphQuery(ctx context.Context, query string, subscriptions []
 	return &graphQueryResult, nil
 }
 
-func (cli *azCli) runAzCommand(ctx context.Context, args ...string) (executil.RunResult, error) {
-	return cli.runAzCommandWithArgs(ctx, executil.RunArgs{
+func (cli *azCli) runAzCommand(ctx context.Context, args ...string) (exec.RunResult, error) {
+	return cli.runAzCommandWithArgs(ctx, exec.RunArgs{
 		Args: args,
 	})
 }
 
 // runAzCommandWithArgs will run the 'args', ignoring 'Cmd' in favor of injecting the proper
 // 'az' alias.
-func (cli *azCli) runAzCommandWithArgs(ctx context.Context, args executil.RunArgs) (executil.RunResult, error) {
+func (cli *azCli) runAzCommandWithArgs(ctx context.Context, args exec.RunArgs) (exec.RunResult, error) {
 	if cli.enableDebug {
 		args.Args = append(args.Args, "--debug")
 	}
@@ -1108,7 +1108,7 @@ func (cli *azCli) runAzCommandWithArgs(ctx context.Context, args executil.RunArg
 
 	args.Debug = cli.enableDebug
 
-	return cli.runWithResultFn(ctx, args)
+	return cli.commandRunner.Run(ctx, args)
 }
 
 // Azure Active Directory codes can be referenced via https://login.microsoftonline.com/error?code=<ERROR_CODE>,
@@ -1189,11 +1189,11 @@ func GetAzCli(ctx context.Context) AzCli {
 	if !ok {
 		options := azdinternal.GetCommandOptions(ctx)
 
-		execFn := executil.GetCommandRunner(ctx)
+		commandRunner := exec.GetCommandRunner(ctx)
 		args := NewAzCliArgs{
 			EnableDebug:     options.EnableDebugLogging,
 			EnableTelemetry: options.EnableTelemetry,
-			RunWithResultFn: execFn,
+			CommandRunner:   commandRunner,
 		}
 		azCli = NewAzCli(args)
 	}

@@ -22,26 +22,37 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/github"
 )
 
+// GitHubScmProvider implements ScmProvider using GitHub as the provider
+// for source control manager.
 type GitHubScmProvider struct {
 	newGitHubRepoCreated bool
 }
 
 // ***  subareaProvider implementation ******
+
+// requiredTools return the list of external tools required by
+// GitHub provider during its execution.
 func (p *GitHubScmProvider) requiredTools() []tools.ExternalTool {
 	return []tools.ExternalTool{
 		github.NewGitHubCli(),
 	}
 }
 
+// preConfigureCheck check the current state of external tools and any
+// other dependency to be as expected for execution.
 func (p *GitHubScmProvider) preConfigureCheck(ctx context.Context, console input.Console) error {
 	return ensureGitHubLogin(ctx, github.GitHubHostName, console)
 }
 
+// name returns the name of the provider
 func (p *GitHubScmProvider) name() string {
 	return "GitHub"
 }
 
 // ***  scmProvider implementation ******
+
+// configureGitRemote uses GitHub cli to guide user on setting a remote url
+// for the local git project
 func (p *GitHubScmProvider) configureGitRemote(ctx context.Context, repoPath string, remoteName string, console input.Console) (string, error) {
 	// used to detect when the GitHub has created a new repo
 	p.newGitHubRepoCreated = false
@@ -91,10 +102,17 @@ func (p *GitHubScmProvider) configureGitRemote(ctx context.Context, repoPath str
 	return remoteUrl, nil
 }
 
+// defines the structure of an ssl git remote
 var gitHubRemoteGitUrlRegex = regexp.MustCompile(`^git@github\.com:(.*?)(?:\.git)?$`)
+
+// defines the structure of an HTTPS git remote
 var gitHubRemoteHttpsUrlRegex = regexp.MustCompile(`^https://(?:www\.)?github\.com/(.*?)(?:\.git)?$`)
+
+// ErrRemoteHostIsNotGitHub the error used when a non GitHub remote is found
 var ErrRemoteHostIsNotGitHub = errors.New("not a github host")
 
+// gitRepoDetails extracts the information from a GitHub remote url into general scm concepts
+// like owner, name and path
 func (p *GitHubScmProvider) gitRepoDetails(ctx context.Context, remoteUrl string) (*gitRepositoryDetails, error) {
 	slug := ""
 	for _, r := range []*regexp.Regexp{gitHubRemoteGitUrlRegex, gitHubRemoteHttpsUrlRegex} {
@@ -113,6 +131,8 @@ func (p *GitHubScmProvider) gitRepoDetails(ctx context.Context, remoteUrl string
 	}, nil
 }
 
+// preventGitPush validate if GitHub actions are disabled and won't work before pushing
+// changes to upstream.
 func (p *GitHubScmProvider) preventGitPush(
 	ctx context.Context,
 	gitRepo *gitRepositoryDetails,
@@ -128,13 +148,16 @@ func (p *GitHubScmProvider) preventGitPush(
 	return false, nil
 }
 
+// enum type for taking a choice after finding GitHub actions disabled.
 type gitHubActionsEnablingChoice int
 
+// defines the options upon detecting GitHub actions disabled.
 const (
 	manualChoice gitHubActionsEnablingChoice = iota
 	cancelChoice
 )
 
+// enables gitHubActionsEnablingChoice to produce a string value.
 func (selection gitHubActionsEnablingChoice) String() string {
 	switch selection {
 	case manualChoice:
@@ -145,6 +168,9 @@ func (selection gitHubActionsEnablingChoice) String() string {
 	panic("Tried to convert invalid input gitHubActionsEnablingChoice to string")
 }
 
+// notifyWhenGitHubActionsAreDisabled uses GitHub cli to check if actions are disabled
+// or if at least one workflow is not listed. Returns true after interacting with user
+// and if user decides to stop a current petition to push changes to upstream.
 func notifyWhenGitHubActionsAreDisabled(
 	ctx context.Context,
 	gitProjectPath,
@@ -237,24 +263,36 @@ func notifyWhenGitHubActionsAreDisabled(
 	return false, nil
 }
 
+// GitHubCiProvider implements a CiProvider using GitHub to manage CI pipelines as
+// GitHub actions.
 type GitHubCiProvider struct {
 }
 
 // ***  subareaProvider implementation ******
+
+// requiredTools defines the requires tools for GitHub to be used as CI manager
 func (p *GitHubCiProvider) requiredTools() []tools.ExternalTool {
 	return []tools.ExternalTool{
 		github.NewGitHubCli(),
 	}
 }
 
+// preConfigureCheck validates that current state of tools and GitHub is as expected to
+// execute.
 func (p *GitHubCiProvider) preConfigureCheck(ctx context.Context, console input.Console) error {
 	return ensureGitHubLogin(ctx, github.GitHubHostName, console)
 }
+
+// name returns the name of the provider.
 func (p *GitHubCiProvider) name() string {
 	return "GitHub"
 }
 
 // ***  ciProvider implementation ******
+
+// configureConnection set up GitHub account with Azure Credentials for
+// GitHub actions to use a service principal account to log in to Azure
+// and make changes on behalf of a user.
 func (p *GitHubCiProvider) configureConnection(
 	ctx context.Context,
 	azdEnvironment environment.Environment,
@@ -289,6 +327,8 @@ func (p *GitHubCiProvider) configureConnection(
 	return nil
 }
 
+// configurePipeline is a no-op for GitHub, as the pipeline is automatically
+// created by creating the workflow files in .github folder.
 func (p *GitHubCiProvider) configurePipeline(ctx context.Context) error {
 	return nil
 }
@@ -328,6 +368,8 @@ func ensureGitHubLogin(ctx context.Context, hostname string, console input.Conso
 	}
 }
 
+// getRemoteUrlFromExisting let user to select an existing repository from his/her account and
+// returns the remote url for that repository.
 func getRemoteUrlFromExisting(ctx context.Context, ghCli github.GitHubCli, console input.Console) (string, error) {
 	repos, err := ghCli.ListRepositories(ctx)
 	if err != nil {
@@ -351,6 +393,8 @@ func getRemoteUrlFromExisting(ctx context.Context, ghCli github.GitHubCli, conso
 	return selectRemoteUrl(ctx, ghCli, repos[repoIdx])
 }
 
+// selectRemoteUrl let user to type and enter the url from an existing GitHub repo.
+// If the url is valid, the remote url is returned. Otherwise an error is returned.
 func selectRemoteUrl(ctx context.Context, ghCli github.GitHubCli, repo github.GhCliRepository) (string, error) {
 	protocolType, err := ghCli.GetGitProtocolType(ctx)
 	if err != nil {
@@ -367,6 +411,7 @@ func selectRemoteUrl(ctx context.Context, ghCli github.GitHubCli, repo github.Gh
 	}
 }
 
+// getRemoteUrlFromNewRepository creates a new repository on GitHub and returns its remote url
 func getRemoteUrlFromNewRepository(ctx context.Context, ghCli github.GitHubCli, currentPathName string, console input.Console) (string, error) {
 	var repoName string
 	currentFolderName := filepath.Base(currentPathName)

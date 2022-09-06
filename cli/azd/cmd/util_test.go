@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/executil"
+	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
@@ -85,12 +85,12 @@ func Test_promptEnvironmentName(t *testing.T) {
 		}
 
 		mockContext := mocks.NewMockContext(context.Background())
-		mockContext.CommandRunner.When(func(args executil.RunArgs, command string) bool {
+		mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 			return strings.Contains(command, "az deployment sub show")
-		}).RespondFn(func(args executil.RunArgs) (executil.RunResult, error) {
+		}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
 			jsonBytes, _ := json.Marshal(mockDeployment)
 
-			return executil.NewRunResult(0, string(jsonBytes), ""), nil
+			return exec.NewRunResult(0, string(jsonBytes), ""), nil
 		})
 
 		resourceManager := infra.NewAzureResourceManager(*mockContext.Context)

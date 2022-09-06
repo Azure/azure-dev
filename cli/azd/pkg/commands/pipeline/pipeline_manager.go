@@ -41,10 +41,11 @@ func (i *PipelineManager) requiredTools() []tools.ExternalTool {
 
 // preConfigureCheck invoke the validations from each provider.
 func (i *PipelineManager) preConfigureCheck(ctx context.Context) error {
-	if err := i.ScmProvider.preConfigureCheck(ctx, i.Console); err != nil {
+	console := input.GetConsole(ctx)
+	if err := i.ScmProvider.preConfigureCheck(ctx, console); err != nil {
 		return fmt.Errorf("pre-config check error from %s provider: %w", i.ScmProvider.name(), err)
 	}
-	if err := i.CiProvider.preConfigureCheck(ctx, i.Console); err != nil {
+	if err := i.CiProvider.preConfigureCheck(ctx, console); err != nil {
 		return fmt.Errorf("pre-config check error from %s provider: %w", i.CiProvider.name(), err)
 	}
 
@@ -71,13 +72,14 @@ func (i *PipelineManager) ensureRemote(ctx context.Context, repositoryPath strin
 // getGitRepoDetails get the details about a git project using the azd context to discover the project path.
 func (i *PipelineManager) getGitRepoDetails(ctx context.Context) (*gitRepositoryDetails, error) {
 	gitCli := git.NewGitCli()
+	console := input.GetConsole(ctx)
 	repoPath := i.AzdCtx.ProjectDirectory()
 	for {
 		repoRemoteDetails, err := i.ensureRemote(ctx, repoPath, i.PipelineRemoteName)
 		switch {
 		case errors.Is(err, git.ErrNotRepository):
 			// Offer the user a chance to init a new repository if one does not exist.
-			initRepo, err := i.Console.Confirm(ctx, input.ConsoleOptions{
+			initRepo, err := console.Confirm(ctx, input.ConsoleOptions{
 				Message:      "Initialize a new git repository?",
 				DefaultValue: true,
 			})
@@ -97,7 +99,7 @@ func (i *PipelineManager) getGitRepoDetails(ctx context.Context) (*gitRepository
 			continue
 		case errors.Is(err, git.ErrNoSuchRemote):
 			// Offer the user a chance to create the remote if one does not exist.
-			addRemote, err := i.Console.Confirm(ctx, input.ConsoleOptions{
+			addRemote, err := console.Confirm(ctx, input.ConsoleOptions{
 				Message:      fmt.Sprintf("A remote named \"%s\" was not found. Would you like to configure one?", i.PipelineRemoteName),
 				DefaultValue: true,
 			})
@@ -110,7 +112,7 @@ func (i *PipelineManager) getGitRepoDetails(ctx context.Context) (*gitRepository
 			}
 
 			// the scm provider returns the repo url that is used as git remote
-			remoteUrl, err := i.ScmProvider.configureGitRemote(ctx, repoPath, i.PipelineRemoteName, i.Console)
+			remoteUrl, err := i.ScmProvider.configureGitRemote(ctx, repoPath, i.PipelineRemoteName, console)
 			if err != nil {
 				return nil, err
 			}

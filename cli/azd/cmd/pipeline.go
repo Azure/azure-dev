@@ -6,11 +6,13 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"log"
 
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/commands"
 	"github.com/azure/azure-dev/cli/azd/pkg/commands/pipeline"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
+	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
@@ -82,7 +84,12 @@ func (p *pipelineConfigAction) Run(
 	}
 
 	// Read or init env
-	env, err := loadOrInitEnvironment(ctx, &p.manager.RootOptions.EnvironmentName, azdCtx, p.manager.Console)
+	console := input.GetConsole(ctx)
+	if console == nil {
+		log.Panic("missing input console in the provided context")
+	}
+
+	env, err := loadOrInitEnvironment(ctx, &p.manager.RootOptions.EnvironmentName, azdCtx, console)
 	if err != nil {
 		return fmt.Errorf("loading environment: %w", err)
 	}

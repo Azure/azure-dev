@@ -27,6 +27,30 @@
                 }
             }
         },
+        "infra": {
+            "type": "object",
+            "properties": {
+                "provider":{
+                    "type": "string",
+                    "title": "Type of infrastructure provisioning provider",
+                    "description": "Optional. When specified will set the infrastructure provisioning provider used to provision the Azure resources for the application. (Default: bicep)",
+                    "enum": [
+                        "bicep",
+                        "terraform"
+                    ]
+                },
+                "path": {
+                    "type": "string",
+                    "title": "Path to the location that contains Azure provisioning templates",
+                    "description": "Optional. When specified will override the path to the Azure provisioning templates for the specified provider. (Default: infra)"
+                },
+                "module": {
+                    "type": "string",
+                    "title": "Name of the default module within the Azure provisioning templates",
+                    "description": "Optional. When specified will override the name of the Azure provisioning module used when provisioning resources. (Default: main)"
+                }
+            }
+        },
         "services": {
             "type": "object",
             "title": "Definition of services that comprise the application",
@@ -69,11 +93,6 @@
                             "js",
                             "ts"
                         ]
-                    },
-                    "module": {
-                        "type": "string",
-                        "title": "Path of the infrastructure module used to deploy the service relative to the root infra folder",
-                        "description": "If omitted, the CLI will assume the module name is the same as the service name."
                     },
                     "dist": {
                         "type": "string",

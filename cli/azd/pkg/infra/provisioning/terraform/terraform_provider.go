@@ -71,7 +71,11 @@ func (t *TerraformProvider) Plan(ctx context.Context) *async.InteractiveTaskWith
 			asyncContext.SetProgress(&DeploymentPlanningProgress{Message: "Initialize terraform", Timestamp: time.Now()})
 
 			os.Setenv("TF_DATA_DIR", t.dataDirPath())
-			err := t.init(ctx, "-upgrade")
+
+			//check if local vs remote state file :
+			isRemoteBackendConfig := t.isRemoteBackendConfig()
+
+			err := t.init(ctx, isRemoteBackendConfig, "-upgrade")
 			if err != nil {
 				asyncContext.SetError(fmt.Errorf("terraform init failed: %w", err))
 				return
@@ -105,9 +109,7 @@ func (t *TerraformProvider) Plan(ctx context.Context) *async.InteractiveTaskWith
 				fmt.Sprintf("-out=%s", planFilePath),
 				"-input=false", "-lock=false"}
 
-			//check if local vs remote state file :
-			isRemoteModule := t.isRemoteBackendConfig()
-			if !isRemoteModule {
+			if !isRemoteBackendConfig {
 				cmd = append(cmd, fmt.Sprintf("-state=%s", t.localStateFilePath()))
 			}
 
@@ -131,7 +133,7 @@ func (t *TerraformProvider) Plan(ctx context.Context) *async.InteractiveTaskWith
 				ParameterFilePath: parametersFilePath,
 				PlanFilePath:      planFilePath,
 			}
-			if !isRemoteModule {
+			if !isRemoteBackendConfig {
 				deploymentDetails.localStateFilePath = t.localStateFilePath()
 			}
 
@@ -151,6 +153,7 @@ func (t *TerraformProvider) Deploy(ctx context.Context, deployment *DeploymentPl
 
 			modulePath := t.modulePath()
 			terraformDeploymentData := deployment.Details.(TerraformDeploymentDetails)
+			isRemoteBackendConfig := t.isRemoteBackendConfig()
 
 			parametersFilePath := terraformDeploymentData.ParameterFilePath
 			planFilePath := terraformDeploymentData.PlanFilePath
@@ -171,7 +174,7 @@ func (t *TerraformProvider) Deploy(ctx context.Context, deployment *DeploymentPl
 			//run the deploy cmd
 			asyncContext.SetProgress(&DeployProgress{Message: "Deploy terraform template", Timestamp: time.Now()})
 			cmd := []string{fmt.Sprintf("-chdir=%s", modulePath), "apply", "-lock=false", "-input=false", "-auto-approve"}
-			if !t.isRemoteBackendConfig() {
+			if !isRemoteBackendConfig {
 				cmd = append(cmd, fmt.Sprintf("-state=%s", terraformDeploymentData.localStateFilePath))
 			}
 
@@ -188,7 +191,7 @@ func (t *TerraformProvider) Deploy(ctx context.Context, deployment *DeploymentPl
 			asyncContext.SetProgress(&DeployProgress{Message: fmt.Sprintf("terraform apply result: %s", runResult.Stdout), Timestamp: time.Now()})
 
 			//set the deployment result
-			outputs, err := t.createOutputParameters(ctx, modulePath)
+			outputs, err := t.createOutputParameters(ctx, modulePath, isRemoteBackendConfig)
 			if err != nil {
 				asyncContext.SetError(fmt.Errorf("create terraform template failed: %w", err))
 				return
@@ -209,7 +212,9 @@ func (t *TerraformProvider) Destroy(ctx context.Context, deployment *Deployment,
 		func(asyncContext *async.InteractiveTaskContextWithProgress[*DestroyResult, *DestroyProgress]) {
 			// discuss : check if you want to set auto-destroy . CAN WE PASS VALUES BACK AND FORTH BETWEEN THE AZD CONTEXT AND PROCESS
 			os.Setenv("TF_DATA_DIR", t.dataDirPath())
-			err := t.init(ctx, "-upgrade")
+
+			isRemoteBackendConfig := t.isRemoteBackendConfig()
+			err := t.init(ctx, isRemoteBackendConfig, "-upgrade")
 			if err != nil {
 				asyncContext.SetError(fmt.Errorf("terraform init failed: %w", err))
 				return
@@ -231,7 +236,7 @@ func (t *TerraformProvider) Destroy(ctx context.Context, deployment *Deployment,
 			cmdArgs.WriteString(fmt.Sprintf("-var-file=%s", t.parametersFilePath()))
 
 			//load the deployment result
-			outputs, err := t.createOutputParameters(ctx, modulePath)
+			outputs, err := t.createOutputParameters(ctx, modulePath, isRemoteBackendConfig)
 			if err != nil {
 				asyncContext.SetError(fmt.Errorf("load terraform template output failed: %w", err))
 				return
@@ -240,7 +245,7 @@ func (t *TerraformProvider) Destroy(ctx context.Context, deployment *Deployment,
 			asyncContext.SetProgress(&DestroyProgress{Message: "Destroy terraform deployment", Timestamp: time.Now()})
 			cmd := []string{fmt.Sprintf("-chdir=%s", modulePath), "destroy", "-input=false", "-auto-approve", cmdArgs.String()}
 
-			if !t.isRemoteBackendConfig() {
+			if !isRemoteBackendConfig {
 				asyncContext.SetProgress(&DestroyProgress{Message: "Locating state file...", Timestamp: time.Now()})
 				cmd = append(cmd, fmt.Sprintf("-state=%s", t.localStateFilePath()))
 			}
@@ -264,8 +269,9 @@ func (t *TerraformProvider) GetDeployment(ctx context.Context, scope infra.Scope
 		func(asyncContext *async.InteractiveTaskContextWithProgress[*DeployResult, *DeployProgress]) {
 			asyncContext.SetProgress(&DeployProgress{Message: "Loading terraform module", Timestamp: time.Now()})
 
+			isRemoteBackendConfig := t.isRemoteBackendConfig()
 			os.Setenv("TF_DATA_DIR", t.dataDirPath())
-			err := t.init(ctx, "-upgrade")
+			err := t.init(ctx, isRemoteBackendConfig, "-upgrade")
 			if err != nil {
 				asyncContext.SetError(fmt.Errorf("terraform init failed: %w", err))
 				return
@@ -279,7 +285,7 @@ func (t *TerraformProvider) GetDeployment(ctx context.Context, scope infra.Scope
 			}
 
 			asyncContext.SetProgress(&DeployProgress{Message: "Retrieving deployment output", Timestamp: time.Now()})
-			outputs, err := t.createOutputParameters(ctx, modulePath)
+			outputs, err := t.createOutputParameters(ctx, modulePath, isRemoteBackendConfig)
 			if err != nil {
 				asyncContext.SetError(fmt.Errorf("create terraform output failed: %w", err))
 				return
@@ -294,13 +300,13 @@ func (t *TerraformProvider) GetDeployment(ctx context.Context, scope infra.Scope
 }
 
 //initialize template terraform provider through terraform init
-func (t *TerraformProvider) init(ctx context.Context, initArgs ...string) error {
+func (t *TerraformProvider) init(ctx context.Context, isRemoteBackendConfig bool, initArgs ...string) error {
 
 	modulePath := t.modulePath()
 	cmd := []string{fmt.Sprintf("-chdir=%s", modulePath), "init", "-input=false"}
 
 	t.console.Message(ctx, "initialize terraform...")
-	if t.isRemoteBackendConfig() {
+	if isRemoteBackendConfig {
 		t.console.Message(ctx, "Generating terraform backend config file")
 
 		err := t.createBackendConfigFile()
@@ -321,13 +327,13 @@ func (t *TerraformProvider) init(ctx context.Context, initArgs ...string) error 
 }
 
 // Creates a normalized view of the terraform output.
-func (t *TerraformProvider) createOutputParameters(ctx context.Context, modulePath string) (map[string]OutputParameter, error) {
+func (t *TerraformProvider) createOutputParameters(ctx context.Context, modulePath string, isRemoteBackend bool) (map[string]OutputParameter, error) {
 
 	cmd := []string{
 		fmt.Sprintf("-chdir=%s", modulePath),
 		"output", "-json"}
 
-	if !t.isRemoteBackendConfig() {
+	if !isRemoteBackend {
 		cmd = append(cmd, fmt.Sprintf("-state=%s", t.localStateFilePath()))
 	}
 

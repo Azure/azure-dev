@@ -45,7 +45,7 @@ func (t *TerraformProvider) RequiredExternalTools() []tools.ExternalTool {
 }
 
 // NewTerraformProvider creates a new instance of a Terraform Infra provider
-func NewTerraformProvider(ctx context.Context, env *environment.Environment, projectPath string, infraOptions Options) Provider {
+func NewTerraformProvider(ctx context.Context, env *environment.Environment, projectPath string, infraOptions Options) *TerraformProvider {
 	terraformCli := terraform.GetTerraformCli(ctx)
 	console := input.GetConsole(ctx)
 
@@ -119,7 +119,7 @@ func (t *TerraformProvider) Plan(ctx context.Context) *async.InteractiveTaskWith
 			asyncContext.SetProgress(&DeploymentPlanningProgress{Message: fmt.Sprintf("terraform plan result : %s", runResult.Stdout), Timestamp: time.Now()})
 
 			//create deployment plan
-			asyncContext.SetProgress(&DeploymentPlanningProgress{Message: "create terraform template", Timestamp: time.Now()})
+			asyncContext.SetProgress(&DeploymentPlanningProgress{Message: "Create terraform template", Timestamp: time.Now()})
 			deployment, err := t.createDeployment(ctx, modulePath)
 			if err != nil {
 				asyncContext.SetError(fmt.Errorf("create terraform template failed: %w", err))
@@ -304,7 +304,7 @@ func (t *TerraformProvider) init(ctx context.Context, initArgs ...string) error 
 
 		err := t.createBackendConfigFile()
 		if err != nil {
-			t.console.Message(ctx, fmt.Sprintf("creating terraform backend config file: %w", err))
+			t.console.Message(ctx, fmt.Sprintf("creating terraform backend config file: %s", err))
 			return err
 		}
 		cmd = append(cmd, fmt.Sprintf("--backend-config=%s", t.backendConfigFilePath()))
@@ -358,7 +358,7 @@ func (t *TerraformProvider) createDeployment(ctx context.Context, modulePath str
 	parameters := make(map[string]any)
 	parametersFilePath := t.parametersFilePath()
 
-	// check if the file does not exist to create it --> for env refresh scenario
+	// check if the file does not exist to create it --> for shared env scenario
 	log.Printf("Reading parameters template file from: %s", parametersFilePath)
 	if _, err := os.Stat(parametersFilePath); err != nil {
 		err = t.createParametersFile()

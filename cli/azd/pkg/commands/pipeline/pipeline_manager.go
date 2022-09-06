@@ -33,12 +33,14 @@ type PipelineManager struct {
 	Environment                  environment.Environment
 }
 
+// requiredTools get all the provider's required tools.
 func (i *PipelineManager) requiredTools() []tools.ExternalTool {
 	reqTools := i.ScmProvider.requiredTools()
 	reqTools = append(reqTools, i.CiProvider.requiredTools()...)
 	return reqTools
 }
 
+// preConfigureCheck invoke the validations from each provider.
 func (i *PipelineManager) preConfigureCheck(ctx context.Context) error {
 	if err := i.ScmProvider.preConfigureCheck(ctx, i.Console); err != nil {
 		return fmt.Errorf("pre-config check error from %s provider: %w", i.ScmProvider.name(), err)
@@ -50,6 +52,7 @@ func (i *PipelineManager) preConfigureCheck(ctx context.Context) error {
 	return nil
 }
 
+// ensureRemote get the git project details from a path and remote name using the scm provider.
 func (i *PipelineManager) ensureRemote(ctx context.Context, repositoryPath string, remoteName string) (*gitRepositoryDetails, error) {
 	gitCli := git.NewGitCli()
 	remoteUrl, err := gitCli.GetRemoteUrl(ctx, repositoryPath, remoteName)
@@ -66,6 +69,7 @@ func (i *PipelineManager) ensureRemote(ctx context.Context, repositoryPath strin
 	return gitRepoDetails, nil
 }
 
+// getGitRepoDetails get the details about a git project using the azd context to discover the project path.
 func (i *PipelineManager) getGitRepoDetails(ctx context.Context) (*gitRepositoryDetails, error) {
 	gitCli := git.NewGitCli()
 	repoPath := i.AzdCtx.ProjectDirectory()
@@ -140,6 +144,7 @@ func validateDependencyInjection(manager *PipelineManager) {
 	}
 }
 
+// pushGitRepo commit all changes in the git project and push it to upstream.
 func (i *PipelineManager) pushGitRepo(ctx context.Context, currentBranch string) error {
 	gitCli := git.NewGitCli()
 
@@ -160,6 +165,8 @@ func (i *PipelineManager) pushGitRepo(ctx context.Context, currentBranch string)
 	return nil
 }
 
+// Configure is the main function from the pipeline manager which takes care
+// of creating or setting up the git project, the ci pipeline and the Azure connection.
 func (manager *PipelineManager) Configure(ctx context.Context) error {
 
 	// check that scm and ci providers are set

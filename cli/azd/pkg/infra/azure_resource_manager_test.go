@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/executil"
+	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/stretchr/testify/require"
@@ -112,22 +112,22 @@ func TestGetDeploymentResourceOperationsSuccess(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
 	scope := NewSubscriptionScope(*mockContext.Context, "eastus2", "SUBSCRIPTION_ID", "DEPLOYMENT_NAME")
 
-	mockContext.CommandRunner.When(func(args executil.RunArgs, command string) bool {
+	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 		return strings.Contains(command, "az deployment operation sub list")
-	}).RespondFn(func(args executil.RunArgs) (executil.RunResult, error) {
+	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
 		subCalls++
 
 		subJsonBytes, _ := json.Marshal(mockSubDeploymentOperations)
-		return executil.NewRunResult(0, string(subJsonBytes), ""), nil
+		return exec.NewRunResult(0, string(subJsonBytes), ""), nil
 	})
 
-	mockContext.CommandRunner.When(func(args executil.RunArgs, command string) bool {
+	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 		return strings.Contains(command, "az deployment operation group list")
-	}).RespondFn(func(args executil.RunArgs) (executil.RunResult, error) {
+	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
 		groupCalls++
 
 		groupJsonBytes, _ := json.Marshal(mockGroupDeploymentOperations)
-		return executil.NewRunResult(0, string(groupJsonBytes), ""), nil
+		return exec.NewRunResult(0, string(groupJsonBytes), ""), nil
 	})
 
 	arm := NewAzureResourceManager(*mockContext.Context)
@@ -147,20 +147,20 @@ func TestGetDeploymentResourceOperationsFail(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
 	scope := NewSubscriptionScope(*mockContext.Context, "eastus2", "SUBSCRIPTION_ID", "DEPLOYMENT_NAME")
 
-	mockContext.CommandRunner.When(func(args executil.RunArgs, command string) bool {
+	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 		return strings.Contains(command, "az deployment operation sub list")
-	}).RespondFn(func(args executil.RunArgs) (executil.RunResult, error) {
+	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
 		subCalls++
 
-		return executil.NewRunResult(1, "", "error getting resource operations"), nil
+		return exec.NewRunResult(1, "", "error getting resource operations"), nil
 	})
 
-	mockContext.CommandRunner.When(func(args executil.RunArgs, command string) bool {
+	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 		return strings.Contains(command, "az deployment operation group list")
-	}).RespondFn(func(args executil.RunArgs) (executil.RunResult, error) {
+	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
 		groupCalls++
 
-		return executil.NewRunResult(0, "[]", ""), nil
+		return exec.NewRunResult(0, "[]", ""), nil
 	})
 
 	arm := NewAzureResourceManager(*mockContext.Context)
@@ -180,20 +180,20 @@ func TestGetDeploymentResourceOperationsNoResourceGroup(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
 	scope := NewSubscriptionScope(*mockContext.Context, "eastus2", "SUBSCRIPTION_ID", "DEPLOYMENT_NAME")
 
-	mockContext.CommandRunner.When(func(args executil.RunArgs, command string) bool {
+	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 		return strings.Contains(command, "az deployment operation sub list")
-	}).RespondFn(func(args executil.RunArgs) (executil.RunResult, error) {
+	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
 		subCalls++
 
-		return executil.NewRunResult(0, "[]", ""), nil
+		return exec.NewRunResult(0, "[]", ""), nil
 	})
 
-	mockContext.CommandRunner.When(func(args executil.RunArgs, command string) bool {
+	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 		return strings.Contains(command, "az deployment operation group list")
-	}).RespondFn(func(args executil.RunArgs) (executil.RunResult, error) {
+	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
 		groupCalls++
 
-		return executil.NewRunResult(0, "[]", ""), nil
+		return exec.NewRunResult(0, "[]", ""), nil
 	})
 
 	arm := NewAzureResourceManager(*mockContext.Context)
@@ -213,26 +213,26 @@ func TestGetDeploymentResourceOperationsWithNestedDeployments(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
 	scope := NewSubscriptionScope(*mockContext.Context, "eastus2", "SUBSCRIPTION_ID", "DEPLOYMENT_NAME")
 
-	mockContext.CommandRunner.When(func(args executil.RunArgs, command string) bool {
+	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 		return strings.Contains(command, "az deployment operation sub list")
-	}).RespondFn(func(args executil.RunArgs) (executil.RunResult, error) {
+	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
 		subCalls++
 
 		subJsonBytes, _ := json.Marshal(mockSubDeploymentOperations)
-		return executil.NewRunResult(0, string(subJsonBytes), ""), nil
+		return exec.NewRunResult(0, string(subJsonBytes), ""), nil
 	})
 
-	mockContext.CommandRunner.When(func(args executil.RunArgs, command string) bool {
+	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 		return strings.Contains(command, "az deployment operation group list")
-	}).RespondFn(func(args executil.RunArgs) (executil.RunResult, error) {
+	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
 		groupCalls++
 
 		if groupCalls == 1 {
 			nestedGroupJsonBytes, _ := json.Marshal(mockNestedGroupDeploymentOperations)
-			return executil.NewRunResult(0, string(nestedGroupJsonBytes), ""), nil
+			return exec.NewRunResult(0, string(nestedGroupJsonBytes), ""), nil
 		} else {
 			groupJsonBytes, _ := json.Marshal(mockGroupDeploymentOperations)
-			return executil.NewRunResult(0, string(groupJsonBytes), ""), nil
+			return exec.NewRunResult(0, string(groupJsonBytes), ""), nil
 		}
 	})
 

@@ -4,14 +4,15 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/executil"
+	"github.com/azure/azure-dev/cli/azd/pkg/exec"
+	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/stretchr/testify/require"
 )
 
 func Test_DockerBuild(t *testing.T) {
-	docker := NewDocker(DockerArgs{})
 
 	cwd := "."
 	dockerFile := "./Dockerfile"
@@ -21,7 +22,11 @@ func Test_DockerBuild(t *testing.T) {
 	t.Run("NoError", func(t *testing.T) {
 		ran := false
 
-		docker.runWithResultFn = func(ctx context.Context, args executil.RunArgs) (executil.RunResult, error) {
+		mockContext := mocks.NewMockContext(context.Background())
+		docker := NewDocker(*mockContext.Context)
+		mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
+			return strings.Contains(command, "docker build")
+		}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
 			ran = true
 
 			require.Equal(t, "docker", args.Cmd)
@@ -34,12 +39,12 @@ func Test_DockerBuild(t *testing.T) {
 				dockerContext,
 			}, args.Args)
 
-			return executil.RunResult{
+			return exec.RunResult{
 				Stdout:   "Docker build output",
 				Stderr:   "",
 				ExitCode: 0,
 			}, nil
-		}
+		})
 
 		result, err := docker.Build(context.Background(), cwd, dockerFile, platform, dockerContext)
 
@@ -53,7 +58,11 @@ func Test_DockerBuild(t *testing.T) {
 		stdErr := "Error tagging DockerFile"
 		customErrorMessage := "example error message"
 
-		docker.runWithResultFn = func(ctx context.Context, args executil.RunArgs) (executil.RunResult, error) {
+		mockContext := mocks.NewMockContext(context.Background())
+		docker := NewDocker(*mockContext.Context)
+		mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
+			return strings.Contains(command, "docker build")
+		}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
 			ran = true
 
 			require.Equal(t, "docker", args.Cmd)
@@ -66,12 +75,12 @@ func Test_DockerBuild(t *testing.T) {
 				dockerContext,
 			}, args.Args)
 
-			return executil.RunResult{
+			return exec.RunResult{
 				Stdout:   "",
 				Stderr:   stdErr,
 				ExitCode: 1,
 			}, errors.New(customErrorMessage)
-		}
+		})
 
 		result, err := docker.Build(context.Background(), cwd, dockerFile, platform, dockerContext)
 
@@ -83,15 +92,18 @@ func Test_DockerBuild(t *testing.T) {
 }
 
 func Test_DockerBuildEmptyPlatform(t *testing.T) {
-	docker := NewDocker(DockerArgs{})
-
 	ran := false
 	cwd := "."
 	dockerFile := "./Dockerfile"
 	dockerContext := "../"
 	platform := "amd64"
 
-	docker.runWithResultFn = func(ctx context.Context, args executil.RunArgs) (executil.RunResult, error) {
+	mockContext := mocks.NewMockContext(context.Background())
+	docker := NewDocker(*mockContext.Context)
+
+	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
+		return strings.Contains(command, "docker build")
+	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
 		ran = true
 
 		require.Equal(t, "docker", args.Cmd)
@@ -104,12 +116,12 @@ func Test_DockerBuildEmptyPlatform(t *testing.T) {
 			dockerContext,
 		}, args.Args)
 
-		return executil.RunResult{
+		return exec.RunResult{
 			Stdout:   "Docker build output",
 			Stderr:   "",
 			ExitCode: 0,
 		}, nil
-	}
+	})
 
 	result, err := docker.Build(context.Background(), cwd, dockerFile, "", dockerContext)
 
@@ -119,8 +131,6 @@ func Test_DockerBuildEmptyPlatform(t *testing.T) {
 }
 
 func Test_DockerTag(t *testing.T) {
-	docker := NewDocker(DockerArgs{})
-
 	cwd := "."
 	imageName := "image-name"
 	tag := "customTag"
@@ -128,7 +138,12 @@ func Test_DockerTag(t *testing.T) {
 	t.Run("NoError", func(t *testing.T) {
 		ran := false
 
-		docker.runWithResultFn = func(ctx context.Context, args executil.RunArgs) (executil.RunResult, error) {
+		mockContext := mocks.NewMockContext(context.Background())
+		docker := NewDocker(*mockContext.Context)
+
+		mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
+			return strings.Contains(command, "docker tag")
+		}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
 			ran = true
 
 			require.Equal(t, "docker", args.Cmd)
@@ -139,12 +154,12 @@ func Test_DockerTag(t *testing.T) {
 				tag,
 			}, args.Args)
 
-			return executil.RunResult{
+			return exec.RunResult{
 				Stdout:   "Docker build output",
 				Stderr:   "",
 				ExitCode: 0,
 			}, nil
-		}
+		})
 
 		err := docker.Tag(context.Background(), cwd, imageName, tag)
 
@@ -157,7 +172,12 @@ func Test_DockerTag(t *testing.T) {
 		stdErr := "Error tagging DockerFile"
 		customErrorMessage := "example error message"
 
-		docker.runWithResultFn = func(ctx context.Context, args executil.RunArgs) (executil.RunResult, error) {
+		mockContext := mocks.NewMockContext(context.Background())
+		docker := NewDocker(*mockContext.Context)
+
+		mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
+			return strings.Contains(command, "docker tag")
+		}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
 			ran = true
 
 			require.Equal(t, "docker", args.Cmd)
@@ -168,12 +188,12 @@ func Test_DockerTag(t *testing.T) {
 				tag,
 			}, args.Args)
 
-			return executil.RunResult{
+			return exec.RunResult{
 				Stdout:   "",
 				Stderr:   stdErr,
 				ExitCode: 1,
 			}, errors.New(customErrorMessage)
-		}
+		})
 
 		err := docker.Tag(context.Background(), cwd, imageName, tag)
 
@@ -184,15 +204,18 @@ func Test_DockerTag(t *testing.T) {
 }
 
 func Test_DockerPush(t *testing.T) {
-	docker := NewDocker(DockerArgs{})
-
 	cwd := "."
 	tag := "customTag"
 
 	t.Run("NoError", func(t *testing.T) {
 		ran := false
 
-		docker.runWithResultFn = func(ctx context.Context, args executil.RunArgs) (executil.RunResult, error) {
+		mockContext := mocks.NewMockContext(context.Background())
+		docker := NewDocker(*mockContext.Context)
+
+		mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
+			return strings.Contains(command, "docker push")
+		}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
 			ran = true
 
 			require.Equal(t, "docker", args.Cmd)
@@ -202,12 +225,12 @@ func Test_DockerPush(t *testing.T) {
 				tag,
 			}, args.Args)
 
-			return executil.RunResult{
+			return exec.RunResult{
 				Stdout:   "Docker build output",
 				Stderr:   "",
 				ExitCode: 0,
 			}, nil
-		}
+		})
 
 		err := docker.Push(context.Background(), cwd, tag)
 
@@ -220,7 +243,12 @@ func Test_DockerPush(t *testing.T) {
 		stdErr := "Error pushing DockerFile"
 		customErrorMessage := "example error message"
 
-		docker.runWithResultFn = func(ctx context.Context, args executil.RunArgs) (executil.RunResult, error) {
+		mockContext := mocks.NewMockContext(context.Background())
+		docker := NewDocker(*mockContext.Context)
+
+		mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
+			return strings.Contains(command, "docker push")
+		}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
 			ran = true
 
 			require.Equal(t, "docker", args.Cmd)
@@ -230,12 +258,12 @@ func Test_DockerPush(t *testing.T) {
 				tag,
 			}, args.Args)
 
-			return executil.RunResult{
+			return exec.RunResult{
 				Stdout:   "",
 				Stderr:   stdErr,
 				ExitCode: 1,
 			}, errors.New(customErrorMessage)
-		}
+		})
 
 		err := docker.Push(context.Background(), cwd, tag)
 

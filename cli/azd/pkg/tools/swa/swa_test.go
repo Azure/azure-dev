@@ -6,20 +6,24 @@ package swa
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/executil"
+	"github.com/azure/azure-dev/cli/azd/pkg/exec"
+	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/stretchr/testify/require"
 )
 
 func Test_SwaBuild(t *testing.T) {
-	tempSwaCli := NewSwaCli()
-	swacli := tempSwaCli.(*swaCli)
-
 	ran := false
 
 	t.Run("NoErrors", func(t *testing.T) {
-		swacli.runWithResultFn = func(ctx context.Context, args executil.RunArgs) (executil.RunResult, error) {
+		mockContext := mocks.NewMockContext(context.Background())
+		swacli := NewSwaCli(*mockContext.Context)
+
+		mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
+			return strings.Contains(command, "npx")
+		}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
 			ran = true
 
 			require.Equal(t, "./projectPath", args.Cwd)
@@ -30,7 +34,7 @@ func Test_SwaBuild(t *testing.T) {
 				"--output-location", "build",
 			}, args.Args)
 
-			return executil.RunResult{
+			return exec.RunResult{
 				Stdout: "",
 				Stderr: "",
 				// if the returned `error` is nil we don't return an error. The underlying 'exec'
@@ -38,7 +42,7 @@ func Test_SwaBuild(t *testing.T) {
 				// need to check it.
 				ExitCode: 1,
 			}, nil
-		}
+		})
 
 		err := swacli.Build(context.Background(), "./projectPath", "service/path", "build")
 		require.NoError(t, err)
@@ -46,7 +50,12 @@ func Test_SwaBuild(t *testing.T) {
 	})
 
 	t.Run("Error", func(t *testing.T) {
-		swacli.runWithResultFn = func(ctx context.Context, args executil.RunArgs) (executil.RunResult, error) {
+		mockContext := mocks.NewMockContext(context.Background())
+		swacli := NewSwaCli(*mockContext.Context)
+
+		mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
+			return strings.Contains(command, "npx")
+		}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
 			ran = true
 
 			require.Equal(t, "./projectPath", args.Cwd)
@@ -57,12 +66,12 @@ func Test_SwaBuild(t *testing.T) {
 				"--output-location", "build",
 			}, args.Args)
 
-			return executil.RunResult{
+			return exec.RunResult{
 				Stdout:   "stdout text",
 				Stderr:   "stderr text",
 				ExitCode: 1,
 			}, errors.New("example error message")
-		}
+		})
 
 		err := swacli.Build(context.Background(), "./projectPath", "service/path", "build")
 		require.True(t, ran)
@@ -71,13 +80,15 @@ func Test_SwaBuild(t *testing.T) {
 }
 
 func Test_SwaDeploy(t *testing.T) {
-	tempSwaCli := NewSwaCli()
-	swacli := tempSwaCli.(*swaCli)
-
 	ran := false
 
 	t.Run("NoErrors", func(t *testing.T) {
-		swacli.runWithResultFn = func(ctx context.Context, args executil.RunArgs) (executil.RunResult, error) {
+		mockContext := mocks.NewMockContext(context.Background())
+		swacli := NewSwaCli(*mockContext.Context)
+
+		mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
+			return strings.Contains(command, "npx")
+		}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
 			ran = true
 
 			require.Equal(t, "./projectPath", args.Cwd)
@@ -95,7 +106,7 @@ func Test_SwaDeploy(t *testing.T) {
 				"--deployment-token", "deploymentToken",
 			}, args.Args)
 
-			return executil.RunResult{
+			return exec.RunResult{
 				Stdout: "",
 				Stderr: "",
 				// if the returned `error` is nil we don't return an error. The underlying 'exec'
@@ -103,7 +114,7 @@ func Test_SwaDeploy(t *testing.T) {
 				// need to check it.
 				ExitCode: 1,
 			}, nil
-		}
+		})
 
 		_, err := swacli.Deploy(context.Background(), "./projectPath", "tenantID", "subscriptionID", "resourceGroupID", "appName", "service/path", "build", "default", "deploymentToken")
 		require.NoError(t, err)
@@ -111,7 +122,12 @@ func Test_SwaDeploy(t *testing.T) {
 	})
 
 	t.Run("Error", func(t *testing.T) {
-		swacli.runWithResultFn = func(ctx context.Context, args executil.RunArgs) (executil.RunResult, error) {
+		mockContext := mocks.NewMockContext(context.Background())
+		swacli := NewSwaCli(*mockContext.Context)
+
+		mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
+			return strings.Contains(command, "npx")
+		}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
 			ran = true
 
 			require.Equal(t, "./projectPath", args.Cwd)
@@ -129,12 +145,12 @@ func Test_SwaDeploy(t *testing.T) {
 				"--deployment-token", "deploymentToken",
 			}, args.Args)
 
-			return executil.RunResult{
+			return exec.RunResult{
 				Stdout:   "stdout text",
 				Stderr:   "stderr text",
 				ExitCode: 1,
 			}, errors.New("example error message")
-		}
+		})
 
 		_, err := swacli.Deploy(context.Background(), "./projectPath", "tenantID", "subscriptionID", "resourceGroupID", "appName", "service/path", "build", "default", "deploymentToken")
 		require.True(t, ran)

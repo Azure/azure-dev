@@ -11,7 +11,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
-	"github.com/azure/azure-dev/cli/azd/test/mocks/executil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/exp/slices"
@@ -125,9 +124,7 @@ services:
 	rg := "rg-test"
 	resourceName := "app-api-abc123"
 	mockContext := mocks.NewMockContext(context.Background())
-	mockContext.CommandRunner.AddAzResourceListMock(&executil.AzResourceListMatchOptions{
-		MatchResourceGroup: &rg,
-	},
+	mockContext.CommandRunner.AddAzResourceListMock(&rg,
 		[]azcli.AzCliResource{
 			{
 				Id:       "random",

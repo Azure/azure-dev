@@ -32,7 +32,7 @@ const collectTelemetryEnvVar = "AZURE_DEV_COLLECT_TELEMETRY"
 
 const telemetryItemExtension = ".trn"
 const (
-	devInstrumentationKey  = "d3b9c006-3680-4300-9862-35fce9ac66c7"
+	devInstrumentationKey  = "321df807-079f-4957-9fc0-0ef2b422ee16"
 	prodInstrumentationKey = ""
 )
 
@@ -93,7 +93,7 @@ func GetTelemetrySystem() *TelemetrySystem {
 
 func initialize() (*TelemetrySystem, error) {
 	// Feature guard: Disable for production until dependencies are met in production
-	isDev := internal.IsDevVersion()
+	isDev := internal.IsNonProdVersion()
 	if !isDev {
 		return nil, nil
 	}

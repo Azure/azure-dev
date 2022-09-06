@@ -202,10 +202,10 @@ chmod +x "$tmp_folder/$bin_name"
 
 install_location="$install_folder/azd"
 if [ -w "$install_folder/" ]; then
-    cp "$tmp_folder/$bin_name" "$install_location"
+    mv "$tmp_folder/$bin_name" "$install_location"
 else
     say "Writing to $install_folder/ requires elevated permission. You may be prompted to enter credentials."
-    sudo cp "$tmp_folder/$bin_name" "$install_location"
+    sudo mv "$tmp_folder/$bin_name" "$install_location"
 fi
 
 say_verbose "Cleaning up temp folder: $tmp_folder"

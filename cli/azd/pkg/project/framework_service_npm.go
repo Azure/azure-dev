@@ -18,14 +18,14 @@ import (
 type npmProject struct {
 	config *ServiceConfig
 	env    *environment.Environment
+	cli    npm.NpmCli
 }
 
 func (np *npmProject) RequiredExternalTools() []tools.ExternalTool {
-	return []tools.ExternalTool{npm.NewNpmCli()}
+	return []tools.ExternalTool{np.cli}
 }
 
 func (np *npmProject) Package(ctx context.Context, progress chan<- string) (string, error) {
-	npmCli := npm.NewNpmCli()
 	publishRoot, err := os.MkdirTemp("", "azd")
 	if err != nil {
 		return "", fmt.Errorf("creating package directory for %s: %w", np.config.Name, err)
@@ -33,7 +33,7 @@ func (np *npmProject) Package(ctx context.Context, progress chan<- string) (stri
 
 	// Run NPM install
 	progress <- "Installing dependencies"
-	if err := npmCli.Install(ctx, np.config.Path(), false); err != nil {
+	if err := np.cli.Install(ctx, np.config.Path(), false); err != nil {
 		return "", err
 	}
 
@@ -45,7 +45,7 @@ func (np *npmProject) Package(ctx context.Context, progress chan<- string) (stri
 	envs = append(envs, "NODE_ENV=production")
 
 	progress <- "Building service"
-	if err := npmCli.Build(ctx, np.config.Path(), envs); err != nil {
+	if err := np.cli.Build(ctx, np.config.Path(), envs); err != nil {
 		return "", err
 	}
 
@@ -65,7 +65,7 @@ func (np *npmProject) Package(ctx context.Context, progress chan<- string) (stri
 }
 
 func (np *npmProject) InstallDependencies(ctx context.Context) error {
-	npmCli := npm.NewNpmCli()
+	npmCli := npm.NewNpmCli(ctx)
 	if err := npmCli.Install(ctx, np.config.Path(), false); err != nil {
 		return err
 	}
@@ -76,9 +76,10 @@ func (np *npmProject) Initialize(ctx context.Context) error {
 	return nil
 }
 
-func NewNpmProject(config *ServiceConfig, env *environment.Environment) FrameworkService {
+func NewNpmProject(ctx context.Context, config *ServiceConfig, env *environment.Environment) FrameworkService {
 	return &npmProject{
 		config: config,
 		env:    env,
+		cli:    npm.NewNpmCli(ctx),
 	}
 }

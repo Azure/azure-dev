@@ -10,7 +10,7 @@ import (
 	"log"
 	"regexp"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/executil"
+	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/blang/semver/v4"
@@ -21,25 +21,16 @@ type BicepCli interface {
 	Build(ctx context.Context, file string) (string, error)
 }
 
-func NewBicepCli(args NewBicepCliArgs) BicepCli {
-	if args.RunWithResultFn == nil {
-		args.RunWithResultFn = executil.RunWithResult
-	}
-
+func NewBicepCli(ctx context.Context) BicepCli {
 	return &bicepCli{
-		cli:             args.AzCli,
-		runWithResultFn: args.RunWithResultFn,
+		cli:           azcli.GetAzCli(ctx),
+		commandRunner: exec.GetCommandRunner(ctx),
 	}
-}
-
-type NewBicepCliArgs struct {
-	AzCli           azcli.AzCli
-	RunWithResultFn func(ctx context.Context, args executil.RunArgs) (executil.RunResult, error)
 }
 
 type bicepCli struct {
-	cli             azcli.AzCli
-	runWithResultFn func(ctx context.Context, args executil.RunArgs) (executil.RunResult, error)
+	cli           azcli.AzCli
+	commandRunner exec.CommandRunner
 }
 
 var isBicepNotFoundRegex = regexp.MustCompile(`Bicep CLI not found\.`)
@@ -141,13 +132,9 @@ func (cli *bicepCli) Build(ctx context.Context, file string) (string, error) {
 	return buildRes.Stdout, nil
 }
 
-func (cli *bicepCli) runCommand(ctx context.Context, args ...string) (executil.RunResult, error) {
-	runArgs := executil.RunArgs{
-		Cmd:  "az",
-		Args: args,
-	}
-
-	return cli.runWithResultFn(ctx, runArgs)
+func (cli *bicepCli) runCommand(ctx context.Context, args ...string) (exec.RunResult, error) {
+	runArgs := exec.NewRunArgs("az", args...)
+	return cli.commandRunner.Run(ctx, runArgs)
 }
 
 type contextKey string
@@ -157,14 +144,9 @@ const (
 )
 
 func GetBicepCli(ctx context.Context) BicepCli {
-	execUtilFn := executil.GetCommandRunner(ctx)
 	cli, ok := ctx.Value(bicepContextKey).(BicepCli)
 	if !ok {
-		args := NewBicepCliArgs{
-			AzCli:           azcli.GetAzCli(ctx),
-			RunWithResultFn: execUtilFn,
-		}
-		cli = NewBicepCli(args)
+		cli = NewBicepCli(ctx)
 	}
 
 	return cli

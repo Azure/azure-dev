@@ -111,6 +111,9 @@ jobs:
             -p 'list'
           workingDirectory: templates/tests
 
+      # First tag the resource group (if exists) so that it can get cleaned up
+      # by the cleanup pipeline. Then attempt to delete the resource group 
+      # directly. If the delete fails the cleanup pipeline will delete it.
       - pwsh: |
           $resourceGroupId = az group show `
             --resource-group '$(ResourceGroupName)' `
@@ -121,8 +124,12 @@ jobs:
             exit 0
           }
 
+          # Tag the resource group so it gets cleaned up later if delete fails
           az tag create `
             --resource-id $resourceGroupId `
-            --tags DeleteAfter="$(Get-Date -AsUTC).ToString('o')"
+            --tags DeleteAfter="$((Get-Date -AsUTC).ToString('o'))"
+
+          # Attempt to delete the resource group
+          az group delete --resource-group $(ResourceGroupName) --yes --no-wait
         condition: always()
         displayName: Tag resource group for deletion

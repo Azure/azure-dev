@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
-package executil
+package exec
 
 import (
 	"bytes"
@@ -18,7 +18,12 @@ import (
 )
 
 func TestRunCommandWithShell(t *testing.T) {
-	res, err := RunCommandWithShell(context.Background(), "az", "--version")
+	runner := NewCommandRunner()
+
+	runArgs := NewRunArgs("az", "--version").
+		WithShell(true)
+
+	res, err := runner.Run(context.Background(), runArgs)
 
 	if err != nil {
 		t.Errorf("failed to launch process: %v", err)
@@ -38,7 +43,13 @@ func TestRunCommandWithShell(t *testing.T) {
 }
 
 func TestRunCommand(t *testing.T) {
-	res, err := RunCommand(context.Background(), "git", "--version")
+	runner := NewCommandRunner()
+
+	args := RunArgs{
+		Cmd:  "git",
+		Args: []string{"--version"},
+	}
+	res, err := runner.Run(context.Background(), args)
 
 	if err != nil {
 		t.Errorf("failed to launch process: %v", err)
@@ -63,7 +74,8 @@ func TestKillCommand(t *testing.T) {
 
 	s := time.Now()
 
-	_, err := RunWithResult(ctx, RunArgs{
+	runner := NewCommandRunner()
+	_, err := runner.Run(ctx, RunArgs{
 		Cmd: "pwsh",
 		Args: []string{
 			"-c",
@@ -130,7 +142,8 @@ func TestRunCommandList(t *testing.T) {
 func TestRunCapturingStderr(t *testing.T) {
 	myStderr := &bytes.Buffer{}
 
-	res, _ := RunWithResult(context.Background(), RunArgs{
+	runner := NewCommandRunner()
+	res, _ := runner.Run(context.Background(), RunArgs{
 		Cmd:    "go",
 		Args:   []string{"--help"},
 		Stderr: myStderr,
@@ -141,7 +154,8 @@ func TestRunCapturingStderr(t *testing.T) {
 }
 
 func TestRunEnrichError(t *testing.T) {
-	_, err := RunWithResult(context.Background(), RunArgs{
+	runner := NewCommandRunner()
+	_, err := runner.Run(context.Background(), RunArgs{
 		Cmd:  "go",
 		Args: []string{"--help"},
 	})
@@ -150,7 +164,7 @@ func TestRunEnrichError(t *testing.T) {
 	// an ExitError
 	require.EqualError(t, err, "exit status 2")
 
-	res, err := RunWithResult(context.Background(), RunArgs{
+	res, err := runner.Run(context.Background(), RunArgs{
 		Cmd:         "go",
 		Args:        []string{"--help"},
 		EnrichError: true,

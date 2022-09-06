@@ -24,7 +24,6 @@ import (
 type PipelineManager struct {
 	ScmProvider
 	CiProvider
-	Console                      input.Console
 	AzdCtx                       *azdcontext.AzdContext
 	RootOptions                  *internal.GlobalCommandOptions
 	PipelineServicePrincipalName string
@@ -132,7 +131,7 @@ func (i *PipelineManager) getGitRepoDetails(ctx context.Context) (*gitRepository
 
 // validateDependencyInjection panic if the manager did not received all the
 // mandatory dependencies to work
-func validateDependencyInjection(manager *PipelineManager) {
+func validateDependencyInjection(ctx context.Context, manager *PipelineManager) {
 	if manager.AzdCtx == nil {
 		log.Panic("missing azd context for pipeline manager")
 	}
@@ -141,6 +140,9 @@ func validateDependencyInjection(manager *PipelineManager) {
 	}
 	if manager.CiProvider == nil {
 		log.Panic("missing CI provider for pipeline manager")
+	}
+	if input.GetConsole(ctx) == nil {
+		log.Panic("missing input console in the provided context")
 	}
 }
 
@@ -170,7 +172,10 @@ func (i *PipelineManager) pushGitRepo(ctx context.Context, currentBranch string)
 func (manager *PipelineManager) Configure(ctx context.Context) error {
 
 	// check that scm and ci providers are set
-	validateDependencyInjection(manager)
+	validateDependencyInjection(ctx, manager)
+
+	// after previous check, we know we can get the input console from the context
+	inputConsole := input.GetConsole(ctx)
 
 	// check all required tools are installed
 	azCli := azcli.GetAzCli(ctx)
@@ -226,7 +231,7 @@ func (manager *PipelineManager) Configure(ctx context.Context) error {
 
 	// The CI pipeline should be set-up and ready at this point.
 	// azd offers to push changes to the scm to start a new pipeline run
-	doPush, err := manager.Console.Confirm(ctx, input.ConsoleOptions{
+	doPush, err := inputConsole.Confirm(ctx, input.ConsoleOptions{
 		Message:      "Would you like to commit and push your local changes to start the configured CI pipeline?",
 		DefaultValue: true,
 	})
@@ -248,7 +253,7 @@ func (manager *PipelineManager) Configure(ctx context.Context) error {
 			gitRepoInfo,
 			manager.PipelineRemoteName,
 			currentBranch,
-			manager.Console)
+			inputConsole)
 		if err != nil {
 			return fmt.Errorf("check git push prevent: %w", err)
 		}

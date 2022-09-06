@@ -11,7 +11,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/commands"
 	"github.com/azure/azure-dev/cli/azd/pkg/commands/pipeline"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
-	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
@@ -96,7 +95,6 @@ func (p *pipelineConfigAction) Run(
 	p.manager.CiProvider = &pipeline.GitHubCiProvider{}
 
 	// set context for manager
-	p.manager.Console = input.GetConsole(ctx)
 	p.manager.AzdCtx = azdCtx
 	p.manager.Environment = env
 

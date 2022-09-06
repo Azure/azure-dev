@@ -23,6 +23,9 @@ elseif ($BuildReason -eq "PullRequest") {
     $prereleaseCategory = "pr"
 }
 else {
+    # This intentionally covers all scheduled/CI trigger definitions: IndividualCI, BatchedCI, Schedule.
+    # For all other types such as ResourceTrigger, we default back to 'daily' as a sensible default.
+    # See https://docs.microsoft.com/en-us/azure/devops/pipelines/build/variables?view=azure-devops&tabs=yaml#build-variables-devops-services for full list.
     $prereleaseCategory = "daily"
 }
 

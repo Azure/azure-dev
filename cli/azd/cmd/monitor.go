@@ -75,7 +75,7 @@ func (m *monitorAction) Run(ctx context.Context, cmd *cobra.Command, args []stri
 	}
 
 	if !m.monitorLive && !m.monitorLogs && !m.monitorOverview {
-		m.monitorLive = true
+		m.monitorOverview = true
 	}
 
 	env, err := loadOrInitEnvironment(ctx, &m.rootOptions.EnvironmentName, azdCtx, console)

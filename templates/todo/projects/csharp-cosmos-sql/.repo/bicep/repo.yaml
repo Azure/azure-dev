@@ -73,6 +73,10 @@ repo:
         - abbreviations.json
         - applicationinsights.bicep
         - applicationinsights-dashboard.bicep
+        - appservice.bicep
+        - appservice-config*.bicep
+        - appservice-dotnet.bicep
+        - appservice-node.bicep
         - appserviceplan.bicep
         - appserviceplan-sites.bicep
         - cosmos.bicep
@@ -80,10 +84,6 @@ repo:
         - keyvault.bicep
         - keyvault-access.bicep
         - loganalytics.bicep
-        - website-config*.bicep
-        - website-dotnet.bicep
-        - website-node.bicep
-        - website.bicep
 
     - from: ../../../../common/infra/modules
       to: ./infra/modules

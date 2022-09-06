@@ -10,7 +10,7 @@ module appServicePlan '../../../../../../common/infra/bicep/modules/appservicepl
   }
 }
 
-module web '../../../../../../common/infra/bicep/modules/website-node.bicep' = {
+module web '../../../../../../common/infra/bicep/modules/appservice-node.bicep' = {
   name: 'web-resources'
   params: {
     environmentName: environmentName
@@ -23,7 +23,7 @@ module web '../../../../../../common/infra/bicep/modules/website-node.bicep' = {
   ]
 }
 
-module api '../../../../../../common/infra/bicep/modules/website-dotnet.bicep' = {
+module api '../../../../../../common/infra/bicep/modules/appservice-dotnet.bicep' = {
   name: 'api-resources'
   params: {
     environmentName: environmentName
@@ -38,7 +38,7 @@ module api '../../../../../../common/infra/bicep/modules/website-dotnet.bicep' =
   ]
 }
 
-module apiCosmosConfig '../../../../../../common/infra/bicep/modules/website-config-cosmos.bicep' = {
+module apiCosmosConfig '../../../../../../common/infra/bicep/modules/appservice-config-cosmos.bicep' = {
   name: 'api-cosmos-config-resources'
   params: {
     resourceName: api.outputs.NAME

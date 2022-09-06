@@ -25,7 +25,7 @@ resource applicationInsights 'Microsoft.Insights/components@2020-02-02' existing
   name: '${abbrs.insightsComponents}${resourceToken}'
 }
 
-resource website 'Microsoft.Web/sites@2022-03-01' = {
+resource appservice 'Microsoft.Web/sites@2022-03-01' = {
   name: '${abbrs.webSitesAppService}${serviceName}-${resourceToken}'
   location: location
   tags: union(tags, { 'azd-service-name': serviceName })
@@ -53,32 +53,32 @@ resource website 'Microsoft.Web/sites@2022-03-01' = {
   }
 }
 
-module apiAppSettings 'website-config-union.bicep' = if (!empty(appSettings)) {
+module apiAppSettings 'appservice-config-union.bicep' = if (!empty(appSettings)) {
   name: 'api-app-settings-${serviceName}'
   params: {
-    resourceName: website.name
+    resourceName: appservice.name
     configName: 'appsettings'
-    currentConfigProperties: website::appSettings.list().properties
+    currentConfigProperties: appservice::appSettings.list().properties
     additionalConfigProperties: appSettings
   }
 }
 
-module apiSiteConfigLogs 'website-config-logs.bicep' = {
-  name: 'website-config-logs-${serviceName}'
+module apiSiteConfigLogs 'appservice-config-logs.bicep' = {
+  name: 'appservice-config-logs-${serviceName}'
   params: {
-    resourceName: website.name
+    resourceName: appservice.name
   }
 }
 
 module keyVaultAccess 'keyvault-access.bicep' = if (useKeyVault) {
   name: 'keyvault-access-api'
   params: {
-    principalId: website.identity.principalId
+    principalId: appservice.identity.principalId
     environmentName: environmentName
     location: location
   }
 }
 
-output NAME string = website.name
-output URI string = 'https://${website.properties.defaultHostName}'
-output IDENTITY_PRINCIPAL_ID string = managedIdentity ? website.identity.principalId : ''
+output NAME string = appservice.name
+output URI string = 'https://${appservice.properties.defaultHostName}'
+output IDENTITY_PRINCIPAL_ID string = managedIdentity ? appservice.identity.principalId : ''

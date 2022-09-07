@@ -84,6 +84,11 @@ func (cli *terraformCli) CheckInstalled(ctx context.Context) (bool, error) {
 }
 
 func (cli *terraformCli) runCommand(ctx context.Context, args ...string) (exec.RunResult, error) {
+	runArgs := exec.NewRunArgs("terraform", args...)
+	return cli.commandRunner.Run(ctx, runArgs)
+}
+
+func (cli *terraformCli) runInteractive(ctx context.Context, args ...string) (exec.RunResult, error) {
 	runArgs := exec.NewRunArgs("terraform", args...).WithInteractive(true)
 	return cli.commandRunner.Run(ctx, runArgs)
 }
@@ -125,7 +130,7 @@ func (cli *terraformCli) Init(ctx context.Context, modulePath string, additional
 		"-input=false", "-upgrade"}
 
 	args = append(args, additionalArgs...)
-	cmdRes, err := cli.runCommand(ctx, args...)
+	cmdRes, err := cli.runInteractive(ctx, args...)
 	if err != nil {
 		return "", fmt.Errorf(
 			"failed running terraform init: %s (%w)",
@@ -143,7 +148,7 @@ func (cli *terraformCli) Plan(ctx context.Context, modulePath string, planFilePa
 		"-input=false", "-lock=false"}
 
 	args = append(args, additionalArgs...)
-	cmdRes, err := cli.runCommand(ctx, args...)
+	cmdRes, err := cli.runInteractive(ctx, args...)
 	if err != nil {
 		return "", fmt.Errorf(
 			"failed running terraform plan: %s (%w)",
@@ -160,7 +165,7 @@ func (cli *terraformCli) Apply(ctx context.Context, modulePath string, additiona
 		"-input=false", "-lock=false", "-auto-approve"}
 
 	args = append(args, additionalArgs...)
-	cmdRes, err := cli.runCommand(ctx, args...)
+	cmdRes, err := cli.runInteractive(ctx, args...)
 	if err != nil {
 		return "", fmt.Errorf(
 			"failed running terraform apply: %s (%w)",
@@ -193,7 +198,7 @@ func (cli *terraformCli) Destroy(ctx context.Context, modulePath string, additio
 		"-input=false", "-auto-approve"}
 
 	args = append(args, additionalArgs...)
-	cmdRes, err := cli.runCommand(ctx, args...)
+	cmdRes, err := cli.runInteractive(ctx, args...)
 	if err != nil {
 		return "", fmt.Errorf(
 			"failed running terraform destroy: %s (%w)",

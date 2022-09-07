@@ -25,6 +25,12 @@ resource "random_string" "resource_token" {
   lower   = true
   numeric = false
   special = false
+
+  keepers = {
+    env      = var.environment_name,
+    location = azurerm_resource_group.rg.location,
+    subid    = data.azurerm_client_config.current.subscription_id
+  }
 }
 
 # ------------------------------------------------------------------------------------------------------

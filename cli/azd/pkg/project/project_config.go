@@ -12,6 +12,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/internal/telemetry"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
@@ -262,6 +263,40 @@ func ParseProjectConfig(yamlContent string, env *environment.Environment) (*Proj
 
 		if svc.Language == "" || svc.Language == "csharp" || svc.Language == "fsharp" {
 			svc.Language = "dotnet"
+		}
+
+		if svc.Language == "dotnet" {
+			stat, err := os.Stat(svc.Path())
+			if err != nil {
+				return nil, fmt.Errorf("stating project %s: %w", svc.Path(), err)
+			} else if stat.IsDir() {
+				entries, err := os.ReadDir(svc.Path())
+				if err != nil {
+					return nil, fmt.Errorf("discovering listing project files for service %s: %w", svc.Name, err)
+				}
+				var projectFile string
+				for _, entry := range entries {
+					switch strings.ToLower(filepath.Ext(entry.Name())) {
+					case ".csproj", ".fsproj", ".vbproj":
+						if projectFile != "" {
+							// we found multiple project files, we need to ask the user to specify which one
+							// corresponds to the service.
+							return nil, fmt.Errorf("multiple .NET project files detected in %s for service %s, please include the name of the .NET project file in project setting in %s for this service", svc.Path(), svc.Name, azdcontext.ProjectFileName)
+						} else {
+							projectFile = entry.Name()
+						}
+					}
+				}
+				if projectFile == "" {
+					return nil, fmt.Errorf("could not determine the .NET project file for service %s, please include the name of the .NET project file in project setting in %s for this service", svc.Name, azdcontext.ProjectFileName)
+				} else {
+					if svc.RelativePath != "" {
+						svc.RelativePath = filepath.Join(svc.RelativePath, projectFile)
+					} else {
+						svc.Project.Path = filepath.Join(svc.Project.Path, projectFile)
+					}
+				}
+			}
 		}
 	}
 

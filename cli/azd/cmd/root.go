@@ -91,10 +91,11 @@ For more information, visit the Azure Developer CLI Dev Hub: https://aka.ms/azur
 	cmd.AddCommand(pipelineCmd(opts))
 	cmd.AddCommand(provisionCmd(opts))
 	cmd.AddCommand(restoreCmd(opts))
-	cmd.AddCommand(upCmd(opts))
-	cmd.AddCommand(templatesCmd(opts))
-	cmd.AddCommand(versionCmd(opts))
+	cmd.AddCommand(showCmd(opts))
 	cmd.AddCommand(telemetryCmd(opts))
+	cmd.AddCommand(templatesCmd(opts))
+	cmd.AddCommand(upCmd(opts))
+	cmd.AddCommand(versionCmd(opts))
 
 	return cmd
 }

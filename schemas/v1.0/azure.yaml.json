@@ -29,12 +29,14 @@
         },
         "infra": {
             "type": "object",
+            "title": "The infrastructure configuration used for the application",
+            "description": "Optional. Provides additional configuration for Azure infrastructure provisioning.",
             "additionalProperties": true,
             "properties": {
                 "provider":{
                     "type": "string",
                     "title": "Type of infrastructure provisioning provider",
-                    "description": "Optional. When specified will set the infrastructure provisioning provider used to provision the Azure resources for the application. (Default: bicep)",
+                    "description": "Optional. The infrastructure provisioning provider used to provision the Azure resources for the application. (Default: bicep)",
                     "enum": [
                         "bicep",
                         "terraform"
@@ -43,12 +45,12 @@
                 "path": {
                     "type": "string",
                     "title": "Path to the location that contains Azure provisioning templates",
-                    "description": "Optional. When specified will override the path to the Azure provisioning templates for the specified provider. (Default: infra)"
+                    "description": "Optional.The relative folder path to the Azure provisioning templates for the specified provider. (Default: infra)"
                 },
                 "module": {
                     "type": "string",
                     "title": "Name of the default module within the Azure provisioning templates",
-                    "description": "Optional. When specified will override the name of the Azure provisioning module used when provisioning resources. (Default: main)"
+                    "description": "Optional. The name of the Azure provisioning module used when provisioning resources. (Default: main)"
                 }
             }
         },

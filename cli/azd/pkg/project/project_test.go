@@ -38,7 +38,8 @@ services:
 `
 	mockContext := mocks.NewMockContext(context.Background())
 
-	e := environment.Environment{Values: make(map[string]string)}
+	e := environment.Environment{}
+	e.Init()
 	e.SetEnvName("envA")
 	projectConfig, err := ParseProjectConfig(testProj, &e)
 	assert.Nil(t, err)
@@ -87,7 +88,8 @@ services:
 `
 	mockContext := mocks.NewMockContext(context.Background())
 
-	e := environment.Environment{Values: make(map[string]string)}
+	e := environment.Environment{}
+	e.Init()
 	e.SetEnvName("envA")
 	projectConfig, err := ParseProjectConfig(testProj, &e)
 	assert.Nil(t, err)
@@ -133,7 +135,8 @@ services:
 				Location: "westus2",
 			}})
 
-	e := environment.Environment{Values: make(map[string]string)}
+	e := environment.Environment{}
+	e.Init()
 	e.SetEnvName("envA")
 	projectConfig, err := ParseProjectConfig(testProj, &e)
 	assert.Nil(t, err)
@@ -168,7 +171,8 @@ services:
 `
 	mockContext := mocks.NewMockContext(context.Background())
 
-	e := environment.Environment{Values: make(map[string]string)}
+	e := environment.Environment{}
+	e.Init()
 	e.SetEnvName("envA")
 	projectConfig, err := ParseProjectConfig(testProj, &e)
 	assert.Nil(t, err)
@@ -209,7 +213,11 @@ services:
 
 	expectedResourceGroupName := "custom-name-from-env-rg"
 	values := map[string]string{"AZURE_RESOURCE_GROUP": expectedResourceGroupName}
-	e := environment.Environment{Values: values}
+	e := environment.Environment{}
+	e.Init()
+	for k, v := range values {
+		e.SetVariable(k, v)
+	}
 
 	e.SetEnvName("envA")
 	projectConfig, err := ParseProjectConfig(testProj, &e)

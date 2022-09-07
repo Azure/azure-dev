@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
@@ -36,12 +37,72 @@ const ContainerRegistryEndpointEnvVarName = "AZURE_CONTAINER_REGISTRY_ENDPOINT"
 const ResourceGroupEnvVarName = "AZURE_RESOURCE_GROUP"
 
 type Environment struct {
-	// Values is a map of setting names to values.
-	Values map[string]string
+	// values is a map of setting names to values.
+	// all keys are converted to upper case before it is set.
+	values map[string]string
 	// File is a path to the file that backs this environment. If empty, the Environment
 	// will not be persisted when `Save` is called. This allows the zero value to be used
 	// for testing.
 	File string
+}
+
+// DeleteVariable removes an entry from azd environment which key matches the variable name.
+func (e *Environment) DeleteVariable(variableName string) {
+	delete(e.values, strings.ToUpper(variableName))
+}
+
+// SetVariable update or create an entry to the azd environment.
+// key is converted to upper case.
+func (e *Environment) SetVariable(key, value string) {
+	e.values[strings.ToUpper(key)] = value
+}
+
+// GetValue get the value of an entry with the requested key.
+// return empty string and false if the key is not found.
+// Use ValueOf if you don't need to check if value is found
+func (e *Environment) GetValue(key string) (string, bool) {
+	value, found := e.values[strings.ToUpper(key)]
+	return value, found
+}
+
+// GetValue get the value of an entry with the requested key.
+// return empty string and false if the key is not found.
+// Use GetValue to return if the value is found as well
+func (e *Environment) ValueOf(key string) string {
+	return e.values[strings.ToUpper(key)]
+}
+
+// HasValue return true if the key is found and the value is not empty string.
+func (e *Environment) HasValue(key string) bool {
+	value, found := e.values[strings.ToUpper(key)]
+	return found && value != ""
+}
+
+// Init make sure that values has an empty map.
+func (e *Environment) Init() {
+	if e.values == nil {
+		e.values = make(map[string]string)
+	}
+}
+
+// CopyValues get a copy of the azd environment variable entries.
+func (e *Environment) CopyValues() map[string]string {
+	result := make(map[string]string)
+	for k, v := range e.values {
+		// keys are already upper case
+		result[k] = v
+	}
+	return result
+}
+
+// ToStringArray create an array of strings where each string is in the form of
+// "key=value"
+func (e *Environment) ToStringArray() []string {
+	result := make([]string, 0, len(e.values)+1)
+	for k, v := range e.values {
+		result = append(result, fmt.Sprintf("%s=%s", k, v))
+	}
+	return result
 }
 
 // Same restrictions as a deployment name (ref: https://docs.microsoft.com/azure/azure-resource-manager/management/resource-name-rules#microsoftresources)
@@ -56,17 +117,17 @@ func IsValidEnvironmentName(name string) bool {
 // to file, is returned.
 func FromFile(file string) (Environment, error) {
 	env := Environment{
-		Values: make(map[string]string),
+		values: make(map[string]string),
 		File:   file,
 	}
 
 	e, err := godotenv.Read(file)
 	if err != nil {
-		env.Values = make(map[string]string)
+		env.values = make(map[string]string)
 		return env, fmt.Errorf("can't read %s: %w", file, err)
 	}
 
-	env.Values = e
+	env.values = e
 	return env, nil
 }
 
@@ -79,7 +140,7 @@ func GetEnvironment(azdContext *azdcontext.AzdContext, name string) (Environment
 func Empty(file string) Environment {
 	return Environment{
 		File:   file,
-		Values: make(map[string]string),
+		values: make(map[string]string),
 	}
 }
 
@@ -95,7 +156,7 @@ func (e *Environment) Save() error {
 		return fmt.Errorf("failed to create a directory: %w", err)
 	}
 
-	err = godotenv.Write(e.Values, e.File)
+	err = godotenv.Write(e.values, e.File)
 	if err != nil {
 		return fmt.Errorf("can't write '%s': %w", e.File, err)
 	}
@@ -104,33 +165,33 @@ func (e *Environment) Save() error {
 }
 
 func (e *Environment) GetEnvName() string {
-	return e.Values[EnvNameEnvVarName]
+	return e.values[EnvNameEnvVarName]
 }
 
 func (e *Environment) SetEnvName(envname string) {
-	e.Values[EnvNameEnvVarName] = envname
+	e.values[EnvNameEnvVarName] = envname
 }
 
 func (e *Environment) GetSubscriptionId() string {
-	return e.Values[SubscriptionIdEnvVarName]
+	return e.values[SubscriptionIdEnvVarName]
 }
 
 func (e *Environment) GetTenantId() string {
-	return e.Values[TenantIdEnvVarName]
+	return e.values[TenantIdEnvVarName]
 }
 
 func (e *Environment) SetSubscriptionId(id string) {
-	e.Values[SubscriptionIdEnvVarName] = id
+	e.values[SubscriptionIdEnvVarName] = id
 }
 
 func (e *Environment) GetLocation() string {
-	return e.Values[LocationEnvVarName]
+	return e.values[LocationEnvVarName]
 }
 
 func (e *Environment) SetLocation(location string) {
-	e.Values[LocationEnvVarName] = location
+	e.values[LocationEnvVarName] = location
 }
 
 func (e *Environment) SetPrincipalId(principalID string) {
-	e.Values[PrincipalIdEnvVarName] = principalID
+	e.values[PrincipalIdEnvVarName] = principalID
 }

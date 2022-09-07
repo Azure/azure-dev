@@ -12,7 +12,7 @@ import (
 func UpdateEnvironment(env *environment.Environment, outputs *map[string]OutputParameter) error {
 	if len(*outputs) > 0 {
 		for key, param := range *outputs {
-			env.Values[key] = fmt.Sprintf("%v", param.Value)
+			env.SetVariable(key, fmt.Sprintf("%v", param.Value))
 		}
 
 		if err := env.Save(); err != nil {

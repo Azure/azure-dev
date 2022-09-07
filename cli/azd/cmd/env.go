@@ -74,7 +74,7 @@ func envSetCmd(rootOptions *internal.GlobalCommandOptions) *cobra.Command {
 			return fmt.Errorf("loading environment: %w", err)
 		}
 
-		env.Values[args[0]] = args[1]
+		env.SetVariable(args[0], args[1])
 
 		if err := env.Save(); err != nil {
 			return fmt.Errorf("saving environment: %w", err)
@@ -309,7 +309,7 @@ func envGetValuesCmd(rootOptions *internal.GlobalCommandOptions) *cobra.Command 
 				return err
 			}
 
-			err = formatter.Format(env.Values, writer, nil)
+			err = formatter.Format(env.CopyValues(), writer, nil)
 			if err != nil {
 				return err
 			}

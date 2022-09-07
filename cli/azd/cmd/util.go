@@ -161,19 +161,13 @@ func loadOrInitEnvironment(ctx context.Context, environmentName *string, azdCtx 
 // It will use the values from the "environment spec" passed in, and prompt for any missing values as necessary.
 // Existing environment value are left unchanged, even if the "spec" has different values.
 func ensureEnvironmentInitialized(ctx context.Context, envSpec environmentSpec, env *environment.Environment, console input.Console) error {
-	if env.Values == nil {
-		env.Values = make(map[string]string)
-	}
+	// make sure env is init
+	env.Init()
 
-	hasValue := func(key string) bool {
-		val, has := env.Values[key]
-		return has && val != ""
-	}
-
-	hasEnvName := hasValue(environment.EnvNameEnvVarName)
-	hasLocation := hasValue(environment.LocationEnvVarName)
-	hasSubID := hasValue(environment.SubscriptionIdEnvVarName)
-	hasPrincipalID := hasValue(environment.PrincipalIdEnvVarName)
+	hasEnvName := env.HasValue(environment.EnvNameEnvVarName)
+	hasLocation := env.HasValue(environment.LocationEnvVarName)
+	hasSubID := env.HasValue(environment.SubscriptionIdEnvVarName)
+	hasPrincipalID := env.HasValue(environment.PrincipalIdEnvVarName)
 
 	if hasEnvName && hasLocation && hasSubID && hasPrincipalID {
 		return nil

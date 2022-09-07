@@ -162,7 +162,8 @@ services:
     module: ./api/api
 `
 
-	e := environment.Environment{Values: make(map[string]string)}
+	e := environment.Environment{}
+	e.Init()
 	e.SetEnvName("test-env")
 
 	projectConfig, _ := ParseProjectConfig(testProj, &e)

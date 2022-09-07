@@ -239,7 +239,8 @@ func (p *pipelineConfigAction) Run(ctx context.Context, cmd *cobra.Command, args
 	for _, envName := range []string{environment.EnvNameEnvVarName, environment.LocationEnvVarName, environment.SubscriptionIdEnvVarName} {
 		fmt.Printf("Setting %s GitHub repo secret.\n", envName)
 
-		if err := ghCli.SetSecret(ctx, repoSlug, envName, env.Values[envName]); err != nil {
+		value, _ := env.GetValue(envName)
+		if err := ghCli.SetSecret(ctx, repoSlug, envName, value); err != nil {
 			return fmt.Errorf("failed setting %s secret: %w", envName, err)
 		}
 	}

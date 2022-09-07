@@ -4,7 +4,7 @@
 package environment
 
 func GetResourceGroupNameFromEnvVar(env *Environment) string {
-	resourceGroupName, ok := env.Values[ResourceGroupEnvVarName]
+	resourceGroupName, ok := env.values[ResourceGroupEnvVarName]
 	if ok {
 		return resourceGroupName
 	}

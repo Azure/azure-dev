@@ -27,7 +27,8 @@ services:
 `
 	ran := false
 
-	env := environment.Environment{Values: make(map[string]string)}
+	env := environment.Environment{}
+	env.Init()
 	env.SetEnvName("test-env")
 
 	mockContext := mocks.NewMockContext(context.Background())
@@ -101,7 +102,8 @@ services:
       context: ../
 `
 
-	env := environment.Environment{Values: make(map[string]string)}
+	env := environment.Environment{}
+	env.Init()
 	env.SetEnvName("test-env")
 
 	mockContext := mocks.NewMockContext(context.Background())

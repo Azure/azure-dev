@@ -57,7 +57,7 @@ func (at *containerAppTarget) Deploy(ctx context.Context, azdCtx *azdcontext.Azd
 	}
 
 	// Login to container registry.
-	loginServer, has := at.env.Values[environment.ContainerRegistryEndpointEnvVarName]
+	loginServer, has := at.env.GetValue(environment.ContainerRegistryEndpointEnvVarName)
 	if !has {
 		return ServiceDeploymentResult{}, fmt.Errorf("could not determine container registry endpoint, ensure %s is set as an output of your infrastructure", environment.ContainerRegistryEndpointEnvVarName)
 	}
@@ -89,7 +89,7 @@ func (at *containerAppTarget) Deploy(ctx context.Context, azdCtx *azdcontext.Azd
 	log.Printf("writing image name to environment")
 
 	// Save the name of the image we pushed into the environment with a well known key.
-	at.env.Values[fmt.Sprintf("SERVICE_%s_IMAGE_NAME", strings.ToUpper(at.config.Name))] = fullTag
+	at.env.SetVariable(fmt.Sprintf("SERVICE_%s_IMAGE_NAME", strings.ToUpper(at.config.Name)), fullTag)
 
 	if err := at.env.Save(); err != nil {
 		return ServiceDeploymentResult{}, fmt.Errorf("saving image name to environment: %w", err)

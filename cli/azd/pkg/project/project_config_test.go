@@ -28,7 +28,8 @@ services:
     host: appservice
 `
 
-	e := environment.Environment{Values: make(map[string]string)}
+	e := environment.Environment{}
+	e.Init()
 	e.SetEnvName("test-env")
 
 	projectConfig, err := ParseProjectConfig(testProj, &e)
@@ -64,7 +65,8 @@ services:
     host: appservice
 `
 
-	e := environment.Environment{Values: make(map[string]string)}
+	e := environment.Environment{}
+	e.Init()
 	e.SetEnvName("test-env")
 
 	projectConfig, err := ParseProjectConfig(testProj, &e)
@@ -93,7 +95,8 @@ services:
 `
 	mockContext := mocks.NewMockContext(context.Background())
 
-	e := environment.Environment{Values: make(map[string]string)}
+	e := environment.Environment{}
+	e.Init()
 	e.SetEnvName("test-env")
 
 	projectConfig, err := ParseProjectConfig(testProj, &e)
@@ -129,7 +132,8 @@ services:
       path: ./Dockerfile.dev
       context: ../
 `
-	e := environment.Environment{Values: make(map[string]string)}
+	e := environment.Environment{}
+	e.Init()
 	e.SetEnvName("test-env")
 
 	projectConfig, err := ParseProjectConfig(testProj, &e)
@@ -157,7 +161,8 @@ services:
     module: ./api/api
 `
 
-	e := environment.Environment{Values: make(map[string]string)}
+	e := environment.Environment{}
+	e.Init()
 	e.SetEnvName("test-env")
 
 	projectConfig, err := ParseProjectConfig(testProj, &e)
@@ -321,7 +326,8 @@ services:
     module: ./api/api
 `
 
-	e := environment.Environment{Values: make(map[string]string)}
+	e := environment.Environment{}
+	e.Init()
 	e.SetEnvName("test-env")
 
 	projectConfig, _ := ParseProjectConfig(testProj, &e)

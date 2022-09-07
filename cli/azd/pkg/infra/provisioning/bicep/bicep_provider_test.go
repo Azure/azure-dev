@@ -55,8 +55,8 @@ func TestBicepPlan(t *testing.T) {
 	require.Contains(t, progressLog[0], "Generating Bicep parameters file")
 	require.Contains(t, progressLog[1], "Compiling Bicep template")
 
-	require.Equal(t, infraProvider.env.Values["AZURE_LOCATION"], deploymentPlan.Deployment.Parameters["location"].Value)
-	require.Equal(t, infraProvider.env.Values["AZURE_ENV_NAME"], deploymentPlan.Deployment.Parameters["name"].Value)
+	require.Equal(t, infraProvider.env.ValueOf("AZURE_LOCATION"), deploymentPlan.Deployment.Parameters["location"].Value)
+	require.Equal(t, infraProvider.env.ValueOf("AZURE_ENV_NAME"), deploymentPlan.Deployment.Parameters["name"].Value)
 }
 
 func TestBicepGetDeploymentPlan(t *testing.T) {
@@ -71,7 +71,8 @@ func TestBicepGetDeploymentPlan(t *testing.T) {
 	prepareDeployMocks(mockContext.CommandRunner)
 
 	infraProvider := createBicepProvider(*mockContext.Context)
-	scope := infra.NewSubscriptionScope(*mockContext.Context, infraProvider.env.Values["AZURE_LOCATION"], infraProvider.env.GetSubscriptionId(), infraProvider.env.GetEnvName())
+	location, _ := infraProvider.env.GetValue("AZURE_LOCATION")
+	scope := infra.NewSubscriptionScope(*mockContext.Context, location, infraProvider.env.GetSubscriptionId(), infraProvider.env.GetEnvName())
 	getDeploymentTask := infraProvider.GetDeployment(*mockContext.Context, scope)
 
 	go func() {
@@ -118,7 +119,7 @@ func TestBicepDeploy(t *testing.T) {
 		},
 	}
 
-	scope := infra.NewSubscriptionScope(*mockContext.Context, infraProvider.env.Values["AZURE_LOCATION"], infraProvider.env.GetSubscriptionId(), infraProvider.env.GetEnvName())
+	scope := infra.NewSubscriptionScope(*mockContext.Context, infraProvider.env.ValueOf("AZURE_LOCATION"), infraProvider.env.GetSubscriptionId(), infraProvider.env.GetEnvName())
 	deployTask := infraProvider.Deploy(*mockContext.Context, &deploymentPlan, scope)
 
 	go func() {
@@ -268,7 +269,8 @@ func createBicepProvider(ctx context.Context) *BicepProvider {
 		Module: "main",
 	}
 
-	env := environment.Environment{Values: make(map[string]string)}
+	env := environment.Environment{}
+	env.Init()
 	env.SetLocation("westus2")
 	env.SetEnvName("test-env")
 

@@ -38,10 +38,7 @@ func (np *npmProject) Package(ctx context.Context, progress chan<- string) (stri
 	}
 
 	// Run Build, injecting env.
-	envs := make([]string, 0, len(np.env.Values)+1)
-	for k, v := range np.env.Values {
-		envs = append(envs, fmt.Sprintf("%s=%s", k, v))
-	}
+	envs := np.env.ToStringArray()
 	envs = append(envs, "NODE_ENV=production")
 
 	progress <- "Building service"

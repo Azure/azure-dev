@@ -507,7 +507,7 @@ func (p *BicepProvider) createParametersFile(ctx context.Context, asyncContext *
 	}
 
 	replaced, err := envsubst.Eval(string(parametersBytes), func(name string) string {
-		if val, has := p.env.Values[name]; has {
+		if val, has := p.env.GetValue(name); has {
 			return val
 		}
 		return os.Getenv(name)
@@ -669,7 +669,7 @@ func (p *BicepProvider) ensureParameters(ctx context.Context, deployment *Deploy
 			}
 
 			if saveParameter {
-				p.env.Values[key] = userValue
+				p.env.SetVariable(key, userValue)
 			}
 
 			updatedParameters = true

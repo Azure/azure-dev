@@ -226,7 +226,7 @@ func ParseProjectConfig(yamlContent string, env *environment.Environment) (*Proj
 	}
 
 	file, err := rawFile.Execute(func(name string) string {
-		if val, has := env.Values[name]; has {
+		if val, has := env.GetValue(name); has {
 			return val
 		}
 		return os.Getenv(name)

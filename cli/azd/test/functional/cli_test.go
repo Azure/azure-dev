@@ -274,7 +274,7 @@ func Test_CLI_InfraCreateAndDelete(t *testing.T) {
 
 	// AZURE_STORAGE_ACCOUNT_NAME is an output of the template, make sure it was added to the .env file.
 	// the name should start with 'st'
-	accountName, ok := env.Values["AZURE_STORAGE_ACCOUNT_NAME"]
+	accountName, ok := env.GetValue("AZURE_STORAGE_ACCOUNT_NAME")
 	require.True(t, ok)
 	require.Regexp(t, `st\S*`, accountName)
 
@@ -320,7 +320,7 @@ func Test_CLI_InfraCreateAndDeleteUpperCase(t *testing.T) {
 
 	// AZURE_STORAGE_ACCOUNT_NAME is an output of the template, make sure it was added to the .env file.
 	// the name should start with 'st'
-	accountName, ok := env.Values["AZURE_STORAGE_ACCOUNT_NAME"]
+	accountName, ok := env.GetValue("AZURE_STORAGE_ACCOUNT_NAME")
 	require.True(t, ok)
 	require.Regexp(t, `st\S*`, accountName)
 

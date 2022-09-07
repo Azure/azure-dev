@@ -88,7 +88,7 @@ func (a *infraDeleteAction) Run(ctx context.Context, cmd *cobra.Command, args []
 	// Remove any outputs from the template from the environment since destroying the infrastructure
 	// invalidated them all.
 	for outputName := range destroyResult.Outputs {
-		delete(env.Values, outputName)
+		env.DeleteVariable(outputName)
 	}
 
 	if err := env.Save(); err != nil {

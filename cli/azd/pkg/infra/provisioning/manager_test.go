@@ -18,8 +18,9 @@ import (
 )
 
 func TestManagerPlan(t *testing.T) {
-	env := environment.Environment{Values: make(map[string]string)}
-	env.Values["AZURE_LOCATION"] = "eastus2"
+	env := environment.Environment{}
+	env.Init()
+	env.SetVariable("AZURE_LOCATION", "eastus2")
 	env.SetEnvName("test-env")
 	options := Options{Provider: "test"}
 	interactive := false
@@ -32,12 +33,13 @@ func TestManagerPlan(t *testing.T) {
 
 	require.NotNil(t, deploymentPlan)
 	require.Nil(t, err)
-	require.Equal(t, deploymentPlan.Deployment.Parameters["location"].Value, env.Values["AZURE_LOCATION"])
+	require.Equal(t, deploymentPlan.Deployment.Parameters["location"].Value, env.ValueOf("AZURE_LOCATION"))
 }
 
 func TestManagerGetDeployment(t *testing.T) {
-	env := environment.Environment{Values: make(map[string]string)}
-	env.Values["AZURE_LOCATION"] = "eastus2"
+	env := environment.Environment{}
+	env.Init()
+	env.SetVariable("AZURE_LOCATION", "eastus2")
 	env.SetEnvName("test-env")
 	options := Options{Provider: "test"}
 	interactive := false
@@ -54,8 +56,9 @@ func TestManagerGetDeployment(t *testing.T) {
 }
 
 func TestManagerDeploy(t *testing.T) {
-	env := environment.Environment{Values: make(map[string]string)}
-	env.Values["AZURE_LOCATION"] = "eastus2"
+	env := environment.Environment{}
+	env.Init()
+	env.SetVariable("AZURE_LOCATION", "eastus2")
 	env.SetEnvName("test-env")
 	options := Options{Provider: "test"}
 	interactive := false
@@ -73,8 +76,9 @@ func TestManagerDeploy(t *testing.T) {
 }
 
 func TestManagerDestroyWithPositiveConfirmation(t *testing.T) {
-	env := environment.Environment{Values: make(map[string]string)}
-	env.Values["AZURE_LOCATION"] = "eastus2"
+	env := environment.Environment{}
+	env.Init()
+	env.SetVariable("AZURE_LOCATION", "eastus2")
 	env.SetEnvName("test-env")
 	options := Options{Provider: "test"}
 	interactive := false
@@ -97,8 +101,9 @@ func TestManagerDestroyWithPositiveConfirmation(t *testing.T) {
 }
 
 func TestManagerDestroyWithNegativeConfirmation(t *testing.T) {
-	env := environment.Environment{Values: make(map[string]string)}
-	env.Values["AZURE_LOCATION"] = "eastus2"
+	env := environment.Environment{}
+	env.Init()
+	env.SetVariable("AZURE_LOCATION", "eastus2")
 	env.SetEnvName("test-env")
 	options := Options{Provider: "test"}
 	interactive := false

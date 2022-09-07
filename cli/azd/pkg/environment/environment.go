@@ -87,6 +87,10 @@ func (e *Environment) Init() {
 
 // CopyValues get a copy of the azd environment variable entries.
 func (e *Environment) CopyValues() map[string]string {
+	if e.values == nil {
+		return nil
+	}
+
 	result := make(map[string]string)
 	for k, v := range e.values {
 		// keys are already upper case

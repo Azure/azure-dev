@@ -15,10 +15,8 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	. "github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
-	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/terraform"
-	"github.com/drone/envsubst"
 )
 
 // TerraformProvider exposes infrastructure provisioning using Azure Terraform templates
@@ -86,7 +84,7 @@ func (t *TerraformProvider) Plan(ctx context.Context) *async.InteractiveTaskWith
 			}
 
 			asyncContext.SetProgress(&DeploymentPlanningProgress{Message: "Generating terraform parameters", Timestamp: time.Now()})
-			err = t.createParametersFile()
+			err = CreateInputParametersFile(t.parametersTemplateFilePath(), t.parametersFilePath(), t.env.Values)
 			if err != nil {
 				asyncContext.SetError(fmt.Errorf("creating parameters file: %w", err))
 				return
@@ -238,7 +236,7 @@ func (t *TerraformProvider) Destroy(ctx context.Context, deployment *Deployment,
 
 			if _, err := os.Stat(parametersFilePath); err != nil {
 				asyncContext.SetProgress(&DestroyProgress{Message: "parameters file not found, creating parameters file...", Timestamp: time.Now()})
-				err := t.createParametersFile()
+				err = CreateInputParametersFile(t.parametersTemplateFilePath(), t.parametersFilePath(), t.env.Values)
 				if err != nil {
 					asyncContext.SetError(fmt.Errorf("creating parameters file: %w", err))
 					return
@@ -325,7 +323,7 @@ func (t *TerraformProvider) init(ctx context.Context, isRemoteBackendConfig bool
 	if isRemoteBackendConfig {
 		t.console.Message(ctx, "Generating terraform backend config file")
 
-		err := t.createBackendConfigFile()
+		err := CreateInputParametersFile(t.backendConfigTemplateFilePath(), t.backendConfigFilePath(), t.env.Values)
 		if err != nil {
 			return fmt.Sprintf("creating terraform backend config file: %s", err), err
 		}
@@ -380,7 +378,7 @@ func (t *TerraformProvider) createDeployment(ctx context.Context, modulePath str
 	// check if the file does not exist to create it --> for shared env scenario
 	log.Printf("Reading parameters template file from: %s", parametersFilePath)
 	if _, err := os.Stat(parametersFilePath); err != nil {
-		err = t.createParametersFile()
+		err = CreateInputParametersFile(t.parametersTemplateFilePath(), parametersFilePath, t.env.Values)
 		if err != nil {
 			return nil, fmt.Errorf("creating parameters file: %w", err)
 		}
@@ -407,78 +405,6 @@ func (t *TerraformProvider) createDeployment(ctx context.Context, modulePath str
 	}
 
 	return &template, nil
-}
-
-// Copies the Terraform parameters file from the project template into the .azure environment folder
-func (t *TerraformProvider) createParametersFile() error {
-	// Copy the parameter template file to the environment working directory and do substitutions.
-	parametersTemplateFilePath := t.parametersTemplateFilePath()
-
-	log.Printf("Reading parameters template file from: %s", parametersTemplateFilePath)
-	parametersBytes, err := os.ReadFile(parametersTemplateFilePath)
-	if err != nil {
-		return fmt.Errorf("reading parameter file template: %w", err)
-	}
-	replaced, err := envsubst.Eval(string(parametersBytes), func(name string) string {
-		if val, has := t.env.Values[name]; has {
-			return val
-		}
-		return os.Getenv(name)
-	})
-
-	if err != nil {
-		return fmt.Errorf("substituting parameter file: %w", err)
-	}
-
-	parametersFilePath := t.parametersFilePath()
-	writeDir := filepath.Dir(parametersFilePath)
-	if err := os.MkdirAll(writeDir, osutil.PermissionDirectory); err != nil {
-		return fmt.Errorf("creating directory structure: %w", err)
-	}
-
-	log.Printf("Writing parameters file to: %s", parametersFilePath)
-	err = os.WriteFile(parametersFilePath, []byte(replaced), 0644)
-	if err != nil {
-		return fmt.Errorf("writing parameter file: %w", err)
-	}
-
-	return nil
-}
-
-// Copies the Terraform backend file from the project template into the .azure environment folder
-func (t *TerraformProvider) createBackendConfigFile() error {
-	// Copy the backend config template file to the environment working directory and do substitutions.
-	backendTemplateFilePath := t.backendConfigTemplateFilePath()
-
-	log.Printf("Reading backend config template file from: %s", backendTemplateFilePath)
-	backendBytes, err := os.ReadFile(backendTemplateFilePath)
-	if err != nil {
-		return fmt.Errorf("reading backend config file template: %w", err)
-	}
-	replaced, err := envsubst.Eval(string(backendBytes), func(name string) string {
-		if val, has := t.env.Values[name]; has {
-			return val
-		}
-		return os.Getenv(name)
-	})
-
-	if err != nil {
-		return fmt.Errorf("substituting backend config file: %w", err)
-	}
-
-	backendConfigFilePath := t.backendConfigFilePath()
-	writeDir := filepath.Dir(backendConfigFilePath)
-	if err := os.MkdirAll(writeDir, osutil.PermissionDirectory); err != nil {
-		return fmt.Errorf("creating directory structure: %w", err)
-	}
-
-	log.Printf("Writing backend config file to: %s", backendConfigFilePath)
-	err = os.WriteFile(backendConfigFilePath, []byte(replaced), 0644)
-	if err != nil {
-		return fmt.Errorf("writing backend config file: %w", err)
-	}
-
-	return nil
 }
 
 // Gets the path to the project parameters file path

@@ -35,6 +35,7 @@ functionapp
 GOARCH
 godotenv
 golangci
+ineffassign
 jmes
 keychain
 ldflags
@@ -56,6 +57,7 @@ rzip
 semconv
 serverfarms
 sstore
+staticcheck
 staticwebapp
 STRINGSLICE
 structs

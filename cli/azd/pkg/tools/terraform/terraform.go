@@ -126,8 +126,10 @@ func (cli *terraformCli) Validate(ctx context.Context, modulePath string) (strin
 
 func (cli *terraformCli) Init(ctx context.Context, modulePath string, additionalArgs ...string) (string, error) {
 	args := []string{
-		fmt.Sprintf("-chdir=%s", modulePath), "init",
-		"-input=false", "-upgrade"}
+		fmt.Sprintf("-chdir=%s", modulePath),
+		"init",
+		"-upgrade",
+	}
 
 	args = append(args, additionalArgs...)
 	cmdRes, err := cli.runInteractive(ctx, args...)
@@ -143,9 +145,11 @@ func (cli *terraformCli) Init(ctx context.Context, modulePath string, additional
 
 func (cli *terraformCli) Plan(ctx context.Context, modulePath string, planFilePath string, additionalArgs ...string) (string, error) {
 	args := []string{
-		fmt.Sprintf("-chdir=%s", modulePath), "plan",
+		fmt.Sprintf("-chdir=%s", modulePath),
+		"plan",
 		fmt.Sprintf("-out=%s", planFilePath),
-		"-input=false", "-lock=false"}
+		"-lock=false",
+	}
 
 	args = append(args, additionalArgs...)
 	cmdRes, err := cli.runInteractive(ctx, args...)
@@ -161,8 +165,10 @@ func (cli *terraformCli) Plan(ctx context.Context, modulePath string, planFilePa
 
 func (cli *terraformCli) Apply(ctx context.Context, modulePath string, additionalArgs ...string) (string, error) {
 	args := []string{
-		fmt.Sprintf("-chdir=%s", modulePath), "apply",
-		"-input=false", "-lock=false", "-auto-approve"}
+		fmt.Sprintf("-chdir=%s", modulePath),
+		"apply",
+		"-lock=false",
+	}
 
 	args = append(args, additionalArgs...)
 	cmdRes, err := cli.runInteractive(ctx, args...)
@@ -194,8 +200,9 @@ func (cli *terraformCli) Output(ctx context.Context, modulePath string, addition
 
 func (cli *terraformCli) Destroy(ctx context.Context, modulePath string, additionalArgs ...string) (string, error) {
 	args := []string{
-		fmt.Sprintf("-chdir=%s", modulePath), "destroy",
-		"-input=false", "-auto-approve"}
+		fmt.Sprintf("-chdir=%s", modulePath),
+		"destroy",
+	}
 
 	args = append(args, additionalArgs...)
 	cmdRes, err := cli.runInteractive(ctx, args...)

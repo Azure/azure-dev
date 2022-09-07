@@ -99,13 +99,11 @@ func (t *TerraformProvider) Plan(ctx context.Context) *async.InteractiveTaskWith
 				}
 
 				asyncContext.SetProgress(&DeploymentPlanningProgress{Message: "Validating terraform template", Timestamp: time.Now()})
-				//validate the terraform template
 				validated, err := t.cli.Validate(ctx, modulePath)
 				if err != nil {
 					return fmt.Errorf("terraform validate failed: %s, err %w", validated, err)
 				}
 
-				// discuss: -input=false arg force the cmd to fail in inputs for module variables were missing
 				asyncContext.SetProgress(&DeploymentPlanningProgress{Message: "Generating terraform plan", Timestamp: time.Now()})
 
 				cmd := []string{

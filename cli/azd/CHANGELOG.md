@@ -2,6 +2,10 @@
 
 ## 0.1.0-beta.6 (Unreleased)
 
+### Bugs Fixed
+
+- [[#590]](https://github.com/Azure/azure-dev/pull/590) Fix for using upper case keys only for azd environment.
+
 ### Breaking Changes
 
 - [[#588]](https://github.com/Azure/azure-dev/pull/588) Update default view from `azd monitor` to overview dashboard.

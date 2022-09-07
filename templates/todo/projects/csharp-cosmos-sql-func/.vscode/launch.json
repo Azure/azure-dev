@@ -21,8 +21,6 @@
                 "start"
             ],
             "cwd": "${workspaceFolder}/src/api",
-            "console": "internalConsole",
-            "stopAtEntry": false,
             "envFile": "${input:dotEnvFilePath}"
         },
         {

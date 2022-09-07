@@ -41,7 +41,27 @@ func TestToStringArray(t *testing.T) {
 	env.SetVariable("key", "value")
 	expected := []string{"KEY=value"}
 	assert.Equal(t, expected, env.ToStringArray())
-	env.SetVariable("key2", "value2")
-	expected = append(expected, "KEY2=value2")
-	assert.Equal(t, expected, env.ToStringArray())
+}
+
+func TestUpperCase(t *testing.T) {
+	env := Environment{}
+	env.Init()
+
+	validateCombinations := func(expected string) {
+		for _, key := range []string{
+			"some_key", "SOME_KEY", "some_Key", "SOME_key", "Some_Key", "Some_Key", "Some_key"} {
+			assert.Equal(t, expected, env.ValueOf(key))
+		}
+	}
+
+	validateCombinations("")
+	env.SetVariable("some_key", "value")
+	validateCombinations("value")
+	assert.Equal(t, "", env.ValueOf("someKey"))
+
+	env.SetVariable("SOME_KEY", "other_value")
+	validateCombinations("other_value")
+
+	env.DeleteVariable("Some_Key")
+	validateCombinations("")
 }

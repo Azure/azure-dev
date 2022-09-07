@@ -2,7 +2,7 @@
 # Deploy log analytics workspace
 # ------------------------------------------------------------------------------------------------------
 resource "azurecaf_name" "workspace_name" {
-  name          = random_string.resource_token.result
+  name          = local.resource_token
   resource_type = "azurerm_log_analytics_workspace"
   random_length = 0
   clean_input   = true

@@ -2,7 +2,7 @@
 # Deploy app service plan
 # ------------------------------------------------------------------------------------------------------
 resource "azurecaf_name" "plan_name" {
-  name          = random_string.resource_token.result
+  name          = local.resource_token
   resource_type = "azurerm_app_service_plan"
   random_length = 0
   clean_input   = true
@@ -22,7 +22,7 @@ resource "azurerm_service_plan" "plan" {
 # Deploy app service web app
 # ------------------------------------------------------------------------------------------------------
 resource "azurecaf_name" "web_name" {
-  name          = "web-${random_string.resource_token.result}"
+  name          = "web-${local.resource_token}"
   resource_type = "azurerm_app_service"
   random_length = 0
   clean_input   = true
@@ -69,7 +69,7 @@ resource "azurerm_linux_web_app" "web" {
 # Deploy app service api
 # ------------------------------------------------------------------------------------------------------
 resource "azurecaf_name" "appi_name" {
-  name          = "api-${random_string.resource_token.result}"
+  name          = "api-${local.resource_token}"
   resource_type = "azurerm_app_service"
   random_length = 0
   clean_input   = true

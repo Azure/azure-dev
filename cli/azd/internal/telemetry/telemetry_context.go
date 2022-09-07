@@ -2,8 +2,6 @@ package telemetry
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 
 	"github.com/azure/azure-dev/cli/azd/internal/telemetry/baggage"
 	"github.com/azure/azure-dev/cli/azd/internal/telemetry/fields"
@@ -29,12 +27,6 @@ func ContextWithEnvironment(ctx context.Context, env *environment.Environment) c
 // ContextWithTemplate sets the template in context for telemetry purposes.
 func ContextWithTemplate(ctx context.Context, templateName string) context.Context {
 	return SetAttributesInContext(ctx, fields.TemplateIdKey.String(sha256Hash(templateName)))
-}
-
-func sha256Hash(val string) string {
-	sha := sha256.Sum256([]byte(val))
-	hash := hex.EncodeToString(sha[:])
-	return hash
 }
 
 func TemplateFromContext(ctx context.Context) string {

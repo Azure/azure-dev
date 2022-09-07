@@ -38,10 +38,6 @@ func (userAgent *UserAgent) String() string {
 	return sb.String()
 }
 
-const (
-	templateContextKey contextKey = "template"
-)
-
 func appendIdentifier(sb *strings.Builder, identifier string) {
 	if identifier != "" {
 		sb.WriteString(" " + identifier)

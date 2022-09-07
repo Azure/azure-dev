@@ -69,7 +69,8 @@ func envSetCmd(rootOptions *internal.GlobalCommandOptions) *cobra.Command {
 			return err
 		}
 
-		env, ctx, err := loadOrInitEnvironment(ctx, &rootOptions.EnvironmentName, azdCtx, console)
+		//lint:ignore SA4006 // We want ctx overridden here for future changes
+		env, ctx, err := loadOrInitEnvironment(ctx, &rootOptions.EnvironmentName, azdCtx, console) //nolint:ineffassign,staticcheck
 		if err != nil {
 			return fmt.Errorf("loading environment: %w", err)
 		}
@@ -304,7 +305,8 @@ func envGetValuesCmd(rootOptions *internal.GlobalCommandOptions) *cobra.Command 
 			formatter := output.GetFormatter(ctx)
 			writer := output.GetWriter(ctx)
 
-			env, ctx, err := loadOrInitEnvironment(ctx, &rootOptions.EnvironmentName, azdCtx, console)
+			//lint:ignore SA4006 // We want ctx overridden here for future changes
+			env, ctx, err := loadOrInitEnvironment(ctx, &rootOptions.EnvironmentName, azdCtx, console) //nolint:ineffassign,staticcheck
 			if err != nil {
 				return err
 			}

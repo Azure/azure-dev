@@ -19,7 +19,7 @@ const baggageKey contextKey = "baggageState"
 // ContextWithAttributes returns a copy of ctx with attributes set.
 func ContextWithAttributes(ctx context.Context, attributes []attribute.KeyValue) context.Context {
 	bg := BaggageFromContext(ctx)
-	bg.Set(attributes...)
+	bg = bg.Set(attributes...)
 	return ContextWithBaggage(ctx, bg)
 }
 

@@ -21,14 +21,6 @@ resource "azurerm_resource_group" "rg" {
   tags = local.tags
 }
 
-
-#   keepers = {
-#     env      = var.environment_name,
-#     location = azurerm_resource_group.rg.location,
-#     subid    = data.azurerm_client_config.current.subscription_id
-#   }
-# }
-
 # ------------------------------------------------------------------------------------------------------
 # Deploy application insights
 # ------------------------------------------------------------------------------------------------------

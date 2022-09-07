@@ -130,7 +130,7 @@ func (d *deployAction) Run(ctx context.Context, cmd *cobra.Command, args []strin
 			continue
 		}
 
-		deployAndReportProgress := func(showProgress func(string)) error {
+		deployAndReportProgress := func(ctx context.Context, showProgress func(string)) error {
 			result, progress := svc.Deploy(ctx, azdCtx)
 
 			// Report any progress
@@ -155,18 +155,21 @@ func (d *deployAction) Run(ctx context.Context, cmd *cobra.Command, args []strin
 			deployMsg := fmt.Sprintf("Deploying service %s...", output.WithHighLightFormat(svc.Config.Name))
 			console.Message(ctx, deployMsg)
 
-			spinner := spin.NewSpinner(deployMsg)
-			ctx = spin.WithSpinner(ctx, spinner)
+			spinner := spin.GetSpinner(ctx)
+			if spinner == nil {
+				spinner = spin.NewSpinner(deployMsg)
+				ctx = spin.WithSpinner(ctx, spinner)
+			}
 
 			spinner.Start()
-			err = deployAndReportProgress(spinner.Title)
+			err = deployAndReportProgress(ctx, spinner.Title)
 			spinner.Stop()
 
 			if err == nil {
 				reportServiceDeploymentResultInteractive(ctx, console, svc, &svcDeploymentResult)
 			}
 		} else {
-			err = deployAndReportProgress(nil)
+			err = deployAndReportProgress(ctx, nil)
 		}
 		if err != nil {
 			return err

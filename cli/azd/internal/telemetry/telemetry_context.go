@@ -2,6 +2,7 @@ package telemetry
 
 import (
 	"context"
+	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/internal/telemetry/baggage"
 	"github.com/azure/azure-dev/cli/azd/internal/telemetry/fields"
@@ -25,7 +26,7 @@ func ContextWithEnvironment(ctx context.Context, env *environment.Environment) c
 
 // ContextWithTemplate sets the template in context for telemetry purposes.
 func ContextWithTemplate(ctx context.Context, templateName string) context.Context {
-	return SetAttributesInContext(ctx, fields.TemplateIdKey.String(sha256Hash(templateName)))
+	return SetAttributesInContext(ctx, fields.TemplateIdKey.String(sha256Hash(strings.ToLower(templateName))))
 }
 
 func TemplateFromContext(ctx context.Context) string {

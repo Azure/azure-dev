@@ -61,7 +61,7 @@ In VS Code you can create a launch.json that runs the tool with a specified set 
 
 We use `gotestsum`, which is a simple tool that wraps `go test` except with better formatting output. Install the tool by running `go install gotest.tools/gotestsum@latest`.
 
-### Run all units tests
+### Run all unit tests
 
 `gotestsum -- -short ./...`
 

@@ -15,8 +15,3 @@ type FrameworkService interface {
 	InstallDependencies(ctx context.Context) error
 	Initialize(ctx context.Context) error
 }
-
-var _ FrameworkService = &dotnetProject{}
-var _ FrameworkService = &npmProject{}
-var _ FrameworkService = &pythonProject{}
-var _ FrameworkService = &dockerProject{}

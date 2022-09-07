@@ -87,7 +87,7 @@ func (i *initAction) Run(ctx context.Context, cmd *cobra.Command, args []string,
 
 	console := input.GetConsole(ctx)
 	azCli := azcli.GetAzCli(ctx)
-	gitCli := git.NewGitCli()
+	gitCli := git.NewGitCli(ctx)
 
 	requiredTools := []tools.ExternalTool{azCli}
 

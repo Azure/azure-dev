@@ -18,6 +18,8 @@ azurestaticapps
 azureutil
 Backticks
 BOOLSLICE
+circleci
+cflags
 cmdsubst
 containerapp
 csharpapp
@@ -43,6 +45,7 @@ nolint
 omitempty
 opentelemetry
 osutil
+osversion
 otel
 pflag
 pulumi
@@ -58,8 +61,10 @@ STRINGSLICE
 structs
 Syncer
 swacli
+teamcity
 tracesdk
 tracetest
 unmarshalling
+utsname
 westus2
 yacspin

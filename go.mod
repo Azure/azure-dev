@@ -1,6 +1,6 @@
 module github.com/azure/azure-dev
 
-go 1.18
+go 1.19
 
 require (
 	github.com/AlecAivazis/survey/v2 v2.3.2
@@ -9,6 +9,7 @@ require (
 	github.com/drone/envsubst v1.0.3
 	github.com/fatih/color v1.13.0
 	github.com/gofrs/flock v0.8.1
+	github.com/google/uuid v1.3.0
 	github.com/joho/godotenv v1.4.0
 	github.com/magefile/mage v1.12.1
 	github.com/mattn/go-colorable v0.1.12

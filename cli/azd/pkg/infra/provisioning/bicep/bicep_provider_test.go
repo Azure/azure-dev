@@ -10,13 +10,13 @@ import (
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
-	"github.com/azure/azure-dev/cli/azd/pkg/executil"
+	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	. "github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
-	execmock "github.com/azure/azure-dev/cli/azd/test/mocks/executil"
+	execmock "github.com/azure/azure-dev/cli/azd/test/mocks/exec"
 	"github.com/stretchr/testify/require"
 )
 
@@ -275,37 +275,37 @@ func createBicepProvider(ctx context.Context) *BicepProvider {
 	return NewBicepProvider(ctx, &env, projectDir, options)
 }
 
-func prepareGenericMocks(execUtil *execmock.MockCommandRunner) {
-	// Setup expected values for executil
-	execUtil.When(func(args executil.RunArgs, command string) bool {
+func prepareGenericMocks(commandRunner *execmock.MockCommandRunner) {
+	// Setup expected values for exec
+	commandRunner.When(func(args exec.RunArgs, command string) bool {
 		return strings.Contains(command, "az version")
-	}).Respond(executil.RunResult{
+	}).Respond(exec.RunResult{
 		Stdout: `{"azure-cli": "2.38.0"}`,
 		Stderr: "",
 	})
 }
 
 // Sets up all the mocks required for the bicep plan & deploy operation
-func prepareDeployMocks(execUtil *execmock.MockCommandRunner) {
+func prepareDeployMocks(commandRunner *execmock.MockCommandRunner) {
 	// Gets deployment progress
-	execUtil.When(
-		func(args executil.RunArgs, command string) bool {
+	commandRunner.When(
+		func(args exec.RunArgs, command string) bool {
 			return strings.Contains(command, "az deployment operation sub list")
-		}).Respond(executil.RunResult{
+		}).Respond(exec.RunResult{
 		Stdout: "",
 		Stderr: "",
 	})
 
 	// Gets deployment progress
-	execUtil.When(func(args executil.RunArgs, command string) bool {
+	commandRunner.When(func(args exec.RunArgs, command string) bool {
 		return strings.Contains(command, "deployment operation group list")
-	}).Respond(executil.RunResult{
+	}).Respond(exec.RunResult{
 		Stdout: "",
 		Stderr: "",
 	})
 }
 
-func preparePlanningMocks(execUtil *execmock.MockCommandRunner) {
+func preparePlanningMocks(commandRunner *execmock.MockCommandRunner) {
 	expectedWebsiteUrl := "http://myapp.azurewebsites.net"
 	bicepInputParams := make(map[string]BicepInputParameter)
 	bicepInputParams["name"] = BicepInputParameter{Value: "${AZURE_ENV_NAME}"}
@@ -342,31 +342,31 @@ func preparePlanningMocks(execUtil *execmock.MockCommandRunner) {
 	bicepBytes, _ := json.Marshal(bicepTemplate)
 	deployResultBytes, _ := json.Marshal(azDeployment)
 
-	execUtil.When(func(args executil.RunArgs, command string) bool {
+	commandRunner.When(func(args exec.RunArgs, command string) bool {
 		return strings.Contains(command, "az bicep build")
-	}).Respond(executil.RunResult{
+	}).Respond(exec.RunResult{
 		Stdout: string(bicepBytes),
 		Stderr: "",
 	})
 
 	// ARM deployment
-	execUtil.When(func(args executil.RunArgs, command string) bool {
+	commandRunner.When(func(args exec.RunArgs, command string) bool {
 		return strings.Contains(command, "az deployment sub create")
-	}).Respond(executil.RunResult{
+	}).Respond(exec.RunResult{
 		Stdout: string(deployResultBytes),
 		Stderr: "",
 	})
 
 	// Get deployment result
-	execUtil.When(func(args executil.RunArgs, command string) bool {
+	commandRunner.When(func(args exec.RunArgs, command string) bool {
 		return strings.Contains(command, "az deployment sub show")
-	}).Respond(executil.RunResult{
+	}).Respond(exec.RunResult{
 		Stdout: string(deployResultBytes),
 		Stderr: "",
 	})
 }
 
-func prepareDestroyMocks(execUtil *execmock.MockCommandRunner) {
+func prepareDestroyMocks(commandRunner *execmock.MockCommandRunner) {
 	resourceList := []azcli.AzCliResource{
 		{
 			Id:   "webapp",
@@ -397,41 +397,41 @@ func prepareDestroyMocks(execUtil *execmock.MockCommandRunner) {
 	keyVaultBytes, _ := json.Marshal(keyVault)
 
 	// Get list of resources to delete
-	execUtil.When(func(args executil.RunArgs, command string) bool {
+	commandRunner.When(func(args exec.RunArgs, command string) bool {
 		return strings.Contains(command, "az resource list")
-	}).Respond(executil.RunResult{
+	}).Respond(exec.RunResult{
 		Stdout: string(resourceListBytes),
 		Stderr: "",
 	})
 
 	// Get Key Vault
-	execUtil.When(func(args executil.RunArgs, command string) bool {
+	commandRunner.When(func(args exec.RunArgs, command string) bool {
 		return strings.Contains(command, "az keyvault show")
-	}).Respond(executil.RunResult{
+	}).Respond(exec.RunResult{
 		Stdout: string(keyVaultBytes),
 		Stderr: "",
 	})
 
 	// Delete resource group
-	execUtil.When(func(args executil.RunArgs, command string) bool {
+	commandRunner.When(func(args exec.RunArgs, command string) bool {
 		return strings.Contains(command, "az group delete")
-	}).Respond(executil.RunResult{
+	}).Respond(exec.RunResult{
 		Stdout: "",
 		Stderr: "",
 	})
 
 	// Purge Key vault
-	execUtil.When(func(args executil.RunArgs, command string) bool {
+	commandRunner.When(func(args exec.RunArgs, command string) bool {
 		return strings.Contains(command, "az keyvault purge")
-	}).Respond(executil.RunResult{
+	}).Respond(exec.RunResult{
 		Stdout: "",
 		Stderr: "",
 	})
 
 	// Delete deployment
-	execUtil.When(func(args executil.RunArgs, command string) bool {
+	commandRunner.When(func(args exec.RunArgs, command string) bool {
 		return strings.Contains(command, "az deployment sub delete")
-	}).Respond(executil.RunResult{
+	}).Respond(exec.RunResult{
 		Stdout: "",
 		Stderr: "",
 	})

@@ -1,7 +1,7 @@
 locals {
   tags             = { azd-env-name : var.environment_name }
-  sha = base64encode(sha256("${var.environment_name}${var.location}${data.azurerm_client_config.current.subscription_id}"))
-  resource_token   = substr(replace(lower(local.sha),"[^A-Za-z0-9_]",""), 0, 13)
+  sha              = base64encode(sha256("${var.environment_name}${var.location}${data.azurerm_client_config.current.subscription_id}"))
+  resource_token   = substr(replace(lower(local.sha), "[^A-Za-z0-9_]", ""), 0, 13)
   api_command_line = "gunicorn --workers 4 --threads 2 --timeout 60 --access-logfile \"-\" --error-logfile \"-\" --bind=0.0.0.0:8000 -k uvicorn.workers.UvicornWorker todo.app:app"
 }
 # ------------------------------------------------------------------------------------------------------

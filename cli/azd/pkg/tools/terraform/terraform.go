@@ -84,7 +84,7 @@ func (cli *terraformCli) CheckInstalled(ctx context.Context) (bool, error) {
 }
 
 func (cli *terraformCli) runCommand(ctx context.Context, args ...string) (exec.RunResult, error) {
-	runArgs := exec.NewRunArgs("terraform", args...)
+	runArgs := exec.NewRunArgs("terraform", args...).WithInteractive(true)
 	return cli.commandRunner.Run(ctx, runArgs)
 }
 

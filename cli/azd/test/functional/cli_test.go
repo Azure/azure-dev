@@ -9,8 +9,10 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"flag"
 	"fmt"
 	"io/fs"
+	"log"
 	"net/http"
 	"os"
 	osexec "os/exec"
@@ -38,8 +40,6 @@ import (
 )
 
 func Test_CLI_Login_FailsIfNoAzCliIsMissing(t *testing.T) {
-	SkipIfShort(t)
-
 	ctx, cancel := newTestContext(t)
 	defer cancel()
 
@@ -55,7 +55,6 @@ func Test_CLI_Login_FailsIfNoAzCliIsMissing(t *testing.T) {
 }
 
 func Test_CLI_Version_PrintsVersion(t *testing.T) {
-	SkipIfShort(t)
 	ctx, cancel := newTestContext(t)
 	defer cancel()
 
@@ -73,7 +72,6 @@ func Test_CLI_Version_PrintsVersion(t *testing.T) {
 }
 
 func Test_CLI_Init_FailsIfAzCliIsMissing(t *testing.T) {
-	SkipIfShort(t)
 	ctx, cancel := newTestContext(t)
 	defer cancel()
 
@@ -91,7 +89,6 @@ func Test_CLI_Init_FailsIfAzCliIsMissing(t *testing.T) {
 }
 
 func Test_CLI_Init_AsksForSubscriptionIdAndCreatesEnvAndProjectFile(t *testing.T) {
-	SkipIfShort(t)
 	ctx, cancel := newTestContext(t)
 	defer cancel()
 
@@ -118,7 +115,6 @@ func Test_CLI_Init_AsksForSubscriptionIdAndCreatesEnvAndProjectFile(t *testing.T
 }
 
 func Test_CLI_Init_CanUseTemplate(t *testing.T) {
-	SkipIfShort(t)
 	// running this test in parallel is ok as it uses a t.TempDir()
 	t.Parallel()
 	ctx, cancel := newTestContext(t)
@@ -143,7 +139,6 @@ func Test_CLI_Init_CanUseTemplate(t *testing.T) {
 
 // Test when we have multiple resource group matches. More than one rg has azd-env-name set
 func Test_CLI_ResourceGroupNameWithMultipleMatches(t *testing.T) {
-	SkipIfShort(t)
 	// running this test in parallel is ok as it uses a t.TempDir()
 	t.Parallel()
 	envName := randomEnvName()
@@ -152,7 +147,6 @@ func Test_CLI_ResourceGroupNameWithMultipleMatches(t *testing.T) {
 
 // Test when we can't find any resource group matches
 func Test_CLI_ResourceGroupNameWithoutMatch(t *testing.T) {
-	SkipIfShort(t)
 	// running this test in parallel is ok as it uses a t.TempDir()
 	t.Parallel()
 	envName := randomEnvName()
@@ -161,7 +155,6 @@ func Test_CLI_ResourceGroupNameWithoutMatch(t *testing.T) {
 
 // Test when resource group uses rg- prefix
 func Test_CLI_ResourceGroupNameWithPrefix(t *testing.T) {
-	SkipIfShort(t)
 	// running this test in parallel is ok as it uses a t.TempDir()
 	t.Parallel()
 	envName := randomEnvName()
@@ -170,7 +163,6 @@ func Test_CLI_ResourceGroupNameWithPrefix(t *testing.T) {
 
 // Test when resource group uses -rg suffix
 func Test_CLI_ResourceGroupNameWithSuffix(t *testing.T) {
-	SkipIfShort(t)
 	// running this test in parallel is ok as it uses a t.TempDir()
 	t.Parallel()
 	envName := randomEnvName()
@@ -179,7 +171,6 @@ func Test_CLI_ResourceGroupNameWithSuffix(t *testing.T) {
 
 // Test when we don't have any resource groups with azd-env-name tag
 func Test_CLI_ResourceGroupNameWithoutEnvNameTag(t *testing.T) {
-	SkipIfShort(t)
 	// running this test in parallel is ok as it uses a t.TempDir()
 	t.Parallel()
 	envName := randomEnvName()
@@ -255,7 +246,6 @@ func Internal_Test_CLI_ResourceGroupsName(t *testing.T, envName string, rgName s
 }
 
 func Test_CLI_InfraCreateAndDelete(t *testing.T) {
-	SkipIfShort(t)
 	// running this test in parallel is ok as it uses a t.TempDir()
 	t.Parallel()
 	ctx, cancel := newTestContext(t)
@@ -302,7 +292,6 @@ func Test_CLI_InfraCreateAndDelete(t *testing.T) {
 }
 
 func Test_CLI_InfraCreateAndDeleteUpperCase(t *testing.T) {
-	SkipIfShort(t)
 	// running this test in parallel is ok as it uses a t.TempDir()
 	t.Parallel()
 	ctx, cancel := newTestContext(t)
@@ -349,7 +338,6 @@ func Test_CLI_InfraCreateAndDeleteUpperCase(t *testing.T) {
 }
 
 func Test_CLI_InfraCreateAndDeleteWebApp(t *testing.T) {
-	SkipIfShort(t)
 	// running this test in parallel is ok as it uses a t.TempDir()
 	t.Parallel()
 	ctx, cancel := newTestContext(t)
@@ -439,7 +427,6 @@ func Test_CLI_InfraCreateAndDeleteWebApp(t *testing.T) {
 
 // test for azd deploy, azd deploy --service
 func Test_CLI_DeployInvalidName(t *testing.T) {
-	SkipIfShort(t)
 	// running this test in parallel is ok as it uses a t.TempDir()
 	t.Parallel()
 	ctx, cancel := newTestContext(t)
@@ -466,7 +453,6 @@ func Test_CLI_DeployInvalidName(t *testing.T) {
 }
 
 func Test_CLI_RestoreCommand(t *testing.T) {
-	SkipIfShort(t)
 	// running this test in parallel is ok as it uses a t.TempDir()
 	t.Parallel()
 	ctx, cancel := newTestContext(t)
@@ -496,7 +482,6 @@ func Test_CLI_RestoreCommand(t *testing.T) {
 }
 
 func Test_CLI_InfraCreateAndDeleteFuncApp(t *testing.T) {
-	SkipIfShort(t)
 	// running this test in parallel is ok as it uses a t.TempDir()
 	t.Parallel()
 	ctx, cancel := newTestContext(t)
@@ -562,7 +547,6 @@ func Test_CLI_InfraCreateAndDeleteFuncApp(t *testing.T) {
 }
 
 func Test_CLI_ProjectIsNeeded(t *testing.T) {
-	SkipIfShort(t)
 	ctx, cancel := newTestContext(t)
 	defer cancel()
 
@@ -600,7 +584,6 @@ func Test_CLI_ProjectIsNeeded(t *testing.T) {
 		}
 
 		t.Run(test.command, func(t *testing.T) {
-			SkipIfShort(t)
 			out, err := cli.RunCommand(ctx, args...)
 			assert.Error(t, err)
 			assert.Regexp(t, "no project exists; to create a new project, run `azd init`", out)
@@ -609,7 +592,6 @@ func Test_CLI_ProjectIsNeeded(t *testing.T) {
 }
 
 func Test_CLI_NoDebugSpewWhenHelpPassedWithoutDebug(t *testing.T) {
-	SkipIfShort(t)
 	stdErrBuf := bytes.Buffer{}
 
 	cmd := osexec.Command(azdcli.GetAzdLocation(), "--help")
@@ -711,9 +693,14 @@ func newTestContext(t *testing.T) (context.Context, context.CancelFunc) {
 	return context.WithCancel(ctx)
 }
 
-func SkipIfShort(t *testing.T) {
-	t.Helper()
-	if testing.Short() {
-		t.Skip("skipping tests in short mode")
+func TestMain(m *testing.M) {
+	flag.Parse()
+	shortFlag := flag.Lookup("test.short")
+	if shortFlag != nil && shortFlag.Value.String() == "true" {
+		log.Println("Skipping tests in short mode")
+		os.Exit(0)
 	}
+
+	exitVal := m.Run()
+	os.Exit(exitVal)
 }

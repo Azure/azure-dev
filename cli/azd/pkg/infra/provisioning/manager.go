@@ -259,13 +259,7 @@ func (m *Manager) runAction(ctx context.Context, title string, interactive bool,
 	var spinner *spin.Spinner
 
 	if interactive {
-		// Check whether there is already a spinner active in the current context
-		spinner = spin.GetSpinner(ctx)
-		// If we don't find a spinner then create one and set it on the context
-		if spinner == nil {
-			spinner = spin.NewSpinner(title)
-			ctx = spin.WithSpinner(ctx, spinner)
-		}
+		spinner, ctx = spin.GetOrCreateSpinner(ctx, title)
 		defer spinner.Stop()
 		defer m.console.SetWriter(nil)
 

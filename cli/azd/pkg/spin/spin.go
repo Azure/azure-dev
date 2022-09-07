@@ -123,3 +123,17 @@ func GetSpinner(ctx context.Context) *Spinner {
 
 	return spinner
 }
+
+// Gets a spinner from the specified context, otherwise creates a new instance
+// Returns a new context when a new spinner is created
+func GetOrCreateSpinner(ctx context.Context, title string) (*Spinner, context.Context) {
+	spinner := GetSpinner(ctx)
+	if spinner == nil {
+		spinner = NewSpinner(title)
+		ctx = WithSpinner(ctx, spinner)
+	}
+
+	spinner.Title(title)
+
+	return spinner, ctx
+}

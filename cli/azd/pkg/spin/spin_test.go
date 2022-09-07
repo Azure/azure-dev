@@ -63,7 +63,7 @@ func Test_Println(t *testing.T) {
 	spinner.Stop()
 }
 
-func Test_WithGetSpinner(t *testing.T) {
+func Test_GetAndSetSpinner(t *testing.T) {
 	rootContext := context.Background()
 	spinner := GetSpinner(rootContext)
 
@@ -79,4 +79,27 @@ func Test_WithGetSpinner(t *testing.T) {
 
 	// Still nil on the root context
 	require.Nil(t, existingOnRootContext)
+}
+
+func Test_GetOrCreate(t *testing.T) {
+	t.Run("New", func(t *testing.T) {
+		rootContext := context.Background()
+		spinner, newContext := GetOrCreateSpinner(rootContext, "New")
+
+		require.NotNil(t, spinner)
+		require.NotSame(t, rootContext, newContext)
+	})
+
+	t.Run("Existing", func(t *testing.T) {
+		// Create new context and manually add Spinner to context.
+		rootContext := context.Background()
+		existingSpinner := NewSpinner("Existing")
+		existingContext := WithSpinner(rootContext, existingSpinner)
+
+		// Get spinner or create spinner from context
+		newSpinner, newContext := GetOrCreateSpinner(existingContext, "Test")
+
+		require.Same(t, existingSpinner, newSpinner)
+		require.Same(t, existingContext, newContext)
+	})
 }

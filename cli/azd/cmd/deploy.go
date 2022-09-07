@@ -155,11 +155,7 @@ func (d *deployAction) Run(ctx context.Context, cmd *cobra.Command, args []strin
 			deployMsg := fmt.Sprintf("Deploying service %s...", output.WithHighLightFormat(svc.Config.Name))
 			console.Message(ctx, deployMsg)
 
-			spinner := spin.GetSpinner(ctx)
-			if spinner == nil {
-				spinner = spin.NewSpinner(deployMsg)
-				ctx = spin.WithSpinner(ctx, spinner)
-			}
+			spinner, ctx := spin.GetOrCreateSpinner(ctx, deployMsg)
 
 			spinner.Start()
 			err = deployAndReportProgress(ctx, spinner.Title)

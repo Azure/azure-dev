@@ -2,11 +2,13 @@ package spin
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"io"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func Test_Run(t *testing.T) {
@@ -59,4 +61,22 @@ func Test_Println(t *testing.T) {
 	assert.Contains(t, buf.String(), message)
 
 	spinner.Stop()
+}
+
+func Test_WithGetSpinner(t *testing.T) {
+	rootContext := context.Background()
+	spinner := GetSpinner(rootContext)
+
+	// Spinner hasn't been set yet
+	require.Nil(t, spinner)
+
+	spinner = NewSpinner("Test")
+	newContext := WithSpinner(rootContext, spinner)
+
+	existingOnNewContext := GetSpinner(newContext)
+	existingOnRootContext := GetSpinner(rootContext)
+	require.Same(t, spinner, existingOnNewContext)
+
+	// Still nil on the root context
+	require.Nil(t, existingOnRootContext)
 }

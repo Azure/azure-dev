@@ -152,9 +152,12 @@ func (d *deployAction) Run(ctx context.Context, cmd *cobra.Command, args []strin
 		}
 
 		if interactive {
-			deployMsg := fmt.Sprintf("Deploying service %s", svc.Config.Name)
-			fmt.Println(deployMsg)
+			deployMsg := fmt.Sprintf("Deploying service %s...", output.WithHighLightFormat(svc.Config.Name))
+			console.Message(ctx, deployMsg)
+
 			spinner := spin.NewSpinner(deployMsg)
+			ctx = spin.WithSpinner(ctx, spinner)
+
 			spinner.Start()
 			err = deployAndReportProgress(spinner.Title)
 			spinner.Stop()
@@ -207,7 +210,7 @@ func (d *deployAction) Run(ctx context.Context, cmd *cobra.Command, args []strin
 func reportServiceDeploymentResultInteractive(ctx context.Context, console input.Console, svc *project.Service, sdr *project.ServiceDeploymentResult) {
 	var builder strings.Builder
 
-	builder.WriteString(fmt.Sprintf("Deployed service %s\n", svc.Config.Name))
+	builder.WriteString(fmt.Sprintf("Deployed service %s\n", output.WithHighLightFormat(svc.Config.Name)))
 
 	for _, endpoint := range sdr.Endpoints {
 		builder.WriteString(fmt.Sprintf(" - Endpoint: %s\n", output.WithLinkFormat(endpoint)))

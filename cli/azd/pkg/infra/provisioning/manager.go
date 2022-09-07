@@ -45,7 +45,7 @@ func (m *Manager) Plan(ctx context.Context) (*DeploymentPlan, error) {
 func (m *Manager) GetDeployment(ctx context.Context, scope infra.Scope) (*DeployResult, error) {
 	var deployResult *DeployResult
 
-	err := m.runAction("Retrieving Azure Deployment", m.interactive, func(spinner *spin.Spinner) error {
+	err := m.runAction(ctx, "Retrieving Azure Deployment", m.interactive, func(ctx context.Context, spinner *spin.Spinner) error {
 		queryTask := m.provider.GetDeployment(ctx, scope)
 
 		go func() {
@@ -120,7 +120,7 @@ func (m *Manager) Destroy(ctx context.Context, deployment *Deployment, options D
 func (m *Manager) plan(ctx context.Context) (*DeploymentPlan, error) {
 	var deploymentPlan *DeploymentPlan
 
-	err := m.runAction("Planning infrastructure provisioning", m.interactive, func(spinner *spin.Spinner) error {
+	err := m.runAction(ctx, "Planning infrastructure provisioning", m.interactive, func(ctx context.Context, spinner *spin.Spinner) error {
 		planningTask := m.provider.Plan(ctx)
 
 		go func() {
@@ -145,7 +145,7 @@ func (m *Manager) plan(ctx context.Context) (*DeploymentPlan, error) {
 		return nil, fmt.Errorf("planning infrastructure provisioning: %w", err)
 	}
 
-	m.console.Message(ctx, "\nInfrastructure provisioning planned")
+	m.console.Message(ctx, output.WithSuccessFormat("\nInfrastructure provisioning plan completed successfully"))
 
 	return deploymentPlan, nil
 }
@@ -154,7 +154,7 @@ func (m *Manager) plan(ctx context.Context) (*DeploymentPlan, error) {
 func (m *Manager) deploy(ctx context.Context, location string, plan *DeploymentPlan, scope infra.Scope) (*DeployResult, error) {
 	var deployResult *DeployResult
 
-	err := m.runAction("Provisioning Azure resources", m.interactive, func(spinner *spin.Spinner) error {
+	err := m.runAction(ctx, "Provisioning Azure resources", m.interactive, func(ctx context.Context, spinner *spin.Spinner) error {
 		deployTask := m.provider.Deploy(ctx, plan, scope)
 
 		go func() {
@@ -187,7 +187,7 @@ func (m *Manager) deploy(ctx context.Context, location string, plan *DeploymentP
 		m.writeJsonOutput(ctx, deployResult.Operations)
 	}
 
-	m.console.Message(ctx, "\nAzure resource provisioning completed successfully")
+	m.console.Message(ctx, output.WithSuccessFormat("\nAzure resource provisioning completed successfully"))
 
 	return deployResult, nil
 }
@@ -196,7 +196,7 @@ func (m *Manager) deploy(ctx context.Context, location string, plan *DeploymentP
 func (m *Manager) destroy(ctx context.Context, deployment *Deployment, options DestroyOptions) (*DestroyResult, error) {
 	var destroyResult *DestroyResult
 
-	err := m.runAction("Destroying Azure resources", m.interactive, func(spinner *spin.Spinner) error {
+	err := m.runAction(ctx, "Destroying Azure resources", m.interactive, func(ctx context.Context, spinner *spin.Spinner) error {
 		destroyTask := m.provider.Destroy(ctx, deployment, options)
 
 		go func() {
@@ -221,7 +221,7 @@ func (m *Manager) destroy(ctx context.Context, deployment *Deployment, options D
 		return nil, fmt.Errorf("error destroying Azure resources: %w", err)
 	}
 
-	m.console.Message(ctx, "\nDestroyed Azure resources")
+	m.console.Message(ctx, output.WithSuccessFormat("\nDestroyed Azure resources"))
 
 	return destroyResult, nil
 }
@@ -255,11 +255,17 @@ func (m *Manager) ensureLocation(ctx context.Context, deployment *Deployment) (s
 	return location, nil
 }
 
-func (m *Manager) runAction(title string, interactive bool, action func(spinner *spin.Spinner) error) error {
+func (m *Manager) runAction(ctx context.Context, title string, interactive bool, action func(ctx context.Context, spinner *spin.Spinner) error) error {
 	var spinner *spin.Spinner
 
 	if interactive {
-		spinner = spin.NewSpinner(title)
+		// Check whether there is already a spinner active in the current context
+		spinner = spin.GetSpinner(ctx)
+		// If we don't find a spinner then create one and set it on the context
+		if spinner == nil {
+			spinner = spin.NewSpinner(title)
+			ctx = spin.WithSpinner(ctx, spinner)
+		}
 		defer spinner.Stop()
 		defer m.console.SetWriter(nil)
 
@@ -267,7 +273,7 @@ func (m *Manager) runAction(title string, interactive bool, action func(spinner 
 		m.console.SetWriter(spinner)
 	}
 
-	return action(spinner)
+	return action(ctx, spinner)
 }
 
 // Updates the spinner title during interactive console session

@@ -1,6 +1,7 @@
 package spin
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"sync"
@@ -99,4 +100,26 @@ func NewSpinner(title string) *Spinner {
 	return &Spinner{
 		spinner: spinner,
 	}
+}
+
+type contextKey string
+
+const (
+	spinnerContextKey contextKey = "spinner"
+)
+
+// Creates and returns new context with the specified spinner instance
+func WithSpinner(ctx context.Context, spinner *Spinner) context.Context {
+	return context.WithValue(ctx, spinnerContextKey, spinner)
+}
+
+// Attempts to retrieve a Spinner instance from the current context.
+// Returns the found instance when available or `nil` if not found.
+func GetSpinner(ctx context.Context) *Spinner {
+	spinner, ok := ctx.Value(spinnerContextKey).(*Spinner)
+	if !ok {
+		return nil
+	}
+
+	return spinner
 }

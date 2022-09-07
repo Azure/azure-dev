@@ -21,24 +21,30 @@ func getEnvironmentAttributes(env *environment.Environment) []attribute.KeyValue
 // ContextWithEnvironment sets the environment in context for telemetry purposes.
 func ContextWithEnvironment(ctx context.Context, env *environment.Environment) context.Context {
 	attributes := getEnvironmentAttributes(env)
-	return SetAttributesInContext(ctx, attributes...)
+	return SetBaggageInContext(ctx, attributes...)
 }
 
 // ContextWithTemplate sets the template in context for telemetry purposes.
 func ContextWithTemplate(ctx context.Context, templateName string) context.Context {
-	return SetAttributesInContext(ctx, fields.TemplateIdKey.String(sha256Hash(strings.ToLower(templateName))))
+	return SetBaggageInContext(ctx, fields.TemplateIdKey.String(sha256Hash(strings.ToLower(templateName))))
 }
 
+// TemplateFromContext retrieves the template stored in context.
+// If not found, an empty string is returned.
 func TemplateFromContext(ctx context.Context) string {
 	baggage := baggage.BaggageFromContext(ctx)
 	return baggage.Get(fields.TemplateIdKey).AsString()
 }
 
-func SetAttributesInContext(ctx context.Context, attributes ...attribute.KeyValue) context.Context {
-	// Set the attributes in the current running span so that they are immediately available
+// SetBaggageInContext sets the given attributes as baggage.
+// Baggage attributes are set for the current running span, and for any child spans created.
+func SetBaggageInContext(ctx context.Context, attributes ...attribute.KeyValue) context.Context {
+	SetAttributesInContext(ctx, attributes...)
+	return baggage.ContextWithAttributes(ctx, attributes)
+}
+
+// SetAttributesInContext sets the given attributes for the current running span.
+func SetAttributesInContext(ctx context.Context, attributes ...attribute.KeyValue) {
 	runningSpan := trace.SpanFromContext(ctx)
 	runningSpan.SetAttributes(attributes...)
-
-	// Set the attributes as baggage in the context so that they can be propagated to children spans
-	return baggage.ContextWithAttributes(ctx, attributes)
 }

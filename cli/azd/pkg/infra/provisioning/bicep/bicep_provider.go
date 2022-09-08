@@ -278,7 +278,7 @@ func (p *BicepProvider) getAllResources(ctx context.Context, resourceGroups []st
 	allResources := []azcli.AzCliResource{}
 
 	for _, resourceGroup := range resourceGroups {
-		resources, err := p.azCli.ListResourceGroupResources(ctx, p.env.GetSubscriptionId(), resourceGroup)
+		resources, err := p.azCli.ListResourceGroupResources(ctx, p.env.GetSubscriptionId(), resourceGroup, nil)
 		if err != nil {
 			return []azcli.AzCliResource{}, nil
 		}

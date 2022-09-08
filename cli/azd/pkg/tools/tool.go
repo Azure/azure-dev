@@ -7,10 +7,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os/exec"
+	osexec "os/exec"
 	"regexp"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/executil"
+	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/blang/semver/v4"
 )
 
@@ -39,12 +39,12 @@ func (err *ErrSemver) Error() string {
 // does, but returns "(false, nil)" in the case where os.LookPath would return
 // exec.ErrNotFound.
 func ToolInPath(name string) (bool, error) {
-	_, err := exec.LookPath(name)
+	_, err := osexec.LookPath(name)
 
 	switch {
 	case err == nil:
 		return true, nil
-	case errors.Is(err, exec.ErrNotFound):
+	case errors.Is(err, osexec.ErrNotFound):
 		return false, nil
 	default:
 		return false, fmt.Errorf("failed searching for `%s` on PATH: %w", name, err)
@@ -52,7 +52,8 @@ func ToolInPath(name string) (bool, error) {
 }
 
 func ExecuteCommand(ctx context.Context, cmd string, args ...string) (string, error) {
-	runResult, err := executil.RunWithResult(ctx, executil.RunArgs{
+	commandRunner := exec.GetCommandRunner(ctx)
+	runResult, err := commandRunner.Run(ctx, exec.RunArgs{
 		Cmd:  cmd,
 		Args: args,
 	})

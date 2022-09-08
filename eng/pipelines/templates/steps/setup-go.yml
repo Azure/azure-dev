@@ -1,5 +1,5 @@
 parameters:
-  GoVersion: 1.18
+  GoVersion: 1.19
 
 steps:
   - task: GoTool@0

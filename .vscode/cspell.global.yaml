@@ -24,6 +24,7 @@ ignoreWords:
     - bicepcli
     - cdne
     - cdnp
+    - commandrunner
     - databricks
     - dedb
     - dnsz
@@ -35,9 +36,11 @@ ignoreWords:
     - execmock
     - fdfp
     - Frontdoor
+    - hndl
     - httpclient
     - inputhelper
     - ippre
+    - JOBOBJECT
     - kubernetes
     - kusto
     - migr
@@ -47,6 +50,7 @@ ignoreWords:
     - nsgsr
     - ntfns
     - osdisk
+    - osexec
     - pcert
     - pdnsz
     - Peerings
@@ -80,6 +84,10 @@ ignoreWords:
     - httptrigger
     - resourcegroups
     - devcontainer
+    - azurecaf
+    - azurerm
+    - aztfmod
+    - menuid
 useGitignore: true
 dictionaryDefinitions:
     - name: gitHubUserAliases

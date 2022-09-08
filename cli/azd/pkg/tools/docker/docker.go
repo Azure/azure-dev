@@ -7,27 +7,19 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/executil"
+	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/blang/semver/v4"
 )
 
-func NewDocker(args DockerArgs) *Docker {
-	if args.RunWithResultFn == nil {
-		args.RunWithResultFn = executil.RunWithResult
-	}
-
+func NewDocker(ctx context.Context) *Docker {
 	return &Docker{
-		runWithResultFn: args.RunWithResultFn,
+		commandRunner: exec.GetCommandRunner(ctx),
 	}
-}
-
-type DockerArgs struct {
-	RunWithResultFn func(ctx context.Context, args executil.RunArgs) (executil.RunResult, error)
 }
 
 type Docker struct {
-	runWithResultFn func(ctx context.Context, args executil.RunArgs) (executil.RunResult, error)
+	commandRunner exec.CommandRunner
 }
 
 // Runs a Docker build for a given Dockerfile. If the platform is not specified (empty), it defaults to amd64. If the build is successful, the function
@@ -122,11 +114,10 @@ func (d *Docker) Name() string {
 	return "Docker"
 }
 
-func (d *Docker) executeCommand(ctx context.Context, cwd string, args ...string) (executil.RunResult, error) {
-	return d.runWithResultFn(ctx, executil.RunArgs{
-		Cmd:         "docker",
-		Args:        args,
-		Cwd:         cwd,
-		EnrichError: true,
-	})
+func (d *Docker) executeCommand(ctx context.Context, cwd string, args ...string) (exec.RunResult, error) {
+	runArgs := exec.NewRunArgs("docker", args...).
+		WithCwd(cwd).
+		WithEnrichError(true)
+
+	return d.commandRunner.Run(ctx, runArgs)
 }

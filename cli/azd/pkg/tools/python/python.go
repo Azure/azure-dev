@@ -10,15 +10,19 @@ import (
 	"path/filepath"
 	"runtime"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/executil"
+	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/blang/semver/v4"
 )
 
-type PythonCli struct{}
+type PythonCli struct {
+	commandRunner exec.CommandRunner
+}
 
-func NewPythonCli() *PythonCli {
-	return &PythonCli{}
+func NewPythonCli(ctx context.Context) *PythonCli {
+	return &PythonCli{
+		commandRunner: exec.GetCommandRunner(ctx),
+	}
 }
 
 func (cli *PythonCli) versionInfo() tools.VersionInfo {
@@ -60,7 +64,7 @@ func (cli *PythonCli) Name() string {
 }
 
 func (cli *PythonCli) InstallRequirements(ctx context.Context, workingDir, environment, requirementFile string) error {
-	var res executil.RunResult
+	var res exec.RunResult
 	var err error
 
 	if runtime.GOOS == "windows" {
@@ -75,15 +79,18 @@ func (cli *PythonCli) InstallRequirements(ctx context.Context, workingDir, envir
 
 		vEnvSetting := fmt.Sprintf("VIRTUAL_ENV=%s", path.Join(absWorkingDir, environment))
 
-		res, err = executil.RunCommandWithShellAndEnvAndCwd(ctx, pythonExe(), []string{
-			"-m", "pip", "install", "-r", requirementFile,
-		}, []string{vEnvSetting}, workingDir)
+		runArgs := exec.
+			NewRunArgs(pythonExe(), "-m", "pip", "install", "-r", requirementFile).
+			WithCwd(workingDir).
+			WithEnv([]string{vEnvSetting})
+
+		res, err = cli.commandRunner.Run(ctx, runArgs)
 	} else {
 		envActivation := ". " + path.Join(environment, "bin", "activate")
 		installCmd := fmt.Sprintf("%s -m pip install -r %s", pythonExe(), requirementFile)
 		commands := []string{envActivation, installCmd}
 
-		res, err = executil.RunCommandList(ctx, commands, nil, workingDir)
+		res, err = exec.RunCommandList(ctx, commands, nil, workingDir)
 	}
 
 	if err != nil {
@@ -93,9 +100,12 @@ func (cli *PythonCli) InstallRequirements(ctx context.Context, workingDir, envir
 }
 
 func (cli *PythonCli) CreateVirtualEnv(ctx context.Context, workingDir, name string) error {
-	res, err := executil.RunCommandWithShellAndEnvAndCwd(ctx, pythonExe(), []string{
-		"-m", "venv", name,
-	}, nil, workingDir)
+	runArgs := exec.
+		NewRunArgs(pythonExe(), "-m", "venv", name).
+		WithCwd(workingDir)
+
+	res, err := cli.commandRunner.Run(ctx, runArgs)
+
 	if err != nil {
 		return fmt.Errorf("failed to create virtual Python environment for project '%s': %w (%s)", workingDir, err, res.String())
 	}

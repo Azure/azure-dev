@@ -1,3 +1,7 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
+// Package telemetry provides functionality for emitting telemetry in azd.
 package telemetry
 
 import (
@@ -5,26 +9,31 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"os/user"
 	"path/filepath"
 	"sync"
 	"time"
 
 	"github.com/azure/azure-dev/cli/azd/internal"
 	appinsightsexporter "github.com/azure/azure-dev/cli/azd/internal/telemetry/appinsights-exporter"
+	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/benbjohnson/clock"
 	"github.com/gofrs/flock"
 	"github.com/microsoft/ApplicationInsights-Go/appinsights"
 	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/sdk/resource"
 	"go.opentelemetry.io/otel/sdk/trace"
-
-	semconv "go.opentelemetry.io/otel/semconv/v1.10.0"
 )
 
+const azdAppName = "azd"
+
+// the equivalent of AZURE_CORE_COLLECT_TELEMETRY
+const collectTelemetryEnvVar = "AZURE_DEV_COLLECT_TELEMETRY"
+
 const telemetryItemExtension = ".trn"
-const devInstrumentationKey = "d3b9c006-3680-4300-9862-35fce9ac66c7"
-const prodInstrumentationKey = ""
+const (
+	devInstrumentationKey  = "321df807-079f-4957-9fc0-0ef2b422ee16"
+	prodInstrumentationKey = ""
+)
+
 const appInsightsMaxIngestionDelay = time.Duration(48) * time.Hour
 
 type TelemetrySystem struct {
@@ -40,30 +49,17 @@ var once sync.Once
 var instance *TelemetrySystem
 
 func getTelemetryDirectory() (string, error) {
-	user, err := user.Current()
+	configDir, err := config.GetUserConfigDir()
 	if err != nil {
 		return "", fmt.Errorf("could not determine current user: %w", err)
 	}
 
-	telemetryDir := filepath.Join(user.HomeDir, ".azd", "telemetry")
+	telemetryDir := filepath.Join(configDir, "telemetry")
 	return telemetryDir, nil
 }
 
-func newResource() *resource.Resource {
-	r, _ := resource.Merge(
-		resource.Default(),
-		resource.NewWithAttributes(
-			semconv.SchemaURL,
-			semconv.ServiceNameKey.String("azd"),
-			semconv.ServiceVersionKey.String(internal.GetVersionNumber()),
-		),
-	)
-	return r
-}
-
 func IsTelemetryEnabled() bool {
-	// the equivalent of AZURE_CORE_COLLECT_TELEMETRY
-	return os.Getenv("AZURE_DEV_COLLECT_TELEMETRY") != "no"
+	return os.Getenv(collectTelemetryEnvVar) != "no"
 }
 
 // Returns the singleton TelemetrySystem instance.
@@ -83,7 +79,7 @@ func GetTelemetrySystem() *TelemetrySystem {
 
 func initialize() (*TelemetrySystem, error) {
 	// Feature guard: Disable for production until dependencies are met in production
-	isDev := internal.IsDevVersion()
+	isDev := internal.IsNonProdVersion()
 	if !isDev {
 		return nil, nil
 	}

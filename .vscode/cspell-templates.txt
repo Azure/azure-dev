@@ -31,6 +31,7 @@ reactd
 ROLENAME
 Serializers
 staticwebapp
+Swashbuckle
 tsbuildinfo
 TTFB
 uuidv
@@ -39,3 +40,4 @@ virtuals
 VSIX
 webfonts
 webui
+wwwroot

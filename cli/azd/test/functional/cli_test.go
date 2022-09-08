@@ -9,11 +9,13 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"flag"
 	"fmt"
 	"io/fs"
+	"log"
 	"net/http"
 	"os"
-	"os/exec"
+	osexec "os/exec"
 	"path"
 	"path/filepath"
 	"regexp"
@@ -26,7 +28,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/container"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
-	"github.com/azure/azure-dev/cli/azd/pkg/executil"
+	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
@@ -396,7 +398,9 @@ func Test_CLI_InfraCreateAndDeleteWebApp(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	secrets, err := executil.RunCommandWithShell(ctx, "dotnet", "user-secrets", "list", "--project", filepath.Join(dir, "/src/dotnet/webapp.csproj"))
+	commandRunner := exec.NewCommandRunner()
+	runArgs := exec.NewRunArgs("dotnet", "user-secrets", "list", "--project", filepath.Join(dir, "/src/dotnet/webapp.csproj"))
+	secrets, err := commandRunner.Run(ctx, runArgs)
 	require.NoError(t, err)
 
 	contain := strings.Contains(secrets.Stdout, fmt.Sprintf("WEBSITE_URL = %s", url))
@@ -542,7 +546,7 @@ func Test_CLI_InfraCreateAndDeleteFuncApp(t *testing.T) {
 	t.Logf("Done\n")
 }
 
-func Test_ProjectIsNeeded(t *testing.T) {
+func Test_CLI_ProjectIsNeeded(t *testing.T) {
 	ctx, cancel := newTestContext(t)
 	defer cancel()
 
@@ -587,10 +591,10 @@ func Test_ProjectIsNeeded(t *testing.T) {
 	}
 }
 
-func Test_NoDebugSpewWhenHelpPassedWithoutDebug(t *testing.T) {
+func Test_CLI_NoDebugSpewWhenHelpPassedWithoutDebug(t *testing.T) {
 	stdErrBuf := bytes.Buffer{}
 
-	cmd := exec.Command(azdcli.GetAzdLocation(), "--help")
+	cmd := osexec.Command(azdcli.GetAzdLocation(), "--help")
 	cmd.Stderr = &stdErrBuf
 
 	// Run the command and wait for it to complete, we don't expect any errors.
@@ -687,4 +691,16 @@ func newTestContext(t *testing.T) (context.Context, context.CancelFunc) {
 	}
 
 	return context.WithCancel(ctx)
+}
+
+func TestMain(m *testing.M) {
+	flag.Parse()
+	shortFlag := flag.Lookup("test.short")
+	if shortFlag != nil && shortFlag.Value.String() == "true" {
+		log.Println("Skipping tests in short mode")
+		os.Exit(0)
+	}
+
+	exitVal := m.Run()
+	os.Exit(exitVal)
 }

@@ -1,6 +1,6 @@
 module github.com/azure/azure-dev
 
-go 1.18
+go 1.19
 
 require (
 	github.com/AlecAivazis/survey/v2 v2.3.2
@@ -9,11 +9,11 @@ require (
 	github.com/drone/envsubst v1.0.3
 	github.com/fatih/color v1.13.0
 	github.com/gofrs/flock v0.8.1
+	github.com/google/uuid v1.3.0
 	github.com/joho/godotenv v1.4.0
 	github.com/magefile/mage v1.12.1
 	github.com/mattn/go-colorable v0.1.12
 	github.com/mattn/go-isatty v0.0.14
-	github.com/mgutz/ansi v0.0.0-20170206155736-9520e82c474b
 	github.com/microsoft/ApplicationInsights-Go v0.4.4
 	github.com/otiai10/copy v1.7.0
 	github.com/pbnj/go-open v0.1.1
@@ -41,6 +41,7 @@ require (
 	github.com/inconshreveable/mousetrap v1.0.0 // indirect
 	github.com/kballard/go-shellquote v0.0.0-20180428030007-95032a82bc51 // indirect
 	github.com/mattn/go-runewidth v0.0.13 // indirect
+	github.com/mgutz/ansi v0.0.0-20170206155736-9520e82c474b // indirect
 	github.com/pkg/errors v0.8.1 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/rivo/uniseg v0.2.0 // indirect

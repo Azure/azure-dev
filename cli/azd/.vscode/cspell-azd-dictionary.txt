@@ -18,6 +18,8 @@ azurestaticapps
 azureutil
 Backticks
 BOOLSLICE
+circleci
+cflags
 cmdsubst
 containerapp
 csharpapp
@@ -33,6 +35,8 @@ functionapp
 GOARCH
 godotenv
 golangci
+ineffassign
+jmes
 keychain
 ldflags
 mgmt
@@ -42,6 +46,7 @@ nolint
 omitempty
 opentelemetry
 osutil
+osversion
 otel
 pflag
 pulumi
@@ -52,13 +57,16 @@ rzip
 semconv
 serverfarms
 sstore
+staticcheck
 staticwebapp
 STRINGSLICE
 structs
 Syncer
 swacli
+teamcity
 tracesdk
 tracetest
 unmarshalling
+utsname
 westus2
 yacspin

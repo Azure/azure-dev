@@ -4,11 +4,11 @@ import (
 	"context"
 
 	"github.com/azure/azure-dev/cli/azd/internal"
-	"github.com/azure/azure-dev/cli/azd/pkg/executil"
+	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	mockconsole "github.com/azure/azure-dev/cli/azd/test/mocks/console"
-	mockexec "github.com/azure/azure-dev/cli/azd/test/mocks/executil"
+	mockexec "github.com/azure/azure-dev/cli/azd/test/mocks/exec"
 	mockhttp "github.com/azure/azure-dev/cli/azd/test/mocks/httputil"
 )
 
@@ -21,21 +21,21 @@ type MockContext struct {
 
 func NewMockContext(ctx context.Context) *MockContext {
 	mockConsole := mockconsole.NewMockConsole()
-	execUtil := mockexec.NewMockCommandRunner()
+	commandRunner := mockexec.NewMockCommandRunner()
 	http := mockhttp.NewMockHttpUtil()
 
-	mockexec.AddAzLoginMocks(execUtil)
-	mockhttp.AddDefaultMocks(http)
+	mockexec.AddAzLoginMocks(commandRunner)
+	commandRunner.AddDefaultMocks()
 
 	ctx = internal.WithCommandOptions(ctx, internal.GlobalCommandOptions{})
 	ctx = input.WithConsole(ctx, mockConsole)
-	ctx = executil.WithCommandRunner(ctx, execUtil.RunWithResult)
+	ctx = exec.WithCommandRunner(ctx, commandRunner)
 	ctx = httputil.WithHttpClient(ctx, http)
 
 	mockContext := &MockContext{
 		Context:       &ctx,
 		Console:       mockConsole,
-		CommandRunner: execUtil,
+		CommandRunner: commandRunner,
 		HttpClient:    http,
 	}
 

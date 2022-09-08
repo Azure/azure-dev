@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
-package telemetry
+package resource
 
 import (
 	"crypto/sha256"
@@ -24,7 +24,8 @@ var invalidMacAddresses = map[string]struct{}{
 	"ac:de:48:00:11:22": {},
 }
 
-func sha256Hash(val string) string {
+// Sha256Hash returns the hex-encoded Sha256 hash of the given string.
+func Sha256Hash(val string) string {
 	sha := sha256.Sum256([]byte(val))
 	hash := hex.EncodeToString(sha[:])
 	return hash
@@ -41,7 +42,7 @@ func calculateMachineId() string {
 	mac, ok := getMacAddress()
 
 	if ok {
-		return sha256Hash(mac)
+		return Sha256Hash(mac)
 	} else {
 		// No valid mac address, return a GUID instead.
 		return uuid.NewString()

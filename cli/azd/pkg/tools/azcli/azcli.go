@@ -58,8 +58,6 @@ type AzCli interface {
 	ListExtensions(ctx context.Context) ([]AzCliExtensionInfo, error)
 	GetCliConfigValue(ctx context.Context, name string) (AzCliConfigValue, error)
 	GetSubscriptionTenant(ctx context.Context, subscriptionId string) (string, error)
-	GetCurrentSubscriptionId(ctx context.Context) (string, error)
-	SetCurrentSubscriptionId(ctx context.Context, subscriptionId string) error
 	GetSubscriptionDeployment(ctx context.Context, subscriptionId string, deploymentName string) (AzCliDeployment, error)
 	GetResourceGroupDeployment(ctx context.Context, subscriptionId string, resourceGroupName string, deploymentName string) (AzCliDeployment, error)
 	GetResource(ctx context.Context, subscriptionId string, resourceId string) (AzCliResourceExtended, error)
@@ -476,31 +474,6 @@ func (cli *azCli) GetSubscriptionTenant(ctx context.Context, subscriptionId stri
 		return "", fmt.Errorf("could not unmarshal output %s as a string: %w", res.Stdout, err)
 	}
 	return tenantId, nil
-}
-
-func (cli *azCli) GetCurrentSubscriptionId(ctx context.Context) (string, error) {
-	res, err := cli.runAzCommand(ctx, "account", "show", "--query", "id", "--output", "json")
-	if isNotLoggedInMessage(res.Stderr) {
-		return "", ErrAzCliNotLoggedIn
-	} else if err != nil {
-		return "", fmt.Errorf("failed running az account show: %s: %w", res.String(), err)
-	}
-
-	var subId string
-	if err := json.Unmarshal([]byte(res.Stdout), &subId); err != nil {
-		return "", fmt.Errorf("could not unmarshal output %s as a string: %w", res.Stdout, err)
-	}
-	return subId, nil
-}
-
-func (cli *azCli) SetCurrentSubscriptionId(ctx context.Context, subscriptionId string) error {
-	res, err := cli.runAzCommand(ctx, "account", "set", "--subscription", subscriptionId)
-	if isNotLoggedInMessage(res.Stderr) {
-		return ErrAzCliNotLoggedIn
-	} else if err != nil {
-		return fmt.Errorf("failed running az account set: %s: %w", res.String(), err)
-	}
-	return nil
 }
 
 func (cli *azCli) Login(ctx context.Context, useDeviceCode bool, deviceCodeWriter io.Writer) error {

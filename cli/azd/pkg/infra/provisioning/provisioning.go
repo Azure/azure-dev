@@ -28,7 +28,7 @@ func UpdateEnvironment(env *environment.Environment, outputs *map[string]OutputP
 	return nil
 }
 
-// Copies the an input parameters file from the project template into the .azure environment folder
+// Copies the an input parameters file templateFilePath to inputFilePath after replacing environment variable references in the contents```
 func CreateInputParametersFile(templateFilePath string, inputFilePath string, envValues map[string]string) error {
 	// Copy the parameter template file to the environment working directory and do substitutions.
 	log.Printf("Reading parameters template file from: %s", templateFilePath)

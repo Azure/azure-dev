@@ -15,7 +15,6 @@ import (
 	. "github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/terraform"
 )
 
@@ -26,7 +25,6 @@ type TerraformProvider struct {
 	options     Options
 	console     input.Console
 	cli         terraform.TerraformCli
-	azCli       azcli.AzCli
 }
 
 type TerraformDeploymentDetails struct {
@@ -48,7 +46,6 @@ func (t *TerraformProvider) RequiredExternalTools() []tools.ExternalTool {
 func NewTerraformProvider(ctx context.Context, env *environment.Environment, projectPath string, infraOptions Options) *TerraformProvider {
 	terraformCli := terraform.GetTerraformCli(ctx)
 	console := input.GetConsole(ctx)
-	azCli := azcli.GetAzCli(ctx)
 
 	// Default to a module named "main" if not specified.
 	if strings.TrimSpace(infraOptions.Module) == "" {
@@ -61,11 +58,13 @@ func NewTerraformProvider(ctx context.Context, env *environment.Environment, pro
 		options:     infraOptions,
 		console:     console,
 		cli:         terraformCli,
-		azCli:       azCli,
 	}
 
 	// Sets the terraform data directory env var that will get set on all terraform CLI commands
-	envVars := []string{fmt.Sprintf("TF_DATA_DIR=%s", provider.dataDirPath())}
+	envVars := []string{
+		fmt.Sprintf("TF_DATA_DIR=%s", provider.dataDirPath()),
+		fmt.Sprintf("ARM_SUBSCRIPTION_ID=%s", env.GetSubscriptionId()),
+	}
 	terraformCli.SetEnv(envVars)
 
 	return provider
@@ -99,14 +98,6 @@ func (t *TerraformProvider) Plan(ctx context.Context) *async.InteractiveTaskWith
 			}
 
 			t.console.Message(ctx, "\nGenerating terraform parameters...")
-			currentSubscription, err := t.ensureEnvSubscription(ctx)
-			if err != nil {
-				asyncContext.SetError(fmt.Errorf("failed to set az subscription , err: %w", err))
-				return
-			}
-			if currentSubscription != "" {
-				defer t.setAZSubscription(ctx, currentSubscription)
-			}
 
 			err = CreateInputParametersFile(t.parametersTemplateFilePath(), t.parametersFilePath(), t.env.Values)
 			if err != nil {
@@ -166,14 +157,6 @@ func (t *TerraformProvider) Deploy(ctx context.Context, deployment *DeploymentPl
 	return async.RunInteractiveTaskWithProgress(
 		func(asyncContext *async.InteractiveTaskContextWithProgress[*DeployResult, *DeployProgress]) {
 			t.console.Message(ctx, "Locating plan file...")
-			currentSubscription, err := t.ensureEnvSubscription(ctx)
-			if err != nil {
-				asyncContext.SetError(fmt.Errorf("failed to set az subscription , err: %w", err))
-				return
-			}
-			if currentSubscription != "" {
-				defer t.setAZSubscription(ctx, currentSubscription)
-			}
 
 			modulePath := t.modulePath()
 			terraformDeploymentData := deployment.Details.(TerraformDeploymentDetails)
@@ -224,14 +207,6 @@ func (t *TerraformProvider) Deploy(ctx context.Context, deployment *DeploymentPl
 func (t *TerraformProvider) Destroy(ctx context.Context, deployment *Deployment, options DestroyOptions) *async.InteractiveTaskWithProgress[*DestroyResult, *DestroyProgress] {
 	return async.RunInteractiveTaskWithProgress(
 		func(asyncContext *async.InteractiveTaskContextWithProgress[*DestroyResult, *DestroyProgress]) {
-			currentSubscription, err := t.ensureEnvSubscription(ctx)
-			if err != nil {
-				asyncContext.SetError(fmt.Errorf("failed to set az subscription , err: %w", err))
-				return
-			}
-			if currentSubscription != "" {
-				defer t.setAZSubscription(ctx, currentSubscription)
-			}
 
 			isRemoteBackendConfig, err := t.isRemoteBackendConfig()
 			if err != nil {
@@ -567,30 +542,4 @@ func Register() {
 	if err != nil {
 		panic(err)
 	}
-}
-
-func (t *TerraformProvider) ensureEnvSubscription(ctx context.Context) (string, error) {
-	envSubscriptionId := t.env.GetSubscriptionId()
-	currentSubscriptionId, err := t.azCli.GetCurrentSubscriptionId(ctx)
-	if err != nil {
-		return "", fmt.Errorf("failed to get current subscription Id. err :%w", err)
-	}
-	if currentSubscriptionId == envSubscriptionId {
-		return "", nil
-	}
-
-	err = t.setAZSubscription(ctx, envSubscriptionId)
-	if err != nil {
-		return "", fmt.Errorf("failed to set current subscription Id. err :%w", err)
-	}
-	return currentSubscriptionId, nil
-}
-
-func (t *TerraformProvider) setAZSubscription(ctx context.Context, subscriptionId string) error {
-	//set the subscription Id
-	err := t.azCli.SetCurrentSubscriptionId(ctx, subscriptionId)
-	if err != nil {
-		return fmt.Errorf("failed to set subscription Id. err :%w", err)
-	}
-	return nil
 }

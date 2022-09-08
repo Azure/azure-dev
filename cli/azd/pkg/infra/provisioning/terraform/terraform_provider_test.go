@@ -48,14 +48,13 @@ func TestTerraformPlan(t *testing.T) {
 	require.Nil(t, err)
 	require.NotNil(t, deploymentPlan.Deployment)
 
-	require.Len(t, progressLog, 7)
-	require.Contains(t, progressLog[0], "Initialize terraform")
-	require.Contains(t, progressLog[1], "Generating terraform parameters")
-	require.Contains(t, progressLog[2], "Validate terraform template")
-	require.Contains(t, progressLog[3], "terraform validate result : Success! The configuration is valid.")
-	require.Contains(t, progressLog[4], "Plan terraform template")
-	require.Contains(t, progressLog[5], "terraform plan result : To perform exactly these actions, run the following command to apply:terraform apply")
-	require.Contains(t, progressLog[6], "Create terraform template")
+	consoleLog := mockContext.Console.Output()
+
+	require.Len(t, consoleLog, 4)
+	require.Contains(t, consoleLog[0], "Initializing terraform...")
+	require.Contains(t, consoleLog[1], "Generating terraform parameters...")
+	require.Contains(t, consoleLog[2], "Validating terraform template...")
+	require.Contains(t, consoleLog[3], "Generating terraform plan...")
 
 	require.Equal(t, infraProvider.env.Values["AZURE_LOCATION"], deploymentPlan.Deployment.Parameters["location"].Value)
 	require.Equal(t, infraProvider.env.Values["AZURE_ENV_NAME"], deploymentPlan.Deployment.Parameters["name"].Value)

@@ -45,7 +45,7 @@
                 "path": {
                     "type": "string",
                     "title": "Path to the location that contains Azure provisioning templates",
-                    "description": "Optional.The relative folder path to the Azure provisioning templates for the specified provider. (Default: infra)"
+                    "description": "Optional. The relative folder path to the Azure provisioning templates for the specified provider. (Default: infra)"
                 },
                 "module": {
                     "type": "string",

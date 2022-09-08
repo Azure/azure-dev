@@ -30,7 +30,7 @@ const collectTelemetryEnvVar = "AZURE_DEV_COLLECT_TELEMETRY"
 
 const telemetryItemExtension = ".trn"
 const (
-	devInstrumentationKey  = "321df807-079f-4957-9fc0-0ef2b422ee16"
+	devInstrumentationKey  = "cf5f7d89-5383-47a8-8d27-ad237c3613d9"
 	prodInstrumentationKey = ""
 )
 

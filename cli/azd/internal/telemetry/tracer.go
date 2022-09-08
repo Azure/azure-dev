@@ -6,6 +6,7 @@ package telemetry
 import (
 	"context"
 
+	"github.com/azure/azure-dev/cli/azd/internal/telemetry/baggage"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/codes"
 
@@ -30,16 +31,19 @@ type wrapperTracer struct {
 
 func (w *wrapperTracer) Start(ctx context.Context, spanName string, opts ...trace.SpanStartOption) (context.Context, Span) {
 	ctx, span := w.tracer.Start(ctx, spanName, opts...)
+	// Propagate any baggage in the current context
+	baggage := baggage.BaggageFromContext(ctx)
+	span.SetAttributes(baggage.Attributes()...)
 	return ctx, &wrapperSpan{span}
 }
 
 // redefinedSpan is a slightly modified version of trace.Span.
 //
-// The only changes made is to remove functionality around emitting events.
+// The only change made is to remove functionality around emitting events.
 // Events are nested telemetry events that can be fired from a Span.
 // We currently do not support this yet (no use case), but this is likely to be changed in the future.
 //
-// Current modifications to trace.Span:
+// Exact modifications to trace.Span:
 //   - Removed AddEvent
 //   - Removed RecordError. This creates an error type event
 type redefinedSpan interface {

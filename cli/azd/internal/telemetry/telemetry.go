@@ -9,20 +9,18 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"os/user"
 	"path/filepath"
 	"sync"
 	"time"
 
 	"github.com/azure/azure-dev/cli/azd/internal"
 	appinsightsexporter "github.com/azure/azure-dev/cli/azd/internal/telemetry/appinsights-exporter"
+	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/benbjohnson/clock"
 	"github.com/gofrs/flock"
 	"github.com/microsoft/ApplicationInsights-Go/appinsights"
 	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/sdk/resource"
 	"go.opentelemetry.io/otel/sdk/trace"
-	semconv "go.opentelemetry.io/otel/semconv/v1.10.0"
 )
 
 const azdAppName = "azd"
@@ -51,25 +49,13 @@ var once sync.Once
 var instance *TelemetrySystem
 
 func getTelemetryDirectory() (string, error) {
-	user, err := user.Current()
+	configDir, err := config.GetUserConfigDir()
 	if err != nil {
 		return "", fmt.Errorf("could not determine current user: %w", err)
 	}
 
-	telemetryDir := filepath.Join(user.HomeDir, ".azd", "telemetry")
+	telemetryDir := filepath.Join(configDir, "telemetry")
 	return telemetryDir, nil
-}
-
-func newResource() *resource.Resource {
-	r, _ := resource.Merge(
-		resource.Default(),
-		resource.NewWithAttributes(
-			semconv.SchemaURL,
-			semconv.ServiceNameKey.String(azdAppName),
-			semconv.ServiceVersionKey.String(internal.GetVersionNumber()),
-		),
-	)
-	return r
 }
 
 func IsTelemetryEnabled() bool {

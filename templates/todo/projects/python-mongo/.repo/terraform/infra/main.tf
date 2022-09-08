@@ -1,5 +1,7 @@
 locals {
   tags             = { azd-env-name : var.environment_name }
+  sha              = base64encode(sha256("${var.environment_name}${var.location}${data.azurerm_client_config.current.subscription_id}"))
+  resource_token   = substr(replace(lower(local.sha), "[^A-Za-z0-9_]", ""), 0, 13)
   api_command_line = "gunicorn --workers 4 --threads 2 --timeout 60 --access-logfile \"-\" --error-logfile \"-\" --bind=0.0.0.0:8000 -k uvicorn.workers.UvicornWorker todo.app:app"
 }
 # ------------------------------------------------------------------------------------------------------
@@ -19,14 +21,6 @@ resource "azurerm_resource_group" "rg" {
   tags = local.tags
 }
 
-resource "random_string" "resource_token" {
-  length  = 10
-  upper   = false
-  lower   = true
-  numeric = false
-  special = false
-}
-
 # ------------------------------------------------------------------------------------------------------
 # Deploy application insights
 # ------------------------------------------------------------------------------------------------------
@@ -37,5 +31,5 @@ module "applicationinsights" {
   environment_name = var.environment_name
   workspace_id     = azurerm_log_analytics_workspace.workspace.id
   tags             = azurerm_resource_group.rg.tags
-  resource_token   = random_string.resource_token.result
+  resource_token   = local.resource_token
 }

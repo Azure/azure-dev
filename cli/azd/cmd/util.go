@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/AlecAivazis/survey/v2"
+	"github.com/azure/azure-dev/cli/azd/internal/telemetry"
 	"github.com/azure/azure-dev/cli/azd/pkg/azureutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
@@ -59,15 +60,15 @@ type environmentSpec struct {
 
 // createEnvironment creates a new named environment. If an environment with this name already
 // exists, and error is return.
-func createAndInitEnvironment(ctx context.Context, envSpec *environmentSpec, azdCtx *azdcontext.AzdContext, console input.Console) (environment.Environment, error) {
+func createAndInitEnvironment(ctx context.Context, envSpec *environmentSpec, azdCtx *azdcontext.AzdContext, console input.Console) (environment.Environment, context.Context, error) {
 	if envSpec.environmentName != "" && !environment.IsValidEnvironmentName(envSpec.environmentName) {
 		errMsg := invalidEnvironmentNameMsg(envSpec.environmentName)
 		fmt.Print(errMsg)
-		return environment.Environment{}, fmt.Errorf(errMsg)
+		return environment.Environment{}, nil, fmt.Errorf(errMsg)
 	}
 
 	if err := ensureValidEnvironmentName(ctx, &envSpec.environmentName, console); err != nil {
-		return environment.Environment{}, err
+		return environment.Environment{}, nil, err
 	}
 
 	// Ensure the environment does not already exist:
@@ -75,19 +76,19 @@ func createAndInitEnvironment(ctx context.Context, envSpec *environmentSpec, azd
 	switch {
 	case errors.Is(err, os.ErrNotExist):
 	case err != nil:
-		return environment.Environment{}, fmt.Errorf("checking for existing environment: %w", err)
+		return environment.Environment{}, nil, fmt.Errorf("checking for existing environment: %w", err)
 	case err == nil:
-		return environment.Environment{}, fmt.Errorf("environment '%s' already exists", envSpec.environmentName)
+		return environment.Environment{}, nil, fmt.Errorf("environment '%s' already exists", envSpec.environmentName)
 	}
 
 	if err := ensureEnvironmentInitialized(ctx, *envSpec, &env, console); err != nil {
-		return environment.Environment{}, fmt.Errorf("initializing environment: %w", err)
+		return environment.Environment{}, nil, fmt.Errorf("initializing environment: %w", err)
 	}
 
-	return env, nil
+	return env, telemetry.ContextWithEnvironment(ctx, &env), nil
 }
 
-func loadOrInitEnvironment(ctx context.Context, environmentName *string, azdCtx *azdcontext.AzdContext, console input.Console) (environment.Environment, error) {
+func loadOrInitEnvironment(ctx context.Context, environmentName *string, azdCtx *azdcontext.AzdContext, console input.Console) (environment.Environment, context.Context, error) {
 	loadOrCreateEnvironment := func() (environment.Environment, bool, error) {
 		// If there's a default environment, use that
 		if *environmentName == "" {
@@ -139,22 +140,22 @@ func loadOrInitEnvironment(ctx context.Context, environmentName *string, azdCtx 
 	env, isNew, err := loadOrCreateEnvironment()
 	switch {
 	case errors.Is(err, os.ErrNotExist):
-		return environment.Environment{}, fmt.Errorf("environment %s does not exist", *environmentName)
+		return environment.Environment{}, nil, fmt.Errorf("environment %s does not exist", *environmentName)
 	case err != nil:
-		return environment.Environment{}, err
+		return environment.Environment{}, nil, err
 	}
 
 	if err := ensureEnvironmentInitialized(ctx, environmentSpec{environmentName: *environmentName}, &env, console); err != nil {
-		return environment.Environment{}, fmt.Errorf("initializing environment: %w", err)
+		return environment.Environment{}, nil, fmt.Errorf("initializing environment: %w", err)
 	}
 
 	if isNew {
 		if err := azdCtx.SetDefaultEnvironmentName(*environmentName); err != nil {
-			return environment.Environment{}, fmt.Errorf("saving default environment name: %w", err)
+			return environment.Environment{}, nil, fmt.Errorf("saving default environment name: %w", err)
 		}
 	}
 
-	return env, nil
+	return env, telemetry.ContextWithEnvironment(ctx, &env), nil
 }
 
 // ensureEnvironmentInitialized ensures the environment is initialized, i.e. it contains values for `AZURE_ENV_NAME`, `AZURE_LOCATION`, `AZURE_SUBSCRIPTION_ID` and `AZURE_PRINCIPAL_ID`.

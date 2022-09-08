@@ -25,6 +25,10 @@ You should now be able to execute Azure Dev commands e.g. "Azure Developer: Init
 
 To debug extension code use "Run extension" debug configuration, provided in the `launch.json` file in the repo. This configuration with (re)build the extension as necessary--no need to build anything manually.
 
+## Using a custom version of `azd`
+
+By default, the extension uses whatever version of the `azd` binary is present in your `$PATH`. If you are developing a feature a need to use a custom version of `azd`, You may set `AZURE_DEV_CLI_PATH` and the extension will use this version instead.
+
 ## Submitting a change
 
 Before submitting a PR make sure that the unit tests pass (`npm run unit-test`) and that the code linter does not produce any errors or warnings (`npm run lint`). 

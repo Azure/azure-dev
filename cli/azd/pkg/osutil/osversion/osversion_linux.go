@@ -10,7 +10,7 @@ func GetVersion() (string, error) {
 	err := unix.Uname(&uname)
 
 	if err != nil {
-		return "", fmt.Errorf("unix.Uname returned error: %s", err)
+		return "", fmt.Errorf("unix.Uname returned error: %w", err)
 	}
 
 	return string(uname.Release[:cStringLen(uname.Release[:])]), nil

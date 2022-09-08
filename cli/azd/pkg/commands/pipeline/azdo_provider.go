@@ -6,6 +6,7 @@ package pipeline
 import (
 	"context"
 	"encoding/json"
+	"errors"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
@@ -28,7 +29,7 @@ func (p *AzdoHubScmProvider) requiredTools() []tools.ExternalTool {
 // preConfigureCheck check the current state of external tools and any
 // other dependency to be as expected for execution.
 func (p *AzdoHubScmProvider) preConfigureCheck(ctx context.Context, console input.Console) error {
-	return nil
+	return errors.New("not implemented")
 }
 
 // name returns the name of the provider
@@ -40,7 +41,7 @@ func (p *AzdoHubScmProvider) name() string {
 
 // configureGitRemote set up or create the git project and git remote
 func (p *AzdoHubScmProvider) configureGitRemote(ctx context.Context, repoPath string, remoteName string, console input.Console) (string, error) {
-	return "remoteUrl", nil
+	return "remoteUrl", errors.New("not implemented")
 }
 
 // gitRepoDetails extracts the information from an Azure DevOps remote url into general scm concepts
@@ -49,7 +50,7 @@ func (p *AzdoHubScmProvider) gitRepoDetails(ctx context.Context, remoteUrl strin
 	return &gitRepositoryDetails{
 		owner:    "",
 		repoName: "",
-	}, nil
+	}, errors.New("not implemented")
 }
 
 // preventGitPush is nil for Azure DevOps
@@ -59,7 +60,7 @@ func (p *AzdoHubScmProvider) preventGitPush(
 	remoteName string,
 	branchName string,
 	console input.Console) (bool, error) {
-	return false, nil
+	return false, errors.New("not implemented")
 }
 
 // AzdoCiProvider implements a CiProvider using Azure DevOps to manage CI with azdo pipelines.
@@ -75,7 +76,7 @@ func (p *AzdoCiProvider) requiredTools() []tools.ExternalTool {
 
 // preConfigureCheck nil for Azdo
 func (p *AzdoCiProvider) preConfigureCheck(ctx context.Context, console input.Console) error {
-	return nil
+	return errors.New("not implemented")
 }
 
 // name returns the name of the provider.
@@ -93,10 +94,10 @@ func (p *AzdoCiProvider) configureConnection(
 	credentials json.RawMessage,
 	console input.Console) error {
 
-	return nil
+	return errors.New("not implemented")
 }
 
 // configurePipeline create Azdo pipeline
 func (p *AzdoCiProvider) configurePipeline(ctx context.Context) error {
-	return nil
+	return errors.New("not implemented")
 }

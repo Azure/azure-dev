@@ -1,0 +1,546 @@
+openapi: 3.0.0
+info:
+  contact:
+    email: wabrez@microsoft.com
+  description: Simple Todo API
+  title: Simple Todo API
+  version: 2.0.0
+servers:
+- url: /
+paths:
+  /lists:
+    get:
+      parameters:
+      - description: The max number of items to returns in a result
+        explode: true
+        in: query
+        name: top
+        required: false
+        schema:
+          type: number
+        style: form
+      - description: The number of items to skip within the results
+        explode: true
+        in: query
+        name: skip
+        required: false
+        schema:
+          type: number
+        style: form
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TodoList'
+          description: A Todo list result
+      summary: Gets an array of Todo lists
+      tags:
+      - Lists
+      x-accepts: application/json
+      x-tags:
+      - tag: Lists
+    post:
+      requestBody:
+        $ref: '#/components/requestBodies/TodoList'
+      responses:
+        "201":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TodoList'
+          description: A Todo list result
+        "400":
+          description: Invalid request schema
+      summary: Creates a new Todo list
+      tags:
+      - Lists
+      x-contentType: application/json
+      x-accepts: application/json
+      x-tags:
+      - tag: Lists
+  /lists/{listId}:
+    delete:
+      parameters:
+      - description: The Todo list unique identifier
+        explode: false
+        in: path
+        name: listId
+        required: true
+        schema:
+          type: string
+        style: simple
+      responses:
+        "204":
+          description: Todo list deleted successfully
+        "404":
+          description: Todo list not found
+      summary: Deletes a Todo list by unique identifier
+      tags:
+      - Lists
+      x-accepts: application/json
+      x-tags:
+      - tag: Lists
+    get:
+      parameters:
+      - description: The Todo list unique identifier
+        explode: false
+        in: path
+        name: listId
+        required: true
+        schema:
+          type: string
+        style: simple
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TodoList'
+          description: A Todo list result
+        "404":
+          description: Todo list not found
+      summary: Gets a Todo list by unique identifier
+      tags:
+      - Lists
+      x-accepts: application/json
+      x-tags:
+      - tag: Lists
+    put:
+      parameters:
+      - description: The Todo list unique identifier
+        explode: false
+        in: path
+        name: listId
+        required: true
+        schema:
+          type: string
+        style: simple
+      requestBody:
+        $ref: '#/components/requestBodies/TodoList'
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TodoList'
+          description: A Todo list result
+        "400":
+          description: Todo list is invalid
+      summary: Updates a Todo list by unique identifier
+      tags:
+      - Lists
+      x-contentType: application/json
+      x-accepts: application/json
+      x-tags:
+      - tag: Lists
+  /lists/{listId}/items:
+    get:
+      parameters:
+      - description: The Todo list unique identifier
+        explode: false
+        in: path
+        name: listId
+        required: true
+        schema:
+          type: string
+        style: simple
+      - description: The max number of items to returns in a result
+        explode: true
+        in: query
+        name: top
+        required: false
+        schema:
+          type: number
+        style: form
+      - description: The number of items to skip within the results
+        explode: true
+        in: query
+        name: skip
+        required: false
+        schema:
+          type: number
+        style: form
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                items:
+                  $ref: '#/components/schemas/TodoList'
+                type: array
+          description: An array of Todo lists
+        "404":
+          description: Todo list not found
+      summary: Gets Todo items within the specified list
+      tags:
+      - Items
+      x-accepts: application/json
+      x-tags:
+      - tag: Items
+    post:
+      parameters:
+      - description: The Todo list unique identifier
+        explode: false
+        in: path
+        name: listId
+        required: true
+        schema:
+          type: string
+        style: simple
+      requestBody:
+        $ref: '#/components/requestBodies/TodoItem'
+      responses:
+        "201":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TodoItem'
+          description: A Todo item result
+        "404":
+          description: Todo list not found
+      summary: Creates a new Todo item within a list
+      tags:
+      - Items
+      x-contentType: application/json
+      x-accepts: application/json
+      x-tags:
+      - tag: Items
+  /lists/{listId}/items/{itemId}:
+    delete:
+      parameters:
+      - description: The Todo list unique identifier
+        explode: false
+        in: path
+        name: listId
+        required: true
+        schema:
+          type: string
+        style: simple
+      - description: The Todo list unique identifier
+        explode: false
+        in: path
+        name: itemId
+        required: true
+        schema:
+          type: string
+        style: simple
+      responses:
+        "204":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TodoItem'
+          description: A Todo item result
+        "404":
+          description: Todo list or item not found
+      summary: Deletes a Todo item by unique identifier
+      tags:
+      - Items
+      x-accepts: application/json
+      x-tags:
+      - tag: Items
+    get:
+      parameters:
+      - description: The Todo list unique identifier
+        explode: false
+        in: path
+        name: listId
+        required: true
+        schema:
+          type: string
+        style: simple
+      - description: The Todo list unique identifier
+        explode: false
+        in: path
+        name: itemId
+        required: true
+        schema:
+          type: string
+        style: simple
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TodoItem'
+          description: A Todo item result
+        "404":
+          description: Todo list or item not found
+      summary: Gets a Todo item by unique identifier
+      tags:
+      - Items
+      x-accepts: application/json
+      x-tags:
+      - tag: Items
+    put:
+      parameters:
+      - description: The Todo list unique identifier
+        explode: false
+        in: path
+        name: listId
+        required: true
+        schema:
+          type: string
+        style: simple
+      - description: The Todo list unique identifier
+        explode: false
+        in: path
+        name: itemId
+        required: true
+        schema:
+          type: string
+        style: simple
+      requestBody:
+        $ref: '#/components/requestBodies/TodoItem'
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TodoItem'
+          description: A Todo item result
+        "400":
+          description: Todo item is invalid
+        "404":
+          description: Todo list or item not found
+      summary: Updates a Todo item by unique identifier
+      tags:
+      - Items
+      x-contentType: application/json
+      x-accepts: application/json
+      x-tags:
+      - tag: Items
+  /lists/{listId}/items/state/{state}:
+    get:
+      parameters:
+      - description: The Todo list unique identifier
+        explode: false
+        in: path
+        name: listId
+        required: true
+        schema:
+          type: string
+        style: simple
+      - description: The Todo item state
+        explode: false
+        in: path
+        name: state
+        required: true
+        schema:
+          $ref: '#/components/schemas/TodoState'
+        style: simple
+      - description: The max number of items to returns in a result
+        explode: true
+        in: query
+        name: top
+        required: false
+        schema:
+          type: number
+        style: form
+      - description: The number of items to skip within the results
+        explode: true
+        in: query
+        name: skip
+        required: false
+        schema:
+          type: number
+        style: form
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                items:
+                  $ref: '#/components/schemas/TodoItem'
+                type: array
+          description: An array of Todo items
+        "404":
+          description: Todo list or item not found
+      summary: Gets a list of Todo items of a specific state
+      tags:
+      - Items
+      x-accepts: application/json
+      x-tags:
+      - tag: Items
+    put:
+      parameters:
+      - description: The Todo list unique identifier
+        explode: false
+        in: path
+        name: listId
+        required: true
+        schema:
+          type: string
+        style: simple
+      - description: The Todo item state
+        explode: false
+        in: path
+        name: state
+        required: true
+        schema:
+          $ref: '#/components/schemas/TodoState'
+        style: simple
+      requestBody:
+        content:
+          application/json:
+            schema:
+              items:
+                description: The Todo item unique identifier
+                type: string
+              type: array
+      responses:
+        "204":
+          description: Todo items updated
+        "400":
+          description: Update request is invalid
+      summary: Changes the state of the specified list items
+      tags:
+      - Items
+      x-contentType: application/json
+      x-accepts: application/json
+      x-tags:
+      - tag: Items
+components:
+  parameters:
+    listId:
+      description: The Todo list unique identifier
+      explode: false
+      in: path
+      name: listId
+      required: true
+      schema:
+        type: string
+      style: simple
+    itemId:
+      description: The Todo list unique identifier
+      explode: false
+      in: path
+      name: itemId
+      required: true
+      schema:
+        type: string
+      style: simple
+    state:
+      description: The Todo item state
+      explode: false
+      in: path
+      name: state
+      required: true
+      schema:
+        $ref: '#/components/schemas/TodoState'
+      style: simple
+    top:
+      description: The max number of items to returns in a result
+      explode: true
+      in: query
+      name: top
+      required: false
+      schema:
+        type: number
+      style: form
+    skip:
+      description: The number of items to skip within the results
+      explode: true
+      in: query
+      name: skip
+      required: false
+      schema:
+        type: number
+      style: form
+  requestBodies:
+    TodoList:
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/TodoList'
+      description: The Todo List
+    TodoItem:
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/TodoItem'
+      description: The Todo Item
+  responses:
+    TodoList:
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/TodoList'
+      description: A Todo list result
+    TodoListArray:
+      content:
+        application/json:
+          schema:
+            items:
+              $ref: '#/components/schemas/TodoList'
+            type: array
+      description: An array of Todo lists
+    TodoItem:
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/TodoItem'
+      description: A Todo item result
+    TodoItemArray:
+      content:
+        application/json:
+          schema:
+            items:
+              $ref: '#/components/schemas/TodoItem'
+            type: array
+      description: An array of Todo items
+  schemas:
+    TodoItem:
+      description: A task that needs to be completed
+      example:
+        listId: listId
+        dueDate: 2000-01-23T04:56:07.000+00:00
+        name: name
+        description: description
+        id: id
+        completedDate: 2000-01-23T04:56:07.000+00:00
+      properties:
+        id:
+          type: string
+        listId:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        state:
+          $ref: '#/components/schemas/TodoState'
+        dueDate:
+          format: date-time
+          type: string
+        completedDate:
+          format: date-time
+          type: string
+      required:
+      - description
+      - listId
+      - name
+      type: object
+    TodoList:
+      description: ' A list of related Todo items'
+      example:
+        name: name
+        description: description
+        id: id
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+      required:
+      - name
+      type: object
+    TodoState:
+      enum:
+      - todo
+      - inprogress
+      - done
+      type: string

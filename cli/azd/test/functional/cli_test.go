@@ -9,8 +9,10 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"flag"
 	"fmt"
 	"io/fs"
+	"log"
 	"net/http"
 	"os"
 	osexec "os/exec"
@@ -544,7 +546,7 @@ func Test_CLI_InfraCreateAndDeleteFuncApp(t *testing.T) {
 	t.Logf("Done\n")
 }
 
-func Test_ProjectIsNeeded(t *testing.T) {
+func Test_CLI_ProjectIsNeeded(t *testing.T) {
 	ctx, cancel := newTestContext(t)
 	defer cancel()
 
@@ -589,7 +591,7 @@ func Test_ProjectIsNeeded(t *testing.T) {
 	}
 }
 
-func Test_NoDebugSpewWhenHelpPassedWithoutDebug(t *testing.T) {
+func Test_CLI_NoDebugSpewWhenHelpPassedWithoutDebug(t *testing.T) {
 	stdErrBuf := bytes.Buffer{}
 
 	cmd := osexec.Command(azdcli.GetAzdLocation(), "--help")
@@ -808,4 +810,16 @@ func Test_CLI_InfraCreateAndDeleteResourceTfRemote(t *testing.T) {
 	require.NoError(t, err)
 
 	t.Logf("Done\n")
+}
+
+func TestMain(m *testing.M) {
+	flag.Parse()
+	shortFlag := flag.Lookup("test.short")
+	if shortFlag != nil && shortFlag.Value.String() == "true" {
+		log.Println("Skipping tests in short mode")
+		os.Exit(0)
+	}
+
+	exitVal := m.Run()
+	os.Exit(exitVal)
 }

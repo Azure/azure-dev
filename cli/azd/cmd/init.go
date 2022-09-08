@@ -267,7 +267,7 @@ func (i *initAction) Run(ctx context.Context, cmd *cobra.Command, args []string,
 		subscription:    i.subscription,
 		location:        i.location,
 	}
-	_, err = createAndInitEnvironment(ctx, &envSpec, azdCtx, console)
+	_, ctx, err = createAndInitEnvironment(ctx, &envSpec, azdCtx, console)
 	if err != nil {
 		return fmt.Errorf("loading environment: %w", err)
 	}

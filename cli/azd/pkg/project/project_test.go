@@ -5,6 +5,8 @@ package project
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
@@ -64,7 +66,9 @@ services:
 		"worker service does not have expected resource name",
 	)
 
-	require.Contains(t, azCli.UserAgent(), "azdtempl/test-proj-template")
+	sha := sha256.Sum256([]byte("test-proj-template"))
+	hash := hex.EncodeToString(sha[:])
+	require.Contains(t, azCli.UserAgent(), "azdtempl/"+hash)
 }
 
 // Specifying resource name in the project file should override the default

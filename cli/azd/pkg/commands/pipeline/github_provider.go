@@ -297,21 +297,22 @@ func (p *GitHubCiProvider) configureConnection(
 	ctx context.Context,
 	azdEnvironment environment.Environment,
 	repoDetails *gitRepositoryDetails,
-	credentials json.RawMessage) error {
+	credentials json.RawMessage,
+	console input.Console) error {
 
 	repoSlug := repoDetails.owner + "/" + repoDetails.repoName
-	fmt.Printf("Configuring repository %s.\n", repoSlug)
-	fmt.Printf("Setting AZURE_CREDENTIALS GitHub repo secret.\n")
+	console.Message(ctx, fmt.Sprintf("Configuring repository %s.\n", repoSlug))
+	console.Message(ctx, "Setting AZURE_CREDENTIALS GitHub repo secret.\n")
 
 	ghCli := github.NewGitHubCli(ctx)
 	if err := ghCli.SetSecret(ctx, repoSlug, "AZURE_CREDENTIALS", string(credentials)); err != nil {
 		return fmt.Errorf("failed setting AZURE_CREDENTIALS secret: %w", err)
 	}
 
-	fmt.Printf("Configuring repository environment.\n")
+	console.Message(ctx, "Configuring repository environment.\n")
 
 	for _, envName := range []string{environment.EnvNameEnvVarName, environment.LocationEnvVarName, environment.SubscriptionIdEnvVarName} {
-		fmt.Printf("Setting %s GitHub repo secret.\n", envName)
+		console.Message(ctx, fmt.Sprintf("Setting %s GitHub repo secret.\n", envName))
 
 		if err := ghCli.SetSecret(ctx, repoSlug, envName, azdEnvironment.Values[envName]); err != nil {
 			return fmt.Errorf("failed setting %s secret: %w", envName, err)
@@ -319,10 +320,10 @@ func (p *GitHubCiProvider) configureConnection(
 	}
 
 	fmt.Println()
-	fmt.Printf(
+	console.Message(ctx, fmt.Sprintf(
 		`GitHub Action secrets are now configured.
 		See your .github/workflows folder for details on which actions will be enabled.
-		You can view the GitHub Actions here: https://github.com/%s/actions`, repoSlug)
+		You can view the GitHub Actions here: https://github.com/%s/actions`, repoSlug))
 
 	return nil
 }
@@ -427,7 +428,7 @@ func getRemoteUrlFromNewRepository(ctx context.Context, ghCli github.GitHubCli, 
 
 		err = ghCli.CreatePrivateRepository(ctx, name)
 		if errors.Is(err, github.ErrRepositoryNameInUse) {
-			fmt.Printf("error: the repository name '%s' is already in use\n", name)
+			console.Message(fmt.Sprintf("error: the repository name '%s' is already in use\n", name))
 			continue // try again
 		} else if err != nil {
 			return "", fmt.Errorf("creating repository: %w", err)

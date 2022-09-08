@@ -172,7 +172,6 @@ func (i *PipelineManager) pushGitRepo(ctx context.Context, currentBranch string)
 // Configure is the main function from the pipeline manager which takes care
 // of creating or setting up the git project, the ci pipeline and the Azure connection.
 func (manager *PipelineManager) Configure(ctx context.Context) error {
-
 	// check that scm and ci providers are set
 	validateDependencyInjection(ctx, manager)
 
@@ -199,7 +198,7 @@ func (manager *PipelineManager) Configure(ctx context.Context) error {
 		// changed from "az-cli" to "az-dev"
 		manager.PipelineServicePrincipalName = fmt.Sprintf("az-dev-%s", time.Now().UTC().Format("01-02-2006-15-04-05"))
 	}
-	fmt.Printf("Creating or updating service principal %s.\n", manager.PipelineServicePrincipalName)
+	inputConsole.Message(ctx, fmt.Sprintf("Creating or updating service principal %s.\n", manager.PipelineServicePrincipalName))
 	credentials, err := azCli.CreateOrUpdateServicePrincipal(
 		ctx,
 		manager.Environment.GetSubscriptionId(),
@@ -226,7 +225,8 @@ func (manager *PipelineManager) Configure(ctx context.Context) error {
 		ctx,
 		manager.Environment,
 		gitRepoInfo,
-		credentials)
+		credentials,
+		inputConsole)
 	if err != nil {
 		return err
 	}
@@ -269,10 +269,11 @@ func (manager *PipelineManager) Configure(ctx context.Context) error {
 			return err
 		}
 	} else {
-		fmt.Printf(
-			"To fully enable pipeline you need to push this repo to the upstream using 'git push --set-upstream %s %s'.\n",
-			manager.PipelineRemoteName,
-			currentBranch)
+		inputConsole.Message(ctx,
+			fmt.Sprintf(
+				"To fully enable pipeline you need to push this repo to the upstream using 'git push --set-upstream %s %s'.\n",
+				manager.PipelineRemoteName,
+				currentBranch))
 	}
 
 	return nil

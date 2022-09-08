@@ -90,7 +90,8 @@ func (p *AzdoCiProvider) configureConnection(
 	ctx context.Context,
 	azdEnvironment environment.Environment,
 	repoDetails *gitRepositoryDetails,
-	credentials json.RawMessage) error {
+	credentials json.RawMessage,
+	console input.Console) error {
 
 	return nil
 }

@@ -67,5 +67,6 @@ type CiProvider interface {
 		ctx context.Context,
 		azdEnvironment environment.Environment,
 		gitRepo *gitRepositoryDetails,
-		credential json.RawMessage) error
+		credential json.RawMessage,
+		console input.Console) error
 }

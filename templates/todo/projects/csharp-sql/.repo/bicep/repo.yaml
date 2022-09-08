@@ -1,17 +1,18 @@
 templateApi: 1.0.0
 metadata:
   type: repo
-  name: todo-csharp-cosmos-sql
-  description: To Do application with a ReactJS frontend, C# API, and Cosmos DB.
+  name: todo-csharp-sql
+  description: To Do application with a ReactJS frontend, C# API, and Azure SQL.
 
 repo:
   includeProjectAssets: true
 
   remotes:
     - name: azure-samples-main
-      url: git@github.com:Azure-Samples/todo-csharp-cosmos-sql.git
+      url: git@github.com:Azure-Samples/todo-csharp-sql.git
+      branch: main
     - name: azure-samples-staging
-      url: git@github.com:Azure-Samples/todo-csharp-cosmos-sql.git
+      url: git@github.com:Azure-Samples/todo-csharp-sql.git
       branch: staging
 
   rewrite:
@@ -50,7 +51,7 @@ repo:
       patterns:
         - "**/*.bicep"
 
-    - from: ../../api/csharp-cosmos-sql
+    - from: ../../api/csharp-sql
       to: ./src/api
       patterns:
         - "**/azure.@(yml|yaml)"
@@ -59,7 +60,7 @@ repo:
       to: ./src/web
       patterns:
         - "**/azure.@(yml|yaml)"
-        
+
   assets:
     # # Common assets
 
@@ -76,13 +77,12 @@ repo:
         - appservice.bicep
         - appservice-config-logs.bicep
         - appservice-config-union.bicep
-        - appservice-config-cosmos.bicep
+        - appservice-config-sqlserver.bicep
         - appservice-dotnet.bicep
         - appservice-node.bicep
         - appserviceplan.bicep
         - appserviceplan-sites.bicep
-        - cosmos.bicep
-        - cosmos-sql*.bicep
+        - sqlserver.bicep
         - keyvault.bicep
         - keyvault-access.bicep
         - loganalytics.bicep
@@ -130,7 +130,7 @@ repo:
       to: ./tests
 
     # C# API
-    - from: ../../../../api/csharp-cosmos-sql
+    - from: ../../../../api/csharp-sql
       to: ./src/api
       ignore:
         - bin

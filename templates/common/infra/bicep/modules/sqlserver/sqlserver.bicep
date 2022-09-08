@@ -1,15 +1,22 @@
-param location string
-param resourceToken string
-param tags object
-
-param appUser string = 'todoApp'
+param environmentName string
+param location string = resourceGroup().location
+param sqlConnectionStringKey string = 'AZURE-SQL-CONNECTION-STRING'
+param appUser string = 'appUser'
 param sqlAdmin string = 'sqlAdmin'
+param dbName string
+
 @secure()
 param sqlAdminPassword string
 @secure()
 param appUserPassword string
 
-var abbrs = loadJsonContent('../../../../common/infra/bicep/abbreviations.json')
+var resourceToken = toLower(uniqueString(subscription().id, environmentName, location))
+var tags = { 'azd-env-name': environmentName }
+var abbrs = loadJsonContent('../../../../../common/infra/bicep/abbreviations.json')
+
+resource keyVault 'Microsoft.KeyVault/vaults@2022-07-01' existing = {
+  name: '${abbrs.keyVaultVaults}${resourceToken}'
+}
 
 resource sqlServer 'Microsoft.Sql/servers@2022-02-01-preview' = {
   name: '${abbrs.sqlServers}${resourceToken}'
@@ -24,7 +31,7 @@ resource sqlServer 'Microsoft.Sql/servers@2022-02-01-preview' = {
   }
 
   resource database 'databases' = {
-    name: 'ToDo'
+    name: dbName
     location: location
   }
 
@@ -51,14 +58,6 @@ resource sqlDeploymentScript 'Microsoft.Resources/deploymentScripts@2020-10-01' 
     cleanupPreference: 'OnSuccess'
     environmentVariables: [
       {
-        name: 'DBSERVER'
-        value: sqlServer.properties.fullyQualifiedDomainName
-      }
-      {
-        name: 'SQLADMIN'
-        value: sqlAdmin
-      }
-      {
         name: 'APPUSERNAME'
         value: appUser
       }
@@ -67,8 +66,20 @@ resource sqlDeploymentScript 'Microsoft.Resources/deploymentScripts@2020-10-01' 
         secureValue: appUserPassword
       }
       {
+        name: 'DBNAME'
+        secureValue: dbName
+      }
+      {
+        name: 'DBSERVER'
+        value: sqlServer.properties.fullyQualifiedDomainName
+      }
+      {
         name: 'SQLCMDPASSWORD'
         secureValue: sqlAdminPassword
+      }
+      {
+        name: 'SQLADMIN'
+        value: sqlAdmin
       }
     ]
 
@@ -85,9 +96,35 @@ alter role db_owner add member ${APPUSERNAME}
 go
 SCRIPT_END
 
-./sqlcmd -S ${DBSERVER} -d ToDo -U ${SQLADMIN} -i ./initDb.sql
+./sqlcmd -S ${DBSERVER} -d ${DBNAME} -U ${SQLADMIN} -i ./initDb.sql
     '''
   }
 }
 
-output AZURE_SQL_CONNECTION_STRING string = 'Server=${sqlServer.properties.fullyQualifiedDomainName}; Database=${sqlServer::database.name}; User=${appUser}'
+resource sqlAdminPasswordSecret 'Microsoft.KeyVault/vaults/secrets@2022-07-01' = {
+  parent: keyVault
+  name: 'sqlAdminPassword'
+  properties: {
+    value: sqlAdminPassword
+  }
+}
+
+resource appUserPasswordSecret 'Microsoft.KeyVault/vaults/secrets@2022-07-01' = {
+  parent: keyVault
+  name: 'appUserPassword'
+  properties: {
+    value: appUserPassword
+  }
+}
+
+resource sqlAzureConnectionStringSercret 'Microsoft.KeyVault/vaults/secrets@2022-07-01' = {
+  parent: keyVault
+  name: sqlConnectionStringKey
+  properties: {
+    value: '${azureSqlConnectionString}; Password=${appUserPassword}'
+  }
+}
+
+var azureSqlConnectionString = 'Server=${sqlServer.properties.fullyQualifiedDomainName}; Database=${sqlServer::database.name}; User=${appUser}'
+output AZURE_SQL_CONNECTION_STRING string = azureSqlConnectionString
+output AZURE_SQL_CONNECTION_STRING_KEY string = sqlConnectionStringKey

@@ -1,6 +1,6 @@
 param environmentName string
 param location string = resourceGroup().location
-param cosmosDatabaseName string = 'Todo'
+param cosmosDatabaseName string
 
 module cosmos 'cosmos.bicep' = {
   name: 'cosmos-account-resources'

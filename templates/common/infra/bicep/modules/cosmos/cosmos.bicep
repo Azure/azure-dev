@@ -5,7 +5,7 @@ param kind string = 'MongoDB'
 
 var resourceToken = toLower(uniqueString(subscription().id, environmentName, location))
 var tags = { 'azd-env-name': environmentName }
-var abbrs = loadJsonContent('../../../../common/infra/bicep/abbreviations.json')
+var abbrs = loadJsonContent('../../../../../common/infra/bicep/abbreviations.json')
 
 resource keyVault 'Microsoft.KeyVault/vaults@2022-07-01' existing = {
   name: '${abbrs.keyVaultVaults}${resourceToken}'

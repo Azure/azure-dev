@@ -1,12 +1,13 @@
 param environmentName string
 param location string = resourceGroup().location
-param cosmosDatabaseName string = 'Todo'
+param cosmosDatabaseName string = ''
 param cosmosConnectionStringKey string = 'AZURE-COSMOS-CONNECTION-STRING'
+param collections array = []
 
 var resourceToken = toLower(uniqueString(subscription().id, environmentName, location))
-var abbrs = loadJsonContent('../../../../common/infra/bicep/abbreviations.json')
+var abbrs = loadJsonContent('../../../../../common/infra/bicep/abbreviations.json')
 
-module cosmos '../../../../common/infra/bicep/modules/cosmos-sql.bicep' = {
+module cosmos '../../../../../common/infra/bicep/modules/cosmos/cosmos-sql.bicep' = {
   name: 'cosmos-account-resources'
   params: {
     environmentName: environmentName
@@ -17,30 +18,19 @@ module cosmos '../../../../common/infra/bicep/modules/cosmos-sql.bicep' = {
 resource database 'Microsoft.DocumentDB/databaseAccounts/mongodbDatabases@2022-05-15' = {
   name: '${abbrs.documentDBDatabaseAccounts}${resourceToken}/${cosmosDatabaseName}'
   properties: {
-    resource: { id: 'Todo' }
+    resource: { id: cosmosDatabaseName }
   }
 
-  resource list 'collections' = {
-    name: 'TodoList'
+  resource list 'collections' = [for collection in collections: {
+    name: collection.name
     properties: {
       resource: {
-        id: 'TodoList'
-        shardKey: { _id: 'Hash' }
-        indexes: [ { key: { keys: [ '_id' ] } } ]
+        id: collection.id
+        shardKey: { _id: collection.shardKey }
+        indexes: [ { key: { keys: [ collection.indexKey ] } } ]
       }
     }
-  }
-
-  resource item 'collections' = {
-    name: 'TodoItem'
-    properties: {
-      resource: {
-        id: 'TodoItem'
-        shardKey: { _id: 'Hash' }
-        indexes: [ { key: { keys: [ '_id' ] } } ]
-      }
-    }
-  }
+  }]
 
   dependsOn: [
     cosmos

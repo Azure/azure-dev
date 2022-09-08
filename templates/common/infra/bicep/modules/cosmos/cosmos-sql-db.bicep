@@ -1,53 +1,44 @@
 param environmentName string
 param location string = resourceGroup().location
-param cosmosDatabaseName string = 'Todo'
+param cosmosDatabaseName string
 param principalIds array = []
+param containers array = []
 
 var resourceToken = toLower(uniqueString(subscription().id, environmentName, location))
-var abbrs = loadJsonContent('../../../../common/infra/bicep/abbreviations.json')
+var abbrs = loadJsonContent('../../../../../common/infra/bicep/abbreviations.json')
 
-module cosmos '../../../../common/infra/bicep/modules/cosmos-sql.bicep' = {
+module cosmos '../../../../../common/infra/bicep/modules/cosmos/cosmos-sql.bicep' = {
   name: 'cosmos-sql-account-resources'
   params: {
     environmentName: environmentName
     location: location
+    cosmosDatabaseName: cosmosDatabaseName
   }
 }
 
 resource database 'Microsoft.DocumentDB/databaseAccounts/sqlDatabases@2022-05-15' = {
   name: '${abbrs.documentDBDatabaseAccounts}${resourceToken}/${cosmosDatabaseName}'
   properties: {
-    resource: { id: 'Todo' }
+    resource: { id: cosmosDatabaseName }
   }
 
-  resource list 'containers' = {
-    name: 'TodoList'
+  resource list 'containers' = [for container in containers: {
+    name: container.name
     properties: {
       resource: {
-        id: 'TodoList'
-        partitionKey: { paths: [ '/id' ] }
+        id: container.id
+        partitionKey: { paths: [ container.partitionKey ] }
       }
       options: {}
     }
-  }
-
-  resource item 'containers' = {
-    name: 'TodoItem'
-    properties: {
-      resource: {
-        id: 'TodoItem'
-        partitionKey: { paths: [ '/id' ] }
-      }
-      options: {}
-    }
-  }
+  }]
 
   dependsOn: [
     cosmos
   ]
 }
 
-module roleDefintion '../../../../common/infra/bicep/modules/cosmos-sql-role-def.bicep' = {
+module roleDefintion '../../../../../common/infra/bicep/modules/cosmos/cosmos-sql-role-def.bicep' = {
   name: 'cosmos-sql-role-def-resources'
   params: {
     environmentName: environmentName
@@ -61,7 +52,7 @@ module roleDefintion '../../../../common/infra/bicep/modules/cosmos-sql-role-def
 
 // We need batchSize(1) here because sql role assignments have to be done sequentially
 @batchSize(1)
-module userRole '../../../../common/infra/bicep/modules/cosmos-sql-role-assign.bicep' = [for principalId in principalIds: if (!empty(principalId)) {
+module userRole '../../../../../common/infra/bicep/modules/cosmos/cosmos-sql-role-assign.bicep' = [for principalId in principalIds: if (!empty(principalId)) {
   name: 'cosmos-sql-user-role-resources-${uniqueString(principalId)}'
   params: {
     environmentName: environmentName

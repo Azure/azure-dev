@@ -3,13 +3,13 @@ targetScope = 'subscription'
 @minLength(1)
 @maxLength(64)
 @description('Name of the the environment which is used to generate a short unique hash used in all resources.')
-param name string
+param environmentName string
 
 @minLength(1)
 @description('Primary location for all resources')
 param location string
 
-@description('User identity to use as resource administrator')
+@description('Id of the user or app to assign application roles')
 param principalId string = ''
 
 @secure()
@@ -20,12 +20,11 @@ param sqlAdminPassword string
 @description('Application user password')
 param appUserPassword string
 
-var resourceToken = toLower(uniqueString(subscription().id, name, location))
-var tags = { 'azd-env-name': name }
-var abbrs = loadJsonContent('../../../../common/infra/bicep/abbreviations.json')
+var tags = { 'azd-env-name': environmentName }
+var abbrs = loadJsonContent('../../../../../../common/infra/bicep/abbreviations.json')
 
 resource rg 'Microsoft.Resources/resourceGroups@2021-04-01' = {
-  name: '${abbrs.resourcesResourceGroups}${name}'
+  name: '${abbrs.resourcesResourceGroups}${environmentName}'
   location: location
   tags: tags
 }
@@ -34,10 +33,9 @@ module resources 'resources.bicep' = {
   name: 'resources'
   scope: rg
   params: {
+    environmentName: environmentName
     location: location
     principalId: principalId
-    resourceToken: resourceToken
-    tags: tags
     sqlAdminPassword: sqlAdminPassword
     appUserPassword: appUserPassword
   }

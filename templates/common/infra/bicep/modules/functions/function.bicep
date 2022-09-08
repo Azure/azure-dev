@@ -4,12 +4,12 @@ param linuxFxVersion string
 param functionsWorkerRuntime string
 param functionsExtensionVersion string = '~4'
 param allowedOrigins array
-param cosmosDatabaseName string = 'Todo'
+param cosmosDatabaseName string
 param cosmosConnectionStringKey string = 'AZURE-COSMOS-CONNECTION-STRING'
 
 var resourceToken = toLower(uniqueString(subscription().id, environmentName, location))
 var tags = { 'azd-env-name': environmentName }
-var abbrs = loadJsonContent('../../../../common/infra/bicep/abbreviations.json')
+var abbrs = loadJsonContent('../../../../../common/infra/bicep/abbreviations.json')
 
 resource appServicePlan 'Microsoft.Web/serverfarms@2022-03-01' existing = {
   name: '${abbrs.webServerFarms}${resourceToken}'

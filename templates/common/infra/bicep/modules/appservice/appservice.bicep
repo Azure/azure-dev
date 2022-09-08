@@ -11,7 +11,7 @@ param useKeyVault bool = false
 
 var tags = { 'azd-env-name': environmentName }
 var resourceToken = toLower(uniqueString(subscription().id, environmentName, location))
-var abbrs = loadJsonContent('../../../../common/infra/bicep/abbreviations.json')
+var abbrs = loadJsonContent('../../../../../common/infra/bicep/abbreviations.json')
 
 resource keyVault 'Microsoft.KeyVault/vaults@2022-07-01' existing = if (useKeyVault) {
   name: '${abbrs.keyVaultVaults}${resourceToken}'
@@ -70,7 +70,7 @@ module apiSiteConfigLogs 'appservice-config-logs.bicep' = {
   }
 }
 
-module keyVaultAccess 'keyvault-access.bicep' = if (useKeyVault) {
+module keyVaultAccess '../keyvault/keyvault-access.bicep' = if (useKeyVault) {
   name: 'keyvault-access-api'
   params: {
     principalId: appservice.identity.principalId

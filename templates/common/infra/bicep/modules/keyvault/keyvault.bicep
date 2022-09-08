@@ -4,7 +4,7 @@ param principalId string = ''
 
 var resourceToken = toLower(uniqueString(subscription().id, environmentName, location))
 var tags = { 'azd-env-name': environmentName }
-var abbrs = loadJsonContent('../abbreviations.json')
+var abbrs = loadJsonContent('../../abbreviations.json')
 
 resource keyVault 'Microsoft.KeyVault/vaults@2022-07-01' = {
   name: '${abbrs.keyVaultVaults}${resourceToken}'

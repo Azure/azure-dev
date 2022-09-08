@@ -1,7 +1,7 @@
 param environmentName string
 param location string = resourceGroup().location
 var resourceToken = toLower(uniqueString(subscription().id, environmentName, location))
-var abbrs = loadJsonContent('../../../../common/infra/bicep/abbreviations.json')
+var abbrs = loadJsonContent('../../../../../common/infra/bicep/abbreviations.json')
 
 resource cosmos 'Microsoft.DocumentDB/databaseAccounts@2022-05-15' existing = {
   name: '${abbrs.documentDBDatabaseAccounts}${resourceToken}'

@@ -3,7 +3,7 @@ param location string = resourceGroup().location
 
 var resourceToken = toLower(uniqueString(subscription().id, environmentName, location))
 var tags = { 'azd-env-name': environmentName }
-var abbrs = loadJsonContent('../../../../common/infra/bicep/abbreviations.json')
+var abbrs = loadJsonContent('../../../../../common/infra/bicep/abbreviations.json')
 
 resource web 'Microsoft.Web/staticSites@2022-03-01' = {
   name: '${abbrs.webStaticSites}web-${resourceToken}'

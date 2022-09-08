@@ -2,6 +2,12 @@ param environmentName string
 param location string = resourceGroup().location
 param principalId string = ''
 
+@secure()
+param sqlAdminPassword string
+@secure()
+param appUserPassword string
+
+
 module appServicePlan '../../../../../../common/infra/bicep/modules/appservice/appserviceplan-sites.bicep' = {
   name: 'appserviceplan-resources'
   params: {
@@ -38,14 +44,12 @@ module api '../../../../../../common/infra/bicep/modules/appservice/appservice-d
   ]
 }
 
-module apiCosmosConfig '../../../../../../common/infra/bicep/modules/appservice/appservice-config-cosmos.bicep' = {
-  name: 'api-cosmos-config-resources'
+module apiSqlServerConfig '../../../../../../common/infra/bicep/modules/appservice/appservice-config-sqlserver.bicep' = {
+  name: 'api-sqlserver-config-resources'
   params: {
     resourceName: api.outputs.NAME
     serviceName: 'api'
-    cosmosDatabaseName: cosmos.outputs.AZURE_COSMOS_DATABASE_NAME
-    cosmosConnectionStringKey: cosmos.outputs.AZURE_COSMOS_CONNECTION_STRING_KEY
-    cosmosEndpoint: cosmos.outputs.AZURE_COSMOS_ENDPOINT
+    sqlConnectionStringKey: sqlServer.outputs.AZURE_SQL_CONNECTION_STRING_KEY
   }
 }
 
@@ -58,25 +62,14 @@ module keyVault '../../../../../../common/infra/bicep/modules/keyvault/keyvault.
   }
 }
 
-module cosmos '../../../../../../common/infra/bicep/modules/cosmos/cosmos-sql-db.bicep' = {
-  name: 'cosmos-resources'
+module sqlServer '../../../../../../common/infra/bicep/modules/sqlserver/sqlserver.bicep' = {
+  name: 'sqlserver-resources'
   params: {
     environmentName: environmentName
     location: location
-    cosmosDatabaseName: 'Todo'
-    principalIds: [ principalId, api.outputs.IDENTITY_PRINCIPAL_ID ]
-    containers: [
-      {
-        name: 'TodoList'
-        id: 'TodoList'
-        partitionKey: '/id'
-      }
-      {
-        name: 'TodoItem'
-        id: 'TodoItem'
-        partitionKey: '/id'
-      }
-    ]
+    sqlAdminPassword: sqlAdminPassword
+    appUserPassword: appUserPassword
+    dbName: 'ToDo'
   }
   dependsOn: [
     keyVault
@@ -100,10 +93,10 @@ module applicationInsights '../../../../../../common/infra/bicep/modules/applica
   }
 }
 
-output AZURE_COSMOS_ENDPOINT string = cosmos.outputs.AZURE_COSMOS_ENDPOINT
-output AZURE_COSMOS_CONNECTION_STRING_KEY string = cosmos.outputs.AZURE_COSMOS_CONNECTION_STRING_KEY
-output AZURE_COSMOS_DATABASE_NAME string = cosmos.outputs.AZURE_COSMOS_DATABASE_NAME
+
 output AZURE_KEY_VAULT_ENDPOINT string = keyVault.outputs.AZURE_KEY_VAULT_ENDPOINT
 output APPLICATIONINSIGHTS_CONNECTION_STRING string = applicationInsights.outputs.APPLICATIONINSIGHTS_CONNECTION_STRING
 output WEB_URI string = web.outputs.URI
 output API_URI string = api.outputs.URI
+output AZURE_SQL_CONNECTION_STRING_KEY string = sqlServer.outputs.AZURE_SQL_CONNECTION_STRING_KEY
+output KEYVAULT_NAME string = keyVault.name

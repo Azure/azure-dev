@@ -6,7 +6,7 @@ param reserved bool = true
 
 var resourceToken = toLower(uniqueString(subscription().id, environmentName, location))
 var tags = { 'azd-env-name': environmentName }
-var abbrs = loadJsonContent('../abbreviations.json')
+var abbrs = loadJsonContent('../../abbreviations.json')
 
 resource appServicePlan 'Microsoft.Web/serverfarms@2022-03-01' = {
   name: '${abbrs.webServerFarms}${resourceToken}'

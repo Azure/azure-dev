@@ -428,7 +428,7 @@ func getRemoteUrlFromNewRepository(ctx context.Context, ghCli github.GitHubCli, 
 
 		err = ghCli.CreatePrivateRepository(ctx, name)
 		if errors.Is(err, github.ErrRepositoryNameInUse) {
-			console.Message(fmt.Sprintf("error: the repository name '%s' is already in use\n", name))
+			console.Message(ctx, fmt.Sprintf("error: the repository name '%s' is already in use\n", name))
 			continue // try again
 		} else if err != nil {
 			return "", fmt.Errorf("creating repository: %w", err)

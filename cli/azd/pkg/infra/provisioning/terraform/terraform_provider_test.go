@@ -216,6 +216,20 @@ func prepareGenericMocks(commandRunner *execmock.MockCommandRunner) {
 		Stdout: `{"terraform_version": "1.1.7"}`,
 		Stderr: "",
 	})
+
+	commandRunner.When(func(args exec.RunArgs, command string) bool {
+		return strings.Contains(command, "az account show")
+	}).Respond(exec.RunResult{
+		Stdout: "\"XXXXXXX-XXXXX-XXXXXX-xxxx-XXXXXXXX\"",
+		Stderr: "",
+	})
+
+	commandRunner.When(func(args exec.RunArgs, command string) bool {
+		return strings.Contains(command, "az account set")
+	}).Respond(exec.RunResult{
+		Stdout: "",
+		Stderr: "",
+	})
 }
 
 func preparePlanningMocks(commandRunner *execmock.MockCommandRunner) {

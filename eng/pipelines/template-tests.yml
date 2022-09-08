@@ -51,6 +51,8 @@ jobs:
 
       - template: /eng/pipelines/templates/steps/install-bicep.yml
 
+      - template: /eng/pipelines/templates/steps/install-terraform.yml
+
       - template: /eng/pipelines/templates/steps/az-login.yml
 
       - pwsh: |

@@ -67,6 +67,8 @@ stages:
 
           - template: /eng/pipelines/templates/steps/install-bicep.yml
 
+          - template: /eng/pipelines/templates/steps/install-terraform.yml
+
           - task: DockerInstaller@0
             displayName: Docker Installer
             condition: and(succeeded(), contains(variables['OSVmImage'], 'macOS'))

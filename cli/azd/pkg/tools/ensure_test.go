@@ -8,10 +8,11 @@ import (
 )
 
 func Test_EnsureInstalledOnlyOnce(t *testing.T) {
+	ctx := context.Background()
 	tool := TestTool{}
 
-	EnsureInstalled(context.Background(), &tool)
-	EnsureInstalled(context.Background(), &tool)
+	EnsureInstalled(ctx, &tool)
+	EnsureInstalled(ctx, &tool)
 
 	require.Equal(t, tool.installChecks, 1)
 }

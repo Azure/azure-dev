@@ -15,5 +15,10 @@ steps:
 
       az account set `
         --subscription "$($subscriptionConfiguration.SubscriptionId)"
+
+      $env:ARM_CLIENT_ID="$($subscriptionConfiguration.TestApplicationId)"
+      $env:ARM_CLIENT_SECRET="$($subscriptionConfiguration.TestApplicationSecret)"
+      $env:ARM_TENANT_ID="$($subscriptionConfiguration.TenantId)"
+
     condition: and(succeeded(), ne(variables['Skip.LiveTest'], 'true'))
     displayName: Azure Login

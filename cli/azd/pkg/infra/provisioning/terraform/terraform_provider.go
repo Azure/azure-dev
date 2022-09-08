@@ -55,7 +55,7 @@ func NewTerraformProvider(ctx context.Context, env *environment.Environment, pro
 		infraOptions.Module = "main"
 	}
 
-	return &TerraformProvider{
+	provider := &TerraformProvider{
 		env:         env,
 		projectPath: projectPath,
 		options:     infraOptions,
@@ -63,13 +63,18 @@ func NewTerraformProvider(ctx context.Context, env *environment.Environment, pro
 		cli:         terraformCli,
 		azCli:       azCli,
 	}
+
+	// Sets the terraform data directory env var that will get set on all terraform CLI commands
+	envVars := []string{fmt.Sprintf("TF_DATA_DIR=%s", provider.dataDirPath())}
+	terraformCli.SetEnv(envVars)
+
+	return provider
 }
 
 // Previews the infrastructure through terraform plan
 func (t *TerraformProvider) Plan(ctx context.Context) *async.InteractiveTaskWithProgress[*DeploymentPlan, *DeploymentPlanningProgress] {
 	return async.RunInteractiveTaskWithProgress(
 		func(asyncContext *async.InteractiveTaskContextWithProgress[*DeploymentPlan, *DeploymentPlanningProgress]) {
-			os.Setenv("TF_DATA_DIR", t.dataDirPath())
 			isRemoteBackendConfig, err := t.isRemoteBackendConfig()
 			if err != nil {
 				asyncContext.SetError(fmt.Errorf("reading backend config: %w", err))
@@ -219,9 +224,6 @@ func (t *TerraformProvider) Deploy(ctx context.Context, deployment *DeploymentPl
 func (t *TerraformProvider) Destroy(ctx context.Context, deployment *Deployment, options DestroyOptions) *async.InteractiveTaskWithProgress[*DestroyResult, *DestroyProgress] {
 	return async.RunInteractiveTaskWithProgress(
 		func(asyncContext *async.InteractiveTaskContextWithProgress[*DestroyResult, *DestroyProgress]) {
-			// discuss : check if you want to set auto-destroy . CAN WE PASS VALUES BACK AND FORTH BETWEEN THE AZD CONTEXT AND PROCESS
-			os.Setenv("TF_DATA_DIR", t.dataDirPath())
-
 			currentSubscription, err := t.ensureEnvSubscription(ctx)
 			if err != nil {
 				asyncContext.SetError(fmt.Errorf("failed to set az subscription , err: %w", err))
@@ -280,7 +282,6 @@ func (t *TerraformProvider) Destroy(ctx context.Context, deployment *Deployment,
 func (t *TerraformProvider) GetDeployment(ctx context.Context, scope infra.Scope) *async.InteractiveTaskWithProgress[*DeployResult, *DeployProgress] {
 	return async.RunInteractiveTaskWithProgress(
 		func(asyncContext *async.InteractiveTaskContextWithProgress[*DeployResult, *DeployProgress]) {
-			os.Setenv("TF_DATA_DIR", t.dataDirPath())
 			t.console.Message(ctx, "Loading terraform module...")
 
 			isRemoteBackendConfig, err := t.isRemoteBackendConfig()

@@ -15,21 +15,28 @@ import (
 
 type TerraformCli interface {
 	tools.ExternalTool
+	// Set environment variables to be used in all terraform commands
+	SetEnv(envVars []string)
+	// Validates the terraform module
 	Validate(ctx context.Context, modulePath string) (string, error)
+	// Initializes the terraform module
 	Init(ctx context.Context, modulePath string, additionalArgs ...string) (string, error)
+	// Creates a deployment plan for the terraform module
 	Plan(ctx context.Context, modulePath string, planFilePath string, additionalArgs ...string) (string, error)
+	// Applies and provisions all resources in the terraform module
 	Apply(ctx context.Context, modulePath string, additionalArgs ...string) (string, error)
+	// Retrieves the output variables from the most recent deployment state
 	Output(ctx context.Context, modulePath string, additionalArgs ...string) (string, error)
+	// Destroys all resources referenced in the terraform module
 	Destroy(ctx context.Context, modulePath string, additionalArgs ...string) (string, error)
 }
 
 type terraformCli struct {
-	cli           TerraformCli
 	commandRunner exec.CommandRunner
+	env           []string
 }
 
 type NewTerraformCliArgs struct {
-	cli           TerraformCli
 	commandRunner exec.CommandRunner
 }
 
@@ -39,7 +46,6 @@ func NewTerraformCli(args NewTerraformCliArgs) TerraformCli {
 	}
 
 	return &terraformCli{
-		cli:           args.cli,
 		commandRunner: args.commandRunner,
 	}
 }
@@ -83,13 +89,25 @@ func (cli *terraformCli) CheckInstalled(ctx context.Context) (bool, error) {
 	return true, nil
 }
 
+// Set environment variables to be used in all terraform commands
+func (cli *terraformCli) SetEnv(env []string) {
+	cli.env = env
+}
+
 func (cli *terraformCli) runCommand(ctx context.Context, args ...string) (exec.RunResult, error) {
-	runArgs := exec.NewRunArgs("terraform", args...)
+	runArgs := exec.
+		NewRunArgs("terraform", args...).
+		WithEnv(cli.env)
+
 	return cli.commandRunner.Run(ctx, runArgs)
 }
 
 func (cli *terraformCli) runInteractive(ctx context.Context, args ...string) (exec.RunResult, error) {
-	runArgs := exec.NewRunArgs("terraform", args...).WithInteractive(true)
+	runArgs := exec.
+		NewRunArgs("terraform", args...).
+		WithEnv(cli.env).
+		WithInteractive(true)
+
 	return cli.commandRunner.Run(ctx, runArgs)
 }
 

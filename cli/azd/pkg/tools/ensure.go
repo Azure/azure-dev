@@ -5,7 +5,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 )
+
+// Stores tools that have already been verified to being installed
+// This will save us time having to re-check downstream in other components
+var confirmedTools map[string]bool = map[string]bool{}
 
 // missingToolErrors wraps a set of errors discovered when
 // probing for tools and implements the Error interface to pretty
@@ -35,6 +40,12 @@ func EnsureInstalled(ctx context.Context, tools ...ExternalTool) error {
 	errorsEncountered := map[string]struct{}{}
 
 	for _, tool := range tools {
+		_, ok := confirmedTools[tool.Name()]
+		if ok {
+			log.Printf("Skipping install check for '%s'. It was previously confirmed.", tool.Name())
+			continue
+		}
+
 		has, err := tool.CheckInstalled(ctx)
 		var errSem *ErrSemver
 		if errors.As(err, &errSem) {
@@ -52,6 +63,9 @@ func EnsureInstalled(ctx context.Context, tools ...ExternalTool) error {
 		} else if !has {
 			allErrors = append(allErrors, fmt.Errorf("%s is not installed, please see %s to install", tool.Name(), tool.InstallUrl()))
 		}
+
+		// Mark the current tool as confirmed
+		confirmedTools[tool.Name()] = true
 	}
 
 	if len(allErrors) > 0 {

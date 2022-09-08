@@ -71,11 +71,15 @@ func Test_EnsureInstalled(t *testing.T) {
 	}
 
 	t.Run("HaveAll", func(t *testing.T) {
+		resetConfirmedTools()
+
 		err := EnsureInstalled(context.Background(), installedToolOne, installedToolTwo)
 		assert.NoError(t, err)
 	})
 
 	t.Run("MissingOne", func(t *testing.T) {
+		resetConfirmedTools()
+
 		err := EnsureInstalled(context.Background(), installedToolOne, missingToolOne)
 		assert.Error(t, err)
 		assert.Regexp(t, regexp.MustCompile(regexp.QuoteMeta(missingToolOne.Name())), err.Error())
@@ -83,6 +87,8 @@ func Test_EnsureInstalled(t *testing.T) {
 	})
 
 	t.Run("MissingMany", func(t *testing.T) {
+		resetConfirmedTools()
+
 		err := EnsureInstalled(context.Background(), installedToolOne, missingToolOne, missingToolTwo)
 		assert.Error(t, err)
 		assert.Regexp(t, regexp.MustCompile(regexp.QuoteMeta(missingToolOne.Name())), err.Error())
@@ -110,4 +116,8 @@ func (m *mockTool) InstallUrl() string {
 
 func (m *mockTool) Name() string {
 	return m.name
+}
+
+func resetConfirmedTools() {
+	confirmedTools = map[string]bool{}
 }

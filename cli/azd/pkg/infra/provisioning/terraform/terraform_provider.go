@@ -60,10 +60,14 @@ func NewTerraformProvider(ctx context.Context, env *environment.Environment, pro
 		cli:         terraformCli,
 	}
 
-	// Sets the terraform data directory env var that will get set on all terraform CLI commands
 	envVars := []string{
+		// Sets the terraform data directory env var that will get set on all terraform CLI commands
 		fmt.Sprintf("TF_DATA_DIR=%s", provider.dataDirPath()),
+		// Required when using service principal login
+		fmt.Sprintf("ARM_TENANT_ID=%s", os.Getenv("ARM_TENANT_ID")),
 		fmt.Sprintf("ARM_SUBSCRIPTION_ID=%s", env.GetSubscriptionId()),
+		fmt.Sprintf("ARM_CLIENT_ID=%s", os.Getenv("ARM_CLIENT_ID")),
+		fmt.Sprintf("ARM_CLIENT_SECRET=%s", os.Getenv("ARM_CLIENT_SECRET")),
 	}
 	terraformCli.SetEnv(envVars)
 

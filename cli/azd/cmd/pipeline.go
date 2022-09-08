@@ -89,7 +89,7 @@ func (p *pipelineConfigAction) Run(
 		log.Panic("missing input console in the provided context")
 	}
 
-	env, err := loadOrInitEnvironment(ctx, &p.manager.RootOptions.EnvironmentName, azdCtx, console)
+	env, ctx, err := loadOrInitEnvironment(ctx, &p.manager.RootOptions.EnvironmentName, azdCtx, console)
 	if err != nil {
 		return fmt.Errorf("loading environment: %w", err)
 	}

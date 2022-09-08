@@ -34,7 +34,7 @@ type GitHubScmProvider struct {
 // GitHub provider during its execution.
 func (p *GitHubScmProvider) requiredTools() []tools.ExternalTool {
 	return []tools.ExternalTool{
-		github.NewGitHubCli(),
+		github.NewGitHubCli(context.Background()),
 	}
 }
 
@@ -73,7 +73,7 @@ func (p *GitHubScmProvider) configureGitRemote(ctx context.Context, repoPath str
 	}
 
 	var remoteUrl string
-	ghCli := github.NewGitHubCli()
+	ghCli := github.NewGitHubCli(ctx)
 
 	switch idx {
 	// Select from an existing GitHub project
@@ -179,8 +179,8 @@ func notifyWhenGitHubActionsAreDisabled(
 	branch string,
 	console input.Console) (bool, error) {
 
-	ghCli := github.NewGitHubCli()
-	gitCli := git.NewGitCli()
+	ghCli := github.NewGitHubCli(ctx)
+	gitCli := git.NewGitCli(ctx)
 	ghActionsInUpstreamRepo, err := ghCli.GitHubActionsExists(ctx, repoSlug)
 	if err != nil {
 		return false, err
@@ -273,7 +273,7 @@ type GitHubCiProvider struct {
 // requiredTools defines the requires tools for GitHub to be used as CI manager
 func (p *GitHubCiProvider) requiredTools() []tools.ExternalTool {
 	return []tools.ExternalTool{
-		github.NewGitHubCli(),
+		github.NewGitHubCli(context.Background()),
 	}
 }
 
@@ -303,7 +303,7 @@ func (p *GitHubCiProvider) configureConnection(
 	fmt.Printf("Configuring repository %s.\n", repoSlug)
 	fmt.Printf("Setting AZURE_CREDENTIALS GitHub repo secret.\n")
 
-	ghCli := github.NewGitHubCli()
+	ghCli := github.NewGitHubCli(ctx)
 	if err := ghCli.SetSecret(ctx, repoSlug, "AZURE_CREDENTIALS", string(credentials)); err != nil {
 		return fmt.Errorf("failed setting AZURE_CREDENTIALS secret: %w", err)
 	}
@@ -336,7 +336,7 @@ func (p *GitHubCiProvider) configurePipeline(ctx context.Context) error {
 // ensureGitHubLogin ensures the user is logged into the GitHub CLI. If not, it prompt the user
 // if they would like to log in and if so runs `gh auth login` interactively.
 func ensureGitHubLogin(ctx context.Context, hostname string, console input.Console) error {
-	ghCli := github.NewGitHubCli()
+	ghCli := github.NewGitHubCli(ctx)
 	loggedIn, err := ghCli.CheckAuth(ctx, hostname)
 	if err != nil {
 		return err

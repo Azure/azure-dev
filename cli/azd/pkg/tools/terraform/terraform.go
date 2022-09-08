@@ -88,6 +88,11 @@ func (cli *terraformCli) runCommand(ctx context.Context, args ...string) (exec.R
 	return cli.commandRunner.Run(ctx, runArgs)
 }
 
+func (cli *terraformCli) runInteractive(ctx context.Context, args ...string) (exec.RunResult, error) {
+	runArgs := exec.NewRunArgs("terraform", args...).WithInteractive(true)
+	return cli.commandRunner.Run(ctx, runArgs)
+}
+
 func (cli *terraformCli) unmarshalCliVersion(ctx context.Context, component string) (string, error) {
 	azRes, err := tools.ExecuteCommand(ctx, "terraform", "version", "-json")
 	if err != nil {
@@ -121,11 +126,13 @@ func (cli *terraformCli) Validate(ctx context.Context, modulePath string) (strin
 
 func (cli *terraformCli) Init(ctx context.Context, modulePath string, additionalArgs ...string) (string, error) {
 	args := []string{
-		fmt.Sprintf("-chdir=%s", modulePath), "init",
-		"-input=false", "-upgrade"}
+		fmt.Sprintf("-chdir=%s", modulePath),
+		"init",
+		"-upgrade",
+	}
 
 	args = append(args, additionalArgs...)
-	cmdRes, err := cli.runCommand(ctx, args...)
+	cmdRes, err := cli.runInteractive(ctx, args...)
 	if err != nil {
 		return "", fmt.Errorf(
 			"failed running terraform init: %s (%w)",
@@ -138,12 +145,14 @@ func (cli *terraformCli) Init(ctx context.Context, modulePath string, additional
 
 func (cli *terraformCli) Plan(ctx context.Context, modulePath string, planFilePath string, additionalArgs ...string) (string, error) {
 	args := []string{
-		fmt.Sprintf("-chdir=%s", modulePath), "plan",
+		fmt.Sprintf("-chdir=%s", modulePath),
+		"plan",
 		fmt.Sprintf("-out=%s", planFilePath),
-		"-input=false", "-lock=false"}
+		"-lock=false",
+	}
 
 	args = append(args, additionalArgs...)
-	cmdRes, err := cli.runCommand(ctx, args...)
+	cmdRes, err := cli.runInteractive(ctx, args...)
 	if err != nil {
 		return "", fmt.Errorf(
 			"failed running terraform plan: %s (%w)",
@@ -156,11 +165,13 @@ func (cli *terraformCli) Plan(ctx context.Context, modulePath string, planFilePa
 
 func (cli *terraformCli) Apply(ctx context.Context, modulePath string, additionalArgs ...string) (string, error) {
 	args := []string{
-		fmt.Sprintf("-chdir=%s", modulePath), "apply",
-		"-input=false", "-lock=false", "-auto-approve"}
+		fmt.Sprintf("-chdir=%s", modulePath),
+		"apply",
+		"-lock=false",
+	}
 
 	args = append(args, additionalArgs...)
-	cmdRes, err := cli.runCommand(ctx, args...)
+	cmdRes, err := cli.runInteractive(ctx, args...)
 	if err != nil {
 		return "", fmt.Errorf(
 			"failed running terraform apply: %s (%w)",
@@ -189,11 +200,12 @@ func (cli *terraformCli) Output(ctx context.Context, modulePath string, addition
 
 func (cli *terraformCli) Destroy(ctx context.Context, modulePath string, additionalArgs ...string) (string, error) {
 	args := []string{
-		fmt.Sprintf("-chdir=%s", modulePath), "destroy",
-		"-input=false", "-auto-approve"}
+		fmt.Sprintf("-chdir=%s", modulePath),
+		"destroy",
+	}
 
 	args = append(args, additionalArgs...)
-	cmdRes, err := cli.runCommand(ctx, args...)
+	cmdRes, err := cli.runInteractive(ctx, args...)
 	if err != nil {
 		return "", fmt.Errorf(
 			"failed running terraform destroy: %s (%w)",

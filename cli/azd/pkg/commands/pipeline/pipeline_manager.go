@@ -151,6 +151,7 @@ func validateDependencyInjection(ctx context.Context, manager *PipelineManager) 
 // pushGitRepo commit all changes in the git project and push it to upstream.
 func (i *PipelineManager) pushGitRepo(ctx context.Context, currentBranch string) error {
 	gitCli := git.NewGitCli(ctx)
+	console := input.GetConsole(ctx)
 
 	if err := gitCli.AddFile(ctx, i.AzdCtx.ProjectDirectory(), "."); err != nil {
 		return fmt.Errorf("adding files: %w", err)
@@ -160,7 +161,7 @@ func (i *PipelineManager) pushGitRepo(ctx context.Context, currentBranch string)
 		return fmt.Errorf("commit changes: %w", err)
 	}
 
-	fmt.Println("Pushing changes")
+	console.Message(ctx, "Pushing changes")
 
 	if err := gitCli.PushUpstream(ctx, i.AzdCtx.ProjectDirectory(), i.PipelineRemoteName, currentBranch); err != nil {
 		return fmt.Errorf("pushing changes: %w", err)

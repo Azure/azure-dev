@@ -11,8 +11,8 @@ func Test_EnsureInstalledOnlyOnce(t *testing.T) {
 	ctx := context.Background()
 	tool := TestTool{}
 
-	EnsureInstalled(ctx, &tool)
-	EnsureInstalled(ctx, &tool)
+	_ = EnsureInstalled(ctx, &tool)
+	_ = EnsureInstalled(ctx, &tool)
 
 	require.Equal(t, tool.installChecks, 1)
 }

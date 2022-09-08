@@ -44,18 +44,6 @@ func (at *containerAppTarget) Deploy(ctx context.Context, azdCtx *azdcontext.Azd
 		at.config.Infra.Module = at.config.Name
 	}
 
-	commandOptions := internal.GetCommandOptions(ctx)
-	infraManager, err := provisioning.NewManager(ctx, *at.env, at.config.Project.Path, at.config.Infra, !commandOptions.NoPrompt)
-	if err != nil {
-		return ServiceDeploymentResult{}, fmt.Errorf("creating provisioning manager: %w", err)
-	}
-
-	progress <- "Creating deployment template"
-	deploymentPlan, err := infraManager.Plan(ctx)
-	if err != nil {
-		return ServiceDeploymentResult{}, fmt.Errorf("planning provisioning: %w", err)
-	}
-
 	// Login to container registry.
 	loginServer, has := at.env.Values[environment.ContainerRegistryEndpointEnvVarName]
 	if !has {
@@ -93,6 +81,18 @@ func (at *containerAppTarget) Deploy(ctx context.Context, azdCtx *azdcontext.Azd
 
 	if err := at.env.Save(); err != nil {
 		return ServiceDeploymentResult{}, fmt.Errorf("saving image name to environment: %w", err)
+	}
+
+	commandOptions := internal.GetCommandOptions(ctx)
+	infraManager, err := provisioning.NewManager(ctx, *at.env, at.config.Project.Path, at.config.Infra, !commandOptions.NoPrompt)
+	if err != nil {
+		return ServiceDeploymentResult{}, fmt.Errorf("creating provisioning manager: %w", err)
+	}
+
+	progress <- "Creating deployment template"
+	deploymentPlan, err := infraManager.Plan(ctx)
+	if err != nil {
+		return ServiceDeploymentResult{}, fmt.Errorf("planning provisioning: %w", err)
 	}
 
 	progress <- "Updating container app image reference"

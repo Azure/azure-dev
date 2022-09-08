@@ -78,7 +78,7 @@ func (m *monitorAction) Run(ctx context.Context, cmd *cobra.Command, args []stri
 		m.monitorLive = true
 	}
 
-	env, err := loadOrInitEnvironment(ctx, &m.rootOptions.EnvironmentName, azdCtx, console)
+	env, ctx, err := loadOrInitEnvironment(ctx, &m.rootOptions.EnvironmentName, azdCtx, console)
 	if err != nil {
 		return fmt.Errorf("loading environment: %w", err)
 	}

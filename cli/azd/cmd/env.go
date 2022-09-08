@@ -69,7 +69,8 @@ func envSetCmd(rootOptions *internal.GlobalCommandOptions) *cobra.Command {
 			return err
 		}
 
-		env, err := loadOrInitEnvironment(ctx, &rootOptions.EnvironmentName, azdCtx, console)
+		//lint:ignore SA4006 // We want ctx overridden here for future changes
+		env, ctx, err := loadOrInitEnvironment(ctx, &rootOptions.EnvironmentName, azdCtx, console) //nolint:ineffassign,staticcheck
 		if err != nil {
 			return fmt.Errorf("loading environment: %w", err)
 		}
@@ -209,7 +210,7 @@ func (en *envNewAction) Run(ctx context.Context, cmd *cobra.Command, args []stri
 		subscription:    en.subscription,
 		location:        en.location,
 	}
-	if _, err := createAndInitEnvironment(ctx, &envSpec, azdCtx, console); err != nil {
+	if _, _, err := createAndInitEnvironment(ctx, &envSpec, azdCtx, console); err != nil {
 		return fmt.Errorf("creating new environment: %w", err)
 	}
 
@@ -237,7 +238,7 @@ func envRefreshCmd(rootOptions *internal.GlobalCommandOptions) *cobra.Command {
 			return fmt.Errorf("failed to ensure login: %w", err)
 		}
 
-		env, err := loadOrInitEnvironment(ctx, &rootOptions.EnvironmentName, azdCtx, console)
+		env, ctx, err := loadOrInitEnvironment(ctx, &rootOptions.EnvironmentName, azdCtx, console)
 		if err != nil {
 			return fmt.Errorf("loading environment: %w", err)
 		}
@@ -304,7 +305,8 @@ func envGetValuesCmd(rootOptions *internal.GlobalCommandOptions) *cobra.Command 
 			formatter := output.GetFormatter(ctx)
 			writer := output.GetWriter(ctx)
 
-			env, err := loadOrInitEnvironment(ctx, &rootOptions.EnvironmentName, azdCtx, console)
+			//lint:ignore SA4006 // We want ctx overridden here for future changes
+			env, ctx, err := loadOrInitEnvironment(ctx, &rootOptions.EnvironmentName, azdCtx, console) //nolint:ineffassign,staticcheck
 			if err != nil {
 				return err
 			}

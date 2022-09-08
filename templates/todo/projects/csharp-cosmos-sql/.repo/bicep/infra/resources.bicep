@@ -2,7 +2,7 @@ param environmentName string
 param location string = resourceGroup().location
 param principalId string = ''
 
-module appServicePlan '../../../../../../common/infra/bicep/modules/appservice/appserviceplan-sites.bicep' = {
+module appServicePlan '../../../../../../common/infra/bicep/core/host/appserviceplan-sites.bicep' = {
   name: 'appserviceplan-resources'
   params: {
     environmentName: environmentName
@@ -10,12 +10,11 @@ module appServicePlan '../../../../../../common/infra/bicep/modules/appservice/a
   }
 }
 
-module web '../../../../../../common/infra/bicep/modules/appservice/appservice-node.bicep' = {
+module web '../../../../../common/infra/core/application/web-node.bicep' = {
   name: 'web-resources'
   params: {
     environmentName: environmentName
     location: location
-    serviceName: 'web'
   }
   dependsOn: [
     applicationInsights
@@ -23,13 +22,11 @@ module web '../../../../../../common/infra/bicep/modules/appservice/appservice-n
   ]
 }
 
-module api '../../../../../../common/infra/bicep/modules/appservice/appservice-dotnet.bicep' = {
+module api '../../../../../common/infra/core/application/api-dotnet.bicep' = {
   name: 'api-resources'
   params: {
     environmentName: environmentName
     location: location
-    serviceName: 'api'
-    useKeyVault: true
   }
   dependsOn: [
     applicationInsights
@@ -38,18 +35,17 @@ module api '../../../../../../common/infra/bicep/modules/appservice/appservice-d
   ]
 }
 
-module apiCosmosConfig '../../../../../../common/infra/bicep/modules/appservice/appservice-config-cosmos.bicep' = {
+module apiCosmosConfig '../../../../../../common/infra/bicep/core/host/appservice-config-cosmos.bicep' = {
   name: 'api-cosmos-config-resources'
   params: {
-    resourceName: api.outputs.NAME
-    serviceName: 'api'
+    appServiceName: api.outputs.NAME
     cosmosDatabaseName: cosmos.outputs.AZURE_COSMOS_DATABASE_NAME
     cosmosConnectionStringKey: cosmos.outputs.AZURE_COSMOS_CONNECTION_STRING_KEY
     cosmosEndpoint: cosmos.outputs.AZURE_COSMOS_ENDPOINT
   }
 }
 
-module keyVault '../../../../../../common/infra/bicep/modules/keyvault/keyvault.bicep' = {
+module keyVault '../../../../../../common/infra/bicep/core/security/keyvault.bicep' = {
   name: 'keyvault-resources'
   params: {
     environmentName: environmentName
@@ -58,7 +54,7 @@ module keyVault '../../../../../../common/infra/bicep/modules/keyvault/keyvault.
   }
 }
 
-module cosmos '../../../../../../common/infra/bicep/modules/cosmos/cosmos-sql-db.bicep' = {
+module cosmos '../../../../../../common/infra/bicep/core/database/cosmos-sql-db.bicep' = {
   name: 'cosmos-resources'
   params: {
     environmentName: environmentName
@@ -83,7 +79,7 @@ module cosmos '../../../../../../common/infra/bicep/modules/cosmos/cosmos-sql-db
   ]
 }
 
-module logAnalytics '../../../../../../common/infra/bicep/modules/loganalytics/loganalytics.bicep' = {
+module logAnalytics '../../../../../../common/infra/bicep/core/monitor/loganalytics.bicep' = {
   name: 'loganalytics-resources'
   params: {
     environmentName: environmentName
@@ -91,7 +87,7 @@ module logAnalytics '../../../../../../common/infra/bicep/modules/loganalytics/l
   }
 }
 
-module applicationInsights '../../../../../../common/infra/bicep/modules/applicationinsights/applicationinsights.bicep' = {
+module applicationInsights '../../../../../../common/infra/bicep/core/monitor/applicationinsights.bicep' = {
   name: 'applicationinsights-resources'
   params: {
     environmentName: environmentName

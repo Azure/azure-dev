@@ -59,6 +59,11 @@ repo:
       to: ./src/web
       patterns:
         - "**/azure.@(yml|yaml)"
+
+    - from: api-node.bicep
+      to: api.bicep
+      patterns:
+        - "**/*.bicep"
         
   assets:
     # # Common assets
@@ -86,6 +91,12 @@ repo:
         - keyvault.bicep
         - keyvault-access.bicep
         - loganalytics.bicep
+
+    - from: ../../../../common/infra/modules
+      to: ./infra
+      patterns:
+        - api-dotnet.bicep
+        - web-node.bicep
 
     - from: ./../../
       to: ./

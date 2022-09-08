@@ -86,6 +86,12 @@ repo:
         - keyvault.bicep
         - keyvault-access.bicep
         - loganalytics.bicep
+    
+    - from: ../../../../common/infra/modules
+      to: ./infra/modules
+      patterns:
+        - api-dotnet.bicep
+        - web-node.bicep
 
     - from: ./../../
       to: ./

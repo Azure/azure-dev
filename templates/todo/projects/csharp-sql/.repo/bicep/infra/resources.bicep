@@ -8,7 +8,7 @@ param sqlAdminPassword string
 param appUserPassword string
 
 
-module appServicePlan '../../../../../../common/infra/bicep/modules/appservice/appserviceplan-sites.bicep' = {
+module appServicePlan '../../../../../../common/infra/bicep/core/host/appserviceplan-sites.bicep' = {
   name: 'appserviceplan-resources'
   params: {
     environmentName: environmentName
@@ -16,12 +16,11 @@ module appServicePlan '../../../../../../common/infra/bicep/modules/appservice/a
   }
 }
 
-module web '../../../../../../common/infra/bicep/modules/appservice/appservice-node.bicep' = {
+module web '../../../../../common/infra/core/application/web-node.bicep' = {
   name: 'web-resources'
   params: {
     environmentName: environmentName
     location: location
-    serviceName: 'web'
   }
   dependsOn: [
     applicationInsights
@@ -29,13 +28,11 @@ module web '../../../../../../common/infra/bicep/modules/appservice/appservice-n
   ]
 }
 
-module api '../../../../../../common/infra/bicep/modules/appservice/appservice-dotnet.bicep' = {
+module api '../../../../../common/infra/core/application/api-dotnet.bicep' = {
   name: 'api-resources'
   params: {
     environmentName: environmentName
     location: location
-    serviceName: 'api'
-    useKeyVault: true
   }
   dependsOn: [
     applicationInsights
@@ -44,16 +41,15 @@ module api '../../../../../../common/infra/bicep/modules/appservice/appservice-d
   ]
 }
 
-module apiSqlServerConfig '../../../../../../common/infra/bicep/modules/appservice/appservice-config-sqlserver.bicep' = {
+module apiSqlServerConfig '../../../../../../common/infra/bicep/core/host/appservice-config-sqlserver.bicep' = {
   name: 'api-sqlserver-config-resources'
   params: {
-    resourceName: api.outputs.NAME
-    serviceName: 'api'
+    appServiceName: api.outputs.NAME
     sqlConnectionStringKey: sqlServer.outputs.AZURE_SQL_CONNECTION_STRING_KEY
   }
 }
 
-module keyVault '../../../../../../common/infra/bicep/modules/keyvault/keyvault.bicep' = {
+module keyVault '../../../../../../common/infra/bicep/core/security/keyvault.bicep' = {
   name: 'keyvault-resources'
   params: {
     environmentName: environmentName
@@ -62,7 +58,7 @@ module keyVault '../../../../../../common/infra/bicep/modules/keyvault/keyvault.
   }
 }
 
-module sqlServer '../../../../../../common/infra/bicep/modules/sqlserver/sqlserver.bicep' = {
+module sqlServer '../../../../../../common/infra/bicep/core/database/sqlserver.bicep' = {
   name: 'sqlserver-resources'
   params: {
     environmentName: environmentName
@@ -76,7 +72,7 @@ module sqlServer '../../../../../../common/infra/bicep/modules/sqlserver/sqlserv
   ]
 }
 
-module logAnalytics '../../../../../../common/infra/bicep/modules/loganalytics/loganalytics.bicep' = {
+module logAnalytics '../../../../../../common/infra/bicep/core/monitor/loganalytics.bicep' = {
   name: 'loganalytics-resources'
   params: {
     environmentName: environmentName
@@ -84,7 +80,7 @@ module logAnalytics '../../../../../../common/infra/bicep/modules/loganalytics/l
   }
 }
 
-module applicationInsights '../../../../../../common/infra/bicep/modules/applicationinsights/applicationinsights.bicep' = {
+module applicationInsights '../../../../../../common/infra/bicep/core/monitor/applicationinsights.bicep' = {
   name: 'applicationinsights-resources'
   params: {
     environmentName: environmentName

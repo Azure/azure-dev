@@ -2,7 +2,7 @@
 # Deploy cosmos db account
 # ------------------------------------------------------------------------------------------------------
 resource "azurecaf_name" "db_acc_name" {
-  name          = random_string.resource_token.result
+  name          = local.resource_token
   resource_type = "azurerm_cosmosdb_account"
   random_length = 0
   clean_input   = true

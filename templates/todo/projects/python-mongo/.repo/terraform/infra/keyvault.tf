@@ -2,7 +2,7 @@
 # DEPLOY AZURE KEYVAULT
 # ------------------------------------------------------------------------------------------------------
 resource "azurecaf_name" "kv_name" {
-  name          = random_string.resource_token.result
+  name          = local.resource_token
   resource_type = "azurerm_key_vault"
   random_length = 0
   clean_input   = true

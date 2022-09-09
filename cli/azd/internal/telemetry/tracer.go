@@ -7,6 +7,7 @@ import (
 	"context"
 
 	"github.com/azure/azure-dev/cli/azd/internal/telemetry/baggage"
+	"github.com/azure/azure-dev/cli/azd/internal/telemetry/fields"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/codes"
 
@@ -138,5 +139,5 @@ func (s *wrapperSpan) TracerProvider() trace.TracerProvider {
 
 // GetTracer returns the application tracer for azd.
 func GetTracer() Tracer {
-	return &wrapperTracer{otel.Tracer(azdAppName)}
+	return &wrapperTracer{otel.Tracer(fields.ServiceNameAzd)}
 }

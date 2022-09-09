@@ -47,6 +47,7 @@ ignoreWords:
     - mockconsole
     - mockexec
     - mockhttp
+    - MYDIR
     - nsgsr
     - ntfns
     - osdisk
@@ -71,6 +72,9 @@ ignoreWords:
     - synsp
     - synw
     - TEAMPROJECTID
+    - terraformcli
+    - tfvars
+    - tfstate
     - traf
     - useragent
     - vmss
@@ -83,6 +87,8 @@ ignoreWords:
     - Retryable
     - httptrigger
     - resourcegroups
+    - resourcegroupterraform
+    - resourcegroupterraformremote
     - devcontainer
     - azurecaf
     - azurerm

@@ -67,6 +67,8 @@ stages:
 
           - template: /eng/pipelines/templates/steps/install-bicep.yml
 
+          - template: /eng/pipelines/templates/steps/install-terraform.yml
+
           - task: DockerInstaller@0
             displayName: Docker Installer
             condition: and(succeeded(), contains(variables['OSVmImage'], 'macOS'))
@@ -113,6 +115,10 @@ stages:
               GITHUB_RUN_NUMBER: $(Build.BuildId)
               # Generate junit report to publish results
               GOTESTSUM_JUNITFILE: junitTestReport.xml
+              # Required for Terraform service principal authentication
+              ARM_CLIENT_ID: $(arm-client-id)
+              ARM_CLIENT_SECRET: $(arm-client-secret)
+              ARM_TENANT_ID: $(arm-tenant-id)
 
           - task: PublishTestResults@2
             inputs:

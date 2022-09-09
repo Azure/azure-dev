@@ -3,6 +3,8 @@
 name: todo-python-mongo-terraform
 metadata:
   template: todo-python-mongo-terraform@0.0.1-beta
+infra:
+  provider: terraform
 services:
   web:
     project: ../../web/react-fluent
@@ -13,3 +15,5 @@ services:
     project: ../../api/python
     language: py
     host: appservice
+infra:
+  provider: terraform

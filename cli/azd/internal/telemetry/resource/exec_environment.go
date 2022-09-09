@@ -1,45 +1,15 @@
-package telemetry
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
+package resource
 
 import (
 	"os"
-	"runtime"
+	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/telemetry/fields"
-	"github.com/azure/azure-dev/cli/azd/pkg/osutil/osversion"
-	"go.opentelemetry.io/otel/sdk/resource"
-	semconv "go.opentelemetry.io/otel/semconv/v1.10.0"
 )
-
-// newResource creates a resource with all application-level fields populated.
-func newResource() *resource.Resource {
-	r, _ := resource.Merge(
-		resource.Default(),
-		resource.NewWithAttributes(
-			semconv.SchemaURL,
-			fields.ServiceNameKey.String(azdAppName),
-			fields.ServiceVersionKey.String(internal.GetVersionNumber()),
-			fields.OSTypeKey.String(runtime.GOOS),
-			fields.OSVersionKey.String(getOsVersion()),
-			fields.HostArchKey.String(runtime.GOARCH),
-			fields.ProcessRuntimeVersionKey.String(runtime.Version()),
-			fields.ExecutionEnvironmentKey.String(getExecutionEnvironment()),
-			fields.MachineIdKey.String(getMachineId()),
-		),
-	)
-
-	return r
-}
-
-func getOsVersion() string {
-	ver, err := osversion.GetVersion()
-
-	if err != nil {
-		return "Unknown"
-	}
-
-	return ver
-}
 
 var booleanEnvVarRules = []struct {
 	envVar      string
@@ -78,16 +48,35 @@ var nonNullEnvVarRules = []struct {
 }
 
 func getExecutionEnvironment() string {
+	ciEnv, ok := getExecutionEnvironmentForCI()
+	if ok {
+		return ciEnv
+	}
+
+	return getExecutionEnvironmentForDesktop()
+}
+
+func getExecutionEnvironmentForCI() (string, bool) {
 	for _, rule := range booleanEnvVarRules {
 		if os.Getenv(rule.envVar) == "true" {
-			return rule.environment
+			return rule.environment, true
 		}
 	}
 
 	for _, rule := range nonNullEnvVarRules {
 		if _, ok := os.LookupEnv(rule.envVar); ok {
-			return rule.environment
+			return rule.environment, true
 		}
+	}
+
+	return "", false
+}
+
+func getExecutionEnvironmentForDesktop() string {
+	userAgent := internal.GetCallerUserAgent()
+
+	if strings.HasPrefix(userAgent, internal.VsCodeAgentPrefix) {
+		return fields.EnvVisualStudioCode
 	}
 
 	return fields.EnvDesktop

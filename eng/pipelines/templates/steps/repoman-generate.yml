@@ -8,14 +8,7 @@ steps:
     inputs:
       versionSpec: 16
 
-  - pwsh: |
-      git config --global user.name "azure-sdk"
-      git config --global user.email "azuresdk@microsoft.com"
-      Set-Content `
-        -Value "https://azure-sdk:${{ parameters.GitHubPat }}@github.com" `
-        -Path ~/.git-credentials
-      git config --global credential.helper "store"
-    displayName: Set git credentials
+  - template: /eng/pipelines/templates/steps/set-git-credentials.yml
 
   - pwsh: npm install
     displayName: Install dependencies

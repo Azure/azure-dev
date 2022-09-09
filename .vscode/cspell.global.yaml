@@ -47,6 +47,7 @@ ignoreWords:
     - mockconsole
     - mockexec
     - mockhttp
+    - MYDIR
     - nsgsr
     - ntfns
     - osdisk

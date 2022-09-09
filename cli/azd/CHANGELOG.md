@@ -2,6 +2,9 @@
 
 ## 0.1.0-beta.6 (Unreleased)
 
+### Breaking Changes
+
+- [[#588]](https://github.com/Azure/azure-dev/pull/588) Update default view from `azd monitor` to overview dashboard.
 
 ## 0.1.0-beta.5 (2022-08-25)
 

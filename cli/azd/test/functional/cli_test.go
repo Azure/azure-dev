@@ -19,6 +19,7 @@ import (
 	"path"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -661,7 +662,11 @@ func randomEnvName() string {
 	}
 
 	// Adding first letter initial of the OS for CI identification
-	osInitial := os.Getenv("AZURE_DEV_CI_OS")[:1]
+	osName := os.Getenv("AZURE_DEV_CI_OS")
+	if osName == "" {
+		osName = runtime.GOOS
+	}
+	osInitial := osName[:1]
 
 	return ("azdtest-" + osInitial + hex.EncodeToString(bytes))[0:15]
 }
@@ -714,7 +719,7 @@ func Test_CLI_InfraCreateAndDeleteResourceTerraform(t *testing.T) {
 	require.NoError(t, err)
 
 	t.Logf("Starting infra create\n")
-	err = cmd.Execute([]string{"infra", "create", "--cwd", dir})
+	_, err = cli.RunCommand(ctx, "infra", "create", "--cwd", dir)
 	require.NoError(t, err)
 
 	out, err := cli.RunCommand(ctx, "env", "get-values", "-o", "json", "--cwd", dir)
@@ -722,7 +727,7 @@ func Test_CLI_InfraCreateAndDeleteResourceTerraform(t *testing.T) {
 	_ = out
 
 	t.Logf("Starting infra delete\n")
-	err = cmd.Execute([]string{"infra", "delete", "--cwd", dir, "--force", "--purge"})
+	_, err = cli.RunCommand(ctx, "infra", "delete", "--cwd", dir, "--force", "--purge")
 	require.NoError(t, err)
 
 	t.Logf("Done\n")
@@ -798,11 +803,11 @@ func Test_CLI_InfraCreateAndDeleteResourceTerraformRemote(t *testing.T) {
 	require.NoError(t, err)
 
 	t.Logf("Starting infra create\n")
-	err = cmd.Execute([]string{"infra", "create", "--cwd", dir})
+	_, err = cli.RunCommand(ctx, "infra", "create", "--cwd", dir)
 	require.NoError(t, err)
 
 	t.Logf("Starting infra delete\n")
-	err = cmd.Execute([]string{"infra", "delete", "--cwd", dir, "--force", "--purge"})
+	_, err = cli.RunCommand(ctx, "infra", "delete", "--cwd", dir, "--force", "--purge")
 	require.NoError(t, err)
 
 	t.Logf("Done\n")

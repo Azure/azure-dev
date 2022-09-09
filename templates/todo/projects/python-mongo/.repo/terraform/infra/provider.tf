@@ -2,7 +2,7 @@
 
 # Configure the Azure Provider
 terraform {
-  required_version = "~> v1.1.7"
+  required_version = ">= 1.1.7, < 2.0.0"
   required_providers {
     azurerm = {
       version = "~>3.18.0"

@@ -184,24 +184,22 @@ func (d *deployAction) Run(ctx context.Context, cmd *cobra.Command, args []strin
 	}
 
 	resourceManager := infra.NewAzureResourceManager(ctx)
-	resourceGroups, err := resourceManager.GetResourceGroupsForDeployment(ctx, env.GetSubscriptionId(), env.GetEnvName())
+	resourceGroup, err := resourceManager.FindResourceGroupForEnvironment(ctx, &env)
 	if err != nil {
-		return fmt.Errorf("discovering resource groups from deployment: %w", err)
+		return fmt.Errorf("discovering resource group from deployment: %w", err)
 	}
 
-	for _, resourceGroup := range resourceGroups {
-		resourcesGroupsURL := fmt.Sprintf(
-			"https://portal.azure.com/#@/resource/subscriptions/%s/resourceGroups/%s/overview",
-			env.GetSubscriptionId(),
-			resourceGroup)
+	resourcesGroupURL := fmt.Sprintf(
+		"https://portal.azure.com/#@/resource/subscriptions/%s/resourceGroups/%s/overview",
+		env.GetSubscriptionId(),
+		resourceGroup)
 
-		message := fmt.Sprintf(
-			"View the resources created under the resource group %s in Azure Portal:\n%s\n",
-			output.WithHighLightFormat(resourceGroup),
-			output.WithLinkFormat(resourcesGroupsURL),
-		)
-		console.Message(ctx, message)
-	}
+	message := fmt.Sprintf(
+		"View the resources created under the resource group %s in Azure Portal:\n%s\n",
+		output.WithHighLightFormat(resourceGroup),
+		output.WithLinkFormat(resourcesGroupURL),
+	)
+	console.Message(ctx, message)
 
 	return nil
 }

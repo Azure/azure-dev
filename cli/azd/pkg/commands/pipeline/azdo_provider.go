@@ -9,6 +9,7 @@ import (
 	"errors"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 )
@@ -91,6 +92,7 @@ func (p *AzdoCiProvider) configureConnection(
 	ctx context.Context,
 	azdEnvironment environment.Environment,
 	repoDetails *gitRepositoryDetails,
+	provisioningProvider provisioning.Options,
 	credentials json.RawMessage,
 	console input.Console) error {
 

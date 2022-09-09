@@ -14,6 +14,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/git"
@@ -221,11 +222,17 @@ func (manager *PipelineManager) Configure(ctx context.Context) error {
 		return err
 	}
 
-	// Config CI provider using credential
+	// Figure out what is the expected provider to use for provisioning
+	prj, err := project.LoadProjectConfig(manager.AzdCtx.ProjectPath(), &manager.Environment)
+	if err != nil {
+		return fmt.Errorf("finding provisioning provider: %w", err)
+	}
+
 	err = manager.CiProvider.configureConnection(
 		ctx,
 		manager.Environment,
 		gitRepoInfo,
+		prj.Infra,
 		credentials,
 		inputConsole)
 	if err != nil {

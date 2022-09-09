@@ -54,6 +54,9 @@ jobs:
 
       - template: /eng/pipelines/templates/steps/az-login.yml
 
+      # Required to clone repos that are not yet public
+      - template: /eng/pipelines/templates/steps/set-git-credentials.yml
+
       - pwsh: |
           if (!$env:TEMPLATEBRANCHNAME) {
             Write-Host "TemplateBranchName variable not set. Using 'staging'"

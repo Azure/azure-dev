@@ -208,7 +208,6 @@ func createTerraformProvider(ctx context.Context) *TerraformProvider {
 }
 
 func prepareGenericMocks(commandRunner *execmock.MockCommandRunner) {
-
 	commandRunner.When(func(args exec.RunArgs, command string) bool {
 		return strings.Contains(command, "terraform version")
 	}).Respond(exec.RunResult{
@@ -219,24 +218,22 @@ func prepareGenericMocks(commandRunner *execmock.MockCommandRunner) {
 }
 
 func preparePlanningMocks(commandRunner *execmock.MockCommandRunner) {
-	modulePath := "..\\..\\..\\..\\test\\samples\\resourcegroupterraform\\infra"
-
 	commandRunner.When(func(args exec.RunArgs, command string) bool {
-		return strings.Contains(command, fmt.Sprintf("terraform -chdir=%s init", modulePath))
+		return args.Cmd == "terraform" && strings.Contains(command, "init")
 	}).Respond(exec.RunResult{
 		Stdout: string("Terraform has been successfully initialized!"),
 		Stderr: "",
 	})
 
 	commandRunner.When(func(args exec.RunArgs, command string) bool {
-		return strings.Contains(command, fmt.Sprintf("terraform -chdir=%s validate", modulePath))
+		return args.Cmd == "terraform" && strings.Contains(command, "validate")
 	}).Respond(exec.RunResult{
 		Stdout: string("Success! The configuration is valid."),
 		Stderr: "",
 	})
 
 	commandRunner.When(func(args exec.RunArgs, command string) bool {
-		return strings.Contains(command, fmt.Sprintf("terraform -chdir=%s plan", modulePath))
+		return args.Cmd == "terraform" && strings.Contains(command, "plan")
 	}).Respond(exec.RunResult{
 		Stdout: string("To perform exactly these actions, run the following command to apply:terraform apply"),
 		Stderr: "",
@@ -244,17 +241,15 @@ func preparePlanningMocks(commandRunner *execmock.MockCommandRunner) {
 }
 
 func prepareDeployMocks(commandRunner *execmock.MockCommandRunner) {
-	modulePath := "..\\..\\..\\..\\test\\samples\\resourcegroupterraform\\infra"
-
 	commandRunner.When(func(args exec.RunArgs, command string) bool {
-		return strings.Contains(command, fmt.Sprintf("terraform -chdir=%s validate", modulePath))
+		return args.Cmd == "terraform" && strings.Contains(command, "validate")
 	}).Respond(exec.RunResult{
 		Stdout: string("Success! The configuration is valid."),
 		Stderr: "",
 	})
 
 	commandRunner.When(func(args exec.RunArgs, command string) bool {
-		return strings.Contains(command, fmt.Sprintf("terraform -chdir=%s apply", modulePath))
+		return args.Cmd == "terraform" && strings.Contains(command, "apply")
 	}).Respond(exec.RunResult{
 		Stdout: string(""),
 		Stderr: "",
@@ -262,7 +257,7 @@ func prepareDeployMocks(commandRunner *execmock.MockCommandRunner) {
 
 	output := "{\"AZURE_LOCATION\": {\"sensitive\": false,\"type\": \"string\",\"value\": \"westus2\"},\"RG_NAME\":{\"sensitive\": false,\"type\": \"string\",\"value\": \"rg-test-env\"}}"
 	commandRunner.When(func(args exec.RunArgs, command string) bool {
-		return strings.Contains(command, fmt.Sprintf("terraform -chdir=%s output", modulePath))
+		return args.Cmd == "terraform" && strings.Contains(command, "output")
 	}).Respond(exec.RunResult{
 		Stdout: output,
 		Stderr: "",
@@ -270,10 +265,8 @@ func prepareDeployMocks(commandRunner *execmock.MockCommandRunner) {
 }
 
 func prepareDestroyMocks(commandRunner *execmock.MockCommandRunner) {
-	modulePath := "..\\..\\..\\..\\test\\samples\\resourcegroupterraform\\infra"
-
 	commandRunner.When(func(args exec.RunArgs, command string) bool {
-		return strings.Contains(command, fmt.Sprintf("terraform -chdir=%s init", modulePath))
+		return args.Cmd == "terraform" && strings.Contains(command, "init")
 	}).Respond(exec.RunResult{
 		Stdout: string("Terraform has been successfully initialized!"),
 		Stderr: "",
@@ -281,17 +274,16 @@ func prepareDestroyMocks(commandRunner *execmock.MockCommandRunner) {
 
 	output := "{\"AZURE_LOCATION\": {\"sensitive\": false,\"type\": \"string\",\"value\": \"westus2\"},\"RG_NAME\":{\"sensitive\": false,\"type\": \"string\",\"value\": \"rg-test-env\"}}"
 	commandRunner.When(func(args exec.RunArgs, command string) bool {
-		return strings.Contains(command, fmt.Sprintf("terraform -chdir=%s output", modulePath))
+		return args.Cmd == "terraform" && strings.Contains(command, "output")
 	}).Respond(exec.RunResult{
 		Stdout: output,
 		Stderr: "",
 	})
 
 	commandRunner.When(func(args exec.RunArgs, command string) bool {
-		return strings.Contains(command, fmt.Sprintf("terraform -chdir=%s destroy", modulePath))
+		return args.Cmd == "terraform" && strings.Contains(command, "destroy")
 	}).Respond(exec.RunResult{
 		Stdout: string(""),
 		Stderr: "",
 	})
-
 }

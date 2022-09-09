@@ -371,6 +371,30 @@ func Test_CLI_InfraCreateAndDeleteWebApp(t *testing.T) {
 	_, err = cli.RunCommand(ctx, "infra", "create")
 	require.NoError(t, err)
 
+	t.Logf("Running show\n")
+	out, err := cli.RunCommand(ctx, "show", "-o", "json", "--cwd", dir)
+	require.NoError(t, err)
+
+	var showRes struct {
+		Services map[string]struct {
+			Project struct {
+				Path     string `json:"path"`
+				Language string `json:"language"`
+			} `json:"project"`
+			Target struct {
+				ResourceId string `json:"resourceId"`
+			} `json:"target"`
+		} `json:"services"`
+	}
+	err = json.Unmarshal([]byte(out), &showRes)
+	require.NoError(t, err)
+
+	service, has := showRes.Services["web"]
+	require.True(t, has)
+	require.Equal(t, "dotnet", service.Project.Language)
+	require.Equal(t, "webapp.csproj", filepath.Base(service.Project.Path))
+	require.NotEmpty(t, service.Target.ResourceId)
+
 	_, err = cli.RunCommand(ctx, "deploy")
 	require.NoError(t, err)
 
@@ -432,6 +456,21 @@ func Test_CLI_InfraCreateAndDeleteWebApp(t *testing.T) {
 
 	_, err = cli.RunCommand(ctx, "infra", "delete", "--force", "--purge")
 	require.NoError(t, err)
+
+	t.Logf("Running show (again)\n")
+	out, err = cli.RunCommand(ctx, "show", "-o", "json", "--cwd", dir)
+	require.NoError(t, err)
+
+	err = json.Unmarshal([]byte(out), &showRes)
+	require.NoError(t, err)
+
+	// Project information should be present, but since we have run infra delete, the target
+	// should no longer be set.
+	service, has = showRes.Services["web"]
+	require.True(t, has)
+	require.Equal(t, "dotnet", service.Project.Language)
+	require.Equal(t, "webapp.csproj", filepath.Base(service.Project.Path))
+	require.Empty(t, service.Target.ResourceId)
 }
 
 // test for azd deploy, azd deploy --service

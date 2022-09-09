@@ -16,9 +16,10 @@ steps:
       az account set `
         --subscription "$($subscriptionConfiguration.SubscriptionId)"
 
-      echo "##vso[task.setvariable variable=ARM_CLIENT_ID;issecret=true]$($subscriptionConfiguration.TestApplicationId)"
-      echo "##vso[task.setvariable variable=ARM_CLIENT_SECRET;issecret=true]$($subscriptionConfiguration.TestApplicationSecret)"
-      echo "##vso[task.setvariable variable=ARM_TENANT_ID;issecret=true]$($subscriptionConfiguration.TenantId)"
+            # Export service principal auth information for terraform testing
+            Write-Host "##vso[task.setvariable variable=arm-client-id;issecret=true]$($subscriptionConfiguration.TestApplicationId)"
+      Write-Host "##vso[task.setvariable variable=arm-client-secret;issecret=true]$($subscriptionConfiguration.TestApplicationSecret)"
+      Write-Host "##vso[task.setvariable variable=arm-tenant-id;issecret=true]$($subscriptionConfiguration.TenantId)"
 
     condition: and(succeeded(), ne(variables['Skip.LiveTest'], 'true'))
     displayName: Azure Login

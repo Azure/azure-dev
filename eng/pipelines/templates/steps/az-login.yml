@@ -16,9 +16,9 @@ steps:
       az account set `
         --subscription "$($subscriptionConfiguration.SubscriptionId)"
 
-      $env:ARM_CLIENT_ID="$($subscriptionConfiguration.TestApplicationId)"
-      $env:ARM_CLIENT_SECRET="$($subscriptionConfiguration.TestApplicationSecret)"
-      $env:ARM_TENANT_ID="$($subscriptionConfiguration.TenantId)"
+      echo "##vso[task.setvariable variable=ARM_CLIENT_ID;issecret=true]$($subscriptionConfiguration.TestApplicationId)"
+      echo "##vso[task.setvariable variable=ARM_CLIENT_SECRET;issecret=true]$($subscriptionConfiguration.TestApplicationSecret)"
+      echo "##vso[task.setvariable variable=ARM_TENANT_ID;issecret=true]$($subscriptionConfiguration.TenantId)"
 
     condition: and(succeeded(), ne(variables['Skip.LiveTest'], 'true'))
     displayName: Azure Login

@@ -50,8 +50,8 @@ func showCmd(rootOptions *internal.GlobalCommandOptions) *cobra.Command {
 		for name, svc := range prj.Services {
 			showSvc := showService{
 				Project: showServiceProject{
-					Path:     svc.Path(),
-					Language: svc.Language,
+					Path: svc.Path(),
+					Type: showTypeFromLanguage(svc.Language),
 				},
 			}
 
@@ -60,7 +60,6 @@ func showCmd(rootOptions *internal.GlobalCommandOptions) *cobra.Command {
 
 		// Add information about the target of each service, if we can determine it (if the infrastructure has
 		// not been deployed, for example, we'll just not include target information)
-
 		resourceManager := infra.NewAzureResourceManager(ctx)
 		if resourceGroupName, err := resourceManager.FindResourceGroupForEnvironment(ctx, &env); err == nil {
 			for name := range prj.Services {
@@ -77,7 +76,7 @@ func showCmd(rootOptions *internal.GlobalCommandOptions) *cobra.Command {
 				}
 			}
 		} else {
-			log.Printf("ignoring error determining resource group for environment %s: %v", env.GetEnvName(), err)
+			log.Printf("ignoring error determining resource group for environment %s, resource ids will not be available: %v", env.GetEnvName(), err)
 		}
 
 		return formatter.Format(res, writer, nil)
@@ -115,12 +114,25 @@ type showService struct {
 
 type showServiceProject struct {
 	// Path contains the path to the project for this service.
-	// For .NET Based services, this includes the project file (i.e. Todo.Api.csproj).
+	// When 'type' is 'dotnet', this includes the project file (i.e. Todo.Api.csproj).
 	Path string `json:"path"`
-	// The language uses for this project.
-	Language string `json:"language"`
+	// The type of this project. One of "dotnet", "python", or "node"
+	Type string `json:"language"`
 }
 
 type showTargetArm struct {
 	ResourceId string `json:"resourceId"`
+}
+
+func showTypeFromLanguage(language string) string {
+	switch language {
+	case "dotnet":
+		return "dotnet"
+	case "py", "python":
+		return "python"
+	case "ts", "js":
+		return "node"
+	default:
+		panic(fmt.Sprintf("unknown language %s", language))
+	}
 }

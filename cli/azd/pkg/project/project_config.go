@@ -272,7 +272,7 @@ func ParseProjectConfig(yamlContent string, env *environment.Environment) (*Proj
 			} else if stat.IsDir() {
 				entries, err := os.ReadDir(svc.Path())
 				if err != nil {
-					return nil, fmt.Errorf("discovering listing project files for service %s: %w", svc.Name, err)
+					return nil, fmt.Errorf("listing files for service %s: %w", svc.Name, err)
 				}
 				var projectFile string
 				for _, entry := range entries {
@@ -281,7 +281,7 @@ func ParseProjectConfig(yamlContent string, env *environment.Environment) (*Proj
 						if projectFile != "" {
 							// we found multiple project files, we need to ask the user to specify which one
 							// corresponds to the service.
-							return nil, fmt.Errorf("multiple .NET project files detected in %s for service %s, please include the name of the .NET project file in project setting in %s for this service", svc.Path(), svc.Name, azdcontext.ProjectFileName)
+							return nil, fmt.Errorf("multiple .NET project files detected in %s for service %s, please include the name of the .NET project file in 'project' setting in %s for this service", svc.Path(), svc.Name, azdcontext.ProjectFileName)
 						} else {
 							projectFile = entry.Name()
 						}

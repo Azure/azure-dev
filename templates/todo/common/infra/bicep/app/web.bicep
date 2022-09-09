@@ -4,7 +4,6 @@ param serviceName string = 'web'
 param appCommandLine string = 'pm2 serve /home/site/wwwroot --no-daemon --spa'
 param applicationInsightsName string
 param appServicePlanId string
-param keyVaultName string = ''
 
 module web '../../../../../common/infra/bicep/core/host/appservice-node.bicep' = {
   name: 'application-appservice-node-${serviceName}'
@@ -15,7 +14,6 @@ module web '../../../../../common/infra/bicep/core/host/appservice-node.bicep' =
     appCommandLine: appCommandLine
     applicationInsightsName: applicationInsightsName
     appServicePlanId: appServicePlanId
-    keyVaultName: keyVaultName
   }
 }
 

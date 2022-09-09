@@ -14,7 +14,7 @@ module cosmos 'cosmos-sql.bicep' = {
     environmentName: environmentName
     location: location
     cosmosDatabaseName: cosmosDatabaseName
-     keyVaultName: keyVaultName
+    keyVaultName: keyVaultName
   }
 }
 

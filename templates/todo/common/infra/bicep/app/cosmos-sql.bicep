@@ -1,30 +1,30 @@
 param environmentName string
 param location string = resourceGroup().location
 param keyVaultName string
+param principalIds array = []
 param cosmosDatabaseName string = 'Todo'
-param collections array = [
+param containers array = [
   {
     name: 'TodoList'
     id: 'TodoList'
-    shardKey: 'Hash'
-    indexKey: '_id'
+    partitionKey: '/id'
   }
   {
     name: 'TodoItem'
     id: 'TodoItem'
-    shardKey: 'Hash'
-    indexKey: '_id'
+    partitionKey: '/id'
   }
 ]
 
-module cosmos '../../../../../common/infra/bicep/core/database/cosmos-mongo-db.bicep' = {
-  name: 'todo-cosmos-mongo-resources'
+module cosmos '../../../../../common/infra/bicep/core/database/cosmos-sql-db.bicep' = {
+  name: 'todo-cosmos-sql-resources'
   params: {
     environmentName: environmentName
     location: location
     cosmosDatabaseName: cosmosDatabaseName
-    collections: collections
+    containers: containers
     keyVaultName: keyVaultName
+    principalIds: principalIds
   }
 }
 

@@ -13,7 +13,6 @@ module cosmos 'cosmos.bicep' = {
   }
 }
 
-
 output AZURE_COSMOS_RESOURCE_ID string = cosmos.outputs.AZURE_COSMOS_RESOURCE_ID
 output AZURE_COSMOS_ENDPOINT string = cosmos.outputs.AZURE_COSMOS_ENDPOINT
 output AZURE_COSMOS_DATABASE_NAME string = cosmosDatabaseName

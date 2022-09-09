@@ -2,39 +2,41 @@ param environmentName string
 param location string = resourceGroup().location
 param principalId string = ''
 
-module appServicePlan '../../../../../../common/infra/bicep/core/host/appserviceplan-sites.bicep' = {
-  name: 'appserviceplan-resources'
-  params: {
-    environmentName: environmentName
-    location: location
-  }
-}
-
-module web '../../../../../common/infra/core/application/web-node.bicep' = {
+// The application frontend
+module web '../../../../../common/infra/bicep/app/web.bicep' = {
   name: 'web-resources'
   params: {
     environmentName: environmentName
     location: location
+    applicationInsightsName: monitoring.outputs.APPLICATIONINSIGHTS_NAME
+    appServicePlanId: appServicePlan.outputs.AZURE_APP_SERVICE_PLAN_ID
   }
-  dependsOn: [
-    applicationInsights
-    appServicePlan
-  ]
 }
 
-module api '../../../../../common/infra/core/application/api-dotnet.bicep' = {
+// The application backend
+module api '../../../../../common/infra/bicep/app/api-dotnet.bicep' = {
   name: 'api-resources'
   params: {
     environmentName: environmentName
     location: location
+    applicationInsightsName: monitoring.outputs.APPLICATIONINSIGHTS_NAME
+    appServicePlanId: appServicePlan.outputs.AZURE_APP_SERVICE_PLAN_ID
+    keyVaultName: keyVault.outputs.AZURE_KEY_VAULT_NAME
   }
-  dependsOn: [
-    applicationInsights
-    keyVault
-    appServicePlan
-  ]
 }
 
+// The application database
+module cosmos '../../../../../common/infra/bicep/app/cosmos-sql.bicep' = {
+  name: 'cosmos-resources'
+  params: {
+    environmentName: environmentName
+    location: location
+    keyVaultName: keyVault.outputs.AZURE_KEY_VAULT_NAME
+    principalIds: [ principalId, api.outputs.IDENTITY_PRINCIPAL_ID ]
+  }
+}
+
+// Configure api to use cosmos
 module apiCosmosConfig '../../../../../../common/infra/bicep/core/host/appservice-config-cosmos.bicep' = {
   name: 'api-cosmos-config-resources'
   params: {
@@ -45,6 +47,16 @@ module apiCosmosConfig '../../../../../../common/infra/bicep/core/host/appservic
   }
 }
 
+// Create an App Service Plan to group applications under the same payment plan and SKU
+module appServicePlan '../../../../../../common/infra/bicep/core/host/appserviceplan-sites.bicep' = {
+  name: 'appserviceplan-resources'
+  params: {
+    environmentName: environmentName
+    location: location
+  }
+}
+
+// Store secrets in a keyvault
 module keyVault '../../../../../../common/infra/bicep/core/security/keyvault.bicep' = {
   name: 'keyvault-resources'
   params: {
@@ -54,45 +66,12 @@ module keyVault '../../../../../../common/infra/bicep/core/security/keyvault.bic
   }
 }
 
-module cosmos '../../../../../../common/infra/bicep/core/database/cosmos-sql-db.bicep' = {
-  name: 'cosmos-resources'
+// Monitor application with Azure Monitor
+module monitoring '../../../../../../common/infra/bicep/core/monitor/monitoring.bicep' = {
+  name: 'monitoring-resources'
   params: {
     environmentName: environmentName
     location: location
-    cosmosDatabaseName: 'Todo'
-    principalIds: [ principalId, api.outputs.IDENTITY_PRINCIPAL_ID ]
-    containers: [
-      {
-        name: 'TodoList'
-        id: 'TodoList'
-        partitionKey: '/id'
-      }
-      {
-        name: 'TodoItem'
-        id: 'TodoItem'
-        partitionKey: '/id'
-      }
-    ]
-  }
-  dependsOn: [
-    keyVault
-  ]
-}
-
-module logAnalytics '../../../../../../common/infra/bicep/core/monitor/loganalytics.bicep' = {
-  name: 'loganalytics-resources'
-  params: {
-    environmentName: environmentName
-    location: location
-  }
-}
-
-module applicationInsights '../../../../../../common/infra/bicep/core/monitor/applicationinsights.bicep' = {
-  name: 'applicationinsights-resources'
-  params: {
-    environmentName: environmentName
-    location: location
-    workspaceId: logAnalytics.outputs.AZURE_LOG_ANALYTICS_WORKSPACE_ID
   }
 }
 
@@ -100,6 +79,6 @@ output AZURE_COSMOS_ENDPOINT string = cosmos.outputs.AZURE_COSMOS_ENDPOINT
 output AZURE_COSMOS_CONNECTION_STRING_KEY string = cosmos.outputs.AZURE_COSMOS_CONNECTION_STRING_KEY
 output AZURE_COSMOS_DATABASE_NAME string = cosmos.outputs.AZURE_COSMOS_DATABASE_NAME
 output AZURE_KEY_VAULT_ENDPOINT string = keyVault.outputs.AZURE_KEY_VAULT_ENDPOINT
-output APPLICATIONINSIGHTS_CONNECTION_STRING string = applicationInsights.outputs.APPLICATIONINSIGHTS_CONNECTION_STRING
+output APPLICATIONINSIGHTS_CONNECTION_STRING string = monitoring.outputs.APPLICATIONINSIGHTS_CONNECTION_STRING
 output WEB_URI string = web.outputs.URI
 output API_URI string = api.outputs.URI

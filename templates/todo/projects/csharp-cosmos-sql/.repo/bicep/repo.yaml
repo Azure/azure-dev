@@ -16,18 +16,18 @@ repo:
 
   rewrite:
     rules:
-    - from: ../../../../../common/infra/appservice/bicep/modules
-      to: ./modules
+    - from: ../../../../../../common/infra/bicep/core
+      to: ./core
       patterns:
         - "**/*.bicep"
 
-    - from: ../../../../../../common/infra/bicep/modules
-      to: ./modules
+    - from: ../../../../../common/infra/bicep/app
+      to: ./app
       patterns:
         - "**/*.bicep"
 
-    - from: ../../../../../common/infra/modules
-      to: ./modules
+    - from: ../../../../../common/infra/bicep/core
+      to: ../core
       patterns:
         - "**/*.bicep"   
 
@@ -45,10 +45,6 @@ repo:
       patterns:
         - "**/main.bicep"
 
-    - from: ../../../../common/infra/bicep
-      to: ../
-      patterns:
-        - "**/*.bicep"
 
     - from: ../../api/csharp-cosmos-sql
       to: ./src/api
@@ -60,10 +56,15 @@ repo:
       patterns:
         - "**/azure.@(yml|yaml)"
 
-    - from: api-node.bicep
+    - from: api-dotnet.bicep
       to: api.bicep
       patterns:
-        - "**/*.bicep"
+        - "**/resources.bicep"
+
+    - from: cosmos-sql.bicep
+      to: db.bicep
+      patterns:
+        - "**/resources.bicep"
         
   assets:
     # # Common assets
@@ -91,12 +92,16 @@ repo:
         - keyvault.bicep
         - keyvault-access.bicep
         - loganalytics.bicep
+        - monitoring.bicep
 
-    - from: ../../../../common/infra/modules
-      to: ./infra
-      patterns:
-        - api-dotnet.bicep
-        - web-node.bicep
+    - from: ../../../../common/infra/bicep/app/web.bicep
+      to: ./infra/app/web.bicep
+
+    - from: ../../../../common/infra/bicep/app/api-dotnet.bicep
+      to: ./infra/app/api.bicep
+
+    - from: ../../../../common/infra/bicep/app/cosmos-sql.bicep
+      to: ./infra/app/db.bicep
 
     - from: ./../../
       to: ./

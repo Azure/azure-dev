@@ -3,7 +3,7 @@ param location string = resourceGroup().location
 param serviceName string = 'api'
 param applicationInsightsName string
 param appServicePlanId string
-param keyVaultName string = ''
+param keyVaultName string 
 
 module api '../../../../../common/infra/bicep/core/host/appservice-dotnet.bicep' = {
   name: 'application-appservice-dotnet-${serviceName}'

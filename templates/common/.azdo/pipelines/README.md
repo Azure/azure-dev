@@ -210,6 +210,9 @@ Run the following commands to set the environment variables in the Azure DevOps 
 az pipelines variable create --name AZURE_SUBSCRIPTION_ID --org ${AZURE_DEVOPS_ORG_URI} --pipeline-name ${AZURE_DEVOPS_PIPELINE_NAME} --project ${AZURE_DEVOPS_PROJECT_NAME} --value ${AZURE_SUBSCRIPTION_ID} --allow-override true
 az pipelines variable create --name AZURE_LOCATION --org ${AZURE_DEVOPS_ORG_URI} --pipeline-name ${AZURE_DEVOPS_PIPELINE_NAME} --project ${AZURE_DEVOPS_PROJECT_NAME} --value ${AZURE_LOCATION} --allow-override true
 az pipelines variable create --name AZURE_ENV_NAME --org ${AZURE_DEVOPS_ORG_URI} --pipeline-name ${AZURE_DEVOPS_PIPELINE_NAME} --project ${AZURE_DEVOPS_PROJECT_NAME} --value ${AZURE_ENV_NAME} --allow-override true
+az pipeline variable create --name ARM_TENANT_ID --org ${AZURE_DEVOPS_ORG_URI} --pipeline-name ${AZURE_DEVOPS_PIPELINE_NAME} --project ${AZURE_DEVOPS_PROJECT_NAME} --value ${AZURE_TENANT_ID} --secret
+az pipeline variable create --name ARM_CLIENT_ID --org ${AZURE_DEVOPS_ORG_URI} --pipeline-name ${AZURE_DEVOPS_PIPELINE_NAME} --project ${AZURE_DEVOPS_PROJECT_NAME} --value ${AZURE_SERVICE_PRINCIPAL_ID} --secret
+az pipeline variable create --name ARM_CLIENT_SECRET --org ${AZURE_DEVOPS_ORG_URI} --pipeline-name ${AZURE_DEVOPS_PIPELINE_NAME} --project ${AZURE_DEVOPS_PROJECT_NAME} --value ${AZURE_DEVOPS_EXT_AZURE_RM_SERVICE_PRINCIPAL_KEY} --secret
 ```
 
 ## Create Azure DevOps Build Policy

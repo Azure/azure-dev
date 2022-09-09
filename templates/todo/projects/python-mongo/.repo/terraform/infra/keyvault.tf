@@ -43,6 +43,7 @@ resource "azurerm_key_vault_access_policy" "user" {
     "Set",
     "List",
     "Delete",
+    "Purge"
   ]
 }
 
@@ -50,4 +51,8 @@ resource "azurerm_key_vault_secret" "dbconnection" {
   name         = "AZURE-COSMOS-CONNECTION-STRING"
   value        = azurerm_cosmosdb_account.db.connection_strings[0]
   key_vault_id = azurerm_key_vault.kv.id
+  depends_on = [
+    azurerm_key_vault_access_policy.user,
+    azurerm_key_vault_access_policy.app
+  ]
 }

@@ -730,9 +730,7 @@ func Test_CLI_InfraCreateAndDeleteResourceTerraform(t *testing.T) {
 	t.Logf("Done\n")
 }
 
-func Test_CLI_InfraCreateAndDeleteResourceTfRemote(t *testing.T) {
-	// running this test in parallel is ok as it uses a t.TempDir()
-	t.Parallel()
+func Test_CLI_InfraCreateAndDeleteResourceTerraformRemote(t *testing.T) {
 	ctx, cancel := newTestContext(t)
 	defer cancel()
 

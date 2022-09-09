@@ -66,7 +66,7 @@ func (r *commandRunner) Run(ctx context.Context, args RunArgs) (RunResult, error
 	// use the shell on Windows since most commands are actually just batch files wrapping
 	// real commands. And even if they're not, this will work fine without having to do any
 	// probing or checking.
-	cmd, err := newCmdTree(ctx, args.Cmd, args.Args, args.UseShell || runtime.GOOS == "windows")
+	cmd, err := newCmdTree(ctx, args.Cmd, args.Args, args.UseShell || runtime.GOOS == "windows", args.Interactive)
 
 	if err != nil {
 		return RunResult{}, err
@@ -154,12 +154,17 @@ func appendEnv(env []string) []string {
 // or POSIX environments.
 // An empty cmd parameter indicates "command list mode", which means that args are combined into a single command list,
 // joined with && operator.
-func newCmdTree(ctx context.Context, cmd string, args []string, useShell bool) (CmdTree, error) {
+func newCmdTree(ctx context.Context, cmd string, args []string, useShell bool, interactive bool) (CmdTree, error) {
+	options := CmdTreeOptions{Interactive: interactive}
+
 	if !useShell {
 		if cmd == "" {
 			return CmdTree{}, errors.New("command must be provided if shell is not used")
 		} else {
-			return CmdTree{Cmd: exec.CommandContext(ctx, cmd, args...)}, nil
+			return CmdTree{
+				CmdTreeOptions: options,
+				Cmd:            exec.CommandContext(ctx, cmd, args...),
+			}, nil
 		}
 	}
 
@@ -169,7 +174,7 @@ func newCmdTree(ctx context.Context, cmd string, args []string, useShell bool) (
 	if runtime.GOOS == "windows" {
 		dir := os.Getenv("SYSTEMROOT")
 		if dir == "" {
-			return CmdTree{}, errors.New("environment variable 'SYSTEMROOT' has no value")
+			return CmdTree{CmdTreeOptions: options}, errors.New("environment variable 'SYSTEMROOT' has no value")
 		}
 
 		shellName = filepath.Join(dir, "System32", "cmd.exe")
@@ -204,7 +209,10 @@ func newCmdTree(ctx context.Context, cmd string, args []string, useShell bool) (
 	allArgs = append(allArgs, shellCommandPrefix)
 	allArgs = append(allArgs, args...)
 
-	return CmdTree{Cmd: exec.Command(shellName, allArgs...)}, nil
+	return CmdTree{
+		CmdTreeOptions: options,
+		Cmd:            exec.Command(shellName, allArgs...),
+	}, nil
 }
 
 type redactData struct {

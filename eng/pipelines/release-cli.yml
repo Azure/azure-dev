@@ -116,9 +116,9 @@ stages:
               # Generate junit report to publish results
               GOTESTSUM_JUNITFILE: junitTestReport.xml
               # Required for Terraform service principal authentication
-              ARM_CLIENT_ID: $(ARM_CLIENT_ID)
-              ARM_CLIENT_SECRET: $(ARM_CLIENT_SECRET)
-              ARM_TENANT_ID: $(ARM_TENANT_ID)
+              ARM_CLIENT_ID: $(arm-client-id)
+              ARM_CLIENT_SECRET: $(arm-client-secret)
+              ARM_TENANT_ID: $(arm-tenant-id)
 
           - task: PublishTestResults@2
             inputs:

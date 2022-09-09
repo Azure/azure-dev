@@ -174,7 +174,7 @@ func newCmdTree(ctx context.Context, cmd string, args []string, useShell bool, i
 	if runtime.GOOS == "windows" {
 		dir := os.Getenv("SYSTEMROOT")
 		if dir == "" {
-			return CmdTree{CmdTreeOptions: options}, errors.New("environment variable 'SYSTEMROOT' has no value")
+			return CmdTree{}, errors.New("environment variable 'SYSTEMROOT' has no value")
 		}
 
 		shellName = filepath.Join(dir, "System32", "cmd.exe")

@@ -115,6 +115,7 @@ stages:
               GITHUB_RUN_NUMBER: $(Build.BuildId)
               # Generate junit report to publish results
               GOTESTSUM_JUNITFILE: junitTestReport.xml
+              # Required for Terraform service principal authentication
               ARM_CLIENT_ID: $(ARM_CLIENT_ID)
               ARM_CLIENT_SECRET: $(ARM_CLIENT_SECRET)
               ARM_TENANT_ID: $(ARM_TENANT_ID)

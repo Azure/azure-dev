@@ -323,13 +323,13 @@ func (p *GitHubCiProvider) configureConnection(
 		if e := json.Unmarshal(credentials, &values); e != nil {
 			return fmt.Errorf("setting terraform env var credentials: %w", e)
 		}
-		if err := ghCli.SetSecret(ctx, repoSlug, "ARM_TENANT_ID", values.ClientId); err != nil {
+		if err := ghCli.SetSecret(ctx, repoSlug, "ARM_TENANT_ID", values.Tenant); err != nil {
 			return fmt.Errorf("setting terraform env var credentials:: %w", err)
 		}
 		if err := ghCli.SetSecret(ctx, repoSlug, "ARM_CLIENT_ID", values.ClientId); err != nil {
 			return fmt.Errorf("setting terraform env var credentials:: %w", err)
 		}
-		if err := ghCli.SetSecret(ctx, repoSlug, "ARM_CLIENT_SECRET", values.ClientId); err != nil {
+		if err := ghCli.SetSecret(ctx, repoSlug, "ARM_CLIENT_SECRET", values.ClientSecret); err != nil {
 			return fmt.Errorf("setting terraform env var credentials:: %w", err)
 		}
 	}

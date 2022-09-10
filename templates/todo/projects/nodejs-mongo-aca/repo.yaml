@@ -8,8 +8,28 @@ repo:
   includeProjectAssets: true
 
   remotes:
-    - name: azure-samples
+    - name: azure-samples-main
       url: git@github.com:Azure-Samples/todo-nodejs-mongo-aca.git
+    - name: azure-samples-staging
+      url: git@github.com:Azure-Samples/todo-nodejs-mongo-aca.git
+      branch: staging
+
+  rewrite:
+    rules:
+      - from: ../../../../../common/infra/bicep
+        to: ./
+        patterns:
+          - "**/*.bicep"
+
+      - from: ../../api/js
+        to: ./src/api
+        patterns:
+          - "**/azure.@(yml|yaml)"
+
+      - from: ../../web/react-fluent
+        to: ./src/web
+        patterns:
+          - "**/azure.@(yml|yaml)"
 
   assets:
     # Common assets
@@ -26,9 +46,23 @@ repo:
       patterns:
         - openapi.yaml
 
-    # Template common
+    # Templates common
     - from: ../../../common
       to: ./
+      ignore:
+        - .devcontainer/**/*
+        - "infra/**/*"
+
+    - from: ../../../common/infra/bicep
+      to: ./infra
+
+    # .devcontainer common (devcontainer.json)
+    - from: ../../../common/.devcontainer/devcontainer.json/nodejs
+      to: ./.devcontainer
+
+    # .devcontainer common (Dockerfile)
+    - from: ../../../common/.devcontainer/Dockerfile/base
+      to: ./.devcontainer
 
     # Assets common
     - from: ../../common/assets
@@ -37,9 +71,9 @@ repo:
     # Tests common
     - from: ../../common/tests
       to: ./tests
-      
+
     # ACA infra common
-    - from: ../../common/infra/aca
+    - from: ../../common/infra/aca/bicep
       to: ./infra
 
     # Node JS API
@@ -57,5 +91,3 @@ repo:
       ignore:
         - "build/**/*"
         - "node_modules/**/*"
-
-

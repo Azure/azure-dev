@@ -6,7 +6,7 @@ import * as path from 'path';
 import { IActionContext } from "@microsoft/vscode-azext-utils";
 import { localize } from '../localize';
 import { quickPickWorkspaceFolder } from '../utils/quickPickWorkspaceFolder';
-import { getAzDevTerminalTitle, pickAzureYamlFile, selectApplicationTemplate } from './cmdUtil';
+import { getAzDevTerminalTitle, pickAzureYamlFile, selectApplicationTemplate, showReadmeFile } from './cmdUtil';
 import { createAzureDevCli } from '../utils/azureDevCli';
 import { executeAsTask } from '../utils/executeAsTask';
 import { TelemetryId } from '../telemetry/telemetryId';
@@ -17,7 +17,7 @@ export async function up(context: IActionContext, selectedFile?: vscode.Uri): Pr
         folder = await quickPickWorkspaceFolder(context, localize('azure-dev.commands.cli.init.needWorkspaceFolder', "To run '{0}' command you must first open a folder or workspace in VS Code", 'up'));
     }
 
-    const azureCli = createAzureDevCli();
+    const azureCli = await createAzureDevCli(context);
     let command = azureCli.commandBuilder
         .withArg('up');
     let workingDir = folder.uri;
@@ -36,5 +36,10 @@ export async function up(context: IActionContext, selectedFile?: vscode.Uri): Pr
         alwaysRunNew: true,
         cwd: workingDir.fsPath,
         env: azureCli.env
-    }, TelemetryId.UpCli);
+    }, TelemetryId.UpCli).then(() => {
+        // Only show README if we are initializing a new workspace/application
+        if (!azureYamlFile) {
+            void showReadmeFile(workingDir.fsPath);
+        }
+    });
 }

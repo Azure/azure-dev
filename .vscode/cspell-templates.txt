@@ -20,6 +20,7 @@ inprogress
 INPROGRESS
 Instrumentor
 mkdir
+networkidle
 OPTARG
 prestart
 printenv
@@ -30,6 +31,7 @@ reactd
 ROLENAME
 Serializers
 staticwebapp
+Swashbuckle
 tsbuildinfo
 TTFB
 uuidv
@@ -38,3 +40,4 @@ virtuals
 VSIX
 webfonts
 webui
+wwwroot

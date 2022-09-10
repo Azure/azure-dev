@@ -20,6 +20,9 @@ steps:
       AZURE_SUBSCRIPTION_ID: ${AZURE_SUBSCRIPTION_ID}
       AZURE_ENV_NAME: ${AZURE_ENV_NAME}
       AZURE_LOCATION: ${AZURE_LOCATION}
+      ARM_TENANT_ID: ${ARM_TENANT_ID}
+      ARM_CLIENT_ID: ${ARM_CLIENT_ID}
+      ARM_CLIENT_SECRET: ${ARM_CLIENT_SECRET}
   - task: AzureCLI@2
     displayName: Azure Dev Deploy
     inputs:

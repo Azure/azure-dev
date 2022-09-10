@@ -8,8 +8,28 @@ repo:
   includeProjectAssets: true
 
   remotes:
-    - name: azure-samples
+    - name: azure-samples-main
       url: git@github.com:Azure-Samples/todo-csharp-cosmos-sql.git
+    - name: azure-samples-staging
+      url: git@github.com:Azure-Samples/todo-csharp-cosmos-sql.git
+      branch: staging
+
+  rewrite:
+    rules:
+      - from: ../../../../common/infra/bicep
+        to: ./
+        patterns:
+          - "**/*.bicep"
+
+      - from: ../../api/csharp-cosmos-sql
+        to: ./src/api
+        patterns:
+          - "**/azure.@(yml|yaml)"
+
+      - from: ../../web/react-fluent
+        to: ./src/web
+        patterns:
+          - "**/azure.@(yml|yaml)"
 
   assets:
     # Common assets
@@ -22,13 +42,27 @@ repo:
 
     # openapi.yaml to api root
     - from: ../../api/common
-      to: ./src/api
+      to: ./src/api/wwwroot/
       patterns:
         - openapi.yaml
 
-    # Template common
+    # Templates common
     - from: ../../../common
       to: ./
+      ignore:
+        - .devcontainer/**/*
+        - "infra/**/*"
+
+    - from: ../../../common/infra/bicep
+      to: ./infra
+
+    # .devcontainer common (devcontainer.json)
+    - from: ../../../common/.devcontainer/devcontainer.json/csharp
+      to: ./.devcontainer
+
+    # .devcontainer common (Dockerfile)
+    - from: ../../../common/.devcontainer/Dockerfile/base
+      to: ./.devcontainer
 
     # Assets common
     - from: ../../common/assets

@@ -4,14 +4,17 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"io/fs"
 	"log"
+	"math/rand"
 	"net/http"
 	"os"
+	"os/exec"
 	"os/user"
 	"path/filepath"
 	"runtime"
@@ -21,17 +24,26 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/cmd"
 	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/internal/telemetry"
+	"github.com/azure/azure-dev/cli/azd/pkg/container"
+	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
+	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/blang/semver/v4"
-	"github.com/fatih/color"
 	"github.com/spf13/pflag"
 )
 
 func main() {
+	// Ensure random numbers from default random number generator are unpredictable
+	rand.Seed(time.Now().UTC().UnixNano())
+
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
 
 	if !isDebugEnabled() {
 		log.SetOutput(io.Discard)
 	}
+
+	ts := telemetry.GetTelemetrySystem()
+	container.RegisterDependencies()
 
 	latest := make(chan semver.Version)
 	go fetchLatestVersion(latest)
@@ -51,28 +63,36 @@ func main() {
 			// This is a dev build (i.e. built using `go install without setting a version`) - don't print a warning in this case
 			log.Printf("eliding update message for dev build")
 		} else if latestVersion.GT(curVersion) {
-			fmt.Printf(color.YellowString("warning: your version of azd is out of date, you have %s and the latest version is %s\n"), curVersion.String(), latestVersion.String())
+			fmt.Printf(output.WithWarningFormat("warning: your version of azd is out of date, you have %s and the latest version is %s\n"), curVersion.String(), latestVersion.String())
 			fmt.Println()
-			fmt.Println(color.YellowString(`To update to the latest version, run:`))
+			fmt.Println(output.WithWarningFormat(`To update to the latest version, run:`))
 
 			if runtime.GOOS == "windows" {
-				fmt.Println(color.YellowString(`powershell -c "Set-ExecutionPolicy Bypass Process -Force; irm 'https://aka.ms/install-azd.ps1' | iex"`))
+				fmt.Println(output.WithWarningFormat(`powershell -ex AllSigned -c "Invoke-RestMethod 'https://aka.ms/install-azd.ps1' | Invoke-Expression"`))
 			} else {
-				fmt.Println(color.YellowString(`curl -fsSL https://aka.ms/install-azd.sh | bash`))
+				fmt.Println(output.WithWarningFormat(`curl -fsSL https://aka.ms/install-azd.sh | bash`))
 			}
 		}
 	}
+
+	if ts != nil {
+		err := ts.Shutdown(context.Background())
+		if err != nil {
+			log.Printf("non-graceful telemetry shutdown: %v\n", err)
+		}
+
+		if ts.EmittedAnyTelemetry() {
+			err := startBackgroundUploadProcess()
+			if err != nil {
+				log.Printf("failed to start background telemetry upload: %v\n", err)
+			}
+		}
+	}
+
 	if cmdErr != nil {
 		os.Exit(1)
 	}
 }
-
-// azdDirectoryPermissions are the permissions to use on the `.azd` folder in the user's home
-// directory.
-const azdDirectoryPermissions = 0755
-
-// updateCheckFilePermissions are the permissions to use on the `update-check.json` file.
-const updateCheckFilePermissions = 0644
 
 // azdConfigDir is the name of the folder where `azd` writes user wide configuration data.
 const azdConfigDir = ".azd"
@@ -183,7 +203,7 @@ func fetchLatestVersion(version chan<- semver.Version) {
 		// eagerly, since we have not yet sent the latest versions across the channel (and we don't want to do that until we've updated
 		// the cache since reader on the other end of the channel will exit the process after it receives this value and finishes
 		// the up to date check, possibly while this go-routine is still running)
-		if err := os.MkdirAll(filepath.Dir(cacheFilePath), azdDirectoryPermissions); err != nil {
+		if err := os.MkdirAll(filepath.Dir(cacheFilePath), osutil.PermissionFile); err != nil {
 			log.Printf("failed to create cache folder '%s': %v", filepath.Dir(cacheFilePath), err)
 		} else {
 			cacheObject := updateCacheFile{
@@ -194,7 +214,7 @@ func fetchLatestVersion(version chan<- semver.Version) {
 			// The marshal call can not fail, so we ignore the error.
 			cacheContents, _ := json.Marshal(cacheObject)
 
-			if err := os.WriteFile(cacheFilePath, cacheContents, updateCheckFilePermissions); err != nil {
+			if err := os.WriteFile(cacheFilePath, cacheContents, osutil.PermissionDirectory); err != nil {
 				log.Printf("failed to write update cache file: %v", err)
 			} else {
 				log.Printf("updated cache file to version %s (expires on: %s)", cacheObject.Version, cacheObject.ExpiresOn)
@@ -246,4 +266,16 @@ func readToEndAndClose(r io.ReadCloser) (string, error) {
 	var buf strings.Builder
 	_, err := io.Copy(&buf, r)
 	return buf.String(), err
+}
+
+func startBackgroundUploadProcess() error {
+	// The background upload process executable is ourself
+	execPath, err := os.Executable()
+	if err != nil {
+		return fmt.Errorf("failed to get current executable path: %w", err)
+	}
+
+	cmd := exec.Command(execPath, cmd.TelemetryCommandFlag, cmd.TelemetryUploadCommandFlag)
+	err = cmd.Start()
+	return err
 }

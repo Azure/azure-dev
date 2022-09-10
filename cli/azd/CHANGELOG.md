@@ -1,10 +1,38 @@
 # Release History
 
-## 0.1.0-beta.3 (Unreleased)
+## 0.1.0-beta.6 (Unreleased)
+
+### Breaking Changes
+
+- [[#588]](https://github.com/Azure/azure-dev/pull/588) Update default view from `azd monitor` to overview dashboard.
+
+## 0.1.0-beta.5 (2022-08-25)
+
+### Bugs Fixed
+
+- [[#461]](https://github.com/Azure/azure-dev/pull/461) Fix for using a command output other than JSON.
+- [[#480]](https://github.com/Azure/azure-dev/pull/480) Fix deploy error when using an environment name with capital letters.
+
+## 0.1.0-beta.4 (2022-08-10)
 
 ### Features Added
 
+- [[#140]](https://github.com/Azure/azure-dev/pull/140) Add consistent resource abbreviations.
+
+### Bugs Fixed
+
+- [[#245]](https://github.com/Azure/azure-dev/issues/245) Fix Windows installer script modifying `PATH` environment variable to `REG_SZ` (reported by [@alexandair](https://github.com/alexandair))
+
+## 0.1.0-beta.3 (2022-07-28)
+
+### Features Added
+
+- [[#100]](https://github.com/Azure/azure-dev/pull/100) Add support for an optional `docker` section in service configuration to control advanced docker options.
+- [[#152]](https://github.com/Azure/azure-dev/pull/152) While provisioning in interactive mode (default), Azure resources are now logged to console as they are created.
+
 ### Breaking Changes
+
+- [[#117]](https://github.com/Azure/azure-dev/issues/117) When specifying a custom module within a service the configuration key has been changed from `moduleName` to `module` and accepts a relative path to the infra module.
 
 ### Bugs Fixed
 
@@ -12,6 +40,7 @@
 - [[#115]](https://github.com/Azure/azure-dev/issues/115) Fix deploy error when using a resource name with capital letters.
 
 ### Other Changes
+- [[#188]](https://github.com/Azure/azure-dev/issues/188) Update the minimum Bicep version to `v0.8.9`.
 
 ## 0.1.0-beta.2 (2022-07-13)
 

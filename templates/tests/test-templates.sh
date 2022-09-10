@@ -9,6 +9,7 @@ BRANCH_NAME="main"
 ENV_NAME_PREFIX=$(whoami)
 TEMPLATE_NAME=""
 PLAYWRIGHT_RETRIES="1"
+PLAYWRIGHT_REPORTER="list"
 LOCATION="eastus2"
 # Default to a random value if not specified
 ENV_SUFFIX="$RANDOM"
@@ -27,6 +28,7 @@ function usage {
     echo "  -e    Sets the environment name prefix. Environment prefix is used in the azd environment name along with the template name (default: whoami)"
     echo "  -t    Sets the template name. Use values from 'azd template list'. When omitted will run for all templates available in 'azd template list'"
     echo "  -r    Sets the number of retries for playwright tests (default: 1)"
+    echo "  -p    Sets the reporter for playwright tests (default: list)"
     echo "  -l    Sets the Azure location for the template infrastructure (default: eastus2)"
     echo "  -s    Sets the environment suffix (default: RANDOM)"
     echo "  -n    When set will only run test commands (default: false)"
@@ -42,13 +44,14 @@ function usage {
     exit 1
 }
 
-while getopts "f:t:b:e:r:l:s:n:c:h" arg; do
+while getopts "f:t:b:e:r:p:l:s:n:c:h" arg; do
     case ${arg} in
     f) FOLDER_PATH=$OPTARG ;;
     t) TEMPLATE_NAME=$OPTARG ;;
     b) BRANCH_NAME=$OPTARG ;;
     e) ENV_NAME_PREFIX=$OPTARG ;;
     r) PLAYWRIGHT_RETRIES=$OPTARG ;;
+    p) PLAYWRIGHT_REPORTER=$OPTARG ;;
     l) LOCATION=$OPTARG ;;
     s) ENV_SUFFIX=$OPTARG ;;
     n) TEST_ONLY=true ;;
@@ -96,7 +99,7 @@ function testTemplate {
     echo "Running template smoke tests for $3..."
     cd "$FOLDER_PATH/$3/tests"
     npm i && npx playwright install
-    npx -y playwright test --retries="$PLAYWRIGHT_RETRIES"
+    npx -y playwright test --retries="$PLAYWRIGHT_RETRIES" --reporter="$PLAYWRIGHT_REPORTER"
 }
 
 # Cleans the specified template

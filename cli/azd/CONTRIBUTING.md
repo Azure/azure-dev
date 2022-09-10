@@ -2,7 +2,7 @@
 
 ## Prerequisites
 
-`azd` is written in Golang and requires Go 1.18 or above:
+`azd` is written in Golang and requires Go 1.19 or above:
 
 - [Go](https://go.dev/dl/)
 
@@ -53,23 +53,40 @@ In VS Code you can create a launch.json that runs the tool with a specified set 
     "args": [
         "restore"
     ],
-    "cwd": "/Users/karolz/code/scratch/azd-devel/src/api"
+    "cwd": "${workspaceFolder}"
 },
 ```
 
 ## Testing
 
-We use `go test`.  The `functional` package contains end to end tests that run `azd` and deploy live resources. You need to ensure you have run `go build` to
-build a copy of `azd` at the root of the repository. The tests look for that binary.  We hope to improve this. Use the `-run` flag of `go test` to filter tests,
-as usual. You'll want to pass a larger `-timeout` since these tests deploy live resources.
+We use `gotestsum`, which is a simple tool that wraps `go test` except with better formatting output. Install the tool by running `go install gotest.tools/gotestsum@latest`.
 
-### Run all the tests
+### Run all unit tests
 
-`go test -timeout 15m -v ./...`
+`gotestsum -- -short ./...`
+
+### Run all end-to-end tests
+
+```bash
+go build
+gotestsum -- -timeout 20m -run Test_CLI ./...
+```
+
+This runs all end-to-end tests that run `azd` locally and deploy live resources. Run `go build`  first to ensure the integration tests target
+the latest `azd` binary built.
+
+### Run all tests (including end-to-end tests)
+
+```bash
+go build
+gotestsum -- -timeout 20m ./...
+```
 
 ### Run a specific test
 
-`go test -timeout 15m -v ./... -run Test_CLI_RestoreCommand`
+`gotestsum -- -timeout 20m -run Test_CLI_RestoreCommand ./...`
+
+This can be useful for running specific end-to-end tests that cover the relevant scenarios.
 
 ## Linting
 
@@ -79,7 +96,9 @@ Run `golangci-lint run ./...`
 
 ## Spell checking
 
-Install [cspell](https://cspell.org/) and then run `cspell lint "**/*.go" --relative --config ./.vscode/cspell.yaml`
+1. Install [cspell](https://cspell.org/)
+2. CD to /cli/azd
+3. Run `cspell lint "**/*.go" --relative --config ./.vscode/cspell.yaml`
 
 ## Troubleshooting
 

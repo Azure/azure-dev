@@ -38,7 +38,7 @@ func ReadProject(ctx context.Context, projectPath string, env *environment.Envir
 	}
 
 	// Evaluate project
-	project, err := projectConfig.GetProject(ctx, env)
+	project, err := projectConfig.GetProject(&ctx, env)
 	if err != nil {
 		return nil, fmt.Errorf("reading project: %w", err)
 	}
@@ -61,7 +61,7 @@ func NewProject(path string, name string) (*Project, error) {
 		return nil, fmt.Errorf("preparing new project file contents: %w", err)
 	}
 
-	err = os.WriteFile(path, projectFileContents.Bytes(), 0644)
+	err = os.WriteFile(path, projectFileContents.Bytes(), osutil.PermissionFile)
 	if err != nil {
 		return nil, fmt.Errorf("writing project file: %w", err)
 	}

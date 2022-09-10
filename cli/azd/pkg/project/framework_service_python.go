@@ -13,16 +13,18 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/python"
 	"github.com/otiai10/copy"
 )
 
 type pythonProject struct {
 	config *ServiceConfig
 	env    *environment.Environment
+	cli    *python.PythonCli
 }
 
 func (pp *pythonProject) RequiredExternalTools() []tools.ExternalTool {
-	return []tools.ExternalTool{tools.NewPythonCli()}
+	return []tools.ExternalTool{pp.cli}
 }
 
 func (pp *pythonProject) Package(_ context.Context, progress chan<- string) (string, error) {
@@ -46,15 +48,13 @@ func (pp *pythonProject) Package(_ context.Context, progress chan<- string) (str
 }
 
 func (pp *pythonProject) InstallDependencies(ctx context.Context) error {
-	pythonCli := tools.NewPythonCli()
-
 	vEnvName := pp.getVenvName()
 	vEnvPath := path.Join(pp.config.Path(), vEnvName)
 
 	_, err := os.Stat(vEnvPath)
 	if err != nil {
 		if os.IsNotExist(err) {
-			err = pythonCli.CreateVirtualEnv(ctx, pp.config.Path(), vEnvName)
+			err = pp.cli.CreateVirtualEnv(ctx, pp.config.Path(), vEnvName)
 			if err != nil {
 				return fmt.Errorf("python virtual environment for project '%s' could not be created: %w", pp.config.Path(), err)
 			}
@@ -63,7 +63,7 @@ func (pp *pythonProject) InstallDependencies(ctx context.Context) error {
 		}
 	}
 
-	err = pythonCli.InstallRequirements(ctx, pp.config.Path(), vEnvName, "requirements.txt")
+	err = pp.cli.InstallRequirements(ctx, pp.config.Path(), vEnvName, "requirements.txt")
 	if err != nil {
 		return fmt.Errorf("requirements for project '%s' could not be installed: %w", pp.config.Path(), err)
 	}
@@ -82,6 +82,10 @@ func (pp *pythonProject) getVenvName() string {
 
 func (pp *pythonProject) Config() *ServiceConfig {
 	return pp.config
+}
+
+func (pp *pythonProject) Initialize(ctx context.Context) error {
+	return nil
 }
 
 // skipPatterns returns a `copy.Options` which will skip any files
@@ -104,9 +108,10 @@ func skipPatterns(patterns ...string) copy.Options {
 	}
 }
 
-func NewPythonProject(config *ServiceConfig, env *environment.Environment) FrameworkService {
+func NewPythonProject(ctx context.Context, config *ServiceConfig, env *environment.Environment) FrameworkService {
 	return &pythonProject{
 		config: config,
 		env:    env,
+		cli:    python.NewPythonCli(ctx),
 	}
 }

@@ -1,0 +1,25 @@
+parameters:
+  SubscriptionConfiguration: $(sub-config-azure-cloud-test-resources)
+
+steps:
+  - pwsh: |
+      $subscriptionConfiguration = @'
+        ${{ parameters.SubscriptionConfiguration }}
+      '@ | ConvertFrom-Json -AsHashtable;
+
+      az login `
+        --service-principal `
+        -u "$($subscriptionConfiguration.TestApplicationId)" `
+        -p "$($subscriptionConfiguration.TestApplicationSecret)" `
+        --tenant "$($subscriptionConfiguration.TenantId)"
+
+      az account set `
+        --subscription "$($subscriptionConfiguration.SubscriptionId)"
+
+            # Export service principal auth information for terraform testing
+            Write-Host "##vso[task.setvariable variable=arm-client-id;issecret=true]$($subscriptionConfiguration.TestApplicationId)"
+      Write-Host "##vso[task.setvariable variable=arm-client-secret;issecret=true]$($subscriptionConfiguration.TestApplicationSecret)"
+      Write-Host "##vso[task.setvariable variable=arm-tenant-id;issecret=true]$($subscriptionConfiguration.TenantId)"
+
+    condition: and(succeeded(), ne(variables['Skip.LiveTest'], 'true'))
+    displayName: Azure Login

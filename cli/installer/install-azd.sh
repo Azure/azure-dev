@@ -132,7 +132,7 @@ do
         echo "Usage: $script_name [--version <VERSION>] [--install-location <LOCATION>]"
         echo "       $script_name -h|-?|--help"
         echo ""
-        echo "$script_name is a simple command for installing the azd CLI"
+        echo "$script_name is a simple command for downloading and installing the azd CLI"
         echo ""
         echo "Options:"
         echo "  -u, --base-url <URL>          Download from the specific base URL. Defaults to"
@@ -151,7 +151,7 @@ do
         echo "  --version <VERSION>           Download specific version. Default is 'latest'"
         echo "                                which specifies the most recently released"
         echo "                                version (GA or preview)."
-        echo "                                Possible values: <version>, latest, GA, daily"
+        echo "                                Possible values: <version>, latest, daily"
         echo ""
         echo "  --dry-run                     Do not download or install, just display the"
         echo "                                download URL."
@@ -202,10 +202,10 @@ chmod +x "$tmp_folder/$bin_name"
 
 install_location="$install_folder/azd"
 if [ -w "$install_folder/" ]; then
-    cp "$tmp_folder/$bin_name" "$install_location"
+    mv "$tmp_folder/$bin_name" "$install_location"
 else
     say "Writing to $install_folder/ requires elevated permission. You may be prompted to enter credentials."
-    sudo cp "$tmp_folder/$bin_name" "$install_location"
+    sudo mv "$tmp_folder/$bin_name" "$install_location"
 fi
 
 say_verbose "Cleaning up temp folder: $tmp_folder"

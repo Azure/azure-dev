@@ -4,37 +4,21 @@
 package azureutil
 
 import (
-	"context"
 	"fmt"
-
-	"github.com/azure/azure-dev/cli/azd/pkg/infra"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 )
 
-// GetResourceGroupsForDeployment returns the names of all the resource groups from a subscription level deployment.
-func GetResourceGroupsForDeployment(ctx context.Context, azCli tools.AzCli, subscriptionId string, deploymentName string) ([]string, error) {
-	deployment, err := azCli.GetSubscriptionDeployment(ctx, subscriptionId, deploymentName)
-	if err != nil {
-		return nil, fmt.Errorf("fetching current deployment: %w", err)
+type ResourceNotFoundError struct {
+	err error
+}
+
+func (e *ResourceNotFoundError) Error() string {
+	if e.err == nil {
+		return "resource not found: <nil>"
 	}
 
-	// NOTE: it's possible for a deployment to list a resource group more than once. We're only interested in the
-	// unique set.
-	resourceGroups := map[string]struct{}{}
+	return fmt.Sprintf("resource not found: %s", e.err.Error())
+}
 
-	for _, dependency := range deployment.Properties.Dependencies {
-		for _, dependent := range dependency.DependsOn {
-			if dependent.ResourceType == string(infra.AzureResourceTypeResourceGroup) {
-				resourceGroups[dependent.ResourceName] = struct{}{}
-			}
-		}
-	}
-
-	var keys []string
-
-	for k := range resourceGroups {
-		keys = append(keys, k)
-	}
-
-	return keys, nil
+func ResourceNotFound(err error) error {
+	return &ResourceNotFoundError{err: err}
 }

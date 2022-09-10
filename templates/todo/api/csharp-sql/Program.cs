@@ -1,18 +1,19 @@
-using Microsoft.ApplicationInsights.AspNetCore.Extensions;
+using Azure.Identity;
 using Microsoft.EntityFrameworkCore;
 using SimpleTodo.Api;
 
 var builder = WebApplication.CreateBuilder(args);
+builder.Configuration.AddAzureKeyVault(new Uri(builder.Configuration["AZURE_KEY_VAULT_ENDPOINT"]), new DefaultAzureCredential());
 
 builder.Services.AddScoped<ListsRepository>();
 builder.Services.AddDbContext<TodoDb>(options =>
 {
-    options.UseSqlServer(builder.Configuration["AZURE_SQL_CONNECTION_STRING"], sqlOptions => sqlOptions.EnableRetryOnFailure());
+    var connectionString = builder.Configuration[builder.Configuration["AZURE_SQL_CONNECTION_STRING_KEY"]];
+    options.UseSqlServer(connectionString, sqlOptions => sqlOptions.EnableRetryOnFailure());
 });
 
 builder.Services.AddControllers();
-var options = new ApplicationInsightsServiceOptions { ConnectionString = builder.Configuration["APPLICATIONINSIGHTS_CONNECTION_STRING"] };
-builder.Services.AddApplicationInsightsTelemetry(options);
+builder.Services.AddApplicationInsightsTelemetry(builder.Configuration);
 
 var app = builder.Build();
 
@@ -27,6 +28,17 @@ app.UseCors(policy =>
     policy.AllowAnyOrigin();
     policy.AllowAnyHeader();
     policy.AllowAnyMethod();
+});
+    
+// Swagger UI
+app.UseSwaggerUI(options => {
+    options.SwaggerEndpoint("./openapi.yaml", "v1");
+    options.RoutePrefix = "";
+});
+
+app.UseStaticFiles(new StaticFileOptions{
+    // Serve openapi.yaml file
+    ServeUnknownFileTypes = true,
 });
 
 app.MapControllers();

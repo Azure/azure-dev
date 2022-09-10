@@ -28,7 +28,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        node-version: [14.x]
+        node-version: [16.x]
         os: [macos-latest, ubuntu-latest, windows-latest]
         include:
           - os: ubuntu-latest

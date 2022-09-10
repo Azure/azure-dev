@@ -6,38 +6,42 @@ package project
 import (
 	"context"
 	"fmt"
-	"io/ioutil"
 	"log"
-	"os"
 	"strings"
 	"time"
 
+	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
-	"github.com/azure/azure-dev/cli/azd/pkg/iac/bicep"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
+	"github.com/azure/azure-dev/cli/azd/pkg/infra"
+	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
+	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
-	"github.com/drone/envsubst"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/docker"
 )
 
 type containerAppTarget struct {
-	config *ServiceConfig
-	env    *environment.Environment
-	scope  *environment.DeploymentScope
-	cli    tools.AzCli
-	docker *tools.Docker
+	config  *ServiceConfig
+	env     *environment.Environment
+	scope   *environment.DeploymentScope
+	cli     azcli.AzCli
+	docker  *docker.Docker
+	console input.Console
 }
 
 func (at *containerAppTarget) RequiredExternalTools() []tools.ExternalTool {
 	return []tools.ExternalTool{at.cli, at.docker}
 }
 
-func (at *containerAppTarget) Deploy(ctx context.Context, azdCtx *environment.AzdContext, path string, progress chan<- string) (ServiceDeploymentResult, error) {
-	bicepPath := azdCtx.BicepModulePath(at.config.ModuleName)
-
-	progress <- "Creating deployment template"
-	template, err := bicep.Compile(ctx, tools.NewBicepCli(at.cli), bicepPath)
-	if err != nil {
-		return ServiceDeploymentResult{}, err
+func (at *containerAppTarget) Deploy(ctx context.Context, azdCtx *azdcontext.AzdContext, path string, progress chan<- string) (ServiceDeploymentResult, error) {
+	// If the infra module has not been specified default to a module with the same name as the service.
+	if strings.TrimSpace(at.config.Infra.Module) == "" {
+		at.config.Infra.Module = at.config.Module
+	}
+	if strings.TrimSpace(at.config.Infra.Module) == "" {
+		at.config.Infra.Module = at.config.Name
 	}
 
 	// Login to container registry.
@@ -79,51 +83,30 @@ func (at *containerAppTarget) Deploy(ctx context.Context, azdCtx *environment.Az
 		return ServiceDeploymentResult{}, fmt.Errorf("saving image name to environment: %w", err)
 	}
 
-	log.Print("generating deployment parameters file")
-
-	// Copy the parameter template file to the environment working directory and do substitutions.
-	parametersTemplate := azdCtx.BicepParametersTemplateFilePath(at.config.ModuleName)
-	templateBytes, err := ioutil.ReadFile(parametersTemplate)
+	commandOptions := internal.GetCommandOptions(ctx)
+	infraManager, err := provisioning.NewManager(ctx, *at.env, at.config.Project.Path, at.config.Infra, !commandOptions.NoPrompt)
 	if err != nil {
-		return ServiceDeploymentResult{}, fmt.Errorf("reading parameter file template: %w", err)
+		return ServiceDeploymentResult{}, fmt.Errorf("creating provisioning manager: %w", err)
 	}
 
-	replaced, err := envsubst.Eval(string(templateBytes), func(name string) string {
-		if val, has := at.env.Values[name]; has {
-			return val
-		}
-		return os.Getenv(name)
-	})
+	progress <- "Creating deployment template"
+	deploymentPlan, err := infraManager.Plan(ctx)
 	if err != nil {
-		return ServiceDeploymentResult{}, fmt.Errorf("substituting parameter file: %w", err)
+		return ServiceDeploymentResult{}, fmt.Errorf("planning provisioning: %w", err)
 	}
-
-	parametersFile := azdCtx.BicepParametersFilePath(at.env.GetEnvName(), at.config.ModuleName)
-	err = ioutil.WriteFile(parametersFile, []byte(replaced), 0644)
-	if err != nil {
-		return ServiceDeploymentResult{}, fmt.Errorf("writing parameter file: %w", err)
-	}
-	log.Printf("generated deployment parameters file %s", parametersFile)
-
-	log.Printf("running ARM deployment to update container")
-	deploymentTarget := bicep.NewResourceGroupDeploymentTarget(at.cli, at.env.GetSubscriptionId(), at.scope.ResourceGroupName(), at.scope.ResourceName())
 
 	progress <- "Updating container app image reference"
-	res, err := bicep.Deploy(ctx, deploymentTarget, azdCtx.BicepModulePath(at.config.ModuleName), parametersFile)
+	deploymentName := fmt.Sprintf("%s-%s", at.env.GetEnvName(), at.config.Name)
+	scope := infra.NewResourceGroupScope(ctx, at.env.GetSubscriptionId(), at.scope.ResourceGroupName(), deploymentName)
+	deployResult, err := infraManager.Deploy(ctx, deploymentPlan, scope)
+
 	if err != nil {
-		return ServiceDeploymentResult{}, fmt.Errorf("updating infrastructure: %w", err)
+		return ServiceDeploymentResult{}, fmt.Errorf("provisioning infrastructure for app deployment: %w", err)
 	}
 
-	if len(res.Properties.Outputs) > 0 {
-		log.Printf("saving %d deployment outputs", len(res.Properties.Outputs))
-
-		template.CanonicalizeDeploymentOutputs(&res.Properties.Outputs)
-
-		for name, o := range res.Properties.Outputs {
-			at.env.Values[name] = fmt.Sprintf("%v", o.Value)
-		}
-
-		if err := at.env.Save(); err != nil {
+	if len(deployResult.Deployment.Outputs) > 0 {
+		log.Printf("saving %d deployment outputs", len(deployResult.Deployment.Outputs))
+		if err := provisioning.UpdateEnvironment(at.env, &deployResult.Deployment.Outputs); err != nil {
 			return ServiceDeploymentResult{}, fmt.Errorf("saving outputs to environment: %w", err)
 		}
 	}
@@ -137,7 +120,7 @@ func (at *containerAppTarget) Deploy(ctx context.Context, azdCtx *environment.Az
 	return ServiceDeploymentResult{
 		TargetResourceId: azure.ContainerAppRID(at.env.GetSubscriptionId(), at.scope.ResourceGroupName(), at.scope.ResourceName()),
 		Kind:             ContainerAppTarget,
-		Details:          res,
+		Details:          deployResult,
 		Endpoints:        endpoints,
 	}, nil
 }
@@ -151,12 +134,13 @@ func (at *containerAppTarget) Endpoints(ctx context.Context) ([]string, error) {
 	return []string{fmt.Sprintf("https://%s/", containerAppProperties.Properties.Configuration.Ingress.Fqdn)}, nil
 }
 
-func NewContainerAppTarget(config *ServiceConfig, env *environment.Environment, scope *environment.DeploymentScope, azCli tools.AzCli, docker *tools.Docker) ServiceTarget {
+func NewContainerAppTarget(config *ServiceConfig, env *environment.Environment, scope *environment.DeploymentScope, azCli azcli.AzCli, docker *docker.Docker, console input.Console) ServiceTarget {
 	return &containerAppTarget{
-		config: config,
-		env:    env,
-		scope:  scope,
-		cli:    azCli,
-		docker: docker,
+		config:  config,
+		env:     env,
+		scope:   scope,
+		cli:     azCli,
+		docker:  docker,
+		console: console,
 	}
 }

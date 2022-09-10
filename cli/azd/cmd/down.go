@@ -1,12 +1,13 @@
 package cmd
 
 import (
+	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/commands"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/spf13/cobra"
 )
 
-func downCmd(rootOptions *commands.GlobalCommandOptions) *cobra.Command {
+func downCmd(rootOptions *internal.GlobalCommandOptions) *cobra.Command {
 	cmd := commands.Build(
 		&infraDeleteAction{
 			rootOptions: rootOptions,
@@ -14,7 +15,7 @@ func downCmd(rootOptions *commands.GlobalCommandOptions) *cobra.Command {
 		rootOptions,
 		"down",
 		"Delete Azure resources for an application.",
-		"",
+		nil,
 	)
 
 	output.AddOutputParam(cmd,

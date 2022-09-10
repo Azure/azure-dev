@@ -15,8 +15,7 @@ builder.Services.AddSingleton(_ => new CosmosClient(builder.Configuration["AZURE
     }
 }));
 builder.Services.AddControllers();
-var options = new ApplicationInsightsServiceOptions { ConnectionString = builder.Configuration["APPLICATIONINSIGHTS_CONNECTION_STRING"] };
-builder.Services.AddApplicationInsightsTelemetry(options);
+builder.Services.AddApplicationInsightsTelemetry(builder.Configuration);
 
 var app = builder.Build();
 
@@ -25,6 +24,17 @@ app.UseCors(policy =>
     policy.AllowAnyOrigin();
     policy.AllowAnyHeader();
     policy.AllowAnyMethod();
+});
+
+// Swagger UI
+app.UseSwaggerUI(options => {
+    options.SwaggerEndpoint("./openapi.yaml", "v1");
+    options.RoutePrefix = "";
+});
+
+app.UseStaticFiles(new StaticFileOptions{
+    // Serve openapi.yaml file
+    ServeUnknownFileTypes = true,
 });
 
 app.MapControllers();

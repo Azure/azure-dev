@@ -94,6 +94,7 @@ ignoreWords:
     - azurerm
     - aztfmod
     - menuid
+    - PLACEHOLDERIACTOOLS
 useGitignore: true
 dictionaryDefinitions:
     - name: gitHubUserAliases

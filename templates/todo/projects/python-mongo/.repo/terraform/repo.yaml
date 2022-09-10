@@ -30,6 +30,16 @@ repo:
         to: ./src/web
         patterns:
           - "**/azure.@(yml|yaml)"
+      
+      - from: "PLACEHOLDERIACTOOLS"
+        to: "- [Terraform CLI](https://aka.ms/azure-dev/terraform-install)"
+        patterns:
+          - "README.md"
+
+      - from: "todo-python-mongo"
+        to: "todo-python-mongo-terraform"
+        patterns:
+          - "README.md"
 
   assets:
     # Common assets

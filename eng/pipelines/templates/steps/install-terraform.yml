@@ -1,5 +1,5 @@
 parameters:
-  TerraformVersion: v1.1.7
+  TerraformVersion: latest
 
 steps:
   - task: ms-devlabs.custom-terraform-tasks.custom-terraform-installer-task.TerraformInstaller@0

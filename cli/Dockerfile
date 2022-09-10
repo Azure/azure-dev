@@ -30,7 +30,18 @@ RUN export DEBIAN_FRONTEND=noninteractive \
      && python3 -m pip install --upgrade pip \
      && echo 'alias python=python3' >> ~/.bashrc \
      && echo 'alias pip=pip3' >> ~/.bashrc \
-     && apt-get clean -y && rm -rf /var/lib/apt/lists/*
+     && apt-get clean -y && rm -rf /var/lib/apt/lists/* \
+     # terraform cli
+     && sudo apt-get update && sudo apt-get install -y gnupg software-properties-common \
+     && wget -O- https://apt.releases.hashicorp.com/gpg | \
+          gpg --dearmor | \
+          sudo tee /usr/share/keyrings/hashicorp-archive-keyring.gpg \
+     && echo "deb [signed-by=/usr/share/keyrings/hashicorp-archive-keyring.gpg] \
+          https://apt.releases.hashicorp.com $(lsb_release -cs) main" | \
+          sudo tee /etc/apt/sources.list.d/hashicorp.list \
+     && sudo apt update && sudo apt-get install terraform
+
+
 # azd
 COPY cli/bin/azd-linux-amd64 /usr/bin/azd
 COPY NOTICE.txt .

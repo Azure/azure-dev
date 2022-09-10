@@ -323,6 +323,7 @@ func (p *GitHubCiProvider) configureConnection(
 		if e := json.Unmarshal(credentials, &values); e != nil {
 			return fmt.Errorf("setting terraform env var credentials: %w", e)
 		}
+		console.Message(ctx, "Setting secrets for terraform provider.\n")
 		if err := ghCli.SetSecret(ctx, repoSlug, "ARM_TENANT_ID", values.Tenant); err != nil {
 			return fmt.Errorf("setting terraform env var credentials:: %w", err)
 		}

@@ -17,87 +17,74 @@ repo:
 
   rewrite:
     rules:
-    - from: ../../../../../../common/infra/bicep/core
-      to: ./core
-      patterns:
-        - "**/*.bicep"
+      - from: ../../../../../../common/infra/bicep/core
+        to: ./core
+        patterns:
+          - "**/*.bicep"
 
-    - from: ../../../../../common/infra/bicep/app
-      to: ./app
-      patterns:
-        - "**/*.bicep"
+      - from: ../../../../../common/infra/bicep/app
+        to: ./app
+        patterns:
+          - "**/*.bicep"
 
-    - from: ../../../../../common/infra/bicep/core
-      to: ../core
-      patterns:
-        - "**/*.bicep"   
+      - from: ../../../../../common/infra/bicep/core
+        to: ../core
+        patterns:
+          - "**/*.bicep"
 
-    # app service modules
-    - from: ../../../../../../common/infra/bicep
-      to: ../
-      patterns:
-        - "**/*.bicep"
-      ignore:
-        - "**/main.bicep"
+      # app service modules
+      - from: ../../../../../../common/infra/bicep
+        to: ../
+        patterns:
+          - "**/*.bicep"
+        ignore:
+          - "**/main.bicep"
 
-    # main.bicep
-    - from: ../../../../../../common/infra/bicep
-      to: ./
-      patterns:
-        - "**/main.bicep"
+      # main.bicep
+      - from: ../../../../../../common/infra/bicep
+        to: ./
+        patterns:
+          - "**/main.bicep"
 
+      - from: ../../api/csharp-sql
+        to: ./src/api
+        patterns:
+          - "**/azure.@(yml|yaml)"
 
-    - from: ../../api/csharp-sql
-      to: ./src/api
-      patterns:
-        - "**/azure.@(yml|yaml)"
+      - from: ../../web/react-fluent
+        to: ./src/web
+        patterns:
+          - "**/azure.@(yml|yaml)"
 
-    - from: ../../web/react-fluent
-      to: ./src/web
-      patterns:
-        - "**/azure.@(yml|yaml)"
+      - from: web-appservice.bicep
+        to: web.bicep
+        patterns:
+          - "**/resources.bicep"
 
-    - from: api-dotnet.bicep
-      to: api.bicep
-      patterns:
-        - "**/resources.bicep"
+      - from: api-appservice-dotnet.bicep
+        to: api.bicep
+        patterns:
+          - "**/resources.bicep"
 
-    - from: sql.bicep
-      to: db.bicep
-      patterns:
-        - "**/resources.bicep"
-        
+      - from: sql.bicep
+        to: db.bicep
+        patterns:
+          - "**/resources.bicep"
+
   assets:
     # # Common assets
 
-    # Infra 
+    # Infra
     - from: ./infra/
       to: ./infra
 
     - from: ../../../../../common/infra/bicep
       to: ./infra
-      patterns:
-        - abbreviations.json
-        - applicationinsights.bicep
-        - applicationinsights-dashboard.bicep
-        - appservice.bicep
-        - appservice-config-logs.bicep
-        - appservice-config-union.bicep
-        - appservice-config-sqlserver.bicep
-        - appservice-dotnet.bicep
-        - appservice-node.bicep
-        - appserviceplan.bicep
-        - appserviceplan-sites.bicep
-        - sqlserver.bicep
-        - keyvault.bicep
-        - keyvault-access.bicep
-        - loganalytics.bicep
-        - monitoring.bicep
 
-    - from: ../../../../common/infra/bicep/app/web.bicep
+    - from: ../../../../common/infra/bicep/app/web-appservice.bicep
       to: ./infra/app/web.bicep
 
-    - from: ../../../../common/infra/bicep/app/api-dotnet.bicep
+    - from: ../../../../common/infra/bicep/app/api-appservice-dotnet.bicep
       to: ./infra/app/api.bicep
 
     - from: ../../../../common/infra/bicep/app/sql.bicep
@@ -105,7 +92,7 @@ repo:
 
     - from: ./../../
       to: ./
-      ignore: 
+      ignore:
         - ".repo/**/*"
         - "repo.y[a]ml"
         - "azure.y[a]ml"
@@ -126,9 +113,9 @@ repo:
     - from: ../../../../../common
       to: ./
       ignore:
-      - .devcontainer/**/*
-      - "infra/**/*"
-    
+        - .devcontainer/**/*
+        - "infra/**/*"
+
     # .devcontainer common (devcontainer.json)
     - from: ../../../../../common/.devcontainer/devcontainer.json/csharp
       to: ./.devcontainer

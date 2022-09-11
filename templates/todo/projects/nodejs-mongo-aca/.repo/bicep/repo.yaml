@@ -5,7 +5,7 @@ metadata:
   description: ToDo Application with a Node.js API and Azure Cosmos DB API for MongoDB on Azure Container Apps
 
 repo:
-  includeProjectAssets: false
+  includeProjectAssets: true
 
   remotes:
     - name: azure-samples-main
@@ -15,71 +15,96 @@ repo:
       branch: staging
 
   rewrite:
-    patterns:
-      - "**/azure.@(yml|yaml)"
-      - "**/*.bicep"
+    rules:
+      - from: ../../../../../../common/infra/bicep/core
+        to: ./core
+        patterns:
+          - "**/*.bicep"
+
+      - from: ../../../../../common/infra/bicep/app
+        to: ./app
+        patterns:
+          - "**/*.bicep"
+
+      - from: ../../../../../common/infra/bicep/core
+        to: ../core
+        patterns:
+          - "**/*.bicep"
+
+      # app service modules
+      - from: ../../../../../../common/infra/bicep
+        to: ../
+        patterns:
+          - "**/*.bicep"
+        ignore:
+          - "**/main.bicep"
+
+      - from: ../../../../../common/infra/bicep
+        to: ../
+        patterns:
+          - "**/*.bicep"
+        ignore:
+          - "**/main.bicep"
+          
+      # main.bicep
+      - from: ../../../../../../common/infra/bicep
+        to: ./
+        patterns:
+          - "**/main.bicep"
+
+      - from: ../../api/js
+        to: ./src/api
+        patterns:
+          - "**/azure.@(yml|yaml)"
+
+      - from: ../../web/react-fluent
+        to: ./src/web
+        patterns:
+          - "**/azure.@(yml|yaml)"
+
+      - from: web-containerapp.bicep
+        to: web.bicep
+        patterns:
+          - "**/resources.bicep"
+
+      - from: api-containerapp.bicep
+        to: api.bicep
+        patterns:
+          - "**/resources.bicep"
+
+      - from: cosmos-mongo.bicep
+        to: db.bicep
+        patterns:
+          - "**/resources.bicep"
 
   assets:
     # # Common assets
-    # # Rules for Path Rewrite Only
-    - from: ../../../../../common/infra/bicep
-      to: ./
-      ignore:
-        - "**/*"
 
-    - from: ../../../../../common/infra/bicep/modules
-      to: ./modules
-      ignore:
-        - "**/*"
-
-    - from: ../../../../../../templates/todo/common/infra/modules
-      to: ./modules
-      ignore:
-        - "**/*"
-
-    - from: ../../../../../../common/infra/bicep
-      to: ../
-      ignore:
-        - "**/*"
-
-    - from: ../../../../common/infra/bicep
-      to: ../
-      ignore:
-        - "**/*"
-
-    - from: ../../api/js
-      to: ./src/api
-      ignore: 
-        - "**/*"
-
-    - from: ../../web/react-fluent
-      to: ./src/web
-      ignore: 
-        - "**/*"
-        
-    # End Path Rewrite Rules
-    - from: ../../../../../common/infra/bicep
-      to: ./infra
-      patterns:
-        - aca.bicep
-        - acr.bicep
-        - applicationinsights.bicep
-        - keyvault.bicep
-        - loganalytics.bicep
-        - abbreviations.json
-
-    # ACA infra common
-    - from: ../../../../common/infra/aca/bicep
+    # Infra
+    - from: ./infra/
       to: ./infra
 
-    - from: ../../../../common/infra/modules
-      to: ./infra/modules
-      patterns:
-        - cosmos.bicep
+    - from: ../../../../../common/infra/bicep
+      to: ./infra
+
+    - from: ../../../../common/infra/bicep/app/web-containerapp.bicep
+      to: ./infra/app/web.bicep
+
+    - from: ../../../../common/infra/bicep/app/api-containerapp.bicep
+      to: ./infra/app/api.bicep
+
+    - from: ../../../../common/infra/bicep/app/web-containerapp.parameters.json
+      to: ./infra/app/web.parameters.json
+
+    - from: ../../../../common/infra/bicep/app/api-containerapp.parameters.json
+      to: ./infra/app/api.parameters.json
+
+    - from: ../../../../common/infra/bicep/app/cosmos-mongo.bicep
+      to: ./infra/app/db.bicep
 
     - from: ./../../
       to: ./
-      ignore: 
+      ignore:
         - ".repo/**/*"
         - "repo.y[a]ml"
         - "azure.y[a]ml"
@@ -102,7 +127,6 @@ repo:
       ignore:
         - .devcontainer/**/*
         - "infra/**/*"
-    
 
     # .devcontainer common (devcontainer.json)
     - from: ../../../../../common/.devcontainer/devcontainer.json/nodejs
@@ -135,7 +159,7 @@ repo:
       ignore:
         - "build/**/*"
         - "node_modules/**/*"
-      
+
     # Azure.yml
     - from: ./azure.yaml
       to: ./azure.yaml

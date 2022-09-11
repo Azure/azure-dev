@@ -11,10 +11,19 @@ param useKeyVault bool = !(empty(keyVaultName))
 param managedIdentity bool = useKeyVault
 param applicationInsightsName string
 param appServicePlanId string
+param numberOfWorkers int = -1
+param alwaysOn bool = true
+param minimumElasticInstanceCount int = -1
+param use32BitWorkerProcess bool = false
+param clientAffinityEnabled bool = false
+param allowedOrigins array = []
+param functionAppScaleLimit int = -1
 
 var tags = { 'azd-env-name': environmentName }
 var resourceToken = toLower(uniqueString(subscription().id, environmentName, location))
 var abbrs = loadJsonContent('../../abbreviations.json')
+
+var prefix = contains(kind, 'function') ? abbrs.webSitesFunctions : abbrs.webSitesAppService
 
 resource keyVault 'Microsoft.KeyVault/vaults@2022-07-01' existing = if (useKeyVault) {
   name: keyVaultName
@@ -25,7 +34,7 @@ resource applicationInsights 'Microsoft.Insights/components@2020-02-02' existing
 }
 
 resource appservice 'Microsoft.Web/sites@2022-03-01' = {
-  name: '${abbrs.webSitesAppService}${serviceName}-${resourceToken}'
+  name: '${prefix}${serviceName}-${resourceToken}'
   location: location
   tags: union(tags, { 'azd-service-name': serviceName })
   kind: kind
@@ -33,10 +42,18 @@ resource appservice 'Microsoft.Web/sites@2022-03-01' = {
     serverFarmId: appServicePlanId
     siteConfig: {
       linuxFxVersion: linuxFxVersion
-      alwaysOn: true
+      alwaysOn: alwaysOn
       ftpsState: 'FtpsOnly'
       appCommandLine: appCommandLine
+      numberOfWorkers: numberOfWorkers != -1 ? numberOfWorkers : null
+      minimumElasticInstanceCount: minimumElasticInstanceCount != -1 ? minimumElasticInstanceCount : null
+      use32BitWorkerProcess: use32BitWorkerProcess
+      functionAppScaleLimit: functionAppScaleLimit != -1 ? functionAppScaleLimit : null
+      cors: {
+        allowedOrigins: union([ 'https://portal.azure.com', 'https://ms.portal.azure.com' ], allowedOrigins)
+      }
     }
+    clientAffinityEnabled: clientAffinityEnabled
     httpsOnly: true
   }
 
@@ -52,8 +69,8 @@ resource appservice 'Microsoft.Web/sites@2022-03-01' = {
   }
 }
 
-module apiAppSettings 'appservice-config-union.bicep' = if (!empty(appSettings)) {
-  name: 'api-app-settings-${serviceName}'
+module appSettingsUnion 'appservice-config-union.bicep' = if (!empty(appSettings)) {
+  name: 'app-settings-union-${serviceName}'
   params: {
     appServiceName: appservice.name
     configName: 'appsettings'
@@ -62,7 +79,7 @@ module apiAppSettings 'appservice-config-union.bicep' = if (!empty(appSettings))
   }
 }
 
-module apiSiteConfigLogs 'appservice-config-logs.bicep' = {
+module siteConfigLogs 'appservice-config-logs.bicep' = {
   name: 'appservice-config-logs-${serviceName}'
   params: {
     appServiceName: appservice.name
@@ -70,7 +87,7 @@ module apiSiteConfigLogs 'appservice-config-logs.bicep' = {
 }
 
 module keyVaultAccess '../security/keyvault-access.bicep' = if (useKeyVault) {
-  name: 'keyvault-access-api'
+  name: 'appservice-keyvault-access-${serviceName}'
   params: {
     principalId: appservice.identity.principalId
     environmentName: environmentName

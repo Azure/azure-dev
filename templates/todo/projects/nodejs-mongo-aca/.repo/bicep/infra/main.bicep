@@ -19,7 +19,7 @@ param apiImageName string = ''
 param webImageName string = ''
 
 var tags = { 'azd-env-name': environmentName }
-var abbrs = loadJsonContent('../../../../../common/infra/bicep/abbreviations.json')
+var abbrs = loadJsonContent('../../../../../../common/infra/bicep/abbreviations.json')
 
 resource rg 'Microsoft.Resources/resourceGroups@2021-04-01' = {
   name: '${abbrs.resourcesResourceGroups}${environmentName}'

@@ -3,7 +3,7 @@ param location string = resourceGroup().location
 param principalId string = ''
 
 // The application frontend
-module web '../../../../../common/infra/bicep/app/web.bicep' = {
+module web '../../../../../common/infra/bicep/app/web-appservice.bicep' = {
   name: 'web-resources'
   params: {
     environmentName: environmentName
@@ -14,7 +14,7 @@ module web '../../../../../common/infra/bicep/app/web.bicep' = {
 }
 
 // The application backend
-module api '../../../../../common/infra/bicep/app/api-dotnet.bicep' = {
+module api '../../../../../common/infra/bicep/app/api-appservice-dotnet.bicep' = {
   name: 'api-resources'
   params: {
     environmentName: environmentName
@@ -22,6 +22,7 @@ module api '../../../../../common/infra/bicep/app/api-dotnet.bicep' = {
     applicationInsightsName: monitoring.outputs.APPLICATIONINSIGHTS_NAME
     appServicePlanId: appServicePlan.outputs.AZURE_APP_SERVICE_PLAN_ID
     keyVaultName: keyVault.outputs.AZURE_KEY_VAULT_NAME
+    allowedOrigins: [web.outputs.URI]
   }
 }
 

@@ -1,12 +1,16 @@
 param environmentName string
 param location string = resourceGroup().location
+
 param serviceName string = 'api'
 param applicationInsightsName string
 param appServicePlanId string
-param keyVaultName string 
+param keyVaultName string
+param allowedOrigins array = []
+param storageAccountName string
+param appSettings object = {}
 
-module api '../../../../../common/infra/bicep/core/host/appservice-dotnet.bicep' = {
-  name: 'application-appservice-dotnet-${serviceName}'
+module api '../../../../../common/infra/bicep/core/host/function-node.bicep' = {
+  name: 'api-function-node-${serviceName}'
   params: {
     environmentName: environmentName
     location: location
@@ -14,6 +18,9 @@ module api '../../../../../common/infra/bicep/core/host/appservice-dotnet.bicep'
     applicationInsightsName: applicationInsightsName
     appServicePlanId: appServicePlanId
     keyVaultName: keyVaultName
+    allowedOrigins: allowedOrigins
+    storageAccountName: storageAccountName
+    appSettings: appSettings
   }
 }
 

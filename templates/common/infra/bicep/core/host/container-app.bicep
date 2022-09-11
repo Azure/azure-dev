@@ -1,17 +1,17 @@
-@minLength(1)
-@maxLength(64)
-@description('Name of the the environment which is used to generate a short unique hash used in all resources.')
 param environmentName string
-
-@minLength(1)
-@description('Primary location for all resources')
-param location string
-
+param location string = resourceGroup().location
 param imageName string
+param serviceName string
+param keyVaultName string = ''
+param useKeyVault bool = !(empty(keyVaultName))
+param managedIdentity bool = useKeyVault
+param env array = []
+param targetPort int = 80
+param external bool = true
 
 var resourceToken = toLower(uniqueString(subscription().id, environmentName, location))
 var tags = { 'azd-env-name': environmentName }
-var abbrs = loadJsonContent('../../../../../../common/infra/bicep/abbreviations.json')
+var abbrs = loadJsonContent('../../abbreviations.json')
 
 resource containerAppsEnvironment 'Microsoft.App/managedEnvironments@2022-03-01' existing = {
   name: '${abbrs.appManagedEnvironments}${resourceToken}'
@@ -30,20 +30,18 @@ resource keyVault 'Microsoft.KeyVault/vaults@2022-07-01' existing = {
   name: '${abbrs.keyVaultVaults}${resourceToken}'
 }
 
-resource api 'Microsoft.App/containerApps@2022-03-01' = {
-  name: '${abbrs.appContainerApps}api-${resourceToken}'
+resource app 'Microsoft.App/containerApps@2022-03-01' = {
+  name: '${abbrs.appContainerApps}${serviceName}-${resourceToken}'
   location: location
-  tags: union(tags, { 'azd-service-name': 'api' })
-  identity: {
-    type: 'SystemAssigned'
-  }
+  tags: union(tags, { 'azd-service-name': serviceName })
+  identity: managedIdentity ? { type: 'SystemAssigned' } : null
   properties: {
     managedEnvironmentId: containerAppsEnvironment.id
     configuration: {
       activeRevisionsMode: 'single'
       ingress: {
-        external: true
-        targetPort: 3100
+        external: external
+        targetPort: targetPort
         transport: 'auto'
       }
       secrets: [
@@ -65,33 +63,29 @@ resource api 'Microsoft.App/containerApps@2022-03-01' = {
         {
           image: imageName
           name: 'main'
-          env: [
-            {
-              name: 'APPLICATIONINSIGHTS_CONNECTION_STRING'
-              value: applicationInsights.properties.ConnectionString
-            }
-            {
-              name: 'AZURE_KEY_VAULT_ENDPOINT'
-              value: keyVault.properties.vaultUri
-            }
-          ]
+          env: union(
+            [
+              {
+                name: 'APPLICATIONINSIGHTS_CONNECTION_STRING'
+                value: applicationInsights.properties.ConnectionString
+              }
+            ],
+            env)
         }
       ]
     }
   }
 }
 
-resource keyVaultAccessPolicies 'Microsoft.KeyVault/vaults/accessPolicies@2022-07-01' = {
-  name: '${keyVault.name}/add'
-  properties: {
-    accessPolicies: [
-      {
-        objectId: api.identity.principalId
-        permissions: { secrets: [ 'get', 'list' ] }
-        tenantId: subscription().tenantId
-      }
-    ]
+module keyVaultAccess '../security/keyvault-access.bicep' = if (useKeyVault) {
+  name: 'appservice-keyvault-access-${serviceName}'
+  params: {
+    principalId: app.identity.principalId
+    environmentName: environmentName
+    location: location
   }
 }
 
-output API_URI string = 'https://${api.properties.configuration.ingress.fqdn}'
+output NAME string = app.name
+output URI string = 'https://${app.properties.configuration.ingress.fqdn}'
+output IDENTITY_PRINCIPAL_ID string = managedIdentity ? app.identity.principalId : ''

@@ -9,6 +9,7 @@ param useKeyVault bool = !(empty(keyVaultName))
 param managedIdentity bool = useKeyVault
 param applicationInsightsName string
 param appServicePlanId string
+param allowedOrigins array = []
 
 module web 'appservice.bicep' = {
   name: 'appservice-dotnet-${serviceName}'
@@ -24,6 +25,7 @@ module web 'appservice.bicep' = {
     keyVaultName: keyVaultName
     useKeyVault: useKeyVault
     managedIdentity: managedIdentity
+    allowedOrigins: allowedOrigins
   }
 }
 

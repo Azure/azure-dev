@@ -16,86 +16,74 @@ repo:
 
   rewrite:
     rules:
-    - from: ../../../../../../common/infra/bicep/core
-      to: ./core
-      patterns:
-        - "**/*.bicep"
+      - from: ../../../../../../common/infra/bicep/core
+        to: ./core
+        patterns:
+          - "**/*.bicep"
 
-    - from: ../../../../../common/infra/bicep/app
-      to: ./app
-      patterns:
-        - "**/*.bicep"
+      - from: ../../../../../common/infra/bicep/app
+        to: ./app
+        patterns:
+          - "**/*.bicep"
 
-    - from: ../../../../../common/infra/bicep/core
-      to: ../core
-      patterns:
-        - "**/*.bicep"   
+      - from: ../../../../../common/infra/bicep/core
+        to: ../core
+        patterns:
+          - "**/*.bicep"
 
-    # app service modules
-    - from: ../../../../../../common/infra/bicep
-      to: ../
-      patterns:
-        - "**/*.bicep"
-      ignore:
-        - "**/main.bicep"
+      # app service modules
+      - from: ../../../../../../common/infra/bicep
+        to: ../
+        patterns:
+          - "**/*.bicep"
+        ignore:
+          - "**/main.bicep"
 
-    # main.bicep
-    - from: ../../../../../../common/infra/bicep
-      to: ./
-      patterns:
-        - "**/main.bicep"
+      # main.bicep
+      - from: ../../../../../../common/infra/bicep
+        to: ./
+        patterns:
+          - "**/main.bicep"
 
-    - from: ../../api/js
-      to: ./src/api
-      patterns:
-        - "**/azure.@(yml|yaml)"
+      - from: ../../api/js
+        to: ./src/api
+        patterns:
+          - "**/azure.@(yml|yaml)"
 
-    - from: ../../web/react-fluent
-      to: ./src/web
-      patterns:
-        - "**/azure.@(yml|yaml)"
+      - from: ../../web/react-fluent
+        to: ./src/web
+        patterns:
+          - "**/azure.@(yml|yaml)"
 
-    - from: api-node.bicep
-      to: api.bicep
-      patterns:
-        - "**/resources.bicep"
+      - from: web-appservice.bicep
+        to: web.bicep
+        patterns:
+          - "**/resources.bicep"
 
-    - from: cosmos-mongo.bicep
-      to: db.bicep
-      patterns:
-        - "**/resources.bicep"
-        
+      - from: api-appservice-node.bicep
+        to: api.bicep
+        patterns:
+          - "**/resources.bicep"
+
+      - from: cosmos-mongo.bicep
+        to: db.bicep
+        patterns:
+          - "**/resources.bicep"
+
   assets:
     # # Common assets
 
-    # Infra 
+    # Infra
     - from: ./infra/
       to: ./infra
 
     - from: ../../../../../common/infra/bicep
       to: ./infra
-      patterns:
-        - abbreviations.json
-        - applicationinsights.bicep
-        - applicationinsights-dashboard.bicep
-        - appservice.bicep
-        - appservice-config-logs.bicep
-        - appservice-config-union.bicep
-        - appservice-config-cosmos.bicep
-        - appservice-node.bicep
-        - appserviceplan.bicep
-        - appserviceplan-sites.bicep
-        - cosmos.bicep
-        - cosmos-mongo-db.bicep
-        - keyvault.bicep
-        - keyvault-access.bicep
-        - loganalytics.bicep
-        - monitoring.bicep
 
-    - from: ../../../../common/infra/bicep/app/web.bicep
+    - from: ../../../../common/infra/bicep/app/web-appservice.bicep
       to: ./infra/app/web.bicep
 
-    - from: ../../../../common/infra/bicep/app/api-node.bicep
+    - from: ../../../../common/infra/bicep/app/api-appservice-node.bicep
       to: ./infra/app/api.bicep
 
     - from: ../../../../common/infra/bicep/app/cosmos-mongo.bicep

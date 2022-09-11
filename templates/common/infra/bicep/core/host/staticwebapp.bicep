@@ -1,14 +1,15 @@
 param environmentName string
 param location string = resourceGroup().location
+param serviceName string
 
 var resourceToken = toLower(uniqueString(subscription().id, environmentName, location))
 var tags = { 'azd-env-name': environmentName }
 var abbrs = loadJsonContent('../../abbreviations.json')
 
 resource web 'Microsoft.Web/staticSites@2022-03-01' = {
-  name: '${abbrs.webStaticSites}web-${resourceToken}'
+  name: '${abbrs.webStaticSites}${serviceName}-${resourceToken}'
   location: location
-  tags: union(tags, { 'azd-service-name': 'web' })
+  tags: union(tags, { 'azd-service-name': serviceName })
   sku: {
     name: 'Free'
     tier: 'Free'
@@ -18,4 +19,5 @@ resource web 'Microsoft.Web/staticSites@2022-03-01' = {
   }
 }
 
-output WEB_URI string = 'https://${web.properties.defaultHostname}'
+output NAME string = web.name
+output URI string = 'https://${web.properties.defaultHostname}'

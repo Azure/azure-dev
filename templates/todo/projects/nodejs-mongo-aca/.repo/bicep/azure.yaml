@@ -6,11 +6,11 @@ metadata:
 services:
   web:
     project: ../../web/react-fluent
-    module: modules/web
+    module: app/web
     language: js
     host: containerapp
   api:
     project: ../../api/js
-    module: modules/api
+    module: app/api
     language: js
     host: containerapp

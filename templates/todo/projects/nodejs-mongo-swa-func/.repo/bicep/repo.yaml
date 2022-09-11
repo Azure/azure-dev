@@ -16,10 +16,34 @@ repo:
 
   rewrite:
     rules:
-      - from: ../../../../common/infra/bicep
-        to: ./
+      - from: ../../../../../../common/infra/bicep/core
+        to: ./core
         patterns:
           - "**/*.bicep"
+
+      - from: ../../../../../common/infra/bicep/app
+        to: ./app
+        patterns:
+          - "**/*.bicep"
+
+      - from: ../../../../../common/infra/bicep/core
+        to: ../core
+        patterns:
+          - "**/*.bicep"
+
+      # app service modules
+      - from: ../../../../../../common/infra/bicep
+        to: ../
+        patterns:
+          - "**/*.bicep"
+        ignore:
+          - "**/main.bicep"
+
+      # main.bicep
+      - from: ../../../../../../common/infra/bicep
+        to: ./
+        patterns:
+          - "**/main.bicep"
 
       - from: ../../api/js
         to: ./src/api
@@ -31,23 +55,61 @@ repo:
         patterns:
           - "**/azure.@(yml|yaml)"
 
+      - from: web-staticwebapp.bicep
+        to: web.bicep
+        patterns:
+          - "**/resources.bicep"
+
+      - from: api-function-node.bicep
+        to: api.bicep
+        patterns:
+          - "**/resources.bicep"
+
+      - from: cosmos-mongo.bicep
+        to: db.bicep
+        patterns:
+          - "**/resources.bicep"
+
   assets:
-    # Common assets
+    # # Common assets
+
+    # Infra
+    - from: ./infra/
+      to: ./infra
+
+    - from: ../../../../../common/infra/bicep
+      to: ./infra
+
+    - from: ../../../../common/infra/bicep/app/web-staticwebapp.bicep
+      to: ./infra/app/web.bicep
+
+    - from: ../../../../common/infra/bicep/app/api-function-node.bicep
+      to: ./infra/app/api.bicep
+
+    - from: ../../../../common/infra/bicep/app/cosmos-mongo.bicep
+      to: ./infra/app/db.bicep
+
+    - from: ./../../
+      to: ./
+      ignore:
+        - ".repo/**/*"
+        - "repo.y[a]ml"
+        - "azure.y[a]ml"
 
     # openapi.yaml to root
-    - from: ../../api/common
+    - from: ../../../../api/common
       to: ./
       patterns:
         - openapi.yaml
 
     # openapi.yaml to api root
-    - from: ../../api/common
+    - from: ../../../../api/common
       to: ./src/api
       patterns:
         - openapi.yaml
 
     # Templates common
-    - from: ../../../common
+    - from: ../../../../../common
       to: ./
       ignore:
         - .github/**/*
@@ -62,23 +124,23 @@ repo:
       to: ./infra
 
     # .devcontainer common (devcontainer.json)
-    - from: ../../../common/.devcontainer/devcontainer.json/nodejs
+    - from: ../../../../../common/.devcontainer/devcontainer.json/nodejs
       to: ./.devcontainer
 
     # .devcontainer common (Dockerfile)
-    - from: ../../../common/.devcontainer/Dockerfile/func
+    - from: ../../../../../common/.devcontainer/Dockerfile/func
       to: ./.devcontainer
 
     # Assets common
-    - from: ../../common/assets
+    - from: ../../../../common/assets
       to: ./assets
 
     # Tests common
-    - from: ../../common/tests
+    - from: ../../../../common/tests
       to: ./tests
 
     # Node JS API
-    - from: ../../api/js
+    - from: ../../../../api/js
       to: ./src/api
       ignore:
         - "dist/**/*"
@@ -87,8 +149,12 @@ repo:
         - "**/*.log"
 
     # React Frontend
-    - from: ../../web/react-fluent
+    - from: ../../../../web/react-fluent
       to: ./src/web
       ignore:
         - "build/**/*"
         - "node_modules/**/*"
+
+    # Azure.yml
+    - from: ./azure.yaml
+      to: ./azure.yaml

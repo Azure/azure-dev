@@ -1,13 +1,16 @@
 param environmentName string
 param location string = resourceGroup().location
+
 param serviceName string = 'api'
-param appCommandLine string = 'gunicorn --workers 4 --threads 2 --timeout 60 --access-logfile "-" --error-logfile "-" --bind=0.0.0.0:8000 -k uvicorn.workers.UvicornWorker todo.app:app'
 param applicationInsightsName string
 param appServicePlanId string
 param keyVaultName string
+param allowedOrigins array = []
+param storageAccountName string
+param appSettings object = {}
 
-module api '../../../../../common/infra/bicep/core/host/appservice-python.bicep' = {
-  name: 'application-appservice-python-${serviceName}'
+module api '../../../../../common/infra/bicep/core/host/function-python.bicep' = {
+  name: 'api-function-python-${serviceName}'
   params: {
     environmentName: environmentName
     location: location
@@ -15,8 +18,9 @@ module api '../../../../../common/infra/bicep/core/host/appservice-python.bicep'
     applicationInsightsName: applicationInsightsName
     appServicePlanId: appServicePlanId
     keyVaultName: keyVaultName
-    appCommandLine: appCommandLine
-    scmDoBuildDuringDeployment: true
+    allowedOrigins: allowedOrigins
+    storageAccountName: storageAccountName
+    appSettings: appSettings
   }
 }
 

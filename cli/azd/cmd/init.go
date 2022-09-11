@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/commands"
@@ -27,6 +28,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/git"
+	"github.com/azure/azure-dev/cli/azd/pkg/ux"
 	"github.com/otiai10/copy"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
@@ -69,6 +71,56 @@ func (i *initAction) SetupFlags(
 }
 
 func (i *initAction) Run(ctx context.Context, cmd *cobra.Command, args []string, azdCtx *azdcontext.AzdContext) error {
+	console := input.GetConsole(ctx)
+	console.Confirm(ctx, input.ConsoleOptions{
+		Message:      "Ready?",
+		DefaultValue: true,
+	})
+
+	ux.NewCommandPrinter[string]().
+		Title("Initializing your project (init)").
+		Description("This will initialize your project and environment stuff").
+		AddStep("Doing thing 1", "Initializing", func(ctx context.Context, progress *ux.Progress) (string, error) {
+			progress.Message("Step 1")
+			time.Sleep(1 * time.Second)
+			progress.Message("Step 2")
+			time.Sleep(1 * time.Second)
+			progress.Message("Step 3")
+			time.Sleep(1 * time.Second)
+
+			return "", nil
+		}).
+		AddStep("Doing thing 2", "Initializing", func(ctx context.Context, progress *ux.Progress) (string, error) {
+			progress.Message("Step 1")
+			time.Sleep(1 * time.Second)
+			progress.Message("Step 2")
+			time.Sleep(1 * time.Second)
+			progress.Message("Step 3")
+			time.Sleep(1 * time.Second)
+
+			progress.Warn("Oops")
+
+			return "", nil
+		}).
+		AddStep("Doing thing 3", "Initializing", func(ctx context.Context, progress *ux.Progress) (string, error) {
+			progress.Message("Step 1")
+			time.Sleep(1 * time.Second)
+			progress.Message("Step 2")
+			time.Sleep(1 * time.Second)
+			progress.Message("Step 3")
+			time.Sleep(1 * time.Second)
+			progress.Fail("Shit happened!")
+
+			return "Hello", nil
+		}).
+		Complete("Finished the thing!", func(ctx context.Context, result string) error {
+			fmt.Println(result)
+			return nil
+		}).
+		Run(ctx)
+
+	return nil
+
 	// In the case where `init` is run and a parent folder already has an `azure.yaml` file, the
 	// current ProjectDirectory will be set to that folder. That's not what we want here. We want
 	// to force using the current working directory as a project root (since we are initializing a
@@ -85,7 +137,6 @@ func (i *initAction) Run(ctx context.Context, cmd *cobra.Command, args []string,
 		return errors.New("template name required when specifying a branch name")
 	}
 
-	console := input.GetConsole(ctx)
 	azCli := azcli.GetAzCli(ctx)
 	gitCli := git.NewGitCli(ctx)
 

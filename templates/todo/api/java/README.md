@@ -10,7 +10,7 @@
 
 Create a `.env` with the following configuration:
 
-- `SPRING_DATA_MONGODB_URI` - Cosmos DB connection string (Mongo DB also supported)
+- `AZURE_COSMOS_CONNECTION_STRING` - Cosmos DB connection string (Mongo DB also supported)
 
 ### Build & Compile
 
@@ -28,9 +28,9 @@ Run `./mvnw spring-boot:build-image` to build the Docker image.
 
 ### Run the Docker image
 
-The environment variable `SPRING_DATA_MONGODB_URI` must point to the Cosmos DB connection string.
+The environment variable `AZURE_COSMOS_CONNECTION_STRING` must point to the Cosmos DB connection string.
 
-Run `docker run -it -p 8080:8080 -e SPRING_DATA_MONGODB_URI=$SPRING_DATA_MONGODB_URI azure/azure-dev-todo-java` to start the Docker image.
+Run `docker run -it -p 8080:8080 -e AZURE_COSMOS_CONNECTION_STRING=$AZURE_COSMOS_CONNECTION_STRING azure/azure-dev-todo-java` to start the Docker image.
 
 ## Deploy to Azure App Service using Maven
 

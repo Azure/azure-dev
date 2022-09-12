@@ -12,7 +12,7 @@ type initStep struct {
 	description string
 }
 
-func (s *initStep) Execute(ctx context.Context) (any, error) {
+func (s *initStep) Execute(ctx context.Context, stepCtx StepContext) error {
 	c := color.New(color.FgWhite).Add(color.Bold)
 	c.Println(s.title)
 
@@ -22,10 +22,14 @@ func (s *initStep) Execute(ctx context.Context) (any, error) {
 
 	fmt.Println()
 
-	return nil, nil
+	return nil
 }
 
-func NewInitStep(title string, description string) Step[any] {
+func (s *initStep) ContinueOnError() bool {
+	return true
+}
+
+func NewInitStep(title string, description string) Step {
 	return &initStep{
 		title:       title,
 		description: description,

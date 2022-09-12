@@ -7,41 +7,47 @@ import (
 	"github.com/fatih/color"
 )
 
-type CompleteFn[R any] func(ctx context.Context, result R) error
+type ErrorFn func(ctx context.Context, stepCtx StepContext, err error)
 
-type completeStep[R any] struct {
-	message    string
-	completeFn CompleteFn[R]
-	err        error
-	result     R
+type completeStep struct {
+	// Success
+	successTitle string
+	successFn    StepFn
+	// Error
+	errorTitle string
+	errorFn    ErrorFn
+	error      error
 }
 
-func (s *completeStep[R]) Result(value R) {
-	s.result = value
+// Gets a value specifying whether or not the step should fail the whole action
+func (s *completeStep) ContinueOnError() bool {
+	return false
 }
 
-func (s *completeStep[R]) Execute(ctx context.Context) (R, error) {
+func (s *completeStep) Execute(ctx context.Context, stepCtx StepContext) error {
 	fmt.Println()
 
-	if s.err == nil {
+	if s.error == nil {
 		boldGreen := color.New(color.FgGreen).Add(color.Bold)
 		boldGreen.Print("SUCCESS: ")
-		color.Green(s.message)
+		color.Green(s.successTitle)
+		s.successFn(ctx, stepCtx)
+
 	} else {
 		boldRed := color.New(color.FgRed).Add(color.Bold)
 		boldRed.Print("ERROR: ")
-		color.Red(s.err.Error())
+		color.Red(s.errorTitle)
+		s.errorFn(ctx, stepCtx, s.error)
 	}
 
-	s.completeFn(ctx, s.result)
 	fmt.Println()
 
-	return s.result, nil
+	return nil
 }
 
-func NewCompleteStep[R any](successMessage string, completeFn CompleteFn[R]) Step[R] {
-	return &completeStep[R]{
-		message:    successMessage,
-		completeFn: completeFn,
+func NewCompleteStep(successMessage string, completeFn StepFn) Step {
+	return &completeStep{
+		successTitle: successMessage,
+		successFn:    completeFn,
 	}
 }

@@ -4,8 +4,13 @@ import (
 	"context"
 )
 
-type ExecuteFn[R any] func(ctx context.Context, progress *Progress) (R, error)
+type StepFn func(ctx context.Context, stepCtx StepContext) error
+type ProgressStepFn func(ctx context.Context, stepCtx StepContext, progress *Progress) error
 
-type Step[R any] interface {
-	Execute(ctx context.Context) (R, error)
+// A UX step with consistent user experience
+type Step interface {
+	// The action to perform during the step
+	Execute(ctx context.Context, stepCtx StepContext) error
+	// Whether or not the step should fail the whole action
+	ContinueOnError() bool
 }

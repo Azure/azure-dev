@@ -7,27 +7,31 @@ import (
 	"github.com/theckman/yacspin"
 )
 
-type progressStep[R any] struct {
-	progress  *Progress
-	spinner   *yacspin.Spinner
-	executeFn ExecuteFn[R]
+type progressStep struct {
+	progress        *Progress
+	spinner         *yacspin.Spinner
+	executeFn       ProgressStepFn
+	continueOnError bool
 }
 
-func (s *progressStep[R]) Execute(ctx context.Context) (R, error) {
-	var result R
+func (s *progressStep) ContinueOnError() bool {
+	return s.continueOnError
+}
+
+func (s *progressStep) Execute(ctx context.Context, stepCtx StepContext) error {
 	s.spinner.Start()
 
-	result, err := s.executeFn(ctx, s.progress)
+	err := s.executeFn(ctx, stepCtx, s.progress)
 	if err != nil {
 		s.spinner.StopFail()
-		return result, err
+		return err
 	}
 
 	s.spinner.Stop()
-	return result, nil
+	return nil
 }
 
-func NewProgressStep[R any](prefix string, message string, executeFn ExecuteFn[R]) Step[R] {
+func NewProgressStep(prefix string, message string, executeFn ProgressStepFn) Step {
 	config := yacspin.Config{
 		Frequency:         200 * time.Millisecond,
 		CharSet:           yacspin.CharSets[33],
@@ -45,7 +49,7 @@ func NewProgressStep[R any](prefix string, message string, executeFn ExecuteFn[R
 		spinner: spinner,
 	}
 
-	return &progressStep[R]{
+	return &progressStep{
 		progress:  progress,
 		spinner:   spinner,
 		executeFn: executeFn,

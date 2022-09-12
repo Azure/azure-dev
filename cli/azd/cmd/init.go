@@ -72,15 +72,11 @@ func (i *initAction) SetupFlags(
 
 func (i *initAction) Run(ctx context.Context, cmd *cobra.Command, args []string, azdCtx *azdcontext.AzdContext) error {
 	console := input.GetConsole(ctx)
-	// console.Confirm(ctx, input.ConsoleOptions{
-	// 	Message:      "Ready?",
-	// 	DefaultValue: true,
-	// })
 
-	ux.NewCommandPrinter[string]().
+	ux.NewActionPrinter[string]().
 		Title("Initializing your project (init)").
 		Description("This will initialize your project and environment stuff").
-		AddStep("Doing thing 1", "Initializing", func(ctx context.Context, progress *ux.Progress) (string, error) {
+		AddProgressStep("Doing thing 1", "Initializing", func(ctx context.Context, stepCtx ux.StepContext, progress *ux.Progress) error {
 			progress.Message("Step 1")
 			time.Sleep(1 * time.Second)
 			progress.Message("Step 2")
@@ -88,34 +84,60 @@ func (i *initAction) Run(ctx context.Context, cmd *cobra.Command, args []string,
 			progress.Message("Step 3")
 			time.Sleep(1 * time.Second)
 
-			return "", nil
-		}).
-		AddStep("Doing thing 2", "Initializing", func(ctx context.Context, progress *ux.Progress) (string, error) {
-			progress.Message("Step 1")
-			time.Sleep(1 * time.Second)
-			progress.Message("Step 2")
-			time.Sleep(1 * time.Second)
-			progress.Message("Step 3")
-			time.Sleep(1 * time.Second)
-
-			progress.Warn("Oops")
-
-			return "", nil
-		}).
-		AddStep("Doing thing 3", "Initializing", func(ctx context.Context, progress *ux.Progress) (string, error) {
-			progress.Message("Step 1")
-			time.Sleep(1 * time.Second)
-			progress.Message("Step 2")
-			time.Sleep(1 * time.Second)
-			progress.Message("Step 3")
-			time.Sleep(1 * time.Second)
-			progress.Fail("Shit happened!")
-
-			return "More info about stuff that happened.", nil
-		}).
-		Complete("Finished the thing!", func(ctx context.Context, result string) error {
-			fmt.Println(result)
 			return nil
+		}).
+		AddProgressStep("Doing thing 2", "Initializing", func(ctx context.Context, stepCtx ux.StepContext, progress *ux.Progress) error {
+			progress.Message("Step 1")
+			time.Sleep(1 * time.Second)
+			progress.Message("Step 2")
+			time.Sleep(1 * time.Second)
+			progress.Message("Step 3")
+			time.Sleep(1 * time.Second)
+
+			return nil
+		}).
+		AddStep(ux.NewInteractiveStep(func(ctx context.Context, stepCtx ux.StepContext) error {
+			userValue, _ := console.Confirm(ctx,
+				input.ConsoleOptions{
+					Message:      "Should next step fail?",
+					DefaultValue: false,
+				})
+
+			stepCtx.SetValue("fail", userValue)
+			return nil
+		})).
+		AddProgressStep("Doing thing 3", "Initializing", func(ctx context.Context, stepCtx ux.StepContext, progress *ux.Progress) error {
+			progress.Message("Step 1")
+			time.Sleep(1 * time.Second)
+			progress.Message("Step 2")
+			time.Sleep(1 * time.Second)
+			progress.Message("Step 3")
+			time.Sleep(1 * time.Second)
+
+			failValue, ok := stepCtx.GetValue("fail")
+			if !ok {
+				return errors.New("Cannot find `fail` value in step context")
+			}
+
+			if failValue.(bool) {
+				return errors.New("Something bad happened and cannot continue")
+			}
+
+			// Set some result
+			stepCtx.SetValue("result", "More information to display in the complete func")
+
+			return nil
+		}).
+		Complete("Finished the thing!", func(ctx context.Context, stepCtx ux.StepContext) error {
+			result, ok := stepCtx.GetValue("result")
+			if ok {
+				fmt.Println(result.(string))
+			}
+
+			return nil
+		}).
+		Error("Initialization failed!", func(ctx context.Context, stepCtx ux.StepContext, err error) {
+			fmt.Println(err.Error())
 		}).
 		Run(ctx)
 

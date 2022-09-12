@@ -18,14 +18,14 @@ func TestGetAzDevCliIdentifier(t *testing.T) {
 func TestUserSpecifiedAgentIdentifier(t *testing.T) {
 	devUserAgent := "MyAgent/1.0.0"
 	restorer := EnvironmentVariablesSetter(map[string]string{
-		userSpecifiedAgentEnvironmentVariableName: devUserAgent,
+		AzdUserAgentEnvVar: devUserAgent,
 	})
 
-	require.Equal(t, devUserAgent, getUserSpecifiedIdentifier())
+	require.Equal(t, devUserAgent, GetCallerUserAgent())
 
 	// Empty case
-	os.Setenv(userSpecifiedAgentEnvironmentVariableName, "")
-	require.Equal(t, "", getUserSpecifiedIdentifier())
+	os.Setenv(AzdUserAgentEnvVar, "")
+	require.Equal(t, "", GetCallerUserAgent())
 
 	t.Cleanup(restorer)
 }
@@ -53,8 +53,8 @@ func TestFormatTemplate(t *testing.T) {
 // Scenario tests
 func TestUserAgentStringScenarios(t *testing.T) {
 	restorer := EnvironmentVariablesSetter(map[string]string{
-		userSpecifiedAgentEnvironmentVariableName: "",
-		githubActionsEnvironmentVariableName:      "",
+		AzdUserAgentEnvVar:                   "",
+		githubActionsEnvironmentVariableName: "",
 	})
 
 	version := GetVersionNumber()
@@ -66,9 +66,9 @@ func TestUserAgentStringScenarios(t *testing.T) {
 	require.Equal(t, azDevIdentifier, MakeUserAgentString(""))
 
 	// Scenario: user specifies agent variable
-	os.Setenv(userSpecifiedAgentEnvironmentVariableName, "dev_user_agent")
+	os.Setenv(AzdUserAgentEnvVar, "dev_user_agent")
 	require.Equal(t, fmt.Sprintf("%s dev_user_agent", azDevIdentifier), MakeUserAgentString(""))
-	os.Setenv(userSpecifiedAgentEnvironmentVariableName, "")
+	os.Setenv(AzdUserAgentEnvVar, "")
 
 	// Scenario: running on github actions
 	os.Setenv(githubActionsEnvironmentVariableName, "true")
@@ -79,7 +79,7 @@ func TestUserAgentStringScenarios(t *testing.T) {
 	require.Equal(t, fmt.Sprintf("%s azdtempl/template@0.0.1", azDevIdentifier), MakeUserAgentString("template@0.0.1"))
 
 	// Scenario: full combination
-	os.Setenv(userSpecifiedAgentEnvironmentVariableName, "dev_user_agent")
+	os.Setenv(AzdUserAgentEnvVar, "dev_user_agent")
 	os.Setenv(githubActionsEnvironmentVariableName, "true")
 	require.Equal(t, fmt.Sprintf("%s dev_user_agent azdtempl/template@0.0.1 GhActions", azDevIdentifier), MakeUserAgentString("template@0.0.1"))
 

@@ -15,6 +15,7 @@ azdtest
 azsdk
 AZURECLI
 azurestaticapps
+azuretools
 azureutil
 Backticks
 BOOLSLICE

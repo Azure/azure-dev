@@ -27,6 +27,7 @@ The following prerequisites are required to use this application. Please ensure 
 - [Python (3.8+)](https://www.python.org/downloads/) - for the API backend
 - [Node.js with npm (16.13.1+)](https://nodejs.org/) - for the Web frontend
 - [Git (2.36.1+)](https://git-scm.com/)
+PLACEHOLDERIACTOOLS
 
 ### Quickstart
 

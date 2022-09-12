@@ -20,26 +20,36 @@ repo:
         to: ./modules/applicationinsights
         patterns:
           - "**/*.tf"
-      
+
       - from: ../../api/python
         to: ./src/api
-        patterns: 
+        patterns:
           - "**/azure.@(yml|yaml)"
 
       - from: ../../web/react-fluent
         to: ./src/web
-        patterns: 
+        patterns:
           - "**/azure.@(yml|yaml)"
       
+      - from: "PLACEHOLDERIACTOOLS"
+        to: "- [Terraform CLI](https://aka.ms/azure-dev/terraform-install)"
+        patterns:
+          - "README.md"
+
+      - from: "todo-python-mongo"
+        to: "todo-python-mongo-terraform"
+        patterns:
+          - "README.md"
+
   assets:
-    # Common assets   
+    # Common assets
     - from: ./../../
       to: ./
-      ignore: 
+      ignore:
         - ".repo/**/*"
         - "repo.y[a]ml"
         - "azure.y[a]ml"
-        
+
     # openapi.yaml to root
     - from: ../../../../api/common
       to: ./
@@ -51,19 +61,19 @@ repo:
       to: ./src/api
       patterns:
         - openapi.yaml
-     
+
     # Templates common
     - from: ../../../../../common
       to: ./
-      ignore: 
-      - "infra/**/*"
-      - .devcontainer/**/*
+      ignore:
+        - "infra/**/*"
+        - .devcontainer/**/*
 
     - from: ../../../../../common/infra/terraform/applicationinsights
       to: ./infra/modules/applicationinsights
 
     # .devcontainer common (devcontainer.json)
-    - from: ../../../../../common/.devcontainer/devcontainer.json/python
+    - from: ../../../../../common/.devcontainer/devcontainer.json/python/terraform
       to: ./.devcontainer
 
     # .devcontainer common (Dockerfile)
@@ -92,7 +102,7 @@ repo:
         - "build/**/*"
         - "node_modules/**/*"
 
-    # Infra 
+    # Infra
     - from: ./infra/
       to: ./infra
 

@@ -83,3 +83,6 @@ const (
 	EnvTeamCity         = "TeamCity"
 	EnvJetBrainsSpace   = "JetBrains Space"
 )
+
+// The value used for ServiceNameKey
+const ServiceNameAzd = "azd"

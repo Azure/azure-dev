@@ -6,6 +6,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/internal/telemetry/baggage"
 	"github.com/azure/azure-dev/cli/azd/internal/telemetry/fields"
+	"github.com/azure/azure-dev/cli/azd/internal/telemetry/resource"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
@@ -26,7 +27,7 @@ func ContextWithEnvironment(ctx context.Context, env *environment.Environment) c
 
 // ContextWithTemplate sets the template in context for telemetry purposes.
 func ContextWithTemplate(ctx context.Context, templateName string) context.Context {
-	return SetBaggageInContext(ctx, fields.TemplateIdKey.String(sha256Hash(strings.ToLower(templateName))))
+	return SetBaggageInContext(ctx, fields.TemplateIdKey.String(resource.Sha256Hash(strings.ToLower(templateName))))
 }
 
 // TemplateFromContext retrieves the template stored in context.

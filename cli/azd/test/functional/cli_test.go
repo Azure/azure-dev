@@ -19,6 +19,7 @@ import (
 	"path"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -660,10 +661,14 @@ func randomEnvName() string {
 		panic(fmt.Errorf("could not read random bytes: %w", err))
 	}
 
-	// Adding the name of the OS for CI to avoid name collisions and fail tests
-	osNameOnCI := os.Getenv("AZURE_DEV_CI_OS")
+	// Adding first letter initial of the OS for CI identification
+	osName := os.Getenv("AZURE_DEV_CI_OS")
+	if osName == "" {
+		osName = runtime.GOOS
+	}
+	osInitial := osName[:1]
 
-	return ("azdtest-" + osNameOnCI + "-" + hex.EncodeToString(bytes))[0:15]
+	return ("azdtest-" + osInitial + hex.EncodeToString(bytes))[0:15]
 }
 
 // stdinForTests is just enough stdin to bypass all the prompts or choose defaults.
@@ -691,6 +696,123 @@ func newTestContext(t *testing.T) (context.Context, context.CancelFunc) {
 	}
 
 	return context.WithCancel(ctx)
+}
+
+func Test_CLI_InfraCreateAndDeleteResourceTerraform(t *testing.T) {
+	// running this test in parallel is ok as it uses a t.TempDir()
+	t.Parallel()
+	ctx, cancel := newTestContext(t)
+	defer cancel()
+
+	dir := t.TempDir()
+	t.Logf("DIR: %s", dir)
+
+	envName := randomEnvName()
+	t.Logf("AZURE_ENV_NAME: %s", envName)
+
+	cli := azdcli.NewCLI(t)
+	cli.WorkingDirectory = dir
+	cli.Env = append(os.Environ(), "AZURE_LOCATION=eastus2")
+
+	err := copySample(dir, "resourcegroupterraform")
+	require.NoError(t, err, "failed expanding sample")
+
+	_, err = cli.RunCommandWithStdIn(ctx, stdinForTests(envName), "init")
+	require.NoError(t, err)
+
+	t.Logf("Starting infra create\n")
+	_, err = cli.RunCommand(ctx, "infra", "create", "--cwd", dir)
+	require.NoError(t, err)
+
+	out, err := cli.RunCommand(ctx, "env", "get-values", "-o", "json", "--cwd", dir)
+	require.NoError(t, err)
+	_ = out
+
+	t.Logf("Starting infra delete\n")
+	_, err = cli.RunCommand(ctx, "infra", "delete", "--cwd", dir, "--force", "--purge")
+	require.NoError(t, err)
+
+	t.Logf("Done\n")
+}
+
+func Test_CLI_InfraCreateAndDeleteResourceTerraformRemote(t *testing.T) {
+	ctx, cancel := newTestContext(t)
+	defer cancel()
+
+	dir := t.TempDir()
+	t.Logf("DIR: %s", dir)
+
+	envName := randomEnvName()
+	location := "eastus2"
+	backendResourceGroupName := fmt.Sprintf("rs-%s", envName)
+	backendStorageAccountName := strings.Replace(envName, "-", "", -1)
+	backendContainerName := "tfstate"
+
+	t.Logf("AZURE_ENV_NAME: %s", envName)
+
+	cli := azdcli.NewCLI(t)
+	cli.WorkingDirectory = dir
+	cli.Env = append(os.Environ(), fmt.Sprintf("AZURE_LOCATION=%s", location))
+
+	err := copySample(dir, "resourcegroupterraformremote")
+	require.NoError(t, err, "failed expanding sample")
+
+	//Create remote state resources
+	commandRunner := exec.NewCommandRunner()
+	runArgs := exec.NewRunArgs("az", "group", "create", "--name", backendResourceGroupName, "--location", location)
+	_, err = commandRunner.Run(ctx, runArgs)
+	require.NoError(t, err)
+
+	defer func() {
+		commandRunner := exec.NewCommandRunner()
+		runArgs := exec.NewRunArgs("az", "group", "delete", "--name", backendResourceGroupName, "--yes")
+		_, err = commandRunner.Run(ctx, runArgs)
+		require.NoError(t, err)
+	}()
+
+	//Create storage account
+	runArgs = exec.NewRunArgs("az", "storage", "account", "create", "--resource-group", backendResourceGroupName,
+		"--name", backendStorageAccountName, "--sku", "Standard_LRS", "--encryption-services", "blob")
+	_, err = commandRunner.Run(ctx, runArgs)
+	require.NoError(t, err)
+
+	//Get Account Key
+	runArgs = exec.NewRunArgs("az", "storage", "account", "keys", "list", "--resource-group",
+		backendResourceGroupName, "--account-name", backendStorageAccountName, "--query", "[0].value",
+		"-o", "tsv")
+	cmdResult, err := commandRunner.Run(ctx, runArgs)
+	require.NoError(t, err)
+	storageAccountKey := cmdResult.Stdout
+
+	// Create storage container
+	runArgs = exec.NewRunArgs("az", "storage", "container", "create", "--name", backendContainerName,
+		"--account-name", backendStorageAccountName, "--account-key", storageAccountKey)
+	result, err := commandRunner.Run(ctx, runArgs)
+	_ = result
+	require.NoError(t, err)
+
+	//Run azd init
+	_, err = cli.RunCommandWithStdIn(ctx, stdinForTests(envName), "init")
+	require.NoError(t, err)
+
+	_, err = cli.RunCommand(ctx, "env", "set", "RS_STORAGE_ACCOUNT", backendStorageAccountName, "--cwd", dir)
+	require.NoError(t, err)
+
+	_, err = cli.RunCommand(ctx, "env", "set", "RS_CONTAINER_NAME", backendContainerName, "--cwd", dir)
+	require.NoError(t, err)
+
+	_, err = cli.RunCommand(ctx, "env", "set", "RS_RESOURCE_GROUP", backendResourceGroupName, "--cwd", dir)
+	require.NoError(t, err)
+
+	t.Logf("Starting infra create\n")
+	_, err = cli.RunCommand(ctx, "infra", "create", "--cwd", dir)
+	require.NoError(t, err)
+
+	t.Logf("Starting infra delete\n")
+	_, err = cli.RunCommand(ctx, "infra", "delete", "--cwd", dir, "--force", "--purge")
+	require.NoError(t, err)
+
+	t.Logf("Done\n")
 }
 
 func TestMain(m *testing.M) {

@@ -1,17 +1,18 @@
 param environmentName string
 param location string = resourceGroup().location
+param sku object = {
+  name: 'Y1'
+  tier: 'Dynamic'
+  size: 'Y1'
+  family: 'Y'
+}
 
 module appServicePlanFunctions 'appserviceplan.bicep' = {
   name: 'appserviceplanfunctions-resources'
   params: {
     environmentName: environmentName
     location: location
-    sku: {
-      name: 'Y1'
-      tier: 'Dynamic'
-      size: 'Y1'
-      family: 'Y'
-    }
+    sku: sku
     kind: 'functionapp'
   }
 }

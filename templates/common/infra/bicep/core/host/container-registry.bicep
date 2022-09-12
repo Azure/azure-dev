@@ -1,5 +1,8 @@
 param environmentName string
 param location string = resourceGroup().location
+param sku object = {
+  name: 'Standard'
+}
 
 var resourceToken = toLower(uniqueString(subscription().id, environmentName, location))
 var tags = { 'azd-env-name': environmentName }
@@ -10,9 +13,7 @@ resource containerRegistry 'Microsoft.ContainerRegistry/registries@2022-02-01-pr
   name: '${abbrs.containerRegistryRegistries}${resourceToken}'
   location: location
   tags: tags
-  sku: {
-    name: 'Standard'
-  }
+  sku: sku
   properties: {
     adminUserEnabled: true
     anonymousPullEnabled: false

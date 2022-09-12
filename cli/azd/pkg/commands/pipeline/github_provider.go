@@ -315,9 +315,9 @@ func (p *GitHubCiProvider) configureConnection(
 	if infraOptions.Provider == "terraform" {
 		// terraform expect the credential info to be set in the env individually
 		type credentialParse struct {
-			Tenant       string `json:"tenant"`
-			ClientId     string `json:"appId"`
-			ClientSecret string `json:"password"`
+			Tenant       string `json:"tenantId"`
+			ClientId     string `json:"clientId"`
+			ClientSecret string `json:"clientSecret"`
 		}
 		values := credentialParse{}
 		if e := json.Unmarshal(credentials, &values); e != nil {

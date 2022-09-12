@@ -6,7 +6,7 @@ A complete ToDo application that includes everything you need to build, deploy, 
 
 Let's jump in and get the ToDo app up and running in Azure. When you are finished, you will have a fully functional web app deployed on Azure. In later steps, you'll see how to setup a pipeline and monitor the application.
 
-img src="assets/web.png" width="75%" alt="Screenshot of deployed ToDo app">
+<img src="assets/web.png" width="75%" alt="Screenshot of deployed ToDo app"/>
 
 <sup>Screenshot of the deployed ToDo app</sup>
 

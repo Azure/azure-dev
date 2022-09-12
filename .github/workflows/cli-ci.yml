@@ -14,7 +14,10 @@ permissions:
 
 jobs:
   azd-lint:
-    runs-on: windows-latest
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
     steps:
       - uses: actions/checkout@v2
       - uses: actions/setup-go@v2

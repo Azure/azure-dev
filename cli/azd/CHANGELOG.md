@@ -1,9 +1,13 @@
 # Release History
 
-## 0.1.0-beta.6 (Unreleased)
+## 0.2.0-beta.1 (2022-09-14)
+
+### Features Added
+
+- [[#226]](https://github.com/Azure/azure-dev/issues/226) Added support for Terraform for infrastructure as code (IaC), plus a new Terraform template for Python workloads.
+- [[#450]](https://github.com/Azure/azure-dev/issues/450) New C# + Azure SQL Template.
 
 ### Breaking Changes
-
 - [[#588]](https://github.com/Azure/azure-dev/pull/588) Update default view from `azd monitor` to overview dashboard.
 
 ## 0.1.0-beta.5 (2022-08-25)

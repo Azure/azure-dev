@@ -31,6 +31,11 @@ repo:
         patterns:
           - "**/azure.@(yml|yaml)"
 
+      - from: "PLACEHOLDERIACTOOLS"
+        to: ""
+        patterns:
+          - "README.md"
+
   assets:
     # Common assets
     - from: ./../../

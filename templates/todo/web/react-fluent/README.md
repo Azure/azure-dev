@@ -13,6 +13,10 @@ Create a `.env` file within the base of the `reactd-fluent` folder with the foll
 
 In the project directory, you can run:
 
+### `npm ci`
+
+Installs local pre-requisites.
+
 ### `npm start`
 
 Runs the app in the development mode.

@@ -23,16 +23,19 @@ module app '../../../../../common/infra/bicep/core/host/container-app.bicep' = {
     targetPort: 80
     imageName: imageName
     env: [ {
-        name: 'REACT_APP_APPLICATIONINSIGHTS_CONNECTION_STRING'
-        value: applicationInsights.properties.ConnectionString
-      }
-      {
-        name: 'REACT_APP_API_BASE_URL'
-        value: 'https://${api.properties.configuration.ingress.fqdn}'
-      } ]
+      name: 'REACT_APP_APPLICATIONINSIGHTS_CONNECTION_STRING'
+      value: applicationInsights.properties.ConnectionString
+    }
+    {
+      name: 'REACT_APP_API_BASE_URL'
+      value: 'https://${api.properties.configuration.ingress.fqdn}'
+    }
+    {
+      name: 'APPLICATIONINSIGHTS_CONNECTION_STRING'
+      value: applicationInsights.properties.ConnectionString
+    } ]
   }
 }
 
-output NAME string = app.outputs.NAME
-output URI string = app.outputs.URI
-output IDENTITY_PRINCIPAL_ID string = app.outputs.IDENTITY_PRINCIPAL_ID
+output WEB_NAME string = app.outputs.NAME
+output WEB_URI string = app.outputs.URI

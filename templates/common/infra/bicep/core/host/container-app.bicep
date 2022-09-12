@@ -22,14 +22,6 @@ resource containerRegistry 'Microsoft.ContainerRegistry/registries@2022-02-01-pr
   name: '${abbrs.containerRegistryRegistries}${resourceToken}'
 }
 
-resource applicationInsights 'Microsoft.Insights/components@2020-02-02' existing = {
-  name: '${abbrs.insightsComponents}${resourceToken}'
-}
-
-resource keyVault 'Microsoft.KeyVault/vaults@2022-07-01' existing = {
-  name: '${abbrs.keyVaultVaults}${resourceToken}'
-}
-
 resource app 'Microsoft.App/containerApps@2022-03-01' = {
   name: '${abbrs.appContainerApps}${serviceName}-${resourceToken}'
   location: location
@@ -63,14 +55,7 @@ resource app 'Microsoft.App/containerApps@2022-03-01' = {
         {
           image: imageName
           name: 'main'
-          env: union(
-            [
-              {
-                name: 'APPLICATIONINSIGHTS_CONNECTION_STRING'
-                value: applicationInsights.properties.ConnectionString
-              }
-            ],
-            env)
+          env: env
         }
       ]
     }

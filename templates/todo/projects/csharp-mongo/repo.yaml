@@ -50,6 +50,7 @@ repo:
     - from: ../../../common
       to: ./
       ignore:
+        - .github/**/*
         - .devcontainer/**/*
         - "infra/**/*"
 

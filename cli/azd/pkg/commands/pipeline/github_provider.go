@@ -332,6 +332,17 @@ func (p *GitHubCiProvider) configureConnection(
 		if err := ghCli.SetSecret(ctx, repoSlug, "ARM_CLIENT_SECRET", values.ClientSecret); err != nil {
 			return fmt.Errorf("setting terraform env var credentials:: %w", err)
 		}
+
+		// Sets the terraform remote state environment variables in github
+		remoteStateKeys := []string{"RS_RESOURCE_GROUP", "RS_STORAGE_ACCOUNT", "RS_CONTAINER_NAME"}
+		for _, key := range remoteStateKeys {
+			value, ok := azdEnvironment.Values[key]
+			if ok {
+				if err := ghCli.SetSecret(ctx, repoSlug, key, value); err != nil {
+					return fmt.Errorf("setting terraform remote state variables:: %w", err)
+				}
+			}
+		}
 	}
 
 	console.Message(ctx, "Configuring repository environment.\n")

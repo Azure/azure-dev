@@ -66,8 +66,13 @@ repo:
     - from: ../../../../../common
       to: ./
       ignore:
-        - "infra/**/*"
+        - .github/**/*
         - .devcontainer/**/*
+        - "infra/**/*"
+
+    # Github workflows for bicep
+    - from: ../../../../../common/.github/workflows/terraform
+      to: ./.github/workflows
 
     - from: ../../../../../common/infra/terraform/applicationinsights
       to: ./infra/modules/applicationinsights

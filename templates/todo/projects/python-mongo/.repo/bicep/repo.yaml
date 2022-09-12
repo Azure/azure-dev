@@ -62,8 +62,13 @@ repo:
     - from: ../../../../../common
       to: ./
       ignore: 
-      - "infra/**/*"
-      - .devcontainer/**/*
+        - .github/**/*
+        - .devcontainer/**/*
+        - "infra/**/*"
+
+    # Github workflows for bicep
+    - from: .../../../../../common/.github/workflows/bicep
+      to: ./.github/workflows
 
     - from: ../../../../../common/infra/bicep
       to: ./infra

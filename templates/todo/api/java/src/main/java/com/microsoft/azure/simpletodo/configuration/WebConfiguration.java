@@ -17,7 +17,7 @@ public class WebConfiguration {
                 registry.addMapping("/**")
                         .allowedOrigins("*")
                         .allowedMethods("*")
-                        .allowedHeaders("Content-Type");
+                        .allowedHeaders("*");
             }
         };
     }

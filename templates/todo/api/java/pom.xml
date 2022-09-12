@@ -13,7 +13,7 @@
     <description>Simple Todo application</description>
     <properties>
         <basename>tmp-judubois-1111</basename>
-        <java.version>17</java.version>
+        <java.version>18</java.version>
         <maven.compiler.source>${java.version}</maven.compiler.source>
         <maven.compiler.target>${java.version}</maven.compiler.target>
         <springdoc.version>1.6.4</springdoc.version>

@@ -36,7 +36,6 @@ repo:
         patterns:
           - "README.md"
 
-
       - from: "PLACEHOLDER_TITLE"
         to: "ToDo Application with a Python API and Azure Cosmos DB API for MongoDB on Azure App Service"
         patterns:

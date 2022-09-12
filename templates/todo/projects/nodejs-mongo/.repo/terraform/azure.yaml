@@ -10,8 +10,8 @@ services:
     language: js
     host: appservice
   api:
-    project: ../../api/python
-    language: py
+    project: ../../api/js
+    language: js
     host: appservice
 infra:
   provider: terraform

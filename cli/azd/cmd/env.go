@@ -9,7 +9,6 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/commands"
-	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
@@ -243,7 +242,7 @@ func envRefreshCmd(rootOptions *internal.GlobalCommandOptions) *cobra.Command {
 			return fmt.Errorf("loading environment: %w", err)
 		}
 
-		prj, err := project.LoadProjectConfig(azdCtx.ProjectPath(), &environment.Environment{})
+		prj, err := project.LoadProjectConfig(azdCtx.ProjectPath(), env)
 		if err != nil {
 			return fmt.Errorf("loading project: %w", err)
 		}
@@ -263,7 +262,7 @@ func envRefreshCmd(rootOptions *internal.GlobalCommandOptions) *cobra.Command {
 			return fmt.Errorf("getting deployment: %w", err)
 		}
 
-		if err := provisioning.UpdateEnvironment(&env, &getDeploymentResult.Deployment.Outputs); err != nil {
+		if err := provisioning.UpdateEnvironment(env, &getDeploymentResult.Deployment.Outputs); err != nil {
 			return err
 		}
 

@@ -268,11 +268,11 @@ func createBicepProvider(ctx context.Context) *BicepProvider {
 		Module: "main",
 	}
 
-	env := environment.Environment{Values: make(map[string]string)}
-	env.SetLocation("westus2")
-	env.SetEnvName("test-env")
+	env := environment.EphemeralWithValues("test-env", map[string]string{
+		"AZURE_LOCATION": "westus2",
+	})
 
-	return NewBicepProvider(ctx, &env, projectDir, options)
+	return NewBicepProvider(ctx, env, projectDir, options)
 }
 
 func prepareGenericMocks(commandRunner *execmock.MockCommandRunner) {

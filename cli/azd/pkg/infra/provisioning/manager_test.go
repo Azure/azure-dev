@@ -18,9 +18,9 @@ import (
 )
 
 func TestManagerPlan(t *testing.T) {
-	env := environment.Environment{Values: make(map[string]string)}
-	env.Values["AZURE_LOCATION"] = "eastus2"
-	env.SetEnvName("test-env")
+	env := environment.EphemeralWithValues("test-env", map[string]string{
+		"AZURE_LOCATION": "eastus2",
+	})
 	options := Options{Provider: "test"}
 	interactive := false
 
@@ -36,9 +36,9 @@ func TestManagerPlan(t *testing.T) {
 }
 
 func TestManagerGetDeployment(t *testing.T) {
-	env := environment.Environment{Values: make(map[string]string)}
-	env.Values["AZURE_LOCATION"] = "eastus2"
-	env.SetEnvName("test-env")
+	env := environment.EphemeralWithValues("test-env", map[string]string{
+		"AZURE_LOCATION": "eastus2",
+	})
 	options := Options{Provider: "test"}
 	interactive := false
 
@@ -54,9 +54,9 @@ func TestManagerGetDeployment(t *testing.T) {
 }
 
 func TestManagerDeploy(t *testing.T) {
-	env := environment.Environment{Values: make(map[string]string)}
-	env.Values["AZURE_LOCATION"] = "eastus2"
-	env.SetEnvName("test-env")
+	env := environment.EphemeralWithValues("test-env", map[string]string{
+		"AZURE_LOCATION": "eastus2",
+	})
 	options := Options{Provider: "test"}
 	interactive := false
 
@@ -73,9 +73,9 @@ func TestManagerDeploy(t *testing.T) {
 }
 
 func TestManagerDestroyWithPositiveConfirmation(t *testing.T) {
-	env := environment.Environment{Values: make(map[string]string)}
-	env.Values["AZURE_LOCATION"] = "eastus2"
-	env.SetEnvName("test-env")
+	env := environment.EphemeralWithValues("test-env", map[string]string{
+		"AZURE_LOCATION": "eastus2",
+	})
 	options := Options{Provider: "test"}
 	interactive := false
 
@@ -97,9 +97,9 @@ func TestManagerDestroyWithPositiveConfirmation(t *testing.T) {
 }
 
 func TestManagerDestroyWithNegativeConfirmation(t *testing.T) {
-	env := environment.Environment{Values: make(map[string]string)}
-	env.Values["AZURE_LOCATION"] = "eastus2"
-	env.SetEnvName("test-env")
+	env := environment.EphemeralWithValues("test-env", map[string]string{
+		"AZURE_LOCATION": "eastus2",
+	})
 	options := Options{Provider: "test"}
 	interactive := false
 

@@ -296,7 +296,7 @@ func (p *GitHubCiProvider) name() string {
 // and make changes on behalf of a user.
 func (p *GitHubCiProvider) configureConnection(
 	ctx context.Context,
-	azdEnvironment environment.Environment,
+	azdEnvironment *environment.Environment,
 	repoDetails *gitRepositoryDetails,
 	infraOptions provisioning.Options,
 	credentials json.RawMessage,

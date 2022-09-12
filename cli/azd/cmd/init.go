@@ -72,10 +72,10 @@ func (i *initAction) SetupFlags(
 
 func (i *initAction) Run(ctx context.Context, cmd *cobra.Command, args []string, azdCtx *azdcontext.AzdContext) error {
 	console := input.GetConsole(ctx)
-	console.Confirm(ctx, input.ConsoleOptions{
-		Message:      "Ready?",
-		DefaultValue: true,
-	})
+	// console.Confirm(ctx, input.ConsoleOptions{
+	// 	Message:      "Ready?",
+	// 	DefaultValue: true,
+	// })
 
 	ux.NewCommandPrinter[string]().
 		Title("Initializing your project (init)").
@@ -111,7 +111,7 @@ func (i *initAction) Run(ctx context.Context, cmd *cobra.Command, args []string,
 			time.Sleep(1 * time.Second)
 			progress.Fail("Shit happened!")
 
-			return "Hello", nil
+			return "More info about stuff that happened.", nil
 		}).
 		Complete("Finished the thing!", func(ctx context.Context, result string) error {
 			fmt.Println(result)

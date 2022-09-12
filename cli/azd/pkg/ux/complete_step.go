@@ -34,6 +34,7 @@ func (s *completeStep[R]) Execute(ctx context.Context) (R, error) {
 	}
 
 	s.completeFn(ctx, s.result)
+	fmt.Println()
 
 	return s.result, nil
 }

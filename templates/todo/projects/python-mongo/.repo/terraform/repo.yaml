@@ -70,7 +70,7 @@ repo:
         - .devcontainer/**/*
         - "infra/**/*"
 
-    # Github workflows for bicep
+    # Github workflows for terraform
     - from: ../../../../../common/.github/workflows/terraform
       to: ./.github/workflows
 

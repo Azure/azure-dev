@@ -4,6 +4,14 @@ All notable changes to the Azure Dev CLI extension will be documented in this fi
 
 Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
 
+## [0.3.0] 2022-09-14
+### Added
+- [[#493]](https://github.com/Azure/azure-dev/pull/493)  Show README file after successful init/up.
+
+### Fixed
+- [[#498]](https://github.com/Azure/azure-dev/pull/498) Use `azd template list` to populate template list in VS Code (now always consistent with the CLI).
+- [[#556]](https://github.com/Azure/azure-dev/pull/556) Improve error message when no environments are found.
+
 ## [0.2.0] 2022-08-02
 
 ### Changed

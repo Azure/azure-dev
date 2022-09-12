@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 )
@@ -67,6 +68,7 @@ type CiProvider interface {
 		ctx context.Context,
 		azdEnvironment environment.Environment,
 		gitRepo *gitRepositoryDetails,
+		provisioningProvider provisioning.Options,
 		credential json.RawMessage,
 		console input.Console) error
 }

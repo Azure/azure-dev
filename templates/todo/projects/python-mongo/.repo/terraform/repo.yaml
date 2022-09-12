@@ -30,6 +30,16 @@ repo:
         to: ./src/web
         patterns:
           - "**/azure.@(yml|yaml)"
+      
+      - from: "PLACEHOLDERIACTOOLS"
+        to: "- [Terraform CLI](https://aka.ms/azure-dev/terraform-install)"
+        patterns:
+          - "README.md"
+
+      - from: "todo-python-mongo"
+        to: "todo-python-mongo-terraform"
+        patterns:
+          - "README.md"
 
   assets:
     # Common assets
@@ -62,6 +72,14 @@ repo:
     - from: ../../../../../common/infra/terraform/applicationinsights
       to: ./infra/modules/applicationinsights
 
+    # .devcontainer common (devcontainer.json)
+    - from: ../../../../../common/.devcontainer/devcontainer.json/python/terraform
+      to: ./.devcontainer
+
+    # .devcontainer common (Dockerfile)
+    - from: ../../../../../common/.devcontainer/Dockerfile/base
+      to: ./.devcontainer
+
     # Assets common
     - from: ../../../../common/assets
       to: ./assets
@@ -87,10 +105,6 @@ repo:
     # Infra
     - from: ./infra/
       to: ./infra
-
-    # Devcontainer
-    - from: ./.devcontainer
-      to: ./.devcontainer
 
     # Azure.yml
     - from: ./azure.yaml

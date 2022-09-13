@@ -22,6 +22,8 @@ const (
 	AzureResourceTypeCosmosDb                AzureResourceType = "Microsoft.DocumentDB/databaseAccounts"
 	AzureResourceTypeContainerApp            AzureResourceType = "Microsoft.App/containerApps"
 	AzureResourceTypeContainerAppEnvironment AzureResourceType = "Microsoft.App/managedEnvironments"
+	AzureResourceTypeContainerRegistry       AzureResourceType = "Microsoft.ContainerRegistry/registries"
+	AzureResourceTypeManagedCluster          AzureResourceType = "Microsoft.ContainerService/managedClusters"
 )
 
 const resourceLevelSeparator = "/"
@@ -57,6 +59,10 @@ func GetResourceTypeDisplayName(resourceType AzureResourceType) string {
 		return "App Service plan"
 	case AzureResourceTypeCosmosDb:
 		return "Azure Cosmos DB"
+	case AzureResourceTypeContainerRegistry:
+		return "Container Registry"
+	case AzureResourceTypeManagedCluster:
+		return "AKS Managed Cluster"
 	}
 
 	return ""

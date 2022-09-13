@@ -1,0 +1,15 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/Azure/azure-dev/main/schemas/v1.0/azure.yaml.json
+
+name: todo-nodejs-mongo-aks
+metadata:
+  template: todo-nodejs-mongo-aks@0.0.1-beta
+services:
+  web:
+    project: ../../web/react-fluent
+    dist: build
+    language: js
+    host: aks
+  api:
+    project: ../../api/js
+    language: js
+    host: aks

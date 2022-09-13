@@ -88,9 +88,7 @@ resource appServicePlan 'Microsoft.Web/serverfarms@2022-03-01' = {
     name: 'Y1'
     tier: 'Dynamic'
   }
-  properties: {
-
-  }
+  properties: {}
 }
 
 resource keyVault 'Microsoft.KeyVault/vaults@2022-07-01' = {

@@ -93,6 +93,11 @@ jobs:
 
       - task: Bash@3
         displayName: Test templates
+        env:             
+          # Required for Terraform service principal authentication
+          ARM_CLIENT_ID: $(arm-client-id)
+          ARM_CLIENT_SECRET: $(arm-client-secret)
+          ARM_TENANT_ID: $(arm-tenant-id)
         inputs:
           targetType: filePath
           filePath: templates/tests/test-templates.sh

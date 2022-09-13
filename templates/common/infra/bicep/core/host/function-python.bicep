@@ -9,7 +9,6 @@ param managedIdentity bool = useKeyVault
 param applicationInsightsName string
 param appServicePlanId string
 param storageAccountName string
-param functionsWorkerRuntime string = 'python'
 param allowedOrigins array = []
 
 module function 'function.bicep' = {
@@ -20,7 +19,7 @@ module function 'function.bicep' = {
     serviceName: serviceName
     allowedOrigins: allowedOrigins
     linuxFxVersion: linuxFxVersion
-    functionsWorkerRuntime: functionsWorkerRuntime
+    functionsWorkerRuntime: 'python'
     storageAccountName: storageAccountName
     applicationInsightsName: applicationInsightsName
     appServicePlanId: appServicePlanId

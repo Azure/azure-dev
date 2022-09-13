@@ -68,7 +68,7 @@ resource sqlDeploymentScript 'Microsoft.Resources/deploymentScripts@2020-10-01' 
       }
       {
         name: 'DBNAME'
-        secureValue: dbName
+        value: dbName
       }
       {
         name: 'DBSERVER'
@@ -127,5 +127,4 @@ resource sqlAzureConnectionStringSercret 'Microsoft.KeyVault/vaults/secrets@2022
 }
 
 var azureSqlConnectionString = 'Server=${sqlServer.properties.fullyQualifiedDomainName}; Database=${sqlServer::database.name}; User=${appUser}'
-output AZURE_SQL_CONNECTION_STRING string = azureSqlConnectionString
 output AZURE_SQL_CONNECTION_STRING_KEY string = sqlConnectionStringKey

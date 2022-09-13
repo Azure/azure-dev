@@ -13,7 +13,6 @@ module cosmos 'cosmos-sql.bicep' = {
   params: {
     environmentName: environmentName
     location: location
-    cosmosDatabaseName: cosmosDatabaseName
     keyVaultName: keyVaultName
   }
 }
@@ -65,7 +64,6 @@ module userRole 'cosmos-sql-role-assign.bicep' = [for principalId in principalId
   dependsOn: [
     cosmos
     database
-    roleDefintion
   ]
 }]
 

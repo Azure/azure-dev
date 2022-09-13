@@ -22,10 +22,8 @@ module applicationInsightsDashboard 'applicationinsights-dashboard.bicep' = {
   params: {
     environmentName: environmentName
     location: location
+    applicationInsightsName: applicationInsights.name
   }
-  dependsOn: [
-    applicationInsights
-  ]
 }
 
 output APPLICATIONINSIGHTS_NAME string = applicationInsights.name

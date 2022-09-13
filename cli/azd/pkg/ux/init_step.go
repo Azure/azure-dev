@@ -28,10 +28,3 @@ func (s *initStep) Execute(ctx context.Context, stepCtx StepContext) error {
 func (s *initStep) ContinueOnError() bool {
 	return true
 }
-
-func NewInitStep(title string, description string) Step {
-	return &initStep{
-		title:       title,
-		description: description,
-	}
-}

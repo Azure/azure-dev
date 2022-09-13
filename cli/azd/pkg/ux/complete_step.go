@@ -44,10 +44,3 @@ func (s *completeStep) Execute(ctx context.Context, stepCtx StepContext) error {
 
 	return nil
 }
-
-func NewCompleteStep(successMessage string, completeFn StepFn) Step {
-	return &completeStep{
-		successTitle: successMessage,
-		successFn:    completeFn,
-	}
-}

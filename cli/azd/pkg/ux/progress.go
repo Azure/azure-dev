@@ -21,6 +21,22 @@ func (p *Progress) Warn(message string) {
 	p.spinner.StopFail()
 }
 
+func (p *Progress) Skip(message string) {
+	p.spinner.Pause()
+	p.spinner.StopFailColors("fgWhite")
+	p.spinner.StopFailCharacter("(-) Skipped")
+	p.spinner.StopFailMessage(message)
+	p.spinner.StopFail()
+}
+
+func (p *Progress) Info(message string) {
+	p.spinner.Pause()
+	p.spinner.StopFailColors("fgCyan")
+	p.spinner.StopFailCharacter("(?) Info")
+	p.spinner.StopFailMessage(message)
+	p.spinner.StopFail()
+}
+
 func (p *Progress) Fail(message string) {
 	p.spinner.Pause()
 	p.spinner.StopFailMessage(message)

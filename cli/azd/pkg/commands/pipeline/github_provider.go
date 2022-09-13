@@ -334,32 +334,19 @@ func (p *GitHubCiProvider) configureConnection(
 		}
 
 		// Sets the terraform remote state environment variables in github
-		missingRemoteStateValues := false
-		var terraformConfigError error
 		remoteStateKeys := []string{"RS_RESOURCE_GROUP", "RS_STORAGE_ACCOUNT", "RS_CONTAINER_NAME"}
 		for _, key := range remoteStateKeys {
 			value, ok := azdEnvironment.Values[key]
-			if ok {
-				if err := ghCli.SetSecret(ctx, repoSlug, key, value); err != nil {
-					terraformConfigError = fmt.Errorf("setting terraform remote state variables:: %w", err)
-					break
-				}
-			} else {
-				missingRemoteStateValues = true
-				break
+			if !ok || strings.TrimSpace(value) == "" {
+				console.Message(ctx, output.WithWarningFormat("WARNING: Terraform Remote State configuration is invalid!"))
+				console.Message(ctx, fmt.Sprintf("Visit %s for more information on configuring Terraform remote state", output.WithLinkFormat("https://aka.ms/azure-dev/terraform")))
+				console.Message(ctx, "")
+				return errors.New("terraform remote state is not correctly configured")
 			}
-		}
-
-		if terraformConfigError != nil || missingRemoteStateValues {
-			console.Message(ctx, output.WithWarningFormat("WARNING: Terraform Remote State configuration is invalid!"))
-			console.Message(ctx, fmt.Sprintf("Visit %s for more information on configuring Terraform remote state", output.WithLinkFormat("https://aka.ms/azure-dev/terraform")))
-			console.Message(ctx, "")
-
-			if terraformConfigError == nil {
-				terraformConfigError = errors.New("terraform remote state is not correctly configured")
+			// env var was found
+			if err := ghCli.SetSecret(ctx, repoSlug, key, value); err != nil {
+				return fmt.Errorf("setting terraform remote state variables: %w", err)
 			}
-
-			return terraformConfigError
 		}
 	}
 

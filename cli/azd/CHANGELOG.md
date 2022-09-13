@@ -4,10 +4,14 @@
 
 ### Features Added
 
-- [[#226]](https://github.com/Azure/azure-dev/issues/226) Added support for Terraform for infrastructure as code (IaC), plus new Terraform templates for Python and Node.js workloads.
-- [[#450]](https://github.com/Azure/azure-dev/issues/450) New C# + Azure SQL Template.
+- [[#172]](https://github.com/Azure/azure-dev/pull/172) Implement Infrastructure Provision Provider Model.
+- [[#573]](https://github.com/Azure/azure-dev/pull/573) Add support for Terraform for infrastructure as code (IaC).
+- [[#532]](https://github.com/Azure/azure-dev/pull/532) Add Terraform support for Python template.
+- [[#646]](https://github.com/Azure/azure-dev/pull/646) Add Terraform support for Node.js template.
+- [[#550]](https://github.com/Azure/azure-dev/pull/550) Add C# + Azure SQL template.
 
 ### Breaking Changes
+
 - [[#588]](https://github.com/Azure/azure-dev/pull/588) Update default view from `azd monitor` to overview dashboard.
 
 ## 0.1.0-beta.5 (2022-08-25)

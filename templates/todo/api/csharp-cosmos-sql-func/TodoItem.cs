@@ -1,8 +1,6 @@
-using System;
 using System.Text.Json.Serialization;
 
 namespace SimpleTodo.Api;
-
 public class TodoItem
 {
     public TodoItem(string listId, string name)
@@ -10,9 +8,10 @@ public class TodoItem
         ListId = listId;
         Name = name;
     }
+
     [JsonPropertyName("id")]
     public string? Id { get; set; }
-    
+
     [JsonPropertyName("listId")]
     public string ListId { get; set; }
 

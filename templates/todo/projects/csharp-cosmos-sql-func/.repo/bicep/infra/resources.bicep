@@ -3,12 +3,12 @@ param principalId string = ''
 param resourceToken string
 param tags object
 
-resource web 'Microsoft.Web/staticSites@2021-03-01' = {
-  name: 'stapp-${resourceToken}'
+var abbrs = loadJsonContent('../../../../../../common/infra/bicep/abbreviations.json')
+
+resource web 'Microsoft.Web/staticSites@2022-03-01' = {
+  name: '${abbrs.webStaticSites}${resourceToken}'
   location: location
-  tags: union(tags, {
-      'azd-service-name': 'web'
-    })
+  tags: union(tags, { 'azd-service-name': 'web' })
   sku: {
     name: 'Free'
     tier: 'Free'
@@ -18,23 +18,15 @@ resource web 'Microsoft.Web/staticSites@2021-03-01' = {
   }
 }
 
-resource api 'Microsoft.Web/sites@2021-03-01' = {
-  name: 'app-api-${resourceToken}'
+resource api 'Microsoft.Web/sites@2022-03-01' = {
+  name: '${abbrs.webSitesFunctions}api-${resourceToken}'
   location: location
-  tags: union(tags, {
-      'azd-service-name': 'api'
-    })
+  tags: union(tags, { 'azd-service-name': 'api' })
   kind: 'functionapp'
   properties: {
     serverFarmId: appServicePlan.id
     siteConfig: {
-      //numberOfWorkers: 1
-      //linuxFxVersion: 'DOTNET-ISOLATED|6.0'
-      //alwaysOn: false
-      //functionAppScaleLimit: 200
-      //minimumElasticInstanceCount: 0
       ftpsState: 'FtpsOnly'
-      //use32BitWorkerProcess: false
       cors: {
         allowedOrigins: [
           'https://ms.portal.azure.com'
@@ -42,7 +34,6 @@ resource api 'Microsoft.Web/sites@2021-03-01' = {
         ]
       }
     }
-    //clientAffinityEnabled: false
     httpsOnly: true
   }
 
@@ -57,12 +48,10 @@ resource api 'Microsoft.Web/sites@2021-03-01' = {
       'AzureWebJobsStorage': 'DefaultEndpointsProtocol=https;AccountName=${storage.name};EndpointSuffix=${environment().suffixes.storage};AccountKey=${storage.listKeys().keys[0].value}'
       'FUNCTIONS_EXTENSION_VERSION': '~4'
       'FUNCTIONS_WORKER_RUNTIME': 'dotnet-isolated'
-      //'SCM_DO_BUILD_DURING_DEPLOYMENT': 'true'
       'AZURE_COSMOS_ENDPOINT': cosmos.properties.documentEndpoint
       'AZURE_COSMOS_DATABASE_NAME': cosmos::database.name
       'AZURE_KEY_VAULT_ENDPOINT': keyVault.properties.vaultUri
-      //'WEBSITE_RUN_FROM_PACKAGE': '1'
-      'WEBSITE_CONTENTAZUREFILECONNECTIONSTRING':'DefaultEndpointsProtocol=https;AccountName=${storage.name};EndpointSuffix=${environment().suffixes.storage};AccountKey=${storage.listKeys().keys[0].value}'
+      'WEBSITE_CONTENTAZUREFILECONNECTIONSTRING': 'DefaultEndpointsProtocol=https;AccountName=${storage.name};EndpointSuffix=${environment().suffixes.storage};AccountKey=${storage.listKeys().keys[0].value}'
       'WEBSITE_CONTENTSHARE': 'app-api-${resourceToken}'
     }
   }
@@ -91,22 +80,21 @@ resource api 'Microsoft.Web/sites@2021-03-01' = {
     }
   }
 }
-resource appServicePlan 'Microsoft.Web/serverfarms@2021-03-01' = {
-  name: 'plan-${resourceToken}'
+resource appServicePlan 'Microsoft.Web/serverfarms@2022-03-01' = {
+  name: '${abbrs.webServerFarms}${resourceToken}'
   location: location
   tags: tags
   sku: {
     name: 'Y1'
     tier: 'Dynamic'
-    
   }
   properties: {
-    
+
   }
 }
 
-resource keyVault 'Microsoft.KeyVault/vaults@2021-10-01' = {
-  name: 'keyvault${resourceToken}'
+resource keyVault 'Microsoft.KeyVault/vaults@2022-07-01' = {
+  name: '${abbrs.keyVaultVaults}${resourceToken}'
   location: location
   tags: tags
   properties: {
@@ -148,8 +136,8 @@ resource keyVault 'Microsoft.KeyVault/vaults@2021-10-01' = {
   }
 }
 
-resource logAnalyticsWorkspace 'Microsoft.OperationalInsights/workspaces@2020-03-01-preview' = {
-  name: 'log-${resourceToken}'
+resource logAnalyticsWorkspace 'Microsoft.OperationalInsights/workspaces@2021-12-01-preview' = {
+  name: '${abbrs.operationalInsightsWorkspaces}${resourceToken}'
   location: location
   tags: tags
   properties: any({
@@ -174,7 +162,7 @@ module applicationInsightsResources './applicationinsights.bicep' = {
 }
 
 resource storage 'Microsoft.Storage/storageAccounts@2021-09-01' = {
-  name: 'stor${resourceToken}'
+  name: '${abbrs.storageStorageAccounts}${resourceToken}'
   location: location
   tags: tags
   kind: 'StorageV2'
@@ -191,8 +179,8 @@ resource storage 'Microsoft.Storage/storageAccounts@2021-09-01' = {
   }
 }
 
-resource cosmos 'Microsoft.DocumentDB/databaseAccounts@2021-10-15' = {
-  name: 'cosmos-${resourceToken}'
+resource cosmos 'Microsoft.DocumentDB/databaseAccounts@2022-05-15' = {
+  name: '${abbrs.documentDBDatabaseAccounts}${resourceToken}'
   location: location
   tags: tags
   properties: {
@@ -290,13 +278,11 @@ resource cosmos 'Microsoft.DocumentDB/databaseAccounts@2021-10-15' = {
       roleDefinitionId: roleDefinition.id
       scope: cosmos.id
     }
-
     dependsOn: [
       userRole
     ]
   }
 }
- 
 
 output AZURE_COSMOS_ENDPOINT string = cosmos.properties.documentEndpoint
 output AZURE_COSMOS_DATABASE_NAME string = cosmos::database.name

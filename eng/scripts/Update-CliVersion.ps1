@@ -23,6 +23,7 @@ if (!$version) {
     if ($version.IsPrerelease) {
         if ($version.HasValidPrereleaseLabel()) {
             # 0.1.0-beta.1 -> 0.1.0-beta.2
+            # 1.0.0-beta.1 -> 1.0.0-beta.2
             $version.PrereleaseNumber++
         } else {
             # 0.1.0 -> 0.2.0-beta.1
@@ -31,7 +32,6 @@ if (!$version) {
             $version.PrereleaseNumber = 1
         }
     } else {
-        # 1.0.0-beta.1 -> 1.0.0-beta.2
         # 1.0.0 -> 1.1.0-beta.1
         $version.IncrementAndSetToPrerelease()
     }

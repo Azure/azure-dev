@@ -95,8 +95,6 @@ ignoreWords:
     - aztfmod
     - menuid
     - PLACEHOLDERIACTOOLS
-    - PLACEHOLDERTITLE
-    - PLACEHOLDERDESCRIPTION
 useGitignore: true
 dictionaryDefinitions:
     - name: gitHubUserAliases

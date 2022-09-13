@@ -23,12 +23,12 @@ repo:
 
       - from: ../../api/python
         to: ./src/api
-        patterns: 
+        patterns:
           - "**/azure.@(yml|yaml)"
 
       - from: ../../web/react-fluent
         to: ./src/web
-        patterns: 
+        patterns:
           - "**/azure.@(yml|yaml)"
 
       - from: "PLACEHOLDERIACTOOLS"
@@ -38,14 +38,14 @@ repo:
 
   assets:
     # Common assets
-  
+
     - from: ./../../
       to: ./
-      ignore: 
+      ignore:
         - ".repo/**/*"
         - "repo.y[a]ml"
         - "azure.y[a]ml"
-        
+
     # openapi.yaml to root
     - from: ../../../../api/common
       to: ./
@@ -57,13 +57,18 @@ repo:
       to: ./src/api
       patterns:
         - openapi.yaml
-     
+
     # Templates common
     - from: ../../../../../common
       to: ./
-      ignore: 
-      - "infra/**/*"
-      - .devcontainer/**/*
+      ignore:
+        - .github/**/*
+        - .devcontainer/**/*
+        - "infra/**/*"
+
+    # Github workflows for bicep
+    - from: ../../../../../common/.github/workflows/bicep
+      to: ./.github/workflows
 
     - from: ../../../../../common/infra/bicep
       to: ./infra
@@ -98,7 +103,7 @@ repo:
         - "build/**/*"
         - "node_modules/**/*"
 
-    # Infra 
+    # Infra
     - from: ./infra/
       to: ./infra
 

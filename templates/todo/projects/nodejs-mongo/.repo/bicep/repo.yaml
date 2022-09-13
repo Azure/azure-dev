@@ -35,6 +35,16 @@ repo:
         to: ""
         patterns:
           - "README.md"
+      
+      - from: "PLACEHOLDERTITLE"
+        to: "ToDo Application with a Node.js API and Azure Cosmos DB API for MongoDB on Azure App Service"
+        patterns:
+          - "README.md"
+      
+      - from: "PLACEHOLDERDESCRIPTION"
+        to: "using Bicep as the IaC Provider"
+        patterns:
+          - "README.md"
 
   assets:
     # Common assets

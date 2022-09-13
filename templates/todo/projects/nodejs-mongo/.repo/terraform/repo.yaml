@@ -36,6 +36,17 @@ repo:
         patterns:
           - "README.md"
 
+      - from: "PLACEHOLDERTITLE"
+        to: "ToDo Application with a Node.js API and Azure Cosmos DB API for MongoDB on Azure App Service (Terraform)"
+        patterns:
+          - "README.md"
+      
+      - from: "PLACEHOLDERDESCRIPTION"
+        to: "using Terraform as the IaC Provider"
+        patterns:
+          - "README.md"
+
+
       - from: "todo-nodejs-mongo"
         to: "todo-nodejs-mongo-terraform"
         patterns:

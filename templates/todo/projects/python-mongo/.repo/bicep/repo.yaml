@@ -42,7 +42,7 @@ repo:
           - "README.md"
       
       - from: "PLACEHOLDERDESCRIPTION"
-        to: "using Bicep as the IaC Provider"
+        to: "using Bicep as the IaC provider"
         patterns:
           - "README.md"
 

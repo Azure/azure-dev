@@ -42,7 +42,7 @@ repo:
           - "README.md"
       
       - from: "PLACEHOLDERDESCRIPTION"
-        to: "using Terraform as the IaC Provider"
+        to: "using Terraform as the IaC provider"
         patterns:
           - "README.md"
 

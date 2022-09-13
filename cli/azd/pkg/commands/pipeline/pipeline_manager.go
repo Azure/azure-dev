@@ -5,9 +5,11 @@ package pipeline
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
+	"os"
 	"time"
 
 	"github.com/azure/azure-dev/cli/azd/internal"
@@ -200,14 +202,25 @@ func (manager *PipelineManager) Configure(ctx context.Context) error {
 		// changed from "az-cli" to "az-dev"
 		manager.PipelineServicePrincipalName = fmt.Sprintf("az-dev-%s", time.Now().UTC().Format("01-02-2006-15-04-05"))
 	}
+
 	inputConsole.Message(ctx, fmt.Sprintf("Creating or updating service principal %s.\n", manager.PipelineServicePrincipalName))
-	credentials, err := azCli.CreateOrUpdateServicePrincipal(
-		ctx,
-		manager.Environment.GetSubscriptionId(),
-		manager.PipelineServicePrincipalName,
-		manager.PipelineRoleName)
-	if err != nil {
-		return fmt.Errorf("failed to create or update service principal: %w", err)
+	var credentials json.RawMessage = nil
+	var err error
+
+	existingSP := os.Getenv("AZD_EXISTING_SP")
+	if existingSP != "" {
+		credentials = json.RawMessage(existingSP)
+	}
+
+	if credentials == nil {
+		credentials, err = azCli.CreateOrUpdateServicePrincipal(
+			ctx,
+			manager.Environment.GetSubscriptionId(),
+			manager.PipelineServicePrincipalName,
+			manager.PipelineRoleName)
+		if err != nil {
+			return fmt.Errorf("failed to create or update service principal: %w", err)
+		}
 	}
 
 	// Get git repo details
@@ -239,14 +252,17 @@ func (manager *PipelineManager) Configure(ctx context.Context) error {
 		return err
 	}
 
-	// The CI pipeline should be set-up and ready at this point.
-	// azd offers to push changes to the scm to start a new pipeline run
-	doPush, err := inputConsole.Confirm(ctx, input.ConsoleOptions{
-		Message:      "Would you like to commit and push your local changes to start the configured CI pipeline?",
-		DefaultValue: true,
-	})
-	if err != nil {
-		return fmt.Errorf("prompting to push: %w", err)
+	var doPush bool = true
+	if existingSP == "" {
+		// The CI pipeline should be set-up and ready at this point.
+		// azd offers to push changes to the scm to start a new pipeline run
+		doPush, err = inputConsole.Confirm(ctx, input.ConsoleOptions{
+			Message:      "Would you like to commit and push your local changes to start the configured CI pipeline?",
+			DefaultValue: true,
+		})
+		if err != nil {
+			return fmt.Errorf("prompting to push: %w", err)
+		}
 	}
 
 	currentBranch, err := git.NewGitCli(ctx).GetCurrentBranch(ctx, manager.AzdCtx.ProjectDirectory())

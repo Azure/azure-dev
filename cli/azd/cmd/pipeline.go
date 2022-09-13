@@ -98,8 +98,12 @@ func (p *pipelineConfigAction) Run(
 	// Using GitHub by default for now. To be updated to either GitHub or Azdo.
 	// The CI provider might need to have a reference to the SCM provider if its implementation
 	// will depend on where is the SCM. For example, azdo support any SCM source.
-	p.manager.ScmProvider = &pipeline.GitHubScmProvider{}
-	p.manager.CiProvider = &pipeline.GitHubCiProvider{}
+	p.manager.ScmProvider = &pipeline.AzdoHubScmProvider{
+		Env: &env,
+	}
+	p.manager.CiProvider = &pipeline.AzdoCiProvider{
+		Env: &env,
+	}
 
 	// set context for manager
 	p.manager.AzdCtx = azdCtx

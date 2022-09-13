@@ -15,6 +15,7 @@ require (
 	github.com/mattn/go-colorable v0.1.12
 	github.com/mattn/go-isatty v0.0.14
 	github.com/microsoft/ApplicationInsights-Go v0.4.4
+	github.com/microsoft/azure-devops-go-api/azuredevops v1.0.0-b5
 	github.com/otiai10/copy v1.7.0
 	github.com/pbnj/go-open v0.1.1
 	github.com/sethvargo/go-retry v0.2.3

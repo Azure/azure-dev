@@ -95,6 +95,7 @@ ignoreWords:
     - aztfmod
     - menuid
     - PLACEHOLDERIACTOOLS
+    - Azdo
 useGitignore: true
 dictionaryDefinitions:
     - name: gitHubUserAliases

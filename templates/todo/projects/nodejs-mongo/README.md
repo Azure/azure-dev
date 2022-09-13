@@ -26,6 +26,7 @@ The following prerequisites are required to use this application. Please ensure 
 - [Azure CLI (2.38.0+)](https://docs.microsoft.com/cli/azure/install-azure-cli)
 - [Node.js with npm (16.13.1+)](https://nodejs.org/) - for API backend and Web frontend
 - [Git (2.36.1+)](https://git-scm.com/)
+PLACEHOLDERIACTOOLS
 
 ### Quickstart
 

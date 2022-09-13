@@ -1,0 +1,202 @@
+templateApi: 1.0.0
+metadata:
+  type: repo
+  name: todo-nodejs-mongo-aks
+  description: ToDo Application with a Node.js API and Azure Cosmos DB API for MongoDB hosted in AKS
+
+repo:
+  includeProjectAssets: false
+
+  remotes:
+    - name: wbreza-main
+      url: git@github.com:wbreza/todo-nodejs-mongo-aks.git
+    - name: wbreza-staging
+      url: git@github.com:wbreza/todo-nodejs-mongo-aks.git
+      branch: staging
+
+  rewrite:
+    rules:
+      - from: ../../../../../../common/infra/bicep/core
+        to: ./core
+        patterns:
+          - "**/*.bicep"
+
+      - from: ../../../../../common/infra/bicep/app
+        to: ./app
+        patterns:
+          - "**/*.bicep"
+
+      - from: ../../../../../common/infra/bicep/core
+        to: ../core
+        patterns:
+          - "**/*.bicep"
+
+      - from: ../../../../../common/infra/shared/gateway/apim
+        to: ./
+        patterns:
+          - apim-api.bicep
+
+      # app service modules
+      - from: ../../../../../../common/infra/bicep
+        to: ../
+        patterns:
+          - "**/*.bicep"
+        ignore:
+          - "**/main.bicep"
+
+      # main.bicep
+      - from: ../../../../../../common/infra/bicep
+        to: ./
+        patterns:
+          - "**/main.bicep"
+
+      - from: ../../api/js
+        to: ./src/api
+        patterns:
+          - "**/azure.@(yml|yaml)"
+
+      - from: ../../web/react-fluent
+        to: ./src/web
+        patterns:
+          - "**/azure.@(yml|yaml)"
+
+      - from: web-appservice.bicep
+        to: web.bicep
+        patterns:
+          - "**/main.bicep"
+
+      - from: api-appservice-node.bicep
+        to: api.bicep
+        patterns:
+          - "**/main.bicep"
+
+      - from: cosmos-mongo-db.bicep
+        to: db.bicep
+        patterns:
+          - "**/main.bicep"
+
+      - from: "PLACEHOLDERIACTOOLS"
+        to: ""
+        patterns:
+          - "README.md"
+
+      - from: "PLACEHOLDER_TITLE"
+        to: "ToDo Application with a Node.js API and Azure Cosmos DB API for MongoDB on Azure App Service"
+        patterns:
+          - "README.md"
+
+      - from: "PLACEHOLDER_DESCRIPTION"
+        to: "using Bicep as the IaC provider"
+        patterns:
+          - "README.md"
+
+      - from: ../../../../api/common/openapi.yaml
+        to: ../../src/api/openapi.yaml
+        patterns:
+          - "apim-api.bicep"
+
+  assets:
+    # Common assets
+
+    # Infra
+    - from: ./infra/
+      to: ./infra
+
+    - from: ../../../../common/infra/bicep/app/web-appservice.bicep
+      to: ./infra/app/web.bicep
+
+    - from: ../../../../common/infra/bicep/app/api-appservice-node.bicep
+      to: ./infra/app/api.bicep
+
+    - from: ../../../../common/infra/bicep/app/apim-api.bicep
+      to: ./infra/app/apim-api.bicep
+
+    - from: ../../../../../common/infra/shared/gateway/apim/apim-api-policy.xml
+      to: ./infra/app/apim-api-policy.xml
+
+    - from: ../../../../common/infra/bicep/app/cosmos-mongo-db.bicep
+      to: ./infra/app/db.bicep
+
+    - from: ./../../
+      to: ./
+      ignore:
+        - ".repo/**/*"
+        - "repo.y[a]ml"
+        - "azure.y[a]ml"
+
+    # openapi.yaml to root
+    - from: ../../../../api/common
+      to: ./
+      patterns:
+        - openapi.yaml
+
+    # openapi.yaml to api root
+    - from: ../../../../api/common
+      to: ./src/api
+      patterns:
+        - openapi.yaml
+
+    # Templates common
+    - from: ../../../../../common
+      to: ./
+      ignore:
+        - .github/**/*
+        - .devcontainer/**/*
+        - "infra/**/*"
+        - .azdo/pipelines/*/azure-dev.yml
+
+    # AzDo workflows for bicep
+    - from: ../../../../../common/.azdo/pipelines/bicep/azure-dev.yml
+      to: ./.azdo/pipelines/azure-dev.yml
+
+    # Github workflows for bicep
+    - from: ../../../../../common/.github/workflows/bicep
+      to: ./.github/workflows
+
+    # azd core modules
+    - from: ../../../../../common/infra/bicep
+      to: ./infra
+
+    # .devcontainer common (devcontainer.json)
+    - from: ../../../../../common/.devcontainer/devcontainer.json/nodejs/devcontainer.json
+      to: ./.devcontainer/devcontainer.json
+
+    # .devcontainer common (Dockerfile)
+    - from: ../../../../../common/.devcontainer/Dockerfile/base
+      to: ./.devcontainer
+
+    # Assets common
+    - from: ../../../../common/assets
+      to: ./assets
+
+    # Tests common
+    - from: ../../../../common/tests
+      to: ./tests
+
+    # Auth JS common
+    - from: ../../../../common/auth/js
+      to: ./src/api/src
+
+    # Node JS API
+    - from: ../../../../api/js
+      to: ./src/api
+      ignore:
+        - "dist/**/*"
+        - "coverage/**/*"
+        - "node_modules/**/*"
+        - "**/*.log"
+
+    # React Frontend
+    - from: ../../../../web/react-fluent
+      to: ./src/web
+      ignore:
+        - "build/**/*"
+        - "node_modules/**/*"
+
+    # Infra
+    - from: ./infra/
+      to: ./infra
+
+    # Azure.yml
+    - from: ./azure.yaml
+      to: ./azure.yaml

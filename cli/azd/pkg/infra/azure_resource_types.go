@@ -25,6 +25,8 @@ const (
 	AzureResourceTypeResourceGroup           AzureResourceType = "Microsoft.Resources/resourceGroups"
 	AzureResourceTypeStorageAccount          AzureResourceType = "Microsoft.Storage/storageAccounts"
 	AzureResourceTypeStaticWebSite           AzureResourceType = "Microsoft.Web/staticSites"
+	AzureResourceTypeContainerRegistry       AzureResourceType = "Microsoft.ContainerRegistry/registries"
+	AzureResourceTypeManagedCluster          AzureResourceType = "Microsoft.ContainerService/managedClusters"
 	AzureResourceTypeServicePlan             AzureResourceType = "Microsoft.Web/serverfarms"
 	AzureResourceTypeSqlServer               AzureResourceType = "Microsoft.Sql/servers"
 	AzureResourceTypeVirtualNetwork          AzureResourceType = "Microsoft.Network/virtualNetworks"
@@ -78,6 +80,10 @@ func GetResourceTypeDisplayName(resourceType AzureResourceType) string {
 		return "Load Tests"
 	case AzureResourceTypeVirtualNetwork:
 		return "Virtual Network"
+	case AzureResourceTypeContainerRegistry:
+		return "Container Registry"
+	case AzureResourceTypeManagedCluster:
+		return "AKS Managed Cluster"
 	}
 
 	return ""

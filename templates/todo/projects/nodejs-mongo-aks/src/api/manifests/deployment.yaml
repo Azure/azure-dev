@@ -1,0 +1,34 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: todo-api
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: todo-api
+  template:
+    metadata:
+      labels:
+        app: todo-api
+    spec:
+      containers:
+        - name: todo-api
+          image: crppnnadqdq7owqmxjqvwcid425o.azurecr.io/todo-nodejs-mongo-aks/api:latest
+          ports:
+            - containerPort: 3100
+          env:
+            - name: AZURE_CLIENT_ID
+              value: 8111defe-2f69-4893-b025-ffeaea359c4a
+            - name: AZURE_KEY_VAULT_ENDPOINT
+              valueFrom:
+                secretKeyRef:
+                  name: azd
+                  key: AZURE_KEY_VAULT_ENDPOINT
+                  optional: false
+            - name: APPLICATIONINSIGHTS_CONNECTION_STRING
+              valueFrom:
+                secretKeyRef:
+                  name: azd
+                  key: APPLICATIONINSIGHTS_CONNECTION_STRING
+                  optional: false

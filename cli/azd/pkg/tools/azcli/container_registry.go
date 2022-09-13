@@ -7,7 +7,6 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerregistry/armcontainerregistry"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
-	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/docker"
 	"golang.org/x/exp/slices"
 )
@@ -37,7 +36,7 @@ func (cli *azCli) GetContainerRegistries(
 }
 
 func (cli *azCli) LoginAcr(ctx context.Context,
-	commandRunner exec.CommandRunner, subscriptionId string, loginServer string,
+	dockerCli docker.Docker, subscriptionId string, loginServer string,
 ) error {
 	client, err := cli.createRegistriesClient(ctx, subscriptionId)
 	if err != nil {
@@ -62,7 +61,6 @@ func (cli *azCli) LoginAcr(ctx context.Context,
 	username := *credResponse.Username
 
 	// Login to docker with ACR credentials to allow push operations
-	dockerCli := docker.NewDocker(commandRunner)
 	err = dockerCli.Login(ctx, loginServer, username, *credResponse.Passwords[0].Value)
 	if err != nil {
 		return fmt.Errorf("failed logging into docker for username '%s' and server %s: %w", loginServer, username, err)

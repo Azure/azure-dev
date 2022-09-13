@@ -31,7 +31,7 @@ type containerAppTarget struct {
 	env            *environment.Environment
 	resource       *environment.TargetResource
 	cli            azcli.AzCli
-	docker         *docker.Docker
+	docker        docker.Docker
 	console        input.Console
 	commandRunner  exec.CommandRunner
 	accountManager account.Manager
@@ -70,7 +70,7 @@ func (at *containerAppTarget) Deploy(
 	log.Printf("logging into registry %s", loginServer)
 
 	progress <- "Logging into container registry"
-	if err := at.cli.LoginAcr(ctx, at.commandRunner, at.env.GetSubscriptionId(), loginServer); err != nil {
+	if err := at.cli.LoginAcr(ctx, at.docker, at.env.GetSubscriptionId(), loginServer); err != nil {
 		return ServiceDeploymentResult{}, fmt.Errorf("logging into registry '%s': %w", loginServer, err)
 	}
 
@@ -234,7 +234,7 @@ func NewContainerAppTarget(
 	env *environment.Environment,
 	resource *environment.TargetResource,
 	azCli azcli.AzCli,
-	docker *docker.Docker,
+	docker docker.Docker,
 	console input.Console,
 	commandRunner exec.CommandRunner,
 	accountManager account.Manager,

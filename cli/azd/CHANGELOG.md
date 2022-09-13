@@ -4,7 +4,7 @@
 
 ### Features Added
 
-- [[#226]](https://github.com/Azure/azure-dev/issues/226) Added support for Terraform for infrastructure as code (IaC), plus a new Terraform template for Python workloads.
+- [[#226]](https://github.com/Azure/azure-dev/issues/226) Added support for Terraform for infrastructure as code (IaC), plus new Terraform templates for Python and Node.js workloads.
 - [[#450]](https://github.com/Azure/azure-dev/issues/450) New C# + Azure SQL Template.
 
 ### Breaking Changes

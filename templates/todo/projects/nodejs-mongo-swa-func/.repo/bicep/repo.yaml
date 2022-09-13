@@ -5,7 +5,7 @@ metadata:
   description: ToDo Application with a Node.js API and Azure Cosmos DB API for MongoDB on Static Web App and Functions
 
 repo:
-  includeProjectAssets: true
+  includeProjectAssets: false
 
   remotes:
     - name: azure-samples-main

@@ -5,7 +5,7 @@ metadata:
   description: ToDo Application with a Python API and Azure Cosmos DB API for MongoDB
 
 repo:
-  includeProjectAssets: true
+  includeProjectAssets: false
 
   remotes:
     - name: azure-samples-main

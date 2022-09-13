@@ -5,7 +5,7 @@ metadata:
   description: ToDo Application with a Node.js API and Azure Cosmos DB API for MongoDB on Azure Container Apps
 
 repo:
-  includeProjectAssets: true
+  includeProjectAssets: false
 
   remotes:
     - name: azure-samples-main
@@ -125,8 +125,16 @@ repo:
     - from: ../../../../../common
       to: ./
       ignore:
+        - .github/**/*
         - .devcontainer/**/*
         - "infra/**/*"
+
+    # Github workflows for bicep
+    - from: ../../../common/.github/workflows/bicep
+      to: ./.github/workflows
+
+    - from: ../../../common/infra/bicep
+      to: ./infra
 
     # .devcontainer common (devcontainer.json)
     - from: ../../../../../common/.devcontainer/devcontainer.json/nodejs

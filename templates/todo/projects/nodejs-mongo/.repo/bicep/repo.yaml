@@ -5,7 +5,7 @@ metadata:
   description: ToDo Application with a Node.js API and Azure Cosmos DB API for MongoDB
 
 repo:
-  includeProjectAssets: true
+  includeProjectAssets: false
 
   remotes:
     - name: azure-samples-main
@@ -71,8 +71,8 @@ repo:
           - "**/resources.bicep"
 
   assets:
-    # # Common assets
-
+    # Common assets
+    
     # Infra
     - from: ./infra/
       to: ./infra
@@ -89,23 +89,23 @@ repo:
     - from: ../../../../common/infra/bicep/app/cosmos-mongo.bicep
       to: ./infra/app/db.bicep
 
-      - from: "PLACEHOLDERIACTOOLS"
-        to: ""
-        patterns:
-          - "README.md"
-      
-      - from: "PLACEHOLDER_TITLE"
-        to: "ToDo Application with a Node.js API and Azure Cosmos DB API for MongoDB on Azure App Service"
-        patterns:
-          - "README.md"
-      
-      - from: "PLACEHOLDER_DESCRIPTION"
-        to: "using Bicep as the IaC provider"
-        patterns:
-          - "README.md"
 
-  assets:
-    # Common assets
+    - from: "PLACEHOLDERIACTOOLS"
+      to: ""
+      patterns:
+        - "README.md"
+    
+    - from: "PLACEHOLDER_TITLE"
+      to: "ToDo Application with a Node.js API and Azure Cosmos DB API for MongoDB on Azure App Service"
+      patterns:
+        - "README.md"
+    
+    - from: "PLACEHOLDER_DESCRIPTION"
+      to: "using Bicep as the IaC provider"
+      patterns:
+        - "README.md"
+
+  
     - from: ./../../
       to: ./
       ignore:

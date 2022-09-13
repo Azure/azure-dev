@@ -5,7 +5,7 @@ metadata:
   description: To Do application with a ReactJS frontend, C# API, and Cosmos DB.
 
 repo:
-  includeProjectAssets: true
+  includeProjectAssets: false
 
   remotes:
     - name: azure-samples-main
@@ -71,7 +71,7 @@ repo:
           - "**/resources.bicep"
 
   assets:
-    # # Common assets
+    # Common assets
 
     # Infra
     - from: ./infra/
@@ -112,8 +112,16 @@ repo:
     - from: ../../../../../common
       to: ./
       ignore:
+        - .github/**/*
         - .devcontainer/**/*
         - "infra/**/*"
+
+    # Github workflows for bicep
+    - from: ../../../common/.github/workflows/bicep
+      to: ./.github/workflows
+
+    - from: ../../../common/infra/bicep
+      to: ./infra
 
     # .devcontainer common (devcontainer.json)
     - from: ../../../../../common/.devcontainer/devcontainer.json/csharp

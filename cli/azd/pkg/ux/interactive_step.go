@@ -7,12 +7,17 @@ import (
 
 type interactiveStep struct {
 	stepFn StepFn
+	indent string
 }
 
 func NewInteractiveStep(stepFn StepFn) Step {
 	return &interactiveStep{
 		stepFn: stepFn,
 	}
+}
+
+func (s *interactiveStep) SetIndent(value string) {
+	s.indent = value
 }
 
 func (s *interactiveStep) ContinueOnError() bool {

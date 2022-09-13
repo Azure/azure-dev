@@ -11,6 +11,7 @@ import (
 
 	"github.com/AlecAivazis/survey/v2"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
+	"github.com/fatih/color"
 )
 
 type Console interface {
@@ -24,6 +25,8 @@ type Console interface {
 	Confirm(ctx context.Context, options ConsoleOptions) (bool, error)
 	// Sets the underlying writer for the console
 	SetWriter(writer io.Writer)
+	// Sets the indentation used for output
+	SetIndentation(indentation string)
 }
 
 type AskerConsole struct {
@@ -31,12 +34,15 @@ type AskerConsole struct {
 	asker       Asker
 	writer      io.Writer
 	formatter   output.Formatter
+	indentation string
+	options     []survey.AskOpt
 }
 
 type ConsoleOptions struct {
 	Message      string
 	Options      []string
 	DefaultValue any
+	Help         string
 }
 
 // Sets the underlying writer for the console
@@ -50,6 +56,10 @@ func (c *AskerConsole) SetWriter(writer io.Writer) {
 
 // Prints out a message to the underlying console write
 func (c *AskerConsole) Message(ctx context.Context, message string) {
+	if c.indentation != "" {
+		message = c.indentation + message
+	}
+
 	// Only write to the console during interactive & non-formatted responses.
 	if c.interactive && (c.formatter == nil || c.formatter.Kind() == output.NoneFormat) {
 		fmt.Fprintln(c.writer, message)
@@ -68,11 +78,12 @@ func (c *AskerConsole) Prompt(ctx context.Context, options ConsoleOptions) (stri
 	survey := &survey.Input{
 		Message: options.Message,
 		Default: defaultValue,
+		Help:    options.Help,
 	}
 
 	var response string
 
-	if err := c.asker(survey, &response); err != nil {
+	if err := c.asker(survey, c.options, &response); err != nil {
 		return "", err
 	}
 
@@ -85,11 +96,12 @@ func (c *AskerConsole) Select(ctx context.Context, options ConsoleOptions) (int,
 		Message: options.Message,
 		Options: options.Options,
 		Default: options.DefaultValue,
+		Help:    options.Help,
 	}
 
 	var response int
 
-	if err := c.asker(survey, &response); err != nil {
+	if err := c.asker(survey, c.options, &response); err != nil {
 		return -1, err
 	}
 
@@ -106,11 +118,12 @@ func (c *AskerConsole) Confirm(ctx context.Context, options ConsoleOptions) (boo
 	survey := &survey.Confirm{
 		Message: options.Message,
 		Default: defaultValue,
+		Help:    options.Help,
 	}
 
 	var response bool
 
-	if err := c.asker(survey, &response); err != nil {
+	if err := c.asker(survey, c.options, &response); err != nil {
 		return false, err
 	}
 
@@ -122,6 +135,15 @@ func (c *AskerConsole) Writer() io.Writer {
 	return c.writer
 }
 
+func (c *AskerConsole) SetIndentation(indentation string) {
+	c.indentation = indentation
+	c.options = append(c.options, survey.WithIcons(func(icons *survey.IconSet) {
+		icons.Question.Text = fmt.Sprintf("%s%s", indentation, color.CyanString(icons.Question.Text))
+		icons.UnmarkedOption.Text = fmt.Sprintf("%s%s", indentation, color.CyanString(icons.UnmarkedOption.Text))
+		icons.MarkedOption.Text = fmt.Sprintf("%s%s", indentation, color.CyanString(icons.MarkedOption.Text))
+	}))
+}
+
 // Creates a new console with the specified writer and formatter
 func NewConsole(interactive bool, writer io.Writer, formatter output.Formatter) Console {
 	asker := NewAsker(!interactive)
@@ -131,6 +153,7 @@ func NewConsole(interactive bool, writer io.Writer, formatter output.Formatter) 
 		asker:       asker,
 		writer:      writer,
 		formatter:   formatter,
+		options:     []survey.AskOpt{},
 	}
 }
 

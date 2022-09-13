@@ -13,4 +13,6 @@ type Step interface {
 	Execute(ctx context.Context, stepCtx StepContext) error
 	// Whether or not the step should fail the whole action
 	ContinueOnError() bool
+	// Sets the indent for the step
+	SetIndent(value string)
 }

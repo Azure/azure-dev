@@ -27,6 +27,10 @@ func (c *MockConsole) SetWriter(writer io.Writer) {
 
 }
 
+func (c *MockConsole) SetIndentation(value string) {
+
+}
+
 func (c *MockConsole) Output() []string {
 	return c.log
 }

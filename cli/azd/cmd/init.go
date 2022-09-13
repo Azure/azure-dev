@@ -72,10 +72,15 @@ func (i *initAction) SetupFlags(
 
 func (i *initAction) Run(ctx context.Context, cmd *cobra.Command, args []string, azdCtx *azdcontext.AzdContext) error {
 	console := input.GetConsole(ctx)
+	// console.Confirm(ctx, input.ConsoleOptions{
+	// 	Message:      "Ready?",
+	// 	DefaultValue: true,
+	// })
 
-	ux.NewActionPrinter().
+	err := ux.NewActionPrinter(output.GetDefaultWriter()).
 		Title("Initializing your project (init)").
 		Description("This will initialize your project and environment stuff").
+		Indent("   ").
 		AddStep(ux.NewProgressStep("Doing thing 1", "Initializing", func(ctx context.Context, stepCtx ux.StepContext, progress *ux.Progress) error {
 			progress.Message("Step 1")
 			time.Sleep(1 * time.Second)
@@ -120,10 +125,28 @@ func (i *initAction) Run(ctx context.Context, cmd *cobra.Command, args []string,
 			return nil
 		})).
 		AddStep(ux.NewInteractiveStep(func(ctx context.Context, stepCtx ux.StepContext) error {
+			console := input.GetConsole(ctx)
+			console.Message(ctx, "This message is written from inside a step.")
+			console.Message(ctx, "")
+
+			console.Prompt(ctx, input.ConsoleOptions{
+				Message:      "Enter a value",
+				DefaultValue: "Default",
+				Help:         "help",
+			})
+
+			console.Select(ctx, input.ConsoleOptions{
+				Message:      "Select an option from the list",
+				Options:      []string{"Option 1", "Option 2", "Option 3"},
+				DefaultValue: "Option 1",
+				Help:         "help",
+			})
+
 			userValue, _ := console.Confirm(ctx,
 				input.ConsoleOptions{
 					Message:      "Should next step fail?",
 					DefaultValue: false,
+					Help:         "help",
 				})
 
 			stepCtx.SetValue("fail", userValue)
@@ -163,6 +186,10 @@ func (i *initAction) Run(ctx context.Context, cmd *cobra.Command, args []string,
 			fmt.Println(err.Error())
 		}).
 		Run(ctx)
+
+	if err != nil {
+		return err
+	}
 
 	return nil
 

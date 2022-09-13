@@ -15,7 +15,7 @@ import (
 	"github.com/mattn/go-isatty"
 )
 
-type Asker func(p survey.Prompt, response interface{}) error
+type Asker func(p survey.Prompt, options []survey.AskOpt, response interface{}) error
 
 func NewAsker(noPrompt bool) Asker {
 	if noPrompt {
@@ -25,7 +25,7 @@ func NewAsker(noPrompt bool) Asker {
 	return askOnePrompt
 }
 
-func askOneNoPrompt(p survey.Prompt, response interface{}) error {
+func askOneNoPrompt(p survey.Prompt, opts []survey.AskOpt, response interface{}) error {
 	switch v := p.(type) {
 	case *survey.Input:
 		if v.Default == "" {
@@ -70,7 +70,7 @@ func withShowCursor(o *survey.AskOptions) error {
 	return nil
 }
 
-func askOnePrompt(p survey.Prompt, response interface{}) error {
+func askOnePrompt(p survey.Prompt, opts []survey.AskOpt, response interface{}) error {
 	// Like (*bufio.Reader).ReadString(byte) except that it does not buffer input from the input stream.
 	// instead, it reads a byte at a time until a delimiter is found, without consuming any extra characters.
 	readStringNoBuffer := func(r io.Reader, delim byte) (string, error) {
@@ -91,8 +91,6 @@ func askOnePrompt(p survey.Prompt, response interface{}) error {
 	}
 
 	if isatty.IsTerminal(os.Stdin.Fd()) && isatty.IsTerminal(os.Stdout.Fd()) && os.Getenv("AZD_DEBUG_FORCE_NO_TTY") != "1" {
-		opts := []survey.AskOpt{}
-
 		// When asking a question which requires a text response, show the cursor, it helps
 		// users understand we need some input.
 		if _, ok := p.(*survey.Input); ok {

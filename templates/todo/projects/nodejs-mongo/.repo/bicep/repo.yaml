@@ -20,7 +20,7 @@ repo:
         to: ./
         patterns:
           - "**/*.bicep"
-      
+
       - from: ../../api/js
         to: ./src/api
         patterns:
@@ -35,7 +35,7 @@ repo:
     # Common assets
     - from: ./../../
       to: ./
-      ignore: 
+      ignore:
         - ".repo/**/*"
         - "repo.y[a]ml"
         - "azure.y[a]ml"
@@ -61,9 +61,9 @@ repo:
         - "infra/**/*"
 
     # Github workflows for bicep
-    - from: ../../../common/.github/workflows/bicep
+    - from: ../../../../../common/.github/workflows/bicep
       to: ./.github/workflows
-    
+
     - from: ../../../../../common/infra/bicep
       to: ./infra
 
@@ -99,7 +99,7 @@ repo:
         - "build/**/*"
         - "node_modules/**/*"
 
-    # Infra 
+    # Infra
     - from: ./infra/
       to: ./infra
 

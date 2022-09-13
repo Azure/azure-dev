@@ -23,19 +23,6 @@ jobs:
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-      - name: Azure Dev Configure Environment
-        run: |
-          azd env set RS_RESOURCE_GROUP $RS_RESOURCE_GROUP
-          azd env set RS_STORAGE_ACCOUNT $RS_STORAGE_ACCOUNT
-          azd env set RS_CONTAINER_NAME $RS_CONTAINER_NAME
-        env:
-          AZURE_ENV_NAME: ${{ secrets.AZURE_ENV_NAME }}
-          AZURE_LOCATION: ${{ secrets.AZURE_LOCATION }}
-          AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-          RS_RESOURCE_GROUP: ${{ secrets.RS_RESOURCE_GROUP }}
-          RS_STORAGE_ACCOUNT: ${{ secrets.RS_STORAGE_ACCOUNT }}
-          RS_CONTAINER_NAME: ${{ secrets.RS_CONTAINER_NAME }}
-
       - name: Azure Dev Provision
         run: azd provision --no-prompt
         env:
@@ -45,6 +32,9 @@ jobs:
           ARM_TENANT_ID: ${{ secrets.ARM_TENANT_ID }}
           ARM_CLIENT_ID: ${{ secrets.ARM_CLIENT_ID }}
           ARM_CLIENT_SECRET: ${{ secrets.ARM_CLIENT_SECRET }}
+          RS_RESOURCE_GROUP: ${{ secrets.RS_RESOURCE_GROUP }}
+          RS_STORAGE_ACCOUNT: ${{ secrets.RS_STORAGE_ACCOUNT }}
+          RS_CONTAINER_NAME: ${{ secrets.RS_CONTAINER_NAME }}
 
       - name: Azure Dev Deploy
         run: azd deploy --no-prompt

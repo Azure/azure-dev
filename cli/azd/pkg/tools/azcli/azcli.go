@@ -26,6 +26,7 @@ import (
 
 var (
 	ErrAzCliNotLoggedIn          = errors.New("cli is not logged in. Try running \"azd login\" to fix")
+	ErrAzCliNotProperLoggedIn    = errors.New("az cli is not properly logged in. See more here: https://github.com/Azure/azure-dev/issues/197")
 	ErrAzCliRefreshTokenExpired  = errors.New("refresh token has expired. Try running \"azd login\" to fix")
 	ErrCurrentPrincipalIsNotUser = errors.New("current principal is not a user principal")
 	ErrClientAssertionExpired    = errors.New("client assertion expired")
@@ -437,6 +438,8 @@ func (cli *azCli) ListAccounts(ctx context.Context) ([]AzCliSubscriptionInfo, er
 
 	if isNotLoggedInMessage(res.Stderr) {
 		return []AzCliSubscriptionInfo{}, ErrAzCliNotLoggedIn
+	} else if isNotProperLoggedInMessage(res.Stderr) {
+		return []AzCliSubscriptionInfo{}, ErrAzCliNotProperLoggedIn
 	} else if err != nil {
 		return nil, fmt.Errorf("failed running az account list: %s: %w", res.String(), err)
 	}
@@ -466,6 +469,8 @@ func (cli *azCli) GetSubscriptionTenant(ctx context.Context, subscriptionId stri
 	res, err := cli.runAzCommand(ctx, "account", "show", "--subscription", subscriptionId, "--query", "tenantId", "--output", "json")
 	if isNotLoggedInMessage(res.Stderr) {
 		return "", ErrAzCliNotLoggedIn
+	} else if isNotProperLoggedInMessage(res.Stderr) {
+		return "", ErrAzCliNotProperLoggedIn
 	} else if err != nil {
 		return "", fmt.Errorf("failed running az account show: %s: %w", res.String(), err)
 	}
@@ -526,6 +531,8 @@ func (cli *azCli) DeployAppServiceZip(ctx context.Context, subscriptionId string
 	res, err := cli.runAzCommand(ctx, "webapp", "deployment", "source", "config-zip", "--subscription", subscriptionId, "--resource-group", resourceGroup, "--name", appName, "--src", deployZipPath, "--timeout", "3600", "--output", "json")
 	if isNotLoggedInMessage(res.Stderr) {
 		return "", ErrAzCliNotLoggedIn
+	} else if isNotProperLoggedInMessage(res.Stderr) {
+		return "", ErrAzCliNotProperLoggedIn
 	} else if err != nil {
 		return "", fmt.Errorf("failed running az deployment source config-zip: %s: %w", res.String(), err)
 	}
@@ -559,6 +566,8 @@ func (cli *azCli) GetAppServiceProperties(ctx context.Context, subscriptionId st
 	res, err := cli.runAzCommand(ctx, "webapp", "show", "--subscription", subscriptionId, "--resource-group", resourceGroup, "--name", appName, "--output", "json")
 	if isNotLoggedInMessage(res.Stderr) {
 		return AzCliAppServiceProperties{}, ErrAzCliNotLoggedIn
+	} else if isNotProperLoggedInMessage(res.Stderr) {
+		return AzCliAppServiceProperties{}, ErrAzCliNotProperLoggedIn
 	} else if err != nil {
 		return AzCliAppServiceProperties{}, fmt.Errorf("failed running az webapp show: %s: %w", res.String(), err)
 	}
@@ -575,6 +584,8 @@ func (cli *azCli) GetContainerAppProperties(ctx context.Context, subscriptionId,
 	res, err := cli.runAzCommand(ctx, "resource", "show", "--subscription", subscriptionId, "--resource-group", resourceGroup, "--name", appName, "--resource-type", "Microsoft.App/containerApps", "--output", "json")
 	if isNotLoggedInMessage(res.Stderr) {
 		return AzCliContainerAppProperties{}, ErrAzCliNotLoggedIn
+	} else if isNotProperLoggedInMessage(res.Stderr) {
+		return AzCliContainerAppProperties{}, ErrAzCliNotProperLoggedIn
 	} else if err != nil {
 		return AzCliContainerAppProperties{}, fmt.Errorf("failed running az resource show: %s: %w", res.String(), err)
 	}
@@ -684,6 +695,8 @@ func (cli *azCli) DeployToSubscription(ctx context.Context, subscriptionId strin
 	res, err := cli.runAzCommand(ctx, "deployment", "sub", "create", "--subscription", subscriptionId, "--name", deploymentName, "--location", location, "--template-file", templateFile, "--parameters", fmt.Sprintf("@%s", parametersFile), "--output", "json")
 	if isNotLoggedInMessage(res.Stderr) {
 		return AzCliDeploymentResult{}, ErrAzCliNotLoggedIn
+	} else if isNotProperLoggedInMessage(res.Stderr) {
+		return AzCliDeploymentResult{}, ErrAzCliNotProperLoggedIn
 	} else if err != nil {
 		if isDeploymentError(res.Stderr) {
 			deploymentErrorJson := getDeploymentErrorJson(res.Stderr)
@@ -705,6 +718,8 @@ func (cli *azCli) DeployToResourceGroup(ctx context.Context, subscriptionId stri
 	res, err := cli.runAzCommand(ctx, "deployment", "group", "create", "--subscription", subscriptionId, "--resource-group", resourceGroup, "--name", deploymentName, "--template-file", templateFile, "--parameters", fmt.Sprintf("@%s", parametersFile), "--output", "json")
 	if isNotLoggedInMessage(res.Stderr) {
 		return AzCliDeploymentResult{}, ErrAzCliNotLoggedIn
+	} else if isNotProperLoggedInMessage(res.Stderr) {
+		return AzCliDeploymentResult{}, ErrAzCliNotProperLoggedIn
 	} else if err != nil {
 		if isDeploymentError(res.Stderr) {
 			deploymentErrorJson := getDeploymentErrorJson(res.Stderr)
@@ -726,6 +741,8 @@ func (cli *azCli) DeleteSubscriptionDeployment(ctx context.Context, subscription
 	res, err := cli.runAzCommand(ctx, "deployment", "sub", "delete", "--subscription", subscriptionId, "--name", deploymentName, "--output", "json")
 	if isNotLoggedInMessage(res.Stderr) {
 		return ErrAzCliNotLoggedIn
+	} else if isNotProperLoggedInMessage(res.Stderr) {
+		return ErrAzCliNotProperLoggedIn
 	} else if err != nil {
 		return fmt.Errorf("failed running az deployment sub delete: %s: %w", res.String(), err)
 	}
@@ -737,6 +754,8 @@ func (cli *azCli) DeleteResourceGroup(ctx context.Context, subscriptionId string
 	res, err := cli.runAzCommand(ctx, "group", "delete", "--subscription", subscriptionId, "--name", resourceGroupName, "--yes", "--output", "json")
 	if isNotLoggedInMessage(res.Stderr) {
 		return ErrAzCliNotLoggedIn
+	} else if isNotProperLoggedInMessage(res.Stderr) {
+		return ErrAzCliNotProperLoggedIn
 	} else if err != nil {
 		return fmt.Errorf("failed running az group delete: %s: %w", res.String(), err)
 	}
@@ -759,6 +778,8 @@ func (cli *azCli) ListResourceGroup(ctx context.Context, subscriptionId string, 
 	res, err := cli.runAzCommand(ctx, args...)
 	if isNotLoggedInMessage(res.Stderr) {
 		return nil, ErrAzCliNotLoggedIn
+	} else if isNotProperLoggedInMessage(res.Stderr) {
+		return nil, ErrAzCliNotProperLoggedIn
 	} else if err != nil {
 		return nil, fmt.Errorf("failed running az group list: %s: %w", res.String(), err)
 	}
@@ -782,6 +803,8 @@ func (cli *azCli) ListResourceGroupResources(ctx context.Context, subscriptionId
 
 	if isNotLoggedInMessage(res.Stderr) {
 		return nil, ErrAzCliNotLoggedIn
+	} else if isNotProperLoggedInMessage(res.Stderr) {
+		return nil, ErrAzCliNotProperLoggedIn
 	} else if err != nil {
 		return nil, fmt.Errorf("failed running az resource list: %s: %w", res.String(), err)
 	}
@@ -797,6 +820,8 @@ func (cli *azCli) GetResource(ctx context.Context, subscriptionId string, resour
 	res, err := cli.runAzCommand(ctx, "resource", "show", "--ids", resourceId, "--output", "json")
 	if isNotLoggedInMessage(res.Stderr) {
 		return AzCliResourceExtended{}, ErrAzCliNotLoggedIn
+	} else if isNotProperLoggedInMessage(res.Stderr) {
+		return AzCliResourceExtended{}, ErrAzCliNotProperLoggedIn
 	} else if err != nil {
 		return AzCliResourceExtended{}, fmt.Errorf("failed running az resource show --ids: %s: %w", res.String(), err)
 	}
@@ -814,6 +839,8 @@ func (cli *azCli) ListSubscriptionDeploymentOperations(ctx context.Context, subs
 	res, err := cli.runAzCommand(ctx, "deployment", "operation", "sub", "list", "--subscription", subscriptionId, "--name", deploymentName, "--output", "json")
 	if isNotLoggedInMessage(res.Stderr) {
 		return nil, ErrAzCliNotLoggedIn
+	} else if isNotProperLoggedInMessage(res.Stderr) {
+		return nil, ErrAzCliNotProperLoggedIn
 	} else if isDeploymentNotFoundMessage(res.Stderr) {
 		return nil, ErrDeploymentNotFound
 	} else if err != nil {
@@ -831,6 +858,8 @@ func (cli *azCli) ListResourceGroupDeploymentOperations(ctx context.Context, sub
 	res, err := cli.runAzCommand(ctx, "deployment", "operation", "group", "list", "--subscription", subscriptionId, "--resource-group", resourceGroupName, "--name", deploymentName, "--output", "json")
 	if isNotLoggedInMessage(res.Stderr) {
 		return nil, ErrAzCliNotLoggedIn
+	} else if isNotProperLoggedInMessage(res.Stderr) {
+		return nil, ErrAzCliNotProperLoggedIn
 	} else if isDeploymentNotFoundMessage(res.Stderr) {
 		return nil, ErrDeploymentNotFound
 	} else if err != nil {
@@ -848,6 +877,8 @@ func (cli *azCli) ListAccountLocations(ctx context.Context) ([]AzCliLocation, er
 	res, err := cli.runAzCommand(ctx, "account", "list-locations", "--query", "[?metadata.regionType == 'Physical']", "--output", "json")
 	if isNotLoggedInMessage(res.Stderr) {
 		return nil, ErrAzCliNotLoggedIn
+	} else if isNotProperLoggedInMessage(res.Stderr) {
+		return nil, ErrAzCliNotProperLoggedIn
 	} else if err != nil {
 		return nil, fmt.Errorf("failed running az account list-locations: %s: %w", res.String(), err)
 	}
@@ -863,6 +894,8 @@ func (cli *azCli) GetSubscriptionDeployment(ctx context.Context, subscriptionId 
 	res, err := cli.runAzCommand(ctx, "deployment", "sub", "show", "--subscription", subscriptionId, "--name", deploymentName, "--output", "json")
 	if isNotLoggedInMessage(res.Stderr) {
 		return AzCliDeployment{}, ErrAzCliNotLoggedIn
+	} else if isNotProperLoggedInMessage(res.Stderr) {
+		return AzCliDeployment{}, ErrAzCliNotProperLoggedIn
 	} else if isDeploymentNotFoundMessage(res.Stderr) {
 		return AzCliDeployment{}, ErrDeploymentNotFound
 	} else if err != nil {
@@ -880,6 +913,8 @@ func (cli *azCli) GetResourceGroupDeployment(ctx context.Context, subscriptionId
 	res, err := cli.runAzCommand(ctx, "deployment", "group", "show", "--subscription", subscriptionId, "--resource-group", resourceGroupName, "--name", deploymentName, "--output", "json")
 	if isNotLoggedInMessage(res.Stderr) {
 		return AzCliDeployment{}, ErrAzCliNotLoggedIn
+	} else if isNotProperLoggedInMessage(res.Stderr) {
+		return AzCliDeployment{}, ErrAzCliNotProperLoggedIn
 	} else if isDeploymentNotFoundMessage(res.Stderr) {
 		return AzCliDeployment{}, ErrDeploymentNotFound
 	} else if err != nil {
@@ -897,6 +932,8 @@ func (cli *azCli) GetSignedInUserId(ctx context.Context) (string, error) {
 	res, err := cli.runAzCommand(ctx, "ad", "signed-in-user", "show", "--query", "objectId", "--output", "json")
 	if isNotLoggedInMessage(res.Stderr) {
 		return "", ErrAzCliNotLoggedIn
+	} else if isNotProperLoggedInMessage(res.Stderr) {
+		return "", ErrAzCliNotProperLoggedIn
 	} else if isResourceSegmentMeNotFoundMessage(res.Stderr) {
 		return "", ErrCurrentPrincipalIsNotUser
 	} else if isClientAssertionInvalidMessage(res.Stderr) {
@@ -938,6 +975,8 @@ func (cli *azCli) CreateOrUpdateServicePrincipal(ctx context.Context, subscripti
 	res, err := cli.runAzCommand(ctx, "ad", "sp", "create-for-rbac", "--scopes", scopes, "--name", applicationName, "--role", roleName, "--output", "json")
 	if isNotLoggedInMessage(res.Stderr) {
 		return nil, ErrAzCliNotLoggedIn
+	} else if isNotProperLoggedInMessage(res.Stderr) {
+		return nil, ErrAzCliNotProperLoggedIn
 	} else if err != nil {
 		return nil, fmt.Errorf("failed running az ad sp create-for-rbac: %s: %w", res.String(), err)
 	}
@@ -975,6 +1014,8 @@ func (cli *azCli) GetAccessToken(ctx context.Context) (AzCliAccessToken, error) 
 	res, err := cli.runAzCommand(ctx, "account", "get-access-token", "--output", "json")
 	if isNotLoggedInMessage(res.Stderr) {
 		return AzCliAccessToken{}, ErrAzCliNotLoggedIn
+	} else if isNotProperLoggedInMessage(res.Stderr) {
+		return AzCliAccessToken{}, ErrAzCliNotProperLoggedIn
 	} else if isRefreshTokenExpiredMessage(res.Stderr) {
 		return AzCliAccessToken{}, ErrAzCliRefreshTokenExpired
 	} else if err != nil {
@@ -992,6 +1033,8 @@ func (cli *azCli) GetKeyVault(ctx context.Context, subscriptionId string, vaultN
 	res, err := cli.runAzCommand(ctx, "keyvault", "show", "--subscription", subscriptionId, "--name", vaultName, "--output", "json")
 	if isNotLoggedInMessage(res.Stderr) {
 		return AzCliKeyVault{}, ErrAzCliNotLoggedIn
+	} else if isNotProperLoggedInMessage(res.Stderr) {
+		return AzCliKeyVault{}, ErrAzCliNotProperLoggedIn
 	} else if err != nil {
 		return AzCliKeyVault{}, fmt.Errorf("failed running az keyvault show: %s: %w", res.String(), err)
 	}
@@ -1007,6 +1050,8 @@ func (cli *azCli) GetKeyVaultSecret(ctx context.Context, subscriptionId string, 
 	res, err := cli.runAzCommand(ctx, "keyvault", "secret", "show", "--subscription", subscriptionId, "--vault-name", vaultName, "--name", secretName, "--output", "json")
 	if isNotLoggedInMessage(res.Stderr) {
 		return AzCliKeyVaultSecret{}, ErrAzCliNotLoggedIn
+	} else if isNotProperLoggedInMessage(res.Stderr) {
+		return AzCliKeyVaultSecret{}, ErrAzCliNotProperLoggedIn
 	} else if isSecretNotFoundError(res.Stderr) {
 		return AzCliKeyVaultSecret{}, ErrAzCliSecretNotFound
 	} else if err != nil {
@@ -1024,6 +1069,8 @@ func (cli *azCli) PurgeKeyVault(ctx context.Context, subscriptionId string, vaul
 	res, err := cli.runAzCommand(ctx, "keyvault", "purge", "--subscription", subscriptionId, "--name", vaultName, "--output", "json")
 	if isNotLoggedInMessage(res.Stderr) {
 		return ErrAzCliNotLoggedIn
+	} else if isNotProperLoggedInMessage(res.Stderr) {
+		return ErrAzCliNotProperLoggedIn
 	} else if err != nil {
 		return fmt.Errorf("failed running az keyvault purge: %s: %w", res.String(), err)
 	}
@@ -1075,6 +1122,8 @@ func (cli *azCli) GraphQuery(ctx context.Context, query string, subscriptions []
 
 	if isNotLoggedInMessage(responseText) {
 		return nil, ErrAzCliNotLoggedIn
+	} else if isNotProperLoggedInMessage(responseText) {
+		return nil, ErrAzCliNotProperLoggedIn
 	} else if err != nil {
 		return nil, fmt.Errorf("failed running az graph query: %s: %w", responseText, err)
 	}
@@ -1114,8 +1163,11 @@ func (cli *azCli) runAzCommandWithArgs(ctx context.Context, args exec.RunArgs) (
 
 // Azure Active Directory codes can be referenced via https://login.microsoftonline.com/error?code=<ERROR_CODE>,
 // where ERROR_CODE is the digits portion of an AAD error code. Example: AADSTS70043 has error code 70043
-
 var isNotLoggedInMessageRegex = regexp.MustCompile(`Please run ('|")az login('|") to (setup account|access your accounts)\.`)
+
+// az logged in or trying to log in from an unsupported platform/browser
+// https://github.com/Azure/azure-dev/issues/197
+var isNotProperLoggedInMessageRegex = regexp.MustCompile(`[AADSTS53000,AADSTS50005]`)
 
 // Regex for "AADSTS70043: The refresh token has expired or is invalid due to sign-in frequency checks by conditional access."
 var isRefreshTokenExpiredMessageRegex = regexp.MustCompile(`AADSTS70043`)
@@ -1132,6 +1184,10 @@ var isSecretNotFoundMessageRegex = regexp.MustCompile(`ERROR: \(SecretNotFound\)
 
 func isNotLoggedInMessage(s string) bool {
 	return isNotLoggedInMessageRegex.MatchString(s)
+}
+
+func isNotProperLoggedInMessage(s string) bool {
+	return isNotProperLoggedInMessageRegex.MatchString(s)
 }
 
 func isRefreshTokenExpiredMessage(s string) bool {

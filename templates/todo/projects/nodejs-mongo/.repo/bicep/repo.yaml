@@ -20,7 +20,7 @@ repo:
         to: ./
         patterns:
           - "**/*.bicep"
-      
+
       - from: ../../api/js
         to: ./src/api
         patterns:
@@ -31,11 +31,16 @@ repo:
         patterns:
           - "**/azure.@(yml|yaml)"
 
+      - from: "PLACEHOLDERIACTOOLS"
+        to: ""
+        patterns:
+          - "README.md"
+
   assets:
     # Common assets
     - from: ./../../
       to: ./
-      ignore: 
+      ignore:
         - ".repo/**/*"
         - "repo.y[a]ml"
         - "azure.y[a]ml"
@@ -56,9 +61,14 @@ repo:
     - from: ../../../../../common
       to: ./
       ignore:
-      - .devcontainer/**/*
-      - "infra/**/*"
-    
+        - .github/**/*
+        - .devcontainer/**/*
+        - "infra/**/*"
+
+    # Github workflows for bicep
+    - from: ../../../../../common/.github/workflows/bicep
+      to: ./.github/workflows
+
     - from: ../../../../../common/infra/bicep
       to: ./infra
 
@@ -94,7 +104,7 @@ repo:
         - "build/**/*"
         - "node_modules/**/*"
 
-    # Infra 
+    # Infra
     - from: ./infra/
       to: ./infra
 

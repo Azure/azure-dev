@@ -24,7 +24,7 @@ The following prerequisites are required to use this application. Please ensure 
     curl -fsSL https://aka.ms/install-azd.sh | bash
     ```
 - [Azure CLI (2.38.0+)](https://docs.microsoft.com/cli/azure/install-azure-cli)
-- [Java 18 or later](https://jdk.java.net/) - for API backend
+- [Java 17 or later](https://jdk.java.net/) - for API backend
 - [Node.js with npm (16.13.1+)](https://nodejs.org/) - for the Web frontend
 - [Docker](https://docs.docker.com/get-docker/)
 - [Git (2.36.1+)](https://git-scm.com/)

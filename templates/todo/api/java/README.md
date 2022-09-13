@@ -8,9 +8,23 @@
 
 ### Local Environment
 
-Create a `.env` with the following configuration:
+Create an `.env` file.
+Set the property values by either providing a KeyVault endpoint, or to provide the secrets directly.
 
-- `AZURE_COSMOS_CONNECTION_STRING` - Cosmos DB connection string (Mongo DB also supported)
+#### Option 1: Use KeyVault to provide secrets
+
+Set `AZURE_KEY_VAULT_ENDPOINT`. With this set, other secret environment properties such as `AZURE_COSMOS_CONNECTION_STRING` are loaded from KeyVault.
+
+#### Option 2: Provide secrets directly
+
+Set `AZURE_COSMOS_CONNECTION_STRING`, the Cosmos DB connection string (Mongo DB also supported)
+
+#### Local ApplicationInsights telemetry
+
+To configure Application Insights locally, either
+
+- Set an environment variable `APPLICATIONINSIGHTS_CONNECTION_STRING`
+- Update the `connectionString` defined in `applicationinsights.json`
 
 ### Build & Compile
 

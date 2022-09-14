@@ -99,6 +99,9 @@ type AzCli interface {
 	// This allows free-form querying of resources by any attribute, which is powerful.
 	// However, results may be delayed for multiple minutes. Ensure that your this fits your use-case.
 	GraphQuery(ctx context.Context, query string, subscriptions []string) (*AzCliGraphQuery, error)
+
+	// AKS
+	GetAksCredentials(ctx context.Context, resourceGroupName string, clusterName string) error
 }
 
 type AzCliDeployment struct {
@@ -1015,6 +1018,20 @@ func (cli *azCli) GraphQuery(ctx context.Context, query string, subscriptions []
 	}
 
 	return &graphQueryResult, nil
+}
+
+func (cli *azCli) GetAksCredentials(ctx context.Context, resourceGroupName string, clusterName string) error {
+	_, err := cli.runAzCommand(ctx,
+		"aks", "get-credentials",
+		"--resource-group", resourceGroupName,
+		"--name", clusterName,
+	)
+
+	if err != nil {
+		return fmt.Errorf("getting AKS credentials: %w", err)
+	}
+
+	return nil
 }
 
 func (cli *azCli) runAzCommand(ctx context.Context, args ...string) (exec.RunResult, error) {

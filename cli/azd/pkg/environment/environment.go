@@ -32,6 +32,9 @@ const TenantIdEnvVarName = "AZURE_TENANT_ID"
 // ContainerRegistryEndpointEnvVarName is the name of they key used to store the endpoint of the container registry to push to.
 const ContainerRegistryEndpointEnvVarName = "AZURE_CONTAINER_REGISTRY_ENDPOINT"
 
+// ContainerRegistryEndpointEnvVarName is the name of they key used to store the endpoint of the container registry to push to.
+const AksClusterEnvVarName = "AZURE_AKS_CLUSTER_NAME"
+
 // ResourceGroupEnvVarName is the name of the azure resource group that should be used for deployments
 const ResourceGroupEnvVarName = "AZURE_RESOURCE_GROUP"
 

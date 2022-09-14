@@ -13,19 +13,26 @@ import (
 	"github.com/blang/semver/v4"
 )
 
-func NewDocker(ctx context.Context) *Docker {
-	return &Docker{
+type Docker interface {
+	tools.ExternalTool
+	Build(ctx context.Context, cwd string, dockerFilePath string, platform string, buildContext string) (string, error)
+	Tag(ctx context.Context, cwd string, imageName string, tag string) error
+	Push(ctx context.Context, cwd string, tag string) error
+}
+
+func NewDocker(ctx context.Context) Docker {
+	return &docker{
 		commandRunner: exec.GetCommandRunner(ctx),
 	}
 }
 
-type Docker struct {
+type docker struct {
 	commandRunner exec.CommandRunner
 }
 
 // Runs a Docker build for a given Dockerfile. If the platform is not specified (empty), it defaults to amd64. If the build is successful, the function
 // returns the image id of the built image.
-func (d *Docker) Build(ctx context.Context, cwd string, dockerFilePath string, platform string, buildContext string) (string, error) {
+func (d *docker) Build(ctx context.Context, cwd string, dockerFilePath string, platform string, buildContext string) (string, error) {
 	if strings.TrimSpace(platform) == "" {
 		platform = "amd64"
 	}
@@ -38,7 +45,7 @@ func (d *Docker) Build(ctx context.Context, cwd string, dockerFilePath string, p
 	return strings.TrimSpace(res.Stdout), nil
 }
 
-func (d *Docker) Tag(ctx context.Context, cwd string, imageName string, tag string) error {
+func (d *docker) Tag(ctx context.Context, cwd string, imageName string, tag string) error {
 	res, err := d.executeCommand(ctx, cwd, "tag", imageName, tag)
 	if err != nil {
 		return fmt.Errorf("tagging image: %s: %w", res.String(), err)
@@ -47,7 +54,7 @@ func (d *Docker) Tag(ctx context.Context, cwd string, imageName string, tag stri
 	return nil
 }
 
-func (d *Docker) Push(ctx context.Context, cwd string, tag string) error {
+func (d *docker) Push(ctx context.Context, cwd string, tag string) error {
 	res, err := d.executeCommand(ctx, cwd, "push", tag)
 	if err != nil {
 		return fmt.Errorf("pushing image: %s: %w", res.String(), err)
@@ -56,7 +63,7 @@ func (d *Docker) Push(ctx context.Context, cwd string, tag string) error {
 	return nil
 }
 
-func (d *Docker) versionInfo() tools.VersionInfo {
+func (d *docker) versionInfo() tools.VersionInfo {
 	return tools.VersionInfo{
 		MinimumVersion: semver.Version{
 			Major: 17,
@@ -129,8 +136,7 @@ func isSupportedDockerVersion(cliOutput string) (bool, error) {
 	// If we reach this point, we don't understand how to validate the version based on its scheme.
 	return false, fmt.Errorf("could not determine version from docker version string: %s", version)
 }
-
-func (d *Docker) CheckInstalled(ctx context.Context) (bool, error) {
+func (d *docker) CheckInstalled(ctx context.Context) (bool, error) {
 	found, err := tools.ToolInPath("docker")
 	if !found {
 		return false, err
@@ -149,15 +155,15 @@ func (d *Docker) CheckInstalled(ctx context.Context) (bool, error) {
 	return true, nil
 }
 
-func (d *Docker) InstallUrl() string {
+func (d *docker) InstallUrl() string {
 	return "https://aka.ms/azure-dev/docker-install"
 }
 
-func (d *Docker) Name() string {
+func (d *docker) Name() string {
 	return "Docker"
 }
 
-func (d *Docker) executeCommand(ctx context.Context, cwd string, args ...string) (exec.RunResult, error) {
+func (d *docker) executeCommand(ctx context.Context, cwd string, args ...string) (exec.RunResult, error) {
 	runArgs := exec.NewRunArgs("docker", args...).
 		WithCwd(cwd).
 		WithEnrichError(true)

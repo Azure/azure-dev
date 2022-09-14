@@ -18,6 +18,7 @@ const (
 	ContainerAppTarget  ServiceTargetKind = "containerapp"
 	AzureFunctionTarget ServiceTargetKind = "function"
 	StaticWebAppTarget  ServiceTargetKind = "staticwebapp"
+	AksTarget           ServiceTargetKind = "aks"
 )
 
 type ServiceDeploymentResult struct {
@@ -57,8 +58,3 @@ func NewServiceDeploymentResult(relatedResourceId string, kind ServiceTargetKind
 
 	return returnValue
 }
-
-var _ ServiceTarget = &appServiceTarget{}
-var _ ServiceTarget = &containerAppTarget{}
-var _ ServiceTarget = &functionAppTarget{}
-var _ ServiceTarget = &staticWebAppTarget{}

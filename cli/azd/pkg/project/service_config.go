@@ -12,6 +12,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/docker"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/kubectl"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/swa"
 )
 
@@ -90,6 +91,8 @@ func (sc *ServiceConfig) GetServiceTarget(ctx context.Context, env *environment.
 		target = NewFunctionAppTarget(sc, env, scope, azCli)
 	case string(StaticWebAppTarget):
 		target = NewStaticWebAppTarget(sc, env, scope, azCli, swa.NewSwaCli(ctx))
+	case string(AksTarget):
+		target = NewAksTarget(sc, env, scope, azCli, kubectl.NewKubectl(ctx), docker.NewDocker(ctx))
 	default:
 		return nil, fmt.Errorf("unsupported host '%s' for service '%s'", sc.Host, sc.Name)
 	}
@@ -113,7 +116,7 @@ func (sc *ServiceConfig) GetFrameworkService(ctx context.Context, env *environme
 	}
 
 	// For containerized applications we use a nested framework service
-	if sc.Host == string(ContainerAppTarget) {
+	if sc.Host == string(ContainerAppTarget) || sc.Host == string(AksTarget) {
 		sourceFramework := frameworkService
 		frameworkService = NewDockerProject(sc, env, docker.NewDocker(ctx), sourceFramework)
 	}

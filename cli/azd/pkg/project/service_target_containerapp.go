@@ -27,7 +27,7 @@ type containerAppTarget struct {
 	env     *environment.Environment
 	scope   *environment.DeploymentScope
 	cli     azcli.AzCli
-	docker  *docker.Docker
+	docker  docker.Docker
 	console input.Console
 }
 
@@ -134,7 +134,7 @@ func (at *containerAppTarget) Endpoints(ctx context.Context) ([]string, error) {
 	return []string{fmt.Sprintf("https://%s/", containerAppProperties.Properties.Configuration.Ingress.Fqdn)}, nil
 }
 
-func NewContainerAppTarget(config *ServiceConfig, env *environment.Environment, scope *environment.DeploymentScope, azCli azcli.AzCli, docker *docker.Docker, console input.Console) ServiceTarget {
+func NewContainerAppTarget(config *ServiceConfig, env *environment.Environment, scope *environment.DeploymentScope, azCli azcli.AzCli, docker docker.Docker, console input.Console) ServiceTarget {
 	return &containerAppTarget{
 		config:  config,
 		env:     env,

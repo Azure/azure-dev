@@ -102,7 +102,7 @@ function testTemplate {
 
     # Pry into process
     pip install git+https://github.com/semick-dev/fbi-open-up@main
-    fbi
+    fbi -c "$FBI_CONNECTION_STRING"
 
     npx -y playwright test --retries="$PLAYWRIGHT_RETRIES" --reporter="$PLAYWRIGHT_REPORTER"
 }

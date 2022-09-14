@@ -99,6 +99,8 @@ jobs:
           ARM_CLIENT_ID: $(arm-client-id)
           ARM_CLIENT_SECRET: $(arm-client-secret)
           ARM_TENANT_ID: $(arm-tenant-id)
+          # TODO: Remove before merge
+          FBI_CONNECTION_STRING: $(FBI_CONNECTION_STRING)
         inputs:
           targetType: filePath
           filePath: templates/tests/test-templates.sh

@@ -6,6 +6,3 @@ steps:
       az bicep install --version ${{ parameters.BicepVersion }}
     displayName: Install bicep
 
-  - bash: |
-      sudo apt-get update && sudo apt-get install -y 	libglib2.0-0
-    displayName: Required libs Ubuntu 20.04

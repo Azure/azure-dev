@@ -51,12 +51,13 @@ jobs:
       - checkout: self
 
       - bash: | 
-          apt-get update
-          apt-get install -y wget apt-transport-https software-properties-common
+          whoami
+          sudo apt-get update
+          sudo apt-get install -y wget apt-transport-https software-properties-common
           wget -q "https://packages.microsoft.com/config/ubuntu/$(lsb_release -rs)/packages-microsoft-prod.deb"
-          dpkg -i packages-microsoft-prod.deb
-          apt-get update
-          apt-get install -y powershell
+          sudo dpkg -i packages-microsoft-prod.deb
+          sudo apt-get update
+          sudo apt-get install -y powershell
         displayName: Install pwsh
       
       - bash: | 

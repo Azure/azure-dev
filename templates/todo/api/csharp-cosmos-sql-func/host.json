@@ -10,7 +10,10 @@
     },
     "extensions": {
         "http": {
-        "routePrefix": ""
-      }
+            "routePrefix": "",
+            "customHeaders": {
+                "Content-Type": "application/json; charset=utf-8"
+            }
+        }
     }
 }

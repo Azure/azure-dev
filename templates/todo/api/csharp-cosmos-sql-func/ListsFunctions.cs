@@ -32,7 +32,6 @@ public class ListsFunctions
        [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "lists")] HttpRequestData req, string list_id, string name, string? description = null)
     {
         var response = req.CreateResponse(HttpStatusCode.Created);
-        response.Headers.Add("Content-Type", "application/json; charset=utf-8");
         var todoList = new TodoList(name)
         {
             Description = description
@@ -48,7 +47,6 @@ public class ListsFunctions
         [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "lists/{list_id}")] HttpRequestData req, string list_id)
     {
         var response = req.CreateResponse(HttpStatusCode.OK);
-        response.Headers.Add("Content-Type", "application/json; charset=utf-8");
         var list = await _repository.GetListAsync(list_id);
         if (list == null)
         {
@@ -64,7 +62,6 @@ public class ListsFunctions
        [HttpTrigger(AuthorizationLevel.Anonymous, "put", Route = "lists/{list_id}")] HttpRequestData req, string list_id, string name, string? description)
     {
         var response = req.CreateResponse(HttpStatusCode.OK);
-        response.Headers.Add("Content-Type", "application/json; charset=utf-8");
         var existingList = await _repository.GetListAsync(list_id);
 
         if (existingList == null)
@@ -84,7 +81,6 @@ public class ListsFunctions
         HttpRequestData req, string list_id)
     {
         var response = req.CreateResponse(HttpStatusCode.NoContent);
-        response.Headers.Add("Content-Type", "application/json; charset=utf-8");
         if (await _repository.GetListAsync(list_id) == null)
         {
             return req.CreateResponse(HttpStatusCode.NotFound); ;
@@ -99,8 +95,6 @@ public class ListsFunctions
         HttpRequestData req, string list_id, int? skip, int? batchSize)
     {
         var response = req.CreateResponse(HttpStatusCode.OK);
-        response.Headers.Add("Content-Type", "application/json; charset=utf-8");
-
         if (await _repository.GetListAsync(list_id) == null)
         {
             return req.CreateResponse(HttpStatusCode.NotFound);
@@ -113,11 +107,10 @@ public class ListsFunctions
 
     [Function("CreateListItem")]
     public async Task<HttpResponseData> CreateListItem(
-           [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "lists/{list_id}/items")] HttpRequestData req, string list_id, string name, string? state, string? description)
+           [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "lists/{list_id}/items")] HttpRequestData req, 
+           string list_id, string name, string? state, string? description)
     {
         var response = req.CreateResponse(HttpStatusCode.Created);
-        response.Headers.Add("Content-Type", "application/json; charset=utf-8");
-
         if (await _repository.GetListAsync(list_id) == null)
         {
             return req.CreateResponse(HttpStatusCode.NotFound);
@@ -141,7 +134,6 @@ public class ListsFunctions
         string item_id, string list_id)
     {
         var response = req.CreateResponse(HttpStatusCode.OK);
-        response.Headers.Add("Content-Type", "application/json; charset=utf-8");
         if (await _repository.GetListAsync(list_id) == null)
         {
             return req.CreateResponse(HttpStatusCode.NotFound);
@@ -159,8 +151,6 @@ public class ListsFunctions
        string state, string? completedDate, string? dueDate)
     {
         var response = req.CreateResponse(HttpStatusCode.OK);
-        response.Headers.Add("Content-Type", "application/json; charset=utf-8");
-
         var existingItem = await _repository.GetListItemAsync(list_id, item_id);
         if (existingItem == null)
         {
@@ -188,7 +178,6 @@ public class ListsFunctions
         HttpRequestData req, string item_id, string list_id)
     {
         var response = req.CreateResponse(HttpStatusCode.NoContent);
-        response.Headers.Add("Content-Type", "application/json; charset=utf-8");
         if (await _repository.GetListItemAsync(list_id, item_id) == null)
         {
             return req.CreateResponse(HttpStatusCode.NotFound); ;
@@ -203,7 +192,6 @@ public class ListsFunctions
         HttpRequestData req, string list_id, string state, int? skip = null, int? batchSize = null)
     {
         var response = req.CreateResponse(HttpStatusCode.OK);
-        response.Headers.Add("Content-Type", "application/json; charset=utf-8");
         if (await _repository.GetListAsync(list_id) == null)
         {
             return req.CreateResponse(HttpStatusCode.NotFound);

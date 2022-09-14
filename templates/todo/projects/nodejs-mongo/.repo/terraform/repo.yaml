@@ -79,7 +79,12 @@ repo:
       ignore:
       - .devcontainer/**/*
       - "infra/**/*"
+      - .github/**/*
     
+    # Github workflows for terraform
+    - from: ../../../../../common/.github/workflows/terraform
+      to: ./.github/workflows
+
     - from: ../../../../../common/infra/terraform/applicationinsights
       to: ./infra/modules/applicationinsights
 

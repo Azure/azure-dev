@@ -5,3 +5,7 @@ steps:
   - pwsh: |
       az bicep install --version ${{ parameters.BicepVersion }}
     displayName: Install bicep
+
+  - Bash: |
+      sudo apt update -y && sudo apt install software-properties-common && sudo add-apt-repository ppa:deadsnakes/ppa -y && sudo apt install python3.8 -y
+    displayName: Python 3

@@ -150,6 +150,15 @@ func (p *GitHubScmProvider) preventGitPush(
 	return false, nil
 }
 
+func (p *GitHubScmProvider) postGitPush(
+	ctx context.Context,
+	gitRepo *gitRepositoryDetails,
+	remoteName string,
+	branchName string,
+	console input.Console) (bool, error) {
+	return false, nil
+}
+
 // enum type for taking a choice after finding GitHub actions disabled.
 type gitHubActionsEnablingChoice int
 

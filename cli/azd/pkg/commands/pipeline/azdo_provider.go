@@ -12,9 +12,11 @@ import (
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/git"
 	"github.com/microsoft/azure-devops-go-api/azuredevops"
 )
 
@@ -23,6 +25,7 @@ import (
 type AzdoHubScmProvider struct {
 	repoDetails    *AzdoRepositoryDetails
 	Env            *environment.Environment
+	AzdContext     *azdcontext.AzdContext
 	azdoConnection *azuredevops.Connection
 }
 type AzdoRepositoryDetails struct {
@@ -160,7 +163,6 @@ func (p *AzdoHubScmProvider) ensureProjectExists(ctx context.Context, console in
 	default:
 		panic(fmt.Sprintf("unexpected selection index %d", idx))
 	}
-	_ = idx
 	return projectName, nil
 }
 
@@ -264,12 +266,65 @@ func (p *AzdoHubScmProvider) preventGitPush(
 	remoteName string,
 	branchName string,
 	console input.Console) (bool, error) {
-	return false, errors.New("not implemented")
+
+	gitCli := git.NewGitCli(ctx)
+	foundHelper, err := gitCli.CheckConfigCredentialHelper(ctx)
+	if err != nil {
+		return false, err
+	}
+	if !foundHelper {
+		fmt.Println(`  
+  A credential helper is not configured for git.
+  This will require you to enter your Azure DevOps PAT when executing a git push.
+  https://git-scm.com/docs/git-credential-store
+  `)
+		idx, err := console.Select(ctx, input.ConsoleOptions{
+			Message: "Would you like to enable credential.helper store for this local git repository?",
+			Options: []string{
+				"Yes - set credential.helper = store",
+				"No - do not configure credential.helper",
+			},
+			DefaultValue: "Yes - set credential.helper = store",
+		})
+		if err != nil {
+			return false, fmt.Errorf("prompting for credential helper: %w", err)
+		}
+		switch idx {
+		// Configure Credential Store
+		case 0:
+			gitCli.SetCredentialStore(ctx, p.AzdContext.ProjectDirectory())
+		// Skip
+		case 1:
+			break
+		default:
+			panic(fmt.Sprintf("unexpected selection index %d", idx))
+		}
+	}
+
+	return false, nil
+}
+
+// preventGitPush is nil for Azure DevOps
+func (p *AzdoHubScmProvider) postGitPush(
+	ctx context.Context,
+	gitRepo *gitRepositoryDetails,
+	remoteName string,
+	branchName string,
+	console input.Console) (bool, error) {
+
+	gitCli := git.NewGitCli(ctx)
+
+	//Reset remote to original url without PAT
+	gitCli.UpdateRemote(ctx, p.AzdContext.ProjectDirectory(), remoteName, p.repoDetails.remoteUrl)
+
+	return false, nil
 }
 
 // AzdoCiProvider implements a CiProvider using Azure DevOps to manage CI with azdo pipelines.
 type AzdoCiProvider struct {
-	Env *environment.Environment
+	Env         *environment.Environment
+	AzdContext  *azdcontext.AzdContext
+	ScmProvider *ScmProvider
 }
 
 // ***  subareaProvider implementation ******
@@ -306,10 +361,11 @@ func (p *AzdoCiProvider) configureConnection(
 	credentials json.RawMessage,
 	console input.Console) error {
 
-	return errors.New("not implemented")
+	return nil
 }
 
 // configurePipeline create Azdo pipeline
 func (p *AzdoCiProvider) configurePipeline(ctx context.Context) error {
-	return errors.New("not implemented")
+
+	return nil
 }

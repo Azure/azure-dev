@@ -99,11 +99,14 @@ func (p *pipelineConfigAction) Run(
 	// The CI provider might need to have a reference to the SCM provider if its implementation
 	// will depend on where is the SCM. For example, azdo support any SCM source.
 	p.manager.ScmProvider = &pipeline.AzdoHubScmProvider{
-		Env: &env,
+		Env:        &env,
+		AzdContext: azdCtx,
 	}
 	p.manager.CiProvider = &pipeline.AzdoCiProvider{
-		Env: &env,
+		Env:        &env,
+		AzdContext: azdCtx,
 	}
+
 	// set context for manager
 	p.manager.AzdCtx = azdCtx
 	p.manager.Environment = env

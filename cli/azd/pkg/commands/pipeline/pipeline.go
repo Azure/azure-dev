@@ -56,6 +56,12 @@ type ScmProvider interface {
 		remoteName string,
 		branchName string,
 		console input.Console) (bool, error)
+	//Hook function to allow SCM providers to handle scenarios after the git push is complete
+	postGitPush(ctx context.Context,
+		gitRepo *gitRepositoryDetails,
+		remoteName string,
+		branchName string,
+		console input.Console) (bool, error)
 }
 
 // CiProvider defines the base behavior for a continuous integration provider.

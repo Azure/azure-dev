@@ -1,13 +1,14 @@
 param environmentName string
 param location string = resourceGroup().location
-param kind string = 'StorageV2'
-param sku object = { name: 'Standard_LRS' }
-param minimumTlsVersion string = 'TLS1_2'
-param allowBlobPublicAccess bool = false
 
+param allowBlobPublicAccess bool = false
+param kind string = 'StorageV2'
+param minimumTlsVersion string = 'TLS1_2'
+param sku object = { name: 'Standard_LRS' }
+
+var abbrs = loadJsonContent('../../abbreviations.json')
 var resourceToken = toLower(uniqueString(subscription().id, environmentName, location))
 var tags = { 'azd-env-name': environmentName }
-var abbrs = loadJsonContent('../../abbreviations.json')
 
 resource storage 'Microsoft.Storage/storageAccounts@2021-09-01' = {
   name: '${abbrs.storageStorageAccounts}${resourceToken}'
@@ -25,4 +26,4 @@ resource storage 'Microsoft.Storage/storageAccounts@2021-09-01' = {
   }
 }
 
-output NAME string = storage.name
+output name string = storage.name

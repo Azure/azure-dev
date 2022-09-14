@@ -17,11 +17,11 @@ module api '../../../../../common/infra/bicep/app/api-function-node.bicep' = {
   params: {
     environmentName: environmentName
     location: location
-    applicationInsightsName: monitoring.outputs.APPLICATIONINSIGHTS_NAME
-    appServicePlanId: appServicePlan.outputs.AZURE_APP_SERVICE_PLAN_ID
-    keyVaultName: keyVault.outputs.AZURE_KEY_VAULT_NAME
-    storageAccountName: storage.outputs.NAME
-    allowedOrigins: [web.outputs.URI]
+    applicationInsightsName: monitoring.outputs.applicationInsightsName
+    appServicePlanId: appServicePlan.outputs.appServicePlanId
+    keyVaultName: keyVault.outputs.keyVaultName
+    storageAccountName: storage.outputs.name
+    allowedOrigins: [ web.outputs.uri ]
   }
 }
 
@@ -31,7 +31,7 @@ module cosmos '../../../../../common/infra/bicep/app/cosmos-mongo.bicep' = {
   params: {
     environmentName: environmentName
     location: location
-    keyVaultName: keyVault.outputs.AZURE_KEY_VAULT_NAME
+    keyVaultName: keyVault.outputs.keyVaultName
   }
 }
 
@@ -39,10 +39,10 @@ module cosmos '../../../../../common/infra/bicep/app/cosmos-mongo.bicep' = {
 module apiCosmosConfig '../../../../../../common/infra/bicep/core/host/appservice-config-cosmos.bicep' = {
   name: 'api-cosmos-config-resources'
   params: {
-    appServiceName: api.outputs.NAME
-    cosmosDatabaseName: cosmos.outputs.AZURE_COSMOS_DATABASE_NAME
-    cosmosConnectionStringKey: cosmos.outputs.AZURE_COSMOS_CONNECTION_STRING_KEY
-    cosmosEndpoint: cosmos.outputs.AZURE_COSMOS_ENDPOINT
+    appServiceName: api.outputs.name
+    cosmosDatabaseName: cosmos.outputs.cosmosDatabaseName
+    cosmosConnectionStringKey: cosmos.outputs.cosmosConnectionStringKey
+    cosmosEndpoint: cosmos.outputs.cosmosEndpoint
   }
 }
 
@@ -83,10 +83,10 @@ module monitoring '../../../../../../common/infra/bicep/core/monitor/monitoring.
   }
 }
 
-output AZURE_COSMOS_ENDPOINT string = cosmos.outputs.AZURE_COSMOS_ENDPOINT
-output AZURE_COSMOS_CONNECTION_STRING_KEY string = cosmos.outputs.AZURE_COSMOS_CONNECTION_STRING_KEY
-output AZURE_COSMOS_DATABASE_NAME string = cosmos.outputs.AZURE_COSMOS_DATABASE_NAME
-output AZURE_KEY_VAULT_ENDPOINT string = keyVault.outputs.AZURE_KEY_VAULT_ENDPOINT
-output APPLICATIONINSIGHTS_CONNECTION_STRING string = monitoring.outputs.APPLICATIONINSIGHTS_CONNECTION_STRING
-output WEB_URI string = web.outputs.URI
-output API_URI string = api.outputs.URI
+output apiUri string = api.outputs.uri
+output applicationInsightsConnectionString string = monitoring.outputs.applicationInsightsConnectionString
+output cosmosConnectionStringKey string = cosmos.outputs.cosmosConnectionStringKey
+output cosmosDatabaseName string = cosmos.outputs.cosmosDatabaseName
+output cosmosEndpoint string = cosmos.outputs.cosmosEndpoint
+output keyVaultEndpoint string = keyVault.outputs.keyVaultEndpoint
+output webUri string = web.outputs.uri

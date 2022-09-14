@@ -1,29 +1,29 @@
 param environmentName string
 param location string = resourceGroup().location
 
-param serviceName string = 'api'
+param allowedOrigins array = []
 param applicationInsightsName string
 param appServicePlanId string
-param keyVaultName string
-param allowedOrigins array = []
-param storageAccountName string
 param appSettings object = {}
+param keyVaultName string
+param serviceName string = 'api'
+param storageAccountName string
 
 module api '../../../../../common/infra/bicep/core/host/function-node.bicep' = {
-  name: 'api-function-node-${serviceName}'
+  name: 'function-node-${serviceName}'
   params: {
     environmentName: environmentName
     location: location
-    serviceName: serviceName
+    allowedOrigins: allowedOrigins
+    appSettings: appSettings
     applicationInsightsName: applicationInsightsName
     appServicePlanId: appServicePlanId
     keyVaultName: keyVaultName
-    allowedOrigins: allowedOrigins
+    serviceName: serviceName
     storageAccountName: storageAccountName
-    appSettings: appSettings
   }
 }
 
-output NAME string = api.outputs.NAME
-output URI string = api.outputs.URI
-output IDENTITY_PRINCIPAL_ID string = api.outputs.IDENTITY_PRINCIPAL_ID
+output apiIdentityPrincipalId string = api.outputs.identityPrincipalId
+output apiName string = api.outputs.name
+output apiUri string = api.outputs.uri

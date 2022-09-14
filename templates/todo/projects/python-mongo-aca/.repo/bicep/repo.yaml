@@ -133,9 +133,6 @@ repo:
     - from: ../../../common/.github/workflows/bicep
       to: ./.github/workflows
 
-    - from: ../../../common/infra/bicep
-      to: ./infra
-
     # .devcontainer common (devcontainer.json)
     - from: ../../../../../common/.devcontainer/devcontainer.json/python
       to: ./.devcontainer

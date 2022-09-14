@@ -1,34 +1,34 @@
 param environmentName string
 param location string = resourceGroup().location
-param serviceName string
-param linuxFxVersion string = 'PYTHON|3.8'
-param appSettings object = {}
-param keyVaultName string = ''
-param useKeyVault bool = !(empty(keyVaultName))
-param managedIdentity bool = useKeyVault
+
+param allowedOrigins array = []
 param applicationInsightsName string
 param appServicePlanId string
+param appSettings object = {}
+param keyVaultName string = ''
+param linuxFxVersion string = 'PYTHON|3.8'
+param managedIdentity bool = !(empty(keyVaultName))
+param serviceName string
 param storageAccountName string
-param allowedOrigins array = []
 
 module function 'function.bicep' = {
   name: 'function-python-resources-${serviceName}'
   params: {
     environmentName: environmentName
     location: location
-    serviceName: serviceName
     allowedOrigins: allowedOrigins
-    linuxFxVersion: linuxFxVersion
-    functionsWorkerRuntime: 'python'
-    storageAccountName: storageAccountName
     applicationInsightsName: applicationInsightsName
     appServicePlanId: appServicePlanId
-    managedIdentity: managedIdentity
     appSettings: appSettings
+    functionsWorkerRuntime: 'python'
     keyVaultName: keyVaultName
+    linuxFxVersion: linuxFxVersion
+    managedIdentity: managedIdentity
+    serviceName: serviceName
+    storageAccountName: storageAccountName
   }
 }
 
-output NAME string = function.outputs.NAME
-output URI string = function.outputs.URI
-output IDENTITY_PRINCIPAL_ID string = function.outputs.IDENTITY_PRINCIPAL_ID
+output identityPrincipalId string = function.outputs.identityPrincipalId
+output name string = function.outputs.name
+output uri string = function.outputs.uri

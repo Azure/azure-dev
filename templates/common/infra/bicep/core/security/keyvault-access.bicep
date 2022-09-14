@@ -1,13 +1,15 @@
 param environmentName string
 param location string = resourceGroup().location
-param principalId string
-param permissions object = { secrets: [ 'get', 'list' ] }
 
-var resourceToken = toLower(uniqueString(subscription().id, environmentName, location))
+param keyVaultName string = ''
+param permissions object = { secrets: [ 'get', 'list' ] }
+param principalId string
+
 var abbrs = loadJsonContent('../../abbreviations.json')
+var resourceToken = toLower(uniqueString(subscription().id, environmentName, location))
 
 resource keyVault 'Microsoft.KeyVault/vaults@2022-07-01' existing = {
-  name: '${abbrs.keyVaultVaults}${resourceToken}'
+  name: !empty(keyVaultName) ? keyVaultName : '${abbrs.keyVaultVaults}${resourceToken}'
 }
 
 resource keyVaultAccessPolicies 'Microsoft.KeyVault/vaults/accessPolicies@2022-07-01' = {

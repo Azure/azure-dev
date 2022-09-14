@@ -1,36 +1,35 @@
 param environmentName string
 param location string = resourceGroup().location
-param serviceName string
-param linuxFxVersion string = 'NODE|16-lts'
+
+param allowedOrigins array = []
 param appCommandLine string = ''
-param scmDoBuildDuringDeployment bool = false
-param appSettings object = {}
-param keyVaultName string = ''
-param useKeyVault bool = !(empty(keyVaultName))
-param managedIdentity bool = useKeyVault
 param applicationInsightsName string
 param appServicePlanId string
-param allowedOrigins array = []
+param appSettings object = {}
+param keyVaultName string = ''
+param linuxFxVersion string = 'NODE|16-lts'
+param managedIdentity bool = !(empty(keyVaultName))
+param scmDoBuildDuringDeployment bool = false
+param serviceName string
 
 module web 'appservice.bicep' = {
   name: 'appservice-node-${serviceName}'
   params: {
     environmentName: environmentName
     location: location
-    linuxFxVersion: linuxFxVersion
-    serviceName: serviceName
+    allowedOrigins: allowedOrigins
     appCommandLine: appCommandLine
-    scmDoBuildDuringDeployment: scmDoBuildDuringDeployment
-    appSettings: appSettings
     applicationInsightsName: applicationInsightsName
     appServicePlanId: appServicePlanId
+    appSettings: appSettings
     keyVaultName: keyVaultName
-    useKeyVault: useKeyVault
+    linuxFxVersion: linuxFxVersion
     managedIdentity: managedIdentity
-    allowedOrigins: allowedOrigins
+    scmDoBuildDuringDeployment: scmDoBuildDuringDeployment
+    serviceName: serviceName
   }
 }
 
-output NAME string = web.outputs.NAME
-output URI string = web.outputs.URI
-output IDENTITY_PRINCIPAL_ID string = web.outputs.IDENTITY_PRINCIPAL_ID
+output identityPrincipalId string = web.outputs.identityPrincipalId
+output name string = web.outputs.name
+output uri string = web.outputs.uri

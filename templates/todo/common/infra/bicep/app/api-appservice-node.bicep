@@ -1,25 +1,26 @@
 param environmentName string
 param location string = resourceGroup().location
-param serviceName string = 'api'
+
+param allowedOrigins array = []
 param applicationInsightsName string
 param appServicePlanId string
 param keyVaultName string
-param allowedOrigins array = []
+param serviceName string = 'api'
 
 module api '../../../../../common/infra/bicep/core/host/appservice-node.bicep' = {
-  name: 'api-appservice-node-${serviceName}'
+  name: 'appservice-node-${serviceName}'
   params: {
     environmentName: environmentName
     location: location
-    serviceName: serviceName
+    allowedOrigins: allowedOrigins
     applicationInsightsName: applicationInsightsName
     appServicePlanId: appServicePlanId
     keyVaultName: keyVaultName
     scmDoBuildDuringDeployment: true
-    allowedOrigins: allowedOrigins
+    serviceName: serviceName
   }
 }
 
-output NAME string = api.outputs.NAME
-output URI string = api.outputs.URI
-output IDENTITY_PRINCIPAL_ID string = api.outputs.IDENTITY_PRINCIPAL_ID
+output apiIdentityPrincipalId string = api.outputs.identityPrincipalId
+output apiName string = api.outputs.name
+output apiUri string = api.outputs.uri

@@ -1,12 +1,13 @@
 param environmentName string
 param location string = resourceGroup().location
-param keyVaultName string
+
 param cosmosConnectionStringKey string = 'AZURE-COSMOS-CONNECTION-STRING'
+param keyVaultName string
 param kind string = 'MongoDB'
 
+var abbrs = loadJsonContent('../../abbreviations.json')
 var resourceToken = toLower(uniqueString(subscription().id, environmentName, location))
 var tags = { 'azd-env-name': environmentName }
-var abbrs = loadJsonContent('../../abbreviations.json')
 
 resource keyVault 'Microsoft.KeyVault/vaults@2022-07-01' existing = {
   name: keyVaultName
@@ -43,6 +44,6 @@ resource cosmosConnectionString 'Microsoft.KeyVault/vaults/secrets@2022-07-01' =
   }
 }
 
-output AZURE_COSMOS_RESOURCE_ID string = cosmos.id
-output AZURE_COSMOS_ENDPOINT string = cosmos.properties.documentEndpoint
-output AZURE_COSMOS_CONNECTION_STRING_KEY string = cosmosConnectionStringKey
+output cosmosEndpoint string = cosmos.properties.documentEndpoint
+output cosmosConnectionStringKey string = cosmosConnectionStringKey
+output cosmosResourceId string = cosmos.id

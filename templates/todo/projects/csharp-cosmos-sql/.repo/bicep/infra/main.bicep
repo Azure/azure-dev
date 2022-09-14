@@ -12,8 +12,8 @@ param location string
 @description('Id of the user or app to assign application roles')
 param principalId string = ''
 
-var tags = { 'azd-env-name': environmentName }
 var abbrs = loadJsonContent('../../../../../../common/infra/bicep/abbreviations.json')
+var tags = { 'azd-env-name': environmentName }
 
 resource rg 'Microsoft.Resources/resourceGroups@2021-04-01' = {
   name: '${abbrs.resourcesResourceGroups}${environmentName}'
@@ -31,9 +31,9 @@ module resources 'resources.bicep' = {
   }
 }
 
-output AZURE_COSMOS_ENDPOINT string = resources.outputs.AZURE_COSMOS_ENDPOINT
-output AZURE_COSMOS_DATABASE_NAME string = resources.outputs.AZURE_COSMOS_DATABASE_NAME
-output REACT_APP_WEB_BASE_URL string = resources.outputs.WEB_URI
-output REACT_APP_API_BASE_URL string = resources.outputs.API_URI
-output REACT_APP_APPLICATIONINSIGHTS_CONNECTION_STRING string = resources.outputs.APPLICATIONINSIGHTS_CONNECTION_STRING
+output AZURE_COSMOS_ENDPOINT string = resources.outputs.cosmosEndpoint
+output AZURE_COSMOS_DATABASE_NAME string = resources.outputs.cosmosDatabaseName
 output AZURE_LOCATION string = location
+output REACT_APP_API_BASE_URL string = resources.outputs.apiUri
+output REACT_APP_APPLICATIONINSIGHTS_CONNECTION_STRING string = resources.outputs.applicationInsightsConnectionString
+output REACT_APP_WEB_BASE_URL string = resources.outputs.webUri

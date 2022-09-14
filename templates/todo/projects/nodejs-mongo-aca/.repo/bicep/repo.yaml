@@ -45,7 +45,7 @@ repo:
           - "**/*.bicep"
         ignore:
           - "**/main.bicep"
-          
+
       # main.bicep
       - from: ../../../../../../common/infra/bicep
         to: ./

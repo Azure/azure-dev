@@ -1,7 +1,6 @@
 param environmentName string
 param location string = resourceGroup().location
-param keyVaultName string
-param cosmosDatabaseName string = 'Todo'
+
 param collections array = [
   {
     name: 'TodoList'
@@ -16,18 +15,20 @@ param collections array = [
     indexKey: '_id'
   }
 ]
+param cosmosDatabaseName string = 'Todo'
+param keyVaultName string
 
 module cosmos '../../../../../common/infra/bicep/core/database/cosmos-mongo-db.bicep' = {
-  name: 'todo-cosmos-mongo-resources'
+  name: 'cosmos-mongo-resources'
   params: {
     environmentName: environmentName
     location: location
-    cosmosDatabaseName: cosmosDatabaseName
     collections: collections
+    cosmosDatabaseName: cosmosDatabaseName
     keyVaultName: keyVaultName
   }
 }
 
-output AZURE_COSMOS_ENDPOINT string = cosmos.outputs.AZURE_COSMOS_ENDPOINT
-output AZURE_COSMOS_DATABASE_NAME string = cosmosDatabaseName
-output AZURE_COSMOS_CONNECTION_STRING_KEY string = cosmos.outputs.AZURE_COSMOS_CONNECTION_STRING_KEY
+output cosmosConnectionStringKey string = cosmos.outputs.cosmosConnectionStringKey
+output cosmosDatabaseName string = cosmosDatabaseName
+output cosmosEndpoint string = cosmos.outputs.cosmosEndpoint

@@ -1,5 +1,6 @@
 param environmentName string
 param location string = resourceGroup().location
+
 param sku object = {
   name: 'Y1'
   tier: 'Dynamic'
@@ -17,4 +18,4 @@ module appServicePlanFunctions 'appserviceplan.bicep' = {
   }
 }
 
-output AZURE_APP_SERVICE_PLAN_ID string = appServicePlanFunctions.outputs.AZURE_APP_SERVICE_PLAN_ID
+output appServicePlanId string = appServicePlanFunctions.outputs.appServicePlanId

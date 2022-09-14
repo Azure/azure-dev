@@ -1,7 +1,8 @@
 param environmentName string
 param location string = resourceGroup().location
-var resourceToken = toLower(uniqueString(subscription().id, environmentName, location))
+
 var abbrs = loadJsonContent('../../abbreviations.json')
+var resourceToken = toLower(uniqueString(subscription().id, environmentName, location))
 
 resource cosmos 'Microsoft.DocumentDB/databaseAccounts@2022-05-15' existing = {
   name: '${abbrs.documentDBDatabaseAccounts}${resourceToken}'
@@ -29,4 +30,4 @@ resource roleDefinition 'Microsoft.DocumentDB/databaseAccounts/sqlRoleDefinition
   }
 }
 
-output AZURE_COSMOS_SQL_ROLE_DEFINITION_ID string = roleDefinition.id
+output cosmosSqlRoleDefinitionId string = roleDefinition.id

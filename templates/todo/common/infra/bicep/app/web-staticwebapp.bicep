@@ -1,9 +1,10 @@
 param environmentName string
 param location string = resourceGroup().location
+
 param serviceName string = 'web'
 
 module web '../../../../../common/infra/bicep/core/host/staticwebapp.bicep' = {
-  name: 'web-staticwebapp-${serviceName}'
+  name: 'staticwebapp-${serviceName}'
   params: {
     environmentName: environmentName
     location: location
@@ -11,5 +12,5 @@ module web '../../../../../common/infra/bicep/core/host/staticwebapp.bicep' = {
   }
 }
 
-output NAME string = web.outputs.NAME
-output URI string = web.outputs.URI
+output webName string = web.outputs.name
+output webUri string = web.outputs.uri

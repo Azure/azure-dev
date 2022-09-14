@@ -1,7 +1,8 @@
 param environmentName string
 param location string = resourceGroup().location
-param keyVaultName string
+
 param databaseName string = 'ToDo'
+param keyVaultName string
 
 @secure()
 param sqlAdminPassword string
@@ -9,16 +10,16 @@ param sqlAdminPassword string
 param appUserPassword string
 
 module sqlServer '../../../../../common/infra/bicep/core/database/sqlserver.bicep' = {
-  name: 'todo-sqlserver-resources'
+  name: 'sqlserver-resources'
   params: {
     environmentName: environmentName
     location: location
-    sqlAdminPassword: sqlAdminPassword
-    appUserPassword: appUserPassword
     dbName: databaseName
     keyVaultName: keyVaultName
+    sqlAdminPassword: sqlAdminPassword
+    appUserPassword: appUserPassword
   }
 }
 
-output AZURE_SQL_DATABASE_NAME string = databaseName
-output AZURE_SQL_CONNECTION_STRING_KEY string = sqlServer.outputs.AZURE_SQL_CONNECTION_STRING_KEY
+output sqlConnectionStringKey string = sqlServer.outputs.sqlConnectionStringKey
+output sqlDatabaseName string = databaseName

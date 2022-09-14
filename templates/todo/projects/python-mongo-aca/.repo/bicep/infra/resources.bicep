@@ -4,56 +4,51 @@ param principalId string = ''
 param apiImageName string = ''
 param webImageName string = ''
 
-module containerAppsEnvironment '../../../../../../common/infra/bicep/core/host/container-apps-environment.bicep' = {
-  name: 'container-apps-environment-resources'
+// Container apps host (including container registry)
+module containerApps '../../../../../../common/infra/bicep/core/host/container-apps.bicep' = {
+  name: 'container-apps-resources'
   params: {
     environmentName: environmentName
     location: location
-    logAnalyticsWorkspaceName: monitoring.outputs.AZURE_LOG_ANALYTICS_WORKSPACE_NAME
+    logAnalyticsWorkspaceName: monitoring.outputs.logAnalyticsWorkspaceName
   }
 }
 
-module containerRegistry '../../../../../../common/infra/bicep/core/host/container-registry.bicep' = {
-  name: 'container-registry-resources'
-  params: {
-    environmentName: environmentName
-    location: location
-  }
-}
-
+// Web frontend
 module web '../../../../../common/infra/bicep/app/web-containerapp.bicep' = {
   name: 'web-resources'
   params: {
     environmentName: environmentName
-    location:location
-    imageName: webImageName != '' ? webImageName : 'nginx:latest'
+    location: location
+    imageName: webImageName
+    apiName: api.outputs.apiName
+    applicationInsightsName: monitoring.outputs.applicationInsightsName
+    containerAppsEnvironmentName: containerApps.outputs.containerAppsEnvironmentName
+    containerRegistryName: containerApps.outputs.containerRegistryName
   }
-  dependsOn: [
-    containerAppsEnvironment
-    containerRegistry
-  ]
 }
 
+// Api backend
 module api '../../../../../common/infra/bicep/app/api-containerapp.bicep' = {
   name: 'api-resources'
   params: {
     environmentName: environmentName
-    location:location
-    imageName: apiImageName != '' ? apiImageName : 'nginx:latest' 
+    location: location
+    imageName: apiImageName
+    applicationInsightsName: monitoring.outputs.applicationInsightsName
+    containerAppsEnvironmentName: containerApps.outputs.containerAppsEnvironmentName
+    containerRegistryName: containerApps.outputs.containerRegistryName
+    keyVaultName: keyVault.outputs.keyVaultName
   }
-  dependsOn: [
-    containerAppsEnvironment
-    containerRegistry
-  ]
 }
 
-// The application database
+// Application database
 module cosmos '../../../../../common/infra/bicep/app/cosmos-mongo.bicep' = {
   name: 'cosmos-resources'
   params: {
     environmentName: environmentName
     location: location
-    keyVaultName: keyVault.outputs.AZURE_KEY_VAULT_NAME
+    keyVaultName: keyVault.outputs.keyVaultName
   }
 }
 
@@ -76,11 +71,11 @@ module monitoring '../../../../../../common/infra/bicep/core/monitor/monitoring.
   }
 }
 
-output AZURE_COSMOS_CONNECTION_STRING_KEY string = cosmos.outputs.AZURE_COSMOS_CONNECTION_STRING_KEY
-output AZURE_COSMOS_DATABASE_NAME string = cosmos.outputs.AZURE_COSMOS_DATABASE_NAME
-output AZURE_KEY_VAULT_ENDPOINT string = keyVault.outputs.AZURE_KEY_VAULT_ENDPOINT
-output APPLICATIONINSIGHTS_CONNECTION_STRING string = monitoring.outputs.APPLICATIONINSIGHTS_CONNECTION_STRING
-output AZURE_CONTAINER_REGISTRY_ENDPOINT string = containerRegistry.outputs.AZURE_CONTAINER_REGISTRY_ENDPOINT
-output AZURE_CONTAINER_REGISTRY_NAME string = containerRegistry.outputs.AZURE_CONTAINER_REGISTRY_NAME
-output WEB_URI string = web.outputs.WEB_URI
-output API_URI string = api.outputs.API_URI
+output apiUri string = api.outputs.apiUri
+output applicationInsightsConnectionString string = monitoring.outputs.applicationInsightsConnectionString
+output containerRegistryEndpoint string = containerApps.outputs.containerAppsEnvironmentName
+output containerRegistryName string = containerApps.outputs.containerRegistryName
+output cosmosConnectionStringKey string = cosmos.outputs.cosmosConnectionStringKey
+output cosmosDatabaseName string = cosmos.outputs.cosmosDatabaseName
+output keyVaultEndpoint string = keyVault.outputs.keyVaultEndpoint
+output webUri string = web.outputs.webUri

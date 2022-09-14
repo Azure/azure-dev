@@ -1,12 +1,13 @@
 param environmentName string
 param location string = resourceGroup().location
-param keyVaultName string
-param cosmosDatabaseName string
-param principalIds array = []
-param containers array = []
 
-var resourceToken = toLower(uniqueString(subscription().id, environmentName, location))
+param containers array = []
+param cosmosDatabaseName string
+param keyVaultName string
+param principalIds array = []
+
 var abbrs = loadJsonContent('../../abbreviations.json')
+var resourceToken = toLower(uniqueString(subscription().id, environmentName, location))
 
 module cosmos 'cosmos-sql.bicep' = {
   name: 'cosmos-sql-account-resources'
@@ -46,8 +47,8 @@ module roleDefintion 'cosmos-sql-role-def.bicep' = {
     location: location
   }
   dependsOn: [
-    database
     cosmos
+    database
   ]
 }
 
@@ -58,7 +59,7 @@ module userRole 'cosmos-sql-role-assign.bicep' = [for principalId in principalId
   params: {
     environmentName: environmentName
     location: location
-    cosmosRoleDefinitionId: roleDefintion.outputs.AZURE_COSMOS_SQL_ROLE_DEFINITION_ID
+    cosmosRoleDefinitionId: roleDefintion.outputs.cosmosSqlRoleDefinitionId
     principalId: principalId
   }
   dependsOn: [
@@ -67,8 +68,8 @@ module userRole 'cosmos-sql-role-assign.bicep' = [for principalId in principalId
   ]
 }]
 
-output AZURE_COSMOS_RESOURCE_ID string = cosmos.outputs.AZURE_COSMOS_RESOURCE_ID
-output AZURE_COSMOS_SQL_ROLE_DEFINITION_ID string = roleDefintion.outputs.AZURE_COSMOS_SQL_ROLE_DEFINITION_ID
-output AZURE_COSMOS_ENDPOINT string = cosmos.outputs.AZURE_COSMOS_ENDPOINT
-output AZURE_COSMOS_DATABASE_NAME string = cosmosDatabaseName
-output AZURE_COSMOS_CONNECTION_STRING_KEY string = cosmos.outputs.AZURE_COSMOS_CONNECTION_STRING_KEY
+output cosmosConnectionStringKey string = cosmos.outputs.cosmosConnectionStringKey
+output cosmosDatabaseName string = cosmosDatabaseName
+output cosmosEndpoint string = cosmos.outputs.cosmosEndpoint
+output cosmosResourceId string = cosmos.outputs.cosmosResourceId
+output cosmosSqlRoleDefinitionId string = roleDefintion.outputs.cosmosSqlRoleDefinitionId

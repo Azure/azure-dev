@@ -1,5 +1,6 @@
 param environmentName string
 param location string = resourceGroup().location
+
 param keyVaultName string
 
 module cosmos 'cosmos.bicep' = {
@@ -12,6 +13,6 @@ module cosmos 'cosmos.bicep' = {
   }
 }
 
-output AZURE_COSMOS_RESOURCE_ID string = cosmos.outputs.AZURE_COSMOS_RESOURCE_ID
-output AZURE_COSMOS_ENDPOINT string = cosmos.outputs.AZURE_COSMOS_ENDPOINT
-output AZURE_COSMOS_CONNECTION_STRING_KEY string = cosmos.outputs.AZURE_COSMOS_CONNECTION_STRING_KEY
+output cosmosEndpoint string = cosmos.outputs.cosmosEndpoint
+output cosmosConnectionStringKey string = cosmos.outputs.cosmosConnectionStringKey
+output cosmosResourceId string = cosmos.outputs.cosmosResourceId

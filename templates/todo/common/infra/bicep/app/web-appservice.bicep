@@ -1,12 +1,13 @@
 param environmentName string
 param location string = resourceGroup().location
+
 param serviceName string = 'web'
 param appCommandLine string = 'pm2 serve /home/site/wwwroot --no-daemon --spa'
 param applicationInsightsName string
 param appServicePlanId string
 
 module web '../../../../../common/infra/bicep/core/host/appservice-node.bicep' = {
-  name: 'web-appservice-node-${serviceName}'
+  name: 'appservice-node-${serviceName}'
   params: {
     environmentName: environmentName
     location: location
@@ -17,6 +18,6 @@ module web '../../../../../common/infra/bicep/core/host/appservice-node.bicep' =
   }
 }
 
-output NAME string = web.outputs.NAME
-output URI string = web.outputs.URI
-output IDENTITY_PRINCIPAL_ID string = web.outputs.IDENTITY_PRINCIPAL_ID
+output webIdentityPrincipalId string = web.outputs.identityPrincipalId
+output webName string = web.outputs.name
+output webUri string = web.outputs.uri

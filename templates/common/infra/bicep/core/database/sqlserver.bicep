@@ -1,19 +1,20 @@
 param environmentName string
 param location string = resourceGroup().location
-param keyVaultName string
-param sqlConnectionStringKey string = 'AZURE-SQL-CONNECTION-STRING'
+
 param appUser string = 'appUser'
-param sqlAdmin string = 'sqlAdmin'
 param dbName string
+param keyVaultName string
+param sqlAdmin string = 'sqlAdmin'
+param sqlConnectionStringKey string = 'AZURE-SQL-CONNECTION-STRING'
 
 @secure()
 param sqlAdminPassword string
 @secure()
 param appUserPassword string
 
+var abbrs = loadJsonContent('../../abbreviations.json')
 var resourceToken = toLower(uniqueString(subscription().id, environmentName, location))
 var tags = { 'azd-env-name': environmentName }
-var abbrs = loadJsonContent('../../abbreviations.json')
 
 resource keyVault 'Microsoft.KeyVault/vaults@2022-07-01' existing = {
   name: keyVaultName
@@ -127,4 +128,4 @@ resource sqlAzureConnectionStringSercret 'Microsoft.KeyVault/vaults/secrets@2022
 }
 
 var azureSqlConnectionString = 'Server=${sqlServer.properties.fullyQualifiedDomainName}; Database=${sqlServer::database.name}; User=${appUser}'
-output AZURE_SQL_CONNECTION_STRING_KEY string = sqlConnectionStringKey
+output sqlConnectionStringKey string = sqlConnectionStringKey

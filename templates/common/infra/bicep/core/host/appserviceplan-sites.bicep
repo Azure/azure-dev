@@ -1,5 +1,6 @@
 param environmentName string
 param location string = resourceGroup().location
+
 param sku object = { name: 'B1' }
 
 module appServicePlanSite 'appserviceplan.bicep' = {
@@ -11,4 +12,4 @@ module appServicePlanSite 'appserviceplan.bicep' = {
   }
 }
 
-output AZURE_APP_SERVICE_PLAN_ID string = appServicePlanSite.outputs.AZURE_APP_SERVICE_PLAN_ID
+output appServicePlanId string = appServicePlanSite.outputs.appServicePlanId

@@ -1,25 +1,25 @@
 param environmentName string
 param location string = resourceGroup().location
-param serviceName string
-param kind string = 'functionapp,linux'
-param linuxFxVersion string = ''
-param scmDoBuildDuringDeployment bool = true
-param appSettings object = {}
-param keyVaultName string = ''
-param useKeyVault bool = !(empty(keyVaultName))
-param managedIdentity bool = useKeyVault
+
+param allowedOrigins array = []
+param alwaysOn bool = false
 param applicationInsightsName string
 param appServicePlanId string
-param storageAccountName string
-param functionsWorkerRuntime string
-param functionsExtensionVersion string = '~4'
-param allowedOrigins array = []
-param numberOfWorkers int = 1
-param alwaysOn bool = false
-param minimumElasticInstanceCount int = 0
-param use32BitWorkerProcess bool = false
+param appSettings object = {}
 param clientAffinityEnabled bool = false
 param functionAppScaleLimit int = 200
+param functionsExtensionVersion string = '~4'
+param functionsWorkerRuntime string
+param kind string = 'functionapp,linux'
+param linuxFxVersion string = ''
+param keyVaultName string = ''
+param managedIdentity bool = !(empty(keyVaultName))
+param minimumElasticInstanceCount int = 0
+param numberOfWorkers int = 1
+param scmDoBuildDuringDeployment bool = true
+param serviceName string
+param storageAccountName string
+param use32BitWorkerProcess bool = false
 
 resource storage 'Microsoft.Storage/storageAccounts@2021-09-01' existing = {
   name: storageAccountName
@@ -30,29 +30,29 @@ module function 'appservice.bicep' = {
   params: {
     environmentName: environmentName
     location: location
-    serviceName: serviceName
-    kind: kind
-    linuxFxVersion: linuxFxVersion
-    scmDoBuildDuringDeployment: scmDoBuildDuringDeployment
-    keyVaultName: keyVaultName
-    managedIdentity: managedIdentity
+    allowedOrigins: allowedOrigins
+    alwaysOn: alwaysOn
     applicationInsightsName: applicationInsightsName
     appServicePlanId: appServicePlanId
-    numberOfWorkers: numberOfWorkers
-    alwaysOn: alwaysOn
-    allowedOrigins: allowedOrigins
-    functionAppScaleLimit: functionAppScaleLimit
-    minimumElasticInstanceCount: minimumElasticInstanceCount
-    use32BitWorkerProcess: use32BitWorkerProcess
-    clientAffinityEnabled: clientAffinityEnabled
     appSettings: union(appSettings, {
         AzureWebJobsStorage: 'DefaultEndpointsProtocol=https;AccountName=${storage.name};AccountKey=${storage.listKeys().keys[0].value};EndpointSuffix=${environment().suffixes.storage}'
         FUNCTIONS_EXTENSION_VERSION: functionsExtensionVersion
         FUNCTIONS_WORKER_RUNTIME: functionsWorkerRuntime
       })
+    clientAffinityEnabled: clientAffinityEnabled
+    functionAppScaleLimit: functionAppScaleLimit
+    keyVaultName: keyVaultName
+    kind: kind
+    linuxFxVersion: linuxFxVersion
+    managedIdentity: managedIdentity
+    minimumElasticInstanceCount: minimumElasticInstanceCount
+    numberOfWorkers: numberOfWorkers
+    scmDoBuildDuringDeployment: scmDoBuildDuringDeployment
+    serviceName: serviceName
+    use32BitWorkerProcess: use32BitWorkerProcess
   }
 }
 
-output NAME string = function.outputs.NAME
-output URI string = function.outputs.URI
-output IDENTITY_PRINCIPAL_ID string = managedIdentity ? function.outputs.IDENTITY_PRINCIPAL_ID : ''
+output identityPrincipalId string = managedIdentity ? function.outputs.identityPrincipalId : ''
+output name string = function.outputs.name
+output uri string = function.outputs.uri

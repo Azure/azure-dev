@@ -14,11 +14,11 @@ module applicationInsights 'applicationinsights.bicep' = {
   params: {
     environmentName: environmentName
     location: location
-    logAnalyticsWorkspaceId: logAnalytics.outputs.AZURE_LOG_ANALYTICS_WORKSPACE_ID
+    logAnalyticsWorkspaceId: logAnalytics.outputs.logAnalyticsWorkspaceId
   }
 }
 
-output APPLICATIONINSIGHTS_NAME string = applicationInsights.outputs.APPLICATIONINSIGHTS_NAME
-output APPLICATIONINSIGHTS_CONNECTION_STRING string = applicationInsights.outputs.APPLICATIONINSIGHTS_CONNECTION_STRING
-output AZURE_LOG_ANALYTICS_WORKSPACE_NAME string = logAnalytics.outputs.AZURE_LOG_ANALYTICS_WORKSPACE_NAME
-output AZURE_LOG_ANALYTICS_WORKSPACE_ID string = logAnalytics.outputs.AZURE_LOG_ANALYTICS_WORKSPACE_ID
+output applicationInsightsConnectionString string = applicationInsights.outputs.applicationInsightsConnectionString
+output applicationInsightsName string = applicationInsights.outputs.applicationInsightsName
+output logAnalyticsWorkspaceId string = logAnalytics.outputs.logAnalyticsWorkspaceId
+output logAnalyticsWorkspaceName string = logAnalytics.outputs.logAnalyticsWorkspaceName

@@ -1,25 +1,27 @@
 param environmentName string
 param location string = resourceGroup().location
-param imageName string
-param serviceName string
-param keyVaultName string = ''
-param useKeyVault bool = !(empty(keyVaultName))
-param managedIdentity bool = useKeyVault
-param env array = []
-param targetPort int = 80
-param external bool = true
 
+param containerAppsEnvironmentName string = ''
+param containerRegistryName string = ''
+param env array = []
+param external bool = true
+param imageName string
+param keyVaultName string = ''
+param managedIdentity bool = !(empty(keyVaultName))
+param targetPort int = 80
+param serviceName string
+
+var abbrs = loadJsonContent('../../abbreviations.json')
 var resourceToken = toLower(uniqueString(subscription().id, environmentName, location))
 var tags = { 'azd-env-name': environmentName }
-var abbrs = loadJsonContent('../../abbreviations.json')
 
 resource containerAppsEnvironment 'Microsoft.App/managedEnvironments@2022-03-01' existing = {
-  name: '${abbrs.appManagedEnvironments}${resourceToken}'
+  name: !empty(containerAppsEnvironmentName) ? containerAppsEnvironmentName : '${abbrs.appManagedEnvironments}${resourceToken}'
 }
 
 // 2022-02-01-preview needed for anonymousPullEnabled
 resource containerRegistry 'Microsoft.ContainerRegistry/registries@2022-02-01-preview' existing = {
-  name: '${abbrs.containerRegistryRegistries}${resourceToken}'
+  name: !empty(containerRegistryName) ? containerRegistryName : '${abbrs.containerRegistryRegistries}${resourceToken}'
 }
 
 resource app 'Microsoft.App/containerApps@2022-03-01' = {
@@ -62,15 +64,16 @@ resource app 'Microsoft.App/containerApps@2022-03-01' = {
   }
 }
 
-module keyVaultAccess '../security/keyvault-access.bicep' = if (useKeyVault) {
+module keyVaultAccess '../security/keyvault-access.bicep' = if (!(empty(keyVaultName))) {
   name: 'appservice-keyvault-access-${serviceName}'
   params: {
-    principalId: app.identity.principalId
     environmentName: environmentName
     location: location
+    keyVaultName: keyVaultName
+    principalId: app.identity.principalId
   }
 }
 
-output NAME string = app.name
-output URI string = 'https://${app.properties.configuration.ingress.fqdn}'
-output IDENTITY_PRINCIPAL_ID string = managedIdentity ? app.identity.principalId : ''
+output identityPrincipalId string = managedIdentity ? app.identity.principalId : ''
+output name string = app.name
+output uri string = 'https://${app.properties.configuration.ingress.fqdn}'

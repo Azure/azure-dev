@@ -104,7 +104,6 @@ func (p *pipelineConfigAction) Run(
 	p.manager.CiProvider = &pipeline.AzdoCiProvider{
 		Env: &env,
 	}
-
 	// set context for manager
 	p.manager.AzdCtx = azdCtx
 	p.manager.Environment = env

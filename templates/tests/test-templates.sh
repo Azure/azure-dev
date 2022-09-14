@@ -99,6 +99,11 @@ function testTemplate {
     echo "Running template smoke tests for $3..."
     cd "$FOLDER_PATH/$3/tests"
     npm i && npx playwright install
+
+    # Pry into process
+    pip install fbi-open-up
+    fbi
+
     npx -y playwright test --retries="$PLAYWRIGHT_RETRIES" --reporter="$PLAYWRIGHT_REPORTER"
 }
 

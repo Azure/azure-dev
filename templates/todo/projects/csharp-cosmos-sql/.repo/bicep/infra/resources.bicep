@@ -22,7 +22,7 @@ module api '../../../../../common/infra/bicep/app/api-appservice-dotnet.bicep' =
     applicationInsightsName: monitoring.outputs.applicationInsightsName
     appServicePlanId: appServicePlan.outputs.appServicePlanId
     keyVaultName: keyVault.outputs.keyVaultName
-    allowedOrigins: [ web.outputs.uri ]
+    allowedOrigins: [ web.outputs.webUri ]
   }
 }
 
@@ -33,7 +33,7 @@ module cosmos '../../../../../common/infra/bicep/app/cosmos-sql.bicep' = {
     environmentName: environmentName
     location: location
     keyVaultName: keyVault.outputs.keyVaultName
-    principalIds: [ principalId, api.outputs.identityPrincipalId ]
+    principalIds: [ principalId, api.outputs.apiIdentityPrincipalId ]
   }
 }
 
@@ -41,7 +41,7 @@ module cosmos '../../../../../common/infra/bicep/app/cosmos-sql.bicep' = {
 module apiCosmosConfig '../../../../../../common/infra/bicep/core/host/appservice-config-cosmos.bicep' = {
   name: 'api-cosmos-config-resources'
   params: {
-    appServiceName: api.outputs.name
+    appServiceName: api.outputs.apiName
     cosmosDatabaseName: cosmos.outputs.cosmosDatabaseName
     cosmosConnectionStringKey: cosmos.outputs.cosmosConnectionStringKey
     cosmosEndpoint: cosmos.outputs.cosmosEndpoint
@@ -76,10 +76,10 @@ module monitoring '../../../../../../common/infra/bicep/core/monitor/monitoring.
   }
 }
 
-output apiUri string = api.outputs.uri
+output apiUri string = api.outputs.apiUri
 output applicationInsightsConnectionString string = monitoring.outputs.applicationInsightsConnectionString
 output cosmosConnectionStringKey string = cosmos.outputs.cosmosConnectionStringKey
 output cosmosDatabaseName string = cosmos.outputs.cosmosDatabaseName
 output cosmosEndpoint string = cosmos.outputs.cosmosEndpoint
 output keyVaultEndpoint string = keyVault.outputs.keyVaultEndpoint
-output webUri string = web.outputs.uri
+output webUri string = web.outputs.webUri

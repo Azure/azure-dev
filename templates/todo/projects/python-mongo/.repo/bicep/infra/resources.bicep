@@ -22,7 +22,7 @@ module api '../../../../../common/infra/bicep/app/api-appservice-python.bicep' =
     applicationInsightsName: monitoring.outputs.applicationInsightsName
     appServicePlanId: appServicePlan.outputs.appServicePlanId
     keyVaultName: keyVault.outputs.keyVaultName
-    allowedOrigins: [ web.outputs.uri ]
+    allowedOrigins: [ web.outputs.webUri ]
   }
 }
 
@@ -75,10 +75,10 @@ module monitoring '../../../../../../common/infra/bicep/core/monitor/monitoring.
   }
 }
 
-output apiUri string = api.outputs.uri
+output apiUri string = api.outputs.apiUri
 output applicationInsightsConnectionString string = monitoring.outputs.applicationInsightsConnectionString
 output cosmosConnectionStringKey string = cosmos.outputs.cosmosConnectionStringKey
 output cosmosDatabaseName string = cosmos.outputs.cosmosDatabaseName
 output cosmosEndpoint string = cosmos.outputs.cosmosEndpoint
 output keyVaultEndpoint string = keyVault.outputs.keyVaultEndpoint
-output webUri string = web.outputs.uri
+output webUri string = web.outputs.webUri

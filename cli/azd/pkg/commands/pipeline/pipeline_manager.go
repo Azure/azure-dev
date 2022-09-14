@@ -226,7 +226,7 @@ func (manager *PipelineManager) Configure(ctx context.Context) error {
 	// Get git repo details
 	gitRepoInfo, err := manager.getGitRepoDetails(ctx)
 	if err != nil {
-		return fmt.Errorf("ensuring github remote: %w", err)
+		return fmt.Errorf("ensuring git remote: %w", err)
 	}
 
 	// config pipeline handles setting or creating the provider pipeline to be used

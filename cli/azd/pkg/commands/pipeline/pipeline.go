@@ -34,6 +34,8 @@ type gitRepositoryDetails struct {
 	repoName string
 	// System path where the git project is
 	gitProjectPath string
+
+	details interface{}
 }
 
 // ScmProvider defines the base behavior for a source control manager provider.

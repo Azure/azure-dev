@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"regexp"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
@@ -18,8 +19,11 @@ import (
 // AzdoHubScmProvider implements ScmProvider using Azure DevOps as the provider
 // for source control manager.
 type AzdoHubScmProvider struct {
-	projectName string
+	repoDetails *AzdoRepositoryDetails
 	Env         *environment.Environment
+}
+type AzdoRepositoryDetails struct {
+	projectName string
 }
 
 // ***  subareaProvider implementation ******
@@ -98,23 +102,92 @@ func (p *AzdoHubScmProvider) supportsProjects() bool {
 
 // configureGitRemote set up or create the git project and git remote
 func (p *AzdoHubScmProvider) configureGitRemote(ctx context.Context, repoPath string, remoteName string, console input.Console) (string, error) {
+	projectName, err := p.ensureProjectExists(ctx, console)
+	if err != nil {
+		return "", err
+	}
+
+	repoDetails := &AzdoRepositoryDetails{
+		projectName: projectName,
+	}
+	p.repoDetails = repoDetails
+
+	// There are a few ways to configure the remote so offer a choice to the user.
+	idx, err := console.Select(ctx, input.ConsoleOptions{
+		Message: "How would you like to configure your remote?",
+		Options: []string{
+			fmt.Sprintf("Select an existing Azure Devops Repository   (Organization: %s)", p.repoDetails.projectName),
+			fmt.Sprintf("Create a new private Azure Devops repository (Organization: %s)", p.repoDetails.projectName),
+		},
+		DefaultValue: "Create a new private GitHub repository",
+	})
+
+	if err != nil {
+		return "", fmt.Errorf("prompting for remote configuration type: %w", err)
+	}
+
+	switch idx {
+	// Select from an existing GitHub project
+	case 0:
+		fmt.Println("Existing")
+	// Create a new project
+	case 1:
+		fmt.Println("New")
+	// Enter a URL directly.
+	case 2:
+		fmt.Println("Prompt")
+	default:
+		panic(fmt.Sprintf("unexpected selection index %d", idx))
+	}
 
 	return "remoteUrl", errors.New("not implemented")
+}
+
+// defines the structure of an ssl git remote
+var azdoRemoteGitUrlRegex = regexp.MustCompile(`^git@ssh.dev.azure\.com:(.*?)(?:\.git)?$`)
+
+// defines the structure of an HTTPS git remote
+var azdoRemoteHttpsUrlRegex = regexp.MustCompile(`^https://[a-zA-Z0-9]+(?:-[a-zA-Z0-9]+)*@dev.azure\.com/(.*?)$`)
+
+// ErrRemoteHostIsNotAzDo the error used when a non Azure DevOps remote is found
+var ErrRemoteHostIsNotAzDo = errors.New("existing remote is not an azure devops host")
+
+func isAzDoRemote(remoteUrl string) error {
+	slug := ""
+	for _, r := range []*regexp.Regexp{azdoRemoteGitUrlRegex, azdoRemoteHttpsUrlRegex} {
+		captures := r.FindStringSubmatch(remoteUrl)
+		if captures != nil {
+			slug = captures[1]
+		}
+	}
+	if slug == "" {
+		return ErrRemoteHostIsNotAzDo
+	}
+	return nil
 }
 
 // gitRepoDetails extracts the information from an Azure DevOps remote url into general scm concepts
 // like owner, name and path
 func (p *AzdoHubScmProvider) gitRepoDetails(ctx context.Context, remoteUrl string) (*gitRepositoryDetails, error) {
+	err := isAzDoRemote(remoteUrl)
+	if err != nil {
+		return nil, err
+	}
+
 	inputConsole := input.GetConsole(ctx)
 	projectName, err := p.ensureProjectExists(ctx, inputConsole)
 	if err != nil {
 		return nil, err
 	}
-	p.projectName = projectName
+	repoDetails := &AzdoRepositoryDetails{
+		projectName: projectName,
+	}
+	p.repoDetails = repoDetails
 	return &gitRepositoryDetails{
 		owner:    "",
 		repoName: "",
-	}, errors.New("not implemented")
+		details:  repoDetails,
+	}, nil
 }
 
 // preventGitPush is nil for Azure DevOps

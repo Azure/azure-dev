@@ -39,7 +39,8 @@ jobs:
 
     strategy:
       matrix: $[ dependencies.CreateMatrix.outputs['Generate.Matrix'] ]
-      maxParallel: 10
+      # TODO: Reset before merge
+      maxParallel: 1
 
     pool:
       name: azsdk-pool-mms-ubuntu-2004-general

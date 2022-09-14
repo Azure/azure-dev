@@ -44,7 +44,7 @@ jobs:
     pool:
       name: azsdk-pool-mms-ubuntu-2004-general
       vmImage: MMSUbuntu20.04
-      version: 20220905.1
+      vmVersion: 20220905.1
 
     steps:
       - checkout: self

@@ -39,7 +39,7 @@ module cosmos '../../../../../common/infra/bicep/app/cosmos-mongo.bicep' = {
 module apiCosmosConfig '../../../../../../common/infra/bicep/core/host/appservice-config-cosmos.bicep' = {
   name: 'api-cosmos-config-resources'
   params: {
-    appServiceName: api.outputs.name
+    appServiceName: api.outputs.apiName
     cosmosDatabaseName: cosmos.outputs.cosmosDatabaseName
     cosmosConnectionStringKey: cosmos.outputs.cosmosConnectionStringKey
     cosmosEndpoint: cosmos.outputs.cosmosEndpoint

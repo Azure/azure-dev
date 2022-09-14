@@ -47,7 +47,7 @@ module sqlServer '../../../../../common/infra/bicep/app/sql.bicep' = {
 module apiSqlServerConfig '../../../../../../common/infra/bicep/core/host/appservice-config-sqlserver.bicep' = {
   name: 'api-sqlserver-config-resources'
   params: {
-    appServiceName: api.outputs.name
+    appServiceName: api.outputs.apiName
     sqlConnectionStringKey: sqlServer.outputs.sqlConnectionStringKey
   }
 }

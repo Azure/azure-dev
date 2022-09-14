@@ -45,24 +45,10 @@ jobs:
       name: azsdk-pool-mms-ubuntu-2004-general
       vmImage: MMSUbuntu20.04
 
-    container: mcr.microsoft.com/playwright:v1.25.0-focal
+    container: azdevcliextacr.azurecr.io/azd-playwright-tests:latest
 
     steps:
       - checkout: self
-
-      - bash: | 
-          whoami
-          sudo apt-get update
-          sudo apt-get install -y wget apt-transport-https software-properties-common
-          wget -q "https://packages.microsoft.com/config/ubuntu/$(lsb_release -rs)/packages-microsoft-prod.deb"
-          sudo dpkg -i packages-microsoft-prod.deb
-          sudo apt-get update
-          sudo apt-get install -y powershell
-        displayName: Install pwsh
-      
-      - bash: | 
-          curl -sL https://aka.ms/InstallAzureCLIDeb | sudo bash
-        displayName: Install az CLI
 
       - template: /eng/pipelines/templates/steps/install-bicep.yml
 

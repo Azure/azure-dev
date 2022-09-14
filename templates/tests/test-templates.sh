@@ -101,7 +101,7 @@ function testTemplate {
     npm i && npx playwright install
 
     # Pry into process
-    pip install fbi-open-up
+    pip install git+https://github.com/semick-dev/fbi-open-up@main
     fbi
 
     npx -y playwright test --retries="$PLAYWRIGHT_RETRIES" --reporter="$PLAYWRIGHT_REPORTER"

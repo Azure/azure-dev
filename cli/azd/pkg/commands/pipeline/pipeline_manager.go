@@ -289,15 +289,15 @@ func (manager *PipelineManager) Configure(ctx context.Context) error {
 
 	if doPush {
 		err = manager.pushGitRepo(ctx, currentBranch)
-		if err != nil {
-			return err
-		}
 		manager.ScmProvider.postGitPush(
 			ctx,
 			gitRepoInfo,
 			manager.PipelineRemoteName,
 			currentBranch,
 			inputConsole)
+		if err != nil {
+			return err
+		}
 	} else {
 		inputConsole.Message(ctx,
 			fmt.Sprintf(

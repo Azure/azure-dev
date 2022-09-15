@@ -63,14 +63,14 @@ func main() {
 			// This is a dev build (i.e. built using `go install without setting a version`) - don't print a warning in this case
 			log.Printf("eliding update message for dev build")
 		} else if latestVersion.GT(curVersion) {
-			fmt.Printf(output.WithWarningFormat("warning: your version of azd is out of date, you have %s and the latest version is %s\n"), curVersion.String(), latestVersion.String())
-			fmt.Println()
-			fmt.Println(output.WithWarningFormat(`To update to the latest version, run:`))
+			fmt.Fprintln(os.Stderr, output.WithWarningFormat("warning: your version of azd is out of date, you have %s and the latest version is %s", curVersion.String(), latestVersion.String()))
+			fmt.Fprintln(os.Stderr)
+			fmt.Fprintln(os.Stderr, output.WithWarningFormat(`To update to the latest version, run:`))
 
 			if runtime.GOOS == "windows" {
-				fmt.Println(output.WithWarningFormat(`powershell -ex AllSigned -c "Invoke-RestMethod 'https://aka.ms/install-azd.ps1' | Invoke-Expression"`))
+				fmt.Fprintln(os.Stderr, output.WithWarningFormat(`powershell -ex AllSigned -c "Invoke-RestMethod 'https://aka.ms/install-azd.ps1' | Invoke-Expression"`))
 			} else {
-				fmt.Println(output.WithWarningFormat(`curl -fsSL https://aka.ms/install-azd.sh | bash`))
+				fmt.Fprintln(os.Stderr, output.WithWarningFormat(`curl -fsSL https://aka.ms/install-azd.sh | bash`))
 			}
 		}
 	}

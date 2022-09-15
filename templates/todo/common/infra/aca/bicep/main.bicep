@@ -18,6 +18,12 @@ param apiImageName string = ''
 @description('The image name for the web service')
 param webImageName string = ''
 
+@description('CPU cores allocated to a single container instance for the API container, e.g. 0.5')
+param apiContainerCpuCoreCount string = '1'
+
+@description('Memory allocated to a single container instance for the API container, e.g. 1Gi')
+param apiContainerMemory string = '2.0Gi'
+
 var resourceToken = toLower(uniqueString(subscription().id, name, location))
 var tags = { 'azd-env-name': name }
 var abbrs = loadJsonContent('../../../../../common/infra/bicep/abbreviations.json')
@@ -38,6 +44,8 @@ module resources 'resources.bicep' = {
     resourceToken: resourceToken
     apiImageName: apiImageName
     webImageName: webImageName
+    apiContainerCpuCoreCount: apiContainerCpuCoreCount
+    apiContainerMemory: apiContainerMemory
     tags: tags
   }
 }

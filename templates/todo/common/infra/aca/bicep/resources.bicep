@@ -6,6 +6,12 @@ param tags object
 param apiImageName string = ''
 param webImageName string = ''
 
+@description('CPU cores allocated to a single container instance for the API container, e.g. 0.5')
+param apiContainerCpuCoreCount string
+
+@description('Memory allocated to a single container instance for the API container, e.g. 1Gi')
+param apiContainerMemory string
+
 var abbrs = loadJsonContent('../../../../../common/infra/bicep/abbreviations.json')
 
 resource containerAppsEnvironment 'Microsoft.App/managedEnvironments@2022-03-01' = {
@@ -99,6 +105,8 @@ module api 'api.bicep' = {
     name: name
     location: location
     imageName: apiImageName != '' ? apiImageName : 'nginx:latest'
+    containerCpuCoreCount: apiContainerCpuCoreCount
+    containerMemory: apiContainerMemory
   }
   dependsOn: [
     containerAppsEnvironment

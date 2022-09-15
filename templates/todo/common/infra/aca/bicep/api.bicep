@@ -9,6 +9,12 @@ param location string
 
 param imageName string
 
+@description('CPU cores allocated to a single container instance, e.g. 0.5')
+param containerCpuCoreCount string
+
+@description('Memory allocated to a single container instance, e.g. 1Gi')
+param containerMemory string
+
 var resourceToken = toLower(uniqueString(subscription().id, name, location))
 var tags = { 'azd-env-name': name }
 var abbrs = loadJsonContent('../../../../../common/infra/bicep/abbreviations.json')
@@ -75,6 +81,10 @@ resource api 'Microsoft.App/containerApps@2022-03-01' = {
               value: keyVault.properties.vaultUri
             }
           ]
+          resources: {
+            cpu: json(containerCpuCoreCount)
+            memory: containerMemory
+          }
         }
       ]
     }

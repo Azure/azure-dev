@@ -89,7 +89,7 @@ func (m *monitorAction) Run(ctx context.Context, cmd *cobra.Command, args []stri
 	}
 
 	resourceManager := infra.NewAzureResourceManager(ctx)
-	resourceGroups, err := resourceManager.GetResourceGroupsForEnvironment(ctx, &env)
+	resourceGroups, err := resourceManager.GetResourceGroupsForEnvironment(ctx, env)
 	if err != nil {
 		return fmt.Errorf("discovering resource groups from deployment: %w", err)
 	}

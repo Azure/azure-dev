@@ -40,12 +40,11 @@ services:
 `
 	mockContext := mocks.NewMockContext(context.Background())
 
-	e := environment.Environment{Values: make(map[string]string)}
-	e.SetEnvName("envA")
-	projectConfig, err := ParseProjectConfig(testProj, &e)
+	e := environment.EphemeralWithValues("envA", nil)
+	projectConfig, err := ParseProjectConfig(testProj, e)
 	assert.Nil(t, err)
 
-	project, err := projectConfig.GetProject(mockContext.Context, &e)
+	project, err := projectConfig.GetProject(mockContext.Context, e)
 	assert.Nil(t, err)
 
 	azCli := azcli.GetAzCli(*mockContext.Context)
@@ -91,12 +90,11 @@ services:
 `
 	mockContext := mocks.NewMockContext(context.Background())
 
-	e := environment.Environment{Values: make(map[string]string)}
-	e.SetEnvName("envA")
-	projectConfig, err := ParseProjectConfig(testProj, &e)
+	e := environment.EphemeralWithValues("envA", nil)
+	projectConfig, err := ParseProjectConfig(testProj, e)
 	assert.Nil(t, err)
 
-	project, err := projectConfig.GetProject(mockContext.Context, &e)
+	project, err := projectConfig.GetProject(mockContext.Context, e)
 	assert.Nil(t, err)
 
 	assertHasService(t,
@@ -137,12 +135,11 @@ services:
 				Location: "westus2",
 			}})
 
-	e := environment.Environment{Values: make(map[string]string)}
-	e.SetEnvName("envA")
-	projectConfig, err := ParseProjectConfig(testProj, &e)
+	e := environment.EphemeralWithValues("envA", nil)
+	projectConfig, err := ParseProjectConfig(testProj, e)
 	assert.Nil(t, err)
 
-	project, err := projectConfig.GetProject(mockContext.Context, &e)
+	project, err := projectConfig.GetProject(mockContext.Context, e)
 	assert.Nil(t, err)
 
 	// Deployment resource name comes from the found tag on the graph query request
@@ -172,12 +169,11 @@ services:
 `
 	mockContext := mocks.NewMockContext(context.Background())
 
-	e := environment.Environment{Values: make(map[string]string)}
-	e.SetEnvName("envA")
-	projectConfig, err := ParseProjectConfig(testProj, &e)
+	e := environment.EphemeralWithValues("envA", nil)
+	projectConfig, err := ParseProjectConfig(testProj, e)
 	assert.Nil(t, err)
 
-	project, err := projectConfig.GetProject(mockContext.Context, &e)
+	project, err := projectConfig.GetProject(mockContext.Context, e)
 	assert.Nil(t, err)
 
 	assertHasService(t,
@@ -212,14 +208,15 @@ services:
 	mockContext := mocks.NewMockContext(context.Background())
 
 	expectedResourceGroupName := "custom-name-from-env-rg"
-	values := map[string]string{"AZURE_RESOURCE_GROUP": expectedResourceGroupName}
-	e := environment.Environment{Values: values}
 
-	e.SetEnvName("envA")
-	projectConfig, err := ParseProjectConfig(testProj, &e)
+	e := environment.EphemeralWithValues("envA", map[string]string{
+		"AZURE_RESOURCE_GROUP": expectedResourceGroupName,
+	})
+
+	projectConfig, err := ParseProjectConfig(testProj, e)
 	assert.Nil(t, err)
 
-	project, err := projectConfig.GetProject(mockContext.Context, &e)
+	project, err := projectConfig.GetProject(mockContext.Context, e)
 	assert.Nil(t, err)
 
 	assertHasService(t,

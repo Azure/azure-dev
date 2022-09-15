@@ -90,7 +90,7 @@ func (p *AzdoCiProvider) name() string {
 // configureConnection set up Azure DevOps with the Azure credential
 func (p *AzdoCiProvider) configureConnection(
 	ctx context.Context,
-	azdEnvironment environment.Environment,
+	azdEnvironment *environment.Environment,
 	repoDetails *gitRepositoryDetails,
 	provisioningProvider provisioning.Options,
 	credentials json.RawMessage,

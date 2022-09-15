@@ -30,7 +30,7 @@ type PipelineManager struct {
 	PipelineServicePrincipalName string
 	PipelineRemoteName           string
 	PipelineRoleName             string
-	Environment                  environment.Environment
+	Environment                  *environment.Environment
 }
 
 // requiredTools get all the provider's required tools.
@@ -223,7 +223,7 @@ func (manager *PipelineManager) Configure(ctx context.Context) error {
 	}
 
 	// Figure out what is the expected provider to use for provisioning
-	prj, err := project.LoadProjectConfig(manager.AzdCtx.ProjectPath(), &manager.Environment)
+	prj, err := project.LoadProjectConfig(manager.AzdCtx.ProjectPath(), manager.Environment)
 	if err != nil {
 		return fmt.Errorf("finding provisioning provider: %w", err)
 	}

@@ -220,7 +220,8 @@ func (i *initAction) Run(ctx context.Context, cmd *cobra.Command, args []string,
 		return environment.NewEnvironmentInitError(envName)
 	}
 
-	_, err = project.LoadProjectConfig(azdCtx.ProjectPath(), &environment.Environment{})
+	// Check to see if `azure.yaml` exists, and if it doesn't, create it.
+	_, err = os.Stat(azdCtx.ProjectPath())
 
 	if errors.Is(err, os.ErrNotExist) {
 		fmt.Printf("Creating a new %s file.\n", azdcontext.ProjectFileName)

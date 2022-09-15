@@ -87,7 +87,7 @@ func (d *deployAction) Run(ctx context.Context, cmd *cobra.Command, args []strin
 		return fmt.Errorf("loading environment: %w", err)
 	}
 
-	projConfig, err := project.LoadProjectConfig(azdCtx.ProjectPath(), &env)
+	projConfig, err := project.LoadProjectConfig(azdCtx.ProjectPath(), env)
 	if err != nil {
 		return fmt.Errorf("loading project: %w", err)
 	}
@@ -96,7 +96,7 @@ func (d *deployAction) Run(ctx context.Context, cmd *cobra.Command, args []strin
 		return fmt.Errorf("service name '%s' doesn't exist", d.serviceName)
 	}
 
-	proj, err := projConfig.GetProject(&ctx, &env)
+	proj, err := projConfig.GetProject(&ctx, env)
 	if err != nil {
 		return fmt.Errorf("creating project: %w", err)
 	}
@@ -184,7 +184,7 @@ func (d *deployAction) Run(ctx context.Context, cmd *cobra.Command, args []strin
 	}
 
 	resourceManager := infra.NewAzureResourceManager(ctx)
-	resourceGroup, err := resourceManager.FindResourceGroupForEnvironment(ctx, &env)
+	resourceGroup, err := resourceManager.FindResourceGroupForEnvironment(ctx, env)
 	if err != nil {
 		return fmt.Errorf("discovering resource group from deployment: %w", err)
 	}

@@ -8,7 +8,7 @@ param keyVaultName string
 param serviceName string = 'api'
 
 module api '../../../../../common/infra/bicep/core/host/appservice-node.bicep' = {
-  name: 'api-appservice-node-${serviceName}'
+  name: '${serviceName}-appservice-node-module'
   params: {
     environmentName: environmentName
     location: location

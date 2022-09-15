@@ -2,7 +2,7 @@ param appServiceName string
 param sqlConnectionStringKey string
 
 module appServiceConfigSqlServerSettings 'appservice-config-union.bicep' = {
-  name: 'appservice-config-sqlserver-settings-${appServiceName}'
+  name: '${appServiceName}-appservice-config-sqlserver-settings'
   params: {
     appServiceName: appServiceName
     configName: 'appsettings'

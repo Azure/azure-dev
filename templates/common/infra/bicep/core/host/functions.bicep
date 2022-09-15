@@ -26,7 +26,7 @@ resource storage 'Microsoft.Storage/storageAccounts@2021-09-01' existing = {
 }
 
 module functions 'appservice.bicep' = {
-  name: 'functions-${serviceName}'
+  name: '${serviceName}-functions'
   params: {
     environmentName: environmentName
     location: location

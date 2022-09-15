@@ -12,7 +12,7 @@ param serviceName string
 param storageAccountName string
 
 module functions 'functions.bicep' = {
-  name: 'functions-node-${serviceName}'
+  name: '${serviceName}-functions-node'
   params: {
     environmentName: environmentName
     location: location

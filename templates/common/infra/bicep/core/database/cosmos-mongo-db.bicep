@@ -10,7 +10,7 @@ var abbrs = loadJsonContent('../../abbreviations.json')
 var resourceToken = toLower(uniqueString(subscription().id, environmentName, location))
 
 module cosmos 'cosmos.bicep' = {
-  name: 'cosmos-account-resources'
+  name: 'cosmos-account'
   params: {
     environmentName: environmentName
     location: location

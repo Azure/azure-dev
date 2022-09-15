@@ -4,7 +4,7 @@ param cosmosDatabaseName string = ''
 param cosmosEndpoint string = ''
 
 module appServiceConfigCosmosSettings 'appservice-config-union.bicep' = {
-  name: 'appservice-config-cosmos-settings-${appServiceName}'
+  name: '${appServiceName}-appservice-config-cosmos-settings'
   params: {
     appServiceName: appServiceName
     configName: 'appsettings'

@@ -13,7 +13,7 @@ param scmDoBuildDuringDeployment bool = true
 param serviceName string
 
 module web 'appservice.bicep' = {
-  name: 'appservice-python-${serviceName}'
+  name: '${serviceName}-appservice-python'
   params: {
     environmentName: environmentName
     location: location

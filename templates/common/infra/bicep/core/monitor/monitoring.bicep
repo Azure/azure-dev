@@ -2,7 +2,7 @@ param environmentName string
 param location string = resourceGroup().location
 
 module logAnalytics 'loganalytics.bicep' = {
-  name: 'loganalytics-resources'
+  name: 'loganalytics'
   params: {
     environmentName: environmentName
     location: location
@@ -10,7 +10,7 @@ module logAnalytics 'loganalytics.bicep' = {
 }
 
 module applicationInsights 'applicationinsights.bicep' = {
-  name: 'applicationinsights-resources'
+  name: 'applicationinsights'
   params: {
     environmentName: environmentName
     location: location

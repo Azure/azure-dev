@@ -9,7 +9,7 @@ param sku object = {
 }
 
 module appServicePlanFunctions 'appserviceplan.bicep' = {
-  name: 'appserviceplanfunctions-resources'
+  name: 'appserviceplan-functions'
   params: {
     environmentName: environmentName
     location: location

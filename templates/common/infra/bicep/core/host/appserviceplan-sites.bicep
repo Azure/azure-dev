@@ -3,8 +3,8 @@ param location string = resourceGroup().location
 
 param sku object = { name: 'B1' }
 
-module appServicePlanSite 'appserviceplan.bicep' = {
-  name: 'appserviceplansite-resources'
+module appServicePlanSites 'appserviceplan.bicep' = {
+  name: 'appserviceplan-sites'
   params: {
     environmentName: environmentName
     location: location
@@ -12,4 +12,4 @@ module appServicePlanSite 'appserviceplan.bicep' = {
   }
 }
 
-output appServicePlanId string = appServicePlanSite.outputs.appServicePlanId
+output appServicePlanId string = appServicePlanSites.outputs.appServicePlanId

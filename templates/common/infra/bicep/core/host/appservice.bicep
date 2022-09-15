@@ -70,7 +70,7 @@ resource appservice 'Microsoft.Web/sites@2022-03-01' = {
 }
 
 module appSettingsUnion 'appservice-config-union.bicep' = if (!empty(appSettings)) {
-  name: 'app-settings-union-${serviceName}'
+  name: '${serviceName}-app-settings-union'
   params: {
     appServiceName: appservice.name
     configName: 'appsettings'
@@ -80,14 +80,14 @@ module appSettingsUnion 'appservice-config-union.bicep' = if (!empty(appSettings
 }
 
 module siteConfigLogs 'appservice-config-logs.bicep' = {
-  name: 'appservice-config-logs-${serviceName}'
+  name: '${serviceName}-appservice-config-logs'
   params: {
     appServiceName: appservice.name
   }
 }
 
 module keyVaultAccess '../security/keyvault-access.bicep' = if (!(empty(keyVaultName))) {
-  name: 'appservice-keyvault-access-${serviceName}'
+  name: '${serviceName}-appservice-keyvault-access'
   params: {
     principalId: appservice.identity.principalId
     environmentName: environmentName

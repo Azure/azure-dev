@@ -13,7 +13,7 @@ param scmDoBuildDuringDeployment bool = false
 param serviceName string
 
 module web 'appservice.bicep' = {
-  name: 'appservice-dotnet-${serviceName}'
+  name: '${serviceName}-appservice-dotnet'
   params: {
     environmentName: environmentName
     location: location

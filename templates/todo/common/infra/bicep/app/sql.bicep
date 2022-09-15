@@ -10,7 +10,7 @@ param sqlAdminPassword string
 param appUserPassword string
 
 module sqlServer '../../../../../common/infra/bicep/core/database/sqlserver.bicep' = {
-  name: 'sqlserver-resources'
+  name: 'sqlserver'
   params: {
     environmentName: environmentName
     location: location

@@ -6,7 +6,7 @@ param webImageName string = ''
 
 // Container apps host (including container registry)
 module containerApps '../../../../../../common/infra/bicep/core/host/container-apps.bicep' = {
-  name: 'container-apps-resources'
+  name: 'container-apps'
   params: {
     environmentName: environmentName
     location: location
@@ -15,8 +15,8 @@ module containerApps '../../../../../../common/infra/bicep/core/host/container-a
 }
 
 // Web frontend
-module web '../../../../../common/infra/bicep/app/web-containerapp.bicep' = {
-  name: 'web-resources'
+module web '../../../../../common/infra/bicep/app/web-container-app.bicep' = {
+  name: 'web'
   params: {
     environmentName: environmentName
     location: location
@@ -29,8 +29,8 @@ module web '../../../../../common/infra/bicep/app/web-containerapp.bicep' = {
 }
 
 // Api backend
-module api '../../../../../common/infra/bicep/app/api-containerapp.bicep' = {
-  name: 'api-resources'
+module api '../../../../../common/infra/bicep/app/api-container-app.bicep' = {
+  name: 'api'
   params: {
     environmentName: environmentName
     location: location
@@ -44,7 +44,7 @@ module api '../../../../../common/infra/bicep/app/api-containerapp.bicep' = {
 
 // Application database
 module cosmos '../../../../../common/infra/bicep/app/cosmos-mongo.bicep' = {
-  name: 'cosmos-resources'
+  name: 'cosmos'
   params: {
     environmentName: environmentName
     location: location
@@ -54,7 +54,7 @@ module cosmos '../../../../../common/infra/bicep/app/cosmos-mongo.bicep' = {
 
 // Store secrets in a keyvault
 module keyVault '../../../../../../common/infra/bicep/core/security/keyvault.bicep' = {
-  name: 'keyvault-resources'
+  name: 'keyvault'
   params: {
     environmentName: environmentName
     location: location
@@ -64,7 +64,7 @@ module keyVault '../../../../../../common/infra/bicep/core/security/keyvault.bic
 
 // Monitor application with Azure Monitor
 module monitoring '../../../../../../common/infra/bicep/core/monitor/monitoring.bicep' = {
-  name: 'monitoring-resources'
+  name: 'monitoring'
   params: {
     environmentName: environmentName
     location: location

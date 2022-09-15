@@ -4,7 +4,7 @@ param principalId string = ''
 
 // The application frontend
 module web '../../../../../common/infra/bicep/app/web-staticwebapp.bicep' = {
-  name: 'web-resources'
+  name: 'web'
   params: {
     environmentName: environmentName
     location: location
@@ -13,7 +13,7 @@ module web '../../../../../common/infra/bicep/app/web-staticwebapp.bicep' = {
 
 // The application backend
 module api '../../../../../common/infra/bicep/app/api-functions-python.bicep' = {
-  name: 'api-resources'
+  name: 'api'
   params: {
     environmentName: environmentName
     location: location
@@ -27,7 +27,7 @@ module api '../../../../../common/infra/bicep/app/api-functions-python.bicep' = 
 
 // The application database
 module cosmos '../../../../../common/infra/bicep/app/cosmos-mongo.bicep' = {
-  name: 'cosmos-resources'
+  name: 'cosmos'
   params: {
     environmentName: environmentName
     location: location
@@ -37,7 +37,7 @@ module cosmos '../../../../../common/infra/bicep/app/cosmos-mongo.bicep' = {
 
 // Configure api to use cosmos
 module apiCosmosConfig '../../../../../../common/infra/bicep/core/host/appservice-config-cosmos.bicep' = {
-  name: 'api-cosmos-config-resources'
+  name: 'api-cosmos-config'
   params: {
     appServiceName: api.outputs.apiName
     cosmosDatabaseName: cosmos.outputs.cosmosDatabaseName
@@ -48,7 +48,7 @@ module apiCosmosConfig '../../../../../../common/infra/bicep/core/host/appservic
 
 // Backing storage for Azure functions backend API
 module storage '../../../../../../common/infra/bicep/core/storage/storage-account.bicep' = {
-  name: 'storage-resources'
+  name: 'storage'
   params: {
     environmentName: environmentName
     location: location
@@ -57,7 +57,7 @@ module storage '../../../../../../common/infra/bicep/core/storage/storage-accoun
 
 // Create an App Service Plan to group applications under the same payment plan and SKU
 module appServicePlan '../../../../../../common/infra/bicep/core/host/appserviceplan-functions.bicep' = {
-  name: 'appserviceplan-resources'
+  name: 'appserviceplan'
   params: {
     environmentName: environmentName
     location: location
@@ -66,7 +66,7 @@ module appServicePlan '../../../../../../common/infra/bicep/core/host/appservice
 
 // Store secrets in a keyvault
 module keyVault '../../../../../../common/infra/bicep/core/security/keyvault.bicep' = {
-  name: 'keyvault-resources'
+  name: 'keyvault'
   params: {
     environmentName: environmentName
     location: location
@@ -76,7 +76,7 @@ module keyVault '../../../../../../common/infra/bicep/core/security/keyvault.bic
 
 // Monitor application with Azure Monitor
 module monitoring '../../../../../../common/infra/bicep/core/monitor/monitoring.bicep' = {
-  name: 'monitoring-resources'
+  name: 'monitoring'
   params: {
     environmentName: environmentName
     location: location

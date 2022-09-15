@@ -7,7 +7,7 @@ param containerRegistryName string = ''
 param logAnalyticsWorkspaceName string = ''
 
 module containerAppsEnvironment 'container-apps-environment.bicep' = {
-  name: 'container-apps-environment-resources-${containerAppsGroupName}'
+  name: '${containerAppsGroupName}-container-apps-environment'
   params: {
     environmentName: environmentName
     location: location
@@ -17,7 +17,7 @@ module containerAppsEnvironment 'container-apps-environment.bicep' = {
 }
 
 module containerRegistry 'container-registry.bicep' = {
-  name: 'container-registry-resources-${containerAppsGroupName}'
+  name: '${containerAppsGroupName}-container-registry'
   params: {
     environmentName: environmentName
     location: location

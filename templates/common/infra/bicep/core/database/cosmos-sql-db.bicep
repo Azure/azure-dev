@@ -10,7 +10,7 @@ var abbrs = loadJsonContent('../../abbreviations.json')
 var resourceToken = toLower(uniqueString(subscription().id, environmentName, location))
 
 module cosmos 'cosmos-sql.bicep' = {
-  name: 'cosmos-sql-account-resources'
+  name: 'cosmos-sql-account'
   params: {
     environmentName: environmentName
     location: location
@@ -41,7 +41,7 @@ resource database 'Microsoft.DocumentDB/databaseAccounts/sqlDatabases@2022-05-15
 }
 
 module roleDefintion 'cosmos-sql-role-def.bicep' = {
-  name: 'cosmos-sql-role-def-resources'
+  name: 'cosmos-sql-role-definition'
   params: {
     environmentName: environmentName
     location: location
@@ -55,7 +55,7 @@ module roleDefintion 'cosmos-sql-role-def.bicep' = {
 // We need batchSize(1) here because sql role assignments have to be done sequentially
 @batchSize(1)
 module userRole 'cosmos-sql-role-assign.bicep' = [for principalId in principalIds: if (!empty(principalId)) {
-  name: 'cosmos-sql-user-role-resources-${uniqueString(principalId)}'
+  name: 'cosmos-sql-user-role-${uniqueString(principalId)}'
   params: {
     environmentName: environmentName
     location: location

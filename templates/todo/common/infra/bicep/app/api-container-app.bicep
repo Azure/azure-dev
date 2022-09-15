@@ -20,7 +20,7 @@ resource keyVault 'Microsoft.KeyVault/vaults@2022-07-01' existing = {
 }
 
 module api '../../../../../common/infra/bicep/core/host/container-app.bicep' = {
-  name: 'api-containerapp-${serviceName}'
+  name: '${serviceName}-container-app-module'
   params: {
     environmentName: environmentName
     location: location

@@ -59,6 +59,35 @@ func getAzdoConnection(ctx context.Context, organization string, personalAccessT
 	return connection
 }
 
+func getAzDoDefaultGitRepositoriesInProject(ctx context.Context, projectName string, connection *azuredevops.Connection) (*git.GitRepository, error) {
+	gitClient, err := git.NewClient(ctx, connection)
+	if err != nil {
+		return nil, err
+	}
+
+	includeLinks := true
+	includeAllUrls := true
+	repoArgs := git.GetRepositoriesArgs{
+		Project:        &projectName,
+		IncludeLinks:   &includeLinks,
+		IncludeAllUrls: &includeAllUrls,
+	}
+
+	getRepositoriesResult, err := gitClient.GetRepositories(ctx, repoArgs)
+	if err != nil {
+		return nil, err
+	}
+	repos := *getRepositoriesResult
+
+	for _, repo := range repos {
+		if *repo.Name == projectName {
+			return &repo, nil
+		}
+	}
+
+	return nil, fmt.Errorf("error finding default git repository %s in project %s", projectName)
+}
+
 func getAzDoGitRepositoriesInProject(ctx context.Context, projectName string, orgName string, connection *azuredevops.Connection, console input.Console) (*git.GitRepository, error) {
 	gitClient, err := git.NewClient(ctx, connection)
 	if err != nil {
@@ -101,7 +130,7 @@ func getAzDoGitRepositoriesInProject(ctx context.Context, projectName string, or
 	return nil, fmt.Errorf("error finding git repository %s in organization %s", selectedRepoName, orgName)
 }
 
-func GetProcessTemplateId(ctx context.Context, client core.Client) (string, error) {
+func getProcessTemplateId(ctx context.Context, client core.Client) (string, error) {
 	processArgs := core.GetProcessesArgs{}
 	processes, err := client.GetProcesses(ctx, processArgs)
 	if err != nil {
@@ -117,7 +146,7 @@ func createAzdoProject(ctx context.Context, connection *azuredevops.Connection, 
 		return nil, err
 	}
 
-	processTemplateId, err := GetProcessTemplateId(ctx, coreClient)
+	processTemplateId, err := getProcessTemplateId(ctx, coreClient)
 	if err != nil {
 		return nil, fmt.Errorf("error fetching process template id %w", err)
 	}
@@ -189,7 +218,7 @@ func getAzdoProjectFromNew(ctx context.Context, repoPath string, connection *azu
 			DefaultValue: currentFolderName,
 		})
 		if err != nil {
-			return "", "", fmt.Errorf("asking for new repository name: %w", err)
+			return "", "", fmt.Errorf("asking for new project name: %w", err)
 		}
 		var message string = ""
 		newProject, err := createAzdoProject(ctx, connection, name, projectDescription, console)
@@ -212,6 +241,7 @@ func getAzdoProjectFromNew(ctx context.Context, repoPath string, connection *azu
 
 	return *project.Name, project.Id.String(), nil
 }
+
 func getAzdoProjectByName(ctx context.Context, connection *azuredevops.Connection, name string) (*core.TeamProjectReference, error) {
 	coreClient, err := core.NewClient(ctx, connection)
 	if err != nil {
@@ -233,6 +263,7 @@ func getAzdoProjectByName(ctx context.Context, connection *azuredevops.Connectio
 
 	return nil, fmt.Errorf("azure devops project %s not found", name)
 }
+
 func getAzdoProjectFromExisting(ctx context.Context, connection *azuredevops.Connection, console input.Console) (string, string, error) {
 	coreClient, err := core.NewClient(ctx, connection)
 	if err != nil {

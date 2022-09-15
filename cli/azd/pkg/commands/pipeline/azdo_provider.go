@@ -149,9 +149,9 @@ func (p *AzdoHubScmProvider) getAzdoConnection(ctx context.Context) (*azuredevop
 	connection := getAzdoConnection(ctx, org, pat)
 	return connection, nil
 }
-func (p *AzdoHubScmProvider) ensureProjectExists(ctx context.Context, console input.Console) (string, string, error) {
+func (p *AzdoHubScmProvider) ensureProjectExists(ctx context.Context, console input.Console) (string, string, bool, error) {
 	if p.repoDetails != nil && p.repoDetails.projectName != "" {
-		return p.repoDetails.projectName, p.repoDetails.projectId, nil
+		return p.repoDetails.projectName, p.repoDetails.projectId, false, nil
 	}
 	idx, err := console.Select(ctx, input.ConsoleOptions{
 		Message: "How would you like to configure your project?",
@@ -162,38 +162,40 @@ func (p *AzdoHubScmProvider) ensureProjectExists(ctx context.Context, console in
 		DefaultValue: "Create a new Azure DevOps Project",
 	})
 	if err != nil {
-		return "", "", fmt.Errorf("prompting for azdo project type: %w", err)
+		return "", "", false, fmt.Errorf("prompting for azdo project type: %w", err)
 	}
 
 	connection, err := p.getAzdoConnection(ctx)
 	if err != nil {
-		return "", "", err
+		return "", "", false, err
 	}
 
 	var projectName string
 	var projectId string
+	var newProject bool = false
 	switch idx {
 	// Select from an existing AzDo project
 	case 0:
 		projectName, projectId, err = getAzdoProjectFromExisting(ctx, connection, console)
 		if err != nil {
-			return "", "", err
+			return "", "", false, err
 		}
 	// Create a new AzDo project
 	case 1:
 		projectName, projectId, err = getAzdoProjectFromNew(ctx, p.AzdContext.ProjectDirectory(), connection, p.Env, console)
+		newProject = true
 		if err != nil {
-			return "", "", err
+			return "", "", false, err
 		}
 	default:
 		panic(fmt.Sprintf("unexpected selection index %d", idx))
 	}
-	return projectName, projectId, nil
+	return projectName, projectId, newProject, nil
 }
 
 // configureGitRemote set up or create the git project and git remote
 func (p *AzdoHubScmProvider) configureGitRemote(ctx context.Context, repoPath string, remoteName string, console input.Console) (string, error) {
-	projectName, projectId, err := p.ensureProjectExists(ctx, console)
+	projectName, projectId, newProject, err := p.ensureProjectExists(ctx, console)
 	if err != nil {
 		return "", err
 	}
@@ -211,7 +213,40 @@ func (p *AzdoHubScmProvider) configureGitRemote(ctx context.Context, repoPath st
 	if err != nil {
 		return "", fmt.Errorf("error saving project name to environment %w", err)
 	}
+	var remoteUrl string
 
+	if !newProject {
+		remoteUrl, err = p.promptForAzdoRepository(ctx, console)
+		if err != nil {
+			return "", err
+		}
+	} else {
+		remoteUrl, err = p.gethDefaultRepoRemote(ctx, projectName, projectId, console)
+		if err != nil {
+			return "", err
+		}
+	}
+	return remoteUrl, nil
+}
+
+func (p *AzdoHubScmProvider) gethDefaultRepoRemote(ctx context.Context, projectName string, projectId string, console input.Console) (string, error) {
+	connection, err := p.getAzdoConnection(ctx)
+	if err != nil {
+		return "", err
+	}
+	repo, err := getAzDoDefaultGitRepositoriesInProject(ctx, projectName, connection)
+	if err != nil {
+		return "", err
+	}
+
+	message := fmt.Sprintf("using default repo (%s) in newly created project(%s)", *repo.Name, projectName)
+	fmt.Println(message)
+
+	return *repo.RemoteUrl, nil
+}
+
+func (p *AzdoHubScmProvider) promptForAzdoRepository(ctx context.Context, console input.Console) (string, error) {
+	var remoteUrl string
 	// There are a few ways to configure the remote so offer a choice to the user.
 	idx, err := console.Select(ctx, input.ConsoleOptions{
 		Message: fmt.Sprintf("How would you like to configure your remote? (Organization: %s)", p.repoDetails.projectName),
@@ -226,8 +261,6 @@ func (p *AzdoHubScmProvider) configureGitRemote(ctx context.Context, repoPath st
 		return "", fmt.Errorf("prompting for remote configuration type: %w", err)
 	}
 
-	var remoteUrl string
-
 	switch idx {
 	// Select from an existing Azure Devops project
 	case 0:
@@ -239,9 +272,7 @@ func (p *AzdoHubScmProvider) configureGitRemote(ctx context.Context, repoPath st
 	// Create a new project
 	case 1:
 		fmt.Println("New")
-	// Enter a URL directly.
-	case 2:
-		fmt.Println("Prompt")
+
 	default:
 		panic(fmt.Sprintf("unexpected selection index %d", idx))
 	}

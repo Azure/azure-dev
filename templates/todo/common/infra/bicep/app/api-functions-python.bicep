@@ -24,6 +24,6 @@ module api '../../../../../common/infra/bicep/core/host/functions-python.bicep' 
   }
 }
 
-output apiIdentityPrincipalId string = api.outputs.identityPrincipalId
-output apiName string = api.outputs.name
-output apiUri string = api.outputs.uri
+output API_IDENTITY_PRINCIPAL_ID string = api.outputs.identityPrincipalId
+output API_NAME string = api.outputs.name
+output API_URI string = api.outputs.uri

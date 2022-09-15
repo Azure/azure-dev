@@ -28,7 +28,7 @@ module api '../../../../../common/infra/bicep/app/api-appservice-dotnet.bicep' =
     applicationInsightsName: monitoring.outputs.applicationInsightsName
     appServicePlanId: appServicePlan.outputs.appServicePlanId
     keyVaultName: keyVault.outputs.keyVaultName
-    allowedOrigins: [ web.outputs.webUri ]
+    allowedOrigins: [ web.outputs.WEB_URI ]
   }
 }
 // The application database
@@ -47,7 +47,7 @@ module sqlServer '../../../../../common/infra/bicep/app/sql.bicep' = {
 module apiSqlServerConfig '../../../../../../common/infra/bicep/core/host/appservice-config-sqlserver.bicep' = {
   name: 'api-sqlserver-config'
   params: {
-    appServiceName: api.outputs.apiName
+    appServiceName: api.outputs.API_NAME
     sqlConnectionStringKey: sqlServer.outputs.sqlConnectionStringKey
   }
 }
@@ -80,9 +80,9 @@ module monitoring '../../../../../../common/infra/bicep/core/monitor/monitoring.
   }
 }
 
-output apiUri string = api.outputs.apiUri
-output applicationInsightsConnectionString string = monitoring.outputs.applicationInsightsConnectionString
-output keyVaultEndpoint string = keyVault.outputs.keyVaultEndpoint
-output keyVaultName string = keyVault.name
-output sqlConnectionStringKey string = sqlServer.outputs.sqlConnectionStringKey
-output webUri string = web.outputs.webUri
+output API_URI string = api.outputs.API_URI
+output APPLICATIONINSIGHTS_CONNECTION_STRING string = monitoring.outputs.applicationInsightsConnectionString
+output AZURE_KEY_VAULT_ENDPOINT string = keyVault.outputs.keyVaultEndpoint
+output AZURE_KEY_VAULT_NAME string = keyVault.name
+output AZURE_SQL_CONNECTION_STRING_KEY string = sqlServer.outputs.sqlConnectionStringKey
+output WEB_URI string = web.outputs.WEB_URI

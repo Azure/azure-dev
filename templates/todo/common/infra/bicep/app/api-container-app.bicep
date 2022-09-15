@@ -1,11 +1,11 @@
 param environmentName string
 param location string = resourceGroup().location
 
-param applicationInsightsName string
+param applicationInsightsName string = ''
 param containerAppsEnvironmentName string = ''
 param containerRegistryName string = ''
-param imageName string
-param keyVaultName string
+param imageName string = ''
+param keyVaultName string = ''
 param serviceName string = 'api'
 
 var abbrs = loadJsonContent('../../../../../common/infra/bicep/abbreviations.json')
@@ -37,12 +37,12 @@ module api '../../../../../common/infra/bicep/core/host/container-app.bicep' = {
       }
     ]
     imageName: !empty(imageName) ? imageName : 'nginx:latest'
-    keyVaultName: keyVaultName
+    keyVaultName: keyVault.name
     serviceName: serviceName
     targetPort: 3100
   }
 }
 
-output apiIdentityPrincipalId string = api.outputs.identityPrincipalId
-output apiName string = api.outputs.name
-output apiUri string = api.outputs.uri
+output API_IDENTITY_PRINCIPAL_ID string = api.outputs.identityPrincipalId
+output API_NAME string = api.outputs.name
+output API_URI string = api.outputs.uri

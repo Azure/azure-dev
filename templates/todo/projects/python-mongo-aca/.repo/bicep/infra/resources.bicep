@@ -21,7 +21,7 @@ module web '../../../../../common/infra/bicep/app/web-container-app.bicep' = {
     environmentName: environmentName
     location: location
     imageName: webImageName
-    apiName: api.outputs.apiName
+    apiName: api.outputs.API_NAME
     applicationInsightsName: monitoring.outputs.applicationInsightsName
     containerAppsEnvironmentName: containerApps.outputs.containerAppsEnvironmentName
     containerRegistryName: containerApps.outputs.containerRegistryName
@@ -71,11 +71,11 @@ module monitoring '../../../../../../common/infra/bicep/core/monitor/monitoring.
   }
 }
 
-output apiUri string = api.outputs.apiUri
-output applicationInsightsConnectionString string = monitoring.outputs.applicationInsightsConnectionString
-output containerRegistryEndpoint string = containerApps.outputs.containerRegistryEndpoint
-output containerRegistryName string = containerApps.outputs.containerRegistryName
-output cosmosConnectionStringKey string = cosmos.outputs.cosmosConnectionStringKey
-output cosmosDatabaseName string = cosmos.outputs.cosmosDatabaseName
-output keyVaultEndpoint string = keyVault.outputs.keyVaultEndpoint
-output webUri string = web.outputs.webUri
+output API_URI string = api.outputs.API_URI
+output APPLICATIONINSIGHTS_CONNECTION_STRING string = monitoring.outputs.applicationInsightsConnectionString
+output AZURE_CONTAINER_REGISTRY_ENDPOINT string = containerApps.outputs.containerRegistryEndpoint
+output AZURE_CONTAINER_REGISTRY_NAME string = containerApps.outputs.containerRegistryName
+output AZURE_COSMOS_CONNECTION_STRING_KEY string = cosmos.outputs.cosmosConnectionStringKey
+output AZURE_COSMOS_DATABASE_NAME string = cosmos.outputs.cosmosDatabaseName
+output AZURE_KEY_VAULT_ENDPOINT string = keyVault.outputs.keyVaultEndpoint
+output WEB_URI string = web.outputs.WEB_URI

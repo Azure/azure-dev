@@ -18,6 +18,6 @@ module web '../../../../../common/infra/bicep/core/host/appservice-node.bicep' =
   }
 }
 
-output webIdentityPrincipalId string = web.outputs.identityPrincipalId
-output webName string = web.outputs.name
-output webUri string = web.outputs.uri
+output WEB_IDENTITY_PRINCIPAL_ID string = web.outputs.identityPrincipalId
+output WEB_NAME string = web.outputs.name
+output WEB_URI string = web.outputs.uri

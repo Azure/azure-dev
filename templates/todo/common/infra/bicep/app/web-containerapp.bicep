@@ -20,7 +20,7 @@ resource api 'Microsoft.App/containerApps@2022-03-01' existing = {
 }
 
 module app '../../../../../common/infra/bicep/core/host/container-app.bicep' = {
-  name: 'containerapp-${serviceName}'
+  name: 'web-containerapp-${serviceName}'
   params: {
     environmentName: environmentName
     location: location

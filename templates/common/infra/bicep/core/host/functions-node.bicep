@@ -11,8 +11,8 @@ param managedIdentity bool = !(empty(keyVaultName))
 param serviceName string
 param storageAccountName string
 
-module function 'function.bicep' = {
-  name: 'function-node-resources-${serviceName}'
+module functions 'functions.bicep' = {
+  name: 'functions-node-${serviceName}'
   params: {
     environmentName: environmentName
     location: location
@@ -29,6 +29,6 @@ module function 'function.bicep' = {
   }
 }
 
-output identityPrincipalId string = function.outputs.identityPrincipalId
-output name string = function.outputs.name
-output uri string = function.outputs.uri
+output identityPrincipalId string = functions.outputs.identityPrincipalId
+output name string = functions.outputs.name
+output uri string = functions.outputs.uri

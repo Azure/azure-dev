@@ -25,8 +25,8 @@ resource storage 'Microsoft.Storage/storageAccounts@2021-09-01' existing = {
   name: storageAccountName
 }
 
-module function 'appservice.bicep' = {
-  name: 'function-resources-${serviceName}'
+module functions 'appservice.bicep' = {
+  name: 'functions-${serviceName}'
   params: {
     environmentName: environmentName
     location: location
@@ -53,6 +53,6 @@ module function 'appservice.bicep' = {
   }
 }
 
-output identityPrincipalId string = managedIdentity ? function.outputs.identityPrincipalId : ''
-output name string = function.outputs.name
-output uri string = function.outputs.uri
+output identityPrincipalId string = managedIdentity ? functions.outputs.identityPrincipalId : ''
+output name string = functions.outputs.name
+output uri string = functions.outputs.uri

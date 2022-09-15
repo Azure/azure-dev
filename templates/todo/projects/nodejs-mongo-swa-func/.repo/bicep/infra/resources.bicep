@@ -12,7 +12,7 @@ module web '../../../../../common/infra/bicep/app/web-staticwebapp.bicep' = {
 }
 
 // The application backend
-module api '../../../../../common/infra/bicep/app/api-function-node.bicep' = {
+module api '../../../../../common/infra/bicep/app/api-functions-node.bicep' = {
   name: 'api-resources'
   params: {
     environmentName: environmentName

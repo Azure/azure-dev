@@ -9,8 +9,8 @@ param keyVaultName string
 param serviceName string = 'api'
 param storageAccountName string
 
-module api '../../../../../common/infra/bicep/core/host/function-python.bicep' = {
-  name: 'function-python-${serviceName}'
+module api '../../../../../common/infra/bicep/core/host/functions-python.bicep' = {
+  name: 'api-functions-python-${serviceName}'
   params: {
     environmentName: environmentName
     location: location

@@ -289,6 +289,9 @@ func (manager *PipelineManager) Configure(ctx context.Context) error {
 
 	if doPush {
 		err = manager.pushGitRepo(ctx, currentBranch)
+		if err == nil {
+			gitRepoInfo.pushStatus = true
+		}
 		manager.ScmProvider.postGitPush(
 			ctx,
 			gitRepoInfo,

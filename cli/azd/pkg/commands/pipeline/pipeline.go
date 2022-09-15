@@ -34,6 +34,8 @@ type gitRepositoryDetails struct {
 	repoName string
 	// System path where the git project is
 	gitProjectPath string
+	//Indicates if the repo was successfully pushed a remote
+	pushStatus bool
 
 	details interface{}
 }

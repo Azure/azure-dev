@@ -15,9 +15,11 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/git"
 	"github.com/microsoft/azure-devops-go-api/azuredevops"
+	azdoGit "github.com/microsoft/azure-devops-go-api/azuredevops/git"
 )
 
 // AzdoHubScmProvider implements ScmProvider using Azure DevOps as the provider
@@ -34,8 +36,10 @@ type AzdoRepositoryDetails struct {
 	repoId      string
 	orgName     string
 	repoName    string
+	repoWebUrl  string
 	remoteUrl   string
 	sshUrl      string
+	pushSuccess bool
 }
 
 // ***  subareaProvider implementation ******
@@ -73,6 +77,74 @@ func (p *AzdoHubScmProvider) name() string {
 }
 
 // ***  scmProvider implementation ******
+func (p *AzdoHubScmProvider) StoreRepoDetails(ctx context.Context, repo *azdoGit.GitRepository) error {
+	repoDetails := p.getRepoDetails()
+	repoDetails.repoName = *repo.Name
+	repoDetails.remoteUrl = *repo.RemoteUrl
+	repoDetails.repoWebUrl = *repo.WebUrl
+	repoDetails.sshUrl = *repo.SshUrl
+	repoDetails.repoId = repo.Id.String()
+
+	err := p.saveEnvironmentConfig(AzDoEnvironmentRepoIdName, p.repoDetails.repoId)
+	if err != nil {
+		return fmt.Errorf("error saving repo id to environment %w", err)
+	}
+
+	err = p.saveEnvironmentConfig(AzDoEnvironmentRepoName, p.repoDetails.repoName)
+	if err != nil {
+		return fmt.Errorf("error saving repo name to environment %w", err)
+	}
+
+	err = p.saveEnvironmentConfig(AzDoEnvironmentRepoWebUrl, p.repoDetails.repoWebUrl)
+	if err != nil {
+		return fmt.Errorf("error saving repo web url to environment %w", err)
+	}
+
+	return nil
+}
+
+func (p *AzdoHubScmProvider) createNewGitRepositoryFromInput(ctx context.Context, console input.Console) (string, error) {
+	connection, err := p.getAzdoConnection(ctx)
+	if err != nil {
+		return "", err
+	}
+
+	var repo *azdoGit.GitRepository
+	for {
+		name, err := console.Prompt(ctx, input.ConsoleOptions{
+			Message:      "Enter the name for your new Azure Devops Repository OR Hit enter to use this name:",
+			DefaultValue: p.repoDetails.projectName,
+		})
+		if err != nil {
+			return "", fmt.Errorf("asking for new project name: %w", err)
+		}
+
+		var message string
+		newRepo, err := createRepository(ctx, p.repoDetails.projectId, name, connection)
+		if err != nil {
+			message = err.Error()
+		}
+		if strings.Contains(message, fmt.Sprintf("A Git repository with the name %s already exists.", name)) {
+			console.Message(ctx, fmt.Sprintf("error: the repo name '%s' is already in use\n", name))
+			continue // try again
+		} else if strings.Contains(message, "TF401025: 'repoName' is not a valid name for a Git repository.") {
+			console.Message(ctx, fmt.Sprintf("error: '%s' is not a valid Azure Devops repo name. See https://docs.microsoft.com/en-us/azure/devops/organizations/settings/naming-restrictions?view=azure-devops#azure-repos-git\n", name))
+			continue // try again
+		} else if err != nil {
+			return "", fmt.Errorf("creating repository: %w", err)
+		} else {
+			repo = newRepo
+			break
+		}
+	}
+
+	err = p.StoreRepoDetails(ctx, repo)
+	if err != nil {
+		return "", err
+
+	}
+	return *repo.RemoteUrl, nil
+}
 func (p *AzdoHubScmProvider) ensureGitRepositoryExists(ctx context.Context, console input.Console) (string, error) {
 	if p.repoDetails != nil && p.repoDetails.repoName != "" {
 		return p.repoDetails.remoteUrl, nil
@@ -88,23 +160,12 @@ func (p *AzdoHubScmProvider) ensureGitRepositoryExists(ctx context.Context, cons
 		return "", err
 	}
 
-	repoDetails := p.getRepoDetails()
-	repoDetails.repoName = *repo.Name
-	repoDetails.remoteUrl = *repo.RemoteUrl
-	repoDetails.sshUrl = *repo.SshUrl
-	repoDetails.repoId = repo.Id.String()
-
-	err = p.saveEnvironmentConfig(AzDoEnvironmentRepoIdName, repoDetails.repoId)
+	err = p.StoreRepoDetails(ctx, repo)
 	if err != nil {
-		return "", fmt.Errorf("error saving repo id to environment %w", err)
+		return "", err
 	}
 
-	err = p.saveEnvironmentConfig(AzDoEnvironmentRepoName, repoDetails.repoName)
-	if err != nil {
-		return "", fmt.Errorf("error saving repo name to environment %w", err)
-	}
-
-	remoteParts := strings.Split(repoDetails.remoteUrl, "@")
+	remoteParts := strings.Split(p.repoDetails.remoteUrl, "@")
 	if len(remoteParts) < 2 {
 		return "", fmt.Errorf("invalid azure devops remote")
 	}
@@ -114,7 +175,9 @@ func (p *AzdoHubScmProvider) ensureGitRepositoryExists(ctx context.Context, cons
 	if err != nil {
 		return "", err
 	}
+
 	updatedRemote := fmt.Sprintf("%s:%s@%s", remoteUser, pat, remoteHost)
+	console.Message(ctx, fmt.Sprintf("using azure devOps repo: %s", p.repoDetails.repoWebUrl))
 
 	return updatedRemote, nil
 }
@@ -221,7 +284,7 @@ func (p *AzdoHubScmProvider) configureGitRemote(ctx context.Context, repoPath st
 			return "", err
 		}
 	} else {
-		remoteUrl, err = p.gethDefaultRepoRemote(ctx, projectName, projectId, console)
+		remoteUrl, err = p.getDefaultRepoRemote(ctx, projectName, projectId, console)
 		if err != nil {
 			return "", err
 		}
@@ -229,7 +292,7 @@ func (p *AzdoHubScmProvider) configureGitRemote(ctx context.Context, repoPath st
 	return remoteUrl, nil
 }
 
-func (p *AzdoHubScmProvider) gethDefaultRepoRemote(ctx context.Context, projectName string, projectId string, console input.Console) (string, error) {
+func (p *AzdoHubScmProvider) getDefaultRepoRemote(ctx context.Context, projectName string, projectId string, console input.Console) (string, error) {
 	connection, err := p.getAzdoConnection(ctx)
 	if err != nil {
 		return "", err
@@ -239,8 +302,13 @@ func (p *AzdoHubScmProvider) gethDefaultRepoRemote(ctx context.Context, projectN
 		return "", err
 	}
 
+	err = p.StoreRepoDetails(ctx, repo)
+	if err != nil {
+		return "", err
+	}
+
 	message := fmt.Sprintf("using default repo (%s) in newly created project(%s)", *repo.Name, projectName)
-	fmt.Println(message)
+	console.Message(ctx, message)
 
 	return *repo.RemoteUrl, nil
 }
@@ -271,7 +339,10 @@ func (p *AzdoHubScmProvider) promptForAzdoRepository(ctx context.Context, consol
 
 	// Create a new project
 	case 1:
-		fmt.Println("New")
+		remoteUrl, err = p.createNewGitRepositoryFromInput(ctx, console)
+		if err != nil {
+			return "", err
+		}
 
 	default:
 		panic(fmt.Sprintf("unexpected selection index %d", idx))
@@ -327,6 +398,9 @@ func (p *AzdoHubScmProvider) gitRepoDetails(ctx context.Context, remoteUrl strin
 	if repoDetails.repoId == "" {
 		repoDetails.repoId = p.Env.Values[AzDoEnvironmentRepoIdName]
 	}
+	if repoDetails.repoWebUrl == "" {
+		repoDetails.repoWebUrl = p.Env.Values[AzDoEnvironmentRepoWebUrl]
+	}
 	if repoDetails.remoteUrl == "" {
 		repoDetails.remoteUrl = remoteUrl
 	}
@@ -352,7 +426,7 @@ func (p *AzdoHubScmProvider) preventGitPush(
 		return false, err
 	}
 	if !foundHelper {
-		fmt.Println(`  
+		console.Message(ctx, `  
   A credential helper is not configured for git.
   This will require you to enter your Azure DevOps PAT when executing a git push.
   https://git-scm.com/docs/git-credential-store
@@ -396,6 +470,9 @@ func (p *AzdoHubScmProvider) postGitPush(
 	//Reset remote to original url without PAT
 	gitCli.UpdateRemote(ctx, p.AzdContext.ProjectDirectory(), remoteName, p.repoDetails.remoteUrl)
 
+	if gitRepo.pushStatus {
+		console.Message(ctx, output.WithSuccessFormat(AzdoConfigSuccessMessage, p.repoDetails.repoWebUrl))
+	}
 	return false, nil
 }
 

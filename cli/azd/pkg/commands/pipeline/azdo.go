@@ -26,6 +26,8 @@ var (
 	AzDoEnvironmentProjectName   = "AZURE_DEVOPS_PROJECT_NAME"
 	AzDoEnvironmentRepoIdName    = "AZURE_DEVOPS_REPOSITORY_ID"
 	AzDoEnvironmentRepoName      = "AZURE_DEVOPS_REPOSITORY_NAME"
+	AzDoEnvironmentRepoWebUrl    = "AZURE_DEVOPS_REPOSITORY_WEB_URL"
+	AzdoConfigSuccessMessage     = "\nSuccessfully configured Azure DevOps Repository %s\n"
 )
 
 type AzDoClient struct {
@@ -130,6 +132,27 @@ func getAzDoGitRepositoriesInProject(ctx context.Context, projectName string, or
 	return nil, fmt.Errorf("error finding git repository %s in organization %s", selectedRepoName, orgName)
 }
 
+func createRepository(ctx context.Context, projectId string, repoName string, connection *azuredevops.Connection) (*git.GitRepository, error) {
+	gitClient, err := git.NewClient(ctx, connection)
+	if err != nil {
+		return nil, err
+	}
+
+	gitRepositoryCreateOptions := git.GitRepositoryCreateOptions{
+		Name: &repoName,
+	}
+
+	createRepositoryArgs := git.CreateRepositoryArgs{
+		Project:               &projectId,
+		GitRepositoryToCreate: &gitRepositoryCreateOptions,
+	}
+	repo, err := gitClient.CreateRepository(ctx, createRepositoryArgs)
+	if err != nil {
+		return nil, err
+	}
+	return repo, nil
+}
+
 func getProcessTemplateId(ctx context.Context, client core.Client) (string, error) {
 	processArgs := core.GetProcessesArgs{}
 	processes, err := client.GetProcesses(ctx, processArgs)
@@ -140,7 +163,7 @@ func getProcessTemplateId(ctx context.Context, client core.Client) (string, erro
 	return fmt.Sprintf("%s", process.Id), nil
 }
 
-func createAzdoProject(ctx context.Context, connection *azuredevops.Connection, name string, description string, console input.Console) (*core.TeamProjectReference, error) {
+func createProject(ctx context.Context, connection *azuredevops.Connection, name string, description string, console input.Console) (*core.TeamProjectReference, error) {
 	coreClient, err := core.NewClient(ctx, connection)
 	if err != nil {
 		return nil, err
@@ -221,7 +244,7 @@ func getAzdoProjectFromNew(ctx context.Context, repoPath string, connection *azu
 			return "", "", fmt.Errorf("asking for new project name: %w", err)
 		}
 		var message string = ""
-		newProject, err := createAzdoProject(ctx, connection, name, projectDescription, console)
+		newProject, err := createProject(ctx, connection, name, projectDescription, console)
 		if err != nil {
 			message = err.Error()
 		}

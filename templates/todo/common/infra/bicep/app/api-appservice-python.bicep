@@ -18,7 +18,6 @@ module api '../../../../../common/infra/bicep/core/host/appservice-python.bicep'
     applicationInsightsName: applicationInsightsName
     appServicePlanId: appServicePlanId
     keyVaultName: keyVaultName
-    scmDoBuildDuringDeployment: true
     serviceName: serviceName
   }
 }

@@ -9,7 +9,7 @@ param appSettings object = {}
 param keyVaultName string = ''
 param linuxFxVersion string = 'PYTHON|3.8'
 param managedIdentity bool = !(empty(keyVaultName))
-param scmDoBuildDuringDeployment bool = false
+param scmDoBuildDuringDeployment bool = true
 param serviceName string
 
 module web 'appservice.bicep' = {

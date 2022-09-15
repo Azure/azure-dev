@@ -3,7 +3,6 @@ package pipeline
 import (
 	"context"
 	"fmt"
-	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -52,7 +51,6 @@ func ensureAzdoPatExists(ctx context.Context, env *environment.Environment) (str
 
 func ensureAzdoOrgNameExists(ctx context.Context, env *environment.Environment) (string, error) {
 	return ensureAzdoConfigExists(ctx, env, AzDoEnvironmentOrgName, "azure devops organization name")
-
 }
 
 func getAzdoConnection(ctx context.Context, organization string, personalAccessToken string) *azuredevops.Connection {
@@ -100,13 +98,12 @@ func getAzDoGitRepositoriesInProject(ctx context.Context, projectName string, or
 		}
 	}
 
-	return nil, fmt.Errorf("Error finding git repository %s in organization %s", selectedRepoName, orgName)
+	return nil, fmt.Errorf("error finding git repository %s in organization %s", selectedRepoName, orgName)
 }
 
 func GetProcessTemplateId(ctx context.Context, client core.Client) (string, error) {
 	processArgs := core.GetProcessesArgs{}
 	processes, err := client.GetProcesses(ctx, processArgs)
-	_ = processes
 	if err != nil {
 		return "", err
 	}
@@ -159,7 +156,7 @@ func createAzdoProject(ctx context.Context, connection *azuredevops.Connection, 
 	for !projectCreated {
 		operation, err := operationsClient.GetOperation(ctx, getOperationsArgs)
 		if err != nil {
-			log.Fatal(err)
+			return nil, err
 		}
 
 		if *operation.Status == "succeeded" {
@@ -167,11 +164,11 @@ func createAzdoProject(ctx context.Context, connection *azuredevops.Connection, 
 		}
 
 		if count >= maxCheck {
-			log.Fatalf("Error creating project %s", name)
+			return nil, fmt.Errorf("error creating azure devops project %s", name)
 		}
 
 		count++
-		time.Sleep(2 * time.Second)
+		time.Sleep(700 * time.Millisecond)
 	}
 
 	project, err := getAzdoProjectByName(ctx, connection, name)

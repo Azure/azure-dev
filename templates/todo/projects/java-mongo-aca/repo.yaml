@@ -30,6 +30,11 @@ repo:
         to: ./src/web
         patterns:
           - "**/azure.@(yml|yaml)"
+      
+      - from: ../common/openapi.yaml
+        to: openapi.yaml
+        patterns:
+          - pom.xml
 
   assets:
     # Common assets

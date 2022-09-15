@@ -24,7 +24,7 @@
         {
             "label": "Build API",
             "command": "./mvnw",
-            "type": "process",
+            "type": "shell",
             "options": {
                 "cwd": "${workspaceFolder}/src/api/"
             },

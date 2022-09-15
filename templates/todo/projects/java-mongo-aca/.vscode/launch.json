@@ -1,0 +1,35 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Debug Web",
+            "request": "launch",
+            "type": "msedge",
+            "webRoot": "${workspaceFolder}/src/web/src",
+            "url": "http://localhost:3000",
+            "sourceMapPathOverrides": {
+                "webpack:///src/*": "${webRoot}/*"
+            }, 
+        },
+
+        {
+            "name": "Debug API",
+            "type": "java",
+            "request": "launch",
+            "preLaunchTask": "Build API",
+            "mainClass": "com.microsoft.azure.simpletodo.SimpleTodoApplication",
+            "args": [],
+            "cwd": "${workspaceFolder}/src/api",
+            "env": {},
+            "envFile": "${input:dotEnvFilePath}"
+        }
+    ],
+
+    "inputs": [
+        {
+            "id": "dotEnvFilePath",
+            "type": "command",
+            "command": "azure-dev.commands.getDotEnvFilePath"
+        }
+    ]
+}

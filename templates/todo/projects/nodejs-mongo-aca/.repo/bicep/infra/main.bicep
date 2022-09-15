@@ -40,8 +40,8 @@ module resources 'resources.bicep' = {
 }
 
 output APPLICATIONINSIGHTS_CONNECTION_STRING string = resources.outputs.applicationInsightsConnectionString
-output containerRegistryEndpoint string = resources.outputs.containerRegistryEndpoint
-output containerRegistryName string = resources.outputs.containerRegistryName
+output AZURE_CONTAINER_REGISTRY_ENDPOINT string = resources.outputs.containerRegistryEndpoint
+output AZURE_CONTAINER_REGISTRY_NAME string = resources.outputs.containerRegistryName
 output AZURE_COSMOS_CONNECTION_STRING_KEY string = resources.outputs.cosmosConnectionStringKey
 output AZURE_COSMOS_DATABASE_NAME string = resources.outputs.cosmosDatabaseName
 output AZURE_KEY_VAULT_ENDPOINT string = resources.outputs.keyVaultEndpoint

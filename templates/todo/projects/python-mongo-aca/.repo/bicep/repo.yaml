@@ -62,12 +62,12 @@ repo:
         patterns:
           - "**/azure.@(yml|yaml)"
 
-      - from: web-containerapp.bicep
+      - from: web-container-app.bicep
         to: web.bicep
         patterns:
           - "**/resources.bicep"
 
-      - from: api-containerapp.bicep
+      - from: api-container-app.bicep
         to: api.bicep
         patterns:
           - "**/resources.bicep"
@@ -87,16 +87,16 @@ repo:
     - from: ../../../../../common/infra/bicep
       to: ./infra
 
-    - from: ../../../../common/infra/bicep/app/web-containerapp.bicep
+    - from: ../../../../common/infra/bicep/app/web-container-app.bicep
       to: ./infra/app/web.bicep
 
-    - from: ../../../../common/infra/bicep/app/api-containerapp.bicep
+    - from: ../../../../common/infra/bicep/app/api-container-app.bicep
       to: ./infra/app/api.bicep
 
-    - from: ../../../../common/infra/bicep/app/web-containerapp.parameters.json
+    - from: ../../../../common/infra/bicep/app/web-container-app.parameters.json
       to: ./infra/app/web.parameters.json
 
-    - from: ../../../../common/infra/bicep/app/api-containerapp.parameters.json
+    - from: ../../../../common/infra/bicep/app/api-container-app.parameters.json
       to: ./infra/app/api.parameters.json
 
     - from: ../../../../common/infra/bicep/app/cosmos-mongo.bicep
@@ -130,7 +130,7 @@ repo:
         - "infra/**/*"
 
     # Github workflows for bicep
-    - from: ../../../common/.github/workflows/bicep
+    - from: ../../../../../common/.github/workflows/bicep
       to: ./.github/workflows
 
     # .devcontainer common (devcontainer.json)

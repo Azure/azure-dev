@@ -118,11 +118,8 @@ repo:
         - "infra/**/*"
 
     # Github workflows for bicep
-    - from: ../../../common/.github/workflows/bicep
+    - from: ../../../../../common/.github/workflows/bicep
       to: ./.github/workflows
-
-    - from: ../../../common/infra/bicep
-      to: ./infra
 
     # .devcontainer common (devcontainer.json)
     - from: ../../../../../common/.devcontainer/devcontainer.json/csharp

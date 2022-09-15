@@ -56,14 +56,13 @@ repo:
     - from: ../../../common/infra/bicep
       to: ./infra
 
-
     # .devcontainer common (devcontainer.json)
-    # - from: ../../../common/.devcontainer/devcontainer.json/nodejs
-    #   to: ./.devcontainer
+    - from: ../../../common/.devcontainer/devcontainer.json/java
+      to: ./.devcontainer
 
-    # # .devcontainer common (Dockerfile)
-    # - from: ../../../common/.devcontainer/Dockerfile/base
-    #   to: ./.devcontainer
+    # .devcontainer common (Dockerfile)
+    - from: ../../../common/.devcontainer/Dockerfile/base
+      to: ./.devcontainer
 
     # Assets common
     - from: ../../common/assets

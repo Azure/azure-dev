@@ -73,7 +73,7 @@ module monitoring '../../../../../../common/infra/bicep/core/monitor/monitoring.
 
 output apiUri string = api.outputs.apiUri
 output applicationInsightsConnectionString string = monitoring.outputs.applicationInsightsConnectionString
-output containerRegistryEndpoint string = containerApps.outputs.containerAppsEnvironmentName
+output containerRegistryEndpoint string = containerApps.outputs.containerRegistryEndpoint
 output containerRegistryName string = containerApps.outputs.containerRegistryName
 output cosmosConnectionStringKey string = cosmos.outputs.cosmosConnectionStringKey
 output cosmosDatabaseName string = cosmos.outputs.cosmosDatabaseName

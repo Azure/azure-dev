@@ -31,7 +31,7 @@ function usage {
     echo "  -p    Sets the reporter for playwright tests (default: list)"
     echo "  -l    Sets the Azure location for the template infrastructure (default: eastus2)"
     echo "  -s    Sets the environment suffix (default: RANDOM)"
-    echo "  -n    When set will only run test commands (default: false)"
+    echo "  -n    When set will only run test commands. If true script won't deploy the templates. This is helpful when you already have the environments provisioned and you want to re-run the tests (default: false)"
     echo "  -c    when set will clean up resources (default: true)"
     echo ""
     echo "Examples:"

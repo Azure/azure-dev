@@ -1,8 +1,9 @@
-param location string
-param resourceToken string
-param tags object
+param environmentName string
+param location string = resourceGroup().location
+var tags = { 'azd-env-name': environmentName }
+var resourceToken = toLower(uniqueString(subscription().id, environmentName, location))
 
-resource function 'Microsoft.Web/sites@2022-03-01' = {
+resource functions 'Microsoft.Web/sites@2022-03-01' = {
   name: 'func-${resourceToken}'
   location: location
   kind: 'functionapp,linux'
@@ -71,4 +72,4 @@ resource appServicePlan 'Microsoft.Web/serverfarms@2022-03-01' = {
 }
 
 
-output AZURE_FUNCTION_URI string = 'https://${function.properties.defaultHostName}'
+output AZURE_FUNCTION_URI string = 'https://${functions.properties.defaultHostName}'

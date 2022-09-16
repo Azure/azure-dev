@@ -1,0 +1,174 @@
+templateApi: 1.0.0
+metadata:
+  type: repo
+  name: todo-nodejs-mongo-aca
+  description: ToDo Application with a Node.js API and Azure Cosmos DB API for MongoDB on Azure Container Apps
+
+repo:
+  includeProjectAssets: false
+
+  remotes:
+    - name: azure-samples-main
+      url: git@github.com:Azure-Samples/todo-nodejs-mongo-aca.git
+    - name: azure-samples-staging
+      url: git@github.com:Azure-Samples/todo-nodejs-mongo-aca.git
+      branch: staging
+
+  rewrite:
+    rules:
+      - from: ../../../../../../common/infra/bicep/core
+        to: ./core
+        patterns:
+          - "**/*.bicep"
+
+      - from: ../../../../../common/infra/bicep/app
+        to: ./app
+        patterns:
+          - "**/*.bicep"
+
+      - from: ../../../../../common/infra/bicep/core
+        to: ../core
+        patterns:
+          - "**/*.bicep"
+
+      # app service modules
+      - from: ../../../../../../common/infra/bicep
+        to: ../
+        patterns:
+          - "**/*.bicep"
+        ignore:
+          - "**/main.bicep"
+
+      - from: ../../../../../common/infra/bicep
+        to: ../
+        patterns:
+          - "**/*.bicep"
+        ignore:
+          - "**/main.bicep"
+
+      # main.bicep
+      - from: ../../../../../../common/infra/bicep
+        to: ./
+        patterns:
+          - "**/main.bicep"
+
+      - from: ../../api/js
+        to: ./src/api
+        patterns:
+          - "**/azure.@(yml|yaml)"
+
+      - from: ../../web/react-fluent
+        to: ./src/web
+        patterns:
+          - "**/azure.@(yml|yaml)"
+
+      - from: web-container-app.bicep
+        to: web.bicep
+        patterns:
+          - "**/resources.bicep"
+
+      - from: api-container-app.bicep
+        to: api.bicep
+        patterns:
+          - "**/resources.bicep"
+
+      - from: cosmos-mongo-db.bicep
+        to: db.bicep
+        patterns:
+          - "**/resources.bicep"
+
+  assets:
+    # # Common assets
+
+    # Infra
+    - from: ./infra/
+      to: ./infra
+
+    - from: ../../../../../common/infra/bicep
+      to: ./infra
+
+    - from: ../../../../common/infra/bicep/app/web-container-app.bicep
+      to: ./infra/app/web.bicep
+
+    - from: ../../../../common/infra/bicep/app/api-container-app.bicep
+      to: ./infra/app/api.bicep
+
+    - from: ../../../../common/infra/bicep/app/web-container-app.parameters.json
+      to: ./infra/app/web.parameters.json
+
+    - from: ../../../../common/infra/bicep/app/api-container-app.parameters.json
+      to: ./infra/app/api.parameters.json
+
+    - from: ../../../../common/infra/bicep/app/cosmos-mongo-db.bicep
+      to: ./infra/app/db.bicep
+
+    - from: ./../../
+      to: ./
+      ignore:
+        - ".repo/**/*"
+        - "repo.y[a]ml"
+        - "azure.y[a]ml"
+
+    # openapi.yaml to root
+    - from: ../../../../api/common
+      to: ./
+      patterns:
+        - openapi.yaml
+
+    # openapi.yaml to api root
+    - from: ../../../../api/common
+      to: ./src/api
+      patterns:
+        - openapi.yaml
+
+    # Templates common
+    - from: ../../../../../common
+      to: ./
+      ignore:
+        - .github/**/*
+        - .devcontainer/**/*
+        - "infra/**/*"
+
+    # Github workflows for bicep
+    - from: ../../../../../common/.github/workflows/bicep
+      to: ./.github/workflows
+
+    # azd core modules
+    - from: ../../../../../common/infra/bicep
+      to: ./infra
+
+    # .devcontainer common (devcontainer.json)
+    - from: ../../../../../common/.devcontainer/devcontainer.json/nodejs
+      to: ./.devcontainer
+
+    # .devcontainer common (Dockerfile)
+    - from: ../../../../../common/.devcontainer/Dockerfile/base
+      to: ./.devcontainer
+
+    # Assets common
+    - from: ../../../../common/assets
+      to: ./assets
+
+    # Tests common
+    - from: ../../../../common/tests
+      to: ./tests
+
+    # Node JS API
+    - from: ../../../../api/js
+      to: ./src/api
+      ignore:
+        - "dist/**/*"
+        - "coverage/**/*"
+        - "node_modules/**/*"
+        - "**/*.log"
+
+    # React Frontend
+    - from: ../../../../web/react-fluent
+      to: ./src/web
+      ignore:
+        - "build/**/*"
+        - "node_modules/**/*"
+
+    # Azure.yml
+    - from: ./azure.yaml
+      to: ./azure.yaml

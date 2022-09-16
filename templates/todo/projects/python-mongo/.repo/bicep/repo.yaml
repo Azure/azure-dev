@@ -16,19 +16,19 @@ repo:
 
   rewrite:
     rules:
-      - from: ../../../../../../common/infra/bicep
-        to: ./
+      - from: ../../../../../../common/infra/bicep/core
+        to: ./core
         patterns:
           - "**/*.bicep"
 
-      - from: ../../api/python
-        to: ./src/api
+      - from: ../../../../../common/infra/bicep/app
+        to: ./app
         patterns:
-          - "**/azure.@(yml|yaml)"
+          - "**/*.bicep"
 
       - from: ../../web/react-fluent
         to: ./src/web
-        patterns:
+        patterns: 
           - "**/azure.@(yml|yaml)"
 
       - from: "PLACEHOLDERIACTOOLS"
@@ -46,8 +46,73 @@ repo:
         patterns:
           - "README.md"
 
+      - from: ../../../../../common/infra/bicep/core
+        to: ../core
+        patterns:
+          - "**/*.bicep"   
+
+      # app service modules
+      - from: ../../../../../../common/infra/bicep
+        to: ../
+        patterns:
+          - "**/*.bicep"
+        ignore:
+          - "**/main.bicep"
+
+      # main.bicep
+      - from: ../../../../../../common/infra/bicep
+        to: ./
+        patterns:
+          - "**/main.bicep"
+
+      - from: ../../api/python
+        to: ./src/api
+        patterns:
+          - "**/azure.@(yml|yaml)"
+
+      - from: ../../web/react-fluent
+        to: ./src/web
+        patterns:
+          - "**/azure.@(yml|yaml)"
+
+      - from: web-appservice.bicep
+        to: web.bicep
+        patterns:
+          - "**/resources.bicep"
+
+      - from: api-appservice-python.bicep
+        to: api.bicep
+        patterns:
+          - "**/resources.bicep"
+
+      - from: cosmos-mongo-db.bicep
+        to: db.bicep
+        patterns:
+          - "**/resources.bicep"
+
+      - from: cosmos-mongo-db.bicep
+        to: db.bicep
+        patterns:
+          - "**/resources.bicep"
+
   assets:
     # Common assets
+
+    # Infra
+    - from: ./infra/
+      to: ./infra
+
+    - from: ../../../../../common/infra/bicep
+      to: ./infra
+
+    - from: ../../../../common/infra/bicep/app/web-appservice.bicep
+      to: ./infra/app/web.bicep
+
+    - from: ../../../../common/infra/bicep/app/api-appservice-python.bicep
+      to: ./infra/app/api.bicep
+
+    - from: ../../../../common/infra/bicep/app/cosmos-mongo-db.bicep
+      to: ./infra/app/db.bicep
 
     - from: ./../../
       to: ./
@@ -80,6 +145,7 @@ repo:
     - from: ../../../../../common/.github/workflows/bicep
       to: ./.github/workflows
 
+    # azd core modules
     - from: ../../../../../common/infra/bicep
       to: ./infra
 

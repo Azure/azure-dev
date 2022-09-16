@@ -16,10 +16,34 @@ repo:
 
   rewrite:
     rules:
+      - from: ../../../../../../common/infra/bicep/core
+        to: ./core
+        patterns:
+          - "**/*.bicep"
+
+      - from: ../../../../../common/infra/bicep/app
+        to: ./app
+        patterns:
+          - "**/*.bicep"
+
+      - from: ../../../../../common/infra/bicep/core
+        to: ../core
+        patterns:
+          - "**/*.bicep"
+
+      # app service modules
+      - from: ../../../../../../common/infra/bicep
+        to: ../
+        patterns:
+          - "**/*.bicep"
+        ignore:
+          - "**/main.bicep"
+
+      # main.bicep
       - from: ../../../../../../common/infra/bicep
         to: ./
         patterns:
-          - "**/*.bicep"
+          - "**/main.bicep"
 
       - from: ../../api/js
         to: ./src/api
@@ -30,6 +54,21 @@ repo:
         to: ./src/web
         patterns:
           - "**/azure.@(yml|yaml)"
+
+      - from: web-appservice.bicep
+        to: web.bicep
+        patterns:
+          - "**/resources.bicep"
+
+      - from: api-appservice-node.bicep
+        to: api.bicep
+        patterns:
+          - "**/resources.bicep"
+
+      - from: cosmos-mongo-db.bicep
+        to: db.bicep
+        patterns:
+          - "**/resources.bicep"
 
       - from: "PLACEHOLDERIACTOOLS"
         to: ""
@@ -48,6 +87,20 @@ repo:
 
   assets:
     # Common assets
+    
+    # Infra
+    - from: ./infra/
+      to: ./infra
+
+    - from: ../../../../common/infra/bicep/app/web-appservice.bicep
+      to: ./infra/app/web.bicep
+
+    - from: ../../../../common/infra/bicep/app/api-appservice-node.bicep
+      to: ./infra/app/api.bicep
+
+    - from: ../../../../common/infra/bicep/app/cosmos-mongo-db.bicep
+      to: ./infra/app/db.bicep
+
     - from: ./../../
       to: ./
       ignore:
@@ -79,6 +132,7 @@ repo:
     - from: ../../../../../common/.github/workflows/bicep
       to: ./.github/workflows
 
+    # azd core modules
     - from: ../../../../../common/infra/bicep
       to: ./infra
 

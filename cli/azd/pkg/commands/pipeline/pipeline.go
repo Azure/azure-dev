@@ -66,7 +66,7 @@ type CiProvider interface {
 	// to Azure
 	configureConnection(
 		ctx context.Context,
-		azdEnvironment environment.Environment,
+		azdEnvironment *environment.Environment,
 		gitRepo *gitRepositoryDetails,
 		provisioningProvider provisioning.Options,
 		credential json.RawMessage,

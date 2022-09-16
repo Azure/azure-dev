@@ -1,7 +1,7 @@
 @minLength(1)
 @maxLength(64)
 @description('Name of the the environment which is used to generate a short unique hash used in all resources.')
-param name string
+param environmentName string
 
 @description('Primary location for all resources')
 param location string
@@ -11,11 +11,10 @@ param deleteAfterTime string = dateTimeAdd(utcNow('o'), 'PT1H')
 
 targetScope = 'subscription'
 
-var resourceToken = toLower(uniqueString(subscription().id, name, location))
-var tags = { 'azd-env-name': name, DeleteAfter: deleteAfterTime }
+var tags = { 'azd-env-name': environmentName, DeleteAfter: deleteAfterTime }
 
 resource rg 'Microsoft.Resources/resourceGroups@2021-04-01' = {
-  name: 'rg-${name}'
+  name: 'rg-${environmentName}'
   location: location
   tags: tags
 }
@@ -24,9 +23,8 @@ module resources 'resources.bicep' = {
   name: 'resources'
   scope: rg
   params: {
+    environmentName: environmentName
     location: location
-    resourceToken: resourceToken
-    tags: tags
   }
 }
 

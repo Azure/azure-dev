@@ -58,7 +58,7 @@ module "keyvault" {
   secrets = [
     {
       name  = "AZURE-COSMOS-CONNECTION-STRING"
-      value = module.applicationinsights.APPLICATIONINSIGHTS_CONNECTION_STRING
+      value = module.cosmos.AZURE_COSMOS_CONNECTION_STRING_KEY
     }
   ]
 }

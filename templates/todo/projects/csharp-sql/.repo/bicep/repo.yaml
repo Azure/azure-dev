@@ -66,8 +66,8 @@ repo:
         patterns:
           - "**/resources.bicep"
 
-      - from: sqlserver.bicep
-        to: db.bicep
+      - from: /sqlserver.bicep
+        to: /db.bicep
         patterns:
           - "**/resources.bicep"
 

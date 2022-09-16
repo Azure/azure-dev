@@ -229,12 +229,6 @@ func (manager *PipelineManager) Configure(ctx context.Context) error {
 		return fmt.Errorf("ensuring git remote: %w", err)
 	}
 
-	// config pipeline handles setting or creating the provider pipeline to be used
-	err = manager.CiProvider.configurePipeline(ctx)
-	if err != nil {
-		return err
-	}
-
 	// Figure out what is the expected provider to use for provisioning
 	prj, err := project.LoadProjectConfig(manager.AzdCtx.ProjectPath(), &manager.Environment)
 	if err != nil {
@@ -248,6 +242,12 @@ func (manager *PipelineManager) Configure(ctx context.Context) error {
 		prj.Infra,
 		credentials,
 		inputConsole)
+	if err != nil {
+		return err
+	}
+
+	// config pipeline handles setting or creating the provider pipeline to be used
+	err = manager.CiProvider.configurePipeline(ctx, gitRepoInfo)
 	if err != nil {
 		return err
 	}

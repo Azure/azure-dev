@@ -2,6 +2,7 @@ package pipeline
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -12,22 +13,24 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 
 	"github.com/microsoft/azure-devops-go-api/azuredevops"
+	"github.com/microsoft/azure-devops-go-api/azuredevops/build"
 	"github.com/microsoft/azure-devops-go-api/azuredevops/core"
 	"github.com/microsoft/azure-devops-go-api/azuredevops/git"
 	"github.com/microsoft/azure-devops-go-api/azuredevops/operations"
 )
 
 var (
-	// The hostname of the AzDo PaaS service.
-	AzDoHostName                 = "dev.azure.com"
-	AzDoPatName                  = "AZURE_DEVOPS_EXT_PAT"
-	AzDoEnvironmentOrgName       = "AZURE_DEVOPS_ORG_NAME"
+	AzDoHostName                 = "dev.azure.com"         // hostname of the AzDo PaaS service.
+	AzDoPatName                  = "AZURE_DEVOPS_EXT_PAT"  // environment variable that holds the Azure DevOps PAT
+	AzDoEnvironmentOrgName       = "AZURE_DEVOPS_ORG_NAME" //  environment variable that holds the Azure DevOps Organization Name
 	AzDoEnvironmentProjectIdName = "AZURE_DEVOPS_PROJECT_ID"
 	AzDoEnvironmentProjectName   = "AZURE_DEVOPS_PROJECT_NAME"
 	AzDoEnvironmentRepoIdName    = "AZURE_DEVOPS_REPOSITORY_ID"
 	AzDoEnvironmentRepoName      = "AZURE_DEVOPS_REPOSITORY_NAME"
 	AzDoEnvironmentRepoWebUrl    = "AZURE_DEVOPS_REPOSITORY_WEB_URL"
 	AzdoConfigSuccessMessage     = "\nSuccessfully configured Azure DevOps Repository %s\n"
+	AzurePipelineName            = "Azure Dev Deploy"
+	AzurePipelineYamlPath        = ".azdo/pipelines/azure-dev.yml"
 )
 
 type AzDoClient struct {
@@ -255,7 +258,7 @@ func getAzdoProjectFromNew(ctx context.Context, repoPath string, connection *azu
 			console.Message(ctx, fmt.Sprintf("error: the project name '%s' is not a valid Azure DevOps project Name. See https://docs.microsoft.com/en-us/azure/devops/organizations/settings/naming-restrictions?view=azure-devops#project-names\n", name))
 			continue // try again
 		} else if err != nil {
-			return "", "", fmt.Errorf("creating repository: %w", err)
+			return "", "", fmt.Errorf("creating project: %w", err)
 		} else {
 			project = newProject
 			break
@@ -317,4 +320,73 @@ func getAzdoProjectFromExisting(ctx context.Context, connection *azuredevops.Con
 	}
 
 	return options[projectIdx], projectsList[projectIdx].Id.String(), nil
+}
+
+func createBuildDefinitionVariable(value string, isSecret bool, allowOverride bool) build.BuildDefinitionVariable {
+	return build.BuildDefinitionVariable{
+		AllowOverride: &allowOverride,
+		IsSecret:      &isSecret,
+		Value:         &value,
+	}
+}
+
+func createPipeline(
+	ctx context.Context,
+	projectId string,
+	name string,
+	repoName string,
+	connection *azuredevops.Connection,
+	credentials AzureServicePrincipalCredentials,
+	env environment.Environment) error {
+
+	client, err := build.NewClient(ctx, connection)
+	if err != nil {
+		return err
+	}
+	repoType := "tfsgit"
+	buildDefinitionType := build.DefinitionType("build")
+	definitionQueueStatus := build.DefinitionQueueStatus("enabled")
+	buildRepository := &build.BuildRepository{
+		Type: &repoType,
+		Name: &repoName,
+	}
+
+	process := make(map[string]interface{})
+	process["type"] = 2
+	process["yamlFilename"] = AzurePipelineYamlPath
+
+	variables := make(map[string]build.BuildDefinitionVariable)
+	variables["AZURE_SUBSCRIPTION_ID"] = createBuildDefinitionVariable(credentials.SubscriptionId, false, false)
+	variables["ARM_TENANT_ID"] = createBuildDefinitionVariable(credentials.TenantId, false, false)
+	variables["ARM_CLIENT_ID"] = createBuildDefinitionVariable(credentials.ClientId, true, false)
+	variables["ARM_CLIENT_SECRET"] = createBuildDefinitionVariable(credentials.ClientSecret, true, false)
+	variables["AZURE_LOCATION"] = createBuildDefinitionVariable(env.GetLocation(), false, false)
+	variables["AZURE_ENV_NAME"] = createBuildDefinitionVariable(env.GetEnvName(), false, false)
+
+	buildDefinition := &build.BuildDefinition{
+		Name:        &name,
+		Type:        &buildDefinitionType,
+		QueueStatus: &definitionQueueStatus,
+		Repository:  buildRepository,
+		Process:     process,
+		Variables:   &variables,
+	}
+
+	createDefinitionArgs := &build.CreateDefinitionArgs{
+		Project:    &projectId,
+		Definition: buildDefinition,
+	}
+	body, marshalErr := json.Marshal(*createDefinitionArgs.Definition)
+	if marshalErr != nil {
+		return marshalErr
+	}
+	json := string(body)
+	_ = json
+	newBuildDefinition, err := client.CreateDefinition(ctx, *createDefinitionArgs)
+	if err != nil {
+		return err
+	}
+	_ = newBuildDefinition
+
+	return nil
 }

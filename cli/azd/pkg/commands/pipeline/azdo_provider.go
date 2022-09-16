@@ -480,7 +480,7 @@ func (p *AzdoHubScmProvider) postGitPush(
 type AzdoCiProvider struct {
 	Env         *environment.Environment
 	AzdContext  *azdcontext.AzdContext
-	ScmProvider *ScmProvider
+	credentials *AzureServicePrincipalCredentials
 }
 
 // ***  subareaProvider implementation ******
@@ -517,10 +517,45 @@ func (p *AzdoCiProvider) configureConnection(
 	credentials json.RawMessage,
 	console input.Console) error {
 
+	azureCredentials, err := parseCredentials(ctx, credentials)
+	if err != nil {
+		return err
+	}
+
+	p.credentials = azureCredentials
 	return nil
 }
 
+type AzureServicePrincipalCredentials struct {
+	TenantId       string `json:"tenantId"`
+	ClientId       string `json:"clientId"`
+	ClientSecret   string `json:"clientSecret"`
+	SubscriptionId string `json:"subscriptionId"`
+}
+
+func parseCredentials(ctx context.Context, credentials json.RawMessage) (*AzureServicePrincipalCredentials, error) {
+	azureCredentials := AzureServicePrincipalCredentials{}
+	if e := json.Unmarshal(credentials, &azureCredentials); e != nil {
+		return nil, fmt.Errorf("setting terraform env var credentials: %w", e)
+	}
+	return &azureCredentials, nil
+}
+
 // configurePipeline create Azdo pipeline
-func (p *AzdoCiProvider) configurePipeline(ctx context.Context) error {
+func (p *AzdoCiProvider) configurePipeline(ctx context.Context, repoDetails *gitRepositoryDetails) error {
+	details := repoDetails.details.(*AzdoRepositoryDetails)
+
+	org, err := ensureAzdoOrgNameExists(ctx, p.Env)
+	if err != nil {
+		return err
+	}
+	pat, err := ensureAzdoPatExists(ctx, p.Env)
+	if err != nil {
+		return err
+	}
+
+	connection := getAzdoConnection(ctx, org, pat)
+
+	createPipeline(ctx, details.projectId, AzurePipelineName, details.repoName, connection, *p.credentials, *p.Env)
 	return nil
 }

@@ -71,7 +71,7 @@ type CiProvider interface {
 	// compose the behavior from subareaProvider
 	subareaProvider
 	// configurePipeline set up or create the CI pipeline.
-	configurePipeline(ctx context.Context) error
+	configurePipeline(ctx context.Context, repoDetails *gitRepositoryDetails) error
 	// configureConnection use the credential to set up the connection from the pipeline
 	// to Azure
 	configureConnection(

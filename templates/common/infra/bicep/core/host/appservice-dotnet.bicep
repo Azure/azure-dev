@@ -12,7 +12,7 @@ param managedIdentity bool = !(empty(keyVaultName))
 param scmDoBuildDuringDeployment bool = false
 param serviceName string
 
-module web 'appservice.bicep' = {
+module appService 'appservice.bicep' = {
   name: '${serviceName}-appservice-dotnet'
   params: {
     environmentName: environmentName
@@ -30,6 +30,6 @@ module web 'appservice.bicep' = {
   }
 }
 
-output identityPrincipalId string = web.outputs.identityPrincipalId
-output name string = web.outputs.name
-output uri string = web.outputs.uri
+output identityPrincipalId string = appService.outputs.identityPrincipalId
+output name string = appService.outputs.name
+output uri string = appService.outputs.uri

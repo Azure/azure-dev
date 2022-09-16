@@ -9,7 +9,7 @@ param principalIds array = []
 var abbrs = loadJsonContent('../../abbreviations.json')
 var resourceToken = toLower(uniqueString(subscription().id, environmentName, location))
 
-module cosmos 'cosmos-sql.bicep' = {
+module cosmos 'cosmos-sql-account.bicep' = {
   name: 'cosmos-sql-account'
   params: {
     environmentName: environmentName

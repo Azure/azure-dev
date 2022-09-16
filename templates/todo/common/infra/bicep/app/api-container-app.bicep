@@ -11,14 +11,6 @@ param serviceName string = 'api'
 var abbrs = loadJsonContent('../../../../../common/infra/bicep/abbreviations.json')
 var resourceToken = toLower(uniqueString(subscription().id, environmentName, location))
 
-resource applicationInsights 'Microsoft.Insights/components@2020-02-02' existing = {
-  name: !empty(applicationInsightsName) ? applicationInsightsName : '${abbrs.insightsComponents}${resourceToken}'
-}
-
-resource keyVault 'Microsoft.KeyVault/vaults@2022-07-01' existing = {
-  name: !empty(keyVaultName) ? keyVaultName : '${abbrs.keyVaultVaults}${resourceToken}'
-}
-
 module api '../../../../../common/infra/bicep/core/host/container-app.bicep' = {
   name: '${serviceName}-container-app-module'
   params: {
@@ -41,6 +33,14 @@ module api '../../../../../common/infra/bicep/core/host/container-app.bicep' = {
     serviceName: serviceName
     targetPort: 3100
   }
+}
+
+resource applicationInsights 'Microsoft.Insights/components@2020-02-02' existing = {
+  name: !empty(applicationInsightsName) ? applicationInsightsName : '${abbrs.insightsComponents}${resourceToken}'
+}
+
+resource keyVault 'Microsoft.KeyVault/vaults@2022-07-01' existing = {
+  name: !empty(keyVaultName) ? keyVaultName : '${abbrs.keyVaultVaults}${resourceToken}'
 }
 
 output API_IDENTITY_PRINCIPAL_ID string = api.outputs.identityPrincipalId

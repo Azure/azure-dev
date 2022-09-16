@@ -6,10 +6,6 @@ var abbrs = loadJsonContent('../../abbreviations.json')
 var resourceToken = toLower(uniqueString(subscription().id, environmentName, location))
 var tags = { 'azd-env-name': environmentName }
 
-resource applicationInsights 'Microsoft.Insights/components@2020-02-02' existing = {
-  name: applicationInsightsName
-}
-
 // 2020-09-01-preview because that is the latest valid version
 resource applicationInsightsDashboard 'Microsoft.Portal/dashboards@2020-09-01-preview' = {
   name: '${abbrs.portalDashboards}${resourceToken}'
@@ -1235,4 +1231,8 @@ resource applicationInsightsDashboard 'Microsoft.Portal/dashboards@2020-09-01-pr
       }
     ]
   }
+}
+
+resource applicationInsights 'Microsoft.Insights/components@2020-02-02' existing = {
+  name: applicationInsightsName
 }

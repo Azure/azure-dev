@@ -27,7 +27,7 @@ module api '../../../../../common/infra/bicep/app/api-appservice-python.bicep' =
 }
 
 // The application database
-module cosmos '../../../../../common/infra/bicep/app/cosmos-mongo.bicep' = {
+module cosmos '../../../../../common/infra/bicep/app/cosmos-mongo-db.bicep' = {
   name: 'cosmos'
   params: {
     environmentName: environmentName

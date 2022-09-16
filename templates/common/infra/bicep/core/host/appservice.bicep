@@ -25,15 +25,7 @@ var resourceToken = toLower(uniqueString(subscription().id, environmentName, loc
 
 var prefix = contains(kind, 'function') ? abbrs.webSitesFunctions : abbrs.webSitesAppService
 
-resource keyVault 'Microsoft.KeyVault/vaults@2022-07-01' existing = if (!(empty(keyVaultName))) {
-  name: keyVaultName
-}
-
-resource applicationInsights 'Microsoft.Insights/components@2020-02-02' existing = {
-  name: applicationInsightsName
-}
-
-resource appservice 'Microsoft.Web/sites@2022-03-01' = {
+resource appService 'Microsoft.Web/sites@2022-03-01' = {
   name: '${prefix}${serviceName}-${resourceToken}'
   location: location
   tags: union(tags, { 'azd-service-name': serviceName })
@@ -72,9 +64,9 @@ resource appservice 'Microsoft.Web/sites@2022-03-01' = {
 module appSettingsUnion 'appservice-config-union.bicep' = if (!empty(appSettings)) {
   name: '${serviceName}-app-settings-union'
   params: {
-    appServiceName: appservice.name
+    appServiceName: appService.name
     configName: 'appsettings'
-    currentConfigProperties: appservice::appSettings.list().properties
+    currentConfigProperties: appService::appSettings.list().properties
     additionalConfigProperties: appSettings
   }
 }
@@ -82,19 +74,27 @@ module appSettingsUnion 'appservice-config-union.bicep' = if (!empty(appSettings
 module siteConfigLogs 'appservice-config-logs.bicep' = {
   name: '${serviceName}-appservice-config-logs'
   params: {
-    appServiceName: appservice.name
+    appServiceName: appService.name
   }
 }
 
 module keyVaultAccess '../security/keyvault-access.bicep' = if (!(empty(keyVaultName))) {
   name: '${serviceName}-appservice-keyvault-access'
   params: {
-    principalId: appservice.identity.principalId
+    principalId: appService.identity.principalId
     environmentName: environmentName
     location: location
   }
 }
 
-output identityPrincipalId string = managedIdentity ? appservice.identity.principalId : ''
-output name string = appservice.name
-output uri string = 'https://${appservice.properties.defaultHostName}'
+resource keyVault 'Microsoft.KeyVault/vaults@2022-07-01' existing = if (!(empty(keyVaultName))) {
+  name: keyVaultName
+}
+
+resource applicationInsights 'Microsoft.Insights/components@2020-02-02' existing = {
+  name: applicationInsightsName
+}
+
+output identityPrincipalId string = managedIdentity ? appService.identity.principalId : ''
+output name string = appService.name
+output uri string = 'https://${appService.properties.defaultHostName}'

@@ -12,18 +12,6 @@ param serviceName string = 'web'
 var abbrs = loadJsonContent('../../../../../common/infra/bicep/abbreviations.json')
 var resourceToken = toLower(uniqueString(subscription().id, environmentName, location))
 
-resource applicationInsights 'Microsoft.Insights/components@2020-02-02' existing = {
-  name: !empty(applicationInsightsName) ? applicationInsightsName : '${abbrs.insightsComponents}${resourceToken}'
-}
-
-resource keyVault 'Microsoft.KeyVault/vaults@2022-07-01' existing = {
-  name: !empty(keyVaultName) ? keyVaultName : '${abbrs.keyVaultVaults}${resourceToken}'
-}
-
-resource api 'Microsoft.App/containerApps@2022-03-01' existing = {
-  name: !empty(apiName) ? apiName : '${abbrs.appContainerApps}api-${resourceToken}'
-}
-
 module web '../../../../../common/infra/bicep/core/host/container-app.bicep' = {
   name: '${serviceName}-container-app-module'
   params: {
@@ -50,6 +38,18 @@ module web '../../../../../common/infra/bicep/core/host/container-app.bicep' = {
     serviceName: serviceName
     targetPort: 80
   }
+}
+
+resource applicationInsights 'Microsoft.Insights/components@2020-02-02' existing = {
+  name: !empty(applicationInsightsName) ? applicationInsightsName : '${abbrs.insightsComponents}${resourceToken}'
+}
+
+resource keyVault 'Microsoft.KeyVault/vaults@2022-07-01' existing = {
+  name: !empty(keyVaultName) ? keyVaultName : '${abbrs.keyVaultVaults}${resourceToken}'
+}
+
+resource api 'Microsoft.App/containerApps@2022-03-01' existing = {
+  name: !empty(apiName) ? apiName : '${abbrs.appContainerApps}api-${resourceToken}'
 }
 
 output WEB_NAME string = web.outputs.name

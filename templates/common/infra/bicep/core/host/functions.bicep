@@ -21,10 +21,6 @@ param serviceName string
 param storageAccountName string
 param use32BitWorkerProcess bool = false
 
-resource storage 'Microsoft.Storage/storageAccounts@2021-09-01' existing = {
-  name: storageAccountName
-}
-
 module functions 'appservice.bicep' = {
   name: '${serviceName}-functions'
   params: {
@@ -51,6 +47,10 @@ module functions 'appservice.bicep' = {
     serviceName: serviceName
     use32BitWorkerProcess: use32BitWorkerProcess
   }
+}
+
+resource storage 'Microsoft.Storage/storageAccounts@2021-09-01' existing = {
+  name: storageAccountName
 }
 
 output identityPrincipalId string = managedIdentity ? functions.outputs.identityPrincipalId : ''

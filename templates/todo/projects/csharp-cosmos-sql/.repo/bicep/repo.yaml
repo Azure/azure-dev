@@ -65,7 +65,7 @@ repo:
         patterns:
           - "**/resources.bicep"
 
-      - from: cosmos-sql.bicep
+      - from: cosmos-sql-db.bicep
         to: db.bicep
         patterns:
           - "**/resources.bicep"
@@ -86,7 +86,7 @@ repo:
     - from: ../../../../common/infra/bicep/app/api-appservice-dotnet.bicep
       to: ./infra/app/api.bicep
 
-    - from: ../../../../common/infra/bicep/app/cosmos-sql.bicep
+    - from: ../../../../common/infra/bicep/app/cosmos-sql-db.bicep
       to: ./infra/app/db.bicep
 
     - from: ./../../

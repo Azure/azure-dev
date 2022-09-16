@@ -16,10 +16,6 @@ var abbrs = loadJsonContent('../../abbreviations.json')
 var resourceToken = toLower(uniqueString(subscription().id, environmentName, location))
 var tags = { 'azd-env-name': environmentName }
 
-resource keyVault 'Microsoft.KeyVault/vaults@2022-07-01' existing = {
-  name: keyVaultName
-}
-
 resource sqlServer 'Microsoft.Sql/servers@2022-02-01-preview' = {
   name: '${abbrs.sqlServers}${resourceToken}'
   location: location
@@ -125,6 +121,10 @@ resource sqlAzureConnectionStringSercret 'Microsoft.KeyVault/vaults/secrets@2022
   properties: {
     value: '${azureSqlConnectionString}; Password=${appUserPassword}'
   }
+}
+
+resource keyVault 'Microsoft.KeyVault/vaults@2022-07-01' existing = {
+  name: keyVaultName
 }
 
 var azureSqlConnectionString = 'Server=${sqlServer.properties.fullyQualifiedDomainName}; Database=${sqlServer::database.name}; User=${appUser}'

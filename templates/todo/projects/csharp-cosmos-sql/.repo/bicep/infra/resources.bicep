@@ -27,7 +27,7 @@ module api '../../../../../common/infra/bicep/app/api-appservice-dotnet.bicep' =
 }
 
 // The application database
-module cosmos '../../../../../common/infra/bicep/app/cosmos-sql.bicep' = {
+module cosmos '../../../../../common/infra/bicep/app/cosmos-sql-db.bicep' = {
   name: 'cosmos'
   params: {
     environmentName: environmentName

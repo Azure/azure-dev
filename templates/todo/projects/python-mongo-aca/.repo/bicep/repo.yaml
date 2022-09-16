@@ -72,7 +72,7 @@ repo:
         patterns:
           - "**/resources.bicep"
 
-      - from: cosmos-mongo.bicep
+      - from: cosmos-mongo-db.bicep
         to: db.bicep
         patterns:
           - "**/resources.bicep"
@@ -99,7 +99,7 @@ repo:
     - from: ../../../../common/infra/bicep/app/api-container-app.parameters.json
       to: ./infra/app/api.parameters.json
 
-    - from: ../../../../common/infra/bicep/app/cosmos-mongo.bicep
+    - from: ../../../../common/infra/bicep/app/cosmos-mongo-db.bicep
       to: ./infra/app/db.bicep
 
     - from: ./../../

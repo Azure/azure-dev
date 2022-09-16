@@ -32,7 +32,7 @@ module api '../../../../../common/infra/bicep/app/api-appservice-dotnet.bicep' =
   }
 }
 // The application database
-module sqlServer '../../../../../common/infra/bicep/app/sql.bicep' = {
+module sqlServer '../../../../../common/infra/bicep/app/sqlserver.bicep' = {
   name: 'sql'
   params: {
     environmentName: environmentName

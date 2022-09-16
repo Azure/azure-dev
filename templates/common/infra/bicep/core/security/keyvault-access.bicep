@@ -8,10 +8,6 @@ param principalId string
 var abbrs = loadJsonContent('../../abbreviations.json')
 var resourceToken = toLower(uniqueString(subscription().id, environmentName, location))
 
-resource keyVault 'Microsoft.KeyVault/vaults@2022-07-01' existing = {
-  name: !empty(keyVaultName) ? keyVaultName : '${abbrs.keyVaultVaults}${resourceToken}'
-}
-
 resource keyVaultAccessPolicies 'Microsoft.KeyVault/vaults/accessPolicies@2022-07-01' = {
   parent: keyVault
   name: 'add'
@@ -22,4 +18,8 @@ resource keyVaultAccessPolicies 'Microsoft.KeyVault/vaults/accessPolicies@2022-0
         permissions: permissions
       } ]
   }
+}
+
+resource keyVault 'Microsoft.KeyVault/vaults@2022-07-01' existing = {
+  name: !empty(keyVaultName) ? keyVaultName : '${abbrs.keyVaultVaults}${resourceToken}'
 }

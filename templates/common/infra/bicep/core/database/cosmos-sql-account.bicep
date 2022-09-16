@@ -3,7 +3,7 @@ param location string = resourceGroup().location
 
 param keyVaultName string
 
-module cosmos 'cosmos.bicep' = {
+module cosmos 'cosmos-account.bicep' = {
   name: 'cosmos-account'
   params: {
     environmentName: environmentName

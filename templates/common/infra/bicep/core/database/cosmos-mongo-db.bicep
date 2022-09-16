@@ -9,8 +9,8 @@ param keyVaultName string
 var abbrs = loadJsonContent('../../abbreviations.json')
 var resourceToken = toLower(uniqueString(subscription().id, environmentName, location))
 
-module cosmos 'cosmos.bicep' = {
-  name: 'cosmos-account'
+module cosmos 'cosmos-mongo-account.bicep' = {
+  name: 'cosmos-mongo-account'
   params: {
     environmentName: environmentName
     location: location

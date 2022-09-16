@@ -15,15 +15,6 @@ var abbrs = loadJsonContent('../../abbreviations.json')
 var resourceToken = toLower(uniqueString(subscription().id, environmentName, location))
 var tags = { 'azd-env-name': environmentName }
 
-resource containerAppsEnvironment 'Microsoft.App/managedEnvironments@2022-03-01' existing = {
-  name: !empty(containerAppsEnvironmentName) ? containerAppsEnvironmentName : '${abbrs.appManagedEnvironments}${resourceToken}'
-}
-
-// 2022-02-01-preview needed for anonymousPullEnabled
-resource containerRegistry 'Microsoft.ContainerRegistry/registries@2022-02-01-preview' existing = {
-  name: !empty(containerRegistryName) ? containerRegistryName : '${abbrs.containerRegistryRegistries}${resourceToken}'
-}
-
 resource app 'Microsoft.App/containerApps@2022-03-01' = {
   name: '${abbrs.appContainerApps}${serviceName}-${resourceToken}'
   location: location
@@ -72,6 +63,15 @@ module keyVaultAccess '../security/keyvault-access.bicep' = if (!(empty(keyVault
     keyVaultName: keyVaultName
     principalId: app.identity.principalId
   }
+}
+
+resource containerAppsEnvironment 'Microsoft.App/managedEnvironments@2022-03-01' existing = {
+  name: !empty(containerAppsEnvironmentName) ? containerAppsEnvironmentName : '${abbrs.appManagedEnvironments}${resourceToken}'
+}
+
+// 2022-02-01-preview needed for anonymousPullEnabled
+resource containerRegistry 'Microsoft.ContainerRegistry/registries@2022-02-01-preview' existing = {
+  name: !empty(containerRegistryName) ? containerRegistryName : '${abbrs.containerRegistryRegistries}${resourceToken}'
 }
 
 output identityPrincipalId string = managedIdentity ? app.identity.principalId : ''

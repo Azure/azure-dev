@@ -85,12 +85,12 @@ repo:
         patterns:
           - "**/resources.bicep"
 
-      - from: cosmos-mongo.bicep
+      - from: cosmos-mongo-db.bicep
         to: db.bicep
         patterns:
           - "**/resources.bicep"
 
-      - from: cosmos-mongo.bicep
+      - from: cosmos-mongo-db.bicep
         to: db.bicep
         patterns:
           - "**/resources.bicep"
@@ -111,7 +111,7 @@ repo:
     - from: ../../../../common/infra/bicep/app/api-appservice-python.bicep
       to: ./infra/app/api.bicep
 
-    - from: ../../../../common/infra/bicep/app/cosmos-mongo.bicep
+    - from: ../../../../common/infra/bicep/app/cosmos-mongo-db.bicep
       to: ./infra/app/db.bicep
 
     - from: ./../../

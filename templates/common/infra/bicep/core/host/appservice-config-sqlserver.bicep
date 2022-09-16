@@ -8,7 +8,7 @@ module appServiceConfigSqlServerSettings 'appservice-config-union.bicep' = {
     configName: 'appsettings'
     currentConfigProperties: list(resourceId('Microsoft.Web/sites/config', appServiceName, 'appsettings'), '2022-03-01').properties
     additionalConfigProperties: {
-      sqlConnectionStringKey: sqlConnectionStringKey
+      AZURE_SQL_CONNECTION_STRING_KEY: sqlConnectionStringKey
     }
   }
 }

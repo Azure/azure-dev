@@ -63,9 +63,9 @@ resource appservice 'Microsoft.Web/sites@2022-03-01' = {
     name: 'appsettings'
     properties: union({
         SCM_DO_BUILD_DURING_DEPLOYMENT: string(scmDoBuildDuringDeployment)
-        applicationInsightsConnectionString: applicationInsights.properties.ConnectionString
+        APPLICATIONINSIGHTS_CONNECTION_STRING: applicationInsights.properties.ConnectionString
       },
-      !(empty(keyVaultName)) ? { keyVaultEndpoint: keyVault.properties.vaultUri } : {})
+      !(empty(keyVaultName)) ? { AZURE_KEY_VAULT_ENDPOINT: keyVault.properties.vaultUri } : {})
   }
 }
 

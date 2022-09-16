@@ -117,7 +117,7 @@ func DetectProviders(ctx context.Context, console input.Console) (ScmProvider, C
 	}
 
 	// Both folders exist. Prompt to select SCM first
-	scmElection, err := console.Prompt(ctx, input.ConsoleOptions{
+	scmElection, err := console.Select(ctx, input.ConsoleOptions{
 		Message: "Select what SCM provider to use",
 		Options: []string{
 			"GitHub",
@@ -130,13 +130,13 @@ func DetectProviders(ctx context.Context, console input.Console) (ScmProvider, C
 		return nil, nil, err
 	}
 
-	if scmElection == "Azure DevOps" {
+	if scmElection == 1 {
 		// using azdo for scm would only support using azdo pipelines
 		return &AzdoHubScmProvider{}, &AzdoCiProvider{}, nil
 	}
 
 	// GitHub selected for SCM, prompt for CI provider
-	ciElection, err := console.Prompt(ctx, input.ConsoleOptions{
+	ciElection, err := console.Select(ctx, input.ConsoleOptions{
 		Message: "Select what CI provider to use",
 		Options: []string{
 			"GitHub Actions",
@@ -149,7 +149,7 @@ func DetectProviders(ctx context.Context, console input.Console) (ScmProvider, C
 		return nil, nil, err
 	}
 
-	if ciElection == "GitHub Actions" {
+	if ciElection == 0 {
 		return &GitHubScmProvider{}, &GitHubCiProvider{}, nil
 	}
 

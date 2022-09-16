@@ -88,7 +88,7 @@ func Test_detectProviders(t *testing.T) {
 		assert.NoError(t, err)
 
 		scmProvider, ciProvider, err := DetectProviders(ctx, &circularConsole{
-			promptReturnValues: []string{"Azure DevOps"},
+			selectReturnValues: []int{1},
 		})
 		assert.IsType(t, &AzdoHubScmProvider{}, scmProvider)
 		assert.IsType(t, &AzdoCiProvider{}, ciProvider)
@@ -107,7 +107,7 @@ func Test_detectProviders(t *testing.T) {
 		assert.NoError(t, err)
 
 		scmProvider, ciProvider, err := DetectProviders(ctx, &circularConsole{
-			promptReturnValues: []string{"GitHub", "Azure DevOps Pipelines"},
+			selectReturnValues: []int{0, 1},
 		})
 		assert.IsType(t, &GitHubScmProvider{}, scmProvider)
 		assert.IsType(t, &AzdoCiProvider{}, ciProvider)
@@ -147,6 +147,11 @@ func (console *selectDefaultConsole) Prompt(ctx context.Context, options input.C
 	return options.DefaultValue.(string), nil
 }
 func (console *selectDefaultConsole) Select(ctx context.Context, options input.ConsoleOptions) (int, error) {
+	for index, value := range options.Options {
+		if value == options.DefaultValue {
+			return index, nil
+		}
+	}
 	return 0, nil
 }
 func (console *selectDefaultConsole) Confirm(ctx context.Context, options input.ConsoleOptions) (bool, error) {
@@ -156,28 +161,30 @@ func (console *selectDefaultConsole) SetWriter(writer io.Writer) {}
 
 // For tests where console.prompt returns values provided in its internal []string
 type circularConsole struct {
-	promptReturnValues []string
+	selectReturnValues []int
 	index              int
 }
 
 func (console *circularConsole) Message(ctx context.Context, message string) {}
 func (console *circularConsole) Prompt(ctx context.Context, options input.ConsoleOptions) (string, error) {
+	return "", nil
+}
+
+func (console *circularConsole) Select(ctx context.Context, options input.ConsoleOptions) (int, error) {
 	// If no values where provided, return error
-	arraySize := len(console.promptReturnValues)
+	arraySize := len(console.selectReturnValues)
 	if arraySize == 0 {
-		return "", errors.New("no values to return")
+		return 0, errors.New("no values to return")
 	}
 
 	// Reset index when it reaches size (back to first value)
 	if console.index == arraySize {
 		console.index = 0
 	}
-	returnValue := console.promptReturnValues[console.index]
+
+	returnValue := console.selectReturnValues[console.index]
 	console.index += 1
 	return returnValue, nil
-}
-func (console *circularConsole) Select(ctx context.Context, options input.ConsoleOptions) (int, error) {
-	return 0, nil
 }
 func (console *circularConsole) Confirm(ctx context.Context, options input.ConsoleOptions) (bool, error) {
 	return false, nil

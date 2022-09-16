@@ -103,7 +103,7 @@ func DetectProviders(ctx context.Context, console input.Console) (ScmProvider, C
 	hasAzDevOpsFolder := folderExists(path.Join(projectDir, ".azdo"))
 
 	if !hasGitHubFolder && !hasAzDevOpsFolder {
-		return nil, nil, fmt.Errorf("no CI/CD provider found in template root folders.")
+		return nil, nil, fmt.Errorf("no CI/CD provider configuration found. Expecting either .github and/or .azdo folder in the project root directory.")
 	}
 
 	if !hasAzDevOpsFolder && hasGitHubFolder {

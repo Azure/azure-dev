@@ -36,7 +36,7 @@ func Test_detectProviders(t *testing.T) {
 		scmProvider, ciProvider, err := DetectProviders(ctx, &nullConsole{})
 		assert.Nil(t, scmProvider)
 		assert.Nil(t, ciProvider)
-		assert.EqualError(t, err, "no CI/CD provider found in template root folders.")
+		assert.EqualError(t, err, "no CI/CD provider configuration found. Expecting either .github and/or .azdo folder in the project root directory.")
 	})
 	t.Run("github folder only", func(t *testing.T) {
 		ghFolder := path.Join(tempDir, ".github")

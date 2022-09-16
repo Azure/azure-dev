@@ -1,8 +1,22 @@
+terraform {
+  required_providers {
+    azurerm = {
+      version = "~>3.18.0"
+      source  = "hashicorp/azurerm"
+    }
+    azurecaf = {
+      source  = "aztfmod/azurecaf"
+      version = "~>1.2.15"
+    }
+  }
+}
+
+data "azurerm_client_config" "current" {}
 # ------------------------------------------------------------------------------------------------------
 # DEPLOY AZURE KEYVAULT
 # ------------------------------------------------------------------------------------------------------
 resource "azurecaf_name" "kv_name" {
-  name          = local.resource_token
+  name          = var.resource_token
   resource_type = "azurerm_key_vault"
   random_length = 0
   clean_input   = true
@@ -10,19 +24,20 @@ resource "azurecaf_name" "kv_name" {
 
 resource "azurerm_key_vault" "kv" {
   name                     = azurecaf_name.kv_name.result
-  location                 = azurerm_resource_group.rg.location
-  resource_group_name      = azurerm_resource_group.rg.name
+  location                 = var.location
+  resource_group_name      = var.rg_name
   tenant_id                = data.azurerm_client_config.current.tenant_id
   purge_protection_enabled = false
   sku_name                 = "standard"
 
-  tags = local.tags
+  tags = var.tags
 }
 
 resource "azurerm_key_vault_access_policy" "app" {
+  count        = length(var.access_policy_object_ids)
   key_vault_id = azurerm_key_vault.kv.id
   tenant_id    = data.azurerm_client_config.current.tenant_id
-  object_id    = azurerm_linux_web_app.api.identity.0.principal_id
+  object_id    = var.access_policy_object_ids[count.index]
 
   secret_permissions = [
     "Get",
@@ -48,8 +63,9 @@ resource "azurerm_key_vault_access_policy" "user" {
 }
 
 resource "azurerm_key_vault_secret" "dbconnection" {
-  name         = "AZURE-COSMOS-CONNECTION-STRING"
-  value        = azurerm_cosmosdb_account.db.connection_strings[0]
+  count        = length(var.secrets)
+  name         = var.secrets[count.index].name
+  value        = var.secrets[count.index].value
   key_vault_id = azurerm_key_vault.kv.id
   depends_on = [
     azurerm_key_vault_access_policy.user,

@@ -1,23 +1,23 @@
 output "AZURE_COSMOS_CONNECTION_STRING_KEY" {
-  value     = azurerm_cosmosdb_account.db.connection_strings[0]
+  value     = module.cosmos.AZURE_COSMOS_CONNECTION_STRING_KEY
   sensitive = true
 }
 
 output "AZURE_COSMOS_DATABASE_NAME" {
-  value = azurerm_cosmosdb_mongo_database.mongodb.name
+  value = module.cosmos.AZURE_COSMOS_DATABASE_NAME
 }
 
 output "AZURE_KEY_VAULT_ENDPOINT" {
-  value     = azurerm_key_vault.kv.vault_uri
+  value     = module.keyvault.AZURE_KEY_VAULT_ENDPOINT
   sensitive = true
 }
 
 output "REACT_APP_WEB_BASE_URL" {
-  value = "https://${azurerm_linux_web_app.web.default_hostname}"
+  value = "https://${module.appserviceweb.APP_DEFAULT_HOST_NAME}"
 }
 
 output "REACT_APP_API_BASE_URL" {
-  value = "https://${azurerm_linux_web_app.api.default_hostname}"
+  value = "https://${module.appserviceapi.APP_DEFAULT_HOST_NAME}"
 }
 
 output "AZURE_LOCATION" {

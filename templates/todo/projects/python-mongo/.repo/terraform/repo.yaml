@@ -21,6 +21,36 @@ repo:
         patterns:
           - "**/*.tf"
 
+      - from: ../../../../../../common/infra/terraform/loganalytics
+        to: ./modules/loganalytics
+        patterns:
+          - "**/*.tf"
+
+      - from: ../../../../../../common/infra/terraform/keyvault
+        to: ./modules/keyvault
+        patterns:
+          - "**/*.tf"
+
+      - from: ../../../../../../common/infra/terraform/cosmos
+        to: ./modules/cosmos
+        patterns:
+          - "**/*.tf"
+      
+      - from: ../../../../../../common/infra/terraform/host/appserviceplan
+        to: ./modules/appserviceplan
+        patterns:
+          - "**/*.tf"
+
+      - from: ../../../../../../common/infra/terraform/host/appservice/appservicenode
+        to: ./modules/appservicenode
+        patterns:
+          - "**/*.tf"
+
+      - from: ../../../../../../common/infra/terraform/host/appservice/appservicepython
+        to: ./modules/appservicepython
+        patterns:
+          - "**/*.tf"
+
       - from: ../../api/python
         to: ./src/api
         patterns:
@@ -86,6 +116,24 @@ repo:
 
     - from: ../../../../../common/infra/terraform/applicationinsights
       to: ./infra/modules/applicationinsights
+
+    - from: ../../../../../common/infra/terraform/loganalytics
+      to: ./infra/modules/loganalytics
+    
+    - from: ../../../../../common/infra/terraform/keyvault
+      to: ./infra/modules/keyvault
+
+    - from: ../../../../../common/infra/terraform/cosmos
+      to: ./infra/modules/cosmos
+
+    - from: ../../../../../common/infra/terraform/host/appserviceplan
+      to: ./infra/modules/appserviceplan
+
+    - from: ../../../../../common/infra/terraform/host/appservice/appservicenode
+      to: ./infra/modules/appservicenode
+    
+    - from: ../../../../../common/infra/terraform/host/appservice/appservicepython
+      to: ./infra/modules/appservicepython
 
     # .devcontainer common (devcontainer.json)
     - from: ../../../../../common/.devcontainer/devcontainer.json/python/terraform

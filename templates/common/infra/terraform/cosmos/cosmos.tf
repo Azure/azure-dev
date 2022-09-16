@@ -1,8 +1,20 @@
+terraform {
+  required_providers {
+    azurerm = {
+      version = "~>3.18.0"
+      source  = "hashicorp/azurerm"
+    }
+    azurecaf = {
+      source  = "aztfmod/azurecaf"
+      version = "~>1.2.15"
+    }
+  }
+}
 # ------------------------------------------------------------------------------------------------------
 # Deploy cosmos db account
 # ------------------------------------------------------------------------------------------------------
 resource "azurecaf_name" "db_acc_name" {
-  name          = local.resource_token
+  name          = var.resource_token
   resource_type = "azurerm_cosmosdb_account"
   random_length = 0
   clean_input   = true
@@ -10,29 +22,28 @@ resource "azurecaf_name" "db_acc_name" {
 
 resource "azurerm_cosmosdb_account" "db" {
   name                            = azurecaf_name.db_acc_name.result
-  location                        = azurerm_resource_group.rg.location
-  resource_group_name             = azurerm_resource_group.rg.name
+  location                        = var.location
+  resource_group_name             = var.rg_name
   offer_type                      = "Standard"
   kind                            = "MongoDB"
   enable_automatic_failover       = false
   enable_multiple_write_locations = false
   mongo_server_version            = "4.0"
-  tags                            = local.tags
-
-  lifecycle {
-    ignore_changes = [capabilities]
-  }
+  tags                            = var.tags
 
   capabilities {
     name = "EnableServerless"
   }
 
+  lifecycle {
+    ignore_changes = [capabilities]
+  }
   consistency_policy {
     consistency_level = "Session"
   }
 
   geo_location {
-    location          = azurerm_resource_group.rg.location
+    location          = var.location
     failover_priority = 0
     zone_redundant    = false
   }

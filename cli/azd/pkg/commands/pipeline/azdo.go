@@ -174,7 +174,7 @@ func getProcessTemplateId(ctx context.Context, client core.Client) (string, erro
 		return "", err
 	}
 	process := (*processes)[0]
-	return fmt.Sprintf("%s", process.Id), nil
+	return process.Id.String(), nil
 }
 
 // creates a new Azure Devops project
@@ -576,8 +576,10 @@ func createServiceConnection(
 		return err
 	}
 
-	authorizeServiceConnectionToAllPipelines(ctx, projectId, endpoint, connection)
-
+	err = authorizeServiceConnectionToAllPipelines(ctx, projectId, endpoint, connection)
+	if err != nil {
+		return err
+	}
 	return nil
 }
 

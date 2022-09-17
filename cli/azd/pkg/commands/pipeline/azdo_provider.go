@@ -576,7 +576,10 @@ func (p *AzdoCiProvider) configureConnection(
 	}
 	connection := getAzdoConnection(ctx, org, pat)
 
-	createServiceConnection(ctx, connection, details.projectId, *p.Env, repoDetails, *p.credentials, console)
+	err = createServiceConnection(ctx, connection, details.projectId, *p.Env, repoDetails, *p.credentials, console)
+	if err != nil {
+		return err
+	}
 	return nil
 }
 

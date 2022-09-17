@@ -27,7 +27,6 @@ import (
 // for source control manager.
 type GitHubScmProvider struct {
 	newGitHubRepoCreated bool
-	environment          *environment.Environment
 }
 
 // ***  subareaProvider implementation ******

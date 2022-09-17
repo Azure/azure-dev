@@ -84,7 +84,7 @@ func (at *containerAppTarget) Deploy(ctx context.Context, azdCtx *azdcontext.Azd
 	}
 
 	commandOptions := internal.GetCommandOptions(ctx)
-	infraManager, err := provisioning.NewManager(ctx, *at.env, at.config.Project.Path, at.config.Infra, !commandOptions.NoPrompt)
+	infraManager, err := provisioning.NewManager(ctx, at.env, at.config.Project.Path, at.config.Infra, !commandOptions.NoPrompt)
 	if err != nil {
 		return ServiceDeploymentResult{}, fmt.Errorf("creating provisioning manager: %w", err)
 	}

@@ -35,6 +35,16 @@ repo:
         to: "- [Terraform CLI](https://aka.ms/azure-dev/terraform-install)"
         patterns:
           - "README.md"
+      
+      - from: "PLACEHOLDER_TITLE"
+        to: "ToDo Application with a Python API and Azure Cosmos DB API for MongoDB on Azure App Service (Terraform)"
+        patterns:
+          - "README.md"
+      
+      - from: "PLACEHOLDER_DESCRIPTION"
+        to: "using Terraform as the IaC provider"
+        patterns:
+          - "README.md"
 
       - from: "todo-python-mongo"
         to: "todo-python-mongo-terraform"
@@ -66,8 +76,13 @@ repo:
     - from: ../../../../../common
       to: ./
       ignore:
-        - "infra/**/*"
+        - .github/**/*
         - .devcontainer/**/*
+        - "infra/**/*"
+
+    # Github workflows for terraform
+    - from: ../../../../../common/.github/workflows/terraform
+      to: ./.github/workflows
 
     - from: ../../../../../common/infra/terraform/applicationinsights
       to: ./infra/modules/applicationinsights

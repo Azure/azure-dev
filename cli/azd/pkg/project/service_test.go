@@ -23,7 +23,6 @@ services:
     language: js
     host: appservice
 `
-	env             = &environment.Environment{}
 	deploymentScope = environment.NewDeploymentScope("test-subscription-id", "test-resource-group-name", "test-resource-name")
 	mockEndpoints   = []string{"https://test-resource.azurewebsites.net"}
 )
@@ -71,6 +70,8 @@ func (st *mockServiceTarget) Endpoints(_ context.Context) ([]string, error) {
 
 func TestDeployProgressMessages(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
+
+	env := environment.Ephemeral()
 
 	projectConfig, _ := ParseProjectConfig(projectYaml, env)
 	project, _ := projectConfig.GetProject(mockContext.Context, env)

@@ -56,7 +56,7 @@ func TestBicepPlan(t *testing.T) {
 	require.Contains(t, progressLog[1], "Compiling Bicep template")
 
 	require.Equal(t, infraProvider.env.Values["AZURE_LOCATION"], deploymentPlan.Deployment.Parameters["location"].Value)
-	require.Equal(t, infraProvider.env.Values["AZURE_ENV_NAME"], deploymentPlan.Deployment.Parameters["name"].Value)
+	require.Equal(t, infraProvider.env.Values["AZURE_ENV_NAME"], deploymentPlan.Deployment.Parameters["environmentName"].Value)
 }
 
 func TestBicepGetDeploymentPlan(t *testing.T) {
@@ -268,11 +268,11 @@ func createBicepProvider(ctx context.Context) *BicepProvider {
 		Module: "main",
 	}
 
-	env := environment.Environment{Values: make(map[string]string)}
-	env.SetLocation("westus2")
-	env.SetEnvName("test-env")
+	env := environment.EphemeralWithValues("test-env", map[string]string{
+		"AZURE_LOCATION": "westus2",
+	})
 
-	return NewBicepProvider(ctx, &env, projectDir, options)
+	return NewBicepProvider(ctx, env, projectDir, options)
 }
 
 func prepareGenericMocks(commandRunner *execmock.MockCommandRunner) {
@@ -308,7 +308,7 @@ func prepareDeployMocks(commandRunner *execmock.MockCommandRunner) {
 func preparePlanningMocks(commandRunner *execmock.MockCommandRunner) {
 	expectedWebsiteUrl := "http://myapp.azurewebsites.net"
 	bicepInputParams := make(map[string]BicepInputParameter)
-	bicepInputParams["name"] = BicepInputParameter{Value: "${AZURE_ENV_NAME}"}
+	bicepInputParams["environmentName"] = BicepInputParameter{Value: "${AZURE_ENV_NAME}"}
 	bicepInputParams["location"] = BicepInputParameter{Value: "${AZURE_LOCATION}"}
 
 	bicepOutputParams := make(map[string]BicepOutputParameter)

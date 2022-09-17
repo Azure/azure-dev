@@ -6,7 +6,6 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/commands"
-	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
@@ -66,12 +65,12 @@ func (ica *infraCreateAction) Run(ctx context.Context, cmd *cobra.Command, args 
 		return fmt.Errorf("loading environment: %w", err)
 	}
 
-	prj, err := project.LoadProjectConfig(azdCtx.ProjectPath(), &environment.Environment{})
+	prj, err := project.LoadProjectConfig(azdCtx.ProjectPath(), env)
 	if err != nil {
 		return fmt.Errorf("loading project: %w", err)
 	}
 
-	if err = prj.Initialize(ctx, &env); err != nil {
+	if err = prj.Initialize(ctx, env); err != nil {
 		return err
 	}
 

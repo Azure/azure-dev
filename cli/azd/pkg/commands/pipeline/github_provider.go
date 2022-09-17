@@ -306,7 +306,7 @@ func (p *GitHubCiProvider) name() string {
 // and make changes on behalf of a user.
 func (p *GitHubCiProvider) configureConnection(
 	ctx context.Context,
-	azdEnvironment environment.Environment,
+	azdEnvironment *environment.Environment,
 	repoDetails *gitRepositoryDetails,
 	infraOptions provisioning.Options,
 	credentials json.RawMessage,
@@ -342,6 +342,22 @@ func (p *GitHubCiProvider) configureConnection(
 		if err := ghCli.SetSecret(ctx, repoSlug, "ARM_CLIENT_SECRET", values.ClientSecret); err != nil {
 			return fmt.Errorf("setting terraform env var credentials:: %w", err)
 		}
+
+		// Sets the terraform remote state environment variables in github
+		remoteStateKeys := []string{"RS_RESOURCE_GROUP", "RS_STORAGE_ACCOUNT", "RS_CONTAINER_NAME"}
+		for _, key := range remoteStateKeys {
+			value, ok := azdEnvironment.Values[key]
+			if !ok || strings.TrimSpace(value) == "" {
+				console.Message(ctx, output.WithWarningFormat("WARNING: Terraform Remote State configuration is invalid!"))
+				console.Message(ctx, fmt.Sprintf("Visit %s for more information on configuring Terraform remote state", output.WithLinkFormat("https://aka.ms/azure-dev/terraform")))
+				console.Message(ctx, "")
+				return errors.New("terraform remote state is not correctly configured")
+			}
+			// env var was found
+			if err := ghCli.SetSecret(ctx, repoSlug, key, value); err != nil {
+				return fmt.Errorf("setting terraform remote state variables: %w", err)
+			}
+		}
 	}
 
 	console.Message(ctx, "Configuring repository environment.\n")
@@ -364,7 +380,7 @@ func (p *GitHubCiProvider) configureConnection(
 
 // configurePipeline is a no-op for GitHub, as the pipeline is automatically
 // created by creating the workflow files in .github folder.
-func (p *GitHubCiProvider) configurePipeline(ctx context.Context, repoDetails gitRepositoryDetails) error {
+func (p *GitHubCiProvider) configurePipeline(ctx context.Context, repoDetails *gitRepositoryDetails) error {
 	return nil
 }
 

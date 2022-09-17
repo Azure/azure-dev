@@ -66,7 +66,7 @@ func Test_CLI_Version_PrintsVersion(t *testing.T) {
 	rn := os.Getenv("GITHUB_RUN_NUMBER")
 	if rn != "" {
 		// TODO: This should be read from cli/version.txt (https://github.com/Azure/azure-dev/issues/36)
-		require.Contains(t, out, "0.1.0")
+		require.Contains(t, out, "0.2.0")
 	} else {
 		require.Contains(t, out, fmt.Sprintf("azd version %s", internal.Version))
 	}
@@ -109,7 +109,7 @@ func Test_CLI_Init_AsksForSubscriptionIdAndCreatesEnvAndProjectFile(t *testing.T
 	require.Regexp(t, regexp.MustCompile(`AZURE_SUBSCRIPTION_ID="MY_SUB_ID"`+"\n"), string(file))
 	require.Regexp(t, regexp.MustCompile(`AZURE_ENV_NAME="TESTENV"`+"\n"), string(file))
 
-	proj, err := project.LoadProjectConfig(filepath.Join(dir, azdcontext.ProjectFileName), &environment.Environment{})
+	proj, err := project.LoadProjectConfig(filepath.Join(dir, azdcontext.ProjectFileName), environment.Ephemeral())
 	require.NoError(t, err)
 
 	require.Equal(t, filepath.Base(dir), proj.Name)
@@ -224,7 +224,7 @@ func Internal_Test_CLI_ResourceGroupsName(t *testing.T, envName string, rgName s
 
 	// Verify that resource group is found or not found correctly
 	resourceManager := infra.NewAzureResourceManager(ctx)
-	foundRg, err := resourceManager.FindResourceGroupForEnvironment(ctx, &env)
+	foundRg, err := resourceManager.FindResourceGroupForEnvironment(ctx, env)
 
 	if createResources {
 		if createMultipleResourceGroups {
@@ -283,7 +283,7 @@ func Test_CLI_InfraCreateAndDelete(t *testing.T) {
 
 	// Verify that resource groups are created with tag
 	resourceManager := infra.NewAzureResourceManager(ctx)
-	rgs, err := resourceManager.GetResourceGroupsForEnvironment(ctx, &env)
+	rgs, err := resourceManager.GetResourceGroupsForEnvironment(ctx, env)
 	require.NoError(t, err)
 	require.NotNil(t, rgs)
 
@@ -329,7 +329,7 @@ func Test_CLI_InfraCreateAndDeleteUpperCase(t *testing.T) {
 
 	// Verify that resource groups are created with tag
 	resourceManager := infra.NewAzureResourceManager(ctx)
-	rgs, err := resourceManager.GetResourceGroupsForEnvironment(ctx, &env)
+	rgs, err := resourceManager.GetResourceGroupsForEnvironment(ctx, env)
 	require.NoError(t, err)
 	require.NotNil(t, rgs)
 

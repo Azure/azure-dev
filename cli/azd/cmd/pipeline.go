@@ -94,17 +94,13 @@ func (p *pipelineConfigAction) Run(
 		return fmt.Errorf("loading environment: %w", err)
 	}
 
-	// TODO: Providers can be init at this point either from azure.yaml or from command args
-	// Using GitHub by default for now. To be updated to either GitHub or Azdo.
-	// The CI provider might need to have a reference to the SCM provider if its implementation
-	// will depend on where is the SCM. For example, azdo support any SCM source.
-	p.manager.ScmProvider = &pipeline.AzdoHubScmProvider{
-		Env:        &env,
-		AzdContext: azdCtx,
-	}
-	p.manager.CiProvider = &pipeline.AzdoCiProvider{
-		Env:        &env,
-		AzdContext: azdCtx,
+	// Detect the SCM and CI providers based on the project directory
+	p.manager.ScmProvider,
+		p.manager.CiProvider,
+		err = pipeline.DetectProviders(ctx, console)
+
+	if err != nil {
+		return err
 	}
 
 	// set context for manager

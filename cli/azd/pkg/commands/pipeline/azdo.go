@@ -94,7 +94,7 @@ func getAzDoDefaultGitRepositoriesInProject(ctx context.Context, projectName str
 		}
 	}
 
-	return nil, fmt.Errorf("error finding default git repository %s in project %s", projectName)
+	return nil, fmt.Errorf("error finding default git repository in project %s", projectName)
 }
 
 func getAzDoGitRepositoriesInProject(ctx context.Context, projectName string, orgName string, connection *azuredevops.Connection, console input.Console) (*git.GitRepository, error) {

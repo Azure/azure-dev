@@ -96,6 +96,14 @@ ignoreWords:
     - menuid
     - PLACEHOLDERIACTOOLS
     - Azdo
+    - azconnection
+    - azuredevops
+    - taskagent
+    - tfsgit
+    - serviceendpoint
+    - serviceprincipalid
+    - serviceprincipalkey
+    - tenantid
 useGitignore: true
 dictionaryDefinitions:
     - name: gitHubUserAliases

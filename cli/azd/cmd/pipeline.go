@@ -97,7 +97,7 @@ func (p *pipelineConfigAction) Run(
 	// Detect the SCM and CI providers based on the project directory
 	p.manager.ScmProvider,
 		p.manager.CiProvider,
-		err = pipeline.DetectProviders(ctx, console, env, azdCtx)
+		err = pipeline.DetectProviders(ctx, console, env)
 
 	if err != nil {
 		return err

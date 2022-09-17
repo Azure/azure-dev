@@ -22,7 +22,7 @@ func Test_detectProviders(t *testing.T) {
 	ctx := context.Background()
 
 	t.Run("no azd context within context", func(t *testing.T) {
-		scmProvider, ciProvider, err := DetectProviders(ctx, &nullConsole{}, nil, nil)
+		scmProvider, ciProvider, err := DetectProviders(ctx, &nullConsole{}, nil)
 		assert.Nil(t, scmProvider)
 		assert.Nil(t, ciProvider)
 		assert.EqualError(t, err, "cannot find AzdContext on go context")
@@ -33,7 +33,7 @@ func Test_detectProviders(t *testing.T) {
 	ctx = azdcontext.WithAzdContext(ctx, azdContext)
 
 	t.Run("no folders error", func(t *testing.T) {
-		scmProvider, ciProvider, err := DetectProviders(ctx, &nullConsole{}, nil, nil)
+		scmProvider, ciProvider, err := DetectProviders(ctx, &nullConsole{}, nil)
 		assert.Nil(t, scmProvider)
 		assert.Nil(t, ciProvider)
 		assert.EqualError(t, err, "no CI/CD provider configuration found. Expecting either .github and/or .azdo folder in the project root directory.")
@@ -43,7 +43,7 @@ func Test_detectProviders(t *testing.T) {
 		err := os.Mkdir(ghFolder, osutil.PermissionDirectory)
 		assert.NoError(t, err)
 
-		scmProvider, ciProvider, err := DetectProviders(ctx, &nullConsole{}, nil, nil)
+		scmProvider, ciProvider, err := DetectProviders(ctx, &nullConsole{}, nil)
 		assert.IsType(t, &GitHubScmProvider{}, scmProvider)
 		assert.IsType(t, &GitHubCiProvider{}, ciProvider)
 		assert.NoError(t, err)
@@ -55,7 +55,7 @@ func Test_detectProviders(t *testing.T) {
 		err := os.Mkdir(azdoFolder, osutil.PermissionDirectory)
 		assert.NoError(t, err)
 
-		scmProvider, ciProvider, err := DetectProviders(ctx, &nullConsole{}, nil, nil)
+		scmProvider, ciProvider, err := DetectProviders(ctx, &nullConsole{}, nil)
 		assert.IsType(t, &AzdoHubScmProvider{}, scmProvider)
 		assert.IsType(t, &AzdoCiProvider{}, ciProvider)
 		assert.NoError(t, err)
@@ -70,7 +70,7 @@ func Test_detectProviders(t *testing.T) {
 		err = os.Mkdir(ghFolder, osutil.PermissionDirectory)
 		assert.NoError(t, err)
 
-		scmProvider, ciProvider, err := DetectProviders(ctx, &selectDefaultConsole{}, nil, nil)
+		scmProvider, ciProvider, err := DetectProviders(ctx, &selectDefaultConsole{}, nil)
 		assert.IsType(t, &GitHubScmProvider{}, scmProvider)
 		assert.IsType(t, &GitHubCiProvider{}, ciProvider)
 		assert.NoError(t, err)
@@ -89,7 +89,7 @@ func Test_detectProviders(t *testing.T) {
 
 		scmProvider, ciProvider, err := DetectProviders(ctx, &circularConsole{
 			selectReturnValues: []int{1},
-		}, nil, nil)
+		}, nil)
 		assert.IsType(t, &AzdoHubScmProvider{}, scmProvider)
 		assert.IsType(t, &AzdoCiProvider{}, ciProvider)
 		assert.NoError(t, err)
@@ -108,7 +108,7 @@ func Test_detectProviders(t *testing.T) {
 
 		scmProvider, ciProvider, err := DetectProviders(ctx, &circularConsole{
 			selectReturnValues: []int{0, 1},
-		}, nil, nil)
+		}, nil)
 		assert.IsType(t, &GitHubScmProvider{}, scmProvider)
 		assert.IsType(t, &AzdoCiProvider{}, ciProvider)
 		assert.NoError(t, err)

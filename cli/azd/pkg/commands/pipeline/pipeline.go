@@ -101,7 +101,7 @@ func folderExists(folderPath string) bool {
 // - both .github and .azdo folders found: prompt user to choose provider for scm and ci
 // - none of the folders found: return error
 // - no azd context in the ctx: return error
-func DetectProviders(ctx context.Context, console input.Console, env *environment.Environment, azdCtx *azdcontext.AzdContext) (ScmProvider, CiProvider, error) {
+func DetectProviders(ctx context.Context, console input.Console, env *environment.Environment) (ScmProvider, CiProvider, error) {
 	azdContext, err := azdcontext.GetAzdContext(ctx)
 	if err != nil {
 		return nil, nil, err
@@ -142,7 +142,7 @@ func DetectProviders(ctx context.Context, console input.Console, env *environmen
 
 	if scmElection == 1 {
 		// using azdo for scm would only support using azdo pipelines
-		return createAzdoScmProvider(env, azdCtx), createAzdoCiProvider(env, azdContext), nil
+		return createAzdoScmProvider(env, azdContext), createAzdoCiProvider(env, azdContext), nil
 	}
 
 	// GitHub selected for SCM, prompt for CI provider
@@ -164,7 +164,7 @@ func DetectProviders(ctx context.Context, console input.Console, env *environmen
 	}
 
 	// GitHub plus azdo pipelines otherwise
-	return &GitHubScmProvider{}, createAzdoCiProvider(env, azdCtx), nil
+	return &GitHubScmProvider{}, createAzdoCiProvider(env, azdContext), nil
 }
 
 func createAzdoCiProvider(env *environment.Environment, azdCtx *azdcontext.AzdContext) *AzdoCiProvider {

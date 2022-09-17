@@ -815,27 +815,6 @@ func Test_CLI_InfraCreateAndDeleteResourceTerraformRemote(t *testing.T) {
 	t.Logf("Done\n")
 }
 
-func Test_CLI_PipelineConfig(t *testing.T) {
-	// running this test in parallel is ok as it uses a t.TempDir()
-	t.Parallel()
-
-	dir := t.TempDir()
-	t.Logf("DIR: %s", dir)
-
-	envName := randomEnvName()
-	t.Logf("AZURE_ENV_NAME: %s", envName)
-
-	cli := azdcli.NewCLI(t)
-	cli.WorkingDirectory = dir
-	cli.Env = append(os.Environ(), "AZURE_LOCATION=eastus2")
-
-	t.Logf("Starting pipeline config\n")
-	err := cmd.Execute([]string{"pipeline", "config", "--cwd", dir, "--principal-name", "mock-principal"})
-	require.NoError(t, err)
-
-	t.Logf("Done\n")
-}
-
 func TestMain(m *testing.M) {
 	flag.Parse()
 	shortFlag := flag.Lookup("test.short")

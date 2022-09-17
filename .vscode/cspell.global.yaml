@@ -104,6 +104,7 @@ ignoreWords:
     - serviceprincipalid
     - serviceprincipalkey
     - tenantid
+    - versioncontrol
 useGitignore: true
 dictionaryDefinitions:
     - name: gitHubUserAliases

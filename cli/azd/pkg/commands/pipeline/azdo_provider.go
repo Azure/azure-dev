@@ -19,6 +19,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/git"
 	"github.com/microsoft/azure-devops-go-api/azuredevops"
+	"github.com/microsoft/azure-devops-go-api/azuredevops/build"
 	azdoGit "github.com/microsoft/azure-devops-go-api/azuredevops/git"
 )
 
@@ -31,15 +32,16 @@ type AzdoHubScmProvider struct {
 	azdoConnection *azuredevops.Connection
 }
 type AzdoRepositoryDetails struct {
-	projectName string
-	projectId   string
-	repoId      string
-	orgName     string
-	repoName    string
-	repoWebUrl  string
-	remoteUrl   string
-	sshUrl      string
-	pushSuccess bool
+	projectName     string
+	projectId       string
+	repoId          string
+	orgName         string
+	repoName        string
+	repoWebUrl      string
+	remoteUrl       string
+	sshUrl          string
+	pushSuccess     bool
+	buildDefinition *build.BuildDefinition
 }
 
 // ***  subareaProvider implementation ******
@@ -473,6 +475,22 @@ func (p *AzdoHubScmProvider) postGitPush(
 	if gitRepo.pushStatus {
 		console.Message(ctx, output.WithSuccessFormat(AzdoConfigSuccessMessage, p.repoDetails.repoWebUrl))
 	}
+
+	connection, err := p.getAzdoConnection(ctx)
+	if err != nil {
+		return false, err
+	}
+
+	err = createBuildPolicy(ctx, connection, p.repoDetails.projectId, p.repoDetails.repoId, p.repoDetails.buildDefinition)
+	if err != nil {
+		return false, err
+	}
+
+	err = queueBuild(ctx, connection, p.repoDetails.projectId, p.repoDetails.buildDefinition)
+	if err != nil {
+		return false, err
+	}
+
 	return false, nil
 }
 
@@ -523,6 +541,18 @@ func (p *AzdoCiProvider) configureConnection(
 	}
 
 	p.credentials = azureCredentials
+	details := repoDetails.details.(*AzdoRepositoryDetails)
+	org, err := ensureAzdoOrgNameExists(ctx, p.Env)
+	if err != nil {
+		return err
+	}
+	pat, err := ensureAzdoPatExists(ctx, p.Env)
+	if err != nil {
+		return err
+	}
+	connection := getAzdoConnection(ctx, org, pat)
+
+	createServiceConnection(ctx, connection, details.projectId, *p.Env, repoDetails, *p.credentials, console)
 	return nil
 }
 
@@ -553,9 +583,12 @@ func (p *AzdoCiProvider) configurePipeline(ctx context.Context, repoDetails *git
 	if err != nil {
 		return err
 	}
-
 	connection := getAzdoConnection(ctx, org, pat)
 
-	createPipeline(ctx, details.projectId, AzurePipelineName, details.repoName, connection, *p.credentials, *p.Env)
+	buildDefinition, err := createPipeline(ctx, details.projectId, AzurePipelineName, details.repoName, connection, *p.credentials, *p.Env)
+	if err != nil {
+		return err
+	}
+	details.buildDefinition = buildDefinition
 	return nil
 }

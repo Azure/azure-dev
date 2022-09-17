@@ -2,7 +2,6 @@ package pipeline
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -17,6 +16,9 @@ import (
 	"github.com/microsoft/azure-devops-go-api/azuredevops/core"
 	"github.com/microsoft/azure-devops-go-api/azuredevops/git"
 	"github.com/microsoft/azure-devops-go-api/azuredevops/operations"
+	"github.com/microsoft/azure-devops-go-api/azuredevops/policy"
+	"github.com/microsoft/azure-devops-go-api/azuredevops/serviceendpoint"
+	"github.com/microsoft/azure-devops-go-api/azuredevops/taskagent"
 )
 
 var (
@@ -31,6 +33,8 @@ var (
 	AzdoConfigSuccessMessage     = "\nSuccessfully configured Azure DevOps Repository %s\n"
 	AzurePipelineName            = "Azure Dev Deploy"
 	AzurePipelineYamlPath        = ".azdo/pipelines/azure-dev.yml"
+	CloudEnvironment             = "AzureCloud"
+	DefaultBranch                = "master"
 )
 
 type AzDoClient struct {
@@ -330,6 +334,26 @@ func createBuildDefinitionVariable(value string, isSecret bool, allowOverride bo
 	}
 }
 
+func getAgentQueue(ctx context.Context, projectId string, connection *azuredevops.Connection) (*taskagent.TaskAgentQueue, error) {
+	client, err := taskagent.NewClient(ctx, connection)
+	if err != nil {
+		return nil, err
+	}
+	getAgentQueuesArgs := taskagent.GetAgentQueuesArgs{
+		Project: &projectId,
+	}
+	queues, err := client.GetAgentQueues(ctx, getAgentQueuesArgs)
+	if err != nil {
+		return nil, err
+	}
+	for _, queue := range *queues {
+		if *queue.Name == "Default" {
+			return &queue, nil
+		}
+	}
+	return nil, fmt.Errorf("could not find a default agent queue in project %s", projectId)
+}
+
 func createPipeline(
 	ctx context.Context,
 	projectId string,
@@ -337,18 +361,21 @@ func createPipeline(
 	repoName string,
 	connection *azuredevops.Connection,
 	credentials AzureServicePrincipalCredentials,
-	env environment.Environment) error {
+	env environment.Environment) (*build.BuildDefinition, error) {
 
 	client, err := build.NewClient(ctx, connection)
 	if err != nil {
-		return err
+		return nil, err
 	}
+
 	repoType := "tfsgit"
 	buildDefinitionType := build.DefinitionType("build")
 	definitionQueueStatus := build.DefinitionQueueStatus("enabled")
+	defaultBranch := fmt.Sprintf("refs/heads/%s", DefaultBranch)
 	buildRepository := &build.BuildRepository{
-		Type: &repoType,
-		Name: &repoName,
+		Type:          &repoType,
+		Name:          &repoName,
+		DefaultBranch: &defaultBranch,
 	}
 
 	process := make(map[string]interface{})
@@ -363,30 +390,248 @@ func createPipeline(
 	variables["AZURE_LOCATION"] = createBuildDefinitionVariable(env.GetLocation(), false, false)
 	variables["AZURE_ENV_NAME"] = createBuildDefinitionVariable(env.GetEnvName(), false, false)
 
+	queue, err := getAgentQueue(ctx, projectId, connection)
+	if err != nil {
+		return nil, err
+	}
+
+	agentPoolQueue := &build.AgentPoolQueue{
+		Id:   queue.Id,
+		Name: queue.Name,
+	}
+
+	trigger := make(map[string]interface{})
+	trigger["batchChanges"] = false
+	trigger["maxConcurrentBuildsPerBranch"] = 1
+	trigger["pollingInterval"] = 0
+	trigger["isSettingsSourceOptionSupported"] = true
+	trigger["defaultSettingsSourceType"] = 2
+	trigger["settingsSourceType"] = 2
+	trigger["defaultSettingsSourceType"] = 2
+	trigger["triggerType"] = 2
+
+	triggers := make([]interface{}, 1)
+	triggers[0] = trigger
+
 	buildDefinition := &build.BuildDefinition{
 		Name:        &name,
 		Type:        &buildDefinitionType,
 		QueueStatus: &definitionQueueStatus,
 		Repository:  buildRepository,
 		Process:     process,
+		Queue:       agentPoolQueue,
 		Variables:   &variables,
+		Triggers:    &triggers,
 	}
 
 	createDefinitionArgs := &build.CreateDefinitionArgs{
 		Project:    &projectId,
 		Definition: buildDefinition,
 	}
-	body, marshalErr := json.Marshal(*createDefinitionArgs.Definition)
-	if marshalErr != nil {
-		return marshalErr
-	}
-	json := string(body)
-	_ = json
+
 	newBuildDefinition, err := client.CreateDefinition(ctx, *createDefinitionArgs)
+	if err != nil {
+		return nil, err
+	}
+
+	return newBuildDefinition, nil
+}
+
+func queueBuild(
+	ctx context.Context,
+	connection *azuredevops.Connection,
+	projectId string,
+	buildDefinition *build.BuildDefinition) error {
+	client, err := build.NewClient(ctx, connection)
 	if err != nil {
 		return err
 	}
-	_ = newBuildDefinition
+	definitionReference := &build.DefinitionReference{
+		Id: buildDefinition.Id,
+	}
+
+	newBuild := &build.Build{
+		Definition: definitionReference,
+	}
+	queueBuildArgs := build.QueueBuildArgs{
+		Project: &projectId,
+		Build:   newBuild,
+	}
+
+	//time.Sleep(500 * time.Millisecond)
+
+	_, err = client.QueueBuild(ctx, queueBuildArgs)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+func authorizeServiceConnectionToAllPipelines(
+	ctx context.Context,
+	projectId string,
+	endpoint *serviceendpoint.ServiceEndpoint,
+	connection *azuredevops.Connection) error {
+	buildClient, err := build.NewClient(ctx, connection)
+	if err != nil {
+		return err
+	}
+
+	endpointResource := "endpoint"
+	endpointAuthorized := true
+	endpointId := endpoint.Id.String()
+	resources := make([]build.DefinitionResourceReference, 1)
+	resources[0] = build.DefinitionResourceReference{
+		Type:       &endpointResource,
+		Authorized: &endpointAuthorized,
+		Id:         &endpointId,
+	}
+
+	authorizeProjectResourcesArgs := build.AuthorizeProjectResourcesArgs{
+		Project:   &projectId,
+		Resources: &resources,
+	}
+
+	_, err = buildClient.AuthorizeProjectResources(ctx, authorizeProjectResourcesArgs)
+
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func createServiceConnection(
+	ctx context.Context,
+	connection *azuredevops.Connection,
+	projectId string,
+	azdEnvironment environment.Environment,
+	repoDetails *gitRepositoryDetails,
+	credentials AzureServicePrincipalCredentials,
+	console input.Console) error {
+
+	client, err := serviceendpoint.NewClient(ctx, connection)
+	if err != nil {
+		return err
+	}
+
+	endpointType := "azurerm"
+	endpointOwner := "library"
+	endpointUrl := "https://management.azure.com/"
+	endpointName := "azconnection"
+	endpointIsShared := false
+	endpointScheme := "ServicePrincipal"
+
+	endpointAuthorizationParameters := make(map[string]string)
+	endpointAuthorizationParameters["serviceprincipalid"] = credentials.ClientId
+	endpointAuthorizationParameters["serviceprincipalkey"] = credentials.ClientSecret
+	endpointAuthorizationParameters["authenticationType"] = "spnKey"
+	endpointAuthorizationParameters["tenantid"] = credentials.TenantId
+
+	endpointData := make(map[string]string)
+	endpointData["environment"] = CloudEnvironment
+	endpointData["subscriptionId"] = credentials.SubscriptionId
+	endpointData["subscriptionName"] = "azure subscription"
+	endpointData["scopeLevel"] = "Subscription"
+	endpointData["creationMode"] = "Manual"
+
+	endpointAuthorization := serviceendpoint.EndpointAuthorization{
+		Scheme:     &endpointScheme,
+		Parameters: &endpointAuthorizationParameters,
+	}
+	serviceEndpoint := &serviceendpoint.ServiceEndpoint{
+		Type:          &endpointType,
+		Owner:         &endpointOwner,
+		Url:           &endpointUrl,
+		Name:          &endpointName,
+		IsShared:      &endpointIsShared,
+		Authorization: &endpointAuthorization,
+		Data:          &endpointData,
+	}
+	createServiceEndpointArgs := serviceendpoint.CreateServiceEndpointArgs{
+		Project:  &projectId,
+		Endpoint: serviceEndpoint,
+	}
+
+	endpoint, err := client.CreateServiceEndpoint(ctx, createServiceEndpointArgs)
+	if err != nil {
+		return err
+	}
+
+	authorizeServiceConnectionToAllPipelines(ctx, projectId, endpoint, connection)
+
+	return nil
+}
+
+func getBuildType(ctx context.Context, projectId *string, policyClient policy.Client) (*policy.PolicyType, error) {
+	getPolicyTypesArgs := policy.GetPolicyTypesArgs{
+		Project: projectId,
+	}
+	policyTypes, err := policyClient.GetPolicyTypes(ctx, getPolicyTypesArgs)
+	if err != nil {
+		return nil, err
+	}
+	for _, policy := range *policyTypes {
+		if *policy.DisplayName == "Build" {
+			return &policy, nil
+		}
+	}
+	return nil, fmt.Errorf("could not find 'Build' policy type in project")
+}
+
+func createBuildPolicy(
+	ctx context.Context,
+	connection *azuredevops.Connection,
+	projectId string,
+	repoId string,
+	buildDefinition *build.BuildDefinition) error {
+	client, err := policy.NewClient(ctx, connection)
+	if err != nil {
+		return err
+	}
+
+	buildPolicyType, err := getBuildType(ctx, &projectId, client)
+	if err != nil {
+		return err
+	}
+
+	policyTypeRef := &policy.PolicyTypeRef{
+		Id: buildPolicyType.Id,
+	}
+	policyRevision := 1
+	policyIsDeleted := false
+	policyIsBlocking := true
+	policyIsEnabled := true
+
+	policySettingsScope := make(map[string]interface{})
+	policySettingsScope["repositoryId"] = repoId
+	policySettingsScope["refName"] = fmt.Sprintf("refs/heads/%s", DefaultBranch)
+	policySettingsScope["matchKind"] = "Exact"
+
+	policySettingsScopes := make([]map[string]interface{}, 1)
+	policySettingsScopes[0] = policySettingsScope
+
+	policySettings := make(map[string]interface{})
+	policySettings["buildDefinitionId"] = buildDefinition.Id
+	policySettings["displayName"] = "Azure Dev Deploy PR"
+	policySettings["manualQueueOnly"] = false
+	policySettings["queueOnSourceUpdateOnly"] = true
+	policySettings["validDuration"] = 720
+	policySettings["scope"] = policySettingsScopes
+
+	policyConfiguration := &policy.PolicyConfiguration{
+		Type:       policyTypeRef,
+		Revision:   &policyRevision,
+		IsDeleted:  &policyIsDeleted,
+		IsBlocking: &policyIsBlocking,
+		IsEnabled:  &policyIsEnabled,
+		Settings:   policySettings,
+	}
+
+	createPolicyConfigurationArgs := policy.CreatePolicyConfigurationArgs{
+		Project:       &projectId,
+		Configuration: policyConfiguration,
+	}
+	client.CreatePolicyConfiguration(ctx, createPolicyConfigurationArgs)
 
 	return nil
 }

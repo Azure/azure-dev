@@ -22,26 +22,24 @@ import (
 )
 
 var (
-	AzDoHostName                 = "dev.azure.com"         // hostname of the AzDo PaaS service.
-	AzDoPatName                  = "AZURE_DEVOPS_EXT_PAT"  // environment variable that holds the Azure DevOps PAT
-	AzDoEnvironmentOrgName       = "AZURE_DEVOPS_ORG_NAME" //  environment variable that holds the Azure DevOps Organization Name
-	AzDoEnvironmentProjectIdName = "AZURE_DEVOPS_PROJECT_ID"
-	AzDoEnvironmentProjectName   = "AZURE_DEVOPS_PROJECT_NAME"
-	AzDoEnvironmentRepoIdName    = "AZURE_DEVOPS_REPOSITORY_ID"
-	AzDoEnvironmentRepoName      = "AZURE_DEVOPS_REPOSITORY_NAME"
-	AzDoEnvironmentRepoWebUrl    = "AZURE_DEVOPS_REPOSITORY_WEB_URL"
-	AzdoConfigSuccessMessage     = "\nSuccessfully configured Azure DevOps Repository %s\n"
-	AzurePipelineName            = "Azure Dev Deploy"
-	AzurePipelineYamlPath        = ".azdo/pipelines/azure-dev.yml"
-	CloudEnvironment             = "AzureCloud"
-	DefaultBranch                = "master"
-	AzDoProjectDescription       = "Azure Dev CLI Project"
+	AzDoHostName                 = "dev.azure.com"                                          // hostname of the AzDo PaaS service.
+	AzDoPatName                  = "AZURE_DEVOPS_EXT_PAT"                                   // environment variable that holds the Azure DevOps PAT
+	AzDoEnvironmentOrgName       = "AZURE_DEVOPS_ORG_NAME"                                  // environment variable that holds the Azure DevOps Organization Name
+	AzDoEnvironmentProjectIdName = "AZURE_DEVOPS_PROJECT_ID"                                // Environment Configuration name used to store the project Id
+	AzDoEnvironmentProjectName   = "AZURE_DEVOPS_PROJECT_NAME"                              // Environment Configuration name used to store the project name
+	AzDoEnvironmentRepoIdName    = "AZURE_DEVOPS_REPOSITORY_ID"                             // Environment Configuration name used to store repo ID
+	AzDoEnvironmentRepoName      = "AZURE_DEVOPS_REPOSITORY_NAME"                           // Environment Configuration name used to store the Repo Name
+	AzDoEnvironmentRepoWebUrl    = "AZURE_DEVOPS_REPOSITORY_WEB_URL"                        // web url for the configured repo. This is displayed on a the command line after a successful invocation of azd pipeline config
+	AzdoConfigSuccessMessage     = "\nSuccessfully configured Azure DevOps Repository %s\n" // success message after azd pipeline config is successful
+	AzurePipelineName            = "Azure Dev Deploy"                                       // name of the azure pipeline that will be created
+	AzurePipelineYamlPath        = ".azdo/pipelines/azure-dev.yml"                          // path to the azure pipeline yaml
+	CloudEnvironment             = "AzureCloud"                                             // target Azure Cloud
+	DefaultBranch                = "master"                                                 // default branch for pipeline and branch policy
+	AzDoProjectDescription       = "Azure Dev CLI Project"                                  // azure devops project description
+	ServiceConnectionName        = "azconnection"                                           // name of the service connection that will be used in the AzDo project. This will store the Azure service principal
 )
 
-type AzDoClient struct {
-	core.Client
-}
-
+// helper method to verify that a configuration exists in the .env file or in system environment variables
 func ensureAzdoConfigExists(ctx context.Context, env *environment.Environment, key string, label string) (string, error) {
 	value := env.Values[key]
 	if value != "" {
@@ -55,20 +53,25 @@ func ensureAzdoConfigExists(ctx context.Context, env *environment.Environment, k
 	return value, nil
 }
 
+// helper method to ensure an Azure DevOps PAT exists either in .env or system environment variables
 func ensureAzdoPatExists(ctx context.Context, env *environment.Environment) (string, error) {
 	return ensureAzdoConfigExists(ctx, env, AzDoPatName, "azure devops personal access token")
 }
 
+// helper method to ensure an Azure DevOps organization name exists either in .env or system environment variables
 func ensureAzdoOrgNameExists(ctx context.Context, env *environment.Environment) (string, error) {
 	return ensureAzdoConfigExists(ctx, env, AzDoEnvironmentOrgName, "azure devops organization name")
 }
 
+// helper method to return an Azure DevOps connection used the AzDo go sdk
 func getAzdoConnection(ctx context.Context, organization string, personalAccessToken string) *azuredevops.Connection {
 	organizationUrl := fmt.Sprintf("https://%s/%s", AzDoHostName, organization)
 	connection := azuredevops.NewPatConnection(organizationUrl, personalAccessToken)
 	return connection
 }
 
+// returns a default repo from a newly created AzDo project.
+// this relies on the fact that new projects automatically get a repo named the same as the project
 func getAzDoDefaultGitRepositoriesInProject(ctx context.Context, projectName string, connection *azuredevops.Connection) (*git.GitRepository, error) {
 	gitClient, err := git.NewClient(ctx, connection)
 	if err != nil {
@@ -98,6 +101,7 @@ func getAzDoDefaultGitRepositoriesInProject(ctx context.Context, projectName str
 	return nil, fmt.Errorf("error finding default git repository in project %s", projectName)
 }
 
+// prompt the user to select a repo and return a repository object
 func getAzDoGitRepositoriesInProject(ctx context.Context, projectName string, orgName string, connection *azuredevops.Connection, console input.Console) (*git.GitRepository, error) {
 	gitClient, err := git.NewClient(ctx, connection)
 	if err != nil {
@@ -140,6 +144,7 @@ func getAzDoGitRepositoriesInProject(ctx context.Context, projectName string, or
 	return nil, fmt.Errorf("error finding git repository %s in organization %s", selectedRepoName, orgName)
 }
 
+// create a new repository in the current project
 func createRepository(ctx context.Context, projectId string, repoName string, connection *azuredevops.Connection) (*git.GitRepository, error) {
 	gitClient, err := git.NewClient(ctx, connection)
 	if err != nil {
@@ -161,6 +166,7 @@ func createRepository(ctx context.Context, projectId string, repoName string, co
 	return repo, nil
 }
 
+// returns a process template (basic, agile etc) used in the new project creation flow
 func getProcessTemplateId(ctx context.Context, client core.Client) (string, error) {
 	processArgs := core.GetProcessesArgs{}
 	processes, err := client.GetProcesses(ctx, processArgs)
@@ -171,6 +177,7 @@ func getProcessTemplateId(ctx context.Context, client core.Client) (string, erro
 	return fmt.Sprintf("%s", process.Id), nil
 }
 
+// creates a new Azure Devops project
 func createProject(ctx context.Context, connection *azuredevops.Connection, name string, description string, console input.Console) (*core.TeamProjectReference, error) {
 	coreClient, err := core.NewClient(ctx, connection)
 	if err != nil {
@@ -238,6 +245,8 @@ func createProject(ctx context.Context, connection *azuredevops.Connection, name
 	return project, nil
 }
 
+// prompts the user for a new AzDo project name and creates the project
+// returns project name, project id, error
 func getAzdoProjectFromNew(ctx context.Context, repoPath string, connection *azuredevops.Connection, env *environment.Environment, console input.Console) (string, string, error) {
 	var project *core.TeamProjectReference
 	currentFolderName := filepath.Base(repoPath)
@@ -273,6 +282,7 @@ func getAzdoProjectFromNew(ctx context.Context, repoPath string, connection *azu
 	return *project.Name, project.Id.String(), nil
 }
 
+// return an azdo project by name
 func getAzdoProjectByName(ctx context.Context, connection *azuredevops.Connection, name string) (*core.TeamProjectReference, error) {
 	coreClient, err := core.NewClient(ctx, connection)
 	if err != nil {
@@ -295,6 +305,7 @@ func getAzdoProjectByName(ctx context.Context, connection *azuredevops.Connectio
 	return nil, fmt.Errorf("azure devops project %s not found", name)
 }
 
+// prompt the user to select form a list of existing Azure DevOps projects
 func getAzdoProjectFromExisting(ctx context.Context, connection *azuredevops.Connection, console input.Console) (string, string, error) {
 	coreClient, err := core.NewClient(ctx, connection)
 	if err != nil {
@@ -327,6 +338,7 @@ func getAzdoProjectFromExisting(ctx context.Context, connection *azuredevops.Con
 	return options[projectIdx], projectsList[projectIdx].Id.String(), nil
 }
 
+// Creates a variable to be associated with a Pipeline
 func createBuildDefinitionVariable(value string, isSecret bool, allowOverride bool) build.BuildDefinitionVariable {
 	return build.BuildDefinitionVariable{
 		AllowOverride: &allowOverride,
@@ -335,6 +347,7 @@ func createBuildDefinitionVariable(value string, isSecret bool, allowOverride bo
 	}
 }
 
+// returns the default agent queue. This is used to associate a Pipeline with a default agent pool queue
 func getAgentQueue(ctx context.Context, projectId string, connection *azuredevops.Connection) (*taskagent.TaskAgentQueue, error) {
 	client, err := taskagent.NewClient(ctx, connection)
 	if err != nil {
@@ -355,6 +368,7 @@ func getAgentQueue(ctx context.Context, projectId string, connection *azuredevop
 	return nil, fmt.Errorf("could not find a default agent queue in project %s", projectId)
 }
 
+// create a new Azure DevOps pipeline
 func createPipeline(
 	ctx context.Context,
 	projectId string,
@@ -438,6 +452,7 @@ func createPipeline(
 	return newBuildDefinition, nil
 }
 
+// run a pipeline. This is used to invoke the deploy pipeline after a successful push of the code
 func queueBuild(
 	ctx context.Context,
 	connection *azuredevops.Connection,
@@ -468,6 +483,8 @@ func queueBuild(
 
 	return nil
 }
+
+// authorize a service connection to be used in all pipelines
 func authorizeServiceConnectionToAllPipelines(
 	ctx context.Context,
 	projectId string,
@@ -501,6 +518,7 @@ func authorizeServiceConnectionToAllPipelines(
 	return nil
 }
 
+// create a new service connection that will be used in the deployment pipeline
 func createServiceConnection(
 	ctx context.Context,
 	connection *azuredevops.Connection,
@@ -518,7 +536,7 @@ func createServiceConnection(
 	endpointType := "azurerm"
 	endpointOwner := "library"
 	endpointUrl := "https://management.azure.com/"
-	endpointName := "azconnection"
+	endpointName := ServiceConnectionName
 	endpointIsShared := false
 	endpointScheme := "ServicePrincipal"
 
@@ -563,6 +581,7 @@ func createServiceConnection(
 	return nil
 }
 
+// returns a build policy type named "Build." Used to created the PR build policy on the default branch
 func getBuildType(ctx context.Context, projectId *string, policyClient policy.Client) (*policy.PolicyType, error) {
 	getPolicyTypesArgs := policy.GetPolicyTypesArgs{
 		Project: projectId,
@@ -579,6 +598,8 @@ func getBuildType(ctx context.Context, projectId *string, policyClient policy.Cl
 	return nil, fmt.Errorf("could not find 'Build' policy type in project")
 }
 
+// create the PR build policy to ensure that the pipeline runs on a new pull request
+// this also disables direct pushes to the default branch and requires changes to go through a PR.
 func createBuildPolicy(
 	ctx context.Context,
 	connection *azuredevops.Connection,

@@ -6,13 +6,12 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"runtime"
+	"sync"
 
 	osexec "os/exec"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
-	"github.com/blang/semver/v4"
 )
 
 type MavenCli interface {
@@ -22,7 +21,14 @@ type MavenCli interface {
 }
 
 type mavenCli struct {
-	commandRunner exec.CommandRunner
+	commandRunner   exec.CommandRunner
+	projectPath     string
+	rootProjectPath string
+
+	// Lazily initialized. Access through mvnCmd.
+	mvnCmdStr  string
+	mvnCmdOnce sync.Once
+	mvnCmdErr  error
 }
 
 func (m *mavenCli) Name() string {
@@ -33,106 +39,93 @@ func (m *mavenCli) InstallUrl() string {
 	return "https://maven.apache.org"
 }
 
-func (m *mavenCli) jdkVersionInfo() tools.VersionInfo {
-	return tools.VersionInfo{
-		MinimumVersion: semver.Version{
-			Major: 17,
-			Minor: 0,
-			Patch: 0},
-		UpdateCommand: "Visit https://jdk.java.net/ to upgrade",
-	}
-}
-
 func (m *mavenCli) CheckInstalled(ctx context.Context) (bool, error) {
-	javac, err := getJavaCompilerPath()
+	_, err := m.mvnCmd()
 	if err != nil {
-		return false, fmt.Errorf("checking java jdk installation: %s", err)
-	}
-
-	res, err := tools.ExecuteCommand(ctx, javac, "--version")
-	if err != nil {
-		return false, fmt.Errorf("checking javac version: %w", err)
-	}
-
-	javaSemver, err := tools.ExtractSemver(res)
-	if err != nil {
-		return false, fmt.Errorf("converting to semver version fails: %w", err)
-	}
-
-	updateDetail := m.jdkVersionInfo()
-	if javaSemver.LT(updateDetail.MinimumVersion) {
-		return false, &tools.ErrSemver{ToolName: "Java JDK", VersionInfo: m.jdkVersionInfo()}
+		return false, err
 	}
 
 	return true, nil
 }
 
-func getJavaCompilerPath() (string, error) {
-	javac := "javac"
-	path, err := osexec.LookPath(javac)
+func (m *mavenCli) mvnCmd() (string, error) {
+	m.mvnCmdOnce.Do(func() {
+		mvn, err := getMavenPath(m.projectPath, m.rootProjectPath)
+		if err != nil {
+			m.mvnCmdErr = err
+		} else {
+			m.mvnCmdStr = mvn
+		}
+	})
+
+	if m.mvnCmdErr != nil {
+		return "", m.mvnCmdErr
+	}
+
+	return m.mvnCmdStr, nil
+}
+
+func getMavenPath(projectPath string, rootProjectPath string) (string, error) {
+	mvnw, err := getMavenWrapperPath(projectPath, rootProjectPath)
+	if mvnw != "" {
+		return mvnw, nil
+	}
+
+	if err != nil {
+		return "", err
+	}
+
+	mvn, err := osexec.LookPath("mvn")
 	if err == nil {
-		return path, nil
+		return mvn, nil
 	}
 
 	if !errors.Is(err, osexec.ErrNotFound) {
 		return "", err
 	}
 
-	home := os.Getenv("JAVA_HOME")
-	if home == "" {
-		return "", errors.New("java JDK not installed")
-	}
-
-	absPath := filepath.Join(home, "bin", pathOptionalExt(javac, ".exe"))
-	_, err = os.Stat(absPath)
-	if err == nil {
-		return absPath, nil
-	}
-
-	if errors.Is(err, osexec.ErrNotFound) {
-		return "", fmt.Errorf("javac could not be found under JAVA_HOME directory. Expected javac to be present at: %s", absPath)
-	}
-
-	return "", err
+	return "", errors.New("mvn could not be found in PATH or as mvnw in the project repository")
 }
 
-func pathOptionalExt(executable string, ext string) string {
-	if runtime.GOOS == "windows" {
-		return executable + ext
-	} else {
-		return executable
-	}
-}
-
-func getMavenPath(projectPath string) (string, error) {
-	mvnw, ok := getMavenWrapperPath(projectPath)
-	if ok {
-		return mvnw, nil
-	}
-
-	mvn, err := osexec.LookPath("mvn")
+// getMavenWrapperPath finds the path to mvnw in the project directory, up to the root project directory.
+//
+// An error is returned if an unexpected error occurred while finding. If mvnw is not found, an empty string is returned with no error.
+func getMavenWrapperPath(projectPath string, rootProjectPath string) (string, error) {
+	searchDir, err := filepath.Abs(projectPath)
 	if err != nil {
 		return "", err
 	}
 
-	return mvn, nil
-}
-
-func getMavenWrapperPath(projectPath string) (string, bool) {
-	mvnw := pathOptionalExt(filepath.Join(projectPath, "mvnw"), ".cmd")
-	if _, err := os.Stat(mvnw); err != nil {
-		return "", false
+	root, err := filepath.Abs(rootProjectPath)
+	if err != nil {
+		return "", err
 	}
 
-	return mvnw, true
+	for {
+		mvnw, err := osexec.LookPath(filepath.Join(searchDir, "mvnw"))
+		if err == nil {
+			return mvnw, nil
+		}
+
+		if !errors.Is(err, os.ErrNotExist) {
+			return "", err
+		}
+
+		searchDir = filepath.Dir(searchDir)
+
+		// Past root, terminate search and return not found
+		if len(searchDir) < len(root) {
+			return "", nil
+		}
+	}
 }
 
 func (cli *mavenCli) Package(ctx context.Context, projectPath string) error {
-	mvn, err := getMavenPath(projectPath)
+	mvnCmd, err := cli.mvnCmd()
 	if err != nil {
 		return err
 	}
-	runArgs := exec.NewRunArgs(mvn, "package").WithCwd(projectPath)
+	runArgs := exec.NewRunArgs(mvnCmd, "package").WithCwd(projectPath)
 	res, err := cli.commandRunner.Run(ctx, runArgs)
 	if err != nil {
 		return fmt.Errorf("mvn package on project '%s' failed: %s: %w", projectPath, res.String(), err)
@@ -141,12 +134,11 @@ func (cli *mavenCli) Package(ctx context.Context, projectPath string) error {
 }
 
 func (cli *mavenCli) ResolveDependencies(ctx context.Context, projectPath string) error {
-	mvn, err := getMavenPath(projectPath)
+	mvnCmd, err := cli.mvnCmd()
 	if err != nil {
 		return err
 	}
-
-	runArgs := exec.NewRunArgs(mvn, "dependency:resolve").WithCwd(projectPath)
+	runArgs := exec.NewRunArgs(mvnCmd, "dependency:resolve").WithCwd(projectPath)
 	res, err := cli.commandRunner.Run(ctx, runArgs)
 	if err != nil {
 		return fmt.Errorf("mvn dependency:resolve on project '%s' failed: %s: %w", projectPath, res.String(), err)
@@ -154,8 +146,10 @@ func (cli *mavenCli) ResolveDependencies(ctx context.Context, projectPath string
 	return nil
 }
 
-func NewMavenCli(ctx context.Context) MavenCli {
+func NewMavenCli(ctx context.Context, projectPath string, rootProjectPath string) MavenCli {
 	return &mavenCli{
-		commandRunner: exec.GetCommandRunner(ctx),
+		commandRunner:   exec.GetCommandRunner(ctx),
+		projectPath:     projectPath,
+		rootProjectPath: rootProjectPath,
 	}
 }

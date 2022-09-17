@@ -6,6 +6,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/javac"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/maven"
 )
 
@@ -13,10 +14,14 @@ type mavenProject struct {
 	config   *ServiceConfig
 	env      *environment.Environment
 	mavenCli maven.MavenCli
+	javacCli javac.JavacCli
 }
 
 func (m *mavenProject) RequiredExternalTools() []tools.ExternalTool {
-	return []tools.ExternalTool{m.mavenCli}
+	return []tools.ExternalTool{
+		m.mavenCli,
+		m.javacCli,
+	}
 }
 
 func (m *mavenProject) Package(ctx context.Context, progress chan<- string) (string, error) {
@@ -44,6 +49,7 @@ func NewMavenProject(ctx context.Context, config *ServiceConfig, env *environmen
 	return &mavenProject{
 		config:   config,
 		env:      env,
-		mavenCli: maven.NewMavenCli(ctx),
+		mavenCli: maven.NewMavenCli(ctx, config.Path(), config.Project.Path),
+		javacCli: javac.NewCli(),
 	}
 }

@@ -9,8 +9,8 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/commands"
-	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
+	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/pkg/spin"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
@@ -46,10 +46,18 @@ func (r *restoreAction) SetupFlags(persis, local *pflag.FlagSet) {
 }
 
 func (r *restoreAction) Run(ctx context.Context, _ *cobra.Command, args []string, azdCtx *azdcontext.AzdContext) error {
-	proj, err := project.LoadProjectConfig(azdCtx.ProjectPath(), &environment.Environment{})
+	console := input.GetConsole(ctx)
+
 	if err := ensureProject(azdCtx.ProjectPath()); err != nil {
 		return err
 	}
+
+	env, ctx, err := loadOrInitEnvironment(ctx, &r.rootOptions.EnvironmentName, azdCtx, console)
+	if err != nil {
+		return fmt.Errorf("loading environment: %w", err)
+	}
+
+	proj, err := project.LoadProjectConfig(azdCtx.ProjectPath(), env)
 
 	if err != nil {
 		return fmt.Errorf("loading project: %w", err)
@@ -67,7 +75,7 @@ func (r *restoreAction) Run(ctx context.Context, _ *cobra.Command, args []string
 	allTools := []tools.ExternalTool{}
 	for _, svc := range proj.Services {
 		if r.serviceName == "" || r.serviceName == svc.Name {
-			frameworkService, err := svc.GetFrameworkService(ctx, &environment.Environment{})
+			frameworkService, err := svc.GetFrameworkService(ctx, env)
 			if err != nil {
 				return fmt.Errorf("getting framework services: %w", err)
 			}
@@ -86,7 +94,7 @@ func (r *restoreAction) Run(ctx context.Context, _ *cobra.Command, args []string
 		}
 
 		installMsg := fmt.Sprintf("Installing dependencies for %s service...", svc.Name)
-		frameworkService, err := svc.GetFrameworkService(ctx, &environment.Environment{})
+		frameworkService, err := svc.GetFrameworkService(ctx, env)
 		if err != nil {
 			return fmt.Errorf("getting framework services: %w", err)
 		}

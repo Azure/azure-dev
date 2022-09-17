@@ -23,7 +23,7 @@ import (
 // Manages the orchestration of infrastructure provisioning
 type Manager struct {
 	azCli       azcli.AzCli
-	env         environment.Environment
+	env         *environment.Environment
 	provider    Provider
 	formatter   output.Formatter
 	writer      io.Writer
@@ -87,7 +87,7 @@ func (m *Manager) Deploy(ctx context.Context, plan *DeploymentPlan, scope infra.
 		return nil, err
 	}
 
-	if err := UpdateEnvironment(&m.env, &deployResult.Deployment.Outputs); err != nil {
+	if err := UpdateEnvironment(m.env, &deployResult.Deployment.Outputs); err != nil {
 		return nil, fmt.Errorf("updating environment with deployment outputs: %w", err)
 	}
 
@@ -302,8 +302,8 @@ func (m *Manager) monitorInteraction(spinner *spin.Spinner, interactiveChannel <
 }
 
 // Creates a new instance of the Provisioning Manager
-func NewManager(ctx context.Context, env environment.Environment, projectPath string, infraOptions Options, interactive bool) (*Manager, error) {
-	infraProvider, err := NewProvider(ctx, &env, projectPath, infraOptions)
+func NewManager(ctx context.Context, env *environment.Environment, projectPath string, infraOptions Options, interactive bool) (*Manager, error) {
+	infraProvider, err := NewProvider(ctx, env, projectPath, infraOptions)
 	if err != nil {
 		return nil, fmt.Errorf("error creating infra provider: %w", err)
 	}

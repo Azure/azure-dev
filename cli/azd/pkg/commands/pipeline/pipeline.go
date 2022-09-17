@@ -6,8 +6,12 @@ package pipeline
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"os"
+	"path"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
@@ -76,9 +80,89 @@ type CiProvider interface {
 	// to Azure
 	configureConnection(
 		ctx context.Context,
-		azdEnvironment environment.Environment,
+		azdEnvironment *environment.Environment,
 		gitRepo *gitRepositoryDetails,
 		provisioningProvider provisioning.Options,
 		credential json.RawMessage,
 		console input.Console) error
+}
+
+func folderExists(folderPath string) bool {
+	if _, err := os.Stat(folderPath); err == nil {
+		return true
+	}
+	return false
+}
+
+// DetectProviders get azd context from the context and pulls the project directory from it.
+// Depending on the project directory, returns pipeline scm and ci providers based on:
+// - if .github folder is found and .azdo folder is missing: GitHub scm and ci as provider
+// - if .azdo folder is found and .github folder is missing: Azdo scm and ci as provider
+// - both .github and .azdo folders found: prompt user to choose provider for scm and ci
+// - none of the folders found: return error
+// - no azd context in the ctx: return error
+func DetectProviders(ctx context.Context, console input.Console) (ScmProvider, CiProvider, error) {
+	azdContext, err := azdcontext.GetAzdContext(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	projectDir := azdContext.ProjectDirectory()
+
+	hasGitHubFolder := folderExists(path.Join(projectDir, ".github"))
+	hasAzDevOpsFolder := folderExists(path.Join(projectDir, ".azdo"))
+
+	if !hasGitHubFolder && !hasAzDevOpsFolder {
+		return nil, nil, fmt.Errorf("no CI/CD provider configuration found. Expecting either .github and/or .azdo folder in the project root directory.")
+	}
+
+	if !hasAzDevOpsFolder && hasGitHubFolder {
+		// GitHub only
+		return &GitHubScmProvider{}, &GitHubCiProvider{}, nil
+	}
+
+	if hasAzDevOpsFolder && !hasGitHubFolder {
+		// Azdo only
+		return &AzdoHubScmProvider{}, &AzdoCiProvider{}, nil
+	}
+
+	// Both folders exist. Prompt to select SCM first
+	scmElection, err := console.Select(ctx, input.ConsoleOptions{
+		Message: "Select what SCM provider to use",
+		Options: []string{
+			"GitHub",
+			"Azure DevOps",
+		},
+		DefaultValue: "GitHub",
+	})
+
+	if err != nil {
+		return nil, nil, err
+	}
+
+	if scmElection == 1 {
+		// using azdo for scm would only support using azdo pipelines
+		return &AzdoHubScmProvider{}, &AzdoCiProvider{}, nil
+	}
+
+	// GitHub selected for SCM, prompt for CI provider
+	ciElection, err := console.Select(ctx, input.ConsoleOptions{
+		Message: "Select what CI provider to use",
+		Options: []string{
+			"GitHub Actions",
+			"Azure DevOps Pipelines",
+		},
+		DefaultValue: "GitHub Actions",
+	})
+
+	if err != nil {
+		return nil, nil, err
+	}
+
+	if ciElection == 0 {
+		return &GitHubScmProvider{}, &GitHubCiProvider{}, nil
+	}
+
+	// GitHub plus azdo pipelines otherwise
+	return &GitHubScmProvider{}, &AzdoCiProvider{}, nil
 }

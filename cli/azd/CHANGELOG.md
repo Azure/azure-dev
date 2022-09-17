@@ -1,6 +1,16 @@
 # Release History
 
-## 0.1.0-beta.6 (Unreleased)
+## 0.2.0-beta.2 (Unreleased)
+
+## 0.2.0-beta.1 (2022-09-14)
+
+### Features Added
+
+- [[#172]](https://github.com/Azure/azure-dev/pull/172) Implement Infrastructure Provision Provider Model.
+- [[#573]](https://github.com/Azure/azure-dev/pull/573) Add support for Terraform for infrastructure as code (IaC).
+- [[#532]](https://github.com/Azure/azure-dev/pull/532) Add Terraform support for Python template.
+- [[#646]](https://github.com/Azure/azure-dev/pull/646) Add Terraform support for Node.js template.
+- [[#550]](https://github.com/Azure/azure-dev/pull/550) Add C# + Azure SQL template.
 
 ### Breaking Changes
 

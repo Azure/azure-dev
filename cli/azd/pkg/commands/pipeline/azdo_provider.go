@@ -43,7 +43,6 @@ type AzdoRepositoryDetails struct {
 	repoWebUrl      string
 	remoteUrl       string
 	sshUrl          string
-	pushSuccess     bool
 	buildDefinition *build.BuildDefinition
 }
 

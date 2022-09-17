@@ -31,6 +31,9 @@ type AzdoHubScmProvider struct {
 	AzdContext     *azdcontext.AzdContext
 	azdoConnection *azuredevops.Connection
 }
+
+// AzdoRepositoryDetails provides extra state needed for the AzDo provider.
+// this is stored as the details property in repoDetails
 type AzdoRepositoryDetails struct {
 	projectName     string
 	projectId       string
@@ -64,6 +67,7 @@ func (p *AzdoHubScmProvider) preConfigureCheck(ctx context.Context, console inpu
 	return err
 }
 
+// helper function to save configuration values to .env file
 func (p *AzdoHubScmProvider) saveEnvironmentConfig(key string, value string) error {
 	p.Env.Values[key] = value
 	err := p.Env.Save()
@@ -79,6 +83,8 @@ func (p *AzdoHubScmProvider) name() string {
 }
 
 // ***  scmProvider implementation ******
+
+// stores repo details in state for use in other functions. Also saves AzDo project details to .env
 func (p *AzdoHubScmProvider) StoreRepoDetails(ctx context.Context, repo *azdoGit.GitRepository) error {
 	repoDetails := p.getRepoDetails()
 	repoDetails.repoName = *repo.Name
@@ -105,6 +111,7 @@ func (p *AzdoHubScmProvider) StoreRepoDetails(ctx context.Context, repo *azdoGit
 	return nil
 }
 
+// prompts the user for a new AzDo Git repo and creates the repo
 func (p *AzdoHubScmProvider) createNewGitRepositoryFromInput(ctx context.Context, console input.Console) (string, error) {
 	connection, err := p.getAzdoConnection(ctx)
 	if err != nil {
@@ -147,6 +154,8 @@ func (p *AzdoHubScmProvider) createNewGitRepositoryFromInput(ctx context.Context
 	}
 	return *repo.RemoteUrl, nil
 }
+
+// verifies that a repo exists or prompts the user to select from a list of existing AzDo repos
 func (p *AzdoHubScmProvider) ensureGitRepositoryExists(ctx context.Context, console input.Console) (string, error) {
 	if p.repoDetails != nil && p.repoDetails.repoName != "" {
 		return p.repoDetails.remoteUrl, nil
@@ -184,6 +193,7 @@ func (p *AzdoHubScmProvider) ensureGitRepositoryExists(ctx context.Context, cons
 	return updatedRemote, nil
 }
 
+// helper function to return repoDetails from state
 func (p *AzdoHubScmProvider) getRepoDetails() *AzdoRepositoryDetails {
 	if p.repoDetails != nil {
 		return p.repoDetails
@@ -193,6 +203,7 @@ func (p *AzdoHubScmProvider) getRepoDetails() *AzdoRepositoryDetails {
 	return p.repoDetails
 }
 
+// helper function to return an azuredevops.Connection for use with AzDo Go SDK
 func (p *AzdoHubScmProvider) getAzdoConnection(ctx context.Context) (*azuredevops.Connection, error) {
 	if p.azdoConnection != nil {
 		return p.azdoConnection, nil
@@ -214,6 +225,8 @@ func (p *AzdoHubScmProvider) getAzdoConnection(ctx context.Context) (*azuredevop
 	connection := getAzdoConnection(ctx, org, pat)
 	return connection, nil
 }
+
+// returns an existing project or prompts the user to either select a project or a create a new AzDo project
 func (p *AzdoHubScmProvider) ensureProjectExists(ctx context.Context, console input.Console) (string, string, bool, error) {
 	if p.repoDetails != nil && p.repoDetails.projectName != "" {
 		return p.repoDetails.projectName, p.repoDetails.projectId, false, nil
@@ -294,6 +307,7 @@ func (p *AzdoHubScmProvider) configureGitRemote(ctx context.Context, repoPath st
 	return remoteUrl, nil
 }
 
+// returns the git remote for a newly created repo that is part of a newly created AzDo project
 func (p *AzdoHubScmProvider) getDefaultRepoRemote(ctx context.Context, projectName string, projectId string, console input.Console) (string, error) {
 	connection, err := p.getAzdoConnection(ctx)
 	if err != nil {
@@ -315,6 +329,7 @@ func (p *AzdoHubScmProvider) getDefaultRepoRemote(ctx context.Context, projectNa
 	return *repo.RemoteUrl, nil
 }
 
+// prompt the user to select azdo repo or create a new one
 func (p *AzdoHubScmProvider) promptForAzdoRepository(ctx context.Context, console input.Console) (string, error) {
 	var remoteUrl string
 	// There are a few ways to configure the remote so offer a choice to the user.
@@ -362,6 +377,8 @@ var azdoRemoteHttpsUrlRegex = regexp.MustCompile(`^https://[a-zA-Z0-9]+(?:-[a-zA
 // ErrRemoteHostIsNotAzDo the error used when a non Azure DevOps remote is found
 var ErrRemoteHostIsNotAzDo = errors.New("existing remote is not an azure devops host")
 
+// helper function to determine if the provided remoteUrl is an azure devops repo.
+// currently supports AzDo PaaS
 func isAzDoRemote(remoteUrl string) error {
 	slug := ""
 	for _, r := range []*regexp.Regexp{azdoRemoteGitUrlRegex, azdoRemoteHttpsUrlRegex} {
@@ -415,6 +432,7 @@ func (p *AzdoHubScmProvider) gitRepoDetails(ctx context.Context, remoteUrl strin
 }
 
 // preventGitPush is nil for Azure DevOps
+// this method also checks for a credential helper and prompts the user to set a helper to make subsequent pushes easier
 func (p *AzdoHubScmProvider) preventGitPush(
 	ctx context.Context,
 	gitRepo *gitRepositoryDetails,
@@ -459,7 +477,9 @@ func (p *AzdoHubScmProvider) preventGitPush(
 	return false, nil
 }
 
-// preventGitPush is nil for Azure DevOps
+// hook function that fires after a git push
+// allows the provider to perform certain tasks after push including
+// cleanup on the remote url, creating the build policy for PRs and queuing an initial deployment
 func (p *AzdoHubScmProvider) postGitPush(
 	ctx context.Context,
 	gitRepo *gitRepositoryDetails,
@@ -556,6 +576,7 @@ func (p *AzdoCiProvider) configureConnection(
 	return nil
 }
 
+// struct used to deserialize service principal json object
 type AzureServicePrincipalCredentials struct {
 	TenantId       string `json:"tenantId"`
 	ClientId       string `json:"clientId"`
@@ -563,6 +584,7 @@ type AzureServicePrincipalCredentials struct {
 	SubscriptionId string `json:"subscriptionId"`
 }
 
+// parses the incoming json object and deserializes it to a struct
 func parseCredentials(ctx context.Context, credentials json.RawMessage) (*AzureServicePrincipalCredentials, error) {
 	azureCredentials := AzureServicePrincipalCredentials{}
 	if e := json.Unmarshal(credentials, &azureCredentials); e != nil {

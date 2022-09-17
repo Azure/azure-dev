@@ -35,6 +35,7 @@ var (
 	AzurePipelineYamlPath        = ".azdo/pipelines/azure-dev.yml"
 	CloudEnvironment             = "AzureCloud"
 	DefaultBranch                = "master"
+	AzDoProjectDescription       = "Azure Dev CLI Project"
 )
 
 type AzDoClient struct {
@@ -63,7 +64,7 @@ func ensureAzdoOrgNameExists(ctx context.Context, env *environment.Environment) 
 }
 
 func getAzdoConnection(ctx context.Context, organization string, personalAccessToken string) *azuredevops.Connection {
-	organizationUrl := fmt.Sprintf("https://dev.azure.com/%s", organization)
+	organizationUrl := fmt.Sprintf("https://%s/%s", AzDoHostName, organization)
 	connection := azuredevops.NewPatConnection(organizationUrl, personalAccessToken)
 	return connection
 }
@@ -240,7 +241,7 @@ func createProject(ctx context.Context, connection *azuredevops.Connection, name
 func getAzdoProjectFromNew(ctx context.Context, repoPath string, connection *azuredevops.Connection, env *environment.Environment, console input.Console) (string, string, error) {
 	var project *core.TeamProjectReference
 	currentFolderName := filepath.Base(repoPath)
-	var projectDescription string = "Azure Dev CLI Project"
+	var projectDescription string = AzDoProjectDescription
 
 	for {
 		name, err := console.Prompt(ctx, input.ConsoleOptions{

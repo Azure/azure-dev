@@ -653,7 +653,11 @@ func createBuildPolicy(
 		Project:       &projectId,
 		Configuration: policyConfiguration,
 	}
-	client.CreatePolicyConfiguration(ctx, createPolicyConfigurationArgs)
+
+	_, err = client.CreatePolicyConfiguration(ctx, createPolicyConfigurationArgs)
+	if err != nil {
+		return err
+	}
 
 	return nil
 }

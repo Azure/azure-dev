@@ -460,12 +460,15 @@ func (p *AzdoHubScmProvider) preventGitPush(
 			DefaultValue: "Yes - set credential.helper = store",
 		})
 		if err != nil {
-			return false, fmt.Errorf("prompting for credential helper: %w", err)
+			return false, fmt.Errorf("prompting for credential helper: %w ", err)
 		}
 		switch idx {
 		// Configure Credential Store
 		case 0:
-			gitCli.SetCredentialStore(ctx, p.AzdContext.ProjectDirectory())
+			err = gitCli.SetCredentialStore(ctx, p.AzdContext.ProjectDirectory())
+			if err != nil {
+				return false, fmt.Errorf("storing credentials in env: %w ", err)
+			}
 		// Skip
 		case 1:
 			break
@@ -485,33 +488,35 @@ func (p *AzdoHubScmProvider) postGitPush(
 	gitRepo *gitRepositoryDetails,
 	remoteName string,
 	branchName string,
-	console input.Console) (bool, error) {
+	console input.Console) error {
 
 	gitCli := git.NewGitCli(ctx)
 
 	//Reset remote to original url without PAT
-	gitCli.UpdateRemote(ctx, p.AzdContext.ProjectDirectory(), remoteName, p.repoDetails.remoteUrl)
-
+	err := gitCli.UpdateRemote(ctx, p.AzdContext.ProjectDirectory(), remoteName, p.repoDetails.remoteUrl)
+	if err != nil {
+		return err
+	}
 	if gitRepo.pushStatus {
 		console.Message(ctx, output.WithSuccessFormat(AzdoConfigSuccessMessage, p.repoDetails.repoWebUrl))
 	}
 
 	connection, err := p.getAzdoConnection(ctx)
 	if err != nil {
-		return false, err
+		return err
 	}
 
 	err = createBuildPolicy(ctx, connection, p.repoDetails.projectId, p.repoDetails.repoId, p.repoDetails.buildDefinition)
 	if err != nil {
-		return false, err
+		return err
 	}
 
 	err = queueBuild(ctx, connection, p.repoDetails.projectId, p.repoDetails.buildDefinition)
 	if err != nil {
-		return false, err
+		return err
 	}
 
-	return false, nil
+	return nil
 }
 
 // AzdoCiProvider implements a CiProvider using Azure DevOps to manage CI with azdo pipelines.

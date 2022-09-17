@@ -155,8 +155,8 @@ func (p *GitHubScmProvider) postGitPush(
 	gitRepo *gitRepositoryDetails,
 	remoteName string,
 	branchName string,
-	console input.Console) (bool, error) {
-	return false, nil
+	console input.Console) error {
+	return nil
 }
 
 // enum type for taking a choice after finding GitHub actions disabled.

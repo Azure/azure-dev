@@ -67,7 +67,7 @@ type ScmProvider interface {
 		gitRepo *gitRepositoryDetails,
 		remoteName string,
 		branchName string,
-		console input.Console) (bool, error)
+		console input.Console) error
 }
 
 // CiProvider defines the base behavior for a continuous integration provider.

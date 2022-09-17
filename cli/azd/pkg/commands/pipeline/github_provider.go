@@ -380,7 +380,7 @@ func (p *GitHubCiProvider) configureConnection(
 
 // configurePipeline is a no-op for GitHub, as the pipeline is automatically
 // created by creating the workflow files in .github folder.
-func (p *GitHubCiProvider) configurePipeline(ctx context.Context, repoDetails gitRepositoryDetails) error {
+func (p *GitHubCiProvider) configurePipeline(ctx context.Context, repoDetails *gitRepositoryDetails) error {
 	return nil
 }
 

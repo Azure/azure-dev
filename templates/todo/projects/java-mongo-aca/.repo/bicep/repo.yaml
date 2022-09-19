@@ -52,7 +52,7 @@ repo:
         patterns:
           - "**/main.bicep"
 
-      - from: ../../api/js
+      - from: ../../api/java
         to: ./src/api
         patterns:
           - "**/azure.@(yml|yaml)"

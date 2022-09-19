@@ -104,6 +104,10 @@ func getInstalledPath() (string, error) {
 		return path, nil
 	}
 
+	if !errors.Is(err, osexec.ErrNotFound) {
+		return "", fmt.Errorf("failed looking up javac in PATH: %w", err)
+	}
+
 	return "", errors.New(
 		"javac could not be found. Set either JAVA_HOME or JDK_HOME environment variable to point to your Java installation, " +
 			"or include javac in your PATH environment variable")

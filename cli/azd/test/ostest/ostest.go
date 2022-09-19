@@ -2,13 +2,16 @@
 package ostest
 
 import (
+	"errors"
 	"os"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
-// SetTempEnv sets the value of the environment variable named by the key.
+// Setenv sets the value of the environment variable named by the key.
 // Any set values are automatically restored during test Cleanup.
-func SetTempEnv(t *testing.T, key string, value string) {
+func Setenv(t *testing.T, key string, value string) {
 	orig, present := os.LookupEnv(key)
 	os.Setenv(key, value)
 
@@ -21,8 +24,8 @@ func SetTempEnv(t *testing.T, key string, value string) {
 	})
 }
 
-// UnsetTempEnv unsets the environment variable, which is later restored during test Cleanup.
-func UnsetTempEnv(t *testing.T, key string) {
+// Unsetenv unsets the environment variable, which is later restored during test Cleanup.
+func Unsetenv(t *testing.T, key string) {
 	orig, present := os.LookupEnv(key)
 	os.Unsetenv(key)
 
@@ -33,8 +36,8 @@ func UnsetTempEnv(t *testing.T, key string) {
 	})
 }
 
-// UnsetTempEnv unsets the provided environment variables, which is later restored during test Cleanup.
-func UnsetTempEnvs(t *testing.T, keys []string) {
+// Unsetenvs unsets the provided environment variables, which is later restored during test Cleanup.
+func Unsetenvs(t *testing.T, keys []string) {
 	restoreContext := map[string]string{}
 
 	for _, key := range keys {
@@ -56,9 +59,9 @@ func UnsetTempEnvs(t *testing.T, keys []string) {
 	}
 }
 
-// SetTempEnvs sets the provided environment variables keys with their corresponding values.
+// Setenvs sets the provided environment variables keys with their corresponding values.
 // Any set values are automatically restored during test Cleanup.
-func SetTempEnvs(t *testing.T, envContext map[string]string) {
+func Setenvs(t *testing.T, envContext map[string]string) {
 	restoreContext := map[string]string{}
 	for key, value := range envContext {
 		orig, present := os.LookupEnv(key)
@@ -77,5 +80,45 @@ func SetTempEnvs(t *testing.T, envContext map[string]string) {
 				os.Unsetenv(key)
 			}
 		}
+	})
+}
+
+// Create creates or truncates the named file. If the file already exists,
+// it is truncated. If the file does not exist, it is created with mode 0666
+// (before umask).
+// Files created are automatically removed during test Cleanup. Ignores errors
+// due to the file already being deleted.
+func Create(t *testing.T, name string) {
+	CreateNoCleanup(t, name)
+
+	t.Cleanup(func() {
+		err := os.Remove(name)
+		if !errors.Is(err, os.ErrNotExist) {
+			require.NoError(t, err)
+		}
+	})
+}
+
+// Create creates or truncates the named file. If the file already exists,
+// it is truncated. If the file does not exist, it is created with mode 0666
+// (before umask).
+func CreateNoCleanup(t *testing.T, name string) {
+	f, err := os.Create(name)
+	require.NoError(t, err)
+	defer f.Close()
+}
+
+// Chdir changes the current working directory to the named directory.
+// The working directory is automatically restored as part of Cleanup.
+func Chdir(t *testing.T, dir string) {
+	wd, err := os.Getwd()
+	require.NoError(t, err)
+
+	err = os.Chdir(dir)
+	require.NoError(t, err)
+
+	t.Cleanup(func() {
+		err = os.Chdir(wd)
+		require.NoError(t, err)
 	})
 }

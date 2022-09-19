@@ -2,7 +2,6 @@ package javac
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -21,8 +20,8 @@ func TestCheckInstalledVersion(t *testing.T) {
 	javaHomeBin := filepath.Join(javaHome, "bin")
 	require.NoError(t, os.Mkdir(javaHomeBin, 0755))
 
-	installJavac(t, javaHomeBin)
-	ostest.SetTempEnv(t, "JAVA_HOME", javaHome)
+	ostest.CreateNoCleanup(t, filepath.Join(javaHomeBin, javacWithExt()))
+	ostest.Setenv(t, "JAVA_HOME", javaHome)
 
 	tests := []struct {
 		name    string
@@ -67,7 +66,7 @@ func Test_getInstalledPath(t *testing.T) {
 	origPath := os.Getenv("PATH")
 	pathBin := t.TempDir()
 	pathVal := fmt.Sprintf("%s%c%s", pathBin, os.PathListSeparator, origPath)
-	ostest.UnsetTempEnvs(t, []string{"JDK_HOME", "JAVA_HOME", "PATH"})
+	ostest.Unsetenvs(t, []string{"JDK_HOME", "JAVA_HOME", "PATH"})
 
 	tests := []struct {
 		name               string
@@ -118,10 +117,8 @@ func Test_getInstalledPath(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			cleanJavac(t, javaHomeBin, jdkHomeBin, pathBin)
-			installJavac(t, tt.javacPaths...)
-
-			ostest.SetTempEnvs(t, tt.envVar)
+			placeJavac(t, tt.javacPaths...)
+			ostest.Setenvs(t, tt.envVar)
 
 			actual, err := getInstalledPath()
 			if tt.wantErr {
@@ -135,12 +132,10 @@ func Test_getInstalledPath(t *testing.T) {
 	}
 }
 
-func installJavac(t *testing.T, dirs ...string) {
+func placeJavac(t *testing.T, dirs ...string) {
 	for _, createPath := range dirs {
 		toCreate := filepath.Join(createPath, javacWithExt())
-		f, err := os.Create(toCreate)
-		require.NoError(t, err)
-		defer f.Close()
+		ostest.Create(t, toCreate)
 	}
 }
 
@@ -150,15 +145,5 @@ func javacWithExt() string {
 		return javac + ".exe"
 	} else {
 		return javac
-	}
-}
-
-func cleanJavac(t *testing.T, dirs ...string) {
-	for _, dir := range dirs {
-		err := os.Remove(filepath.Join(dir, javacWithExt()))
-
-		if !errors.Is(err, os.ErrNotExist) {
-			require.NoError(t, err)
-		}
 	}
 }

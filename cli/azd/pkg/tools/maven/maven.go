@@ -50,11 +50,11 @@ func (m *mavenCli) CheckInstalled(ctx context.Context) (bool, error) {
 
 func (m *mavenCli) mvnCmd() (string, error) {
 	m.mvnCmdOnce.Do(func() {
-		mvn, err := getMavenPath(m.projectPath, m.rootProjectPath)
+		mvnCmd, err := getMavenPath(m.projectPath, m.rootProjectPath)
 		if err != nil {
 			m.mvnCmdErr = err
 		} else {
-			m.mvnCmdStr = mvn
+			m.mvnCmdStr = mvnCmd
 		}
 	})
 
@@ -72,7 +72,7 @@ func getMavenPath(projectPath string, rootProjectPath string) (string, error) {
 	}
 
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("failed finding mvnw in repository path: %w", err)
 	}
 
 	mvn, err := osexec.LookPath("mvn")
@@ -81,10 +81,10 @@ func getMavenPath(projectPath string, rootProjectPath string) (string, error) {
 	}
 
 	if !errors.Is(err, osexec.ErrNotFound) {
-		return "", err
+		return "", fmt.Errorf("failed looking up mvn in PATH: %w", err)
 	}
 
-	return "", errors.New("mvn could not be found in PATH or as mvnw in the project repository")
+	return "", errors.New("maven could not be found. Install either Maven or Maven Wrapper by visiting https://maven.apache.org/ or https://maven.apache.org/wrapper/")
 }
 
 // getMavenWrapperPath finds the path to mvnw in the project directory, up to the root project directory.

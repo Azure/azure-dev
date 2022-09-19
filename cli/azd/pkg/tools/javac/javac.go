@@ -70,44 +70,53 @@ func (j *javacCli) Name() string {
 // getInstalledPath returns the installed javac path.
 //
 // javac is located by consulting, in search order:
-//   - JDK_HOME
-//   - JAVA_HOME
+//   - JDK_HOME (if set)
+//   - JAVA_HOME (if set)
 //   - PATH
+//
+// An error is returned if javac could not be found, or if invalid locations are provided.
 func getInstalledPath() (string, error) {
-	path := findByEnvVar("JDK_HOME")
+	path, err := findByEnvVar("JDK_HOME")
 	if path != "" {
 		return path, nil
 	}
-
-	path = findByEnvVar("JAVA_HOME")
-	if path != "" {
-		return path, nil
-	}
-
-	path, err := osexec.LookPath(javac)
-	if err == nil {
-		return path, nil
-	}
-	if !errors.Is(err, osexec.ErrNotFound) {
+	if err != nil {
 		return "", err
 	}
 
-	return "", errors.New("javac could not be found in PATH, JAVA_HOME or JDK_HOME directory")
+	path, err = findByEnvVar("JAVA_HOME")
+	if path != "" {
+		return path, nil
+	}
+	if err != nil {
+		return "", err
+	}
+
+	path, err = osexec.LookPath(javac)
+	if err == nil {
+		return path, nil
+	}
+
+	return "", errors.New(
+		"javac could not be found. Set either JAVA_HOME or JDK_HOME environment variable to point to your Java installation, " +
+			"or include javac in your PATH environment variable")
 }
 
 // findByEnvVar returns the javac path by the following environment variable home directory.
-// If javac is not found, an empty string is returned.
-func findByEnvVar(envVar string) string {
+//
+// An error is returned if an error occurred while finding.
+// If the environment variable home directory is unset, an empty string is returned with no error.
+func findByEnvVar(envVar string) (string, error) {
 	home := os.Getenv(envVar)
 	if home == "" {
-		return ""
+		return "", nil
 	}
 
 	absPath := filepath.Join(home, "bin", javac)
 	absPath, err := osexec.LookPath(absPath)
 	if err != nil {
-		return ""
+		return "", fmt.Errorf("%s is set to an invalid directory: %w", envVar, err)
 	}
 
-	return absPath
+	return absPath, nil
 }

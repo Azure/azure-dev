@@ -33,6 +33,29 @@ func UnsetTempEnv(t *testing.T, key string) {
 	})
 }
 
+// UnsetTempEnv unsets the provided environment variables, which is later restored during test Cleanup.
+func UnsetTempEnvs(t *testing.T, keys []string) {
+	restoreContext := map[string]string{}
+
+	for _, key := range keys {
+		orig, present := os.LookupEnv(key)
+		if present {
+			restoreContext[key] = orig
+			os.Unsetenv(key)
+		}
+	}
+
+	if len(restoreContext) > 0 {
+		t.Cleanup(func() {
+			for _, key := range keys {
+				if restoreValue, present := restoreContext[key]; present {
+					os.Setenv(key, restoreValue)
+				}
+			}
+		})
+	}
+}
+
 // SetTempEnvs sets the provided environment variables keys with their corresponding values.
 // Any set values are automatically restored during test Cleanup.
 func SetTempEnvs(t *testing.T, envContext map[string]string) {

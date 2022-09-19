@@ -8,6 +8,7 @@ import (
 	osexec "os/exec"
 	"path/filepath"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/blang/semver/v4"
 )
@@ -19,10 +20,13 @@ type JavacCli interface {
 }
 
 type javacCli struct {
+	cmdRun exec.CommandRunner
 }
 
-func NewCli() JavacCli {
-	return &javacCli{}
+func NewCli(cmdRun exec.CommandRunner) JavacCli {
+	return &javacCli{
+		cmdRun: cmdRun,
+	}
 }
 
 func (j *javacCli) VersionInfo() tools.VersionInfo {
@@ -37,18 +41,21 @@ func (j *javacCli) VersionInfo() tools.VersionInfo {
 
 func (j *javacCli) CheckInstalled(ctx context.Context) (bool, error) {
 	path, err := getInstalledPath()
-	if path != "" {
+	if err != nil {
 		return false, err
 	}
 
-	verOutput, err := tools.ExecuteCommand(ctx, path, "--version")
+	runResult, err := j.cmdRun.Run(ctx, exec.RunArgs{
+		Cmd:  path,
+		Args: []string{"--version"},
+	})
 	if err != nil {
-		return true, fmt.Errorf("checking javac version: %w", err)
+		return false, fmt.Errorf("checking javac version: %w", err)
 	}
 
-	jdkVer, err := tools.ExtractSemver(verOutput)
+	jdkVer, err := tools.ExtractSemver(runResult.Stdout)
 	if err != nil {
-		return true, fmt.Errorf("converting to semver version fails: %w", err)
+		return false, fmt.Errorf("converting to semver version fails: %w", err)
 	}
 
 	requiredVersion := j.VersionInfo()

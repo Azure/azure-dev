@@ -146,9 +146,9 @@ func (cli *mavenCli) ResolveDependencies(ctx context.Context, projectPath string
 	return nil
 }
 
-func NewMavenCli(ctx context.Context, projectPath string, rootProjectPath string) MavenCli {
+func NewMavenCli(commandRunner exec.CommandRunner, projectPath string, rootProjectPath string) MavenCli {
 	return &mavenCli{
-		commandRunner:   exec.GetCommandRunner(ctx),
+		commandRunner:   commandRunner,
 		projectPath:     projectPath,
 		rootProjectPath: rootProjectPath,
 	}

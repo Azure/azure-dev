@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/javac"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/maven"
@@ -45,11 +46,11 @@ func (m *mavenProject) Initialize(ctx context.Context) error {
 	return nil
 }
 
-func NewMavenProject(ctx context.Context, config *ServiceConfig, env *environment.Environment) FrameworkService {
+func NewMavenProject(commandRunner exec.CommandRunner, config *ServiceConfig, env *environment.Environment) FrameworkService {
 	return &mavenProject{
 		config:   config,
 		env:      env,
-		mavenCli: maven.NewMavenCli(ctx, config.Path(), config.Project.Path),
-		javacCli: javac.NewCli(),
+		mavenCli: maven.NewMavenCli(commandRunner, config.Path(), config.Project.Path),
+		javacCli: javac.NewCli(commandRunner),
 	}
 }

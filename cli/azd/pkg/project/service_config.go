@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
@@ -109,7 +110,7 @@ func (sc *ServiceConfig) GetFrameworkService(ctx context.Context, env *environme
 	case "js", "ts":
 		frameworkService = NewNpmProject(ctx, sc, env)
 	case "java":
-		frameworkService = NewMavenProject(ctx, sc, env)
+		frameworkService = NewMavenProject(exec.GetCommandRunner(ctx), sc, env)
 	default:
 		return nil, fmt.Errorf("unsupported language '%s' for service '%s'", sc.Language, sc.Name)
 	}

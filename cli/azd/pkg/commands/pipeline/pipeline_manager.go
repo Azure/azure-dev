@@ -207,7 +207,7 @@ func (manager *PipelineManager) Configure(ctx context.Context) error {
 	var credentials json.RawMessage = nil
 	var err error
 
-	existingSP := os.Getenv("AZURE_EXISTING_SP")
+	existingSP := os.Getenv("AZURE_CREDENTIALS")
 	if existingSP != "" {
 		credentials = json.RawMessage(existingSP)
 	}

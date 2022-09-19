@@ -15,6 +15,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/internal"
 	appinsightsexporter "github.com/azure/azure-dev/cli/azd/internal/telemetry/appinsights-exporter"
+	"github.com/azure/azure-dev/cli/azd/internal/telemetry/resource"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/benbjohnson/clock"
 	"github.com/gofrs/flock"
@@ -23,14 +24,12 @@ import (
 	"go.opentelemetry.io/otel/sdk/trace"
 )
 
-const azdAppName = "azd"
-
 // the equivalent of AZURE_CORE_COLLECT_TELEMETRY
 const collectTelemetryEnvVar = "AZURE_DEV_COLLECT_TELEMETRY"
 
 const telemetryItemExtension = ".trn"
 const (
-	devInstrumentationKey  = "321df807-079f-4957-9fc0-0ef2b422ee16"
+	devInstrumentationKey  = "cf5f7d89-5383-47a8-8d27-ad237c3613d9"
 	prodInstrumentationKey = ""
 )
 
@@ -114,7 +113,7 @@ func initialize() (*TelemetrySystem, error) {
 
 	tp := trace.NewTracerProvider(
 		trace.WithBatcher(exporter),
-		trace.WithResource(newResource()),
+		trace.WithResource(resource.New()),
 	)
 	otel.SetTracerProvider(tp)
 

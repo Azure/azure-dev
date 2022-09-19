@@ -38,5 +38,15 @@
         "name": "Azure-Samples/todo-csharp-sql",
         "description": "ToDo Application with a C# API and Azure SQL Database",
         "repositoryPath": "Azure-Samples/todo-csharp-sql"
+    },
+    {
+        "name": "Azure-Samples/todo-nodejs-mongo-terraform",
+        "description": "ToDo Application with a Node.js API and Azure Cosmos DB API for MongoDB on Azure App Service",
+        "repositoryPath": "Azure-Samples/todo-nodejs-mongo-terraform"
+    },
+    {
+        "name": "Azure-Samples/todo-python-mongo-terraform",
+        "description": "ToDo Application with a Python API and Azure Cosmos DB API for MongoDB on Azure App Service",
+        "repositoryPath": "Azure-Samples/todo-python-mongo-terraform"
     }
 ]

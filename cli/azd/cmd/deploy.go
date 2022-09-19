@@ -87,7 +87,7 @@ func (d *deployAction) Run(ctx context.Context, cmd *cobra.Command, args []strin
 		return fmt.Errorf("loading environment: %w", err)
 	}
 
-	projConfig, err := project.LoadProjectConfig(azdCtx.ProjectPath(), &env)
+	projConfig, err := project.LoadProjectConfig(azdCtx.ProjectPath(), env)
 	if err != nil {
 		return fmt.Errorf("loading project: %w", err)
 	}
@@ -96,7 +96,7 @@ func (d *deployAction) Run(ctx context.Context, cmd *cobra.Command, args []strin
 		return fmt.Errorf("service name '%s' doesn't exist", d.serviceName)
 	}
 
-	proj, err := projConfig.GetProject(&ctx, &env)
+	proj, err := projConfig.GetProject(&ctx, env)
 	if err != nil {
 		return fmt.Errorf("creating project: %w", err)
 	}
@@ -184,24 +184,22 @@ func (d *deployAction) Run(ctx context.Context, cmd *cobra.Command, args []strin
 	}
 
 	resourceManager := infra.NewAzureResourceManager(ctx)
-	resourceGroups, err := resourceManager.GetResourceGroupsForDeployment(ctx, env.GetSubscriptionId(), env.GetEnvName())
+	resourceGroup, err := resourceManager.FindResourceGroupForEnvironment(ctx, env)
 	if err != nil {
-		return fmt.Errorf("discovering resource groups from deployment: %w", err)
+		return fmt.Errorf("discovering resource group from deployment: %w", err)
 	}
 
-	for _, resourceGroup := range resourceGroups {
-		resourcesGroupsURL := fmt.Sprintf(
-			"https://portal.azure.com/#@/resource/subscriptions/%s/resourceGroups/%s/overview",
-			env.GetSubscriptionId(),
-			resourceGroup)
+	resourcesGroupURL := fmt.Sprintf(
+		"https://portal.azure.com/#@/resource/subscriptions/%s/resourceGroups/%s/overview",
+		env.GetSubscriptionId(),
+		resourceGroup)
 
-		message := fmt.Sprintf(
-			"View the resources created under the resource group %s in Azure Portal:\n%s\n",
-			output.WithHighLightFormat(resourceGroup),
-			output.WithLinkFormat(resourcesGroupsURL),
-		)
-		console.Message(ctx, message)
-	}
+	message := fmt.Sprintf(
+		"View the resources created under the resource group %s in Azure Portal:\n%s\n",
+		output.WithHighLightFormat(resourceGroup),
+		output.WithLinkFormat(resourcesGroupURL),
+	)
+	console.Message(ctx, message)
 
 	return nil
 }

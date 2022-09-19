@@ -1,0 +1,129 @@
+templateApi: 1.0.0
+metadata:
+  type: repo
+  name: todo-nodejs-mongo-terraform
+  description: ToDo Application with a Node.js API and Azure Cosmos DB API for MongoDB
+
+repo:
+  includeProjectAssets: false
+
+  remotes:
+    - name: azure-samples-main
+      url: git@github.com:Azure-Samples/todo-nodejs-mongo-terraform.git
+    - name: azure-samples-staging
+      url: git@github.com:Azure-Samples/todo-nodejs-mongo-terraform.git
+      branch: staging
+
+  rewrite:
+    rules:
+      - from: ../../../../../../common/infra/terraform/applicationinsights
+        to: ./modules/applicationinsights
+        patterns:
+          - "**/*.tf"
+      
+      - from: ../../api/js
+        to: ./src/api
+        patterns:
+          - "**/azure.@(yml|yaml)"
+
+      - from: ../../web/react-fluent
+        to: ./src/web
+        patterns:
+          - "**/azure.@(yml|yaml)"
+
+      - from: "PLACEHOLDERIACTOOLS"
+        to: "- [Terraform CLI](https://aka.ms/azure-dev/terraform-install)"
+        patterns:
+          - "README.md"
+
+      - from: "PLACEHOLDER_TITLE"
+        to: "ToDo Application with a Node.js API and Azure Cosmos DB API for MongoDB on Azure App Service (Terraform)"
+        patterns:
+          - "README.md"
+      
+      - from: "PLACEHOLDER_DESCRIPTION"
+        to: "using Terraform as the IaC provider"
+        patterns:
+          - "README.md"
+
+
+      - from: "todo-nodejs-mongo"
+        to: "todo-nodejs-mongo-terraform"
+        patterns:
+          - "README.md"
+
+  assets:
+    # Common assets
+    - from: ./../../
+      to: ./
+      ignore: 
+        - ".repo/**/*"
+        - "repo.y[a]ml"
+        - "azure.y[a]ml"
+
+    # openapi.yaml to root
+    - from: ../../../../api/common
+      to: ./
+      patterns:
+        - openapi.yaml
+
+    # openapi.yaml to api root
+    - from: ../../../../api/common
+      to: ./src/api
+      patterns:
+        - openapi.yaml
+
+    # Templates common
+    - from: ../../../../../common
+      to: ./
+      ignore:
+      - .devcontainer/**/*
+      - "infra/**/*"
+      - .github/**/*
+    
+    # Github workflows for terraform
+    - from: ../../../../../common/.github/workflows/terraform
+      to: ./.github/workflows
+
+    - from: ../../../../../common/infra/terraform/applicationinsights
+      to: ./infra/modules/applicationinsights
+
+    # .devcontainer common (devcontainer.json)
+    - from: ../../../../../common/.devcontainer/devcontainer.json/nodejs
+      to: ./.devcontainer
+
+    # .devcontainer common (Dockerfile)
+    - from: ../../../../../common/.devcontainer/Dockerfile/base
+      to: ./.devcontainer
+
+    # Assets common
+    - from: ../../../../common/assets
+      to: ./assets
+
+    # Tests common
+    - from: ../../../../common/tests
+      to: ./tests
+
+    # Node JS API
+    - from: ../../../../api/js
+      to: ./src/api
+      ignore:
+        - "dist/**/*"
+        - "coverage/**/*"
+        - "node_modules/**/*"
+        - "**/*.log"
+
+    # React Frontend
+    - from: ../../../../web/react-fluent
+      to: ./src/web
+      ignore:
+        - "build/**/*"
+        - "node_modules/**/*"
+
+    # Infra 
+    - from: ./infra/
+      to: ./infra
+
+    # Azure.yml
+    - from: ./azure.yaml
+      to: ./azure.yaml

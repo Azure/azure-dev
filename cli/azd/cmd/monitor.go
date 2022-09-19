@@ -89,7 +89,7 @@ func (m *monitorAction) Run(ctx context.Context, cmd *cobra.Command, args []stri
 	}
 
 	resourceManager := infra.NewAzureResourceManager(ctx)
-	resourceGroups, err := resourceManager.GetResourceGroupsForDeployment(ctx, env.GetSubscriptionId(), env.GetEnvName())
+	resourceGroups, err := resourceManager.GetResourceGroupsForEnvironment(ctx, env)
 	if err != nil {
 		return fmt.Errorf("discovering resource groups from deployment: %w", err)
 	}
@@ -98,7 +98,7 @@ func (m *monitorAction) Run(ctx context.Context, cmd *cobra.Command, args []stri
 	var portalResources []azcli.AzCliResource
 
 	for _, resourceGroup := range resourceGroups {
-		resources, err := azCli.ListResourceGroupResources(ctx, env.GetSubscriptionId(), resourceGroup, nil)
+		resources, err := azCli.ListResourceGroupResources(ctx, env.GetSubscriptionId(), resourceGroup.Name, nil)
 		if err != nil {
 			return fmt.Errorf("listing resources: %w", err)
 		}

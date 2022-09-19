@@ -12,8 +12,7 @@ jobs:
     steps:
       - checkout: self
 
-      - bash: curl -fsSL https://aka.ms/install-azd.sh | bash
-        displayName: Install azd
+      - template: /eng/pipelines/templates/steps/install-azd-live-sh.yml
 
       - pwsh: |
           $templateNames = (azd template list --output json | ConvertFrom-Json).name
@@ -51,16 +50,14 @@ jobs:
 
       - template: /eng/pipelines/templates/steps/install-bicep.yml
 
+      - template: /eng/pipelines/templates/steps/install-terraform.yml
+      
+      - template: /eng/pipelines/templates/steps/install-azd-live-sh.yml
+
       - template: /eng/pipelines/templates/steps/az-login.yml
 
-      - pwsh: |
-          if (!$env:AZDVERSION) {
-            Write-Host "AzdVersion variable not set. Using 'daily'"
-            Write-Host "##vso[task.setvariable variable=AzdVersion]daily"
-          } else {
-            Write-Host "Using specified azd version: $(AzdVersion)"
-          }
-        displayName: Ensure AzdVersion is set
+      # Required to clone repos that are not yet public
+      - template: /eng/pipelines/templates/steps/set-git-credentials.yml
 
       - pwsh: |
           if (!$env:TEMPLATEBRANCHNAME) {
@@ -80,9 +77,6 @@ jobs:
           }
         displayName: Ensure DeployLocation is set
 
-      - bash: curl -fsSL https://aka.ms/install-azd.sh | bash -s -- --version '$(AzdVersion)' --verbose
-        displayName: Install azd
-
       - pwsh: |
           $templateName = '$(TemplateName)'.Substring(14)
           $useUpperCaseName = '$(UseUpperCase)'
@@ -99,6 +93,11 @@ jobs:
 
       - task: Bash@3
         displayName: Test templates
+        env:             
+          # Required for Terraform service principal authentication
+          ARM_CLIENT_ID: $(arm-client-id)
+          ARM_CLIENT_SECRET: $(arm-client-secret)
+          ARM_TENANT_ID: $(arm-tenant-id)
         inputs:
           targetType: filePath
           filePath: templates/tests/test-templates.sh

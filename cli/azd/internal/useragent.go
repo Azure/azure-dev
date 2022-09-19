@@ -7,12 +7,22 @@ import (
 	"strings"
 )
 
-const userSpecifiedAgentEnvironmentVariableName = "AZURE_DEV_USER_AGENT"
+// Environment variable that identifies a user agent calling into azd.
+// Any caller of azd can set this variable to identify themselves.
+const AzdUserAgentEnvVar = "AZURE_DEV_USER_AGENT"
+
+// Well-known user agents prefixes.
+const (
+	VsCodeAgentPrefix = "vscode:/extensions/ms-azuretools.azure-dev"
+)
+
 const githubActionsEnvironmentVariableName = "GITHUB_ACTIONS"
 
-const azDevProductIdentifierKey = "azdev"
-const templateProductIdentifierKey = "azdtempl"
-const githubActionsProductIdentifierKey = "GhActions"
+const (
+	azDevProductIdentifierKey         = "azdev"
+	templateProductIdentifierKey      = "azdtempl"
+	githubActionsProductIdentifierKey = "GhActions"
+)
 
 type UserAgent struct {
 	// Azure Developer CLI product identifier. Formatted as `azdev/<version>`
@@ -47,7 +57,7 @@ func appendIdentifier(sb *strings.Builder, identifier string) {
 func makeUserAgent(template string) UserAgent {
 	userAgent := UserAgent{}
 	userAgent.azDevCliIdentifier = getAzDevCliIdentifier()
-	userAgent.userSpecifiedIdentifier = getUserSpecifiedIdentifier()
+	userAgent.userSpecifiedIdentifier = GetCallerUserAgent()
 	userAgent.githubActionsIdentifier = getGithubActionsIdentifier()
 	userAgent.templateIdentifier = formatTemplateIdentifier(template)
 
@@ -76,14 +86,9 @@ func getPlatformInfo() string {
 	return fmt.Sprintf("(Go %s; %s/%s)", runtime.Version(), runtime.GOOS, runtime.GOARCH)
 }
 
-func getUserSpecifiedIdentifier() string {
-	// like the Azure CLI (via it's `AZURE_HTTP_USER_AGENT` env variable) we allow for a user to append
-	// information to the UserAgent by setting an environment variable.
-	if devUserAgent := os.Getenv(userSpecifiedAgentEnvironmentVariableName); devUserAgent != "" {
-		return devUserAgent
-	}
-
-	return ""
+// GetCallerUserAgent returns the user agent calling into azd.
+func GetCallerUserAgent() string {
+	return os.Getenv(AzdUserAgentEnvVar)
 }
 
 func getGithubActionsIdentifier() string {

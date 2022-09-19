@@ -79,6 +79,7 @@ func CreatePipeline(
 	variables["ARM_CLIENT_SECRET"] = createBuildDefinitionVariable(credentials.ClientSecret, true, false)
 	variables["AZURE_LOCATION"] = createBuildDefinitionVariable(env.GetLocation(), false, false)
 	variables["AZURE_ENV_NAME"] = createBuildDefinitionVariable(env.GetEnvName(), false, false)
+	variables["AZURE_SERVICE_CONNECTION"] = createBuildDefinitionVariable(ServiceConnectionName, false, false)
 
 	queue, err := getAgentQueue(ctx, projectId, connection)
 	if err != nil {

@@ -1,6 +1,14 @@
 # Release History
 
-## 0.2.0-beta.2 (Unreleased)
+## 0.2.0-beta.2 (2022-09-21)
+
+### Features Added
+
+- [[#616]](https://github.com/Azure/azure-dev/pull/616) Add `azd show --output json` for tooling use.
+
+### Other Changes
+
+- [[#548]](https://github.com/Azure/azure-dev/pull/548) Refactor template bicep into modules.
 
 ## 0.2.0-beta.1 (2022-09-14)
 

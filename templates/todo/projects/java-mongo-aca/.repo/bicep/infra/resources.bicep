@@ -38,8 +38,6 @@ module api '../../../../../common/infra/bicep/app/api-container-app.bicep' = {
     applicationInsightsName: monitoring.outputs.applicationInsightsName
     containerAppsEnvironmentName: containerApps.outputs.containerAppsEnvironmentName
     containerRegistryName: containerApps.outputs.containerRegistryName
-    containerCpuCoreCount: '1'
-    containerMemory: '2.0Gi'
     keyVaultName: keyVault.outputs.keyVaultName
   }
 }

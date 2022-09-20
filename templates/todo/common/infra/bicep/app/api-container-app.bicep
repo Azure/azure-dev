@@ -8,12 +8,6 @@ param imageName string = ''
 param keyVaultName string = ''
 param serviceName string = 'api'
 
-@description('CPU cores allocated to a single container instance, e.g. 0.5')
-param containerCpuCoreCount string = '0.5'
-
-@description('Memory allocated to a single container instance, e.g. 1Gi')
-param containerMemory string = '1Gi'
-
 var abbrs = loadJsonContent('../../../../../common/infra/bicep/abbreviations.json')
 var resourceToken = toLower(uniqueString(subscription().id, environmentName, location))
 
@@ -24,8 +18,8 @@ module api '../../../../../common/infra/bicep/core/host/container-app.bicep' = {
     location: location
     containerAppsEnvironmentName: containerAppsEnvironmentName
     containerRegistryName: containerRegistryName
-    containerCpuCoreCount: containerCpuCoreCount
-    containerMemory: containerMemory
+    containerCpuCoreCount: '1.0'
+    containerMemory: '2.0Gi'
     env: [
       {
         name: 'AZURE_KEY_VAULT_ENDPOINT'

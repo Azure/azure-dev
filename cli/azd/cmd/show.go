@@ -25,13 +25,6 @@ func showCmd(rootOptions *internal.GlobalCommandOptions) *cobra.Command {
 		formatter := output.GetFormatter(ctx)
 		writer := output.GetWriter(ctx)
 
-		// Right now this command is hidden and we only expect it to be called by tooling,
-		// which passes `--output json`. If for some reason someone ran it directly, just
-		// don't do anything.
-		if formatter.Kind() != output.JsonFormat {
-			return nil
-		}
-
 		if err := ensureProject(azdCtx.ProjectPath()); err != nil {
 			return err
 		}
@@ -99,7 +92,7 @@ func showCmd(rootOptions *internal.GlobalCommandOptions) *cobra.Command {
 	)
 
 	output.AddOutputParam(cmd,
-		[]output.Format{output.JsonFormat, output.NoneFormat},
+		[]output.Format{output.JsonFormat},
 		output.NoneFormat,
 	)
 

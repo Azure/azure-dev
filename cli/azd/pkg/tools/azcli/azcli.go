@@ -770,46 +770,6 @@ func (cli *azCli) ListResourceGroup(ctx context.Context, subscriptionId string, 
 	return resources, nil
 }
 
-func (cli *azCli) ListResourceGroupResources(ctx context.Context, subscriptionId string, resourceGroupName string, listOptions *ListResourceGroupResourcesOptions) ([]AzCliResource, error) {
-	args := []string{"resource", "list", "--subscription", subscriptionId, "--resource-group", resourceGroupName, "--output", "json"}
-	if listOptions != nil {
-		if listOptions.JmesPathQuery != nil {
-			args = append(args, "--query", *listOptions.JmesPathQuery)
-		}
-	}
-
-	res, err := cli.runAzCommand(ctx, args...)
-
-	if isNotLoggedInMessage(res.Stderr) {
-		return nil, ErrAzCliNotLoggedIn
-	} else if err != nil {
-		return nil, fmt.Errorf("failed running az resource list: %s: %w", res.String(), err)
-	}
-
-	var resources []AzCliResource
-	if err := json.Unmarshal([]byte(res.Stdout), &resources); err != nil {
-		return nil, fmt.Errorf("could not unmarshal output %s as a []AzCliResource: %w", res.Stdout, err)
-	}
-	return resources, nil
-}
-
-func (cli *azCli) GetResource(ctx context.Context, subscriptionId string, resourceId string) (AzCliResourceExtended, error) {
-	res, err := cli.runAzCommand(ctx, "resource", "show", "--ids", resourceId, "--output", "json")
-	if isNotLoggedInMessage(res.Stderr) {
-		return AzCliResourceExtended{}, ErrAzCliNotLoggedIn
-	} else if err != nil {
-		return AzCliResourceExtended{}, fmt.Errorf("failed running az resource show --ids: %s: %w", res.String(), err)
-	}
-
-	var resource AzCliResourceExtended
-
-	if err := json.Unmarshal([]byte(res.Stdout), &resource); err != nil {
-		return AzCliResourceExtended{}, fmt.Errorf("could not unmarshal output %s as a AzCliResourceExtended: %w", res.Stdout, err)
-	}
-
-	return resource, nil
-}
-
 func (cli *azCli) ListSubscriptionDeploymentOperations(ctx context.Context, subscriptionId string, deploymentName string) ([]AzCliResourceOperation, error) {
 	res, err := cli.runAzCommand(ctx, "deployment", "operation", "sub", "list", "--subscription", subscriptionId, "--name", deploymentName, "--output", "json")
 	if isNotLoggedInMessage(res.Stderr) {

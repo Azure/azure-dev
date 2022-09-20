@@ -32,6 +32,7 @@ type PipelineManager struct {
 	PipelineServicePrincipalName string
 	PipelineRemoteName           string
 	PipelineRoleName             string
+	PipelineProvider             string
 	Environment                  *environment.Environment
 }
 
@@ -247,7 +248,7 @@ func (manager *PipelineManager) Configure(ctx context.Context) error {
 	}
 
 	// config pipeline handles setting or creating the provider pipeline to be used
-	err = manager.CiProvider.configurePipeline(ctx, gitRepoInfo)
+	err = manager.CiProvider.configurePipeline(ctx, gitRepoInfo, prj.Infra)
 	if err != nil {
 		return err
 	}

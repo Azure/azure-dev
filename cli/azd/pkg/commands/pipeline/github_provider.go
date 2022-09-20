@@ -321,7 +321,7 @@ func (p *GitHubCiProvider) configureConnection(
 		return fmt.Errorf("failed setting AZURE_CREDENTIALS secret: %w", err)
 	}
 
-	if infraOptions.Provider == "terraform" {
+	if infraOptions.Provider == provisioning.Terraform {
 		// terraform expect the credential info to be set in the env individually
 		type credentialParse struct {
 			Tenant       string `json:"tenantId"`
@@ -379,7 +379,7 @@ func (p *GitHubCiProvider) configureConnection(
 
 // configurePipeline is a no-op for GitHub, as the pipeline is automatically
 // created by creating the workflow files in .github folder.
-func (p *GitHubCiProvider) configurePipeline(ctx context.Context, repoDetails *gitRepositoryDetails) error {
+func (p *GitHubCiProvider) configurePipeline(ctx context.Context, repoDetails *gitRepositoryDetails, provisioningProvider provisioning.Options) error {
 	return nil
 }
 

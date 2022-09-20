@@ -8,6 +8,7 @@ import (
 	"fmt"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/microsoft/azure-devops-go-api/azuredevops"
 	"github.com/microsoft/azure-devops-go-api/azuredevops/build"
@@ -78,7 +79,8 @@ func CreatePipeline(
 	connection *azuredevops.Connection,
 	credentials AzureServicePrincipalCredentials,
 	env environment.Environment,
-	console input.Console) (*build.BuildDefinition, error) {
+	console input.Console,
+	provisioningProvider provisioning.Options) (*build.BuildDefinition, error) {
 
 	client, err := build.NewClient(ctx, connection)
 	if err != nil {
@@ -111,7 +113,8 @@ func CreatePipeline(
 		return nil, err
 	}
 
-	createDefinitionArgs, err := createAzureDevPipelineArgs(ctx, projectId, name, repoName, credentials, env, queue)
+	createDefinitionArgs, err := createAzureDevPipelineArgs(
+		ctx, projectId, name, repoName, credentials, env, queue, provisioningProvider)
 	if err != nil {
 		return nil, err
 	}
@@ -133,6 +136,7 @@ func createAzureDevPipelineArgs(
 	credentials AzureServicePrincipalCredentials,
 	env environment.Environment,
 	queue *taskagent.TaskAgentQueue,
+	provisioningProvider provisioning.Options,
 ) (*build.CreateDefinitionArgs, error) {
 
 	repoType := "tfsgit"
@@ -151,9 +155,11 @@ func createAzureDevPipelineArgs(
 
 	variables := make(map[string]build.BuildDefinitionVariable)
 	variables["AZURE_SUBSCRIPTION_ID"] = createBuildDefinitionVariable(credentials.SubscriptionId, false, false)
-	variables["ARM_TENANT_ID"] = createBuildDefinitionVariable(credentials.TenantId, false, false)
-	variables["ARM_CLIENT_ID"] = createBuildDefinitionVariable(credentials.ClientId, true, false)
-	variables["ARM_CLIENT_SECRET"] = createBuildDefinitionVariable(credentials.ClientSecret, true, false)
+	if provisioningProvider.Provider == provisioning.Terraform {
+		variables["ARM_TENANT_ID"] = createBuildDefinitionVariable(credentials.TenantId, false, false)
+		variables["ARM_CLIENT_ID"] = createBuildDefinitionVariable(credentials.ClientId, true, false)
+		variables["ARM_CLIENT_SECRET"] = createBuildDefinitionVariable(credentials.ClientSecret, true, false)
+	}
 	variables["AZURE_LOCATION"] = createBuildDefinitionVariable(env.GetLocation(), false, false)
 	variables["AZURE_ENV_NAME"] = createBuildDefinitionVariable(env.GetEnvName(), false, false)
 	variables["AZURE_SERVICE_CONNECTION"] = createBuildDefinitionVariable(ServiceConnectionName, false, false)

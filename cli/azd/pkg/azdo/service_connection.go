@@ -48,6 +48,7 @@ func authorizeServiceConnectionToAllPipelines(
 	return nil
 }
 
+// find service connection by name.
 func serviceConnectionExists(ctx context.Context,
 	client *serviceendpoint.Client,
 	projectId *string,

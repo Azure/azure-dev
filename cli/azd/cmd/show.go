@@ -146,36 +146,38 @@ func showTypeFromLanguage(language string) string {
 // does not include the project file, we attempt to determine it by looking for a single .csproj/.vbproj/.fsproj file
 // in that directory. If there are multiple, an error is returned.
 func getFullPathToProjectForService(svc *project.ServiceConfig) (string, error) {
-	if svc.Language == "dotnet" {
-		stat, err := os.Stat(svc.Path())
+	if svc.Language != "dotnet" {
+		return svc.Path(), nil
+	}
+
+	stat, err := os.Stat(svc.Path())
+	if err != nil {
+		return "", fmt.Errorf("stating project %s: %w", svc.Path(), err)
+	} else if stat.IsDir() {
+		entries, err := os.ReadDir(svc.Path())
 		if err != nil {
-			return "", fmt.Errorf("stating project %s: %w", svc.Path(), err)
-		} else if stat.IsDir() {
-			entries, err := os.ReadDir(svc.Path())
-			if err != nil {
-				return "", fmt.Errorf("listing files for service %s: %w", svc.Name, err)
-			}
-			var projectFile string
-			for _, entry := range entries {
-				switch strings.ToLower(filepath.Ext(entry.Name())) {
-				case ".csproj", ".fsproj", ".vbproj":
-					if projectFile != "" {
-						// we found multiple project files, we need to ask the user to specify which one
-						// corresponds to the service.
-						return "", fmt.Errorf("multiple .NET project files detected in %s for service %s, please include the name of the .NET project file in 'project' setting in %s for this service", svc.Path(), svc.Name, azdcontext.ProjectFileName)
-					} else {
-						projectFile = entry.Name()
-					}
-				}
-			}
-			if projectFile == "" {
-				return "", fmt.Errorf("could not determine the .NET project file for service %s, please include the name of the .NET project file in project setting in %s for this service", svc.Name, azdcontext.ProjectFileName)
-			} else {
-				if svc.RelativePath != "" {
-					svc.RelativePath = filepath.Join(svc.RelativePath, projectFile)
+			return "", fmt.Errorf("listing files for service %s: %w", svc.Name, err)
+		}
+		var projectFile string
+		for _, entry := range entries {
+			switch strings.ToLower(filepath.Ext(entry.Name())) {
+			case ".csproj", ".fsproj", ".vbproj":
+				if projectFile != "" {
+					// we found multiple project files, we need to ask the user to specify which one
+					// corresponds to the service.
+					return "", fmt.Errorf("multiple .NET project files detected in %s for service %s, please include the name of the .NET project file in 'project' setting in %s for this service", svc.Path(), svc.Name, azdcontext.ProjectFileName)
 				} else {
-					svc.Project.Path = filepath.Join(svc.Project.Path, projectFile)
+					projectFile = entry.Name()
 				}
+			}
+		}
+		if projectFile == "" {
+			return "", fmt.Errorf("could not determine the .NET project file for service %s, please include the name of the .NET project file in project setting in %s for this service", svc.Name, azdcontext.ProjectFileName)
+		} else {
+			if svc.RelativePath != "" {
+				svc.RelativePath = filepath.Join(svc.RelativePath, projectFile)
+			} else {
+				svc.Project.Path = filepath.Join(svc.Project.Path, projectFile)
 			}
 		}
 	}

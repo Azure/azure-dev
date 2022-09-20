@@ -252,17 +252,14 @@ func (manager *PipelineManager) Configure(ctx context.Context) error {
 		return err
 	}
 
-	var doPush bool = true
-	if existingSP == "" {
-		// The CI pipeline should be set-up and ready at this point.
-		// azd offers to push changes to the scm to start a new pipeline run
-		doPush, err = inputConsole.Confirm(ctx, input.ConsoleOptions{
-			Message:      "Would you like to commit and push your local changes to start the configured CI pipeline?",
-			DefaultValue: true,
-		})
-		if err != nil {
-			return fmt.Errorf("prompting to push: %w", err)
-		}
+	// The CI pipeline should be set-up and ready at this point.
+	// azd offers to push changes to the scm to start a new pipeline run
+	doPush, err := inputConsole.Confirm(ctx, input.ConsoleOptions{
+		Message:      "Would you like to commit and push your local changes to start the configured CI pipeline?",
+		DefaultValue: true,
+	})
+	if err != nil {
+		return fmt.Errorf("prompting to push: %w", err)
 	}
 
 	currentBranch, err := git.NewGitCli(ctx).GetCurrentBranch(ctx, manager.AzdCtx.ProjectDirectory())

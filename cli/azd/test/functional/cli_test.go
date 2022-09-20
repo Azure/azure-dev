@@ -382,7 +382,7 @@ func Test_CLI_InfraCreateAndDeleteWebApp(t *testing.T) {
 				Language string `json:"language"`
 			} `json:"project"`
 			Target struct {
-				ResourceId string `json:"resourceId"`
+				ResourceIds []string `json:"resourceIds"`
 			} `json:"target"`
 		} `json:"services"`
 	}
@@ -393,7 +393,7 @@ func Test_CLI_InfraCreateAndDeleteWebApp(t *testing.T) {
 	require.True(t, has)
 	require.Equal(t, "dotnet", service.Project.Language)
 	require.Equal(t, "webapp.csproj", filepath.Base(service.Project.Path))
-	require.NotEmpty(t, service.Target.ResourceId)
+	require.Equal(t, 1, len(service.Target.ResourceIds))
 
 	_, err = cli.RunCommand(ctx, "deploy")
 	require.NoError(t, err)
@@ -464,13 +464,13 @@ func Test_CLI_InfraCreateAndDeleteWebApp(t *testing.T) {
 	err = json.Unmarshal([]byte(out), &showRes)
 	require.NoError(t, err)
 
-	// Project information should be present, but since we have run infra delete, the target
-	// should no longer be set.
+	// Project information should be present, but since we have run infra delete, there should
+	// be no resources in the resourceIds array.
 	service, has = showRes.Services["web"]
 	require.True(t, has)
 	require.Equal(t, "dotnet", service.Project.Language)
 	require.Equal(t, "webapp.csproj", filepath.Base(service.Project.Path))
-	require.Empty(t, service.Target.ResourceId)
+	require.Equal(t, 0, len(service.Target.ResourceIds))
 }
 
 // test for azd deploy, azd deploy --service

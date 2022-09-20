@@ -65,13 +65,16 @@ func showCmd(rootOptions *internal.GlobalCommandOptions) *cobra.Command {
 		if resourceGroupName, err := resourceManager.FindResourceGroupForEnvironment(ctx, &env); err == nil {
 			for name := range prj.Services {
 				if resources, err := project.GetServiceResources(ctx, resourceGroupName, name, &env); err == nil {
-					if len(resources) == 1 {
-						resSvc := res.Services[name]
-						resSvc.Target = &showTargetArm{
-							ResourceId: resources[0].Id,
-						}
-						res.Services[name] = resSvc
+					resourceIds := make([]string, 0, len(resources))
+					for idx, res := range resources {
+						resourceIds[idx] = res.Id
 					}
+
+					resSvc := res.Services[name]
+					resSvc.Target = &showTargetArm{
+						ResourceIds: resourceIds,
+					}
+					res.Services[name] = resSvc
 				} else {
 					log.Printf("ignoring error determining resource id for service %s: %v", name, err)
 				}
@@ -122,7 +125,7 @@ type showServiceProject struct {
 }
 
 type showTargetArm struct {
-	ResourceId string `json:"resourceId"`
+	ResourceIds []string `json:"resourceIds"`
 }
 
 func showTypeFromLanguage(language string) string {

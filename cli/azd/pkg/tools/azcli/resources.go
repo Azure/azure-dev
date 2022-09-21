@@ -41,6 +41,8 @@ func (cli *azCli) ListResourceGroupResources(ctx context.Context, subscriptionId
 		return nil, err
 	}
 
+	// Filter expression on the underlying REST API are different from --query param in az cli.
+	// https://learn.microsoft.com/en-us/rest/api/resources/resources/list-by-resource-group#uri-parameters
 	options := armresources.ClientListByResourceGroupOptions{}
 	if listOptions != nil && *listOptions.Filter != "" {
 		options.Filter = listOptions.Filter
@@ -73,6 +75,8 @@ func (cli *azCli) ListResourceGroup(ctx context.Context, subscriptionId string, 
 		return nil, err
 	}
 
+	// Filter values differ from those support in the --query param of az cli.
+	// https://learn.microsoft.com/en-us/rest/api/resources/resource-groups/list
 	options := armresources.ResourceGroupsClientListOptions{}
 	if listOptions != nil {
 		if listOptions.TagFilter != nil {
@@ -82,17 +86,6 @@ func (cli *azCli) ListResourceGroup(ctx context.Context, subscriptionId string, 
 			options.Filter = listOptions.Filter
 		}
 	}
-
-	// TODO: Implement these filters.
-	// if listOptions != nil {
-	// 	if listOptions.TagFilter != nil {
-	// 		args = append(args, "--tag", fmt.Sprintf("%s=%s", listOptions.TagFilter.Key, listOptions.TagFilter.Value))
-	// 	}
-
-	// 	if listOptions.JmesPathQuery != nil {
-	// 		args = append(args, "--query", *listOptions.JmesPathQuery)
-	// 	}
-	// }
 
 	groups := []AzCliResource{}
 	pager := client.NewListPager(&options)

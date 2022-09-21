@@ -285,13 +285,13 @@ type ListResourceGroupOptions struct {
 	// An optional tag filter
 	TagFilter *Filter
 	// An optional JMES path query to filter or project the result
-	JmesPathQuery *string
+	Filter *string
 }
 
 // Optional parameters for resource group resources listing.
 type ListResourceGroupResourcesOptions struct {
 	// An optional JMES path query to filter or project the result
-	JmesPathQuery *string
+	Filter *string
 }
 
 type Filter struct {

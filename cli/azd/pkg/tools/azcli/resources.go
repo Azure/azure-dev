@@ -42,8 +42,8 @@ func (cli *azCli) ListResourceGroupResources(ctx context.Context, subscriptionId
 	}
 
 	options := armresources.ClientListByResourceGroupOptions{}
-	if listOptions != nil && *listOptions.JmesPathQuery != "" {
-		options.Filter = listOptions.JmesPathQuery
+	if listOptions != nil && *listOptions.Filter != "" {
+		options.Filter = listOptions.Filter
 	}
 
 	resources := []AzCliResource{}
@@ -76,11 +76,10 @@ func (cli *azCli) ListResourceGroup(ctx context.Context, subscriptionId string, 
 	options := armresources.ResourceGroupsClientListOptions{}
 	if listOptions != nil {
 		if listOptions.TagFilter != nil {
-			tagFilter := fmt.Sprintf("$filter=%s = eq '%s'", listOptions.TagFilter.Key, listOptions.TagFilter.Value)
+			tagFilter := fmt.Sprintf("tagName eq '%s' and tagValue eq '%s'", listOptions.TagFilter.Key, listOptions.TagFilter.Value)
 			options.Filter = &tagFilter
-		} else if listOptions.JmesPathQuery != nil {
-			queryFilter := fmt.Sprintf("$filter=%p", listOptions.JmesPathQuery)
-			options.Filter = &queryFilter
+		} else if listOptions.Filter != nil {
+			options.Filter = listOptions.Filter
 		}
 	}
 

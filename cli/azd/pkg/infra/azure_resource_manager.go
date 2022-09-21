@@ -124,9 +124,9 @@ func (rm *AzureResourceManager) GetResourceGroupsForEnvironment(ctx context.Cont
 // We search for them instead using the rg- prefix or -rg suffix
 func (rm *AzureResourceManager) GetDefaultResourceGroups(ctx context.Context, env *environment.Environment) ([]azcli.AzCliResource, error) {
 	azCli := azcli.GetAzCli(ctx)
-	query := fmt.Sprintf("[?name=='rg-%[1]s' || name=='%[1]s-rg']", env.GetEnvName())
+	filter := fmt.Sprintf("name eq 'rg-%[1]s' or name eq '%[1]s-rg'", env.GetEnvName())
 	res, err := azCli.ListResourceGroup(ctx, env.GetSubscriptionId(), &azcli.ListResourceGroupOptions{
-		JmesPathQuery: &query,
+		Filter: &filter,
 	})
 
 	if err != nil {

@@ -58,12 +58,12 @@ func (p *AzdoHubScmProvider) requiredTools() []tools.ExternalTool {
 // preConfigureCheck check the current state of external tools and any
 // other dependency to be as expected for execution.
 func (p *AzdoHubScmProvider) preConfigureCheck(ctx context.Context, console input.Console) error {
-	_, err := azdo.EnsureAzdoPatExists(ctx, p.Env)
+	_, err := azdo.EnsureAzdoPatExists(ctx, p.Env, console)
 	if err != nil {
 		return err
 	}
 
-	_, err = azdo.EnsureAzdoOrgNameExists(ctx, p.Env)
+	_, err = azdo.EnsureAzdoOrgNameExists(ctx, p.Env, console)
 	return err
 }
 
@@ -137,7 +137,7 @@ func (p *AzdoHubScmProvider) createNewGitRepositoryFromInput(ctx context.Context
 			console.Message(ctx, fmt.Sprintf("error: the repo name '%s' is already in use\n", name))
 			continue // try again
 		} else if strings.Contains(message, "TF401025: 'repoName' is not a valid name for a Git repository.") {
-			console.Message(ctx, fmt.Sprintf("error: '%s' is not a valid Azure Devops repo name. See https://aka.ms/azure-dev/azdo-repo-naming\n", name))
+			console.Message(ctx, fmt.Sprintf("error: '%s' is not a valid Azure DevOps repo name. See https://aka.ms/azure-dev/azdo-repo-naming\n", name))
 			continue // try again
 		} else if err != nil {
 			return "", fmt.Errorf("creating repository: %w", err)
@@ -182,13 +182,13 @@ func (p *AzdoHubScmProvider) ensureGitRepositoryExists(ctx context.Context, cons
 	}
 	remoteUser := remoteParts[0]
 	remoteHost := remoteParts[1]
-	pat, err := azdo.EnsureAzdoPatExists(ctx, p.Env)
+	pat, err := azdo.EnsureAzdoPatExists(ctx, p.Env, console)
 	if err != nil {
 		return "", err
 	}
 
 	updatedRemote := fmt.Sprintf("%s:%s@%s", remoteUser, pat, remoteHost)
-	console.Message(ctx, fmt.Sprintf("using azure devOps repo: %s", p.repoDetails.repoWebUrl))
+	console.Message(ctx, fmt.Sprintf("using Azure DevOps repo: %s", p.repoDetails.repoWebUrl))
 
 	return updatedRemote, nil
 }
@@ -205,11 +205,12 @@ func (p *AzdoHubScmProvider) getRepoDetails() *AzdoRepositoryDetails {
 
 // helper function to return an azuredevops.Connection for use with AzDo Go SDK
 func (p *AzdoHubScmProvider) getAzdoConnection(ctx context.Context) (*azuredevops.Connection, error) {
+	console := input.GetConsole(ctx)
 	if p.azdoConnection != nil {
 		return p.azdoConnection, nil
 	}
 
-	org, err := azdo.EnsureAzdoOrgNameExists(ctx, p.Env)
+	org, err := azdo.EnsureAzdoOrgNameExists(ctx, p.Env, console)
 	if err != nil {
 		return nil, err
 	}
@@ -217,7 +218,7 @@ func (p *AzdoHubScmProvider) getAzdoConnection(ctx context.Context) (*azuredevop
 	repoDetails := p.getRepoDetails()
 	repoDetails.orgName = org
 
-	pat, err := azdo.EnsureAzdoPatExists(ctx, p.Env)
+	pat, err := azdo.EnsureAzdoPatExists(ctx, p.Env, console)
 	if err != nil {
 		return nil, err
 	}
@@ -340,10 +341,10 @@ func (p *AzdoHubScmProvider) promptForAzdoRepository(ctx context.Context, consol
 	idx, err := console.Select(ctx, input.ConsoleOptions{
 		Message: fmt.Sprintf("How would you like to configure your remote? (Organization: %s)", p.repoDetails.projectName),
 		Options: []string{
-			"Select an existing Azure Devops Repository",
-			"Create a new private Azure Devops Repository",
+			"Select an existing Azure DevOps Repository",
+			"Create a new private Azure DevOps Repository",
 		},
-		DefaultValue: "Create a new private Azure Devops Repository",
+		DefaultValue: "Create a new private Azure DevOps Repository",
 	})
 
 	if err != nil {
@@ -379,7 +380,7 @@ var azdoRemoteGitUrlRegex = regexp.MustCompile(`^git@ssh.dev.azure\.com:(.*?)(?:
 var azdoRemoteHttpsUrlRegex = regexp.MustCompile(`^https://[a-zA-Z0-9]+(?:-[a-zA-Z0-9]+)*:*.+@dev.azure\.com/(.*?)$`)
 
 // ErrRemoteHostIsNotAzDo the error used when a non Azure DevOps remote is found
-var ErrRemoteHostIsNotAzDo = errors.New("existing remote is not an azure devops host")
+var ErrRemoteHostIsNotAzDo = errors.New("existing remote is not an Azure DevOps host")
 
 // helper function to determine if the provided remoteUrl is an azure devops repo.
 // currently supports AzDo PaaS
@@ -539,12 +540,12 @@ func (p *AzdoCiProvider) requiredTools() []tools.ExternalTool {
 
 // preConfigureCheck nil for Azdo
 func (p *AzdoCiProvider) preConfigureCheck(ctx context.Context, console input.Console) error {
-	_, err := azdo.EnsureAzdoPatExists(ctx, p.Env)
+	_, err := azdo.EnsureAzdoPatExists(ctx, p.Env, console)
 	if err != nil {
 		return err
 	}
 
-	_, err = azdo.EnsureAzdoOrgNameExists(ctx, p.Env)
+	_, err = azdo.EnsureAzdoOrgNameExists(ctx, p.Env, console)
 	return err
 }
 
@@ -571,11 +572,11 @@ func (p *AzdoCiProvider) configureConnection(
 
 	p.credentials = azureCredentials
 	details := repoDetails.details.(*AzdoRepositoryDetails)
-	org, err := azdo.EnsureAzdoOrgNameExists(ctx, p.Env)
+	org, err := azdo.EnsureAzdoOrgNameExists(ctx, p.Env, console)
 	if err != nil {
 		return err
 	}
-	pat, err := azdo.EnsureAzdoPatExists(ctx, p.Env)
+	pat, err := azdo.EnsureAzdoPatExists(ctx, p.Env, console)
 	if err != nil {
 		return err
 	}
@@ -602,14 +603,15 @@ func parseCredentials(ctx context.Context, credentials json.RawMessage) (*azdo.A
 }
 
 // configurePipeline create Azdo pipeline
-func (p *AzdoCiProvider) configurePipeline(ctx context.Context, repoDetails *gitRepositoryDetails) error {
+func (p *AzdoCiProvider) configurePipeline(ctx context.Context, repoDetails *gitRepositoryDetails, provisioningProvider provisioning.Options) error {
 	details := repoDetails.details.(*AzdoRepositoryDetails)
+	console := input.GetConsole(ctx)
 
-	org, err := azdo.EnsureAzdoOrgNameExists(ctx, p.Env)
+	org, err := azdo.EnsureAzdoOrgNameExists(ctx, p.Env, console)
 	if err != nil {
 		return err
 	}
-	pat, err := azdo.EnsureAzdoPatExists(ctx, p.Env)
+	pat, err := azdo.EnsureAzdoPatExists(ctx, p.Env, console)
 	if err != nil {
 		return err
 	}
@@ -617,7 +619,8 @@ func (p *AzdoCiProvider) configurePipeline(ctx context.Context, repoDetails *git
 	if err != nil {
 		return err
 	}
-	buildDefinition, err := azdo.CreatePipeline(ctx, details.projectId, azdo.AzurePipelineName, details.repoName, connection, *p.credentials, *p.Env)
+	buildDefinition, err := azdo.CreatePipeline(
+		ctx, details.projectId, azdo.AzurePipelineName, details.repoName, connection, *p.credentials, *p.Env, console, provisioningProvider)
 	if err != nil {
 		return err
 	}

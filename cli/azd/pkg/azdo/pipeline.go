@@ -8,6 +8,8 @@ import (
 	"fmt"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
+	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/microsoft/azure-devops-go-api/azuredevops"
 	"github.com/microsoft/azure-devops-go-api/azuredevops/build"
 	"github.com/microsoft/azure-devops-go-api/azuredevops/taskagent"
@@ -43,6 +45,31 @@ func getAgentQueue(ctx context.Context, projectId string, connection *azuredevop
 	return nil, fmt.Errorf("could not find a default agent queue in project %s", projectId)
 }
 
+// find pipeline by name
+func pipelineExists(
+	ctx context.Context,
+	client *build.Client,
+	projectId *string,
+	pipelineName *string,
+) (bool, error) {
+	getDefinitionsArgs := build.GetDefinitionsArgs{
+		Project: projectId,
+		Name:    pipelineName,
+	}
+
+	buildDefinitionsResponse, err := (*client).GetDefinitions(ctx, getDefinitionsArgs)
+	if err != nil {
+		return false, err
+	}
+	buildDefinitions := buildDefinitionsResponse.Value
+	for _, definition := range buildDefinitions {
+		if *definition.Name == *pipelineName {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
 // create a new Azure DevOps pipeline
 func CreatePipeline(
 	ctx context.Context,
@@ -51,12 +78,66 @@ func CreatePipeline(
 	repoName string,
 	connection *azuredevops.Connection,
 	credentials AzureServicePrincipalCredentials,
-	env environment.Environment) (*build.BuildDefinition, error) {
+	env environment.Environment,
+	console input.Console,
+	provisioningProvider provisioning.Options) (*build.BuildDefinition, error) {
 
 	client, err := build.NewClient(ctx, connection)
 	if err != nil {
 		return nil, err
 	}
+
+	var exists bool = true
+	var count = 0
+	var maxTries = 4
+	for exists {
+		exists, err = pipelineExists(ctx, &client, &projectId, &name)
+		if err != nil {
+			return nil, err
+		}
+		count = count + 1
+
+		if exists {
+			name = fmt.Sprintf("%s - %s (%d)", name, repoName, count)
+		} else {
+			continue
+		}
+
+		if count >= maxTries {
+			return nil, fmt.Errorf("error creating new pipeline")
+		}
+	}
+
+	queue, err := getAgentQueue(ctx, projectId, connection)
+	if err != nil {
+		return nil, err
+	}
+
+	createDefinitionArgs, err := createAzureDevPipelineArgs(
+		ctx, projectId, name, repoName, credentials, env, queue, provisioningProvider)
+	if err != nil {
+		return nil, err
+	}
+
+	newBuildDefinition, err := client.CreateDefinition(ctx, *createDefinitionArgs)
+	if err != nil {
+		return nil, err
+	}
+
+	return newBuildDefinition, nil
+}
+
+// create Azure Deploy Pipeline parameters
+func createAzureDevPipelineArgs(
+	ctx context.Context,
+	projectId string,
+	name string,
+	repoName string,
+	credentials AzureServicePrincipalCredentials,
+	env environment.Environment,
+	queue *taskagent.TaskAgentQueue,
+	provisioningProvider provisioning.Options,
+) (*build.CreateDefinitionArgs, error) {
 
 	repoType := "tfsgit"
 	buildDefinitionType := build.DefinitionType("build")
@@ -74,16 +155,14 @@ func CreatePipeline(
 
 	variables := make(map[string]build.BuildDefinitionVariable)
 	variables["AZURE_SUBSCRIPTION_ID"] = createBuildDefinitionVariable(credentials.SubscriptionId, false, false)
-	variables["ARM_TENANT_ID"] = createBuildDefinitionVariable(credentials.TenantId, false, false)
-	variables["ARM_CLIENT_ID"] = createBuildDefinitionVariable(credentials.ClientId, true, false)
-	variables["ARM_CLIENT_SECRET"] = createBuildDefinitionVariable(credentials.ClientSecret, true, false)
+	if provisioningProvider.Provider == provisioning.Terraform {
+		variables["ARM_TENANT_ID"] = createBuildDefinitionVariable(credentials.TenantId, false, false)
+		variables["ARM_CLIENT_ID"] = createBuildDefinitionVariable(credentials.ClientId, true, false)
+		variables["ARM_CLIENT_SECRET"] = createBuildDefinitionVariable(credentials.ClientSecret, true, false)
+	}
 	variables["AZURE_LOCATION"] = createBuildDefinitionVariable(env.GetLocation(), false, false)
 	variables["AZURE_ENV_NAME"] = createBuildDefinitionVariable(env.GetEnvName(), false, false)
-
-	queue, err := getAgentQueue(ctx, projectId, connection)
-	if err != nil {
-		return nil, err
-	}
+	variables["AZURE_SERVICE_CONNECTION"] = createBuildDefinitionVariable(ServiceConnectionName, false, false)
 
 	agentPoolQueue := &build.AgentPoolQueue{
 		Id:   queue.Id,
@@ -118,13 +197,7 @@ func CreatePipeline(
 		Project:    &projectId,
 		Definition: buildDefinition,
 	}
-
-	newBuildDefinition, err := client.CreateDefinition(ctx, *createDefinitionArgs)
-	if err != nil {
-		return nil, err
-	}
-
-	return newBuildDefinition, nil
+	return createDefinitionArgs, nil
 }
 
 // run a pipeline. This is used to invoke the deploy pipeline after a successful push of the code
@@ -148,8 +221,6 @@ func QueueBuild(
 		Project: &projectId,
 		Build:   newBuild,
 	}
-
-	//time.Sleep(500 * time.Millisecond)
 
 	_, err = client.QueueBuild(ctx, queueBuildArgs)
 	if err != nil {

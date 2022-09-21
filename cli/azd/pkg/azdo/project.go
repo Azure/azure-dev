@@ -86,7 +86,7 @@ func createProject(ctx context.Context, connection *azuredevops.Connection, name
 		}
 
 		count++
-		time.Sleep(700 * time.Millisecond)
+		time.Sleep(800 * time.Millisecond)
 	}
 
 	project, err := getAzdoProjectByName(ctx, connection, name)

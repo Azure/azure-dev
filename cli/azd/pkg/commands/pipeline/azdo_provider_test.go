@@ -5,12 +5,14 @@ package pipeline
 
 import (
 	"context"
+	"io"
 	"os"
 	"path"
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdo"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/stretchr/testify/require"
 )
 
@@ -101,14 +103,17 @@ func Test_azdo_provider_preConfigureCheck(t *testing.T) {
 		os.Unsetenv(azdo.AzDoPatName)
 		os.Setenv(azdo.AzDoEnvironmentOrgName, "testOrg")
 		provider := getEmptyAzdoScmProviderTestHarness()
-		testConsole := &circularConsole{}
+		testConsole := &configurablePromptConsole{}
+		testPat := "testPAT12345"
+		testConsole.promptResponse = testPat
 		ctx := context.Background()
 
 		// act
 		e := provider.preConfigureCheck(ctx, testConsole)
 
 		// assert
-		require.Error(t, e)
+		require.Nil(t, e)
+		require.EqualValues(t, provider.Env.Values[azdo.AzDoPatName], testPat)
 	})
 
 }
@@ -156,3 +161,20 @@ func getAzdoScmProviderTestHarness() *AzdoHubScmProvider {
 		},
 	}
 }
+
+// For tests where the console won't matter at all
+type configurablePromptConsole struct {
+	promptResponse string
+}
+
+func (console *configurablePromptConsole) Message(ctx context.Context, message string) {}
+func (console *configurablePromptConsole) Prompt(ctx context.Context, options input.ConsoleOptions) (string, error) {
+	return console.promptResponse, nil
+}
+func (console *configurablePromptConsole) Select(ctx context.Context, options input.ConsoleOptions) (int, error) {
+	return 0, nil
+}
+func (console *configurablePromptConsole) Confirm(ctx context.Context, options input.ConsoleOptions) (bool, error) {
+	return false, nil
+}
+func (console *configurablePromptConsole) SetWriter(writer io.Writer) {}

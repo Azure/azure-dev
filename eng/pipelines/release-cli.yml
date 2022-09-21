@@ -76,11 +76,6 @@ stages:
               dockerVersion: 17.09.0-ce
               releaseType: stable
 
-          - pwsh: |
-              docker --version
-              docker version
-            displayName: Print Docker Version Info
-
           - task: PowerShell@2
             inputs:
               pwsh: true

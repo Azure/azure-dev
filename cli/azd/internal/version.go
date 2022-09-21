@@ -27,6 +27,22 @@ type AzdVersionSpec struct {
 	Commit  string `json:"commit"`
 }
 
+func IsDevVersion() bool {
+	return GetVersionNumber() == "0.0.0-dev.0"
+}
+
+func IsNonProdVersion() bool {
+	if IsDevVersion() {
+		return true
+	}
+
+	// This currently relies on checking for specific internal release tags.
+	// This can be improved to instead check for any presence of prerelease versioning
+	// once the product is GA.
+	ver := GetVersionNumber()
+	return strings.Contains(ver, "pr") || strings.Contains(ver, "daily")
+}
+
 // GetVersionNumber splits the cmd.Version string to get the
 // semver for the command.
 // Returns a version string like `0.0.1-alpha.1`.

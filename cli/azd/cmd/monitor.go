@@ -8,18 +8,19 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/azureutil"
+	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/commands"
-	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/pbnj/go-open"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
 
-func monitorCmd(rootOptions *commands.GlobalCommandOptions) *cobra.Command {
+func monitorCmd(rootOptions *internal.GlobalCommandOptions) *cobra.Command {
 	cmd := commands.Build(
 		&monitorAction{
 			rootOptions: rootOptions,
@@ -27,7 +28,8 @@ func monitorCmd(rootOptions *commands.GlobalCommandOptions) *cobra.Command {
 		rootOptions,
 		"monitor",
 		"Monitor a deployed application.",
-		`Monitor a deployed application.
+		&commands.BuildOptions{
+			Long: `Monitor a deployed application.
 		
 Examples:
 
@@ -36,7 +38,7 @@ Examples:
 	$ azd monitor --logs
 		
 For more information, go to https://aka.ms/azure-dev/monitor.`,
-	)
+		})
 	return cmd
 }
 
@@ -44,7 +46,7 @@ type monitorAction struct {
 	monitorLive     bool
 	monitorLogs     bool
 	monitorOverview bool
-	rootOptions     *commands.GlobalCommandOptions
+	rootOptions     *internal.GlobalCommandOptions
 }
 
 func (m *monitorAction) SetupFlags(
@@ -56,9 +58,9 @@ func (m *monitorAction) SetupFlags(
 	persis.BoolVar(&m.monitorOverview, "overview", false, "Open a browser to Application Insights Overview Dashboard.")
 }
 
-func (m *monitorAction) Run(ctx context.Context, _ *cobra.Command, args []string, azdCtx *environment.AzdContext) error {
-	azCli := commands.GetAzCliFromContext(ctx)
-	console := input.NewConsole(!m.rootOptions.NoPrompt)
+func (m *monitorAction) Run(ctx context.Context, cmd *cobra.Command, args []string, azdCtx *azdcontext.AzdContext) error {
+	azCli := azcli.GetAzCli(ctx)
+	console := input.GetConsole(ctx)
 
 	if err := ensureProject(azdCtx.ProjectPath()); err != nil {
 		return err
@@ -73,10 +75,10 @@ func (m *monitorAction) Run(ctx context.Context, _ *cobra.Command, args []string
 	}
 
 	if !m.monitorLive && !m.monitorLogs && !m.monitorOverview {
-		m.monitorLive = true
+		m.monitorOverview = true
 	}
 
-	env, err := loadOrInitEnvironment(ctx, &m.rootOptions.EnvironmentName, azdCtx, console)
+	env, ctx, err := loadOrInitEnvironment(ctx, &m.rootOptions.EnvironmentName, azdCtx, console)
 	if err != nil {
 		return fmt.Errorf("loading environment: %w", err)
 	}
@@ -86,16 +88,17 @@ func (m *monitorAction) Run(ctx context.Context, _ *cobra.Command, args []string
 		return fmt.Errorf("getting tenant id for subscription: %w", err)
 	}
 
-	resourceGroups, err := azureutil.GetResourceGroupsForDeployment(ctx, azCli, env.GetSubscriptionId(), env.GetEnvName())
+	resourceManager := infra.NewAzureResourceManager(ctx)
+	resourceGroups, err := resourceManager.GetResourceGroupsForEnvironment(ctx, env)
 	if err != nil {
 		return fmt.Errorf("discovering resource groups from deployment: %w", err)
 	}
 
-	var insightsResources []tools.AzCliResource
-	var portalResources []tools.AzCliResource
+	var insightsResources []azcli.AzCliResource
+	var portalResources []azcli.AzCliResource
 
 	for _, resourceGroup := range resourceGroups {
-		resources, err := azCli.ListResourceGroupResources(ctx, env.GetSubscriptionId(), resourceGroup)
+		resources, err := azCli.ListResourceGroupResources(ctx, env.GetSubscriptionId(), resourceGroup.Name, nil)
 		if err != nil {
 			return fmt.Errorf("listing resources: %w", err)
 		}

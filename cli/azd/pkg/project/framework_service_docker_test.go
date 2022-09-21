@@ -2,12 +2,13 @@ package project
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
-	"github.com/azure/azure-dev/cli/azd/pkg/executil"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools"
-	"github.com/azure/azure-dev/cli/azd/test/helpers"
+	"github.com/azure/azure-dev/cli/azd/pkg/exec"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/docker"
+	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/stretchr/testify/require"
 )
 
@@ -22,42 +23,44 @@ services:
     project: src/web
     language: js
     host: containerapp
+    resourceName: test-containerapp-web
 `
-
-	ctx := helpers.CreateTestContext(context.Background(), gblCmdOptions, azCli, mockHttpClient)
-	env := environment.Environment{Values: make(map[string]string)}
-	env.SetEnvName("test-env")
-
-	projectConfig, _ := ParseProjectConfig(testProj, &env)
-	prj, _ := projectConfig.GetProject(ctx, &env)
-	service := prj.Services[0]
 	ran := false
 
-	dockerArgs := tools.DockerArgs{
-		RunWithResultFn: func(ctx context.Context, args executil.RunArgs) (executil.RunResult, error) {
-			ran = true
+	env := environment.EphemeralWithValues("test-env", nil)
+	mockContext := mocks.NewMockContext(context.Background())
+	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
+		return strings.Contains(command, "docker build")
+	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+		ran = true
 
-			require.Equal(t, []string{
-				"build", "-q",
-				"-f", "./Dockerfile",
-				"--platform", "amd64",
-				".",
-			}, args.Args)
+		require.Equal(t, []string{
+			"build", "-q",
+			"-f", "./Dockerfile",
+			"--platform", "amd64",
+			".",
+		}, args.Args)
 
-			return executil.RunResult{
-				Stdout:   "imageId",
-				Stderr:   "",
-				ExitCode: 0,
-			}, nil
-		},
-	}
+		return exec.RunResult{
+			Stdout:   "imageId",
+			Stderr:   "",
+			ExitCode: 0,
+		}, nil
+	})
 
-	docker := tools.NewDocker(dockerArgs)
+	projectConfig, err := ParseProjectConfig(testProj, env)
+	require.NoError(t, err)
+	prj, err := projectConfig.GetProject(mockContext.Context, env)
+	require.NoError(t, err)
+
+	service := prj.Services[0]
+
+	docker := docker.NewDocker(*mockContext.Context)
 
 	progress := make(chan string)
 	done := make(chan bool)
 
-	internalFramework := NewNpmProject(service.Config, &env)
+	internalFramework := NewNpmProject(*mockContext.Context, service.Config, env)
 	progressMessages := []string{}
 
 	go func() {
@@ -67,8 +70,8 @@ services:
 		done <- true
 	}()
 
-	framework := NewDockerProject(service.Config, &env, docker, internalFramework)
-	res, err := framework.Package(ctx, progress)
+	framework := NewDockerProject(service.Config, env, docker, internalFramework)
+	res, err := framework.Package(*mockContext.Context, progress)
 	close(progress)
 	<-done
 
@@ -90,45 +93,50 @@ services:
     project: src/web
     language: js
     host: containerapp
+    resourceName: test-containerapp-web
     docker:
       path: ./Dockerfile.dev
       context: ../
 `
 
-	ctx := helpers.CreateTestContext(context.Background(), gblCmdOptions, azCli, mockHttpClient)
-	env := environment.Environment{Values: make(map[string]string)}
-	env.SetEnvName("test-env")
+	env := environment.EphemeralWithValues("test-env", nil)
+	mockContext := mocks.NewMockContext(context.Background())
 
-	projectConfig, _ := ParseProjectConfig(testProj, &env)
-	prj, _ := projectConfig.GetProject(ctx, &env)
-	service := prj.Services[0]
 	ran := false
 
-	dockerArgs := tools.DockerArgs{
-		RunWithResultFn: func(ctx context.Context, args executil.RunArgs) (executil.RunResult, error) {
-			ran = true
+	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
+		return strings.Contains(command, "docker build")
+	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+		ran = true
 
-			require.Equal(t, []string{
-				"build", "-q",
-				"-f", "./Dockerfile.dev",
-				"--platform", "amd64",
-				"../",
-			}, args.Args)
+		require.Equal(t, []string{
+			"build", "-q",
+			"-f", "./Dockerfile.dev",
+			"--platform", "amd64",
+			"../",
+		}, args.Args)
 
-			return executil.RunResult{
-				Stdout:   "imageId",
-				Stderr:   "",
-				ExitCode: 0,
-			}, nil
-		},
-	}
+		return exec.RunResult{
+			Stdout:   "imageId",
+			Stderr:   "",
+			ExitCode: 0,
+		}, nil
+	})
 
-	docker := tools.NewDocker(dockerArgs)
+	docker := docker.NewDocker(*mockContext.Context)
+
+	projectConfig, err := ParseProjectConfig(testProj, env)
+	require.NoError(t, err)
+
+	prj, err := projectConfig.GetProject(mockContext.Context, env)
+	require.NoError(t, err)
+
+	service := prj.Services[0]
 
 	progress := make(chan string)
 	done := make(chan bool)
 
-	internalFramework := NewNpmProject(service.Config, &env)
+	internalFramework := NewNpmProject(*mockContext.Context, service.Config, env)
 	status := ""
 
 	go func() {
@@ -138,8 +146,8 @@ services:
 		done <- true
 	}()
 
-	framework := NewDockerProject(service.Config, &env, docker, internalFramework)
-	res, err := framework.Package(ctx, progress)
+	framework := NewDockerProject(service.Config, env, docker, internalFramework)
+	res, err := framework.Package(*mockContext.Context, progress)
 	close(progress)
 	<-done
 

@@ -1,17 +1,28 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 package provisioning
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
-	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 )
 
 type ProviderKind string
+
+type NewProviderFn func(ctx context.Context, env *environment.Environment, projectPath string, infraOptions Options) (Provider, error)
+
+var (
+	providers map[ProviderKind]NewProviderFn = make(map[ProviderKind]NewProviderFn)
+)
 
 const (
 	Bicep     ProviderKind = "bicep"
@@ -27,28 +38,32 @@ type Options struct {
 	Module   string       `yaml:"module"`
 }
 
-type PreviewResult struct {
-	Preview Preview
+type DeploymentPlan struct {
+	Deployment Deployment
+
+	// Additional information about deployment, provider-specific.
+	Details interface{}
 }
 
-type PreviewProgress struct {
+type DeploymentPlanningProgress struct {
 	Message   string
 	Timestamp time.Time
 }
 
 type DeployResult struct {
-	Operations []tools.AzCliResourceOperation
-	Outputs    map[string]PreviewOutputParameter
+	Operations []azcli.AzCliResourceOperation
+	Deployment *Deployment
 }
 
 type DestroyResult struct {
-	Resources []tools.AzCliResource
-	Outputs   map[string]PreviewOutputParameter
+	Resources []azcli.AzCliResource
+	Outputs   map[string]OutputParameter
 }
 
 type DeployProgress struct {
+	Message    string
 	Timestamp  time.Time
-	Operations []tools.AzCliResourceOperation
+	Operations []azcli.AzCliResourceOperation
 }
 
 type DestroyProgress struct {
@@ -59,31 +74,38 @@ type DestroyProgress struct {
 type Provider interface {
 	Name() string
 	RequiredExternalTools() []tools.ExternalTool
-	UpdatePlan(ctx context.Context, preview Preview) error
-	Preview(ctx context.Context) *async.InteractiveTaskWithProgress[*PreviewResult, *PreviewProgress]
-	Deploy(ctx context.Context, preview *Preview, scope Scope) *async.InteractiveTaskWithProgress[*DeployResult, *DeployProgress]
-	Destroy(ctx context.Context, preview *Preview) *async.InteractiveTaskWithProgress[*DestroyResult, *DestroyProgress]
+	GetDeployment(ctx context.Context, scope infra.Scope) *async.InteractiveTaskWithProgress[*DeployResult, *DeployProgress]
+	Plan(ctx context.Context) *async.InteractiveTaskWithProgress[*DeploymentPlan, *DeploymentPlanningProgress]
+	Deploy(ctx context.Context, plan *DeploymentPlan, scope infra.Scope) *async.InteractiveTaskWithProgress[*DeployResult, *DeployProgress]
+	Destroy(ctx context.Context, deployment *Deployment, options DestroyOptions) *async.InteractiveTaskWithProgress[*DestroyResult, *DestroyProgress]
 }
 
-func NewProvider(env *environment.Environment, projectPath string, options Options, console input.Console, cliArgs tools.NewCliToolArgs) (Provider, error) {
+// Registers a provider creation function for the specified provider kind
+func RegisterProvider(kind ProviderKind, newFn NewProviderFn) error {
+	if newFn == nil {
+		return errors.New("NewProviderFn is required")
+	}
+
+	providers[kind] = newFn
+	return nil
+}
+
+func NewProvider(ctx context.Context, env *environment.Environment, projectPath string, infraOptions Options) (Provider, error) {
 	var provider Provider
 
-	switch options.Provider {
-	case Bicep:
-		bicepArgs := tools.NewBicepCliArgs(cliArgs)
-		provider = NewBicepProvider(env, projectPath, options, console, bicepArgs)
-	case Test:
-		provider = NewTestProvider(env, projectPath, options, console)
-	default:
-		bicepArgs := tools.NewBicepCliArgs(cliArgs)
-		provider = NewBicepProvider(env, projectPath, options, console, bicepArgs)
+	if infraOptions.Provider == "" {
+		infraOptions.Provider = Bicep
 	}
 
-	if provider != nil {
-		return provider, nil
+	newProviderFn, ok := providers[infraOptions.Provider]
+	if !ok {
+		return nil, fmt.Errorf("provider '%s' is not supported", infraOptions.Provider)
 	}
 
-	return nil, fmt.Errorf("provider '%s' is not supported", options.Provider)
+	provider, err := newProviderFn(ctx, env, projectPath, infraOptions)
+	if err != nil {
+		return nil, fmt.Errorf("error creating provider for type '%s' : %w", infraOptions.Provider, err)
+	}
+
+	return provider, nil
 }
-
-var _ BicepProvider = BicepProvider{}

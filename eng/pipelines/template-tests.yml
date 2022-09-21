@@ -12,8 +12,7 @@ jobs:
     steps:
       - checkout: self
 
-      - bash: curl -fsSL https://aka.ms/install-azd.sh | bash
-        displayName: Install azd
+      - template: /eng/pipelines/templates/steps/install-azd-live-sh.yml
 
       - pwsh: |
           $templateNames = (azd template list --output json | ConvertFrom-Json).name
@@ -22,8 +21,13 @@ jobs:
             $jobName = $template.Replace('/', '_')
             $matrix[$jobName] = @{ TemplateName = $template }
           }
+          # Adding extra test for capitals letters support. Using first template
+          $firstTemplate = $($templateNames)[0]
+          $capitalsTest = $firstTemplate.Replace('/', '_') + "-Upper-case-test"
+          $matrix[$capitalsTest] = @{ TemplateName = $firstTemplate; UseUpperCase = "true" }
+
           Write-Host "Matrix:"
-          Write-Host $matrix
+          Write-Host ($matrix | Format-List | Out-String)
 
           $matrixJson = ConvertTo-Json $matrix -Depth 100 -Compress
           Write-Host "##vso[task.setvariable variable=Matrix;isOutput=true]$matrixJson"
@@ -46,16 +50,14 @@ jobs:
 
       - template: /eng/pipelines/templates/steps/install-bicep.yml
 
+      - template: /eng/pipelines/templates/steps/install-terraform.yml
+      
+      - template: /eng/pipelines/templates/steps/install-azd-live-sh.yml
+
       - template: /eng/pipelines/templates/steps/az-login.yml
 
-      - pwsh: |
-          if (!$env:AZDVERSION) {
-            Write-Host "AzdVersion variable not set. Using 'daily'"
-            Write-Host "##vso[task.setvariable variable=AzdVersion]daily"
-          } else {
-            Write-Host "Using specified azd version: $(AzdVersion)"
-          }
-        displayName: Ensure $(AzdVersion) is set
+      # Required to clone repos that are not yet public
+      - template: /eng/pipelines/templates/steps/set-git-credentials.yml
 
       - pwsh: |
           if (!$env:TEMPLATEBRANCHNAME) {
@@ -64,7 +66,7 @@ jobs:
           } else {
             Write-Host "Using specified azd version: $(TemplateBranchName)"
           }
-        displayName: Ensure $(TemplateBranchName) is set
+        displayName: Ensure TemplateBranchName is set
 
       - pwsh: |
           if (!$env:DEPLOYLOCATION) {
@@ -73,31 +75,44 @@ jobs:
           } else {
             Write-Host "Using specified azd version: $(DeployLocation)"
           }
-        displayName: Ensure $(DeployLocation) is set
-
-      - bash: curl -fsSL https://aka.ms/install-azd.sh | bash -s -- --version '$(AzdVersion)' --verbose
-        displayName: Install azd
+        displayName: Ensure DeployLocation is set
 
       - pwsh: |
           $templateName = '$(TemplateName)'.Substring(14)
-          $resourceGroupName = "azd-template-test-$templateName-$(Build.BuildId)-rg"
+          $useUpperCaseName = '$(UseUpperCase)'
+          $envPrefixName = "azd-template-test"
+          if($useUpperCaseName -eq "true") {
+            # Use upper case name for env prefix name
+            $envPrefixName = "AZD-TEMPLATE-UPPER-TEST"
+          } 
+          $resourceGroupName = "rg-$envPrefixName-$templateName-$(Build.BuildId)"
           Write-Host "Resource group name: $resourceGroupName"
           Write-Host "##vso[task.setvariable variable=ResourceGroupName]$resourceGroupName"
+          Write-Host "##vso[task.setvariable variable=EnvPrefixName]$envPrefixName"
+        displayName: Set Resource Group Name
 
       - task: Bash@3
+        displayName: Test templates
+        env:             
+          # Required for Terraform service principal authentication
+          ARM_CLIENT_ID: $(arm-client-id)
+          ARM_CLIENT_SECRET: $(arm-client-secret)
+          ARM_TENANT_ID: $(arm-tenant-id)
         inputs:
           targetType: filePath
           filePath: templates/tests/test-templates.sh
           arguments: >
-            -e 'azd-template-test'
+            -e '$(EnvPrefixName)'
             -t '$(TemplateName)'
             -b '$(TemplateBranchName)'
             -s '$(Build.BuildId)'
             -l '$(DeployLocation)'
             -p 'list'
           workingDirectory: templates/tests
-        displayName: Test templates
 
+      # First tag the resource group (if exists) so that it can get cleaned up
+      # by the cleanup pipeline. Then attempt to delete the resource group 
+      # directly. If the delete fails the cleanup pipeline will delete it.
       - pwsh: |
           $resourceGroupId = az group show `
             --resource-group '$(ResourceGroupName)' `
@@ -108,8 +123,12 @@ jobs:
             exit 0
           }
 
+          # Tag the resource group so it gets cleaned up later if delete fails
           az tag create `
             --resource-id $resourceGroupId `
-            --tags DeleteAfter="$(Get-Date -AsUTC).ToString('o')"
+            --tags DeleteAfter="$((Get-Date -AsUTC).ToString('o'))"
+
+          # Attempt to delete the resource group
+          az group delete --resource-group $(ResourceGroupName) --yes --no-wait
         condition: always()
         displayName: Tag resource group for deletion

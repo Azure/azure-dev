@@ -1,0 +1,16 @@
+parameters:
+    DefaultVersion: daily
+    ScriptUrl: https://aka.ms/install-azd.sh
+
+steps:
+  - pwsh: |
+      if (!$env:AZDVERSION) {
+        Write-Host "AzdVersion variable not set. Using '${{ parameters.DefaultVersion }}'"
+        Write-Host "##vso[task.setvariable variable=AzdVersion]${{ parameters.DefaultVersion }}"
+      } else {
+        Write-Host "Using specified azd version: $(AzdVersion)"
+      }
+    displayName: Ensure AzdVersion is set
+
+  - bash: curl -fsSL ${{ parameters.ScriptUrl }} | bash -s -- --version '$(AzdVersion)' --verbose
+    displayName: Install azd

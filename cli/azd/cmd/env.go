@@ -5,21 +5,23 @@ package cmd
 
 import (
 	"context"
-	"errors"
 	"fmt"
-	"path/filepath"
 
+	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/commands"
-	"github.com/azure/azure-dev/cli/azd/pkg/environment"
-	"github.com/azure/azure-dev/cli/azd/pkg/iac/bicep"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
+	"github.com/azure/azure-dev/cli/azd/pkg/infra"
+	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
+	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
 
-func envCmd(rootOptions *commands.GlobalCommandOptions) *cobra.Command {
+func envCmd(rootOptions *internal.GlobalCommandOptions) *cobra.Command {
 	root := &cobra.Command{
 		Use:   "env",
 		Short: "Manage environments.",
@@ -53,10 +55,10 @@ You can find all environment configurations under the *.azure\<environment-name>
 	return root
 }
 
-func envSetCmd(rootOptions *commands.GlobalCommandOptions) *cobra.Command {
-	actionFn := func(ctx context.Context, _ *cobra.Command, args []string, azdCtx *environment.AzdContext) error {
-		console := input.NewConsole(!rootOptions.NoPrompt)
-		azCli := commands.GetAzCliFromContext(ctx)
+func envSetCmd(rootOptions *internal.GlobalCommandOptions) *cobra.Command {
+	actionFn := func(ctx context.Context, cmd *cobra.Command, args []string, azdCtx *azdcontext.AzdContext) error {
+		azCli := azcli.GetAzCli(ctx)
+		console := input.GetConsole(ctx)
 
 		if err := ensureProject(azdCtx.ProjectPath()); err != nil {
 			return err
@@ -66,7 +68,8 @@ func envSetCmd(rootOptions *commands.GlobalCommandOptions) *cobra.Command {
 			return err
 		}
 
-		env, err := loadOrInitEnvironment(ctx, &rootOptions.EnvironmentName, azdCtx, console)
+		//lint:ignore SA4006 // We want ctx overridden here for future changes
+		env, ctx, err := loadOrInitEnvironment(ctx, &rootOptions.EnvironmentName, azdCtx, console) //nolint:ineffassign,staticcheck
 		if err != nil {
 			return fmt.Errorf("loading environment: %w", err)
 		}
@@ -85,15 +88,15 @@ func envSetCmd(rootOptions *commands.GlobalCommandOptions) *cobra.Command {
 		rootOptions,
 		"set <key> <value>",
 		"Set a value in the environment.",
-		"",
+		nil,
 	)
 	cmd.Args = cobra.ExactArgs(2)
 	return cmd
 }
 
-func envSelectCmd(rootOptions *commands.GlobalCommandOptions) *cobra.Command {
+func envSelectCmd(rootOptions *internal.GlobalCommandOptions) *cobra.Command {
 	action := commands.ActionFunc(
-		func(_ context.Context, _ *cobra.Command, args []string, azdCtx *environment.AzdContext) error {
+		func(_ context.Context, _ *cobra.Command, args []string, azdCtx *azdcontext.AzdContext) error {
 			if err := ensureProject(azdCtx.ProjectPath()); err != nil {
 				return err
 			}
@@ -110,33 +113,23 @@ func envSelectCmd(rootOptions *commands.GlobalCommandOptions) *cobra.Command {
 		rootOptions,
 		"select <environment>",
 		"Set the default environment.",
-		"",
+		nil,
 	)
 	cmd.Args = cobra.ExactArgs(1)
 	return cmd
 }
 
-func envListCmd(rootOptions *commands.GlobalCommandOptions) *cobra.Command {
-	cmd := &cobra.Command{
-		Use:     "list",
-		Short:   "List environments.",
-		Aliases: []string{"ls"},
-		RunE: func(cmd *cobra.Command, args []string) error {
-			ctx, err := environment.NewAzdContext()
-			if err != nil {
-				return fmt.Errorf("failed to get the current directory: %w", err)
-			}
-
-			if err := ensureProject(ctx.ProjectPath()); err != nil {
+func envListCmd(rootOptions *internal.GlobalCommandOptions) *cobra.Command {
+	action := commands.ActionFunc(
+		func(ctx context.Context, cmd *cobra.Command, args []string, azdCtx *azdcontext.AzdContext) error {
+			if err := ensureProject(azdCtx.ProjectPath()); err != nil {
 				return err
 			}
 
-			formatter, err := output.GetFormatter(cmd)
-			if err != nil {
-				return err
-			}
+			formatter := output.GetFormatter(ctx)
+			writer := output.GetWriter(ctx)
+			envs, err := azdCtx.ListEnvironments()
 
-			envs, err := ctx.ListEnvironments()
 			if err != nil {
 				return fmt.Errorf("listing environments: %w", err)
 			}
@@ -153,36 +146,44 @@ func envListCmd(rootOptions *commands.GlobalCommandOptions) *cobra.Command {
 					},
 				}
 
-				err = formatter.Format(envs, cmd.OutOrStdout(), output.TableFormatterOptions{
+				err = formatter.Format(envs, writer, output.TableFormatterOptions{
 					Columns: columns,
 				})
 			} else {
-				err = formatter.Format(envs, cmd.OutOrStdout(), nil)
+				err = formatter.Format(envs, writer, nil)
 			}
 			if err != nil {
 				return err
 			}
 
 			return nil
+		})
+
+	cmd := commands.Build(
+		action,
+		rootOptions,
+		"list",
+		"List environments",
+		&commands.BuildOptions{
+			Aliases: []string{"ls"},
 		},
-	}
-	cmd.Flags().BoolP("help", "h", false, fmt.Sprintf("Gets help for %s.", cmd.Name()))
+	)
+
 	return cmd
 }
 
-func envNewCmd(rootOptions *commands.GlobalCommandOptions) *cobra.Command {
-	cmd := commands.Build(
+func envNewCmd(rootOptions *internal.GlobalCommandOptions) *cobra.Command {
+	return commands.Build(
 		&envNewAction{rootOptions: rootOptions},
 		rootOptions,
 		"new <environment>",
 		"Create a new environment.",
-		"",
+		nil,
 	)
-	return cmd
 }
 
 type envNewAction struct {
-	rootOptions  *commands.GlobalCommandOptions
+	rootOptions  *internal.GlobalCommandOptions
 	subscription string
 	location     string
 }
@@ -192,23 +193,23 @@ func (en *envNewAction) SetupFlags(persis *pflag.FlagSet, local *pflag.FlagSet) 
 	local.StringVarP(&en.location, "location", "l", "", "Azure location for the new environment")
 }
 
-func (en *envNewAction) Run(ctx context.Context, _ *cobra.Command, args []string, azdCtx *environment.AzdContext) error {
+func (en *envNewAction) Run(ctx context.Context, cmd *cobra.Command, args []string, azdCtx *azdcontext.AzdContext) error {
 	if err := ensureProject(azdCtx.ProjectPath()); err != nil {
 		return err
 	}
 
-	azCli := commands.GetAzCliFromContext(ctx)
+	azCli := azcli.GetAzCli(ctx)
 	if err := tools.EnsureInstalled(ctx, azCli); err != nil {
 		return err
 	}
 
-	console := input.NewConsole(!en.rootOptions.NoPrompt)
+	console := input.GetConsole(ctx)
 	envSpec := environmentSpec{
 		environmentName: en.rootOptions.EnvironmentName,
 		subscription:    en.subscription,
 		location:        en.location,
 	}
-	if _, err := createAndInitEnvironment(ctx, &envSpec, azdCtx, console); err != nil {
+	if _, _, err := createAndInitEnvironment(ctx, &envSpec, azdCtx, console); err != nil {
 		return fmt.Errorf("creating new environment: %w", err)
 	}
 
@@ -219,17 +220,16 @@ func (en *envNewAction) Run(ctx context.Context, _ *cobra.Command, args []string
 	return nil
 }
 
-func envRefreshCmd(rootOptions *commands.GlobalCommandOptions) *cobra.Command {
-	actionFn := func(ctx context.Context, cmd *cobra.Command, args []string, azdCtx *environment.AzdContext) error {
-		azCli := commands.GetAzCliFromContext(ctx)
-		bicepCli := tools.NewBicepCli(tools.NewBicepCliArgs{AzCli: azCli})
-		console := input.NewConsole(!rootOptions.NoPrompt)
+func envRefreshCmd(rootOptions *internal.GlobalCommandOptions) *cobra.Command {
+	actionFn := func(ctx context.Context, cmd *cobra.Command, args []string, azdCtx *azdcontext.AzdContext) error {
+		azCli := azcli.GetAzCli(ctx)
+		console := input.GetConsole(ctx)
 
 		if err := ensureProject(azdCtx.ProjectPath()); err != nil {
 			return err
 		}
 
-		if err := tools.EnsureInstalled(ctx, azCli, bicepCli); err != nil {
+		if err := tools.EnsureInstalled(ctx, azCli); err != nil {
 			return err
 		}
 
@@ -237,34 +237,39 @@ func envRefreshCmd(rootOptions *commands.GlobalCommandOptions) *cobra.Command {
 			return fmt.Errorf("failed to ensure login: %w", err)
 		}
 
-		env, err := loadOrInitEnvironment(ctx, &rootOptions.EnvironmentName, azdCtx, console)
+		env, ctx, err := loadOrInitEnvironment(ctx, &rootOptions.EnvironmentName, azdCtx, console)
 		if err != nil {
 			return fmt.Errorf("loading environment: %w", err)
 		}
 
-		template, err := bicep.Compile(ctx, bicepCli, filepath.Join(azdCtx.InfrastructureDirectory(), "main.bicep"))
+		prj, err := project.LoadProjectConfig(azdCtx.ProjectPath(), env)
 		if err != nil {
-			return err
+			return fmt.Errorf("loading project: %w", err)
 		}
 
-		res, err := azCli.GetSubscriptionDeployment(ctx, env.GetSubscriptionId(), env.GetEnvName())
-		if errors.Is(err, tools.ErrDeploymentNotFound) {
-			return fmt.Errorf("no deployment for environment '%s' found. Have you run `infra create`?", rootOptions.EnvironmentName)
-		} else if err != nil {
-			return fmt.Errorf("fetching latest deployment: %w", err)
-		}
+		formatter := output.GetFormatter(ctx)
+		writer := output.GetWriter(ctx)
 
-		template.CanonicalizeDeploymentOutputs(&res.Properties.Outputs)
-		if err = saveEnvironmentValues(res, env); err != nil {
-			return err
-		}
-
-		formatter, err := output.GetFormatter(cmd)
+		infraManager, err := provisioning.NewManager(ctx, env, prj.Path, prj.Infra, !rootOptions.NoPrompt)
 		if err != nil {
+			return fmt.Errorf("creating provisioning manager: %w", err)
+		}
+
+		scope := infra.NewSubscriptionScope(ctx, env.GetLocation(), env.GetSubscriptionId(), env.GetEnvName())
+
+		getDeploymentResult, err := infraManager.GetDeployment(ctx, scope)
+		if err != nil {
+			return fmt.Errorf("getting deployment: %w", err)
+		}
+
+		if err := provisioning.UpdateEnvironment(env, &getDeploymentResult.Deployment.Outputs); err != nil {
 			return err
 		}
+
+		console.Message(ctx, "Environments setting refresh completed")
+
 		if formatter.Kind() == output.JsonFormat {
-			err = formatter.Format(res, cmd.OutOrStdout(), nil)
+			err = formatter.Format(getDeploymentResult.Deployment, writer, nil)
 			if err != nil {
 				return fmt.Errorf("writing deployment result in JSON format: %w", err)
 			}
@@ -278,26 +283,15 @@ func envRefreshCmd(rootOptions *commands.GlobalCommandOptions) *cobra.Command {
 		rootOptions,
 		"refresh",
 		"Refresh environment settings by using information from a previous infrastructure provision.",
-		"",
+		nil,
 	)
 }
 
-func envGetValuesCmd(rootOptions *commands.GlobalCommandOptions) *cobra.Command {
-	cmd := &cobra.Command{
-		Use:   "get-values",
-		Short: "Get all environment values.",
-		Args:  cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			ctx := context.Background()
-			ctx = context.WithValue(ctx, environment.OptionsContextKey, rootOptions)
-
-			console := input.NewConsole(!rootOptions.NoPrompt)
-			azCli := commands.GetAzCliFromContext(ctx)
-
-			azdCtx, err := environment.NewAzdContext()
-			if err != nil {
-				return fmt.Errorf("failed to get the current directory: %w", err)
-			}
+func envGetValuesCmd(rootOptions *internal.GlobalCommandOptions) *cobra.Command {
+	actionFn := commands.ActionFunc(
+		func(ctx context.Context, cmd *cobra.Command, args []string, azdCtx *azdcontext.AzdContext) error {
+			console := input.GetConsole(ctx)
+			azCli := azcli.GetAzCli(ctx)
 
 			if err := ensureProject(azdCtx.ProjectPath()); err != nil {
 				return err
@@ -307,24 +301,30 @@ func envGetValuesCmd(rootOptions *commands.GlobalCommandOptions) *cobra.Command 
 				return err
 			}
 
-			formatter, err := output.GetFormatter(cmd)
+			formatter := output.GetFormatter(ctx)
+			writer := output.GetWriter(ctx)
+
+			//lint:ignore SA4006 // We want ctx overridden here for future changes
+			env, ctx, err := loadOrInitEnvironment(ctx, &rootOptions.EnvironmentName, azdCtx, console) //nolint:ineffassign,staticcheck
 			if err != nil {
 				return err
 			}
 
-			env, err := loadOrInitEnvironment(ctx, &rootOptions.EnvironmentName, azdCtx, console)
-			if err != nil {
-				return err
-			}
-
-			err = formatter.Format(env.Values, cmd.OutOrStdout(), nil)
+			err = formatter.Format(env.Values, writer, nil)
 			if err != nil {
 				return err
 			}
 
 			return nil
-		},
-	}
-	cmd.Flags().BoolP("help", "h", false, fmt.Sprintf("Gets help for %s.", cmd.Name()))
+		})
+
+	cmd := commands.Build(
+		actionFn,
+		rootOptions,
+		"get-values",
+		"Get all environment values.",
+		nil,
+	)
+
 	return cmd
 }

@@ -1,5 +1,28 @@
 # Release History
 
+## 0.2.0-beta.2 (Unreleased)
+
+## 0.2.0-beta.1 (2022-09-14)
+
+### Features Added
+
+- [[#172]](https://github.com/Azure/azure-dev/pull/172) Implement Infrastructure Provision Provider Model.
+- [[#573]](https://github.com/Azure/azure-dev/pull/573) Add support for Terraform for infrastructure as code (IaC).
+- [[#532]](https://github.com/Azure/azure-dev/pull/532) Add Terraform support for Python template.
+- [[#646]](https://github.com/Azure/azure-dev/pull/646) Add Terraform support for Node.js template.
+- [[#550]](https://github.com/Azure/azure-dev/pull/550) Add C# + Azure SQL template.
+
+### Breaking Changes
+
+- [[#588]](https://github.com/Azure/azure-dev/pull/588) Update default view from `azd monitor` to overview dashboard.
+
+## 0.1.0-beta.5 (2022-08-25)
+
+### Bugs Fixed
+
+- [[#461]](https://github.com/Azure/azure-dev/pull/461) Fix for using a command output other than JSON.
+- [[#480]](https://github.com/Azure/azure-dev/pull/480) Fix deploy error when using an environment name with capital letters.
+
 ## 0.1.0-beta.4 (2022-08-10)
 
 ### Features Added

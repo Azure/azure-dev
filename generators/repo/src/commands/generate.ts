@@ -5,8 +5,8 @@ import os from "os";
 import fs from "fs/promises";
 import ansiEscapes from "ansi-escapes";
 import chalk from "chalk";
-import { cleanDirectoryPath, copyFile, createRepoUrlFromRemote, ensureDirectoryPath, getGlobFiles, getRepoPropsFromRemote, isStringNullOrEmpty, RepoProps, writeHeader } from "../common/util";
-import { AssetRule, GitRemote, RepomanCommand, RepomanCommandOptions, RepoManifest } from "../models";
+import { cleanDirectoryPath, ensureRelativeBasePath, copyFile, createRepoUrlFromRemote, ensureDirectoryPath, getGlobFiles, getRepoPropsFromRemote, isStringNullOrEmpty, RepoProps, writeHeader,isFilePath } from "../common/util";
+import { AssetRule, RewriteRule, GitRemote, RepomanCommand, RepomanCommandOptions, RepoManifest } from "../models";
 import { GitRepo } from "../tools/git";
 
 export interface GenerateCommandOptions extends RepomanCommandOptions {
@@ -39,7 +39,7 @@ export class GenerateCommand implements RepomanCommand {
     private outputPath: string;
     private generatePath: string;
     private assetRules: AssetRule[];
-    private rewritePatterns: string[];
+    private rewriteRules: RewriteRule[];
 
     constructor(private options: GenerateCommandOptions) {
         this.sourcePath = path.resolve(path.normalize(options.source));
@@ -61,7 +61,7 @@ export class GenerateCommand implements RepomanCommand {
                 });
             }
 
-            this.rewritePatterns = this.manifest.repo.rewrite?.patterns || ["**/*.@(yml|yaml)"];
+            this.rewriteRules =(this.manifest.repo.rewrite) ? [...this.manifest.repo.rewrite?.rules] : [];
         }
         catch (err) {
             console.error(chalk.red(`Repo template manifest not found at '${this.templateFile}'`));
@@ -86,7 +86,10 @@ export class GenerateCommand implements RepomanCommand {
         }
 
         console.info();
-        await this.rewritePaths();
+
+        for (const rule of this.rewriteRules) {
+            await this.processRewriteRule(rule);
+        }
         console.info(chalk.cyan('Repo generation completed.'));
         console.info();
 
@@ -213,15 +216,16 @@ export class GenerateCommand implements RepomanCommand {
         console.info(chalk.white(`Cloning repo for remote...`));
         await repo.clone(remote.name, remote.url);
 
-        const isEmptyRepo = await repo.isEmptyRepo(remote.name);
+        const defaultBranchExists = await repo.remoteBranchExists(remote.name, defaultBranch);
 
-        if (isEmptyRepo) {
-            console.warn(chalk.yellowBright(`Remote is empty!`));
+        if (!defaultBranchExists) {
+            console.warn(chalk.yellowBright(`Remote does not have branch ${chalk.cyan(defaultBranch)}`));
             console.info(`Creating default branch ${chalk.cyan(defaultBranch)}...`);
             await repo.createBranch(defaultBranch);
             await repo.commit("Initial Commit", { empty: true });
             await repo.push(remote.name, defaultBranch);
         } else {
+            await repo.checkoutBranch(defaultBranch);
             const pullBranchExists = await repo.remoteBranchExists(remote.name, defaultBranch);
             if (pullBranchExists) {
                 console.info(chalk.cyan(`Pulling changes from branch ${chalk.cyanBright(defaultBranch)}...`));
@@ -338,8 +342,13 @@ export class GenerateCommand implements RepomanCommand {
     private processAssetRule = async (rule: AssetRule) => {
         const absoluteSourcePath = path.resolve(this.sourcePath, rule.from);
         const absoluteDestPath = path.join(this.generatePath, rule.to);
-        console.info(chalk.white(`Copying assets from ${chalk.cyan(rule.from)} to ${chalk.cyan(rule.to)}...`));
-
+        console.info(chalk.white(`Copying asset(s) from ${chalk.cyan(rule.from)} to ${chalk.cyan(rule.to)}...`));
+        // check if this is filepath
+        if (await isFilePath(absoluteSourcePath)) {
+            await copyFile(absoluteSourcePath, absoluteDestPath);
+            return;
+        }
+        
         // Default to all files if no patterns defined
         const patterns = rule.patterns ?? ["**/*"];
         const globOptions: IOptions = {
@@ -369,54 +378,58 @@ export class GenerateCommand implements RepomanCommand {
         }
     }
 
-    private rewritePaths = async () => {
-        console.info(chalk.cyan("Rewriting relative paths found in files"));
+    private processRewriteRule = async(rule: RewriteRule) => {
+        const globOptions: IOptions = { 
+            cwd: this.generatePath, 
+            ignore: rule.ignore,
+            matchBase: true,
+            nodir: true
+        };
+        const patterns = rule.patterns ?? [];
+        if(patterns.length == 0){
+            console.warn(chalk.yellowBright(`Skipping Rewrite Rule ${rule.from} => ${rule.to}. No pattern found. Add a pattern of '**/*' to apply this rule to all files.`));
+        }
+        for (const pattern of patterns) {
+            const files = await getGlobFiles(pattern, globOptions);
+            for (const filePath of files) {
+                await this.rewritePath(rule, filePath);
+            }
+        }
+    }
 
-        const globOptions: IOptions = { cwd: this.generatePath, matchBase: true };
-        const tasks = this.rewritePatterns.map(pattern => getGlobFiles(pattern, globOptions));
-        const files = (await Promise.all(tasks)).flat();
+    private rewritePath = async(rule: RewriteRule, filePath: string) => {
+        const destFilePath = path.join(this.generatePath, filePath);
+        const destFolderPath = path.dirname(destFilePath);
+        const buffer = await fs.readFile(destFilePath);
+        let contents = buffer.toString('utf8');
+        if(contents.indexOf(rule.from) == -1) return;
 
+        console.info(chalk.cyan(` -> Rewriting relative paths ${rule.from} => ${rule.to} for file "${filePath}"`));
+        contents = contents.replaceAll(rule.from, rule.to);
+
+        // Normalize transformed paths
         const pathRegex = new RegExp(/((?:\.{1,2}[\/\\]{1,2})+[^'"\s]*)/gm);
-
-        for (const filePath of files) {
-            const destFilePath = path.join(this.generatePath, filePath);
-            const destFolderPath = path.dirname(destFilePath)
-
-            if (this.options.debug) {
-                console.debug(chalk.whiteBright(`Processing file: ${destFilePath}`));
-            }
-
-            const buffer = await fs.readFile(destFilePath);
-            let contents = buffer.toString('utf8');
-
-            // Replace relative path updates
-            for (const rule of this.assetRules) {
-                if (this.options.debug) {
-                    console.debug(chalk.white(`- Processing ${rule.from} => ${rule.to}`));
-                }
-                contents = contents.replaceAll(rule.from, rule.to);
-            }
-
-            // Normalize transformed paths
-            const matches = contents.match(pathRegex);
-            if (matches && matches.length > 0) {
-                for (const match of matches) {
+        const matches = contents.match(pathRegex);
+        if (matches && matches.length > 0) {
+            for (const match of matches) {
+                if(match.indexOf(rule.to) > -1){
                     // Generate the absolute path to the referenced match
                     let refPath = path.resolve(destFolderPath, path.normalize(match))
                     // Generate the relative path between the current processed file dir path & the referenced match path
                     let relativePath = path.relative(destFolderPath, refPath)
+                    relativePath = ensureRelativeBasePath(relativePath);
                     // Finally convert the path back to a POSIX compatible path
                     relativePath = relativePath.split(path.sep).join(path.posix.sep)
 
                     contents = contents.replaceAll(match, relativePath);
 
                     if (this.options.debug) {
-                        console.log(chalk.grey(` -> Rewriting relative path ${match} => ${relativePath}`));
+                        console.log(chalk.grey(` -> Rewriting relative path ${match} => ${relativePath} in ${destFilePath}`));
                     }
                 }
             }
-
-            await fs.writeFile(destFilePath, contents);
         }
+        await fs.writeFile(destFilePath, contents);
+        
     }
 }

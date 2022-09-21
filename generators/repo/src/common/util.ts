@@ -47,12 +47,36 @@ export const ensureDirectoryPath = async (directoryPath: string) => {
     }
 }
 
+export const isFilePath = async (filePath: string) => {
+    try {
+        const link = await fs.lstat(filePath);
+        return link.isFile()
+    }
+    catch (err: any) 
+    {
+        console.warn(chalk.yellowBright(`- ${err.message}`));
+    }
+}
+
 export const cleanDirectoryPath = async (directoryPath: string, cleanGit: boolean = true) => {
     if (isDebug()) {
         console.debug(chalk.yellow(`Cleaning output directory: ${directoryPath}`));
     }
     const patterns = cleanGit ? ["**"] : ["**", "!.git"];
     await del(patterns, { cwd: directoryPath, force: true, dot: true });
+}
+
+export const ensureRelativeBasePath  = (input : string) => {
+    const basePath =`.${path.sep}`
+    if(!input.startsWith(basePath) && !input.startsWith(`.${basePath}`)) {
+        input = `${basePath}${input}`
+    }
+    else{
+        if (isDebug()) {
+            console.warn(chalk.yellowBright(` - ${input} already contains a relative base path.`));
+        }
+    }
+    return input;
 }
 
 export const toArray = (data: Buffer): string[] => {

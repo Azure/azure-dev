@@ -5,8 +5,9 @@ import (
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
-	"github.com/azure/azure-dev/cli/azd/test/helpers"
+	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/stretchr/testify/require"
 )
 
@@ -22,7 +23,6 @@ services:
     language: js
     host: appservice
 `
-	env             = &environment.Environment{}
 	deploymentScope = environment.NewDeploymentScope("test-subscription-id", "test-resource-group-name", "test-resource-name")
 	mockEndpoints   = []string{"https://test-resource.azurewebsites.net"}
 )
@@ -54,7 +54,7 @@ func (st *mockServiceTarget) RequiredExternalTools() []tools.ExternalTool {
 	return []tools.ExternalTool{}
 }
 
-func (st *mockServiceTarget) Deploy(_ context.Context, _ *environment.AzdContext, _ string, progress chan<- string) (ServiceDeploymentResult, error) {
+func (st *mockServiceTarget) Deploy(_ context.Context, _ *azdcontext.AzdContext, _ string, progress chan<- string) (ServiceDeploymentResult, error) {
 	progress <- "mock deploy progress"
 	return ServiceDeploymentResult{
 		TargetResourceId: "target-resource-id",
@@ -69,11 +69,13 @@ func (st *mockServiceTarget) Endpoints(_ context.Context) ([]string, error) {
 }
 
 func TestDeployProgressMessages(t *testing.T) {
-	ctx := helpers.CreateTestContext(context.Background(), gblCmdOptions, azCli, mockHttpClient)
+	mockContext := mocks.NewMockContext(context.Background())
+
+	env := environment.Ephemeral()
 
 	projectConfig, _ := ParseProjectConfig(projectYaml, env)
-	project, _ := projectConfig.GetProject(ctx, env)
-	azdContext, _ := environment.NewAzdContext()
+	project, _ := projectConfig.GetProject(mockContext.Context, env)
+	azdContext, _ := azdcontext.NewAzdContext()
 
 	mockFramework := &mockFrameworkService{}
 	mockTarget := &mockServiceTarget{}
@@ -86,7 +88,7 @@ func TestDeployProgressMessages(t *testing.T) {
 		Scope:     deploymentScope,
 	}
 
-	result, progress := service.Deploy(ctx, azdContext)
+	result, progress := service.Deploy(*mockContext.Context, azdContext)
 	progressMessages := []string{}
 
 	go func() {

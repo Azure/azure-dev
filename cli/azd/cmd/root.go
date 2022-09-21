@@ -7,25 +7,27 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/commands"
+	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/internal/telemetry"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/spf13/cobra"
 )
 
 func NewRootCmd() *cobra.Command {
 	prevDir := ""
-	opts := &commands.GlobalCommandOptions{}
+	opts := &internal.GlobalCommandOptions{}
 
 	cmd := &cobra.Command{
 		Use:   "azd",
 		Short: "Azure Developer CLI is a command-line interface for developers who build Azure solutions.",
 		Long: `Azure Developer CLI is a command-line interface for developers who build Azure solutions.
 
-To begin working with Azure Developer CLI, run the ` + withBackticks("azd up") + ` command by supplying a sample template in an empty directory:
+To begin working with Azure Developer CLI, run the ` + output.WithBackticks("azd up") + ` command by supplying a sample template in an empty directory:
 
 	$ azd up –-template todo-nodejs-mongo
 
-You can pick a template by running ` + withBackticks("azd template list") + `and then supplying the repo name as a value to ` + withBackticks("--template") + `.
+You can pick a template by running ` + output.WithBackticks("azd template list") + `and then supplying the repo name as a value to ` + output.WithBackticks("--template") + `.
 
 The most common next commands are:
 
@@ -77,8 +79,7 @@ For more information, visit the Azure Developer CLI Dev Hub: https://aka.ms/azur
 	cmd.PersistentFlags().BoolVar(&opts.NoPrompt, "no-prompt", false, "Accepts the default value instead of prompting, or it fails if there is no default.")
 	cmd.SetHelpTemplate(fmt.Sprintf("%s\nPlease let us know how we are doing: https://aka.ms/azure-dev/hats\n", cmd.HelpTemplate()))
 
-	// the equivalent of AZURE_CORE_COLLECT_TELEMETRY
-	opts.EnableTelemetry = os.Getenv("AZURE_DEV_COLLECT_TELEMETRY") != "no"
+	opts.EnableTelemetry = telemetry.IsTelemetryEnabled()
 
 	cmd.AddCommand(deployCmd(opts))
 	cmd.AddCommand(downCmd(opts))
@@ -93,6 +94,7 @@ For more information, visit the Azure Developer CLI Dev Hub: https://aka.ms/azur
 	cmd.AddCommand(upCmd(opts))
 	cmd.AddCommand(templatesCmd(opts))
 	cmd.AddCommand(versionCmd(opts))
+	cmd.AddCommand(telemetryCmd(opts))
 
 	return cmd
 }

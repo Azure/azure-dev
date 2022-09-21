@@ -10,6 +10,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/docker"
 )
 
 type DockerProjectOptions struct {
@@ -21,7 +22,7 @@ type DockerProjectOptions struct {
 type dockerProject struct {
 	config    *ServiceConfig
 	env       *environment.Environment
-	docker    *tools.Docker
+	docker    *docker.Docker
 	framework FrameworkService
 }
 
@@ -55,7 +56,7 @@ func (p *dockerProject) Initialize(ctx context.Context) error {
 	return nil
 }
 
-func NewDockerProject(config *ServiceConfig, env *environment.Environment, docker *tools.Docker, framework FrameworkService) FrameworkService {
+func NewDockerProject(config *ServiceConfig, env *environment.Environment, docker *docker.Docker, framework FrameworkService) FrameworkService {
 	return &dockerProject{
 		config:    config,
 		env:       env,

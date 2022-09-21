@@ -10,8 +10,10 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/project/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 )
 
 // functionAppTarget specifies an Azure Function to deploy to.
@@ -20,14 +22,14 @@ type functionAppTarget struct {
 	config *ServiceConfig
 	env    *environment.Environment
 	scope  *environment.DeploymentScope
-	cli    tools.AzCli
+	cli    azcli.AzCli
 }
 
 func (f *functionAppTarget) RequiredExternalTools() []tools.ExternalTool {
 	return []tools.ExternalTool{f.cli}
 }
 
-func (f *functionAppTarget) Deploy(ctx context.Context, _ *environment.AzdContext, path string, progress chan<- string) (ServiceDeploymentResult, error) {
+func (f *functionAppTarget) Deploy(ctx context.Context, _ *azdcontext.AzdContext, path string, progress chan<- string) (ServiceDeploymentResult, error) {
 	progress <- "Compressing deployment artifacts"
 	zipFilePath, err := internal.CreateDeployableZip(f.config.Name, path)
 
@@ -74,7 +76,7 @@ func (f *functionAppTarget) Endpoints(ctx context.Context) ([]string, error) {
 	}
 }
 
-func NewFunctionAppTarget(config *ServiceConfig, env *environment.Environment, scope *environment.DeploymentScope, azCli tools.AzCli) ServiceTarget {
+func NewFunctionAppTarget(config *ServiceConfig, env *environment.Environment, scope *environment.DeploymentScope, azCli azcli.AzCli) ServiceTarget {
 	return &functionAppTarget{
 		config: config,
 		env:    env,

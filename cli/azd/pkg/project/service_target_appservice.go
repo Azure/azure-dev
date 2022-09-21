@@ -10,22 +10,24 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/project/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 )
 
 type appServiceTarget struct {
 	config *ServiceConfig
 	env    *environment.Environment
 	scope  *environment.DeploymentScope
-	cli    tools.AzCli
+	cli    azcli.AzCli
 }
 
 func (st *appServiceTarget) RequiredExternalTools() []tools.ExternalTool {
 	return []tools.ExternalTool{st.cli}
 }
 
-func (st *appServiceTarget) Deploy(ctx context.Context, _ *environment.AzdContext, path string, progress chan<- string) (ServiceDeploymentResult, error) {
+func (st *appServiceTarget) Deploy(ctx context.Context, _ *azdcontext.AzdContext, path string, progress chan<- string) (ServiceDeploymentResult, error) {
 	progress <- "Compressing deployment artifacts"
 	zipFilePath, err := internal.CreateDeployableZip(st.config.Name, path)
 
@@ -70,7 +72,7 @@ func (st *appServiceTarget) Endpoints(ctx context.Context) ([]string, error) {
 	return endpoints, nil
 }
 
-func NewAppServiceTarget(config *ServiceConfig, env *environment.Environment, scope *environment.DeploymentScope, azCli tools.AzCli) ServiceTarget {
+func NewAppServiceTarget(config *ServiceConfig, env *environment.Environment, scope *environment.DeploymentScope, azCli azcli.AzCli) ServiceTarget {
 	return &appServiceTarget{
 		config: config,
 		env:    env,

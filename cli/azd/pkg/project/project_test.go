@@ -5,60 +5,18 @@ package project
 
 import (
 	"context"
-	"encoding/json"
-	"fmt"
-	"net/http"
-	"strings"
+	"crypto/sha256"
+	"encoding/hex"
 	"testing"
-	"time"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/commands"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
-	"github.com/azure/azure-dev/cli/azd/pkg/executil"
-	"github.com/azure/azure-dev/cli/azd/pkg/httpUtil"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools"
-	"github.com/azure/azure-dev/cli/azd/test/helpers"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
+	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/exp/slices"
 )
-
-var gblCmdOptions = &commands.GlobalCommandOptions{
-	EnableDebugLogging: false,
-	EnableTelemetry:    true,
-}
-
-var azCli = tools.NewAzCli(tools.NewAzCliArgs{
-	EnableDebug:     false,
-	EnableTelemetry: true,
-	RunWithResultFn: func(ctx context.Context, args executil.RunArgs) (executil.RunResult, error) {
-		if helpers.CallStackContains("GetAccessToken") {
-			now := time.Now().UTC().Format(time.RFC3339)
-			requestJson := fmt.Sprintf(`{"AccessToken": "abc123", "ExpiresOn": "%s"}`, now)
-			return executil.NewRunResult(0, requestJson, ""), nil
-		}
-
-		return executil.NewRunResult(0, "", ""), nil
-	},
-})
-
-var mockHttpClient = &helpers.MockHttpUtil{
-	SendRequestFn: func(req *httpUtil.HttpRequestMessage) (*httpUtil.HttpResponseMessage, error) {
-		if req.Method == http.MethodPost && strings.Contains(req.Url, "providers/Microsoft.ResourceGraph/resources") {
-			jsonResponse := `{"data": [], "total_records": 0}`
-
-			response := &httpUtil.HttpResponseMessage{
-				Status: 200,
-				Body:   []byte(jsonResponse),
-			}
-
-			return response, nil
-		}
-
-		return nil, fmt.Errorf("Mock not registered for request")
-	},
-}
 
 // If resource name is not specified, it should default to <environment name><service friendly name>
 func TestResourceNameDefaultValues(t *testing.T) {
@@ -80,15 +38,16 @@ services:
     project: src/worker
     host: containerapp
 `
-	ctx := helpers.CreateTestContext(context.Background(), gblCmdOptions, azCli, mockHttpClient)
+	mockContext := mocks.NewMockContext(context.Background())
 
-	e := environment.Environment{Values: make(map[string]string)}
-	e.SetEnvName("envA")
-	projectConfig, err := ParseProjectConfig(testProj, &e)
+	e := environment.EphemeralWithValues("envA", nil)
+	projectConfig, err := ParseProjectConfig(testProj, e)
 	assert.Nil(t, err)
 
-	project, err := projectConfig.GetProject(ctx, &e)
+	project, err := projectConfig.GetProject(mockContext.Context, e)
 	assert.Nil(t, err)
+
+	azCli := azcli.GetAzCli(*mockContext.Context)
 
 	assertHasService(t,
 		project.Services,
@@ -106,7 +65,9 @@ services:
 		"worker service does not have expected resource name",
 	)
 
-	require.Contains(t, azCli.UserAgent(), "azdtempl/test-proj-template")
+	sha := sha256.Sum256([]byte("test-proj-template"))
+	hash := hex.EncodeToString(sha[:])
+	require.Contains(t, azCli.UserAgent(), "azdtempl/"+hash)
 }
 
 // Specifying resource name in the project file should override the default
@@ -127,15 +88,13 @@ services:
     language: js
     host: appservice
 `
+	mockContext := mocks.NewMockContext(context.Background())
 
-	ctx := helpers.CreateTestContext(context.Background(), gblCmdOptions, azCli, mockHttpClient)
-
-	e := environment.Environment{Values: make(map[string]string)}
-	e.SetEnvName("envA")
-	projectConfig, err := ParseProjectConfig(testProj, &e)
+	e := environment.EphemeralWithValues("envA", nil)
+	projectConfig, err := ParseProjectConfig(testProj, e)
 	assert.Nil(t, err)
 
-	project, err := projectConfig.GetProject(ctx, &e)
+	project, err := projectConfig.GetProject(mockContext.Context, e)
 	assert.Nil(t, err)
 
 	assertHasService(t,
@@ -153,40 +112,6 @@ services:
 }
 
 func TestResourceNameOverrideFromResourceTag(t *testing.T) {
-	graphQueryResult := &tools.AzCliGraphQuery{
-		Count:        1,
-		TotalRecords: 1,
-		Data: []tools.AzCliResource{
-			{
-				Id:       "random",
-				Name:     "app-api-abc123",
-				Type:     string(infra.AzureResourceTypeWebSite),
-				Location: "westus2",
-			},
-		},
-	}
-
-	var mockHttpClient = &helpers.MockHttpUtil{
-		SendRequestFn: func(req *httpUtil.HttpRequestMessage) (*httpUtil.HttpResponseMessage, error) {
-			if req.Method == http.MethodPost && strings.Contains(req.Url, "providers/Microsoft.ResourceGraph/resources") {
-				var jsonResponse string
-				bytes, err := json.Marshal(graphQueryResult)
-				if err == nil {
-					jsonResponse = string(bytes)
-				}
-
-				response := &httpUtil.HttpResponseMessage{
-					Status: 200,
-					Body:   []byte(jsonResponse),
-				}
-
-				return response, nil
-			}
-
-			return nil, fmt.Errorf("Mock not registered for request")
-		},
-	}
-
 	const testProj = `
 name: test-proj
 metadata:
@@ -198,21 +123,29 @@ services:
     language: js
     host: appservice
 `
+	rg := "rg-test"
+	resourceName := "app-api-abc123"
+	mockContext := mocks.NewMockContext(context.Background())
+	mockContext.CommandRunner.AddAzResourceListMock(&rg,
+		[]azcli.AzCliResource{
+			{
+				Id:       "random",
+				Name:     resourceName,
+				Type:     string(infra.AzureResourceTypeWebSite),
+				Location: "westus2",
+			}})
 
-	ctx := helpers.CreateTestContext(context.Background(), gblCmdOptions, azCli, mockHttpClient)
-
-	e := environment.Environment{Values: make(map[string]string)}
-	e.SetEnvName("envA")
-	projectConfig, err := ParseProjectConfig(testProj, &e)
+	e := environment.EphemeralWithValues("envA", nil)
+	projectConfig, err := ParseProjectConfig(testProj, e)
 	assert.Nil(t, err)
 
-	project, err := projectConfig.GetProject(ctx, &e)
+	project, err := projectConfig.GetProject(mockContext.Context, e)
 	assert.Nil(t, err)
 
 	// Deployment resource name comes from the found tag on the graph query request
 	assertHasService(t,
 		project.Services,
-		func(s *Service) bool { return s.Scope.ResourceName() == graphQueryResult.Data[0].Name },
+		func(s *Service) bool { return s.Scope.ResourceName() == resourceName },
 		"api service does not have expected resource name",
 	)
 }
@@ -234,15 +167,13 @@ services:
     language: js
     host: appservice
 `
+	mockContext := mocks.NewMockContext(context.Background())
 
-	ctx := helpers.CreateTestContext(context.Background(), gblCmdOptions, azCli, mockHttpClient)
-
-	e := environment.Environment{Values: make(map[string]string)}
-	e.SetEnvName("envA")
-	projectConfig, err := ParseProjectConfig(testProj, &e)
+	e := environment.EphemeralWithValues("envA", nil)
+	projectConfig, err := ParseProjectConfig(testProj, e)
 	assert.Nil(t, err)
 
-	project, err := projectConfig.GetProject(ctx, &e)
+	project, err := projectConfig.GetProject(mockContext.Context, e)
 	assert.Nil(t, err)
 
 	assertHasService(t,
@@ -274,18 +205,18 @@ services:
     language: js
     host: appservice
 `
-
-	ctx := helpers.CreateTestContext(context.Background(), gblCmdOptions, azCli, mockHttpClient)
+	mockContext := mocks.NewMockContext(context.Background())
 
 	expectedResourceGroupName := "custom-name-from-env-rg"
-	values := map[string]string{"AZURE_RESOURCE_GROUP": expectedResourceGroupName}
-	e := environment.Environment{Values: values}
 
-	e.SetEnvName("envA")
-	projectConfig, err := ParseProjectConfig(testProj, &e)
+	e := environment.EphemeralWithValues("envA", map[string]string{
+		"AZURE_RESOURCE_GROUP": expectedResourceGroupName,
+	})
+
+	projectConfig, err := ParseProjectConfig(testProj, e)
 	assert.Nil(t, err)
 
-	project, err := projectConfig.GetProject(ctx, &e)
+	project, err := projectConfig.GetProject(mockContext.Context, e)
 	assert.Nil(t, err)
 
 	assertHasService(t,

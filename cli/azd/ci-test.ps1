@@ -1,6 +1,14 @@
 param(
-    [string] $Timeout = '30m',
-    [string] $CoverageFileOut = 'cover.out'
+    [string] $Timeout = '90m',
+    [string] $CoverageFileOut = 'cover.out',
+    [string] $Package = './...',
+    [switch] $ShortMode
 )
 
-go test -timeout $Timeout -v -coverprofile $CoverageFileOut ./...
+$goTest = "$(go env GOPATH)/bin/gotestsum -- -timeout $Timeout -v -coverprofile='$CoverageFileOut' $Package"
+
+if ($ShortMode) {
+    $goTest = $goTest + " -short"
+}
+
+Invoke-Expression $goTest

@@ -21,8 +21,10 @@ ignoreWords:
     - appi
     - arck
     - Bfor
+    - bicepcli
     - cdne
     - cdnp
+    - commandrunner
     - databricks
     - dedb
     - dnsz
@@ -30,15 +32,26 @@ ignoreWords:
     - evgs
     - evgt
     - evhns
+    - execfn
+    - execmock
     - fdfp
     - Frontdoor
+    - hndl
+    - httpclient
+    - inputhelper
     - ippre
+    - JOBOBJECT
     - kubernetes
     - kusto
     - migr
+    - mockconsole
+    - mockexec
+    - mockhttp
+    - MYDIR
     - nsgsr
     - ntfns
     - osdisk
+    - osexec
     - pcert
     - pdnsz
     - Peerings
@@ -58,7 +71,12 @@ ignoreWords:
     - syndp
     - synsp
     - synw
+    - TEAMPROJECTID
+    - terraformcli
+    - tfvars
+    - tfstate
     - traf
+    - useragent
     - vmss
     - vnet
     - vpng
@@ -69,6 +87,14 @@ ignoreWords:
     - Retryable
     - httptrigger
     - resourcegroups
+    - resourcegroupterraform
+    - resourcegroupterraformremote
+    - devcontainer
+    - azurecaf
+    - azurerm
+    - aztfmod
+    - menuid
+    - PLACEHOLDERIACTOOLS
 useGitignore: true
 dictionaryDefinitions:
     - name: gitHubUserAliases

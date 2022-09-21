@@ -1,17 +1,18 @@
 package spin
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"sync"
 	"time"
 
-	"github.com/mattn/go-colorable"
+	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/theckman/yacspin"
 )
 
 // Default writer to std.out, with possibility to mock for tests
-var writer io.Writer = colorable.NewColorableStdout()
+var writer io.Writer = output.GetDefaultWriter()
 
 // Spinner is a type representing an animated CLi terminal spinner.
 type Spinner struct {
@@ -41,9 +42,17 @@ func (s *Spinner) Println(message string) {
 		s.logMutex.Lock()
 
 		s.Stop()
-		fmt.Fprintln(writer, message)
+		fmt.Fprint(writer, message)
 		s.Start()
 	}
+}
+
+// Implements the standard io.Writer interface
+func (s *Spinner) Write(p []byte) (int, error) {
+	message := string(p)
+	s.Println(message)
+
+	return len(p), nil
 }
 
 // Run renders the spinner while runFn is executing,
@@ -91,4 +100,40 @@ func NewSpinner(title string) *Spinner {
 	return &Spinner{
 		spinner: spinner,
 	}
+}
+
+type contextKey string
+
+const (
+	spinnerContextKey contextKey = "spinner"
+)
+
+// Creates and returns new context with the specified spinner instance
+func WithSpinner(ctx context.Context, spinner *Spinner) context.Context {
+	return context.WithValue(ctx, spinnerContextKey, spinner)
+}
+
+// Attempts to retrieve a Spinner instance from the current context.
+// Returns the found instance when available or `nil` if not found.
+func GetSpinner(ctx context.Context) *Spinner {
+	spinner, ok := ctx.Value(spinnerContextKey).(*Spinner)
+	if !ok {
+		return nil
+	}
+
+	return spinner
+}
+
+// Gets a spinner from the specified context, otherwise creates a new instance
+// Returns a new context when a new spinner is created
+func GetOrCreateSpinner(ctx context.Context, title string) (*Spinner, context.Context) {
+	spinner := GetSpinner(ctx)
+	if spinner == nil {
+		spinner = NewSpinner(title)
+		ctx = WithSpinner(ctx, spinner)
+	}
+
+	spinner.Title(title)
+
+	return spinner, ctx
 }

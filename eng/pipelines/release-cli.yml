@@ -3,7 +3,7 @@ resources:
     - repository: azure-sdk-build-tools
       type: git
       name: internal/azure-sdk-build-tools
-      ref: refs/tags/azure-sdk-build-tools_20220329.1
+      ref: refs/tags/azure-sdk-build-tools_20220920.1
 
 # Continuous deployment trigger
 trigger:
@@ -12,12 +12,14 @@ trigger:
       - main
   paths:
     include:
+      - go.mod
       - cli/
       - eng/pipelines/release-cli.yml
 
 pr:
   paths:
     include:
+      - go.mod
       - cli/
       - eng/pipelines/release-cli.yml
 
@@ -35,6 +37,7 @@ stages:
               OSVmImage: MMS2019
               BuildTarget: azd-windows-amd64.exe
               BuildOutputName: azd.exe
+              AZURE_DEV_CI_OS: win
               Demands: ImageVersionOverride -equals 61.0.0
             Linux:
               Pool: azsdk-pool-mms-ubuntu-2004-general
@@ -44,6 +47,7 @@ stages:
               SetExecutableBit: true
               SetShieldInfo: true
               GenerateCoverage: true
+              AZURE_DEV_CI_OS: lin
             Mac:
               Pool: Azure Pipelines
               OSVmImage: macOS-11
@@ -51,19 +55,22 @@ stages:
               BuildOutputName: azd
               MacLocalSign: false
               SetExecutableBit: true
+              AZURE_DEV_CI_OS: mac
         pool:
             name: $(Pool)
             vmImage: $(OSVmImage)
             demands: $(Demands)
 
+        timeoutInMinutes: 180
         steps:
           - checkout: self
           - template: /eng/pipelines/templates/steps/setup-go.yml
 
-          - ${{ if in(variables['Build.Reason'], 'IndividualCI', 'BatchedCI') }}:
-            - template: /eng/pipelines/templates/steps/set-cli-version-cd.yml
+          - template: /eng/pipelines/templates/steps/set-cli-version-cd.yml
 
           - template: /eng/pipelines/templates/steps/install-bicep.yml
+
+          - template: /eng/pipelines/templates/steps/install-terraform.yml
 
           - task: DockerInstaller@0
             displayName: Docker Installer
@@ -109,6 +116,22 @@ stages:
               # Set GITHUB_RUN_NUMBER because cli_test.go is coupled to that
               # environment variable.
               GITHUB_RUN_NUMBER: $(Build.BuildId)
+              # Generate junit report to publish results
+              GOTESTSUM_JUNITFILE: junitTestReport.xml
+              # Required for Terraform service principal authentication
+              ARM_CLIENT_ID: $(arm-client-id)
+              ARM_CLIENT_SECRET: $(arm-client-secret)
+              ARM_TENANT_ID: $(arm-tenant-id)
+
+          - task: PublishTestResults@2
+            inputs:
+              testResultsFormat: JUnit
+              testResultsFiles: '**/junitTestReport.xml'
+              testRunTitle: $(Agent.JobName)
+              searchFolder: cli/azd
+              publishRunAttachments: true
+            displayName: Publish test results
+            condition: succeededOrFailed()
 
           - pwsh: |
               go install github.com/axw/gocov/gocov@latest
@@ -490,6 +513,28 @@ stages:
             env:
               GH_TOKEN: $(azuresdk-github-pat)
 
+      - job: Verify_Mac_InstallOver
+        pool: 
+          name: Azure Pipelines
+          vmImage: macOS-12
+        
+        steps: 
+          - checkout: self
+
+          - bash: ./install-azd.sh --version daily --verbose
+            displayName: Install "daily" version
+            workingDirectory: cli/installer/
+
+          - pwsh: azd version
+            displayName: Run azd version
+
+          - bash: ./install-azd.sh --version latest --verbose
+            displayName: Install "latest" version
+            workingDirectory: cli/installer/
+
+          - pwsh: azd version
+            displayName: Run azd version (expect no failure)
+
       - job: Verify_Installers
         condition: >-
           and(
@@ -551,7 +596,7 @@ stages:
 
         pool:
           name: $(Pool)
-          OSVmImage: $(OSVmImage)
+          vmImage: $(OSVmImage)
 
         steps:
           - pwsh: $(TestInstallCommand)

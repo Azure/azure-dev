@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"regexp"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/joho/godotenv"
 )
@@ -53,10 +54,10 @@ func IsValidEnvironmentName(name string) bool {
 // FromFile loads an environment from a file on disk. On error,
 // an valid empty environment file, configured to persist its contents
 // to file, is returned.
-func FromFile(file string) (Environment, error) {
-	env := Environment{
-		Values: make(map[string]string),
+func FromFile(file string) (*Environment, error) {
+	env := &Environment{
 		File:   file,
+		Values: make(map[string]string),
 	}
 
 	e, err := godotenv.Read(file)
@@ -69,13 +70,39 @@ func FromFile(file string) (Environment, error) {
 	return env, nil
 }
 
-// Empty returns an empty environment, which will be persisted
+func GetEnvironment(azdContext *azdcontext.AzdContext, name string) (*Environment, error) {
+	return FromFile(azdContext.GetEnvironmentFilePath(name))
+}
+
+// EmptyWithFile returns an empty environment, which will be persisted
 // to a given file when saved.
-func Empty(file string) Environment {
-	return Environment{
+func EmptyWithFile(file string) *Environment {
+	return &Environment{
 		File:   file,
 		Values: make(map[string]string),
 	}
+}
+
+func Ephemeral() *Environment {
+	return &Environment{
+		Values: make(map[string]string),
+	}
+}
+
+// EphemeralWithValues returns an ephemeral environment (i.e. not backed by a file) with a set
+// of values. Useful for testing. The name parameter is added to the environment with the
+// AZURE_ENV_NAME key, replacing an existing value in the provided values map. A nil values is
+// treated the same way as an empty map.
+func EphemeralWithValues(name string, values map[string]string) *Environment {
+	env := Ephemeral()
+
+	if values != nil {
+		env.Values = values
+	}
+
+	env.Values[EnvNameEnvVarName] = name
+
+	return env
 }
 
 // If `File` is set, Save writes the current contents of the environment to
@@ -118,10 +145,18 @@ func (e *Environment) SetSubscriptionId(id string) {
 	e.Values[SubscriptionIdEnvVarName] = id
 }
 
+func (e *Environment) GetLocation() string {
+	return e.Values[LocationEnvVarName]
+}
+
 func (e *Environment) SetLocation(location string) {
 	e.Values[LocationEnvVarName] = location
 }
 
 func (e *Environment) SetPrincipalId(principalID string) {
 	e.Values[PrincipalIdEnvVarName] = principalID
+}
+
+func (e *Environment) GetPrincipalId() string {
+	return e.Values[PrincipalIdEnvVarName]
 }

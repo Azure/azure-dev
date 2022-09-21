@@ -36,6 +36,7 @@ services:
     host: appservice
   worker:
     project: src/worker
+    language: js
     host: containerapp
 `
 	mockContext := mocks.NewMockContext(context.Background())

@@ -137,7 +137,7 @@ func (p *AzdoHubScmProvider) createNewGitRepositoryFromInput(ctx context.Context
 			console.Message(ctx, fmt.Sprintf("error: the repo name '%s' is already in use\n", name))
 			continue // try again
 		} else if strings.Contains(message, "TF401025: 'repoName' is not a valid name for a Git repository.") {
-			console.Message(ctx, fmt.Sprintf("error: '%s' is not a valid Azure Devops repo name. See https://aka.ms/azure-dev/azdo-repo-naming\n", name))
+			console.Message(ctx, fmt.Sprintf("error: '%s' is not a valid Azure DevOps repo name. See https://aka.ms/azure-dev/azdo-repo-naming\n", name))
 			continue // try again
 		} else if err != nil {
 			return "", fmt.Errorf("creating repository: %w", err)
@@ -188,7 +188,7 @@ func (p *AzdoHubScmProvider) ensureGitRepositoryExists(ctx context.Context, cons
 	}
 
 	updatedRemote := fmt.Sprintf("%s:%s@%s", remoteUser, pat, remoteHost)
-	console.Message(ctx, fmt.Sprintf("using azure devOps repo: %s", p.repoDetails.repoWebUrl))
+	console.Message(ctx, fmt.Sprintf("using Azure DevOps repo: %s", p.repoDetails.repoWebUrl))
 
 	return updatedRemote, nil
 }
@@ -340,10 +340,10 @@ func (p *AzdoHubScmProvider) promptForAzdoRepository(ctx context.Context, consol
 	idx, err := console.Select(ctx, input.ConsoleOptions{
 		Message: fmt.Sprintf("How would you like to configure your remote? (Organization: %s)", p.repoDetails.projectName),
 		Options: []string{
-			"Select an existing Azure Devops Repository",
-			"Create a new private Azure Devops Repository",
+			"Select an existing Azure DevOps Repository",
+			"Create a new private Azure DevOps Repository",
 		},
-		DefaultValue: "Create a new private Azure Devops Repository",
+		DefaultValue: "Create a new private Azure DevOps Repository",
 	})
 
 	if err != nil {
@@ -379,7 +379,7 @@ var azdoRemoteGitUrlRegex = regexp.MustCompile(`^git@ssh.dev.azure\.com:(.*?)(?:
 var azdoRemoteHttpsUrlRegex = regexp.MustCompile(`^https://[a-zA-Z0-9]+(?:-[a-zA-Z0-9]+)*:*.+@dev.azure\.com/(.*?)$`)
 
 // ErrRemoteHostIsNotAzDo the error used when a non Azure DevOps remote is found
-var ErrRemoteHostIsNotAzDo = errors.New("existing remote is not an azure devops host")
+var ErrRemoteHostIsNotAzDo = errors.New("existing remote is not an Azure DevOps host")
 
 // helper function to determine if the provided remoteUrl is an azure devops repo.
 // currently supports AzDo PaaS

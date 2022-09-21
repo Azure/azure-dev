@@ -222,8 +222,6 @@ func QueueBuild(
 		Build:   newBuild,
 	}
 
-	//time.Sleep(500 * time.Millisecond)
-
 	_, err = client.QueueBuild(ctx, queueBuildArgs)
 	if err != nil {
 		return err

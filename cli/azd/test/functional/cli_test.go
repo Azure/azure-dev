@@ -464,13 +464,13 @@ func Test_CLI_InfraCreateAndDeleteWebApp(t *testing.T) {
 	err = json.Unmarshal([]byte(out), &showRes)
 	require.NoError(t, err)
 
-	// Project information should be present, but since we have run infra delete, there should
-	// be no resources in the resourceIds array.
+	// Project information should be present, but since we have run infra delete, there shouldn't
+	// be any resource ids.
 	service, has = showRes.Services["web"]
 	require.True(t, has)
 	require.Equal(t, "dotnet", service.Project.Language)
 	require.Equal(t, "webapp.csproj", filepath.Base(service.Project.Path))
-	require.Equal(t, 0, len(service.Target.ResourceIds))
+	require.Nil(t, service.Target.ResourceIds)
 }
 
 // test for azd deploy, azd deploy --service

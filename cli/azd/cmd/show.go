@@ -62,10 +62,11 @@ func showCmd(rootOptions *internal.GlobalCommandOptions) *cobra.Command {
 		// Add information about the target of each service, if we can determine it (if the infrastructure has
 		// not been deployed, for example, we'll just not include target information)
 		resourceManager := infra.NewAzureResourceManager(ctx)
+
 		if resourceGroupName, err := resourceManager.FindResourceGroupForEnvironment(ctx, env); err == nil {
 			for name := range prj.Services {
 				if resources, err := project.GetServiceResources(ctx, resourceGroupName, name, env); err == nil {
-					resourceIds := make([]string, 0, len(resources))
+					resourceIds := make([]string, len(resources))
 					for idx, res := range resources {
 						resourceIds[idx] = res.Id
 					}

@@ -38,7 +38,6 @@ stages:
               BuildTarget: azd-windows-amd64.exe
               BuildOutputName: azd.exe
               AZURE_DEV_CI_OS: win
-              Demands: ImageVersionOverride -equals 61.0.0
             Linux:
               Pool: azsdk-pool-mms-ubuntu-2004-general
               OSVmImage:  MMSUbuntu20.04
@@ -48,7 +47,6 @@ stages:
               SetShieldInfo: true
               GenerateCoverage: true
               AZURE_DEV_CI_OS: lin
-              Demands: ''
             Mac:
               Pool: Azure Pipelines
               OSVmImage: macOS-11
@@ -57,11 +55,11 @@ stages:
               MacLocalSign: false
               SetExecutableBit: true
               AZURE_DEV_CI_OS: mac
-              Demands: ''
         pool:
-            name: $(Pool)
-            vmImage: $(OSVmImage)
-            demands: $(Demands)
+          name: $(Pool)
+          vmImage: $(OSVmImage)
+          ${{ if eq(variables['AZURE_DEV_CI_OS'], 'win') }}:
+            demands: ImageVersionOverride -equals 61.0.0
         timeoutInMinutes: 180
         steps:
           - checkout: self

@@ -34,7 +34,7 @@ func showCmd(rootOptions *internal.GlobalCommandOptions) *cobra.Command {
 			return fmt.Errorf("loading environment: %w", err)
 		}
 
-		prj, err := project.LoadProjectConfig(azdCtx.ProjectPath(), &env)
+		prj, err := project.LoadProjectConfig(azdCtx.ProjectPath(), env)
 		if err != nil {
 			return fmt.Errorf("loading project: %w", err)
 		}
@@ -62,9 +62,9 @@ func showCmd(rootOptions *internal.GlobalCommandOptions) *cobra.Command {
 		// Add information about the target of each service, if we can determine it (if the infrastructure has
 		// not been deployed, for example, we'll just not include target information)
 		resourceManager := infra.NewAzureResourceManager(ctx)
-		if resourceGroupName, err := resourceManager.FindResourceGroupForEnvironment(ctx, &env); err == nil {
+		if resourceGroupName, err := resourceManager.FindResourceGroupForEnvironment(ctx, env); err == nil {
 			for name := range prj.Services {
-				if resources, err := project.GetServiceResources(ctx, resourceGroupName, name, &env); err == nil {
+				if resources, err := project.GetServiceResources(ctx, resourceGroupName, name, env); err == nil {
 					resourceIds := make([]string, 0, len(resources))
 					for idx, res := range resources {
 						resourceIds[idx] = res.Id

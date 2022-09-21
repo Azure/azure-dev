@@ -12,6 +12,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/commands"
 	"github.com/azure/azure-dev/cli/azd/pkg/commands/pipeline"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/spf13/cobra"
@@ -108,6 +109,7 @@ func (p *pipelineConfigAction) Run(
 	} else if overrideProvider == "github" {
 		p.manager.ScmProvider = &pipeline.GitHubScmProvider{}
 		p.manager.CiProvider = &pipeline.GitHubCiProvider{}
+		savePipelineProviderToEnv(ctx, "github", env)
 	} else if overrideProvider == "azdo" {
 		p.manager.ScmProvider = &pipeline.AzdoHubScmProvider{
 			Env:        env,
@@ -116,8 +118,9 @@ func (p *pipelineConfigAction) Run(
 			Env:        env,
 			AzdContext: azdCtx,
 		}
+		savePipelineProviderToEnv(ctx, "azdo", env)
 	} else {
-		return fmt.Errorf("Unknown pipeline provider: %s. Supported providers: [GitHub, Azdo]", overrideProvider)
+		return fmt.Errorf("unknown pipeline provider: %s. Supported providers: [GitHub, Azdo]", overrideProvider)
 	}
 
 	// set context for manager
@@ -125,4 +128,9 @@ func (p *pipelineConfigAction) Run(
 	p.manager.Environment = env
 
 	return p.manager.Configure(ctx)
+}
+
+func savePipelineProviderToEnv(ctx context.Context, provider string, env *environment.Environment) {
+	env.Values["PIPELINE_PROVIDER"] = provider
+	env.Save()
 }

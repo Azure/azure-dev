@@ -3,7 +3,6 @@ package docker
 import (
 	"context"
 	"fmt"
-	"log"
 	"regexp"
 	"strconv"
 	"strings"
@@ -72,7 +71,6 @@ func (d *Docker) extractDockerVersionSemVer(cliOutput string) (semver.Version, e
 	// Skip leading zeroes to allow inexact parsing for version formats that are not truly SemVer compliant.
 	// Example: docker has versions like 17.09.0 (non semver) instead of 17.9.0 (semver)
 	fmt.Println("!!!", ver)
-	log.Fatalln("!!!", ver)
 	versionSplit := strings.Split(ver, ".")
 	for key, val := range versionSplit {
 		verInt, err := strconv.Atoi(val)

@@ -109,7 +109,10 @@ func (p *pipelineConfigAction) Run(
 	} else if overrideProvider == "github" {
 		p.manager.ScmProvider = &pipeline.GitHubScmProvider{}
 		p.manager.CiProvider = &pipeline.GitHubCiProvider{}
-		savePipelineProviderToEnv(ctx, "github", env)
+		err := savePipelineProviderToEnv(ctx, "github", env)
+		if err != nil {
+			return nil
+		}
 	} else if overrideProvider == "azdo" {
 		p.manager.ScmProvider = &pipeline.AzdoHubScmProvider{
 			Env:        env,
@@ -118,7 +121,10 @@ func (p *pipelineConfigAction) Run(
 			Env:        env,
 			AzdContext: azdCtx,
 		}
-		savePipelineProviderToEnv(ctx, "azdo", env)
+		err := savePipelineProviderToEnv(ctx, "azdo", env)
+		if err != nil {
+			return err
+		}
 	} else {
 		return fmt.Errorf("unknown pipeline provider: %s. Supported providers: [GitHub, Azdo]", overrideProvider)
 	}
@@ -130,7 +136,12 @@ func (p *pipelineConfigAction) Run(
 	return p.manager.Configure(ctx)
 }
 
-func savePipelineProviderToEnv(ctx context.Context, provider string, env *environment.Environment) {
+func savePipelineProviderToEnv(ctx context.Context, provider string, env *environment.Environment) error {
 	env.Values["PIPELINE_PROVIDER"] = provider
-	env.Save()
+	err := env.Save()
+	if err != nil {
+		return err
+	}
+
+	return nil
 }

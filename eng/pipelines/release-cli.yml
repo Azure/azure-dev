@@ -60,7 +60,6 @@ stages:
             name: $(Pool)
             vmImage: $(OSVmImage)
             demands: $(Demands)
-
         timeoutInMinutes: 180
         steps:
           - checkout: self

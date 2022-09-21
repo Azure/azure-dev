@@ -126,7 +126,7 @@ func (p *pipelineConfigAction) Run(
 			return err
 		}
 	} else {
-		return fmt.Errorf("unknown pipeline provider: %s. Supported providers: [GitHub, Azdo]", overrideProvider)
+		return fmt.Errorf("unknown pipeline provider: %s. Supported providers: [github, azdo]", overrideProvider)
 	}
 
 	// set context for manager

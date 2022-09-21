@@ -48,6 +48,7 @@ stages:
               SetShieldInfo: true
               GenerateCoverage: true
               AZURE_DEV_CI_OS: lin
+              Demands:
             Mac:
               Pool: Azure Pipelines
               OSVmImage: macOS-11
@@ -56,6 +57,7 @@ stages:
               MacLocalSign: false
               SetExecutableBit: true
               AZURE_DEV_CI_OS: mac
+              Demands:
         pool:
             name: $(Pool)
             vmImage: $(OSVmImage)

@@ -73,6 +73,17 @@ func (cli *azCli) ListResourceGroup(ctx context.Context, subscriptionId string, 
 		return nil, err
 	}
 
+	options := armresources.ResourceGroupsClientListOptions{}
+	if listOptions != nil {
+		if listOptions.TagFilter != nil {
+			tagFilter := fmt.Sprintf("$filter=%s = eq '%s'", listOptions.TagFilter.Key, listOptions.TagFilter.Value)
+			options.Filter = &tagFilter
+		} else if listOptions.JmesPathQuery != nil {
+			queryFilter := fmt.Sprintf("$filter=%p", listOptions.JmesPathQuery)
+			options.Filter = &queryFilter
+		}
+	}
+
 	// TODO: Implement these filters.
 	// if listOptions != nil {
 	// 	if listOptions.TagFilter != nil {
@@ -85,7 +96,7 @@ func (cli *azCli) ListResourceGroup(ctx context.Context, subscriptionId string, 
 	// }
 
 	groups := []AzCliResource{}
-	pager := client.NewListPager(nil)
+	pager := client.NewListPager(&options)
 
 	for pager.More() {
 		page, err := pager.NextPage(ctx)

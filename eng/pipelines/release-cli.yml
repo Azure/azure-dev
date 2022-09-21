@@ -3,7 +3,7 @@ resources:
     - repository: azure-sdk-build-tools
       type: git
       name: internal/azure-sdk-build-tools
-      ref: refs/tags/azure-sdk-build-tools_20220329.1
+      ref: refs/tags/azure-sdk-build-tools_20220920.1
 
 # Continuous deployment trigger
 trigger:
@@ -75,6 +75,7 @@ stages:
             inputs:
               dockerVersion: 17.09.0-ce
               releaseType: stable
+
           - task: PowerShell@2
             inputs:
               pwsh: true

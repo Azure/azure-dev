@@ -58,12 +58,12 @@ func (p *AzdoHubScmProvider) requiredTools() []tools.ExternalTool {
 // preConfigureCheck check the current state of external tools and any
 // other dependency to be as expected for execution.
 func (p *AzdoHubScmProvider) preConfigureCheck(ctx context.Context, console input.Console) error {
-	_, err := azdo.EnsureAzdoPatExists(ctx, p.Env)
+	_, err := azdo.EnsureAzdoPatExists(ctx, p.Env, console)
 	if err != nil {
 		return err
 	}
 
-	_, err = azdo.EnsureAzdoOrgNameExists(ctx, p.Env)
+	_, err = azdo.EnsureAzdoOrgNameExists(ctx, p.Env, console)
 	return err
 }
 
@@ -182,7 +182,7 @@ func (p *AzdoHubScmProvider) ensureGitRepositoryExists(ctx context.Context, cons
 	}
 	remoteUser := remoteParts[0]
 	remoteHost := remoteParts[1]
-	pat, err := azdo.EnsureAzdoPatExists(ctx, p.Env)
+	pat, err := azdo.EnsureAzdoPatExists(ctx, p.Env, console)
 	if err != nil {
 		return "", err
 	}
@@ -205,11 +205,12 @@ func (p *AzdoHubScmProvider) getRepoDetails() *AzdoRepositoryDetails {
 
 // helper function to return an azuredevops.Connection for use with AzDo Go SDK
 func (p *AzdoHubScmProvider) getAzdoConnection(ctx context.Context) (*azuredevops.Connection, error) {
+	console := input.GetConsole(ctx)
 	if p.azdoConnection != nil {
 		return p.azdoConnection, nil
 	}
 
-	org, err := azdo.EnsureAzdoOrgNameExists(ctx, p.Env)
+	org, err := azdo.EnsureAzdoOrgNameExists(ctx, p.Env, console)
 	if err != nil {
 		return nil, err
 	}
@@ -217,7 +218,7 @@ func (p *AzdoHubScmProvider) getAzdoConnection(ctx context.Context) (*azuredevop
 	repoDetails := p.getRepoDetails()
 	repoDetails.orgName = org
 
-	pat, err := azdo.EnsureAzdoPatExists(ctx, p.Env)
+	pat, err := azdo.EnsureAzdoPatExists(ctx, p.Env, console)
 	if err != nil {
 		return nil, err
 	}
@@ -539,12 +540,12 @@ func (p *AzdoCiProvider) requiredTools() []tools.ExternalTool {
 
 // preConfigureCheck nil for Azdo
 func (p *AzdoCiProvider) preConfigureCheck(ctx context.Context, console input.Console) error {
-	_, err := azdo.EnsureAzdoPatExists(ctx, p.Env)
+	_, err := azdo.EnsureAzdoPatExists(ctx, p.Env, console)
 	if err != nil {
 		return err
 	}
 
-	_, err = azdo.EnsureAzdoOrgNameExists(ctx, p.Env)
+	_, err = azdo.EnsureAzdoOrgNameExists(ctx, p.Env, console)
 	return err
 }
 
@@ -571,11 +572,11 @@ func (p *AzdoCiProvider) configureConnection(
 
 	p.credentials = azureCredentials
 	details := repoDetails.details.(*AzdoRepositoryDetails)
-	org, err := azdo.EnsureAzdoOrgNameExists(ctx, p.Env)
+	org, err := azdo.EnsureAzdoOrgNameExists(ctx, p.Env, console)
 	if err != nil {
 		return err
 	}
-	pat, err := azdo.EnsureAzdoPatExists(ctx, p.Env)
+	pat, err := azdo.EnsureAzdoPatExists(ctx, p.Env, console)
 	if err != nil {
 		return err
 	}
@@ -606,11 +607,11 @@ func (p *AzdoCiProvider) configurePipeline(ctx context.Context, repoDetails *git
 	details := repoDetails.details.(*AzdoRepositoryDetails)
 	console := input.GetConsole(ctx)
 
-	org, err := azdo.EnsureAzdoOrgNameExists(ctx, p.Env)
+	org, err := azdo.EnsureAzdoOrgNameExists(ctx, p.Env, console)
 	if err != nil {
 		return err
 	}
-	pat, err := azdo.EnsureAzdoPatExists(ctx, p.Env)
+	pat, err := azdo.EnsureAzdoPatExists(ctx, p.Env, console)
 	if err != nil {
 		return err
 	}

@@ -28,8 +28,7 @@ func ensureAzdoConfigExists(ctx context.Context, env *environment.Environment, k
 }
 
 // helper method to ensure an Azure DevOps PAT exists either in .env or system environment variables
-func EnsureAzdoPatExists(ctx context.Context, env *environment.Environment) (string, error) {
-	console := input.GetConsole(ctx)
+func EnsureAzdoPatExists(ctx context.Context, env *environment.Environment, console input.Console) (string, error) {
 	value, err := ensureAzdoConfigExists(ctx, env, AzDoPatName, "azure devops personal access token")
 	if err != nil {
 		console.Message(ctx, output.WithWarningFormat("You need an Azure DevOps Personal Access Token (PAT). Please create a PAT by following the instructions here https://aka.ms/azure-dev/azdo-pat"))
@@ -75,8 +74,7 @@ func EnsureAzdoPatExists(ctx context.Context, env *environment.Environment) (str
 }
 
 // helper method to ensure an Azure DevOps organization name exists either in .env or system environment variables
-func EnsureAzdoOrgNameExists(ctx context.Context, env *environment.Environment) (string, error) {
-	console := input.GetConsole(ctx)
+func EnsureAzdoOrgNameExists(ctx context.Context, env *environment.Environment, console input.Console) (string, error) {
 	value, err := ensureAzdoConfigExists(ctx, env, AzDoEnvironmentOrgName, "azure devops organization name")
 	if err != nil {
 		orgName, err := console.Prompt(ctx, input.ConsoleOptions{

@@ -45,6 +45,7 @@ func Test_CLI_Login_FailsIfNoAzCliIsMissing(t *testing.T) {
 	defer cancel()
 
 	dir := t.TempDir()
+	t.Cleanup(RemoveAllWithRetries(t, dir))
 
 	cli := azdcli.NewCLI(t)
 	cli.WorkingDirectory = dir
@@ -77,6 +78,7 @@ func Test_CLI_Init_FailsIfAzCliIsMissing(t *testing.T) {
 	defer cancel()
 
 	dir := t.TempDir()
+	t.Cleanup(RemoveAllWithRetries(t, dir))
 
 	cli := azdcli.NewCLI(t)
 	cli.WorkingDirectory = dir
@@ -94,6 +96,7 @@ func Test_CLI_Init_AsksForSubscriptionIdAndCreatesEnvAndProjectFile(t *testing.T
 	defer cancel()
 
 	dir := t.TempDir()
+	t.Cleanup(RemoveAllWithRetries(t, dir))
 
 	cli := azdcli.NewCLI(t)
 	cli.WorkingDirectory = dir
@@ -122,6 +125,7 @@ func Test_CLI_Init_CanUseTemplate(t *testing.T) {
 	defer cancel()
 
 	dir := t.TempDir()
+	t.Cleanup(RemoveAllWithRetries(t, dir))
 
 	cli := azdcli.NewCLI(t)
 	cli.WorkingDirectory = dir
@@ -185,6 +189,7 @@ func Internal_Test_CLI_ResourceGroupsName(t *testing.T, envName string, rgName s
 	os.Setenv("AZD_FUNC_TEST", "TRUE")
 
 	dir := t.TempDir()
+	t.Cleanup(RemoveAllWithRetries(t, dir))
 	t.Logf("DIR: %s", dir)
 
 	//envName := randomEnvName()
@@ -253,6 +258,7 @@ func Test_CLI_InfraCreateAndDelete(t *testing.T) {
 	defer cancel()
 
 	dir := t.TempDir()
+	t.Cleanup(RemoveAllWithRetries(t, dir))
 	t.Logf("DIR: %s", dir)
 
 	envName := randomEnvName()
@@ -299,6 +305,7 @@ func Test_CLI_InfraCreateAndDeleteUpperCase(t *testing.T) {
 	defer cancel()
 
 	dir := t.TempDir()
+	t.Cleanup(RemoveAllWithRetries(t, dir))
 	t.Logf("DIR: %s", dir)
 
 	envName := "UpperCase" + randomEnvName()
@@ -345,6 +352,7 @@ func Test_CLI_InfraCreateAndDeleteWebApp(t *testing.T) {
 	defer cancel()
 
 	dir := t.TempDir()
+	t.Cleanup(RemoveAllWithRetries(t, dir))
 	t.Logf("DIR: %s", dir)
 
 	envName := randomEnvName()
@@ -434,6 +442,7 @@ func Test_CLI_DeployInvalidName(t *testing.T) {
 	defer cancel()
 
 	dir := t.TempDir()
+	t.Cleanup(RemoveAllWithRetries(t, dir))
 	t.Logf("DIR: %s", dir)
 
 	envName := randomEnvName()
@@ -460,6 +469,7 @@ func Test_CLI_RestoreCommand(t *testing.T) {
 	defer cancel()
 
 	dir := t.TempDir()
+	t.Cleanup(RemoveAllWithRetries(t, dir))
 	t.Logf("DIR: %s", dir)
 
 	envName := randomEnvName()
@@ -489,6 +499,7 @@ func Test_CLI_InfraCreateAndDeleteFuncApp(t *testing.T) {
 	defer cancel()
 
 	dir := t.TempDir()
+	t.Cleanup(RemoveAllWithRetries(t, dir))
 	t.Logf("DIR: %s", dir)
 
 	envName := randomEnvName()
@@ -552,6 +563,7 @@ func Test_CLI_ProjectIsNeeded(t *testing.T) {
 	defer cancel()
 
 	dir := t.TempDir()
+	t.Cleanup(RemoveAllWithRetries(t, dir))
 	t.Logf("DIR: %s", dir)
 
 	cli := azdcli.NewCLI(t)
@@ -705,6 +717,7 @@ func Test_CLI_InfraCreateAndDeleteResourceTerraform(t *testing.T) {
 	defer cancel()
 
 	dir := t.TempDir()
+	t.Cleanup(RemoveAllWithRetries(t, dir))
 	t.Logf("DIR: %s", dir)
 
 	envName := randomEnvName()
@@ -740,6 +753,7 @@ func Test_CLI_InfraCreateAndDeleteResourceTerraformRemote(t *testing.T) {
 	defer cancel()
 
 	dir := t.TempDir()
+	t.Cleanup(RemoveAllWithRetries(t, dir))
 	t.Logf("DIR: %s", dir)
 
 	envName := randomEnvName()
@@ -825,4 +839,21 @@ func TestMain(m *testing.M) {
 
 	exitVal := m.Run()
 	os.Exit(exitVal)
+}
+
+func RemoveAllWithRetries(t *testing.T, dir string) func() {
+	return func() {
+		err := retry.Do(context.Background(), retry.WithMaxRetries(10, retry.NewConstant(1*time.Second)), func(_ context.Context) error {
+			removeErr := os.RemoveAll(dir)
+			if removeErr == nil {
+				return nil
+			}
+			t.Logf("failed to clean up %s with error: %v", dir, removeErr)
+			return retry.RetryableError(removeErr)
+		})
+
+		if err != nil {
+			t.Errorf("RemoveAllWithRetries failed after many retires: %v", err)
+		}
+	}
 }

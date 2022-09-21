@@ -75,6 +75,7 @@ stages:
             inputs:
               dockerVersion: 17.09.0-ce
               releaseType: stable
+
           - task: PowerShell@2
             inputs:
               pwsh: true

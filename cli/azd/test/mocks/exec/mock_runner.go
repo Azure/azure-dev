@@ -2,7 +2,6 @@ package exec
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -100,30 +99,5 @@ func AddAzLoginMocks(commandRunner *MockCommandRunner) {
 		now := time.Now().UTC().Format(time.RFC3339)
 		requestJson := fmt.Sprintf(`{"AccessToken": "abc123", "ExpiresOn": "%s"}`, now)
 		return exec.NewRunResult(0, requestJson, ""), nil
-	})
-}
-
-func (r *MockCommandRunner) AddDefaultMocks() {
-	// This is harmless but should be removed long-term.
-	// By default, mock returning an empty list of azure resources instead of crashing.
-	// This is an unfortunate mock required due to the side-effect of
-	// running "az resource list" as part of loading a project in project.GetProject.
-	r.AddAzResourceListMock(nil, []string{})
-}
-
-func (r *MockCommandRunner) AddAzResourceListMock(matchResourceGroupName *string, result any) {
-	r.When(func(args exec.RunArgs, command string) bool {
-		isMatch := strings.Contains(command, "az resource list")
-		if matchResourceGroupName != nil {
-			isMatch = isMatch && strings.Contains(command, fmt.Sprintf("--resource-group %s", *matchResourceGroupName))
-		}
-
-		return isMatch
-	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
-		bytes, err := json.Marshal(result)
-		if err != nil {
-			panic(err)
-		}
-		return exec.NewRunResult(0, string(bytes), ""), nil
 	})
 }

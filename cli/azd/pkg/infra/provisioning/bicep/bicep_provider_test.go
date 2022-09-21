@@ -269,7 +269,8 @@ func createBicepProvider(ctx context.Context) *BicepProvider {
 	}
 
 	env := environment.EphemeralWithValues("test-env", map[string]string{
-		"AZURE_LOCATION": "westus2",
+		environment.LocationEnvVarName:       "westus2",
+		environment.SubscriptionIdEnvVarName: "SUBSCRIPTION_ID",
 	})
 
 	return NewBicepProvider(ctx, env, projectDir, options)

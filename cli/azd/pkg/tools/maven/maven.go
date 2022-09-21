@@ -125,7 +125,9 @@ func (cli *mavenCli) Package(ctx context.Context, projectPath string) error {
 	if err != nil {
 		return err
 	}
-	runArgs := exec.NewRunArgs(mvnCmd, "package").WithCwd(projectPath)
+
+	// Maven's package phase includes tests by default. Skip it explicitly.
+	runArgs := exec.NewRunArgs(mvnCmd, "package", "-DskipTests").WithCwd(projectPath)
 	res, err := cli.commandRunner.Run(ctx, runArgs)
 	if err != nil {
 		return fmt.Errorf("mvn package on project '%s' failed: %s: %w", projectPath, res.String(), err)

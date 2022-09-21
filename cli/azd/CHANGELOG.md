@@ -2,6 +2,10 @@
 
 ## 0.2.0-beta.2 (2022-09-21)
 
+### Bugs Fixed
+
+- [[#724]](https://github.com/Azure/azure-dev/pull/724) Fix version check for supporting Docker CE / Moby schemes. 
+
 ### Other Changes
 
 - [[#548]](https://github.com/Azure/azure-dev/pull/548) Refactor template bicep into modules.

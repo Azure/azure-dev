@@ -1,6 +1,7 @@
 package ostest
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"math/rand"
@@ -10,6 +11,8 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	azdexec "github.com/azure/azure-dev/cli/azd/pkg/exec"
 
 	"golang.org/x/sys/windows"
 )
@@ -56,14 +59,15 @@ func logHandles(t *testing.T, path string) {
 		return
 	}
 
-	cmd := exec.Cmd{Path: handle, Args: []string{path}}
-	err = cmd.Run()
+	args := azdexec.NewRunArgs(handle, path, "-nobanner")
+	cmd := azdexec.NewCommandRunner()
+	rr, err := cmd.Run(context.Background(), args)
 	if err != nil {
-		t.Logf("handle.exe failed. stdout: %s, stderr: %s\n", cmd.Stdout, cmd.Stderr)
+		t.Logf("handle.exe failed. stdout: %s, stderr: %s\n", rr.Stdout, rr.Stderr)
 		return
 	}
 
-	t.Logf("handle.exe output\n:%s%s\n", cmd.Stdout, cmd.Stderr)
+	t.Logf("handle.exe output\n:%s%s\n", rr.Stdout, rr.Stderr)
 }
 
 func removeAll(path string) error {

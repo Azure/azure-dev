@@ -8,6 +8,7 @@ azdcli
 azdcontext
 azddeploy
 azdev
+azdexec
 azdinternal
 azdtempl
 azdtempl
@@ -19,6 +20,7 @@ azuretools
 azureutil
 Backticks
 BOOLSLICE
+BUILDNUMBER
 circleci
 cflags
 cmdsubst
@@ -43,11 +45,13 @@ keychain
 ldflags
 mgmt
 mgutz
+nobanner
 nodeapp
 nolint
 omitempty
 opentelemetry
 osutil
+ostest
 osversion
 otel
 pflag

@@ -34,6 +34,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/test/azdcli"
+	"github.com/azure/azure-dev/cli/azd/test/ostest"
 	"github.com/joho/godotenv"
 	"github.com/sethvargo/go-retry"
 	"github.com/stretchr/testify/assert"
@@ -44,8 +45,7 @@ func Test_CLI_Login_FailsIfNoAzCliIsMissing(t *testing.T) {
 	ctx, cancel := newTestContext(t)
 	defer cancel()
 
-	dir := t.TempDir()
-	t.Cleanup(RemoveAllWithRetries(t, dir))
+	dir := ostest.TempDirWithDiagnostics(t)
 
 	cli := azdcli.NewCLI(t)
 	cli.WorkingDirectory = dir
@@ -77,8 +77,7 @@ func Test_CLI_Init_FailsIfAzCliIsMissing(t *testing.T) {
 	ctx, cancel := newTestContext(t)
 	defer cancel()
 
-	dir := t.TempDir()
-	t.Cleanup(RemoveAllWithRetries(t, dir))
+	dir := ostest.TempDirWithDiagnostics(t)
 
 	cli := azdcli.NewCLI(t)
 	cli.WorkingDirectory = dir
@@ -95,8 +94,7 @@ func Test_CLI_Init_AsksForSubscriptionIdAndCreatesEnvAndProjectFile(t *testing.T
 	ctx, cancel := newTestContext(t)
 	defer cancel()
 
-	dir := t.TempDir()
-	t.Cleanup(RemoveAllWithRetries(t, dir))
+	dir := ostest.TempDirWithDiagnostics(t)
 
 	cli := azdcli.NewCLI(t)
 	cli.WorkingDirectory = dir
@@ -124,8 +122,7 @@ func Test_CLI_Init_CanUseTemplate(t *testing.T) {
 	ctx, cancel := newTestContext(t)
 	defer cancel()
 
-	dir := t.TempDir()
-	t.Cleanup(RemoveAllWithRetries(t, dir))
+	dir := ostest.TempDirWithDiagnostics(t)
 
 	cli := azdcli.NewCLI(t)
 	cli.WorkingDirectory = dir
@@ -188,8 +185,7 @@ func Internal_Test_CLI_ResourceGroupsName(t *testing.T, envName string, rgName s
 
 	os.Setenv("AZD_FUNC_TEST", "TRUE")
 
-	dir := t.TempDir()
-	t.Cleanup(RemoveAllWithRetries(t, dir))
+	dir := ostest.TempDirWithDiagnostics(t)
 	t.Logf("DIR: %s", dir)
 
 	//envName := randomEnvName()
@@ -257,8 +253,7 @@ func Test_CLI_InfraCreateAndDelete(t *testing.T) {
 	ctx, cancel := newTestContext(t)
 	defer cancel()
 
-	dir := t.TempDir()
-	t.Cleanup(RemoveAllWithRetries(t, dir))
+	dir := ostest.TempDirWithDiagnostics(t)
 	t.Logf("DIR: %s", dir)
 
 	envName := randomEnvName()
@@ -304,8 +299,7 @@ func Test_CLI_InfraCreateAndDeleteUpperCase(t *testing.T) {
 	ctx, cancel := newTestContext(t)
 	defer cancel()
 
-	dir := t.TempDir()
-	t.Cleanup(RemoveAllWithRetries(t, dir))
+	dir := ostest.TempDirWithDiagnostics(t)
 	t.Logf("DIR: %s", dir)
 
 	envName := "UpperCase" + randomEnvName()
@@ -351,8 +345,7 @@ func Test_CLI_InfraCreateAndDeleteWebApp(t *testing.T) {
 	ctx, cancel := newTestContext(t)
 	defer cancel()
 
-	dir := t.TempDir()
-	t.Cleanup(RemoveAllWithRetries(t, dir))
+	dir := ostest.TempDirWithDiagnostics(t)
 	t.Logf("DIR: %s", dir)
 
 	envName := randomEnvName()
@@ -480,8 +473,7 @@ func Test_CLI_DeployInvalidName(t *testing.T) {
 	ctx, cancel := newTestContext(t)
 	defer cancel()
 
-	dir := t.TempDir()
-	t.Cleanup(RemoveAllWithRetries(t, dir))
+	dir := ostest.TempDirWithDiagnostics(t)
 	t.Logf("DIR: %s", dir)
 
 	envName := randomEnvName()
@@ -507,8 +499,7 @@ func Test_CLI_RestoreCommand(t *testing.T) {
 	ctx, cancel := newTestContext(t)
 	defer cancel()
 
-	dir := t.TempDir()
-	t.Cleanup(RemoveAllWithRetries(t, dir))
+	dir := ostest.TempDirWithDiagnostics(t)
 	t.Logf("DIR: %s", dir)
 
 	envName := randomEnvName()
@@ -537,8 +528,7 @@ func Test_CLI_InfraCreateAndDeleteFuncApp(t *testing.T) {
 	ctx, cancel := newTestContext(t)
 	defer cancel()
 
-	dir := t.TempDir()
-	t.Cleanup(RemoveAllWithRetries(t, dir))
+	dir := ostest.TempDirWithDiagnostics(t)
 	t.Logf("DIR: %s", dir)
 
 	envName := randomEnvName()
@@ -601,8 +591,7 @@ func Test_CLI_ProjectIsNeeded(t *testing.T) {
 	ctx, cancel := newTestContext(t)
 	defer cancel()
 
-	dir := t.TempDir()
-	t.Cleanup(RemoveAllWithRetries(t, dir))
+	dir := ostest.TempDirWithDiagnostics(t)
 	t.Logf("DIR: %s", dir)
 
 	cli := azdcli.NewCLI(t)
@@ -755,8 +744,7 @@ func Test_CLI_InfraCreateAndDeleteResourceTerraform(t *testing.T) {
 	ctx, cancel := newTestContext(t)
 	defer cancel()
 
-	dir := t.TempDir()
-	t.Cleanup(RemoveAllWithRetries(t, dir))
+	dir := ostest.TempDirWithDiagnostics(t)
 	t.Logf("DIR: %s", dir)
 
 	envName := randomEnvName()
@@ -791,8 +779,7 @@ func Test_CLI_InfraCreateAndDeleteResourceTerraformRemote(t *testing.T) {
 	ctx, cancel := newTestContext(t)
 	defer cancel()
 
-	dir := t.TempDir()
-	t.Cleanup(RemoveAllWithRetries(t, dir))
+	dir := ostest.TempDirWithDiagnostics(t)
 	t.Logf("DIR: %s", dir)
 
 	envName := randomEnvName()

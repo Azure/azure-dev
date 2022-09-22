@@ -61,7 +61,7 @@ func logHandles(t *testing.T, path string) {
 
 	// Log this to telemetry for ease of correlation
 	tracer := telemetry.GetTracer()
-	_, span := tracer.Start(context.Background(), "test.file_cleanup")
+	_, span := tracer.Start(context.Background(), "test.file_cleanup_failure")
 	span.SetAttributes(attribute.String("handle.stdout", rr.Stdout))
 	span.SetAttributes(attribute.String("ci.build.number", os.Getenv("BUILD_BUILDNUMBER")))
 	span.End()

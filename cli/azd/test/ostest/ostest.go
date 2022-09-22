@@ -54,7 +54,7 @@ func logHandles(t *testing.T, path string) {
 		return
 	}
 
-	t.Logf("handle.exe output\n:%s%s\n", rr.Stdout, rr.Stderr)
+	t.Logf("handle.exe output:\n%s\n", rr.Stdout)
 
 	// Ensure telemetry is initialized since we're running in a CI environment
 	_ = telemetry.GetTelemetrySystem()
@@ -63,7 +63,6 @@ func logHandles(t *testing.T, path string) {
 	tracer := telemetry.GetTracer()
 	_, span := tracer.Start(context.Background(), "test.file_cleanup")
 	span.SetAttributes(attribute.String("handle.stdout", rr.Stdout))
-	span.SetAttributes(attribute.String("handle.stderr", rr.Stderr))
 	span.SetAttributes(attribute.String("ci.build.number", os.Getenv("BUILD_BUILDNUMBER")))
 	span.End()
 }

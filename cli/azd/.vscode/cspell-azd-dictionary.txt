@@ -8,6 +8,7 @@ azdcli
 azdcontext
 azddeploy
 azdev
+azdexec
 azdinternal
 azdtempl
 azdtempl
@@ -47,6 +48,7 @@ nolint
 omitempty
 opentelemetry
 osutil
+ostest
 osversion
 otel
 pflag

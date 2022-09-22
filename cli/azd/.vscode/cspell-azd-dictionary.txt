@@ -43,6 +43,7 @@ keychain
 ldflags
 mgmt
 mgutz
+nobanner
 nodeapp
 nolint
 omitempty

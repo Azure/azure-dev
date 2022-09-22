@@ -44,6 +44,7 @@ jobs:
     pool:
       name: azsdk-pool-mms-ubuntu-2004-general
       vmImage: MMSUbuntu20.04
+      demands: ImageVersionOverride -equals 66.0.0
 
     steps:
       - checkout: self

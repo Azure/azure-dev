@@ -6,6 +6,7 @@ package dotnet
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
@@ -90,6 +91,10 @@ func (cli *dotNetCli) InitializeSecret(ctx context.Context, project string) erro
 }
 
 func (cli *dotNetCli) SetSecret(ctx context.Context, key string, value string, project string) error {
+	// The .net secret configuration provider uses ":" to allow hierarchic configuration.
+	// as we can not use ":" in a variable name in the bicep module output, I propose to apply the same
+	// logic when using environment variables as configuration source: use "__" and map it later
+	key = strings.Replace(key, "__", ":", -1)
 	runArgs := exec.NewRunArgs("dotnet", "user-secrets", "set", key, value, "--project", project)
 	res, err := cli.commandRunner.Run(ctx, runArgs)
 	if err != nil {

@@ -9,9 +9,9 @@ repo:
 
   remotes:
     - name: azure-samples-main
-      url: git@github.com:Azure-Samples/todo-nodejs-mongo-aca.git
+      url: git@github.com:Azure-Samples/todo-java-mongo-aca.git
     - name: azure-samples-staging
-      url: git@github.com:Azure-Samples/todo-nodejs-mongo-aca.git
+      url: git@github.com:Azure-Samples/todo-java-mongo-aca.git
       branch: staging
 
   rewrite:

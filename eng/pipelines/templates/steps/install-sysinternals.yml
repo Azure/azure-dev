@@ -3,7 +3,7 @@ parameters:
 
 steps:
   - pwsh: |
-      if "${{ parameters.SysInternalsVersion }}" -ne "latest" {
+      if ("${{ parameters.SysInternalsVersion }}" -ne "latest") {
         choco install sysinternals -y --version "${{ parameters.SysInternalsVersion }}"
       } else {
         choco install sysinternals -y

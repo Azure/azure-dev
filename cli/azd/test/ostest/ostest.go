@@ -3,15 +3,16 @@ package ostest
 import (
 	"context"
 	"errors"
-	"fmt"
-	"math/rand"
 	"os"
 	"os/exec"
 	"runtime"
 	"testing"
 	"time"
 
+	"github.com/azure/azure-dev/cli/azd/internal/telemetry"
 	azdexec "github.com/azure/azure-dev/cli/azd/pkg/exec"
+	"github.com/sethvargo/go-retry"
+	"go.opentelemetry.io/otel/attribute"
 )
 
 // TempDirWithDiagnostics creates a temp directory with cleanup that also provides additional
@@ -19,29 +20,18 @@ import (
 func TempDirWithDiagnostics(t *testing.T) string {
 	temp := t.TempDir()
 
-	t.Cleanup(func() {
-		err := removeAllWithDiagnostics(t, temp)
-		if err != nil && errors.Is(err, os.ErrNotExist) {
-			t.Fatalf("TempDirWithDiagnostics: %s", err)
-		}
-	})
+	if runtime.GOOS == "windows" {
+		// Enable our additional custom remove logic for Windows where we see locked files.
+		t.Cleanup(func() {
+			err := removeAllWithDiagnostics(t, temp)
+			if err != nil {
+				logHandles(t, temp)
+				t.Fatalf("TempDirWithDiagnostics: %s", err)
+			}
+		})
+	}
 
 	return temp
-}
-
-// removeAllWithDiagnostics performs os.RemoveAll with additional
-// diagnostic logging and retries.
-func removeAllWithDiagnostics(t *testing.T, path string) error {
-	if runtime.GOOS != "windows" {
-		return nil
-	}
-
-	err := removeAll(path)
-	if err != nil {
-		logHandles(t, path)
-	}
-
-	return err
 }
 
 func logHandles(t *testing.T, path string) {
@@ -65,23 +55,36 @@ func logHandles(t *testing.T, path string) {
 	}
 
 	t.Logf("handle.exe output\n:%s%s\n", rr.Stdout, rr.Stderr)
+
+	// Ensure telemetry is initialized since we're running in a CI environment
+	_ = telemetry.GetTelemetrySystem()
+
+	// Log this to telemetry for ease of correlation
+	tracer := telemetry.GetTracer()
+	_, span := tracer.Start(context.Background(), "test.file_cleanup")
+	span.SetAttributes(attribute.String("handle.stdout", rr.Stdout))
+	span.SetAttributes(attribute.String("handle.stderr", rr.Stderr))
+	span.SetAttributes(attribute.String("ci.build.number", os.Getenv("BUILD_BUILDNUMBER")))
+	span.End()
 }
 
-func removeAll(path string) error {
-	const arbitraryTimeout = 2 * time.Second
-	var (
-		start     time.Time
-		nextSleep = 1 * time.Millisecond
-	)
-	for {
-		err := os.RemoveAll(path)
-
-		if start.IsZero() {
-			start = time.Now()
-		} else if d := time.Since(start) + nextSleep; d >= arbitraryTimeout {
-			return fmt.Errorf("timeout: %w", err)
+func removeAllWithDiagnostics(t *testing.T, path string) error {
+	retryCount := 0
+	loggedOnce := false
+	return retry.Do(context.Background(), retry.WithMaxRetries(10, retry.NewConstant(1*time.Second)), func(_ context.Context) error {
+		removeErr := os.RemoveAll(path)
+		if removeErr == nil {
+			return nil
 		}
-		time.Sleep(nextSleep)
-		nextSleep += time.Duration(rand.Int63n(int64(nextSleep)))
-	}
+		t.Logf("failed to clean up %s with error: %v", path, removeErr)
+
+		if retryCount >= 2 && !loggedOnce {
+			// Only log once after 2 seconds - logHandles is pretty expensive and slow
+			logHandles(t, path)
+			loggedOnce = true
+		}
+
+		retryCount++
+		return retry.RetryableError(removeErr)
+	})
 }

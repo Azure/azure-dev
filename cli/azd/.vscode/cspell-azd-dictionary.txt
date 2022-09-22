@@ -26,6 +26,7 @@ cmdsubst
 containerapp
 csharpapp
 devel
+dockerproject
 eastus
 envname
 errcheck

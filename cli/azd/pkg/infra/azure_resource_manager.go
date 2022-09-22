@@ -124,20 +124,24 @@ func (rm *AzureResourceManager) GetResourceGroupsForEnvironment(ctx context.Cont
 // We search for them instead using the rg- prefix or -rg suffix
 func (rm *AzureResourceManager) GetDefaultResourceGroups(ctx context.Context, env *environment.Environment) ([]azcli.AzCliResource, error) {
 	azCli := azcli.GetAzCli(ctx)
-	filter := fmt.Sprintf("name eq 'rg-%[1]s' or name eq '%[1]s-rg'", env.GetEnvName())
-	res, err := azCli.ListResourceGroup(ctx, env.GetSubscriptionId(), &azcli.ListResourceGroupOptions{
-		Filter: &filter,
-	})
+	allGroups, err := azCli.ListResourceGroup(ctx, env.GetSubscriptionId(), nil)
+
+	matchingGroups := []azcli.AzCliResource{}
+	for _, group := range allGroups {
+		if group.Name == fmt.Sprintf("rg-%[1]s", env.GetEnvName()) || group.Name == fmt.Sprintf("%[1]s-rg", env.GetEnvName()) {
+			matchingGroups = append(matchingGroups, group)
+		}
+	}
 
 	if err != nil {
 		return nil, err
 	}
 
-	if len(res) == 0 {
+	if len(matchingGroups) == 0 {
 		return nil, azureutil.ResourceNotFound(fmt.Errorf("0 resource groups with prefix or suffix with value: '%s'", env.GetEnvName()))
 	}
 
-	return res, nil
+	return matchingGroups, nil
 }
 
 // FindResourceGroupForEnvironment will search for the resource group associated with an environment

@@ -4,11 +4,15 @@
 package bicep
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"io"
+	"net/http"
 	"strings"
 	"testing"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
@@ -149,7 +153,7 @@ func TestBicepDestroy(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
 		prepareGenericMocks(mockContext.CommandRunner)
 		preparePlanningMocks(mockContext.CommandRunner)
-		prepareDestroyMocks(mockContext.CommandRunner)
+		prepareDestroyMocks(mockContext)
 
 		progressLog := []string{}
 		interactiveLog := []bool{}
@@ -213,7 +217,7 @@ func TestBicepDestroy(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
 		prepareGenericMocks(mockContext.CommandRunner)
 		preparePlanningMocks(mockContext.CommandRunner)
-		prepareDestroyMocks(mockContext.CommandRunner)
+		prepareDestroyMocks(mockContext)
 
 		progressLog := []string{}
 		interactiveLog := []bool{}
@@ -367,21 +371,23 @@ func preparePlanningMocks(commandRunner *execmock.MockCommandRunner) {
 	})
 }
 
-func prepareDestroyMocks(commandRunner *execmock.MockCommandRunner) {
-	resourceList := []azcli.AzCliResource{
-		{
-			Id:   "webapp",
-			Name: "app-123",
-			Type: string(infra.AzureResourceTypeWebSite),
-		},
-		{
-			Id:   "keyvault",
-			Name: "kv-123",
-			Type: string(infra.AzureResourceTypeKeyVault),
+func prepareDestroyMocks(mockContext *mocks.MockContext) {
+	resourceList := armresources.ResourceListResult{
+		Value: []*armresources.GenericResourceExpanded{
+			{
+				ID:       mocks.RefOf("webapp"),
+				Name:     mocks.RefOf("app-123"),
+				Type:     mocks.RefOf(string(infra.AzureResourceTypeWebSite)),
+				Location: mocks.RefOf("eastus2"),
+			},
+			{
+				ID:       mocks.RefOf("keyvault"),
+				Name:     mocks.RefOf("kv-123"),
+				Type:     mocks.RefOf(string(infra.AzureResourceTypeKeyVault)),
+				Location: mocks.RefOf("eastus2"),
+			},
 		},
 	}
-
-	resourceListBytes, _ := json.Marshal(resourceList)
 
 	keyVault := azcli.AzCliKeyVault{
 		Id:   "kv-123",
@@ -398,15 +404,19 @@ func prepareDestroyMocks(commandRunner *execmock.MockCommandRunner) {
 	keyVaultBytes, _ := json.Marshal(keyVault)
 
 	// Get list of resources to delete
-	commandRunner.When(func(args exec.RunArgs, command string) bool {
-		return strings.Contains(command, "az resource list")
-	}).Respond(exec.RunResult{
-		Stdout: string(resourceListBytes),
-		Stderr: "",
+	mockContext.HttpClient.When(func(request *http.Request) bool {
+		return request.Method == http.MethodGet && strings.Contains(request.URL.Path, "/resources")
+	}).RespondFn(func(request *http.Request) (*http.Response, error) {
+		resourceListBytes, _ := json.Marshal(resourceList)
+
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(bytes.NewBuffer(resourceListBytes)),
+		}, nil
 	})
 
 	// Get Key Vault
-	commandRunner.When(func(args exec.RunArgs, command string) bool {
+	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 		return strings.Contains(command, "az keyvault show")
 	}).Respond(exec.RunResult{
 		Stdout: string(keyVaultBytes),
@@ -414,15 +424,19 @@ func prepareDestroyMocks(commandRunner *execmock.MockCommandRunner) {
 	})
 
 	// Delete resource group
-	commandRunner.When(func(args exec.RunArgs, command string) bool {
-		return strings.Contains(command, "az group delete")
-	}).Respond(exec.RunResult{
-		Stdout: "",
-		Stderr: "",
+	mockContext.HttpClient.When(func(request *http.Request) bool {
+		return request.Method == http.MethodDelete && strings.Contains(request.URL.Path, "subscriptions/SUBSCRIPTION_ID/resourcegroups/RESOURCE_GROUP")
+	}).RespondFn(func(request *http.Request) (*http.Response, error) {
+		return &http.Response{
+			Request:    request,
+			Header:     http.Header{},
+			StatusCode: http.StatusOK,
+			Body:       http.NoBody,
+		}, nil
 	})
 
 	// Purge Key vault
-	commandRunner.When(func(args exec.RunArgs, command string) bool {
+	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 		return strings.Contains(command, "az keyvault purge")
 	}).Respond(exec.RunResult{
 		Stdout: "",
@@ -430,7 +444,7 @@ func prepareDestroyMocks(commandRunner *execmock.MockCommandRunner) {
 	})
 
 	// Delete deployment
-	commandRunner.When(func(args exec.RunArgs, command string) bool {
+	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 		return strings.Contains(command, "az deployment sub delete")
 	}).Respond(exec.RunResult{
 		Stdout: "",

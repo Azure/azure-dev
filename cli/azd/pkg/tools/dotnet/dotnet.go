@@ -91,16 +91,18 @@ func (cli *dotNetCli) InitializeSecret(ctx context.Context, project string) erro
 }
 
 func (cli *dotNetCli) SetSecret(ctx context.Context, key string, value string, project string) error {
-	// The .net secret configuration provider uses ":" to allow hierarchic configuration.
-	// as we can not use ":" in a variable name in the bicep module output, I propose to apply the same
-	// logic when using environment variables as configuration source: use "__" and map it later
-	key = strings.Replace(key, "__", ":", -1)
-	runArgs := exec.NewRunArgs("dotnet", "user-secrets", "set", key, value, "--project", project)
+	runArgs := exec.NewRunArgs("dotnet", "user-secrets", "set", normalize(key), value, "--project", project)
 	res, err := cli.commandRunner.Run(ctx, runArgs)
 	if err != nil {
 		return fmt.Errorf("failed running %s secret set %s: %w", cli.Name(), res.String(), err)
 	}
 	return nil
+}
+
+// Normalizes a key for dotnet user secrets.
+func normalize(key string) string {
+	// dotnet recognizes "__" as the hierarchy key separator for environment variables, but for user secrets, it has to be ":".
+	return strings.ReplaceAll(key, "__", ":")
 }
 
 func NewDotNetCli(ctx context.Context) DotNetCli {

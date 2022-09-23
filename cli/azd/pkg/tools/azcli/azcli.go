@@ -1007,15 +1007,9 @@ func (cli *azCli) GraphQuery(ctx context.Context, query string, subscriptions []
 
 	responseText := string(responseBytes)
 
-	if isNotLoggedInMessage(responseText) {
-		return nil, ErrAzCliNotLoggedIn
-	} else if err != nil {
-		return nil, fmt.Errorf("failed running az graph query: %s: %w", responseBytes, err)
-	}
-
 	var graphQueryResult AzCliGraphQuery
 	if err := json.Unmarshal(responseBytes, &graphQueryResult); err != nil {
-		return nil, fmt.Errorf("could not unmarshal output %s as an AzCliGraphQuery: %w", responseBytes, err)
+		return nil, fmt.Errorf("could not unmarshal output '%s' as an AzCliGraphQuery: %w", responseText, err)
 	}
 
 	return &graphQueryResult, nil

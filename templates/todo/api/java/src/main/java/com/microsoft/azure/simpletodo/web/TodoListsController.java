@@ -7,7 +7,6 @@ import com.microsoft.azure.simpletodo.model.TodoState;
 import com.microsoft.azure.simpletodo.repository.TodoItemRepository;
 import com.microsoft.azure.simpletodo.repository.TodoListRepository;
 import org.springframework.data.domain.PageRequest;
-import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.RestController;
@@ -41,7 +40,7 @@ public class TodoListsController implements ListsApi {
                     .path("/{id}")
                     .buildAndExpand(savedTodoItem.getId())
                     .toUri();
-            return ResponseEntity.created(location).build();
+            return ResponseEntity.created(location).body(savedTodoItem);
         } else {
             return ResponseEntity.notFound().build();
         }
@@ -49,17 +48,13 @@ public class TodoListsController implements ListsApi {
 
     @Override
     public ResponseEntity<TodoList> createList(TodoList todoList) {
-        try {
-            TodoList savedTodoList = todoListRepository.save(todoList);
-            URI location = ServletUriComponentsBuilder
-                    .fromCurrentRequest()
-                    .path("/{id}")
-                    .buildAndExpand(savedTodoList.getId())
-                    .toUri();
-            return ResponseEntity.created(location).build();
-        } catch (Exception e) {
-            return ResponseEntity.badRequest().build();
-        }
+        TodoList savedTodoList = todoListRepository.save(todoList);
+        URI location = ServletUriComponentsBuilder
+                .fromCurrentRequest()
+                .path("/{id}")
+                .buildAndExpand(savedTodoList.getId())
+                .toUri();
+        return ResponseEntity.created(location).body(savedTodoList);
     }
 
     @Override
@@ -99,7 +94,7 @@ public class TodoListsController implements ListsApi {
         }
         Optional<TodoList> todoList = todoListRepository.findById(listId);
         if (todoList.isPresent()) {
-            return ResponseEntity.ok(todoItemRepository.findTodoItemsByTodoList(listId, PageRequest.of(skip.multiply(top).intValue(), top.intValue())));
+            return ResponseEntity.ok(todoItemRepository.findTodoItemsByTodoList(listId, skip.intValue(), top.intValue()));
         } else {
             return ResponseEntity.notFound().build();
         }
@@ -115,7 +110,7 @@ public class TodoListsController implements ListsApi {
         }
         return ResponseEntity.ok(
                 todoItemRepository
-                        .findTodoItemsByTodoListAndState(listId, state.name(), PageRequest.of(skip.multiply(top).intValue(), top.intValue())));
+                        .findTodoItemsByTodoListAndState(listId, state.name(), skip.intValue(), top.intValue()));
     }
 
     @Override
@@ -131,7 +126,7 @@ public class TodoListsController implements ListsApi {
         if (skip == null) {
             skip = new BigDecimal(0);
         }
-        return ResponseEntity.ok(todoListRepository.findAll(PageRequest.of(skip.multiply(top).intValue(), top.intValue())).toList());
+        return ResponseEntity.ok(todoListRepository.findAll(skip.intValue(), top.intValue()));
     }
 
     @Override
@@ -144,7 +139,7 @@ public class TodoListsController implements ListsApi {
 
     @Override
     public ResponseEntity<Void> updateItemsStateByListId(String listId, TodoState state, List<String> requestBody) {
-        for (TodoItem todoItem : todoItemRepository.findTodoItemsByTodoList(listId, Pageable.unpaged())) {
+        for (TodoItem todoItem : todoItemRepository.findTodoItemsByTodoList(listId)) {
             todoItem.state(state);
             todoItemRepository.save(todoItem);
         }

@@ -1,5 +1,5 @@
-import React, { useEffect, useContext, useMemo, useState } from 'react';
-import { IconButton, IContextualMenuProps, IIconProps, Stack, Text } from '@fluentui/react';
+import React, { useEffect, useContext, useMemo, useState, Fragment } from 'react';
+import { IconButton, IContextualMenuProps, IIconProps, Stack, Text, Shimmer, ShimmerElementType } from '@fluentui/react';
 import TodoItemListPane from '../components/todoItemListPane';
 import { TodoItem, TodoItemState } from '../models';
 import * as itemActions from '../actions/itemActions';
@@ -118,8 +118,18 @@ const HomePage = () => {
             <Stack.Item>
                 <Stack horizontal styles={titleStackStyles} tokens={stackPadding}>
                     <Stack.Item grow={1}>
-                        <Text block variant="xLarge">{appContext.state.selectedList?.name}</Text>
-                        <Text variant="small">{appContext.state.selectedList?.description}</Text>
+                        <Shimmer width={300}
+                            isDataLoaded={!!appContext.state.selectedList}
+                            shimmerElements={
+                                [
+                                    { type: ShimmerElementType.line, height: 20 }
+                                ]
+                            } >
+                            <Fragment>
+                                <Text block variant="xLarge">{appContext.state.selectedList?.name}</Text>
+                                <Text variant="small">{appContext.state.selectedList?.description}</Text>
+                            </Fragment>
+                        </Shimmer>
                     </Stack.Item>
                     <Stack.Item>
                         <IconButton

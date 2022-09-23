@@ -1,4 +1,4 @@
-import { CommandBar, DetailsList, DetailsListLayoutMode, IStackStyles, Selection, Stack, IIconProps, SearchBox, Text, IGroup, IColumn, MarqueeSelection, FontIcon, IObjectWithKey, CheckboxVisibility, IDetailsGroupRenderProps, getTheme } from '@fluentui/react';
+import { CommandBar, DetailsList, DetailsListLayoutMode, IStackStyles, Selection, Label, Spinner, SpinnerSize, Stack, IIconProps, SearchBox, Text, IGroup, IColumn, MarqueeSelection, FontIcon, IObjectWithKey, CheckboxVisibility, IDetailsGroupRenderProps, getTheme } from '@fluentui/react';
 import React, { ReactElement, useEffect, useState, FormEvent, FC } from 'react';
 import { useNavigate } from 'react-router';
 import { TodoItem, TodoItemState, TodoList } from '../models';
@@ -240,7 +240,13 @@ const TodoItemListPane: FC<TodoItemListPaneProps> = (props: TodoItemListPaneProp
                     </MarqueeSelection>
                 </Stack.Item>
             }
-            {items.length === 0 &&
+            {!props.items &&
+                <Stack.Item align="center" tokens={stackItemPadding}>
+                    <Label>Loading List Items...</Label>
+                    <Spinner size={SpinnerSize.large} labelPosition="top" /> 
+                </Stack.Item>
+            }
+            {props.items && items.length === 0 &&
                 <Stack.Item align="center" tokens={stackItemPadding}>
                     <Text>This list is empty.</Text>
                 </Stack.Item>

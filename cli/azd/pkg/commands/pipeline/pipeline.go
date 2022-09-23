@@ -101,7 +101,7 @@ const (
 	githubFolder    string = ".github"
 	azdoLabel       string = "azdo"
 	azdoFolder      string = ".azdo"
-	envPersistedKeh string = "AZD_PIPELINE_PROVIDER"
+	envPersistedKey string = "AZD_PIPELINE_PROVIDER"
 )
 
 // DetectProviders get azd context from the context and pulls the project directory from it.
@@ -131,12 +131,24 @@ func DetectProviders(
 	// get the override value
 	overrideWith := strings.ToLower(overrideProvider)
 
+	// detecting pipeline folder configuration
+	hasGitHubFolder := folderExists(path.Join(projectDir, githubFolder))
+	hasAzDevOpsFolder := folderExists(path.Join(projectDir, azdoFolder))
+
+	// Error missing config for any provider
+	if !hasGitHubFolder && !hasAzDevOpsFolder {
+		return nil, nil, fmt.Errorf(
+			"no CI/CD provider configuration found. Expecting either %s and/or %s folder in the project root directory.",
+			gitHubLabel,
+			azdoLabel)
+	}
+
 	// overrideWith is the last overriding mode. When it is empty
 	// we can re-assign it based on a previous run (persisted data)
 	// or based on the azure.yaml
 	if overrideWith == "" {
 		// check if there is a persisted value from a previous run in env
-		lastUsedProvider, configExists := env.Values[envPersistedKeh]
+		lastUsedProvider, configExists := env.Values[envPersistedKey]
 		if configExists {
 			// Setting override value based on last run. This will force detector to use the same
 			// configuration.
@@ -153,17 +165,6 @@ func DetectProviders(
 
 	}
 
-	// detecting pipeline folder configuration
-	hasGitHubFolder := folderExists(path.Join(projectDir, githubFolder))
-	hasAzDevOpsFolder := folderExists(path.Join(projectDir, azdoFolder))
-
-	// Error missing config for any provider
-	if !hasGitHubFolder && !hasAzDevOpsFolder {
-		return nil, nil, fmt.Errorf(
-			"no CI/CD provider configuration found. Expecting either %s and/or %s folder in the project root directory.",
-			gitHubLabel,
-			azdoLabel)
-	}
 	// Check override errors for missing folder
 	if overrideWith == gitHubLabel && !hasGitHubFolder {
 		return nil, nil, fmt.Errorf("%s folder is missing. Can't use selected provider.", githubFolder)
@@ -172,7 +173,7 @@ func DetectProviders(
 		return nil, nil, fmt.Errorf("%s folder is missing. Can't use selected provider.", azdoFolder)
 	}
 	// using wrong override value
-	if overrideWith != "" {
+	if overrideWith != "" && overrideWith != azdoLabel && overrideWith != gitHubLabel {
 		return nil, nil, fmt.Errorf("%s is not a known pipeline provider.", overrideWith)
 	}
 
@@ -194,7 +195,7 @@ func DetectProviders(
 }
 
 func savePipelineProviderToEnv(provider string, env *environment.Environment) error {
-	env.Values[envPersistedKeh] = provider
+	env.Values[envPersistedKey] = provider
 	err := env.Save()
 	if err != nil {
 		return err
@@ -209,8 +210,8 @@ func createAzdoCiProvider(env *environment.Environment, azdCtx *azdcontext.AzdCo
 	}
 }
 
-func createAzdoScmProvider(env *environment.Environment, azdCtx *azdcontext.AzdContext) *AzdoHubScmProvider {
-	return &AzdoHubScmProvider{
+func createAzdoScmProvider(env *environment.Environment, azdCtx *azdcontext.AzdContext) *AzdoScmProvider {
+	return &AzdoScmProvider{
 		Env:        env,
 		AzdContext: azdCtx,
 	}

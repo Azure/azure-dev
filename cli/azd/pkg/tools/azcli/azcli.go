@@ -284,13 +284,15 @@ type AzCliGraphQuery struct {
 type ListResourceGroupOptions struct {
 	// An optional tag filter
 	TagFilter *Filter
-	// An optional JMES path query to filter or project the result
+	// An optional filter expression to filter the resource group results
+	// https://learn.microsoft.com/en-us/rest/api/resources/resource-groups/list
 	Filter *string
 }
 
 // Optional parameters for resource group resources listing.
 type ListResourceGroupResourcesOptions struct {
-	// An optional JMES path query to filter or project the result
+	// An optional filter expression to filter the resource list result
+	// https://learn.microsoft.com/en-us/rest/api/resources/resources/list-by-resource-group#uri-parameters
 	Filter *string
 }
 

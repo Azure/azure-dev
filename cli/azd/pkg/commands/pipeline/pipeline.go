@@ -177,6 +177,8 @@ func DetectProviders(
 		return nil, nil, fmt.Errorf("%s is not a known pipeline provider.", overrideWith)
 	}
 
+	console := input.GetConsole(ctx)
+
 	// At this point, we know that override value has either:
 	// - github or azdo value
 	// - OR is not set
@@ -185,12 +187,14 @@ func DetectProviders(
 	if overrideWith == azdoLabel || hasAzDevOpsFolder && !hasGitHubFolder {
 		// Azdo only either by override or by finding only that folder
 		_ = savePipelineProviderToEnv(azdoLabel, env)
+		console.Message(ctx, "Using pipeline provider: Azure DevOps")
 		return createAzdoScmProvider(env, azdContext), createAzdoCiProvider(env, azdContext), nil
 	}
 
 	// Both folders exists and no override value. Default to GitHub
 	// Or override value is github and the folder is available
 	_ = savePipelineProviderToEnv(gitHubLabel, env)
+	console.Message(ctx, "Using pipeline provider: GitHub")
 	return &GitHubScmProvider{}, &GitHubCiProvider{}, nil
 }
 

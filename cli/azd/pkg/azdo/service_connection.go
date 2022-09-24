@@ -5,6 +5,7 @@ package azdo
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
@@ -86,12 +87,12 @@ func CreateServiceConnection(
 
 	client, err := serviceendpoint.NewClient(ctx, connection)
 	if err != nil {
-		return err
+		return fmt.Errorf("creating new azdo client: %w", err)
 	}
 
 	foundServiceConnection, err := serviceConnectionExists(ctx, &client, &projectId, &ServiceConnectionName)
 	if err != nil {
-		return err
+		return fmt.Errorf("creating service connection: looking for existing connection: %w", err)
 	}
 
 	// if a service connection exists, skip creation.

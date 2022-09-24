@@ -403,7 +403,7 @@ func Test_CLI_InfraCreateAndDeleteWebApp(t *testing.T) {
 	env, err := godotenv.Read(filepath.Join(dir, azdcontext.EnvironmentDirectoryName, envName, ".env"))
 	require.NoError(t, err)
 
-	url, has := env["WEBSITE__URL"]
+	url, has := env["WEBSITE_URL"]
 	require.True(t, has, "WEBSITE_URL should be in environment after infra create")
 
 	// Add a retry here because appService deployment can take time
@@ -436,7 +436,7 @@ func Test_CLI_InfraCreateAndDeleteWebApp(t *testing.T) {
 	secrets, err := commandRunner.Run(ctx, runArgs)
 	require.NoError(t, err)
 
-	contain := strings.Contains(secrets.Stdout, fmt.Sprintf("WEBSITE__URL = %s", url))
+	contain := strings.Contains(secrets.Stdout, fmt.Sprintf("WEBSITE_URL = %s", url))
 	require.True(t, contain)
 
 	// Ensure `env refresh` works by removing an output parameter from the .env file and ensure that `env refresh`

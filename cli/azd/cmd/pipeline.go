@@ -7,12 +7,10 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/commands"
 	"github.com/azure/azure-dev/cli/azd/pkg/commands/pipeline"
-	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/spf13/cobra"
@@ -70,7 +68,7 @@ func (p *pipelineConfigAction) SetupFlags(
 	local.StringVar(&p.manager.PipelineServicePrincipalName, "principal-name", "", "The name of the service principal to use to grant access to Azure resources as part of the pipeline.")
 	local.StringVar(&p.manager.PipelineRemoteName, "remote-name", "origin", "The name of the git remote to configure the pipeline to run on.")
 	local.StringVar(&p.manager.PipelineRoleName, "principal-role", "Contributor", "The role to assign to the service principal.")
-	local.StringVar(&p.manager.PipelineProvider, "provider", "github", "The pipeline provider to use (GitHub and Azdo supported).")
+	local.StringVar(&p.manager.PipelineProvider, "provider", "", "The pipeline provider to use (GitHub and Azdo supported).")
 }
 
 // Run implements action interface
@@ -97,36 +95,12 @@ func (p *pipelineConfigAction) Run(
 		return fmt.Errorf("loading environment: %w", err)
 	}
 
-	overrideProvider := strings.ToLower(p.manager.PipelineProvider)
-	if overrideProvider == "" {
-		// Detect the SCM and CI providers based on the project directory
-		p.manager.ScmProvider,
-			p.manager.CiProvider,
-			err = pipeline.DetectProviders(ctx, console, env)
-		if err != nil {
-			return err
-		}
-	} else if overrideProvider == "github" {
-		p.manager.ScmProvider = &pipeline.GitHubScmProvider{}
-		p.manager.CiProvider = &pipeline.GitHubCiProvider{}
-		err := savePipelineProviderToEnv(ctx, "github", env)
-		if err != nil {
-			return nil
-		}
-	} else if overrideProvider == "azdo" {
-		p.manager.ScmProvider = &pipeline.AzdoHubScmProvider{
-			Env:        env,
-			AzdContext: azdCtx}
-		p.manager.CiProvider = &pipeline.AzdoCiProvider{
-			Env:        env,
-			AzdContext: azdCtx,
-		}
-		err := savePipelineProviderToEnv(ctx, "azdo", env)
-		if err != nil {
-			return err
-		}
-	} else {
-		return fmt.Errorf("unknown pipeline provider: %s. Supported providers: [GitHub, Azdo]", overrideProvider)
+	// Detect the SCM and CI providers based on the project directory
+	p.manager.ScmProvider,
+		p.manager.CiProvider,
+		err = pipeline.DetectProviders(ctx, env, p.manager.PipelineProvider)
+	if err != nil {
+		return err
 	}
 
 	// set context for manager
@@ -134,14 +108,4 @@ func (p *pipelineConfigAction) Run(
 	p.manager.Environment = env
 
 	return p.manager.Configure(ctx)
-}
-
-func savePipelineProviderToEnv(ctx context.Context, provider string, env *environment.Environment) error {
-	env.Values["PIPELINE_PROVIDER"] = provider
-	err := env.Save()
-	if err != nil {
-		return err
-	}
-
-	return nil
 }

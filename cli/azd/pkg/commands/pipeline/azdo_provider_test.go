@@ -5,6 +5,7 @@ package pipeline
 
 import (
 	"context"
+	"errors"
 	"io"
 	"os"
 	"path"
@@ -53,7 +54,7 @@ func Test_azdo_provider_getRepoDetails(t *testing.T) {
 
 	t.Run("non azure devops https remote", func(t *testing.T) {
 		//arrange
-		provider := &AzdoHubScmProvider{}
+		provider := &AzdoScmProvider{}
 		ctx := context.Background()
 
 		//act
@@ -66,7 +67,7 @@ func Test_azdo_provider_getRepoDetails(t *testing.T) {
 
 	t.Run("non azure devops git remote", func(t *testing.T) {
 		//arrange
-		provider := &AzdoHubScmProvider{}
+		provider := &AzdoScmProvider{}
 		ctx := context.Background()
 
 		//act
@@ -139,16 +140,16 @@ func Test_saveEnvironmentConfig(t *testing.T) {
 	})
 
 }
-func getEmptyAzdoScmProviderTestHarness() *AzdoHubScmProvider {
-	return &AzdoHubScmProvider{
+func getEmptyAzdoScmProviderTestHarness() *AzdoScmProvider {
+	return &AzdoScmProvider{
 		Env: &environment.Environment{
 			Values: map[string]string{},
 		},
 	}
 }
 
-func getAzdoScmProviderTestHarness() *AzdoHubScmProvider {
-	return &AzdoHubScmProvider{
+func getAzdoScmProviderTestHarness() *AzdoScmProvider {
+	return &AzdoScmProvider{
 		Env: &environment.Environment{
 			Values: map[string]string{
 				azdo.AzDoEnvironmentOrgName:       "fake_org",
@@ -178,3 +179,35 @@ func (console *configurablePromptConsole) Confirm(ctx context.Context, options i
 	return false, nil
 }
 func (console *configurablePromptConsole) SetWriter(writer io.Writer) {}
+
+// For tests where console.prompt returns values provided in its internal []string
+type circularConsole struct {
+	selectReturnValues []int
+	index              int
+}
+
+func (console *circularConsole) Message(ctx context.Context, message string) {}
+func (console *circularConsole) Prompt(ctx context.Context, options input.ConsoleOptions) (string, error) {
+	return "", nil
+}
+
+func (console *circularConsole) Select(ctx context.Context, options input.ConsoleOptions) (int, error) {
+	// If no values where provided, return error
+	arraySize := len(console.selectReturnValues)
+	if arraySize == 0 {
+		return 0, errors.New("no values to return")
+	}
+
+	// Reset index when it reaches size (back to first value)
+	if console.index == arraySize {
+		console.index = 0
+	}
+
+	returnValue := console.selectReturnValues[console.index]
+	console.index += 1
+	return returnValue, nil
+}
+func (console *circularConsole) Confirm(ctx context.Context, options input.ConsoleOptions) (bool, error) {
+	return false, nil
+}
+func (console *circularConsole) SetWriter(writer io.Writer) {}

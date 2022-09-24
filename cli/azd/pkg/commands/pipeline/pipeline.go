@@ -9,11 +9,13 @@ import (
 	"fmt"
 	"os"
 	"path"
+	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 )
 
@@ -94,77 +96,111 @@ func folderExists(folderPath string) bool {
 	return false
 }
 
+const (
+	gitHubLabel     string = "github"
+	githubFolder    string = ".github"
+	azdoLabel       string = "azdo"
+	azdoFolder      string = ".azdo"
+	envPersistedKey string = "AZD_PIPELINE_PROVIDER"
+)
+
 // DetectProviders get azd context from the context and pulls the project directory from it.
 // Depending on the project directory, returns pipeline scm and ci providers based on:
-// - if .github folder is found and .azdo folder is missing: GitHub scm and ci as provider
-// - if .azdo folder is found and .github folder is missing: Azdo scm and ci as provider
-// - both .github and .azdo folders found: prompt user to choose provider for scm and ci
-// - none of the folders found: return error
-// - no azd context in the ctx: return error
-func DetectProviders(ctx context.Context, console input.Console, env *environment.Environment) (ScmProvider, CiProvider, error) {
+//   - if .github folder is found and .azdo folder is missing: GitHub scm and ci as provider
+//   - if .azdo folder is found and .github folder is missing: Azdo scm and ci as provider
+//   - both .github and .azdo folders found: GitHub scm and ci as provider
+//   - overrideProvider set to github (regardless of folders): GitHub scm and ci as provider
+//   - overrideProvider set to azdo (regardless of folders): Azdo scm and ci as provider
+//   - none of the folders found: return error
+//   - no azd context in the ctx: return error
+//   - overrideProvider set to neither github or azdo: return error
+//   - Note: The provider is persisted in the environment so the next time the function is run
+//     the same provider is used directly, unless the overrideProvider is used to change
+//     the last used configuration
+func DetectProviders(
+	ctx context.Context,
+	env *environment.Environment,
+	overrideProvider string) (ScmProvider, CiProvider, error) {
+	// This should be a pre-condition. azd context should be injected with the context
 	azdContext, err := azdcontext.GetAzdContext(ctx)
 	if err != nil {
 		return nil, nil, err
 	}
-
 	projectDir := azdContext.ProjectDirectory()
 
-	hasGitHubFolder := folderExists(path.Join(projectDir, ".github"))
-	hasAzDevOpsFolder := folderExists(path.Join(projectDir, ".azdo"))
+	// get the override value
+	overrideWith := strings.ToLower(overrideProvider)
 
+	// detecting pipeline folder configuration
+	hasGitHubFolder := folderExists(path.Join(projectDir, githubFolder))
+	hasAzDevOpsFolder := folderExists(path.Join(projectDir, azdoFolder))
+
+	// Error missing config for any provider
 	if !hasGitHubFolder && !hasAzDevOpsFolder {
-		return nil, nil, fmt.Errorf("no CI/CD provider configuration found. Expecting either .github and/or .azdo folder in the project root directory")
+		return nil, nil, fmt.Errorf(
+			"no CI/CD provider configuration found. Expecting either %s and/or %s folder in the project root directory.",
+			gitHubLabel,
+			azdoLabel)
 	}
 
-	if !hasAzDevOpsFolder && hasGitHubFolder {
-		// GitHub only
-		return &GitHubScmProvider{}, &GitHubCiProvider{}, nil
+	// overrideWith is the last overriding mode. When it is empty
+	// we can re-assign it based on a previous run (persisted data)
+	// or based on the azure.yaml
+	if overrideWith == "" {
+		// check if there is a persisted value from a previous run in env
+		lastUsedProvider, configExists := env.Values[envPersistedKey]
+		if configExists {
+			// Setting override value based on last run. This will force detector to use the same
+			// configuration.
+			overrideWith = lastUsedProvider
+		}
+		// Figure out what is the expected provider to use for provisioning
+		prj, err := project.LoadProjectConfig(azdContext.ProjectPath(), env)
+		if err != nil {
+			return nil, nil, fmt.Errorf("finding pipeline provider: %w", err)
+		}
+		if prj.Pipeline.Provider != "" {
+			overrideWith = prj.Pipeline.Provider
+		}
+
 	}
 
-	if hasAzDevOpsFolder && !hasGitHubFolder {
-		// Azdo only
+	// Check override errors for missing folder
+	if overrideWith == gitHubLabel && !hasGitHubFolder {
+		return nil, nil, fmt.Errorf("%s folder is missing. Can't use selected provider.", githubFolder)
+	}
+	if overrideWith == azdoLabel && !hasAzDevOpsFolder {
+		return nil, nil, fmt.Errorf("%s folder is missing. Can't use selected provider.", azdoFolder)
+	}
+	// using wrong override value
+	if overrideWith != "" && overrideWith != azdoLabel && overrideWith != gitHubLabel {
+		return nil, nil, fmt.Errorf("%s is not a known pipeline provider.", overrideWith)
+	}
+
+	// At this point, we know that override value has either:
+	// - github or azdo value
+	// - OR is not set
+	// And we know that github and azdo folders are present.
+	// checking positive cases for overriding
+	if overrideWith == azdoLabel || hasAzDevOpsFolder && !hasGitHubFolder {
+		// Azdo only either by override or by finding only that folder
+		_ = savePipelineProviderToEnv(azdoLabel, env)
 		return createAzdoScmProvider(env, azdContext), createAzdoCiProvider(env, azdContext), nil
 	}
 
-	// Both folders exist. Prompt to select SCM first
-	scmElection, err := console.Select(ctx, input.ConsoleOptions{
-		Message: "Select what SCM provider to use",
-		Options: []string{
-			"GitHub",
-			"Azure DevOps",
-		},
-		DefaultValue: "GitHub",
-	})
+	// Both folders exists and no override value. Default to GitHub
+	// Or override value is github and the folder is available
+	_ = savePipelineProviderToEnv(gitHubLabel, env)
+	return &GitHubScmProvider{}, &GitHubCiProvider{}, nil
+}
 
+func savePipelineProviderToEnv(provider string, env *environment.Environment) error {
+	env.Values[envPersistedKey] = provider
+	err := env.Save()
 	if err != nil {
-		return nil, nil, err
+		return err
 	}
-
-	if scmElection == 1 {
-		// using azdo for scm would only support using azdo pipelines
-		return createAzdoScmProvider(env, azdContext), createAzdoCiProvider(env, azdContext), nil
-	}
-
-	// GitHub selected for SCM, prompt for CI provider
-	ciElection, err := console.Select(ctx, input.ConsoleOptions{
-		Message: "Select what CI provider to use",
-		Options: []string{
-			"GitHub Actions",
-			"Azure DevOps Pipelines",
-		},
-		DefaultValue: "GitHub Actions",
-	})
-
-	if err != nil {
-		return nil, nil, err
-	}
-
-	if ciElection == 0 {
-		return &GitHubScmProvider{}, &GitHubCiProvider{}, nil
-	}
-
-	// GitHub plus azdo pipelines otherwise
-	return &GitHubScmProvider{}, createAzdoCiProvider(env, azdContext), nil
+	return nil
 }
 
 func createAzdoCiProvider(env *environment.Environment, azdCtx *azdcontext.AzdContext) *AzdoCiProvider {
@@ -174,8 +210,8 @@ func createAzdoCiProvider(env *environment.Environment, azdCtx *azdcontext.AzdCo
 	}
 }
 
-func createAzdoScmProvider(env *environment.Environment, azdCtx *azdcontext.AzdContext) *AzdoHubScmProvider {
-	return &AzdoHubScmProvider{
+func createAzdoScmProvider(env *environment.Environment, azdCtx *azdcontext.AzdContext) *AzdoScmProvider {
+	return &AzdoScmProvider{
 		Env:        env,
 		AzdContext: azdCtx,
 	}

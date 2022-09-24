@@ -45,7 +45,7 @@ func EnsureAzdoPatExists(ctx context.Context, env *environment.Environment, cons
 		value = pat
 
 		idx, err := console.Select(ctx, input.ConsoleOptions{
-			Message: fmt.Sprintf("Would you like to PAT to the %s environment file (.env)?", env.GetEnvName()),
+			Message: fmt.Sprintf("Would you like to save the PAT to the %s environment file (.env)?", env.GetEnvName()),
 			Options: []string{
 				"Yes, save this PAT to the current .env file",
 				"No, do not store the PAT.",

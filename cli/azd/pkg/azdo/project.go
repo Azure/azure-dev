@@ -105,7 +105,7 @@ func GetAzdoProjectFromNew(ctx context.Context, repoPath string, connection *azu
 
 	for {
 		name, err := console.Prompt(ctx, input.ConsoleOptions{
-			Message:      "Enter the name for your new Azure Devops Project OR Hit enter to use this name:",
+			Message:      "Enter the name for your new Azure DevOps Project OR Hit enter to use this name:",
 			DefaultValue: currentFolderName,
 		})
 		if err != nil {

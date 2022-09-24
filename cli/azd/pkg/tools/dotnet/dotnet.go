@@ -6,7 +6,6 @@ package dotnet
 import (
 	"context"
 	"fmt"
-	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
@@ -91,18 +90,12 @@ func (cli *dotNetCli) InitializeSecret(ctx context.Context, project string) erro
 }
 
 func (cli *dotNetCli) SetSecret(ctx context.Context, key string, value string, project string) error {
-	runArgs := exec.NewRunArgs("dotnet", "user-secrets", "set", normalize(key), value, "--project", project)
+	runArgs := exec.NewRunArgs("dotnet", "user-secrets", "set", key, value, "--project", project)
 	res, err := cli.commandRunner.Run(ctx, runArgs)
 	if err != nil {
 		return fmt.Errorf("failed running %s secret set %s: %w", cli.Name(), res.String(), err)
 	}
 	return nil
-}
-
-// Normalizes a key for dotnet user secrets.
-func normalize(key string) string {
-	// dotnet recognizes "__" as the hierarchy key separator for environment variables, but for user secrets, it has to be ":".
-	return strings.ReplaceAll(key, "__", ":")
 }
 
 func NewDotNetCli(ctx context.Context) DotNetCli {

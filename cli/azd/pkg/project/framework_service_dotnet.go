@@ -9,6 +9,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
@@ -69,7 +70,7 @@ func (dp *dotnetProject) Initialize(ctx context.Context) error {
 		}
 
 		for key, val := range bicepOutput {
-			if err := dp.dotnetCli.SetSecret(ctx, key, fmt.Sprint(val.Value), dp.config.Path()); err != nil {
+			if err := dp.dotnetCli.SetSecret(ctx, replaceUnderscoreWithColon(key), fmt.Sprint(val.Value), dp.config.Path()); err != nil {
 				return err
 			}
 		}
@@ -80,6 +81,12 @@ func (dp *dotnetProject) Initialize(ctx context.Context) error {
 	}
 
 	return nil
+}
+
+func replaceUnderscoreWithColon(key string) string {
+	// bicep takes .env and convert ":" to "__". dotnet secrets has to be converted back to ":"
+	// dotnet recognizes "__" as the hierarchy key separator for environment variables
+	return strings.ReplaceAll(key, "__", ":")
 }
 
 func NewDotNetProject(ctx context.Context, config *ServiceConfig, env *environment.Environment) FrameworkService {

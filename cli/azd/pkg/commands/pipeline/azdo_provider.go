@@ -620,7 +620,7 @@ func (p *AzdoCiProvider) configurePipeline(ctx context.Context, repoDetails *git
 		return err
 	}
 	buildDefinition, err := azdo.CreatePipeline(
-		ctx, details.projectId, azdo.AzurePipelineName, details.repoName, connection, *p.credentials, *p.Env, console, provisioningProvider)
+		ctx, details.projectId, azdo.AzurePipelineName, details.repoName, connection, *p.credentials, p.Env, console, provisioningProvider)
 	if err != nil {
 		return err
 	}

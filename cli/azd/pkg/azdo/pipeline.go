@@ -78,7 +78,7 @@ func CreatePipeline(
 	repoName string,
 	connection *azuredevops.Connection,
 	credentials AzureServicePrincipalCredentials,
-	env environment.Environment,
+	env *environment.Environment,
 	console input.Console,
 	provisioningProvider provisioning.Options) (*build.BuildDefinition, error) {
 
@@ -134,7 +134,7 @@ func createAzureDevPipelineArgs(
 	name string,
 	repoName string,
 	credentials AzureServicePrincipalCredentials,
-	env environment.Environment,
+	env *environment.Environment,
 	queue *taskagent.TaskAgentQueue,
 	provisioningProvider provisioning.Options,
 ) (*build.CreateDefinitionArgs, error) {

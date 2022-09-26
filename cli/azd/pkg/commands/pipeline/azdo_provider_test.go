@@ -114,7 +114,7 @@ func Test_azdo_provider_preConfigureCheck(t *testing.T) {
 
 		// assert
 		require.Nil(t, e)
-		require.EqualValues(t, provider.Env.Values[azdo.AzDoPatName], testPat)
+		require.EqualValues(t, testPat, provider.Env.Values[azdo.AzDoPatName])
 	})
 
 }
@@ -176,7 +176,7 @@ func (console *configurablePromptConsole) Select(ctx context.Context, options in
 	return 0, nil
 }
 func (console *configurablePromptConsole) Confirm(ctx context.Context, options input.ConsoleOptions) (bool, error) {
-	return false, nil
+	return true, nil
 }
 func (console *configurablePromptConsole) SetWriter(writer io.Writer) {}
 

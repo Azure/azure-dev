@@ -12,7 +12,9 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
+	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
+	"github.com/azure/azure-dev/cli/azd/test/mocks/console"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -65,6 +67,8 @@ func Test_detectProviders(t *testing.T) {
 		env := &environment.Environment{
 			Values: envValues,
 		}
+		// set a console for ctx
+		ctx = input.WithConsole(ctx, console.NewMockConsole())
 		scmProvider, ciProvider, err := DetectProviders(ctx, env, "")
 		assert.Nil(t, scmProvider)
 		assert.Nil(t, ciProvider)
@@ -301,6 +305,9 @@ func Test_detectProviders(t *testing.T) {
 		ghFolder := path.Join(tempDir, githubFolder)
 		err = os.Mkdir(ghFolder, osutil.PermissionDirectory)
 		assert.NoError(t, err)
+
+		// set a console for ctx
+		ctx = input.WithConsole(ctx, console.NewMockConsole())
 
 		env := &environment.Environment{Values: map[string]string{}}
 

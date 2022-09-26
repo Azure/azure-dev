@@ -44,30 +44,17 @@ func EnsurePatExists(ctx context.Context, env *environment.Environment, console 
 		os.Setenv(AzDoPatName, pat)
 		value = pat
 
-		idx, err := console.Select(ctx, input.ConsoleOptions{
-			Message: fmt.Sprintf("Would you like to save the PAT to the %s environment file (.env)?", env.GetEnvName()),
-			Options: []string{
-				"Yes, save this PAT to the current .env file",
-				"No, do not store the PAT.",
-			},
-			DefaultValue: "Yes, save this PAT to the current .env file",
+		persistPat, err := console.Confirm(ctx, input.ConsoleOptions{
+			Message: fmt.Sprintf("Save the PAT to the %s environment file (.env)?", env.GetEnvName()),
 		})
 		if err != nil {
 			return "", fmt.Errorf("prompting for pat storage: %w", err)
 		}
-
-		switch idx {
-		// save pat to env file
-		case 0:
+		if persistPat {
 			err = saveEnvironmentConfig(AzDoPatName, value, env)
 			if err != nil {
 				return "", err
 			}
-		// user rejected pat storage, skip
-		case 1:
-			break
-		default:
-			panic(fmt.Sprintf("unexpected selection index %d", idx))
 		}
 	}
 	return value, nil

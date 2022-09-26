@@ -55,7 +55,7 @@ func CreateBuildPolicy(
 	policyIsBlocking := true
 	policyIsEnabled := true
 
-	policySettingsScope := make(map[string]interface{})
+	policySettingsScope := map[string]interface{}{}
 	policySettingsScope["repositoryId"] = repoId
 	policySettingsScope["refName"] = fmt.Sprintf("refs/heads/%s", DefaultBranch)
 	policySettingsScope["matchKind"] = "Exact"

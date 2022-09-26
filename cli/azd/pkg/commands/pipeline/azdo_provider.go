@@ -58,12 +58,12 @@ func (p *AzdoScmProvider) requiredTools() []tools.ExternalTool {
 // preConfigureCheck check the current state of external tools and any
 // other dependency to be as expected for execution.
 func (p *AzdoScmProvider) preConfigureCheck(ctx context.Context, console input.Console) error {
-	_, err := azdo.EnsureAzdoPatExists(ctx, p.Env, console)
+	_, err := azdo.EnsurePatExists(ctx, p.Env, console)
 	if err != nil {
 		return err
 	}
 
-	_, err = azdo.EnsureAzdoOrgNameExists(ctx, p.Env, console)
+	_, err = azdo.EnsureOrgNameExists(ctx, p.Env, console)
 	return err
 }
 
@@ -182,7 +182,7 @@ func (p *AzdoScmProvider) ensureGitRepositoryExists(ctx context.Context, console
 	}
 	remoteUser := remoteParts[0]
 	remoteHost := remoteParts[1]
-	pat, err := azdo.EnsureAzdoPatExists(ctx, p.Env, console)
+	pat, err := azdo.EnsurePatExists(ctx, p.Env, console)
 	if err != nil {
 		return "", err
 	}
@@ -210,7 +210,7 @@ func (p *AzdoScmProvider) getAzdoConnection(ctx context.Context) (*azuredevops.C
 		return p.azdoConnection, nil
 	}
 
-	org, err := azdo.EnsureAzdoOrgNameExists(ctx, p.Env, console)
+	org, err := azdo.EnsureOrgNameExists(ctx, p.Env, console)
 	if err != nil {
 		return nil, err
 	}
@@ -218,7 +218,7 @@ func (p *AzdoScmProvider) getAzdoConnection(ctx context.Context) (*azuredevops.C
 	repoDetails := p.getRepoDetails()
 	repoDetails.orgName = org
 
-	pat, err := azdo.EnsureAzdoPatExists(ctx, p.Env, console)
+	pat, err := azdo.EnsurePatExists(ctx, p.Env, console)
 	if err != nil {
 		return nil, err
 	}
@@ -540,12 +540,12 @@ func (p *AzdoCiProvider) requiredTools() []tools.ExternalTool {
 
 // preConfigureCheck nil for Azdo
 func (p *AzdoCiProvider) preConfigureCheck(ctx context.Context, console input.Console) error {
-	_, err := azdo.EnsureAzdoPatExists(ctx, p.Env, console)
+	_, err := azdo.EnsurePatExists(ctx, p.Env, console)
 	if err != nil {
 		return err
 	}
 
-	_, err = azdo.EnsureAzdoOrgNameExists(ctx, p.Env, console)
+	_, err = azdo.EnsureOrgNameExists(ctx, p.Env, console)
 	return err
 }
 
@@ -572,11 +572,11 @@ func (p *AzdoCiProvider) configureConnection(
 
 	p.credentials = azureCredentials
 	details := repoDetails.details.(*AzdoRepositoryDetails)
-	org, err := azdo.EnsureAzdoOrgNameExists(ctx, p.Env, console)
+	org, err := azdo.EnsureOrgNameExists(ctx, p.Env, console)
 	if err != nil {
 		return err
 	}
-	pat, err := azdo.EnsureAzdoPatExists(ctx, p.Env, console)
+	pat, err := azdo.EnsurePatExists(ctx, p.Env, console)
 	if err != nil {
 		return err
 	}
@@ -607,11 +607,11 @@ func (p *AzdoCiProvider) configurePipeline(ctx context.Context, repoDetails *git
 	details := repoDetails.details.(*AzdoRepositoryDetails)
 	console := input.GetConsole(ctx)
 
-	org, err := azdo.EnsureAzdoOrgNameExists(ctx, p.Env, console)
+	org, err := azdo.EnsureOrgNameExists(ctx, p.Env, console)
 	if err != nil {
 		return err
 	}
-	pat, err := azdo.EnsureAzdoPatExists(ctx, p.Env, console)
+	pat, err := azdo.EnsurePatExists(ctx, p.Env, console)
 	if err != nil {
 		return err
 	}

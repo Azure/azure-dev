@@ -53,7 +53,7 @@ func authorizeServiceConnectionToAllPipelines(
 func serviceConnectionExists(ctx context.Context,
 	client *serviceendpoint.Client,
 	projectId *string,
-	serviceConnectionName *string) (bool, error) {
+	serviceConnectionName *string) (*serviceendpoint.ServiceEndpoint, error) {
 
 	endpointNames := make([]string, 1)
 	endpointNames[0] = *serviceConnectionName
@@ -64,16 +64,16 @@ func serviceConnectionExists(ctx context.Context,
 
 	serviceEndpoints, err := (*client).GetServiceEndpointsByNames(ctx, getServiceEndpointsByNamesArgs)
 	if err != nil {
-		return false, err
+		return nil, err
 	}
 
 	for _, endpoint := range *serviceEndpoints {
 		if *endpoint.Name == *serviceConnectionName && *endpoint.IsReady {
-			return true, nil
+			return &endpoint, nil
 		}
 	}
 
-	return false, nil
+	return nil, nil
 }
 
 // create a new service connection that will be used in the deployment pipeline
@@ -95,24 +95,36 @@ func CreateServiceConnection(
 		return fmt.Errorf("creating service connection: looking for existing connection: %w", err)
 	}
 
-	// if a service connection exists, skip creation.
-	if foundServiceConnection {
-		console.Message(ctx, output.WithWarningFormat("Service Connection %s already exists. Skipping Service Connection Creation", ServiceConnectionName))
+	// endpoint contains the Azure credentials
+	createServiceEndpointArgs, err := createAzureRMServiceEndPointArgs(ctx, &projectId, credentials)
+	if err != nil {
+		return fmt.Errorf("creating Azure DevOps endpoint: %w", err)
+	}
+
+	// if a service connection exists, skip creating a new Service connection. But update the current connection only
+	if foundServiceConnection != nil {
+		console.Message(ctx, output.WithWarningFormat("Service Connection %s already exists. Updating endpoint", ServiceConnectionName))
+		// After updating the endpoint with credentials, we no longer need it
+		_, err := client.UpdateServiceEndpoint(ctx, serviceendpoint.UpdateServiceEndpointArgs{
+			Endpoint:   createServiceEndpointArgs.Endpoint,
+			Project:    createServiceEndpointArgs.Project,
+			EndpointId: foundServiceConnection.Id,
+		})
+		if err != nil {
+			return fmt.Errorf("updating service connection: %w", err)
+		}
 		return nil
 	}
 
-	createServiceEndpointArgs, err := createAzureRMServiceEndPointArgs(ctx, &projectId, credentials)
-	if err != nil {
-		return err
-	}
+	// Service connection not found. Creating a new one and authorizing.
 	endpoint, err := client.CreateServiceEndpoint(ctx, createServiceEndpointArgs)
 	if err != nil {
-		return err
+		return fmt.Errorf("Creating new service connection: %w", err)
 	}
 
 	err = authorizeServiceConnectionToAllPipelines(ctx, projectId, endpoint, connection)
 	if err != nil {
-		return err
+		return fmt.Errorf("authorizing service connection: %w", err)
 	}
 
 	return nil

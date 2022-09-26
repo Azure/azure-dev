@@ -511,7 +511,7 @@ func (p *AzdoScmProvider) postGitPush(
 		return err
 	}
 
-	err = azdo.CreateBuildPolicy(ctx, connection, p.repoDetails.projectId, p.repoDetails.repoId, p.repoDetails.buildDefinition)
+	err = azdo.CreateBuildPolicy(ctx, connection, p.repoDetails.projectId, p.repoDetails.repoId, p.repoDetails.buildDefinition, p.Env)
 	if err != nil {
 		return err
 	}

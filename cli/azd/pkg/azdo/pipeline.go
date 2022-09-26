@@ -48,7 +48,7 @@ func getAgentQueue(ctx context.Context, projectId string, connection *azuredevop
 // find pipeline by name
 func pipelineExists(
 	ctx context.Context,
-	client *build.Client,
+	client build.Client,
 	projectId *string,
 	pipelineName *string,
 ) (bool, error) {
@@ -57,7 +57,7 @@ func pipelineExists(
 		Name:    pipelineName,
 	}
 
-	buildDefinitionsResponse, err := (*client).GetDefinitions(ctx, getDefinitionsArgs)
+	buildDefinitionsResponse, err := client.GetDefinitions(ctx, getDefinitionsArgs)
 	if err != nil {
 		return false, err
 	}
@@ -91,7 +91,7 @@ func CreatePipeline(
 	var count = 0
 	var maxTries = 4
 	for exists {
-		exists, err = pipelineExists(ctx, &client, &projectId, &name)
+		exists, err = pipelineExists(ctx, client, &projectId, &name)
 		if err != nil {
 			return nil, err
 		}

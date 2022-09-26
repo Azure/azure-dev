@@ -152,7 +152,6 @@
         "pipeline": {
             "type": "object",
             "title": "Definition of continuous integration pipeline",
-            "additionalProperties": true,
             "properties": {
                 "provider":{
                     "type": "string",

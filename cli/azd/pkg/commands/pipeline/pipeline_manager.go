@@ -159,7 +159,7 @@ func (i *PipelineManager) pushGitRepo(ctx context.Context, currentBranch string)
 		return fmt.Errorf("adding files: %w", err)
 	}
 
-	if err := gitCli.Commit(ctx, i.AzdCtx.ProjectDirectory(), "Configure GitHub Actions"); err != nil {
+	if err := gitCli.Commit(ctx, i.AzdCtx.ProjectDirectory(), "Configure Azure Developer Pipeline"); err != nil {
 		return fmt.Errorf("commit changes: %w", err)
 	}
 

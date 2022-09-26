@@ -29,12 +29,12 @@ func authorizeServiceConnectionToAllPipelines(
 	endpointResource := "endpoint"
 	endpointAuthorized := true
 	endpointId := endpoint.Id.String()
-	resources := make([]build.DefinitionResourceReference, 1)
-	resources[0] = build.DefinitionResourceReference{
-		Type:       &endpointResource,
-		Authorized: &endpointAuthorized,
-		Id:         &endpointId,
-	}
+	resources := []build.DefinitionResourceReference{
+		{
+			Type:       &endpointResource,
+			Authorized: &endpointAuthorized,
+			Id:         &endpointId,
+		}}
 
 	authorizeProjectResourcesArgs := build.AuthorizeProjectResourcesArgs{
 		Project:   &projectId,

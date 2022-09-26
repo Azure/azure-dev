@@ -5,11 +5,9 @@ package pipeline
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
-	"os"
 	"time"
 
 	"github.com/azure/azure-dev/cli/azd/internal"
@@ -205,23 +203,14 @@ func (manager *PipelineManager) Configure(ctx context.Context) error {
 	}
 
 	inputConsole.Message(ctx, fmt.Sprintf("Creating or updating service principal %s.\n", manager.PipelineServicePrincipalName))
-	var credentials json.RawMessage = nil
-	var err error
 
-	existingSP := os.Getenv("AZURE_CREDENTIALS")
-	if existingSP != "" {
-		credentials = json.RawMessage(existingSP)
-	}
-
-	if credentials == nil {
-		credentials, err = azCli.CreateOrUpdateServicePrincipal(
-			ctx,
-			manager.Environment.GetSubscriptionId(),
-			manager.PipelineServicePrincipalName,
-			manager.PipelineRoleName)
-		if err != nil {
-			return fmt.Errorf("failed to create or update service principal: %w", err)
-		}
+	credentials, err := azCli.CreateOrUpdateServicePrincipal(
+		ctx,
+		manager.Environment.GetSubscriptionId(),
+		manager.PipelineServicePrincipalName,
+		manager.PipelineRoleName)
+	if err != nil {
+		return fmt.Errorf("failed to create or update service principal: %w", err)
 	}
 
 	// Get git repo details

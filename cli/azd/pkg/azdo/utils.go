@@ -45,7 +45,8 @@ func EnsurePatExists(ctx context.Context, env *environment.Environment, console 
 		value = pat
 
 		persistPat, err := console.Confirm(ctx, input.ConsoleOptions{
-			Message: fmt.Sprintf("Save the PAT to the %s environment file (.env)?", env.GetEnvName()),
+			Message:      fmt.Sprintf("Save the PAT to the %s environment file (.env)?", env.GetEnvName()),
+			DefaultValue: true,
 		})
 		if err != nil {
 			return "", fmt.Errorf("prompting for pat storage: %w", err)

@@ -5,8 +5,6 @@ package pipeline
 
 import (
 	"context"
-	"errors"
-	"io"
 	"os"
 	"path"
 	"testing"
@@ -14,6 +12,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azdo"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/test/mocks/console"
 	"github.com/stretchr/testify/require"
 )
 
@@ -86,7 +85,7 @@ func Test_azdo_provider_preConfigureCheck(t *testing.T) {
 		provider := getEmptyAzdoScmProviderTestHarness()
 		os.Setenv(azdo.AzDoEnvironmentOrgName, "testOrg")
 		os.Setenv(azdo.AzDoPatName, testPat)
-		testConsole := &circularConsole{}
+		testConsole := console.NewMockConsole()
 		ctx := context.Background()
 
 		// act
@@ -104,9 +103,14 @@ func Test_azdo_provider_preConfigureCheck(t *testing.T) {
 		os.Unsetenv(azdo.AzDoPatName)
 		os.Setenv(azdo.AzDoEnvironmentOrgName, "testOrg")
 		provider := getEmptyAzdoScmProviderTestHarness()
-		testConsole := &configurablePromptConsole{}
+		testConsole := console.NewMockConsole()
+		testConsole.WhenConfirm(func(options input.ConsoleOptions) bool {
+			return options.Message == "Save the PAT to the  environment file (.env)?"
+		}).Respond(true)
 		testPat := "testPAT12345"
-		testConsole.promptResponse = testPat
+		testConsole.WhenPrompt(func(options input.ConsoleOptions) bool {
+			return options.Message == "Personal Access Token (PAT):"
+		}).Respond(testPat)
 		ctx := context.Background()
 
 		// act
@@ -162,52 +166,3 @@ func getAzdoScmProviderTestHarness() *AzdoScmProvider {
 		},
 	}
 }
-
-// For tests where the console won't matter at all
-type configurablePromptConsole struct {
-	promptResponse string
-}
-
-func (console *configurablePromptConsole) Message(ctx context.Context, message string) {}
-func (console *configurablePromptConsole) Prompt(ctx context.Context, options input.ConsoleOptions) (string, error) {
-	return console.promptResponse, nil
-}
-func (console *configurablePromptConsole) Select(ctx context.Context, options input.ConsoleOptions) (int, error) {
-	return 0, nil
-}
-func (console *configurablePromptConsole) Confirm(ctx context.Context, options input.ConsoleOptions) (bool, error) {
-	return true, nil
-}
-func (console *configurablePromptConsole) SetWriter(writer io.Writer) {}
-
-// For tests where console.prompt returns values provided in its internal []string
-type circularConsole struct {
-	selectReturnValues []int
-	index              int
-}
-
-func (console *circularConsole) Message(ctx context.Context, message string) {}
-func (console *circularConsole) Prompt(ctx context.Context, options input.ConsoleOptions) (string, error) {
-	return "", nil
-}
-
-func (console *circularConsole) Select(ctx context.Context, options input.ConsoleOptions) (int, error) {
-	// If no values where provided, return error
-	arraySize := len(console.selectReturnValues)
-	if arraySize == 0 {
-		return 0, errors.New("no values to return")
-	}
-
-	// Reset index when it reaches size (back to first value)
-	if console.index == arraySize {
-		console.index = 0
-	}
-
-	returnValue := console.selectReturnValues[console.index]
-	console.index += 1
-	return returnValue, nil
-}
-func (console *circularConsole) Confirm(ctx context.Context, options input.ConsoleOptions) (bool, error) {
-	return false, nil
-}
-func (console *circularConsole) SetWriter(writer io.Writer) {}

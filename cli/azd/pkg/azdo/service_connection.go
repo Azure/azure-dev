@@ -131,18 +131,20 @@ func createAzureRMServiceEndPointArgs(
 	endpointIsShared := false
 	endpointScheme := "ServicePrincipal"
 
-	endpointAuthorizationParameters := make(map[string]string)
-	endpointAuthorizationParameters["serviceprincipalid"] = credentials.ClientId
-	endpointAuthorizationParameters["serviceprincipalkey"] = credentials.ClientSecret
-	endpointAuthorizationParameters["authenticationType"] = "spnKey"
-	endpointAuthorizationParameters["tenantid"] = credentials.TenantId
+	endpointAuthorizationParameters := map[string]string{
+		"serviceprincipalid":  credentials.ClientId,
+		"serviceprincipalkey": credentials.ClientSecret,
+		"authenticationType":  "spnKey",
+		"tenantid":            credentials.TenantId,
+	}
 
-	endpointData := make(map[string]string)
-	endpointData["environment"] = CloudEnvironment
-	endpointData["subscriptionId"] = credentials.SubscriptionId
-	endpointData["subscriptionName"] = "azure subscription"
-	endpointData["scopeLevel"] = "Subscription"
-	endpointData["creationMode"] = "Manual"
+	endpointData := map[string]string{
+		"environment":      CloudEnvironment,
+		"subscriptionId":   credentials.SubscriptionId,
+		"subscriptionName": "azure subscription",
+		"scopeLevel":       "Subscription",
+		"creationMode":     "Manual",
+	}
 
 	endpointAuthorization := serviceendpoint.EndpointAuthorization{
 		Scheme:     &endpointScheme,

@@ -14,7 +14,7 @@ import (
 )
 
 // helper method to verify that a configuration exists in the .env file or in system environment variables
-func ensureAzdoConfigExists(ctx context.Context, env *environment.Environment, key string, label string) (string, error) {
+func ensureConfigExists(ctx context.Context, env *environment.Environment, key string, label string) (string, error) {
 	value := env.Values[key]
 	if value != "" {
 		return value, nil
@@ -28,8 +28,8 @@ func ensureAzdoConfigExists(ctx context.Context, env *environment.Environment, k
 }
 
 // helper method to ensure an Azure DevOps PAT exists either in .env or system environment variables
-func EnsureAzdoPatExists(ctx context.Context, env *environment.Environment, console input.Console) (string, error) {
-	value, err := ensureAzdoConfigExists(ctx, env, AzDoPatName, "azure devops personal access token")
+func EnsurePatExists(ctx context.Context, env *environment.Environment, console input.Console) (string, error) {
+	value, err := ensureConfigExists(ctx, env, AzDoPatName, "azure devops personal access token")
 	if err != nil {
 		console.Message(ctx, output.WithWarningFormat("You need an Azure DevOps Personal Access Token (PAT). Please create a PAT by following the instructions here https://aka.ms/azure-dev/azdo-pat"))
 		pat, err := console.Prompt(ctx, input.ConsoleOptions{
@@ -74,8 +74,8 @@ func EnsureAzdoPatExists(ctx context.Context, env *environment.Environment, cons
 }
 
 // helper method to ensure an Azure DevOps organization name exists either in .env or system environment variables
-func EnsureAzdoOrgNameExists(ctx context.Context, env *environment.Environment, console input.Console) (string, error) {
-	value, err := ensureAzdoConfigExists(ctx, env, AzDoEnvironmentOrgName, "azure devops organization name")
+func EnsureOrgNameExists(ctx context.Context, env *environment.Environment, console input.Console) (string, error) {
+	value, err := ensureConfigExists(ctx, env, AzDoEnvironmentOrgName, "azure devops organization name")
 	if err != nil {
 		orgName, err := console.Prompt(ctx, input.ConsoleOptions{
 			Message:      "Please enter an Azure DevOps Organization Name:",

@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/microsoft/azure-devops-go-api/azuredevops"
 	"github.com/microsoft/azure-devops-go-api/azuredevops/build"
 	"github.com/microsoft/azure-devops-go-api/azuredevops/policy"
@@ -36,7 +37,8 @@ func CreateBuildPolicy(
 	connection *azuredevops.Connection,
 	projectId string,
 	repoId string,
-	buildDefinition *build.BuildDefinition) error {
+	buildDefinition *build.BuildDefinition,
+	env *environment.Environment) error {
 	client, err := policy.NewClient(ctx, connection)
 	if err != nil {
 		return err
@@ -55,21 +57,24 @@ func CreateBuildPolicy(
 	policyIsBlocking := true
 	policyIsEnabled := true
 
-	policySettingsScope := make(map[string]interface{})
-	policySettingsScope["repositoryId"] = repoId
-	policySettingsScope["refName"] = fmt.Sprintf("refs/heads/%s", DefaultBranch)
-	policySettingsScope["matchKind"] = "Exact"
+	policySettingsScope := map[string]interface{}{
+		"repositoryId": repoId,
+		"refName":      fmt.Sprintf("refs/heads/%s", DefaultBranch),
+		"matchKind":    "Exact",
+	}
 
-	policySettingsScopes := make([]map[string]interface{}, 1)
-	policySettingsScopes[0] = policySettingsScope
+	policySettingsScopes := []map[string]interface{}{
+		policySettingsScope,
+	}
 
-	policySettings := make(map[string]interface{})
-	policySettings["buildDefinitionId"] = buildDefinition.Id
-	policySettings["displayName"] = "Azure Dev Deploy PR"
-	policySettings["manualQueueOnly"] = false
-	policySettings["queueOnSourceUpdateOnly"] = true
-	policySettings["validDuration"] = 720
-	policySettings["scope"] = policySettingsScopes
+	policySettings := map[string]interface{}{
+		"buildDefinitionId":       buildDefinition.Id,
+		"displayName":             fmt.Sprintf("Azure Dev Deploy PR - %s", env.GetEnvName()),
+		"manualQueueOnly":         false,
+		"queueOnSourceUpdateOnly": true,
+		"validDuration":           720,
+		"scope":                   policySettingsScopes,
+	}
 
 	policyConfiguration := &policy.PolicyConfiguration{
 		Type:       policyTypeRef,

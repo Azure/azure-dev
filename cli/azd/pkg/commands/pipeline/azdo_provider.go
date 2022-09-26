@@ -166,7 +166,7 @@ func (p *AzdoScmProvider) ensureGitRepositoryExists(ctx context.Context, console
 		return "", err
 	}
 
-	repo, err := azdo.GetAzDoGitRepositoriesInProject(ctx, p.repoDetails.projectName, p.repoDetails.orgName, connection, console)
+	repo, err := azdo.GetGitRepositoriesInProject(ctx, p.repoDetails.projectName, p.repoDetails.orgName, connection, console)
 	if err != nil {
 		return "", err
 	}
@@ -223,7 +223,7 @@ func (p *AzdoScmProvider) getAzdoConnection(ctx context.Context) (*azuredevops.C
 		return nil, err
 	}
 
-	connection, err := azdo.GetAzdoConnection(ctx, org, pat)
+	connection, err := azdo.GetConnection(ctx, org, pat)
 	if err != nil {
 		return nil, err
 	}
@@ -259,13 +259,13 @@ func (p *AzdoScmProvider) ensureProjectExists(ctx context.Context, console input
 	switch idx {
 	// Select from an existing AzDo project
 	case 0:
-		projectName, projectId, err = azdo.GetAzdoProjectFromExisting(ctx, connection, console)
+		projectName, projectId, err = azdo.GetProjectFromExisting(ctx, connection, console)
 		if err != nil {
 			return "", "", false, err
 		}
 	// Create a new AzDo project
 	case 1:
-		projectName, projectId, err = azdo.GetAzdoProjectFromNew(ctx, p.AzdContext.ProjectDirectory(), connection, p.Env, console)
+		projectName, projectId, err = azdo.GetProjectFromNew(ctx, p.AzdContext.ProjectDirectory(), connection, p.Env, console)
 		newProject = true
 		if err != nil {
 			return "", "", false, err
@@ -318,7 +318,7 @@ func (p *AzdoScmProvider) getDefaultRepoRemote(ctx context.Context, projectName 
 	if err != nil {
 		return "", err
 	}
-	repo, err := azdo.GetAzDoDefaultGitRepositoriesInProject(ctx, projectName, connection)
+	repo, err := azdo.GetDefaultGitRepositoriesInProject(ctx, projectName, connection)
 	if err != nil {
 		return "", err
 	}
@@ -580,7 +580,7 @@ func (p *AzdoCiProvider) configureConnection(
 	if err != nil {
 		return err
 	}
-	connection, err := azdo.GetAzdoConnection(ctx, org, pat)
+	connection, err := azdo.GetConnection(ctx, org, pat)
 	if err != nil {
 		return err
 	}
@@ -615,7 +615,7 @@ func (p *AzdoCiProvider) configurePipeline(ctx context.Context, repoDetails *git
 	if err != nil {
 		return err
 	}
-	connection, err := azdo.GetAzdoConnection(ctx, org, pat)
+	connection, err := azdo.GetConnection(ctx, org, pat)
 	if err != nil {
 		return err
 	}

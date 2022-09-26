@@ -36,7 +36,7 @@ type AzureServicePrincipalCredentials struct {
 }
 
 // helper method to return an Azure DevOps connection used the AzDo go sdk
-func GetAzdoConnection(ctx context.Context, organization string, personalAccessToken string) (*azuredevops.Connection, error) {
+func GetConnection(ctx context.Context, organization string, personalAccessToken string) (*azuredevops.Connection, error) {
 	if organization == "" {
 		return nil, fmt.Errorf("organization name is required")
 	}

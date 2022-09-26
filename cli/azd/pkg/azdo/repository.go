@@ -36,7 +36,7 @@ func CreateRepository(ctx context.Context, projectId string, repoName string, co
 
 // returns a default repo from a newly created AzDo project.
 // this relies on the fact that new projects automatically get a repo named the same as the project
-func GetAzDoDefaultGitRepositoriesInProject(ctx context.Context, projectName string, connection *azuredevops.Connection) (*git.GitRepository, error) {
+func GetDefaultGitRepositoriesInProject(ctx context.Context, projectName string, connection *azuredevops.Connection) (*git.GitRepository, error) {
 	gitClient, err := git.NewClient(ctx, connection)
 	if err != nil {
 		return nil, err
@@ -66,7 +66,7 @@ func GetAzDoDefaultGitRepositoriesInProject(ctx context.Context, projectName str
 }
 
 // prompt the user to select a repo and return a repository object
-func GetAzDoGitRepositoriesInProject(ctx context.Context, projectName string, orgName string, connection *azuredevops.Connection, console input.Console) (*git.GitRepository, error) {
+func GetGitRepositoriesInProject(ctx context.Context, projectName string, orgName string, connection *azuredevops.Connection, console input.Console) (*git.GitRepository, error) {
 	gitClient, err := git.NewClient(ctx, connection)
 	if err != nil {
 		return nil, err

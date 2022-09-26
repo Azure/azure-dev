@@ -89,7 +89,7 @@ func createProject(ctx context.Context, connection *azuredevops.Connection, name
 		time.Sleep(800 * time.Millisecond)
 	}
 
-	project, err := getAzdoProjectByName(ctx, connection, name)
+	project, err := getProjectByName(ctx, connection, name)
 	if err != nil {
 		return nil, err
 	}
@@ -98,7 +98,7 @@ func createProject(ctx context.Context, connection *azuredevops.Connection, name
 
 // prompts the user for a new AzDo project name and creates the project
 // returns project name, project id, error
-func GetAzdoProjectFromNew(ctx context.Context, repoPath string, connection *azuredevops.Connection, env *environment.Environment, console input.Console) (string, string, error) {
+func GetProjectFromNew(ctx context.Context, repoPath string, connection *azuredevops.Connection, env *environment.Environment, console input.Console) (string, string, error) {
 	var project *core.TeamProjectReference
 	currentFolderName := filepath.Base(repoPath)
 	var projectDescription string = AzDoProjectDescription
@@ -134,7 +134,7 @@ func GetAzdoProjectFromNew(ctx context.Context, repoPath string, connection *azu
 }
 
 // return an azdo project by name
-func getAzdoProjectByName(ctx context.Context, connection *azuredevops.Connection, name string) (*core.TeamProjectReference, error) {
+func getProjectByName(ctx context.Context, connection *azuredevops.Connection, name string) (*core.TeamProjectReference, error) {
 	coreClient, err := core.NewClient(ctx, connection)
 	if err != nil {
 		return nil, err
@@ -157,7 +157,7 @@ func getAzdoProjectByName(ctx context.Context, connection *azuredevops.Connectio
 }
 
 // prompt the user to select form a list of existing Azure DevOps projects
-func GetAzdoProjectFromExisting(ctx context.Context, connection *azuredevops.Connection, console input.Console) (string, string, error) {
+func GetProjectFromExisting(ctx context.Context, connection *azuredevops.Connection, console input.Console) (string, string, error) {
 	coreClient, err := core.NewClient(ctx, connection)
 	if err != nil {
 		return "", "", err

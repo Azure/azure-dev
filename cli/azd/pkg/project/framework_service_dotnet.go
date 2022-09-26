@@ -70,7 +70,7 @@ func (dp *dotnetProject) Initialize(ctx context.Context) error {
 		}
 
 		for key, val := range bicepOutput {
-			if err := dp.dotnetCli.SetSecret(ctx, replaceUnderscoreWithColon(key), fmt.Sprint(val.Value), dp.config.Path()); err != nil {
+			if err := dp.dotnetCli.SetSecret(ctx, normalizeDotNetSecret(key), fmt.Sprint(val.Value), dp.config.Path()); err != nil {
 				return err
 			}
 		}
@@ -83,7 +83,7 @@ func (dp *dotnetProject) Initialize(ctx context.Context) error {
 	return nil
 }
 
-func replaceUnderscoreWithColon(key string) string {
+func normalizeDotNetSecret(key string) string {
 	// dotnet recognizes "__" as the hierarchy key separator for environment variables, but for user secrets, it has to be ":".
 	return strings.ReplaceAll(key, "__", ":")
 }

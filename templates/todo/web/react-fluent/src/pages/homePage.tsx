@@ -1,5 +1,5 @@
-import React, { useEffect, useContext, useMemo } from 'react';
-import { IconButton, IContextualMenuProps, IIconProps, Stack, Text } from '@fluentui/react';
+import React, { useEffect, useContext, useMemo, useState, Fragment } from 'react';
+import { IconButton, IContextualMenuProps, IIconProps, Stack, Text, Shimmer, ShimmerElementType } from '@fluentui/react';
 import TodoItemListPane from '../components/todoItemListPane';
 import { TodoItem, TodoItemState } from '../models';
 import * as itemActions from '../actions/itemActions';
@@ -22,6 +22,8 @@ const HomePage = () => {
         items: bindActionCreators(itemActions, appContext.dispatch) as unknown as ItemActions,
     }), [appContext.dispatch]);
 
+    const [isReady, setIsReady] = useState(false)
+
     // Create default list of does not exist
     useEffect(() => {
         if (appContext.state.lists?.length === 0) {
@@ -34,7 +36,6 @@ const HomePage = () => {
         if (appContext.state.lists?.length && !listId && !appContext.state.selectedList) {
             const defaultList = appContext.state.lists[0];
             navigate(`/lists/${defaultList.id}`);
-            console.log('selected default list');
         }
     }, [appContext.state.lists, appContext.state.selectedList, listId, navigate])
 
@@ -55,7 +56,12 @@ const HomePage = () => {
     // Load items for selected list
     useEffect(() => {
         if (appContext.state.selectedList?.id && !appContext.state.selectedList.items) {
-            actions.items.list(appContext.state.selectedList.id);
+            const loadListItems = async (listId: string) => {
+                await actions.items.list(listId);
+                setIsReady(true)
+            }
+
+            loadListItems(appContext.state.selectedList.id)
         }
     }, [actions.items, appContext.state.selectedList?.id, appContext.state.selectedList?.items])
 
@@ -112,11 +118,22 @@ const HomePage = () => {
             <Stack.Item>
                 <Stack horizontal styles={titleStackStyles} tokens={stackPadding}>
                     <Stack.Item grow={1}>
-                        <Text block variant="xLarge">{appContext.state.selectedList?.name}</Text>
-                        <Text variant="small">{appContext.state.selectedList?.description}</Text>
+                        <Shimmer width={300}
+                            isDataLoaded={!!appContext.state.selectedList}
+                            shimmerElements={
+                                [
+                                    { type: ShimmerElementType.line, height: 20 }
+                                ]
+                            } >
+                            <Fragment>
+                                <Text block variant="xLarge">{appContext.state.selectedList?.name}</Text>
+                                <Text variant="small">{appContext.state.selectedList?.description}</Text>
+                            </Fragment>
+                        </Shimmer>
                     </Stack.Item>
                     <Stack.Item>
                         <IconButton
+                            disabled={!isReady}
                             menuProps={menuProps}
                             iconProps={iconProps}
                             styles={{ root: { fontSize: 16 } }}
@@ -130,6 +147,7 @@ const HomePage = () => {
                     list={appContext.state.selectedList}
                     items={appContext.state.selectedList?.items}
                     selectedItem={appContext.state.selectedItem}
+                    disabled={!isReady}
                     onSelect={onItemSelected}
                     onCreated={onItemCreated}
                     onComplete={onItemCompleted}

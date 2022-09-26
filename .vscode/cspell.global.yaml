@@ -26,6 +26,9 @@ ignoreWords:
     - azurecaf
     - azuredevops
     - azurerm
+    - armresources
+    - azcore
+    - azidentity
     - Bfor
     - bicepcli
     - cdne
@@ -105,6 +108,19 @@ ignoreWords:
     - vwan
     - wafrg
     - Wans
+    - apim
+    - Retryable
+    - httptrigger
+    - resourcegroups
+    - resourcegroupterraform
+    - resourcegroupterraformremote
+    - resourcemanager
+    - devcontainer
+    - azurecaf
+    - azurerm
+    - aztfmod
+    - menuid
+    - PLACEHOLDERIACTOOLS
 useGitignore: true
 dictionaryDefinitions:
     - name: gitHubUserAliases

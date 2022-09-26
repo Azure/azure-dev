@@ -3,7 +3,7 @@ resources:
     - repository: azure-sdk-build-tools
       type: git
       name: internal/azure-sdk-build-tools
-      ref: refs/tags/azure-sdk-build-tools_20220329.1
+      ref: refs/tags/azure-sdk-build-tools_20220920.1
 
 # Continuous deployment trigger
 trigger:
@@ -69,12 +69,15 @@ stages:
 
           - template: /eng/pipelines/templates/steps/install-terraform.yml
 
+          - template: /eng/pipelines/templates/steps/install-sysinternals.yml
+
           - task: DockerInstaller@0
             displayName: Docker Installer
             condition: and(succeeded(), contains(variables['OSVmImage'], 'macOS'))
             inputs:
               dockerVersion: 17.09.0-ce
               releaseType: stable
+
           - task: PowerShell@2
             inputs:
               pwsh: true

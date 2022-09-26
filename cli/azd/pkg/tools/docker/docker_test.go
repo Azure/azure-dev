@@ -272,3 +272,61 @@ func Test_DockerPush(t *testing.T) {
 		require.Equal(t, fmt.Sprintf("pushing image: exit code: 1, stdout: , stderr: %s: %s", stdErr, customErrorMessage), err.Error())
 	})
 }
+
+func Test_IsSupportedDockerVersion(t *testing.T) {
+	cases := []struct {
+		name        string
+		version     string
+		supported   bool
+		expectError bool
+	}{
+		{
+			name:        "CI_Linux",
+			version:     "Docker version 20.10.17+azure-1, build 100c70180fde3601def79a59cc3e996aa553c9b9",
+			supported:   true,
+			expectError: false,
+		},
+		{
+			name:        "CI_Mac",
+			version:     "Docker version 17.09.0-ce, build afdb6d4",
+			supported:   true,
+			expectError: false,
+		},
+		{
+			name:        "CI_Windows",
+			version:     "Docker version master-dockerproject-2022-03-26, build dd7397342a",
+			supported:   true,
+			expectError: false,
+		},
+		{
+			name:        "DockerDesktop_Windows",
+			version:     "Docker version 20.10.17, build 100c701",
+			supported:   true,
+			expectError: false,
+		},
+		{
+			name:        "NotNewEnough",
+			version:     "Docker version 17.06.0-ce, build badf00d",
+			supported:   false,
+			expectError: false,
+		},
+		{
+			name:        "UnknownScheme",
+			version:     "Docker version some-new-scheme-we-don-t-know-about-2021-01-01, build badf00d",
+			supported:   false,
+			expectError: true,
+		},
+	}
+
+	for _, testCase := range cases {
+		t.Run(testCase.name, func(t *testing.T) {
+			supported, err := isSupportedDockerVersion(testCase.version)
+			require.Equal(t, testCase.supported, supported)
+			if testCase.expectError {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}

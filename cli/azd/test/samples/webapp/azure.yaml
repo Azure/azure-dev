@@ -3,6 +3,6 @@ metadata:
   template: azd-test/webapptest@v1
 services:
   web:
-    project: src/dotnet/webapp.csproj
+    project: src/dotnet/
     host: appservice
     language: csharp

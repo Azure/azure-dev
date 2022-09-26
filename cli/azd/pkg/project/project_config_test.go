@@ -28,7 +28,9 @@ services:
     host: appservice
 `
 
-	e := environment.EphemeralWithValues("test-env", nil)
+	e := environment.EphemeralWithValues("test-env", map[string]string{
+		environment.SubscriptionIdEnvVarName: "SUBSCRIPTION_ID",
+	})
 
 	projectConfig, err := ParseProjectConfig(testProj, e)
 	require.Nil(t, err)
@@ -63,7 +65,9 @@ services:
     host: appservice
 `
 
-	e := environment.EphemeralWithValues("test-env", nil)
+	e := environment.EphemeralWithValues("test-env", map[string]string{
+		environment.SubscriptionIdEnvVarName: "SUBSCRIPTION_ID",
+	})
 
 	projectConfig, err := ParseProjectConfig(testProj, e)
 	require.Nil(t, err)
@@ -91,7 +95,9 @@ services:
 `
 	mockContext := mocks.NewMockContext(context.Background())
 
-	e := environment.EphemeralWithValues("test-env", nil)
+	e := environment.EphemeralWithValues("test-env", map[string]string{
+		environment.SubscriptionIdEnvVarName: "SUBSCRIPTION_ID",
+	})
 
 	projectConfig, err := ParseProjectConfig(testProj, e)
 	require.Nil(t, err)
@@ -126,7 +132,9 @@ services:
       path: ./Dockerfile.dev
       context: ../
 `
-	e := environment.EphemeralWithValues("test-env", nil)
+	e := environment.EphemeralWithValues("test-env", map[string]string{
+		environment.SubscriptionIdEnvVarName: "SUBSCRIPTION_ID",
+	})
 
 	projectConfig, err := ParseProjectConfig(testProj, e)
 
@@ -153,7 +161,9 @@ services:
     module: ./api/api
 `
 
-	e := environment.EphemeralWithValues("test-env", nil)
+	e := environment.EphemeralWithValues("test-env", map[string]string{
+		environment.SubscriptionIdEnvVarName: "SUBSCRIPTION_ID",
+	})
 
 	projectConfig, err := ParseProjectConfig(testProj, e)
 
@@ -316,7 +326,9 @@ services:
     module: ./api/api
 `
 
-	e := environment.EphemeralWithValues("test-env", nil)
+	e := environment.EphemeralWithValues("test-env", map[string]string{
+		environment.SubscriptionIdEnvVarName: "SUBSCRIPTION_ID",
+	})
 
 	projectConfig, _ := ParseProjectConfig(testProj, e)
 

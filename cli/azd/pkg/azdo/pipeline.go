@@ -149,38 +149,42 @@ func createAzureDevPipelineArgs(
 		DefaultBranch: &defaultBranch,
 	}
 
-	process := make(map[string]interface{})
-	process["type"] = 2
-	process["yamlFilename"] = AzurePipelineYamlPath
+	process := map[string]interface{}{
+		"type":         2,
+		"yamlFilename": AzurePipelineYamlPath,
+	}
 
-	variables := make(map[string]build.BuildDefinitionVariable)
-	variables["AZURE_SUBSCRIPTION_ID"] = createBuildDefinitionVariable(credentials.SubscriptionId, false, false)
+	variables := map[string]build.BuildDefinitionVariable{
+		"AZURE_LOCATION":           createBuildDefinitionVariable(env.GetLocation(), false, false),
+		"AZURE_ENV_NAME":           createBuildDefinitionVariable(env.GetEnvName(), false, false),
+		"AZURE_SERVICE_CONNECTION": createBuildDefinitionVariable(ServiceConnectionName, false, false),
+		"AZURE_SUBSCRIPTION_ID":    createBuildDefinitionVariable(credentials.SubscriptionId, false, false),
+	}
+
 	if provisioningProvider.Provider == provisioning.Terraform {
 		variables["ARM_TENANT_ID"] = createBuildDefinitionVariable(credentials.TenantId, false, false)
 		variables["ARM_CLIENT_ID"] = createBuildDefinitionVariable(credentials.ClientId, true, false)
 		variables["ARM_CLIENT_SECRET"] = createBuildDefinitionVariable(credentials.ClientSecret, true, false)
 	}
-	variables["AZURE_LOCATION"] = createBuildDefinitionVariable(env.GetLocation(), false, false)
-	variables["AZURE_ENV_NAME"] = createBuildDefinitionVariable(env.GetEnvName(), false, false)
-	variables["AZURE_SERVICE_CONNECTION"] = createBuildDefinitionVariable(ServiceConnectionName, false, false)
 
 	agentPoolQueue := &build.AgentPoolQueue{
 		Id:   queue.Id,
 		Name: queue.Name,
 	}
 
-	trigger := make(map[string]interface{})
-	trigger["batchChanges"] = false
-	trigger["maxConcurrentBuildsPerBranch"] = 1
-	trigger["pollingInterval"] = 0
-	trigger["isSettingsSourceOptionSupported"] = true
-	trigger["defaultSettingsSourceType"] = 2
-	trigger["settingsSourceType"] = 2
-	trigger["defaultSettingsSourceType"] = 2
-	trigger["triggerType"] = 2
+	trigger := map[string]interface{}{
+		"batchChanges":                    false,
+		"maxConcurrentBuildsPerBranch":    1,
+		"pollingInterval":                 0,
+		"isSettingsSourceOptionSupported": true,
+		"defaultSettingsSourceType":       2,
+		"settingsSourceType":              2,
+		"triggerType":                     2,
+	}
 
-	triggers := make([]interface{}, 1)
-	triggers[0] = trigger
+	triggers := []interface{}{
+		trigger,
+	}
 
 	buildDefinition := &build.BuildDefinition{
 		Name:        &name,

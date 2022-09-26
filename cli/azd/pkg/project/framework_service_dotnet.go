@@ -84,8 +84,7 @@ func (dp *dotnetProject) Initialize(ctx context.Context) error {
 }
 
 func replaceUnderscoreWithColon(key string) string {
-	// bicep takes .env and convert ":" to "__". dotnet secrets has to be converted back to ":"
-	// dotnet recognizes "__" as the hierarchy key separator for environment variables
+	// dotnet recognizes "__" as the hierarchy key separator for environment variables, but for user secrets, it has to be ":".
 	return strings.ReplaceAll(key, "__", ":")
 }
 

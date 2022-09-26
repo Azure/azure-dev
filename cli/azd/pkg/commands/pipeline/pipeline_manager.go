@@ -276,9 +276,11 @@ func (manager *PipelineManager) Configure(ctx context.Context) error {
 
 	if doPush {
 		err = manager.pushGitRepo(ctx, currentBranch)
-		if err == nil {
-			gitRepoInfo.pushStatus = true
+		if err != nil {
+			return fmt.Errorf("git push: %w", err)
 		}
+
+		gitRepoInfo.pushStatus = true
 		err = manager.ScmProvider.postGitPush(
 			ctx,
 			gitRepoInfo,
@@ -286,7 +288,7 @@ func (manager *PipelineManager) Configure(ctx context.Context) error {
 			currentBranch,
 			inputConsole)
 		if err != nil {
-			return fmt.Errorf(" post git push hook : ")
+			return fmt.Errorf("post git push hook: %w", err)
 		}
 	} else {
 		inputConsole.Message(ctx,

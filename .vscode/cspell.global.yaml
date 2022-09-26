@@ -20,6 +20,9 @@ ignoreWords:
     - appcs
     - appi
     - arck
+    - armresources
+    - azcore
+    - azidentity
     - Bfor
     - bicepcli
     - cdne
@@ -89,6 +92,7 @@ ignoreWords:
     - resourcegroups
     - resourcegroupterraform
     - resourcegroupterraformremote
+    - resourcemanager
     - devcontainer
     - azurecaf
     - azurerm

@@ -9,6 +9,7 @@ import (
 	"encoding/hex"
 	"testing"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
@@ -41,7 +42,9 @@ services:
 `
 	mockContext := mocks.NewMockContext(context.Background())
 
-	e := environment.EphemeralWithValues("envA", nil)
+	e := environment.EphemeralWithValues("envA", map[string]string{
+		environment.SubscriptionIdEnvVarName: "SUBSCRIPTION_ID",
+	})
 	projectConfig, err := ParseProjectConfig(testProj, e)
 	assert.Nil(t, err)
 
@@ -91,7 +94,9 @@ services:
 `
 	mockContext := mocks.NewMockContext(context.Background())
 
-	e := environment.EphemeralWithValues("envA", nil)
+	e := environment.EphemeralWithValues("envA", map[string]string{
+		environment.SubscriptionIdEnvVarName: "SUBSCRIPTION_ID",
+	})
 	projectConfig, err := ParseProjectConfig(testProj, e)
 	assert.Nil(t, err)
 
@@ -126,17 +131,25 @@ services:
 `
 	rg := "rg-test"
 	resourceName := "app-api-abc123"
+	resourceId := "random"
+	resourceType := string(infra.AzureResourceTypeWebSite)
+	resourceLocation := "westus2"
 	mockContext := mocks.NewMockContext(context.Background())
-	mockContext.CommandRunner.AddAzResourceListMock(&rg,
-		[]azcli.AzCliResource{
-			{
-				Id:       "random",
-				Name:     resourceName,
-				Type:     string(infra.AzureResourceTypeWebSite),
-				Location: "westus2",
-			}})
+	mockContext.HttpClient.AddAzResourceListMock(&rg,
+		armresources.ResourceListResult{
+			Value: []*armresources.GenericResourceExpanded{
+				{
+					ID:       &resourceId,
+					Name:     &resourceName,
+					Type:     &resourceType,
+					Location: &resourceLocation,
+				},
+			},
+		})
 
-	e := environment.EphemeralWithValues("envA", nil)
+	e := environment.EphemeralWithValues("envA", map[string]string{
+		environment.SubscriptionIdEnvVarName: "SUBSCRIPTION_ID",
+	})
 	projectConfig, err := ParseProjectConfig(testProj, e)
 	assert.Nil(t, err)
 
@@ -170,7 +183,9 @@ services:
 `
 	mockContext := mocks.NewMockContext(context.Background())
 
-	e := environment.EphemeralWithValues("envA", nil)
+	e := environment.EphemeralWithValues("envA", map[string]string{
+		environment.SubscriptionIdEnvVarName: "SUBSCRIPTION_ID",
+	})
 	projectConfig, err := ParseProjectConfig(testProj, e)
 	assert.Nil(t, err)
 
@@ -211,7 +226,8 @@ services:
 	expectedResourceGroupName := "custom-name-from-env-rg"
 
 	e := environment.EphemeralWithValues("envA", map[string]string{
-		"AZURE_RESOURCE_GROUP": expectedResourceGroupName,
+		environment.ResourceGroupEnvVarName:  expectedResourceGroupName,
+		environment.SubscriptionIdEnvVarName: "SUBSCRIPTION_ID",
 	})
 
 	projectConfig, err := ParseProjectConfig(testProj, e)

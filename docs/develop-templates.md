@@ -7,10 +7,10 @@ The `templates` directory in this repository is structured as follows:
 ```yml
 templates: # Root template folder
     todo: # Templates related to the Simple ToDo application
+        common: # Common assets shared across templates.
         api: # API servers definition
         web: # Web servers definition
-        common: # Common assets shared across templates
-        projects: # The actual definition of how to assemble the template projects. repo.yml is defined here which references relevant assets from  different directories. 
+        projects: # The actual definition of how to assemble the template projects. repo.yaml is defined here which references relevant assets from  different directories. 
 ```
 
 ## Building

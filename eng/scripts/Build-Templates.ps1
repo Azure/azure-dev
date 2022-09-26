@@ -1,4 +1,4 @@
-
+#!/bin/pwsh
 <#
 .SYNOPSIS
 Build-Templates builds all repoman templates in the current repository and places it under <repository root>/.output folder.

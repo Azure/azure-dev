@@ -93,7 +93,7 @@ func CreatePipeline(
 	name = fmt.Sprintf("%s (%s)", name, repoName)
 	exists, err := pipelineExists(ctx, client, &projectId, &name)
 	if err != nil {
-		return nil, fmt.Errorf("creating pipeline: validate name: %s", err)
+		return nil, fmt.Errorf("creating pipeline: validate name: %w", err)
 	}
 	if exists {
 		// keep only one pipeline per repo

@@ -5,7 +5,6 @@ package pipeline
 
 import (
 	"context"
-	"fmt"
 	"os"
 	"path"
 	"testing"
@@ -48,7 +47,8 @@ func Test_detectProviders(t *testing.T) {
 		scmProvider, ciProvider, err := DetectProviders(ctx, &environment.Environment{}, "")
 		assert.Nil(t, scmProvider)
 		assert.Nil(t, ciProvider)
-		assert.EqualError(t, err, fmt.Sprintf("finding pipeline provider: reading project file: open %s/azure.yaml: no such file or directory", tempDir))
+		assert.ErrorContains(
+			t, err, "finding pipeline provider: reading project file:")
 		os.Remove(ghFolder)
 	})
 
@@ -365,8 +365,6 @@ func Test_detectProviders(t *testing.T) {
 		// reset state
 		projectFile.Close()
 		os.Remove(projectFileName)
-		projectFile, err = os.Create(projectFileName)
-		assert.NoError(t, err)
 
 		os.Remove(azdoFolder)
 		os.Remove(ghFolder)

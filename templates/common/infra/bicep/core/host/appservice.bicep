@@ -4,7 +4,7 @@ param location string = resourceGroup().location
 param allowedOrigins array = []
 param alwaysOn bool = true
 param appCommandLine string = ''
-param applicationInsightsName string
+param applicationInsightsName string = ''
 param appServicePlanId string
 param appSettings object = {}
 param clientAffinityEnabled bool = false
@@ -55,8 +55,8 @@ resource appService 'Microsoft.Web/sites@2022-03-01' = {
     name: 'appsettings'
     properties: union({
         SCM_DO_BUILD_DURING_DEPLOYMENT: string(scmDoBuildDuringDeployment)
-        APPLICATIONINSIGHTS_CONNECTION_STRING: applicationInsights.properties.ConnectionString
       },
+      !(empty(applicationInsightsName)) ? { APPLICATIONINSIGHTS_CONNECTION_STRING: applicationInsights.properties.ConnectionString } : {},
       !(empty(keyVaultName)) ? { AZURE_KEY_VAULT_ENDPOINT: keyVault.properties.vaultUri } : {})
   }
 }
@@ -91,7 +91,7 @@ resource keyVault 'Microsoft.KeyVault/vaults@2022-07-01' existing = if (!(empty(
   name: keyVaultName
 }
 
-resource applicationInsights 'Microsoft.Insights/components@2020-02-02' existing = {
+resource applicationInsights 'Microsoft.Insights/components@2020-02-02' existing = if (!(empty(applicationInsightsName))) {
   name: applicationInsightsName
 }
 

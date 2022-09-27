@@ -3,7 +3,7 @@ param location string = resourceGroup().location
 
 param allowedOrigins array = []
 param alwaysOn bool = false
-param applicationInsightsName string
+param applicationInsightsName string = ''
 param appServicePlanId string
 param appSettings object = {}
 param clientAffinityEnabled bool = false

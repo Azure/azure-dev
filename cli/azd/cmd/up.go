@@ -16,7 +16,7 @@ import (
 )
 
 func upCmd(rootOptions *internal.GlobalCommandOptions) *cobra.Command {
-	infaCreateFinalOutput := []string{}
+	infraCreateFinalOutput := []string{}
 
 	cmd := commands.Build(
 		commands.CompositeAction(
@@ -27,7 +27,7 @@ func upCmd(rootOptions *internal.GlobalCommandOptions) *cobra.Command {
 			},
 			&infraCreateAction{
 				// Delay print final output from infra create
-				finalOutputRedirect: &infaCreateFinalOutput,
+				finalOutputRedirect: &infraCreateFinalOutput,
 				rootOptions:         rootOptions,
 			},
 			// Print an additional newline to separate provision from deploy
@@ -47,7 +47,7 @@ func upCmd(rootOptions *internal.GlobalCommandOptions) *cobra.Command {
 			commands.ActionFunc(
 				func(ctx context.Context, cmd *cobra.Command, args []string, azdCtx *azdcontext.AzdContext) error {
 					console := input.GetConsole(ctx)
-					for _, message := range infaCreateFinalOutput {
+					for _, message := range infraCreateFinalOutput {
 						console.Message(ctx, message)
 					}
 					return nil

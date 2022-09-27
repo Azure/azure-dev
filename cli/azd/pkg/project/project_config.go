@@ -28,8 +28,14 @@ type ProjectConfig struct {
 	Metadata          *ProjectMetadata          `yaml:"metadata,omitempty"`
 	Services          map[string]*ServiceConfig `yaml:",omitempty"`
 	Infra             provisioning.Options      `yaml:"infra"`
+	Pipeline          PipelineOptions           `yaml:"pipeline"`
 
 	handlers map[Event][]ProjectLifecycleEventHandlerFn
+}
+
+// options supported in azure.yaml
+type PipelineOptions struct {
+	Provider string `yaml:"provider"`
 }
 
 // Project lifecycle events

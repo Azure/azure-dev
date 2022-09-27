@@ -4,6 +4,9 @@ go 1.19
 
 require (
 	github.com/AlecAivazis/survey/v2 v2.3.2
+	github.com/Azure/azure-sdk-for-go/sdk/azcore v1.1.3
+	github.com/Azure/azure-sdk-for-go/sdk/azidentity v1.1.0
+	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources v1.0.0
 	github.com/benbjohnson/clock v1.3.0
 	github.com/blang/semver/v4 v4.0.0
 	github.com/drone/envsubst v1.0.3
@@ -15,6 +18,7 @@ require (
 	github.com/mattn/go-colorable v0.1.12
 	github.com/mattn/go-isatty v0.0.14
 	github.com/microsoft/ApplicationInsights-Go v0.4.4
+	github.com/microsoft/azure-devops-go-api/azuredevops v1.0.0-b5
 	github.com/otiai10/copy v1.7.0
 	github.com/pbnj/go-open v0.1.1
 	github.com/sethvargo/go-retry v0.2.3
@@ -34,16 +38,12 @@ require (
 
 require (
 	code.cloudfoundry.org/clock v0.0.0-20180518195852-02e53af36e6c // indirect
-	github.com/Azure/azure-sdk-for-go/sdk/azcore v1.1.3 // indirect
-	github.com/Azure/azure-sdk-for-go/sdk/azidentity v1.1.0 // indirect
 	github.com/Azure/azure-sdk-for-go/sdk/internal v1.0.1 // indirect
-	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources v1.0.0 // indirect
 	github.com/AzureAD/microsoft-authentication-library-for-go v0.7.0 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/go-logr/logr v1.2.3 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/gofrs/uuid v3.3.0+incompatible // indirect
-	github.com/golang-jwt/jwt v3.2.2+incompatible // indirect
 	github.com/golang-jwt/jwt/v4 v4.4.2 // indirect
 	github.com/inconshreveable/mousetrap v1.0.0 // indirect
 	github.com/kballard/go-shellquote v0.0.0-20180428030007-95032a82bc51 // indirect

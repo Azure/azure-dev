@@ -12,6 +12,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/keyvault/armkeyvault"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
@@ -389,20 +390,6 @@ func prepareDestroyMocks(mockContext *mocks.MockContext) {
 		},
 	}
 
-	keyVault := azcli.AzCliKeyVault{
-		Id:   "kv-123",
-		Name: "kv-123",
-		Properties: struct {
-			EnableSoftDelete      bool "json:\"enableSoftDelete\""
-			EnablePurgeProtection bool "json:\"enablePurgeProtection\""
-		}{
-			EnableSoftDelete:      true,
-			EnablePurgeProtection: false,
-		},
-	}
-
-	keyVaultBytes, _ := json.Marshal(keyVault)
-
 	// Get list of resources to delete
 	mockContext.HttpClient.When(func(request *http.Request) bool {
 		return request.Method == http.MethodGet && strings.Contains(request.URL.Path, "/resources")
@@ -416,11 +403,27 @@ func prepareDestroyMocks(mockContext *mocks.MockContext) {
 	})
 
 	// Get Key Vault
-	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
-		return strings.Contains(command, "az keyvault show")
-	}).Respond(exec.RunResult{
-		Stdout: string(keyVaultBytes),
-		Stderr: "",
+	mockContext.HttpClient.When(func(request *http.Request) bool {
+		return request.Method == http.MethodGet && strings.Contains(request.URL.Path, "/vaults/kv-123")
+	}).RespondFn(func(request *http.Request) (*http.Response, error) {
+		keyVaultResponse := armkeyvault.VaultsClientGetResponse{
+			Vault: armkeyvault.Vault{
+				ID:       mocks.RefOf("kv-123"),
+				Name:     mocks.RefOf("kv-123"),
+				Location: mocks.RefOf("eastus2"),
+				Properties: &armkeyvault.VaultProperties{
+					EnableSoftDelete:      mocks.RefOf(true),
+					EnablePurgeProtection: mocks.RefOf(false),
+				},
+			},
+		}
+
+		keyVaultBytes, _ := json.Marshal(keyVaultResponse)
+
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(bytes.NewBuffer(keyVaultBytes)),
+		}, nil
 	})
 
 	// Delete resource group
@@ -436,11 +439,15 @@ func prepareDestroyMocks(mockContext *mocks.MockContext) {
 	})
 
 	// Purge Key vault
-	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
-		return strings.Contains(command, "az keyvault purge")
-	}).Respond(exec.RunResult{
-		Stdout: "",
-		Stderr: "",
+	mockContext.HttpClient.When(func(request *http.Request) bool {
+		return request.Method == http.MethodPost && strings.Contains(request.URL.Path, "deletedVaults/kv-123/purge")
+	}).RespondFn(func(request *http.Request) (*http.Response, error) {
+		return &http.Response{
+			Request:    request,
+			Header:     http.Header{},
+			StatusCode: http.StatusOK,
+			Body:       http.NoBody,
+		}, nil
 	})
 
 	// Delete deployment

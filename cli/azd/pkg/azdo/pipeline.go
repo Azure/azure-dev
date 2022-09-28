@@ -52,21 +52,23 @@ func pipelineExists(
 	projectId *string,
 	pipelineName *string,
 ) (bool, error) {
-	getDefinitionsArgs := build.GetDefinitionsArgs{
-		Project: projectId,
-		Name:    pipelineName,
-	}
 
-	buildDefinitionsResponse, err := client.GetDefinitions(ctx, getDefinitionsArgs)
-	if err != nil {
-		return false, err
-	}
-	buildDefinitions := buildDefinitionsResponse.Value
-	for _, definition := range buildDefinitions {
-		if *definition.Name == *pipelineName {
-			return true, nil
+	// GetDefinitions return just the first page (it could be more)
+	// using pager to iterate pages
+	definitionsPager := getDefinitionsPager(ctx, client, projectId, pipelineName)
+
+	for definitionsPager.More() {
+		page, err := definitionsPager.NextPage(ctx)
+		if err != nil {
+			return false, fmt.Errorf("getting next page of definitions: %w", err)
+		}
+		for _, definition := range page.Value {
+			if *definition.Name == *pipelineName {
+				return true, nil
+			}
 		}
 	}
+
 	return false, nil
 }
 
@@ -87,25 +89,15 @@ func CreatePipeline(
 		return nil, err
 	}
 
-	var exists bool = true
-	var count = 0
-	var maxTries = 4
-	for exists {
-		exists, err = pipelineExists(ctx, client, &projectId, &name)
-		if err != nil {
-			return nil, err
-		}
-		count = count + 1
-
-		if exists {
-			name = fmt.Sprintf("%s - %s (%d)", name, repoName, count)
-		} else {
-			continue
-		}
-
-		if count >= maxTries {
-			return nil, fmt.Errorf("error creating new pipeline")
-		}
+	// Add the name of the repo as part of the Pipeline name
+	name = fmt.Sprintf("%s (%s)", name, repoName)
+	exists, err := pipelineExists(ctx, client, &projectId, &name)
+	if err != nil {
+		return nil, fmt.Errorf("creating pipeline: validate name: %w", err)
+	}
+	if exists {
+		// keep only one pipeline per repo
+		return nil, nil
 	}
 
 	queue, err := getAgentQueue(ctx, projectId, connection)

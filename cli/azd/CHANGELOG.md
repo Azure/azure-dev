@@ -2,6 +2,10 @@
 
 ## 0.2.0-beta.3 (Unreleased)
 
+### Features Added
+
+- [[#743]](https://github.com/Azure/azure-dev/pull/743) Azure DevOps support for pipeline config command.
+
 ## 0.2.0-beta.2 (2022-09-21)
 
 ### Bugs Fixed

@@ -10,7 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func Test_getRepoDetails(t *testing.T) {
+func Test_gitHub_provider_getRepoDetails(t *testing.T) {
 	t.Run("https", func(t *testing.T) {
 		provider := &GitHubScmProvider{}
 		ctx := context.Background()

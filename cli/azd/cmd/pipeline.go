@@ -68,6 +68,7 @@ func (p *pipelineConfigAction) SetupFlags(
 	local.StringVar(&p.manager.PipelineServicePrincipalName, "principal-name", "", "The name of the service principal to use to grant access to Azure resources as part of the pipeline.")
 	local.StringVar(&p.manager.PipelineRemoteName, "remote-name", "origin", "The name of the git remote to configure the pipeline to run on.")
 	local.StringVar(&p.manager.PipelineRoleName, "principal-role", "Contributor", "The role to assign to the service principal.")
+	local.StringVar(&p.manager.PipelineProvider, "provider", "", "The pipeline provider to use (GitHub and Azdo supported).")
 }
 
 // Run implements action interface
@@ -97,8 +98,7 @@ func (p *pipelineConfigAction) Run(
 	// Detect the SCM and CI providers based on the project directory
 	p.manager.ScmProvider,
 		p.manager.CiProvider,
-		err = pipeline.DetectProviders(ctx, console)
-
+		err = pipeline.DetectProviders(ctx, env, p.manager.PipelineProvider)
 	if err != nil {
 		return err
 	}

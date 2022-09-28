@@ -1,6 +1,20 @@
 # Release History
 
-## 0.2.0-beta.2 (Unreleased)
+## 0.2.0-beta.3 (Unreleased)
+
+### Features Added
+
+- [[#743]](https://github.com/Azure/azure-dev/pull/743) Azure DevOps support for pipeline config command.
+
+## 0.2.0-beta.2 (2022-09-21)
+
+### Bugs Fixed
+
+- [[#724]](https://github.com/Azure/azure-dev/pull/724) Fix version check for supporting Docker CE / Moby schemes. 
+
+### Other Changes
+
+- [[#548]](https://github.com/Azure/azure-dev/pull/548) Refactor template bicep into modules.
 
 ## 0.2.0-beta.1 (2022-09-14)
 

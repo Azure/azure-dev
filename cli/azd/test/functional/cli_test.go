@@ -34,6 +34,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/test/azdcli"
+	"github.com/azure/azure-dev/cli/azd/test/ostest"
 	"github.com/joho/godotenv"
 	"github.com/sethvargo/go-retry"
 	"github.com/stretchr/testify/assert"
@@ -44,7 +45,7 @@ func Test_CLI_Login_FailsIfNoAzCliIsMissing(t *testing.T) {
 	ctx, cancel := newTestContext(t)
 	defer cancel()
 
-	dir := t.TempDir()
+	dir := ostest.TempDirWithDiagnostics(t)
 
 	cli := azdcli.NewCLI(t)
 	cli.WorkingDirectory = dir
@@ -76,7 +77,7 @@ func Test_CLI_Init_FailsIfAzCliIsMissing(t *testing.T) {
 	ctx, cancel := newTestContext(t)
 	defer cancel()
 
-	dir := t.TempDir()
+	dir := ostest.TempDirWithDiagnostics(t)
 
 	cli := azdcli.NewCLI(t)
 	cli.WorkingDirectory = dir
@@ -93,7 +94,7 @@ func Test_CLI_Init_AsksForSubscriptionIdAndCreatesEnvAndProjectFile(t *testing.T
 	ctx, cancel := newTestContext(t)
 	defer cancel()
 
-	dir := t.TempDir()
+	dir := ostest.TempDirWithDiagnostics(t)
 
 	cli := azdcli.NewCLI(t)
 	cli.WorkingDirectory = dir
@@ -121,7 +122,7 @@ func Test_CLI_Init_CanUseTemplate(t *testing.T) {
 	ctx, cancel := newTestContext(t)
 	defer cancel()
 
-	dir := t.TempDir()
+	dir := ostest.TempDirWithDiagnostics(t)
 
 	cli := azdcli.NewCLI(t)
 	cli.WorkingDirectory = dir
@@ -184,7 +185,7 @@ func Internal_Test_CLI_ResourceGroupsName(t *testing.T, envName string, rgName s
 
 	os.Setenv("AZD_FUNC_TEST", "TRUE")
 
-	dir := t.TempDir()
+	dir := ostest.TempDirWithDiagnostics(t)
 	t.Logf("DIR: %s", dir)
 
 	//envName := randomEnvName()
@@ -252,7 +253,7 @@ func Test_CLI_InfraCreateAndDelete(t *testing.T) {
 	ctx, cancel := newTestContext(t)
 	defer cancel()
 
-	dir := t.TempDir()
+	dir := ostest.TempDirWithDiagnostics(t)
 	t.Logf("DIR: %s", dir)
 
 	envName := randomEnvName()
@@ -298,7 +299,7 @@ func Test_CLI_InfraCreateAndDeleteUpperCase(t *testing.T) {
 	ctx, cancel := newTestContext(t)
 	defer cancel()
 
-	dir := t.TempDir()
+	dir := ostest.TempDirWithDiagnostics(t)
 	t.Logf("DIR: %s", dir)
 
 	envName := "UpperCase" + randomEnvName()
@@ -344,7 +345,7 @@ func Test_CLI_InfraCreateAndDeleteWebApp(t *testing.T) {
 	ctx, cancel := newTestContext(t)
 	defer cancel()
 
-	dir := t.TempDir()
+	dir := ostest.TempDirWithDiagnostics(t)
 	t.Logf("DIR: %s", dir)
 
 	envName := randomEnvName()
@@ -362,6 +363,30 @@ func Test_CLI_InfraCreateAndDeleteWebApp(t *testing.T) {
 
 	_, err = cli.RunCommand(ctx, "infra", "create")
 	require.NoError(t, err)
+
+	t.Logf("Running show\n")
+	out, err := cli.RunCommand(ctx, "show", "-o", "json", "--cwd", dir)
+	require.NoError(t, err)
+
+	var showRes struct {
+		Services map[string]struct {
+			Project struct {
+				Path     string `json:"path"`
+				Language string `json:"language"`
+			} `json:"project"`
+			Target struct {
+				ResourceIds []string `json:"resourceIds"`
+			} `json:"target"`
+		} `json:"services"`
+	}
+	err = json.Unmarshal([]byte(out), &showRes)
+	require.NoError(t, err)
+
+	service, has := showRes.Services["web"]
+	require.True(t, has)
+	require.Equal(t, "dotnet", service.Project.Language)
+	require.Equal(t, "webapp.csproj", filepath.Base(service.Project.Path))
+	require.Equal(t, 1, len(service.Target.ResourceIds))
 
 	_, err = cli.RunCommand(ctx, "deploy")
 	require.NoError(t, err)
@@ -424,6 +449,21 @@ func Test_CLI_InfraCreateAndDeleteWebApp(t *testing.T) {
 
 	_, err = cli.RunCommand(ctx, "infra", "delete", "--force", "--purge")
 	require.NoError(t, err)
+
+	t.Logf("Running show (again)\n")
+	out, err = cli.RunCommand(ctx, "show", "-o", "json", "--cwd", dir)
+	require.NoError(t, err)
+
+	err = json.Unmarshal([]byte(out), &showRes)
+	require.NoError(t, err)
+
+	// Project information should be present, but since we have run infra delete, there shouldn't
+	// be any resource ids.
+	service, has = showRes.Services["web"]
+	require.True(t, has)
+	require.Equal(t, "dotnet", service.Project.Language)
+	require.Equal(t, "webapp.csproj", filepath.Base(service.Project.Path))
+	require.Nil(t, service.Target.ResourceIds)
 }
 
 // test for azd deploy, azd deploy --service
@@ -433,7 +473,7 @@ func Test_CLI_DeployInvalidName(t *testing.T) {
 	ctx, cancel := newTestContext(t)
 	defer cancel()
 
-	dir := t.TempDir()
+	dir := ostest.TempDirWithDiagnostics(t)
 	t.Logf("DIR: %s", dir)
 
 	envName := randomEnvName()
@@ -459,7 +499,7 @@ func Test_CLI_RestoreCommand(t *testing.T) {
 	ctx, cancel := newTestContext(t)
 	defer cancel()
 
-	dir := t.TempDir()
+	dir := ostest.TempDirWithDiagnostics(t)
 	t.Logf("DIR: %s", dir)
 
 	envName := randomEnvName()
@@ -488,7 +528,7 @@ func Test_CLI_InfraCreateAndDeleteFuncApp(t *testing.T) {
 	ctx, cancel := newTestContext(t)
 	defer cancel()
 
-	dir := t.TempDir()
+	dir := ostest.TempDirWithDiagnostics(t)
 	t.Logf("DIR: %s", dir)
 
 	envName := randomEnvName()
@@ -551,7 +591,7 @@ func Test_CLI_ProjectIsNeeded(t *testing.T) {
 	ctx, cancel := newTestContext(t)
 	defer cancel()
 
-	dir := t.TempDir()
+	dir := ostest.TempDirWithDiagnostics(t)
 	t.Logf("DIR: %s", dir)
 
 	cli := azdcli.NewCLI(t)
@@ -704,7 +744,7 @@ func Test_CLI_InfraCreateAndDeleteResourceTerraform(t *testing.T) {
 	ctx, cancel := newTestContext(t)
 	defer cancel()
 
-	dir := t.TempDir()
+	dir := ostest.TempDirWithDiagnostics(t)
 	t.Logf("DIR: %s", dir)
 
 	envName := randomEnvName()
@@ -739,7 +779,7 @@ func Test_CLI_InfraCreateAndDeleteResourceTerraformRemote(t *testing.T) {
 	ctx, cancel := newTestContext(t)
 	defer cancel()
 
-	dir := t.TempDir()
+	dir := ostest.TempDirWithDiagnostics(t)
 	t.Logf("DIR: %s", dir)
 
 	envName := randomEnvName()
@@ -825,4 +865,21 @@ func TestMain(m *testing.M) {
 
 	exitVal := m.Run()
 	os.Exit(exitVal)
+}
+
+func RemoveAllWithRetries(t *testing.T, dir string) func() {
+	return func() {
+		err := retry.Do(context.Background(), retry.WithMaxRetries(10, retry.NewConstant(1*time.Second)), func(_ context.Context) error {
+			removeErr := os.RemoveAll(dir)
+			if removeErr == nil {
+				return nil
+			}
+			t.Logf("failed to clean up %s with error: %v", dir, removeErr)
+			return retry.RetryableError(removeErr)
+		})
+
+		if err != nil {
+			t.Errorf("RemoveAllWithRetries failed after many retires: %v", err)
+		}
+	}
 }

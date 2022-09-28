@@ -148,6 +148,21 @@
                 },
                 "required": ["project"]
             }
+        },
+        "pipeline": {
+            "type": "object",
+            "title": "Definition of continuous integration pipeline",
+            "properties": {
+                "provider":{
+                    "type": "string",
+                    "title": "Type of pipeline provider",
+                    "description": "Optional. The pipeline provider to be used for continuous integration. (Default: github)",
+                    "enum": [
+                        "github",
+                        "azdo"
+                    ]
+                }
+            }
         }
     }
 }

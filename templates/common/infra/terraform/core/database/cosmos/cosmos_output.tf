@@ -1,4 +1,4 @@
-output "AZURE_COSMOS_CONNECTION_STRING_KEY" {
+output "AZURE_COSMOS_CONNECTION_STRING" {
   value     = azurerm_cosmosdb_account.db.connection_strings[0]
   sensitive = true
 }

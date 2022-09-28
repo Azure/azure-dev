@@ -237,7 +237,7 @@ stages:
             displayName: Generate azure.yaml schema
 
           # Upload docs for CLI ref and azure.yaml schema
-          - pwsh: Get-ChildItem docs
+          - pwsh: Get-ChildItem .
             workingDirectory: $(Pipeline.Workspace)/docs
             displayName: Show doc artifacts to publish
 

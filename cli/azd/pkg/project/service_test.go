@@ -72,6 +72,7 @@ func TestDeployProgressMessages(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
 
 	env := environment.Ephemeral()
+	env.SetSubscriptionId("SUBSCRIPTION_ID")
 
 	projectConfig, _ := ParseProjectConfig(projectYaml, env)
 	project, _ := projectConfig.GetProject(mockContext.Context, env)

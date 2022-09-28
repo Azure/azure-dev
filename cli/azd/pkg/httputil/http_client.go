@@ -4,73 +4,12 @@
 package httputil
 
 import (
-	"bytes"
 	"context"
-	"fmt"
-	"io"
 	"net/http"
 )
 
-type HttpRequestMessage struct {
-	Url     string
-	Method  string
-	Headers map[string]string
-	Body    string
-}
-
-type HttpResponseMessage struct {
-	Headers map[string]string
-	Status  int
-	Body    []byte
-}
-
 type HttpClient interface {
-	Send(req *HttpRequestMessage) (*HttpResponseMessage, error)
-}
-
-type httpClient struct {
-}
-
-func (hu *httpClient) Send(req *HttpRequestMessage) (*HttpResponseMessage, error) {
-	requestBytes := []byte(req.Body)
-	requestReader := bytes.NewReader(requestBytes)
-
-	request, err := http.NewRequest(req.Method, req.Url, requestReader)
-	if err != nil {
-		return nil, fmt.Errorf("creating request")
-	}
-
-	request.Header.Add("Content-Type", "application/json")
-	request.Header.Add("Accept", "application/json")
-
-	if req.Headers != nil {
-		for k, v := range req.Headers {
-			request.Header.Add(k, v)
-		}
-	}
-
-	client := &http.Client{}
-	response, err := client.Do(request)
-	if err != nil {
-		return nil, fmt.Errorf("executing http request")
-	}
-
-	defer response.Body.Close()
-	responseBytes, err := io.ReadAll(response.Body)
-	if err != nil {
-		return nil, fmt.Errorf("reading response")
-	}
-
-	responseMessage := &HttpResponseMessage{
-		Status: response.StatusCode,
-		Body:   responseBytes,
-	}
-
-	return responseMessage, nil
-}
-
-func NewHttpClient() HttpClient {
-	return &httpClient{}
+	Do(req *http.Request) (*http.Response, error)
 }
 
 type contextKey string
@@ -86,7 +25,7 @@ func GetHttpClient(ctx context.Context) HttpClient {
 	client, ok := value.(HttpClient)
 
 	if !ok {
-		return NewHttpClient()
+		return &http.Client{}
 	}
 
 	return client

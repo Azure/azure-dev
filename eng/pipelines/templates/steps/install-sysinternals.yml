@@ -1,0 +1,12 @@
+parameters:
+  SysInternalsVersion: latest
+
+steps:
+  - pwsh: |
+      if ("${{ parameters.SysInternalsVersion }}" -ne "latest") {
+        choco install sysinternals -y --version "${{ parameters.SysInternalsVersion }}"
+      } else {
+        choco install sysinternals -y
+      }
+    displayName: "Install SysInternals - ${{ parameters.SysInternalsVersion }}"
+    condition: and(succeeded(), eq(variables['AZURE_DEV_CI_OS'], 'win'))

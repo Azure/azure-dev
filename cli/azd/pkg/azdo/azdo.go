@@ -23,7 +23,7 @@ var (
 	AzurePipelineName            = "Azure Dev Deploy"                                       // name of the azure pipeline that will be created
 	AzurePipelineYamlPath        = ".azdo/pipelines/azure-dev.yml"                          // path to the azure pipeline yaml
 	CloudEnvironment             = "AzureCloud"                                             // target Azure Cloud
-	DefaultBranch                = "master"                                                 // default branch for pipeline and branch policy
+	DefaultBranch                = "main"                                                   // default branch for pipeline and branch policy
 	AzDoProjectDescription       = "Azure Developer CLI Project"                            // azure devops project description
 	ServiceConnectionName        = "azconnection"                                           // name of the service connection that will be used in the AzDo project. This will store the Azure service principal
 )

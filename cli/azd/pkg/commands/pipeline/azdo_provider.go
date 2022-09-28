@@ -309,7 +309,23 @@ func (p *AzdoScmProvider) configureGitRemote(ctx context.Context, repoPath strin
 			return "", err
 		}
 	}
+
+	branch, err := p.getCurrentGitBranch(ctx, repoPath)
+	if err != nil {
+		return "", err
+	}
+	azdo.DefaultBranch = branch
+
 	return remoteUrl, nil
+}
+
+func (p *AzdoScmProvider) getCurrentGitBranch(ctx context.Context, repoPath string) (string, error) {
+	gitCli := git.NewGitCli(ctx)
+	branch, err := gitCli.GetCurrentBranch(ctx, repoPath)
+	if err != nil {
+		return "", err
+	}
+	return branch, nil
 }
 
 // returns the git remote for a newly created repo that is part of a newly created AzDo project

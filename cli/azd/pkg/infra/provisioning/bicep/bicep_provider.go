@@ -319,7 +319,7 @@ func (p *BicepProvider) destroyResourceGroups(ctx context.Context, asyncContext 
 		}
 	}
 
-	for resourceGroup, _ := range groupedResources {
+	for resourceGroup := range groupedResources {
 		message := fmt.Sprintf("%s resource group %s", output.WithErrorFormat("Deleting"), output.WithHighLightFormat(resourceGroup))
 		asyncContext.SetProgress(&DestroyProgress{Message: message, Timestamp: time.Now()})
 

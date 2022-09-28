@@ -1000,7 +1000,6 @@ var isDeploymentNotFoundMessageRegex = regexp.MustCompile(`\(DeploymentNotFound\
 var isClientAssertionInvalidMessagedRegex = regexp.MustCompile(`AADSTS700024`)
 var isConfigurationIsNotSetMessageRegex = regexp.MustCompile(`Configuration '.*' is not set\.`)
 var isDeploymentErrorRegex = regexp.MustCompile(`ERROR: ({.+})`)
-var isSecretNotFoundMessageRegex = regexp.MustCompile(`ERROR: \(SecretNotFound\)`)
 
 func isNotLoggedInMessage(s string) bool {
 	return isNotLoggedInMessageRegex.MatchString(s)
@@ -1028,10 +1027,6 @@ func isConfigurationIsNotSetMessage(s string) bool {
 
 func isDeploymentError(s string) bool {
 	return isDeploymentErrorRegex.MatchString(s)
-}
-
-func isSecretNotFoundError(s string) bool {
-	return isSecretNotFoundMessageRegex.MatchString(s)
 }
 
 func getDeploymentErrorJson(s string) string {

@@ -94,7 +94,8 @@
                             "py",
                             "python",
                             "js",
-                            "ts"
+                            "ts",
+                            "java"
                         ]
                     },
                     "module": {
@@ -104,8 +105,7 @@
                     },
                     "dist": {
                         "type": "string",
-                        "title": "Relative path to service deployment artifacts",
-                        "description": "The CLI will use files under this path to create the deployment artifact (ZIP file). If omitted, all files under service project directory will be included."
+                        "title": "Relative path to service deployment artifacts"
                     },
                     "docker": {
                         "type": "object",
@@ -132,21 +132,48 @@
                         }
                     }
                 },
-                "if": {
-                    "not": {
+                "required": ["project"],
+                "allOf": [
+                    {
+                        "if": {
+                            "not": {
+                                "properties": {
+                                    "host": {
+                                        "const": "containerapp"
+                                    }
+                                }
+                            }
+                        },
+                        "then": {
+                            "properties": {
+                                "docker": false
+                            }
+                        }
+                    },
+                    {
+                        "if": {
+                            "properties": {
+                                "language": { "const": "java" }
+                            }
+                        },
+                        "then": {
+                            "properties": {
+                                "dist": {
+                                    "type": "string",
+                                    "description": "The CLI will use the JAR file in this directory to create the deployment artifact (ZIP file). If omitted, the CLI will detect the output directory based on the build system in-use."
+                                }
+                            }
+                        }
+                    },
+                    {
                         "properties": {
-                            "host": {
-                                "const": "containerapp"
+                            "dist": {
+                                "type": "string",
+                                "description": "The CLI will use files under this path to create the deployment artifact (ZIP file). If omitted, all files under service project directory will be included."
                             }
                         }
                     }
-                },
-                "then": {
-                    "properties": {
-                        "docker": false
-                    }
-                },
-                "required": ["project"]
+                ]
             }
         },
         "pipeline": {

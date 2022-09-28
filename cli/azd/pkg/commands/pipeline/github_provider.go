@@ -437,7 +437,7 @@ func getRemoteUrlFromExisting(ctx context.Context, ghCli github.GitHubCli, conso
 	})
 
 	if err != nil {
-		return "", fmt.Errorf("prompting for repository: %wf", err)
+		return "", fmt.Errorf("prompting for repository: %w", err)
 	}
 
 	return selectRemoteUrl(ctx, ghCli, repos[repoIdx])

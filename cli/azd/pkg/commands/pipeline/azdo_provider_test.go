@@ -104,9 +104,6 @@ func Test_azdo_provider_preConfigureCheck(t *testing.T) {
 		os.Setenv(azdo.AzDoEnvironmentOrgName, "testOrg")
 		provider := getEmptyAzdoScmProviderTestHarness()
 		testConsole := console.NewMockConsole()
-		testConsole.WhenConfirm(func(options input.ConsoleOptions) bool {
-			return options.Message == "Save the PAT to the  environment file (.env)?"
-		}).Respond(true)
 		testPat := "testPAT12345"
 		testConsole.WhenPrompt(func(options input.ConsoleOptions) bool {
 			return options.Message == "Personal Access Token (PAT):"
@@ -118,7 +115,8 @@ func Test_azdo_provider_preConfigureCheck(t *testing.T) {
 
 		// assert
 		require.Nil(t, e)
-		require.EqualValues(t, testPat, provider.Env.Values[azdo.AzDoPatName])
+		// PAT is not persisted to .env
+		require.EqualValues(t, "", provider.Env.Values[azdo.AzDoPatName])
 	})
 
 }

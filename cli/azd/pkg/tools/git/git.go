@@ -143,6 +143,13 @@ func (cli *gitCli) InitRepo(ctx context.Context, repositoryPath string) error {
 		return fmt.Errorf("failed to init repository: %s: %w", res.String(), err)
 	}
 
+	// Set initial branch to main
+	runArgs = exec.NewRunArgs("git", "-C", repositoryPath, "checkout", "-b", "main")
+	res, err = cli.commandRunner.Run(ctx, runArgs)
+	if err != nil {
+		return fmt.Errorf("failed to create main branch: %s: %w", res.String(), err)
+	}
+
 	return nil
 }
 

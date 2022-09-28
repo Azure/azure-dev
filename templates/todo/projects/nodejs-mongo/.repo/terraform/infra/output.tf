@@ -1,6 +1,5 @@
 output "AZURE_COSMOS_CONNECTION_STRING_KEY" {
-  value     = module.cosmos.AZURE_COSMOS_CONNECTION_STRING
-  sensitive = true
+  value = local.cosmos_connection_string_key
 }
 
 output "AZURE_COSMOS_DATABASE_NAME" {

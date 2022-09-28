@@ -213,7 +213,7 @@ stages:
               targetPath: installer
 
           # CLI ref docs
-          - pwsh: New-Item -ItemType Directory -Path docs
+          - pwsh: New-Item -Force -ItemType Directory -Path docs
             displayName: Create docs artifact folder
 
           - pwsh: go run docgen.go

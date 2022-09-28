@@ -24,7 +24,7 @@ resource "azurerm_resource_group" "rg" {
 # Deploy application insights
 # ------------------------------------------------------------------------------------------------------
 module "applicationinsights" {
-  source           = "../../../../../../common/infra/terraform/applicationinsights"
+  source           = "../../../../../../common/infra/terraform/core/monitor/applicationinsights"
   location         = var.location
   rg_name          = azurerm_resource_group.rg.name
   environment_name = var.environment_name
@@ -37,7 +37,7 @@ module "applicationinsights" {
 # Deploy log analytics
 # ------------------------------------------------------------------------------------------------------
 module "loganalytics" {
-  source         = "../../../../../../common/infra/terraform/loganalytics"
+  source         = "../../../../../../common/infra/terraform/core/monitor/loganalytics"
   location       = var.location
   rg_name        = azurerm_resource_group.rg.name
   tags           = azurerm_resource_group.rg.tags
@@ -48,7 +48,7 @@ module "loganalytics" {
 # Deploy key vault
 # ------------------------------------------------------------------------------------------------------
 module "keyvault" {
-  source                   = "../../../../../../common/infra/terraform/keyvault"
+  source                   = "../../../../../../common/infra/terraform/core/keyvault"
   location                 = var.location
   principal_id             = var.principal_id
   rg_name                  = azurerm_resource_group.rg.name
@@ -67,7 +67,7 @@ module "keyvault" {
 # Deploy cosmos
 # ------------------------------------------------------------------------------------------------------
 module "cosmos" {
-  source         = "../../../../../../common/infra/terraform/cosmos"
+  source         = "../../../../../../common/infra/terraform/core/database/cosmos"
   location       = var.location
   rg_name        = azurerm_resource_group.rg.name
   tags           = azurerm_resource_group.rg.tags
@@ -78,20 +78,18 @@ module "cosmos" {
 # Deploy app service plan
 # ------------------------------------------------------------------------------------------------------
 module "appserviceplan" {
-  source         = "../../../../../../common/infra/terraform/host/appserviceplan"
+  source         = "../../../../../../common/infra/terraform/core/host/appserviceplan"
   location       = var.location
   rg_name        = azurerm_resource_group.rg.name
   tags           = azurerm_resource_group.rg.tags
   resource_token = local.resource_token
-  os_type        = "Linux"
-  sku_name       = "B1"
 }
 
 # ------------------------------------------------------------------------------------------------------
 # Deploy app service web app
 # ------------------------------------------------------------------------------------------------------
 module "appserviceweb" {
-  source         = "../../../../../../common/infra/terraform/host/appservice/appservicenode"
+  source         = "../../../../../../common/infra/terraform/core/host/appservice/appservicenode"
   location       = var.location
   rg_name        = azurerm_resource_group.rg.name
   resource_token = local.resource_token
@@ -105,14 +103,13 @@ module "appserviceweb" {
   }
 
   app_command_line = "pm2 serve /home/site/wwwroot --no-daemon --spa"
-  node_version     = "16-lts"
 }
 
 # ------------------------------------------------------------------------------------------------------
 # Deploy app service api
 # ------------------------------------------------------------------------------------------------------
 module "appserviceapi" {
-  source         = "../../../../../../common/infra/terraform/host/appservice/appservicenode"
+  source         = "../../../../../../common/infra/terraform/core/host/appservice/appservicenode"
   location       = var.location
   rg_name        = azurerm_resource_group.rg.name
   resource_token = local.resource_token
@@ -129,7 +126,6 @@ module "appserviceapi" {
   }
 
   app_command_line = ""
-  node_version     = "16-lts"
 
   identity = [{
     type = "SystemAssigned"

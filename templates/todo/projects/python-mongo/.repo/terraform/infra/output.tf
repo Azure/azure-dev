@@ -1,5 +1,5 @@
 output "AZURE_COSMOS_CONNECTION_STRING_KEY" {
-  value     = module.cosmos.AZURE_COSMOS_CONNECTION_STRING_KEY
+  value     = module.cosmos.AZURE_COSMOS_CONNECTION_STRING
   sensitive = true
 }
 

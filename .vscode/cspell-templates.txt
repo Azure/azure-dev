@@ -1,12 +1,10 @@
 APPLICATIONINSIGHTS
 appservice
-armkeyvault
 asgi
 ASPNETCORE
 asyncio
 autouse
 azdo
-azsecrets
 borderless
 browserslist
 codepaths

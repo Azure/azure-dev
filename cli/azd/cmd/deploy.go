@@ -12,7 +12,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/commands"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
-	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
@@ -182,24 +181,6 @@ func (d *deployAction) Run(ctx context.Context, cmd *cobra.Command, args []strin
 			return fmt.Errorf("deployment result could not be displayed: %w", fmtErr)
 		}
 	}
-
-	resourceManager := infra.NewAzureResourceManager(ctx)
-	resourceGroup, err := resourceManager.FindResourceGroupForEnvironment(ctx, env)
-	if err != nil {
-		return fmt.Errorf("discovering resource group from deployment: %w", err)
-	}
-
-	resourcesGroupURL := fmt.Sprintf(
-		"https://portal.azure.com/#@/resource/subscriptions/%s/resourceGroups/%s/overview",
-		env.GetSubscriptionId(),
-		resourceGroup)
-
-	message := fmt.Sprintf(
-		"View the resources created under the resource group %s in Azure Portal:\n%s\n",
-		output.WithHighLightFormat(resourceGroup),
-		output.WithLinkFormat(resourcesGroupURL),
-	)
-	console.Message(ctx, message)
 
 	return nil
 }

@@ -383,6 +383,16 @@ func isAzDoRemote(remoteUrl string) error {
 	return nil
 }
 
+func parseAzDoRemote(remoteUrl string) (string, error) {
+	for _, r := range []*regexp.Regexp{azdoRemoteGitUrlRegex, azdoRemoteHttpsUrlRegex} {
+		captures := r.FindStringSubmatch(remoteUrl)
+		if captures != nil {
+			return captures[1], nil
+		}
+	}
+	return "", nil
+}
+
 // gitRepoDetails extracts the information from an Azure DevOps remote url into general scm concepts
 // like owner, name and path
 func (p *AzdoScmProvider) gitRepoDetails(ctx context.Context, remoteUrl string) (*gitRepositoryDetails, error) {
@@ -392,6 +402,10 @@ func (p *AzdoScmProvider) gitRepoDetails(ctx context.Context, remoteUrl string) 
 	}
 
 	repoDetails := p.getRepoDetails()
+	// Try getting values from the env.
+	// This is a quick shortcut to avoid parsing the remote in detail.
+	// While using the same .env file, the outputs from creating a project and repository
+	// are memorized in .env file
 	if repoDetails.orgName == "" {
 		repoDetails.orgName = p.Env.Values[azdo.AzDoEnvironmentOrgName]
 	}
@@ -412,6 +426,44 @@ func (p *AzdoScmProvider) gitRepoDetails(ctx context.Context, remoteUrl string) 
 	}
 	if repoDetails.remoteUrl == "" {
 		repoDetails.remoteUrl = remoteUrl
+	}
+
+	if repoDetails.projectId == "" || repoDetails.repoId == "" {
+		// Removing environment or creating a new one would remove any memory fro project
+		// and repo.  In that case, it needs to be calculated from the remote url
+		azdoSlug, err := parseAzDoRemote(remoteUrl)
+		if err != nil {
+			return nil, fmt.Errorf("parsing Azure DevOps remote url: %s: %w", remoteUrl, err)
+		}
+		// azdoSlug => Org/Project/_git/repoName
+		parts := strings.Split(azdoSlug, "_git/")
+		repoDetails.projectName = strings.Split(parts[0], "/")[1]
+		p.Env.Values[azdo.AzDoEnvironmentProjectName] = repoDetails.projectName
+		repoDetails.repoName = parts[1]
+		p.Env.Values[azdo.AzDoEnvironmentRepoName] = repoDetails.repoName
+
+		connection, err := p.getAzdoConnection(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("Getting azdo connection: %w", err)
+		}
+
+		repo, err := azdo.GetGitRepository(ctx, repoDetails.projectName, repoDetails.repoName, connection)
+		if err != nil {
+			return nil, fmt.Errorf("Looking for repository: %w", err)
+		}
+		repoDetails.repoId = repo.Id.String()
+		p.Env.Values[azdo.AzDoEnvironmentRepoIdName] = repoDetails.repoId
+		repoDetails.repoWebUrl = *repo.WebUrl
+		p.Env.Values[azdo.AzDoEnvironmentRepoWebUrl] = repoDetails.repoWebUrl
+
+		proj, err := azdo.GetProjectByName(ctx, connection, repoDetails.projectName)
+		if err != nil {
+			return nil, fmt.Errorf("Looking for project: %w", err)
+		}
+		repoDetails.projectId = proj.Id.String()
+		p.Env.Values[azdo.AzDoEnvironmentProjectIdName] = repoDetails.projectId
+
+		_ = p.Env.Save() // best effort to persist in the env
 	}
 
 	return &gitRepositoryDetails{

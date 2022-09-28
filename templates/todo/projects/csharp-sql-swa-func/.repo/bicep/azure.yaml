@@ -1,8 +1,8 @@
 # yaml-language-server: $schema=https://azuresdkreleasepreview.blob.core.windows.net/azd/schema/azure.yaml.json
 
-name: todo-csharp-sql-func-isolated
+name: todo-csharp-sql-swa-func
 metadata:
-  template: todo-csharp-sql-func-isolated@0.0.1-beta
+  template: todo-csharp-sql-swa-func@0.0.1-beta
 services:
   web:
     project: ../../web/react-fluent
@@ -10,6 +10,6 @@ services:
     language: js
     host: staticwebapp
   api:
-    project: ../../api/csharp-cosmos-sql-func-isolated
+    project: ../../api/csharp-sql-func
     language: dotnet
     host: function

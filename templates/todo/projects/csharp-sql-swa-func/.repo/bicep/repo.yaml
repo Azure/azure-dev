@@ -1,7 +1,7 @@
 templateApi: 1.0.0
 metadata:
   type: repo
-  name: todo-csharp-cosmos-sql-func-isolated
+  name: todo-csharp-sql-swa-func
   description: ToDo Application with a csharp isolated API and Azure Cosmos DB API for SQL on Static Web App and Functions
 
 repo:
@@ -9,9 +9,9 @@ repo:
 
   remotes:
     - name: azure-samples-main
-      url: git@github.com:Azure-Samples/todo-csharp-cosmos-sql-func-isolated.git
+      url: git@github.com:Azure-Samples/todo-csharp-sql-swa-func.git
     - name: azure-samples-staging
-      url: git@github.com:Azure-Samples/todo-csharp-cosmos-sql-func-isolated.git
+      url: git@github.com:Azure-Samples/todo-csharp-sql-swa-func.git
       branch: staging
 
   rewrite:
@@ -45,7 +45,7 @@ repo:
         patterns:
           - "**/main.bicep"
 
-      - from: ../../api/csharp-cosmos-sql-func-isolated
+      - from: ../../api/csharp-cosmos-sql-func
         to: ./src/api
         patterns:
           - "**/azure.@(yml|yaml)"
@@ -60,13 +60,13 @@ repo:
         patterns:
           - "**/resources.bicep"
 
-      - from: api-functions-csharp-isolated.bicep
+      - from: api-functions-csharp.bicep
         to: api.bicep
         patterns:
           - "**/resources.bicep"
 
-      - from: cosmos-sql-db.bicep
-        to: db.bicep
+      - from: /sqlserver.bicep
+        to: /db.bicep 
         patterns:
           - "**/resources.bicep"
 
@@ -83,10 +83,10 @@ repo:
     - from: ../../../../common/infra/bicep/app/web-staticwebapp.bicep
       to: ./infra/app/web.bicep
 
-    - from: ../../../../common/infra/bicep/app/api-functions-csharp-isolated.bicep
+    - from: ../../../../common/infra/bicep/app/api-functions-csharp.bicep
       to: ./infra/app/api.bicep
 
-    - from: ../../../../common/infra/bicep/app/cosmos-sql-db.bicep
+    - from: ../../../../common/infra/bicep/app/sqlserver.bicep
       to: ./infra/app/db.bicep
 
     - from: ./../../
@@ -141,7 +141,7 @@ repo:
       to: ./tests
 
     # csharp func isolated API
-    - from: ../../../../api/csharp-cosmos-sql-func-isolated
+    - from: ../../../../api/csharp-sql-func
       to: ./src/api
       ignore:
         - bin

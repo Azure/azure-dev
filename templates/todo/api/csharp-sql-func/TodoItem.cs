@@ -1,19 +1,21 @@
+using System.ComponentModel.DataAnnotations;
 using System.Text.Json.Serialization;
 
 namespace SimpleTodo.Api;
+
 public class TodoItem
 {
-    public TodoItem(string listId, string name)
+    public TodoItem(Guid listId, string name)
     {
         ListId = listId;
         Name = name;
     }
-
+    [Key]
     [JsonPropertyName("id")]
-    public string? Id { get; set; }
-
+    public Guid? Id { get; set; }
+    
     [JsonPropertyName("listId")]
-    public string ListId { get; set; }
+    public Guid ListId { get; set; }
 
     [JsonPropertyName("name")]
     public string Name { get; set; }

@@ -9,7 +9,7 @@ param keyVaultName string
 param serviceName string = 'api'
 param storageAccountName string
 
-module api '../../../../../common/infra/bicep/core/host/functions-csharp-isolated.bicep' = {
+module api '../../../../../common/infra/bicep/core/host/functions-dotnet.bicep' = {
   name: '${serviceName}-functions-csharp-isolated-module'
   params: {
     environmentName: environmentName

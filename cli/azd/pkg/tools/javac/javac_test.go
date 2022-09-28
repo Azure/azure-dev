@@ -121,6 +121,9 @@ func placeJavac(t *testing.T, dirs ...string) {
 	for _, createPath := range dirs {
 		toCreate := filepath.Join(createPath, javacWithExt())
 		ostest.Create(t, toCreate)
+
+		err := os.Chmod(toCreate, 0755)
+		require.NoError(t, err)
 	}
 }
 

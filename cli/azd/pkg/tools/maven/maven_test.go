@@ -48,8 +48,8 @@ func Test_getMavenPath(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			place(t, mvnwWithExt(), tt.mvnwPath...)
-			place(t, mvnWithExt(), tt.mvnPath...)
+			placeExecutable(t, mvnwWithExt(), tt.mvnwPath...)
+			placeExecutable(t, mvnWithExt(), tt.mvnPath...)
 			ostest.Setenvs(t, tt.envVar)
 
 			args := args{}
@@ -77,10 +77,13 @@ func Test_getMavenPath(t *testing.T) {
 	}
 }
 
-func place(t *testing.T, name string, dirs ...string) {
+func placeExecutable(t *testing.T, name string, dirs ...string) {
 	for _, createPath := range dirs {
 		toCreate := filepath.Join(createPath, name)
 		ostest.Create(t, toCreate)
+
+		err := os.Chmod(toCreate, 0755)
+		require.NoError(t, err)
 	}
 }
 

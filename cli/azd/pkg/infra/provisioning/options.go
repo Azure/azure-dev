@@ -27,14 +27,6 @@ func (options *ActionOptions) Formatter() output.Formatter {
 	return options.formatter
 }
 
-type PlanOptions struct {
-	Values map[any]any
-}
-
-type DeployOptions struct {
-	Values map[any]any
-}
-
 // Infrastructure destroy options
 type DestroyOptions struct {
 	// Whether or not to force the deletion of resources without prompting the user

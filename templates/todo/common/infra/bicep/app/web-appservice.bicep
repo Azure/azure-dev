@@ -3,7 +3,7 @@ param location string = resourceGroup().location
 
 param serviceName string = 'web'
 param appCommandLine string = 'pm2 serve /home/site/wwwroot --no-daemon --spa'
-param applicationInsightsName string
+param applicationInsightsName string = ''
 param appServicePlanId string
 
 module web '../../../../../common/infra/bicep/core/host/appservice-node.bicep' = {

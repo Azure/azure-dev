@@ -55,7 +55,7 @@ type AzCli interface {
 	// the interactive browser login flow happens. In the case of a device code login, the message is written to the
 	// `deviceCodeWriter`.
 	Login(ctx context.Context, useDeviceCode bool, deviceCodeWriter io.Writer) error
-	LoginAcr(ctx context.Context, subscriptionId string, loginServer string) error
+	LoginAcr(ctx context.Context, subscriptionId string, resourceGroup string, loginServer string) error
 	ListAccounts(ctx context.Context) ([]AzCliSubscriptionInfo, error)
 	ListExtensions(ctx context.Context) ([]AzCliExtensionInfo, error)
 	GetCliConfigValue(ctx context.Context, name string) (AzCliConfigValue, error)
@@ -485,15 +485,6 @@ func (cli *azCli) Login(ctx context.Context, useDeviceCode bool, deviceCodeWrite
 
 	if err != nil {
 		return fmt.Errorf("failed running az login: %s: %w", res.String(), err)
-	}
-
-	return nil
-}
-
-func (cli *azCli) LoginAcr(ctx context.Context, subscriptionId string, loginServer string) error {
-	res, err := cli.runAzCommand(ctx, "acr", "login", "--subscription", subscriptionId, "--name", loginServer)
-	if err != nil {
-		return fmt.Errorf("failed registry login for %s: %s: %w", loginServer, res.String(), err)
 	}
 
 	return nil

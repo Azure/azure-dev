@@ -53,7 +53,7 @@ func (at *containerAppTarget) Deploy(ctx context.Context, azdCtx *azdcontext.Azd
 	log.Printf("logging into registry %s", loginServer)
 
 	progress <- "Logging into container registry"
-	if err := at.cli.LoginAcr(ctx, at.env.GetSubscriptionId(), loginServer); err != nil {
+	if err := at.cli.LoginAcr(ctx, at.env.GetSubscriptionId(), at.scope.ResourceGroupName(), loginServer); err != nil {
 		return ServiceDeploymentResult{}, fmt.Errorf("logging into registry '%s': %w", loginServer, err)
 	}
 

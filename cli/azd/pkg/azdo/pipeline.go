@@ -46,7 +46,7 @@ func getAgentQueue(ctx context.Context, projectId string, connection *azuredevop
 }
 
 // find pipeline by name
-func pipelineExists(
+func getPipelineDefinition(
 	ctx context.Context,
 	client build.Client,
 	projectId *string,
@@ -94,7 +94,7 @@ func CreatePipeline(
 
 	// Add the name of the repo as part of the Pipeline name
 	name = fmt.Sprintf("%s (%s)", name, repoName)
-	definition, err := pipelineExists(ctx, client, &projectId, &name)
+	definition, err := getPipelineDefinition(ctx, client, &projectId, &name)
 	if err != nil {
 		return nil, fmt.Errorf("creating pipeline: validate name: %w", err)
 	}

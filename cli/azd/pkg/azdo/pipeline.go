@@ -46,12 +46,12 @@ func getAgentQueue(ctx context.Context, projectId string, connection *azuredevop
 }
 
 // find pipeline by name
-func pipelineExists(
+func getPipelineDefinition(
 	ctx context.Context,
 	client build.Client,
 	projectId *string,
 	pipelineName *string,
-) (bool, error) {
+) (*build.BuildDefinition, error) {
 
 	// GetDefinitions return just the first page (it could be more)
 	// using pager to iterate pages
@@ -60,16 +60,19 @@ func pipelineExists(
 	for definitionsPager.More() {
 		page, err := definitionsPager.NextPage(ctx)
 		if err != nil {
-			return false, fmt.Errorf("getting next page of definitions: %w", err)
+			return nil, fmt.Errorf("getting next page of definitions: %w", err)
 		}
 		for _, definition := range page.Value {
 			if *definition.Name == *pipelineName {
-				return true, nil
+				return client.GetDefinition(ctx, build.GetDefinitionArgs{
+					Project:      projectId,
+					DefinitionId: definition.Id,
+				})
 			}
 		}
 	}
 
-	return false, nil
+	return nil, nil
 }
 
 // create a new Azure DevOps pipeline
@@ -91,13 +94,13 @@ func CreatePipeline(
 
 	// Add the name of the repo as part of the Pipeline name
 	name = fmt.Sprintf("%s (%s)", name, repoName)
-	exists, err := pipelineExists(ctx, client, &projectId, &name)
+	definition, err := getPipelineDefinition(ctx, client, &projectId, &name)
 	if err != nil {
 		return nil, fmt.Errorf("creating pipeline: validate name: %w", err)
 	}
-	if exists {
+	if definition != nil {
 		// keep only one pipeline per repo
-		return nil, nil
+		return definition, nil
 	}
 
 	queue, err := getAgentQueue(ctx, projectId, connection)

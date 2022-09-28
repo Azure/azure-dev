@@ -30,7 +30,6 @@ type GitCli interface {
 	PushUpstream(ctx context.Context, repositoryPath string, origin string, branch string) error
 	IsUntrackedFile(ctx context.Context, repositoryPath string, filePath string) (bool, error)
 	SetCredentialStore(ctx context.Context, repositoryPath string) error
-	CheckConfigCredentialHelper(ctx context.Context) (bool, error)
 }
 
 type gitCli struct {
@@ -151,19 +150,6 @@ func (cli *gitCli) InitRepo(ctx context.Context, repositoryPath string) error {
 	}
 
 	return nil
-}
-
-func (cli *gitCli) CheckConfigCredentialHelper(ctx context.Context) (bool, error) {
-	found, err := tools.ToolInPath("git")
-	if !found {
-		return false, err
-	}
-	gitRes, err := tools.ExecuteCommand(ctx, "git", "config", "credential.helper")
-	if err != nil {
-		return false, fmt.Errorf("checking %s credential.helper: %w", cli.Name(), err)
-	}
-
-	return gitRes != "", nil
 }
 
 func (cli *gitCli) SetCredentialStore(ctx context.Context, repositoryPath string) error {

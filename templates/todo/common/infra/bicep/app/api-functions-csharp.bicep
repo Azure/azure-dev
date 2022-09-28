@@ -10,7 +10,7 @@ param serviceName string = 'api'
 param storageAccountName string
 
 module api '../../../../../common/infra/bicep/core/host/functions-dotnet.bicep' = {
-  name: '${serviceName}-functions-csharp-isolated-module'
+  name: '${serviceName}-functions-csharp-module'
   params: {
     environmentName: environmentName
     location: location

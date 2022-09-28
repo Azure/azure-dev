@@ -83,6 +83,6 @@ module monitoring '../../../../../../common/infra/bicep/core/monitor/monitoring.
 output API_URI string = api.outputs.API_URI
 output APPLICATIONINSIGHTS_CONNECTION_STRING string = monitoring.outputs.applicationInsightsConnectionString
 output AZURE_KEY_VAULT_ENDPOINT string = keyVault.outputs.keyVaultEndpoint
-output AZURE_KEY_VAULT_NAME string = keyVault.name
+output AZURE_KEY_VAULT_NAME string = keyVault.outputs.keyVaultName
 output AZURE_SQL_CONNECTION_STRING_KEY string = sqlServer.outputs.sqlConnectionStringKey
 output WEB_URI string = web.outputs.WEB_URI

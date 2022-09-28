@@ -6,10 +6,8 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
-	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
 	"github.com/azure/azure-dev/cli/azd/pkg/identity"
 )
 
@@ -134,7 +132,7 @@ func (cli *azCli) createResourcesClient(ctx context.Context, subscriptionId stri
 		return nil, err
 	}
 
-	options := cli.createClientOptions(ctx)
+	options := cli.createArmClientOptions(ctx)
 	client, err := armresources.NewClient(subscriptionId, cred, options)
 	if err != nil {
 		return nil, fmt.Errorf("creating Resource client: %w", err)
@@ -149,28 +147,13 @@ func (cli *azCli) createResourceGroupClient(ctx context.Context, subscriptionId 
 		return nil, err
 	}
 
-	options := cli.createClientOptions(ctx)
+	options := cli.createArmClientOptions(ctx)
 	client, err := armresources.NewResourceGroupsClient(subscriptionId, cred, options)
 	if err != nil {
 		return nil, fmt.Errorf("creating ResourceGroup client: %w", err)
 	}
 
 	return client, nil
-}
-
-// Creates the module client options
-// These options include the underlying transport to be used.
-func (cli *azCli) createClientOptions(ctx context.Context) *arm.ClientOptions {
-	return &arm.ClientOptions{
-		ClientOptions: policy.ClientOptions{
-			// Supports mocking for unit tests
-			Transport: httputil.GetHttpClient(ctx),
-			// Per request policies to inject into HTTP pipeline
-			PerCallPolicies: []policy.Policy{
-				NewUserAgentPolicy(cli.userAgent),
-			},
-		},
-	}
 }
 
 type userAgentPolicy struct {

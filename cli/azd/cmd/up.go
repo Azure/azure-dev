@@ -9,12 +9,15 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/commands"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
+	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
 
 func upCmd(rootOptions *internal.GlobalCommandOptions) *cobra.Command {
+	infraCreateFinalOutput := []string{}
+
 	cmd := commands.Build(
 		commands.CompositeAction(
 			&ignoreInitErrorAction{
@@ -23,7 +26,9 @@ func upCmd(rootOptions *internal.GlobalCommandOptions) *cobra.Command {
 				},
 			},
 			&infraCreateAction{
-				rootOptions: rootOptions,
+				// Delay print final output from infra create
+				finalOutputRedirect: &infraCreateFinalOutput,
+				rootOptions:         rootOptions,
 			},
 			// Print an additional newline to separate provision from deploy
 			commands.ActionFunc(
@@ -38,6 +43,16 @@ func upCmd(rootOptions *internal.GlobalCommandOptions) *cobra.Command {
 				},
 			),
 			&deployAction{rootOptions: rootOptions},
+			// Print the final output from infra create
+			commands.ActionFunc(
+				func(ctx context.Context, cmd *cobra.Command, args []string, azdCtx *azdcontext.AzdContext) error {
+					console := input.GetConsole(ctx)
+					for _, message := range infraCreateFinalOutput {
+						console.Message(ctx, message)
+					}
+					return nil
+				},
+			),
 		),
 		rootOptions,
 		"up",

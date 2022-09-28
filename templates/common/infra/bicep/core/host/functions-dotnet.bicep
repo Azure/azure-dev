@@ -7,7 +7,7 @@ param appServicePlanId string
 param appSettings object = {}
 param keyVaultName string = ''
 param linuxFxVersion string = 'DOTNET-ISOLATED|7.0'
-param kind string = 'functionapp'
+param kind string = 'functionapp,linux'
 param managedIdentity bool = !(empty(keyVaultName))
 param serviceName string
 param storageAccountName string

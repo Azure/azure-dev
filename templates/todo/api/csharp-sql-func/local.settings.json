@@ -3,8 +3,6 @@
     "Values": {
         "AzureWebJobsStorage": "",
         "FUNCTIONS_WORKER_RUNTIME": "dotnet-isolated"
-       
-        
     },
     "Host": {
         "LocalHttpPort": 3100,

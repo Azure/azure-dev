@@ -96,7 +96,7 @@ func GetGitRepositoriesInProject(ctx context.Context, projectName string, orgNam
 	})
 
 	if err != nil {
-		return nil, fmt.Errorf("prompting for azdo project: %w", err)
+		return nil, fmt.Errorf("prompting for azdo repository: %w", err)
 	}
 	selectedRepoName := options[repoIdx]
 	for _, repo := range repos {

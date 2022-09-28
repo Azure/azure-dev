@@ -18,7 +18,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/git"
 	"github.com/microsoft/azure-devops-go-api/azuredevops"
 	"github.com/microsoft/azure-devops-go-api/azuredevops/build"
 	azdoGit "github.com/microsoft/azure-devops-go-api/azuredevops/git"
@@ -176,21 +175,7 @@ func (p *AzdoScmProvider) ensureGitRepositoryExists(ctx context.Context, console
 		return "", err
 	}
 
-	remoteParts := strings.Split(p.repoDetails.remoteUrl, "@")
-	if len(remoteParts) < 2 {
-		return "", fmt.Errorf("invalid azure devops remote")
-	}
-	remoteUser := remoteParts[0]
-	remoteHost := remoteParts[1]
-	pat, err := azdo.EnsurePatExists(ctx, p.Env, console)
-	if err != nil {
-		return "", err
-	}
-
-	updatedRemote := fmt.Sprintf("%s:%s@%s", remoteUser, pat, remoteHost)
-	console.Message(ctx, fmt.Sprintf("using Azure DevOps repo: %s", p.repoDetails.repoWebUrl))
-
-	return updatedRemote, nil
+	return *repo.RemoteUrl, nil
 }
 
 // helper function to return repoDetails from state
@@ -437,51 +422,12 @@ func (p *AzdoScmProvider) gitRepoDetails(ctx context.Context, remoteUrl string) 
 }
 
 // preventGitPush is nil for Azure DevOps
-// this method also checks for a credential helper and prompts the user to set a helper to make subsequent pushes easier
 func (p *AzdoScmProvider) preventGitPush(
 	ctx context.Context,
 	gitRepo *gitRepositoryDetails,
 	remoteName string,
 	branchName string,
 	console input.Console) (bool, error) {
-
-	gitCli := git.NewGitCli(ctx)
-	foundHelper, err := gitCli.CheckConfigCredentialHelper(ctx)
-	if err != nil {
-		return false, err
-	}
-	if !foundHelper {
-		console.Message(ctx, `  
-  A credential helper is not configured for git.
-  This will require you to enter your Azure DevOps PAT when executing a git push.
-  https://aka.ms/azure-dev/git-store
-  `)
-		idx, err := console.Select(ctx, input.ConsoleOptions{
-			Message: "Would you like to enable credential.helper store for this local git repository?",
-			Options: []string{
-				"Yes - set credential.helper = store",
-				"No - do not configure credential.helper",
-			},
-			DefaultValue: "Yes - set credential.helper = store",
-		})
-		if err != nil {
-			return false, fmt.Errorf("prompting for credential helper: %w ", err)
-		}
-		switch idx {
-		// Configure Credential Store
-		case 0:
-			err = gitCli.SetCredentialStore(ctx, p.AzdContext.ProjectDirectory())
-			if err != nil {
-				return false, fmt.Errorf("storing credentials in env: %w ", err)
-			}
-		// Skip
-		case 1:
-			break
-		default:
-			panic(fmt.Sprintf("unexpected selection index %d", idx))
-		}
-	}
-
 	return false, nil
 }
 
@@ -495,13 +441,6 @@ func (p *AzdoScmProvider) postGitPush(
 	branchName string,
 	console input.Console) error {
 
-	gitCli := git.NewGitCli(ctx)
-
-	//Reset remote to original url without PAT
-	err := gitCli.UpdateRemote(ctx, p.AzdContext.ProjectDirectory(), remoteName, p.repoDetails.remoteUrl)
-	if err != nil {
-		return err
-	}
 	if gitRepo.pushStatus {
 		console.Message(ctx, output.WithSuccessFormat(azdo.AzdoConfigSuccessMessage, p.repoDetails.repoWebUrl))
 	}
@@ -590,8 +529,6 @@ func (p *AzdoCiProvider) configureConnection(
 	}
 	return nil
 }
-
-// struct used to deserialize service principal json object
 
 // parses the incoming json object and deserializes it to a struct
 func parseCredentials(ctx context.Context, credentials json.RawMessage) (*azdo.AzureServicePrincipalCredentials, error) {

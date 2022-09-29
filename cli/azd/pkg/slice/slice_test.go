@@ -29,14 +29,14 @@ func Test_Find_SimpleType(t *testing.T) {
 func Test_Find_ComplexType(t *testing.T) {
 	t.Run("WithMatch", func(t *testing.T) {
 		people := []*Person{
-			{FirstName: "Wayne", LastName: "Gretzkey"},
+			{FirstName: "Wayne", LastName: "Gretzky"},
 			{FirstName: "Conner", LastName: "McDavid"},
 			{FirstName: "Patrick", LastName: "Kane"},
-			{FirstName: "Auston", LastName: "Matthews"},
+			{FirstName: "Austin", LastName: "Matthews"},
 		}
 
 		match := *Find(people, func(value *Person) bool {
-			return value.LastName == "Gretzkey"
+			return value.LastName == "Gretzky"
 		})
 
 		require.Same(t, people[0], match)
@@ -44,10 +44,10 @@ func Test_Find_ComplexType(t *testing.T) {
 
 	t.Run("NoMatch", func(t *testing.T) {
 		people := []*Person{
-			{FirstName: "Wayne", LastName: "Gretzkey"},
+			{FirstName: "Wayne", LastName: "Gretzky"},
 			{FirstName: "Conner", LastName: "McDavid"},
 			{FirstName: "Patrick", LastName: "Kane"},
-			{FirstName: "Auston", LastName: "Matthews"},
+			{FirstName: "Austin", LastName: "Matthews"},
 		}
 
 		match := Find(people, func(value *Person) bool {

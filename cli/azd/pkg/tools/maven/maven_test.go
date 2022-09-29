@@ -1,6 +1,7 @@
 package maven
 
 import (
+	"log"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -64,6 +65,9 @@ func Test_getMavenPath(t *testing.T) {
 				args.rootProjectPath = rootPath
 			}
 
+			wd, err := os.Getwd()
+			require.NoError(t, err)
+			log.Printf("rootPath: %s, cwd: %s, getMavenPath(%s, %s)\n", rootPath, wd, args.projectPath, args.rootProjectPath)
 			actual, err := getMavenPath(args.projectPath, args.rootProjectPath)
 
 			if tt.wantErr {

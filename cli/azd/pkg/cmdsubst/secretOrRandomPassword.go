@@ -49,7 +49,7 @@ func (e *SecretOrRandomPasswordCommandExecutor) Run(ctx context.Context, command
 		return false, "", fmt.Errorf("missing context information for %s command", SecretOrRandomPasswordCommandName)
 	}
 
-	secret, err := e.GetSecret(ctx, keyVaultName, secretName)
+	secret, err := e.azCli.GetKeyVaultSecret(ctx, keyVaultName, secretName)
 	if err != nil {
 		if errors.Is(err, azcli.ErrAzCliSecretNotFound) {
 			log.Printf("%s: secret '%s' not found in vault '%s', using random password...", SecretOrRandomPasswordCommandName, secretName, keyVaultName)
@@ -65,13 +65,4 @@ func (e *SecretOrRandomPasswordCommandExecutor) Run(ctx context.Context, command
 	}
 
 	return true, secret.Value, nil
-}
-
-func (e *SecretOrRandomPasswordCommandExecutor) GetSecret(ctx context.Context, keyVaultName string, secretName string) (*azcli.AzCliKeyVaultSecret, error) {
-	vaultUrl := keyVaultName
-	if !strings.Contains(strings.ToLower(keyVaultName), "https://") {
-		vaultUrl = fmt.Sprintf("https://%s.vault.azure.net", keyVaultName)
-	}
-
-	return e.azCli.GetKeyVaultSecret(ctx, vaultUrl, secretName)
 }

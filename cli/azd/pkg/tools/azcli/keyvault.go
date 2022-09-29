@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/keyvault/azsecrets"
@@ -54,7 +55,12 @@ func (cli *azCli) GetKeyVault(ctx context.Context, subscriptionId string, resour
 	}, nil
 }
 
-func (cli *azCli) GetKeyVaultSecret(ctx context.Context, vaultUrl string, secretName string) (*AzCliKeyVaultSecret, error) {
+func (cli *azCli) GetKeyVaultSecret(ctx context.Context, vaultName string, secretName string) (*AzCliKeyVaultSecret, error) {
+	vaultUrl := vaultName
+	if !strings.Contains(strings.ToLower(vaultName), "https://") {
+		vaultUrl = fmt.Sprintf("https://%s.vault.azure.net", vaultName)
+	}
+
 	client, err := cli.createSecretsDataClient(ctx, vaultUrl)
 	if err != nil {
 		return nil, nil

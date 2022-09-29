@@ -31,7 +31,14 @@ func ensureConfigExists(ctx context.Context, env *environment.Environment, key s
 func EnsurePatExists(ctx context.Context, env *environment.Environment, console input.Console) (string, error) {
 	value, err := ensureConfigExists(ctx, env, AzDoPatName, "azure devops personal access token")
 	if err != nil {
-		console.Message(ctx, output.WithWarningFormat("You need an Azure DevOps Personal Access Token (PAT). Please create a PAT by following the instructions here https://aka.ms/azure-dev/azdo-pat"))
+		console.Message(ctx, fmt.Sprintf(
+			"You need an %s. Please create a PAT by following the instructions here %s",
+			output.WithWarningFormat("Azure DevOps Personal Access Token (PAT)"),
+			output.WithLinkFormat("https://aka.ms/azure-dev/azdo-pat")))
+		console.Message(ctx, fmt.Sprintf("(%s this prompt by setting the PAT to env var: %s)",
+			output.WithWarningFormat("%s", "skip"),
+			output.WithHighLightFormat("%s", AzDoPatName)))
+
 		pat, err := console.Prompt(ctx, input.ConsoleOptions{
 			Message:      "Personal Access Token (PAT):",
 			DefaultValue: "",
@@ -43,20 +50,6 @@ func EnsurePatExists(ctx context.Context, env *environment.Environment, console 
 		// note: the scope of this env var is only this shell invocation and won't be available in the caller parent shell
 		os.Setenv(AzDoPatName, pat)
 		value = pat
-
-		persistPat, err := console.Confirm(ctx, input.ConsoleOptions{
-			Message:      fmt.Sprintf("Save the PAT to the %s environment file (.env)?", env.GetEnvName()),
-			DefaultValue: true,
-		})
-		if err != nil {
-			return "", fmt.Errorf("prompting for pat storage: %w", err)
-		}
-		if persistPat {
-			err = saveEnvironmentConfig(AzDoPatName, value, env)
-			if err != nil {
-				return "", err
-			}
-		}
 	}
 	return value, nil
 }

@@ -89,7 +89,7 @@ func createProject(ctx context.Context, connection *azuredevops.Connection, name
 		time.Sleep(800 * time.Millisecond)
 	}
 
-	project, err := getProjectByName(ctx, connection, name)
+	project, err := GetProjectByName(ctx, connection, name)
 	if err != nil {
 		return nil, err
 	}
@@ -134,7 +134,7 @@ func GetProjectFromNew(ctx context.Context, repoPath string, connection *azurede
 }
 
 // return an azdo project by name
-func getProjectByName(ctx context.Context, connection *azuredevops.Connection, name string) (*core.TeamProjectReference, error) {
+func GetProjectByName(ctx context.Context, connection *azuredevops.Connection, name string) (*core.TeamProjectReference, error) {
 	coreClient, err := core.NewClient(ctx, connection)
 	if err != nil {
 		return nil, err

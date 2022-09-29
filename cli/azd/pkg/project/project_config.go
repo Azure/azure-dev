@@ -12,7 +12,6 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/internal/telemetry"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
-	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/drone/envsubst"
@@ -105,22 +104,17 @@ func (pc *ProjectConfig) GetProject(ctx *context.Context, env *environment.Envir
 		*ctx = telemetry.ContextWithTemplate(*ctx, project.Metadata.Template)
 	}
 
-	if pc.ResourceGroupName == "" {
-		// We won't have a ResourceGroupName yet if it hasn't been set in either azure.yaml or AZURE_RESOURCE_GROUP env var
-		// Let's try to find the right resource group for this environment
-		resourceManager := infra.NewAzureResourceManager(*ctx)
-		resourceGroupName, err := resourceManager.FindResourceGroupForEnvironment(*ctx, env)
-		if err != nil {
-			return nil, err
-		}
-		pc.ResourceGroupName = resourceGroupName
+	resourceGroupName, err := GetResourceGroupName(*ctx, pc, env)
+	if err != nil {
+		return nil, err
 	}
+	project.ResourceGroupName = resourceGroupName
 
 	for key, serviceConfig := range pc.Services {
 		// If the 'resourceName' was not overridden in the project yaml
 		// Retrieve the resource name from the provisioned resources if available
 		if strings.TrimSpace(serviceConfig.ResourceName) == "" {
-			resolvedResourceName, err := GetServiceResourceName(*ctx, pc.ResourceGroupName, serviceConfig.Name, env)
+			resolvedResourceName, err := GetServiceResourceName(*ctx, project.ResourceGroupName, serviceConfig.Name, env)
 			if err != nil {
 				return nil, fmt.Errorf("getting resource name: %w", err)
 			}
@@ -128,7 +122,7 @@ func (pc *ProjectConfig) GetProject(ctx *context.Context, env *environment.Envir
 			serviceConfig.ResourceName = resolvedResourceName
 		}
 
-		deploymentScope := environment.NewDeploymentScope(env.GetSubscriptionId(), pc.ResourceGroupName, serviceConfig.ResourceName)
+		deploymentScope := environment.NewDeploymentScope(env.GetSubscriptionId(), project.ResourceGroupName, serviceConfig.ResourceName)
 		service, err := serviceConfig.GetService(*ctx, &project, env, deploymentScope)
 
 		if err != nil {
@@ -249,11 +243,6 @@ func ParseProjectConfig(yamlContent string, env *environment.Environment) (*Proj
 	}
 
 	projectFile.handlers = make(map[Event][]ProjectLifecycleEventHandlerFn)
-
-	// If ResourceGroupName not set in azure.yaml, then look for it in the AZURE_RESOURCE_GROUP env var
-	if strings.TrimSpace(projectFile.ResourceGroupName) == "" {
-		projectFile.ResourceGroupName = environment.GetResourceGroupNameFromEnvVar(env)
-	}
 
 	for key, svc := range projectFile.Services {
 		svc.handlers = make(map[Event][]ServiceLifecycleEventHandlerFn)

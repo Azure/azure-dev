@@ -25,7 +25,6 @@ var resourceToken = toLower(uniqueString(subscription().id, environmentName, loc
 
 var prefix = contains(kind, 'function') ? abbrs.webSitesFunctions : abbrs.webSitesAppService
 
-
 resource appService 'Microsoft.Web/sites@2022-03-01' = {
   name: '${prefix}${serviceName}-${resourceToken}'
   location: location

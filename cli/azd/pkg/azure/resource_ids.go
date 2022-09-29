@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"regexp"
 
-	"github.com/azure/azure-dev/cli/azd/test/mocks"
+	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 )
 
 // Creates Azure subscription resource ID
@@ -58,5 +58,5 @@ func GetResourceGroupName(resourceId string) *string {
 		return nil
 	}
 
-	return mocks.RefOf(string(matches[1]))
+	return convert.RefOf(string(matches[1]))
 }

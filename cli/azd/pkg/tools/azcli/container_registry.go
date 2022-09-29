@@ -72,7 +72,7 @@ func (cli *azCli) findContainerRegistryByName(ctx context.Context, subscriptionI
 		return nil, "", fmt.Errorf("failed listing container registries: %w", err)
 	}
 
-	match := *slice.Find(registries, func(registry *armcontainerregistry.Registry) bool {
+	match := slice.Find(registries, func(registry *armcontainerregistry.Registry) bool {
 		return *registry.Name == registryName
 	})
 
@@ -80,12 +80,13 @@ func (cli *azCli) findContainerRegistryByName(ctx context.Context, subscriptionI
 		return nil, "", fmt.Errorf("cannot find registry with name '%s' and subscriptionId '%s'", registryName, subscriptionId)
 	}
 
-	resourceGroup := azure.GetResourceGroupName(*match.ID)
+	registry := *match
+	resourceGroup := azure.GetResourceGroupName(*registry.ID)
 	if resourceGroup == nil {
-		return nil, "", fmt.Errorf("cannot find resource group for resource id: '%s'", *match.ID)
+		return nil, "", fmt.Errorf("cannot find resource group for resource id: '%s'", *registry.ID)
 	}
 
-	return match, *resourceGroup, nil
+	return registry, *resourceGroup, nil
 }
 
 func (cli *azCli) createRegistriesClient(ctx context.Context, subscriptionId string) (*armcontainerregistry.RegistriesClient, error) {

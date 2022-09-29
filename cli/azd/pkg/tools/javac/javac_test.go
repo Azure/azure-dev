@@ -20,7 +20,7 @@ func TestCheckInstalledVersion(t *testing.T) {
 	javaHomeBin := filepath.Join(javaHome, "bin")
 	require.NoError(t, os.Mkdir(javaHomeBin, 0755))
 
-	placeJavac(t, filepath.Join(javaHomeBin, javacWithExt()))
+	placeJavac(t, javaHomeBin)
 	ostest.Setenv(t, "JAVA_HOME", javaHome)
 
 	tests := []struct {

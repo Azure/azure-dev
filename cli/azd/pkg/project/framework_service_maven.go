@@ -85,7 +85,7 @@ func (m *mavenProject) Package(ctx context.Context, progress chan<- string) (str
 
 func (m *mavenProject) InstallDependencies(ctx context.Context) error {
 	if err := m.mavenCli.ResolveDependencies(ctx, m.config.Path()); err != nil {
-		return err
+		return fmt.Errorf("restoring maven dependencies: %w", err)
 	}
 
 	return nil

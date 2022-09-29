@@ -62,7 +62,7 @@ resource "azurerm_key_vault_access_policy" "user" {
   ]
 }
 
-resource "azurerm_key_vault_secret" "dbconnection" {
+resource "azurerm_key_vault_secret" "secrets" {
   count        = length(var.secrets)
   name         = var.secrets[count.index].name
   value        = var.secrets[count.index].value

@@ -8,8 +8,8 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerregistry/armcontainerregistry"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/identity"
-	"github.com/azure/azure-dev/cli/azd/pkg/slice"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/docker"
+	"golang.org/x/exp/slices"
 )
 
 func (cli *azCli) GetContainerRegistries(ctx context.Context, subscriptionId string) ([]*armcontainerregistry.Registry, error) {
@@ -72,15 +72,15 @@ func (cli *azCli) findContainerRegistryByName(ctx context.Context, subscriptionI
 		return nil, "", fmt.Errorf("failed listing container registries: %w", err)
 	}
 
-	match := slice.Find(registries, func(registry *armcontainerregistry.Registry) bool {
+	matchIndex := slices.IndexFunc(registries, func(registry *armcontainerregistry.Registry) bool {
 		return *registry.Name == registryName
 	})
 
-	if match == nil {
+	if matchIndex == -1 {
 		return nil, "", fmt.Errorf("cannot find registry with name '%s' and subscriptionId '%s'", registryName, subscriptionId)
 	}
 
-	registry := *match
+	registry := registries[matchIndex]
 	resourceGroup := azure.GetResourceGroupName(*registry.ID)
 	if resourceGroup == nil {
 		return nil, "", fmt.Errorf("cannot find resource group for resource id: '%s'", *registry.ID)

@@ -85,7 +85,7 @@ func (m *mavenProject) Package(ctx context.Context, progress chan<- string) (str
 
 func (m *mavenProject) InstallDependencies(ctx context.Context) error {
 	if err := m.mavenCli.ResolveDependencies(ctx, m.config.Path()); err != nil {
-		return fmt.Errorf("restoring maven dependencies: %w", err)
+		return fmt.Errorf("resolving maven dependencies: %w", err)
 	}
 
 	return nil
@@ -95,11 +95,12 @@ func (m *mavenProject) Initialize(ctx context.Context) error {
 	return nil
 }
 
-func NewMavenProject(commandRunner exec.CommandRunner, config *ServiceConfig, env *environment.Environment) FrameworkService {
+func NewMavenProject(ctx context.Context, config *ServiceConfig, env *environment.Environment) FrameworkService {
+	runner := exec.GetCommandRunner(ctx)
 	return &mavenProject{
 		config:   config,
 		env:      env,
-		mavenCli: maven.NewMavenCli(commandRunner, config.Path(), config.Project.Path),
-		javacCli: javac.NewCli(commandRunner),
+		mavenCli: maven.NewMavenCli(runner, config.Path(), config.Project.Path),
+		javacCli: javac.NewCli(runner),
 	}
 }

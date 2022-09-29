@@ -14,6 +14,7 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/keyvault/armkeyvault"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
+	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
@@ -376,16 +377,16 @@ func prepareDestroyMocks(mockContext *mocks.MockContext) {
 	resourceList := armresources.ResourceListResult{
 		Value: []*armresources.GenericResourceExpanded{
 			{
-				ID:       mocks.RefOf("webapp"),
-				Name:     mocks.RefOf("app-123"),
-				Type:     mocks.RefOf(string(infra.AzureResourceTypeWebSite)),
-				Location: mocks.RefOf("eastus2"),
+				ID:       convert.RefOf("webapp"),
+				Name:     convert.RefOf("app-123"),
+				Type:     convert.RefOf(string(infra.AzureResourceTypeWebSite)),
+				Location: convert.RefOf("eastus2"),
 			},
 			{
-				ID:       mocks.RefOf("keyvault"),
-				Name:     mocks.RefOf("kv-123"),
-				Type:     mocks.RefOf(string(infra.AzureResourceTypeKeyVault)),
-				Location: mocks.RefOf("eastus2"),
+				ID:       convert.RefOf("keyvault"),
+				Name:     convert.RefOf("kv-123"),
+				Type:     convert.RefOf(string(infra.AzureResourceTypeKeyVault)),
+				Location: convert.RefOf("eastus2"),
 			},
 		},
 	}
@@ -408,12 +409,12 @@ func prepareDestroyMocks(mockContext *mocks.MockContext) {
 	}).RespondFn(func(request *http.Request) (*http.Response, error) {
 		keyVaultResponse := armkeyvault.VaultsClientGetResponse{
 			Vault: armkeyvault.Vault{
-				ID:       mocks.RefOf("kv-123"),
-				Name:     mocks.RefOf("kv-123"),
-				Location: mocks.RefOf("eastus2"),
+				ID:       convert.RefOf("kv-123"),
+				Name:     convert.RefOf("kv-123"),
+				Location: convert.RefOf("eastus2"),
 				Properties: &armkeyvault.VaultProperties{
-					EnableSoftDelete:      mocks.RefOf(true),
-					EnablePurgeProtection: mocks.RefOf(false),
+					EnableSoftDelete:      convert.RefOf(true),
+					EnablePurgeProtection: convert.RefOf(false),
 				},
 			},
 		}

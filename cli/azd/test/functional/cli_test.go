@@ -66,14 +66,11 @@ func Test_CLI_Version_PrintsVersion(t *testing.T) {
 
 	rn := os.Getenv("GITHUB_RUN_NUMBER")
 	if rn != "" {
-		_, filename, _, gotFilePath := runtime.Caller(0)
-		require.True(t, gotFilePath)
-		runningTestPath := filepath.Dir(filename)
-		require.Contains(t, runningTestPath, "cli")
+		runningTestPath := azdcli.GetAzdLocation()
 		cliPath := strings.Split(runningTestPath, "cli")[0]
-		version, err := os.ReadFile(path.Join(cliPath, "cli/version.txt"))
+		version, err := os.ReadFile(path.Join(cliPath, "cli", "version.txt"))
 		require.NoError(t, err)
-		require.Contains(t, out, string(version))
+		require.Contains(t, out, strings.ReplaceAll(string(version), "\n", ""))
 	} else {
 		require.Contains(t, out, fmt.Sprintf("azd version %s", internal.Version))
 	}

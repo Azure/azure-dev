@@ -28,6 +28,7 @@ containerapp
 csharpapp
 devel
 dockerproject
+dskip
 eastus
 envname
 errcheck
@@ -40,11 +41,13 @@ GOARCH
 godotenv
 golangci
 ineffassign
+javac
 jmes
 keychain
 ldflags
 mgmt
 mgutz
+mvnw
 nobanner
 nodeapp
 nolint
@@ -62,6 +65,7 @@ retriable
 rzip
 semconv
 serverfarms
+setenvs
 sstore
 staticcheck
 staticwebapp
@@ -73,6 +77,8 @@ teamcity
 tracesdk
 tracetest
 unmarshalling
+unsets
+unsetenvs
 utsname
 westus2
 yacspin

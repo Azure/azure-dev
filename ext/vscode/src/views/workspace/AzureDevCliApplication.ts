@@ -1,12 +1,18 @@
 import * as vscode from 'vscode';
 import { AzureDevCliModel } from "./AzureDevCliModel";
+import { WorkspaceResource } from './ResourceGroupsApi';
 
 export class AzureDevCliApplication implements AzureDevCliModel {
-    getChildren(): Promise<AzureDevCliModel[]> {
-        throw new Error("Method not implemented.");
+    constructor(private readonly resource: WorkspaceResource) {
     }
 
-    getTreeItem(): Promise<vscode.TreeItem> {
-        throw new Error("Method not implemented.");
+    getChildren(): Promise<AzureDevCliModel[]> {
+        return Promise.resolve([]);
+    }
+
+    getTreeItem(): vscode.TreeItem {
+        const treeItem = new vscode.TreeItem(this.resource.name, vscode.TreeItemCollapsibleState.None);
+
+        return treeItem;
     }
 }

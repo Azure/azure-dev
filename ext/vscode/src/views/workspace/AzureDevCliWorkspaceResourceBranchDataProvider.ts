@@ -10,7 +10,7 @@ export class AzureDevCliWorkspaceResourceBranchDataProvider implements BranchDat
     }
 
     getResourceItem(element: WorkspaceResource): AzureDevCliModel | Thenable<AzureDevCliModel> {
-        return new AzureDevCliApplication();
+        return new AzureDevCliApplication(element);
     }
 
     createResourceItem?: (() => ProviderResult<WorkspaceResource>) | undefined;

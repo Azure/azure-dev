@@ -55,7 +55,7 @@ module "keyvault" {
   rg_name                  = azurerm_resource_group.rg.name
   tags                     = azurerm_resource_group.rg.tags
   resource_token           = local.resource_token
-  access_policy_object_ids = [module.appserviceapi.APP_IDENTITY_PRINCIPAL_ID]
+  access_policy_object_ids = [module.appserviceapi.IDENTITY_PRINCIPAL_ID]
   secrets = [
     {
       name  = local.cosmos_connection_string_key

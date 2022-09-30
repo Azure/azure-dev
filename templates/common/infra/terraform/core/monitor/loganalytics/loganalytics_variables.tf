@@ -1,5 +1,5 @@
 variable "location" {
-  description = "The supported azure location where the resource deployed"
+  description = "The supported Azure location where the resource deployed"
   type        = string
 }
 
@@ -9,7 +9,7 @@ variable "rg_name" {
 }
 
 variable "resource_token" {
-  description = "A postfix string to centrally mitigate resource name collisions."
+  description = "A suffix string to centrally mitigate resource name collisions."
   type        = string
 }
 

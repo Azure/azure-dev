@@ -1,5 +1,5 @@
 variable "location" {
-  description = "The supported azure location where the resource deployed"
+  description = "The supported Azure location where the resource deployed"
   type        = string
 }
 

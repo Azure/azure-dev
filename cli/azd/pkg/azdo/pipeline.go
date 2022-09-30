@@ -99,7 +99,18 @@ func CreatePipeline(
 		return nil, fmt.Errorf("creating pipeline: validate name: %w", err)
 	}
 	if definition != nil {
-		// keep only one pipeline per repo
+		// Pipeline is already created. It uses the same connection but
+		// we need to update the variables and secrets as they
+		// might have been updated
+		definition.Variables = getDefinitionVariables(env, credentials, provisioningProvider)
+		definition, err := client.UpdateDefinition(ctx, build.UpdateDefinitionArgs{
+			Definition:   definition,
+			Project:      &projectId,
+			DefinitionId: definition.Id,
+		})
+		if err != nil {
+			return definition, fmt.Errorf("updating existing pipeline: %w", err)
+		}
 		return definition, nil
 	}
 
@@ -120,6 +131,25 @@ func CreatePipeline(
 	}
 
 	return newBuildDefinition, nil
+}
+
+func getDefinitionVariables(
+	env *environment.Environment,
+	credentials AzureServicePrincipalCredentials,
+	provisioningProvider provisioning.Options) *map[string]build.BuildDefinitionVariable {
+	variables := map[string]build.BuildDefinitionVariable{
+		"AZURE_LOCATION":           createBuildDefinitionVariable(env.GetLocation(), false, false),
+		"AZURE_ENV_NAME":           createBuildDefinitionVariable(env.GetEnvName(), false, false),
+		"AZURE_SERVICE_CONNECTION": createBuildDefinitionVariable(ServiceConnectionName, false, false),
+		"AZURE_SUBSCRIPTION_ID":    createBuildDefinitionVariable(credentials.SubscriptionId, false, false),
+	}
+
+	if provisioningProvider.Provider == provisioning.Terraform {
+		variables["ARM_TENANT_ID"] = createBuildDefinitionVariable(credentials.TenantId, false, false)
+		variables["ARM_CLIENT_ID"] = createBuildDefinitionVariable(credentials.ClientId, true, false)
+		variables["ARM_CLIENT_SECRET"] = createBuildDefinitionVariable(credentials.ClientSecret, true, false)
+	}
+	return &variables
 }
 
 // create Azure Deploy Pipeline parameters
@@ -149,19 +179,6 @@ func createAzureDevPipelineArgs(
 		"yamlFilename": AzurePipelineYamlPath,
 	}
 
-	variables := map[string]build.BuildDefinitionVariable{
-		"AZURE_LOCATION":           createBuildDefinitionVariable(env.GetLocation(), false, false),
-		"AZURE_ENV_NAME":           createBuildDefinitionVariable(env.GetEnvName(), false, false),
-		"AZURE_SERVICE_CONNECTION": createBuildDefinitionVariable(ServiceConnectionName, false, false),
-		"AZURE_SUBSCRIPTION_ID":    createBuildDefinitionVariable(credentials.SubscriptionId, false, false),
-	}
-
-	if provisioningProvider.Provider == provisioning.Terraform {
-		variables["ARM_TENANT_ID"] = createBuildDefinitionVariable(credentials.TenantId, false, false)
-		variables["ARM_CLIENT_ID"] = createBuildDefinitionVariable(credentials.ClientId, true, false)
-		variables["ARM_CLIENT_SECRET"] = createBuildDefinitionVariable(credentials.ClientSecret, true, false)
-	}
-
 	agentPoolQueue := &build.AgentPoolQueue{
 		Id:   queue.Id,
 		Name: queue.Name,
@@ -188,7 +205,7 @@ func createAzureDevPipelineArgs(
 		Repository:  buildRepository,
 		Process:     process,
 		Queue:       agentPoolQueue,
-		Variables:   &variables,
+		Variables:   getDefinitionVariables(env, credentials, provisioningProvider),
 		Triggers:    &triggers,
 	}
 

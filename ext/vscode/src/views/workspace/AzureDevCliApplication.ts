@@ -22,6 +22,8 @@ export class AzureDevCliApplication implements AzureDevCliModel {
     getTreeItem(): vscode.TreeItem {
         const treeItem = new vscode.TreeItem(this.resource.name, vscode.TreeItemCollapsibleState.Expanded);
 
+        treeItem.iconPath = new vscode.ThemeIcon('azure');
+
         return treeItem;
     }
 }

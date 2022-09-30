@@ -191,16 +191,6 @@ func ensureEnvironmentInitialized(ctx context.Context, envSpec environmentSpec, 
 		}
 	}
 
-	if !hasLocation && envSpec.location != "" {
-		env.SetLocation(envSpec.location)
-	} else {
-		location, err := azureutil.PromptLocation(ctx, "Please select an Azure location to use:")
-		if err != nil {
-			return fmt.Errorf("prompting for location: %w", err)
-		}
-		env.SetLocation(strings.TrimSpace(location))
-	}
-
 	if !hasSubID && envSpec.subscription != "" {
 		env.SetSubscriptionId(envSpec.subscription)
 	} else {
@@ -239,6 +229,16 @@ func ensureEnvironmentInitialized(ctx context.Context, envSpec environmentSpec, 
 		env.SetSubscriptionId(strings.TrimSpace(subscriptionId))
 	}
 
+	if !hasLocation && envSpec.location != "" {
+		env.SetLocation(envSpec.location)
+	} else {
+		location, err := azureutil.PromptLocation(ctx, env.GetSubscriptionId(), "Please select an Azure location to use:")
+		if err != nil {
+			return fmt.Errorf("prompting for location: %w", err)
+		}
+		env.SetLocation(strings.TrimSpace(location))
+	}
+
 	if !hasPrincipalID {
 		principalID, err := azureutil.GetCurrentPrincipalId(ctx)
 		if err != nil {
@@ -256,7 +256,8 @@ func ensureEnvironmentInitialized(ctx context.Context, envSpec environmentSpec, 
 
 func getSubscriptionOptions(ctx context.Context) ([]string, string, error) {
 	azCli := azcli.GetAzCli(ctx)
-	subscriptionInfos, err := azCli.ListAccounts(ctx)
+	defaultSubscriptionId := os.Getenv(environment.SubscriptionIdEnvVarName)
+	subscriptionInfos, err := azCli.ListAccounts(ctx, defaultSubscriptionId)
 	if err != nil {
 		return nil, "", fmt.Errorf("listing accounts: %w", err)
 	}
@@ -266,7 +267,6 @@ func getSubscriptionOptions(ctx context.Context) ([]string, string, error) {
 	// If `AZURE_SUBSCRIPTION_ID` is set in the environment, use it to influence
 	// the default option in our prompt. Fall back to the what the `az` CLI is
 	// configured to use if the environment variable is unset.
-	defaultSubscriptionId := os.Getenv(environment.SubscriptionIdEnvVarName)
 	if defaultSubscriptionId == "" {
 		for _, info := range subscriptionInfos {
 			if info.IsDefault {

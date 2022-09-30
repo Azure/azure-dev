@@ -25,11 +25,11 @@ func (s Locs) Less(i, j int) bool {
 func (s Locs) Swap(i, j int) { s[i], s[j] = s[j], s[i] }
 
 // PromptLocation asks the user to select a location from a list of supported azure location
-func PromptLocation(ctx context.Context, message string) (string, error) {
+func PromptLocation(ctx context.Context, subscriptionId string, message string) (string, error) {
 	azCli := azcli.GetAzCli(ctx)
 	console := input.GetConsole(ctx)
 
-	locations, err := azCli.ListAccountLocations(ctx)
+	locations, err := azCli.ListAccountLocations(ctx, subscriptionId)
 	if err != nil {
 		return "", fmt.Errorf("listing locations: %w", err)
 	}

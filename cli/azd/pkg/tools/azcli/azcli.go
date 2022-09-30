@@ -59,7 +59,7 @@ type AzCli interface {
 	Login(ctx context.Context, useDeviceCode bool, deviceCodeWriter io.Writer) error
 	LoginAcr(ctx context.Context, subscriptionId string, loginServer string) error
 	GetContainerRegistries(ctx context.Context, subscriptionId string) ([]*armcontainerregistry.Registry, error)
-	ListAccounts(ctx context.Context) ([]AzCliSubscriptionInfo, error)
+	ListAccounts(ctx context.Context, defaultSubscriptionId string) ([]AzCliSubscriptionInfo, error)
 	ListExtensions(ctx context.Context) ([]AzCliExtensionInfo, error)
 	GetCliConfigValue(ctx context.Context, name string) (AzCliConfigValue, error)
 	GetSubscriptionTenant(ctx context.Context, subscriptionId string) (string, error)
@@ -81,7 +81,7 @@ type AzCli interface {
 	ListSubscriptionDeploymentOperations(ctx context.Context, subscriptionId string, deploymentName string) ([]AzCliResourceOperation, error)
 	ListResourceGroupDeploymentOperations(ctx context.Context, subscriptionId string, resourceGroupName string, deploymentName string) ([]AzCliResourceOperation, error)
 	// ListAccountLocations lists the physical locations in Azure.
-	ListAccountLocations(ctx context.Context) ([]AzCliLocation, error)
+	ListAccountLocations(ctx context.Context, subscriptionId string) ([]AzCliLocation, error)
 	// CreateOrUpdateServicePrincipal creates a service principal using a given name and returns a JSON object which
 	// may be used by tools which understand the `AZURE_CREDENTIALS` format (i.e. the `sdk-auth` format). The service
 	// principal is assigned a given role. If an existing principal exists with the given name,
@@ -235,12 +235,12 @@ type AzCliStaticWebAppEnvironmentProperties struct {
 
 type AzCliLocation struct {
 	// The human friendly name of the location (e.g. "West US 2")
-	DisplayName string `json:"displayName"`
+	DisplayName string
 	// The name of the location (e.g. "westus2")
-	Name string `json:"name"`
+	Name string
 	// The human friendly name of the location, prefixed with a
 	// region name (e.g "(US) West US 2")
-	RegionalDisplayName string `json:"regionalDisplayName"`
+	RegionalDisplayName string
 }
 
 // AzCliConfigValue represents the value returned by `az config get`.
@@ -426,22 +426,6 @@ func (cli *azCli) SetUserAgent(userAgent string) {
 
 func (cli *azCli) UserAgent() string {
 	return cli.userAgent
-}
-
-func (cli *azCli) ListAccounts(ctx context.Context) ([]AzCliSubscriptionInfo, error) {
-	res, err := cli.runAzCommand(ctx, "account", "list", "--output", "json", "--query", "[].{name:name, id:id, isDefault:isDefault}")
-
-	if isNotLoggedInMessage(res.Stderr) {
-		return []AzCliSubscriptionInfo{}, ErrAzCliNotLoggedIn
-	} else if err != nil {
-		return nil, fmt.Errorf("failed running az account list: %s: %w", res.String(), err)
-	}
-
-	var subscriptionInfo []AzCliSubscriptionInfo
-	if err := json.Unmarshal([]byte(res.Stdout), &subscriptionInfo); err != nil {
-		return nil, fmt.Errorf("could not unmarshal output %s as a []AzCliSubscriptionInfo: %w", res.Stdout, err)
-	}
-	return subscriptionInfo, nil
 }
 
 func (cli *azCli) ListExtensions(ctx context.Context) ([]AzCliExtensionInfo, error) {
@@ -779,21 +763,6 @@ func (cli *azCli) ListResourceGroupDeploymentOperations(ctx context.Context, sub
 		return nil, fmt.Errorf("could not unmarshal output %s as a []AzCliResourceOperation: %w", res.Stdout, err)
 	}
 	return resources, nil
-}
-
-func (cli *azCli) ListAccountLocations(ctx context.Context) ([]AzCliLocation, error) {
-	res, err := cli.runAzCommand(ctx, "account", "list-locations", "--query", "[?metadata.regionType == 'Physical']", "--output", "json")
-	if isNotLoggedInMessage(res.Stderr) {
-		return nil, ErrAzCliNotLoggedIn
-	} else if err != nil {
-		return nil, fmt.Errorf("failed running az account list-locations: %s: %w", res.String(), err)
-	}
-
-	var locations []AzCliLocation
-	if err := json.Unmarshal([]byte(res.Stdout), &locations); err != nil {
-		return nil, fmt.Errorf("could not unmarshal output %s as a []AzCliLocation: %w", res.Stdout, err)
-	}
-	return locations, nil
 }
 
 func (cli *azCli) GetSubscriptionDeployment(ctx context.Context, subscriptionId string, deploymentName string) (AzCliDeployment, error) {

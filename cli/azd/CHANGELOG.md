@@ -1,10 +1,15 @@
 # Release History
 
-## 0.2.0-beta.3 (Unreleased)
+## 0.3.0-beta.1 (2022-09-30)
 
 ### Features Added
 
 - [[#743]](https://github.com/Azure/azure-dev/pull/743) Azure DevOps support for pipeline config command.
+
+### Bugs Fixed
+
+- [[#730]](https://github.com/Azure/azure-dev/pull/730) Fix hierarchical configuration keys for dotnet to show up correctly when stored as dotnet user-secrets. Thanks community member [@sebastianmattar](https://github.com/sebastianmattar) for providing the initial fix!
+- [[#761]](https://github.com/Azure/azure-dev/pull/761) Fix error in `azd deploy` when multiple resource groups are defined in bicep
 
 ## 0.2.0-beta.2 (2022-09-21)
 

@@ -66,8 +66,14 @@ func Test_CLI_Version_PrintsVersion(t *testing.T) {
 
 	rn := os.Getenv("GITHUB_RUN_NUMBER")
 	if rn != "" {
-		// TODO: This should be read from cli/version.txt (https://github.com/Azure/azure-dev/issues/36)
-		require.Contains(t, out, "0.2.0")
+		_, filename, _, gotFilePath := runtime.Caller(0)
+		require.True(t, gotFilePath)
+		runningTestPath := filepath.Dir(filename)
+		require.Contains(t, runningTestPath, "cli")
+		cliPath := strings.Split(runningTestPath, "cli")[0]
+		version, err := os.ReadFile(path.Join(cliPath, "cli/version.txt"))
+		require.NoError(t, err)
+		require.Contains(t, out, string(version))
 	} else {
 		require.Contains(t, out, fmt.Sprintf("azd version %s", internal.Version))
 	}

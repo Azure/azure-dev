@@ -52,5 +52,7 @@ export enum TelemetryId {
     SurveyCheck = 'azure-dev.survey-check',
 
     // Captures the result of a survey prompt
-    SurveyPromptResponse = 'azure-dev.survey-prompt-response'
+    SurveyPromptResponse = 'azure-dev.survey-prompt-response',
+
+    WorkspaceViewServicesChildren = 'azure-dev.views.workspace.services.children'
 }

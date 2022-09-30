@@ -69,8 +69,6 @@ stages:
 
           - template: /eng/pipelines/templates/steps/install-terraform.yml
 
-          - template: /eng/pipelines/templates/steps/install-sysinternals.yml
-
           - task: DockerInstaller@0
             displayName: Docker Installer
             condition: and(succeeded(), contains(variables['OSVmImage'], 'macOS'))
@@ -213,14 +211,16 @@ stages:
               targetPath: installer
 
           # CLI ref docs
-          - pwsh: New-Item -Force -ItemType Directory -Path docs
+          - pwsh: New-Item -ItemType Directory -Path docs
+            workingDirectory: $(Pipeline.Workspace)
             displayName: Create docs artifact folder
 
           - pwsh: go run docgen.go
             workingDirectory: cli/azd/docs
             displayName: Generate CLI documentation
 
-          - pwsh: Copy-Item cli/azd/docs/md/* docs/ -Recurse
+          - pwsh: Copy-Item $(Build.SourcesDirectory)/cli/azd/docs/md/* docs/ -Recurse
+            workingDirectory: $(Pipeline.Workspace)
             displayName: Copy CLI docs for pipeline artifact staging
 
           # azure.yaml.json schema docs
@@ -231,14 +231,15 @@ stages:
           - pwsh: pip install jsonschema2md
             displayName: Install jsonschema2md
 
-          - pwsh: jsonschema2md schemas/v1.0/azure.yaml.json docs/azure.yaml.schema.md
+          - pwsh: jsonschema2md schemas/v1.0/azure.yaml.json $(Pipeline.Workspace)/docs/azure.yaml.schema.md
             displayName: Generate azure.yaml schema
 
           # Upload docs for CLI ref and azure.yaml schema
-          - pwsh: Get-ChildItem docs
+          - pwsh: Get-ChildItem .
+            workingDirectory: $(Pipeline.Workspace)/docs
             displayName: Show doc artifacts to publish
 
-          - publish: docs/
+          - publish: $(Pipeline.Workspace)/docs/
             artifact: docs
             displayName: Upload generated documentation
 

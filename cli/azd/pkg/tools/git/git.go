@@ -30,7 +30,6 @@ type GitCli interface {
 	PushUpstream(ctx context.Context, repositoryPath string, origin string, branch string) error
 	IsUntrackedFile(ctx context.Context, repositoryPath string, filePath string) (bool, error)
 	SetCredentialStore(ctx context.Context, repositoryPath string) error
-	CheckConfigCredentialHelper(ctx context.Context) (bool, error)
 }
 
 type gitCli struct {
@@ -143,20 +142,14 @@ func (cli *gitCli) InitRepo(ctx context.Context, repositoryPath string) error {
 		return fmt.Errorf("failed to init repository: %s: %w", res.String(), err)
 	}
 
-	return nil
-}
-
-func (cli *gitCli) CheckConfigCredentialHelper(ctx context.Context) (bool, error) {
-	found, err := tools.ToolInPath("git")
-	if !found {
-		return false, err
-	}
-	gitRes, err := tools.ExecuteCommand(ctx, "git", "config", "credential.helper")
+	// Set initial branch to main
+	runArgs = exec.NewRunArgs("git", "-C", repositoryPath, "checkout", "-b", "main")
+	res, err = cli.commandRunner.Run(ctx, runArgs)
 	if err != nil {
-		return false, fmt.Errorf("checking %s credential.helper: %w", cli.Name(), err)
+		return fmt.Errorf("failed to create main branch: %s: %w", res.String(), err)
 	}
 
-	return gitRes != "", nil
+	return nil
 }
 
 func (cli *gitCli) SetCredentialStore(ctx context.Context, repositoryPath string) error {

@@ -4,6 +4,7 @@
 package cmdsubst
 
 import (
+	"context"
 	"fmt"
 	"regexp"
 	"strings"
@@ -12,7 +13,7 @@ import (
 type CommandExecutor interface {
 	// Returns true + replacement string if a command is recognized and runs successfully.
 	// Returns false and no error if the command was not recognized by the executor, or in other "no-op" cases.
-	Run(commandName string, args []string) (bool, string, error)
+	Run(ctx context.Context, commandName string, args []string) (bool, string, error)
 }
 
 // This package is designed to be used in the context of Azure CLI parameter file templates,
@@ -43,7 +44,7 @@ const (
 // Eval replaces all occurrences of bash-like command output substitution $(command arg1 arg2 ...)
 // with the result provided by the command executor.
 // Any error from the command executor will result in an error reported from Eval().
-func Eval(input string, cmd CommandExecutor) (string, error) {
+func Eval(ctx context.Context, input string, cmd CommandExecutor) (string, error) {
 	var sb strings.Builder
 
 	allMatches := commandInvocationRegex.FindAllStringSubmatchIndex(input, -1)
@@ -63,7 +64,7 @@ func Eval(input string, cmd CommandExecutor) (string, error) {
 		argumentStr := input[match[argsStart]:match[argsEnd]]
 		args := strings.Fields(strings.TrimSpace(argumentStr))
 
-		ran, result, err := cmd.Run(commandName, args)
+		ran, result, err := cmd.Run(ctx, commandName, args)
 		if err != nil {
 			return "", err
 		} else if ran {

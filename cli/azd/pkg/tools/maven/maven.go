@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"sync"
@@ -97,13 +98,18 @@ func getMavenWrapperPath(projectPath string, rootProjectPath string) (string, er
 	}
 
 	root, err := filepath.Abs(rootProjectPath)
+	log.Printf("root: %s\n", root)
+
 	if err != nil {
 		return "", err
 	}
 
 	for {
+		log.Printf("searchDir: %s\n", searchDir)
+
 		mvnw, err := osexec.LookPath(filepath.Join(searchDir, "mvnw"))
 		if err == nil {
+			log.Printf("found mvnw as: %s\n", mvnw)
 			return mvnw, nil
 		}
 

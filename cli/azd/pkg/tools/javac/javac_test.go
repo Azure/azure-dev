@@ -20,7 +20,7 @@ func TestCheckInstalledVersion(t *testing.T) {
 	javaHomeBin := filepath.Join(javaHome, "bin")
 	require.NoError(t, os.Mkdir(javaHomeBin, 0755))
 
-	ostest.CreateNoCleanup(t, filepath.Join(javaHomeBin, javacWithExt()))
+	placeJavac(t, javaHomeBin)
 	ostest.Setenv(t, "JAVA_HOME", javaHome)
 
 	tests := []struct {
@@ -66,7 +66,7 @@ func Test_getInstalledPath(t *testing.T) {
 	origPath := os.Getenv("PATH")
 	pathBin := t.TempDir()
 	pathVal := fmt.Sprintf("%s%c%s", pathBin, os.PathListSeparator, origPath)
-	ostest.Unsetenvs(t, []string{"JDK_HOME", "JAVA_HOME", "PATH"})
+	ostest.Unsetenvs(t, []string{"JAVA_HOME", "PATH"})
 
 	tests := []struct {
 		name               string
@@ -76,13 +76,6 @@ func Test_getInstalledPath(t *testing.T) {
 		want               string
 		wantErr            bool
 	}{
-		{
-			name:       "JdkHome",
-			javacPaths: []string{jdkHomeBin},
-			envVar:     map[string]string{"JDK_HOME": jdkHome},
-			want:       filepath.Join(jdkHomeBin, javacWithExt()),
-			wantErr:    false,
-		},
 		{
 			name:       "JavaHome",
 			javacPaths: []string{javaHomeBin},
@@ -98,20 +91,12 @@ func Test_getInstalledPath(t *testing.T) {
 			wantErr:    false,
 		},
 		{
-			name:       "SearchJdkHomeFirst",
-			javacPaths: []string{jdkHomeBin, javaHomeBin, pathBin},
-			envVar:     map[string]string{"JDK_HOME": jdkHome, "JAVA_HOME": javaHome, "PATH": pathVal},
-			want:       filepath.Join(jdkHomeBin, javacWithExt()),
-			wantErr:    false,
-		},
-		{
-			name:       "SearchJavaHomeSecond",
+			name:       "SearchJavaHomeFirst",
 			javacPaths: []string{javaHomeBin, pathBin},
 			envVar:     map[string]string{"JAVA_HOME": javaHome, "PATH": pathVal},
 			want:       filepath.Join(javaHomeBin, javacWithExt()),
 			wantErr:    false,
 		},
-		{name: "InvalidJdkHome", envVar: map[string]string{"JDK_HOME": jdkHome}, wantErr: true},
 		{name: "InvalidJavaHome", envVar: map[string]string{"JAVA_HOME": javaHome}, wantErr: true},
 		{name: "NotFound", envVar: map[string]string{"PATH": pathBin}, wantErr: true},
 	}
@@ -136,6 +121,9 @@ func placeJavac(t *testing.T, dirs ...string) {
 	for _, createPath := range dirs {
 		toCreate := filepath.Join(createPath, javacWithExt())
 		ostest.Create(t, toCreate)
+
+		err := os.Chmod(toCreate, 0755)
+		require.NoError(t, err)
 	}
 }
 

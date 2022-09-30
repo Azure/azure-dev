@@ -66,8 +66,11 @@ func Test_CLI_Version_PrintsVersion(t *testing.T) {
 
 	rn := os.Getenv("GITHUB_RUN_NUMBER")
 	if rn != "" {
-		// TODO: This should be read from cli/version.txt (https://github.com/Azure/azure-dev/issues/36)
-		require.Contains(t, out, "0.2.0")
+		runningTestPath := azdcli.GetAzdLocation()
+		cliPath := strings.Split(runningTestPath, "cli")[0]
+		version, err := os.ReadFile(path.Join(cliPath, "cli", "version.txt"))
+		require.NoError(t, err)
+		require.Contains(t, out, strings.ReplaceAll(string(version), "\n", ""))
 	} else {
 		require.Contains(t, out, fmt.Sprintf("azd version %s", internal.Version))
 	}
@@ -425,7 +428,7 @@ func Test_CLI_InfraCreateAndDeleteWebApp(t *testing.T) {
 	require.NoError(t, err)
 
 	commandRunner := exec.NewCommandRunner()
-	runArgs := exec.NewRunArgs("dotnet", "user-secrets", "list", "--project", filepath.Join(dir, "/src/dotnet/webapp.csproj"))
+	runArgs := newRunArgs("dotnet", "user-secrets", "list", "--project", filepath.Join(dir, "/src/dotnet/webapp.csproj"))
 	secrets, err := commandRunner.Run(ctx, runArgs)
 	require.NoError(t, err)
 
@@ -799,25 +802,26 @@ func Test_CLI_InfraCreateAndDeleteResourceTerraformRemote(t *testing.T) {
 
 	//Create remote state resources
 	commandRunner := exec.NewCommandRunner()
-	runArgs := exec.NewRunArgs("az", "group", "create", "--name", backendResourceGroupName, "--location", location)
+	runArgs := newRunArgs("az", "group", "create", "--name", backendResourceGroupName, "--location", location)
+
 	_, err = commandRunner.Run(ctx, runArgs)
 	require.NoError(t, err)
 
 	defer func() {
 		commandRunner := exec.NewCommandRunner()
-		runArgs := exec.NewRunArgs("az", "group", "delete", "--name", backendResourceGroupName, "--yes")
+		runArgs := newRunArgs("az", "group", "delete", "--name", backendResourceGroupName, "--yes")
 		_, err = commandRunner.Run(ctx, runArgs)
 		require.NoError(t, err)
 	}()
 
 	//Create storage account
-	runArgs = exec.NewRunArgs("az", "storage", "account", "create", "--resource-group", backendResourceGroupName,
+	runArgs = newRunArgs("az", "storage", "account", "create", "--resource-group", backendResourceGroupName,
 		"--name", backendStorageAccountName, "--sku", "Standard_LRS", "--encryption-services", "blob")
 	_, err = commandRunner.Run(ctx, runArgs)
 	require.NoError(t, err)
 
 	//Get Account Key
-	runArgs = exec.NewRunArgs("az", "storage", "account", "keys", "list", "--resource-group",
+	runArgs = newRunArgs("az", "storage", "account", "keys", "list", "--resource-group",
 		backendResourceGroupName, "--account-name", backendStorageAccountName, "--query", "[0].value",
 		"-o", "tsv")
 	cmdResult, err := commandRunner.Run(ctx, runArgs)
@@ -825,7 +829,7 @@ func Test_CLI_InfraCreateAndDeleteResourceTerraformRemote(t *testing.T) {
 	storageAccountKey := cmdResult.Stdout
 
 	// Create storage container
-	runArgs = exec.NewRunArgs("az", "storage", "container", "create", "--name", backendContainerName,
+	runArgs = newRunArgs("az", "storage", "container", "create", "--name", backendContainerName,
 		"--account-name", backendStorageAccountName, "--account-key", storageAccountKey)
 	result, err := commandRunner.Run(ctx, runArgs)
 	_ = result
@@ -853,6 +857,11 @@ func Test_CLI_InfraCreateAndDeleteResourceTerraformRemote(t *testing.T) {
 	require.NoError(t, err)
 
 	t.Logf("Done\n")
+}
+
+func newRunArgs(cmd string, args ...string) exec.RunArgs {
+	runArgs := exec.NewRunArgs(cmd, args...)
+	return runArgs.WithEnrichError(true)
 }
 
 func TestMain(m *testing.M) {

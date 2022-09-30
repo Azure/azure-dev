@@ -9,8 +9,10 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"gopkg.in/yaml.v3"
 )
@@ -20,10 +22,12 @@ const (
 )
 
 type Project struct {
-	Name     string
-	Config   *ProjectConfig
-	Metadata *ProjectMetadata
-	Services []*Service
+	Name string
+	// The resource group targeted by the current project
+	ResourceGroupName string
+	Config            *ProjectConfig
+	Metadata          *ProjectMetadata
+	Services          []*Service
 }
 
 // ReadProject reads a project file and sets the configured template
@@ -70,4 +74,29 @@ func NewProject(path string, name string) (*Project, error) {
 		Name:     name,
 		Services: make([]*Service, 0),
 	}, nil
+}
+
+// GetResourceGroupName gets the resource group name for the project.
+//
+// The resource group name is resolved in the following order:
+//   - The user defined value in `azure.yaml`
+//   - The user defined environment value `AZURE_RESOURCE_GROUP`
+//   - Resource group discovery by querying Azure Resources (see `resourceManager.FindResourceGroupForEnvironment` for more details)
+func GetResourceGroupName(ctx context.Context, projectConfig *ProjectConfig, env *environment.Environment) (string, error) {
+	if strings.TrimSpace(projectConfig.ResourceGroupName) != "" {
+		return projectConfig.ResourceGroupName, nil
+	}
+
+	envResourceGroupName := environment.GetResourceGroupNameFromEnvVar(env)
+	if envResourceGroupName != "" {
+		return envResourceGroupName, nil
+	}
+
+	resourceManager := infra.NewAzureResourceManager(ctx)
+	resourceGroupName, err := resourceManager.FindResourceGroupForEnvironment(ctx, env)
+	if err != nil {
+		return "", err
+	}
+
+	return resourceGroupName, nil
 }

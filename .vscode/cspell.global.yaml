@@ -20,15 +20,17 @@ ignoreWords:
     - appcs
     - appi
     - arck
+    - armkeyvault
+    - armresources
     - azconnection
+    - azcore
     - Azdo
     - aztfmod
     - azurecaf
     - azuredevops
     - azurerm
-    - armresources
-    - azcore
     - azidentity
+    - azsecrets
     - Bfor
     - bicepcli
     - cdne

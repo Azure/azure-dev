@@ -1,6 +1,7 @@
 package maven
 
 import (
+	"log"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -48,13 +49,16 @@ func Test_getMavenPath(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			place(t, mvnwWithExt(), tt.mvnwPath...)
-			place(t, mvnWithExt(), tt.mvnPath...)
+			placeExecutable(t, mvnwWithExt(), tt.mvnwPath...)
+			placeExecutable(t, mvnWithExt(), tt.mvnPath...)
 			ostest.Setenvs(t, tt.envVar)
 
 			args := args{}
 			if tt.mvnwRelative {
 				ostest.Chdir(t, rootPath)
+				// Set PWD directly to avoid symbolic links
+
+				ostest.Setenv(t, "PWD", rootPath)
 				projectPathRel, err := filepath.Rel(rootPath, projectPath)
 				require.NoError(t, err)
 				args.projectPath = projectPathRel
@@ -64,6 +68,9 @@ func Test_getMavenPath(t *testing.T) {
 				args.rootProjectPath = rootPath
 			}
 
+			wd, err := os.Getwd()
+			require.NoError(t, err)
+			log.Printf("rootPath: %s, cwd: %s, getMavenPath(%s, %s)\n", rootPath, wd, args.projectPath, args.rootProjectPath)
 			actual, err := getMavenPath(args.projectPath, args.rootProjectPath)
 
 			if tt.wantErr {
@@ -77,10 +84,13 @@ func Test_getMavenPath(t *testing.T) {
 	}
 }
 
-func place(t *testing.T, name string, dirs ...string) {
+func placeExecutable(t *testing.T, name string, dirs ...string) {
 	for _, createPath := range dirs {
 		toCreate := filepath.Join(createPath, name)
 		ostest.Create(t, toCreate)
+
+		err := os.Chmod(toCreate, 0755)
+		require.NoError(t, err)
 	}
 }
 

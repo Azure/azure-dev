@@ -35,7 +35,7 @@ func (m *mavenProject) RequiredExternalTools() []tools.ExternalTool {
 func (m *mavenProject) Package(ctx context.Context, progress chan<- string) (string, error) {
 	publishRoot, err := os.MkdirTemp("", "azd")
 	if err != nil {
-		return "", fmt.Errorf("creating package directory for %s: %w", m.config.Name, err)
+		return "", fmt.Errorf("creating staging directory: %w", err)
 	}
 
 	progress <- "Creating deployment package"
@@ -53,7 +53,7 @@ func (m *mavenProject) Package(ctx context.Context, progress chan<- string) (str
 
 	entries, err := os.ReadDir(publishSource)
 	if err != nil {
-		return "", fmt.Errorf("publishing for %s: %w", m.config.Name, err)
+		return "", fmt.Errorf("discovering JAR files in %s: %w", publishSource, err)
 	}
 
 	matches := []string{}
@@ -62,23 +62,22 @@ func (m *mavenProject) Package(ctx context.Context, progress chan<- string) (str
 			continue
 		}
 
-		name := entry.Name()
-		if strings.HasSuffix(name, ".jar") || strings.HasSuffix(name, ".war") || strings.HasSuffix(name, ".ear") {
+		if name := entry.Name(); strings.HasSuffix(name, ".jar") {
 			matches = append(matches, name)
 		}
 	}
 
 	if len(matches) == 0 {
-		return "", fmt.Errorf("could not find any .war/.ear/.jar files packaged in %s", publishSource)
+		return "", fmt.Errorf("no JAR files found in %s", publishSource)
 	}
 	if len(matches) > 1 {
 		names := strings.Join(matches, ", ")
-		return "", fmt.Errorf("multiple application .war/.ear/.jar files found in %s: %s", publishSource, names)
+		return "", fmt.Errorf("multiple JAR files found in %s: %s. Only a single runnable JAR file is expected", publishSource, names)
 	}
 
 	err = copy.Copy(filepath.Join(publishSource, matches[0]), filepath.Join(publishRoot, AppServiceJavaPackageName))
 	if err != nil {
-		return "", fmt.Errorf("publishing for %s: %w", m.config.Name, err)
+		return "", fmt.Errorf("copying to staging directory failed: %w", err)
 	}
 
 	return publishRoot, nil
@@ -86,7 +85,7 @@ func (m *mavenProject) Package(ctx context.Context, progress chan<- string) (str
 
 func (m *mavenProject) InstallDependencies(ctx context.Context) error {
 	if err := m.mavenCli.ResolveDependencies(ctx, m.config.Path()); err != nil {
-		return err
+		return fmt.Errorf("resolving maven dependencies: %w", err)
 	}
 
 	return nil
@@ -96,11 +95,12 @@ func (m *mavenProject) Initialize(ctx context.Context) error {
 	return nil
 }
 
-func NewMavenProject(commandRunner exec.CommandRunner, config *ServiceConfig, env *environment.Environment) FrameworkService {
+func NewMavenProject(ctx context.Context, config *ServiceConfig, env *environment.Environment) FrameworkService {
+	runner := exec.GetCommandRunner(ctx)
 	return &mavenProject{
 		config:   config,
 		env:      env,
-		mavenCli: maven.NewMavenCli(commandRunner, config.Path(), config.Project.Path),
-		javacCli: javac.NewCli(commandRunner),
+		mavenCli: maven.NewMavenCli(runner, config.Path(), config.Project.Path),
+		javacCli: javac.NewCli(runner),
 	}
 }

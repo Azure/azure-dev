@@ -77,12 +77,6 @@ func GetTelemetrySystem() *TelemetrySystem {
 }
 
 func initialize() (*TelemetrySystem, error) {
-	// Feature guard: Disable for production until dependencies are met in production
-	isDev := internal.IsNonProdVersion()
-	if !isDev {
-		return nil, nil
-	}
-
 	if !IsTelemetryEnabled() {
 		log.Println("telemetry is disabled by user and will not be initialized.")
 		return nil, nil
@@ -103,7 +97,7 @@ func initialize() (*TelemetrySystem, error) {
 	}
 
 	var instrumentationKey string
-	if isDev {
+	if internal.IsNonProdVersion() {
 		instrumentationKey = devInstrumentationKey
 	} else {
 		instrumentationKey = prodInstrumentationKey

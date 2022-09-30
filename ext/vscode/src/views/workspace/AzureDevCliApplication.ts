@@ -1,5 +1,6 @@
 import * as path from 'path';
 import * as vscode from 'vscode';
+import { AzureDevCliEnvironments } from './AzureDevCliEnvironments';
 import { AzureDevCliModel } from "./AzureDevCliModel";
 import { AzureDevCliServices } from './AzureDevCliServices';
 import { WorkspaceResource } from './ResourceGroupsApi';
@@ -13,7 +14,8 @@ export class AzureDevCliApplication implements AzureDevCliModel {
         const applicationDirectory = path.dirname(applicationConfigurationPath);
 
         return [
-            new AzureDevCliServices(applicationDirectory)
+            new AzureDevCliServices(applicationDirectory),
+            new AzureDevCliEnvironments(applicationDirectory)
         ];
     }
 

@@ -188,7 +188,21 @@
             "targetTasks"
           ]
         }
-      ]
+      ],
+      "x-azResourcesV2": {
+        "workspace": {
+            "resources": [
+                {
+                    "type": "ms-azuretools.azure-dev.application"
+                }
+            ],
+            "branches": [
+                {
+                    "type": "ms-azuretools.azure-dev.application"
+                }
+            ]
+        }
+      }
     },
     "scripts": {
       "vscode:prepublish": "npm run build",

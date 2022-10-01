@@ -18,6 +18,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/git"
+	"github.com/sethvargo/go-retry"
 )
 
 // PipelineManager takes care of setting up the scm and pipeline.
@@ -165,11 +166,16 @@ func (i *PipelineManager) pushGitRepo(ctx context.Context, currentBranch string)
 
 	console.Message(ctx, "Pushing changes")
 
-	if err := gitCli.PushUpstream(ctx, i.AzdCtx.ProjectDirectory(), i.PipelineRemoteName, currentBranch); err != nil {
-		return fmt.Errorf("pushing changes: %w", err)
-	}
-
-	return nil
+	// If user has a git credential manager with some cached credentials
+	// and the credentials are rotated, the push operation will fail and the credential manager would remote the cache
+	// Then, on the next intent to push code, there should be a prompt for credentials.
+	// Due to this, we use retry here, so we can run the second intent to prompt for credentials one more time
+	return retry.Do(ctx, retry.WithMaxRetries(3, retry.NewConstant(100*time.Millisecond)), func(ctx context.Context) error {
+		if err := gitCli.PushUpstream(ctx, i.AzdCtx.ProjectDirectory(), i.PipelineRemoteName, currentBranch); err != nil {
+			return retry.RetryableError(fmt.Errorf("pushing changes: %w", err))
+		}
+		return nil
+	})
 }
 
 // Configure is the main function from the pipeline manager which takes care

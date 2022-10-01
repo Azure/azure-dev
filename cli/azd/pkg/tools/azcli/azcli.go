@@ -442,21 +442,6 @@ func (cli *azCli) ListExtensions(ctx context.Context) ([]AzCliExtensionInfo, err
 	return extensionInfo, nil
 }
 
-func (cli *azCli) GetSubscriptionTenant(ctx context.Context, subscriptionId string) (string, error) {
-	res, err := cli.runAzCommand(ctx, "account", "show", "--subscription", subscriptionId, "--query", "tenantId", "--output", "json")
-	if isNotLoggedInMessage(res.Stderr) {
-		return "", ErrAzCliNotLoggedIn
-	} else if err != nil {
-		return "", fmt.Errorf("failed running az account show: %s: %w", res.String(), err)
-	}
-
-	var tenantId string
-	if err := json.Unmarshal([]byte(res.Stdout), &tenantId); err != nil {
-		return "", fmt.Errorf("could not unmarshal output %s as a string: %w", res.Stdout, err)
-	}
-	return tenantId, nil
-}
-
 func (cli *azCli) Login(ctx context.Context, useDeviceCode bool, deviceCodeWriter io.Writer) error {
 	args := []string{"login", "--output", "none"}
 

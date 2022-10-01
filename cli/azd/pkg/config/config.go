@@ -7,6 +7,7 @@
 package config
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/user"
@@ -30,4 +31,68 @@ func GetUserConfigDir() (string, error) {
 	err = os.MkdirAll(configDirPath, osutil.PermissionDirectory)
 
 	return configDirPath, err
+}
+
+type Config struct {
+	DefaultSubscription *Subscription `json:"defaultSubscription"`
+}
+
+// Saves the users configuration to their local azd user folder
+func (c *Config) Save() error {
+	configJson, err := json.Marshal(*c)
+	if err != nil {
+		return fmt.Errorf("failed marshalling config JSON: %w", err)
+	}
+
+	configPath, err := getConfigFilePath()
+	if err != nil {
+		return fmt.Errorf("failed locating config dir")
+	}
+
+	err = os.WriteFile(configPath, configJson, osutil.PermissionFile)
+	if err != nil {
+		return fmt.Errorf("failed saving configuration JSON: %w", err)
+	}
+
+	return nil
+}
+
+type Subscription struct {
+	Id   string `json:"id"`
+	Name string `json:"name"`
+}
+
+// Loads azd configuration from the users configuration dir
+func Load() (*Config, error) {
+	configPath, err := getConfigFilePath()
+	if err != nil {
+		return nil, fmt.Errorf("failed locating config dir")
+	}
+
+	bytes, err := os.ReadFile(configPath)
+	if err != nil {
+		return nil, fmt.Errorf("reading project file: %w", err)
+	}
+
+	return Parse(bytes)
+}
+
+// Parses azd configuration JSON and returns a Config instance
+func Parse(configJson []byte) (*Config, error) {
+	var config Config
+	err := json.Unmarshal(configJson, &config)
+	if err != nil {
+		return nil, fmt.Errorf("failed unmarshalling configuration JSON: %w", err)
+	}
+
+	return &config, nil
+}
+
+func getConfigFilePath() (string, error) {
+	configPath, err := GetUserConfigDir()
+	if err != nil {
+		return "", fmt.Errorf("failed locating config dir")
+	}
+
+	return filepath.Join(configPath, "config.json"), nil
 }

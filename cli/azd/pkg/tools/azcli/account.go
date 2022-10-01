@@ -3,6 +3,7 @@ package azcli
 import (
 	"context"
 	"fmt"
+	"log"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/subscription/armsubscription"
 	"github.com/azure/azure-dev/cli/azd/pkg/identity"
@@ -34,6 +35,23 @@ func (cli *azCli) ListAccounts(ctx context.Context, defaultSubscriptionId string
 	}
 
 	return subscriptions, nil
+}
+
+func (cli *azCli) GetSubscriptionTenant(ctx context.Context, subscriptionId string) (string, error) {
+	client, err := cli.createSubscriptionsClient(ctx)
+	if err != nil {
+		return "", err
+	}
+
+	subscription, err := client.Get(ctx, subscriptionId, nil)
+	if err != nil {
+		return "", fmt.Errorf("failed getting subscription for '%s'", subscriptionId)
+	}
+
+	// TODO: GO SDK missing Tenant ID from response
+	//return subscription.TenantID, nil
+	log.Println(subscription.ID)
+	return "TENANT_ID", nil
 }
 
 func (cli *azCli) ListAccountLocations(ctx context.Context, subscriptionId string) ([]AzCliLocation, error) {

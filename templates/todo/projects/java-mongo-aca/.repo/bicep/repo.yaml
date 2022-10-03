@@ -39,13 +39,6 @@ repo:
         ignore:
           - "**/main.bicep"
 
-      - from: ../../../../../common/infra/bicep
-        to: ../
-        patterns:
-          - "**/*.bicep"
-        ignore:
-          - "**/main.bicep"
-
       # main.bicep
       - from: ../../../../../../common/infra/bicep
         to: ./
@@ -78,13 +71,10 @@ repo:
           - "**/resources.bicep"
 
   assets:
-    # # Common assets
+    # Common assets
 
     # Infra
     - from: ./infra/
-      to: ./infra
-
-    - from: ../../../../../common/infra/bicep
       to: ./infra
 
     - from: ../../../../common/infra/bicep/app/web-container-app.bicep

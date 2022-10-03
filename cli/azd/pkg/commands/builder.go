@@ -55,7 +55,14 @@ func Build(action Action, rootOptions *internal.GlobalCommandOptions, use string
 		Long:    buildOptions.Long,
 		Aliases: buildOptions.Aliases,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			ctx, azdCtx, err := createRootContext(context.Background(), cmd, rootOptions)
+			azdCtx, err := azdcontext.NewAzdContext()
+			if err != nil {
+				return fmt.Errorf("creating context: %w", err)
+			}
+
+			ctx := context.Background()
+			ctx = azdcontext.WithAzdContext(ctx, azdCtx)
+			ctx, err = RegisterDependenciesInCtx(ctx, cmd, rootOptions)
 			if err != nil {
 				return err
 			}
@@ -95,14 +102,8 @@ func runCmdWithTelemetry(ctx context.Context, cmd *cobra.Command, runCmd func(ct
 
 // Create the core context for use in all Azd commands
 // Registers context values for azCli, formatter, writer, console and more.
-func createRootContext(ctx context.Context, cmd *cobra.Command, rootOptions *internal.GlobalCommandOptions) (context.Context, *azdcontext.AzdContext, error) {
-	azdCtx, err := azdcontext.NewAzdContext()
-	if err != nil {
-		return ctx, nil, fmt.Errorf("creating context: %w", err)
-	}
-
+func RegisterDependenciesInCtx(ctx context.Context, cmd *cobra.Command, rootOptions *internal.GlobalCommandOptions) (context.Context, error) {
 	// Set the global options in the go context
-	ctx = azdcontext.WithAzdContext(ctx, azdCtx)
 	ctx = internal.WithCommandOptions(ctx, *rootOptions)
 
 	azCliArgs := azcli.NewAzCliArgs{
@@ -124,7 +125,7 @@ func createRootContext(ctx context.Context, cmd *cobra.Command, rootOptions *int
 	// Attempt to get the user specified formatter from the command args
 	formatter, err := output.GetCommandFormatter(cmd)
 	if err != nil {
-		return ctx, nil, err
+		return ctx, err
 	}
 
 	if formatter != nil {
@@ -137,5 +138,5 @@ func createRootContext(ctx context.Context, cmd *cobra.Command, rootOptions *int
 	console := input.NewConsole(!rootOptions.NoPrompt, writer, formatter)
 	ctx = input.WithConsole(ctx, console)
 
-	return ctx, azdCtx, nil
+	return ctx, nil
 }

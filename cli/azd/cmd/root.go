@@ -4,14 +4,19 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"os"
 
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/telemetry"
+	"github.com/azure/azure-dev/cli/azd/internal/telemetry/events"
+	"github.com/azure/azure-dev/cli/azd/pkg/action"
+	"github.com/azure/azure-dev/cli/azd/pkg/commands"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/spf13/cobra"
+	"go.opentelemetry.io/otel/codes"
 )
 
 func NewRootCmd() *cobra.Command {
@@ -85,7 +90,7 @@ For more information, visit the Azure Developer CLI Dev Hub: https://aka.ms/azur
 	cmd.AddCommand(downCmd(opts))
 	cmd.AddCommand(envCmd(opts))
 	cmd.AddCommand(infraCmd(opts))
-	cmd.AddCommand(initCmd(opts))
+	//cmd.AddCommand(initCmdDesign(opts))
 	cmd.AddCommand(loginCmd(opts))
 	cmd.AddCommand(monitorCmd(opts))
 	cmd.AddCommand(pipelineCmd(opts))
@@ -96,8 +101,53 @@ For more information, visit the Azure Developer CLI Dev Hub: https://aka.ms/azur
 	cmd.AddCommand(templatesCmd(opts))
 	cmd.AddCommand(upCmd(opts))
 	cmd.AddCommand(versionCmd(opts))
+	cmd.AddCommand(BuildCmd(opts, initCmdDesign, injectInitAction, false))
 
 	return cmd
+}
+
+type Builder[F any] func(opts *internal.GlobalCommandOptions) (*cobra.Command, *F)
+
+func BuildCmd[F any](opts *internal.GlobalCommandOptions, builder Builder[F], actionBuilder func() (action.Action[F], error), disableTelemetry bool) *cobra.Command {
+	cmd, flags := builder(opts)
+	cmd.RunE = func(cmd *cobra.Command, args []string) error {
+		action, err := actionBuilder()
+		if err != nil {
+			return err
+		}
+
+		// TODO: Is this needed? SHIM to maintain backwards compatibility
+		ctx := context.Background()
+		ctx, err = commands.RegisterDependenciesInCtx(ctx, cmd, opts)
+		if err != nil {
+			return err
+		}
+
+		runCmd := func(cmdCtx context.Context) error {
+			return action.Run(cmdCtx, *flags, args)
+		}
+
+		if disableTelemetry {
+			return runCmd(ctx)
+		} else {
+			return runCmdWithTelemetry(ctx, cmd, runCmd)
+		}
+	}
+	return cmd
+}
+
+func runCmdWithTelemetry(ctx context.Context, cmd *cobra.Command, runCmd func(ctx context.Context) error) error {
+	// Note: CommandPath is constructed using the Use member on each command up to the root.
+	// It does not contain user input, and is safe for telemetry emission.
+	spanCtx, span := telemetry.GetTracer().Start(ctx, events.GetCommandEventName(cmd.CommandPath()))
+	defer span.End()
+
+	err := runCmd(spanCtx)
+	if err != nil {
+		span.SetStatus(codes.Error, "UnknownError")
+	}
+
+	return err
 }
 
 func Execute(args []string) error {

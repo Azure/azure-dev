@@ -20,11 +20,12 @@ func upCmd(rootOptions *internal.GlobalCommandOptions) *cobra.Command {
 
 	cmd := commands.Build(
 		commands.CompositeAction(
-			&ignoreInitErrorAction{
-				action: &initAction{
-					rootOptions: rootOptions,
-				},
-			},
+			// TODO: Reenable
+			// &ignoreInitErrorAction{
+			// 	action: &initAction{
+			// 		rootOptions: rootOptions,
+			// 	},
+			// },
 			&infraCreateAction{
 				// Delay print final output from infra create
 				finalOutputRedirect: &infraCreateFinalOutput,

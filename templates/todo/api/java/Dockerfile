@@ -8,7 +8,6 @@ COPY .mvn .mvn
 COPY openapi.yaml openapi.yaml
 COPY pom.xml .
 COPY src src
-RUN touch .env
 
 RUN ./mvnw package -DskipTests
 RUN mkdir -p target/dependency && (cd target/dependency; jar -xf ../*.jar)

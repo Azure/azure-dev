@@ -39,6 +39,13 @@ repo:
         ignore:
           - "**/main.bicep"
 
+      - from: ../../../../../common/infra/bicep
+        to: ../
+        patterns:
+          - "**/*.bicep"
+        ignore:
+          - "**/main.bicep"
+
       # main.bicep
       - from: ../../../../../../common/infra/bicep
         to: ./
@@ -156,6 +163,9 @@ repo:
       ignore:
         - "build/**/*"
         - "node_modules/**/*"
+
+    - from: ./infra/
+      to: ./infra
 
     # Azure.yml
     - from: ./azure.yaml

@@ -33,3 +33,7 @@ The REST API will be available at `http://localhost:3100`.
 docker build . -t java-todo@latest
 docker run -e AZURE_COSMOS_CONNECTION_STRING=$AZURE_COSMOS_CONNECTION_STRING -p 3100:3100 -t java-todo@latest
 ```
+
+### Regenerate API from OpenAPI spec
+
+Run `./mvnw -P openapigen compile` to regenerate the API model and interfaces from the OpenAPI spec.

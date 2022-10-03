@@ -10,6 +10,7 @@ param linuxFxVersion string = 'DOTNET-ISOLATED|7.0'
 param managedIdentity bool = !(empty(keyVaultName))
 param serviceName string
 param storageAccountName string
+param enableOryxBuild bool = false
 
 module functions 'functions.bicep' = {
   name: '${serviceName}-functions-csharp'
@@ -26,6 +27,7 @@ module functions 'functions.bicep' = {
     managedIdentity: managedIdentity
     serviceName: serviceName
     storageAccountName: storageAccountName
+    enableOryxBuild: enableOryxBuild
   }
 }
 

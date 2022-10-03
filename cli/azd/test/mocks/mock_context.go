@@ -22,21 +22,21 @@ type MockContext struct {
 func NewMockContext(ctx context.Context) *MockContext {
 	mockConsole := mockconsole.NewMockConsole()
 	commandRunner := mockexec.NewMockCommandRunner()
-	http := mockhttp.NewMockHttpUtil()
+	httpClient := mockhttp.NewMockHttpUtil()
 
 	mockexec.AddAzLoginMocks(commandRunner)
-	commandRunner.AddDefaultMocks()
+	httpClient.AddDefaultMocks()
 
 	ctx = internal.WithCommandOptions(ctx, internal.GlobalCommandOptions{})
 	ctx = input.WithConsole(ctx, mockConsole)
 	ctx = exec.WithCommandRunner(ctx, commandRunner)
-	ctx = httputil.WithHttpClient(ctx, http)
+	ctx = httputil.WithHttpClient(ctx, httpClient)
 
 	mockContext := &MockContext{
 		Context:       &ctx,
 		Console:       mockConsole,
 		CommandRunner: commandRunner,
-		HttpClient:    http,
+		HttpClient:    httpClient,
 	}
 
 	return mockContext

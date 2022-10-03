@@ -9,6 +9,7 @@ import (
 	"encoding/hex"
 	"testing"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
@@ -36,16 +37,18 @@ services:
     host: appservice
   worker:
     project: src/worker
+    language: js
     host: containerapp
 `
 	mockContext := mocks.NewMockContext(context.Background())
 
-	e := environment.Environment{Values: make(map[string]string)}
-	e.SetEnvName("envA")
-	projectConfig, err := ParseProjectConfig(testProj, &e)
+	e := environment.EphemeralWithValues("envA", map[string]string{
+		environment.SubscriptionIdEnvVarName: "SUBSCRIPTION_ID",
+	})
+	projectConfig, err := ParseProjectConfig(testProj, e)
 	assert.Nil(t, err)
 
-	project, err := projectConfig.GetProject(mockContext.Context, &e)
+	project, err := projectConfig.GetProject(mockContext.Context, e)
 	assert.Nil(t, err)
 
 	azCli := azcli.GetAzCli(*mockContext.Context)
@@ -91,12 +94,13 @@ services:
 `
 	mockContext := mocks.NewMockContext(context.Background())
 
-	e := environment.Environment{Values: make(map[string]string)}
-	e.SetEnvName("envA")
-	projectConfig, err := ParseProjectConfig(testProj, &e)
+	e := environment.EphemeralWithValues("envA", map[string]string{
+		environment.SubscriptionIdEnvVarName: "SUBSCRIPTION_ID",
+	})
+	projectConfig, err := ParseProjectConfig(testProj, e)
 	assert.Nil(t, err)
 
-	project, err := projectConfig.GetProject(mockContext.Context, &e)
+	project, err := projectConfig.GetProject(mockContext.Context, e)
 	assert.Nil(t, err)
 
 	assertHasService(t,
@@ -127,22 +131,29 @@ services:
 `
 	rg := "rg-test"
 	resourceName := "app-api-abc123"
+	resourceId := "random"
+	resourceType := string(infra.AzureResourceTypeWebSite)
+	resourceLocation := "westus2"
 	mockContext := mocks.NewMockContext(context.Background())
-	mockContext.CommandRunner.AddAzResourceListMock(&rg,
-		[]azcli.AzCliResource{
-			{
-				Id:       "random",
-				Name:     resourceName,
-				Type:     string(infra.AzureResourceTypeWebSite),
-				Location: "westus2",
-			}})
+	mockContext.HttpClient.AddAzResourceListMock(&rg,
+		armresources.ResourceListResult{
+			Value: []*armresources.GenericResourceExpanded{
+				{
+					ID:       &resourceId,
+					Name:     &resourceName,
+					Type:     &resourceType,
+					Location: &resourceLocation,
+				},
+			},
+		})
 
-	e := environment.Environment{Values: make(map[string]string)}
-	e.SetEnvName("envA")
-	projectConfig, err := ParseProjectConfig(testProj, &e)
+	e := environment.EphemeralWithValues("envA", map[string]string{
+		environment.SubscriptionIdEnvVarName: "SUBSCRIPTION_ID",
+	})
+	projectConfig, err := ParseProjectConfig(testProj, e)
 	assert.Nil(t, err)
 
-	project, err := projectConfig.GetProject(mockContext.Context, &e)
+	project, err := projectConfig.GetProject(mockContext.Context, e)
 	assert.Nil(t, err)
 
 	// Deployment resource name comes from the found tag on the graph query request
@@ -172,12 +183,13 @@ services:
 `
 	mockContext := mocks.NewMockContext(context.Background())
 
-	e := environment.Environment{Values: make(map[string]string)}
-	e.SetEnvName("envA")
-	projectConfig, err := ParseProjectConfig(testProj, &e)
+	e := environment.EphemeralWithValues("envA", map[string]string{
+		environment.SubscriptionIdEnvVarName: "SUBSCRIPTION_ID",
+	})
+	projectConfig, err := ParseProjectConfig(testProj, e)
 	assert.Nil(t, err)
 
-	project, err := projectConfig.GetProject(mockContext.Context, &e)
+	project, err := projectConfig.GetProject(mockContext.Context, e)
 	assert.Nil(t, err)
 
 	assertHasService(t,
@@ -212,14 +224,16 @@ services:
 	mockContext := mocks.NewMockContext(context.Background())
 
 	expectedResourceGroupName := "custom-name-from-env-rg"
-	values := map[string]string{"AZURE_RESOURCE_GROUP": expectedResourceGroupName}
-	e := environment.Environment{Values: values}
 
-	e.SetEnvName("envA")
-	projectConfig, err := ParseProjectConfig(testProj, &e)
+	e := environment.EphemeralWithValues("envA", map[string]string{
+		environment.ResourceGroupEnvVarName:  expectedResourceGroupName,
+		environment.SubscriptionIdEnvVarName: "SUBSCRIPTION_ID",
+	})
+
+	projectConfig, err := ParseProjectConfig(testProj, e)
 	assert.Nil(t, err)
 
-	project, err := projectConfig.GetProject(mockContext.Context, &e)
+	project, err := projectConfig.GetProject(mockContext.Context, e)
 	assert.Nil(t, err)
 
 	assertHasService(t,

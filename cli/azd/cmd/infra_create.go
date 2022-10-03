@@ -6,7 +6,6 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/commands"
-	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
@@ -21,8 +20,10 @@ import (
 )
 
 type infraCreateAction struct {
-	noProgress  bool
-	rootOptions *internal.GlobalCommandOptions
+	noProgress bool
+	// If set, redirects the final command printout to the channel
+	finalOutputRedirect *[]string
+	rootOptions         *internal.GlobalCommandOptions
 }
 
 func infraCreateCmd(rootOptions *internal.GlobalCommandOptions) *cobra.Command {
@@ -66,12 +67,12 @@ func (ica *infraCreateAction) Run(ctx context.Context, cmd *cobra.Command, args 
 		return fmt.Errorf("loading environment: %w", err)
 	}
 
-	prj, err := project.LoadProjectConfig(azdCtx.ProjectPath(), &environment.Environment{})
+	prj, err := project.LoadProjectConfig(azdCtx.ProjectPath(), env)
 	if err != nil {
 		return fmt.Errorf("loading project: %w", err)
 	}
 
-	if err = prj.Initialize(ctx, &env); err != nil {
+	if err = prj.Initialize(ctx, env); err != nil {
 		return err
 	}
 
@@ -115,5 +116,32 @@ func (ica *infraCreateAction) Run(ctx context.Context, cmd *cobra.Command, args 
 		}
 	}
 
+	resourceGroupName, err := project.GetResourceGroupName(ctx, prj, env)
+	if err == nil { // Presentation only -- skip print if we failed to resolve the resource group
+		ica.displayResourceGroupCreatedMessage(ctx, console, env.GetSubscriptionId(), resourceGroupName)
+	}
+
 	return nil
+}
+
+func (ica *infraCreateAction) displayResourceGroupCreatedMessage(ctx context.Context, console input.Console, subscriptionId string, resourceGroup string) {
+	resourceGroupCreatedMessage := resourceGroupCreatedMessage(ctx, subscriptionId, resourceGroup)
+	if ica.finalOutputRedirect != nil {
+		*ica.finalOutputRedirect = append(*ica.finalOutputRedirect, resourceGroupCreatedMessage)
+	} else {
+		console.Message(ctx, resourceGroupCreatedMessage)
+	}
+}
+
+func resourceGroupCreatedMessage(ctx context.Context, subscriptionId string, resourceGroup string) string {
+	resourcesGroupURL := fmt.Sprintf(
+		"https://portal.azure.com/#@/resource/subscriptions/%s/resourceGroups/%s/overview",
+		subscriptionId,
+		resourceGroup)
+
+	return fmt.Sprintf(
+		"View the resources created under the resource group %s in Azure Portal:\n%s\n",
+		output.WithHighLightFormat(resourceGroup),
+		output.WithLinkFormat(resourcesGroupURL),
+	)
 }

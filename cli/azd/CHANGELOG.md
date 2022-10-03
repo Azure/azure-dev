@@ -1,6 +1,35 @@
 # Release History
 
-## 0.1.0-beta.6 (Unreleased)
+## 0.3.0-beta.1 (2022-09-30)
+
+### Features Added
+
+- [[#743]](https://github.com/Azure/azure-dev/pull/743) Azure DevOps support for pipeline config command.
+
+### Bugs Fixed
+
+- [[#730]](https://github.com/Azure/azure-dev/pull/730) Fix hierarchical configuration keys for dotnet to show up correctly when stored as dotnet user-secrets. Thanks community member [@sebastianmattar](https://github.com/sebastianmattar) for providing the initial fix!
+- [[#761]](https://github.com/Azure/azure-dev/pull/761) Fix error in `azd deploy` when multiple resource groups are defined in bicep
+
+## 0.2.0-beta.2 (2022-09-21)
+
+### Bugs Fixed
+
+- [[#724]](https://github.com/Azure/azure-dev/pull/724) Fix version check for supporting Docker CE / Moby schemes. 
+
+### Other Changes
+
+- [[#548]](https://github.com/Azure/azure-dev/pull/548) Refactor template bicep into modules.
+
+## 0.2.0-beta.1 (2022-09-14)
+
+### Features Added
+
+- [[#172]](https://github.com/Azure/azure-dev/pull/172) Implement Infrastructure Provision Provider Model.
+- [[#573]](https://github.com/Azure/azure-dev/pull/573) Add support for Terraform for infrastructure as code (IaC).
+- [[#532]](https://github.com/Azure/azure-dev/pull/532) Add Terraform support for Python template.
+- [[#646]](https://github.com/Azure/azure-dev/pull/646) Add Terraform support for Node.js template.
+- [[#550]](https://github.com/Azure/azure-dev/pull/550) Add C# + Azure SQL template.
 
 ### Breaking Changes
 

@@ -14,6 +14,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/git"
@@ -29,7 +30,8 @@ type PipelineManager struct {
 	PipelineServicePrincipalName string
 	PipelineRemoteName           string
 	PipelineRoleName             string
-	Environment                  environment.Environment
+	PipelineProvider             string
+	Environment                  *environment.Environment
 }
 
 // requiredTools get all the provider's required tools.
@@ -157,7 +159,7 @@ func (i *PipelineManager) pushGitRepo(ctx context.Context, currentBranch string)
 		return fmt.Errorf("adding files: %w", err)
 	}
 
-	if err := gitCli.Commit(ctx, i.AzdCtx.ProjectDirectory(), "Configure GitHub Actions"); err != nil {
+	if err := gitCli.Commit(ctx, i.AzdCtx.ProjectDirectory(), "Configure Azure Developer Pipeline"); err != nil {
 		return fmt.Errorf("commit changes: %w", err)
 	}
 
@@ -199,7 +201,9 @@ func (manager *PipelineManager) Configure(ctx context.Context) error {
 		// changed from "az-cli" to "az-dev"
 		manager.PipelineServicePrincipalName = fmt.Sprintf("az-dev-%s", time.Now().UTC().Format("01-02-2006-15-04-05"))
 	}
+
 	inputConsole.Message(ctx, fmt.Sprintf("Creating or updating service principal %s.\n", manager.PipelineServicePrincipalName))
+
 	credentials, err := azCli.CreateOrUpdateServicePrincipal(
 		ctx,
 		manager.Environment.GetSubscriptionId(),
@@ -212,22 +216,28 @@ func (manager *PipelineManager) Configure(ctx context.Context) error {
 	// Get git repo details
 	gitRepoInfo, err := manager.getGitRepoDetails(ctx)
 	if err != nil {
-		return fmt.Errorf("ensuring github remote: %w", err)
+		return fmt.Errorf("ensuring git remote: %w", err)
 	}
 
-	// config pipeline handles setting or creating the provider pipeline to be used
-	err = manager.CiProvider.configurePipeline(ctx)
+	// Figure out what is the expected provider to use for provisioning
+	prj, err := project.LoadProjectConfig(manager.AzdCtx.ProjectPath(), manager.Environment)
 	if err != nil {
-		return err
+		return fmt.Errorf("finding provisioning provider: %w", err)
 	}
 
-	// Config CI provider using credential
 	err = manager.CiProvider.configureConnection(
 		ctx,
 		manager.Environment,
 		gitRepoInfo,
+		prj.Infra,
 		credentials,
 		inputConsole)
+	if err != nil {
+		return err
+	}
+
+	// config pipeline handles setting or creating the provider pipeline to be used
+	err = manager.CiProvider.configurePipeline(ctx, gitRepoInfo, prj.Infra)
 	if err != nil {
 		return err
 	}
@@ -267,7 +277,18 @@ func (manager *PipelineManager) Configure(ctx context.Context) error {
 	if doPush {
 		err = manager.pushGitRepo(ctx, currentBranch)
 		if err != nil {
-			return err
+			return fmt.Errorf("git push: %w", err)
+		}
+
+		gitRepoInfo.pushStatus = true
+		err = manager.ScmProvider.postGitPush(
+			ctx,
+			gitRepoInfo,
+			manager.PipelineRemoteName,
+			currentBranch,
+			inputConsole)
+		if err != nil {
+			return fmt.Errorf("post git push hook: %w", err)
 		}
 	} else {
 		inputConsole.Message(ctx,

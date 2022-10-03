@@ -15,6 +15,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	githubRemote "github.com/azure/azure-dev/cli/azd/pkg/github"
+	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
@@ -146,6 +147,15 @@ func (p *GitHubScmProvider) preventGitPush(
 		return notifyWhenGitHubActionsAreDisabled(ctx, gitRepo.gitProjectPath, slug, remoteName, branchName, console)
 	}
 	return false, nil
+}
+
+func (p *GitHubScmProvider) postGitPush(
+	ctx context.Context,
+	gitRepo *gitRepositoryDetails,
+	remoteName string,
+	branchName string,
+	console input.Console) error {
+	return nil
 }
 
 // enum type for taking a choice after finding GitHub actions disabled.
@@ -295,8 +305,9 @@ func (p *GitHubCiProvider) name() string {
 // and make changes on behalf of a user.
 func (p *GitHubCiProvider) configureConnection(
 	ctx context.Context,
-	azdEnvironment environment.Environment,
+	azdEnvironment *environment.Environment,
 	repoDetails *gitRepositoryDetails,
+	infraOptions provisioning.Options,
 	credentials json.RawMessage,
 	console input.Console) error {
 
@@ -305,8 +316,47 @@ func (p *GitHubCiProvider) configureConnection(
 	console.Message(ctx, "Setting AZURE_CREDENTIALS GitHub repo secret.\n")
 
 	ghCli := github.NewGitHubCli(ctx)
+	// set azure credential for pipelines can log in to Azure
 	if err := ghCli.SetSecret(ctx, repoSlug, "AZURE_CREDENTIALS", string(credentials)); err != nil {
 		return fmt.Errorf("failed setting AZURE_CREDENTIALS secret: %w", err)
+	}
+
+	if infraOptions.Provider == provisioning.Terraform {
+		// terraform expect the credential info to be set in the env individually
+		type credentialParse struct {
+			Tenant       string `json:"tenantId"`
+			ClientId     string `json:"clientId"`
+			ClientSecret string `json:"clientSecret"`
+		}
+		values := credentialParse{}
+		if e := json.Unmarshal(credentials, &values); e != nil {
+			return fmt.Errorf("setting terraform env var credentials: %w", e)
+		}
+		if err := ghCli.SetSecret(ctx, repoSlug, "ARM_TENANT_ID", values.Tenant); err != nil {
+			return fmt.Errorf("setting terraform env var credentials:: %w", err)
+		}
+		if err := ghCli.SetSecret(ctx, repoSlug, "ARM_CLIENT_ID", values.ClientId); err != nil {
+			return fmt.Errorf("setting terraform env var credentials:: %w", err)
+		}
+		if err := ghCli.SetSecret(ctx, repoSlug, "ARM_CLIENT_SECRET", values.ClientSecret); err != nil {
+			return fmt.Errorf("setting terraform env var credentials:: %w", err)
+		}
+
+		// Sets the terraform remote state environment variables in github
+		remoteStateKeys := []string{"RS_RESOURCE_GROUP", "RS_STORAGE_ACCOUNT", "RS_CONTAINER_NAME"}
+		for _, key := range remoteStateKeys {
+			value, ok := azdEnvironment.Values[key]
+			if !ok || strings.TrimSpace(value) == "" {
+				console.Message(ctx, output.WithWarningFormat("WARNING: Terraform Remote State configuration is invalid!"))
+				console.Message(ctx, fmt.Sprintf("Visit %s for more information on configuring Terraform remote state", output.WithLinkFormat("https://aka.ms/azure-dev/terraform")))
+				console.Message(ctx, "")
+				return errors.New("terraform remote state is not correctly configured")
+			}
+			// env var was found
+			if err := ghCli.SetSecret(ctx, repoSlug, key, value); err != nil {
+				return fmt.Errorf("setting terraform remote state variables: %w", err)
+			}
+		}
 	}
 
 	console.Message(ctx, "Configuring repository environment.\n")
@@ -319,7 +369,6 @@ func (p *GitHubCiProvider) configureConnection(
 		}
 	}
 
-	fmt.Println()
 	console.Message(ctx, fmt.Sprintf(
 		`GitHub Action secrets are now configured.
 		See your .github/workflows folder for details on which actions will be enabled.
@@ -330,7 +379,7 @@ func (p *GitHubCiProvider) configureConnection(
 
 // configurePipeline is a no-op for GitHub, as the pipeline is automatically
 // created by creating the workflow files in .github folder.
-func (p *GitHubCiProvider) configurePipeline(ctx context.Context) error {
+func (p *GitHubCiProvider) configurePipeline(ctx context.Context, repoDetails *gitRepositoryDetails, provisioningProvider provisioning.Options) error {
 	return nil
 }
 

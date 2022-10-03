@@ -4,11 +4,17 @@
 package bicep
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"io"
+	"net/http"
 	"strings"
 	"testing"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/keyvault/armkeyvault"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
+	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
@@ -56,7 +62,7 @@ func TestBicepPlan(t *testing.T) {
 	require.Contains(t, progressLog[1], "Compiling Bicep template")
 
 	require.Equal(t, infraProvider.env.Values["AZURE_LOCATION"], deploymentPlan.Deployment.Parameters["location"].Value)
-	require.Equal(t, infraProvider.env.Values["AZURE_ENV_NAME"], deploymentPlan.Deployment.Parameters["name"].Value)
+	require.Equal(t, infraProvider.env.Values["AZURE_ENV_NAME"], deploymentPlan.Deployment.Parameters["environmentName"].Value)
 }
 
 func TestBicepGetDeploymentPlan(t *testing.T) {
@@ -149,7 +155,7 @@ func TestBicepDestroy(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
 		prepareGenericMocks(mockContext.CommandRunner)
 		preparePlanningMocks(mockContext.CommandRunner)
-		prepareDestroyMocks(mockContext.CommandRunner)
+		prepareDestroyMocks(mockContext)
 
 		progressLog := []string{}
 		interactiveLog := []bool{}
@@ -213,7 +219,7 @@ func TestBicepDestroy(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
 		prepareGenericMocks(mockContext.CommandRunner)
 		preparePlanningMocks(mockContext.CommandRunner)
-		prepareDestroyMocks(mockContext.CommandRunner)
+		prepareDestroyMocks(mockContext)
 
 		progressLog := []string{}
 		interactiveLog := []bool{}
@@ -268,11 +274,12 @@ func createBicepProvider(ctx context.Context) *BicepProvider {
 		Module: "main",
 	}
 
-	env := environment.Environment{Values: make(map[string]string)}
-	env.SetLocation("westus2")
-	env.SetEnvName("test-env")
+	env := environment.EphemeralWithValues("test-env", map[string]string{
+		environment.LocationEnvVarName:       "westus2",
+		environment.SubscriptionIdEnvVarName: "SUBSCRIPTION_ID",
+	})
 
-	return NewBicepProvider(ctx, &env, projectDir, options)
+	return NewBicepProvider(ctx, env, projectDir, options)
 }
 
 func prepareGenericMocks(commandRunner *execmock.MockCommandRunner) {
@@ -308,7 +315,7 @@ func prepareDeployMocks(commandRunner *execmock.MockCommandRunner) {
 func preparePlanningMocks(commandRunner *execmock.MockCommandRunner) {
 	expectedWebsiteUrl := "http://myapp.azurewebsites.net"
 	bicepInputParams := make(map[string]BicepInputParameter)
-	bicepInputParams["name"] = BicepInputParameter{Value: "${AZURE_ENV_NAME}"}
+	bicepInputParams["environmentName"] = BicepInputParameter{Value: "${AZURE_ENV_NAME}"}
 	bicepInputParams["location"] = BicepInputParameter{Value: "${AZURE_LOCATION}"}
 
 	bicepOutputParams := make(map[string]BicepOutputParameter)
@@ -366,70 +373,86 @@ func preparePlanningMocks(commandRunner *execmock.MockCommandRunner) {
 	})
 }
 
-func prepareDestroyMocks(commandRunner *execmock.MockCommandRunner) {
-	resourceList := []azcli.AzCliResource{
-		{
-			Id:   "webapp",
-			Name: "app-123",
-			Type: string(infra.AzureResourceTypeWebSite),
-		},
-		{
-			Id:   "keyvault",
-			Name: "kv-123",
-			Type: string(infra.AzureResourceTypeKeyVault),
-		},
-	}
-
-	resourceListBytes, _ := json.Marshal(resourceList)
-
-	keyVault := azcli.AzCliKeyVault{
-		Id:   "kv-123",
-		Name: "kv-123",
-		Properties: struct {
-			EnableSoftDelete      bool "json:\"enableSoftDelete\""
-			EnablePurgeProtection bool "json:\"enablePurgeProtection\""
-		}{
-			EnableSoftDelete:      true,
-			EnablePurgeProtection: false,
+func prepareDestroyMocks(mockContext *mocks.MockContext) {
+	resourceList := armresources.ResourceListResult{
+		Value: []*armresources.GenericResourceExpanded{
+			{
+				ID:       convert.RefOf("webapp"),
+				Name:     convert.RefOf("app-123"),
+				Type:     convert.RefOf(string(infra.AzureResourceTypeWebSite)),
+				Location: convert.RefOf("eastus2"),
+			},
+			{
+				ID:       convert.RefOf("keyvault"),
+				Name:     convert.RefOf("kv-123"),
+				Type:     convert.RefOf(string(infra.AzureResourceTypeKeyVault)),
+				Location: convert.RefOf("eastus2"),
+			},
 		},
 	}
-
-	keyVaultBytes, _ := json.Marshal(keyVault)
 
 	// Get list of resources to delete
-	commandRunner.When(func(args exec.RunArgs, command string) bool {
-		return strings.Contains(command, "az resource list")
-	}).Respond(exec.RunResult{
-		Stdout: string(resourceListBytes),
-		Stderr: "",
+	mockContext.HttpClient.When(func(request *http.Request) bool {
+		return request.Method == http.MethodGet && strings.Contains(request.URL.Path, "/resources")
+	}).RespondFn(func(request *http.Request) (*http.Response, error) {
+		resourceListBytes, _ := json.Marshal(resourceList)
+
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(bytes.NewBuffer(resourceListBytes)),
+		}, nil
 	})
 
 	// Get Key Vault
-	commandRunner.When(func(args exec.RunArgs, command string) bool {
-		return strings.Contains(command, "az keyvault show")
-	}).Respond(exec.RunResult{
-		Stdout: string(keyVaultBytes),
-		Stderr: "",
+	mockContext.HttpClient.When(func(request *http.Request) bool {
+		return request.Method == http.MethodGet && strings.Contains(request.URL.Path, "/vaults/kv-123")
+	}).RespondFn(func(request *http.Request) (*http.Response, error) {
+		keyVaultResponse := armkeyvault.VaultsClientGetResponse{
+			Vault: armkeyvault.Vault{
+				ID:       convert.RefOf("kv-123"),
+				Name:     convert.RefOf("kv-123"),
+				Location: convert.RefOf("eastus2"),
+				Properties: &armkeyvault.VaultProperties{
+					EnableSoftDelete:      convert.RefOf(true),
+					EnablePurgeProtection: convert.RefOf(false),
+				},
+			},
+		}
+
+		keyVaultBytes, _ := json.Marshal(keyVaultResponse)
+
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(bytes.NewBuffer(keyVaultBytes)),
+		}, nil
 	})
 
 	// Delete resource group
-	commandRunner.When(func(args exec.RunArgs, command string) bool {
-		return strings.Contains(command, "az group delete")
-	}).Respond(exec.RunResult{
-		Stdout: "",
-		Stderr: "",
+	mockContext.HttpClient.When(func(request *http.Request) bool {
+		return request.Method == http.MethodDelete && strings.Contains(request.URL.Path, "subscriptions/SUBSCRIPTION_ID/resourcegroups/RESOURCE_GROUP")
+	}).RespondFn(func(request *http.Request) (*http.Response, error) {
+		return &http.Response{
+			Request:    request,
+			Header:     http.Header{},
+			StatusCode: http.StatusOK,
+			Body:       http.NoBody,
+		}, nil
 	})
 
 	// Purge Key vault
-	commandRunner.When(func(args exec.RunArgs, command string) bool {
-		return strings.Contains(command, "az keyvault purge")
-	}).Respond(exec.RunResult{
-		Stdout: "",
-		Stderr: "",
+	mockContext.HttpClient.When(func(request *http.Request) bool {
+		return request.Method == http.MethodPost && strings.Contains(request.URL.Path, "deletedVaults/kv-123/purge")
+	}).RespondFn(func(request *http.Request) (*http.Response, error) {
+		return &http.Response{
+			Request:    request,
+			Header:     http.Header{},
+			StatusCode: http.StatusOK,
+			Body:       http.NoBody,
+		}, nil
 	})
 
 	// Delete deployment
-	commandRunner.When(func(args exec.RunArgs, command string) bool {
+	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 		return strings.Contains(command, "az deployment sub delete")
 	}).Respond(exec.RunResult{
 		Stdout: "",

@@ -27,9 +27,7 @@ services:
 `
 	ran := false
 
-	env := environment.Environment{Values: make(map[string]string)}
-	env.SetEnvName("test-env")
-
+	env := environment.EphemeralWithValues("test-env", nil)
 	mockContext := mocks.NewMockContext(context.Background())
 	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 		return strings.Contains(command, "docker build")
@@ -50,9 +48,9 @@ services:
 		}, nil
 	})
 
-	projectConfig, err := ParseProjectConfig(testProj, &env)
+	projectConfig, err := ParseProjectConfig(testProj, env)
 	require.NoError(t, err)
-	prj, err := projectConfig.GetProject(mockContext.Context, &env)
+	prj, err := projectConfig.GetProject(mockContext.Context, env)
 	require.NoError(t, err)
 
 	service := prj.Services[0]
@@ -62,7 +60,7 @@ services:
 	progress := make(chan string)
 	done := make(chan bool)
 
-	internalFramework := NewNpmProject(*mockContext.Context, service.Config, &env)
+	internalFramework := NewNpmProject(*mockContext.Context, service.Config, env)
 	progressMessages := []string{}
 
 	go func() {
@@ -72,7 +70,7 @@ services:
 		done <- true
 	}()
 
-	framework := NewDockerProject(service.Config, &env, docker, internalFramework)
+	framework := NewDockerProject(service.Config, env, docker, internalFramework)
 	res, err := framework.Package(*mockContext.Context, progress)
 	close(progress)
 	<-done
@@ -101,9 +99,7 @@ services:
       context: ../
 `
 
-	env := environment.Environment{Values: make(map[string]string)}
-	env.SetEnvName("test-env")
-
+	env := environment.EphemeralWithValues("test-env", nil)
 	mockContext := mocks.NewMockContext(context.Background())
 
 	ran := false
@@ -129,10 +125,10 @@ services:
 
 	docker := docker.NewDocker(*mockContext.Context)
 
-	projectConfig, err := ParseProjectConfig(testProj, &env)
+	projectConfig, err := ParseProjectConfig(testProj, env)
 	require.NoError(t, err)
 
-	prj, err := projectConfig.GetProject(mockContext.Context, &env)
+	prj, err := projectConfig.GetProject(mockContext.Context, env)
 	require.NoError(t, err)
 
 	service := prj.Services[0]
@@ -140,7 +136,7 @@ services:
 	progress := make(chan string)
 	done := make(chan bool)
 
-	internalFramework := NewNpmProject(*mockContext.Context, service.Config, &env)
+	internalFramework := NewNpmProject(*mockContext.Context, service.Config, env)
 	status := ""
 
 	go func() {
@@ -150,7 +146,7 @@ services:
 		done <- true
 	}()
 
-	framework := NewDockerProject(service.Config, &env, docker, internalFramework)
+	framework := NewDockerProject(service.Config, env, docker, internalFramework)
 	res, err := framework.Package(*mockContext.Context, progress)
 	close(progress)
 	<-done

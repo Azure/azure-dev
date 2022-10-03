@@ -9,6 +9,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
@@ -51,35 +52,43 @@ func (dp *dotnetProject) InstallDependencies(ctx context.Context) error {
 	return nil
 }
 
+func (dp *dotnetProject) setUserSecretsFromOutputs(ctx context.Context, args ServiceLifecycleEventArgs) error {
+	bicepOutputArgs := args.Args["bicepOutput"]
+	if bicepOutputArgs == nil {
+		log.Println("no bicep outputs set as secrets to dotnet project, map args.Args doesn't contain key \"bicepOutput\"")
+		return nil
+	}
+
+	bicepOutput, ok := bicepOutputArgs.(map[string]provisioning.OutputParameter)
+	if !ok {
+		return fmt.Errorf("fail on interface conversion: no type in map")
+	}
+
+	for key, val := range bicepOutput {
+		if err := dp.dotnetCli.SetSecret(ctx, normalizeDotNetSecret(key), fmt.Sprint(val.Value), dp.config.Path()); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (dp *dotnetProject) Initialize(ctx context.Context) error {
 	if err := dp.dotnetCli.InitializeSecret(ctx, dp.config.Path()); err != nil {
 		return err
 	}
-
 	handler := func(ctx context.Context, args ServiceLifecycleEventArgs) error {
-		bicepOutputArgs := args.Args["bicepOutput"]
-		if bicepOutputArgs == nil {
-			log.Println("no bicep outputs set as secrets to dotnet project, map args.Args doesn't contain key \"bicepOutput\"")
-			return nil
-		}
-
-		bicepOutput, ok := bicepOutputArgs.(map[string]provisioning.OutputParameter)
-		if !ok {
-			return fmt.Errorf("fail on interface conversion: no type in map")
-		}
-
-		for key, val := range bicepOutput {
-			if err := dp.dotnetCli.SetSecret(ctx, key, fmt.Sprint(val.Value), dp.config.Path()); err != nil {
-				return err
-			}
-		}
-		return nil
+		return dp.setUserSecretsFromOutputs(ctx, args)
 	}
 	if err := dp.config.AddHandler(Deployed, handler); err != nil {
 		return err
 	}
 
 	return nil
+}
+
+func normalizeDotNetSecret(key string) string {
+	// dotnet recognizes "__" as the hierarchy key separator for environment variables, but for user secrets, it has to be ":".
+	return strings.ReplaceAll(key, "__", ":")
 }
 
 func NewDotNetProject(ctx context.Context, config *ServiceConfig, env *environment.Environment) FrameworkService {

@@ -17,7 +17,7 @@ type CmdTreeOptions struct {
 // RunCommandList runs a list of commands in shell.
 // The command list is constructed using '&&' operator, so the first failing command causes the whole list run to fail.
 func RunCommandList(ctx context.Context, commands []string, env []string, cwd string) (RunResult, error) {
-	process, err := newCmdTree(ctx, "", commands, true)
+	process, err := newCmdTree(ctx, "", commands, true, false)
 	if err != nil {
 		return NewRunResult(-1, "", ""), err
 	}

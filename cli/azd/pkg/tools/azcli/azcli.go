@@ -4,6 +4,7 @@
 package azcli
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -31,7 +32,7 @@ var (
 	ErrClientAssertionExpired    = errors.New("client assertion expired")
 	ErrDeploymentNotFound        = errors.New("deployment not found")
 	ErrNoConfigurationValue      = errors.New("no value configured")
-	ErrAzCliSecretNotFound       = errors.New("secret not fount")
+	ErrAzCliSecretNotFound       = errors.New("secret not found")
 )
 
 const (
@@ -62,9 +63,9 @@ type AzCli interface {
 	GetSubscriptionDeployment(ctx context.Context, subscriptionId string, deploymentName string) (AzCliDeployment, error)
 	GetResourceGroupDeployment(ctx context.Context, subscriptionId string, resourceGroupName string, deploymentName string) (AzCliDeployment, error)
 	GetResource(ctx context.Context, subscriptionId string, resourceId string) (AzCliResourceExtended, error)
-	GetKeyVault(ctx context.Context, subscriptionId string, vaultName string) (AzCliKeyVault, error)
-	GetKeyVaultSecret(ctx context.Context, subscriptionId string, vaultName string, secretName string) (AzCliKeyVaultSecret, error)
-	PurgeKeyVault(ctx context.Context, subscriptionId string, vaultName string) error
+	GetKeyVault(ctx context.Context, subscriptionId string, resourceGroupName string, vaultName string) (*AzCliKeyVault, error)
+	GetKeyVaultSecret(ctx context.Context, vaultName string, secretName string) (*AzCliKeyVaultSecret, error)
+	PurgeKeyVault(ctx context.Context, subscriptionId string, vaultName string, location string) error
 	DeployAppServiceZip(ctx context.Context, subscriptionId string, resourceGroup string, appName string, deployZipPath string) (string, error)
 	DeployFunctionAppUsingZipFile(ctx context.Context, subscriptionID string, resourceGroup string, funcName string, deployZipPath string) (string, error)
 	GetFunctionAppProperties(ctx context.Context, subscriptionID string, resourceGroup string, funcName string) (AzCliFunctionAppProperties, error)
@@ -202,21 +203,6 @@ type AzCliResourceOperationTargetResource struct {
 	ResourceGroup string `json:"resourceGroup"`
 }
 
-type AzCliKeyVault struct {
-	Id         string `json:"id"`
-	Name       string `json:"name"`
-	Properties struct {
-		EnableSoftDelete      bool `json:"enableSoftDelete"`
-		EnablePurgeProtection bool `json:"enablePurgeProtection"`
-	} `json:"properties"`
-}
-
-type AzCliKeyVaultSecret struct {
-	Id    string `json:"id"`
-	Name  string `json:"name"`
-	Value string `json:"value"`
-}
-
 type AzCliAppServiceProperties struct {
 	HostNames []string `json:"hostNames"`
 }
@@ -283,14 +269,16 @@ type AzCliGraphQuery struct {
 type ListResourceGroupOptions struct {
 	// An optional tag filter
 	TagFilter *Filter
-	// An optional JMES path query to filter or project the result
-	JmesPathQuery *string
+	// An optional filter expression to filter the resource group results
+	// https://learn.microsoft.com/en-us/rest/api/resources/resource-groups/list
+	Filter *string
 }
 
 // Optional parameters for resource group resources listing.
 type ListResourceGroupResourcesOptions struct {
-	// An optional JMES path query to filter or project the result
-	JmesPathQuery *string
+	// An optional filter expression to filter the resource list result
+	// https://learn.microsoft.com/en-us/rest/api/resources/resources/list-by-resource-group#uri-parameters
+	Filter *string
 }
 
 type Filter struct {
@@ -343,6 +331,7 @@ type NewAzCliArgs struct {
 	EnableTelemetry bool
 	// CommandRunner allows us to stub out the command execution for testing
 	CommandRunner exec.CommandRunner
+	HttpClient    httputil.HttpClient
 }
 
 func NewAzCli(args NewAzCliArgs) AzCli {
@@ -355,6 +344,7 @@ func NewAzCli(args NewAzCliArgs) AzCli {
 		enableDebug:     args.EnableDebug,
 		enableTelemetry: args.EnableTelemetry,
 		commandRunner:   args.CommandRunner,
+		httpClient:      args.HttpClient,
 	}
 }
 
@@ -365,6 +355,9 @@ type azCli struct {
 
 	// commandRunner allows us to stub out the exec.CommandRunner, for testing.
 	commandRunner exec.CommandRunner
+
+	// Allows us to mock the Http Requests from the go modules
+	httpClient httputil.HttpClient
 }
 
 func (cli *azCli) Name() string {
@@ -733,83 +726,6 @@ func (cli *azCli) DeleteSubscriptionDeployment(ctx context.Context, subscription
 	return nil
 }
 
-func (cli *azCli) DeleteResourceGroup(ctx context.Context, subscriptionId string, resourceGroupName string) error {
-	res, err := cli.runAzCommand(ctx, "group", "delete", "--subscription", subscriptionId, "--name", resourceGroupName, "--yes", "--output", "json")
-	if isNotLoggedInMessage(res.Stderr) {
-		return ErrAzCliNotLoggedIn
-	} else if err != nil {
-		return fmt.Errorf("failed running az group delete: %s: %w", res.String(), err)
-	}
-
-	return nil
-}
-
-func (cli *azCli) ListResourceGroup(ctx context.Context, subscriptionId string, listOptions *ListResourceGroupOptions) ([]AzCliResource, error) {
-	args := []string{"group", "list", "--subscription", subscriptionId, "--output", "json"}
-	if listOptions != nil {
-		if listOptions.TagFilter != nil {
-			args = append(args, "--tag", fmt.Sprintf("%s=%s", listOptions.TagFilter.Key, listOptions.TagFilter.Value))
-		}
-
-		if listOptions.JmesPathQuery != nil {
-			args = append(args, "--query", *listOptions.JmesPathQuery)
-		}
-	}
-
-	res, err := cli.runAzCommand(ctx, args...)
-	if isNotLoggedInMessage(res.Stderr) {
-		return nil, ErrAzCliNotLoggedIn
-	} else if err != nil {
-		return nil, fmt.Errorf("failed running az group list: %s: %w", res.String(), err)
-	}
-
-	var resources []AzCliResource
-	if err := json.Unmarshal([]byte(res.Stdout), &resources); err != nil {
-		return nil, fmt.Errorf("could not unmarshal output %s as a []AzCliResource: %w", res.Stdout, err)
-	}
-	return resources, nil
-}
-
-func (cli *azCli) ListResourceGroupResources(ctx context.Context, subscriptionId string, resourceGroupName string, listOptions *ListResourceGroupResourcesOptions) ([]AzCliResource, error) {
-	args := []string{"resource", "list", "--subscription", subscriptionId, "--resource-group", resourceGroupName, "--output", "json"}
-	if listOptions != nil {
-		if listOptions.JmesPathQuery != nil {
-			args = append(args, "--query", *listOptions.JmesPathQuery)
-		}
-	}
-
-	res, err := cli.runAzCommand(ctx, args...)
-
-	if isNotLoggedInMessage(res.Stderr) {
-		return nil, ErrAzCliNotLoggedIn
-	} else if err != nil {
-		return nil, fmt.Errorf("failed running az resource list: %s: %w", res.String(), err)
-	}
-
-	var resources []AzCliResource
-	if err := json.Unmarshal([]byte(res.Stdout), &resources); err != nil {
-		return nil, fmt.Errorf("could not unmarshal output %s as a []AzCliResource: %w", res.Stdout, err)
-	}
-	return resources, nil
-}
-
-func (cli *azCli) GetResource(ctx context.Context, subscriptionId string, resourceId string) (AzCliResourceExtended, error) {
-	res, err := cli.runAzCommand(ctx, "resource", "show", "--ids", resourceId, "--output", "json")
-	if isNotLoggedInMessage(res.Stderr) {
-		return AzCliResourceExtended{}, ErrAzCliNotLoggedIn
-	} else if err != nil {
-		return AzCliResourceExtended{}, fmt.Errorf("failed running az resource show --ids: %s: %w", res.String(), err)
-	}
-
-	var resource AzCliResourceExtended
-
-	if err := json.Unmarshal([]byte(res.Stdout), &resource); err != nil {
-		return AzCliResourceExtended{}, fmt.Errorf("could not unmarshal output %s as a AzCliResourceExtended: %w", res.Stdout, err)
-	}
-
-	return resource, nil
-}
-
 func (cli *azCli) ListSubscriptionDeploymentOperations(ctx context.Context, subscriptionId string, deploymentName string) ([]AzCliResourceOperation, error) {
 	res, err := cli.runAzCommand(ctx, "deployment", "operation", "sub", "list", "--subscription", subscriptionId, "--name", deploymentName, "--output", "json")
 	if isNotLoggedInMessage(res.Stderr) {
@@ -988,49 +904,6 @@ func (cli *azCli) GetAccessToken(ctx context.Context) (AzCliAccessToken, error) 
 	return accessToken, nil
 }
 
-func (cli *azCli) GetKeyVault(ctx context.Context, subscriptionId string, vaultName string) (AzCliKeyVault, error) {
-	res, err := cli.runAzCommand(ctx, "keyvault", "show", "--subscription", subscriptionId, "--name", vaultName, "--output", "json")
-	if isNotLoggedInMessage(res.Stderr) {
-		return AzCliKeyVault{}, ErrAzCliNotLoggedIn
-	} else if err != nil {
-		return AzCliKeyVault{}, fmt.Errorf("failed running az keyvault show: %s: %w", res.String(), err)
-	}
-
-	var props AzCliKeyVault
-	if err := json.Unmarshal([]byte(res.Stdout), &props); err != nil {
-		return AzCliKeyVault{}, fmt.Errorf("could not unmarshal output %s as an AzCliKeyVault: %w", res.Stdout, err)
-	}
-	return props, nil
-}
-
-func (cli *azCli) GetKeyVaultSecret(ctx context.Context, subscriptionId string, vaultName string, secretName string) (AzCliKeyVaultSecret, error) {
-	res, err := cli.runAzCommand(ctx, "keyvault", "secret", "show", "--subscription", subscriptionId, "--vault-name", vaultName, "--name", secretName, "--output", "json")
-	if isNotLoggedInMessage(res.Stderr) {
-		return AzCliKeyVaultSecret{}, ErrAzCliNotLoggedIn
-	} else if isSecretNotFoundError(res.Stderr) {
-		return AzCliKeyVaultSecret{}, ErrAzCliSecretNotFound
-	} else if err != nil {
-		return AzCliKeyVaultSecret{}, fmt.Errorf("failed running az keyvault secret show: %s: %w", res.String(), err)
-	}
-
-	var props AzCliKeyVaultSecret
-	if err := json.Unmarshal([]byte(res.Stdout), &props); err != nil {
-		return AzCliKeyVaultSecret{}, fmt.Errorf("could not unmarshal output %s as an AzCliKeyVaultSecret: %w", res.Stdout, err)
-	}
-	return props, nil
-}
-
-func (cli *azCli) PurgeKeyVault(ctx context.Context, subscriptionId string, vaultName string) error {
-	res, err := cli.runAzCommand(ctx, "keyvault", "purge", "--subscription", subscriptionId, "--name", vaultName, "--output", "json")
-	if isNotLoggedInMessage(res.Stderr) {
-		return ErrAzCliNotLoggedIn
-	} else if err != nil {
-		return fmt.Errorf("failed running az keyvault purge: %s: %w", res.String(), err)
-	}
-
-	return nil
-}
-
 type GraphQueryRequest struct {
 	Subscriptions []string `json:"subscriptions"`
 	Query         string   `json:"query"`
@@ -1054,34 +927,33 @@ func (cli *azCli) GraphQuery(ctx context.Context, query string, subscriptions []
 		return nil, fmt.Errorf("getting access token: %w", err)
 	}
 
-	client := httputil.GetHttpClient(ctx)
-	headers := map[string]string{
-		"Authorization": fmt.Sprintf("Bearer %s", token.AccessToken),
+	client := http.Client{}
+	requestBuffer := bytes.NewBuffer(requestJson)
+	request, err := http.NewRequest(http.MethodPost, url, requestBuffer)
+	if err != nil {
+		return nil, fmt.Errorf("creating http request: %w", err)
 	}
 
-	request := &httputil.HttpRequestMessage{
-		Url:     url,
-		Method:  "POST",
-		Headers: headers,
-		Body:    string(requestJson),
-	}
+	request.Header.Set("Authorization", fmt.Sprintf("Bearer %s", token.AccessToken))
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Accept", "application/json")
 
-	response, err := client.Send(request)
-	if err != nil || response.Status != http.StatusOK {
+	response, err := client.Do(request)
+	if err != nil || response.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("sending http request: %w", err)
 	}
 
-	responseText := string(response.Body)
-
-	if isNotLoggedInMessage(responseText) {
-		return nil, ErrAzCliNotLoggedIn
-	} else if err != nil {
-		return nil, fmt.Errorf("failed running az graph query: %s: %w", responseText, err)
+	defer response.Body.Close()
+	responseBytes, err := io.ReadAll(response.Body)
+	if err != nil {
+		return nil, fmt.Errorf("reading http response: %w", err)
 	}
 
+	responseText := string(responseBytes)
+
 	var graphQueryResult AzCliGraphQuery
-	if err := json.Unmarshal(response.Body, &graphQueryResult); err != nil {
-		return nil, fmt.Errorf("could not unmarshal output %s as an AzCliGraphQuery: %w", responseText, err)
+	if err := json.Unmarshal(responseBytes, &graphQueryResult); err != nil {
+		return nil, fmt.Errorf("could not unmarshal output '%s' as an AzCliGraphQuery: %w", responseText, err)
 	}
 
 	return &graphQueryResult, nil
@@ -1128,7 +1000,6 @@ var isDeploymentNotFoundMessageRegex = regexp.MustCompile(`\(DeploymentNotFound\
 var isClientAssertionInvalidMessagedRegex = regexp.MustCompile(`AADSTS700024`)
 var isConfigurationIsNotSetMessageRegex = regexp.MustCompile(`Configuration '.*' is not set\.`)
 var isDeploymentErrorRegex = regexp.MustCompile(`ERROR: ({.+})`)
-var isSecretNotFoundMessageRegex = regexp.MustCompile(`ERROR: \(SecretNotFound\)`)
 
 func isNotLoggedInMessage(s string) bool {
 	return isNotLoggedInMessageRegex.MatchString(s)
@@ -1156,10 +1027,6 @@ func isConfigurationIsNotSetMessage(s string) bool {
 
 func isDeploymentError(s string) bool {
 	return isDeploymentErrorRegex.MatchString(s)
-}
-
-func isSecretNotFoundError(s string) bool {
-	return isSecretNotFoundMessageRegex.MatchString(s)
 }
 
 func getDeploymentErrorJson(s string) string {

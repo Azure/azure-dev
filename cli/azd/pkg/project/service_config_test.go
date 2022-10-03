@@ -162,10 +162,9 @@ services:
     module: ./api/api
 `
 
-	e := environment.Environment{Values: make(map[string]string)}
-	e.SetEnvName("test-env")
+	e := environment.EphemeralWithValues("test-env", nil)
 
-	projectConfig, _ := ParseProjectConfig(testProj, &e)
+	projectConfig, _ := ParseProjectConfig(testProj, e)
 
 	return projectConfig.Services["api"]
 }

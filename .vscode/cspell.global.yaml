@@ -15,11 +15,22 @@ words:
     - bson
     - azdo
 ignoreWords:
-    - magefile
     - afwp
+    - apim
     - appcs
     - appi
     - arck
+    - armkeyvault
+    - armresources
+    - azconnection
+    - azcore
+    - Azdo
+    - aztfmod
+    - azurecaf
+    - azuredevops
+    - azurerm
+    - azidentity
+    - azsecrets
     - Bfor
     - bicepcli
     - cdne
@@ -27,6 +38,7 @@ ignoreWords:
     - commandrunner
     - databricks
     - dedb
+    - devcontainer
     - dnsz
     - evgd
     - evgs
@@ -38,15 +50,19 @@ ignoreWords:
     - Frontdoor
     - hndl
     - httpclient
+    - httptrigger
     - inputhelper
     - ippre
     - JOBOBJECT
     - kubernetes
     - kusto
+    - magefile
+    - menuid
     - migr
     - mockconsole
     - mockexec
     - mockhttp
+    - MYDIR
     - nsgsr
     - ntfns
     - osdisk
@@ -54,9 +70,17 @@ ignoreWords:
     - pcert
     - pdnsz
     - Peerings
+    - PLACEHOLDERIACTOOLS
     - provs
     - psql
     - pview
+    - resourcegroups
+    - resourcegroupterraform
+    - resourcegroupterraformremote
+    - Retryable
+    - serviceendpoint
+    - serviceprincipalid
+    - serviceprincipalkey
     - sigr
     - snet
     - sqldb
@@ -70,9 +94,16 @@ ignoreWords:
     - syndp
     - synsp
     - synw
+    - taskagent
     - TEAMPROJECTID
+    - tenantid
+    - terraformcli
+    - tfsgit
+    - tfstate
+    - tfvars
     - traf
     - useragent
+    - versioncontrol
     - vmss
     - vnet
     - vpng
@@ -83,11 +114,15 @@ ignoreWords:
     - Retryable
     - httptrigger
     - resourcegroups
+    - resourcegroupterraform
+    - resourcegroupterraformremote
+    - resourcemanager
     - devcontainer
     - azurecaf
     - azurerm
     - aztfmod
     - menuid
+    - PLACEHOLDERIACTOOLS
 useGitignore: true
 dictionaryDefinitions:
     - name: gitHubUserAliases

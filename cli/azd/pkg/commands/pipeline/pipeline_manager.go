@@ -167,7 +167,7 @@ func (i *PipelineManager) pushGitRepo(ctx context.Context, currentBranch string)
 	console.Message(ctx, "Pushing changes")
 
 	// If user has a git credential manager with some cached credentials
-	// and the credentials are rotated, the push operation will fail and the credential manager would remote the cache
+	// and the credentials are rotated, the push operation will fail and the credential manager would remove the cache
 	// Then, on the next intent to push code, there should be a prompt for credentials.
 	// Due to this, we use retry here, so we can run the second intent to prompt for credentials one more time
 	return retry.Do(ctx, retry.WithMaxRetries(3, retry.NewConstant(100*time.Millisecond)), func(ctx context.Context) error {

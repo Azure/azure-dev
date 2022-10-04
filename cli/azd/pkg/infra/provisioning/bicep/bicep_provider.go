@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"log"
 	"math"
-	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -160,9 +159,6 @@ func (p *BicepProvider) Deploy(ctx context.Context, pd *DeploymentPlan, scope in
 			done := make(chan bool)
 			var operations []azcli.AzCliResourceOperation
 
-			deploymentUrl := fmt.Sprintf(output.WithLinkFormat("https://portal.azure.com/#blade/HubsExtension/DeploymentDetailsBlade/overview/id/%s\n"), url.PathEscape(scope.DeploymentUrl()))
-			p.console.Message(ctx, fmt.Sprintf("Provisioning Azure resources can take some time.\n\nYou can view detailed progress in the Azure Portal:\n%s", deploymentUrl))
-
 			// Ensure the done marker channel is sent in all conditions
 			defer func() {
 				done <- true
@@ -172,12 +168,17 @@ func (p *BicepProvider) Deploy(ctx context.Context, pd *DeploymentPlan, scope in
 			go func() {
 				resourceManager := infra.NewAzureResourceManager(ctx)
 				progressDisplay := NewProvisioningProgressDisplay(resourceManager, p.console, scope)
+				// Make initial delay shorter to be more responsive in displaying initial progress
+				initialDelay := 3 * time.Second
+				regularDelay := 10 * time.Second
+				timer := time.NewTimer(initialDelay)
 
 				for {
 					select {
 					case <-done:
+						timer.Stop()
 						return
-					case <-time.After(10 * time.Second):
+					case <-timer.C:
 						progressReport, err := progressDisplay.ReportProgress(ctx)
 						if err != nil {
 							// We don't want to fail the whole deployment if a progress reporting error occurs
@@ -187,6 +188,8 @@ func (p *BicepProvider) Deploy(ctx context.Context, pd *DeploymentPlan, scope in
 
 						operations = progressReport.Operations
 						asyncContext.SetProgress(progressReport)
+
+						timer.Reset(regularDelay)
 					}
 				}
 			}()

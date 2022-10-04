@@ -1,0 +1,5 @@
+{
+    "os": "Win32NT",
+    "terminal": "pwsh",
+    "isWsl": "False"
+}

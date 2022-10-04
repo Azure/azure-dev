@@ -1,0 +1,5 @@
+os,ubuntu
+osVersion,20.04
+executionEnvironment,Azure DevOps
+isWsl,false
+terminal,bash

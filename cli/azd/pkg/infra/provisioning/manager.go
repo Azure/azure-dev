@@ -244,7 +244,7 @@ func (m *Manager) ensureLocation(ctx context.Context, deployment *Deployment) (s
 		// user on every deployment if they don't have a `location` parameter in their bicep file.
 		// When we store it, we should store it /per environment/ not as a property of the entire
 		// project.
-		selected, err := azureutil.PromptLocation(ctx, m.env.GetSubscriptionId(), "Please select an Azure location to use to store deployment metadata:")
+		selected, err := azureutil.PromptLocation(ctx, "Please select an Azure location to use to store deployment metadata:")
 		if err != nil {
 			return "", fmt.Errorf("prompting for deployment metadata region: %w", err)
 		}

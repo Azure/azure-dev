@@ -9,4 +9,10 @@ ARG version='must set version'
 RUN yum install -y which
 
 COPY ./*.sh ./
-RUN ./test-sh-install.sh "${shell}" "${baseUrl}" "${version}"
+COPY test/telemetry/centos.sh.telemetry.csv /telemetry.csv
+
+ENV SHELL="${shell}"
+ENV BASE_URL="${baseUrl}"
+ENV VERSION="${version}"
+
+ENTRYPOINT ./test-sh-install.sh $SHELL $BASE_URL $VERSION && ./test-telemetry-functions.sh

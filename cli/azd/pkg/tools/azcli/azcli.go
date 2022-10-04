@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerregistry/armcontainerregistry"
 	azdinternal "github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/telemetry"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
@@ -56,6 +57,7 @@ type AzCli interface {
 	// `deviceCodeWriter`.
 	Login(ctx context.Context, useDeviceCode bool, deviceCodeWriter io.Writer) error
 	LoginAcr(ctx context.Context, subscriptionId string, loginServer string) error
+	GetContainerRegistries(ctx context.Context, subscriptionId string) ([]*armcontainerregistry.Registry, error)
 	ListAccounts(ctx context.Context) ([]AzCliSubscriptionInfo, error)
 	ListExtensions(ctx context.Context) ([]AzCliExtensionInfo, error)
 	GetCliConfigValue(ctx context.Context, name string) (AzCliConfigValue, error)
@@ -485,15 +487,6 @@ func (cli *azCli) Login(ctx context.Context, useDeviceCode bool, deviceCodeWrite
 
 	if err != nil {
 		return fmt.Errorf("failed running az login: %s: %w", res.String(), err)
-	}
-
-	return nil
-}
-
-func (cli *azCli) LoginAcr(ctx context.Context, subscriptionId string, loginServer string) error {
-	res, err := cli.runAzCommand(ctx, "acr", "login", "--subscription", subscriptionId, "--name", loginServer)
-	if err != nil {
-		return fmt.Errorf("failed registry login for %s: %s: %w", loginServer, res.String(), err)
 	}
 
 	return nil

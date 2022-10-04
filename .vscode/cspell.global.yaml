@@ -29,6 +29,7 @@ ignoreWords:
     - azurecaf
     - azuredevops
     - azurerm
+    - armcontainerregistry
     - azidentity
     - azsecrets
     - Bfor
@@ -36,6 +37,7 @@ ignoreWords:
     - cdne
     - cdnp
     - commandrunner
+    - containerregistry
     - databricks
     - dedb
     - devcontainer

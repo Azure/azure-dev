@@ -146,8 +146,6 @@ func TestBicepDeploy(t *testing.T) {
 	require.Nil(t, err)
 	require.NotNil(t, deployResult)
 	require.Equal(t, deployResult.Deployment.Outputs["WEBSITE_URL"].Value, expectedWebsiteUrl)
-	require.Equal(t, 1, len(mockContext.Console.Output()))
-	require.True(t, strings.Contains(mockContext.Console.Output()[0], "Provisioning Azure resources"))
 }
 
 func TestBicepDestroy(t *testing.T) {

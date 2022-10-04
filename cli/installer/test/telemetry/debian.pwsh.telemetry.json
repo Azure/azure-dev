@@ -1,0 +1,6 @@
+{
+    "os": "debian",
+    "osVersion": "11",
+    "isWsl": true,
+    "terminal": "pwsh"
+}

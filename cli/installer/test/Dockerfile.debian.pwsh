@@ -1,0 +1,27 @@
+ARG prefix=''
+ARG base='debian:bullseye'
+FROM ${prefix}${base}
+
+ARG shell='bash'
+ARG baseUrl='must set baseUrl'
+ARG version='must set version'
+
+# pwsh install instructions from
+# https://docs.microsoft.com/en-us/powershell/scripting/install/install-debian?view=powershell-7.2
+RUN apt update \
+    && apt install -y curl gnupg apt-transport-https \
+    && curl https://packages.microsoft.com/keys/microsoft.asc | apt-key add - \
+    && sh -c 'echo "deb [arch=amd64] https://packages.microsoft.com/repos/microsoft-debian-bullseye-prod bullseye main" > /etc/apt/sources.list.d/microsoft.list' \
+    && apt update \
+    && apt install -y powershell
+
+COPY ./test-pwsh-xplat-install.ps1 /test-pwsh-xplat-install.ps1
+COPY ./*stall-azd.ps1 /
+
+COPY ./test-telemetry-functions.ps1 /
+COPY test/telemetry/debian.pwsh.telemetry.json /telemetry.json
+
+ENV BASE_URL="${baseUrl}"
+ENV VERSION="${version}"
+
+ENTRYPOINT pwsh -NonInteractive -c "\$ProgressPreference = 'SilentlyContinue'; /test-pwsh-xplat-install.ps1 -BaseUrl \$env:BASE_URL -Version \$env:VERSION && /test-telemetry-functions.ps1"

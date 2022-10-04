@@ -108,6 +108,8 @@ func (sc *ServiceConfig) GetFrameworkService(ctx context.Context, env *environme
 		frameworkService = NewPythonProject(ctx, sc, env)
 	case "js", "ts":
 		frameworkService = NewNpmProject(ctx, sc, env)
+	case "java":
+		frameworkService = NewMavenProject(ctx, sc, env)
 	default:
 		return nil, fmt.Errorf("unsupported language '%s' for service '%s'", sc.Language, sc.Name)
 	}

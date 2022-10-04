@@ -148,7 +148,7 @@ func Test_AzCli_Login_DoesNotAppend_useDeviceCode(t *testing.T) {
 }
 
 func mustGetDefaultAccount(t *testing.T, azCli AzCli) AzCliSubscriptionInfo {
-	accounts, err := azCli.ListAccounts(context.Background(), "")
+	accounts, err := azCli.ListAccounts(context.Background())
 	require.NoError(t, err)
 	for _, account := range accounts {
 		if account.IsDefault {

@@ -7,6 +7,7 @@
 package config
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -35,6 +36,17 @@ func GetUserConfigDir() (string, error) {
 
 type Config struct {
 	DefaultSubscription *Subscription `json:"defaultSubscription"`
+	DefaultLocation     *Location     `json:"defaultLocation"`
+}
+
+type Subscription struct {
+	Id   string `json:"id"`
+	Name string `json:"name"`
+}
+
+type Location struct {
+	Name        string `json:"name"`
+	DisplayName string `json:"displayName"`
 }
 
 // Saves the users configuration to their local azd user folder
@@ -55,11 +67,6 @@ func (c *Config) Save() error {
 	}
 
 	return nil
-}
-
-type Subscription struct {
-	Id   string `json:"id"`
-	Name string `json:"name"`
 }
 
 // Loads azd configuration from the users configuration dir
@@ -95,4 +102,28 @@ func getConfigFilePath() (string, error) {
 	}
 
 	return filepath.Join(configPath, "config.json"), nil
+}
+
+type contextKey string
+
+const configContextKey contextKey = "config"
+
+// Gets the AZD config from current context
+// If it does not exist will return a new empty AZD config
+func GetConfig(ctx context.Context) *Config {
+	config, ok := ctx.Value(configContextKey).(*Config)
+	if !ok {
+		loadedConfig, err := Load()
+		if err != nil {
+			loadedConfig = &Config{}
+		}
+		config = loadedConfig
+	}
+
+	return config
+}
+
+// Sets the AZD config in the Go context and returns the new context
+func WithConfig(ctx context.Context, config *Config) context.Context {
+	return context.WithValue(ctx, configContextKey, config)
 }

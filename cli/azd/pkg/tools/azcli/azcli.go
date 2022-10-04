@@ -59,7 +59,8 @@ type AzCli interface {
 	Login(ctx context.Context, useDeviceCode bool, deviceCodeWriter io.Writer) error
 	LoginAcr(ctx context.Context, subscriptionId string, loginServer string) error
 	GetContainerRegistries(ctx context.Context, subscriptionId string) ([]*armcontainerregistry.Registry, error)
-	ListAccounts(ctx context.Context, defaultSubscriptionId string) ([]AzCliSubscriptionInfo, error)
+	ListAccounts(ctx context.Context) ([]AzCliSubscriptionInfo, error)
+	GetAccount(ctx context.Context, subscriptionId string) (*AzCliSubscriptionInfo, error)
 	ListExtensions(ctx context.Context) ([]AzCliExtensionInfo, error)
 	GetCliConfigValue(ctx context.Context, name string) (AzCliConfigValue, error)
 	GetSubscriptionTenant(ctx context.Context, subscriptionId string) (string, error)
@@ -127,12 +128,6 @@ type AzCliDeploymentPropertiesBasicDependency struct {
 	Id           string `json:"id"`
 	ResourceName string `json:"resourceName"`
 	ResourceType string `json:"resourceType"`
-}
-
-type AzCliSubscriptionInfo struct {
-	Name      string `json:"name"`
-	Id        string `json:"id"`
-	IsDefault bool   `json:"isDefault"`
 }
 
 type AzCliDeploymentResult struct {

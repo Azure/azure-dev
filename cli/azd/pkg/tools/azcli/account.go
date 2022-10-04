@@ -4,12 +4,19 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"sort"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/subscription/armsubscription"
 	"github.com/azure/azure-dev/cli/azd/pkg/identity"
 )
 
-func (cli *azCli) ListAccounts(ctx context.Context, defaultSubscriptionId string) ([]AzCliSubscriptionInfo, error) {
+type AzCliSubscriptionInfo struct {
+	Name      string `json:"name"`
+	Id        string `json:"id"`
+	IsDefault bool   `json:"isDefault"`
+}
+
+func (cli *azCli) ListAccounts(ctx context.Context) ([]AzCliSubscriptionInfo, error) {
 	client, err := cli.createSubscriptionsClient(ctx)
 	if err != nil {
 		return nil, err
@@ -27,14 +34,34 @@ func (cli *azCli) ListAccounts(ctx context.Context, defaultSubscriptionId string
 		// TODO: How to determine default subscription id without az cli dependency?
 		for _, subscription := range page.ListResult.Value {
 			subscriptions = append(subscriptions, AzCliSubscriptionInfo{
-				Id:        *subscription.SubscriptionID,
-				Name:      *subscription.DisplayName,
-				IsDefault: defaultSubscriptionId == *subscription.SubscriptionID,
+				Id:   *subscription.SubscriptionID,
+				Name: *subscription.DisplayName,
 			})
 		}
 	}
 
+	sort.Slice(subscriptions, func(i, j int) bool {
+		return subscriptions[i].Name < subscriptions[j].Name
+	})
+
 	return subscriptions, nil
+}
+
+func (cli *azCli) GetAccount(ctx context.Context, subscriptionId string) (*AzCliSubscriptionInfo, error) {
+	client, err := cli.createSubscriptionsClient(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	subscription, err := client.Get(ctx, subscriptionId, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed getting subscription for '%s'", subscriptionId)
+	}
+
+	return &AzCliSubscriptionInfo{
+		Id:   *subscription.SubscriptionID,
+		Name: *subscription.DisplayName,
+	}, nil
 }
 
 func (cli *azCli) GetSubscriptionTenant(ctx context.Context, subscriptionId string) (string, error) {
@@ -79,6 +106,10 @@ func (cli *azCli) ListAccountLocations(ctx context.Context, subscriptionId strin
 			})
 		}
 	}
+
+	sort.Slice(locations, func(i, j int) bool {
+		return locations[i].DisplayName < locations[j].DisplayName
+	})
 
 	return locations, nil
 }

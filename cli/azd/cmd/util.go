@@ -257,7 +257,7 @@ func ensureEnvironmentInitialized(ctx context.Context, envSpec environmentSpec, 
 func getSubscriptionOptions(ctx context.Context) ([]string, string, error) {
 	azCli := azcli.GetAzCli(ctx)
 	defaultSubscriptionId := os.Getenv(environment.SubscriptionIdEnvVarName)
-	subscriptionInfos, err := azCli.ListAccounts(ctx, defaultSubscriptionId)
+	subscriptionInfos, err := azCli.ListAccounts(ctx)
 	if err != nil {
 		return nil, "", fmt.Errorf("listing accounts: %w", err)
 	}

@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/azure/azure-dev/cli/azd/cmd/models"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/commands"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
@@ -39,8 +40,9 @@ func showCmd(rootOptions *internal.GlobalCommandOptions) *cobra.Command {
 			return fmt.Errorf("loading project: %w", err)
 		}
 
-		res := showResult{
-			Services: make(map[string]showService, len(prj.Services)),
+		res := models.ShowResult{
+			Name:     prj.Name,
+			Services: make(map[string]models.ShowService, len(prj.Services)),
 		}
 
 		for name, svc := range prj.Services {
@@ -49,8 +51,8 @@ func showCmd(rootOptions *internal.GlobalCommandOptions) *cobra.Command {
 				return err
 			}
 
-			showSvc := showService{
-				Project: showServiceProject{
+			showSvc := models.ShowService{
+				Project: models.ShowServiceProject{
 					Path: path,
 					Type: showTypeFromLanguage(svc.Language),
 				},
@@ -72,7 +74,7 @@ func showCmd(rootOptions *internal.GlobalCommandOptions) *cobra.Command {
 					}
 
 					resSvc := res.Services[name]
-					resSvc.Target = &showTargetArm{
+					resSvc.Target = &models.ShowTargetArm{
 						ResourceIds: resourceIds,
 					}
 					res.Services[name] = resSvc
@@ -103,30 +105,6 @@ func showCmd(rootOptions *internal.GlobalCommandOptions) *cobra.Command {
 	cmd.Hidden = true
 
 	return cmd
-}
-
-type showResult struct {
-	Services map[string]showService `json:"services"`
-}
-
-type showService struct {
-	// Project contains information about the project that backs this service.
-	Project showServiceProject `json:"project"`
-	// Target contains information about the resource that the service is deployed
-	// to.
-	Target *showTargetArm `json:"target,omitempty"`
-}
-
-type showServiceProject struct {
-	// Path contains the path to the project for this service.
-	// When 'type' is 'dotnet', this includes the project file (i.e. Todo.Api.csproj).
-	Path string `json:"path"`
-	// The type of this project. One of "dotnet", "python", or "node"
-	Type string `json:"language"`
-}
-
-type showTargetArm struct {
-	ResourceIds []string `json:"resourceIds"`
 }
 
 func showTypeFromLanguage(language string) string {

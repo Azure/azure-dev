@@ -1,0 +1,44 @@
+ARG prefix=''
+ARG base='alpine:3.15'
+FROM ${prefix}${base}
+
+ARG baseUrl='must set baseUrl'
+ARG version='must set version'
+ARG pwshVersion='7.2.5'
+
+# Required to run azd binary in alpine
+RUN apk add libc6-compat
+
+# pwsh install instructions from
+# https://docs.microsoft.com/en-us/powershell/scripting/install/install-alpine?view=powershell-7.2
+RUN apk add --no-cache \
+        ca-certificates \
+        less \
+        ncurses-terminfo-base \
+        krb5-libs \
+        libgcc \
+        libintl \
+        libssl1.1 \
+        libstdc++ \
+        tzdata \
+        userspace-rcu \
+        zlib \
+        icu-libs \
+        curl \
+    && apk -X https://dl-cdn.alpinelinux.org/alpine/edge/main add --no-cache lttng-ust \
+    && curl -L https://github.com/PowerShell/PowerShell/releases/download/v${pwshVersion}/powershell-${pwshVersion}-linux-alpine-x64.tar.gz -o /tmp/powershell.tar.gz \
+    && mkdir -p /opt/microsoft/powershell/7 \
+    && tar zxf /tmp/powershell.tar.gz -C /opt/microsoft/powershell/7 \
+    && chmod +x /opt/microsoft/powershell/7/pwsh \
+    && ln -s /opt/microsoft/powershell/7/pwsh /usr/bin/pwsh
+
+COPY ./test-pwsh-xplat-install.ps1 /test-pwsh-xplat-install.ps1
+COPY ./*stall-azd.ps1 /
+
+COPY ./test-telemetry-functions.ps1 /
+COPY test/telemetry/alpine.pwsh.telemetry.json /telemetry.json
+
+ENV BASE_URL="${baseUrl}"
+ENV VERSION="${version}"
+
+ENTRYPOINT pwsh -NonInteractive -c "\$ProgressPreference = 'SilentlyContinue'; /test-pwsh-xplat-install.ps1 -BaseUrl \$env:BASE_URL -Version \$env:VERSION && /test-telemetry-functions.ps1"

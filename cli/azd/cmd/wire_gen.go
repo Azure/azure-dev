@@ -8,7 +8,7 @@ package cmd
 
 import (
 	"github.com/azure/azure-dev/cli/azd/internal"
-	"github.com/azure/azure-dev/cli/azd/pkg/action"
+	"github.com/azure/azure-dev/cli/azd/cmd/action"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/git"
@@ -30,7 +30,7 @@ func injectInitAction(cmd *cobra.Command, o *internal.GlobalCommandOptions, flag
 	}
 	console := newConsoleFromOptions(o, writer, formatter)
 	azCli := newAzCliFromOptions(o, commandRunner)
-	gitCli := git.NewGitCliFromRun(commandRunner)
+	gitCli := git.NewGitCliFromRunner(commandRunner)
 	cmdInitAction, err := newInitAction(azdContext, commandRunner, console, azCli, gitCli, flags)
 	if err != nil {
 		return nil, err
@@ -88,7 +88,7 @@ func injectUpAction(cmd *cobra.Command, o *internal.GlobalCommandOptions, flags 
 	}
 	console := newConsoleFromOptions(o, writer, formatter)
 	azCli := newAzCliFromOptions(o, commandRunner)
-	gitCli := git.NewGitCliFromRun(commandRunner)
+	gitCli := git.NewGitCliFromRunner(commandRunner)
 	cmdInitFlags := flags.initFlags
 	cmdInitAction, err := newInitAction(azdContext, commandRunner, console, azCli, gitCli, cmdInitFlags)
 	if err != nil {

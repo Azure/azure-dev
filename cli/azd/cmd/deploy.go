@@ -30,11 +30,6 @@ type deployFlags struct {
 
 func (d *deployFlags) Setup(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
 	local.StringVar(&d.serviceName, "service", "", "Deploys a specific service (when the string is unspecified, all services that are listed in the "+azdcontext.ProjectFileName+" file are deployed).")
-	output.AddOutputFlag(
-		local,
-		&d.outputFormat,
-		[]output.Format{output.JsonFormat, output.NoneFormat},
-		output.NoneFormat)
 
 	d.global = global
 }
@@ -56,6 +51,11 @@ After the deployment is complete, the endpoint is printed. To start the service,
 	}
 	df := deployFlags{}
 	df.Setup(cmd.Flags(), rootOptions)
+	output.AddOutputFlag(
+		cmd.Flags(),
+		&df.outputFormat,
+		[]output.Format{output.JsonFormat, output.NoneFormat},
+		output.NoneFormat)
 
 	return cmd, &df
 }

@@ -30,17 +30,8 @@ func AddOutputFlag(f *pflag.FlagSet, s *string, supportedFormats []Format, defau
 }
 
 func AddOutputParam(cmd *cobra.Command, supportedFormats []Format, defaultFormat Format) *cobra.Command {
-	formatNames := make([]string, len(supportedFormats))
-	for i, f := range supportedFormats {
-		formatNames[i] = string(f)
-	}
-
-	description := fmt.Sprintf("The output format (the supported formats are %s).", strings.Join(formatNames, ", "))
-	cmd.Flags().StringP(outputFlagName, "o", string(defaultFormat), description)
-
-	// Only error that can occur is "flag not found", which is not possible given we just added the flag on the previous line
-	_ = cmd.Flags().SetAnnotation(outputFlagName, supportedFormatterAnnotation, formatNames)
-
+	discard := new(string)
+	AddOutputFlag(cmd.Flags(), discard, supportedFormats, defaultFormat)
 	return cmd
 }
 

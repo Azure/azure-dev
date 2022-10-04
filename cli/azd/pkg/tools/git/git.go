@@ -36,16 +36,14 @@ type gitCli struct {
 	commandRunner exec.CommandRunner
 }
 
-func NewGitCliFromRun(commandRunner exec.CommandRunner) GitCli {
+func NewGitCliFromRunner(commandRunner exec.CommandRunner) GitCli {
 	return &gitCli{
 		commandRunner: commandRunner,
 	}
 }
 
 func NewGitCli(ctx context.Context) GitCli {
-	return &gitCli{
-		commandRunner: exec.GetCommandRunner(ctx),
-	}
+	return NewGitCliFromRunner(exec.GetCommandRunner(ctx))
 }
 
 func (cli *gitCli) versionInfo() tools.VersionInfo {

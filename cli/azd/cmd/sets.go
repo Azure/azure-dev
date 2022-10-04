@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"io"
 
+	"github.com/azure/azure-dev/cli/azd/cmd/action"
 	"github.com/azure/azure-dev/cli/azd/internal"
-	"github.com/azure/azure-dev/cli/azd/pkg/action"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
@@ -52,7 +52,7 @@ var CommonSet = wire.NewSet(
 var InitCmdSet = wire.NewSet(
 	CommonSet,
 	newAzCliFromOptions,
-	git.NewGitCliFromRun,
+	git.NewGitCliFromRunner,
 	newInitAction,
 	wire.Bind(new(action.Action), new(*initAction)))
 
@@ -71,7 +71,7 @@ var DeployCmdSet = wire.NewSet(
 var UpCmdSet = wire.NewSet(
 	CommonSet,
 	newAzCliFromOptions,
-	git.NewGitCliFromRun,
+	git.NewGitCliFromRunner,
 	newInitAction,
 	newInfraCreateAction,
 	newDeployAction,

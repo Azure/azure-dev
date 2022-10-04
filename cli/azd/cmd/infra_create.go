@@ -27,11 +27,6 @@ type infraCreateFlags struct {
 
 func (i *infraCreateFlags) Setup(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
 	local.BoolVar(&i.noProgress, "no-progress", false, "Suppresses progress information.")
-	output.AddOutputFlag(
-		local,
-		&i.outputFormat,
-		[]output.Format{output.JsonFormat, output.NoneFormat},
-		output.NoneFormat)
 
 	i.global = global
 }
@@ -44,6 +39,11 @@ func infraCreateCmdDesign(rootOptions *internal.GlobalCommandOptions) (*cobra.Co
 	}
 	f := &infraCreateFlags{}
 	f.Setup(cmd.Flags(), rootOptions)
+	output.AddOutputFlag(
+		cmd.Flags(),
+		&f.outputFormat,
+		[]output.Format{output.JsonFormat, output.NoneFormat},
+		output.NoneFormat)
 
 	return cmd, f
 }

@@ -42,7 +42,7 @@ When no template is supplied, you can optionally select an Azure Developer CLI t
 
 When a template is provided, the sample code is cloned to the current directory.`,
 	}
-	cmd.Flags().BoolP("help", "h", false, fmt.Sprintf("Gets help for %s.", cmd.Name()))
+
 	f := &initFlags{}
 	f.Setup(cmd.Flags(), rootOptions)
 

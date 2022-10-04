@@ -1,10 +1,4 @@
-// Package action provides general interfaces for the main application logic for any CLI program.
-//
-// An action is simply a request handler for a command invocation. Each action implements Run, which looks like:
-//
-//	Run(ctx context.Context, flags F, args []string)
-//
-// where `flags` is the parsed flags, and `args` is the remaining positional arguments after flags.
+// Package action provides the general interface for the application logic for azd CLI commands.
 package action
 
 import (

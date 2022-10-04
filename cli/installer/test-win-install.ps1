@@ -4,6 +4,16 @@ param(
     [string] $InstallFolder = "$($env:USERPROFILE)\azd-install-test"
 )
 
+function assertSuccessfulExecution($errorMessage) {
+    if ($LASTEXITCODE -or !$?) {
+        Write-Error $errorMessage
+        if ($LASTEXITCODE) {
+            exit $LASTEXITCODE
+        }
+        exit 1
+    }
+}
+
 $regKey = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Environment', $false)
 $originalPath = $regKey.GetValue( `
     'PATH', `
@@ -17,11 +27,7 @@ $originalPathType = $regKey.GetValueKind('PATH')
     -Version $Version `
     -InstallFolder $InstallFolder `
     -Verbose
-
-if ($LASTEXITCODE) {
-    Write-Error "Install failed. Last exit code: $LASTEXITCODE"
-    exit $LASTEXITCODE
-}
+assertSuccessfulExecution "Install failed. Last exit code: $LASTEXITCODE"
 
 $currentPath = $regKey.GetValue( `
     'PATH', `
@@ -46,18 +52,10 @@ if ($originalPathType -ne $afterInstallPathType) {
 }
 
 & $InstallFolder/azd version
-
-if ($LASTEXITCODE) {
-    Write-Error "Could not execute 'azd version'"
-    exit 1
-}
+assertSuccessfulExecution "Could not execute 'azd version'"
 
 & $PSScriptRoot/uninstall-azd.ps1 -InstallFolder $InstallFolder -Verbose
-
-if ($LASTEXITCODE) {
-    Write-Error "Uninstall failed"
-    exit 1
-}
+assertSuccessfulExecution "Uninstall failed"
 
 $currentPath = $regKey.GetValue( `
     'PATH', `

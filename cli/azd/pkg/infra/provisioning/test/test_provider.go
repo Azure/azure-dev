@@ -53,6 +53,27 @@ func (p *TestProvider) Plan(ctx context.Context) *async.InteractiveTaskWithProgr
 		})
 }
 
+func (p *TestProvider) State(ctx context.Context, scope infra.Scope) *async.InteractiveTaskWithProgress[*StateResult, *StateProgress] {
+	return async.RunInteractiveTaskWithProgress(
+		func(asyncContext *async.InteractiveTaskContextWithProgress[*StateResult, *StateProgress]) {
+			asyncContext.SetProgress(&StateProgress{
+				Message:   "Looking up deployment",
+				Timestamp: time.Now(),
+			})
+
+			state := State{
+				Outputs:   make(map[string]OutputParameter),
+				Resources: make([]Resource, 0),
+			}
+
+			stateResult := StateResult{
+				State: &state,
+			}
+
+			asyncContext.SetResult(&stateResult)
+		})
+}
+
 func (p *TestProvider) GetDeployment(ctx context.Context, scope infra.Scope) *async.InteractiveTaskWithProgress[*DeployResult, *DeployProgress] {
 	return async.RunInteractiveTaskWithProgress(
 		func(asyncContext *async.InteractiveTaskContextWithProgress[*DeployResult, *DeployProgress]) {

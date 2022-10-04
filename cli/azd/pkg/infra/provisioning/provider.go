@@ -74,10 +74,20 @@ type DestroyProgress struct {
 	Timestamp time.Time
 }
 
+type StateResult struct {
+	State *State
+}
+
+type StateProgress struct {
+	Message   string
+	Timestamp time.Time
+}
+
 type Provider interface {
 	Name() string
 	RequiredExternalTools() []tools.ExternalTool
-	GetDeployment(ctx context.Context, scope infra.Scope) *async.InteractiveTaskWithProgress[*DeployResult, *DeployProgress]
+	// State gets the current state of the infrastructure, this contains both the provisioned resources and any outputs from the module.
+	State(ctx context.Context, scope infra.Scope) *async.InteractiveTaskWithProgress[*StateResult, *StateProgress]
 	Plan(ctx context.Context) *async.InteractiveTaskWithProgress[*DeploymentPlan, *DeploymentPlanningProgress]
 	Deploy(ctx context.Context, plan *DeploymentPlan, scope infra.Scope) *async.InteractiveTaskWithProgress[*DeployResult, *DeployProgress]
 	Destroy(ctx context.Context, deployment *Deployment, options DestroyOptions) *async.InteractiveTaskWithProgress[*DestroyResult, *DestroyProgress]

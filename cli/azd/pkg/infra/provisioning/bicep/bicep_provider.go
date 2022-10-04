@@ -70,11 +70,10 @@ func (p *BicepProvider) RequiredExternalTools() []tools.ExternalTool {
 	return []tools.ExternalTool{p.bicepCli, p.azCli}
 }
 
-// Gets the latest deployment details for the specified scope
-func (p *BicepProvider) GetDeployment(ctx context.Context, scope infra.Scope) *async.InteractiveTaskWithProgress[*DeployResult, *DeployProgress] {
+func (p *BicepProvider) State(ctx context.Context, scope infra.Scope) *async.InteractiveTaskWithProgress[*StateResult, *StateProgress] {
 	return async.RunInteractiveTaskWithProgress(
-		func(asyncContext *async.InteractiveTaskContextWithProgress[*DeployResult, *DeployProgress]) {
-			asyncContext.SetProgress(&DeployProgress{Message: "Loading Bicep template", Timestamp: time.Now()})
+		func(asyncContext *async.InteractiveTaskContextWithProgress[*StateResult, *StateProgress]) {
+			asyncContext.SetProgress(&StateProgress{Message: "Loading Bicep template", Timestamp: time.Now()})
 			modulePath := p.modulePath()
 			deployment, err := p.createDeployment(ctx, modulePath)
 			if err != nil {
@@ -82,19 +81,28 @@ func (p *BicepProvider) GetDeployment(ctx context.Context, scope infra.Scope) *a
 				return
 			}
 
-			asyncContext.SetProgress(&DeployProgress{Message: "Retrieving Azure deployment", Timestamp: time.Now()})
+			asyncContext.SetProgress(&StateProgress{Message: "Retrieving Azure deployment", Timestamp: time.Now()})
 			armDeployment, err := scope.GetDeployment(ctx)
 			if err != nil {
 				asyncContext.SetError(fmt.Errorf("retrieving deployment: %w", err))
 				return
 			}
 
-			asyncContext.SetProgress(&DeployProgress{Message: "Normalizing output parameters", Timestamp: time.Now()})
-			deployment.Outputs = p.createOutputParameters(deployment, armDeployment.Properties.Outputs)
+			state := State{}
 
-			result := DeployResult{
-				Deployment: deployment,
-				Operations: []azcli.AzCliResourceOperation{},
+			state.Resources = make([]Resource, len(armDeployment.Properties.OutputResources))
+
+			for idx, res := range armDeployment.Properties.OutputResources {
+				state.Resources[idx] = Resource{
+					Id: res.Id,
+				}
+			}
+
+			asyncContext.SetProgress(&StateProgress{Message: "Normalizing output parameters", Timestamp: time.Now()})
+			state.Outputs = p.createOutputParameters(deployment, armDeployment.Properties.Outputs)
+
+			result := StateResult{
+				State: &state,
 			}
 
 			asyncContext.SetResult(&result)
@@ -476,6 +484,23 @@ func (p *BicepProvider) updateParametersFile(ctx context.Context, deployment *De
 	return nil
 }
 
+func (p *BicepProvider) mapBicepTypeToInterfaceType(s string) ParameterType {
+	switch s {
+	case "String":
+		return ParameterTypeString
+	case "Bool":
+		return ParameterTypeBoolean
+	case "Int":
+		return ParameterTypeNumber
+	case "Object":
+		return ParameterTypeObject
+	case "Array":
+		return ParameterTypeArray
+	default:
+		panic(fmt.Sprintf("unexpected bicep type: '%s'", s))
+	}
+}
+
 // Creates a normalized view of the azure output parameters and resolves inconsistencies in the output parameter name casings.
 func (p *BicepProvider) createOutputParameters(template *Deployment, azureOutputParams map[string]azcli.AzCliDeploymentOutput) map[string]OutputParameter {
 	canonicalOutputCasings := make(map[string]string, len(template.Outputs))
@@ -496,7 +521,7 @@ func (p *BicepProvider) createOutputParameters(template *Deployment, azureOutput
 		}
 
 		outputParams[paramName] = OutputParameter{
-			Type:  azureParam.Type,
+			Type:  p.mapBicepTypeToInterfaceType(azureParam.Type),
 			Value: azureParam.Value,
 		}
 	}
@@ -589,7 +614,10 @@ func (p *BicepProvider) convertToDeployment(bicepTemplate BicepTemplate) (*Deplo
 	}
 
 	for key, param := range bicepTemplate.Outputs {
-		outputs[key] = OutputParameter(param)
+		outputs[key] = OutputParameter{
+			Type:  p.mapBicepTypeToInterfaceType(param.Type),
+			Value: param.Value,
+		}
 	}
 
 	template.Parameters = parameters

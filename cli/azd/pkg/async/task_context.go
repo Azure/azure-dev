@@ -85,7 +85,7 @@ func NewInteractiveTaskContextWithProgress[R comparable, P comparable](task *Int
 	}
 }
 
-// Sends a signal to the CLI that the task wants to interact with the terminal
+// Sends a signal to the CLI that the task wants to interact with the terminal.
 // This will pause any special console spinners, etc.
 func (c *InteractiveTaskContextWithProgress[R, P]) Interact(interactFn func() error) error {
 	c.task.interactiveChannel <- true

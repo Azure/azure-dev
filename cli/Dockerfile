@@ -31,6 +31,11 @@ RUN export DEBIAN_FRONTEND=noninteractive \
      && echo 'alias python=python3' >> ~/.bashrc \
      && echo 'alias pip=pip3' >> ~/.bashrc \
      && apt-get clean -y && rm -rf /var/lib/apt/lists/* \
+     # java
+     && sudo apt-get install wget lsb-release -y \
+     && wget https://packages.microsoft.com/config/debian/${lsb_release -rs}/packages-microsoft-prod.deb -O packages-microsoft-prod.deb \
+     && sudo dpkg -i packages-microsoft-prod.deb \
+     && apt-get update && apt-get install -y msopenjdk-17 \
      # terraform cli
      && apt-get update && apt-get install -y gnupg software-properties-common \
      && wget -O- https://apt.releases.hashicorp.com/gpg | \

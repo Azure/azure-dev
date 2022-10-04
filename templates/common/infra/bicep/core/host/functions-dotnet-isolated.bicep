@@ -8,10 +8,12 @@ param appSettings object = {}
 param enableOryxBuild bool = false
 param keyVaultName string = ''
 param kind string = 'functionapp,linux'
-param linuxFxVersion string = 'DOTNET-ISOLATED|6.0'
+param linuxFxVersion string = 'DOTNET-ISOLATED|7.0'
 param managedIdentity bool = !(empty(keyVaultName))
+param scmDoBuildDuringDeployment bool = false
 param serviceName string
 param storageAccountName string
+
 
 
 module functions 'functions.bicep' = {
@@ -29,6 +31,7 @@ module functions 'functions.bicep' = {
     kind: kind
     linuxFxVersion: linuxFxVersion
     managedIdentity: managedIdentity
+    scmDoBuildDuringDeployment: scmDoBuildDuringDeployment
     serviceName: serviceName
     storageAccountName: storageAccountName
   }

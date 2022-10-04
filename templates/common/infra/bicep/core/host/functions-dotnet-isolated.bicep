@@ -7,7 +7,7 @@ param appServicePlanId string
 param appSettings object = {}
 param enableOryxBuild bool = false
 param keyVaultName string = ''
-param linuxFxVersion string = 'DOTNET-ISOLATED|7.0'
+param linuxFxVersion string = 'DOTNET-ISOLATED|6.0'
 param managedIdentity bool = !(empty(keyVaultName))
 param scmDoBuildDuringDeployment bool = false
 param serviceName string

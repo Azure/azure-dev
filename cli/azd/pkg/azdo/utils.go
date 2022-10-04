@@ -77,10 +77,7 @@ func getUserProfileId(ctx context.Context, pat string) (id string, err error) {
 		DisplayName  string `json:"displayName"`
 		PublicAlias  string `json:"publicAlias"`
 		EmailAddress string `json:"emailAddress"`
-		CoreRevision string `json:"coreRevision"`
-		TimeStamp    string `json:"timeStamp"`
 		Id           string `json:"id"`
-		Revision     string `json:"revision"`
 	}
 	var responseValue azdoProfile
 	err = json.Unmarshal(response, &responseValue)

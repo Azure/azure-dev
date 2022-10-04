@@ -1,0 +1,80 @@
+package cmd
+
+import (
+	"fmt"
+	"io"
+
+	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/pkg/action"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
+	"github.com/azure/azure-dev/cli/azd/pkg/exec"
+	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/output"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/git"
+	"github.com/google/wire"
+)
+
+func newConsoleFromOptions(rootOptions *internal.GlobalCommandOptions, writer io.Writer, formatter output.Formatter) input.Console {
+	return input.NewConsole(!rootOptions.NoPrompt, writer, formatter)
+}
+
+func newAzCliFromOptions(rootOptions *internal.GlobalCommandOptions, cmdRun exec.CommandRunner) azcli.AzCli {
+	return azcli.NewAzCli(azcli.NewAzCliArgs{
+		EnableDebug:     rootOptions.EnableDebugLogging,
+		EnableTelemetry: rootOptions.EnableTelemetry,
+		CommandRunner:   cmdRun,
+		HttpClient:      nil,
+	})
+}
+
+func newAzdContext() (*azdcontext.AzdContext, error) {
+	azdCtx, err := azdcontext.NewAzdContext()
+	if err != nil {
+		return nil, fmt.Errorf("creating context: %w", err)
+	}
+
+	return azdCtx, nil
+}
+
+var FormattedConsoleSet = wire.NewSet(
+	output.GetCommandFormatter,
+	output.GetDefaultWriter,
+	newConsoleFromOptions,
+)
+
+var CommonSet = wire.NewSet(
+	newAzdContext,
+	exec.NewCommandRunner,
+	FormattedConsoleSet,
+)
+
+var InitCmdSet = wire.NewSet(
+	CommonSet,
+	newAzCliFromOptions,
+	git.NewGitCliFromRun,
+	newInitAction,
+	wire.Bind(new(action.Action), new(*initAction)))
+
+var InfraCreateCmdSet = wire.NewSet(
+	CommonSet,
+	newAzCliFromOptions,
+	newInfraCreateAction,
+	wire.Bind(new(action.Action), new(*infraCreateAction)))
+
+var DeployCmdSet = wire.NewSet(
+	CommonSet,
+	newAzCliFromOptions,
+	newDeployAction,
+	wire.Bind(new(action.Action), new(*deployAction)))
+
+var UpCmdSet = wire.NewSet(
+	CommonSet,
+	newAzCliFromOptions,
+	git.NewGitCliFromRun,
+	newInitAction,
+	newInfraCreateAction,
+	newDeployAction,
+	newUpAction,
+	wire.FieldsOf(new(upFlags), "initFlags", "infraCreateFlags", "deployFlags"),
+	wire.Bind(new(action.Action), new(*upAction)))

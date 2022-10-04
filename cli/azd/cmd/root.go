@@ -86,32 +86,43 @@ For more information, visit the Azure Developer CLI Dev Hub: https://aka.ms/azur
 
 	opts.EnableTelemetry = telemetry.IsTelemetryEnabled()
 
-	cmd.AddCommand(deployCmd(opts))
+	//cmd.AddCommand(deployCmdDesign(opts))
 	cmd.AddCommand(downCmd(opts))
 	cmd.AddCommand(envCmd(opts))
 	cmd.AddCommand(infraCmd(opts))
-	//cmd.AddCommand(initCmdDesign(opts))
 	cmd.AddCommand(loginCmd(opts))
 	cmd.AddCommand(monitorCmd(opts))
 	cmd.AddCommand(pipelineCmd(opts))
-	cmd.AddCommand(provisionCmd(opts))
 	cmd.AddCommand(restoreCmd(opts))
 	cmd.AddCommand(showCmd(opts))
 	cmd.AddCommand(telemetryCmd(opts))
 	cmd.AddCommand(templatesCmd(opts))
-	cmd.AddCommand(upCmd(opts))
 	cmd.AddCommand(versionCmd(opts))
-	cmd.AddCommand(BuildCmd(opts, initCmdDesign, injectInitAction, false))
+
+	cmd.AddCommand(BuildCmd(opts, initCmdDesign, injectInitAction, nil))
+	cmd.AddCommand(BuildCmd(opts, upCmdDesign, injectUpAction, nil))
+	cmd.AddCommand(BuildCmd(opts, provisionCmdDesign, injectInfraCreateAction, nil))
+	cmd.AddCommand(BuildCmd(opts, deployCmdDesign, injectDeployAction, nil))
 
 	return cmd
 }
 
-type Builder[F any] func(opts *internal.GlobalCommandOptions) (*cobra.Command, *F)
+type designBuilder[F any] func(opts *internal.GlobalCommandOptions) (*cobra.Command, *F)
+type actionBuilder[F any] func(cmd *cobra.Command, o *internal.GlobalCommandOptions, flags F, args []string) (action.Action, error)
+type buildOptions struct {
+	disableTelemetry bool
+}
 
-func BuildCmd[F any](opts *internal.GlobalCommandOptions, builder Builder[F], actionBuilder func() (action.Action[F], error), disableTelemetry bool) *cobra.Command {
-	cmd, flags := builder(opts)
+func BuildCmd[F any](
+	opts *internal.GlobalCommandOptions,
+	buildDesign designBuilder[F],
+	buildAction actionBuilder[F],
+	buildOptions *buildOptions) *cobra.Command {
+	cmd, flags := buildDesign(opts)
+	cmd.Flags().BoolP("help", "h", false, fmt.Sprintf("Gets help for %s.", cmd.Name()))
+
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
-		action, err := actionBuilder()
+		action, err := buildAction(cmd, opts, *flags, args)
 		if err != nil {
 			return err
 		}
@@ -124,10 +135,10 @@ func BuildCmd[F any](opts *internal.GlobalCommandOptions, builder Builder[F], ac
 		}
 
 		runCmd := func(cmdCtx context.Context) error {
-			return action.Run(cmdCtx, *flags, args)
+			return action.Run(cmdCtx)
 		}
 
-		if disableTelemetry {
+		if buildOptions != nil && buildOptions.disableTelemetry {
 			return runCmd(ctx)
 		} else {
 			return runCmdWithTelemetry(ctx, cmd, runCmd)

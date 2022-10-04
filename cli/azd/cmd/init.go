@@ -15,9 +15,9 @@ import (
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/internal"
-	"github.com/azure/azure-dev/cli/azd/pkg/action"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
+	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
@@ -27,7 +27,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/git"
-	"github.com/google/wire"
 	"github.com/otiai10/copy"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
@@ -63,18 +62,37 @@ func (i *initFlags) Setup(local *pflag.FlagSet, global *internal.GlobalCommandOp
 	local.StringVarP(&i.templateBranch, "branch", "b", "", "The template branch to initialize from.")
 	local.StringVar(&i.subscription, "subscription", "", "Name or ID of an Azure subscription to use for the new environment")
 	local.StringVarP(&i.location, "location", "l", "", "Azure location for the new environment")
+
 	i.rootOptions = global
 }
 
-type initAction[f initFlags] struct {
-	azdCtx *azdcontext.AzdContext
+type initAction struct {
+	azdCtx  *azdcontext.AzdContext
+	console input.Console
+	cmdRun  exec.CommandRunner
+	azCli   azcli.AzCli
+	gitCli  git.GitCli
+	flags   initFlags
 }
 
-func newInitAction(azdCtx *azdcontext.AzdContext) (*initAction[initFlags], error) {
-	return &initAction[initFlags]{azdCtx: azdCtx}, nil
+func newInitAction(
+	azdCtx *azdcontext.AzdContext,
+	cmdRun exec.CommandRunner,
+	console input.Console,
+	azCli azcli.AzCli,
+	gitCli git.GitCli,
+	flags initFlags) (*initAction, error) {
+	return &initAction{
+		azdCtx:  azdCtx,
+		console: console,
+		cmdRun:  cmdRun,
+		azCli:   azCli,
+		gitCli:  gitCli,
+		flags:   flags,
+	}, nil
 }
 
-func (i *initAction[z]) Run(ctx context.Context, f initFlags, args []string) error {
+func (i *initAction) Run(ctx context.Context) error {
 	// In the case where `init` is run and a parent folder already has an `azure.yaml` file, the
 	// current ProjectDirectory will be set to that folder. That's not what we want here. We want
 	// to force using the current working directory as a project root (since we are initializing a
@@ -87,19 +105,15 @@ func (i *initAction[z]) Run(ctx context.Context, f initFlags, args []string) err
 	log.Printf("forcing project directory to %s", wd)
 	i.azdCtx.SetProjectDirectory(wd)
 
-	if f.templateBranch != "" && f.template.Name == "" {
+	if i.flags.templateBranch != "" && i.flags.template.Name == "" {
 		return errors.New("template name required when specifying a branch name")
 	}
 
-	console := input.GetConsole(ctx)
-	azCli := azcli.GetAzCli(ctx)
-	gitCli := git.NewGitCli(ctx)
-
-	requiredTools := []tools.ExternalTool{azCli}
+	requiredTools := []tools.ExternalTool{i.azCli}
 
 	// When using a template, we also require `git`, to acquire the template.
-	if f.template.Name != "" {
-		requiredTools = append(requiredTools, gitCli)
+	if i.flags.template.Name != "" {
+		requiredTools = append(requiredTools, i.gitCli)
 	}
 
 	if err := tools.EnsureInstalled(ctx, requiredTools...); err != nil {
@@ -110,8 +124,8 @@ func (i *initAction[z]) Run(ctx context.Context, f initFlags, args []string) err
 	if _, err := os.Stat(i.azdCtx.ProjectPath()); err != nil && errors.Is(err, os.ErrNotExist) {
 		fmt.Printf("Initializing a new project in %s\n\n", wd)
 
-		if f.template.Name == "" {
-			f.template, err = templates.PromptTemplate(ctx, "Select a project template")
+		if i.flags.template.Name == "" {
+			i.flags.template, err = templates.PromptTemplate(ctx, "Select a project template")
 
 			if err != nil {
 				return err
@@ -119,25 +133,25 @@ func (i *initAction[z]) Run(ctx context.Context, f initFlags, args []string) err
 		}
 	}
 
-	if f.template.Name != "" {
+	if i.flags.template.Name != "" {
 		var templateUrl string
 
-		if f.template.RepositoryPath == "" {
+		if i.flags.template.RepositoryPath == "" {
 			// using template name directly from command line
-			f.template.RepositoryPath = f.template.Name
+			i.flags.template.RepositoryPath = i.flags.template.Name
 		}
 
 		// treat names that start with http or git as full URLs and don't change them
-		if strings.HasPrefix(f.template.RepositoryPath, "git") || strings.HasPrefix(f.template.RepositoryPath, "http") {
-			templateUrl = f.template.RepositoryPath
+		if strings.HasPrefix(i.flags.template.RepositoryPath, "git") || strings.HasPrefix(i.flags.template.RepositoryPath, "http") {
+			templateUrl = i.flags.template.RepositoryPath
 		} else {
-			switch strings.Count(f.template.RepositoryPath, "/") {
+			switch strings.Count(i.flags.template.RepositoryPath, "/") {
 			case 0:
-				templateUrl = fmt.Sprintf("https://github.com/Azure-Samples/%s", f.template.RepositoryPath)
+				templateUrl = fmt.Sprintf("https://github.com/Azure-Samples/%s", i.flags.template.RepositoryPath)
 			case 1:
-				templateUrl = fmt.Sprintf("https://github.com/%s", f.template.RepositoryPath)
+				templateUrl = fmt.Sprintf("https://github.com/%s", i.flags.template.RepositoryPath)
 			default:
-				return fmt.Errorf("template '%s' should be either <repository> or <repo>/<repository>", f.template.RepositoryPath)
+				return fmt.Errorf("template '%s' should be either <repository> or <repo>/<repository>", i.flags.template.RepositoryPath)
 			}
 		}
 
@@ -154,7 +168,7 @@ func (i *initAction[z]) Run(ctx context.Context, f initFlags, args []string) err
 
 		spinner := spin.NewSpinner("Downloading template")
 		err = spinner.Run(func() error {
-			return gitCli.FetchCode(ctx, templateUrl, f.templateBranch, templateStagingDir)
+			return i.gitCli.FetchCode(ctx, templateUrl, i.flags.templateBranch, templateStagingDir)
 		})
 
 		if err != nil {
@@ -198,7 +212,7 @@ func (i *initAction[z]) Run(ctx context.Context, f initFlags, args []string) err
 				fmt.Printf(" * %s\n", file)
 			}
 
-			overwrite, err := console.Confirm(ctx, input.ConsoleOptions{
+			overwrite, err := i.console.Confirm(ctx, input.ConsoleOptions{
 				Message:      "Overwrite files with versions from template?",
 				DefaultValue: false,
 			})
@@ -270,11 +284,11 @@ func (i *initAction[z]) Run(ctx context.Context, f initFlags, args []string) err
 	}
 
 	envSpec := environmentSpec{
-		environmentName: f.rootOptions.EnvironmentName,
-		subscription:    f.subscription,
-		location:        f.location,
+		environmentName: i.flags.rootOptions.EnvironmentName,
+		subscription:    i.flags.subscription,
+		location:        i.flags.location,
 	}
-	_, ctx, err = createAndInitEnvironment(ctx, &envSpec, i.azdCtx, console)
+	_, ctx, err = createAndInitEnvironment(ctx, &envSpec, i.azdCtx, i.console)
 	if err != nil {
 		return fmt.Errorf("loading environment: %w", err)
 	}
@@ -285,11 +299,6 @@ func (i *initAction[z]) Run(ctx context.Context, f initFlags, args []string) err
 
 	return nil
 }
-
-var InitSet = wire.NewSet(
-	azdcontext.NewAzdContext,
-	newInitAction,
-	wire.Bind(new(action.Action[initFlags]), new(*initAction[initFlags])))
 
 const (
 	// CodespacesEnvVarName is the name of the env variable set when you're in a Github codespace. It's

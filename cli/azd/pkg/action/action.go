@@ -12,15 +12,15 @@ import (
 )
 
 // ActionFunc is an Action implementation for regular functions.
-type ActionFunc[F any] func(context.Context, F, []string) error
+type ActionFunc func(context.Context) error
 
 // Run implements the Action interface
-func (a ActionFunc[F]) Run(ctx context.Context, flags F, args []string) error {
-	return a(ctx, flags, args)
+func (a ActionFunc) Run(ctx context.Context) error {
+	return a(ctx)
 }
 
 // Action is the representation of the application logic of a CLI command.
-type Action[F any] interface {
+type Action interface {
 	// Run executes the CLI command.
-	Run(ctx context.Context, flags F, args []string) error
+	Run(ctx context.Context) error
 }

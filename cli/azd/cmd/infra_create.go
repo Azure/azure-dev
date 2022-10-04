@@ -3,9 +3,9 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"io"
 
 	"github.com/azure/azure-dev/cli/azd/internal"
-	"github.com/azure/azure-dev/cli/azd/pkg/commands"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
@@ -19,42 +19,64 @@ import (
 	"go.uber.org/multierr"
 )
 
+type infraCreateFlags struct {
+	noProgress   bool
+	outputFormat string
+	global       *internal.GlobalCommandOptions
+}
+
+func (i *infraCreateFlags) Setup(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
+	local.BoolVar(&i.noProgress, "no-progress", false, "Suppresses progress information.")
+	output.AddOutputFlag(
+		local,
+		&i.outputFormat,
+		[]output.Format{output.JsonFormat, output.NoneFormat},
+		output.NoneFormat)
+
+	i.global = global
+}
+
+func infraCreateCmdDesign(rootOptions *internal.GlobalCommandOptions) (*cobra.Command, *infraCreateFlags) {
+	cmd := &cobra.Command{
+		Use:     "create",
+		Short:   "Create Azure resources for an application.",
+		Aliases: []string{"provision"},
+	}
+	f := &infraCreateFlags{}
+	f.Setup(cmd.Flags(), rootOptions)
+
+	return cmd, f
+}
+
 type infraCreateAction struct {
-	noProgress bool
+	flags     infraCreateFlags
+	azdCtx    *azdcontext.AzdContext
+	azCli     azcli.AzCli
+	formatter output.Formatter
+	writer    io.Writer
+	console   input.Console
 	// If set, redirects the final command printout to the channel
 	finalOutputRedirect *[]string
-	rootOptions         *internal.GlobalCommandOptions
 }
 
-func infraCreateCmd(rootOptions *internal.GlobalCommandOptions) *cobra.Command {
-	cmd := commands.Build(
-		&infraCreateAction{
-			rootOptions: rootOptions,
-		},
-		rootOptions,
-		"create",
-		"Create Azure resources for an application.",
-		&commands.BuildOptions{
-			Aliases: []string{"provision"},
-		},
-	)
-
-	return cmd
+func newInfraCreateAction(f infraCreateFlags, azdCtx *azdcontext.AzdContext, azCli azcli.AzCli, console input.Console, formatter output.Formatter, writer io.Writer) *infraCreateAction {
+	return &infraCreateAction{
+		flags:               f,
+		azdCtx:              azdCtx,
+		azCli:               azCli,
+		formatter:           formatter,
+		writer:              writer,
+		console:             console,
+		finalOutputRedirect: nil,
+	}
 }
 
-func (ica *infraCreateAction) SetupFlags(persis, local *pflag.FlagSet) {
-	local.BoolVar(&ica.noProgress, "no-progress", false, "Suppresses progress information.")
-}
-
-func (ica *infraCreateAction) Run(ctx context.Context, cmd *cobra.Command, args []string, azdCtx *azdcontext.AzdContext) error {
-	azCli := azcli.GetAzCli(ctx)
-	console := input.GetConsole(ctx)
-
-	if err := ensureProject(azdCtx.ProjectPath()); err != nil {
+func (ica *infraCreateAction) Run(ctx context.Context) error {
+	if err := ensureProject(ica.azdCtx.ProjectPath()); err != nil {
 		return err
 	}
 
-	if err := tools.EnsureInstalled(ctx, azCli); err != nil {
+	if err := tools.EnsureInstalled(ctx, ica.azCli); err != nil {
 		return err
 	}
 
@@ -62,12 +84,12 @@ func (ica *infraCreateAction) Run(ctx context.Context, cmd *cobra.Command, args 
 		return fmt.Errorf("failed to ensure login: %w", err)
 	}
 
-	env, ctx, err := loadOrInitEnvironment(ctx, &ica.rootOptions.EnvironmentName, azdCtx, console)
+	env, ctx, err := loadOrInitEnvironment(ctx, &ica.flags.global.EnvironmentName, ica.azdCtx, ica.console)
 	if err != nil {
 		return fmt.Errorf("loading environment: %w", err)
 	}
 
-	prj, err := project.LoadProjectConfig(azdCtx.ProjectPath(), env)
+	prj, err := project.LoadProjectConfig(ica.azdCtx.ProjectPath(), env)
 	if err != nil {
 		return fmt.Errorf("loading project: %w", err)
 	}
@@ -76,10 +98,7 @@ func (ica *infraCreateAction) Run(ctx context.Context, cmd *cobra.Command, args 
 		return err
 	}
 
-	formatter := output.GetFormatter(ctx)
-	writer := output.GetWriter(ctx)
-
-	infraManager, err := provisioning.NewManager(ctx, env, prj.Path, prj.Infra, !ica.rootOptions.NoPrompt)
+	infraManager, err := provisioning.NewManager(ctx, env, prj.Path, prj.Infra, !ica.flags.global.NoPrompt)
 	if err != nil {
 		return fmt.Errorf("creating provisioning manager: %w", err)
 	}
@@ -96,13 +115,13 @@ func (ica *infraCreateAction) Run(ctx context.Context, cmd *cobra.Command, args 
 	}
 
 	if err != nil {
-		if formatter.Kind() == output.JsonFormat {
+		if ica.formatter.Kind() == output.JsonFormat {
 			deployment, err := infraManager.GetDeployment(ctx, provisioningScope)
 			if err != nil {
 				return fmt.Errorf("deployment failed and the deployment result is unavailable: %w", multierr.Combine(err, err))
 			}
 
-			if err := formatter.Format(deployment, writer, nil); err != nil {
+			if err := ica.formatter.Format(deployment, ica.writer, nil); err != nil {
 				return fmt.Errorf("deployment failed and the deployment result could not be displayed: %w", multierr.Combine(err, err))
 			}
 		}
@@ -118,7 +137,7 @@ func (ica *infraCreateAction) Run(ctx context.Context, cmd *cobra.Command, args 
 
 	resourceGroupName, err := project.GetResourceGroupName(ctx, prj, env)
 	if err == nil { // Presentation only -- skip print if we failed to resolve the resource group
-		ica.displayResourceGroupCreatedMessage(ctx, console, env.GetSubscriptionId(), resourceGroupName)
+		ica.displayResourceGroupCreatedMessage(ctx, ica.console, env.GetSubscriptionId(), resourceGroupName)
 	}
 
 	return nil

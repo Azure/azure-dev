@@ -6,60 +6,32 @@ import (
 	"fmt"
 
 	"github.com/azure/azure-dev/cli/azd/internal"
-	"github.com/azure/azure-dev/cli/azd/pkg/commands"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
-	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
 
-func upCmd(rootOptions *internal.GlobalCommandOptions) *cobra.Command {
-	infraCreateFinalOutput := []string{}
+type upFlags struct {
+	initFlags
+	infraCreateFlags
+	deployFlags
+	global *internal.GlobalCommandOptions
+}
 
-	cmd := commands.Build(
-		commands.CompositeAction(
-			// TODO: Reenable
-			// &ignoreInitErrorAction{
-			// 	action: &initAction{
-			// 		rootOptions: rootOptions,
-			// 	},
-			// },
-			&infraCreateAction{
-				// Delay print final output from infra create
-				finalOutputRedirect: &infraCreateFinalOutput,
-				rootOptions:         rootOptions,
-			},
-			// Print an additional newline to separate provision from deploy
-			commands.ActionFunc(
-				func(ctx context.Context, cmd *cobra.Command, args []string, azdCtx *azdcontext.AzdContext) error {
-					formatter := output.GetFormatter(ctx)
-					interactive := formatter.Kind() == output.NoneFormat
-					if interactive {
-						fmt.Println()
-					}
+func (u *upFlags) Setup(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
+	u.initFlags.Setup(local, global)
+	u.infraCreateFlags.Setup(local, global)
+	u.deployFlags.Setup(local, global)
+	u.global = global
+}
 
-					return nil
-				},
-			),
-			&deployAction{rootOptions: rootOptions},
-			// Print the final output from infra create
-			commands.ActionFunc(
-				func(ctx context.Context, cmd *cobra.Command, args []string, azdCtx *azdcontext.AzdContext) error {
-					console := input.GetConsole(ctx)
-					for _, message := range infraCreateFinalOutput {
-						console.Message(ctx, message)
-					}
-					return nil
-				},
-			),
-		),
-		rootOptions,
-		"up",
-		"Initialize application, provision Azure resources, and deploy your project with a single command.",
-		&commands.BuildOptions{
-			Long: `Initialize the project (if the project folder has not been initialized or cloned from a template), provision Azure resources, and deploy your project with a single command.
+func upCmdDesign(global *internal.GlobalCommandOptions) (*cobra.Command, *upFlags) {
+	cmd := &cobra.Command{
+		Use:   "up",
+		Short: "Initialize application, provision Azure resources, and deploy your project with a single command.",
+		Long: `Initialize the project (if the project folder has not been initialized or cloned from a template), provision Azure resources, and deploy your project with a single command.
 
 This command executes the following in one step:
 
@@ -68,33 +40,65 @@ This command executes the following in one step:
 	$ azd deploy
 
 When no template is supplied, you can optionally select an Azure Developer CLI template for cloning. Otherwise, running ` + output.WithBackticks("azd up") + ` initializes the current directory so that your project is compatible with Azure Developer CLI.`,
-		})
+	}
 
-	output.AddOutputParam(cmd,
-		[]output.Format{output.JsonFormat, output.NoneFormat},
-		output.NoneFormat,
-	)
+	uf := &upFlags{}
+	uf.Setup(cmd.Flags(), global)
 
-	return cmd
+	return cmd, uf
 }
 
-type ignoreInitErrorAction struct {
-	action commands.Action
+type upAction struct {
+	init        *initAction
+	infraCreate *infraCreateAction
+	deploy      *deployAction
+	console     input.Console
 }
 
-func (a *ignoreInitErrorAction) Run(ctx context.Context, cmd *cobra.Command, args []string, azdCtx *azdcontext.AzdContext) error {
-	err := a.action.Run(ctx, cmd, args, azdCtx)
-	var envInitError *environment.EnvironmentInitError
-	if errors.As(err, &envInitError) {
-		// We can ignore environment already initialized errors
-		return nil
-	} else if err != nil {
+func newUpAction(init *initAction, infraCreate *infraCreateAction, deploy *deployAction, console input.Console) *upAction {
+	return &upAction{
+		init:        init,
+		infraCreate: infraCreate,
+		deploy:      deploy,
+		console:     console,
+	}
+}
+
+func (u *upAction) Run(ctx context.Context) error {
+	err := u.runInit(ctx)
+	if err != nil {
 		return fmt.Errorf("running init: %w", err)
+	}
+
+	finalOutput := []string{}
+	u.infraCreate.finalOutputRedirect = &finalOutput
+	err = u.infraCreate.Run(ctx)
+	if err != nil {
+		return err
+	}
+
+	// Print an additional newline to separate provision from deploy
+	u.console.Message(ctx, "")
+
+	err = u.deploy.Run(ctx)
+	if err != nil {
+		return err
+	}
+
+	for _, message := range finalOutput {
+		u.console.Message(ctx, message)
 	}
 
 	return nil
 }
 
-func (a *ignoreInitErrorAction) SetupFlags(persistent *pflag.FlagSet, local *pflag.FlagSet) {
-	a.action.SetupFlags(persistent, local)
+func (u *upAction) runInit(ctx context.Context) error {
+	err := u.init.Run(ctx)
+	var envInitError *environment.EnvironmentInitError
+	if errors.As(err, &envInitError) {
+		// We can ignore environment already initialized errors
+		return nil
+	}
+
+	return err
 }

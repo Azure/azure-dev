@@ -7,20 +7,100 @@
 package cmd
 
 import (
+	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/action"
-	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
+	"github.com/azure/azure-dev/cli/azd/pkg/exec"
+	"github.com/azure/azure-dev/cli/azd/pkg/output"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/git"
+	"github.com/spf13/cobra"
 )
 
 // Injectors from wire.go:
 
-func injectInitAction() (action.Action[initFlags], error) {
-	azdContext, err := azdcontext.NewAzdContext()
+func injectInitAction(cmd *cobra.Command, o *internal.GlobalCommandOptions, flags initFlags, args []string) (action.Action, error) {
+	azdContext, err := newAzdContext()
 	if err != nil {
 		return nil, err
 	}
-	cmdInitAction, err := newInitAction(azdContext)
+	commandRunner := exec.NewCommandRunner()
+	writer := output.GetDefaultWriter()
+	formatter, err := output.GetCommandFormatter(cmd)
+	if err != nil {
+		return nil, err
+	}
+	console := newConsoleFromOptions(o, writer, formatter)
+	azCli := newAzCliFromOptions(o, commandRunner)
+	gitCli := git.NewGitCliFromRun(commandRunner)
+	cmdInitAction, err := newInitAction(azdContext, commandRunner, console, azCli, gitCli, flags)
 	if err != nil {
 		return nil, err
 	}
 	return cmdInitAction, nil
+}
+
+func injectInfraCreateAction(cmd *cobra.Command, o *internal.GlobalCommandOptions, flags infraCreateFlags, args []string) (action.Action, error) {
+	azdContext, err := newAzdContext()
+	if err != nil {
+		return nil, err
+	}
+	commandRunner := exec.NewCommandRunner()
+	azCli := newAzCliFromOptions(o, commandRunner)
+	writer := output.GetDefaultWriter()
+	formatter, err := output.GetCommandFormatter(cmd)
+	if err != nil {
+		return nil, err
+	}
+	console := newConsoleFromOptions(o, writer, formatter)
+	cmdInfraCreateAction := newInfraCreateAction(flags, azdContext, azCli, console, formatter, writer)
+	return cmdInfraCreateAction, nil
+}
+
+func injectDeployAction(cmd *cobra.Command, o *internal.GlobalCommandOptions, flags deployFlags, args []string) (action.Action, error) {
+	azdContext, err := newAzdContext()
+	if err != nil {
+		return nil, err
+	}
+	commandRunner := exec.NewCommandRunner()
+	azCli := newAzCliFromOptions(o, commandRunner)
+	writer := output.GetDefaultWriter()
+	formatter, err := output.GetCommandFormatter(cmd)
+	if err != nil {
+		return nil, err
+	}
+	console := newConsoleFromOptions(o, writer, formatter)
+	cmdDeployAction, err := newDeployAction(flags, azdContext, azCli, console, formatter, writer)
+	if err != nil {
+		return nil, err
+	}
+	return cmdDeployAction, nil
+}
+
+func injectUpAction(cmd *cobra.Command, o *internal.GlobalCommandOptions, flags upFlags, args []string) (action.Action, error) {
+	azdContext, err := newAzdContext()
+	if err != nil {
+		return nil, err
+	}
+	commandRunner := exec.NewCommandRunner()
+	writer := output.GetDefaultWriter()
+	formatter, err := output.GetCommandFormatter(cmd)
+	if err != nil {
+		return nil, err
+	}
+	console := newConsoleFromOptions(o, writer, formatter)
+	azCli := newAzCliFromOptions(o, commandRunner)
+	gitCli := git.NewGitCliFromRun(commandRunner)
+	cmdInitFlags := flags.initFlags
+	cmdInitAction, err := newInitAction(azdContext, commandRunner, console, azCli, gitCli, cmdInitFlags)
+	if err != nil {
+		return nil, err
+	}
+	cmdInfraCreateFlags := flags.infraCreateFlags
+	cmdInfraCreateAction := newInfraCreateAction(cmdInfraCreateFlags, azdContext, azCli, console, formatter, writer)
+	cmdDeployFlags := flags.deployFlags
+	cmdDeployAction, err := newDeployAction(cmdDeployFlags, azdContext, azCli, console, formatter, writer)
+	if err != nil {
+		return nil, err
+	}
+	cmdUpAction := newUpAction(cmdInitAction, cmdInfraCreateAction, cmdDeployAction, console)
+	return cmdUpAction, nil
 }

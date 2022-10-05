@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/azure/azure-dev/cli/azd/cmd/models"
+	"github.com/azure/azure-dev/cli/azd/cmd/contracts"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/commands"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
@@ -40,9 +40,9 @@ func showCmd(rootOptions *internal.GlobalCommandOptions) *cobra.Command {
 			return fmt.Errorf("loading project: %w", err)
 		}
 
-		res := models.ShowResult{
+		res := contracts.ShowResult{
 			Name:     prj.Name,
-			Services: make(map[string]models.ShowService, len(prj.Services)),
+			Services: make(map[string]contracts.ShowService, len(prj.Services)),
 		}
 
 		for name, svc := range prj.Services {
@@ -51,8 +51,8 @@ func showCmd(rootOptions *internal.GlobalCommandOptions) *cobra.Command {
 				return err
 			}
 
-			showSvc := models.ShowService{
-				Project: models.ShowServiceProject{
+			showSvc := contracts.ShowService{
+				Project: contracts.ShowServiceProject{
 					Path: path,
 					Type: showTypeFromLanguage(svc.Language),
 				},
@@ -74,7 +74,7 @@ func showCmd(rootOptions *internal.GlobalCommandOptions) *cobra.Command {
 					}
 
 					resSvc := res.Services[name]
-					resSvc.Target = &models.ShowTargetArm{
+					resSvc.Target = &contracts.ShowTargetArm{
 						ResourceIds: resourceIds,
 					}
 					res.Services[name] = resSvc

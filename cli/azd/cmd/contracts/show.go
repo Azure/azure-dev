@@ -1,7 +1,9 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
-package models
+// Package contracts contains API contracts that azd CLI communicates externally in commands via stdout.
+// Currently, all contracts support JSON output.
+package contracts
 
 // showResult is the model type that represents the JSON output of `azd show`
 type ShowResult struct {

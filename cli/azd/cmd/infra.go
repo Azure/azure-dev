@@ -17,6 +17,6 @@ func infraCmd(rootOptions *internal.GlobalCommandOptions) *cobra.Command {
 	}
 	cmd.Flags().BoolP("help", "h", false, fmt.Sprintf("Gets help for %s.", cmd.Name()))
 	cmd.AddCommand(BuildCmd(rootOptions, infraCreateCmdDesign, injectInfraCreateAction, nil))
-	cmd.AddCommand(infraDeleteCmd(rootOptions))
+	cmd.AddCommand(BuildCmd(rootOptions, infraDeleteCmdDesign, injectInfraDeleteAction, nil))
 	return cmd
 }

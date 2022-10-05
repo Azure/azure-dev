@@ -62,6 +62,12 @@ var InfraCreateCmdSet = wire.NewSet(
 	newInfraCreateAction,
 	wire.Bind(new(action.Action), new(*infraCreateAction)))
 
+var InfraDeleteCmdSet = wire.NewSet(
+	CommonSet,
+	newAzCliFromOptions,
+	newInfraDeleteAction,
+	wire.Bind(new(action.Action), new(*infraDeleteAction)))
+
 var DeployCmdSet = wire.NewSet(
 	CommonSet,
 	newAzCliFromOptions,

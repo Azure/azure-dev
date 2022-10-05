@@ -7,8 +7,8 @@
 package cmd
 
 import (
-	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/cmd/action"
+	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/git"
@@ -103,4 +103,21 @@ func injectUpAction(cmd *cobra.Command, o *internal.GlobalCommandOptions, flags 
 	}
 	cmdUpAction := newUpAction(cmdInitAction, cmdInfraCreateAction, cmdDeployAction, console)
 	return cmdUpAction, nil
+}
+
+func injectInfraDeleteAction(cmd *cobra.Command, o *internal.GlobalCommandOptions, flags infraDeleteFlags, args []string) (action.Action, error) {
+	azdContext, err := newAzdContext()
+	if err != nil {
+		return nil, err
+	}
+	commandRunner := exec.NewCommandRunner()
+	azCli := newAzCliFromOptions(o, commandRunner)
+	writer := output.GetDefaultWriter()
+	formatter, err := output.GetCommandFormatter(cmd)
+	if err != nil {
+		return nil, err
+	}
+	console := newConsoleFromOptions(o, writer, formatter)
+	cmdInfraDeleteAction := newInfraDeleteAction(flags, azdContext, azCli, console)
+	return cmdInfraDeleteAction, nil
 }

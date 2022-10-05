@@ -86,7 +86,6 @@ For more information, visit the Azure Developer CLI Dev Hub: https://aka.ms/azur
 
 	opts.EnableTelemetry = telemetry.IsTelemetryEnabled()
 
-	cmd.AddCommand(downCmd(opts))
 	cmd.AddCommand(envCmd(opts))
 	cmd.AddCommand(infraCmd(opts))
 	cmd.AddCommand(loginCmd(opts))
@@ -98,6 +97,7 @@ For more information, visit the Azure Developer CLI Dev Hub: https://aka.ms/azur
 	cmd.AddCommand(templatesCmd(opts))
 	cmd.AddCommand(versionCmd(opts))
 
+	cmd.AddCommand(BuildCmd(opts, downCmdDesign, injectInfraDeleteAction, nil))
 	cmd.AddCommand(BuildCmd(opts, initCmdDesign, injectInitAction, nil))
 	cmd.AddCommand(BuildCmd(opts, upCmdDesign, injectUpAction, nil))
 	cmd.AddCommand(BuildCmd(opts, provisionCmdDesign, injectInfraCreateAction, nil))

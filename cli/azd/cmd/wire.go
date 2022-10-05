@@ -4,8 +4,8 @@
 package cmd
 
 import (
+	"github.com/azure/azure-dev/cli/azd/cmd/action"
 	"github.com/azure/azure-dev/cli/azd/internal"
-	"github.com/azure/azure-dev/cli/azd/pkg/action"
 	"github.com/google/wire"
 	"github.com/spf13/cobra"
 )
@@ -24,4 +24,8 @@ func injectDeployAction(cmd *cobra.Command, o *internal.GlobalCommandOptions, fl
 
 func injectUpAction(cmd *cobra.Command, o *internal.GlobalCommandOptions, flags upFlags, args []string) (action.Action, error) {
 	panic(wire.Build(UpCmdSet))
+}
+
+func injectInfraDeleteAction(cmd *cobra.Command, o *internal.GlobalCommandOptions, flags infraDeleteFlags, args []string) (action.Action, error) {
+	panic(wire.Build(InfraDeleteCmdSet))
 }

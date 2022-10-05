@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -41,11 +43,15 @@ func Test_GetAccountDefaults(t *testing.T) {
 	})
 
 	t.Run("FromAzConfig", func(t *testing.T) {
+		emptyConfig := config.Config{}
+
 		mockContext := mocks.NewMockContext(context.Background())
 		setupAccountMocks(mockContext)
 
-		manager := NewManager(*mockContext.Context)
-		actualConfig, err := manager.GetAccountDefaults(*mockContext.Context)
+		ctx := config.WithConfig(*mockContext.Context, &emptyConfig)
+
+		manager := NewManager(ctx)
+		actualConfig, err := manager.GetAccountDefaults(ctx)
 
 		expectedConfig := config.Config{
 			DefaultSubscription: &config.Subscription{
@@ -62,48 +68,272 @@ func Test_GetAccountDefaults(t *testing.T) {
 		require.Equal(t, expectedConfig, *actualConfig)
 	})
 
-	t.Run("FromConfig", func(t *testing.T) {
+	t.Run("FromCodeDefaults", func(t *testing.T) {
+		emptyConfig := config.Config{}
 
+		mockContext := mocks.NewMockContext(context.Background())
+		setupAccountMocks(mockContext)
+		setupEmptyAzCliMocks(mockContext)
+
+		ctx := config.WithConfig(*mockContext.Context, &emptyConfig)
+
+		manager := NewManager(ctx)
+		actualConfig, err := manager.GetAccountDefaults(ctx)
+
+		expectedConfig := config.Config{
+			DefaultSubscription: &config.Subscription{
+				Id:   "SUBSCRIPTION_02",
+				Name: "Subscription 2",
+			},
+			// Location should default to east us 2 when not found in either azd or az configs.
+			DefaultLocation: &config.Location{
+				Name:        "eastus2",
+				DisplayName: "East US 2",
+			},
+		}
+
+		require.NoError(t, err)
+		require.Equal(t, expectedConfig, *actualConfig)
+	})
+
+	t.Run("NotLoggedIn", func(t *testing.T) {
+		emptyConfig := config.Config{}
+
+		mockContext := mocks.NewMockContext(context.Background())
+		ctx := config.WithConfig(*mockContext.Context, &emptyConfig)
+
+		setupAzNotLoggedInMocks(mockContext)
+
+		manager := NewManager(ctx)
+		actualConfig, err := manager.GetAccountDefaults(ctx)
+
+		require.Error(t, err)
+		require.Nil(t, actualConfig)
 	})
 }
 
 func Test_GetSubscriptions(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
-	setupAccountMocks(mockContext)
+	t.Run("Success", func(t *testing.T) {
+		mockContext := mocks.NewMockContext(context.Background())
+		setupAccountMocks(mockContext)
 
-	manager := NewManager(*mockContext.Context)
-	subscriptions, err := manager.GetSubscriptions(*mockContext.Context)
+		manager := NewManager(*mockContext.Context)
+		subscriptions, err := manager.GetSubscriptions(*mockContext.Context)
 
-	require.NoError(t, err)
-	require.Len(t, subscriptions, 3)
+		require.NoError(t, err)
+		require.Len(t, subscriptions, 3)
+	})
+
+	t.Run("Error", func(t *testing.T) {
+		mockContext := mocks.NewMockContext(context.Background())
+		setupAccountErrorMocks(mockContext)
+		setupAzNotLoggedInMocks(mockContext)
+
+		manager := NewManager(*mockContext.Context)
+		subscriptions, err := manager.GetSubscriptions(*mockContext.Context)
+
+		require.Error(t, err)
+		require.Nil(t, subscriptions)
+	})
 }
 
 func Test_GetLocations(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
-	setupAccountMocks(mockContext)
+	t.Run("Success", func(t *testing.T) {
+		mockContext := mocks.NewMockContext(context.Background())
+		setupAccountErrorMocks(mockContext)
+		setupAzNotLoggedInMocks(mockContext)
 
-	manager := NewManager(*mockContext.Context)
-	locations, err := manager.GetLocations(*mockContext.Context)
+		manager := NewManager(*mockContext.Context)
+		locations, err := manager.GetLocations(*mockContext.Context)
 
-	require.NoError(t, err)
-	require.Len(t, locations, 4)
+		require.Error(t, err)
+		require.Nil(t, locations)
+	})
+
+	t.Run("Error", func(t *testing.T) {
+		mockContext := mocks.NewMockContext(context.Background())
+		setupAccountMocks(mockContext)
+
+		manager := NewManager(*mockContext.Context)
+		locations, err := manager.GetLocations(*mockContext.Context)
+
+		require.NoError(t, err)
+		require.Len(t, locations, 4)
+	})
 }
 
 func Test_SetDefaultSubscription(t *testing.T) {
+	t.Run("ValidSubscription", func(t *testing.T) {
+		expectedSubscription := config.Subscription{
+			Id:   "SUBSCRRIPTION_03",
+			Name: "Subscription 3",
+		}
 
+		mockContext := mocks.NewMockContext(context.Background())
+		setupAccountMocks(mockContext)
+		setupGetSubscriptionMock(mockContext, &expectedSubscription, nil)
+
+		manager := NewManager(*mockContext.Context)
+		actualSubscription, err := manager.SetDefaultSubscription(*mockContext.Context, expectedSubscription.Id)
+
+		require.NoError(t, err)
+		require.Equal(t, expectedSubscription, *actualSubscription)
+	})
+
+	t.Run("InvalidSubscription", func(t *testing.T) {
+		expectedSubscription := config.Subscription{
+			Id:   "SUBSCRRIPTION_03",
+			Name: "Subscription 3",
+		}
+
+		mockContext := mocks.NewMockContext(context.Background())
+		setupAccountMocks(mockContext)
+		setupGetSubscriptionMock(mockContext, &expectedSubscription, errors.New("Not found"))
+
+		manager := NewManager(*mockContext.Context)
+		actualSubscription, err := manager.SetDefaultSubscription(*mockContext.Context, expectedSubscription.Id)
+
+		require.Error(t, err)
+		require.Nil(t, actualSubscription)
+	})
 }
 
 func Test_SetDefaultLocation(t *testing.T) {
+	t.Run("ValidLocation", func(t *testing.T) {
+		expectedLocation := "westus2"
 
+		mockContext := mocks.NewMockContext(context.Background())
+		setupAccountMocks(mockContext)
+
+		manager := NewManager(*mockContext.Context)
+		location, err := manager.SetDefaultLocation(*mockContext.Context, expectedLocation)
+
+		require.NoError(t, err)
+		require.Equal(t, expectedLocation, location.Name)
+	})
+
+	t.Run("InvalidLocation", func(t *testing.T) {
+		expectedLocation := "invalid"
+
+		mockContext := mocks.NewMockContext(context.Background())
+		setupAccountMocks(mockContext)
+
+		manager := NewManager(*mockContext.Context)
+		location, err := manager.SetDefaultLocation(*mockContext.Context, expectedLocation)
+
+		require.Error(t, err)
+		require.Nil(t, location)
+	})
 }
 
 func Test_Clear(t *testing.T) {
+	expectedSubscription := config.Subscription{
+		Id:   "SUBSCRIPTION_03",
+		Name: "Subscription 3",
+	}
 
+	mockContext := mocks.NewMockContext(context.Background())
+	setupAccountMocks(mockContext)
+	setupGetSubscriptionMock(mockContext, &expectedSubscription, nil)
+
+	manager := NewManager(*mockContext.Context)
+	subscription, err := manager.SetDefaultSubscription(*mockContext.Context, expectedSubscription.Id)
+	require.NoError(t, err)
+
+	location, err := manager.SetDefaultLocation(*mockContext.Context, "westus2")
+	require.NoError(t, err)
+
+	updatedConfig, err := config.Load()
+	require.NoError(t, err)
+
+	require.Equal(t, subscription, updatedConfig.DefaultSubscription)
+	require.Equal(t, location, updatedConfig.DefaultLocation)
+
+	err = manager.Clear(*mockContext.Context)
+	require.NoError(t, err)
+
+	clearedConfig, err := config.Load()
+	require.NotNil(t, clearedConfig)
+	require.Nil(t, clearedConfig.DefaultSubscription)
+	require.Nil(t, clearedConfig.DefaultLocation)
+	require.NoError(t, err)
+}
+
+func setupAzNotLoggedInMocks(mockContext *mocks.MockContext) {
+	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
+		return strings.Contains(command, "az account show")
+	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+		return exec.NewRunResult(1, "", "Please run 'az login' to setup account"), errors.New("error")
+	})
+}
+
+func setupEmptyAzCliMocks(mockContext *mocks.MockContext) {
+	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
+		return strings.Contains(command, "az config get defaults.location")
+	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+		return exec.NewRunResult(1, "", "No config"), errors.New("No config found")
+	})
+}
+
+func setupGetSubscriptionMock(mockContext *mocks.MockContext, subscription *config.Subscription, err error) {
+	mockContext.HttpClient.When(func(request *http.Request) bool {
+		return request.Method == http.MethodGet && request.URL.Path == fmt.Sprintf("/subscriptions/%s", subscription.Id)
+	}).RespondFn(func(request *http.Request) (*http.Response, error) {
+		if err != nil {
+			return &http.Response{
+				Request:    request,
+				StatusCode: http.StatusNotFound,
+				Header:     http.Header{},
+				Body:       http.NoBody,
+			}, nil
+		}
+
+		res := armsubscription.SubscriptionsClientGetResponse{
+			Subscription: armsubscription.Subscription{
+				ID:             &subscription.Id,
+				SubscriptionID: &subscription.Id,
+				DisplayName:    &subscription.Name,
+			},
+		}
+
+		jsonBytes, _ := json.Marshal(res)
+
+		return &http.Response{
+			Request:    request,
+			StatusCode: http.StatusOK,
+			Header:     http.Header{},
+			Body:       io.NopCloser(bytes.NewBuffer(jsonBytes)),
+		}, nil
+	})
+}
+
+func setupAccountErrorMocks(mockContext *mocks.MockContext) {
+	mockContext.HttpClient.When(func(request *http.Request) bool {
+		return request.Method == http.MethodGet && request.URL.Path == "/subscriptions"
+	}).RespondFn(func(request *http.Request) (*http.Response, error) {
+		return &http.Response{
+			Request:    request,
+			StatusCode: http.StatusUnauthorized,
+			Header:     http.Header{},
+			Body:       http.NoBody,
+		}, nil
+	})
+
+	mockContext.HttpClient.When(func(request *http.Request) bool {
+		return request.Method == http.MethodGet && strings.Contains(request.URL.Path, "/locations")
+	}).RespondFn(func(request *http.Request) (*http.Response, error) {
+		return &http.Response{
+			Request:    request,
+			StatusCode: http.StatusUnauthorized,
+			Header:     http.Header{},
+			Body:       http.NoBody,
+		}, nil
+	})
 }
 
 func setupAccountMocks(mockContext *mocks.MockContext) {
 	mockContext.HttpClient.When(func(request *http.Request) bool {
-		return request.Method == http.MethodGet && strings.Contains(request.URL.Path, "/subscriptions")
+		return request.Method == http.MethodGet && request.URL.Path == "/subscriptions"
 	}).RespondFn(func(request *http.Request) (*http.Response, error) {
 		res := armsubscription.SubscriptionsClientListResponse{
 			ListResult: armsubscription.ListResult{
@@ -208,5 +438,4 @@ func setupAccountMocks(mockContext *mocks.MockContext) {
 
 		return exec.NewRunResult(0, string(jsonBytes), ""), nil
 	})
-
 }

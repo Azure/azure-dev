@@ -165,7 +165,7 @@ func Test_GetLocations(t *testing.T) {
 func Test_SetDefaultSubscription(t *testing.T) {
 	t.Run("ValidSubscription", func(t *testing.T) {
 		expectedSubscription := config.Subscription{
-			Id:   "SUBSCRRIPTION_03",
+			Id:   "SUBSCRIPTION_03",
 			Name: "Subscription 3",
 		}
 
@@ -182,7 +182,7 @@ func Test_SetDefaultSubscription(t *testing.T) {
 
 	t.Run("InvalidSubscription", func(t *testing.T) {
 		expectedSubscription := config.Subscription{
-			Id:   "SUBSCRRIPTION_03",
+			Id:   "SUBSCRIPTION_03",
 			Name: "Subscription 3",
 		}
 

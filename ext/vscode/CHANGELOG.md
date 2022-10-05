@@ -1,8 +1,14 @@
-# Change Log
+# Release History
 
-All notable changes to the Azure Dev CLI extension will be documented in this file.
+## 0.5.0-alpha0 (Unreleased)
 
-Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
+### Features Added
+
+### Breaking Changes
+
+### Bugs Fixed
+
+### Other Changes
 
 ## 0.3.0 (2022-09-14)
 ### Added

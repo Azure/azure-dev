@@ -1,5 +1,7 @@
 # Release History
 
+## 0.3.0-beta.2 (Unreleased)
+
 ## 0.3.0-beta.2 (2022-10-05)
 
 ### Bugs Fixed

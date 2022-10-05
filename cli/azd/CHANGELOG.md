@@ -1,6 +1,11 @@
 # Release History
 
-## 0.3.0-beta.2 (Unreleased)
+## 0.3.0-beta.2 (2022-10-05)
+
+### Bugs Fixed
+
+- [[#795]](https://github.com/Azure/azure-dev/pull/795) Fix cases where clicking the Azure deployment progress link provided in `azd provision` might result in a 404 NotFound error page due to timing.
+- [[#755]](https://github.com/Azure/azure-dev/pull/755) Fix cases where `azd pipeline config` might fail in pushing the repository due to cached credentials.
 
 ## 0.3.0-beta.1 (2022-09-30)
 

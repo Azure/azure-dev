@@ -3,10 +3,7 @@ package azcli
 import (
 	"context"
 	"fmt"
-	"net/http"
-	"strings"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/azure/azure-dev/cli/azd/pkg/identity"
 )
@@ -132,7 +129,7 @@ func (cli *azCli) createResourcesClient(ctx context.Context, subscriptionId stri
 		return nil, err
 	}
 
-	options := cli.createArmClientOptions(ctx)
+	options := cli.createArmClientOptions(ctx, nil)
 	client, err := armresources.NewClient(subscriptionId, cred, options)
 	if err != nil {
 		return nil, fmt.Errorf("creating Resource client: %w", err)
@@ -147,30 +144,11 @@ func (cli *azCli) createResourceGroupClient(ctx context.Context, subscriptionId 
 		return nil, err
 	}
 
-	options := cli.createArmClientOptions(ctx)
+	options := cli.createArmClientOptions(ctx, nil)
 	client, err := armresources.NewResourceGroupsClient(subscriptionId, cred, options)
 	if err != nil {
 		return nil, fmt.Errorf("creating ResourceGroup client: %w", err)
 	}
 
 	return client, nil
-}
-
-type userAgentPolicy struct {
-	userAgent string
-}
-
-// Policy to ensure the AZD custom user agent is set on all HTTP requests.
-func NewUserAgentPolicy(userAgent string) policy.Policy {
-	return &userAgentPolicy{
-		userAgent: userAgent,
-	}
-}
-
-// Sets the custom user-agent string on the underlying request
-func (p *userAgentPolicy) Do(req *policy.Request) (*http.Response, error) {
-	if strings.TrimSpace(p.userAgent) != "" {
-		req.Raw().Header.Set("User-Agent", p.userAgent)
-	}
-	return req.Next()
 }

@@ -71,7 +71,7 @@ func accountListCmd(rootOptions *internal.GlobalCommandOptions) *cobra.Command {
 			tableOptions := output.TableFormatterOptions{
 				Columns: []output.Column{
 					{
-						Heading:       "ID",
+						Heading:       "Subscription ID",
 						ValueTemplate: "{{.Id}}",
 					},
 					{
@@ -113,12 +113,12 @@ func locationListCmd(rootOptions *internal.GlobalCommandOptions) *cobra.Command 
 			tableOptions := output.TableFormatterOptions{
 				Columns: []output.Column{
 					{
-						Heading:       "Name",
+						Heading:       "Key",
 						ValueTemplate: "{{.Name}}",
 					},
 					{
 						Heading:       "Regional Name",
-						ValueTemplate: "{{.DisplayName}}",
+						ValueTemplate: "{{.RegionalDisplayName}}",
 					},
 				},
 			}

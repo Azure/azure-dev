@@ -4,16 +4,19 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
+	"net/http"
 	"sort"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/subscription/armsubscription"
+	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/identity"
 )
 
 type AzCliSubscriptionInfo struct {
 	Name      string `json:"name"`
 	Id        string `json:"id"`
+	TenantId  string `json:"tenantId"`
 	IsDefault bool   `json:"isDefault"`
 }
 
@@ -23,20 +26,29 @@ func (cli *azCli) ListAccounts(ctx context.Context) ([]AzCliSubscriptionInfo, er
 		return nil, err
 	}
 
+	var rawResponse *http.Response
+	ctx = runtime.WithCaptureResponse(ctx, &rawResponse)
+
 	subscriptions := []AzCliSubscriptionInfo{}
 	pager := client.NewListPager(nil)
 
 	for pager.More() {
-		page, err := pager.NextPage(ctx)
+		_, err := pager.NextPage(ctx)
 		if err != nil {
 			return nil, fmt.Errorf("failed getting next page of subscriptions: %w", err)
 		}
 
-		// TODO: How to determine default subscription id without az cli dependency?
-		for _, subscription := range page.ListResult.Value {
+		// Using custom response processing unto Go SDK support required properties
+		listResponse, err := readRawResponse[CustomListSubscriptionResponse](rawResponse)
+		if err != nil {
+			return nil, err
+		}
+
+		for _, subscription := range listResponse.Value {
 			subscriptions = append(subscriptions, AzCliSubscriptionInfo{
-				Id:   *subscription.SubscriptionID,
-				Name: *subscription.DisplayName,
+				Id:       subscription.SubscriptionID,
+				Name:     subscription.DisplayName,
+				TenantId: subscription.TenantID,
 			})
 		}
 	}
@@ -74,32 +86,34 @@ func (cli *azCli) GetAccount(ctx context.Context, subscriptionId string) (*AzCli
 		return nil, err
 	}
 
-	subscription, err := client.Get(ctx, subscriptionId, nil)
+	var rawResponse *http.Response
+	ctx = runtime.WithCaptureResponse(ctx, &rawResponse)
+
+	_, err = client.Get(ctx, subscriptionId, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed getting subscription for '%s'", subscriptionId)
 	}
 
+	// Using custom response processing unto Go SDK support required properties
+	subscriptionResponse, err := readRawResponse[CustomGetSubscriptionResponse](rawResponse)
+	if err != nil {
+		return nil, err
+	}
+
 	return &AzCliSubscriptionInfo{
-		Id:   *subscription.SubscriptionID,
-		Name: *subscription.DisplayName,
+		Id:       subscriptionResponse.Value.SubscriptionID,
+		Name:     subscriptionResponse.Value.DisplayName,
+		TenantId: subscriptionResponse.Value.TenantID,
 	}, nil
 }
 
 func (cli *azCli) GetSubscriptionTenant(ctx context.Context, subscriptionId string) (string, error) {
-	client, err := cli.createSubscriptionsClient(ctx)
+	subscription, err := cli.GetAccount(ctx, subscriptionId)
 	if err != nil {
 		return "", err
 	}
 
-	subscription, err := client.Get(ctx, subscriptionId, nil)
-	if err != nil {
-		return "", fmt.Errorf("failed getting subscription for '%s'", subscriptionId)
-	}
-
-	// TODO: GO SDK missing Tenant ID from response
-	//return subscription.TenantID, nil
-	log.Println(subscription.ID)
-	return "TENANT_ID", nil
+	return subscription.TenantId, nil
 }
 
 func (cli *azCli) ListAccountLocations(ctx context.Context, subscriptionId string) ([]AzCliLocation, error) {
@@ -111,25 +125,37 @@ func (cli *azCli) ListAccountLocations(ctx context.Context, subscriptionId strin
 	locations := []AzCliLocation{}
 	pager := client.NewListLocationsPager(subscriptionId, nil)
 
+	var rawResponse *http.Response
+	ctx = runtime.WithCaptureResponse(ctx, &rawResponse)
+
 	for pager.More() {
-		page, err := pager.NextPage(ctx)
+		_, err := pager.NextPage(ctx)
 		if err != nil {
 			return nil, fmt.Errorf("failed getting next page of locations: %w", err)
 		}
 
-		// TODO: Previous implementation had a filter to only return where regionType == 'Physical'
-		// This prop is not currently available on in the Go SDK
-		for _, location := range page.LocationListResult.Value {
+		// Using custom response processing unto Go SDK support required properties
+		locationResponse, err := readRawResponse[CustomListLocationsResponse](rawResponse)
+		if err != nil {
+			return nil, err
+		}
+
+		for _, location := range locationResponse.Value {
+			// Ignore non-physical locations
+			if location.Metadata.RegionType != "Physical" {
+				continue
+			}
+
 			locations = append(locations, AzCliLocation{
-				Name:                *location.Name,
-				DisplayName:         *location.DisplayName,
-				RegionalDisplayName: *location.DisplayName,
+				Name:                location.Name,
+				DisplayName:         location.DisplayName,
+				RegionalDisplayName: location.RegionalDisplayName,
 			})
 		}
 	}
 
 	sort.Slice(locations, func(i, j int) bool {
-		return locations[i].DisplayName < locations[j].DisplayName
+		return locations[i].RegionalDisplayName < locations[j].RegionalDisplayName
 	})
 
 	return locations, nil
@@ -141,11 +167,48 @@ func (cli *azCli) createSubscriptionsClient(ctx context.Context) (*armsubscripti
 		return nil, err
 	}
 
-	options := cli.createArmClientOptions(ctx)
+	options := cli.createArmClientOptions(ctx, convert.RefOf("2020-01-01"))
 	client, err := armsubscription.NewSubscriptionsClient(cred, options)
 	if err != nil {
 		return nil, fmt.Errorf("creating Subscriptions client: %w", err)
 	}
 
 	return client, nil
+}
+
+// Temporary custom response until Go SDK support all of the specified properties in the response
+type CustomListLocationsResponse struct {
+	Value []*CustomLocation `json:"value"`
+}
+
+// Temporary custom response until Go SDK support all of the specified properties in the response
+type CustomLocation struct {
+	ID                  string                 `json:"id"`
+	Name                string                 `json:"name"`
+	DisplayName         string                 `json:"displayName"`
+	RegionalDisplayName string                 `json:"regionalDisplayName"` // Missing from Go SDK
+	Metadata            CustomLocationMetadata `json:"metadata"`            // Missing from Go SDK
+}
+
+// Temporary custom response until Go SDK support all of the specified properties in the response
+type CustomLocationMetadata struct {
+	RegionType string `json:"regionType"`
+}
+
+// Temporary custom response until Go SDK support all of the specified properties in the response
+type CustomGetSubscriptionResponse struct {
+	Value CustomSubscription `json:"value"`
+}
+
+// Temporary custom response until Go SDK support all of the specified properties in the response
+type CustomListSubscriptionResponse struct {
+	Value []*CustomSubscription `json:"value"`
+}
+
+// Temporary custom response until Go SDK support all of the specified properties in the response
+type CustomSubscription struct {
+	ID             string `json:"id"`
+	SubscriptionID string `json:"subscriptionId"`
+	TenantID       string `json:"tenantId"` // Missing from Go SDK
+	DisplayName    string `json:"displayName"`
 }

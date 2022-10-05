@@ -183,8 +183,9 @@ func (m *Manager) getDefaultSubscription(ctx context.Context) (*config.Subscript
 	}
 
 	return &config.Subscription{
-		Id:   subscription.Id,
-		Name: subscription.Name,
+		Id:       subscription.Id,
+		Name:     subscription.Name,
+		TenantId: subscription.TenantId,
 	}, nil
 }
 
@@ -197,7 +198,7 @@ func (m *Manager) getDefaultLocation(ctx context.Context) (*config.Location, err
 
 	defaultLocation := &config.Location{
 		Name:        "eastus2",
-		DisplayName: "East US 2",
+		DisplayName: "(US) East US 2",
 	}
 
 	configValue, err := m.azCli.GetCliConfigValue(ctx, "defaults.location")

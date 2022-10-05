@@ -40,8 +40,9 @@ type Config struct {
 }
 
 type Subscription struct {
-	Id   string `json:"id"`
-	Name string `json:"name"`
+	Id       string `json:"id"`
+	Name     string `json:"name"`
+	TenantId string `json:"tenantId"`
 }
 
 type Location struct {

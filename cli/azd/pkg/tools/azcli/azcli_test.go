@@ -6,6 +6,7 @@ package azcli
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"regexp"
@@ -162,4 +163,65 @@ func runAndCaptureUserAgent(t *testing.T, subscriptionID string) string {
 	require.NotNil(t, matches)
 
 	return matches[0][1]
+}
+
+func TestAZCliGetAccessTokenTranslatesErrors(t *testing.T) {
+	tests := []struct {
+		name   string
+		stderr string
+		expect error
+	}{
+		{
+			name:   "AADSTS70043",
+			stderr: "AADSTS70043: The refresh token has expired or is invalid due to sign-in frequency checks by conditional access. The token was issued on {issueDate} and the maximum allowed lifetime for this request is {time}.",
+			expect: ErrAzCliRefreshTokenExpired,
+		},
+		{
+			name:   "AADSTS700082",
+			stderr: "AADSTS700082: The refresh token has expired due to inactivity. The token was issued on {issueDate} and was inactive for {time}.",
+			expect: ErrAzCliRefreshTokenExpired,
+		},
+		{
+			name:   "RunAzLoginDoubleQuotes",
+			stderr: `Please run "az login" to setup account.`,
+			expect: ErrAzCliNotLoggedIn,
+		},
+		{
+			name:   "RunAzLoginSingleQuotes",
+			stderr: `Please run 'az login' to setup account.`,
+			expect: ErrAzCliNotLoggedIn,
+		},
+		{
+			name:   "RunAzLoginDoubleQuotesAccessAccount",
+			stderr: `Please run "az login" to access your accounts.`,
+			expect: ErrAzCliNotLoggedIn,
+		},
+		{
+			name:   "RunAzLoginSingleQuotesAccessAccount",
+			stderr: `Please run 'az login' to access your accounts.`,
+			expect: ErrAzCliNotLoggedIn,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			mockContext := mocks.NewMockContext(context.Background())
+			azCli := NewAzCli(NewAzCliArgs{
+				EnableDebug:     true,
+				EnableTelemetry: true,
+				CommandRunner:   mockContext.CommandRunner,
+			})
+
+			mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
+				return strings.Contains(command, "az account get-access-token")
+			}).Respond(exec.RunResult{
+				ExitCode: 1,
+				Stdout:   "",
+				Stderr:   test.stderr,
+			})
+
+			_, err := azCli.GetAccessToken(*mockContext.Context)
+			assert.True(t, errors.Is(err, test.expect))
+		})
+	}
 }

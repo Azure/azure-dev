@@ -979,11 +979,16 @@ func (cli *azCli) runAzCommandWithArgs(ctx context.Context, args exec.RunArgs) (
 
 // Azure Active Directory codes can be referenced via https://login.microsoftonline.com/error?code=<ERROR_CODE>,
 // where ERROR_CODE is the digits portion of an AAD error code. Example: AADSTS70043 has error code 70043
+// Additionally, https://learn.microsoft.com/azure/active-directory/develop/reference-aadsts-error-codes#aadsts-error-codes
+// is a helpful resource with a list of error codes and messages.
 
 var isNotLoggedInMessageRegex = regexp.MustCompile(`Please run ('|")az login('|") to (setup account|access your accounts)\.`)
 
-// Regex for "AADSTS70043: The refresh token has expired or is invalid due to sign-in frequency checks by conditional access."
-var isRefreshTokenExpiredMessageRegex = regexp.MustCompile(`AADSTS70043`)
+// Regex for the following errors related to refresh tokens:
+// - "AADSTS70043: The refresh token has expired or is invalid due to sign-in frequency checks by conditional access.""
+// - "AADSTS700082: The refresh token has expired due to inactivity."
+var isRefreshTokenExpiredMessageRegex = regexp.MustCompile(`AADSTS(70043|700082)`)
+
 var isResourceSegmentMeNotFoundMessageRegex = regexp.MustCompile(`Resource not found for the segment 'me'.`)
 
 // Regex for "(DeploymentNotFound) Deployment '<name>' could not be found."

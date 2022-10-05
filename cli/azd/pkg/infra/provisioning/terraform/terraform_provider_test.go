@@ -200,11 +200,11 @@ func createTerraformProvider(ctx context.Context) *TerraformProvider {
 		Module: "main",
 	}
 
-	env := environment.Environment{Values: make(map[string]string)}
-	env.SetLocation("westus2")
-	env.SetEnvName("test-env")
+	env := environment.EphemeralWithValues("test-env", map[string]string{
+		"AZURE_LOCATION": "westus2",
+	})
 
-	return NewTerraformProvider(ctx, &env, projectDir, options)
+	return NewTerraformProvider(ctx, env, projectDir, options)
 }
 
 func prepareGenericMocks(commandRunner *execmock.MockCommandRunner) {

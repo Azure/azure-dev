@@ -15,18 +15,32 @@ words:
     - bson
     - azdo
 ignoreWords:
-    - magefile
     - afwp
+    - apim
     - appcs
     - appi
     - arck
+    - armkeyvault
+    - armresources
+    - azconnection
+    - azcore
+    - Azdo
+    - aztfmod
+    - azurecaf
+    - azuredevops
+    - azurerm
+    - armcontainerregistry
+    - azidentity
+    - azsecrets
     - Bfor
     - bicepcli
     - cdne
     - cdnp
     - commandrunner
+    - containerregistry
     - databricks
     - dedb
+    - devcontainer
     - dnsz
     - evgd
     - evgs
@@ -38,11 +52,14 @@ ignoreWords:
     - Frontdoor
     - hndl
     - httpclient
+    - httptrigger
     - inputhelper
     - ippre
     - JOBOBJECT
     - kubernetes
     - kusto
+    - magefile
+    - menuid
     - migr
     - mockconsole
     - mockexec
@@ -55,9 +72,17 @@ ignoreWords:
     - pcert
     - pdnsz
     - Peerings
+    - PLACEHOLDERIACTOOLS
     - provs
     - psql
     - pview
+    - resourcegroups
+    - resourcegroupterraform
+    - resourcegroupterraformremote
+    - Retryable
+    - serviceendpoint
+    - serviceprincipalid
+    - serviceprincipalkey
     - sigr
     - snet
     - sqldb
@@ -71,12 +96,16 @@ ignoreWords:
     - syndp
     - synsp
     - synw
+    - taskagent
     - TEAMPROJECTID
+    - tenantid
     - terraformcli
-    - tfvars
+    - tfsgit
     - tfstate
+    - tfvars
     - traf
     - useragent
+    - versioncontrol
     - vmss
     - vnet
     - vpng
@@ -89,6 +118,7 @@ ignoreWords:
     - resourcegroups
     - resourcegroupterraform
     - resourcegroupterraformremote
+    - resourcemanager
     - devcontainer
     - azurecaf
     - azurerm

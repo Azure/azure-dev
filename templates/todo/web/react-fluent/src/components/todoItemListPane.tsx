@@ -1,4 +1,4 @@
-import { CommandBar, DetailsList, DetailsListLayoutMode, ICommandBarItemProps, IStackStyles, Selection, Stack, IIconProps, SearchBox, Text, IGroup, IColumn, MarqueeSelection, FontIcon, IObjectWithKey, CheckboxVisibility, IDetailsGroupRenderProps, getTheme } from '@fluentui/react';
+import { CommandBar, DetailsList, DetailsListLayoutMode, IStackStyles, Selection, Label, Spinner, SpinnerSize, Stack, IIconProps, SearchBox, Text, IGroup, IColumn, MarqueeSelection, FontIcon, IObjectWithKey, CheckboxVisibility, IDetailsGroupRenderProps, getTheme } from '@fluentui/react';
 import React, { ReactElement, useEffect, useState, FormEvent, FC } from 'react';
 import { useNavigate } from 'react-router';
 import { TodoItem, TodoItemState, TodoList } from '../models';
@@ -8,6 +8,7 @@ interface TodoItemListPaneProps {
     list?: TodoList
     items?: TodoItem[]
     selectedItem?: TodoItem;
+    disabled: boolean
     onCreated: (item: TodoItem) => void
     onDelete: (item: TodoItem) => void
     onComplete: (item: TodoItem) => void
@@ -156,11 +157,6 @@ const TodoItemListPane: FC<TodoItemListPaneProps> = (props: TodoItemListPaneProp
         { key: 'completedDate', name: 'Completed', fieldName: 'completedDate', minWidth: 100 },
     ];
 
-    const commandItems: ICommandBarItemProps[] = [
-        { key: 'markComplete', text: 'Mark Complete', iconProps: { iconName: 'Completed' }, onClick: () => { completeItems() } },
-        { key: 'delete', text: 'Delete', iconProps: { iconName: 'Delete' }, onClick: () => { deleteItems() } },
-    ];
-
     const groupRenderProps: IDetailsGroupRenderProps = {
         headerProps: {
             styles: {
@@ -198,11 +194,26 @@ const TodoItemListPane: FC<TodoItemListPaneProps> = (props: TodoItemListPaneProp
                 <form onSubmit={onFormSubmit}>
                     <Stack horizontal styles={stackStyles}>
                         <Stack.Item grow={1}>
-                            <SearchBox value={newItemName} placeholder="Add an item" iconProps={addIconProps} onChange={onNewItemChanged} />
+                            <SearchBox value={newItemName} placeholder="Add an item" iconProps={addIconProps} onChange={onNewItemChanged} disabled={props.disabled} />
                         </Stack.Item>
                         <Stack.Item>
                             <CommandBar
-                                items={commandItems}
+                                items={[
+                                    {
+                                        key: 'markComplete',
+                                        text: 'Mark Complete',
+                                        disabled: props.disabled,
+                                        iconProps: { iconName: 'Completed' },
+                                        onClick: () => { completeItems() }
+                                    },
+                                    {
+                                        key: 'delete',
+                                        text: 'Delete',
+                                        disabled: props.disabled,
+                                        iconProps: { iconName: 'Delete' },
+                                        onClick: () => { deleteItems() }
+                                    }
+                                ]}
                                 ariaLabel="Todo actions" />
                         </Stack.Item>
                     </Stack>
@@ -229,7 +240,13 @@ const TodoItemListPane: FC<TodoItemListPaneProps> = (props: TodoItemListPaneProp
                     </MarqueeSelection>
                 </Stack.Item>
             }
-            {items.length === 0 &&
+            {!props.items &&
+                <Stack.Item align="center" tokens={stackItemPadding}>
+                    <Label>Loading List Items...</Label>
+                    <Spinner size={SpinnerSize.large} labelPosition="top" /> 
+                </Stack.Item>
+            }
+            {props.items && items.length === 0 &&
                 <Stack.Item align="center" tokens={stackItemPadding}>
                     <Text>This list is empty.</Text>
                 </Stack.Item>

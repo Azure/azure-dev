@@ -18,6 +18,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/git"
+	"github.com/sethvargo/go-retry"
 )
 
 // PipelineManager takes care of setting up the scm and pipeline.
@@ -30,7 +31,8 @@ type PipelineManager struct {
 	PipelineServicePrincipalName string
 	PipelineRemoteName           string
 	PipelineRoleName             string
-	Environment                  environment.Environment
+	PipelineProvider             string
+	Environment                  *environment.Environment
 }
 
 // requiredTools get all the provider's required tools.
@@ -158,17 +160,22 @@ func (i *PipelineManager) pushGitRepo(ctx context.Context, currentBranch string)
 		return fmt.Errorf("adding files: %w", err)
 	}
 
-	if err := gitCli.Commit(ctx, i.AzdCtx.ProjectDirectory(), "Configure GitHub Actions"); err != nil {
+	if err := gitCli.Commit(ctx, i.AzdCtx.ProjectDirectory(), "Configure Azure Developer Pipeline"); err != nil {
 		return fmt.Errorf("commit changes: %w", err)
 	}
 
 	console.Message(ctx, "Pushing changes")
 
-	if err := gitCli.PushUpstream(ctx, i.AzdCtx.ProjectDirectory(), i.PipelineRemoteName, currentBranch); err != nil {
-		return fmt.Errorf("pushing changes: %w", err)
-	}
-
-	return nil
+	// If user has a git credential manager with some cached credentials
+	// and the credentials are rotated, the push operation will fail and the credential manager would remove the cache
+	// Then, on the next intent to push code, there should be a prompt for credentials.
+	// Due to this, we use retry here, so we can run the second intent to prompt for credentials one more time
+	return retry.Do(ctx, retry.WithMaxRetries(3, retry.NewConstant(100*time.Millisecond)), func(ctx context.Context) error {
+		if err := gitCli.PushUpstream(ctx, i.AzdCtx.ProjectDirectory(), i.PipelineRemoteName, currentBranch); err != nil {
+			return retry.RetryableError(fmt.Errorf("pushing changes: %w", err))
+		}
+		return nil
+	})
 }
 
 // Configure is the main function from the pipeline manager which takes care
@@ -200,7 +207,9 @@ func (manager *PipelineManager) Configure(ctx context.Context) error {
 		// changed from "az-cli" to "az-dev"
 		manager.PipelineServicePrincipalName = fmt.Sprintf("az-dev-%s", time.Now().UTC().Format("01-02-2006-15-04-05"))
 	}
+
 	inputConsole.Message(ctx, fmt.Sprintf("Creating or updating service principal %s.\n", manager.PipelineServicePrincipalName))
+
 	credentials, err := azCli.CreateOrUpdateServicePrincipal(
 		ctx,
 		manager.Environment.GetSubscriptionId(),
@@ -213,17 +222,11 @@ func (manager *PipelineManager) Configure(ctx context.Context) error {
 	// Get git repo details
 	gitRepoInfo, err := manager.getGitRepoDetails(ctx)
 	if err != nil {
-		return fmt.Errorf("ensuring github remote: %w", err)
-	}
-
-	// config pipeline handles setting or creating the provider pipeline to be used
-	err = manager.CiProvider.configurePipeline(ctx)
-	if err != nil {
-		return err
+		return fmt.Errorf("ensuring git remote: %w", err)
 	}
 
 	// Figure out what is the expected provider to use for provisioning
-	prj, err := project.LoadProjectConfig(manager.AzdCtx.ProjectPath(), &manager.Environment)
+	prj, err := project.LoadProjectConfig(manager.AzdCtx.ProjectPath(), manager.Environment)
 	if err != nil {
 		return fmt.Errorf("finding provisioning provider: %w", err)
 	}
@@ -235,6 +238,12 @@ func (manager *PipelineManager) Configure(ctx context.Context) error {
 		prj.Infra,
 		credentials,
 		inputConsole)
+	if err != nil {
+		return err
+	}
+
+	// config pipeline handles setting or creating the provider pipeline to be used
+	err = manager.CiProvider.configurePipeline(ctx, gitRepoInfo, prj.Infra)
 	if err != nil {
 		return err
 	}
@@ -274,7 +283,18 @@ func (manager *PipelineManager) Configure(ctx context.Context) error {
 	if doPush {
 		err = manager.pushGitRepo(ctx, currentBranch)
 		if err != nil {
-			return err
+			return fmt.Errorf("git push: %w", err)
+		}
+
+		gitRepoInfo.pushStatus = true
+		err = manager.ScmProvider.postGitPush(
+			ctx,
+			gitRepoInfo,
+			manager.PipelineRemoteName,
+			currentBranch,
+			inputConsole)
+		if err != nil {
+			return fmt.Errorf("post git push hook: %w", err)
 		}
 	} else {
 		inputConsole.Message(ctx,

@@ -28,10 +28,11 @@ services:
     host: appservice
 `
 
-	e := environment.Environment{Values: make(map[string]string)}
-	e.SetEnvName("test-env")
+	e := environment.EphemeralWithValues("test-env", map[string]string{
+		environment.SubscriptionIdEnvVarName: "SUBSCRIPTION_ID",
+	})
 
-	projectConfig, err := ParseProjectConfig(testProj, &e)
+	projectConfig, err := ParseProjectConfig(testProj, e)
 	require.Nil(t, err)
 	require.NotNil(t, projectConfig)
 
@@ -64,10 +65,11 @@ services:
     host: appservice
 `
 
-	e := environment.Environment{Values: make(map[string]string)}
-	e.SetEnvName("test-env")
+	e := environment.EphemeralWithValues("test-env", map[string]string{
+		environment.SubscriptionIdEnvVarName: "SUBSCRIPTION_ID",
+	})
 
-	projectConfig, err := ParseProjectConfig(testProj, &e)
+	projectConfig, err := ParseProjectConfig(testProj, e)
 	require.Nil(t, err)
 
 	require.True(t, projectConfig.HasService("web"))
@@ -93,13 +95,14 @@ services:
 `
 	mockContext := mocks.NewMockContext(context.Background())
 
-	e := environment.Environment{Values: make(map[string]string)}
-	e.SetEnvName("test-env")
+	e := environment.EphemeralWithValues("test-env", map[string]string{
+		environment.SubscriptionIdEnvVarName: "SUBSCRIPTION_ID",
+	})
 
-	projectConfig, err := ParseProjectConfig(testProj, &e)
+	projectConfig, err := ParseProjectConfig(testProj, e)
 	require.Nil(t, err)
 
-	project, err := projectConfig.GetProject(mockContext.Context, &e)
+	project, err := projectConfig.GetProject(mockContext.Context, e)
 	require.Nil(t, err)
 	require.NotNil(t, project)
 
@@ -129,10 +132,11 @@ services:
       path: ./Dockerfile.dev
       context: ../
 `
-	e := environment.Environment{Values: make(map[string]string)}
-	e.SetEnvName("test-env")
+	e := environment.EphemeralWithValues("test-env", map[string]string{
+		environment.SubscriptionIdEnvVarName: "SUBSCRIPTION_ID",
+	})
 
-	projectConfig, err := ParseProjectConfig(testProj, &e)
+	projectConfig, err := ParseProjectConfig(testProj, e)
 
 	require.NotNil(t, projectConfig)
 	require.Nil(t, err)
@@ -157,10 +161,11 @@ services:
     module: ./api/api
 `
 
-	e := environment.Environment{Values: make(map[string]string)}
-	e.SetEnvName("test-env")
+	e := environment.EphemeralWithValues("test-env", map[string]string{
+		environment.SubscriptionIdEnvVarName: "SUBSCRIPTION_ID",
+	})
 
-	projectConfig, err := ParseProjectConfig(testProj, &e)
+	projectConfig, err := ParseProjectConfig(testProj, e)
 
 	require.NotNil(t, projectConfig)
 	require.Nil(t, err)
@@ -321,10 +326,11 @@ services:
     module: ./api/api
 `
 
-	e := environment.Environment{Values: make(map[string]string)}
-	e.SetEnvName("test-env")
+	e := environment.EphemeralWithValues("test-env", map[string]string{
+		environment.SubscriptionIdEnvVarName: "SUBSCRIPTION_ID",
+	})
 
-	projectConfig, _ := ParseProjectConfig(testProj, &e)
+	projectConfig, _ := ParseProjectConfig(testProj, e)
 
 	return projectConfig
 }

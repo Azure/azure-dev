@@ -23,6 +23,9 @@ resource "azurerm_cosmosdb_account" "db" {
     name = "EnableServerless"
   }
 
+  lifecycle {
+    ignore_changes = [capabilities]
+  }
   consistency_policy {
     consistency_level = "Session"
   }

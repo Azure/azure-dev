@@ -34,6 +34,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/test/azdcli"
+	"github.com/azure/azure-dev/cli/azd/test/ostest"
 	"github.com/joho/godotenv"
 	"github.com/sethvargo/go-retry"
 	"github.com/stretchr/testify/assert"
@@ -44,7 +45,7 @@ func Test_CLI_Login_FailsIfNoAzCliIsMissing(t *testing.T) {
 	ctx, cancel := newTestContext(t)
 	defer cancel()
 
-	dir := t.TempDir()
+	dir := ostest.TempDirWithDiagnostics(t)
 
 	cli := azdcli.NewCLI(t)
 	cli.WorkingDirectory = dir
@@ -65,8 +66,9 @@ func Test_CLI_Version_PrintsVersion(t *testing.T) {
 
 	rn := os.Getenv("GITHUB_RUN_NUMBER")
 	if rn != "" {
-		// TODO: This should be read from cli/version.txt (https://github.com/Azure/azure-dev/issues/36)
-		require.Contains(t, out, "0.2.0")
+		version := os.Getenv("CLI_VERSION")
+		require.NotEmpty(t, version)
+		require.Contains(t, out, version)
 	} else {
 		require.Contains(t, out, fmt.Sprintf("azd version %s", internal.Version))
 	}
@@ -76,7 +78,7 @@ func Test_CLI_Init_FailsIfAzCliIsMissing(t *testing.T) {
 	ctx, cancel := newTestContext(t)
 	defer cancel()
 
-	dir := t.TempDir()
+	dir := ostest.TempDirWithDiagnostics(t)
 
 	cli := azdcli.NewCLI(t)
 	cli.WorkingDirectory = dir
@@ -93,7 +95,7 @@ func Test_CLI_Init_AsksForSubscriptionIdAndCreatesEnvAndProjectFile(t *testing.T
 	ctx, cancel := newTestContext(t)
 	defer cancel()
 
-	dir := t.TempDir()
+	dir := ostest.TempDirWithDiagnostics(t)
 
 	cli := azdcli.NewCLI(t)
 	cli.WorkingDirectory = dir
@@ -109,7 +111,7 @@ func Test_CLI_Init_AsksForSubscriptionIdAndCreatesEnvAndProjectFile(t *testing.T
 	require.Regexp(t, regexp.MustCompile(`AZURE_SUBSCRIPTION_ID="MY_SUB_ID"`+"\n"), string(file))
 	require.Regexp(t, regexp.MustCompile(`AZURE_ENV_NAME="TESTENV"`+"\n"), string(file))
 
-	proj, err := project.LoadProjectConfig(filepath.Join(dir, azdcontext.ProjectFileName), &environment.Environment{})
+	proj, err := project.LoadProjectConfig(filepath.Join(dir, azdcontext.ProjectFileName), environment.Ephemeral())
 	require.NoError(t, err)
 
 	require.Equal(t, filepath.Base(dir), proj.Name)
@@ -121,7 +123,7 @@ func Test_CLI_Init_CanUseTemplate(t *testing.T) {
 	ctx, cancel := newTestContext(t)
 	defer cancel()
 
-	dir := t.TempDir()
+	dir := ostest.TempDirWithDiagnostics(t)
 
 	cli := azdcli.NewCLI(t)
 	cli.WorkingDirectory = dir
@@ -184,7 +186,7 @@ func Internal_Test_CLI_ResourceGroupsName(t *testing.T, envName string, rgName s
 
 	os.Setenv("AZD_FUNC_TEST", "TRUE")
 
-	dir := t.TempDir()
+	dir := ostest.TempDirWithDiagnostics(t)
 	t.Logf("DIR: %s", dir)
 
 	//envName := randomEnvName()
@@ -224,7 +226,7 @@ func Internal_Test_CLI_ResourceGroupsName(t *testing.T, envName string, rgName s
 
 	// Verify that resource group is found or not found correctly
 	resourceManager := infra.NewAzureResourceManager(ctx)
-	foundRg, err := resourceManager.FindResourceGroupForEnvironment(ctx, &env)
+	foundRg, err := resourceManager.FindResourceGroupForEnvironment(ctx, env)
 
 	if createResources {
 		if createMultipleResourceGroups {
@@ -252,7 +254,7 @@ func Test_CLI_InfraCreateAndDelete(t *testing.T) {
 	ctx, cancel := newTestContext(t)
 	defer cancel()
 
-	dir := t.TempDir()
+	dir := ostest.TempDirWithDiagnostics(t)
 	t.Logf("DIR: %s", dir)
 
 	envName := randomEnvName()
@@ -283,7 +285,7 @@ func Test_CLI_InfraCreateAndDelete(t *testing.T) {
 
 	// Verify that resource groups are created with tag
 	resourceManager := infra.NewAzureResourceManager(ctx)
-	rgs, err := resourceManager.GetResourceGroupsForEnvironment(ctx, &env)
+	rgs, err := resourceManager.GetResourceGroupsForEnvironment(ctx, env)
 	require.NoError(t, err)
 	require.NotNil(t, rgs)
 
@@ -298,7 +300,7 @@ func Test_CLI_InfraCreateAndDeleteUpperCase(t *testing.T) {
 	ctx, cancel := newTestContext(t)
 	defer cancel()
 
-	dir := t.TempDir()
+	dir := ostest.TempDirWithDiagnostics(t)
 	t.Logf("DIR: %s", dir)
 
 	envName := "UpperCase" + randomEnvName()
@@ -329,7 +331,7 @@ func Test_CLI_InfraCreateAndDeleteUpperCase(t *testing.T) {
 
 	// Verify that resource groups are created with tag
 	resourceManager := infra.NewAzureResourceManager(ctx)
-	rgs, err := resourceManager.GetResourceGroupsForEnvironment(ctx, &env)
+	rgs, err := resourceManager.GetResourceGroupsForEnvironment(ctx, env)
 	require.NoError(t, err)
 	require.NotNil(t, rgs)
 
@@ -344,7 +346,7 @@ func Test_CLI_InfraCreateAndDeleteWebApp(t *testing.T) {
 	ctx, cancel := newTestContext(t)
 	defer cancel()
 
-	dir := t.TempDir()
+	dir := ostest.TempDirWithDiagnostics(t)
 	t.Logf("DIR: %s", dir)
 
 	envName := randomEnvName()
@@ -362,6 +364,30 @@ func Test_CLI_InfraCreateAndDeleteWebApp(t *testing.T) {
 
 	_, err = cli.RunCommand(ctx, "infra", "create")
 	require.NoError(t, err)
+
+	t.Logf("Running show\n")
+	out, err := cli.RunCommand(ctx, "show", "-o", "json", "--cwd", dir)
+	require.NoError(t, err)
+
+	var showRes struct {
+		Services map[string]struct {
+			Project struct {
+				Path     string `json:"path"`
+				Language string `json:"language"`
+			} `json:"project"`
+			Target struct {
+				ResourceIds []string `json:"resourceIds"`
+			} `json:"target"`
+		} `json:"services"`
+	}
+	err = json.Unmarshal([]byte(out), &showRes)
+	require.NoError(t, err)
+
+	service, has := showRes.Services["web"]
+	require.True(t, has)
+	require.Equal(t, "dotnet", service.Project.Language)
+	require.Equal(t, "webapp.csproj", filepath.Base(service.Project.Path))
+	require.Equal(t, 1, len(service.Target.ResourceIds))
 
 	_, err = cli.RunCommand(ctx, "deploy")
 	require.NoError(t, err)
@@ -400,7 +426,7 @@ func Test_CLI_InfraCreateAndDeleteWebApp(t *testing.T) {
 	require.NoError(t, err)
 
 	commandRunner := exec.NewCommandRunner()
-	runArgs := exec.NewRunArgs("dotnet", "user-secrets", "list", "--project", filepath.Join(dir, "/src/dotnet/webapp.csproj"))
+	runArgs := newRunArgs("dotnet", "user-secrets", "list", "--project", filepath.Join(dir, "/src/dotnet/webapp.csproj"))
 	secrets, err := commandRunner.Run(ctx, runArgs)
 	require.NoError(t, err)
 
@@ -424,6 +450,21 @@ func Test_CLI_InfraCreateAndDeleteWebApp(t *testing.T) {
 
 	_, err = cli.RunCommand(ctx, "infra", "delete", "--force", "--purge")
 	require.NoError(t, err)
+
+	t.Logf("Running show (again)\n")
+	out, err = cli.RunCommand(ctx, "show", "-o", "json", "--cwd", dir)
+	require.NoError(t, err)
+
+	err = json.Unmarshal([]byte(out), &showRes)
+	require.NoError(t, err)
+
+	// Project information should be present, but since we have run infra delete, there shouldn't
+	// be any resource ids.
+	service, has = showRes.Services["web"]
+	require.True(t, has)
+	require.Equal(t, "dotnet", service.Project.Language)
+	require.Equal(t, "webapp.csproj", filepath.Base(service.Project.Path))
+	require.Nil(t, service.Target.ResourceIds)
 }
 
 // test for azd deploy, azd deploy --service
@@ -433,7 +474,7 @@ func Test_CLI_DeployInvalidName(t *testing.T) {
 	ctx, cancel := newTestContext(t)
 	defer cancel()
 
-	dir := t.TempDir()
+	dir := ostest.TempDirWithDiagnostics(t)
 	t.Logf("DIR: %s", dir)
 
 	envName := randomEnvName()
@@ -459,7 +500,7 @@ func Test_CLI_RestoreCommand(t *testing.T) {
 	ctx, cancel := newTestContext(t)
 	defer cancel()
 
-	dir := t.TempDir()
+	dir := ostest.TempDirWithDiagnostics(t)
 	t.Logf("DIR: %s", dir)
 
 	envName := randomEnvName()
@@ -488,7 +529,7 @@ func Test_CLI_InfraCreateAndDeleteFuncApp(t *testing.T) {
 	ctx, cancel := newTestContext(t)
 	defer cancel()
 
-	dir := t.TempDir()
+	dir := ostest.TempDirWithDiagnostics(t)
 	t.Logf("DIR: %s", dir)
 
 	envName := randomEnvName()
@@ -551,7 +592,7 @@ func Test_CLI_ProjectIsNeeded(t *testing.T) {
 	ctx, cancel := newTestContext(t)
 	defer cancel()
 
-	dir := t.TempDir()
+	dir := ostest.TempDirWithDiagnostics(t)
 	t.Logf("DIR: %s", dir)
 
 	cli := azdcli.NewCLI(t)
@@ -704,7 +745,7 @@ func Test_CLI_InfraCreateAndDeleteResourceTerraform(t *testing.T) {
 	ctx, cancel := newTestContext(t)
 	defer cancel()
 
-	dir := t.TempDir()
+	dir := ostest.TempDirWithDiagnostics(t)
 	t.Logf("DIR: %s", dir)
 
 	envName := randomEnvName()
@@ -739,7 +780,7 @@ func Test_CLI_InfraCreateAndDeleteResourceTerraformRemote(t *testing.T) {
 	ctx, cancel := newTestContext(t)
 	defer cancel()
 
-	dir := t.TempDir()
+	dir := ostest.TempDirWithDiagnostics(t)
 	t.Logf("DIR: %s", dir)
 
 	envName := randomEnvName()
@@ -759,25 +800,26 @@ func Test_CLI_InfraCreateAndDeleteResourceTerraformRemote(t *testing.T) {
 
 	//Create remote state resources
 	commandRunner := exec.NewCommandRunner()
-	runArgs := exec.NewRunArgs("az", "group", "create", "--name", backendResourceGroupName, "--location", location)
+	runArgs := newRunArgs("az", "group", "create", "--name", backendResourceGroupName, "--location", location)
+
 	_, err = commandRunner.Run(ctx, runArgs)
 	require.NoError(t, err)
 
 	defer func() {
 		commandRunner := exec.NewCommandRunner()
-		runArgs := exec.NewRunArgs("az", "group", "delete", "--name", backendResourceGroupName, "--yes")
+		runArgs := newRunArgs("az", "group", "delete", "--name", backendResourceGroupName, "--yes")
 		_, err = commandRunner.Run(ctx, runArgs)
 		require.NoError(t, err)
 	}()
 
 	//Create storage account
-	runArgs = exec.NewRunArgs("az", "storage", "account", "create", "--resource-group", backendResourceGroupName,
+	runArgs = newRunArgs("az", "storage", "account", "create", "--resource-group", backendResourceGroupName,
 		"--name", backendStorageAccountName, "--sku", "Standard_LRS", "--encryption-services", "blob")
 	_, err = commandRunner.Run(ctx, runArgs)
 	require.NoError(t, err)
 
 	//Get Account Key
-	runArgs = exec.NewRunArgs("az", "storage", "account", "keys", "list", "--resource-group",
+	runArgs = newRunArgs("az", "storage", "account", "keys", "list", "--resource-group",
 		backendResourceGroupName, "--account-name", backendStorageAccountName, "--query", "[0].value",
 		"-o", "tsv")
 	cmdResult, err := commandRunner.Run(ctx, runArgs)
@@ -785,7 +827,7 @@ func Test_CLI_InfraCreateAndDeleteResourceTerraformRemote(t *testing.T) {
 	storageAccountKey := cmdResult.Stdout
 
 	// Create storage container
-	runArgs = exec.NewRunArgs("az", "storage", "container", "create", "--name", backendContainerName,
+	runArgs = newRunArgs("az", "storage", "container", "create", "--name", backendContainerName,
 		"--account-name", backendStorageAccountName, "--account-key", storageAccountKey)
 	result, err := commandRunner.Run(ctx, runArgs)
 	_ = result
@@ -815,6 +857,11 @@ func Test_CLI_InfraCreateAndDeleteResourceTerraformRemote(t *testing.T) {
 	t.Logf("Done\n")
 }
 
+func newRunArgs(cmd string, args ...string) exec.RunArgs {
+	runArgs := exec.NewRunArgs(cmd, args...)
+	return runArgs.WithEnrichError(true)
+}
+
 func TestMain(m *testing.M) {
 	flag.Parse()
 	shortFlag := flag.Lookup("test.short")
@@ -825,4 +872,21 @@ func TestMain(m *testing.M) {
 
 	exitVal := m.Run()
 	os.Exit(exitVal)
+}
+
+func RemoveAllWithRetries(t *testing.T, dir string) func() {
+	return func() {
+		err := retry.Do(context.Background(), retry.WithMaxRetries(10, retry.NewConstant(1*time.Second)), func(_ context.Context) error {
+			removeErr := os.RemoveAll(dir)
+			if removeErr == nil {
+				return nil
+			}
+			t.Logf("failed to clean up %s with error: %v", dir, removeErr)
+			return retry.RetryableError(removeErr)
+		})
+
+		if err != nil {
+			t.Errorf("RemoveAllWithRetries failed after many retires: %v", err)
+		}
+	}
 }

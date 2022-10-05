@@ -3,7 +3,12 @@
 
 package azure
 
-import "fmt"
+import (
+	"fmt"
+	"regexp"
+
+	"github.com/azure/azure-dev/cli/azd/pkg/convert"
+)
 
 // Creates Azure subscription resource ID
 func SubscriptionRID(subscriptionId string) string {
@@ -42,4 +47,16 @@ func ContainerAppRID(subscriptionId, resourceGroupName, containerAppName string)
 func StaticWebAppRID(subscriptionId, resourceGroupName, staticSiteName string) string {
 	returnValue := fmt.Sprintf("%s/providers/Microsoft.Web/staticSites/%s", ResourceGroupRID(subscriptionId, resourceGroupName), staticSiteName)
 	return returnValue
+}
+
+var resourceIdRegex = regexp.MustCompile("/.+/(?i)resourceGroups/(.+?)/.+")
+
+// Find the resource group name from the resource id
+func GetResourceGroupName(resourceId string) *string {
+	matches := resourceIdRegex.FindSubmatch([]byte(resourceId))
+	if matches == nil || len(matches) < 2 {
+		return nil
+	}
+
+	return convert.RefOf(string(matches[1]))
 }

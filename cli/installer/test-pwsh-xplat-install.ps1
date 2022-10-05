@@ -3,26 +3,29 @@ param(
     [string] $Version = 'latest'
 )
 
-& $PSScriptRoot/install-azd.ps1 -BaseUrl $BaseUrl -Version $Version
-
-if ($LASTEXITCODE) {
-    Write-Error "Install failed"
-    exit $LASTEXITCODE
+function assertSuccessfulExecution($errorMessage) {
+    if ($LASTEXITCODE -or !$?) {
+        Write-Error $errorMessage
+        if ($LASTEXITCODE) {
+            exit $LASTEXITCODE
+        }
+        exit 1
+    }
 }
 
-azd version
+& $PSScriptRoot/install-azd.ps1 -BaseUrl $BaseUrl -Version $Version
+assertSuccessfulExecution "Install failed"
 
-if ($LASTEXITCODE) {
-    Write-Error "Could not execute azd"
-    exit $LASTEXITCODE
+try {
+    & azd version
+    assertSuccessfulExecution "Could not execute azd"
+} catch {
+    Write-Error "Could not run 'azd version': $_"
+    exit 1
 }
 
 & $PSScriptRoot/uninstall-azd.ps1
-
-if  ($LASTEXITCODE) {
-    Write-Error "Uninstall failed"
-    exit $LASTEXITCODE
-}
+assertSuccessfulExecution "Uninstall failed"
 
 if (Get-Command 'azd' -ErrorAction Ignore) {
     Write-Error "azd command still accessible"

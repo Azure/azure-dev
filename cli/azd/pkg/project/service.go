@@ -87,13 +87,7 @@ func (svc *Service) Deploy(ctx context.Context, azdCtx *azdcontext.AzdContext) (
 
 // GetServiceResourceName attempts to find the name of the azure resource with the 'azd-service-name' tag set to the service key.
 func GetServiceResourceName(ctx context.Context, resourceGroupName string, serviceName string, env *environment.Environment) (string, error) {
-	azCli := azcli.GetAzCli(ctx)
-	query := fmt.Sprintf("[?tags.\"azd-service-name\" =='%s']", serviceName)
-
-	res, err := azCli.ListResourceGroupResources(ctx, env.GetSubscriptionId(), resourceGroupName, &azcli.ListResourceGroupResourcesOptions{
-		JmesPathQuery: &query,
-	})
-
+	res, err := GetServiceResources(ctx, resourceGroupName, serviceName, env)
 	if err != nil {
 		return "", err
 	}
@@ -104,4 +98,14 @@ func GetServiceResourceName(ctx context.Context, resourceGroupName string, servi
 	}
 
 	return res[0].Name, nil
+}
+
+// GetServiceResources gets the resources tagged for a given service
+func GetServiceResources(ctx context.Context, resourceGroupName string, serviceName string, env *environment.Environment) ([]azcli.AzCliResource, error) {
+	azCli := azcli.GetAzCli(ctx)
+	filter := fmt.Sprintf("tagName eq 'azd-service-name' and tagValue eq '%s'", serviceName)
+
+	return azCli.ListResourceGroupResources(ctx, env.GetSubscriptionId(), resourceGroupName, &azcli.ListResourceGroupResourcesOptions{
+		Filter: &filter,
+	})
 }

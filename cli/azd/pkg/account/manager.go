@@ -24,14 +24,10 @@ func NewManager(ctx context.Context) *Manager {
 // 1. Returns AZD config defaults if exists
 // 2. Returns AZ CLI defaults if exists
 func (m *Manager) GetAccountDefaults(ctx context.Context) (*config.Config, error) {
-	azdConfig, err := config.Load()
+	azdConfig := config.GetConfig(ctx)
 
-	if err == nil && azdConfig.DefaultSubscription != nil && azdConfig.DefaultLocation != nil {
+	if azdConfig.DefaultSubscription != nil && azdConfig.DefaultLocation != nil {
 		return azdConfig, nil
-	}
-
-	if azdConfig == nil {
-		azdConfig = &config.Config{}
 	}
 
 	if azdConfig.DefaultSubscription == nil {

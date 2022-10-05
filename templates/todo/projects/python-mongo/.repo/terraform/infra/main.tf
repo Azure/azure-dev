@@ -50,13 +50,13 @@ module "loganalytics" {
 # Deploy key vault
 # ------------------------------------------------------------------------------------------------------
 module "keyvault" {
-  source                   = "../../../../../../common/infra/terraform/core/keyvault"
+  source                   = "../../../../../../common/infra/terraform/core/security/keyvault"
   location                 = var.location
   principal_id             = var.principal_id
   rg_name                  = azurerm_resource_group.rg.name
   tags                     = azurerm_resource_group.rg.tags
   resource_token           = local.resource_token
-  access_policy_object_ids = [module.appserviceapi.IDENTITY_PRINCIPAL_ID]
+  access_policy_object_ids = [module.api.IDENTITY_PRINCIPAL_ID]
   secrets = [
     {
       name  = local.cosmos_connection_string_key
@@ -90,7 +90,7 @@ module "appserviceplan" {
 # ------------------------------------------------------------------------------------------------------
 # Deploy app service web app
 # ------------------------------------------------------------------------------------------------------
-module "appserviceweb" {
+module "web" {
   source         = "../../../../../../common/infra/terraform/core/host/appservice/appservicenode"
   location       = var.location
   rg_name        = azurerm_resource_group.rg.name
@@ -110,7 +110,7 @@ module "appserviceweb" {
 # ------------------------------------------------------------------------------------------------------
 # Deploy app service api
 # ------------------------------------------------------------------------------------------------------
-module "appserviceapi" {
+module "api" {
   source         = "../../../../../../common/infra/terraform/core/host/appservice/appservicepython"
   location       = var.location
   rg_name        = azurerm_resource_group.rg.name

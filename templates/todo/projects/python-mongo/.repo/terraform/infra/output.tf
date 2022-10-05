@@ -12,11 +12,11 @@ output "AZURE_KEY_VAULT_ENDPOINT" {
 }
 
 output "REACT_APP_WEB_BASE_URL" {
-  value = "https://${module.appserviceweb.DEFAULT_HOST_NAME}"
+  value = module.web.URI
 }
 
 output "REACT_APP_API_BASE_URL" {
-  value = "https://${module.appserviceapi.DEFAULT_HOST_NAME}"
+  value = module.api.URI
 }
 
 output "AZURE_LOCATION" {

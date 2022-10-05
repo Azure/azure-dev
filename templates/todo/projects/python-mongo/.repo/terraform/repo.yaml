@@ -26,7 +26,7 @@ repo:
         patterns:
           - "**/*.tf"
 
-      - from: ../../../../../../common/infra/terraform/core/keyvault
+      - from: ../../../../../../common/infra/terraform/core/security/keyvault
         to: ./modules/keyvault
         patterns:
           - "**/*.tf"
@@ -120,7 +120,7 @@ repo:
     - from: ../../../../../common/infra/terraform/core/monitor/loganalytics
       to: ./infra/modules/loganalytics
     
-    - from: ../../../../../common/infra/terraform/core/keyvault
+    - from: ../../../../../common/infra/terraform/core/security/keyvault
       to: ./infra/modules/keyvault
 
     - from: ../../../../../common/infra/terraform/core/database/cosmos

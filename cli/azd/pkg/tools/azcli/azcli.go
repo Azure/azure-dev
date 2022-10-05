@@ -229,16 +229,6 @@ type AzCliStaticWebAppEnvironmentProperties struct {
 	Status   string `json:"status"`
 }
 
-type AzCliLocation struct {
-	// The human friendly name of the location (e.g. "West US 2")
-	DisplayName string
-	// The name of the location (e.g. "westus2")
-	Name string
-	// The human friendly name of the location, prefixed with a
-	// region name (e.g "(US) West US 2")
-	RegionalDisplayName string
-}
-
 // AzCliConfigValue represents the value returned by `az config get`.
 type AzCliConfigValue struct {
 	Name   string `json:"name"`

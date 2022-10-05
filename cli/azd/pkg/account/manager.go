@@ -53,21 +53,24 @@ func (m *Manager) GetAccountDefaults(ctx context.Context) (*config.Config, error
 
 // Gets the available Azure subscriptions for the current logged in account.
 func (m *Manager) GetSubscriptions(ctx context.Context) ([]azcli.AzCliSubscriptionInfo, error) {
-	config := config.GetConfig(ctx)
+	defaultSubscription, err := m.getDefaultSubscription(ctx)
+	if err != nil {
+		return nil, err
+	}
 
 	accounts, err := m.azCli.ListAccounts(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed listing azure subscriptions: %w", err)
 	}
 
-	if config.DefaultSubscription == nil {
+	if defaultSubscription == nil {
 		return accounts, nil
 	}
 
 	// If default subscription is set, set it in the results
 	results := []azcli.AzCliSubscriptionInfo{}
 	for _, sub := range accounts {
-		if sub.Id == config.DefaultSubscription.Id {
+		if sub.Id == defaultSubscription.Id {
 			sub.IsDefault = true
 		}
 		results = append(results, sub)

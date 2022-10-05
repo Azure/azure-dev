@@ -20,6 +20,16 @@ type AzCliSubscriptionInfo struct {
 	IsDefault bool   `json:"isDefault"`
 }
 
+type AzCliLocation struct {
+	// The human friendly name of the location (e.g. "West US 2")
+	DisplayName string `json:"displayName"`
+	// The name of the location (e.g. "westus2")
+	Name string `json:"name"`
+	// The human friendly name of the location, prefixed with a
+	// region name (e.g "(US) West US 2")
+	RegionalDisplayName string `json:"regionalDisplayName"`
+}
+
 func (cli *azCli) ListAccounts(ctx context.Context) ([]AzCliSubscriptionInfo, error) {
 	client, err := cli.createSubscriptionsClient(ctx)
 	if err != nil {
@@ -167,6 +177,7 @@ func (cli *azCli) createSubscriptionsClient(ctx context.Context) (*armsubscripti
 		return nil, err
 	}
 
+	// Uses latest api version of subscriptions api to get additional properties
 	options := cli.createArmClientOptions(ctx, convert.RefOf("2020-01-01"))
 	client, err := armsubscription.NewSubscriptionsClient(cred, options)
 	if err != nil {

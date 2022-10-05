@@ -16,6 +16,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/exp/slices"
 )
 
 func Test_GetAccountDefaults(t *testing.T) {
@@ -121,6 +122,36 @@ func Test_GetSubscriptions(t *testing.T) {
 
 		require.NoError(t, err)
 		require.Len(t, subscriptions, 3)
+	})
+
+	t.Run("SuccessWithDefault", func(t *testing.T) {
+		defaultConfig := config.Config{
+			DefaultSubscription: &config.Subscription{
+				Id:   "SUBSCRIPTION_03",
+				Name: "Subscription 3",
+			},
+			DefaultLocation: &config.Location{
+				Name:        "westus2",
+				DisplayName: "(US) West US 2",
+			},
+		}
+
+		mockContext := mocks.NewMockContext(context.Background())
+		setupAccountMocks(mockContext)
+
+		ctx := config.WithConfig(*mockContext.Context, &defaultConfig)
+
+		manager := NewManager(ctx)
+		subscriptions, err := manager.GetSubscriptions(ctx)
+
+		defaultIndex := slices.IndexFunc(subscriptions, func(s azcli.AzCliSubscriptionInfo) bool {
+			return s.IsDefault
+		})
+
+		require.NoError(t, err)
+		require.Len(t, subscriptions, 3)
+		require.GreaterOrEqual(t, defaultIndex, 0)
+		require.Equal(t, defaultConfig.DefaultSubscription.Id, subscriptions[defaultIndex].Id)
 	})
 
 	t.Run("Error", func(t *testing.T) {

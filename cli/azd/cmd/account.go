@@ -78,6 +78,10 @@ func accountListCmd(rootOptions *internal.GlobalCommandOptions) *cobra.Command {
 						Heading:       "Name",
 						ValueTemplate: "{{.Name}}",
 					},
+					{
+						Heading:       "Default",
+						ValueTemplate: "{{.IsDefault}}",
+					},
 				},
 			}
 

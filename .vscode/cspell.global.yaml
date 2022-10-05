@@ -20,20 +20,24 @@ ignoreWords:
     - appcs
     - appi
     - arck
+    - armkeyvault
+    - armresources
     - azconnection
+    - azcore
     - Azdo
     - aztfmod
     - azurecaf
     - azuredevops
     - azurerm
-    - armresources
-    - azcore
+    - armcontainerregistry
     - azidentity
+    - azsecrets
     - Bfor
     - bicepcli
     - cdne
     - cdnp
     - commandrunner
+    - containerregistry
     - databricks
     - dedb
     - devcontainer

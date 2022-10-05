@@ -176,21 +176,7 @@ func (p *AzdoScmProvider) ensureGitRepositoryExists(ctx context.Context, console
 		return "", err
 	}
 
-	remoteParts := strings.Split(p.repoDetails.remoteUrl, "@")
-	if len(remoteParts) < 2 {
-		return "", fmt.Errorf("invalid azure devops remote")
-	}
-	remoteUser := remoteParts[0]
-	remoteHost := remoteParts[1]
-	pat, err := azdo.EnsurePatExists(ctx, p.Env, console)
-	if err != nil {
-		return "", err
-	}
-
-	updatedRemote := fmt.Sprintf("%s:%s@%s", remoteUser, pat, remoteHost)
-	console.Message(ctx, fmt.Sprintf("using Azure DevOps repo: %s", p.repoDetails.repoWebUrl))
-
-	return updatedRemote, nil
+	return *repo.RemoteUrl, nil
 }
 
 // helper function to return repoDetails from state
@@ -309,7 +295,23 @@ func (p *AzdoScmProvider) configureGitRemote(ctx context.Context, repoPath strin
 			return "", err
 		}
 	}
+
+	branch, err := p.getCurrentGitBranch(ctx, repoPath)
+	if err != nil {
+		return "", err
+	}
+	azdo.DefaultBranch = branch
+
 	return remoteUrl, nil
+}
+
+func (p *AzdoScmProvider) getCurrentGitBranch(ctx context.Context, repoPath string) (string, error) {
+	gitCli := git.NewGitCli(ctx)
+	branch, err := gitCli.GetCurrentBranch(ctx, repoPath)
+	if err != nil {
+		return "", err
+	}
+	return branch, nil
 }
 
 // returns the git remote for a newly created repo that is part of a newly created AzDo project
@@ -398,6 +400,16 @@ func isAzDoRemote(remoteUrl string) error {
 	return nil
 }
 
+func parseAzDoRemote(remoteUrl string) (string, error) {
+	for _, r := range []*regexp.Regexp{azdoRemoteGitUrlRegex, azdoRemoteHttpsUrlRegex} {
+		captures := r.FindStringSubmatch(remoteUrl)
+		if captures != nil {
+			return captures[1], nil
+		}
+	}
+	return "", nil
+}
+
 // gitRepoDetails extracts the information from an Azure DevOps remote url into general scm concepts
 // like owner, name and path
 func (p *AzdoScmProvider) gitRepoDetails(ctx context.Context, remoteUrl string) (*gitRepositoryDetails, error) {
@@ -407,6 +419,10 @@ func (p *AzdoScmProvider) gitRepoDetails(ctx context.Context, remoteUrl string) 
 	}
 
 	repoDetails := p.getRepoDetails()
+	// Try getting values from the env.
+	// This is a quick shortcut to avoid parsing the remote in detail.
+	// While using the same .env file, the outputs from creating a project and repository
+	// are memorized in .env file
 	if repoDetails.orgName == "" {
 		repoDetails.orgName = p.Env.Values[azdo.AzDoEnvironmentOrgName]
 	}
@@ -429,6 +445,44 @@ func (p *AzdoScmProvider) gitRepoDetails(ctx context.Context, remoteUrl string) 
 		repoDetails.remoteUrl = remoteUrl
 	}
 
+	if repoDetails.projectId == "" || repoDetails.repoId == "" {
+		// Removing environment or creating a new one would remove any memory fro project
+		// and repo.  In that case, it needs to be calculated from the remote url
+		azdoSlug, err := parseAzDoRemote(remoteUrl)
+		if err != nil {
+			return nil, fmt.Errorf("parsing Azure DevOps remote url: %s: %w", remoteUrl, err)
+		}
+		// azdoSlug => Org/Project/_git/repoName
+		parts := strings.Split(azdoSlug, "_git/")
+		repoDetails.projectName = strings.Split(parts[0], "/")[1]
+		p.Env.Values[azdo.AzDoEnvironmentProjectName] = repoDetails.projectName
+		repoDetails.repoName = parts[1]
+		p.Env.Values[azdo.AzDoEnvironmentRepoName] = repoDetails.repoName
+
+		connection, err := p.getAzdoConnection(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("Getting azdo connection: %w", err)
+		}
+
+		repo, err := azdo.GetGitRepository(ctx, repoDetails.projectName, repoDetails.repoName, connection)
+		if err != nil {
+			return nil, fmt.Errorf("Looking for repository: %w", err)
+		}
+		repoDetails.repoId = repo.Id.String()
+		p.Env.Values[azdo.AzDoEnvironmentRepoIdName] = repoDetails.repoId
+		repoDetails.repoWebUrl = *repo.WebUrl
+		p.Env.Values[azdo.AzDoEnvironmentRepoWebUrl] = repoDetails.repoWebUrl
+
+		proj, err := azdo.GetProjectByName(ctx, connection, repoDetails.projectName)
+		if err != nil {
+			return nil, fmt.Errorf("Looking for project: %w", err)
+		}
+		repoDetails.projectId = proj.Id.String()
+		p.Env.Values[azdo.AzDoEnvironmentProjectIdName] = repoDetails.projectId
+
+		_ = p.Env.Save() // best effort to persist in the env
+	}
+
 	return &gitRepositoryDetails{
 		owner:    p.repoDetails.orgName,
 		repoName: p.repoDetails.repoName,
@@ -437,51 +491,12 @@ func (p *AzdoScmProvider) gitRepoDetails(ctx context.Context, remoteUrl string) 
 }
 
 // preventGitPush is nil for Azure DevOps
-// this method also checks for a credential helper and prompts the user to set a helper to make subsequent pushes easier
 func (p *AzdoScmProvider) preventGitPush(
 	ctx context.Context,
 	gitRepo *gitRepositoryDetails,
 	remoteName string,
 	branchName string,
 	console input.Console) (bool, error) {
-
-	gitCli := git.NewGitCli(ctx)
-	foundHelper, err := gitCli.CheckConfigCredentialHelper(ctx)
-	if err != nil {
-		return false, err
-	}
-	if !foundHelper {
-		console.Message(ctx, `  
-  A credential helper is not configured for git.
-  This will require you to enter your Azure DevOps PAT when executing a git push.
-  https://aka.ms/azure-dev/git-store
-  `)
-		idx, err := console.Select(ctx, input.ConsoleOptions{
-			Message: "Would you like to enable credential.helper store for this local git repository?",
-			Options: []string{
-				"Yes - set credential.helper = store",
-				"No - do not configure credential.helper",
-			},
-			DefaultValue: "Yes - set credential.helper = store",
-		})
-		if err != nil {
-			return false, fmt.Errorf("prompting for credential helper: %w ", err)
-		}
-		switch idx {
-		// Configure Credential Store
-		case 0:
-			err = gitCli.SetCredentialStore(ctx, p.AzdContext.ProjectDirectory())
-			if err != nil {
-				return false, fmt.Errorf("storing credentials in env: %w ", err)
-			}
-		// Skip
-		case 1:
-			break
-		default:
-			panic(fmt.Sprintf("unexpected selection index %d", idx))
-		}
-	}
-
 	return false, nil
 }
 
@@ -495,13 +510,6 @@ func (p *AzdoScmProvider) postGitPush(
 	branchName string,
 	console input.Console) error {
 
-	gitCli := git.NewGitCli(ctx)
-
-	//Reset remote to original url without PAT
-	err := gitCli.UpdateRemote(ctx, p.AzdContext.ProjectDirectory(), remoteName, p.repoDetails.remoteUrl)
-	if err != nil {
-		return err
-	}
 	if gitRepo.pushStatus {
 		console.Message(ctx, output.WithSuccessFormat(azdo.AzdoConfigSuccessMessage, p.repoDetails.repoWebUrl))
 	}
@@ -590,8 +598,6 @@ func (p *AzdoCiProvider) configureConnection(
 	}
 	return nil
 }
-
-// struct used to deserialize service principal json object
 
 // parses the incoming json object and deserializes it to a struct
 func parseCredentials(ctx context.Context, credentials json.RawMessage) (*azdo.AzureServicePrincipalCredentials, error) {

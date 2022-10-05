@@ -71,6 +71,7 @@ steps:
   - ${{ if eq('true', parameters.UploadInstaller) }}:
     - pwsh: |
         Copy-Item cli/installer/install-azd.sh release/
+        Copy-Item cli/installer/install-azd-report.sh release/
         Copy-Item cli/installer/uninstall-azd.sh release/
         Copy-Item cli/installer/install-azd.ps1 release/
         Copy-Item cli/installer/uninstall-azd.ps1 release/

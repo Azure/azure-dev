@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"net/url"
 	"sort"
 	"time"
 
@@ -17,10 +18,13 @@ import (
 )
 
 const defaultProgressTitle string = "Provisioning Azure resources"
+const deploymentStartedDisplayMessage string = "Provisioning Azure resources can take some time."
 const succeededProvisioningState string = "Succeeded"
 
 // ProvisioningProgressDisplay displays interactive progress for an ongoing Azure provisioning operation.
 type ProvisioningProgressDisplay struct {
+	// Whether the deployment has started
+	deploymentStarted bool
 	// Keeps track of created resources
 	createdResources map[string]bool
 	resourceManager  infra.ResourceManager
@@ -43,6 +47,19 @@ func (display *ProvisioningProgressDisplay) ReportProgress(ctx context.Context) 
 		Timestamp:  time.Now(),
 		Message:    defaultProgressTitle,
 		Operations: nil,
+	}
+
+	if !display.deploymentStarted {
+		_, err := display.scope.GetDeployment(ctx)
+		if err != nil {
+			// Return default progress
+			log.Printf("error while reporting progress: %s", err.Error())
+			return &progress, nil
+		}
+
+		display.deploymentStarted = true
+		deploymentUrl := fmt.Sprintf(output.WithLinkFormat("https://portal.azure.com/#blade/HubsExtension/DeploymentDetailsBlade/overview/id/%s\n"), url.PathEscape(display.scope.DeploymentUrl()))
+		display.console.Message(ctx, fmt.Sprintf("%s\n\nYou can view detailed progress in the Azure Portal:\n%s", deploymentStartedDisplayMessage, deploymentUrl))
 	}
 
 	operations, err := display.resourceManager.GetDeploymentResourceOperations(ctx, display.scope)

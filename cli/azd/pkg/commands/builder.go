@@ -4,10 +4,12 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/telemetry"
 	"github.com/azure/azure-dev/cli/azd/internal/telemetry/events"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
+	"github.com/azure/azure-dev/cli/azd/pkg/identity"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
@@ -107,6 +109,13 @@ func createRootContext(ctx context.Context, cmd *cobra.Command, rootOptions *int
 		EnableDebug:     rootOptions.EnableDebugLogging,
 		EnableTelemetry: rootOptions.EnableTelemetry,
 	}
+
+	// Set default credentials used for operations against azure data/control planes
+	credentials, err := azidentity.NewDefaultAzureCredential(nil)
+	if err != nil {
+		panic("failed creating default azure credentials")
+	}
+	ctx = identity.WithCredentials(ctx, credentials)
 
 	// Create and set the AzCli that will be used for the command
 	azCli := azcli.NewAzCli(azCliArgs)

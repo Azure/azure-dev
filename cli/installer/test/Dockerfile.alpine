@@ -9,4 +9,10 @@ ARG version='must set version'
 RUN apk add curl libc6-compat tar bash
 
 COPY ./*.sh ./
-RUN ./test-sh-install.sh "${shell}" "${baseUrl}" "${version}"
+COPY test/telemetry/alpine.sh.telemetry.csv /telemetry.csv
+
+ENV SHELL="${shell}"
+ENV BASE_URL="${baseUrl}"
+ENV VERSION="${version}"
+
+ENTRYPOINT ./test-sh-install.sh $SHELL $BASE_URL $VERSION && ./test-telemetry-functions.sh

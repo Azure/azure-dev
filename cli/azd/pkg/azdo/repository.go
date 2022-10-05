@@ -96,7 +96,7 @@ func GetGitRepositoriesInProject(ctx context.Context, projectName string, orgNam
 	})
 
 	if err != nil {
-		return nil, fmt.Errorf("prompting for azdo project: %w", err)
+		return nil, fmt.Errorf("prompting for azdo repository: %w", err)
 	}
 	selectedRepoName := options[repoIdx]
 	for _, repo := range repos {
@@ -106,4 +106,17 @@ func GetGitRepositoriesInProject(ctx context.Context, projectName string, orgNam
 	}
 
 	return nil, fmt.Errorf("error finding git repository %s in organization %s", selectedRepoName, orgName)
+}
+
+// GetGitRepository find the repository by its name
+func GetGitRepository(ctx context.Context, projectName string, repoName string, connection *azuredevops.Connection) (*git.GitRepository, error) {
+	gitClient, err := git.NewClient(ctx, connection)
+	if err != nil {
+		return nil, err
+	}
+
+	return gitClient.GetRepository(ctx, git.GetRepositoryArgs{
+		RepositoryId: &repoName,
+		Project:      &projectName,
+	})
 }

@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"log"
 	"math"
-	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -160,9 +159,6 @@ func (p *BicepProvider) Deploy(ctx context.Context, pd *DeploymentPlan, scope in
 			done := make(chan bool)
 			var operations []azcli.AzCliResourceOperation
 
-			deploymentUrl := fmt.Sprintf(output.WithLinkFormat("https://portal.azure.com/#blade/HubsExtension/DeploymentDetailsBlade/overview/id/%s\n"), url.PathEscape(scope.DeploymentUrl()))
-			p.console.Message(ctx, fmt.Sprintf("Provisioning Azure resources can take some time.\n\nYou can view detailed progress in the Azure Portal:\n%s", deploymentUrl))
-
 			// Ensure the done marker channel is sent in all conditions
 			defer func() {
 				done <- true
@@ -172,12 +168,17 @@ func (p *BicepProvider) Deploy(ctx context.Context, pd *DeploymentPlan, scope in
 			go func() {
 				resourceManager := infra.NewAzureResourceManager(ctx)
 				progressDisplay := NewProvisioningProgressDisplay(resourceManager, p.console, scope)
+				// Make initial delay shorter to be more responsive in displaying initial progress
+				initialDelay := 3 * time.Second
+				regularDelay := 10 * time.Second
+				timer := time.NewTimer(initialDelay)
 
 				for {
 					select {
 					case <-done:
+						timer.Stop()
 						return
-					case <-time.After(10 * time.Second):
+					case <-timer.C:
 						progressReport, err := progressDisplay.ReportProgress(ctx)
 						if err != nil {
 							// We don't want to fail the whole deployment if a progress reporting error occurs
@@ -187,6 +188,8 @@ func (p *BicepProvider) Deploy(ctx context.Context, pd *DeploymentPlan, scope in
 
 						operations = progressReport.Operations
 						asyncContext.SetProgress(progressReport)
+
+						timer.Reset(regularDelay)
 					}
 				}
 			}()
@@ -227,20 +230,25 @@ func (p *BicepProvider) Destroy(ctx context.Context, deployment *Deployment, opt
 			}
 
 			asyncContext.SetProgress(&DestroyProgress{Message: "Fetching resources", Timestamp: time.Now()})
-			allResources, err := p.getAllResources(ctx, resourceGroups)
+			groupedResources, err := p.getAllResources(ctx, resourceGroups)
 			if err != nil {
 				asyncContext.SetError(fmt.Errorf("getting resources to delete: %w", err))
 				return
 			}
 
+			allResources := []azcli.AzCliResource{}
+			for _, groupResources := range groupedResources {
+				allResources = append(allResources, groupResources...)
+			}
+
 			asyncContext.SetProgress(&DestroyProgress{Message: "Getting KeyVaults to purge", Timestamp: time.Now()})
-			keyVaults, err := p.getKeyVaultsToPurge(ctx, allResources)
+			keyVaults, err := p.getKeyVaultsToPurge(ctx, groupedResources)
 			if err != nil {
 				asyncContext.SetError(fmt.Errorf("getting key vaults to purge: %w", err))
 				return
 			}
 
-			if err := p.destroyResourceGroups(ctx, asyncContext, options, resourceGroups, allResources); err != nil {
+			if err := p.destroyResourceGroups(ctx, asyncContext, options, groupedResources, len(allResources)); err != nil {
 				asyncContext.SetError(fmt.Errorf("destroying resource groups: %w", err))
 				return
 			}
@@ -274,27 +282,27 @@ func (p *BicepProvider) getResourceGroups(ctx context.Context) ([]string, error)
 	return resourceGroups, nil
 }
 
-func (p *BicepProvider) getAllResources(ctx context.Context, resourceGroups []string) ([]azcli.AzCliResource, error) {
-	allResources := []azcli.AzCliResource{}
+func (p *BicepProvider) getAllResources(ctx context.Context, resourceGroups []string) (map[string][]azcli.AzCliResource, error) {
+	allResources := map[string][]azcli.AzCliResource{}
 
 	for _, resourceGroup := range resourceGroups {
-		resources, err := p.azCli.ListResourceGroupResources(ctx, p.env.GetSubscriptionId(), resourceGroup, nil)
+		groupResources, err := p.azCli.ListResourceGroupResources(ctx, p.env.GetSubscriptionId(), resourceGroup, nil)
 		if err != nil {
-			return []azcli.AzCliResource{}, nil
+			return allResources, nil
 		}
 
-		allResources = append(allResources, resources...)
+		allResources[resourceGroup] = groupResources
 	}
 
 	return allResources, nil
 }
 
 // Deletes the azure resources within the deployment
-func (p *BicepProvider) destroyResourceGroups(ctx context.Context, asyncContext *async.InteractiveTaskContextWithProgress[*DestroyResult, *DestroyProgress], options DestroyOptions, resourceGroups []string, allResources []azcli.AzCliResource) error {
+func (p *BicepProvider) destroyResourceGroups(ctx context.Context, asyncContext *async.InteractiveTaskContextWithProgress[*DestroyResult, *DestroyProgress], options DestroyOptions, groupedResources map[string][]azcli.AzCliResource, resourceCount int) error {
 	if !options.Force() {
 		err := asyncContext.Interact(func() error {
 			confirmDestroy, err := p.console.Confirm(ctx, input.ConsoleOptions{
-				Message:      fmt.Sprintf("This will delete %d resources, are you sure you want to continue?", len(allResources)),
+				Message:      fmt.Sprintf("This will delete %d resources, are you sure you want to continue?", resourceCount),
 				DefaultValue: false,
 			})
 
@@ -314,7 +322,7 @@ func (p *BicepProvider) destroyResourceGroups(ctx context.Context, asyncContext 
 		}
 	}
 
-	for _, resourceGroup := range resourceGroups {
+	for resourceGroup := range groupedResources {
 		message := fmt.Sprintf("%s resource group %s", output.WithErrorFormat("Deleting"), output.WithHighLightFormat(resourceGroup))
 		asyncContext.SetProgress(&DestroyProgress{Message: message, Timestamp: time.Now()})
 
@@ -328,29 +336,31 @@ func (p *BicepProvider) destroyResourceGroups(ctx context.Context, asyncContext 
 	return nil
 }
 
-func (p *BicepProvider) getKeyVaults(ctx context.Context, resources []azcli.AzCliResource) ([]azcli.AzCliKeyVault, error) {
-	vaults := []azcli.AzCliKeyVault{}
+func (p *BicepProvider) getKeyVaults(ctx context.Context, groupedResources map[string][]azcli.AzCliResource) ([]*azcli.AzCliKeyVault, error) {
+	vaults := []*azcli.AzCliKeyVault{}
 
-	for _, resource := range resources {
-		if resource.Type == string(infra.AzureResourceTypeKeyVault) {
-			vault, err := p.azCli.GetKeyVault(ctx, p.env.GetSubscriptionId(), resource.Name)
-			if err != nil {
-				return []azcli.AzCliKeyVault{}, fmt.Errorf("listing key vault %s properties: %w", resource.Name, err)
+	for resourceGroup, groupResources := range groupedResources {
+		for _, resource := range groupResources {
+			if resource.Type == string(infra.AzureResourceTypeKeyVault) {
+				vault, err := p.azCli.GetKeyVault(ctx, p.env.GetSubscriptionId(), resourceGroup, resource.Name)
+				if err != nil {
+					return nil, fmt.Errorf("listing key vault %s properties: %w", resource.Name, err)
+				}
+				vaults = append(vaults, vault)
 			}
-			vaults = append(vaults, vault)
 		}
 	}
 
 	return vaults, nil
 }
 
-func (p *BicepProvider) getKeyVaultsToPurge(ctx context.Context, resources []azcli.AzCliResource) ([]azcli.AzCliKeyVault, error) {
-	vaults, err := p.getKeyVaults(ctx, resources)
+func (p *BicepProvider) getKeyVaultsToPurge(ctx context.Context, groupedResources map[string][]azcli.AzCliResource) ([]*azcli.AzCliKeyVault, error) {
+	vaults, err := p.getKeyVaults(ctx, groupedResources)
 	if err != nil {
-		return []azcli.AzCliKeyVault{}, err
+		return nil, err
 	}
 
-	vaultsToPurge := []azcli.AzCliKeyVault{}
+	vaultsToPurge := []*azcli.AzCliKeyVault{}
 	for _, v := range vaults {
 		if v.Properties.EnableSoftDelete && !v.Properties.EnablePurgeProtection {
 			vaultsToPurge = append(vaultsToPurge, v)
@@ -372,7 +382,7 @@ func (p *BicepProvider) getKeyVaultsToPurge(ctx context.Context, resources []azc
 //
 // See https://docs.microsoft.com/azure/key-vault/general/key-vault-recovery?tabs=azure-portal#what-are-soft-delete-and-purge-protection
 // for more information on this feature.
-func (p *BicepProvider) purgeKeyVaults(ctx context.Context, asyncContext *async.InteractiveTaskContextWithProgress[*DestroyResult, *DestroyProgress], keyVaults []azcli.AzCliKeyVault, options DestroyOptions) error {
+func (p *BicepProvider) purgeKeyVaults(ctx context.Context, asyncContext *async.InteractiveTaskContextWithProgress[*DestroyResult, *DestroyProgress], keyVaults []*azcli.AzCliKeyVault, options DestroyOptions) error {
 	if len(keyVaults) > 0 && !options.Purge() {
 		keyVaultWarning := fmt.Sprintf(""+
 			"\nThis operation will delete and purge %d Key Vaults. These Key Vaults have soft delete enabled allowing them to be recovered for a period \n"+
@@ -412,7 +422,7 @@ func (p *BicepProvider) purgeKeyVaults(ctx context.Context, asyncContext *async.
 
 		asyncContext.SetProgress(&progressReport)
 
-		err := p.azCli.PurgeKeyVault(ctx, p.env.GetSubscriptionId(), keyVault.Name)
+		err := p.azCli.PurgeKeyVault(ctx, p.env.GetSubscriptionId(), keyVault.Name, keyVault.Location)
 		if err != nil {
 			return fmt.Errorf("purging key vault %s: %w", keyVault.Name, err)
 		}
@@ -517,8 +527,8 @@ func (p *BicepProvider) createParametersFile(ctx context.Context, asyncContext *
 	}
 
 	if cmdsubst.ContainsCommandInvocation(replaced, cmdsubst.SecretOrRandomPasswordCommandName) {
-		cmdExecutor := cmdsubst.NewSecretOrRandomPasswordExecutor(ctx, p.azCli, p.env.GetSubscriptionId())
-		replaced, err = cmdsubst.Eval(replaced, cmdExecutor)
+		cmdExecutor := cmdsubst.NewSecretOrRandomPasswordExecutor(p.azCli)
+		replaced, err = cmdsubst.Eval(ctx, replaced, cmdExecutor)
 		if err != nil {
 			return nil, "", fmt.Errorf("substituting command output inside parameter file: %w", err)
 		}

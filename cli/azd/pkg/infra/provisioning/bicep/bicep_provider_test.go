@@ -12,7 +12,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/keyvault/armkeyvault"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
+	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
@@ -144,8 +146,6 @@ func TestBicepDeploy(t *testing.T) {
 	require.Nil(t, err)
 	require.NotNil(t, deployResult)
 	require.Equal(t, deployResult.Deployment.Outputs["WEBSITE_URL"].Value, expectedWebsiteUrl)
-	require.Equal(t, 1, len(mockContext.Console.Output()))
-	require.True(t, strings.Contains(mockContext.Console.Output()[0], "Provisioning Azure resources"))
 }
 
 func TestBicepDestroy(t *testing.T) {
@@ -375,33 +375,19 @@ func prepareDestroyMocks(mockContext *mocks.MockContext) {
 	resourceList := armresources.ResourceListResult{
 		Value: []*armresources.GenericResourceExpanded{
 			{
-				ID:       mocks.RefOf("webapp"),
-				Name:     mocks.RefOf("app-123"),
-				Type:     mocks.RefOf(string(infra.AzureResourceTypeWebSite)),
-				Location: mocks.RefOf("eastus2"),
+				ID:       convert.RefOf("webapp"),
+				Name:     convert.RefOf("app-123"),
+				Type:     convert.RefOf(string(infra.AzureResourceTypeWebSite)),
+				Location: convert.RefOf("eastus2"),
 			},
 			{
-				ID:       mocks.RefOf("keyvault"),
-				Name:     mocks.RefOf("kv-123"),
-				Type:     mocks.RefOf(string(infra.AzureResourceTypeKeyVault)),
-				Location: mocks.RefOf("eastus2"),
+				ID:       convert.RefOf("keyvault"),
+				Name:     convert.RefOf("kv-123"),
+				Type:     convert.RefOf(string(infra.AzureResourceTypeKeyVault)),
+				Location: convert.RefOf("eastus2"),
 			},
 		},
 	}
-
-	keyVault := azcli.AzCliKeyVault{
-		Id:   "kv-123",
-		Name: "kv-123",
-		Properties: struct {
-			EnableSoftDelete      bool "json:\"enableSoftDelete\""
-			EnablePurgeProtection bool "json:\"enablePurgeProtection\""
-		}{
-			EnableSoftDelete:      true,
-			EnablePurgeProtection: false,
-		},
-	}
-
-	keyVaultBytes, _ := json.Marshal(keyVault)
 
 	// Get list of resources to delete
 	mockContext.HttpClient.When(func(request *http.Request) bool {
@@ -416,11 +402,27 @@ func prepareDestroyMocks(mockContext *mocks.MockContext) {
 	})
 
 	// Get Key Vault
-	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
-		return strings.Contains(command, "az keyvault show")
-	}).Respond(exec.RunResult{
-		Stdout: string(keyVaultBytes),
-		Stderr: "",
+	mockContext.HttpClient.When(func(request *http.Request) bool {
+		return request.Method == http.MethodGet && strings.Contains(request.URL.Path, "/vaults/kv-123")
+	}).RespondFn(func(request *http.Request) (*http.Response, error) {
+		keyVaultResponse := armkeyvault.VaultsClientGetResponse{
+			Vault: armkeyvault.Vault{
+				ID:       convert.RefOf("kv-123"),
+				Name:     convert.RefOf("kv-123"),
+				Location: convert.RefOf("eastus2"),
+				Properties: &armkeyvault.VaultProperties{
+					EnableSoftDelete:      convert.RefOf(true),
+					EnablePurgeProtection: convert.RefOf(false),
+				},
+			},
+		}
+
+		keyVaultBytes, _ := json.Marshal(keyVaultResponse)
+
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(bytes.NewBuffer(keyVaultBytes)),
+		}, nil
 	})
 
 	// Delete resource group
@@ -436,11 +438,15 @@ func prepareDestroyMocks(mockContext *mocks.MockContext) {
 	})
 
 	// Purge Key vault
-	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
-		return strings.Contains(command, "az keyvault purge")
-	}).Respond(exec.RunResult{
-		Stdout: "",
-		Stderr: "",
+	mockContext.HttpClient.When(func(request *http.Request) bool {
+		return request.Method == http.MethodPost && strings.Contains(request.URL.Path, "deletedVaults/kv-123/purge")
+	}).RespondFn(func(request *http.Request) (*http.Response, error) {
+		return &http.Response{
+			Request:    request,
+			Header:     http.Header{},
+			StatusCode: http.StatusOK,
+			Body:       http.NoBody,
+		}, nil
 	})
 
 	// Delete deployment

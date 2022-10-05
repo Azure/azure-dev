@@ -23,6 +23,19 @@ type Docker struct {
 	commandRunner exec.CommandRunner
 }
 
+func (d *Docker) Login(ctx context.Context, loginServer string, username string, password string) error {
+	_, err := d.executeCommand(ctx, ".", "login",
+		"--username", username,
+		"--password", password,
+		loginServer)
+
+	if err != nil {
+		return fmt.Errorf("failed logging into docker: %w", err)
+	}
+
+	return nil
+}
+
 // Runs a Docker build for a given Dockerfile. If the platform is not specified (empty), it defaults to amd64. If the build is successful, the function
 // returns the image id of the built image.
 func (d *Docker) Build(ctx context.Context, cwd string, dockerFilePath string, platform string, buildContext string) (string, error) {

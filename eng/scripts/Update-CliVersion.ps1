@@ -5,7 +5,7 @@ param(
 $CLI_VERSION_FILE = "$PSScriptRoot../../../cli/version.txt"
 . "$PSScriptRoot../../common/scripts/common.ps1"
 
-Set-StrictMode -Version 3
+Set-StrictMode -Version 4
 
 function getVersion {
     $versionString = Get-Content $CLI_VERSION_FILE

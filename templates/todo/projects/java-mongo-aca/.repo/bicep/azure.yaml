@@ -1,0 +1,16 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/Azure/azure-dev/main/schemas/v1.0/azure.yaml.json
+
+name: todo-java-mongo-aca
+metadata:
+  template: todo-java-mongo-aca@0.0.1-beta
+services:
+  web:
+    project: ../../web/react-fluent
+    module: app/web
+    language: js
+    host: containerapp
+  api:
+    project: ../../api/java
+    module: app/api
+    language: java
+    host: containerapp

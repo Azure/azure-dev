@@ -3,6 +3,7 @@ package account
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
@@ -120,6 +121,25 @@ func (m *Manager) SetDefaultSubscription(ctx context.Context, subscriptionId str
 	}
 
 	return azdConfig.DefaultSubscription, nil
+}
+
+// Sets the default Azure subscription for the current logged in account.
+func (m *Manager) SetDefaultSubscriptionWithName(ctx context.Context, subscriptionName string) (*config.Subscription, error) {
+	subscriptions, err := m.GetSubscriptions(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	// Lookup subscriptions and attempt to match by name
+	subIndex := slices.IndexFunc(subscriptions, func(s azcli.AzCliSubscriptionInfo) bool {
+		return strings.TrimSpace(strings.ToLower(subscriptionName)) == strings.ToLower(s.Name)
+	})
+
+	if subIndex < 0 {
+		return nil, fmt.Errorf("subscription '%s' not found", subscriptionName)
+	}
+
+	return m.SetDefaultSubscription(ctx, subscriptions[subIndex].Id)
 }
 
 // Sets the default Azure location for the current logged in account.

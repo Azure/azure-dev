@@ -12,10 +12,8 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
-	"golang.org/x/exp/slices"
 )
 
 func NewAccountCmd(rootOptions *internal.GlobalCommandOptions) *cobra.Command {
@@ -228,23 +226,9 @@ func (a *accountSetAction) Run(ctx context.Context, cmd *cobra.Command, args []s
 
 	// Sets defaults subscription when -n / --name argument has been specified
 	if !subscriptionSet && strings.TrimSpace(a.subscriptionName) != "" {
-		subscriptions, err := manager.GetSubscriptions(ctx)
+		_, err := manager.SetDefaultSubscriptionWithName(ctx, a.subscriptionName)
 		if err != nil {
-			return err
-		}
-
-		// Lookup subscriptions and attempt to match by name
-		subIndex := slices.IndexFunc(subscriptions, func(s azcli.AzCliSubscriptionInfo) bool {
-			return strings.TrimSpace(strings.ToLower(a.subscriptionName)) == strings.ToLower(s.Name)
-		})
-
-		if subIndex < 0 {
-			return fmt.Errorf("subscription '%s' not found", a.subscriptionName)
-		}
-
-		_, err = manager.SetDefaultSubscription(ctx, subscriptions[subIndex].Id)
-		if err != nil {
-			return fmt.Errorf("failed setting default subscription, '%s' : %w", a.subscriptionId, err)
+			return fmt.Errorf("failed setting default subscription, '%s' : %w", a.subscriptionName, err)
 		}
 	}
 

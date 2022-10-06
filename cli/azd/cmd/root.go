@@ -81,7 +81,6 @@ For more information, visit the Azure Developer CLI Dev Hub: https://aka.ms/azur
 
 	opts.EnableTelemetry = telemetry.IsTelemetryEnabled()
 
-	cmd.AddCommand(accountCmd(opts))
 	cmd.AddCommand(deployCmd(opts))
 	cmd.AddCommand(downCmd(opts))
 	cmd.AddCommand(envCmd(opts))

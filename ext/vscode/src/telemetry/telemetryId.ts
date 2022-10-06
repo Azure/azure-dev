@@ -40,6 +40,9 @@ export enum TelemetryId {
     // Reported when 'up' CLI command is invoked.
     UpCli = 'azure-dev.commands.cli.up.task',
 
+    // Reported when 'down' CLI command is invoked.
+    DownCli = 'azure-dev.commands.cli.down.task',
+
     // Reported when 'init' CLI command is invoked.
     InitCli = 'azure-dev.commands.cli.init.task',
     

@@ -9,6 +9,7 @@ import { deploy } from './deploy';
 import { restore } from './restore';
 import { infraDelete } from './infra';
 import { up } from './up';
+import { down } from './down';
 import { monitor } from './monitor';
 import { selectEnvironment, newEnvironment, refreshEnvironment } from './env';
 import { pipelineConfig } from './pipeline';
@@ -22,6 +23,7 @@ export function registerCommands(): void {
     registerActivityCommand('azure-dev.commands.cli.restore', restore);
     registerActivityCommand('azure-dev.commands.cli.infra-delete', infraDelete);
     registerActivityCommand('azure-dev.commands.cli.up', up);
+    registerActivityCommand('azure-dev.commands.cli.down', down);
     registerActivityCommand('azure-dev.commands.cli.monitor', monitor);
     registerActivityCommand('azure-dev.commands.cli.env-select', selectEnvironment);
     registerActivityCommand('azure-dev.commands.cli.env-new', newEnvironment);

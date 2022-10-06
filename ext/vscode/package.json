@@ -25,6 +25,7 @@
         "onCommand:azure-dev.commands.cli.restore",
         "onCommand:azure-dev.commands.cli.infra-delete",
         "onCommand:azure-dev.commands.cli.up",
+        "onCommand:azure-dev.commands.cli.down",
         "onCommand:azure-dev.commands.cli.monitor",
         "onCommand:azure-dev.commands.cli.env-select",
         "onCommand:azure-dev.commands.cli.env-new",
@@ -65,6 +66,11 @@
                 "category": "%azure-dev.commands_category%",
                 "command": "azure-dev.commands.cli.up",
                 "title": "%azure-dev.commands.cli.up.title%"
+            },
+            {
+                "category": "%azure-dev.commands_category%",
+                "command": "azure-dev.commands.cli.down",
+                "title": "%azure-dev.commands.cli.down.title%"
             },
             {
                 "category": "%azure-dev.commands_category%",
@@ -162,6 +168,10 @@
             "view/item/context": [
               {
                 "command": "azure-dev.commands.cli.up",
+                "when": "viewItem == ms-azuretools.azure-dev.views.workspace.application"
+              },
+              {
+                "command": "azure-dev.commands.cli.down",
                 "when": "viewItem == ms-azuretools.azure-dev.views.workspace.application"
               }
             ]

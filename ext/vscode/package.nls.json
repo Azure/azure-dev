@@ -26,6 +26,7 @@
     "azure-dev.commands.cli.infra-delete.purge-prompt": "Permanently delete resources with are soft-deleted by default (e.g. KeyVaults)?",
 
     "azure-dev.commands.cli.up.title": "up (initialize application, provision resources, and deploy)",
+    "azure-dev.commands.cli.down.title": "down (delete deployed application and infrastructure)",
 
     "azure-dev.commands.cli.monitor.title": "monitor (monitor a deployed application)",
     "azure-dev.commands.cli.monitor.open-live-metrics": "Application Insights Live Metrics",

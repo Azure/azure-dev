@@ -18,6 +18,10 @@ import (
 	"golang.org/x/exp/slices"
 )
 
+func NewAccountCmd(rootOptions *internal.GlobalCommandOptions) *cobra.Command {
+	return accountCmd(rootOptions)
+}
+
 // Setup account command category
 func accountCmd(rootOptions *internal.GlobalCommandOptions) *cobra.Command {
 	root := &cobra.Command{

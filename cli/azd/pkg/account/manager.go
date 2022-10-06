@@ -221,7 +221,7 @@ func (m *Manager) getDefaultLocation(ctx context.Context) (*config.Location, err
 		if index > -1 {
 			return &config.Location{
 				Name:        allLocations[index].Name,
-				DisplayName: allLocations[index].DisplayName,
+				DisplayName: allLocations[index].RegionalDisplayName,
 			}, nil
 		}
 	}

@@ -29,7 +29,7 @@ func Test_GetAccountDefaults(t *testing.T) {
 			},
 			DefaultLocation: &config.Location{
 				Name:        "westus",
-				DisplayName: "West US",
+				DisplayName: "(US) West US",
 			},
 		}
 
@@ -62,7 +62,7 @@ func Test_GetAccountDefaults(t *testing.T) {
 			},
 			DefaultLocation: &config.Location{
 				Name:        "westus2",
-				DisplayName: "West US 2",
+				DisplayName: "(US) West US 2",
 			},
 		}
 
@@ -456,6 +456,7 @@ func setupAccountMocks(mockContext *mocks.MockContext) {
 		showRes := map[string]any{
 			"id":        "SUBSCRIPTION_02",
 			"name":      "Subscription 2",
+			"tenantId":  "TENANT_ID",
 			"isDefault": false,
 		}
 

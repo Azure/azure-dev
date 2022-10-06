@@ -92,7 +92,7 @@ type AzCli interface {
 	CreateOrUpdateServicePrincipal(ctx context.Context, subscriptionId string, applicationName string, roleToAssign string) (json.RawMessage, error)
 	GetAppServiceProperties(ctx context.Context, subscriptionId string, resourceGroupName string, applicationName string) (AzCliAppServiceProperties, error)
 	GetContainerAppProperties(ctx context.Context, subscriptionId string, resourceGroupName string, applicationName string) (AzCliContainerAppProperties, error)
-	GetStaticWebAppProperties(ctx context.Context, subscriptionID string, resourceGroup string, appName string) (AzCliStaticWebAppProperties, error)
+	GetStaticWebAppProperties(ctx context.Context, subscriptionID string, resourceGroup string, appName string) (*AzCliStaticWebAppProperties, error)
 	GetStaticWebAppApiKey(ctx context.Context, subscriptionID string, resourceGroup string, appName string) (string, error)
 	GetStaticWebAppEnvironmentProperties(ctx context.Context, subscriptionID string, resourceGroup string, appName string, environmentName string) (AzCliStaticWebAppEnvironmentProperties, error)
 

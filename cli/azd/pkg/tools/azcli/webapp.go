@@ -3,8 +3,11 @@ package azcli
 import (
 	"context"
 	"fmt"
+	"net/http"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appservice/armappservice"
+	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/identity"
 )
 
@@ -18,28 +21,22 @@ func (cli *azCli) GetAppServiceProperties(ctx context.Context, subscriptionId st
 		return nil, err
 	}
 
-	webApp, err := client.Get(ctx, resourceGroup, appName, nil)
+	var rawResponse *http.Response
+	ctx = runtime.WithCaptureResponse(ctx, &rawResponse)
+
+	_, err = client.Get(ctx, resourceGroup, appName, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed retrieving webapp properties: %w", err)
 	}
 
-	return &AzCliAppServiceProperties{
-		HostNames: webApp,
+	webApp, err := readRawResponse[CustomSite](rawResponse)
+	if err != nil {
+		return nil, err
 	}
 
-	// res, err := cli.runAzCommand(ctx, "webapp", "show", "--subscription", subscriptionId, "--resource-group", resourceGroup, "--name", appName, "--output", "json")
-	// if isNotLoggedInMessage(res.Stderr) {
-	// 	return AzCliAppServiceProperties{}, ErrAzCliNotLoggedIn
-	// } else if err != nil {
-	// 	return AzCliAppServiceProperties{}, fmt.Errorf("failed running az webapp show: %s: %w", res.String(), err)
-	// }
-
-	// var appServiceProperties AzCliAppServiceProperties
-	// if err := json.Unmarshal([]byte(res.Stdout), &appServiceProperties); err != nil {
-	// 	return AzCliAppServiceProperties{}, fmt.Errorf("could not unmarshal output %s as an AzCliAppServiceProperties: %w", res.Stdout, err)
-	// }
-
-	// return appServiceProperties, nil
+	return &AzCliAppServiceProperties{
+		HostNames: webApp.Properties.HostNames,
+	}, nil
 }
 
 func (cli *azCli) DeployAppServiceZip(ctx context.Context, subscriptionId string, resourceGroup string, appName string, deployZipPath string) (string, error) {
@@ -59,7 +56,7 @@ func (cli *azCli) createWebAppsClient(ctx context.Context, subscriptionId string
 		return nil, err
 	}
 
-	options := cli.createArmClientOptions(ctx)
+	options := cli.createArmClientOptions(ctx, convert.RefOf("2022-03-01"))
 	client, err := armappservice.NewWebAppsClient(subscriptionId, cred, options)
 	if err != nil {
 		return nil, fmt.Errorf("creating WebApps client: %w", err)

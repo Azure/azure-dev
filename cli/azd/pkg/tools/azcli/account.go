@@ -105,15 +105,15 @@ func (cli *azCli) GetAccount(ctx context.Context, subscriptionId string) (*AzCli
 	}
 
 	// Using custom response processing unto Go SDK support required properties
-	subscriptionResponse, err := readRawResponse[CustomGetSubscriptionResponse](rawResponse)
+	subscription, err := readRawResponse[CustomSubscription](rawResponse)
 	if err != nil {
 		return nil, err
 	}
 
 	return &AzCliSubscriptionInfo{
-		Id:       subscriptionResponse.Value.SubscriptionID,
-		Name:     subscriptionResponse.Value.DisplayName,
-		TenantId: subscriptionResponse.Value.TenantID,
+		Id:       subscription.SubscriptionID,
+		Name:     subscription.DisplayName,
+		TenantId: subscription.TenantID,
 	}, nil
 }
 
@@ -204,11 +204,6 @@ type CustomLocation struct {
 // Temporary custom response until Go SDK support all of the specified properties in the response
 type CustomLocationMetadata struct {
 	RegionType string `json:"regionType"`
-}
-
-// Temporary custom response until Go SDK support all of the specified properties in the response
-type CustomGetSubscriptionResponse struct {
-	Value CustomSubscription `json:"value"`
 }
 
 // Temporary custom response until Go SDK support all of the specified properties in the response

@@ -255,20 +255,21 @@ func ensureEnvironmentInitialized(ctx context.Context, envSpec environmentSpec, 
 
 func getSubscriptionOptions(ctx context.Context) ([]string, string, error) {
 	accountManager := account.NewManager(ctx)
-
-	defaultSubscriptionId := os.Getenv(environment.SubscriptionIdEnvVarName)
 	subscriptionInfos, err := accountManager.GetSubscriptions(ctx)
 	if err != nil {
 		return nil, "", fmt.Errorf("listing accounts: %w", err)
 	}
 
+	// If `AZURE_SUBSCRIPTION_ID` is set in the environment, use it to influence
+	// the default option in our prompt. Fall back to the what the `az` CLI is
+	// configured to use if the environment variable is unset.
+	defaultSubscriptionId := os.Getenv(environment.SubscriptionIdEnvVarName)
 	if defaultSubscriptionId == "" {
-		accountDefaults, err := accountManager.GetAccountDefaults(ctx)
-		if err != nil {
-			return nil, "", fmt.Errorf("failed retrieving account defaults: %w", err)
+		for _, info := range subscriptionInfos {
+			if info.IsDefault {
+				defaultSubscriptionId = info.Id
+			}
 		}
-
-		defaultSubscriptionId = accountDefaults.DefaultSubscription.Id
 	}
 
 	var subscriptionOptions = make([]string, len(subscriptionInfos)+1)

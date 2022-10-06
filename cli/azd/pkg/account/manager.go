@@ -9,6 +9,8 @@ import (
 	"golang.org/x/exp/slices"
 )
 
+// Manages azd account configuration
+// `az cli` is not required and will only be called `azd` default have not already been set.
 type Manager struct {
 	azCli azcli.AzCli
 }
@@ -107,8 +109,9 @@ func (m *Manager) SetDefaultSubscription(ctx context.Context, subscriptionId str
 	}
 
 	azdConfig.DefaultSubscription = &config.Subscription{
-		Id:   subscription.Id,
-		Name: subscription.Name,
+		Id:       subscription.Id,
+		Name:     subscription.Name,
+		TenantId: subscription.TenantId,
 	}
 
 	err = azdConfig.Save()
@@ -143,7 +146,7 @@ func (m *Manager) SetDefaultLocation(ctx context.Context, location string) (*con
 
 	azdConfig.DefaultLocation = &config.Location{
 		Name:        matchingLocation.Name,
-		DisplayName: matchingLocation.DisplayName,
+		DisplayName: matchingLocation.RegionalDisplayName,
 	}
 
 	err = azdConfig.Save()

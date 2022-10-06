@@ -23,8 +23,9 @@ func Test_GetAccountDefaults(t *testing.T) {
 	t.Run("FromAzdConfig", func(t *testing.T) {
 		expectedConfig := config.Config{
 			DefaultSubscription: &config.Subscription{
-				Id:   "SUBSCRIPTION_01",
-				Name: "Subscription 1",
+				Id:       "SUBSCRIPTION_01",
+				Name:     "Subscription 1",
+				TenantId: "TENANT_ID",
 			},
 			DefaultLocation: &config.Location{
 				Name:        "westus",
@@ -55,8 +56,9 @@ func Test_GetAccountDefaults(t *testing.T) {
 
 		expectedConfig := config.Config{
 			DefaultSubscription: &config.Subscription{
-				Id:   "SUBSCRIPTION_02",
-				Name: "Subscription 2",
+				Id:       "SUBSCRIPTION_02",
+				Name:     "Subscription 2",
+				TenantId: "TENANT_ID",
 			},
 			DefaultLocation: &config.Location{
 				Name:        "westus2",
@@ -82,8 +84,9 @@ func Test_GetAccountDefaults(t *testing.T) {
 
 		expectedConfig := config.Config{
 			DefaultSubscription: &config.Subscription{
-				Id:   "SUBSCRIPTION_02",
-				Name: "Subscription 2",
+				Id:       "SUBSCRIPTION_02",
+				Name:     "Subscription 2",
+				TenantId: "TENANT_ID",
 			},
 			// Location should default to east us 2 when not found in either azd or az configs.
 			DefaultLocation: &config.Location{
@@ -127,8 +130,9 @@ func Test_GetSubscriptions(t *testing.T) {
 	t.Run("SuccessWithDefault", func(t *testing.T) {
 		defaultConfig := config.Config{
 			DefaultSubscription: &config.Subscription{
-				Id:   "SUBSCRIPTION_03",
-				Name: "Subscription 3",
+				Id:       "SUBSCRIPTION_03",
+				Name:     "Subscription 3",
+				TenantId: "TENANT_ID",
 			},
 			DefaultLocation: &config.Location{
 				Name:        "westus2",
@@ -195,8 +199,9 @@ func Test_GetLocations(t *testing.T) {
 func Test_SetDefaultSubscription(t *testing.T) {
 	t.Run("ValidSubscription", func(t *testing.T) {
 		expectedSubscription := config.Subscription{
-			Id:   "SUBSCRIPTION_03",
-			Name: "Subscription 3",
+			Id:       "SUBSCRIPTION_03",
+			Name:     "Subscription 3",
+			TenantId: "TENANT_ID",
 		}
 
 		mockContext := mocks.NewMockContext(context.Background())
@@ -212,8 +217,9 @@ func Test_SetDefaultSubscription(t *testing.T) {
 
 	t.Run("InvalidSubscription", func(t *testing.T) {
 		expectedSubscription := config.Subscription{
-			Id:   "SUBSCRIPTION_03",
-			Name: "Subscription 3",
+			Id:       "SUBSCRIPTION_03",
+			Name:     "Subscription 3",
+			TenantId: "TENANT_ID",
 		}
 
 		mockContext := mocks.NewMockContext(context.Background())
@@ -258,8 +264,9 @@ func Test_SetDefaultLocation(t *testing.T) {
 
 func Test_Clear(t *testing.T) {
 	expectedSubscription := config.Subscription{
-		Id:   "SUBSCRIPTION_03",
-		Name: "Subscription 3",
+		Id:       "SUBSCRIPTION_03",
+		Name:     "Subscription 3",
+		TenantId: "TENANT_ID",
 	}
 
 	mockContext := mocks.NewMockContext(context.Background())
@@ -318,13 +325,11 @@ func setupGetSubscriptionMock(mockContext *mocks.MockContext, subscription *conf
 			}, nil
 		}
 
-		res := azcli.CustomGetSubscriptionResponse{
-			Value: azcli.CustomSubscription{
-				ID:             subscription.Id,
-				SubscriptionID: subscription.Id,
-				DisplayName:    subscription.Name,
-				TenantID:       subscription.TenantId,
-			},
+		res := azcli.CustomSubscription{
+			ID:             subscription.Id,
+			SubscriptionID: subscription.Id,
+			DisplayName:    subscription.Name,
+			TenantID:       subscription.TenantId,
 		}
 
 		jsonBytes, _ := json.Marshal(res)

@@ -103,7 +103,7 @@ func Test_CLI_Init_AsksForSubscriptionIdAndCreatesEnvAndProjectFile(t *testing.T
 	cli.WorkingDirectory = dir
 	cli.Env = append(os.Environ(), "AZURE_LOCATION=eastus2")
 
-	_, err := cli.RunCommandWithStdIn(ctx, "Empty Template\nTESTENV\n\nOther (enter manually)\nMY_SUB_ID\n", "init")
+	_, err := cli.RunCommandWithStdIn(ctx, "Empty Template\nTESTENV\nOther (enter manually)\nMY_SUB_ID\n\n", "init")
 	require.NoError(t, err)
 
 	file, err := os.ReadFile(getTestEnvPath(dir, "TESTENV"))

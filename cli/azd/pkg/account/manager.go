@@ -35,7 +35,7 @@ func (m *Manager) GetAccountDefaults(ctx context.Context) (*config.Config, error
 	if azdConfig.DefaultSubscription == nil {
 		defaultSubscription, err := m.getDefaultSubscription(ctx)
 		if err != nil {
-			return nil, fmt.Errorf("failed retrieving default subscription from Azure CLI")
+			return nil, fmt.Errorf("failed retrieving default subscription from Azure CLI: %w", err)
 		}
 
 		azdConfig.DefaultSubscription = defaultSubscription
@@ -44,7 +44,7 @@ func (m *Manager) GetAccountDefaults(ctx context.Context) (*config.Config, error
 	if azdConfig.DefaultLocation == nil {
 		defaultLocation, err := m.getDefaultLocation(ctx)
 		if err != nil {
-			return nil, fmt.Errorf("failed retrieving default location from Azure CLI")
+			return nil, fmt.Errorf("failed retrieving default location from Azure CLI: %w", err)
 		}
 
 		azdConfig.DefaultLocation = defaultLocation
@@ -185,7 +185,7 @@ func (m *Manager) getDefaultSubscription(ctx context.Context) (*config.Subscript
 
 	subscription, err := m.azCli.GetDefaultAccount(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed retrieving default subscription from Azure CLI")
+		return nil, fmt.Errorf("failed retrieving default subscription from Azure CLI: %w", err)
 	}
 
 	return &config.Subscription{

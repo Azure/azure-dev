@@ -91,7 +91,7 @@ func accountListCmd(rootOptions *internal.GlobalCommandOptions) *cobra.Command {
 		}
 
 		if err != nil {
-			return fmt.Errorf("failed formatting output")
+			return fmt.Errorf("failed formatting output: %w", err)
 		}
 
 		return nil
@@ -133,7 +133,7 @@ func locationListCmd(rootOptions *internal.GlobalCommandOptions) *cobra.Command 
 		}
 
 		if err != nil {
-			return fmt.Errorf("failed formatting output")
+			return fmt.Errorf("failed formatting output: %w", err)
 		}
 
 		return nil
@@ -217,7 +217,7 @@ func (a *accountSetAction) Run(ctx context.Context, cmd *cobra.Command, args []s
 	if strings.TrimSpace(a.subscriptionId) != "" {
 		_, err := manager.SetDefaultSubscription(ctx, a.subscriptionId)
 		if err != nil {
-			return fmt.Errorf("failed setting default subscription, '%s'", a.subscriptionId)
+			return fmt.Errorf("failed setting default subscription, '%s' : %w", a.subscriptionId, err)
 		}
 		subscriptionSet = true
 	}
@@ -240,7 +240,7 @@ func (a *accountSetAction) Run(ctx context.Context, cmd *cobra.Command, args []s
 
 		_, err = manager.SetDefaultSubscription(ctx, subscriptions[subIndex].Id)
 		if err != nil {
-			return fmt.Errorf("failed setting default subscription, '%s'", a.subscriptionId)
+			return fmt.Errorf("failed setting default subscription, '%s' : %w", a.subscriptionId, err)
 		}
 	}
 

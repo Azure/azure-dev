@@ -193,6 +193,7 @@ type CustomListLocationsResponse struct {
 }
 
 // Temporary custom response until Go SDK support all of the specified properties in the response
+// https://github.com/Azure/azure-sdk-for-go/issues/19241
 type CustomLocation struct {
 	ID                  string                 `json:"id"`
 	Name                string                 `json:"name"`
@@ -212,6 +213,7 @@ type CustomListSubscriptionResponse struct {
 }
 
 // Temporary custom response until Go SDK support all of the specified properties in the response
+// https://github.com/Azure/azure-sdk-for-go/issues/19243
 type CustomSubscription struct {
 	ID             string `json:"id"`
 	SubscriptionID string `json:"subscriptionId"`

@@ -84,3 +84,37 @@ var UpCmdSet = wire.NewSet(
 	newUpAction,
 	wire.FieldsOf(new(upFlags), "initFlags", "infraCreateFlags", "deployFlags"),
 	wire.Bind(new(action.Action), new(*upAction)))
+
+var EnvSetCmdSet = wire.NewSet(
+	CommonSet,
+	newAzCliFromOptions,
+	newEnvSetAction,
+	wire.Bind(new(action.Action), new(*envSetAction)))
+
+var EnvSelectCmdSet = wire.NewSet(
+	newAzdContext,
+	newEnvSelectAction,
+	wire.Bind(new(action.Action), new(*envSelectAction)))
+
+var EnvListCmdSet = wire.NewSet(
+	CommonSet,
+	newEnvListAction,
+	wire.Bind(new(action.Action), new(*envListAction)))
+
+var EnvNewCmdSet = wire.NewSet(
+	CommonSet,
+	newAzCliFromOptions,
+	newEnvNewAction,
+	wire.Bind(new(action.Action), new(*envNewAction)))
+
+var EnvRefreshCmdSet = wire.NewSet(
+	CommonSet,
+	newAzCliFromOptions,
+	newEnvRefreshAction,
+	wire.Bind(new(action.Action), new(*envRefreshAction)))
+
+var EnvGetValuesCmdSet = wire.NewSet(
+	CommonSet,
+	newAzCliFromOptions,
+	newEnvGetValuesAction,
+	wire.Bind(new(action.Action), new(*envGetValuesAction)))

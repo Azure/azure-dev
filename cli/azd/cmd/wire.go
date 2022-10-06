@@ -29,3 +29,27 @@ func injectUpAction(cmd *cobra.Command, o *internal.GlobalCommandOptions, flags 
 func injectInfraDeleteAction(cmd *cobra.Command, o *internal.GlobalCommandOptions, flags infraDeleteFlags, args []string) (action.Action, error) {
 	panic(wire.Build(InfraDeleteCmdSet))
 }
+
+func initEnvSetAction(cmd *cobra.Command, o *internal.GlobalCommandOptions, flags struct{}, args []string) (action.Action, error) {
+	panic(wire.Build(EnvSetCmdSet))
+}
+
+func initEnvSelectAction(cmd *cobra.Command, o *internal.GlobalCommandOptions, flags struct{}, args []string) (action.Action, error) {
+	panic(wire.Build(EnvSelectCmdSet))
+}
+
+func initEnvListAction(cmd *cobra.Command, o *internal.GlobalCommandOptions, flags struct{}, args []string) (action.Action, error) {
+	panic(wire.Build(EnvListCmdSet))
+}
+
+func initEnvNewAction(cmd *cobra.Command, o *internal.GlobalCommandOptions, flags envNewFlags, args []string) (action.Action, error) {
+	panic(wire.Build(EnvNewCmdSet))
+}
+
+func initEnvRefreshAction(cmd *cobra.Command, o *internal.GlobalCommandOptions, flags struct{}, args []string) (action.Action, error) {
+	panic(wire.Build(EnvRefreshCmdSet))
+}
+
+func initEnvGetValuesAction(cmd *cobra.Command, o *internal.GlobalCommandOptions, flags struct{}, args []string) (action.Action, error) {
+	panic(wire.Build(EnvGetValuesCmdSet))
+}

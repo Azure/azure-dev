@@ -1,4 +1,4 @@
-os,INVALID
-osVersion,INVALID
+os,centos
+osVersion,7
 isWsl,true
 terminal,bash

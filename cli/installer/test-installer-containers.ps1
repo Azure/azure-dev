@@ -36,6 +36,14 @@ docker build  . `
     }
 
     docker run -t azd-test
+    if ($LASTEXITCODE) {
+        Write-Error "Validation run failed for $dockerfile"
+        $exitCode = 1
+
+        # Build failed, don't execute the container becuase we'll be executing
+        # the last successfully built container with the name azd-test
+        continue
+    }
 }
 
 exit $exitCode

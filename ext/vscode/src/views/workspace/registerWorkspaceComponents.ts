@@ -37,7 +37,7 @@ export async function registerWorkspaceComponents(extensionId: string): Promise<
 
     const disposables: vscode.Disposable[] = [];
 
-    disposables.push(api.registerWorkspaceResourceProvider('ms-azuretools.azure-dev.application', new AzureDevCliWorkspaceResourceProvider()));
+    disposables.push(api.registerWorkspaceResourceProvider(new AzureDevCliWorkspaceResourceProvider()));
     disposables.push(api.registerWorkspaceResourceBranchDataProvider('ms-azuretools.azure-dev.application', new AzureDevCliWorkspaceResourceBranchDataProvider()));
 
     return disposables;

@@ -28,7 +28,7 @@ export interface ResourceBase {
     readonly name: string;
 }
 
-export interface ApplicationResourceType {
+export interface AzureResourceType {
     readonly type: string;
     readonly kinds?: string[];
 }
@@ -39,8 +39,8 @@ export interface ApplicationResourceType {
  */
 export interface ApplicationResource extends ResourceBase {
     readonly subscription: ApplicationSubscription;
-    readonly type: ApplicationResourceType;
-    readonly azExtResourceType?: AzExtResourceType;
+    readonly azureResourceType: AzureResourceType;
+    readonly resourceType?: AzExtResourceType;
     readonly location?: string;
     readonly resourceGroup?: string;
     /** Resource tags */
@@ -195,32 +195,30 @@ export interface V2AzureResourcesApi extends AzureResourcesApiBase {
     revealResource(resourceId: string): Promise<void>;
 
     /**
-     * Registers an application provider.
-     * @param id The provider ID . Must be unique.
-     * @param provider The provider.
+     * Registers a provider of application resources.
+     * @param provider The resource provider.
      */
-    registerApplicationResourceProvider(id: string, provider: ApplicationResourceProvider): vscode.Disposable;
+    registerApplicationResourceProvider(provider: ApplicationResourceProvider): vscode.Disposable;
 
     /**
-     * Registers an application resource tree data provider factory
-     * @param id The resolver ID. Must be unique.
-     * @param resolver The resolver
+     * Registers an application resource branch data provider.
+     * @param type The Azure application resource type associated with the provider. Must be unique.
+     * @param resolver The branch data provider for the resource type.
      */
-    registerApplicationResourceBranchDataProvider<T extends ResourceModelBase>(id: string, provider: BranchDataProvider<ApplicationResource, T>): vscode.Disposable;
+    registerApplicationResourceBranchDataProvider<T extends ResourceModelBase>(type: AzExtResourceType, provider: BranchDataProvider<ApplicationResource, T>): vscode.Disposable;
 
     /**
-     * Registers a workspace resource provider
-     * @param id The provider ID. Must be unique.
-     * @param provider The provider
+     * Registers a provider of workspace resources.
+     * @param provider The resource provider.
      */
-    registerWorkspaceResourceProvider(id: string, provider: WorkspaceResourceProvider): vscode.Disposable;
+    registerWorkspaceResourceProvider(provider: WorkspaceResourceProvider): vscode.Disposable;
 
     /**
-     * Registers an application resource tree data provider factory
-     * @param id The resolver ID. Must be unique.
-     * @param resolver The resolver
+     * Registers a workspace resource branch data provider.
+     * @param type The workspace resource type associated with the provider. Must be unique.
+     * @param provider The branch data provider for the resource type.
      */
-    registerWorkspaceResourceBranchDataProvider<T extends ResourceModelBase>(id: string, provider: BranchDataProvider<WorkspaceResource, T>): vscode.Disposable;
+    registerWorkspaceResourceBranchDataProvider<T extends ResourceModelBase>(type: string, provider: BranchDataProvider<WorkspaceResource, T>): vscode.Disposable;
 }
 
 export interface AzureResourcesApiBase {

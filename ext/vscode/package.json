@@ -158,6 +158,12 @@
                     "command": "azure-dev.commands.getDotEnvFilePath",
                     "when": "false"
                 }
+            ],
+            "view/item/context": [
+              {
+                "command": "azure-dev.commands.cli.up",
+                "when": "viewItem == ms-azuretools.azure-dev.views.workspace.application"
+              }
             ]
         },
         "taskDefinitions": [
@@ -191,11 +197,7 @@
         ],
         "x-azResourcesV2": {
             "workspace": {
-                "resources": [
-                    {
-                        "type": "ms-azuretools.azure-dev.application"
-                    }
-                ],
+                "resources": true,
                 "branches": [
                     {
                         "type": "ms-azuretools.azure-dev.application"

@@ -28,7 +28,7 @@ func getProcessTemplateId(ctx context.Context, client core.Client) (string, erro
 	return process.Id.String(), nil
 }
 
-// creates a new Azure Devops project
+// creates a new Azure DevOps project
 func createProject(ctx context.Context, connection *azuredevops.Connection, name string, description string, console input.Console) (*core.TeamProjectReference, error) {
 	coreClient, err := core.NewClient(ctx, connection)
 	if err != nil {

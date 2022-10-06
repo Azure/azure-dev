@@ -97,7 +97,7 @@ func accountListCmd(rootOptions *internal.GlobalCommandOptions) *cobra.Command {
 		return nil
 	})
 
-	return commands.Build(action, rootOptions, "list", "Gets the available Azure subscriptions for the logged in account.", nil)
+	return commands.Build(action, rootOptions, "list", "Get a list of subscriptions for the logged in account.azd", nil)
 }
 
 // Command to list valid locations for the default Azure subscription/account.
@@ -139,7 +139,7 @@ func locationListCmd(rootOptions *internal.GlobalCommandOptions) *cobra.Command 
 		return nil
 	})
 
-	return commands.Build(action, rootOptions, "list-locations", "Gets the available Azure locations for the default Azure account.", nil)
+	return commands.Build(action, rootOptions, "list-locations", "List supported regions for the current subscription.", nil)
 }
 
 // Command that shows the default subscription & location for the logged in user

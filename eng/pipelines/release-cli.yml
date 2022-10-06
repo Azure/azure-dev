@@ -397,7 +397,7 @@ stages:
                 -BaseUrl "http://localhost:8080"
                 -Version ''
                 -ContainerPrefix '$(docker-mirror-tag-prefix)/'
-                --add-host=host.docker.internal:host-gateway--add-host=host.docker.internal:host-gateway
+                --add-host=host.docker.internal:host-gateway
             LinuxSh:
               Pool: azsdk-pool-mms-ubuntu-2004-general
               OSVmImage:  MMSUbuntu20.04

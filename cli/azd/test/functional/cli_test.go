@@ -341,6 +341,7 @@ func Test_CLI_InfraCreateAndDeleteUpperCase(t *testing.T) {
 }
 
 func Test_CLI_InfraCreateAndDeleteWebApp(t *testing.T) {
+	t.Skip("azure-dev/834")
 	// running this test in parallel is ok as it uses a t.TempDir()
 	t.Parallel()
 	ctx, cancel := newTestContext(t)
@@ -524,6 +525,7 @@ func Test_CLI_RestoreCommand(t *testing.T) {
 }
 
 func Test_CLI_InfraCreateAndDeleteFuncApp(t *testing.T) {
+	t.Skip("azure-dev/834")
 	// running this test in parallel is ok as it uses a t.TempDir()
 	t.Parallel()
 	ctx, cancel := newTestContext(t)

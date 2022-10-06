@@ -3,7 +3,7 @@ FROM mcr.microsoft.com/dotnet/sdk:6.0
 WORKDIR /app
 
 RUN export DEBIAN_FRONTEND=noninteractive \
-     && wget -q https://packages.microsoft.com/config/ubuntu/19.04/packages-microsoft-prod.deb && dpkg -i packages-microsoft-prod.deb \
+     && wget -q https://packages.microsoft.com/config/ubuntu/20.04/packages-microsoft-prod.deb && dpkg -i packages-microsoft-prod.deb \
      && apt-get update && apt-get install -y --no-install-recommends apt-utils && apt-get install -y apt-transport-https ca-certificates curl unzip procps gnupg2 software-properties-common lsb-release \
      # functions core tools
      && curl https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor > microsoft.gpg \
@@ -30,7 +30,8 @@ RUN export DEBIAN_FRONTEND=noninteractive \
      && python3 -m pip install --upgrade pip \
      && echo 'alias python=python3' >> ~/.bashrc \
      && echo 'alias pip=pip3' >> ~/.bashrc \
-     && apt-get clean -y && rm -rf /var/lib/apt/lists/* \
+     # java
+     && apt-get update && apt-get install -y msopenjdk-17 \  
      # terraform cli
      && apt-get update && apt-get install -y gnupg software-properties-common \
      && wget -O- https://apt.releases.hashicorp.com/gpg | \
@@ -39,7 +40,9 @@ RUN export DEBIAN_FRONTEND=noninteractive \
      && echo "deb [signed-by=/usr/share/keyrings/hashicorp-archive-keyring.gpg] \
           https://apt.releases.hashicorp.com $(lsb_release -cs) main" | \
           tee /etc/apt/sources.list.d/hashicorp.list \
-     && apt update && apt-get install terraform
+     && apt update && apt-get install terraform \
+     # Cleanup
+     && apt-get clean -y && rm -rf /var/lib/apt/lists/*
 
 # azd
 COPY cli/bin/azd-linux-amd64 /usr/bin/azd

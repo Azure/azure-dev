@@ -9,7 +9,6 @@ import (
 	"os"
 
 	"github.com/azure/azure-dev/cli/azd/internal"
-	"github.com/azure/azure-dev/cli/azd/pkg/commands"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
@@ -20,16 +19,25 @@ import (
 	"github.com/spf13/pflag"
 )
 
-func monitorCmd(rootOptions *internal.GlobalCommandOptions) *cobra.Command {
-	cmd := commands.Build(
-		&monitorAction{
-			rootOptions: rootOptions,
-		},
-		rootOptions,
-		"monitor",
-		"Monitor a deployed application.",
-		&commands.BuildOptions{
-			Long: `Monitor a deployed application.
+type monitorFlags struct {
+	monitorLive     bool
+	monitorLogs     bool
+	monitorOverview bool
+	global          *internal.GlobalCommandOptions
+}
+
+func (m *monitorFlags) Setup(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
+	local.BoolVar(&m.monitorLive, "live", false, "Open a browser to Application Insights Live Metrics. Live Metrics is currently not supported for Python applications.")
+	local.BoolVar(&m.monitorLogs, "logs", false, "Open a browser to Application Insights Logs.")
+	local.BoolVar(&m.monitorOverview, "overview", false, "Open a browser to Application Insights Overview Dashboard.")
+	m.global = global
+}
+
+func monitorCmdDesign(global *internal.GlobalCommandOptions) (*cobra.Command, *monitorFlags) {
+	cmd := &cobra.Command{
+		Use:   "monitor",
+		Short: "Monitor a deployed application.",
+		Long: `Monitor a deployed application.
 		
 Examples:
 
@@ -38,35 +46,34 @@ Examples:
 	$ azd monitor --logs
 		
 For more information, go to https://aka.ms/azure-dev/monitor.`,
-		})
-	return cmd
+	}
+	flags := &monitorFlags{}
+	flags.Setup(cmd.Flags(), global)
+	return cmd, flags
 }
 
 type monitorAction struct {
-	monitorLive     bool
-	monitorLogs     bool
-	monitorOverview bool
-	rootOptions     *internal.GlobalCommandOptions
+	azdCtx  *azdcontext.AzdContext
+	azCli   azcli.AzCli
+	console input.Console
+	flags   monitorFlags
 }
 
-func (m *monitorAction) SetupFlags(
-	persis *pflag.FlagSet,
-	local *pflag.FlagSet,
-) {
-	persis.BoolVar(&m.monitorLive, "live", false, "Open a browser to Application Insights Live Metrics. Live Metrics is currently not supported for Python applications.")
-	persis.BoolVar(&m.monitorLogs, "logs", false, "Open a browser to Application Insights Logs.")
-	persis.BoolVar(&m.monitorOverview, "overview", false, "Open a browser to Application Insights Overview Dashboard.")
+func newMonitorAction(azdCtx *azdcontext.AzdContext, azCli azcli.AzCli, console input.Console, flags monitorFlags) *monitorAction {
+	return &monitorAction{
+		azdCtx:  azdCtx,
+		azCli:   azCli,
+		console: console,
+		flags:   flags,
+	}
 }
 
-func (m *monitorAction) Run(ctx context.Context, cmd *cobra.Command, args []string, azdCtx *azdcontext.AzdContext) error {
-	azCli := azcli.GetAzCli(ctx)
-	console := input.GetConsole(ctx)
-
-	if err := ensureProject(azdCtx.ProjectPath()); err != nil {
+func (m *monitorAction) Run(ctx context.Context) error {
+	if err := ensureProject(m.azdCtx.ProjectPath()); err != nil {
 		return err
 	}
 
-	if err := tools.EnsureInstalled(ctx, azCli); err != nil {
+	if err := tools.EnsureInstalled(ctx, m.azCli); err != nil {
 		return err
 	}
 
@@ -74,16 +81,16 @@ func (m *monitorAction) Run(ctx context.Context, cmd *cobra.Command, args []stri
 		return fmt.Errorf("failed to ensure login: %w", err)
 	}
 
-	if !m.monitorLive && !m.monitorLogs && !m.monitorOverview {
-		m.monitorOverview = true
+	if !m.flags.monitorLive && !m.flags.monitorLogs && !m.flags.monitorOverview {
+		m.flags.monitorOverview = true
 	}
 
-	env, ctx, err := loadOrInitEnvironment(ctx, &m.rootOptions.EnvironmentName, azdCtx, console)
+	env, ctx, err := loadOrInitEnvironment(ctx, &m.flags.global.EnvironmentName, m.azdCtx, m.console)
 	if err != nil {
 		return fmt.Errorf("loading environment: %w", err)
 	}
 
-	tenantId, err := azCli.GetSubscriptionTenant(ctx, env.GetSubscriptionId())
+	tenantId, err := m.azCli.GetSubscriptionTenant(ctx, env.GetSubscriptionId())
 	if err != nil {
 		return fmt.Errorf("getting tenant id for subscription: %w", err)
 	}
@@ -98,7 +105,7 @@ func (m *monitorAction) Run(ctx context.Context, cmd *cobra.Command, args []stri
 	var portalResources []azcli.AzCliResource
 
 	for _, resourceGroup := range resourceGroups {
-		resources, err := azCli.ListResourceGroupResources(ctx, env.GetSubscriptionId(), resourceGroup.Name, nil)
+		resources, err := m.azCli.ListResourceGroupResources(ctx, env.GetSubscriptionId(), resourceGroup.Name, nil)
 		if err != nil {
 			return fmt.Errorf("listing resources: %w", err)
 		}
@@ -113,11 +120,11 @@ func (m *monitorAction) Run(ctx context.Context, cmd *cobra.Command, args []stri
 		}
 	}
 
-	if len(insightsResources) == 0 && (m.monitorLive || m.monitorLogs) {
+	if len(insightsResources) == 0 && (m.flags.monitorLive || m.flags.monitorLogs) {
 		return fmt.Errorf("application does not contain an Application Insights resource")
 	}
 
-	if len(portalResources) == 0 && m.monitorOverview {
+	if len(portalResources) == 0 && m.flags.monitorOverview {
 		return fmt.Errorf("application does not contain an Application Insights dashboard")
 	}
 
@@ -130,17 +137,17 @@ func (m *monitorAction) Run(ctx context.Context, cmd *cobra.Command, args []stri
 	}
 
 	for _, insightsResource := range insightsResources {
-		if m.monitorLive {
+		if m.flags.monitorLive {
 			openWithDefaultBrowser(fmt.Sprintf("https://app.azure.com/%s%s/quickPulse", tenantId, insightsResource.Id))
 		}
 
-		if m.monitorLogs {
+		if m.flags.monitorLogs {
 			openWithDefaultBrowser(fmt.Sprintf("https://app.azure.com/%s%s/logs", tenantId, insightsResource.Id))
 		}
 	}
 
 	for _, portalResource := range portalResources {
-		if m.monitorOverview {
+		if m.flags.monitorOverview {
 			openWithDefaultBrowser(fmt.Sprintf("https://portal.azure.com/#@%s/dashboard/arm%s", tenantId, portalResource.Id))
 		}
 	}

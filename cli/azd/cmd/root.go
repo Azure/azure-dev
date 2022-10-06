@@ -88,8 +88,6 @@ For more information, visit the Azure Developer CLI Dev Hub: https://aka.ms/azur
 
 	cmd.AddCommand(envCmd(opts))
 	cmd.AddCommand(infraCmd(opts))
-	cmd.AddCommand(loginCmd(opts))
-	cmd.AddCommand(monitorCmd(opts))
 	cmd.AddCommand(pipelineCmd(opts))
 	cmd.AddCommand(restoreCmd(opts))
 	cmd.AddCommand(showCmd(opts))
@@ -97,6 +95,8 @@ For more information, visit the Azure Developer CLI Dev Hub: https://aka.ms/azur
 	cmd.AddCommand(templatesCmd(opts))
 	cmd.AddCommand(versionCmd(opts))
 
+	cmd.AddCommand(BuildCmd(opts, loginCmdDesign, initLoginAction, nil))
+	cmd.AddCommand(BuildCmd(opts, monitorCmdDesign, initMonitorAction, nil))
 	cmd.AddCommand(BuildCmd(opts, downCmdDesign, injectInfraDeleteAction, nil))
 	cmd.AddCommand(BuildCmd(opts, initCmdDesign, injectInitAction, nil))
 	cmd.AddCommand(BuildCmd(opts, upCmdDesign, injectUpAction, nil))

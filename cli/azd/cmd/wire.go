@@ -53,3 +53,15 @@ func initEnvRefreshAction(cmd *cobra.Command, o *internal.GlobalCommandOptions, 
 func initEnvGetValuesAction(cmd *cobra.Command, o *internal.GlobalCommandOptions, flags struct{}, args []string) (action.Action, error) {
 	panic(wire.Build(EnvGetValuesCmdSet))
 }
+
+func initLoginAction(cmd *cobra.Command, o *internal.GlobalCommandOptions, flags loginFlags, args []string) (action.Action, error) {
+	panic(wire.Build(LoginCmdSet))
+}
+
+func initMonitorAction(cmd *cobra.Command, o *internal.GlobalCommandOptions, flags monitorFlags, args []string) (action.Action, error) {
+	panic(wire.Build(MonitorCmdSet))
+}
+
+func initPipelineConfigAction(cmd *cobra.Command, o *internal.GlobalCommandOptions, flags pipelineConfigFlags, args []string) (action.Action, error) {
+	panic(wire.Build(PipelineConfigCmdSet))
+}

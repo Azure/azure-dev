@@ -20,18 +20,30 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/git"
 )
 
+type PipelineManagerArgs struct {
+	PipelineServicePrincipalName string
+	PipelineRemoteName           string
+	PipelineRoleName             string
+	PipelineProvider             string
+}
+
 // PipelineManager takes care of setting up the scm and pipeline.
 // The manager allows to use and test scm providers without a cobra command.
 type PipelineManager struct {
 	ScmProvider
 	CiProvider
-	AzdCtx                       *azdcontext.AzdContext
-	RootOptions                  *internal.GlobalCommandOptions
-	PipelineServicePrincipalName string
-	PipelineRemoteName           string
-	PipelineRoleName             string
-	PipelineProvider             string
-	Environment                  *environment.Environment
+	AzdCtx      *azdcontext.AzdContext
+	RootOptions *internal.GlobalCommandOptions
+	Environment *environment.Environment
+	PipelineManagerArgs
+}
+
+func NewPipelineManager(azdCtx *azdcontext.AzdContext, global *internal.GlobalCommandOptions, args PipelineManagerArgs) *PipelineManager {
+	return &PipelineManager{
+		AzdCtx:              azdCtx,
+		RootOptions:         global,
+		PipelineManagerArgs: args,
+	}
 }
 
 // requiredTools get all the provider's required tools.

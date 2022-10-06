@@ -212,3 +212,47 @@ func initEnvGetValuesAction(cmd *cobra.Command, o *internal.GlobalCommandOptions
 	cmdEnvGetValuesAction := newEnvGetValuesAction(azdContext, console, formatter, writer, azCli, o)
 	return cmdEnvGetValuesAction, nil
 }
+
+func initLoginAction(cmd *cobra.Command, o *internal.GlobalCommandOptions, flags loginFlags, args []string) (action.Action, error) {
+	formatter, err := output.GetCommandFormatter(cmd)
+	if err != nil {
+		return nil, err
+	}
+	writer := output.GetDefaultWriter()
+	commandRunner := exec.NewCommandRunner()
+	azCli := newAzCliFromOptions(o, commandRunner)
+	cmdLoginAction := newLoginAction(formatter, writer, azCli, flags)
+	return cmdLoginAction, nil
+}
+
+func initMonitorAction(cmd *cobra.Command, o *internal.GlobalCommandOptions, flags monitorFlags, args []string) (action.Action, error) {
+	azdContext, err := newAzdContext()
+	if err != nil {
+		return nil, err
+	}
+	commandRunner := exec.NewCommandRunner()
+	azCli := newAzCliFromOptions(o, commandRunner)
+	writer := output.GetDefaultWriter()
+	formatter, err := output.GetCommandFormatter(cmd)
+	if err != nil {
+		return nil, err
+	}
+	console := newConsoleFromOptions(o, writer, formatter)
+	cmdMonitorAction := newMonitorAction(azdContext, azCli, console, flags)
+	return cmdMonitorAction, nil
+}
+
+func initPipelineConfigAction(cmd *cobra.Command, o *internal.GlobalCommandOptions, flags pipelineConfigFlags, args []string) (action.Action, error) {
+	azdContext, err := newAzdContext()
+	if err != nil {
+		return nil, err
+	}
+	writer := output.GetDefaultWriter()
+	formatter, err := output.GetCommandFormatter(cmd)
+	if err != nil {
+		return nil, err
+	}
+	console := newConsoleFromOptions(o, writer, formatter)
+	cmdPipelineConfigAction := newPipelineConfigAction(azdContext, console, flags)
+	return cmdPipelineConfigAction, nil
+}

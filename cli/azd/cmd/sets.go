@@ -118,3 +118,21 @@ var EnvGetValuesCmdSet = wire.NewSet(
 	newAzCliFromOptions,
 	newEnvGetValuesAction,
 	wire.Bind(new(action.Action), new(*envGetValuesAction)))
+
+var LoginCmdSet = wire.NewSet(
+	CommonSet,
+	newAzCliFromOptions,
+	newLoginAction,
+	wire.Bind(new(action.Action), new(*loginAction)))
+
+var MonitorCmdSet = wire.NewSet(
+	CommonSet,
+	newAzCliFromOptions,
+	newMonitorAction,
+	wire.Bind(new(action.Action), new(*monitorAction)))
+
+var PipelineConfigCmdSet = wire.NewSet(
+	CommonSet,
+	newAzCliFromOptions,
+	newPipelineConfigAction,
+	wire.Bind(new(action.Action), new(*pipelineConfigAction)))

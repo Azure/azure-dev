@@ -2,12 +2,12 @@ package telemetry
 
 import (
 	"context"
-	"os"
 	"sync"
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/internal"
 	appinsightsexporter "github.com/azure/azure-dev/cli/azd/internal/telemetry/appinsights-exporter"
+	"github.com/azure/azure-dev/cli/azd/test/ostest"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -43,9 +43,9 @@ func TestGetTelemetrySystem(t *testing.T) {
 			internal.Version = tt.args.version
 
 			if tt.args.disableTelemetryEnvVarValue == "unset" {
-				os.Unsetenv(collectTelemetryEnvVar)
+				ostest.Unsetenv(t, collectTelemetryEnvVar)
 			} else {
-				os.Setenv(collectTelemetryEnvVar, tt.args.disableTelemetryEnvVarValue)
+				ostest.Setenv(t, collectTelemetryEnvVar, tt.args.disableTelemetryEnvVarValue)
 			}
 
 			ts := GetTelemetrySystem()
@@ -61,8 +61,6 @@ func TestGetTelemetrySystem(t *testing.T) {
 				err := ts.Shutdown(context.Background())
 				assert.NoError(t, err)
 			}
-
-			os.Unsetenv(collectTelemetryEnvVar)
 			once = sync.Once{}
 		})
 	}

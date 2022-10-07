@@ -5,7 +5,6 @@ package output
 
 import (
 	"fmt"
-	"os"
 	"reflect"
 	"testing"
 
@@ -21,7 +20,7 @@ func Test_ColorWriter(t *testing.T) {
 	})
 
 	t.Run("WithEmptyEnvVar", func(t *testing.T) {
-		os.Setenv("NO_COLOR", "")
+		t.Setenv("NO_COLOR", "")
 
 		writer := GetDefaultWriter()
 		writerType := fmt.Sprintf("%v", reflect.TypeOf(writer))
@@ -31,7 +30,7 @@ func Test_ColorWriter(t *testing.T) {
 }
 
 func Test_NoColorWriter(t *testing.T) {
-	os.Setenv("NO_COLOR", "some-value")
+	t.Setenv("NO_COLOR", "some-value")
 
 	writer := GetDefaultWriter()
 	writerType := fmt.Sprintf("%v", reflect.TypeOf(writer))

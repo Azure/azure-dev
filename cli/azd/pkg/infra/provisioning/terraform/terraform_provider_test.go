@@ -266,7 +266,7 @@ func prepareDeployMocks(commandRunner *execmock.MockCommandRunner) {
 	})
 }
 
-// go:embed testdata/terraform_show_mock.json
+//go:embed testdata/terraform_show_mock.json
 var terraformShowMockOutput string
 
 func prepareShowMocks(commandRunner *execmock.MockCommandRunner) {

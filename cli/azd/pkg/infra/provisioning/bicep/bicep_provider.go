@@ -486,15 +486,15 @@ func (p *BicepProvider) updateParametersFile(ctx context.Context, deployment *De
 
 func (p *BicepProvider) mapBicepTypeToInterfaceType(s string) ParameterType {
 	switch s {
-	case "String":
+	case "String", "string":
 		return ParameterTypeString
-	case "Bool":
+	case "Bool", "bool":
 		return ParameterTypeBoolean
-	case "Int":
+	case "Int", "int":
 		return ParameterTypeNumber
-	case "Object":
+	case "Object", "object":
 		return ParameterTypeObject
-	case "Array":
+	case "Array", "array":
 		return ParameterTypeArray
 	default:
 		panic(fmt.Sprintf("unexpected bicep type: '%s'", s))

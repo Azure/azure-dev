@@ -1,16 +1,23 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
-
-// Package contracts contains API contracts that azd CLI communicates externally in commands via stdout.
-// Currently, all contracts support JSON output.
 package contracts
 
-// showResult is the model type that represents the JSON output of `azd show`
+// ShowType are the values for the language property of a ShowServiceProject
+type ShowType string
+
+const (
+	ShowTypeDotNet ShowType = "dotnet"
+	ShowTypePython ShowType = "python"
+	ShowTypeNode   ShowType = "node"
+)
+
+// ShowResult is the contract for the output of `azd show`
 type ShowResult struct {
 	Name     string                 `json:"name"`
 	Services map[string]ShowService `json:"services"`
 }
 
+// ShowService is the contract for a service returned by `azd show`
 type ShowService struct {
 	// Project contains information about the project that backs this service.
 	Project ShowServiceProject `json:"project"`
@@ -19,14 +26,17 @@ type ShowService struct {
 	Target *ShowTargetArm `json:"target,omitempty"`
 }
 
+// ShowServiceProject is the contract for a service's project as returned by `azd show`
 type ShowServiceProject struct {
 	// Path contains the path to the project for this service.
 	// When 'type' is 'dotnet', this includes the project file (i.e. Todo.Api.csproj).
 	Path string `json:"path"`
-	// The type of this project. One of "dotnet", "python", or "node"
-	Type string `json:"language"`
+	// The type of this project.
+	Type ShowType `json:"language"`
 }
 
+// ShowTargetArm is the contract for information about the resources that a given service
+// is deployed to.
 type ShowTargetArm struct {
 	ResourceIds []string `json:"resourceIds"`
 }

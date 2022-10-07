@@ -107,14 +107,14 @@ func showCmd(rootOptions *internal.GlobalCommandOptions) *cobra.Command {
 	return cmd
 }
 
-func showTypeFromLanguage(language string) string {
+func showTypeFromLanguage(language string) contracts.ShowType {
 	switch language {
 	case "dotnet":
-		return "dotnet"
+		return contracts.ShowTypeDotNet
 	case "py", "python":
-		return "python"
+		return contracts.ShowTypePython
 	case "ts", "js":
-		return "node"
+		return contracts.ShowTypeNode
 	default:
 		panic(fmt.Sprintf("unknown language %s", language))
 	}

@@ -1,0 +1,19 @@
+{
+    "name": "Azure Developer CLI",
+    "build": {
+        "dockerfile": "Dockerfile",
+        "args": {
+            "VARIANT": "bullseye"
+        }
+    },
+    "features": {
+        // Prerequisites for running azd
+        // https://github.com/Azure/azure-dev/wiki/Install
+        "github-cli": "2.3",
+        "azure-cli": "2.38"
+    }, 
+    "extensions": [
+        "redhat.vscode-yaml",
+        "streetsidesoftware.code-spell-checker"
+    ]
+}

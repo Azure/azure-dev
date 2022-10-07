@@ -14,6 +14,7 @@
     }, 
     "extensions": [
         "redhat.vscode-yaml",
-        "streetsidesoftware.code-spell-checker"
+        "streetsidesoftware.code-spell-checker",
+        "golang.go"
     ]
 }

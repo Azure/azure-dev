@@ -8,8 +8,8 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"time"
 
+	"github.com/azure/azure-dev/cli/azd/cmd/contracts"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/commands"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
@@ -33,8 +33,8 @@ func loginCmd(rootOptions *internal.GlobalCommandOptions) *cobra.Command {
 
 	return output.AddOutputParam(
 		cmd,
-		[]output.Format{output.JsonFormat, output.TableFormat},
-		output.TableFormat,
+		[]output.Format{output.JsonFormat, output.NoneFormat},
+		output.NoneFormat,
 	)
 }
 
@@ -61,25 +61,26 @@ func (la *loginAction) Run(ctx context.Context, cmd *cobra.Command, args []strin
 		}
 	}
 
-	token, err := azCli.GetAccessToken(ctx)
-	if errors.Is(err, azcli.ErrAzCliNotLoggedIn) {
-		return azcli.ErrAzCliNotLoggedIn
+	var res contracts.LoginResult
+
+	if token, err := azCli.GetAccessToken(ctx); errors.Is(err, azcli.ErrAzCliNotLoggedIn) || errors.Is(err, azcli.ErrAzCliRefreshTokenExpired) {
+		res.Status = contracts.LoginStatusUnauthenticated
 	} else if err != nil {
 		return fmt.Errorf("checking auth status: %w", err)
+	} else {
+		res.Status = contracts.LoginStatusSuccess
+		res.ExpiresOn = token.ExpiresOn
 	}
 
-	if formatter.Kind() == output.TableFormat {
-		fmt.Println("Logged in to Azure.")
+	if formatter.Kind() == output.NoneFormat {
+		if res.Status == contracts.LoginStatusSuccess {
+			fmt.Println("Logged in to Azure.")
+		} else {
+			fmt.Println("Not logged in, run `azd login` to login to Azure.")
+		}
+
 		return nil
 	}
-
-	var res struct {
-		Status    string     `json:"status"`
-		ExpiresOn *time.Time `json:"expiresOn"`
-	}
-
-	res.Status = "success"
-	res.ExpiresOn = token.ExpiresOn
 
 	return formatter.Format(res, writer, nil)
 }

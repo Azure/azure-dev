@@ -69,6 +69,8 @@ func Test_CLI_Login_UsesDeviceCodeInDevContainer(t *testing.T) {
 	cli.Env = append(filterEnviron("CODESPACES"), "CODESPACES=true")
 
 	out, err := cli.RunCommand(ctx, "", "login")
+	// Error is expected because the az CLI waits for user response and the
+	// test times out execution instead of waiting for the process to complete
 	require.Error(t, err)
 	require.Contains(t, out, "WARNING: To sign in, use a web browser to open the page https://microsoft.com/devicelogin and enter the code")
 }
@@ -85,6 +87,8 @@ func Test_CLI_Login_UsesDeviceCodeInRemoteContainer(t *testing.T) {
 
 	out, err := cli.RunCommand(ctx, "", "login")
 	require.Error(t, err)
+	// Error is expected because the az CLI waits for user response and the
+	// test times out execution instead of waiting for the process to complete
 	require.Contains(t, out, "WARNING: To sign in, use a web browser to open the page https://microsoft.com/devicelogin and enter the code")
 }
 
@@ -96,9 +100,11 @@ func Test_CLI_Login_DoesNotUseDeviceCodeByDefault(t *testing.T) {
 
 	cli := azdcli.NewCLI(t)
 	cli.WorkingDirectory = dir
-	cli.Env = append(filterEnviron("REMOTE_CONTAINERS", "CODESPACES"))
+	cli.Env = filterEnviron("REMOTE_CONTAINERS", "CODESPACES")
 
 	out, err := cli.RunCommand(ctx, "", "login")
+	// Error is expected because the az CLI waits for user response and the
+	// test times out execution instead of waiting for the process to complete
 	require.Error(t, err)
 	require.NotContains(t, out, "WARNING: To sign in, use a web browser to open the page https://microsoft.com/devicelogin and enter the code")
 }

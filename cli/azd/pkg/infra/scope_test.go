@@ -20,15 +20,15 @@ func TestScopeGetDeployment(t *testing.T) {
 		Value: "https://www.myapp.com",
 	}
 
-	deployment := azcli.AzCliDeploymentResult{
-		Properties: azcli.AzCliDeploymentResultProperties{
-			Outputs: outputs,
-		},
-	}
-	deploymentBytes, _ := json.Marshal(deployment)
-
 	// mocked response for get deployment from subscription
 	deploymentWithOptions := &armresources.DeploymentsClientGetAtSubscriptionScopeResponse{
+		DeploymentExtended: armresources.DeploymentExtended{
+			Properties: &armresources.DeploymentPropertiesExtended{
+				Outputs: outputs,
+			},
+		},
+	}
+	deploymentResourceGroupWithOptions := &armresources.DeploymentsClientGetResponse{
 		DeploymentExtended: armresources.DeploymentExtended{
 			Properties: &armresources.DeploymentPropertiesExtended{
 				Outputs: outputs,
@@ -38,7 +38,7 @@ func TestScopeGetDeployment(t *testing.T) {
 
 	t.Run("SubscriptionScopeSuccess", func(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
-		mockContext.MockDeployments.OnGetAtSubscriptionScope(deploymentWithOptions)
+		mockContext.MockDeployments.WhenGetAtSubscriptionScope(deploymentWithOptions)
 
 		scope := NewSubscriptionScope(*mockContext.Context, "eastus2", "SUBSCRIPTION_ID", "DEPLOYMENT_NAME")
 
@@ -51,15 +51,15 @@ func TestScopeGetDeployment(t *testing.T) {
 
 	t.Run("ResourceGroupScopeSuccess", func(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
-		mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
-			return strings.Contains(command, "az deployment group show")
-		}).Respond(exec.NewRunResult(0, string(deploymentBytes), ""))
+		mockContext.MockDeployments.WhenGetResourceGroupDeployment(deploymentResourceGroupWithOptions)
 
 		scope := NewResourceGroupScope(*mockContext.Context, "SUBSCRIPTION_ID", "RESOURCE_GROUP", "DEPLOYMENT_NAME")
 
 		deployment, err := scope.GetDeployment(*mockContext.Context)
 		require.NoError(t, err)
-		require.Equal(t, outputs["APP_URL"].Value, deployment.Properties.Outputs.(map[string]azcli.AzCliDeploymentOutput)["APP_URL"].Value)
+		responseOutputs := deployment.Properties.Outputs.(map[string]azcli.AzCliDeploymentOutput)["APP_URL"]
+		require.Equal(t, outputs["APP_URL"].Value, responseOutputs.Value)
+		require.Equal(t, outputs["APP_URL"].Type, responseOutputs.Type)
 	})
 }
 

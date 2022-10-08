@@ -599,7 +599,7 @@ func (p *BicepProvider) convertToDeployment(bicepTemplate BicepTemplate) (*Deplo
 
 // Deploys the specified Bicep module and parameters with the selected provisioning scope (subscription vs resource group)
 func (p *BicepProvider) deployModule(ctx context.Context, scope infra.Scope, bicepPath string, parametersPath string) (
-	result armresources.DeploymentsClientGetAtSubscriptionScopeResponse, err error) {
+	result armresources.DeploymentExtended, err error) {
 	// We've seen issues where `Deploy` completes but for a short while after, fetching the deployment fails with a `DeploymentNotFound` error.
 	// Since other commands of ours use the deployment, let's try to fetch it here and if we fail with `DeploymentNotFound`,
 	// ignore this error, wait a short while and retry.
@@ -607,7 +607,7 @@ func (p *BicepProvider) deployModule(ctx context.Context, scope infra.Scope, bic
 		return result, fmt.Errorf("failed deploying: %w", err)
 	}
 
-	var deployment armresources.DeploymentsClientGetAtSubscriptionScopeResponse
+	var deployment armresources.DeploymentExtended
 
 	for i := 0; i < 10; i++ {
 		time.Sleep(time.Duration(math.Min(float64(i), 3)*10) * time.Second)

@@ -35,6 +35,7 @@ func WithDeploymentFactory(ctx context.Context, factory DeploymentClientFactory)
 
 type DeploymentClient interface {
 	GetAtSubscriptionScope(ctx context.Context, deploymentName string) (armresources.DeploymentsClientGetAtSubscriptionScopeResponse, error)
+	GetResourceGroupDeployment(ctx context.Context, resourceGroupName string, deploymentName string) (armresources.DeploymentsClientGetResponse, error)
 }
 
 type deploymentClient struct {
@@ -43,6 +44,10 @@ type deploymentClient struct {
 
 func (client *deploymentClient) GetAtSubscriptionScope(ctx context.Context, deploymentName string) (armresources.DeploymentsClientGetAtSubscriptionScopeResponse, error) {
 	return client.implClient.GetAtSubscriptionScope(ctx, deploymentName, nil)
+}
+
+func (client *deploymentClient) GetResourceGroupDeployment(ctx context.Context, resourceGroupName string, deploymentName string) (armresources.DeploymentsClientGetResponse, error) {
+	return client.implClient.Get(ctx, resourceGroupName, deploymentName, nil)
 }
 
 func newDeploymentClient(subscriptionId string, credential azcore.TokenCredential) (DeploymentClient, error) {
@@ -60,7 +65,7 @@ func newDeploymentClient(subscriptionId string, credential azcore.TokenCredentia
 func GetSubscriptionDeployment(
 	ctx context.Context,
 	subscriptionId string,
-	deploymentName string) (result armresources.DeploymentsClientGetAtSubscriptionScopeResponse, err error) {
+	deploymentName string) (result armresources.DeploymentExtended, err error) {
 	credential, err := identity.GetCredentials(ctx)
 	if err != nil {
 		return result, fmt.Errorf("looking for credentials: %w", err)
@@ -72,10 +77,34 @@ func GetSubscriptionDeployment(
 		return result, fmt.Errorf("creating deployments client: %w", err)
 	}
 
-	result, err = deploymentClient.GetAtSubscriptionScope(ctx, deploymentName)
+	deployment, err := deploymentClient.GetAtSubscriptionScope(ctx, deploymentName)
 	if err != nil {
 		return result, fmt.Errorf("getting deployment from subscription: %w", err)
 	}
 
-	return result, nil
+	return deployment.DeploymentExtended, nil
+}
+
+func GetResourceGroupDeployment(
+	ctx context.Context,
+	subscriptionId,
+	resourceGroupName,
+	deploymentName string) (result armresources.DeploymentExtended, err error) {
+	credential, err := identity.GetCredentials(ctx)
+	if err != nil {
+		return result, fmt.Errorf("looking for credentials: %w", err)
+	}
+
+	clientFactory := GetDeploymentClientFactory(ctx)
+	deploymentClient, err := clientFactory(subscriptionId, credential)
+	if err != nil {
+		return result, fmt.Errorf("creating deployments client: %w", err)
+	}
+
+	deployment, err := deploymentClient.GetResourceGroupDeployment(ctx, resourceGroupName, deploymentName)
+	if err != nil {
+		return result, fmt.Errorf("getting deployment from resource group: %w", err)
+	}
+
+	return deployment.DeploymentExtended, nil
 }

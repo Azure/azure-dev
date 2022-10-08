@@ -64,8 +64,8 @@ type AzCli interface {
 	ListExtensions(ctx context.Context) ([]AzCliExtensionInfo, error)
 	GetCliConfigValue(ctx context.Context, name string) (AzCliConfigValue, error)
 	GetSubscriptionTenant(ctx context.Context, subscriptionId string) (string, error)
-	GetSubscriptionDeployment(ctx context.Context, subscriptionId string, deploymentName string) (armresources.DeploymentsClientGetAtSubscriptionScopeResponse, error)
-	GetResourceGroupDeployment(ctx context.Context, subscriptionId string, resourceGroupName string, deploymentName string) (AzCliDeployment, error)
+	GetSubscriptionDeployment(ctx context.Context, subscriptionId string, deploymentName string) (armresources.DeploymentExtended, error)
+	GetResourceGroupDeployment(ctx context.Context, subscriptionId string, resourceGroupName string, deploymentName string) (armresources.DeploymentExtended, error)
 	GetResource(ctx context.Context, subscriptionId string, resourceId string) (AzCliResourceExtended, error)
 	GetKeyVault(ctx context.Context, subscriptionId string, resourceGroupName string, vaultName string) (*AzCliKeyVault, error)
 	GetKeyVaultSecret(ctx context.Context, vaultName string, secretName string) (*AzCliKeyVaultSecret, error)
@@ -770,25 +770,12 @@ func (cli *azCli) ListAccountLocations(ctx context.Context) ([]AzCliLocation, er
 	return locations, nil
 }
 
-func (cli *azCli) GetSubscriptionDeployment(ctx context.Context, subscriptionId string, deploymentName string) (armresources.DeploymentsClientGetAtSubscriptionScopeResponse, error) {
+func (cli *azCli) GetSubscriptionDeployment(ctx context.Context, subscriptionId string, deploymentName string) (armresources.DeploymentExtended, error) {
 	return azsdk.GetSubscriptionDeployment(ctx, subscriptionId, deploymentName)
 }
 
-func (cli *azCli) GetResourceGroupDeployment(ctx context.Context, subscriptionId string, resourceGroupName string, deploymentName string) (AzCliDeployment, error) {
-	res, err := cli.runAzCommand(ctx, "deployment", "group", "show", "--subscription", subscriptionId, "--resource-group", resourceGroupName, "--name", deploymentName, "--output", "json")
-	if isNotLoggedInMessage(res.Stderr) {
-		return AzCliDeployment{}, ErrAzCliNotLoggedIn
-	} else if isDeploymentNotFoundMessage(res.Stderr) {
-		return AzCliDeployment{}, ErrDeploymentNotFound
-	} else if err != nil {
-		return AzCliDeployment{}, fmt.Errorf("failed running az deployment sub show: %s: %w", res.String(), err)
-	}
-
-	var deployment AzCliDeployment
-	if err := json.Unmarshal([]byte(res.Stdout), &deployment); err != nil {
-		return AzCliDeployment{}, fmt.Errorf("could not unmarshal output %s as an AzCliDeployment: %w", res.Stdout, err)
-	}
-	return deployment, nil
+func (cli *azCli) GetResourceGroupDeployment(ctx context.Context, subscriptionId string, resourceGroupName string, deploymentName string) (armresources.DeploymentExtended, error) {
+	return azsdk.GetResourceGroupDeployment(ctx, subscriptionId, resourceGroupName, deploymentName)
 }
 
 func (cli *azCli) GetSignedInUserId(ctx context.Context) (string, error) {

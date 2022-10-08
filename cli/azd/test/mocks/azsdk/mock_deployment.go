@@ -8,7 +8,19 @@ import (
 )
 
 type MockDeploymentClient struct {
-	onGetAtSubscriptionScope *armresources.DeploymentsClientGetAtSubscriptionScopeResponse
+	onGetAtSubscriptionScope     *armresources.DeploymentsClientGetAtSubscriptionScopeResponse
+	onGetResourceGroupDeployment *armresources.DeploymentsClientGetResponse
+}
+
+func (client *MockDeploymentClient) GetResourceGroupDeployment(ctx context.Context, resourceGroupName string, deploymentName string) (armresources.DeploymentsClientGetResponse, error) {
+	if client.onGetResourceGroupDeployment == nil {
+		log.Panic("missing mock configuration for test: onGetResourceGroupDeployment")
+	}
+	return *client.onGetResourceGroupDeployment, nil
+}
+
+func (client *MockDeploymentClient) WhenGetResourceGroupDeployment(response *armresources.DeploymentsClientGetResponse) {
+	client.onGetResourceGroupDeployment = response
 }
 
 func (client *MockDeploymentClient) GetAtSubscriptionScope(ctx context.Context, deploymentName string) (armresources.DeploymentsClientGetAtSubscriptionScopeResponse, error) {
@@ -18,6 +30,6 @@ func (client *MockDeploymentClient) GetAtSubscriptionScope(ctx context.Context, 
 	return *client.onGetAtSubscriptionScope, nil
 }
 
-func (client *MockDeploymentClient) OnGetAtSubscriptionScope(response *armresources.DeploymentsClientGetAtSubscriptionScopeResponse) {
+func (client *MockDeploymentClient) WhenGetAtSubscriptionScope(response *armresources.DeploymentsClientGetAtSubscriptionScopeResponse) {
 	client.onGetAtSubscriptionScope = response
 }

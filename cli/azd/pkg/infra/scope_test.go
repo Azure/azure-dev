@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
@@ -26,17 +27,26 @@ func TestScopeGetDeployment(t *testing.T) {
 	}
 	deploymentBytes, _ := json.Marshal(deployment)
 
+	// mocked response for get deployment from subscription
+	deploymentWithOptions := &armresources.DeploymentsClientGetAtSubscriptionScopeResponse{
+		DeploymentExtended: armresources.DeploymentExtended{
+			Properties: &armresources.DeploymentPropertiesExtended{
+				Outputs: outputs,
+			},
+		},
+	}
+
 	t.Run("SubscriptionScopeSuccess", func(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
-		mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
-			return strings.Contains(command, "az deployment sub show")
-		}).Respond(exec.NewRunResult(0, string(deploymentBytes), ""))
+		mockContext.MockDeployments.OnGetAtSubscriptionScope(deploymentWithOptions)
 
 		scope := NewSubscriptionScope(*mockContext.Context, "eastus2", "SUBSCRIPTION_ID", "DEPLOYMENT_NAME")
 
 		deployment, err := scope.GetDeployment(*mockContext.Context)
 		require.NoError(t, err)
-		require.Equal(t, outputs["APP_URL"].Value, deployment.Properties.Outputs["APP_URL"].Value)
+		responseOutputs := deployment.Properties.Outputs.(map[string]azcli.AzCliDeploymentOutput)["APP_URL"]
+		require.Equal(t, outputs["APP_URL"].Value, responseOutputs.Value)
+		require.Equal(t, outputs["APP_URL"].Type, responseOutputs.Type)
 	})
 
 	t.Run("ResourceGroupScopeSuccess", func(t *testing.T) {
@@ -49,7 +59,7 @@ func TestScopeGetDeployment(t *testing.T) {
 
 		deployment, err := scope.GetDeployment(*mockContext.Context)
 		require.NoError(t, err)
-		require.Equal(t, outputs["APP_URL"].Value, deployment.Properties.Outputs["APP_URL"].Value)
+		require.Equal(t, outputs["APP_URL"].Value, deployment.Properties.Outputs.(map[string]azcli.AzCliDeploymentOutput)["APP_URL"].Value)
 	})
 }
 

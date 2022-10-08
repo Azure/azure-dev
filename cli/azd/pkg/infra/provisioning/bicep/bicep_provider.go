@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/cmdsubst"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
@@ -90,7 +91,7 @@ func (p *BicepProvider) GetDeployment(ctx context.Context, scope infra.Scope) *a
 			}
 
 			asyncContext.SetProgress(&DeployProgress{Message: "Normalizing output parameters", Timestamp: time.Now()})
-			deployment.Outputs = p.createOutputParameters(deployment, armDeployment.Properties.Outputs)
+			deployment.Outputs = p.createOutputParameters(deployment, armDeployment.Properties.Outputs.(map[string]azcli.AzCliDeploymentOutput))
 
 			result := DeployResult{
 				Deployment: deployment,
@@ -205,9 +206,7 @@ func (p *BicepProvider) Deploy(ctx context.Context, pd *DeploymentPlan, scope in
 			}
 
 			deployment := pd.Deployment
-			if deployResult != nil {
-				deployment.Outputs = p.createOutputParameters(&pd.Deployment, deployResult.Properties.Outputs)
-			}
+			deployment.Outputs = p.createOutputParameters(&pd.Deployment, deployResult.Properties.Outputs.(map[string]azcli.AzCliDeploymentOutput))
 
 			result := &DeployResult{
 				Operations: operations,
@@ -599,16 +598,16 @@ func (p *BicepProvider) convertToDeployment(bicepTemplate BicepTemplate) (*Deplo
 }
 
 // Deploys the specified Bicep module and parameters with the selected provisioning scope (subscription vs resource group)
-func (p *BicepProvider) deployModule(ctx context.Context, scope infra.Scope, bicepPath string, parametersPath string) (*azcli.AzCliDeployment, error) {
+func (p *BicepProvider) deployModule(ctx context.Context, scope infra.Scope, bicepPath string, parametersPath string) (
+	result armresources.DeploymentsClientGetAtSubscriptionScopeResponse, err error) {
 	// We've seen issues where `Deploy` completes but for a short while after, fetching the deployment fails with a `DeploymentNotFound` error.
 	// Since other commands of ours use the deployment, let's try to fetch it here and if we fail with `DeploymentNotFound`,
 	// ignore this error, wait a short while and retry.
 	if err := scope.Deploy(ctx, bicepPath, parametersPath); err != nil {
-		return nil, fmt.Errorf("failed deploying: %w", err)
+		return result, fmt.Errorf("failed deploying: %w", err)
 	}
 
-	var deployment azcli.AzCliDeployment
-	var err error
+	var deployment armresources.DeploymentsClientGetAtSubscriptionScopeResponse
 
 	for i := 0; i < 10; i++ {
 		time.Sleep(time.Duration(math.Min(float64(i), 3)*10) * time.Second)
@@ -616,13 +615,13 @@ func (p *BicepProvider) deployModule(ctx context.Context, scope infra.Scope, bic
 		if errors.Is(err, azcli.ErrDeploymentNotFound) {
 			continue
 		} else if err != nil {
-			return nil, fmt.Errorf("failed waiting for deployment: %w", err)
+			return result, fmt.Errorf("failed waiting for deployment: %w", err)
 		} else {
-			return &deployment, nil
+			return deployment, nil
 		}
 	}
 
-	return nil, fmt.Errorf("timed out waiting for deployment: %w", err)
+	return result, fmt.Errorf("timed out waiting for deployment: %w", err)
 }
 
 // Gets the path to the project parameters file path

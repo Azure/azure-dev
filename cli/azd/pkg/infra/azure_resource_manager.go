@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/azsdk"
 	"github.com/azure/azure-dev/cli/azd/pkg/azureutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
@@ -75,7 +76,7 @@ func (rm *AzureResourceManager) GetDeploymentResourceOperations(ctx context.Cont
 
 // GetResourceGroupsForDeployment returns the names of all the resource groups from a subscription level deployment.
 func (rm *AzureResourceManager) GetResourceGroupsForDeployment(ctx context.Context, subscriptionId string, deploymentName string) ([]string, error) {
-	deployment, err := rm.azCli.GetSubscriptionDeployment(ctx, subscriptionId, deploymentName)
+	deployment, err := azsdk.GetSubscriptionDeployment(ctx, subscriptionId, deploymentName)
 	if err != nil {
 		return nil, fmt.Errorf("fetching current deployment: %w", err)
 	}
@@ -86,8 +87,8 @@ func (rm *AzureResourceManager) GetResourceGroupsForDeployment(ctx context.Conte
 
 	for _, dependency := range deployment.Properties.Dependencies {
 		for _, dependent := range dependency.DependsOn {
-			if dependent.ResourceType == string(AzureResourceTypeResourceGroup) {
-				resourceGroups[dependent.ResourceName] = struct{}{}
+			if *dependent.ResourceType == string(AzureResourceTypeResourceGroup) {
+				resourceGroups[*dependent.ResourceName] = struct{}{}
 			}
 		}
 	}

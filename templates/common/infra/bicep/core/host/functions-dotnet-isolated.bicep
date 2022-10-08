@@ -9,7 +9,7 @@ param enableOryxBuild bool = false
 param keyVaultName string = ''
 param linuxFxVersion string = 'DOTNET-ISOLATED|6.0'
 param managedIdentity bool = !(empty(keyVaultName))
-param scmDoBuildDuringDeployment bool = true
+param scmDoBuildDuringDeployment bool = false
 param serviceName string
 param storageAccountName string
 

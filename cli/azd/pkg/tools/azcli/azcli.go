@@ -16,11 +16,14 @@ import (
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerregistry/armcontainerregistry"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	azdinternal "github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/telemetry"
+	"github.com/azure/azure-dev/cli/azd/pkg/azsdk"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
+	"github.com/azure/azure-dev/cli/azd/pkg/identity"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/internal"
 	"github.com/blang/semver/v4"
@@ -769,20 +772,73 @@ func (cli *azCli) ListAccountLocations(ctx context.Context) ([]AzCliLocation, er
 }
 
 func (cli *azCli) GetSubscriptionDeployment(ctx context.Context, subscriptionId string, deploymentName string) (AzCliDeployment, error) {
-	res, err := cli.runAzCommand(ctx, "deployment", "sub", "show", "--subscription", subscriptionId, "--name", deploymentName, "--output", "json")
-	if isNotLoggedInMessage(res.Stderr) {
+	credential, err := identity.GetCredentials(ctx)
+	if err != nil {
 		return AzCliDeployment{}, ErrAzCliNotLoggedIn
-	} else if isDeploymentNotFoundMessage(res.Stderr) {
-		return AzCliDeployment{}, ErrDeploymentNotFound
-	} else if err != nil {
-		return AzCliDeployment{}, fmt.Errorf("failed running az deployment sub show: %s: %w", res.String(), err)
 	}
 
-	var deployment AzCliDeployment
-	if err := json.Unmarshal([]byte(res.Stdout), &deployment); err != nil {
-		return AzCliDeployment{}, fmt.Errorf("could not unmarshal output %s as an AzCliDeployment: %w", res.Stdout, err)
+	deploymentClient, err := azsdk.NewDeploymentClient(subscriptionId, credential)
+	if err != nil {
+		return AzCliDeployment{}, fmt.Errorf("creating deployments client: %w", err)
 	}
-	return deployment, nil
+
+	res, err := deploymentClient.GetAtSubscriptionScope(ctx, deploymentName)
+	if err != nil {
+		return AzCliDeployment{}, fmt.Errorf("getting deployment from subscription: %w", err)
+	}
+
+	return AzCliDeployment{
+		Id:   string(*res.ID),
+		Name: *res.Name,
+		Properties: AzCliDeploymentProperties{
+			CorrelationId:   *res.Properties.CorrelationID,
+			Error:           res.Properties.Error,
+			Dependencies:    getDeploymentDependencies(res.Properties.Dependencies),
+			OutputResources: getDeploymentResourceReference(res.Properties.OutputResources),
+			Outputs:         res.Properties.Outputs.(map[string]AzCliDeploymentOutput),
+		},
+	}, nil
+}
+
+func getDeploymentError(err *armresources.ErrorResponse) AzCliDeploymentErrorResponse {
+
+}
+
+func getDeploymentResourceReference(dependencies []*armresources.ResourceReference) []AzCliDeploymentResourceReference {
+	result := make([]AzCliDeploymentResourceReference, len(dependencies))
+	for _, dependency := range dependencies {
+		result = append(result, AzCliDeploymentResourceReference{
+			Id: *dependency.ID,
+		})
+	}
+	return result
+}
+
+func getDeploymentDependencies(dependencies []*armresources.Dependency) []AzCliDeploymentPropertiesDependency {
+	result := make([]AzCliDeploymentPropertiesDependency, len(dependencies))
+	for _, dependency := range dependencies {
+		result = append(result, AzCliDeploymentPropertiesDependency{
+			AzCliDeploymentPropertiesBasicDependency: AzCliDeploymentPropertiesBasicDependency{
+				Id:           *dependency.ID,
+				ResourceName: *dependency.ResourceName,
+				ResourceType: *dependency.ResourceType,
+			},
+			DependsOn: getDeploymentBasicDependencies(dependency.DependsOn),
+		})
+	}
+	return result
+}
+
+func getDeploymentBasicDependencies(dependencies []*armresources.BasicDependency) []AzCliDeploymentPropertiesBasicDependency {
+	result := make([]AzCliDeploymentPropertiesBasicDependency, len(dependencies))
+	for _, dependency := range dependencies {
+		result = append(result, AzCliDeploymentPropertiesBasicDependency{
+			Id:           *dependency.ID,
+			ResourceName: *dependency.ResourceName,
+			ResourceType: *dependency.ResourceType,
+		})
+	}
+	return result
 }
 
 func (cli *azCli) GetResourceGroupDeployment(ctx context.Context, subscriptionId string, resourceGroupName string, deploymentName string) (AzCliDeployment, error) {

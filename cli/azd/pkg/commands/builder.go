@@ -55,7 +55,7 @@ func Build(action Action, rootOptions *internal.GlobalCommandOptions, use string
 		Long:    buildOptions.Long,
 		Aliases: buildOptions.Aliases,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			ctx, azdCtx, err := createRootContext(context.Background(), cmd, rootOptions)
+			ctx, azdCtx, err := createRootContext(cmd.Context(), cmd, rootOptions)
 			if err != nil {
 				return err
 			}

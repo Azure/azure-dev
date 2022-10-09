@@ -33,9 +33,9 @@ type GitHubScmProvider struct {
 
 // requiredTools return the list of external tools required by
 // GitHub provider during its execution.
-func (p *GitHubScmProvider) requiredTools() []tools.ExternalTool {
+func (p *GitHubScmProvider) requiredTools(ctx context.Context) []tools.ExternalTool {
 	return []tools.ExternalTool{
-		github.NewGitHubCli(context.Background()),
+		github.NewGitHubCli(ctx),
 	}
 }
 
@@ -281,9 +281,9 @@ type GitHubCiProvider struct {
 // ***  subareaProvider implementation ******
 
 // requiredTools defines the requires tools for GitHub to be used as CI manager
-func (p *GitHubCiProvider) requiredTools() []tools.ExternalTool {
+func (p *GitHubCiProvider) requiredTools(ctx context.Context) []tools.ExternalTool {
 	return []tools.ExternalTool{
-		github.NewGitHubCli(context.Background()),
+		github.NewGitHubCli(ctx),
 	}
 }
 

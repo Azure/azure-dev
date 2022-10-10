@@ -16,6 +16,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -140,6 +141,7 @@ func Test_AzCli_Login_DoesNotAppend_useDeviceCode(t *testing.T) {
 	require.NotContains(t, commandArgs, "--use-device-code")
 }
 
+func runAndCaptureUserAgent(t *testing.T) string {
 	// Get the default command runner implementation
 	defaultRunner := exec.NewCommandRunner()
 	mockContext := mocks.NewMockContext(context.Background())

@@ -31,6 +31,18 @@ module api '../../../../../common/infra/bicep/app/api-appservice-dotnet.bicep' =
     allowedOrigins: [ web.outputs.WEB_URI ]
   }
 }
+
+// Give the API access to KeyVault
+module apiKeyVaultAccess '../../../../../../common/infra/bicep/core/security/keyvault-access.bicep' = {
+  name: 'api-keyvault-access'
+  params: {
+    environmentName: environmentName
+    location: location
+    keyVaultName: keyVault.outputs.keyVaultName
+    principalId: api.outputs.API_IDENTITY_PRINCIPAL_ID
+  }
+}
+
 // The application database
 module sqlServer '../../../../../common/infra/bicep/app/sqlserver.bicep' = {
   name: 'sql'

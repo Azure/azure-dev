@@ -26,6 +26,17 @@ module api '../../../../../common/infra/bicep/app/api-appservice-dotnet.bicep' =
   }
 }
 
+// Give the API access to KeyVault
+module apiKeyVaultAccess '../../../../../../common/infra/bicep/core/security/keyvault-access.bicep' = {
+  name: 'api-keyvault-access'
+  params: {
+    environmentName: environmentName
+    location: location
+    keyVaultName: keyVault.outputs.keyVaultName
+    principalId: api.outputs.API_IDENTITY_PRINCIPAL_ID
+  }
+}
+
 // The application database
 module cosmos '../../../../../common/infra/bicep/app/cosmos-sql-db.bicep' = {
   name: 'cosmos'

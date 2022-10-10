@@ -110,43 +110,6 @@ func TestAZCLIWithUserAgent(t *testing.T) {
 	require.Contains(t, userAgent, "azdev")
 }
 
-func Test_AzCli_Login_Appends_useDeviceCode(t *testing.T) {
-	var commandArgs []string
-	var writer io.Writer
-
-	mockContext := mocks.NewMockContext(context.Background())
-	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
-		return strings.Contains(command, "--use-device-code")
-	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
-		commandArgs = args.Args
-		return exec.NewRunResult(0, "", ""), nil
-	})
-
-	azCli := GetAzCli(*mockContext.Context)
-	err := azCli.Login(*mockContext.Context, true, writer)
-	require.NoError(t, err)
-	require.Contains(t, commandArgs, "--use-device-code")
-}
-
-func Test_AzCli_Login_DoesNotAppend_useDeviceCode(t *testing.T) {
-	var commandArgs []string
-	var writer io.Writer
-
-	mockContext := mocks.NewMockContext(context.Background())
-	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
-		return !strings.Contains(command, "--use-device-code")
-	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
-		commandArgs = args.Args
-		return exec.NewRunResult(0, "", ""), nil
-	})
-
-	azCli := GetAzCli(*mockContext.Context)
-	err := azCli.Login(*mockContext.Context, false, writer)
-
-	require.NoError(t, err)
-	require.NotContains(t, commandArgs, "--use-device-code")
-}
-
 func mustGetDefaultAccount(t *testing.T, azCli AzCli) AzCliSubscriptionInfo {
 	accounts, err := azCli.ListAccounts(context.Background())
 	require.NoError(t, err)

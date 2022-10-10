@@ -11,7 +11,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armsubscriptions"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
+	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
@@ -325,11 +327,11 @@ func setupGetSubscriptionMock(mockContext *mocks.MockContext, subscription *conf
 			}, nil
 		}
 
-		res := azcli.CustomSubscription{
-			ID:             subscription.Id,
-			SubscriptionID: subscription.Id,
-			DisplayName:    subscription.Name,
-			TenantID:       subscription.TenantId,
+		res := armsubscriptions.Subscription{
+			ID:             convert.RefOf(subscription.Id),
+			SubscriptionID: convert.RefOf(subscription.Id),
+			DisplayName:    convert.RefOf(subscription.Name),
+			TenantID:       convert.RefOf(subscription.TenantId),
 		}
 
 		jsonBytes, _ := json.Marshal(res)
@@ -371,25 +373,27 @@ func setupAccountMocks(mockContext *mocks.MockContext) {
 	mockContext.HttpClient.When(func(request *http.Request) bool {
 		return request.Method == http.MethodGet && request.URL.Path == "/subscriptions"
 	}).RespondFn(func(request *http.Request) (*http.Response, error) {
-		res := azcli.CustomListSubscriptionResponse{
-			Value: []*azcli.CustomSubscription{
-				{
-					ID:             "subscriptions/SUBSCRIPTION_01",
-					SubscriptionID: "SUBSCRIPTION_01",
-					DisplayName:    "Subscription 1",
-					TenantID:       "TENANT_ID",
-				},
-				{
-					ID:             "subscriptions/SUBSCRIPTION_02",
-					SubscriptionID: "SUBSCRIPTION_02",
-					DisplayName:    "Subscription 2",
-					TenantID:       "TENANT_ID",
-				},
-				{
-					ID:             "subscriptions/SUBSCRIPTION_03",
-					SubscriptionID: "SUBSCRIPTION_03",
-					DisplayName:    "Subscription 3",
-					TenantID:       "TENANT_ID",
+		res := armsubscriptions.ClientListResponse{
+			SubscriptionListResult: armsubscriptions.SubscriptionListResult{
+				Value: []*armsubscriptions.Subscription{
+					{
+						ID:             convert.RefOf("subscriptions/SUBSCRIPTION_01"),
+						SubscriptionID: convert.RefOf("SUBSCRIPTION_01"),
+						DisplayName:    convert.RefOf("Subscription 1"),
+						TenantID:       convert.RefOf("TENANT_ID"),
+					},
+					{
+						ID:             convert.RefOf("subscriptions/SUBSCRIPTION_02"),
+						SubscriptionID: convert.RefOf("SUBSCRIPTION_02"),
+						DisplayName:    convert.RefOf("Subscription 2"),
+						TenantID:       convert.RefOf("TENANT_ID"),
+					},
+					{
+						ID:             convert.RefOf("subscriptions/SUBSCRIPTION_03"),
+						SubscriptionID: convert.RefOf("SUBSCRIPTION_03"),
+						DisplayName:    convert.RefOf("Subscription 3"),
+						TenantID:       convert.RefOf("TENANT_ID"),
+					},
 				},
 			},
 		}
@@ -407,35 +411,37 @@ func setupAccountMocks(mockContext *mocks.MockContext) {
 	mockContext.HttpClient.When(func(request *http.Request) bool {
 		return request.Method == http.MethodGet && strings.Contains(request.URL.Path, "/locations")
 	}).RespondFn(func(request *http.Request) (*http.Response, error) {
-		res := azcli.CustomListLocationsResponse{
-			Value: []*azcli.CustomLocation{
-				{
-					ID:                  "westus",
-					Name:                "westus",
-					DisplayName:         "West US",
-					RegionalDisplayName: "(US) West US",
-					Metadata:            azcli.CustomLocationMetadata{RegionType: "Physical"},
-				},
-				{
-					ID:                  "westus2",
-					Name:                "westus2",
-					DisplayName:         "West US 2",
-					RegionalDisplayName: "(US) West US 2",
-					Metadata:            azcli.CustomLocationMetadata{RegionType: "Physical"},
-				},
-				{
-					ID:                  "eastus",
-					Name:                "eastus",
-					DisplayName:         "East US",
-					RegionalDisplayName: "(US) East US",
-					Metadata:            azcli.CustomLocationMetadata{RegionType: "Physical"},
-				},
-				{
-					ID:                  "eastus2",
-					Name:                "eastus2",
-					DisplayName:         "East US 2",
-					RegionalDisplayName: "(US) East US 2",
-					Metadata:            azcli.CustomLocationMetadata{RegionType: "Physical"},
+		res := armsubscriptions.ClientListLocationsResponse{
+			LocationListResult: armsubscriptions.LocationListResult{
+				Value: []*armsubscriptions.Location{
+					{
+						ID:                  convert.RefOf("westus"),
+						Name:                convert.RefOf("westus"),
+						DisplayName:         convert.RefOf("West US"),
+						RegionalDisplayName: convert.RefOf("(US) West US"),
+						Metadata:            &armsubscriptions.LocationMetadata{RegionType: convert.RefOf(armsubscriptions.RegionTypePhysical)},
+					},
+					{
+						ID:                  convert.RefOf("westus2"),
+						Name:                convert.RefOf("westus2"),
+						DisplayName:         convert.RefOf("West US 2"),
+						RegionalDisplayName: convert.RefOf("(US) West US 2"),
+						Metadata:            &armsubscriptions.LocationMetadata{RegionType: convert.RefOf(armsubscriptions.RegionTypePhysical)},
+					},
+					{
+						ID:                  convert.RefOf("eastus"),
+						Name:                convert.RefOf("eastus"),
+						DisplayName:         convert.RefOf("East US"),
+						RegionalDisplayName: convert.RefOf("(US) East US"),
+						Metadata:            &armsubscriptions.LocationMetadata{RegionType: convert.RefOf(armsubscriptions.RegionTypePhysical)},
+					},
+					{
+						ID:                  convert.RefOf("eastus2"),
+						Name:                convert.RefOf("eastus2"),
+						DisplayName:         convert.RefOf("East US 2"),
+						RegionalDisplayName: convert.RefOf("(US) East US 2"),
+						Metadata:            &armsubscriptions.LocationMetadata{RegionType: convert.RefOf(armsubscriptions.RegionTypePhysical)},
+					},
 				},
 			},
 		}

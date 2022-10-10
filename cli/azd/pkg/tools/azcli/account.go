@@ -4,11 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"net/http"
 	"sort"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/subscription/armsubscription"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armsubscriptions"
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/identity"
 )
@@ -36,29 +34,20 @@ func (cli *azCli) ListAccounts(ctx context.Context) ([]AzCliSubscriptionInfo, er
 		return nil, err
 	}
 
-	var rawResponse *http.Response
-	ctx = runtime.WithCaptureResponse(ctx, &rawResponse)
-
 	subscriptions := []AzCliSubscriptionInfo{}
 	pager := client.NewListPager(nil)
 
 	for pager.More() {
-		_, err := pager.NextPage(ctx)
+		page, err := pager.NextPage(ctx)
 		if err != nil {
 			return nil, fmt.Errorf("failed getting next page of subscriptions: %w", err)
 		}
 
-		// Using custom response processing unto Go SDK support required properties
-		listResponse, err := readRawResponse[CustomListSubscriptionResponse](rawResponse)
-		if err != nil {
-			return nil, err
-		}
-
-		for _, subscription := range listResponse.Value {
+		for _, subscription := range page.SubscriptionListResult.Value {
 			subscriptions = append(subscriptions, AzCliSubscriptionInfo{
-				Id:       subscription.SubscriptionID,
-				Name:     subscription.DisplayName,
-				TenantId: subscription.TenantID,
+				Id:       *subscription.SubscriptionID,
+				Name:     *subscription.DisplayName,
+				TenantId: *subscription.TenantID,
 			})
 		}
 	}
@@ -96,24 +85,15 @@ func (cli *azCli) GetAccount(ctx context.Context, subscriptionId string) (*AzCli
 		return nil, err
 	}
 
-	var rawResponse *http.Response
-	ctx = runtime.WithCaptureResponse(ctx, &rawResponse)
-
-	_, err = client.Get(ctx, subscriptionId, nil)
+	subscription, err := client.Get(ctx, subscriptionId, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed getting subscription for '%s'", subscriptionId)
 	}
 
-	// Using custom response processing unto Go SDK support required properties
-	subscription, err := readRawResponse[CustomSubscription](rawResponse)
-	if err != nil {
-		return nil, err
-	}
-
 	return &AzCliSubscriptionInfo{
-		Id:       subscription.SubscriptionID,
-		Name:     subscription.DisplayName,
-		TenantId: subscription.TenantID,
+		Id:       *subscription.SubscriptionID,
+		Name:     *subscription.DisplayName,
+		TenantId: *subscription.TenantID,
 	}, nil
 }
 
@@ -135,31 +115,22 @@ func (cli *azCli) ListAccountLocations(ctx context.Context, subscriptionId strin
 	locations := []AzCliLocation{}
 	pager := client.NewListLocationsPager(subscriptionId, nil)
 
-	var rawResponse *http.Response
-	ctx = runtime.WithCaptureResponse(ctx, &rawResponse)
-
 	for pager.More() {
-		_, err := pager.NextPage(ctx)
+		page, err := pager.NextPage(ctx)
 		if err != nil {
 			return nil, fmt.Errorf("failed getting next page of locations: %w", err)
 		}
 
-		// Using custom response processing unto Go SDK support required properties
-		locationResponse, err := readRawResponse[CustomListLocationsResponse](rawResponse)
-		if err != nil {
-			return nil, err
-		}
-
-		for _, location := range locationResponse.Value {
+		for _, location := range page.LocationListResult.Value {
 			// Ignore non-physical locations
-			if location.Metadata.RegionType != "Physical" {
+			if *location.Metadata.RegionType != "Physical" {
 				continue
 			}
 
 			locations = append(locations, AzCliLocation{
-				Name:                location.Name,
-				DisplayName:         location.DisplayName,
-				RegionalDisplayName: location.RegionalDisplayName,
+				Name:                *location.Name,
+				DisplayName:         *location.DisplayName,
+				RegionalDisplayName: *location.RegionalDisplayName,
 			})
 		}
 	}
@@ -171,7 +142,7 @@ func (cli *azCli) ListAccountLocations(ctx context.Context, subscriptionId strin
 	return locations, nil
 }
 
-func (cli *azCli) createSubscriptionsClient(ctx context.Context) (*armsubscription.SubscriptionsClient, error) {
+func (cli *azCli) createSubscriptionsClient(ctx context.Context) (*armsubscriptions.Client, error) {
 	cred, err := identity.GetCredentials(ctx)
 	if err != nil {
 		return nil, err
@@ -179,44 +150,10 @@ func (cli *azCli) createSubscriptionsClient(ctx context.Context) (*armsubscripti
 
 	// Uses latest api version of subscriptions api to get additional properties
 	options := cli.createArmClientOptions(ctx, convert.RefOf("2020-01-01"))
-	client, err := armsubscription.NewSubscriptionsClient(cred, options)
+	client, err := armsubscriptions.NewClient(cred, options)
 	if err != nil {
 		return nil, fmt.Errorf("creating Subscriptions client: %w", err)
 	}
 
 	return client, nil
-}
-
-// Temporary custom response until Go SDK support all of the specified properties in the response
-type CustomListLocationsResponse struct {
-	Value []*CustomLocation `json:"value"`
-}
-
-// Temporary custom response until Go SDK support all of the specified properties in the response
-// https://github.com/Azure/azure-sdk-for-go/issues/19241
-type CustomLocation struct {
-	ID                  string                 `json:"id"`
-	Name                string                 `json:"name"`
-	DisplayName         string                 `json:"displayName"`
-	RegionalDisplayName string                 `json:"regionalDisplayName"` // Missing from Go SDK
-	Metadata            CustomLocationMetadata `json:"metadata"`            // Missing from Go SDK
-}
-
-// Temporary custom response until Go SDK support all of the specified properties in the response
-type CustomLocationMetadata struct {
-	RegionType string `json:"regionType"`
-}
-
-// Temporary custom response until Go SDK support all of the specified properties in the response
-type CustomListSubscriptionResponse struct {
-	Value []*CustomSubscription `json:"value"`
-}
-
-// Temporary custom response until Go SDK support all of the specified properties in the response
-// https://github.com/Azure/azure-sdk-for-go/issues/19243
-type CustomSubscription struct {
-	ID             string `json:"id"`
-	SubscriptionID string `json:"subscriptionId"`
-	TenantID       string `json:"tenantId"` // Missing from Go SDK
-	DisplayName    string `json:"displayName"`
 }

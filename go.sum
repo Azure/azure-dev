@@ -58,10 +58,12 @@ github.com/Azure/azure-sdk-for-go/sdk/internal v1.0.1 h1:XUNQ4mw+zJmaA2KXzP9JlQi
 github.com/Azure/azure-sdk-for-go/sdk/internal v1.0.1/go.mod h1:eWRD7oawr1Mu1sLCawqVc0CUiF43ia3qQMxLscsKQ9w=
 github.com/Azure/azure-sdk-for-go/sdk/keyvault/azsecrets v0.10.1 h1:AhZnZn4kUKz36bHJ8AK/FH2tH/q3CAkG+Gme+2ibuak=
 github.com/Azure/azure-sdk-for-go/sdk/keyvault/azsecrets v0.10.1/go.mod h1:S78i9yTr4o/nXlH76bKjGUye9Z2wSxO5Tz7GoDr4vfI=
-github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerregistry/armcontainerregistry v0.6.0 h1:Z5/bDxQL2Zc9t6ZDwdRU60bpLHZvoKOeuaM7XVbf2z0=
-github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerregistry/armcontainerregistry v0.6.0/go.mod h1:0FPu3oDRGPvuX1H8TtHJ5XGA0KrXLunomcixR+PQGGA=
 github.com/Azure/azure-sdk-for-go/sdk/keyvault/internal v0.7.0 h1:Lg6BW0VPmCwcMlvOviL3ruHFO+H9tZNqscK0AeuFjGM=
 github.com/Azure/azure-sdk-for-go/sdk/keyvault/internal v0.7.0/go.mod h1:9V2j0jn9jDEkCkv8w/bKTNppX/d0FVA1ud77xCIP4KA=
+github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appconfiguration/armappconfiguration v1.0.0 h1:5reBX+9pzc5xp9VrjSUoPrE8Wl/3y7wjfHzGjXzJbNk=
+github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appconfiguration/armappconfiguration v1.0.0/go.mod h1:YW819qVTop21KS8LJLEf3Z47LBaRHIaz/IRLZpKqTIU=
+github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerregistry/armcontainerregistry v0.6.0 h1:Z5/bDxQL2Zc9t6ZDwdRU60bpLHZvoKOeuaM7XVbf2z0=
+github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerregistry/armcontainerregistry v0.6.0/go.mod h1:0FPu3oDRGPvuX1H8TtHJ5XGA0KrXLunomcixR+PQGGA=
 github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/internal v1.0.0 h1:lMW1lD/17LUA5z1XTURo7LcVG2ICBPlyMHjIUrcFZNQ=
 github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/keyvault/armkeyvault v1.0.0 h1:Jc2KcpCDMu7wJfkrzn7fs/53QMDXH78GuqnH4HOd7zs=
 github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/keyvault/armkeyvault v1.0.0/go.mod h1:PFVgFsclKzPqYRT/BiwpfUN22cab0C7FlgXR3iWpwMo=

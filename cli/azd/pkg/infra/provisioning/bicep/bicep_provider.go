@@ -248,6 +248,13 @@ func (p *BicepProvider) Destroy(ctx context.Context, deployment *Deployment, opt
 				return
 			}
 
+			asyncContext.SetProgress(&DestroyProgress{Message: "Getting AppConfigurations to purge", Timestamp: time.Now()})
+			appConfigs, err := p.getAppConfigsToPurge(ctx, groupedResources)
+			if err != nil {
+				asyncContext.SetError(fmt.Errorf("getting key vaults to purge: %w", err))
+				return
+			}
+
 			if err := p.destroyResourceGroups(ctx, asyncContext, options, groupedResources, len(allResources)); err != nil {
 				asyncContext.SetError(fmt.Errorf("destroying resource groups: %w", err))
 				return
@@ -255,6 +262,11 @@ func (p *BicepProvider) Destroy(ctx context.Context, deployment *Deployment, opt
 
 			if err := p.purgeKeyVaults(ctx, asyncContext, keyVaults, options); err != nil {
 				asyncContext.SetError(fmt.Errorf("purging key vaults: %w", err))
+				return
+			}
+
+			if err := p.purgeAppConfigs(ctx, asyncContext, appConfigs, options); err != nil {
+				asyncContext.SetError(fmt.Errorf("purging app configurations: %w", err))
 				return
 			}
 
@@ -354,6 +366,24 @@ func (p *BicepProvider) getKeyVaults(ctx context.Context, groupedResources map[s
 	return vaults, nil
 }
 
+func (p *BicepProvider) getAppConfigs(ctx context.Context, groupedResources map[string][]azcli.AzCliResource) ([]*azcli.AzCliAppConfig, error) {
+	configs := []*azcli.AzCliAppConfig{}
+
+	for resourceGroup, groupResources := range groupedResources {
+		for _, resource := range groupResources {
+			if resource.Type == string(infra.AzureResourceTypeAppConfig) {
+				config, err := p.azCli.GetAppConfig(ctx, p.env.GetSubscriptionId(), resourceGroup, resource.Name)
+				if err != nil {
+					return nil, fmt.Errorf("listing app configuration %s properties: %w", resource.Name, err)
+				}
+				configs = append(configs, config)
+			}
+		}
+	}
+
+	return configs, nil
+}
+
 func (p *BicepProvider) getKeyVaultsToPurge(ctx context.Context, groupedResources map[string][]azcli.AzCliResource) ([]*azcli.AzCliKeyVault, error) {
 	vaults, err := p.getKeyVaults(ctx, groupedResources)
 	if err != nil {
@@ -368,6 +398,22 @@ func (p *BicepProvider) getKeyVaultsToPurge(ctx context.Context, groupedResource
 	}
 
 	return vaultsToPurge, nil
+}
+
+func (p *BicepProvider) getAppConfigsToPurge(ctx context.Context, groupedResources map[string][]azcli.AzCliResource) ([]*azcli.AzCliAppConfig, error) {
+	configs, err := p.getAppConfigs(ctx, groupedResources)
+	if err != nil {
+		return nil, err
+	}
+
+	configsToPurge := []*azcli.AzCliAppConfig{}
+	for _, c := range configs {
+		if !c.Properties.EnablePurgeProtection {
+			configsToPurge = append(configsToPurge, c)
+		}
+	}
+
+	return configsToPurge, nil
 }
 
 // Azure KeyVaults have a "soft delete" functionality (now enabled by default) where a vault may be marked
@@ -428,6 +474,57 @@ func (p *BicepProvider) purgeKeyVaults(ctx context.Context, asyncContext *async.
 		}
 
 		p.console.Message(ctx, fmt.Sprintf("%s key vault %s", output.WithErrorFormat("Purged"), output.WithHighLightFormat(keyVault.Name)))
+	}
+
+	return nil
+}
+
+func (p *BicepProvider) purgeAppConfigs(ctx context.Context, asyncContext *async.InteractiveTaskContextWithProgress[*DestroyResult, *DestroyProgress], appConfigs []*azcli.AzCliAppConfig, options DestroyOptions) error {
+	if len(appConfigs) > 0 && !options.Purge() {
+		appConfigWarning := fmt.Sprintf(""+
+			"\nThis operation will delete and purge %d App Configurations. These App Configurations have soft delete enabled allowing them to be recovered for a period \n"+
+			"of time after deletion. During this period, their names may not be reused.\n"+
+			"You can use argument --purge to skip this confirmation.\n\n",
+			len(appConfigs))
+
+		p.console.Message(ctx, output.WithWarningFormat(appConfigWarning))
+
+		err := asyncContext.Interact(func() error {
+			purgeAppConfigs, err := p.console.Confirm(ctx, input.ConsoleOptions{
+				Message:      fmt.Sprintf("Would you like to %s delete these App Configurations instead, allowing their names to be reused?", output.WithErrorFormat("permanently")),
+				DefaultValue: false,
+			})
+
+			if err != nil {
+				return fmt.Errorf("prompting for purge confirmation: %w", err)
+			}
+
+			if !purgeAppConfigs {
+				return errors.New("user denied purge confirmation")
+			}
+
+			return nil
+		})
+
+		if err != nil {
+			return err
+		}
+	}
+
+	for _, appConfig := range appConfigs {
+		progressReport := DestroyProgress{
+			Timestamp: time.Now(),
+			Message:   fmt.Sprintf("%s app configuration %s", output.WithErrorFormat("Purging"), output.WithHighLightFormat(appConfig.Name)),
+		}
+
+		asyncContext.SetProgress(&progressReport)
+
+		err := p.azCli.PurgeAppConfig(ctx, p.env.GetSubscriptionId(), appConfig.Name, appConfig.Location)
+		if err != nil {
+			return fmt.Errorf("purging app configuration %s: %w", appConfig.Name, err)
+		}
+
+		p.console.Message(ctx, fmt.Sprintf("%s app configuration %s", output.WithErrorFormat("Purged"), output.WithHighLightFormat(appConfig.Name)))
 	}
 
 	return nil

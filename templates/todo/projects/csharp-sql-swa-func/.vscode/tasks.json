@@ -43,7 +43,7 @@
             "label": "API Functions Run",
             "detail": "Helper task--use 'Start API' task to ensure environment is set up correctly",
             "type": "func",
-            "dependsOn": "build (functions)",
+            "dependsOn": "Build API",
             "command": "host start",
             "options": {
                 "cwd": "${workspaceFolder}/src/api/"

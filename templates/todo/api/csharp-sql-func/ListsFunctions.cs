@@ -18,7 +18,7 @@ public class ListsFunctions
 
     [Function("GetLists")]
     public async Task<HttpResponseData> GetLists(
-        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "lists/{skip:int?}/{batchSize:int?}")]
+        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "lists")]
         HttpRequestData req, int? skip, int? batchSize)
     {
         var response = req.CreateResponse(HttpStatusCode.OK);
@@ -81,7 +81,7 @@ public class ListsFunctions
         var response = req.CreateResponse(HttpStatusCode.NoContent);
         if (await _repository.GetListAsync(list_id) == null)
         {
-            return req.CreateResponse(HttpStatusCode.NotFound); ;
+            return req.CreateResponse(HttpStatusCode.NotFound);
         }
         await _repository.DeleteListAsync(list_id);
         return response;
@@ -89,7 +89,7 @@ public class ListsFunctions
 
     [Function("GetListItems")]
     public async Task<HttpResponseData> GetListItems(
-        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "lists/{list_id}/items/{skip:int?}/{batchSize:int?}")]
+        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "lists/{list_id}/items")]
         HttpRequestData req, Guid list_id, int? skip, int? batchSize)
     {
         var response = req.CreateResponse(HttpStatusCode.OK);
@@ -184,7 +184,7 @@ public class ListsFunctions
 
     [Function("GetListItemsByState")]
     public async Task<HttpResponseData> GetListItemsByState(
-        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "lists/{list_id}/state/{state}/{skip:int?}/{batchSize:int?}")]
+        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "lists/{list_id}/state/{state}")]
         HttpRequestData req, Guid list_id, string state, int? skip = null, int? batchSize = null)
     {
         var response = req.CreateResponse(HttpStatusCode.OK);

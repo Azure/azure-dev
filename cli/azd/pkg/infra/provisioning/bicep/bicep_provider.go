@@ -91,7 +91,7 @@ func (p *BicepProvider) GetDeployment(ctx context.Context, scope infra.Scope) *a
 			}
 
 			asyncContext.SetProgress(&DeployProgress{Message: "Normalizing output parameters", Timestamp: time.Now()})
-			deployment.Outputs = p.createOutputParameters(deployment, armDeployment.Properties.Outputs.(map[string]azcli.AzCliDeploymentOutput))
+			deployment.Outputs = p.createOutputParameters(deployment, createDeploymentOutput(armDeployment.Properties.Outputs))
 
 			result := DeployResult{
 				Deployment: deployment,
@@ -100,6 +100,22 @@ func (p *BicepProvider) GetDeployment(ctx context.Context, scope infra.Scope) *a
 
 			asyncContext.SetResult(&result)
 		})
+}
+
+// convert from: sdk client outputs: interface{} to map[string]azcli.AzCliDeploymentOutput
+// sdk client parses http response from network as an interface{}
+// this function keeps the compatibility with the previous AzCliDeploymentOutput model
+func createDeploymentOutput(rawOutputs interface{}) (result map[string]azcli.AzCliDeploymentOutput) {
+	castInput := rawOutputs.(map[string]interface{})
+	result = make(map[string]azcli.AzCliDeploymentOutput, len(castInput))
+	for key, output := range castInput {
+		innerValue := output.(map[string]interface{})
+		result[key] = azcli.AzCliDeploymentOutput{
+			Type:  innerValue["type"].(string),
+			Value: innerValue["value"].(string),
+		}
+	}
+	return result
 }
 
 // Plans the infrastructure provisioning
@@ -206,7 +222,7 @@ func (p *BicepProvider) Deploy(ctx context.Context, pd *DeploymentPlan, scope in
 			}
 
 			deployment := pd.Deployment
-			deployment.Outputs = p.createOutputParameters(&pd.Deployment, deployResult.Properties.Outputs.(map[string]azcli.AzCliDeploymentOutput))
+			deployment.Outputs = p.createOutputParameters(&pd.Deployment, createDeploymentOutput(deployResult.Properties.Outputs))
 
 			result := &DeployResult{
 				Operations: operations,

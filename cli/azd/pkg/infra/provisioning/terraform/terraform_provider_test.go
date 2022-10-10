@@ -57,7 +57,7 @@ func TestTerraformPlan(t *testing.T) {
 	require.Contains(t, consoleLog[3], "Generating terraform plan...")
 
 	require.Equal(t, infraProvider.env.Values["AZURE_LOCATION"], deploymentPlan.Deployment.Parameters["location"].Value)
-	require.Equal(t, infraProvider.env.Values["AZURE_ENV_NAME"], deploymentPlan.Deployment.Parameters["name"].Value)
+	require.Equal(t, infraProvider.env.Values["AZURE_ENV_NAME"], deploymentPlan.Deployment.Parameters["environment_name"].Value)
 
 	require.NotNil(t, deploymentPlan.Details)
 

@@ -18,7 +18,7 @@ func GetCredentials(ctx context.Context) (azcore.TokenCredential, error) {
 	cred, ok := ctx.Value(credentialsContextKey).(azcore.TokenCredential)
 
 	if !ok {
-		defaultCreds, err := azidentity.NewAzureCLICredential(nil)
+		defaultCreds, err := azidentity.NewDefaultAzureCredential(nil)
 		if err != nil {
 			return nil, fmt.Errorf("getting azure credentials: %w", err)
 		}

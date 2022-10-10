@@ -173,6 +173,10 @@
               {
                 "command": "azure-dev.commands.cli.down",
                 "when": "viewItem == ms-azuretools.azure-dev.views.workspace.application"
+              },
+              {
+                "command": "azure-dev.commands.cli.infra-delete",
+                "when": "viewItem == ms-azuretools.azure-dev.views.workspace.application"
               }
             ]
         },

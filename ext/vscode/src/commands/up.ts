@@ -11,14 +11,7 @@ import { createAzureDevCli } from '../utils/azureDevCli';
 import { executeAsTask } from '../utils/executeAsTask';
 import { TelemetryId } from '../telemetry/telemetryId';
 import { AzureDevCliApplication } from '../views/workspace/AzureDevCliApplication';
-
-interface TreeViewModel {
-    unwrap<T>(): T;
-}
-
-function isTreeViewModel(selectedItem: vscode.Uri | TreeViewModel | undefined): selectedItem is TreeViewModel {
-    return !!(selectedItem as TreeViewModel).unwrap;
-}
+import { isTreeViewModel, TreeViewModel } from '../utils/isTreeViewModel';
 
 export async function up(context: IActionContext, selectedItem?: vscode.Uri | TreeViewModel): Promise<void> {
     const selectedFile = isTreeViewModel(selectedItem) ? selectedItem.unwrap<AzureDevCliApplication>().configurationFile : selectedItem;

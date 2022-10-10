@@ -4,6 +4,7 @@ import { localize } from '../../localize';
 import { TelemetryId } from '../../telemetry/telemetryId';
 import { createAzureDevCli } from '../../utils/azureDevCli';
 import { execAsync } from '../../utils/process';
+import { withTimeout } from '../../utils/withTimeout';
 import { AzureDevCliModel } from "./AzureDevCliModel";
 import { AzureDevCliService } from './AzureDevCliService';
 
@@ -37,7 +38,7 @@ export class AzureDevCliServices implements AzureDevCliModel {
                     .withNamedArg('--output', 'json')
                     .build();
 
-                const showResultsJson = await execAsync(command);
+                const showResultsJson = await withTimeout(execAsync(command), 30000);
 
                 const showResults = JSON.parse(showResultsJson.stdout) as ShowResults;
 

@@ -8,7 +8,7 @@
             "file": "${input:dotEnvFilePath}"
         },
         {
-            "label": "clean (functions)",
+            "label": "Clean API",
             "command": "dotnet",
             "args": [
                 "clean",
@@ -23,7 +23,7 @@
             "problemMatcher": "$msCompile"
         },
         {
-            "label": "build (functions)",
+            "label": "Build API",
             "command": "dotnet",
             "args": [
                 "build",

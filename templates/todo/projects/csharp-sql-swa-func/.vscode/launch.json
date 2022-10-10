@@ -14,14 +14,8 @@
         {
             "name": "Debug API",
             "type": "coreclr",
-            "request": "launch",
-            "program": "func",
-            "args": [
-                "host",
-                "start"
-            ],
-            "cwd": "${workspaceFolder}/src/api",
-            "envFile": "${input:dotEnvFilePath}"
+            "request": "attach",
+            "processId": "${command:pickProcess}"
         },
         {
             "name": ".NET Core Attach",

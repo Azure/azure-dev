@@ -121,7 +121,7 @@ func (p *AzdoScmProvider) createNewGitRepositoryFromInput(ctx context.Context, c
 	var repo *azdoGit.GitRepository
 	for {
 		name, err := console.Prompt(ctx, input.ConsoleOptions{
-			Message:      "Enter the name for your new Azure Devops Repository OR Hit enter to use this name:",
+			Message:      "Enter the name for your new Azure DevOps Repository OR Hit enter to use this name:",
 			DefaultValue: p.repoDetails.projectName,
 		})
 		if err != nil {
@@ -354,7 +354,7 @@ func (p *AzdoScmProvider) promptForAzdoRepository(ctx context.Context, console i
 	}
 
 	switch idx {
-	// Select from an existing Azure Devops project
+	// Select from an existing Azure DevOps project
 	case 0:
 		remoteUrl, err = p.ensureGitRepositoryExists(ctx, console)
 		if err != nil {

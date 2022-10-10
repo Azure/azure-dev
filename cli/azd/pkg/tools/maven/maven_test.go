@@ -58,7 +58,7 @@ func Test_getMavenPath(t *testing.T) {
 				ostest.Chdir(t, rootPath)
 				// Set PWD directly to avoid symbolic links
 
-				ostest.Setenv(t, "PWD", rootPath)
+				t.Setenv("PWD", rootPath)
 				projectPathRel, err := filepath.Rel(rootPath, projectPath)
 				require.NoError(t, err)
 				args.projectPath = projectPathRel

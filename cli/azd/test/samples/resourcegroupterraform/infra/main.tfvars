@@ -1,3 +1,3 @@
 
 location="${AZURE_LOCATION}"
-name="${AZURE_ENV_NAME}"
+environment_name="${AZURE_ENV_NAME}"

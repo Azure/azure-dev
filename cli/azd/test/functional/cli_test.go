@@ -58,57 +58,6 @@ func Test_CLI_Login_FailsIfNoAzCliIsMissing(t *testing.T) {
 	require.Contains(t, out, "Azure CLI is not installed, please see https://aka.ms/azure-dev/azure-cli-install to install")
 }
 
-func Test_CLI_Login_UsesDeviceCodeInDevContainer(t *testing.T) {
-	ctx, cancel := newTimeoutTestContext(t, time.Second*2)
-	defer cancel()
-
-	dir := ostest.TempDirWithDiagnostics(t)
-
-	cli := azdcli.NewCLI(t)
-	cli.WorkingDirectory = dir
-	cli.Env = append(filterEnviron("CODESPACES"), "CODESPACES=true")
-
-	out, err := cli.RunCommand(ctx, "", "login")
-	// Error is expected because the az CLI waits for user response and the
-	// test times out execution instead of waiting for the process to complete
-	require.Error(t, err)
-	require.Contains(t, out, "WARNING: To sign in, use a web browser to open the page https://microsoft.com/devicelogin and enter the code")
-}
-
-func Test_CLI_Login_UsesDeviceCodeInRemoteContainer(t *testing.T) {
-	ctx, cancel := newTimeoutTestContext(t, time.Second*2)
-	defer cancel()
-
-	dir := ostest.TempDirWithDiagnostics(t)
-
-	cli := azdcli.NewCLI(t)
-	cli.WorkingDirectory = dir
-	cli.Env = append(filterEnviron("REMOTE_CONTAINERS"), "REMOTE_CONTAINERS=true")
-
-	out, err := cli.RunCommand(ctx, "", "login")
-	require.Error(t, err)
-	// Error is expected because the az CLI waits for user response and the
-	// test times out execution instead of waiting for the process to complete
-	require.Contains(t, out, "WARNING: To sign in, use a web browser to open the page https://microsoft.com/devicelogin and enter the code")
-}
-
-func Test_CLI_Login_DoesNotUseDeviceCodeByDefault(t *testing.T) {
-	ctx, cancel := newTimeoutTestContext(t, time.Second*5)
-	defer cancel()
-
-	dir := ostest.TempDirWithDiagnostics(t)
-
-	cli := azdcli.NewCLI(t)
-	cli.WorkingDirectory = dir
-	cli.Env = filterEnviron("REMOTE_CONTAINERS", "CODESPACES")
-
-	out, err := cli.RunCommand(ctx, "", "login")
-	// Error is expected because the az CLI waits for user response and the
-	// test times out execution instead of waiting for the process to complete
-	require.Error(t, err)
-	require.NotContains(t, out, "WARNING: To sign in, use a web browser to open the page https://microsoft.com/devicelogin and enter the code")
-}
-
 func Test_CLI_Version_PrintsVersion(t *testing.T) {
 	ctx, cancel := newTestContext(t)
 	defer cancel()
@@ -790,17 +739,6 @@ func newTestContext(t *testing.T) (context.Context, context.CancelFunc) {
 	}
 
 	return context.WithCancel(ctx)
-}
-
-func newTimeoutTestContext(t *testing.T, timeout time.Duration) (context.Context, context.CancelFunc) {
-	container.RegisterDependencies()
-
-	ctx := context.Background()
-	ctx = internal.WithCommandOptions(ctx, internal.GlobalCommandOptions{})
-
-	// TODO: Should this also incorporate checking whether a Deadline or
-	// timeout is closer and then selecting for the one that's closer?
-	return context.WithTimeout(ctx, timeout)
 }
 
 func Test_CLI_InfraCreateAndDeleteResourceTerraform(t *testing.T) {

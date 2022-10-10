@@ -89,19 +89,19 @@ For more information, visit the Azure Developer CLI Dev Hub: https://aka.ms/azur
 	cmd.AddCommand(envCmd(opts))
 	cmd.AddCommand(infraCmd(opts))
 	cmd.AddCommand(pipelineCmd(opts))
-	cmd.AddCommand(restoreCmd(opts))
-	cmd.AddCommand(showCmd(opts))
 	cmd.AddCommand(telemetryCmd(opts))
 	cmd.AddCommand(templatesCmd(opts))
-	cmd.AddCommand(versionCmd(opts))
 
+	cmd.AddCommand(BuildCmd(opts, versionCmdDesign, initVersionAction, &buildOptions{disableTelemetry: true}))
+	cmd.AddCommand(BuildCmd(opts, showCmdDesign, initShowAction, nil))
+	cmd.AddCommand(BuildCmd(opts, restoreCmdDesign, initRestoreAction, nil))
 	cmd.AddCommand(BuildCmd(opts, loginCmdDesign, initLoginAction, nil))
 	cmd.AddCommand(BuildCmd(opts, monitorCmdDesign, initMonitorAction, nil))
-	cmd.AddCommand(BuildCmd(opts, downCmdDesign, injectInfraDeleteAction, nil))
-	cmd.AddCommand(BuildCmd(opts, initCmdDesign, injectInitAction, nil))
-	cmd.AddCommand(BuildCmd(opts, upCmdDesign, injectUpAction, nil))
-	cmd.AddCommand(BuildCmd(opts, provisionCmdDesign, injectInfraCreateAction, nil))
-	cmd.AddCommand(BuildCmd(opts, deployCmdDesign, injectDeployAction, nil))
+	cmd.AddCommand(BuildCmd(opts, downCmdDesign, initInfraDeleteAction, nil))
+	cmd.AddCommand(BuildCmd(opts, initCmdDesign, initInitAction, nil))
+	cmd.AddCommand(BuildCmd(opts, upCmdDesign, initUpAction, nil))
+	cmd.AddCommand(BuildCmd(opts, provisionCmdDesign, initInfraCreateAction, nil))
+	cmd.AddCommand(BuildCmd(opts, deployCmdDesign, initDeployAction, nil))
 
 	return cmd
 }

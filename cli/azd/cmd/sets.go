@@ -10,6 +10,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
+	"github.com/azure/azure-dev/cli/azd/pkg/templates"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/git"
 	"github.com/google/wire"
@@ -136,3 +137,30 @@ var PipelineConfigCmdSet = wire.NewSet(
 	newAzCliFromOptions,
 	newPipelineConfigAction,
 	wire.Bind(new(action.Action), new(*pipelineConfigAction)))
+
+var RestoreCmdSet = wire.NewSet(
+	CommonSet,
+	newRestoreAction,
+	wire.Bind(new(action.Action), new(*restoreAction)))
+
+var ShowCmdSet = wire.NewSet(
+	CommonSet,
+	newShowAction,
+	wire.Bind(new(action.Action), new(*showAction)))
+
+var TemplatesListCmdSet = wire.NewSet(
+	CommonSet,
+	newTemplatesListAction,
+	templates.NewTemplateManager,
+	wire.Bind(new(action.Action), new(*templatesListAction)))
+
+var TemplatesShowCmdSet = wire.NewSet(
+	CommonSet,
+	newTemplatesShowAction,
+	templates.NewTemplateManager,
+	wire.Bind(new(action.Action), new(templatesShowAction)))
+
+var VersionCmdSet = wire.NewSet(
+	CommonSet,
+	newVersionAction,
+	wire.Bind(new(action.Action), new(*versionAction)))

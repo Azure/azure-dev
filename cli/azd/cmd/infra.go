@@ -16,7 +16,7 @@ func infraCmd(rootOptions *internal.GlobalCommandOptions) *cobra.Command {
 		Short: "Manage Azure resources.",
 	}
 	cmd.Flags().BoolP("help", "h", false, fmt.Sprintf("Gets help for %s.", cmd.Name()))
-	cmd.AddCommand(BuildCmd(rootOptions, infraCreateCmdDesign, injectInfraCreateAction, nil))
-	cmd.AddCommand(BuildCmd(rootOptions, infraDeleteCmdDesign, injectInfraDeleteAction, nil))
+	cmd.AddCommand(BuildCmd(rootOptions, infraCreateCmdDesign, initInfraCreateAction, nil))
+	cmd.AddCommand(BuildCmd(rootOptions, infraDeleteCmdDesign, initInfraDeleteAction, nil))
 	return cmd
 }

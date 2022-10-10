@@ -32,7 +32,7 @@
                 "/consoleloggerparameters:NoSummary"
             ],
             "type": "process",
-            "dependsOn": "clean (functions)",
+            "dependsOn": "Clean API",
             "group": {
                 "kind": "build",
                 "isDefault": true

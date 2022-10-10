@@ -11,13 +11,15 @@ func Test_SaveAndLoadConfig(t *testing.T) {
 	defer deleteExistingConfig()
 
 	newConfig := &Config{
-		DefaultSubscription: &Subscription{
-			Id:   "SUBSCRIPTION_ID",
-			Name: "Test Subscription",
-		},
-		DefaultLocation: &Location{
-			Name:        "eastus2",
-			DisplayName: "East US 2",
+		Account: &Account{
+			DefaultSubscription: &Subscription{
+				Id:   "SUBSCRIPTION_ID",
+				Name: "Test Subscription",
+			},
+			DefaultLocation: &Location{
+				Name:        "eastus2",
+				DisplayName: "East US 2",
+			},
 		},
 	}
 
@@ -40,8 +42,7 @@ func Test_SaveAndLoadEmptyConfig(t *testing.T) {
 	existingConfig, err := Load()
 	require.NoError(t, err)
 	require.NotNil(t, existingConfig)
-	require.Nil(t, existingConfig.DefaultSubscription)
-	require.Nil(t, existingConfig.DefaultLocation)
+	require.Nil(t, existingConfig.Account)
 }
 
 func deleteExistingConfig() {

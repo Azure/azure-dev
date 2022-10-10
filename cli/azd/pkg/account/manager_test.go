@@ -24,14 +24,16 @@ import (
 func Test_GetAccountDefaults(t *testing.T) {
 	t.Run("FromAzdConfig", func(t *testing.T) {
 		expectedConfig := config.Config{
-			DefaultSubscription: &config.Subscription{
-				Id:       "SUBSCRIPTION_01",
-				Name:     "Subscription 1",
-				TenantId: "TENANT_ID",
-			},
-			DefaultLocation: &config.Location{
-				Name:        "westus",
-				DisplayName: "(US) West US",
+			Account: &config.Account{
+				DefaultSubscription: &config.Subscription{
+					Id:       "SUBSCRIPTION_01",
+					Name:     "Subscription 1",
+					TenantId: "TENANT_ID",
+				},
+				DefaultLocation: &config.Location{
+					Name:        "westus",
+					DisplayName: "(US) West US",
+				},
 			},
 		}
 
@@ -42,7 +44,7 @@ func Test_GetAccountDefaults(t *testing.T) {
 		actualConfig, err := manager.GetAccountDefaults(ctx)
 
 		require.NoError(t, err)
-		require.Equal(t, expectedConfig, *actualConfig)
+		require.Equal(t, expectedConfig.Account, actualConfig)
 	})
 
 	t.Run("FromAzConfig", func(t *testing.T) {
@@ -57,19 +59,21 @@ func Test_GetAccountDefaults(t *testing.T) {
 		actualConfig, err := manager.GetAccountDefaults(ctx)
 
 		expectedConfig := config.Config{
-			DefaultSubscription: &config.Subscription{
-				Id:       "SUBSCRIPTION_02",
-				Name:     "Subscription 2",
-				TenantId: "TENANT_ID",
-			},
-			DefaultLocation: &config.Location{
-				Name:        "westus2",
-				DisplayName: "(US) West US 2",
+			Account: &config.Account{
+				DefaultSubscription: &config.Subscription{
+					Id:       "SUBSCRIPTION_02",
+					Name:     "Subscription 2",
+					TenantId: "TENANT_ID",
+				},
+				DefaultLocation: &config.Location{
+					Name:        "westus2",
+					DisplayName: "(US) West US 2",
+				},
 			},
 		}
 
 		require.NoError(t, err)
-		require.Equal(t, expectedConfig, *actualConfig)
+		require.Equal(t, expectedConfig.Account, actualConfig)
 	})
 
 	t.Run("FromCodeDefaults", func(t *testing.T) {
@@ -85,20 +89,22 @@ func Test_GetAccountDefaults(t *testing.T) {
 		actualConfig, err := manager.GetAccountDefaults(ctx)
 
 		expectedConfig := config.Config{
-			DefaultSubscription: &config.Subscription{
-				Id:       "SUBSCRIPTION_02",
-				Name:     "Subscription 2",
-				TenantId: "TENANT_ID",
-			},
-			// Location should default to east us 2 when not found in either azd or az configs.
-			DefaultLocation: &config.Location{
-				Name:        "eastus2",
-				DisplayName: "(US) East US 2",
+			Account: &config.Account{
+				DefaultSubscription: &config.Subscription{
+					Id:       "SUBSCRIPTION_02",
+					Name:     "Subscription 2",
+					TenantId: "TENANT_ID",
+				},
+				// Location should default to east us 2 when not found in either azd or az configs.
+				DefaultLocation: &config.Location{
+					Name:        "eastus2",
+					DisplayName: "(US) East US 2",
+				},
 			},
 		}
 
 		require.NoError(t, err)
-		require.Equal(t, expectedConfig, *actualConfig)
+		require.Equal(t, expectedConfig.Account, actualConfig)
 	})
 
 	t.Run("NotLoggedIn", func(t *testing.T) {
@@ -131,14 +137,16 @@ func Test_GetSubscriptions(t *testing.T) {
 
 	t.Run("SuccessWithDefault", func(t *testing.T) {
 		defaultConfig := config.Config{
-			DefaultSubscription: &config.Subscription{
-				Id:       "SUBSCRIPTION_03",
-				Name:     "Subscription 3",
-				TenantId: "TENANT_ID",
-			},
-			DefaultLocation: &config.Location{
-				Name:        "westus2",
-				DisplayName: "(US) West US 2",
+			Account: &config.Account{
+				DefaultSubscription: &config.Subscription{
+					Id:       "SUBSCRIPTION_03",
+					Name:     "Subscription 3",
+					TenantId: "TENANT_ID",
+				},
+				DefaultLocation: &config.Location{
+					Name:        "westus2",
+					DisplayName: "(US) West US 2",
+				},
 			},
 		}
 
@@ -157,7 +165,7 @@ func Test_GetSubscriptions(t *testing.T) {
 		require.NoError(t, err)
 		require.Len(t, subscriptions, 3)
 		require.GreaterOrEqual(t, defaultIndex, 0)
-		require.Equal(t, defaultConfig.DefaultSubscription.Id, subscriptions[defaultIndex].Id)
+		require.Equal(t, defaultConfig.Account.DefaultSubscription.Id, subscriptions[defaultIndex].Id)
 	})
 
 	t.Run("Error", func(t *testing.T) {
@@ -285,16 +293,15 @@ func Test_Clear(t *testing.T) {
 	updatedConfig, err := config.Load()
 	require.NoError(t, err)
 
-	require.Equal(t, subscription, updatedConfig.DefaultSubscription)
-	require.Equal(t, location, updatedConfig.DefaultLocation)
+	require.Equal(t, subscription, updatedConfig.Account.DefaultSubscription)
+	require.Equal(t, location, updatedConfig.Account.DefaultLocation)
 
 	err = manager.Clear(*mockContext.Context)
 	require.NoError(t, err)
 
 	clearedConfig, err := config.Load()
 	require.NotNil(t, clearedConfig)
-	require.Nil(t, clearedConfig.DefaultSubscription)
-	require.Nil(t, clearedConfig.DefaultLocation)
+	require.Nil(t, clearedConfig.Account)
 	require.NoError(t, err)
 }
 

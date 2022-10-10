@@ -34,7 +34,13 @@ func GetUserConfigDir() (string, error) {
 	return configDirPath, err
 }
 
+// Top level AZD configuration
 type Config struct {
+	Account *Account `json:"account"`
+}
+
+// AZD Account configuration
+type Account struct {
 	DefaultSubscription *Subscription `json:"defaultSubscription"`
 	DefaultLocation     *Location     `json:"defaultLocation"`
 }

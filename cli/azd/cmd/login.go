@@ -108,6 +108,16 @@ func ensureLoggedIn(ctx context.Context) error {
 // runLogin runs an interactive login. When running in a Codespace or Remote Container, a device code based is
 // preformed since the default browser login needs UI. A device code login can be forced with `forceDeviceCode`.
 func runLogin(ctx context.Context, forceDeviceCode bool) error {
+	const (
+		// CodespacesEnvVarName is the name of the env variable set when you're in a Github codespace. It's
+		// just set to 'true'.
+		CodespacesEnvVarName = "CODESPACES"
+
+		// RemoteContainersEnvVarName is the name of the env variable set when you're in a remote container. It's
+		// just set to 'true'.
+		RemoteContainersEnvVarName = "REMOTE_CONTAINERS"
+	)
+
 	azCli := azcli.GetAzCli(ctx)
 	useDeviceCode := forceDeviceCode || os.Getenv(CodespacesEnvVarName) == "true" || os.Getenv(RemoteContainersEnvVarName) == "true"
 

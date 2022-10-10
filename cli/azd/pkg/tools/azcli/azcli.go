@@ -479,6 +479,7 @@ func (cli *azCli) Login(ctx context.Context, useDeviceCode bool, deviceCodeWrite
 	var writer io.Writer
 	if useDeviceCode {
 		writer = deviceCodeWriter
+		args = append(args, "--use-device-code")
 	}
 
 	res, err := cli.runAzCommandWithArgs(ctx, exec.RunArgs{

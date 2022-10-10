@@ -165,6 +165,67 @@ func runAndCaptureUserAgent(t *testing.T, subscriptionID string) string {
 	return matches[0][1]
 }
 
+func Test_extractDeploymentError(t *testing.T) {
+	type args struct {
+		stderr string
+	}
+	tests := []struct {
+		name     string
+		args     args
+		expected string
+	}{
+		{
+			name: "errorWithInner",
+			args: args{
+				`ERROR: {"code": "InvalidTemplateDeployment", "message": "See inner errors for details."}
+
+Inner Errors:
+{"code": "PreflightValidationCheckFailed", "message": "Preflight validation failed. Please refer to the details for the specific errors."}
+
+Inner Errors:
+{"code": "AccountNameInvalid", "target": "invalid-123", "message": "invalid-123 is not a valid storage account name. Storage account name must be between 3 and 24 characters in length and use numbers and lower-case letters only."}`},
+			expected: `Deployment Error Details:
+InvalidTemplateDeployment: See inner errors for details.
+
+Inner Error:
+PreflightValidationCheckFailed: Preflight validation failed. Please refer to the details for the specific errors.
+
+Inner Error:
+AccountNameInvalid: invalid-123 is not a valid storage account name. Storage account name must be between 3 and 24 characters in length and use numbers and lower-case letters only.
+`,
+		},
+		{
+			name: "errorWithInnerRaw",
+			args: args{
+				`ERROR: {"code": "InvalidTemplateDeployment", "message": "See inner errors for details."}
+
+Line1: additional detail happened
+Line2: additional detail happened`,
+			},
+			expected: `Deployment Error Details:
+InvalidTemplateDeployment: See inner errors for details.
+
+Line1: additional detail happened
+Line2: additional detail happened`,
+		},
+		{
+			name: "errorOnly",
+			args: args{
+				`ERROR: {"code": "InvalidTemplateDeployment", "message": "Invalid template deployment."}`,
+			},
+			expected: `Deployment Error Details:
+InvalidTemplateDeployment: Invalid template deployment.
+`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := extractDeploymentError(tt.args.stderr)
+			assert.Equal(t, tt.expected, err.Error())
+		})
+	}
+}
+
 func TestAZCliGetAccessTokenTranslatesErrors(t *testing.T) {
 	tests := []struct {
 		name   string

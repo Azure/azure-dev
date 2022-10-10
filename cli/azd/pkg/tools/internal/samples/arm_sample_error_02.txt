@@ -1,3 +1,1 @@
-
-Deployment Error Details:
 ResourceNameInvalid: Invalid resource name: 'matell-azdacaacr'. Resource names may contain alpha numeric characters only and must be between 5 and 50 characters.. For more information, please refer resource name requirements at: https://docs.microsoft.com/en-us/rest/api/containerregistry/

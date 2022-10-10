@@ -41,8 +41,6 @@ func (e *AzureDeploymentError) Error() string {
 	lines := generateErrorOutput(errors)
 
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintln())
-	sb.WriteString(fmt.Sprintln(output.WithErrorFormat("Deployment Error Details:")))
 
 	for _, line := range lines {
 		sb.WriteString(fmt.Sprintln(output.WithErrorFormat(line)))

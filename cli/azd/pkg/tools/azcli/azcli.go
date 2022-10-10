@@ -21,6 +21,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
+	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/internal"
 	"github.com/blang/semver/v4"
@@ -666,15 +667,43 @@ func (cli *azCli) GetStaticWebAppApiKey(ctx context.Context, subscriptionID stri
 	return strings.TrimSpace(res.Stdout), nil
 }
 
+func extractDeploymentError(stderr string) error {
+	if start, end := findDeploymentErrorJsonIndex(stderr); start != -1 && end != -1 {
+		deploymentError := internal.NewAzureDeploymentError(stderr[start:end])
+		var innerErrorDetails string
+		if len(stderr) >= end+1 {
+			innerErrorDetails = extractInnerDeploymentErrors(stderr[end+1:])
+		}
+
+		return fmt.Errorf("%s\n%w%s", output.WithErrorFormat("Deployment Error Details:"), deploymentError, innerErrorDetails)
+	}
+
+	return nil
+}
+
+func extractInnerDeploymentErrors(stderr string) string {
+	innerErrors := getInnerDeploymentErrorsJson(stderr)
+
+	if len(innerErrors) == 0 {
+		// Return raw text to be displayed
+		return stderr
+	} else {
+		var sb strings.Builder
+		for _, innerErrorJson := range innerErrors {
+			innerError := internal.NewAzureDeploymentError(innerErrorJson)
+			sb.WriteString(output.WithErrorFormat(fmt.Sprintf("\nInner Error:\n%s", innerError.Error())))
+		}
+		return sb.String()
+	}
+}
+
 func (cli *azCli) DeployToSubscription(ctx context.Context, subscriptionId string, deploymentName string, templateFile string, parametersFile string, location string) (AzCliDeploymentResult, error) {
 	res, err := cli.runAzCommand(ctx, "deployment", "sub", "create", "--subscription", subscriptionId, "--name", deploymentName, "--location", location, "--template-file", templateFile, "--parameters", fmt.Sprintf("@%s", parametersFile), "--output", "json")
 	if isNotLoggedInMessage(res.Stderr) {
 		return AzCliDeploymentResult{}, ErrAzCliNotLoggedIn
 	} else if err != nil {
-		if isDeploymentError(res.Stderr) {
-			deploymentErrorJson := getDeploymentErrorJson(res.Stderr)
-			deploymentError := internal.NewAzureDeploymentError(deploymentErrorJson)
-			return AzCliDeploymentResult{}, fmt.Errorf("failed running az deployment sub create: \n%w", deploymentError)
+		if deploymentError := extractDeploymentError(res.Stderr); deploymentError != nil {
+			return AzCliDeploymentResult{}, fmt.Errorf("failed running az deployment sub create:\n\n%w", deploymentError)
 		}
 
 		return AzCliDeploymentResult{}, fmt.Errorf("failed running az deployment sub create: %s: %w", res.String(), err)
@@ -692,10 +721,8 @@ func (cli *azCli) DeployToResourceGroup(ctx context.Context, subscriptionId stri
 	if isNotLoggedInMessage(res.Stderr) {
 		return AzCliDeploymentResult{}, ErrAzCliNotLoggedIn
 	} else if err != nil {
-		if isDeploymentError(res.Stderr) {
-			deploymentErrorJson := getDeploymentErrorJson(res.Stderr)
-			deploymentError := internal.NewAzureDeploymentError(deploymentErrorJson)
-			return AzCliDeploymentResult{}, fmt.Errorf("failed running az deployment group create: \n%w", deploymentError)
+		if deploymentError := extractDeploymentError(res.Stderr); deploymentError != nil {
+			return AzCliDeploymentResult{}, fmt.Errorf("failed running az deployment group create:\n\n%w", deploymentError)
 		}
 
 		return AzCliDeploymentResult{}, fmt.Errorf("failed running az deployment group create: %s: %w", res.String(), err)
@@ -998,6 +1025,7 @@ var isDeploymentNotFoundMessageRegex = regexp.MustCompile(`\(DeploymentNotFound\
 var isClientAssertionInvalidMessagedRegex = regexp.MustCompile(`AADSTS700024`)
 var isConfigurationIsNotSetMessageRegex = regexp.MustCompile(`Configuration '.*' is not set\.`)
 var isDeploymentErrorRegex = regexp.MustCompile(`ERROR: ({.+})`)
+var isInnerDeploymentErrorRegex = regexp.MustCompile(`Inner Errors:\s+({.+})`)
 
 func isNotLoggedInMessage(s string) bool {
 	return isNotLoggedInMessageRegex.MatchString(s)
@@ -1023,20 +1051,32 @@ func isConfigurationIsNotSetMessage(s string) bool {
 	return isConfigurationIsNotSetMessageRegex.MatchString(s)
 }
 
-func isDeploymentError(s string) bool {
-	return isDeploymentErrorRegex.MatchString(s)
-}
+func findDeploymentErrorJsonIndex(s string) (int, int) {
+	index := isDeploymentErrorRegex.FindStringSubmatchIndex(s)
 
-func getDeploymentErrorJson(s string) string {
-	matches := isDeploymentErrorRegex.FindStringSubmatch(s)
-
-	if matches == nil {
-		return ""
-	} else if len(matches) > 1 {
-		return matches[1]
+	if index == nil {
+		return -1, -1
+	} else if len(index) >= 4 { // [matchStart, matchEnd, submatchStart, submatchEnd]
+		return index[2], index[3]
 	}
 
-	return s
+	return -1, -1
+}
+
+func getInnerDeploymentErrorsJson(s string) []string {
+	results := []string{}
+	matches := isInnerDeploymentErrorRegex.FindAllStringSubmatch(s, -1)
+	if matches == nil {
+		return results
+	}
+
+	for _, match := range matches {
+		if len(match) > 1 {
+			results = append(results, match[1])
+		}
+	}
+
+	return results
 }
 
 type contextKey string

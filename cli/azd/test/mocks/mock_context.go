@@ -7,25 +7,22 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
-	azsdkMock "github.com/azure/azure-dev/cli/azd/test/mocks/azsdk"
 	mockconsole "github.com/azure/azure-dev/cli/azd/test/mocks/console"
 	mockexec "github.com/azure/azure-dev/cli/azd/test/mocks/exec"
 	mockhttp "github.com/azure/azure-dev/cli/azd/test/mocks/httputil"
 )
 
 type MockContext struct {
-	Context         *context.Context
-	Console         *mockconsole.MockConsole
-	HttpClient      *mockhttp.MockHttpClient
-	CommandRunner   *mockexec.MockCommandRunner
-	MockDeployments *azsdkMock.MockDeploymentClient
+	Context       *context.Context
+	Console       *mockconsole.MockConsole
+	HttpClient    *mockhttp.MockHttpClient
+	CommandRunner *mockexec.MockCommandRunner
 }
 
 func NewMockContext(ctx context.Context) *MockContext {
 	mockConsole := mockconsole.NewMockConsole()
 	commandRunner := mockexec.NewMockCommandRunner()
 	httpClient := mockhttp.NewMockHttpUtil()
-	deploymentMock := &azsdkMock.MockDeploymentClient{}
 
 	mockexec.AddAzLoginMocks(commandRunner)
 	httpClient.AddDefaultMocks()
@@ -36,11 +33,10 @@ func NewMockContext(ctx context.Context) *MockContext {
 	ctx = httputil.WithHttpClient(ctx, httpClient)
 
 	mockContext := &MockContext{
-		Context:         &ctx,
-		Console:         mockConsole,
-		CommandRunner:   commandRunner,
-		HttpClient:      httpClient,
-		MockDeployments: deploymentMock,
+		Context:       &ctx,
+		Console:       mockConsole,
+		CommandRunner: commandRunner,
+		HttpClient:    httpClient,
 	}
 
 	return mockContext

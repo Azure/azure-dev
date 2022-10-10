@@ -1,8 +1,11 @@
 package infra
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"io"
+	"net/http"
 	"strings"
 	"testing"
 
@@ -38,28 +41,46 @@ func TestScopeGetDeployment(t *testing.T) {
 
 	t.Run("SubscriptionScopeSuccess", func(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
-		mockContext.MockDeployments.WhenGetAtSubscriptionScope(deploymentWithOptions)
+		mockContext.HttpClient.When(func(request *http.Request) bool {
+			return request.Method == http.MethodGet && strings.Contains(request.URL.Path, "/subscriptions")
+		}).RespondFn(func(request *http.Request) (*http.Response, error) {
+			subscriptionsListBytes, _ := json.Marshal(deploymentWithOptions)
+
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Body:       io.NopCloser(bytes.NewBuffer(subscriptionsListBytes)),
+			}, nil
+		})
 
 		scope := NewSubscriptionScope(*mockContext.Context, "eastus2", "SUBSCRIPTION_ID", "DEPLOYMENT_NAME")
 
 		deployment, err := scope.GetDeployment(*mockContext.Context)
 		require.NoError(t, err)
-		responseOutputs := deployment.Properties.Outputs.(map[string]azcli.AzCliDeploymentOutput)["APP_URL"]
-		require.Equal(t, outputs["APP_URL"].Value, responseOutputs.Value)
-		require.Equal(t, outputs["APP_URL"].Type, responseOutputs.Type)
+		responseOutputs := deployment.Properties.Outputs.(map[string]interface{})["APP_URL"].(map[string]interface{})
+		require.Equal(t, outputs["APP_URL"].Value, responseOutputs["value"].(string))
+		require.Equal(t, outputs["APP_URL"].Type, responseOutputs["type"].(string))
 	})
 
 	t.Run("ResourceGroupScopeSuccess", func(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
-		mockContext.MockDeployments.WhenGetResourceGroupDeployment(deploymentResourceGroupWithOptions)
+		mockContext.HttpClient.When(func(request *http.Request) bool {
+			return request.Method == http.MethodGet && strings.Contains(request.URL.Path, "/subscriptions")
+		}).RespondFn(func(request *http.Request) (*http.Response, error) {
+			subscriptionsListBytes, _ := json.Marshal(deploymentResourceGroupWithOptions)
+
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Body:       io.NopCloser(bytes.NewBuffer(subscriptionsListBytes)),
+			}, nil
+		})
 
 		scope := NewResourceGroupScope(*mockContext.Context, "SUBSCRIPTION_ID", "RESOURCE_GROUP", "DEPLOYMENT_NAME")
 
 		deployment, err := scope.GetDeployment(*mockContext.Context)
 		require.NoError(t, err)
-		responseOutputs := deployment.Properties.Outputs.(map[string]azcli.AzCliDeploymentOutput)["APP_URL"]
-		require.Equal(t, outputs["APP_URL"].Value, responseOutputs.Value)
-		require.Equal(t, outputs["APP_URL"].Type, responseOutputs.Type)
+		responseOutputs := deployment.Properties.Outputs.(map[string]interface{})["APP_URL"].(map[string]interface{})
+		require.Equal(t, outputs["APP_URL"].Value, responseOutputs["value"].(string))
+		require.Equal(t, outputs["APP_URL"].Type, responseOutputs["type"].(string))
 	})
 }
 

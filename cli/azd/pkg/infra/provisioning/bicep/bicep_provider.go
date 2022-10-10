@@ -251,7 +251,7 @@ func (p *BicepProvider) Destroy(ctx context.Context, deployment *Deployment, opt
 			asyncContext.SetProgress(&DestroyProgress{Message: "Getting AppConfigurations to purge", Timestamp: time.Now()})
 			appConfigs, err := p.getAppConfigsToPurge(ctx, groupedResources)
 			if err != nil {
-				asyncContext.SetError(fmt.Errorf("getting key vaults to purge: %w", err))
+				asyncContext.SetError(fmt.Errorf("getting app configurations to purge: %w", err))
 				return
 			}
 

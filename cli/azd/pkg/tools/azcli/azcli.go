@@ -19,7 +19,6 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	azdinternal "github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/telemetry"
-	"github.com/azure/azure-dev/cli/azd/pkg/azsdk"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
@@ -768,14 +767,6 @@ func (cli *azCli) ListAccountLocations(ctx context.Context) ([]AzCliLocation, er
 		return nil, fmt.Errorf("could not unmarshal output %s as a []AzCliLocation: %w", res.Stdout, err)
 	}
 	return locations, nil
-}
-
-func (cli *azCli) GetSubscriptionDeployment(ctx context.Context, subscriptionId string, deploymentName string) (armresources.DeploymentExtended, error) {
-	return azsdk.GetSubscriptionDeployment(ctx, subscriptionId, deploymentName)
-}
-
-func (cli *azCli) GetResourceGroupDeployment(ctx context.Context, subscriptionId string, resourceGroupName string, deploymentName string) (armresources.DeploymentExtended, error) {
-	return azsdk.GetResourceGroupDeployment(ctx, subscriptionId, resourceGroupName, deploymentName)
 }
 
 func (cli *azCli) GetSignedInUserId(ctx context.Context) (string, error) {

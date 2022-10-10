@@ -3,9 +3,7 @@ package mocks
 import (
 	"context"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/azure/azure-dev/cli/azd/internal"
-	"github.com/azure/azure-dev/cli/azd/pkg/azsdk"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
@@ -36,9 +34,6 @@ func NewMockContext(ctx context.Context) *MockContext {
 	ctx = input.WithConsole(ctx, mockConsole)
 	ctx = exec.WithCommandRunner(ctx, commandRunner)
 	ctx = httputil.WithHttpClient(ctx, httpClient)
-	ctx = azsdk.WithDeploymentFactory(ctx, func(subscriptionId string, credential azcore.TokenCredential) (azsdk.DeploymentClient, error) {
-		return deploymentMock, nil
-	})
 
 	mockContext := &MockContext{
 		Context:         &ctx,

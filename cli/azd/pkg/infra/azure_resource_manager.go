@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/azsdk"
 	"github.com/azure/azure-dev/cli/azd/pkg/azureutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
@@ -76,7 +75,7 @@ func (rm *AzureResourceManager) GetDeploymentResourceOperations(ctx context.Cont
 
 // GetResourceGroupsForDeployment returns the names of all the resource groups from a subscription level deployment.
 func (rm *AzureResourceManager) GetResourceGroupsForDeployment(ctx context.Context, subscriptionId string, deploymentName string) ([]string, error) {
-	deployment, err := azsdk.GetSubscriptionDeployment(ctx, subscriptionId, deploymentName)
+	deployment, err := rm.azCli.GetResourceGroupDeployment(ctx, subscriptionId, deploymentName, deploymentName)
 	if err != nil {
 		return nil, fmt.Errorf("fetching current deployment: %w", err)
 	}

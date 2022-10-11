@@ -8,16 +8,15 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"sort"
 	"strings"
 
 	"github.com/AlecAivazis/survey/v2"
 	"github.com/azure/azure-dev/cli/azd/internal/telemetry"
+	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/azureutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 )
 
 type Asker func(p survey.Prompt, response interface{}) error
@@ -191,16 +190,6 @@ func ensureEnvironmentInitialized(ctx context.Context, envSpec environmentSpec, 
 		}
 	}
 
-	if !hasLocation && envSpec.location != "" {
-		env.SetLocation(envSpec.location)
-	} else {
-		location, err := azureutil.PromptLocation(ctx, "Please select an Azure location to use:")
-		if err != nil {
-			return fmt.Errorf("prompting for location: %w", err)
-		}
-		env.SetLocation(strings.TrimSpace(location))
-	}
-
 	if !hasSubID && envSpec.subscription != "" {
 		env.SetSubscriptionId(envSpec.subscription)
 	} else {
@@ -239,6 +228,16 @@ func ensureEnvironmentInitialized(ctx context.Context, envSpec environmentSpec, 
 		env.SetSubscriptionId(strings.TrimSpace(subscriptionId))
 	}
 
+	if !hasLocation && envSpec.location != "" {
+		env.SetLocation(envSpec.location)
+	} else {
+		location, err := azureutil.PromptLocation(ctx, "Please select an Azure location to use:")
+		if err != nil {
+			return fmt.Errorf("prompting for location: %w", err)
+		}
+		env.SetLocation(strings.TrimSpace(location))
+	}
+
 	if !hasPrincipalID {
 		principalID, err := azureutil.GetCurrentPrincipalId(ctx)
 		if err != nil {
@@ -255,13 +254,11 @@ func ensureEnvironmentInitialized(ctx context.Context, envSpec environmentSpec, 
 }
 
 func getSubscriptionOptions(ctx context.Context) ([]string, string, error) {
-	azCli := azcli.GetAzCli(ctx)
-	subscriptionInfos, err := azCli.ListAccounts(ctx)
+	accountManager := account.NewManager(ctx)
+	subscriptionInfos, err := accountManager.GetSubscriptions(ctx)
 	if err != nil {
 		return nil, "", fmt.Errorf("listing accounts: %w", err)
 	}
-
-	sort.Sort(azureutil.Subs(subscriptionInfos))
 
 	// If `AZURE_SUBSCRIPTION_ID` is set in the environment, use it to influence
 	// the default option in our prompt. Fall back to the what the `az` CLI is

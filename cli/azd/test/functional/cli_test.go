@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/rand"
+	"embed"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -673,11 +674,14 @@ func filterEnviron(toExclude ...string) []string {
 	return new
 }
 
-// copySample copies the tree rooted at ${ROOT}/test/samples/ to targetRoot.
-func copySample(targetRoot string, sampleName string) error {
-	sampleRoot := filepath.Join(filepath.Dir(azdcli.GetAzdLocation()), "test", "samples", sampleName)
+//go:embed testdata/samples/*
+var samples embed.FS
 
-	return filepath.WalkDir(sampleRoot, func(name string, info fs.DirEntry, err error) error {
+// copySample copies the given sample to targetRoot.
+func copySample(targetRoot string, sampleName string) error {
+	sampleRoot := path.Join("testdata", "samples", sampleName)
+
+	return fs.WalkDir(samples, sampleRoot, func(name string, d fs.DirEntry, err error) error {
 		// If there was some error that was preventing is from walking into the directory, just fail now,
 		// not much we can do to recover.
 		if err != nil {
@@ -685,11 +689,11 @@ func copySample(targetRoot string, sampleName string) error {
 		}
 		targetPath := filepath.Join(targetRoot, name[len(sampleRoot):])
 
-		if info.IsDir() {
+		if d.IsDir() {
 			return os.MkdirAll(targetPath, osutil.PermissionDirectory)
 		}
 
-		contents, err := os.ReadFile(name)
+		contents, err := fs.ReadFile(samples, name)
 		if err != nil {
 			return fmt.Errorf("reading sample file: %w", err)
 		}

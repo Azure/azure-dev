@@ -195,7 +195,7 @@ func TestTerraformGetDeployment(t *testing.T) {
 }
 
 func createTerraformProvider(ctx context.Context) *TerraformProvider {
-	projectDir := "../../../../test/samples/resourcegroupterraform"
+	projectDir := "../../../../test/functional/testdata/samples/resourcegroupterraform"
 	options := Options{
 		Module: "main",
 	}

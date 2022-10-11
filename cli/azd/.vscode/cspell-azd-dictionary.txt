@@ -74,6 +74,7 @@ structs
 Syncer
 swacli
 teamcity
+testdata
 tracesdk
 tracetest
 unmarshalling

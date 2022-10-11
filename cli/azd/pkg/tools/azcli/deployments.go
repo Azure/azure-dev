@@ -5,8 +5,10 @@ package azcli
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/azure/azure-dev/cli/azd/pkg/identity"
 )
@@ -45,6 +47,11 @@ func (cli *azCli) GetResourceGroupDeployment(ctx context.Context, subscriptionId
 
 	deployment, err := deploymentClient.Get(ctx, resourceGroupName, deploymentName, nil)
 	if err != nil {
+		var errDetails *azcore.ResponseError
+		errors.As(err, &errDetails)
+		if errDetails.StatusCode == 404 {
+			return result, ErrDeploymentNotFound
+		}
 		return result, fmt.Errorf("getting deployment from resource group: %w", err)
 	}
 

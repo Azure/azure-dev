@@ -12,6 +12,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/identity"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/spf13/cobra"
 	"go.opentelemetry.io/otel/codes"
@@ -104,6 +105,7 @@ func createRootContext(ctx context.Context, cmd *cobra.Command, rootOptions *int
 	// Set the global options in the go context
 	ctx = azdcontext.WithAzdContext(ctx, azdCtx)
 	ctx = internal.WithCommandOptions(ctx, *rootOptions)
+	ctx = tools.WithInstalledCheckCache(ctx)
 
 	azCliArgs := azcli.NewAzCliArgs{
 		EnableDebug:     rootOptions.EnableDebugLogging,

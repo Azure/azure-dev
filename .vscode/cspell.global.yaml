@@ -22,7 +22,7 @@ ignoreWords:
     - arck
     - armkeyvault
     - armresources
-    - armsubscription
+    - armsubscriptions
     - azconnection
     - azcore
     - Azdo

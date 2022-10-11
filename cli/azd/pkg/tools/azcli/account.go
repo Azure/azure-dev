@@ -7,7 +7,6 @@ import (
 	"sort"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armsubscriptions"
-	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/identity"
 )
 
@@ -149,7 +148,7 @@ func (cli *azCli) createSubscriptionsClient(ctx context.Context) (*armsubscripti
 	}
 
 	// Uses latest api version of subscriptions api to get additional properties
-	options := cli.createArmClientOptions(ctx, convert.RefOf("2020-01-01"))
+	options := cli.createArmClientOptions(ctx)
 	client, err := armsubscriptions.NewClient(cred, options)
 	if err != nil {
 		return nil, fmt.Errorf("creating Subscriptions client: %w", err)

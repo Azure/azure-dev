@@ -16,7 +16,7 @@ We have some additional linting tools that we run in CI, and you will want to be
 
 - [golangci-lint](https://golangci-lint.run/usage/install/#local-installation)
 
-In order to run all tests, you'll need the following dependencies:
+In order to run end-to-end tests and develop templates, you'll need the following dependencies:
 
 Language tooling:
 

@@ -267,7 +267,7 @@ func TestBicepDestroy(t *testing.T) {
 }
 
 func createBicepProvider(ctx context.Context) *BicepProvider {
-	projectDir := "../../../../test/samples/webapp"
+	projectDir := "../../../../test/functional/testdata/samples/webapp"
 	options := Options{
 		Module: "main",
 	}

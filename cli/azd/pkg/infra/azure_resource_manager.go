@@ -75,7 +75,7 @@ func (rm *AzureResourceManager) GetDeploymentResourceOperations(ctx context.Cont
 
 // GetResourceGroupsForDeployment returns the names of all the resource groups from a subscription level deployment.
 func (rm *AzureResourceManager) GetResourceGroupsForDeployment(ctx context.Context, subscriptionId string, deploymentName string) ([]string, error) {
-	deployment, err := rm.azCli.GetResourceGroupDeployment(ctx, subscriptionId, deploymentName, deploymentName)
+	deployment, err := rm.azCli.GetSubscriptionDeployment(ctx, subscriptionId, deploymentName)
 	if err != nil {
 		return nil, fmt.Errorf("fetching current deployment: %w", err)
 	}

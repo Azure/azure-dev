@@ -478,7 +478,7 @@ func (cli *azCli) DeployAppServiceZip(ctx context.Context, subscriptionId string
 
 func (cli *azCli) DeployFunctionAppUsingZipFile(ctx context.Context, subscriptionID string, resourceGroup string, funcName string, deployZipPath string) (string, error) {
 	// eg: az functionapp deployment source config-zip -g <resource_group> -n <app_name> --src <zip_file_path>
-	res, err := cli.runAzCommandWithArgs(context.Background(), exec.RunArgs{
+	res, err := cli.runAzCommandWithArgs(ctx, exec.RunArgs{
 		Args: []string{
 			"functionapp", "deployment", "source", "config-zip",
 			"--subscription", subscriptionID,
@@ -531,7 +531,7 @@ func (cli *azCli) GetContainerAppProperties(ctx context.Context, subscriptionId,
 }
 
 func (cli *azCli) GetFunctionAppProperties(ctx context.Context, subscriptionID string, resourceGroup string, funcName string) (AzCliFunctionAppProperties, error) {
-	res, err := cli.runAzCommandWithArgs(context.Background(), exec.RunArgs{
+	res, err := cli.runAzCommandWithArgs(ctx, exec.RunArgs{
 		Args: []string{
 			"functionapp", "show",
 			"--subscription", subscriptionID,
@@ -555,7 +555,7 @@ func (cli *azCli) GetFunctionAppProperties(ctx context.Context, subscriptionID s
 }
 
 func (cli *azCli) GetStaticWebAppProperties(ctx context.Context, subscriptionID string, resourceGroup string, appName string) (AzCliStaticWebAppProperties, error) {
-	res, err := cli.runAzCommandWithArgs(context.Background(), exec.RunArgs{
+	res, err := cli.runAzCommandWithArgs(ctx, exec.RunArgs{
 		Args: []string{
 			"staticwebapp", "show",
 			"--subscription", subscriptionID,
@@ -579,7 +579,7 @@ func (cli *azCli) GetStaticWebAppProperties(ctx context.Context, subscriptionID 
 }
 
 func (cli *azCli) GetStaticWebAppEnvironmentProperties(ctx context.Context, subscriptionID string, resourceGroup string, appName string, environmentName string) (AzCliStaticWebAppEnvironmentProperties, error) {
-	res, err := cli.runAzCommandWithArgs(context.Background(), exec.RunArgs{
+	res, err := cli.runAzCommandWithArgs(ctx, exec.RunArgs{
 		Args: []string{
 			"staticwebapp", "environment", "show",
 			"--subscription", subscriptionID,
@@ -604,7 +604,7 @@ func (cli *azCli) GetStaticWebAppEnvironmentProperties(ctx context.Context, subs
 }
 
 func (cli *azCli) GetStaticWebAppApiKey(ctx context.Context, subscriptionID string, resourceGroup string, appName string) (string, error) {
-	res, err := cli.runAzCommandWithArgs(context.Background(), exec.RunArgs{
+	res, err := cli.runAzCommandWithArgs(ctx, exec.RunArgs{
 		Args: []string{
 			"staticwebapp", "secrets", "list",
 			"--subscription", subscriptionID,

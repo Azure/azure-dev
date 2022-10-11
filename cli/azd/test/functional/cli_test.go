@@ -26,7 +26,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/azure/azure-dev/cli/azd/cmd"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/telemetry"
 	"github.com/azure/azure-dev/cli/azd/pkg/container"
@@ -549,11 +548,11 @@ func Test_CLI_InfraCreateAndDeleteFuncApp(t *testing.T) {
 	require.NoError(t, err)
 
 	t.Logf("Starting infra create\n")
-	err = cmd.Execute([]string{"infra", "create", "--cwd", dir})
+	_, err = cli.RunCommand(ctx, "infra", "create", "--cwd", dir)
 	require.NoError(t, err)
 
 	t.Logf("Starting deploy\n")
-	err = cmd.Execute([]string{"deploy", "--cwd", dir})
+	_, err = cli.RunCommand(ctx, "deploy", "--cwd", dir)
 	require.NoError(t, err)
 
 	out, err := cli.RunCommand(ctx, "env", "get-values", "-o", "json", "--cwd", dir)
@@ -585,7 +584,7 @@ func Test_CLI_InfraCreateAndDeleteFuncApp(t *testing.T) {
 	require.NoError(t, err)
 
 	t.Logf("Starting infra delete\n")
-	err = cmd.Execute([]string{"infra", "delete", "--cwd", dir, "--force", "--purge"})
+	_, err = cli.RunCommand(ctx, "infra", "delete", "--cwd", dir, "--force", "--purge")
 	require.NoError(t, err)
 
 	t.Logf("Done\n")

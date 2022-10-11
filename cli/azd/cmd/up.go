@@ -22,6 +22,12 @@ type upFlags struct {
 }
 
 func (u *upFlags) Setup(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
+	output.AddOutputFlag(
+		local,
+		&u.outputFormat,
+		[]output.Format{output.JsonFormat, output.NoneFormat},
+		output.NoneFormat)
+
 	u.initFlags.Setup(local, global)
 	u.infraCreateFlags.bind(local, global)
 	u.infraCreateFlags.outputFormat = &u.outputFormat

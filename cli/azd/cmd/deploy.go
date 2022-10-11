@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
@@ -24,13 +25,14 @@ import (
 
 type deployFlags struct {
 	serviceName  string
-	outputFormat *string
+	outputFormat *string // pointer to allow delay-initialization when used in "azd up"
 	global       *internal.GlobalCommandOptions
 }
 
 func (d *deployFlags) Bind(flags *pflag.FlagSet, global *internal.GlobalCommandOptions) {
 	d.bind(flags, global)
 
+	d.outputFormat = convert.RefOf("")
 	output.AddOutputFlag(
 		flags,
 		d.outputFormat,

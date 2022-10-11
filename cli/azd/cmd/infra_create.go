@@ -6,6 +6,7 @@ import (
 	"io"
 
 	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
@@ -21,13 +22,14 @@ import (
 
 type infraCreateFlags struct {
 	noProgress   bool
-	outputFormat *string
+	outputFormat *string // pointer to allow delay-initialization when used in "azd up"
 	global       *internal.GlobalCommandOptions
 }
 
 func (i *infraCreateFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
 	i.bind(local, global)
 
+	i.outputFormat = convert.RefOf("")
 	output.AddOutputFlag(
 		local,
 		i.outputFormat,

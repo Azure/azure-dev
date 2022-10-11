@@ -175,6 +175,10 @@
                 "when": "viewItem == ms-azuretools.azure-dev.views.workspace.application"
               },
               {
+                "command": "azure-dev.commands.cli.deploy",
+                "when": "viewItem == ms-azuretools.azure-dev.views.workspace.application"
+              },
+              {
                 "command": "azure-dev.commands.cli.infra-delete",
                 "when": "viewItem == ms-azuretools.azure-dev.views.workspace.application"
               }

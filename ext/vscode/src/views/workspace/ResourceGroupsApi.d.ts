@@ -73,6 +73,8 @@ export interface ResourceQuickPickOptions {
 }
 
 export interface ResourceModelBase {
+    // TODO: Should IDs be optional?
+    readonly id?: string;
     readonly quickPickOptions?: ResourceQuickPickOptions;
     readonly azureResourceId?: string;
 }

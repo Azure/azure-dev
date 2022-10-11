@@ -111,9 +111,9 @@ func createRootContext(ctx context.Context, cmd *cobra.Command, rootOptions *int
 	}
 
 	// Set default credentials used for operations against azure data/control planes
-	credentials, err := azidentity.NewDefaultAzureCredential(nil)
+	credentials, err := azidentity.NewAzureCLICredential(nil)
 	if err != nil {
-		panic("failed creating default azure credentials")
+		panic("failed creating azure cli credential")
 	}
 	ctx = identity.WithCredentials(ctx, credentials)
 

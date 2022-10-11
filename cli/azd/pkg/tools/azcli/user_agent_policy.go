@@ -7,6 +7,8 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 )
 
+const userAgentHeaderName = "User-Agent"
+
 type userAgentPolicy struct {
 	userAgent string
 }
@@ -21,7 +23,14 @@ func NewUserAgentPolicy(userAgent string) policy.Policy {
 // Sets the custom user-agent string on the underlying request
 func (p *userAgentPolicy) Do(req *policy.Request) (*http.Response, error) {
 	if strings.TrimSpace(p.userAgent) != "" {
-		req.Raw().Header.Set("User-Agent", p.userAgent)
+		rawRequest := req.Raw()
+		userAgent, ok := rawRequest.Header[userAgentHeaderName]
+		if !ok {
+			userAgent = []string{}
+		}
+		userAgent = append(userAgent, p.userAgent)
+		rawRequest.Header.Set(userAgentHeaderName, strings.Join(userAgent, ","))
 	}
+
 	return req.Next()
 }

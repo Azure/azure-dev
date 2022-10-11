@@ -17,13 +17,16 @@ type upFlags struct {
 	initFlags
 	infraCreateFlags
 	deployFlags
-	global *internal.GlobalCommandOptions
+	outputFormat string
+	global       *internal.GlobalCommandOptions
 }
 
 func (u *upFlags) Setup(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
 	u.initFlags.Setup(local, global)
-	u.infraCreateFlags.Setup(local, global)
-	u.deployFlags.Setup(local, global)
+	u.infraCreateFlags.bind(local, global)
+	u.infraCreateFlags.outputFormat = &u.outputFormat
+	u.deployFlags.bind(local, global)
+	u.deployFlags.outputFormat = &u.outputFormat
 	u.global = global
 }
 

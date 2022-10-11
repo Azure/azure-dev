@@ -20,7 +20,7 @@ Depending on what Azure resources are created, running this command might take a
 	}
 
 	f := &infraCreateFlags{}
-	f.Setup(cmd.Flags(), rootOptions)
+	f.Bind(cmd.Flags(), rootOptions)
 
 	return cmd, f
 }

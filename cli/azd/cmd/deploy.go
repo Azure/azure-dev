@@ -24,12 +24,22 @@ import (
 
 type deployFlags struct {
 	serviceName  string
-	outputFormat string
+	outputFormat *string
 	global       *internal.GlobalCommandOptions
 }
 
-func (d *deployFlags) Setup(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
-	local.StringVar(&d.serviceName, "service", "", "Deploys a specific service (when the string is unspecified, all services that are listed in the "+azdcontext.ProjectFileName+" file are deployed).")
+func (d *deployFlags) Bind(flags *pflag.FlagSet, global *internal.GlobalCommandOptions) {
+	d.bind(flags, global)
+
+	output.AddOutputFlag(
+		flags,
+		d.outputFormat,
+		[]output.Format{output.JsonFormat, output.NoneFormat},
+		output.NoneFormat)
+}
+
+func (d *deployFlags) bind(flags *pflag.FlagSet, global *internal.GlobalCommandOptions) {
+	flags.StringVar(&d.serviceName, "service", "", "Deploys a specific service (when the string is unspecified, all services that are listed in the "+azdcontext.ProjectFileName+" file are deployed).")
 
 	d.global = global
 }
@@ -44,18 +54,13 @@ When no ` + output.WithBackticks("--service") + ` value is specified, all servic
 Examples:
 
 	$ azd deploy
-	$ azd deploy –-service api
-	$ azd deploy –-service web
+	$ azd deploy --service api
+	$ azd deploy --service web
 	
 After the deployment is complete, the endpoint is printed. To start the service, select the endpoint or paste it in a browser.`,
 	}
 	df := deployFlags{}
-	df.Setup(cmd.Flags(), rootOptions)
-	output.AddOutputFlag(
-		cmd.Flags(),
-		&df.outputFormat,
-		[]output.Format{output.JsonFormat, output.NoneFormat},
-		output.NoneFormat)
+	df.Bind(cmd.Flags(), rootOptions)
 
 	return cmd, &df
 }

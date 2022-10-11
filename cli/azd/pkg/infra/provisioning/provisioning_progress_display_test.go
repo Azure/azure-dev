@@ -4,14 +4,17 @@
 package provisioning
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/exec"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
@@ -67,12 +70,20 @@ func (mock *mockResourceManager) MarkComplete(i int) {
 }
 
 func mockAzDeploymentShow(t *testing.T, m mocks.MockContext) {
-	deployment := azcli.AzCliDeployment{}
+	deployment := armresources.DeploymentExtended{}
 	deploymentJson, err := json.Marshal(deployment)
 	require.NoError(t, err)
-	m.CommandRunner.When(func(args exec.RunArgs, command string) bool {
-		return strings.HasPrefix(command, "az deployment sub show")
-	}).Respond(exec.NewRunResult(0, string(deploymentJson), ""))
+	m.HttpClient.When(func(request *http.Request) bool {
+		return request.Method == http.MethodGet && strings.Contains(
+			request.URL.Path,
+			"subscriptions/SUBSCRIPTION_ID/providers/Microsoft.Resources/deployments/DEPLOYMENT_NAME",
+		)
+	}).RespondFn(func(request *http.Request) (*http.Response, error) {
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(bytes.NewBuffer(deploymentJson)),
+		}, nil
+	})
 }
 
 func TestReportProgress(t *testing.T) {

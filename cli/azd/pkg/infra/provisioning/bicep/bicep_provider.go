@@ -9,7 +9,6 @@ import (
 	"errors"
 	"fmt"
 	"log"
-	"math"
 	"os"
 	"path/filepath"
 	"strings"
@@ -28,6 +27,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/bicep"
 	"github.com/drone/envsubst"
+	"github.com/sethvargo/go-retry"
 )
 
 type BicepTemplate struct {
@@ -615,29 +615,30 @@ func (p *BicepProvider) convertToDeployment(bicepTemplate BicepTemplate) (*Deplo
 
 // Deploys the specified Bicep module and parameters with the selected provisioning scope (subscription vs resource group)
 func (p *BicepProvider) deployModule(ctx context.Context, scope infra.Scope, bicepPath string, parametersPath string) (
-	result armresources.DeploymentExtended, err error) {
+	*armresources.DeploymentExtended, error) {
 	// We've seen issues where `Deploy` completes but for a short while after, fetching the deployment fails with a `DeploymentNotFound` error.
 	// Since other commands of ours use the deployment, let's try to fetch it here and if we fail with `DeploymentNotFound`,
 	// ignore this error, wait a short while and retry.
 	if err := scope.Deploy(ctx, bicepPath, parametersPath); err != nil {
-		return result, fmt.Errorf("failed deploying: %w", err)
+		return nil, fmt.Errorf("failed deploying: %w", err)
 	}
 
-	var deployment armresources.DeploymentExtended
-
-	for i := 0; i < 10; i++ {
-		time.Sleep(time.Duration(math.Min(float64(i), 3)*10) * time.Second)
-		deployment, err = scope.GetDeployment(ctx)
+	var deployment *armresources.DeploymentExtended
+	if err := retry.Do(ctx, retry.WithMaxRetries(10, retry.NewExponential(1*time.Second)), func(ctx context.Context) error {
+		deploymentResult, err := scope.GetDeployment(ctx)
 		if errors.Is(err, azcli.ErrDeploymentNotFound) {
-			continue
+			return retry.RetryableError(err)
 		} else if err != nil {
-			return result, fmt.Errorf("failed waiting for deployment: %w", err)
-		} else {
-			return deployment, nil
+			return fmt.Errorf("failed waiting for deployment: %w", err)
 		}
+
+		deployment = deploymentResult
+		return nil
+	}); err != nil {
+		return nil, fmt.Errorf("timed out waiting for deployment: %w", err)
 	}
 
-	return result, fmt.Errorf("timed out waiting for deployment: %w", err)
+	return deployment, nil
 }
 
 // Gets the path to the project parameters file path

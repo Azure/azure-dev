@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -41,8 +42,18 @@ func TestScopeGetDeployment(t *testing.T) {
 
 	t.Run("SubscriptionScopeSuccess", func(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
+
+		subscriptionId := "SUBSCRIPTION_ID"
+		deploymentName := "DEPLOYMENT_NAME"
+
 		mockContext.HttpClient.When(func(request *http.Request) bool {
-			return request.Method == http.MethodGet && strings.Contains(request.URL.Path, "/subscriptions")
+			return request.Method == http.MethodGet && strings.Contains(
+				request.URL.Path,
+				fmt.Sprintf(
+					"/subscriptions/%s/providers/Microsoft.Resources/deployments/%s",
+					subscriptionId,
+					deploymentName),
+			)
 		}).RespondFn(func(request *http.Request) (*http.Response, error) {
 			subscriptionsListBytes, _ := json.Marshal(deploymentWithOptions)
 
@@ -52,7 +63,7 @@ func TestScopeGetDeployment(t *testing.T) {
 			}, nil
 		})
 
-		scope := NewSubscriptionScope(*mockContext.Context, "eastus2", "SUBSCRIPTION_ID", "DEPLOYMENT_NAME")
+		scope := NewSubscriptionScope(*mockContext.Context, "eastus2", subscriptionId, deploymentName)
 
 		deployment, err := scope.GetDeployment(*mockContext.Context)
 		require.NoError(t, err)
@@ -63,8 +74,20 @@ func TestScopeGetDeployment(t *testing.T) {
 
 	t.Run("ResourceGroupScopeSuccess", func(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
+
+		subscriptionId := "SUBSCRIPTION_ID"
+		deploymentName := "DEPLOYMENT_NAME"
+		resourceGroupName := "RESOURCE_GROUP"
+
 		mockContext.HttpClient.When(func(request *http.Request) bool {
-			return request.Method == http.MethodGet && strings.Contains(request.URL.Path, "/subscriptions")
+			return request.Method == http.MethodGet && strings.Contains(
+				request.URL.Path,
+				fmt.Sprintf(
+					"/subscriptions/%s/resourcegroups/%s/providers/Microsoft.Resources/deployments/%s",
+					subscriptionId,
+					resourceGroupName,
+					deploymentName),
+			)
 		}).RespondFn(func(request *http.Request) (*http.Response, error) {
 			subscriptionsListBytes, _ := json.Marshal(deploymentResourceGroupWithOptions)
 
@@ -74,7 +97,7 @@ func TestScopeGetDeployment(t *testing.T) {
 			}, nil
 		})
 
-		scope := NewResourceGroupScope(*mockContext.Context, "SUBSCRIPTION_ID", "RESOURCE_GROUP", "DEPLOYMENT_NAME")
+		scope := NewResourceGroupScope(*mockContext.Context, subscriptionId, resourceGroupName, deploymentName)
 
 		deployment, err := scope.GetDeployment(*mockContext.Context)
 		require.NoError(t, err)

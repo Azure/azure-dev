@@ -13,7 +13,6 @@ param scmDoBuildDuringDeployment bool = false
 param serviceName string
 param storageAccountName string
 
-
 module functions 'functions.bicep' = {
   name: '${serviceName}-functions-csharp'
   params: {

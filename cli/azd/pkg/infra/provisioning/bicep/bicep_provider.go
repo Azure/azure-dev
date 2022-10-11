@@ -106,6 +106,10 @@ func (p *BicepProvider) GetDeployment(ctx context.Context, scope infra.Scope) *a
 // sdk client parses http response from network as an interface{}
 // this function keeps the compatibility with the previous AzCliDeploymentOutput model
 func createDeploymentOutput(rawOutputs interface{}) (result map[string]azcli.AzCliDeploymentOutput) {
+	if rawOutputs == nil {
+		return make(map[string]azcli.AzCliDeploymentOutput, 0)
+	}
+
 	castInput := rawOutputs.(map[string]interface{})
 	result = make(map[string]azcli.AzCliDeploymentOutput, len(castInput))
 	for key, output := range castInput {

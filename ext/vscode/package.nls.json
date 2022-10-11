@@ -18,6 +18,8 @@
     "azure-dev.commands.cli.deploy.title": "deploy (deploy the application's code to Azure)",
     "azure-dev.commands.cli.restore.title": "restore (restores application dependencies)",
 
+    "azure-dev.commands.cli.infra-create.title": "infra create (create Azure resources for the application)",
+
     "azure-dev.commands.cli.infra-delete.title": "infra delete (delete Azure resources for the application)",
     "azure-dev.commands.cli.infra-delete.confirm-prompt": "Are you sure to delete all application's Azure resources?",
     "azure-dev.commands.cli.infra-delete.confirm-ack": "Delete resources",

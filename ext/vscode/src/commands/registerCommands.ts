@@ -15,12 +15,14 @@ import { selectEnvironment, newEnvironment, refreshEnvironment } from './env';
 import { pipelineConfig } from './pipeline';
 import { getDotEnvFilePath } from './getDotEnvFilePath';
 import ext from '../ext';
+import { infraCreate } from './infraCreate';
 
 export function registerCommands(): void {
     registerActivityCommand('azure-dev.commands.cli.init', init);
     registerActivityCommand('azure-dev.commands.cli.provision', provision);
     registerActivityCommand('azure-dev.commands.cli.deploy', deploy);
     registerActivityCommand('azure-dev.commands.cli.restore', restore);
+    registerActivityCommand('azure-dev.commands.cli.infra-create', infraCreate);
     registerActivityCommand('azure-dev.commands.cli.infra-delete', infraDelete);
     registerActivityCommand('azure-dev.commands.cli.up', up);
     registerActivityCommand('azure-dev.commands.cli.down', down);

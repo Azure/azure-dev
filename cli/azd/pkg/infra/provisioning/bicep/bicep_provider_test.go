@@ -34,9 +34,8 @@ func TestBicepPlan(t *testing.T) {
 
 	mockContext := mocks.NewMockContext(context.Background())
 	prepareGenericMocks(mockContext.CommandRunner)
-	preparePlanningMocks(
-		mockContext.CommandRunner, mockContext.HttpClient)
-
+	preparePlanningMocks(mockContext.CommandRunner)
+	prepareDeployShowMocks(mockContext.HttpClient)
 	infraProvider := createBicepProvider(*mockContext.Context)
 	planningTask := infraProvider.Plan(*mockContext.Context)
 
@@ -75,7 +74,8 @@ func TestBicepGetDeploymentPlan(t *testing.T) {
 
 	mockContext := mocks.NewMockContext(context.Background())
 	prepareGenericMocks(mockContext.CommandRunner)
-	preparePlanningMocks(mockContext.CommandRunner, mockContext.HttpClient)
+	preparePlanningMocks(mockContext.CommandRunner)
+	prepareDeployShowMocks(mockContext.HttpClient)
 	prepareDeployMocks(mockContext.CommandRunner)
 
 	infraProvider := createBicepProvider(*mockContext.Context)
@@ -116,7 +116,8 @@ func TestBicepDeploy(t *testing.T) {
 
 	mockContext := mocks.NewMockContext(context.Background())
 	prepareGenericMocks(mockContext.CommandRunner)
-	preparePlanningMocks(mockContext.CommandRunner, mockContext.HttpClient)
+	preparePlanningMocks(mockContext.CommandRunner)
+	prepareDeployShowMocks(mockContext.HttpClient)
 	prepareDeployMocks(mockContext.CommandRunner)
 
 	infraProvider := createBicepProvider(*mockContext.Context)
@@ -154,7 +155,8 @@ func TestBicepDestroy(t *testing.T) {
 	t.Run("Interactive", func(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
 		prepareGenericMocks(mockContext.CommandRunner)
-		preparePlanningMocks(mockContext.CommandRunner, mockContext.HttpClient)
+		preparePlanningMocks(mockContext.CommandRunner)
+		prepareDeployShowMocks(mockContext.HttpClient)
 		prepareDestroyMocks(mockContext)
 
 		progressLog := []string{}
@@ -218,7 +220,8 @@ func TestBicepDestroy(t *testing.T) {
 	t.Run("InteractiveForceAndPurge", func(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
 		prepareGenericMocks(mockContext.CommandRunner)
-		preparePlanningMocks(mockContext.CommandRunner, mockContext.HttpClient)
+		preparePlanningMocks(mockContext.CommandRunner)
+		prepareDeployShowMocks(mockContext.HttpClient)
 		prepareDestroyMocks(mockContext)
 
 		progressLog := []string{}
@@ -313,8 +316,7 @@ func prepareDeployMocks(commandRunner *execmock.MockCommandRunner) {
 }
 
 func preparePlanningMocks(
-	commandRunner *execmock.MockCommandRunner,
-	httpClient *httputil.MockHttpClient) {
+	commandRunner *execmock.MockCommandRunner) {
 	expectedWebsiteUrl := "http://myapp.azurewebsites.net"
 	bicepInputParams := make(map[string]BicepInputParameter)
 	bicepInputParams["environmentName"] = BicepInputParameter{Value: "${AZURE_ENV_NAME}"}
@@ -365,6 +367,34 @@ func preparePlanningMocks(
 		Stdout: string(deployResultBytes),
 		Stderr: "",
 	})
+}
+
+func prepareDeployShowMocks(
+	httpClient *httputil.MockHttpClient) {
+	expectedWebsiteUrl := "http://myapp.azurewebsites.net"
+
+	deployOutputs := make(map[string]interface{})
+	deployOutputs["WEBSITE_URL"] = map[string]interface{}{"value": expectedWebsiteUrl, "type": "string"}
+	azDeployment := armresources.DeploymentExtended{
+		ID:   convert.RefOf("DEPLOYMENT_ID"),
+		Name: convert.RefOf("DEPLOYMENT_NAME"),
+		Properties: &armresources.DeploymentPropertiesExtended{
+			Outputs: deployOutputs,
+			Dependencies: []*armresources.Dependency{
+				{
+					DependsOn: []*armresources.BasicDependency{
+						{
+							ID:           convert.RefOf("RESOURCE_ID"),
+							ResourceName: convert.RefOf("RESOURCE_GROUP"),
+							ResourceType: convert.RefOf(string(infra.AzureResourceTypeResourceGroup)),
+						},
+					},
+				},
+			},
+		},
+	}
+
+	deployResultBytes, _ := json.Marshal(azDeployment)
 
 	// Get deployment result
 	httpClient.When(func(request *http.Request) bool {
@@ -373,11 +403,9 @@ func preparePlanningMocks(
 			"/SUBSCRIPTION_ID/providers/Microsoft.Resources/deployments",
 		)
 	}).RespondFn(func(request *http.Request) (*http.Response, error) {
-		subscriptionsListBytes, _ := json.Marshal(deployResultBytes)
-
 		return &http.Response{
 			StatusCode: http.StatusOK,
-			Body:       io.NopCloser(bytes.NewBuffer(subscriptionsListBytes)),
+			Body:       io.NopCloser(bytes.NewBuffer(deployResultBytes)),
 		}, nil
 	})
 }

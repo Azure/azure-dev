@@ -16,13 +16,20 @@ We have some additional linting tools that we run in CI, and you will want to be
 
 - [golangci-lint](https://golangci-lint.run/usage/install/#local-installation)
 
-In order to run some of the tests, you'll need the toolchain for all the languages we support:
+In order to run end-to-end tests and develop templates, you'll need the following dependencies:
+
+Language tooling:
 
 - [NodeJS](https://nodejs.org/en/download/)
 - [Python](https://www.python.org/downloads)
 - [DotNet CLI](https://get.dot.net)
 
-Also, you'll want to install Docker (as we use that for some of our tests)
+Infrastructure-as-code providers:
+
+- [Bicep CLI](https://aka.ms/bicep-install)
+- [Terraform](https://learn.hashicorp.com/tutorials/terraform/install-cli) (if working on Terraform templates)
+
+Docker:
 
 - [Docker](https://docs.docker.com/desktop/#download-and-install)
 

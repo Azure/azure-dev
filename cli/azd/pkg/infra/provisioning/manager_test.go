@@ -35,7 +35,7 @@ func TestManagerPlan(t *testing.T) {
 	require.Equal(t, deploymentPlan.Deployment.Parameters["location"].Value, env.Values["AZURE_LOCATION"])
 }
 
-func TestManagerGetDeployment(t *testing.T) {
+func TestManagerGetState(t *testing.T) {
 	env := environment.EphemeralWithValues("test-env", map[string]string{
 		"AZURE_LOCATION": "eastus2",
 	})
@@ -47,7 +47,7 @@ func TestManagerGetDeployment(t *testing.T) {
 	mgr, _ := NewManager(*mockContext.Context, env, "", options, interactive)
 
 	provisioningScope := infra.NewSubscriptionScope(*mockContext.Context, "eastus2", env.GetSubscriptionId(), env.GetEnvName())
-	getResult, err := mgr.GetDeployment(*mockContext.Context, provisioningScope)
+	getResult, err := mgr.State(*mockContext.Context, provisioningScope)
 
 	require.NotNil(t, getResult)
 	require.Nil(t, err)

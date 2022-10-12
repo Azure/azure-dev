@@ -115,7 +115,7 @@ func (i *initAction) Run(ctx context.Context, cmd *cobra.Command, args []string,
 
 	// Project not initialized and no template specified
 	if _, err := os.Stat(azdCtx.ProjectPath()); err != nil && errors.Is(err, os.ErrNotExist) {
-		fmt.Printf("Initializing a new project in %s\n\n", wd)
+		fmt.Fprintf(console.Handles().Stdout, "Initializing a new project in %s\n\n", wd)
 
 		if i.template.Name == "" {
 			i.template, err = templates.PromptTemplate(ctx, "Select a project template")
@@ -159,7 +159,7 @@ func (i *initAction) Run(ctx context.Context, cmd *cobra.Command, args []string,
 			_ = os.RemoveAll(templateStagingDir)
 		}()
 
-		spinner := spin.NewSpinner("Downloading template")
+		spinner := spin.NewSpinner(console.Handles().Stdout, "Downloading template")
 		err = spinner.Run(func() error {
 			return gitCli.FetchCode(ctx, templateUrl, i.templateBranch, templateStagingDir)
 		})
@@ -204,9 +204,11 @@ func (i *initAction) Run(ctx context.Context, cmd *cobra.Command, args []string,
 		}
 
 		if len(duplicateFiles) > 0 {
-			fmt.Printf("warning: the following files will be overwritten with the versions from the template: \n")
+			fmt.Fprintf(
+				console.Handles().Stdout,
+				"warning: the following files will be overwritten with the versions from the template: \n")
 			for _, file := range duplicateFiles {
-				fmt.Printf(" * %s\n", file)
+				fmt.Fprintf(console.Handles().Stdout, " * %s\n", file)
 			}
 
 			overwrite, err := console.Confirm(ctx, input.ConsoleOptions{
@@ -241,7 +243,7 @@ func (i *initAction) Run(ctx context.Context, cmd *cobra.Command, args []string,
 	_, err = os.Stat(azdCtx.ProjectPath())
 
 	if errors.Is(err, os.ErrNotExist) {
-		fmt.Printf("Creating a new %s file.\n", azdcontext.ProjectFileName)
+		fmt.Fprintf(console.Handles().Stdout, "Creating a new %s file.\n", azdcontext.ProjectFileName)
 
 		_, err = project.NewProject(azdCtx.ProjectPath(), azdCtx.GetDefaultProjectName())
 

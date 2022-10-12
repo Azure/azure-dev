@@ -105,7 +105,7 @@ func doBasicTransmit(client Transmitter, server *testServer, t *testing.T) {
 	server.responseHeaders["Content-type"] = "application/json"
 	result, err := client.Transmit([]byte("foobar"), make(TelemetryItems, 0))
 	if err != nil {
-		fmt.Println(err.Error())
+		t.Log(err.Error())
 	}
 	req := server.waitForRequest(t)
 

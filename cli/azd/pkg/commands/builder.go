@@ -3,6 +3,7 @@ package commands
 import (
 	"context"
 	"fmt"
+	"os"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/azure/azure-dev/cli/azd/internal"
@@ -16,6 +17,8 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
+	"github.com/mattn/go-colorable"
+	"github.com/mattn/go-isatty"
 	"github.com/spf13/cobra"
 	"go.opentelemetry.io/otel/codes"
 )
@@ -146,10 +149,29 @@ func createRootContext(
 		ctx = output.WithFormatter(ctx, formatter)
 	}
 
-	writer := output.GetDefaultWriter()
+	writer := cmd.OutOrStdout()
+
+	if os.Getenv("NO_COLOR") != "" {
+		writer = colorable.NewNonColorable(writer)
+	}
+
+	// To support color on windows platforms which don't natively support rendering ANSI codes
+	// we use colorable.NewColorableStdout() which creates a stream that uses the Win32 APIs to
+	// change colors as it interprets the ANSI escape codes in the string it is writing.
+	if writer == os.Stdout {
+		writer = colorable.NewColorableStdout()
+	}
+
 	ctx = output.WithWriter(ctx, writer)
 
-	console := input.NewConsole(!rootOptions.NoPrompt, writer, formatter)
+	isTerminal := cmd.OutOrStdout() == os.Stdout &&
+		cmd.InOrStdin() == os.Stdin && isatty.IsTerminal(os.Stdin.Fd()) &&
+		isatty.IsTerminal(os.Stdout.Fd())
+	console := input.NewConsole(!rootOptions.NoPrompt, isTerminal, input.ConsoleHandles{
+		Stdin:  cmd.InOrStdin(),
+		Stdout: cmd.OutOrStdout(),
+		Stderr: cmd.ErrOrStderr(),
+	}, formatter)
 	ctx = input.WithConsole(ctx, console)
 
 	return ctx, azdCtx, nil

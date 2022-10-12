@@ -25,12 +25,12 @@ type AzCliAppConfigSecret struct {
 }
 
 func (cli *azCli) GetAppConfig(ctx context.Context, subscriptionId string, resourceGroupName string, configName string) (*AzCliAppConfig, error) {
-	client, err := cli.createAppConfigClient(ctx, subscriptionId)
+	appConfigStoresClient, err := cli.createAppConfigClient(ctx, subscriptionId)
 	if err != nil {
 		return nil, err
 	}
 
-	config, err := client.Get(ctx, resourceGroupName, configName, nil)
+	config, err := appConfigStoresClient.Get(ctx, resourceGroupName, configName, nil)
 	if err != nil {
 		return nil, fmt.Errorf("getting app configuration: %w", err)
 	}
@@ -48,12 +48,12 @@ func (cli *azCli) GetAppConfig(ctx context.Context, subscriptionId string, resou
 }
 
 func (cli *azCli) PurgeAppConfig(ctx context.Context, subscriptionId string, configName string, location string) error {
-	client, err := cli.createAppConfigClient(ctx, subscriptionId)
+	appConfigStoresClient, err := cli.createAppConfigClient(ctx, subscriptionId)
 	if err != nil {
 		return err
 	}
 
-	poller, err := client.BeginPurgeDeleted(ctx, configName, location, nil)
+	poller, err := appConfigStoresClient.BeginPurgeDeleted(ctx, configName, location, nil)
 	if err != nil {
 		return fmt.Errorf("starting purging app configuration: %w", err)
 	}
@@ -74,10 +74,10 @@ func (cli *azCli) createAppConfigClient(ctx context.Context, subscriptionId stri
 	}
 
 	options := cli.createArmClientOptions(ctx)
-	client, err := armappconfiguration.NewConfigurationStoresClient(subscriptionId, cred, options)
+	appConfigStoresClient, err := armappconfiguration.NewConfigurationStoresClient(subscriptionId, cred, options)
 	if err != nil {
 		return nil, fmt.Errorf("creating Resource client: %w", err)
 	}
 
-	return client, nil
+	return appConfigStoresClient, nil
 }

@@ -426,28 +426,36 @@ func setupAccountMocks(mockContext *mocks.MockContext) {
 						Name:                convert.RefOf("westus"),
 						DisplayName:         convert.RefOf("West US"),
 						RegionalDisplayName: convert.RefOf("(US) West US"),
-						Metadata:            &armsubscriptions.LocationMetadata{RegionType: convert.RefOf(armsubscriptions.RegionTypePhysical)},
+						Metadata: &armsubscriptions.LocationMetadata{
+							RegionType: convert.RefOf(armsubscriptions.RegionTypePhysical),
+						},
 					},
 					{
 						ID:                  convert.RefOf("westus2"),
 						Name:                convert.RefOf("westus2"),
 						DisplayName:         convert.RefOf("West US 2"),
 						RegionalDisplayName: convert.RefOf("(US) West US 2"),
-						Metadata:            &armsubscriptions.LocationMetadata{RegionType: convert.RefOf(armsubscriptions.RegionTypePhysical)},
+						Metadata: &armsubscriptions.LocationMetadata{
+							RegionType: convert.RefOf(armsubscriptions.RegionTypePhysical),
+						},
 					},
 					{
 						ID:                  convert.RefOf("eastus"),
 						Name:                convert.RefOf("eastus"),
 						DisplayName:         convert.RefOf("East US"),
 						RegionalDisplayName: convert.RefOf("(US) East US"),
-						Metadata:            &armsubscriptions.LocationMetadata{RegionType: convert.RefOf(armsubscriptions.RegionTypePhysical)},
+						Metadata: &armsubscriptions.LocationMetadata{
+							RegionType: convert.RefOf(armsubscriptions.RegionTypePhysical),
+						},
 					},
 					{
 						ID:                  convert.RefOf("eastus2"),
 						Name:                convert.RefOf("eastus2"),
 						DisplayName:         convert.RefOf("East US 2"),
 						RegionalDisplayName: convert.RefOf("(US) East US 2"),
-						Metadata:            &armsubscriptions.LocationMetadata{RegionType: convert.RefOf(armsubscriptions.RegionTypePhysical)},
+						Metadata: &armsubscriptions.LocationMetadata{
+							RegionType: convert.RefOf(armsubscriptions.RegionTypePhysical),
+						},
 					},
 				},
 			},

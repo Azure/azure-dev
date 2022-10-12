@@ -116,7 +116,13 @@ func Test_GetStaticWebAppEnvironmentProperties(t *testing.T) {
 			}, nil
 		})
 
-		props, err := azCli.GetStaticWebAppEnvironmentProperties(context.Background(), "subID", "resourceGroupID", "appName", "default")
+		props, err := azCli.GetStaticWebAppEnvironmentProperties(
+			context.Background(),
+			"subID",
+			"resourceGroupID",
+			"appName",
+			"default",
+		)
 		require.NoError(t, err)
 		require.Equal(t, "default-environment-name.azurestaticapps.net", props.Hostname)
 		require.True(t, ran)
@@ -149,7 +155,13 @@ func Test_GetStaticWebAppEnvironmentProperties(t *testing.T) {
 			}, errors.New("example error message")
 		})
 
-		props, err := azCli.GetStaticWebAppEnvironmentProperties(context.Background(), "subID", "resourceGroupID", "appName", "default")
+		props, err := azCli.GetStaticWebAppEnvironmentProperties(
+			context.Background(),
+			"subID",
+			"resourceGroupID",
+			"appName",
+			"default",
+		)
 		require.Equal(t, AzCliStaticWebAppEnvironmentProperties{}, props)
 		require.True(t, ran)
 		require.EqualError(t, err, "failed getting staticwebapp environment properties: example error message")

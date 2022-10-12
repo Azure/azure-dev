@@ -65,7 +65,8 @@ func (la *loginAction) Run(ctx context.Context, cmd *cobra.Command, args []strin
 
 	var res contracts.LoginResult
 
-	if token, err := azCli.GetAccessToken(ctx); errors.Is(err, azcli.ErrAzCliNotLoggedIn) || errors.Is(err, azcli.ErrAzCliRefreshTokenExpired) {
+	if token, err := azCli.GetAccessToken(ctx); errors.Is(err, azcli.ErrAzCliNotLoggedIn) ||
+		errors.Is(err, azcli.ErrAzCliRefreshTokenExpired) {
 		res.Status = contracts.LoginStatusUnauthenticated
 	} else if err != nil {
 		return fmt.Errorf("checking auth status: %w", err)
@@ -89,7 +90,12 @@ func (la *loginAction) Run(ctx context.Context, cmd *cobra.Command, args []strin
 
 func (la *loginAction) SetupFlags(persistent *pflag.FlagSet, local *pflag.FlagSet) {
 	local.BoolVar(&la.onlyCheckStatus, "check-status", false, "Checks the log-in status instead of logging in.")
-	local.BoolVar(&la.useDeviceCode, "use-device-code", false, "When true, log in by using a device code instead of a browser.")
+	local.BoolVar(
+		&la.useDeviceCode,
+		"use-device-code",
+		false,
+		"When true, log in by using a device code instead of a browser.",
+	)
 }
 
 // ensureLoggedIn checks to see if the user is currently logged in. If not, the equivalent of `az login` is run.
@@ -126,7 +132,8 @@ func runLogin(ctx context.Context, forceDeviceCode bool) error {
 	)
 
 	azCli := azcli.GetAzCli(ctx)
-	useDeviceCode := forceDeviceCode || os.Getenv(CodespacesEnvVarName) == "true" || os.Getenv(RemoteContainersEnvVarName) == "true"
+	useDeviceCode := forceDeviceCode || os.Getenv(CodespacesEnvVarName) == "true" ||
+		os.Getenv(RemoteContainersEnvVarName) == "true"
 
 	return azCli.Login(ctx, useDeviceCode, console.Handles().Stdout)
 }

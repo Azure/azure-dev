@@ -41,6 +41,7 @@ func initCmd(rootOptions *internal.GlobalCommandOptions) *cobra.Command {
 		"init",
 		"Initialize a new application.",
 		&commands.BuildOptions{
+			//nolint:lll
 			Long: `Initialize a new application.
 
 When no template is supplied, you can optionally select an Azure Developer CLI template for cloning. Otherwise, ` + output.WithBackticks("azd init") + ` initializes the current directory and creates resources so that your project is compatible with Azure Developer CLI.
@@ -62,9 +63,21 @@ func (i *initAction) SetupFlags(
 	persis *pflag.FlagSet,
 	local *pflag.FlagSet,
 ) {
-	local.StringVarP(&i.template.Name, "template", "t", "", "The template to use when you initialize the project. You can use Full URI, <owner>/<repository>, or <repository> if it's part of the azure-samples organization.")
+	local.StringVarP(
+		&i.template.Name,
+		"template",
+		"t",
+		"",
+		"The template to use when you initialize the project. "+
+			"You can use Full URI, <owner>/<repository>, or <repository> if it's part of the azure-samples organization.",
+	)
 	local.StringVarP(&i.templateBranch, "branch", "b", "", "The template branch to initialize from.")
-	local.StringVar(&i.subscription, "subscription", "", "Name or ID of an Azure subscription to use for the new environment")
+	local.StringVar(
+		&i.subscription,
+		"subscription",
+		"",
+		"Name or ID of an Azure subscription to use for the new environment",
+	)
 	local.StringVarP(&i.location, "location", "l", "", "Azure location for the new environment")
 }
 
@@ -155,7 +168,11 @@ func (i *initAction) Run(ctx context.Context, cmd *cobra.Command, args []string,
 			return fmt.Errorf("fetching template: %w", err)
 		}
 
-		log.Printf("template init, checking for duplicates. source: %s target: %s", templateStagingDir, azdCtx.ProjectDirectory())
+		log.Printf(
+			"template init, checking for duplicates. source: %s target: %s",
+			templateStagingDir,
+			azdCtx.ProjectDirectory(),
+		)
 
 		// If there are any existing files in the destination that would be overwritten by files from the
 		// template, have the user confirm they would like to overwrite these files. This is a more relaxed
@@ -234,13 +251,20 @@ func (i *initAction) Run(ctx context.Context, cmd *cobra.Command, args []string,
 	}
 
 	//create .azure when running azd init
-	err = os.MkdirAll(filepath.Join(azdCtx.ProjectDirectory(), azdcontext.EnvironmentDirectoryName), osutil.PermissionDirectory)
+	err = os.MkdirAll(
+		filepath.Join(azdCtx.ProjectDirectory(), azdcontext.EnvironmentDirectoryName),
+		osutil.PermissionDirectory,
+	)
 	if err != nil {
 		return fmt.Errorf("failed to create a directory: %w", err)
 	}
 
 	//create .gitignore or open existing .gitignore file, and contains .azure
-	gitignoreFile, err := os.OpenFile(filepath.Join(azdCtx.ProjectDirectory(), ".gitignore"), os.O_APPEND|os.O_RDWR|os.O_CREATE, osutil.PermissionFile)
+	gitignoreFile, err := os.OpenFile(
+		filepath.Join(azdCtx.ProjectDirectory(), ".gitignore"),
+		os.O_APPEND|os.O_RDWR|os.O_CREATE,
+		osutil.PermissionFile,
+	)
 	if err != nil {
 		return fmt.Errorf("fail to create or open .gitignore: %w", err)
 	}

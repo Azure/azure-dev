@@ -125,7 +125,11 @@ func (r *commandRunner) Run(ctx context.Context, args RunArgs) (RunResult, error
 		}
 	} else {
 		if args.Debug {
-			log.Printf("Exit Code:%d\nOut:%s\nErr:%s\n", cmd.ProcessState.ExitCode(), redactSensitiveData(stdout.String()), redactSensitiveData(stderr.String()))
+			log.Printf(
+				"Exit Code:%d\nOut:%s\nErr:%s\n",
+				cmd.ProcessState.ExitCode(),
+				redactSensitiveData(stdout.String()),
+				redactSensitiveData(stderr.String()))
 		}
 
 		result = RunResult{

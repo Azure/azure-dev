@@ -135,7 +135,10 @@ func (m *Manager) SetDefaultSubscription(ctx context.Context, subscriptionId str
 }
 
 // Sets the default Azure subscription for the current logged in account.
-func (m *Manager) SetDefaultSubscriptionWithName(ctx context.Context, subscriptionName string) (*config.Subscription, error) {
+func (m *Manager) SetDefaultSubscriptionWithName(
+	ctx context.Context,
+	subscriptionName string,
+) (*config.Subscription, error) {
 	subscriptions, err := m.GetSubscriptions(ctx)
 	if err != nil {
 		return nil, err

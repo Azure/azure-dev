@@ -44,7 +44,12 @@ func TestManagerGetState(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
 	mgr, _ := NewManager(*mockContext.Context, env, "", options, interactive)
 
-	provisioningScope := infra.NewSubscriptionScope(*mockContext.Context, "eastus2", env.GetSubscriptionId(), env.GetEnvName())
+	provisioningScope := infra.NewSubscriptionScope(
+		*mockContext.Context,
+		"eastus2",
+		env.GetSubscriptionId(),
+		env.GetEnvName(),
+	)
 	getResult, err := mgr.State(*mockContext.Context, provisioningScope)
 
 	require.NotNil(t, getResult)
@@ -62,7 +67,12 @@ func TestManagerDeploy(t *testing.T) {
 	mgr, _ := NewManager(*mockContext.Context, env, "", options, interactive)
 
 	deploymentPlan, _ := mgr.Plan(*mockContext.Context)
-	provisioningScope := infra.NewSubscriptionScope(*mockContext.Context, "eastus2", env.GetSubscriptionId(), env.GetEnvName())
+	provisioningScope := infra.NewSubscriptionScope(
+		*mockContext.Context,
+		"eastus2",
+		env.GetSubscriptionId(),
+		env.GetEnvName(),
+	)
 	deployResult, err := mgr.Deploy(*mockContext.Context, deploymentPlan, provisioningScope)
 
 	require.NotNil(t, deployResult)

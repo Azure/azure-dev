@@ -57,7 +57,8 @@ func TestFifoQueue(t *testing.T) {
 	// Queue 3 items
 	// Milliseconds of sleep is added between each queue attempt to ensure that no item shares the same
 	// file modification time (which is used for ordering) on certain file systems that have granularity of milliseconds.
-	// This is only for determinism in assertions. In practice, the ordering of two messages delivered around the same millisecond intervals
+	// This is only for determinism in assertions. In practice, the ordering of two messages delivered around the same
+	// millisecond intervals
 	// is not important.
 	enqueueAndAssert(storage, messages[0], t)
 	time.Sleep(time.Millisecond * 10)
@@ -343,7 +344,16 @@ func TestStorageQueue_Cleanup(t *testing.T) {
 					assert.NoError(t, err)
 
 					if slices.Contains(tt.expectedItemsRemaining, string(content)) {
-						assert.Fail(t, fmt.Sprintf("Unknown remaining file found. Filename: %s, content: %s. Expected filenames: %v, expected content: %v. ", remainingFile.Name(), string(content), tt.expectedFilesRemaining, tt.expectedItemsRemaining))
+						assert.Fail(
+							t,
+							fmt.Sprintf(
+								"Unknown remaining file found. Filename: %s, content: %s. Expected filenames: %v, expected content: %v. ",
+								remainingFile.Name(),
+								string(content),
+								tt.expectedFilesRemaining,
+								tt.expectedItemsRemaining,
+							),
+						)
 					}
 				}
 			}

@@ -8,7 +8,8 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/identity"
 )
 
-func (cli *azCli) GetResource(ctx context.Context, subscriptionId string, resourceId string) (AzCliResourceExtended, error) {
+func (cli *azCli) GetResource(
+	ctx context.Context, subscriptionId string, resourceId string) (AzCliResourceExtended, error) {
 	client, err := cli.createResourcesClient(ctx, subscriptionId)
 	if err != nil {
 		return AzCliResourceExtended{}, err
@@ -30,7 +31,12 @@ func (cli *azCli) GetResource(ctx context.Context, subscriptionId string, resour
 	}, nil
 }
 
-func (cli *azCli) ListResourceGroupResources(ctx context.Context, subscriptionId string, resourceGroupName string, listOptions *ListResourceGroupResourcesOptions) ([]AzCliResource, error) {
+func (cli *azCli) ListResourceGroupResources(
+	ctx context.Context,
+	subscriptionId string,
+	resourceGroupName string,
+	listOptions *ListResourceGroupResourcesOptions,
+) ([]AzCliResource, error) {
 	client, err := cli.createResourcesClient(ctx, subscriptionId)
 	if err != nil {
 		return nil, err
@@ -64,7 +70,11 @@ func (cli *azCli) ListResourceGroupResources(ctx context.Context, subscriptionId
 	return resources, nil
 }
 
-func (cli *azCli) ListResourceGroup(ctx context.Context, subscriptionId string, listOptions *ListResourceGroupOptions) ([]AzCliResource, error) {
+func (cli *azCli) ListResourceGroup(
+	ctx context.Context,
+	subscriptionId string,
+	listOptions *ListResourceGroupOptions,
+) ([]AzCliResource, error) {
 	client, err := cli.createResourceGroupClient(ctx, subscriptionId)
 	if err != nil {
 		return nil, err
@@ -75,7 +85,11 @@ func (cli *azCli) ListResourceGroup(ctx context.Context, subscriptionId string, 
 	options := armresources.ResourceGroupsClientListOptions{}
 	if listOptions != nil {
 		if listOptions.TagFilter != nil {
-			tagFilter := fmt.Sprintf("tagName eq '%s' and tagValue eq '%s'", listOptions.TagFilter.Key, listOptions.TagFilter.Value)
+			tagFilter := fmt.Sprintf(
+				"tagName eq '%s' and tagValue eq '%s'",
+				listOptions.TagFilter.Key,
+				listOptions.TagFilter.Value,
+			)
 			options.Filter = &tagFilter
 		} else if listOptions.Filter != nil {
 			options.Filter = listOptions.Filter
@@ -138,7 +152,10 @@ func (cli *azCli) createResourcesClient(ctx context.Context, subscriptionId stri
 	return client, nil
 }
 
-func (cli *azCli) createResourceGroupClient(ctx context.Context, subscriptionId string) (*armresources.ResourceGroupsClient, error) {
+func (cli *azCli) createResourceGroupClient(
+	ctx context.Context,
+	subscriptionId string,
+) (*armresources.ResourceGroupsClient, error) {
 	cred, err := identity.GetCredentials(ctx)
 	if err != nil {
 		return nil, err

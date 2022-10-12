@@ -60,6 +60,7 @@ func upCmd(rootOptions *internal.GlobalCommandOptions) *cobra.Command {
 		"up",
 		"Initialize application, provision Azure resources, and deploy your project with a single command.",
 		&commands.BuildOptions{
+			//nolint:lll
 			Long: `Initialize the project (if the project folder has not been initialized or cloned from a template), provision Azure resources, and deploy your project with a single command.
 
 This command executes the following in one step:
@@ -68,7 +69,9 @@ This command executes the following in one step:
 	$ azd provision
 	$ azd deploy
 
-When no template is supplied, you can optionally select an Azure Developer CLI template for cloning. Otherwise, running ` + output.WithBackticks("azd up") + ` initializes the current directory so that your project is compatible with Azure Developer CLI.`,
+When no template is supplied, you can optionally select an Azure Developer CLI template for cloning. Otherwise, running ` + output.WithBackticks(
+				"azd up",
+			) + ` initializes the current directory so that your project is compatible with Azure Developer CLI.`,
 		})
 
 	output.AddOutputParam(cmd,
@@ -83,7 +86,12 @@ type ignoreInitErrorAction struct {
 	action commands.Action
 }
 
-func (a *ignoreInitErrorAction) Run(ctx context.Context, cmd *cobra.Command, args []string, azdCtx *azdcontext.AzdContext) error {
+func (a *ignoreInitErrorAction) Run(
+	ctx context.Context,
+	cmd *cobra.Command,
+	args []string,
+	azdCtx *azdcontext.AzdContext,
+) error {
 	err := a.action.Run(ctx, cmd, args, azdCtx)
 	var envInitError *environment.EnvironmentInitError
 	if errors.As(err, &envInitError) {

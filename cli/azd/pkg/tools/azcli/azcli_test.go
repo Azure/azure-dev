@@ -175,7 +175,8 @@ func runAndCaptureUserAgent(t *testing.T) string {
 	_, _ = azCli.CreateOrUpdateServicePrincipal(context.Background(), "SUBSCRIPTION_ID", "APP_NAME", "ROLE_TO_ASSIGN")
 
 	// The outputted line will look like this:
-	// DEBUG: cli.azure.cli.core.sdk.policies:     'User-Agent': 'AZURECLI/2.35.0 (MSI) azsdk-python-azure-mgmt-resource/20.0.0 Python/3.10.3 (Windows-10-10.0.22621-SP0) azdev/0.0.0-dev.0 AZTesting=yes'
+	// DEBUG: cli.azure.cli.core.sdk.policies:     'User-Agent': 'AZURECLI/2.35.0 (MSI)
+	// azsdk-python-azure-mgmt-resource/20.0.0 Python/3.10.3 (Windows-10-10.0.22621-SP0) azdev/0.0.0-dev.0 AZTesting=yes'
 	re := regexp.MustCompile(`'User-Agent':\s+'([^']+)'`)
 
 	matches := re.FindAllStringSubmatch(stderrBuffer.String(), -1)
@@ -188,6 +189,7 @@ func Test_extractDeploymentError(t *testing.T) {
 	type args struct {
 		stderr string
 	}
+	//nolint:lll
 	tests := []struct {
 		name     string
 		args     args
@@ -246,6 +248,7 @@ InvalidTemplateDeployment: Invalid template deployment.
 }
 
 func TestAZCliGetAccessTokenTranslatesErrors(t *testing.T) {
+	//nolint:lll
 	tests := []struct {
 		name   string
 		stderr string

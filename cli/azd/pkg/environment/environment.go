@@ -29,7 +29,8 @@ const PrincipalIdEnvVarName = "AZURE_PRINCIPAL_ID"
 // TenantIdEnvVarName is the tenant that owns the subscription
 const TenantIdEnvVarName = "AZURE_TENANT_ID"
 
-// ContainerRegistryEndpointEnvVarName is the name of they key used to store the endpoint of the container registry to push to.
+// ContainerRegistryEndpointEnvVarName is the name of they key used to store the endpoint of the container registry to push
+// to.
 const ContainerRegistryEndpointEnvVarName = "AZURE_CONTAINER_REGISTRY_ENDPOINT"
 
 // ResourceGroupEnvVarName is the name of the azure resource group that should be used for deployments
@@ -44,7 +45,8 @@ type Environment struct {
 	File string
 }
 
-// Same restrictions as a deployment name (ref: https://docs.microsoft.com/azure/azure-resource-manager/management/resource-name-rules#microsoftresources)
+// Same restrictions as a deployment name (ref:
+// https://docs.microsoft.com/azure/azure-resource-manager/management/resource-name-rules#microsoftresources)
 var environmentNameRegexp = regexp.MustCompile(`^[a-zA-Z0-9-\(\)_\.]{1,64}$`)
 
 func IsValidEnvironmentName(name string) bool {

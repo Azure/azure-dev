@@ -30,7 +30,12 @@ type AzCliKeyVaultSecret struct {
 	Value string `json:"value"`
 }
 
-func (cli *azCli) GetKeyVault(ctx context.Context, subscriptionId string, resourceGroupName string, vaultName string) (*AzCliKeyVault, error) {
+func (cli *azCli) GetKeyVault(
+	ctx context.Context,
+	subscriptionId string,
+	resourceGroupName string,
+	vaultName string,
+) (*AzCliKeyVault, error) {
 	client, err := cli.createKeyVaultClient(ctx, subscriptionId)
 	if err != nil {
 		return nil, err

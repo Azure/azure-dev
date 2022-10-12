@@ -75,7 +75,7 @@ func (c *MockConsole) respond(command string, options input.ConsoleOptions) (any
 	var match *MockConsoleExpression
 
 	for _, expr := range c.expressions {
-		if expr.predicateFn(options) {
+		if command == expr.command && expr.predicateFn(options) {
 			match = expr
 			break
 		}

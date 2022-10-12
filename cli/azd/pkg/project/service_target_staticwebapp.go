@@ -98,7 +98,13 @@ func (at *staticWebAppTarget) Deploy(
 func (at *staticWebAppTarget) Endpoints(ctx context.Context) ([]string, error) {
 	// TODO: Enhance for multi-environment support
 	// https://github.com/Azure/azure-dev/issues/1152
-	if envProps, err := at.cli.GetStaticWebAppEnvironmentProperties(ctx, at.env.GetSubscriptionId(), at.scope.ResourceGroupName(), at.scope.ResourceName(), DefaultStaticWebAppEnvironmentName); err != nil {
+	if envProps, err := at.cli.GetStaticWebAppEnvironmentProperties(
+		ctx,
+		at.env.GetSubscriptionId(),
+		at.scope.ResourceGroupName(),
+		at.scope.ResourceName(),
+		DefaultStaticWebAppEnvironmentName,
+	); err != nil {
 		return nil, fmt.Errorf("fetching service properties: %w", err)
 	} else {
 		return []string{fmt.Sprintf("https://%s/", envProps.Hostname)}, nil

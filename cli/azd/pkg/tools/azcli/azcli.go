@@ -353,6 +353,7 @@ func (tok *AzCliAccessToken) UnmarshalJSON(data []byte) error {
 
 	// the format of the ExpiresOn property of the access token differs across environments
 	// see
+	//nolint:lll
 	// https://github.com/Azure/azure-sdk-for-go/blob/61e2e74b9af2cfbff74ea8bb3c6f687c582c419f/sdk/azidentity/azure_cli_credential.go
 	//
 	// nolint:errorlint
@@ -365,7 +366,7 @@ func (tok *AzCliAccessToken) UnmarshalJSON(data []byte) error {
 			expirationDate, cliErr := time.ParseInLocation(cliFormat, input, time.Local)
 			if cliErr != nil {
 				return nil, fmt.Errorf(
-					"Error parsing expiration date %q.\n\nCloudShell Error: \n%+v\n\nCLI Error:\n%+v",
+					"Error parsing expiration date %q.\n\nCloudShell Error: \n%+v\n\nCLI Error:\n%w",
 					input,
 					cloudShellErr,
 					cliErr,

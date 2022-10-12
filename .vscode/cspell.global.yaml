@@ -40,6 +40,7 @@ ignoreWords:
     - cdne
     - cdnp
     - commandrunner
+    - conjuntion
     - containerregistry
     - databricks
     - dedb
@@ -130,6 +131,7 @@ ignoreWords:
     - menuid
     - PLACEHOLDERIACTOOLS
     - LOGANALYTICS
+    - zipdeploy
 useGitignore: true
 dictionaryDefinitions:
     - name: gitHubUserAliases

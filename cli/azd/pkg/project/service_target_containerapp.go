@@ -150,7 +150,11 @@ func (at *containerAppTarget) Deploy(
 }
 
 func (at *containerAppTarget) Endpoints(ctx context.Context) ([]string, error) {
-	if containerAppProperties, err := at.cli.GetContainerAppProperties(ctx, at.env.GetSubscriptionId(), at.scope.ResourceGroupName(), at.scope.ResourceName()); err != nil {
+	if containerAppProperties, err := at.cli.GetContainerAppProperties(
+		ctx, at.env.GetSubscriptionId(),
+		at.scope.ResourceGroupName(),
+		at.scope.ResourceName(),
+	); err != nil {
 		return nil, fmt.Errorf("fetching service properties: %w", err)
 	} else {
 		endpoints := make([]string, len(containerAppProperties.HostNames))

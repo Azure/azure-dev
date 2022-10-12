@@ -58,8 +58,10 @@ func GetVersionNumber() string {
 	return pieces[0]
 }
 
-// Non-whitespace (version number), followed by some whitespace, followed by open parenthesis, optional whitespace, and word
-// 'commit', followed by not-whitespace, not-closing-parenthesis (commit hash), followed by optional whitespace and closing
+// Non-whitespace (version number), followed by some whitespace, followed by open parenthesis,
+// optional whitespace, and word
+// 'commit', followed by not-whitespace, not-closing-parenthesis (commit hash),
+// followed by optional whitespace and closing
 // parenthesis.
 var azdVersionStrRegex = regexp.MustCompile(`(\S+)\s+\(\s*commit\s+([^)\s]+)\s*\)`)
 

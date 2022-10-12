@@ -18,7 +18,11 @@ import (
 
 type ProviderKind string
 
-type NewProviderFn func(ctx context.Context, env *environment.Environment, projectPath string, infraOptions Options) (Provider, error)
+type NewProviderFn func(
+	ctx context.Context,
+	env *environment.Environment,
+	projectPath string,
+	infraOptions Options) (Provider, error)
 
 var (
 	providers map[ProviderKind]NewProviderFn = make(map[ProviderKind]NewProviderFn)

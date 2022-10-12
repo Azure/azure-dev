@@ -8,3 +8,6 @@ linters-settings:
     errorf: true
     asserts: true
     comparison: true
+  lll:
+    # GitHub recommended for code review
+    line-length: 125

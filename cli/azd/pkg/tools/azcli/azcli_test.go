@@ -189,6 +189,7 @@ func Test_extractDeploymentError(t *testing.T) {
 	type args struct {
 		stderr string
 	}
+	//nolint:lll
 	tests := []struct {
 		name     string
 		args     args
@@ -247,6 +248,7 @@ InvalidTemplateDeployment: Invalid template deployment.
 }
 
 func TestAZCliGetAccessTokenTranslatesErrors(t *testing.T) {
+	//nolint:lll
 	tests := []struct {
 		name   string
 		stderr string

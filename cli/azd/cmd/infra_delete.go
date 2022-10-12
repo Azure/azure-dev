@@ -43,7 +43,8 @@ func (a *infraDeleteAction) SetupFlags(
 		&a.purgeDelete,
 		"purge",
 		false,
-		"Does not require confirmation before it permanently deletes resources that are soft-deleted by default (for example, key vaults).",
+		"Does not require confirmation before it permanently deletes resources that are"+
+			" soft-deleted by default (for example, key vaults).",
 	)
 }
 

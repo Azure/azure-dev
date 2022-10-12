@@ -64,12 +64,19 @@ func main() {
 			// case
 			log.Printf("eliding update message for dev build")
 		} else if latestVersion.GT(curVersion) {
-			fmt.Fprintln(os.Stderr, output.WithWarningFormat("warning: your version of azd is out of date, you have %s and the latest version is %s", curVersion.String(), latestVersion.String()))
+			fmt.Fprintln(
+				os.Stderr,
+				output.WithWarningFormat(
+					"warning: your version of azd is out of date, you have %s and the latest version is %s",
+					curVersion.String(), latestVersion.String()))
 			fmt.Fprintln(os.Stderr)
 			fmt.Fprintln(os.Stderr, output.WithWarningFormat(`To update to the latest version, run:`))
 
 			if runtime.GOOS == "windows" {
-				fmt.Fprintln(os.Stderr, output.WithWarningFormat(`powershell -ex AllSigned -c "Invoke-RestMethod 'https://aka.ms/install-azd.ps1' | Invoke-Expression"`))
+				fmt.Fprintln(
+					os.Stderr,
+					output.WithWarningFormat(
+						`powershell -ex AllSigned -c "Invoke-RestMethod 'https://aka.ms/install-azd.ps1' | Invoke-Expression"`))
 			} else {
 				fmt.Fprintln(os.Stderr, output.WithWarningFormat(`curl -fsSL https://aka.ms/install-azd.sh | bash`))
 			}
@@ -115,7 +122,8 @@ func fetchLatestVersion(version chan<- semver.Version) {
 			log.Print("skipping update check since AZD_SKIP_UPDATE_CHECK is true")
 			return
 		} else if err != nil {
-			log.Printf("could not parse value for AZD_SKIP_UPDATE_CHECK a boolean (it was: %s), proceeding with update check", value)
+			log.Printf("could not parse value for AZD_SKIP_UPDATE_CHECK a boolean "+
+				"(it was: %s), proceeding with update check", value)
 		}
 	}
 
@@ -153,10 +161,15 @@ func fetchLatestVersion(version chan<- semver.Version) {
 				}
 			} else {
 				if parseVersionErr != nil {
-					log.Printf("failed to parse cached version '%s' as a semver: %v, ignoring cached value", cache.Version, parseVersionErr)
+					log.Printf("failed to parse cached version '%s' as a semver: %v,"+
+						" ignoring cached value", cache.Version, parseVersionErr)
 				}
 				if parseExpiresOnErr != nil {
-					log.Printf("failed to parse cached version expiration time '%s' as a RFC3339 timestamp: %v, ignoring cached value", cache.ExpiresOn, parseExpiresOnErr)
+					log.Printf(
+						"failed to parse cached version expiration time '%s' as a RFC3339"+
+							" timestamp: %v, ignoring cached value",
+						cache.ExpiresOn,
+						parseExpiresOnErr)
 				}
 			}
 		} else {

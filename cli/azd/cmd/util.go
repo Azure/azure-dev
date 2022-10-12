@@ -163,7 +163,11 @@ func loadOrInitEnvironment(
 		return nil, nil, err
 	}
 
-	if err := ensureEnvironmentInitialized(ctx, environmentSpec{environmentName: *environmentName}, env, console); err != nil {
+	if err := ensureEnvironmentInitialized(
+		ctx,
+		environmentSpec{environmentName: *environmentName},
+		env,
+		console); err != nil {
 		return nil, nil, fmt.Errorf("initializing environment: %w", err)
 	}
 
@@ -246,7 +250,8 @@ func ensureEnvironmentInitialized(
 					return fmt.Errorf("reading subscription id: %w", err)
 				}
 			} else {
-				subscriptionId = subscriptionSelection[len(subscriptionSelection)-len("(00000000-0000-0000-0000-000000000000)")+1 : len(subscriptionSelection)-1]
+				subscriptionId = subscriptionSelection[len(subscriptionSelection)-
+					len("(00000000-0000-0000-0000-000000000000)")+1 : len(subscriptionSelection)-1]
 			}
 		}
 

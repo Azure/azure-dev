@@ -111,7 +111,8 @@ func (ica *infraCreateAction) Run(
 				)
 			}
 
-			if err := formatter.Format(contracts.NewEnvRefreshResultFromProvisioningState(stateResult.State), writer, nil); err != nil {
+			if err := formatter.Format(
+				contracts.NewEnvRefreshResultFromProvisioningState(stateResult.State), writer, nil); err != nil {
 				return fmt.Errorf(
 					"deployment failed and the deployment result could not be displayed: %w",
 					multierr.Combine(err, err),
@@ -123,7 +124,9 @@ func (ica *infraCreateAction) Run(
 	}
 
 	for _, svc := range prj.Services {
-		if err := svc.RaiseEvent(ctx, project.Deployed, map[string]any{"bicepOutput": deployResult.Deployment.Outputs}); err != nil {
+		if err := svc.RaiseEvent(
+			ctx, project.Deployed,
+			map[string]any{"bicepOutput": deployResult.Deployment.Outputs}); err != nil {
 			return err
 		}
 	}

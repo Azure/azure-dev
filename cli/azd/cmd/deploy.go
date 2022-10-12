@@ -29,6 +29,7 @@ func deployCmd(rootOptions *internal.GlobalCommandOptions) *cobra.Command {
 		"deploy",
 		"Deploy the application's code to Azure.",
 		&commands.BuildOptions{
+			//nolint:lll
 			Long: `Deploy the application's code to Azure.
 
 When no ` + output.WithBackticks("--service") + ` value is specified, all services in the ` + output.WithBackticks("azure.yaml") + ` file (found in the root of your project) are deployed.
@@ -66,7 +67,8 @@ func (d *deployAction) SetupFlags(
 		&d.serviceName,
 		"service",
 		"",
-		"Deploys a specific service (when the string is unspecified, all services that are listed in the "+azdcontext.ProjectFileName+" file are deployed).",
+		"Deploys a specific service (when the string is unspecified, "+
+			"all services that are listed in the "+azdcontext.ProjectFileName+" file are deployed).",
 	)
 }
 

@@ -168,7 +168,8 @@ func Test_DeployFunctionAppUsingZipFile(t *testing.T) {
 		require.EqualError(
 			t,
 			err,
-			"failed deploying function app: this error is printed verbatim but would be enriched since we passed args.EnrichError.true",
+			"failed deploying function app: this error is printed verbatim but would "+
+				"be enriched since we passed args.EnrichError.true",
 		)
 	})
 }

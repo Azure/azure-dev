@@ -27,6 +27,7 @@ func restoreCmd(rootOptions *internal.GlobalCommandOptions) *cobra.Command {
 		"restore",
 		"Restore application dependencies.",
 		&commands.BuildOptions{
+			//nolint:lll
 			Long: `Restore application dependencies.
 
 Run this command to download and install all the required libraries so that you can build, run, and debug the application locally.
@@ -46,7 +47,8 @@ func (r *restoreAction) SetupFlags(persis, local *pflag.FlagSet) {
 		&r.serviceName,
 		"service",
 		"",
-		"Restores a specific service (when the string is unspecified, all services that are listed in the "+azdcontext.ProjectFileName+" file are restored).",
+		"Restores a specific service (when the string is unspecified, "+
+			"all services that are listed in the "+azdcontext.ProjectFileName+" file are restored).",
 	)
 }
 

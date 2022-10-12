@@ -57,7 +57,11 @@ func (np *npmProject) Package(ctx context.Context, progress chan<- string) (stri
 	}
 
 	progress <- "Copying deployment package"
-	if err := copy.Copy(publishSource, publishRoot, skipPatterns(filepath.Join(publishSource, "node_modules"), filepath.Join(publishSource, ".azure"))); err != nil {
+	if err := copy.Copy(
+		publishSource,
+		publishRoot,
+		skipPatterns(
+			filepath.Join(publishSource, "node_modules"), filepath.Join(publishSource, ".azure"))); err != nil {
 		return "", fmt.Errorf("publishing for %s: %w", np.config.Name, err)
 	}
 

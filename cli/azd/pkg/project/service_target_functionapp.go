@@ -75,7 +75,10 @@ func (f *functionAppTarget) Endpoints(ctx context.Context) ([]string, error) {
 	// TODO(azure/azure-dev#670) Implement this. For now we just return an empty set of endpoints and
 	// a nil error.  In `deploy` we just loop over the endpoint array and print any endpoints, so returning
 	// an empty array and nil error will mean "no endpoints".
-	if props, err := f.cli.GetFunctionAppProperties(ctx, f.env.GetSubscriptionId(), f.scope.ResourceGroupName(), f.scope.ResourceName()); err != nil {
+	if props, err := f.cli.GetFunctionAppProperties(
+		ctx, f.env.GetSubscriptionId(),
+		f.scope.ResourceGroupName(),
+		f.scope.ResourceName()); err != nil {
 		return nil, fmt.Errorf("fetching service properties: %w", err)
 	} else {
 		endpoints := make([]string, len(props.HostNames))

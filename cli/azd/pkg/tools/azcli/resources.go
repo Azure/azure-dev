@@ -8,7 +8,8 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/identity"
 )
 
-func (cli *azCli) GetResource(ctx context.Context, subscriptionId string, resourceId string) (AzCliResourceExtended, error) {
+func (cli *azCli) GetResource(
+	ctx context.Context, subscriptionId string, resourceId string) (AzCliResourceExtended, error) {
 	client, err := cli.createResourcesClient(ctx, subscriptionId)
 	if err != nil {
 		return AzCliResourceExtended{}, err

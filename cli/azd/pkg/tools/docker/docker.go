@@ -36,7 +36,8 @@ func (d *Docker) Login(ctx context.Context, loginServer string, username string,
 	return nil
 }
 
-// Runs a Docker build for a given Dockerfile. If the platform is not specified (empty), it defaults to amd64. If the build
+// Runs a Docker build for a given Dockerfile. If the platform is not specified (empty),
+// it defaults to amd64. If the build
 // is successful, the function
 // returns the image id of the built image.
 func (d *Docker) Build(

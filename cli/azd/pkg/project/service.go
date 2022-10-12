@@ -88,8 +88,8 @@ func (svc *Service) Deploy(
 	return result, progress
 }
 
-// GetServiceResourceName attempts to find the name of the azure resource with the 'azd-service-name' tag set to the service
-// key.
+// GetServiceResourceName attempts to find the name of the azure resource with the
+// 'azd-service-name' tag set to the service key.
 func GetServiceResourceName(
 	ctx context.Context,
 	resourceGroupName string,

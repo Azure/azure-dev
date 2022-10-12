@@ -465,6 +465,8 @@ func (p *BicepProvider) getKeyVaultsToPurge(
 // See
 // https://docs.microsoft.com/azure/key-vault/general/key-vault-recovery?tabs=azure-portal#what-are-soft-delete-and-purge-protection
 // for more information on this feature.
+//
+//nolint:lll
 func (p *BicepProvider) purgeKeyVaults(
 	ctx context.Context,
 	asyncContext *async.InteractiveTaskContextWithProgress[*DestroyResult, *DestroyProgress],
@@ -473,7 +475,8 @@ func (p *BicepProvider) purgeKeyVaults(
 ) error {
 	if len(keyVaults) > 0 && !options.Purge() {
 		keyVaultWarning := fmt.Sprintf(""+
-			"\nThis operation will delete and purge %d Key Vaults. These Key Vaults have soft delete enabled allowing them to be recovered for a period \n"+
+			"\nThis operation will delete and purge %d Key Vaults. These Key Vaults have soft delete enabled "+
+			"allowing them to be recovered for a period \n"+
 			"of time after deletion. During this period, their names may not be reused.\n"+
 			"You can use argument --purge to skip this confirmation.\n\n",
 			len(keyVaults))

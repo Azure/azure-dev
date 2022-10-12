@@ -372,7 +372,10 @@ func (p *GitHubCiProvider) configureConnection(
 
 	console.Message(ctx, "Configuring repository environment.\n")
 
-	for _, envName := range []string{environment.EnvNameEnvVarName, environment.LocationEnvVarName, environment.SubscriptionIdEnvVarName} {
+	for _, envName := range []string{
+		environment.EnvNameEnvVarName,
+		environment.LocationEnvVarName,
+		environment.SubscriptionIdEnvVarName} {
 		console.Message(ctx, fmt.Sprintf("Setting %s GitHub repo secret.\n", envName))
 
 		if err := ghCli.SetSecret(ctx, repoSlug, envName, azdEnvironment.Values[envName]); err != nil {

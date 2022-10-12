@@ -107,7 +107,8 @@ func (sc *ServiceConfig) GetServiceTarget(
 }
 
 // GetFrameworkService constructs a framework service from the underlying service configuration
-func (sc *ServiceConfig) GetFrameworkService(ctx context.Context, env *environment.Environment) (*FrameworkService, error) {
+func (sc *ServiceConfig) GetFrameworkService(
+	ctx context.Context, env *environment.Environment) (*FrameworkService, error) {
 	var frameworkService FrameworkService
 
 	switch sc.Language {

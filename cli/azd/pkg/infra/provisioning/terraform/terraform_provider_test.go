@@ -275,6 +275,7 @@ func prepareDeployMocks(commandRunner *execmock.MockCommandRunner) {
 		Stderr: "",
 	})
 
+	//nolint:lll
 	output := `{"AZURE_LOCATION":{"sensitive": false,"type": "string","value": "westus2"},"RG_NAME":{"sensitive": false,"type": "string","value": "rg-test-env"}}`
 	commandRunner.When(func(args exec.RunArgs, command string) bool {
 		return args.Cmd == "terraform" && strings.Contains(command, "output")
@@ -304,6 +305,7 @@ func prepareDestroyMocks(commandRunner *execmock.MockCommandRunner) {
 		Stderr: "",
 	})
 
+	//nolint:lll
 	output := `{"AZURE_LOCATION":{"sensitive": false,"type": "string","value": "westus2"},"RG_NAME":{"sensitive": false,"type": "string","value": "rg-test-env"}}`
 	commandRunner.When(func(args exec.RunArgs, command string) bool {
 		return args.Cmd == "terraform" && strings.Contains(command, "output")

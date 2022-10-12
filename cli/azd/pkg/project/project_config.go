@@ -245,7 +245,8 @@ func ParseProjectConfig(yamlContent string, env *environment.Environment) (*Proj
 
 	if err = yaml.Unmarshal([]byte(file), &projectFile); err != nil {
 		return nil, fmt.Errorf(
-			"unable to parse azure.yaml file. Please check the format of the file, and also verify you have the latest version of the CLI: %w",
+			"unable to parse azure.yaml file. Please check the format of the file, "+
+				"and also verify you have the latest version of the CLI: %w",
 			err,
 		)
 	}

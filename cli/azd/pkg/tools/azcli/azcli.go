@@ -382,6 +382,7 @@ func (tok *AzCliAccessToken) UnmarshalJSON(data []byte) error {
 	// https://github.com/Azure/azure-sdk-for-go/blob/61e2e74b9af2cfbff74ea8bb3c6f687c582c419f/sdk/azidentity/azure_cli_credential.go
 	//
 	// nolint:errorlint
+	//nolint:lll
 	parseExpirationDate := func(input string) (*time.Time, error) {
 		// CloudShell (and potentially the Azure CLI in future)
 		expirationDate, cloudShellErr := time.Parse(time.RFC3339, input)
@@ -956,7 +957,10 @@ func (cli *azCli) DeployToResourceGroup(
 	return deploymentResult, nil
 }
 
-func (cli *azCli) DeleteSubscriptionDeployment(ctx context.Context, subscriptionId string, deploymentName string) error {
+func (cli *azCli) DeleteSubscriptionDeployment(
+	ctx context.Context,
+	subscriptionId string,
+	deploymentName string) error {
 	res, err := cli.runAzCommand(
 		ctx,
 		"deployment",
@@ -1089,7 +1093,8 @@ func (cli *azCli) CreateOrUpdateServicePrincipal(
 	applicationName string,
 	roleName string,
 ) (json.RawMessage, error) {
-	// By default the role assignment is tied to the root of the currently active subscription (in the az cli), which may not
+	// By default the role assignment is tied to the root of the currently active subscription
+	// (in the az cli), which may not
 	// be the same
 	// subscription that the user has requested, so build the scope ourselves.
 	scopes := azure.SubscriptionRID(subscriptionId)
@@ -1243,9 +1248,11 @@ func (cli *azCli) runAzCommandWithArgs(ctx context.Context, args exec.RunArgs) (
 
 // Azure Active Directory codes can be referenced via https://login.microsoftonline.com/error?code=<ERROR_CODE>,
 // where ERROR_CODE is the digits portion of an AAD error code. Example: AADSTS70043 has error code 70043
-// Additionally, https://learn.microsoft.com/azure/active-directory/develop/reference-aadsts-error-codes#aadsts-error-codes
+// Additionally,
+// https://learn.microsoft.com/azure/active-directory/develop/reference-aadsts-error-codes#aadsts-error-codes
 // is a helpful resource with a list of error codes and messages.
-
+//
+//nolint:lll
 var isNotLoggedInMessageRegex = regexp.MustCompile(`Please run ('|")az login('|") to (setup account|access your accounts)\.`)
 
 // Regex for the following errors related to refresh tokens:

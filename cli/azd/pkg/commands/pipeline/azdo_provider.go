@@ -137,7 +137,9 @@ func (p *AzdoScmProvider) createNewGitRepositoryFromInput(ctx context.Context, c
 			console.Message(ctx, fmt.Sprintf("error: the repo name '%s' is already in use\n", name))
 			continue // try again
 		} else if strings.Contains(message, "TF401025: 'repoName' is not a valid name for a Git repository.") {
-			console.Message(ctx, fmt.Sprintf("error: '%s' is not a valid Azure DevOps repo name. See https://aka.ms/azure-dev/azdo-repo-naming\n", name))
+			console.Message(ctx, fmt.Sprintf(
+				"error: '%s' is not a valid Azure DevOps repo name. "+
+					"See https://aka.ms/azure-dev/azdo-repo-naming\n", name))
 			continue // try again
 		} else if err != nil {
 			return "", fmt.Errorf("creating repository: %w", err)

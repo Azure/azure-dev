@@ -40,7 +40,11 @@ func (pp *pythonProject) Package(_ context.Context, progress chan<- string) (str
 	}
 
 	progress <- "Copying deployment package"
-	if err := copy.Copy(publishSource, publishRoot, skipPatterns(filepath.Join(publishSource, "__pycache__"), filepath.Join(publishSource, ".azure"))); err != nil {
+	if err := copy.Copy(
+		publishSource,
+		publishRoot,
+		skipPatterns(
+			filepath.Join(publishSource, "__pycache__"), filepath.Join(publishSource, ".azure"))); err != nil {
 		return "", fmt.Errorf("publishing for %s: %w", pp.config.Name, err)
 	}
 

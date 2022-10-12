@@ -330,7 +330,8 @@ func (t *TerraformProvider) createPlanArgs(isRemoteBackendConfig bool) []string 
 }
 
 // Creates the terraform apply CLI arguments
-func (t *TerraformProvider) createApplyArgs(isRemoteBackendConfig bool, data TerraformDeploymentDetails) ([]string, error) {
+func (t *TerraformProvider) createApplyArgs(
+	isRemoteBackendConfig bool, data TerraformDeploymentDetails) ([]string, error) {
 	args := []string{}
 	if !isRemoteBackendConfig {
 		args = append(args, fmt.Sprintf("-state=%s", data.localStateFilePath))

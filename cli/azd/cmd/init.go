@@ -41,6 +41,7 @@ func initCmd(rootOptions *internal.GlobalCommandOptions) *cobra.Command {
 		"init",
 		"Initialize a new application.",
 		&commands.BuildOptions{
+			//nolint:lll
 			Long: `Initialize a new application.
 
 When no template is supplied, you can optionally select an Azure Developer CLI template for cloning. Otherwise, ` + output.WithBackticks("azd init") + ` initializes the current directory and creates resources so that your project is compatible with Azure Developer CLI.
@@ -67,7 +68,8 @@ func (i *initAction) SetupFlags(
 		"template",
 		"t",
 		"",
-		"The template to use when you initialize the project. You can use Full URI, <owner>/<repository>, or <repository> if it's part of the azure-samples organization.",
+		"The template to use when you initialize the project. "+
+			"You can use Full URI, <owner>/<repository>, or <repository> if it's part of the azure-samples organization.",
 	)
 	local.StringVarP(&i.templateBranch, "branch", "b", "", "The template branch to initialize from.")
 	local.StringVar(

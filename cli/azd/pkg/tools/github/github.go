@@ -223,6 +223,7 @@ func (cli *ghCli) GitHubActionsExists(ctx context.Context, repoSlug string) (boo
 	return true, nil
 }
 
+//nolint:lll
 var isGhCliNotLoggedInMessageRegex = regexp.MustCompile(
 	"(To authenticate, please run `gh auth login`\\.)|(Try authenticating with:  gh auth login)|(To re-authenticate, run: gh auth login)",
 )

@@ -271,7 +271,8 @@ func (rm *AzureResourceManager) appendDeploymentResourcesRecursive(
 	deploymentName string,
 	resourceOperations *[]azcli.AzCliResourceOperation,
 ) error {
-	operations, err := rm.azCli.ListResourceGroupDeploymentOperations(ctx, subscriptionId, resourceGroupName, deploymentName)
+	operations, err := rm.azCli.ListResourceGroupDeploymentOperations(
+		ctx, subscriptionId, resourceGroupName, deploymentName)
 	if err != nil {
 		return fmt.Errorf("getting subscription deployment operations: %w", err)
 	}
@@ -288,7 +289,8 @@ func (rm *AzureResourceManager) appendDeploymentResourcesRecursive(
 			if err != nil {
 				return fmt.Errorf("appending deployment resources: %w", err)
 			}
-		} else if operation.Properties.ProvisioningOperation == "Create" && strings.TrimSpace(operation.Properties.TargetResource.ResourceType) != "" {
+		} else if operation.Properties.ProvisioningOperation == "Create" &&
+			strings.TrimSpace(operation.Properties.TargetResource.ResourceType) != "" {
 			*resourceOperations = append(*resourceOperations, operation)
 		}
 	}

@@ -546,7 +546,7 @@ func (p *BicepProvider) purgeKeyVaults(
 	return nil
 }
 
-func (p *BicepProvider) getAppConfigs(
+func (p *BicepProvider) getAppConfigsToPurge(
 	ctx context.Context,
 	groupedResources map[string][]azcli.AzCliResource,
 ) ([]*azcli.AzCliAppConfig, error) {
@@ -559,31 +559,15 @@ func (p *BicepProvider) getAppConfigs(
 				if err != nil {
 					return nil, fmt.Errorf("listing app configuration %s properties: %w", resource.Name, err)
 				}
-				configs = append(configs, config)
+
+				if !config.Properties.EnablePurgeProtection {
+					configs = append(configs, config)
+				}
 			}
 		}
 	}
 
 	return configs, nil
-}
-
-func (p *BicepProvider) getAppConfigsToPurge(
-	ctx context.Context,
-	groupedResources map[string][]azcli.AzCliResource,
-) ([]*azcli.AzCliAppConfig, error) {
-	configs, err := p.getAppConfigs(ctx, groupedResources)
-	if err != nil {
-		return nil, err
-	}
-
-	configsToPurge := []*azcli.AzCliAppConfig{}
-	for _, c := range configs {
-		if !c.Properties.EnablePurgeProtection {
-			configsToPurge = append(configsToPurge, c)
-		}
-	}
-
-	return configsToPurge, nil
 }
 
 // Azure AppConfigurations have a "soft delete" functionality (now enabled by default) where a

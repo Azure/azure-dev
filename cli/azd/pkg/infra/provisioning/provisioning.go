@@ -14,9 +14,9 @@ import (
 	"github.com/drone/envsubst"
 )
 
-func UpdateEnvironment(env *environment.Environment, outputs *map[string]OutputParameter) error {
-	if len(*outputs) > 0 {
-		for key, param := range *outputs {
+func UpdateEnvironment(env *environment.Environment, outputs map[string]OutputParameter) error {
+	if len(outputs) > 0 {
+		for key, param := range outputs {
 			env.Values[key] = fmt.Sprintf("%v", param.Value)
 		}
 
@@ -28,7 +28,8 @@ func UpdateEnvironment(env *environment.Environment, outputs *map[string]OutputP
 	return nil
 }
 
-// Copies the an input parameters file templateFilePath to inputFilePath after replacing environment variable references in the contents```
+// Copies the an input parameters file templateFilePath to inputFilePath after replacing environment variable references in
+// the contents```
 func CreateInputParametersFile(templateFilePath string, inputFilePath string, envValues map[string]string) error {
 	// Copy the parameter template file to the environment working directory and do substitutions.
 	log.Printf("Reading parameters template file from: %s", templateFilePath)

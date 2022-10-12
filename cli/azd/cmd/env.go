@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 
+	"github.com/azure/azure-dev/cli/azd/cmd/contracts"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
@@ -25,6 +26,7 @@ func envCmd(rootOptions *internal.GlobalCommandOptions) *cobra.Command {
 	root := &cobra.Command{
 		Use:   "env",
 		Short: "Manage environments.",
+		//nolint:lll
 		Long: `Manage environments.
 
 With this command group, you can create a new environment or get, set, and list your application environments. An application can have multiple environments (for example, dev, test, prod), each with a different configuration (that is, connectivity information) for accessing Azure resources. 
@@ -253,7 +255,13 @@ func (en *envNewAction) Run(ctx context.Context) error {
 		return fmt.Errorf("saving default environment: %w", err)
 	}
 
-	return nil
+func newEnvNewAction(azdCtx *azdcontext.AzdContext, azcli azcli.AzCli, flags envNewFlags, console input.Console) *envNewAction {
+	return &envNewAction{
+		azdCtx:  azdCtx,
+		azCli:   azcli,
+		flags:   flags,
+		console: console,
+	}
 }
 
 func envRefreshCmdDesign(global *internal.GlobalCommandOptions) (*cobra.Command, *struct{}) {

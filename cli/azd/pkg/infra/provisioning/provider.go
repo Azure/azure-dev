@@ -18,7 +18,11 @@ import (
 
 type ProviderKind string
 
-type NewProviderFn func(ctx context.Context, env *environment.Environment, projectPath string, infraOptions Options) (Provider, error)
+type NewProviderFn func(
+	ctx context.Context,
+	env *environment.Environment,
+	projectPath string,
+	infraOptions Options) (Provider, error)
 
 var (
 	providers map[ProviderKind]NewProviderFn = make(map[ProviderKind]NewProviderFn)
@@ -71,13 +75,32 @@ type DestroyProgress struct {
 	Timestamp time.Time
 }
 
+type StateResult struct {
+	State *State
+}
+
+type StateProgress struct {
+	Message   string
+	Timestamp time.Time
+}
+
 type Provider interface {
 	Name() string
 	RequiredExternalTools() []tools.ExternalTool
-	GetDeployment(ctx context.Context, scope infra.Scope) *async.InteractiveTaskWithProgress[*DeployResult, *DeployProgress]
+	// State gets the current state of the infrastructure, this contains both the provisioned resources and any outputs from
+	// the module.
+	State(ctx context.Context, scope infra.Scope) *async.InteractiveTaskWithProgress[*StateResult, *StateProgress]
 	Plan(ctx context.Context) *async.InteractiveTaskWithProgress[*DeploymentPlan, *DeploymentPlanningProgress]
-	Deploy(ctx context.Context, plan *DeploymentPlan, scope infra.Scope) *async.InteractiveTaskWithProgress[*DeployResult, *DeployProgress]
-	Destroy(ctx context.Context, deployment *Deployment, options DestroyOptions) *async.InteractiveTaskWithProgress[*DestroyResult, *DestroyProgress]
+	Deploy(
+		ctx context.Context,
+		plan *DeploymentPlan,
+		scope infra.Scope,
+	) *async.InteractiveTaskWithProgress[*DeployResult, *DeployProgress]
+	Destroy(
+		ctx context.Context,
+		deployment *Deployment,
+		options DestroyOptions,
+	) *async.InteractiveTaskWithProgress[*DestroyResult, *DestroyProgress]
 }
 
 // Registers a provider creation function for the specified provider kind
@@ -90,7 +113,12 @@ func RegisterProvider(kind ProviderKind, newFn NewProviderFn) error {
 	return nil
 }
 
-func NewProvider(ctx context.Context, env *environment.Environment, projectPath string, infraOptions Options) (Provider, error) {
+func NewProvider(
+	ctx context.Context,
+	env *environment.Environment,
+	projectPath string,
+	infraOptions Options,
+) (Provider, error) {
 	var provider Provider
 
 	if infraOptions.Provider == "" {
@@ -98,6 +126,7 @@ func NewProvider(ctx context.Context, env *environment.Environment, projectPath 
 	}
 
 	newProviderFn, ok := providers[infraOptions.Provider]
+
 	if !ok {
 		return nil, fmt.Errorf("provider '%s' is not supported", infraOptions.Provider)
 	}

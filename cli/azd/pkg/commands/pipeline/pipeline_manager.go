@@ -18,6 +18,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/git"
+	"github.com/sethvargo/go-retry"
 )
 
 type PipelineManagerArgs struct {
@@ -47,9 +48,9 @@ func NewPipelineManager(azdCtx *azdcontext.AzdContext, global *internal.GlobalCo
 }
 
 // requiredTools get all the provider's required tools.
-func (i *PipelineManager) requiredTools() []tools.ExternalTool {
-	reqTools := i.ScmProvider.requiredTools()
-	reqTools = append(reqTools, i.CiProvider.requiredTools()...)
+func (i *PipelineManager) requiredTools(ctx context.Context) []tools.ExternalTool {
+	reqTools := i.ScmProvider.requiredTools(ctx)
+	reqTools = append(reqTools, i.CiProvider.requiredTools(ctx)...)
 	return reqTools
 }
 
@@ -67,7 +68,11 @@ func (i *PipelineManager) preConfigureCheck(ctx context.Context) error {
 }
 
 // ensureRemote get the git project details from a path and remote name using the scm provider.
-func (i *PipelineManager) ensureRemote(ctx context.Context, repositoryPath string, remoteName string) (*gitRepositoryDetails, error) {
+func (i *PipelineManager) ensureRemote(
+	ctx context.Context,
+	repositoryPath string,
+	remoteName string,
+) (*gitRepositoryDetails, error) {
 	gitCli := git.NewGitCli(ctx)
 	remoteUrl, err := gitCli.GetRemoteUrl(ctx, repositoryPath, remoteName)
 	if err != nil {
@@ -114,7 +119,10 @@ func (i *PipelineManager) getGitRepoDetails(ctx context.Context) (*gitRepository
 		case errors.Is(err, git.ErrNoSuchRemote):
 			// Offer the user a chance to create the remote if one does not exist.
 			addRemote, err := console.Confirm(ctx, input.ConsoleOptions{
-				Message:      fmt.Sprintf("A remote named \"%s\" was not found. Would you like to configure one?", i.PipelineRemoteName),
+				Message: fmt.Sprintf(
+					"A remote named \"%s\" was not found. Would you like to configure one?",
+					i.PipelineRemoteName,
+				),
 				DefaultValue: true,
 			})
 			if err != nil {
@@ -177,11 +185,16 @@ func (i *PipelineManager) pushGitRepo(ctx context.Context, currentBranch string)
 
 	console.Message(ctx, "Pushing changes")
 
-	if err := gitCli.PushUpstream(ctx, i.AzdCtx.ProjectDirectory(), i.PipelineRemoteName, currentBranch); err != nil {
-		return fmt.Errorf("pushing changes: %w", err)
-	}
-
-	return nil
+	// If user has a git credential manager with some cached credentials
+	// and the credentials are rotated, the push operation will fail and the credential manager would remove the cache
+	// Then, on the next intent to push code, there should be a prompt for credentials.
+	// Due to this, we use retry here, so we can run the second intent to prompt for credentials one more time
+	return retry.Do(ctx, retry.WithMaxRetries(3, retry.NewConstant(100*time.Millisecond)), func(ctx context.Context) error {
+		if err := gitCli.PushUpstream(ctx, i.AzdCtx.ProjectDirectory(), i.PipelineRemoteName, currentBranch); err != nil {
+			return retry.RetryableError(fmt.Errorf("pushing changes: %w", err))
+		}
+		return nil
+	})
 }
 
 // Configure is the main function from the pipeline manager which takes care
@@ -195,7 +208,7 @@ func (manager *PipelineManager) Configure(ctx context.Context) error {
 
 	// check all required tools are installed
 	azCli := azcli.GetAzCli(ctx)
-	requiredTools := manager.requiredTools()
+	requiredTools := manager.requiredTools(ctx)
 	requiredTools = append(requiredTools, azCli)
 	if err := tools.EnsureInstalled(ctx, requiredTools...); err != nil {
 		return err
@@ -214,7 +227,10 @@ func (manager *PipelineManager) Configure(ctx context.Context) error {
 		manager.PipelineServicePrincipalName = fmt.Sprintf("az-dev-%s", time.Now().UTC().Format("01-02-2006-15-04-05"))
 	}
 
-	inputConsole.Message(ctx, fmt.Sprintf("Creating or updating service principal %s.\n", manager.PipelineServicePrincipalName))
+	inputConsole.Message(
+		ctx,
+		fmt.Sprintf("Creating or updating service principal %s.\n", manager.PipelineServicePrincipalName),
+	)
 
 	credentials, err := azCli.CreateOrUpdateServicePrincipal(
 		ctx,

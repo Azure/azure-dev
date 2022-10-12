@@ -2,12 +2,12 @@ package telemetry
 
 import (
 	"context"
-	"os"
 	"sync"
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/internal"
 	appinsightsexporter "github.com/azure/azure-dev/cli/azd/internal/telemetry/appinsights-exporter"
+	"github.com/azure/azure-dev/cli/azd/test/ostest"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -28,9 +28,24 @@ func TestGetTelemetrySystem(t *testing.T) {
 		expectNil    bool
 		expectConfig appinsightsexporter.EndpointConfig
 	}{
-		{"DevVersion", args{"0.0.0-dev.0 (commit 0000000000000000000000000000000000000000)", "unset"}, false, devEndpointConfig},
-		{"DevVersionTelemetryEnabled", args{"0.0.0-dev.0 (commit 0000000000000000000000000000000000000000)", "yes"}, false, devEndpointConfig},
-		{"DevVersionTelemetryDisabled", args{"0.0.0-dev.0 (commit 0000000000000000000000000000000000000000)", "no"}, true, devEndpointConfig},
+		{
+			"DevVersion",
+			args{"0.0.0-dev.0 (commit 0000000000000000000000000000000000000000)", "unset"},
+			false,
+			devEndpointConfig,
+		},
+		{
+			"DevVersionTelemetryEnabled",
+			args{"0.0.0-dev.0 (commit 0000000000000000000000000000000000000000)", "yes"},
+			false,
+			devEndpointConfig,
+		},
+		{
+			"DevVersionTelemetryDisabled",
+			args{"0.0.0-dev.0 (commit 0000000000000000000000000000000000000000)", "no"},
+			true,
+			devEndpointConfig,
+		},
 
 		{"ProdVersion", args{"1.0.0 (commit 13ec2b11aa755b11640fa16b8664cb8741d5d300)", "no"}, true, prodEndpointConfig},
 		{"ProdVersion", args{"1.0.0 (commit 13ec2b11aa755b11640fa16b8664cb8741d5d300)", "unset"}, false, prodEndpointConfig},
@@ -43,9 +58,9 @@ func TestGetTelemetrySystem(t *testing.T) {
 			internal.Version = tt.args.version
 
 			if tt.args.disableTelemetryEnvVarValue == "unset" {
-				os.Unsetenv(collectTelemetryEnvVar)
+				ostest.Unsetenv(t, collectTelemetryEnvVar)
 			} else {
-				os.Setenv(collectTelemetryEnvVar, tt.args.disableTelemetryEnvVarValue)
+				ostest.Setenv(t, collectTelemetryEnvVar, tt.args.disableTelemetryEnvVarValue)
 			}
 
 			ts := GetTelemetrySystem()
@@ -61,8 +76,6 @@ func TestGetTelemetrySystem(t *testing.T) {
 				err := ts.Shutdown(context.Background())
 				assert.NoError(t, err)
 			}
-
-			os.Unsetenv(collectTelemetryEnvVar)
 			once = sync.Once{}
 		})
 	}

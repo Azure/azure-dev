@@ -26,6 +26,7 @@ func NewRootCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "azd",
 		Short: "Azure Developer CLI is a command-line interface for developers who build Azure solutions.",
+		//nolint:lll
 		Long: `Azure Developer CLI is a command-line interface for developers who build Azure solutions.
 
 To begin working with Azure Developer CLI, run the ` + output.WithBackticks("azd up") + ` command by supplying a sample template in an empty directory:
@@ -81,8 +82,15 @@ For more information, visit the Azure Developer CLI Dev Hub: https://aka.ms/azur
 	cmd.PersistentFlags().StringVarP(&opts.EnvironmentName, "environment", "e", "", "The name of the environment to use.")
 	cmd.PersistentFlags().StringVarP(&opts.Cwd, "cwd", "C", "", "Sets the current working directory.")
 	cmd.PersistentFlags().BoolVar(&opts.EnableDebugLogging, "debug", false, "Enables debugging and diagnostics logging.")
-	cmd.PersistentFlags().BoolVar(&opts.NoPrompt, "no-prompt", false, "Accepts the default value instead of prompting, or it fails if there is no default.")
-	cmd.SetHelpTemplate(fmt.Sprintf("%s\nPlease let us know how we are doing: https://aka.ms/azure-dev/hats\n", cmd.HelpTemplate()))
+	cmd.PersistentFlags().
+		BoolVar(
+			&opts.NoPrompt,
+			"no-prompt",
+			false,
+			"Accepts the default value instead of prompting, or it fails if there is no default.")
+	cmd.SetHelpTemplate(
+		fmt.Sprintf("%s\nPlease let us know how we are doing: https://aka.ms/azure-dev/hats\n", cmd.HelpTemplate()),
+	)
 
 	opts.EnableTelemetry = telemetry.IsTelemetryEnabled()
 

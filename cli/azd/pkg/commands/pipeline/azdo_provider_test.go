@@ -5,7 +5,6 @@ package pipeline
 
 import (
 	"context"
-	"os"
 	"path"
 	"testing"
 
@@ -13,6 +12,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/console"
+	"github.com/azure/azure-dev/cli/azd/test/ostest"
 	"github.com/stretchr/testify/require"
 )
 
@@ -83,8 +83,8 @@ func Test_azdo_provider_preConfigureCheck(t *testing.T) {
 		// arrange
 		testPat := "12345"
 		provider := getEmptyAzdoScmProviderTestHarness()
-		os.Setenv(azdo.AzDoEnvironmentOrgName, "testOrg")
-		os.Setenv(azdo.AzDoPatName, testPat)
+		t.Setenv(azdo.AzDoEnvironmentOrgName, "testOrg")
+		t.Setenv(azdo.AzDoPatName, testPat)
 		testConsole := console.NewMockConsole()
 		ctx := context.Background()
 
@@ -93,15 +93,12 @@ func Test_azdo_provider_preConfigureCheck(t *testing.T) {
 
 		// assert
 		require.NoError(t, e)
-
-		//cleanup
-		os.Unsetenv(azdo.AzDoPatName)
 	})
 
 	t.Run("returns an error if no pat is provided", func(t *testing.T) {
 		// arrange
-		os.Unsetenv(azdo.AzDoPatName)
-		os.Setenv(azdo.AzDoEnvironmentOrgName, "testOrg")
+		ostest.Unsetenv(t, azdo.AzDoPatName)
+		ostest.Setenv(t, azdo.AzDoEnvironmentOrgName, "testOrg")
 		provider := getEmptyAzdoScmProviderTestHarness()
 		testConsole := console.NewMockConsole()
 		testPat := "testPAT12345"

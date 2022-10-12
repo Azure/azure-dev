@@ -33,9 +33,9 @@ type GitHubScmProvider struct {
 
 // requiredTools return the list of external tools required by
 // GitHub provider during its execution.
-func (p *GitHubScmProvider) requiredTools() []tools.ExternalTool {
+func (p *GitHubScmProvider) requiredTools(ctx context.Context) []tools.ExternalTool {
 	return []tools.ExternalTool{
-		github.NewGitHubCli(context.Background()),
+		github.NewGitHubCli(ctx),
 	}
 }
 
@@ -54,7 +54,12 @@ func (p *GitHubScmProvider) name() string {
 
 // configureGitRemote uses GitHub cli to guide user on setting a remote url
 // for the local git project
-func (p *GitHubScmProvider) configureGitRemote(ctx context.Context, repoPath string, remoteName string, console input.Console) (string, error) {
+func (p *GitHubScmProvider) configureGitRemote(
+	ctx context.Context,
+	repoPath string,
+	remoteName string,
+	console input.Console,
+) (string, error) {
 	// used to detect when the GitHub has created a new repo
 	p.newGitHubRepoCreated = false
 
@@ -281,9 +286,9 @@ type GitHubCiProvider struct {
 // ***  subareaProvider implementation ******
 
 // requiredTools defines the requires tools for GitHub to be used as CI manager
-func (p *GitHubCiProvider) requiredTools() []tools.ExternalTool {
+func (p *GitHubCiProvider) requiredTools(ctx context.Context) []tools.ExternalTool {
 	return []tools.ExternalTool{
-		github.NewGitHubCli(context.Background()),
+		github.NewGitHubCli(ctx),
 	}
 }
 
@@ -348,7 +353,13 @@ func (p *GitHubCiProvider) configureConnection(
 			value, ok := azdEnvironment.Values[key]
 			if !ok || strings.TrimSpace(value) == "" {
 				console.Message(ctx, output.WithWarningFormat("WARNING: Terraform Remote State configuration is invalid!"))
-				console.Message(ctx, fmt.Sprintf("Visit %s for more information on configuring Terraform remote state", output.WithLinkFormat("https://aka.ms/azure-dev/terraform")))
+				console.Message(
+					ctx,
+					fmt.Sprintf(
+						"Visit %s for more information on configuring Terraform remote state",
+						output.WithLinkFormat("https://aka.ms/azure-dev/terraform"),
+					),
+				)
 				console.Message(ctx, "")
 				return errors.New("terraform remote state is not correctly configured")
 			}
@@ -361,7 +372,10 @@ func (p *GitHubCiProvider) configureConnection(
 
 	console.Message(ctx, "Configuring repository environment.\n")
 
-	for _, envName := range []string{environment.EnvNameEnvVarName, environment.LocationEnvVarName, environment.SubscriptionIdEnvVarName} {
+	for _, envName := range []string{
+		environment.EnvNameEnvVarName,
+		environment.LocationEnvVarName,
+		environment.SubscriptionIdEnvVarName} {
 		console.Message(ctx, fmt.Sprintf("Setting %s GitHub repo secret.\n", envName))
 
 		if err := ghCli.SetSecret(ctx, repoSlug, envName, azdEnvironment.Values[envName]); err != nil {
@@ -379,7 +393,11 @@ func (p *GitHubCiProvider) configureConnection(
 
 // configurePipeline is a no-op for GitHub, as the pipeline is automatically
 // created by creating the workflow files in .github folder.
-func (p *GitHubCiProvider) configurePipeline(ctx context.Context, repoDetails *gitRepositoryDetails, provisioningProvider provisioning.Options) error {
+func (p *GitHubCiProvider) configurePipeline(
+	ctx context.Context,
+	repoDetails *gitRepositoryDetails,
+	provisioningProvider provisioning.Options,
+) error {
 	return nil
 }
 
@@ -414,7 +432,7 @@ func ensureGitHubLogin(ctx context.Context, hostname string, console input.Conso
 			return nil
 		}
 
-		fmt.Println("There was an issue logging into GitHub.")
+		fmt.Fprintln(console.Handles().Stdout, "There was an issue logging into GitHub.")
 	}
 }
 
@@ -462,7 +480,12 @@ func selectRemoteUrl(ctx context.Context, ghCli github.GitHubCli, repo github.Gh
 }
 
 // getRemoteUrlFromNewRepository creates a new repository on GitHub and returns its remote url
-func getRemoteUrlFromNewRepository(ctx context.Context, ghCli github.GitHubCli, currentPathName string, console input.Console) (string, error) {
+func getRemoteUrlFromNewRepository(
+	ctx context.Context,
+	ghCli github.GitHubCli,
+	currentPathName string,
+	console input.Console,
+) (string, error) {
 	var repoName string
 	currentFolderName := filepath.Base(currentPathName)
 
@@ -512,7 +535,7 @@ func getRemoteUrlFromPrompt(ctx context.Context, remoteName string, console inpu
 		remoteUrl = promptValue
 
 		if _, err := githubRemote.GetSlugForRemote(remoteUrl); errors.Is(err, githubRemote.ErrRemoteHostIsNotGitHub) {
-			fmt.Printf("error: \"%s\" is not a valid GitHub URL.\n", remoteUrl)
+			fmt.Fprintf(console.Handles().Stdout, "error: \"%s\" is not a valid GitHub URL.\n", remoteUrl)
 
 			// So we retry from the loop.
 			remoteUrl = ""

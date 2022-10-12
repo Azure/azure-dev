@@ -28,8 +28,14 @@ func getProcessTemplateId(ctx context.Context, client core.Client) (string, erro
 	return process.Id.String(), nil
 }
 
-// creates a new Azure Devops project
-func createProject(ctx context.Context, connection *azuredevops.Connection, name string, description string, console input.Console) (*core.TeamProjectReference, error) {
+// creates a new Azure DevOps project
+func createProject(
+	ctx context.Context,
+	connection *azuredevops.Connection,
+	name string,
+	description string,
+	console input.Console,
+) (*core.TeamProjectReference, error) {
 	coreClient, err := core.NewClient(ctx, connection)
 	if err != nil {
 		return nil, err
@@ -98,7 +104,13 @@ func createProject(ctx context.Context, connection *azuredevops.Connection, name
 
 // prompts the user for a new AzDo project name and creates the project
 // returns project name, project id, error
-func GetProjectFromNew(ctx context.Context, repoPath string, connection *azuredevops.Connection, env *environment.Environment, console input.Console) (string, string, error) {
+func GetProjectFromNew(
+	ctx context.Context,
+	repoPath string,
+	connection *azuredevops.Connection,
+	env *environment.Environment,
+	console input.Console,
+) (string, string, error) {
 	var project *core.TeamProjectReference
 	currentFolderName := filepath.Base(repoPath)
 	var projectDescription string = AzDoProjectDescription
@@ -116,11 +128,16 @@ func GetProjectFromNew(ctx context.Context, repoPath string, connection *azurede
 		if err != nil {
 			message = err.Error()
 		}
-		if strings.Contains(message, fmt.Sprintf("The following project already exists on the Azure DevOps Server: %s", name)) {
+		if strings.Contains(
+			message,
+			fmt.Sprintf("The following project already exists on the Azure DevOps Server: %s", name),
+		) {
 			console.Message(ctx, fmt.Sprintf("error: the project name '%s' is already in use\n", name))
 			continue // try again
 		} else if strings.Contains(message, "The following name is not valid") {
-			console.Message(ctx, fmt.Sprintf("error: the project name '%s' is not a valid Azure DevOps project Name. See https://aka.ms/azure-dev/azdo-project-naming\n", name))
+			console.Message(ctx, fmt.Sprintf(
+				"error: the project name '%s' is not a valid Azure DevOps project Name."+
+					" See https://aka.ms/azure-dev/azdo-project-naming\n", name))
 			continue // try again
 		} else if err != nil {
 			return "", "", fmt.Errorf("creating project: %w", err)
@@ -134,7 +151,11 @@ func GetProjectFromNew(ctx context.Context, repoPath string, connection *azurede
 }
 
 // return an azdo project by name
-func GetProjectByName(ctx context.Context, connection *azuredevops.Connection, name string) (*core.TeamProjectReference, error) {
+func GetProjectByName(
+	ctx context.Context,
+	connection *azuredevops.Connection,
+	name string,
+) (*core.TeamProjectReference, error) {
 	coreClient, err := core.NewClient(ctx, connection)
 	if err != nil {
 		return nil, err
@@ -157,7 +178,11 @@ func GetProjectByName(ctx context.Context, connection *azuredevops.Connection, n
 }
 
 // prompt the user to select form a list of existing Azure DevOps projects
-func GetProjectFromExisting(ctx context.Context, connection *azuredevops.Connection, console input.Console) (string, string, error) {
+func GetProjectFromExisting(
+	ctx context.Context,
+	connection *azuredevops.Connection,
+	console input.Console,
+) (string, string, error) {
 	coreClient, err := core.NewClient(ctx, connection)
 	if err != nil {
 		return "", "", err

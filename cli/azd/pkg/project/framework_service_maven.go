@@ -72,7 +72,11 @@ func (m *mavenProject) Package(ctx context.Context, progress chan<- string) (str
 	}
 	if len(matches) > 1 {
 		names := strings.Join(matches, ", ")
-		return "", fmt.Errorf("multiple JAR files found in %s: %s. Only a single runnable JAR file is expected", publishSource, names)
+		return "", fmt.Errorf(
+			"multiple JAR files found in %s: %s. Only a single runnable JAR file is expected",
+			publishSource,
+			names,
+		)
 	}
 
 	err = copy.Copy(filepath.Join(publishSource, matches[0]), filepath.Join(publishRoot, AppServiceJavaPackageName))

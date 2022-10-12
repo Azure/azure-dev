@@ -33,7 +33,13 @@ func (p *dockerProject) RequiredExternalTools() []tools.ExternalTool {
 func (p *dockerProject) Package(ctx context.Context, progress chan<- string) (string, error) {
 	dockerOptions := getDockerOptionsWithDefaults(p.config.Docker)
 
-	log.Printf("building image for service %s, cwd: %s, path: %s, context: %s)", p.config.Name, p.config.Path(), dockerOptions.Path, dockerOptions.Context)
+	log.Printf(
+		"building image for service %s, cwd: %s, path: %s, context: %s)",
+		p.config.Name,
+		p.config.Path(),
+		dockerOptions.Path,
+		dockerOptions.Context,
+	)
 
 	// Build the container
 	progress <- "Building docker image"
@@ -56,7 +62,12 @@ func (p *dockerProject) Initialize(ctx context.Context) error {
 	return nil
 }
 
-func NewDockerProject(config *ServiceConfig, env *environment.Environment, docker *docker.Docker, framework FrameworkService) FrameworkService {
+func NewDockerProject(
+	config *ServiceConfig,
+	env *environment.Environment,
+	docker *docker.Docker,
+	framework FrameworkService,
+) FrameworkService {
 	return &dockerProject{
 		config:    config,
 		env:       env,

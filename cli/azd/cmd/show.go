@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/azure/azure-dev/cli/azd/cmd/contracts"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
@@ -122,38 +123,14 @@ func (s *showAction) Run(ctx context.Context) error {
 	return s.formatter.Format(res, s.writer, nil)
 }
 
-type showResult struct {
-	Services map[string]showService `json:"services"`
-}
-
-type showService struct {
-	// Project contains information about the project that backs this service.
-	Project showServiceProject `json:"project"`
-	// Target contains information about the resource that the service is deployed
-	// to.
-	Target *showTargetArm `json:"target,omitempty"`
-}
-
-type showServiceProject struct {
-	// Path contains the path to the project for this service.
-	// When 'type' is 'dotnet', this includes the project file (i.e. Todo.Api.csproj).
-	Path string `json:"path"`
-	// The type of this project. One of "dotnet", "python", or "node"
-	Type string `json:"language"`
-}
-
-type showTargetArm struct {
-	ResourceIds []string `json:"resourceIds"`
-}
-
-func showTypeFromLanguage(language string) string {
+func showTypeFromLanguage(language string) contracts.ShowType {
 	switch language {
 	case "dotnet":
-		return "dotnet"
+		return contracts.ShowTypeDotNet
 	case "py", "python":
-		return "python"
+		return contracts.ShowTypePython
 	case "ts", "js":
-		return "node"
+		return contracts.ShowTypeNode
 	default:
 		panic(fmt.Sprintf("unknown language %s", language))
 	}
@@ -183,14 +160,25 @@ func getFullPathToProjectForService(svc *project.ServiceConfig) (string, error) 
 				if projectFile != "" {
 					// we found multiple project files, we need to ask the user to specify which one
 					// corresponds to the service.
-					return "", fmt.Errorf("multiple .NET project files detected in %s for service %s, please include the name of the .NET project file in 'project' setting in %s for this service", svc.Path(), svc.Name, azdcontext.ProjectFileName)
+					return "", fmt.Errorf(
+						"multiple .NET project files detected in %s for service %s, "+
+							"please include the name of the .NET project file in 'project' "+
+							"setting in %s for this service",
+						svc.Path(),
+						svc.Name,
+						azdcontext.ProjectFileName)
 				} else {
 					projectFile = entry.Name()
 				}
 			}
 		}
 		if projectFile == "" {
-			return "", fmt.Errorf("could not determine the .NET project file for service %s, please include the name of the .NET project file in project setting in %s for this service", svc.Name, azdcontext.ProjectFileName)
+			return "", fmt.Errorf(
+				"could not determine the .NET project file for service %s,"+
+					" please include the name of the .NET project file in project setting in %s for"+
+					" this service",
+				svc.Name,
+				azdcontext.ProjectFileName)
 		} else {
 			if svc.RelativePath != "" {
 				svc.RelativePath = filepath.Join(svc.RelativePath, projectFile)

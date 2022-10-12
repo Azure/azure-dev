@@ -35,7 +35,12 @@ func (at *containerAppTarget) RequiredExternalTools() []tools.ExternalTool {
 	return []tools.ExternalTool{at.cli, at.docker}
 }
 
-func (at *containerAppTarget) Deploy(ctx context.Context, azdCtx *azdcontext.AzdContext, path string, progress chan<- string) (ServiceDeploymentResult, error) {
+func (at *containerAppTarget) Deploy(
+	ctx context.Context,
+	azdCtx *azdcontext.AzdContext,
+	path string,
+	progress chan<- string,
+) (ServiceDeploymentResult, error) {
 	// If the infra module has not been specified default to a module with the same name as the service.
 	if strings.TrimSpace(at.config.Infra.Module) == "" {
 		at.config.Infra.Module = at.config.Module
@@ -47,7 +52,10 @@ func (at *containerAppTarget) Deploy(ctx context.Context, azdCtx *azdcontext.Azd
 	// Login to container registry.
 	loginServer, has := at.env.Values[environment.ContainerRegistryEndpointEnvVarName]
 	if !has {
-		return ServiceDeploymentResult{}, fmt.Errorf("could not determine container registry endpoint, ensure %s is set as an output of your infrastructure", environment.ContainerRegistryEndpointEnvVarName)
+		return ServiceDeploymentResult{}, fmt.Errorf(
+			"could not determine container registry endpoint, ensure %s is set as an output of your infrastructure",
+			environment.ContainerRegistryEndpointEnvVarName,
+		)
 	}
 
 	log.Printf("logging into registry %s", loginServer)
@@ -57,7 +65,13 @@ func (at *containerAppTarget) Deploy(ctx context.Context, azdCtx *azdcontext.Azd
 		return ServiceDeploymentResult{}, fmt.Errorf("logging into registry '%s': %w", loginServer, err)
 	}
 
-	fullTag := fmt.Sprintf("%s/%s/%s:azdev-deploy-%d", loginServer, at.scope.ResourceName(), at.scope.ResourceName(), time.Now().Unix())
+	fullTag := fmt.Sprintf(
+		"%s/%s/%s:azdev-deploy-%d",
+		loginServer,
+		at.scope.ResourceName(),
+		at.scope.ResourceName(),
+		time.Now().Unix(),
+	)
 
 	// Tag image.
 	log.Printf("tagging image %s as %s", path, fullTag)
@@ -84,7 +98,13 @@ func (at *containerAppTarget) Deploy(ctx context.Context, azdCtx *azdcontext.Azd
 	}
 
 	commandOptions := internal.GetCommandOptions(ctx)
-	infraManager, err := provisioning.NewManager(ctx, at.env, at.config.Project.Path, at.config.Infra, !commandOptions.NoPrompt)
+	infraManager, err := provisioning.NewManager(
+		ctx,
+		at.env,
+		at.config.Project.Path,
+		at.config.Infra,
+		!commandOptions.NoPrompt,
+	)
 	if err != nil {
 		return ServiceDeploymentResult{}, fmt.Errorf("creating provisioning manager: %w", err)
 	}
@@ -106,7 +126,7 @@ func (at *containerAppTarget) Deploy(ctx context.Context, azdCtx *azdcontext.Azd
 
 	if len(deployResult.Deployment.Outputs) > 0 {
 		log.Printf("saving %d deployment outputs", len(deployResult.Deployment.Outputs))
-		if err := provisioning.UpdateEnvironment(at.env, &deployResult.Deployment.Outputs); err != nil {
+		if err := provisioning.UpdateEnvironment(at.env, deployResult.Deployment.Outputs); err != nil {
 			return ServiceDeploymentResult{}, fmt.Errorf("saving outputs to environment: %w", err)
 		}
 	}
@@ -118,15 +138,24 @@ func (at *containerAppTarget) Deploy(ctx context.Context, azdCtx *azdcontext.Azd
 	}
 
 	return ServiceDeploymentResult{
-		TargetResourceId: azure.ContainerAppRID(at.env.GetSubscriptionId(), at.scope.ResourceGroupName(), at.scope.ResourceName()),
-		Kind:             ContainerAppTarget,
-		Details:          deployResult,
-		Endpoints:        endpoints,
+		TargetResourceId: azure.ContainerAppRID(
+			at.env.GetSubscriptionId(),
+			at.scope.ResourceGroupName(),
+			at.scope.ResourceName(),
+		),
+		Kind:      ContainerAppTarget,
+		Details:   deployResult,
+		Endpoints: endpoints,
 	}, nil
 }
 
 func (at *containerAppTarget) Endpoints(ctx context.Context) ([]string, error) {
-	containerAppProperties, err := at.cli.GetContainerAppProperties(ctx, at.env.GetSubscriptionId(), at.scope.ResourceGroupName(), at.scope.ResourceName())
+	containerAppProperties, err := at.cli.GetContainerAppProperties(
+		ctx,
+		at.env.GetSubscriptionId(),
+		at.scope.ResourceGroupName(),
+		at.scope.ResourceName(),
+	)
 	if err != nil {
 		return nil, fmt.Errorf("fetching service properties: %w", err)
 	}
@@ -134,7 +163,14 @@ func (at *containerAppTarget) Endpoints(ctx context.Context) ([]string, error) {
 	return []string{fmt.Sprintf("https://%s/", containerAppProperties.Properties.Configuration.Ingress.Fqdn)}, nil
 }
 
-func NewContainerAppTarget(config *ServiceConfig, env *environment.Environment, scope *environment.DeploymentScope, azCli azcli.AzCli, docker *docker.Docker, console input.Console) ServiceTarget {
+func NewContainerAppTarget(
+	config *ServiceConfig,
+	env *environment.Environment,
+	scope *environment.DeploymentScope,
+	azCli azcli.AzCli,
+	docker *docker.Docker,
+	console input.Console,
+) ServiceTarget {
 	return &containerAppTarget{
 		config:  config,
 		env:     env,

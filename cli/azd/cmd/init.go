@@ -60,7 +60,12 @@ type initFlags struct {
 func (i *initFlags) Setup(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
 	local.StringVarP(&i.template.Name, "template", "t", "", "The template to use when you initialize the project. You can use Full URI, <owner>/<repository>, or <repository> if it's part of the azure-samples organization.")
 	local.StringVarP(&i.templateBranch, "branch", "b", "", "The template branch to initialize from.")
-	local.StringVar(&i.subscription, "subscription", "", "Name or ID of an Azure subscription to use for the new environment")
+	local.StringVar(
+		&i.subscription,
+		"subscription",
+		"",
+		"Name or ID of an Azure subscription to use for the new environment",
+	)
 	local.StringVarP(&i.location, "location", "l", "", "Azure location for the new environment")
 
 	i.rootOptions = global
@@ -166,7 +171,7 @@ func (i *initAction) Run(ctx context.Context) error {
 			_ = os.RemoveAll(templateStagingDir)
 		}()
 
-		spinner := spin.NewSpinner("Downloading template")
+		spinner := spin.NewSpinner(console.Handles().Stdout, "Downloading template")
 		err = spinner.Run(func() error {
 			return i.gitCli.FetchCode(ctx, templateUrl, i.flags.templateBranch, templateStagingDir)
 		})
@@ -207,9 +212,11 @@ func (i *initAction) Run(ctx context.Context) error {
 		}
 
 		if len(duplicateFiles) > 0 {
-			fmt.Printf("warning: the following files will be overwritten with the versions from the template: \n")
+			fmt.Fprintf(
+				console.Handles().Stdout,
+				"warning: the following files will be overwritten with the versions from the template: \n")
 			for _, file := range duplicateFiles {
-				fmt.Printf(" * %s\n", file)
+				fmt.Fprintf(console.Handles().Stdout, " * %s\n", file)
 			}
 
 			overwrite, err := i.console.Confirm(ctx, input.ConsoleOptions{
@@ -244,7 +251,7 @@ func (i *initAction) Run(ctx context.Context) error {
 	_, err = os.Stat(i.azdCtx.ProjectPath())
 
 	if errors.Is(err, os.ErrNotExist) {
-		fmt.Printf("Creating a new %s file.\n", azdcontext.ProjectFileName)
+		fmt.Fprintf(console.Handles().Stdout, "Creating a new %s file.\n", azdcontext.ProjectFileName)
 
 		_, err = project.NewProject(i.azdCtx.ProjectPath(), i.azdCtx.GetDefaultProjectName())
 
@@ -299,13 +306,3 @@ func (i *initAction) Run(ctx context.Context) error {
 
 	return nil
 }
-
-const (
-	// CodespacesEnvVarName is the name of the env variable set when you're in a Github codespace. It's
-	// just set to 'true'.
-	CodespacesEnvVarName = "CODESPACES"
-
-	// RemoteContainersEnvVarName is the name of the env variable set when you're in a remote container. It's
-	// just set to 'true'.
-	RemoteContainersEnvVarName = "REMOTE_CONTAINERS"
-)

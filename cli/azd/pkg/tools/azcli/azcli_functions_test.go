@@ -117,7 +117,13 @@ func Test_DeployFunctionAppUsingZipFile(t *testing.T) {
 			}, nil
 		})
 
-		res, err := azCli.DeployFunctionAppUsingZipFile(context.Background(), "subID", "resourceGroupID", "funcName", "test.zip")
+		res, err := azCli.DeployFunctionAppUsingZipFile(
+			context.Background(),
+			"subID",
+			"resourceGroupID",
+			"funcName",
+			"test.zip",
+		)
 		require.NoError(t, err)
 		require.True(t, ran)
 		require.Equal(t, "stdout text", res)
@@ -151,8 +157,19 @@ func Test_DeployFunctionAppUsingZipFile(t *testing.T) {
 			}, errors.New("this error is printed verbatim but would be enriched since we passed args.EnrichError.true")
 		})
 
-		_, err := azCli.DeployFunctionAppUsingZipFile(context.Background(), "subID", "resourceGroupID", "funcName", "test.zip")
+		_, err := azCli.DeployFunctionAppUsingZipFile(
+			context.Background(),
+			"subID",
+			"resourceGroupID",
+			"funcName",
+			"test.zip",
+		)
 		require.True(t, ran)
-		require.EqualError(t, err, "failed deploying function app: this error is printed verbatim but would be enriched since we passed args.EnrichError.true")
+		require.EqualError(
+			t,
+			err,
+			"failed deploying function app: this error is printed verbatim but would "+
+				"be enriched since we passed args.EnrichError.true",
+		)
 	})
 }

@@ -50,6 +50,7 @@ func deployCmdDesign(rootOptions *internal.GlobalCommandOptions) (*cobra.Command
 	cmd := &cobra.Command{
 		Use:   "deploy",
 		Short: "Deploy the application's code to Azure.",
+		//nolint:lll
 		Long: `Deploy the application's code to Azure.
 When no ` + output.WithBackticks("--service") + ` value is specified, all services in the ` + output.WithBackticks("azure.yaml") + ` file (found in the root of your project) are deployed.
 
@@ -178,7 +179,7 @@ func (d *deployAction) Run(ctx context.Context) error {
 			deployMsg := fmt.Sprintf("Deploying service %s...", output.WithHighLightFormat(svc.Config.Name))
 			d.console.Message(ctx, deployMsg)
 
-			spinner, ctx := spin.GetOrCreateSpinner(ctx, deployMsg)
+			spinner, ctx := spin.GetOrCreateSpinner(ctx, console.Handles().Stdout, deployMsg)
 
 			spinner.Start()
 			err = deployAndReportProgress(ctx, spinner.Title)
@@ -209,7 +210,12 @@ func (d *deployAction) Run(ctx context.Context) error {
 	return nil
 }
 
-func reportServiceDeploymentResultInteractive(ctx context.Context, console input.Console, svc *project.Service, sdr *project.ServiceDeploymentResult) {
+func reportServiceDeploymentResultInteractive(
+	ctx context.Context,
+	console input.Console,
+	svc *project.Service,
+	sdr *project.ServiceDeploymentResult,
+) {
 	var builder strings.Builder
 
 	builder.WriteString(fmt.Sprintf("Deployed service %s\n", output.WithHighLightFormat(svc.Config.Name)))

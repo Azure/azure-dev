@@ -109,7 +109,7 @@ func (r *restoreAction) Run(ctx context.Context) error {
 			return fmt.Errorf("getting framework services: %w", err)
 		}
 
-		spinner := spin.NewSpinner(installMsg)
+		spinner := spin.NewSpinner(console.Handles().Stdout, installMsg)
 		if err = spinner.Run(func() error { return (*frameworkService).InstallDependencies(ctx) }); err != nil {
 			return err
 		}

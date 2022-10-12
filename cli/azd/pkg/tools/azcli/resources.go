@@ -3,15 +3,13 @@ package azcli
 import (
 	"context"
 	"fmt"
-	"net/http"
-	"strings"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/azure/azure-dev/cli/azd/pkg/identity"
 )
 
-func (cli *azCli) GetResource(ctx context.Context, subscriptionId string, resourceId string) (AzCliResourceExtended, error) {
+func (cli *azCli) GetResource(
+	ctx context.Context, subscriptionId string, resourceId string) (AzCliResourceExtended, error) {
 	client, err := cli.createResourcesClient(ctx, subscriptionId)
 	if err != nil {
 		return AzCliResourceExtended{}, err
@@ -33,7 +31,12 @@ func (cli *azCli) GetResource(ctx context.Context, subscriptionId string, resour
 	}, nil
 }
 
-func (cli *azCli) ListResourceGroupResources(ctx context.Context, subscriptionId string, resourceGroupName string, listOptions *ListResourceGroupResourcesOptions) ([]AzCliResource, error) {
+func (cli *azCli) ListResourceGroupResources(
+	ctx context.Context,
+	subscriptionId string,
+	resourceGroupName string,
+	listOptions *ListResourceGroupResourcesOptions,
+) ([]AzCliResource, error) {
 	client, err := cli.createResourcesClient(ctx, subscriptionId)
 	if err != nil {
 		return nil, err
@@ -67,7 +70,11 @@ func (cli *azCli) ListResourceGroupResources(ctx context.Context, subscriptionId
 	return resources, nil
 }
 
-func (cli *azCli) ListResourceGroup(ctx context.Context, subscriptionId string, listOptions *ListResourceGroupOptions) ([]AzCliResource, error) {
+func (cli *azCli) ListResourceGroup(
+	ctx context.Context,
+	subscriptionId string,
+	listOptions *ListResourceGroupOptions,
+) ([]AzCliResource, error) {
 	client, err := cli.createResourceGroupClient(ctx, subscriptionId)
 	if err != nil {
 		return nil, err
@@ -78,7 +85,11 @@ func (cli *azCli) ListResourceGroup(ctx context.Context, subscriptionId string, 
 	options := armresources.ResourceGroupsClientListOptions{}
 	if listOptions != nil {
 		if listOptions.TagFilter != nil {
-			tagFilter := fmt.Sprintf("tagName eq '%s' and tagValue eq '%s'", listOptions.TagFilter.Key, listOptions.TagFilter.Value)
+			tagFilter := fmt.Sprintf(
+				"tagName eq '%s' and tagValue eq '%s'",
+				listOptions.TagFilter.Key,
+				listOptions.TagFilter.Value,
+			)
 			options.Filter = &tagFilter
 		} else if listOptions.Filter != nil {
 			options.Filter = listOptions.Filter
@@ -141,7 +152,10 @@ func (cli *azCli) createResourcesClient(ctx context.Context, subscriptionId stri
 	return client, nil
 }
 
-func (cli *azCli) createResourceGroupClient(ctx context.Context, subscriptionId string) (*armresources.ResourceGroupsClient, error) {
+func (cli *azCli) createResourceGroupClient(
+	ctx context.Context,
+	subscriptionId string,
+) (*armresources.ResourceGroupsClient, error) {
 	cred, err := identity.GetCredentials(ctx)
 	if err != nil {
 		return nil, err
@@ -154,23 +168,4 @@ func (cli *azCli) createResourceGroupClient(ctx context.Context, subscriptionId 
 	}
 
 	return client, nil
-}
-
-type userAgentPolicy struct {
-	userAgent string
-}
-
-// Policy to ensure the AZD custom user agent is set on all HTTP requests.
-func NewUserAgentPolicy(userAgent string) policy.Policy {
-	return &userAgentPolicy{
-		userAgent: userAgent,
-	}
-}
-
-// Sets the custom user-agent string on the underlying request
-func (p *userAgentPolicy) Do(req *policy.Request) (*http.Response, error) {
-	if strings.TrimSpace(p.userAgent) != "" {
-		req.Raw().Header.Set("User-Agent", p.userAgent)
-	}
-	return req.Next()
 }

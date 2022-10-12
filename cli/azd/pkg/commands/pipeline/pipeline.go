@@ -22,7 +22,7 @@ import (
 // subareaProvider defines the base behavior from any pipeline provider
 type subareaProvider interface {
 	// requiredTools return the list of requires external tools required by the provider.
-	requiredTools() []tools.ExternalTool
+	requiredTools(ctx context.Context) []tools.ExternalTool
 	// preConfigureCheck validates that the provider's state is ready to be used.
 	// a provider would typically use this method for checking if tools are logged in
 	// of checking if all expected input data is found.
@@ -77,7 +77,11 @@ type CiProvider interface {
 	// compose the behavior from subareaProvider
 	subareaProvider
 	// configurePipeline set up or create the CI pipeline.
-	configurePipeline(ctx context.Context, repoDetails *gitRepositoryDetails, provisioningProvider provisioning.Options) error
+	configurePipeline(
+		ctx context.Context,
+		repoDetails *gitRepositoryDetails,
+		provisioningProvider provisioning.Options,
+	) error
 	// configureConnection use the credential to set up the connection from the pipeline
 	// to Azure
 	configureConnection(

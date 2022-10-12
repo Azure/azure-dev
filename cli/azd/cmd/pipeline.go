@@ -33,6 +33,7 @@ func pipelineCmd(global *internal.GlobalCommandOptions) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "pipeline",
 		Short: "Manage GitHub Actions pipelines.",
+		//nolint:lll
 		Long: `Manage GitHub Actions pipelines.
 
 The Azure Developer CLI template includes a GitHub Actions pipeline configuration file (in the *.github/workflows* folder) that deploys your application whenever code is pushed to the main branch.

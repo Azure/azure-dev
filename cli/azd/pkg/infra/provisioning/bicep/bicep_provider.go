@@ -1,6 +1,15 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
+// Package bicep contains an implementation of provider.Provider for Bicep. This
+// provider is registered for use when this package is imported, and can be imported for
+// side effects only to register the provider, e.g.:
+//
+// require(
+//
+//	_ "github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning/bicep"
+//
+// )
 package bicep
 
 import (
@@ -9,12 +18,12 @@ import (
 	"errors"
 	"fmt"
 	"log"
-	"math"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/cmdsubst"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
@@ -27,6 +36,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/bicep"
 	"github.com/drone/envsubst"
+	"github.com/sethvargo/go-retry"
 )
 
 type BicepTemplate struct {
@@ -70,11 +80,13 @@ func (p *BicepProvider) RequiredExternalTools() []tools.ExternalTool {
 	return []tools.ExternalTool{p.bicepCli, p.azCli}
 }
 
-// Gets the latest deployment details for the specified scope
-func (p *BicepProvider) GetDeployment(ctx context.Context, scope infra.Scope) *async.InteractiveTaskWithProgress[*DeployResult, *DeployProgress] {
+func (p *BicepProvider) State(
+	ctx context.Context,
+	scope infra.Scope,
+) *async.InteractiveTaskWithProgress[*StateResult, *StateProgress] {
 	return async.RunInteractiveTaskWithProgress(
-		func(asyncContext *async.InteractiveTaskContextWithProgress[*DeployResult, *DeployProgress]) {
-			asyncContext.SetProgress(&DeployProgress{Message: "Loading Bicep template", Timestamp: time.Now()})
+		func(asyncContext *async.InteractiveTaskContextWithProgress[*StateResult, *StateProgress]) {
+			asyncContext.SetProgress(&StateProgress{Message: "Loading Bicep template", Timestamp: time.Now()})
 			modulePath := p.modulePath()
 			deployment, err := p.createDeployment(ctx, modulePath)
 			if err != nil {
@@ -82,30 +94,62 @@ func (p *BicepProvider) GetDeployment(ctx context.Context, scope infra.Scope) *a
 				return
 			}
 
-			asyncContext.SetProgress(&DeployProgress{Message: "Retrieving Azure deployment", Timestamp: time.Now()})
+			asyncContext.SetProgress(&StateProgress{Message: "Retrieving Azure deployment", Timestamp: time.Now()})
 			armDeployment, err := scope.GetDeployment(ctx)
 			if err != nil {
 				asyncContext.SetError(fmt.Errorf("retrieving deployment: %w", err))
 				return
 			}
 
-			asyncContext.SetProgress(&DeployProgress{Message: "Normalizing output parameters", Timestamp: time.Now()})
-			deployment.Outputs = p.createOutputParameters(deployment, armDeployment.Properties.Outputs)
+			state := State{}
+			state.Resources = make([]Resource, len(armDeployment.Properties.OutputResources))
 
-			result := DeployResult{
-				Deployment: deployment,
-				Operations: []azcli.AzCliResourceOperation{},
+			for idx, res := range armDeployment.Properties.OutputResources {
+				state.Resources[idx] = Resource{
+					Id: *res.ID,
+				}
+			}
+
+			asyncContext.SetProgress(&StateProgress{Message: "Normalizing output parameters", Timestamp: time.Now()})
+			state.Outputs = p.createOutputParameters(deployment, createDeploymentOutput(armDeployment.Properties.Outputs))
+
+			result := StateResult{
+				State: &state,
 			}
 
 			asyncContext.SetResult(&result)
 		})
 }
 
+// convert from: sdk client outputs: interface{} to map[string]azcli.AzCliDeploymentOutput
+// sdk client parses http response from network as an interface{}
+// this function keeps the compatibility with the previous AzCliDeploymentOutput model
+func createDeploymentOutput(rawOutputs interface{}) (result map[string]azcli.AzCliDeploymentOutput) {
+	if rawOutputs == nil {
+		return make(map[string]azcli.AzCliDeploymentOutput, 0)
+	}
+
+	castInput := rawOutputs.(map[string]interface{})
+	result = make(map[string]azcli.AzCliDeploymentOutput, len(castInput))
+	for key, output := range castInput {
+		innerValue := output.(map[string]interface{})
+		result[key] = azcli.AzCliDeploymentOutput{
+			Type:  innerValue["type"].(string),
+			Value: innerValue["value"].(string),
+		}
+	}
+	return result
+}
+
 // Plans the infrastructure provisioning
-func (p *BicepProvider) Plan(ctx context.Context) *async.InteractiveTaskWithProgress[*DeploymentPlan, *DeploymentPlanningProgress] {
+func (p *BicepProvider) Plan(
+	ctx context.Context,
+) *async.InteractiveTaskWithProgress[*DeploymentPlan, *DeploymentPlanningProgress] {
 	return async.RunInteractiveTaskWithProgress(
 		func(asyncContext *async.InteractiveTaskContextWithProgress[*DeploymentPlan, *DeploymentPlanningProgress]) {
-			asyncContext.SetProgress(&DeploymentPlanningProgress{Message: "Generating Bicep parameters file", Timestamp: time.Now()})
+			asyncContext.SetProgress(
+				&DeploymentPlanningProgress{Message: "Generating Bicep parameters file", Timestamp: time.Now()},
+			)
 			bicepTemplate, parameterFilePath, err := p.createParametersFile(ctx, asyncContext)
 			if err != nil {
 				asyncContext.SetError(fmt.Errorf("creating parameters file: %w", err))
@@ -153,7 +197,11 @@ func (p *BicepProvider) Plan(ctx context.Context) *async.InteractiveTaskWithProg
 }
 
 // Provisioning the infrastructure within the specified template
-func (p *BicepProvider) Deploy(ctx context.Context, pd *DeploymentPlan, scope infra.Scope) *async.InteractiveTaskWithProgress[*DeployResult, *DeployProgress] {
+func (p *BicepProvider) Deploy(
+	ctx context.Context,
+	pd *DeploymentPlan,
+	scope infra.Scope,
+) *async.InteractiveTaskWithProgress[*DeployResult, *DeployProgress] {
 	return async.RunInteractiveTaskWithProgress(
 		func(asyncContext *async.InteractiveTaskContextWithProgress[*DeployResult, *DeployProgress]) {
 			done := make(chan bool)
@@ -205,9 +253,10 @@ func (p *BicepProvider) Deploy(ctx context.Context, pd *DeploymentPlan, scope in
 			}
 
 			deployment := pd.Deployment
-			if deployResult != nil {
-				deployment.Outputs = p.createOutputParameters(&pd.Deployment, deployResult.Properties.Outputs)
-			}
+			deployment.Outputs = p.createOutputParameters(
+				&pd.Deployment,
+				createDeploymentOutput(deployResult.Properties.Outputs),
+			)
 
 			result := &DeployResult{
 				Operations: operations,
@@ -219,7 +268,11 @@ func (p *BicepProvider) Deploy(ctx context.Context, pd *DeploymentPlan, scope in
 }
 
 // Destroys the specified deployment by deleting all azure resources, resource groups & deployments that are referenced.
-func (p *BicepProvider) Destroy(ctx context.Context, deployment *Deployment, options DestroyOptions) *async.InteractiveTaskWithProgress[*DestroyResult, *DestroyProgress] {
+func (p *BicepProvider) Destroy(
+	ctx context.Context,
+	deployment *Deployment,
+	options DestroyOptions,
+) *async.InteractiveTaskWithProgress[*DestroyResult, *DestroyProgress] {
 	return async.RunInteractiveTaskWithProgress(
 		func(asyncContext *async.InteractiveTaskContextWithProgress[*DestroyResult, *DestroyProgress]) {
 			asyncContext.SetProgress(&DestroyProgress{Message: "Fetching resource groups", Timestamp: time.Now()})
@@ -282,7 +335,10 @@ func (p *BicepProvider) getResourceGroups(ctx context.Context) ([]string, error)
 	return resourceGroups, nil
 }
 
-func (p *BicepProvider) getAllResources(ctx context.Context, resourceGroups []string) (map[string][]azcli.AzCliResource, error) {
+func (p *BicepProvider) getAllResources(
+	ctx context.Context,
+	resourceGroups []string,
+) (map[string][]azcli.AzCliResource, error) {
 	allResources := map[string][]azcli.AzCliResource{}
 
 	for _, resourceGroup := range resourceGroups {
@@ -298,11 +354,20 @@ func (p *BicepProvider) getAllResources(ctx context.Context, resourceGroups []st
 }
 
 // Deletes the azure resources within the deployment
-func (p *BicepProvider) destroyResourceGroups(ctx context.Context, asyncContext *async.InteractiveTaskContextWithProgress[*DestroyResult, *DestroyProgress], options DestroyOptions, groupedResources map[string][]azcli.AzCliResource, resourceCount int) error {
+func (p *BicepProvider) destroyResourceGroups(
+	ctx context.Context,
+	asyncContext *async.InteractiveTaskContextWithProgress[*DestroyResult, *DestroyProgress],
+	options DestroyOptions,
+	groupedResources map[string][]azcli.AzCliResource,
+	resourceCount int,
+) error {
 	if !options.Force() {
 		err := asyncContext.Interact(func() error {
 			confirmDestroy, err := p.console.Confirm(ctx, input.ConsoleOptions{
-				Message:      fmt.Sprintf("This will delete %d resources, are you sure you want to continue?", resourceCount),
+				Message: fmt.Sprintf(
+					"This will delete %d resources, are you sure you want to continue?",
+					resourceCount,
+				),
 				DefaultValue: false,
 			})
 
@@ -323,20 +388,34 @@ func (p *BicepProvider) destroyResourceGroups(ctx context.Context, asyncContext 
 	}
 
 	for resourceGroup := range groupedResources {
-		message := fmt.Sprintf("%s resource group %s", output.WithErrorFormat("Deleting"), output.WithHighLightFormat(resourceGroup))
+		message := fmt.Sprintf(
+			"%s resource group %s",
+			output.WithErrorFormat("Deleting"),
+			output.WithHighLightFormat(resourceGroup),
+		)
 		asyncContext.SetProgress(&DestroyProgress{Message: message, Timestamp: time.Now()})
 
 		if err := p.azCli.DeleteResourceGroup(ctx, p.env.GetSubscriptionId(), resourceGroup); err != nil {
 			return err
 		}
 
-		p.console.Message(ctx, fmt.Sprintf("%s resource group %s", output.WithErrorFormat("Deleted"), output.WithHighLightFormat(resourceGroup)))
+		p.console.Message(
+			ctx,
+			fmt.Sprintf(
+				"%s resource group %s",
+				output.WithErrorFormat("Deleted"),
+				output.WithHighLightFormat(resourceGroup),
+			),
+		)
 	}
 
 	return nil
 }
 
-func (p *BicepProvider) getKeyVaults(ctx context.Context, groupedResources map[string][]azcli.AzCliResource) ([]*azcli.AzCliKeyVault, error) {
+func (p *BicepProvider) getKeyVaults(
+	ctx context.Context,
+	groupedResources map[string][]azcli.AzCliResource,
+) ([]*azcli.AzCliKeyVault, error) {
 	vaults := []*azcli.AzCliKeyVault{}
 
 	for resourceGroup, groupResources := range groupedResources {
@@ -354,7 +433,10 @@ func (p *BicepProvider) getKeyVaults(ctx context.Context, groupedResources map[s
 	return vaults, nil
 }
 
-func (p *BicepProvider) getKeyVaultsToPurge(ctx context.Context, groupedResources map[string][]azcli.AzCliResource) ([]*azcli.AzCliKeyVault, error) {
+func (p *BicepProvider) getKeyVaultsToPurge(
+	ctx context.Context,
+	groupedResources map[string][]azcli.AzCliResource,
+) ([]*azcli.AzCliKeyVault, error) {
 	vaults, err := p.getKeyVaults(ctx, groupedResources)
 	if err != nil {
 		return nil, err
@@ -380,12 +462,21 @@ func (p *BicepProvider) getKeyVaultsToPurge(ctx context.Context, groupedResource
 // Since that's behavior we'd like to support, we run a purge operation for each KeyVault after
 // it has been deleted.
 //
-// See https://docs.microsoft.com/azure/key-vault/general/key-vault-recovery?tabs=azure-portal#what-are-soft-delete-and-purge-protection
+// See
+// https://docs.microsoft.com/azure/key-vault/general/key-vault-recovery?tabs=azure-portal#what-are-soft-delete-and-purge-protection
 // for more information on this feature.
-func (p *BicepProvider) purgeKeyVaults(ctx context.Context, asyncContext *async.InteractiveTaskContextWithProgress[*DestroyResult, *DestroyProgress], keyVaults []*azcli.AzCliKeyVault, options DestroyOptions) error {
+//
+//nolint:lll
+func (p *BicepProvider) purgeKeyVaults(
+	ctx context.Context,
+	asyncContext *async.InteractiveTaskContextWithProgress[*DestroyResult, *DestroyProgress],
+	keyVaults []*azcli.AzCliKeyVault,
+	options DestroyOptions,
+) error {
 	if len(keyVaults) > 0 && !options.Purge() {
 		keyVaultWarning := fmt.Sprintf(""+
-			"\nThis operation will delete and purge %d Key Vaults. These Key Vaults have soft delete enabled allowing them to be recovered for a period \n"+
+			"\nThis operation will delete and purge %d Key Vaults. These Key Vaults have soft delete enabled "+
+			"allowing them to be recovered for a period \n"+
 			"of time after deletion. During this period, their names may not be reused.\n"+
 			"You can use argument --purge to skip this confirmation.\n\n",
 			len(keyVaults))
@@ -394,7 +485,10 @@ func (p *BicepProvider) purgeKeyVaults(ctx context.Context, asyncContext *async.
 
 		err := asyncContext.Interact(func() error {
 			purgeKeyVaults, err := p.console.Confirm(ctx, input.ConsoleOptions{
-				Message:      fmt.Sprintf("Would you like to %s delete these Key Vaults instead, allowing their names to be reused?", output.WithErrorFormat("permanently")),
+				Message: fmt.Sprintf(
+					"Would you like to %s delete these Key Vaults instead, allowing their names to be reused?",
+					output.WithErrorFormat("permanently"),
+				),
 				DefaultValue: false,
 			})
 
@@ -417,7 +511,11 @@ func (p *BicepProvider) purgeKeyVaults(ctx context.Context, asyncContext *async.
 	for _, keyVault := range keyVaults {
 		progressReport := DestroyProgress{
 			Timestamp: time.Now(),
-			Message:   fmt.Sprintf("%s key vault %s", output.WithErrorFormat("Purging"), output.WithHighLightFormat(keyVault.Name)),
+			Message: fmt.Sprintf(
+				"%s key vault %s",
+				output.WithErrorFormat("Purging"),
+				output.WithHighLightFormat(keyVault.Name),
+			),
 		}
 
 		asyncContext.SetProgress(&progressReport)
@@ -427,14 +525,20 @@ func (p *BicepProvider) purgeKeyVaults(ctx context.Context, asyncContext *async.
 			return fmt.Errorf("purging key vault %s: %w", keyVault.Name, err)
 		}
 
-		p.console.Message(ctx, fmt.Sprintf("%s key vault %s", output.WithErrorFormat("Purged"), output.WithHighLightFormat(keyVault.Name)))
+		p.console.Message(
+			ctx,
+			fmt.Sprintf("%s key vault %s", output.WithErrorFormat("Purged"), output.WithHighLightFormat(keyVault.Name)),
+		)
 	}
 
 	return nil
 }
 
 // Deletes the azure deployment
-func (p *BicepProvider) deleteDeployment(ctx context.Context, asyncContext *async.InteractiveTaskContextWithProgress[*DestroyResult, *DestroyProgress]) error {
+func (p *BicepProvider) deleteDeployment(
+	ctx context.Context,
+	asyncContext *async.InteractiveTaskContextWithProgress[*DestroyResult, *DestroyProgress],
+) error {
 	asyncContext.SetProgress(&DestroyProgress{Message: "Deleting deployment", Timestamp: time.Now()})
 
 	deploymentName := p.env.GetEnvName()
@@ -443,7 +547,10 @@ func (p *BicepProvider) deleteDeployment(ctx context.Context, asyncContext *asyn
 		return err
 	}
 
-	p.console.Message(ctx, fmt.Sprintf("%s deployment %s", output.WithErrorFormat("Deleted"), output.WithHighLightFormat(deploymentName)))
+	p.console.Message(
+		ctx,
+		fmt.Sprintf("%s deployment %s", output.WithErrorFormat("Deleted"), output.WithHighLightFormat(deploymentName)),
+	)
 
 	return nil
 }
@@ -476,8 +583,29 @@ func (p *BicepProvider) updateParametersFile(ctx context.Context, deployment *De
 	return nil
 }
 
-// Creates a normalized view of the azure output parameters and resolves inconsistencies in the output parameter name casings.
-func (p *BicepProvider) createOutputParameters(template *Deployment, azureOutputParams map[string]azcli.AzCliDeploymentOutput) map[string]OutputParameter {
+func (p *BicepProvider) mapBicepTypeToInterfaceType(s string) ParameterType {
+	switch s {
+	case "String", "string":
+		return ParameterTypeString
+	case "Bool", "bool":
+		return ParameterTypeBoolean
+	case "Int", "int":
+		return ParameterTypeNumber
+	case "Object", "object":
+		return ParameterTypeObject
+	case "Array", "array":
+		return ParameterTypeArray
+	default:
+		panic(fmt.Sprintf("unexpected bicep type: '%s'", s))
+	}
+}
+
+// Creates a normalized view of the azure output parameters and resolves inconsistencies in the output parameter name
+// casings.
+func (p *BicepProvider) createOutputParameters(
+	template *Deployment,
+	azureOutputParams map[string]azcli.AzCliDeploymentOutput,
+) map[string]OutputParameter {
 	canonicalOutputCasings := make(map[string]string, len(template.Outputs))
 
 	for key := range template.Outputs {
@@ -496,7 +624,7 @@ func (p *BicepProvider) createOutputParameters(template *Deployment, azureOutput
 		}
 
 		outputParams[paramName] = OutputParameter{
-			Type:  azureParam.Type,
+			Type:  p.mapBicepTypeToInterfaceType(azureParam.Type),
 			Value: azureParam.Value,
 		}
 	}
@@ -508,7 +636,10 @@ func (p *BicepProvider) createOutputParameters(template *Deployment, azureOutput
 // do environment and command substitutions, and write out the result into a temporary file.
 //
 // The caller of the method is responsible for deleting the file when it is no longer necessary.
-func (p *BicepProvider) createParametersFile(ctx context.Context, asyncContext *async.InteractiveTaskContextWithProgress[*DeploymentPlan, *DeploymentPlanningProgress]) (*BicepTemplate, string, error) {
+func (p *BicepProvider) createParametersFile(
+	ctx context.Context,
+	asyncContext *async.InteractiveTaskContextWithProgress[*DeploymentPlan, *DeploymentPlanningProgress],
+) (*BicepTemplate, string, error) {
 	parametersTemplateFilePath := p.parametersTemplateFilePath()
 	log.Printf("Reading parameters template file from: %s", parametersTemplateFilePath)
 	parametersBytes, err := os.ReadFile(parametersTemplateFilePath)
@@ -589,7 +720,10 @@ func (p *BicepProvider) convertToDeployment(bicepTemplate BicepTemplate) (*Deplo
 	}
 
 	for key, param := range bicepTemplate.Outputs {
-		outputs[key] = OutputParameter(param)
+		outputs[key] = OutputParameter{
+			Type:  p.mapBicepTypeToInterfaceType(param.Type),
+			Value: param.Value,
+		}
 	}
 
 	template.Parameters = parameters
@@ -599,30 +733,32 @@ func (p *BicepProvider) convertToDeployment(bicepTemplate BicepTemplate) (*Deplo
 }
 
 // Deploys the specified Bicep module and parameters with the selected provisioning scope (subscription vs resource group)
-func (p *BicepProvider) deployModule(ctx context.Context, scope infra.Scope, bicepPath string, parametersPath string) (*azcli.AzCliDeployment, error) {
-	// We've seen issues where `Deploy` completes but for a short while after, fetching the deployment fails with a `DeploymentNotFound` error.
+func (p *BicepProvider) deployModule(ctx context.Context, scope infra.Scope, bicepPath string, parametersPath string) (
+	*armresources.DeploymentExtended, error) {
+	// We've seen issues where `Deploy` completes but for a short while after, fetching the deployment fails with a
+	// `DeploymentNotFound` error.
 	// Since other commands of ours use the deployment, let's try to fetch it here and if we fail with `DeploymentNotFound`,
 	// ignore this error, wait a short while and retry.
 	if err := scope.Deploy(ctx, bicepPath, parametersPath); err != nil {
 		return nil, fmt.Errorf("failed deploying: %w", err)
 	}
 
-	var deployment azcli.AzCliDeployment
-	var err error
-
-	for i := 0; i < 10; i++ {
-		time.Sleep(time.Duration(math.Min(float64(i), 3)*10) * time.Second)
-		deployment, err = scope.GetDeployment(ctx)
+	var deployment *armresources.DeploymentExtended
+	if err := retry.Do(ctx, retry.WithMaxRetries(10, retry.NewExponential(1*time.Second)), func(ctx context.Context) error {
+		deploymentResult, err := scope.GetDeployment(ctx)
 		if errors.Is(err, azcli.ErrDeploymentNotFound) {
-			continue
+			return retry.RetryableError(err)
 		} else if err != nil {
-			return nil, fmt.Errorf("failed waiting for deployment: %w", err)
-		} else {
-			return &deployment, nil
+			return fmt.Errorf("failed waiting for deployment: %w", err)
 		}
+
+		deployment = deploymentResult
+		return nil
+	}); err != nil {
+		return nil, fmt.Errorf("timed out waiting for deployment: %w", err)
 	}
 
-	return nil, fmt.Errorf("timed out waiting for deployment: %w", err)
+	return deployment, nil
 }
 
 // Gets the path to the project parameters file path
@@ -690,7 +826,12 @@ func (p *BicepProvider) ensureParameters(ctx context.Context, deployment *Deploy
 }
 
 // NewBicepProvider creates a new instance of a Bicep Infra provider
-func NewBicepProvider(ctx context.Context, env *environment.Environment, projectPath string, infraOptions Options) *BicepProvider {
+func NewBicepProvider(
+	ctx context.Context,
+	env *environment.Environment,
+	projectPath string,
+	infraOptions Options,
+) *BicepProvider {
 	azCli := azcli.GetAzCli(ctx)
 	bicepCli := bicep.GetBicepCli(ctx)
 	console := input.GetConsole(ctx)
@@ -710,11 +851,13 @@ func NewBicepProvider(ctx context.Context, env *environment.Environment, project
 	}
 }
 
-// Registers the Bicep provider with the provisioning module
-func Register() {
-	err := RegisterProvider(Bicep, func(ctx context.Context, env *environment.Environment, projectPath string, options Options) (Provider, error) {
-		return NewBicepProvider(ctx, env, projectPath, options), nil
-	})
+func init() {
+	err := RegisterProvider(
+		Bicep,
+		func(ctx context.Context, env *environment.Environment, projectPath string, options Options) (Provider, error) {
+			return NewBicepProvider(ctx, env, projectPath, options), nil
+		},
+	)
 
 	if err != nil {
 		panic(err)

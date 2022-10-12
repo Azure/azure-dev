@@ -1,6 +1,15 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
+// Package test contains an test implementation of provider.Provider. This
+// provider is registered for use when this package is imported, and can be imported for
+// side effects only to register the provider, e.g.:
+//
+// require(
+//
+//	_ "github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning/test"
+//
+// )
 package test
 
 import (
@@ -33,7 +42,9 @@ func (p *TestProvider) RequiredExternalTools() []tools.ExternalTool {
 	return []tools.ExternalTool{}
 }
 
-func (p *TestProvider) Plan(ctx context.Context) *async.InteractiveTaskWithProgress[*DeploymentPlan, *DeploymentPlanningProgress] {
+func (p *TestProvider) Plan(
+	ctx context.Context,
+) *async.InteractiveTaskWithProgress[*DeploymentPlan, *DeploymentPlanningProgress] {
 	return async.RunInteractiveTaskWithProgress(
 		func(asyncContext *async.InteractiveTaskContextWithProgress[*DeploymentPlan, *DeploymentPlanningProgress]) {
 			asyncContext.SetProgress(&DeploymentPlanningProgress{Message: "Planning deployment", Timestamp: time.Now()})
@@ -48,12 +59,41 @@ func (p *TestProvider) Plan(ctx context.Context) *async.InteractiveTaskWithProgr
 				},
 			}
 
-			asyncContext.SetProgress(&DeploymentPlanningProgress{Message: "Deployment planning completed", Timestamp: time.Now()})
+			asyncContext.SetProgress(
+				&DeploymentPlanningProgress{Message: "Deployment planning completed", Timestamp: time.Now()},
+			)
 			asyncContext.SetResult(&deploymentPlan)
 		})
 }
 
-func (p *TestProvider) GetDeployment(ctx context.Context, scope infra.Scope) *async.InteractiveTaskWithProgress[*DeployResult, *DeployProgress] {
+func (p *TestProvider) State(
+	ctx context.Context,
+	scope infra.Scope,
+) *async.InteractiveTaskWithProgress[*StateResult, *StateProgress] {
+	return async.RunInteractiveTaskWithProgress(
+		func(asyncContext *async.InteractiveTaskContextWithProgress[*StateResult, *StateProgress]) {
+			asyncContext.SetProgress(&StateProgress{
+				Message:   "Looking up deployment",
+				Timestamp: time.Now(),
+			})
+
+			state := State{
+				Outputs:   make(map[string]OutputParameter),
+				Resources: make([]Resource, 0),
+			}
+
+			stateResult := StateResult{
+				State: &state,
+			}
+
+			asyncContext.SetResult(&stateResult)
+		})
+}
+
+func (p *TestProvider) GetDeployment(
+	ctx context.Context,
+	scope infra.Scope,
+) *async.InteractiveTaskWithProgress[*DeployResult, *DeployProgress] {
 	return async.RunInteractiveTaskWithProgress(
 		func(asyncContext *async.InteractiveTaskContextWithProgress[*DeployResult, *DeployProgress]) {
 			asyncContext.SetProgress(&DeployProgress{
@@ -77,7 +117,11 @@ func (p *TestProvider) GetDeployment(ctx context.Context, scope infra.Scope) *as
 }
 
 // Provisioning the infrastructure within the specified template
-func (p *TestProvider) Deploy(ctx context.Context, pd *DeploymentPlan, scope infra.Scope) *async.InteractiveTaskWithProgress[*DeployResult, *DeployProgress] {
+func (p *TestProvider) Deploy(
+	ctx context.Context,
+	pd *DeploymentPlan,
+	scope infra.Scope,
+) *async.InteractiveTaskWithProgress[*DeployResult, *DeployProgress] {
 	return async.RunInteractiveTaskWithProgress(
 		func(asyncContext *async.InteractiveTaskContextWithProgress[*DeployResult, *DeployProgress]) {
 			asyncContext.SetProgress(&DeployProgress{
@@ -101,7 +145,11 @@ func (p *TestProvider) Deploy(ctx context.Context, pd *DeploymentPlan, scope inf
 		})
 }
 
-func (p *TestProvider) Destroy(ctx context.Context, deployment *Deployment, options DestroyOptions) *async.InteractiveTaskWithProgress[*DestroyResult, *DestroyProgress] {
+func (p *TestProvider) Destroy(
+	ctx context.Context,
+	deployment *Deployment,
+	options DestroyOptions,
+) *async.InteractiveTaskWithProgress[*DestroyResult, *DestroyProgress] {
 	return async.RunInteractiveTaskWithProgress(
 		func(asyncContext *async.InteractiveTaskContextWithProgress[*DestroyResult, *DestroyProgress]) {
 			asyncContext.SetProgress(&DestroyProgress{
@@ -150,10 +198,13 @@ func NewTestProvider(ctx context.Context, env *environment.Environment, projectP
 }
 
 // Registers the Test provider with the provisioning module
-func RegisterTestProvider() {
-	err := RegisterProvider(Test, func(ctx context.Context, env *environment.Environment, projectPath string, options Options) (Provider, error) {
-		return NewTestProvider(ctx, env, projectPath, options), nil
-	})
+func init() {
+	err := RegisterProvider(
+		Test,
+		func(ctx context.Context, env *environment.Environment, projectPath string, options Options) (Provider, error) {
+			return NewTestProvider(ctx, env, projectPath, options), nil
+		},
+	)
 
 	if err != nil {
 		panic(err)

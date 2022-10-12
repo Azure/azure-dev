@@ -26,7 +26,11 @@ func NewSecretOrRandomPasswordExecutor(azCli azcli.AzCli) *SecretOrRandomPasswor
 	}
 }
 
-func (e *SecretOrRandomPasswordCommandExecutor) Run(ctx context.Context, commandName string, args []string) (bool, string, error) {
+func (e *SecretOrRandomPasswordCommandExecutor) Run(
+	ctx context.Context,
+	commandName string,
+	args []string,
+) (bool, string, error) {
 	if commandName != SecretOrRandomPasswordCommandName {
 		return false, "", nil
 	}
@@ -52,7 +56,12 @@ func (e *SecretOrRandomPasswordCommandExecutor) Run(ctx context.Context, command
 	secret, err := e.azCli.GetKeyVaultSecret(ctx, keyVaultName, secretName)
 	if err != nil {
 		if errors.Is(err, azcli.ErrAzCliSecretNotFound) {
-			log.Printf("%s: secret '%s' not found in vault '%s', using random password...", SecretOrRandomPasswordCommandName, secretName, keyVaultName)
+			log.Printf(
+				"%s: secret '%s' not found in vault '%s', using random password...",
+				SecretOrRandomPasswordCommandName,
+				secretName,
+				keyVaultName,
+			)
 			return generatePassword()
 		} else {
 			return false, "", fmt.Errorf("reading secret '%s' from vault '%s': %w", secretName, keyVaultName, err)
@@ -60,7 +69,12 @@ func (e *SecretOrRandomPasswordCommandExecutor) Run(ctx context.Context, command
 	}
 
 	if len(strings.TrimSpace(secret.Value)) == 0 {
-		log.Printf("%s: secret '%s' in vault '%s' has empty value, using random password...", SecretOrRandomPasswordCommandName, secretName, keyVaultName)
+		log.Printf(
+			"%s: secret '%s' in vault '%s' has empty value, using random password...",
+			SecretOrRandomPasswordCommandName,
+			secretName,
+			keyVaultName,
+		)
 		return generatePassword() // Do not use empty password secret even if the secret exists
 	}
 

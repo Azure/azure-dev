@@ -30,7 +30,8 @@ type wrapperTracer struct {
 	tracer trace.Tracer
 }
 
-func (w *wrapperTracer) Start(ctx context.Context, spanName string, opts ...trace.SpanStartOption) (context.Context, Span) {
+func (w *wrapperTracer) Start(
+	ctx context.Context, spanName string, opts ...trace.SpanStartOption) (context.Context, Span) {
 	ctx, span := w.tracer.Start(ctx, spanName, opts...)
 	// Propagate any baggage in the current context
 	baggage := baggage.BaggageFromContext(ctx)

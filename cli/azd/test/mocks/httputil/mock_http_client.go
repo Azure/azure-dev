@@ -87,7 +87,8 @@ func (c *MockHttpClient) AddAzResourceListMock(matchResourceGroupName *string, r
 	c.When(func(request *http.Request) bool {
 		isMatch := strings.Contains(request.URL.Path, "/resources")
 		if matchResourceGroupName != nil {
-			isMatch = isMatch && strings.Contains(request.URL.Path, fmt.Sprintf("/resourceGroups/%s/resources", *matchResourceGroupName))
+			isMatch = isMatch &&
+				strings.Contains(request.URL.Path, fmt.Sprintf("/resourceGroups/%s/resources", *matchResourceGroupName))
 		}
 
 		return isMatch

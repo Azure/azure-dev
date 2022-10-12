@@ -17,15 +17,50 @@ func TestNewEndpointConfig(t *testing.T) {
 		wantErr bool
 	}{
 		// Valid cases
-		{"IKeyOnly", args{"InstrumentationKey=foobar"}, EndpointConfig{InstrumentationKey: "foobar", EndpointUrl: "https://dc.services.visualstudio.com/v2/track"}, false},
-		{"EndpointSuffix", args{"InstrumentationKey=foobar;EndpointSuffix=localhost:1010"}, EndpointConfig{InstrumentationKey: "foobar", EndpointUrl: "https://dc.localhost:1010/v2/track"}, false},
-		{"ExplicitEndpoint", args{"InstrumentationKey=foobar;IngestionEndpoint=https://localhost:1030"}, EndpointConfig{InstrumentationKey: "foobar", EndpointUrl: "https://localhost:1030/v2/track"}, false},
-		{"ExplicitEndpointOverride", args{"InstrumentationKey=foobar;IngestionEndpoint=https://localhost:1030;EndpointSuffix=localhost:1010"}, EndpointConfig{InstrumentationKey: "foobar", EndpointUrl: "https://localhost:1030/v2/track"}, false},
+		{
+			"IKeyOnly",
+			args{"InstrumentationKey=foobar"},
+			EndpointConfig{InstrumentationKey: "foobar", EndpointUrl: "https://dc.services.visualstudio.com/v2/track"},
+			false,
+		},
+		{
+			"EndpointSuffix",
+			args{"InstrumentationKey=foobar;EndpointSuffix=localhost:1010"},
+			EndpointConfig{InstrumentationKey: "foobar", EndpointUrl: "https://dc.localhost:1010/v2/track"},
+			false,
+		},
+		{
+			"ExplicitEndpoint",
+			args{"InstrumentationKey=foobar;IngestionEndpoint=https://localhost:1030"},
+			EndpointConfig{InstrumentationKey: "foobar", EndpointUrl: "https://localhost:1030/v2/track"},
+			false,
+		},
+		{
+			"ExplicitEndpointOverride",
+			args{"InstrumentationKey=foobar;IngestionEndpoint=https://localhost:1030;EndpointSuffix=localhost:1010"},
+			EndpointConfig{InstrumentationKey: "foobar", EndpointUrl: "https://localhost:1030/v2/track"},
+			false,
+		},
 
 		// Cases where we reformat input for user-friendly handling
-		{"ExplicitEndpointTrailingSlash", args{"InstrumentationKey=foobar;IngestionEndpoint=https://localhost:1030//"}, EndpointConfig{InstrumentationKey: "foobar", EndpointUrl: "https://localhost:1030/v2/track"}, false},
-		{"EndpointSuffixLeadingDot", args{"InstrumentationKey=foobar;EndpointSuffix=..localhost:1010"}, EndpointConfig{InstrumentationKey: "foobar", EndpointUrl: "https://dc.localhost:1010/v2/track"}, false},
-		{"EndpointSuffixTrailingSlash", args{"InstrumentationKey=foobar;EndpointSuffix=localhost:1010//"}, EndpointConfig{InstrumentationKey: "foobar", EndpointUrl: "https://dc.localhost:1010/v2/track"}, false},
+		{
+			"ExplicitEndpointTrailingSlash",
+			args{"InstrumentationKey=foobar;IngestionEndpoint=https://localhost:1030//"},
+			EndpointConfig{InstrumentationKey: "foobar", EndpointUrl: "https://localhost:1030/v2/track"},
+			false,
+		},
+		{
+			"EndpointSuffixLeadingDot",
+			args{"InstrumentationKey=foobar;EndpointSuffix=..localhost:1010"},
+			EndpointConfig{InstrumentationKey: "foobar", EndpointUrl: "https://dc.localhost:1010/v2/track"},
+			false,
+		},
+		{
+			"EndpointSuffixTrailingSlash",
+			args{"InstrumentationKey=foobar;EndpointSuffix=localhost:1010//"},
+			EndpointConfig{InstrumentationKey: "foobar", EndpointUrl: "https://dc.localhost:1010/v2/track"},
+			false,
+		},
 
 		// Invalid cases
 		{"Empty", args{""}, EndpointConfig{}, true},

@@ -53,7 +53,7 @@ func newVersionAction(flags versionFlags, formatter output.Formatter, writer io.
 func (v *versionAction) Run(ctx context.Context) error {
 	switch v.formatter.Kind() {
 	case output.NoneFormat:
-		fmt.Printf("azd version %s\n", internal.Version)
+		fmt.Fprintf(console.Handles().Stdout, "azd version %s\n", internal.Version)
 	case output.JsonFormat:
 		versionSpec := internal.GetVersionSpec()
 		err := v.formatter.Format(versionSpec, v.writer, nil)

@@ -2,8 +2,12 @@ linters:
   enable:
     - errorlint
     - gofmt
+    - lll
 linters-settings:
   errorlint:
     errorf: true
     asserts: true
     comparison: true
+  lll:
+    # GitHub recommended for code review
+    line-length: 125

@@ -9,8 +9,8 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"time"
 
+	"github.com/azure/azure-dev/cli/azd/cmd/contracts"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
@@ -82,6 +82,9 @@ func (la *loginAction) Run(ctx context.Context) error {
 		return azcli.ErrAzCliNotLoggedIn
 	} else if err != nil {
 		return fmt.Errorf("checking auth status: %w", err)
+	} else {
+		res.Status = contracts.LoginStatusSuccess
+		res.ExpiresOn = token.ExpiresOn
 	}
 
 	if la.formatter.Kind() == output.TableFormat {
@@ -118,8 +121,24 @@ func ensureLoggedIn(ctx context.Context) error {
 // runLogin runs an interactive login. When running in a Codespace or Remote Container, a device code based is
 // preformed since the default browser login needs UI. A device code login can be forced with `forceDeviceCode`.
 func runLogin(ctx context.Context, forceDeviceCode bool) error {
-	azCli := azcli.GetAzCli(ctx)
-	useDeviceCode := forceDeviceCode || os.Getenv(CodespacesEnvVarName) == "true" || os.Getenv(RemoteContainersEnvVarName) == "true"
+	console := input.GetConsole(ctx)
+	if console == nil {
+		panic("need console")
+	}
 
-	return azCli.Login(ctx, useDeviceCode, os.Stdout)
+	const (
+		// CodespacesEnvVarName is the name of the env variable set when you're in a Github codespace. It's
+		// just set to 'true'.
+		CodespacesEnvVarName = "CODESPACES"
+
+		// RemoteContainersEnvVarName is the name of the env variable set when you're in a remote container. It's
+		// just set to 'true'.
+		RemoteContainersEnvVarName = "REMOTE_CONTAINERS"
+	)
+
+	azCli := azcli.GetAzCli(ctx)
+	useDeviceCode := forceDeviceCode || os.Getenv(CodespacesEnvVarName) == "true" ||
+		os.Getenv(RemoteContainersEnvVarName) == "true"
+
+	return azCli.Login(ctx, useDeviceCode, console.Handles().Stdout)
 }

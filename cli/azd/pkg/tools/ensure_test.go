@@ -7,8 +7,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func Test_EnsureInstalledOnlyOnce(t *testing.T) {
-	ctx := context.Background()
+func Test_EnsureInstalledOnlyOnceWhenCached(t *testing.T) {
+	ctx := WithInstalledCheckCache(context.Background())
 	tool := TestTool{}
 
 	_ = EnsureInstalled(ctx, &tool)

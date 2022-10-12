@@ -78,7 +78,10 @@ func newTestTlsClientServer(t *testing.T) (Transmitter, *testServer) {
 	server.responseData = make([]byte, 0)
 	server.responseHeaders = make(map[string]string)
 
-	client := NewTransmitter(fmt.Sprintf("https://%s/v2/track", server.server.Listener.Addr().String()), server.server.Client())
+	client := NewTransmitter(
+		fmt.Sprintf("https://%s/v2/track", server.server.Listener.Addr().String()),
+		server.server.Client(),
+	)
 
 	return client, server
 }
@@ -102,7 +105,7 @@ func doBasicTransmit(client Transmitter, server *testServer, t *testing.T) {
 	server.responseHeaders["Content-type"] = "application/json"
 	result, err := client.Transmit([]byte("foobar"), make(TelemetryItems, 0))
 	if err != nil {
-		fmt.Println(err.Error())
+		t.Log(err.Error())
 	}
 	req := server.waitForRequest(t)
 
@@ -175,7 +178,9 @@ func TestFailedTransmit(t *testing.T) {
 	defer server.Close()
 
 	server.responseCode = errorResponse
-	server.responseData = []byte(`{"itemsReceived":3, "itemsAccepted":0, "errors":[{"index": 2, "statusCode": 500, "message": "Hello"}]}`)
+	server.responseData = []byte(
+		`{"itemsReceived":3, "itemsAccepted":0, "errors":[{"index": 2, "statusCode": 500, "message": "Hello"}]}`,
+	)
 	server.responseHeaders["Content-type"] = "application/json"
 	result, err := client.Transmit([]byte("foobar"), make(TelemetryItems, 0))
 	server.waitForRequest(t)

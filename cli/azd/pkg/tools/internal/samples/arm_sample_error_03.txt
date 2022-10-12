@@ -1,5 +1,3 @@
-
-Deployment Error Details:
 ResourceNotFound: The Resource 'Microsoft.Insights/components/matell-azdacainsights' under resource group 'matell-azdacarg' was not found. For more details please go to https://aka.ms/ARMResourceNotFoundFix
 ResourceNotFound: The Resource 'Microsoft.App/containerApps/matell-azdacaapi' under resource group 'matell-azdacarg' was not found. For more details please go to https://aka.ms/ARMResourceNotFoundFix
 ResourceNotFound: The Resource 'Microsoft.Insights/components/matell-azdacainsights' under resource group 'matell-azdacarg' was not found. For more details please go to https://aka.ms/ARMResourceNotFoundFix

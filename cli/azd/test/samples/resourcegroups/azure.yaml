@@ -1,3 +1,0 @@
-name: resourcegroupstest
-metadata:
-  template: azd-test/resourcegroupstest@v1

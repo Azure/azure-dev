@@ -546,7 +546,10 @@ func (p *BicepProvider) purgeKeyVaults(
 	return nil
 }
 
-func (p *BicepProvider) getAppConfigs(ctx context.Context, groupedResources map[string][]azcli.AzCliResource) ([]*azcli.AzCliAppConfig, error) {
+func (p *BicepProvider) getAppConfigs(
+	ctx context.Context,
+	groupedResources map[string][]azcli.AzCliResource,
+) ([]*azcli.AzCliAppConfig, error) {
 	configs := []*azcli.AzCliAppConfig{}
 
 	for resourceGroup, groupResources := range groupedResources {
@@ -564,7 +567,10 @@ func (p *BicepProvider) getAppConfigs(ctx context.Context, groupedResources map[
 	return configs, nil
 }
 
-func (p *BicepProvider) getAppConfigsToPurge(ctx context.Context, groupedResources map[string][]azcli.AzCliResource) ([]*azcli.AzCliAppConfig, error) {
+func (p *BicepProvider) getAppConfigsToPurge(
+	ctx context.Context,
+	groupedResources map[string][]azcli.AzCliResource,
+) ([]*azcli.AzCliAppConfig, error) {
 	configs, err := p.getAppConfigs(ctx, groupedResources)
 	if err != nil {
 		return nil, err
@@ -580,7 +586,8 @@ func (p *BicepProvider) getAppConfigsToPurge(ctx context.Context, groupedResourc
 	return configsToPurge, nil
 }
 
-// Azure AppConfigurations have a "soft delete" functionality (now enabled by default) where a configuration store may be marked
+// Azure AppConfigurations have a "soft delete" functionality (now enabled by default) where a
+// configuration store may be marked
 // such that when it is deleted it can be recovered for a period of time. During that time, the name may
 // not be reused.
 //
@@ -592,10 +599,16 @@ func (p *BicepProvider) getAppConfigsToPurge(ctx context.Context, groupedResourc
 //
 // See https://learn.microsoft.com/en-us/azure/azure-app-configuration/concept-soft-delete
 // for more information on this feature.
-func (p *BicepProvider) purgeAppConfigs(ctx context.Context, asyncContext *async.InteractiveTaskContextWithProgress[*DestroyResult, *DestroyProgress], appConfigs []*azcli.AzCliAppConfig, options DestroyOptions) error {
+func (p *BicepProvider) purgeAppConfigs(
+	ctx context.Context,
+	asyncContext *async.InteractiveTaskContextWithProgress[*DestroyResult, *DestroyProgress],
+	appConfigs []*azcli.AzCliAppConfig,
+	options DestroyOptions,
+) error {
 	if len(appConfigs) > 0 && !options.Purge() {
 		appConfigWarning := fmt.Sprintf(""+
-			"\nThis operation will delete and purge %d App Configurations. These App Configurations have soft delete enabled allowing them to be recovered for a period \n"+
+			"\nThis operation will delete and purge %d App Configurations. "+
+			"These App Configurations have soft delete enabled allowing them to be recovered for a period \n"+
 			"of time after deletion. During this period, their names may not be reused.\n"+
 			"You can use argument --purge to skip this confirmation.\n\n",
 			len(appConfigs))
@@ -604,7 +617,10 @@ func (p *BicepProvider) purgeAppConfigs(ctx context.Context, asyncContext *async
 
 		err := asyncContext.Interact(func() error {
 			purgeAppConfigs, err := p.console.Confirm(ctx, input.ConsoleOptions{
-				Message:      fmt.Sprintf("Would you like to %s delete these App Configurations instead, allowing their names to be reused?", output.WithErrorFormat("permanently")),
+				Message: fmt.Sprintf(
+					"Would you like to %s delete these App Configurations instead, allowing their names to be reused?",
+					output.WithErrorFormat("permanently"),
+				),
 				DefaultValue: false,
 			})
 
@@ -627,7 +643,11 @@ func (p *BicepProvider) purgeAppConfigs(ctx context.Context, asyncContext *async
 	for _, appConfig := range appConfigs {
 		progressReport := DestroyProgress{
 			Timestamp: time.Now(),
-			Message:   fmt.Sprintf("%s app configuration %s", output.WithErrorFormat("Purging"), output.WithHighLightFormat(appConfig.Name)),
+			Message: fmt.Sprintf(
+				"%s app configuration %s",
+				output.WithErrorFormat("Purging"),
+				output.WithHighLightFormat(appConfig.Name),
+			),
 		}
 
 		asyncContext.SetProgress(&progressReport)
@@ -637,7 +657,14 @@ func (p *BicepProvider) purgeAppConfigs(ctx context.Context, asyncContext *async
 			return fmt.Errorf("purging app configuration %s: %w", appConfig.Name, err)
 		}
 
-		p.console.Message(ctx, fmt.Sprintf("%s app configuration %s", output.WithErrorFormat("Purged"), output.WithHighLightFormat(appConfig.Name)))
+		p.console.Message(
+			ctx,
+			fmt.Sprintf(
+				"%s app configuration %s",
+				output.WithErrorFormat("Purged"),
+				output.WithHighLightFormat(appConfig.Name),
+			),
+		)
 	}
 
 	return nil

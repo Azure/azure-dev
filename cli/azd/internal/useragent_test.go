@@ -48,8 +48,16 @@ func TestGithubActionIdentifier(t *testing.T) {
 
 func TestFormatTemplate(t *testing.T) {
 	require.Equal(t, "", formatTemplateIdentifier(""))
-	require.Equal(t, fmt.Sprintf("%s/todo-python-mongo", templateProductIdentifierKey), formatTemplateIdentifier("todo-python-mongo"))
-	require.Equal(t, fmt.Sprintf("%s/todo-csharp-sql@0.0.1-beta", templateProductIdentifierKey), formatTemplateIdentifier("todo-csharp-sql@0.0.1-beta"))
+	require.Equal(
+		t,
+		fmt.Sprintf("%s/todo-python-mongo", templateProductIdentifierKey),
+		formatTemplateIdentifier("todo-python-mongo"),
+	)
+	require.Equal(
+		t,
+		fmt.Sprintf("%s/todo-csharp-sql@0.0.1-beta", templateProductIdentifierKey),
+		formatTemplateIdentifier("todo-csharp-sql@0.0.1-beta"),
+	)
 }
 
 // Scenario tests
@@ -80,7 +88,11 @@ func TestUserAgentStringScenarios(t *testing.T) {
 	t.Run("withEverything", func(t *testing.T) {
 		t.Setenv(AzdUserAgentEnvVar, "dev_user_agent")
 		t.Setenv(githubActionsEnvironmentVariableName, "true")
-		require.Equal(t, fmt.Sprintf("%s dev_user_agent azdtempl/template@0.0.1 GhActions", azDevIdentifier), MakeUserAgentString("template@0.0.1"))
+		require.Equal(
+			t,
+			fmt.Sprintf("%s dev_user_agent azdtempl/template@0.0.1 GhActions", azDevIdentifier),
+			MakeUserAgentString("template@0.0.1"),
+		)
 	})
 }
 
@@ -102,5 +114,12 @@ func TestUserAgentString(t *testing.T) {
 	require.Equal(
 		t,
 		userAgent.String(),
-		fmt.Sprintf("%s %s %s %s", userAgent.azDevCliIdentifier, userAgent.userSpecifiedIdentifier, userAgent.templateIdentifier, userAgent.githubActionsIdentifier))
+		fmt.Sprintf(
+			"%s %s %s %s",
+			userAgent.azDevCliIdentifier,
+			userAgent.userSpecifiedIdentifier,
+			userAgent.templateIdentifier,
+			userAgent.githubActionsIdentifier,
+		),
+	)
 }

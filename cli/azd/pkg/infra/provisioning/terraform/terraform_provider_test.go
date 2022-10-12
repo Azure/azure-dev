@@ -59,7 +59,11 @@ func TestTerraformPlan(t *testing.T) {
 	require.Contains(t, consoleLog[3], "Generating terraform plan...")
 
 	require.Equal(t, infraProvider.env.Values["AZURE_LOCATION"], deploymentPlan.Deployment.Parameters["location"].Value)
-	require.Equal(t, infraProvider.env.Values["AZURE_ENV_NAME"], deploymentPlan.Deployment.Parameters["environment_name"].Value)
+	require.Equal(
+		t,
+		infraProvider.env.Values["AZURE_ENV_NAME"],
+		deploymentPlan.Deployment.Parameters["environment_name"].Value,
+	)
 
 	require.NotNil(t, deploymentPlan.Details)
 
@@ -93,7 +97,12 @@ func TestTerraformDeploy(t *testing.T) {
 		},
 	}
 
-	scope := infra.NewSubscriptionScope(*mockContext.Context, infraProvider.env.Values["AZURE_LOCATION"], infraProvider.env.GetSubscriptionId(), infraProvider.env.GetEnvName())
+	scope := infra.NewSubscriptionScope(
+		*mockContext.Context,
+		infraProvider.env.Values["AZURE_LOCATION"],
+		infraProvider.env.GetSubscriptionId(),
+		infraProvider.env.GetEnvName(),
+	)
 	deployTask := infraProvider.Deploy(*mockContext.Context, &deploymentPlan, scope)
 
 	go func() {
@@ -168,7 +177,12 @@ func TestTerraformState(t *testing.T) {
 	prepareShowMocks(mockContext.CommandRunner)
 
 	infraProvider := createTerraformProvider(*mockContext.Context)
-	scope := infra.NewSubscriptionScope(*mockContext.Context, infraProvider.env.Values["AZURE_LOCATION"], infraProvider.env.GetSubscriptionId(), infraProvider.env.GetEnvName())
+	scope := infra.NewSubscriptionScope(
+		*mockContext.Context,
+		infraProvider.env.Values["AZURE_LOCATION"],
+		infraProvider.env.GetSubscriptionId(),
+		infraProvider.env.GetEnvName(),
+	)
 	getStateTask := infraProvider.State(*mockContext.Context, scope)
 
 	go func() {
@@ -193,7 +207,11 @@ func TestTerraformState(t *testing.T) {
 	require.Equal(t, infraProvider.env.Values["AZURE_LOCATION"], getStateResult.State.Outputs["AZURE_LOCATION"].Value)
 	require.Equal(t, fmt.Sprintf("rg-%s", infraProvider.env.GetEnvName()), getStateResult.State.Outputs["RG_NAME"].Value)
 	require.Len(t, getStateResult.State.Resources, 1)
-	require.Regexp(t, regexp.MustCompile(`^/subscriptions/[^/]*/resourceGroups/[^/]*$`), getStateResult.State.Resources[0].Id)
+	require.Regexp(
+		t,
+		regexp.MustCompile(`^/subscriptions/[^/]*/resourceGroups/[^/]*$`),
+		getStateResult.State.Resources[0].Id,
+	)
 }
 
 func createTerraformProvider(ctx context.Context) *TerraformProvider {

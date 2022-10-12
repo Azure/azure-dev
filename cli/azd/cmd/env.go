@@ -70,7 +70,12 @@ func envSetCmd(rootOptions *internal.GlobalCommandOptions) *cobra.Command {
 		}
 
 		//lint:ignore SA4006 // We want ctx overridden here for future changes
-		env, ctx, err := loadOrInitEnvironment(ctx, &rootOptions.EnvironmentName, azdCtx, console) //nolint:ineffassign,staticcheck
+		env, ctx, err := loadOrInitEnvironment(
+			ctx,
+			&rootOptions.EnvironmentName,
+			azdCtx,
+			console,
+		) //nolint:ineffassign,staticcheck
 		if err != nil {
 			return fmt.Errorf("loading environment: %w", err)
 		}
@@ -190,7 +195,12 @@ type envNewAction struct {
 }
 
 func (en *envNewAction) SetupFlags(persis *pflag.FlagSet, local *pflag.FlagSet) {
-	local.StringVar(&en.subscription, "subscription", "", "Name or ID of an Azure subscription to use for the new environment")
+	local.StringVar(
+		&en.subscription,
+		"subscription",
+		"",
+		"Name or ID of an Azure subscription to use for the new environment",
+	)
 	local.StringVarP(&en.location, "location", "l", "", "Azure location for the new environment")
 }
 
@@ -306,7 +316,12 @@ func envGetValuesCmd(rootOptions *internal.GlobalCommandOptions) *cobra.Command 
 			writer := output.GetWriter(ctx)
 
 			//lint:ignore SA4006 // We want ctx overridden here for future changes
-			env, ctx, err := loadOrInitEnvironment(ctx, &rootOptions.EnvironmentName, azdCtx, console) //nolint:ineffassign,staticcheck
+			env, ctx, err := loadOrInitEnvironment(
+				ctx,
+				&rootOptions.EnvironmentName,
+				azdCtx,
+				console,
+			) //nolint:ineffassign,staticcheck
 			if err != nil {
 				return err
 			}

@@ -185,7 +185,11 @@ func fetchLatestVersion(version chan<- semver.Version) {
 		}
 
 		if res.StatusCode != http.StatusOK {
-			log.Printf("failed to refresh latest version, http status: %v, body: %v, skipping update check", res.StatusCode, body)
+			log.Printf(
+				"failed to refresh latest version, http status: %v, body: %v, skipping update check",
+				res.StatusCode,
+				body,
+			)
 			return
 		}
 

@@ -122,7 +122,11 @@ func (pc *ProjectConfig) GetProject(ctx *context.Context, env *environment.Envir
 			serviceConfig.ResourceName = resolvedResourceName
 		}
 
-		deploymentScope := environment.NewDeploymentScope(env.GetSubscriptionId(), project.ResourceGroupName, serviceConfig.ResourceName)
+		deploymentScope := environment.NewDeploymentScope(
+			env.GetSubscriptionId(),
+			project.ResourceGroupName,
+			serviceConfig.ResourceName,
+		)
 		service, err := serviceConfig.GetService(*ctx, &project, env, deploymentScope)
 
 		if err != nil {
@@ -239,7 +243,10 @@ func ParseProjectConfig(yamlContent string, env *environment.Environment) (*Proj
 	var projectFile ProjectConfig
 
 	if err = yaml.Unmarshal([]byte(file), &projectFile); err != nil {
-		return nil, fmt.Errorf("unable to parse azure.yaml file. Please check the format of the file, and also verify you have the latest version of the CLI: %w", err)
+		return nil, fmt.Errorf(
+			"unable to parse azure.yaml file. Please check the format of the file, and also verify you have the latest version of the CLI: %w",
+			err,
+		)
 	}
 
 	projectFile.handlers = make(map[Event][]ProjectLifecycleEventHandlerFn)

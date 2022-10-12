@@ -55,7 +55,12 @@ func (sc *ServiceConfig) Path() string {
 }
 
 // GetService constructs a parsed Service object from the Service configuration
-func (sc *ServiceConfig) GetService(ctx context.Context, project *Project, env *environment.Environment, scope *environment.DeploymentScope) (*Service, error) {
+func (sc *ServiceConfig) GetService(
+	ctx context.Context,
+	project *Project,
+	env *environment.Environment,
+	scope *environment.DeploymentScope,
+) (*Service, error) {
 	framework, err := sc.GetFrameworkService(ctx, env)
 	if err != nil {
 		return nil, fmt.Errorf("creating framework service: %w", err)
@@ -76,7 +81,11 @@ func (sc *ServiceConfig) GetService(ctx context.Context, project *Project, env *
 }
 
 // GetServiceTarget constructs a ServiceTarget from the underlying service configuration
-func (sc *ServiceConfig) GetServiceTarget(ctx context.Context, env *environment.Environment, scope *environment.DeploymentScope) (*ServiceTarget, error) {
+func (sc *ServiceConfig) GetServiceTarget(
+	ctx context.Context,
+	env *environment.Environment,
+	scope *environment.DeploymentScope,
+) (*ServiceTarget, error) {
 	var target ServiceTarget
 
 	azCli := azcli.GetAzCli(ctx)

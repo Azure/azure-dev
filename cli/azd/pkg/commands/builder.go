@@ -47,7 +47,13 @@ type BuildOptions struct {
 //	    optional, they are enclosed in brackets ([ ]).
 //
 // Example: add [-F file | -D dir]... [-f format] profile
-func Build(action Action, rootOptions *internal.GlobalCommandOptions, use string, short string, buildOptions *BuildOptions) *cobra.Command {
+func Build(
+	action Action,
+	rootOptions *internal.GlobalCommandOptions,
+	use string,
+	short string,
+	buildOptions *BuildOptions,
+) *cobra.Command {
 	if buildOptions == nil {
 		buildOptions = &BuildOptions{}
 	}
@@ -98,7 +104,11 @@ func runCmdWithTelemetry(ctx context.Context, cmd *cobra.Command, runCmd func(ct
 
 // Create the core context for use in all Azd commands
 // Registers context values for azCli, formatter, writer, console and more.
-func createRootContext(ctx context.Context, cmd *cobra.Command, rootOptions *internal.GlobalCommandOptions) (context.Context, *azdcontext.AzdContext, error) {
+func createRootContext(
+	ctx context.Context,
+	cmd *cobra.Command,
+	rootOptions *internal.GlobalCommandOptions,
+) (context.Context, *azdcontext.AzdContext, error) {
 	azdCtx, err := azdcontext.NewAzdContext()
 	if err != nil {
 		return ctx, nil, fmt.Errorf("creating context: %w", err)

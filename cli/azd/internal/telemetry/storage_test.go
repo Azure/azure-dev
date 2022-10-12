@@ -343,7 +343,16 @@ func TestStorageQueue_Cleanup(t *testing.T) {
 					assert.NoError(t, err)
 
 					if slices.Contains(tt.expectedItemsRemaining, string(content)) {
-						assert.Fail(t, fmt.Sprintf("Unknown remaining file found. Filename: %s, content: %s. Expected filenames: %v, expected content: %v. ", remainingFile.Name(), string(content), tt.expectedFilesRemaining, tt.expectedItemsRemaining))
+						assert.Fail(
+							t,
+							fmt.Sprintf(
+								"Unknown remaining file found. Filename: %s, content: %s. Expected filenames: %v, expected content: %v. ",
+								remainingFile.Name(),
+								string(content),
+								tt.expectedFilesRemaining,
+								tt.expectedItemsRemaining,
+							),
+						)
 					}
 				}
 			}

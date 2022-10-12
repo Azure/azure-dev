@@ -56,7 +56,11 @@ func (pp *pythonProject) InstallDependencies(ctx context.Context) error {
 		if os.IsNotExist(err) {
 			err = pp.cli.CreateVirtualEnv(ctx, pp.config.Path(), vEnvName)
 			if err != nil {
-				return fmt.Errorf("python virtual environment for project '%s' could not be created: %w", pp.config.Path(), err)
+				return fmt.Errorf(
+					"python virtual environment for project '%s' could not be created: %w",
+					pp.config.Path(),
+					err,
+				)
 			}
 		} else {
 			return fmt.Errorf("python virtual environment for project '%s' is not accessible: %w", pp.config.Path(), err)

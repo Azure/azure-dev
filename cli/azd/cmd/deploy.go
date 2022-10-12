@@ -62,7 +62,12 @@ func (d *deployAction) SetupFlags(
 	persis *pflag.FlagSet,
 	local *pflag.FlagSet,
 ) {
-	local.StringVar(&d.serviceName, "service", "", "Deploys a specific service (when the string is unspecified, all services that are listed in the "+azdcontext.ProjectFileName+" file are deployed).")
+	local.StringVar(
+		&d.serviceName,
+		"service",
+		"",
+		"Deploys a specific service (when the string is unspecified, all services that are listed in the "+azdcontext.ProjectFileName+" file are deployed).",
+	)
 }
 
 func (d *deployAction) Run(ctx context.Context, cmd *cobra.Command, args []string, azdCtx *azdcontext.AzdContext) error {
@@ -185,7 +190,12 @@ func (d *deployAction) Run(ctx context.Context, cmd *cobra.Command, args []strin
 	return nil
 }
 
-func reportServiceDeploymentResultInteractive(ctx context.Context, console input.Console, svc *project.Service, sdr *project.ServiceDeploymentResult) {
+func reportServiceDeploymentResultInteractive(
+	ctx context.Context,
+	console input.Console,
+	svc *project.Service,
+	sdr *project.ServiceDeploymentResult,
+) {
 	var builder strings.Builder
 
 	builder.WriteString(fmt.Sprintf("Deployed service %s\n", output.WithHighLightFormat(svc.Config.Name)))

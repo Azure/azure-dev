@@ -54,7 +54,12 @@ func (p *GitHubScmProvider) name() string {
 
 // configureGitRemote uses GitHub cli to guide user on setting a remote url
 // for the local git project
-func (p *GitHubScmProvider) configureGitRemote(ctx context.Context, repoPath string, remoteName string, console input.Console) (string, error) {
+func (p *GitHubScmProvider) configureGitRemote(
+	ctx context.Context,
+	repoPath string,
+	remoteName string,
+	console input.Console,
+) (string, error) {
 	// used to detect when the GitHub has created a new repo
 	p.newGitHubRepoCreated = false
 
@@ -348,7 +353,13 @@ func (p *GitHubCiProvider) configureConnection(
 			value, ok := azdEnvironment.Values[key]
 			if !ok || strings.TrimSpace(value) == "" {
 				console.Message(ctx, output.WithWarningFormat("WARNING: Terraform Remote State configuration is invalid!"))
-				console.Message(ctx, fmt.Sprintf("Visit %s for more information on configuring Terraform remote state", output.WithLinkFormat("https://aka.ms/azure-dev/terraform")))
+				console.Message(
+					ctx,
+					fmt.Sprintf(
+						"Visit %s for more information on configuring Terraform remote state",
+						output.WithLinkFormat("https://aka.ms/azure-dev/terraform"),
+					),
+				)
 				console.Message(ctx, "")
 				return errors.New("terraform remote state is not correctly configured")
 			}
@@ -379,7 +390,11 @@ func (p *GitHubCiProvider) configureConnection(
 
 // configurePipeline is a no-op for GitHub, as the pipeline is automatically
 // created by creating the workflow files in .github folder.
-func (p *GitHubCiProvider) configurePipeline(ctx context.Context, repoDetails *gitRepositoryDetails, provisioningProvider provisioning.Options) error {
+func (p *GitHubCiProvider) configurePipeline(
+	ctx context.Context,
+	repoDetails *gitRepositoryDetails,
+	provisioningProvider provisioning.Options,
+) error {
 	return nil
 }
 
@@ -462,7 +477,12 @@ func selectRemoteUrl(ctx context.Context, ghCli github.GitHubCli, repo github.Gh
 }
 
 // getRemoteUrlFromNewRepository creates a new repository on GitHub and returns its remote url
-func getRemoteUrlFromNewRepository(ctx context.Context, ghCli github.GitHubCli, currentPathName string, console input.Console) (string, error) {
+func getRemoteUrlFromNewRepository(
+	ctx context.Context,
+	ghCli github.GitHubCli,
+	currentPathName string,
+	console input.Console,
+) (string, error) {
 	var repoName string
 	currentFolderName := filepath.Base(currentPathName)
 

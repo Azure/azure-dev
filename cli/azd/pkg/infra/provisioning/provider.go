@@ -86,8 +86,16 @@ type Provider interface {
 	// State gets the current state of the infrastructure, this contains both the provisioned resources and any outputs from the module.
 	State(ctx context.Context, scope infra.Scope) *async.InteractiveTaskWithProgress[*StateResult, *StateProgress]
 	Plan(ctx context.Context) *async.InteractiveTaskWithProgress[*DeploymentPlan, *DeploymentPlanningProgress]
-	Deploy(ctx context.Context, plan *DeploymentPlan, scope infra.Scope) *async.InteractiveTaskWithProgress[*DeployResult, *DeployProgress]
-	Destroy(ctx context.Context, deployment *Deployment, options DestroyOptions) *async.InteractiveTaskWithProgress[*DestroyResult, *DestroyProgress]
+	Deploy(
+		ctx context.Context,
+		plan *DeploymentPlan,
+		scope infra.Scope,
+	) *async.InteractiveTaskWithProgress[*DeployResult, *DeployProgress]
+	Destroy(
+		ctx context.Context,
+		deployment *Deployment,
+		options DestroyOptions,
+	) *async.InteractiveTaskWithProgress[*DestroyResult, *DestroyProgress]
 }
 
 // Registers a provider creation function for the specified provider kind
@@ -100,7 +108,12 @@ func RegisterProvider(kind ProviderKind, newFn NewProviderFn) error {
 	return nil
 }
 
-func NewProvider(ctx context.Context, env *environment.Environment, projectPath string, infraOptions Options) (Provider, error) {
+func NewProvider(
+	ctx context.Context,
+	env *environment.Environment,
+	projectPath string,
+	infraOptions Options,
+) (Provider, error) {
 	var provider Provider
 
 	if infraOptions.Provider == "" {

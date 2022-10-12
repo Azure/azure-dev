@@ -29,7 +29,12 @@ func (f *functionAppTarget) RequiredExternalTools() []tools.ExternalTool {
 	return []tools.ExternalTool{f.cli}
 }
 
-func (f *functionAppTarget) Deploy(ctx context.Context, _ *azdcontext.AzdContext, path string, progress chan<- string) (ServiceDeploymentResult, error) {
+func (f *functionAppTarget) Deploy(
+	ctx context.Context,
+	_ *azdcontext.AzdContext,
+	path string,
+	progress chan<- string,
+) (ServiceDeploymentResult, error) {
 	progress <- "Compressing deployment artifacts"
 	zipFilePath, err := internal.CreateDeployableZip(f.config.Name, path)
 
@@ -40,7 +45,13 @@ func (f *functionAppTarget) Deploy(ctx context.Context, _ *azdcontext.AzdContext
 	defer os.Remove(zipFilePath)
 
 	progress <- "Publishing deployment package"
-	res, err := f.cli.DeployFunctionAppUsingZipFile(ctx, f.env.GetSubscriptionId(), f.scope.ResourceGroupName(), f.scope.ResourceName(), zipFilePath)
+	res, err := f.cli.DeployFunctionAppUsingZipFile(
+		ctx,
+		f.env.GetSubscriptionId(),
+		f.scope.ResourceGroupName(),
+		f.scope.ResourceName(),
+		zipFilePath,
+	)
 	if err != nil {
 		return ServiceDeploymentResult{}, err
 	}
@@ -76,7 +87,12 @@ func (f *functionAppTarget) Endpoints(ctx context.Context) ([]string, error) {
 	}
 }
 
-func NewFunctionAppTarget(config *ServiceConfig, env *environment.Environment, scope *environment.DeploymentScope, azCli azcli.AzCli) ServiceTarget {
+func NewFunctionAppTarget(
+	config *ServiceConfig,
+	env *environment.Environment,
+	scope *environment.DeploymentScope,
+	azCli azcli.AzCli,
+) ServiceTarget {
 	return &functionAppTarget{
 		config: config,
 		env:    env,

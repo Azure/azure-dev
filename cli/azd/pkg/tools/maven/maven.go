@@ -85,7 +85,9 @@ func getMavenPath(projectPath string, rootProjectPath string) (string, error) {
 		return "", fmt.Errorf("failed looking up mvn in PATH: %w", err)
 	}
 
-	return "", errors.New("maven could not be found. Install either Maven or Maven Wrapper by visiting https://maven.apache.org/ or https://maven.apache.org/wrapper/")
+	return "", errors.New(
+		"maven could not be found. Install either Maven or Maven Wrapper by visiting https://maven.apache.org/ or https://maven.apache.org/wrapper/",
+	)
 }
 
 // getMavenWrapperPath finds the path to mvnw in the project directory, up to the root project directory.

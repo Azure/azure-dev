@@ -42,7 +42,10 @@ func (svc *Service) RequiredExternalTools() []tools.ExternalTool {
 	return requiredTools
 }
 
-func (svc *Service) Deploy(ctx context.Context, azdCtx *azdcontext.AzdContext) (<-chan *ServiceDeploymentChannelResponse, <-chan string) {
+func (svc *Service) Deploy(
+	ctx context.Context,
+	azdCtx *azdcontext.AzdContext,
+) (<-chan *ServiceDeploymentChannelResponse, <-chan string) {
 	result := make(chan *ServiceDeploymentChannelResponse, 1)
 	progress := make(chan string)
 
@@ -86,7 +89,12 @@ func (svc *Service) Deploy(ctx context.Context, azdCtx *azdcontext.AzdContext) (
 }
 
 // GetServiceResourceName attempts to find the name of the azure resource with the 'azd-service-name' tag set to the service key.
-func GetServiceResourceName(ctx context.Context, resourceGroupName string, serviceName string, env *environment.Environment) (string, error) {
+func GetServiceResourceName(
+	ctx context.Context,
+	resourceGroupName string,
+	serviceName string,
+	env *environment.Environment,
+) (string, error) {
 	res, err := GetServiceResources(ctx, resourceGroupName, serviceName, env)
 	if err != nil {
 		return "", err
@@ -101,11 +109,21 @@ func GetServiceResourceName(ctx context.Context, resourceGroupName string, servi
 }
 
 // GetServiceResources gets the resources tagged for a given service
-func GetServiceResources(ctx context.Context, resourceGroupName string, serviceName string, env *environment.Environment) ([]azcli.AzCliResource, error) {
+func GetServiceResources(
+	ctx context.Context,
+	resourceGroupName string,
+	serviceName string,
+	env *environment.Environment,
+) ([]azcli.AzCliResource, error) {
 	azCli := azcli.GetAzCli(ctx)
 	filter := fmt.Sprintf("tagName eq 'azd-service-name' and tagValue eq '%s'", serviceName)
 
-	return azCli.ListResourceGroupResources(ctx, env.GetSubscriptionId(), resourceGroupName, &azcli.ListResourceGroupResourcesOptions{
-		Filter: &filter,
-	})
+	return azCli.ListResourceGroupResources(
+		ctx,
+		env.GetSubscriptionId(),
+		resourceGroupName,
+		&azcli.ListResourceGroupResourcesOptions{
+			Filter: &filter,
+		},
+	)
 }

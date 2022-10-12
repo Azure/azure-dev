@@ -42,7 +42,12 @@ type restoreAction struct {
 }
 
 func (r *restoreAction) SetupFlags(persis, local *pflag.FlagSet) {
-	local.StringVar(&r.serviceName, "service", "", "Restores a specific service (when the string is unspecified, all services that are listed in the "+azdcontext.ProjectFileName+" file are restored).")
+	local.StringVar(
+		&r.serviceName,
+		"service",
+		"",
+		"Restores a specific service (when the string is unspecified, all services that are listed in the "+azdcontext.ProjectFileName+" file are restored).",
+	)
 }
 
 func (r *restoreAction) Run(ctx context.Context, _ *cobra.Command, args []string, azdCtx *azdcontext.AzdContext) error {

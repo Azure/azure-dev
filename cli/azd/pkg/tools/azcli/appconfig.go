@@ -24,7 +24,12 @@ type AzCliAppConfigSecret struct {
 	Value string `json:"value"`
 }
 
-func (cli *azCli) GetAppConfig(ctx context.Context, subscriptionId string, resourceGroupName string, configName string) (*AzCliAppConfig, error) {
+func (cli *azCli) GetAppConfig(
+	ctx context.Context,
+	subscriptionId string,
+	resourceGroupName string,
+	configName string,
+) (*AzCliAppConfig, error) {
 	appConfigStoresClient, err := cli.createAppConfigClient(ctx, subscriptionId)
 	if err != nil {
 		return nil, err

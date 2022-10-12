@@ -7,7 +7,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"sync"
 	"time"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
@@ -22,9 +21,7 @@ type ProviderKind string
 type NewProviderFn func(ctx context.Context, env *environment.Environment, projectPath string, infraOptions Options) (Provider, error)
 
 var (
-	//providersMutex guards providers. the lock should be taken before interacting with the map.
-	providersMutex sync.Mutex                     = sync.Mutex{}
-	providers      map[ProviderKind]NewProviderFn = make(map[ProviderKind]NewProviderFn)
+	providers map[ProviderKind]NewProviderFn = make(map[ProviderKind]NewProviderFn)
 )
 
 const (
@@ -74,10 +71,20 @@ type DestroyProgress struct {
 	Timestamp time.Time
 }
 
+type StateResult struct {
+	State *State
+}
+
+type StateProgress struct {
+	Message   string
+	Timestamp time.Time
+}
+
 type Provider interface {
 	Name() string
 	RequiredExternalTools() []tools.ExternalTool
-	GetDeployment(ctx context.Context, scope infra.Scope) *async.InteractiveTaskWithProgress[*DeployResult, *DeployProgress]
+	// State gets the current state of the infrastructure, this contains both the provisioned resources and any outputs from the module.
+	State(ctx context.Context, scope infra.Scope) *async.InteractiveTaskWithProgress[*StateResult, *StateProgress]
 	Plan(ctx context.Context) *async.InteractiveTaskWithProgress[*DeploymentPlan, *DeploymentPlanningProgress]
 	Deploy(ctx context.Context, plan *DeploymentPlan, scope infra.Scope) *async.InteractiveTaskWithProgress[*DeployResult, *DeployProgress]
 	Destroy(ctx context.Context, deployment *Deployment, options DestroyOptions) *async.InteractiveTaskWithProgress[*DestroyResult, *DestroyProgress]
@@ -89,9 +96,7 @@ func RegisterProvider(kind ProviderKind, newFn NewProviderFn) error {
 		return errors.New("NewProviderFn is required")
 	}
 
-	providersMutex.Lock()
 	providers[kind] = newFn
-	providersMutex.Unlock()
 	return nil
 }
 
@@ -102,9 +107,7 @@ func NewProvider(ctx context.Context, env *environment.Environment, projectPath 
 		infraOptions.Provider = Bicep
 	}
 
-	providersMutex.Lock()
 	newProviderFn, ok := providers[infraOptions.Provider]
-	providersMutex.Unlock()
 
 	if !ok {
 		return nil, fmt.Errorf("provider '%s' is not supported", infraOptions.Provider)

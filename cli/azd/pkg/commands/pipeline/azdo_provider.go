@@ -51,7 +51,7 @@ type AzdoRepositoryDetails struct {
 
 // requiredTools return the list of external tools required by
 // Azure DevOps provider during its execution.
-func (p *AzdoScmProvider) requiredTools() []tools.ExternalTool {
+func (p *AzdoScmProvider) requiredTools(_ context.Context) []tools.ExternalTool {
 	return []tools.ExternalTool{}
 }
 
@@ -542,7 +542,7 @@ type AzdoCiProvider struct {
 // ***  subareaProvider implementation ******
 
 // requiredTools defines the requires tools for GitHub to be used as CI manager
-func (p *AzdoCiProvider) requiredTools() []tools.ExternalTool {
+func (p *AzdoCiProvider) requiredTools(_ context.Context) []tools.ExternalTool {
 	return []tools.ExternalTool{}
 }
 

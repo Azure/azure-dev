@@ -8,10 +8,6 @@ import (
 	"log"
 )
 
-// Stores tools that have already been verified to being installed
-// This will save us time having to re-check downstream in other components
-var confirmedTools map[string]bool = map[string]bool{}
-
 // missingToolErrors wraps a set of errors discovered when
 // probing for tools and implements the Error interface to pretty
 // print the underlying errors. We use this instead of the existing
@@ -39,6 +35,11 @@ func EnsureInstalled(ctx context.Context, tools ...ExternalTool) error {
 	var allErrors []error
 	errorsEncountered := map[string]struct{}{}
 
+	confirmedTools := make(map[string]struct{})
+	if fromCtx, ok := ctx.Value(installedCheckCacheKey).(map[string]struct{}); ok && fromCtx != nil {
+		confirmedTools = fromCtx
+	}
+
 	for _, tool := range tools {
 		_, ok := confirmedTools[tool.Name()]
 		if ok {
@@ -65,7 +66,7 @@ func EnsureInstalled(ctx context.Context, tools ...ExternalTool) error {
 		}
 
 		// Mark the current tool as confirmed
-		confirmedTools[tool.Name()] = true
+		confirmedTools[tool.Name()] = struct{}{}
 	}
 
 	if len(allErrors) > 0 {
@@ -91,4 +92,14 @@ func Unique(tools []ExternalTool) []ExternalTool {
 	}
 
 	return uniqueTools
+}
+
+type confirmCacheKey string
+
+const (
+	installedCheckCacheKey confirmCacheKey = "checkCache"
+)
+
+func WithInstalledCheckCache(ctx context.Context) context.Context {
+	return context.WithValue(ctx, installedCheckCacheKey, make(map[string]struct{}))
 }

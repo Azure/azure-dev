@@ -66,7 +66,7 @@ func TestBicepPlan(t *testing.T) {
 	require.Equal(t, infraProvider.env.Values["AZURE_ENV_NAME"], deploymentPlan.Deployment.Parameters["environmentName"].Value)
 }
 
-func TestBicepGetDeploymentPlan(t *testing.T) {
+func TestBicepState(t *testing.T) {
 	progressLog := []string{}
 	interactiveLog := []bool{}
 	progressDone := make(chan bool)
@@ -80,7 +80,7 @@ func TestBicepGetDeploymentPlan(t *testing.T) {
 
 	infraProvider := createBicepProvider(*mockContext.Context)
 	scope := infra.NewSubscriptionScope(*mockContext.Context, infraProvider.env.Values["AZURE_LOCATION"], infraProvider.env.GetSubscriptionId(), infraProvider.env.GetEnvName())
-	getDeploymentTask := infraProvider.GetDeployment(*mockContext.Context, scope)
+	getDeploymentTask := infraProvider.State(*mockContext.Context, scope)
 
 	go func() {
 		for progressReport := range getDeploymentTask.Progress() {
@@ -99,8 +99,8 @@ func TestBicepGetDeploymentPlan(t *testing.T) {
 	<-progressDone
 
 	require.Nil(t, err)
-	require.NotNil(t, getDeploymentResult.Deployment)
-	require.Equal(t, getDeploymentResult.Deployment.Outputs["WEBSITE_URL"].Value, expectedWebsiteUrl)
+	require.NotNil(t, getDeploymentResult.State)
+	require.Equal(t, getDeploymentResult.State.Outputs["WEBSITE_URL"].Value, expectedWebsiteUrl)
 
 	require.Len(t, progressLog, 3)
 	require.Contains(t, progressLog[0], "Loading Bicep template")
@@ -272,7 +272,7 @@ func TestBicepDestroy(t *testing.T) {
 }
 
 func createBicepProvider(ctx context.Context) *BicepProvider {
-	projectDir := "../../../../test/samples/webapp"
+	projectDir := "../../../../test/functional/testdata/samples/webapp"
 	options := Options{
 		Module: "main",
 	}
@@ -330,7 +330,7 @@ func preparePlanningMocks(
 	}
 
 	deployOutputs := make(map[string]azcli.AzCliDeploymentOutput)
-	deployOutputs["WEBSITE_URL"] = azcli.AzCliDeploymentOutput{Value: expectedWebsiteUrl}
+	deployOutputs["WEBSITE_URL"] = azcli.AzCliDeploymentOutput{Type: "String", Value: expectedWebsiteUrl}
 	azDeployment := azcli.AzCliDeployment{
 		Id:   "DEPLOYMENT_ID",
 		Name: "DEPLOYMENT_NAME",

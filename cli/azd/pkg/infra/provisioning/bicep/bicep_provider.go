@@ -1,6 +1,15 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
+// Package bicep contains an implementation of provider.Provider for Bicep. This
+// provider is registered for use when this package is imported, and can be imported for
+// side effects only to register the provider, e.g.:
+//
+// require(
+//
+//	_ "github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning/bicep"
+//
+// )
 package bicep
 
 import (
@@ -71,11 +80,10 @@ func (p *BicepProvider) RequiredExternalTools() []tools.ExternalTool {
 	return []tools.ExternalTool{p.bicepCli, p.azCli}
 }
 
-// Gets the latest deployment details for the specified scope
-func (p *BicepProvider) GetDeployment(ctx context.Context, scope infra.Scope) *async.InteractiveTaskWithProgress[*DeployResult, *DeployProgress] {
+func (p *BicepProvider) State(ctx context.Context, scope infra.Scope) *async.InteractiveTaskWithProgress[*StateResult, *StateProgress] {
 	return async.RunInteractiveTaskWithProgress(
-		func(asyncContext *async.InteractiveTaskContextWithProgress[*DeployResult, *DeployProgress]) {
-			asyncContext.SetProgress(&DeployProgress{Message: "Loading Bicep template", Timestamp: time.Now()})
+		func(asyncContext *async.InteractiveTaskContextWithProgress[*StateResult, *StateProgress]) {
+			asyncContext.SetProgress(&StateProgress{Message: "Loading Bicep template", Timestamp: time.Now()})
 			modulePath := p.modulePath()
 			deployment, err := p.createDeployment(ctx, modulePath)
 			if err != nil {
@@ -83,19 +91,27 @@ func (p *BicepProvider) GetDeployment(ctx context.Context, scope infra.Scope) *a
 				return
 			}
 
-			asyncContext.SetProgress(&DeployProgress{Message: "Retrieving Azure deployment", Timestamp: time.Now()})
+			asyncContext.SetProgress(&StateProgress{Message: "Retrieving Azure deployment", Timestamp: time.Now()})
 			armDeployment, err := scope.GetDeployment(ctx)
 			if err != nil {
 				asyncContext.SetError(fmt.Errorf("retrieving deployment: %w", err))
 				return
 			}
 
-			asyncContext.SetProgress(&DeployProgress{Message: "Normalizing output parameters", Timestamp: time.Now()})
-			deployment.Outputs = p.createOutputParameters(deployment, createDeploymentOutput(armDeployment.Properties.Outputs))
+			state := State{}
+			state.Resources = make([]Resource, len(armDeployment.Properties.OutputResources))
 
-			result := DeployResult{
-				Deployment: deployment,
-				Operations: []azcli.AzCliResourceOperation{},
+			for idx, res := range armDeployment.Properties.OutputResources {
+				state.Resources[idx] = Resource{
+					Id: *res.ID,
+				}
+			}
+
+			asyncContext.SetProgress(&StateProgress{Message: "Normalizing output parameters", Timestamp: time.Now()})
+			state.Outputs = p.createOutputParameters(deployment, createDeploymentOutput(armDeployment.Properties.Outputs))
+
+			result := StateResult{
+				State: &state,
 			}
 
 			asyncContext.SetResult(&result)
@@ -495,6 +511,23 @@ func (p *BicepProvider) updateParametersFile(ctx context.Context, deployment *De
 	return nil
 }
 
+func (p *BicepProvider) mapBicepTypeToInterfaceType(s string) ParameterType {
+	switch s {
+	case "String", "string":
+		return ParameterTypeString
+	case "Bool", "bool":
+		return ParameterTypeBoolean
+	case "Int", "int":
+		return ParameterTypeNumber
+	case "Object", "object":
+		return ParameterTypeObject
+	case "Array", "array":
+		return ParameterTypeArray
+	default:
+		panic(fmt.Sprintf("unexpected bicep type: '%s'", s))
+	}
+}
+
 // Creates a normalized view of the azure output parameters and resolves inconsistencies in the output parameter name casings.
 func (p *BicepProvider) createOutputParameters(template *Deployment, azureOutputParams map[string]azcli.AzCliDeploymentOutput) map[string]OutputParameter {
 	canonicalOutputCasings := make(map[string]string, len(template.Outputs))
@@ -515,7 +548,7 @@ func (p *BicepProvider) createOutputParameters(template *Deployment, azureOutput
 		}
 
 		outputParams[paramName] = OutputParameter{
-			Type:  azureParam.Type,
+			Type:  p.mapBicepTypeToInterfaceType(azureParam.Type),
 			Value: azureParam.Value,
 		}
 	}
@@ -608,7 +641,10 @@ func (p *BicepProvider) convertToDeployment(bicepTemplate BicepTemplate) (*Deplo
 	}
 
 	for key, param := range bicepTemplate.Outputs {
-		outputs[key] = OutputParameter(param)
+		outputs[key] = OutputParameter{
+			Type:  p.mapBicepTypeToInterfaceType(param.Type),
+			Value: param.Value,
+		}
 	}
 
 	template.Parameters = parameters
@@ -730,8 +766,7 @@ func NewBicepProvider(ctx context.Context, env *environment.Environment, project
 	}
 }
 
-// Registers the Bicep provider with the provisioning module
-func Register() {
+func init() {
 	err := RegisterProvider(Bicep, func(ctx context.Context, env *environment.Environment, projectPath string, options Options) (Provider, error) {
 		return NewBicepProvider(ctx, env, projectPath, options), nil
 	})

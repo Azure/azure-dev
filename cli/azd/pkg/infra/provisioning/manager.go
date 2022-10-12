@@ -42,11 +42,11 @@ func (m *Manager) Plan(ctx context.Context) (*DeploymentPlan, error) {
 }
 
 // Gets the latest deployment details for the specified scope
-func (m *Manager) GetDeployment(ctx context.Context, scope infra.Scope) (*DeployResult, error) {
-	var deployResult *DeployResult
+func (m *Manager) State(ctx context.Context, scope infra.Scope) (*StateResult, error) {
+	var stateResult *StateResult
 
-	err := m.runAction(ctx, "Retrieving Azure Deployment", m.interactive, func(ctx context.Context, spinner *spin.Spinner) error {
-		queryTask := m.provider.GetDeployment(ctx, scope)
+	err := m.runAction(ctx, "Retrieving Infrastructure State", m.interactive, func(ctx context.Context, spinner *spin.Spinner) error {
+		queryTask := m.provider.State(ctx, scope)
 
 		go func() {
 			for progress := range queryTask.Progress() {
@@ -61,16 +61,16 @@ func (m *Manager) GetDeployment(ctx context.Context, scope infra.Scope) (*Deploy
 			return err
 		}
 
-		deployResult = result
+		stateResult = result
 
 		return nil
 	})
 
 	if err != nil {
-		return nil, fmt.Errorf("error retrieving deployment: %w", err)
+		return nil, fmt.Errorf("error retrieving state: %w", err)
 	}
 
-	return deployResult, nil
+	return stateResult, nil
 }
 
 // Deploys the Azure infrastructure for the specified project
@@ -87,7 +87,7 @@ func (m *Manager) Deploy(ctx context.Context, plan *DeploymentPlan, scope infra.
 		return nil, err
 	}
 
-	if err := UpdateEnvironment(m.env, &deployResult.Deployment.Outputs); err != nil {
+	if err := UpdateEnvironment(m.env, deployResult.Deployment.Outputs); err != nil {
 		return nil, fmt.Errorf("updating environment with deployment outputs: %w", err)
 	}
 

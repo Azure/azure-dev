@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/azure/azure-dev/cli/azd/cmd/contracts"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/commands"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
@@ -257,19 +258,19 @@ func envRefreshCmd(rootOptions *internal.GlobalCommandOptions) *cobra.Command {
 
 		scope := infra.NewSubscriptionScope(ctx, env.GetLocation(), env.GetSubscriptionId(), env.GetEnvName())
 
-		getDeploymentResult, err := infraManager.GetDeployment(ctx, scope)
+		getStateResult, err := infraManager.State(ctx, scope)
 		if err != nil {
 			return fmt.Errorf("getting deployment: %w", err)
 		}
 
-		if err := provisioning.UpdateEnvironment(env, &getDeploymentResult.Deployment.Outputs); err != nil {
+		if err := provisioning.UpdateEnvironment(env, getStateResult.State.Outputs); err != nil {
 			return err
 		}
 
 		console.Message(ctx, "Environments setting refresh completed")
 
 		if formatter.Kind() == output.JsonFormat {
-			err = formatter.Format(getDeploymentResult.Deployment, writer, nil)
+			err = formatter.Format(contracts.NewEnvRefreshResultFromProvisioningState(getStateResult.State), writer, nil)
 			if err != nil {
 				return fmt.Errorf("writing deployment result in JSON format: %w", err)
 			}

@@ -22,6 +22,7 @@ ignoreWords:
     - arck
     - armkeyvault
     - armresources
+    - armsubscriptions
     - azconnection
     - azcore
     - Azdo
@@ -111,6 +112,7 @@ ignoreWords:
     - vpng
     - vwan
     - wafrg
+    - westus
     - Wans
     - apim
     - Retryable
@@ -125,6 +127,7 @@ ignoreWords:
     - aztfmod
     - menuid
     - PLACEHOLDERIACTOOLS
+    - LOGANALYTICS
 useGitignore: true
 dictionaryDefinitions:
     - name: gitHubUserAliases

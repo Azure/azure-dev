@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/azure/azure-dev/cli/azd/cmd/contracts"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/commands"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
@@ -97,12 +98,12 @@ func (ica *infraCreateAction) Run(ctx context.Context, cmd *cobra.Command, args 
 
 	if err != nil {
 		if formatter.Kind() == output.JsonFormat {
-			deployment, err := infraManager.GetDeployment(ctx, provisioningScope)
+			stateResult, err := infraManager.State(ctx, provisioningScope)
 			if err != nil {
 				return fmt.Errorf("deployment failed and the deployment result is unavailable: %w", multierr.Combine(err, err))
 			}
 
-			if err := formatter.Format(deployment, writer, nil); err != nil {
+			if err := formatter.Format(contracts.NewEnvRefreshResultFromProvisioningState(stateResult.State), writer, nil); err != nil {
 				return fmt.Errorf("deployment failed and the deployment result could not be displayed: %w", multierr.Combine(err, err))
 			}
 		}

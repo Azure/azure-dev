@@ -106,7 +106,7 @@ func (at *containerAppTarget) Deploy(ctx context.Context, azdCtx *azdcontext.Azd
 
 	if len(deployResult.Deployment.Outputs) > 0 {
 		log.Printf("saving %d deployment outputs", len(deployResult.Deployment.Outputs))
-		if err := provisioning.UpdateEnvironment(at.env, &deployResult.Deployment.Outputs); err != nil {
+		if err := provisioning.UpdateEnvironment(at.env, deployResult.Deployment.Outputs); err != nil {
 			return ServiceDeploymentResult{}, fmt.Errorf("saving outputs to environment: %w", err)
 		}
 	}

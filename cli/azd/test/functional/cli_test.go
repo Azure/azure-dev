@@ -7,8 +7,10 @@ import (
 	"bytes"
 	"context"
 	"crypto/rand"
+	"embed"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io/fs"
@@ -24,9 +26,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/azure/azure-dev/cli/azd/cmd"
 	"github.com/azure/azure-dev/cli/azd/internal"
-	"github.com/azure/azure-dev/cli/azd/pkg/container"
+	"github.com/azure/azure-dev/cli/azd/internal/telemetry"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
@@ -34,18 +35,18 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/test/azdcli"
-	"github.com/azure/azure-dev/cli/azd/test/ostest"
 	"github.com/joho/godotenv"
 	"github.com/sethvargo/go-retry"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/otel/attribute"
 )
 
 func Test_CLI_Login_FailsIfNoAzCliIsMissing(t *testing.T) {
 	ctx, cancel := newTestContext(t)
 	defer cancel()
 
-	dir := ostest.TempDirWithDiagnostics(t)
+	dir := tempDirWithDiagnostics(t)
 
 	cli := azdcli.NewCLI(t)
 	cli.WorkingDirectory = dir
@@ -78,7 +79,7 @@ func Test_CLI_Init_FailsIfAzCliIsMissing(t *testing.T) {
 	ctx, cancel := newTestContext(t)
 	defer cancel()
 
-	dir := ostest.TempDirWithDiagnostics(t)
+	dir := tempDirWithDiagnostics(t)
 
 	cli := azdcli.NewCLI(t)
 	cli.WorkingDirectory = dir
@@ -95,13 +96,13 @@ func Test_CLI_Init_AsksForSubscriptionIdAndCreatesEnvAndProjectFile(t *testing.T
 	ctx, cancel := newTestContext(t)
 	defer cancel()
 
-	dir := ostest.TempDirWithDiagnostics(t)
+	dir := tempDirWithDiagnostics(t)
 
 	cli := azdcli.NewCLI(t)
 	cli.WorkingDirectory = dir
 	cli.Env = append(os.Environ(), "AZURE_LOCATION=eastus2")
 
-	_, err := cli.RunCommandWithStdIn(ctx, "Empty Template\nTESTENV\n\nOther (enter manually)\nMY_SUB_ID\n", "init")
+	_, err := cli.RunCommandWithStdIn(ctx, "Empty Template\nTESTENV\nOther (enter manually)\nMY_SUB_ID\n\n", "init")
 	require.NoError(t, err)
 
 	file, err := os.ReadFile(getTestEnvPath(dir, "TESTENV"))
@@ -123,7 +124,7 @@ func Test_CLI_Init_CanUseTemplate(t *testing.T) {
 	ctx, cancel := newTestContext(t)
 	defer cancel()
 
-	dir := ostest.TempDirWithDiagnostics(t)
+	dir := tempDirWithDiagnostics(t)
 
 	cli := azdcli.NewCLI(t)
 	cli.WorkingDirectory = dir
@@ -140,121 +141,13 @@ func Test_CLI_Init_CanUseTemplate(t *testing.T) {
 	require.FileExists(t, filepath.Join(dir, "README.md"))
 }
 
-// Test when we have multiple resource group matches. More than one rg has azd-env-name set
-func Test_CLI_ResourceGroupNameWithMultipleMatches(t *testing.T) {
-	// running this test in parallel is ok as it uses a t.TempDir()
-	t.Parallel()
-	envName := randomEnvName()
-	Internal_Test_CLI_ResourceGroupsName(t, envName, fmt.Sprintf("rg-%s", envName), true, true, true)
-}
-
-// Test when we can't find any resource group matches
-func Test_CLI_ResourceGroupNameWithoutMatch(t *testing.T) {
-	// running this test in parallel is ok as it uses a t.TempDir()
-	t.Parallel()
-	envName := randomEnvName()
-	Internal_Test_CLI_ResourceGroupsName(t, envName, fmt.Sprintf("rg-%s", envName), true, false, false)
-}
-
-// Test when resource group uses rg- prefix
-func Test_CLI_ResourceGroupNameWithPrefix(t *testing.T) {
-	// running this test in parallel is ok as it uses a t.TempDir()
-	t.Parallel()
-	envName := randomEnvName()
-	Internal_Test_CLI_ResourceGroupsName(t, envName, fmt.Sprintf("rg-%s", envName), true, true, false)
-}
-
-// Test when resource group uses -rg suffix
-func Test_CLI_ResourceGroupNameWithSuffix(t *testing.T) {
-	// running this test in parallel is ok as it uses a t.TempDir()
-	t.Parallel()
-	envName := randomEnvName()
-	Internal_Test_CLI_ResourceGroupsName(t, envName, fmt.Sprintf("%s-rg", envName), true, true, false)
-}
-
-// Test when we don't have any resource groups with azd-env-name tag
-func Test_CLI_ResourceGroupNameWithoutEnvNameTag(t *testing.T) {
-	// running this test in parallel is ok as it uses a t.TempDir()
-	t.Parallel()
-	envName := randomEnvName()
-	Internal_Test_CLI_ResourceGroupsName(t, envName, fmt.Sprintf("rg-%s", envName), false, true, false)
-}
-
-func Internal_Test_CLI_ResourceGroupsName(t *testing.T, envName string, rgName string, includeEnvNameTag bool, createResources bool, createMultipleResourceGroups bool) {
-	ctx, cancel := newTestContext(t)
-	defer cancel()
-
-	os.Setenv("AZD_FUNC_TEST", "TRUE")
-
-	dir := ostest.TempDirWithDiagnostics(t)
-	t.Logf("DIR: %s", dir)
-
-	//envName := randomEnvName()
-	t.Logf("AZURE_ENV_NAME: %s", envName)
-
-	cli := azdcli.NewCLI(t)
-	cli.WorkingDirectory = dir
-	cli.Env = append(os.Environ(), "AZURE_LOCATION=eastus2")
-
-	// Store the original environment to be used later
-	originalEnvironment := cli.Env
-
-	err := copySample(dir, "resourcegroups")
-	require.NoError(t, err, "failed expanding sample")
-
-	cli.Env = append(originalEnvironment, fmt.Sprintf("TEST_RESOURCE_GROUP_NAME=%s", rgName))
-
-	if includeEnvNameTag {
-		cli.Env = append(cli.Env, "TEST_INCLUDE_ENV_NAME_TAG=true")
-	}
-
-	if createMultipleResourceGroups {
-		cli.Env = append(cli.Env, "TEST_CREATE_MULTIPLE_RESOURCE_GROUPS=true")
-	}
-
-	_, err = cli.RunCommandWithStdIn(ctx, stdinForTests(envName), "init")
-	require.NoError(t, err)
-
-	if createResources {
-		_, err = cli.RunCommand(ctx, "infra", "create")
-		require.NoError(t, err)
-	}
-
-	envFilePath := filepath.Join(dir, azdcontext.EnvironmentDirectoryName, envName, ".env")
-	env, err := environment.FromFile(envFilePath)
-	require.NoError(t, err)
-
-	// Verify that resource group is found or not found correctly
-	resourceManager := infra.NewAzureResourceManager(ctx)
-	foundRg, err := resourceManager.FindResourceGroupForEnvironment(ctx, env)
-
-	if createResources {
-		if createMultipleResourceGroups {
-			// We have multiple resource groups, so we expect an error
-			require.Error(t, err)
-		} else {
-			// We found a single resource group, so we do not expect an error
-			require.NoError(t, err)
-			require.Equal(t, foundRg, rgName)
-		}
-
-		// Using `down` here to test the down alias to infra delete
-		_, err = cli.RunCommand(ctx, "down", "--force", "--purge")
-		require.NoError(t, err)
-	} else {
-		// We didn't create the resources, so we expect an error
-		require.Error(t, err)
-	}
-
-}
-
 func Test_CLI_InfraCreateAndDelete(t *testing.T) {
 	// running this test in parallel is ok as it uses a t.TempDir()
 	t.Parallel()
 	ctx, cancel := newTestContext(t)
 	defer cancel()
 
-	dir := ostest.TempDirWithDiagnostics(t)
+	dir := tempDirWithDiagnostics(t)
 	t.Logf("DIR: %s", dir)
 
 	envName := randomEnvName()
@@ -300,7 +193,7 @@ func Test_CLI_InfraCreateAndDeleteUpperCase(t *testing.T) {
 	ctx, cancel := newTestContext(t)
 	defer cancel()
 
-	dir := ostest.TempDirWithDiagnostics(t)
+	dir := tempDirWithDiagnostics(t)
 	t.Logf("DIR: %s", dir)
 
 	envName := "UpperCase" + randomEnvName()
@@ -347,7 +240,7 @@ func Test_CLI_InfraCreateAndDeleteWebApp(t *testing.T) {
 	ctx, cancel := newTestContext(t)
 	defer cancel()
 
-	dir := ostest.TempDirWithDiagnostics(t)
+	dir := tempDirWithDiagnostics(t)
 	t.Logf("DIR: %s", dir)
 
 	envName := randomEnvName()
@@ -475,7 +368,7 @@ func Test_CLI_DeployInvalidName(t *testing.T) {
 	ctx, cancel := newTestContext(t)
 	defer cancel()
 
-	dir := ostest.TempDirWithDiagnostics(t)
+	dir := tempDirWithDiagnostics(t)
 	t.Logf("DIR: %s", dir)
 
 	envName := randomEnvName()
@@ -501,7 +394,7 @@ func Test_CLI_RestoreCommand(t *testing.T) {
 	ctx, cancel := newTestContext(t)
 	defer cancel()
 
-	dir := ostest.TempDirWithDiagnostics(t)
+	dir := tempDirWithDiagnostics(t)
 	t.Logf("DIR: %s", dir)
 
 	envName := randomEnvName()
@@ -531,7 +424,7 @@ func Test_CLI_InfraCreateAndDeleteFuncApp(t *testing.T) {
 	ctx, cancel := newTestContext(t)
 	defer cancel()
 
-	dir := ostest.TempDirWithDiagnostics(t)
+	dir := tempDirWithDiagnostics(t)
 	t.Logf("DIR: %s", dir)
 
 	envName := randomEnvName()
@@ -548,11 +441,11 @@ func Test_CLI_InfraCreateAndDeleteFuncApp(t *testing.T) {
 	require.NoError(t, err)
 
 	t.Logf("Starting infra create\n")
-	err = cmd.Execute([]string{"infra", "create", "--cwd", dir})
+	_, err = cli.RunCommand(ctx, "infra", "create", "--cwd", dir)
 	require.NoError(t, err)
 
 	t.Logf("Starting deploy\n")
-	err = cmd.Execute([]string{"deploy", "--cwd", dir})
+	_, err = cli.RunCommand(ctx, "deploy", "--cwd", dir)
 	require.NoError(t, err)
 
 	out, err := cli.RunCommand(ctx, "env", "get-values", "-o", "json", "--cwd", dir)
@@ -584,7 +477,7 @@ func Test_CLI_InfraCreateAndDeleteFuncApp(t *testing.T) {
 	require.NoError(t, err)
 
 	t.Logf("Starting infra delete\n")
-	err = cmd.Execute([]string{"infra", "delete", "--cwd", dir, "--force", "--purge"})
+	_, err = cli.RunCommand(ctx, "infra", "delete", "--cwd", dir, "--force", "--purge")
 	require.NoError(t, err)
 
 	t.Logf("Done\n")
@@ -594,7 +487,7 @@ func Test_CLI_ProjectIsNeeded(t *testing.T) {
 	ctx, cancel := newTestContext(t)
 	defer cancel()
 
-	dir := ostest.TempDirWithDiagnostics(t)
+	dir := tempDirWithDiagnostics(t)
 	t.Logf("DIR: %s", dir)
 
 	cli := azdcli.NewCLI(t)
@@ -673,11 +566,14 @@ func filterEnviron(toExclude ...string) []string {
 	return new
 }
 
-// copySample copies the tree rooted at ${ROOT}/test/samples/ to targetRoot.
-func copySample(targetRoot string, sampleName string) error {
-	sampleRoot := filepath.Join(filepath.Dir(azdcli.GetAzdLocation()), "test", "samples", sampleName)
+//go:embed testdata/samples/*
+var samples embed.FS
 
-	return filepath.WalkDir(sampleRoot, func(name string, info fs.DirEntry, err error) error {
+// copySample copies the given sample to targetRoot.
+func copySample(targetRoot string, sampleName string) error {
+	sampleRoot := path.Join("testdata", "samples", sampleName)
+
+	return fs.WalkDir(samples, sampleRoot, func(name string, d fs.DirEntry, err error) error {
 		// If there was some error that was preventing is from walking into the directory, just fail now,
 		// not much we can do to recover.
 		if err != nil {
@@ -685,11 +581,11 @@ func copySample(targetRoot string, sampleName string) error {
 		}
 		targetPath := filepath.Join(targetRoot, name[len(sampleRoot):])
 
-		if info.IsDir() {
+		if d.IsDir() {
 			return os.MkdirAll(targetPath, osutil.PermissionDirectory)
 		}
 
-		contents, err := os.ReadFile(name)
+		contents, err := fs.ReadFile(samples, name)
 		if err != nil {
 			return fmt.Errorf("reading sample file: %w", err)
 		}
@@ -729,8 +625,6 @@ func getTestEnvPath(dir string, envName string) string {
 // the provided `testing.T` has a deadline applied, the returned context
 // respects the deadline.
 func newTestContext(t *testing.T) (context.Context, context.CancelFunc) {
-	container.RegisterDependencies()
-
 	ctx := context.Background()
 	ctx = internal.WithCommandOptions(ctx, internal.GlobalCommandOptions{})
 
@@ -747,7 +641,7 @@ func Test_CLI_InfraCreateAndDeleteResourceTerraform(t *testing.T) {
 	ctx, cancel := newTestContext(t)
 	defer cancel()
 
-	dir := ostest.TempDirWithDiagnostics(t)
+	dir := tempDirWithDiagnostics(t)
 	t.Logf("DIR: %s", dir)
 
 	envName := randomEnvName()
@@ -782,7 +676,7 @@ func Test_CLI_InfraCreateAndDeleteResourceTerraformRemote(t *testing.T) {
 	ctx, cancel := newTestContext(t)
 	defer cancel()
 
-	dir := ostest.TempDirWithDiagnostics(t)
+	dir := tempDirWithDiagnostics(t)
 	t.Logf("DIR: %s", dir)
 
 	envName := randomEnvName()
@@ -876,19 +770,75 @@ func TestMain(m *testing.M) {
 	os.Exit(exitVal)
 }
 
-func RemoveAllWithRetries(t *testing.T, dir string) func() {
-	return func() {
-		err := retry.Do(context.Background(), retry.WithMaxRetries(10, retry.NewConstant(1*time.Second)), func(_ context.Context) error {
-			removeErr := os.RemoveAll(dir)
-			if removeErr == nil {
-				return nil
-			}
-			t.Logf("failed to clean up %s with error: %v", dir, removeErr)
-			return retry.RetryableError(removeErr)
-		})
+// TempDirWithDiagnostics creates a temp directory with cleanup that also provides additional
+// diagnostic logging and retries.
+func tempDirWithDiagnostics(t *testing.T) string {
+	temp := t.TempDir()
 
-		if err != nil {
-			t.Errorf("RemoveAllWithRetries failed after many retires: %v", err)
-		}
+	if runtime.GOOS == "windows" {
+		// Enable our additional custom remove logic for Windows where we see locked files.
+		t.Cleanup(func() {
+			err := removeAllWithDiagnostics(t, temp)
+			if err != nil {
+				logHandles(t, temp)
+				t.Fatalf("TempDirWithDiagnostics: %s", err)
+			}
+		})
 	}
+
+	return temp
+}
+
+func logHandles(t *testing.T, path string) {
+	handle, err := osexec.LookPath("handle")
+	if err != nil && errors.Is(err, osexec.ErrNotFound) {
+		t.Logf("handle.exe not present. Skipping handle detection. PATH: %s", os.Getenv("PATH"))
+		return
+	}
+
+	if err != nil {
+		t.Logf("failed to find handle.exe: %s", err)
+		return
+	}
+
+	args := exec.NewRunArgs(handle, path, "-nobanner")
+	cmd := exec.NewCommandRunner()
+	rr, err := cmd.Run(context.Background(), args)
+	if err != nil {
+		t.Logf("handle.exe failed. stdout: %s, stderr: %s\n", rr.Stdout, rr.Stderr)
+		return
+	}
+
+	t.Logf("handle.exe output:\n%s\n", rr.Stdout)
+
+	// Ensure telemetry is initialized since we're running in a CI environment
+	_ = telemetry.GetTelemetrySystem()
+
+	// Log this to telemetry for ease of correlation
+	tracer := telemetry.GetTracer()
+	_, span := tracer.Start(context.Background(), "test.file_cleanup_failure")
+	span.SetAttributes(attribute.String("handle.stdout", rr.Stdout))
+	span.SetAttributes(attribute.String("ci.build.number", os.Getenv("BUILD_BUILDNUMBER")))
+	span.End()
+}
+
+func removeAllWithDiagnostics(t *testing.T, path string) error {
+	retryCount := 0
+	loggedOnce := false
+	return retry.Do(context.Background(), retry.WithMaxRetries(10, retry.NewConstant(1*time.Second)), func(_ context.Context) error {
+		removeErr := os.RemoveAll(path)
+		if removeErr == nil {
+			return nil
+		}
+		t.Logf("failed to clean up %s with error: %v", path, removeErr)
+
+		if retryCount >= 2 && !loggedOnce {
+			// Only log once after 2 seconds - logHandles is pretty expensive and slow
+			logHandles(t, path)
+			loggedOnce = true
+		}
+
+		retryCount++
+		return retry.RetryableError(removeErr)
+	})
 }

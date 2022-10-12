@@ -6,6 +6,7 @@ package azcli
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"regexp"
@@ -97,31 +98,50 @@ func TestAzCli(t *testing.T) {
 }
 
 func TestAZCLIWithUserAgent(t *testing.T) {
-	azCli := NewAzCli(NewAzCliArgs{
-		EnableTelemetry: true,
-		EnableDebug:     true,
-	})
-
-	account := mustGetDefaultAccount(t, azCli)
-	userAgent := runAndCaptureUserAgent(t, account.Id)
+	userAgent := runAndCaptureUserAgent(t)
 
 	require.Contains(t, userAgent, "AZTesting=yes")
 	require.Contains(t, userAgent, "azdev")
 }
 
-func mustGetDefaultAccount(t *testing.T, azCli AzCli) AzCliSubscriptionInfo {
-	accounts, err := azCli.ListAccounts(context.Background())
+func Test_AzCli_Login_Appends_useDeviceCode(t *testing.T) {
+	var commandArgs []string
+	var writer io.Writer
+
+	mockContext := mocks.NewMockContext(context.Background())
+	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
+		return strings.Contains(command, "--use-device-code")
+	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+		commandArgs = args.Args
+		return exec.NewRunResult(0, "", ""), nil
+	})
+
+	azCli := GetAzCli(*mockContext.Context)
+	err := azCli.Login(*mockContext.Context, true, writer)
 	require.NoError(t, err)
-	for _, account := range accounts {
-		if account.IsDefault {
-			return account
-		}
-	}
-	assert.Fail(t, "No default account set")
-	return AzCliSubscriptionInfo{}
+	require.Contains(t, commandArgs, "--use-device-code")
 }
 
-func runAndCaptureUserAgent(t *testing.T, subscriptionID string) string {
+func Test_AzCli_Login_DoesNotAppend_useDeviceCode(t *testing.T) {
+	var commandArgs []string
+	var writer io.Writer
+
+	mockContext := mocks.NewMockContext(context.Background())
+	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
+		return !strings.Contains(command, "--use-device-code")
+	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+		commandArgs = args.Args
+		return exec.NewRunResult(0, "", ""), nil
+	})
+
+	azCli := GetAzCli(*mockContext.Context)
+	err := azCli.Login(*mockContext.Context, false, writer)
+
+	require.NoError(t, err)
+	require.NotContains(t, commandArgs, "--use-device-code")
+}
+
+func runAndCaptureUserAgent(t *testing.T) string {
 	// Get the default command runner implementation
 	defaultRunner := exec.NewCommandRunner()
 	mockContext := mocks.NewMockContext(context.Background())
@@ -152,7 +172,7 @@ func runAndCaptureUserAgent(t *testing.T, subscriptionID string) string {
 
 	// the result doesn't matter here since we just want to see what the User-Agent is that we sent, which will
 	// happen regardless of whether the request succeeds or fails.
-	_, _ = azCli.ListAccountLocations(context.Background())
+	_, _ = azCli.CreateOrUpdateServicePrincipal(context.Background(), "SUBSCRIPTION_ID", "APP_NAME", "ROLE_TO_ASSIGN")
 
 	// The outputted line will look like this:
 	// DEBUG: cli.azure.cli.core.sdk.policies:     'User-Agent': 'AZURECLI/2.35.0 (MSI) azsdk-python-azure-mgmt-resource/20.0.0 Python/3.10.3 (Windows-10-10.0.22621-SP0) azdev/0.0.0-dev.0 AZTesting=yes'
@@ -162,4 +182,126 @@ func runAndCaptureUserAgent(t *testing.T, subscriptionID string) string {
 	require.NotNil(t, matches)
 
 	return matches[0][1]
+}
+
+func Test_extractDeploymentError(t *testing.T) {
+	type args struct {
+		stderr string
+	}
+	tests := []struct {
+		name     string
+		args     args
+		expected string
+	}{
+		{
+			name: "errorWithInner",
+			args: args{
+				`ERROR: {"code": "InvalidTemplateDeployment", "message": "See inner errors for details."}
+
+Inner Errors:
+{"code": "PreflightValidationCheckFailed", "message": "Preflight validation failed. Please refer to the details for the specific errors."}
+
+Inner Errors:
+{"code": "AccountNameInvalid", "target": "invalid-123", "message": "invalid-123 is not a valid storage account name. Storage account name must be between 3 and 24 characters in length and use numbers and lower-case letters only."}`},
+			expected: `Deployment Error Details:
+InvalidTemplateDeployment: See inner errors for details.
+
+Inner Error:
+PreflightValidationCheckFailed: Preflight validation failed. Please refer to the details for the specific errors.
+
+Inner Error:
+AccountNameInvalid: invalid-123 is not a valid storage account name. Storage account name must be between 3 and 24 characters in length and use numbers and lower-case letters only.
+`,
+		},
+		{
+			name: "errorWithInnerRaw",
+			args: args{
+				`ERROR: {"code": "InvalidTemplateDeployment", "message": "See inner errors for details."}
+
+Line1: additional detail happened
+Line2: additional detail happened`,
+			},
+			expected: `Deployment Error Details:
+InvalidTemplateDeployment: See inner errors for details.
+
+Line1: additional detail happened
+Line2: additional detail happened`,
+		},
+		{
+			name: "errorOnly",
+			args: args{
+				`ERROR: {"code": "InvalidTemplateDeployment", "message": "Invalid template deployment."}`,
+			},
+			expected: `Deployment Error Details:
+InvalidTemplateDeployment: Invalid template deployment.
+`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := extractDeploymentError(tt.args.stderr)
+			assert.Equal(t, tt.expected, err.Error())
+		})
+	}
+}
+
+func TestAZCliGetAccessTokenTranslatesErrors(t *testing.T) {
+	tests := []struct {
+		name   string
+		stderr string
+		expect error
+	}{
+		{
+			name:   "AADSTS70043",
+			stderr: "AADSTS70043: The refresh token has expired or is invalid due to sign-in frequency checks by conditional access. The token was issued on {issueDate} and the maximum allowed lifetime for this request is {time}.",
+			expect: ErrAzCliRefreshTokenExpired,
+		},
+		{
+			name:   "AADSTS700082",
+			stderr: "AADSTS700082: The refresh token has expired due to inactivity. The token was issued on {issueDate} and was inactive for {time}.",
+			expect: ErrAzCliRefreshTokenExpired,
+		},
+		{
+			name:   "RunAzLoginDoubleQuotes",
+			stderr: `Please run "az login" to setup account.`,
+			expect: ErrAzCliNotLoggedIn,
+		},
+		{
+			name:   "RunAzLoginSingleQuotes",
+			stderr: `Please run 'az login' to setup account.`,
+			expect: ErrAzCliNotLoggedIn,
+		},
+		{
+			name:   "RunAzLoginDoubleQuotesAccessAccount",
+			stderr: `Please run "az login" to access your accounts.`,
+			expect: ErrAzCliNotLoggedIn,
+		},
+		{
+			name:   "RunAzLoginSingleQuotesAccessAccount",
+			stderr: `Please run 'az login' to access your accounts.`,
+			expect: ErrAzCliNotLoggedIn,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			mockContext := mocks.NewMockContext(context.Background())
+			azCli := NewAzCli(NewAzCliArgs{
+				EnableDebug:     true,
+				EnableTelemetry: true,
+				CommandRunner:   mockContext.CommandRunner,
+			})
+
+			mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
+				return strings.Contains(command, "az account get-access-token")
+			}).Respond(exec.RunResult{
+				ExitCode: 1,
+				Stdout:   "",
+				Stderr:   test.stderr,
+			})
+
+			_, err := azCli.GetAccessToken(*mockContext.Context)
+			assert.True(t, errors.Is(err, test.expect))
+		})
+	}
 }

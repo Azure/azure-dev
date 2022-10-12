@@ -1,5 +1,0 @@
-name: todo-python-mongo
-metadata:
-  template: azd-test/resourcegroupterraformremote@v1
-infra:
-  provider: terraform

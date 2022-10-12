@@ -36,9 +36,9 @@ type PipelineManager struct {
 }
 
 // requiredTools get all the provider's required tools.
-func (i *PipelineManager) requiredTools() []tools.ExternalTool {
-	reqTools := i.ScmProvider.requiredTools()
-	reqTools = append(reqTools, i.CiProvider.requiredTools()...)
+func (i *PipelineManager) requiredTools(ctx context.Context) []tools.ExternalTool {
+	reqTools := i.ScmProvider.requiredTools(ctx)
+	reqTools = append(reqTools, i.CiProvider.requiredTools(ctx)...)
 	return reqTools
 }
 
@@ -189,7 +189,7 @@ func (manager *PipelineManager) Configure(ctx context.Context) error {
 
 	// check all required tools are installed
 	azCli := azcli.GetAzCli(ctx)
-	requiredTools := manager.requiredTools()
+	requiredTools := manager.requiredTools(ctx)
 	requiredTools = append(requiredTools, azCli)
 	if err := tools.EnsureInstalled(ctx, requiredTools...); err != nil {
 		return err

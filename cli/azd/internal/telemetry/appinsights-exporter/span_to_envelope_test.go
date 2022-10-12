@@ -133,7 +133,12 @@ func assertRequestData(t *testing.T, data *contracts.RequestData, span tracesdk.
 	}
 }
 
-func assertAttributeInPropertiesOrMeasurement(t *testing.T, attrib attribute.KeyValue, properties map[string]string, measurements map[string]float64) {
+func assertAttributeInPropertiesOrMeasurement(
+	t *testing.T,
+	attrib attribute.KeyValue,
+	properties map[string]string,
+	measurements map[string]float64,
+) {
 	switch attrib.Value.Type() {
 	case attribute.BOOL, attribute.STRING:
 		assert.Contains(t, properties, string(attrib.Key))

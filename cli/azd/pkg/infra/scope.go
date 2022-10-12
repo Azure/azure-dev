@@ -68,7 +68,8 @@ func (s *ResourceGroupScope) DeploymentUrl() string {
 	return azure.ResourceGroupDeploymentRID(s.subscriptionId, s.resourceGroup, s.name)
 }
 
-func NewResourceGroupScope(ctx context.Context, subscriptionId string, resourceGroup string, deploymentName string) Scope {
+func NewResourceGroupScope(
+	ctx context.Context, subscriptionId string, resourceGroup string, deploymentName string) Scope {
 	return &ResourceGroupScope{
 		azCli:          azcli.GetAzCli(ctx),
 		name:           deploymentName,

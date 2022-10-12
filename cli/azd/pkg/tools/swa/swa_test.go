@@ -75,7 +75,11 @@ func Test_SwaBuild(t *testing.T) {
 
 		err := swacli.Build(context.Background(), "./projectPath", "service/path", "build")
 		require.True(t, ran)
-		require.EqualError(t, err, "swa build: exit code: 1, stdout: stdout text, stderr: stderr text: example error message")
+		require.EqualError(
+			t,
+			err,
+			"swa build: exit code: 1, stdout: stdout text, stderr: stderr text: example error message",
+		)
 	})
 }
 
@@ -116,7 +120,18 @@ func Test_SwaDeploy(t *testing.T) {
 			}, nil
 		})
 
-		_, err := swacli.Deploy(context.Background(), "./projectPath", "tenantID", "subscriptionID", "resourceGroupID", "appName", "service/path", "build", "default", "deploymentToken")
+		_, err := swacli.Deploy(
+			context.Background(),
+			"./projectPath",
+			"tenantID",
+			"subscriptionID",
+			"resourceGroupID",
+			"appName",
+			"service/path",
+			"build",
+			"default",
+			"deploymentToken",
+		)
 		require.NoError(t, err)
 		require.True(t, ran)
 	})
@@ -152,8 +167,23 @@ func Test_SwaDeploy(t *testing.T) {
 			}, errors.New("example error message")
 		})
 
-		_, err := swacli.Deploy(context.Background(), "./projectPath", "tenantID", "subscriptionID", "resourceGroupID", "appName", "service/path", "build", "default", "deploymentToken")
+		_, err := swacli.Deploy(
+			context.Background(),
+			"./projectPath",
+			"tenantID",
+			"subscriptionID",
+			"resourceGroupID",
+			"appName",
+			"service/path",
+			"build",
+			"default",
+			"deploymentToken",
+		)
 		require.True(t, ran)
-		require.EqualError(t, err, "swa deploy: exit code: 1, stdout: stdout text, stderr: stderr text: example error message")
+		require.EqualError(
+			t,
+			err,
+			"swa deploy: exit code: 1, stdout: stdout text, stderr: stderr text: example error message",
+		)
 	})
 }

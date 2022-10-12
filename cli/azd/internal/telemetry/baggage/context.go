@@ -2,7 +2,8 @@
 // Licensed under the MIT License.
 
 // Package baggage provides an implementation of storing trace-level context data, i.e. baggage.
-// Unlike OpenTelemetry's implementation of baggage, this baggage is only propagated to child spans of the current local process.
+// Unlike OpenTelemetry's implementation of baggage, this baggage is only propagated to child spans of the current local
+// process.
 // Information is not propagated with any external calls.
 package baggage
 

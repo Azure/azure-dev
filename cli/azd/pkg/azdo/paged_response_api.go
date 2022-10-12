@@ -25,7 +25,9 @@ func getDefinitionsPager(
 			More: func(current *build.GetDefinitionsResponseValue) bool {
 				return current.ContinuationToken != ""
 			},
-			Fetcher: func(ctx context.Context, current **build.GetDefinitionsResponseValue) (*build.GetDefinitionsResponseValue, error) {
+			Fetcher: func(
+				ctx context.Context,
+				current **build.GetDefinitionsResponseValue) (*build.GetDefinitionsResponseValue, error) {
 				var response *build.GetDefinitionsResponseValue
 				var err error
 

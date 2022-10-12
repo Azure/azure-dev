@@ -39,21 +39,23 @@ func templatesCmd(rootOptions *internal.GlobalCommandOptions) *cobra.Command {
 }
 
 func templatesListCmd(rootOptions *internal.GlobalCommandOptions) *cobra.Command {
-	action := commands.ActionFunc(func(ctx context.Context, cmd *cobra.Command, args []string, azdCtx *azdcontext.AzdContext) error {
-		templateManager := templates.NewTemplateManager()
-		templateSet, err := templateManager.ListTemplates()
+	action := commands.ActionFunc(
+		func(ctx context.Context, cmd *cobra.Command, args []string, azdCtx *azdcontext.AzdContext) error {
+			templateManager := templates.NewTemplateManager()
+			templateSet, err := templateManager.ListTemplates()
 
-		if err != nil {
-			return err
-		}
+			if err != nil {
+				return err
+			}
 
-		templateList := make([]templates.Template, 0, len(templateSet))
-		for _, template := range templateSet {
-			templateList = append(templateList, template)
-		}
+			templateList := make([]templates.Template, 0, len(templateSet))
+			for _, template := range templateSet {
+				templateList = append(templateList, template)
+			}
 
-		return formatTemplates(ctx, cmd, templateList...)
-	})
+			return formatTemplates(ctx, cmd, templateList...)
+		},
+	)
 
 	cmd := commands.Build(
 		action,

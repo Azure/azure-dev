@@ -55,7 +55,12 @@ func (t *TerraformProvider) RequiredExternalTools() []tools.ExternalTool {
 }
 
 // NewTerraformProvider creates a new instance of a Terraform Infra provider
-func NewTerraformProvider(ctx context.Context, env *environment.Environment, projectPath string, infraOptions Options) *TerraformProvider {
+func NewTerraformProvider(
+	ctx context.Context,
+	env *environment.Environment,
+	projectPath string,
+	infraOptions Options,
+) *TerraformProvider {
 	terraformCli := terraform.GetTerraformCli(ctx)
 	console := input.GetConsole(ctx)
 
@@ -87,7 +92,9 @@ func NewTerraformProvider(ctx context.Context, env *environment.Environment, pro
 }
 
 // Previews the infrastructure through terraform plan
-func (t *TerraformProvider) Plan(ctx context.Context) *async.InteractiveTaskWithProgress[*DeploymentPlan, *DeploymentPlanningProgress] {
+func (t *TerraformProvider) Plan(
+	ctx context.Context,
+) *async.InteractiveTaskWithProgress[*DeploymentPlan, *DeploymentPlanningProgress] {
 	return async.RunInteractiveTaskWithProgress(
 		func(asyncContext *async.InteractiveTaskContextWithProgress[*DeploymentPlan, *DeploymentPlanningProgress]) {
 			isRemoteBackendConfig, err := t.isRemoteBackendConfig()
@@ -169,7 +176,11 @@ func (t *TerraformProvider) Plan(ctx context.Context) *async.InteractiveTaskWith
 }
 
 // Deploy the infrastructure within the specified template through terraform apply
-func (t *TerraformProvider) Deploy(ctx context.Context, deployment *DeploymentPlan, scope infra.Scope) *async.InteractiveTaskWithProgress[*DeployResult, *DeployProgress] {
+func (t *TerraformProvider) Deploy(
+	ctx context.Context,
+	deployment *DeploymentPlan,
+	scope infra.Scope,
+) *async.InteractiveTaskWithProgress[*DeployResult, *DeployProgress] {
 	return async.RunInteractiveTaskWithProgress(
 		func(asyncContext *async.InteractiveTaskContextWithProgress[*DeployResult, *DeployProgress]) {
 			t.console.Message(ctx, "Locating plan file...")
@@ -220,7 +231,11 @@ func (t *TerraformProvider) Deploy(ctx context.Context, deployment *DeploymentPl
 }
 
 // Destroys the specified deployment through terraform destroy
-func (t *TerraformProvider) Destroy(ctx context.Context, deployment *Deployment, options DestroyOptions) *async.InteractiveTaskWithProgress[*DestroyResult, *DestroyProgress] {
+func (t *TerraformProvider) Destroy(
+	ctx context.Context,
+	deployment *Deployment,
+	options DestroyOptions,
+) *async.InteractiveTaskWithProgress[*DestroyResult, *DestroyProgress] {
 	return async.RunInteractiveTaskWithProgress(
 		func(asyncContext *async.InteractiveTaskContextWithProgress[*DestroyResult, *DestroyProgress]) {
 
@@ -269,7 +284,10 @@ func (t *TerraformProvider) Destroy(ctx context.Context, deployment *Deployment,
 		})
 }
 
-func (t *TerraformProvider) State(ctx context.Context, _ infra.Scope) *async.InteractiveTaskWithProgress[*StateResult, *StateProgress] {
+func (t *TerraformProvider) State(
+	ctx context.Context,
+	_ infra.Scope,
+) *async.InteractiveTaskWithProgress[*StateResult, *StateProgress] {
 	return async.RunInteractiveTaskWithProgress(
 		func(asyncContext *async.InteractiveTaskContextWithProgress[*StateResult, *StateProgress]) {
 			isRemoteBackendConfig, err := t.isRemoteBackendConfig()
@@ -312,7 +330,8 @@ func (t *TerraformProvider) createPlanArgs(isRemoteBackendConfig bool) []string 
 }
 
 // Creates the terraform apply CLI arguments
-func (t *TerraformProvider) createApplyArgs(isRemoteBackendConfig bool, data TerraformDeploymentDetails) ([]string, error) {
+func (t *TerraformProvider) createApplyArgs(
+	isRemoteBackendConfig bool, data TerraformDeploymentDetails) ([]string, error) {
 	args := []string{}
 	if !isRemoteBackendConfig {
 		args = append(args, fmt.Sprintf("-state=%s", data.localStateFilePath))
@@ -382,7 +401,11 @@ func (t *TerraformProvider) init(ctx context.Context, isRemoteBackendConfig bool
 }
 
 // Creates a normalized view of the terraform output.
-func (t *TerraformProvider) createOutputParameters(ctx context.Context, modulePath string, isRemoteBackend bool) (map[string]OutputParameter, error) {
+func (t *TerraformProvider) createOutputParameters(
+	ctx context.Context,
+	modulePath string,
+	isRemoteBackend bool,
+) (map[string]OutputParameter, error) {
 	cmd := []string{}
 
 	if !isRemoteBackend {
@@ -445,7 +468,11 @@ func (t *TerraformProvider) convertOutputs(outputMap map[string]terraformOutput)
 	return outputParameters
 }
 
-func (t *TerraformProvider) showCurrentState(ctx context.Context, modulePath string, isRemoteBackend bool) (*terraformShowOutput, error) {
+func (t *TerraformProvider) showCurrentState(
+	ctx context.Context,
+	modulePath string,
+	isRemoteBackend bool,
+) (*terraformShowOutput, error) {
 	cmd := []string{}
 
 	if !isRemoteBackend {
@@ -657,9 +684,12 @@ func (t *TerraformProvider) isRemoteBackendConfig() (bool, error) {
 }
 
 func init() {
-	err := RegisterProvider(Terraform, func(ctx context.Context, env *environment.Environment, projectPath string, options Options) (Provider, error) {
-		return NewTerraformProvider(ctx, env, projectPath, options), nil
-	})
+	err := RegisterProvider(
+		Terraform,
+		func(ctx context.Context, env *environment.Environment, projectPath string, options Options) (Provider, error) {
+			return NewTerraformProvider(ctx, env, projectPath, options), nil
+		},
+	)
 
 	if err != nil {
 		panic(err)

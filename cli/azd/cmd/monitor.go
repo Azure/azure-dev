@@ -53,7 +53,12 @@ func (m *monitorAction) SetupFlags(
 	persis *pflag.FlagSet,
 	local *pflag.FlagSet,
 ) {
-	persis.BoolVar(&m.monitorLive, "live", false, "Open a browser to Application Insights Live Metrics. Live Metrics is currently not supported for Python applications.")
+	persis.BoolVar(
+		&m.monitorLive,
+		"live",
+		false,
+		"Open a browser to Application Insights Live Metrics. Live Metrics is currently not supported for Python applications.",
+	)
 	persis.BoolVar(&m.monitorLogs, "logs", false, "Open a browser to Application Insights Logs.")
 	persis.BoolVar(&m.monitorOverview, "overview", false, "Open a browser to Application Insights Overview Dashboard.")
 }

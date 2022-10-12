@@ -13,7 +13,11 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/identity"
 )
 
-func (cli *azCli) GetSubscriptionDeployment(ctx context.Context, subscriptionId string, deploymentName string) (*armresources.DeploymentExtended, error) {
+func (cli *azCli) GetSubscriptionDeployment(
+	ctx context.Context,
+	subscriptionId string,
+	deploymentName string,
+) (*armresources.DeploymentExtended, error) {
 	credential, err := identity.GetCredentials(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("looking for credentials: %w", err)
@@ -38,7 +42,12 @@ func (cli *azCli) GetSubscriptionDeployment(ctx context.Context, subscriptionId 
 	return &deployment.DeploymentExtended, nil
 }
 
-func (cli *azCli) GetResourceGroupDeployment(ctx context.Context, subscriptionId string, resourceGroupName string, deploymentName string) (*armresources.DeploymentExtended, error) {
+func (cli *azCli) GetResourceGroupDeployment(
+	ctx context.Context,
+	subscriptionId string,
+	resourceGroupName string,
+	deploymentName string,
+) (*armresources.DeploymentExtended, error) {
 	credential, err := identity.GetCredentials(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("looking for credentials: %w", err)

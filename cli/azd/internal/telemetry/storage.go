@@ -74,7 +74,8 @@ type itemEntry struct {
 }
 
 // Creates the storage-based queue.
-func NewStorageQueue(folder string, itemFileExtension string, itemFileMaxTimeKept time.Duration) (*StorageQueue, error) {
+func NewStorageQueue(
+	folder string, itemFileExtension string, itemFileMaxTimeKept time.Duration) (*StorageQueue, error) {
 	if err := os.MkdirAll(folder, osutil.PermissionDirectory); err != nil {
 		return nil, fmt.Errorf("failed to create storage queue folder: %w", err)
 	}

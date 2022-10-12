@@ -26,15 +26,27 @@ type mockResourceManager struct {
 	operations []azcli.AzCliResourceOperation
 }
 
-func (mock *mockResourceManager) GetDeploymentResourceOperations(ctx context.Context, scope infra.Scope) ([]azcli.AzCliResourceOperation, error) {
+func (mock *mockResourceManager) GetDeploymentResourceOperations(
+	ctx context.Context,
+	scope infra.Scope,
+) ([]azcli.AzCliResourceOperation, error) {
 	return mock.operations, nil
 }
 
-func (mock *mockResourceManager) GetResourceTypeDisplayName(ctx context.Context, subscriptionId string, resourceId string, resourceType infra.AzureResourceType) (string, error) {
+func (mock *mockResourceManager) GetResourceTypeDisplayName(
+	ctx context.Context,
+	subscriptionId string,
+	resourceId string,
+	resourceType infra.AzureResourceType,
+) (string, error) {
 	return string(resourceType), nil
 }
 
-func (mock *mockResourceManager) GetWebAppResourceTypeDisplayName(ctx context.Context, subscriptionId string, resourceId string) (string, error) {
+func (mock *mockResourceManager) GetWebAppResourceTypeDisplayName(
+	ctx context.Context,
+	subscriptionId string,
+	resourceId string,
+) (string, error) {
 	return "", nil
 }
 
@@ -143,5 +155,12 @@ func TestReportProgress(t *testing.T) {
 }
 
 func assertLastOperationLogged(t *testing.T, operation azcli.AzCliResourceOperation, logOutput []string) {
-	assert.Equal(t, formatCreatedResourceLog(operation.Properties.TargetResource.ResourceType, operation.Properties.TargetResource.ResourceName), logOutput[len(logOutput)-1])
+	assert.Equal(
+		t,
+		formatCreatedResourceLog(
+			operation.Properties.TargetResource.ResourceType,
+			operation.Properties.TargetResource.ResourceName,
+		),
+		logOutput[len(logOutput)-1],
+	)
 }

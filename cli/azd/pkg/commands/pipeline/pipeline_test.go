@@ -36,7 +36,11 @@ func Test_detectProviders(t *testing.T) {
 		scmProvider, ciProvider, err := DetectProviders(ctx, &environment.Environment{}, "")
 		assert.Nil(t, scmProvider)
 		assert.Nil(t, ciProvider)
-		assert.EqualError(t, err, "no CI/CD provider configuration found. Expecting either github and/or azdo folder in the project root directory.")
+		assert.EqualError(
+			t,
+			err,
+			"no CI/CD provider configuration found. Expecting either github and/or azdo folder in the project root directory.",
+		)
 	})
 
 	t.Run("can't load project settings", func(t *testing.T) {

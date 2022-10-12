@@ -26,7 +26,10 @@ const (
 )
 
 func invalidEnvironmentNameMsg(environmentName string) string {
-	return fmt.Sprintf("environment name '%s' is invalid (it should contain only alphanumeric characters and hyphens)\n", environmentName)
+	return fmt.Sprintf(
+		"environment name '%s' is invalid (it should contain only alphanumeric characters and hyphens)\n",
+		environmentName,
+	)
 }
 
 // ensureValidEnvironmentName ensures the environment name is valid, if it is not, an error is printed
@@ -59,7 +62,12 @@ type environmentSpec struct {
 
 // createEnvironment creates a new named environment. If an environment with this name already
 // exists, and error is return.
-func createAndInitEnvironment(ctx context.Context, envSpec *environmentSpec, azdCtx *azdcontext.AzdContext, console input.Console) (*environment.Environment, context.Context, error) {
+func createAndInitEnvironment(
+	ctx context.Context,
+	envSpec *environmentSpec,
+	azdCtx *azdcontext.AzdContext,
+	console input.Console,
+) (*environment.Environment, context.Context, error) {
 	if envSpec.environmentName != "" && !environment.IsValidEnvironmentName(envSpec.environmentName) {
 		errMsg := invalidEnvironmentNameMsg(envSpec.environmentName)
 		fmt.Print(errMsg)
@@ -87,7 +95,12 @@ func createAndInitEnvironment(ctx context.Context, envSpec *environmentSpec, azd
 	return env, telemetry.ContextWithEnvironment(ctx, env), nil
 }
 
-func loadOrInitEnvironment(ctx context.Context, environmentName *string, azdCtx *azdcontext.AzdContext, console input.Console) (*environment.Environment, context.Context, error) {
+func loadOrInitEnvironment(
+	ctx context.Context,
+	environmentName *string,
+	azdCtx *azdcontext.AzdContext,
+	console input.Console,
+) (*environment.Environment, context.Context, error) {
 	loadOrCreateEnvironment := func() (*environment.Environment, bool, error) {
 		// If there's a default environment, use that
 		if *environmentName == "" {
@@ -125,8 +138,14 @@ func loadOrInitEnvironment(ctx context.Context, environmentName *string, azdCtx 
 		// - The user has specified an environment name, but the named environment didn't exist and they told us they would
 		//   like us to create it.
 		if *environmentName != "" && !environment.IsValidEnvironmentName(*environmentName) {
-			fmt.Printf("environment name '%s' is invalid (it should contain only alphanumeric characters and hyphens)\n", *environmentName)
-			return nil, false, fmt.Errorf("environment name '%s' is invalid (it should contain only alphanumeric characters and hyphens)", *environmentName)
+			fmt.Printf(
+				"environment name '%s' is invalid (it should contain only alphanumeric characters and hyphens)\n",
+				*environmentName,
+			)
+			return nil, false, fmt.Errorf(
+				"environment name '%s' is invalid (it should contain only alphanumeric characters and hyphens)",
+				*environmentName,
+			)
 		}
 
 		if err := ensureValidEnvironmentName(ctx, environmentName, console); err != nil {
@@ -144,7 +163,11 @@ func loadOrInitEnvironment(ctx context.Context, environmentName *string, azdCtx 
 		return nil, nil, err
 	}
 
-	if err := ensureEnvironmentInitialized(ctx, environmentSpec{environmentName: *environmentName}, env, console); err != nil {
+	if err := ensureEnvironmentInitialized(
+		ctx,
+		environmentSpec{environmentName: *environmentName},
+		env,
+		console); err != nil {
 		return nil, nil, fmt.Errorf("initializing environment: %w", err)
 	}
 
@@ -157,10 +180,16 @@ func loadOrInitEnvironment(ctx context.Context, environmentName *string, azdCtx 
 	return env, telemetry.ContextWithEnvironment(ctx, env), nil
 }
 
-// ensureEnvironmentInitialized ensures the environment is initialized, i.e. it contains values for `AZURE_ENV_NAME`, `AZURE_LOCATION`, `AZURE_SUBSCRIPTION_ID` and `AZURE_PRINCIPAL_ID`.
+// ensureEnvironmentInitialized ensures the environment is initialized, i.e. it contains values for `AZURE_ENV_NAME`,
+// `AZURE_LOCATION`, `AZURE_SUBSCRIPTION_ID` and `AZURE_PRINCIPAL_ID`.
 // It will use the values from the "environment spec" passed in, and prompt for any missing values as necessary.
 // Existing environment value are left unchanged, even if the "spec" has different values.
-func ensureEnvironmentInitialized(ctx context.Context, envSpec environmentSpec, env *environment.Environment, console input.Console) error {
+func ensureEnvironmentInitialized(
+	ctx context.Context,
+	envSpec environmentSpec,
+	env *environment.Environment,
+	console input.Console,
+) error {
 	if env.Values == nil {
 		env.Values = make(map[string]string)
 	}
@@ -221,7 +250,8 @@ func ensureEnvironmentInitialized(ctx context.Context, envSpec environmentSpec, 
 					return fmt.Errorf("reading subscription id: %w", err)
 				}
 			} else {
-				subscriptionId = subscriptionSelection[len(subscriptionSelection)-len("(00000000-0000-0000-0000-000000000000)")+1 : len(subscriptionSelection)-1]
+				subscriptionId = subscriptionSelection[len(subscriptionSelection)-
+					len("(00000000-0000-0000-0000-000000000000)")+1 : len(subscriptionSelection)-1]
 			}
 		}
 

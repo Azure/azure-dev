@@ -76,7 +76,9 @@ type InteractiveTaskContextWithProgress[R comparable, P comparable] struct {
 	TaskContextWithProgress[R, P]
 }
 
-func NewInteractiveTaskContextWithProgress[R comparable, P comparable](task *InteractiveTaskWithProgress[R, P]) *InteractiveTaskContextWithProgress[R, P] {
+func NewInteractiveTaskContextWithProgress[R comparable, P comparable](
+	task *InteractiveTaskWithProgress[R, P],
+) *InteractiveTaskContextWithProgress[R, P] {
 	innerTask := NewTaskContextWithProgress(&task.TaskWithProgress)
 
 	return &InteractiveTaskContextWithProgress[R, P]{

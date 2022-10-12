@@ -83,7 +83,11 @@ func showCmd(rootOptions *internal.GlobalCommandOptions) *cobra.Command {
 				}
 			}
 		} else {
-			log.Printf("ignoring error determining resource group for environment %s, resource ids will not be available: %v", env.GetEnvName(), err)
+			log.Printf(
+				"ignoring error determining resource group for environment %s,"+
+					" resource ids will not be available: %v",
+				env.GetEnvName(),
+				err)
 		}
 
 		return formatter.Format(res, writer, nil)
@@ -144,14 +148,25 @@ func getFullPathToProjectForService(svc *project.ServiceConfig) (string, error) 
 				if projectFile != "" {
 					// we found multiple project files, we need to ask the user to specify which one
 					// corresponds to the service.
-					return "", fmt.Errorf("multiple .NET project files detected in %s for service %s, please include the name of the .NET project file in 'project' setting in %s for this service", svc.Path(), svc.Name, azdcontext.ProjectFileName)
+					return "", fmt.Errorf(
+						"multiple .NET project files detected in %s for service %s, "+
+							"please include the name of the .NET project file in 'project' "+
+							"setting in %s for this service",
+						svc.Path(),
+						svc.Name,
+						azdcontext.ProjectFileName)
 				} else {
 					projectFile = entry.Name()
 				}
 			}
 		}
 		if projectFile == "" {
-			return "", fmt.Errorf("could not determine the .NET project file for service %s, please include the name of the .NET project file in project setting in %s for this service", svc.Name, azdcontext.ProjectFileName)
+			return "", fmt.Errorf(
+				"could not determine the .NET project file for service %s,"+
+					" please include the name of the .NET project file in project setting in %s for"+
+					" this service",
+				svc.Name,
+				azdcontext.ProjectFileName)
 		} else {
 			if svc.RelativePath != "" {
 				svc.RelativePath = filepath.Join(svc.RelativePath, projectFile)

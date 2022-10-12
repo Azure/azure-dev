@@ -41,10 +41,30 @@ func Test_getMavenPath(t *testing.T) {
 		{name: "MvnwRootPath", mvnwPath: []string{rootPath}, want: filepath.Join(rootPath, mvnwWithExt())},
 		{name: "MvnwFirst", mvnwPath: []string{rootPath}, want: filepath.Join(rootPath, mvnwWithExt()),
 			mvnPath: []string{pathDir}, envVar: map[string]string{"PATH": pathDir}},
-		{name: "MvnwProjectPathRelative", mvnwPath: []string{projectPath}, want: filepath.Join(projectPath, mvnwWithExt()), mvnwRelative: true},
-		{name: "MvnwSrcPathRelative", mvnwPath: []string{sourcePath}, want: filepath.Join(sourcePath, mvnwWithExt()), mvnwRelative: true},
-		{name: "MvnwRootPathRelative", mvnwPath: []string{rootPath}, want: filepath.Join(rootPath, mvnwWithExt()), mvnwRelative: true},
-		{name: "Mvn", mvnPath: []string{pathDir}, envVar: map[string]string{"PATH": pathDir}, want: filepath.Join(pathDir, mvnWithExt())},
+		{
+			name:         "MvnwProjectPathRelative",
+			mvnwPath:     []string{projectPath},
+			want:         filepath.Join(projectPath, mvnwWithExt()),
+			mvnwRelative: true,
+		},
+		{
+			name:         "MvnwSrcPathRelative",
+			mvnwPath:     []string{sourcePath},
+			want:         filepath.Join(sourcePath, mvnwWithExt()),
+			mvnwRelative: true,
+		},
+		{
+			name:         "MvnwRootPathRelative",
+			mvnwPath:     []string{rootPath},
+			want:         filepath.Join(rootPath, mvnwWithExt()),
+			mvnwRelative: true,
+		},
+		{
+			name:    "Mvn",
+			mvnPath: []string{pathDir},
+			envVar:  map[string]string{"PATH": pathDir},
+			want:    filepath.Join(pathDir, mvnWithExt()),
+		},
 		{name: "NotFound", want: "", wantErr: true},
 	}
 	for _, tt := range tests {

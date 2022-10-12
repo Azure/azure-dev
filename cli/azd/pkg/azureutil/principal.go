@@ -39,13 +39,16 @@ func GetCurrentPrincipalId(ctx context.Context) (string, error) {
 	return oid, nil
 }
 
+// cspell: disable
+
 // jwtClaimsRegex is a regular expression for JWT. A JWT is a string with three base64 encoded
 // components (using the "url safe" base64 alphabet) separated by dots.  For example:
 // eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyfQ.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c
-// cspell: disable-line
 //
 //nolint:lll
 var jwtClaimsRegex = regexp.MustCompile(`^[a-zA-Z0-9-_]*\.([a-zA-Z0-9-_]*)\.[a-zA-Z0-9-_]*$`)
+
+// cspell: enable
 
 // getOidClaimFromAccessToken extracts a string claim with the name "oid" from an access token.
 // Access Tokens are JWTs and the middle component is a base64 encoded string of a JSON object

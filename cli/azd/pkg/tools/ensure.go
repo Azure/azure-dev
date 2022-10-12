@@ -62,7 +62,8 @@ func EnsureInstalled(ctx context.Context, tools ...ExternalTool) error {
 				errorsEncountered[errorMsg] = struct{}{}
 			}
 		} else if !has {
-			allErrors = append(allErrors, fmt.Errorf("%s is not installed, please see %s to install", tool.Name(), tool.InstallUrl()))
+			allErrors = append(
+				allErrors, fmt.Errorf("%s is not installed, please see %s to install", tool.Name(), tool.InstallUrl()))
 		}
 
 		// Mark the current tool as confirmed

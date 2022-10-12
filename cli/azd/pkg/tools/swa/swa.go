@@ -22,7 +22,18 @@ type SwaCli interface {
 	tools.ExternalTool
 
 	Build(ctx context.Context, cwd string, appFolderPath string, outputRelativeFolderPath string) error
-	Deploy(ctx context.Context, cwd string, tenantId string, subscriptionId string, resourceGroup string, appName string, appFolderPath string, outputRelativeFolderPath string, environment string, deploymentToken string) (string, error)
+	Deploy(
+		ctx context.Context,
+		cwd string,
+		tenantId string,
+		subscriptionId string,
+		resourceGroup string,
+		appName string,
+		appFolderPath string,
+		outputRelativeFolderPath string,
+		environment string,
+		deploymentToken string,
+	) (string, error)
 }
 
 type swaCli struct {
@@ -43,8 +54,26 @@ func (cli *swaCli) Build(ctx context.Context, cwd string, appFolderPath string, 
 	return nil
 }
 
-func (cli *swaCli) Deploy(ctx context.Context, cwd string, tenantId string, subscriptionId string, resourceGroup string, appName string, appFolderPath string, outputRelativeFolderPath string, environment string, deploymentToken string) (string, error) {
-	log.Printf("SWA Deploy: TenantId: %s, SubscriptionId: %s, ResourceGroup: %s, ResourceName: %s, Environment: %s", tenantId, subscriptionId, resourceGroup, appName, environment)
+func (cli *swaCli) Deploy(
+	ctx context.Context,
+	cwd string,
+	tenantId string,
+	subscriptionId string,
+	resourceGroup string,
+	appName string,
+	appFolderPath string,
+	outputRelativeFolderPath string,
+	environment string,
+	deploymentToken string,
+) (string, error) {
+	log.Printf(
+		"SWA Deploy: TenantId: %s, SubscriptionId: %s, ResourceGroup: %s, ResourceName: %s, Environment: %s",
+		tenantId,
+		subscriptionId,
+		resourceGroup,
+		appName,
+		environment,
+	)
 
 	res, err := cli.executeCommand(ctx,
 		cwd, "deploy",

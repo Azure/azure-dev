@@ -25,7 +25,11 @@ func createBuildDefinitionVariable(value string, isSecret bool, allowOverride bo
 }
 
 // returns the default agent queue. This is used to associate a Pipeline with a default agent pool queue
-func getAgentQueue(ctx context.Context, projectId string, connection *azuredevops.Connection) (*taskagent.TaskAgentQueue, error) {
+func getAgentQueue(
+	ctx context.Context,
+	projectId string,
+	connection *azuredevops.Connection,
+) (*taskagent.TaskAgentQueue, error) {
 	client, err := taskagent.NewClient(ctx, connection)
 	if err != nil {
 		return nil, err

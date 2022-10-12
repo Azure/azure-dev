@@ -294,16 +294,29 @@ func TestFindResourceGroupForEnvironment(t *testing.T) {
 		{"oneTaggedResourceGroup", []string{"custom-rg-name"}, nil, "custom-rg-name", ""},
 		{"noTagButPrefix", nil, []string{"rg-test-env"}, "rg-test-env", ""},
 		{"noTagButSuffix", nil, []string{"test-env-rg"}, "test-env-rg", ""},
-		{"twoTaggedResourceGroups", []string{"custom-rg-name", "custom-rg-name-2"}, nil, "", "more than one possible resource group was found"},
+		{
+			"twoTaggedResourceGroups",
+			[]string{"custom-rg-name", "custom-rg-name-2"},
+			nil,
+			"",
+			"more than one possible resource group was found",
+		},
 		{"noResourceGroups", nil, nil, "", "0 resource groups with prefix or suffix with value"},
-		{"noTagMultipleMatches", nil, []string{"test-env-rg", "rg-test-env"}, "", "more than one possible resource group was found"},
+		{
+			"noTagMultipleMatches",
+			nil,
+			[]string{"test-env-rg", "rg-test-env"},
+			"",
+			"more than one possible resource group was found",
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			mockContext := mocks.NewMockContext(context.Background())
 			mockContext.HttpClient.When(func(request *http.Request) bool {
-				return request.Method == "GET" && strings.Contains(request.URL.Path, "/resourcegroups") && request.URL.Query().Has("$filter")
+				return request.Method == "GET" && strings.Contains(request.URL.Path, "/resourcegroups") &&
+					request.URL.Query().Has("$filter")
 			}).RespondFn(func(request *http.Request) (*http.Response, error) {
 				require.Contains(t, request.URL.Query().Get("$filter"), "tagName eq 'azd-env-name'")
 				require.Contains(t, request.URL.Query().Get("$filter"), "tagValue eq 'test-env'")
@@ -311,7 +324,8 @@ func TestFindResourceGroupForEnvironment(t *testing.T) {
 				return responseForGroups(tt.rgsFromFilter), nil
 			})
 			mockContext.HttpClient.When(func(request *http.Request) bool {
-				return request.Method == "GET" && strings.Contains(request.URL.Path, "/resourcegroups") && !request.URL.Query().Has("$filter")
+				return request.Method == "GET" && strings.Contains(request.URL.Path, "/resourcegroups") &&
+					!request.URL.Query().Has("$filter")
 			}).RespondFn(func(request *http.Request) (*http.Response, error) {
 				return responseForGroups(tt.rgsFromNoFilter), nil
 			})

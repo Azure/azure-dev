@@ -42,7 +42,11 @@ func TestSetupFlags(t *testing.T) {
 	principalNameFlag := command.LocalFlags().Lookup(flagName)
 	assert.NotEqual(t, (*pflag.Flag)(nil), principalNameFlag)
 	assert.Equal(t, "", principalNameFlag.Value.String())
-	assert.Equal(t, "The name of the service principal to use to grant access to Azure resources as part of the pipeline.", principalNameFlag.Usage)
+	assert.Equal(
+		t,
+		"The name of the service principal to use to grant access to Azure resources as part of the pipeline.",
+		principalNameFlag.Usage,
+	)
 	principalNameFlag = command.PersistentFlags().Lookup(flagName)
 	assert.Equal(t, (*pflag.Flag)(nil), principalNameFlag)
 

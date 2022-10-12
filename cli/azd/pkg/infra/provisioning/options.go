@@ -13,7 +13,8 @@ type ActionOptions struct {
 }
 
 // Gets a value determining whether the console is interactive
-// Console is only considered interactive when the interactive flag has been set and an output format has not been defined.
+// Console is only considered interactive when the interactive
+// flag has been set and an output format has not been defined.
 func (options *ActionOptions) IsInteractive() bool {
 	return options.interactive && options.Formatter().Kind() == output.NoneFormat
 }

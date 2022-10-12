@@ -12,7 +12,8 @@ type simpleQueue interface {
 	Enqueue(message []byte) error
 }
 
-// Exporter is an implementation of trace.SpanExporter that writes spans into a storage queue in ApplicationInsights format.
+// Exporter is an implementation of trace.SpanExporter that writes spans into a
+// storage queue in ApplicationInsights format.
 type Exporter struct {
 	queue simpleQueue
 

@@ -27,6 +27,8 @@ import (
 const collectTelemetryEnvVar = "AZURE_DEV_COLLECT_TELEMETRY"
 
 const telemetryItemExtension = ".trn"
+
+//nolint:lll
 const (
 	devConnectionString  = "InstrumentationKey=cf5f7d89-5383-47a8-8d27-ad237c3613d9;IngestionEndpoint=https://westus-0.in.applicationinsights.azure.com/;LiveEndpoint=https://westus.livediagnostics.monitor.azure.com/"
 	prodConnectionString = "InstrumentationKey=a9e6fa10-a9ac-4525-8388-22d39336ecc2;IngestionEndpoint=https://centralus-2.in.applicationinsights.azure.com/;LiveEndpoint=https://centralus.livediagnostics.monitor.azure.com/"

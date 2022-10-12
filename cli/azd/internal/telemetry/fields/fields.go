@@ -37,7 +37,8 @@ const (
 
 	// A unique ID associated to the machine the application is installed on.
 	//
-	// This shares implementation with VSCode's machineId and can match exactly on a given device, although there are no guarantees.
+	// This shares implementation with VSCode's machineId and can match exactly on a given device, although there are no
+	// guarantees.
 	MachineIdKey = attribute.Key("machine.id")
 
 	// An enumeration of possible environments that the application is running on.

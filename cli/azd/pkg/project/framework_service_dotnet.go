@@ -87,7 +87,8 @@ func (dp *dotnetProject) Initialize(ctx context.Context) error {
 }
 
 func normalizeDotNetSecret(key string) string {
-	// dotnet recognizes "__" as the hierarchy key separator for environment variables, but for user secrets, it has to be ":".
+	// dotnet recognizes "__" as the hierarchy key separator for environment variables, but for user secrets, it has to be
+	// ":".
 	return strings.ReplaceAll(key, "__", ":")
 }
 

@@ -26,6 +26,7 @@ func envCmd(rootOptions *internal.GlobalCommandOptions) *cobra.Command {
 	root := &cobra.Command{
 		Use:   "env",
 		Short: "Manage environments.",
+		//nolint:lll
 		Long: `Manage environments.
 
 With this command group, you can create a new environment or get, set, and list your application environments. An application can have multiple environments (for example, dev, test, prod), each with a different configuration (that is, connectivity information) for accessing Azure resources. 
@@ -70,7 +71,12 @@ func envSetCmd(rootOptions *internal.GlobalCommandOptions) *cobra.Command {
 		}
 
 		//lint:ignore SA4006 // We want ctx overridden here for future changes
-		env, ctx, err := loadOrInitEnvironment(ctx, &rootOptions.EnvironmentName, azdCtx, console) //nolint:ineffassign,staticcheck
+		env, ctx, err := loadOrInitEnvironment( //nolint:ineffassign,staticcheck
+			ctx,
+			&rootOptions.EnvironmentName,
+			azdCtx,
+			console,
+		)
 		if err != nil {
 			return fmt.Errorf("loading environment: %w", err)
 		}
@@ -190,7 +196,12 @@ type envNewAction struct {
 }
 
 func (en *envNewAction) SetupFlags(persis *pflag.FlagSet, local *pflag.FlagSet) {
-	local.StringVar(&en.subscription, "subscription", "", "Name or ID of an Azure subscription to use for the new environment")
+	local.StringVar(
+		&en.subscription,
+		"subscription",
+		"",
+		"Name or ID of an Azure subscription to use for the new environment",
+	)
 	local.StringVarP(&en.location, "location", "l", "", "Azure location for the new environment")
 }
 
@@ -306,7 +317,12 @@ func envGetValuesCmd(rootOptions *internal.GlobalCommandOptions) *cobra.Command 
 			writer := output.GetWriter(ctx)
 
 			//lint:ignore SA4006 // We want ctx overridden here for future changes
-			env, ctx, err := loadOrInitEnvironment(ctx, &rootOptions.EnvironmentName, azdCtx, console) //nolint:ineffassign,staticcheck
+			env, ctx, err := loadOrInitEnvironment( //nolint:ineffassign,staticcheck
+				ctx,
+				&rootOptions.EnvironmentName,
+				azdCtx,
+				console,
+			)
 			if err != nil {
 				return err
 			}

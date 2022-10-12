@@ -13,7 +13,12 @@ import (
 )
 
 // create a new repository in the current project
-func CreateRepository(ctx context.Context, projectId string, repoName string, connection *azuredevops.Connection) (*git.GitRepository, error) {
+func CreateRepository(
+	ctx context.Context,
+	projectId string,
+	repoName string,
+	connection *azuredevops.Connection,
+) (*git.GitRepository, error) {
 	gitClient, err := git.NewClient(ctx, connection)
 	if err != nil {
 		return nil, err
@@ -36,7 +41,11 @@ func CreateRepository(ctx context.Context, projectId string, repoName string, co
 
 // returns a default repo from a newly created AzDo project.
 // this relies on the fact that new projects automatically get a repo named the same as the project
-func GetDefaultGitRepositoriesInProject(ctx context.Context, projectName string, connection *azuredevops.Connection) (*git.GitRepository, error) {
+func GetDefaultGitRepositoriesInProject(
+	ctx context.Context,
+	projectName string,
+	connection *azuredevops.Connection,
+) (*git.GitRepository, error) {
 	gitClient, err := git.NewClient(ctx, connection)
 	if err != nil {
 		return nil, err
@@ -66,7 +75,13 @@ func GetDefaultGitRepositoriesInProject(ctx context.Context, projectName string,
 }
 
 // prompt the user to select a repo and return a repository object
-func GetGitRepositoriesInProject(ctx context.Context, projectName string, orgName string, connection *azuredevops.Connection, console input.Console) (*git.GitRepository, error) {
+func GetGitRepositoriesInProject(
+	ctx context.Context,
+	projectName string,
+	orgName string,
+	connection *azuredevops.Connection,
+	console input.Console,
+) (*git.GitRepository, error) {
 	gitClient, err := git.NewClient(ctx, connection)
 	if err != nil {
 		return nil, err
@@ -109,7 +124,12 @@ func GetGitRepositoriesInProject(ctx context.Context, projectName string, orgNam
 }
 
 // GetGitRepository find the repository by its name
-func GetGitRepository(ctx context.Context, projectName string, repoName string, connection *azuredevops.Connection) (*git.GitRepository, error) {
+func GetGitRepository(
+	ctx context.Context,
+	projectName string,
+	repoName string,
+	connection *azuredevops.Connection,
+) (*git.GitRepository, error) {
 	gitClient, err := git.NewClient(ctx, connection)
 	if err != nil {
 		return nil, err

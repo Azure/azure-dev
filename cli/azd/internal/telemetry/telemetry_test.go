@@ -28,9 +28,24 @@ func TestGetTelemetrySystem(t *testing.T) {
 		expectNil    bool
 		expectConfig appinsightsexporter.EndpointConfig
 	}{
-		{"DevVersion", args{"0.0.0-dev.0 (commit 0000000000000000000000000000000000000000)", "unset"}, false, devEndpointConfig},
-		{"DevVersionTelemetryEnabled", args{"0.0.0-dev.0 (commit 0000000000000000000000000000000000000000)", "yes"}, false, devEndpointConfig},
-		{"DevVersionTelemetryDisabled", args{"0.0.0-dev.0 (commit 0000000000000000000000000000000000000000)", "no"}, true, devEndpointConfig},
+		{
+			"DevVersion",
+			args{"0.0.0-dev.0 (commit 0000000000000000000000000000000000000000)", "unset"},
+			false,
+			devEndpointConfig,
+		},
+		{
+			"DevVersionTelemetryEnabled",
+			args{"0.0.0-dev.0 (commit 0000000000000000000000000000000000000000)", "yes"},
+			false,
+			devEndpointConfig,
+		},
+		{
+			"DevVersionTelemetryDisabled",
+			args{"0.0.0-dev.0 (commit 0000000000000000000000000000000000000000)", "no"},
+			true,
+			devEndpointConfig,
+		},
 
 		{"ProdVersion", args{"1.0.0 (commit 13ec2b11aa755b11640fa16b8664cb8741d5d300)", "no"}, true, prodEndpointConfig},
 		{"ProdVersion", args{"1.0.0 (commit 13ec2b11aa755b11640fa16b8664cb8741d5d300)", "unset"}, false, prodEndpointConfig},

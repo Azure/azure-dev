@@ -12,7 +12,10 @@ import (
 	"golang.org/x/exp/slices"
 )
 
-func (cli *azCli) GetContainerRegistries(ctx context.Context, subscriptionId string) ([]*armcontainerregistry.Registry, error) {
+func (cli *azCli) GetContainerRegistries(
+	ctx context.Context,
+	subscriptionId string,
+) ([]*armcontainerregistry.Registry, error) {
 	client, err := cli.createRegistriesClient(ctx, subscriptionId)
 	if err != nil {
 		return nil, err
@@ -66,7 +69,11 @@ func (cli *azCli) LoginAcr(ctx context.Context, subscriptionId string, loginServ
 	return nil
 }
 
-func (cli *azCli) findContainerRegistryByName(ctx context.Context, subscriptionId string, registryName string) (*armcontainerregistry.Registry, string, error) {
+func (cli *azCli) findContainerRegistryByName(
+	ctx context.Context,
+	subscriptionId string,
+	registryName string,
+) (*armcontainerregistry.Registry, string, error) {
 	registries, err := cli.GetContainerRegistries(ctx, subscriptionId)
 	if err != nil {
 		return nil, "", fmt.Errorf("failed listing container registries: %w", err)
@@ -77,7 +84,11 @@ func (cli *azCli) findContainerRegistryByName(ctx context.Context, subscriptionI
 	})
 
 	if matchIndex == -1 {
-		return nil, "", fmt.Errorf("cannot find registry with name '%s' and subscriptionId '%s'", registryName, subscriptionId)
+		return nil, "", fmt.Errorf(
+			"cannot find registry with name '%s' and subscriptionId '%s'",
+			registryName,
+			subscriptionId,
+		)
 	}
 
 	registry := registries[matchIndex]
@@ -89,7 +100,10 @@ func (cli *azCli) findContainerRegistryByName(ctx context.Context, subscriptionI
 	return registry, *resourceGroup, nil
 }
 
-func (cli *azCli) createRegistriesClient(ctx context.Context, subscriptionId string) (*armcontainerregistry.RegistriesClient, error) {
+func (cli *azCli) createRegistriesClient(
+	ctx context.Context,
+	subscriptionId string,
+) (*armcontainerregistry.RegistriesClient, error) {
 	cred, err := identity.GetCredentials(ctx)
 	if err != nil {
 		return nil, err

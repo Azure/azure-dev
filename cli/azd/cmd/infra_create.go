@@ -47,7 +47,12 @@ func (ica *infraCreateAction) SetupFlags(persis, local *pflag.FlagSet) {
 	local.BoolVar(&ica.noProgress, "no-progress", false, "Suppresses progress information.")
 }
 
-func (ica *infraCreateAction) Run(ctx context.Context, cmd *cobra.Command, args []string, azdCtx *azdcontext.AzdContext) error {
+func (ica *infraCreateAction) Run(
+	ctx context.Context,
+	cmd *cobra.Command,
+	args []string,
+	azdCtx *azdcontext.AzdContext,
+) error {
 	azCli := azcli.GetAzCli(ctx)
 	console := input.GetConsole(ctx)
 
@@ -100,11 +105,18 @@ func (ica *infraCreateAction) Run(ctx context.Context, cmd *cobra.Command, args 
 		if formatter.Kind() == output.JsonFormat {
 			stateResult, err := infraManager.State(ctx, provisioningScope)
 			if err != nil {
-				return fmt.Errorf("deployment failed and the deployment result is unavailable: %w", multierr.Combine(err, err))
+				return fmt.Errorf(
+					"deployment failed and the deployment result is unavailable: %w",
+					multierr.Combine(err, err),
+				)
 			}
 
-			if err := formatter.Format(contracts.NewEnvRefreshResultFromProvisioningState(stateResult.State), writer, nil); err != nil {
-				return fmt.Errorf("deployment failed and the deployment result could not be displayed: %w", multierr.Combine(err, err))
+			if err := formatter.Format(
+				contracts.NewEnvRefreshResultFromProvisioningState(stateResult.State), writer, nil); err != nil {
+				return fmt.Errorf(
+					"deployment failed and the deployment result could not be displayed: %w",
+					multierr.Combine(err, err),
+				)
 			}
 		}
 
@@ -112,7 +124,9 @@ func (ica *infraCreateAction) Run(ctx context.Context, cmd *cobra.Command, args 
 	}
 
 	for _, svc := range prj.Services {
-		if err := svc.RaiseEvent(ctx, project.Deployed, map[string]any{"bicepOutput": deployResult.Deployment.Outputs}); err != nil {
+		if err := svc.RaiseEvent(
+			ctx, project.Deployed,
+			map[string]any{"bicepOutput": deployResult.Deployment.Outputs}); err != nil {
 			return err
 		}
 	}
@@ -125,7 +139,12 @@ func (ica *infraCreateAction) Run(ctx context.Context, cmd *cobra.Command, args 
 	return nil
 }
 
-func (ica *infraCreateAction) displayResourceGroupCreatedMessage(ctx context.Context, console input.Console, subscriptionId string, resourceGroup string) {
+func (ica *infraCreateAction) displayResourceGroupCreatedMessage(
+	ctx context.Context,
+	console input.Console,
+	subscriptionId string,
+	resourceGroup string,
+) {
 	resourceGroupCreatedMessage := resourceGroupCreatedMessage(ctx, subscriptionId, resourceGroup)
 	if ica.finalOutputRedirect != nil {
 		*ica.finalOutputRedirect = append(*ica.finalOutputRedirect, resourceGroupCreatedMessage)

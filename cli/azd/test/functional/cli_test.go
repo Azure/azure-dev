@@ -130,10 +130,17 @@ func Test_CLI_Init_CanUseTemplate(t *testing.T) {
 	cli.WorkingDirectory = dir
 	cli.Env = append(os.Environ(), "AZURE_LOCATION=eastus2")
 
-	_, err := cli.RunCommandWithStdIn(ctx, "TESTENV\n\nOther (enter manually)\nMY_SUB_ID\n", "init", "--template", "cosmos-dotnet-core-todo-app")
+	_, err := cli.RunCommandWithStdIn(
+		ctx,
+		"TESTENV\n\nOther (enter manually)\nMY_SUB_ID\n",
+		"init",
+		"--template",
+		"cosmos-dotnet-core-todo-app",
+	)
 	require.NoError(t, err)
 
-	// While `init` uses git behind the scenes to pull a template, we don't want to bring the history over or initialize a git
+	// While `init` uses git behind the scenes to pull a template, we don't want to bring the history over or initialize a
+	// git
 	// repository.
 	require.NoDirExists(t, filepath.Join(dir, ".git"))
 
@@ -461,7 +468,8 @@ func Test_CLI_InfraCreateAndDeleteFuncApp(t *testing.T) {
 
 	t.Logf("Issuing GET request to function\n")
 
-	// We've seen some cases in CI where issuing a get right after a deploy ends up with us getting a 404, so retry the request a
+	// We've seen some cases in CI where issuing a get right after a deploy ends up with us getting a 404, so retry the
+	// request a
 	// handful of times if it fails with a 404.
 	err = retry.Do(ctx, retry.WithMaxRetries(10, retry.NewConstant(5*time.Second)), func(ctx context.Context) error {
 		res, err := http.Get(url)
@@ -470,7 +478,9 @@ func Test_CLI_InfraCreateAndDeleteFuncApp(t *testing.T) {
 		}
 		defer res.Body.Close()
 		if res.StatusCode != http.StatusOK {
-			return retry.RetryableError(fmt.Errorf("expected %d but got %d for request to %s", http.StatusOK, res.StatusCode, url))
+			return retry.RetryableError(
+				fmt.Errorf("expected %d but got %d for request to %s", http.StatusOK, res.StatusCode, url),
+			)
 		}
 		return nil
 	})
@@ -825,20 +835,24 @@ func logHandles(t *testing.T, path string) {
 func removeAllWithDiagnostics(t *testing.T, path string) error {
 	retryCount := 0
 	loggedOnce := false
-	return retry.Do(context.Background(), retry.WithMaxRetries(10, retry.NewConstant(1*time.Second)), func(_ context.Context) error {
-		removeErr := os.RemoveAll(path)
-		if removeErr == nil {
-			return nil
-		}
-		t.Logf("failed to clean up %s with error: %v", path, removeErr)
+	return retry.Do(
+		context.Background(),
+		retry.WithMaxRetries(10, retry.NewConstant(1*time.Second)),
+		func(_ context.Context) error {
+			removeErr := os.RemoveAll(path)
+			if removeErr == nil {
+				return nil
+			}
+			t.Logf("failed to clean up %s with error: %v", path, removeErr)
 
-		if retryCount >= 2 && !loggedOnce {
-			// Only log once after 2 seconds - logHandles is pretty expensive and slow
-			logHandles(t, path)
-			loggedOnce = true
-		}
+			if retryCount >= 2 && !loggedOnce {
+				// Only log once after 2 seconds - logHandles is pretty expensive and slow
+				logHandles(t, path)
+				loggedOnce = true
+			}
 
-		retryCount++
-		return retry.RetryableError(removeErr)
-	})
+			retryCount++
+			return retry.RetryableError(removeErr)
+		},
+	)
 }

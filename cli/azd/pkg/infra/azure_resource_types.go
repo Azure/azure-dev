@@ -63,7 +63,8 @@ func GetResourceTypeDisplayName(resourceType AzureResourceType) string {
 }
 
 // IsTopLevelResourceType returns true if the resource type is a top-level resource type, otherwise false.
-// A top-level resource type is of the format of: {ResourceProvider}/{TopLevelResourceType}, i.e. Microsoft.DocumentDB/databaseAccounts
+// A top-level resource type is of the format of: {ResourceProvider}/{TopLevelResourceType}, i.e.
+// Microsoft.DocumentDB/databaseAccounts
 func IsTopLevelResourceType(resourceType AzureResourceType) bool {
 	resType := string(resourceType)
 	firstIndex := strings.Index(resType, resourceLevelSeparator)

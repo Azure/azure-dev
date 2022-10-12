@@ -34,14 +34,24 @@ func (at *staticWebAppTarget) RequiredExternalTools() []tools.ExternalTool {
 	return []tools.ExternalTool{at.cli, at.swa}
 }
 
-func (at *staticWebAppTarget) Deploy(ctx context.Context, azdCtx *azdcontext.AzdContext, path string, progress chan<- string) (ServiceDeploymentResult, error) {
+func (at *staticWebAppTarget) Deploy(
+	ctx context.Context,
+	azdCtx *azdcontext.AzdContext,
+	path string,
+	progress chan<- string,
+) (ServiceDeploymentResult, error) {
 	if strings.TrimSpace(at.config.OutputPath) == "" {
 		at.config.OutputPath = "build"
 	}
 
 	// Get the static webapp deployment token
 	progress <- "Retrieving deployment token"
-	deploymentToken, err := at.cli.GetStaticWebAppApiKey(ctx, at.env.GetSubscriptionId(), at.scope.ResourceGroupName(), at.scope.ResourceName())
+	deploymentToken, err := at.cli.GetStaticWebAppApiKey(
+		ctx,
+		at.env.GetSubscriptionId(),
+		at.scope.ResourceGroupName(),
+		at.scope.ResourceName(),
+	)
 	if err != nil {
 		return ServiceDeploymentResult{}, fmt.Errorf("failed retrieving static web app deployment token: %w", err)
 	}
@@ -88,7 +98,13 @@ func (at *staticWebAppTarget) Deploy(ctx context.Context, azdCtx *azdcontext.Azd
 func (at *staticWebAppTarget) Endpoints(ctx context.Context) ([]string, error) {
 	// TODO: Enhance for multi-environment support
 	// https://github.com/Azure/azure-dev/issues/1152
-	envProps, err := at.cli.GetStaticWebAppEnvironmentProperties(ctx, at.env.GetSubscriptionId(), at.scope.ResourceGroupName(), at.scope.ResourceName(), DefaultStaticWebAppEnvironmentName)
+	envProps, err := at.cli.GetStaticWebAppEnvironmentProperties(
+		ctx,
+		at.env.GetSubscriptionId(),
+		at.scope.ResourceGroupName(),
+		at.scope.ResourceName(),
+		DefaultStaticWebAppEnvironmentName,
+	)
 	if err != nil {
 		return nil, fmt.Errorf("fetching service properties: %w", err)
 	}
@@ -103,7 +119,13 @@ func (at *staticWebAppTarget) verifyDeployment(ctx context.Context, progress cha
 
 	for {
 		progress <- verifyMsg
-		envProps, err := at.cli.GetStaticWebAppEnvironmentProperties(ctx, at.env.GetSubscriptionId(), at.scope.ResourceGroupName(), at.scope.ResourceName(), DefaultStaticWebAppEnvironmentName)
+		envProps, err := at.cli.GetStaticWebAppEnvironmentProperties(
+			ctx,
+			at.env.GetSubscriptionId(),
+			at.scope.ResourceGroupName(),
+			at.scope.ResourceName(),
+			DefaultStaticWebAppEnvironmentName,
+		)
 		if err != nil {
 			return fmt.Errorf("failed verifying static web app deployment: %w", err)
 		}
@@ -125,7 +147,13 @@ func (at *staticWebAppTarget) verifyDeployment(ctx context.Context, progress cha
 	return nil
 }
 
-func NewStaticWebAppTarget(config *ServiceConfig, env *environment.Environment, scope *environment.DeploymentScope, azCli azcli.AzCli, swaCli swa.SwaCli) ServiceTarget {
+func NewStaticWebAppTarget(
+	config *ServiceConfig,
+	env *environment.Environment,
+	scope *environment.DeploymentScope,
+	azCli azcli.AzCli,
+	swaCli swa.SwaCli,
+) ServiceTarget {
 	return &staticWebAppTarget{
 		config: config,
 		env:    env,

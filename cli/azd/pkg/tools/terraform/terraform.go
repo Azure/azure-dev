@@ -163,7 +163,12 @@ func (cli *terraformCli) Init(ctx context.Context, modulePath string, additional
 	return cmdRes.Stdout, nil
 }
 
-func (cli *terraformCli) Plan(ctx context.Context, modulePath string, planFilePath string, additionalArgs ...string) (string, error) {
+func (cli *terraformCli) Plan(
+	ctx context.Context,
+	modulePath string,
+	planFilePath string,
+	additionalArgs ...string,
+) (string, error) {
 	args := []string{
 		fmt.Sprintf("-chdir=%s", modulePath),
 		"plan",

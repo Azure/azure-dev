@@ -107,7 +107,12 @@ func (cli *PythonCli) CreateVirtualEnv(ctx context.Context, workingDir, name str
 	res, err := cli.commandRunner.Run(ctx, runArgs)
 
 	if err != nil {
-		return fmt.Errorf("failed to create virtual Python environment for project '%s': %w (%s)", workingDir, err, res.String())
+		return fmt.Errorf(
+			"failed to create virtual Python environment for project '%s': %w (%s)",
+			workingDir,
+			err,
+			res.String(),
+		)
 	}
 	return nil
 }

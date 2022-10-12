@@ -109,7 +109,10 @@ func NewTransmitterStub() *TransmitterStub {
 	}
 }
 
-func (tr *TransmitterStub) Transmit(payload []byte, items appinsightsexporter.TelemetryItems) (*appinsightsexporter.TransmissionResult, error) {
+func (tr *TransmitterStub) Transmit(
+	payload []byte,
+	items appinsightsexporter.TelemetryItems,
+) (*appinsightsexporter.TransmissionResult, error) {
 	tr.seen = append(tr.seen, payload)
 
 	if tr.mockError != nil {

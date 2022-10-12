@@ -21,6 +21,7 @@ func pipelineCmd(rootOptions *internal.GlobalCommandOptions) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "pipeline",
 		Short: "Manage GitHub Actions pipelines.",
+		//nolint:lll
 		Long: `Manage GitHub Actions pipelines.
 
 The Azure Developer CLI template includes a GitHub Actions pipeline configuration file (in the *.github/workflows* folder) that deploys your application whenever code is pushed to the main branch.
@@ -65,9 +66,24 @@ func (p *pipelineConfigAction) SetupFlags(
 	persis *pflag.FlagSet,
 	local *pflag.FlagSet,
 ) {
-	local.StringVar(&p.manager.PipelineServicePrincipalName, "principal-name", "", "The name of the service principal to use to grant access to Azure resources as part of the pipeline.")
-	local.StringVar(&p.manager.PipelineRemoteName, "remote-name", "origin", "The name of the git remote to configure the pipeline to run on.")
-	local.StringVar(&p.manager.PipelineRoleName, "principal-role", "Contributor", "The role to assign to the service principal.")
+	local.StringVar(
+		&p.manager.PipelineServicePrincipalName,
+		"principal-name",
+		"",
+		"The name of the service principal to use to grant access to Azure resources as part of the pipeline.",
+	)
+	local.StringVar(
+		&p.manager.PipelineRemoteName,
+		"remote-name",
+		"origin",
+		"The name of the git remote to configure the pipeline to run on.",
+	)
+	local.StringVar(
+		&p.manager.PipelineRoleName,
+		"principal-role",
+		"Contributor",
+		"The role to assign to the service principal.",
+	)
 	local.StringVar(&p.manager.PipelineProvider, "provider", "", "The pipeline provider to use (GitHub and Azdo supported).")
 }
 

@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"regexp"
 	"strings"
 	"testing"
@@ -143,7 +144,7 @@ func Test_AzCli_Login_DoesNotAppend_useDeviceCode(t *testing.T) {
 
 func runAndCaptureUserAgent(t *testing.T) string {
 	// Get the default command runner implementation
-	defaultRunner := exec.NewCommandRunner()
+	defaultRunner := exec.NewCommandRunner(os.Stdin, os.Stdout, os.Stderr)
 	mockContext := mocks.NewMockContext(context.Background())
 
 	azCli := NewAzCli(NewAzCliArgs{

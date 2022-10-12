@@ -44,7 +44,7 @@ type NewTerraformCliArgs struct {
 
 func NewTerraformCli(args NewTerraformCliArgs) TerraformCli {
 	if args.commandRunner == nil {
-		args.commandRunner = exec.NewCommandRunner()
+		panic("NewTerraformCli: must set args.commandRunner")
 	}
 
 	return &terraformCli{

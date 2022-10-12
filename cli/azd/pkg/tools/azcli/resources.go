@@ -143,7 +143,7 @@ func (cli *azCli) createResourcesClient(ctx context.Context, subscriptionId stri
 		return nil, err
 	}
 
-	options := cli.createArmClientOptions(ctx)
+	options := cli.createDefaultClientOptions(ctx).BuildArmClientOptions()
 	client, err := armresources.NewClient(subscriptionId, cred, options)
 	if err != nil {
 		return nil, fmt.Errorf("creating Resource client: %w", err)
@@ -161,7 +161,7 @@ func (cli *azCli) createResourceGroupClient(
 		return nil, err
 	}
 
-	options := cli.createArmClientOptions(ctx)
+	options := cli.createDefaultClientOptions(ctx).BuildArmClientOptions()
 	client, err := armresources.NewResourceGroupsClient(subscriptionId, cred, options)
 	if err != nil {
 		return nil, fmt.Errorf("creating ResourceGroup client: %w", err)

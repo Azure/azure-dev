@@ -63,7 +63,7 @@ func (st *appServiceTarget) Deploy(
 	sdr := NewServiceDeploymentResult(
 		azure.WebsiteRID(st.env.GetSubscriptionId(), st.scope.ResourceGroupName(), st.scope.ResourceName()),
 		AppServiceTarget,
-		res,
+		*res,
 		endpoints,
 	)
 	return sdr, nil

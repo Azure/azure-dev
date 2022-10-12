@@ -378,7 +378,8 @@ func (tok *AzCliAccessToken) UnmarshalJSON(data []byte) error {
 	tok.AccessToken = wire.AccessToken
 
 	// the format of the ExpiresOn property of the access token differs across environments
-	// see https://github.com/Azure/azure-sdk-for-go/blob/61e2e74b9af2cfbff74ea8bb3c6f687c582c419f/sdk/azidentity/azure_cli_credential.go
+	// see
+	// https://github.com/Azure/azure-sdk-for-go/blob/61e2e74b9af2cfbff74ea8bb3c6f687c582c419f/sdk/azidentity/azure_cli_credential.go
 	//
 	// nolint:errorlint
 	parseExpirationDate := func(input string) (*time.Time, error) {
@@ -1088,7 +1089,8 @@ func (cli *azCli) CreateOrUpdateServicePrincipal(
 	applicationName string,
 	roleName string,
 ) (json.RawMessage, error) {
-	// By default the role assignment is tied to the root of the currently active subscription (in the az cli), which may not be the same
+	// By default the role assignment is tied to the root of the currently active subscription (in the az cli), which may not
+	// be the same
 	// subscription that the user has requested, so build the scope ourselves.
 	scopes := azure.SubscriptionRID(subscriptionId)
 	var result ServicePrincipalCredentials

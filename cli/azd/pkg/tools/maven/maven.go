@@ -92,7 +92,8 @@ func getMavenPath(projectPath string, rootProjectPath string) (string, error) {
 
 // getMavenWrapperPath finds the path to mvnw in the project directory, up to the root project directory.
 //
-// An error is returned if an unexpected error occurred while finding. If mvnw is not found, an empty string is returned with no error.
+// An error is returned if an unexpected error occurred while finding. If mvnw is not found, an empty string is returned with
+// no error.
 func getMavenWrapperPath(projectPath string, rootProjectPath string) (string, error) {
 	searchDir, err := filepath.Abs(projectPath)
 	if err != nil {

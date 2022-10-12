@@ -83,7 +83,8 @@ type StateProgress struct {
 type Provider interface {
 	Name() string
 	RequiredExternalTools() []tools.ExternalTool
-	// State gets the current state of the infrastructure, this contains both the provisioned resources and any outputs from the module.
+	// State gets the current state of the infrastructure, this contains both the provisioned resources and any outputs from
+	// the module.
 	State(ctx context.Context, scope infra.Scope) *async.InteractiveTaskWithProgress[*StateResult, *StateProgress]
 	Plan(ctx context.Context) *async.InteractiveTaskWithProgress[*DeploymentPlan, *DeploymentPlanningProgress]
 	Deploy(

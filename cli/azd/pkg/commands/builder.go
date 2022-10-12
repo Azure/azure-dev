@@ -22,7 +22,8 @@ import (
 
 // BuildOptions contains the optional parameters for the Build function.
 type BuildOptions struct {
-	// Long is the long message shown in the 'help <this-command>' output. If Long is not provided, the Short message is used instead.
+	// Long is the long message shown in the 'help <this-command>' output. If Long is not provided, the Short message is used
+	// instead.
 	Long string
 
 	// Aliases is an array of aliases that can be used instead of the first word in Use.

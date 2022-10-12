@@ -177,7 +177,8 @@ func (rm *AzureResourceManager) GetDefaultResourceGroups(
 // It will first try to find a resource group tagged with azd-env-name
 // Then it will try to find a resource group that defaults to either {envname}-rg or rg-{envname}
 // If it finds exactly one resource group, then it will use it
-// If it finds more than one or zero resource groups, then it will prompt the user to update azure.yaml or AZURE_RESOURCE_GROUP
+// If it finds more than one or zero resource groups, then it will prompt the user to update azure.yaml or
+// AZURE_RESOURCE_GROUP
 // with the resource group to use.
 func (rm *AzureResourceManager) FindResourceGroupForEnvironment(
 	ctx context.Context,
@@ -191,7 +192,8 @@ func (rm *AzureResourceManager) FindResourceGroupForEnvironment(
 	}
 
 	if len(rgs) == 0 {
-		// We didn't find any Resource Groups for the environment, now let's try to find Resource Groups with the rg-{envname} prefix or {envname}-rg suffix
+		// We didn't find any Resource Groups for the environment, now let's try to find Resource Groups with the
+		// rg-{envname} prefix or {envname}-rg suffix
 		rgs, err = rm.GetDefaultResourceGroups(ctx, env)
 		if err != nil {
 			return "", fmt.Errorf("getting default resource groups for environment: %s: %w", env.GetEnvName(), err)
@@ -226,8 +228,9 @@ func (rm *AzureResourceManager) GetResourceTypeDisplayName(
 	resourceType AzureResourceType,
 ) (string, error) {
 	if resourceType == AzureResourceTypeWebSite {
-		// Web apps have different kinds of resources sharing the same resource type 'Microsoft.Web/sites', i.e. Function app vs. App service
-		// It is extremely important that we display the right one, thus we resolve it by querying the properties of the ARM resource.
+		// Web apps have different kinds of resources sharing the same resource type 'Microsoft.Web/sites', i.e. Function app
+		// vs. App service It is extremely important that we display the right one, thus we resolve it by querying the
+		// properties of the ARM resource.
 		resourceTypeDisplayName, err := rm.GetWebAppResourceTypeDisplayName(ctx, subscriptionId, resourceId)
 
 		if err != nil {

@@ -45,7 +45,8 @@ func NewProvisioningProgressDisplay(
 	}
 }
 
-// ReportProgress reports the current deployment progress, setting the currently executing operation title and logging progress.
+// ReportProgress reports the current deployment progress, setting the currently executing operation title and logging
+// progress.
 func (display *ProvisioningProgressDisplay) ReportProgress(ctx context.Context) (*DeployProgress, error) {
 	progress := DeployProgress{
 		Timestamp:  time.Now(),

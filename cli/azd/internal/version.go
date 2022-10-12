@@ -12,7 +12,9 @@ import (
 // It's updated using ldflags in CI.
 // Example:
 //
-//	-ldflags="-X 'github.com/azure/azure-dev/cli/azd/internal.Version=0.0.1-alpha.1 (commit 8a49ae5ae9ab13beeade35f91ad4b4611c2f5574)'"
+//	-ldflags="-X 'github.com/azure/azure-dev/cli/azd/internal.Version=0.0.1-alpha.1 (commit
+//
+// 8a49ae5ae9ab13beeade35f91ad4b4611c2f5574)'"
 var Version = "0.0.0-dev.0 (commit 0000000000000000000000000000000000000000)"
 
 const UnknownVersion string = "unknown"
@@ -56,8 +58,9 @@ func GetVersionNumber() string {
 	return pieces[0]
 }
 
-// Non-whitespace (version number), followed by some whitespace, followed by open parenthesis, optional whitespace, and word 'commit',
-// followed by not-whitespace, not-closing-parenthesis (commit hash), followed by optional whitespace and closing parenthesis.
+// Non-whitespace (version number), followed by some whitespace, followed by open parenthesis, optional whitespace, and word
+// 'commit', followed by not-whitespace, not-closing-parenthesis (commit hash), followed by optional whitespace and closing
+// parenthesis.
 var azdVersionStrRegex = regexp.MustCompile(`(\S+)\s+\(\s*commit\s+([^)\s]+)\s*\)`)
 
 func GetVersionSpec() VersionSpec {

@@ -176,7 +176,8 @@ func loadOrInitEnvironment(
 	return env, telemetry.ContextWithEnvironment(ctx, env), nil
 }
 
-// ensureEnvironmentInitialized ensures the environment is initialized, i.e. it contains values for `AZURE_ENV_NAME`, `AZURE_LOCATION`, `AZURE_SUBSCRIPTION_ID` and `AZURE_PRINCIPAL_ID`.
+// ensureEnvironmentInitialized ensures the environment is initialized, i.e. it contains values for `AZURE_ENV_NAME`,
+// `AZURE_LOCATION`, `AZURE_SUBSCRIPTION_ID` and `AZURE_PRINCIPAL_ID`.
 // It will use the values from the "environment spec" passed in, and prompt for any missing values as necessary.
 // Existing environment value are left unchanged, even if the "spec" has different values.
 func ensureEnvironmentInitialized(

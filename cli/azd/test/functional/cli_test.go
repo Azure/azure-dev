@@ -139,7 +139,8 @@ func Test_CLI_Init_CanUseTemplate(t *testing.T) {
 	)
 	require.NoError(t, err)
 
-	// While `init` uses git behind the scenes to pull a template, we don't want to bring the history over or initialize a git
+	// While `init` uses git behind the scenes to pull a template, we don't want to bring the history over or initialize a
+	// git
 	// repository.
 	require.NoDirExists(t, filepath.Join(dir, ".git"))
 
@@ -467,7 +468,8 @@ func Test_CLI_InfraCreateAndDeleteFuncApp(t *testing.T) {
 
 	t.Logf("Issuing GET request to function\n")
 
-	// We've seen some cases in CI where issuing a get right after a deploy ends up with us getting a 404, so retry the request a
+	// We've seen some cases in CI where issuing a get right after a deploy ends up with us getting a 404, so retry the
+	// request a
 	// handful of times if it fails with a 404.
 	err = retry.Do(ctx, retry.WithMaxRetries(10, retry.NewConstant(5*time.Second)), func(ctx context.Context) error {
 		res, err := http.Get(url)

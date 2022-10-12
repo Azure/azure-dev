@@ -19,7 +19,8 @@ import (
 )
 
 // ProjectConfig is the top level object serialized into an azure.yaml file.
-// When changing project structure, make sure to update the JSON schema file for azure.yaml (<workspace root>/schemas/vN.M/azure.yaml.json).
+// When changing project structure, make sure to update the JSON schema file for azure.yaml (<workspace
+// root>/schemas/vN.M/azure.yaml.json).
 type ProjectConfig struct {
 	Name              string                    `yaml:"name"`
 	ResourceGroupName string                    `yaml:"resourceGroup,omitempty"`

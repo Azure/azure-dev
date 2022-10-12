@@ -60,7 +60,8 @@ func main() {
 		if err != nil {
 			log.Printf("failed to parse %s as a semver", internal.GetVersionNumber())
 		} else if curVersion.Equals(semver.MustParse("0.0.0-dev.0")) {
-			// This is a dev build (i.e. built using `go install without setting a version`) - don't print a warning in this case
+			// This is a dev build (i.e. built using `go install without setting a version`) - don't print a warning in this
+			// case
 			log.Printf("eliding update message for dev build")
 		} else if latestVersion.GT(curVersion) {
 			fmt.Fprintln(os.Stderr, output.WithWarningFormat("warning: your version of azd is out of date, you have %s and the latest version is %s", curVersion.String(), latestVersion.String()))
@@ -204,8 +205,9 @@ func fetchLatestVersion(version chan<- semver.Version) {
 		cachedLatestVersion = &fetchedVersion
 
 		// Write the value back to the cache. Note that on these logging paths for errors we do not return
-		// eagerly, since we have not yet sent the latest versions across the channel (and we don't want to do that until we've updated
-		// the cache since reader on the other end of the channel will exit the process after it receives this value and finishes
+		// eagerly, since we have not yet sent the latest versions across the channel (and we don't want to do that until
+		// we've updated the cache since reader on the other end of the channel will exit the process after it receives this
+		// value and finishes
 		// the up to date check, possibly while this go-routine is still running)
 		if err := os.MkdirAll(filepath.Dir(cacheFilePath), osutil.PermissionFile); err != nil {
 			log.Printf("failed to create cache folder '%s': %v", filepath.Dir(cacheFilePath), err)

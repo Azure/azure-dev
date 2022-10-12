@@ -462,7 +462,8 @@ func (p *BicepProvider) getKeyVaultsToPurge(
 // Since that's behavior we'd like to support, we run a purge operation for each KeyVault after
 // it has been deleted.
 //
-// See https://docs.microsoft.com/azure/key-vault/general/key-vault-recovery?tabs=azure-portal#what-are-soft-delete-and-purge-protection
+// See
+// https://docs.microsoft.com/azure/key-vault/general/key-vault-recovery?tabs=azure-portal#what-are-soft-delete-and-purge-protection
 // for more information on this feature.
 func (p *BicepProvider) purgeKeyVaults(
 	ctx context.Context,
@@ -596,7 +597,8 @@ func (p *BicepProvider) mapBicepTypeToInterfaceType(s string) ParameterType {
 	}
 }
 
-// Creates a normalized view of the azure output parameters and resolves inconsistencies in the output parameter name casings.
+// Creates a normalized view of the azure output parameters and resolves inconsistencies in the output parameter name
+// casings.
 func (p *BicepProvider) createOutputParameters(
 	template *Deployment,
 	azureOutputParams map[string]azcli.AzCliDeploymentOutput,
@@ -730,7 +732,8 @@ func (p *BicepProvider) convertToDeployment(bicepTemplate BicepTemplate) (*Deplo
 // Deploys the specified Bicep module and parameters with the selected provisioning scope (subscription vs resource group)
 func (p *BicepProvider) deployModule(ctx context.Context, scope infra.Scope, bicepPath string, parametersPath string) (
 	*armresources.DeploymentExtended, error) {
-	// We've seen issues where `Deploy` completes but for a short while after, fetching the deployment fails with a `DeploymentNotFound` error.
+	// We've seen issues where `Deploy` completes but for a short while after, fetching the deployment fails with a
+	// `DeploymentNotFound` error.
 	// Since other commands of ours use the deployment, let's try to fetch it here and if we fail with `DeploymentNotFound`,
 	// ignore this error, wait a short while and retry.
 	if err := scope.Deploy(ctx, bicepPath, parametersPath); err != nil {

@@ -15,9 +15,11 @@ var booleanEnvVarRules = []struct {
 	envVar      string
 	environment string
 }{
-	// Azure Pipelines - https://docs.microsoft.com/en-us/azure/devops/pipelines/build/variables#system-variables-devops-servicesQ
+	// Azure Pipelines -
+	// https://docs.microsoft.com/en-us/azure/devops/pipelines/build/variables#system-variables-devops-servicesQ
 	{"TF_BUILD", fields.EnvAzurePipelines},
-	// GitHub Actions, https://docs.github.com/en/actions/learn-github-actions/environment-variables#default-environment-variables
+	// GitHub Actions,
+	// https://docs.github.com/en/actions/learn-github-actions/environment-variables#default-environment-variables
 	{"GITHUB_ACTIONS", fields.EnvGitHubActions},
 	// AppVeyor - https://www.appveyor.com/docs/environment-variables/
 	{"APPVEYOR", fields.EnvAppVeyor},
@@ -35,7 +37,8 @@ var nonNullEnvVarRules = []struct {
 }{
 	// AWS CodeBuild - https://docs.aws.amazon.com/codebuild/latest/userguide/build-env-ref-env-vars.html
 	{"CODEBUILD_BUILD_ID", fields.EnvAwsCodeBuild},
-	// Jenkins - https://github.com/jenkinsci/jenkins/blob/master/core/src/main/resources/jenkins/model/CoreEnvironmentContributor/buildEnv.groovy
+	// Jenkins -
+	// https://github.com/jenkinsci/jenkins/blob/master/core/src/main/resources/jenkins/model/CoreEnvironmentContributor/buildEnv.groovy
 	{"JENKINS_URL", fields.EnvJenkins},
 	// TeamCity - https://www.jetbrains.com/help/teamcity/predefined-build-parameters.html#Predefined+Server+Build+Parameters
 	{"TEAMCITY_VERSION", fields.EnvTeamCity},

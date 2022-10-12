@@ -27,6 +27,7 @@ func templatesCmd(rootOptions *internal.GlobalCommandOptions) *cobra.Command {
 		[]output.Format{output.JsonFormat, output.TableFormat},
 		output.TableFormat,
 	))
+
 	root.AddCommand(output.AddOutputParam(
 		templatesShowCmd(rootOptions),
 		[]output.Format{output.JsonFormat, output.TableFormat},

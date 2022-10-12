@@ -279,13 +279,3 @@ func (i *initAction) Run(ctx context.Context, cmd *cobra.Command, args []string,
 
 	return nil
 }
-
-const (
-	// CodespacesEnvVarName is the name of the env variable set when you're in a Github codespace. It's
-	// just set to 'true'.
-	CodespacesEnvVarName = "CODESPACES"
-
-	// RemoteContainersEnvVarName is the name of the env variable set when you're in a remote container. It's
-	// just set to 'true'.
-	RemoteContainersEnvVarName = "REMOTE_CONTAINERS"
-)

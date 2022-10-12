@@ -1,5 +1,0 @@
-name: resourcegroupterraformtest
-metadata:
-  template: azd-test/resourcegroupterraformtest@v1
-infra:
-  provider: terraform

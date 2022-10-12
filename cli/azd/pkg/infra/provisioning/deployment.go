@@ -8,6 +8,16 @@ type Deployment struct {
 	Outputs    map[string]OutputParameter
 }
 
+type ParameterType string
+
+const (
+	ParameterTypeString  ParameterType = "string"
+	ParameterTypeNumber  ParameterType = "number"
+	ParameterTypeBoolean ParameterType = "bool"
+	ParameterTypeObject  ParameterType = "object"
+	ParameterTypeArray   ParameterType = "array"
+)
+
 type InputParameter struct {
 	Type         string
 	DefaultValue interface{}
@@ -15,8 +25,22 @@ type InputParameter struct {
 }
 
 type OutputParameter struct {
-	Type  string
+	Type  ParameterType
 	Value interface{}
+}
+
+// State represents the "current state" of the infrastructure, which is the result of the most recent deployment. For ARM
+// this corresponds to information from the most recent deployment object. For Terraform, it's information from the state
+// file.
+type State struct {
+	// Outputs from the most recent deployment.
+	Outputs map[string]OutputParameter
+	// The resources that make up the application.
+	Resources []Resource
+}
+
+type Resource struct {
+	Id string
 }
 
 func (p *InputParameter) HasValue() bool {

@@ -98,31 +98,50 @@ func TestAzCli(t *testing.T) {
 }
 
 func TestAZCLIWithUserAgent(t *testing.T) {
-	azCli := NewAzCli(NewAzCliArgs{
-		EnableTelemetry: true,
-		EnableDebug:     true,
-	})
-
-	account := mustGetDefaultAccount(t, azCli)
-	userAgent := runAndCaptureUserAgent(t, account.Id)
+	userAgent := runAndCaptureUserAgent(t)
 
 	require.Contains(t, userAgent, "AZTesting=yes")
 	require.Contains(t, userAgent, "azdev")
 }
 
-func mustGetDefaultAccount(t *testing.T, azCli AzCli) AzCliSubscriptionInfo {
-	accounts, err := azCli.ListAccounts(context.Background())
+func Test_AzCli_Login_Appends_useDeviceCode(t *testing.T) {
+	var commandArgs []string
+	var writer io.Writer
+
+	mockContext := mocks.NewMockContext(context.Background())
+	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
+		return strings.Contains(command, "--use-device-code")
+	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+		commandArgs = args.Args
+		return exec.NewRunResult(0, "", ""), nil
+	})
+
+	azCli := GetAzCli(*mockContext.Context)
+	err := azCli.Login(*mockContext.Context, true, writer)
 	require.NoError(t, err)
-	for _, account := range accounts {
-		if account.IsDefault {
-			return account
-		}
-	}
-	assert.Fail(t, "No default account set")
-	return AzCliSubscriptionInfo{}
+	require.Contains(t, commandArgs, "--use-device-code")
 }
 
-func runAndCaptureUserAgent(t *testing.T, subscriptionID string) string {
+func Test_AzCli_Login_DoesNotAppend_useDeviceCode(t *testing.T) {
+	var commandArgs []string
+	var writer io.Writer
+
+	mockContext := mocks.NewMockContext(context.Background())
+	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
+		return !strings.Contains(command, "--use-device-code")
+	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+		commandArgs = args.Args
+		return exec.NewRunResult(0, "", ""), nil
+	})
+
+	azCli := GetAzCli(*mockContext.Context)
+	err := azCli.Login(*mockContext.Context, false, writer)
+
+	require.NoError(t, err)
+	require.NotContains(t, commandArgs, "--use-device-code")
+}
+
+func runAndCaptureUserAgent(t *testing.T) string {
 	// Get the default command runner implementation
 	defaultRunner := exec.NewCommandRunner()
 	mockContext := mocks.NewMockContext(context.Background())
@@ -153,7 +172,7 @@ func runAndCaptureUserAgent(t *testing.T, subscriptionID string) string {
 
 	// the result doesn't matter here since we just want to see what the User-Agent is that we sent, which will
 	// happen regardless of whether the request succeeds or fails.
-	_, _ = azCli.ListAccountLocations(context.Background())
+	_, _ = azCli.CreateOrUpdateServicePrincipal(context.Background(), "SUBSCRIPTION_ID", "APP_NAME", "ROLE_TO_ASSIGN")
 
 	// The outputted line will look like this:
 	// DEBUG: cli.azure.cli.core.sdk.policies:     'User-Agent': 'AZURECLI/2.35.0 (MSI) azsdk-python-azure-mgmt-resource/20.0.0 Python/3.10.3 (Windows-10-10.0.22621-SP0) azdev/0.0.0-dev.0 AZTesting=yes'

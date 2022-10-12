@@ -14,9 +14,9 @@ import (
 	"github.com/drone/envsubst"
 )
 
-func UpdateEnvironment(env *environment.Environment, outputs *map[string]OutputParameter) error {
-	if len(*outputs) > 0 {
-		for key, param := range *outputs {
+func UpdateEnvironment(env *environment.Environment, outputs map[string]OutputParameter) error {
+	if len(outputs) > 0 {
+		for key, param := range outputs {
 			env.Values[key] = fmt.Sprintf("%v", param.Value)
 		}
 

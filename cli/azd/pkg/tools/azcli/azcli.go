@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerregistry/armcontainerregistry"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	azdinternal "github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/telemetry"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
@@ -60,11 +61,13 @@ type AzCli interface {
 	LoginAcr(ctx context.Context, subscriptionId string, loginServer string) error
 	GetContainerRegistries(ctx context.Context, subscriptionId string) ([]*armcontainerregistry.Registry, error)
 	ListAccounts(ctx context.Context) ([]AzCliSubscriptionInfo, error)
+	GetDefaultAccount(ctx context.Context) (*AzCliSubscriptionInfo, error)
+	GetAccount(ctx context.Context, subscriptionId string) (*AzCliSubscriptionInfo, error)
 	ListExtensions(ctx context.Context) ([]AzCliExtensionInfo, error)
 	GetCliConfigValue(ctx context.Context, name string) (AzCliConfigValue, error)
 	GetSubscriptionTenant(ctx context.Context, subscriptionId string) (string, error)
-	GetSubscriptionDeployment(ctx context.Context, subscriptionId string, deploymentName string) (AzCliDeployment, error)
-	GetResourceGroupDeployment(ctx context.Context, subscriptionId string, resourceGroupName string, deploymentName string) (AzCliDeployment, error)
+	GetSubscriptionDeployment(ctx context.Context, subscriptionId string, deploymentName string) (*armresources.DeploymentExtended, error)
+	GetResourceGroupDeployment(ctx context.Context, subscriptionId string, resourceGroupName string, deploymentName string) (*armresources.DeploymentExtended, error)
 	GetResource(ctx context.Context, subscriptionId string, resourceId string) (AzCliResourceExtended, error)
 	GetKeyVault(ctx context.Context, subscriptionId string, resourceGroupName string, vaultName string) (*AzCliKeyVault, error)
 	GetKeyVaultSecret(ctx context.Context, vaultName string, secretName string) (*AzCliKeyVaultSecret, error)
@@ -83,7 +86,7 @@ type AzCli interface {
 	ListSubscriptionDeploymentOperations(ctx context.Context, subscriptionId string, deploymentName string) ([]AzCliResourceOperation, error)
 	ListResourceGroupDeploymentOperations(ctx context.Context, subscriptionId string, resourceGroupName string, deploymentName string) ([]AzCliResourceOperation, error)
 	// ListAccountLocations lists the physical locations in Azure.
-	ListAccountLocations(ctx context.Context) ([]AzCliLocation, error)
+	ListAccountLocations(ctx context.Context, subscriptionId string) ([]AzCliLocation, error)
 	// CreateOrUpdateServicePrincipal creates a service principal using a given name and returns a JSON object which
 	// may be used by tools which understand the `AZURE_CREDENTIALS` format (i.e. the `sdk-auth` format). The service
 	// principal is assigned a given role. If an existing principal exists with the given name,
@@ -129,12 +132,6 @@ type AzCliDeploymentPropertiesBasicDependency struct {
 	Id           string `json:"id"`
 	ResourceName string `json:"resourceName"`
 	ResourceType string `json:"resourceType"`
-}
-
-type AzCliSubscriptionInfo struct {
-	Name      string `json:"name"`
-	Id        string `json:"id"`
-	IsDefault bool   `json:"isDefault"`
 }
 
 type AzCliDeploymentResult struct {
@@ -233,16 +230,6 @@ type AzCliStaticWebAppProperties struct {
 type AzCliStaticWebAppEnvironmentProperties struct {
 	Hostname string `json:"hostname"`
 	Status   string `json:"status"`
-}
-
-type AzCliLocation struct {
-	// The human friendly name of the location (e.g. "West US 2")
-	DisplayName string `json:"displayName"`
-	// The name of the location (e.g. "westus2")
-	Name string `json:"name"`
-	// The human friendly name of the location, prefixed with a
-	// region name (e.g "(US) West US 2")
-	RegionalDisplayName string `json:"regionalDisplayName"`
 }
 
 // AzCliConfigValue represents the value returned by `az config get`.
@@ -430,22 +417,6 @@ func (cli *azCli) UserAgent() string {
 	return cli.userAgent
 }
 
-func (cli *azCli) ListAccounts(ctx context.Context) ([]AzCliSubscriptionInfo, error) {
-	res, err := cli.runAzCommand(ctx, "account", "list", "--output", "json", "--query", "[].{name:name, id:id, isDefault:isDefault}")
-
-	if isNotLoggedInMessage(res.Stderr) {
-		return []AzCliSubscriptionInfo{}, ErrAzCliNotLoggedIn
-	} else if err != nil {
-		return nil, fmt.Errorf("failed running az account list: %s: %w", res.String(), err)
-	}
-
-	var subscriptionInfo []AzCliSubscriptionInfo
-	if err := json.Unmarshal([]byte(res.Stdout), &subscriptionInfo); err != nil {
-		return nil, fmt.Errorf("could not unmarshal output %s as a []AzCliSubscriptionInfo: %w", res.Stdout, err)
-	}
-	return subscriptionInfo, nil
-}
-
 func (cli *azCli) ListExtensions(ctx context.Context) ([]AzCliExtensionInfo, error) {
 	res, err := cli.runAzCommand(ctx, "extension", "list", "--output", "json")
 
@@ -460,27 +431,13 @@ func (cli *azCli) ListExtensions(ctx context.Context) ([]AzCliExtensionInfo, err
 	return extensionInfo, nil
 }
 
-func (cli *azCli) GetSubscriptionTenant(ctx context.Context, subscriptionId string) (string, error) {
-	res, err := cli.runAzCommand(ctx, "account", "show", "--subscription", subscriptionId, "--query", "tenantId", "--output", "json")
-	if isNotLoggedInMessage(res.Stderr) {
-		return "", ErrAzCliNotLoggedIn
-	} else if err != nil {
-		return "", fmt.Errorf("failed running az account show: %s: %w", res.String(), err)
-	}
-
-	var tenantId string
-	if err := json.Unmarshal([]byte(res.Stdout), &tenantId); err != nil {
-		return "", fmt.Errorf("could not unmarshal output %s as a string: %w", res.Stdout, err)
-	}
-	return tenantId, nil
-}
-
 func (cli *azCli) Login(ctx context.Context, useDeviceCode bool, deviceCodeWriter io.Writer) error {
 	args := []string{"login", "--output", "none"}
 
 	var writer io.Writer
 	if useDeviceCode {
 		writer = deviceCodeWriter
+		args = append(args, "--use-device-code")
 	}
 
 	res, err := cli.runAzCommandWithArgs(ctx, exec.RunArgs{
@@ -524,7 +481,7 @@ func (cli *azCli) DeployAppServiceZip(ctx context.Context, subscriptionId string
 
 func (cli *azCli) DeployFunctionAppUsingZipFile(ctx context.Context, subscriptionID string, resourceGroup string, funcName string, deployZipPath string) (string, error) {
 	// eg: az functionapp deployment source config-zip -g <resource_group> -n <app_name> --src <zip_file_path>
-	res, err := cli.runAzCommandWithArgs(context.Background(), exec.RunArgs{
+	res, err := cli.runAzCommandWithArgs(ctx, exec.RunArgs{
 		Args: []string{
 			"functionapp", "deployment", "source", "config-zip",
 			"--subscription", subscriptionID,
@@ -577,7 +534,7 @@ func (cli *azCli) GetContainerAppProperties(ctx context.Context, subscriptionId,
 }
 
 func (cli *azCli) GetFunctionAppProperties(ctx context.Context, subscriptionID string, resourceGroup string, funcName string) (AzCliFunctionAppProperties, error) {
-	res, err := cli.runAzCommandWithArgs(context.Background(), exec.RunArgs{
+	res, err := cli.runAzCommandWithArgs(ctx, exec.RunArgs{
 		Args: []string{
 			"functionapp", "show",
 			"--subscription", subscriptionID,
@@ -601,7 +558,7 @@ func (cli *azCli) GetFunctionAppProperties(ctx context.Context, subscriptionID s
 }
 
 func (cli *azCli) GetStaticWebAppProperties(ctx context.Context, subscriptionID string, resourceGroup string, appName string) (AzCliStaticWebAppProperties, error) {
-	res, err := cli.runAzCommandWithArgs(context.Background(), exec.RunArgs{
+	res, err := cli.runAzCommandWithArgs(ctx, exec.RunArgs{
 		Args: []string{
 			"staticwebapp", "show",
 			"--subscription", subscriptionID,
@@ -625,7 +582,7 @@ func (cli *azCli) GetStaticWebAppProperties(ctx context.Context, subscriptionID 
 }
 
 func (cli *azCli) GetStaticWebAppEnvironmentProperties(ctx context.Context, subscriptionID string, resourceGroup string, appName string, environmentName string) (AzCliStaticWebAppEnvironmentProperties, error) {
-	res, err := cli.runAzCommandWithArgs(context.Background(), exec.RunArgs{
+	res, err := cli.runAzCommandWithArgs(ctx, exec.RunArgs{
 		Args: []string{
 			"staticwebapp", "environment", "show",
 			"--subscription", subscriptionID,
@@ -650,7 +607,7 @@ func (cli *azCli) GetStaticWebAppEnvironmentProperties(ctx context.Context, subs
 }
 
 func (cli *azCli) GetStaticWebAppApiKey(ctx context.Context, subscriptionID string, resourceGroup string, appName string) (string, error) {
-	res, err := cli.runAzCommandWithArgs(context.Background(), exec.RunArgs{
+	res, err := cli.runAzCommandWithArgs(ctx, exec.RunArgs{
 		Args: []string{
 			"staticwebapp", "secrets", "list",
 			"--subscription", subscriptionID,
@@ -780,55 +737,6 @@ func (cli *azCli) ListResourceGroupDeploymentOperations(ctx context.Context, sub
 		return nil, fmt.Errorf("could not unmarshal output %s as a []AzCliResourceOperation: %w", res.Stdout, err)
 	}
 	return resources, nil
-}
-
-func (cli *azCli) ListAccountLocations(ctx context.Context) ([]AzCliLocation, error) {
-	res, err := cli.runAzCommand(ctx, "account", "list-locations", "--query", "[?metadata.regionType == 'Physical']", "--output", "json")
-	if isNotLoggedInMessage(res.Stderr) {
-		return nil, ErrAzCliNotLoggedIn
-	} else if err != nil {
-		return nil, fmt.Errorf("failed running az account list-locations: %s: %w", res.String(), err)
-	}
-
-	var locations []AzCliLocation
-	if err := json.Unmarshal([]byte(res.Stdout), &locations); err != nil {
-		return nil, fmt.Errorf("could not unmarshal output %s as a []AzCliLocation: %w", res.Stdout, err)
-	}
-	return locations, nil
-}
-
-func (cli *azCli) GetSubscriptionDeployment(ctx context.Context, subscriptionId string, deploymentName string) (AzCliDeployment, error) {
-	res, err := cli.runAzCommand(ctx, "deployment", "sub", "show", "--subscription", subscriptionId, "--name", deploymentName, "--output", "json")
-	if isNotLoggedInMessage(res.Stderr) {
-		return AzCliDeployment{}, ErrAzCliNotLoggedIn
-	} else if isDeploymentNotFoundMessage(res.Stderr) {
-		return AzCliDeployment{}, ErrDeploymentNotFound
-	} else if err != nil {
-		return AzCliDeployment{}, fmt.Errorf("failed running az deployment sub show: %s: %w", res.String(), err)
-	}
-
-	var deployment AzCliDeployment
-	if err := json.Unmarshal([]byte(res.Stdout), &deployment); err != nil {
-		return AzCliDeployment{}, fmt.Errorf("could not unmarshal output %s as an AzCliDeployment: %w", res.Stdout, err)
-	}
-	return deployment, nil
-}
-
-func (cli *azCli) GetResourceGroupDeployment(ctx context.Context, subscriptionId string, resourceGroupName string, deploymentName string) (AzCliDeployment, error) {
-	res, err := cli.runAzCommand(ctx, "deployment", "group", "show", "--subscription", subscriptionId, "--resource-group", resourceGroupName, "--name", deploymentName, "--output", "json")
-	if isNotLoggedInMessage(res.Stderr) {
-		return AzCliDeployment{}, ErrAzCliNotLoggedIn
-	} else if isDeploymentNotFoundMessage(res.Stderr) {
-		return AzCliDeployment{}, ErrDeploymentNotFound
-	} else if err != nil {
-		return AzCliDeployment{}, fmt.Errorf("failed running az deployment sub show: %s: %w", res.String(), err)
-	}
-
-	var deployment AzCliDeployment
-	if err := json.Unmarshal([]byte(res.Stdout), &deployment); err != nil {
-		return AzCliDeployment{}, fmt.Errorf("could not unmarshal output %s as an AzCliDeployment: %w", res.Stdout, err)
-	}
-	return deployment, nil
 }
 
 func (cli *azCli) GetSignedInUserId(ctx context.Context) (string, error) {

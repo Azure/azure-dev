@@ -99,9 +99,3 @@ For more information, visit the Azure Developer CLI Dev Hub: https://aka.ms/azur
 
 	return cmd
 }
-
-func Execute(args []string) error {
-	tempRootCmd := NewRootCmd()
-	tempRootCmd.SetArgs(args)
-	return tempRootCmd.Execute()
-}

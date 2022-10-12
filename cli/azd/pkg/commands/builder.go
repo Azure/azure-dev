@@ -10,8 +10,11 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal/telemetry/events"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/identity"
+	_ "github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning/bicep"
+	_ "github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning/terraform"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/spf13/cobra"
 	"go.opentelemetry.io/otel/codes"
@@ -55,7 +58,7 @@ func Build(action Action, rootOptions *internal.GlobalCommandOptions, use string
 		Long:    buildOptions.Long,
 		Aliases: buildOptions.Aliases,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			ctx, azdCtx, err := createRootContext(context.Background(), cmd, rootOptions)
+			ctx, azdCtx, err := createRootContext(cmd.Context(), cmd, rootOptions)
 			if err != nil {
 				return err
 			}
@@ -104,6 +107,7 @@ func createRootContext(ctx context.Context, cmd *cobra.Command, rootOptions *int
 	// Set the global options in the go context
 	ctx = azdcontext.WithAzdContext(ctx, azdCtx)
 	ctx = internal.WithCommandOptions(ctx, *rootOptions)
+	ctx = tools.WithInstalledCheckCache(ctx)
 
 	azCliArgs := azcli.NewAzCliArgs{
 		EnableDebug:     rootOptions.EnableDebugLogging,
@@ -111,9 +115,9 @@ func createRootContext(ctx context.Context, cmd *cobra.Command, rootOptions *int
 	}
 
 	// Set default credentials used for operations against azure data/control planes
-	credentials, err := azidentity.NewDefaultAzureCredential(nil)
+	credentials, err := azidentity.NewAzureCLICredential(nil)
 	if err != nil {
-		panic("failed creating default azure credentials")
+		panic("failed creating azure cli credential")
 	}
 	ctx = identity.WithCredentials(ctx, credentials)
 

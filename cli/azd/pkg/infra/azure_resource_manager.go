@@ -86,8 +86,8 @@ func (rm *AzureResourceManager) GetResourceGroupsForDeployment(ctx context.Conte
 
 	for _, dependency := range deployment.Properties.Dependencies {
 		for _, dependent := range dependency.DependsOn {
-			if dependent.ResourceType == string(AzureResourceTypeResourceGroup) {
-				resourceGroups[dependent.ResourceName] = struct{}{}
+			if *dependent.ResourceType == string(AzureResourceTypeResourceGroup) {
+				resourceGroups[*dependent.ResourceName] = struct{}{}
 			}
 		}
 	}

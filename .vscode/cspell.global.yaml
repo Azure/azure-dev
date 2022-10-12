@@ -22,6 +22,7 @@ ignoreWords:
     - arck
     - armkeyvault
     - armresources
+    - armsubscriptions
     - azconnection
     - azcore
     - Azdo
@@ -111,6 +112,7 @@ ignoreWords:
     - vpng
     - vwan
     - wafrg
+    - westus
     - Wans
     - apim
     - Retryable

@@ -15,8 +15,7 @@ func Test_Run(t *testing.T) {
 	t.Run("Run executes runFn", func(t *testing.T) {
 		var buf bytes.Buffer
 		title := "Spinning"
-		writer = io.Writer(&buf)
-		spinner := NewSpinner(title)
+		spinner := NewSpinner(&buf, title)
 		hasRun := false
 
 		err := spinner.Run(func() error {
@@ -30,8 +29,7 @@ func Test_Run(t *testing.T) {
 	t.Run("Run returns err if runFn errs", func(t *testing.T) {
 		var buf bytes.Buffer
 		title := "Spinning"
-		writer = io.Writer(&buf)
-		spinner := NewSpinner(title)
+		spinner := NewSpinner(&buf, title)
 		hasRun := false
 
 		err := spinner.Run(func() error {
@@ -45,10 +43,9 @@ func Test_Run(t *testing.T) {
 
 func Test_Println(t *testing.T) {
 	var buf bytes.Buffer
-	writer = io.Writer(&buf)
 
 	title := "Spinning"
-	spinner := NewSpinner(title)
+	spinner := NewSpinner(&buf, title)
 
 	spinner.Start()
 
@@ -70,7 +67,7 @@ func Test_GetAndSetSpinner(t *testing.T) {
 	// Spinner hasn't been set yet
 	require.Nil(t, spinner)
 
-	spinner = NewSpinner("Test")
+	spinner = NewSpinner(io.Discard, "Test")
 	newContext := WithSpinner(rootContext, spinner)
 
 	existingOnNewContext := GetSpinner(newContext)
@@ -84,7 +81,7 @@ func Test_GetAndSetSpinner(t *testing.T) {
 func Test_GetOrCreate(t *testing.T) {
 	t.Run("New", func(t *testing.T) {
 		rootContext := context.Background()
-		spinner, newContext := GetOrCreateSpinner(rootContext, "New")
+		spinner, newContext := GetOrCreateSpinner(rootContext, io.Discard, "New")
 
 		require.NotNil(t, spinner)
 		require.NotSame(t, rootContext, newContext)
@@ -93,11 +90,11 @@ func Test_GetOrCreate(t *testing.T) {
 	t.Run("Existing", func(t *testing.T) {
 		// Create new context and manually add Spinner to context.
 		rootContext := context.Background()
-		existingSpinner := NewSpinner("Existing")
+		existingSpinner := NewSpinner(io.Discard, "Existing")
 		existingContext := WithSpinner(rootContext, existingSpinner)
 
 		// Get spinner or create spinner from context
-		newSpinner, newContext := GetOrCreateSpinner(existingContext, "Test")
+		newSpinner, newContext := GetOrCreateSpinner(existingContext, io.Discard, "Test")
 
 		require.Same(t, existingSpinner, newSpinner)
 		require.Same(t, existingContext, newContext)

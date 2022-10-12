@@ -24,13 +24,18 @@ type Console interface {
 	Confirm(ctx context.Context, options ConsoleOptions) (bool, error)
 	// Sets the underlying writer for the console
 	SetWriter(writer io.Writer)
+	// Gets the standard input, output and error stream
+	Handles() ConsoleHandles
 }
 
 type AskerConsole struct {
 	interactive bool
 	asker       Asker
-	writer      io.Writer
-	formatter   output.Formatter
+	handles     ConsoleHandles
+	// the current writer, may differ from handles.Stdout when SetWriter has been
+	// called.
+	writer    io.Writer
+	formatter output.Formatter
 }
 
 type ConsoleOptions struct {
@@ -39,10 +44,17 @@ type ConsoleOptions struct {
 	DefaultValue any
 }
 
-// Sets the underlying writer for the console
+type ConsoleHandles struct {
+	Stdin  io.Reader
+	Stdout io.Writer
+	Stderr io.Writer
+}
+
+// Sets the underlying writer for output the console or
+// if writer is nil, sets it back to the default writer.
 func (c *AskerConsole) SetWriter(writer io.Writer) {
 	if writer == nil {
-		writer = output.GetDefaultWriter()
+		writer = c.handles.Stdout
 	}
 
 	c.writer = writer
@@ -122,14 +134,19 @@ func (c *AskerConsole) Writer() io.Writer {
 	return c.writer
 }
 
-// Creates a new console with the specified writer and formatter
-func NewConsole(interactive bool, writer io.Writer, formatter output.Formatter) Console {
-	asker := NewAsker(!interactive)
+func (c *AskerConsole) Handles() ConsoleHandles {
+	return c.handles
+}
+
+// Creates a new console with the specified handles and formatter
+func NewConsole(interactive bool, isTerminal bool, handles ConsoleHandles, formatter output.Formatter) Console {
+	asker := NewAsker(!interactive, isTerminal, handles.Stdout, handles.Stdin)
 
 	return &AskerConsole{
 		interactive: interactive,
 		asker:       asker,
-		writer:      writer,
+		handles:     handles,
+		writer:      handles.Stdout,
 		formatter:   formatter,
 	}
 }

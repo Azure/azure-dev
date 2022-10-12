@@ -45,7 +45,7 @@ func (r *restoreAction) SetupFlags(persis, local *pflag.FlagSet) {
 	local.StringVar(&r.serviceName, "service", "", "Restores a specific service (when the string is unspecified, all services that are listed in the "+azdcontext.ProjectFileName+" file are restored).")
 }
 
-func (r *restoreAction) Run(ctx context.Context, _ *cobra.Command, args []string, azdCtx *azdcontext.AzdContext) error {
+func (r *restoreAction) Run(ctx context.Context, cmd *cobra.Command, args []string, azdCtx *azdcontext.AzdContext) error {
 	console := input.GetConsole(ctx)
 
 	if err := ensureProject(azdCtx.ProjectPath()); err != nil {
@@ -99,7 +99,7 @@ func (r *restoreAction) Run(ctx context.Context, _ *cobra.Command, args []string
 			return fmt.Errorf("getting framework services: %w", err)
 		}
 
-		spinner := spin.NewSpinner(installMsg)
+		spinner := spin.NewSpinner(console.Handles().Stdout, installMsg)
 		if err = spinner.Run(func() error { return (*frameworkService).InstallDependencies(ctx) }); err != nil {
 			return err
 		}

@@ -414,7 +414,7 @@ func ensureGitHubLogin(ctx context.Context, hostname string, console input.Conso
 			return nil
 		}
 
-		fmt.Println("There was an issue logging into GitHub.")
+		fmt.Fprintln(console.Handles().Stdout, "There was an issue logging into GitHub.")
 	}
 }
 
@@ -512,7 +512,7 @@ func getRemoteUrlFromPrompt(ctx context.Context, remoteName string, console inpu
 		remoteUrl = promptValue
 
 		if _, err := githubRemote.GetSlugForRemote(remoteUrl); errors.Is(err, githubRemote.ErrRemoteHostIsNotGitHub) {
-			fmt.Printf("error: \"%s\" is not a valid GitHub URL.\n", remoteUrl)
+			fmt.Fprintf(console.Handles().Stdout, "error: \"%s\" is not a valid GitHub URL.\n", remoteUrl)
 
 			// So we retry from the loop.
 			remoteUrl = ""

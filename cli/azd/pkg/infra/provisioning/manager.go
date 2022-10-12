@@ -259,7 +259,7 @@ func (m *Manager) runAction(ctx context.Context, title string, interactive bool,
 	var spinner *spin.Spinner
 
 	if interactive {
-		spinner, ctx = spin.GetOrCreateSpinner(ctx, title)
+		spinner, ctx = spin.GetOrCreateSpinner(ctx, m.console.Handles().Stdout, title)
 		defer spinner.Stop()
 		defer m.console.SetWriter(nil)
 

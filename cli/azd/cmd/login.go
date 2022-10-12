@@ -13,6 +13,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/commands"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
+	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
@@ -48,6 +49,7 @@ var _ commands.Action = &loginAction{}
 
 func (la *loginAction) Run(ctx context.Context, cmd *cobra.Command, args []string, azdCtx *azdcontext.AzdContext) error {
 	formatter := output.GetFormatter(ctx)
+	console := input.GetConsole(ctx)
 	writer := output.GetWriter(ctx)
 
 	azCli := azcli.GetAzCli(ctx)
@@ -74,9 +76,9 @@ func (la *loginAction) Run(ctx context.Context, cmd *cobra.Command, args []strin
 
 	if formatter.Kind() == output.NoneFormat {
 		if res.Status == contracts.LoginStatusSuccess {
-			fmt.Println("Logged in to Azure.")
+			fmt.Fprintln(console.Handles().Stdout, "Logged in to Azure.")
 		} else {
-			fmt.Println("Not logged in, run `azd login` to login to Azure.")
+			fmt.Fprintln(console.Handles().Stdout, "Not logged in, run `azd login` to login to Azure.")
 		}
 
 		return nil
@@ -108,6 +110,11 @@ func ensureLoggedIn(ctx context.Context) error {
 // runLogin runs an interactive login. When running in a Codespace or Remote Container, a device code based is
 // preformed since the default browser login needs UI. A device code login can be forced with `forceDeviceCode`.
 func runLogin(ctx context.Context, forceDeviceCode bool) error {
+	console := input.GetConsole(ctx)
+	if console == nil {
+		panic("need console")
+	}
+
 	const (
 		// CodespacesEnvVarName is the name of the env variable set when you're in a Github codespace. It's
 		// just set to 'true'.
@@ -121,5 +128,5 @@ func runLogin(ctx context.Context, forceDeviceCode bool) error {
 	azCli := azcli.GetAzCli(ctx)
 	useDeviceCode := forceDeviceCode || os.Getenv(CodespacesEnvVarName) == "true" || os.Getenv(RemoteContainersEnvVarName) == "true"
 
-	return azCli.Login(ctx, useDeviceCode, os.Stdout)
+	return azCli.Login(ctx, useDeviceCode, console.Handles().Stdout)
 }

@@ -6,7 +6,6 @@ package cmd
 import (
 	"context"
 	"fmt"
-	"os"
 
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/commands"
@@ -122,10 +121,10 @@ func (m *monitorAction) Run(ctx context.Context, cmd *cobra.Command, args []stri
 	}
 
 	openWithDefaultBrowser := func(url string) {
-		fmt.Printf("Opening %s in the default browser...\n", url)
+		fmt.Fprintf(console.Handles().Stdout, "Opening %s in the default browser...\n", url)
 
 		if err := open.Open(url); err != nil {
-			fmt.Fprintf(os.Stderr, "warning: failed to open default browser: %s\n", err.Error())
+			fmt.Fprintf(console.Handles().Stderr, "warning: failed to open default browser: %s\n", err.Error())
 		}
 	}
 

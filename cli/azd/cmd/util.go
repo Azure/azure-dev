@@ -44,7 +44,7 @@ func ensureValidEnvironmentName(ctx context.Context, environmentName *string, co
 		*environmentName = userInput
 
 		if !environment.IsValidEnvironmentName(*environmentName) {
-			fmt.Print(invalidEnvironmentNameMsg(*environmentName))
+			fmt.Fprint(console.Handles().Stdout, invalidEnvironmentNameMsg(*environmentName))
 		}
 	}
 
@@ -62,7 +62,7 @@ type environmentSpec struct {
 func createAndInitEnvironment(ctx context.Context, envSpec *environmentSpec, azdCtx *azdcontext.AzdContext, console input.Console) (*environment.Environment, context.Context, error) {
 	if envSpec.environmentName != "" && !environment.IsValidEnvironmentName(envSpec.environmentName) {
 		errMsg := invalidEnvironmentNameMsg(envSpec.environmentName)
-		fmt.Print(errMsg)
+		fmt.Fprint(console.Handles().Stdout, errMsg)
 		return nil, nil, fmt.Errorf(errMsg)
 	}
 
@@ -125,7 +125,7 @@ func loadOrInitEnvironment(ctx context.Context, environmentName *string, azdCtx 
 		// - The user has specified an environment name, but the named environment didn't exist and they told us they would
 		//   like us to create it.
 		if *environmentName != "" && !environment.IsValidEnvironmentName(*environmentName) {
-			fmt.Printf("environment name '%s' is invalid (it should contain only alphanumeric characters and hyphens)\n", *environmentName)
+			fmt.Fprintf(console.Handles().Stdout, "environment name '%s' is invalid (it should contain only alphanumeric characters and hyphens)\n", *environmentName)
 			return nil, false, fmt.Errorf("environment name '%s' is invalid (it should contain only alphanumeric characters and hyphens)", *environmentName)
 		}
 

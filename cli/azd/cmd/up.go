@@ -33,10 +33,12 @@ func upCmd(rootOptions *internal.GlobalCommandOptions) *cobra.Command {
 			// Print an additional newline to separate provision from deploy
 			commands.ActionFunc(
 				func(ctx context.Context, cmd *cobra.Command, args []string, azdCtx *azdcontext.AzdContext) error {
+					console := input.GetConsole(ctx)
+
 					formatter := output.GetFormatter(ctx)
 					interactive := formatter.Kind() == output.NoneFormat
 					if interactive {
-						fmt.Println()
+						fmt.Fprintln(console.Handles().Stdout)
 					}
 
 					return nil

@@ -51,7 +51,7 @@ var jwtClaimsRegex = regexp.MustCompile(`^[a-zA-Z0-9-_]*\.([a-zA-Z0-9-_]*)\.[a-z
 // cspell: enable
 
 // getOidClaimFromAccessToken extracts a string claim with the name "oid" from an access token.
-// Access Tokens are JWTs and the middle component is a base64 encoded string of a JSON object
+// Access Tokens are JWT and the middle component is a base64 encoded string of a JSON object
 // with claims.
 func getOidClaimFromAccessToken(token string) (string, error) {
 	matches := jwtClaimsRegex.FindStringSubmatch(token)

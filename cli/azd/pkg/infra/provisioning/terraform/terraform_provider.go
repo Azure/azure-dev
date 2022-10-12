@@ -1,3 +1,15 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
+// Package terraform contains an implementation of provider.Provider for Terraform. This
+// provider is registered for use when this package is imported, and can be imported for
+// side effects only to register the provider, e.g.:
+//
+// require(
+//
+//	_ "github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning/terraform"
+//
+// )
 package terraform
 
 import (
@@ -644,8 +656,7 @@ func (t *TerraformProvider) isRemoteBackendConfig() (bool, error) {
 	return false, nil
 }
 
-// Registers the Terraform provider with the provisioning module
-func Register() {
+func init() {
 	err := RegisterProvider(Terraform, func(ctx context.Context, env *environment.Environment, projectPath string, options Options) (Provider, error) {
 		return NewTerraformProvider(ctx, env, projectPath, options), nil
 	})

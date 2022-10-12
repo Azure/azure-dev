@@ -25,7 +25,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/cmd"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/telemetry"
-	"github.com/azure/azure-dev/cli/azd/pkg/container"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/blang/semver/v4"
@@ -45,7 +44,6 @@ func main() {
 	}
 
 	ts := telemetry.GetTelemetrySystem()
-	container.RegisterDependencies()
 
 	latest := make(chan semver.Version)
 	go fetchLatestVersion(latest)

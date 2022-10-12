@@ -11,7 +11,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	. "github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
-	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning/test"
+	_ "github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning/test"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/stretchr/testify/require"
@@ -25,7 +25,6 @@ func TestManagerPlan(t *testing.T) {
 	interactive := false
 
 	mockContext := mocks.NewMockContext(context.Background())
-	test.RegisterTestProvider()
 	mgr, _ := NewManager(*mockContext.Context, env, "", options, interactive)
 
 	deploymentPlan, err := mgr.Plan(*mockContext.Context)
@@ -43,7 +42,6 @@ func TestManagerGetState(t *testing.T) {
 	interactive := false
 
 	mockContext := mocks.NewMockContext(context.Background())
-	test.RegisterTestProvider()
 	mgr, _ := NewManager(*mockContext.Context, env, "", options, interactive)
 
 	provisioningScope := infra.NewSubscriptionScope(*mockContext.Context, "eastus2", env.GetSubscriptionId(), env.GetEnvName())
@@ -61,7 +59,6 @@ func TestManagerDeploy(t *testing.T) {
 	interactive := false
 
 	mockContext := mocks.NewMockContext(context.Background())
-	test.RegisterTestProvider()
 	mgr, _ := NewManager(*mockContext.Context, env, "", options, interactive)
 
 	deploymentPlan, _ := mgr.Plan(*mockContext.Context)
@@ -84,7 +81,6 @@ func TestManagerDestroyWithPositiveConfirmation(t *testing.T) {
 		return strings.Contains(options.Message, "Are you sure you want to destroy?")
 	}).Respond(true)
 
-	test.RegisterTestProvider()
 	mgr, _ := NewManager(*mockContext.Context, env, "", options, interactive)
 
 	deploymentPlan, _ := mgr.Plan(*mockContext.Context)
@@ -108,7 +104,6 @@ func TestManagerDestroyWithNegativeConfirmation(t *testing.T) {
 		return strings.Contains(options.Message, "Are you sure you want to destroy?")
 	}).Respond(false)
 
-	test.RegisterTestProvider()
 	mgr, _ := NewManager(*mockContext.Context, env, "", options, interactive)
 
 	deploymentPlan, _ := mgr.Plan(*mockContext.Context)

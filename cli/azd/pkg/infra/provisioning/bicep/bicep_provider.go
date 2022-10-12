@@ -519,7 +519,7 @@ func (p *BicepProvider) getAppConfigsToPurge(ctx context.Context, groupedResourc
 // not be reused.
 //
 // This means that running `az dev provision`, then `az dev infra delete` and finally `az dev provision`
-// again would lead to a deployment error since the vault name is in use.
+// again would lead to a deployment error since the configuration name is in use.
 //
 // Since that's behavior we'd like to support, we run a purge operation for each AppConfiguration after
 // it has been deleted.

@@ -6,6 +6,7 @@ package infra
 import (
 	"context"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 )
@@ -20,7 +21,7 @@ type Scope interface {
 	// Deploy a given template with a set of parameters.
 	Deploy(ctx context.Context, templatePath string, parametersPath string) error
 	// GetDeployment fetches the result of the most recent deployment.
-	GetDeployment(ctx context.Context) (azcli.AzCliDeployment, error)
+	GetDeployment(ctx context.Context) (*armresources.DeploymentExtended, error)
 	// Gets the resource deployment operations for the current scope
 	GetResourceOperations(ctx context.Context) ([]azcli.AzCliResourceOperation, error)
 }
@@ -53,7 +54,7 @@ func (s *ResourceGroupScope) Deploy(ctx context.Context, modulePath string, para
 }
 
 // GetDeployment fetches the result of the most recent deployment.
-func (s *ResourceGroupScope) GetDeployment(ctx context.Context) (azcli.AzCliDeployment, error) {
+func (s *ResourceGroupScope) GetDeployment(ctx context.Context) (*armresources.DeploymentExtended, error) {
 	return s.azCli.GetResourceGroupDeployment(ctx, s.subscriptionId, s.resourceGroup, s.name)
 }
 
@@ -110,7 +111,7 @@ func (s *SubscriptionScope) Deploy(ctx context.Context, bicepPath string, parame
 }
 
 // GetDeployment fetches the result of the most recent deployment.
-func (s *SubscriptionScope) GetDeployment(ctx context.Context) (azcli.AzCliDeployment, error) {
+func (s *SubscriptionScope) GetDeployment(ctx context.Context) (*armresources.DeploymentExtended, error) {
 	return s.azCli.GetSubscriptionDeployment(ctx, s.subscriptionId, s.name)
 }
 

@@ -1,11 +1,16 @@
 package infra
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
 	"strings"
 	"testing"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
@@ -19,37 +24,86 @@ func TestScopeGetDeployment(t *testing.T) {
 		Value: "https://www.myapp.com",
 	}
 
-	deployment := azcli.AzCliDeploymentResult{
-		Properties: azcli.AzCliDeploymentResultProperties{
-			Outputs: outputs,
+	// mocked response for get deployment from subscription
+	deploymentWithOptions := &armresources.DeploymentsClientGetAtSubscriptionScopeResponse{
+		DeploymentExtended: armresources.DeploymentExtended{
+			Properties: &armresources.DeploymentPropertiesExtended{
+				Outputs: outputs,
+			},
 		},
 	}
-	deploymentBytes, _ := json.Marshal(deployment)
+	deploymentResourceGroupWithOptions := &armresources.DeploymentsClientGetResponse{
+		DeploymentExtended: armresources.DeploymentExtended{
+			Properties: &armresources.DeploymentPropertiesExtended{
+				Outputs: outputs,
+			},
+		},
+	}
 
 	t.Run("SubscriptionScopeSuccess", func(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
-		mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
-			return strings.Contains(command, "az deployment sub show")
-		}).Respond(exec.NewRunResult(0, string(deploymentBytes), ""))
 
-		scope := NewSubscriptionScope(*mockContext.Context, "eastus2", "SUBSCRIPTION_ID", "DEPLOYMENT_NAME")
+		subscriptionId := "SUBSCRIPTION_ID"
+		deploymentName := "DEPLOYMENT_NAME"
+
+		mockContext.HttpClient.When(func(request *http.Request) bool {
+			return request.Method == http.MethodGet && strings.Contains(
+				request.URL.Path,
+				fmt.Sprintf(
+					"/subscriptions/%s/providers/Microsoft.Resources/deployments/%s",
+					subscriptionId,
+					deploymentName),
+			)
+		}).RespondFn(func(request *http.Request) (*http.Response, error) {
+			subscriptionsListBytes, _ := json.Marshal(deploymentWithOptions)
+
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Body:       io.NopCloser(bytes.NewBuffer(subscriptionsListBytes)),
+			}, nil
+		})
+
+		scope := NewSubscriptionScope(*mockContext.Context, "eastus2", subscriptionId, deploymentName)
 
 		deployment, err := scope.GetDeployment(*mockContext.Context)
 		require.NoError(t, err)
-		require.Equal(t, outputs["APP_URL"].Value, deployment.Properties.Outputs["APP_URL"].Value)
+		responseOutputs := deployment.Properties.Outputs.(map[string]interface{})["APP_URL"].(map[string]interface{})
+		require.Equal(t, outputs["APP_URL"].Value, responseOutputs["value"].(string))
+		require.Equal(t, outputs["APP_URL"].Type, responseOutputs["type"].(string))
 	})
 
 	t.Run("ResourceGroupScopeSuccess", func(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
-		mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
-			return strings.Contains(command, "az deployment group show")
-		}).Respond(exec.NewRunResult(0, string(deploymentBytes), ""))
 
-		scope := NewResourceGroupScope(*mockContext.Context, "SUBSCRIPTION_ID", "RESOURCE_GROUP", "DEPLOYMENT_NAME")
+		subscriptionId := "SUBSCRIPTION_ID"
+		deploymentName := "DEPLOYMENT_NAME"
+		resourceGroupName := "RESOURCE_GROUP"
+
+		mockContext.HttpClient.When(func(request *http.Request) bool {
+			return request.Method == http.MethodGet && strings.Contains(
+				request.URL.Path,
+				fmt.Sprintf(
+					"/subscriptions/%s/resourcegroups/%s/providers/Microsoft.Resources/deployments/%s",
+					subscriptionId,
+					resourceGroupName,
+					deploymentName),
+			)
+		}).RespondFn(func(request *http.Request) (*http.Response, error) {
+			subscriptionsListBytes, _ := json.Marshal(deploymentResourceGroupWithOptions)
+
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Body:       io.NopCloser(bytes.NewBuffer(subscriptionsListBytes)),
+			}, nil
+		})
+
+		scope := NewResourceGroupScope(*mockContext.Context, subscriptionId, resourceGroupName, deploymentName)
 
 		deployment, err := scope.GetDeployment(*mockContext.Context)
 		require.NoError(t, err)
-		require.Equal(t, outputs["APP_URL"].Value, deployment.Properties.Outputs["APP_URL"].Value)
+		responseOutputs := deployment.Properties.Outputs.(map[string]interface{})["APP_URL"].(map[string]interface{})
+		require.Equal(t, outputs["APP_URL"].Value, responseOutputs["value"].(string))
+		require.Equal(t, outputs["APP_URL"].Type, responseOutputs["type"].(string))
 	})
 }
 

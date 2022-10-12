@@ -23,6 +23,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	execmock "github.com/azure/azure-dev/cli/azd/test/mocks/exec"
+	"github.com/azure/azure-dev/cli/azd/test/mocks/httputil"
 	"github.com/stretchr/testify/require"
 )
 
@@ -34,7 +35,7 @@ func TestBicepPlan(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
 	prepareGenericMocks(mockContext.CommandRunner)
 	preparePlanningMocks(mockContext.CommandRunner)
-
+	prepareDeployShowMocks(mockContext.HttpClient)
 	infraProvider := createBicepProvider(*mockContext.Context)
 	planningTask := infraProvider.Plan(*mockContext.Context)
 
@@ -74,6 +75,8 @@ func TestBicepState(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
 	prepareGenericMocks(mockContext.CommandRunner)
 	preparePlanningMocks(mockContext.CommandRunner)
+	prepareDeployShowMocks(mockContext.HttpClient)
+	prepareDeployMocks(mockContext.CommandRunner)
 
 	infraProvider := createBicepProvider(*mockContext.Context)
 	scope := infra.NewSubscriptionScope(*mockContext.Context, infraProvider.env.Values["AZURE_LOCATION"], infraProvider.env.GetSubscriptionId(), infraProvider.env.GetEnvName())
@@ -114,6 +117,7 @@ func TestBicepDeploy(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
 	prepareGenericMocks(mockContext.CommandRunner)
 	preparePlanningMocks(mockContext.CommandRunner)
+	prepareDeployShowMocks(mockContext.HttpClient)
 	prepareDeployMocks(mockContext.CommandRunner)
 
 	infraProvider := createBicepProvider(*mockContext.Context)
@@ -152,6 +156,7 @@ func TestBicepDestroy(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
 		prepareGenericMocks(mockContext.CommandRunner)
 		preparePlanningMocks(mockContext.CommandRunner)
+		prepareDeployShowMocks(mockContext.HttpClient)
 		prepareDestroyMocks(mockContext)
 
 		progressLog := []string{}
@@ -216,6 +221,7 @@ func TestBicepDestroy(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
 		prepareGenericMocks(mockContext.CommandRunner)
 		preparePlanningMocks(mockContext.CommandRunner)
+		prepareDeployShowMocks(mockContext.HttpClient)
 		prepareDestroyMocks(mockContext)
 
 		progressLog := []string{}
@@ -309,7 +315,8 @@ func prepareDeployMocks(commandRunner *execmock.MockCommandRunner) {
 	})
 }
 
-func preparePlanningMocks(commandRunner *execmock.MockCommandRunner) {
+func preparePlanningMocks(
+	commandRunner *execmock.MockCommandRunner) {
 	expectedWebsiteUrl := "http://myapp.azurewebsites.net"
 	bicepInputParams := make(map[string]BicepInputParameter)
 	bicepInputParams["environmentName"] = BicepInputParameter{Value: "${AZURE_ENV_NAME}"}
@@ -360,13 +367,46 @@ func preparePlanningMocks(commandRunner *execmock.MockCommandRunner) {
 		Stdout: string(deployResultBytes),
 		Stderr: "",
 	})
+}
+
+func prepareDeployShowMocks(
+	httpClient *httputil.MockHttpClient) {
+	expectedWebsiteUrl := "http://myapp.azurewebsites.net"
+
+	deployOutputs := make(map[string]interface{})
+	deployOutputs["WEBSITE_URL"] = map[string]interface{}{"value": expectedWebsiteUrl, "type": "string"}
+	azDeployment := armresources.DeploymentExtended{
+		ID:   convert.RefOf("DEPLOYMENT_ID"),
+		Name: convert.RefOf("DEPLOYMENT_NAME"),
+		Properties: &armresources.DeploymentPropertiesExtended{
+			Outputs: deployOutputs,
+			Dependencies: []*armresources.Dependency{
+				{
+					DependsOn: []*armresources.BasicDependency{
+						{
+							ID:           convert.RefOf("RESOURCE_ID"),
+							ResourceName: convert.RefOf("RESOURCE_GROUP"),
+							ResourceType: convert.RefOf(string(infra.AzureResourceTypeResourceGroup)),
+						},
+					},
+				},
+			},
+		},
+	}
+
+	deployResultBytes, _ := json.Marshal(azDeployment)
 
 	// Get deployment result
-	commandRunner.When(func(args exec.RunArgs, command string) bool {
-		return strings.Contains(command, "az deployment sub show")
-	}).Respond(exec.RunResult{
-		Stdout: string(deployResultBytes),
-		Stderr: "",
+	httpClient.When(func(request *http.Request) bool {
+		return request.Method == http.MethodGet && strings.Contains(
+			request.URL.Path,
+			"/SUBSCRIPTION_ID/providers/Microsoft.Resources/deployments",
+		)
+	}).RespondFn(func(request *http.Request) (*http.Response, error) {
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(bytes.NewBuffer(deployResultBytes)),
+		}, nil
 	})
 }
 

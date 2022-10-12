@@ -366,24 +366,6 @@ func (p *BicepProvider) getKeyVaults(ctx context.Context, groupedResources map[s
 	return vaults, nil
 }
 
-func (p *BicepProvider) getAppConfigs(ctx context.Context, groupedResources map[string][]azcli.AzCliResource) ([]*azcli.AzCliAppConfig, error) {
-	configs := []*azcli.AzCliAppConfig{}
-
-	for resourceGroup, groupResources := range groupedResources {
-		for _, resource := range groupResources {
-			if resource.Type == string(infra.AzureResourceTypeAppConfig) {
-				config, err := p.azCli.GetAppConfig(ctx, p.env.GetSubscriptionId(), resourceGroup, resource.Name)
-				if err != nil {
-					return nil, fmt.Errorf("listing app configuration %s properties: %w", resource.Name, err)
-				}
-				configs = append(configs, config)
-			}
-		}
-	}
-
-	return configs, nil
-}
-
 func (p *BicepProvider) getKeyVaultsToPurge(ctx context.Context, groupedResources map[string][]azcli.AzCliResource) ([]*azcli.AzCliKeyVault, error) {
 	vaults, err := p.getKeyVaults(ctx, groupedResources)
 	if err != nil {
@@ -398,22 +380,6 @@ func (p *BicepProvider) getKeyVaultsToPurge(ctx context.Context, groupedResource
 	}
 
 	return vaultsToPurge, nil
-}
-
-func (p *BicepProvider) getAppConfigsToPurge(ctx context.Context, groupedResources map[string][]azcli.AzCliResource) ([]*azcli.AzCliAppConfig, error) {
-	configs, err := p.getAppConfigs(ctx, groupedResources)
-	if err != nil {
-		return nil, err
-	}
-
-	configsToPurge := []*azcli.AzCliAppConfig{}
-	for _, c := range configs {
-		if !c.Properties.EnablePurgeProtection {
-			configsToPurge = append(configsToPurge, c)
-		}
-	}
-
-	return configsToPurge, nil
 }
 
 // Azure KeyVaults have a "soft delete" functionality (now enabled by default) where a vault may be marked
@@ -479,6 +445,52 @@ func (p *BicepProvider) purgeKeyVaults(ctx context.Context, asyncContext *async.
 	return nil
 }
 
+func (p *BicepProvider) getAppConfigs(ctx context.Context, groupedResources map[string][]azcli.AzCliResource) ([]*azcli.AzCliAppConfig, error) {
+	configs := []*azcli.AzCliAppConfig{}
+
+	for resourceGroup, groupResources := range groupedResources {
+		for _, resource := range groupResources {
+			if resource.Type == string(infra.AzureResourceTypeAppConfig) {
+				config, err := p.azCli.GetAppConfig(ctx, p.env.GetSubscriptionId(), resourceGroup, resource.Name)
+				if err != nil {
+					return nil, fmt.Errorf("listing app configuration %s properties: %w", resource.Name, err)
+				}
+				configs = append(configs, config)
+			}
+		}
+	}
+
+	return configs, nil
+}
+
+func (p *BicepProvider) getAppConfigsToPurge(ctx context.Context, groupedResources map[string][]azcli.AzCliResource) ([]*azcli.AzCliAppConfig, error) {
+	configs, err := p.getAppConfigs(ctx, groupedResources)
+	if err != nil {
+		return nil, err
+	}
+
+	configsToPurge := []*azcli.AzCliAppConfig{}
+	for _, c := range configs {
+		if !c.Properties.EnablePurgeProtection {
+			configsToPurge = append(configsToPurge, c)
+		}
+	}
+
+	return configsToPurge, nil
+}
+
+// Azure AppConfigurations have a "soft delete" functionality (now enabled by default) where a configuration store may be marked
+// such that when it is deleted it can be recovered for a period of time. During that time, the name may
+// not be reused.
+//
+// This means that running `az dev provision`, then `az dev infra delete` and finally `az dev provision`
+// again would lead to a deployment error since the vault name is in use.
+//
+// Since that's behavior we'd like to support, we run a purge operation for each AppConfiguration after
+// it has been deleted.
+//
+// See https://learn.microsoft.com/en-us/azure/azure-app-configuration/concept-soft-delete
+// for more information on this feature.
 func (p *BicepProvider) purgeAppConfigs(ctx context.Context, asyncContext *async.InteractiveTaskContextWithProgress[*DestroyResult, *DestroyProgress], appConfigs []*azcli.AzCliAppConfig, options DestroyOptions) error {
 	if len(appConfigs) > 0 && !options.Purge() {
 		appConfigWarning := fmt.Sprintf(""+

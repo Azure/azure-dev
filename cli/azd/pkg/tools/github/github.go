@@ -223,6 +223,12 @@ func (cli *ghCli) GitHubActionsExists(ctx context.Context, repoSlug string) (boo
 	return true, nil
 }
 
-var isGhCliNotLoggedInMessageRegex = regexp.MustCompile("(To authenticate, please run `gh auth login`\\.)|(Try authenticating with:  gh auth login)|(To re-authenticate, run: gh auth login)")
+//nolint:lll
+var isGhCliNotLoggedInMessageRegex = regexp.MustCompile(
+	"(To authenticate, please run `gh auth login`\\.)|(Try authenticating with:  gh auth login)|(To re-authenticate, run: gh auth login)",
+)
 var repositoryNameInUseRegex = regexp.MustCompile("GraphQL: Name already exists on this account (createRepository)")
-var notLoggedIntoAnyGitHubHostsMessageRegex = regexp.MustCompile("You are not logged into any GitHub hosts. Run gh auth login to authenticate.")
+
+var notLoggedIntoAnyGitHubHostsMessageRegex = regexp.MustCompile(
+	"You are not logged into any GitHub hosts. Run gh auth login to authenticate.",
+)

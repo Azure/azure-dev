@@ -37,7 +37,12 @@ type TelemetryUploader struct {
 	isDebugMode bool
 }
 
-func NewUploader(telemetryQueue Queue, transmitter appinsightsexporter.Transmitter, clock clock.Clock, isDebugMode bool) *TelemetryUploader {
+func NewUploader(
+	telemetryQueue Queue,
+	transmitter appinsightsexporter.Transmitter,
+	clock clock.Clock,
+	isDebugMode bool,
+) *TelemetryUploader {
 	return &TelemetryUploader{
 		transmitter:    transmitter,
 		telemetryQueue: telemetryQueue,
@@ -113,33 +118,51 @@ func (u *TelemetryUploader) reliablePeekWithRemoveFallback(ctx context.Context) 
 // reliablePeekOnly calls Peek() only.
 func (u *TelemetryUploader) reliablePeekOnly(ctx context.Context) (*StoredItem, error) {
 	var item *StoredItem
-	err := retry.Do(ctx, retry.WithMaxRetries(maxStorageFailCount, retry.NewConstant(storageQueueRetryDelay)), func(ctx context.Context) error {
-		peekItem, err := u.telemetryQueue.Peek()
+	err := retry.Do(
+		ctx,
+		retry.WithMaxRetries(maxStorageFailCount, retry.NewConstant(storageQueueRetryDelay)),
+		func(ctx context.Context) error {
+			peekItem, err := u.telemetryQueue.Peek()
 
-		if err != nil {
-			return retry.RetryableError(err)
-		}
+			if err != nil {
+				return retry.RetryableError(err)
+			}
 
-		item = peekItem
-		return nil
-	})
+			item = peekItem
+			return nil
+		},
+	)
 
 	return item, err
 }
 
 func (u *TelemetryUploader) reliableRemove(ctx context.Context, item *StoredItem) error {
-	return retry.Do(ctx, retry.WithMaxRetries(maxStorageFailCount, retry.NewConstant(storageQueueRetryDelay)), func(ctx context.Context) error {
-		return retry.RetryableError(u.telemetryQueue.Remove(item))
-	})
+	return retry.Do(
+		ctx,
+		retry.WithMaxRetries(maxStorageFailCount, retry.NewConstant(storageQueueRetryDelay)),
+		func(ctx context.Context) error {
+			return retry.RetryableError(u.telemetryQueue.Remove(item))
+		},
+	)
 }
 
 // If repeated failures occur, enqueue will log but NOT return an error.
 // With repeated failures, it means that the storage queue is in a bad state, such as disk being full.
 // To avoid adding additional load, we do not want to enqueue the retry, and instead log the error and drop the message.
-func (u *TelemetryUploader) enqueueRetry(ctx context.Context, itemName string, payload []byte, delayDuration time.Duration, attempts int) {
-	err := retry.Do(ctx, retry.WithMaxRetries(maxStorageFailCount, retry.NewConstant(storageQueueRetryDelay)), func(ctx context.Context) error {
-		return retry.RetryableError(u.telemetryQueue.EnqueueWithDelay(payload, delayDuration, attempts))
-	})
+func (u *TelemetryUploader) enqueueRetry(
+	ctx context.Context,
+	itemName string,
+	payload []byte,
+	delayDuration time.Duration,
+	attempts int,
+) {
+	err := retry.Do(
+		ctx,
+		retry.WithMaxRetries(maxStorageFailCount, retry.NewConstant(storageQueueRetryDelay)),
+		func(ctx context.Context) error {
+			return retry.RetryableError(u.telemetryQueue.EnqueueWithDelay(payload, delayDuration, attempts))
+		},
+	)
 
 	if err != nil {
 

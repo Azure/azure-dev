@@ -24,7 +24,12 @@ type AzCliAppConfigSecret struct {
 	Value string `json:"value"`
 }
 
-func (cli *azCli) GetAppConfig(ctx context.Context, subscriptionId string, resourceGroupName string, configName string) (*AzCliAppConfig, error) {
+func (cli *azCli) GetAppConfig(
+	ctx context.Context,
+	subscriptionId string,
+	resourceGroupName string,
+	configName string,
+) (*AzCliAppConfig, error) {
 	appConfigStoresClient, err := cli.createAppConfigClient(ctx, subscriptionId)
 	if err != nil {
 		return nil, err
@@ -67,7 +72,10 @@ func (cli *azCli) PurgeAppConfig(ctx context.Context, subscriptionId string, con
 }
 
 // Creates a AppConfig client for ARM control plane operations
-func (cli *azCli) createAppConfigClient(ctx context.Context, subscriptionId string) (*armappconfiguration.ConfigurationStoresClient, error) {
+func (cli *azCli) createAppConfigClient(
+	ctx context.Context,
+	subscriptionId string,
+) (*armappconfiguration.ConfigurationStoresClient, error) {
 	cred, err := identity.GetCredentials(ctx)
 	if err != nil {
 		return nil, err

@@ -88,7 +88,8 @@ func NewSpinner(title string) *Spinner {
 		SpinnerAtEnd: true,
 		Message:      title,
 		// Set prefix to empty space to always append a space between the spinner title and the spinner itself.
-		// From yacspin.Spinner: if SpinnerAtEnd is set to true, the printed line will instead look like: <message><prefix><spinner><suffix>
+		// From yacspin.Spinner: if SpinnerAtEnd is set to true, the printed line will instead look like:
+		// <message><prefix><spinner><suffix>
 		Prefix: " ",
 		Writer: writer,
 		// Do not set a StopMessage.

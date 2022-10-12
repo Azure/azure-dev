@@ -46,7 +46,8 @@ type compositeAction struct {
 	actions []Action
 }
 
-func (a *compositeAction) Run(ctx context.Context, cmd *cobra.Command, args []string, azdCtx *azdcontext.AzdContext) error {
+func (a *compositeAction) Run(
+	ctx context.Context, cmd *cobra.Command, args []string, azdCtx *azdcontext.AzdContext) error {
 	for _, a := range a.actions {
 		if err := a.Run(ctx, cmd, args, azdCtx); err != nil {
 			return err

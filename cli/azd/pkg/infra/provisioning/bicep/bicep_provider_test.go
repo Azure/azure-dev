@@ -64,7 +64,11 @@ func TestBicepPlan(t *testing.T) {
 	require.Contains(t, progressLog[1], "Compiling Bicep template")
 
 	require.Equal(t, infraProvider.env.Values["AZURE_LOCATION"], deploymentPlan.Deployment.Parameters["location"].Value)
-	require.Equal(t, infraProvider.env.Values["AZURE_ENV_NAME"], deploymentPlan.Deployment.Parameters["environmentName"].Value)
+	require.Equal(
+		t,
+		infraProvider.env.Values["AZURE_ENV_NAME"],
+		deploymentPlan.Deployment.Parameters["environmentName"].Value,
+	)
 }
 
 func TestBicepState(t *testing.T) {
@@ -80,7 +84,12 @@ func TestBicepState(t *testing.T) {
 	prepareDeployMocks(mockContext.CommandRunner)
 
 	infraProvider := createBicepProvider(*mockContext.Context)
-	scope := infra.NewSubscriptionScope(*mockContext.Context, infraProvider.env.Values["AZURE_LOCATION"], infraProvider.env.GetSubscriptionId(), infraProvider.env.GetEnvName())
+	scope := infra.NewSubscriptionScope(
+		*mockContext.Context,
+		infraProvider.env.Values["AZURE_LOCATION"],
+		infraProvider.env.GetSubscriptionId(),
+		infraProvider.env.GetEnvName(),
+	)
 	getDeploymentTask := infraProvider.State(*mockContext.Context, scope)
 
 	go func() {
@@ -128,7 +137,12 @@ func TestBicepDeploy(t *testing.T) {
 		},
 	}
 
-	scope := infra.NewSubscriptionScope(*mockContext.Context, infraProvider.env.Values["AZURE_LOCATION"], infraProvider.env.GetSubscriptionId(), infraProvider.env.GetEnvName())
+	scope := infra.NewSubscriptionScope(
+		*mockContext.Context,
+		infraProvider.env.Values["AZURE_LOCATION"],
+		infraProvider.env.GetSubscriptionId(),
+		infraProvider.env.GetEnvName(),
+	)
 	deployTask := infraProvider.Deploy(*mockContext.Context, &deploymentPlan, scope)
 
 	go func() {
@@ -508,7 +522,8 @@ func prepareDestroyMocks(mockContext *mocks.MockContext) {
 
 	// Delete resource group
 	mockContext.HttpClient.When(func(request *http.Request) bool {
-		return request.Method == http.MethodDelete && strings.Contains(request.URL.Path, "subscriptions/SUBSCRIPTION_ID/resourcegroups/RESOURCE_GROUP")
+		return request.Method == http.MethodDelete &&
+			strings.Contains(request.URL.Path, "subscriptions/SUBSCRIPTION_ID/resourcegroups/RESOURCE_GROUP")
 	}).RespondFn(func(request *http.Request) (*http.Response, error) {
 		return &http.Response{
 			Request:    request,
@@ -532,7 +547,11 @@ func prepareDestroyMocks(mockContext *mocks.MockContext) {
 
 	// Purge App configuration
 	mockContext.HttpClient.When(func(request *http.Request) bool {
-		return request.Method == http.MethodPost && strings.Contains(request.URL.Path, "Microsoft.AppConfiguration/locations/ac-123/deletedConfigurationStores/eastus2/purge")
+		return request.Method == http.MethodPost &&
+			strings.Contains(
+				request.URL.Path,
+				"Microsoft.AppConfiguration/locations/ac-123/deletedConfigurationStores/eastus2/purge",
+			)
 	}).RespondFn(func(request *http.Request) (*http.Response, error) {
 		return &http.Response{
 			Request:    request,

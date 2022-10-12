@@ -137,7 +137,9 @@ func (p *AzdoScmProvider) createNewGitRepositoryFromInput(ctx context.Context, c
 			console.Message(ctx, fmt.Sprintf("error: the repo name '%s' is already in use\n", name))
 			continue // try again
 		} else if strings.Contains(message, "TF401025: 'repoName' is not a valid name for a Git repository.") {
-			console.Message(ctx, fmt.Sprintf("error: '%s' is not a valid Azure DevOps repo name. See https://aka.ms/azure-dev/azdo-repo-naming\n", name))
+			console.Message(ctx, fmt.Sprintf(
+				"error: '%s' is not a valid Azure DevOps repo name. "+
+					"See https://aka.ms/azure-dev/azdo-repo-naming\n", name))
 			continue // try again
 		} else if err != nil {
 			return "", fmt.Errorf("creating repository: %w", err)
@@ -251,7 +253,13 @@ func (p *AzdoScmProvider) ensureProjectExists(ctx context.Context, console input
 		}
 	// Create a new AzDo project
 	case 1:
-		projectName, projectId, err = azdo.GetProjectFromNew(ctx, p.AzdContext.ProjectDirectory(), connection, p.Env, console)
+		projectName, projectId, err = azdo.GetProjectFromNew(
+			ctx,
+			p.AzdContext.ProjectDirectory(),
+			connection,
+			p.Env,
+			console,
+		)
 		newProject = true
 		if err != nil {
 			return "", "", false, err
@@ -263,7 +271,12 @@ func (p *AzdoScmProvider) ensureProjectExists(ctx context.Context, console input
 }
 
 // configureGitRemote set up or create the git project and git remote
-func (p *AzdoScmProvider) configureGitRemote(ctx context.Context, repoPath string, remoteName string, console input.Console) (string, error) {
+func (p *AzdoScmProvider) configureGitRemote(
+	ctx context.Context,
+	repoPath string,
+	remoteName string,
+	console input.Console,
+) (string, error) {
 	projectName, projectId, newProject, err := p.ensureProjectExists(ctx, console)
 	if err != nil {
 		return "", err
@@ -315,7 +328,12 @@ func (p *AzdoScmProvider) getCurrentGitBranch(ctx context.Context, repoPath stri
 }
 
 // returns the git remote for a newly created repo that is part of a newly created AzDo project
-func (p *AzdoScmProvider) getDefaultRepoRemote(ctx context.Context, projectName string, projectId string, console input.Console) (string, error) {
+func (p *AzdoScmProvider) getDefaultRepoRemote(
+	ctx context.Context,
+	projectName string,
+	projectId string,
+	console input.Console,
+) (string, error) {
 	connection, err := p.getAzdoConnection(ctx)
 	if err != nil {
 		return "", err
@@ -519,7 +537,14 @@ func (p *AzdoScmProvider) postGitPush(
 		return err
 	}
 
-	err = azdo.CreateBuildPolicy(ctx, connection, p.repoDetails.projectId, p.repoDetails.repoId, p.repoDetails.buildDefinition, p.Env)
+	err = azdo.CreateBuildPolicy(
+		ctx,
+		connection,
+		p.repoDetails.projectId,
+		p.repoDetails.repoId,
+		p.repoDetails.buildDefinition,
+		p.Env,
+	)
 	if err != nil {
 		return err
 	}
@@ -609,7 +634,11 @@ func parseCredentials(ctx context.Context, credentials json.RawMessage) (*azdo.A
 }
 
 // configurePipeline create Azdo pipeline
-func (p *AzdoCiProvider) configurePipeline(ctx context.Context, repoDetails *gitRepositoryDetails, provisioningProvider provisioning.Options) error {
+func (p *AzdoCiProvider) configurePipeline(
+	ctx context.Context,
+	repoDetails *gitRepositoryDetails,
+	provisioningProvider provisioning.Options,
+) error {
 	details := repoDetails.details.(*AzdoRepositoryDetails)
 	console := input.GetConsole(ctx)
 
@@ -626,7 +655,16 @@ func (p *AzdoCiProvider) configurePipeline(ctx context.Context, repoDetails *git
 		return err
 	}
 	buildDefinition, err := azdo.CreatePipeline(
-		ctx, details.projectId, azdo.AzurePipelineName, details.repoName, connection, *p.credentials, p.Env, console, provisioningProvider)
+		ctx,
+		details.projectId,
+		azdo.AzurePipelineName,
+		details.repoName,
+		connection,
+		*p.credentials,
+		p.Env,
+		console,
+		provisioningProvider,
+	)
 	if err != nil {
 		return err
 	}

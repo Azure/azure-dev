@@ -56,7 +56,11 @@ func (i *PipelineManager) preConfigureCheck(ctx context.Context) error {
 }
 
 // ensureRemote get the git project details from a path and remote name using the scm provider.
-func (i *PipelineManager) ensureRemote(ctx context.Context, repositoryPath string, remoteName string) (*gitRepositoryDetails, error) {
+func (i *PipelineManager) ensureRemote(
+	ctx context.Context,
+	repositoryPath string,
+	remoteName string,
+) (*gitRepositoryDetails, error) {
 	gitCli := git.NewGitCli(ctx)
 	remoteUrl, err := gitCli.GetRemoteUrl(ctx, repositoryPath, remoteName)
 	if err != nil {
@@ -103,7 +107,10 @@ func (i *PipelineManager) getGitRepoDetails(ctx context.Context) (*gitRepository
 		case errors.Is(err, git.ErrNoSuchRemote):
 			// Offer the user a chance to create the remote if one does not exist.
 			addRemote, err := console.Confirm(ctx, input.ConsoleOptions{
-				Message:      fmt.Sprintf("A remote named \"%s\" was not found. Would you like to configure one?", i.PipelineRemoteName),
+				Message: fmt.Sprintf(
+					"A remote named \"%s\" was not found. Would you like to configure one?",
+					i.PipelineRemoteName,
+				),
 				DefaultValue: true,
 			})
 			if err != nil {
@@ -208,7 +215,10 @@ func (manager *PipelineManager) Configure(ctx context.Context) error {
 		manager.PipelineServicePrincipalName = fmt.Sprintf("az-dev-%s", time.Now().UTC().Format("01-02-2006-15-04-05"))
 	}
 
-	inputConsole.Message(ctx, fmt.Sprintf("Creating or updating service principal %s.\n", manager.PipelineServicePrincipalName))
+	inputConsole.Message(
+		ctx,
+		fmt.Sprintf("Creating or updating service principal %s.\n", manager.PipelineServicePrincipalName),
+	)
 
 	credentials, err := azCli.CreateOrUpdateServicePrincipal(
 		ctx,

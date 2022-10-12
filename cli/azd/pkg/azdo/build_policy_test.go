@@ -97,7 +97,10 @@ func (c *MockPolicyClient) GetPolicyType(
 	return nil, nil
 }
 
-func (c *MockPolicyClient) GetPolicyTypes(ctx context.Context, args policy.GetPolicyTypesArgs) (*[]policy.PolicyType, error) {
+func (c *MockPolicyClient) GetPolicyTypes(
+	ctx context.Context,
+	args policy.GetPolicyTypesArgs,
+) (*[]policy.PolicyType, error) {
 	c.getPolicyTypesArgs = args
 	policyTypes := make([]policy.PolicyType, 2)
 	buildPolicyType := "Build"

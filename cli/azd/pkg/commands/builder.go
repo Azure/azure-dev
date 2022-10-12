@@ -164,7 +164,9 @@ func createRootContext(
 
 	ctx = output.WithWriter(ctx, writer)
 
-	isTerminal := cmd.OutOrStdout() == os.Stdout && cmd.InOrStdin() == os.Stdin && isatty.IsTerminal(os.Stdin.Fd()) && isatty.IsTerminal(os.Stdout.Fd())
+	isTerminal := cmd.OutOrStdout() == os.Stdout &&
+		cmd.InOrStdin() == os.Stdin && isatty.IsTerminal(os.Stdin.Fd()) &&
+		isatty.IsTerminal(os.Stdout.Fd())
 	console := input.NewConsole(!rootOptions.NoPrompt, isTerminal, input.ConsoleHandles{
 		Stdin:  cmd.InOrStdin(),
 		Stdout: cmd.OutOrStdout(),

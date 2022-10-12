@@ -204,7 +204,9 @@ func (i *initAction) Run(ctx context.Context, cmd *cobra.Command, args []string,
 		}
 
 		if len(duplicateFiles) > 0 {
-			fmt.Fprintf(console.Handles().Stdout, "warning: the following files will be overwritten with the versions from the template: \n")
+			fmt.Fprintf(
+				console.Handles().Stdout,
+				"warning: the following files will be overwritten with the versions from the template: \n")
 			for _, file := range duplicateFiles {
 				fmt.Fprintf(console.Handles().Stdout, " * %s\n", file)
 			}

@@ -7,8 +7,11 @@ import { getAzDevTerminalTitle, getWorkingFolder } from './cmdUtil';
 import { executeAsTask } from '../utils/executeAsTask';
 import { createAzureDevCli } from '../utils/azureDevCli';
 import { TelemetryId } from '../telemetry/telemetryId';
+import { isTreeViewModel, TreeViewModel } from '../utils/isTreeViewModel';
+import { AzureDevCliApplication } from '../views/workspace/AzureDevCliApplication';
 
-export async function pipelineConfig(context: IActionContext, selectedFile?: vscode.Uri): Promise<void> {
+export async function pipelineConfig(context: IActionContext, selectedItem?: vscode.Uri | TreeViewModel): Promise<void> {
+    const selectedFile = isTreeViewModel(selectedItem) ? selectedItem.unwrap<AzureDevCliApplication>().configurationFile : selectedItem;
     const workingFolder = await getWorkingFolder(context, selectedFile);
 
     const azureCli = await createAzureDevCli(context);

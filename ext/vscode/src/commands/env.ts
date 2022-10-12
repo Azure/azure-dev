@@ -9,6 +9,8 @@ import { quickPickWorkspaceFolder } from '../utils/quickPickWorkspaceFolder';
 import { EnvironmentInfo, getAzDevTerminalTitle, getEnvironments } from './cmdUtil';
 import { executeInTerminal } from '../utils/executeInTerminal';
 import { spawnAsync } from '../utils/process';
+import { isTreeViewModel, TreeViewModel } from '../utils/isTreeViewModel';
+import { AzureDevCliApplication } from '../views/workspace/AzureDevCliApplication';
 
 export async function selectEnvironment(context: IActionContext, selectedFile?: vscode.Uri): Promise<void> {
     let folder: vscode.WorkspaceFolder | undefined = (selectedFile ? vscode.workspace.getWorkspaceFolder(selectedFile) : undefined);
@@ -44,7 +46,8 @@ export async function selectEnvironment(context: IActionContext, selectedFile?: 
         localize('azure-dev.commands.cli.env-select.environment-selected', "'{0}' is now the default environment", selectedEnv.data.Name));
 }
 
-export async function newEnvironment(context: IActionContext, selectedFile?: vscode.Uri): Promise<void> {
+export async function newEnvironment(context: IActionContext, selectedItem?: vscode.Uri | TreeViewModel): Promise<void> {
+    const selectedFile = isTreeViewModel(selectedItem) ? selectedItem.unwrap<AzureDevCliApplication>().configurationFile : selectedItem;
     let folder: vscode.WorkspaceFolder | undefined = (selectedFile ? vscode.workspace.getWorkspaceFolder(selectedFile) : undefined);
     if (!folder) {
         folder = await quickPickWorkspaceFolder(context, localize('azure-dev.commands.util.needWorkspaceFolder', "To run '{0}' command you must first open a folder or workspace in VS Code", 'env new'));

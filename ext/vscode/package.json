@@ -94,7 +94,8 @@
             {
                 "category": "%azure-dev.commands_category%",
                 "command": "azure-dev.commands.cli.env-new",
-                "title": "%azure-dev.commands.cli.env-new.title%"
+                "title": "%azure-dev.commands.cli.env-new.title%",
+                "icon": "$(add)"
             },
             {
                 "category": "%azure-dev.commands_category%",
@@ -217,6 +218,15 @@
               {
                 "command": "azure-dev.commands.cli.pipeline-config",
                 "when": "viewItem == ms-azuretools.azure-dev.views.workspace.application"
+              },
+              {
+                "command": "azure-dev.commands.cli.env-new",
+                "when": "viewItem == ms-azuretools.azure-dev.views.workspace.environments"
+              },
+              {
+                "command": "azure-dev.commands.cli.env-new",
+                "when": "viewItem == ms-azuretools.azure-dev.views.workspace.environments",
+                "group": "inline@1"
               }
             ]
         },

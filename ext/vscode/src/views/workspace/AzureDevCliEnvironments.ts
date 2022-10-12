@@ -48,6 +48,8 @@ export class AzureDevCliEnvironments implements AzureDevCliModel {
     getTreeItem(): vscode.TreeItem {
         const treeItem = new vscode.TreeItem(localize('azure-dev.views.workspace.environments.label', 'Environments'), vscode.TreeItemCollapsibleState.Expanded);
 
+        treeItem.contextValue = 'ms-azuretools.azure-dev.views.workspace.environments';
+
         return treeItem;
     }
 }

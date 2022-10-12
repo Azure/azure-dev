@@ -20,8 +20,10 @@ ignoreWords:
     - appcs
     - appi
     - arck
+    - armappservice
     - armkeyvault
     - armresources
+    - armruntime
     - armsubscriptions
     - azconnection
     - azcore

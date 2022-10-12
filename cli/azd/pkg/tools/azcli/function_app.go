@@ -3,6 +3,9 @@ package azcli
 import (
 	"context"
 	"fmt"
+	"os"
+
+	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 )
 
 type AzCliFunctionAppProperties struct {
@@ -31,10 +34,17 @@ func (cli *azCli) DeployFunctionAppUsingZipFile(ctx context.Context, subscriptio
 		return nil, err
 	}
 
-	response, err := client.Deploy(ctx, appName, deployZipPath)
+	file, err := os.Open(deployZipPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed reading file '%s' : %w", deployZipPath, err)
+	}
+
+	defer file.Close()
+
+	response, err := client.Deploy(ctx, appName, file)
 	if err != nil {
 		return nil, err
 	}
 
-	return &response.StatusText, nil
+	return convert.RefOf(response.StatusText), nil
 }

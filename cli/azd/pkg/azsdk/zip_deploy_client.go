@@ -3,11 +3,11 @@ package azsdk
 import (
 	"bytes"
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
@@ -15,12 +15,10 @@ import (
 	armruntime "github.com/Azure/azure-sdk-for-go/sdk/azcore/arm/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
-	"github.com/sethvargo/go-retry"
 )
 
 const (
-	maxDeployDuration    = 5 * time.Minute
-	deployStatusInterval = 5 * time.Second
+	deployStatusInterval = 10 * time.Second
 )
 
 type ZipDeployClient struct {
@@ -67,8 +65,8 @@ func NewZipDeployClient(subscriptionId string, credential azcore.TokenCredential
 	}, nil
 }
 
-// Deploys the specified application zip to the azure app service
-func (c *ZipDeployClient) Deploy(ctx context.Context, appName string, zipFilePath string) (*DeployResponse, error) {
+// Begins a zip deployment and returns a poller to check for status
+func (c *ZipDeployClient) BeginDeploy(ctx context.Context, appName string, zipFilePath string) (*runtime.Poller[DeployResponse], error) {
 	request, err := c.createDeployRequest(ctx, appName, zipFilePath)
 	if err != nil {
 		return nil, err
@@ -79,35 +77,40 @@ func (c *ZipDeployClient) Deploy(ctx context.Context, appName string, zipFilePat
 		return nil, runtime.NewResponseError(response)
 	}
 
+	defer response.Body.Close()
+
 	if !runtime.HasStatusCode(response, http.StatusAccepted) {
 		return nil, runtime.NewResponseError(response)
 	}
 
-	var deploymentStatus *DeployStatusResponse
-	statusUrl := response.Header.Get("Location")
+	var finalResponse DeployResponse
 
-	err = retry.Do(ctx, retry.WithMaxDuration(maxDeployDuration, retry.NewConstant(deployStatusInterval)), func(ctx context.Context) error {
-		deploymentStatus, err = c.getDeploymentStatus(ctx, statusUrl)
-		if err != nil {
-			return err
-		}
-
-		if !deploymentStatus.Complete {
-			return retry.RetryableError(errors.New(*deploymentStatus.Progress))
-		}
-
-		return nil
-	})
-
-	if err != nil {
-		return nil, fmt.Errorf("deployment failed: %w", err)
+	pollerOptions := &runtime.NewPollerOptions[DeployResponse]{
+		Response: &finalResponse,
+		Handler:  newDeployPollingHandler(c.pipeline, response),
 	}
 
-	return &DeployResponse{
-		DeployStatus: deploymentStatus.DeployStatus,
-	}, nil
+	return runtime.NewPoller(response, c.pipeline, pollerOptions)
 }
 
+// Deploys the specified application zip to the azure app service and waits for completion
+func (c *ZipDeployClient) Deploy(ctx context.Context, appName string, zipFilePath string) (*DeployResponse, error) {
+	poller, err := c.BeginDeploy(ctx, appName, zipFilePath)
+	if err != nil {
+		return nil, err
+	}
+
+	response, err := poller.PollUntilDone(ctx, &runtime.PollUntilDoneOptions{
+		Frequency: deployStatusInterval,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return &response, nil
+}
+
+// Creates the HTTP request for the zip deployment operation
 func (c *ZipDeployClient) createDeployRequest(ctx context.Context, appName string, zipFilePath string) (*policy.Request, error) {
 	endpoint := fmt.Sprintf("https://%s.scm.azurewebsites.net/api/zipdeploy", appName)
 	req, err := runtime.NewRequest(ctx, http.MethodPost, endpoint)
@@ -131,35 +134,67 @@ func (c *ZipDeployClient) createDeployRequest(ctx context.Context, appName strin
 	return req, nil
 }
 
-// Gets the deployment status for the specified deployment URL.
-func (c *ZipDeployClient) getDeploymentStatus(ctx context.Context, deploymentUrl string) (*DeployStatusResponse, error) {
-	request, err := c.createGetDeploymentStatusRequest(ctx, deploymentUrl)
+// Implementation of a Go SDK polling handler for async zip deploy operations
+type deployPollingHandler struct {
+	pipeline runtime.Pipeline
+	response *http.Response
+	result   *DeployStatusResponse
+}
+
+func newDeployPollingHandler(pipeline runtime.Pipeline, response *http.Response) *deployPollingHandler {
+	return &deployPollingHandler{
+		pipeline: pipeline,
+		response: response,
+	}
+}
+
+// Checks whether the long running deploy operation is complete
+func (h *deployPollingHandler) Done() bool {
+	return h.result != nil && h.result.Complete
+}
+
+// Executing the polling logic to check the status of the deploy operation
+func (h *deployPollingHandler) Poll(ctx context.Context) (*http.Response, error) {
+	location := h.response.Header.Get("Location")
+	if strings.TrimSpace(location) == "" {
+		return nil, fmt.Errorf("missing polling location header")
+	}
+
+	req, err := runtime.NewRequest(ctx, http.MethodGet, location)
 	if err != nil {
 		return nil, err
 	}
 
-	response, err := c.pipeline.Do(request)
+	response, err := h.pipeline.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("http request failed: %w", err)
-	}
-
-	if !runtime.HasStatusCode(response, http.StatusOK) && !runtime.HasStatusCode(response, http.StatusAccepted) {
 		return nil, runtime.NewResponseError(response)
 	}
 
+	if !runtime.HasStatusCode(response, http.StatusAccepted) && !runtime.HasStatusCode(response, http.StatusOK) {
+		return nil, runtime.NewResponseError(response)
+	}
+
+	// If response is 202 - we're still waiting
+	if runtime.HasStatusCode(response, http.StatusAccepted) {
+		return response, nil
+	}
+
+	// Status code is 200 if we get to this point - transform the response
 	deploymentStatus, err := ReadRawResponse[DeployStatusResponse](response)
 	if err != nil {
 		return nil, err
 	}
 
-	return deploymentStatus, nil
+	h.result = deploymentStatus
+
+	return response, nil
 }
 
-func (c *ZipDeployClient) createGetDeploymentStatusRequest(ctx context.Context, deploymentUrl string) (*policy.Request, error) {
-	req, err := runtime.NewRequest(ctx, http.MethodGet, deploymentUrl)
-	if err != nil {
-		return nil, fmt.Errorf("creating deploy request: %w", err)
+// Gets the result of the deploy operation
+func (h *deployPollingHandler) Result(ctx context.Context, out *DeployResponse) error {
+	*out = DeployResponse{
+		DeployStatus: h.result.DeployStatus,
 	}
 
-	return req, nil
+	return nil
 }

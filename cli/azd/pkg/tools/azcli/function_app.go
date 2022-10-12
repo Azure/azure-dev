@@ -3,8 +3,6 @@ package azcli
 import (
 	"context"
 	"fmt"
-
-	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 )
 
 type AzCliFunctionAppProperties struct {
@@ -33,10 +31,10 @@ func (cli *azCli) DeployFunctionAppUsingZipFile(ctx context.Context, subscriptio
 		return nil, err
 	}
 
-	_, err = client.Deploy(ctx, appName, deployZipPath)
+	response, err := client.Deploy(ctx, appName, deployZipPath)
 	if err != nil {
 		return nil, err
 	}
 
-	return convert.RefOf(""), nil
+	return &response.StatusText, nil
 }

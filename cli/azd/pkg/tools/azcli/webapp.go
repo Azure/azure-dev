@@ -6,7 +6,6 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appservice/armappservice"
 	"github.com/azure/azure-dev/cli/azd/pkg/azsdk"
-	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/identity"
 )
 
@@ -36,12 +35,12 @@ func (cli *azCli) DeployAppServiceZip(ctx context.Context, subscriptionId string
 		return nil, err
 	}
 
-	_, err = client.Deploy(ctx, appName, deployZipPath)
+	response, err := client.Deploy(ctx, appName, deployZipPath)
 	if err != nil {
 		return nil, err
 	}
 
-	return convert.RefOf(""), nil
+	return &response.StatusText, nil
 }
 
 func (cli *azCli) createWebAppsClient(ctx context.Context, subscriptionId string) (*armappservice.WebAppsClient, error) {

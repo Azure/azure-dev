@@ -12,7 +12,12 @@ type AzCliFunctionAppProperties struct {
 	HostNames []string
 }
 
-func (cli *azCli) GetFunctionAppProperties(ctx context.Context, subscriptionId string, resourceGroup string, appName string) (*AzCliFunctionAppProperties, error) {
+func (cli *azCli) GetFunctionAppProperties(
+	ctx context.Context,
+	subscriptionId string,
+	resourceGroup string,
+	appName string,
+) (*AzCliFunctionAppProperties, error) {
 	client, err := cli.createWebAppsClient(ctx, subscriptionId)
 	if err != nil {
 		return nil, err
@@ -28,7 +33,13 @@ func (cli *azCli) GetFunctionAppProperties(ctx context.Context, subscriptionId s
 	}, nil
 }
 
-func (cli *azCli) DeployFunctionAppUsingZipFile(ctx context.Context, subscriptionId string, resourceGroup string, appName string, deployZipPath string) (*string, error) {
+func (cli *azCli) DeployFunctionAppUsingZipFile(
+	ctx context.Context,
+	subscriptionId string,
+	resourceGroup string,
+	appName string,
+	deployZipPath string,
+) (*string, error) {
 	client, err := cli.createZipDeployClient(ctx, subscriptionId)
 	if err != nil {
 		return nil, err

@@ -13,7 +13,11 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/identity"
 )
 
-func (cli *azCli) GetSubscriptionDeployment(ctx context.Context, subscriptionId string, deploymentName string) (*armresources.DeploymentExtended, error) {
+func (cli *azCli) GetSubscriptionDeployment(
+	ctx context.Context,
+	subscriptionId string,
+	deploymentName string,
+) (*armresources.DeploymentExtended, error) {
 	deploymentClient, err := cli.createDeploymentsClient(ctx, subscriptionId)
 	if err != nil {
 		return nil, fmt.Errorf("creating deployments client: %w", err)
@@ -32,7 +36,12 @@ func (cli *azCli) GetSubscriptionDeployment(ctx context.Context, subscriptionId 
 	return &deployment.DeploymentExtended, nil
 }
 
-func (cli *azCli) GetResourceGroupDeployment(ctx context.Context, subscriptionId string, resourceGroupName string, deploymentName string) (*armresources.DeploymentExtended, error) {
+func (cli *azCli) GetResourceGroupDeployment(
+	ctx context.Context,
+	subscriptionId string,
+	resourceGroupName string,
+	deploymentName string,
+) (*armresources.DeploymentExtended, error) {
 	deploymentClient, err := cli.createDeploymentsClient(ctx, subscriptionId)
 	if err != nil {
 		return nil, fmt.Errorf("creating deployments client: %w", err)
@@ -51,7 +60,10 @@ func (cli *azCli) GetResourceGroupDeployment(ctx context.Context, subscriptionId
 	return &deployment.DeploymentExtended, nil
 }
 
-func (cli *azCli) createDeploymentsClient(ctx context.Context, subscriptionId string) (*armresources.DeploymentsClient, error) {
+func (cli *azCli) createDeploymentsClient(
+	ctx context.Context,
+	subscriptionId string,
+) (*armresources.DeploymentsClient, error) {
 	cred, err := identity.GetCredentials(ctx)
 	if err != nil {
 		return nil, err

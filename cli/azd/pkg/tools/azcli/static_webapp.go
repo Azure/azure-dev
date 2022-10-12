@@ -18,7 +18,12 @@ type AzCliStaticWebAppEnvironmentProperties struct {
 	Status   string
 }
 
-func (cli *azCli) GetStaticWebAppProperties(ctx context.Context, subscriptionId string, resourceGroup string, appName string) (*AzCliStaticWebAppProperties, error) {
+func (cli *azCli) GetStaticWebAppProperties(
+	ctx context.Context,
+	subscriptionId string,
+	resourceGroup string,
+	appName string,
+) (*AzCliStaticWebAppProperties, error) {
 	client, err := cli.createStaticSitesClient(ctx, subscriptionId)
 	if err != nil {
 		return nil, err
@@ -34,7 +39,13 @@ func (cli *azCli) GetStaticWebAppProperties(ctx context.Context, subscriptionId 
 	}, nil
 }
 
-func (cli *azCli) GetStaticWebAppEnvironmentProperties(ctx context.Context, subscriptionId string, resourceGroup string, appName string, environmentName string) (*AzCliStaticWebAppEnvironmentProperties, error) {
+func (cli *azCli) GetStaticWebAppEnvironmentProperties(
+	ctx context.Context,
+	subscriptionId string,
+	resourceGroup string,
+	appName string,
+	environmentName string,
+) (*AzCliStaticWebAppEnvironmentProperties, error) {
 	client, err := cli.createStaticSitesClient(ctx, subscriptionId)
 	if err != nil {
 		return nil, err
@@ -51,7 +62,12 @@ func (cli *azCli) GetStaticWebAppEnvironmentProperties(ctx context.Context, subs
 	}, nil
 }
 
-func (cli *azCli) GetStaticWebAppApiKey(ctx context.Context, subscriptionId string, resourceGroup string, appName string) (*string, error) {
+func (cli *azCli) GetStaticWebAppApiKey(
+	ctx context.Context,
+	subscriptionId string,
+	resourceGroup string,
+	appName string,
+) (*string, error) {
 	client, err := cli.createStaticSitesClient(ctx, subscriptionId)
 	if err != nil {
 		return nil, err
@@ -70,7 +86,10 @@ func (cli *azCli) GetStaticWebAppApiKey(ctx context.Context, subscriptionId stri
 	return apiKey, nil
 }
 
-func (cli *azCli) createStaticSitesClient(ctx context.Context, subscriptionId string) (*armappservice.StaticSitesClient, error) {
+func (cli *azCli) createStaticSitesClient(
+	ctx context.Context,
+	subscriptionId string,
+) (*armappservice.StaticSitesClient, error) {
 	cred, err := identity.GetCredentials(ctx)
 	if err != nil {
 		return nil, err

@@ -47,7 +47,11 @@ type DeployStatus struct {
 	SiteName     string     `json:"site_name"`
 }
 
-func NewZipDeployClient(subscriptionId string, credential azcore.TokenCredential, options *arm.ClientOptions) (*ZipDeployClient, error) {
+func NewZipDeployClient(
+	subscriptionId string,
+	credential azcore.TokenCredential,
+	options *arm.ClientOptions,
+) (*ZipDeployClient, error) {
 	if options == nil {
 		options = &arm.ClientOptions{}
 	}
@@ -67,7 +71,11 @@ func NewZipDeployClient(subscriptionId string, credential azcore.TokenCredential
 }
 
 // Begins a zip deployment and returns a poller to check for status
-func (c *ZipDeployClient) BeginDeploy(ctx context.Context, appName string, zipFile io.Reader) (*runtime.Poller[*DeployResponse], error) {
+func (c *ZipDeployClient) BeginDeploy(
+	ctx context.Context,
+	appName string,
+	zipFile io.Reader,
+) (*runtime.Poller[*DeployResponse], error) {
 	request, err := c.createDeployRequest(ctx, appName, zipFile)
 	if err != nil {
 		return nil, err
@@ -112,7 +120,11 @@ func (c *ZipDeployClient) Deploy(ctx context.Context, appName string, zipFile io
 }
 
 // Creates the HTTP request for the zip deployment operation
-func (c *ZipDeployClient) createDeployRequest(ctx context.Context, appName string, zipFile io.Reader) (*policy.Request, error) {
+func (c *ZipDeployClient) createDeployRequest(
+	ctx context.Context,
+	appName string,
+	zipFile io.Reader,
+) (*policy.Request, error) {
 	endpoint := fmt.Sprintf("https://%s.scm.azurewebsites.net/api/zipdeploy", appName)
 	req, err := runtime.NewRequest(ctx, http.MethodPost, endpoint)
 	if err != nil {

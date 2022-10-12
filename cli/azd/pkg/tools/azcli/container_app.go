@@ -12,7 +12,10 @@ type AzCliContainerAppProperties struct {
 	HostNames []string
 }
 
-func (cli *azCli) GetContainerAppProperties(ctx context.Context, subscriptionId, resourceGroup, appName string) (*AzCliContainerAppProperties, error) {
+func (cli *azCli) GetContainerAppProperties(
+	ctx context.Context,
+	subscriptionId, resourceGroup, appName string,
+) (*AzCliContainerAppProperties, error) {
 	client, err := cli.createContainerAppsClient(ctx, subscriptionId)
 	if err != nil {
 		return nil, err
@@ -28,7 +31,10 @@ func (cli *azCli) GetContainerAppProperties(ctx context.Context, subscriptionId,
 	}, nil
 }
 
-func (cli *azCli) createContainerAppsClient(ctx context.Context, subscriptionId string) (*armappservice.ContainerAppsClient, error) {
+func (cli *azCli) createContainerAppsClient(
+	ctx context.Context,
+	subscriptionId string,
+) (*armappservice.ContainerAppsClient, error) {
 	cred, err := identity.GetCredentials(ctx)
 	if err != nil {
 		return nil, err

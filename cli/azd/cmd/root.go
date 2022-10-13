@@ -144,10 +144,9 @@ func BuildCmd[F any](
 			return err
 		}
 
-		// shim to use context to maintain backwards compatibility
+		// shim to register dependencies in context to maintain backwards compatibility
 		// to be removed long term
-		ctx := context.Background()
-		ctx, err = commands.RegisterDependenciesInCtx(ctx, cmd, opts)
+		ctx, err := commands.RegisterDependenciesInCtx(cmd.Context(), cmd, opts)
 		if err != nil {
 			return err
 		}

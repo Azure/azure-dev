@@ -56,11 +56,15 @@ module storage '../../../../../../common/infra/bicep/core/storage/storage-accoun
 }
 
 // Create an App Service Plan to group applications under the same payment plan and SKU
-module appServicePlan '../../../../../../common/infra/bicep/core/host/appserviceplan-functions.bicep' = {
+module appServicePlan '../../../../../../common/infra/bicep/core/host/appserviceplan.bicep' = {
   name: 'appserviceplan'
   params: {
     environmentName: environmentName
     location: location
+    sku: {
+      name: 'Y1'
+      tier: 'Dynamic'
+    }
   }
 }
 

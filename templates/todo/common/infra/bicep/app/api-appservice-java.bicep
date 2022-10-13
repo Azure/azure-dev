@@ -4,10 +4,11 @@ param location string = resourceGroup().location
 param allowedOrigins array = []
 param applicationInsightsName string
 param appServicePlanId string
+param appSettings object = {}
 param keyVaultName string
 param serviceName string = 'api'
 
-module api '../../../../../common/infra/bicep/core/host/appservice-java.bicep' = {
+module api '../../../../../common/infra/bicep/core/host/appservice.bicep' = {
   name: '${serviceName}-appservice-java-module'
   params: {
     environmentName: environmentName
@@ -15,7 +16,11 @@ module api '../../../../../common/infra/bicep/core/host/appservice-java.bicep' =
     allowedOrigins: allowedOrigins
     applicationInsightsName: applicationInsightsName
     appServicePlanId: appServicePlanId
+    appSettings: appSettings
     keyVaultName: keyVaultName
+    runtimeName: 'java'
+    runtimeVersion: '17-java17'
+    scmDoBuildDuringDeployment: true
     serviceName: serviceName
   }
 }

@@ -1,34 +1,43 @@
 param environmentName string
 param location string = resourceGroup().location
 
-// AppService Settings
-param allowedOrigins array = []
-param alwaysOn bool = false
+// Reference Properties
 param applicationInsightsName string = ''
 param appServicePlanId string
-param appSettings object = {}
-param kind string = 'functionapp,linux'
 param keyVaultName string = ''
 param managedIdentity bool = !(empty(keyVaultName))
-param remoteBuild bool = true
 param serviceName string
+param storageAccountName string
 
-// Function Settings
-param clientAffinityEnabled bool = false
+// Runtime Properties
 @allowed([
-  '~4', '~3', '~2', '~1'
-])
-param extensionVersion string = '~4'
-param functionAppScaleLimit int = 200
-param minimumElasticInstanceCount int = 0
-param numberOfWorkers int = 1
-@allowed([
-  'dotnet', 'dotnet-isolated', 'node', 'python', 'java', 'powershell', 'custom'
+  'dotnet', 'dotnetcore', 'dotnet-isolated', 'node', 'python', 'java', 'powershell', 'custom'
 ])
 param runtimeName string
 param runtimeNameAndVersion string = '${runtimeName}|${runtimeVersion}'
 param runtimeVersion string
-param storageAccountName string
+
+// Function Settings
+@allowed([
+  '~4', '~3', '~2', '~1'
+])
+param extensionVersion string = '~4'
+
+// Microsoft.Web/sites Properties
+param kind string = 'functionapp,linux'
+
+// Microsoft.Web/sites/config
+param allowedOrigins array = []
+param alwaysOn bool = true
+param appCommandLine string = ''
+param appSettings object = {}
+param clientAffinityEnabled bool = false
+param enableOryxBuild bool = false
+param functionAppScaleLimit int = -1
+param linuxFxVersion string = runtimeNameAndVersion
+param minimumElasticInstanceCount int = -1
+param numberOfWorkers int = -1
+param scmDoBuildDuringDeployment bool = false
 param use32BitWorkerProcess bool = false
 
 module functions 'appservice.bicep' = {
@@ -38,6 +47,7 @@ module functions 'appservice.bicep' = {
     location: location
     allowedOrigins: allowedOrigins
     alwaysOn: alwaysOn
+    appCommandLine: appCommandLine
     applicationInsightsName: applicationInsightsName
     appServicePlanId: appServicePlanId
     appSettings: union(appSettings, {
@@ -46,14 +56,18 @@ module functions 'appservice.bicep' = {
         FUNCTIONS_WORKER_RUNTIME: runtimeName
       })
     clientAffinityEnabled: clientAffinityEnabled
+    enableOryxBuild: enableOryxBuild
     functionAppScaleLimit: functionAppScaleLimit
     keyVaultName: keyVaultName
     kind: kind
-    linuxFxVersion: runtimeNameAndVersion
+    linuxFxVersion: linuxFxVersion
     managedIdentity: managedIdentity
     minimumElasticInstanceCount: minimumElasticInstanceCount
     numberOfWorkers: numberOfWorkers
-    remoteBuild: remoteBuild
+    runtimeName: runtimeName
+    runtimeVersion: runtimeVersion
+    runtimeNameAndVersion: runtimeNameAndVersion
+    scmDoBuildDuringDeployment: scmDoBuildDuringDeployment
     serviceName: serviceName
     use32BitWorkerProcess: use32BitWorkerProcess
   }

@@ -53,11 +53,14 @@ module apiSqlServerConfig '../../../../../../common/infra/bicep/core/host/appser
 }
 
 // Create an App Service Plan to group applications under the same payment plan and SKU
-module appServicePlan '../../../../../../common/infra/bicep/core/host/appserviceplan-sites.bicep' = {
+module appServicePlan '../../../../../../common/infra/bicep/core/host/appserviceplan.bicep' = {
   name: 'appserviceplan'
   params: {
     environmentName: environmentName
     location: location
+    sku: {
+      name: 'B1'
+    }
   }
 }
 

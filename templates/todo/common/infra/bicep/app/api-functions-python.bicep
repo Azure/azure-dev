@@ -19,11 +19,11 @@ module api '../../../../../common/infra/bicep/core/host/functions.bicep' = {
     applicationInsightsName: applicationInsightsName
     appServicePlanId: appServicePlanId
     keyVaultName: keyVaultName
-    serviceName: serviceName
-    storageAccountName: storageAccountName
     runtimeName: 'python'
     runtimeVersion: '3.8'
-    remoteBuild: true
+    scmDoBuildDuringDeployment: true
+    serviceName: serviceName
+    storageAccountName: storageAccountName
   }
 }
 

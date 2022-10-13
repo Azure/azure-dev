@@ -4,10 +4,11 @@ param location string = resourceGroup().location
 param allowedOrigins array = []
 param applicationInsightsName string = ''
 param appServicePlanId string
+param appSettings object = {}
 param keyVaultName string
 param serviceName string = 'api'
 
-module api '../../../../../common/infra/bicep/core/host/appservice-dotnet.bicep' = {
+module api '../../../../../common/infra/bicep/core/host/appservice.bicep' = {
   name: '${serviceName}-appservice-dotnet-module'
   params: {
     environmentName: environmentName
@@ -15,8 +16,12 @@ module api '../../../../../common/infra/bicep/core/host/appservice-dotnet.bicep'
     allowedOrigins: allowedOrigins
     applicationInsightsName: applicationInsightsName
     appServicePlanId: appServicePlanId
+    appSettings: appSettings
     keyVaultName: keyVaultName
     serviceName: serviceName
+    runtimeName: 'dotnetcore'
+    runtimeVersion: '6.0'
+    scmDoBuildDuringDeployment: false
   }
 }
 

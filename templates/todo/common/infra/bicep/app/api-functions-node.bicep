@@ -15,6 +15,7 @@ module api '../../../../../common/infra/bicep/core/host/functions/functions.bice
     environmentName: environmentName
     location: location
     allowedOrigins: allowedOrigins
+    alwaysOn: false
     appSettings: appSettings
     applicationInsightsName: applicationInsightsName
     appServicePlanId: appServicePlanId

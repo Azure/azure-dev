@@ -109,7 +109,7 @@ func (cli *azCli) createRegistriesClient(
 		return nil, err
 	}
 
-	options := cli.createArmClientOptions(ctx)
+	options := cli.createDefaultClientOptionsBuilder(ctx).BuildArmClientOptions()
 	client, err := armcontainerregistry.NewRegistriesClient(subscriptionId, cred, options)
 	if err != nil {
 		return nil, fmt.Errorf("creating registries client: %w", err)

@@ -1,4 +1,4 @@
-package azcli
+package azsdk
 
 import (
 	"net/http"

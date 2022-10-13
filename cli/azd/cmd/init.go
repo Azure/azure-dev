@@ -171,7 +171,7 @@ func (i *initAction) Run(ctx context.Context) error {
 			_ = os.RemoveAll(templateStagingDir)
 		}()
 
-		spinner := spin.NewSpinner(console.Handles().Stdout, "Downloading template")
+		spinner := spin.NewSpinner(i.console.Handles().Stdout, "Downloading template")
 		err = spinner.Run(func() error {
 			return i.gitCli.FetchCode(ctx, templateUrl, i.flags.templateBranch, templateStagingDir)
 		})
@@ -213,10 +213,10 @@ func (i *initAction) Run(ctx context.Context) error {
 
 		if len(duplicateFiles) > 0 {
 			fmt.Fprintf(
-				console.Handles().Stdout,
+				i.console.Handles().Stdout,
 				"warning: the following files will be overwritten with the versions from the template: \n")
 			for _, file := range duplicateFiles {
-				fmt.Fprintf(console.Handles().Stdout, " * %s\n", file)
+				fmt.Fprintf(i.console.Handles().Stdout, " * %s\n", file)
 			}
 
 			overwrite, err := i.console.Confirm(ctx, input.ConsoleOptions{
@@ -251,7 +251,7 @@ func (i *initAction) Run(ctx context.Context) error {
 	_, err = os.Stat(i.azdCtx.ProjectPath())
 
 	if errors.Is(err, os.ErrNotExist) {
-		fmt.Fprintf(console.Handles().Stdout, "Creating a new %s file.\n", azdcontext.ProjectFileName)
+		fmt.Fprintf(i.console.Handles().Stdout, "Creating a new %s file.\n", azdcontext.ProjectFileName)
 
 		_, err = project.NewProject(i.azdCtx.ProjectPath(), i.azdCtx.GetDefaultProjectName())
 

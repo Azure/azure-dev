@@ -2,13 +2,10 @@ package commands
 
 import (
 	"context"
-	"fmt"
 	"os"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/azure/azure-dev/cli/azd/internal"
-	"github.com/azure/azure-dev/cli/azd/internal/telemetry"
-	"github.com/azure/azure-dev/cli/azd/internal/telemetry/events"
 	"github.com/azure/azure-dev/cli/azd/pkg/identity"
 	_ "github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning/bicep"
 	_ "github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning/terraform"
@@ -19,84 +16,7 @@ import (
 	"github.com/mattn/go-colorable"
 	"github.com/mattn/go-isatty"
 	"github.com/spf13/cobra"
-	"go.opentelemetry.io/otel/codes"
 )
-
-// BuildOptions contains the optional parameters for the Build function.
-type BuildOptions struct {
-	// Long is the long message shown in the 'help <this-command>' output. If Long is not provided, the Short message is used instead.
-	Long string
-
-	// Aliases is an array of aliases that can be used instead of the first word in Use.
-	Aliases []string
-
-	// Disables the usage event telemetry associated to the command.
-	DisableCmdUsageEvent bool
-}
-
-// Build builds a Cobra command, attaching an action.
-//
-// All commands should be built with this command builder vs manually instantiating cobra commands.
-//
-// Use is the one-line usage message.
-// Recommended syntax is as follow:
-//
-//	[ ] identifies an optional argument. Arguments that are not enclosed in brackets are required.
-//	... indicates that you can specify multiple values for the previous argument.
-//	|   indicates mutually exclusive information. You can use the argument to the left of the separator or the
-//	    argument to the right of the separator. You cannot use both arguments in a single use of the command.
-//	{ } delimits a set of mutually exclusive arguments when one of the arguments is required. If the arguments are
-//	    optional, they are enclosed in brackets ([ ]).
-//
-// Example: add [-F file | -D dir]... [-f format] profile
-func Build(action Action, rootOptions *internal.GlobalCommandOptions, use string, short string, buildOptions *BuildOptions) *cobra.Command {
-	if buildOptions == nil {
-		buildOptions = &BuildOptions{}
-	}
-
-	cmd := &cobra.Command{
-		Use:     use,
-		Short:   short,
-		Long:    buildOptions.Long,
-		Aliases: buildOptions.Aliases,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			ctx, azdCtx, err := createRootContext(context.Background(), cmd, rootOptions)
-			if err != nil {
-				return err
-			}
-
-			runCmd := func(cmdCtx context.Context) error {
-				return action.Run(cmdCtx, cmd, args, azdCtx)
-			}
-
-			if buildOptions.DisableCmdUsageEvent {
-				return runCmd(ctx)
-			} else {
-				return runCmdWithTelemetry(ctx, cmd, runCmd)
-			}
-		},
-	}
-	cmd.Flags().BoolP("help", "h", false, fmt.Sprintf("Gets help for %s.", cmd.Name()))
-	action.SetupFlags(
-		cmd.PersistentFlags(),
-		cmd.Flags(),
-	)
-	return cmd
-}
-
-func runCmdWithTelemetry(ctx context.Context, cmd *cobra.Command, runCmd func(ctx context.Context) error) error {
-	// Note: CommandPath is constructed using the Use member on each command up to the root.
-	// It does not contain user input, and is safe for telemetry emission.
-	spanCtx, span := telemetry.GetTracer().Start(ctx, events.GetCommandEventName(cmd.CommandPath()))
-	defer span.End()
-
-	err := runCmd(spanCtx)
-	if err != nil {
-		span.SetStatus(codes.Error, "UnknownError")
-	}
-
-	return err
-}
 
 // Create the core context for use in all Azd commands
 // Registers context values for azCli, formatter, writer, console and more.
@@ -151,7 +71,7 @@ func RegisterDependenciesInCtx(ctx context.Context, cmd *cobra.Command, rootOpti
 		isatty.IsTerminal(os.Stdout.Fd())
 	console := input.NewConsole(!rootOptions.NoPrompt, isTerminal, input.ConsoleHandles{
 		Stdin:  cmd.InOrStdin(),
-		Stdout: cmd.OutOrStdout(),
+		Stdout: writer,
 		Stderr: cmd.ErrOrStderr(),
 	}, formatter)
 	ctx = input.WithConsole(ctx, console)

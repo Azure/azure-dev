@@ -9,6 +9,7 @@ import (
 	"io"
 
 	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
@@ -40,20 +41,22 @@ type versionAction struct {
 	flags     versionFlags
 	formatter output.Formatter
 	writer    io.Writer
+	console   input.Console
 }
 
-func newVersionAction(flags versionFlags, formatter output.Formatter, writer io.Writer) *versionAction {
+func newVersionAction(flags versionFlags, formatter output.Formatter, writer io.Writer, console input.Console) *versionAction {
 	return &versionAction{
 		flags:     flags,
 		formatter: formatter,
 		writer:    writer,
+		console:   console,
 	}
 }
 
 func (v *versionAction) Run(ctx context.Context) error {
 	switch v.formatter.Kind() {
 	case output.NoneFormat:
-		fmt.Fprintf(console.Handles().Stdout, "azd version %s\n", internal.Version)
+		fmt.Fprintf(v.console.Handles().Stdout, "azd version %s\n", internal.Version)
 	case output.JsonFormat:
 		versionSpec := internal.GetVersionSpec()
 		err := v.formatter.Format(versionSpec, v.writer, nil)

@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 	"io"
+	"os"
 
 	"github.com/azure/azure-dev/cli/azd/cmd/action"
 	"github.com/azure/azure-dev/cli/azd/internal"
@@ -14,10 +15,38 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/git"
 	"github.com/google/wire"
+	"github.com/mattn/go-colorable"
+	"github.com/mattn/go-isatty"
+	"github.com/spf13/cobra"
 )
 
-func newConsoleFromOptions(rootOptions *internal.GlobalCommandOptions, writer io.Writer, formatter output.Formatter) input.Console {
-	return input.NewConsole(!rootOptions.NoPrompt, writer, formatter)
+func newWriter(cmd *cobra.Command) io.Writer {
+	writer := cmd.OutOrStdout()
+
+	if os.Getenv("NO_COLOR") != "" {
+		writer = colorable.NewNonColorable(writer)
+	}
+
+	// To support color on windows platforms which don't natively support rendering ANSI codes
+	// we use colorable.NewColorableStdout() which creates a stream that uses the Win32 APIs to
+	// change colors as it interprets the ANSI escape codes in the string it is writing.
+	if writer == os.Stdout {
+		writer = colorable.NewColorableStdout()
+	}
+
+	return writer
+}
+
+func newConsoleFromOptions(rootOptions *internal.GlobalCommandOptions, formatter output.Formatter, cmd *cobra.Command) input.Console {
+	isTerminal := cmd.OutOrStdout() == os.Stdout &&
+		cmd.InOrStdin() == os.Stdin && isatty.IsTerminal(os.Stdin.Fd()) &&
+		isatty.IsTerminal(os.Stdout.Fd())
+
+	return input.NewConsole(!rootOptions.NoPrompt, isTerminal, input.ConsoleHandles{
+		Stdin:  cmd.InOrStdin(),
+		Stdout: cmd.OutOrStdout(),
+		Stderr: cmd.ErrOrStderr(),
+	}, formatter)
 }
 
 func newAzCliFromOptions(rootOptions *internal.GlobalCommandOptions, cmdRun exec.CommandRunner) azcli.AzCli {
@@ -40,7 +69,7 @@ func newAzdContext() (*azdcontext.AzdContext, error) {
 
 var FormattedConsoleSet = wire.NewSet(
 	output.GetCommandFormatter,
-	output.GetDefaultWriter,
+	newWriter,
 	newConsoleFromOptions,
 )
 

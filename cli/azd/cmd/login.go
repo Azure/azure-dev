@@ -12,6 +12,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/cmd/contracts"
 	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
@@ -53,14 +54,16 @@ func loginCmdDesign(global *internal.GlobalCommandOptions) (*cobra.Command, *log
 type loginAction struct {
 	formatter output.Formatter
 	writer    io.Writer
+	console   input.Console
 	azCli     azcli.AzCli
 	flags     loginFlags
 }
 
-func newLoginAction(formatter output.Formatter, writer io.Writer, azcli azcli.AzCli, flags loginFlags) *loginAction {
+func newLoginAction(formatter output.Formatter, writer io.Writer, azcli azcli.AzCli, flags loginFlags, console input.Console) *loginAction {
 	return &loginAction{
 		formatter: formatter,
 		writer:    writer,
+		console:   console,
 		azCli:     azcli,
 		flags:     flags,
 	}
@@ -77,9 +80,11 @@ func (la *loginAction) Run(ctx context.Context) error {
 		}
 	}
 
-	token, err := la.azCli.GetAccessToken(ctx)
-	if errors.Is(err, azcli.ErrAzCliNotLoggedIn) {
-		return azcli.ErrAzCliNotLoggedIn
+	var res contracts.LoginResult
+
+	if token, err := la.azCli.GetAccessToken(ctx); errors.Is(err, azcli.ErrAzCliNotLoggedIn) ||
+		errors.Is(err, azcli.ErrAzCliRefreshTokenExpired) {
+		res.Status = contracts.LoginStatusUnauthenticated
 	} else if err != nil {
 		return fmt.Errorf("checking auth status: %w", err)
 	} else {
@@ -87,18 +92,15 @@ func (la *loginAction) Run(ctx context.Context) error {
 		res.ExpiresOn = token.ExpiresOn
 	}
 
-	if la.formatter.Kind() == output.TableFormat {
-		fmt.Println("Logged in to Azure.")
+	if la.formatter.Kind() == output.NoneFormat {
+		if res.Status == contracts.LoginStatusSuccess {
+			fmt.Fprintln(la.console.Handles().Stdout, "Logged in to Azure.")
+		} else {
+			fmt.Fprintln(la.console.Handles().Stdout, "Not logged in, run `azd login` to login to Azure.")
+		}
+
 		return nil
 	}
-
-	var res struct {
-		Status    string     `json:"status"`
-		ExpiresOn *time.Time `json:"expiresOn"`
-	}
-
-	res.Status = "success"
-	res.ExpiresOn = token.ExpiresOn
 
 	return la.formatter.Format(res, la.writer, nil)
 }

@@ -179,7 +179,7 @@ func (d *deployAction) Run(ctx context.Context) error {
 			deployMsg := fmt.Sprintf("Deploying service %s...", output.WithHighLightFormat(svc.Config.Name))
 			d.console.Message(ctx, deployMsg)
 
-			spinner, ctx := spin.GetOrCreateSpinner(ctx, console.Handles().Stdout, deployMsg)
+			spinner, ctx := spin.GetOrCreateSpinner(ctx, d.console.Handles().Stdout, deployMsg)
 
 			spinner.Start()
 			err = deployAndReportProgress(ctx, spinner.Title)

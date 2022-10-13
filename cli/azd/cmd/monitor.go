@@ -133,10 +133,10 @@ func (m *monitorAction) Run(ctx context.Context) error {
 	}
 
 	openWithDefaultBrowser := func(url string) {
-		fmt.Fprintf(console.Handles().Stdout, "Opening %s in the default browser...\n", url)
+		fmt.Fprintf(m.console.Handles().Stdout, "Opening %s in the default browser...\n", url)
 
 		if err := open.Open(url); err != nil {
-			fmt.Fprintf(console.Handles().Stderr, "warning: failed to open default browser: %s\n", err.Error())
+			fmt.Fprintf(m.console.Handles().Stderr, "warning: failed to open default browser: %s\n", err.Error())
 		}
 	}
 

@@ -255,13 +255,7 @@ func (en *envNewAction) Run(ctx context.Context) error {
 		return fmt.Errorf("saving default environment: %w", err)
 	}
 
-func newEnvNewAction(azdCtx *azdcontext.AzdContext, azcli azcli.AzCli, flags envNewFlags, console input.Console) *envNewAction {
-	return &envNewAction{
-		azdCtx:  azdCtx,
-		azCli:   azcli,
-		flags:   flags,
-		console: console,
-	}
+	return nil
 }
 
 func envRefreshCmdDesign(global *internal.GlobalCommandOptions) (*cobra.Command, *struct{}) {
@@ -321,6 +315,9 @@ func (ef *envRefreshAction) Run(ctx context.Context) error {
 		return fmt.Errorf("loading project: %w", err)
 	}
 
+	formatter := output.GetFormatter(ctx)
+	writer := output.GetWriter(ctx)
+
 	infraManager, err := provisioning.NewManager(ctx, env, prj.Path, prj.Infra, !ef.global.NoPrompt)
 	if err != nil {
 		return fmt.Errorf("creating provisioning manager: %w", err)
@@ -328,19 +325,19 @@ func (ef *envRefreshAction) Run(ctx context.Context) error {
 
 	scope := infra.NewSubscriptionScope(ctx, env.GetLocation(), env.GetSubscriptionId(), env.GetEnvName())
 
-	getDeploymentResult, err := infraManager.GetDeployment(ctx, scope)
+	getStateResult, err := infraManager.State(ctx, scope)
 	if err != nil {
 		return fmt.Errorf("getting deployment: %w", err)
 	}
 
-	if err := provisioning.UpdateEnvironment(env, &getDeploymentResult.Deployment.Outputs); err != nil {
+	if err := provisioning.UpdateEnvironment(env, getStateResult.State.Outputs); err != nil {
 		return err
 	}
 
 	ef.console.Message(ctx, "Environments setting refresh completed")
 
-	if ef.formatter.Kind() == output.JsonFormat {
-		err = ef.formatter.Format(getDeploymentResult.Deployment, ef.writer, nil)
+	if formatter.Kind() == output.JsonFormat {
+		err = formatter.Format(contracts.NewEnvRefreshResultFromProvisioningState(getStateResult.State), writer, nil)
 		if err != nil {
 			return fmt.Errorf("writing deployment result in JSON format: %w", err)
 		}

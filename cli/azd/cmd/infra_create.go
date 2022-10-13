@@ -123,7 +123,7 @@ func (ica *infraCreateAction) Run(ctx context.Context) error {
 
 	if err != nil {
 		if ica.formatter.Kind() == output.JsonFormat {
-			deployment, err := infraManager.GetDeployment(ctx, provisioningScope)
+			deployment, err := infraManager.State(ctx, provisioningScope)
 			if err != nil {
 				return fmt.Errorf(
 					"deployment failed and the deployment result is unavailable: %w",

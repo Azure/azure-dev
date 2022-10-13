@@ -75,8 +75,9 @@ func (s *showAction) Run(ctx context.Context) error {
 		return fmt.Errorf("loading project: %w", err)
 	}
 
-	res := showResult{
-		Services: make(map[string]showService, len(prj.Services)),
+	res := contracts.ShowResult{
+		Name:     prj.Name,
+		Services: make(map[string]contracts.ShowService, len(prj.Services)),
 	}
 
 	for name, svc := range prj.Services {
@@ -85,8 +86,8 @@ func (s *showAction) Run(ctx context.Context) error {
 			return err
 		}
 
-		showSvc := showService{
-			Project: showServiceProject{
+		showSvc := contracts.ShowService{
+			Project: contracts.ShowServiceProject{
 				Path: path,
 				Type: showTypeFromLanguage(svc.Language),
 			},
@@ -108,7 +109,7 @@ func (s *showAction) Run(ctx context.Context) error {
 				}
 
 				resSvc := res.Services[name]
-				resSvc.Target = &showTargetArm{
+				resSvc.Target = &contracts.ShowTargetArm{
 					ResourceIds: resourceIds,
 				}
 				res.Services[name] = resSvc

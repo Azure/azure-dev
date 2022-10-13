@@ -1,5 +1,5 @@
-//go:build wireinit
-// +build wireinit
+//+build wireinject
+
 
 package cmd
 

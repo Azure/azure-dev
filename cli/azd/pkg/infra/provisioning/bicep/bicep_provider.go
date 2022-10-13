@@ -294,14 +294,14 @@ func (p *BicepProvider) Destroy(
 				allResources = append(allResources, groupResources...)
 			}
 
-			asyncContext.SetProgress(&DestroyProgress{Message: "Getting KeyVaults to purge", Timestamp: time.Now()})
+			asyncContext.SetProgress(&DestroyProgress{Message: "Getting Key Vaults to purge", Timestamp: time.Now()})
 			keyVaults, err := p.getKeyVaultsToPurge(ctx, groupedResources)
 			if err != nil {
 				asyncContext.SetError(fmt.Errorf("getting key vaults to purge: %w", err))
 				return
 			}
 
-			asyncContext.SetProgress(&DestroyProgress{Message: "Getting AppConfigurations to purge", Timestamp: time.Now()})
+			asyncContext.SetProgress(&DestroyProgress{Message: "Getting App Configurations to purge", Timestamp: time.Now()})
 			appConfigs, err := p.getAppConfigsToPurge(ctx, groupedResources)
 			if err != nil {
 				asyncContext.SetError(fmt.Errorf("getting app configurations to purge: %w", err))
@@ -570,19 +570,15 @@ func (p *BicepProvider) getAppConfigsToPurge(
 	return configs, nil
 }
 
-// Azure AppConfigurations have a "soft delete" functionality (now enabled by default) where a
-// configuration store may be marked
-// such that when it is deleted it can be recovered for a period of time. During that time, the name may
-// not be reused.
+// Azure AppConfigurations have a "soft delete" functionality (now enabled by default) where a configuration store may be marked
+// such that when it is deleted it can be recovered for a period of time. During that time, the name may not be reused.
 //
 // This means that running `az dev provision`, then `az dev infra delete` and finally `az dev provision`
 // again would lead to a deployment error since the configuration name is in use.
 //
-// Since that's behavior we'd like to support, we run a purge operation for each AppConfiguration after
-// it has been deleted.
+// Since that's behavior we'd like to support, we run a purge operation for each AppConfiguration after it has been deleted.
 //
-// See https://learn.microsoft.com/en-us/azure/azure-app-configuration/concept-soft-delete
-// for more information on this feature.
+// See https://learn.microsoft.com/en-us/azure/azure-app-configuration/concept-soft-delete for more information on this feature.
 func (p *BicepProvider) purgeAppConfigs(
 	ctx context.Context,
 	asyncContext *async.InteractiveTaskContextWithProgress[*DestroyResult, *DestroyProgress],

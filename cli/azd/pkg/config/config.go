@@ -41,6 +41,7 @@ type Config struct {
 
 // AZD Account configuration
 type Account struct {
+	CurrentUserHomeId   *string       `json:"currentUser,omitempty"`
 	DefaultSubscription *Subscription `json:"defaultSubscription"`
 	DefaultLocation     *Location     `json:"defaultLocation"`
 }

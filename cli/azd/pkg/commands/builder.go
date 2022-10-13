@@ -2,10 +2,13 @@ package commands
 
 import (
 	"context"
+	"fmt"
 	"os"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/identity"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
@@ -25,39 +28,13 @@ func RegisterDependenciesInCtx(
 	cmd *cobra.Command,
 	rootOptions *internal.GlobalCommandOptions,
 ) (context.Context, error) {
+
 	// Set the global options in the go context
 	ctx = internal.WithCommandOptions(ctx, *rootOptions)
 	ctx = tools.WithInstalledCheckCache(ctx)
 
 	runner := exec.NewCommandRunner(cmd.InOrStdin(), cmd.OutOrStdout(), cmd.ErrOrStderr())
 	ctx = exec.WithCommandRunner(ctx, runner)
-
-	// Set default credentials used for operations against azure data/control planes
-	credentials, err := azidentity.NewAzureCLICredential(nil)
-	if err != nil {
-		panic("failed creating azure cli credential")
-	}
-	ctx = identity.WithCredentials(ctx, credentials)
-
-	azCliArgs := azcli.NewAzCliArgs{
-		EnableDebug:     rootOptions.EnableDebugLogging,
-		EnableTelemetry: rootOptions.EnableTelemetry,
-		CommandRunner:   runner,
-	}
-
-	// Create and set the AzCli that will be used for the command
-	azCli := azcli.NewAzCli(credentials, azCliArgs)
-	ctx = azcli.WithAzCli(ctx, azCli)
-
-	// Attempt to get the user specified formatter from the command args
-	formatter, err := output.GetCommandFormatter(cmd)
-	if err != nil {
-		return ctx, err
-	}
-
-	if formatter != nil {
-		ctx = output.WithFormatter(ctx, formatter)
-	}
 
 	writer := cmd.OutOrStdout()
 
@@ -70,6 +47,48 @@ func RegisterDependenciesInCtx(
 	// change colors as it interprets the ANSI escape codes in the string it is writing.
 	if writer == os.Stdout {
 		writer = colorable.NewColorableStdout()
+	}
+
+	authManager, err := auth.NewManager(writer)
+	if err != nil {
+		return ctx, fmt.Errorf("creating auth manager: %w", err)
+	}
+
+	var credential azcore.TokenCredential
+
+	// TODO(ellismg): This is a hack so that we don't fail for `login` when we construct the root context if a user
+	// is not logged in. This is super fragile, but we should be able to clean it up soon with Wei's work.
+	if cmd.Use != "login" {
+		_, cred, err := authManager.CurrentAccount(ctx)
+		if err != nil {
+			return ctx, fmt.Errorf("fetching current user: %w", err)
+		}
+		credential = cred
+	} else {
+		credential = &panicCredential{}
+	}
+
+	azCliArgs := azcli.NewAzCliArgs{
+		EnableDebug:     rootOptions.EnableDebugLogging,
+		EnableTelemetry: rootOptions.EnableTelemetry,
+		CommandRunner:   runner,
+	}
+
+	// Set default credentials used for operations against azure data/control planes
+	ctx = identity.WithCredentials(ctx, credential)
+
+	// Create and set the AzCli that will be used for the command
+	azCli := azcli.NewAzCli(credential, azCliArgs)
+	ctx = azcli.WithAzCli(ctx, azCli)
+
+	// Attempt to get the user specified formatter from the command args
+	formatter, err := output.GetCommandFormatter(cmd)
+	if err != nil {
+		return ctx, err
+	}
+
+	if formatter != nil {
+		ctx = output.WithFormatter(ctx, formatter)
 	}
 
 	ctx = output.WithWriter(ctx, writer)
@@ -91,4 +110,12 @@ func RegisterDependenciesInCtx(
 	ctx = input.WithConsole(ctx, console)
 
 	return ctx, nil
+}
+
+var _ azcore.TokenCredential = &panicCredential{}
+
+type panicCredential struct{}
+
+func (pc *panicCredential) GetToken(_ context.Context, _ policy.TokenRequestOptions) (azcore.AccessToken, error) {
+	panic("not logged in")
 }

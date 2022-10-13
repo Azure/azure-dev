@@ -10,7 +10,9 @@ import (
 	"io"
 	"os"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 	"github.com/azure/azure-dev/cli/azd/pkg/contracts"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
@@ -80,27 +82,51 @@ func newLoginAction(
 	}
 }
 
+const (
+	// CodespacesEnvVarName is the name of the env variable set when you're in a Github codespace. It's
+	// just set to 'true'.
+	CodespacesEnvVarName = "CODESPACES"
+
+	// RemoteContainersEnvVarName is the name of the env variable set when you're in a remote container. It's
+	// just set to 'true'.
+	RemoteContainersEnvVarName = "REMOTE_CONTAINERS"
+)
+
 func (la *loginAction) Run(ctx context.Context) error {
 	if err := tools.EnsureInstalled(ctx, la.azCli); err != nil {
 		return err
 	}
 
+	authManager, err := auth.NewManager(la.writer)
+	if err != nil {
+		return err
+	}
+
 	if !la.flags.onlyCheckStatus {
-		if err := runLogin(ctx, la.flags.useDeviceCode); err != nil {
+		useDeviceCode := la.flags.useDeviceCode || os.Getenv(CodespacesEnvVarName) == "true" ||
+			os.Getenv(RemoteContainersEnvVarName) == "true"
+
+		_, _, err := authManager.Login(ctx, useDeviceCode)
+		if err != nil {
 			return fmt.Errorf("logging in: %w", err)
 		}
 	}
 
 	res := contracts.LoginResult{}
 
-	if token, err := la.azCli.GetAccessToken(ctx); errors.Is(err, azcli.ErrAzCliNotLoggedIn) ||
-		errors.Is(err, azcli.ErrAzCliRefreshTokenExpired) {
+	if _, cred, err := authManager.CurrentAccount(ctx); errors.Is(err, auth.ErrNoCurrentUser) {
 		res.Status = contracts.LoginStatusUnauthenticated
 	} else if err != nil {
 		return fmt.Errorf("checking auth status: %w", err)
 	} else {
-		res.Status = contracts.LoginStatusSuccess
-		res.ExpiresOn = token.ExpiresOn
+		if token, err := cred.GetToken(ctx, policy.TokenRequestOptions{
+			Scopes: auth.LoginScopes,
+		}); err != nil {
+			res.Status = contracts.LoginStatusUnauthenticated
+		} else {
+			res.Status = contracts.LoginStatusSuccess
+			res.ExpiresOn = &token.ExpiresOn
+		}
 	}
 
 	if la.formatter.Kind() == output.NoneFormat {
@@ -138,16 +164,6 @@ func runLogin(ctx context.Context, forceDeviceCode bool) error {
 	if console == nil {
 		panic("need console")
 	}
-
-	const (
-		// CodespacesEnvVarName is the name of the env variable set when you're in a Github codespace. It's
-		// just set to 'true'.
-		CodespacesEnvVarName = "CODESPACES"
-
-		// RemoteContainersEnvVarName is the name of the env variable set when you're in a remote container. It's
-		// just set to 'true'.
-		RemoteContainersEnvVarName = "REMOTE_CONTAINERS"
-	)
 
 	azCli := azcli.GetAzCli(ctx)
 	useDeviceCode := forceDeviceCode || os.Getenv(CodespacesEnvVarName) == "true" ||

@@ -40,7 +40,7 @@ func (cli *azCli) createContainerAppsClient(
 		return nil, err
 	}
 
-	options := cli.createDefaultClientOptions(ctx).BuildArmClientOptions()
+	options := cli.createDefaultClientOptionsBuilder(ctx).BuildArmClientOptions()
 	client, err := armappservice.NewContainerAppsClient(subscriptionId, cred, options)
 	if err != nil {
 		return nil, fmt.Errorf("creating ContainerApps client: %w", err)

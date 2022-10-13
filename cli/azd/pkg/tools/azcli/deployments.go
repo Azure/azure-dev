@@ -26,8 +26,7 @@ func (cli *azCli) GetSubscriptionDeployment(
 	deployment, err := deploymentClient.GetAtSubscriptionScope(ctx, deploymentName, nil)
 	if err != nil {
 		var errDetails *azcore.ResponseError
-		errors.As(err, &errDetails)
-		if errDetails.StatusCode == 404 {
+		if errors.As(err, &errDetails) && errDetails.StatusCode == 404 {
 			return nil, ErrDeploymentNotFound
 		}
 		return nil, fmt.Errorf("getting deployment from subscription: %w", err)
@@ -50,8 +49,7 @@ func (cli *azCli) GetResourceGroupDeployment(
 	deployment, err := deploymentClient.Get(ctx, resourceGroupName, deploymentName, nil)
 	if err != nil {
 		var errDetails *azcore.ResponseError
-		errors.As(err, &errDetails)
-		if errDetails.StatusCode == 404 {
+		if errors.As(err, &errDetails) && errDetails.StatusCode == 404 {
 			return nil, ErrDeploymentNotFound
 		}
 		return nil, fmt.Errorf("getting deployment from resource group: %w", err)
@@ -69,7 +67,7 @@ func (cli *azCli) createDeploymentsClient(
 		return nil, err
 	}
 
-	options := cli.createDefaultClientOptions(ctx).BuildArmClientOptions()
+	options := cli.createDefaultClientOptionsBuilder(ctx).BuildArmClientOptions()
 	client, err := armresources.NewDeploymentsClient(subscriptionId, cred, options)
 	if err != nil {
 		return nil, fmt.Errorf("creating deployments client: %w", err)

@@ -147,7 +147,7 @@ func (cli *azCli) createSubscriptionsClient(ctx context.Context) (*armsubscripti
 		return nil, err
 	}
 
-	options := cli.createDefaultClientOptions(ctx).BuildArmClientOptions()
+	options := cli.createDefaultClientOptionsBuilder(ctx).BuildArmClientOptions()
 	client, err := armsubscriptions.NewClient(cred, options)
 	if err != nil {
 		return nil, fmt.Errorf("creating Subscriptions client: %w", err)

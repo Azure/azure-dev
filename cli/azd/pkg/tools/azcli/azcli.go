@@ -950,7 +950,7 @@ func (cli *azCli) runAzCommandWithArgs(ctx context.Context, args exec.RunArgs) (
 	return cli.commandRunner.Run(ctx, args)
 }
 
-func (cli *azCli) createDefaultClientOptions(ctx context.Context) *azsdk.ClientOptionsBuilder {
+func (cli *azCli) createDefaultClientOptionsBuilder(ctx context.Context) *azsdk.ClientOptionsBuilder {
 	return azsdk.NewClientOptionsBuilder().
 		WithTransport(httputil.GetHttpClient(ctx)).
 		WithPolicy(azsdk.NewUserAgentPolicy(cli.UserAgent()))

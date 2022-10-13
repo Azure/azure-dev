@@ -3,7 +3,7 @@ package azcli
 import (
 	"context"
 	"fmt"
-	"os"
+	"io"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appservice/armappservice"
 	"github.com/azure/azure-dev/cli/azd/pkg/azsdk"
@@ -41,21 +41,14 @@ func (cli *azCli) DeployAppServiceZip(
 	subscriptionId string,
 	resourceGroup string,
 	appName string,
-	deployZipPath string,
+	deployZipFile io.Reader,
 ) (*string, error) {
 	client, err := cli.createZipDeployClient(ctx, subscriptionId)
 	if err != nil {
 		return nil, err
 	}
 
-	file, err := os.Open(deployZipPath)
-	if err != nil {
-		return nil, fmt.Errorf("failed reading file '%s' : %w", deployZipPath, err)
-	}
-
-	defer file.Close()
-
-	response, err := client.Deploy(ctx, appName, file)
+	response, err := client.Deploy(ctx, appName, deployZipFile)
 	if err != nil {
 		return nil, err
 	}

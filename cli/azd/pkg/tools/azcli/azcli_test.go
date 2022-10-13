@@ -6,7 +6,6 @@ package azcli
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -330,17 +329,7 @@ func Test_AzSdk_User_Agent_Policy(t *testing.T) {
 			},
 		}
 
-		responseJson, err := json.Marshal(response)
-		if err != nil {
-			return nil, err
-		}
-
-		return &http.Response{
-			StatusCode: http.StatusOK,
-			Request:    request,
-			Header:     http.Header{},
-			Body:       io.NopCloser(bytes.NewBuffer(responseJson)),
-		}, nil
+		return mocks.CreateHttpResponseWithBody(request, http.StatusOK, response)
 	})
 
 	var rawResponse *http.Response

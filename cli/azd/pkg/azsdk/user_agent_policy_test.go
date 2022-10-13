@@ -18,12 +18,7 @@ func TestOverrideUserAgent(t *testing.T) {
 	mockContext.HttpClient.When(func(request *http.Request) bool {
 		return true
 	}).RespondFn(func(request *http.Request) (*http.Response, error) {
-		return &http.Response{
-			Request:    request,
-			Header:     http.Header{},
-			StatusCode: http.StatusOK,
-			Body:       http.NoBody,
-		}, nil
+		return mocks.CreateEmptyHttpResponse(request, http.StatusOK)
 	})
 
 	clientOptions := NewClientOptionsBuilder().

@@ -4,10 +4,7 @@
 package azcli
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
-	"io"
 	"net/http"
 	"strings"
 	"testing"
@@ -25,7 +22,8 @@ func Test_GetStaticWebAppProperties(t *testing.T) {
 		ran := false
 
 		mockContext.HttpClient.When(func(request *http.Request) bool {
-			return request.Method == http.MethodGet && strings.Contains(request.URL.Path, "/providers/Microsoft.Web/staticSites/appName")
+			return request.Method == http.MethodGet &&
+				strings.Contains(request.URL.Path, "/providers/Microsoft.Web/staticSites/appName")
 		}).RespondFn(func(request *http.Request) (*http.Response, error) {
 			ran = true
 
@@ -36,14 +34,7 @@ func Test_GetStaticWebAppProperties(t *testing.T) {
 				},
 			}
 
-			responseJson, _ := json.Marshal(response)
-
-			return &http.Response{
-				StatusCode: http.StatusOK,
-				Header:     http.Header{},
-				Request:    request,
-				Body:       io.NopCloser(bytes.NewBuffer(responseJson)),
-			}, nil
+			return mocks.CreateHttpResponseWithBody(request, http.StatusOK, response)
 		})
 
 		props, err := azCli.GetStaticWebAppProperties(*mockContext.Context, "subID", "resourceGroupID", "appName")
@@ -58,16 +49,11 @@ func Test_GetStaticWebAppProperties(t *testing.T) {
 		ran := false
 
 		mockContext.HttpClient.When(func(request *http.Request) bool {
-			return request.Method == http.MethodGet && strings.Contains(request.URL.Path, "/providers/Microsoft.Web/staticSites/appName")
+			return request.Method == http.MethodGet &&
+				strings.Contains(request.URL.Path, "/providers/Microsoft.Web/staticSites/appName")
 		}).RespondFn(func(request *http.Request) (*http.Response, error) {
 			ran = true
-
-			return &http.Response{
-				StatusCode: http.StatusNotFound,
-				Header:     http.Header{},
-				Request:    request,
-				Body:       http.NoBody,
-			}, nil
+			return mocks.CreateEmptyHttpResponse(request, http.StatusNotFound)
 		})
 
 		props, err := azCli.GetStaticWebAppProperties(*mockContext.Context, "subID", "resourceGroupID", "appName")
@@ -84,7 +70,8 @@ func Test_GetStaticWebAppEnvironmentProperties(t *testing.T) {
 		ran := false
 
 		mockContext.HttpClient.When(func(request *http.Request) bool {
-			return request.Method == http.MethodGet && strings.Contains(request.URL.Path, "/providers/Microsoft.Web/staticSites/appName/builds/default")
+			return request.Method == http.MethodGet &&
+				strings.Contains(request.URL.Path, "/providers/Microsoft.Web/staticSites/appName/builds/default")
 		}).RespondFn(func(request *http.Request) (*http.Response, error) {
 			ran = true
 
@@ -97,14 +84,7 @@ func Test_GetStaticWebAppEnvironmentProperties(t *testing.T) {
 				},
 			}
 
-			responseJson, _ := json.Marshal(response)
-
-			return &http.Response{
-				StatusCode: http.StatusOK,
-				Header:     http.Header{},
-				Request:    request,
-				Body:       io.NopCloser(bytes.NewBuffer(responseJson)),
-			}, nil
+			return mocks.CreateHttpResponseWithBody(request, http.StatusOK, response)
 		})
 
 		props, err := azCli.GetStaticWebAppEnvironmentProperties(
@@ -125,16 +105,11 @@ func Test_GetStaticWebAppEnvironmentProperties(t *testing.T) {
 		ran := false
 
 		mockContext.HttpClient.When(func(request *http.Request) bool {
-			return request.Method == http.MethodGet && strings.Contains(request.URL.Path, "/providers/Microsoft.Web/staticSites/appName/builds/default")
+			return request.Method == http.MethodGet &&
+				strings.Contains(request.URL.Path, "/providers/Microsoft.Web/staticSites/appName/builds/default")
 		}).RespondFn(func(request *http.Request) (*http.Response, error) {
 			ran = true
-
-			return &http.Response{
-				StatusCode: http.StatusNotFound,
-				Header:     http.Header{},
-				Request:    request,
-				Body:       http.NoBody,
-			}, nil
+			return mocks.CreateEmptyHttpResponse(request, http.StatusNotFound)
 		})
 
 		props, err := azCli.GetStaticWebAppEnvironmentProperties(
@@ -157,7 +132,8 @@ func Test_GetStaticWebAppApiKey(t *testing.T) {
 		ran := false
 
 		mockContext.HttpClient.When(func(request *http.Request) bool {
-			return request.Method == http.MethodPost && strings.Contains(request.URL.Path, "/providers/Microsoft.Web/staticSites/appName/listSecrets")
+			return request.Method == http.MethodPost &&
+				strings.Contains(request.URL.Path, "/providers/Microsoft.Web/staticSites/appName/listSecrets")
 		}).RespondFn(func(request *http.Request) (*http.Response, error) {
 			ran = true
 
@@ -169,14 +145,7 @@ func Test_GetStaticWebAppApiKey(t *testing.T) {
 				},
 			}
 
-			responseJson, _ := json.Marshal(response)
-
-			return &http.Response{
-				StatusCode: http.StatusOK,
-				Header:     http.Header{},
-				Request:    request,
-				Body:       io.NopCloser(bytes.NewBuffer(responseJson)),
-			}, nil
+			return mocks.CreateHttpResponseWithBody(request, http.StatusOK, response)
 		})
 
 		apiKey, err := azCli.GetStaticWebAppApiKey(*mockContext.Context, "subID", "resourceGroupID", "appName")
@@ -191,16 +160,11 @@ func Test_GetStaticWebAppApiKey(t *testing.T) {
 		ran := false
 
 		mockContext.HttpClient.When(func(request *http.Request) bool {
-			return request.Method == http.MethodPost && strings.Contains(request.URL.Path, "/providers/Microsoft.Web/staticSites/appName/listSecrets")
+			return request.Method == http.MethodPost &&
+				strings.Contains(request.URL.Path, "/providers/Microsoft.Web/staticSites/appName/listSecrets")
 		}).RespondFn(func(request *http.Request) (*http.Response, error) {
 			ran = true
-
-			return &http.Response{
-				StatusCode: http.StatusNotFound,
-				Header:     http.Header{},
-				Request:    request,
-				Body:       http.NoBody,
-			}, nil
+			return mocks.CreateEmptyHttpResponse(request, http.StatusNotFound)
 		})
 
 		apiKey, err := azCli.GetStaticWebAppApiKey(*mockContext.Context, "subID", "resourceGroupID", "appName")

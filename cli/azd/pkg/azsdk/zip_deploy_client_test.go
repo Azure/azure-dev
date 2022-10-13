@@ -3,8 +3,6 @@ package azsdk
 import (
 	"bytes"
 	"context"
-	"encoding/json"
-	"io"
 	"net/http"
 	"strings"
 	"testing"
@@ -90,12 +88,7 @@ func registerConflictMocks(mockContext *mocks.MockContext) {
 	mockContext.HttpClient.When(func(request *http.Request) bool {
 		return request.Method == http.MethodPost && strings.Contains(request.URL.Path, "/api/zipdeploy")
 	}).RespondFn(func(request *http.Request) (*http.Response, error) {
-		return &http.Response{
-			StatusCode: http.StatusConflict,
-			Body:       http.NoBody,
-			Request:    request,
-			Header:     http.Header{},
-		}, nil
+		return mocks.CreateEmptyHttpResponse(request, http.StatusConflict)
 	})
 }
 
@@ -104,15 +97,10 @@ func registerDeployMocks(mockContext *mocks.MockContext) {
 	mockContext.HttpClient.When(func(request *http.Request) bool {
 		return request.Method == http.MethodPost && strings.Contains(request.URL.Path, "/api/zipdeploy")
 	}).RespondFn(func(request *http.Request) (*http.Response, error) {
-		header := http.Header{}
-		header.Set("Location", "http://myapp.scm.azurewebsites.net/deployments/latest")
+		response, _ := mocks.CreateEmptyHttpResponse(request, http.StatusAccepted)
+		response.Header.Set("Location", "http://myapp.scm.azurewebsites.net/deployments/latest")
 
-		return &http.Response{
-			StatusCode: http.StatusAccepted,
-			Body:       http.NoBody,
-			Request:    request,
-			Header:     header,
-		}, nil
+		return response, nil
 	})
 }
 func registerPollingMocks(mockContext *mocks.MockContext) {
@@ -151,22 +139,17 @@ func registerPollingMocks(mockContext *mocks.MockContext) {
 		}
 
 		var statusCode int
-		var responseJson []byte
+		var response any
 
 		if pollCount >= 3 {
 			statusCode = http.StatusOK
-			responseJson, _ = json.Marshal(completeStatus)
+			response = completeStatus
 		} else {
 			statusCode = http.StatusAccepted
-			responseJson, _ = json.Marshal(acceptedStatus)
+			response = acceptedStatus
 		}
 
-		return &http.Response{
-			StatusCode: statusCode,
-			Request:    request,
-			Header:     http.Header{},
-			Body:       io.NopCloser(bytes.NewBuffer(responseJson)),
-		}, nil
+		return mocks.CreateHttpResponseWithBody(request, statusCode, response)
 	})
 
 }
@@ -189,13 +172,6 @@ func registerPollingErrorMocks(mockContext *mocks.MockContext) {
 			},
 		}
 
-		responseJson, _ := json.Marshal(errorStatus)
-
-		return &http.Response{
-			StatusCode: http.StatusInternalServerError,
-			Request:    request,
-			Header:     http.Header{},
-			Body:       io.NopCloser(bytes.NewBuffer(responseJson)),
-		}, nil
+		return mocks.CreateHttpResponseWithBody(request, http.StatusInternalServerError, errorStatus)
 	})
 }

@@ -50,7 +50,13 @@ type showAction struct {
 	flags     showFlags
 }
 
-func newShowAction(console input.Console, formatter output.Formatter, writer io.Writer, azdCtx *azdcontext.AzdContext, flags showFlags) *showAction {
+func newShowAction(
+	console input.Console,
+	formatter output.Formatter,
+	writer io.Writer,
+	azdCtx *azdcontext.AzdContext,
+	flags showFlags,
+) *showAction {
 	return &showAction{
 		console:   console,
 		formatter: formatter,

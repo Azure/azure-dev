@@ -66,7 +66,14 @@ type infraCreateAction struct {
 	finalOutputRedirect *[]string
 }
 
-func newInfraCreateAction(f infraCreateFlags, azdCtx *azdcontext.AzdContext, azCli azcli.AzCli, console input.Console, formatter output.Formatter, writer io.Writer) *infraCreateAction {
+func newInfraCreateAction(
+	f infraCreateFlags,
+	azdCtx *azdcontext.AzdContext,
+	azCli azcli.AzCli,
+	console input.Console,
+	formatter output.Formatter,
+	writer io.Writer,
+) *infraCreateAction {
 	return &infraCreateAction{
 		flags:               f,
 		azdCtx:              azdCtx,
@@ -132,7 +139,10 @@ func (ica *infraCreateAction) Run(ctx context.Context) error {
 			}
 
 			if err := ica.formatter.Format(deployment, ica.writer, nil); err != nil {
-				return fmt.Errorf("deployment failed and the deployment result could not be displayed: %w", multierr.Combine(err, err))
+				return fmt.Errorf(
+					"deployment failed and the deployment result could not be displayed: %w",
+					multierr.Combine(err, err),
+				)
 			}
 		}
 

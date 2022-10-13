@@ -39,7 +39,11 @@ type PipelineManager struct {
 	PipelineManagerArgs
 }
 
-func NewPipelineManager(azdCtx *azdcontext.AzdContext, global *internal.GlobalCommandOptions, args PipelineManagerArgs) *PipelineManager {
+func NewPipelineManager(
+	azdCtx *azdcontext.AzdContext,
+	global *internal.GlobalCommandOptions,
+	args PipelineManagerArgs,
+) *PipelineManager {
 	return &PipelineManager{
 		AzdCtx:              azdCtx,
 		RootOptions:         global,

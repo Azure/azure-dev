@@ -44,7 +44,12 @@ type versionAction struct {
 	console   input.Console
 }
 
-func newVersionAction(flags versionFlags, formatter output.Formatter, writer io.Writer, console input.Console) *versionAction {
+func newVersionAction(
+	flags versionFlags,
+	formatter output.Formatter,
+	writer io.Writer,
+	console input.Console,
+) *versionAction {
 	return &versionAction{
 		flags:     flags,
 		formatter: formatter,

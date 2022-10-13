@@ -37,7 +37,11 @@ func newWriter(cmd *cobra.Command) io.Writer {
 	return writer
 }
 
-func newConsoleFromOptions(rootOptions *internal.GlobalCommandOptions, formatter output.Formatter, cmd *cobra.Command) input.Console {
+func newConsoleFromOptions(
+	rootOptions *internal.GlobalCommandOptions,
+	formatter output.Formatter,
+	cmd *cobra.Command,
+) input.Console {
 	isTerminal := cmd.OutOrStdout() == os.Stdout &&
 		cmd.InOrStdin() == os.Stdin && isatty.IsTerminal(os.Stdin.Fd()) &&
 		isatty.IsTerminal(os.Stdout.Fd())

@@ -49,7 +49,9 @@ This command executes the following in one step:
 	$ azd provision
 	$ azd deploy
 
-When no template is supplied, you can optionally select an Azure Developer CLI template for cloning. Otherwise, running ` + output.WithBackticks("azd up") + ` initializes the current directory so that your project is compatible with Azure Developer CLI.`,
+When no template is supplied, you can optionally select an Azure Developer CLI template for cloning. Otherwise, running ` + output.WithBackticks(
+			"azd up",
+		) + ` initializes the current directory so that your project is compatible with Azure Developer CLI.`,
 	}
 
 	uf := &upFlags{}

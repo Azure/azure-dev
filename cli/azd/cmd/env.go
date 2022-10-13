@@ -62,7 +62,13 @@ type envSetAction struct {
 	args    []string
 }
 
-func newEnvSetAction(azdCtx *azdcontext.AzdContext, azCli azcli.AzCli, console input.Console, global *internal.GlobalCommandOptions, args []string) *envSetAction {
+func newEnvSetAction(
+	azdCtx *azdcontext.AzdContext,
+	azCli azcli.AzCli,
+	console input.Console,
+	global *internal.GlobalCommandOptions,
+	args []string,
+) *envSetAction {
 	return &envSetAction{
 		azCli:   azCli,
 		console: console,
@@ -82,7 +88,12 @@ func (e *envSetAction) Run(ctx context.Context) error {
 	}
 
 	//lint:ignore SA4006 // We want ctx overridden here for future changes
-	env, ctx, err := loadOrInitEnvironment(ctx, &e.global.EnvironmentName, e.azdCtx, e.console) //nolint:ineffassign,staticcheck
+	env, ctx, err := loadOrInitEnvironment(
+		ctx,
+		&e.global.EnvironmentName,
+		e.azdCtx,
+		e.console,
+	) //nolint:ineffassign,staticcheck
 	if err != nil {
 		return fmt.Errorf("loading environment: %w", err)
 	}
@@ -200,7 +211,12 @@ type envNewFlags struct {
 }
 
 func (f *envNewFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
-	local.StringVar(&f.subscription, "subscription", "", "Name or ID of an Azure subscription to use for the new environment")
+	local.StringVar(
+		&f.subscription,
+		"subscription",
+		"",
+		"Name or ID of an Azure subscription to use for the new environment",
+	)
 	local.StringVarP(&f.location, "location", "l", "", "Azure location for the new environment")
 
 	f.global = global
@@ -224,7 +240,12 @@ type envNewAction struct {
 	console input.Console
 }
 
-func newEnvNewAction(azdCtx *azdcontext.AzdContext, azcli azcli.AzCli, flags envNewFlags, console input.Console) *envNewAction {
+func newEnvNewAction(
+	azdCtx *azdcontext.AzdContext,
+	azcli azcli.AzCli,
+	flags envNewFlags,
+	console input.Console,
+) *envNewAction {
 	return &envNewAction{
 		azdCtx:  azdCtx,
 		azCli:   azcli,
@@ -281,7 +302,14 @@ type envRefreshAction struct {
 	writer    io.Writer
 }
 
-func newEnvRefreshAction(azdCtx *azdcontext.AzdContext, azCli azcli.AzCli, global *internal.GlobalCommandOptions, console input.Console, formatter output.Formatter, writer io.Writer) *envRefreshAction {
+func newEnvRefreshAction(
+	azdCtx *azdcontext.AzdContext,
+	azCli azcli.AzCli,
+	global *internal.GlobalCommandOptions,
+	console input.Console,
+	formatter output.Formatter,
+	writer io.Writer,
+) *envRefreshAction {
 	return &envRefreshAction{
 		azdCtx:    azdCtx,
 		azCli:     azCli,
@@ -369,7 +397,14 @@ type envGetValuesAction struct {
 	global    *internal.GlobalCommandOptions
 }
 
-func newEnvGetValuesAction(azdCtx *azdcontext.AzdContext, console input.Console, formatter output.Formatter, writer io.Writer, azCli azcli.AzCli, global *internal.GlobalCommandOptions) *envGetValuesAction {
+func newEnvGetValuesAction(
+	azdCtx *azdcontext.AzdContext,
+	console input.Console,
+	formatter output.Formatter,
+	writer io.Writer,
+	azCli azcli.AzCli,
+	global *internal.GlobalCommandOptions,
+) *envGetValuesAction {
 	return &envGetValuesAction{
 		azdCtx:    azdCtx,
 		console:   console,
@@ -389,7 +424,12 @@ func (eg *envGetValuesAction) Run(ctx context.Context) error {
 	}
 
 	//lint:ignore SA4006 // We want ctx overridden here for future changes
-	env, ctx, err := loadOrInitEnvironment(ctx, &eg.global.EnvironmentName, eg.azdCtx, eg.console) //nolint:ineffassign,staticcheck
+	env, ctx, err := loadOrInitEnvironment(
+		ctx,
+		&eg.global.EnvironmentName,
+		eg.azdCtx,
+		eg.console,
+	) //nolint:ineffassign,staticcheck
 	if err != nil {
 		return err
 	}

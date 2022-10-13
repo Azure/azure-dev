@@ -20,7 +20,11 @@ import (
 
 // Create the core context for use in all Azd commands
 // Registers context values for azCli, formatter, writer, console and more.
-func RegisterDependenciesInCtx(ctx context.Context, cmd *cobra.Command, rootOptions *internal.GlobalCommandOptions) (context.Context, error) {
+func RegisterDependenciesInCtx(
+	ctx context.Context,
+	cmd *cobra.Command,
+	rootOptions *internal.GlobalCommandOptions,
+) (context.Context, error) {
 	// Set the global options in the go context
 	ctx = internal.WithCommandOptions(ctx, *rootOptions)
 	ctx = tools.WithInstalledCheckCache(ctx)

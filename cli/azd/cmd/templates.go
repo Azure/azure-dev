@@ -60,7 +60,12 @@ type templatesListAction struct {
 	templateManager *templates.TemplateManager
 }
 
-func newTemplatesListAction(flags templatesListFlags, formatter output.Formatter, writer io.Writer, templateManager *templates.TemplateManager) *templatesListAction {
+func newTemplatesListAction(
+	flags templatesListFlags,
+	formatter output.Formatter,
+	writer io.Writer,
+	templateManager *templates.TemplateManager,
+) *templatesListAction {
 	return &templatesListAction{
 		flags:           flags,
 		formatter:       formatter,
@@ -86,7 +91,12 @@ func (tl *templatesListAction) Run(ctx context.Context) error {
 
 type templatesShowAction action.Action
 
-func newTemplatesShowAction(formatter output.Formatter, writer io.Writer, templateManager *templates.TemplateManager, args []string) templatesShowAction {
+func newTemplatesShowAction(
+	formatter output.Formatter,
+	writer io.Writer,
+	templateManager *templates.TemplateManager,
+	args []string,
+) templatesShowAction {
 	return action.ActionFunc(func(ctx context.Context) error {
 		templateName := args[0]
 		matchingTemplate, err := templateManager.GetTemplate(templateName)
@@ -112,7 +122,12 @@ func templatesShowCmdDesign(rootOptions *internal.GlobalCommandOptions) (*cobra.
 	return cmd, &struct{}{}
 }
 
-func formatTemplates(ctx context.Context, formatter output.Formatter, writer io.Writer, templates ...templates.Template) error {
+func formatTemplates(
+	ctx context.Context,
+	formatter output.Formatter,
+	writer io.Writer,
+	templates ...templates.Template,
+) error {
 	var err error
 	if formatter.Kind() == output.TableFormat {
 		columns := []output.Column{

@@ -58,7 +58,13 @@ type initFlags struct {
 }
 
 func (i *initFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
-	local.StringVarP(&i.template.Name, "template", "t", "", "The template to use when you initialize the project. You can use Full URI, <owner>/<repository>, or <repository> if it's part of the azure-samples organization.")
+	local.StringVarP(
+		&i.template.Name,
+		"template",
+		"t",
+		"",
+		"The template to use when you initialize the project. You can use Full URI, <owner>/<repository>, or <repository> if it's part of the azure-samples organization.",
+	)
 	local.StringVarP(&i.templateBranch, "branch", "b", "", "The template branch to initialize from.")
 	local.StringVar(
 		&i.subscription,
@@ -147,7 +153,8 @@ func (i *initAction) Run(ctx context.Context) error {
 		}
 
 		// treat names that start with http or git as full URLs and don't change them
-		if strings.HasPrefix(i.flags.template.RepositoryPath, "git") || strings.HasPrefix(i.flags.template.RepositoryPath, "http") {
+		if strings.HasPrefix(i.flags.template.RepositoryPath, "git") ||
+			strings.HasPrefix(i.flags.template.RepositoryPath, "http") {
 			templateUrl = i.flags.template.RepositoryPath
 		} else {
 			switch strings.Count(i.flags.template.RepositoryPath, "/") {
@@ -180,7 +187,11 @@ func (i *initAction) Run(ctx context.Context) error {
 			return fmt.Errorf("fetching template: %w", err)
 		}
 
-		log.Printf("template init, checking for duplicates. source: %s target: %s", templateStagingDir, i.azdCtx.ProjectDirectory())
+		log.Printf(
+			"template init, checking for duplicates. source: %s target: %s",
+			templateStagingDir,
+			i.azdCtx.ProjectDirectory(),
+		)
 
 		// If there are any existing files in the destination that would be overwritten by files from the
 		// template, have the user confirm they would like to overwrite these files. This is a more relaxed
@@ -261,13 +272,20 @@ func (i *initAction) Run(ctx context.Context) error {
 	}
 
 	//create .azure when running azd init
-	err = os.MkdirAll(filepath.Join(i.azdCtx.ProjectDirectory(), azdcontext.EnvironmentDirectoryName), osutil.PermissionDirectory)
+	err = os.MkdirAll(
+		filepath.Join(i.azdCtx.ProjectDirectory(), azdcontext.EnvironmentDirectoryName),
+		osutil.PermissionDirectory,
+	)
 	if err != nil {
 		return fmt.Errorf("failed to create a directory: %w", err)
 	}
 
 	//create .gitignore or open existing .gitignore file, and contains .azure
-	gitignoreFile, err := os.OpenFile(filepath.Join(i.azdCtx.ProjectDirectory(), ".gitignore"), os.O_APPEND|os.O_RDWR|os.O_CREATE, osutil.PermissionFile)
+	gitignoreFile, err := os.OpenFile(
+		filepath.Join(i.azdCtx.ProjectDirectory(), ".gitignore"),
+		os.O_APPEND|os.O_RDWR|os.O_CREATE,
+		osutil.PermissionFile,
+	)
 	if err != nil {
 		return fmt.Errorf("fail to create or open .gitignore: %w", err)
 	}

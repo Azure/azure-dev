@@ -29,7 +29,12 @@ type loginFlags struct {
 
 func (lf *loginFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
 	local.BoolVar(&lf.onlyCheckStatus, "check-status", false, "Checks the log-in status instead of logging in.")
-	local.BoolVar(&lf.useDeviceCode, "use-device-code", false, "When true, log in by using a device code instead of a browser.")
+	local.BoolVar(
+		&lf.useDeviceCode,
+		"use-device-code",
+		false,
+		"When true, log in by using a device code instead of a browser.",
+	)
 	output.AddOutputFlag(
 		local,
 		&lf.outputFormat,
@@ -59,7 +64,13 @@ type loginAction struct {
 	flags     loginFlags
 }
 
-func newLoginAction(formatter output.Formatter, writer io.Writer, azcli azcli.AzCli, flags loginFlags, console input.Console) *loginAction {
+func newLoginAction(
+	formatter output.Formatter,
+	writer io.Writer,
+	azcli azcli.AzCli,
+	flags loginFlags,
+	console input.Console,
+) *loginAction {
 	return &loginAction{
 		formatter: formatter,
 		writer:    writer,

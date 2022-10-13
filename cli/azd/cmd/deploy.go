@@ -41,7 +41,12 @@ func (d *deployFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandO
 }
 
 func (d *deployFlags) bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
-	local.StringVar(&d.serviceName, "service", "", "Deploys a specific service (when the string is unspecified, all services that are listed in the "+azdcontext.ProjectFileName+" file are deployed).")
+	local.StringVar(
+		&d.serviceName,
+		"service",
+		"",
+		"Deploys a specific service (when the string is unspecified, all services that are listed in the "+azdcontext.ProjectFileName+" file are deployed).",
+	)
 
 	d.global = global
 }
@@ -77,7 +82,14 @@ type deployAction struct {
 	console   input.Console
 }
 
-func newDeployAction(flags deployFlags, azdCtx *azdcontext.AzdContext, azCli azcli.AzCli, console input.Console, formatter output.Formatter, writer io.Writer) (*deployAction, error) {
+func newDeployAction(
+	flags deployFlags,
+	azdCtx *azdcontext.AzdContext,
+	azCli azcli.AzCli,
+	console input.Console,
+	formatter output.Formatter,
+	writer io.Writer,
+) (*deployAction, error) {
 	da := &deployAction{
 		flags:     flags,
 		azdCtx:    azdCtx,

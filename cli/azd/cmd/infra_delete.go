@@ -23,7 +23,12 @@ type infraDeleteFlags struct {
 
 func (i *infraDeleteFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
 	local.BoolVar(&i.forceDelete, "force", false, "Does not require confirmation before it deletes resources.")
-	local.BoolVar(&i.purgeDelete, "purge", false, "Does not require confirmation before it permanently deletes resources that are soft-deleted by default (for example, key vaults).")
+	local.BoolVar(
+		&i.purgeDelete,
+		"purge",
+		false,
+		"Does not require confirmation before it permanently deletes resources that are soft-deleted by default (for example, key vaults).",
+	)
 	i.global = global
 }
 
@@ -46,7 +51,12 @@ type infraDeleteAction struct {
 	console input.Console
 }
 
-func newInfraDeleteAction(flags infraDeleteFlags, azdCtx *azdcontext.AzdContext, azCli azcli.AzCli, console input.Console) *infraDeleteAction {
+func newInfraDeleteAction(
+	flags infraDeleteFlags,
+	azdCtx *azdcontext.AzdContext,
+	azCli azcli.AzCli,
+	console input.Console,
+) *infraDeleteAction {
 	return &infraDeleteAction{
 		flags:   flags,
 		azdCtx:  azdCtx,

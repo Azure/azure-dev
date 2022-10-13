@@ -34,8 +34,7 @@ type AskerConsole struct {
 	handles     ConsoleHandles
 	// the writer the console was constructed with, and what we reset to when SetWriter(nil) is called.
 	defaultWriter io.Writer
-	// the current writer, may differ from handles.Stdout when SetWriter has been
-	// called.
+	// the writer which output is written to. 
 	writer    io.Writer
 	formatter output.Formatter
 }

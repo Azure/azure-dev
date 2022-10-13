@@ -78,8 +78,9 @@ testdata
 tracesdk
 tracetest
 unmarshalling
-unsets
 unsetenvs
+unsets
 utsname
 westus2
+wireinject
 yacspin

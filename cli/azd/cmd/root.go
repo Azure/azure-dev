@@ -120,7 +120,12 @@ For more information, visit the Azure Developer CLI Dev Hub: https://aka.ms/azur
 
 type designBuilder[F any] func(opts *internal.GlobalCommandOptions) (*cobra.Command, *F)
 
-type actionBuilder[F any] func(cmd *cobra.Command, o *internal.GlobalCommandOptions, flags F, args []string) (action.Action, error)
+type actionBuilder[F any] func(
+	cmd *cobra.Command,
+	o *internal.GlobalCommandOptions,
+	flags F,
+	args []string) (action.Action, error)
+
 type buildOptions struct {
 	disableTelemetry bool
 }

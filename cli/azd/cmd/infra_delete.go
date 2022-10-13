@@ -27,6 +27,7 @@ func (i *infraDeleteFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCom
 		&i.purgeDelete,
 		"purge",
 		false,
+		//nolint:lll
 		"Does not require confirmation before it permanently deletes resources that are soft-deleted by default (for example, key vaults).",
 	)
 	i.global = global

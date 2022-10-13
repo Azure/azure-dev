@@ -45,6 +45,7 @@ func (d *deployFlags) bind(local *pflag.FlagSet, global *internal.GlobalCommandO
 		&d.serviceName,
 		"service",
 		"",
+		//nolint:lll
 		"Deploys a specific service (when the string is unspecified, all services that are listed in the "+azdcontext.ProjectFileName+" file are deployed).",
 	)
 

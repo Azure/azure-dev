@@ -9,6 +9,7 @@ func provisionCmdDesign(rootOptions *internal.GlobalCommandOptions) (*cobra.Comm
 	cmd := &cobra.Command{
 		Use:   "provision",
 		Short: "Provision the Azure resources for an application.",
+		//nolint:lll
 		Long: `Provision the Azure resources for an application.
 
 The command prompts you for the following:

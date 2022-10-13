@@ -88,12 +88,12 @@ func (e *envSetAction) Run(ctx context.Context) error {
 	}
 
 	//lint:ignore SA4006 // We want ctx overridden here for future changes
-	env, ctx, err := loadOrInitEnvironment(
+	env, ctx, err := loadOrInitEnvironment( //nolint:ineffassign,staticcheck
 		ctx,
 		&e.global.EnvironmentName,
 		e.azdCtx,
 		e.console,
-	) //nolint:ineffassign,staticcheck
+	)
 	if err != nil {
 		return fmt.Errorf("loading environment: %w", err)
 	}
@@ -423,12 +423,12 @@ func (eg *envGetValuesAction) Run(ctx context.Context) error {
 	}
 
 	//lint:ignore SA4006 // We want ctx overridden here for future changes
-	env, ctx, err := loadOrInitEnvironment(
+	env, ctx, err := loadOrInitEnvironment( //nolint:ineffassign,staticcheck
 		ctx,
 		&eg.global.EnvironmentName,
 		eg.azdCtx,
 		eg.console,
-	) //nolint:ineffassign,staticcheck
+	)
 	if err != nil {
 		return err
 	}

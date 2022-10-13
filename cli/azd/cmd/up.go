@@ -41,6 +41,7 @@ func upCmdDesign(global *internal.GlobalCommandOptions) (*cobra.Command, *upFlag
 	cmd := &cobra.Command{
 		Use:   "up",
 		Short: "Initialize application, provision Azure resources, and deploy your project with a single command.",
+		//nolint:lll
 		Long: `Initialize the project (if the project folder has not been initialized or cloned from a template), provision Azure resources, and deploy your project with a single command.
 
 This command executes the following in one step:

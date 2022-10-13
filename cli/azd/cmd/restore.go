@@ -27,6 +27,7 @@ func (r *restoreFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommand
 		&r.serviceName,
 		"service",
 		"",
+		//nolint:lll
 		"Restores a specific service (when the string is unspecified, all services that are listed in the "+azdcontext.ProjectFileName+" file are restored).",
 	)
 	r.global = global
@@ -36,6 +37,7 @@ func restoreCmdDesign(global *internal.GlobalCommandOptions) (*cobra.Command, *r
 	cmd := &cobra.Command{
 		Use:   "restore",
 		Short: "Restore application dependencies.",
+		//nolint:lll
 		Long: `Restore application dependencies.
 
 Run this command to download and install all the required libraries so that you can build, run, and debug the application locally.

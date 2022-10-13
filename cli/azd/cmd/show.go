@@ -124,7 +124,9 @@ func (s *showAction) Run(ctx context.Context) error {
 			}
 		}
 	} else {
-		log.Printf("ignoring error determining resource group for environment %s, resource ids will not be available: %v", env.GetEnvName(), err)
+		log.Printf("ignoring error determining resource group for environment %s, resource ids will not be available: %v",
+			env.GetEnvName(),
+			err)
 	}
 
 	return s.formatter.Format(res, s.writer, nil)

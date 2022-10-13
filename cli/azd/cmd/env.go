@@ -227,7 +227,6 @@ func envNewCmdDesign(global *internal.GlobalCommandOptions) (*cobra.Command, *en
 		Use:   "new <environment>",
 		Short: "Create a new environment.",
 	}
-	cmd.Args = cobra.ExactArgs(1)
 	f := &envNewFlags{}
 	f.Bind(cmd.Flags(), global)
 	return cmd, f

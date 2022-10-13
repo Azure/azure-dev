@@ -25,7 +25,7 @@ func (cli *azCli) GetFunctionAppProperties(
 
 	webApp, err := client.Get(ctx, resourceGroup, appName, nil)
 	if err != nil {
-		return nil, fmt.Errorf("failed retrieving webapp properties: %w", err)
+		return nil, fmt.Errorf("failed retrieving function app properties: %w", err)
 	}
 
 	return &AzCliFunctionAppProperties{

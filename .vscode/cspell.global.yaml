@@ -20,6 +20,7 @@ ignoreWords:
     - appcs
     - appi
     - arck
+    - armappcontainers
     - armappservice
     - armkeyvault
     - armresources

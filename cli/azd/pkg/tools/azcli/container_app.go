@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appservice/armappservice"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appcontainers/armappcontainers"
 	"github.com/azure/azure-dev/cli/azd/pkg/identity"
 )
 
@@ -23,7 +23,7 @@ func (cli *azCli) GetContainerAppProperties(
 
 	containerApp, err := client.Get(ctx, resourceGroup, appName, nil)
 	if err != nil {
-		return nil, fmt.Errorf("failed retrieving webapp properties: %w", err)
+		return nil, fmt.Errorf("failed retrieving container app properties: %w", err)
 	}
 
 	return &AzCliContainerAppProperties{
@@ -34,14 +34,14 @@ func (cli *azCli) GetContainerAppProperties(
 func (cli *azCli) createContainerAppsClient(
 	ctx context.Context,
 	subscriptionId string,
-) (*armappservice.ContainerAppsClient, error) {
+) (*armappcontainers.ContainerAppsClient, error) {
 	cred, err := identity.GetCredentials(ctx)
 	if err != nil {
 		return nil, err
 	}
 
 	options := cli.createDefaultClientOptionsBuilder(ctx).BuildArmClientOptions()
-	client, err := armappservice.NewContainerAppsClient(subscriptionId, cred, options)
+	client, err := armappcontainers.NewContainerAppsClient(subscriptionId, cred, options)
 	if err != nil {
 		return nil, fmt.Errorf("creating ContainerApps client: %w", err)
 	}

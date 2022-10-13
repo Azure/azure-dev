@@ -2,8 +2,10 @@ package azsdk
 
 import (
 	"context"
+	"net/http"
 	"testing"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/stretchr/testify/require"
 )
@@ -21,19 +23,19 @@ func TestCreateArmOptions(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
 
 		userAgentPolicy := NewUserAgentPolicy("custom-user-agent")
-		apiVersionPolicy := NewApiVersionPolicy("5.0.0")
+		testPolicy := &testPolicy{}
 		transport := mockContext.HttpClient
 
 		builder := NewClientOptionsBuilder().
 			WithTransport(transport).
 			WithPolicy(userAgentPolicy).
-			WithPolicy(apiVersionPolicy)
+			WithPolicy(testPolicy)
 
 		armOptions := builder.BuildArmClientOptions()
 
 		require.Same(t, transport, armOptions.Transport)
 		require.Same(t, userAgentPolicy, armOptions.PerCallPolicies[0])
-		require.Same(t, apiVersionPolicy, armOptions.PerCallPolicies[1])
+		require.Same(t, testPolicy, armOptions.PerCallPolicies[1])
 	})
 }
 
@@ -50,18 +52,25 @@ func TestCreateCoreOptions(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
 
 		userAgentPolicy := NewUserAgentPolicy("custom-user-agent")
-		apiVersionPolicy := NewApiVersionPolicy("5.0.0")
+		testPolicy := &testPolicy{}
 		transport := mockContext.HttpClient
 
 		builder := NewClientOptionsBuilder().
 			WithTransport(transport).
 			WithPolicy(userAgentPolicy).
-			WithPolicy(apiVersionPolicy)
+			WithPolicy(testPolicy)
 
 		coreOptions := builder.BuildCoreClientOptions()
 
 		require.Same(t, transport, coreOptions.Transport)
 		require.Same(t, userAgentPolicy, coreOptions.PerCallPolicies[0])
-		require.Same(t, apiVersionPolicy, coreOptions.PerCallPolicies[1])
+		require.Same(t, testPolicy, coreOptions.PerCallPolicies[1])
 	})
+}
+
+type testPolicy struct {
+}
+
+func (p *testPolicy) Do(req *policy.Request) (*http.Response, error) {
+	return req.Next()
 }

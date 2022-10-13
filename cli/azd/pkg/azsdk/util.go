@@ -8,7 +8,7 @@ import (
 )
 
 // Reads the raw HTTP response and attempt to convert it into the specified type
-// Typically used in conjuntion with runtime.WithCaptureResponse(...) to get access to the underlying HTTP response of the
+// Typically used in conjunction with runtime.WithCaptureResponse(...) to get access to the underlying HTTP response of the
 // SDK API call.
 func ReadRawResponse[T any](response *http.Response) (*T, error) {
 	data, err := io.ReadAll(response.Body)

@@ -38,7 +38,7 @@ func (b *ClientOptionsBuilder) BuildCoreClientOptions() *azcore.ClientOptions {
 	}
 }
 
-// Builds the ARM module client options for control plan operations
+// Builds the ARM module client options for control plane operations
 // These options include the underlying transport to be used.
 func (b *ClientOptionsBuilder) BuildArmClientOptions() *arm.ClientOptions {
 	return &arm.ClientOptions{

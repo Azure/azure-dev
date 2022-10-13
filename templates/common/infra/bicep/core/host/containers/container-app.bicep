@@ -65,16 +65,6 @@ resource app 'Microsoft.App/containerApps@2022-03-01' = {
   }
 }
 
-module keyVaultAccess '../../security/keyvault-access.bicep' = if (!(empty(keyVaultName))) {
-  name: '${serviceName}-appservice-keyvault-access'
-  params: {
-    environmentName: environmentName
-    location: location
-    keyVaultName: keyVaultName
-    principalId: app.identity.principalId
-  }
-}
-
 resource containerAppsEnvironment 'Microsoft.App/managedEnvironments@2022-03-01' existing = {
   name: !empty(containerAppsEnvironmentName) ? containerAppsEnvironmentName : '${abbrs.appManagedEnvironments}${resourceToken}'
 }

@@ -96,15 +96,6 @@ module appSettingsUnion './config/appservice-config-union.bicep' = if (!empty(ap
   }
 }
 
-module keyVaultAccess '../../security/keyvault-access.bicep' = if (!(empty(keyVaultName))) {
-  name: '${serviceName}-appservice-keyvault-access'
-  params: {
-    principalId: appService.identity.principalId
-    environmentName: environmentName
-    location: location
-  }
-}
-
 resource keyVault 'Microsoft.KeyVault/vaults@2022-07-01' existing = if (!(empty(keyVaultName))) {
   name: keyVaultName
 }

@@ -31,7 +31,8 @@ func initInitAction(cmd *cobra.Command, o *internal.GlobalCommandOptions, flags 
 	if err != nil {
 		return nil, err
 	}
-	console := newConsoleFromOptions(o, formatter, cmd)
+	writer := newWriter(cmd)
+	console := newConsoleFromOptions(o, formatter, writer, cmd)
 	commandRunner := newCommandRunnerFromConsole(console)
 	azCli := newAzCliFromOptions(o, commandRunner)
 	gitCli := git.NewGitCliFromRunner(commandRunner)
@@ -51,10 +52,10 @@ func initInfraCreateAction(cmd *cobra.Command, o *internal.GlobalCommandOptions,
 	if err != nil {
 		return nil, err
 	}
-	console := newConsoleFromOptions(o, formatter, cmd)
+	writer := newWriter(cmd)
+	console := newConsoleFromOptions(o, formatter, writer, cmd)
 	commandRunner := newCommandRunnerFromConsole(console)
 	azCli := newAzCliFromOptions(o, commandRunner)
-	writer := newWriter(cmd)
 	cmdInfraCreateAction := newInfraCreateAction(flags, azdContext, azCli, console, formatter, writer)
 	return cmdInfraCreateAction, nil
 }
@@ -68,10 +69,10 @@ func initDeployAction(cmd *cobra.Command, o *internal.GlobalCommandOptions, flag
 	if err != nil {
 		return nil, err
 	}
-	console := newConsoleFromOptions(o, formatter, cmd)
+	writer := newWriter(cmd)
+	console := newConsoleFromOptions(o, formatter, writer, cmd)
 	commandRunner := newCommandRunnerFromConsole(console)
 	azCli := newAzCliFromOptions(o, commandRunner)
-	writer := newWriter(cmd)
 	cmdDeployAction, err := newDeployAction(flags, azdContext, azCli, console, formatter, writer)
 	if err != nil {
 		return nil, err
@@ -88,7 +89,8 @@ func initUpAction(cmd *cobra.Command, o *internal.GlobalCommandOptions, flags up
 	if err != nil {
 		return nil, err
 	}
-	console := newConsoleFromOptions(o, formatter, cmd)
+	writer := newWriter(cmd)
+	console := newConsoleFromOptions(o, formatter, writer, cmd)
 	commandRunner := newCommandRunnerFromConsole(console)
 	azCli := newAzCliFromOptions(o, commandRunner)
 	gitCli := git.NewGitCliFromRunner(commandRunner)
@@ -98,7 +100,6 @@ func initUpAction(cmd *cobra.Command, o *internal.GlobalCommandOptions, flags up
 		return nil, err
 	}
 	cmdInfraCreateFlags := flags.infraCreateFlags
-	writer := newWriter(cmd)
 	cmdInfraCreateAction := newInfraCreateAction(cmdInfraCreateFlags, azdContext, azCli, console, formatter, writer)
 	cmdDeployFlags := flags.deployFlags
 	cmdDeployAction, err := newDeployAction(cmdDeployFlags, azdContext, azCli, console, formatter, writer)
@@ -118,7 +119,8 @@ func initInfraDeleteAction(cmd *cobra.Command, o *internal.GlobalCommandOptions,
 	if err != nil {
 		return nil, err
 	}
-	console := newConsoleFromOptions(o, formatter, cmd)
+	writer := newWriter(cmd)
+	console := newConsoleFromOptions(o, formatter, writer, cmd)
 	commandRunner := newCommandRunnerFromConsole(console)
 	azCli := newAzCliFromOptions(o, commandRunner)
 	cmdInfraDeleteAction := newInfraDeleteAction(flags, azdContext, azCli, console)
@@ -134,7 +136,8 @@ func initEnvSetAction(cmd *cobra.Command, o *internal.GlobalCommandOptions, flag
 	if err != nil {
 		return nil, err
 	}
-	console := newConsoleFromOptions(o, formatter, cmd)
+	writer := newWriter(cmd)
+	console := newConsoleFromOptions(o, formatter, writer, cmd)
 	commandRunner := newCommandRunnerFromConsole(console)
 	azCli := newAzCliFromOptions(o, commandRunner)
 	cmdEnvSetAction := newEnvSetAction(azdContext, azCli, console, o, args)
@@ -173,7 +176,8 @@ func initEnvNewAction(cmd *cobra.Command, o *internal.GlobalCommandOptions, flag
 	if err != nil {
 		return nil, err
 	}
-	console := newConsoleFromOptions(o, formatter, cmd)
+	writer := newWriter(cmd)
+	console := newConsoleFromOptions(o, formatter, writer, cmd)
 	commandRunner := newCommandRunnerFromConsole(console)
 	azCli := newAzCliFromOptions(o, commandRunner)
 	cmdEnvNewAction := newEnvNewAction(azdContext, azCli, flags, console)
@@ -189,10 +193,10 @@ func initEnvRefreshAction(cmd *cobra.Command, o *internal.GlobalCommandOptions, 
 	if err != nil {
 		return nil, err
 	}
-	console := newConsoleFromOptions(o, formatter, cmd)
+	writer := newWriter(cmd)
+	console := newConsoleFromOptions(o, formatter, writer, cmd)
 	commandRunner := newCommandRunnerFromConsole(console)
 	azCli := newAzCliFromOptions(o, commandRunner)
-	writer := newWriter(cmd)
 	cmdEnvRefreshAction := newEnvRefreshAction(azdContext, azCli, o, console, formatter, writer)
 	return cmdEnvRefreshAction, nil
 }
@@ -206,8 +210,8 @@ func initEnvGetValuesAction(cmd *cobra.Command, o *internal.GlobalCommandOptions
 	if err != nil {
 		return nil, err
 	}
-	console := newConsoleFromOptions(o, formatter, cmd)
 	writer := newWriter(cmd)
+	console := newConsoleFromOptions(o, formatter, writer, cmd)
 	commandRunner := newCommandRunnerFromConsole(console)
 	azCli := newAzCliFromOptions(o, commandRunner)
 	cmdEnvGetValuesAction := newEnvGetValuesAction(azdContext, console, formatter, writer, azCli, o)
@@ -220,7 +224,7 @@ func initLoginAction(cmd *cobra.Command, o *internal.GlobalCommandOptions, flags
 		return nil, err
 	}
 	writer := newWriter(cmd)
-	console := newConsoleFromOptions(o, formatter, cmd)
+	console := newConsoleFromOptions(o, formatter, writer, cmd)
 	commandRunner := newCommandRunnerFromConsole(console)
 	azCli := newAzCliFromOptions(o, commandRunner)
 	cmdLoginAction := newLoginAction(formatter, writer, azCli, flags, console)
@@ -236,7 +240,8 @@ func initMonitorAction(cmd *cobra.Command, o *internal.GlobalCommandOptions, fla
 	if err != nil {
 		return nil, err
 	}
-	console := newConsoleFromOptions(o, formatter, cmd)
+	writer := newWriter(cmd)
+	console := newConsoleFromOptions(o, formatter, writer, cmd)
 	commandRunner := newCommandRunnerFromConsole(console)
 	azCli := newAzCliFromOptions(o, commandRunner)
 	cmdMonitorAction := newMonitorAction(azdContext, azCli, console, flags)
@@ -252,7 +257,8 @@ func initPipelineConfigAction(cmd *cobra.Command, o *internal.GlobalCommandOptio
 	if err != nil {
 		return nil, err
 	}
-	console := newConsoleFromOptions(o, formatter, cmd)
+	writer := newWriter(cmd)
+	console := newConsoleFromOptions(o, formatter, writer, cmd)
 	cmdPipelineConfigAction := newPipelineConfigAction(azdContext, console, flags)
 	return cmdPipelineConfigAction, nil
 }
@@ -262,7 +268,8 @@ func initRestoreAction(cmd *cobra.Command, o *internal.GlobalCommandOptions, fla
 	if err != nil {
 		return nil, err
 	}
-	console := newConsoleFromOptions(o, formatter, cmd)
+	writer := newWriter(cmd)
+	console := newConsoleFromOptions(o, formatter, writer, cmd)
 	azdContext, err := newAzdContext()
 	if err != nil {
 		return nil, err
@@ -276,8 +283,8 @@ func initShowAction(cmd *cobra.Command, o *internal.GlobalCommandOptions, flags 
 	if err != nil {
 		return nil, err
 	}
-	console := newConsoleFromOptions(o, formatter, cmd)
 	writer := newWriter(cmd)
+	console := newConsoleFromOptions(o, formatter, writer, cmd)
 	azdContext, err := newAzdContext()
 	if err != nil {
 		return nil, err
@@ -314,7 +321,7 @@ func initVersionAction(cmd *cobra.Command, o *internal.GlobalCommandOptions, fla
 		return nil, err
 	}
 	writer := newWriter(cmd)
-	console := newConsoleFromOptions(o, formatter, cmd)
+	console := newConsoleFromOptions(o, formatter, writer, cmd)
 	cmdVersionAction := newVersionAction(flags, formatter, writer, console)
 	return cmdVersionAction, nil
 }

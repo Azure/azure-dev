@@ -40,7 +40,8 @@ var nonNullEnvVarRules = []struct {
 	// AWS CodeBuild - https://docs.aws.amazon.com/codebuild/latest/userguide/build-env-ref-env-vars.html
 	{"CODEBUILD_BUILD_ID", fields.EnvAwsCodeBuild},
 	//nolint:lll
-	// Jenkins-https://github.com/jenkinsci/jenkins/blob/master/core/src/main/resources/jenkins/model/CoreEnvironmentContributor/buildEnv.groovy
+	// Jenkins -
+	// https://github.com/jenkinsci/jenkins/blob/master/core/src/main/resources/jenkins/model/CoreEnvironmentContributor/buildEnv.groovy
 	{"JENKINS_URL", fields.EnvJenkins},
 	//nolint:lll
 	// TeamCity - https://www.jetbrains.com/help/teamcity/predefined-build-parameters.html#Predefined+Server+Build+Parameters

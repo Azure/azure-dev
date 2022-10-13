@@ -144,7 +144,8 @@ func BuildCmd[F any](
 			return err
 		}
 
-		// TODO: Is this needed? SHIM to maintain backwards compatibility
+		// shim to use context to maintain backwards compatibility
+		// to be removed long term
 		ctx := context.Background()
 		ctx, err = commands.RegisterDependenciesInCtx(ctx, cmd, opts)
 		if err != nil {

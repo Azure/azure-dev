@@ -9,7 +9,7 @@ import (
 	"io"
 	"log"
 
-	"github.com/azure/azure-dev/cli/azd/cmd/action"
+	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/templates"
@@ -89,7 +89,7 @@ func (tl *templatesListAction) Run(ctx context.Context) error {
 	return formatTemplates(ctx, tl.formatter, tl.writer, templateList...)
 }
 
-type templatesShowAction action.Action
+type templatesShowAction actions.Action
 
 func newTemplatesShowAction(
 	formatter output.Formatter,
@@ -97,7 +97,7 @@ func newTemplatesShowAction(
 	templateManager *templates.TemplateManager,
 	args []string,
 ) templatesShowAction {
-	return action.ActionFunc(func(ctx context.Context) error {
+	return actions.ActionFunc(func(ctx context.Context) error {
 		templateName := args[0]
 		matchingTemplate, err := templateManager.GetTemplate(templateName)
 

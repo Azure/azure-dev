@@ -79,7 +79,7 @@ func RegisterDependenciesInCtx(
 		isatty.IsTerminal(os.Stdout.Fd())
 	console := input.NewConsole(!rootOptions.NoPrompt, isTerminal, writer, input.ConsoleHandles{
 		Stdin:  cmd.InOrStdin(),
-		Stdout: writer,
+		Stdout: cmd.OutOrStdout(),
 		Stderr: cmd.ErrOrStderr(),
 	}, formatter)
 	ctx = input.WithConsole(ctx, console)

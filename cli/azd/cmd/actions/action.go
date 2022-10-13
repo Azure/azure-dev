@@ -1,5 +1,5 @@
-// Package action provides the general interface for the application logic for azd CLI commands.
-package action
+// Package actions contains the application logic that handles azd CLI commands.
+package actions
 
 import (
 	"context"

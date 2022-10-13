@@ -7,7 +7,7 @@
 package cmd
 
 import (
-	"github.com/azure/azure-dev/cli/azd/cmd/action"
+	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/templates"
@@ -22,7 +22,27 @@ import (
 
 // Injectors from wire.go:
 
-func initInitAction(cmd *cobra.Command, o *internal.GlobalCommandOptions, flags initFlags, args []string) (action.Action, error) {
+func initDeployAction(cmd *cobra.Command, o *internal.GlobalCommandOptions, flags deployFlags, args []string) (actions.Action, error) {
+	azdContext, err := newAzdContext()
+	if err != nil {
+		return nil, err
+	}
+	formatter, err := output.GetCommandFormatter(cmd)
+	if err != nil {
+		return nil, err
+	}
+	writer := newWriter(cmd)
+	console := newConsoleFromOptions(o, formatter, writer, cmd)
+	commandRunner := newCommandRunnerFromConsole(console)
+	azCli := newAzCliFromOptions(o, commandRunner)
+	cmdDeployAction, err := newDeployAction(flags, azdContext, azCli, console, formatter, writer)
+	if err != nil {
+		return nil, err
+	}
+	return cmdDeployAction, nil
+}
+
+func initInitAction(cmd *cobra.Command, o *internal.GlobalCommandOptions, flags initFlags, args []string) (actions.Action, error) {
 	azdContext, err := newAzdContext()
 	if err != nil {
 		return nil, err
@@ -43,11 +63,7 @@ func initInitAction(cmd *cobra.Command, o *internal.GlobalCommandOptions, flags 
 	return cmdInitAction, nil
 }
 
-func initInfraCreateAction(cmd *cobra.Command, o *internal.GlobalCommandOptions, flags infraCreateFlags, args []string) (action.Action, error) {
-	azdContext, err := newAzdContext()
-	if err != nil {
-		return nil, err
-	}
+func initLoginAction(cmd *cobra.Command, o *internal.GlobalCommandOptions, flags loginFlags, args []string) (actions.Action, error) {
 	formatter, err := output.GetCommandFormatter(cmd)
 	if err != nil {
 		return nil, err
@@ -56,31 +72,11 @@ func initInfraCreateAction(cmd *cobra.Command, o *internal.GlobalCommandOptions,
 	console := newConsoleFromOptions(o, formatter, writer, cmd)
 	commandRunner := newCommandRunnerFromConsole(console)
 	azCli := newAzCliFromOptions(o, commandRunner)
-	cmdInfraCreateAction := newInfraCreateAction(flags, azdContext, azCli, console, formatter, writer)
-	return cmdInfraCreateAction, nil
+	cmdLoginAction := newLoginAction(formatter, writer, azCli, flags, console)
+	return cmdLoginAction, nil
 }
 
-func initDeployAction(cmd *cobra.Command, o *internal.GlobalCommandOptions, flags deployFlags, args []string) (action.Action, error) {
-	azdContext, err := newAzdContext()
-	if err != nil {
-		return nil, err
-	}
-	formatter, err := output.GetCommandFormatter(cmd)
-	if err != nil {
-		return nil, err
-	}
-	writer := newWriter(cmd)
-	console := newConsoleFromOptions(o, formatter, writer, cmd)
-	commandRunner := newCommandRunnerFromConsole(console)
-	azCli := newAzCliFromOptions(o, commandRunner)
-	cmdDeployAction, err := newDeployAction(flags, azdContext, azCli, console, formatter, writer)
-	if err != nil {
-		return nil, err
-	}
-	return cmdDeployAction, nil
-}
-
-func initUpAction(cmd *cobra.Command, o *internal.GlobalCommandOptions, flags upFlags, args []string) (action.Action, error) {
+func initUpAction(cmd *cobra.Command, o *internal.GlobalCommandOptions, flags upFlags, args []string) (actions.Action, error) {
 	azdContext, err := newAzdContext()
 	if err != nil {
 		return nil, err
@@ -110,128 +106,7 @@ func initUpAction(cmd *cobra.Command, o *internal.GlobalCommandOptions, flags up
 	return cmdUpAction, nil
 }
 
-func initInfraDeleteAction(cmd *cobra.Command, o *internal.GlobalCommandOptions, flags infraDeleteFlags, args []string) (action.Action, error) {
-	azdContext, err := newAzdContext()
-	if err != nil {
-		return nil, err
-	}
-	formatter, err := output.GetCommandFormatter(cmd)
-	if err != nil {
-		return nil, err
-	}
-	writer := newWriter(cmd)
-	console := newConsoleFromOptions(o, formatter, writer, cmd)
-	commandRunner := newCommandRunnerFromConsole(console)
-	azCli := newAzCliFromOptions(o, commandRunner)
-	cmdInfraDeleteAction := newInfraDeleteAction(flags, azdContext, azCli, console)
-	return cmdInfraDeleteAction, nil
-}
-
-func initEnvSetAction(cmd *cobra.Command, o *internal.GlobalCommandOptions, flags struct{}, args []string) (action.Action, error) {
-	azdContext, err := newAzdContext()
-	if err != nil {
-		return nil, err
-	}
-	formatter, err := output.GetCommandFormatter(cmd)
-	if err != nil {
-		return nil, err
-	}
-	writer := newWriter(cmd)
-	console := newConsoleFromOptions(o, formatter, writer, cmd)
-	commandRunner := newCommandRunnerFromConsole(console)
-	azCli := newAzCliFromOptions(o, commandRunner)
-	cmdEnvSetAction := newEnvSetAction(azdContext, azCli, console, o, args)
-	return cmdEnvSetAction, nil
-}
-
-func initEnvSelectAction(cmd *cobra.Command, o *internal.GlobalCommandOptions, flags struct{}, args []string) (action.Action, error) {
-	azdContext, err := newAzdContext()
-	if err != nil {
-		return nil, err
-	}
-	cmdEnvSelectAction := newEnvSelectAction(azdContext, args)
-	return cmdEnvSelectAction, nil
-}
-
-func initEnvListAction(cmd *cobra.Command, o *internal.GlobalCommandOptions, flags struct{}, args []string) (action.Action, error) {
-	azdContext, err := newAzdContext()
-	if err != nil {
-		return nil, err
-	}
-	formatter, err := output.GetCommandFormatter(cmd)
-	if err != nil {
-		return nil, err
-	}
-	writer := newWriter(cmd)
-	cmdEnvListAction := newEnvListAction(azdContext, formatter, writer)
-	return cmdEnvListAction, nil
-}
-
-func initEnvNewAction(cmd *cobra.Command, o *internal.GlobalCommandOptions, flags envNewFlags, args []string) (action.Action, error) {
-	azdContext, err := newAzdContext()
-	if err != nil {
-		return nil, err
-	}
-	formatter, err := output.GetCommandFormatter(cmd)
-	if err != nil {
-		return nil, err
-	}
-	writer := newWriter(cmd)
-	console := newConsoleFromOptions(o, formatter, writer, cmd)
-	commandRunner := newCommandRunnerFromConsole(console)
-	azCli := newAzCliFromOptions(o, commandRunner)
-	cmdEnvNewAction := newEnvNewAction(azdContext, azCli, flags, console)
-	return cmdEnvNewAction, nil
-}
-
-func initEnvRefreshAction(cmd *cobra.Command, o *internal.GlobalCommandOptions, flags struct{}, args []string) (action.Action, error) {
-	azdContext, err := newAzdContext()
-	if err != nil {
-		return nil, err
-	}
-	formatter, err := output.GetCommandFormatter(cmd)
-	if err != nil {
-		return nil, err
-	}
-	writer := newWriter(cmd)
-	console := newConsoleFromOptions(o, formatter, writer, cmd)
-	commandRunner := newCommandRunnerFromConsole(console)
-	azCli := newAzCliFromOptions(o, commandRunner)
-	cmdEnvRefreshAction := newEnvRefreshAction(azdContext, azCli, o, console, formatter, writer)
-	return cmdEnvRefreshAction, nil
-}
-
-func initEnvGetValuesAction(cmd *cobra.Command, o *internal.GlobalCommandOptions, flags struct{}, args []string) (action.Action, error) {
-	azdContext, err := newAzdContext()
-	if err != nil {
-		return nil, err
-	}
-	formatter, err := output.GetCommandFormatter(cmd)
-	if err != nil {
-		return nil, err
-	}
-	writer := newWriter(cmd)
-	console := newConsoleFromOptions(o, formatter, writer, cmd)
-	commandRunner := newCommandRunnerFromConsole(console)
-	azCli := newAzCliFromOptions(o, commandRunner)
-	cmdEnvGetValuesAction := newEnvGetValuesAction(azdContext, console, formatter, writer, azCli, o)
-	return cmdEnvGetValuesAction, nil
-}
-
-func initLoginAction(cmd *cobra.Command, o *internal.GlobalCommandOptions, flags loginFlags, args []string) (action.Action, error) {
-	formatter, err := output.GetCommandFormatter(cmd)
-	if err != nil {
-		return nil, err
-	}
-	writer := newWriter(cmd)
-	console := newConsoleFromOptions(o, formatter, writer, cmd)
-	commandRunner := newCommandRunnerFromConsole(console)
-	azCli := newAzCliFromOptions(o, commandRunner)
-	cmdLoginAction := newLoginAction(formatter, writer, azCli, flags, console)
-	return cmdLoginAction, nil
-}
-
-func initMonitorAction(cmd *cobra.Command, o *internal.GlobalCommandOptions, flags monitorFlags, args []string) (action.Action, error) {
+func initMonitorAction(cmd *cobra.Command, o *internal.GlobalCommandOptions, flags monitorFlags, args []string) (actions.Action, error) {
 	azdContext, err := newAzdContext()
 	if err != nil {
 		return nil, err
@@ -248,22 +123,7 @@ func initMonitorAction(cmd *cobra.Command, o *internal.GlobalCommandOptions, fla
 	return cmdMonitorAction, nil
 }
 
-func initPipelineConfigAction(cmd *cobra.Command, o *internal.GlobalCommandOptions, flags pipelineConfigFlags, args []string) (action.Action, error) {
-	azdContext, err := newAzdContext()
-	if err != nil {
-		return nil, err
-	}
-	formatter, err := output.GetCommandFormatter(cmd)
-	if err != nil {
-		return nil, err
-	}
-	writer := newWriter(cmd)
-	console := newConsoleFromOptions(o, formatter, writer, cmd)
-	cmdPipelineConfigAction := newPipelineConfigAction(azdContext, console, flags)
-	return cmdPipelineConfigAction, nil
-}
-
-func initRestoreAction(cmd *cobra.Command, o *internal.GlobalCommandOptions, flags restoreFlags, args []string) (action.Action, error) {
+func initRestoreAction(cmd *cobra.Command, o *internal.GlobalCommandOptions, flags restoreFlags, args []string) (actions.Action, error) {
 	formatter, err := output.GetCommandFormatter(cmd)
 	if err != nil {
 		return nil, err
@@ -278,7 +138,7 @@ func initRestoreAction(cmd *cobra.Command, o *internal.GlobalCommandOptions, fla
 	return cmdRestoreAction, nil
 }
 
-func initShowAction(cmd *cobra.Command, o *internal.GlobalCommandOptions, flags showFlags, args []string) (action.Action, error) {
+func initShowAction(cmd *cobra.Command, o *internal.GlobalCommandOptions, flags showFlags, args []string) (actions.Action, error) {
 	formatter, err := output.GetCommandFormatter(cmd)
 	if err != nil {
 		return nil, err
@@ -293,7 +153,158 @@ func initShowAction(cmd *cobra.Command, o *internal.GlobalCommandOptions, flags 
 	return cmdShowAction, nil
 }
 
-func initTemplatesListAction(cmd *cobra.Command, o *internal.GlobalCommandOptions, flags templatesListFlags, args []string) (action.Action, error) {
+func initVersionAction(cmd *cobra.Command, o *internal.GlobalCommandOptions, flags versionFlags, args []string) (actions.Action, error) {
+	formatter, err := output.GetCommandFormatter(cmd)
+	if err != nil {
+		return nil, err
+	}
+	writer := newWriter(cmd)
+	console := newConsoleFromOptions(o, formatter, writer, cmd)
+	cmdVersionAction := newVersionAction(flags, formatter, writer, console)
+	return cmdVersionAction, nil
+}
+
+func initInfraCreateAction(cmd *cobra.Command, o *internal.GlobalCommandOptions, flags infraCreateFlags, args []string) (actions.Action, error) {
+	azdContext, err := newAzdContext()
+	if err != nil {
+		return nil, err
+	}
+	formatter, err := output.GetCommandFormatter(cmd)
+	if err != nil {
+		return nil, err
+	}
+	writer := newWriter(cmd)
+	console := newConsoleFromOptions(o, formatter, writer, cmd)
+	commandRunner := newCommandRunnerFromConsole(console)
+	azCli := newAzCliFromOptions(o, commandRunner)
+	cmdInfraCreateAction := newInfraCreateAction(flags, azdContext, azCli, console, formatter, writer)
+	return cmdInfraCreateAction, nil
+}
+
+func initInfraDeleteAction(cmd *cobra.Command, o *internal.GlobalCommandOptions, flags infraDeleteFlags, args []string) (actions.Action, error) {
+	azdContext, err := newAzdContext()
+	if err != nil {
+		return nil, err
+	}
+	formatter, err := output.GetCommandFormatter(cmd)
+	if err != nil {
+		return nil, err
+	}
+	writer := newWriter(cmd)
+	console := newConsoleFromOptions(o, formatter, writer, cmd)
+	commandRunner := newCommandRunnerFromConsole(console)
+	azCli := newAzCliFromOptions(o, commandRunner)
+	cmdInfraDeleteAction := newInfraDeleteAction(flags, azdContext, azCli, console)
+	return cmdInfraDeleteAction, nil
+}
+
+func initEnvSetAction(cmd *cobra.Command, o *internal.GlobalCommandOptions, flags struct{}, args []string) (actions.Action, error) {
+	azdContext, err := newAzdContext()
+	if err != nil {
+		return nil, err
+	}
+	formatter, err := output.GetCommandFormatter(cmd)
+	if err != nil {
+		return nil, err
+	}
+	writer := newWriter(cmd)
+	console := newConsoleFromOptions(o, formatter, writer, cmd)
+	commandRunner := newCommandRunnerFromConsole(console)
+	azCli := newAzCliFromOptions(o, commandRunner)
+	cmdEnvSetAction := newEnvSetAction(azdContext, azCli, console, o, args)
+	return cmdEnvSetAction, nil
+}
+
+func initEnvSelectAction(cmd *cobra.Command, o *internal.GlobalCommandOptions, flags struct{}, args []string) (actions.Action, error) {
+	azdContext, err := newAzdContext()
+	if err != nil {
+		return nil, err
+	}
+	cmdEnvSelectAction := newEnvSelectAction(azdContext, args)
+	return cmdEnvSelectAction, nil
+}
+
+func initEnvListAction(cmd *cobra.Command, o *internal.GlobalCommandOptions, flags struct{}, args []string) (actions.Action, error) {
+	azdContext, err := newAzdContext()
+	if err != nil {
+		return nil, err
+	}
+	formatter, err := output.GetCommandFormatter(cmd)
+	if err != nil {
+		return nil, err
+	}
+	writer := newWriter(cmd)
+	cmdEnvListAction := newEnvListAction(azdContext, formatter, writer)
+	return cmdEnvListAction, nil
+}
+
+func initEnvNewAction(cmd *cobra.Command, o *internal.GlobalCommandOptions, flags envNewFlags, args []string) (actions.Action, error) {
+	azdContext, err := newAzdContext()
+	if err != nil {
+		return nil, err
+	}
+	formatter, err := output.GetCommandFormatter(cmd)
+	if err != nil {
+		return nil, err
+	}
+	writer := newWriter(cmd)
+	console := newConsoleFromOptions(o, formatter, writer, cmd)
+	commandRunner := newCommandRunnerFromConsole(console)
+	azCli := newAzCliFromOptions(o, commandRunner)
+	cmdEnvNewAction := newEnvNewAction(azdContext, azCli, flags, console)
+	return cmdEnvNewAction, nil
+}
+
+func initEnvRefreshAction(cmd *cobra.Command, o *internal.GlobalCommandOptions, flags struct{}, args []string) (actions.Action, error) {
+	azdContext, err := newAzdContext()
+	if err != nil {
+		return nil, err
+	}
+	formatter, err := output.GetCommandFormatter(cmd)
+	if err != nil {
+		return nil, err
+	}
+	writer := newWriter(cmd)
+	console := newConsoleFromOptions(o, formatter, writer, cmd)
+	commandRunner := newCommandRunnerFromConsole(console)
+	azCli := newAzCliFromOptions(o, commandRunner)
+	cmdEnvRefreshAction := newEnvRefreshAction(azdContext, azCli, o, console, formatter, writer)
+	return cmdEnvRefreshAction, nil
+}
+
+func initEnvGetValuesAction(cmd *cobra.Command, o *internal.GlobalCommandOptions, flags struct{}, args []string) (actions.Action, error) {
+	azdContext, err := newAzdContext()
+	if err != nil {
+		return nil, err
+	}
+	formatter, err := output.GetCommandFormatter(cmd)
+	if err != nil {
+		return nil, err
+	}
+	writer := newWriter(cmd)
+	console := newConsoleFromOptions(o, formatter, writer, cmd)
+	commandRunner := newCommandRunnerFromConsole(console)
+	azCli := newAzCliFromOptions(o, commandRunner)
+	cmdEnvGetValuesAction := newEnvGetValuesAction(azdContext, console, formatter, writer, azCli, o)
+	return cmdEnvGetValuesAction, nil
+}
+
+func initPipelineConfigAction(cmd *cobra.Command, o *internal.GlobalCommandOptions, flags pipelineConfigFlags, args []string) (actions.Action, error) {
+	azdContext, err := newAzdContext()
+	if err != nil {
+		return nil, err
+	}
+	formatter, err := output.GetCommandFormatter(cmd)
+	if err != nil {
+		return nil, err
+	}
+	writer := newWriter(cmd)
+	console := newConsoleFromOptions(o, formatter, writer, cmd)
+	cmdPipelineConfigAction := newPipelineConfigAction(azdContext, console, flags)
+	return cmdPipelineConfigAction, nil
+}
+
+func initTemplatesListAction(cmd *cobra.Command, o *internal.GlobalCommandOptions, flags templatesListFlags, args []string) (actions.Action, error) {
 	formatter, err := output.GetCommandFormatter(cmd)
 	if err != nil {
 		return nil, err
@@ -304,7 +315,7 @@ func initTemplatesListAction(cmd *cobra.Command, o *internal.GlobalCommandOption
 	return cmdTemplatesListAction, nil
 }
 
-func initTemplatesShowAction(cmd *cobra.Command, o *internal.GlobalCommandOptions, flags struct{}, args []string) (action.Action, error) {
+func initTemplatesShowAction(cmd *cobra.Command, o *internal.GlobalCommandOptions, flags struct{}, args []string) (actions.Action, error) {
 	formatter, err := output.GetCommandFormatter(cmd)
 	if err != nil {
 		return nil, err
@@ -313,15 +324,4 @@ func initTemplatesShowAction(cmd *cobra.Command, o *internal.GlobalCommandOption
 	templateManager := templates.NewTemplateManager()
 	cmdTemplatesShowAction := newTemplatesShowAction(formatter, writer, templateManager, args)
 	return cmdTemplatesShowAction, nil
-}
-
-func initVersionAction(cmd *cobra.Command, o *internal.GlobalCommandOptions, flags versionFlags, args []string) (action.Action, error) {
-	formatter, err := output.GetCommandFormatter(cmd)
-	if err != nil {
-		return nil, err
-	}
-	writer := newWriter(cmd)
-	console := newConsoleFromOptions(o, formatter, writer, cmd)
-	cmdVersionAction := newVersionAction(flags, formatter, writer, console)
-	return cmdVersionAction, nil
 }

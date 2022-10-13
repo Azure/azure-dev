@@ -8,11 +8,11 @@ import (
 	"fmt"
 	"os"
 
-	// Importing for plugin registrations
+	"github.com/azure/azure-dev/cli/azd/cmd/actions"
+	// Importing for infrastructure provider plugin registrations
 	_ "github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning/bicep"
 	_ "github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning/terraform"
 
-	"github.com/azure/azure-dev/cli/azd/cmd/action"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/telemetry"
 	"github.com/azure/azure-dev/cli/azd/internal/telemetry/events"
@@ -124,7 +124,7 @@ type actionBuilder[F any] func(
 	cmd *cobra.Command,
 	o *internal.GlobalCommandOptions,
 	flags F,
-	args []string) (action.Action, error)
+	args []string) (actions.Action, error)
 
 type buildOptions struct {
 	disableTelemetry bool

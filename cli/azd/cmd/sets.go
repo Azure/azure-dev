@@ -5,7 +5,7 @@ import (
 	"io"
 	"os"
 
-	"github.com/azure/azure-dev/cli/azd/cmd/action"
+	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
@@ -97,25 +97,25 @@ var InitCmdSet = wire.NewSet(
 	newAzCliFromOptions,
 	git.NewGitCliFromRunner,
 	newInitAction,
-	wire.Bind(new(action.Action), new(*initAction)))
+	wire.Bind(new(actions.Action), new(*initAction)))
 
 var InfraCreateCmdSet = wire.NewSet(
 	CommonSet,
 	newAzCliFromOptions,
 	newInfraCreateAction,
-	wire.Bind(new(action.Action), new(*infraCreateAction)))
+	wire.Bind(new(actions.Action), new(*infraCreateAction)))
 
 var InfraDeleteCmdSet = wire.NewSet(
 	CommonSet,
 	newAzCliFromOptions,
 	newInfraDeleteAction,
-	wire.Bind(new(action.Action), new(*infraDeleteAction)))
+	wire.Bind(new(actions.Action), new(*infraDeleteAction)))
 
 var DeployCmdSet = wire.NewSet(
 	CommonSet,
 	newAzCliFromOptions,
 	newDeployAction,
-	wire.Bind(new(action.Action), new(*deployAction)))
+	wire.Bind(new(actions.Action), new(*deployAction)))
 
 var UpCmdSet = wire.NewSet(
 	CommonSet,
@@ -126,83 +126,83 @@ var UpCmdSet = wire.NewSet(
 	newDeployAction,
 	newUpAction,
 	wire.FieldsOf(new(upFlags), "initFlags", "infraCreateFlags", "deployFlags"),
-	wire.Bind(new(action.Action), new(*upAction)))
+	wire.Bind(new(actions.Action), new(*upAction)))
 
 var EnvSetCmdSet = wire.NewSet(
 	CommonSet,
 	newAzCliFromOptions,
 	newEnvSetAction,
-	wire.Bind(new(action.Action), new(*envSetAction)))
+	wire.Bind(new(actions.Action), new(*envSetAction)))
 
 var EnvSelectCmdSet = wire.NewSet(
 	newAzdContext,
 	newEnvSelectAction,
-	wire.Bind(new(action.Action), new(*envSelectAction)))
+	wire.Bind(new(actions.Action), new(*envSelectAction)))
 
 var EnvListCmdSet = wire.NewSet(
 	CommonSet,
 	newEnvListAction,
-	wire.Bind(new(action.Action), new(*envListAction)))
+	wire.Bind(new(actions.Action), new(*envListAction)))
 
 var EnvNewCmdSet = wire.NewSet(
 	CommonSet,
 	newAzCliFromOptions,
 	newEnvNewAction,
-	wire.Bind(new(action.Action), new(*envNewAction)))
+	wire.Bind(new(actions.Action), new(*envNewAction)))
 
 var EnvRefreshCmdSet = wire.NewSet(
 	CommonSet,
 	newAzCliFromOptions,
 	newEnvRefreshAction,
-	wire.Bind(new(action.Action), new(*envRefreshAction)))
+	wire.Bind(new(actions.Action), new(*envRefreshAction)))
 
 var EnvGetValuesCmdSet = wire.NewSet(
 	CommonSet,
 	newAzCliFromOptions,
 	newEnvGetValuesAction,
-	wire.Bind(new(action.Action), new(*envGetValuesAction)))
+	wire.Bind(new(actions.Action), new(*envGetValuesAction)))
 
 var LoginCmdSet = wire.NewSet(
 	CommonSet,
 	newAzCliFromOptions,
 	newLoginAction,
-	wire.Bind(new(action.Action), new(*loginAction)))
+	wire.Bind(new(actions.Action), new(*loginAction)))
 
 var MonitorCmdSet = wire.NewSet(
 	CommonSet,
 	newAzCliFromOptions,
 	newMonitorAction,
-	wire.Bind(new(action.Action), new(*monitorAction)))
+	wire.Bind(new(actions.Action), new(*monitorAction)))
 
 var PipelineConfigCmdSet = wire.NewSet(
 	CommonSet,
 	newAzCliFromOptions,
 	newPipelineConfigAction,
-	wire.Bind(new(action.Action), new(*pipelineConfigAction)))
+	wire.Bind(new(actions.Action), new(*pipelineConfigAction)))
 
 var RestoreCmdSet = wire.NewSet(
 	CommonSet,
 	newRestoreAction,
-	wire.Bind(new(action.Action), new(*restoreAction)))
+	wire.Bind(new(actions.Action), new(*restoreAction)))
 
 var ShowCmdSet = wire.NewSet(
 	CommonSet,
 	newShowAction,
-	wire.Bind(new(action.Action), new(*showAction)))
+	wire.Bind(new(actions.Action), new(*showAction)))
 
 var TemplatesListCmdSet = wire.NewSet(
 	CommonSet,
 	newTemplatesListAction,
 	templates.NewTemplateManager,
-	wire.Bind(new(action.Action), new(*templatesListAction)))
+	wire.Bind(new(actions.Action), new(*templatesListAction)))
 
 var TemplatesShowCmdSet = wire.NewSet(
 	CommonSet,
 	newTemplatesShowAction,
 	templates.NewTemplateManager,
-	wire.Bind(new(action.Action), new(templatesShowAction)))
+	wire.Bind(new(actions.Action), new(templatesShowAction)))
 
 var VersionCmdSet = wire.NewSet(
 	CommonSet,
 	newVersionAction,
-	wire.Bind(new(action.Action), new(*versionAction)))
+	wire.Bind(new(actions.Action), new(*versionAction)))

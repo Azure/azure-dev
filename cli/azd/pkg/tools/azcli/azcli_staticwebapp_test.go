@@ -4,12 +4,16 @@
 package azcli
 
 import (
+	"bytes"
 	"context"
-	"errors"
+	"encoding/json"
+	"io"
+	"net/http"
 	"strings"
 	"testing"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/exec"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appservice/armappservice"
+	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/stretchr/testify/require"
 )
@@ -20,32 +24,29 @@ func Test_GetStaticWebAppProperties(t *testing.T) {
 		azCli := GetAzCli(*mockContext.Context)
 		ran := false
 
-		mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
-			return strings.Contains(command, "az staticwebapp show")
-		}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+		mockContext.HttpClient.When(func(request *http.Request) bool {
+			return request.Method == http.MethodGet && strings.Contains(request.URL.Path, "/providers/Microsoft.Web/staticSites/appName")
+		}).RespondFn(func(request *http.Request) (*http.Response, error) {
 			ran = true
 
-			require.Equal(t, []string{
-				"staticwebapp", "show",
-				"--subscription", "subID",
-				"--resource-group", "resourceGroupID",
-				"--name", "appName",
-				"--output", "json",
-			}, args.Args)
+			response := armappservice.StaticSitesClientGetStaticSiteResponse{
+				StaticSiteARMResource: armappservice.StaticSiteARMResource{
+					Properties: &armappservice.StaticSite{
+						DefaultHostname: convert.RefOf("https://test.com")},
+				},
+			}
 
-			require.True(t, args.EnrichError, "errors are enriched")
+			responseJson, _ := json.Marshal(response)
 
-			return exec.RunResult{
-				Stdout: `{"defaultHostname":"https://test.com"}`,
-				Stderr: "stderr text",
-				// if the returned `error` is nil we don't return an error. The underlying 'exec'
-				// returns an error if the command returns a non-zero exit code so we don't actually
-				// need to check it.
-				ExitCode: 1,
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     http.Header{},
+				Request:    request,
+				Body:       io.NopCloser(bytes.NewBuffer(responseJson)),
 			}, nil
 		})
 
-		props, err := azCli.GetStaticWebAppProperties(context.Background(), "subID", "resourceGroupID", "appName")
+		props, err := azCli.GetStaticWebAppProperties(*mockContext.Context, "subID", "resourceGroupID", "appName")
 		require.NoError(t, err)
 		require.Equal(t, "https://test.com", props.DefaultHostname)
 		require.True(t, ran)
@@ -56,31 +57,23 @@ func Test_GetStaticWebAppProperties(t *testing.T) {
 		azCli := GetAzCli(*mockContext.Context)
 		ran := false
 
-		mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
-			return strings.Contains(command, "az staticwebapp show")
-		}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+		mockContext.HttpClient.When(func(request *http.Request) bool {
+			return request.Method == http.MethodGet && strings.Contains(request.URL.Path, "/providers/Microsoft.Web/staticSites/appName")
+		}).RespondFn(func(request *http.Request) (*http.Response, error) {
 			ran = true
 
-			require.Equal(t, []string{
-				"staticwebapp", "show",
-				"--subscription", "subID",
-				"--resource-group", "resourceGroupID",
-				"--name", "appName",
-				"--output", "json",
-			}, args.Args)
-
-			require.True(t, args.EnrichError, "errors are enriched")
-			return exec.RunResult{
-				Stdout:   "",
-				Stderr:   "stderr text",
-				ExitCode: 1,
-			}, errors.New("example error message")
+			return &http.Response{
+				StatusCode: http.StatusNotFound,
+				Header:     http.Header{},
+				Request:    request,
+				Body:       http.NoBody,
+			}, nil
 		})
 
-		props, err := azCli.GetStaticWebAppProperties(context.Background(), "subID", "resourceGroupID", "appName")
-		require.Equal(t, AzCliStaticWebAppProperties{}, props)
+		props, err := azCli.GetStaticWebAppProperties(*mockContext.Context, "subID", "resourceGroupID", "appName")
+		require.Nil(t, props)
 		require.True(t, ran)
-		require.EqualError(t, err, "failed getting staticwebapp properties: example error message")
+		require.Error(t, err)
 	})
 }
 
@@ -90,34 +83,32 @@ func Test_GetStaticWebAppEnvironmentProperties(t *testing.T) {
 		azCli := GetAzCli(*mockContext.Context)
 		ran := false
 
-		mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
-			return strings.Contains(command, "az staticwebapp environment show")
-		}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+		mockContext.HttpClient.When(func(request *http.Request) bool {
+			return request.Method == http.MethodGet && strings.Contains(request.URL.Path, "/providers/Microsoft.Web/staticSites/appName/builds/default")
+		}).RespondFn(func(request *http.Request) (*http.Response, error) {
 			ran = true
 
-			require.Equal(t, []string{
-				"staticwebapp", "environment", "show",
-				"--subscription", "subID",
-				"--resource-group", "resourceGroupID",
-				"--name", "appName",
-				"--environment", "default",
-				"--output", "json",
-			}, args.Args)
+			response := armappservice.StaticSitesClientGetStaticSiteBuildResponse{
+				StaticSiteBuildARMResource: armappservice.StaticSiteBuildARMResource{
+					Properties: &armappservice.StaticSiteBuildARMResourceProperties{
+						Hostname: convert.RefOf("default-environment-name.azurestaticapps.net"),
+						Status:   convert.RefOf(armappservice.BuildStatusReady),
+					},
+				},
+			}
 
-			require.True(t, args.EnrichError, "errors are enriched")
+			responseJson, _ := json.Marshal(response)
 
-			return exec.RunResult{
-				Stdout: `{"hostname":"default-environment-name.azurestaticapps.net"}`,
-				Stderr: "stderr text",
-				// if the returned `error` is nil we don't return an error. The underlying 'exec'
-				// returns an error if the command returns a non-zero exit code so we don't actually
-				// need to check it.
-				ExitCode: 1,
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     http.Header{},
+				Request:    request,
+				Body:       io.NopCloser(bytes.NewBuffer(responseJson)),
 			}, nil
 		})
 
 		props, err := azCli.GetStaticWebAppEnvironmentProperties(
-			context.Background(),
+			*mockContext.Context,
 			"subID",
 			"resourceGroupID",
 			"appName",
@@ -133,38 +124,29 @@ func Test_GetStaticWebAppEnvironmentProperties(t *testing.T) {
 		azCli := GetAzCli(*mockContext.Context)
 		ran := false
 
-		mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
-			return strings.Contains(command, "az staticwebapp environment show")
-		}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+		mockContext.HttpClient.When(func(request *http.Request) bool {
+			return request.Method == http.MethodGet && strings.Contains(request.URL.Path, "/providers/Microsoft.Web/staticSites/appName/builds/default")
+		}).RespondFn(func(request *http.Request) (*http.Response, error) {
 			ran = true
 
-			require.Equal(t, []string{
-				"staticwebapp", "environment", "show",
-				"--subscription", "subID",
-				"--resource-group", "resourceGroupID",
-				"--name", "appName",
-				"--environment", "default",
-				"--output", "json",
-			}, args.Args)
-
-			require.True(t, args.EnrichError, "errors are enriched")
-			return exec.RunResult{
-				Stdout:   "",
-				Stderr:   "stderr text",
-				ExitCode: 1,
-			}, errors.New("example error message")
+			return &http.Response{
+				StatusCode: http.StatusNotFound,
+				Header:     http.Header{},
+				Request:    request,
+				Body:       http.NoBody,
+			}, nil
 		})
 
 		props, err := azCli.GetStaticWebAppEnvironmentProperties(
-			context.Background(),
+			*mockContext.Context,
 			"subID",
 			"resourceGroupID",
 			"appName",
 			"default",
 		)
-		require.Equal(t, AzCliStaticWebAppEnvironmentProperties{}, props)
+		require.Nil(t, props)
 		require.True(t, ran)
-		require.EqualError(t, err, "failed getting staticwebapp environment properties: example error message")
+		require.Error(t, err)
 	})
 }
 
@@ -174,35 +156,32 @@ func Test_GetStaticWebAppApiKey(t *testing.T) {
 		azCli := GetAzCli(*mockContext.Context)
 		ran := false
 
-		mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
-			return strings.Contains(command, "az staticwebapp secrets list")
-		}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+		mockContext.HttpClient.When(func(request *http.Request) bool {
+			return request.Method == http.MethodPost && strings.Contains(request.URL.Path, "/providers/Microsoft.Web/staticSites/appName/listSecrets")
+		}).RespondFn(func(request *http.Request) (*http.Response, error) {
 			ran = true
 
-			require.Equal(t, []string{
-				"staticwebapp", "secrets", "list",
-				"--subscription", "subID",
-				"--resource-group", "resourceGroupID",
-				"--name", "appName",
-				"--query", "properties.apiKey",
-				"--output", "tsv",
-			}, args.Args)
+			response := armappservice.StaticSitesClientListStaticSiteSecretsResponse{
+				StringDictionary: armappservice.StringDictionary{
+					Properties: map[string]*string{
+						"apiKey": convert.RefOf("ABC123"),
+					},
+				},
+			}
 
-			require.True(t, args.EnrichError, "errors are enriched")
+			responseJson, _ := json.Marshal(response)
 
-			return exec.RunResult{
-				Stdout: "ABC123",
-				Stderr: "stderr text",
-				// if the returned `error` is nil we don't return an error. The underlying 'exec'
-				// returns an error if the command returns a non-zero exit code so we don't actually
-				// need to check it.
-				ExitCode: 1,
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     http.Header{},
+				Request:    request,
+				Body:       io.NopCloser(bytes.NewBuffer(responseJson)),
 			}, nil
 		})
 
-		apiKey, err := azCli.GetStaticWebAppApiKey(context.Background(), "subID", "resourceGroupID", "appName")
+		apiKey, err := azCli.GetStaticWebAppApiKey(*mockContext.Context, "subID", "resourceGroupID", "appName")
 		require.NoError(t, err)
-		require.Equal(t, "ABC123", apiKey)
+		require.Equal(t, "ABC123", *apiKey)
 		require.True(t, ran)
 	})
 
@@ -211,31 +190,22 @@ func Test_GetStaticWebAppApiKey(t *testing.T) {
 		azCli := GetAzCli(*mockContext.Context)
 		ran := false
 
-		mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
-			return strings.Contains(command, "az staticwebapp secrets list")
-		}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+		mockContext.HttpClient.When(func(request *http.Request) bool {
+			return request.Method == http.MethodPost && strings.Contains(request.URL.Path, "/providers/Microsoft.Web/staticSites/appName/listSecrets")
+		}).RespondFn(func(request *http.Request) (*http.Response, error) {
 			ran = true
 
-			require.Equal(t, []string{
-				"staticwebapp", "secrets", "list",
-				"--subscription", "subID",
-				"--resource-group", "resourceGroupID",
-				"--name", "appName",
-				"--query", "properties.apiKey",
-				"--output", "tsv",
-			}, args.Args)
-
-			require.True(t, args.EnrichError, "errors are enriched")
-			return exec.RunResult{
-				Stdout:   "",
-				Stderr:   "stderr text",
-				ExitCode: 1,
-			}, errors.New("example error message")
+			return &http.Response{
+				StatusCode: http.StatusNotFound,
+				Header:     http.Header{},
+				Request:    request,
+				Body:       http.NoBody,
+			}, nil
 		})
 
-		apiKey, err := azCli.GetStaticWebAppApiKey(context.Background(), "subID", "resourceGroupID", "appName")
-		require.Equal(t, "", apiKey)
+		apiKey, err := azCli.GetStaticWebAppApiKey(*mockContext.Context, "subID", "resourceGroupID", "appName")
+		require.Nil(t, apiKey)
 		require.True(t, ran)
-		require.EqualError(t, err, "failed getting staticwebapp api key: example error message")
+		require.Error(t, err)
 	})
 }

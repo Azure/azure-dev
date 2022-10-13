@@ -131,7 +131,12 @@ func Test_detectProviders(t *testing.T) {
 		err := os.Mkdir(ghFolder, osutil.PermissionDirectory)
 		assert.NoError(t, err)
 
-		scmProvider, ciProvider, err := DetectProviders(ctx, azdContext, &environment.Environment{Values: map[string]string{}}, "other")
+		scmProvider, ciProvider, err := DetectProviders(
+			ctx,
+			azdContext,
+			&environment.Environment{Values: map[string]string{}},
+			"other",
+		)
 		assert.Nil(t, scmProvider)
 		assert.Nil(t, ciProvider)
 		assert.EqualError(t, err, "other is not a known pipeline provider.")
@@ -235,7 +240,12 @@ func Test_detectProviders(t *testing.T) {
 		err := os.Mkdir(ghFolder, osutil.PermissionDirectory)
 		assert.NoError(t, err)
 
-		scmProvider, ciProvider, err := DetectProviders(ctx, azdContext, &environment.Environment{Values: map[string]string{}}, "")
+		scmProvider, ciProvider, err := DetectProviders(
+			ctx,
+			azdContext,
+			&environment.Environment{Values: map[string]string{}},
+			"",
+		)
 		assert.IsType(t, &GitHubScmProvider{}, scmProvider)
 		assert.IsType(t, &GitHubCiProvider{}, ciProvider)
 		assert.NoError(t, err)
@@ -247,7 +257,12 @@ func Test_detectProviders(t *testing.T) {
 		err := os.Mkdir(azdoFolder, osutil.PermissionDirectory)
 		assert.NoError(t, err)
 
-		scmProvider, ciProvider, err := DetectProviders(ctx, azdContext, &environment.Environment{Values: map[string]string{}}, "")
+		scmProvider, ciProvider, err := DetectProviders(
+			ctx,
+			azdContext,
+			&environment.Environment{Values: map[string]string{}},
+			"",
+		)
 		assert.IsType(t, &AzdoScmProvider{}, scmProvider)
 		assert.IsType(t, &AzdoCiProvider{}, ciProvider)
 		assert.NoError(t, err)
@@ -262,7 +277,12 @@ func Test_detectProviders(t *testing.T) {
 		err = os.Mkdir(azdoFolder, osutil.PermissionDirectory)
 		assert.NoError(t, err)
 
-		scmProvider, ciProvider, err := DetectProviders(ctx, azdContext, &environment.Environment{Values: map[string]string{}}, "")
+		scmProvider, ciProvider, err := DetectProviders(
+			ctx,
+			azdContext,
+			&environment.Environment{Values: map[string]string{}},
+			"",
+		)
 		assert.IsType(t, &GitHubScmProvider{}, scmProvider)
 		assert.IsType(t, &GitHubCiProvider{}, ciProvider)
 		assert.NoError(t, err)

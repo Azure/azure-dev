@@ -139,7 +139,8 @@ func (i *infraCreateAction) Run(ctx context.Context) error {
 				)
 			}
 
-			if err := i.formatter.Format(contracts.NewEnvRefreshResultFromProvisioningState(stateResult.State), i.writer, nil); err != nil {
+			if err := i.formatter.Format(
+				contracts.NewEnvRefreshResultFromProvisioningState(stateResult.State), i.writer, nil); err != nil {
 				return fmt.Errorf(
 					"deployment failed and the deployment result could not be displayed: %w",
 					multierr.Combine(err, err),

@@ -1,23 +1,34 @@
 param environmentName string
 param location string = resourceGroup().location
 
+// AppService Settings
 param allowedOrigins array = []
 param alwaysOn bool = false
 param applicationInsightsName string = ''
 param appServicePlanId string
 param appSettings object = {}
-param clientAffinityEnabled bool = false
-param functionAppScaleLimit int = 200
-param functionsExtensionVersion string = '~4'
-param functionsWorkerRuntime string
 param kind string = 'functionapp,linux'
-param linuxFxVersion string = ''
 param keyVaultName string = ''
 param managedIdentity bool = !(empty(keyVaultName))
+param remoteBuild bool = true
+param serviceName string
+
+// Function Settings
+
+param clientAffinityEnabled bool = false
+@allowed([
+'~4', '~3', '~2', '~1'
+])
+param extensionVersion string = '~4'
+param functionAppScaleLimit int = 200
 param minimumElasticInstanceCount int = 0
 param numberOfWorkers int = 1
-param scmDoBuildDuringDeployment bool = true
-param serviceName string
+@allowed([
+'dotnet', 'dotnet-isolated', 'node', 'python', 'java', 'powershell', 'custom'
+])
+param runtimeName string
+param runtimeNameAndVersion string = '${runtimeName}|${runtimeVersion}'
+param runtimeVersion string
 param storageAccountName string
 param use32BitWorkerProcess bool = false
 
@@ -32,18 +43,18 @@ module functions 'appservice.bicep' = {
     appServicePlanId: appServicePlanId
     appSettings: union(appSettings, {
         AzureWebJobsStorage: 'DefaultEndpointsProtocol=https;AccountName=${storage.name};AccountKey=${storage.listKeys().keys[0].value};EndpointSuffix=${environment().suffixes.storage}'
-        FUNCTIONS_EXTENSION_VERSION: functionsExtensionVersion
-        FUNCTIONS_WORKER_RUNTIME: functionsWorkerRuntime
+        FUNCTIONS_EXTENSION_VERSION: extensionVersion
+        FUNCTIONS_WORKER_RUNTIME: runtimeName
       })
     clientAffinityEnabled: clientAffinityEnabled
     functionAppScaleLimit: functionAppScaleLimit
     keyVaultName: keyVaultName
     kind: kind
-    linuxFxVersion: linuxFxVersion
+    linuxFxVersion: runtimeNameAndVersion
     managedIdentity: managedIdentity
     minimumElasticInstanceCount: minimumElasticInstanceCount
     numberOfWorkers: numberOfWorkers
-    scmDoBuildDuringDeployment: scmDoBuildDuringDeployment
+    remoteBuild: remoteBuild
     serviceName: serviceName
     use32BitWorkerProcess: use32BitWorkerProcess
   }

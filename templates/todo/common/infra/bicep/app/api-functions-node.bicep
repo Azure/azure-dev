@@ -9,7 +9,7 @@ param keyVaultName string
 param serviceName string = 'api'
 param storageAccountName string
 
-module api '../../../../../common/infra/bicep/core/host/functions-node.bicep' = {
+module api '../../../../../common/infra/bicep/core/host/functions.bicep' = {
   name: '${serviceName}-functions-node-module'
   params: {
     environmentName: environmentName
@@ -21,6 +21,9 @@ module api '../../../../../common/infra/bicep/core/host/functions-node.bicep' = 
     keyVaultName: keyVaultName
     serviceName: serviceName
     storageAccountName: storageAccountName
+    runtimeName: 'node'
+    runtimeVersion: '16'
+    remoteBuild: true
   }
 }
 

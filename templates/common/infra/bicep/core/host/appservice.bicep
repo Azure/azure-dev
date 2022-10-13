@@ -15,7 +15,7 @@ param linuxFxVersion string = ''
 param managedIdentity bool = !(empty(keyVaultName))
 param minimumElasticInstanceCount int = -1
 param numberOfWorkers int = -1
-param scmDoBuildDuringDeployment bool = false
+param remoteBuild bool = false
 param serviceName string
 param use32BitWorkerProcess bool = false
 
@@ -54,7 +54,7 @@ resource appService 'Microsoft.Web/sites@2022-03-01' = {
   resource appSettings 'config' = {
     name: 'appsettings'
     properties: union({
-        SCM_DO_BUILD_DURING_DEPLOYMENT: string(scmDoBuildDuringDeployment)
+        SCM_DO_BUILD_DURING_DEPLOYMENT: string(remoteBuild)
       },
       !(empty(applicationInsightsName)) ? { APPLICATIONINSIGHTS_CONNECTION_STRING: applicationInsights.properties.ConnectionString } : {},
       !(empty(keyVaultName)) ? { AZURE_KEY_VAULT_ENDPOINT: keyVault.properties.vaultUri } : {})

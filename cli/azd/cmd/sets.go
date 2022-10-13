@@ -53,6 +53,14 @@ func newConsoleFromOptions(
 	}, formatter)
 }
 
+func newCommandRunnerFromConsole(console input.Console) exec.CommandRunner {
+	return exec.NewCommandRunner(
+		console.Handles().Stdin,
+		console.Handles().Stdout,
+		console.Handles().Stderr,
+	)
+}
+
 func newAzCliFromOptions(rootOptions *internal.GlobalCommandOptions, cmdRun exec.CommandRunner) azcli.AzCli {
 	return azcli.NewAzCli(azcli.NewAzCliArgs{
 		EnableDebug:     rootOptions.EnableDebugLogging,
@@ -79,8 +87,8 @@ var FormattedConsoleSet = wire.NewSet(
 
 var CommonSet = wire.NewSet(
 	newAzdContext,
-	exec.NewCommandRunner,
 	FormattedConsoleSet,
+	newCommandRunnerFromConsole,
 )
 
 var InitCmdSet = wire.NewSet(

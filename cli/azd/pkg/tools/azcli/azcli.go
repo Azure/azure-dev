@@ -4,13 +4,11 @@
 package azcli
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
-	"net/http"
 	"regexp"
 	"strings"
 	"time"
@@ -63,9 +61,7 @@ type AzCli interface {
 	ListAccounts(ctx context.Context) ([]AzCliSubscriptionInfo, error)
 	GetDefaultAccount(ctx context.Context) (*AzCliSubscriptionInfo, error)
 	GetAccount(ctx context.Context, subscriptionId string) (*AzCliSubscriptionInfo, error)
-	ListExtensions(ctx context.Context) ([]AzCliExtensionInfo, error)
 	GetCliConfigValue(ctx context.Context, name string) (AzCliConfigValue, error)
-	GetSubscriptionTenant(ctx context.Context, subscriptionId string) (string, error)
 	GetSubscriptionDeployment(
 		ctx context.Context,
 		subscriptionId string,
@@ -188,12 +184,6 @@ type AzCli interface {
 	GetSignedInUserId(ctx context.Context) (string, error)
 
 	GetAccessToken(ctx context.Context) (AzCliAccessToken, error)
-
-	// GraphQuery performs a query against Azure Resource Graph.
-	//
-	// This allows free-form querying of resources by any attribute, which is powerful.
-	// However, results may be delayed for multiple minutes. Ensure that your this fits your use-case.
-	GraphQuery(ctx context.Context, query string, subscriptions []string) (*AzCliGraphQuery, error)
 }
 
 type AzCliDeployment struct {
@@ -335,13 +325,6 @@ type AzCliExtensionInfo struct {
 type AzCliAccessToken struct {
 	AccessToken string
 	ExpiresOn   *time.Time
-}
-
-type AzCliGraphQuery struct {
-	Count        int             `json:"count"`
-	Data         []AzCliResource `json:"data"`
-	SkipToken    string          `json:"skipToken"`
-	TotalRecords int             `json:"totalRecords"`
 }
 
 // Optional parameters for resource group listing.
@@ -509,20 +492,6 @@ func (cli *azCli) SetUserAgent(userAgent string) {
 
 func (cli *azCli) UserAgent() string {
 	return cli.userAgent
-}
-
-func (cli *azCli) ListExtensions(ctx context.Context) ([]AzCliExtensionInfo, error) {
-	res, err := cli.runAzCommand(ctx, "extension", "list", "--output", "json")
-
-	if err != nil {
-		return nil, fmt.Errorf("failed running az extension list: %s: %w", res.String(), err)
-	}
-
-	var extensionInfo []AzCliExtensionInfo
-	if err := json.Unmarshal([]byte(res.Stdout), &extensionInfo); err != nil {
-		return nil, fmt.Errorf("could not unmarshal output %s as a []AzCliExtensionInfo: %w", res.Stdout, err)
-	}
-	return extensionInfo, nil
 }
 
 func (cli *azCli) Login(ctx context.Context, useDeviceCode bool, deviceCodeWriter io.Writer) error {
@@ -1164,61 +1133,6 @@ func (cli *azCli) GetAccessToken(ctx context.Context) (AzCliAccessToken, error) 
 		return AzCliAccessToken{}, fmt.Errorf("could not unmarshal output %s as a AzCliAccessToken: %w", res.Stdout, err)
 	}
 	return accessToken, nil
-}
-
-type GraphQueryRequest struct {
-	Subscriptions []string `json:"subscriptions"`
-	Query         string   `json:"query"`
-}
-
-func (cli *azCli) GraphQuery(ctx context.Context, query string, subscriptions []string) (*AzCliGraphQuery, error) {
-	const url = "https://management.azure.com/providers/Microsoft.ResourceGraph/resources?api-version=2021-03-01"
-
-	requestBody := GraphQueryRequest{
-		Subscriptions: subscriptions,
-		Query:         query,
-	}
-
-	requestJson, err := json.Marshal(requestBody)
-	if err != nil {
-		return nil, fmt.Errorf("marshalling JSON body: %w", err)
-	}
-
-	token, err := cli.GetAccessToken(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("getting access token: %w", err)
-	}
-
-	client := http.Client{}
-	requestBuffer := bytes.NewBuffer(requestJson)
-	request, err := http.NewRequest(http.MethodPost, url, requestBuffer)
-	if err != nil {
-		return nil, fmt.Errorf("creating http request: %w", err)
-	}
-
-	request.Header.Set("Authorization", fmt.Sprintf("Bearer %s", token.AccessToken))
-	request.Header.Set("Content-Type", "application/json")
-	request.Header.Set("Accept", "application/json")
-
-	response, err := client.Do(request)
-	if err != nil || response.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("sending http request: %w", err)
-	}
-
-	defer response.Body.Close()
-	responseBytes, err := io.ReadAll(response.Body)
-	if err != nil {
-		return nil, fmt.Errorf("reading http response: %w", err)
-	}
-
-	responseText := string(responseBytes)
-
-	var graphQueryResult AzCliGraphQuery
-	if err := json.Unmarshal(responseBytes, &graphQueryResult); err != nil {
-		return nil, fmt.Errorf("could not unmarshal output '%s' as an AzCliGraphQuery: %w", responseText, err)
-	}
-
-	return &graphQueryResult, nil
 }
 
 func (cli *azCli) runAzCommand(ctx context.Context, args ...string) (exec.RunResult, error) {

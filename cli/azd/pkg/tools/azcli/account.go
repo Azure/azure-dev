@@ -96,15 +96,6 @@ func (cli *azCli) GetAccount(ctx context.Context, subscriptionId string) (*AzCli
 	}, nil
 }
 
-func (cli *azCli) GetSubscriptionTenant(ctx context.Context, subscriptionId string) (string, error) {
-	subscription, err := cli.GetAccount(ctx, subscriptionId)
-	if err != nil {
-		return "", err
-	}
-
-	return subscription.TenantId, nil
-}
-
 func (cli *azCli) ListAccountLocations(ctx context.Context, subscriptionId string) ([]AzCliLocation, error) {
 	client, err := cli.createSubscriptionsClient(ctx)
 	if err != nil {

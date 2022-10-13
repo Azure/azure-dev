@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 
+	"github.com/azure/azure-dev/cli/azd/cmd/contracts"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
@@ -85,12 +86,12 @@ func newInfraCreateAction(
 	}
 }
 
-func (ica *infraCreateAction) Run(ctx context.Context) error {
-	if err := ensureProject(ica.azdCtx.ProjectPath()); err != nil {
+func (i *infraCreateAction) Run(ctx context.Context) error {
+	if err := ensureProject(i.azdCtx.ProjectPath()); err != nil {
 		return err
 	}
 
-	if err := tools.EnsureInstalled(ctx, ica.azCli); err != nil {
+	if err := tools.EnsureInstalled(ctx, i.azCli); err != nil {
 		return err
 	}
 
@@ -98,12 +99,12 @@ func (ica *infraCreateAction) Run(ctx context.Context) error {
 		return fmt.Errorf("failed to ensure login: %w", err)
 	}
 
-	env, ctx, err := loadOrInitEnvironment(ctx, &ica.flags.global.EnvironmentName, ica.azdCtx, ica.console)
+	env, ctx, err := loadOrInitEnvironment(ctx, &i.flags.global.EnvironmentName, i.azdCtx, i.console)
 	if err != nil {
 		return fmt.Errorf("loading environment: %w", err)
 	}
 
-	prj, err := project.LoadProjectConfig(ica.azdCtx.ProjectPath(), env)
+	prj, err := project.LoadProjectConfig(i.azdCtx.ProjectPath(), env)
 	if err != nil {
 		return fmt.Errorf("loading project: %w", err)
 	}
@@ -112,7 +113,7 @@ func (ica *infraCreateAction) Run(ctx context.Context) error {
 		return err
 	}
 
-	infraManager, err := provisioning.NewManager(ctx, env, prj.Path, prj.Infra, !ica.flags.global.NoPrompt)
+	infraManager, err := provisioning.NewManager(ctx, env, prj.Path, prj.Infra, !i.flags.global.NoPrompt)
 	if err != nil {
 		return fmt.Errorf("creating provisioning manager: %w", err)
 	}
@@ -129,8 +130,8 @@ func (ica *infraCreateAction) Run(ctx context.Context) error {
 	}
 
 	if err != nil {
-		if ica.formatter.Kind() == output.JsonFormat {
-			deployment, err := infraManager.State(ctx, provisioningScope)
+		if i.formatter.Kind() == output.JsonFormat {
+			stateResult, err := infraManager.State(ctx, provisioningScope)
 			if err != nil {
 				return fmt.Errorf(
 					"deployment failed and the deployment result is unavailable: %w",
@@ -138,7 +139,7 @@ func (ica *infraCreateAction) Run(ctx context.Context) error {
 				)
 			}
 
-			if err := ica.formatter.Format(deployment, ica.writer, nil); err != nil {
+			if err := i.formatter.Format(contracts.NewEnvRefreshResultFromProvisioningState(stateResult.State), i.writer, nil); err != nil {
 				return fmt.Errorf(
 					"deployment failed and the deployment result could not be displayed: %w",
 					multierr.Combine(err, err),
@@ -159,7 +160,7 @@ func (ica *infraCreateAction) Run(ctx context.Context) error {
 
 	resourceGroupName, err := project.GetResourceGroupName(ctx, prj, env)
 	if err == nil { // Presentation only -- skip print if we failed to resolve the resource group
-		ica.displayResourceGroupCreatedMessage(ctx, ica.console, env.GetSubscriptionId(), resourceGroupName)
+		i.displayResourceGroupCreatedMessage(ctx, i.console, env.GetSubscriptionId(), resourceGroupName)
 	}
 
 	return nil

@@ -135,7 +135,7 @@ func (i *initAction) Run(ctx context.Context) error {
 
 	// Project not initialized and no template specified
 	if _, err := os.Stat(i.azdCtx.ProjectPath()); err != nil && errors.Is(err, os.ErrNotExist) {
-		fmt.Printf("Initializing a new project in %s\n\n", wd)
+		fmt.Fprintf(i.console.Handles().Stdout, "Initializing a new project in %s\n\n", wd)
 
 		if i.flags.template.Name == "" {
 			i.flags.template, err = templates.PromptTemplate(ctx, "Select a project template")

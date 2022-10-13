@@ -38,8 +38,8 @@ func (lf *loginFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandO
 	output.AddOutputFlag(
 		local,
 		&lf.outputFormat,
-		[]output.Format{output.JsonFormat, output.TableFormat},
-		output.TableFormat,
+		[]output.Format{output.JsonFormat, output.NoneFormat},
+		output.NoneFormat,
 	)
 
 	lf.global = global

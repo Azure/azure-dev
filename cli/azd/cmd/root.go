@@ -138,7 +138,7 @@ func BuildCmd[F any](
 	cmd, flags := buildDesign(opts)
 	cmd.Flags().BoolP("help", "h", false, fmt.Sprintf("Gets help for %s.", cmd.Name()))
 
-	cmd.RunE = func(cmd *cobra.Command, args []string) error {
+	runCmd := func(cmd *cobra.Command, ctx context.Context, args []string) error {
 		action, err := buildAction(cmd, opts, *flags, args)
 		if err != nil {
 			return err
@@ -146,28 +146,31 @@ func BuildCmd[F any](
 
 		// shim to register dependencies in context to maintain backwards compatibility
 		// to be removed long term
-		ctx, err := commands.RegisterDependenciesInCtx(cmd.Context(), cmd, opts)
+		ctx, err = commands.RegisterDependenciesInCtx(ctx, cmd, opts)
 		if err != nil {
 			return err
 		}
 
-		runCmd := func(cmdCtx context.Context) error {
-			return action.Run(cmdCtx)
-		}
+		return action.Run(ctx)
+	}
 
+	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		if buildOptions != nil && buildOptions.disableTelemetry {
-			return runCmd(ctx)
+			return runCmd(cmd, cmd.Context(), args)
 		} else {
-			return runCmdWithTelemetry(ctx, cmd, runCmd)
+			// Bind cmd, args. Only a different context needs to be passed.
+			runWithContext := func(ctx context.Context) error { return runCmd(cmd, ctx, args) }
+			return runCmdWithTelemetry(cmd, runWithContext)
 		}
 	}
+
 	return cmd
 }
 
-func runCmdWithTelemetry(ctx context.Context, cmd *cobra.Command, runCmd func(ctx context.Context) error) error {
+func runCmdWithTelemetry(cmd *cobra.Command, runCmd func(ctx context.Context) error) error {
 	// Note: CommandPath is constructed using the Use member on each command up to the root.
 	// It does not contain user input, and is safe for telemetry emission.
-	spanCtx, span := telemetry.GetTracer().Start(ctx, events.GetCommandEventName(cmd.CommandPath()))
+	spanCtx, span := telemetry.GetTracer().Start(cmd.Context(), events.GetCommandEventName(cmd.CommandPath()))
 	defer span.End()
 
 	err := runCmd(spanCtx)
@@ -176,4 +179,5 @@ func runCmdWithTelemetry(ctx context.Context, cmd *cobra.Command, runCmd func(ct
 	}
 
 	return err
+
 }

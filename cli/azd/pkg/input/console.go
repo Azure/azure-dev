@@ -139,14 +139,14 @@ func (c *AskerConsole) Handles() ConsoleHandles {
 }
 
 // Creates a new console with the specified handles and formatter
-func NewConsole(interactive bool, isTerminal bool, handles ConsoleHandles, formatter output.Formatter) Console {
+func NewConsole(interactive bool, isTerminal bool, w io.Writer, handles ConsoleHandles, formatter output.Formatter) Console {
 	asker := NewAsker(!interactive, isTerminal, handles.Stdout, handles.Stdin)
 
 	return &AskerConsole{
 		interactive: interactive,
 		asker:       asker,
 		handles:     handles,
-		writer:      handles.Stdout,
+		writer:      w,
 		formatter:   formatter,
 	}
 }

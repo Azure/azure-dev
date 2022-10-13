@@ -77,7 +77,7 @@ func RegisterDependenciesInCtx(
 	isTerminal := cmd.OutOrStdout() == os.Stdout &&
 		cmd.InOrStdin() == os.Stdin && isatty.IsTerminal(os.Stdin.Fd()) &&
 		isatty.IsTerminal(os.Stdout.Fd())
-	console := input.NewConsole(!rootOptions.NoPrompt, isTerminal, input.ConsoleHandles{
+	console := input.NewConsole(!rootOptions.NoPrompt, isTerminal, writer, input.ConsoleHandles{
 		Stdin:  cmd.InOrStdin(),
 		Stdout: writer,
 		Stderr: cmd.ErrOrStderr(),

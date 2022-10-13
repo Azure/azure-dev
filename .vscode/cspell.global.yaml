@@ -17,6 +17,7 @@ words:
 ignoreWords:
     - afwp
     - apim
+    - appcontainers
     - appcs
     - appi
     - arck

@@ -7,8 +7,9 @@ import (
 )
 
 type ClientOptionsBuilder struct {
-	transport policy.Transporter
-	policies  []policy.Policy
+	transport        policy.Transporter
+	perCallPolicies  []policy.Policy
+	perRetryPolicies []policy.Policy
 }
 
 func NewClientOptionsBuilder() *ClientOptionsBuilder {
@@ -21,9 +22,15 @@ func (b *ClientOptionsBuilder) WithTransport(transport policy.Transporter) *Clie
 	return b
 }
 
-// Appends policies into the HTTP pipeline
-func (b *ClientOptionsBuilder) WithPolicy(policy policy.Policy) *ClientOptionsBuilder {
-	b.policies = append(b.policies, policy)
+// Appends per-call policies into the HTTP pipeline
+func (b *ClientOptionsBuilder) WithPerCallPolicy(policy policy.Policy) *ClientOptionsBuilder {
+	b.perCallPolicies = append(b.perCallPolicies, policy)
+	return b
+}
+
+// Appends per-retry policies into the HTTP pipeline
+func (b *ClientOptionsBuilder) WithPerRetryPolicy(policy policy.Policy) *ClientOptionsBuilder {
+	b.perRetryPolicies = append(b.perRetryPolicies, policy)
 	return b
 }
 
@@ -34,7 +41,9 @@ func (b *ClientOptionsBuilder) BuildCoreClientOptions() *azcore.ClientOptions {
 		// Supports mocking for unit tests
 		Transport: b.transport,
 		// Per request policies to inject into HTTP pipeline
-		PerCallPolicies: b.policies,
+		PerCallPolicies: b.perCallPolicies,
+		// Per retry policies to inject into HTTP pipeline
+		PerRetryPolicies: b.perRetryPolicies,
 	}
 }
 
@@ -46,7 +55,9 @@ func (b *ClientOptionsBuilder) BuildArmClientOptions() *arm.ClientOptions {
 			// Supports mocking for unit tests
 			Transport: b.transport,
 			// Per request policies to inject into HTTP pipeline
-			PerCallPolicies: b.policies,
+			PerCallPolicies: b.perCallPolicies,
+			// Per retry policies to inject into HTTP pipeline
+			PerRetryPolicies: b.perRetryPolicies,
 		},
 	}
 }

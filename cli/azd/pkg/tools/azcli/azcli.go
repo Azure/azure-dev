@@ -953,7 +953,7 @@ func (cli *azCli) runAzCommandWithArgs(ctx context.Context, args exec.RunArgs) (
 func (cli *azCli) createDefaultClientOptionsBuilder(ctx context.Context) *azsdk.ClientOptionsBuilder {
 	return azsdk.NewClientOptionsBuilder().
 		WithTransport(httputil.GetHttpClient(ctx)).
-		WithPolicy(azsdk.NewUserAgentPolicy(cli.UserAgent()))
+		WithPerCallPolicy(azsdk.NewUserAgentPolicy(cli.UserAgent()))
 }
 
 // Azure Active Directory codes can be referenced via https://login.microsoftonline.com/error?code=<ERROR_CODE>,

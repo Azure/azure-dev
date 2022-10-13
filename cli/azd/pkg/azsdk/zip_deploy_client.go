@@ -19,6 +19,10 @@ const (
 	deployStatusInterval = 10 * time.Second
 )
 
+// ZipDeployClient wraps usage of app service zip deploy used for application deployments
+// More info can be found at the following:
+// https://github.com/MicrosoftDocs/azure-docs/blob/main/includes/app-service-deploy-zip-push-rest.md
+// https://github.com/projectkudu/kudu/wiki/REST-API
 type ZipDeployClient struct {
 	subscriptionId string
 	pipeline       runtime.Pipeline
@@ -47,6 +51,7 @@ type DeployStatus struct {
 	SiteName     string     `json:"site_name"`
 }
 
+// Creates a new ZipDeployClient instance
 func NewZipDeployClient(
 	subscriptionId string,
 	credential azcore.TokenCredential,

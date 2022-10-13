@@ -23,7 +23,7 @@ func TestOverrideUserAgent(t *testing.T) {
 
 	clientOptions := NewClientOptionsBuilder().
 		WithTransport(mockContext.HttpClient).
-		WithPolicy(NewUserAgentPolicy(expectedUserAgent)).
+		WithPerCallPolicy(NewUserAgentPolicy(expectedUserAgent)).
 		BuildArmClientOptions()
 
 	client, err := armresources.NewClient("SUBSCRIPTION_ID", &mocks.MockCredentials{}, clientOptions)

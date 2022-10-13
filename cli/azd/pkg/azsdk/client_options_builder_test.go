@@ -23,19 +23,22 @@ func TestCreateArmOptions(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
 
 		userAgentPolicy := NewUserAgentPolicy("custom-user-agent")
-		testPolicy := &testPolicy{}
+		perCallPolicy := &testPerCallPolicy{}
+		preRetryPolicy := &testPerRetryPolicy{}
 		transport := mockContext.HttpClient
 
 		builder := NewClientOptionsBuilder().
 			WithTransport(transport).
-			WithPolicy(userAgentPolicy).
-			WithPolicy(testPolicy)
+			WithPerCallPolicy(userAgentPolicy).
+			WithPerCallPolicy(perCallPolicy).
+			WithPerRetryPolicy(preRetryPolicy)
 
 		armOptions := builder.BuildArmClientOptions()
 
 		require.Same(t, transport, armOptions.Transport)
 		require.Same(t, userAgentPolicy, armOptions.PerCallPolicies[0])
-		require.Same(t, testPolicy, armOptions.PerCallPolicies[1])
+		require.Same(t, perCallPolicy, armOptions.PerCallPolicies[1])
+		require.Same(t, preRetryPolicy, armOptions.PerRetryPolicies[0])
 	})
 }
 
@@ -52,25 +55,35 @@ func TestCreateCoreOptions(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
 
 		userAgentPolicy := NewUserAgentPolicy("custom-user-agent")
-		testPolicy := &testPolicy{}
+		perCallPolicy := &testPerCallPolicy{}
+		preRetryPolicy := &testPerRetryPolicy{}
 		transport := mockContext.HttpClient
 
 		builder := NewClientOptionsBuilder().
 			WithTransport(transport).
-			WithPolicy(userAgentPolicy).
-			WithPolicy(testPolicy)
+			WithPerCallPolicy(userAgentPolicy).
+			WithPerCallPolicy(perCallPolicy).
+			WithPerRetryPolicy(preRetryPolicy)
 
 		coreOptions := builder.BuildCoreClientOptions()
 
 		require.Same(t, transport, coreOptions.Transport)
 		require.Same(t, userAgentPolicy, coreOptions.PerCallPolicies[0])
-		require.Same(t, testPolicy, coreOptions.PerCallPolicies[1])
+		require.Same(t, perCallPolicy, coreOptions.PerCallPolicies[1])
+		require.Same(t, preRetryPolicy, coreOptions.PerRetryPolicies[0])
 	})
 }
 
-type testPolicy struct {
+type testPerCallPolicy struct {
 }
 
-func (p *testPolicy) Do(req *policy.Request) (*http.Response, error) {
+func (p *testPerCallPolicy) Do(req *policy.Request) (*http.Response, error) {
+	return req.Next()
+}
+
+type testPerRetryPolicy struct {
+}
+
+func (p *testPerRetryPolicy) Do(req *policy.Request) (*http.Response, error) {
 	return req.Next()
 }

@@ -178,9 +178,3 @@ func runCmdWithTelemetry(ctx context.Context, cmd *cobra.Command, runCmd func(ct
 
 	return err
 }
-
-func Execute(args []string) error {
-	tempRootCmd := NewRootCmd()
-	tempRootCmd.SetArgs(args)
-	return tempRootCmd.Execute()
-}

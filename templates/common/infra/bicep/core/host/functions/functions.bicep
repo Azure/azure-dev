@@ -40,7 +40,7 @@ param numberOfWorkers int = -1
 param scmDoBuildDuringDeployment bool = false
 param use32BitWorkerProcess bool = false
 
-module functions 'appservice.bicep' = {
+module functions '../appservice/appservice.bicep' = {
   name: '${serviceName}-functions'
   params: {
     environmentName: environmentName

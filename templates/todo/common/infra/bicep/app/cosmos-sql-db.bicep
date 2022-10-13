@@ -17,7 +17,7 @@ param cosmosDatabaseName string = 'Todo'
 param keyVaultName string
 param principalIds array = []
 
-module cosmos '../../../../../common/infra/bicep/core/database/cosmos-sql-db.bicep' = {
+module cosmos '../../../../../common/infra/bicep/core/database/cosmos/sql/cosmos-sql-db.bicep' = {
   name: 'cosmos-sql'
   params: {
     environmentName: environmentName

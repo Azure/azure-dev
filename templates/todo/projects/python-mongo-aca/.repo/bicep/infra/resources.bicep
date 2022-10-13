@@ -5,7 +5,7 @@ param apiImageName string = ''
 param webImageName string = ''
 
 // Container apps host (including container registry)
-module containerApps '../../../../../../common/infra/bicep/core/host/container-apps.bicep' = {
+module containerApps '../../../../../../common/infra/bicep/core/host/containers/container-apps.bicep' = {
   name: 'container-apps'
   params: {
     environmentName: environmentName

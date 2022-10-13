@@ -5,7 +5,7 @@ param kind string = ''
 param reserved bool = true
 param sku object
 
-var abbrs = loadJsonContent('../../abbreviations.json')
+var abbrs = loadJsonContent('../../../abbreviations.json')
 var resourceToken = toLower(uniqueString(subscription().id, environmentName, location))
 var tags = { 'azd-env-name': environmentName }
 

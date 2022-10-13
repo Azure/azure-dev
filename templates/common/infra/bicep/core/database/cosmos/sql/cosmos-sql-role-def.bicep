@@ -1,7 +1,7 @@
 param environmentName string
 param location string = resourceGroup().location
 
-var abbrs = loadJsonContent('../../abbreviations.json')
+var abbrs = loadJsonContent('../../../../abbreviations.json')
 var resourceToken = toLower(uniqueString(subscription().id, environmentName, location))
 
 resource roleDefinition 'Microsoft.DocumentDB/databaseAccounts/sqlRoleDefinitions@2022-05-15' = {

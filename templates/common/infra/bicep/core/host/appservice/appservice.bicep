@@ -33,7 +33,7 @@ param numberOfWorkers int = -1
 param scmDoBuildDuringDeployment bool = false
 param use32BitWorkerProcess bool = false
 
-var abbrs = loadJsonContent('../../abbreviations.json')
+var abbrs = loadJsonContent('../../../abbreviations.json')
 var tags = { 'azd-env-name': environmentName }
 var resourceToken = toLower(uniqueString(subscription().id, environmentName, location))
 
@@ -86,7 +86,7 @@ resource appService 'Microsoft.Web/sites@2022-03-01' = {
   }
 }
 
-module appSettingsUnion 'appservice-config-union.bicep' = if (!empty(appSettings)) {
+module appSettingsUnion './config/appservice-config-union.bicep' = if (!empty(appSettings)) {
   name: '${serviceName}-app-settings-union'
   params: {
     appServiceName: appService.name
@@ -96,7 +96,7 @@ module appSettingsUnion 'appservice-config-union.bicep' = if (!empty(appSettings
   }
 }
 
-module keyVaultAccess '../security/keyvault-access.bicep' = if (!(empty(keyVaultName))) {
+module keyVaultAccess '../../security/keyvault-access.bicep' = if (!(empty(keyVaultName))) {
   name: '${serviceName}-appservice-keyvault-access'
   params: {
     principalId: appService.identity.principalId

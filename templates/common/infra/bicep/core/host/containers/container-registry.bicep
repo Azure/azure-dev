@@ -15,7 +15,7 @@ param sku object = {
 }
 param zoneRedundancy string = 'Disabled'
 
-var abbrs = loadJsonContent('../../abbreviations.json')
+var abbrs = loadJsonContent('../../../abbreviations.json')
 var resourceToken = toLower(uniqueString(subscription().id, environmentName, location))
 var tags = { 'azd-env-name': environmentName }
 

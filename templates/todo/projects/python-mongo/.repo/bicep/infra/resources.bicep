@@ -37,7 +37,7 @@ module cosmos '../../../../../common/infra/bicep/app/cosmos-mongo-db.bicep' = {
 }
 
 // Configure api to use cosmos
-module apiCosmosConfig '../../../../../../common/infra/bicep/core/host/appservice-config-cosmos.bicep' = {
+module apiCosmosConfig '../../../../../../common/infra/bicep/core/host/appservice/config/appservice-config-cosmos.bicep' = {
   name: 'api-cosmos-config'
   params: {
     appServiceName: api.outputs.API_NAME
@@ -48,7 +48,7 @@ module apiCosmosConfig '../../../../../../common/infra/bicep/core/host/appservic
 }
 
 // Create an App Service Plan to group applications under the same payment plan and SKU
-module appServicePlan '../../../../../../common/infra/bicep/core/host/appserviceplan.bicep' = {
+module appServicePlan '../../../../../../common/infra/bicep/core/host/appservice/appserviceplan.bicep' = {
   name: 'appserviceplan'
   params: {
     environmentName: environmentName

@@ -6,7 +6,7 @@ param keyVaultName string
 @allowed([ 'GlobalDocumentDB', 'MongoDB', 'Parse' ])
 param kind string
 
-var abbrs = loadJsonContent('../../abbreviations.json')
+var abbrs = loadJsonContent('../../../abbreviations.json')
 var resourceToken = toLower(uniqueString(subscription().id, environmentName, location))
 var tags = { 'azd-env-name': environmentName }
 

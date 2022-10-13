@@ -22,7 +22,7 @@ type restoreFlags struct {
 	serviceName string
 }
 
-func (r *restoreFlags) Setup(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
+func (r *restoreFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
 	local.StringVar(&r.serviceName, "service", "", "Restores a specific service (when the string is unspecified, all services that are listed in the "+azdcontext.ProjectFileName+" file are restored).")
 	r.global = global
 }
@@ -39,7 +39,7 @@ For the best local run and debug experience, go to https://aka.ms/azure-dev/vsco
 	}
 
 	flags := &restoreFlags{}
-	flags.Setup(cmd.Flags(), global)
+	flags.Bind(cmd.Flags(), global)
 	return cmd, flags
 }
 

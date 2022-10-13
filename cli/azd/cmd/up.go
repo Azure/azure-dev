@@ -21,18 +21,19 @@ type upFlags struct {
 	global       *internal.GlobalCommandOptions
 }
 
-func (u *upFlags) Setup(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
+func (u *upFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
 	output.AddOutputFlag(
 		local,
 		&u.outputFormat,
 		[]output.Format{output.JsonFormat, output.NoneFormat},
 		output.NoneFormat)
-
-	u.initFlags.Setup(local, global)
-	u.infraCreateFlags.bind(local, global)
 	u.infraCreateFlags.outputFormat = &u.outputFormat
-	u.deployFlags.bind(local, global)
 	u.deployFlags.outputFormat = &u.outputFormat
+
+	u.initFlags.Bind(local, global)
+	u.infraCreateFlags.bind(local, global)
+	u.deployFlags.bind(local, global)
+
 	u.global = global
 }
 
@@ -52,7 +53,7 @@ When no template is supplied, you can optionally select an Azure Developer CLI t
 	}
 
 	uf := &upFlags{}
-	uf.Setup(cmd.Flags(), global)
+	uf.Bind(cmd.Flags(), global)
 
 	return cmd, uf
 }

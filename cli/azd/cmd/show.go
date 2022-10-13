@@ -25,7 +25,7 @@ type showFlags struct {
 	global       *internal.GlobalCommandOptions
 }
 
-func (s *showFlags) Setup(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
+func (s *showFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
 	output.AddOutputFlag(local, &s.outputFormat, []output.Format{output.JsonFormat}, output.NoneFormat)
 	s.global = global
 }
@@ -38,7 +38,7 @@ func showCmdDesign(global *internal.GlobalCommandOptions) (*cobra.Command, *show
 	}
 
 	flags := &showFlags{}
-	flags.Setup(cmd.Flags(), global)
+	flags.Bind(cmd.Flags(), global)
 	return cmd, flags
 }
 

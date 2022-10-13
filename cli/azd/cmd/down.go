@@ -13,7 +13,7 @@ func downCmdDesign(global *internal.GlobalCommandOptions) (*cobra.Command, *infr
 	}
 
 	idf := &infraDeleteFlags{}
-	idf.Setup(cmd.Flags(), global)
+	idf.Bind(cmd.Flags(), global)
 
 	output.AddOutputParam(cmd,
 		[]output.Format{output.JsonFormat, output.NoneFormat},

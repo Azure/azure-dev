@@ -199,7 +199,7 @@ type envNewFlags struct {
 	global       *internal.GlobalCommandOptions
 }
 
-func (f *envNewFlags) Setup(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
+func (f *envNewFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
 	local.StringVar(&f.subscription, "subscription", "", "Name or ID of an Azure subscription to use for the new environment")
 	local.StringVarP(&f.location, "location", "l", "", "Azure location for the new environment")
 
@@ -213,7 +213,7 @@ func envNewCmdDesign(global *internal.GlobalCommandOptions) (*cobra.Command, *en
 	}
 	cmd.Args = cobra.ExactArgs(1)
 	f := &envNewFlags{}
-	f.Setup(cmd.Flags(), global)
+	f.Bind(cmd.Flags(), global)
 	return cmd, f
 }
 

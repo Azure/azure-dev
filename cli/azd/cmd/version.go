@@ -20,7 +20,7 @@ type versionFlags struct {
 	global       *internal.GlobalCommandOptions
 }
 
-func (v *versionFlags) Setup(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
+func (v *versionFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
 	output.AddOutputFlag(local, &v.outputFormat, []output.Format{output.JsonFormat, output.NoneFormat}, output.NoneFormat)
 	v.global = global
 }
@@ -32,7 +32,7 @@ func versionCmdDesign(global *internal.GlobalCommandOptions) (*cobra.Command, *v
 	}
 
 	flags := &versionFlags{}
-	flags.Setup(cmd.Flags(), global)
+	flags.Bind(cmd.Flags(), global)
 
 	return cmd, flags
 }

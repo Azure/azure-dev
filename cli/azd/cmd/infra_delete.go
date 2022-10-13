@@ -21,9 +21,9 @@ type infraDeleteFlags struct {
 	global      *internal.GlobalCommandOptions
 }
 
-func (i *infraDeleteFlags) Setup(flags *pflag.FlagSet, global *internal.GlobalCommandOptions) {
-	flags.BoolVar(&i.forceDelete, "force", false, "Does not require confirmation before it deletes resources.")
-	flags.BoolVar(&i.purgeDelete, "purge", false, "Does not require confirmation before it permanently deletes resources that are soft-deleted by default (for example, key vaults).")
+func (i *infraDeleteFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
+	local.BoolVar(&i.forceDelete, "force", false, "Does not require confirmation before it deletes resources.")
+	local.BoolVar(&i.purgeDelete, "purge", false, "Does not require confirmation before it permanently deletes resources that are soft-deleted by default (for example, key vaults).")
 	i.global = global
 }
 
@@ -34,7 +34,7 @@ func infraDeleteCmdDesign(global *internal.GlobalCommandOptions) (*cobra.Command
 	}
 
 	idf := &infraDeleteFlags{}
-	idf.Setup(cmd.Flags(), global)
+	idf.Bind(cmd.Flags(), global)
 
 	return cmd, idf
 }

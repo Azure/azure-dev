@@ -27,7 +27,7 @@ type loginFlags struct {
 	global          *internal.GlobalCommandOptions
 }
 
-func (lf *loginFlags) Setup(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
+func (lf *loginFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
 	local.BoolVar(&lf.onlyCheckStatus, "check-status", false, "Checks the log-in status instead of logging in.")
 	local.BoolVar(&lf.useDeviceCode, "use-device-code", false, "When true, log in by using a device code instead of a browser.")
 	output.AddOutputFlag(
@@ -47,7 +47,7 @@ func loginCmdDesign(global *internal.GlobalCommandOptions) (*cobra.Command, *log
 	}
 
 	flags := &loginFlags{}
-	flags.Setup(cmd.Flags(), global)
+	flags.Bind(cmd.Flags(), global)
 	return cmd, flags
 }
 

@@ -21,7 +21,7 @@ type pipelineConfigFlags struct {
 	global *internal.GlobalCommandOptions
 }
 
-func (pc *pipelineConfigFlags) Setup(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
+func (pc *pipelineConfigFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
 	local.StringVar(&pc.PipelineServicePrincipalName, "principal-name", "", "The name of the service principal to use to grant access to Azure resources as part of the pipeline.")
 	local.StringVar(&pc.PipelineRemoteName, "remote-name", "origin", "The name of the git remote to configure the pipeline to run on.")
 	local.StringVar(&pc.PipelineRoleName, "principal-role", "Contributor", "The role to assign to the service principal.")
@@ -55,7 +55,7 @@ For more information, go to https://aka.ms/azure-dev/pipeline.`,
 	}
 
 	flags := &pipelineConfigFlags{}
-	flags.Setup(cmd.Flags(), global)
+	flags.Bind(cmd.Flags(), global)
 
 	return cmd, flags
 }

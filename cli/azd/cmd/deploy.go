@@ -29,19 +29,19 @@ type deployFlags struct {
 	global       *internal.GlobalCommandOptions
 }
 
-func (d *deployFlags) Bind(flags *pflag.FlagSet, global *internal.GlobalCommandOptions) {
-	d.bind(flags, global)
+func (d *deployFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
+	d.bind(local, global)
 
 	d.outputFormat = convert.RefOf("")
 	output.AddOutputFlag(
-		flags,
+		local,
 		d.outputFormat,
 		[]output.Format{output.JsonFormat, output.NoneFormat},
 		output.NoneFormat)
 }
 
-func (d *deployFlags) bind(flags *pflag.FlagSet, global *internal.GlobalCommandOptions) {
-	flags.StringVar(&d.serviceName, "service", "", "Deploys a specific service (when the string is unspecified, all services that are listed in the "+azdcontext.ProjectFileName+" file are deployed).")
+func (d *deployFlags) bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
+	local.StringVar(&d.serviceName, "service", "", "Deploys a specific service (when the string is unspecified, all services that are listed in the "+azdcontext.ProjectFileName+" file are deployed).")
 
 	d.global = global
 }

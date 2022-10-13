@@ -25,7 +25,7 @@ type monitorFlags struct {
 	global          *internal.GlobalCommandOptions
 }
 
-func (m *monitorFlags) Setup(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
+func (m *monitorFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
 	local.BoolVar(
 		&m.monitorLive,
 		"live",
@@ -52,7 +52,7 @@ Examples:
 For more information, go to https://aka.ms/azure-dev/monitor.`,
 	}
 	flags := &monitorFlags{}
-	flags.Setup(cmd.Flags(), global)
+	flags.Bind(cmd.Flags(), global)
 	return cmd, flags
 }
 

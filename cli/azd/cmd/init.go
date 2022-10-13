@@ -44,7 +44,7 @@ When a template is provided, the sample code is cloned to the current directory.
 	}
 
 	f := &initFlags{}
-	f.Setup(cmd.Flags(), rootOptions)
+	f.Bind(cmd.Flags(), rootOptions)
 
 	return cmd, f
 }
@@ -57,7 +57,7 @@ type initFlags struct {
 	rootOptions    *internal.GlobalCommandOptions
 }
 
-func (i *initFlags) Setup(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
+func (i *initFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
 	local.StringVarP(&i.template.Name, "template", "t", "", "The template to use when you initialize the project. You can use Full URI, <owner>/<repository>, or <repository> if it's part of the azure-samples organization.")
 	local.StringVarP(&i.templateBranch, "branch", "b", "", "The template branch to initialize from.")
 	local.StringVar(

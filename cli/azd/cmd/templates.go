@@ -35,7 +35,7 @@ type templatesListFlags struct {
 	global       *internal.GlobalCommandOptions
 }
 
-func (tl *templatesListFlags) Setup(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
+func (tl *templatesListFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
 	output.AddOutputFlag(local, &tl.outputFormat, []output.Format{output.JsonFormat, output.TableFormat}, output.TableFormat)
 	tl.global = global
 }
@@ -48,7 +48,7 @@ func templatesListCmdDesign(global *internal.GlobalCommandOptions) (*cobra.Comma
 	}
 
 	flags := &templatesListFlags{}
-	flags.Setup(cmd.Flags(), global)
+	flags.Bind(cmd.Flags(), global)
 
 	return cmd, flags
 }

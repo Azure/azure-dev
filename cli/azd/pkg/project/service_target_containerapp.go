@@ -150,17 +150,20 @@ func (at *containerAppTarget) Deploy(
 }
 
 func (at *containerAppTarget) Endpoints(ctx context.Context) ([]string, error) {
-	containerAppProperties, err := at.cli.GetContainerAppProperties(
-		ctx,
-		at.env.GetSubscriptionId(),
+	if containerAppProperties, err := at.cli.GetContainerAppProperties(
+		ctx, at.env.GetSubscriptionId(),
 		at.scope.ResourceGroupName(),
 		at.scope.ResourceName(),
-	)
-	if err != nil {
+	); err != nil {
 		return nil, fmt.Errorf("fetching service properties: %w", err)
-	}
+	} else {
+		endpoints := make([]string, len(containerAppProperties.HostNames))
+		for idx, hostName := range containerAppProperties.HostNames {
+			endpoints[idx] = fmt.Sprintf("https://%s/", hostName)
+		}
 
-	return []string{fmt.Sprintf("https://%s/", containerAppProperties.Properties.Configuration.Ingress.Fqdn)}, nil
+		return endpoints, nil
+	}
 }
 
 func NewContainerAppTarget(

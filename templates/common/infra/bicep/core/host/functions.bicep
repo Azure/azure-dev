@@ -14,17 +14,16 @@ param remoteBuild bool = true
 param serviceName string
 
 // Function Settings
-
 param clientAffinityEnabled bool = false
 @allowed([
-'~4', '~3', '~2', '~1'
+  '~4', '~3', '~2', '~1'
 ])
 param extensionVersion string = '~4'
 param functionAppScaleLimit int = 200
 param minimumElasticInstanceCount int = 0
 param numberOfWorkers int = 1
 @allowed([
-'dotnet', 'dotnet-isolated', 'node', 'python', 'java', 'powershell', 'custom'
+  'dotnet', 'dotnet-isolated', 'node', 'python', 'java', 'powershell', 'custom'
 ])
 param runtimeName string
 param runtimeNameAndVersion string = '${runtimeName}|${runtimeVersion}'

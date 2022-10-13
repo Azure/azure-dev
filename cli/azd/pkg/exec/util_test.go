@@ -18,7 +18,7 @@ import (
 )
 
 func TestRunCommandWithShell(t *testing.T) {
-	runner := NewCommandRunner()
+	runner := NewCommandRunner(os.Stdin, os.Stdout, os.Stderr)
 
 	runArgs := NewRunArgs("az", "--version").
 		WithShell(true)
@@ -43,7 +43,7 @@ func TestRunCommandWithShell(t *testing.T) {
 }
 
 func TestRunCommand(t *testing.T) {
-	runner := NewCommandRunner()
+	runner := NewCommandRunner(os.Stdin, os.Stdout, os.Stderr)
 
 	args := RunArgs{
 		Cmd:  "git",
@@ -74,7 +74,7 @@ func TestKillCommand(t *testing.T) {
 
 	s := time.Now()
 
-	runner := NewCommandRunner()
+	runner := NewCommandRunner(os.Stdin, os.Stdout, os.Stderr)
 	_, err := runner.Run(ctx, RunArgs{
 		Cmd: "pwsh",
 		Args: []string{
@@ -142,7 +142,7 @@ func TestRunCommandList(t *testing.T) {
 func TestRunCapturingStderr(t *testing.T) {
 	myStderr := &bytes.Buffer{}
 
-	runner := NewCommandRunner()
+	runner := NewCommandRunner(os.Stdin, os.Stdout, os.Stderr)
 	res, _ := runner.Run(context.Background(), RunArgs{
 		Cmd:    "go",
 		Args:   []string{"--help"},
@@ -154,7 +154,7 @@ func TestRunCapturingStderr(t *testing.T) {
 }
 
 func TestRunEnrichError(t *testing.T) {
-	runner := NewCommandRunner()
+	runner := NewCommandRunner(os.Stdin, os.Stdout, os.Stderr)
 	_, err := runner.Run(context.Background(), RunArgs{
 		Cmd:  "go",
 		Args: []string{"--help"},

@@ -422,7 +422,7 @@ type NewAzCliArgs struct {
 
 func NewAzCli(args NewAzCliArgs) AzCli {
 	if args.CommandRunner == nil {
-		args.CommandRunner = exec.NewCommandRunner()
+		panic("NewAzCli: must set args.CommandRunner")
 	}
 
 	return &azCli{

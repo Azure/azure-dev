@@ -6,13 +6,14 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/identity"
 	_ "github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning/bicep"
-	_ "github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning/terraform"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
+
 	"github.com/mattn/go-colorable"
 	"github.com/mattn/go-isatty"
 	"github.com/spf13/cobra"
@@ -29,9 +30,13 @@ func RegisterDependenciesInCtx(
 	ctx = internal.WithCommandOptions(ctx, *rootOptions)
 	ctx = tools.WithInstalledCheckCache(ctx)
 
+	runner := exec.NewCommandRunner(cmd.InOrStdin(), cmd.OutOrStdout(), cmd.ErrOrStderr())
+	ctx = exec.WithCommandRunner(ctx, runner)
+
 	azCliArgs := azcli.NewAzCliArgs{
 		EnableDebug:     rootOptions.EnableDebugLogging,
 		EnableTelemetry: rootOptions.EnableTelemetry,
+		CommandRunner:   runner,
 	}
 
 	// Set default credentials used for operations against azure data/control planes

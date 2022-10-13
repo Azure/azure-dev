@@ -1,6 +1,8 @@
 import * as fs from 'fs/promises';
+import { Subscription } from 'rxjs';
 import * as vscode from 'vscode';
 import * as yaml from 'yaml';
+import { AzureDevApplication, AzureDevApplicationProvider } from '../../services/AzureDevApplicationProvider';
 import { ProvideResourceOptions, WorkspaceResource, WorkspaceResourceProvider } from './ResourceGroupsApi';
 
 interface AzureDevCliApplicationConfguration {
@@ -13,23 +15,41 @@ async function getAzureDevCliApplicationConfiguration(path: string): Promise<Azu
     return yaml.parse(configurationYaml) as AzureDevCliApplicationConfguration;
 }
 
-export class AzureDevCliWorkspaceResourceProvider implements WorkspaceResourceProvider {
-    // TODO: Identify and report changes.
-    // onDidChangeResource?: Event<WorkspaceResource | undefined> | undefined;
+export class AzureDevCliWorkspaceResourceProvider extends vscode.Disposable implements WorkspaceResourceProvider {
+    private readonly onDidChangeResourceEmitter = new vscode.EventEmitter<WorkspaceResource | undefined>();
+    private readonly applicationsSubscription: Subscription;
 
-    // TODO: What if no workspace folder is open?
+    private applications: AzureDevApplication[] = [];
+
+    constructor(applicationProvider: AzureDevApplicationProvider) {
+        super(
+            () => {
+                this.applicationsSubscription.unsubscribe();
+                this.onDidChangeResourceEmitter.dispose();
+            });
+
+        this.applicationsSubscription =
+            applicationProvider
+                .applications
+                .subscribe(
+                    applications => {
+                        this.applications = applications;
+                        this.onDidChangeResourceEmitter.fire(undefined);
+                    });
+    }
+
+    readonly onDidChangeResource = this.onDidChangeResourceEmitter.event;
+
     async getResources(source: vscode.WorkspaceFolder, options?: ProvideResourceOptions | undefined): Promise<WorkspaceResource[]> {
-        const files = await vscode.workspace.findFiles('**/azure.{yml,yaml}', '**/node_modules/**');
-        
         const resources: WorkspaceResource[] = [];
 
-        for (const file of files) {
-            const config = await getAzureDevCliApplicationConfiguration(file.fsPath);
+        for (const application of this.applications) {
+            const config = await getAzureDevCliApplicationConfiguration(application.configurationPath.fsPath);
 
             resources.push({
                 folder: source,
-                id: file.fsPath,
-                name: config.name ?? file.fsPath,
+                id: application.configurationPath.fsPath,
+                name: config.name ?? application.configurationPath.fsPath,
                 type: 'ms-azuretools.azure-dev.application'
             });
         }

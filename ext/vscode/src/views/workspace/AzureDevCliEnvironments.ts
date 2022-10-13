@@ -1,5 +1,6 @@
-import { callWithTelemetryAndErrorHandling } from '@microsoft/vscode-azext-utils';
+import * as path from 'path';
 import * as vscode from 'vscode';
+import { callWithTelemetryAndErrorHandling } from '@microsoft/vscode-azext-utils';
 import { localize } from '../../localize';
 import { TelemetryId } from '../../telemetry/telemetryId';
 import { createAzureDevCli } from '../../utils/azureDevCli';
@@ -15,7 +16,8 @@ type EnvListResults = {
 }[];
 
 export class AzureDevCliEnvironments implements AzureDevCliModel {
-    constructor(private readonly applicationDirectory: string) {
+    constructor(
+        public readonly configurationFile: vscode.Uri) {
     }
 
     async getChildren(): Promise<AzureDevCliModel[]> {
@@ -24,10 +26,13 @@ export class AzureDevCliEnvironments implements AzureDevCliModel {
             async context => {
                 const azureCli = await createAzureDevCli(context);
 
+                const configurationFilePath = this.configurationFile.fsPath;
+                const configurationFileDirectory = path.dirname(configurationFilePath);
+
                 const command = azureCli.commandBuilder
                     .withArg('env')
                     .withArg('list')
-                    .withNamedArg('--cwd', this.applicationDirectory)
+                    .withNamedArg('--cwd', configurationFileDirectory)
                     .withNamedArg('--output', 'json')
                     .build();
 

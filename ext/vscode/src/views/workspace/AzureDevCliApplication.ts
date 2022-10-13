@@ -6,7 +6,8 @@ import { AzureDevCliServices } from './AzureDevCliServices';
 import { WorkspaceResource } from './ResourceGroupsApi';
 
 export class AzureDevCliApplication implements AzureDevCliModel {
-    constructor(private readonly resource: WorkspaceResource) {
+    constructor(
+        private readonly resource: WorkspaceResource) {
     }
 
     get configurationFile(): vscode.Uri {
@@ -19,7 +20,7 @@ export class AzureDevCliApplication implements AzureDevCliModel {
 
         return [
             new AzureDevCliServices(applicationDirectory),
-            new AzureDevCliEnvironments(applicationDirectory)
+            new AzureDevCliEnvironments(this.configurationFile)
         ];
     }
 

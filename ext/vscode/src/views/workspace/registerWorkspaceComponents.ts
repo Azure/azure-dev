@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import { AzureDevCliWorkspaceResourceProvider } from './AzureDevCliWorkspaceResourceProvider';
 import { AzureDevCliWorkspaceResourceBranchDataProvider } from './AzureDevCliWorkspaceResourceBranchDataProvider';
 import { AzureResourcesApiManager, GetApiOptions, V2AzureResourcesApi } from './ResourceGroupsApi';
+import { PollingAzureDevApplicationProvider } from '../../services/AzureDevApplicationProvider';
 
 export async function getApiExport<T>(extensionId: string): Promise<T | undefined> {
     const extension: vscode.Extension<T> | undefined = vscode.extensions.getExtension(extensionId);
@@ -37,7 +38,11 @@ export async function registerWorkspaceComponents(extensionId: string): Promise<
 
     const disposables: vscode.Disposable[] = [];
 
-    disposables.push(api.registerWorkspaceResourceProvider(new AzureDevCliWorkspaceResourceProvider()));
+    const workspaceResourceProvider = new AzureDevCliWorkspaceResourceProvider(new PollingAzureDevApplicationProvider(3000));
+
+    disposables.push(workspaceResourceProvider);
+
+    disposables.push(api.registerWorkspaceResourceProvider(workspaceResourceProvider));
     disposables.push(api.registerWorkspaceResourceBranchDataProvider('ms-azuretools.azure-dev.application', new AzureDevCliWorkspaceResourceBranchDataProvider()));
 
     return disposables;

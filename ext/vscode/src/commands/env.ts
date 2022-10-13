@@ -10,7 +10,7 @@ import { EnvironmentInfo, getAzDevTerminalTitle, getEnvironments } from './cmdUt
 import { executeInTerminal } from '../utils/executeInTerminal';
 import { spawnAsync } from '../utils/process';
 import { isTreeViewModel, TreeViewModel } from '../utils/isTreeViewModel';
-import { AzureDevCliApplication } from '../views/workspace/AzureDevCliApplication';
+import { AzureDevCliEnvironments } from '../views/workspace/AzureDevCliEnvironments';
 
 export async function selectEnvironment(context: IActionContext, selectedFile?: vscode.Uri): Promise<void> {
     let folder: vscode.WorkspaceFolder | undefined = (selectedFile ? vscode.workspace.getWorkspaceFolder(selectedFile) : undefined);
@@ -47,7 +47,7 @@ export async function selectEnvironment(context: IActionContext, selectedFile?: 
 }
 
 export async function newEnvironment(context: IActionContext, selectedItem?: vscode.Uri | TreeViewModel): Promise<void> {
-    const selectedFile = isTreeViewModel(selectedItem) ? selectedItem.unwrap<AzureDevCliApplication>().configurationFile : selectedItem;
+    const selectedFile = isTreeViewModel(selectedItem) ? selectedItem.unwrap<AzureDevCliEnvironments>().configurationFile : selectedItem;
     let folder: vscode.WorkspaceFolder | undefined = (selectedFile ? vscode.workspace.getWorkspaceFolder(selectedFile) : undefined);
     if (!folder) {
         folder = await quickPickWorkspaceFolder(context, localize('azure-dev.commands.util.needWorkspaceFolder', "To run '{0}' command you must first open a folder or workspace in VS Code", 'env new'));

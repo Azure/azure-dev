@@ -1,10 +1,19 @@
-import { ProviderResult, Event, TreeItem } from "vscode";
+import * as vscode from 'vscode';
+import { ProviderResult, TreeItem } from "vscode";
 import { AzureDevCliApplication } from "./AzureDevCliApplication";
 import { AzureDevCliModel } from "./AzureDevCliModel";
 import { BranchDataProvider, WorkspaceResource } from "./ResourceGroupsApi";
 
-// TODO: Add helper interface for workspace branch data provider?
-export class AzureDevCliWorkspaceResourceBranchDataProvider implements BranchDataProvider<WorkspaceResource, AzureDevCliModel> {
+export class AzureDevCliWorkspaceResourceBranchDataProvider extends vscode.Disposable implements BranchDataProvider<WorkspaceResource, AzureDevCliModel> {
+    private readonly onDidChangeTreeDataEmitter = new vscode.EventEmitter<void | AzureDevCliModel | null | undefined>();
+
+    constructor() {
+        super(
+            () => {
+                this.onDidChangeTreeDataEmitter.dispose();
+            });
+    }
+
     getChildren(element: AzureDevCliModel): ProviderResult<AzureDevCliModel[]> {
         return element.getChildren();
     }
@@ -15,7 +24,7 @@ export class AzureDevCliWorkspaceResourceBranchDataProvider implements BranchDat
 
     createResourceItem?: (() => ProviderResult<WorkspaceResource>) | undefined;
 
-    onDidChangeTreeData?: Event<void | AzureDevCliModel | null | undefined> | undefined;
+    readonly onDidChangeTreeData = this.onDidChangeTreeDataEmitter.event;
 
     getTreeItem(element: AzureDevCliModel): TreeItem | Thenable<TreeItem> {
         return element.getTreeItem();

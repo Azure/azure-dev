@@ -1,0 +1,1 @@
+powershell.exe .vscode/setup-api.ps1

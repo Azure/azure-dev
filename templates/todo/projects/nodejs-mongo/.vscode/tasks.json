@@ -27,7 +27,6 @@
             "options": {
                 "cwd": "${workspaceFolder}/src/web/",
                 "env": {
-                    "REACT_APP_API_BASE_URL": "http://localhost:3100",
                     "BROWSER": "none"
                 }
             },
@@ -36,10 +35,20 @@
             },
             "problemMatcher": []
         },
-
+        {
+            "label": "Setup API Env",
+            "command": ".vscode/setup-api.sh",
+            "windows": {
+                "command": ".vscode/setup-api.cmd"
+            },
+            "problemMatcher": []
+        },
         {
             "label": "Start API",
             "type": "dotenv",
+            "dependsOn": [
+                "Setup API Env"
+            ],
             "targetTasks": [
                 "Restore API",
                 "API npm start"

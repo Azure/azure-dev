@@ -111,7 +111,7 @@ type AzCli interface {
 		subscriptionId string,
 		resourceGroup string,
 		deploymentName string,
-		templatePath string,
+		compiledBicep string,
 		parametersPath string,
 	) (AzCliDeploymentResult, error)
 	DeleteSubscriptionDeployment(ctx context.Context, subscriptionId string, deploymentName string) error
@@ -533,53 +533,6 @@ func extractInnerDeploymentErrors(stderr string) string {
 		}
 		return sb.String()
 	}
-}
-
-func (cli *azCli) DeployToResourceGroup(
-	ctx context.Context,
-	subscriptionId string,
-	resourceGroup string,
-	deploymentName string,
-	templateFile string,
-	parametersFile string,
-) (AzCliDeploymentResult, error) {
-	res, err := cli.runAzCommand(
-		ctx,
-		"deployment",
-		"group",
-		"create",
-		"--subscription",
-		subscriptionId,
-		"--resource-group",
-		resourceGroup,
-		"--name",
-		deploymentName,
-		"--template-file",
-		templateFile,
-		"--parameters",
-		fmt.Sprintf("@%s", parametersFile),
-		"--output",
-		"json",
-	)
-	if isNotLoggedInMessage(res.Stderr) {
-		return AzCliDeploymentResult{}, ErrAzCliNotLoggedIn
-	} else if err != nil {
-		if deploymentError := extractDeploymentError(res.Stderr); deploymentError != nil {
-			return AzCliDeploymentResult{}, fmt.Errorf("failed running az deployment group create:\n\n%w", deploymentError)
-		}
-
-		return AzCliDeploymentResult{}, fmt.Errorf("failed running az deployment group create: %s: %w", res.String(), err)
-	}
-
-	var deploymentResult AzCliDeploymentResult
-	if err := json.Unmarshal([]byte(res.Stdout), &deploymentResult); err != nil {
-		return AzCliDeploymentResult{}, fmt.Errorf(
-			"could not unmarshal output %s as an AzCliDeploymentResult: %w",
-			res.Stdout,
-			err,
-		)
-	}
-	return deploymentResult, nil
 }
 
 func (cli *azCli) DeleteSubscriptionDeployment(ctx context.Context, subscriptionId string, deploymentName string) error {

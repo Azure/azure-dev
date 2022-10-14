@@ -121,7 +121,49 @@ func (cli *azCli) DeployToSubscription(
 			Outputs: CreateDeploymentOutput(deployResult.Properties.Outputs),
 		},
 	}, nil
+}
 
+func (cli *azCli) DeployToResourceGroup(
+	ctx context.Context, subscriptionId, resourceGroup, deploymentName, compiledBicep, parametersFile string) (
+	AzCliDeploymentResult, error) {
+	deploymentClient, err := cli.createDeploymentsClient(ctx, subscriptionId)
+	if err != nil {
+		return AzCliDeploymentResult{}, fmt.Errorf("creating deployments client: %w", err)
+	}
+
+	templateJsonAsMap, err := readFromString([]byte(compiledBicep))
+	if err != nil {
+		return AzCliDeploymentResult{}, fmt.Errorf("reading template file: %w", err)
+	}
+	parametersFileJsonAsMap, err := readJson(parametersFile)
+	if err != nil {
+		return AzCliDeploymentResult{}, fmt.Errorf("reading parameters file: %w", err)
+	}
+
+	createFromTemplateOperation, err := deploymentClient.BeginCreateOrUpdate(
+		ctx, resourceGroup, deploymentName,
+		armresources.Deployment{
+			Properties: &armresources.DeploymentProperties{
+				Template:   templateJsonAsMap,
+				Parameters: parametersFileJsonAsMap["parameters"],
+				Mode:       to.Ptr(armresources.DeploymentModeIncremental),
+			},
+		}, nil)
+	if err != nil {
+		return AzCliDeploymentResult{}, fmt.Errorf("starting deployment to resource group: %w", err)
+	}
+
+	// wait for deployment creation
+	deployResult, err := createFromTemplateOperation.PollUntilDone(ctx, nil)
+	if err != nil {
+		return AzCliDeploymentResult{}, fmt.Errorf("deploying to resource group: %w", err)
+	}
+
+	return AzCliDeploymentResult{
+		Properties: AzCliDeploymentResultProperties{
+			Outputs: CreateDeploymentOutput(deployResult.Properties.Outputs),
+		},
+	}, nil
 }
 
 func readJson(path string) (map[string]interface{}, error) {

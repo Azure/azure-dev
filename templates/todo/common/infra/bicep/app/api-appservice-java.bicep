@@ -2,7 +2,7 @@ param environmentName string
 param location string = resourceGroup().location
 
 param allowedOrigins array = []
-param applicationInsightsName string
+param applicationInsightsName string = ''
 param appServicePlanId string
 param appSettings object = {}
 param keyVaultName string

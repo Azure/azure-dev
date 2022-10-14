@@ -32,8 +32,9 @@ type AskerConsole struct {
 	interactive bool
 	asker       Asker
 	handles     ConsoleHandles
-	// the current writer, may differ from handles.Stdout when SetWriter has been
-	// called.
+	// the writer the console was constructed with, and what we reset to when SetWriter(nil) is called.
+	defaultWriter io.Writer
+	// the writer which output is written to.
 	writer    io.Writer
 	formatter output.Formatter
 }
@@ -54,7 +55,7 @@ type ConsoleHandles struct {
 // if writer is nil, sets it back to the default writer.
 func (c *AskerConsole) SetWriter(writer io.Writer) {
 	if writer == nil {
-		writer = c.handles.Stdout
+		writer = c.defaultWriter
 	}
 
 	c.writer = writer
@@ -138,16 +139,17 @@ func (c *AskerConsole) Handles() ConsoleHandles {
 	return c.handles
 }
 
-// Creates a new console with the specified handles and formatter
+// Creates a new console with the specified writer, handles and formatter.
 func NewConsole(interactive bool, isTerminal bool, w io.Writer, handles ConsoleHandles, formatter output.Formatter) Console {
 	asker := NewAsker(!interactive, isTerminal, handles.Stdout, handles.Stdin)
 
 	return &AskerConsole{
-		interactive: interactive,
-		asker:       asker,
-		handles:     handles,
-		writer:      w,
-		formatter:   formatter,
+		interactive:   interactive,
+		asker:         asker,
+		handles:       handles,
+		defaultWriter: w,
+		writer:        w,
+		formatter:     formatter,
 	}
 }
 

@@ -123,13 +123,9 @@ const (
 //     the last used configuration
 func DetectProviders(
 	ctx context.Context,
+	azdContext *azdcontext.AzdContext,
 	env *environment.Environment,
 	overrideProvider string) (ScmProvider, CiProvider, error) {
-	// This should be a pre-condition. azd context should be injected with the context
-	azdContext, err := azdcontext.GetAzdContext(ctx)
-	if err != nil {
-		return nil, nil, err
-	}
 	projectDir := azdContext.ProjectDirectory()
 
 	// get the override value

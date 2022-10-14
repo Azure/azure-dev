@@ -30,7 +30,7 @@ type deployFlags struct {
 }
 
 func (d *deployFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
-	d.bind(local, global)
+	d.bindWithoutOutput(local, global)
 
 	d.outputFormat = convert.RefOf("")
 	output.AddOutputFlag(
@@ -40,7 +40,9 @@ func (d *deployFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandO
 		output.NoneFormat)
 }
 
-func (d *deployFlags) bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
+// bindWithoutOutput binds all flags except for the output flag. This is used when multiple actions are attached
+// to the same command.
+func (d *deployFlags) bindWithoutOutput(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
 	local.StringVar(
 		&d.serviceName,
 		"service",

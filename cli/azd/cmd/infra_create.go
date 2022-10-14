@@ -28,7 +28,7 @@ type infraCreateFlags struct {
 }
 
 func (i *infraCreateFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
-	i.bind(local, global)
+	i.bindWithoutOutput(local, global)
 
 	i.outputFormat = convert.RefOf("")
 	output.AddOutputFlag(
@@ -38,7 +38,9 @@ func (i *infraCreateFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCom
 		output.NoneFormat)
 }
 
-func (i *infraCreateFlags) bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
+// bindWithoutOutput binds all flags except for the output flag. This is used when multiple actions are attached
+// to the same command.
+func (i *infraCreateFlags) bindWithoutOutput(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
 	local.BoolVar(&i.noProgress, "no-progress", false, "Suppresses progress information.")
 
 	i.global = global

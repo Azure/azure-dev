@@ -31,8 +31,8 @@ func (u *upFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptio
 	u.deployFlags.outputFormat = &u.outputFormat
 
 	u.initFlags.Bind(local, global)
-	u.infraCreateFlags.bind(local, global)
-	u.deployFlags.bind(local, global)
+	u.infraCreateFlags.bindWithoutOutput(local, global)
+	u.deployFlags.bindWithoutOutput(local, global)
 
 	u.global = global
 }

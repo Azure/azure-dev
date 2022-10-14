@@ -1,5 +1,7 @@
 package cmd
 
+// Run `go generate ./cmd` or `wire ./cmd` after modifying this file to regenerate `wire_gen.go`.
+
 import (
 	"fmt"
 	"io"

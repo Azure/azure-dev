@@ -3,6 +3,8 @@
 
 package cmd
 
+// Run `go generate ./cmd` or `wire ./cmd` after modifying this file to regenerate `wire_gen.go`.
+
 import (
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"

@@ -29,6 +29,9 @@ module api '../../../../../common/infra/bicep/app/api-appservice-dotnet.bicep' =
     appServicePlanId: appServicePlan.outputs.appServicePlanId
     keyVaultName: keyVault.outputs.keyVaultName
     allowedOrigins: [ web.outputs.WEB_URI ]
+    appSettings: {
+      AZURE_SQL_CONNECTION_STRING_KEY: sqlServer.outputs.sqlConnectionStringKey
+    }
   }
 }
 
@@ -52,15 +55,6 @@ module sqlServer '../../../../../common/infra/bicep/app/sqlserver.bicep' = {
     sqlAdminPassword: sqlAdminPassword
     appUserPassword: appUserPassword
     keyVaultName: keyVault.outputs.keyVaultName
-  }
-}
-
-// Configure api to use sql
-module apiSqlServerConfig '../../../../../../common/infra/bicep/core/host/appservice/config/appservice-config-sqlserver.bicep' = {
-  name: 'api-sqlserver-config'
-  params: {
-    appServiceName: api.outputs.API_NAME
-    sqlConnectionStringKey: sqlServer.outputs.sqlConnectionStringKey
   }
 }
 

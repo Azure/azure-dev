@@ -65,9 +65,10 @@ resource appService 'Microsoft.Web/sites@2022-03-01' = {
 
   identity: managedIdentity ? { type: 'SystemAssigned' } : null
 
-  resource appSettings 'config' = {
+  resource configAppSettings 'config' = {
     name: 'appsettings'
-    properties: union({
+    properties: union(appSettings,
+      {
         SCM_DO_BUILD_DURING_DEPLOYMENT: string(scmDoBuildDuringDeployment)
         ENABLE_ORYX_BUILD: enableOryxBuild
       },
@@ -75,7 +76,7 @@ resource appService 'Microsoft.Web/sites@2022-03-01' = {
       !(empty(keyVaultName)) ? { AZURE_KEY_VAULT_ENDPOINT: keyVault.properties.vaultUri } : {})
   }
 
-  resource siteLogsConfig 'config' = {
+  resource configLogs 'config' = {
     name: 'logs'
     properties: {
       applicationLogs: { fileSystem: { level: 'Verbose' } }
@@ -83,17 +84,6 @@ resource appService 'Microsoft.Web/sites@2022-03-01' = {
       failedRequestsTracing: { enabled: true }
       httpLogs: { fileSystem: { enabled: true, retentionInDays: 1, retentionInMb: 35 } }
     }
-  }
-}
-
-// This needs to be a separate module because of the delay in setting and reading the appSettings values caused some values to be lost
-module appSettingsUnion './config/appservice-config-union.bicep' = if (!empty(appSettings)) {
-  name: '${serviceName}-app-settings-union'
-  params: {
-    appServiceName: appService.name
-    configName: 'appsettings'
-    currentConfigProperties: appService::appSettings.list().properties
-    additionalConfigProperties: appSettings
   }
 }
 

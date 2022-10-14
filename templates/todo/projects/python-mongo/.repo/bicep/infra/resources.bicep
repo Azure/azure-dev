@@ -23,6 +23,11 @@ module api '../../../../../common/infra/bicep/app/api-appservice-python.bicep' =
     appServicePlanId: appServicePlan.outputs.appServicePlanId
     keyVaultName: keyVault.outputs.keyVaultName
     allowedOrigins: [ web.outputs.WEB_URI ]
+    appSettings: {
+      AZURE_COSMOS_CONNECTION_STRING_KEY: cosmos.outputs.cosmosConnectionStringKey
+      AZURE_COSMOS_DATABASE_NAME: cosmos.outputs.cosmosDatabaseName
+      AZURE_COSMOS_ENDPOINT: cosmos.outputs.cosmosEndpoint
+    }
   }
 }
 
@@ -44,17 +49,6 @@ module cosmos '../../../../../common/infra/bicep/app/cosmos-mongo-db.bicep' = {
     environmentName: environmentName
     location: location
     keyVaultName: keyVault.outputs.keyVaultName
-  }
-}
-
-// Configure api to use cosmos
-module apiCosmosConfig '../../../../../../common/infra/bicep/core/host/appservice/config/appservice-config-cosmos.bicep' = {
-  name: 'api-cosmos-config'
-  params: {
-    appServiceName: api.outputs.API_NAME
-    cosmosDatabaseName: cosmos.outputs.cosmosDatabaseName
-    cosmosConnectionStringKey: cosmos.outputs.cosmosConnectionStringKey
-    cosmosEndpoint: cosmos.outputs.cosmosEndpoint
   }
 }
 

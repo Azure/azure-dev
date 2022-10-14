@@ -5,7 +5,6 @@ import (
 	"fmt"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appcontainers/armappcontainers"
-	"github.com/azure/azure-dev/cli/azd/pkg/identity"
 )
 
 type AzCliContainerAppProperties struct {
@@ -35,13 +34,8 @@ func (cli *azCli) createContainerAppsClient(
 	ctx context.Context,
 	subscriptionId string,
 ) (*armappcontainers.ContainerAppsClient, error) {
-	cred, err := identity.GetCredentials(ctx)
-	if err != nil {
-		return nil, err
-	}
-
 	options := cli.createDefaultClientOptionsBuilder(ctx).BuildArmClientOptions()
-	client, err := armappcontainers.NewContainerAppsClient(subscriptionId, cred, options)
+	client, err := armappcontainers.NewContainerAppsClient(subscriptionId, cli.credential, options)
 	if err != nil {
 		return nil, fmt.Errorf("creating ContainerApps client: %w", err)
 	}

@@ -5,7 +5,6 @@ import (
 	"fmt"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
-	"github.com/azure/azure-dev/cli/azd/pkg/identity"
 )
 
 func (cli *azCli) GetResource(
@@ -138,13 +137,8 @@ func (cli *azCli) DeleteResourceGroup(ctx context.Context, subscriptionId string
 }
 
 func (cli *azCli) createResourcesClient(ctx context.Context, subscriptionId string) (*armresources.Client, error) {
-	cred, err := identity.GetCredentials(ctx)
-	if err != nil {
-		return nil, err
-	}
-
 	options := cli.createDefaultClientOptionsBuilder(ctx).BuildArmClientOptions()
-	client, err := armresources.NewClient(subscriptionId, cred, options)
+	client, err := armresources.NewClient(subscriptionId, cli.credential, options)
 	if err != nil {
 		return nil, fmt.Errorf("creating Resource client: %w", err)
 	}
@@ -156,13 +150,8 @@ func (cli *azCli) createResourceGroupClient(
 	ctx context.Context,
 	subscriptionId string,
 ) (*armresources.ResourceGroupsClient, error) {
-	cred, err := identity.GetCredentials(ctx)
-	if err != nil {
-		return nil, err
-	}
-
 	options := cli.createDefaultClientOptionsBuilder(ctx).BuildArmClientOptions()
-	client, err := armresources.NewResourceGroupsClient(subscriptionId, cred, options)
+	client, err := armresources.NewResourceGroupsClient(subscriptionId, cli.credential, options)
 	if err != nil {
 		return nil, fmt.Errorf("creating ResourceGroup client: %w", err)
 	}

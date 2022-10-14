@@ -7,6 +7,8 @@ import (
 	"io"
 	"os"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
@@ -64,8 +66,12 @@ func newCommandRunnerFromConsole(console input.Console) exec.CommandRunner {
 	)
 }
 
-func newAzCliFromOptions(rootOptions *internal.GlobalCommandOptions, cmdRun exec.CommandRunner) azcli.AzCli {
-	return azcli.NewAzCli(azcli.NewAzCliArgs{
+func newAzCliFromOptions(
+	rootOptions *internal.GlobalCommandOptions,
+	cmdRun exec.CommandRunner,
+	credential azcore.TokenCredential,
+) azcli.AzCli {
+	return azcli.NewAzCli(credential, azcli.NewAzCliArgs{
 		EnableDebug:     rootOptions.EnableDebugLogging,
 		EnableTelemetry: rootOptions.EnableTelemetry,
 		CommandRunner:   cmdRun,
@@ -82,6 +88,15 @@ func newAzdContext() (*azdcontext.AzdContext, error) {
 	return azdCtx, nil
 }
 
+func newCredential() (azcore.TokenCredential, error) {
+	credential, err := azidentity.NewAzureCLICredential(nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to obtain Azure credentials: %w", err)
+	}
+
+	return credential, nil
+}
+
 var FormattedConsoleSet = wire.NewSet(
 	output.GetCommandFormatter,
 	newWriter,
@@ -94,34 +109,39 @@ var CommonSet = wire.NewSet(
 	newCommandRunnerFromConsole,
 )
 
+var AzCliSet = wire.NewSet(
+	newCredential,
+	newAzCliFromOptions,
+)
+
 var InitCmdSet = wire.NewSet(
 	CommonSet,
-	newAzCliFromOptions,
+	AzCliSet,
 	git.NewGitCliFromRunner,
 	newInitAction,
 	wire.Bind(new(actions.Action), new(*initAction)))
 
 var InfraCreateCmdSet = wire.NewSet(
 	CommonSet,
-	newAzCliFromOptions,
+	AzCliSet,
 	newInfraCreateAction,
 	wire.Bind(new(actions.Action), new(*infraCreateAction)))
 
 var InfraDeleteCmdSet = wire.NewSet(
 	CommonSet,
-	newAzCliFromOptions,
+	AzCliSet,
 	newInfraDeleteAction,
 	wire.Bind(new(actions.Action), new(*infraDeleteAction)))
 
 var DeployCmdSet = wire.NewSet(
 	CommonSet,
-	newAzCliFromOptions,
+	AzCliSet,
 	newDeployAction,
 	wire.Bind(new(actions.Action), new(*deployAction)))
 
 var UpCmdSet = wire.NewSet(
 	CommonSet,
-	newAzCliFromOptions,
+	AzCliSet,
 	git.NewGitCliFromRunner,
 	newInitAction,
 	newInfraCreateAction,
@@ -132,7 +152,7 @@ var UpCmdSet = wire.NewSet(
 
 var EnvSetCmdSet = wire.NewSet(
 	CommonSet,
-	newAzCliFromOptions,
+	AzCliSet,
 	newEnvSetAction,
 	wire.Bind(new(actions.Action), new(*envSetAction)))
 
@@ -148,37 +168,37 @@ var EnvListCmdSet = wire.NewSet(
 
 var EnvNewCmdSet = wire.NewSet(
 	CommonSet,
-	newAzCliFromOptions,
+	AzCliSet,
 	newEnvNewAction,
 	wire.Bind(new(actions.Action), new(*envNewAction)))
 
 var EnvRefreshCmdSet = wire.NewSet(
 	CommonSet,
-	newAzCliFromOptions,
+	AzCliSet,
 	newEnvRefreshAction,
 	wire.Bind(new(actions.Action), new(*envRefreshAction)))
 
 var EnvGetValuesCmdSet = wire.NewSet(
 	CommonSet,
-	newAzCliFromOptions,
+	AzCliSet,
 	newEnvGetValuesAction,
 	wire.Bind(new(actions.Action), new(*envGetValuesAction)))
 
 var LoginCmdSet = wire.NewSet(
 	CommonSet,
-	newAzCliFromOptions,
+	AzCliSet,
 	newLoginAction,
 	wire.Bind(new(actions.Action), new(*loginAction)))
 
 var MonitorCmdSet = wire.NewSet(
 	CommonSet,
-	newAzCliFromOptions,
+	AzCliSet,
 	newMonitorAction,
 	wire.Bind(new(actions.Action), new(*monitorAction)))
 
 var PipelineConfigCmdSet = wire.NewSet(
 	CommonSet,
-	newAzCliFromOptions,
+	AzCliSet,
 	newPipelineConfigAction,
 	wire.Bind(new(actions.Action), new(*pipelineConfigAction)))
 

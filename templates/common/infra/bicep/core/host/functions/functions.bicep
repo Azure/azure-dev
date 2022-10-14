@@ -32,12 +32,12 @@ param alwaysOn bool = true
 param appCommandLine string = ''
 param appSettings object = {}
 param clientAffinityEnabled bool = false
-param enableOryxBuild bool = false
+param enableOryxBuild bool = contains(kind, 'linux')
 param functionAppScaleLimit int = -1
 param linuxFxVersion string = runtimeNameAndVersion
 param minimumElasticInstanceCount int = -1
 param numberOfWorkers int = -1
-param scmDoBuildDuringDeployment bool = false
+param scmDoBuildDuringDeployment bool = true
 param use32BitWorkerProcess bool = false
 
 module functions '../appservice/appservice.bicep' = {

@@ -25,7 +25,7 @@ param alwaysOn bool = true
 param appCommandLine string = ''
 param appSettings object = {}
 param clientAffinityEnabled bool = false
-param enableOryxBuild bool = false
+param enableOryxBuild bool = contains(kind, 'linux')
 param functionAppScaleLimit int = -1
 param linuxFxVersion string = runtimeNameAndVersion
 param minimumElasticInstanceCount int = -1
@@ -65,17 +65,18 @@ resource appService 'Microsoft.Web/sites@2022-03-01' = {
 
   identity: managedIdentity ? { type: 'SystemAssigned' } : null
 
-  resource appSettings 'config' = {
+  resource appSettingsConfig 'config' = {
     name: 'appsettings'
     properties: union({
         SCM_DO_BUILD_DURING_DEPLOYMENT: string(scmDoBuildDuringDeployment)
         ENABLE_ORYX_BUILD: enableOryxBuild
       },
+      appSettings,
       !(empty(applicationInsightsName)) ? { APPLICATIONINSIGHTS_CONNECTION_STRING: applicationInsights.properties.ConnectionString } : {},
       !(empty(keyVaultName)) ? { AZURE_KEY_VAULT_ENDPOINT: keyVault.properties.vaultUri } : {})
   }
 
-  resource siteConfigLogs 'config' = {
+  resource siteLogsConfig 'config' = {
     name: 'logs'
     properties: {
       applicationLogs: { fileSystem: { level: 'Verbose' } }
@@ -83,16 +84,6 @@ resource appService 'Microsoft.Web/sites@2022-03-01' = {
       failedRequestsTracing: { enabled: true }
       httpLogs: { fileSystem: { enabled: true, retentionInDays: 1, retentionInMb: 35 } }
     }
-  }
-}
-
-module appSettingsUnion './config/appservice-config-union.bicep' = if (!empty(appSettings)) {
-  name: '${serviceName}-app-settings-union'
-  params: {
-    appServiceName: appService.name
-    configName: 'appsettings'
-    currentConfigProperties: appService::appSettings.list().properties
-    additionalConfigProperties: appSettings
   }
 }
 

@@ -19,7 +19,6 @@ module web '../../../../../common/infra/bicep/core/host/appservice/appservice.bi
     appSettings: appSettings
     runtimeName: 'node'
     runtimeVersion: '16-lts'
-    scmDoBuildDuringDeployment: false
   }
 }
 

@@ -63,12 +63,13 @@ type BicepDeploymentDetails struct {
 
 // BicepProvider exposes infrastructure provisioning using Azure Bicep templates
 type BicepProvider struct {
-	env         *environment.Environment
-	projectPath string
-	options     Options
-	console     input.Console
-	bicepCli    bicep.BicepCli
-	azCli       azcli.AzCli
+	env           *environment.Environment
+	projectPath   string
+	options       Options
+	console       input.Console
+	bicepCli      bicep.BicepCli
+	azCli         azcli.AzCli
+	compiledBicep *string
 }
 
 // Name gets the name of the infra provider
@@ -111,7 +112,7 @@ func (p *BicepProvider) State(
 			}
 
 			asyncContext.SetProgress(&StateProgress{Message: "Normalizing output parameters", Timestamp: time.Now()})
-			state.Outputs = p.createOutputParameters(deployment, createDeploymentOutput(armDeployment.Properties.Outputs))
+			state.Outputs = p.createOutputParameters(deployment, azcli.CreateDeploymentOutput(armDeployment.Properties.Outputs))
 
 			result := StateResult{
 				State: &state,
@@ -119,26 +120,6 @@ func (p *BicepProvider) State(
 
 			asyncContext.SetResult(&result)
 		})
-}
-
-// convert from: sdk client outputs: interface{} to map[string]azcli.AzCliDeploymentOutput
-// sdk client parses http response from network as an interface{}
-// this function keeps the compatibility with the previous AzCliDeploymentOutput model
-func createDeploymentOutput(rawOutputs interface{}) (result map[string]azcli.AzCliDeploymentOutput) {
-	if rawOutputs == nil {
-		return make(map[string]azcli.AzCliDeploymentOutput, 0)
-	}
-
-	castInput := rawOutputs.(map[string]interface{})
-	result = make(map[string]azcli.AzCliDeploymentOutput, len(castInput))
-	for key, output := range castInput {
-		innerValue := output.(map[string]interface{})
-		result[key] = azcli.AzCliDeploymentOutput{
-			Type:  innerValue["type"].(string),
-			Value: innerValue["value"].(string),
-		}
-	}
-	return result
 }
 
 // Plans the infrastructure provisioning
@@ -255,7 +236,7 @@ func (p *BicepProvider) Deploy(
 			deployment := pd.Deployment
 			deployment.Outputs = p.createOutputParameters(
 				&pd.Deployment,
-				createDeploymentOutput(deployResult.Properties.Outputs),
+				azcli.CreateDeploymentOutput(deployResult.Properties.Outputs),
 			)
 
 			result := &DeployResult{
@@ -693,6 +674,9 @@ func (p *BicepProvider) createDeployment(ctx context.Context, modulePath string)
 		return nil, fmt.Errorf("failed to compile bicep template: %w", err)
 	}
 
+	// save the compiled bicep reference for deployment
+	p.compiledBicep = &compiled
+
 	// Fetch the parameters from the template and ensure we have a value for each one, otherwise
 	// prompt.
 	var bicepTemplate BicepTemplate
@@ -739,7 +723,15 @@ func (p *BicepProvider) deployModule(ctx context.Context, scope infra.Scope, bic
 	// `DeploymentNotFound` error.
 	// Since other commands of ours use the deployment, let's try to fetch it here and if we fail with `DeploymentNotFound`,
 	// ignore this error, wait a short while and retry.
-	if err := scope.Deploy(ctx, bicepPath, parametersPath); err != nil {
+
+	// deployments API takes an ARM template.
+	// At this point, the bicep file should have been already compiled and succeeded
+	// do panic if the application tries to deploy a bicep file without compiling it first
+	if p.compiledBicep == nil {
+		log.Panic("bicep file was not previously compiled. A call to State() is expected before calling Deploy")
+	}
+
+	if err := scope.Deploy(ctx, *p.compiledBicep, parametersPath); err != nil {
 		return nil, fmt.Errorf("failed deploying: %w", err)
 	}
 

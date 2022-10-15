@@ -65,16 +65,16 @@ resource appService 'Microsoft.Web/sites@2022-03-01' = {
 
   identity: managedIdentity ? { type: 'SystemAssigned' } : null
 
-  resource configAppSettings 'config' = {
-    name: 'appsettings'
-    properties: union(appSettings,
-      {
-        SCM_DO_BUILD_DURING_DEPLOYMENT: string(scmDoBuildDuringDeployment)
-        ENABLE_ORYX_BUILD: enableOryxBuild
-      },
-      !(empty(applicationInsightsName)) ? { APPLICATIONINSIGHTS_CONNECTION_STRING: applicationInsights.properties.ConnectionString } : {},
-      !(empty(keyVaultName)) ? { AZURE_KEY_VAULT_ENDPOINT: keyVault.properties.vaultUri } : {})
-  }
+  // resource configAppSettings 'config' = {
+  //   name: 'appsettings'
+  //   properties: union(appSettings,
+  //     {
+  //       SCM_DO_BUILD_DURING_DEPLOYMENT: string(scmDoBuildDuringDeployment)
+  //       ENABLE_ORYX_BUILD: enableOryxBuild
+  //     },
+  //     !(empty(applicationInsightsName)) ? { APPLICATIONINSIGHTS_CONNECTION_STRING: applicationInsights.properties.ConnectionString } : {},
+  //     !(empty(keyVaultName)) ? { AZURE_KEY_VAULT_ENDPOINT: keyVault.properties.vaultUri } : {})
+  // }
 
   resource configLogs 'config' = {
     name: 'logs'
@@ -85,6 +85,18 @@ resource appService 'Microsoft.Web/sites@2022-03-01' = {
       httpLogs: { fileSystem: { enabled: true, retentionInDays: 1, retentionInMb: 35 } }
     }
   }
+}
+
+resource configAppSettings 'Microsoft.Web/sites/config@2022-03-01' = {
+  name: 'appsettings'
+  parent: appService
+  properties: union(appSettings,
+    {
+      SCM_DO_BUILD_DURING_DEPLOYMENT: string(scmDoBuildDuringDeployment)
+      ENABLE_ORYX_BUILD: enableOryxBuild
+    },
+    !(empty(applicationInsightsName)) ? { APPLICATIONINSIGHTS_CONNECTION_STRING: applicationInsights.properties.ConnectionString } : {},
+    !(empty(keyVaultName)) ? { AZURE_KEY_VAULT_ENDPOINT: keyVault.properties.vaultUri } : {})
 }
 
 resource keyVault 'Microsoft.KeyVault/vaults@2022-07-01' existing = if (!(empty(keyVaultName))) {

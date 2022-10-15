@@ -17,7 +17,7 @@ param containerCpuCoreCount string = '0.5'
 @description('Memory allocated to a single container instance, e.g. 1Gi')
 param containerMemory string = '1.0Gi'
 
-var abbrs = loadJsonContent('../../../abbreviations.json')
+var abbrs = loadJsonContent('../../abbreviations.json')
 var resourceToken = toLower(uniqueString(subscription().id, environmentName, location))
 var tags = { 'azd-env-name': environmentName }
 

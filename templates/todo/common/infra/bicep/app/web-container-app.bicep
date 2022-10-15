@@ -12,7 +12,7 @@ param serviceName string = 'web'
 var abbrs = loadJsonContent('../../../../../common/infra/bicep/abbreviations.json')
 var resourceToken = toLower(uniqueString(subscription().id, environmentName, location))
 
-module web '../../../../../common/infra/bicep/core/host/containers/container-app.bicep' = {
+module web '../../../../../common/infra/bicep/core/host/container-app.bicep' = {
   name: '${serviceName}-container-app-module'
   params: {
     environmentName: environmentName

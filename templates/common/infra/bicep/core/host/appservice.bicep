@@ -33,7 +33,7 @@ param numberOfWorkers int = -1
 param scmDoBuildDuringDeployment bool = false
 param use32BitWorkerProcess bool = false
 
-var abbrs = loadJsonContent('../../../abbreviations.json')
+var abbrs = loadJsonContent('../../abbreviations.json')
 var tags = { 'azd-env-name': environmentName }
 var resourceToken = toLower(uniqueString(subscription().id, environmentName, location))
 
@@ -64,17 +64,6 @@ resource appService 'Microsoft.Web/sites@2022-03-01' = {
   }
 
   identity: managedIdentity ? { type: 'SystemAssigned' } : null
-
-  // resource configAppSettings 'config' = {
-  //   name: 'appsettings'
-  //   properties: union(appSettings,
-  //     {
-  //       SCM_DO_BUILD_DURING_DEPLOYMENT: string(scmDoBuildDuringDeployment)
-  //       ENABLE_ORYX_BUILD: enableOryxBuild
-  //     },
-  //     !(empty(applicationInsightsName)) ? { APPLICATIONINSIGHTS_CONNECTION_STRING: applicationInsights.properties.ConnectionString } : {},
-  //     !(empty(keyVaultName)) ? { AZURE_KEY_VAULT_ENDPOINT: keyVault.properties.vaultUri } : {})
-  // }
 
   resource configLogs 'config' = {
     name: 'logs'

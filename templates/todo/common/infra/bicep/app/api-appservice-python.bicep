@@ -9,7 +9,7 @@ param appSettings object = {}
 param keyVaultName string
 param serviceName string = 'api'
 
-module api '../../../../../common/infra/bicep/core/host/appservice/appservice.bicep' = {
+module api '../../../../../common/infra/bicep/core/host/appservice.bicep' = {
   name: '${serviceName}-appservice-python-module'
   params: {
     environmentName: environmentName

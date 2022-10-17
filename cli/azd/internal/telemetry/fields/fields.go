@@ -71,18 +71,20 @@ const (
 
 	// Continuous Integration environments
 
-	EnvUnknownCI        = "UnknownCI"
-	EnvAzurePipelines   = "Azure Pipelines"
-	EnvGitHubActions    = "GitHub Actions"
-	EnvAppVeyor         = "AppVeyor"
-	EnvTravisCI         = "Travis CI"
-	EnvCircleCI         = "Circle CI"
-	EnvGitLabCI         = "GitLab CI"
-	EnvJenkins          = "Jenkins"
-	EnvAwsCodeBuild     = "AWS CodeBuild"
-	EnvGoogleCloudBuild = "Google Cloud Build"
-	EnvTeamCity         = "TeamCity"
-	EnvJetBrainsSpace   = "JetBrains Space"
+	EnvUnknownCI          = "UnknownCI"
+	EnvAzurePipelines     = "Azure Pipelines"
+	EnvGitHubActions      = "GitHub Actions"
+	EnvAppVeyor           = "AppVeyor"
+	EnvBamboo             = "Bamboo"
+	EnvBitBucketPipelines = "BitBucket Pipelines"
+	EnvTravisCI           = "Travis CI"
+	EnvCircleCI           = "Circle CI"
+	EnvGitLabCI           = "GitLab CI"
+	EnvJenkins            = "Jenkins"
+	EnvAwsCodeBuild       = "AWS CodeBuild"
+	EnvGoogleCloudBuild   = "Google Cloud Build"
+	EnvTeamCity           = "TeamCity"
+	EnvJetBrainsSpace     = "JetBrains Space"
 )
 
 // The value used for ServiceNameKey

@@ -7,15 +7,12 @@ import (
 	"sync"
 	"time"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/theckman/yacspin"
 )
 
-// Default writer to std.out, with possibility to mock for tests
-var writer io.Writer = output.GetDefaultWriter()
-
 // Spinner is a type representing an animated CLi terminal spinner.
 type Spinner struct {
+	writer   io.Writer
 	spinner  *yacspin.Spinner
 	logMutex sync.Mutex
 }
@@ -42,7 +39,7 @@ func (s *Spinner) Println(message string) {
 		s.logMutex.Lock()
 
 		s.Stop()
-		fmt.Fprint(writer, message)
+		fmt.Fprint(s.writer, message)
 		s.Start()
 	}
 }
@@ -81,7 +78,7 @@ func (s *Spinner) Stop() {
 	_ = s.spinner.Stop()
 }
 
-func NewSpinner(title string) *Spinner {
+func NewSpinner(writer io.Writer, title string) *Spinner {
 	config := yacspin.Config{
 		Frequency:    time.Millisecond * 500,
 		CharSet:      yacspin.CharSets[9],
@@ -99,6 +96,7 @@ func NewSpinner(title string) *Spinner {
 	spinner, _ := yacspin.New(config)
 
 	return &Spinner{
+		writer:  writer,
 		spinner: spinner,
 	}
 }
@@ -127,10 +125,10 @@ func GetSpinner(ctx context.Context) *Spinner {
 
 // Gets a spinner from the specified context, otherwise creates a new instance
 // Returns a new context when a new spinner is created
-func GetOrCreateSpinner(ctx context.Context, title string) (*Spinner, context.Context) {
+func GetOrCreateSpinner(ctx context.Context, w io.Writer, title string) (*Spinner, context.Context) {
 	spinner := GetSpinner(ctx)
 	if spinner == nil {
-		spinner = NewSpinner(title)
+		spinner = NewSpinner(w, title)
 		ctx = WithSpinner(ctx, spinner)
 	}
 

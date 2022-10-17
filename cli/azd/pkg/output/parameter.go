@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 )
 
 const (
@@ -15,18 +16,22 @@ const (
 	supportedFormatterAnnotation = "github.com/azure/azure-dev/cli/azd/pkg/output/supportedOutputFormatters"
 )
 
-func AddOutputParam(cmd *cobra.Command, supportedFormats []Format, defaultFormat Format) *cobra.Command {
+func AddOutputFlag(f *pflag.FlagSet, s *string, supportedFormats []Format, defaultFormat Format) {
 	formatNames := make([]string, len(supportedFormats))
 	for i, f := range supportedFormats {
 		formatNames[i] = string(f)
 	}
 
 	description := fmt.Sprintf("The output format (the supported formats are %s).", strings.Join(formatNames, ", "))
-	cmd.Flags().StringP(outputFlagName, "o", string(defaultFormat), description)
+	f.StringVarP(s, outputFlagName, "o", string(defaultFormat), description)
 
 	// Only error that can occur is "flag not found", which is not possible given we just added the flag on the previous line
-	_ = cmd.Flags().SetAnnotation(outputFlagName, supportedFormatterAnnotation, formatNames)
+	_ = f.SetAnnotation(outputFlagName, supportedFormatterAnnotation, formatNames)
+}
 
+func AddOutputParam(cmd *cobra.Command, supportedFormats []Format, defaultFormat Format) *cobra.Command {
+	discard := new(string)
+	AddOutputFlag(cmd.Flags(), discard, supportedFormats, defaultFormat)
 	return cmd
 }
 

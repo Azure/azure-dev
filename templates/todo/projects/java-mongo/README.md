@@ -14,19 +14,9 @@ Let's jump in and get the ToDo app up and running in Azure. When you are finishe
 
 The following prerequisites are required to use this application. Please ensure that you have them all installed locally.
 
-- [Azure Developer CLI](https://aka.ms/azure-dev/install)
-  - Windows:
-    ```powershell
-    powershell -ex AllSigned -c "Invoke-RestMethod 'https://aka.ms/install-azd.ps1' | Invoke-Expression"
-    ```
-  - Linux/MacOS:
-    ```
-    curl -fsSL https://aka.ms/install-azd.sh | bash
-    ```
-- [Azure CLI (2.38.0+)](https://docs.microsoft.com/cli/azure/install-azure-cli)
+- [Azure Developer CLI](https://aka.ms/azd-install)
 - [Java 17 or later](https://jdk.java.net/) - for API backend
 - [Node.js with npm (16.13.1+)](https://nodejs.org/) - for Web frontend
-- [Git (2.36.1+)](https://git-scm.com/)
 
 ### Quickstart
 
@@ -90,7 +80,7 @@ The repo is structured to follow the [Azure Developer CLI](https://aka.ms/azure-
 
 ### Azure Subscription
 
-This template will create infrastructure and deploy code to Azure. If you don't have an Azure Subscription, you can sign up for a [free account here](https://azure.microsoft.com/free/).
+This template will create infrastructure and deploy code to Azure. If you don't have an Azure Subscription, you can sign up for a [free account here](https://azure.microsoft.com/free/). Make sure you have contributor role to the Azure subscription.
 
 ### Azure Developer CLI - VS Code Extension
 
@@ -191,19 +181,7 @@ This template uses [Azure Key Vault](https://docs.microsoft.com/azure/key-vault/
 
 ## Uninstall
 
-To uninstall the Azure Developer CLI:
-
-Windows:
-
-```
-powershell -ex AllSigned -c "Invoke-RestMethod 'https://aka.ms/uninstall-azd.ps1' | Invoke-Expression"
-```
-
-Linux/MacOS:
-
-```
-curl -fsSL https://aka.ms/uninstall-azd.sh | bash
-```
+To remove the Azure Developer CLI, refer to [uninstall Azure Developer CLI](https://aka.ms/azd-install?tabs=baremetal%2Cwindows#uninstall-azd).
 
 ## Reporting Issues and Feedback
 

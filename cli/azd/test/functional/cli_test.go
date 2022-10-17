@@ -183,6 +183,9 @@ func Test_CLI_InfraCreateAndDelete(t *testing.T) {
 	require.True(t, ok)
 	require.Regexp(t, `st\S*`, accountName)
 
+	// NewAzureResourceManager needs a command runner right now (since it can call the AZ CLI)
+	ctx = exec.WithCommandRunner(ctx, exec.NewCommandRunner(os.Stdin, os.Stdout, os.Stderr))
+
 	// Verify that resource groups are created with tag
 	resourceManager := infra.NewAzureResourceManager(ctx)
 	rgs, err := resourceManager.GetResourceGroupsForEnvironment(ctx, env)
@@ -228,6 +231,9 @@ func Test_CLI_InfraCreateAndDeleteUpperCase(t *testing.T) {
 	accountName, ok := env.Values["AZURE_STORAGE_ACCOUNT_NAME"]
 	require.True(t, ok)
 	require.Regexp(t, `st\S*`, accountName)
+
+	// NewAzureResourceManager needs a command runner right now (since it can call the AZ CLI)
+	ctx = exec.WithCommandRunner(ctx, exec.NewCommandRunner(os.Stdin, os.Stdout, os.Stderr))
 
 	// Verify that resource groups are created with tag
 	resourceManager := infra.NewAzureResourceManager(ctx)
@@ -326,7 +332,7 @@ func Test_CLI_InfraCreateAndDeleteWebApp(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	commandRunner := exec.NewCommandRunner()
+	commandRunner := exec.NewCommandRunner(os.Stdin, os.Stdout, os.Stderr)
 	runArgs := newRunArgs("dotnet", "user-secrets", "list", "--project", filepath.Join(dir, "/src/dotnet/webapp.csproj"))
 	secrets, err := commandRunner.Run(ctx, runArgs)
 	require.NoError(t, err)
@@ -705,14 +711,14 @@ func Test_CLI_InfraCreateAndDeleteResourceTerraformRemote(t *testing.T) {
 	require.NoError(t, err, "failed expanding sample")
 
 	//Create remote state resources
-	commandRunner := exec.NewCommandRunner()
+	commandRunner := exec.NewCommandRunner(os.Stdin, os.Stdout, os.Stderr)
 	runArgs := newRunArgs("az", "group", "create", "--name", backendResourceGroupName, "--location", location)
 
 	_, err = commandRunner.Run(ctx, runArgs)
 	require.NoError(t, err)
 
 	defer func() {
-		commandRunner := exec.NewCommandRunner()
+		commandRunner := exec.NewCommandRunner(os.Stdin, os.Stdout, os.Stderr)
 		runArgs := newRunArgs("az", "group", "delete", "--name", backendResourceGroupName, "--yes")
 		_, err = commandRunner.Run(ctx, runArgs)
 		require.NoError(t, err)
@@ -812,7 +818,7 @@ func logHandles(t *testing.T, path string) {
 	}
 
 	args := exec.NewRunArgs(handle, path, "-nobanner")
-	cmd := exec.NewCommandRunner()
+	cmd := exec.NewCommandRunner(os.Stdin, os.Stdout, os.Stderr)
 	rr, err := cmd.Run(context.Background(), args)
 	if err != nil {
 		t.Logf("handle.exe failed. stdout: %s, stderr: %s\n", rr.Stdout, rr.Stderr)

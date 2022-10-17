@@ -7,7 +7,6 @@ import (
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/internal"
-	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 	"github.com/stretchr/testify/assert"
 )
@@ -24,7 +23,7 @@ func TestPipelineCmd(t *testing.T) {
 
 func TestPipelineConfigCmd(t *testing.T) {
 	globalOpt := &internal.GlobalCommandOptions{}
-	command := pipelineConfigCmd(globalOpt)
+	command, _ := pipelineConfigCmdDesign(globalOpt)
 	assert.EqualValues(t, "config", command.Use)
 	assert.EqualValues(t, "Create and configure your deployment pipeline by using GitHub Actions.", command.Short)
 
@@ -34,9 +33,7 @@ func TestPipelineConfigCmd(t *testing.T) {
 
 func TestSetupFlags(t *testing.T) {
 	globalOpt := &internal.GlobalCommandOptions{}
-	pipelineAction := NewConfigAction(globalOpt)
-	command := cobra.Command{}
-	pipelineAction.SetupFlags(command.PersistentFlags(), command.Flags())
+	command, _ := pipelineConfigCmdDesign(globalOpt)
 
 	flagName := "principal-name"
 	principalNameFlag := command.LocalFlags().Lookup(flagName)

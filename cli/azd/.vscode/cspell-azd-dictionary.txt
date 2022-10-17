@@ -32,6 +32,7 @@ devel
 dockerproject
 dskip
 eastus
+endregion
 envname
 errcheck
 errorlint
@@ -80,8 +81,9 @@ testdata
 tracesdk
 tracetest
 unmarshalling
-unsets
 unsetenvs
+unsets
 utsname
 westus2
+wireinject
 yacspin

@@ -96,15 +96,6 @@ func (cli *azCli) GetAccount(ctx context.Context, subscriptionId string) (*AzCli
 	}, nil
 }
 
-func (cli *azCli) GetSubscriptionTenant(ctx context.Context, subscriptionId string) (string, error) {
-	subscription, err := cli.GetAccount(ctx, subscriptionId)
-	if err != nil {
-		return "", err
-	}
-
-	return subscription.TenantId, nil
-}
-
 func (cli *azCli) ListAccountLocations(ctx context.Context, subscriptionId string) ([]AzCliLocation, error) {
 	client, err := cli.createSubscriptionsClient(ctx)
 	if err != nil {
@@ -147,8 +138,7 @@ func (cli *azCli) createSubscriptionsClient(ctx context.Context) (*armsubscripti
 		return nil, err
 	}
 
-	// Uses latest api version of subscriptions api to get additional properties
-	options := cli.createArmClientOptions(ctx)
+	options := cli.createDefaultClientOptionsBuilder(ctx).BuildArmClientOptions()
 	client, err := armsubscriptions.NewClient(cred, options)
 	if err != nil {
 		return nil, fmt.Errorf("creating Subscriptions client: %w", err)

@@ -36,13 +36,19 @@ func (f *functionAppTarget) Deploy(
 	progress chan<- string,
 ) (ServiceDeploymentResult, error) {
 	progress <- "Compressing deployment artifacts"
-	zipFilePath, err := internal.CreateDeployableZip(f.config.Name, path)
 
+	zipFilePath, err := internal.CreateDeployableZip(f.config.Name, path)
 	if err != nil {
 		return ServiceDeploymentResult{}, err
 	}
 
+	zipFile, err := os.Open(zipFilePath)
+	if err != nil {
+		return ServiceDeploymentResult{}, fmt.Errorf("failed reading deployment zip file: %w", err)
+	}
+
 	defer os.Remove(zipFilePath)
+	defer zipFile.Close()
 
 	progress <- "Publishing deployment package"
 	res, err := f.cli.DeployFunctionAppUsingZipFile(
@@ -50,7 +56,7 @@ func (f *functionAppTarget) Deploy(
 		f.env.GetSubscriptionId(),
 		f.scope.ResourceGroupName(),
 		f.scope.ResourceName(),
-		zipFilePath,
+		zipFile,
 	)
 	if err != nil {
 		return ServiceDeploymentResult{}, err
@@ -65,7 +71,7 @@ func (f *functionAppTarget) Deploy(
 	sdr := NewServiceDeploymentResult(
 		azure.WebsiteRID(f.env.GetSubscriptionId(), f.scope.ResourceGroupName(), f.scope.ResourceName()),
 		AzureFunctionTarget,
-		res,
+		*res,
 		endpoints,
 	)
 	return sdr, nil

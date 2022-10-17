@@ -18,13 +18,7 @@ func (cli *azCli) GetSubscriptionDeployment(
 	subscriptionId string,
 	deploymentName string,
 ) (*armresources.DeploymentExtended, error) {
-	credential, err := identity.GetCredentials(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("looking for credentials: %w", err)
-	}
-
-	deploymentClient, err := armresources.NewDeploymentsClient(
-		subscriptionId, credential, cli.createArmClientOptions(ctx))
+	deploymentClient, err := cli.createDeploymentsClient(ctx, subscriptionId)
 	if err != nil {
 		return nil, fmt.Errorf("creating deployments client: %w", err)
 	}
@@ -32,8 +26,7 @@ func (cli *azCli) GetSubscriptionDeployment(
 	deployment, err := deploymentClient.GetAtSubscriptionScope(ctx, deploymentName, nil)
 	if err != nil {
 		var errDetails *azcore.ResponseError
-		errors.As(err, &errDetails)
-		if errDetails.StatusCode == 404 {
+		if errors.As(err, &errDetails) && errDetails.StatusCode == 404 {
 			return nil, ErrDeploymentNotFound
 		}
 		return nil, fmt.Errorf("getting deployment from subscription: %w", err)
@@ -48,13 +41,7 @@ func (cli *azCli) GetResourceGroupDeployment(
 	resourceGroupName string,
 	deploymentName string,
 ) (*armresources.DeploymentExtended, error) {
-	credential, err := identity.GetCredentials(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("looking for credentials: %w", err)
-	}
-
-	deploymentClient, err := armresources.NewDeploymentsClient(
-		subscriptionId, credential, cli.createArmClientOptions(ctx))
+	deploymentClient, err := cli.createDeploymentsClient(ctx, subscriptionId)
 	if err != nil {
 		return nil, fmt.Errorf("creating deployments client: %w", err)
 	}
@@ -62,12 +49,29 @@ func (cli *azCli) GetResourceGroupDeployment(
 	deployment, err := deploymentClient.Get(ctx, resourceGroupName, deploymentName, nil)
 	if err != nil {
 		var errDetails *azcore.ResponseError
-		errors.As(err, &errDetails)
-		if errDetails.StatusCode == 404 {
+		if errors.As(err, &errDetails) && errDetails.StatusCode == 404 {
 			return nil, ErrDeploymentNotFound
 		}
 		return nil, fmt.Errorf("getting deployment from resource group: %w", err)
 	}
 
 	return &deployment.DeploymentExtended, nil
+}
+
+func (cli *azCli) createDeploymentsClient(
+	ctx context.Context,
+	subscriptionId string,
+) (*armresources.DeploymentsClient, error) {
+	cred, err := identity.GetCredentials(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	options := cli.createDefaultClientOptionsBuilder(ctx).BuildArmClientOptions()
+	client, err := armresources.NewDeploymentsClient(subscriptionId, cred, options)
+	if err != nil {
+		return nil, fmt.Errorf("creating deployments client: %w", err)
+	}
+
+	return client, nil
 }

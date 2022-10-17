@@ -8,7 +8,7 @@ package exec
 
 import (
 	"fmt"
-	"os"
+	"log"
 	"os/exec"
 	"syscall"
 	"unsafe"
@@ -76,6 +76,6 @@ func (o *CmdTree) Start() error {
 func (o *CmdTree) Kill() {
 	err := windows.TerminateJobObject(windows.Handle(o.jobObject), 0)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "failed to terminate job object %d: %s\n", o.jobObject, err)
+		log.Printf("failed to terminate job object %d: %s\n", o.jobObject, err)
 	}
 }

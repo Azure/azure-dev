@@ -21,8 +21,12 @@ type CommandRunner interface {
 }
 
 // Creates a new default instance of the CommandRunner
-func NewCommandRunner() CommandRunner {
-	return &commandRunner{}
+func NewCommandRunner(stdin io.Reader, stdout io.Writer, stderr io.Writer) CommandRunner {
+	return &commandRunner{
+		stdin:  stdin,
+		stdout: stdout,
+		stderr: stderr,
+	}
 }
 
 type contextKey string
@@ -37,12 +41,12 @@ func WithCommandRunner(ctx context.Context, commandRunner CommandRunner) context
 	return context.WithValue(ctx, execFnContextKey, commandRunner)
 }
 
-// Gets the exec util implementation used for executing cLI commands on the host machine
-// If a value is not found in the context the default implementation will be used.
+// Gets the exec util implementation used for executing CLI commands on the host machine
+// If a value is not found in the context, panic.
 func GetCommandRunner(ctx context.Context) CommandRunner {
 	execFn, ok := ctx.Value(execFnContextKey).(CommandRunner)
 	if !ok {
-		return NewCommandRunner()
+		panic("GetCommandRunner: no runner in context")
 	}
 
 	return execFn
@@ -51,6 +55,9 @@ func GetCommandRunner(ctx context.Context) CommandRunner {
 // commandRunner is the default private implementation of the CommandRunner interface
 // This implementation executes actual commands on the underlying console/shell
 type commandRunner struct {
+	stdin  io.Reader
+	stdout io.Writer
+	stderr io.Writer
 }
 
 // Run runs the command specified in 'args'.

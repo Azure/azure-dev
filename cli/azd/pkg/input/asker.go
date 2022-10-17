@@ -12,17 +12,18 @@ import (
 	"strings"
 
 	"github.com/AlecAivazis/survey/v2"
-	"github.com/mattn/go-isatty"
 )
 
 type Asker func(p survey.Prompt, response interface{}) error
 
-func NewAsker(noPrompt bool) Asker {
+func NewAsker(noPrompt bool, isTerminal bool, w io.Writer, r io.Reader) Asker {
 	if noPrompt {
 		return askOneNoPrompt
 	}
 
-	return askOnePrompt
+	return func(p survey.Prompt, response interface{}) error {
+		return askOnePrompt(p, response, isTerminal, w, r)
+	}
 }
 
 func askOneNoPrompt(p survey.Prompt, response interface{}) error {
@@ -70,7 +71,7 @@ func withShowCursor(o *survey.AskOptions) error {
 	return nil
 }
 
-func askOnePrompt(p survey.Prompt, response interface{}) error {
+func askOnePrompt(p survey.Prompt, response interface{}, isTerminal bool, stdout io.Writer, stdin io.Reader) error {
 	// Like (*bufio.Reader).ReadString(byte) except that it does not buffer input from the input stream.
 	// instead, it reads a byte at a time until a delimiter is found, without consuming any extra characters.
 	readStringNoBuffer := func(r io.Reader, delim byte) (string, error) {
@@ -90,7 +91,7 @@ func askOnePrompt(p survey.Prompt, response interface{}) error {
 		}
 	}
 
-	if isatty.IsTerminal(os.Stdin.Fd()) && isatty.IsTerminal(os.Stdout.Fd()) && os.Getenv("AZD_DEBUG_FORCE_NO_TTY") != "1" {
+	if isTerminal && os.Getenv("AZD_DEBUG_FORCE_NO_TTY") != "1" {
 		opts := []survey.AskOpt{}
 
 		// When asking a question which requires a text response, show the cursor, it helps
@@ -105,12 +106,12 @@ func askOnePrompt(p survey.Prompt, response interface{}) error {
 	switch v := p.(type) {
 	case *survey.Input:
 		var pResponse = response.(*string)
-		fmt.Printf("%s", v.Message[0:len(v.Message)-1])
+		fmt.Fprintf(stdout, "%s", v.Message[0:len(v.Message)-1])
 		if v.Default != "" {
-			fmt.Printf(" (or hit enter to use the default %s)", v.Default)
+			fmt.Fprintf(stdout, " (or hit enter to use the default %s)", v.Default)
 		}
-		fmt.Printf("%s ", v.Message[len(v.Message)-1:])
-		result, err := readStringNoBuffer(os.Stdin, '\n')
+		fmt.Fprintf(stdout, "%s ", v.Message[len(v.Message)-1:])
+		result, err := readStringNoBuffer(stdin, '\n')
 		if err != nil && !errors.Is(err, io.EOF) {
 			return fmt.Errorf("reading response: %w", err)
 		}
@@ -122,12 +123,12 @@ func askOnePrompt(p survey.Prompt, response interface{}) error {
 		return nil
 	case *survey.Select:
 		for {
-			fmt.Printf("%s", v.Message[0:len(v.Message)-1])
+			fmt.Fprintf(stdout, "%s", v.Message[0:len(v.Message)-1])
 			if v.Default != nil {
-				fmt.Printf(" (or hit enter to use the default %v)", v.Default)
+				fmt.Fprintf(stdout, " (or hit enter to use the default %v)", v.Default)
 			}
-			fmt.Printf("%s ", v.Message[len(v.Message)-1:])
-			result, err := readStringNoBuffer(os.Stdin, '\n')
+			fmt.Fprintf(stdout, "%s ", v.Message[len(v.Message)-1:])
+			result, err := readStringNoBuffer(stdin, '\n')
 			if err != nil && !errors.Is(err, io.EOF) {
 				return fmt.Errorf("reading response: %w", err)
 			}
@@ -149,19 +150,19 @@ func askOnePrompt(p survey.Prompt, response interface{}) error {
 					return nil
 				}
 			}
-			fmt.Printf("error: %s is not an allowed choice\n", result)
+			fmt.Fprintf(stdout, "error: %s is not an allowed choice\n", result)
 		}
 	case *survey.Confirm:
 		var pResponse = response.(*bool)
 
 		for {
-			fmt.Print(v.Message)
+			fmt.Fprint(stdout, v.Message)
 			if *pResponse {
-				fmt.Print(" (Y/n)")
+				fmt.Fprint(stdout, " (Y/n)")
 			} else {
-				fmt.Printf(" (y/N)")
+				fmt.Fprintf(stdout, " (y/N)")
 			}
-			result, err := readStringNoBuffer(os.Stdin, '\n')
+			result, err := readStringNoBuffer(stdin, '\n')
 			if err != nil && !errors.Is(err, io.EOF) {
 				return fmt.Errorf("reading response: %w", err)
 			}

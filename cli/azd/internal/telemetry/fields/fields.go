@@ -68,9 +68,8 @@ const (
 	EnvDesktop          = "Desktop"
 	EnvVisualStudio     = "Visual Studio"
 	EnvVisualStudioCode = "Visual Studio Code"
-	Codespaces          = "GitHub Codespaces"
 
-	// Continuous Integration environments
+	// Hosted/Continuous Integration environments
 
 	EnvUnknownCI          = "UnknownCI"
 	EnvAzurePipelines     = "Azure Pipelines"
@@ -86,6 +85,7 @@ const (
 	EnvGoogleCloudBuild   = "Google Cloud Build"
 	EnvTeamCity           = "TeamCity"
 	EnvJetBrainsSpace     = "JetBrains Space"
+	Codespaces            = "GitHub Codespaces"
 )
 
 // The value used for ServiceNameKey

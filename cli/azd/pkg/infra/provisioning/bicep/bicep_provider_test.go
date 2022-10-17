@@ -217,7 +217,7 @@ func TestBicepDestroy(t *testing.T) {
 		require.Len(t, consoleOutput, 7)
 		require.Contains(t, consoleOutput[0], "This will delete")
 		require.Contains(t, consoleOutput[1], "Deleted resource group")
-		require.Contains(t, consoleOutput[2], "This operation will delete and purge")
+		require.Contains(t, consoleOutput[2], "This operation will delete")
 		require.Contains(t, consoleOutput[3], "Would you like to permanently delete these Key Vaults and App Configurations")
 		require.Contains(t, consoleOutput[4], "Purged key vault")
 		require.Contains(t, consoleOutput[5], "Purged app configuration")

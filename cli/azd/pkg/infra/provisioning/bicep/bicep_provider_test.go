@@ -184,11 +184,7 @@ func TestBicepDestroy(t *testing.T) {
 		}).Respond(true)
 
 		mockContext.Console.WhenConfirm(func(options input.ConsoleOptions) bool {
-			return strings.Contains(options.Message, "Would you like to permanently delete these Key Vaults")
-		}).Respond(true)
-
-		mockContext.Console.WhenConfirm(func(options input.ConsoleOptions) bool {
-			return strings.Contains(options.Message, "Would you like to permanently delete these App Configurations")
+			return strings.Contains(options.Message, "Would you like to permanently delete these Key Vaults and App Configurations")
 		}).Respond(true)
 
 		infraProvider := createBicepProvider(*mockContext.Context)
@@ -218,16 +214,14 @@ func TestBicepDestroy(t *testing.T) {
 
 		// Verify console prompts
 		consoleOutput := mockContext.Console.Output()
-		require.Len(t, consoleOutput, 9)
+		require.Len(t, consoleOutput, 7)
 		require.Contains(t, consoleOutput[0], "This will delete")
 		require.Contains(t, consoleOutput[1], "Deleted resource group")
 		require.Contains(t, consoleOutput[2], "This operation will delete and purge")
-		require.Contains(t, consoleOutput[3], "Would you like to permanently delete these Key Vaults")
+		require.Contains(t, consoleOutput[3], "Would you like to permanently delete these Key Vaults and App Configurations")
 		require.Contains(t, consoleOutput[4], "Purged key vault")
-		require.Contains(t, consoleOutput[5], "This operation will delete and purge")
-		require.Contains(t, consoleOutput[6], "Would you like to permanently delete these App Configurations")
-		require.Contains(t, consoleOutput[7], "Purged app configuration")
-		require.Contains(t, consoleOutput[8], "Deleted deployment")
+		require.Contains(t, consoleOutput[5], "Purged app configuration")
+		require.Contains(t, consoleOutput[6], "Deleted deployment")
 
 		// Verify progress output
 		require.Len(t, progressLog, 8)
@@ -279,22 +273,18 @@ func TestBicepDestroy(t *testing.T) {
 
 		// Verify console prompts
 		consoleOutput := mockContext.Console.Output()
-		require.Len(t, consoleOutput, 4)
+		require.Len(t, consoleOutput, 2)
 		require.Contains(t, consoleOutput[0], "Deleted resource group")
-		require.Contains(t, consoleOutput[1], "Purged key vault")
-		require.Contains(t, consoleOutput[2], "Purged app configuration")
-		require.Contains(t, consoleOutput[3], "Deleted deployment")
+		require.Contains(t, consoleOutput[1], "Deleted deployment")
 
 		// Verify progress output
-		require.Len(t, progressLog, 8)
+		require.Len(t, progressLog, 6)
 		require.Contains(t, progressLog[0], "Fetching resource groups")
 		require.Contains(t, progressLog[1], "Fetching resources")
 		require.Contains(t, progressLog[2], "Getting Key Vaults to purge")
 		require.Contains(t, progressLog[3], "Getting App Configurations to purge")
 		require.Contains(t, progressLog[4], "Deleting resource group")
-		require.Contains(t, progressLog[5], "Purging key vault")
-		require.Contains(t, progressLog[6], "Purging app configuration")
-		require.Contains(t, progressLog[7], "Deleting deployment")
+		require.Contains(t, progressLog[5], "Deleting deployment")
 	})
 }
 

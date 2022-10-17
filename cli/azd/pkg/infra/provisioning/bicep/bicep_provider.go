@@ -313,13 +313,8 @@ func (p *BicepProvider) Destroy(
 				return
 			}
 
-			if err := p.purgeKeyVaults(ctx, asyncContext, keyVaults, options); err != nil {
-				asyncContext.SetError(fmt.Errorf("purging key vaults: %w", err))
-				return
-			}
-
-			if err := p.purgeAppConfigs(ctx, asyncContext, appConfigs, options); err != nil {
-				asyncContext.SetError(fmt.Errorf("purging app configurations: %w", err))
+			if err := p.purgeItems(ctx, asyncContext, keyVaults, appConfigs, options); err != nil {
+				asyncContext.SetError(fmt.Errorf("purging key vaults or app configurations: %w", err))
 				return
 			}
 
@@ -424,6 +419,81 @@ func (p *BicepProvider) destroyResourceGroups(
 	return nil
 }
 
+func (p *BicepProvider) purgeItems(
+	ctx context.Context,
+	asyncContext *async.InteractiveTaskContextWithProgress[*DestroyResult, *DestroyProgress],
+	keyVaults []*azcli.AzCliKeyVault,
+	appConfigs []*azcli.AzCliAppConfig,
+	options DestroyOptions,
+) error {
+	var items string
+	var itemsWarning string
+	if len(appConfigs) > 0 && len(keyVaults) > 0 {
+		items = "Key Vaults and App Configurations"
+		itemsWarning = fmt.Sprintf(""+
+			"\nThis operation will delete and purge %d Key Vaults and %d App Configurations. These %s have soft delete enabled "+
+			"allowing them to be recovered for a period \n"+
+			"of time after deletion. During this period, their names may not be reused.\n"+
+			"You can use argument --purge to skip this confirmation.\n\n",
+			len(keyVaults), len(appConfigs), items)
+	} else if len(keyVaults) > 0 {
+		items = "Key Vaults"
+		itemsWarning = fmt.Sprintf(""+
+			"\nThis operation will delete and purge %d Key Vaults. These %s have soft delete enabled "+
+			"allowing them to be recovered for a period \n"+
+			"of time after deletion. During this period, their names may not be reused.\n"+
+			"You can use argument --purge to skip this confirmation.\n\n",
+			len(keyVaults), items)
+	} else if len(appConfigs) > 0 {
+		items = "App Configurations"
+		itemsWarning = fmt.Sprintf(""+
+			"\nThis operation will delete and purge %d App Configurations. These %s have soft delete enabled "+
+			"allowing them to be recovered for a period \n"+
+			"of time after deletion. During this period, their names may not be reused.\n"+
+			"You can use argument --purge to skip this confirmation.\n\n",
+			len(appConfigs), items)
+	}
+
+	if items != "" && !options.Purge() {
+		p.console.Message(ctx, output.WithWarningFormat(itemsWarning))
+
+		err := asyncContext.Interact(func() error {
+			purgeItems, err := p.console.Confirm(ctx, input.ConsoleOptions{
+				Message: fmt.Sprintf(
+					"Would you like to %s delete these %s instead, allowing their names to be reused?",
+					output.WithErrorFormat("permanently"),
+					items,
+				),
+				DefaultValue: false,
+			})
+
+			if err != nil {
+				return fmt.Errorf("prompting for %s confirmation: %w", items, err)
+			}
+
+			if !purgeItems {
+				return fmt.Errorf("user denied %s confirmation", items)
+			}
+
+			return nil
+		})
+
+		if err != nil {
+			return err
+		}
+
+		if err := p.purgeKeyVaults(ctx, asyncContext, keyVaults, options); err != nil {
+			return err
+		}
+
+		if err := p.purgeAppConfigs(ctx, asyncContext, appConfigs, options); err != nil {
+			return err
+		}
+
+	}
+	return nil
+}
+
 func (p *BicepProvider) getKeyVaults(
 	ctx context.Context,
 	groupedResources map[string][]azcli.AzCliResource,
@@ -485,41 +555,6 @@ func (p *BicepProvider) purgeKeyVaults(
 	keyVaults []*azcli.AzCliKeyVault,
 	options DestroyOptions,
 ) error {
-	if len(keyVaults) > 0 && !options.Purge() {
-		keyVaultWarning := fmt.Sprintf(""+
-			"\nThis operation will delete and purge %d Key Vaults. These Key Vaults have soft delete enabled "+
-			"allowing them to be recovered for a period \n"+
-			"of time after deletion. During this period, their names may not be reused.\n"+
-			"You can use argument --purge to skip this confirmation.\n\n",
-			len(keyVaults))
-
-		p.console.Message(ctx, output.WithWarningFormat(keyVaultWarning))
-
-		err := asyncContext.Interact(func() error {
-			purgeKeyVaults, err := p.console.Confirm(ctx, input.ConsoleOptions{
-				Message: fmt.Sprintf(
-					"Would you like to %s delete these Key Vaults instead, allowing their names to be reused?",
-					output.WithErrorFormat("permanently"),
-				),
-				DefaultValue: false,
-			})
-
-			if err != nil {
-				return fmt.Errorf("prompting for purge confirmation: %w", err)
-			}
-
-			if !purgeKeyVaults {
-				return errors.New("user denied purge confirmation")
-			}
-
-			return nil
-		})
-
-		if err != nil {
-			return err
-		}
-	}
-
 	for _, keyVault := range keyVaults {
 		progressReport := DestroyProgress{
 			Timestamp: time.Now(),
@@ -585,41 +620,6 @@ func (p *BicepProvider) purgeAppConfigs(
 	appConfigs []*azcli.AzCliAppConfig,
 	options DestroyOptions,
 ) error {
-	if len(appConfigs) > 0 && !options.Purge() {
-		appConfigWarning := fmt.Sprintf(""+
-			"\nThis operation will delete and purge %d App Configurations. "+
-			"These App Configurations have soft delete enabled allowing them to be recovered for a period \n"+
-			"of time after deletion. During this period, their names may not be reused.\n"+
-			"You can use argument --purge to skip this confirmation.\n\n",
-			len(appConfigs))
-
-		p.console.Message(ctx, output.WithWarningFormat(appConfigWarning))
-
-		err := asyncContext.Interact(func() error {
-			purgeAppConfigs, err := p.console.Confirm(ctx, input.ConsoleOptions{
-				Message: fmt.Sprintf(
-					"Would you like to %s delete these App Configurations instead, allowing their names to be reused?",
-					output.WithErrorFormat("permanently"),
-				),
-				DefaultValue: false,
-			})
-
-			if err != nil {
-				return fmt.Errorf("prompting for purge confirmation: %w", err)
-			}
-
-			if !purgeAppConfigs {
-				return errors.New("user denied purge confirmation")
-			}
-
-			return nil
-		})
-
-		if err != nil {
-			return err
-		}
-	}
-
 	for _, appConfig := range appConfigs {
 		progressReport := DestroyProgress{
 			Timestamp: time.Now(),

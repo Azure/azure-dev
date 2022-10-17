@@ -49,9 +49,8 @@ func NewProvisioningProgressDisplay(
 // progress.
 func (display *ProvisioningProgressDisplay) ReportProgress(ctx context.Context) (*DeployProgress, error) {
 	progress := DeployProgress{
-		Timestamp:  time.Now(),
-		Message:    defaultProgressTitle,
-		Operations: nil,
+		Timestamp: time.Now(),
+		Message:   defaultProgressTitle,
 	}
 
 	if !display.deploymentStarted {
@@ -82,8 +81,6 @@ func (display *ProvisioningProgressDisplay) ReportProgress(ctx context.Context) 
 		// Status display is best-effort activity.
 		return &progress, err
 	}
-
-	progress.Operations = operations
 
 	succeededCount := 0
 	newlyDeployedResources := []*azcli.AzCliResourceOperation{}

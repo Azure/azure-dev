@@ -68,6 +68,7 @@ const (
 	EnvDesktop          = "Desktop"
 	EnvVisualStudio     = "Visual Studio"
 	EnvVisualStudioCode = "Visual Studio Code"
+	Codespaces          = "GitHub Codespaces"
 
 	// Continuous Integration environments
 

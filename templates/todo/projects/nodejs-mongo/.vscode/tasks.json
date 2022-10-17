@@ -2,13 +2,32 @@
     "version": "2.0.0",
     "tasks": [
         {
+            "label": "Setup Web Env",
+            "command": ".vscode/setup-web.sh",
+            "windows": {
+                "command": ".vscode/setup-web.cmd"
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "Setup API Env",
+            "command": ".vscode/setup-api.sh",
+            "windows": {
+                "command": ".vscode/setup-api.cmd"
+            },
+            "problemMatcher": []
+        },
+        {
             "label": "Start Web",
             "type": "dotenv",
             "targetTasks": [
                 "Restore Web",
                 "Web npm start"
             ],
-            "file": "${input:dotEnvFilePath}"
+            "file": "${input:dotEnvFilePath}",
+            "dependsOn": [
+                "Setup Web Env"
+            ],
         },
         {
             "label": "Restore Web",

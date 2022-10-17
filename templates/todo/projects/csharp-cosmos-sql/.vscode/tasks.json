@@ -40,6 +40,14 @@
             "problemMatcher": []
         },
         {
+            "label": "Parepare API Debug",
+            "dependsOrder": "sequence",
+            "dependsOn": [
+                "Setup API Env",
+                "Build API"
+            ]
+        },
+        {
             "label": "Build API",
             "command": "dotnet",
             "type": "process",

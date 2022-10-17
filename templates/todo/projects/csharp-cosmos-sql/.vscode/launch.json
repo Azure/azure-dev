@@ -19,7 +19,7 @@
             "name": "Debug API",
             "type": "coreclr",
             "request": "launch",
-            "preLaunchTask": "Build API",
+            "preLaunchTask": "Prepare API Debug",
             // If you have changed target frameworks, make sure to update the program path.
             "program": "${workspaceFolder}/src/api/bin/Debug/net6.0/Todo.Api.dll",
             "args": [],

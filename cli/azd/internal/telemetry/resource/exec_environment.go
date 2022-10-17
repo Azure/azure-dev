@@ -4,7 +4,6 @@
 package resource
 
 import (
-	"fmt"
 	"os"
 	"strings"
 
@@ -89,13 +88,10 @@ func getExecutionEnvironmentForCI() (string, bool) {
 }
 
 func getExecutionEnvironmentForDesktop() string {
-	// TODO: Remove Println
-	fmt.Println("I'm checking on the desktop environment...")
 	// GitHub Codespaces
 	// https://docs.github.com/en/codespaces/developing-in-codespaces/default-environment-variables-for-your-codespace
 	if strings.ToLower(os.Getenv("CODESPACES")) == "true" {
-		// TODO: Remove Println
-		fmt.Println("I AM RUNNING IN CODESPACES!!!")
+
 		return fields.Codespaces
 	}
 

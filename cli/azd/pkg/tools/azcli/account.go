@@ -7,7 +7,6 @@ import (
 	"sort"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armsubscriptions"
-	"github.com/azure/azure-dev/cli/azd/pkg/identity"
 )
 
 type AzCliSubscriptionInfo struct {
@@ -133,13 +132,8 @@ func (cli *azCli) ListAccountLocations(ctx context.Context, subscriptionId strin
 }
 
 func (cli *azCli) createSubscriptionsClient(ctx context.Context) (*armsubscriptions.Client, error) {
-	cred, err := identity.GetCredentials(ctx)
-	if err != nil {
-		return nil, err
-	}
-
 	options := cli.createDefaultClientOptionsBuilder(ctx).BuildArmClientOptions()
-	client, err := armsubscriptions.NewClient(cred, options)
+	client, err := armsubscriptions.NewClient(cli.credential, options)
 	if err != nil {
 		return nil, fmt.Errorf("creating Subscriptions client: %w", err)
 	}

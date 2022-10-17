@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerregistry/armcontainerregistry"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	azdinternal "github.com/azure/azure-dev/cli/azd/internal"
@@ -21,6 +22,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
+	"github.com/azure/azure-dev/cli/azd/pkg/identity"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/internal"
@@ -377,17 +379,17 @@ type NewAzCliArgs struct {
 	HttpClient    httputil.HttpClient
 }
 
-func NewAzCli(args NewAzCliArgs) AzCli {
+func NewAzCli(credential azcore.TokenCredential, args NewAzCliArgs) AzCli {
 	if args.CommandRunner == nil {
 		panic("NewAzCli: must set args.CommandRunner")
 	}
-
 	return &azCli{
 		userAgent:       azdinternal.MakeUserAgentString(""),
 		enableDebug:     args.EnableDebug,
 		enableTelemetry: args.EnableTelemetry,
 		commandRunner:   args.CommandRunner,
 		httpClient:      args.HttpClient,
+		credential:      credential,
 	}
 }
 
@@ -401,6 +403,8 @@ type azCli struct {
 
 	// Allows us to mock the Http Requests from the go modules
 	httpClient httputil.HttpClient
+
+	credential azcore.TokenCredential
 }
 
 func (cli *azCli) Name() string {
@@ -960,6 +964,7 @@ func GetAzCli(ctx context.Context) AzCli {
 	azCli, ok := ctx.Value(azCliContextKey).(AzCli)
 	if !ok {
 		options := azdinternal.GetCommandOptions(ctx)
+		credential := identity.GetCredentials(ctx)
 
 		commandRunner := exec.GetCommandRunner(ctx)
 		args := NewAzCliArgs{
@@ -967,7 +972,7 @@ func GetAzCli(ctx context.Context) AzCli {
 			EnableTelemetry: options.EnableTelemetry,
 			CommandRunner:   commandRunner,
 		}
-		azCli = NewAzCli(args)
+		azCli = NewAzCli(credential, args)
 	}
 
 	// Set the user agent if a template has been selected

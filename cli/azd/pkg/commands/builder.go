@@ -32,12 +32,6 @@ func RegisterDependenciesInCtx(
 	runner := exec.NewCommandRunner(cmd.InOrStdin(), cmd.OutOrStdout(), cmd.ErrOrStderr())
 	ctx = exec.WithCommandRunner(ctx, runner)
 
-	azCliArgs := azcli.NewAzCliArgs{
-		EnableDebug:     rootOptions.EnableDebugLogging,
-		EnableTelemetry: rootOptions.EnableTelemetry,
-		CommandRunner:   runner,
-	}
-
 	// Set default credentials used for operations against azure data/control planes
 	credentials, err := azidentity.NewAzureCLICredential(nil)
 	if err != nil {
@@ -45,8 +39,14 @@ func RegisterDependenciesInCtx(
 	}
 	ctx = identity.WithCredentials(ctx, credentials)
 
+	azCliArgs := azcli.NewAzCliArgs{
+		EnableDebug:     rootOptions.EnableDebugLogging,
+		EnableTelemetry: rootOptions.EnableTelemetry,
+		CommandRunner:   runner,
+	}
+
 	// Create and set the AzCli that will be used for the command
-	azCli := azcli.NewAzCli(azCliArgs)
+	azCli := azcli.NewAzCli(credentials, azCliArgs)
 	ctx = azcli.WithAzCli(ctx, azCli)
 
 	// Attempt to get the user specified formatter from the command args

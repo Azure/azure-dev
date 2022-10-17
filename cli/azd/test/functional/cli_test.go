@@ -26,11 +26,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/telemetry"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
+	"github.com/azure/azure-dev/cli/azd/pkg/identity"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
@@ -186,6 +188,13 @@ func Test_CLI_InfraCreateAndDelete(t *testing.T) {
 	// NewAzureResourceManager needs a command runner right now (since it can call the AZ CLI)
 	ctx = exec.WithCommandRunner(ctx, exec.NewCommandRunner(os.Stdin, os.Stdout, os.Stderr))
 
+	// GetResourceGroupsForEnvironment requires a credential since it is using the SDK now
+	cred, err := azidentity.NewDefaultAzureCredential(nil)
+	if err != nil {
+		t.Fatal("could not create credential")
+	}
+	ctx = identity.WithCredentials(ctx, cred)
+
 	// Verify that resource groups are created with tag
 	resourceManager := infra.NewAzureResourceManager(ctx)
 	rgs, err := resourceManager.GetResourceGroupsForEnvironment(ctx, env)
@@ -234,6 +243,13 @@ func Test_CLI_InfraCreateAndDeleteUpperCase(t *testing.T) {
 
 	// NewAzureResourceManager needs a command runner right now (since it can call the AZ CLI)
 	ctx = exec.WithCommandRunner(ctx, exec.NewCommandRunner(os.Stdin, os.Stdout, os.Stderr))
+
+	// GetResourceGroupsForEnvironment requires a credential since it is using the SDK now
+	cred, err := azidentity.NewDefaultAzureCredential(nil)
+	if err != nil {
+		t.Fatal("could not create credential")
+	}
+	ctx = identity.WithCredentials(ctx, cred)
 
 	// Verify that resource groups are created with tag
 	resourceManager := infra.NewAzureResourceManager(ctx)

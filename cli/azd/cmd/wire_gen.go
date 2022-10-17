@@ -34,7 +34,11 @@ func initDeployAction(cmd *cobra.Command, o *internal.GlobalCommandOptions, flag
 	writer := newWriter(cmd)
 	console := newConsoleFromOptions(o, formatter, writer, cmd)
 	commandRunner := newCommandRunnerFromConsole(console)
-	azCli := newAzCliFromOptions(o, commandRunner)
+	tokenCredential, err := newCredential()
+	if err != nil {
+		return nil, err
+	}
+	azCli := newAzCliFromOptions(o, commandRunner, tokenCredential)
 	cmdDeployAction, err := newDeployAction(flags, azdContext, azCli, console, formatter, writer)
 	if err != nil {
 		return nil, err
@@ -54,7 +58,11 @@ func initInitAction(cmd *cobra.Command, o *internal.GlobalCommandOptions, flags 
 	writer := newWriter(cmd)
 	console := newConsoleFromOptions(o, formatter, writer, cmd)
 	commandRunner := newCommandRunnerFromConsole(console)
-	azCli := newAzCliFromOptions(o, commandRunner)
+	tokenCredential, err := newCredential()
+	if err != nil {
+		return nil, err
+	}
+	azCli := newAzCliFromOptions(o, commandRunner, tokenCredential)
 	gitCli := git.NewGitCliFromRunner(commandRunner)
 	cmdInitAction, err := newInitAction(azdContext, commandRunner, console, azCli, gitCli, flags)
 	if err != nil {
@@ -71,7 +79,11 @@ func initLoginAction(cmd *cobra.Command, o *internal.GlobalCommandOptions, flags
 	writer := newWriter(cmd)
 	console := newConsoleFromOptions(o, formatter, writer, cmd)
 	commandRunner := newCommandRunnerFromConsole(console)
-	azCli := newAzCliFromOptions(o, commandRunner)
+	tokenCredential, err := newCredential()
+	if err != nil {
+		return nil, err
+	}
+	azCli := newAzCliFromOptions(o, commandRunner, tokenCredential)
 	cmdLoginAction := newLoginAction(formatter, writer, azCli, flags, console)
 	return cmdLoginAction, nil
 }
@@ -88,7 +100,11 @@ func initUpAction(cmd *cobra.Command, o *internal.GlobalCommandOptions, flags up
 	writer := newWriter(cmd)
 	console := newConsoleFromOptions(o, formatter, writer, cmd)
 	commandRunner := newCommandRunnerFromConsole(console)
-	azCli := newAzCliFromOptions(o, commandRunner)
+	tokenCredential, err := newCredential()
+	if err != nil {
+		return nil, err
+	}
+	azCli := newAzCliFromOptions(o, commandRunner, tokenCredential)
 	gitCli := git.NewGitCliFromRunner(commandRunner)
 	cmdInitFlags := flags.initFlags
 	cmdInitAction, err := newInitAction(azdContext, commandRunner, console, azCli, gitCli, cmdInitFlags)
@@ -118,7 +134,11 @@ func initMonitorAction(cmd *cobra.Command, o *internal.GlobalCommandOptions, fla
 	writer := newWriter(cmd)
 	console := newConsoleFromOptions(o, formatter, writer, cmd)
 	commandRunner := newCommandRunnerFromConsole(console)
-	azCli := newAzCliFromOptions(o, commandRunner)
+	tokenCredential, err := newCredential()
+	if err != nil {
+		return nil, err
+	}
+	azCli := newAzCliFromOptions(o, commandRunner, tokenCredential)
 	cmdMonitorAction := newMonitorAction(azdContext, azCli, console, flags)
 	return cmdMonitorAction, nil
 }
@@ -176,7 +196,11 @@ func initInfraCreateAction(cmd *cobra.Command, o *internal.GlobalCommandOptions,
 	writer := newWriter(cmd)
 	console := newConsoleFromOptions(o, formatter, writer, cmd)
 	commandRunner := newCommandRunnerFromConsole(console)
-	azCli := newAzCliFromOptions(o, commandRunner)
+	tokenCredential, err := newCredential()
+	if err != nil {
+		return nil, err
+	}
+	azCli := newAzCliFromOptions(o, commandRunner, tokenCredential)
 	cmdInfraCreateAction := newInfraCreateAction(flags, azdContext, azCli, console, formatter, writer)
 	return cmdInfraCreateAction, nil
 }
@@ -193,7 +217,11 @@ func initInfraDeleteAction(cmd *cobra.Command, o *internal.GlobalCommandOptions,
 	writer := newWriter(cmd)
 	console := newConsoleFromOptions(o, formatter, writer, cmd)
 	commandRunner := newCommandRunnerFromConsole(console)
-	azCli := newAzCliFromOptions(o, commandRunner)
+	tokenCredential, err := newCredential()
+	if err != nil {
+		return nil, err
+	}
+	azCli := newAzCliFromOptions(o, commandRunner, tokenCredential)
 	cmdInfraDeleteAction := newInfraDeleteAction(flags, azdContext, azCli, console)
 	return cmdInfraDeleteAction, nil
 }
@@ -210,7 +238,11 @@ func initEnvSetAction(cmd *cobra.Command, o *internal.GlobalCommandOptions, flag
 	writer := newWriter(cmd)
 	console := newConsoleFromOptions(o, formatter, writer, cmd)
 	commandRunner := newCommandRunnerFromConsole(console)
-	azCli := newAzCliFromOptions(o, commandRunner)
+	tokenCredential, err := newCredential()
+	if err != nil {
+		return nil, err
+	}
+	azCli := newAzCliFromOptions(o, commandRunner, tokenCredential)
 	cmdEnvSetAction := newEnvSetAction(azdContext, azCli, console, o, args)
 	return cmdEnvSetAction, nil
 }
@@ -250,7 +282,11 @@ func initEnvNewAction(cmd *cobra.Command, o *internal.GlobalCommandOptions, flag
 	writer := newWriter(cmd)
 	console := newConsoleFromOptions(o, formatter, writer, cmd)
 	commandRunner := newCommandRunnerFromConsole(console)
-	azCli := newAzCliFromOptions(o, commandRunner)
+	tokenCredential, err := newCredential()
+	if err != nil {
+		return nil, err
+	}
+	azCli := newAzCliFromOptions(o, commandRunner, tokenCredential)
 	cmdEnvNewAction := newEnvNewAction(azdContext, azCli, flags, console)
 	return cmdEnvNewAction, nil
 }
@@ -267,7 +303,11 @@ func initEnvRefreshAction(cmd *cobra.Command, o *internal.GlobalCommandOptions, 
 	writer := newWriter(cmd)
 	console := newConsoleFromOptions(o, formatter, writer, cmd)
 	commandRunner := newCommandRunnerFromConsole(console)
-	azCli := newAzCliFromOptions(o, commandRunner)
+	tokenCredential, err := newCredential()
+	if err != nil {
+		return nil, err
+	}
+	azCli := newAzCliFromOptions(o, commandRunner, tokenCredential)
 	cmdEnvRefreshAction := newEnvRefreshAction(azdContext, azCli, o, console, formatter, writer)
 	return cmdEnvRefreshAction, nil
 }
@@ -284,7 +324,11 @@ func initEnvGetValuesAction(cmd *cobra.Command, o *internal.GlobalCommandOptions
 	writer := newWriter(cmd)
 	console := newConsoleFromOptions(o, formatter, writer, cmd)
 	commandRunner := newCommandRunnerFromConsole(console)
-	azCli := newAzCliFromOptions(o, commandRunner)
+	tokenCredential, err := newCredential()
+	if err != nil {
+		return nil, err
+	}
+	azCli := newAzCliFromOptions(o, commandRunner, tokenCredential)
 	cmdEnvGetValuesAction := newEnvGetValuesAction(azdContext, console, formatter, writer, azCli, o)
 	return cmdEnvGetValuesAction, nil
 }

@@ -431,7 +431,7 @@ func (p *BicepProvider) purgeItems(
 	if len(appConfigs) > 0 && len(keyVaults) > 0 {
 		items = "Key Vaults and App Configurations"
 		itemsWarning = fmt.Sprintf(""+
-			"\nThis operation will delete and purge %d Key Vaults and %d App Configurations. These %s have soft delete enabled "+
+			"\nThis operation will delete %d Key Vaults and %d App Configurations. These %s have soft delete enabled "+
 			"allowing them to be recovered for a period \n"+
 			"of time after deletion. During this period, their names may not be reused.\n"+
 			"You can use argument --purge to skip this confirmation.\n\n",
@@ -439,7 +439,7 @@ func (p *BicepProvider) purgeItems(
 	} else if len(keyVaults) > 0 {
 		items = "Key Vaults"
 		itemsWarning = fmt.Sprintf(""+
-			"\nThis operation will delete and purge %d Key Vaults. These %s have soft delete enabled "+
+			"\nThis operation will delete %d Key Vaults. These %s have soft delete enabled "+
 			"allowing them to be recovered for a period \n"+
 			"of time after deletion. During this period, their names may not be reused.\n"+
 			"You can use argument --purge to skip this confirmation.\n\n",
@@ -447,7 +447,7 @@ func (p *BicepProvider) purgeItems(
 	} else if len(appConfigs) > 0 {
 		items = "App Configurations"
 		itemsWarning = fmt.Sprintf(""+
-			"\nThis operation will delete and purge %d App Configurations. These %s have soft delete enabled "+
+			"\nThis operation will delete %d App Configurations. These %s have soft delete enabled "+
 			"allowing them to be recovered for a period \n"+
 			"of time after deletion. During this period, their names may not be reused.\n"+
 			"You can use argument --purge to skip this confirmation.\n\n",

@@ -40,7 +40,7 @@
             "problemMatcher": []
         },
         {
-            "label": "Parepare API Debug",
+            "label": "Prepare API Debug",
             "dependsOrder": "sequence",
             "dependsOn": [
                 "Setup API Env",

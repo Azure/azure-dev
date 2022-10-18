@@ -85,7 +85,7 @@ const (
 	EnvGoogleCloudBuild   = "Google Cloud Build"
 	EnvTeamCity           = "TeamCity"
 	EnvJetBrainsSpace     = "JetBrains Space"
-	EnvCodespaces            = "GitHub Codespaces"
+	EnvCodespaces         = "GitHub Codespaces"
 )
 
 // The value used for ServiceNameKey

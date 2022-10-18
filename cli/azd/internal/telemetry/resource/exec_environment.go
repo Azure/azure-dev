@@ -57,7 +57,7 @@ var nonNullEnvVarRules = []struct {
 	{"BITBUCKET_BUILD_NUMBER", fields.EnvBitBucketPipelines},
 	// GitHub Codespaces -
 	// https://docs.github.com/en/codespaces/developing-in-codespaces/default-environment-variables-for-your-codespace
-	{"CODESPACES", fields.Codespaces},
+	{"CODESPACES", fields.EnvCodespaces},
 	// Unknown CI cases
 	{"CI", fields.EnvUnknownCI},
 	{"BUILD_ID", fields.EnvUnknownCI},

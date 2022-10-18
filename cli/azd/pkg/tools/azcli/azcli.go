@@ -19,7 +19,6 @@ import (
 	azdinternal "github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/telemetry"
 	"github.com/azure/azure-dev/cli/azd/pkg/azsdk"
-	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
 	"github.com/azure/azure-dev/cli/azd/pkg/identity"
@@ -635,25 +634,6 @@ func (cli *azCli) ListResourceGroupDeploymentOperations(
 	return resources, nil
 }
 
-func (cli *azCli) GetSignedInUserId(ctx context.Context) (string, error) {
-	res, err := cli.runAzCommand(ctx, "ad", "signed-in-user", "show", "--query", "objectId", "--output", "json")
-	if isNotLoggedInMessage(res.Stderr) {
-		return "", ErrAzCliNotLoggedIn
-	} else if isResourceSegmentMeNotFoundMessage(res.Stderr) {
-		return "", ErrCurrentPrincipalIsNotUser
-	} else if isClientAssertionInvalidMessage(res.Stderr) {
-		return "", ErrClientAssertionExpired
-	} else if err != nil {
-		return "", fmt.Errorf("failed running az signed-in-user show: %s: %w", res.String(), err)
-	}
-
-	var objectId string
-	if err := json.Unmarshal([]byte(res.Stdout), &objectId); err != nil {
-		return "", fmt.Errorf("could not unmarshal output %s as a string: %w", res.Stdout, err)
-	}
-	return objectId, nil
-}
-
 // Default response model from `az ad sp`
 type ServicePrincipalCredentials struct {
 	AppId       string `json:"appId"`
@@ -669,90 +649,6 @@ type AzureCredentials struct {
 	SubscriptionId             string `json:"subscriptionId"`
 	TenantId                   string `json:"tenantId"`
 	ResourceManagerEndpointUrl string `json:"resourceManagerEndpointUrl"`
-}
-
-func (cli *azCli) CreateOrUpdateServicePrincipal(
-	ctx context.Context,
-	subscriptionId string,
-	applicationName string,
-	roleName string,
-) (json.RawMessage, error) {
-	// By default the role assignment is tied to the root of the currently active subscription (in the az cli), which may not
-	// be the same
-	// subscription that the user has requested, so build the scope ourselves.
-	scopes := azure.SubscriptionRID(subscriptionId)
-	var result ServicePrincipalCredentials
-
-	res, err := cli.runAzCommand(
-		ctx,
-		"ad",
-		"sp",
-		"create-for-rbac",
-		"--scopes",
-		scopes,
-		"--name",
-		applicationName,
-		"--role",
-		roleName,
-		"--output",
-		"json",
-	)
-	if isNotLoggedInMessage(res.Stderr) {
-		return nil, ErrAzCliNotLoggedIn
-	} else if err != nil {
-		return nil, fmt.Errorf("failed running az ad sp create-for-rbac: %s: %w", res.String(), err)
-	}
-
-	if err := json.Unmarshal([]byte(res.Stdout), &result); err != nil {
-		return nil, fmt.Errorf("could not unmarshal output %s as a string: %w", res.Stdout, err)
-	}
-
-	// --sdk-auth arg was deprecated from the az cli. See: https://docs.microsoft.com/cli/azure/microsoft-graph-migration
-	// this argument would ensure that the output from creating a Service Principal could
-	// be used as input to log in to azure. See: https://github.com/Azure/login#configure-a-service-principal-with-a-secret
-	// Create the credentials expected structure from the json-rawResponse
-	credentials := AzureCredentials{
-		ClientId:                   result.AppId,
-		ClientSecret:               result.Password,
-		SubscriptionId:             subscriptionId,
-		TenantId:                   result.Tenant,
-		ResourceManagerEndpointUrl: "https://management.azure.com/",
-	}
-
-	credentialsJson, err := json.Marshal(credentials)
-	if err != nil {
-		return nil, fmt.Errorf("couldn't build Azure Credential")
-	}
-
-	var resultWithAzureCredentialsModel json.RawMessage
-	if err := json.Unmarshal(credentialsJson, &resultWithAzureCredentialsModel); err != nil {
-		return nil, fmt.Errorf("couldn't build Azure Credential Json")
-	}
-
-	return resultWithAzureCredentialsModel, nil
-}
-
-func (cli *azCli) GetAccessToken(ctx context.Context) (AzCliAccessToken, error) {
-	res, err := cli.runAzCommand(ctx, "account", "get-access-token", "--output", "json")
-	if isNotLoggedInMessage(res.Stderr) {
-		return AzCliAccessToken{}, ErrAzCliNotLoggedIn
-	} else if isRefreshTokenExpiredMessage(res.Stderr) {
-		return AzCliAccessToken{}, ErrAzCliRefreshTokenExpired
-	} else if err != nil {
-		return AzCliAccessToken{}, fmt.Errorf("failed running az account get-access-token: %s: %w", res.String(), err)
-	}
-
-	var accessToken AzCliAccessToken
-	if err := json.Unmarshal([]byte(res.Stdout), &accessToken); err != nil {
-		return AzCliAccessToken{}, fmt.Errorf("could not unmarshal output %s as a AzCliAccessToken: %w", res.Stdout, err)
-	}
-	return accessToken, nil
-}
-
-func (cli *azCli) runAzCommand(ctx context.Context, args ...string) (exec.RunResult, error) {
-	return cli.runAzCommandWithArgs(ctx, exec.RunArgs{
-		Args: args,
-	})
 }
 
 // runAzCommandWithArgs will run the 'args', ignoring 'Cmd' in favor of injecting the proper

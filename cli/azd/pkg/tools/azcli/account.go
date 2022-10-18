@@ -7,6 +7,7 @@ import (
 	"sort"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armsubscriptions"
+	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 )
 
 type AzCliSubscriptionInfo struct {
@@ -139,4 +140,27 @@ func (cli *azCli) createSubscriptionsClient(ctx context.Context) (*armsubscripti
 	}
 
 	return client, nil
+}
+
+func (cli *azCli) GetAccessToken(ctx context.Context) (AzCliAccessToken, error) {
+	res, err := cli.runAzCommand(ctx, "account", "get-access-token", "--output", "json")
+	if isNotLoggedInMessage(res.Stderr) {
+		return AzCliAccessToken{}, ErrAzCliNotLoggedIn
+	} else if isRefreshTokenExpiredMessage(res.Stderr) {
+		return AzCliAccessToken{}, ErrAzCliRefreshTokenExpired
+	} else if err != nil {
+		return AzCliAccessToken{}, fmt.Errorf("failed running az account get-access-token: %s: %w", res.String(), err)
+	}
+
+	var accessToken AzCliAccessToken
+	if err := json.Unmarshal([]byte(res.Stdout), &accessToken); err != nil {
+		return AzCliAccessToken{}, fmt.Errorf("could not unmarshal output %s as a AzCliAccessToken: %w", res.Stdout, err)
+	}
+	return accessToken, nil
+}
+
+func (cli *azCli) runAzCommand(ctx context.Context, args ...string) (exec.RunResult, error) {
+	return cli.runAzCommandWithArgs(ctx, exec.RunArgs{
+		Args: args,
+	})
 }

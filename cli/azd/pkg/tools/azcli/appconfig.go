@@ -57,7 +57,7 @@ func (cli *azCli) PurgeAppConfig(ctx context.Context, subscriptionId string, con
 		return err
 	}
 
-	poller, err := appConfigStoresClient.BeginPurgeDeleted(ctx, configName, location, nil)
+	poller, err := appConfigStoresClient.BeginPurgeDeleted(ctx, location, configName, nil)
 	if err != nil {
 		return fmt.Errorf("starting purging app configuration: %w", err)
 	}

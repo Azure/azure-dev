@@ -46,7 +46,6 @@
             "options": {
                 "cwd": "${workspaceFolder}/src/web/",
                 "env": {
-                    "REACT_APP_API_BASE_URL": "http://localhost:3100",
                     "BROWSER": "none"
                 }
             },
@@ -66,6 +65,14 @@
             "dependsOn": [
                 "Setup API Env"
             ],
+        },
+        {
+            "label": "Prepare API Debug",
+            "dependsOrder": "sequence",
+            "dependsOn": [
+                "Setup API Env",
+                "Restore API"
+            ]
         },
         {
             "label": "Restore API",

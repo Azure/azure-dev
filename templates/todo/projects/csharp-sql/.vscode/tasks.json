@@ -52,6 +52,14 @@
             "problemMatcher": "$msCompile"
         },
         {
+            "label": "Prepare API Debug",
+            "dependsOrder": "sequence",
+            "dependsOn": [
+                "Setup API Env",
+                "Build API"
+            ]
+        },
+        {
             "label": "Watch API",
             "command": "dotnet",
             "type": "process",
@@ -93,7 +101,6 @@
             "options": {
                 "cwd": "${workspaceFolder}/src/web/",
                 "env": {
-                    "REACT_APP_API_BASE_URL": "http://localhost:3100",
                     "BROWSER": "none"
                 }
             },

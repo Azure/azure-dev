@@ -28,6 +28,14 @@
             ],
         },
         {
+            "label": "Prepare API Debug",
+            "dependsOrder": "sequence",
+            "dependsOn": [
+                "Setup API Env",
+                "Build API"
+            ]
+        },
+        {
             "label": "API mvn spring-boot:run",
             "detail": "Helper task--use 'Start API' task to ensure environment is set up correctly",
             "type": "shell",
@@ -82,7 +90,6 @@
             "options": {
                 "cwd": "${workspaceFolder}/src/web/",
                 "env": {
-                    "REACT_APP_API_BASE_URL": "http://localhost:3100",
                     "BROWSER": "none"
                 }
             },

@@ -6,7 +6,6 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appconfiguration/armappconfiguration"
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
-	"github.com/azure/azure-dev/cli/azd/pkg/identity"
 )
 
 type AzCliAppConfig struct {
@@ -76,13 +75,8 @@ func (cli *azCli) createAppConfigClient(
 	ctx context.Context,
 	subscriptionId string,
 ) (*armappconfiguration.ConfigurationStoresClient, error) {
-	cred, err := identity.GetCredentials(ctx)
-	if err != nil {
-		return nil, err
-	}
-
 	options := cli.createDefaultClientOptionsBuilder(ctx).BuildArmClientOptions()
-	appConfigStoresClient, err := armappconfiguration.NewConfigurationStoresClient(subscriptionId, cred, options)
+	appConfigStoresClient, err := armappconfiguration.NewConfigurationStoresClient(subscriptionId, cli.credential, options)
 	if err != nil {
 		return nil, fmt.Errorf("creating Resource client: %w", err)
 	}

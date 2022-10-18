@@ -16,7 +16,7 @@ func (cli *azCli) GetSignedInUserId(ctx context.Context) (string, error) {
 		return "", err
 	}
 
-	userProfile, err := client.GetCurrentUser(ctx)
+	userProfile, err := client.Me().Get(ctx)
 	if err != nil {
 		return "", fmt.Errorf("failed retrieving current user profile: %w", err)
 	}
@@ -86,30 +86,14 @@ func (cli *azCli) CreateOrUpdateServicePrincipal(
 }
 
 // Creates a graph users client using credentials from the Go context.
-func (cli *azCli) createUsersClient(ctx context.Context) (*graphsdk.UsersClient, error) {
+func (cli *azCli) createUsersClient(ctx context.Context) (*graphsdk.GraphClient, error) {
 	cred, err := identity.GetCredentials(ctx)
 	if err != nil {
 		return nil, err
 	}
 
 	options := cli.createDefaultClientOptionsBuilder(ctx).BuildCoreClientOptions()
-	client, err := graphsdk.NewUsersClient(cred, options)
-	if err != nil {
-		return nil, fmt.Errorf("creating Graph Users client: %w", err)
-	}
-
-	return client, nil
-}
-
-// Creates a graph users client using credentials from the Go context.
-func (cli *azCli) createApplicationsClient(ctx context.Context) (*graphsdk.ApplicationsClient, error) {
-	cred, err := identity.GetCredentials(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	options := cli.createDefaultClientOptionsBuilder(ctx).BuildCoreClientOptions()
-	client, err := graphsdk.NewApplicationsClient(cred, options)
+	client, err := graphsdk.NewGraphClient(cred, options)
 	if err != nil {
 		return nil, fmt.Errorf("creating Graph Users client: %w", err)
 	}

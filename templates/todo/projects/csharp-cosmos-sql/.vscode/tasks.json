@@ -5,7 +5,7 @@
             "label": "Setup Web Env",
             "command": ".vscode/setup-web.sh",
             "windows": {
-                "command": ".vscode/setup-web.cmd"
+                "command": ".vscode/no-op.cmd"
             },
             "problemMatcher": []
         },
@@ -13,7 +13,7 @@
             "label": "Setup API Env",
             "command": ".vscode/setup-api.sh",
             "windows": {
-                "command": ".vscode/setup-api.cmd"
+                "command": ".vscode/no-op.cmd"
             },
             "problemMatcher": []
         },

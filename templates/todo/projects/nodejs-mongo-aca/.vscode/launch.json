@@ -32,7 +32,7 @@
             "env": {
                 "NODE_ENV": "development"
             },
-            "preLaunchTask": "Restore API",
+            "preLaunchTask": "Prepare API Debug",
             "outputCapture": "std"
         },
     ],

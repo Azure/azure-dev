@@ -5,7 +5,7 @@
             "name": "Debug API",
             "type": "java",
             "request": "launch",
-            "preLaunchTask": "Build API",
+            "preLaunchTask": "Prepare API Debug",
             "mainClass": "com.microsoft.azure.simpletodo.SimpleTodoApplication",
             "args": [],
             "cwd": "${workspaceFolder}/src/api",

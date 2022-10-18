@@ -11,6 +11,7 @@
 				"todo.app:app",
 				"--reload"
 			],
+			"preLaunchTask": "Prepare API Debug"
 		},
 		{
 			"name": "Python: Pytest",

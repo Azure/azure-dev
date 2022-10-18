@@ -28,7 +28,7 @@
             ],
             "justMyCode": true,
             "python": "${workspaceFolder}/src/api/api_env/bin/python3",
-            "envFile": "${input:dotEnvFilePath}",
+            "envFile": "${input:dotEnvFilePath}.debug",
             "windows": {
                 "python": "${workspaceFolder}/src/api/api_env/scripts/python.exe",
             },

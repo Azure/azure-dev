@@ -24,7 +24,7 @@
                 "Restore Web",
                 "Web npm start"
             ],
-            "file": "${input:dotEnvFilePath}",
+            "file": "${input:dotEnvFilePath}.debug",
             "dependsOn": [
                 "Setup Web Env"
             ],
@@ -62,7 +62,7 @@
                 "Restore API",
                 "API uvicorn launch"
             ],
-            "file": "${input:dotEnvFilePath}",
+            "file": "${input:dotEnvFilePath}.debug",
             "dependsOn": [
                 "Setup API Env"
             ],

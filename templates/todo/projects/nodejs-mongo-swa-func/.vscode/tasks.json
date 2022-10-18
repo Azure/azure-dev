@@ -24,7 +24,7 @@
                 "Restore Web",
                 "Web npm start"
             ],
-            "file": "${input:dotEnvFilePath}",
+            "file": "${input:dotEnvFilePath}.debug",
             "dependsOn": [
                 "Setup Web Env"
             ],
@@ -61,7 +61,7 @@
                 "Restore API",
                 "API npm start"
             ],
-            "file": "${input:dotEnvFilePath}",
+            "file": "${input:dotEnvFilePath}.debug",
             "dependsOn": [
                 "Setup API Env"
             ],

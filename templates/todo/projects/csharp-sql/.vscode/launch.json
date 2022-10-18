@@ -28,7 +28,7 @@
             "env": {
                 "ASPNETCORE_ENVIRONMENT": "Development"
             },
-            "envFile": "${input:dotEnvFilePath}"
+            "envFile": "${input:dotEnvFilePath}.debug"
         },
 
         {

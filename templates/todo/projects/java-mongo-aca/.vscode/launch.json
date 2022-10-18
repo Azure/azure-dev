@@ -10,7 +10,7 @@
             "args": [],
             "cwd": "${workspaceFolder}/src/api",
             "env": {},
-            "envFile": "${input:dotEnvFilePath}"
+            "envFile": "${input:dotEnvFilePath}.debug"
         },
         {
             "name": "Debug Web",

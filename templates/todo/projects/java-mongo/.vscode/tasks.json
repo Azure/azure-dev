@@ -22,7 +22,7 @@
             "label": "Start API",
             "type": "dotenv",
             "targetTasks": "API mvn spring-boot:run",
-            "file": "${input:dotEnvFilePath}",
+            "file": "${input:dotEnvFilePath}.debug",
             "dependsOn": [
                 "Setup API Env"
             ],
@@ -68,7 +68,7 @@
                 "Restore Web",
                 "Web npm start"
             ],
-            "file": "${input:dotEnvFilePath}",
+            "file": "${input:dotEnvFilePath}.debug",
             "dependsOn": [
                 "Setup Web Env"
             ],

@@ -28,7 +28,7 @@
             ],
             "type": "pwa-node",
             "cwd": "${workspaceFolder}/src/api",
-            "envFile": "${input:dotEnvFilePath}",
+            "envFile": "${input:dotEnvFilePath}.debug",
             "env": {
                 "NODE_ENV": "development"
             },

@@ -537,7 +537,8 @@ func prepareDestroyMocks(mockContext *mocks.MockContext) {
 
 	// Purge App configuration
 	mockContext.HttpClient.When(func(request *http.Request) bool {
-		return request.Method == http.MethodPost && strings.Contains(request.URL.Path, "deletedConfigurationStores/ac-123/purge")
+		return request.Method == http.MethodPost && strings.Contains(request.URL.Path,
+			"deletedConfigurationStores/ac-123/purge")
 	}).RespondFn(func(request *http.Request) (*http.Response, error) {
 		return &http.Response{
 			Request:    request,

@@ -184,7 +184,7 @@ func TestBicepDestroy(t *testing.T) {
 		}).Respond(true)
 
 		mockContext.Console.WhenConfirm(func(options input.ConsoleOptions) bool {
-			return strings.Contains(options.Message, "Would you like to permanently delete these Key Vaults and App Configurations")
+			return strings.Contains(options.Message, "Would you like to permanently delete these Key Vaults/App Configurations")
 		}).Respond(true)
 
 		infraProvider := createBicepProvider(*mockContext.Context)
@@ -218,7 +218,7 @@ func TestBicepDestroy(t *testing.T) {
 		require.Contains(t, consoleOutput[0], "This will delete")
 		require.Contains(t, consoleOutput[1], "Deleted resource group")
 		require.Contains(t, consoleOutput[2], "This operation will delete")
-		require.Contains(t, consoleOutput[3], "Would you like to permanently delete these Key Vaults and App Configurations")
+		require.Contains(t, consoleOutput[3], "Would you like to permanently delete these Key Vaults/App Configurations")
 		require.Contains(t, consoleOutput[4], "Purged key vault")
 		require.Contains(t, consoleOutput[5], "Purged app configuration")
 		require.Contains(t, consoleOutput[6], "Deleted deployment")

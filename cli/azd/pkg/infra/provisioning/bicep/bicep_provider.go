@@ -267,6 +267,12 @@ func (p *BicepProvider) Deploy(
 		})
 }
 
+type itemToPurge struct {
+	resourceType string
+	count        int
+	purge        func() error
+}
+
 // Destroys the specified deployment by deleting all azure resources, resource groups & deployments that are referenced.
 func (p *BicepProvider) Destroy(
 	ctx context.Context,
@@ -313,7 +319,22 @@ func (p *BicepProvider) Destroy(
 				return
 			}
 
-			purgeItem := map[string]interface{}{"Key Vaults": keyVaults, "App Configurations": appConfigs}
+			keyVaultsPurge := itemToPurge{
+				resourceType: "Key Vaults",
+				count:        len(keyVaults),
+				purge: func() error {
+					return p.purgeKeyVaults(ctx, asyncContext, keyVaults, options)
+				},
+			}
+			appConfigsPurge := itemToPurge{
+				resourceType: "App Configurations",
+				count:        len(appConfigs),
+				purge: func() error {
+					return p.purgeAppConfigs(ctx, asyncContext, appConfigs, options)
+				},
+			}
+			purgeItem := []itemToPurge{keyVaultsPurge, appConfigsPurge}
+
 			if err := p.purgeItems(ctx, asyncContext, purgeItem, options); err != nil {
 				asyncContext.SetError(fmt.Errorf("purging key vaults or app configurations: %w", err))
 				return
@@ -423,61 +444,58 @@ func (p *BicepProvider) destroyResourceGroups(
 func (p *BicepProvider) purgeItems(
 	ctx context.Context,
 	asyncContext *async.InteractiveTaskContextWithProgress[*DestroyResult, *DestroyProgress],
-	items map[string]interface{},
+	items []itemToPurge,
 	options DestroyOptions,
 ) error {
-	// if !options.Purge() {
-	// 	var itemString string
-	// 	itemsWarning := "" + "\nThis operation will delete: \n "
-	// 	for k, v := range items {
-	// 		if itemString != "" {
-	// 			itemString = itemString + "/" + k
-	// 		} else {
-	// 			itemString = k
-	// 		}
-	// 		itemsWarning = itemsWarning + fmt.Sprintf("%d %s\n", len(v), k)
-	// 	}
-	// 	itemsWarning = itemsWarning + fmt.Sprintf("These %s have soft delete enabled "+
-	// 		"allowing them to be recovered for a period \n"+
-	// 		"of time after deletion. During this period, their names may not be reused.\n"+
-	// 		"You can use argument --purge to skip this confirmation.\n\n", itemString)
+	if !options.Purge() {
+		var itemString string
+		itemsWarning := "\nThis operation will delete: \n "
+		for _, v := range items {
+			if itemString != "" {
+				itemString = itemString + "/" + v.resourceType
+			} else {
+				itemString = v.resourceType
+			}
+			itemsWarning = itemsWarning + fmt.Sprintf("%d %s\n", v.count, v.resourceType)
+		}
+		itemsWarning = itemsWarning + fmt.Sprintf("These %s have soft delete enabled "+
+			"allowing them to be recovered for a period \n"+
+			"of time after deletion. During this period, their names may not be reused.\n"+
+			"You can use argument --purge to skip this confirmation.\n\n", itemString)
 
-	// 	p.console.Message(ctx, output.WithWarningFormat(itemsWarning))
+		p.console.Message(ctx, output.WithWarningFormat(itemsWarning))
 
-	// 	err := asyncContext.Interact(func() error {
-	// 		purgeItems, err := p.console.Confirm(ctx, input.ConsoleOptions{
-	// 			Message: fmt.Sprintf(
-	// 				"Would you like to %s delete these %s instead, allowing their names to be reused?",
-	// 				output.WithErrorFormat("permanently"),
-	// 				items,
-	// 			),
-	// 			DefaultValue: false,
-	// 		})
+		err := asyncContext.Interact(func() error {
+			purgeItems, err := p.console.Confirm(ctx, input.ConsoleOptions{
+				Message: fmt.Sprintf(
+					"Would you like to %s delete these %s instead, allowing their names to be reused?",
+					output.WithErrorFormat("permanently"),
+					itemString,
+				),
+				DefaultValue: false,
+			})
 
-	// 		if err != nil {
-	// 			return fmt.Errorf("prompting for %s confirmation: %w", itemString, err)
-	// 		}
+			if err != nil {
+				return fmt.Errorf("prompting for %s confirmation: %w", itemString, err)
+			}
 
-	// 		if !purgeItems {
-	// 			return fmt.Errorf("user denied %s confirmation", itemString)
-	// 		}
+			if !purgeItems {
+				return fmt.Errorf("user denied %s confirmation", itemString)
+			}
 
-	// 		return nil
-	// 	})
+			return nil
+		})
 
-	// 	if err != nil {
-	// 		return err
-	// 	}
+		if err != nil {
+			return err
+		}
 
-	// 	if err := p.purgeKeyVaults(ctx, asyncContext, items["Key Vaults"], options); items["Key Vaults"] != null && err != nil {
-	// 		return err
-	// 	}
-
-	// 	if err := p.purgeAppConfigs(ctx, asyncContext, items["App Configurations"], options); items["App Configurations"] != null && err != nil {
-	// 		return err
-	// 	}
-
-	// }
+		for _, item := range items {
+			if err := item.purge(); err != nil {
+				return fmt.Errorf("failed to purge %s: %w", item.resourceType, err)
+			}
+		}
+	}
 	return nil
 }
 

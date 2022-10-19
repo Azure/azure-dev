@@ -9,18 +9,22 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"os"
+	"path"
 	"strings"
 	"testing"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/keyvault/armkeyvault"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
+	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	. "github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
+	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	execmock "github.com/azure/azure-dev/cli/azd/test/mocks/exec"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/httputil"
@@ -34,7 +38,7 @@ func TestBicepPlan(t *testing.T) {
 
 	mockContext := mocks.NewMockContext(context.Background())
 	prepareGenericMocks(mockContext.CommandRunner)
-	preparePlanningMocks(mockContext.CommandRunner)
+	preparePlanningMocks(mockContext)
 	prepareDeployShowMocks(mockContext.HttpClient)
 	infraProvider := createBicepProvider(*mockContext.Context)
 	planningTask := infraProvider.Plan(*mockContext.Context)
@@ -78,7 +82,7 @@ func TestBicepState(t *testing.T) {
 
 	mockContext := mocks.NewMockContext(context.Background())
 	prepareGenericMocks(mockContext.CommandRunner)
-	preparePlanningMocks(mockContext.CommandRunner)
+	preparePlanningMocks(mockContext)
 	prepareDeployShowMocks(mockContext.HttpClient)
 	prepareDeployMocks(mockContext.CommandRunner)
 
@@ -125,14 +129,20 @@ func TestBicepDeploy(t *testing.T) {
 
 	mockContext := mocks.NewMockContext(context.Background())
 	prepareGenericMocks(mockContext.CommandRunner)
-	preparePlanningMocks(mockContext.CommandRunner)
+	preparePlanningMocks(mockContext)
 	prepareDeployShowMocks(mockContext.HttpClient)
 	prepareDeployMocks(mockContext.CommandRunner)
 
 	infraProvider := createBicepProvider(*mockContext.Context)
+	tmpPath := t.TempDir()
+	parametersPath := path.Join(tmpPath, "params.json")
+	createTmpFile := os.WriteFile(parametersPath, []byte(testArmParametersFile), osutil.PermissionFile)
+	require.NoError(t, createTmpFile)
+
 	deploymentPlan := DeploymentPlan{
 		Details: BicepDeploymentDetails{
-			ParameterFilePath: "",
+			ParameterFilePath: parametersPath,
+			Template:          to.Ptr(azure.ArmTemplate("{}")),
 		},
 	}
 
@@ -169,7 +179,7 @@ func TestBicepDestroy(t *testing.T) {
 	t.Run("Interactive", func(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
 		prepareGenericMocks(mockContext.CommandRunner)
-		preparePlanningMocks(mockContext.CommandRunner)
+		preparePlanningMocks(mockContext)
 		prepareDeployShowMocks(mockContext.HttpClient)
 		prepareDestroyMocks(mockContext)
 
@@ -234,7 +244,7 @@ func TestBicepDestroy(t *testing.T) {
 	t.Run("InteractiveForceAndPurge", func(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
 		prepareGenericMocks(mockContext.CommandRunner)
-		preparePlanningMocks(mockContext.CommandRunner)
+		preparePlanningMocks(mockContext)
 		prepareDeployShowMocks(mockContext.HttpClient)
 		prepareDestroyMocks(mockContext)
 
@@ -330,8 +340,7 @@ func prepareDeployMocks(commandRunner *execmock.MockCommandRunner) {
 }
 
 func preparePlanningMocks(
-	commandRunner *execmock.MockCommandRunner) {
-	expectedWebsiteUrl := "http://myapp.azurewebsites.net"
+	mockContext *mocks.MockContext) {
 	bicepInputParams := make(map[string]BicepInputParameter)
 	bicepInputParams["environmentName"] = BicepInputParameter{Value: "${AZURE_ENV_NAME}"}
 	bicepInputParams["location"] = BicepInputParameter{Value: "${AZURE_LOCATION}"}
@@ -343,43 +352,37 @@ func preparePlanningMocks(
 		Outputs:    bicepOutputParams,
 	}
 
-	deployOutputs := make(map[string]azcli.AzCliDeploymentOutput)
-	deployOutputs["WEBSITE_URL"] = azcli.AzCliDeploymentOutput{Type: "String", Value: expectedWebsiteUrl}
-	azDeployment := azcli.AzCliDeployment{
-		Id:   "DEPLOYMENT_ID",
-		Name: "DEPLOYMENT_NAME",
-		Properties: azcli.AzCliDeploymentProperties{
-			Outputs: deployOutputs,
-			Dependencies: []azcli.AzCliDeploymentPropertiesDependency{
-				{
-					DependsOn: []azcli.AzCliDeploymentPropertiesBasicDependency{
-						{
-							Id:           "RESOURCE_ID",
-							ResourceName: "RESOURCE_GROUP",
-							ResourceType: string(infra.AzureResourceTypeResourceGroup),
-						},
-					},
-				},
-			},
-		},
-	}
-
 	bicepBytes, _ := json.Marshal(bicepTemplate)
-	deployResultBytes, _ := json.Marshal(azDeployment)
+	deployResult := `
+	{
+		"id":"DEPLOYMENT_ID",
+		"name":"DEPLOYMENT_NAME",
+		"properties":{
+			"outputs":{
+				"WEBSITE_URL":{"type": "String", "value": "http://myapp.azurewebsites.net"}
+			}
+		}
+	}`
 
-	commandRunner.When(func(args exec.RunArgs, command string) bool {
+	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 		return strings.Contains(command, "az bicep build")
 	}).Respond(exec.RunResult{
 		Stdout: string(bicepBytes),
 		Stderr: "",
 	})
-
-	// ARM deployment
-	commandRunner.When(func(args exec.RunArgs, command string) bool {
-		return strings.Contains(command, "az deployment sub create")
-	}).Respond(exec.RunResult{
-		Stdout: string(deployResultBytes),
-		Stderr: "",
+	mockContext.HttpClient.When(func(request *http.Request) bool {
+		return request.Method == http.MethodPut && strings.Contains(
+			request.URL.Path,
+			"/subscriptions/SUBSCRIPTION_ID/providers/Microsoft.Resources/deployments",
+		)
+	}).RespondFn(func(request *http.Request) (*http.Response, error) {
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(bytes.NewBuffer([]byte(deployResult))),
+			Request: &http.Request{
+				Method: http.MethodGet,
+			},
+		}, nil
 	})
 }
 
@@ -511,3 +514,11 @@ func prepareDestroyMocks(mockContext *mocks.MockContext) {
 		Stderr: "",
 	})
 }
+
+var testArmParametersFile string = `{
+	"parameters": {
+		"location": {
+			"value": "West US"
+		}
+	}
+}`

@@ -104,14 +104,16 @@ type AzCli interface {
 		funcName string,
 	) (*AzCliFunctionAppProperties, error)
 	DeployToSubscription(
-		ctx context.Context, subscriptionId, deploymentName, compiledBicep, parametersPath, location string) (
+		ctx context.Context, subscriptionId, deploymentName string,
+		armTemplate *azure.ArmTemplate,
+		parametersPath, location string) (
 		AzCliDeploymentResult, error)
 	DeployToResourceGroup(
 		ctx context.Context,
-		subscriptionId string,
-		resourceGroup string,
+		subscriptionId,
+		resourceGroup,
 		deploymentName string,
-		compiledBicep string,
+		armTemplate *azure.ArmTemplate,
 		parametersPath string,
 	) (AzCliDeploymentResult, error)
 	DeleteSubscriptionDeployment(ctx context.Context, subscriptionId string, deploymentName string) error

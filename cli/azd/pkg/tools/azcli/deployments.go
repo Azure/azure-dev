@@ -13,6 +13,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
+	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/identity"
 )
 
@@ -80,14 +81,15 @@ func (cli *azCli) createDeploymentsClient(
 }
 
 func (cli *azCli) DeployToSubscription(
-	ctx context.Context, subscriptionId, deploymentName, compiledBicep, parametersFile, location string) (
+	ctx context.Context, subscriptionId, deploymentName string,
+	armTemplate *azure.ArmTemplate, parametersFile, location string) (
 	AzCliDeploymentResult, error) {
 	deploymentClient, err := cli.createDeploymentsClient(ctx, subscriptionId)
 	if err != nil {
 		return AzCliDeploymentResult{}, fmt.Errorf("creating deployments client: %w", err)
 	}
 
-	templateJsonAsMap, err := readFromString([]byte(compiledBicep))
+	templateJsonAsMap, err := readFromString([]byte(*armTemplate))
 	if err != nil {
 		return AzCliDeploymentResult{}, fmt.Errorf("reading template file: %w", err)
 	}
@@ -124,14 +126,15 @@ func (cli *azCli) DeployToSubscription(
 }
 
 func (cli *azCli) DeployToResourceGroup(
-	ctx context.Context, subscriptionId, resourceGroup, deploymentName, compiledBicep, parametersFile string) (
+	ctx context.Context, subscriptionId, resourceGroup, deploymentName string,
+	armTemplate *azure.ArmTemplate, parametersFile string) (
 	AzCliDeploymentResult, error) {
 	deploymentClient, err := cli.createDeploymentsClient(ctx, subscriptionId)
 	if err != nil {
 		return AzCliDeploymentResult{}, fmt.Errorf("creating deployments client: %w", err)
 	}
 
-	templateJsonAsMap, err := readFromString([]byte(compiledBicep))
+	templateJsonAsMap, err := readFromString([]byte(*armTemplate))
 	if err != nil {
 		return AzCliDeploymentResult{}, fmt.Errorf("reading template file: %w", err)
 	}

@@ -14,38 +14,45 @@ import { AzureDevCliEnvironments } from '../views/workspace/AzureDevCliEnvironme
 import { AzureDevCliEnvironment } from '../views/workspace/AzureDevCliEnvironment';
 
 export async function selectEnvironment(context: IActionContext, selectedItem?: vscode.Uri | TreeViewModel): Promise<void> {
-    const selectedFile = isTreeViewModel(selectedItem) ? selectedItem.unwrap<AzureDevCliEnvironment>().context.configurationFile : selectedItem;
+    const selectedEnvironment = isTreeViewModel(selectedItem) ? selectedItem.unwrap<AzureDevCliEnvironment>() : undefined;
+    const selectedFile = isTreeViewModel(selectedItem) ? selectedItem.unwrap<AzureDevCliEnvironments>().context.configurationFile : selectedItem;
     let folder: vscode.WorkspaceFolder | undefined = (selectedFile ? vscode.workspace.getWorkspaceFolder(selectedFile) : undefined);
     if (!folder) {
         folder = await quickPickWorkspaceFolder(context, localize('azure-dev.commands.util.needWorkspaceFolder', "To run '{0}' command you must first open a folder or workspace in VS Code", 'env select'));
     }
     const cwd = folder.uri.fsPath;
 
-    let envData: EnvironmentInfo[] = [];
-    let errorMsg: string | undefined = undefined;
-    try {
-        envData = await getEnvironments(context, cwd);
-    } catch(err) {
-        errorMsg = parseError(err).message;
-        // Treated the same as no environments case
-    }
+    let name = selectedEnvironment?.name;
 
-    if (envData.length === 0) {
-        await promptCreateNewEnvironment(localize('azure-dev.commands.cli.env-select.no-environments', 'There are no environments to select. Would you like to create one?'), errorMsg);
-        return; // promptCreateNewEnvironment() will call newEnvironment() asynchronously if necessary
-    }
+    if (!name) {       
+        let envData: EnvironmentInfo[] = [];
+        let errorMsg: string | undefined = undefined;
+        try {
+            envData = await getEnvironments(context, cwd);
+        } catch(err) {
+            errorMsg = parseError(err).message;
+            // Treated the same as no environments case
+        }
+        
+        if (envData.length === 0) {
+            await promptCreateNewEnvironment(localize('azure-dev.commands.cli.env-select.no-environments', 'There are no environments to select. Would you like to create one?'), errorMsg);
+            return; // promptCreateNewEnvironment() will call newEnvironment() asynchronously if necessary
+        }
+        
+        const envChoices  = envData.map(d => ({ label: d.Name, data: d,} as IAzureQuickPickItem<EnvironmentInfo>));
+        const selectedEnv = await context.ui.showQuickPick(envChoices, {
+            canPickMany: false,
+            title: localize('azure-dev.commands.cli.env-select.choose-environment', 'What environment should be set as default?')
+        });
 
-    const envChoices  = envData.map(d => ({ label: d.Name, data: d,} as IAzureQuickPickItem<EnvironmentInfo>));
-    const selectedEnv = await context.ui.showQuickPick(envChoices, {
-        canPickMany: false,
-        title: localize('azure-dev.commands.cli.env-select.choose-environment', 'What environment should be set as default?')
-    });
+        name = selectedEnv.data.Name;
+    }
 
     const azureCli = await createAzureDevCli(context);
-    azureCli.commandBuilder.withArg('env').withArg('select').withQuotedArg(selectedEnv.data.Name);
+    azureCli.commandBuilder.withArg('env').withArg('select').withQuotedArg(name);
     await spawnAsync(azureCli.commandBuilder.build(), azureCli.spawnOptions(cwd));
     await vscode.window.showInformationMessage(
-        localize('azure-dev.commands.cli.env-select.environment-selected', "'{0}' is now the default environment", selectedEnv.data.Name));
+        localize('azure-dev.commands.cli.env-select.environment-selected', "'{0}' is now the default environment", name));
 }
 
 export async function newEnvironment(context: IActionContext, selectedItem?: vscode.Uri | TreeViewModel): Promise<void> {

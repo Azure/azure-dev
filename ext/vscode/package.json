@@ -227,6 +227,10 @@
                     "command": "azure-dev.commands.cli.env-new",
                     "when": "viewItem == ms-azuretools.azure-dev.views.workspace.environments",
                     "group": "inline@1"
+                },
+                {
+                    "command": "azure-dev.commands.cli.env-select",
+                    "when": "viewItem == ms-azuretools.azure-dev.views.workspace.environment"
                 }
             ]
         },

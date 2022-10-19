@@ -8,5 +8,5 @@ export interface TreeViewModel {
 }
 
 export function isTreeViewModel(selectedItem: vscode.Uri | TreeViewModel | undefined): selectedItem is TreeViewModel {
-    return !!(selectedItem as TreeViewModel).unwrap;
+    return selectedItem !== undefined && (selectedItem as TreeViewModel).unwrap !== undefined;
 }

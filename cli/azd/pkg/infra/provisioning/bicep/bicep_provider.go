@@ -25,6 +25,7 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
+	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/cmdsubst"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
@@ -59,6 +60,7 @@ type BicepOutputParameter struct {
 
 type BicepDeploymentDetails struct {
 	ParameterFilePath string
+	Template          *azure.ArmTemplate
 }
 
 // BicepProvider exposes infrastructure provisioning using Azure Bicep templates
@@ -88,7 +90,7 @@ func (p *BicepProvider) State(
 		func(asyncContext *async.InteractiveTaskContextWithProgress[*StateResult, *StateProgress]) {
 			asyncContext.SetProgress(&StateProgress{Message: "Loading Bicep template", Timestamp: time.Now()})
 			modulePath := p.modulePath()
-			deployment, err := p.createDeployment(ctx, modulePath)
+			deployment, _, err := p.createDeployment(ctx, modulePath)
 			if err != nil {
 				asyncContext.SetError(fmt.Errorf("compiling bicep template: %w", err))
 				return
@@ -111,7 +113,7 @@ func (p *BicepProvider) State(
 			}
 
 			asyncContext.SetProgress(&StateProgress{Message: "Normalizing output parameters", Timestamp: time.Now()})
-			state.Outputs = p.createOutputParameters(deployment, createDeploymentOutput(armDeployment.Properties.Outputs))
+			state.Outputs = p.createOutputParameters(deployment, azcli.CreateDeploymentOutput(armDeployment.Properties.Outputs))
 
 			result := StateResult{
 				State: &state,
@@ -119,26 +121,6 @@ func (p *BicepProvider) State(
 
 			asyncContext.SetResult(&result)
 		})
-}
-
-// convert from: sdk client outputs: interface{} to map[string]azcli.AzCliDeploymentOutput
-// sdk client parses http response from network as an interface{}
-// this function keeps the compatibility with the previous AzCliDeploymentOutput model
-func createDeploymentOutput(rawOutputs interface{}) (result map[string]azcli.AzCliDeploymentOutput) {
-	if rawOutputs == nil {
-		return make(map[string]azcli.AzCliDeploymentOutput, 0)
-	}
-
-	castInput := rawOutputs.(map[string]interface{})
-	result = make(map[string]azcli.AzCliDeploymentOutput, len(castInput))
-	for key, output := range castInput {
-		innerValue := output.(map[string]interface{})
-		result[key] = azcli.AzCliDeploymentOutput{
-			Type:  innerValue["type"].(string),
-			Value: innerValue["value"].(string),
-		}
-	}
-	return result
 }
 
 // Plans the infrastructure provisioning
@@ -158,7 +140,7 @@ func (p *BicepProvider) Plan(
 
 			modulePath := p.modulePath()
 			asyncContext.SetProgress(&DeploymentPlanningProgress{Message: "Compiling Bicep template", Timestamp: time.Now()})
-			deployment, err := p.createDeployment(ctx, modulePath)
+			deployment, armTemplate, err := p.createDeployment(ctx, modulePath)
 			if err != nil {
 				asyncContext.SetError(fmt.Errorf("creating template: %w", err))
 				return
@@ -189,6 +171,7 @@ func (p *BicepProvider) Plan(
 				Deployment: *deployment,
 				Details: BicepDeploymentDetails{
 					ParameterFilePath: parameterFilePath,
+					Template:          armTemplate,
 				},
 			}
 
@@ -243,9 +226,9 @@ func (p *BicepProvider) Deploy(
 			}()
 
 			// Start the deployment
-			modulePath := p.modulePath()
 			bicepDeploymentData := pd.Details.(BicepDeploymentDetails)
-			deployResult, err := p.deployModule(ctx, scope, modulePath, bicepDeploymentData.ParameterFilePath)
+			deployResult, err := p.deployModule(
+				ctx, scope, bicepDeploymentData.Template, bicepDeploymentData.ParameterFilePath)
 
 			if err != nil {
 				asyncContext.SetError(err)
@@ -255,7 +238,7 @@ func (p *BicepProvider) Deploy(
 			deployment := pd.Deployment
 			deployment.Outputs = p.createOutputParameters(
 				&pd.Deployment,
-				createDeploymentOutput(deployResult.Properties.Outputs),
+				azcli.CreateDeploymentOutput(deployResult.Properties.Outputs),
 			)
 
 			result := &DeployResult{
@@ -686,11 +669,11 @@ func (p *BicepProvider) createParametersFile(
 }
 
 // Creates the compiled template from the specified module path
-func (p *BicepProvider) createDeployment(ctx context.Context, modulePath string) (*Deployment, error) {
+func (p *BicepProvider) createDeployment(ctx context.Context, modulePath string) (*Deployment, *azure.ArmTemplate, error) {
 	// Compile the bicep file into an ARM template we can create.
 	compiled, err := p.bicepCli.Build(ctx, modulePath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to compile bicep template: %w", err)
+		return nil, nil, fmt.Errorf("failed to compile bicep template: %w", err)
 	}
 
 	// Fetch the parameters from the template and ensure we have a value for each one, otherwise
@@ -698,15 +681,15 @@ func (p *BicepProvider) createDeployment(ctx context.Context, modulePath string)
 	var bicepTemplate BicepTemplate
 	if err := json.Unmarshal([]byte(compiled), &bicepTemplate); err != nil {
 		log.Printf("failed un-marshaling compiled arm template to JSON (err: %v), template contents:\n%s", err, compiled)
-		return nil, fmt.Errorf("error un-marshaling arm template from json: %w", err)
+		return nil, nil, fmt.Errorf("error un-marshaling arm template from json: %w", err)
 	}
 
 	compiledTemplate, err := p.convertToDeployment(bicepTemplate)
 	if err != nil {
-		return nil, fmt.Errorf("converting from bicep to compiled template: %w", err)
+		return nil, nil, fmt.Errorf("converting from bicep to compiled template: %w", err)
 	}
-
-	return compiledTemplate, nil
+	arm := azure.ArmTemplate(compiled)
+	return compiledTemplate, &arm, nil
 }
 
 // Converts a Bicep parameters file to a generic provisioning template
@@ -733,13 +716,22 @@ func (p *BicepProvider) convertToDeployment(bicepTemplate BicepTemplate) (*Deplo
 }
 
 // Deploys the specified Bicep module and parameters with the selected provisioning scope (subscription vs resource group)
-func (p *BicepProvider) deployModule(ctx context.Context, scope infra.Scope, bicepPath string, parametersPath string) (
+func (p *BicepProvider) deployModule(
+	ctx context.Context, scope infra.Scope, armTemplate *azure.ArmTemplate, parametersPath string) (
 	*armresources.DeploymentExtended, error) {
 	// We've seen issues where `Deploy` completes but for a short while after, fetching the deployment fails with a
 	// `DeploymentNotFound` error.
 	// Since other commands of ours use the deployment, let's try to fetch it here and if we fail with `DeploymentNotFound`,
 	// ignore this error, wait a short while and retry.
-	if err := scope.Deploy(ctx, bicepPath, parametersPath); err != nil {
+
+	// deployments API takes an ARM template.
+	// At this point, the bicep file should have been already compiled and succeeded
+	// do panic if the application tries to deploy a bicep file without compiling it first
+	if armTemplate == nil {
+		log.Panic("deployModule: received nil for arm template.")
+	}
+
+	if err := scope.Deploy(ctx, armTemplate, parametersPath); err != nil {
 		return nil, fmt.Errorf("failed deploying: %w", err)
 	}
 

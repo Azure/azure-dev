@@ -14,7 +14,6 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
-	"github.com/azure/azure-dev/cli/azd/pkg/identity"
 )
 
 func (cli *azCli) GetSubscriptionDeployment(
@@ -66,13 +65,8 @@ func (cli *azCli) createDeploymentsClient(
 	ctx context.Context,
 	subscriptionId string,
 ) (*armresources.DeploymentsClient, error) {
-	cred, err := identity.GetCredentials(ctx)
-	if err != nil {
-		return nil, err
-	}
-
 	options := cli.createDefaultClientOptionsBuilder(ctx).BuildArmClientOptions()
-	client, err := armresources.NewDeploymentsClient(subscriptionId, cred, options)
+	client, err := armresources.NewDeploymentsClient(subscriptionId, cli.credential, options)
 	if err != nil {
 		return nil, fmt.Errorf("creating deployments client: %w", err)
 	}

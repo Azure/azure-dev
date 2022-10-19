@@ -20,6 +20,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
+	"github.com/azure/azure-dev/cli/azd/pkg/identity"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -29,7 +30,7 @@ func TestAzCli(t *testing.T) {
 	t.Run("DebugAndTelemetryEnabled", func(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
 
-		tempCli := NewAzCli(NewAzCliArgs{
+		tempCli := NewAzCli(identity.GetCredentials(*mockContext.Context), NewAzCliArgs{
 			EnableDebug:     true,
 			EnableTelemetry: true,
 			CommandRunner:   mockContext.CommandRunner,
@@ -66,7 +67,7 @@ func TestAzCli(t *testing.T) {
 	t.Run("DebugAndTelemetryDisabled", func(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
 
-		tempCli := NewAzCli(NewAzCliArgs{
+		tempCli := NewAzCli(identity.GetCredentials(*mockContext.Context), NewAzCliArgs{
 			EnableDebug:     false,
 			EnableTelemetry: false,
 			CommandRunner:   mockContext.CommandRunner,
@@ -151,7 +152,7 @@ func runAndCaptureUserAgent(t *testing.T) string {
 	defaultRunner := exec.NewCommandRunner(os.Stdin, os.Stdout, os.Stderr)
 	mockContext := mocks.NewMockContext(context.Background())
 
-	azCli := NewAzCli(NewAzCliArgs{
+	azCli := NewAzCli(identity.GetCredentials(*mockContext.Context), NewAzCliArgs{
 		EnableDebug:     true,
 		EnableTelemetry: true,
 		CommandRunner:   mockContext.CommandRunner,
@@ -294,7 +295,7 @@ func TestAZCliGetAccessTokenTranslatesErrors(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			mockContext := mocks.NewMockContext(context.Background())
-			azCli := NewAzCli(NewAzCliArgs{
+			azCli := NewAzCli(identity.GetCredentials(*mockContext.Context), NewAzCliArgs{
 				EnableDebug:     true,
 				EnableTelemetry: true,
 				CommandRunner:   mockContext.CommandRunner,

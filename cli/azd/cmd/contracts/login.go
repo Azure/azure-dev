@@ -4,6 +4,10 @@ package contracts
 
 import "time"
 
+const (
+	LoginResultType string = "loginResult"
+)
+
 // LoginStatus are the values of the "status" property of a LoginResult
 type LoginStatus string
 
@@ -18,6 +22,7 @@ const (
 
 // LoginResult is the contract for the output of `azd login`.
 type LoginResult struct {
+	Type string `json:"type"`
 	// The result of checking for a valid access token.
 	Status LoginStatus `json:"status"`
 	// When status is `LoginStatusSuccess`, the time at which the access token

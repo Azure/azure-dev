@@ -82,6 +82,7 @@ func (s *showAction) Run(ctx context.Context) error {
 	}
 
 	res := contracts.ShowResult{
+		Type:     contracts.ShowResultType,
 		Name:     prj.Name,
 		Services: make(map[string]contracts.ShowService, len(prj.Services)),
 	}

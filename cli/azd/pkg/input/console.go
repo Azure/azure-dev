@@ -4,13 +4,17 @@
 package input
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
 	"log"
+	"strings"
 
 	"github.com/AlecAivazis/survey/v2"
+	"github.com/azure/azure-dev/cli/azd/pkg/input/contracts"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
+	"github.com/mattn/go-colorable"
 )
 
 type Console interface {
@@ -63,11 +67,33 @@ func (c *AskerConsole) SetWriter(writer io.Writer) {
 // Prints out a message to the underlying console write
 func (c *AskerConsole) Message(ctx context.Context, message string) {
 	// Disable output when formatting is enabled
-	if c.formatter == nil || c.formatter.Kind() == output.NoneFormat {
+	if c.formatter != nil && c.formatter.Kind() == output.JsonFormat {
+		// we do not expect formatter.Format to fail on valid input. Discard the error to appease the linter (note
+		// that we implicitly discard the error from fmt.Fprintln later, as well).
+		_ = c.formatter.Format(c.consoleMessageForMessage(message), c.writer, nil)
+	} else if c.formatter == nil || c.formatter.Kind() == output.NoneFormat {
 		fmt.Fprintln(c.writer, message)
 	} else {
 		log.Println(message)
 	}
+}
+
+// jsonObjectForMessage creates a json object representing a message. Any ANSI control sequences from the message are
+// removed. A trailing newline is added to the message.
+func (c *AskerConsole) consoleMessageForMessage(message string) contracts.ConsoleMessage {
+	// Strip any ANSI colors for the message.
+	var buf bytes.Buffer
+
+	// We do not expect the io.Copy to fail since none of these sub-calls will ever return an error (other than
+	// EOF when we hit the end of the string)
+	if _, err := io.Copy(colorable.NewNonColorable(&buf), strings.NewReader(message)); err != nil {
+		panic(fmt.Sprintf("jsonObjectForMessage: did not expect error from io.Copy but got: %v", err))
+	}
+
+	// Add the newline that would have been added by fmt.Println when we wrote the message directly to the console.
+	buf.WriteByte('\n')
+
+	return contracts.NewConsoleMessage(buf.String())
 }
 
 // Prompts the user for a single value

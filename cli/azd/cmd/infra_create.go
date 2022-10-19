@@ -166,6 +166,24 @@ func (i *infraCreateAction) Run(ctx context.Context) error {
 		i.displayResourceGroupCreatedMessage(ctx, i.console, env.GetSubscriptionId(), resourceGroupName)
 	}
 
+	if i.formatter.Kind() == output.JsonFormat {
+		stateResult, err := infraManager.State(ctx, provisioningScope)
+		if err != nil {
+			return fmt.Errorf(
+				"deployment succeeded but the deployment result is unavailable: %w",
+				multierr.Combine(err, err),
+			)
+		}
+
+		if err := i.formatter.Format(
+			contracts.NewEnvRefreshResultFromProvisioningState(stateResult.State), i.writer, nil); err != nil {
+			return fmt.Errorf(
+				"deployment succeeded but the deployment result could not be displayed: %w",
+				multierr.Combine(err, err),
+			)
+		}
+	}
+
 	return nil
 }
 

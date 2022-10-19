@@ -1,7 +1,7 @@
 package graphsdk
 
-// A Microsoft Graph User entity.
-type User struct {
+// A Microsoft Graph UserProfile entity.
+type UserProfile struct {
 	Id                string   `json:"id"`
 	DisplayName       string   `json:"displayName"`
 	GivenName         string   `json:"givenName"`

@@ -21,7 +21,7 @@ func newMeItemRequestBuilder(client *GraphClient) *MeItemRequestBuilder {
 }
 
 // Gets the user profile information for the current logged in user
-func (b *MeItemRequestBuilder) Get(ctx context.Context) (*User, error) {
+func (b *MeItemRequestBuilder) Get(ctx context.Context) (*UserProfile, error) {
 	req, err := b.createRequest(ctx, http.MethodGet, fmt.Sprintf("%s/me", b.client.host))
 	if err != nil {
 		return nil, fmt.Errorf("failed creating request: %w", err)
@@ -32,5 +32,5 @@ func (b *MeItemRequestBuilder) Get(ctx context.Context) (*User, error) {
 		return nil, runtime.NewResponseError(res)
 	}
 
-	return httputil.ReadRawResponse[User](res)
+	return httputil.ReadRawResponse[UserProfile](res)
 }

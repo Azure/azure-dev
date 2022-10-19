@@ -17,7 +17,13 @@
             },
             "problemMatcher": []
         },
-        
+        {
+            "label": "Teardown API Env",
+            "command": ".vscode/teardown-api.sh",
+            "windows": {
+                "command": ".vscode/no-op.cmd"
+            }
+        },        
         {
             "label": "Start API",
             "type": "dotenv",

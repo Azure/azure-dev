@@ -18,6 +18,13 @@
             "problemMatcher": []
         },
         {
+            "label": "Teardown API Env",
+            "command": ".vscode/teardown-api.sh",
+            "windows": {
+                "command": ".vscode/no-op.cmd"
+            }
+        },
+        {
             "label": "Start Web",
             "type": "dotenv",
             "targetTasks": [
@@ -51,14 +58,6 @@
             },
             "presentation": {
                 "panel": "dedicated",
-            },
-            "problemMatcher": []
-        },
-        {
-            "label": "Setup API Env",
-            "command": ".vscode/setup-api.sh",
-            "windows": {
-                "command": ".vscode/no-op.cmd"
             },
             "problemMatcher": []
         },

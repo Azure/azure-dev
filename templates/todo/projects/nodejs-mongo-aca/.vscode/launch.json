@@ -33,6 +33,7 @@
                 "NODE_ENV": "development"
             },
             "preLaunchTask": "Prepare API Debug",
+            "postDebugTask": "Teardown API Env",
             "outputCapture": "std"
         },
     ],

@@ -10,7 +10,6 @@
             "sourceMapPathOverrides": {
                 "webpack:///src/*": "${webRoot}/*"
             },
-            "preLaunchTask": "Start Web"
         },
 
         {
@@ -21,6 +20,7 @@
             "type": "coreclr",
             "request": "launch",
             "preLaunchTask": "Prepare API Debug",
+            "postDebugTask": "Teardown API Env",
             // If you have changed target frameworks, make sure to update the program path.
             "program": "${workspaceFolder}/src/api/bin/Debug/net6.0/Todo.Api.dll",
             "args": [],

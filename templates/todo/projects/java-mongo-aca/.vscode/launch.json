@@ -6,6 +6,7 @@
             "type": "java",
             "request": "launch",
             "preLaunchTask": "Prepare API Debug",
+            "postDebugTask": "Teardown API Env",
             "mainClass": "com.microsoft.azure.simpletodo.SimpleTodoApplication",
             "args": [],
             "cwd": "${workspaceFolder}/src/api",

@@ -11,7 +11,8 @@
 				"todo.app:app",
 				"--reload"
 			],
-			"preLaunchTask": "Prepare API Debug"
+			"preLaunchTask": "Prepare API Debug",
+            "postDebugTask": "Teardown API Env",
 		},
 		{
 			"name": "Python: Pytest",

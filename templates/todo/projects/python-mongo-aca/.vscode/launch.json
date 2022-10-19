@@ -32,7 +32,8 @@
             "windows": {
                 "python": "${workspaceFolder}/src/api/api_env/scripts/python.exe",
             },
-            "preLaunchTask": "Prepare API Debug"
+            "preLaunchTask": "Prepare API Debug",
+            "postDebugTask": "Teardown API Env",
         }
     ],
 

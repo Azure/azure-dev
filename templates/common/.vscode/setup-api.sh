@@ -26,7 +26,7 @@ function getEnvFile() {
     envFile=$(azd env list --output json | jq -r "map(select(.IsDefault == true))[].DotEnvPath")
 
     if [ ! $? ]; then 
-        say_error "Could not locate envFile: $envFile"
+        say_error "Could not locate .env file: $envFile"
         say_error "Resources may not be deployed. Use 'azd provision' to deploy resources."
         exit 1
     fi 

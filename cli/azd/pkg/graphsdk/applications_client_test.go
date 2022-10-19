@@ -9,6 +9,7 @@ import (
 )
 
 func TestListApplications(t *testing.T) {
+	// TODO: Not really a test, just debugging implementation. Will fix.
 	ctx := context.Background()
 	creds, err := azidentity.NewAzureCLICredential(nil)
 	require.NoError(t, err)

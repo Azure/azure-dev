@@ -220,11 +220,7 @@ func ensureServicePrincipal(ctx context.Context, client *graphsdk.GraphClient, a
 
 // Creates a graph users client using credentials from the Go context.
 func (cli *azCli) createGraphClient(ctx context.Context) (*graphsdk.GraphClient, error) {
-	cred, err := identity.GetCredentials(ctx)
-	if err != nil {
-		return nil, err
-	}
-
+	cred := identity.GetCredentials(ctx)
 	options := cli.createDefaultClientOptionsBuilder(ctx).BuildCoreClientOptions()
 	client, err := graphsdk.NewGraphClient(cred, options)
 	if err != nil {
@@ -236,11 +232,7 @@ func (cli *azCli) createGraphClient(ctx context.Context) (*graphsdk.GraphClient,
 
 // Creates a graph users client using credentials from the Go context.
 func (cli *azCli) createRoleDefinitionsClient(ctx context.Context) (*armauthorization.RoleDefinitionsClient, error) {
-	cred, err := identity.GetCredentials(ctx)
-	if err != nil {
-		return nil, err
-	}
-
+	cred := identity.GetCredentials(ctx)
 	options := cli.createDefaultClientOptionsBuilder(ctx).BuildArmClientOptions()
 	client, err := armauthorization.NewRoleDefinitionsClient(cred, options)
 	if err != nil {
@@ -252,11 +244,7 @@ func (cli *azCli) createRoleDefinitionsClient(ctx context.Context) (*armauthoriz
 
 // Creates a graph users client using credentials from the Go context.
 func (cli *azCli) createRoleAssignmentsClient(ctx context.Context, subscriptionId string) (*armauthorization.RoleAssignmentsClient, error) {
-	cred, err := identity.GetCredentials(ctx)
-	if err != nil {
-		return nil, err
-	}
-
+	cred := identity.GetCredentials(ctx)
 	options := cli.createDefaultClientOptionsBuilder(ctx).BuildArmClientOptions()
 	client, err := armauthorization.NewRoleAssignmentsClient(subscriptionId, cred, options)
 	if err != nil {

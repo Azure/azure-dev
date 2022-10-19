@@ -10,7 +10,6 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/cloud"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armsubscriptions"
-	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/identity"
 )
 
@@ -169,10 +168,4 @@ func (cli *azCli) GetAccessToken(ctx context.Context) (*AzCliAccessToken, error)
 		AccessToken: token.Token,
 		ExpiresOn:   &token.ExpiresOn,
 	}, nil
-}
-
-func (cli *azCli) runAzCommand(ctx context.Context, args ...string) (exec.RunResult, error) {
-	return cli.runAzCommandWithArgs(ctx, exec.RunArgs{
-		Args: args,
-	})
 }

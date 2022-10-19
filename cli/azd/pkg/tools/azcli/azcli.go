@@ -581,6 +581,12 @@ func (cli *azCli) ListResourceGroupDeploymentOperations(
 	return resources, nil
 }
 
+func (cli *azCli) runAzCommand(ctx context.Context, args ...string) (exec.RunResult, error) {
+	return cli.runAzCommandWithArgs(ctx, exec.RunArgs{
+		Args: args,
+	})
+}
+
 // runAzCommandWithArgs will run the 'args', ignoring 'Cmd' in favor of injecting the proper
 // 'az' alias.
 func (cli *azCli) runAzCommandWithArgs(ctx context.Context, args exec.RunArgs) (exec.RunResult, error) {

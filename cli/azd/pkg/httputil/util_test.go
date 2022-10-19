@@ -1,4 +1,4 @@
-package azsdk
+package httputil
 
 import (
 	"bytes"
@@ -10,20 +10,18 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+type exampleResponse struct {
+	A string `json:"a"`
+	B string `json:"b"`
+	C string `json:"c"`
+}
+
 func TestReadRawResponse(t *testing.T) {
 	t.Run("Success", func(t *testing.T) {
-		expectedResponse := &DeployResponse{
-			DeployStatus: DeployStatus{
-				Id:         "ID",
-				Status:     http.StatusOK,
-				StatusText: "Things are OK",
-				Message:    "Message",
-				Progress:   nil,
-				Complete:   true,
-				Active:     true,
-				LogUrl:     "https://log.url",
-				SiteName:   "my-site",
-			},
+		expectedResponse := &exampleResponse{
+			A: "Apple",
+			B: "Banana",
+			C: "Carrot",
 		}
 
 		jsonBytes, err := json.Marshal(expectedResponse)
@@ -35,7 +33,7 @@ func TestReadRawResponse(t *testing.T) {
 			Body:       io.NopCloser(bytes.NewBuffer(jsonBytes)),
 		}
 
-		actualResponse, err := ReadRawResponse[DeployResponse](httpResponse)
+		actualResponse, err := ReadRawResponse[exampleResponse](httpResponse)
 		require.NoError(t, err)
 		require.Equal(t, *expectedResponse, *actualResponse)
 	})

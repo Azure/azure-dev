@@ -5,9 +5,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"sort"
+	"time"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/cloud"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armsubscriptions"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
+	"github.com/azure/azure-dev/cli/azd/pkg/identity"
 )
 
 type AzCliSubscriptionInfo struct {
@@ -25,6 +29,12 @@ type AzCliLocation struct {
 	// The human friendly name of the location, prefixed with a
 	// region name (e.g "(US) West US 2")
 	RegionalDisplayName string `json:"regionalDisplayName"`
+}
+
+// AzCliAccessToken represents the value returned by `az account get-access-token`
+type AzCliAccessToken struct {
+	AccessToken string
+	ExpiresOn   *time.Time
 }
 
 func (cli *azCli) ListAccounts(ctx context.Context) ([]AzCliSubscriptionInfo, error) {
@@ -142,21 +152,23 @@ func (cli *azCli) createSubscriptionsClient(ctx context.Context) (*armsubscripti
 	return client, nil
 }
 
-func (cli *azCli) GetAccessToken(ctx context.Context) (AzCliAccessToken, error) {
-	res, err := cli.runAzCommand(ctx, "account", "get-access-token", "--output", "json")
-	if isNotLoggedInMessage(res.Stderr) {
-		return AzCliAccessToken{}, ErrAzCliNotLoggedIn
-	} else if isRefreshTokenExpiredMessage(res.Stderr) {
-		return AzCliAccessToken{}, ErrAzCliRefreshTokenExpired
-	} else if err != nil {
-		return AzCliAccessToken{}, fmt.Errorf("failed running az account get-access-token: %s: %w", res.String(), err)
+func (cli *azCli) GetAccessToken(ctx context.Context) (*AzCliAccessToken, error) {
+	credential := identity.GetCredentials(ctx)
+
+	token, err := credential.GetToken(ctx, policy.TokenRequestOptions{
+		Scopes: []string{
+			fmt.Sprintf("%s/.default", cloud.AzurePublic.Services[cloud.ResourceManager].Audience),
+		},
+	})
+
+	if err != nil {
+		return nil, fmt.Errorf("failed getting access token: %w", err)
 	}
 
-	var accessToken AzCliAccessToken
-	if err := json.Unmarshal([]byte(res.Stdout), &accessToken); err != nil {
-		return AzCliAccessToken{}, fmt.Errorf("could not unmarshal output %s as a AzCliAccessToken: %w", res.Stdout, err)
-	}
-	return accessToken, nil
+	return &AzCliAccessToken{
+		AccessToken: token.Token,
+		ExpiresOn:   &token.ExpiresOn,
+	}, nil
 }
 
 func (cli *azCli) runAzCommand(ctx context.Context, args ...string) (exec.RunResult, error) {

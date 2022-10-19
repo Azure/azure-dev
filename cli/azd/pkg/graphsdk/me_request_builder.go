@@ -6,7 +6,7 @@ import (
 	"net/http"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
-	"github.com/azure/azure-dev/cli/azd/pkg/azsdk"
+	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
 )
 
 type MeItemRequestBuilder struct {
@@ -32,5 +32,5 @@ func (b *MeItemRequestBuilder) Get(ctx context.Context) (*User, error) {
 		return nil, runtime.NewResponseError(res)
 	}
 
-	return azsdk.ReadRawResponse[User](res)
+	return httputil.ReadRawResponse[User](res)
 }

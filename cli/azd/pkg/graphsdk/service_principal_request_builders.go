@@ -6,28 +6,8 @@ import (
 	"net/http"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
-	"github.com/azure/azure-dev/cli/azd/pkg/azsdk"
-	"github.com/azure/azure-dev/cli/azd/pkg/convert"
+	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
 )
-
-// A Microsoft Graph Service Principal entity.
-type ServicePrincipal struct {
-	Id          string `json:"id"`
-	AppId       string `json:"appId"`
-	DisplayName string `json:"appDisplayName"`
-	Description string `json:"appDescription"`
-	Type        string `json:"servicePrincipalType"`
-}
-
-// A list of service principals returned from the Microsoft Graph.
-type ServicePrincipalListResponse struct {
-	NextLink *string            `json:"@odata.nextLink`
-	Value    []ServicePrincipal `json:"value"`
-}
-
-type ServicePrincipalListRequestBuilder struct {
-	*EntityListRequestBuilder[ServicePrincipalListRequestBuilder]
-}
 
 func newServicePrincipalListRequestBuilder(client *GraphClient) *ServicePrincipalListRequestBuilder {
 	builder := &ServicePrincipalListRequestBuilder{}
@@ -52,21 +32,26 @@ func (c *ServicePrincipalListRequestBuilder) Get(ctx context.Context) (*ServiceP
 		return nil, runtime.NewResponseError(res)
 	}
 
-	return azsdk.ReadRawResponse[ServicePrincipalListResponse](res)
+	return httputil.ReadRawResponse[ServicePrincipalListResponse](res)
 }
 
-func (c *ServicePrincipalListRequestBuilder) Post(ctx context.Context, servicePrincipal *ServicePrincipal) (*ServicePrincipal, error) {
+func (c *ServicePrincipalListRequestBuilder) Post(
+	ctx context.Context,
+	servicePrincipal *ServicePrincipal,
+) (*ServicePrincipal, error) {
 	req, err := c.createRequest(ctx, http.MethodPost, fmt.Sprintf("%s/servicePrincipals", c.client.host))
 	if err != nil {
 		return nil, fmt.Errorf("failed creating request: %w", err)
 	}
 
-	body, err := convert.ToHttpRequestBody(servicePrincipal)
+	createRequest := ServicePrincipalCreateRequest{
+		AppId: servicePrincipal.AppId,
+	}
+
+	err = SetHttpRequestBody(req, createRequest)
 	if err != nil {
 		return nil, err
 	}
-
-	req.Raw().Body = body
 
 	res, err := c.client.pipeline.Do(req)
 	if err != nil {
@@ -77,7 +62,7 @@ func (c *ServicePrincipalListRequestBuilder) Post(ctx context.Context, servicePr
 		return nil, runtime.NewResponseError(res)
 	}
 
-	return azsdk.ReadRawResponse[ServicePrincipal](res)
+	return httputil.ReadRawResponse[ServicePrincipal](res)
 }
 
 type ServicePrincipalItemRequestBuilder struct {
@@ -107,5 +92,5 @@ func (b *ServicePrincipalItemRequestBuilder) Get(ctx context.Context) (*ServiceP
 		return nil, runtime.NewResponseError(res)
 	}
 
-	return azsdk.ReadRawResponse[ServicePrincipal](res)
+	return httputil.ReadRawResponse[ServicePrincipal](res)
 }

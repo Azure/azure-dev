@@ -31,7 +31,11 @@ func newEntityItemRequestBuilder[T any](builder *T, client *GraphClient, id stri
 }
 
 // Creates a HTTP request for the specified method, URL and configured request information
-func (b *EntityItemRequestBuilder[T]) createRequest(ctx context.Context, method string, rawUrl string) (*policy.Request, error) {
+func (b *EntityItemRequestBuilder[T]) createRequest(
+	ctx context.Context,
+	method string,
+	rawUrl string,
+) (*policy.Request, error) {
 	req, err := runtime.NewRequest(ctx, method, rawUrl)
 	if err != nil {
 		return nil, err

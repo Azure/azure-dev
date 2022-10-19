@@ -13,6 +13,7 @@ import (
 	armruntime "github.com/Azure/azure-sdk-for-go/sdk/azcore/arm/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
+	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
 )
 
 const (
@@ -193,7 +194,7 @@ func (h *deployPollingHandler) Poll(ctx context.Context) (*http.Response, error)
 	}
 
 	// Status code is 200 if we get to this point - transform the response
-	deploymentStatus, err := ReadRawResponse[DeployStatusResponse](response)
+	deploymentStatus, err := httputil.ReadRawResponse[DeployStatusResponse](response)
 	if err != nil {
 		return nil, err
 	}

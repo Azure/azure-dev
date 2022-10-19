@@ -6,8 +6,8 @@ import (
 	"net/http"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
-	"github.com/azure/azure-dev/cli/azd/pkg/azsdk"
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
+	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
 )
 
 type ApplicationListRequestBuilder struct {
@@ -37,7 +37,7 @@ func (c *ApplicationListRequestBuilder) Get(ctx context.Context) (*ApplicationLi
 		return nil, runtime.NewResponseError(res)
 	}
 
-	return azsdk.ReadRawResponse[ApplicationListResponse](res)
+	return httputil.ReadRawResponse[ApplicationListResponse](res)
 }
 
 func (c *ApplicationListRequestBuilder) Post(ctx context.Context, application *Application) (*Application, error) {
@@ -46,12 +46,10 @@ func (c *ApplicationListRequestBuilder) Post(ctx context.Context, application *A
 		return nil, fmt.Errorf("failed creating request: %w", err)
 	}
 
-	body, err := convert.ToHttpRequestBody(application)
+	err = SetHttpRequestBody(req, application)
 	if err != nil {
 		return nil, err
 	}
-
-	req.Raw().Body = body
 
 	res, err := c.client.pipeline.Do(req)
 	if err != nil {
@@ -62,7 +60,7 @@ func (c *ApplicationListRequestBuilder) Post(ctx context.Context, application *A
 		return nil, runtime.NewResponseError(res)
 	}
 
-	return azsdk.ReadRawResponse[Application](res)
+	return httputil.ReadRawResponse[Application](res)
 }
 
 type ApplicationItemRequestBuilder struct {
@@ -92,25 +90,27 @@ func (c *ApplicationItemRequestBuilder) Get(ctx context.Context) (*Application, 
 		return nil, runtime.NewResponseError(res)
 	}
 
-	return azsdk.ReadRawResponse[Application](res)
+	return httputil.ReadRawResponse[Application](res)
 }
 
 func (c *ApplicationItemRequestBuilder) RemovePassword(ctx context.Context, keyId string) error {
-	req, err := runtime.NewRequest(ctx, http.MethodPost, fmt.Sprintf("%s/applications/%s/removePassword", c.client.host, c.id))
+	req, err := runtime.NewRequest(
+		ctx,
+		http.MethodPost,
+		fmt.Sprintf("%s/applications/%s/removePassword", c.client.host, c.id),
+	)
 	if err != nil {
 		return fmt.Errorf("failed creating request: %w", err)
 	}
 
-	requestBody := ApplicationRemovePasswordRequest{
+	removePasswordRequest := ApplicationRemovePasswordRequest{
 		KeyId: keyId,
 	}
 
-	jsonBody, err := convert.ToHttpRequestBody(requestBody)
+	err = SetHttpRequestBody(req, removePasswordRequest)
 	if err != nil {
 		return err
 	}
-
-	req.Raw().Body = jsonBody
 
 	res, err := c.client.pipeline.Do(req)
 	if err != nil {
@@ -130,16 +130,16 @@ func (c *ApplicationItemRequestBuilder) AddPassword(ctx context.Context) (*Appli
 		return nil, fmt.Errorf("failed creating request: %w", err)
 	}
 
-	requestBody := ApplicationAddPasswordRequest{
-		PasswordCredential: ApplicationPasswordCredential{},
+	addPasswordRequest := ApplicationAddPasswordRequest{
+		PasswordCredential: ApplicationPasswordCredential{
+			DisplayName: convert.RefOf("Azure Developer CLI"),
+		},
 	}
 
-	jsonBody, err := convert.ToHttpRequestBody(requestBody)
+	err = SetHttpRequestBody(req, addPasswordRequest)
 	if err != nil {
 		return nil, err
 	}
-
-	req.Raw().Body = jsonBody
 
 	res, err := c.client.pipeline.Do(req)
 	if err != nil {
@@ -150,5 +150,5 @@ func (c *ApplicationItemRequestBuilder) AddPassword(ctx context.Context) (*Appli
 		return nil, runtime.NewResponseError(res)
 	}
 
-	return azsdk.ReadRawResponse[ApplicationPasswordCredential](res)
+	return httputil.ReadRawResponse[ApplicationPasswordCredential](res)
 }

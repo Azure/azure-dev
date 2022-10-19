@@ -185,7 +185,7 @@ type AzCli interface {
 
 	GetSignedInUserId(ctx context.Context) (string, error)
 
-	GetAccessToken(ctx context.Context) (AzCliAccessToken, error)
+	GetAccessToken(ctx context.Context) (*AzCliAccessToken, error)
 }
 
 type AzCliDeployment struct {
@@ -296,12 +296,6 @@ type AzCliExtensionInfo struct {
 	Name string
 }
 
-// AzCliAccessToken represents the value returned by `az account get-access-token`
-type AzCliAccessToken struct {
-	AccessToken string
-	ExpiresOn   *time.Time
-}
-
 // Optional parameters for resource group listing.
 type ListResourceGroupOptions struct {
 	// An optional tag filter
@@ -321,53 +315,6 @@ type ListResourceGroupResourcesOptions struct {
 type Filter struct {
 	Key   string
 	Value string
-}
-
-func (tok *AzCliAccessToken) UnmarshalJSON(data []byte) error {
-	var wire struct {
-		AccessToken string `json:"accessToken"`
-		ExpiresOn   string `json:"expiresOn"`
-	}
-
-	if err := json.Unmarshal(data, &wire); err != nil {
-		return fmt.Errorf("unmarshalling json: %w", err)
-	}
-
-	tok.AccessToken = wire.AccessToken
-
-	// the format of the ExpiresOn property of the access token differs across environments
-	// see
-	//nolint:lll
-	// https://github.com/Azure/azure-sdk-for-go/blob/61e2e74b9af2cfbff74ea8bb3c6f687c582c419f/sdk/azidentity/azure_cli_credential.go
-	//
-	// nolint:errorlint
-	parseExpirationDate := func(input string) (*time.Time, error) {
-		// CloudShell (and potentially the Azure CLI in future)
-		expirationDate, cloudShellErr := time.Parse(time.RFC3339, input)
-		if cloudShellErr != nil {
-			// Azure CLI (Python) e.g. 2017-08-31 19:48:57.998857 (plus the local timezone)
-			const cliFormat = "2006-01-02 15:04:05.999999"
-			expirationDate, cliErr := time.ParseInLocation(cliFormat, input, time.Local)
-			if cliErr != nil {
-				return nil, fmt.Errorf(
-					"Error parsing expiration date %q.\n\nCloudShell Error: \n%+v\n\nCLI Error:\n%w",
-					input,
-					cloudShellErr,
-					cliErr,
-				)
-			}
-			return &expirationDate, nil
-		}
-		return &expirationDate, nil
-	}
-
-	expiresOn, err := parseExpirationDate(wire.ExpiresOn)
-	if err != nil {
-		return fmt.Errorf("parsing expiresOn: %w", err)
-	}
-
-	tok.ExpiresOn = expiresOn
-	return nil
 }
 
 type NewAzCliArgs struct {
@@ -634,23 +581,6 @@ func (cli *azCli) ListResourceGroupDeploymentOperations(
 	return resources, nil
 }
 
-// Default response model from `az ad sp`
-type ServicePrincipalCredentials struct {
-	AppId       string `json:"appId"`
-	DisplayName string `json:"displayName"`
-	Password    string `json:"password"`
-	Tenant      string `json:"tenant"`
-}
-
-// Required model structure for Azure Credentials tools
-type AzureCredentials struct {
-	ClientId                   string `json:"clientId"`
-	ClientSecret               string `json:"clientSecret"`
-	SubscriptionId             string `json:"subscriptionId"`
-	TenantId                   string `json:"tenantId"`
-	ResourceManagerEndpointUrl string `json:"resourceManagerEndpointUrl"`
-}
-
 // runAzCommandWithArgs will run the 'args', ignoring 'Cmd' in favor of injecting the proper
 // 'az' alias.
 func (cli *azCli) runAzCommandWithArgs(ctx context.Context, args exec.RunArgs) (exec.RunResult, error) {
@@ -683,18 +613,8 @@ func (cli *azCli) createDefaultClientOptionsBuilder(ctx context.Context) *azsdk.
 
 var isNotLoggedInMessageRegex = regexp.MustCompile(`Please run ('|")az login('|") to (setup account|access your accounts)\.`)
 
-// Regex for the following errors related to refresh tokens:
-// - "AADSTS70043: The refresh token has expired or is invalid due to sign-in frequency checks by conditional access.""
-// - "AADSTS700082: The refresh token has expired due to inactivity."
-var isRefreshTokenExpiredMessageRegex = regexp.MustCompile(`AADSTS(70043|700082)`)
-
-var isResourceSegmentMeNotFoundMessageRegex = regexp.MustCompile(`Resource not found for the segment 'me'.`)
-
 // Regex for "(DeploymentNotFound) Deployment '<name>' could not be found."
 var isDeploymentNotFoundMessageRegex = regexp.MustCompile(`\(DeploymentNotFound\)`)
-
-// Regex for "AADSTS700024: Client assertion is not within its valid time range."
-var isClientAssertionInvalidMessagedRegex = regexp.MustCompile(`AADSTS700024`)
 var isConfigurationIsNotSetMessageRegex = regexp.MustCompile(`Configuration '.*' is not set\.`)
 var isDeploymentErrorRegex = regexp.MustCompile(`ERROR: ({.+})`)
 var isInnerDeploymentErrorRegex = regexp.MustCompile(`Inner Errors:\s+({.+})`)
@@ -703,20 +623,8 @@ func isNotLoggedInMessage(s string) bool {
 	return isNotLoggedInMessageRegex.MatchString(s)
 }
 
-func isRefreshTokenExpiredMessage(s string) bool {
-	return isRefreshTokenExpiredMessageRegex.MatchString(s)
-}
-
-func isResourceSegmentMeNotFoundMessage(s string) bool {
-	return isResourceSegmentMeNotFoundMessageRegex.MatchString(s)
-}
-
 func isDeploymentNotFoundMessage(s string) bool {
 	return isDeploymentNotFoundMessageRegex.MatchString(s)
-}
-
-func isClientAssertionInvalidMessage(s string) bool {
-	return isClientAssertionInvalidMessagedRegex.MatchString(s)
 }
 
 func isConfigurationIsNotSetMessage(s string) bool {

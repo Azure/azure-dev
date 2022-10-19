@@ -3,15 +3,29 @@ package azcli
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"net/http"
+	"time"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/authorization/armauthorization"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/graphsdk"
 	"github.com/azure/azure-dev/cli/azd/pkg/identity"
 	"github.com/google/uuid"
+	"github.com/sethvargo/go-retry"
 )
+
+// Required model structure for Azure Credentials tools
+type AzureCredentials struct {
+	ClientId                   string `json:"clientId"`
+	ClientSecret               string `json:"clientSecret"`
+	SubscriptionId             string `json:"subscriptionId"`
+	TenantId                   string `json:"tenantId"`
+	ResourceManagerEndpointUrl string `json:"resourceManagerEndpointUrl"`
+}
 
 func (cli *azCli) GetSignedInUserId(ctx context.Context) (string, error) {
 	client, err := cli.createGraphClient(ctx)
@@ -38,31 +52,35 @@ func (cli *azCli) CreateOrUpdateServicePrincipal(
 		return nil, err
 	}
 
+	// Get or create application
 	application, err := ensureApplication(ctx, graphClient, applicationName)
 	if err != nil {
 		return nil, err
 	}
 
+	// Get or create service principal from application
 	servicePrincipal, err := ensureServicePrincipal(ctx, graphClient, application)
 	if err != nil {
 		return nil, err
 	}
 
+	// Reset credentials for service principal
 	credential, err := resetCredentials(ctx, graphClient, application)
 	if err != nil {
 		return nil, fmt.Errorf("failed resetting application credentials: %w", err)
 	}
 
-	err = cli.applyRoleAssignments(ctx, subscriptionId, roleName, servicePrincipal)
+	// Apply specified role assignment
+	err = cli.ensureRoleAssignments(ctx, subscriptionId, roleName, servicePrincipal)
 	if err != nil {
 		return nil, fmt.Errorf("failed applying role assignment: %w", err)
 	}
 
 	azureCreds := AzureCredentials{
-		ClientId:                   application.AppId,
+		ClientId:                   *application.AppId,
 		ClientSecret:               *credential.SecretText,
 		SubscriptionId:             subscriptionId,
-		TenantId:                   "",
+		TenantId:                   *servicePrincipal.AppOwnerOrganizationId,
 		ResourceManagerEndpointUrl: "https://management.azure.com/",
 	}
 
@@ -79,82 +97,12 @@ func (cli *azCli) CreateOrUpdateServicePrincipal(
 	return rawMessage, nil
 }
 
-// Applies the Azure selected RBAC role assignments to the specified service principal
-func (cli *azCli) applyRoleAssignments(ctx context.Context, subscriptionId string, roleName string, servicePrincipal *graphsdk.ServicePrincipal) error {
-	roleDefinitionsClient, err := cli.createRoleDefinitionsClient(ctx)
-	if err != nil {
-		return err
-	}
-
-	roleAssignmentsClient, err := cli.createRoleAssignmentsClient(ctx, subscriptionId)
-	if err != nil {
-		return err
-	}
-
-	// Find the specified role in the subscription scope
-	scope := azure.SubscriptionRID(subscriptionId)
-	pager := roleDefinitionsClient.NewListPager(scope, &armauthorization.RoleDefinitionsClientListOptions{
-		Filter: convert.RefOf(fmt.Sprintf("roleName eq '%s'", roleName)),
-	})
-
-	roleDefinitions := []*armauthorization.RoleDefinition{}
-
-	for pager.More() {
-		page, err := pager.NextPage(ctx)
-		if err != nil {
-			return fmt.Errorf("failed getting next page of role definitions: %w", err)
-		}
-
-		roleDefinitions = append(roleDefinitions, page.RoleDefinitionListResult.Value...)
-	}
-
-	if len(roleDefinitions) == 0 {
-		return fmt.Errorf("role definition with scope: '%s' and name: '%s' was not found", scope, roleName)
-	}
-
-	roleDefinition := roleDefinitions[0]
-	roleAssignmentId := uuid.New().String()
-
-	// Create the new role assignment
-	_, err = roleAssignmentsClient.Create(ctx, scope, roleAssignmentId, armauthorization.RoleAssignmentCreateParameters{
-		Properties: &armauthorization.RoleAssignmentProperties{
-			PrincipalID:      &servicePrincipal.Id,
-			RoleDefinitionID: roleDefinition.ID,
-		},
-	}, nil)
-
-	if err != nil {
-		return fmt.Errorf("failed assigning role assignment '%s' to service principal '%s' : %w", *roleDefinition.Name, servicePrincipal.DisplayName, err)
-	}
-
-	return nil
-}
-
-// Resets all password credentials associated with the specified application
-func resetCredentials(ctx context.Context, client *graphsdk.GraphClient, application *graphsdk.Application) (*graphsdk.ApplicationPasswordCredential, error) {
-	for _, credential := range application.PasswordCredentials {
-		err := client.
-			ApplicationById(application.Id).
-			RemovePassword(ctx, *credential.KeyId)
-
-		if err != nil {
-			return nil, fmt.Errorf("failed removing credentials for KeyId '%s' : %w", *credential.KeyId, err)
-		}
-	}
-
-	credential, err := client.
-		ApplicationById(application.Id).
-		AddPassword(ctx)
-
-	if err != nil {
-		return nil, fmt.Errorf("failed adding new password credential for application '%s' : %w", application.DisplayName, err)
-	}
-
-	return credential, nil
-}
-
-// Retrieves or creates an application with the specified name
-func ensureApplication(ctx context.Context, client *graphsdk.GraphClient, applicationName string) (*graphsdk.Application, error) {
+// Gets or creates an application with the specified name
+func ensureApplication(
+	ctx context.Context,
+	client *graphsdk.GraphClient,
+	applicationName string,
+) (*graphsdk.Application, error) {
 	matchingItems, err := client.
 		Applications().
 		Filter(fmt.Sprintf("startswith(displayName, '%s')", applicationName)).
@@ -172,9 +120,11 @@ func ensureApplication(ctx context.Context, client *graphsdk.GraphClient, applic
 		return &matchingItems.Value[0], nil
 	}
 
+	// Existing application doesn't exist - create a new one
 	newApp := &graphsdk.Application{
-		DisplayName: applicationName,
-		Description: "Autogenerated from Azure Developer CLI",
+		DisplayName:         applicationName,
+		Description:         convert.RefOf("Autogenerated from Azure Developer CLI"),
+		PasswordCredentials: []*graphsdk.ApplicationPasswordCredential{},
 	}
 
 	newApp, err = client.Applications().Post(ctx, newApp)
@@ -185,8 +135,12 @@ func ensureApplication(ctx context.Context, client *graphsdk.GraphClient, applic
 	return newApp, nil
 }
 
-// Retrieves or creates a service principal for the specified application name
-func ensureServicePrincipal(ctx context.Context, client *graphsdk.GraphClient, application *graphsdk.Application) (*graphsdk.ServicePrincipal, error) {
+// Gets or creates a service principal for the specified application name
+func ensureServicePrincipal(
+	ctx context.Context,
+	client *graphsdk.GraphClient,
+	application *graphsdk.Application,
+) (*graphsdk.ServicePrincipal, error) {
 	matchingItems, err := client.
 		ServicePrincipals().
 		Filter(fmt.Sprintf("displayName eq '%s'", application.DisplayName)).
@@ -197,17 +151,18 @@ func ensureServicePrincipal(ctx context.Context, client *graphsdk.GraphClient, a
 	}
 
 	if len(matchingItems.Value) > 1 {
-		return nil, fmt.Errorf("more than 1 application with same name '%s'", application.DisplayName)
+		return nil, fmt.Errorf("more than 1 application exists with same name '%s'", application.DisplayName)
 	}
 
 	if len(matchingItems.Value) == 1 {
 		return &matchingItems.Value[0], nil
 	}
 
+	// Existing service principal doesn't exist - create a new one.
 	newSpn := &graphsdk.ServicePrincipal{
-		AppId:       application.AppId,
+		AppId:       *application.AppId,
 		DisplayName: application.DisplayName,
-		Description: application.DisplayName,
+		Description: application.Description,
 	}
 
 	newSpn, err = client.ServicePrincipals().Post(ctx, newSpn)
@@ -216,6 +171,141 @@ func ensureServicePrincipal(ctx context.Context, client *graphsdk.GraphClient, a
 	}
 
 	return newSpn, nil
+}
+
+// Removes any existing password credentials from the application
+// and creates a new password credential
+func resetCredentials(
+	ctx context.Context,
+	client *graphsdk.GraphClient,
+	application *graphsdk.Application,
+) (*graphsdk.ApplicationPasswordCredential, error) {
+	for _, credential := range application.PasswordCredentials {
+		err := client.
+			ApplicationById(*application.Id).
+			RemovePassword(ctx, *credential.KeyId)
+
+		if err != nil {
+			return nil, fmt.Errorf("failed removing credentials for KeyId '%s' : %w", *credential.KeyId, err)
+		}
+	}
+
+	credential, err := client.
+		ApplicationById(*application.Id).
+		AddPassword(ctx)
+
+	if err != nil {
+		return nil, fmt.Errorf(
+			"failed adding new password credential for application '%s' : %w",
+			application.DisplayName,
+			err,
+		)
+	}
+
+	return credential, nil
+}
+
+// Applies the Azure selected RBAC role assignments to the specified service principal
+func (cli *azCli) ensureRoleAssignments(
+	ctx context.Context,
+	subscriptionId string,
+	roleName string,
+	servicePrincipal *graphsdk.ServicePrincipal,
+) error {
+	// Find the specified role in the subscription scope
+	scope := azure.SubscriptionRID(subscriptionId)
+	roleDefinition, err := cli.getRoleDefinition(ctx, scope, roleName)
+	if err != nil {
+		return err
+	}
+
+	// Create the new role assignment
+	err = cli.applyRoleAssignmentWithRetry(ctx, subscriptionId, roleDefinition, servicePrincipal)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// Applies the role assignment to the specified service principal
+// This operation will retry up to 10 times to ensure the new service principal is available in Azure AD
+func (cli *azCli) applyRoleAssignmentWithRetry(
+	ctx context.Context,
+	subscriptionId string,
+	roleDefinition *armauthorization.RoleDefinition,
+	servicePrincipal *graphsdk.ServicePrincipal,
+) error {
+	roleAssignmentsClient, err := cli.createRoleAssignmentsClient(ctx, subscriptionId)
+	if err != nil {
+		return err
+	}
+
+	scope := azure.SubscriptionRID(subscriptionId)
+	roleAssignmentId := uuid.New().String()
+
+	// There is a lag in the application/service principal becoming available in Azure AD
+	// This can cause the role assignment operation to fail
+	return retry.Do(ctx, retry.WithMaxRetries(10, retry.NewConstant(time.Second*5)), func(ctx context.Context) error {
+		_, err = roleAssignmentsClient.Create(ctx, scope, roleAssignmentId, armauthorization.RoleAssignmentCreateParameters{
+			Properties: &armauthorization.RoleAssignmentProperties{
+				PrincipalID:      servicePrincipal.Id,
+				RoleDefinitionID: roleDefinition.ID,
+			},
+		}, nil)
+
+		if err != nil {
+			// If the response is a 409 conflict then the role has already been assigned.
+			var responseError *azcore.ResponseError
+			if errors.As(err, &responseError) && responseError.StatusCode == http.StatusConflict {
+				return nil
+			}
+
+			return retry.RetryableError(
+				fmt.Errorf(
+					"failed assigning role assignment '%s' to service principal '%s' : %w",
+					*roleDefinition.Name,
+					servicePrincipal.DisplayName,
+					err,
+				),
+			)
+		}
+
+		return nil
+	})
+}
+
+// Find the Azure role definition for the specified scope and role name
+func (cli *azCli) getRoleDefinition(
+	ctx context.Context,
+	scope string,
+	roleName string,
+) (*armauthorization.RoleDefinition, error) {
+	roleDefinitionsClient, err := cli.createRoleDefinitionsClient(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	pager := roleDefinitionsClient.NewListPager(scope, &armauthorization.RoleDefinitionsClientListOptions{
+		Filter: convert.RefOf(fmt.Sprintf("roleName eq '%s'", roleName)),
+	})
+
+	roleDefinitions := []*armauthorization.RoleDefinition{}
+
+	for pager.More() {
+		page, err := pager.NextPage(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed getting next page of role definitions: %w", err)
+		}
+
+		roleDefinitions = append(roleDefinitions, page.RoleDefinitionListResult.Value...)
+	}
+
+	if len(roleDefinitions) == 0 {
+		return nil, fmt.Errorf("role definition with scope: '%s' and name: '%s' was not found", scope, roleName)
+	}
+
+	return roleDefinitions[0], nil
 }
 
 // Creates a graph users client using credentials from the Go context.
@@ -243,7 +333,10 @@ func (cli *azCli) createRoleDefinitionsClient(ctx context.Context) (*armauthoriz
 }
 
 // Creates a graph users client using credentials from the Go context.
-func (cli *azCli) createRoleAssignmentsClient(ctx context.Context, subscriptionId string) (*armauthorization.RoleAssignmentsClient, error) {
+func (cli *azCli) createRoleAssignmentsClient(
+	ctx context.Context,
+	subscriptionId string,
+) (*armauthorization.RoleAssignmentsClient, error) {
 	cred := identity.GetCredentials(ctx)
 	options := cli.createDefaultClientOptionsBuilder(ctx).BuildArmClientOptions()
 	client, err := armauthorization.NewRoleAssignmentsClient(subscriptionId, cred, options)

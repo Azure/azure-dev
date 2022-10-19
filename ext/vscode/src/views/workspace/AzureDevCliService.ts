@@ -1,8 +1,10 @@
 import * as vscode from 'vscode';
-import { AzureDevCliModel } from "./AzureDevCliModel";
+import { AzureDevCliModel, AzureDevCliModelContext } from "./AzureDevCliModel";
 
 export class AzureDevCliService implements AzureDevCliModel {
-    constructor(private readonly name: string) {
+    constructor(
+        public readonly context: AzureDevCliModelContext,
+        private readonly name: string) {
     }
 
     getChildren(): AzureDevCliModel[] {

@@ -11,7 +11,7 @@ import { AzureDevCliApplication } from '../views/workspace/AzureDevCliApplicatio
 import { getAzDevTerminalTitle, getWorkingFolder } from './cmdUtil';
 
 export async function infraCreate(context: IActionContext, selectedItem?: vscode.Uri | TreeViewModel): Promise<void> {
-    const selectedFile = isTreeViewModel(selectedItem) ? selectedItem.unwrap<AzureDevCliApplication>().configurationFile : selectedItem;
+    const selectedFile = isTreeViewModel(selectedItem) ? selectedItem.unwrap<AzureDevCliApplication>().context.configurationFile : selectedItem;
 
     const workingFolder = await getWorkingFolder(context, selectedFile);
 

@@ -1,11 +1,12 @@
-import { callWithTelemetryAndErrorHandling } from '@microsoft/vscode-azext-utils';
+import * as path from 'path';
 import * as vscode from 'vscode';
+import { callWithTelemetryAndErrorHandling } from '@microsoft/vscode-azext-utils';
 import { localize } from '../../localize';
 import { TelemetryId } from '../../telemetry/telemetryId';
 import { createAzureDevCli } from '../../utils/azureDevCli';
 import { execAsync } from '../../utils/process';
 import { withTimeout } from '../../utils/withTimeout';
-import { AzureDevCliModel } from "./AzureDevCliModel";
+import { AzureDevCliModel, AzureDevCliModelContext } from './AzureDevCliModel';
 import { AzureDevCliService } from './AzureDevCliService';
 
 interface ShowResults {
@@ -23,7 +24,7 @@ interface ShowResults {
 }
 
 export class AzureDevCliServices implements AzureDevCliModel {
-    constructor(private readonly applicationDirectory: string) {
+    constructor(public readonly context: AzureDevCliModelContext) {
     }
 
     async getChildren(): Promise<AzureDevCliModel[]> {
@@ -32,9 +33,12 @@ export class AzureDevCliServices implements AzureDevCliModel {
             async context => {
                 const azureCli = await createAzureDevCli(context);
 
+                const configurationFilePath = this.context.configurationFile.fsPath;
+                const configurationFileDirectory = path.dirname(configurationFilePath);
+
                 const command = azureCli.commandBuilder
                     .withArg('show')
-                    .withNamedArg('--cwd', this.applicationDirectory)
+                    .withNamedArg('--cwd', configurationFileDirectory)
                     .withNamedArg('--output', 'json')
                     .build();
 
@@ -45,7 +49,7 @@ export class AzureDevCliServices implements AzureDevCliModel {
                 const services: AzureDevCliModel[] = [];
 
                 for (const serviceName in (showResults.services ?? {})) {
-                    services.push(new AzureDevCliService(serviceName));
+                    services.push(new AzureDevCliService(this.context, serviceName));
                 }
 
                 return services;

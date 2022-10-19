@@ -7,7 +7,7 @@ import { createAzureDevCli } from '../../utils/azureDevCli';
 import { execAsync } from '../../utils/process';
 import { withTimeout } from '../../utils/withTimeout';
 import { AzureDevCliEnvironment } from './AzureDevCliEnvironment';
-import { AzureDevCliModel } from "./AzureDevCliModel";
+import { AzureDevCliModel, AzureDevCliModelContext } from "./AzureDevCliModel";
 
 type EnvListResults = {
     Name?: string;
@@ -17,7 +17,7 @@ type EnvListResults = {
 
 export class AzureDevCliEnvironments implements AzureDevCliModel {
     constructor(
-        public readonly configurationFile: vscode.Uri) {
+        public readonly context: AzureDevCliModelContext) {
     }
 
     async getChildren(): Promise<AzureDevCliModel[]> {
@@ -26,7 +26,7 @@ export class AzureDevCliEnvironments implements AzureDevCliModel {
             async context => {
                 const azureCli = await createAzureDevCli(context);
 
-                const configurationFilePath = this.configurationFile.fsPath;
+                const configurationFilePath = this.context.configurationFile.fsPath;
                 const configurationFileDirectory = path.dirname(configurationFilePath);
 
                 const command = azureCli.commandBuilder
@@ -43,7 +43,7 @@ export class AzureDevCliEnvironments implements AzureDevCliModel {
                 const environments: AzureDevCliModel[] = [];
 
                 for (const environment of envListResults) {
-                    environments.push(new AzureDevCliEnvironment(environment.Name ?? '<unknown>', environment.IsDefault ?? false));
+                    environments.push(new AzureDevCliEnvironment(this.context, environment.Name ?? '<unknown>', environment.IsDefault ?? false));
                 }
 
                 return environments;

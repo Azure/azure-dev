@@ -1,7 +1,6 @@
-import * as path from 'path';
 import * as vscode from 'vscode';
 import { AzureDevCliEnvironments } from './AzureDevCliEnvironments';
-import { AzureDevCliModel } from "./AzureDevCliModel";
+import { AzureDevCliModel, AzureDevCliModelContext } from "./AzureDevCliModel";
 import { AzureDevCliServices } from './AzureDevCliServices';
 import { WorkspaceResource } from './ResourceGroupsApi';
 
@@ -10,17 +9,14 @@ export class AzureDevCliApplication implements AzureDevCliModel {
         private readonly resource: WorkspaceResource) {
     }
 
-    get configurationFile(): vscode.Uri {
-        return vscode.Uri.file(this.resource.id);
-    }
+    readonly context: AzureDevCliModelContext = {
+        configurationFile: vscode.Uri.file(this.resource.id)
+    };
 
     getChildren(): AzureDevCliModel[] {
-        const applicationConfigurationPath = this.resource.id;
-        const applicationDirectory = path.dirname(applicationConfigurationPath);
-
         return [
-            new AzureDevCliServices(applicationDirectory),
-            new AzureDevCliEnvironments(this.configurationFile)
+            new AzureDevCliServices(this.context),
+            new AzureDevCliEnvironments(this.context)
         ];
     }
 

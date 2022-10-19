@@ -1,9 +1,10 @@
 import * as vscode from 'vscode';
-import { AzureDevCliModel } from "./AzureDevCliModel";
+import { AzureDevCliModel, AzureDevCliModelContext } from './AzureDevCliModel';
 import { localize } from '../../localize';
 
 export class AzureDevCliEnvironment implements AzureDevCliModel {
     constructor(
+        public readonly context: AzureDevCliModelContext,
         private readonly name: string,
         private readonly isDefault: boolean) {
     }

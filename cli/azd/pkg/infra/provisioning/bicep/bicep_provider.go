@@ -313,7 +313,8 @@ func (p *BicepProvider) Destroy(
 				return
 			}
 
-			if err := p.purgeItems(ctx, asyncContext, keyVaults, appConfigs, options); err != nil {
+			purgeItem := map[string]interface{}{"Key Vaults": keyVaults, "App Configurations": appConfigs}
+			if err := p.purgeItems(ctx, asyncContext, purgeItem, options); err != nil {
 				asyncContext.SetError(fmt.Errorf("purging key vaults or app configurations: %w", err))
 				return
 			}
@@ -422,75 +423,61 @@ func (p *BicepProvider) destroyResourceGroups(
 func (p *BicepProvider) purgeItems(
 	ctx context.Context,
 	asyncContext *async.InteractiveTaskContextWithProgress[*DestroyResult, *DestroyProgress],
-	keyVaults []*azcli.AzCliKeyVault,
-	appConfigs []*azcli.AzCliAppConfig,
+	items map[string]interface{},
 	options DestroyOptions,
 ) error {
-	var items string
-	var itemsWarning string
-	if len(appConfigs) > 0 && len(keyVaults) > 0 {
-		items = "Key Vaults and App Configurations"
-		itemsWarning = fmt.Sprintf(""+
-			"\nThis operation will delete %d Key Vaults and %d App Configurations. These %s have soft delete enabled "+
-			"allowing them to be recovered for a period \n"+
-			"of time after deletion. During this period, their names may not be reused.\n"+
-			"You can use argument --purge to skip this confirmation.\n\n",
-			len(keyVaults), len(appConfigs), items)
-	} else if len(keyVaults) > 0 {
-		items = "Key Vaults"
-		itemsWarning = fmt.Sprintf(""+
-			"\nThis operation will delete %d Key Vaults. These %s have soft delete enabled "+
-			"allowing them to be recovered for a period \n"+
-			"of time after deletion. During this period, their names may not be reused.\n"+
-			"You can use argument --purge to skip this confirmation.\n\n",
-			len(keyVaults), items)
-	} else if len(appConfigs) > 0 {
-		items = "App Configurations"
-		itemsWarning = fmt.Sprintf(""+
-			"\nThis operation will delete %d App Configurations. These %s have soft delete enabled "+
-			"allowing them to be recovered for a period \n"+
-			"of time after deletion. During this period, their names may not be reused.\n"+
-			"You can use argument --purge to skip this confirmation.\n\n",
-			len(appConfigs), items)
-	}
+	// if !options.Purge() {
+	// 	var itemString string
+	// 	itemsWarning := "" + "\nThis operation will delete: \n "
+	// 	for k, v := range items {
+	// 		if itemString != "" {
+	// 			itemString = itemString + "/" + k
+	// 		} else {
+	// 			itemString = k
+	// 		}
+	// 		itemsWarning = itemsWarning + fmt.Sprintf("%d %s\n", len(v), k)
+	// 	}
+	// 	itemsWarning = itemsWarning + fmt.Sprintf("These %s have soft delete enabled "+
+	// 		"allowing them to be recovered for a period \n"+
+	// 		"of time after deletion. During this period, their names may not be reused.\n"+
+	// 		"You can use argument --purge to skip this confirmation.\n\n", itemString)
 
-	if items != "" && !options.Purge() {
-		p.console.Message(ctx, output.WithWarningFormat(itemsWarning))
+	// 	p.console.Message(ctx, output.WithWarningFormat(itemsWarning))
 
-		err := asyncContext.Interact(func() error {
-			purgeItems, err := p.console.Confirm(ctx, input.ConsoleOptions{
-				Message: fmt.Sprintf(
-					"Would you like to %s delete these %s instead, allowing their names to be reused?",
-					output.WithErrorFormat("permanently"),
-					items,
-				),
-				DefaultValue: false,
-			})
+	// 	err := asyncContext.Interact(func() error {
+	// 		purgeItems, err := p.console.Confirm(ctx, input.ConsoleOptions{
+	// 			Message: fmt.Sprintf(
+	// 				"Would you like to %s delete these %s instead, allowing their names to be reused?",
+	// 				output.WithErrorFormat("permanently"),
+	// 				items,
+	// 			),
+	// 			DefaultValue: false,
+	// 		})
 
-			if err != nil {
-				return fmt.Errorf("prompting for %s confirmation: %w", items, err)
-			}
+	// 		if err != nil {
+	// 			return fmt.Errorf("prompting for %s confirmation: %w", itemString, err)
+	// 		}
 
-			if !purgeItems {
-				return fmt.Errorf("user denied %s confirmation", items)
-			}
+	// 		if !purgeItems {
+	// 			return fmt.Errorf("user denied %s confirmation", itemString)
+	// 		}
 
-			return nil
-		})
+	// 		return nil
+	// 	})
 
-		if err != nil {
-			return err
-		}
+	// 	if err != nil {
+	// 		return err
+	// 	}
 
-		if err := p.purgeKeyVaults(ctx, asyncContext, keyVaults, options); err != nil {
-			return err
-		}
+	// 	if err := p.purgeKeyVaults(ctx, asyncContext, items["Key Vaults"], options); items["Key Vaults"] != null && err != nil {
+	// 		return err
+	// 	}
 
-		if err := p.purgeAppConfigs(ctx, asyncContext, appConfigs, options); err != nil {
-			return err
-		}
+	// 	if err := p.purgeAppConfigs(ctx, asyncContext, items["App Configurations"], options); items["App Configurations"] != null && err != nil {
+	// 		return err
+	// 	}
 
-	}
+	// }
 	return nil
 }
 

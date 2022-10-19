@@ -5,13 +5,16 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/authorization/armauthorization"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
+	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/graphsdk"
 	"github.com/azure/azure-dev/cli/azd/pkg/identity"
+	"github.com/google/uuid"
 )
 
 func (cli *azCli) GetSignedInUserId(ctx context.Context) (string, error) {
-	client, err := cli.createUsersClient(ctx)
+	client, err := cli.createGraphClient(ctx)
 	if err != nil {
 		return "", err
 	}
@@ -30,63 +33,193 @@ func (cli *azCli) CreateOrUpdateServicePrincipal(
 	applicationName string,
 	roleName string,
 ) (json.RawMessage, error) {
-	// By default the role assignment is tied to the root of the currently active subscription (in the az cli), which may not
-	// be the same
-	// subscription that the user has requested, so build the scope ourselves.
-	scopes := azure.SubscriptionRID(subscriptionId)
-	var result ServicePrincipalCredentials
-
-	res, err := cli.runAzCommand(
-		ctx,
-		"ad",
-		"sp",
-		"create-for-rbac",
-		"--scopes",
-		scopes,
-		"--name",
-		applicationName,
-		"--role",
-		roleName,
-		"--output",
-		"json",
-	)
-	if isNotLoggedInMessage(res.Stderr) {
-		return nil, ErrAzCliNotLoggedIn
-	} else if err != nil {
-		return nil, fmt.Errorf("failed running az ad sp create-for-rbac: %s: %w", res.String(), err)
+	graphClient, err := cli.createGraphClient(ctx)
+	if err != nil {
+		return nil, err
 	}
 
-	if err := json.Unmarshal([]byte(res.Stdout), &result); err != nil {
-		return nil, fmt.Errorf("could not unmarshal output %s as a string: %w", res.Stdout, err)
+	application, err := ensureApplication(ctx, graphClient, applicationName)
+	if err != nil {
+		return nil, err
 	}
 
-	// --sdk-auth arg was deprecated from the az cli. See: https://docs.microsoft.com/cli/azure/microsoft-graph-migration
-	// this argument would ensure that the output from creating a Service Principal could
-	// be used as input to log in to azure. See: https://github.com/Azure/login#configure-a-service-principal-with-a-secret
-	// Create the credentials expected structure from the json-rawResponse
-	credentials := AzureCredentials{
-		ClientId:                   result.AppId,
-		ClientSecret:               result.Password,
+	servicePrincipal, err := ensureServicePrincipal(ctx, graphClient, application)
+	if err != nil {
+		return nil, err
+	}
+
+	credential, err := resetCredentials(ctx, graphClient, application)
+	if err != nil {
+		return nil, fmt.Errorf("failed resetting application credentials: %w", err)
+	}
+
+	err = cli.applyRoleAssignments(ctx, subscriptionId, roleName, servicePrincipal)
+	if err != nil {
+		return nil, fmt.Errorf("failed applying role assignment: %w", err)
+	}
+
+	azureCreds := AzureCredentials{
+		ClientId:                   application.AppId,
+		ClientSecret:               *credential.SecretText,
 		SubscriptionId:             subscriptionId,
-		TenantId:                   result.Tenant,
+		TenantId:                   "",
 		ResourceManagerEndpointUrl: "https://management.azure.com/",
 	}
 
-	credentialsJson, err := json.Marshal(credentials)
+	credentialsJson, err := json.Marshal(azureCreds)
 	if err != nil {
-		return nil, fmt.Errorf("couldn't build Azure Credential")
+		return nil, fmt.Errorf("failed marshalling Azure credentials to JSON: %w", err)
 	}
 
-	var resultWithAzureCredentialsModel json.RawMessage
-	if err := json.Unmarshal(credentialsJson, &resultWithAzureCredentialsModel); err != nil {
-		return nil, fmt.Errorf("couldn't build Azure Credential Json")
+	var rawMessage json.RawMessage
+	if err := json.Unmarshal(credentialsJson, &rawMessage); err != nil {
+		return nil, fmt.Errorf("failed unmarshalling JSON to raw message: %w", err)
 	}
 
-	return resultWithAzureCredentialsModel, nil
+	return rawMessage, nil
+}
+
+// Applies the Azure selected RBAC role assignments to the specified service principal
+func (cli *azCli) applyRoleAssignments(ctx context.Context, subscriptionId string, roleName string, servicePrincipal *graphsdk.ServicePrincipal) error {
+	roleDefinitionsClient, err := cli.createRoleDefinitionsClient(ctx)
+	if err != nil {
+		return err
+	}
+
+	roleAssignmentsClient, err := cli.createRoleAssignmentsClient(ctx, subscriptionId)
+	if err != nil {
+		return err
+	}
+
+	// Find the specified role in the subscription scope
+	scope := azure.SubscriptionRID(subscriptionId)
+	pager := roleDefinitionsClient.NewListPager(scope, &armauthorization.RoleDefinitionsClientListOptions{
+		Filter: convert.RefOf(fmt.Sprintf("roleName eq '%s'", roleName)),
+	})
+
+	roleDefinitions := []*armauthorization.RoleDefinition{}
+
+	for pager.More() {
+		page, err := pager.NextPage(ctx)
+		if err != nil {
+			return fmt.Errorf("failed getting next page of role definitions: %w", err)
+		}
+
+		roleDefinitions = append(roleDefinitions, page.RoleDefinitionListResult.Value...)
+	}
+
+	if len(roleDefinitions) == 0 {
+		return fmt.Errorf("role definition with scope: '%s' and name: '%s' was not found", scope, roleName)
+	}
+
+	roleDefinition := roleDefinitions[0]
+	roleAssignmentId := uuid.New().String()
+
+	// Create the new role assignment
+	_, err = roleAssignmentsClient.Create(ctx, scope, roleAssignmentId, armauthorization.RoleAssignmentCreateParameters{
+		Properties: &armauthorization.RoleAssignmentProperties{
+			PrincipalID:      &servicePrincipal.Id,
+			RoleDefinitionID: roleDefinition.ID,
+		},
+	}, nil)
+
+	if err != nil {
+		return fmt.Errorf("failed assigning role assignment '%s' to service principal '%s' : %w", *roleDefinition.Name, servicePrincipal.DisplayName, err)
+	}
+
+	return nil
+}
+
+// Resets all password credentials associated with the specified application
+func resetCredentials(ctx context.Context, client *graphsdk.GraphClient, application *graphsdk.Application) (*graphsdk.ApplicationPasswordCredential, error) {
+	for _, credential := range application.PasswordCredentials {
+		err := client.
+			ApplicationById(application.Id).
+			RemovePassword(ctx, *credential.KeyId)
+
+		if err != nil {
+			return nil, fmt.Errorf("failed removing credentials for KeyId '%s' : %w", *credential.KeyId, err)
+		}
+	}
+
+	credential, err := client.
+		ApplicationById(application.Id).
+		AddPassword(ctx)
+
+	if err != nil {
+		return nil, fmt.Errorf("failed adding new password credential for application '%s' : %w", application.DisplayName, err)
+	}
+
+	return credential, nil
+}
+
+// Retrieves or creates an application with the specified name
+func ensureApplication(ctx context.Context, client *graphsdk.GraphClient, applicationName string) (*graphsdk.Application, error) {
+	matchingItems, err := client.
+		Applications().
+		Filter(fmt.Sprintf("startswith(displayName, '%s')", applicationName)).
+		Get(ctx)
+
+	if err != nil {
+		return nil, fmt.Errorf("failed retrieving application list, %w", err)
+	}
+
+	if len(matchingItems.Value) > 1 {
+		return nil, fmt.Errorf("more than 1 application with same name '%s'", applicationName)
+	}
+
+	if len(matchingItems.Value) == 1 {
+		return &matchingItems.Value[0], nil
+	}
+
+	newApp := &graphsdk.Application{
+		DisplayName: applicationName,
+		Description: "Autogenerated from Azure Developer CLI",
+	}
+
+	newApp, err = client.Applications().Post(ctx, newApp)
+	if err != nil {
+		return nil, fmt.Errorf("failed creating application '%s': %w", applicationName, err)
+	}
+
+	return newApp, nil
+}
+
+// Retrieves or creates a service principal for the specified application name
+func ensureServicePrincipal(ctx context.Context, client *graphsdk.GraphClient, application *graphsdk.Application) (*graphsdk.ServicePrincipal, error) {
+	matchingItems, err := client.
+		ServicePrincipals().
+		Filter(fmt.Sprintf("displayName eq '%s'", application.DisplayName)).
+		Get(ctx)
+
+	if err != nil {
+		return nil, fmt.Errorf("failed retrieving application list, %w", err)
+	}
+
+	if len(matchingItems.Value) > 1 {
+		return nil, fmt.Errorf("more than 1 application with same name '%s'", application.DisplayName)
+	}
+
+	if len(matchingItems.Value) == 1 {
+		return &matchingItems.Value[0], nil
+	}
+
+	newSpn := &graphsdk.ServicePrincipal{
+		AppId:       application.AppId,
+		DisplayName: application.DisplayName,
+		Description: application.DisplayName,
+	}
+
+	newSpn, err = client.ServicePrincipals().Post(ctx, newSpn)
+	if err != nil {
+		return nil, fmt.Errorf("failed creating service principal '%s': %w", application.DisplayName, err)
+	}
+
+	return newSpn, nil
 }
 
 // Creates a graph users client using credentials from the Go context.
-func (cli *azCli) createUsersClient(ctx context.Context) (*graphsdk.GraphClient, error) {
+func (cli *azCli) createGraphClient(ctx context.Context) (*graphsdk.GraphClient, error) {
 	cred, err := identity.GetCredentials(ctx)
 	if err != nil {
 		return nil, err
@@ -96,6 +229,38 @@ func (cli *azCli) createUsersClient(ctx context.Context) (*graphsdk.GraphClient,
 	client, err := graphsdk.NewGraphClient(cred, options)
 	if err != nil {
 		return nil, fmt.Errorf("creating Graph Users client: %w", err)
+	}
+
+	return client, nil
+}
+
+// Creates a graph users client using credentials from the Go context.
+func (cli *azCli) createRoleDefinitionsClient(ctx context.Context) (*armauthorization.RoleDefinitionsClient, error) {
+	cred, err := identity.GetCredentials(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	options := cli.createDefaultClientOptionsBuilder(ctx).BuildArmClientOptions()
+	client, err := armauthorization.NewRoleDefinitionsClient(cred, options)
+	if err != nil {
+		return nil, fmt.Errorf("creating ARM Role Definitions client: %w", err)
+	}
+
+	return client, nil
+}
+
+// Creates a graph users client using credentials from the Go context.
+func (cli *azCli) createRoleAssignmentsClient(ctx context.Context, subscriptionId string) (*armauthorization.RoleAssignmentsClient, error) {
+	cred, err := identity.GetCredentials(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	options := cli.createDefaultClientOptionsBuilder(ctx).BuildArmClientOptions()
+	client, err := armauthorization.NewRoleAssignmentsClient(subscriptionId, cred, options)
+	if err != nil {
+		return nil, fmt.Errorf("creating ARM Role Assignments client: %w", err)
 	}
 
 	return client, nil

@@ -7,6 +7,7 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/azure/azure-dev/cli/azd/pkg/azsdk"
+	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 )
 
 // A Microsoft Graph Service Principal entity.
@@ -47,7 +48,36 @@ func (c *ServicePrincipalListRequestBuilder) Get(ctx context.Context) (*ServiceP
 		return nil, runtime.NewResponseError(res)
 	}
 
+	if !runtime.HasStatusCode(res, http.StatusOK) {
+		return nil, runtime.NewResponseError(res)
+	}
+
 	return azsdk.ReadRawResponse[ServicePrincipalListResponse](res)
+}
+
+func (c *ServicePrincipalListRequestBuilder) Post(ctx context.Context, servicePrincipal *ServicePrincipal) (*ServicePrincipal, error) {
+	req, err := c.createRequest(ctx, http.MethodPost, fmt.Sprintf("%s/servicePrincipals", c.client.host))
+	if err != nil {
+		return nil, fmt.Errorf("failed creating request: %w", err)
+	}
+
+	body, err := convert.ToHttpRequestBody(servicePrincipal)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Raw().Body = body
+
+	res, err := c.client.pipeline.Do(req)
+	if err != nil {
+		return nil, runtime.NewResponseError(res)
+	}
+
+	if !runtime.HasStatusCode(res, http.StatusCreated) {
+		return nil, runtime.NewResponseError(res)
+	}
+
+	return azsdk.ReadRawResponse[ServicePrincipal](res)
 }
 
 type ServicePrincipalItemRequestBuilder struct {
@@ -70,6 +100,10 @@ func (b *ServicePrincipalItemRequestBuilder) Get(ctx context.Context) (*ServiceP
 
 	res, err := b.client.pipeline.Do(req)
 	if err != nil {
+		return nil, runtime.NewResponseError(res)
+	}
+
+	if !runtime.HasStatusCode(res, http.StatusOK) {
 		return nil, runtime.NewResponseError(res)
 	}
 

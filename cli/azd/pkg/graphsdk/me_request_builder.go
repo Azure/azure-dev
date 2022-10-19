@@ -9,19 +9,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azsdk"
 )
 
-// A Microsoft Graph User entity.
-type User struct {
-	Id                string   `json:"id"`
-	DisplayName       string   `json:"displayName"`
-	GivenName         string   `json:"givenName"`
-	Surname           string   `json:"surname"`
-	JobTitle          string   `json:"jobTitle"`
-	Mail              string   `json:"mail"`
-	OfficeLocation    string   `json:"officeLocation"`
-	UserPrincipalName string   `json:"userPrincipalName"`
-	BusinessPhones    []string `json:"businessPhones"`
-}
-
 type MeItemRequestBuilder struct {
 	*EntityItemRequestBuilder[MeItemRequestBuilder]
 }
@@ -45,10 +32,5 @@ func (b *MeItemRequestBuilder) Get(ctx context.Context) (*User, error) {
 		return nil, runtime.NewResponseError(res)
 	}
 
-	result, err := azsdk.ReadRawResponse[User](res)
-	if err != nil {
-		return nil, err
-	}
-
-	return result, err
+	return azsdk.ReadRawResponse[User](res)
 }

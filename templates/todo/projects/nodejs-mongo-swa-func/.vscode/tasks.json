@@ -78,8 +78,18 @@
             "dependsOrder": "sequence",
             "dependsOn": [
                 "Setup API Env",
-                "Restore API"
+                "Restore API",
+                "Pre-start API"
+
             ]
+        },
+        {
+            "label": "Pre-start API",
+            "type": "shell",
+            "command": "npm run prestart",
+            "options": {
+                "cwd": "${workspaceFolder}/src/api"
+            }
         },
         {
             "label": "Restore API",

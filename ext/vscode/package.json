@@ -28,6 +28,7 @@
         "onCommand:azure-dev.commands.cli.up",
         "onCommand:azure-dev.commands.cli.down",
         "onCommand:azure-dev.commands.cli.monitor",
+        "onCommand:azure-dev.commands.cli.env-edit",
         "onCommand:azure-dev.commands.cli.env-select",
         "onCommand:azure-dev.commands.cli.env-new",
         "onCommand:azure-dev.commands.cli.env-refresh",
@@ -85,6 +86,11 @@
                 "command": "azure-dev.commands.cli.monitor",
                 "title": "%azure-dev.commands.cli.monitor.title%",
                 "icon": "$(dashboard)"
+            },
+            {
+                "category": "%azure-dev.commands_category%",
+                "command": "azure-dev.commands.cli.env-edit",
+                "title": "%azure-dev.commands.cli.env-edit.title%"
             },
             {
                 "category": "%azure-dev.commands_category%",
@@ -173,6 +179,10 @@
                 {
                     "command": "azure-dev.commands.getDotEnvFilePath",
                     "when": "false"
+                },
+                {
+                    "command": "azure-dev.commands.cli.env-edit",
+                    "when": "false"
                 }
             ],
             "view/item/context": [
@@ -234,6 +244,10 @@
                 },
                 {
                     "command": "azure-dev.commands.cli.env-refresh",
+                    "when": "viewItem == ms-azuretools.azure-dev.views.workspace.environment"
+                },
+                {
+                    "command": "azure-dev.commands.cli.env-edit",
                     "when": "viewItem == ms-azuretools.azure-dev.views.workspace.environment"
                 }
             ]

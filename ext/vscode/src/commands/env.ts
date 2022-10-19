@@ -13,6 +13,18 @@ import { isTreeViewModel, TreeViewModel } from '../utils/isTreeViewModel';
 import { AzureDevCliEnvironments } from '../views/workspace/AzureDevCliEnvironments';
 import { AzureDevCliEnvironment } from '../views/workspace/AzureDevCliEnvironment';
 
+export async function editEnvironment(context: IActionContext, selectedEnvironment?: TreeViewModel): Promise<void> {
+    if (selectedEnvironment) {
+        const environment = selectedEnvironment.unwrap<AzureDevCliEnvironment>();
+
+        if (environment.environmentFile) {
+            const document = await vscode.workspace.openTextDocument(environment.environmentFile);
+
+            await vscode.window.showTextDocument(document);
+        }
+    }
+}
+
 export async function selectEnvironment(context: IActionContext, selectedItem?: vscode.Uri | TreeViewModel): Promise<void> {
     const selectedEnvironment = isTreeViewModel(selectedItem) ? selectedItem.unwrap<AzureDevCliEnvironment>() : undefined;
     const selectedFile = isTreeViewModel(selectedItem) ? selectedItem.unwrap<AzureDevCliEnvironments>().context.configurationFile : selectedItem;

@@ -7,7 +7,8 @@ export class AzureDevCliEnvironment implements AzureDevCliModel {
     constructor(
         public readonly context: AzureDevCliEnvironmentsModelContext,
         public readonly name: string,
-        private readonly isDefault: boolean) {
+        private readonly isDefault: boolean,
+        public readonly environmentFile: vscode.Uri | undefined) {
     }
 
     getChildren(): AzureDevCliModel[] {

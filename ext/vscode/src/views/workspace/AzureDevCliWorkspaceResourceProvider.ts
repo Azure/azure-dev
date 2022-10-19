@@ -3,7 +3,7 @@ import { Subscription } from 'rxjs';
 import * as vscode from 'vscode';
 import * as yaml from 'yaml';
 import { AzureDevApplication, AzureDevApplicationProvider } from '../../services/AzureDevApplicationProvider';
-import { ProvideResourceOptions, WorkspaceResource, WorkspaceResourceProvider } from './ResourceGroupsApi';
+import { WorkspaceResource, WorkspaceResourceProvider } from './ResourceGroupsApi';
 
 interface AzureDevCliApplicationConfguration {
     name?: string;
@@ -40,7 +40,7 @@ export class AzureDevCliWorkspaceResourceProvider extends vscode.Disposable impl
 
     readonly onDidChangeResource = this.onDidChangeResourceEmitter.event;
 
-    async getResources(source: vscode.WorkspaceFolder, options?: ProvideResourceOptions | undefined): Promise<WorkspaceResource[]> {
+    async getResources(source: vscode.WorkspaceFolder): Promise<WorkspaceResource[]> {
         const resources: WorkspaceResource[] = [];
 
         for (const application of this.applications) {
@@ -50,7 +50,7 @@ export class AzureDevCliWorkspaceResourceProvider extends vscode.Disposable impl
                 folder: source,
                 id: application.configurationPath.fsPath,
                 name: config.name ?? application.configurationPath.fsPath,
-                type: 'ms-azuretools.azure-dev.application'
+                resourceType: 'ms-azuretools.azure-dev.application'
             });
         }
 

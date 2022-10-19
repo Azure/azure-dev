@@ -43,7 +43,7 @@ export class AzureDevCliEnvironments implements AzureDevCliModel {
                 const environments: AzureDevCliModel[] = [];
 
                 for (const environment of envListResults) {
-                    environments.push(new AzureDevCliEnvironment(environment.Name ?? '<unknown>'));
+                    environments.push(new AzureDevCliEnvironment(environment.Name ?? '<unknown>', environment.IsDefault ?? false));
                 }
 
                 return environments;

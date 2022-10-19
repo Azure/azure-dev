@@ -28,7 +28,7 @@ func TestGetServicePrincipalList(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
 		registerServicePrincipalListMock(mockContext, http.StatusOK, expected)
 
-		client, err := creatGraphClient(mockContext)
+		client, err := createGraphClient(mockContext)
 		require.NoError(t, err)
 
 		servicePrincipals, err := client.ServicePrincipals().Get(*mockContext.Context)
@@ -41,7 +41,7 @@ func TestGetServicePrincipalList(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
 		registerServicePrincipalListMock(mockContext, http.StatusUnauthorized, nil)
 
-		client, err := creatGraphClient(mockContext)
+		client, err := createGraphClient(mockContext)
 		require.NoError(t, err)
 
 		res, err := client.ServicePrincipals().Get(*mockContext.Context)
@@ -61,7 +61,7 @@ func TestGetServicePrincipalById(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
 		registerServicePrincipalItemMock(mockContext, http.StatusOK, *expected.Id, &expected)
 
-		client, err := creatGraphClient(mockContext)
+		client, err := createGraphClient(mockContext)
 		require.NoError(t, err)
 
 		actual, err := client.ServicePrincipalById(*expected.Id).Get(*mockContext.Context)
@@ -76,7 +76,7 @@ func TestGetServicePrincipalById(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
 		registerServicePrincipalItemMock(mockContext, http.StatusNotFound, "bad-id", nil)
 
-		client, err := creatGraphClient(mockContext)
+		client, err := createGraphClient(mockContext)
 		require.NoError(t, err)
 
 		res, err := client.ServicePrincipalById("bad-id").Get(*mockContext.Context)
@@ -96,7 +96,7 @@ func TestCreateServicePrincipal(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
 		registerServicePrincipalCreateMock(mockContext, http.StatusCreated, &expected)
 
-		client, err := creatGraphClient(mockContext)
+		client, err := createGraphClient(mockContext)
 		require.NoError(t, err)
 
 		actual, err := client.ServicePrincipals().Post(*mockContext.Context, &expected)
@@ -111,7 +111,7 @@ func TestCreateServicePrincipal(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
 		registerServicePrincipalCreateMock(mockContext, http.StatusBadRequest, nil)
 
-		client, err := creatGraphClient(mockContext)
+		client, err := createGraphClient(mockContext)
 		require.NoError(t, err)
 
 		res, err := client.ServicePrincipals().Post(*mockContext.Context, &ServicePrincipal{})

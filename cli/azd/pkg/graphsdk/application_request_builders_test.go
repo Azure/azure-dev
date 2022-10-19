@@ -31,7 +31,7 @@ func TestGetApplicationList(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
 		registerApplicationListMock(mockContext, http.StatusOK, expected)
 
-		client, err := creatGraphClient(mockContext)
+		client, err := createGraphClient(mockContext)
 		require.NoError(t, err)
 
 		apps, err := client.Applications().Get(*mockContext.Context)
@@ -44,7 +44,7 @@ func TestGetApplicationList(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
 		registerApplicationListMock(mockContext, http.StatusUnauthorized, nil)
 
-		client, err := creatGraphClient(mockContext)
+		client, err := createGraphClient(mockContext)
 		require.NoError(t, err)
 
 		res, err := client.Applications().Get(*mockContext.Context)
@@ -65,7 +65,7 @@ func TestGetApplicationById(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
 		registerApplicationItemMock(mockContext, http.StatusOK, *expected.Id, &expected)
 
-		client, err := creatGraphClient(mockContext)
+		client, err := createGraphClient(mockContext)
 		require.NoError(t, err)
 
 		actual, err := client.ApplicationById(*expected.Id).Get(*mockContext.Context)
@@ -80,7 +80,7 @@ func TestGetApplicationById(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
 		registerApplicationItemMock(mockContext, http.StatusNotFound, "bad-id", nil)
 
-		client, err := creatGraphClient(mockContext)
+		client, err := createGraphClient(mockContext)
 		require.NoError(t, err)
 
 		res, err := client.ApplicationById("bad-id").Get(*mockContext.Context)
@@ -101,7 +101,7 @@ func TestCreateApplication(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
 		registerApplicationCreateMock(mockContext, http.StatusCreated, &expected)
 
-		client, err := creatGraphClient(mockContext)
+		client, err := createGraphClient(mockContext)
 		require.NoError(t, err)
 
 		actual, err := client.Applications().Post(*mockContext.Context, &expected)
@@ -116,7 +116,7 @@ func TestCreateApplication(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
 		registerApplicationCreateMock(mockContext, http.StatusBadRequest, nil)
 
-		client, err := creatGraphClient(mockContext)
+		client, err := createGraphClient(mockContext)
 		require.NoError(t, err)
 
 		res, err := client.Applications().Post(*mockContext.Context, &Application{})
@@ -143,7 +143,7 @@ func TestApplicationAddPassword(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
 		registerApplicationAddPasswordMock(mockContext, http.StatusOK, *app.Id, &mockCredential)
 
-		client, err := creatGraphClient(mockContext)
+		client, err := createGraphClient(mockContext)
 		require.NoError(t, err)
 
 		actual, err := client.ApplicationById(*app.Id).AddPassword(*mockContext.Context)
@@ -158,7 +158,7 @@ func TestApplicationAddPassword(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
 		registerApplicationAddPasswordMock(mockContext, http.StatusNotFound, "bad-app-id", nil)
 
-		client, err := creatGraphClient(mockContext)
+		client, err := createGraphClient(mockContext)
 		require.NoError(t, err)
 
 		actual, err := client.ApplicationById("bad-app-id").AddPassword(*mockContext.Context)
@@ -185,7 +185,7 @@ func TestApplicationRemovePassword(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
 		registerApplicationRemovePasswordMock(mockContext, http.StatusNoContent, *app.Id, &mockCredential)
 
-		client, err := creatGraphClient(mockContext)
+		client, err := createGraphClient(mockContext)
 		require.NoError(t, err)
 
 		err = client.ApplicationById(*app.Id).RemovePassword(*mockContext.Context, "key1")
@@ -196,7 +196,7 @@ func TestApplicationRemovePassword(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
 		registerApplicationRemovePasswordMock(mockContext, http.StatusNotFound, *app.Id, nil)
 
-		client, err := creatGraphClient(mockContext)
+		client, err := createGraphClient(mockContext)
 		require.NoError(t, err)
 
 		err = client.ApplicationById(*app.Id).RemovePassword(*mockContext.Context, "bad-key-id")
@@ -282,7 +282,7 @@ func registerApplicationRemovePasswordMock(
 	})
 }
 
-func creatGraphClient(mockContext *mocks.MockContext) (*GraphClient, error) {
+func createGraphClient(mockContext *mocks.MockContext) (*GraphClient, error) {
 	credential := identity.GetCredentials(*mockContext.Context)
 	clientOptions := createDefaultClientOptions(mockContext)
 

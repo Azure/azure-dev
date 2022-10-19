@@ -24,7 +24,7 @@ func TestGetMe(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
 		registerMeGetMock(mockContext, http.StatusOK, &expected)
 
-		client, err := creatGraphClient(mockContext)
+		client, err := createGraphClient(mockContext)
 		require.NoError(t, err)
 
 		actual, err := client.Me().Get(*mockContext.Context)
@@ -37,7 +37,7 @@ func TestGetMe(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
 		registerMeGetMock(mockContext, http.StatusUnauthorized, nil)
 
-		client, err := creatGraphClient(mockContext)
+		client, err := createGraphClient(mockContext)
 		require.NoError(t, err)
 
 		actual, err := client.Me().Get(*mockContext.Context)

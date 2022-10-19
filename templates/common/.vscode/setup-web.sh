@@ -1,47 +1,43 @@
 #!/usr/bin/env bash
 
-function codespacesPortUrl() {
-    local portNumber=$1
-    gh codespace ports \
-        -c "$CODESPACE_NAME" \
-        --json sourcePort,browseUrl \
-        --jq "map(select(.sourcePort == $portNumber))[0].browseUrl"
+# Stop script on non-zero exit code
+set -e
+# Stop script if unbound variable found (use ${var:-} if intentional)
+set -u
+
+say_error() {
+    printf "setup-api: ERROR: %b\n" "$1" >&2
 }
 
-function getEnvFile() { 
-    azd env list --output json | jq -r "map(select(.IsDefault == true))[].DotEnvPath"
+say() {
+    printf "setup-api: %b\n" "$1"
+}
+
+function getEnvFile() {
+    local envFile
+    envFile=$(azd env list --output json | jq -r "map(select(.IsDefault == true))[].DotEnvPath")
+
+    if [ ! $? ]; then 
+        say_error "Could not locate envFile: $envFile"
+        say_error "Resources may not be deployed. Use 'azd provision' to deploy resources."
+        exit 1
+    fi 
+    echo "$envFile"
 }
 
 envFile="$(getEnvFile)"
-backupEnvFile="$envFile.backup"
 debugEnvFile="$envFile.debug"
 
-if [ -f "$envFile" ]; then 
-    echo "Copying .env file to backup $envFile -> $backupEnvFile" 
-    cp "$envFile" "$backupEnvFile"
-fi
-
 if [ -f "$debugEnvFile" ]; then
-    echo "Existing debug envfile, using that $debugEnvFile -> $envFile"
-    mv "$debugEnvFile" "$envFile"
+    say "Existing debug envfile, no action necessary"
+    exit 0
 fi
 
-if [ "$CODESPACES" = 'true' ]; then
-    echo "Running in Codespaces. Setting port configurations."
-
-    webPortUrl=$(codespacesPortUrl 3000)
-    echo "azd env set REACT_APP_WEB_BASE_URL \"$webPortUrl\""
-    azd env set REACT_APP_WEB_BASE_URL "$webPortUrl"
-
-else 
-    echo "Running in local development mode. Setting port configurations"
-    
-    echo "azd env set REACT_APP_WEB_BASE_URL \"http://localhost:3000\""
-    azd env set REACT_APP_WEB_BASE_URL "http://localhost:3000"
+if [ ! -f "$envFile" ]; then 
+    say_error "Could not locate .env file: $envFile"
+    say_error "Try 'azd env refresh' if resources are already deployed or 'azd provision'"
+    exit 1
 fi
 
-echo "Moving .env file to .env.debug"
-mv -f "$envFile" "$debugEnvFile"
-
-echo "Restoring .env.backup"
-mv "$backupEnvFile" "$envFile"
+say "Could not locate debug env file ($debugEnvFile). Using default env file"
+cp "$envFile" "$debugEnvFile" 

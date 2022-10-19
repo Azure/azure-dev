@@ -76,9 +76,13 @@ export async function newEnvironment(context: IActionContext, selectedItem?: vsc
     };
 
     void executeInTerminal(command.build(), options);
+
+    // NOTE: We can't refresh the tree view because we don't know when creation is complete.
 }
 
-export async function refreshEnvironment(context: IActionContext, selectedFile?: vscode.Uri): Promise<void> {
+export async function refreshEnvironment(context: IActionContext, selectedItem?: vscode.Uri | TreeViewModel): Promise<void> {
+    const selectedEnvironment = isTreeViewModel(selectedItem) ? selectedItem.unwrap<AzureDevCliEnvironment>() : undefined;
+    const selectedFile = isTreeViewModel(selectedItem) ? selectedItem.unwrap<AzureDevCliEnvironments>().context.configurationFile : selectedItem;
     let folder: vscode.WorkspaceFolder | undefined = (selectedFile ? vscode.workspace.getWorkspaceFolder(selectedFile) : undefined);
     if (!folder) {
         folder = await quickPickWorkspaceFolder(context, localize('azure-dev.commands.util.needWorkspaceFolder', "To run '{0}' command you must first open a folder or workspace in VS Code", 'env refresh'));
@@ -91,6 +95,11 @@ export async function refreshEnvironment(context: IActionContext, selectedFile?:
         title: localize('azure-dev.commands.cli.env-refresh.refreshing', 'Refreshing environment values...'),
     };
     azureCli.commandBuilder.withArg('env').withArg('refresh');
+
+    if (selectedEnvironment) {
+        azureCli.commandBuilder.withNamedArg('--environment', selectedEnvironment.name);
+    }
+
     let errorMsg: string | undefined = undefined;
 
     await vscode.window.withProgress(progressOptions, async () => {

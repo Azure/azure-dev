@@ -7,7 +7,7 @@ import { createAzureDevCli } from '../../utils/azureDevCli';
 import { execAsync } from '../../utils/process';
 import { withTimeout } from '../../utils/withTimeout';
 import { AzureDevCliEnvironment } from './AzureDevCliEnvironment';
-import { AzureDevCliModel, AzureDevCliModelContext } from "./AzureDevCliModel";
+import { AzureDevCliModel, AzureDevCliModelContext, RefreshHandler } from "./AzureDevCliModel";
 
 type EnvListResults = {
     Name?: string;
@@ -15,10 +15,21 @@ type EnvListResults = {
     DotEnvPath?: string;
 }[];
 
+export interface AzureDevCliEnvironmentsModelContext extends AzureDevCliModelContext {
+    refreshEnvironments(): void;
+}
+
 export class AzureDevCliEnvironments implements AzureDevCliModel {
     constructor(
-        public readonly context: AzureDevCliModelContext) {
+        context: AzureDevCliModelContext,
+        refresh: RefreshHandler) {
+        this.context = {
+            ...context,
+            refreshEnvironments: () => refresh(this)
+        };
     }
+
+    readonly context: AzureDevCliEnvironmentsModelContext;
 
     async getChildren(): Promise<AzureDevCliModel[]> {
         return await callWithTelemetryAndErrorHandling(

@@ -51,8 +51,13 @@ export async function selectEnvironment(context: IActionContext, selectedItem?: 
     const azureCli = await createAzureDevCli(context);
     azureCli.commandBuilder.withArg('env').withArg('select').withQuotedArg(name);
     await spawnAsync(azureCli.commandBuilder.build(), azureCli.spawnOptions(cwd));
-    await vscode.window.showInformationMessage(
+    
+    void vscode.window.showInformationMessage(
         localize('azure-dev.commands.cli.env-select.environment-selected', "'{0}' is now the default environment", name));
+
+    if (selectedEnvironment) {
+        selectedEnvironment?.context.refreshEnvironments();
+    }
 }
 
 export async function newEnvironment(context: IActionContext, selectedItem?: vscode.Uri | TreeViewModel): Promise<void> {

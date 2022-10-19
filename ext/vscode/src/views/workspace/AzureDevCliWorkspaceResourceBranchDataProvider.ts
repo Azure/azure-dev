@@ -19,7 +19,7 @@ export class AzureDevCliWorkspaceResourceBranchDataProvider extends vscode.Dispo
     }
 
     getResourceItem(element: WorkspaceResource): AzureDevCliModel | Thenable<AzureDevCliModel> {
-        return new AzureDevCliApplication(element);
+        return new AzureDevCliApplication(element, model => this.onDidChangeTreeDataEmitter.fire(model));
     }
 
     createResourceItem?: (() => ProviderResult<WorkspaceResource>) | undefined;

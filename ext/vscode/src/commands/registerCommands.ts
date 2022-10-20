@@ -11,7 +11,7 @@ import { infraDelete } from './infra';
 import { up } from './up';
 import { down } from './down';
 import { monitor } from './monitor';
-import { selectEnvironment, newEnvironment, refreshEnvironment, editEnvironment } from './env';
+import { selectEnvironment, newEnvironment, refreshEnvironment, editEnvironment, deleteEnvironment } from './env';
 import { pipelineConfig } from './pipeline';
 import { getDotEnvFilePath } from './getDotEnvFilePath';
 import ext from '../ext';
@@ -27,6 +27,7 @@ export function registerCommands(): void {
     registerActivityCommand('azure-dev.commands.cli.up', up);
     registerActivityCommand('azure-dev.commands.cli.down', down);
     registerActivityCommand('azure-dev.commands.cli.monitor', monitor);
+    registerActivityCommand('azure-dev.commands.cli.env-delete', deleteEnvironment);
     registerActivityCommand('azure-dev.commands.cli.env-edit', editEnvironment);
     registerActivityCommand('azure-dev.commands.cli.env-select', selectEnvironment);
     registerActivityCommand('azure-dev.commands.cli.env-new', newEnvironment);

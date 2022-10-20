@@ -37,6 +37,8 @@
     "azure-dev.commands.cli.monitor.choose-pages": "What monitoring page(s) do you want to open?",
     "azure-dev.commands.cli.monitor.opening-pages": "Opening monitoring page(s)...",
 
+    "azure-dev.commands.cli.env-delete.title": "env delete (delete an environment)",
+
     "azure-dev.commands.cli.env-edit.title": "Edit .env file",
 
     "azure-dev.commands.cli.env-select.title": "env select (set default environment)",

@@ -25,6 +25,70 @@ export async function editEnvironment(context: IActionContext, selectedEnvironme
     }
 }
 
+export async function deleteEnvironment(context: IActionContext, selectedItem?: vscode.Uri | TreeViewModel): Promise<void> {
+    const selectedEnvironment = isTreeViewModel(selectedItem) ? selectedItem.unwrap<AzureDevCliEnvironment>() : undefined;
+    const selectedFile = isTreeViewModel(selectedItem) ? selectedItem.unwrap<AzureDevCliEnvironments>().context.configurationFile : selectedItem;
+    let folder: vscode.WorkspaceFolder | undefined = (selectedFile ? vscode.workspace.getWorkspaceFolder(selectedFile) : undefined);
+    if (!folder) {
+        folder = await quickPickWorkspaceFolder(context, localize('azure-dev.commands.util.needWorkspaceFolder', "To run '{0}' command you must first open a folder or workspace in VS Code", 'env select'));
+    }
+    const cwd = folder.uri.fsPath;
+
+    let name = selectedEnvironment?.name;
+
+    if (!name) {       
+        let envData: EnvironmentInfo[] = [];
+        try {
+            envData = await getEnvironments(context, cwd);
+        } catch(err) {
+            // Treated the same as no environments case
+        }
+        
+        if (envData.length === 0) {
+            void vscode.window.showInformationMessage(localize('azure-dev.commands.cli.env-delete.no-environments', 'There are no environments to delete.'));
+            return;
+        }
+        
+        const envChoices  = envData.map(d => ({ label: d.Name, data: d,} as IAzureQuickPickItem<EnvironmentInfo>));
+        const selectedEnv = await context.ui.showQuickPick(envChoices, {
+            canPickMany: false,
+            title: localize('azure-dev.commands.cli.env-delete.choose-environment', 'Which environment should be deleted?')
+        });
+
+        name = selectedEnv.data.Name;
+    }
+
+    const deleteOption: vscode.MessageItem = { title: localize('azure-dev.commands.cli.env-delete.delete', 'Delete') };
+
+    const result = await vscode.window.showWarningMessage(
+        localize('', 'Are you sure you want to delete the {0} environment?', name),
+        { modal: true },
+        deleteOption);
+
+    if (result === deleteOption) {
+        const environmentDirectory = vscode.Uri.joinPath(folder.uri, '.azure', name);
+        
+        await vscode.workspace.fs.delete(environmentDirectory, { recursive: true, useTrash: false });
+        
+        // TODO: Update default environment, if necessary.
+        
+        // TODO: Use Azure Dev CLI to delete environment.
+        // const azureCli = await createAzureDevCli(context);
+        // azureCli.commandBuilder.withArg('env').withArg('delete').withQuotedArg(name);
+        // await spawnAsync(azureCli.commandBuilder.build(), azureCli.spawnOptions(cwd));
+        
+        // TODO: What happens if default environment is deleted?
+        
+        void vscode.window.showInformationMessage(
+            localize('azure-dev.commands.cli.env-delete.environment-deleted', "'{0}' has been deleted.", name));
+            
+        if (selectedEnvironment) {
+            selectedEnvironment?.context.refreshEnvironments();
+        }
+    }
+}
+
+
 export async function selectEnvironment(context: IActionContext, selectedItem?: vscode.Uri | TreeViewModel): Promise<void> {
     const selectedEnvironment = isTreeViewModel(selectedItem) ? selectedItem.unwrap<AzureDevCliEnvironment>() : undefined;
     const selectedFile = isTreeViewModel(selectedItem) ? selectedItem.unwrap<AzureDevCliEnvironments>().context.configurationFile : selectedItem;
@@ -54,7 +118,7 @@ export async function selectEnvironment(context: IActionContext, selectedItem?: 
         const envChoices  = envData.map(d => ({ label: d.Name, data: d,} as IAzureQuickPickItem<EnvironmentInfo>));
         const selectedEnv = await context.ui.showQuickPick(envChoices, {
             canPickMany: false,
-            title: localize('azure-dev.commands.cli.env-select.choose-environment', 'What environment should be set as default?')
+            title: localize('azure-dev.commands.cli.env-select.choose-environment', 'Which environment should be set as default?')
         });
 
         name = selectedEnv.data.Name;
@@ -65,7 +129,7 @@ export async function selectEnvironment(context: IActionContext, selectedItem?: 
     await spawnAsync(azureCli.commandBuilder.build(), azureCli.spawnOptions(cwd));
     
     void vscode.window.showInformationMessage(
-        localize('azure-dev.commands.cli.env-select.environment-selected', "'{0}' is now the default environment", name));
+        localize('azure-dev.commands.cli.env-select.environment-selected', "'{0}' is now the default environment.", name));
 
     if (selectedEnvironment) {
         selectedEnvironment?.context.refreshEnvironments();

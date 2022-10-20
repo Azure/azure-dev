@@ -28,6 +28,7 @@
         "onCommand:azure-dev.commands.cli.up",
         "onCommand:azure-dev.commands.cli.down",
         "onCommand:azure-dev.commands.cli.monitor",
+        "onCommand:azure-dev.commands.cli.env-delete",
         "onCommand:azure-dev.commands.cli.env-edit",
         "onCommand:azure-dev.commands.cli.env-select",
         "onCommand:azure-dev.commands.cli.env-new",
@@ -86,6 +87,11 @@
                 "command": "azure-dev.commands.cli.monitor",
                 "title": "%azure-dev.commands.cli.monitor.title%",
                 "icon": "$(dashboard)"
+            },
+            {
+                "category": "%azure-dev.commands_category%",
+                "command": "azure-dev.commands.cli.env-delete",
+                "title": "%azure-dev.commands.cli.env-delete.title%"
             },
             {
                 "category": "%azure-dev.commands_category%",
@@ -248,6 +254,10 @@
                 },
                 {
                     "command": "azure-dev.commands.cli.env-edit",
+                    "when": "viewItem == ms-azuretools.azure-dev.views.workspace.environment"
+                },
+                {
+                    "command": "azure-dev.commands.cli.env-delete",
                     "when": "viewItem == ms-azuretools.azure-dev.views.workspace.environment"
                 }
             ]

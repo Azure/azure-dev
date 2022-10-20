@@ -143,7 +143,12 @@ func (m *monitorAction) Run(ctx context.Context) error {
 		// In Codespaces a $BROWSER environment variable is present whose value
 		// is an executable that launches the browser when called with the form:
 		// $BROWSER <url>
-		if envBrowser := os.Getenv("BROWSER"); len(envBrowser) > 0 {
+
+		const BrowserEnvVarName = "BROWSER"
+		isCodespaces := os.Getenv(CodespacesEnvVarName) == "true"
+		envBrowser := os.Getenv(BrowserEnvVarName)
+
+		if isCodespaces && len(envBrowser) > 0 {
 			fmt.Fprintf(m.console.Handles().Stdout, "Opening %s in the browser configured by $BROWSER...\n", url)
 
 			if err := exec.Command(envBrowser, url).Run(); err != nil {

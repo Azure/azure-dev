@@ -127,7 +127,7 @@ func Test_CreateOrUpdateServicePrincipal(t *testing.T) {
 		assertAzureCredentials(t, rawMessage)
 	})
 
-	// Tests the use case for an existing service principal that already has the requried role assignment.
+	// Tests the use case for an existing service principal that already has the required role assignment.
 	t.Run("RoleAssignmentExists", func(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
 		graphsdk_mocks.RegisterApplicationListMock(mockContext, http.StatusOK, []graphsdk.Application{existingApplication})

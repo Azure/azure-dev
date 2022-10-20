@@ -11,8 +11,6 @@ import { getAzDevTerminalTitle, selectApplicationTemplate, showReadmeFile } from
 import { TelemetryId } from '../telemetry/telemetryId';
 
 export async function init(context: IActionContext, selectedFile?: vscode.Uri, allSelectedFiles?: vscode.Uri): Promise<void> {
-    throw new Error('Failure!');
-
     let folder: vscode.WorkspaceFolder | undefined = (selectedFile ? vscode.workspace.getWorkspaceFolder(selectedFile) : undefined);
     if (!folder) {
         folder = await quickPickWorkspaceFolder(context, localize('azure-dev.commands.util.needWorkspaceFolder', "To run '{0}' command you must first open a folder or workspace in VS Code", 'init'));

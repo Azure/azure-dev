@@ -8,16 +8,9 @@ import { IActionContext, IAzureQuickPickItem, UserCancelledError } from '@micros
 import { localize } from '../localize';
 import { createAzureDevCli } from "../utils/azureDevCli";
 import { execAsync } from "../utils/process";
+import { fileExists } from '../utils/fileUtils';
 
 const AzureYamlGlobPattern: vscode.GlobPattern = '**/[aA][zZ][uU][rR][eE].[yY][aA][mM][lL]';
-
-async function fileExists(path: vscode.Uri): Promise<boolean> {
-    try {
-        return (await vscode.workspace.fs.stat(path)).type === vscode.FileType.File;
-    } catch {
-        return false;
-    }
-}
 
 // If the command was invoked with a specific file context, use the file context as the working directory for running Azure dev CLI commands.
 // Otherwise search the workspace for "azure.yaml" files. If only one is found, use it (i.e. its folder). If more than one is found, ask the user which one to use.

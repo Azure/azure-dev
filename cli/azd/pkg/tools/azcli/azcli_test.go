@@ -152,12 +152,12 @@ func runAndCaptureUserAgent(t *testing.T) string {
 	defaultRunner := exec.NewCommandRunner(os.Stdin, os.Stdout, os.Stderr)
 	mockContext := mocks.NewMockContext(context.Background())
 
-	azCli := NewAzCli(identity.GetCredentials(*mockContext.Context), NewAzCliArgs{
+	cli := NewAzCli(identity.GetCredentials(*mockContext.Context), NewAzCliArgs{
 		EnableDebug:     true,
 		EnableTelemetry: true,
 		CommandRunner:   mockContext.CommandRunner,
 	})
-	azCli.SetUserAgent(internal.MakeUserAgentString("AZTesting=yes"))
+	cli.SetUserAgent(internal.MakeUserAgentString("AZTesting=yes"))
 
 	stderrBuffer := &bytes.Buffer{}
 
@@ -176,9 +176,20 @@ func runAndCaptureUserAgent(t *testing.T) string {
 		return rr, err
 	})
 
+	// Since most of the az CLI commands have been refactored to use Go SDKs at this point
+	// We just want to verify that any left over commands still pass in the required user agent strings.
+	// Here we will just execute a custom command against the concrete CLI helper method
+	runArgs := exec.
+		NewRunArgs("az", "group", "show", "-g", "RESOURCE_GROUP").
+		WithDebug(true).
+		WithEnrichError(true)
+
+	// Cast to the concrete CLI so we can exec the common command
+	concreteCli := cli.(*azCli)
+
 	// the result doesn't matter here since we just want to see what the User-Agent is that we sent, which will
 	// happen regardless of whether the request succeeds or fails.
-	_, _ = azCli.ListSubscriptionDeploymentOperations(context.Background(), "SUBSCRIPTION_ID", "DEPLOYMENT_NAME")
+	_, _ = concreteCli.runAzCommandWithArgs(context.Background(), runArgs)
 
 	// The outputted line will look like this:
 	// DEBUG: cli.azure.cli.core.sdk.policies:     'User-Agent': 'AZURECLI/2.35.0 (MSI)

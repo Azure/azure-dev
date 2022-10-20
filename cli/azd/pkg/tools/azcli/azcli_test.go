@@ -178,7 +178,7 @@ func runAndCaptureUserAgent(t *testing.T) string {
 
 	// the result doesn't matter here since we just want to see what the User-Agent is that we sent, which will
 	// happen regardless of whether the request succeeds or fails.
-	_, _ = azCli.CreateOrUpdateServicePrincipal(context.Background(), "SUBSCRIPTION_ID", "APP_NAME", "ROLE_TO_ASSIGN")
+	_, _ = azCli.ListSubscriptionDeploymentOperations(context.Background(), "SUBSCRIPTION_ID", "DEPLOYMENT_NAME")
 
 	// The outputted line will look like this:
 	// DEBUG: cli.azure.cli.core.sdk.policies:     'User-Agent': 'AZURECLI/2.35.0 (MSI)

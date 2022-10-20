@@ -9,18 +9,22 @@ param keyVaultName string
 param serviceName string = 'api'
 param storageAccountName string
 
-module api '../../../../../common/infra/bicep/core/host/functions-dotnet-isolated.bicep' = {
-  name: '${serviceName}-functions-csharp-module'
+module api '../../../../../common/infra/bicep/core/host/functions.bicep' = {
+  name: '${serviceName}-functions-dotnet-isolated-module'
   params: {
     environmentName: environmentName
     location: location
     allowedOrigins: allowedOrigins
+    alwaysOn: false
     appSettings: appSettings
     applicationInsightsName: applicationInsightsName
     appServicePlanId: appServicePlanId
     keyVaultName: keyVaultName
+    runtimeName: 'dotnet-isolated'
+    runtimeVersion: '6.0'
     serviceName: serviceName
     storageAccountName: storageAccountName
+    scmDoBuildDuringDeployment: false
   }
 }
 

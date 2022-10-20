@@ -60,7 +60,7 @@ repo:
         patterns:
           - "**/resources.bicep"
 
-      - from: api-functions-csharp.bicep
+      - from: api-functions-dotnet-isolated.bicep
         to: api.bicep
         patterns:
           - "**/resources.bicep"
@@ -83,7 +83,7 @@ repo:
     - from: ../../../../common/infra/bicep/app/web-staticwebapp.bicep
       to: ./infra/app/web.bicep
 
-    - from: ../../../../common/infra/bicep/app/api-functions-csharp.bicep
+    - from: ../../../../common/infra/bicep/app/api-functions-dotnet-isolated.bicep
       to: ./infra/app/api.bicep
 
     - from: ../../../../common/infra/bicep/app/sqlserver.bicep

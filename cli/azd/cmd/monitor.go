@@ -140,6 +140,8 @@ func (m *monitorAction) Run(ctx context.Context) error {
 	}
 
 	openWithDefaultBrowser := func(url string) {
+		fmt.Fprintf(m.console.Handles().Stdout, "Opening %s in the default browser...\n", url)
+
 		// In Codespaces and devcontainers a $BROWSER environment variable is
 		// present whose value is an executable that launches the browser when
 		// called with the form:
@@ -148,15 +150,12 @@ func (m *monitorAction) Run(ctx context.Context) error {
 		const BrowserEnvVarName = "BROWSER"
 
 		if envBrowser := os.Getenv(BrowserEnvVarName); len(envBrowser) > 0 {
-			fmt.Fprintf(m.console.Handles().Stdout, "Opening %s in the browser configured by $BROWSER...\n", url)
-
 			if err := exec.Command(envBrowser, url).Run(); err != nil {
 				fmt.Fprintf(m.console.Handles().Stderr, "warning: failed to open browser configured by $BROWSER: %s\n", err.Error())
 			}
 			return
 		}
 
-		fmt.Fprintf(m.console.Handles().Stdout, "Opening %s in the default browser...\n", url)
 		if err := browser.OpenURL(url); err != nil {
 			fmt.Fprintf(m.console.Handles().Stderr, "warning: failed to open default browser: %s\n", err.Error())
 		}

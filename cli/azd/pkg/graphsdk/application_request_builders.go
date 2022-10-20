@@ -14,7 +14,7 @@ type ApplicationListRequestBuilder struct {
 	*EntityListRequestBuilder[ApplicationListRequestBuilder]
 }
 
-func newApplicationsRequestBuilder(client *GraphClient) *ApplicationListRequestBuilder {
+func NewApplicationsRequestBuilder(client *GraphClient) *ApplicationListRequestBuilder {
 	builder := &ApplicationListRequestBuilder{}
 	builder.EntityListRequestBuilder = newEntityListRequestBuilder(builder, client)
 
@@ -67,7 +67,7 @@ type ApplicationItemRequestBuilder struct {
 	*EntityItemRequestBuilder[ApplicationItemRequestBuilder]
 }
 
-func newApplicationItemRequestBuilder(client *GraphClient, id string) *ApplicationItemRequestBuilder {
+func NewApplicationItemRequestBuilder(client *GraphClient, id string) *ApplicationItemRequestBuilder {
 	builder := &ApplicationItemRequestBuilder{}
 	builder.EntityItemRequestBuilder = newEntityItemRequestBuilder(builder, client, id)
 

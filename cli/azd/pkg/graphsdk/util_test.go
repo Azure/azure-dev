@@ -1,4 +1,4 @@
-package graphsdk
+package graphsdk_test
 
 import (
 	"context"
@@ -10,7 +10,9 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
+	"github.com/azure/azure-dev/cli/azd/pkg/graphsdk"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
+	graphsdk_mocks "github.com/azure/azure-dev/cli/azd/test/mocks/graphsdk"
 	"github.com/stretchr/testify/require"
 )
 
@@ -28,7 +30,7 @@ func TestNewPipeline(t *testing.T) {
 
 	ran := false
 	expectedScopes := []string{
-		fmt.Sprintf("%s/.default", serviceConfig.Audience),
+		fmt.Sprintf("%s/.default", graphsdk.ServiceConfig.Audience),
 	}
 
 	credential := mocks.MockCredentials{
@@ -43,12 +45,12 @@ func TestNewPipeline(t *testing.T) {
 		},
 	}
 
-	clientOptions := createDefaultClientOptions(mockContext)
-	pipeline := NewPipeline(&credential, serviceConfig, clientOptions)
+	clientOptions := graphsdk_mocks.CreateDefaultClientOptions(mockContext)
+	pipeline := graphsdk.NewPipeline(&credential, graphsdk.ServiceConfig, clientOptions)
 	require.False(t, ran)
 	require.NotNil(t, pipeline)
 
-	req, err := runtime.NewRequest(*mockContext.Context, http.MethodGet, serviceConfig.Endpoint)
+	req, err := runtime.NewRequest(*mockContext.Context, http.MethodGet, graphsdk.ServiceConfig.Endpoint)
 	require.NoError(t, err)
 
 	_, err = pipeline.Do(req)

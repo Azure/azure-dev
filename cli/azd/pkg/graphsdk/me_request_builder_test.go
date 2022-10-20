@@ -1,18 +1,19 @@
-package graphsdk
+package graphsdk_test
 
 import (
 	"context"
 	"net/http"
-	"strings"
 	"testing"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/graphsdk"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
+	graphsdk_mocks "github.com/azure/azure-dev/cli/azd/test/mocks/graphsdk"
 	"github.com/stretchr/testify/require"
 )
 
 func TestGetMe(t *testing.T) {
 	t.Run("Success", func(t *testing.T) {
-		expected := UserProfile{
+		expected := graphsdk.UserProfile{
 			Id:                "user1",
 			GivenName:         "John",
 			Surname:           "Doe",
@@ -22,9 +23,9 @@ func TestGetMe(t *testing.T) {
 		}
 
 		mockContext := mocks.NewMockContext(context.Background())
-		registerMeGetMock(mockContext, http.StatusOK, &expected)
+		graphsdk_mocks.RegisterMeGetMock(mockContext, http.StatusOK, &expected)
 
-		client, err := createGraphClient(mockContext)
+		client, err := graphsdk_mocks.CreateGraphClient(mockContext)
 		require.NoError(t, err)
 
 		actual, err := client.Me().Get(*mockContext.Context)
@@ -35,25 +36,13 @@ func TestGetMe(t *testing.T) {
 
 	t.Run("Error", func(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
-		registerMeGetMock(mockContext, http.StatusUnauthorized, nil)
+		graphsdk_mocks.RegisterMeGetMock(mockContext, http.StatusUnauthorized, nil)
 
-		client, err := createGraphClient(mockContext)
+		client, err := graphsdk_mocks.CreateGraphClient(mockContext)
 		require.NoError(t, err)
 
 		actual, err := client.Me().Get(*mockContext.Context)
 		require.Error(t, err)
 		require.Nil(t, actual)
-	})
-}
-
-func registerMeGetMock(mockContext *mocks.MockContext, statusCode int, userProfile *UserProfile) {
-	mockContext.HttpClient.When(func(request *http.Request) bool {
-		return request.Method == http.MethodGet && strings.Contains(request.URL.Path, "/me")
-	}).RespondFn(func(request *http.Request) (*http.Response, error) {
-		if userProfile == nil {
-			return mocks.CreateEmptyHttpResponse(request, statusCode)
-		}
-
-		return mocks.CreateHttpResponseWithBody(request, statusCode, userProfile)
 	})
 }

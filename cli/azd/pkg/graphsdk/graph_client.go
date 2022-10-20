@@ -19,11 +19,11 @@ func NewGraphClient(
 		options = &azcore.ClientOptions{}
 	}
 
-	pipeline := NewPipeline(credential, serviceConfig, options)
+	pipeline := NewPipeline(credential, ServiceConfig, options)
 
 	return &GraphClient{
 		pipeline: pipeline,
-		host:     serviceConfig.Endpoint,
+		host:     ServiceConfig.Endpoint,
 	}, nil
 }
 
@@ -35,19 +35,19 @@ func (c *GraphClient) Me() *MeItemRequestBuilder {
 // Applications
 
 func (c *GraphClient) Applications() *ApplicationListRequestBuilder {
-	return newApplicationsRequestBuilder(c)
+	return NewApplicationsRequestBuilder(c)
 }
 
 func (c *GraphClient) ApplicationById(id string) *ApplicationItemRequestBuilder {
-	return newApplicationItemRequestBuilder(c, id)
+	return NewApplicationItemRequestBuilder(c, id)
 }
 
 // ServicePrincipals
 
 func (c *GraphClient) ServicePrincipals() *ServicePrincipalListRequestBuilder {
-	return newServicePrincipalListRequestBuilder(c)
+	return NewServicePrincipalListRequestBuilder(c)
 }
 
 func (c *GraphClient) ServicePrincipalById(id string) *ServicePrincipalItemRequestBuilder {
-	return newServicePrincipalItemRequestBuilder(c, id)
+	return NewServicePrincipalItemRequestBuilder(c, id)
 }

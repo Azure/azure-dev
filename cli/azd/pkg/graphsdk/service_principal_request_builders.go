@@ -9,7 +9,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
 )
 
-func newServicePrincipalListRequestBuilder(client *GraphClient) *ServicePrincipalListRequestBuilder {
+func NewServicePrincipalListRequestBuilder(client *GraphClient) *ServicePrincipalListRequestBuilder {
 	builder := &ServicePrincipalListRequestBuilder{}
 	builder.EntityListRequestBuilder = newEntityListRequestBuilder(builder, client)
 
@@ -69,7 +69,7 @@ type ServicePrincipalItemRequestBuilder struct {
 	*EntityItemRequestBuilder[ServicePrincipalItemRequestBuilder]
 }
 
-func newServicePrincipalItemRequestBuilder(client *GraphClient, id string) *ServicePrincipalItemRequestBuilder {
+func NewServicePrincipalItemRequestBuilder(client *GraphClient, id string) *ServicePrincipalItemRequestBuilder {
 	builder := &ServicePrincipalItemRequestBuilder{}
 	builder.EntityItemRequestBuilder = newEntityItemRequestBuilder(builder, client, id)
 

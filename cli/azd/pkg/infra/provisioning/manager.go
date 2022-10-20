@@ -282,7 +282,7 @@ func (m *Manager) runAction(
 ) error {
 	var spinner *spin.Spinner
 
-	if interactive {
+	if interactive && (m.formatter == nil || m.formatter.Kind() != output.JsonFormat) {
 		spinner, ctx = spin.GetOrCreateSpinner(ctx, m.console.Handles().Stdout, title)
 		defer spinner.Stop()
 		defer m.console.SetWriter(nil)

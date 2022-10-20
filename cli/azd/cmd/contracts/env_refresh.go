@@ -6,13 +6,8 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 )
 
-const (
-	EnvRefreshResultType = "envRefreshResult"
-)
-
 // EnvRefreshResult is the contract for the output of `azd env refresh`.
 type EnvRefreshResult struct {
-	Type      string                               `json:"type"`
 	Outputs   map[string]EnvRefreshOutputParameter `json:"outputs"`
 	Resources []EnvRefreshResource                 `json:"resources"`
 }
@@ -43,9 +38,7 @@ type EnvRefreshResource struct {
 // NewEnvRefreshResultFromProvisioningState creates a EnvRefreshResult from a provisioning state object,
 // applying the required translations.
 func NewEnvRefreshResultFromProvisioningState(state *provisioning.State) EnvRefreshResult {
-	result := EnvRefreshResult{
-		Type: EnvRefreshResultType,
-	}
+	result := EnvRefreshResult{}
 
 	result.Outputs = make(map[string]EnvRefreshOutputParameter, len(state.Outputs))
 	result.Resources = make([]EnvRefreshResource, len(state.Resources))

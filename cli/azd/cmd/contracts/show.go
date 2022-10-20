@@ -2,10 +2,6 @@
 // Licensed under the MIT License.
 package contracts
 
-const (
-	ShowResultType string = "showResult"
-)
-
 // ShowType are the values for the language property of a ShowServiceProject
 type ShowType string
 
@@ -17,7 +13,6 @@ const (
 
 // ShowResult is the contract for the output of `azd show`
 type ShowResult struct {
-	Type     string                 `json:"type"`
 	Name     string                 `json:"name"`
 	Services map[string]ShowService `json:"services"`
 }

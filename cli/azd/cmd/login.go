@@ -91,9 +91,7 @@ func (la *loginAction) Run(ctx context.Context) error {
 		}
 	}
 
-	res := contracts.LoginResult{
-		Type: contracts.LoginResultType,
-	}
+	res := contracts.LoginResult{}
 
 	if token, err := la.azCli.GetAccessToken(ctx); errors.Is(err, azcli.ErrAzCliNotLoggedIn) ||
 		errors.Is(err, azcli.ErrAzCliRefreshTokenExpired) {

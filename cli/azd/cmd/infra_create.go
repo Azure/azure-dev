@@ -161,9 +161,11 @@ func (i *infraCreateAction) Run(ctx context.Context) error {
 		}
 	}
 
-	resourceGroupName, err := project.GetResourceGroupName(ctx, prj, env)
-	if err == nil { // Presentation only -- skip print if we failed to resolve the resource group
-		i.displayResourceGroupCreatedMessage(ctx, i.console, env.GetSubscriptionId(), resourceGroupName)
+	if i.formatter.Kind() != output.JsonFormat {
+		resourceGroupName, err := project.GetResourceGroupName(ctx, prj, env)
+		if err == nil { // Presentation only -- skip print if we failed to resolve the resource group
+			i.displayResourceGroupCreatedMessage(ctx, i.console, env.GetSubscriptionId(), resourceGroupName)
+		}
 	}
 
 	if i.formatter.Kind() == output.JsonFormat {

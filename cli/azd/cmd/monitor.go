@@ -160,7 +160,6 @@ func (m *monitorAction) Run(ctx context.Context) error {
 		if err := browser.OpenURL(url); err != nil {
 			fmt.Fprintf(m.console.Handles().Stderr, "warning: failed to open default browser: %s\n", err.Error())
 		}
-
 	}
 
 	for _, insightsResource := range insightsResources {

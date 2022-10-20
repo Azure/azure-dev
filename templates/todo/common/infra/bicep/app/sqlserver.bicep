@@ -9,7 +9,7 @@ param sqlAdminPassword string
 @secure()
 param appUserPassword string
 
-module sqlServer '../../../../../common/infra/bicep/core/database/sqlserver.bicep' = {
+module sqlServer '../../../../../common/infra/bicep/core/database/sqlserver/sqlserver.bicep' = {
   name: 'sqlserver'
   params: {
     environmentName: environmentName

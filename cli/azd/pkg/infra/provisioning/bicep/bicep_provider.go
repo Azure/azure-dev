@@ -449,17 +449,19 @@ func (p *BicepProvider) purgeItems(
 ) error {
 	if !options.Purge() {
 		var itemString string
-		itemsWarning := "\nThis operation will delete: \n "
+		itemsWarning := "\n\nThis operation will delete:"
 		for _, v := range items {
-			if itemString != "" {
-				itemString = itemString + "/" + v.resourceType
-			} else {
-				itemString = v.resourceType
+			if v.count != 0 {
+				if itemString != "" {
+					itemString = itemString + "/" + v.resourceType
+				} else {
+					itemString = v.resourceType
+				}
+				itemsWarning = itemsWarning + fmt.Sprintf("\n				%d %s", v.count, v.resourceType)
 			}
-			itemsWarning = itemsWarning + fmt.Sprintf("%d %s\n", v.count, v.resourceType)
 		}
-		itemsWarning = itemsWarning + fmt.Sprintf("These %s have soft delete enabled "+
-			"allowing them to be recovered for a period \n"+
+		itemsWarning = itemsWarning + fmt.Sprintf("\nThese %s have soft delete enabled "+
+			"allowing them to be recovered for a period "+
 			"of time after deletion. During this period, their names may not be reused.\n"+
 			"You can use argument --purge to skip this confirmation.\n\n", itemString)
 

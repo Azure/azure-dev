@@ -29,9 +29,8 @@ type Console interface {
 }
 
 type AskerConsole struct {
-	interactive bool
-	asker       Asker
-	handles     ConsoleHandles
+	asker   Asker
+	handles ConsoleHandles
 	// the writer the console was constructed with, and what we reset to when SetWriter(nil) is called.
 	defaultWriter io.Writer
 	// the writer which output is written to.
@@ -63,8 +62,8 @@ func (c *AskerConsole) SetWriter(writer io.Writer) {
 
 // Prints out a message to the underlying console write
 func (c *AskerConsole) Message(ctx context.Context, message string) {
-	// Only write to the console during interactive & non-formatted responses.
-	if c.interactive && (c.formatter == nil || c.formatter.Kind() == output.NoneFormat) {
+	// Disable output when formatting is enabled
+	if c.formatter == nil || c.formatter.Kind() == output.NoneFormat {
 		fmt.Fprintln(c.writer, message)
 	} else {
 		log.Println(message)
@@ -140,11 +139,10 @@ func (c *AskerConsole) Handles() ConsoleHandles {
 }
 
 // Creates a new console with the specified writer, handles and formatter.
-func NewConsole(interactive bool, isTerminal bool, w io.Writer, handles ConsoleHandles, formatter output.Formatter) Console {
-	asker := NewAsker(!interactive, isTerminal, handles.Stdout, handles.Stdin)
+func NewConsole(noPrompt bool, isTerminal bool, w io.Writer, handles ConsoleHandles, formatter output.Formatter) Console {
+	asker := NewAsker(noPrompt, isTerminal, handles.Stdout, handles.Stdin)
 
 	return &AskerConsole{
-		interactive:   interactive,
 		asker:         asker,
 		handles:       handles,
 		defaultWriter: w,

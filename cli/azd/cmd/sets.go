@@ -51,7 +51,7 @@ func newConsoleFromOptions(
 		cmd.InOrStdin() == os.Stdin && isatty.IsTerminal(os.Stdin.Fd()) &&
 		isatty.IsTerminal(os.Stdout.Fd())
 
-	return input.NewConsole(!rootOptions.NoPrompt, isTerminal, writer, input.ConsoleHandles{
+	return input.NewConsole(rootOptions.NoPrompt, isTerminal, writer, input.ConsoleHandles{
 		Stdin:  cmd.InOrStdin(),
 		Stdout: cmd.OutOrStdout(),
 		Stderr: cmd.ErrOrStderr(),

@@ -7,16 +7,24 @@ import { TelemetryId } from '../telemetry/telemetryId';
 import { createAzureDevCli } from '../utils/azureDevCli';
 import { executeAsTask } from '../utils/executeAsTask';
 import { isTreeViewModel, TreeViewModel } from '../utils/isTreeViewModel';
-import { AzureDevCliServices } from '../views/workspace/AzureDevCliServices';
+import { AzureDevCliModel } from '../views/workspace/AzureDevCliModel';
+import { AzureDevCliService } from '../views/workspace/AzureDevCliService';
 import { getAzDevTerminalTitle, getWorkingFolder } from './cmdUtil';
 
 export async function restore(context: IActionContext, selectedItem?: vscode.Uri | TreeViewModel): Promise<void> {
-    const selectedFile = isTreeViewModel(selectedItem) ? selectedItem.unwrap<AzureDevCliServices>().context.configurationFile : selectedItem;
+    const selectedModel = isTreeViewModel(selectedItem) ? selectedItem.unwrap<AzureDevCliModel>() : undefined;
+    const selectedFile = isTreeViewModel(selectedItem) ? selectedItem.unwrap<AzureDevCliModel>().context.configurationFile : selectedItem;
     const workingFolder = await getWorkingFolder(context, selectedFile);
 
     const azureCli = await createAzureDevCli(context);
 
-    const command = azureCli.commandBuilder.withArg('restore').build();
+    const commandBuilder = azureCli.commandBuilder.withArg('restore');
+
+    if (selectedModel instanceof AzureDevCliService) {
+        commandBuilder.withNamedArg('--service', selectedModel.name);
+    }
+
+    const command = commandBuilder.build();
 
     void executeAsTask(command, getAzDevTerminalTitle(), {
         alwaysRunNew: true,

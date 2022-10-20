@@ -263,6 +263,10 @@
                 {
                     "command": "azure-dev.commands.cli.restore",
                     "when": "viewItem == ms-azuretools.azure-dev.views.workspace.services"
+                },
+                {
+                    "command": "azure-dev.commands.cli.restore",
+                    "when": "viewItem == ms-azuretools.azure-dev.views.workspace.service"
                 }
             ]
         },

@@ -4,7 +4,7 @@ import { AzureDevCliModel, AzureDevCliModelContext } from "./AzureDevCliModel";
 export class AzureDevCliService implements AzureDevCliModel {
     constructor(
         public readonly context: AzureDevCliModelContext,
-        private readonly name: string) {
+        public readonly name: string) {
     }
 
     getChildren(): AzureDevCliModel[] {
@@ -14,6 +14,7 @@ export class AzureDevCliService implements AzureDevCliModel {
     getTreeItem(): vscode.TreeItem {
         const treeItem = new vscode.TreeItem(this.name);
 
+        treeItem.contextValue = 'ms-azuretools.azure-dev.views.workspace.service';
         treeItem.iconPath = new vscode.ThemeIcon('symbol-interface');
 
         return treeItem;

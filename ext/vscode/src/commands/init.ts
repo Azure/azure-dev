@@ -22,12 +22,12 @@ export async function init(context: IActionContext, selectedFile?: vscode.Uri, a
     const command = azureCli.commandBuilder
         .withArg('init')
         .withNamedArg('-t', {value: templateUrl, quoting: vscode.ShellQuoting.Strong});
-    const workspacePath = folder?.uri.fsPath;
+    const workspacePath = folder?.uri;
 
     // Don't wait
     void executeAsTask(command.build(), getAzDevTerminalTitle(), {
         alwaysRunNew: true,
-        cwd: workspacePath,
+        cwd: workspacePath.fsPath,
         env: azureCli.env
     }, TelemetryId.InitCli).then(() => {
         void showReadmeFile(workspacePath);

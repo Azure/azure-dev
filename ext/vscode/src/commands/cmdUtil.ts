@@ -2,7 +2,6 @@
 // Licensed under the MIT License.
 
 import * as vscode from 'vscode';
-import * as fse from 'fs-extra';
 import * as path from 'path';
 import { createHash } from 'crypto';
 import { IActionContext, IAzureQuickPickItem, UserCancelledError } from '@microsoft/vscode-azext-utils';
@@ -11,6 +10,14 @@ import { createAzureDevCli } from "../utils/azureDevCli";
 import { execAsync } from "../utils/process";
 
 const AzureYamlGlobPattern: vscode.GlobPattern = '**/[aA][zZ][uU][rR][eE].[yY][aA][mM][lL]';
+
+async function fileExists(path: vscode.Uri): Promise<boolean> {
+    try {
+        return (await vscode.workspace.fs.stat(path)).type === vscode.FileType.File;
+    } catch {
+        return false;
+    }
+}
 
 // If the command was invoked with a specific file context, use the file context as the working directory for running Azure dev CLI commands.
 // Otherwise search the workspace for "azure.yaml" files. If only one is found, use it (i.e. its folder). If more than one is found, ask the user which one to use.
@@ -37,13 +44,15 @@ export async function getWorkingFolder(context: IActionContext, selectedFile?: v
             throw new UserCancelledError();
         }
 
-        folderPath = localFolderUris[0].fsPath;
+        const folderUri = localFolderUris[0];
+        const azureYamlUri = vscode.Uri.joinPath(folderUri, 'azure.yaml');
 
-        const azureYamlPath = path.join(folderPath, 'azure.yaml');
-        if (!await fse.pathExists(azureYamlPath)) {
+        if (!await fileExists(azureYamlUri)) {
             context.errorHandling.suppressReportIssue = true;
             throw new Error(localize('azure-dev.commands.util.noAzureYamlFile', "The selected folder does not contain 'azure.yaml' file and cannot be used to run Azure Developer CLI commands"));
         }
+
+        folderPath = folderUri.fsPath;
     }
 
     return folderPath;
@@ -137,7 +146,7 @@ function sha256(s: string): string {
     return retval;
 }
 
-export async function showReadmeFile(folder: string | undefined): Promise<void> {
+export async function showReadmeFile(folder: vscode.Uri | undefined): Promise<void> {
     // The whole action is "best effort" -- if folder/file do not exist, just do nothing.
 
     if (!folder) {
@@ -147,9 +156,9 @@ export async function showReadmeFile(folder: string | undefined): Promise<void> 
     const candidates: string[] = ["README.md", "README.MD", "readme.md"];
 
     for (const fname of candidates) {
-        const fullPath = path.join(folder, fname);
-        if (await fse.pathExists(fullPath)) {
-            void vscode.commands.executeCommand('markdown.showPreview', vscode.Uri.file(fullPath), { 'sideBySide': false });
+        const fullPath = vscode.Uri.joinPath(folder, fname);
+        if (await fileExists(fullPath)) {
+            void vscode.commands.executeCommand('markdown.showPreview', fullPath, { 'sideBySide': false });
             return;
         }
     }

@@ -7,11 +7,15 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
+	"path"
 	"strings"
 	"testing"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
+	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
+	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/stretchr/testify/require"
@@ -108,30 +112,57 @@ func TestScopeGetDeployment(t *testing.T) {
 }
 
 func TestScopeDeploy(t *testing.T) {
-	deployment := azcli.AzCliDeploymentResult{}
-	deploymentBytes, _ := json.Marshal(deployment)
+	tmpPath := t.TempDir()
+	parametersPath := path.Join(tmpPath, "params.json")
+	createTmpFile := os.WriteFile(parametersPath, []byte(testArmParametersFile), osutil.PermissionFile)
+	require.NoError(t, createTmpFile)
 
 	t.Run("SubscriptionScopeSuccess", func(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
-		mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
-			return strings.Contains(command, "az deployment sub create")
-		}).Respond(exec.NewRunResult(0, string(deploymentBytes), ""))
+		mockContext.HttpClient.When(func(request *http.Request) bool {
+			return request.Method == http.MethodPut && strings.Contains(
+				request.URL.Path,
+				"/subscriptions/SUBSCRIPTION_ID/providers/Microsoft.Resources/deployments/DEPLOYMENT_NAME",
+			)
+		}).RespondFn(func(request *http.Request) (*http.Response, error) {
+			return &http.Response{
+				StatusCode: http.StatusCreated,
+				Body:       io.NopCloser(bytes.NewBuffer([]byte(testArmResponse))),
+				Request: &http.Request{
+					Method: http.MethodGet,
+				},
+			}, nil
+		})
 
 		scope := NewSubscriptionScope(*mockContext.Context, "eastus2", "SUBSCRIPTION_ID", "DEPLOYMENT_NAME")
 
-		err := scope.Deploy(*mockContext.Context, "/path/to/template.bicep", "path/to/params.json")
+		armTemplate := azure.ArmTemplate(testArmTemplate)
+		err := scope.Deploy(*mockContext.Context, &armTemplate, parametersPath)
 		require.NoError(t, err)
 	})
 
 	t.Run("ResourceGroupScopeSuccess", func(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
-		mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
-			return strings.Contains(command, "az deployment group create")
-		}).Respond(exec.NewRunResult(0, string(deploymentBytes), ""))
+		mockContext.HttpClient.When(func(request *http.Request) bool {
+			return request.Method == http.MethodPut && strings.Contains(
+				request.URL.Path,
+				"/subscriptions/SUBSCRIPTION_ID/resourcegroups/RESOURCE_GROUP/providers/"+
+					"Microsoft.Resources/deployments/DEPLOYMENT_NAME",
+			)
+		}).RespondFn(func(request *http.Request) (*http.Response, error) {
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Body:       io.NopCloser(bytes.NewBuffer([]byte(testArmResponse))),
+				Request: &http.Request{
+					Method: http.MethodGet,
+				},
+			}, nil
+		})
 
 		scope := NewResourceGroupScope(*mockContext.Context, "SUBSCRIPTION_ID", "RESOURCE_GROUP", "DEPLOYMENT_NAME")
 
-		err := scope.Deploy(*mockContext.Context, "/path/to/template.bicep", "path/to/params.json")
+		armTemplate := azure.ArmTemplate(testArmTemplate)
+		err := scope.Deploy(*mockContext.Context, &armTemplate, parametersPath)
 		require.NoError(t, err)
 	})
 }
@@ -166,3 +197,56 @@ func TestScopeGetResourceOperations(t *testing.T) {
 		require.Len(t, operations, 0)
 	})
 }
+
+var testArmResponse string = `{
+	"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/providers/Microsoft.Resources/deployments/foo",
+	"name":"foo",
+	"type":"Microsoft.Resources/deployments",
+	"location":"westus3",
+	"properties":{
+		"templateHash":"10006264233799735596",
+		"parameters":{
+			"environmentName":{"type":"String","value":"foo"},
+			"location":{"type":"String","value":"westus3"}
+		}
+	}
+}
+`
+
+var testArmParametersFile string = `{
+	"parameters": {
+		"location": {
+			"value": "West US"
+		}
+	}
+}`
+
+var testArmTemplate string = `{
+"$schema": "https://schema.management.azure.com/schemas/2015-01-01/deploymentTemplate.json#",
+"contentVersion": "1.0.0.0",
+"parameters": {
+	"location": {
+	"type": "string",
+	"allowedValues": [
+		"East US"
+	],
+	"metadata": {
+		"description": "Location to deploy to"
+	}
+	}
+},
+"resources": [
+	{
+	"type": "Microsoft.Compute/availabilitySets",
+	"name": "availabilitySet1",
+	"apiVersion": "2019-07-01",
+	"location": "[parameters('location')]",
+	"properties": {}
+	}
+],
+"outputs": {
+	"parameter": {
+	"type": "object",
+	"value": "[reference('Microsoft.Compute/availabilitySets/availabilitySet1')]"
+	}
+}}`

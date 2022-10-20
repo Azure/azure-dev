@@ -3,13 +3,13 @@ param location string = resourceGroup().location
 
 param keyVaultName string
 
-module cosmos 'cosmos-account.bicep' = {
+module cosmos '../../cosmos/cosmos-account.bicep' = {
   name: 'cosmos-account'
   params: {
     environmentName: environmentName
     location: location
     keyVaultName: keyVaultName
-    kind: 'GlobalDocumentDB'
+    kind: 'MongoDB'
   }
 }
 

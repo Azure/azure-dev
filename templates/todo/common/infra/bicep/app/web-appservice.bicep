@@ -5,8 +5,9 @@ param serviceName string = 'web'
 param appCommandLine string = 'pm2 serve /home/site/wwwroot --no-daemon --spa'
 param applicationInsightsName string = ''
 param appServicePlanId string
+param appSettings object = {}
 
-module web '../../../../../common/infra/bicep/core/host/appservice-node.bicep' = {
+module web '../../../../../common/infra/bicep/core/host/appservice.bicep' = {
   name: '${serviceName}-appservice-node-module'
   params: {
     environmentName: environmentName
@@ -15,6 +16,9 @@ module web '../../../../../common/infra/bicep/core/host/appservice-node.bicep' =
     appCommandLine: appCommandLine
     applicationInsightsName: applicationInsightsName
     appServicePlanId: appServicePlanId
+    appSettings: appSettings
+    runtimeName: 'node'
+    runtimeVersion: '16-lts'
   }
 }
 

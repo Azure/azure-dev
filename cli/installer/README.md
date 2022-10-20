@@ -47,7 +47,7 @@ powershell -ex AllSigned -c "Invoke-RestMethod 'https://aka.ms/install-azd.ps1' 
 #### Linux/MacOS
 
 ```bash
-curl -fsSL https://aka.ms/install-azd.sh | bash -s -- --version daily
+curl -fsSL https://aka.ms/install-azd.sh | bash -s -- --version daily
 ```
 
 ### Download Windows installer (PowerShell)

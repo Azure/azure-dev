@@ -6,9 +6,12 @@ import * as vscode from 'vscode';
 import { TelemetryId } from '../telemetry/telemetryId';
 import { createAzureDevCli } from '../utils/azureDevCli';
 import { executeAsTask } from '../utils/executeAsTask';
+import { isTreeViewModel, TreeViewModel } from '../utils/isTreeViewModel';
+import { AzureDevCliServices } from '../views/workspace/AzureDevCliServices';
 import { getAzDevTerminalTitle, getWorkingFolder } from './cmdUtil';
 
-export async function restore(context: IActionContext, selectedFile?: vscode.Uri): Promise<void> {
+export async function restore(context: IActionContext, selectedItem?: vscode.Uri | TreeViewModel): Promise<void> {
+    const selectedFile = isTreeViewModel(selectedItem) ? selectedItem.unwrap<AzureDevCliServices>().context.configurationFile : selectedItem;
     const workingFolder = await getWorkingFolder(context, selectedFile);
 
     const azureCli = await createAzureDevCli(context);

@@ -259,6 +259,10 @@
                 {
                     "command": "azure-dev.commands.cli.env-delete",
                     "when": "viewItem == ms-azuretools.azure-dev.views.workspace.environment"
+                },
+                {
+                    "command": "azure-dev.commands.cli.restore",
+                    "when": "viewItem == ms-azuretools.azure-dev.views.workspace.services"
                 }
             ]
         },

@@ -59,6 +59,8 @@ export class AzureDevCliServices implements AzureDevCliModel {
     getTreeItem(): vscode.TreeItem {
         const treeItem = new vscode.TreeItem(localize('azure-dev.views.workspace.services.label', 'Services'), vscode.TreeItemCollapsibleState.Expanded);
 
+        treeItem.contextValue = 'ms-azuretools.azure-dev.views.workspace.services';
+
         return treeItem;
     }
 }

@@ -15,7 +15,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
-	"github.com/pbnj/go-open"
+	"github.com/cli/browser"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
@@ -140,15 +140,14 @@ func (m *monitorAction) Run(ctx context.Context) error {
 	}
 
 	openWithDefaultBrowser := func(url string) {
-		// In Codespaces a $BROWSER environment variable is present whose value
-		// is an executable that launches the browser when called with the form:
+		// In Codespaces and devcontainers a $BROWSER environment variable is
+		// present whose value is an executable that launches the browser when
+		// called with the form:
 		// $BROWSER <url>
 
 		const BrowserEnvVarName = "BROWSER"
-		isCodespaces := os.Getenv(CodespacesEnvVarName) == "true"
-		envBrowser := os.Getenv(BrowserEnvVarName)
 
-		if isCodespaces && len(envBrowser) > 0 {
+		if envBrowser := os.Getenv(BrowserEnvVarName); len(envBrowser) > 0 {
 			fmt.Fprintf(m.console.Handles().Stdout, "Opening %s in the browser configured by $BROWSER...\n", url)
 
 			if err := exec.Command(envBrowser, url).Run(); err != nil {
@@ -158,7 +157,7 @@ func (m *monitorAction) Run(ctx context.Context) error {
 		}
 
 		fmt.Fprintf(m.console.Handles().Stdout, "Opening %s in the default browser...\n", url)
-		if err := open.Open(url); err != nil {
+		if err := browser.OpenURL(url); err != nil {
 			fmt.Fprintf(m.console.Handles().Stderr, "warning: failed to open default browser: %s\n", err.Error())
 		}
 

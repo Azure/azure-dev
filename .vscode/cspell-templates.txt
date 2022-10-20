@@ -15,6 +15,7 @@ configurer
 containerapp
 CUSTOMHANDLER
 databind
+devcontainers
 Dskip
 eastus
 envconfig

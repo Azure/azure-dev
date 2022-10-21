@@ -1,6 +1,15 @@
 # Release History
 
-## 0.3.0-beta.3 (Unreleased)
+## 0.3.0-beta.3 (2022-10-21)
+
+### Features Added
+
+- [[#878]](https://github.com/Azure/azure-dev/pull/878) `azd down` supports purge of app configuration stores.
+
+### Other Changes
+
+- [[#691]](https://github.com/Azure/azure-dev/pull/691) Rearrange Terraform templates by extracting common resources and using these common modules.
+- [[#892]](https://github.com/Azure/azure-dev/pull/892) Simplify template bicep modules.
 
 ## 0.3.0-beta.2 (2022-10-05)
 

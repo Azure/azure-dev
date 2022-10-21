@@ -55,7 +55,10 @@ func main() {
 	// print a warning if we are not. Note that we don't print this warning when the CLI version
 	// is exactly 0.0.0-dev.0, which is a sentinel value used for `internal.Version` when
 	// a version is not explicitly applied at build time (i.e. dev builds installed with `go install`)
-	if ok {
+	//
+	// Don't write this message when JSON output is enabled, since in that case we use stderr to return structured
+	// information about command progress.
+	if !isJsonOutput() && ok {
 		curVersion, err := semver.Parse(internal.GetVersionNumber())
 		if err != nil {
 			log.Printf("failed to parse %s as a semver", internal.GetVersionNumber())
@@ -278,6 +281,33 @@ func isDebugEnabled() bool {
 	}
 
 	return debug
+}
+
+// isJsonOutput checks to see if `--output` was passed with the value `json`
+func isJsonOutput() bool {
+	output := ""
+	help := false
+	flags := pflag.NewFlagSet("", pflag.ContinueOnError)
+
+	// Since we are running this parse logic on the full command line, there may be additional flags
+	// which we have not defined in our flag set (but would be defined by whatever command we end up
+	// running). Setting UnknownFlags instructs `flags.Parse` to continue parsing the command line
+	// even if a flag is not in the flag set (instead of just returning an error saying the flag was not
+	// found).
+	flags.ParseErrorsWhitelist.UnknownFlags = true
+	flags.StringVarP(&output, "output", "o", "", "")
+
+	// pflag treats "help" as special and if you don't define a help flag returns `ErrHelp` from
+	// Parse when `--help` is on the command line. Add an explicit help parameter (which we ignore)
+	// so pflag doesn't fail in this case.  If `--help` is passed, the help for `azd` will be shown later
+	// when `cmd.Execute` is run
+	flags.BoolVar(&help, "help", false, "")
+
+	if err := flags.Parse(os.Args[1:]); err != nil {
+		log.Printf("could not parse flags: %v", err)
+	}
+
+	return output == "json"
 }
 
 func readToEndAndClose(r io.ReadCloser) (string, error) {

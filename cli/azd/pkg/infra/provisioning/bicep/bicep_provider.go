@@ -188,7 +188,6 @@ func (p *BicepProvider) Deploy(
 	return async.RunInteractiveTaskWithProgress(
 		func(asyncContext *async.InteractiveTaskContextWithProgress[*DeployResult, *DeployProgress]) {
 			done := make(chan bool)
-			var operations []azcli.AzCliResourceOperation
 
 			// Ensure the done marker channel is sent in all conditions
 			defer func() {
@@ -217,7 +216,6 @@ func (p *BicepProvider) Deploy(
 							continue
 						}
 
-						operations = progressReport.Operations
 						asyncContext.SetProgress(progressReport)
 
 						timer.Reset(regularDelay)
@@ -242,7 +240,6 @@ func (p *BicepProvider) Deploy(
 			)
 
 			result := &DeployResult{
-				Operations: operations,
 				Deployment: &deployment,
 			}
 

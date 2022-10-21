@@ -55,7 +55,6 @@ type DeploymentPlanningProgress struct {
 }
 
 type DeployResult struct {
-	Operations []azcli.AzCliResourceOperation
 	Deployment *Deployment
 }
 
@@ -65,9 +64,8 @@ type DestroyResult struct {
 }
 
 type DeployProgress struct {
-	Message    string
-	Timestamp  time.Time
-	Operations []azcli.AzCliResourceOperation
+	Message   string
+	Timestamp time.Time
 }
 
 type DestroyProgress struct {

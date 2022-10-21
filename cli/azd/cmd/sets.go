@@ -11,6 +11,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
@@ -107,6 +108,15 @@ func newCredential() (azcore.TokenCredential, error) {
 	return credential, nil
 }
 
+func newConfig() config.Config {
+	cfg, err := config.Load()
+	if err != nil {
+		cfg = config.NewConfig(nil)
+	}
+
+	return cfg
+}
+
 var FormattedConsoleSet = wire.NewSet(
 	output.GetCommandFormatter,
 	newWriter,
@@ -114,6 +124,7 @@ var FormattedConsoleSet = wire.NewSet(
 )
 
 var CommonSet = wire.NewSet(
+	newConfig,
 	newAzdContext,
 	FormattedConsoleSet,
 	newCommandRunnerFromConsole,
@@ -238,3 +249,23 @@ var VersionCmdSet = wire.NewSet(
 	CommonSet,
 	newVersionAction,
 	wire.Bind(new(actions.Action), new(*versionAction)))
+
+var ConfigListCmdSet = wire.NewSet(
+	CommonSet,
+	newConfigListAction,
+	wire.Bind(new(actions.Action), new(*configListAction)))
+
+var ConfigGetCmdSet = wire.NewSet(
+	CommonSet,
+	newConfigGetAction,
+	wire.Bind(new(actions.Action), new(*configGetAction)))
+
+var ConfigSetCmdSet = wire.NewSet(
+	CommonSet,
+	newConfigSetAction,
+	wire.Bind(new(actions.Action), new(*configSetAction)))
+
+var ConfigUnsetCmdSet = wire.NewSet(
+	CommonSet,
+	newConfigUnsetAction,
+	wire.Bind(new(actions.Action), new(*configUnsetAction)))

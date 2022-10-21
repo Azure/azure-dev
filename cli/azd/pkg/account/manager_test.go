@@ -23,95 +23,45 @@ import (
 
 func Test_GetAccountDefaults(t *testing.T) {
 	t.Run("FromAzdConfig", func(t *testing.T) {
-		expectedConfig := config.Config{
-			Account: &config.Account{
-				DefaultSubscription: &config.Subscription{
-					Id:       "SUBSCRIPTION_01",
-					Name:     "Subscription 1",
-					TenantId: "TENANT_ID",
-				},
-				DefaultLocation: &config.Location{
-					Name:        "westus",
-					DisplayName: "(US) West US",
-				},
+		expectedConfig := config.NewConfig(map[string]any{
+			"defaults": map[string]any{
+				"subscription": "SUBSCRIPTION_01",
+				"location":     "westus",
 			},
-		}
+		})
 
 		mockContext := mocks.NewMockContext(context.Background())
-		ctx := config.WithConfig(*mockContext.Context, &expectedConfig)
+		ctx := config.WithConfig(*mockContext.Context, expectedConfig)
 
 		manager := NewManager(ctx)
-		actualConfig, err := manager.GetAccountDefaults(ctx)
+		accountDefaults, err := manager.GetAccountDefaults(ctx)
 
 		require.NoError(t, err)
-		require.Equal(t, expectedConfig.Account, actualConfig)
-	})
-
-	t.Run("FromAzConfig", func(t *testing.T) {
-		emptyConfig := config.Config{}
-
-		mockContext := mocks.NewMockContext(context.Background())
-		setupAccountMocks(mockContext)
-
-		ctx := config.WithConfig(*mockContext.Context, &emptyConfig)
-
-		manager := NewManager(ctx)
-		actualConfig, err := manager.GetAccountDefaults(ctx)
-
-		expectedConfig := config.Config{
-			Account: &config.Account{
-				DefaultSubscription: &config.Subscription{
-					Id:       "SUBSCRIPTION_02",
-					Name:     "Subscription 2",
-					TenantId: "TENANT_ID",
-				},
-				DefaultLocation: &config.Location{
-					Name:        "westus2",
-					DisplayName: "(US) West US 2",
-				},
-			},
-		}
-
-		require.NoError(t, err)
-		require.Equal(t, expectedConfig.Account, actualConfig)
+		require.Equal(t, "SUBSCRIPTION_01", accountDefaults.DefaultSubscription.Id)
+		require.Equal(t, "westus", accountDefaults.DefaultLocation.Name)
 	})
 
 	t.Run("FromCodeDefaults", func(t *testing.T) {
-		emptyConfig := config.Config{}
+		emptyConfig := config.NewConfig(nil)
 
 		mockContext := mocks.NewMockContext(context.Background())
 		setupAccountMocks(mockContext)
-		setupEmptyAzCliMocks(mockContext)
 
-		ctx := config.WithConfig(*mockContext.Context, &emptyConfig)
+		ctx := config.WithConfig(*mockContext.Context, emptyConfig)
 
 		manager := NewManager(ctx)
-		actualConfig, err := manager.GetAccountDefaults(ctx)
-
-		expectedConfig := config.Config{
-			Account: &config.Account{
-				DefaultSubscription: &config.Subscription{
-					Id:       "SUBSCRIPTION_02",
-					Name:     "Subscription 2",
-					TenantId: "TENANT_ID",
-				},
-				// Location should default to east us 2 when not found in either azd or az configs.
-				DefaultLocation: &config.Location{
-					Name:        "eastus2",
-					DisplayName: "(US) East US 2",
-				},
-			},
-		}
+		accountDefaults, err := manager.GetAccountDefaults(ctx)
 
 		require.NoError(t, err)
-		require.Equal(t, expectedConfig.Account, actualConfig)
+		require.Nil(t, accountDefaults.DefaultSubscription)
+		require.Equal(t, "eastus2", accountDefaults.DefaultLocation.Name)
 	})
 
 	t.Run("NotLoggedIn", func(t *testing.T) {
-		emptyConfig := config.Config{}
+		emptyConfig := config.NewConfig(nil)
 
 		mockContext := mocks.NewMockContext(context.Background())
-		ctx := config.WithConfig(*mockContext.Context, &emptyConfig)
+		ctx := config.WithConfig(*mockContext.Context, emptyConfig)
 
 		setupAzNotLoggedInMocks(mockContext)
 
@@ -136,24 +86,17 @@ func Test_GetSubscriptions(t *testing.T) {
 	})
 
 	t.Run("SuccessWithDefault", func(t *testing.T) {
-		defaultConfig := config.Config{
-			Account: &config.Account{
-				DefaultSubscription: &config.Subscription{
-					Id:       "SUBSCRIPTION_03",
-					Name:     "Subscription 3",
-					TenantId: "TENANT_ID",
-				},
-				DefaultLocation: &config.Location{
-					Name:        "westus2",
-					DisplayName: "(US) West US 2",
-				},
+		defaultConfig := config.NewConfig(map[string]any{
+			"defaults": map[string]any{
+				"subscription": "SUBSCRIPTION_03",
+				"location":     "westus2",
 			},
-		}
+		})
 
 		mockContext := mocks.NewMockContext(context.Background())
 		setupAccountMocks(mockContext)
 
-		ctx := config.WithConfig(*mockContext.Context, &defaultConfig)
+		ctx := config.WithConfig(*mockContext.Context, defaultConfig)
 
 		manager := NewManager(ctx)
 		subscriptions, err := manager.GetSubscriptions(ctx)
@@ -165,7 +108,7 @@ func Test_GetSubscriptions(t *testing.T) {
 		require.NoError(t, err)
 		require.Len(t, subscriptions, 3)
 		require.GreaterOrEqual(t, defaultIndex, 0)
-		require.Equal(t, defaultConfig.Account.DefaultSubscription.Id, subscriptions[defaultIndex].Id)
+		require.Equal(t, "SUBSCRIPTION_03", subscriptions[defaultIndex].Id)
 	})
 
 	t.Run("Error", func(t *testing.T) {
@@ -208,7 +151,7 @@ func Test_GetLocations(t *testing.T) {
 
 func Test_SetDefaultSubscription(t *testing.T) {
 	t.Run("ValidSubscription", func(t *testing.T) {
-		expectedSubscription := config.Subscription{
+		expectedSubscription := Subscription{
 			Id:       "SUBSCRIPTION_03",
 			Name:     "Subscription 3",
 			TenantId: "TENANT_ID",
@@ -226,7 +169,7 @@ func Test_SetDefaultSubscription(t *testing.T) {
 	})
 
 	t.Run("InvalidSubscription", func(t *testing.T) {
-		expectedSubscription := config.Subscription{
+		expectedSubscription := Subscription{
 			Id:       "SUBSCRIPTION_03",
 			Name:     "Subscription 3",
 			TenantId: "TENANT_ID",
@@ -273,7 +216,7 @@ func Test_SetDefaultLocation(t *testing.T) {
 }
 
 func Test_Clear(t *testing.T) {
-	expectedSubscription := config.Subscription{
+	expectedSubscription := Subscription{
 		Id:       "SUBSCRIPTION_03",
 		Name:     "Subscription 3",
 		TenantId: "TENANT_ID",
@@ -293,16 +236,24 @@ func Test_Clear(t *testing.T) {
 	updatedConfig, err := config.Load()
 	require.NoError(t, err)
 
-	require.Equal(t, subscription, updatedConfig.Account.DefaultSubscription)
-	require.Equal(t, location, updatedConfig.Account.DefaultLocation)
+	configSubscription, _ := updatedConfig.Get("defaults.subscription")
+	configLocation, _ := updatedConfig.Get("defaults.location")
+
+	require.Equal(t, subscription, configSubscription)
+	require.Equal(t, location, configLocation)
 
 	err = manager.Clear(*mockContext.Context)
 	require.NoError(t, err)
 
 	clearedConfig, err := config.Load()
 	require.NotNil(t, clearedConfig)
-	require.Nil(t, clearedConfig.Account)
 	require.NoError(t, err)
+
+	configSubscription, _ = clearedConfig.Get("defaults.subscription")
+	configLocation, _ = clearedConfig.Get("defaults.location")
+
+	require.Nil(t, configSubscription)
+	require.Nil(t, configLocation)
 }
 
 func setupAzNotLoggedInMocks(mockContext *mocks.MockContext) {
@@ -321,7 +272,7 @@ func setupEmptyAzCliMocks(mockContext *mocks.MockContext) {
 	})
 }
 
-func setupGetSubscriptionMock(mockContext *mocks.MockContext, subscription *config.Subscription, err error) {
+func setupGetSubscriptionMock(mockContext *mocks.MockContext, subscription *Subscription, err error) {
 	mockContext.HttpClient.When(func(request *http.Request) bool {
 		return request.Method == http.MethodGet && request.URL.Path == fmt.Sprintf("/subscriptions/%s", subscription.Id)
 	}).RespondFn(func(request *http.Request) (*http.Response, error) {

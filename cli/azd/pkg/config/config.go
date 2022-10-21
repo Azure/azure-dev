@@ -13,11 +13,31 @@ import (
 	"os"
 	"os/user"
 	"path/filepath"
+	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 )
 
 const configDir = ".azd"
+
+type Config interface {
+	Raw() map[string]any
+	Get(path string) (any, bool)
+	Set(path string, value any) error
+	Unset(path string) error
+	Save() error
+}
+
+// Creates a new empty configuration
+func NewConfig(data map[string]any) Config {
+	if data == nil {
+		data = map[string]any{}
+	}
+
+	return &config{
+		data: data,
+	}
+}
 
 // GetUserConfigDir returns the config directory for storing user wide configuration data.
 //
@@ -35,30 +55,18 @@ func GetUserConfigDir() (string, error) {
 }
 
 // Top level AZD configuration
-type Config struct {
-	Account *Account `json:"account"`
+type config struct {
+	data map[string]any
 }
 
-// AZD Account configuration
-type Account struct {
-	DefaultSubscription *Subscription `json:"defaultSubscription"`
-	DefaultLocation     *Location     `json:"defaultLocation"`
-}
-
-type Subscription struct {
-	Id       string `json:"id"`
-	Name     string `json:"name"`
-	TenantId string `json:"tenantId"`
-}
-
-type Location struct {
-	Name        string `json:"name"`
-	DisplayName string `json:"displayName"`
+// Gets the raw values stored in the configuration as a Go map
+func (c *config) Raw() map[string]any {
+	return c.data
 }
 
 // Saves the users configuration to their local azd user folder
-func (c *Config) Save() error {
-	configJson, err := json.Marshal(*c)
+func (c *config) Save() error {
+	configJson, err := json.MarshalIndent(c.data, "", "  ")
 	if err != nil {
 		return fmt.Errorf("failed marshalling config JSON: %w", err)
 	}
@@ -77,7 +85,7 @@ func (c *Config) Save() error {
 }
 
 // Loads azd configuration from the users configuration dir
-func Load() (*Config, error) {
+func Load() (Config, error) {
 	configPath, err := getConfigFilePath()
 	if err != nil {
 		return nil, fmt.Errorf("failed locating config dir")
@@ -91,15 +99,106 @@ func Load() (*Config, error) {
 	return Parse(bytes)
 }
 
+// Sets a value at the specified location
+func (c *config) Set(path string, value any) error {
+	depth := 1
+	currentNode := c.data
+	parts := strings.Split(path, ".")
+	for _, part := range parts {
+		if depth == len(parts) {
+			currentNode[part] = value
+			return nil
+		}
+		var node map[string]any
+		value, ok := currentNode[part]
+		if !ok || value == nil {
+			node = map[string]any{}
+		}
+
+		if value != nil {
+			node, ok = value.(map[string]any)
+			if !ok {
+				return fmt.Errorf("failed converting node at path '%s' to map", part)
+			}
+		}
+
+		currentNode[part] = node
+		currentNode = node
+		depth++
+	}
+
+	return nil
+}
+
+func (c *config) Unset(path string) error {
+	depth := 1
+	currentNode := c.data
+	parts := strings.Split(path, ".")
+	for _, part := range parts {
+		if depth == len(parts) {
+			delete(currentNode, part)
+			return nil
+		}
+		var node map[string]any
+		value, ok := currentNode[part]
+
+		// Path already doesn't exist, NOOP
+		if !ok || value == nil {
+			return nil
+		}
+
+		if value != nil {
+			node, ok = value.(map[string]any)
+			if !ok {
+				return fmt.Errorf("failed converting node at path '%s' to map", part)
+			}
+		}
+
+		currentNode[part] = node
+		currentNode = node
+		depth++
+	}
+
+	return nil
+}
+
+// Gets the value stored at the specified location
+// Returns the value if exists, otherwise returns nil & a value indicating if the value existing
+func (c *config) Get(path string) (any, bool) {
+	depth := 1
+	currentNode := c.data
+	parts := strings.Split(path, ".")
+	for _, part := range parts {
+		if depth == len(parts) {
+			value, ok := currentNode[part]
+			return value, ok
+		}
+		value, ok := currentNode[part]
+		if !ok {
+			return value, ok
+		}
+
+		node, ok := value.(map[string]any)
+		if !ok {
+			return nil, false
+		}
+
+		currentNode = node
+		depth++
+	}
+
+	return nil, false
+}
+
 // Parses azd configuration JSON and returns a Config instance
-func Parse(configJson []byte) (*Config, error) {
-	var config Config
-	err := json.Unmarshal(configJson, &config)
+func Parse(configJson []byte) (Config, error) {
+	var data map[string]any
+	err := json.Unmarshal(configJson, &data)
 	if err != nil {
 		return nil, fmt.Errorf("failed unmarshalling configuration JSON: %w", err)
 	}
 
-	return &config, nil
+	return NewConfig(data), nil
 }
 
 func getConfigFilePath() (string, error) {
@@ -117,20 +216,20 @@ const configContextKey contextKey = "config"
 
 // Gets the AZD config from current context
 // If it does not exist will return a new empty AZD config
-func GetConfig(ctx context.Context) *Config {
-	config, ok := ctx.Value(configContextKey).(*Config)
+func GetConfig(ctx context.Context) Config {
+	existingConfig, ok := ctx.Value(configContextKey).(Config)
 	if !ok {
 		loadedConfig, err := Load()
 		if err != nil {
-			loadedConfig = &Config{}
+			loadedConfig = NewConfig(nil)
 		}
-		config = loadedConfig
+		existingConfig = loadedConfig
 	}
 
-	return config
+	return existingConfig
 }
 
 // Sets the AZD config in the Go context and returns the new context
-func WithConfig(ctx context.Context, config *Config) context.Context {
+func WithConfig(ctx context.Context, config Config) context.Context {
 	return context.WithValue(ctx, configContextKey, config)
 }

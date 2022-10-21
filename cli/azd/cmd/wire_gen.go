@@ -369,3 +369,37 @@ func initTemplatesShowAction(cmd *cobra.Command, o *internal.GlobalCommandOption
 	cmdTemplatesShowAction := newTemplatesShowAction(formatter, writer, templateManager, args)
 	return cmdTemplatesShowAction, nil
 }
+
+func initConfigListAction(cmd *cobra.Command, o *internal.GlobalCommandOptions, flags struct{}, args []string) (actions.Action, error) {
+	config := newConfig()
+	formatter, err := output.GetCommandFormatter(cmd)
+	if err != nil {
+		return nil, err
+	}
+	writer := newWriter(cmd)
+	cmdConfigListAction := newConfigListAction(config, formatter, writer)
+	return cmdConfigListAction, nil
+}
+
+func initConfigGetAction(cmd *cobra.Command, o *internal.GlobalCommandOptions, flags struct{}, args []string) (actions.Action, error) {
+	config := newConfig()
+	formatter, err := output.GetCommandFormatter(cmd)
+	if err != nil {
+		return nil, err
+	}
+	writer := newWriter(cmd)
+	cmdConfigGetAction := newConfigGetAction(config, formatter, writer, args)
+	return cmdConfigGetAction, nil
+}
+
+func initConfigSetAction(cmd *cobra.Command, o *internal.GlobalCommandOptions, flags struct{}, args []string) (actions.Action, error) {
+	config := newConfig()
+	cmdConfigSetAction := newConfigSetAction(config, args)
+	return cmdConfigSetAction, nil
+}
+
+func initConfigUnsetAction(cmd *cobra.Command, o *internal.GlobalCommandOptions, flags struct{}, args []string) (actions.Action, error) {
+	config := newConfig()
+	cmdConfigUnsetAction := newConfigUnsetAction(config, args)
+	return cmdConfigUnsetAction, nil
+}

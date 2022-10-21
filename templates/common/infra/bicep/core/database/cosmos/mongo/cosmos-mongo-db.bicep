@@ -6,7 +6,7 @@ param cosmosDatabaseName string
 param cosmosConnectionStringKey string = 'AZURE-COSMOS-CONNECTION-STRING'
 param keyVaultName string
 
-var abbrs = loadJsonContent('../../abbreviations.json')
+var abbrs = loadJsonContent('../../../../abbreviations.json')
 var resourceToken = toLower(uniqueString(subscription().id, environmentName, location))
 
 module cosmos 'cosmos-mongo-account.bicep' = {

@@ -15,6 +15,7 @@ import (
 	"testing"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appconfiguration/armappconfiguration"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/keyvault/armkeyvault"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
@@ -193,7 +194,7 @@ func TestBicepDestroy(t *testing.T) {
 		}).Respond(true)
 
 		mockContext.Console.WhenConfirm(func(options input.ConsoleOptions) bool {
-			return strings.Contains(options.Message, "Would you like to permanently delete these Key Vaults")
+			return strings.Contains(options.Message, "Would you like to permanently delete these Key Vaults/App Configurations")
 		}).Respond(true)
 
 		infraProvider := createBicepProvider(*mockContext.Context)
@@ -223,22 +224,25 @@ func TestBicepDestroy(t *testing.T) {
 
 		// Verify console prompts
 		consoleOutput := mockContext.Console.Output()
-		require.Len(t, consoleOutput, 6)
+		require.Len(t, consoleOutput, 7)
 		require.Contains(t, consoleOutput[0], "This will delete")
 		require.Contains(t, consoleOutput[1], "Deleted resource group")
-		require.Contains(t, consoleOutput[2], "This operation will delete and purge")
-		require.Contains(t, consoleOutput[3], "Would you like to permanently delete these Key Vaults")
+		require.Contains(t, consoleOutput[2], "This operation will delete")
+		require.Contains(t, consoleOutput[3], "Would you like to permanently delete these Key Vaults/App Configurations")
 		require.Contains(t, consoleOutput[4], "Purged key vault")
-		require.Contains(t, consoleOutput[5], "Deleted deployment")
+		require.Contains(t, consoleOutput[5], "Purged app configuration")
+		require.Contains(t, consoleOutput[6], "Deleted deployment")
 
 		// Verify progress output
-		require.Len(t, progressLog, 6)
+		require.Len(t, progressLog, 8)
 		require.Contains(t, progressLog[0], "Fetching resource groups")
 		require.Contains(t, progressLog[1], "Fetching resources")
-		require.Contains(t, progressLog[2], "Getting KeyVaults to purge")
-		require.Contains(t, progressLog[3], "Deleting resource group")
-		require.Contains(t, progressLog[4], "Purging key vault")
-		require.Contains(t, progressLog[5], "Deleting deployment")
+		require.Contains(t, progressLog[2], "Getting Key Vaults to purge")
+		require.Contains(t, progressLog[3], "Getting App Configurations to purge")
+		require.Contains(t, progressLog[4], "Deleting resource group")
+		require.Contains(t, progressLog[5], "Purging key vault")
+		require.Contains(t, progressLog[6], "Purging app configuration")
+		require.Contains(t, progressLog[7], "Deleting deployment")
 	})
 
 	t.Run("InteractiveForceAndPurge", func(t *testing.T) {
@@ -279,18 +283,17 @@ func TestBicepDestroy(t *testing.T) {
 
 		// Verify console prompts
 		consoleOutput := mockContext.Console.Output()
-		require.Len(t, consoleOutput, 3)
+		require.Len(t, consoleOutput, 2)
 		require.Contains(t, consoleOutput[0], "Deleted resource group")
-		require.Contains(t, consoleOutput[1], "Purged key vault")
-		require.Contains(t, consoleOutput[2], "Deleted deployment")
+		require.Contains(t, consoleOutput[1], "Deleted deployment")
 
 		// Verify progress output
 		require.Len(t, progressLog, 6)
 		require.Contains(t, progressLog[0], "Fetching resource groups")
 		require.Contains(t, progressLog[1], "Fetching resources")
-		require.Contains(t, progressLog[2], "Getting KeyVaults to purge")
-		require.Contains(t, progressLog[3], "Deleting resource group")
-		require.Contains(t, progressLog[4], "Purging key vault")
+		require.Contains(t, progressLog[2], "Getting Key Vaults to purge")
+		require.Contains(t, progressLog[3], "Getting App Configurations to purge")
+		require.Contains(t, progressLog[4], "Deleting resource group")
 		require.Contains(t, progressLog[5], "Deleting deployment")
 	})
 }
@@ -442,6 +445,12 @@ func prepareDestroyMocks(mockContext *mocks.MockContext) {
 				Type:     convert.RefOf(string(infra.AzureResourceTypeKeyVault)),
 				Location: convert.RefOf("eastus2"),
 			},
+			{
+				ID:       convert.RefOf("appconfiguration"),
+				Name:     convert.RefOf("ac-123"),
+				Type:     convert.RefOf(string(infra.AzureResourceTypeAppConfig)),
+				Location: convert.RefOf("eastus2"),
+			},
 		},
 	}
 
@@ -481,6 +490,29 @@ func prepareDestroyMocks(mockContext *mocks.MockContext) {
 		}, nil
 	})
 
+	// Get App Configuration
+	mockContext.HttpClient.When(func(request *http.Request) bool {
+		return request.Method == http.MethodGet && strings.Contains(request.URL.Path, "/configurationStores/ac-123")
+	}).RespondFn(func(request *http.Request) (*http.Response, error) {
+		appConfigResponse := armappconfiguration.ConfigurationStoresClientGetResponse{
+			ConfigurationStore: armappconfiguration.ConfigurationStore{
+				ID:       convert.RefOf("ac-123"),
+				Name:     convert.RefOf("ac-123"),
+				Location: convert.RefOf("eastus2"),
+				Properties: &armappconfiguration.ConfigurationStoreProperties{
+					EnablePurgeProtection: convert.RefOf(false),
+				},
+			},
+		}
+
+		appConfigBytes, _ := json.Marshal(appConfigResponse)
+
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(bytes.NewBuffer(appConfigBytes)),
+		}, nil
+	})
+
 	// Delete resource group
 	mockContext.HttpClient.When(func(request *http.Request) bool {
 		return request.Method == http.MethodDelete &&
@@ -497,6 +529,19 @@ func prepareDestroyMocks(mockContext *mocks.MockContext) {
 	// Purge Key vault
 	mockContext.HttpClient.When(func(request *http.Request) bool {
 		return request.Method == http.MethodPost && strings.Contains(request.URL.Path, "deletedVaults/kv-123/purge")
+	}).RespondFn(func(request *http.Request) (*http.Response, error) {
+		return &http.Response{
+			Request:    request,
+			Header:     http.Header{},
+			StatusCode: http.StatusOK,
+			Body:       http.NoBody,
+		}, nil
+	})
+
+	// Purge App configuration
+	mockContext.HttpClient.When(func(request *http.Request) bool {
+		return request.Method == http.MethodPost && strings.Contains(request.URL.Path,
+			"deletedConfigurationStores/ac-123/purge")
 	}).RespondFn(func(request *http.Request) (*http.Response, error) {
 		return &http.Response{
 			Request:    request,

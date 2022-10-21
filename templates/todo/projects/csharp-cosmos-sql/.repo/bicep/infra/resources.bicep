@@ -23,6 +23,33 @@ module api '../../../../../common/infra/bicep/app/api-appservice-dotnet.bicep' =
     appServicePlanId: appServicePlan.outputs.appServicePlanId
     keyVaultName: keyVault.outputs.keyVaultName
     allowedOrigins: [ web.outputs.WEB_URI ]
+    appSettings: {
+      AZURE_COSMOS_CONNECTION_STRING_KEY: cosmos.outputs.cosmosConnectionStringKey
+      AZURE_COSMOS_DATABASE_NAME: cosmos.outputs.cosmosDatabaseName
+      AZURE_COSMOS_ENDPOINT: cosmos.outputs.cosmosEndpoint
+    }
+  }
+}
+
+// Give the API access to KeyVault
+module apiKeyVaultAccess '../../../../../../common/infra/bicep/core/security/keyvault-access.bicep' = {
+  name: 'api-keyvault-access'
+  params: {
+    environmentName: environmentName
+    location: location
+    keyVaultName: keyVault.outputs.keyVaultName
+    principalId: api.outputs.API_IDENTITY_PRINCIPAL_ID
+  }
+}
+
+// Give the API the role to access Cosmos
+module apiCosmosSqlRoleAssign '../../../../../../common/infra/bicep/core/database/cosmos/sql/cosmos-sql-role-assign.bicep' = {
+  name: 'api-cosmos-access'
+  params: {
+    environmentName: environmentName
+    location: location
+    cosmosRoleDefinitionId: cosmos.outputs.cosmosSqlRoleDefinitionId
+    principalId: api.outputs.API_IDENTITY_PRINCIPAL_ID
   }
 }
 
@@ -33,27 +60,19 @@ module cosmos '../../../../../common/infra/bicep/app/cosmos-sql-db.bicep' = {
     environmentName: environmentName
     location: location
     keyVaultName: keyVault.outputs.keyVaultName
-    principalIds: [ principalId, api.outputs.API_IDENTITY_PRINCIPAL_ID ]
-  }
-}
-
-// Configure api to use cosmos
-module apiCosmosConfig '../../../../../../common/infra/bicep/core/host/appservice-config-cosmos.bicep' = {
-  name: 'api-cosmos-config'
-  params: {
-    appServiceName: api.outputs.API_NAME
-    cosmosDatabaseName: cosmos.outputs.cosmosDatabaseName
-    cosmosConnectionStringKey: cosmos.outputs.cosmosConnectionStringKey
-    cosmosEndpoint: cosmos.outputs.cosmosEndpoint
+    principalIds: [ principalId ]
   }
 }
 
 // Create an App Service Plan to group applications under the same payment plan and SKU
-module appServicePlan '../../../../../../common/infra/bicep/core/host/appserviceplan-sites.bicep' = {
+module appServicePlan '../../../../../../common/infra/bicep/core/host/appserviceplan.bicep' = {
   name: 'appserviceplan'
   params: {
     environmentName: environmentName
     location: location
+    sku: {
+      name: 'B1'
+    }
   }
 }
 

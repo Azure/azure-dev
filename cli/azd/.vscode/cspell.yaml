@@ -14,6 +14,7 @@ words:
   - Codespaces
   - Retryable
   - Canonicalize
+  - devcontainers
 dictionaryDefinitions:
   - name: azdProjectDictionary
     path: ./cspell-azd-dictionary.txt

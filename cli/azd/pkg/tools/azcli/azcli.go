@@ -85,6 +85,9 @@ type AzCli interface {
 	) (*AzCliKeyVault, error)
 	GetKeyVaultSecret(ctx context.Context, vaultName string, secretName string) (*AzCliKeyVaultSecret, error)
 	PurgeKeyVault(ctx context.Context, subscriptionId string, vaultName string, location string) error
+	GetAppConfig(
+		ctx context.Context, subscriptionId string, resourceGroupName string, configName string) (*AzCliAppConfig, error)
+	PurgeAppConfig(ctx context.Context, subscriptionId string, configName string, location string) error
 	DeployAppServiceZip(
 		ctx context.Context,
 		subscriptionId string,

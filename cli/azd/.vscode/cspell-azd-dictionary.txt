@@ -1,8 +1,10 @@
 AADSTS
+appconfiguration
 appinsights
 appinsightsexporter
 appinsightsstorage
 appservice
+armappconfiguration
 AZCLI
 azdcli
 azdcontext

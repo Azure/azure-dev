@@ -2,7 +2,6 @@
 // Licensed under the MIT License.
 
 import * as vscode from 'vscode';
-import * as fse from 'fs-extra';
 import * as dotenv from 'dotenv';
 import * as dayjs from 'dayjs';
 import * as duration from 'dayjs/plugin/duration';
@@ -14,6 +13,7 @@ import { PseudoterminalWriter } from './pseudoterminalWriter';
 import { resolveVariables } from '../utils/resolveVariables';
 import { TelemetryId } from '../telemetry/telemetryId';
 import ext from '../ext';
+import { fileExists } from '../utils/fileUtils';
 
 interface DotEnvTaskDefinition extends vscode.TaskDefinition {
     file: string;
@@ -82,9 +82,9 @@ export class DotEnvTaskProvider implements vscode.TaskProvider {
         writer: PseudoterminalWriter, 
         ct: vscode.CancellationToken
     ): Promise<DotEnvTaskResult> {
-        const resolvedFile = resolveVariables(resolvedDefinition.file);
-        if (!await fse.pathExists(resolvedFile)) {
-            writer.writeLine(localize('azure-dev.tasks.dotenv.envFileDoesNotExist', "Error: environment file '{0}' does not exist", resolvedFile), 'bold');
+        const resolvedFile = vscode.Uri.file(resolveVariables(resolvedDefinition.file));
+        if (!await fileExists(resolvedFile)) {
+            writer.writeLine(localize('azure-dev.tasks.dotenv.envFileDoesNotExist', "Error: environment file '{0}' does not exist", resolvedFile.fsPath), 'bold');
             return DotEnvTaskResult.ErrorEnvFileDoesNotExist;
         }
         const envVars = await getEnvVars(resolvedFile);
@@ -190,9 +190,9 @@ async function executeChildTask(
     }
 }
 
-async function getEnvVars(envFilePath: string): Promise<{ [key: string]: string }> {
-    const contents = await fse.readFile(envFilePath);
-    const result = dotenv.parse(contents);
+async function getEnvVars(envFilePath: vscode.Uri): Promise<{ [key: string]: string }> {
+    const contents = await vscode.workspace.fs.readFile(envFilePath);
+    const result = dotenv.parse(contents.toString());
     return result;
 }
 

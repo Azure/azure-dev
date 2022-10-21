@@ -14,6 +14,9 @@
     "categories": [
       "Other"
     ],
+    "bugs": {
+        "url": "https://github.com/Azure/azure-dev/issues"
+    },
     "repository": {
       "type": "git",
       "url": "https://github.com/azure/azure-dev"
@@ -35,7 +38,16 @@
     ],
     "main": "./main.js",
     "contributes": {
-      "commands": [
+        "x-azResources": {
+          "commands": [
+              {
+                  "command": "azure-dev.commands.cli.provision",
+                  "title": "Create application infrastructure using azd...",
+                  "detail": "Use the Azure Developer CLI to set up application infrastructure resources (azd provision)."
+              }
+          ]
+        },
+        "commands": [
         {
           "category": "%azure-dev.commands_category%",
           "command": "azure-dev.commands.cli.init",
@@ -230,7 +242,6 @@
     "dependencies": {
       "@microsoft/vscode-azext-utils": "~0.3.15",
       "glob": "~8.0",
-      "fs-extra": "~10.1",
       "dotenv": "~16.0",
       "dayjs": "~1.11",
       "vscode-tas-client": "~0.1"

@@ -66,6 +66,10 @@ func newInfraDeleteAction(
 	}
 }
 
+func (i *infraDeleteAction) PostRun(ctx context.Context, RunResult error) error {
+	return nil
+}
+
 func (a *infraDeleteAction) Run(ctx context.Context) error {
 	if err := ensureProject(a.azdCtx.ProjectPath()); err != nil {
 		return err

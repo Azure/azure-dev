@@ -77,6 +77,10 @@ func newUpAction(init *initAction, infraCreate *infraCreateAction, deploy *deplo
 	}
 }
 
+func (i *upAction) PostRun(ctx context.Context, RunResult error) error {
+	return nil
+}
+
 func (u *upAction) Run(ctx context.Context) error {
 	err := u.runInit(ctx)
 	if err != nil {

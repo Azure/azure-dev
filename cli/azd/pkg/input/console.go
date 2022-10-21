@@ -8,14 +8,34 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"time"
 
 	"github.com/AlecAivazis/survey/v2"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
+	"github.com/theckman/yacspin"
+)
+
+type MessageUxType int
+
+const (
+	Title MessageUxType = iota
+	Step
+	StepDone
+	StepFailed
 )
 
 type Console interface {
 	// Prints out a message to the underlying console write
 	Message(ctx context.Context, message string)
+	// Prints out a message following the UX format type
+	MessageUx(ctx context.Context, message string, format MessageUxType)
+	// Prints progress spinner with the given title.
+	// If a previous spinner is running, the title is updated.
+	ShowSpinner(ctx context.Context, title string, format MessageUxType)
+	// Stop the current spinner from the console and change the spinner bar for the lastMessage
+	// Set lastMessage to empty string to clear the spinner message instead of a displaying a last message
+	// If there is no spinner running, this is a no-op function
+	StopSpinner(ctx context.Context, lastMessage string, format MessageUxType)
 	// Prompts the user for a single value
 	Prompt(ctx context.Context, options ConsoleOptions) (string, error)
 	// Prompts the user to select from a set of values
@@ -37,6 +57,7 @@ type AskerConsole struct {
 	// the writer which output is written to.
 	writer    io.Writer
 	formatter output.Formatter
+	spinner   *yacspin.Spinner
 }
 
 type ConsoleOptions struct {
@@ -69,6 +90,114 @@ func (c *AskerConsole) Message(ctx context.Context, message string) {
 	} else {
 		log.Println(message)
 	}
+}
+
+func (c *AskerConsole) MessageUx(ctx context.Context, message string, format MessageUxType) {
+	formattedText, err := addFormat(message, format)
+	// Message and MessageUx don't return errors. Let's log the error and use the original message on error
+	if err != nil {
+		log.Printf("Failed adding format for MessageUx: %s. Using message with no ux format", err.Error())
+		c.Message(ctx, message)
+		return
+	}
+
+	c.Message(ctx, formattedText)
+}
+
+func (c *AskerConsole) ShowSpinner(ctx context.Context, title string, format MessageUxType) {
+	// make sure spinner exists
+	if c.spinner == nil {
+		c.spinner, _ = yacspin.New(yacspin.Config{
+			Frequency:       200 * time.Millisecond,
+			Writer:          c.writer,
+			Suffix:          " ",
+			SuffixAutoColon: true,
+		})
+	}
+	// If running, pause to apply style changes
+	if c.spinner.Status() == yacspin.SpinnerRunning {
+		c.spinner.Pause()
+	}
+
+	// Update style according to MessageUxType
+	c.spinner.Message(title)
+	c.spinner.CharSet(getCharset(format))
+
+	// unpause if Paused
+	if c.spinner.Status() == yacspin.SpinnerPaused {
+		c.spinner.Unpause()
+	} else if c.spinner.Status() == yacspin.SpinnerStopped {
+		c.spinner.Start()
+	}
+}
+
+func getCharset(format MessageUxType) []string {
+	customCharSet := []string{
+		"|       |", "|=      |", "|==     |", "|===    |", "|====   |", "|=====  |", "|====== |", "|=======|"}
+
+	newCharSet := make([]string, len(customCharSet))
+	for i, value := range customCharSet {
+		newCharSet[i] = fmt.Sprintf("%s%s", getIndent(format), value)
+	}
+	return newCharSet
+}
+
+func getIndent(format MessageUxType) string {
+	spaces := 0
+	switch format {
+	case Step:
+		spaces = 1
+	}
+	bytes := make([]byte, spaces)
+	for i := range bytes {
+		bytes[i] = byte(' ')
+	}
+	return string(bytes)
+}
+
+func (c *AskerConsole) StopSpinner(ctx context.Context, lastMessage string, format MessageUxType) {
+	// calling stop for non existing spinner
+	if c.spinner == nil {
+		return
+	}
+	// Do nothing when it is already stopped
+	if c.spinner.Status() == yacspin.SpinnerStopped {
+		return
+	}
+
+	// Update style according to MessageUxType
+	if lastMessage == "" {
+		c.spinner.StopCharacter("")
+	} else {
+		c.spinner.StopCharacter(getStopChar(format))
+	}
+
+	c.spinner.StopMessage(lastMessage)
+	c.spinner.Stop()
+	// Add empty line every time the spinner stops
+	c.Message(ctx, "")
+}
+
+func getStopChar(format MessageUxType) string {
+	var stopChar string
+	switch format {
+	case StepDone:
+		stopChar = output.WithSuccessFormat("(✓) Done:")
+	case StepFailed:
+		stopChar = output.WithErrorFormat("(x) Failed:")
+	}
+	return stopChar
+}
+
+func addFormat(message string, format MessageUxType) (withFormat string, err error) {
+	switch format {
+	case Title:
+		withFormat = fmt.Sprintf("\n%s\n", message)
+	default:
+		return withFormat, fmt.Errorf("Unknown UX format type")
+	}
+
+	return withFormat, nil
 }
 
 // Prompts the user for a single value

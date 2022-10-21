@@ -80,6 +80,10 @@ func newLoginAction(
 	}
 }
 
+func (i *loginAction) PostRun(ctx context.Context, RunResult error) error {
+	return nil
+}
+
 func (la *loginAction) Run(ctx context.Context) error {
 	if err := tools.EnsureInstalled(ctx, la.azCli); err != nil {
 		return err

@@ -78,6 +78,10 @@ func newEnvSetAction(
 	}
 }
 
+func (i *envSetAction) PostRun(ctx context.Context, RunResult error) error {
+	return nil
+}
+
 func (e *envSetAction) Run(ctx context.Context) error {
 	if err := ensureProject(e.azdCtx.ProjectPath()); err != nil {
 		return err
@@ -128,6 +132,10 @@ func newEnvSelectAction(azdCtx *azdcontext.AzdContext, args []string) *envSelect
 	}
 }
 
+func (i *envSelectAction) PostRun(ctx context.Context, RunResult error) error {
+	return nil
+}
+
 func (e *envSelectAction) Run(ctx context.Context) error {
 	if err := ensureProject(e.azdCtx.ProjectPath()); err != nil {
 		return err
@@ -166,6 +174,10 @@ func newEnvListAction(azdCtx *azdcontext.AzdContext, formatter output.Formatter,
 		formatter: formatter,
 		writer:    writer,
 	}
+}
+
+func (i *envListAction) PostRun(ctx context.Context, RunResult error) error {
+	return nil
 }
 
 func (e *envListAction) Run(ctx context.Context) error {
@@ -253,6 +265,10 @@ func newEnvNewAction(
 	}
 }
 
+func (i *envNewAction) PostRun(ctx context.Context, RunResult error) error {
+	return nil
+}
+
 func (en *envNewAction) Run(ctx context.Context) error {
 	if err := ensureProject(en.azdCtx.ProjectPath()); err != nil {
 		return err
@@ -317,6 +333,10 @@ func newEnvRefreshAction(
 		formatter: formatter,
 		writer:    writer,
 	}
+}
+
+func (i *envRefreshAction) PostRun(ctx context.Context, RunResult error) error {
+	return nil
 }
 
 func (ef *envRefreshAction) Run(ctx context.Context) error {
@@ -413,6 +433,11 @@ func newEnvGetValuesAction(
 		global:    global,
 	}
 }
+
+func (i *envGetValuesAction) PostRun(ctx context.Context, RunResult error) error {
+	return nil
+}
+
 func (eg *envGetValuesAction) Run(ctx context.Context) error {
 	if err := ensureProject(eg.azdCtx.ProjectPath()); err != nil {
 		return err

@@ -39,7 +39,7 @@ func (s *Spinner) Println(message string) {
 		s.logMutex.Lock()
 
 		s.Stop()
-		fmt.Fprint(s.writer, message)
+		fmt.Fprintln(s.writer, message)
 		s.Start()
 	}
 }

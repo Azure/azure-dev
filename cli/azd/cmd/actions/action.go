@@ -8,6 +8,10 @@ import (
 // ActionFunc is an Action implementation for regular functions.
 type ActionFunc func(context.Context) error
 
+func (i ActionFunc) PostRun(ctx context.Context, RunResult error) error {
+	return nil
+}
+
 // Run implements the Action interface
 func (a ActionFunc) Run(ctx context.Context) error {
 	return a(ctx)
@@ -17,4 +21,6 @@ func (a ActionFunc) Run(ctx context.Context) error {
 type Action interface {
 	// Run executes the CLI command.
 	Run(ctx context.Context) error
+	// Executes after Run
+	PostRun(ctx context.Context, RunResult error) error
 }

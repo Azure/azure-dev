@@ -77,6 +77,10 @@ func newMonitorAction(
 	}
 }
 
+func (i *monitorAction) PostRun(ctx context.Context, RunResult error) error {
+	return nil
+}
+
 func (m *monitorAction) Run(ctx context.Context) error {
 	if err := ensureProject(m.azdCtx.ProjectPath()); err != nil {
 		return err

@@ -74,6 +74,10 @@ func newTemplatesListAction(
 	}
 }
 
+func (i *templatesListAction) PostRun(ctx context.Context, RunResult error) error {
+	return nil
+}
+
 func (tl *templatesListAction) Run(ctx context.Context) error {
 	templateSet, err := tl.templateManager.ListTemplates()
 

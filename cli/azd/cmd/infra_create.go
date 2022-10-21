@@ -88,6 +88,10 @@ func newInfraCreateAction(
 	}
 }
 
+func (i *infraCreateAction) PostRun(ctx context.Context, RunResult error) error {
+	return nil
+}
+
 func (i *infraCreateAction) Run(ctx context.Context) error {
 	if err := ensureProject(i.azdCtx.ProjectPath()); err != nil {
 		return err

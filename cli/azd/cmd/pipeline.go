@@ -93,6 +93,10 @@ func newPipelineConfigAction(
 	return pca
 }
 
+func (i *pipelineConfigAction) PostRun(ctx context.Context, RunResult error) error {
+	return nil
+}
+
 // Run implements action interface
 func (p *pipelineConfigAction) Run(ctx context.Context) error {
 	if err := ensureProject(p.azdCtx.ProjectPath()); err != nil {

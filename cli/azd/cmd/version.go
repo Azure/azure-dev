@@ -58,6 +58,10 @@ func newVersionAction(
 	}
 }
 
+func (i *versionAction) PostRun(ctx context.Context, RunResult error) error {
+	return nil
+}
+
 func (v *versionAction) Run(ctx context.Context) error {
 	switch v.formatter.Kind() {
 	case output.NoneFormat:

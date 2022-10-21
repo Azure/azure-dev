@@ -64,6 +64,10 @@ func newRestoreAction(flags restoreFlags, console input.Console, azdCtx *azdcont
 	}
 }
 
+func (i *restoreAction) PostRun(ctx context.Context, RunResult error) error {
+	return nil
+}
+
 func (r *restoreAction) Run(ctx context.Context) error {
 	if err := ensureProject(r.azdCtx.ProjectPath()); err != nil {
 		return err

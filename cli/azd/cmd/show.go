@@ -66,6 +66,10 @@ func newShowAction(
 	}
 }
 
+func (i *showAction) PostRun(ctx context.Context, RunResult error) error {
+	return nil
+}
+
 func (s *showAction) Run(ctx context.Context) error {
 	if err := ensureProject(s.azdCtx.ProjectPath()); err != nil {
 		return err

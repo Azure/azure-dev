@@ -83,5 +83,8 @@ func PromptTemplate(ctx context.Context, message string) (Template, error) {
 	selectedTemplateName := templateNames[selectedIndex]
 	log.Printf("Selected template: %s", fmt.Sprint(selectedTemplateName))
 
+	// separate this prompt from the next log
+	console.Message(ctx, "")
+
 	return templatesSet[selectedTemplateName], nil
 }

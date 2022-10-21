@@ -22,7 +22,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
-	"github.com/azure/azure-dev/cli/azd/pkg/spin"
 	"github.com/azure/azure-dev/cli/azd/pkg/templates"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
@@ -86,6 +85,7 @@ type initAction struct {
 	azCli   azcli.AzCli
 	gitCli  git.GitCli
 	flags   initFlags
+	cwd     string
 }
 
 func newInitAction(
@@ -103,6 +103,10 @@ func newInitAction(
 		gitCli:  gitCli,
 		flags:   flags,
 	}, nil
+}
+
+func (i *initAction) PostRun(ctx context.Context, RunResult error) error {
+	return nil
 }
 
 func (i *initAction) Run(ctx context.Context) error {
@@ -133,10 +137,12 @@ func (i *initAction) Run(ctx context.Context) error {
 		return err
 	}
 
-	// Project not initialized and no template specified
-	if _, err := os.Stat(i.azdCtx.ProjectPath()); err != nil && errors.Is(err, os.ErrNotExist) {
-		fmt.Fprintf(i.console.Handles().Stdout, "Initializing a new project in %s\n\n", wd)
+	// Command title
+	i.console.MessageUx(ctx, "Initializing a new project (azd init)", input.Title)
 
+	// Project not initialized and no template specified
+	// NOTE: Adding `azure.yaml` to a folder removes the option from selecting a template
+	if _, err := os.Stat(i.azdCtx.ProjectPath()); err != nil && errors.Is(err, os.ErrNotExist) {
 		if i.flags.template.Name == "" {
 			i.flags.template, err = templates.PromptTemplate(ctx, "Select a project template")
 
@@ -180,13 +186,22 @@ func (i *initAction) Run(ctx context.Context) error {
 			_ = os.RemoveAll(templateStagingDir)
 		}()
 
-		spinner := spin.NewSpinner(i.console.Handles().Stdout, "Downloading template")
-		err = spinner.Run(func() error {
-			return i.gitCli.FetchCode(ctx, templateUrl, i.flags.templateBranch, templateStagingDir)
-		})
+		i.cwd = output.WithHighLightFormat("%s", wd)
+		stepMessage := fmt.Sprintf("Downloading template code to: %s", i.cwd)
+		i.console.ShowSpinner(ctx, stepMessage, input.Step)
+
+		// perform the work while the spinner is running
+		err = i.gitCli.FetchCode(ctx, templateUrl, i.flags.templateBranch, templateStagingDir)
+
+		// stop the spinner based on the result
+		formatResult := input.StepDone
+		if err != nil {
+			formatResult = input.StepFailed
+		}
+		i.console.StopSpinner(ctx, stepMessage, formatResult)
 
 		if err != nil {
-			return fmt.Errorf("fetching template: %w", err)
+			return fmt.Errorf("\nfetching template: %w", err)
 		}
 
 		log.Printf(

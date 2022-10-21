@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/azure/azure-dev/cli/azd/cmd/contracts"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
@@ -364,7 +363,7 @@ func (ef *envRefreshAction) Run(ctx context.Context) error {
 	ef.console.Message(ctx, "Environments setting refresh completed")
 
 	if formatter.Kind() == output.JsonFormat {
-		err = formatter.Format(contracts.NewEnvRefreshResultFromProvisioningState(getStateResult.State), writer, nil)
+		err = formatter.Format(provisioning.NewEnvRefreshResultFromState(getStateResult.State), writer, nil)
 		if err != nil {
 			return fmt.Errorf("writing deployment result in JSON format: %w", err)
 		}

@@ -233,7 +233,6 @@
     "dependencies": {
       "@microsoft/vscode-azext-utils": "~0.3.15",
       "glob": "~8.0",
-      "fs-extra": "~10.1",
       "dotenv": "~16.0",
       "dayjs": "~1.11",
       "vscode-tas-client": "~0.1"

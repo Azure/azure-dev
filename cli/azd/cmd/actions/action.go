@@ -8,6 +8,8 @@ import (
 // ActionFunc is an Action implementation for regular functions.
 type ActionFunc func(context.Context) error
 
+// PostRun executes after Run. The action can  print the last message in the console as a summary after its execution.
+// runResult is the return value from the action.Run()
 func (i ActionFunc) PostRun(ctx context.Context, runResult error) error {
 	return runResult
 }
@@ -21,6 +23,6 @@ func (a ActionFunc) Run(ctx context.Context) error {
 type Action interface {
 	// Run executes the CLI command.
 	Run(ctx context.Context) error
-	// Executes after Run. The action can use it to print the last message in the console as a summary after its execution.
+	// Executes after Run. The action can  print the last message in the console as a summary after its execution.
 	PostRun(ctx context.Context, runResult error) error
 }

@@ -85,7 +85,7 @@ type initAction struct {
 	azCli                 azcli.AzCli
 	gitCli                git.GitCli
 	flags                 initFlags
-	formattedWithColorCwd string
+	formattedWithColorCwd string // this is used to print the path with color in the console
 }
 
 func newInitAction(
@@ -111,6 +111,7 @@ func (i *initAction) PostRun(ctx context.Context, runResult error) error {
 		i.console.Message(ctx, fmt.Sprintf("You can view the template code in your directory: %s", i.formattedWithColorCwd))
 	} else {
 		i.console.MessageUx(ctx, runResult.Error(), input.ResultError)
+		os.Exit(1)
 	}
 	return nil
 }

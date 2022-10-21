@@ -70,7 +70,7 @@ func (c *AskerConsole) SetWriter(writer io.Writer) {
 func (c *AskerConsole) Message(ctx context.Context, message string) {
 	// Disable output when formatting is enabled
 	if c.formatter != nil && c.formatter.Kind() == output.JsonFormat {
-		// we call json.Marhsal directly, because the formatter marshalls using indentation, and we would prefer
+		// we call json.Marshal directly, because the formatter marshalls using indentation, and we would prefer
 		// these objects be written on a single line.
 		jsonMessage, err := json.Marshal(c.eventForMessage(message))
 		if err != nil {

@@ -334,7 +334,7 @@ func (i *initAction) Run(ctx context.Context) error {
 		subscription:    i.flags.subscription,
 		location:        i.flags.location,
 	}
-	_, ctx, err = createAndInitEnvironment(ctx, &envSpec, i.azdCtx, i.console)
+	_, _, err = createAndInitEnvironment(ctx, &envSpec, i.azdCtx, i.console)
 	if err != nil {
 		return fmt.Errorf("loading environment: %w", err)
 	}

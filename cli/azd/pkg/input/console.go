@@ -133,18 +133,18 @@ func (c *AskerConsole) ShowSpinner(ctx context.Context, title string, format Mes
 	}
 	// If running, pause to apply style changes
 	if c.spinner.Status() == yacspin.SpinnerRunning {
-		c.spinner.Pause()
+		_ = c.spinner.Pause()
 	}
 
 	// Update style according to MessageUxType
 	c.spinner.Message(title)
-	c.spinner.CharSet(getCharset(format))
+	_ = c.spinner.CharSet(getCharset(format))
 
 	// unpause if Paused
 	if c.spinner.Status() == yacspin.SpinnerPaused {
-		c.spinner.Unpause()
+		_ = c.spinner.Unpause()
 	} else if c.spinner.Status() == yacspin.SpinnerStopped {
-		c.spinner.Start()
+		_ = c.spinner.Start()
 	}
 }
 
@@ -190,7 +190,7 @@ func (c *AskerConsole) StopSpinner(ctx context.Context, lastMessage string, form
 	}
 
 	c.spinner.StopMessage(lastMessage)
-	c.spinner.Stop()
+	_ = c.spinner.Stop()
 	// Add empty line every time the spinner stops
 	c.Message(ctx, "")
 }

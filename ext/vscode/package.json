@@ -42,8 +42,8 @@
           "commands": [
               {
                   "command": "azure-dev.commands.cli.provision",
-                  "title": "Create with the Azure Developer CLI (azd)...",
-                  "detail": "Use the Azure Developer CLI to set up all application resources."
+                  "title": "Create application infrastructure using azd...",
+                  "detail": "Use the Azure Developer CLI to set up application infrastructure resources (azd provision)."
               }
           ]
         },

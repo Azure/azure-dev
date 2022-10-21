@@ -29,8 +29,23 @@ module api '../../../../../common/infra/bicep/app/api-appservice-dotnet.bicep' =
     appServicePlanId: appServicePlan.outputs.appServicePlanId
     keyVaultName: keyVault.outputs.keyVaultName
     allowedOrigins: [ web.outputs.WEB_URI ]
+    appSettings: {
+      AZURE_SQL_CONNECTION_STRING_KEY: sqlServer.outputs.sqlConnectionStringKey
+    }
   }
 }
+
+// Give the API access to KeyVault
+module apiKeyVaultAccess '../../../../../../common/infra/bicep/core/security/keyvault-access.bicep' = {
+  name: 'api-keyvault-access'
+  params: {
+    environmentName: environmentName
+    location: location
+    keyVaultName: keyVault.outputs.keyVaultName
+    principalId: api.outputs.API_IDENTITY_PRINCIPAL_ID
+  }
+}
+
 // The application database
 module sqlServer '../../../../../common/infra/bicep/app/sqlserver.bicep' = {
   name: 'sql'
@@ -43,21 +58,15 @@ module sqlServer '../../../../../common/infra/bicep/app/sqlserver.bicep' = {
   }
 }
 
-// Configure api to use sql
-module apiSqlServerConfig '../../../../../../common/infra/bicep/core/host/appservice-config-sqlserver.bicep' = {
-  name: 'api-sqlserver-config'
-  params: {
-    appServiceName: api.outputs.API_NAME
-    sqlConnectionStringKey: sqlServer.outputs.sqlConnectionStringKey
-  }
-}
-
 // Create an App Service Plan to group applications under the same payment plan and SKU
-module appServicePlan '../../../../../../common/infra/bicep/core/host/appserviceplan-sites.bicep' = {
+module appServicePlan '../../../../../../common/infra/bicep/core/host/appserviceplan.bicep' = {
   name: 'appserviceplan'
   params: {
     environmentName: environmentName
     location: location
+    sku: {
+      name: 'B1'
+    }
   }
 }
 

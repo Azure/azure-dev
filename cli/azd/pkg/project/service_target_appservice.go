@@ -27,18 +27,35 @@ func (st *appServiceTarget) RequiredExternalTools() []tools.ExternalTool {
 	return []tools.ExternalTool{st.cli}
 }
 
-func (st *appServiceTarget) Deploy(ctx context.Context, _ *azdcontext.AzdContext, path string, progress chan<- string) (ServiceDeploymentResult, error) {
+func (st *appServiceTarget) Deploy(
+	ctx context.Context,
+	_ *azdcontext.AzdContext,
+	path string,
+	progress chan<- string,
+) (ServiceDeploymentResult, error) {
 	progress <- "Compressing deployment artifacts"
-	zipFilePath, err := internal.CreateDeployableZip(st.config.Name, path)
 
+	zipFilePath, err := internal.CreateDeployableZip(st.config.Name, path)
 	if err != nil {
 		return ServiceDeploymentResult{}, err
 	}
 
+	zipFile, err := os.Open(zipFilePath)
+	if err != nil {
+		return ServiceDeploymentResult{}, fmt.Errorf("failed reading deployment zip file: %w", err)
+	}
+
 	defer os.Remove(zipFilePath)
+	defer zipFile.Close()
 
 	progress <- "Publishing deployment package"
-	res, err := st.cli.DeployAppServiceZip(ctx, st.env.GetSubscriptionId(), st.scope.ResourceGroupName(), st.scope.ResourceName(), zipFilePath)
+	res, err := st.cli.DeployAppServiceZip(
+		ctx,
+		st.env.GetSubscriptionId(),
+		st.scope.ResourceGroupName(),
+		st.scope.ResourceName(),
+		zipFile,
+	)
 	if err != nil {
 		return ServiceDeploymentResult{}, fmt.Errorf("deploying service %s: %w", st.config.Name, err)
 	}
@@ -52,14 +69,19 @@ func (st *appServiceTarget) Deploy(ctx context.Context, _ *azdcontext.AzdContext
 	sdr := NewServiceDeploymentResult(
 		azure.WebsiteRID(st.env.GetSubscriptionId(), st.scope.ResourceGroupName(), st.scope.ResourceName()),
 		AppServiceTarget,
-		res,
+		*res,
 		endpoints,
 	)
 	return sdr, nil
 }
 
 func (st *appServiceTarget) Endpoints(ctx context.Context) ([]string, error) {
-	appServiceProperties, err := st.cli.GetAppServiceProperties(ctx, st.env.GetSubscriptionId(), st.scope.ResourceGroupName(), st.scope.ResourceName())
+	appServiceProperties, err := st.cli.GetAppServiceProperties(
+		ctx,
+		st.env.GetSubscriptionId(),
+		st.scope.ResourceGroupName(),
+		st.scope.ResourceName(),
+	)
 	if err != nil {
 		return nil, fmt.Errorf("fetching service properties: %w", err)
 	}
@@ -72,7 +94,12 @@ func (st *appServiceTarget) Endpoints(ctx context.Context) ([]string, error) {
 	return endpoints, nil
 }
 
-func NewAppServiceTarget(config *ServiceConfig, env *environment.Environment, scope *environment.DeploymentScope, azCli azcli.AzCli) ServiceTarget {
+func NewAppServiceTarget(
+	config *ServiceConfig,
+	env *environment.Environment,
+	scope *environment.DeploymentScope,
+	azCli azcli.AzCli,
+) ServiceTarget {
 	return &appServiceTarget{
 		config: config,
 		env:    env,

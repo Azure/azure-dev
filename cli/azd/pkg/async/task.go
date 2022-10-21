@@ -166,7 +166,9 @@ type InteractiveTaskWithProgress[R comparable, P comparable] struct {
 }
 
 // Creates a new Task instance with progress reporting and interactive console
-func NewInteractiveTaskWithProgress[R comparable, P comparable](taskFn InteractiveTaskWithProgressRunFunc[R, P]) *InteractiveTaskWithProgress[R, P] {
+func NewInteractiveTaskWithProgress[R comparable, P comparable](
+	taskFn InteractiveTaskWithProgressRunFunc[R, P],
+) *InteractiveTaskWithProgress[R, P] {
 	return &InteractiveTaskWithProgress[R, P]{
 		TaskWithProgress:   *NewTaskWithProgress[R, P](nil),
 		taskFn:             taskFn,
@@ -199,7 +201,9 @@ func (t *InteractiveTaskWithProgress[R, P]) Interactive() <-chan bool {
 }
 
 // Creates and schedules the task function and returns a task instance that holds the future result
-func RunInteractiveTaskWithProgress[R comparable, P comparable](taskFn InteractiveTaskWithProgressRunFunc[R, P]) *InteractiveTaskWithProgress[R, P] {
+func RunInteractiveTaskWithProgress[R comparable, P comparable](
+	taskFn InteractiveTaskWithProgressRunFunc[R, P],
+) *InteractiveTaskWithProgress[R, P] {
 	task := NewInteractiveTaskWithProgress(taskFn)
 	if err := task.Run(); err != nil {
 		panic(err)

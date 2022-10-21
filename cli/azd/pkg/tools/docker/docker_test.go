@@ -86,7 +86,11 @@ func Test_DockerBuild(t *testing.T) {
 
 		require.Equal(t, true, ran)
 		require.NotNil(t, err)
-		require.Equal(t, fmt.Sprintf("building image: exit code: 1, stdout: , stderr: %s: %s", stdErr, customErrorMessage), err.Error())
+		require.Equal(
+			t,
+			fmt.Sprintf("building image: exit code: 1, stdout: , stderr: %s: %s", stdErr, customErrorMessage),
+			err.Error(),
+		)
 		require.Equal(t, "", result)
 	})
 }
@@ -199,7 +203,11 @@ func Test_DockerTag(t *testing.T) {
 
 		require.Equal(t, true, ran)
 		require.NotNil(t, err)
-		require.Equal(t, fmt.Sprintf("tagging image: exit code: 1, stdout: , stderr: %s: %s", stdErr, customErrorMessage), err.Error())
+		require.Equal(
+			t,
+			fmt.Sprintf("tagging image: exit code: 1, stdout: , stderr: %s: %s", stdErr, customErrorMessage),
+			err.Error(),
+		)
 	})
 }
 
@@ -269,7 +277,84 @@ func Test_DockerPush(t *testing.T) {
 
 		require.Equal(t, true, ran)
 		require.NotNil(t, err)
-		require.Equal(t, fmt.Sprintf("pushing image: exit code: 1, stdout: , stderr: %s: %s", stdErr, customErrorMessage), err.Error())
+		require.Equal(
+			t,
+			fmt.Sprintf("pushing image: exit code: 1, stdout: , stderr: %s: %s", stdErr, customErrorMessage),
+			err.Error(),
+		)
+	})
+}
+
+func Test_DockerLogin(t *testing.T) {
+	cwd := "."
+
+	t.Run("NoError", func(t *testing.T) {
+		ran := false
+
+		mockContext := mocks.NewMockContext(context.Background())
+		docker := NewDocker(*mockContext.Context)
+
+		mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
+			return strings.Contains(command, "docker login")
+		}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+			ran = true
+
+			require.Equal(t, "docker", args.Cmd)
+			require.Equal(t, cwd, args.Cwd)
+			require.Equal(t, []string{
+				"login",
+				"--username", "USERNAME",
+				"--password", "PASSWORD",
+				"LOGIN_SERVER",
+			}, args.Args)
+
+			return exec.RunResult{
+				Stdout:   "Docker build output",
+				Stderr:   "",
+				ExitCode: 0,
+			}, nil
+		})
+
+		err := docker.Login(context.Background(), "LOGIN_SERVER", "USERNAME", "PASSWORD")
+
+		require.Equal(t, true, ran)
+		require.Nil(t, err)
+	})
+
+	t.Run("WithError", func(t *testing.T) {
+		ran := false
+		stdErr := "failed logging into docker"
+		customErrorMessage := "example error message"
+
+		mockContext := mocks.NewMockContext(context.Background())
+		docker := NewDocker(*mockContext.Context)
+
+		mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
+			return strings.Contains(command, "docker login")
+		}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+			ran = true
+
+			require.Equal(t, "docker", args.Cmd)
+			require.Equal(t, cwd, args.Cwd)
+			require.Equal(t, []string{
+				"login",
+				"--username", "USERNAME",
+				"--password", "PASSWORD",
+				"LOGIN_SERVER",
+			}, args.Args)
+
+			return exec.RunResult{
+				Stdout:   "",
+				Stderr:   stdErr,
+				ExitCode: 1,
+			}, errors.New(customErrorMessage)
+		})
+
+		err := docker.Login(context.Background(), "LOGIN_SERVER", "USERNAME", "PASSWORD")
+
+		require.Equal(t, true, ran)
+		require.NotNil(t, err)
+		require.Equal(t, fmt.Sprintf("%s: %s", stdErr, customErrorMessage), err.Error())
 	})
 }
 

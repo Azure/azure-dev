@@ -7,7 +7,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"log"
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azureutil"
@@ -42,35 +41,40 @@ func (m *Manager) Plan(ctx context.Context) (*DeploymentPlan, error) {
 }
 
 // Gets the latest deployment details for the specified scope
-func (m *Manager) GetDeployment(ctx context.Context, scope infra.Scope) (*DeployResult, error) {
-	var deployResult *DeployResult
+func (m *Manager) State(ctx context.Context, scope infra.Scope) (*StateResult, error) {
+	var stateResult *StateResult
 
-	err := m.runAction(ctx, "Retrieving Azure Deployment", m.interactive, func(ctx context.Context, spinner *spin.Spinner) error {
-		queryTask := m.provider.GetDeployment(ctx, scope)
+	err := m.runAction(
+		ctx,
+		"Retrieving Infrastructure State",
+		m.interactive,
+		func(ctx context.Context, spinner *spin.Spinner) error {
+			queryTask := m.provider.State(ctx, scope)
 
-		go func() {
-			for progress := range queryTask.Progress() {
-				m.updateSpinnerTitle(spinner, progress.Message)
+			go func() {
+				for progress := range queryTask.Progress() {
+					m.updateSpinnerTitle(spinner, progress.Message)
+				}
+			}()
+
+			go m.monitorInteraction(spinner, queryTask.Interactive())
+
+			result, err := queryTask.Await()
+			if err != nil {
+				return err
 			}
-		}()
 
-		go m.monitorInteraction(spinner, queryTask.Interactive())
+			stateResult = result
 
-		result, err := queryTask.Await()
-		if err != nil {
-			return err
-		}
-
-		deployResult = result
-
-		return nil
-	})
+			return nil
+		},
+	)
 
 	if err != nil {
-		return nil, fmt.Errorf("error retrieving deployment: %w", err)
+		return nil, fmt.Errorf("error retrieving state: %w", err)
 	}
 
-	return deployResult, nil
+	return stateResult, nil
 }
 
 // Deploys the Azure infrastructure for the specified project
@@ -87,7 +91,7 @@ func (m *Manager) Deploy(ctx context.Context, plan *DeploymentPlan, scope infra.
 		return nil, err
 	}
 
-	if err := UpdateEnvironment(m.env, &deployResult.Deployment.Outputs); err != nil {
+	if err := UpdateEnvironment(m.env, deployResult.Deployment.Outputs); err != nil {
 		return nil, fmt.Errorf("updating environment with deployment outputs: %w", err)
 	}
 
@@ -120,26 +124,31 @@ func (m *Manager) Destroy(ctx context.Context, deployment *Deployment, options D
 func (m *Manager) plan(ctx context.Context) (*DeploymentPlan, error) {
 	var deploymentPlan *DeploymentPlan
 
-	err := m.runAction(ctx, "Planning infrastructure provisioning", m.interactive, func(ctx context.Context, spinner *spin.Spinner) error {
-		planningTask := m.provider.Plan(ctx)
+	err := m.runAction(
+		ctx,
+		"Planning infrastructure provisioning",
+		m.interactive,
+		func(ctx context.Context, spinner *spin.Spinner) error {
+			planningTask := m.provider.Plan(ctx)
 
-		go func() {
-			for progress := range planningTask.Progress() {
-				m.updateSpinnerTitle(spinner, progress.Message)
+			go func() {
+				for progress := range planningTask.Progress() {
+					m.updateSpinnerTitle(spinner, progress.Message)
+				}
+			}()
+
+			go m.monitorInteraction(spinner, planningTask.Interactive())
+
+			result, err := planningTask.Await()
+			if err != nil {
+				return err
 			}
-		}()
 
-		go m.monitorInteraction(spinner, planningTask.Interactive())
+			deploymentPlan = result
 
-		result, err := planningTask.Await()
-		if err != nil {
-			return err
-		}
-
-		deploymentPlan = result
-
-		return nil
-	})
+			return nil
+		},
+	)
 
 	if err != nil {
 		return nil, fmt.Errorf("planning infrastructure provisioning: %w", err)
@@ -151,40 +160,42 @@ func (m *Manager) plan(ctx context.Context) (*DeploymentPlan, error) {
 }
 
 // Applies the specified infrastructure provisioning and orchestrates the interactive terminal operations
-func (m *Manager) deploy(ctx context.Context, location string, plan *DeploymentPlan, scope infra.Scope) (*DeployResult, error) {
+func (m *Manager) deploy(
+	ctx context.Context,
+	location string,
+	plan *DeploymentPlan,
+	scope infra.Scope,
+) (*DeployResult, error) {
 	var deployResult *DeployResult
 
-	err := m.runAction(ctx, "Provisioning Azure resources", m.interactive, func(ctx context.Context, spinner *spin.Spinner) error {
-		deployTask := m.provider.Deploy(ctx, plan, scope)
+	err := m.runAction(
+		ctx,
+		"Provisioning Azure resources",
+		m.interactive,
+		func(ctx context.Context, spinner *spin.Spinner) error {
+			deployTask := m.provider.Deploy(ctx, plan, scope)
 
-		go func() {
-			for progress := range deployTask.Progress() {
-				m.updateSpinnerTitle(spinner, progress.Message)
-
-				if m.formatter.Kind() == output.JsonFormat {
-					m.writeJsonOutput(ctx, progress.Operations)
+			go func() {
+				for progress := range deployTask.Progress() {
+					m.updateSpinnerTitle(spinner, progress.Message)
 				}
+			}()
+
+			go m.monitorInteraction(spinner, deployTask.Interactive())
+
+			result, err := deployTask.Await()
+			if err != nil {
+				return err
 			}
-		}()
 
-		go m.monitorInteraction(spinner, deployTask.Interactive())
+			deployResult = result
 
-		result, err := deployTask.Await()
-		if err != nil {
-			return err
-		}
-
-		deployResult = result
-
-		return nil
-	})
+			return nil
+		},
+	)
 
 	if err != nil {
 		return nil, fmt.Errorf("error deploying infrastructure: %w", err)
-	}
-
-	if m.formatter.Kind() == output.JsonFormat {
-		m.writeJsonOutput(ctx, deployResult.Operations)
 	}
 
 	m.console.Message(ctx, output.WithSuccessFormat("\nAzure resource provisioning completed successfully"))
@@ -196,26 +207,31 @@ func (m *Manager) deploy(ctx context.Context, location string, plan *DeploymentP
 func (m *Manager) destroy(ctx context.Context, deployment *Deployment, options DestroyOptions) (*DestroyResult, error) {
 	var destroyResult *DestroyResult
 
-	err := m.runAction(ctx, "Destroying Azure resources", m.interactive, func(ctx context.Context, spinner *spin.Spinner) error {
-		destroyTask := m.provider.Destroy(ctx, deployment, options)
+	err := m.runAction(
+		ctx,
+		"Destroying Azure resources",
+		m.interactive,
+		func(ctx context.Context, spinner *spin.Spinner) error {
+			destroyTask := m.provider.Destroy(ctx, deployment, options)
 
-		go func() {
-			for progress := range destroyTask.Progress() {
-				m.updateSpinnerTitle(spinner, progress.Message)
+			go func() {
+				for progress := range destroyTask.Progress() {
+					m.updateSpinnerTitle(spinner, progress.Message)
+				}
+			}()
+
+			go m.monitorInteraction(spinner, destroyTask.Interactive())
+
+			result, err := destroyTask.Await()
+			if err != nil {
+				return err
 			}
-		}()
 
-		go m.monitorInteraction(spinner, destroyTask.Interactive())
+			destroyResult = result
 
-		result, err := destroyTask.Await()
-		if err != nil {
-			return err
-		}
-
-		destroyResult = result
-
-		return nil
-	})
+			return nil
+		},
+	)
 
 	if err != nil {
 		return nil, fmt.Errorf("error destroying Azure resources: %w", err)
@@ -244,7 +260,10 @@ func (m *Manager) ensureLocation(ctx context.Context, deployment *Deployment) (s
 		// user on every deployment if they don't have a `location` parameter in their bicep file.
 		// When we store it, we should store it /per environment/ not as a property of the entire
 		// project.
-		selected, err := azureutil.PromptLocation(ctx, "Please select an Azure location to use to store deployment metadata:")
+		selected, err := azureutil.PromptLocation(
+			ctx,
+			"Please select an Azure location to use to store deployment metadata:",
+		)
 		if err != nil {
 			return "", fmt.Errorf("prompting for deployment metadata region: %w", err)
 		}
@@ -255,11 +274,16 @@ func (m *Manager) ensureLocation(ctx context.Context, deployment *Deployment) (s
 	return location, nil
 }
 
-func (m *Manager) runAction(ctx context.Context, title string, interactive bool, action func(ctx context.Context, spinner *spin.Spinner) error) error {
+func (m *Manager) runAction(
+	ctx context.Context,
+	title string,
+	interactive bool,
+	action func(ctx context.Context, spinner *spin.Spinner) error,
+) error {
 	var spinner *spin.Spinner
 
-	if interactive {
-		spinner, ctx = spin.GetOrCreateSpinner(ctx, title)
+	if interactive && (m.formatter == nil || m.formatter.Kind() != output.JsonFormat) {
+		spinner, ctx = spin.GetOrCreateSpinner(ctx, m.console.Handles().Stdout, title)
 		defer spinner.Stop()
 		defer m.console.SetWriter(nil)
 
@@ -279,13 +303,6 @@ func (m *Manager) updateSpinnerTitle(spinner *spin.Spinner, message string) {
 	spinner.Title(fmt.Sprintf("%s...", message))
 }
 
-func (m *Manager) writeJsonOutput(ctx context.Context, output any) {
-	err := m.formatter.Format(output, m.writer, nil)
-	if err != nil {
-		log.Printf("error formatting output: %s", err.Error())
-	}
-}
-
 // Monitors the interactive channel and starts/stops the terminal spinner as needed
 func (m *Manager) monitorInteraction(spinner *spin.Spinner, interactiveChannel <-chan bool) {
 	for isInteractive := range interactiveChannel {
@@ -302,7 +319,13 @@ func (m *Manager) monitorInteraction(spinner *spin.Spinner, interactiveChannel <
 }
 
 // Creates a new instance of the Provisioning Manager
-func NewManager(ctx context.Context, env *environment.Environment, projectPath string, infraOptions Options, interactive bool) (*Manager, error) {
+func NewManager(
+	ctx context.Context,
+	env *environment.Environment,
+	projectPath string,
+	infraOptions Options,
+	interactive bool,
+) (*Manager, error) {
 	infraProvider, err := NewProvider(ctx, env, projectPath, infraOptions)
 	if err != nil {
 		return nil, fmt.Errorf("error creating infra provider: %w", err)

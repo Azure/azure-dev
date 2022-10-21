@@ -66,12 +66,12 @@ func WithWriter(ctx context.Context, writer io.Writer) context.Context {
 	return context.WithValue(ctx, writerContextKey, writer)
 }
 
-// Gets the io.Writer implementation previously specified.
-// If not found will return a default writer implementation.
+// Gets the io.Writer implementation previously specified or panics
+// if one can not be found
 func GetWriter(ctx context.Context) io.Writer {
 	writer, ok := ctx.Value(writerContextKey).(io.Writer)
 	if !ok {
-		return GetDefaultWriter()
+		panic("no writer")
 	}
 
 	return writer

@@ -1,5 +1,3 @@
-
-Deployment Error Details:
 Conflict: Website with given name devapi already exists.
 - Website with given name devapi already exists.
 Conflict: Website with given name devweb already exists.

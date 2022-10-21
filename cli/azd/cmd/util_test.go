@@ -1,17 +1,20 @@
 package cmd
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
+	"net/http"
 	"sort"
 	"strings"
 	"testing"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/exec"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
+	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/stretchr/testify/require"
 )
@@ -45,38 +48,38 @@ func Test_promptEnvironmentName(t *testing.T) {
 	})
 
 	t.Run("duplicate resource groups ignored", func(t *testing.T) {
-		mockDeployment := azcli.AzCliDeployment{
-			Properties: azcli.AzCliDeploymentProperties{
-				Dependencies: []azcli.AzCliDeploymentPropertiesDependency{
+		mockDeployment := armresources.DeploymentExtended{
+			Properties: &armresources.DeploymentPropertiesExtended{
+				Dependencies: []*armresources.Dependency{
 					{
-						DependsOn: []azcli.AzCliDeploymentPropertiesBasicDependency{
+						DependsOn: []*armresources.BasicDependency{
 							{
-								ResourceName: "groupA",
-								ResourceType: string(infra.AzureResourceTypeResourceGroup),
+								ResourceName: convert.RefOf("groupA"),
+								ResourceType: convert.RefOf(string(infra.AzureResourceTypeResourceGroup)),
 							},
 							{
-								ResourceName: "groupB",
-								ResourceType: string(infra.AzureResourceTypeResourceGroup),
+								ResourceName: convert.RefOf("groupB"),
+								ResourceType: convert.RefOf(string(infra.AzureResourceTypeResourceGroup)),
 							},
 							{
-								ResourceName: "ignoredForWrongType",
-								ResourceType: string(infra.AzureResourceTypeStorageAccount),
+								ResourceName: convert.RefOf("ignoredForWrongType"),
+								ResourceType: convert.RefOf(string(infra.AzureResourceTypeStorageAccount)),
 							},
 						},
 					},
 					{
-						DependsOn: []azcli.AzCliDeploymentPropertiesBasicDependency{
+						DependsOn: []*armresources.BasicDependency{
 							{
-								ResourceName: "groupA",
-								ResourceType: string(infra.AzureResourceTypeResourceGroup),
+								ResourceName: convert.RefOf("groupA"),
+								ResourceType: convert.RefOf(string(infra.AzureResourceTypeResourceGroup)),
 							},
 							{
-								ResourceName: "groupB",
-								ResourceType: string(infra.AzureResourceTypeResourceGroup),
+								ResourceName: convert.RefOf("groupB"),
+								ResourceType: convert.RefOf(string(infra.AzureResourceTypeResourceGroup)),
 							},
 							{
-								ResourceName: "groupC",
-								ResourceType: string(infra.AzureResourceTypeResourceGroup),
+								ResourceName: convert.RefOf("groupC"),
+								ResourceType: convert.RefOf(string(infra.AzureResourceTypeResourceGroup)),
 							},
 						},
 					},
@@ -85,12 +88,19 @@ func Test_promptEnvironmentName(t *testing.T) {
 		}
 
 		mockContext := mocks.NewMockContext(context.Background())
-		mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
-			return strings.Contains(command, "az deployment sub show")
-		}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
-			jsonBytes, _ := json.Marshal(mockDeployment)
 
-			return exec.NewRunResult(0, string(jsonBytes), ""), nil
+		mockContext.HttpClient.When(func(request *http.Request) bool {
+			return request.Method == http.MethodGet && strings.Contains(
+				request.URL.Path,
+				"/subscriptions/sub-id/providers/Microsoft.Resources/deployments",
+			)
+		}).RespondFn(func(request *http.Request) (*http.Response, error) {
+			subscriptionsListBytes, _ := json.Marshal(mockDeployment)
+
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Body:       io.NopCloser(bytes.NewBuffer(subscriptionsListBytes)),
+			}, nil
 		})
 
 		resourceManager := infra.NewAzureResourceManager(*mockContext.Context)

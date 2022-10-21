@@ -23,9 +23,30 @@ type Docker struct {
 	commandRunner exec.CommandRunner
 }
 
-// Runs a Docker build for a given Dockerfile. If the platform is not specified (empty), it defaults to amd64. If the build is successful, the function
+func (d *Docker) Login(ctx context.Context, loginServer string, username string, password string) error {
+	_, err := d.executeCommand(ctx, ".", "login",
+		"--username", username,
+		"--password", password,
+		loginServer)
+
+	if err != nil {
+		return fmt.Errorf("failed logging into docker: %w", err)
+	}
+
+	return nil
+}
+
+// Runs a Docker build for a given Dockerfile. If the platform is not specified (empty),
+// it defaults to amd64. If the build
+// is successful, the function
 // returns the image id of the built image.
-func (d *Docker) Build(ctx context.Context, cwd string, dockerFilePath string, platform string, buildContext string) (string, error) {
+func (d *Docker) Build(
+	ctx context.Context,
+	cwd string,
+	dockerFilePath string,
+	platform string,
+	buildContext string,
+) (string, error) {
 	if strings.TrimSpace(platform) == "" {
 		platform = "amd64"
 	}
@@ -104,12 +125,20 @@ func isSupportedDockerVersion(cliOutput string) (bool, error) {
 	if releaseVersionMatches := dockerVersionReleaseBuildRegexp.FindStringSubmatch(version); releaseVersionMatches != nil {
 		major, err := strconv.Atoi(releaseVersionMatches[1])
 		if err != nil {
-			return false, fmt.Errorf("failed to convert major version component %s to an integer: %w", releaseVersionMatches[1], err)
+			return false, fmt.Errorf(
+				"failed to convert major version component %s to an integer: %w",
+				releaseVersionMatches[1],
+				err,
+			)
 		}
 
 		minor, err := strconv.Atoi(releaseVersionMatches[2])
 		if err != nil {
-			return false, fmt.Errorf("failed to convert minor version component %s to an integer: %w", releaseVersionMatches[2], err)
+			return false, fmt.Errorf(
+				"failed to convert minor version component %s to an integer: %w",
+				releaseVersionMatches[2],
+				err,
+			)
 		}
 
 		return (major > 17 || (major == 17 && minor >= 9)), nil
@@ -120,7 +149,11 @@ func isSupportedDockerVersion(cliOutput string) (bool, error) {
 	if masterVersionMatches := dockerVersionMasterBuildRegexp.FindStringSubmatch(version); masterVersionMatches != nil {
 		year, err := strconv.Atoi(masterVersionMatches[1])
 		if err != nil {
-			return false, fmt.Errorf("failed to convert major version component %s to an integer: %w", masterVersionMatches[1], err)
+			return false, fmt.Errorf(
+				"failed to convert major version component %s to an integer: %w",
+				masterVersionMatches[1],
+				err,
+			)
 		}
 
 		return year >= 2018, nil

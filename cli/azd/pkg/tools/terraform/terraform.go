@@ -27,6 +27,8 @@ type TerraformCli interface {
 	Apply(ctx context.Context, modulePath string, additionalArgs ...string) (string, error)
 	// Retrieves the output variables from the most recent deployment state
 	Output(ctx context.Context, modulePath string, additionalArgs ...string) (string, error)
+	// Retrieves information about the infrastructure from the current deployment state
+	Show(ctx context.Context, modulePath string, additionalArgs ...string) (string, error)
 	// Destroys all resources referenced in the terraform module
 	Destroy(ctx context.Context, modulePath string, additionalArgs ...string) (string, error)
 }
@@ -42,7 +44,7 @@ type NewTerraformCliArgs struct {
 
 func NewTerraformCli(args NewTerraformCliArgs) TerraformCli {
 	if args.commandRunner == nil {
-		args.commandRunner = exec.NewCommandRunner()
+		panic("NewTerraformCli: must set args.commandRunner")
 	}
 
 	return &terraformCli{
@@ -161,7 +163,12 @@ func (cli *terraformCli) Init(ctx context.Context, modulePath string, additional
 	return cmdRes.Stdout, nil
 }
 
-func (cli *terraformCli) Plan(ctx context.Context, modulePath string, planFilePath string, additionalArgs ...string) (string, error) {
+func (cli *terraformCli) Plan(
+	ctx context.Context,
+	modulePath string,
+	planFilePath string,
+	additionalArgs ...string,
+) (string, error) {
 	args := []string{
 		fmt.Sprintf("-chdir=%s", modulePath),
 		"plan",
@@ -203,6 +210,22 @@ func (cli *terraformCli) Apply(ctx context.Context, modulePath string, additiona
 func (cli *terraformCli) Output(ctx context.Context, modulePath string, additionalArgs ...string) (string, error) {
 	args := []string{
 		fmt.Sprintf("-chdir=%s", modulePath), "output", "-json"}
+
+	args = append(args, additionalArgs...)
+	cmdRes, err := cli.runCommand(ctx, args...)
+	if err != nil {
+		return "", fmt.Errorf(
+			"failed running terraform output: %s (%w)",
+			cmdRes.Stderr,
+			err,
+		)
+	}
+	return cmdRes.Stdout, nil
+}
+
+func (cli *terraformCli) Show(ctx context.Context, modulePath string, additionalArgs ...string) (string, error) {
+	args := []string{
+		fmt.Sprintf("-chdir=%s", modulePath), "show", "-json"}
 
 	args = append(args, additionalArgs...)
 	cmdRes, err := cli.runCommand(ctx, args...)

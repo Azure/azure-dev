@@ -1,3 +1,15 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
+// Package terraform contains an implementation of provider.Provider for Terraform. This
+// provider is registered for use when this package is imported, and can be imported for
+// side effects only to register the provider, e.g.:
+//
+// require(
+//
+//	_ "github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning/terraform"
+//
+// )
 package terraform
 
 import (
@@ -43,7 +55,12 @@ func (t *TerraformProvider) RequiredExternalTools() []tools.ExternalTool {
 }
 
 // NewTerraformProvider creates a new instance of a Terraform Infra provider
-func NewTerraformProvider(ctx context.Context, env *environment.Environment, projectPath string, infraOptions Options) *TerraformProvider {
+func NewTerraformProvider(
+	ctx context.Context,
+	env *environment.Environment,
+	projectPath string,
+	infraOptions Options,
+) *TerraformProvider {
 	terraformCli := terraform.GetTerraformCli(ctx)
 	console := input.GetConsole(ctx)
 
@@ -75,7 +92,9 @@ func NewTerraformProvider(ctx context.Context, env *environment.Environment, pro
 }
 
 // Previews the infrastructure through terraform plan
-func (t *TerraformProvider) Plan(ctx context.Context) *async.InteractiveTaskWithProgress[*DeploymentPlan, *DeploymentPlanningProgress] {
+func (t *TerraformProvider) Plan(
+	ctx context.Context,
+) *async.InteractiveTaskWithProgress[*DeploymentPlan, *DeploymentPlanningProgress] {
 	return async.RunInteractiveTaskWithProgress(
 		func(asyncContext *async.InteractiveTaskContextWithProgress[*DeploymentPlan, *DeploymentPlanningProgress]) {
 			isRemoteBackendConfig, err := t.isRemoteBackendConfig()
@@ -157,7 +176,11 @@ func (t *TerraformProvider) Plan(ctx context.Context) *async.InteractiveTaskWith
 }
 
 // Deploy the infrastructure within the specified template through terraform apply
-func (t *TerraformProvider) Deploy(ctx context.Context, deployment *DeploymentPlan, scope infra.Scope) *async.InteractiveTaskWithProgress[*DeployResult, *DeployProgress] {
+func (t *TerraformProvider) Deploy(
+	ctx context.Context,
+	deployment *DeploymentPlan,
+	scope infra.Scope,
+) *async.InteractiveTaskWithProgress[*DeployResult, *DeployProgress] {
 	return async.RunInteractiveTaskWithProgress(
 		func(asyncContext *async.InteractiveTaskContextWithProgress[*DeployResult, *DeployProgress]) {
 			t.console.Message(ctx, "Locating plan file...")
@@ -208,7 +231,11 @@ func (t *TerraformProvider) Deploy(ctx context.Context, deployment *DeploymentPl
 }
 
 // Destroys the specified deployment through terraform destroy
-func (t *TerraformProvider) Destroy(ctx context.Context, deployment *Deployment, options DestroyOptions) *async.InteractiveTaskWithProgress[*DestroyResult, *DestroyProgress] {
+func (t *TerraformProvider) Destroy(
+	ctx context.Context,
+	deployment *Deployment,
+	options DestroyOptions,
+) *async.InteractiveTaskWithProgress[*DestroyResult, *DestroyProgress] {
 	return async.RunInteractiveTaskWithProgress(
 		func(asyncContext *async.InteractiveTaskContextWithProgress[*DestroyResult, *DestroyProgress]) {
 
@@ -257,52 +284,37 @@ func (t *TerraformProvider) Destroy(ctx context.Context, deployment *Deployment,
 		})
 }
 
-// Gets the latest deployment details
-func (t *TerraformProvider) GetDeployment(ctx context.Context, scope infra.Scope) *async.InteractiveTaskWithProgress[*DeployResult, *DeployProgress] {
+func (t *TerraformProvider) State(
+	ctx context.Context,
+	_ infra.Scope,
+) *async.InteractiveTaskWithProgress[*StateResult, *StateProgress] {
 	return async.RunInteractiveTaskWithProgress(
-		func(asyncContext *async.InteractiveTaskContextWithProgress[*DeployResult, *DeployProgress]) {
-			t.console.Message(ctx, "Loading terraform module...")
-
+		func(asyncContext *async.InteractiveTaskContextWithProgress[*StateResult, *StateProgress]) {
 			isRemoteBackendConfig, err := t.isRemoteBackendConfig()
 			if err != nil {
 				asyncContext.SetError(fmt.Errorf("reading backend config: %w", err))
 				return
 			}
 
-			err = asyncContext.Interact(func() error {
-				initRes, err := t.init(ctx, isRemoteBackendConfig)
-				if err != nil {
-					return fmt.Errorf("terraform init failed: %s , err: %w", initRes, err)
-				}
-
-				return nil
-			})
-
-			if err != nil {
-				asyncContext.SetError(err)
-				return
-			}
-
-			t.console.Message(ctx, "Retrieving deployment output...")
+			t.console.Message(ctx, "Retrieving terraform state...")
 			modulePath := t.modulePath()
-			deployment, err := t.createDeployment(ctx, modulePath)
+
+			terraformState, err := t.showCurrentState(ctx, modulePath, isRemoteBackendConfig)
 			if err != nil {
-				asyncContext.SetError(fmt.Errorf("compiling terraform deployment: %w", err))
+				asyncContext.SetError(fmt.Errorf("fetching terraform state failed: %w", err))
 				return
 			}
 
-			outputs, err := t.createOutputParameters(ctx, modulePath, isRemoteBackendConfig)
-			if err != nil {
-				asyncContext.SetError(fmt.Errorf("create terraform output failed: %w", err))
-				return
+			state := State{}
+
+			state.Outputs = t.convertOutputs(terraformState.Values.Outputs)
+			state.Resources = t.collectAzureResources(terraformState.Values.RootModule)
+
+			result := StateResult{
+				State: &state,
 			}
 
-			deployment.Outputs = outputs
-			result := &DeployResult{
-				Deployment: deployment,
-			}
-
-			asyncContext.SetResult(result)
+			asyncContext.SetResult(&result)
 		})
 }
 
@@ -318,7 +330,8 @@ func (t *TerraformProvider) createPlanArgs(isRemoteBackendConfig bool) []string 
 }
 
 // Creates the terraform apply CLI arguments
-func (t *TerraformProvider) createApplyArgs(isRemoteBackendConfig bool, data TerraformDeploymentDetails) ([]string, error) {
+func (t *TerraformProvider) createApplyArgs(
+	isRemoteBackendConfig bool, data TerraformDeploymentDetails) ([]string, error) {
 	args := []string{}
 	if !isRemoteBackendConfig {
 		args = append(args, fmt.Sprintf("-state=%s", data.localStateFilePath))
@@ -388,7 +401,11 @@ func (t *TerraformProvider) init(ctx context.Context, isRemoteBackendConfig bool
 }
 
 // Creates a normalized view of the terraform output.
-func (t *TerraformProvider) createOutputParameters(ctx context.Context, modulePath string, isRemoteBackend bool) (map[string]OutputParameter, error) {
+func (t *TerraformProvider) createOutputParameters(
+	ctx context.Context,
+	modulePath string,
+	isRemoteBackend bool,
+) (map[string]OutputParameter, error) {
 	cmd := []string{}
 
 	if !isRemoteBackend {
@@ -400,19 +417,79 @@ func (t *TerraformProvider) createOutputParameters(ctx context.Context, modulePa
 		return nil, fmt.Errorf("reading deployment output failed: %s, err:%w", runResult, err)
 	}
 
-	var outputMap map[string]map[string]interface{}
+	var outputMap map[string]terraformOutput
 	if err := json.Unmarshal([]byte(runResult), &outputMap); err != nil {
 		return nil, err
 	}
 
+	return t.convertOutputs(outputMap), nil
+}
+
+func (t *TerraformProvider) mapTerraformTypeToInterfaceType(typ any) ParameterType {
+	// in the JSON output, the type property maps to either a string (for a primitive type) or an
+	// array of things which describe a complex type.
+	switch v := typ.(type) {
+	case string:
+		switch v {
+		case "string":
+			return ParameterTypeString
+		case "bool":
+			return ParameterTypeBoolean
+		case "number":
+			return ParameterTypeNumber
+		default:
+			panic(fmt.Sprintf("unknown primitive type: %s", v))
+		}
+	case []any:
+		// in this case we have a complex type, which in json looked like ["type", <schema parts>...], just pull out the
+		// first part and map to either and object or array.
+		switch v[0].(string) {
+		case "tuple":
+			return ParameterTypeArray
+		case "object":
+			return ParameterTypeObject
+		default:
+			panic(fmt.Sprintf("unknown primitive complex type tag: %s (full type: %+v)", v, typ))
+		}
+	}
+
+	return ParameterTypeString
+}
+
+// convertOutputs converts a terraform output map to the canonical format shared by all provider implementations.
+func (t *TerraformProvider) convertOutputs(outputMap map[string]terraformOutput) map[string]OutputParameter {
 	outputParameters := make(map[string]OutputParameter)
 	for k, v := range outputMap {
 		outputParameters[k] = OutputParameter{
-			Type:  fmt.Sprint(v["type"]),
-			Value: v["value"],
+			Type:  t.mapTerraformTypeToInterfaceType(v.Type),
+			Value: v.Value,
 		}
 	}
-	return outputParameters, nil
+	return outputParameters
+}
+
+func (t *TerraformProvider) showCurrentState(
+	ctx context.Context,
+	modulePath string,
+	isRemoteBackend bool,
+) (*terraformShowOutput, error) {
+	cmd := []string{}
+
+	if !isRemoteBackend {
+		cmd = append(cmd, t.localStateFilePath())
+	}
+
+	runResult, err := t.cli.Show(ctx, modulePath, cmd...)
+	if err != nil {
+		return nil, fmt.Errorf("showing current state failed: %s, err:%w", runResult, err)
+	}
+
+	var showOutput terraformShowOutput
+	if err := json.Unmarshal([]byte(runResult), &showOutput); err != nil {
+		return nil, err
+	}
+
+	return &showOutput, nil
 }
 
 // Creates the deployment object from the specified module path
@@ -450,6 +527,75 @@ func (t *TerraformProvider) createDeployment(ctx context.Context, modulePath str
 	}
 
 	return &template, nil
+}
+
+// collectAzureResources collects the set of resources from the root module of a terraform state file, including
+// resources from all child modules. Only resources managed by azure providers are considered (today, that's
+// just resources from the `registry.terraform.io/hashicorp/azurerm` provider). Only "managed" resources are
+// considered.
+func (t *TerraformProvider) collectAzureResources(rootModule terraformRootModule) []Resource {
+	// the set of resources we've seen (keyed by their id)
+	azureResources := make(map[string]struct{})
+
+	// Walk over all the modules (starting at the root) and mark each resource we see from the azure
+	// provider.
+	visitResource := func(r terraformResource) {
+		if r.Mode == terraformModeManaged && r.ProviderName == "registry.terraform.io/hashicorp/azurerm" {
+			if id, err := t.getIdForManagedResource(r); err != nil {
+				log.Printf("error determining id for resource: %v, ignoring...", err)
+			} else {
+				azureResources[id] = struct{}{}
+			}
+		}
+	}
+
+	var visitChildModule func(c terraformChildModule)
+	visitChildModule = func(c terraformChildModule) {
+		for _, r := range c.Resources {
+			visitResource(r)
+		}
+
+		for _, c := range c.ChildModules {
+			visitChildModule(c)
+		}
+	}
+
+	for _, r := range rootModule.Resources {
+		visitResource(r)
+	}
+
+	for _, c := range rootModule.ChildModules {
+		visitChildModule(c)
+	}
+
+	// At this point, allResources contains the ids of all the resources we discovered.
+	resources := make([]Resource, 0, len(azureResources))
+	for id := range azureResources {
+		resources = append(resources, Resource{
+			Id: id,
+		})
+	}
+
+	return resources
+}
+
+func (t *TerraformProvider) getIdForManagedResource(r terraformResource) (string, error) {
+	// Most azure resources use "id" as the key in the values bag that holds the resource id. However, some
+	// resources are special and use a different key for the Azure Resource Id.
+	idKey := "id"
+
+	switch r.Type {
+	case "azurerm_key_vault_secret":
+		idKey = "resource_id"
+	}
+
+	if val, has := r.Values[idKey]; !has {
+		return "", fmt.Errorf("resource %s has no %s property", r.Address, idKey)
+	} else if id, ok := val.(string); !ok {
+		return "", fmt.Errorf("resource %s has %s property with type %T not string", r.Address, idKey, val)
+	} else {
+		return id, nil
+	}
 }
 
 // Gets the path to the project parameters file path
@@ -537,13 +683,66 @@ func (t *TerraformProvider) isRemoteBackendConfig() (bool, error) {
 	return false, nil
 }
 
-// Registers the Terraform provider with the provisioning module
-func Register() {
-	err := RegisterProvider(Terraform, func(ctx context.Context, env *environment.Environment, projectPath string, options Options) (Provider, error) {
-		return NewTerraformProvider(ctx, env, projectPath, options), nil
-	})
+func init() {
+	err := RegisterProvider(
+		Terraform,
+		func(ctx context.Context, env *environment.Environment, projectPath string, options Options) (Provider, error) {
+			return NewTerraformProvider(ctx, env, projectPath, options), nil
+		},
+	)
 
 	if err != nil {
 		panic(err)
 	}
+}
+
+// terraformShowOutput is a model type for the output of `terraform show` for a tfstate file.
+// see https://www.terraform.io/internals/json-format#state-representation for more information on the shape
+// of the JSON data
+type terraformShowOutput struct {
+	FormatVersion string          `json:"format_version"`
+	Values        terraformValues `json:"values"`
+}
+
+// terraformValues is a model type for the `values-representation` object in a JSON output from terraform.
+// see https://www.terraform.io/internals/json-format#values-representation for more information on the shape
+// of the JSON data.
+type terraformValues struct {
+	Outputs    map[string]terraformOutput `json:"outputs"`
+	RootModule terraformRootModule        `json:"root_module"`
+}
+
+// terraformOutput is a model type for the value in the output map.
+type terraformOutput struct {
+	Value any `json:"value"`
+	// This is either a string or an array objects for a complex type
+	Type      any  `json:"type"`
+	Sensitive bool `json:"sensitive"`
+}
+
+// terraformRootModule is a model type for the "root_module" property the JSON output of a state file.
+type terraformRootModule struct {
+	Resources    []terraformResource    `json:"resources"`
+	ChildModules []terraformChildModule `json:"child_modules"`
+}
+
+const terraformModeManaged = "managed"
+
+// terraformResource is the model type for a resource in a terraform state file. The "values"
+// array contains provider specific values (for azurerm, this includes "id" which is the resource id).
+type terraformResource struct {
+	Address      string `json:"address"`
+	ProviderName string `json:"provider_name"`
+	// "mode" can be "managed", for resources, or "data", for data resources
+	Mode   string         `json:"mode"`
+	Type   string         `json:"type"`
+	Values map[string]any `json:"values"`
+}
+
+// terraformChildModule is the model type for a child module in the state file. It may contain
+// further child modules which contain additional resources.
+type terraformChildModule struct {
+	Address      string                 `json:"address"`
+	Resources    []terraformResource    `json:"resources"`
+	ChildModules []terraformChildModule `json:"child_modules"`
 }

@@ -5,7 +5,6 @@ import (
 	"fmt"
 
 	"github.com/azure/azure-dev/cli/azd/internal"
-	"github.com/azure/azure-dev/cli/azd/pkg/commands"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
@@ -16,41 +15,63 @@ import (
 	"github.com/spf13/pflag"
 )
 
-func infraDeleteCmd(rootOptions *internal.GlobalCommandOptions) *cobra.Command {
-	return commands.Build(
-		&infraDeleteAction{
-			rootOptions: rootOptions,
-		},
-		rootOptions,
-		"delete",
-		"Delete Azure resources for an application.",
-		nil,
+type infraDeleteFlags struct {
+	forceDelete bool
+	purgeDelete bool
+	global      *internal.GlobalCommandOptions
+}
+
+func (i *infraDeleteFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
+	local.BoolVar(&i.forceDelete, "force", false, "Does not require confirmation before it deletes resources.")
+	local.BoolVar(
+		&i.purgeDelete,
+		"purge",
+		false,
+		//nolint:lll
+		"Does not require confirmation before it permanently deletes resources that are soft-deleted by default (for example, key vaults).",
 	)
+	i.global = global
+}
+
+func infraDeleteCmdDesign(global *internal.GlobalCommandOptions) (*cobra.Command, *infraDeleteFlags) {
+	cmd := &cobra.Command{
+		Use:   "delete",
+		Short: "Delete Azure resources for an application.",
+	}
+
+	idf := &infraDeleteFlags{}
+	idf.Bind(cmd.Flags(), global)
+
+	return cmd, idf
 }
 
 type infraDeleteAction struct {
-	forceDelete bool
-	purgeDelete bool
-	rootOptions *internal.GlobalCommandOptions
+	flags   infraDeleteFlags
+	azdCtx  *azdcontext.AzdContext
+	azCli   azcli.AzCli
+	console input.Console
 }
 
-func (a *infraDeleteAction) SetupFlags(
-	persis *pflag.FlagSet,
-	local *pflag.FlagSet,
-) {
-	local.BoolVar(&a.forceDelete, "force", false, "Does not require confirmation before it deletes resources.")
-	local.BoolVar(&a.purgeDelete, "purge", false, "Does not require confirmation before it permanently deletes resources that are soft-deleted by default (for example, key vaults).")
+func newInfraDeleteAction(
+	flags infraDeleteFlags,
+	azdCtx *azdcontext.AzdContext,
+	azCli azcli.AzCli,
+	console input.Console,
+) *infraDeleteAction {
+	return &infraDeleteAction{
+		flags:   flags,
+		azdCtx:  azdCtx,
+		azCli:   azCli,
+		console: console,
+	}
 }
 
-func (a *infraDeleteAction) Run(ctx context.Context, cmd *cobra.Command, args []string, azdCtx *azdcontext.AzdContext) error {
-	azCli := azcli.GetAzCli(ctx)
-	console := input.GetConsole(ctx)
-
-	if err := ensureProject(azdCtx.ProjectPath()); err != nil {
+func (a *infraDeleteAction) Run(ctx context.Context) error {
+	if err := ensureProject(a.azdCtx.ProjectPath()); err != nil {
 		return err
 	}
 
-	if err := tools.EnsureInstalled(ctx, azCli); err != nil {
+	if err := tools.EnsureInstalled(ctx, a.azCli); err != nil {
 		return err
 	}
 
@@ -58,17 +79,17 @@ func (a *infraDeleteAction) Run(ctx context.Context, cmd *cobra.Command, args []
 		return fmt.Errorf("failed to ensure login: %w", err)
 	}
 
-	env, ctx, err := loadOrInitEnvironment(ctx, &a.rootOptions.EnvironmentName, azdCtx, console)
+	env, ctx, err := loadOrInitEnvironment(ctx, &a.flags.global.EnvironmentName, a.azdCtx, a.console)
 	if err != nil {
 		return fmt.Errorf("loading environment: %w", err)
 	}
 
-	prj, err := project.LoadProjectConfig(azdCtx.ProjectPath(), env)
+	prj, err := project.LoadProjectConfig(a.azdCtx.ProjectPath(), env)
 	if err != nil {
 		return fmt.Errorf("loading project: %w", err)
 	}
 
-	infraManager, err := provisioning.NewManager(ctx, env, prj.Path, prj.Infra, !a.rootOptions.NoPrompt)
+	infraManager, err := provisioning.NewManager(ctx, env, prj.Path, prj.Infra, !a.flags.global.NoPrompt)
 	if err != nil {
 		return fmt.Errorf("creating provisioning manager: %w", err)
 	}
@@ -78,7 +99,7 @@ func (a *infraDeleteAction) Run(ctx context.Context, cmd *cobra.Command, args []
 		return fmt.Errorf("planning destroy: %w", err)
 	}
 
-	destroyOptions := provisioning.NewDestroyOptions(a.forceDelete, a.purgeDelete)
+	destroyOptions := provisioning.NewDestroyOptions(a.flags.forceDelete, a.flags.purgeDelete)
 	destroyResult, err := infraManager.Destroy(ctx, &deploymentPlan.Deployment, destroyOptions)
 	if err != nil {
 		return fmt.Errorf("destroying infrastructure: %w", err)

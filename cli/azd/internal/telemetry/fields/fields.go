@@ -37,7 +37,8 @@ const (
 
 	// A unique ID associated to the machine the application is installed on.
 	//
-	// This shares implementation with VSCode's machineId and can match exactly on a given device, although there are no guarantees.
+	// This shares implementation with VSCode's machineId and can match exactly on a given device, although there are no
+	// guarantees.
 	MachineIdKey = attribute.Key("machine.id")
 
 	// An enumeration of possible environments that the application is running on.
@@ -68,20 +69,23 @@ const (
 	EnvVisualStudio     = "Visual Studio"
 	EnvVisualStudioCode = "Visual Studio Code"
 
-	// Continuous Integration environments
+	// Hosted/Continuous Integration environments
 
-	EnvUnknownCI        = "UnknownCI"
-	EnvAzurePipelines   = "Azure Pipelines"
-	EnvGitHubActions    = "GitHub Actions"
-	EnvAppVeyor         = "AppVeyor"
-	EnvTravisCI         = "Travis CI"
-	EnvCircleCI         = "Circle CI"
-	EnvGitLabCI         = "GitLab CI"
-	EnvJenkins          = "Jenkins"
-	EnvAwsCodeBuild     = "AWS CodeBuild"
-	EnvGoogleCloudBuild = "Google Cloud Build"
-	EnvTeamCity         = "TeamCity"
-	EnvJetBrainsSpace   = "JetBrains Space"
+	EnvUnknownCI          = "UnknownCI"
+	EnvAzurePipelines     = "Azure Pipelines"
+	EnvGitHubActions      = "GitHub Actions"
+	EnvAppVeyor           = "AppVeyor"
+	EnvBamboo             = "Bamboo"
+	EnvBitBucketPipelines = "BitBucket Pipelines"
+	EnvTravisCI           = "Travis CI"
+	EnvCircleCI           = "Circle CI"
+	EnvGitLabCI           = "GitLab CI"
+	EnvJenkins            = "Jenkins"
+	EnvAwsCodeBuild       = "AWS CodeBuild"
+	EnvGoogleCloudBuild   = "Google Cloud Build"
+	EnvTeamCity           = "TeamCity"
+	EnvJetBrainsSpace     = "JetBrains Space"
+	EnvCodespaces         = "GitHub Codespaces"
 )
 
 // The value used for ServiceNameKey

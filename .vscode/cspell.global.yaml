@@ -17,18 +17,25 @@ words:
 ignoreWords:
     - afwp
     - apim
+    - appcontainers
     - appcs
     - appi
     - arck
+    - armappcontainers
+    - armappservice
     - armkeyvault
     - armresources
+    - armruntime
+    - armsubscriptions
     - azconnection
+    - azurewebsites
     - azcore
     - Azdo
     - aztfmod
     - azurecaf
     - azuredevops
     - azurerm
+    - armcontainerregistry
     - azidentity
     - azsecrets
     - Bfor
@@ -36,6 +43,8 @@ ignoreWords:
     - cdne
     - cdnp
     - commandrunner
+    - conjunction
+    - containerregistry
     - databricks
     - dedb
     - devcontainer
@@ -109,6 +118,7 @@ ignoreWords:
     - vpng
     - vwan
     - wafrg
+    - westus
     - Wans
     - apim
     - Retryable
@@ -123,6 +133,8 @@ ignoreWords:
     - aztfmod
     - menuid
     - PLACEHOLDERIACTOOLS
+    - LOGANALYTICS
+    - zipdeploy
 useGitignore: true
 dictionaryDefinitions:
     - name: gitHubUserAliases

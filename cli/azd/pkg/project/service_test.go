@@ -23,8 +23,12 @@ services:
     language: js
     host: appservice
 `
-	deploymentScope = environment.NewDeploymentScope("test-subscription-id", "test-resource-group-name", "test-resource-name")
-	mockEndpoints   = []string{"https://test-resource.azurewebsites.net"}
+	deploymentScope = environment.NewDeploymentScope(
+		"test-subscription-id",
+		"test-resource-group-name",
+		"test-resource-name",
+	)
+	mockEndpoints = []string{"https://test-resource.azurewebsites.net"}
 )
 
 type mockFrameworkService struct {
@@ -54,7 +58,12 @@ func (st *mockServiceTarget) RequiredExternalTools() []tools.ExternalTool {
 	return []tools.ExternalTool{}
 }
 
-func (st *mockServiceTarget) Deploy(_ context.Context, _ *azdcontext.AzdContext, _ string, progress chan<- string) (ServiceDeploymentResult, error) {
+func (st *mockServiceTarget) Deploy(
+	_ context.Context,
+	_ *azdcontext.AzdContext,
+	_ string,
+	progress chan<- string,
+) (ServiceDeploymentResult, error) {
 	progress <- "mock deploy progress"
 	return ServiceDeploymentResult{
 		TargetResourceId: "target-resource-id",

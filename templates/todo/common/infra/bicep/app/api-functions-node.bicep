@@ -9,16 +9,19 @@ param keyVaultName string
 param serviceName string = 'api'
 param storageAccountName string
 
-module api '../../../../../common/infra/bicep/core/host/functions-node.bicep' = {
+module api '../../../../../common/infra/bicep/core/host/functions.bicep' = {
   name: '${serviceName}-functions-node-module'
   params: {
     environmentName: environmentName
     location: location
     allowedOrigins: allowedOrigins
+    alwaysOn: false
     appSettings: appSettings
     applicationInsightsName: applicationInsightsName
     appServicePlanId: appServicePlanId
     keyVaultName: keyVaultName
+    runtimeName: 'node'
+    runtimeVersion: '16'
     serviceName: serviceName
     storageAccountName: storageAccountName
   }

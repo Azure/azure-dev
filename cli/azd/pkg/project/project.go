@@ -18,7 +18,8 @@ import (
 )
 
 const (
-	projectSchemaAnnotation = "# yaml-language-server: $schema=https://raw.githubusercontent.com/Azure/azure-dev/main/schemas/v1.0/azure.yaml.json"
+	projectSchemaAnnotation = "# yaml-language-server: $schema=" +
+		"https://raw.githubusercontent.com/Azure/azure-dev/main/schemas/v1.0/azure.yaml.json"
 )
 
 type Project struct {
@@ -81,8 +82,14 @@ func NewProject(path string, name string) (*Project, error) {
 // The resource group name is resolved in the following order:
 //   - The user defined value in `azure.yaml`
 //   - The user defined environment value `AZURE_RESOURCE_GROUP`
-//   - Resource group discovery by querying Azure Resources (see `resourceManager.FindResourceGroupForEnvironment` for more details)
-func GetResourceGroupName(ctx context.Context, projectConfig *ProjectConfig, env *environment.Environment) (string, error) {
+//
+// - Resource group discovery by querying Azure Resources
+// (see `resourceManager.FindResourceGroupForEnvironment` for more
+// details)
+func GetResourceGroupName(
+	ctx context.Context,
+	projectConfig *ProjectConfig,
+	env *environment.Environment) (string, error) {
 	if strings.TrimSpace(projectConfig.ResourceGroupName) != "" {
 		return projectConfig.ResourceGroupName, nil
 	}

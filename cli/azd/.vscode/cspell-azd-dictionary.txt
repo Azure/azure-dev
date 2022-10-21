@@ -1,8 +1,10 @@
 AADSTS
+appconfiguration
 appinsights
 appinsightsexporter
 appinsightsstorage
 appservice
+armappconfiguration
 AZCLI
 azdcli
 azdcontext
@@ -28,7 +30,9 @@ containerapp
 csharpapp
 devel
 dockerproject
+dskip
 eastus
+endregion
 envname
 errcheck
 errorlint
@@ -40,11 +44,13 @@ GOARCH
 godotenv
 golangci
 ineffassign
+javac
 jmes
 keychain
 ldflags
 mgmt
 mgutz
+mvnw
 nobanner
 nodeapp
 nolint
@@ -62,6 +68,7 @@ retriable
 rzip
 semconv
 serverfarms
+setenvs
 sstore
 staticcheck
 staticwebapp
@@ -70,9 +77,13 @@ structs
 Syncer
 swacli
 teamcity
+testdata
 tracesdk
 tracetest
 unmarshalling
+unsetenvs
+unsets
 utsname
 westus2
+wireinject
 yacspin

@@ -14,7 +14,6 @@ import (
 
 func getEnvironmentAttributes(env *environment.Environment) []attribute.KeyValue {
 	return []attribute.KeyValue{
-		fields.ObjectIdKey.String(env.GetPrincipalId()),
 		fields.SubscriptionIdKey.String(env.GetSubscriptionId()),
 	}
 }

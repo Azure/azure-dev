@@ -103,7 +103,10 @@ func CreateServiceConnection(
 
 	// if a service connection exists, skip creating a new Service connection. But update the current connection only
 	if foundServiceConnection != nil {
-		console.Message(ctx, output.WithWarningFormat("Service Connection %s already exists. Updating endpoint", ServiceConnectionName))
+		console.Message(
+			ctx,
+			output.WithWarningFormat("Service Connection %s already exists. Updating endpoint", ServiceConnectionName),
+		)
 		// After updating the endpoint with credentials, we no longer need it
 		_, err := client.UpdateServiceEndpoint(ctx, serviceendpoint.UpdateServiceEndpointArgs{
 			Endpoint:   createServiceEndpointArgs.Endpoint,

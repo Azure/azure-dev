@@ -2,7 +2,6 @@ package internal
 
 import (
 	"fmt"
-	"os"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -16,74 +15,85 @@ func TestGetAzDevCliIdentifier(t *testing.T) {
 }
 
 func TestUserSpecifiedAgentIdentifier(t *testing.T) {
-	devUserAgent := "MyAgent/1.0.0"
-	restorer := EnvironmentVariablesSetter(map[string]string{
-		AzdUserAgentEnvVar: devUserAgent,
-	})
-
-	require.Equal(t, devUserAgent, GetCallerUserAgent())
-
-	// Empty case
-	os.Setenv(AzdUserAgentEnvVar, "")
-	require.Equal(t, "", GetCallerUserAgent())
-
-	t.Cleanup(restorer)
+	for _, test := range []struct {
+		name   string
+		value  string
+		expect string
+	}{
+		{"custom", "MyAgent/1.0.0", "MyAgent/1.0.0"},
+		{"empty", "", ""},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Setenv(AzdUserAgentEnvVar, test.value)
+			require.Equal(t, test.expect, GetCallerUserAgent())
+		})
+	}
 }
 
 func TestGithubActionIdentifier(t *testing.T) {
-	restorer := EnvironmentVariablesSetter(map[string]string{
-		githubActionsEnvironmentVariableName: "",
-	})
-
-	require.Equal(t, "", getGithubActionsIdentifier())
-
-	// Empty case
-	os.Setenv(githubActionsEnvironmentVariableName, "true")
-	require.Equal(t, "GhActions", getGithubActionsIdentifier())
-
-	t.Cleanup(restorer)
+	for _, test := range []struct {
+		name   string
+		value  string
+		expect string
+	}{
+		{"empty", "", ""},
+		{"set", "true", "GhActions"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Setenv(githubActionsEnvironmentVariableName, test.value)
+			require.Equal(t, test.expect, getGithubActionsIdentifier())
+		})
+	}
 }
 
 func TestFormatTemplate(t *testing.T) {
 	require.Equal(t, "", formatTemplateIdentifier(""))
-	require.Equal(t, fmt.Sprintf("%s/todo-python-mongo", templateProductIdentifierKey), formatTemplateIdentifier("todo-python-mongo"))
-	require.Equal(t, fmt.Sprintf("%s/todo-csharp-sql@0.0.1-beta", templateProductIdentifierKey), formatTemplateIdentifier("todo-csharp-sql@0.0.1-beta"))
+	require.Equal(
+		t,
+		fmt.Sprintf("%s/todo-python-mongo", templateProductIdentifierKey),
+		formatTemplateIdentifier("todo-python-mongo"),
+	)
+	require.Equal(
+		t,
+		fmt.Sprintf("%s/todo-csharp-sql@0.0.1-beta", templateProductIdentifierKey),
+		formatTemplateIdentifier("todo-csharp-sql@0.0.1-beta"),
+	)
 }
 
 // Scenario tests
 func TestUserAgentStringScenarios(t *testing.T) {
-	restorer := EnvironmentVariablesSetter(map[string]string{
-		AzdUserAgentEnvVar:                   "",
-		githubActionsEnvironmentVariableName: "",
-	})
-
 	version := GetVersionNumber()
 	require.NotEmpty(t, version)
 
 	azDevIdentifier := fmt.Sprintf("azdev/%s %s", version, getPlatformInfo())
 
-	// Scenario: default agent
-	require.Equal(t, azDevIdentifier, MakeUserAgentString(""))
+	t.Run("default", func(t *testing.T) {
+		require.Equal(t, azDevIdentifier, MakeUserAgentString(""))
+	})
 
-	// Scenario: user specifies agent variable
-	os.Setenv(AzdUserAgentEnvVar, "dev_user_agent")
-	require.Equal(t, fmt.Sprintf("%s dev_user_agent", azDevIdentifier), MakeUserAgentString(""))
-	os.Setenv(AzdUserAgentEnvVar, "")
+	t.Run("withUserAgent", func(t *testing.T) {
+		t.Setenv(AzdUserAgentEnvVar, "dev_user_agent")
+		require.Equal(t, fmt.Sprintf("%s dev_user_agent", azDevIdentifier), MakeUserAgentString(""))
+	})
 
-	// Scenario: running on github actions
-	os.Setenv(githubActionsEnvironmentVariableName, "true")
-	require.Equal(t, fmt.Sprintf("%s GhActions", azDevIdentifier), MakeUserAgentString(""))
-	os.Setenv(githubActionsEnvironmentVariableName, "")
+	t.Run("onGitHubActions", func(t *testing.T) {
+		t.Setenv(githubActionsEnvironmentVariableName, "true")
+		require.Equal(t, fmt.Sprintf("%s GhActions", azDevIdentifier), MakeUserAgentString(""))
+	})
 
-	// Scenario: template present
-	require.Equal(t, fmt.Sprintf("%s azdtempl/template@0.0.1", azDevIdentifier), MakeUserAgentString("template@0.0.1"))
+	t.Run("withTemplate", func(t *testing.T) {
+		require.Equal(t, fmt.Sprintf("%s azdtempl/template@0.0.1", azDevIdentifier), MakeUserAgentString("template@0.0.1"))
+	})
 
-	// Scenario: full combination
-	os.Setenv(AzdUserAgentEnvVar, "dev_user_agent")
-	os.Setenv(githubActionsEnvironmentVariableName, "true")
-	require.Equal(t, fmt.Sprintf("%s dev_user_agent azdtempl/template@0.0.1 GhActions", azDevIdentifier), MakeUserAgentString("template@0.0.1"))
-
-	t.Cleanup(restorer)
+	t.Run("withEverything", func(t *testing.T) {
+		t.Setenv(AzdUserAgentEnvVar, "dev_user_agent")
+		t.Setenv(githubActionsEnvironmentVariableName, "true")
+		require.Equal(
+			t,
+			fmt.Sprintf("%s dev_user_agent azdtempl/template@0.0.1 GhActions", azDevIdentifier),
+			MakeUserAgentString("template@0.0.1"),
+		)
+	})
 }
 
 func TestUserAgentString(t *testing.T) {
@@ -104,37 +114,12 @@ func TestUserAgentString(t *testing.T) {
 	require.Equal(
 		t,
 		userAgent.String(),
-		fmt.Sprintf("%s %s %s %s", userAgent.azDevCliIdentifier, userAgent.userSpecifiedIdentifier, userAgent.templateIdentifier, userAgent.githubActionsIdentifier))
-}
-
-// EnvironmentVariablesSetter sets the provided environment variables,
-// returning a function that restores the environment variables to their original values.
-// Example usage:
-//
-//	fn test(t *testing.T) {
-//	  closer := helpers.EnvironmentVariablesSetter(map[string]string { "FOO_ENV": "Bar", "OTHER_FOO_ENV": "Bar2"})
-//	  require.Equal(t, os.GetEnv("FOO_ENV"), "Bar")
-//	  require.Equal(t, os.GetEnv("OTHER_FOO_ENV"), "Bar2")
-//	  t.Cleanup(closer)
-//	}
-func EnvironmentVariablesSetter(envContext map[string]string) func() {
-	restoreContext := map[string]string{}
-	for key, value := range envContext {
-		orig, present := os.LookupEnv(key)
-		if present {
-			restoreContext[key] = orig
-		}
-
-		os.Setenv(key, value)
-	}
-
-	return func() {
-		for key := range envContext {
-			if restoreValue, present := restoreContext[key]; present {
-				os.Setenv(key, restoreValue)
-			} else {
-				os.Unsetenv(key)
-			}
-		}
-	}
+		fmt.Sprintf(
+			"%s %s %s %s",
+			userAgent.azDevCliIdentifier,
+			userAgent.userSpecifiedIdentifier,
+			userAgent.templateIdentifier,
+			userAgent.githubActionsIdentifier,
+		),
+	)
 }

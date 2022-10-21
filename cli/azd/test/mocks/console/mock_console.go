@@ -1,6 +1,7 @@
 package console
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -29,6 +30,14 @@ func (c *MockConsole) SetWriter(writer io.Writer) {
 
 func (c *MockConsole) Output() []string {
 	return c.log
+}
+
+func (c *MockConsole) Handles() input.ConsoleHandles {
+	return input.ConsoleHandles{
+		Stdout: io.Discard,
+		Stderr: io.Discard,
+		Stdin:  bytes.NewBufferString(""),
+	}
 }
 
 // Prints a message to the console
@@ -66,7 +75,7 @@ func (c *MockConsole) respond(command string, options input.ConsoleOptions) (any
 	var match *MockConsoleExpression
 
 	for _, expr := range c.expressions {
-		if expr.predicateFn(options) {
+		if command == expr.command && expr.predicateFn(options) {
 			match = expr
 			break
 		}

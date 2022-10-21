@@ -1,7 +1,9 @@
 parameters:
   BicepVersion: v0.8.9
+  Condition: succeeded()
 
 steps:
   - pwsh: |
       az bicep install --version ${{ parameters.BicepVersion }}
+    condition: ${{ parameters.Condition }}
     displayName: Install bicep

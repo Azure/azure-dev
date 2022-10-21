@@ -1,10 +1,37 @@
 # Release History
 
-## 0.2.0-beta.3 (Unreleased)
+## 0.3.0-beta.3 (2022-10-21)
+
+### Features Added
+
+- [[#878]](https://github.com/Azure/azure-dev/pull/878) `azd down` supports purge of app configuration stores.
+
+### Bugs Fixed
+
+- [[#925]](https://github.com/Azure/azure-dev/pull/925) Fix issues where running `azd infra create` with `--output==json` would emit invalid JSON.  As part of this change, we now no longer emit multiple objects to `stdout` as part of an operation. Instead, progress messages are streamed in a structured way to `stderr`.
+
+### Other Changes
+
+- [[#691]](https://github.com/Azure/azure-dev/pull/691) Rearrange Terraform templates by extracting common resources and using these common modules.
+- [[#892]](https://github.com/Azure/azure-dev/pull/892) Simplify template bicep modules.
+
+## 0.3.0-beta.2 (2022-10-05)
+
+### Bugs Fixed
+
+- [[#795]](https://github.com/Azure/azure-dev/pull/795) Fix cases where clicking the Azure deployment progress link provided in `azd provision` might result in a 404 NotFound error page due to timing.
+- [[#755]](https://github.com/Azure/azure-dev/pull/755) Fix cases where `azd pipeline config` might fail in pushing the repository due to cached credentials.
+
+## 0.3.0-beta.1 (2022-09-30)
 
 ### Features Added
 
 - [[#743]](https://github.com/Azure/azure-dev/pull/743) Azure DevOps support for pipeline config command.
+
+### Bugs Fixed
+
+- [[#730]](https://github.com/Azure/azure-dev/pull/730) Fix hierarchical configuration keys for dotnet to show up correctly when stored as dotnet user-secrets. Thanks community member [@sebastianmattar](https://github.com/sebastianmattar) for providing the initial fix!
+- [[#761]](https://github.com/Azure/azure-dev/pull/761) Fix error in `azd deploy` when multiple resource groups are defined in bicep
 
 ## 0.2.0-beta.2 (2022-09-21)
 

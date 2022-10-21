@@ -25,7 +25,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/cmd"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/telemetry"
-	"github.com/azure/azure-dev/cli/azd/pkg/container"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/blang/semver/v4"
@@ -33,6 +32,8 @@ import (
 )
 
 func main() {
+	ctx := context.Background()
+
 	// Ensure random numbers from default random number generator are unpredictable
 	rand.Seed(time.Now().UTC().UnixNano())
 
@@ -43,32 +44,42 @@ func main() {
 	}
 
 	ts := telemetry.GetTelemetrySystem()
-	container.RegisterDependencies()
 
 	latest := make(chan semver.Version)
 	go fetchLatestVersion(latest)
 
-	cmdErr := cmd.Execute(os.Args[1:])
+	cmdErr := cmd.NewRootCmd().ExecuteContext(ctx)
 	latestVersion, ok := <-latest
 
 	// If we were able to fetch a latest version, check to see if we are up to date and
 	// print a warning if we are not. Note that we don't print this warning when the CLI version
 	// is exactly 0.0.0-dev.0, which is a sentinel value used for `internal.Version` when
 	// a version is not explicitly applied at build time (i.e. dev builds installed with `go install`)
-	if ok {
+	//
+	// Don't write this message when JSON output is enabled, since in that case we use stderr to return structured
+	// information about command progress.
+	if !isJsonOutput() && ok {
 		curVersion, err := semver.Parse(internal.GetVersionNumber())
 		if err != nil {
 			log.Printf("failed to parse %s as a semver", internal.GetVersionNumber())
 		} else if curVersion.Equals(semver.MustParse("0.0.0-dev.0")) {
-			// This is a dev build (i.e. built using `go install without setting a version`) - don't print a warning in this case
+			// This is a dev build (i.e. built using `go install without setting a version`) - don't print a warning in this
+			// case
 			log.Printf("eliding update message for dev build")
 		} else if latestVersion.GT(curVersion) {
-			fmt.Fprintln(os.Stderr, output.WithWarningFormat("warning: your version of azd is out of date, you have %s and the latest version is %s", curVersion.String(), latestVersion.String()))
+			fmt.Fprintln(
+				os.Stderr,
+				output.WithWarningFormat(
+					"warning: your version of azd is out of date, you have %s and the latest version is %s",
+					curVersion.String(), latestVersion.String()))
 			fmt.Fprintln(os.Stderr)
 			fmt.Fprintln(os.Stderr, output.WithWarningFormat(`To update to the latest version, run:`))
 
 			if runtime.GOOS == "windows" {
-				fmt.Fprintln(os.Stderr, output.WithWarningFormat(`powershell -ex AllSigned -c "Invoke-RestMethod 'https://aka.ms/install-azd.ps1' | Invoke-Expression"`))
+				fmt.Fprintln(
+					os.Stderr,
+					output.WithWarningFormat(
+						`powershell -ex AllSigned -c "Invoke-RestMethod 'https://aka.ms/install-azd.ps1' | Invoke-Expression"`))
 			} else {
 				fmt.Fprintln(os.Stderr, output.WithWarningFormat(`curl -fsSL https://aka.ms/install-azd.sh | bash`))
 			}
@@ -76,7 +87,7 @@ func main() {
 	}
 
 	if ts != nil {
-		err := ts.Shutdown(context.Background())
+		err := ts.Shutdown(ctx)
 		if err != nil {
 			log.Printf("non-graceful telemetry shutdown: %v\n", err)
 		}
@@ -114,7 +125,8 @@ func fetchLatestVersion(version chan<- semver.Version) {
 			log.Print("skipping update check since AZD_SKIP_UPDATE_CHECK is true")
 			return
 		} else if err != nil {
-			log.Printf("could not parse value for AZD_SKIP_UPDATE_CHECK a boolean (it was: %s), proceeding with update check", value)
+			log.Printf("could not parse value for AZD_SKIP_UPDATE_CHECK a boolean "+
+				"(it was: %s), proceeding with update check", value)
 		}
 	}
 
@@ -152,10 +164,15 @@ func fetchLatestVersion(version chan<- semver.Version) {
 				}
 			} else {
 				if parseVersionErr != nil {
-					log.Printf("failed to parse cached version '%s' as a semver: %v, ignoring cached value", cache.Version, parseVersionErr)
+					log.Printf("failed to parse cached version '%s' as a semver: %v,"+
+						" ignoring cached value", cache.Version, parseVersionErr)
 				}
 				if parseExpiresOnErr != nil {
-					log.Printf("failed to parse cached version expiration time '%s' as a RFC3339 timestamp: %v, ignoring cached value", cache.ExpiresOn, parseExpiresOnErr)
+					log.Printf(
+						"failed to parse cached version expiration time '%s' as a RFC3339"+
+							" timestamp: %v, ignoring cached value",
+						cache.ExpiresOn,
+						parseExpiresOnErr)
 				}
 			}
 		} else {
@@ -185,7 +202,11 @@ func fetchLatestVersion(version chan<- semver.Version) {
 		}
 
 		if res.StatusCode != http.StatusOK {
-			log.Printf("failed to refresh latest version, http status: %v, body: %v, skipping update check", res.StatusCode, body)
+			log.Printf(
+				"failed to refresh latest version, http status: %v, body: %v, skipping update check",
+				res.StatusCode,
+				body,
+			)
 			return
 		}
 
@@ -200,8 +221,9 @@ func fetchLatestVersion(version chan<- semver.Version) {
 		cachedLatestVersion = &fetchedVersion
 
 		// Write the value back to the cache. Note that on these logging paths for errors we do not return
-		// eagerly, since we have not yet sent the latest versions across the channel (and we don't want to do that until we've updated
-		// the cache since reader on the other end of the channel will exit the process after it receives this value and finishes
+		// eagerly, since we have not yet sent the latest versions across the channel (and we don't want to do that until
+		// we've updated the cache since reader on the other end of the channel will exit the process after it receives this
+		// value and finishes
 		// the up to date check, possibly while this go-routine is still running)
 		if err := os.MkdirAll(filepath.Dir(cacheFilePath), osutil.PermissionFile); err != nil {
 			log.Printf("failed to create cache folder '%s': %v", filepath.Dir(cacheFilePath), err)
@@ -259,6 +281,33 @@ func isDebugEnabled() bool {
 	}
 
 	return debug
+}
+
+// isJsonOutput checks to see if `--output` was passed with the value `json`
+func isJsonOutput() bool {
+	output := ""
+	help := false
+	flags := pflag.NewFlagSet("", pflag.ContinueOnError)
+
+	// Since we are running this parse logic on the full command line, there may be additional flags
+	// which we have not defined in our flag set (but would be defined by whatever command we end up
+	// running). Setting UnknownFlags instructs `flags.Parse` to continue parsing the command line
+	// even if a flag is not in the flag set (instead of just returning an error saying the flag was not
+	// found).
+	flags.ParseErrorsWhitelist.UnknownFlags = true
+	flags.StringVarP(&output, "output", "o", "", "")
+
+	// pflag treats "help" as special and if you don't define a help flag returns `ErrHelp` from
+	// Parse when `--help` is on the command line. Add an explicit help parameter (which we ignore)
+	// so pflag doesn't fail in this case.  If `--help` is passed, the help for `azd` will be shown later
+	// when `cmd.Execute` is run
+	flags.BoolVar(&help, "help", false, "")
+
+	if err := flags.Parse(os.Args[1:]); err != nil {
+		log.Printf("could not parse flags: %v", err)
+	}
+
+	return output == "json"
 }
 
 func readToEndAndClose(r io.ReadCloser) (string, error) {

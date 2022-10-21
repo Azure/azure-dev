@@ -19,7 +19,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/benbjohnson/clock"
 	"github.com/gofrs/flock"
-	"github.com/microsoft/ApplicationInsights-Go/appinsights"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/sdk/trace"
 )
@@ -28,9 +27,11 @@ import (
 const collectTelemetryEnvVar = "AZURE_DEV_COLLECT_TELEMETRY"
 
 const telemetryItemExtension = ".trn"
+
+//nolint:lll
 const (
-	devInstrumentationKey  = "cf5f7d89-5383-47a8-8d27-ad237c3613d9"
-	prodInstrumentationKey = ""
+	devConnectionString  = "InstrumentationKey=cf5f7d89-5383-47a8-8d27-ad237c3613d9;IngestionEndpoint=https://westus-0.in.applicationinsights.azure.com/;LiveEndpoint=https://westus.livediagnostics.monitor.azure.com/"
+	prodConnectionString = "InstrumentationKey=a9e6fa10-a9ac-4525-8388-22d39336ecc2;IngestionEndpoint=https://centralus-2.in.applicationinsights.azure.com/;LiveEndpoint=https://centralus.livediagnostics.monitor.azure.com/"
 )
 
 const appInsightsMaxIngestionDelay = time.Duration(48) * time.Hour
@@ -40,7 +41,7 @@ type TelemetrySystem struct {
 	tracerProvider *trace.TracerProvider
 	exporter       *Exporter
 
-	instrumentationKey string
+	config             appinsightsexporter.EndpointConfig
 	telemetryDirectory string
 }
 
@@ -77,12 +78,6 @@ func GetTelemetrySystem() *TelemetrySystem {
 }
 
 func initialize() (*TelemetrySystem, error) {
-	// Feature guard: Disable for production until dependencies are met in production
-	isDev := internal.IsNonProdVersion()
-	if !isDev {
-		return nil, nil
-	}
-
 	if !IsTelemetryEnabled() {
 		log.Println("telemetry is disabled by user and will not be initialized.")
 		return nil, nil
@@ -102,14 +97,18 @@ func initialize() (*TelemetrySystem, error) {
 		return nil, fmt.Errorf("failed to initialize storage queue: %w", err)
 	}
 
-	var instrumentationKey string
-	if isDev {
-		instrumentationKey = devInstrumentationKey
+	var connectionString string
+	if internal.IsNonProdVersion() {
+		connectionString = devConnectionString
 	} else {
-		instrumentationKey = prodInstrumentationKey
+		connectionString = prodConnectionString
+	}
+	config, err := appinsightsexporter.NewEndpointConfig(connectionString)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse appInsights connection string: %w", err)
 	}
 
-	exporter := NewExporter(storageQueue, instrumentationKey)
+	exporter := NewExporter(storageQueue, config.InstrumentationKey)
 
 	tp := trace.NewTracerProvider(
 		trace.WithBatcher(exporter),
@@ -121,7 +120,7 @@ func initialize() (*TelemetrySystem, error) {
 		storageQueue:       storageQueue,
 		tracerProvider:     tp,
 		exporter:           exporter,
-		instrumentationKey: instrumentationKey,
+		config:             config,
 		telemetryDirectory: telemetryDir,
 	}, nil
 }
@@ -142,8 +141,7 @@ func (ts *TelemetrySystem) EmittedAnyTelemetry() bool {
 }
 
 func (ts *TelemetrySystem) NewUploader(enableDebugLogging bool) Uploader {
-	config := appinsights.NewTelemetryConfiguration(ts.instrumentationKey)
-	transmitter := appinsightsexporter.NewTransmitter(config.EndpointUrl, nil)
+	transmitter := appinsightsexporter.NewTransmitter(ts.config.EndpointUrl, nil)
 
 	uploader := NewUploader(ts.GetTelemetryQueue(), transmitter, clock.New(), enableDebugLogging)
 	return uploader

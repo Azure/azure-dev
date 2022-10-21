@@ -3,140 +3,143 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"path/filepath"
 	"strings"
 
+	"github.com/azure/azure-dev/cli/azd/cmd/contracts"
 	"github.com/azure/azure-dev/cli/azd/internal"
-	"github.com/azure/azure-dev/cli/azd/pkg/commands"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 )
 
-func showCmd(rootOptions *internal.GlobalCommandOptions) *cobra.Command {
-	action := func(ctx context.Context, cmd *cobra.Command, args []string, azdCtx *azdcontext.AzdContext) error {
-		console := input.GetConsole(ctx)
+type showFlags struct {
+	outputFormat string
+	global       *internal.GlobalCommandOptions
+}
 
-		formatter := output.GetFormatter(ctx)
-		writer := output.GetWriter(ctx)
+func (s *showFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
+	output.AddOutputFlag(local, &s.outputFormat, []output.Format{output.JsonFormat}, output.NoneFormat)
+	s.global = global
+}
 
-		if err := ensureProject(azdCtx.ProjectPath()); err != nil {
+func showCmdDesign(global *internal.GlobalCommandOptions) (*cobra.Command, *showFlags) {
+	cmd := &cobra.Command{
+		Use:    "show",
+		Short:  "Display information about your application and its resources.",
+		Hidden: true,
+	}
+
+	flags := &showFlags{}
+	flags.Bind(cmd.Flags(), global)
+	return cmd, flags
+}
+
+type showAction struct {
+	console   input.Console
+	formatter output.Formatter
+	writer    io.Writer
+	azdCtx    *azdcontext.AzdContext
+	flags     showFlags
+}
+
+func newShowAction(
+	console input.Console,
+	formatter output.Formatter,
+	writer io.Writer,
+	azdCtx *azdcontext.AzdContext,
+	flags showFlags,
+) *showAction {
+	return &showAction{
+		console:   console,
+		formatter: formatter,
+		writer:    writer,
+		azdCtx:    azdCtx,
+		flags:     flags,
+	}
+}
+
+func (s *showAction) Run(ctx context.Context) error {
+	if err := ensureProject(s.azdCtx.ProjectPath()); err != nil {
+		return err
+	}
+
+	env, ctx, err := loadOrInitEnvironment(ctx, &s.flags.global.EnvironmentName, s.azdCtx, s.console)
+	if err != nil {
+		return fmt.Errorf("loading environment: %w", err)
+	}
+
+	prj, err := project.LoadProjectConfig(s.azdCtx.ProjectPath(), env)
+	if err != nil {
+		return fmt.Errorf("loading project: %w", err)
+	}
+
+	res := contracts.ShowResult{
+		Name:     prj.Name,
+		Services: make(map[string]contracts.ShowService, len(prj.Services)),
+	}
+
+	for name, svc := range prj.Services {
+		path, err := getFullPathToProjectForService(svc)
+		if err != nil {
 			return err
 		}
 
-		env, ctx, err := loadOrInitEnvironment(ctx, &rootOptions.EnvironmentName, azdCtx, console)
-		if err != nil {
-			return fmt.Errorf("loading environment: %w", err)
+		showSvc := contracts.ShowService{
+			Project: contracts.ShowServiceProject{
+				Path: path,
+				Type: showTypeFromLanguage(svc.Language),
+			},
 		}
 
-		prj, err := project.LoadProjectConfig(azdCtx.ProjectPath(), env)
-		if err != nil {
-			return fmt.Errorf("loading project: %w", err)
-		}
-
-		res := showResult{
-			Services: make(map[string]showService, len(prj.Services)),
-		}
-
-		for name, svc := range prj.Services {
-			path, err := getFullPathToProjectForService(svc)
-			if err != nil {
-				return err
-			}
-
-			showSvc := showService{
-				Project: showServiceProject{
-					Path: path,
-					Type: showTypeFromLanguage(svc.Language),
-				},
-			}
-
-			res.Services[name] = showSvc
-		}
-
-		// Add information about the target of each service, if we can determine it (if the infrastructure has
-		// not been deployed, for example, we'll just not include target information)
-		resourceManager := infra.NewAzureResourceManager(ctx)
-
-		if resourceGroupName, err := resourceManager.FindResourceGroupForEnvironment(ctx, env); err == nil {
-			for name := range prj.Services {
-				if resources, err := project.GetServiceResources(ctx, resourceGroupName, name, env); err == nil {
-					resourceIds := make([]string, len(resources))
-					for idx, res := range resources {
-						resourceIds[idx] = res.Id
-					}
-
-					resSvc := res.Services[name]
-					resSvc.Target = &showTargetArm{
-						ResourceIds: resourceIds,
-					}
-					res.Services[name] = resSvc
-				} else {
-					log.Printf("ignoring error determining resource id for service %s: %v", name, err)
-				}
-			}
-		} else {
-			log.Printf("ignoring error determining resource group for environment %s, resource ids will not be available: %v", env.GetEnvName(), err)
-		}
-
-		return formatter.Format(res, writer, nil)
+		res.Services[name] = showSvc
 	}
 
-	cmd := commands.Build(
-		commands.ActionFunc(action),
-		rootOptions,
-		"show",
-		"Display information about your application and its resources.",
-		nil,
-	)
+	// Add information about the target of each service, if we can determine it (if the infrastructure has
+	// not been deployed, for example, we'll just not include target information)
+	resourceManager := infra.NewAzureResourceManager(ctx)
 
-	output.AddOutputParam(cmd,
-		[]output.Format{output.JsonFormat},
-		output.NoneFormat,
-	)
+	if resourceGroupName, err := resourceManager.FindResourceGroupForEnvironment(ctx, env); err == nil {
+		for name := range prj.Services {
+			if resources, err := project.GetServiceResources(ctx, resourceGroupName, name, env); err == nil {
+				resourceIds := make([]string, len(resources))
+				for idx, res := range resources {
+					resourceIds[idx] = res.Id
+				}
 
-	cmd.Hidden = true
+				resSvc := res.Services[name]
+				resSvc.Target = &contracts.ShowTargetArm{
+					ResourceIds: resourceIds,
+				}
+				res.Services[name] = resSvc
+			} else {
+				log.Printf("ignoring error determining resource id for service %s: %v", name, err)
+			}
+		}
+	} else {
+		log.Printf("ignoring error determining resource group for environment %s, resource ids will not be available: %v",
+			env.GetEnvName(),
+			err)
+	}
 
-	return cmd
+	return s.formatter.Format(res, s.writer, nil)
 }
 
-type showResult struct {
-	Services map[string]showService `json:"services"`
-}
-
-type showService struct {
-	// Project contains information about the project that backs this service.
-	Project showServiceProject `json:"project"`
-	// Target contains information about the resource that the service is deployed
-	// to.
-	Target *showTargetArm `json:"target,omitempty"`
-}
-
-type showServiceProject struct {
-	// Path contains the path to the project for this service.
-	// When 'type' is 'dotnet', this includes the project file (i.e. Todo.Api.csproj).
-	Path string `json:"path"`
-	// The type of this project. One of "dotnet", "python", or "node"
-	Type string `json:"language"`
-}
-
-type showTargetArm struct {
-	ResourceIds []string `json:"resourceIds"`
-}
-
-func showTypeFromLanguage(language string) string {
+func showTypeFromLanguage(language string) contracts.ShowType {
 	switch language {
 	case "dotnet":
-		return "dotnet"
+		return contracts.ShowTypeDotNet
 	case "py", "python":
-		return "python"
+		return contracts.ShowTypePython
 	case "ts", "js":
-		return "node"
+		return contracts.ShowTypeNode
 	default:
 		panic(fmt.Sprintf("unknown language %s", language))
 	}
@@ -166,14 +169,25 @@ func getFullPathToProjectForService(svc *project.ServiceConfig) (string, error) 
 				if projectFile != "" {
 					// we found multiple project files, we need to ask the user to specify which one
 					// corresponds to the service.
-					return "", fmt.Errorf("multiple .NET project files detected in %s for service %s, please include the name of the .NET project file in 'project' setting in %s for this service", svc.Path(), svc.Name, azdcontext.ProjectFileName)
+					return "", fmt.Errorf(
+						"multiple .NET project files detected in %s for service %s, "+
+							"please include the name of the .NET project file in 'project' "+
+							"setting in %s for this service",
+						svc.Path(),
+						svc.Name,
+						azdcontext.ProjectFileName)
 				} else {
 					projectFile = entry.Name()
 				}
 			}
 		}
 		if projectFile == "" {
-			return "", fmt.Errorf("could not determine the .NET project file for service %s, please include the name of the .NET project file in project setting in %s for this service", svc.Name, azdcontext.ProjectFileName)
+			return "", fmt.Errorf(
+				"could not determine the .NET project file for service %s,"+
+					" please include the name of the .NET project file in project setting in %s for"+
+					" this service",
+				svc.Name,
+				azdcontext.ProjectFileName)
 		} else {
 			if svc.RelativePath != "" {
 				svc.RelativePath = filepath.Join(svc.RelativePath, projectFile)

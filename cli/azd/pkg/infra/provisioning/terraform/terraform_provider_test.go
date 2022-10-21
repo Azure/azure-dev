@@ -2,8 +2,10 @@ package terraform
 
 import (
 	"context"
+	_ "embed"
 	"fmt"
 	"path"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -57,7 +59,11 @@ func TestTerraformPlan(t *testing.T) {
 	require.Contains(t, consoleLog[3], "Generating terraform plan...")
 
 	require.Equal(t, infraProvider.env.Values["AZURE_LOCATION"], deploymentPlan.Deployment.Parameters["location"].Value)
-	require.Equal(t, infraProvider.env.Values["AZURE_ENV_NAME"], deploymentPlan.Deployment.Parameters["name"].Value)
+	require.Equal(
+		t,
+		infraProvider.env.Values["AZURE_ENV_NAME"],
+		deploymentPlan.Deployment.Parameters["environment_name"].Value,
+	)
 
 	require.NotNil(t, deploymentPlan.Details)
 
@@ -91,7 +97,12 @@ func TestTerraformDeploy(t *testing.T) {
 		},
 	}
 
-	scope := infra.NewSubscriptionScope(*mockContext.Context, infraProvider.env.Values["AZURE_LOCATION"], infraProvider.env.GetSubscriptionId(), infraProvider.env.GetEnvName())
+	scope := infra.NewSubscriptionScope(
+		*mockContext.Context,
+		infraProvider.env.Values["AZURE_LOCATION"],
+		infraProvider.env.GetSubscriptionId(),
+		infraProvider.env.GetEnvName(),
+	)
 	deployTask := infraProvider.Deploy(*mockContext.Context, &deploymentPlan, scope)
 
 	go func() {
@@ -156,46 +167,55 @@ func TestTerraformDestroy(t *testing.T) {
 	require.Equal(t, destroyResult.Outputs["RG_NAME"].Value, fmt.Sprintf("rg-%s", infraProvider.env.GetEnvName()))
 }
 
-func TestTerraformGetDeployment(t *testing.T) {
+func TestTerraformState(t *testing.T) {
 	progressLog := []string{}
 	interactiveLog := []bool{}
 	progressDone := make(chan bool)
 
 	mockContext := mocks.NewMockContext(context.Background())
 	prepareGenericMocks(mockContext.CommandRunner)
-	preparePlanningMocks(mockContext.CommandRunner)
-	prepareDeployMocks(mockContext.CommandRunner)
+	prepareShowMocks(mockContext.CommandRunner)
 
 	infraProvider := createTerraformProvider(*mockContext.Context)
-	scope := infra.NewSubscriptionScope(*mockContext.Context, infraProvider.env.Values["AZURE_LOCATION"], infraProvider.env.GetSubscriptionId(), infraProvider.env.GetEnvName())
-	getDeploymentTask := infraProvider.GetDeployment(*mockContext.Context, scope)
+	scope := infra.NewSubscriptionScope(
+		*mockContext.Context,
+		infraProvider.env.Values["AZURE_LOCATION"],
+		infraProvider.env.GetSubscriptionId(),
+		infraProvider.env.GetEnvName(),
+	)
+	getStateTask := infraProvider.State(*mockContext.Context, scope)
 
 	go func() {
-		for progressReport := range getDeploymentTask.Progress() {
+		for progressReport := range getStateTask.Progress() {
 			progressLog = append(progressLog, progressReport.Message)
 		}
 		progressDone <- true
 	}()
 
 	go func() {
-		for deploymentInteractive := range getDeploymentTask.Interactive() {
+		for deploymentInteractive := range getStateTask.Interactive() {
 			interactiveLog = append(interactiveLog, deploymentInteractive)
 		}
 	}()
 
-	getDeploymentResult, err := getDeploymentTask.Await()
+	getStateResult, err := getStateTask.Await()
 	<-progressDone
 
 	require.Nil(t, err)
-	require.NotNil(t, getDeploymentResult.Deployment)
+	require.NotNil(t, getStateResult.State)
 
-	require.Equal(t, getDeploymentResult.Deployment.Outputs["AZURE_LOCATION"].Value, infraProvider.env.Values["AZURE_LOCATION"])
-	require.Equal(t, getDeploymentResult.Deployment.Outputs["RG_NAME"].Value, fmt.Sprintf("rg-%s", infraProvider.env.GetEnvName()))
-
+	require.Equal(t, infraProvider.env.Values["AZURE_LOCATION"], getStateResult.State.Outputs["AZURE_LOCATION"].Value)
+	require.Equal(t, fmt.Sprintf("rg-%s", infraProvider.env.GetEnvName()), getStateResult.State.Outputs["RG_NAME"].Value)
+	require.Len(t, getStateResult.State.Resources, 1)
+	require.Regexp(
+		t,
+		regexp.MustCompile(`^/subscriptions/[^/]*/resourceGroups/[^/]*$`),
+		getStateResult.State.Resources[0].Id,
+	)
 }
 
 func createTerraformProvider(ctx context.Context) *TerraformProvider {
-	projectDir := "../../../../test/samples/resourcegroupterraform"
+	projectDir := "../../../../test/functional/testdata/samples/resourcegroupterraform"
 	options := Options{
 		Module: "main",
 	}
@@ -221,21 +241,21 @@ func preparePlanningMocks(commandRunner *execmock.MockCommandRunner) {
 	commandRunner.When(func(args exec.RunArgs, command string) bool {
 		return args.Cmd == "terraform" && strings.Contains(command, "init")
 	}).Respond(exec.RunResult{
-		Stdout: string("Terraform has been successfully initialized!"),
+		Stdout: "Terraform has been successfully initialized!",
 		Stderr: "",
 	})
 
 	commandRunner.When(func(args exec.RunArgs, command string) bool {
 		return args.Cmd == "terraform" && strings.Contains(command, "validate")
 	}).Respond(exec.RunResult{
-		Stdout: string("Success! The configuration is valid."),
+		Stdout: "Success! The configuration is valid.",
 		Stderr: "",
 	})
 
 	commandRunner.When(func(args exec.RunArgs, command string) bool {
 		return args.Cmd == "terraform" && strings.Contains(command, "plan")
 	}).Respond(exec.RunResult{
-		Stdout: string("To perform exactly these actions, run the following command to apply:terraform apply"),
+		Stdout: "To perform exactly these actions, run the following command to apply:terraform apply",
 		Stderr: "",
 	})
 }
@@ -244,18 +264,19 @@ func prepareDeployMocks(commandRunner *execmock.MockCommandRunner) {
 	commandRunner.When(func(args exec.RunArgs, command string) bool {
 		return args.Cmd == "terraform" && strings.Contains(command, "validate")
 	}).Respond(exec.RunResult{
-		Stdout: string("Success! The configuration is valid."),
+		Stdout: "Success! The configuration is valid.",
 		Stderr: "",
 	})
 
 	commandRunner.When(func(args exec.RunArgs, command string) bool {
 		return args.Cmd == "terraform" && strings.Contains(command, "apply")
 	}).Respond(exec.RunResult{
-		Stdout: string(""),
+		Stdout: "",
 		Stderr: "",
 	})
 
-	output := "{\"AZURE_LOCATION\": {\"sensitive\": false,\"type\": \"string\",\"value\": \"westus2\"},\"RG_NAME\":{\"sensitive\": false,\"type\": \"string\",\"value\": \"rg-test-env\"}}"
+	//nolint:lll
+	output := `{"AZURE_LOCATION":{"sensitive": false,"type": "string","value": "westus2"},"RG_NAME":{"sensitive": false,"type": "string","value": "rg-test-env"}}`
 	commandRunner.When(func(args exec.RunArgs, command string) bool {
 		return args.Cmd == "terraform" && strings.Contains(command, "output")
 	}).Respond(exec.RunResult{
@@ -264,15 +285,28 @@ func prepareDeployMocks(commandRunner *execmock.MockCommandRunner) {
 	})
 }
 
+//go:embed testdata/terraform_show_mock.json
+var terraformShowMockOutput string
+
+func prepareShowMocks(commandRunner *execmock.MockCommandRunner) {
+	commandRunner.When(func(args exec.RunArgs, command string) bool {
+		return args.Cmd == "terraform" && strings.Contains(command, "show")
+	}).Respond(exec.RunResult{
+		Stdout: terraformShowMockOutput,
+		Stderr: "",
+	})
+}
+
 func prepareDestroyMocks(commandRunner *execmock.MockCommandRunner) {
 	commandRunner.When(func(args exec.RunArgs, command string) bool {
 		return args.Cmd == "terraform" && strings.Contains(command, "init")
 	}).Respond(exec.RunResult{
-		Stdout: string("Terraform has been successfully initialized!"),
+		Stdout: "Terraform has been successfully initialized!",
 		Stderr: "",
 	})
 
-	output := "{\"AZURE_LOCATION\": {\"sensitive\": false,\"type\": \"string\",\"value\": \"westus2\"},\"RG_NAME\":{\"sensitive\": false,\"type\": \"string\",\"value\": \"rg-test-env\"}}"
+	//nolint:lll
+	output := `{"AZURE_LOCATION":{"sensitive": false,"type": "string","value": "westus2"},"RG_NAME":{"sensitive": false,"type": "string","value": "rg-test-env"}}`
 	commandRunner.When(func(args exec.RunArgs, command string) bool {
 		return args.Cmd == "terraform" && strings.Contains(command, "output")
 	}).Respond(exec.RunResult{
@@ -283,7 +317,7 @@ func prepareDestroyMocks(commandRunner *execmock.MockCommandRunner) {
 	commandRunner.When(func(args exec.RunArgs, command string) bool {
 		return args.Cmd == "terraform" && strings.Contains(command, "destroy")
 	}).Respond(exec.RunResult{
-		Stdout: string(""),
+		Stdout: "",
 		Stderr: "",
 	})
 }

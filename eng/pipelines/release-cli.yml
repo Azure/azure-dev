@@ -66,10 +66,10 @@ stages:
           - template: /eng/pipelines/templates/steps/set-cli-version-cd.yml
 
           - template: /eng/pipelines/templates/steps/install-bicep.yml
+            parameters:
+              Condition: and(succeeded(), ne(variables['Skip.LiveTest'], 'true'))
 
           - template: /eng/pipelines/templates/steps/install-terraform.yml
-
-          - template: /eng/pipelines/templates/steps/install-sysinternals.yml
 
           - task: DockerInstaller@0
             displayName: Docker Installer
@@ -245,6 +245,43 @@ stages:
             artifact: docs
             displayName: Upload generated documentation
 
+      - job: Compress_For_Hosting
+        dependsOn: BuildCLI
+        pool:
+          name: azsdk-pool-mms-ubuntu-2004-general
+          vmImage: MMSUbuntu20.04
+
+        steps:
+          - task: DownloadPipelineArtifact@2
+            inputs:
+              artifact: azd-windows-amd64.exe
+              path: azd-windows-amd64.exe
+
+          - task: DownloadPipelineArtifact@2
+            inputs:
+              artifact: azd-linux-amd64
+              path: azd-linux-amd64
+
+          - task: DownloadPipelineArtifact@2
+            inputs:
+              artifact: azd-darwin-amd64
+              path: azd-darwin-amd64
+
+          - pwsh: |
+              Write-Host "Moving downloaded files to hosting folder"
+              New-Item -ItemType Directory -Path hosting
+
+              Write-Host "Compressing artifacts as if publishing"
+              zip hosting/azd-windows-amd64.zip -j azd-windows-amd64.exe/azd-windows-amd64.exe
+              zip hosting/azd-darwin-amd64.zip -j azd-darwin-amd64/azd-darwin-amd64
+              tar -C azd-linux-amd64 -cvzf hosting/azd-linux-amd64.tar.gz azd-linux-amd64
+
+              Get-ChildItem hosting/ -Recurse | Select-Object -Property Name,Size
+            displayName: Move folders to hosting location
+
+          - publish: hosting
+            artifact: test-hosting
+
   - stage: Sign
     dependsOn: BuildAndTest
     jobs:
@@ -322,6 +359,210 @@ stages:
           inputs:
             artifactName: signed-FailedAttempt$(System.JobAttempt)
             path: signed/
+
+  - stage: Verify_Installers
+    dependsOn: BuildAndTest
+    jobs:
+      - job: Verify_Mac_InstallOver
+        pool:
+          name: Azure Pipelines
+          vmImage: macOS-12
+
+        steps:
+          - checkout: self
+
+          - bash: ./install-azd.sh --version daily --verbose
+            displayName: Install "daily" version
+            workingDirectory: cli/installer/
+
+          - pwsh: azd version
+            displayName: Run azd version
+
+          - bash: ./install-azd.sh --version latest --verbose
+            displayName: Install "latest" version
+            workingDirectory: cli/installer/
+
+          - pwsh: azd version
+            displayName: Run azd version (expect no failure)
+
+      - job: Verify_Installers
+        strategy:
+          matrix:
+            LinuxDockerSh:
+              Pool: azsdk-pool-mms-ubuntu-2004-general
+              OSVmImage:  MMSUbuntu20.04
+              TestShell: pwsh
+              TestInstallCommand: >
+                ./test-installer-containers.ps1
+                -BaseUrl "http://localhost:8080"
+                -Version ''
+                -ContainerPrefix '$(docker-mirror-tag-prefix)/'
+            LinuxSh:
+              Pool: azsdk-pool-mms-ubuntu-2004-general
+              OSVmImage:  MMSUbuntu20.04
+              TestShell: bash
+              TestInstallCommand: >
+                ./test-sh-install.sh "bash" "$BASEURL" "" &&
+                ./test-telemetry-functions.sh "telemetry/linux.sh.telemetry.csv"
+            LinuxPwsh:
+              Pool: azsdk-pool-mms-ubuntu-2004-general
+              OSVmImage:  MMSUbuntu20.04
+              TestShell: pwsh
+              TestInstallCommand: >
+                ./test-pwsh-xplat-install.ps1 -BaseUrl $env:BASEURL -Version '';
+                ./test-telemetry-functions.ps1 -NonInteractive -Shell pwsh -ExpectedFieldMap telemetry/linux.telemetry.json
+
+            Mac11Sh:
+              Pool: Azure Pipelines
+              OSVmImage: macOS-11
+              TestShell: bash
+              TestInstallCommand: >
+                ./test-sh-install.sh "bash" "$BASEURL" "" &&
+                ./test-telemetry-functions.sh "telemetry/macos11.sh.telemetry.csv"
+            Mac12Sh:
+              Pool: Azure Pipelines
+              OSVmImage: macOS-12
+              TestShell: bash
+              TestInstallCommand: >
+                ./test-sh-install.sh "bash" "$BASEURL" "" &&
+                ./test-telemetry-functions.sh "telemetry/macos12.sh.telemetry.csv"
+            Mac12Pwsh:
+              Pool: Azure Pipelines
+              OSVmImage: macOS-12
+              TestShell: pwsh
+              # Should also test telemetry functions but cannot because of macOS
+              # host limitations in DevOps which do not reproduce on non-DevOps
+              # macs. Disabled for now.
+              #  ./test-telemetry-functions.ps1 -Shell pwsh -ExpectedFieldMap telemetry/macos.telemetry.json
+              TestInstallCommand: >
+                ./test-pwsh-xplat-install.ps1 -BaseUrl $env:BASEURL -Version ''
+            Mac11Pwsh:
+              Pool: Azure Pipelines
+              OSVmImage: macOS-11
+              TestShell: pwsh
+              # Should also test telemetry functions but cannot because of macOS
+              # host limitations in DevOps which do not reproduce on non-DevOps
+              # macs. Disabled for now.
+              #  ./test-telemetry-functions.ps1 -Shell pwsh -ExpectedFieldMap telemetry/macos.telemetry.json
+              TestInstallCommand: >
+                ./test-pwsh-xplat-install.ps1 -BaseUrl $env:BASEURL -Version ''
+
+            WindowsCmd:
+              Pool: azsdk-pool-mms-win-2019-general
+              OSVmImage: MMS2019
+              TestShell: cmd
+              TestInstallCommand: cmd /c test-windows-install.cmd %BASEURL%
+            WindowsPwsh:
+              Pool: azsdk-pool-mms-win-2019-general
+              OSVmImage: MMS2019
+              TestShell: pwsh
+              TestInstallCommand: >
+                ./test-win-install.ps1 -BaseUrl $env:BASEURL -Version '';
+                ./test-telemetry-functions.ps1 -Shell pwsh -ExpectedFieldMap telemetry/windows.pwsh.telemetry.json
+            WindowsPowerShell:
+              Pool: azsdk-pool-mms-win-2019-general
+              OSVmImage: MMS2019
+              TestShell: powershell
+              TestInstallCommand: >
+                ./test-win-install.ps1 -BaseUrl $env:BASEURL -Version '';
+                ./test-telemetry-functions.ps1 -Shell powershell -ExpectedFieldMap telemetry/windows.powershell.telemetry.json
+
+        pool:
+          name: $(Pool)
+          vmImage: $(OSVmImage)
+
+        variables:
+          BaseUrl: http://127.0.0.1:8080
+
+        timeoutInMinutes: 10
+
+        steps:
+          - checkout: self
+
+          - task: DownloadPipelineArtifact@2
+            inputs:
+              artifact: test-hosting
+              path: hosting
+
+          - bash: ls
+            workingDirectory: hosting
+
+          - bash: nohup npx -y http-server &
+            displayName: Start server in hosting/ (bash)
+            condition: and(succeeded(), not(contains(variables['Agent.OS'], 'Windows')))
+            workingDirectory: hosting
+
+          - pwsh: |
+              Start-Process npx.cmd `
+                -ArgumentList @('-y', 'http-server') `
+                -NoNewWindow `
+                -PassThru `
+                -RedirectStandardOutput ../server.log
+              Write-Host "Server started, waiting for server to initialize"
+              Start-Sleep -Seconds 15
+            displayName: Start server in hosting/ (pwsh)
+            condition: and(succeeded(), contains(variables['Agent.OS'], 'Windows'))
+            workingDirectory: hosting
+
+          - pwsh: |
+              $tmpFile = New-TemporaryFile
+              $timer = [Diagnostics.Stopwatch]::StartNew()
+              $MAX_ELAPSED_SECONDS = 120
+              $TIMEOUT_SECONDS = 12
+              $SLEEP_SECONDS = 1
+
+              while ($timer.Elapsed.TotalSeconds -lt $MAX_ELAPSED_SECONDS) {
+                try {
+                  Write-Host "Downloading file..."
+                  Invoke-WebRequest `
+                    $(BaseUrl)/azd-windows-amd64.zip `
+                    -OutFile $tmpFile `
+                    -TimeoutSec $TIMEOUT_SECONDS
+
+                  if ($LASTEXITCODE) {
+                    throw "Failed downloading file"
+                  }
+                } catch {
+                  Write-Host "Error downloading file."
+                  Write-Host $_
+                  Start-Sleep -Seconds $SLEEP_SECONDS
+                  continue
+                }
+
+                # Exit if the downloaded file size is less than a small threshold
+                # this could mean an error in how the files are being served.
+                if ((Get-Item $tmpFile).Length -le 100000) {
+                  Get-Content $tmpFile
+                  exit 1
+                }
+
+                break
+              }
+
+              Get-Item $tmpFile | Select-Object -Property Name,Length
+            displayName: Verify installer hosting
+
+          - pwsh: $(TestInstallCommand)
+            condition: and(succeeded(), eq('pwsh', variables['TestShell']))
+            workingDirectory: cli/installer/
+            displayName: Test install script (pwsh)
+
+          - powershell: $(TestInstallCommand)
+            condition: and(succeeded(), eq('powershell', variables['TestShell']))
+            workingDirectory: cli/installer/
+            displayName: Test install script (PowerShell)
+
+          - bash: $(TestInstallCommand)
+            condition: and(succeeded(), eq('bash', variables['TestShell']))
+            workingDirectory: cli/installer/
+            displayName: Test install script (bash)
+
+          - task: CmdLine@2
+            condition: and(succeeded(), eq('cmd', variables['TestShell']))
+            inputs:
+              script: $(TestInstallCommand)
+              workingDirectory: cli/installer/
+            displayName: Test install script (cmd)
 
   - stage: PublishCLI
     dependsOn: Sign
@@ -509,118 +750,12 @@ stages:
               targetType: filePath
               filePath: ./eng/scripts/Update-PRComment.ps1
               arguments: >-
-                -Repo "azure/azure-dev"
+                -Repo "$(Build.Repository.Name)"
                 -PrNumber $(PRNumber)
                 -Tag "<!-- #comment-cli-pr -->"
                 -BodyFile $(CommentBodyFile)
             env:
               GH_TOKEN: $(azuresdk-github-pat)
-
-      - job: Verify_Mac_InstallOver
-        pool: 
-          name: Azure Pipelines
-          vmImage: macOS-12
-        
-        steps: 
-          - checkout: self
-
-          - bash: ./install-azd.sh --version daily --verbose
-            displayName: Install "daily" version
-            workingDirectory: cli/installer/
-
-          - pwsh: azd version
-            displayName: Run azd version
-
-          - bash: ./install-azd.sh --version latest --verbose
-            displayName: Install "latest" version
-            workingDirectory: cli/installer/
-
-          - pwsh: azd version
-            displayName: Run azd version (expect no failure)
-
-      - job: Verify_Installers
-        condition: >-
-          and(
-            succeeded(),
-            ne(variables['Skip.Release'], 'true'),
-            or(
-              eq('PullRequest', variables['BuildReasonOverride']),
-              and(
-                eq('', variables['BuildReasonOverride']),
-                eq(variables['Build.Reason'], 'PullRequest')
-              )
-            )
-          )
-
-        dependsOn: Publish_For_PR
-
-        variables:
-          BaseUrl: $[ dependencies.Publish_for_PR.outputs['GenerateUrlBase.UrlBase'] ]
-
-        strategy:
-          matrix:
-            LinuxDockerSh:
-              Pool: azsdk-pool-mms-ubuntu-2004-general
-              OSVmImage:  MMSUbuntu20.04
-              TestShell: pwsh
-              TestInstallCommand: >
-                ./test-installer-containers.ps1
-                -BaseUrl "$env:BASEURL"
-                -Version ''
-                -ContainerPrefix '$(docker-mirror-tag-prefix)/'
-            MacSh:
-              Pool: Azure Pipelines
-              OSVmImage: macOS-11
-              TestShell: bash
-              TestInstallCommand: ./test-sh-install.sh "bash" "$BASEURL" ""
-            LinuxPwsh:
-              Pool: azsdk-pool-mms-ubuntu-2004-general
-              OSVmImage:  MMSUbuntu20.04
-              TestShell: pwsh
-              TestInstallCommand: >
-                ./test-pwsh-xplat-install.ps1 -BaseUrl $env:BASEURL -Version ''
-            MacPwsh:
-              Pool: Azure Pipelines
-              OSVmImage: macOS-11
-              TestShell: pwsh
-              TestInstallCommand: >
-                ./test-pwsh-xplat-install.ps1 -BaseUrl $env:BASEURL -Version ''
-            WindowsCmd:
-              Pool: azsdk-pool-mms-win-2019-general
-              OSVmImage: MMS2019
-              TestShell: cmd
-              TestInstallCommand: cmd /c test-windows-install.cmd %BASEURL%
-            WindowsPwsh:
-              Pool: azsdk-pool-mms-win-2019-general
-              OSVmImage: MMS2019
-              TestShell: pwsh
-              TestInstallCommand: >
-                ./test-pwsh-win-install.ps1 -BaseUrl $env:BASEURL -Version ''
-
-        pool:
-          name: $(Pool)
-          vmImage: $(OSVmImage)
-
-        steps:
-          - pwsh: $(TestInstallCommand)
-            condition: and(succeeded(), eq('pwsh', variables['TestShell']))
-            workingDirectory: cli/installer/
-            env:
-              BASEURL: $(BaseUrl)
-
-          - bash: $(TestInstallCommand)
-            condition: and(succeeded(), eq('bash', variables['TestShell']))
-            workingDirectory: cli/installer/
-            env:
-              BASEURL: $(BaseUrl)
-
-          - task: CmdLine@2
-            condition: and(succeeded(), eq('cmd', variables['TestShell']))
-            inputs:
-              script: $(TestInstallCommand)
-              workingDirectory: cli/installer/
-            env:
-              BASEURL: $(BaseUrl)
 
   - stage: Publish_Installers
     dependsOn: Sign

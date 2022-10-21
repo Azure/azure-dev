@@ -113,7 +113,10 @@ func (p *BicepProvider) State(
 			}
 
 			asyncContext.SetProgress(&StateProgress{Message: "Normalizing output parameters", Timestamp: time.Now()})
-			state.Outputs = p.createOutputParameters(deployment, azcli.CreateDeploymentOutput(armDeployment.Properties.Outputs))
+			state.Outputs = p.createOutputParameters(
+				deployment,
+				azcli.CreateDeploymentOutput(armDeployment.Properties.Outputs),
+			)
 
 			result := StateResult{
 				State: &state,

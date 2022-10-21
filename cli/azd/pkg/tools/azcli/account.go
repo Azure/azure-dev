@@ -14,7 +14,9 @@ import (
 )
 
 var (
-	isNotLoggedInMessageRegex         = regexp.MustCompile(`(ERROR: No subscription found)|(Please run ('|")az login('|") to (setup account|access your accounts)\.)+`)
+	isNotLoggedInMessageRegex = regexp.MustCompile(
+		`(ERROR: No subscription found)|(Please run ('|")az login('|") to (setup account|access your accounts)\.)+`,
+	)
 	isRefreshTokenExpiredMessageRegex = regexp.MustCompile(`AADSTS(70043|700082)`)
 )
 

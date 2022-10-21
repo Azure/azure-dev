@@ -65,6 +65,13 @@
     "async": "^3.2.3",
     "nth-check": "^2.0.1",
     "ejs": "^3.1.7",
-    "svgo": "^2.8.0"
+    "svgo": "^2.8.0",
+    "react-scripts":{
+      "react-dev-utils": {
+        "recursive-readdir": {
+          "minimatch": "^3.0.5"
+        }
+      }
+    }
   }
 }

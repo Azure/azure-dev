@@ -6,6 +6,7 @@ package input
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log"
@@ -69,9 +70,13 @@ func (c *AskerConsole) SetWriter(writer io.Writer) {
 func (c *AskerConsole) Message(ctx context.Context, message string) {
 	// Disable output when formatting is enabled
 	if c.formatter != nil && c.formatter.Kind() == output.JsonFormat {
-		// we do not expect formatter.Format to fail on valid input. Discard the error to appease the linter (note
-		// that we implicitly discard the error from fmt.Fprintln later, as well).
-		_ = c.formatter.Format(c.eventForMessage(message), c.writer, nil)
+		// we call json.Marhsal directly, because the formatter marshalls using indentation, and we would prefer
+		// these objects be written on a single line.
+		jsonMessage, err := json.Marshal(c.eventForMessage(message))
+		if err != nil {
+			panic(fmt.Sprintf("Message: unexpected error during marshaling for a valid object: %v", err))
+		}
+		fmt.Fprintln(c.writer, string(jsonMessage))
 	} else if c.formatter == nil || c.formatter.Kind() == output.NoneFormat {
 		fmt.Fprintln(c.writer, message)
 	} else {

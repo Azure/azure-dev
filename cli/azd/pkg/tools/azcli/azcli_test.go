@@ -15,6 +15,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/azure/azure-dev/cli/azd/internal"
@@ -282,23 +284,28 @@ func TestAZCliGetAccessTokenTranslatesErrors(t *testing.T) {
 			expect: ErrAzCliRefreshTokenExpired,
 		},
 		{
-			name:   "RunAzLoginDoubleQuotes",
+			name:   "GetAccessTokenDoubleQuotes",
 			stderr: `Please run "az login" to setup account.`,
 			expect: ErrAzCliNotLoggedIn,
 		},
 		{
-			name:   "RunAzLoginSingleQuotes",
+			name:   "GetAccessTokenSingleQuotes",
 			stderr: `Please run 'az login' to setup account.`,
 			expect: ErrAzCliNotLoggedIn,
 		},
 		{
-			name:   "RunAzLoginDoubleQuotesAccessAccount",
+			name:   "GetAccessTokenDoubleQuotesAccessAccount",
 			stderr: `Please run "az login" to access your accounts.`,
 			expect: ErrAzCliNotLoggedIn,
 		},
 		{
-			name:   "RunAzLoginSingleQuotesAccessAccount",
+			name:   "GetAccessTokenSingleQuotesAccessAccount",
 			stderr: `Please run 'az login' to access your accounts.`,
+			expect: ErrAzCliNotLoggedIn,
+		},
+		{
+			name:   "GetAccessTokenErrorNoSubscriptionFound",
+			stderr: `ERROR: No subscription found`,
 			expect: ErrAzCliNotLoggedIn,
 		},
 	}
@@ -306,18 +313,16 @@ func TestAZCliGetAccessTokenTranslatesErrors(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			mockContext := mocks.NewMockContext(context.Background())
-			azCli := NewAzCli(identity.GetCredentials(*mockContext.Context), NewAzCliArgs{
+			mockCredential := mocks.MockCredentials{
+				GetTokenFn: func(ctx context.Context, options policy.TokenRequestOptions) (azcore.AccessToken, error) {
+					return azcore.AccessToken{}, errors.New(test.stderr)
+				},
+			}
+
+			azCli := NewAzCli(&mockCredential, NewAzCliArgs{
 				EnableDebug:     true,
 				EnableTelemetry: true,
 				CommandRunner:   mockContext.CommandRunner,
-			})
-
-			mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
-				return strings.Contains(command, "az account get-access-token")
-			}).Respond(exec.RunResult{
-				ExitCode: 1,
-				Stdout:   "",
-				Stderr:   test.stderr,
 			})
 
 			_, err := azCli.GetAccessToken(*mockContext.Context)

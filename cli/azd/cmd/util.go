@@ -272,7 +272,7 @@ func ensureEnvironmentInitialized(
 		if err != nil {
 			return fmt.Errorf("fetching current user information: %w", err)
 		}
-		env.SetPrincipalId(principalID)
+		env.SetPrincipalId(*principalID)
 	}
 
 	if err := env.Save(); err != nil {

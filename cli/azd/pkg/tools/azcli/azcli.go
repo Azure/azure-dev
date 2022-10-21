@@ -30,13 +30,12 @@ import (
 )
 
 var (
-	ErrAzCliNotLoggedIn          = errors.New("cli is not logged in. Try running \"azd login\" to fix")
-	ErrAzCliRefreshTokenExpired  = errors.New("refresh token has expired. Try running \"azd login\" to fix")
-	ErrCurrentPrincipalIsNotUser = errors.New("current principal is not a user principal")
-	ErrClientAssertionExpired    = errors.New("client assertion expired")
-	ErrDeploymentNotFound        = errors.New("deployment not found")
-	ErrNoConfigurationValue      = errors.New("no value configured")
-	ErrAzCliSecretNotFound       = errors.New("secret not found")
+	ErrAzCliNotLoggedIn         = errors.New("cli is not logged in. Try running \"azd login\" to fix")
+	ErrAzCliRefreshTokenExpired = errors.New("refresh token has expired. Try running \"azd login\" to fix")
+	ErrClientAssertionExpired   = errors.New("client assertion expired")
+	ErrDeploymentNotFound       = errors.New("deployment not found")
+	ErrNoConfigurationValue     = errors.New("no value configured")
+	ErrAzCliSecretNotFound      = errors.New("secret not found")
 )
 
 const (
@@ -184,7 +183,7 @@ type AzCli interface {
 		environmentName string,
 	) (*AzCliStaticWebAppEnvironmentProperties, error)
 
-	GetSignedInUserId(ctx context.Context) (string, error)
+	GetSignedInUserId(ctx context.Context) (*string, error)
 
 	GetAccessToken(ctx context.Context) (*AzCliAccessToken, error)
 }
@@ -618,17 +617,11 @@ func (cli *azCli) createDefaultClientOptionsBuilder(ctx context.Context) *azsdk.
 // Additionally, https://learn.microsoft.com/azure/active-directory/develop/reference-aadsts-error-codes#aadsts-error-codes
 // is a helpful resource with a list of error codes and messages.
 
-var isNotLoggedInMessageRegex = regexp.MustCompile(`Please run ('|")az login('|") to (setup account|access your accounts)\.`)
-
 // Regex for "(DeploymentNotFound) Deployment '<name>' could not be found."
 var isDeploymentNotFoundMessageRegex = regexp.MustCompile(`\(DeploymentNotFound\)`)
 var isConfigurationIsNotSetMessageRegex = regexp.MustCompile(`Configuration '.*' is not set\.`)
 var isDeploymentErrorRegex = regexp.MustCompile(`ERROR: ({.+})`)
 var isInnerDeploymentErrorRegex = regexp.MustCompile(`Inner Errors:\s+({.+})`)
-
-func isNotLoggedInMessage(s string) bool {
-	return isNotLoggedInMessageRegex.MatchString(s)
-}
 
 func isDeploymentNotFoundMessage(s string) bool {
 	return isDeploymentNotFoundMessageRegex.MatchString(s)

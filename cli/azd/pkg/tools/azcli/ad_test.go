@@ -16,23 +16,36 @@ import (
 )
 
 func Test_GetSignedInUserId(t *testing.T) {
-	mockUserProfile := graphsdk.UserProfile{
-		Id:                "user1",
-		GivenName:         "John",
-		Surname:           "Doe",
-		JobTitle:          "Software Engineer",
-		DisplayName:       "John Doe",
-		UserPrincipalName: "john.doe@contoso.com",
-	}
+	t.Run("Success", func(t *testing.T) {
+		mockUserProfile := graphsdk.UserProfile{
+			Id:                "user1",
+			GivenName:         "John",
+			Surname:           "Doe",
+			JobTitle:          "Software Engineer",
+			DisplayName:       "John Doe",
+			UserPrincipalName: "john.doe@contoso.com",
+		}
 
-	mockContext := mocks.NewMockContext(context.Background())
-	registerGetMeGraphMock(mockContext, http.StatusOK, &mockUserProfile)
+		mockContext := mocks.NewMockContext(context.Background())
+		registerGetMeGraphMock(mockContext, http.StatusOK, &mockUserProfile)
 
-	azCli := GetAzCli(*mockContext.Context)
+		azCli := GetAzCli(*mockContext.Context)
 
-	userId, err := azCli.GetSignedInUserId(*mockContext.Context)
-	require.NoError(t, err)
-	require.Equal(t, mockUserProfile.Id, userId)
+		userId, err := azCli.GetSignedInUserId(*mockContext.Context)
+		require.NoError(t, err)
+		require.Equal(t, mockUserProfile.Id, *userId)
+	})
+
+	t.Run("Error", func(t *testing.T) {
+		mockContext := mocks.NewMockContext(context.Background())
+		registerGetMeGraphMock(mockContext, http.StatusBadRequest, nil)
+
+		azCli := GetAzCli(*mockContext.Context)
+
+		userId, err := azCli.GetSignedInUserId(*mockContext.Context)
+		require.Error(t, err)
+		require.Nil(t, userId)
+	})
 }
 
 var expectedServicePrincipalCredential AzureCredentials = AzureCredentials{

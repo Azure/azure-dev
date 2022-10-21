@@ -32,5 +32,9 @@ func (b *MeItemRequestBuilder) Get(ctx context.Context) (*UserProfile, error) {
 		return nil, runtime.NewResponseError(res)
 	}
 
+	if !runtime.HasStatusCode(res, http.StatusOK) {
+		return nil, runtime.NewResponseError(res)
+	}
+
 	return httputil.ReadRawResponse[UserProfile](res)
 }

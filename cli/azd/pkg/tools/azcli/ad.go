@@ -27,18 +27,18 @@ type AzureCredentials struct {
 	ResourceManagerEndpointUrl string `json:"resourceManagerEndpointUrl"`
 }
 
-func (cli *azCli) GetSignedInUserId(ctx context.Context) (string, error) {
+func (cli *azCli) GetSignedInUserId(ctx context.Context) (*string, error) {
 	client, err := cli.createGraphClient(ctx)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
 	userProfile, err := client.Me().Get(ctx)
 	if err != nil {
-		return "", fmt.Errorf("failed retrieving current user profile: %w", err)
+		return nil, fmt.Errorf("failed retrieving current user profile: %w", err)
 	}
 
-	return userProfile.Id, nil
+	return &userProfile.Id, nil
 }
 
 func (cli *azCli) CreateOrUpdateServicePrincipal(

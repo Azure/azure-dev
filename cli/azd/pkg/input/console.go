@@ -22,6 +22,8 @@ const (
 	Step
 	StepDone
 	StepFailed
+	ResultSuccess
+	ResultError
 )
 
 type Console interface {
@@ -102,6 +104,21 @@ func (c *AskerConsole) MessageUx(ctx context.Context, message string, format Mes
 	}
 
 	c.Message(ctx, formattedText)
+}
+
+func addFormat(message string, format MessageUxType) (withFormat string, err error) {
+	switch format {
+	case Title:
+		withFormat = fmt.Sprintf("\n%s\n", message)
+	case ResultSuccess:
+		withFormat = output.WithSuccessFormat("\n%s: %s", "SUCCESS", message)
+	case ResultError:
+		withFormat = output.WithErrorFormat("\n%s: %s", "ERROR", message)
+	default:
+		return withFormat, fmt.Errorf("Unknown UX format type")
+	}
+
+	return withFormat, nil
 }
 
 func (c *AskerConsole) ShowSpinner(ctx context.Context, title string, format MessageUxType) {
@@ -187,17 +204,6 @@ func getStopChar(format MessageUxType) string {
 		stopChar = output.WithErrorFormat("(x) Failed:")
 	}
 	return stopChar
-}
-
-func addFormat(message string, format MessageUxType) (withFormat string, err error) {
-	switch format {
-	case Title:
-		withFormat = fmt.Sprintf("\n%s\n", message)
-	default:
-		return withFormat, fmt.Errorf("Unknown UX format type")
-	}
-
-	return withFormat, nil
 }
 
 // Prompts the user for a single value

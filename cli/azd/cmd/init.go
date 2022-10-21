@@ -79,13 +79,13 @@ func (i *initFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOpt
 }
 
 type initAction struct {
-	azdCtx  *azdcontext.AzdContext
-	console input.Console
-	cmdRun  exec.CommandRunner
-	azCli   azcli.AzCli
-	gitCli  git.GitCli
-	flags   initFlags
-	cwd     string
+	azdCtx                *azdcontext.AzdContext
+	console               input.Console
+	cmdRun                exec.CommandRunner
+	azCli                 azcli.AzCli
+	gitCli                git.GitCli
+	flags                 initFlags
+	formattedWithColorCwd string
 }
 
 func newInitAction(
@@ -106,7 +106,13 @@ func newInitAction(
 }
 
 func (i *initAction) PostRun(ctx context.Context, runResult error) error {
-	return runResult
+	if runResult == nil {
+		i.console.MessageUx(ctx, "New project initialized!", input.ResultSuccess)
+		i.console.Message(ctx, fmt.Sprintf("You can view the template code in your directory: %s", i.formattedWithColorCwd))
+	} else {
+		i.console.MessageUx(ctx, runResult.Error(), input.ResultError)
+	}
+	return nil
 }
 
 func (i *initAction) Run(ctx context.Context) error {
@@ -115,6 +121,7 @@ func (i *initAction) Run(ctx context.Context) error {
 	// to force using the current working directory as a project root (since we are initializing a
 	// new project).
 	wd, err := os.Getwd()
+	i.formattedWithColorCwd = output.WithHighLightFormat("%s", wd)
 	if err != nil {
 		return fmt.Errorf("getting cwd: %w", err)
 	}
@@ -186,19 +193,14 @@ func (i *initAction) Run(ctx context.Context) error {
 			_ = os.RemoveAll(templateStagingDir)
 		}()
 
-		i.cwd = output.WithHighLightFormat("%s", wd)
-		stepMessage := fmt.Sprintf("Downloading template code to: %s", i.cwd)
+		stepMessage := fmt.Sprintf("Downloading template code to: %s", i.formattedWithColorCwd)
 		i.console.ShowSpinner(ctx, stepMessage, input.Step)
 
 		// perform the work while the spinner is running
 		err = i.gitCli.FetchCode(ctx, templateUrl, i.flags.templateBranch, templateStagingDir)
 
 		// stop the spinner based on the result
-		formatResult := input.StepDone
-		if err != nil {
-			formatResult = input.StepFailed
-		}
-		i.console.StopSpinner(ctx, stepMessage, formatResult)
+		i.console.StopSpinner(ctx, stepMessage, getStepResultFormat(err))
 
 		if err != nil {
 			return fmt.Errorf("\nfetching template: %w", err)
@@ -279,9 +281,11 @@ func (i *initAction) Run(ctx context.Context) error {
 	_, err = os.Stat(i.azdCtx.ProjectPath())
 
 	if errors.Is(err, os.ErrNotExist) {
-		fmt.Fprintf(i.console.Handles().Stdout, "Creating a new %s file.\n", azdcontext.ProjectFileName)
+		stepMessage := fmt.Sprintf("Creating a new %s file.", azdcontext.ProjectFileName)
 
+		i.console.ShowSpinner(ctx, stepMessage, input.Step)
 		_, err = project.NewProject(i.azdCtx.ProjectPath(), i.azdCtx.GetDefaultProjectName())
+		i.console.StopSpinner(ctx, stepMessage, getStepResultFormat(err))
 
 		if err != nil {
 			return fmt.Errorf("failed to create a project file: %w", err)
@@ -340,4 +344,12 @@ func (i *initAction) Run(ctx context.Context) error {
 	}
 
 	return nil
+}
+
+func getStepResultFormat(result error) input.MessageUxType {
+	formatResult := input.StepDone
+	if result != nil {
+		formatResult = input.StepFailed
+	}
+	return formatResult
 }

@@ -72,6 +72,9 @@ func PromptTemplate(ctx context.Context, message string) (Template, error) {
 		DefaultValue: templateNames[0],
 	})
 
+	// separate this prompt from the next log
+	console.Message(ctx, "")
+
 	if err != nil {
 		return result, fmt.Errorf("prompting for template: %w", err)
 	}
@@ -82,9 +85,6 @@ func PromptTemplate(ctx context.Context, message string) (Template, error) {
 
 	selectedTemplateName := templateNames[selectedIndex]
 	log.Printf("Selected template: %s", fmt.Sprint(selectedTemplateName))
-
-	// separate this prompt from the next log
-	console.Message(ctx, "")
 
 	return templatesSet[selectedTemplateName], nil
 }

@@ -2,6 +2,10 @@
 
 ## 0.3.0-beta.3 (Unreleased)
 
+### Bugs Fixed
+
+- [[#925]](https://github.com/Azure/azure-dev/pull/925) Fix issues where running `azd infra create` with `--output==json` would emit invalid JSON.  As part of this change, we now no longer emit multiple objects to `stdout` as part of an operation. Instead, progress messages are streamed in a structured way to `stderr`.
+
 ## 0.3.0-beta.2 (2022-10-05)
 
 ### Bugs Fixed

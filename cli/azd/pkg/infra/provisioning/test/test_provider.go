@@ -97,9 +97,8 @@ func (p *TestProvider) GetDeployment(
 	return async.RunInteractiveTaskWithProgress(
 		func(asyncContext *async.InteractiveTaskContextWithProgress[*DeployResult, *DeployProgress]) {
 			asyncContext.SetProgress(&DeployProgress{
-				Message:    "Looking up deployment",
-				Operations: []azcli.AzCliResourceOperation{},
-				Timestamp:  time.Now(),
+				Message:   "Looking up deployment",
+				Timestamp: time.Now(),
 			})
 
 			deployment := Deployment{
@@ -108,7 +107,6 @@ func (p *TestProvider) GetDeployment(
 			}
 
 			deployResult := DeployResult{
-				Operations: []azcli.AzCliResourceOperation{},
 				Deployment: &deployment,
 			}
 
@@ -125,9 +123,8 @@ func (p *TestProvider) Deploy(
 	return async.RunInteractiveTaskWithProgress(
 		func(asyncContext *async.InteractiveTaskContextWithProgress[*DeployResult, *DeployProgress]) {
 			asyncContext.SetProgress(&DeployProgress{
-				Message:    "Deploying azure resources",
-				Operations: []azcli.AzCliResourceOperation{},
-				Timestamp:  time.Now(),
+				Message:   "Deploying azure resources",
+				Timestamp: time.Now(),
 			})
 
 			deployment := Deployment{
@@ -136,11 +133,9 @@ func (p *TestProvider) Deploy(
 			}
 
 			deployResult := DeployResult{
-				Operations: []azcli.AzCliResourceOperation{},
 				Deployment: &deployment,
 			}
 
-			asyncContext.SetProgress(&DeployProgress{Operations: []azcli.AzCliResourceOperation{}, Timestamp: time.Now()})
 			asyncContext.SetResult(&deployResult)
 		})
 }

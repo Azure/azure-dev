@@ -12,7 +12,7 @@ import { AzExtErrorButton, IActionContext } from '@microsoft/vscode-azext-utils'
 
 // Twenty seconds: generous, but not infinite
 export const DefaultAzCliInvocationTimeout: number = 20 * 1000;
-const AzdInstallationUrl: string = 'https://aka.ms/azd';
+const AzdInstallationUrl: string = 'https://aka.ms/azd-install';
 const AzdVersionCacheLifetime = 15 * 60 * 1000; // 15 minutes
 
 enum AzdVersionCheckFailure {

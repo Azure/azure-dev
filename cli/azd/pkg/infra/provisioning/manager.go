@@ -7,7 +7,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"log"
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azureutil"
@@ -179,10 +178,6 @@ func (m *Manager) deploy(
 			go func() {
 				for progress := range deployTask.Progress() {
 					m.updateSpinnerTitle(spinner, progress.Message)
-
-					if m.formatter.Kind() == output.JsonFormat {
-						m.writeJsonOutput(ctx, progress.Operations)
-					}
 				}
 			}()
 
@@ -201,10 +196,6 @@ func (m *Manager) deploy(
 
 	if err != nil {
 		return nil, fmt.Errorf("error deploying infrastructure: %w", err)
-	}
-
-	if m.formatter.Kind() == output.JsonFormat {
-		m.writeJsonOutput(ctx, deployResult.Operations)
 	}
 
 	m.console.Message(ctx, output.WithSuccessFormat("\nAzure resource provisioning completed successfully"))
@@ -291,7 +282,7 @@ func (m *Manager) runAction(
 ) error {
 	var spinner *spin.Spinner
 
-	if interactive {
+	if interactive && (m.formatter == nil || m.formatter.Kind() != output.JsonFormat) {
 		spinner, ctx = spin.GetOrCreateSpinner(ctx, m.console.Handles().Stdout, title)
 		defer spinner.Stop()
 		defer m.console.SetWriter(nil)
@@ -310,13 +301,6 @@ func (m *Manager) updateSpinnerTitle(spinner *spin.Spinner, message string) {
 	}
 
 	spinner.Title(fmt.Sprintf("%s...", message))
-}
-
-func (m *Manager) writeJsonOutput(ctx context.Context, output any) {
-	err := m.formatter.Format(output, m.writer, nil)
-	if err != nil {
-		log.Printf("error formatting output: %s", err.Error())
-	}
 }
 
 // Monitors the interactive channel and starts/stops the terminal spinner as needed

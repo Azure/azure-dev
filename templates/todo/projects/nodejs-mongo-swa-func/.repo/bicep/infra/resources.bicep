@@ -22,6 +22,22 @@ module api '../../../../../common/infra/bicep/app/api-functions-node.bicep' = {
     keyVaultName: keyVault.outputs.keyVaultName
     storageAccountName: storage.outputs.name
     allowedOrigins: [ web.outputs.WEB_URI ]
+    appSettings: {
+      AZURE_COSMOS_CONNECTION_STRING_KEY: cosmos.outputs.cosmosConnectionStringKey
+      AZURE_COSMOS_DATABASE_NAME: cosmos.outputs.cosmosDatabaseName
+      AZURE_COSMOS_ENDPOINT: cosmos.outputs.cosmosEndpoint
+    }
+  }
+}
+
+// Give the API access to KeyVault
+module apiKeyVaultAccess '../../../../../../common/infra/bicep/core/security/keyvault-access.bicep' = {
+  name: 'api-keyvault-access'
+  params: {
+    environmentName: environmentName
+    location: location
+    keyVaultName: keyVault.outputs.keyVaultName
+    principalId: api.outputs.API_IDENTITY_PRINCIPAL_ID
   }
 }
 
@@ -35,17 +51,6 @@ module cosmos '../../../../../common/infra/bicep/app/cosmos-mongo-db.bicep' = {
   }
 }
 
-// Configure api to use cosmos
-module apiCosmosConfig '../../../../../../common/infra/bicep/core/host/appservice-config-cosmos.bicep' = {
-  name: 'api-cosmos-config'
-  params: {
-    appServiceName: api.outputs.API_NAME
-    cosmosDatabaseName: cosmos.outputs.cosmosDatabaseName
-    cosmosConnectionStringKey: cosmos.outputs.cosmosConnectionStringKey
-    cosmosEndpoint: cosmos.outputs.cosmosEndpoint
-  }
-}
-
 // Backing storage for Azure functions backend API
 module storage '../../../../../../common/infra/bicep/core/storage/storage-account.bicep' = {
   name: 'storage'
@@ -56,11 +61,15 @@ module storage '../../../../../../common/infra/bicep/core/storage/storage-accoun
 }
 
 // Create an App Service Plan to group applications under the same payment plan and SKU
-module appServicePlan '../../../../../../common/infra/bicep/core/host/appserviceplan-functions.bicep' = {
+module appServicePlan '../../../../../../common/infra/bicep/core/host/appserviceplan.bicep' = {
   name: 'appserviceplan'
   params: {
     environmentName: environmentName
     location: location
+    sku: {
+      name: 'Y1'
+      tier: 'Dynamic'
+    }
   }
 }
 

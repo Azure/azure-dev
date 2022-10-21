@@ -4,13 +4,19 @@
 package input
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log"
+	"strings"
 
 	"github.com/AlecAivazis/survey/v2"
+	"github.com/azure/azure-dev/cli/azd/pkg/contracts"
+	input_contracts "github.com/azure/azure-dev/cli/azd/pkg/input/contracts"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
+	"github.com/mattn/go-colorable"
 )
 
 type Console interface {
@@ -29,9 +35,8 @@ type Console interface {
 }
 
 type AskerConsole struct {
-	interactive bool
-	asker       Asker
-	handles     ConsoleHandles
+	asker   Asker
+	handles ConsoleHandles
 	// the writer the console was constructed with, and what we reset to when SetWriter(nil) is called.
 	defaultWriter io.Writer
 	// the writer which output is written to.
@@ -63,12 +68,38 @@ func (c *AskerConsole) SetWriter(writer io.Writer) {
 
 // Prints out a message to the underlying console write
 func (c *AskerConsole) Message(ctx context.Context, message string) {
-	// Only write to the console during interactive & non-formatted responses.
-	if c.interactive && (c.formatter == nil || c.formatter.Kind() == output.NoneFormat) {
+	// Disable output when formatting is enabled
+	if c.formatter != nil && c.formatter.Kind() == output.JsonFormat {
+		// we call json.Marshal directly, because the formatter marshalls using indentation, and we would prefer
+		// these objects be written on a single line.
+		jsonMessage, err := json.Marshal(c.eventForMessage(message))
+		if err != nil {
+			panic(fmt.Sprintf("Message: unexpected error during marshaling for a valid object: %v", err))
+		}
+		fmt.Fprintln(c.writer, string(jsonMessage))
+	} else if c.formatter == nil || c.formatter.Kind() == output.NoneFormat {
 		fmt.Fprintln(c.writer, message)
 	} else {
 		log.Println(message)
 	}
+}
+
+// jsonObjectForMessage creates a json object representing a message. Any ANSI control sequences from the message are
+// removed. A trailing newline is added to the message.
+func (c *AskerConsole) eventForMessage(message string) contracts.EventEnvelope {
+	// Strip any ANSI colors for the message.
+	var buf bytes.Buffer
+
+	// We do not expect the io.Copy to fail since none of these sub-calls will ever return an error (other than
+	// EOF when we hit the end of the string)
+	if _, err := io.Copy(colorable.NewNonColorable(&buf), strings.NewReader(message)); err != nil {
+		panic(fmt.Sprintf("consoleMessageForMessage: did not expect error from io.Copy but got: %v", err))
+	}
+
+	// Add the newline that would have been added by fmt.Println when we wrote the message directly to the console.
+	buf.WriteByte('\n')
+
+	return input_contracts.NewConsoleMessage(buf.String())
 }
 
 // Prompts the user for a single value
@@ -140,11 +171,10 @@ func (c *AskerConsole) Handles() ConsoleHandles {
 }
 
 // Creates a new console with the specified writer, handles and formatter.
-func NewConsole(interactive bool, isTerminal bool, w io.Writer, handles ConsoleHandles, formatter output.Formatter) Console {
-	asker := NewAsker(!interactive, isTerminal, handles.Stdout, handles.Stdin)
+func NewConsole(noPrompt bool, isTerminal bool, w io.Writer, handles ConsoleHandles, formatter output.Formatter) Console {
+	asker := NewAsker(noPrompt, isTerminal, handles.Stdout, handles.Stdin)
 
 	return &AskerConsole{
-		interactive:   interactive,
 		asker:         asker,
 		handles:       handles,
 		defaultWriter: w,

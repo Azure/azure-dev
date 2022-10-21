@@ -9,16 +9,19 @@ param keyVaultName string
 param serviceName string = 'api'
 param storageAccountName string
 
-module api '../../../../../common/infra/bicep/core/host/functions-python.bicep' = {
+module api '../../../../../common/infra/bicep/core/host/functions.bicep' = {
   name: '${serviceName}-functions-python-module'
   params: {
     environmentName: environmentName
     location: location
     allowedOrigins: allowedOrigins
+    alwaysOn: false
     appSettings: appSettings
     applicationInsightsName: applicationInsightsName
     appServicePlanId: appServicePlanId
     keyVaultName: keyVaultName
+    runtimeName: 'python'
+    runtimeVersion: '3.8'
     serviceName: serviceName
     storageAccountName: storageAccountName
   }

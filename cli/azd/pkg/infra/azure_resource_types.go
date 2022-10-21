@@ -12,6 +12,7 @@ const (
 	AzureResourceTypeDeployment              AzureResourceType = "Microsoft.Resources/deployments"
 	AzureResourceTypeStorageAccount          AzureResourceType = "Microsoft.Storage/storageAccounts"
 	AzureResourceTypeKeyVault                AzureResourceType = "Microsoft.KeyVault/vaults"
+	AzureResourceTypeAppConfig               AzureResourceType = "Microsoft.AppConfiguration/configurationStores"
 	AzureResourceTypePortalDashboard         AzureResourceType = "Microsoft.Portal/dashboards"
 	AzureResourceTypeAppInsightComponent     AzureResourceType = "Microsoft.Insights/components"
 	AzureResourceTypeLogAnalyticsWorkspace   AzureResourceType = "Microsoft.OperationalInsights/workspaces"

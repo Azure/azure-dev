@@ -258,7 +258,7 @@ func notifyWhenGitHubActionsAreDisabled(
 				manualChoice.String(),
 				cancelChoice.String(),
 			},
-			DefaultValue: manualChoice,
+			DefaultValue: manualChoice.String(),
 		})
 
 		if err != nil {

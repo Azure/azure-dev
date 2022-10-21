@@ -80,8 +80,8 @@ func newLoginAction(
 	}
 }
 
-func (i *loginAction) PostRun(ctx context.Context, RunResult error) error {
-	return nil
+func (i *loginAction) PostRun(ctx context.Context, runResult error) error {
+	return runResult
 }
 
 func (la *loginAction) Run(ctx context.Context) error {

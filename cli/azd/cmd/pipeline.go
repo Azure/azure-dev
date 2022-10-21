@@ -93,8 +93,8 @@ func newPipelineConfigAction(
 	return pca
 }
 
-func (i *pipelineConfigAction) PostRun(ctx context.Context, RunResult error) error {
-	return nil
+func (i *pipelineConfigAction) PostRun(ctx context.Context, runResult error) error {
+	return runResult
 }
 
 // Run implements action interface

@@ -151,7 +151,9 @@ func BuildCmd[F any](
 			return err
 		}
 
-		return action.Run(ctx)
+		actionResult := action.Run(ctx)
+		// let action decide what to do with the error
+		return action.PostRun(ctx, actionResult)
 	}
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {

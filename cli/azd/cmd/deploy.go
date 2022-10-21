@@ -110,8 +110,8 @@ type DeploymentResult struct {
 	Services  []project.ServiceDeploymentResult `json:"services"`
 }
 
-func (i *deployAction) PostRun(ctx context.Context, RunResult error) error {
-	return nil
+func (i *deployAction) PostRun(ctx context.Context, runResult error) error {
+	return runResult
 }
 
 func (d *deployAction) Run(ctx context.Context) error {

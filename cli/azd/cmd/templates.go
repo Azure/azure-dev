@@ -74,8 +74,8 @@ func newTemplatesListAction(
 	}
 }
 
-func (i *templatesListAction) PostRun(ctx context.Context, RunResult error) error {
-	return nil
+func (i *templatesListAction) PostRun(ctx context.Context, runResult error) error {
+	return runResult
 }
 
 func (tl *templatesListAction) Run(ctx context.Context) error {

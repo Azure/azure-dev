@@ -77,8 +77,8 @@ func newUpAction(init *initAction, infraCreate *infraCreateAction, deploy *deplo
 	}
 }
 
-func (i *upAction) PostRun(ctx context.Context, RunResult error) error {
-	return nil
+func (i *upAction) PostRun(ctx context.Context, runResult error) error {
+	return runResult
 }
 
 func (u *upAction) Run(ctx context.Context) error {

@@ -66,8 +66,8 @@ func newShowAction(
 	}
 }
 
-func (i *showAction) PostRun(ctx context.Context, RunResult error) error {
-	return nil
+func (i *showAction) PostRun(ctx context.Context, runResult error) error {
+	return runResult
 }
 
 func (s *showAction) Run(ctx context.Context) error {

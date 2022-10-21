@@ -64,8 +64,8 @@ func newRestoreAction(flags restoreFlags, console input.Console, azdCtx *azdcont
 	}
 }
 
-func (i *restoreAction) PostRun(ctx context.Context, RunResult error) error {
-	return nil
+func (i *restoreAction) PostRun(ctx context.Context, runResult error) error {
+	return runResult
 }
 
 func (r *restoreAction) Run(ctx context.Context) error {

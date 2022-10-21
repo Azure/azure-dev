@@ -105,8 +105,8 @@ func newInitAction(
 	}, nil
 }
 
-func (i *initAction) PostRun(ctx context.Context, RunResult error) error {
-	return nil
+func (i *initAction) PostRun(ctx context.Context, runResult error) error {
+	return runResult
 }
 
 func (i *initAction) Run(ctx context.Context) error {

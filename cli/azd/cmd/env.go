@@ -78,8 +78,8 @@ func newEnvSetAction(
 	}
 }
 
-func (i *envSetAction) PostRun(ctx context.Context, RunResult error) error {
-	return nil
+func (i *envSetAction) PostRun(ctx context.Context, runResult error) error {
+	return runResult
 }
 
 func (e *envSetAction) Run(ctx context.Context) error {
@@ -132,8 +132,8 @@ func newEnvSelectAction(azdCtx *azdcontext.AzdContext, args []string) *envSelect
 	}
 }
 
-func (i *envSelectAction) PostRun(ctx context.Context, RunResult error) error {
-	return nil
+func (i *envSelectAction) PostRun(ctx context.Context, runResult error) error {
+	return runResult
 }
 
 func (e *envSelectAction) Run(ctx context.Context) error {
@@ -176,8 +176,8 @@ func newEnvListAction(azdCtx *azdcontext.AzdContext, formatter output.Formatter,
 	}
 }
 
-func (i *envListAction) PostRun(ctx context.Context, RunResult error) error {
-	return nil
+func (i *envListAction) PostRun(ctx context.Context, runResult error) error {
+	return runResult
 }
 
 func (e *envListAction) Run(ctx context.Context) error {
@@ -265,8 +265,8 @@ func newEnvNewAction(
 	}
 }
 
-func (i *envNewAction) PostRun(ctx context.Context, RunResult error) error {
-	return nil
+func (i *envNewAction) PostRun(ctx context.Context, runResult error) error {
+	return runResult
 }
 
 func (en *envNewAction) Run(ctx context.Context) error {
@@ -335,8 +335,8 @@ func newEnvRefreshAction(
 	}
 }
 
-func (i *envRefreshAction) PostRun(ctx context.Context, RunResult error) error {
-	return nil
+func (i *envRefreshAction) PostRun(ctx context.Context, runResult error) error {
+	return runResult
 }
 
 func (ef *envRefreshAction) Run(ctx context.Context) error {
@@ -434,8 +434,8 @@ func newEnvGetValuesAction(
 	}
 }
 
-func (i *envGetValuesAction) PostRun(ctx context.Context, RunResult error) error {
-	return nil
+func (i *envGetValuesAction) PostRun(ctx context.Context, runResult error) error {
+	return runResult
 }
 
 func (eg *envGetValuesAction) Run(ctx context.Context) error {

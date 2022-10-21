@@ -66,8 +66,8 @@ func newInfraDeleteAction(
 	}
 }
 
-func (i *infraDeleteAction) PostRun(ctx context.Context, RunResult error) error {
-	return nil
+func (i *infraDeleteAction) PostRun(ctx context.Context, runResult error) error {
+	return runResult
 }
 
 func (a *infraDeleteAction) Run(ctx context.Context) error {

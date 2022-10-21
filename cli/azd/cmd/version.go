@@ -58,8 +58,8 @@ func newVersionAction(
 	}
 }
 
-func (i *versionAction) PostRun(ctx context.Context, RunResult error) error {
-	return nil
+func (i *versionAction) PostRun(ctx context.Context, runResult error) error {
+	return runResult
 }
 
 func (v *versionAction) Run(ctx context.Context) error {

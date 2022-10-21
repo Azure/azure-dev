@@ -77,8 +77,8 @@ func newMonitorAction(
 	}
 }
 
-func (i *monitorAction) PostRun(ctx context.Context, RunResult error) error {
-	return nil
+func (i *monitorAction) PostRun(ctx context.Context, runResult error) error {
+	return runResult
 }
 
 func (m *monitorAction) Run(ctx context.Context) error {

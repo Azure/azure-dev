@@ -88,8 +88,8 @@ func newInfraCreateAction(
 	}
 }
 
-func (i *infraCreateAction) PostRun(ctx context.Context, RunResult error) error {
-	return nil
+func (i *infraCreateAction) PostRun(ctx context.Context, runResult error) error {
+	return runResult
 }
 
 func (i *infraCreateAction) Run(ctx context.Context) error {

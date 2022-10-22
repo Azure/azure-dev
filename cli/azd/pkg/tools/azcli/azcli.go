@@ -138,13 +138,13 @@ type AzCli interface {
 		ctx context.Context,
 		subscriptionId string,
 		deploymentName string,
-	) ([]AzCliResourceOperation, error)
+	) ([]*armresources.DeploymentOperation, error)
 	ListResourceGroupDeploymentOperations(
 		ctx context.Context,
 		subscriptionId string,
 		resourceGroupName string,
 		deploymentName string,
-	) ([]AzCliResourceOperation, error)
+	) ([]*armresources.DeploymentOperation, error)
 	// ListAccountLocations lists the physical locations in Azure.
 	ListAccountLocations(ctx context.Context, subscriptionId string) ([]AzCliLocation, error)
 	// CreateOrUpdateServicePrincipal creates a service principal using a given name and returns a JSON object which
@@ -566,75 +566,6 @@ func (cli *azCli) DeleteSubscriptionDeployment(ctx context.Context, subscription
 	return nil
 }
 
-func (cli *azCli) ListSubscriptionDeploymentOperations(
-	ctx context.Context,
-	subscriptionId string,
-	deploymentName string,
-) ([]AzCliResourceOperation, error) {
-	res, err := cli.runAzCommand(
-		ctx,
-		"deployment",
-		"operation",
-		"sub",
-		"list",
-		"--subscription",
-		subscriptionId,
-		"--name",
-		deploymentName,
-		"--output",
-		"json",
-	)
-	if isNotLoggedInMessage(res.Stderr) {
-		return nil, ErrAzCliNotLoggedIn
-	} else if isDeploymentNotFoundMessage(res.Stderr) {
-		return nil, ErrDeploymentNotFound
-	} else if err != nil {
-		return nil, fmt.Errorf("failed running az deployment operation sub list: %s: %w", res.String(), err)
-	}
-
-	var resources []AzCliResourceOperation
-	if err := json.Unmarshal([]byte(res.Stdout), &resources); err != nil {
-		return nil, fmt.Errorf("could not unmarshal output %s as a []AzCliResourceOperation: %w", res.Stdout, err)
-	}
-	return resources, nil
-}
-
-func (cli *azCli) ListResourceGroupDeploymentOperations(
-	ctx context.Context,
-	subscriptionId string,
-	resourceGroupName string,
-	deploymentName string,
-) ([]AzCliResourceOperation, error) {
-	res, err := cli.runAzCommand(
-		ctx,
-		"deployment",
-		"operation",
-		"group",
-		"list",
-		"--subscription",
-		subscriptionId,
-		"--resource-group",
-		resourceGroupName,
-		"--name",
-		deploymentName,
-		"--output",
-		"json",
-	)
-	if isNotLoggedInMessage(res.Stderr) {
-		return nil, ErrAzCliNotLoggedIn
-	} else if isDeploymentNotFoundMessage(res.Stderr) {
-		return nil, ErrDeploymentNotFound
-	} else if err != nil {
-		return nil, fmt.Errorf("failed running az deployment operation group list: %s: %w", res.String(), err)
-	}
-
-	var resources []AzCliResourceOperation
-	if err := json.Unmarshal([]byte(res.Stdout), &resources); err != nil {
-		return nil, fmt.Errorf("could not unmarshal output %s as a []AzCliResourceOperation: %w", res.Stdout, err)
-	}
-	return resources, nil
-}
-
 func (cli *azCli) GetSignedInUserId(ctx context.Context) (string, error) {
 	res, err := cli.runAzCommand(ctx, "ad", "signed-in-user", "show", "--query", "objectId", "--output", "json")
 	if isNotLoggedInMessage(res.Stderr) {
@@ -794,9 +725,6 @@ var isRefreshTokenExpiredMessageRegex = regexp.MustCompile(`AADSTS(70043|700082)
 
 var isResourceSegmentMeNotFoundMessageRegex = regexp.MustCompile(`Resource not found for the segment 'me'.`)
 
-// Regex for "(DeploymentNotFound) Deployment '<name>' could not be found."
-var isDeploymentNotFoundMessageRegex = regexp.MustCompile(`\(DeploymentNotFound\)`)
-
 // Regex for "AADSTS700024: Client assertion is not within its valid time range."
 var isClientAssertionInvalidMessagedRegex = regexp.MustCompile(`AADSTS700024`)
 var isConfigurationIsNotSetMessageRegex = regexp.MustCompile(`Configuration '.*' is not set\.`)
@@ -813,10 +741,6 @@ func isRefreshTokenExpiredMessage(s string) bool {
 
 func isResourceSegmentMeNotFoundMessage(s string) bool {
 	return isResourceSegmentMeNotFoundMessageRegex.MatchString(s)
-}
-
-func isDeploymentNotFoundMessage(s string) bool {
-	return isDeploymentNotFoundMessageRegex.MatchString(s)
 }
 
 func isClientAssertionInvalidMessage(s string) bool {

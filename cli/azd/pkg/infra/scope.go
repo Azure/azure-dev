@@ -23,7 +23,7 @@ type Scope interface {
 	// GetDeployment fetches the result of the most recent deployment.
 	GetDeployment(ctx context.Context) (*armresources.DeploymentExtended, error)
 	// Gets the resource deployment operations for the current scope
-	GetResourceOperations(ctx context.Context) ([]azcli.AzCliResourceOperation, error)
+	GetResourceOperations(ctx context.Context) ([]*armresources.DeploymentOperation, error)
 }
 
 type ResourceGroupScope struct {
@@ -59,7 +59,7 @@ func (s *ResourceGroupScope) GetDeployment(ctx context.Context) (*armresources.D
 }
 
 // Gets the resource deployment operations for the current scope
-func (s *ResourceGroupScope) GetResourceOperations(ctx context.Context) ([]azcli.AzCliResourceOperation, error) {
+func (s *ResourceGroupScope) GetResourceOperations(ctx context.Context) ([]*armresources.DeploymentOperation, error) {
 	return s.azCli.ListResourceGroupDeploymentOperations(ctx, s.subscriptionId, s.resourceGroup, s.name)
 }
 
@@ -117,7 +117,7 @@ func (s *SubscriptionScope) GetDeployment(ctx context.Context) (*armresources.De
 }
 
 // Gets the resource deployment operations for the current scope
-func (s *SubscriptionScope) GetResourceOperations(ctx context.Context) ([]azcli.AzCliResourceOperation, error) {
+func (s *SubscriptionScope) GetResourceOperations(ctx context.Context) ([]*armresources.DeploymentOperation, error) {
 	return s.azCli.ListSubscriptionDeploymentOperations(ctx, s.subscriptionId, s.name)
 }
 

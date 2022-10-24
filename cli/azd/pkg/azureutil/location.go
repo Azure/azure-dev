@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
+	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
@@ -25,11 +26,11 @@ func (s Locs) Less(i, j int) bool {
 func (s Locs) Swap(i, j int) { s[i], s[j] = s[j], s[i] }
 
 // PromptLocation asks the user to select a location from a list of supported azure location
-func PromptLocation(ctx context.Context, message string) (string, error) {
-	accountManager := account.NewManager(ctx)
+func PromptLocation(ctx context.Context, env *environment.Environment, message string) (string, error) {
+	accountManager := account.NewManager(config.GetConfig(), azcli.GetAzCli(ctx))
 	console := input.GetConsole(ctx)
 
-	locations, err := accountManager.GetLocations(ctx)
+	locations, err := accountManager.GetLocations(ctx, env.GetSubscriptionId())
 	if err != nil {
 		return "", fmt.Errorf("listing locations: %w", err)
 	}

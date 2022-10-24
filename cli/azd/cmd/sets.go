@@ -11,6 +11,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
@@ -108,15 +109,6 @@ func newCredential() (azcore.TokenCredential, error) {
 	return credential, nil
 }
 
-func newConfig() config.Config {
-	cfg, err := config.Load()
-	if err != nil {
-		cfg = config.NewConfig(nil)
-	}
-
-	return cfg
-}
-
 var FormattedConsoleSet = wire.NewSet(
 	output.GetCommandFormatter,
 	newWriter,
@@ -124,7 +116,8 @@ var FormattedConsoleSet = wire.NewSet(
 )
 
 var CommonSet = wire.NewSet(
-	newConfig,
+	config.GetConfig,
+	account.NewManager,
 	newAzdContext,
 	FormattedConsoleSet,
 	newCommandRunnerFromConsole,

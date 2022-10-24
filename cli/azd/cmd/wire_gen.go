@@ -9,6 +9,8 @@ package cmd
 import (
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/pkg/account"
+	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/templates"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/git"
@@ -51,6 +53,7 @@ func initInitAction(cmd *cobra.Command, o *internal.GlobalCommandOptions, flags 
 	if err != nil {
 		return nil, err
 	}
+	configConfig := config.GetConfig()
 	formatter, err := output.GetCommandFormatter(cmd)
 	if err != nil {
 		return nil, err
@@ -63,8 +66,9 @@ func initInitAction(cmd *cobra.Command, o *internal.GlobalCommandOptions, flags 
 		return nil, err
 	}
 	azCli := newAzCliFromOptions(o, commandRunner, tokenCredential)
+	manager := account.NewManager(configConfig, azCli)
 	gitCli := git.NewGitCliFromRunner(commandRunner)
-	cmdInitAction, err := newInitAction(azdContext, commandRunner, console, azCli, gitCli, flags)
+	cmdInitAction, err := newInitAction(azdContext, configConfig, manager, commandRunner, console, azCli, gitCli, flags)
 	if err != nil {
 		return nil, err
 	}
@@ -93,6 +97,7 @@ func initUpAction(cmd *cobra.Command, o *internal.GlobalCommandOptions, flags up
 	if err != nil {
 		return nil, err
 	}
+	configConfig := config.GetConfig()
 	formatter, err := output.GetCommandFormatter(cmd)
 	if err != nil {
 		return nil, err
@@ -105,9 +110,10 @@ func initUpAction(cmd *cobra.Command, o *internal.GlobalCommandOptions, flags up
 		return nil, err
 	}
 	azCli := newAzCliFromOptions(o, commandRunner, tokenCredential)
+	manager := account.NewManager(configConfig, azCli)
 	gitCli := git.NewGitCliFromRunner(commandRunner)
 	cmdInitFlags := flags.initFlags
-	cmdInitAction, err := newInitAction(azdContext, commandRunner, console, azCli, gitCli, cmdInitFlags)
+	cmdInitAction, err := newInitAction(azdContext, configConfig, manager, commandRunner, console, azCli, gitCli, cmdInitFlags)
 	if err != nil {
 		return nil, err
 	}
@@ -371,35 +377,35 @@ func initTemplatesShowAction(cmd *cobra.Command, o *internal.GlobalCommandOption
 }
 
 func initConfigListAction(cmd *cobra.Command, o *internal.GlobalCommandOptions, flags struct{}, args []string) (actions.Action, error) {
-	config := newConfig()
+	configConfig := config.GetConfig()
 	formatter, err := output.GetCommandFormatter(cmd)
 	if err != nil {
 		return nil, err
 	}
 	writer := newWriter(cmd)
-	cmdConfigListAction := newConfigListAction(config, formatter, writer)
+	cmdConfigListAction := newConfigListAction(configConfig, formatter, writer)
 	return cmdConfigListAction, nil
 }
 
 func initConfigGetAction(cmd *cobra.Command, o *internal.GlobalCommandOptions, flags struct{}, args []string) (actions.Action, error) {
-	config := newConfig()
+	configConfig := config.GetConfig()
 	formatter, err := output.GetCommandFormatter(cmd)
 	if err != nil {
 		return nil, err
 	}
 	writer := newWriter(cmd)
-	cmdConfigGetAction := newConfigGetAction(config, formatter, writer, args)
+	cmdConfigGetAction := newConfigGetAction(configConfig, formatter, writer, args)
 	return cmdConfigGetAction, nil
 }
 
 func initConfigSetAction(cmd *cobra.Command, o *internal.GlobalCommandOptions, flags struct{}, args []string) (actions.Action, error) {
-	config := newConfig()
-	cmdConfigSetAction := newConfigSetAction(config, args)
+	configConfig := config.GetConfig()
+	cmdConfigSetAction := newConfigSetAction(configConfig, args)
 	return cmdConfigSetAction, nil
 }
 
 func initConfigUnsetAction(cmd *cobra.Command, o *internal.GlobalCommandOptions, flags struct{}, args []string) (actions.Action, error) {
-	config := newConfig()
-	cmdConfigUnsetAction := newConfigUnsetAction(config, args)
+	configConfig := config.GetConfig()
+	cmdConfigUnsetAction := newConfigUnsetAction(configConfig, args)
 	return cmdConfigUnsetAction, nil
 }

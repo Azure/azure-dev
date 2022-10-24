@@ -38,10 +38,9 @@ func Test_GetAccountDefaults(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
 		setupAccountMocks(mockContext)
 		setupGetSubscriptionMock(mockContext, &subscription, nil)
-		ctx := config.WithConfig(*mockContext.Context, expectedConfig)
 
-		manager := NewManager(ctx)
-		accountDefaults, err := manager.GetAccountDefaults(ctx)
+		manager := NewManager(expectedConfig, azcli.GetAzCli(*mockContext.Context))
+		accountDefaults, err := manager.GetAccountDefaults(*mockContext.Context)
 
 		require.NoError(t, err)
 		require.Equal(t, "SUBSCRIPTION_01", accountDefaults.DefaultSubscription.Id)
@@ -54,13 +53,11 @@ func Test_GetAccountDefaults(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
 		setupAccountMocks(mockContext)
 
-		ctx := config.WithConfig(*mockContext.Context, emptyConfig)
-
-		manager := NewManager(ctx)
-		accountDefaults, err := manager.GetAccountDefaults(ctx)
+		manager := NewManager(emptyConfig, azcli.GetAzCli(*mockContext.Context))
+		accountDefaults, err := manager.GetAccountDefaults(*mockContext.Context)
 
 		require.NoError(t, err)
-		require.Nil(t, accountDefaults.DefaultSubscription)
+		require.Equal(t, *allTestSubscriptions[0].SubscriptionID, accountDefaults.DefaultSubscription.Id)
 		require.Equal(t, "eastus2", accountDefaults.DefaultLocation.Name)
 	})
 }
@@ -70,7 +67,7 @@ func Test_GetSubscriptions(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
 		setupAccountMocks(mockContext)
 
-		manager := NewManager(*mockContext.Context)
+		manager := NewManager(config.NewConfig(nil), azcli.GetAzCli(*mockContext.Context))
 		subscriptions, err := manager.GetSubscriptions(*mockContext.Context)
 
 		require.NoError(t, err)
@@ -95,13 +92,11 @@ func Test_GetSubscriptions(t *testing.T) {
 		setupAccountMocks(mockContext)
 		setupGetSubscriptionMock(mockContext, &subscription, nil)
 
-		ctx := config.WithConfig(*mockContext.Context, defaultConfig)
+		manager := NewManager(defaultConfig, azcli.GetAzCli(*mockContext.Context))
+		subscriptions, err := manager.GetSubscriptions(*mockContext.Context)
 
-		manager := NewManager(ctx)
-		subscriptions, err := manager.GetSubscriptions(ctx)
-
-		defaultIndex := slices.IndexFunc(subscriptions, func(s azcli.AzCliSubscriptionInfo) bool {
-			return s.IsDefault
+		defaultIndex := slices.IndexFunc(subscriptions, func(sub *azcli.AzCliSubscriptionInfo) bool {
+			return sub.IsDefault
 		})
 
 		require.NoError(t, err)
@@ -114,7 +109,7 @@ func Test_GetSubscriptions(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
 		setupAccountErrorMocks(mockContext)
 
-		manager := NewManager(*mockContext.Context)
+		manager := NewManager(config.NewConfig(nil), azcli.GetAzCli(*mockContext.Context))
 		subscriptions, err := manager.GetSubscriptions(*mockContext.Context)
 
 		require.Error(t, err)
@@ -138,12 +133,11 @@ func Test_GetLocations(t *testing.T) {
 
 	t.Run("Success", func(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
-		ctx := config.WithConfig(*mockContext.Context, defaultConfig)
 		setupAccountMocks(mockContext)
 		setupGetSubscriptionMock(mockContext, &subscription, nil)
 
-		manager := NewManager(ctx)
-		locations, err := manager.GetLocations(ctx)
+		manager := NewManager(defaultConfig, azcli.GetAzCli(*mockContext.Context))
+		locations, err := manager.GetLocations(*mockContext.Context, subscription.Id)
 
 		require.NoError(t, err)
 		require.Len(t, locations, 4)
@@ -153,8 +147,8 @@ func Test_GetLocations(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
 		setupAccountErrorMocks(mockContext)
 
-		manager := NewManager(*mockContext.Context)
-		locations, err := manager.GetLocations(*mockContext.Context)
+		manager := NewManager(config.NewConfig(nil), azcli.GetAzCli(*mockContext.Context))
+		locations, err := manager.GetLocations(*mockContext.Context, subscription.Id)
 
 		require.Error(t, err)
 		require.Nil(t, locations)
@@ -162,12 +156,11 @@ func Test_GetLocations(t *testing.T) {
 
 	t.Run("Error", func(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
-		ctx := config.WithConfig(*mockContext.Context, defaultConfig)
 		setupAccountErrorMocks(mockContext)
 		setupGetSubscriptionMock(mockContext, &subscription, nil)
 
-		manager := NewManager(ctx)
-		locations, err := manager.GetLocations(ctx)
+		manager := NewManager(defaultConfig, azcli.GetAzCli(*mockContext.Context))
+		locations, err := manager.GetLocations(*mockContext.Context, subscription.Id)
 
 		require.Error(t, err)
 		require.Nil(t, locations)
@@ -186,7 +179,7 @@ func Test_SetDefaultSubscription(t *testing.T) {
 		setupAccountMocks(mockContext)
 		setupGetSubscriptionMock(mockContext, &expectedSubscription, nil)
 
-		manager := NewManager(*mockContext.Context)
+		manager := NewManager(config.NewConfig(nil), azcli.GetAzCli(*mockContext.Context))
 		actualSubscription, err := manager.SetDefaultSubscription(*mockContext.Context, expectedSubscription.Id)
 
 		require.NoError(t, err)
@@ -204,7 +197,7 @@ func Test_SetDefaultSubscription(t *testing.T) {
 		setupAccountMocks(mockContext)
 		setupGetSubscriptionMock(mockContext, &expectedSubscription, errors.New("Not found"))
 
-		manager := NewManager(*mockContext.Context)
+		manager := NewManager(config.NewConfig(nil), azcli.GetAzCli(*mockContext.Context))
 		actualSubscription, err := manager.SetDefaultSubscription(*mockContext.Context, expectedSubscription.Id)
 
 		require.Error(t, err)
@@ -213,14 +206,28 @@ func Test_SetDefaultSubscription(t *testing.T) {
 }
 
 func Test_SetDefaultLocation(t *testing.T) {
+	defaultConfig := config.NewConfig(map[string]any{
+		"defaults": map[string]any{
+			"subscription": "SUBSCRIPTION_03",
+			"location":     "westus2",
+		},
+	})
+
+	subscription := Subscription{
+		Id:       "SUBSCRIPTION_03",
+		Name:     "Subscription 3",
+		TenantId: "TENANT_ID",
+	}
+
 	t.Run("ValidLocation", func(t *testing.T) {
 		expectedLocation := "westus2"
 
 		mockContext := mocks.NewMockContext(context.Background())
 		setupAccountMocks(mockContext)
+		setupGetSubscriptionMock(mockContext, &subscription, nil)
 
-		manager := NewManager(*mockContext.Context)
-		location, err := manager.SetDefaultLocation(*mockContext.Context, expectedLocation)
+		manager := NewManager(defaultConfig, azcli.GetAzCli(*mockContext.Context))
+		location, err := manager.SetDefaultLocation(*mockContext.Context, subscription.Id, expectedLocation)
 
 		require.NoError(t, err)
 		require.Equal(t, expectedLocation, location.Name)
@@ -231,9 +238,10 @@ func Test_SetDefaultLocation(t *testing.T) {
 
 		mockContext := mocks.NewMockContext(context.Background())
 		setupAccountMocks(mockContext)
+		setupGetSubscriptionMock(mockContext, &subscription, nil)
 
-		manager := NewManager(*mockContext.Context)
-		location, err := manager.SetDefaultLocation(*mockContext.Context, expectedLocation)
+		manager := NewManager(defaultConfig, azcli.GetAzCli(*mockContext.Context))
+		location, err := manager.SetDefaultLocation(*mockContext.Context, subscription.Id, expectedLocation)
 
 		require.Error(t, err)
 		require.Nil(t, location)
@@ -251,11 +259,11 @@ func Test_Clear(t *testing.T) {
 	setupAccountMocks(mockContext)
 	setupGetSubscriptionMock(mockContext, &expectedSubscription, nil)
 
-	manager := NewManager(*mockContext.Context)
+	manager := NewManager(config.NewConfig(nil), azcli.GetAzCli(*mockContext.Context))
 	subscription, err := manager.SetDefaultSubscription(*mockContext.Context, expectedSubscription.Id)
 	require.NoError(t, err)
 
-	location, err := manager.SetDefaultLocation(*mockContext.Context, "westus2")
+	location, err := manager.SetDefaultLocation(*mockContext.Context, subscription.Id, "westus2")
 	require.NoError(t, err)
 
 	updatedConfig, err := config.Load()
@@ -279,6 +287,27 @@ func Test_Clear(t *testing.T) {
 
 	require.Nil(t, configSubscription)
 	require.Nil(t, configLocation)
+}
+
+var allTestSubscriptions []*armsubscriptions.Subscription = []*armsubscriptions.Subscription{
+	{
+		ID:             convert.RefOf("subscriptions/SUBSCRIPTION_01"),
+		SubscriptionID: convert.RefOf("SUBSCRIPTION_01"),
+		DisplayName:    convert.RefOf("Subscription 1"),
+		TenantID:       convert.RefOf("TENANT_ID"),
+	},
+	{
+		ID:             convert.RefOf("subscriptions/SUBSCRIPTION_02"),
+		SubscriptionID: convert.RefOf("SUBSCRIPTION_02"),
+		DisplayName:    convert.RefOf("Subscription 2"),
+		TenantID:       convert.RefOf("TENANT_ID"),
+	},
+	{
+		ID:             convert.RefOf("subscriptions/SUBSCRIPTION_03"),
+		SubscriptionID: convert.RefOf("SUBSCRIPTION_03"),
+		DisplayName:    convert.RefOf("Subscription 3"),
+		TenantID:       convert.RefOf("TENANT_ID"),
+	},
 }
 
 func setupGetSubscriptionMock(mockContext *mocks.MockContext, subscription *Subscription, err error) {
@@ -342,26 +371,7 @@ func setupAccountMocks(mockContext *mocks.MockContext) {
 	}).RespondFn(func(request *http.Request) (*http.Response, error) {
 		res := armsubscriptions.ClientListResponse{
 			SubscriptionListResult: armsubscriptions.SubscriptionListResult{
-				Value: []*armsubscriptions.Subscription{
-					{
-						ID:             convert.RefOf("subscriptions/SUBSCRIPTION_01"),
-						SubscriptionID: convert.RefOf("SUBSCRIPTION_01"),
-						DisplayName:    convert.RefOf("Subscription 1"),
-						TenantID:       convert.RefOf("TENANT_ID"),
-					},
-					{
-						ID:             convert.RefOf("subscriptions/SUBSCRIPTION_02"),
-						SubscriptionID: convert.RefOf("SUBSCRIPTION_02"),
-						DisplayName:    convert.RefOf("Subscription 2"),
-						TenantID:       convert.RefOf("TENANT_ID"),
-					},
-					{
-						ID:             convert.RefOf("subscriptions/SUBSCRIPTION_03"),
-						SubscriptionID: convert.RefOf("SUBSCRIPTION_03"),
-						DisplayName:    convert.RefOf("Subscription 3"),
-						TenantID:       convert.RefOf("TENANT_ID"),
-					},
-				},
+				Value: allTestSubscriptions,
 			},
 		}
 

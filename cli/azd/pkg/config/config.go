@@ -7,7 +7,6 @@
 package config
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -26,6 +25,7 @@ type Config interface {
 	Set(path string, value any) error
 	Unset(path string) error
 	Save() error
+	IsEmpty() bool
 }
 
 // Creates a new empty configuration
@@ -57,6 +57,11 @@ func GetUserConfigDir() (string, error) {
 // Top level AZD configuration
 type config struct {
 	data map[string]any
+}
+
+// Returns a value indicating whether the configuration is empty
+func (c *config) IsEmpty() bool {
+	return len(c.data) == 0
 }
 
 // Gets the raw values stored in the configuration as a Go map
@@ -210,26 +215,13 @@ func getConfigFilePath() (string, error) {
 	return filepath.Join(configPath, "config.json"), nil
 }
 
-type contextKey string
-
-const configContextKey contextKey = "config"
-
 // Gets the AZD config from current context
 // If it does not exist will return a new empty AZD config
-func GetConfig(ctx context.Context) Config {
-	existingConfig, ok := ctx.Value(configContextKey).(Config)
-	if !ok {
-		loadedConfig, err := Load()
-		if err != nil {
-			loadedConfig = NewConfig(nil)
-		}
-		existingConfig = loadedConfig
+func GetConfig() Config {
+	azdConfig, err := Load()
+	if err != nil {
+		azdConfig = NewConfig(nil)
 	}
 
-	return existingConfig
-}
-
-// Sets the AZD config in the Go context and returns the new context
-func WithConfig(ctx context.Context, config Config) context.Context {
-	return context.WithValue(ctx, configContextKey, config)
+	return azdConfig
 }

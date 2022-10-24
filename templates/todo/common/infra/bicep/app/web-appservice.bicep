@@ -1,6 +1,6 @@
-param environmentName string
+param name string
 param location string = resourceGroup().location
-
+param tags object = {}
 param serviceName string = 'web'
 param appCommandLine string = 'pm2 serve /home/site/wwwroot --no-daemon --spa'
 param applicationInsightsName string = ''
@@ -8,17 +8,17 @@ param appServicePlanId string
 param appSettings object = {}
 
 module web '../../../../../common/infra/bicep/core/host/appservice.bicep' = {
-  name: '${serviceName}-appservice-node-module'
+  name: '${name}-deployment'
   params: {
-    environmentName: environmentName
+    name: name
     location: location
-    serviceName: serviceName
     appCommandLine: appCommandLine
     applicationInsightsName: applicationInsightsName
     appServicePlanId: appServicePlanId
     appSettings: appSettings
     runtimeName: 'node'
     runtimeVersion: '16-lts'
+    tags: union(tags, { 'azd-service-name': serviceName })
   }
 }
 

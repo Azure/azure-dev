@@ -1,5 +1,6 @@
-param environmentName string
+param accountName string
 param location string = resourceGroup().location
+param tags object = {}
 
 param collections array = [
   {
@@ -15,20 +16,21 @@ param collections array = [
     indexKey: '_id'
   }
 ]
-param cosmosDatabaseName string = 'Todo'
+param databaseName string = 'Todo'
 param keyVaultName string
 
 module cosmos '../../../../../common/infra/bicep/core/database/cosmos/mongo/cosmos-mongo-db.bicep' = {
   name: 'cosmos-mongo'
   params: {
-    environmentName: environmentName
+    accountName: accountName
+    databaseName: databaseName
     location: location
     collections: collections
-    cosmosDatabaseName: cosmosDatabaseName
     keyVaultName: keyVaultName
+    tags: tags
   }
 }
 
 output cosmosConnectionStringKey string = cosmos.outputs.cosmosConnectionStringKey
-output cosmosDatabaseName string = cosmosDatabaseName
+output cosmosDatabaseName string = databaseName
 output cosmosEndpoint string = cosmos.outputs.cosmosEndpoint

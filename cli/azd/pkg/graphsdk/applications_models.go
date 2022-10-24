@@ -17,8 +17,7 @@ type ApplicationCreateRequest struct {
 
 // A list of applications returned from the Microsoft Graph.
 type ApplicationListResponse struct {
-	NextLink *string       `json:"@odata.nextLink"`
-	Value    []Application `json:"value"`
+	Value []Application `json:"value"`
 }
 
 type ApplicationAddPasswordRequest struct {

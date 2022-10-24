@@ -17,8 +17,7 @@ type ServicePrincipalCreateRequest struct {
 
 // A list of service principals returned from the Microsoft Graph.
 type ServicePrincipalListResponse struct {
-	NextLink *string            `json:"@odata.nextLink"`
-	Value    []ServicePrincipal `json:"value"`
+	Value []ServicePrincipal `json:"value"`
 }
 
 type ServicePrincipalListRequestBuilder struct {

@@ -1,4 +1,4 @@
-package azsdk
+package httputil
 
 import (
 	"encoding/json"

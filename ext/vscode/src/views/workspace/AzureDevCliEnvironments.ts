@@ -33,7 +33,7 @@ export class AzureDevCliEnvironments implements AzureDevCliModel {
 
     async getChildren(): Promise<AzureDevCliModel[]> {
         return await callWithTelemetryAndErrorHandling(
-            TelemetryId.WorkspaceViewServicesChildren,
+            TelemetryId.WorkspaceViewApplicationResolve,
             async context => {
                 const azureCli = await createAzureDevCli(context);
 

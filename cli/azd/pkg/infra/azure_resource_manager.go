@@ -279,7 +279,8 @@ func (rm *AzureResourceManager) appendDeploymentResourcesRecursive(
 	}
 
 	for _, operation := range operations {
-		if *operation.Properties.TargetResource.ResourceType == string(AzureResourceTypeDeployment) {
+		if operation.Properties.TargetResource != nil &&
+			*operation.Properties.TargetResource.ResourceType == string(AzureResourceTypeDeployment) {
 			err := rm.appendDeploymentResourcesRecursive(
 				ctx,
 				subscriptionId,

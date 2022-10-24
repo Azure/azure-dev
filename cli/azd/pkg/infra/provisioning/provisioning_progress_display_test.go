@@ -60,6 +60,8 @@ func (mock *mockResourceManager) AddInProgressSubResourceOperation() {
 				ID:           to.Ptr(fmt.Sprintf("website-resource-id-%d", len(mock.operations))),
 				ResourceName: to.Ptr(fmt.Sprintf("website-resource-name-%d", len(mock.operations))),
 			},
+			ProvisioningState: to.Ptr("In Progress"),
+			Timestamp:         to.Ptr(time.Now().UTC()),
 		}})
 }
 
@@ -73,6 +75,8 @@ func (mock *mockResourceManager) AddInProgressOperation() {
 				ID:           to.Ptr(fmt.Sprintf("website-resource-id-%d", len(mock.operations))),
 				ResourceName: to.Ptr(fmt.Sprintf("website-resource-name-%d", len(mock.operations))),
 			},
+			ProvisioningState: to.Ptr("In Progress"),
+			Timestamp:         to.Ptr(time.Now().UTC()),
 		}})
 }
 
@@ -94,6 +98,9 @@ func mockAzDeploymentShow(t *testing.T, m mocks.MockContext) {
 		return &http.Response{
 			StatusCode: http.StatusOK,
 			Body:       io.NopCloser(bytes.NewBuffer(deploymentJson)),
+			Request: &http.Request{
+				Method: http.MethodGet,
+			},
 		}, nil
 	})
 }

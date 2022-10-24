@@ -194,7 +194,7 @@ func CreateDeploymentOutput(rawOutputs interface{}) (result map[string]AzCliDepl
 		innerValue := output.(map[string]interface{})
 		result[key] = AzCliDeploymentOutput{
 			Type:  innerValue["type"].(string),
-			Value: innerValue["value"].(string),
+			Value: innerValue["value"],
 		}
 	}
 	return result

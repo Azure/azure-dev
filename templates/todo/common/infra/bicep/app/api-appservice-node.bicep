@@ -1,5 +1,6 @@
-param environmentName string
+param name string
 param location string = resourceGroup().location
+param tags object = {}
 
 param allowedOrigins array = []
 param applicationInsightsName string = ''
@@ -9,9 +10,9 @@ param keyVaultName string
 param serviceName string = 'api'
 
 module api '../../../../../common/infra/bicep/core/host/appservice.bicep' = {
-  name: '${serviceName}-appservice-node-module'
+  name: '${name}-deployment'
   params: {
-    environmentName: environmentName
+    name: name
     location: location
     allowedOrigins: allowedOrigins
     applicationInsightsName: applicationInsightsName
@@ -21,7 +22,7 @@ module api '../../../../../common/infra/bicep/core/host/appservice.bicep' = {
     runtimeName: 'node'
     runtimeVersion: '16-lts'
     scmDoBuildDuringDeployment: true
-    serviceName: serviceName
+    tags: union(tags, { 'azd-service-name': serviceName })
   }
 }
 

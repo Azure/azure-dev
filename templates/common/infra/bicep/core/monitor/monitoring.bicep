@@ -1,19 +1,25 @@
-param environmentName string
+param logAnalyticsName string
+param applicationInsightsName string
+param applicationInsightsDashboardName string
 param location string = resourceGroup().location
+param tags object = {}
 
 module logAnalytics 'loganalytics.bicep' = {
   name: 'loganalytics'
   params: {
-    environmentName: environmentName
+    name: logAnalyticsName
     location: location
+    tags: tags
   }
 }
 
 module applicationInsights 'applicationinsights.bicep' = {
   name: 'applicationinsights'
   params: {
-    environmentName: environmentName
+    name: applicationInsightsName
     location: location
+    tags: tags
+    dashboardName: applicationInsightsDashboardName
     logAnalyticsWorkspaceId: logAnalytics.outputs.logAnalyticsWorkspaceId
   }
 }

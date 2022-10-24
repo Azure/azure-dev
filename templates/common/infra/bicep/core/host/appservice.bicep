@@ -1,12 +1,12 @@
-param environmentName string
+param name string
 param location string = resourceGroup().location
+param tags object = {}
 
 // Reference Properties
 param applicationInsightsName string = ''
 param appServicePlanId string
 param keyVaultName string = ''
 param managedIdentity bool = !(empty(keyVaultName))
-param serviceName string
 
 // Runtime Properties
 @allowed([
@@ -33,16 +33,10 @@ param numberOfWorkers int = -1
 param scmDoBuildDuringDeployment bool = false
 param use32BitWorkerProcess bool = false
 
-var abbrs = loadJsonContent('../../abbreviations.json')
-var tags = { 'azd-env-name': environmentName }
-var resourceToken = toLower(uniqueString(subscription().id, environmentName, location))
-
-var prefix = contains(kind, 'function') ? abbrs.webSitesFunctions : abbrs.webSitesAppService
-
 resource appService 'Microsoft.Web/sites@2022-03-01' = {
-  name: '${prefix}${serviceName}-${resourceToken}'
+  name: name
   location: location
-  tags: union(tags, { 'azd-service-name': serviceName })
+  tags: tags
   kind: kind
   properties: {
     serverFarmId: appServicePlanId

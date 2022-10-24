@@ -194,7 +194,10 @@ func TestBicepDestroy(t *testing.T) {
 		}).Respond(true)
 
 		mockContext.Console.WhenConfirm(func(options input.ConsoleOptions) bool {
-			return strings.Contains(options.Message, "Would you like to permanently delete these Key Vaults/App Configurations")
+			return strings.Contains(
+				options.Message,
+				"Would you like to permanently delete these Key Vaults/App Configurations",
+			)
 		}).Respond(true)
 
 		infraProvider := createBicepProvider(*mockContext.Context)

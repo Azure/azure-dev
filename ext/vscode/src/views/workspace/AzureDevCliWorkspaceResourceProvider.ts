@@ -1,19 +1,8 @@
-import * as fs from 'fs/promises';
-import { Subscription } from 'rxjs';
+import * as path from 'path';
 import * as vscode from 'vscode';
-import * as yaml from 'yaml';
+import { Subscription } from 'rxjs';
 import { AzureDevApplication, AzureDevApplicationProvider } from '../../services/AzureDevApplicationProvider';
 import { WorkspaceResource, WorkspaceResourceProvider } from './ResourceGroupsApi';
-
-interface AzureDevCliApplicationConfguration {
-    name?: string;
-}
-
-async function getAzureDevCliApplicationConfiguration(path: string): Promise<AzureDevCliApplicationConfguration> {
-    const configurationYaml = await fs.readFile(path, 'utf8');
-
-    return yaml.parse(configurationYaml) as AzureDevCliApplicationConfguration;
-}
 
 export class AzureDevCliWorkspaceResourceProvider extends vscode.Disposable implements WorkspaceResourceProvider {
     private readonly onDidChangeResourceEmitter = new vscode.EventEmitter<WorkspaceResource | undefined>();
@@ -43,13 +32,14 @@ export class AzureDevCliWorkspaceResourceProvider extends vscode.Disposable impl
     async getResources(source: vscode.WorkspaceFolder): Promise<WorkspaceResource[]> {
         const resources: WorkspaceResource[] = [];
 
-        for (const application of this.applications) {
-            const config = await getAzureDevCliApplicationConfiguration(application.configurationPath.fsPath);
+        for (const application of this.applications.filter(application => application.workspaceFolder === source)) {
+            const configurationFilePath = application.configurationPath.fsPath;
+            const configurationFolderName = path.basename(path.dirname(configurationFilePath));
 
             resources.push({
                 folder: source,
                 id: application.configurationPath.fsPath,
-                name: config.name ?? application.configurationPath.fsPath,
+                name: configurationFolderName,
                 resourceType: 'ms-azuretools.azure-dev.application'
             });
         }

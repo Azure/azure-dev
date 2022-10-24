@@ -22,4 +22,4 @@ Support for Azure Developer CLI is limited to the resources listed above.
 [contribute]: https://github.com/Azure/azure-dev/blob/main/cli/azd/CONTRIBUTING.md
 [azd-link]: https://aka.ms/azure-dev
 [learn-doc]: https://learn.microsoft.com/en-us/azure/developer/azure-developer-cli/overview
-[gh-template]: https://github.com/search?q=org:azure-samples%20topic:azd-templates
+[gh-template]: https://aka.ms/azure-dev/templates

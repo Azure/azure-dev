@@ -2,10 +2,11 @@
     "IsEncrypted": false,
     "Values": {
         "AzureWebJobsStorage": "",
-        "FUNCTIONS_WORKER_RUNTIME": "dotnet-isolated"
+        "FUNCTIONS_WORKER_RUNTIME": "dotnet-isolated",
+        "AzureWebJobsDisableHomepage": true
     },
     "Host": {
         "LocalHttpPort": 3100,
         "CORS": "*"
-      }
+    }
 }

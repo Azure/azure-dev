@@ -11,11 +11,13 @@ import (
 	"golang.org/x/exp/slices"
 )
 
+// JSON document path locations for default subscription & location
 const (
 	defaultSubscriptionKeyPath = "defaults.subscription"
 	defaultLocationKeyPath     = "defaults.location"
 )
 
+// The default location to use in AZD when not previously set to any value
 var defaultLocation Location = Location{
 	Name:        "eastus2",
 	DisplayName: "(US) East US 2",
@@ -92,7 +94,7 @@ func (m *Manager) GetSubscriptions(ctx context.Context) ([]*azcli.AzCliSubscript
 	return results, nil
 }
 
-// Gets the available Azure locations for the default Azure subscription.
+// Gets the available Azure locations for the specified Azure subscription.
 func (m *Manager) GetLocations(ctx context.Context, subscriptionId string) ([]azcli.AzCliLocation, error) {
 	locations, err := m.azCli.ListAccountLocations(ctx, subscriptionId)
 	if err != nil {
@@ -102,7 +104,7 @@ func (m *Manager) GetLocations(ctx context.Context, subscriptionId string) ([]az
 	return locations, nil
 }
 
-// Sets the default Azure subscription for the current logged in account.
+// Sets the default Azure subscription for the current logged in principal.
 func (m *Manager) SetDefaultSubscription(ctx context.Context, subscriptionId string) (*Subscription, error) {
 	subscription, err := m.azCli.GetAccount(ctx, subscriptionId)
 	if err != nil {
@@ -126,7 +128,7 @@ func (m *Manager) SetDefaultSubscription(ctx context.Context, subscriptionId str
 	}, nil
 }
 
-// Sets the default Azure location for the current logged in account.
+// Sets the default Azure location for the current logged in principal.
 func (m *Manager) SetDefaultLocation(ctx context.Context, subscriptionId string, location string) (*Location, error) {
 	locations, err := m.GetLocations(ctx, subscriptionId)
 	if err != nil {
@@ -159,7 +161,7 @@ func (m *Manager) SetDefaultLocation(ctx context.Context, subscriptionId string,
 	}, nil
 }
 
-// Clears and persisted defaults in the AZD config
+// Clears any persisted defaults in the AZD config
 func (m *Manager) Clear(ctx context.Context) error {
 	err := m.config.Unset("defaults")
 	if err != nil {
@@ -174,7 +176,7 @@ func (m *Manager) Clear(ctx context.Context) error {
 	return nil
 }
 
-// Gets the available Azure subscriptions for the current logged in account.
+// Gets the available Azure subscriptions for the current logged in principal.
 func (m *Manager) getAllSubscriptions(ctx context.Context) ([]*azcli.AzCliSubscriptionInfo, error) {
 	accounts, err := m.azCli.ListAccounts(ctx)
 	if err != nil {
@@ -183,16 +185,14 @@ func (m *Manager) getAllSubscriptions(ctx context.Context) ([]*azcli.AzCliSubscr
 
 	// If default subscription is set, set it in the results
 	results := []*azcli.AzCliSubscriptionInfo{}
-	for _, sub := range accounts {
-		results = append(results, sub)
-	}
+	results = append(results, accounts...)
 
 	return results, nil
 }
 
 // Returns the default subscription for the current logged in principal
 // If set in config will return the configured subscription
-// otherwise will return the first subscription returned.
+// otherwise will return the first subscription found.
 func (m *Manager) getDefaultSubscription(ctx context.Context) (*Subscription, error) {
 	// Get the default subscription ID from azd configuration
 	configSubscriptionId, ok := m.config.Get(defaultSubscriptionKeyPath)
@@ -231,6 +231,8 @@ func (m *Manager) getDefaultSubscription(ctx context.Context) (*Subscription, er
 	return defaultSubscription, nil
 }
 
+// Gets the default Azure location for the specified subscription
+// When specified in azd config, will return the location when valid, otherwise azd global default (eastus2)
 func (m *Manager) getDefaultLocation(ctx context.Context, subscriptionId string) (*Location, error) {
 	configLocation, ok := m.config.Get(defaultLocationKeyPath)
 	if !ok {

@@ -90,10 +90,5 @@ func RegisterDependenciesInCtx(
 	}, formatter)
 	ctx = input.WithConsole(ctx, console)
 
-	console.Confirm(ctx, input.ConsoleOptions{
-		Message:      "Ready?",
-		DefaultValue: true,
-	})
-
 	return ctx, nil
 }

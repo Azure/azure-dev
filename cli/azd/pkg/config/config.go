@@ -19,6 +19,8 @@ import (
 
 const configDir = ".azd"
 
+// Azd configuration for the current user
+// Configuration data is stored in user's home directory @ ~/.azd/config.json
 type Config interface {
 	Raw() map[string]any
 	Get(path string) (any, bool)
@@ -135,6 +137,9 @@ func (c *config) Set(path string, value any) error {
 	return nil
 }
 
+// Removes any values stored at the specified path
+// When the path location is an object will remove the whole node
+// When the path does not exist, will return a `nil` value
 func (c *config) Unset(path string) error {
 	depth := 1
 	currentNode := c.data
@@ -206,15 +211,6 @@ func Parse(configJson []byte) (Config, error) {
 	return NewConfig(data), nil
 }
 
-func getConfigFilePath() (string, error) {
-	configPath, err := GetUserConfigDir()
-	if err != nil {
-		return "", fmt.Errorf("failed locating config dir")
-	}
-
-	return filepath.Join(configPath, "config.json"), nil
-}
-
 // Gets the AZD config from current context
 // If it does not exist will return a new empty AZD config
 func GetConfig() Config {
@@ -224,4 +220,13 @@ func GetConfig() Config {
 	}
 
 	return azdConfig
+}
+
+func getConfigFilePath() (string, error) {
+	configPath, err := GetUserConfigDir()
+	if err != nil {
+		return "", fmt.Errorf("failed locating config dir")
+	}
+
+	return filepath.Join(configPath, "config.json"), nil
 }

@@ -19,7 +19,7 @@ import (
 // (via ad sp signed-in-user), falling back to extracting the
 // `oid` claim from an access token a principal can not be
 // obtained in this way.
-func GetCurrentPrincipalId(ctx context.Context) (string, error) {
+func GetCurrentPrincipalId(ctx context.Context) (*string, error) {
 	azCli := azcli.GetAzCli(ctx)
 	principalId, err := azCli.GetSignedInUserId(ctx)
 	if err == nil {
@@ -28,15 +28,15 @@ func GetCurrentPrincipalId(ctx context.Context) (string, error) {
 
 	token, err := azCli.GetAccessToken(ctx)
 	if err != nil {
-		return "", fmt.Errorf("getting access token: %w", err)
+		return nil, fmt.Errorf("getting access token: %w", err)
 	}
 
 	oid, err := getOidClaimFromAccessToken(token.AccessToken)
 	if err != nil {
-		return "", fmt.Errorf("getting oid from token: %w", err)
+		return nil, fmt.Errorf("getting oid from token: %w", err)
 	}
 
-	return oid, nil
+	return &oid, nil
 }
 
 // cspell: disable

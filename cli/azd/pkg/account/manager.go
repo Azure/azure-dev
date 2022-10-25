@@ -41,7 +41,7 @@ func NewManager(config config.Config, azCli azcli.AzCli) *Manager {
 // Gets the default subscription for the logged in account.
 // 1. Returns AZD config defaults if exists
 // 2. Returns AZ CLI defaults if exists
-func (m *Manager) GetAccountDefaults(ctx context.Context) (*Account, error) {
+func (m *Manager) GetAccountDefaults(ctx context.Context) *Account {
 	subscription, err := m.getDefaultSubscription(ctx)
 
 	// If we don't have a default subscription then the principal does not have any active
@@ -61,7 +61,7 @@ func (m *Manager) GetAccountDefaults(ctx context.Context) (*Account, error) {
 	return &Account{
 		DefaultSubscription: subscription,
 		DefaultLocation:     location,
-	}, nil
+	}
 }
 
 // Gets the available Azure subscriptions for the current logged in account.

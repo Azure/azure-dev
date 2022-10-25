@@ -40,9 +40,8 @@ func Test_GetAccountDefaults(t *testing.T) {
 		setupGetSubscriptionMock(mockContext, &subscription, nil)
 
 		manager := NewManager(expectedConfig, azcli.GetAzCli(*mockContext.Context))
-		accountDefaults, err := manager.GetAccountDefaults(*mockContext.Context)
+		accountDefaults := manager.GetAccountDefaults(*mockContext.Context)
 
-		require.NoError(t, err)
 		require.Equal(t, "SUBSCRIPTION_01", accountDefaults.DefaultSubscription.Id)
 		require.Equal(t, "westus", accountDefaults.DefaultLocation.Name)
 	})
@@ -54,9 +53,8 @@ func Test_GetAccountDefaults(t *testing.T) {
 		setupAccountMocks(mockContext)
 
 		manager := NewManager(emptyConfig, azcli.GetAzCli(*mockContext.Context))
-		accountDefaults, err := manager.GetAccountDefaults(*mockContext.Context)
+		accountDefaults := manager.GetAccountDefaults(*mockContext.Context)
 
-		require.NoError(t, err)
 		require.Equal(t, *allTestSubscriptions[0].SubscriptionID, accountDefaults.DefaultSubscription.Id)
 		require.Equal(t, "eastus2", accountDefaults.DefaultLocation.Name)
 	})

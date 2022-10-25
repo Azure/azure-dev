@@ -15,6 +15,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/azure/azure-dev/cli/azd/internal"
@@ -152,12 +154,12 @@ func runAndCaptureUserAgent(t *testing.T) string {
 	defaultRunner := exec.NewCommandRunner(os.Stdin, os.Stdout, os.Stderr)
 	mockContext := mocks.NewMockContext(context.Background())
 
-	azCli := NewAzCli(identity.GetCredentials(*mockContext.Context), NewAzCliArgs{
+	cli := NewAzCli(identity.GetCredentials(*mockContext.Context), NewAzCliArgs{
 		EnableDebug:     true,
 		EnableTelemetry: true,
 		CommandRunner:   mockContext.CommandRunner,
 	})
-	azCli.SetUserAgent(internal.MakeUserAgentString("AZTesting=yes"))
+	cli.SetUserAgent(internal.MakeUserAgentString("AZTesting=yes"))
 
 	stderrBuffer := &bytes.Buffer{}
 
@@ -176,9 +178,20 @@ func runAndCaptureUserAgent(t *testing.T) string {
 		return rr, err
 	})
 
+	// Since most of the az CLI commands have been refactored to use Go SDKs at this point
+	// We just want to verify that any left over commands still pass in the required user agent strings.
+	// Here we will just execute a custom command against the concrete CLI helper method
+	runArgs := exec.
+		NewRunArgs("az", "group", "show", "-g", "RESOURCE_GROUP").
+		WithDebug(true).
+		WithEnrichError(true)
+
+	// Cast to the concrete CLI so we can exec the common command
+	concreteCli := cli.(*azCli)
+
 	// the result doesn't matter here since we just want to see what the User-Agent is that we sent, which will
 	// happen regardless of whether the request succeeds or fails.
-	_, _ = azCli.CreateOrUpdateServicePrincipal(context.Background(), "SUBSCRIPTION_ID", "APP_NAME", "ROLE_TO_ASSIGN")
+	_, _ = concreteCli.runAzCommandWithArgs(context.Background(), runArgs)
 
 	// The outputted line will look like this:
 	// DEBUG: cli.azure.cli.core.sdk.policies:     'User-Agent': 'AZURECLI/2.35.0 (MSI)
@@ -271,23 +284,28 @@ func TestAZCliGetAccessTokenTranslatesErrors(t *testing.T) {
 			expect: ErrAzCliRefreshTokenExpired,
 		},
 		{
-			name:   "RunAzLoginDoubleQuotes",
+			name:   "GetAccessTokenDoubleQuotes",
 			stderr: `Please run "az login" to setup account.`,
 			expect: ErrAzCliNotLoggedIn,
 		},
 		{
-			name:   "RunAzLoginSingleQuotes",
+			name:   "GetAccessTokenSingleQuotes",
 			stderr: `Please run 'az login' to setup account.`,
 			expect: ErrAzCliNotLoggedIn,
 		},
 		{
-			name:   "RunAzLoginDoubleQuotesAccessAccount",
+			name:   "GetAccessTokenDoubleQuotesAccessAccount",
 			stderr: `Please run "az login" to access your accounts.`,
 			expect: ErrAzCliNotLoggedIn,
 		},
 		{
-			name:   "RunAzLoginSingleQuotesAccessAccount",
+			name:   "GetAccessTokenSingleQuotesAccessAccount",
 			stderr: `Please run 'az login' to access your accounts.`,
+			expect: ErrAzCliNotLoggedIn,
+		},
+		{
+			name:   "GetAccessTokenErrorNoSubscriptionFound",
+			stderr: `ERROR: No subscription found`,
 			expect: ErrAzCliNotLoggedIn,
 		},
 	}
@@ -295,18 +313,16 @@ func TestAZCliGetAccessTokenTranslatesErrors(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			mockContext := mocks.NewMockContext(context.Background())
-			azCli := NewAzCli(identity.GetCredentials(*mockContext.Context), NewAzCliArgs{
+			mockCredential := mocks.MockCredentials{
+				GetTokenFn: func(ctx context.Context, options policy.TokenRequestOptions) (azcore.AccessToken, error) {
+					return azcore.AccessToken{}, errors.New(test.stderr)
+				},
+			}
+
+			azCli := NewAzCli(&mockCredential, NewAzCliArgs{
 				EnableDebug:     true,
 				EnableTelemetry: true,
 				CommandRunner:   mockContext.CommandRunner,
-			})
-
-			mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
-				return strings.Contains(command, "az account get-access-token")
-			}).Respond(exec.RunResult{
-				ExitCode: 1,
-				Stdout:   "",
-				Stderr:   test.stderr,
 			})
 
 			_, err := azCli.GetAccessToken(*mockContext.Context)

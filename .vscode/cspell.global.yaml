@@ -21,6 +21,7 @@ ignoreWords:
     - appcs
     - appi
     - arck
+    - armauthorization
     - armappcontainers
     - armappservice
     - armkeyvault
@@ -57,6 +58,7 @@ ignoreWords:
     - execmock
     - fdfp
     - Frontdoor
+    - graphsdk
     - hndl
     - httpclient
     - httptrigger
@@ -74,6 +76,7 @@ ignoreWords:
     - MYDIR
     - nsgsr
     - ntfns
+    - odata
     - osdisk
     - osexec
     - pcert
@@ -99,6 +102,7 @@ ignoreWords:
     - srch
     - ssimp
     - stapp
+    - startswith
     - stvm
     - syndp
     - synsp

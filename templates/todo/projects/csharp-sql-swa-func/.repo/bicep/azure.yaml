@@ -1,0 +1,15 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/Azure/azure-dev/main/schemas/v1.0/azure.yaml.json
+
+name: todo-csharp-sql-swa-func
+metadata:
+  template: todo-csharp-sql-swa-func@0.0.1-beta
+services:
+  web:
+    project: ../../web/react-fluent
+    dist: build
+    language: js
+    host: staticwebapp
+  api:
+    project: ../../api/csharp-sql-func
+    language: dotnet
+    host: function

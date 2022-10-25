@@ -68,7 +68,7 @@ func initInitAction(cmd *cobra.Command, o *internal.GlobalCommandOptions, flags 
 	azCli := newAzCliFromOptions(o, commandRunner, tokenCredential)
 	manager := account.NewManager(configConfig, azCli)
 	gitCli := git.NewGitCliFromRunner(commandRunner)
-	cmdInitAction, err := newInitAction(azdContext, configConfig, manager, commandRunner, console, azCli, gitCli, flags)
+	cmdInitAction, err := newInitAction(azdContext, manager, commandRunner, console, azCli, gitCli, flags)
 	if err != nil {
 		return nil, err
 	}
@@ -113,7 +113,7 @@ func initUpAction(cmd *cobra.Command, o *internal.GlobalCommandOptions, flags up
 	manager := account.NewManager(configConfig, azCli)
 	gitCli := git.NewGitCliFromRunner(commandRunner)
 	cmdInitFlags := flags.initFlags
-	cmdInitAction, err := newInitAction(azdContext, configConfig, manager, commandRunner, console, azCli, gitCli, cmdInitFlags)
+	cmdInitAction, err := newInitAction(azdContext, manager, commandRunner, console, azCli, gitCli, cmdInitFlags)
 	if err != nil {
 		return nil, err
 	}

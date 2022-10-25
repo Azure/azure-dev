@@ -44,6 +44,10 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 )
 
+const (
+	testSubscriptionId = "2cd617ea-1866-46b1-90e3-fffb087ebf9b"
+)
+
 func Test_CLI_Login_FailsIfNoAzCliIsMissing(t *testing.T) {
 	ctx, cancel := newTestContext(t)
 	defer cancel()
@@ -99,10 +103,6 @@ func Test_CLI_Init_AsksForSubscriptionIdAndCreatesEnvAndProjectFile(t *testing.T
 	defer cancel()
 
 	dir := tempDirWithDiagnostics(t)
-	testSubscriptionId := os.Getenv("TEST_SUBSCRIPTION_ID")
-	if strings.TrimSpace(testSubscriptionId) == "" {
-		testSubscriptionId = "faa080af-c1d8-40ad-9cce-e1a450ca5b57"
-	}
 
 	cli := azdcli.NewCLI(t)
 	cli.WorkingDirectory = dir

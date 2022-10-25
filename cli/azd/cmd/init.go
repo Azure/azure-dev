@@ -16,7 +16,6 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
-	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
@@ -83,7 +82,6 @@ func (i *initFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOpt
 
 type initAction struct {
 	azdCtx         *azdcontext.AzdContext
-	config         config.Config
 	accountManager *account.Manager
 	console        input.Console
 	cmdRun         exec.CommandRunner
@@ -94,7 +92,6 @@ type initAction struct {
 
 func newInitAction(
 	azdCtx *azdcontext.AzdContext,
-	config config.Config,
 	accountManager *account.Manager,
 	cmdRun exec.CommandRunner,
 	console input.Console,
@@ -103,7 +100,6 @@ func newInitAction(
 	flags initFlags) (*initAction, error) {
 	return &initAction{
 		azdCtx:         azdCtx,
-		config:         config,
 		accountManager: accountManager,
 		console:        console,
 		cmdRun:         cmdRun,
@@ -334,14 +330,14 @@ func (i *initAction) Run(ctx context.Context) error {
 
 	// If the configuration is empty, set default subscription & location
 	// This will be the case for first run experience
-	if i.config.IsEmpty() {
+	if !i.accountManager.HasDefaults() {
 		_, err = i.accountManager.SetDefaultSubscription(ctx, env.GetSubscriptionId())
 		if err != nil {
-			return fmt.Errorf("failed setting default subscription. %w", err)
+			log.Printf("failed setting default subscription. %s\n", err.Error())
 		}
 		_, err = i.accountManager.SetDefaultLocation(ctx, env.GetSubscriptionId(), env.GetLocation())
 		if err != nil {
-			return fmt.Errorf("failed setting default location. %w", err)
+			log.Printf("failed setting default location. %s\n", err.Error())
 		}
 	}
 

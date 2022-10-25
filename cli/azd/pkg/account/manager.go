@@ -161,6 +161,14 @@ func (m *Manager) SetDefaultLocation(ctx context.Context, subscriptionId string,
 	}, nil
 }
 
+// Checks whether account related defaults of subscription and location have previously been set
+func (m *Manager) HasDefaults() bool {
+	_, hasDefaultSubscription := m.config.Get(defaultSubscriptionKeyPath)
+	_, hasDefaultLocation := m.config.Get(defaultLocationKeyPath)
+
+	return hasDefaultSubscription && hasDefaultLocation
+}
+
 // Clears any persisted defaults in the AZD config
 func (m *Manager) Clear(ctx context.Context) error {
 	err := m.config.Unset("defaults")

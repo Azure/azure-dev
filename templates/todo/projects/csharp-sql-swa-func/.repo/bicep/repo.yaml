@@ -1,17 +1,17 @@
 templateApi: 1.0.0
 metadata:
   type: repo
-  name: todo-python-mongo-swa-func
-  description: ToDo Application with a Python API and Azure Cosmos DB API for MongoDB
+  name: todo-csharp-sql-swa-func
+  description: ToDo Application with a C# API and Azure SQL DB on Static Web Apps and Functions
 
 repo:
-  includeProjectAssets: false
+  includeProjectAssets: true
 
   remotes:
     - name: azure-samples-main
-      url: git@github.com:Azure-Samples/todo-python-mongo-swa-func.git
+      url: git@github.com:Azure-Samples/todo-csharp-sql-swa-func.git
     - name: azure-samples-staging
-      url: git@github.com:Azure-Samples/todo-python-mongo-swa-func.git
+      url: git@github.com:Azure-Samples/todo-csharp-sql-swa-func.git
       branch: staging
 
   rewrite:
@@ -45,7 +45,7 @@ repo:
         patterns:
           - "**/main.bicep"
 
-      - from: ../../api/python
+      - from: ../../api/csharp-sql-func
         to: ./src/api
         patterns:
           - "**/azure.@(yml|yaml)"
@@ -60,13 +60,13 @@ repo:
         patterns:
           - "**/resources.bicep"
 
-      - from: api-functions-python.bicep
+      - from: api-functions-dotnet-isolated.bicep
         to: api.bicep
         patterns:
           - "**/resources.bicep"
 
-      - from: cosmos-mongo-db.bicep
-        to: db.bicep
+      - from: /sqlserver.bicep
+        to: /db.bicep 
         patterns:
           - "**/resources.bicep"
 
@@ -83,10 +83,10 @@ repo:
     - from: ../../../../common/infra/bicep/app/web-staticwebapp.bicep
       to: ./infra/app/web.bicep
 
-    - from: ../../../../common/infra/bicep/app/api-functions-python.bicep
+    - from: ../../../../common/infra/bicep/app/api-functions-dotnet-isolated.bicep
       to: ./infra/app/api.bicep
 
-    - from: ../../../../common/infra/bicep/app/cosmos-mongo-db.bicep
+    - from: ../../../../common/infra/bicep/app/sqlserver.bicep
       to: ./infra/app/db.bicep
 
     - from: ./../../
@@ -125,7 +125,7 @@ repo:
       to: ./infra
 
     # .devcontainer common (devcontainer.json)
-    - from: ../../../../../common/.devcontainer/devcontainer.json/python/func
+    - from: ../../../../../common/.devcontainer/devcontainer.json/csharp
       to: ./.devcontainer
 
     # .devcontainer common (Dockerfile)
@@ -140,12 +140,13 @@ repo:
     - from: ../../../../common/tests
       to: ./tests
 
-    # Python API
-    - from: ../../../../api/python
+    # csharp func isolated API
+    - from: ../../../../api/csharp-sql-func
       to: ./src/api
       ignore:
-        - "**/__pycache__/**"
-        - "**/@(venv|.venv)/**"
+        - bin
+        - obj
+        - .vs
 
     # React Frontend
     - from: ../../../../web/react-fluent

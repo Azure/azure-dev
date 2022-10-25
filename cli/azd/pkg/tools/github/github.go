@@ -37,8 +37,11 @@ func NewGitHubCli(ctx context.Context) GitHubCli {
 var (
 	ErrGitHubCliNotLoggedIn = errors.New("gh cli is not logged in")
 	ErrRepositoryNameInUse  = errors.New("repository name already in use")
+
 	// The hostname of the public GitHub service.
 	GitHubHostName = "github.com"
+
+	GitHubTokenEnvVars = []string{"GITHUB_TOKEN", "GH_TOKEN"}
 )
 
 type ghCli struct {
@@ -85,7 +88,7 @@ func (cli *ghCli) InstallUrl() string {
 }
 
 func (cli *ghCli) CheckAuth(ctx context.Context, hostname string) (bool, error) {
-	runArgs := exec.NewRunArgs("gh", "auth", "status", "--hostname", hostname)
+	runArgs := cli.newRunArgs("auth", "status", "--hostname", hostname)
 	res, err := cli.commandRunner.Run(ctx, runArgs)
 	if res.ExitCode == 0 {
 		return true, nil
@@ -101,8 +104,7 @@ func (cli *ghCli) CheckAuth(ctx context.Context, hostname string) (bool, error) 
 }
 
 func (cli *ghCli) Login(ctx context.Context, hostname string) error {
-	runArgs := exec.
-		NewRunArgs("gh", "auth", "login", "--hostname", hostname).
+	runArgs := cli.newRunArgs("auth", "login", "--hostname", hostname).
 		WithInteractive(true)
 
 	res, err := cli.commandRunner.Run(ctx, runArgs)
@@ -115,11 +117,9 @@ func (cli *ghCli) Login(ctx context.Context, hostname string) error {
 }
 
 func (cli *ghCli) SetSecret(ctx context.Context, repoSlug string, name string, value string) error {
-	runArgs := exec.NewRunArgs("gh", "-R", repoSlug, "secret", "set", name, "--body", value)
-	res, err := cli.commandRunner.Run(ctx, runArgs)
-	if isGhCliNotLoggedInMessageRegex.MatchString(res.Stderr) {
-		return ErrGitHubCliNotLoggedIn
-	} else if err != nil {
+	runArgs := cli.newRunArgs("-R", repoSlug, "secret", "set", name, "--body", value)
+	res, err := cli.runAuthenticated(ctx, runArgs)
+	if err != nil {
 		return fmt.Errorf("failed running gh secret set %s: %w", res.String(), err)
 	}
 	return nil
@@ -135,11 +135,9 @@ type GhCliRepository struct {
 }
 
 func (cli *ghCli) ListRepositories(ctx context.Context) ([]GhCliRepository, error) {
-	runArgs := exec.NewRunArgs("gh", "repo", "list", "--no-archived", "--json", "nameWithOwner,url,sshUrl")
-	res, err := cli.commandRunner.Run(ctx, runArgs)
-	if isGhCliNotLoggedInMessageRegex.MatchString(res.Stderr) {
-		return nil, ErrGitHubCliNotLoggedIn
-	} else if err != nil {
+	runArgs := cli.newRunArgs("repo", "list", "--no-archived", "--json", "nameWithOwner,url,sshUrl")
+	res, err := cli.runAuthenticated(ctx, runArgs)
+	if err != nil {
 		return nil, fmt.Errorf("failed running gh repo list %s: %w", res.String(), err)
 	}
 
@@ -153,11 +151,9 @@ func (cli *ghCli) ListRepositories(ctx context.Context) ([]GhCliRepository, erro
 }
 
 func (cli *ghCli) ViewRepository(ctx context.Context, name string) (GhCliRepository, error) {
-	runArgs := exec.NewRunArgs("gh", "repo", "view", name, "--json", "nameWithOwner,url,sshUrl")
-	res, err := cli.commandRunner.Run(ctx, runArgs)
-	if isGhCliNotLoggedInMessageRegex.MatchString(res.Stderr) {
-		return GhCliRepository{}, ErrGitHubCliNotLoggedIn
-	} else if err != nil {
+	runArgs := cli.newRunArgs("repo", "view", name, "--json", "nameWithOwner,url,sshUrl")
+	res, err := cli.runAuthenticated(ctx, runArgs)
+	if err != nil {
 		return GhCliRepository{}, fmt.Errorf("failed running gh repo list %s: %w", res.String(), err)
 	}
 
@@ -171,11 +167,9 @@ func (cli *ghCli) ViewRepository(ctx context.Context, name string) (GhCliReposit
 }
 
 func (cli *ghCli) CreatePrivateRepository(ctx context.Context, name string) error {
-	runArgs := exec.NewRunArgs("gh", "repo", "create", name, "--private")
-	res, err := cli.commandRunner.Run(ctx, runArgs)
-	if isGhCliNotLoggedInMessageRegex.MatchString(res.Stderr) {
-		return ErrGitHubCliNotLoggedIn
-	} else if repositoryNameInUseRegex.MatchString(res.Stderr) {
+	runArgs := cli.newRunArgs("repo", "create", name, "--private")
+	res, err := cli.runAuthenticated(ctx, runArgs)
+	if repositoryNameInUseRegex.MatchString(res.Stderr) {
 		return ErrRepositoryNameInUse
 	} else if err != nil {
 		return fmt.Errorf("failed running gh repo create %s: %w", res.String(), err)
@@ -190,11 +184,9 @@ const (
 )
 
 func (cli *ghCli) GetGitProtocolType(ctx context.Context) (string, error) {
-	runArgs := exec.NewRunArgs("gh", "config", "get", "git_protocol")
-	res, err := cli.commandRunner.Run(ctx, runArgs)
-	if isGhCliNotLoggedInMessageRegex.MatchString(res.Stderr) {
-		return "", ErrGitHubCliNotLoggedIn
-	} else if err != nil {
+	runArgs := cli.newRunArgs("config", "get", "git_protocol")
+	res, err := cli.runAuthenticated(ctx, runArgs)
+	if err != nil {
 		return "", fmt.Errorf("failed running gh config get git_protocol %s: %w", res.String(), err)
 	}
 
@@ -208,8 +200,8 @@ type GitHubActionsResponse struct {
 // GitHubActionsExists gets the information from upstream about the workflows and
 // return true if there is at least one workflow in the repo.
 func (cli *ghCli) GitHubActionsExists(ctx context.Context, repoSlug string) (bool, error) {
-	runArgs := exec.NewRunArgs("gh", "api", "/repos/"+repoSlug+"/actions/workflows")
-	res, err := cli.commandRunner.Run(ctx, runArgs)
+	runArgs := cli.newRunArgs("api", "/repos/"+repoSlug+"/actions/workflows")
+	res, err := cli.runAuthenticated(ctx, runArgs)
 	if err != nil {
 		return false, fmt.Errorf("getting github actions %s: %w", res.String(), err)
 	}
@@ -223,9 +215,22 @@ func (cli *ghCli) GitHubActionsExists(ctx context.Context, repoSlug string) (boo
 	return true, nil
 }
 
+func (cli *ghCli) newRunArgs(args ...string) exec.RunArgs {
+	return exec.NewRunArgs("gh", args...)
+}
+
+func (cli *ghCli) runAuthenticated(ctx context.Context, runArgs exec.RunArgs) (exec.RunResult, error) {
+	res, err := cli.commandRunner.Run(ctx, runArgs)
+	if isGhCliNotLoggedInMessageRegex.MatchString(res.Stderr) {
+		return res, ErrGitHubCliNotLoggedIn
+	}
+
+	return res, err
+}
+
 //nolint:lll
 var isGhCliNotLoggedInMessageRegex = regexp.MustCompile(
-	"(To authenticate, please run `gh auth login`\\.)|(Try authenticating with:  gh auth login)|(To re-authenticate, run: gh auth login)",
+	"(To authenticate, please run `gh auth login`\\.)|(Try authenticating with:  gh auth login)|(To re-authenticate, run: gh auth login)|(To get started with GitHub CLI, please run:  gh auth login)",
 )
 var repositoryNameInUseRegex = regexp.MustCompile("GraphQL: Name already exists on this account (createRepository)")
 

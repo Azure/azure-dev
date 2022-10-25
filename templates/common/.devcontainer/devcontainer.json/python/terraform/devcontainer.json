@@ -8,7 +8,7 @@
   },
   "features": {
     "ghcr.io/devcontainers/features/github-cli:1": {
-      "version": "2"
+        "version": "2"
     },
     "ghcr.io/devcontainers/features/azure-cli:1": {
         "version": "2.38"
@@ -24,7 +24,7 @@
         "nodeGypDependencies": false
     },
     "ghcr.io/devcontainers/features/terraform:1": {
-      "version": "latest"
+        "version": "latest"
     }
   },
   "extensions": [

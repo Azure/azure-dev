@@ -86,7 +86,8 @@ func (display *ProvisioningProgressDisplay) ReportProgress(ctx context.Context) 
 	newlyDeployedResources := []*armresources.DeploymentOperation{}
 
 	for i := range operations {
-		if *operations[i].Properties.ProvisioningState == succeededProvisioningState {
+		if operations[i].Properties.TargetResource != nil &&
+			*operations[i].Properties.ProvisioningState == succeededProvisioningState {
 			succeededCount++
 
 			if !display.createdResources[*operations[i].Properties.TargetResource.ID] &&

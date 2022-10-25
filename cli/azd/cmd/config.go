@@ -46,7 +46,7 @@ func configListCmdDesign(global *internal.GlobalCommandOptions) (*cobra.Command,
 
 func configGetCmdDesign(global *internal.GlobalCommandOptions) (*cobra.Command, *struct{}) {
 	cmd := &cobra.Command{
-		Use:   "get <key>",
+		Use:   "get <path>",
 		Short: "Gets a configuration",
 		Long:  "Gets a configuration",
 	}
@@ -63,7 +63,7 @@ func configGetCmdDesign(global *internal.GlobalCommandOptions) (*cobra.Command, 
 
 func configSetCmdDesign(global *internal.GlobalCommandOptions) (*cobra.Command, *struct{}) {
 	cmd := &cobra.Command{
-		Use:   "set <key> <value>",
+		Use:   "set <path> <value>",
 		Short: "Sets a configuration",
 		Long:  "Sets a configuration",
 	}
@@ -73,7 +73,7 @@ func configSetCmdDesign(global *internal.GlobalCommandOptions) (*cobra.Command, 
 
 func configUnsetCmdDesign(global *internal.GlobalCommandOptions) (*cobra.Command, *struct{}) {
 	cmd := &cobra.Command{
-		Use:   "unset <key>",
+		Use:   "unset <path>",
 		Short: "Unsets a configuration",
 		Long:  "Unsets a configuration",
 	}
@@ -125,7 +125,7 @@ func newConfigGetAction(config config.Config, formatter output.Formatter, writer
 	}
 }
 
-// Executes the `azd config get <key>` action
+// Executes the `azd config get <path>` action
 func (a *configGetAction) Run(ctx context.Context) error {
 	key := a.args[0]
 	value, ok := a.config.Get(key)
@@ -156,7 +156,7 @@ func newConfigSetAction(config config.Config, args []string) *configSetAction {
 	}
 }
 
-// Executes the `azd config set <key> <value>` action
+// Executes the `azd config set <path> <value>` action
 func (a *configSetAction) Run(ctx context.Context) error {
 	path := a.args[0]
 	value := a.args[1]
@@ -186,7 +186,7 @@ func newConfigUnsetAction(config config.Config, args []string) *configUnsetActio
 	}
 }
 
-// Executes the `azd config unset <key>` action
+// Executes the `azd config unset <path>` action
 func (a *configUnsetAction) Run(ctx context.Context) error {
 	path := a.args[0]
 

@@ -122,7 +122,7 @@ func (i *initAction) Run(ctx context.Context) error {
 	// to force using the current working directory as a project root (since we are initializing a
 	// new project).
 	wd, err := os.Getwd()
-	i.formattedWithColorCwd = output.WithHighLightFormat("%s", wd)
+	i.formattedWithColorCwd = output.WithLinkFormat("%s", wd)
 	if err != nil {
 		return fmt.Errorf("getting cwd: %w", err)
 	}
@@ -152,7 +152,7 @@ func (i *initAction) Run(ctx context.Context) error {
 	// NOTE: Adding `azure.yaml` to a folder removes the option from selecting a template
 	if _, err := os.Stat(i.azdCtx.ProjectPath()); err != nil && errors.Is(err, os.ErrNotExist) {
 		if i.flags.template.Name == "" {
-			i.flags.template, err = templates.PromptTemplate(ctx, "Select a project template")
+			i.flags.template, err = templates.PromptTemplate(ctx, "Select a project template:")
 
 			if err != nil {
 				return err

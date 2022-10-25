@@ -122,7 +122,7 @@ func (c *AskerConsole) MessageUx(ctx context.Context, message string, format Mes
 func addFormat(message string, format MessageUxType) (withFormat string, err error) {
 	switch format {
 	case Title:
-		withFormat = fmt.Sprintf("\n%s\n", message)
+		withFormat = output.WithBold(fmt.Sprintf("\n%s\n", message))
 	case ResultSuccess:
 		withFormat = output.WithSuccessFormat("\n%s: %s", "SUCCESS", message)
 	case ResultError:
@@ -176,7 +176,11 @@ func getIndent(format MessageUxType) string {
 	spaces := 0
 	switch format {
 	case Step:
-		spaces = 1
+		spaces = 2
+	case StepDone:
+		spaces = 2
+	case StepFailed:
+		spaces = 2
 	}
 	bytes := make([]byte, spaces)
 	for i := range bytes {
@@ -216,7 +220,7 @@ func getStopChar(format MessageUxType) string {
 	case StepFailed:
 		stopChar = output.WithErrorFormat("(x) Failed:")
 	}
-	return stopChar
+	return fmt.Sprintf("%s%s", getIndent(format), stopChar)
 }
 
 // jsonObjectForMessage creates a json object representing a message. Any ANSI control sequences from the message are

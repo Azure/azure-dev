@@ -1,188 +1,28 @@
 package auth
 
 import (
-	"context"
+	"bytes"
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/rand"
 	"encoding/base64"
 	"errors"
 	"fmt"
-	"io"
 	"log"
 	"os"
 	"path/filepath"
 	"strings"
 
 	"github.com/99designs/keyring"
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/cache"
-	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/public"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 )
-
-// nolint:lll
-// https://github.com/Azure/azure-cli/blob/6cd8cedd49e2546b57673b4ab6ebd7567b73e530/src/azure-cli-core/azure/cli/core/auth/identity.py#L23
-const cAZURE_CLI_CLIENT_ID = "04b07795-8ddb-461a-bbee-02f9e1bf7b46"
 
 const cacheDirectoryFileMode = 0700
 const cacheFileFileMode = 0600
 
 const azdKeyringServiceName = "azd-auth"
 const azdKeyringItemKey = "azd-auth-encryption-key"
-
-// The scopes to request when acquiring our token during the login flow.
-//
-// TODO(ellismg): Should we be requesting additional scopes, like the scopes for the data plane operations we need to do
-// (for example Key Vault?)
-var LoginScopes = []string{"https://management.azure.com/.default"}
-
-var _ azcore.TokenCredential = &azdCredential{}
-
-type azdCredential struct {
-	client  *public.Client
-	account *public.Account
-}
-
-func (c *azdCredential) GetToken(ctx context.Context, options policy.TokenRequestOptions) (azcore.AccessToken, error) {
-	log.Printf("fetching token scopes for account %s with scopes %+v", c.account.HomeAccountID, options.Scopes)
-	res, err := c.client.AcquireTokenSilent(ctx, options.Scopes, public.WithSilentAccount(*c.account))
-	log.Printf("token fetch completed, err=%v", err)
-
-	if err != nil {
-		return azcore.AccessToken{}, err
-	}
-
-	return azcore.AccessToken{
-		Token:     res.AccessToken,
-		ExpiresOn: res.ExpiresOn.UTC(),
-	}, nil
-}
-
-type Manager struct {
-	out    io.Writer
-	client *public.Client
-}
-
-func NewManager(out io.Writer) (Manager, error) {
-	key, err := getCacheKey()
-	if err != nil {
-		return Manager{}, fmt.Errorf("getting secret: %w", err)
-	}
-
-	cfgRoot, err := config.GetUserConfigDir()
-	if err != nil {
-		return Manager{}, fmt.Errorf("getting config dir: %w", err)
-	}
-
-	cacheRoot := filepath.Join(cfgRoot, "auth", "msal")
-	if err := os.MkdirAll(cacheRoot, 0700); err != nil {
-		return Manager{}, fmt.Errorf("creating cache root: %w", err)
-	}
-
-	publicClientApp, err := public.New(cAZURE_CLI_CLIENT_ID, public.WithCache(&encryptedCache{
-		root: cacheRoot,
-		key:  key,
-	}))
-	if err != nil {
-		return Manager{}, fmt.Errorf("creating msal client: %w", err)
-	}
-
-	return Manager{
-		client: &publicClientApp,
-		out:    out,
-	}, nil
-}
-
-var ErrNoCurrentUser = errors.New("not logged in, run `azd login` to login")
-
-// TODO(ellismg): Should this also fetch an access token to ensure everything is "ok"?  If so,
-// perhaps it can be returned and `login.go` can use it instead of calling GetToken itself?
-func (m *Manager) CurrentAccount(ctx context.Context) (*public.Account, azcore.TokenCredential, error) {
-	cfg, err := config.Load()
-	if errors.Is(err, os.ErrNotExist) {
-		cfg = &config.Config{}
-	} else if err != nil {
-		return nil, nil, fmt.Errorf("fetching current user: %w", err)
-	}
-
-	if cfg.Account == nil || cfg.Account.CurrentUserHomeId == nil {
-		return nil, nil, ErrNoCurrentUser
-	}
-
-	for _, account := range m.client.Accounts() {
-		if account.HomeAccountID == *cfg.Account.CurrentUserHomeId {
-			cred := m.newCredential(&account)
-			if _, err := cred.GetToken(ctx, policy.TokenRequestOptions{Scopes: LoginScopes}); err != nil {
-				// TODO(ellismg): Feels like we need a real error type here...
-				return nil, nil, fmt.Errorf("failed to get token: %v: %w", err, ErrNoCurrentUser)
-			}
-
-			return &account, m.newCredential(&account), nil
-		}
-
-		log.Printf("ignoring cached account with home id '%s', does not match '%s'",
-			account.HomeAccountID, *cfg.Account.CurrentUserHomeId)
-	}
-
-	return nil, nil, ErrNoCurrentUser
-}
-
-func (m *Manager) Login(ctx context.Context, useDeviceCode bool) (*public.Account, azcore.TokenCredential, error) {
-	var account public.Account
-
-	if useDeviceCode {
-		code, err := m.client.AcquireTokenByDeviceCode(ctx, LoginScopes)
-		if err != nil {
-			return nil, nil, err
-		}
-
-		fmt.Fprintln(m.out, code.Result.Message)
-
-		res, err := code.AuthenticationResult(ctx)
-		if err != nil {
-			return nil, nil, err
-		}
-
-		account = res.Account
-	} else {
-		res, err := m.client.AcquireTokenInteractive(ctx, LoginScopes)
-		if err != nil {
-			return nil, nil, err
-		}
-
-		account = res.Account
-	}
-
-	cfg, err := config.Load()
-	if errors.Is(err, os.ErrNotExist) {
-		cfg = &config.Config{}
-	} else if err != nil {
-		return nil, nil, fmt.Errorf("loading config: %w", err)
-	}
-
-	if cfg.Account == nil {
-		cfg.Account = &config.Account{}
-	}
-
-	cfg.Account.CurrentUserHomeId = &account.HomeAccountID
-
-	if err := cfg.Save(); err != nil {
-		return nil, nil, fmt.Errorf("saving config: %w", err)
-	}
-
-	log.Printf("logged in as %s (%s)", account.PreferredUsername, account.HomeAccountID)
-
-	return &account, m.newCredential(&account), nil
-}
-
-func (m *Manager) newCredential(a *public.Account) azcore.TokenCredential {
-	return &azdCredential{
-		client:  m.client,
-		account: a,
-	}
-}
 
 // getCacheKey gets the encryption key used to encrypt the MSAL cache from the system keyring. If a key does not already
 // exist, a new one is generated and stored in the system keyring.
@@ -239,6 +79,57 @@ func saveCurrentUser(homeId string) error {
 
 var _ cache.ExportReplace = &encryptedCache{}
 
+var _ cache.ExportReplace = &msalCache{}
+
+type msalCache struct {
+	cache map[string][]byte
+	inner cache.ExportReplace
+}
+
+type cacheUpdatingUnmarshaler struct {
+	c     *msalCache
+	key   string
+	inner cache.Unmarshaler
+}
+
+func (r *cacheUpdatingUnmarshaler) Unmarshal(b []byte) error {
+	r.c.cache[r.key] = b
+	return r.inner.Unmarshal(b)
+}
+
+func (c *msalCache) Replace(cache cache.Unmarshaler, key string) {
+	log.Printf("msalCache: replacing cache with key '%s'", key)
+
+	if v, has := c.cache[key]; has {
+		cache.Unmarshal(v)
+	} else if c.inner != nil {
+		c.inner.Replace(&cacheUpdatingUnmarshaler{
+			c:     c,
+			key:   key,
+			inner: cache,
+		}, key)
+	} else {
+		log.Printf("no existing cache entry found with key '%s'", key)
+	}
+}
+
+func (c *msalCache) Export(cache cache.Marshaler, key string) {
+	log.Printf("msalCache: exporting cache with key '%s'", key)
+
+	new, err := cache.Marshal()
+	if err != nil {
+		log.Printf("error marshaling existing msal cache: %v", err)
+		return
+	}
+
+	old := c.cache[key]
+
+	if !bytes.Equal(old, new) {
+		c.cache[key] = new
+		c.inner.Export(cache, key)
+	}
+}
+
 // encryptedCache is a cache.ExportReplace that uses encrypted files. The cache is stored in files named `cache%s.bin`
 // (where %s is the 'key' parameter of the ExportReplace interface). The files are encrypted by AES-256-GCM using a key.
 // The format of the file is "v1:<base-64-encoded-nonce>:<base-64-encoded-ciphertext>".
@@ -249,8 +140,45 @@ type encryptedCache struct {
 	key  []byte
 }
 
+func (c *encryptedCache) Export(cache cache.Marshaler, key string) {
+	log.Printf("encryptedCache: exporting cache with key '%s'", key)
+	res, err := cache.Marshal()
+	if err != nil {
+		panic(err)
+	}
+
+	block, err := aes.NewCipher(c.key)
+	if err != nil {
+		panic(err)
+	}
+
+	gcm, err := cipher.NewGCM(block)
+	if err != nil {
+		panic(err)
+	}
+
+	nonce := make([]byte, gcm.NonceSize())
+
+	if _, err := rand.Read(nonce); err != nil {
+		log.Printf("failed to generate nonce, not caching")
+	}
+
+	ciphertext := gcm.Seal(nil, nonce, res, nil)
+
+	fileContents := fmt.Sprintf(
+		"v1:%s:%s",
+		base64.StdEncoding.EncodeToString(nonce),
+		base64.StdEncoding.EncodeToString(ciphertext))
+
+	cachePath := filepath.Join(c.root, fmt.Sprintf("cache%s.bin", key))
+
+	if err := os.WriteFile(cachePath, []byte(fileContents), cacheFileFileMode); err != nil {
+		panic(err)
+	}
+}
+
 func (c *encryptedCache) Replace(cache cache.Unmarshaler, key string) {
-	log.Printf("replacing cache with key '%s'", key)
+	log.Printf("encryptedCache: replacing cache with key '%s'", key)
 	cacheFile := filepath.Join(c.root, fmt.Sprintf("cache%s.bin", key))
 
 	contents, err := os.ReadFile(cacheFile)
@@ -298,41 +226,4 @@ func (c *encryptedCache) decrypt(nonce []byte, ciphertext []byte) ([]byte, error
 	}
 
 	return gcm.Open(nil, nonce, ciphertext, nil)
-}
-
-func (c *encryptedCache) Export(cache cache.Marshaler, key string) {
-	log.Printf("exporting cache with key '%s'", key)
-	res, err := cache.Marshal()
-	if err != nil {
-		panic(err)
-	}
-
-	block, err := aes.NewCipher(c.key)
-	if err != nil {
-		panic(err)
-	}
-
-	gcm, err := cipher.NewGCM(block)
-	if err != nil {
-		panic(err)
-	}
-
-	nonce := make([]byte, gcm.NonceSize())
-
-	if _, err := rand.Read(nonce); err != nil {
-		log.Printf("failed to generate nonce, not caching")
-	}
-
-	ciphertext := gcm.Seal(nil, nonce, res, nil)
-
-	fileContents := fmt.Sprintf(
-		"v1:%s:%s",
-		base64.StdEncoding.EncodeToString(nonce),
-		base64.StdEncoding.EncodeToString(ciphertext))
-
-	cachePath := filepath.Join(c.root, fmt.Sprintf("cache%s.bin", key))
-
-	if err := os.WriteFile(cachePath, []byte(fileContents), cacheFileFileMode); err != nil {
-		panic(err)
-	}
 }

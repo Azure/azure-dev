@@ -32,6 +32,7 @@ func configListCmdDesign(global *internal.GlobalCommandOptions) (*cobra.Command,
 	cmd := &cobra.Command{
 		Use:   "list",
 		Short: "Lists all configuration values",
+		Long:  "Lists all configuration values",
 	}
 
 	output.AddOutputParam(
@@ -47,6 +48,7 @@ func configGetCmdDesign(global *internal.GlobalCommandOptions) (*cobra.Command, 
 	cmd := &cobra.Command{
 		Use:   "get <key>",
 		Short: "Gets a configuration",
+		Long:  "Gets a configuration",
 	}
 
 	output.AddOutputParam(
@@ -63,6 +65,7 @@ func configSetCmdDesign(global *internal.GlobalCommandOptions) (*cobra.Command, 
 	cmd := &cobra.Command{
 		Use:   "set <key> <value>",
 		Short: "Sets a configuration",
+		Long:  "Sets a configuration",
 	}
 	cmd.Args = cobra.ExactArgs(2)
 	return cmd, &struct{}{}
@@ -72,6 +75,7 @@ func configUnsetCmdDesign(global *internal.GlobalCommandOptions) (*cobra.Command
 	cmd := &cobra.Command{
 		Use:   "unset <key>",
 		Short: "Unsets a configuration",
+		Long:  "Unsets a configuration",
 	}
 	cmd.Args = cobra.ExactArgs(1)
 	return cmd, &struct{}{}
@@ -91,6 +95,7 @@ func newConfigListAction(config config.Config, formatter output.Formatter, write
 	}
 }
 
+// Executes the `azd config list` action
 func (a *configListAction) Run(ctx context.Context) error {
 	values := a.config.Raw()
 
@@ -120,6 +125,7 @@ func newConfigGetAction(config config.Config, formatter output.Formatter, writer
 	}
 }
 
+// Executes the `azd config get <key>` action
 func (a *configGetAction) Run(ctx context.Context) error {
 	key := a.args[0]
 	value, ok := a.config.Get(key)
@@ -150,6 +156,7 @@ func newConfigSetAction(config config.Config, args []string) *configSetAction {
 	}
 }
 
+// Executes the `azd config set <key> <value>` action
 func (a *configSetAction) Run(ctx context.Context) error {
 	path := a.args[0]
 	value := a.args[1]
@@ -179,6 +186,7 @@ func newConfigUnsetAction(config config.Config, args []string) *configUnsetActio
 	}
 }
 
+// Executes the `azd config unset <key>` action
 func (a *configUnsetAction) Run(ctx context.Context) error {
 	path := a.args[0]
 

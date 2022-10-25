@@ -29,8 +29,8 @@ func (cli *azCli) ListSubscriptionDeploymentOperations(
 	ctx context.Context,
 	subscriptionId string,
 	deploymentName string,
-) (result []*armresources.DeploymentOperation, err error) {
-	result = make([]*armresources.DeploymentOperation, 0)
+) ([]*armresources.DeploymentOperation, error) {
+	result := make([]*armresources.DeploymentOperation, 0)
 	deploymentOperationsClient, err := cli.createDeploymentsOperationsClient(ctx, subscriptionId)
 	if err != nil {
 		return nil, fmt.Errorf("creating deployments client: %w", err)
@@ -59,8 +59,8 @@ func (cli *azCli) ListResourceGroupDeploymentOperations(
 	subscriptionId string,
 	resourceGroupName string,
 	deploymentName string,
-) (result []*armresources.DeploymentOperation, err error) {
-	result = make([]*armresources.DeploymentOperation, 0)
+) ([]*armresources.DeploymentOperation, error) {
+	result := make([]*armresources.DeploymentOperation, 0)
 	deploymentOperationsClient, err := cli.createDeploymentsOperationsClient(ctx, subscriptionId)
 	if err != nil {
 		return nil, fmt.Errorf("creating deployments client: %w", err)

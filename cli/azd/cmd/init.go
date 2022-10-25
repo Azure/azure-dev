@@ -145,12 +145,12 @@ func (i *initAction) Run(ctx context.Context) error {
 		return err
 	}
 
-	// Command title
-	i.console.MessageUx(ctx, "Initializing a new project (azd init)", input.Title)
-
 	// Project not initialized and no template specified
 	// NOTE: Adding `azure.yaml` to a folder removes the option from selecting a template
 	if _, err := os.Stat(i.azdCtx.ProjectPath()); err != nil && errors.Is(err, os.ErrNotExist) {
+		// Command title
+		i.console.MessageUx(ctx, "Initializing a new project (azd init)", input.Title)
+
 		if i.flags.template.Name == "" {
 			i.flags.template, err = templates.PromptTemplate(ctx, "Select a project template:")
 

@@ -43,7 +43,11 @@ func (s *Spinner) print(message string, addNewLine bool) {
 		s.logMutex.Lock()
 
 		s.Stop()
-		fmt.Fprintln(s.writer, message)
+		if addNewLine {
+			fmt.Fprintln(s.writer, message)
+		} else {
+			fmt.Fprint(s.writer, message)
+		}
 		s.Start()
 	}
 }

@@ -1,3 +1,6 @@
+trigger:
+- main
+
 variables:
   - template: /eng/pipelines/templates/variables/globals.yml
   - name: NodeVersion

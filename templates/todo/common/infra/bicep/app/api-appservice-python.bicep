@@ -1,5 +1,6 @@
-param environmentName string
+param name string
 param location string = resourceGroup().location
+param tags object = {}
 
 param allowedOrigins array = []
 param appCommandLine string = 'gunicorn --workers 4 --threads 2 --timeout 60 --access-logfile "-" --error-logfile "-" --bind=0.0.0.0:8000 -k uvicorn.workers.UvicornWorker todo.app:app'
@@ -10,9 +11,9 @@ param keyVaultName string
 param serviceName string = 'api'
 
 module api '../../../../../common/infra/bicep/core/host/appservice.bicep' = {
-  name: '${serviceName}-appservice-python-module'
+  name: '${name}-app-module'
   params: {
-    environmentName: environmentName
+    name: name
     location: location
     allowedOrigins: allowedOrigins
     appCommandLine: appCommandLine
@@ -23,7 +24,7 @@ module api '../../../../../common/infra/bicep/core/host/appservice.bicep' = {
     runtimeName: 'python'
     runtimeVersion: '3.8'
     scmDoBuildDuringDeployment: true
-    serviceName: serviceName
+    tags: union(tags, { 'azd-service-name': serviceName })
   }
 }
 

@@ -3,6 +3,7 @@ param location string = resourceGroup().location
 param tags object = {}
 
 param allowedOrigins array = []
+param appCommandLine string = ''
 param applicationInsightsName string = ''
 param appServicePlanId string
 param appSettings object = {}
@@ -10,11 +11,12 @@ param keyVaultName string
 param serviceName string = 'api'
 
 module api '../../../../../common/infra/bicep/core/host/appservice.bicep' = {
-  name: '${name}-deployment'
+  name: '${name}-app-module'
   params: {
     name: name
     location: location
     allowedOrigins: allowedOrigins
+    appCommandLine: appCommandLine
     applicationInsightsName: applicationInsightsName
     appServicePlanId: appServicePlanId
     appSettings: appSettings

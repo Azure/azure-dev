@@ -1,7 +1,9 @@
-param environmentName string
+param name string
 param location string = resourceGroup().location
+param tags object = {}
 
 param allowedOrigins array = []
+param appCommandLine string = ''
 param applicationInsightsName string = ''
 param appServicePlanId string
 param appSettings object = {}
@@ -9,11 +11,12 @@ param keyVaultName string
 param serviceName string = 'api'
 
 module api '../../../../../common/infra/bicep/core/host/appservice.bicep' = {
-  name: '${serviceName}-appservice-dotnet-module'
+  name: '${name}-app-module'
   params: {
-    environmentName: environmentName
+    name: name
     location: location
     allowedOrigins: allowedOrigins
+    appCommandLine: appCommandLine
     applicationInsightsName: applicationInsightsName
     appServicePlanId: appServicePlanId
     appSettings: appSettings
@@ -21,7 +24,7 @@ module api '../../../../../common/infra/bicep/core/host/appservice.bicep' = {
     runtimeName: 'dotnetcore'
     runtimeVersion: '6.0'
     scmDoBuildDuringDeployment: false
-    serviceName: serviceName
+    tags: union(tags, { 'azd-service-name': serviceName })
   }
 }
 

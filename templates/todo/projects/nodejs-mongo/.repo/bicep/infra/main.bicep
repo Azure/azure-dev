@@ -5,6 +5,14 @@ targetScope = 'subscription'
 @description('Name of the the environment which is used to generate a short unique hash used in all resources.')
 param environmentName string
 
+@minLength(1)
+@description('Primary location for all resources')
+param location string
+
+// Optional paramaters. Add corresponding parameters to main.parameters.json to provide. For example:
+// "resourceGroupName": {
+//      "value": "myGroupName"
+// }
 param resourceGroupName string = ''
 param webServiceName string = ''
 param apiServiceName string = ''
@@ -15,10 +23,6 @@ param keyVaultName string = ''
 param logAnalyticsName string = ''
 param applicationInsightsName string = ''
 param applicationInsightsDashboardName string = ''
-
-@minLength(1)
-@description('Primary location for all resources')
-param location string
 
 @description('Id of the user or app to assign application roles')
 param principalId string = ''
@@ -81,7 +85,6 @@ module apiKeyVaultAccess '../../../../../../common/infra/bicep/core/security/key
 module cosmos '../../../../../common/infra/bicep/app/cosmos-mongo-db.bicep' = {
   name: 'cosmos'
   scope: rg
-
   params: {
     accountName: !empty(cosmosAccountName) ? cosmosAccountName : '${abbrs.documentDBDatabaseAccounts}${resourceToken}'
     databaseName: cosmosDatabaseName

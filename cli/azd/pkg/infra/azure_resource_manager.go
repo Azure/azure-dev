@@ -57,7 +57,8 @@ func (rm *AzureResourceManager) GetDeploymentResourceOperations(
 	} else {
 		// Otherwise find the resource group within the deployment operations
 		for _, operation := range resourceOperations {
-			if *operation.Properties.TargetResource.ResourceType == string(AzureResourceTypeResourceGroup) {
+			if operation.Properties.TargetResource != nil &&
+				*operation.Properties.TargetResource.ResourceType == string(AzureResourceTypeResourceGroup) {
 				resourceGroupName = *operation.Properties.TargetResource.ResourceName
 				break
 			}
@@ -71,7 +72,8 @@ func (rm *AzureResourceManager) GetDeploymentResourceOperations(
 	// Find all resource group deployments within the subscription operations
 	// Recursively append any resource group deployments that are found
 	for _, operation := range resourceOperations {
-		if *operation.Properties.TargetResource.ResourceType == string(AzureResourceTypeDeployment) {
+		if operation.Properties.TargetResource != nil &&
+			*operation.Properties.TargetResource.ResourceType == string(AzureResourceTypeDeployment) {
 			err = rm.appendDeploymentResourcesRecursive(
 				ctx,
 				scope.SubscriptionId(),
@@ -279,21 +281,22 @@ func (rm *AzureResourceManager) appendDeploymentResourcesRecursive(
 	}
 
 	for _, operation := range operations {
-		if operation.Properties.TargetResource != nil &&
-			*operation.Properties.TargetResource.ResourceType == string(AzureResourceTypeDeployment) {
-			err := rm.appendDeploymentResourcesRecursive(
-				ctx,
-				subscriptionId,
-				resourceGroupName,
-				*operation.Properties.TargetResource.ResourceName,
-				resourceOperations,
-			)
-			if err != nil {
-				return fmt.Errorf("appending deployment resources: %w", err)
+		if operation.Properties.TargetResource != nil {
+			if *operation.Properties.TargetResource.ResourceType == string(AzureResourceTypeDeployment) {
+				err := rm.appendDeploymentResourcesRecursive(
+					ctx,
+					subscriptionId,
+					resourceGroupName,
+					*operation.Properties.TargetResource.ResourceName,
+					resourceOperations,
+				)
+				if err != nil {
+					return fmt.Errorf("appending deployment resources: %w", err)
+				}
+			} else if *operation.Properties.ProvisioningOperation == "Create" &&
+				strings.TrimSpace(*operation.Properties.TargetResource.ResourceType) != "" {
+				*resourceOperations = append(*resourceOperations, operation)
 			}
-		} else if *operation.Properties.ProvisioningOperation == "Create" &&
-			strings.TrimSpace(*operation.Properties.TargetResource.ResourceType) != "" {
-			*resourceOperations = append(*resourceOperations, operation)
 		}
 	}
 

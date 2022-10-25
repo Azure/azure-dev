@@ -30,7 +30,7 @@ func (cli *azCli) ListSubscriptionDeploymentOperations(
 	subscriptionId string,
 	deploymentName string,
 ) ([]*armresources.DeploymentOperation, error) {
-	result := make([]*armresources.DeploymentOperation, 0)
+	result := []*armresources.DeploymentOperation{}
 	deploymentOperationsClient, err := cli.createDeploymentsOperationsClient(ctx, subscriptionId)
 	if err != nil {
 		return nil, fmt.Errorf("creating deployments client: %w", err)
@@ -60,7 +60,7 @@ func (cli *azCli) ListResourceGroupDeploymentOperations(
 	resourceGroupName string,
 	deploymentName string,
 ) ([]*armresources.DeploymentOperation, error) {
-	result := make([]*armresources.DeploymentOperation, 0)
+	result := []*armresources.DeploymentOperation{}
 	deploymentOperationsClient, err := cli.createDeploymentsOperationsClient(ctx, subscriptionId)
 	if err != nil {
 		return nil, fmt.Errorf("creating deployments client: %w", err)

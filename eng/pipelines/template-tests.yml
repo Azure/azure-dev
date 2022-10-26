@@ -104,24 +104,6 @@ jobs:
           Write-Host "##vso[task.setvariable variable=EnvPrefixName]$envPrefixName"
         displayName: Set Resource Group Name
 
-      - task: Bash@3
-        displayName: Test templates with Windows/Mac/Linux
-        env:             
-          # Required for Terraform service principal authentication
-          ARM_CLIENT_ID: $(arm-client-id)
-          ARM_CLIENT_SECRET: $(arm-client-secret)
-          ARM_TENANT_ID: $(arm-tenant-id)
-        inputs:
-          targetType: filePath
-          filePath: templates/tests/test-templates.sh
-          arguments: >
-            -e '$(EnvPrefixName)'
-            -t '$(TemplateName)'
-            -b '$(TemplateBranchName)'
-            -s '$(Build.BuildId)'
-            -l '$(DeployLocation)'
-            -p 'list'
-          workingDirectory: templates/tests
 
       - task: DevcontainersCI@0
         displayName: Test templates with Devontainers
@@ -151,6 +133,25 @@ jobs:
               -s '$(Build.BuildId)' \
               -l '$(DeployLocation)' \
               -p 'list'
+
+      - task: Bash@3
+        displayName: Test templates with Windows/Mac/Linux
+        env:             
+          # Required for Terraform service principal authentication
+          ARM_CLIENT_ID: $(arm-client-id)
+          ARM_CLIENT_SECRET: $(arm-client-secret)
+          ARM_TENANT_ID: $(arm-tenant-id)
+        inputs:
+          targetType: filePath
+          filePath: templates/tests/test-templates.sh
+          arguments: >
+            -e '$(EnvPrefixName)'
+            -t '$(TemplateName)'
+            -b '$(TemplateBranchName)'
+            -s '$(Build.BuildId)'
+            -l '$(DeployLocation)'
+            -p 'list'
+          workingDirectory: templates/tests
 
       # First tag the resource group (if exists) so that it can get cleaned up
       # by the cleanup pipeline. Then attempt to delete the resource group 

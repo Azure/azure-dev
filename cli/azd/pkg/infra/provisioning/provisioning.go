@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/contracts"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/drone/envsubst"
@@ -60,4 +61,45 @@ func CreateInputParametersFile(templateFilePath string, inputFilePath string, en
 	}
 
 	return nil
+}
+
+// NewEnvRefreshResultFromState creates a EnvRefreshResult from a provisioning state object,
+// applying the required translations.
+func NewEnvRefreshResultFromState(state *State) contracts.EnvRefreshResult {
+	result := contracts.EnvRefreshResult{}
+
+	result.Outputs = make(map[string]contracts.EnvRefreshOutputParameter, len(state.Outputs))
+	result.Resources = make([]contracts.EnvRefreshResource, len(state.Resources))
+
+	mapType := func(p ParameterType) contracts.EnvRefreshOutputType {
+		switch p {
+		case ParameterTypeString:
+			return contracts.EnvRefreshOutputTypeString
+		case ParameterTypeBoolean:
+			return contracts.EnvRefreshOutputTypeBoolean
+		case ParameterTypeNumber:
+			return contracts.EnvRefreshOutputTypeNumber
+		case ParameterTypeObject:
+			return contracts.EnvRefreshOutputTypeObject
+		case ParameterTypeArray:
+			return contracts.EnvRefreshOutputTypeArray
+		default:
+			panic(fmt.Sprintf("unknown provisioning.ParameterType value: %v", p))
+		}
+	}
+
+	for k, v := range state.Outputs {
+		result.Outputs[k] = contracts.EnvRefreshOutputParameter{
+			Type:  mapType(v.Type),
+			Value: v.Value,
+		}
+	}
+
+	for idx, res := range state.Resources {
+		result.Resources[idx] = contracts.EnvRefreshResource{
+			Id: res.Id,
+		}
+	}
+
+	return result
 }

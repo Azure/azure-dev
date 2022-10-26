@@ -1,6 +1,8 @@
-trigger:
-- main
-
+pr:
+  paths:
+    include:
+      - eng/pipelines/template-tests.yml
+      
 variables:
   - template: /eng/pipelines/templates/variables/globals.yml
   - name: NodeVersion

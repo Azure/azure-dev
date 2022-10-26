@@ -45,6 +45,8 @@ require (
 	gopkg.in/yaml.v3 v3.0.0
 )
 
+require gopkg.in/square/go-jose.v2 v2.6.0
+
 require (
 	github.com/99designs/go-keychain v0.0.0-20191008050251-8e49817e8af4 // indirect
 	github.com/Azure/azure-sdk-for-go/sdk/internal v1.0.1 // indirect

@@ -10,7 +10,6 @@ import (
 	"io"
 	"os"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 	"github.com/azure/azure-dev/cli/azd/pkg/contracts"
@@ -95,27 +94,20 @@ func (la *loginAction) Run(ctx context.Context) error {
 		useDeviceCode := la.flags.useDeviceCode || os.Getenv(CodespacesEnvVarName) == "true" ||
 			os.Getenv(RemoteContainersEnvVarName) == "true"
 
-		_, _, err := la.authManager.Login(ctx, useDeviceCode)
-		if err != nil {
+		if _, _, _, err := la.authManager.Login(ctx, useDeviceCode); err != nil {
 			return fmt.Errorf("logging in: %w", err)
 		}
 	}
 
 	res := contracts.LoginResult{}
 
-	if _, cred, err := la.authManager.CurrentAccount(ctx); errors.Is(err, auth.ErrNoCurrentUser) {
+	if _, _, expiresOn, err := la.authManager.GetSignedInUser(ctx); errors.Is(err, auth.ErrNoCurrentUser) {
 		res.Status = contracts.LoginStatusUnauthenticated
 	} else if err != nil {
 		return fmt.Errorf("checking auth status: %w", err)
 	} else {
-		if token, err := cred.GetToken(ctx, policy.TokenRequestOptions{
-			Scopes: auth.LoginScopes,
-		}); err != nil {
-			res.Status = contracts.LoginStatusUnauthenticated
-		} else {
-			res.Status = contracts.LoginStatusSuccess
-			res.ExpiresOn = &token.ExpiresOn
-		}
+		res.Status = contracts.LoginStatusSuccess
+		res.ExpiresOn = expiresOn
 	}
 
 	if la.formatter.Kind() == output.NoneFormat {

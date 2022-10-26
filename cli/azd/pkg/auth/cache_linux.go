@@ -5,4 +5,4 @@ package auth
 
 import "github.com/99designs/keyring"
 
-var azdKeyringAllowedBackends = []keyring.BackendType{keyring.SecretServiceBackend}
+var azdKeyringAllowedBackends = []keyring.BackendType{keyring.SecretServiceBackend, keyring.KeyCtlBackend}

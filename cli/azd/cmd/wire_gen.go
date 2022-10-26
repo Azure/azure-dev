@@ -9,6 +9,7 @@ package cmd
 import (
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/templates"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/git"
@@ -34,7 +35,11 @@ func initDeployAction(cmd *cobra.Command, o *internal.GlobalCommandOptions, flag
 	writer := newWriter(cmd)
 	console := newConsoleFromOptions(o, formatter, writer, cmd)
 	commandRunner := newCommandRunnerFromConsole(console)
-	tokenCredential, err := newCredential()
+	manager, err := auth.NewManager(writer)
+	if err != nil {
+		return nil, err
+	}
+	tokenCredential, err := newCredential(manager)
 	if err != nil {
 		return nil, err
 	}
@@ -58,7 +63,11 @@ func initInitAction(cmd *cobra.Command, o *internal.GlobalCommandOptions, flags 
 	writer := newWriter(cmd)
 	console := newConsoleFromOptions(o, formatter, writer, cmd)
 	commandRunner := newCommandRunnerFromConsole(console)
-	tokenCredential, err := newCredential()
+	manager, err := auth.NewManager(writer)
+	if err != nil {
+		return nil, err
+	}
+	tokenCredential, err := newCredential(manager)
 	if err != nil {
 		return nil, err
 	}
@@ -77,14 +86,12 @@ func initLoginAction(cmd *cobra.Command, o *internal.GlobalCommandOptions, flags
 		return nil, err
 	}
 	writer := newWriter(cmd)
-	console := newConsoleFromOptions(o, formatter, writer, cmd)
-	commandRunner := newCommandRunnerFromConsole(console)
-	tokenCredential, err := newCredential()
+	manager, err := auth.NewManager(writer)
 	if err != nil {
 		return nil, err
 	}
-	azCli := newAzCliFromOptions(o, commandRunner, tokenCredential)
-	cmdLoginAction := newLoginAction(formatter, writer, azCli, flags, console)
+	console := newConsoleFromOptions(o, formatter, writer, cmd)
+	cmdLoginAction := newLoginAction(formatter, writer, manager, flags, console)
 	return cmdLoginAction, nil
 }
 
@@ -100,7 +107,11 @@ func initUpAction(cmd *cobra.Command, o *internal.GlobalCommandOptions, flags up
 	writer := newWriter(cmd)
 	console := newConsoleFromOptions(o, formatter, writer, cmd)
 	commandRunner := newCommandRunnerFromConsole(console)
-	tokenCredential, err := newCredential()
+	manager, err := auth.NewManager(writer)
+	if err != nil {
+		return nil, err
+	}
+	tokenCredential, err := newCredential(manager)
 	if err != nil {
 		return nil, err
 	}
@@ -134,7 +145,11 @@ func initMonitorAction(cmd *cobra.Command, o *internal.GlobalCommandOptions, fla
 	writer := newWriter(cmd)
 	console := newConsoleFromOptions(o, formatter, writer, cmd)
 	commandRunner := newCommandRunnerFromConsole(console)
-	tokenCredential, err := newCredential()
+	manager, err := auth.NewManager(writer)
+	if err != nil {
+		return nil, err
+	}
+	tokenCredential, err := newCredential(manager)
 	if err != nil {
 		return nil, err
 	}
@@ -196,7 +211,11 @@ func initInfraCreateAction(cmd *cobra.Command, o *internal.GlobalCommandOptions,
 	writer := newWriter(cmd)
 	console := newConsoleFromOptions(o, formatter, writer, cmd)
 	commandRunner := newCommandRunnerFromConsole(console)
-	tokenCredential, err := newCredential()
+	manager, err := auth.NewManager(writer)
+	if err != nil {
+		return nil, err
+	}
+	tokenCredential, err := newCredential(manager)
 	if err != nil {
 		return nil, err
 	}
@@ -217,7 +236,11 @@ func initInfraDeleteAction(cmd *cobra.Command, o *internal.GlobalCommandOptions,
 	writer := newWriter(cmd)
 	console := newConsoleFromOptions(o, formatter, writer, cmd)
 	commandRunner := newCommandRunnerFromConsole(console)
-	tokenCredential, err := newCredential()
+	manager, err := auth.NewManager(writer)
+	if err != nil {
+		return nil, err
+	}
+	tokenCredential, err := newCredential(manager)
 	if err != nil {
 		return nil, err
 	}
@@ -238,7 +261,11 @@ func initEnvSetAction(cmd *cobra.Command, o *internal.GlobalCommandOptions, flag
 	writer := newWriter(cmd)
 	console := newConsoleFromOptions(o, formatter, writer, cmd)
 	commandRunner := newCommandRunnerFromConsole(console)
-	tokenCredential, err := newCredential()
+	manager, err := auth.NewManager(writer)
+	if err != nil {
+		return nil, err
+	}
+	tokenCredential, err := newCredential(manager)
 	if err != nil {
 		return nil, err
 	}
@@ -282,7 +309,11 @@ func initEnvNewAction(cmd *cobra.Command, o *internal.GlobalCommandOptions, flag
 	writer := newWriter(cmd)
 	console := newConsoleFromOptions(o, formatter, writer, cmd)
 	commandRunner := newCommandRunnerFromConsole(console)
-	tokenCredential, err := newCredential()
+	manager, err := auth.NewManager(writer)
+	if err != nil {
+		return nil, err
+	}
+	tokenCredential, err := newCredential(manager)
 	if err != nil {
 		return nil, err
 	}
@@ -303,7 +334,11 @@ func initEnvRefreshAction(cmd *cobra.Command, o *internal.GlobalCommandOptions, 
 	writer := newWriter(cmd)
 	console := newConsoleFromOptions(o, formatter, writer, cmd)
 	commandRunner := newCommandRunnerFromConsole(console)
-	tokenCredential, err := newCredential()
+	manager, err := auth.NewManager(writer)
+	if err != nil {
+		return nil, err
+	}
+	tokenCredential, err := newCredential(manager)
 	if err != nil {
 		return nil, err
 	}
@@ -324,7 +359,11 @@ func initEnvGetValuesAction(cmd *cobra.Command, o *internal.GlobalCommandOptions
 	writer := newWriter(cmd)
 	console := newConsoleFromOptions(o, formatter, writer, cmd)
 	commandRunner := newCommandRunnerFromConsole(console)
-	tokenCredential, err := newCredential()
+	manager, err := auth.NewManager(writer)
+	if err != nil {
+		return nil, err
+	}
+	tokenCredential, err := newCredential(manager)
 	if err != nil {
 		return nil, err
 	}

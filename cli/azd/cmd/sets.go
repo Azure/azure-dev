@@ -3,14 +3,15 @@ package cmd
 // Run `go generate ./cmd` or `wire ./cmd` after modifying this file to regenerate `wire_gen.go`.
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"os"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
-	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
@@ -98,8 +99,10 @@ func newAzdContext() (*azdcontext.AzdContext, error) {
 	return azdCtx, nil
 }
 
-func newCredential() (azcore.TokenCredential, error) {
-	credential, err := azidentity.NewAzureCLICredential(nil)
+func newCredential(authManager auth.Manager) (azcore.TokenCredential, error) {
+	// TODO(ellismg): I guess we should inject this?
+	authManager.CurrentAccount(context.TODO())
+	_, credential, err := authManager.CurrentAccount(context.TODO())
 	if err != nil {
 		return nil, fmt.Errorf("failed to obtain Azure credentials: %w", err)
 	}
@@ -120,6 +123,7 @@ var CommonSet = wire.NewSet(
 )
 
 var AzCliSet = wire.NewSet(
+	auth.NewManager,
 	newCredential,
 	newAzCliFromOptions,
 )

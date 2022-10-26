@@ -327,10 +327,6 @@ func (ef *envRefreshAction) Run(ctx context.Context) error {
 		return err
 	}
 
-	if err := ensureLoggedIn(ctx); err != nil {
-		return fmt.Errorf("failed to ensure login: %w", err)
-	}
-
 	env, ctx, err := loadOrInitEnvironment(ctx, &ef.global.EnvironmentName, ef.azdCtx, ef.console)
 	if err != nil {
 		return fmt.Errorf("loading environment: %w", err)

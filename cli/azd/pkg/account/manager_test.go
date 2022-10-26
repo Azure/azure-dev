@@ -144,7 +144,7 @@ func Test_GetLocations(t *testing.T) {
 		setupAccountMocks(mockContext)
 		setupGetSubscriptionMock(mockContext, &subscription, nil)
 
-		manager, err := NewManager(config.NewManager(), azcli.GetAzCli(*mockContext.Context))
+		manager, err := NewManager(mockContext.ConfigManager.WithConfig(defaultConfig), azcli.GetAzCli(*mockContext.Context))
 		require.NoError(t, err)
 
 		locations, err := manager.GetLocations(*mockContext.Context, subscription.Id)
@@ -157,7 +157,7 @@ func Test_GetLocations(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
 		setupAccountErrorMocks(mockContext)
 
-		manager, err := NewManager(config.NewManager(), azcli.GetAzCli(*mockContext.Context))
+		manager, err := NewManager(mockContext.ConfigManager, azcli.GetAzCli(*mockContext.Context))
 		require.NoError(t, err)
 
 		locations, err := manager.GetLocations(*mockContext.Context, subscription.Id)
@@ -244,7 +244,7 @@ func Test_SetDefaultLocation(t *testing.T) {
 		setupAccountMocks(mockContext)
 		setupGetSubscriptionMock(mockContext, &subscription, nil)
 
-		manager, err := NewManager(config.NewManager(), azcli.GetAzCli(*mockContext.Context))
+		manager, err := NewManager(mockContext.ConfigManager.WithConfig(defaultConfig), azcli.GetAzCli(*mockContext.Context))
 		require.NoError(t, err)
 
 		location, err := manager.SetDefaultLocation(*mockContext.Context, subscription.Id, expectedLocation)
@@ -290,7 +290,7 @@ func Test_Clear(t *testing.T) {
 	location, err := manager.SetDefaultLocation(*mockContext.Context, subscription.Id, "westus2")
 	require.NoError(t, err)
 
-	updatedConfig, err := config.Load()
+	updatedConfig, err := mockContext.ConfigManager.Load("PATH")
 	require.NoError(t, err)
 
 	configSubscription, _ := updatedConfig.Get(defaultSubscriptionKeyPath)
@@ -302,7 +302,7 @@ func Test_Clear(t *testing.T) {
 	err = manager.Clear(*mockContext.Context)
 	require.NoError(t, err)
 
-	clearedConfig, err := config.Load()
+	clearedConfig, err := mockContext.ConfigManager.Load("PATH")
 	require.NotNil(t, clearedConfig)
 	require.NoError(t, err)
 

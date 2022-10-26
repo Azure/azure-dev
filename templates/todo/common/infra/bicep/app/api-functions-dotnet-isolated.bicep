@@ -1,5 +1,6 @@
-param environmentName string
+param name string
 param location string = resourceGroup().location
+param tags object = {}
 
 param allowedOrigins array = []
 param applicationInsightsName string = ''
@@ -12,8 +13,9 @@ param storageAccountName string
 module api '../../../../../common/infra/bicep/core/host/functions.bicep' = {
   name: '${serviceName}-functions-dotnet-isolated-module'
   params: {
-    environmentName: environmentName
+    name: name
     location: location
+    tags: union(tags, { 'azd-service-name': serviceName })
     allowedOrigins: allowedOrigins
     alwaysOn: false
     appSettings: appSettings
@@ -22,7 +24,6 @@ module api '../../../../../common/infra/bicep/core/host/functions.bicep' = {
     keyVaultName: keyVaultName
     runtimeName: 'dotnet-isolated'
     runtimeVersion: '6.0'
-    serviceName: serviceName
     storageAccountName: storageAccountName
     scmDoBuildDuringDeployment: false
   }

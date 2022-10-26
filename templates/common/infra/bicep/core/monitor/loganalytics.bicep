@@ -17,5 +17,5 @@ resource logAnalytics 'Microsoft.OperationalInsights/workspaces@2021-12-01-previ
   })
 }
 
-output logAnalyticsWorkspaceId string = logAnalytics.id
-output logAnalyticsWorkspaceName string = logAnalytics.name
+output id string = logAnalytics.id
+output name string = logAnalytics.name

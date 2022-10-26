@@ -20,11 +20,11 @@ module applicationInsights 'applicationinsights.bicep' = {
     location: location
     tags: tags
     dashboardName: applicationInsightsDashboardName
-    logAnalyticsWorkspaceId: logAnalytics.outputs.logAnalyticsWorkspaceId
+    logAnalyticsWorkspaceId: logAnalytics.outputs.id
   }
 }
 
-output applicationInsightsConnectionString string = applicationInsights.outputs.applicationInsightsConnectionString
-output applicationInsightsName string = applicationInsights.outputs.applicationInsightsName
-output logAnalyticsWorkspaceId string = logAnalytics.outputs.logAnalyticsWorkspaceId
-output logAnalyticsWorkspaceName string = logAnalytics.outputs.logAnalyticsWorkspaceName
+output applicationInsightsConnectionString string = applicationInsights.outputs.connectionString
+output applicationInsightsName string = applicationInsights.outputs.name
+output logAnalyticsWorkspaceId string = logAnalytics.outputs.id
+output logAnalyticsWorkspaceName string = logAnalytics.outputs.name

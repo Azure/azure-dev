@@ -47,7 +47,7 @@ module web '../../../../../common/infra/bicep/app/web-appservice.bicep' = {
     location: location
     tags: tags
     applicationInsightsName: monitoring.outputs.applicationInsightsName
-    appServicePlanId: appServicePlan.outputs.appServicePlanId
+    appServicePlanId: appServicePlan.outputs.id
   }
 }
 
@@ -60,13 +60,13 @@ module api '../../../../../common/infra/bicep/app/api-appservice-node.bicep' = {
     location: location
     tags: tags
     applicationInsightsName: monitoring.outputs.applicationInsightsName
-    appServicePlanId: appServicePlan.outputs.appServicePlanId
-    keyVaultName: keyVault.outputs.keyVaultName
+    appServicePlanId: appServicePlan.outputs.id
+    keyVaultName: keyVault.outputs.name
     allowedOrigins: [ web.outputs.WEB_URI ]
     appSettings: {
-      AZURE_COSMOS_CONNECTION_STRING_KEY: cosmos.outputs.cosmosConnectionStringKey
-      AZURE_COSMOS_DATABASE_NAME: cosmos.outputs.cosmosDatabaseName
-      AZURE_COSMOS_ENDPOINT: cosmos.outputs.cosmosEndpoint
+      AZURE_COSMOS_CONNECTION_STRING_KEY: cosmos.outputs.connectionStringKey
+      AZURE_COSMOS_DATABASE_NAME: cosmos.outputs.databaseName
+      AZURE_COSMOS_ENDPOINT: cosmos.outputs.endpoint
     }
   }
 }
@@ -76,7 +76,7 @@ module apiKeyVaultAccess '../../../../../../common/infra/bicep/core/security/key
   name: 'api-keyvault-access'
   scope: rg
   params: {
-    keyVaultName: keyVault.outputs.keyVaultName
+    keyVaultName: keyVault.outputs.name
     principalId: api.outputs.API_IDENTITY_PRINCIPAL_ID
   }
 }
@@ -90,7 +90,7 @@ module cosmos '../../../../../common/infra/bicep/app/cosmos-mongo-db.bicep' = {
     databaseName: cosmosDatabaseName
     location: location
     tags: tags
-    keyVaultName: keyVault.outputs.keyVaultName
+    keyVaultName: keyVault.outputs.name
   }
 }
 
@@ -134,9 +134,9 @@ module monitoring '../../../../../../common/infra/bicep/core/monitor/monitoring.
 }
 
 output APPLICATIONINSIGHTS_CONNECTION_STRING string = monitoring.outputs.applicationInsightsConnectionString
-output AZURE_COSMOS_CONNECTION_STRING_KEY string = cosmos.outputs.cosmosConnectionStringKey
-output AZURE_COSMOS_DATABASE_NAME string = cosmos.outputs.cosmosDatabaseName
-output AZURE_KEY_VAULT_ENDPOINT string = keyVault.outputs.keyVaultEndpoint
+output AZURE_COSMOS_CONNECTION_STRING_KEY string = cosmos.outputs.connectionStringKey
+output AZURE_COSMOS_DATABASE_NAME string = cosmos.outputs.databaseName
+output AZURE_KEY_VAULT_ENDPOINT string = keyVault.outputs.endpoint
 output AZURE_LOCATION string = location
 output AZURE_TENANT_ID string = tenant().tenantId
 output REACT_APP_API_BASE_URL string = api.outputs.API_URI

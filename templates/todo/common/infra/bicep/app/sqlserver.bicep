@@ -1,5 +1,6 @@
-param environmentName string
+param name string
 param location string = resourceGroup().location
+param tags object = {}
 
 param databaseName string = 'ToDo'
 param keyVaultName string
@@ -12,8 +13,9 @@ param appUserPassword string
 module sqlServer '../../../../../common/infra/bicep/core/database/sqlserver/sqlserver.bicep' = {
   name: 'sqlserver'
   params: {
-    environmentName: environmentName
+    name: name
     location: location
+    tags: tags
     dbName: databaseName
     keyVaultName: keyVaultName
     sqlAdminPassword: sqlAdminPassword
@@ -21,5 +23,5 @@ module sqlServer '../../../../../common/infra/bicep/core/database/sqlserver/sqls
   }
 }
 
-output sqlConnectionStringKey string = sqlServer.outputs.sqlConnectionStringKey
-output sqlDatabaseName string = databaseName
+output connectionStringKey string = sqlServer.outputs.connectionStringKey
+output databaseName string = databaseName

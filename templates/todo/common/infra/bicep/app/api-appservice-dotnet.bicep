@@ -15,6 +15,7 @@ module api '../../../../../common/infra/bicep/core/host/appservice.bicep' = {
   params: {
     name: name
     location: location
+    tags: union(tags, { 'azd-service-name': serviceName })
     allowedOrigins: allowedOrigins
     appCommandLine: appCommandLine
     applicationInsightsName: applicationInsightsName
@@ -24,7 +25,6 @@ module api '../../../../../common/infra/bicep/core/host/appservice.bicep' = {
     runtimeName: 'dotnetcore'
     runtimeVersion: '6.0'
     scmDoBuildDuringDeployment: false
-    tags: union(tags, { 'azd-service-name': serviceName })
   }
 }
 

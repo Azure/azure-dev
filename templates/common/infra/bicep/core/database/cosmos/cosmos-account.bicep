@@ -8,7 +8,7 @@ param keyVaultName string
 @allowed([ 'GlobalDocumentDB', 'MongoDB', 'Parse' ])
 param kind string
 
-resource cosmos 'Microsoft.DocumentDB/databaseAccounts@2022-05-15' = {
+resource cosmos 'Microsoft.DocumentDB/databaseAccounts@2022-08-15' = {
   name: name
   kind: kind
   location: location
@@ -42,6 +42,6 @@ resource keyVault 'Microsoft.KeyVault/vaults@2022-07-01' existing = {
   name: keyVaultName
 }
 
-output cosmosConnectionStringKey string = connectionStringKey
-output cosmosEndpoint string = cosmos.properties.documentEndpoint
-output cosmosResourceId string = cosmos.id
+output connectionStringKey string = connectionStringKey
+output endpoint string = cosmos.properties.documentEndpoint
+output resourceId string = cosmos.id

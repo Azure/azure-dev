@@ -21,7 +21,7 @@ module api '../../../../../common/infra/bicep/app/api-appservice-dotnet.bicep' =
     location: location
     applicationInsightsName: monitoring.outputs.applicationInsightsName
     appServicePlanId: appServicePlan.outputs.appServicePlanId
-    keyVaultName: keyVault.outputs.keyVaultName
+    keyVaultName: keyVault.outputs.name
     allowedOrigins: [ web.outputs.WEB_URI ]
     appSettings: {
       AZURE_COSMOS_CONNECTION_STRING_KEY: cosmos.outputs.cosmosConnectionStringKey
@@ -37,7 +37,7 @@ module apiKeyVaultAccess '../../../../../../common/infra/bicep/core/security/key
   params: {
     environmentName: environmentName
     location: location
-    keyVaultName: keyVault.outputs.keyVaultName
+    keyVaultName: keyVault.outputs.name
     principalId: api.outputs.API_IDENTITY_PRINCIPAL_ID
   }
 }
@@ -59,7 +59,7 @@ module cosmos '../../../../../common/infra/bicep/app/cosmos-sql-db.bicep' = {
   params: {
     environmentName: environmentName
     location: location
-    keyVaultName: keyVault.outputs.keyVaultName
+    keyVaultName: keyVault.outputs.name
     principalIds: [ principalId ]
   }
 }
@@ -100,5 +100,5 @@ output APPLICATIONINSIGHTS_CONNECTION_STRING string = monitoring.outputs.applica
 output AZURE_COSMOS_CONNECTION_STRING_KEY string = cosmos.outputs.cosmosConnectionStringKey
 output AZURE_COSMOS_DATABASE_NAME string = cosmos.outputs.cosmosDatabaseName
 output AZURE_COSMOS_ENDPOINT string = cosmos.outputs.cosmosEndpoint
-output AZURE_KEY_VAULT_ENDPOINT string = keyVault.outputs.keyVaultEndpoint
+output AZURE_KEY_VAULT_ENDPOINT string = keyVault.outputs.endpoint
 output WEB_URI string = web.outputs.WEB_URI

@@ -18,7 +18,7 @@ module cosmos 'cosmos-mongo-account.bicep' = {
   }
 }
 
-resource database 'Microsoft.DocumentDB/databaseAccounts/mongodbDatabases@2022-05-15' = {
+resource database 'Microsoft.DocumentDB/databaseAccounts/mongodbDatabases@2022-08-15' = {
   name: '${accountName}/${databaseName}'
   tags: tags
   properties: {
@@ -41,6 +41,6 @@ resource database 'Microsoft.DocumentDB/databaseAccounts/mongodbDatabases@2022-0
   ]
 }
 
-output cosmosConnectionStringKey string = connectionStringKey
-output cosmosDatabaseName string = databaseName
-output cosmosEndpoint string = cosmos.outputs.cosmosEndpoint
+output connectionStringKey string = connectionStringKey
+output databaseName string = databaseName
+output endpoint string = cosmos.outputs.endpoint

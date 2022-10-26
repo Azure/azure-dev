@@ -23,7 +23,7 @@ module web '../../../../../common/infra/bicep/app/web-container-app.bicep' = {
     imageName: webImageName
     apiName: api.outputs.API_NAME
     applicationInsightsName: monitoring.outputs.applicationInsightsName
-    containerAppsEnvironmentName: containerApps.outputs.containerAppsEnvironmentName
+    containerAppsEnvironmentName: containerApps.outputs.name
     containerRegistryName: containerApps.outputs.containerRegistryName
   }
 }
@@ -36,9 +36,9 @@ module api '../../../../../common/infra/bicep/app/api-container-app.bicep' = {
     location: location
     imageName: apiImageName
     applicationInsightsName: monitoring.outputs.applicationInsightsName
-    containerAppsEnvironmentName: containerApps.outputs.containerAppsEnvironmentName
+    containerAppsEnvironmentName: containerApps.outputs.name
     containerRegistryName: containerApps.outputs.containerRegistryName
-    keyVaultName: keyVault.outputs.keyVaultName
+    keyVaultName: keyVault.outputs.name
   }
 }
 
@@ -48,7 +48,7 @@ module apiKeyVaultAccess '../../../../../../common/infra/bicep/core/security/key
   params: {
     environmentName: environmentName
     location: location
-    keyVaultName: keyVault.outputs.keyVaultName
+    keyVaultName: keyVault.outputs.name
     principalId: api.outputs.API_IDENTITY_PRINCIPAL_ID
   }
 }
@@ -59,7 +59,7 @@ module cosmos '../../../../../common/infra/bicep/app/cosmos-mongo-db.bicep' = {
   params: {
     environmentName: environmentName
     location: location
-    keyVaultName: keyVault.outputs.keyVaultName
+    keyVaultName: keyVault.outputs.name
   }
 }
 
@@ -88,5 +88,5 @@ output AZURE_CONTAINER_REGISTRY_ENDPOINT string = containerApps.outputs.containe
 output AZURE_CONTAINER_REGISTRY_NAME string = containerApps.outputs.containerRegistryName
 output AZURE_COSMOS_CONNECTION_STRING_KEY string = cosmos.outputs.cosmosConnectionStringKey
 output AZURE_COSMOS_DATABASE_NAME string = cosmos.outputs.cosmosDatabaseName
-output AZURE_KEY_VAULT_ENDPOINT string = keyVault.outputs.keyVaultEndpoint
+output AZURE_KEY_VAULT_ENDPOINT string = keyVault.outputs.endpoint
 output WEB_URI string = web.outputs.WEB_URI

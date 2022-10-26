@@ -7,7 +7,9 @@ type MockConfigManager struct {
 }
 
 func NewMockConfigManager() *MockConfigManager {
-	return &MockConfigManager{}
+	return &MockConfigManager{
+		config: config.NewConfig(nil),
+	}
 }
 
 func (m *MockConfigManager) WithConfig(config config.Config) *MockConfigManager {

@@ -262,3 +262,8 @@ var ConfigUnsetCmdSet = wire.NewSet(
 	CommonSet,
 	newConfigUnsetAction,
 	wire.Bind(new(actions.Action), new(*configUnsetAction)))
+
+var ConfigResetCmdSet = wire.NewSet(
+	CommonSet,
+	newConfigResetAction,
+	wire.Bind(new(actions.Action), new(*configResetAction)))

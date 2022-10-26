@@ -115,7 +115,7 @@ func Test_GetSubscriptions(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
 		setupAccountErrorMocks(mockContext)
 
-		manager, err := NewManager(config.NewManager(), azcli.GetAzCli(*mockContext.Context))
+		manager, err := NewManager(mockContext.ConfigManager, azcli.GetAzCli(*mockContext.Context))
 		require.NoError(t, err)
 
 		subscriptions, err := manager.GetSubscriptions(*mockContext.Context)
@@ -171,7 +171,7 @@ func Test_GetLocations(t *testing.T) {
 		setupAccountErrorMocks(mockContext)
 		setupGetSubscriptionMock(mockContext, &subscription, nil)
 
-		manager, err := NewManager(config.NewManager(), azcli.GetAzCli(*mockContext.Context))
+		manager, err := NewManager(mockContext.ConfigManager, azcli.GetAzCli(*mockContext.Context))
 		require.NoError(t, err)
 
 		locations, err := manager.GetLocations(*mockContext.Context, subscription.Id)
@@ -193,7 +193,7 @@ func Test_SetDefaultSubscription(t *testing.T) {
 		setupAccountMocks(mockContext)
 		setupGetSubscriptionMock(mockContext, &expectedSubscription, nil)
 
-		manager, err := NewManager(config.NewManager(), azcli.GetAzCli(*mockContext.Context))
+		manager, err := NewManager(mockContext.ConfigManager, azcli.GetAzCli(*mockContext.Context))
 		require.NoError(t, err)
 
 		actualSubscription, err := manager.SetDefaultSubscription(*mockContext.Context, expectedSubscription.Id)
@@ -213,7 +213,7 @@ func Test_SetDefaultSubscription(t *testing.T) {
 		setupAccountMocks(mockContext)
 		setupGetSubscriptionMock(mockContext, &expectedSubscription, errors.New("Not found"))
 
-		manager, err := NewManager(config.NewManager(), azcli.GetAzCli(*mockContext.Context))
+		manager, err := NewManager(mockContext.ConfigManager, azcli.GetAzCli(*mockContext.Context))
 		require.NoError(t, err)
 
 		actualSubscription, err := manager.SetDefaultSubscription(*mockContext.Context, expectedSubscription.Id)
@@ -260,7 +260,7 @@ func Test_SetDefaultLocation(t *testing.T) {
 		setupAccountMocks(mockContext)
 		setupGetSubscriptionMock(mockContext, &subscription, nil)
 
-		manager, err := NewManager(config.NewManager(), azcli.GetAzCli(*mockContext.Context))
+		manager, err := NewManager(mockContext.ConfigManager, azcli.GetAzCli(*mockContext.Context))
 		require.NoError(t, err)
 
 		location, err := manager.SetDefaultLocation(*mockContext.Context, subscription.Id, expectedLocation)
@@ -281,7 +281,7 @@ func Test_Clear(t *testing.T) {
 	setupAccountMocks(mockContext)
 	setupGetSubscriptionMock(mockContext, &expectedSubscription, nil)
 
-	manager, err := NewManager(config.NewManager(), azcli.GetAzCli(*mockContext.Context))
+	manager, err := NewManager(mockContext.ConfigManager, azcli.GetAzCli(*mockContext.Context))
 	require.NoError(t, err)
 
 	subscription, err := manager.SetDefaultSubscription(*mockContext.Context, expectedSubscription.Id)
@@ -311,6 +311,35 @@ func Test_Clear(t *testing.T) {
 
 	require.Nil(t, configSubscription)
 	require.Nil(t, configLocation)
+}
+
+func Test_HasDefaults(t *testing.T) {
+	mockContext := mocks.NewMockContext(context.Background())
+
+	t.Run("DefaultsSet", func(t *testing.T) {
+		azdConfig := config.NewConfig(map[string]any{
+			"defaults": map[string]any{
+				"subscription": "SUBSCRIPTION_ID",
+				"location":     "LOCATION",
+			},
+		})
+
+		manager, err := NewManager(mockContext.ConfigManager.WithConfig(azdConfig), azcli.GetAzCli(*mockContext.Context))
+		require.NoError(t, err)
+
+		value := manager.HasDefaults()
+		require.True(t, value)
+	})
+
+	t.Run("DefaultsNotSet", func(t *testing.T) {
+		azdConfig := config.NewConfig(nil)
+
+		manager, err := NewManager(mockContext.ConfigManager.WithConfig(azdConfig), azcli.GetAzCli(*mockContext.Context))
+		require.NoError(t, err)
+
+		value := manager.HasDefaults()
+		require.False(t, value)
+	})
 }
 
 var allTestSubscriptions []*armsubscriptions.Subscription = []*armsubscriptions.Subscription{

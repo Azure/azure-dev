@@ -415,3 +415,9 @@ func initConfigUnsetAction(cmd *cobra.Command, o *internal.GlobalCommandOptions,
 	cmdConfigUnsetAction := newConfigUnsetAction(manager, args)
 	return cmdConfigUnsetAction, nil
 }
+
+func initConfigResetAction(cmd *cobra.Command, o *internal.GlobalCommandOptions, flags struct{}, args []string) (actions.Action, error) {
+	manager := config.NewManager()
+	cmdConfigResetAction := newConfigResetAction(manager, args)
+	return cmdConfigResetAction, nil
+}

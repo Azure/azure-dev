@@ -90,7 +90,7 @@ func GetUserConfigDir() (string, error) {
 func GetUserConfigFilePath() (string, error) {
 	configPath, err := GetUserConfigDir()
 	if err != nil {
-		return "", fmt.Errorf("failed locating config dir")
+		return "", fmt.Errorf("failed getting user config file path '%s'. %w", configPath, err)
 	}
 
 	return filepath.Join(configPath, "config.json"), nil

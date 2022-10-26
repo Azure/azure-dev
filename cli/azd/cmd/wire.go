@@ -241,4 +241,13 @@ func initConfigUnsetAction(
 	panic(wire.Build(ConfigUnsetCmdSet))
 }
 
+func initConfigResetAction(
+	cmd *cobra.Command,
+	o *internal.GlobalCommandOptions,
+	flags struct{},
+	args []string,
+) (actions.Action, error) {
+	panic(wire.Build(ConfigResetCmdSet))
+}
+
 //#endregion Config

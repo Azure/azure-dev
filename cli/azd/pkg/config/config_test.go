@@ -75,3 +75,22 @@ func Test_SetGetUnsetRootNodeWithChildren(t *testing.T) {
 	require.True(t, ok)
 	require.Equal(t, expectedEmail, email)
 }
+
+func Test_IsEmtpy(t *testing.T) {
+	t.Run("Empty", func(t *testing.T) {
+		azdConfig := NewConfig(nil)
+		require.True(t, azdConfig.IsEmpty())
+	})
+
+	t.Run("EmptyWithEmptyMap", func(t *testing.T) {
+		azdConfig := NewConfig(map[string]any{})
+		require.True(t, azdConfig.IsEmpty())
+	})
+
+	t.Run("NotEmpty", func(t *testing.T) {
+		azdConfig := NewConfig(map[string]any{
+			"a": "apple",
+		})
+		require.False(t, azdConfig.IsEmpty())
+	})
+}

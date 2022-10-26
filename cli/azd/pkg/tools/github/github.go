@@ -41,8 +41,9 @@ func NewGitHubCli(ctx context.Context) GitHubCli {
 
 var (
 	ErrGitHubCliNotLoggedIn = errors.New("gh cli is not logged in")
-	ErrUserNotAuthorized    = errors.New("user is not authorized. Try running gh auth refresh with the required scopes to request additional authorization")
-	ErrRepositoryNameInUse  = errors.New("repository name already in use")
+	ErrUserNotAuthorized    = errors.New("user is not authorized. " +
+		"Try running gh auth refresh with the required scopes to request additional authorization")
+	ErrRepositoryNameInUse = errors.New("repository name already in use")
 
 	// The hostname of the public GitHub service.
 	GitHubHostName = "github.com"

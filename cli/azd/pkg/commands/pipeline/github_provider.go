@@ -307,7 +307,11 @@ func (p *GitHubCiProvider) name() string {
 
 // ensureAuthorizedForRepoSecrets ensures the user is authorized for modifying repository-level secrets.
 // If not, the user is prompted for login.
-func (p *GitHubCiProvider) ensureAuthorizedForRepoSecrets(ctx context.Context, ghCli github.GitHubCli, console input.Console, repoSlug string) error {
+func (p *GitHubCiProvider) ensureAuthorizedForRepoSecrets(
+	ctx context.Context,
+	ghCli github.GitHubCli,
+	console input.Console,
+	repoSlug string) error {
 	// The actual scope for repository-level secrets is simply the `repo` scope in GitHub.
 	// Thus, listing secrets has the same access level permissions as writing secrets
 	// and can be used for probing secrets authorization.

@@ -27,6 +27,7 @@ func getCacheKey() ([]byte, error) {
 	ring, err := keyring.Open(keyring.Config{
 		ServiceName:     azdKeyringServiceName,
 		AllowedBackends: azdKeyringAllowedBackends,
+		KeychainName:    "login",
 	})
 	if err != nil {
 		return nil, fmt.Errorf("opening keyring: %w", err)

@@ -26,16 +26,31 @@ var defaultLocation Location = Location{
 // Manages azd account configuration
 // `az cli` is not required and will only be called `azd` default have not already been set.
 type Manager struct {
-	config config.Config
-	azCli  azcli.AzCli
+	// Path to the local azd user configuration file
+	filePath      string
+	configManager config.Manager
+	config        config.Config
+	azCli         azcli.AzCli
 }
 
 // Creates a new Account Manager instance
-func NewManager(config config.Config, azCli azcli.AzCli) *Manager {
-	return &Manager{
-		azCli:  azCli,
-		config: config,
+func NewManager(configManager config.Manager, azCli azcli.AzCli) (*Manager, error) {
+	filePath, err := config.GetUserConfigFilePath()
+	if err != nil {
+		return nil, err
 	}
+
+	config, err := configManager.Load(filePath)
+	if err != nil {
+		return nil, err
+	}
+
+	return &Manager{
+		filePath:      filePath,
+		azCli:         azCli,
+		configManager: configManager,
+		config:        config,
+	}, nil
 }
 
 // Gets the default subscription for the logged in account.
@@ -116,7 +131,7 @@ func (m *Manager) SetDefaultSubscription(ctx context.Context, subscriptionId str
 		return nil, fmt.Errorf("failed setting default subscription: %w", err)
 	}
 
-	err = m.config.Save()
+	err = m.configManager.Save(m.config, m.filePath)
 	if err != nil {
 		return nil, fmt.Errorf("failed saving AZD configuration: %w", err)
 	}
@@ -150,7 +165,7 @@ func (m *Manager) SetDefaultLocation(ctx context.Context, subscriptionId string,
 		return nil, fmt.Errorf("failed setting default location: %w", err)
 	}
 
-	err = m.config.Save()
+	err = m.configManager.Save(m.config, m.filePath)
 	if err != nil {
 		return nil, fmt.Errorf("failed saving AZD configuration: %w", err)
 	}
@@ -176,7 +191,7 @@ func (m *Manager) Clear(ctx context.Context) error {
 		return fmt.Errorf("failed clearing defaults: %w", err)
 	}
 
-	err = m.config.Save()
+	err = m.configManager.Save(m.config, m.filePath)
 	if err != nil {
 		return fmt.Errorf("failed saving AZD configuration: %w", err)
 	}

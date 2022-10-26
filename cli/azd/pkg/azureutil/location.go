@@ -27,7 +27,10 @@ func (s Locs) Swap(i, j int) { s[i], s[j] = s[j], s[i] }
 
 // PromptLocation asks the user to select a location from a list of supported azure location
 func PromptLocation(ctx context.Context, env *environment.Environment, message string) (string, error) {
-	accountManager := account.NewManager(config.GetConfig(), azcli.GetAzCli(ctx))
+	accountManager, err := account.NewManager(config.NewManager(), azcli.GetAzCli(ctx))
+	if err != nil {
+		return "", fmt.Errorf("failed creating account manager: %w", err)
+	}
 	console := input.GetConsole(ctx)
 
 	locations, err := accountManager.GetLocations(ctx, env.GetSubscriptionId())

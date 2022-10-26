@@ -7,17 +7,9 @@
 package config
 
 import (
-	"encoding/json"
 	"fmt"
-	"os"
-	"os/user"
-	"path/filepath"
 	"strings"
-
-	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 )
-
-const configDir = ".azd"
 
 // Azd configuration for the current user
 // Configuration data is stored in user's home directory @ ~/.azd/config.json
@@ -26,7 +18,6 @@ type Config interface {
 	Get(path string) (any, bool)
 	Set(path string, value any) error
 	Unset(path string) error
-	Save() error
 	IsEmpty() bool
 }
 
@@ -39,21 +30,6 @@ func NewConfig(data map[string]any) Config {
 	return &config{
 		data: data,
 	}
-}
-
-// GetUserConfigDir returns the config directory for storing user wide configuration data.
-//
-// The config directory is guaranteed to exist, otherwise an error is returned.
-func GetUserConfigDir() (string, error) {
-	user, err := user.Current()
-	if err != nil {
-		return "", fmt.Errorf("could not determine current user: %w", err)
-	}
-
-	configDirPath := filepath.Join(user.HomeDir, configDir)
-	err = os.MkdirAll(configDirPath, osutil.PermissionDirectory)
-
-	return configDirPath, err
 }
 
 // Top level AZD configuration
@@ -69,41 +45,6 @@ func (c *config) IsEmpty() bool {
 // Gets the raw values stored in the configuration as a Go map
 func (c *config) Raw() map[string]any {
 	return c.data
-}
-
-// Saves the users configuration to their local azd user folder
-func (c *config) Save() error {
-	configJson, err := json.MarshalIndent(c.data, "", "  ")
-	if err != nil {
-		return fmt.Errorf("failed marshalling config JSON: %w", err)
-	}
-
-	configPath, err := getConfigFilePath()
-	if err != nil {
-		return fmt.Errorf("failed locating config dir")
-	}
-
-	err = os.WriteFile(configPath, configJson, osutil.PermissionFile)
-	if err != nil {
-		return fmt.Errorf("failed saving configuration JSON: %w", err)
-	}
-
-	return nil
-}
-
-// Loads azd configuration from the users configuration dir
-func Load() (Config, error) {
-	configPath, err := getConfigFilePath()
-	if err != nil {
-		return nil, fmt.Errorf("failed locating config dir")
-	}
-
-	bytes, err := os.ReadFile(configPath)
-	if err != nil {
-		return nil, fmt.Errorf("reading project file: %w", err)
-	}
-
-	return Parse(bytes)
 }
 
 // Sets a value at the specified location
@@ -198,35 +139,4 @@ func (c *config) Get(path string) (any, bool) {
 	}
 
 	return nil, false
-}
-
-// Parses azd configuration JSON and returns a Config instance
-func Parse(configJson []byte) (Config, error) {
-	var data map[string]any
-	err := json.Unmarshal(configJson, &data)
-	if err != nil {
-		return nil, fmt.Errorf("failed unmarshalling configuration JSON: %w", err)
-	}
-
-	return NewConfig(data), nil
-}
-
-// Gets the AZD config from current context
-// If it does not exist will return a new empty AZD config
-func GetConfig() Config {
-	azdConfig, err := Load()
-	if err != nil {
-		azdConfig = NewConfig(nil)
-	}
-
-	return azdConfig
-}
-
-func getConfigFilePath() (string, error) {
-	configPath, err := GetUserConfigDir()
-	if err != nil {
-		return "", fmt.Errorf("failed locating config dir")
-	}
-
-	return filepath.Join(configPath, "config.json"), nil
 }

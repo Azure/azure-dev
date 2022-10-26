@@ -1,44 +1,10 @@
 package config
 
 import (
-	"os"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 )
-
-func Test_SaveAndLoadConfig(t *testing.T) {
-	defer deleteExistingConfig()
-
-	var azdConfig Config = NewConfig(
-		map[string]any{
-			"defaults": map[string]any{
-				"location":     "eastus2",
-				"subscription": "SUBSCRIPTION_ID",
-			},
-		},
-	)
-
-	err := azdConfig.Save()
-	require.NoError(t, err)
-
-	existingConfig, err := Load()
-	require.NoError(t, err)
-	require.NotNil(t, existingConfig)
-	require.Equal(t, azdConfig, existingConfig)
-}
-
-func Test_SaveAndLoadEmptyConfig(t *testing.T) {
-	defer deleteExistingConfig()
-
-	azdConfig := NewConfig(nil)
-	err := azdConfig.Save()
-	require.NoError(t, err)
-
-	existingConfig, err := Load()
-	require.NoError(t, err)
-	require.NotNil(t, existingConfig)
-}
 
 func Test_SetGetUnsetWithValue(t *testing.T) {
 	tests := []struct {
@@ -108,10 +74,4 @@ func Test_SetGetUnsetRootNodeWithChildren(t *testing.T) {
 	email, ok = azdConfig.Get("user.email")
 	require.True(t, ok)
 	require.Equal(t, expectedEmail, email)
-}
-
-func deleteExistingConfig() {
-	configFilePath, _ := getConfigFilePath()
-	// Remove file if it exists
-	_ = os.Remove(configFilePath)
 }

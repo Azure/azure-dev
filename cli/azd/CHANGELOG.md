@@ -1,5 +1,19 @@
 # Release History
 
+## 0.3.0-beta.5 (2022-10-21)
+
+### Other Changes
+
+### Bugs Fixed
+
+- [[#979]](https://github.com/Azure/azure-dev/pull/979) Fix provisioning template with non string outputs.
+
+## 0.3.0-beta.4 (2022-10-25) ** DEPRECATED **
+
+### Bugs Fixed
+
+- [[#979]](https://github.com/Azure/azure-dev/pull/979) Fix provisioning template with non string outputs.
+
 ## 0.3.0-beta.3 (2022-10-21)
 
 ### Features Added

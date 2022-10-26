@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/azure/azure-dev/cli/azd/pkg/azureutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
@@ -19,7 +20,7 @@ type AzureResourceManager struct {
 }
 
 type ResourceManager interface {
-	GetDeploymentResourceOperations(ctx context.Context, scope Scope) ([]azcli.AzCliResourceOperation, error)
+	GetDeploymentResourceOperations(ctx context.Context, scope Scope) ([]*armresources.DeploymentOperation, error)
 	GetResourceTypeDisplayName(
 		ctx context.Context,
 		subscriptionId string,
@@ -40,7 +41,7 @@ func NewAzureResourceManager(ctx context.Context) *AzureResourceManager {
 func (rm *AzureResourceManager) GetDeploymentResourceOperations(
 	ctx context.Context,
 	scope Scope,
-) ([]azcli.AzCliResourceOperation, error) {
+) ([]*armresources.DeploymentOperation, error) {
 	// Gets all the scope level resource operations
 	resourceOperations, err := scope.GetResourceOperations(ctx)
 	if err != nil {
@@ -56,8 +57,9 @@ func (rm *AzureResourceManager) GetDeploymentResourceOperations(
 	} else {
 		// Otherwise find the resource group within the deployment operations
 		for _, operation := range resourceOperations {
-			if operation.Properties.TargetResource.ResourceType == string(AzureResourceTypeResourceGroup) {
-				resourceGroupName = operation.Properties.TargetResource.ResourceName
+			if operation.Properties.TargetResource != nil &&
+				*operation.Properties.TargetResource.ResourceType == string(AzureResourceTypeResourceGroup) {
+				resourceGroupName = *operation.Properties.TargetResource.ResourceName
 				break
 			}
 		}
@@ -70,12 +72,13 @@ func (rm *AzureResourceManager) GetDeploymentResourceOperations(
 	// Find all resource group deployments within the subscription operations
 	// Recursively append any resource group deployments that are found
 	for _, operation := range resourceOperations {
-		if operation.Properties.TargetResource.ResourceType == string(AzureResourceTypeDeployment) {
+		if operation.Properties.TargetResource != nil &&
+			*operation.Properties.TargetResource.ResourceType == string(AzureResourceTypeDeployment) {
 			err = rm.appendDeploymentResourcesRecursive(
 				ctx,
 				scope.SubscriptionId(),
 				resourceGroupName,
-				operation.Properties.TargetResource.ResourceName,
+				*operation.Properties.TargetResource.ResourceName,
 				&resourceOperations,
 			)
 			if err != nil {
@@ -269,7 +272,7 @@ func (rm *AzureResourceManager) appendDeploymentResourcesRecursive(
 	subscriptionId string,
 	resourceGroupName string,
 	deploymentName string,
-	resourceOperations *[]azcli.AzCliResourceOperation,
+	resourceOperations *[]*armresources.DeploymentOperation,
 ) error {
 	operations, err := rm.azCli.ListResourceGroupDeploymentOperations(
 		ctx, subscriptionId, resourceGroupName, deploymentName)
@@ -278,20 +281,22 @@ func (rm *AzureResourceManager) appendDeploymentResourcesRecursive(
 	}
 
 	for _, operation := range operations {
-		if operation.Properties.TargetResource.ResourceType == string(AzureResourceTypeDeployment) {
-			err := rm.appendDeploymentResourcesRecursive(
-				ctx,
-				subscriptionId,
-				resourceGroupName,
-				operation.Properties.TargetResource.ResourceName,
-				resourceOperations,
-			)
-			if err != nil {
-				return fmt.Errorf("appending deployment resources: %w", err)
+		if operation.Properties.TargetResource != nil {
+			if *operation.Properties.TargetResource.ResourceType == string(AzureResourceTypeDeployment) {
+				err := rm.appendDeploymentResourcesRecursive(
+					ctx,
+					subscriptionId,
+					resourceGroupName,
+					*operation.Properties.TargetResource.ResourceName,
+					resourceOperations,
+				)
+				if err != nil {
+					return fmt.Errorf("appending deployment resources: %w", err)
+				}
+			} else if *operation.Properties.ProvisioningOperation == "Create" &&
+				strings.TrimSpace(*operation.Properties.TargetResource.ResourceType) != "" {
+				*resourceOperations = append(*resourceOperations, operation)
 			}
-		} else if operation.Properties.ProvisioningOperation == "Create" &&
-			strings.TrimSpace(operation.Properties.TargetResource.ResourceType) != "" {
-			*resourceOperations = append(*resourceOperations, operation)
 		}
 	}
 

@@ -9,7 +9,7 @@ param environmentName string
 @description('Primary location for all resources')
 param location string
 
-// Optional paramaters. Add corresponding parameters to main.parameters.json to provide. For example:
+// Optional parameters. Update the main.parameters.json file to provide values. i.e.:
 // "resourceGroupName": {
 //      "value": "myGroupName"
 // }

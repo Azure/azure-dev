@@ -26,4 +26,4 @@ resource cosmos 'Microsoft.DocumentDB/databaseAccounts@2022-08-15' existing = {
   name: accountName
 }
 
-output roleDefinitionId string = roleDefinition.id
+output id string = roleDefinition.id

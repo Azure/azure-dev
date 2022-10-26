@@ -44,4 +44,5 @@ resource keyVault 'Microsoft.KeyVault/vaults@2022-07-01' existing = {
 
 output connectionStringKey string = connectionStringKey
 output endpoint string = cosmos.properties.documentEndpoint
-output resourceId string = cosmos.id
+output id string = cosmos.id
+output name string = cosmos.name

@@ -56,7 +56,7 @@ module userRole 'cosmos-sql-role-assign.bicep' = [for principalId in principalId
   name: 'cosmos-sql-user-role-${uniqueString(principalId)}'
   params: {
     accountName: accountName
-    roleDefinitionId: roleDefintion.outputs.roleDefinitionId
+    roleDefinitionId: roleDefintion.outputs.id
     principalId: principalId
   }
   dependsOn: [
@@ -65,8 +65,9 @@ module userRole 'cosmos-sql-role-assign.bicep' = [for principalId in principalId
   ]
 }]
 
+output accountId string = cosmos.outputs.id
+output accountName string = cosmos.outputs.name
 output connectionStringKey string = cosmos.outputs.connectionStringKey
 output databaseName string = databaseName
 output endpoint string = cosmos.outputs.endpoint
-output resourceId string = cosmos.outputs.resourceId
-output roleDefinitionId string = roleDefintion.outputs.roleDefinitionId
+output roleDefinitionId string = roleDefintion.outputs.id

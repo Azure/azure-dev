@@ -17,6 +17,6 @@ module cosmos '../../cosmos/cosmos-account.bicep' = {
   }
 }
 
-output endpoint string = cosmos.outputs.endpoint
 output connectionStringKey string = cosmos.outputs.connectionStringKey
-output resourceId string = cosmos.outputs.resourceId
+output endpoint string = cosmos.outputs.endpoint
+output id string = cosmos.outputs.id

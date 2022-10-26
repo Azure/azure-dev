@@ -3,7 +3,11 @@
 
 package auth
 
-import "github.com/99designs/keyring"
+import (
+	"github.com/99designs/keyring"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/cache"
+)
+
 
 var azdKeyringAllowedBackends = []keyring.BackendType{keyring.SecretServiceBackend, keyring.KeyCtlBackend}
 

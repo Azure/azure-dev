@@ -33,34 +33,28 @@ type Manager struct {
 	client *public.Client
 }
 
-func NewManager(out io.Writer) (Manager, error) {
-	key, err := getCacheKey()
-	if err != nil {
-		return Manager{}, fmt.Errorf("getting secret: %w", err)
-	}
-
+func NewManager(out io.Writer) (*Manager, error) {
 	cfgRoot, err := config.GetUserConfigDir()
 	if err != nil {
-		return Manager{}, fmt.Errorf("getting config dir: %w", err)
+		return nil, fmt.Errorf("getting config dir: %w", err)
 	}
 
 	cacheRoot := filepath.Join(cfgRoot, "auth", "msal")
 	if err := os.MkdirAll(cacheRoot, cacheDirectoryFileMode); err != nil {
-		return Manager{}, fmt.Errorf("creating cache root: %w", err)
+		return nil, fmt.Errorf("creating cache root: %w", err)
 	}
 
-	publicClientApp, err := public.New(cAZD_CLIENT_ID, public.WithCache(&memoryCacheWithFallback{
-		cache: make(map[string][]byte),
-		fallback: &encryptedCache{
-			root: cacheRoot,
-			key:  key,
-		},
-	}))
+	cache, err := newCache(cacheRoot)
 	if err != nil {
-		return Manager{}, fmt.Errorf("creating msal client: %w", err)
+		return nil, fmt.Errorf("creating cache: %w", err)
 	}
 
-	return Manager{
+	publicClientApp, err := public.New(cAZD_CLIENT_ID, public.WithCache(cache))
+	if err != nil {
+		return nil, fmt.Errorf("creating msal client: %w", err)
+	}
+
+	return &Manager{
 		client: &publicClientApp,
 		out:    out,
 	}, nil

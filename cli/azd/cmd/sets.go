@@ -99,7 +99,7 @@ func newAzdContext() (*azdcontext.AzdContext, error) {
 	return azdCtx, nil
 }
 
-func newCredential(authManager auth.Manager) (azcore.TokenCredential, error) {
+func newCredential(authManager *auth.Manager) (azcore.TokenCredential, error) {
 	// TODO(ellismg): I guess we should inject this?
 	authManager.GetSignedInUser(context.TODO())
 	_, credential, _, err := authManager.GetSignedInUser(context.TODO())

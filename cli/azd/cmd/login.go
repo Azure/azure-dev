@@ -59,14 +59,14 @@ type loginAction struct {
 	formatter   output.Formatter
 	writer      io.Writer
 	console     input.Console
-	authManager auth.Manager
+	authManager *auth.Manager
 	flags       loginFlags
 }
 
 func newLoginAction(
 	formatter output.Formatter,
 	writer io.Writer,
-	authManager auth.Manager,
+	authManager *auth.Manager,
 	flags loginFlags,
 	console input.Console,
 ) *loginAction {

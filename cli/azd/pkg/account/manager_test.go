@@ -39,7 +39,10 @@ func Test_GetAccountDefaults(t *testing.T) {
 		setupAccountMocks(mockContext)
 		setupGetSubscriptionMock(mockContext, &subscription, nil)
 
-		manager, err := NewManager(mockContext.ConfigManager.WithConfig(expectedConfig), azcli.GetAzCli(*mockContext.Context))
+		manager, err := NewManager(
+			mockContext.ConfigManager.WithConfig(expectedConfig),
+			azcli.GetAzCli(*mockContext.Context),
+		)
 		require.NoError(t, err)
 
 		accountDefaults := manager.GetAccountDefaults(*mockContext.Context)

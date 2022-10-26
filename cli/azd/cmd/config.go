@@ -109,7 +109,12 @@ type configGetAction struct {
 	args          []string
 }
 
-func newConfigGetAction(configManager config.Manager, formatter output.Formatter, writer io.Writer, args []string) *configGetAction {
+func newConfigGetAction(
+	configManager config.Manager,
+	formatter output.Formatter,
+	writer io.Writer,
+	args []string,
+) *configGetAction {
 	return &configGetAction{
 		configManager: configManager,
 		formatter:     formatter,

@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"io"
 	"regexp"
-	"strings"
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
@@ -23,9 +22,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
 	"github.com/azure/azure-dev/cli/azd/pkg/identity"
-	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/internal"
 	"github.com/blang/semver/v4"
 )
 
@@ -455,41 +452,6 @@ func (cli *azCli) GetCliConfigValue(ctx context.Context, name string) (AzCliConf
 	return value, nil
 }
 
-func extractDeploymentError(stderr string) error {
-	if start, end := findDeploymentErrorJsonIndex(stderr); start != -1 && end != -1 {
-		deploymentError := internal.NewAzureDeploymentError(stderr[start:end])
-		var innerErrorDetails string
-		if len(stderr) >= end+1 {
-			innerErrorDetails = extractInnerDeploymentErrors(stderr[end+1:])
-		}
-
-		return fmt.Errorf(
-			"%s\n%w%s",
-			output.WithErrorFormat("Deployment Error Details:"),
-			deploymentError,
-			innerErrorDetails,
-		)
-	}
-
-	return nil
-}
-
-func extractInnerDeploymentErrors(stderr string) string {
-	innerErrors := getInnerDeploymentErrorsJson(stderr)
-
-	if len(innerErrors) == 0 {
-		// Return raw text to be displayed
-		return stderr
-	} else {
-		var sb strings.Builder
-		for _, innerErrorJson := range innerErrors {
-			innerError := internal.NewAzureDeploymentError(innerErrorJson)
-			sb.WriteString(output.WithErrorFormat(fmt.Sprintf("\nInner Error:\n%s", innerError.Error())))
-		}
-		return sb.String()
-	}
-}
-
 func (cli *azCli) runAzCommand(ctx context.Context, args ...string) (exec.RunResult, error) {
 	return cli.runAzCommandWithArgs(ctx, exec.RunArgs{
 		Args: args,
@@ -527,39 +489,9 @@ func (cli *azCli) createDefaultClientOptionsBuilder(ctx context.Context) *azsdk.
 // is a helpful resource with a list of error codes and messages.
 
 var isConfigurationIsNotSetMessageRegex = regexp.MustCompile(`Configuration '.*' is not set\.`)
-var isDeploymentErrorRegex = regexp.MustCompile(`ERROR: ({.+})`)
-var isInnerDeploymentErrorRegex = regexp.MustCompile(`Inner Errors:\s+({.+})`)
 
 func isConfigurationIsNotSetMessage(s string) bool {
 	return isConfigurationIsNotSetMessageRegex.MatchString(s)
-}
-
-func findDeploymentErrorJsonIndex(s string) (int, int) {
-	index := isDeploymentErrorRegex.FindStringSubmatchIndex(s)
-
-	if index == nil {
-		return -1, -1
-	} else if len(index) >= 4 { // [matchStart, matchEnd, submatchStart, submatchEnd]
-		return index[2], index[3]
-	}
-
-	return -1, -1
-}
-
-func getInnerDeploymentErrorsJson(s string) []string {
-	results := []string{}
-	matches := isInnerDeploymentErrorRegex.FindAllStringSubmatch(s, -1)
-	if matches == nil {
-		return results
-	}
-
-	for _, match := range matches {
-		if len(match) > 1 {
-			results = append(results, match[1])
-		}
-	}
-
-	return results
 }
 
 type contextKey string

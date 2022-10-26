@@ -9,7 +9,7 @@ module web '../../../../../common/infra/bicep/core/host/staticwebapp.bicep' = {
   params: {
     name: name
     location: location
-    tags: tags
+    tags: union(tags, { 'azd-service-name': serviceName })
   }
 }
 

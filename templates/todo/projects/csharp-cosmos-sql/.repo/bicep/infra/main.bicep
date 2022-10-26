@@ -13,16 +13,16 @@ param location string
 // "resourceGroupName": {
 //      "value": "myGroupName"
 // }
-param resourceGroupName string = ''
-param webServiceName string = ''
 param apiServiceName string = ''
-param cosmosAccountName string = ''
-param cosmosDatabaseName string = 'Todo'
+param applicationInsightsDashboardName string = ''
+param applicationInsightsName string = ''
 param appServicePlanName string = ''
 param keyVaultName string = ''
 param logAnalyticsName string = ''
-param applicationInsightsName string = ''
-param applicationInsightsDashboardName string = ''
+param resourceGroupName string = ''
+param cosmosAccountName string = ''
+param cosmosDatabaseName string = 'Todo'
+param webServiceName string = ''
 
 @description('Id of the user or app to assign application roles')
 param principalId string = ''
@@ -144,11 +144,14 @@ module monitoring '../../../../../../common/infra/bicep/core/monitor/monitoring.
   }
 }
 
-output APPLICATIONINSIGHTS_CONNECTION_STRING string = monitoring.outputs.applicationInsightsConnectionString
+// Data outputs
 output AZURE_COSMOS_CONNECTION_STRING_KEY string = cosmos.outputs.connectionStringKey
 output AZURE_COSMOS_DATABASE_NAME string = cosmos.outputs.databaseName
-output AZURE_COSMOS_ENDPOINT string = cosmos.outputs.endpoint
+
+// App outputs
+output APPLICATIONINSIGHTS_CONNECTION_STRING string = monitoring.outputs.applicationInsightsConnectionString
 output AZURE_KEY_VAULT_ENDPOINT string = keyVault.outputs.endpoint
+output AZURE_KEY_VAULT_NAME string = keyVault.outputs.name
 output AZURE_LOCATION string = location
 output AZURE_TENANT_ID string = tenant().tenantId
 output REACT_APP_API_BASE_URL string = api.outputs.API_URI

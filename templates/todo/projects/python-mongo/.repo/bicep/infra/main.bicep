@@ -13,16 +13,16 @@ param location string
 // "resourceGroupName": {
 //      "value": "myGroupName"
 // }
-param resourceGroupName string = ''
-param webServiceName string = ''
 param apiServiceName string = ''
-param cosmosAccountName string = ''
-param cosmosDatabaseName string = 'Todo'
+param applicationInsightsDashboardName string = ''
+param applicationInsightsName string = ''
 param appServicePlanName string = ''
 param keyVaultName string = ''
 param logAnalyticsName string = ''
-param applicationInsightsName string = ''
-param applicationInsightsDashboardName string = ''
+param resourceGroupName string = ''
+param cosmosAccountName string = ''
+param cosmosDatabaseName string = 'Todo'
+param webServiceName string = ''
 
 @description('Id of the user or app to assign application roles')
 param principalId string = ''
@@ -47,7 +47,7 @@ module web '../../../../../common/infra/bicep/app/web-appservice.bicep' = {
     location: location
     tags: tags
     applicationInsightsName: monitoring.outputs.applicationInsightsName
-    appServicePlanId: appServicePlan.outputs.appServicePlanId
+    appServicePlanId: appServicePlan.outputs.id
   }
 }
 
@@ -60,13 +60,13 @@ module api '../../../../../common/infra/bicep/app/api-appservice-python.bicep' =
     location: location
     tags: tags
     applicationInsightsName: monitoring.outputs.applicationInsightsName
-    appServicePlanId: appServicePlan.outputs.appServicePlanId
+    appServicePlanId: appServicePlan.outputs.id
     keyVaultName: keyVault.outputs.name
     allowedOrigins: [ web.outputs.WEB_URI ]
     appSettings: {
-      AZURE_COSMOS_CONNECTION_STRING_KEY: cosmos.outputs.cosmosConnectionStringKey
-      AZURE_COSMOS_DATABASE_NAME: cosmos.outputs.cosmosDatabaseName
-      AZURE_COSMOS_ENDPOINT: cosmos.outputs.cosmosEndpoint
+      AZURE_COSMOS_CONNECTION_STRING_KEY: cosmos.outputs.connectionStringKey
+      AZURE_COSMOS_DATABASE_NAME: cosmos.outputs.databaseName
+      AZURE_COSMOS_ENDPOINT: cosmos.outputs.endpoint
     }
   }
 }
@@ -133,10 +133,14 @@ module monitoring '../../../../../../common/infra/bicep/core/monitor/monitoring.
   }
 }
 
+// Data outputs
+output AZURE_COSMOS_CONNECTION_STRING_KEY string = cosmos.outputs.connectionStringKey
+output AZURE_COSMOS_DATABASE_NAME string = cosmos.outputs.databaseName
+
+// App outputs
 output APPLICATIONINSIGHTS_CONNECTION_STRING string = monitoring.outputs.applicationInsightsConnectionString
-output AZURE_COSMOS_CONNECTION_STRING_KEY string = cosmos.outputs.cosmosConnectionStringKey
-output AZURE_COSMOS_DATABASE_NAME string = cosmos.outputs.cosmosDatabaseName
 output AZURE_KEY_VAULT_ENDPOINT string = keyVault.outputs.endpoint
+output AZURE_KEY_VAULT_NAME string = keyVault.outputs.name
 output AZURE_LOCATION string = location
 output AZURE_TENANT_ID string = tenant().tenantId
 output REACT_APP_API_BASE_URL string = api.outputs.API_URI

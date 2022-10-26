@@ -562,7 +562,7 @@ func prepareDestroyMocks(mockContext *mocks.MockContext) {
 				request.URL.Path, "/subscriptions/SUBSCRIPTION_ID/providers/Microsoft.Resources/deployments/test-env")
 	}).RespondFn(func(request *http.Request) (*http.Response, error) {
 		response, err := mocks.CreateEmptyHttpResponse(request, 202)
-		response.Header.Add("Operation-Location", mockPollingUrl)
+		response.Header.Add("location", mockPollingUrl)
 		return response, err
 	})
 	mockContext.HttpClient.When(func(request *http.Request) bool {
@@ -573,7 +573,8 @@ func prepareDestroyMocks(mockContext *mocks.MockContext) {
 		type theBody struct {
 			Status string `json:"status,omitempty"`
 		}
-		return mocks.CreateHttpResponseWithBody(request, 204, theBody{Status: "Succeeded"})
+		// set the end of LRO with 204 response (since we are using location header)
+		return mocks.CreateEmptyHttpResponse(request, 204)
 	})
 }
 

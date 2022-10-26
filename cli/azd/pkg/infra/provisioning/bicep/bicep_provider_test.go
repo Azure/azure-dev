@@ -555,11 +555,25 @@ func prepareDestroyMocks(mockContext *mocks.MockContext) {
 	})
 
 	// Delete deployment
-	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
-		return strings.Contains(command, "az deployment sub delete")
-	}).Respond(exec.RunResult{
-		Stdout: "",
-		Stderr: "",
+	mockPollingUrl := "https://url-to-poll.net/keep-deleting"
+	mockContext.HttpClient.When(func(request *http.Request) bool {
+		return request.Method == http.MethodDelete &&
+			strings.Contains(
+				request.URL.Path, "/subscriptions/SUBSCRIPTION_ID/providers/Microsoft.Resources/deployments/test-env")
+	}).RespondFn(func(request *http.Request) (*http.Response, error) {
+		response, err := mocks.CreateEmptyHttpResponse(request, 202)
+		response.Header.Add("Operation-Location", mockPollingUrl)
+		return response, err
+	})
+	mockContext.HttpClient.When(func(request *http.Request) bool {
+		return request.Method == http.MethodGet &&
+			strings.Contains(
+				request.URL.String(), mockPollingUrl)
+	}).RespondFn(func(request *http.Request) (*http.Response, error) {
+		type theBody struct {
+			Status string `json:"status,omitempty"`
+		}
+		return mocks.CreateHttpResponseWithBody(request, 204, theBody{Status: "Succeeded"})
 	})
 }
 

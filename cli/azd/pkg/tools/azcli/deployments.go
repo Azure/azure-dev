@@ -163,6 +163,26 @@ func (cli *azCli) DeployToResourceGroup(
 	}, nil
 }
 
+func (cli *azCli) DeleteSubscriptionDeployment(ctx context.Context, subscriptionId string, deploymentName string) error {
+	deploymentClient, err := cli.createDeploymentsClient(ctx, subscriptionId)
+	if err != nil {
+		return fmt.Errorf("deleting deployment: %w", err)
+	}
+
+	deleteDeploymentOperation, err := deploymentClient.BeginDeleteAtSubscriptionScope(ctx, deploymentName, nil)
+	if err != nil {
+		return fmt.Errorf("starting to delete deployment: %w", err)
+	}
+
+	// wait for the operation to complete
+	_, err = deleteDeploymentOperation.PollUntilDone(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("deleting deployment operation: %w", err)
+	}
+
+	return nil
+}
+
 func readJson(path string) (map[string]interface{}, error) {
 	templateFile, err := os.ReadFile(path)
 	if err != nil {

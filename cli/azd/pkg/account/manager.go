@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"os"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
@@ -40,16 +41,21 @@ func NewManager(configManager config.Manager, azCli azcli.AzCli) (*Manager, erro
 		return nil, err
 	}
 
-	config, err := configManager.Load(filePath)
+	azdConfig, err := configManager.Load(filePath)
 	if err != nil {
-		return nil, err
+		if errors.Is(err, os.ErrNotExist) {
+			log.Println(err.Error())
+			azdConfig = config.NewConfig(nil)
+		} else {
+			return nil, err
+		}
 	}
 
 	return &Manager{
 		filePath:      filePath,
 		azCli:         azCli,
 		configManager: configManager,
-		config:        config,
+		config:        azdConfig,
 	}, nil
 }
 

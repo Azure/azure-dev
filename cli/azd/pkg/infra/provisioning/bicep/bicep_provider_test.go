@@ -570,9 +570,6 @@ func prepareDestroyMocks(mockContext *mocks.MockContext) {
 			strings.Contains(
 				request.URL.String(), mockPollingUrl)
 	}).RespondFn(func(request *http.Request) (*http.Response, error) {
-		type theBody struct {
-			Status string `json:"status,omitempty"`
-		}
 		// set the end of LRO with 204 response (since we are using location header)
 		return mocks.CreateEmptyHttpResponse(request, 204)
 	})

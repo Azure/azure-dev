@@ -3,7 +3,7 @@ param location string = resourceGroup().location
 param tags object = {}
 
 param appUser string = 'appUser'
-param dbName string
+param databaseName string
 param keyVaultName string
 param sqlAdmin string = 'sqlAdmin'
 param connectionStringKey string = 'AZURE-SQL-CONNECTION-STRING'
@@ -26,7 +26,7 @@ resource sqlServer 'Microsoft.Sql/servers@2022-05-01-preview' = {
   }
 
   resource database 'databases' = {
-    name: dbName
+    name: databaseName
     location: location
   }
 
@@ -62,7 +62,7 @@ resource sqlDeploymentScript 'Microsoft.Resources/deploymentScripts@2020-10-01' 
       }
       {
         name: 'DBNAME'
-        value: dbName
+        value: databaseName
       }
       {
         name: 'DBSERVER'

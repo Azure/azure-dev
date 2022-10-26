@@ -16,7 +16,7 @@ module sqlServer '../../../../../common/infra/bicep/core/database/sqlserver/sqls
     name: name
     location: location
     tags: tags
-    dbName: databaseName
+    databaseName: databaseName
     keyVaultName: keyVaultName
     sqlAdminPassword: sqlAdminPassword
     appUserPassword: appUserPassword

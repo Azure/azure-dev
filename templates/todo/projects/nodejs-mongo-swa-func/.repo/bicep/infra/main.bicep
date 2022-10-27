@@ -51,7 +51,7 @@ module web '../../../../../common/infra/bicep/app/web-staticwebapp.bicep' = {
 }
 
 // The application backend
-module api '../../../../../common/infra/bicep/app/api-functions-dotnet-isolated.bicep' = {
+module api '../../../../../common/infra/bicep/app/api-functions-node.bicep' = {
   name: 'api'
   scope: rg
   params: {

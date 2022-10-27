@@ -490,28 +490,6 @@ func extractInnerDeploymentErrors(stderr string) string {
 	}
 }
 
-func (cli *azCli) DeleteSubscriptionDeployment(ctx context.Context, subscriptionId string, deploymentName string) error {
-	res, err := cli.runAzCommand(
-		ctx,
-		"deployment",
-		"sub",
-		"delete",
-		"--subscription",
-		subscriptionId,
-		"--name",
-		deploymentName,
-		"--output",
-		"json",
-	)
-	if isNotLoggedInMessage(res.Stderr) {
-		return ErrAzCliNotLoggedIn
-	} else if err != nil {
-		return fmt.Errorf("failed running az deployment sub delete: %s: %w", res.String(), err)
-	}
-
-	return nil
-}
-
 func (cli *azCli) runAzCommand(ctx context.Context, args ...string) (exec.RunResult, error) {
 	return cli.runAzCommandWithArgs(ctx, exec.RunArgs{
 		Args: args,

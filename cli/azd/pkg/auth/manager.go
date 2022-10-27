@@ -144,3 +144,24 @@ func (m *Manager) newCredential(a *public.Account) azcore.TokenCredential {
 		account: a,
 	}
 }
+
+func saveCurrentUser(homeId string) error {
+	cfg, err := config.Load()
+	if errors.Is(err, os.ErrNotExist) {
+		cfg = &config.Config{}
+	} else if err != nil {
+		return err
+	}
+
+	if cfg.Account == nil {
+		cfg.Account = &config.Account{}
+	}
+
+	cfg.Account.CurrentUserHomeId = &homeId
+
+	if err := cfg.Save(); err != nil {
+		return err
+	}
+
+	return nil
+}

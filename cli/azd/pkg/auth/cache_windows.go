@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 //go:build windows
 // +build windows
 
@@ -82,6 +85,7 @@ func (c *encryptedCache) Replace(cache cache.Unmarshaler, key string) {
 		// TODO(ellismg): pinning?
 		Data: &capture.val[0],
 	}
+
 	var plaintext windows.DataBlob
 
 	if err := windows.CryptUnprotectData(&encrypted, nil, nil, uintptr(0), nil, 0, &plaintext); err != nil {

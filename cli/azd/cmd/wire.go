@@ -202,3 +202,52 @@ func initTemplatesShowAction(
 }
 
 //#endregion Templates
+
+//#region Config
+
+func initConfigListAction(
+	cmd *cobra.Command,
+	o *internal.GlobalCommandOptions,
+	flags struct{},
+	args []string,
+) (actions.Action, error) {
+	panic(wire.Build(ConfigListCmdSet))
+}
+
+func initConfigGetAction(
+	cmd *cobra.Command,
+	o *internal.GlobalCommandOptions,
+	flags struct{},
+	args []string,
+) (actions.Action, error) {
+	panic(wire.Build(ConfigGetCmdSet))
+}
+
+func initConfigSetAction(
+	cmd *cobra.Command,
+	o *internal.GlobalCommandOptions,
+	flags struct{},
+	args []string,
+) (actions.Action, error) {
+	panic(wire.Build(ConfigSetCmdSet))
+}
+
+func initConfigUnsetAction(
+	cmd *cobra.Command,
+	o *internal.GlobalCommandOptions,
+	flags struct{},
+	args []string,
+) (actions.Action, error) {
+	panic(wire.Build(ConfigUnsetCmdSet))
+}
+
+func initConfigResetAction(
+	cmd *cobra.Command,
+	o *internal.GlobalCommandOptions,
+	flags struct{},
+	args []string,
+) (actions.Action, error) {
+	panic(wire.Build(ConfigResetCmdSet))
+}
+
+//#endregion Config

@@ -104,6 +104,9 @@ jobs:
           Write-Host "##vso[task.setvariable variable=EnvPrefixName]$envPrefixName"
         displayName: Set Resource Group Name
 
+      - pwsh: |
+          npm install -g @devcontainers/cli
+        displayName: Install npm
 
       - task: DevcontainersCI@0
         displayName: Test templates with Devontainers
@@ -113,8 +116,6 @@ jobs:
             ARM_CLIENT_SECRET=$(arm-client-secret)
             ARM_TENANT_ID=$(arm-tenant-id)
           runCmd: |
-            DIRECTORY="/generators/repo"
-            echo "#$DIRECTORY#";
             az login \
               --service-principal \
               -u "$(ARM_CLIENT_ID)" \

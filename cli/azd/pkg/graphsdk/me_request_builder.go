@@ -29,7 +29,7 @@ func (b *MeItemRequestBuilder) Get(ctx context.Context) (*UserProfile, error) {
 
 	res, err := b.client.pipeline.Do(req)
 	if err != nil {
-		return nil, runtime.NewResponseError(res)
+		return nil, httputil.HandleRequestError(res, err)
 	}
 
 	if !runtime.HasStatusCode(res, http.StatusOK) {

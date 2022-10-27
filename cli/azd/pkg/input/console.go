@@ -15,7 +15,6 @@ import (
 
 	"github.com/AlecAivazis/survey/v2"
 	"github.com/azure/azure-dev/cli/azd/pkg/contracts"
-	input_contracts "github.com/azure/azure-dev/cli/azd/pkg/input/contracts"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/mattn/go-colorable"
 	"github.com/theckman/yacspin"
@@ -238,7 +237,7 @@ func (c *AskerConsole) eventForMessage(message string) contracts.EventEnvelope {
 	// Add the newline that would have been added by fmt.Println when we wrote the message directly to the console.
 	buf.WriteByte('\n')
 
-	return input_contracts.NewConsoleMessage(buf.String())
+	return newConsoleMessageEvent(buf.String())
 }
 
 // Prompts the user for a single value
@@ -341,4 +340,14 @@ func GetConsole(ctx context.Context) Console {
 	}
 
 	return console
+}
+
+func newConsoleMessageEvent(msg string) contracts.EventEnvelope {
+	return contracts.EventEnvelope{
+		Type:      contracts.ConsoleMessageEventDataType,
+		Timestamp: time.Now(),
+		Data: contracts.ConsoleMessage{
+			Message: msg,
+		},
+	}
 }

@@ -25,7 +25,7 @@ func (c *ServicePrincipalListRequestBuilder) Get(ctx context.Context) (*ServiceP
 
 	res, err := c.client.pipeline.Do(req)
 	if err != nil {
-		return nil, runtime.NewResponseError(res)
+		return nil, httputil.HandleRequestError(res, err)
 	}
 
 	if !runtime.HasStatusCode(res, http.StatusOK) {
@@ -55,7 +55,7 @@ func (c *ServicePrincipalListRequestBuilder) Post(
 
 	res, err := c.client.pipeline.Do(req)
 	if err != nil {
-		return nil, runtime.NewResponseError(res)
+		return nil, httputil.HandleRequestError(res, err)
 	}
 
 	if !runtime.HasStatusCode(res, http.StatusCreated) {
@@ -85,7 +85,7 @@ func (b *ServicePrincipalItemRequestBuilder) Get(ctx context.Context) (*ServiceP
 
 	res, err := b.client.pipeline.Do(req)
 	if err != nil {
-		return nil, runtime.NewResponseError(res)
+		return nil, httputil.HandleRequestError(res, err)
 	}
 
 	if !runtime.HasStatusCode(res, http.StatusOK) {

@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 )
 
 // Reads the raw HTTP response and attempt to convert it into the specified type
@@ -24,4 +26,13 @@ func ReadRawResponse[T any](response *http.Response) (*T, error) {
 	}
 
 	return instance, nil
+}
+
+// Handles and errors executing the http request
+func HandleRequestError(response *http.Response, err error) error {
+	if response == nil {
+		return fmt.Errorf("failed executing request: %w", err)
+	}
+
+	return runtime.NewResponseError(response)
 }

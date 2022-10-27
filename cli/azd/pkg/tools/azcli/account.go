@@ -43,13 +43,13 @@ type AzCliAccessToken struct {
 	ExpiresOn   *time.Time
 }
 
-func (cli *azCli) ListAccounts(ctx context.Context) ([]AzCliSubscriptionInfo, error) {
+func (cli *azCli) ListAccounts(ctx context.Context) ([]*AzCliSubscriptionInfo, error) {
 	client, err := cli.createSubscriptionsClient(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	subscriptions := []AzCliSubscriptionInfo{}
+	subscriptions := []*AzCliSubscriptionInfo{}
 	pager := client.NewListPager(nil)
 
 	for pager.More() {
@@ -59,11 +59,12 @@ func (cli *azCli) ListAccounts(ctx context.Context) ([]AzCliSubscriptionInfo, er
 		}
 
 		for _, subscription := range page.SubscriptionListResult.Value {
-			subscriptions = append(subscriptions, AzCliSubscriptionInfo{
-				Id:       *subscription.SubscriptionID,
-				Name:     *subscription.DisplayName,
-				TenantId: *subscription.TenantID,
-			})
+			subscriptions = append(subscriptions,
+				&AzCliSubscriptionInfo{
+					Id:       *subscription.SubscriptionID,
+					Name:     *subscription.DisplayName,
+					TenantId: *subscription.TenantID,
+				})
 		}
 	}
 

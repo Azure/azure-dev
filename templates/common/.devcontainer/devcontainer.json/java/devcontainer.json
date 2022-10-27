@@ -7,11 +7,19 @@
         }
     },
     "features": {
-        "github-cli": "2",
-        "azure-cli": "2.38",
-        "docker-from-docker": "20.10",
-        "java": "17.0",
-        "node": {
+        "ghcr.io/devcontainers/features/azure-cli:1": {
+            "version": "2.38"
+        },
+        "ghcr.io/devcontainers/features/docker-from-docker:1": {
+            "version": "20.10"
+        },
+        "ghcr.io/devcontainers/features/github-cli:1": {
+            "version": "2"
+        },
+        "ghcr.io/devcontainers/features/java:1": {
+            "version": "17.0"
+        },
+        "ghcr.io/devcontainers/features/node:1": {
             "version": "16",
             "nodeGypDependencies": false
         }

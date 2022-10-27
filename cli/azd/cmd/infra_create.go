@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/azure/azure-dev/cli/azd/cmd/contracts"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
@@ -146,7 +145,7 @@ func (i *infraCreateAction) Run(ctx context.Context) error {
 			}
 
 			if err := i.formatter.Format(
-				contracts.NewEnvRefreshResultFromProvisioningState(stateResult.State), i.writer, nil); err != nil {
+				provisioning.NewEnvRefreshResultFromState(stateResult.State), i.writer, nil); err != nil {
 				return fmt.Errorf(
 					"deployment failed and the deployment result could not be displayed: %w",
 					multierr.Combine(err, err),
@@ -182,7 +181,7 @@ func (i *infraCreateAction) Run(ctx context.Context) error {
 		}
 
 		if err := i.formatter.Format(
-			contracts.NewEnvRefreshResultFromProvisioningState(stateResult.State), i.writer, nil); err != nil {
+			provisioning.NewEnvRefreshResultFromState(stateResult.State), i.writer, nil); err != nil {
 			return fmt.Errorf(
 				"deployment succeeded but the deployment result could not be displayed: %w",
 				multierr.Combine(err, err),

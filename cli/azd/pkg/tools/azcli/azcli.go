@@ -60,7 +60,7 @@ type AzCli interface {
 	Login(ctx context.Context, useDeviceCode bool, deviceCodeWriter io.Writer) error
 	LoginAcr(ctx context.Context, subscriptionId string, loginServer string) error
 	GetContainerRegistries(ctx context.Context, subscriptionId string) ([]*armcontainerregistry.Registry, error)
-	ListAccounts(ctx context.Context) ([]AzCliSubscriptionInfo, error)
+	ListAccounts(ctx context.Context) ([]*AzCliSubscriptionInfo, error)
 	GetDefaultAccount(ctx context.Context) (*AzCliSubscriptionInfo, error)
 	GetAccount(ctx context.Context, subscriptionId string) (*AzCliSubscriptionInfo, error)
 	GetCliConfigValue(ctx context.Context, name string) (AzCliConfigValue, error)
@@ -137,13 +137,13 @@ type AzCli interface {
 		ctx context.Context,
 		subscriptionId string,
 		deploymentName string,
-	) ([]AzCliResourceOperation, error)
+	) ([]*armresources.DeploymentOperation, error)
 	ListResourceGroupDeploymentOperations(
 		ctx context.Context,
 		subscriptionId string,
 		resourceGroupName string,
 		deploymentName string,
-	) ([]AzCliResourceOperation, error)
+	) ([]*armresources.DeploymentOperation, error)
 	// ListAccountLocations lists the physical locations in Azure.
 	ListAccountLocations(ctx context.Context, subscriptionId string) ([]AzCliLocation, error)
 	// CreateOrUpdateServicePrincipal creates a service principal using a given name and returns a JSON object which
@@ -490,97 +490,6 @@ func extractInnerDeploymentErrors(stderr string) string {
 	}
 }
 
-func (cli *azCli) DeleteSubscriptionDeployment(ctx context.Context, subscriptionId string, deploymentName string) error {
-	res, err := cli.runAzCommand(
-		ctx,
-		"deployment",
-		"sub",
-		"delete",
-		"--subscription",
-		subscriptionId,
-		"--name",
-		deploymentName,
-		"--output",
-		"json",
-	)
-	if isNotLoggedInMessage(res.Stderr) {
-		return ErrAzCliNotLoggedIn
-	} else if err != nil {
-		return fmt.Errorf("failed running az deployment sub delete: %s: %w", res.String(), err)
-	}
-
-	return nil
-}
-
-func (cli *azCli) ListSubscriptionDeploymentOperations(
-	ctx context.Context,
-	subscriptionId string,
-	deploymentName string,
-) ([]AzCliResourceOperation, error) {
-	res, err := cli.runAzCommand(
-		ctx,
-		"deployment",
-		"operation",
-		"sub",
-		"list",
-		"--subscription",
-		subscriptionId,
-		"--name",
-		deploymentName,
-		"--output",
-		"json",
-	)
-	if isNotLoggedInMessage(res.Stderr) {
-		return nil, ErrAzCliNotLoggedIn
-	} else if isDeploymentNotFoundMessage(res.Stderr) {
-		return nil, ErrDeploymentNotFound
-	} else if err != nil {
-		return nil, fmt.Errorf("failed running az deployment operation sub list: %s: %w", res.String(), err)
-	}
-
-	var resources []AzCliResourceOperation
-	if err := json.Unmarshal([]byte(res.Stdout), &resources); err != nil {
-		return nil, fmt.Errorf("could not unmarshal output %s as a []AzCliResourceOperation: %w", res.Stdout, err)
-	}
-	return resources, nil
-}
-
-func (cli *azCli) ListResourceGroupDeploymentOperations(
-	ctx context.Context,
-	subscriptionId string,
-	resourceGroupName string,
-	deploymentName string,
-) ([]AzCliResourceOperation, error) {
-	res, err := cli.runAzCommand(
-		ctx,
-		"deployment",
-		"operation",
-		"group",
-		"list",
-		"--subscription",
-		subscriptionId,
-		"--resource-group",
-		resourceGroupName,
-		"--name",
-		deploymentName,
-		"--output",
-		"json",
-	)
-	if isNotLoggedInMessage(res.Stderr) {
-		return nil, ErrAzCliNotLoggedIn
-	} else if isDeploymentNotFoundMessage(res.Stderr) {
-		return nil, ErrDeploymentNotFound
-	} else if err != nil {
-		return nil, fmt.Errorf("failed running az deployment operation group list: %s: %w", res.String(), err)
-	}
-
-	var resources []AzCliResourceOperation
-	if err := json.Unmarshal([]byte(res.Stdout), &resources); err != nil {
-		return nil, fmt.Errorf("could not unmarshal output %s as a []AzCliResourceOperation: %w", res.Stdout, err)
-	}
-	return resources, nil
-}
-
 func (cli *azCli) runAzCommand(ctx context.Context, args ...string) (exec.RunResult, error) {
 	return cli.runAzCommandWithArgs(ctx, exec.RunArgs{
 		Args: args,
@@ -617,15 +526,9 @@ func (cli *azCli) createDefaultClientOptionsBuilder(ctx context.Context) *azsdk.
 // Additionally, https://learn.microsoft.com/azure/active-directory/develop/reference-aadsts-error-codes#aadsts-error-codes
 // is a helpful resource with a list of error codes and messages.
 
-// Regex for "(DeploymentNotFound) Deployment '<name>' could not be found."
-var isDeploymentNotFoundMessageRegex = regexp.MustCompile(`\(DeploymentNotFound\)`)
 var isConfigurationIsNotSetMessageRegex = regexp.MustCompile(`Configuration '.*' is not set\.`)
 var isDeploymentErrorRegex = regexp.MustCompile(`ERROR: ({.+})`)
 var isInnerDeploymentErrorRegex = regexp.MustCompile(`Inner Errors:\s+({.+})`)
-
-func isDeploymentNotFoundMessage(s string) bool {
-	return isDeploymentNotFoundMessageRegex.MatchString(s)
-}
 
 func isConfigurationIsNotSetMessage(s string) bool {
 	return isConfigurationIsNotSetMessageRegex.MatchString(s)

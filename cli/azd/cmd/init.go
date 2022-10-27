@@ -15,6 +15,7 @@ import (
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
@@ -80,6 +81,7 @@ func (i *initFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOpt
 
 type initAction struct {
 	azdCtx                *azdcontext.AzdContext
+	accountManager        *account.Manager
 	console               input.Console
 	cmdRun                exec.CommandRunner
 	azCli                 azcli.AzCli
@@ -90,18 +92,20 @@ type initAction struct {
 
 func newInitAction(
 	azdCtx *azdcontext.AzdContext,
+	accountManager *account.Manager,
 	cmdRun exec.CommandRunner,
 	console input.Console,
 	azCli azcli.AzCli,
 	gitCli git.GitCli,
 	flags initFlags) (*initAction, error) {
 	return &initAction{
-		azdCtx:  azdCtx,
-		console: console,
-		cmdRun:  cmdRun,
-		azCli:   azCli,
-		gitCli:  gitCli,
-		flags:   flags,
+		azdCtx:         azdCtx,
+		accountManager: accountManager,
+		console:        console,
+		cmdRun:         cmdRun,
+		azCli:          azCli,
+		gitCli:         gitCli,
+		flags:          flags,
 	}, nil
 }
 
@@ -335,13 +339,26 @@ func (i *initAction) Run(ctx context.Context) error {
 		subscription:    i.flags.subscription,
 		location:        i.flags.location,
 	}
-	_, _, err = createAndInitEnvironment(ctx, &envSpec, i.azdCtx, i.console)
+	env, ctx, err := createAndInitEnvironment(ctx, &envSpec, i.azdCtx, i.console)
 	if err != nil {
 		return fmt.Errorf("loading environment: %w", err)
 	}
 
 	if err := i.azdCtx.SetDefaultEnvironmentName(envSpec.environmentName); err != nil {
 		return fmt.Errorf("saving default environment: %w", err)
+	}
+
+	// If the configuration is empty, set default subscription & location
+	// This will be the case for first run experience
+	if !i.accountManager.HasDefaults() {
+		_, err = i.accountManager.SetDefaultSubscription(ctx, env.GetSubscriptionId())
+		if err != nil {
+			log.Printf("failed setting default subscription. %s\n", err.Error())
+		}
+		_, err = i.accountManager.SetDefaultLocation(ctx, env.GetSubscriptionId(), env.GetLocation())
+		if err != nil {
+			log.Printf("failed setting default location. %s\n", err.Error())
+		}
 	}
 
 	return nil

@@ -24,7 +24,7 @@ module api '../../../../../common/infra/bicep/core/host/appservice.bicep' = {
     keyVaultName: keyVaultName
     runtimeName: 'python'
     runtimeVersion: '3.8'
-    scmDoBuildDuringDeployment: true
+    scmDoBuildDuringDeployment: false
   }
 }
 

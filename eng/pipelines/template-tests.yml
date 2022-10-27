@@ -113,6 +113,8 @@ jobs:
             ARM_CLIENT_SECRET=$(arm-client-secret)
             ARM_TENANT_ID=$(arm-tenant-id)
           runCmd: |
+            DIRECTORY="/generators/repo"
+            echo "#$DIRECTORY#";
             az login \
               --service-principal \
               -u "$(ARM_CLIENT_ID)" \

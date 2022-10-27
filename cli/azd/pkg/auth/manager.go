@@ -44,12 +44,7 @@ func NewManager(out io.Writer) (*Manager, error) {
 		return nil, fmt.Errorf("creating cache root: %w", err)
 	}
 
-	cache, err := newCache(cacheRoot)
-	if err != nil {
-		return nil, fmt.Errorf("creating cache: %w", err)
-	}
-
-	publicClientApp, err := public.New(cAZD_CLIENT_ID, public.WithCache(cache))
+	publicClientApp, err := public.New(cAZD_CLIENT_ID, public.WithCache(newCache(cacheRoot)))
 	if err != nil {
 		return nil, fmt.Errorf("creating msal client: %w", err)
 	}

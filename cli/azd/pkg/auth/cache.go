@@ -2,57 +2,18 @@ package auth
 
 import (
 	"bytes"
-	"crypto/rand"
 	"errors"
 	"fmt"
 	"log"
 	"os"
 	"path/filepath"
 
-	"github.com/99designs/keyring"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/cache"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/gofrs/flock"
-	"gopkg.in/square/go-jose.v2"
 )
 
 const cacheFileFileMode = 0600
-
-const azdKeyringServiceName = "azd-auth"
-const azdKeyringItemKey = "azd-auth-encryption-key"
-
-// getCacheKey gets the encryption key used to encrypt the MSAL cache from the system keyring. If a key does not already
-// exist, a new one is generated and stored in the system keyring.
-func getCacheKey() ([]byte, error) {
-	ring, err := keyring.Open(keyring.Config{
-		ServiceName:     azdKeyringServiceName,
-		AllowedBackends: azdKeyringAllowedBackends,
-		KeychainName:    "login",
-	})
-	if err != nil {
-		return nil, fmt.Errorf("opening keyring: %w", err)
-	}
-
-	item, err := ring.Get(azdKeyringItemKey)
-	if err != nil && !errors.Is(err, keyring.ErrKeyNotFound) {
-		return nil, fmt.Errorf("reading secret: %w", err)
-	} else if errors.Is(err, keyring.ErrKeyNotFound) {
-		buf := make([]byte, 32)
-		if _, err := rand.Read(buf); err != nil {
-			return nil, err
-		}
-
-		item = keyring.Item{
-			Key:  azdKeyringItemKey,
-			Data: buf,
-		}
-		if err := ring.Set(item); err != nil {
-			return nil, fmt.Errorf("writing secret: %w", err)
-		}
-	}
-
-	return item.Data, nil
-}
 
 func saveCurrentUser(homeId string) error {
 	cfg, err := config.Load()
@@ -76,7 +37,6 @@ func saveCurrentUser(homeId string) error {
 }
 
 var _ cache.ExportReplace = &fileCache{}
-var _ cache.ExportReplace = &encryptedCache{}
 var _ cache.ExportReplace = &memoryCache{}
 
 type fileCache struct {
@@ -217,77 +177,5 @@ func (c *memoryCache) Export(cache cache.Marshaler, key string) {
 	if !bytes.Equal(old, new) {
 		c.cache[key] = new
 		c.inner.Export(cache, key)
-	}
-}
-
-// encryptedCache is a cache.ExportReplace that uses encrypted files. The cache is stored in files named `cache%s.bin`
-// (where %s is the 'key' parameter of the ExportReplace interface). The files are encrypted using JSON Web Encryption
-// with AES-256-GCM and stored stored using the compact encoding. Mutual exclusion is provided using file locking with
-// a file named `cache%s.lock`.
-type encryptedCache struct {
-	key   []byte
-	inner cache.ExportReplace
-}
-
-func (c *encryptedCache) Export(cache cache.Marshaler, key string) {
-	log.Printf("encryptedCache: exporting cache with key '%s'", key)
-	res, err := cache.Marshal()
-	if err != nil {
-		fmt.Printf("failed to marshal cache from MSAL: %v", err)
-		return
-	}
-
-	encrypter, err := jose.NewEncrypter(jose.A256GCM, jose.Recipient{
-		Algorithm: jose.DIRECT,
-		Key:       c.key,
-	}, nil)
-	if err != nil {
-		fmt.Printf("failed to create JWE Encrypter: %v", err)
-		return
-	}
-
-	enc, err := encrypter.Encrypt(res)
-	if err != nil {
-		fmt.Printf("failed to create encrypt cache: %v", err)
-		return
-	}
-
-	cs, err := enc.CompactSerialize()
-	if err != nil {
-		fmt.Printf("failed to serialized JWE: %v", err)
-		return
-	}
-
-	c.inner.Export(&fixedMarshaller{
-		val: []byte(cs),
-	}, key)
-}
-
-func (c *encryptedCache) Replace(cache cache.Unmarshaler, key string) {
-	log.Printf("encryptedCache: replacing cache with key '%s'", key)
-
-	capture := &fixedMarshaller{}
-	c.inner.Replace(capture, key)
-
-	if len(capture.val) == 0 {
-		log.Printf("encrypted cache is empty, ignoring")
-		return
-	}
-
-	jwe, err := jose.ParseEncrypted(string(capture.val))
-	if err != nil {
-		log.Printf("failed to parse cache as a JWE, ignoring cache: %v", err)
-		return
-	}
-
-	decrypted, err := jwe.Decrypt(c.key)
-	if err != nil {
-		log.Printf("failed to decrypt cache, ignoring cache: %v", err)
-		return
-	}
-
-	if err := cache.Unmarshal(decrypted); err != nil {
-		log.Printf("failed to unmarshal decrypted cache to MSAL: %v", err)
-		return
 	}
 }

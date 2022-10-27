@@ -117,7 +117,10 @@ jobs:
             ARM_TENANT_ID=$(arm-tenant-id)
             SUBSCRIPTION_ID=$(subscription-id)
           runCmd: |
-            sudo ./templates/tests/test-templates.sh \
+            pwd
+            cd /templates/tests/
+            pwd
+            sudo ./test-templates.sh \
               -e '$(EnvPrefixName)' \
               -t '$(TemplateName)' \
               -b '$(TemplateBranchName)' \

@@ -54,8 +54,9 @@ func NewManager(out io.Writer, configManager config.Manager) (*Manager, error) {
 	}
 
 	return &Manager{
-		client: &publicClientApp,
-		out:    out,
+		out:           out,
+		client:        &publicClientApp,
+		configManager: configManager,
 	}, nil
 }
 
@@ -64,11 +65,13 @@ var ErrNoCurrentUser = errors.New("not logged in, run `azd login` to login")
 func (m *Manager) GetSignedInUser(ctx context.Context) (*public.Account, azcore.TokenCredential, *time.Time, error) {
 	cfg, err := config.GetUserConfig(m.configManager)
 	if err != nil {
+		log.Println(err)
 		return nil, nil, nil, fmt.Errorf("fetching current user: %w", err)
 	}
 
 	currentUserHomeId, has := cfg.Get("auth.account.currentUserHomeId")
 	if !has {
+		log.Println("no value found in cache")
 		return nil, nil, nil, ErrNoCurrentUser
 	}
 
@@ -86,6 +89,7 @@ func (m *Manager) GetSignedInUser(ctx context.Context) (*public.Account, azcore.
 			account.HomeAccountID, currentUserHomeId.(string))
 	}
 
+	log.Println("got to end")
 	return nil, nil, nil, ErrNoCurrentUser
 }
 
@@ -147,25 +151,4 @@ func (m *Manager) newCredential(a *public.Account) azcore.TokenCredential {
 		client:  m.client,
 		account: a,
 	}
-}
-
-func saveCurrentUser(homeId string) error {
-	// cfg, err := config.Load()
-	// if errors.Is(err, os.ErrNotExist) {
-	// 	cfg = &config.Config{}
-	// } else if err != nil {
-	// 	return err
-	// }
-
-	// if cfg.Account == nil {
-	// 	cfg.Account = &config.Account{}
-	// }
-
-	// cfg.Account.CurrentUserHomeId = &homeId
-
-	// if err := cfg.Save(); err != nil {
-	// 	return err
-	// }
-
-	return nil
 }

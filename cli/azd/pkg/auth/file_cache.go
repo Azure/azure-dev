@@ -62,7 +62,11 @@ func (c *fileCache) readCacheWithLock(key string) ([]byte, error) {
 	if err := fl.Lock(); err != nil {
 		return nil, fmt.Errorf("locking file %s: %w", lockPath, err)
 	}
-	defer fl.Unlock()
+	defer func() {
+		if err := fl.Unlock(); err != nil {
+			log.Printf("failed to release file lock: %v", err)
+		}
+	}()
 
 	return os.ReadFile(cachePath)
 }
@@ -78,7 +82,11 @@ func (c *fileCache) writeFileWithLock(key string, data []byte) error {
 	if err := fl.Lock(); err != nil {
 		return fmt.Errorf("locking file %s: %w", lockPath, err)
 	}
-	defer fl.Unlock()
+	defer func() {
+		if err := fl.Unlock(); err != nil {
+			log.Printf("failed to release file lock: %v", err)
+		}
+	}()
 
 	return os.WriteFile(cachePath, data, cacheFileFileMode)
 }

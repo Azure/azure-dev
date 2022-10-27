@@ -52,7 +52,9 @@ func (c *memoryCache) Replace(cache cache.Unmarshaler, key string) {
 	log.Printf("msalCache: replacing cache with key '%s'", key)
 
 	if v, has := c.cache[key]; has {
-		cache.Unmarshal(v)
+		if err := cache.Unmarshal(v); err != nil {
+			log.Printf("failed to unmarshal value into cache: %v", err)
+		}
 	} else if c.inner != nil {
 		c.inner.Replace(&cacheUpdatingUnmarshaler{
 			c:     c,
@@ -75,8 +77,11 @@ func (c *memoryCache) Export(cache cache.Marshaler, key string) {
 
 	old := c.cache[key]
 
-	if !bytes.Equal(old, new) {
-		c.cache[key] = new
-		c.inner.Export(cache, key)
+	if bytes.Equal(old, new) {
+		log.Printf("eliding inner update, cache value has not changed")
+		return
 	}
+
+	c.cache[key] = new
+	c.inner.Export(cache, key)
 }

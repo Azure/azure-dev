@@ -44,7 +44,6 @@ func (c *encryptedCache) Export(cache cache.Marshaler, key string) {
 
 	plaintext := windows.DataBlob{
 		Size: uint32(len(res)),
-		// TODO(ellismg): pinning?
 		Data: &res[0],
 	}
 	var encrypted windows.DataBlob
@@ -82,7 +81,6 @@ func (c *encryptedCache) Replace(cache cache.Unmarshaler, key string) {
 
 	encrypted := windows.DataBlob{
 		Size: uint32(len(capture.val)),
-		// TODO(ellismg): pinning?
 		Data: &capture.val[0],
 	}
 
@@ -101,5 +99,9 @@ func (c *encryptedCache) Replace(cache cache.Unmarshaler, key string) {
 
 	if _, err := windows.LocalFree(windows.Handle(unsafe.Pointer(plaintext.Data))); err != nil {
 		log.Printf("failed to free encrypted data: %v", err)
+	}
+
+	if err := cache.Unmarshal(cs); err != nil {
+		log.Printf("failed to unmarshal decrypted cache to msal: %v", err)
 	}
 }

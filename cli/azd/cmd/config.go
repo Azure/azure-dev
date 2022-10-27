@@ -64,6 +64,10 @@ func newConfigListAction(configManager config.Manager, formatter output.Formatte
 	}
 }
 
+func (a *configListAction) PostRun(ctx context.Context, runResult error) error {
+	return nil
+}
+
 // Executes the `azd config list` action
 func (a *configListAction) Run(ctx context.Context) error {
 	azdConfig, err := getUserConfig(a.configManager)
@@ -123,6 +127,10 @@ func newConfigGetAction(
 	}
 }
 
+func (a *configGetAction) PostRun(ctx context.Context, runResult error) error {
+	return nil
+}
+
 // Executes the `azd config get <path>` action
 func (a *configGetAction) Run(ctx context.Context) error {
 	azdConfig, err := getUserConfig(a.configManager)
@@ -169,6 +177,10 @@ func newConfigSetAction(configManager config.Manager, args []string) *configSetA
 		configManager: configManager,
 		args:          args,
 	}
+}
+
+func (a *configSetAction) PostRun(ctx context.Context, runResult error) error {
+	return nil
 }
 
 // Executes the `azd config set <path> <value>` action
@@ -223,6 +235,10 @@ func newConfigUnsetAction(configManager config.Manager, args []string) *configUn
 	}
 }
 
+func (a *configUnsetAction) PostRun(ctx context.Context, runResult error) error {
+	return nil
+}
+
 // Executes the `azd config unset <path>` action
 func (a *configUnsetAction) Run(ctx context.Context) error {
 	azdConfig, err := getUserConfig(a.configManager)
@@ -272,6 +288,10 @@ func newConfigResetAction(configManager config.Manager, args []string) *configRe
 		configManager: configManager,
 		args:          args,
 	}
+}
+
+func (a *configResetAction) PostRun(ctx context.Context, runResult error) error {
+	return nil
 }
 
 // Executes the `azd config reset` action

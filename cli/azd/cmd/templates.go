@@ -15,6 +15,8 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/templates"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
+	"golang.org/x/exp/maps"
+	"golang.org/x/exp/slices"
 )
 
 func templatesCmd(rootOptions *internal.GlobalCommandOptions) *cobra.Command {
@@ -81,10 +83,10 @@ func (tl *templatesListAction) Run(ctx context.Context) error {
 		return err
 	}
 
-	templateList := make([]templates.Template, 0, len(templateSet))
-	for _, template := range templateSet {
-		templateList = append(templateList, template)
-	}
+	templateList := maps.Values(templateSet)
+	slices.SortFunc(templateList, func(a, b templates.Template) bool {
+		return a.Name < b.Name
+	})
 
 	return formatTemplates(ctx, tl.formatter, tl.writer, templateList...)
 }

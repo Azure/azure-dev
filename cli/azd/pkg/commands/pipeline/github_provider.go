@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"log"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -328,6 +329,7 @@ func (p *GitHubCiProvider) ensureAuthorizedForRepoSecrets(
 		}
 
 		if authResult.TokenSource == github.TokenSourceEnvVar {
+			log.Println("Switching gh to file authentication mode")
 			// Force file-based auth so that we can re-prompt for login.
 			// Otherwise, `gh auth` commands will simply report that we are authenticated.
 			ghCli.ForceConfigureAuth(github.TokenSourceFile)
@@ -338,7 +340,10 @@ func (p *GitHubCiProvider) ensureAuthorizedForRepoSecrets(
 			if err != nil {
 				return fmt.Errorf("logging in: %w", err)
 			}
+
+			return nil
 		}
+
 	}
 
 	return fmt.Errorf("listing secrets: %w", err)

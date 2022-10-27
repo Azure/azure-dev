@@ -9,7 +9,7 @@ param environmentName string
 @description('Primary location for all resources')
 param location string
 
-// Optional parameters. Update the main.parameters.json file to provide values. i.e.:
+// Optional parameters to override the default azd resource naming conventions. Update the main.parameters.json file to provide values. e.g.,:
 // "resourceGroupName": {
 //      "value": "myGroupName"
 // }

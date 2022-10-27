@@ -16,5 +16,5 @@ func newCache(root string) cache.ExportReplace {
 		inner: &fileCache{
 			root: root,
 		},
-	}, nil
+	}
 }

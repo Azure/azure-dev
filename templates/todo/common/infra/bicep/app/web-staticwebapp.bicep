@@ -13,5 +13,5 @@ module web '../../../../../common/infra/bicep/core/host/staticwebapp.bicep' = {
   }
 }
 
-output WEB_NAME string = web.outputs.name
-output WEB_URI string = web.outputs.uri
+output SERVICE_WEB_NAME string = web.outputs.name
+output SERVICE_WEB_URI string = web.outputs.uri

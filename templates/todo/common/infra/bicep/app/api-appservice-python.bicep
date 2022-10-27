@@ -24,10 +24,10 @@ module api '../../../../../common/infra/bicep/core/host/appservice.bicep' = {
     keyVaultName: keyVaultName
     runtimeName: 'python'
     runtimeVersion: '3.8'
-    scmDoBuildDuringDeployment: false
+    scmDoBuildDuringDeployment: true
   }
 }
 
-output API_IDENTITY_PRINCIPAL_ID string = api.outputs.identityPrincipalId
-output API_NAME string = api.outputs.name
-output API_URI string = api.outputs.uri
+output SERVICE_API_IDENTITY_PRINCIPAL_ID string = api.outputs.identityPrincipalId
+output SERVICE_API_NAME string = api.outputs.name
+output SERVICE_API_URI string = api.outputs.uri

@@ -66,7 +66,7 @@ module web '../../../../../common/infra/bicep/app/web-container-app.bicep' = {
     name: !empty(webContainerAppName) ? webContainerAppName : '${abbrs.appContainerApps}web-${resourceToken}'
     location: location
     imageName: webImageName
-    apiContainerAppName: api.outputs.API_NAME
+    apiContainerAppName: api.outputs.SERVICE_API_NAME
     applicationInsightsName: monitoring.outputs.applicationInsightsName
     containerAppsEnvironmentName: containerApps.outputs.environmentName
     containerRegistryName: containerApps.outputs.registryName
@@ -95,7 +95,7 @@ module apiKeyVaultAccess '../../../../../../common/infra/bicep/core/security/key
   scope: rg
   params: {
     keyVaultName: keyVault.outputs.name
-    principalId: api.outputs.API_IDENTITY_PRINCIPAL_ID
+    principalId: api.outputs.SERVICE_API_IDENTITY_PRINCIPAL_ID
   }
 }
 
@@ -151,8 +151,8 @@ output AZURE_KEY_VAULT_ENDPOINT string = keyVault.outputs.endpoint
 output AZURE_KEY_VAULT_NAME string = keyVault.outputs.name
 output AZURE_LOCATION string = location
 output AZURE_TENANT_ID string = tenant().tenantId
-output REACT_APP_API_BASE_URL string = api.outputs.API_URI
+output REACT_APP_API_BASE_URL string = api.outputs.SERVICE_API_URI
 output REACT_APP_APPLICATIONINSIGHTS_CONNECTION_STRING string = monitoring.outputs.applicationInsightsConnectionString
-output REACT_APP_WEB_BASE_URL string = web.outputs.WEB_URI
-output SERVICE_API_NAME string = api.outputs.API_NAME
-output SERVICE_WEB_NAME string = web.outputs.WEB_NAME
+output REACT_APP_WEB_BASE_URL string = web.outputs.SERVICE_WEB_URI
+output SERVICE_API_NAME string = api.outputs.SERVICE_API_NAME
+output SERVICE_WEB_NAME string = web.outputs.SERVICE_WEB_NAME

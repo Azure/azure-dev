@@ -70,7 +70,7 @@ module api '../../../../../common/infra/bicep/app/api-appservice-dotnet.bicep' =
     applicationInsightsName: monitoring.outputs.applicationInsightsName
     appServicePlanId: appServicePlan.outputs.id
     keyVaultName: keyVault.outputs.name
-    allowedOrigins: [ web.outputs.WEB_URI ]
+    allowedOrigins: [ web.outputs.SERVICE_WEB_URI ]
     appSettings: {
       AZURE_SQL_CONNECTION_STRING_KEY: sqlServer.outputs.connectionStringKey
     }
@@ -83,7 +83,7 @@ module apiKeyVaultAccess '../../../../../../common/infra/bicep/core/security/key
   scope: rg
   params: {
     keyVaultName: keyVault.outputs.name
-    principalId: api.outputs.API_IDENTITY_PRINCIPAL_ID
+    principalId: api.outputs.SERVICE_API_IDENTITY_PRINCIPAL_ID
   }
 }
 
@@ -150,6 +150,6 @@ output AZURE_KEY_VAULT_ENDPOINT string = keyVault.outputs.endpoint
 output AZURE_KEY_VAULT_NAME string = keyVault.outputs.name
 output AZURE_LOCATION string = location
 output AZURE_TENANT_ID string = tenant().tenantId
-output REACT_APP_API_BASE_URL string = api.outputs.API_URI
+output REACT_APP_API_BASE_URL string = api.outputs.SERVICE_API_URI
 output REACT_APP_APPLICATIONINSIGHTS_CONNECTION_STRING string = monitoring.outputs.applicationInsightsConnectionString
-output REACT_APP_WEB_BASE_URL string = web.outputs.WEB_URI
+output REACT_APP_WEB_BASE_URL string = web.outputs.SERVICE_WEB_URI

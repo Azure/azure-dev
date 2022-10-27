@@ -10,7 +10,7 @@ param imageName string = ''
 param keyVaultName string
 param serviceName string = 'web'
 
-module web '../../../../../common/infra/bicep/core/host/container-app.bicep' = {
+module app '../../../../../common/infra/bicep/core/host/container-app.bicep' = {
   name: '${serviceName}-container-app-module'
   params: {
     name: name
@@ -50,5 +50,7 @@ resource api 'Microsoft.App/containerApps@2022-03-01' existing = {
   name: apiContainerAppName
 }
 
-output WEB_NAME string = web.outputs.name
-output WEB_URI string = web.outputs.uri
+output SERVICE_WEB_IDENTITY_PRINCIPAL_ID string = app.outputs.identityPrincipalId
+output SERVICE_WEB_NAME string = app.outputs.name
+output SERVICE_WEB_URI string = app.outputs.uri
+output SERVICE_WEB_IMAGE_NAME string = app.outputs.imageName

@@ -9,7 +9,7 @@ param imageName string = ''
 param keyVaultName string
 param serviceName string = 'api'
 
-module api '../../../../../common/infra/bicep/core/host/container-app.bicep' = {
+module app '../../../../../common/infra/bicep/core/host/container-app.bicep' = {
   name: '${serviceName}-container-app-module'
   params: {
     name: name
@@ -43,6 +43,7 @@ resource keyVault 'Microsoft.KeyVault/vaults@2022-07-01' existing = {
   name: keyVaultName
 }
 
-output API_IDENTITY_PRINCIPAL_ID string = api.outputs.identityPrincipalId
-output API_NAME string = api.outputs.name
-output API_URI string = api.outputs.uri
+output SERVICE_API_IDENTITY_PRINCIPAL_ID string = app.outputs.identityPrincipalId
+output SERVICE_API_NAME string = app.outputs.name
+output SERVICE_API_URI string = app.outputs.uri
+output SERVICE_API_IMAGE_NAME string = app.outputs.imageName

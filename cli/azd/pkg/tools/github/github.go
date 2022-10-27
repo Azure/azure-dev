@@ -18,7 +18,7 @@ import (
 
 type GitHubCli interface {
 	tools.ExternalTool
-	CheckAuth(ctx context.Context, hostname string) (CheckAuthResult, error)
+	GetAuthStatus(ctx context.Context, hostname string) (AuthStatus, error)
 	// Forces the authentication token mode used by github CLI.
 	//
 	// If set to TokenSourceFile, environment variables such as GH_TOKEN and GITHUB_TOKEN are ignored.
@@ -101,8 +101,8 @@ func (cli *ghCli) InstallUrl() string {
 	return "https://aka.ms/azure-dev/github-cli-install"
 }
 
-// The result from calling CheckAuth
-type CheckAuthResult struct {
+// The result from calling GetAuthStatus
+type AuthStatus struct {
 	LoggedIn    bool
 	TokenSource AuthTokenSource
 }
@@ -112,28 +112,28 @@ type AuthTokenSource int
 
 const (
 	TokenSourceFile AuthTokenSource = iota
-	// See isEnvVarTokenSourceRegex for example token env vars
+	// See TokenEnvVars for token env vars
 	TokenSourceEnvVar
 )
 
-func (cli *ghCli) CheckAuth(ctx context.Context, hostname string) (CheckAuthResult, error) {
+func (cli *ghCli) GetAuthStatus(ctx context.Context, hostname string) (AuthStatus, error) {
 	runArgs := cli.newRunArgs("auth", "status", "--hostname", hostname)
 	res, err := cli.commandRunner.Run(ctx, runArgs)
 	if res.ExitCode == 0 {
-		authResult := CheckAuthResult{TokenSource: TokenSourceFile, LoggedIn: true}
+		authResult := AuthStatus{TokenSource: TokenSourceFile, LoggedIn: true}
 		if isEnvVarTokenSource(res.Stderr) {
 			authResult.TokenSource = TokenSourceEnvVar
 		}
 		return authResult, nil
 	} else if isGhCliNotLoggedInMessageRegex.MatchString(res.Stderr) {
-		return CheckAuthResult{}, nil
+		return AuthStatus{}, nil
 	} else if notLoggedIntoAnyGitHubHostsMessageRegex.MatchString(res.Stderr) {
-		return CheckAuthResult{}, nil
+		return AuthStatus{}, nil
 	} else if err != nil {
-		return CheckAuthResult{}, fmt.Errorf("failed running gh auth status %s: %w", res.String(), err)
+		return AuthStatus{}, fmt.Errorf("failed running gh auth status %s: %w", res.String(), err)
 	}
 
-	return CheckAuthResult{}, errors.New("could not determine auth status")
+	return AuthStatus{}, errors.New("could not determine auth status")
 }
 
 func (cli *ghCli) Login(ctx context.Context, hostname string) error {
@@ -151,7 +151,7 @@ func (cli *ghCli) Login(ctx context.Context, hostname string) error {
 
 func (cli *ghCli) ListSecrets(ctx context.Context, repoSlug string) error {
 	runArgs := cli.newRunArgs("-R", repoSlug, "secret", "list")
-	res, err := cli.runAuthenticated(ctx, runArgs)
+	res, err := cli.run(ctx, runArgs)
 	if err != nil {
 		return fmt.Errorf("failed running gh secret list %s: %w", res.String(), err)
 	}
@@ -160,7 +160,7 @@ func (cli *ghCli) ListSecrets(ctx context.Context, repoSlug string) error {
 
 func (cli *ghCli) SetSecret(ctx context.Context, repoSlug string, name string, value string) error {
 	runArgs := cli.newRunArgs("-R", repoSlug, "secret", "set", name, "--body", value)
-	res, err := cli.runAuthenticated(ctx, runArgs)
+	res, err := cli.run(ctx, runArgs)
 	if err != nil {
 		return fmt.Errorf("failed running gh secret set %s: %w", res.String(), err)
 	}
@@ -178,7 +178,7 @@ type GhCliRepository struct {
 
 func (cli *ghCli) ListRepositories(ctx context.Context) ([]GhCliRepository, error) {
 	runArgs := cli.newRunArgs("repo", "list", "--no-archived", "--json", "nameWithOwner,url,sshUrl")
-	res, err := cli.runAuthenticated(ctx, runArgs)
+	res, err := cli.run(ctx, runArgs)
 	if err != nil {
 		return nil, fmt.Errorf("failed running gh repo list %s: %w", res.String(), err)
 	}
@@ -194,7 +194,7 @@ func (cli *ghCli) ListRepositories(ctx context.Context) ([]GhCliRepository, erro
 
 func (cli *ghCli) ViewRepository(ctx context.Context, name string) (GhCliRepository, error) {
 	runArgs := cli.newRunArgs("repo", "view", name, "--json", "nameWithOwner,url,sshUrl")
-	res, err := cli.runAuthenticated(ctx, runArgs)
+	res, err := cli.run(ctx, runArgs)
 	if err != nil {
 		return GhCliRepository{}, fmt.Errorf("failed running gh repo list %s: %w", res.String(), err)
 	}
@@ -210,7 +210,7 @@ func (cli *ghCli) ViewRepository(ctx context.Context, name string) (GhCliReposit
 
 func (cli *ghCli) CreatePrivateRepository(ctx context.Context, name string) error {
 	runArgs := cli.newRunArgs("repo", "create", name, "--private")
-	res, err := cli.runAuthenticated(ctx, runArgs)
+	res, err := cli.run(ctx, runArgs)
 	if repositoryNameInUseRegex.MatchString(res.Stderr) {
 		return ErrRepositoryNameInUse
 	} else if err != nil {
@@ -227,7 +227,7 @@ const (
 
 func (cli *ghCli) GetGitProtocolType(ctx context.Context) (string, error) {
 	runArgs := cli.newRunArgs("config", "get", "git_protocol")
-	res, err := cli.runAuthenticated(ctx, runArgs)
+	res, err := cli.run(ctx, runArgs)
 	if err != nil {
 		return "", fmt.Errorf("failed running gh config get git_protocol %s: %w", res.String(), err)
 	}
@@ -243,7 +243,7 @@ type GitHubActionsResponse struct {
 // return true if there is at least one workflow in the repo.
 func (cli *ghCli) GitHubActionsExists(ctx context.Context, repoSlug string) (bool, error) {
 	runArgs := cli.newRunArgs("api", "/repos/"+repoSlug+"/actions/workflows")
-	res, err := cli.runAuthenticated(ctx, runArgs)
+	res, err := cli.run(ctx, runArgs)
 	if err != nil {
 		return false, fmt.Errorf("getting github actions %s: %w", res.String(), err)
 	}
@@ -278,7 +278,7 @@ func (cli *ghCli) newRunArgs(args ...string) exec.RunArgs {
 	return runArgs
 }
 
-func (cli *ghCli) runAuthenticated(ctx context.Context, runArgs exec.RunArgs) (exec.RunResult, error) {
+func (cli *ghCli) run(ctx context.Context, runArgs exec.RunArgs) (exec.RunResult, error) {
 	res, err := cli.commandRunner.Run(ctx, runArgs)
 	if isGhCliNotLoggedInMessageRegex.MatchString(res.Stderr) {
 		return res, ErrGitHubCliNotLoggedIn

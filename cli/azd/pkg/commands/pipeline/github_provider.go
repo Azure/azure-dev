@@ -317,12 +317,14 @@ func (p *GitHubCiProvider) ensureAuthorizedForRepoSecrets(
 	// and can be used for probing secrets authorization.
 	err := ghCli.ListSecrets(ctx, repoSlug)
 
-	if err != nil {
-		return fmt.Errorf("listing secrets: %w", err)
-	} else if errors.Is(err, github.ErrUserNotAuthorized) {
-		authResult, err := ghCli.CheckAuth(ctx, github.GitHubHostName)
+	if err == nil {
+		return nil
+	}
+
+	if errors.Is(err, github.ErrUserNotAuthorized) {
+		authResult, err := ghCli.GetAuthStatus(ctx, github.GitHubHostName)
 		if err != nil {
-			return fmt.Errorf("checking auth: %w", err)
+			return fmt.Errorf("getting auth status: %w", err)
 		}
 
 		if authResult.TokenSource == github.TokenSourceEnvVar {
@@ -339,7 +341,7 @@ func (p *GitHubCiProvider) ensureAuthorizedForRepoSecrets(
 		}
 	}
 
-	return nil
+	return fmt.Errorf("listing secrets: %w", err)
 }
 
 // configureConnection set up GitHub account with Azure Credentials for
@@ -445,7 +447,7 @@ func (p *GitHubCiProvider) configurePipeline(
 // ensureGitHubLogin ensures the user is logged into the GitHub CLI. If not, it prompt the user
 // if they would like to log in and if so runs `gh auth login` interactively.
 func ensureGitHubLogin(ctx context.Context, ghCli github.GitHubCli, hostname string, console input.Console) error {
-	authResult, err := ghCli.CheckAuth(ctx, hostname)
+	authResult, err := ghCli.GetAuthStatus(ctx, hostname)
 	if err != nil {
 		return err
 	}

@@ -262,6 +262,7 @@ func (m *Manager) ensureLocation(ctx context.Context, deployment *Deployment) (s
 		// project.
 		selected, err := azureutil.PromptLocation(
 			ctx,
+			m.env,
 			"Please select an Azure location to use to store deployment metadata:",
 		)
 		if err != nil {

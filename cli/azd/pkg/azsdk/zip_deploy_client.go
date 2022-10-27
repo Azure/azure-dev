@@ -89,7 +89,7 @@ func (c *ZipDeployClient) BeginDeploy(
 
 	response, err := c.pipeline.Do(request)
 	if err != nil {
-		return nil, runtime.NewResponseError(response)
+		return nil, httputil.HandleRequestError(response, err)
 	}
 
 	defer response.Body.Close()
@@ -181,7 +181,7 @@ func (h *deployPollingHandler) Poll(ctx context.Context) (*http.Response, error)
 
 	response, err := h.pipeline.Do(req)
 	if err != nil {
-		return nil, runtime.NewResponseError(response)
+		return nil, httputil.HandleRequestError(response, err)
 	}
 
 	if !runtime.HasStatusCode(response, http.StatusAccepted) && !runtime.HasStatusCode(response, http.StatusOK) {

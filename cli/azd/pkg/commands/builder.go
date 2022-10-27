@@ -9,6 +9,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/auth"
+	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/identity"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
@@ -49,7 +50,7 @@ func RegisterDependenciesInCtx(
 		writer = colorable.NewColorableStdout()
 	}
 
-	authManager, err := auth.NewManager(writer)
+	authManager, err := auth.NewManager(writer, config.NewManager())
 	if err != nil {
 		return ctx, fmt.Errorf("creating auth manager: %w", err)
 	}

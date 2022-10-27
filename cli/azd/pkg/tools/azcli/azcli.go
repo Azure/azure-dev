@@ -60,7 +60,7 @@ type AzCli interface {
 	Login(ctx context.Context, useDeviceCode bool, deviceCodeWriter io.Writer) error
 	LoginAcr(ctx context.Context, subscriptionId string, loginServer string) error
 	GetContainerRegistries(ctx context.Context, subscriptionId string) ([]*armcontainerregistry.Registry, error)
-	ListAccounts(ctx context.Context) ([]AzCliSubscriptionInfo, error)
+	ListAccounts(ctx context.Context) ([]*AzCliSubscriptionInfo, error)
 	GetDefaultAccount(ctx context.Context) (*AzCliSubscriptionInfo, error)
 	GetAccount(ctx context.Context, subscriptionId string) (*AzCliSubscriptionInfo, error)
 	GetCliConfigValue(ctx context.Context, name string) (AzCliConfigValue, error)
@@ -488,28 +488,6 @@ func extractInnerDeploymentErrors(stderr string) string {
 		}
 		return sb.String()
 	}
-}
-
-func (cli *azCli) DeleteSubscriptionDeployment(ctx context.Context, subscriptionId string, deploymentName string) error {
-	res, err := cli.runAzCommand(
-		ctx,
-		"deployment",
-		"sub",
-		"delete",
-		"--subscription",
-		subscriptionId,
-		"--name",
-		deploymentName,
-		"--output",
-		"json",
-	)
-	if isNotLoggedInMessage(res.Stderr) {
-		return ErrAzCliNotLoggedIn
-	} else if err != nil {
-		return fmt.Errorf("failed running az deployment sub delete: %s: %w", res.String(), err)
-	}
-
-	return nil
 }
 
 func (cli *azCli) runAzCommand(ctx context.Context, args ...string) (exec.RunResult, error) {

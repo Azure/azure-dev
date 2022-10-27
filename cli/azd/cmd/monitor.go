@@ -147,7 +147,11 @@ func (m *monitorAction) Run(ctx context.Context) error {
 
 		if envBrowser := os.Getenv(BrowserEnvVarName); len(envBrowser) > 0 {
 			if err := exec.Command(envBrowser, url).Run(); err != nil {
-				fmt.Fprintf(m.console.Handles().Stderr, "warning: failed to open browser configured by $BROWSER: %s\n", err.Error())
+				fmt.Fprintf(
+					m.console.Handles().Stderr,
+					"warning: failed to open browser configured by $BROWSER: %s\n",
+					err.Error(),
+				)
 			}
 			return
 		}

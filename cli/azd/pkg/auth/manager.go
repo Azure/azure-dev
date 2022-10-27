@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 package auth
 
 import (
@@ -29,11 +32,12 @@ var cLoginScopes = []string{"https://management.azure.com/.default"}
 const cacheDirectoryFileMode = 0700
 
 type Manager struct {
-	out    io.Writer
-	client *public.Client
+	out           io.Writer
+	client        *public.Client
+	configManager config.Manager
 }
 
-func NewManager(out io.Writer) (*Manager, error) {
+func NewManager(out io.Writer, configManager config.Manager) (*Manager, error) {
 	cfgRoot, err := config.GetUserConfigDir()
 	if err != nil {
 		return nil, fmt.Errorf("getting config dir: %w", err)
@@ -58,19 +62,18 @@ func NewManager(out io.Writer) (*Manager, error) {
 var ErrNoCurrentUser = errors.New("not logged in, run `azd login` to login")
 
 func (m *Manager) GetSignedInUser(ctx context.Context) (*public.Account, azcore.TokenCredential, *time.Time, error) {
-	cfg, err := config.Load()
-	if errors.Is(err, os.ErrNotExist) {
-		cfg = &config.Config{}
-	} else if err != nil {
+	cfg, err := config.GetUserConfig(m.configManager)
+	if err != nil {
 		return nil, nil, nil, fmt.Errorf("fetching current user: %w", err)
 	}
 
-	if cfg.Account == nil || cfg.Account.CurrentUserHomeId == nil {
+	currentUserHomeId, has := cfg.Get("auth.account.currentUserHomeId")
+	if !has {
 		return nil, nil, nil, ErrNoCurrentUser
 	}
 
 	for _, account := range m.client.Accounts() {
-		if account.HomeAccountID == *cfg.Account.CurrentUserHomeId {
+		if account.HomeAccountID == currentUserHomeId.(string) {
 			cred := m.newCredential(&account)
 			if tok, err := cred.GetToken(ctx, policy.TokenRequestOptions{Scopes: cLoginScopes}); err != nil {
 				return nil, nil, nil, fmt.Errorf("failed to get token: %v: %w", err, ErrNoCurrentUser)
@@ -80,7 +83,7 @@ func (m *Manager) GetSignedInUser(ctx context.Context) (*public.Account, azcore.
 		}
 
 		log.Printf("ignoring cached account with home id '%s', does not match '%s'",
-			account.HomeAccountID, *cfg.Account.CurrentUserHomeId)
+			account.HomeAccountID, currentUserHomeId.(string))
 	}
 
 	return nil, nil, nil, ErrNoCurrentUser
@@ -116,21 +119,22 @@ func (m *Manager) Login(
 		authResult = res
 	}
 
-	cfg, err := config.Load()
-	if errors.Is(err, os.ErrNotExist) {
-		cfg = &config.Config{}
-	} else if err != nil {
-		return nil, nil, nil, fmt.Errorf("loading config: %w", err)
+	cfg, err := config.GetUserConfig(m.configManager)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("fetching current user: %w", err)
 	}
 
-	if cfg.Account == nil {
-		cfg.Account = &config.Account{}
+	if err := cfg.Set("auth.account.currentUserHomeId", authResult.Account.HomeAccountID); err != nil {
+		return nil, nil, nil, fmt.Errorf("setting account id in config: %w", err)
 	}
 
-	cfg.Account.CurrentUserHomeId = &authResult.Account.HomeAccountID
+	userConfigFilePath, err := config.GetUserConfigFilePath()
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("failed getting user config file path. %w", err)
+	}
 
-	if err := cfg.Save(); err != nil {
-		return nil, nil, nil, fmt.Errorf("saving config: %w", err)
+	if err := m.configManager.Save(cfg, userConfigFilePath); err != nil {
+		return nil, nil, nil, fmt.Errorf("failed saving configuration: %w", err)
 	}
 
 	log.Printf("logged in as %s (%s)", authResult.Account.PreferredUsername, authResult.Account.HomeAccountID)
@@ -146,22 +150,22 @@ func (m *Manager) newCredential(a *public.Account) azcore.TokenCredential {
 }
 
 func saveCurrentUser(homeId string) error {
-	cfg, err := config.Load()
-	if errors.Is(err, os.ErrNotExist) {
-		cfg = &config.Config{}
-	} else if err != nil {
-		return err
-	}
+	// cfg, err := config.Load()
+	// if errors.Is(err, os.ErrNotExist) {
+	// 	cfg = &config.Config{}
+	// } else if err != nil {
+	// 	return err
+	// }
 
-	if cfg.Account == nil {
-		cfg.Account = &config.Account{}
-	}
+	// if cfg.Account == nil {
+	// 	cfg.Account = &config.Account{}
+	// }
 
-	cfg.Account.CurrentUserHomeId = &homeId
+	// cfg.Account.CurrentUserHomeId = &homeId
 
-	if err := cfg.Save(); err != nil {
-		return err
-	}
+	// if err := cfg.Save(); err != nil {
+	// 	return err
+	// }
 
 	return nil
 }

@@ -14,9 +14,11 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal/telemetry"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/azureutil"
+	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 )
 
 type Asker func(p survey.Prompt, response interface{}) error
@@ -253,7 +255,7 @@ func ensureEnvironmentInitialized(
 	if !hasLocation && envSpec.location != "" {
 		env.SetLocation(envSpec.location)
 	} else {
-		location, err := azureutil.PromptLocation(ctx, "Please select an Azure location to use:")
+		location, err := azureutil.PromptLocation(ctx, env, "Please select an Azure location to use:")
 		if err != nil {
 			return fmt.Errorf("prompting for location: %w", err)
 		}
@@ -276,7 +278,11 @@ func ensureEnvironmentInitialized(
 }
 
 func getSubscriptionOptions(ctx context.Context) ([]string, string, error) {
-	accountManager := account.NewManager(ctx)
+	accountManager, err := account.NewManager(config.NewManager(), azcli.GetAzCli(ctx))
+	if err != nil {
+		return nil, "", fmt.Errorf("failed creating account manager: %w", err)
+	}
+
 	subscriptionInfos, err := accountManager.GetSubscriptions(ctx)
 	if err != nil {
 		return nil, "", fmt.Errorf("listing accounts: %w", err)

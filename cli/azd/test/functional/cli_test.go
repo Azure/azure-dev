@@ -44,6 +44,10 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 )
 
+const (
+	testSubscriptionId = "2cd617ea-1866-46b1-90e3-fffb087ebf9b"
+)
+
 func Test_CLI_Login_FailsIfNoAzCliIsMissing(t *testing.T) {
 	ctx, cancel := newTestContext(t)
 	defer cancel()
@@ -104,14 +108,18 @@ func Test_CLI_Init_AsksForSubscriptionIdAndCreatesEnvAndProjectFile(t *testing.T
 	cli.WorkingDirectory = dir
 	cli.Env = append(os.Environ(), "AZURE_LOCATION=eastus2")
 
-	_, err := cli.RunCommandWithStdIn(ctx, "Empty Template\nTESTENV\nOther (enter manually)\nMY_SUB_ID\n\n", "init")
+	_, err := cli.RunCommandWithStdIn(
+		ctx,
+		fmt.Sprintf("Empty Template\nTESTENV\nOther (enter manually)\n%s\n\n", testSubscriptionId),
+		"init",
+	)
 	require.NoError(t, err)
 
 	file, err := os.ReadFile(getTestEnvPath(dir, "TESTENV"))
 
 	require.NoError(t, err)
 
-	require.Regexp(t, regexp.MustCompile(`AZURE_SUBSCRIPTION_ID="MY_SUB_ID"`+"\n"), string(file))
+	require.Regexp(t, regexp.MustCompile(fmt.Sprintf(`AZURE_SUBSCRIPTION_ID="%s"`, testSubscriptionId)+"\n"), string(file))
 	require.Regexp(t, regexp.MustCompile(`AZURE_ENV_NAME="TESTENV"`+"\n"), string(file))
 
 	proj, err := project.LoadProjectConfig(filepath.Join(dir, azdcontext.ProjectFileName), environment.Ephemeral())
@@ -752,7 +760,7 @@ func Test_CLI_InfraCreateAndDeleteResourceTerraformRemote(t *testing.T) {
 		"-o", "tsv")
 	cmdResult, err := commandRunner.Run(ctx, runArgs)
 	require.NoError(t, err)
-	storageAccountKey := cmdResult.Stdout
+	storageAccountKey := strings.ReplaceAll(strings.ReplaceAll(cmdResult.Stdout, "\n", ""), "\r", "")
 
 	// Create storage container
 	runArgs = newRunArgs("az", "storage", "container", "create", "--name", backendContainerName,

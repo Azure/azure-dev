@@ -11,7 +11,9 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/auth"
+	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
@@ -117,6 +119,8 @@ var FormattedConsoleSet = wire.NewSet(
 )
 
 var CommonSet = wire.NewSet(
+	config.NewManager,
+	account.NewManager,
 	newAzdContext,
 	FormattedConsoleSet,
 	newCommandRunnerFromConsole,
@@ -242,3 +246,28 @@ var VersionCmdSet = wire.NewSet(
 	CommonSet,
 	newVersionAction,
 	wire.Bind(new(actions.Action), new(*versionAction)))
+
+var ConfigListCmdSet = wire.NewSet(
+	CommonSet,
+	newConfigListAction,
+	wire.Bind(new(actions.Action), new(*configListAction)))
+
+var ConfigGetCmdSet = wire.NewSet(
+	CommonSet,
+	newConfigGetAction,
+	wire.Bind(new(actions.Action), new(*configGetAction)))
+
+var ConfigSetCmdSet = wire.NewSet(
+	CommonSet,
+	newConfigSetAction,
+	wire.Bind(new(actions.Action), new(*configSetAction)))
+
+var ConfigUnsetCmdSet = wire.NewSet(
+	CommonSet,
+	newConfigUnsetAction,
+	wire.Bind(new(actions.Action), new(*configUnsetAction)))
+
+var ConfigResetCmdSet = wire.NewSet(
+	CommonSet,
+	newConfigResetAction,
+	wire.Bind(new(actions.Action), new(*configResetAction)))

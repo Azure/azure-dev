@@ -17,11 +17,11 @@ param apiServiceName string = ''
 param applicationInsightsDashboardName string = ''
 param applicationInsightsName string = ''
 param appServicePlanName string = ''
+param cosmosAccountName string = ''
+param cosmosDatabaseName string = 'Todo'
 param keyVaultName string = ''
 param logAnalyticsName string = ''
 param resourceGroupName string = ''
-param cosmosAccountName string = ''
-param cosmosDatabaseName string = 'Todo'
 param webServiceName string = ''
 
 @description('Id of the user or app to assign application roles')

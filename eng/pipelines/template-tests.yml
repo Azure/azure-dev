@@ -130,8 +130,7 @@ jobs:
             echo "https://azure-sdk:$(azuresdk-github-pat)@github.com" > ~/.git-credentials
             git config --global credential.helper "store"
             cd templates/tests/
-            sudo apt-get update
-            sudo apt-get install npm
+            sudo npm install -g npm
             curl -fsSL https://aka.ms/install-azd.sh | bash -s -- --version daily
             chmod +x ./test-templates.sh
             ./test-templates.sh \

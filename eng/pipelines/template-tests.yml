@@ -60,8 +60,8 @@ jobs:
 
       - pwsh: |
           $AzdVersion = '${{ parameters.AzdVersion }}'
-          if ('$(System.PullRequest.PullRequestNumber)' -ne '') {
-            $AzdVersion = 'pr/$(System.PullRequest.PullRequestNumber)'
+          if ($env:SYSTEM_PULLREQUEST_PULLREQUESTNUMBER -ne '') {
+            $AzdVersion = 'pr/' + $env:SYSTEM_PULLREQUEST_PULLREQUESTNUMBER
           }
           Write-Host "##vso[task.setvariable variable=AzdVersion]$AzdVersion"
         displayName: Set azd version for test run

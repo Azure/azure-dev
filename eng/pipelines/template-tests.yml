@@ -7,14 +7,17 @@ parameters:
   - name: AzdPrNumber
     displayName: PR number of azd, overrides AzdVersion (PR validation build publish-cli must succeed)
     type: string
+    default: ''
 
   - name: TemplateList
     displayName: Comma-delimited list of templates to test against (by default, results of azd template list)
     type: string
+    default: ''
 
   - name: TemplateListFilter
     displayName: Regex filter expression to filter templates
     type: string
+    default: ''
 
   - name: TemplateBranchName
     displayName: The branch of each template to test against

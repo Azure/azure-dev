@@ -48,7 +48,7 @@ export class AzureDevCliApplication implements AzureDevCliModel {
 
     async getTreeItem(): Promise<vscode.TreeItem> {
         const results = await this.getResults();
-        
+
         const treeItem = new vscode.TreeItem(results?.name ?? this.resource.name, vscode.TreeItemCollapsibleState.Expanded);
 
         treeItem.contextValue = 'ms-azuretools.azure-dev.views.workspace.application';

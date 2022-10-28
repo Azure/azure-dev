@@ -45,6 +45,8 @@ jobs:
       name: azsdk-pool-mms-ubuntu-2004-general
       vmImage: MMSUbuntu20.04
 
+    container: mcr.microsoft.com/azure-dev-cli-apps:latest
+
     steps:
       - checkout: self
 

@@ -16,14 +16,16 @@ param collections array = [
     indexKey: '_id'
   }
 ]
-param databaseName string = 'Todo'
+param databaseName string = ''
 param keyVaultName string
+
+var defaultDatabaseName = 'Todo'
 
 module cosmos '../../../../../common/infra/bicep/core/database/cosmos/mongo/cosmos-mongo-db.bicep' = {
   name: 'cosmos-mongo'
   params: {
     accountName: accountName
-    databaseName: !empty(databaseName) ? databaseName : 'Todo'
+    databaseName: !empty(databaseName) ? databaseName : defaultDatabaseName
     location: location
     collections: collections
     keyVaultName: keyVaultName

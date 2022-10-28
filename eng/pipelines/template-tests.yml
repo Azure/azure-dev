@@ -54,8 +54,8 @@ jobs:
             $CleanupImmediate = $false
             $CleanupHoursDelay = 8
           }
-          Write-Host "##vso[task.setvariable variable=CleanupImmediate;isOutput=true]$CleanupImmediate"
-          Write-Host "##vso[task.setvariable variable=CleanupHoursDelay;isOutput=true]$CleanupHoursDelay"
+          Write-Host "##vso[task.setvariable variable=CleanupImmediate]$CleanupImmediate"
+          Write-Host "##vso[task.setvariable variable=CleanupHoursDelay]$CleanupHoursDelay"
         displayName: Configure cleanup
 
       - pwsh: |
@@ -93,9 +93,9 @@ jobs:
           $matrix[$capitalsTest] = @{ TemplateName = $firstTemplate; UseUpperCase = "true" }
 
           foreach ($job in $matrix.Values) {
-            $job.CleanupImmediate = $(CleanupImmediate)
-            $job.CleanupHoursDelay = $(CleanupHoursDelay)
-            $job.AzdContainerImage = $(AzdContainerImage)
+            $job.CleanupImmediate = '$(CleanupImmediate)'
+            $job.CleanupHoursDelay = '$(CleanupHoursDelay)'
+            $job.AzdContainerImage = '$(AzdContainerImage)'
           }
 
           Write-Host "Matrix:"

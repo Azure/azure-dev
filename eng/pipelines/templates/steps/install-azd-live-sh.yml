@@ -24,7 +24,7 @@ steps:
     if ('${{ parameters.ContainerImageVariableName }}' -ne '') {
       $ContainerImage = "${{ parameters.ContainerRegistryHost }}/azure-dev:$ContainerImageTag"
       Write-Host "Container image for azd version '${{ parameters.Version }}': $ContainerImage"
-      Write-Host "##vso[task.setvariable variable=${{ parameters.ContainerImageVariableName }};isOutput=true]"
+      Write-Host "##vso[task.setvariable variable=${{ parameters.ContainerImageVariableName }}]$ContainerImage"
     }
   displayName: Configure azd install
 

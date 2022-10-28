@@ -25,6 +25,9 @@ import (
 // https://github.com/Azure/azure-cli/blob/azure-cli-2.41.0/src/azure-cli-core/azure/cli/core/auth/identity.py#L23
 const cAZD_CLIENT_ID = "04b07795-8ddb-461a-bbee-02f9e1bf7b46"
 
+// cCurrentUserHomeIdKey is the key we use in config for the storing the home ID of the currently logged in user
+const cCurrentUserHomeIdKey = "auth.account.currentUserHomeId"
+
 // The scopes to request when acquiring our token during the login flow.
 var cLoginScopes = []string{"https://management.azure.com/.default"}
 
@@ -69,7 +72,7 @@ func (m *Manager) GetSignedInUser(ctx context.Context) (*public.Account, azcore.
 		return nil, nil, nil, fmt.Errorf("fetching current user: %w", err)
 	}
 
-	currentUserHomeId, has := cfg.Get("auth.account.currentUserHomeId")
+	currentUserHomeId, has := cfg.Get(cCurrentUserHomeIdKey)
 	if !has {
 		return nil, nil, nil, ErrNoCurrentUser
 	}
@@ -127,7 +130,7 @@ func (m *Manager) Login(
 		return nil, nil, nil, fmt.Errorf("fetching current user: %w", err)
 	}
 
-	if err := cfg.Set("auth.account.currentUserHomeId", authResult.Account.HomeAccountID); err != nil {
+	if err := cfg.Set(cCurrentUserHomeIdKey, authResult.Account.HomeAccountID); err != nil {
 		return nil, nil, nil, fmt.Errorf("setting account id in config: %w", err)
 	}
 
@@ -152,6 +155,15 @@ func (m *Manager) Logout(ctx context.Context) error {
 		return nil
 	} else if err != nil {
 		return fmt.Errorf("fetching current user: %w", err)
+	}
+
+	// Unset the current user from config, but if we fail to do so, don't fail the overall operation
+	if cfg, err := config.GetUserConfig(m.configManager); err != nil {
+		log.Printf("error fetching config for current user during logout. ignoring: %v", err)
+	} else {
+		if err := cfg.Unset(cCurrentUserHomeIdKey); err != nil {
+			log.Printf("error un-setting key current user during logout. ignoring: %v", err)
+		}
 	}
 
 	if err := m.client.RemoveAccount(*act); err != nil {

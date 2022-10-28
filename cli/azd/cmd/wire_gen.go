@@ -104,6 +104,21 @@ func initLoginAction(cmd *cobra.Command, o *internal.GlobalCommandOptions, flags
 	return cmdLoginAction, nil
 }
 
+func initLogoutAction(cmd *cobra.Command, o *internal.GlobalCommandOptions, flags struct{}, args []string) (actions.Action, error) {
+	writer := newWriter(cmd)
+	manager := config.NewManager()
+	authManager, err := auth.NewManager(writer, manager)
+	if err != nil {
+		return nil, err
+	}
+	formatter, err := output.GetCommandFormatter(cmd)
+	if err != nil {
+		return nil, err
+	}
+	cmdLogoutAction := newLogoutAction(authManager, formatter, writer)
+	return cmdLogoutAction, nil
+}
+
 func initUpAction(cmd *cobra.Command, o *internal.GlobalCommandOptions, flags upFlags, args []string) (actions.Action, error) {
 	azdContext, err := newAzdContext()
 	if err != nil {

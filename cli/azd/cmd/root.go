@@ -109,6 +109,7 @@ For more information, visit the Azure Developer CLI Dev Hub: https://aka.ms/azur
 	cmd.AddCommand(BuildCmd(opts, showCmdDesign, initShowAction, nil))
 	cmd.AddCommand(BuildCmd(opts, restoreCmdDesign, initRestoreAction, nil))
 	cmd.AddCommand(BuildCmd(opts, loginCmdDesign, initLoginAction, nil))
+	cmd.AddCommand(BuildCmd(opts, logoutCmdDesign, initLogoutAction, nil))
 	cmd.AddCommand(BuildCmd(opts, monitorCmdDesign, initMonitorAction, nil))
 	cmd.AddCommand(BuildCmd(opts, downCmdDesign, initInfraDeleteAction, nil))
 	cmd.AddCommand(BuildCmd(opts, initCmdDesign, initInitAction, nil))

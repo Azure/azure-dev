@@ -71,7 +71,6 @@ func (m *Manager) GetSignedInUser(ctx context.Context) (*public.Account, azcore.
 
 	currentUserHomeId, has := cfg.Get("auth.account.currentUserHomeId")
 	if !has {
-		log.Println("no value found in cache")
 		return nil, nil, nil, ErrNoCurrentUser
 	}
 
@@ -144,6 +143,22 @@ func (m *Manager) Login(
 	log.Printf("logged in as %s (%s)", authResult.Account.PreferredUsername, authResult.Account.HomeAccountID)
 
 	return &authResult.Account, m.newCredential(&authResult.Account), &authResult.ExpiresOn, nil
+}
+
+func (m *Manager) Logout(ctx context.Context) error {
+	act, _, _, err := m.GetSignedInUser(ctx)
+	if errors.Is(err, ErrNoCurrentUser) {
+		// already signed out, nothing to do.
+		return nil
+	} else if err != nil {
+		return fmt.Errorf("fetching current user: %w", err)
+	}
+
+	if err := m.client.RemoveAccount(*act); err != nil {
+		return fmt.Errorf("removing account from msal cache: %w", err)
+	}
+
+	return nil
 }
 
 func (m *Manager) newCredential(a *public.Account) azcore.TokenCredential {

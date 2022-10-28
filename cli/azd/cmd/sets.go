@@ -102,7 +102,7 @@ func newAzdContext() (*azdcontext.AzdContext, error) {
 }
 
 func newCredential(authManager *auth.Manager) (azcore.TokenCredential, error) {
-	// TODO(ellismg): I guess we should inject this?
+	// TODO(ellismg): I guess we should inject this context object at some point?
 	_, credential, _, err := authManager.GetSignedInUser(context.TODO())
 	if err != nil {
 		return nil, fmt.Errorf("failed to obtain Azure credentials: %w", err)
@@ -203,9 +203,15 @@ var EnvGetValuesCmdSet = wire.NewSet(
 
 var LoginCmdSet = wire.NewSet(
 	CommonSet,
-	AzCliSet,
+	auth.NewManager,
 	newLoginAction,
 	wire.Bind(new(actions.Action), new(*loginAction)))
+
+var LogoutCmdSet = wire.NewSet(
+	CommonSet,
+	auth.NewManager,
+	newLogoutAction,
+	wire.Bind(new(actions.Action), new(*logoutAction)))
 
 var MonitorCmdSet = wire.NewSet(
 	CommonSet,

@@ -41,6 +41,15 @@ func initLoginAction(
 	panic(wire.Build(LoginCmdSet))
 }
 
+func initLogoutAction(
+	cmd *cobra.Command,
+	o *internal.GlobalCommandOptions,
+	flags struct{},
+	args []string,
+) (actions.Action, error) {
+	panic(wire.Build(LogoutCmdSet))
+}
+
 func initUpAction(
 	cmd *cobra.Command,
 	o *internal.GlobalCommandOptions,

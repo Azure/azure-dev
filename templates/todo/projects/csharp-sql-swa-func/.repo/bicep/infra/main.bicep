@@ -21,7 +21,7 @@ param keyVaultName string = ''
 param logAnalyticsName string = ''
 param resourceGroupName string = ''
 param storageAccountName string = ''
-param sqlDatabaseName string = 'ToDo'
+param sqlDatabaseName string = ''
 param sqlServerName string = ''
 param webServiceName string = ''
 

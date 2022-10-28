@@ -21,7 +21,7 @@ param keyVaultName string = ''
 param logAnalyticsName string = ''
 param resourceGroupName string = ''
 param sqlServerName string = ''
-param sqlDatabaseName string = 'ToDo'
+param sqlDatabaseName string = ''
 param webServiceName string = ''
 
 @description('Id of the user or app to assign application roles')

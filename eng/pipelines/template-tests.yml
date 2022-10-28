@@ -1,23 +1,22 @@
 parameters:
   - name: AzdVersion
-    displayName: Released version of azd to test against
+    displayName: |
+      Version of azd to test against.
+      - For official build, 'daily', 'latest' or a specific version number, '0.3.0-beta.6-daily.1947218'.
+      - For PR builds, specify 'pr/<PRNumber>'. The PR validation build must have succeeded prior.
     type: string
     default: daily
 
-  - name: AzdPrNumber
-    displayName: PR number of azd, overrides AzdVersion (PR validation build publish-cli must succeed)
-    type: string
-    default: 'UNSET'
-
   - name: TemplateList
-    displayName: Comma-delimited list of templates to test against (by default, results of azd template list)
+    displayName: |
+      Comma-delimited list of templates to test against (by default, results of azd template list). Example: 'Azure-Samples/todo-csharp-sql, Azure-Samples/todo-nodejs-mongo'
     type: string
-    default: 'UNSET'
+    default: '(azd template list)'
 
   - name: TemplateListFilter
     displayName: Regex filter expression to filter templates
     type: string
-    default: 'UNSET'
+    default: '.*'
 
   - name: TemplateBranchName
     displayName: The branch of each template to test against
@@ -60,8 +59,8 @@ jobs:
 
       - pwsh: |
           $PrNumber = '$(System.PullRequest.PullRequestNumber)'
-          if ('${{ parameters.AzdPrNumber }}' -ne '') {
-            $PrNumber = '${{ parameters.AzdPrNumber }}'
+          if ('${{ parameters.AzdVersion }}' -ne '' -and '${{ parameters.AzdVersion }}'.StartsWith('pr/')) {
+            $PrNumber = '${{ parameters.AzdVersion }}'.Substring(3)
           }
 
           if ($PrNumber -ne '') {
@@ -79,13 +78,13 @@ jobs:
           BaseUrl: $[variables.AzdInstallBaseUrl]
 
       - pwsh: |
-          if ('${{ parameters.TemplateList }}' -ne '') {
+          if ('${{ parameters.TemplateList }}' -ne '(azd template list)') {
             $templateNames = '${{ parameters.TemplateList }}' -split ',' | ForEach-Object { $_.Trim() }
           } else {
             $templateNames = (azd template list --output json | ConvertFrom-Json).name
           }
 
-          if ('${{ parameters.TemplateListFilter }}' -ne '') {
+          if ('${{ parameters.TemplateListFilter }}' -ne '.*') {
             $templateNames = $templateNames -match '${{ parameters.TemplateListFilter }}'
           }
 

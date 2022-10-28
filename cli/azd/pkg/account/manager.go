@@ -25,7 +25,6 @@ var defaultLocation Location = Location{
 }
 
 // Manages azd account configuration
-// `az cli` is not required and will only be called `azd` default have not already been set.
 type Manager struct {
 	// Path to the local azd user configuration file
 	filePath      string
@@ -61,7 +60,7 @@ func NewManager(configManager config.Manager, azCli azcli.AzCli) (*Manager, erro
 
 // Gets the default subscription for the logged in account.
 // 1. Returns AZD config defaults if exists
-// 2. Returns AZ CLI defaults if exists
+// 2. Returns Coded location default if needed
 func (m *Manager) GetAccountDefaults(ctx context.Context) (*Account, error) {
 	subscription, err := m.getDefaultSubscription(ctx)
 	if err != nil {

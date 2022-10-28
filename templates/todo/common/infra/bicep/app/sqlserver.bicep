@@ -16,7 +16,7 @@ module sqlServer '../../../../../common/infra/bicep/core/database/sqlserver/sqls
     name: name
     location: location
     tags: tags
-    databaseName: databaseName
+    databaseName: !empty(databaseName) ? databaseName : 'ToDo'
     keyVaultName: keyVaultName
     sqlAdminPassword: sqlAdminPassword
     appUserPassword: appUserPassword

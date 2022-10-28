@@ -26,7 +26,7 @@ module cosmos '../../../../../common/infra/bicep/core/database/cosmos/sql/cosmos
     location: location
     tags: tags
     containers: containers
-    databaseName: databaseName
+    databaseName: !empty(databaseName) ? databaseName : 'Todo'
     keyVaultName: keyVaultName
     principalIds: principalIds
   }

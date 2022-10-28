@@ -117,6 +117,18 @@ jobs:
             ARM_TENANT_ID=$(arm-tenant-id)
             SUBSCRIPTION_ID=$(subscription-id)
           runCmd: |
+            az login \
+              --service-principal \
+              -u "$(arm-client-id)" \
+              -p "$(arm-client-secret)" \
+              --tenant "$(arm-tenant-id)"
+            az account set \
+              --subscription "$(subscription-id)"
+
+            git config --global user.name "azure-sdk"
+            git config --global user.email "azuresdk@microsoft.com"
+            "https://azure-sdk:$(azuresdk-github-pat)@github.com" > ~/.git-credentials
+            git config --global credential.helper "store"
             cd templates/tests/
             curl -fsSL https://aka.ms/install-azd.sh | bash -s -- --version daily
             chmod +x ./test-templates.sh

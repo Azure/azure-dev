@@ -112,7 +112,10 @@ func (cli *azCli) DeployToSubscription(
 	deployResult, err := createFromTemplateOperation.PollUntilDone(ctx, nil)
 	if err != nil {
 		deploymentError := createDeploymentError(err)
-		return AzCliDeploymentResult{}, fmt.Errorf("deploying to subscription: %w", deploymentError)
+		return AzCliDeploymentResult{}, fmt.Errorf(
+			"deploying to subscription:\n\nDeployment Error Details:\n%w",
+			deploymentError,
+		)
 	}
 
 	return AzCliDeploymentResult{
@@ -157,7 +160,10 @@ func (cli *azCli) DeployToResourceGroup(
 	deployResult, err := createFromTemplateOperation.PollUntilDone(ctx, nil)
 	if err != nil {
 		deploymentError := createDeploymentError(err)
-		return AzCliDeploymentResult{}, fmt.Errorf("deploying to resource group: %w", deploymentError)
+		return AzCliDeploymentResult{}, fmt.Errorf(
+			"deploying to resource group:\n\nDeployment Error Details:\n%w",
+			deploymentError,
+		)
 	}
 
 	return AzCliDeploymentResult{

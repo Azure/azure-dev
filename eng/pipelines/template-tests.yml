@@ -118,6 +118,7 @@ jobs:
             SUBSCRIPTION_ID=$(subscription-id)
           runCmd: |
             cd templates/tests/
+            chmod +x ./test-templates.sh
             ./test-templates.sh \
               -e '$(EnvPrefixName)' \
               -t '$(TemplateName)' \

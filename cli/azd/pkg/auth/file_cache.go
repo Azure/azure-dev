@@ -19,11 +19,10 @@ var _ cache.ExportReplace = &fileCache{}
 
 type fileCache struct {
 	root string
+	ext  string
 }
 
 func (c *fileCache) Replace(cache cache.Unmarshaler, key string) {
-	log.Printf("fileCache: replacing cache with key '%s'", key)
-
 	contents, err := c.readCacheWithLock(key)
 	if err != nil {
 		log.Printf("failed to read cache: %v", err)
@@ -37,8 +36,6 @@ func (c *fileCache) Replace(cache cache.Unmarshaler, key string) {
 }
 
 func (c *fileCache) Export(cache cache.Marshaler, key string) {
-	log.Printf("fileCache: exporting cache with key '%s'", key)
-
 	new, err := cache.Marshal()
 	if err != nil {
 		log.Printf("error marshaling existing msal cache: %v", err)
@@ -92,7 +89,7 @@ func (c *fileCache) writeFileWithLock(key string, data []byte) error {
 }
 
 func (c *fileCache) pathForCache(key string) string {
-	return filepath.Join(c.root, fmt.Sprintf("cache%s.bin", key))
+	return filepath.Join(c.root, fmt.Sprintf("cache%s.%s", key, c.ext))
 }
 
 func (c *fileCache) pathForLock(key string) string {

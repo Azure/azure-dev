@@ -21,6 +21,7 @@ func newCache(root string) cache.ExportReplace {
 		inner: &encryptedCache{
 			inner: &fileCache{
 				root: root,
+				ext:  "bin",
 			},
 		},
 	}
@@ -35,7 +36,6 @@ type encryptedCache struct {
 }
 
 func (c *encryptedCache) Export(cache cache.Marshaler, key string) {
-	log.Printf("encryptedCache: exporting cache with key '%s'", key)
 	res, err := cache.Marshal()
 	if err != nil {
 		fmt.Printf("failed to marshal cache from MSAL: %v", err)
@@ -55,9 +55,7 @@ func (c *encryptedCache) Export(cache cache.Marshaler, key string) {
 	encryptedSlice := unsafe.Slice(encrypted.Data, encrypted.Size)
 
 	cs := make([]byte, encrypted.Size)
-	for i := uint32(0); i < encrypted.Size; i++ {
-		cs[i] = encryptedSlice[i]
-	}
+	copy(cs, encryptedSlice)
 
 	if _, err := windows.LocalFree(windows.Handle(unsafe.Pointer(encrypted.Data))); err != nil {
 		log.Printf("failed to free encrypted data: %v", err)
@@ -69,8 +67,6 @@ func (c *encryptedCache) Export(cache cache.Marshaler, key string) {
 }
 
 func (c *encryptedCache) Replace(cache cache.Unmarshaler, key string) {
-	log.Printf("encryptedCache: replacing cache with key '%s'", key)
-
 	capture := &fixedMarshaller{}
 	c.inner.Replace(capture, key)
 
@@ -93,9 +89,7 @@ func (c *encryptedCache) Replace(cache cache.Unmarshaler, key string) {
 	decryptedSlice := unsafe.Slice(plaintext.Data, plaintext.Size)
 
 	cs := make([]byte, plaintext.Size)
-	for i := uint32(0); i < plaintext.Size; i++ {
-		cs[i] = decryptedSlice[i]
-	}
+	copy(cs, decryptedSlice)
 
 	if _, err := windows.LocalFree(windows.Handle(unsafe.Pointer(plaintext.Data))); err != nil {
 		log.Printf("failed to free encrypted data: %v", err)

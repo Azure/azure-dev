@@ -29,7 +29,7 @@ const cAZD_CLIENT_ID = "04b07795-8ddb-461a-bbee-02f9e1bf7b46"
 const cCurrentUserHomeIdKey = "auth.account.currentUserHomeId"
 
 // The scopes to request when acquiring our token during the login flow.
-var cLoginScopes = []string{"https://management.azure.com/.default"}
+var cLoginScopes = []string{"https://management.azure.com//.default"}
 
 // cacheDirectoryFileMode is the file mode used to create the folder that is used for the MSAL cache.
 const cacheDirectoryFileMode = 0700

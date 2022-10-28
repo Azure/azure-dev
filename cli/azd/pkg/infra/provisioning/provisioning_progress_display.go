@@ -78,6 +78,7 @@ func (display *ProvisioningProgressDisplay) ReportProgress(ctx context.Context) 
 
 	operations, err := display.resourceManager.GetDeploymentResourceOperations(ctx, display.scope)
 	if err != nil {
+		log.Printf("failed to fetch operations: %v", err)
 		// Status display is best-effort activity.
 		return &progress, err
 	}

@@ -5,7 +5,6 @@ package auth
 
 import (
 	"context"
-	"log"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
@@ -20,9 +19,7 @@ type azdCredential struct {
 }
 
 func (c *azdCredential) GetToken(ctx context.Context, options policy.TokenRequestOptions) (azcore.AccessToken, error) {
-	log.Printf("fetching token scopes for account %s with scopes %+v", c.account.HomeAccountID, options.Scopes)
 	res, err := c.client.AcquireTokenSilent(ctx, options.Scopes, public.WithSilentAccount(*c.account))
-	log.Printf("token fetch completed, err=%v", err)
 
 	if err != nil {
 		return azcore.AccessToken{}, err

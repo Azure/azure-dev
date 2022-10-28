@@ -118,8 +118,10 @@ jobs:
             SUBSCRIPTION_ID=$(subscription-id)
           runCmd: |
             pwd
-            cd /templates/tests/
+            ls -l
+            cd templates/tests/
             pwd
+            ls -l
             sudo ./test-templates.sh \
               -e '$(EnvPrefixName)' \
               -t '$(TemplateName)' \

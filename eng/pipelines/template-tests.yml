@@ -58,25 +58,10 @@ jobs:
           Write-Host "##vso[task.setvariable variable=CleanupHoursDelay;isOutput=true]$CleanupHoursDelay"
         displayName: Configure cleanup
 
-      - pwsh: |
-          $PrNumber = '$(System.PullRequest.PullRequestNumber)'
-          if ('${{ parameters.AzdVersion }}' -ne '' -and '${{ parameters.AzdVersion }}'.StartsWith('pr/')) {
-            $PrNumber = '${{ parameters.AzdVersion }}'.Substring(3)
-          }
-
-          if ($PrNumber -ne '') {
-            Write-Host "##vso[task.setvariable variable=AzdInstallBaseUrl]https://$(azdev-storage-account-name).blob.core.windows.net/azd/standalone/pr/$PrNumber"
-            Write-Host "##vso[task.setvariable variable=AzdContainerImage;isOutput=true]$(azdev-acr-host)/azure-dev:pr-$PrNumber"
-          } else {
-            Write-Host "##vso[task.setvariable variable=AzdInstallVersion]${{ parameters.AzdVersion }}"
-            Write-Host "##vso[task.setvariable variable=AzdContainerImage;isOutput=true]$(azdev-acr-host)/azure-dev:${{ parameters.AzdVersion }}"
-          }
-        displayName: Set azd version for test run
-
       - template: /eng/pipelines/templates/steps/install-azd-live-sh.yml
         parameters:
-          Version: $(AzdInstallVersion)
-          BaseUrl: $(AzdInstallBaseUrl)
+          Version: ${{ parameters.AzdVersion }}
+          ContainerImageVariableName: AzdContainerImage
 
       - pwsh: |
           if ('${{ parameters.TemplateList }}' -ne '(azd template list)') {

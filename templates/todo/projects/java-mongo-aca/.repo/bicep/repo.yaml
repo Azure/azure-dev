@@ -125,6 +125,14 @@ repo:
         - .github/**/*
         - .devcontainer/**/*
         - "infra/**/*"
+        - .azdo/**/*
+
+    # AzDo workflows for bicep
+    - from: ../../../../../common/.azdo/pipelines/bicep/azure-dev.yml
+      to: ./.azdo/pipelines/azure-dev.yml
+
+    - from: ../../../../../common/.azdo/pipelines/README.md
+      to: ./.azdo/pipelines/README.md
 
     # Github workflows for bicep
     - from: ../../../../../common/.github/workflows/bicep

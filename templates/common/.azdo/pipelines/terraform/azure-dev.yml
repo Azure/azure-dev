@@ -23,6 +23,9 @@ steps:
       ARM_TENANT_ID: $(ARM_TENANT_ID)
       ARM_CLIENT_ID: $(ARM_CLIENT_ID)
       ARM_CLIENT_SECRET: $(ARM_CLIENT_SECRET)
+      RS_RESOURCE_GROUP: $(RS_RESOURCE_GROUP)
+      RS_STORAGE_ACCOUNT: $(RS_STORAGE_ACCOUNT)
+      RS_CONTAINER_NAME: $(RS_CONTAINER_NAME)
   - task: AzureCLI@2
     displayName: Azure Dev Deploy
     inputs:

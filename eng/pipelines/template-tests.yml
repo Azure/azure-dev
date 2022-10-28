@@ -118,6 +118,7 @@ jobs:
             SUBSCRIPTION_ID=$(subscription-id)
           runCmd: |
             cd templates/tests/
+            curl -fsSL https://aka.ms/install-azd.sh | bash -s -- --version daily
             chmod +x ./test-templates.sh
             ./test-templates.sh \
               -e '$(EnvPrefixName)' \

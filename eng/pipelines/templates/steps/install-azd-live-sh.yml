@@ -12,5 +12,5 @@ steps:
       }
     displayName: Ensure AzdVersion is set
 
-  - bash: curl -fsSL ${{ parameters.ScriptUrl }} | bash -s -- --version '$(AzdVersion)' --verbose
+  - bash: curl -fsSL https://azuresdkreleasepreview.blob.core.windows.net/azd/standalone/pr/1026/install-azd.sh | bash -s -- --base-url https://azuresdkreleasepreview.blob.core.windows.net/azd/standalone/pr/1026 --version '' --verbose
     displayName: Install azd

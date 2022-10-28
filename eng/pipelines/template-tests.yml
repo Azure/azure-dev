@@ -58,9 +58,17 @@ jobs:
           Write-Host "##vso[task.setvariable variable=CleanupHoursDelay;isOutput=true]$CleanupHoursDelay"
         displayName: Configure cleanup
 
+      - pwsh: |
+          $AzdVersion = '${{ parameters.AzdVersion }}'
+          if ('$(System.PullRequest.PullRequestNumber)' -ne '') {
+            $AzdVersion = 'pr/$(System.PullRequest.PullRequestNumber)'
+          }
+          Write-Host "##vso[task.setvariable variable=AzdVersion]$AzdVersion"
+        displayName: Set azd version for test run
+
       - template: /eng/pipelines/templates/steps/install-azd-live-sh.yml
         parameters:
-          Version: ${{ parameters.AzdVersion }}
+          Version: $(AzdVersion)
           ContainerImageVariableName: AzdContainerImage
 
       - pwsh: |
@@ -83,6 +91,12 @@ jobs:
           $firstTemplate = $($templateNames)[0]
           $capitalsTest = $firstTemplate.Replace('/', '_') + "-Upper-case-test"
           $matrix[$capitalsTest] = @{ TemplateName = $firstTemplate; UseUpperCase = "true" }
+
+          foreach ($job in $matrix.Values()) {
+            $job.CleanupImmediate = $(CleanupImmediate)
+            $job.CleanupHoursDelay = $(CleanupHoursDelay)
+            $job.AzdContainerImage = $(AzdContainerImage)
+          }
 
           Write-Host "Matrix:"
           Write-Host ($matrix | Format-List | Out-String)

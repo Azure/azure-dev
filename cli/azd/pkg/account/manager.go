@@ -65,7 +65,7 @@ func NewManager(configManager config.Manager, azCli azcli.AzCli) (*Manager, erro
 func (m *Manager) GetAccountDefaults(ctx context.Context) (*Account, error) {
 	subscription, err := m.getDefaultSubscription(ctx)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed retrieving default subscription: %w", err)
 	}
 
 	var location *Location
@@ -75,7 +75,7 @@ func (m *Manager) GetAccountDefaults(ctx context.Context) (*Account, error) {
 	} else {
 		location, err = m.getDefaultLocation(ctx, subscription.Id)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("failed retrieving default location: %w", err)
 		}
 	}
 

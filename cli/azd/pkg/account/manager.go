@@ -232,7 +232,12 @@ func (m *Manager) getDefaultSubscription(ctx context.Context) (*Subscription, er
 	subscriptionId := fmt.Sprint(configSubscriptionId)
 	subscription, err := m.azCli.GetAccount(ctx, subscriptionId)
 	if err != nil {
-		return nil, fmt.Errorf("failed retrieving subscription with ID '%s'. %w", subscriptionId, err)
+		return nil, fmt.Errorf(
+			`the subscription id '%s' is either invalid or you no longer have access. 
+			Check your configuration with 'azd config list'. %w`,
+			subscriptionId,
+			err,
+		)
 	}
 
 	return &Subscription{
@@ -261,7 +266,7 @@ func (m *Manager) getDefaultLocation(ctx context.Context, subscriptionId string)
 	})
 
 	if index < 0 {
-		return nil, fmt.Errorf("The location '%s' specified in azd config is invalid", locationName)
+		return nil, fmt.Errorf("the location '%s' is invalid. Check your configuration with `azd config list`", locationName)
 	}
 
 	return &Location{

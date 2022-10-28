@@ -470,10 +470,7 @@ func (cli *azCli) createDefaultClientOptionsBuilder(ctx context.Context) *azsdk.
 // Additionally, https://learn.microsoft.com/azure/active-directory/develop/reference-aadsts-error-codes#aadsts-error-codes
 // is a helpful resource with a list of error codes and messages.
 
-var isConfigurationIsNotSetMessageRegex = regexp.MustCompile(`Configuration '.*' is not set\.`)
 
-func isConfigurationIsNotSetMessage(s string) bool {
-	return isConfigurationIsNotSetMessageRegex.MatchString(s)
 }
 
 type contextKey string

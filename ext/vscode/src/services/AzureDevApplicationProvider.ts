@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { mergeMap, Observable } from "rxjs";
+import { merge, mergeMap, Observable, startWith } from "rxjs";
 
 export interface AzureDevApplication {
     configurationPath: vscode.Uri;
@@ -10,16 +10,47 @@ export interface AzureDevApplicationProvider {
     readonly applications: Observable<AzureDevApplication[]>;
 }
 
+const azureYamlFilePattern = '**/azure.{yml,yaml}';
+
+async function getApplications(): Promise<AzureDevApplication[]> {
+    const files = await vscode.workspace.findFiles(azureYamlFilePattern, '**/node_modules/**');
+    
+    const applications: AzureDevApplication[] = [];
+
+    for (const file of files) {
+        const workspaceFolder = vscode.workspace.getWorkspaceFolder(file);
+
+        if (workspaceFolder) {
+            applications.push({
+                configurationPath: file,
+                workspaceFolder
+            });
+        }
+    }
+
+    return applications;
+}
+
 export class WorkspaceAzureDevApplicationProvider implements AzureDevApplicationProvider {
     constructor() {
-        const workspaceFolders =
-            new Observable<readonly vscode.WorkspaceFolder[] | undefined>(
+        const azureYamlWatcher =
+            new Observable<void>(
                 subscriber => {
-                    subscriber.next(vscode.workspace.workspaceFolders);
+                    const watcher = vscode.workspace.createFileSystemWatcher(azureYamlFilePattern, false, false, false);
 
+                    watcher.onDidCreate(uri => subscriber.next());
+                    watcher.onDidChange(uri => subscriber.next());
+                    watcher.onDidDelete(uri => subscriber.next());
+
+                    return () => watcher.dispose();
+                });
+
+        const workspaceFolderWatcher =
+            new Observable<void>(
+                subscriber => {
                     const subscription = vscode.workspace.onDidChangeWorkspaceFolders(
                         () => {
-                            subscriber.next(vscode.workspace.workspaceFolders);
+                            subscriber.next();
                         });
 
                     return () => {
@@ -28,29 +59,11 @@ export class WorkspaceAzureDevApplicationProvider implements AzureDevApplication
                 });
 
         this.applications =
-                workspaceFolders
-                    .pipe(
-                        mergeMap(WorkspaceAzureDevApplicationProvider.toApplications));
+            merge(azureYamlWatcher, workspaceFolderWatcher)
+                .pipe(
+                    startWith(undefined),
+                    mergeMap(getApplications));
     }
 
     public readonly applications: Observable<AzureDevApplication[]>;
-
-    private static async toApplications(workspaceFolders: readonly vscode.WorkspaceFolder[] | undefined): Promise<AzureDevApplication[]> {
-        const files = await vscode.workspace.findFiles('**/azure.{yml,yaml}', '**/node_modules/**');
-        
-        const applications: AzureDevApplication[] = [];
-
-        for (const file of files) {
-            const workspaceFolder = vscode.workspace.getWorkspaceFolder(file);
-
-            if (workspaceFolder) {
-                applications.push({
-                    configurationPath: file,
-                    workspaceFolder
-                });
-            }
-        }
-
-        return applications;
-    }
 }

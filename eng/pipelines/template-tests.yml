@@ -92,7 +92,7 @@ jobs:
           $capitalsTest = $firstTemplate.Replace('/', '_') + "-Upper-case-test"
           $matrix[$capitalsTest] = @{ TemplateName = $firstTemplate; UseUpperCase = "true" }
 
-          foreach ($job in $matrix.Values()) {
+          foreach ($job in $matrix.Values) {
             $job.CleanupImmediate = $(CleanupImmediate)
             $job.CleanupHoursDelay = $(CleanupHoursDelay)
             $job.AzdContainerImage = $(AzdContainerImage)

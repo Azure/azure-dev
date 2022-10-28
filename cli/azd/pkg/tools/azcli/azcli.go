@@ -9,7 +9,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"regexp"
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
@@ -463,14 +462,6 @@ func (cli *azCli) createDefaultClientOptionsBuilder(ctx context.Context) *azsdk.
 	return azsdk.NewClientOptionsBuilder().
 		WithTransport(httputil.GetHttpClient(ctx)).
 		WithPerCallPolicy(azsdk.NewUserAgentPolicy(cli.UserAgent()))
-}
-
-// Azure Active Directory codes can be referenced via https://login.microsoftonline.com/error?code=<ERROR_CODE>,
-// where ERROR_CODE is the digits portion of an AAD error code. Example: AADSTS70043 has error code 70043
-// Additionally, https://learn.microsoft.com/azure/active-directory/develop/reference-aadsts-error-codes#aadsts-error-codes
-// is a helpful resource with a list of error codes and messages.
-
-
 }
 
 type contextKey string

@@ -164,8 +164,9 @@ func getDefinitionVariables(
 		for _, key := range remoteStateKeys {
 			value, ok := env.Values[key]
 			if !ok || strings.TrimSpace(value) == "" {
-				message := `terraform remote state is not correctly configured, Visit %s for more information on configuring Terraform remote state`
-				return nil, fmt.Errorf(fmt.Sprintf(message, output.WithLinkFormat("https://aka.ms/azure-dev/terraform")))
+				return nil, fmt.Errorf(fmt.Sprintf(`terraform remote state is not correctly configured,
+Visit %s for more information on configuring Terraform remote state`,
+					output.WithLinkFormat("https://aka.ms/azure-dev/terraform")))
 			}
 			variables[key] = createBuildDefinitionVariable(value, false, true)
 		}

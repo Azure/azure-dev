@@ -1,38 +1,38 @@
 parameters:
-  - name: AzdVersion
-    displayName: |
-      Version of azd to test against.
-      For PR builds, specify 'pr/<PRNumber>'. The PR validation build must have succeeded prior.
-      For official build, 'daily', 'latest', or a specific version number: '0.3.0-beta.6-daily.1947218'.
-    type: string
-    default: daily
+- name: AzdVersion
+  displayName: |
+    Version of azd to test against.
+    For PR builds, specify 'pr/<PRNumber>'. The PR validation build must have succeeded prior.
+    For official build, 'daily', 'latest', or a specific version number: '0.3.0-beta.6-daily.1947218'.
+  type: string
+  default: daily
 
-  - name: TemplateList
-    displayName: |
-      Comma-delimited list of templates to test against (by default, results of azd template list). Example: 'Azure-Samples/todo-csharp-sql, Azure-Samples/todo-nodejs-mongo'
-    type: string
-    default: '(azd template list)'
+- name: TemplateList
+  displayName: |
+    Comma-delimited list of templates to test against (by default, results of azd template list). Example: 'Azure-Samples/todo-csharp-sql, Azure-Samples/todo-nodejs-mongo'
+  type: string
+  default: '(azd template list)'
 
-  - name: TemplateListFilter
-    displayName: | 
-      Regex filter expression to filter templates. Examples: 'csharp', 'terraform', 'python-mongo'
-    type: string
-    default: '.*'
+- name: TemplateListFilter
+  displayName: | 
+    Regex filter expression to filter templates. Examples: 'csharp', 'terraform', 'python-mongo'
+  type: string
+  default: '.*'
 
-  - name: TemplateBranchName
-    displayName: The template repository branch to test against
-    type: string
-    default: main
+- name: TemplateBranchName
+  displayName: The template repository branch to test against
+  type: string
+  default: main
 
-  - name: AzureLocation
-    displayName: Azure location for templates to be deployed to
-    type: string
-    default: eastus2
+- name: AzureLocation
+  displayName: Azure location for templates to be deployed to
+  type: string
+  default: eastus2
 
-  - name: DelayCleanup
-    displayName: Delay cleanup of resources by 8 hours for debugging purposes
-    type: boolean
-    default: false
+- name: CleanupHoursDelay
+  displayName: Delay of cleanup for Azure resources for debugging purposes
+  type: int
+  default: 0
 
 variables:
   - template: /eng/pipelines/templates/variables/globals.yml
@@ -47,64 +47,16 @@ jobs:
 
     steps:
       - checkout: self
-
-      - pwsh: |
-          $CleanupImmediate = $true
-          if ('${{ parameters.DelayCleanup }}' -eq 'true') {
-            $CleanupImmediate = $false
-            $CleanupHoursDelay = 8
-          }
-          Write-Host "##vso[task.setvariable variable=CleanupImmediate]$CleanupImmediate"
-          Write-Host "##vso[task.setvariable variable=CleanupHoursDelay]$CleanupHoursDelay"
-        displayName: Configure cleanup
-
-      - pwsh: |
-          $AzdVersion = '${{ parameters.AzdVersion }}'
-          if ($env:SYSTEM_PULLREQUEST_PULLREQUESTNUMBER) {
-            $AzdVersion = 'pr/' + $env:SYSTEM_PULLREQUEST_PULLREQUESTNUMBER
-          }
-          Write-Host "##vso[task.setvariable variable=AzdVersion]$AzdVersion"
-        displayName: Set azd version for test run
-
-      - template: /eng/pipelines/templates/steps/install-azd-live-sh.yml
+      - template: /eng/pipelines/templates/steps/template-test-generate-jobs.yml
         parameters:
-          Version: $(AzdVersion)
-          ContainerImageVariableName: AzdContainerImage
-
-      - pwsh: |
-          if ('${{ parameters.TemplateList }}' -ne '(azd template list)') {
-            $templateNames = '${{ parameters.TemplateList }}' -split ',' | ForEach-Object { $_.Trim() }
-          } else {
-            $templateNames = (azd template list --output json | ConvertFrom-Json).name
-          }
-
-          if ('${{ parameters.TemplateListFilter }}' -ne '.*') {
-            $templateNames = $templateNames -match '${{ parameters.TemplateListFilter }}'
-          }
-
-          $matrix = @{}
-          foreach ($template in $templateNames) {
-            $jobName = $template.Replace('/', '_')
-            $matrix[$jobName] = @{ TemplateName = $template }
-          }
-          # Adding extra test for capitals letters support. Using first template
-          $firstTemplate = $($templateNames)[0]
-          $capitalsTest = $firstTemplate.Replace('/', '_') + "-Upper-case-test"
-          $matrix[$capitalsTest] = @{ TemplateName = $firstTemplate; UseUpperCase = "true" }
-
-          foreach ($job in $matrix.Values) {
-            $job.CleanupImmediate = '$(CleanupImmediate)'
-            $job.CleanupHoursDelay = '$(CleanupHoursDelay)'
-            $job.AzdContainerImage = '$(AzdContainerImage)'
-          }
-
-          Write-Host "Matrix:"
-          Write-Host ($matrix | Format-List | Out-String)
-
-          $matrixJson = ConvertTo-Json $matrix -Depth 100 -Compress
-          Write-Host "##vso[task.setvariable variable=Matrix;isOutput=true]$matrixJson"
-        name: Generate
-        displayName: Generate matrix
+          AzdVersion: ${{ parameters.AzdVersion }}
+          AzureLocation: ${{ parameters.AzureLocation }}
+          TemplateList: ${{ parameters.TemplateList }}
+          TemplateListFilter: ${{ parameters.TemplateListFilter }}
+          TemplateBranchName: ${{ parameters.TemplateBranchName }}
+          CleanupHoursDelay: $(CleanupHoursDelay)
+          OutputMatrixStepName: 'Generate'
+          OutputMatrixVariable: 'Matrix'
 
   - job: TestTemplates
     dependsOn: CreateMatrix
@@ -117,77 +69,6 @@ jobs:
       name: azsdk-pool-mms-ubuntu-2004-general
       vmImage: MMSUbuntu20.04
 
-    container: $[ variables['AzdContainerImage'] ]
-
     steps:
       - checkout: self
-
-      - template: /eng/pipelines/templates/steps/az-login.yml
-
-      # Required to clone repos that are not yet public
-      - template: /eng/pipelines/templates/steps/set-git-credentials.yml
-
-      - pwsh: |
-          $templateName = '$(TemplateName)'.Substring(14)
-          $useUpperCaseName = '$(UseUpperCase)'
-          $envPrefixName = "azd-template-test"
-          if($useUpperCaseName -eq "true") {
-            # Use upper case name for env prefix name
-            $envPrefixName = "AZD-TEMPLATE-UPPER-TEST"
-          } 
-          $resourceGroupName = "rg-$envPrefixName-$templateName-$(Build.BuildId)"
-          Write-Host "Resource group name: $resourceGroupName"
-          Write-Host "##vso[task.setvariable variable=ResourceGroupName]$resourceGroupName"
-          Write-Host "##vso[task.setvariable variable=EnvPrefixName]$envPrefixName"
-        displayName: Set Resource Group Name
-
-      - task: Bash@3
-        displayName: Test templates
-        env:             
-          # Required secrets for Terraform service principal authentication
-          ARM_CLIENT_ID: $(arm-client-id)
-          ARM_CLIENT_SECRET: $(arm-client-secret)
-          ARM_TENANT_ID: $(arm-tenant-id)
-        inputs:
-          targetType: filePath
-          filePath: templates/tests/test-templates.sh
-          arguments: >
-            -e '$(EnvPrefixName)'
-            -t '$(TemplateName)'
-            -b '${{ parameters.TemplateBranchName }}'
-            -s '$(Build.BuildId)'
-            -l '${{ parameters.AzureLocation }}'
-            -p 'list'
-            -c '$(CleanupImmediate)'
-          workingDirectory: templates/tests
-
-      # First tag the resource group (if exists) so that it can get cleaned up
-      # by the cleanup pipeline. Then attempt to delete the resource group 
-      # directly. If the delete fails the cleanup pipeline will delete it.
-      - pwsh: |
-          $resourceGroupId = az group show `
-            --resource-group '$(ResourceGroupName)' `
-            --query id
-
-          if ($LASTEXITCODE) {
-            Write-Host "Could not get information for resource group: $(ResourceGroupName)"
-            exit 0
-          }
-
-          if ('$(CleanupImmediate)' -eq 'true') {
-            # Tag the resource group so it gets cleaned up later if delete fails
-            az tag create `
-              --resource-id $resourceGroupId `
-              --tags DeleteAfter="$((Get-Date -AsUTC).ToString('o'))"
-
-            # Attempt to delete the resource group
-            az group delete --resource-group $(ResourceGroupName) --yes --no-wait
-          } else {
-            $delayInHours = [int]'$(CleanupHoursDelay)'
-            # Tag the resource group for delayed cleanup
-            az tag create `
-              --resource-id $resourceGroupId `
-              --tags DeleteAfter="$((Get-Date -AsUTC).AddHours($delayInHours).ToString('o'))"
-          }
-        condition: always()
-        displayName: Tag resource group for deletion
+      - template: /eng/pipelines/templates/steps/template-test-run-job.yml

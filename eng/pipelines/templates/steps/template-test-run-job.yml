@@ -1,0 +1,80 @@
+# Consumes all variables defined in template-test-generate-jobs.yml
+
+steps:
+- template: /eng/pipelines/templates/steps/az-login.yml
+
+- template: /eng/pipelines/templates/steps/install-azd-live-sh.yml
+  parameters:
+    Version: $(AzdVersion)
+
+# Java pre-requisites that isn't met
+# TODO: Use azd container as a form of validation that the container works
+- template: /eng/pipelines/templates/steps/install-ms-openjdk.yml
+
+# Required to clone repos that are not yet public
+- template: /eng/pipelines/templates/steps/set-git-credentials.yml
+
+- pwsh: |
+    $templateName = '$(TemplateName)'.Substring(14)
+    $useUpperCaseName = '$(UseUpperCase)'
+    $envPrefixName = "azd-template-test"
+    if($useUpperCaseName -eq "true") {
+      # Use upper case name for env prefix name
+      $envPrefixName = "AZD-TEMPLATE-UPPER-TEST"
+    } 
+    $resourceGroupName = "rg-$envPrefixName-$templateName-$(Build.BuildId)"
+    Write-Host "Resource group name: $resourceGroupName"
+    Write-Host "##vso[task.setvariable variable=ResourceGroupName]$resourceGroupName"
+    Write-Host "##vso[task.setvariable variable=EnvPrefixName]$envPrefixName"
+  displayName: Set Resource Group Name
+
+- task: Bash@3
+  displayName: Test templates
+  env:             
+    # Required secrets for Terraform service principal authentication
+    ARM_CLIENT_ID: $(arm-client-id)
+    ARM_CLIENT_SECRET: $(arm-client-secret)
+    ARM_TENANT_ID: $(arm-tenant-id)
+  inputs:
+    targetType: filePath
+    filePath: templates/tests/test-templates.sh
+    arguments: >
+      -e '$(EnvPrefixName)'
+      -t '$(TemplateName)'
+      -b '$(TemplateBranchName)'
+      -s '$(Build.BuildId)'
+      -l '$(AzureLocation)'
+      -p 'list'
+      -c '$(CleanupImmediate)'
+    workingDirectory: templates/tests
+
+# First tag the resource group (if exists) so that it can get cleaned up
+# by the cleanup pipeline. Then attempt to delete the resource group 
+# directly. If the delete fails the cleanup pipeline will delete it.
+- pwsh: |
+    $resourceGroupId = az group show `
+      --resource-group '$(ResourceGroupName)' `
+      --query id
+
+    if ($LASTEXITCODE) {
+      Write-Host "Could not get information for resource group: $(ResourceGroupName)"
+      exit 0
+    }
+
+    if ('$(CleanupImmediate)' -eq 'true') {
+      # Tag the resource group so it gets cleaned up later if delete fails
+      az tag create `
+        --resource-id $resourceGroupId `
+        --tags DeleteAfter="$((Get-Date -AsUTC).ToString('o'))"
+
+      # Attempt to delete the resource group
+      az group delete --resource-group $(ResourceGroupName) --yes --no-wait
+    } else {
+      $delayInHours = [int]'$(CleanupHoursDelay)'
+      # Tag the resource group for delayed cleanup
+      az tag create `
+        --resource-id $resourceGroupId `
+        --tags DeleteAfter="$((Get-Date -AsUTC).AddHours($delayInHours).ToString('o'))"
+    }
+  condition: always()
+  displayName: Tag resource group for deletion

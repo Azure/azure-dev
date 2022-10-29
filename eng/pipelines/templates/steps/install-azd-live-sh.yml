@@ -1,12 +1,12 @@
 parameters:
     # For PR builds, specify 'pr/<pr number>'
     Version: daily
-    # If set, the container image for `azd` will be determined and set to the specified variable name
-    ContainerImageVariableName: ''
     ContainerRegistryHost: $(azdev-acr-host)
     StorageAccountName: $(azdev-storage-account-name)
     ScriptUrl: https://aka.ms/install-azd.sh
-  
+    # If set, the container image for `azd` will be determined and set to the specified variable name
+    OutputContainerImageVariableName: ''
+
 
 steps:
 - pwsh: |
@@ -21,10 +21,10 @@ steps:
     Write-Host "Arguments for installer to install azd version '${{ parameters.Version }}' : $InstallArgs"
     Write-Host "##vso[task.setvariable variable=AzdInstallArgs]$InstallArgs"
 
-    if ('${{ parameters.ContainerImageVariableName }}' -ne '') {
+    if ('${{ parameters.OutputContainerImageVariableName }}' -ne '') {
       $ContainerImage = "${{ parameters.ContainerRegistryHost }}/azure-dev:$ContainerImageTag"
       Write-Host "Container image for azd version '${{ parameters.Version }}': $ContainerImage"
-      Write-Host "##vso[task.setvariable variable=${{ parameters.ContainerImageVariableName }}]$ContainerImage"
+      Write-Host "##vso[task.setvariable variable=${{ parameters.OutputContainerImageVariableName }}]$ContainerImage"
     }
   displayName: Configure azd install
 

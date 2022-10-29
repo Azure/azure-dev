@@ -1,11 +1,37 @@
-# Consumes all variables defined in template-test-generate-jobs.yml
+parameters:
+- name: AzdVersion
+  displayName: |
+    Version of azd to test against.
+    For PR builds, specify 'pr/<PRNumber>'. The PR validation build must have succeeded prior.
+    For official build, 'daily', 'latest', or a specific version number: '0.3.0-beta.6-daily.1947218'.
+  type: string
+  default: daily
+
+- name: TemplateBranchName
+  displayName: The template repository branch to test against
+  type: string
+  default: main
+
+- name: AzureLocation
+  displayName: Azure location for templates to be deployed to
+  type: string
+  default: eastus2
+
+- name: CleanupHoursDelay
+  displayName: Delay of cleanup for Azure resources for debugging purposes
+  type: number
+  default: 0
+
+# Consumes the following variables from Set-TemplateTestMatrixVariable.ps1:
+# - TemplateName
+# - UseUpperCase
 
 steps:
 - template: /eng/pipelines/templates/steps/az-login.yml
 
 - template: /eng/pipelines/templates/steps/install-azd-live-sh.yml
   parameters:
-    Version: $(AzdVersion)
+    Version: ${{ parameters.AzdVersion }}
 
 # Java pre-requisites that isn't met
 # TODO: Use azd container as a form of validation that the container works
@@ -26,7 +52,13 @@ steps:
     Write-Host "Resource group name: $resourceGroupName"
     Write-Host "##vso[task.setvariable variable=ResourceGroupName]$resourceGroupName"
     Write-Host "##vso[task.setvariable variable=EnvPrefixName]$envPrefixName"
-  displayName: Set Resource Group Name
+
+    $CleanupImmediate = 'true'
+    if (${{ parameters.CleanupHoursDelay }} -ne '0') {
+      $CleanupImmediate = 'false'
+    }
+    Write-Host "##vso[task.setvariable variable=CleanupImmediate]$CleanupImmediate"
+  displayName: Set test run parameters
 
 - task: Bash@3
   displayName: Test templates
@@ -41,9 +73,9 @@ steps:
     arguments: >
       -e '$(EnvPrefixName)'
       -t '$(TemplateName)'
-      -b '$(TemplateBranchName)'
+      -b '${{ parameters.TemplateBranchName }}'
       -s '$(Build.BuildId)'
-      -l '$(AzureLocation)'
+      -l '${{ parameters.AzureLocation }}'
       -p 'list'
       -c '$(CleanupImmediate)'
     workingDirectory: templates/tests
@@ -70,7 +102,7 @@ steps:
       # Attempt to delete the resource group
       az group delete --resource-group $(ResourceGroupName) --yes --no-wait
     } else {
-      $delayInHours = [int]'$(CleanupHoursDelay)'
+      $delayInHours = [int]'${{ parameters.CleanupHoursDelay }}'
       # Tag the resource group for delayed cleanup
       az tag create `
         --resource-id $resourceGroupId `

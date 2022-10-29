@@ -31,7 +31,7 @@ parameters:
 
 - name: CleanupHoursDelay
   displayName: Delay of cleanup for Azure resources for debugging purposes
-  type: int
+  type: number
   default: 0
 
 variables:
@@ -49,12 +49,8 @@ jobs:
       - checkout: self
       - template: /eng/pipelines/templates/steps/template-test-generate-jobs.yml
         parameters:
-          AzdVersion: ${{ parameters.AzdVersion }}
-          AzureLocation: ${{ parameters.AzureLocation }}
           TemplateList: ${{ parameters.TemplateList }}
           TemplateListFilter: ${{ parameters.TemplateListFilter }}
-          TemplateBranchName: ${{ parameters.TemplateBranchName }}
-          CleanupHoursDelay: $(CleanupHoursDelay)
           OutputMatrixStepName: 'Generate'
           OutputMatrixVariable: 'Matrix'
 
@@ -72,3 +68,8 @@ jobs:
     steps:
       - checkout: self
       - template: /eng/pipelines/templates/steps/template-test-run-job.yml
+        parameters:
+          AzdVersion: ${{ parameters.AzdVersion }}
+          AzureLocation: ${{ parameters.AzureLocation }}
+          TemplateBranchName: ${{ parameters.TemplateBranchName }}
+          CleanupHoursDelay: ${{ parameters.CleanupHoursDelay }}

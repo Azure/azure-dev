@@ -19,21 +19,6 @@ parameters:
   type: string
   default: '.*'
 
-- name: TemplateBranchName
-  displayName: The template repository branch to test against
-  type: string
-  default: main
-
-- name: AzureLocation
-  displayName: Azure location for templates to be deployed to
-  type: string
-  default: eastus2
-
-- name: CleanupHoursDelay
-  displayName: Delay of cleanup for Azure resources for debugging purposes
-  type: int
-  default: 0
-
 - name: OutputMatrixVariable
   displayName: The output matrix variable to set
   type: string
@@ -60,7 +45,6 @@ steps:
   - template: /eng/pipelines/templates/steps/install-azd-live-sh.yml
     parameters:
       Version: $(AzdVersion)
-      OutputContainerImageVariableName: AzdContainerImage
 
   - task: PowerShell@2
     name: ${{ parameters.OutputMatrixStepName }}
@@ -70,11 +54,6 @@ steps:
       targetType: filePath
       filePath: ./eng/scripts/Set-TemplateTestMatrixVariable.ps1
       arguments: >-
-        -AzdVersion $(AzdVersion)
-        -AzdContainerImage $(AzdContainerImage)
-        -AzureLocation ${{ parameters.AzureLocation }}
         -TemplateList ${{ parameters.TemplateList }}
         -TemplateListFilter ${{ parameters.TemplateListFilter }}
-        -TemplateBranchName ${{ parameters.TemplateBranchName }}
-        -CleanupHoursDelay $(CleanupHoursDelay)
         -OutputMatrixVariable ${{ parameters.OutputMatrixVariable }}

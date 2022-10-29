@@ -132,7 +132,7 @@ jobs:
             cd templates/tests/
             curl -fsSL https://deb.nodesource.com/setup_19.x | sudo -E bash - &&\
             sudo apt-get install -y nodejs
-            curl -fsSL https://aka.ms/install-azd.sh | bash -s -- --version daily
+            curl -fsSL https://aka.ms/install-azd.sh | bash -s -- --version 'daily' --verbose
             chmod +x ./test-templates.sh
             ./test-templates.sh \
               -e '$(EnvPrefixName)' \

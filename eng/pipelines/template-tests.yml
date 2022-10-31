@@ -105,7 +105,8 @@ jobs:
             -e '$(EnvPrefixName)'
             -t '$(TemplateName)'
             -b '$(TemplateBranchName)'
-            -s '$(Build.BuildId)'
+            -s '$(SubscriptionId)'
+            -u '$(Build.BuildId)'
             -l '$(DeployLocation)'
             -p 'list'
           workingDirectory: templates/tests

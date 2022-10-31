@@ -20,3 +20,14 @@ func newCache(root string) cache.ExportReplace {
 		},
 	}
 }
+
+func newCredentialCache(root string) cache.ExportReplace {
+	return &memoryCache{
+		cache: make(map[string][]byte),
+		inner: &fileCache{
+			prefix: "cred",
+			root:   root,
+			ext:    "json",
+		},
+	}
+}

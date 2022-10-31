@@ -33,7 +33,7 @@ const cCurrentUserKey = "auth.account.currentUser"
 // The scopes to request when acquiring our token during the login flow.
 var cLoginScopes = []string{"https://management.azure.com//.default"}
 
-// authDirectoryFileMode is the file mode used to create the folder that is used for auth folder and subfolders.
+// authDirectoryFileMode is the file mode used to create the folder that is used for auth folder and sub-folders.
 const authDirectoryFileMode = 0700
 
 type Manager struct {
@@ -251,7 +251,7 @@ func (m *Manager) Logout(ctx context.Context) error {
 	if cfg, err := config.GetUserConfig(m.configManager); err != nil {
 		log.Printf("error fetching config for current user during logout. ignoring: %v", err)
 	} else {
-		// TODO(ellismg): remove confidental credential
+		// TODO(ellismg): remove confidential credential
 
 		if err := cfg.Unset(cCurrentUserKey); err != nil {
 			log.Printf("error un-setting key current user during logout. ignoring: %v", err)

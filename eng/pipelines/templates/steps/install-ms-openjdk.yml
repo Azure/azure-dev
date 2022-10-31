@@ -8,7 +8,6 @@ steps:
     sudo apt-get install msopenjdk-17
     sudo update-java-alternatives --set msopenjdk-17-amd64
 
-    # Set JAVA_HOME explicitly since the build agent has existing overrides
-    export
-    Write-Host "##vso[task.setvariable variable=JAVA_HOME]/usr/lib/jvm/msopenjdk-17-amd64"
+    # Set JAVA_HOME explicitly since the build agent has existing JAVA_HOME defined
+    echo "##vso[task.setvariable variable=JAVA_HOME]/usr/lib/jvm/msopenjdk-17-amd64"
   displayName: Install msopenjdk-17

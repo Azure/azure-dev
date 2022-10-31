@@ -130,13 +130,12 @@ jobs:
             echo "https://azure-sdk:$(azuresdk-github-pat)@github.com" > ~/.git-credentials
             git config --global credential.helper "store"
             cd templates/tests/
-            sudo apt-get update
             curl -fsSL https://deb.nodesource.com/setup_19.x | sudo -E bash - &&\
             sudo apt-get install -y nodejs
             wget https://packages.microsoft.com/config/ubuntu/21.04/packages-microsoft-prod.deb -O packages-microsoft-prod.deb
             sudo dpkg -i packages-microsoft-prod.deb
             rm packages-microsoft-prod.deb
-            sudo apt-get install -y dotnet-sdk-6.0
+            sudo apt-get update && sudo apt-get install -y dotnet-sdk-6.0
             sudo apt-get install \
             ca-certificates \
             curl \

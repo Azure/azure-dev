@@ -124,6 +124,8 @@ jobs:
               --tenant "$(arm-tenant-id)"
             az account set \
               --subscription "$(subscription-id)"
+            echo "!!!"
+            echo "$(subscription-id)"
 
             git config --global user.name "azure-sdk"
             git config --global user.email "azuresdk@microsoft.com"

@@ -78,6 +78,9 @@ resource appService 'Microsoft.Web/sites@2022-03-01' = {
       failedRequestsTracing: { enabled: true }
       httpLogs: { fileSystem: { enabled: true, retentionInDays: 1, retentionInMb: 35 } }
     }
+    dependsOn: [
+      configAppSettings
+    ]
   }
 }
 

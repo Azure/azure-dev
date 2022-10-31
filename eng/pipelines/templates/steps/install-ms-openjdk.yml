@@ -8,4 +8,5 @@ steps:
     sudo apt-get install apt-transport-https
     sudo apt-get update
     sudo apt-get install msopenjdk-17
+    sudo update-java-alternatives --set msopenjdk-17-amd64
   displayName: Install msopenjdk-17

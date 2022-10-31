@@ -22,7 +22,6 @@ import (
 	"strings"
 	"time"
 
-	azcorelog "github.com/Azure/azure-sdk-for-go/sdk/azcore/log"
 	"github.com/azure/azure-dev/cli/azd/cmd"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/telemetry"
@@ -40,11 +39,7 @@ func main() {
 
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
 
-	if isDebugEnabled() {
-		azcorelog.SetListener(func(event azcorelog.Event, msg string) {
-			log.Printf("%s: %s\n", event, msg)
-		})
-	} else {
+	if !isDebugEnabled() {
 		log.SetOutput(io.Discard)
 	}
 

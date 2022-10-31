@@ -65,8 +65,8 @@ func NewZipDeployClient(
 	// We do not have a Resource provider to register
 	options.DisableRPRegistration = true
 
-	// Increase default retry attempts from 3 to 4.
-	// With the default azcore.policy options, this introduces up to 20 seconds of exponential back-off.
+	// Increase retry attempts from default of 3 to 4.
+	// With the default azcore.policy options of 800ms RetryDelay, this introduces up to 20 seconds of exponential back-off.
 	options.Retry = policy.RetryOptions{
 		MaxRetries: 4,
 	}

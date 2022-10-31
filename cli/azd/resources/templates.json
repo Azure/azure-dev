@@ -45,6 +45,16 @@
         "repositoryPath": "Azure-Samples/todo-csharp-sql"
     },
     {
+        "name": "Azure-Samples/todo-java-mongo",
+        "description": "ToDo Application with a Java API and Azure Cosmos DB API for MongoDB on Azure App Service",
+        "repositoryPath": "Azure-Samples/todo-java-mongo"
+    },
+    {
+        "name": "Azure-Samples/todo-java-mongo-aca",
+        "description": "ToDo Application with a Java API and Azure Cosmos DB API for MongoDB on Azure Container Apps",
+        "repositoryPath": "Azure-Samples/todo-java-mongo-aca"
+    },
+    {
         "name": "Azure-Samples/todo-nodejs-mongo-terraform",
         "description": "ToDo Application with a Node.js API and Azure Cosmos DB API for MongoDB on Azure App Service",
         "repositoryPath": "Azure-Samples/todo-nodejs-mongo-terraform"

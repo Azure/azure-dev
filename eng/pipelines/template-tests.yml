@@ -51,7 +51,7 @@ jobs:
       - template: /eng/pipelines/templates/steps/install-bicep.yml
 
       - template: /eng/pipelines/templates/steps/install-terraform.yml
-      
+
       - template: /eng/pipelines/templates/steps/install-azd-live-sh.yml
 
       - template: /eng/pipelines/templates/steps/az-login.yml
@@ -84,7 +84,7 @@ jobs:
           if($useUpperCaseName -eq "true") {
             # Use upper case name for env prefix name
             $envPrefixName = "AZD-TEMPLATE-UPPER-TEST"
-          } 
+          }
           $resourceGroupName = "rg-$envPrefixName-$templateName-$(Build.BuildId)"
           Write-Host "Resource group name: $resourceGroupName"
           Write-Host "##vso[task.setvariable variable=ResourceGroupName]$resourceGroupName"
@@ -93,11 +93,12 @@ jobs:
 
       - task: Bash@3
         displayName: Test templates
-        env:             
+        env:
           # Required for Terraform service principal authentication
           ARM_CLIENT_ID: $(arm-client-id)
           ARM_CLIENT_SECRET: $(arm-client-secret)
           ARM_TENANT_ID: $(arm-tenant-id)
+          ARM_SUBSCRIPTION_ID: $(arm-subscription-id)
         inputs:
           targetType: filePath
           filePath: templates/tests/test-templates.sh
@@ -111,7 +112,7 @@ jobs:
           workingDirectory: templates/tests
 
       # First tag the resource group (if exists) so that it can get cleaned up
-      # by the cleanup pipeline. Then attempt to delete the resource group 
+      # by the cleanup pipeline. Then attempt to delete the resource group
       # directly. If the delete fails the cleanup pipeline will delete it.
       - pwsh: |
           $resourceGroupId = az group show `

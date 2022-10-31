@@ -6,7 +6,7 @@ param tags object = {}
 param applicationInsightsName string = ''
 param appServicePlanId string
 param keyVaultName string = ''
-param managedIdentity bool = !(empty(keyVaultName))
+param managedIdentity bool = !empty(keyVaultName)
 param storageAccountName string
 
 // Runtime Properties

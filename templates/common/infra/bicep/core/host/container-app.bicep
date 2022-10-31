@@ -8,7 +8,7 @@ param env array = []
 param external bool = true
 param imageName string
 param keyVaultName string = ''
-param managedIdentity bool = !(empty(keyVaultName))
+param managedIdentity bool = !empty(keyVaultName)
 param targetPort int = 80
 
 @description('CPU cores allocated to a single container instance, e.g. 0.5')

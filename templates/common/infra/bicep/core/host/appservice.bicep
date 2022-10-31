@@ -6,7 +6,7 @@ param tags object = {}
 param applicationInsightsName string = ''
 param appServicePlanId string
 param keyVaultName string = ''
-param managedIdentity bool = !(empty(keyVaultName))
+param managedIdentity bool = !empty(keyVaultName)
 
 // Runtime Properties
 @allowed([
@@ -64,10 +64,10 @@ resource appService 'Microsoft.Web/sites@2022-03-01' = {
     properties: union(appSettings,
       {
         SCM_DO_BUILD_DURING_DEPLOYMENT: string(scmDoBuildDuringDeployment)
-        ENABLE_ORYX_BUILD: enableOryxBuild
+        ENABLE_ORYX_BUILD: string(enableOryxBuild)
       },
-      !(empty(applicationInsightsName)) ? { APPLICATIONINSIGHTS_CONNECTION_STRING: applicationInsights.properties.ConnectionString } : {},
-      !(empty(keyVaultName)) ? { AZURE_KEY_VAULT_ENDPOINT: keyVault.properties.vaultUri } : {})
+      !empty(applicationInsightsName) ? { APPLICATIONINSIGHTS_CONNECTION_STRING: applicationInsights.properties.ConnectionString } : {},
+      !empty(keyVaultName) ? { AZURE_KEY_VAULT_ENDPOINT: keyVault.properties.vaultUri } : {})
   }
 
   resource configLogs 'config' = {
@@ -85,7 +85,7 @@ resource keyVault 'Microsoft.KeyVault/vaults@2022-07-01' existing = if (!(empty(
   name: keyVaultName
 }
 
-resource applicationInsights 'Microsoft.Insights/components@2020-02-02' existing = if (!(empty(applicationInsightsName))) {
+resource applicationInsights 'Microsoft.Insights/components@2020-02-02' existing = if (!empty(applicationInsightsName)) {
   name: applicationInsightsName
 }
 

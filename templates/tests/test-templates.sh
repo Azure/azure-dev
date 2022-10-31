@@ -11,7 +11,7 @@ TEMPLATE_NAME=""
 PLAYWRIGHT_RETRIES="1"
 PLAYWRIGHT_REPORTER="list"
 LOCATION="eastus2"
-SUBSCRIPTION="2cd617ea-1866-46b1-90e3-fffb087ebf9b"
+SUBSCRIPTION="faa080af-c1d8-40ad-9cce-e1a450ca5b57"
 # Default to a random value if not specified
 ENV_SUFFIX="$RANDOM"
 # When set will only run tests without deployments
@@ -31,7 +31,7 @@ function usage {
     echo "  -r    Sets the number of retries for playwright tests (default: 1)"
     echo "  -p    Sets the reporter for playwright tests (default: list)"
     echo "  -l    Sets the Azure location for the template tests to run in (default: eastus2)"
-    echo "  -s    Sets the Azure subscription name or ID for the template tests to run in. (default: 2cd617ea-1866-46b1-90e3-fffb087ebf9b)"
+    echo "  -s    Sets the Azure subscription name or ID for the template tests to run in. (default: faa080af-c1d8-40ad-9cce-e1a450ca5b57)"
     echo "  -u    Sets the environment suffix (default: RANDOM)"
     echo "  -n    When set will only run test commands. If true script won't deploy the templates. This is helpful when you already have the environments provisioned and you want to re-run the tests (default: false)"
     echo "  -c    when set will clean up resources (default: true)"

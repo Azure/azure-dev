@@ -163,27 +163,35 @@ func (m *Manager) Login(
 		authResult = res
 	}
 
-	cfg, err := config.GetUserConfig(m.configManager)
-	if err != nil {
-		return nil, nil, nil, fmt.Errorf("fetching current user: %w", err)
-	}
-
-	if err := cfg.Set(cCurrentUserKey, map[string]any{"homeId": authResult.Account.HomeAccountID}); err != nil {
-		return nil, nil, nil, fmt.Errorf("setting account id in config: %w", err)
-	}
-
-	userConfigFilePath, err := config.GetUserConfigFilePath()
-	if err != nil {
-		return nil, nil, nil, fmt.Errorf("failed getting user config file path. %w", err)
-	}
-
-	if err := m.configManager.Save(cfg, userConfigFilePath); err != nil {
-		return nil, nil, nil, fmt.Errorf("failed saving configuration: %w", err)
+	if err := m.saveCurrentUserProperties(map[string]any{"homeId": authResult.Account.HomeAccountID}); err != nil {
+		return nil, nil, nil, err
 	}
 
 	log.Printf("logged in as %s (%s)", authResult.Account.PreferredUsername, authResult.Account.HomeAccountID)
 
 	return &authResult.Account, m.newCredential(&authResult.Account), &authResult.ExpiresOn, nil
+}
+
+func (m *Manager) saveCurrentUserProperties(properties map[string]any) error {
+	cfg, err := config.GetUserConfig(m.configManager)
+	if err != nil {
+		return fmt.Errorf("fetching current user: %w", err)
+	}
+
+	if err := cfg.Set(cCurrentUserKey, properties); err != nil {
+		return fmt.Errorf("setting account id in config: %w", err)
+	}
+
+	userConfigFilePath, err := config.GetUserConfigFilePath()
+	if err != nil {
+		return fmt.Errorf("failed getting user config file path. %w", err)
+	}
+
+	if err := m.configManager.Save(cfg, userConfigFilePath); err != nil {
+		return fmt.Errorf("failed saving configuration: %w", err)
+	}
+
+	return nil
 }
 
 func (m *Manager) LoginWithServicePrincipal(
@@ -202,32 +210,18 @@ func (m *Manager) LoginWithServicePrincipal(
 		return nil, nil, nil, fmt.Errorf("fetching token: %w", err)
 	}
 
-	cfg, err := config.GetUserConfig(m.configManager)
-	if err != nil {
-		return nil, nil, nil, fmt.Errorf("fetching current user: %w", err)
-	}
-
-	if err := cfg.Set(cCurrentUserKey, map[string]any{
-		"tenantId": tenantId,
-		"clientId": clientId,
-	}); err != nil {
-		return nil, nil, nil, fmt.Errorf("setting account id in config: %w", err)
-	}
-
-	userConfigFilePath, err := config.GetUserConfigFilePath()
-	if err != nil {
-		return nil, nil, nil, fmt.Errorf("failed getting user config file path. %w", err)
-	}
-
-	if err := m.configManager.Save(cfg, userConfigFilePath); err != nil {
-		return nil, nil, nil, fmt.Errorf("failed saving configuration: %w", err)
-	}
-
 	m.credentialCache.Export(&fixedMarshaller{
 		val: []byte(clientSecret),
 	},
 		fmt.Sprintf("%s.%s", tenantId, clientId),
 	)
+
+	if err := m.saveCurrentUserProperties(map[string]any{
+		"tenantId": tenantId,
+		"clientId": clientId,
+	}); err != nil {
+		return nil, nil, nil, err
+	}
 
 	return nil, cred, &tok.ExpiresOn, nil
 }
@@ -248,20 +242,36 @@ func (m *Manager) Logout(ctx context.Context) error {
 	}
 
 	// Unset the current user from config, but if we fail to do so, don't fail the overall operation
-	if cfg, err := config.GetUserConfig(m.configManager); err != nil {
+	cfg, err := config.GetUserConfig(m.configManager)
+	if err != nil {
 		log.Printf("error fetching config for current user during logout. ignoring: %v", err)
+		return nil
+	}
+
+	if cur, has := cfg.Get(cCurrentUserKey); has {
+		// When logged in as a service principal, remove the cached credential
+		if props, ok := cur.(map[string]any); ok {
+			clientId, _ := props["clientId"]
+			tenantId, _ := props["tenantId"]
+
+			if clientId != "" && tenantId != "" {
+				m.credentialCache.Export(&fixedMarshaller{
+					val: []byte{},
+				},
+					fmt.Sprintf("%s.%s", tenantId, clientId),
+				)
+			}
+		}
+	}
+
+	if err := cfg.Unset(cCurrentUserKey); err != nil {
+		log.Printf("error un-setting key current user during logout. ignoring: %v", err)
+	}
+
+	if path, err := config.GetUserConfigFilePath(); err != nil {
+		log.Printf("error getting user config path during logout. ignoring: %v", err)
 	} else {
-		// TODO(ellismg): remove confidential credential
-
-		if err := cfg.Unset(cCurrentUserKey); err != nil {
-			log.Printf("error un-setting key current user during logout. ignoring: %v", err)
-		}
-
-		if path, err := config.GetUserConfigFilePath(); err != nil {
-			log.Printf("error getting user config path during logout. ignoring: %v", err)
-		} else {
-			return m.configManager.Save(cfg, path)
-		}
+		return m.configManager.Save(cfg, path)
 	}
 
 	return nil

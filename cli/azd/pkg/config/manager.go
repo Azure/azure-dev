@@ -113,7 +113,7 @@ func GetUserConfig(configManager Manager) (Config, error) {
 		// Ignore missing file errors
 		// File will automatically be created on first `set` operation
 		if errors.Is(err, os.ErrNotExist) {
-			log.Printf("failed loading azd user config from '%s'. %s\n", configFilePath, err.Error())
+			log.Printf("creating empty config since '%s' did not exist.", configFilePath)
 			return NewConfig(nil), nil
 		}
 

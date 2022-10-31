@@ -6,5 +6,50 @@
     "editor.rulers": [ 125 ],
     "cSpell.import": [
         "${workspaceFolder}/.vscode/cspell.yaml"
-    ]
+    ],
+    "editor.tokenColorCustomizations": {
+        "textMateRules": [
+            {
+                "scope": "googletest.failed",
+                "settings": {
+                    "foreground": "#f00"
+                }
+            },
+            {
+                "scope": "googletest.passed",
+                "settings": {
+                    "foreground": "#0f0"
+                }
+            },
+            {
+                "scope": "googletest.run",
+                "settings": {
+                    "foreground": "#0f0"
+                }
+            }
+        ]
+    },
+    "gtest-adapter.debugConfig": [
+        "Launch Package"
+    ],
+    "workbench.colorCustomizations": {
+        "activityBar.activeBackground": "#78021a",
+        "activityBar.background": "#78021a",
+        "activityBar.foreground": "#e7e7e7",
+        "activityBar.inactiveForeground": "#e7e7e799",
+        "activityBarBadge.background": "#1b7d02",
+        "activityBarBadge.foreground": "#e7e7e7",
+        "commandCenter.border": "#e7e7e799",
+        "sash.hoverBorder": "#78021a",
+        "statusBar.background": "#46010f",
+        "statusBar.foreground": "#e7e7e7",
+        "statusBarItem.hoverBackground": "#78021a",
+        "statusBarItem.remoteBackground": "#46010f",
+        "statusBarItem.remoteForeground": "#e7e7e7",
+        "titleBar.activeBackground": "#46010f",
+        "titleBar.activeForeground": "#e7e7e7",
+        "titleBar.inactiveBackground": "#46010f99",
+        "titleBar.inactiveForeground": "#e7e7e799"
+    },
+    "peacock.remoteColor": "#46010f"
 }

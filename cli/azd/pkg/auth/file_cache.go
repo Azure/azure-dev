@@ -18,8 +18,9 @@ const cacheFileFileMode = 0600
 var _ cache.ExportReplace = &fileCache{}
 
 type fileCache struct {
-	root string
-	ext  string
+	prefix string
+	root   string
+	ext    string
 }
 
 func (c *fileCache) Replace(cache cache.Unmarshaler, key string) {
@@ -89,9 +90,9 @@ func (c *fileCache) writeFileWithLock(key string, data []byte) error {
 }
 
 func (c *fileCache) pathForCache(key string) string {
-	return filepath.Join(c.root, fmt.Sprintf("cache%s.%s", key, c.ext))
+	return filepath.Join(c.root, fmt.Sprintf("%s%s.%s", c.prefix, key, c.ext))
 }
 
 func (c *fileCache) pathForLock(key string) string {
-	return filepath.Join(c.root, fmt.Sprintf("cache%s.lock", key))
+	return filepath.Join(c.root, fmt.Sprintf("%s%s.lock", c.prefix, key))
 }

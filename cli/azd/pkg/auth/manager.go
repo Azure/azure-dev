@@ -16,6 +16,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/cache"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/public"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 )
@@ -32,14 +33,14 @@ const cCurrentUserKey = "auth.account.currentUser"
 // The scopes to request when acquiring our token during the login flow.
 var cLoginScopes = []string{"https://management.azure.com//.default"}
 
-// cacheDirectoryFileMode is the file mode used to create the folder that is used for the MSAL cache.
-const cacheDirectoryFileMode = 0700
+// authDirectoryFileMode is the file mode used to create the folder that is used for auth folder and subfolders.
+const authDirectoryFileMode = 0700
 
 type Manager struct {
-	out           io.Writer
-	publicClient  *public.Client
-	configManager config.Manager
-	cacheRoot     string
+	out             io.Writer
+	publicClient    *public.Client
+	configManager   config.Manager
+	credentialCache cache.ExportReplace
 }
 
 func NewManager(out io.Writer, configManager config.Manager) (*Manager, error) {
@@ -48,9 +49,14 @@ func NewManager(out io.Writer, configManager config.Manager) (*Manager, error) {
 		return nil, fmt.Errorf("getting config dir: %w", err)
 	}
 
-	cacheRoot := filepath.Join(cfgRoot, "auth", "msal")
-	if err := os.MkdirAll(cacheRoot, cacheDirectoryFileMode); err != nil {
-		return nil, fmt.Errorf("creating cache root: %w", err)
+	authRoot := filepath.Join(cfgRoot, "auth")
+	if err := os.MkdirAll(authRoot, authDirectoryFileMode); err != nil {
+		return nil, fmt.Errorf("creating auth root: %w", err)
+	}
+
+	cacheRoot := filepath.Join(authRoot, "msal")
+	if err := os.MkdirAll(cacheRoot, authDirectoryFileMode); err != nil {
+		return nil, fmt.Errorf("creating msal cache root: %w", err)
 	}
 
 	publicClientApp, err := public.New(cAZD_CLIENT_ID, public.WithCache(newCache(cacheRoot)))
@@ -59,10 +65,10 @@ func NewManager(out io.Writer, configManager config.Manager) (*Manager, error) {
 	}
 
 	return &Manager{
-		out:           out,
-		publicClient:  &publicClientApp,
-		configManager: configManager,
-		cacheRoot:     cacheRoot,
+		out:             out,
+		publicClient:    &publicClientApp,
+		configManager:   configManager,
+		credentialCache: newCredentialCache(authRoot),
 	}, nil
 }
 
@@ -107,11 +113,21 @@ func (m *Manager) GetSignedInUser(ctx context.Context) (*public.Account, azcore.
 				account.HomeAccountID, currentUserHomeId)
 		}
 	} else if _, has := currentUserData["clientId"]; has {
+		var secret fixedMarshaller
+
+		m.credentialCache.Replace(&secret,
+			fmt.Sprintf("%s.%s", currentUserData["tenantId"].(string), currentUserData["clientId"].(string)),
+		)
+
+		if len(secret.val) == 0 {
+			return nil, nil, nil, ErrNoCurrentUser
+		}
+
 		return m.LoginWithServicePrincipal(
 			ctx,
 			currentUserData["tenantId"].(string),
 			currentUserData["clientId"].(string),
-			currentUserData["clientSecret"].(string))
+			string(secret.val))
 	}
 
 	return nil, nil, nil, ErrNoCurrentUser
@@ -194,8 +210,6 @@ func (m *Manager) LoginWithServicePrincipal(
 	if err := cfg.Set(cCurrentUserKey, map[string]any{
 		"tenantId": tenantId,
 		"clientId": clientId,
-		// TODO(ellismg): We need to encrypt this...
-		"clientSecret": clientSecret,
 	}); err != nil {
 		return nil, nil, nil, fmt.Errorf("setting account id in config: %w", err)
 	}
@@ -209,6 +223,12 @@ func (m *Manager) LoginWithServicePrincipal(
 		return nil, nil, nil, fmt.Errorf("failed saving configuration: %w", err)
 	}
 
+	m.credentialCache.Export(&fixedMarshaller{
+		val: []byte(clientSecret),
+	},
+		fmt.Sprintf("%s.%s", tenantId, clientId),
+	)
+
 	return nil, cred, &tok.ExpiresOn, nil
 }
 
@@ -221,18 +241,26 @@ func (m *Manager) Logout(ctx context.Context) error {
 		return fmt.Errorf("fetching current user: %w", err)
 	}
 
+	if act != nil {
+		if err := m.publicClient.RemoveAccount(*act); err != nil {
+			log.Printf("error removing account from msal cache during logout. ignoring: %v", err)
+		}
+	}
+
 	// Unset the current user from config, but if we fail to do so, don't fail the overall operation
 	if cfg, err := config.GetUserConfig(m.configManager); err != nil {
 		log.Printf("error fetching config for current user during logout. ignoring: %v", err)
 	} else {
+		// TODO(ellismg): remove confidental credential
+
 		if err := cfg.Unset(cCurrentUserKey); err != nil {
 			log.Printf("error un-setting key current user during logout. ignoring: %v", err)
 		}
-	}
 
-	if act != nil {
-		if err := m.publicClient.RemoveAccount(*act); err != nil {
-			return fmt.Errorf("removing account from msal cache: %w", err)
+		if path, err := config.GetUserConfigFilePath(); err != nil {
+			log.Printf("error getting user config path during logout. ignoring: %v", err)
+		} else {
+			return m.configManager.Save(cfg, path)
 		}
 	}
 

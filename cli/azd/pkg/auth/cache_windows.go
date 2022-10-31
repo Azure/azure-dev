@@ -20,8 +20,22 @@ func newCache(root string) cache.ExportReplace {
 		cache: make(map[string][]byte),
 		inner: &encryptedCache{
 			inner: &fileCache{
-				root: root,
-				ext:  "bin",
+				prefix: "cache",
+				root:   root,
+				ext:    "bin",
+			},
+		},
+	}
+}
+
+func newCredentialCache(root string) cache.ExportReplace {
+	return &memoryCache{
+		cache: make(map[string][]byte),
+		inner: &encryptedCache{
+			inner: &fileCache{
+				prefix: "cred",
+				root:   root,
+				ext:    "bin",
 			},
 		},
 	}

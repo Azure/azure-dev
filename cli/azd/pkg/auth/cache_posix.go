@@ -14,8 +14,9 @@ func newCache(root string) cache.ExportReplace {
 	return &memoryCache{
 		cache: make(map[string][]byte),
 		inner: &fileCache{
-			root: root,
-			ext:  "json",
+			prefix: "cache",
+			root:   root,
+			ext:    "json",
 		},
 	}
 }

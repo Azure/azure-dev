@@ -103,9 +103,9 @@ func newAzdContext() (*azdcontext.AzdContext, error) {
 
 func newCredential(authManager *auth.Manager) (azcore.TokenCredential, error) {
 	// TODO(ellismg): I guess we should inject this context object at some point?
-	_, credential, _, err := authManager.GetSignedInUser(context.TODO())
+	credential, err := authManager.GetCredentialForCurrentUser(context.TODO())
 	if err != nil {
-		return nil, fmt.Errorf("failed to obtain Azure credentials: %w", err)
+		return nil, err
 	}
 
 	return credential, nil

@@ -23,6 +23,9 @@ type loginFlags struct {
 	onlyCheckStatus bool
 	useDeviceCode   bool
 	outputFormat    string
+	tenantId        string
+	clientId        string
+	clientSecret    string
 	global          *internal.GlobalCommandOptions
 }
 
@@ -34,6 +37,9 @@ func (lf *loginFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandO
 		false,
 		"When true, log in by using a device code instead of a browser.",
 	)
+	local.StringVar(&lf.clientId, "client-id", "", "The client id for the service principal to authenticate with.")
+	local.StringVar(&lf.clientSecret, "client-secret", "", "The client secret for the service principal to authenticate with.")
+	local.StringVar(&lf.tenantId, "tenant-id", "", "The tenant id for the service principal to authenticate with.")
 	output.AddOutputFlag(
 		local,
 		&lf.outputFormat,
@@ -90,12 +96,27 @@ const (
 )
 
 func (la *loginAction) Run(ctx context.Context) error {
-	if !la.flags.onlyCheckStatus {
-		useDeviceCode := la.flags.useDeviceCode || os.Getenv(CodespacesEnvVarName) == "true" ||
-			os.Getenv(RemoteContainersEnvVarName) == "true"
+	if la.flags.clientId != "" || la.flags.clientSecret != "" || la.flags.tenantId != "" {
+		if la.flags.clientId == "" || la.flags.clientSecret == "" || la.flags.tenantId == "" {
+			return errors.New("must set `client-id`, `client-secret` and `tenant-id` for service principal")
+		}
+	}
 
-		if _, _, _, err := la.authManager.Login(ctx, useDeviceCode); err != nil {
-			return fmt.Errorf("logging in: %w", err)
+	if !la.flags.onlyCheckStatus {
+		if la.flags.clientId != "" {
+			if _, _, _, err := la.authManager.LoginWithServicePrincipal(
+				ctx, la.flags.tenantId, la.flags.clientId, la.flags.clientSecret,
+			); err != nil {
+				return fmt.Errorf("logging in: %w", err)
+			}
+
+		} else {
+			useDeviceCode := la.flags.useDeviceCode || os.Getenv(CodespacesEnvVarName) == "true" ||
+				os.Getenv(RemoteContainersEnvVarName) == "true"
+
+			if _, _, _, err := la.authManager.Login(ctx, useDeviceCode); err != nil {
+				return fmt.Errorf("logging in: %w", err)
+			}
 		}
 	}
 

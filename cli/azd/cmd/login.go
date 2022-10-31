@@ -38,7 +38,11 @@ func (lf *loginFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandO
 		"When true, log in by using a device code instead of a browser.",
 	)
 	local.StringVar(&lf.clientId, "client-id", "", "The client id for the service principal to authenticate with.")
-	local.StringVar(&lf.clientSecret, "client-secret", "", "The client secret for the service principal to authenticate with.")
+	local.StringVar(
+		&lf.clientSecret,
+		"client-secret",
+		"",
+		"The client secret for the service principal to authenticate with.")
 	local.StringVar(&lf.tenantId, "tenant-id", "", "The tenant id for the service principal to authenticate with.")
 	output.AddOutputFlag(
 		local,

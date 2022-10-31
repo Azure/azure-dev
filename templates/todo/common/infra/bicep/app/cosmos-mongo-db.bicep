@@ -19,13 +19,15 @@ param collections array = [
 param databaseName string = ''
 param keyVaultName string
 
+// Because databaseName is optional in main.bicep, we make sure the database name is set here.
 var defaultDatabaseName = 'Todo'
+var actualDatabaseName = !empty(databaseName) ? databaseName : defaultDatabaseName
 
 module cosmos '../../../../../common/infra/bicep/core/database/cosmos/mongo/cosmos-mongo-db.bicep' = {
   name: 'cosmos-mongo'
   params: {
     accountName: accountName
-    databaseName: !empty(databaseName) ? databaseName : defaultDatabaseName
+    databaseName: actualDatabaseName
     location: location
     collections: collections
     keyVaultName: keyVaultName
@@ -34,5 +36,5 @@ module cosmos '../../../../../common/infra/bicep/core/database/cosmos/mongo/cosm
 }
 
 output connectionStringKey string = cosmos.outputs.connectionStringKey
-output databaseName string = databaseName
+output databaseName string = cosmos.outputs.databaseName
 output endpoint string = cosmos.outputs.endpoint

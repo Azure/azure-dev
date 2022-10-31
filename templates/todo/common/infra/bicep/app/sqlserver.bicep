@@ -10,7 +10,9 @@ param sqlAdminPassword string
 @secure()
 param appUserPassword string
 
+// Because databaseName is optional in main.bicep, we make sure the database name is set here.
 var defaultDatabaseName = 'Todo'
+var actualDatabaseName = !empty(databaseName) ? databaseName : defaultDatabaseName
 
 module sqlServer '../../../../../common/infra/bicep/core/database/sqlserver/sqlserver.bicep' = {
   name: 'sqlserver'
@@ -18,7 +20,7 @@ module sqlServer '../../../../../common/infra/bicep/core/database/sqlserver/sqls
     name: name
     location: location
     tags: tags
-    databaseName: !empty(databaseName) ? databaseName : defaultDatabaseName
+    databaseName: actualDatabaseName
     keyVaultName: keyVaultName
     sqlAdminPassword: sqlAdminPassword
     appUserPassword: appUserPassword
@@ -26,4 +28,4 @@ module sqlServer '../../../../../common/infra/bicep/core/database/sqlserver/sqls
 }
 
 output connectionStringKey string = sqlServer.outputs.connectionStringKey
-output databaseName string = databaseName
+output databaseName string = sqlServer.outputs.databaseName

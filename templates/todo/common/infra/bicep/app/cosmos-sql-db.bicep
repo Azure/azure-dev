@@ -19,7 +19,9 @@ param databaseName string = ''
 param keyVaultName string
 param principalIds array = []
 
+// Because databaseName is optional in main.bicep, we make sure the database name is set here.
 var defaultDatabaseName = 'Todo'
+var actualDatabaseName = !empty(databaseName) ? databaseName : defaultDatabaseName
 
 module cosmos '../../../../../common/infra/bicep/core/database/cosmos/sql/cosmos-sql-db.bicep' = {
   name: 'cosmos-sql'
@@ -28,14 +30,14 @@ module cosmos '../../../../../common/infra/bicep/core/database/cosmos/sql/cosmos
     location: location
     tags: tags
     containers: containers
-    databaseName: !empty(databaseName) ? databaseName : defaultDatabaseName
+    databaseName: actualDatabaseName
     keyVaultName: keyVaultName
     principalIds: principalIds
   }
 }
 
-output connectionStringKey string = cosmos.outputs.connectionStringKey
 output accountName string = cosmos.outputs.accountName
-output databaseName string = databaseName
+output connectionStringKey string = cosmos.outputs.connectionStringKey
+output databaseName string = cosmos.outputs.databaseName
 output endpoint string = cosmos.outputs.endpoint
 output roleDefinitionId string = cosmos.outputs.roleDefinitionId

@@ -109,6 +109,7 @@ jobs:
             -u '$(Build.BuildId)'
             -l '$(DeployLocation)'
             -p 'list'
+            -c 'false'
           workingDirectory: templates/tests
 
       # First tag the resource group (if exists) so that it can get cleaned up
@@ -127,9 +128,9 @@ jobs:
           # Tag the resource group so it gets cleaned up later if delete fails
           az tag create `
             --resource-id $resourceGroupId `
-            --tags DeleteAfter="$((Get-Date -AsUTC).ToString('o'))"
+            --tags DeleteAfter="$((Get-Date -AsUTC).AddHours(8).ToString('o'))"
 
           # Attempt to delete the resource group
-          az group delete --resource-group $(ResourceGroupName) --yes --no-wait
+          #az group delete --resource-group $(ResourceGroupName) --yes --no-wait
         condition: always()
         displayName: Tag resource group for deletion

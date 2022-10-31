@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"io"
 	"log"
-	"sort"
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
@@ -17,6 +16,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 	"golang.org/x/exp/maps"
+	"golang.org/x/exp/slices"
 )
 
 func templatesCmd(rootOptions *internal.GlobalCommandOptions) *cobra.Command {
@@ -84,8 +84,8 @@ func (tl *templatesListAction) Run(ctx context.Context) error {
 	}
 
 	templateList := maps.Values(templateSet)
-	sort.Slice(templateList, func(i, j int) bool {
-		return templateList[i].Name < templateList[j].Name
+	slices.SortFunc(templateList, func(a, b templates.Template) bool {
+		return a.Name < b.Name
 	})
 
 	return formatTemplates(ctx, tl.formatter, tl.writer, templateList...)
@@ -104,7 +104,6 @@ func newTemplatesShowAction(
 		matchingTemplate, err := templateManager.GetTemplate(templateName)
 
 		log.Printf("Template Name: %s\n", templateName)
-		sort.Slice()
 
 		if err != nil {
 			return err

@@ -159,7 +159,7 @@ func getDefinitionVariables(
 		variables["ARM_CLIENT_ID"] = createBuildDefinitionVariable(credentials.ClientId, true, false)
 		variables["ARM_CLIENT_SECRET"] = createBuildDefinitionVariable(credentials.ClientSecret, true, false)
 
-		// Sets the terraform remote state environment variables in github
+		// Sets the terraform remote state environment variables in azure devops
 		remoteStateKeys := []string{"RS_RESOURCE_GROUP", "RS_STORAGE_ACCOUNT", "RS_CONTAINER_NAME"}
 		for _, key := range remoteStateKeys {
 			value, ok := env.Values[key]

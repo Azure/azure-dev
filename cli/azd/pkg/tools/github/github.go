@@ -258,14 +258,18 @@ func (cli *ghCli) GitHubActionsExists(ctx context.Context, repoSlug string) (boo
 }
 
 func (cli *ghCli) ForceConfigureAuth(authMode AuthTokenSource) {
-	if authMode == TokenSourceFile {
+	switch authMode {
+	case TokenSourceFile:
+		// Unset token environment variables to force file-base auth.
 		for _, tokenEnvVarName := range TokenEnvVars {
 			cli.overrideTokenEnv = append(cli.overrideTokenEnv, fmt.Sprintf("%v=", tokenEnvVarName))
 		}
-	} else { // authMode == TokenSourceEnvVar
+	case TokenSourceEnvVar:
 		// GitHub CLI will always use environment variables first.
-		// Therefore, we simply need to clear our environment context override to force environment variable usage.
+		// Therefore, we simply need to clear our environment context override (if any) to force environment variable usage.
 		cli.overrideTokenEnv = nil
+	default:
+		panic(fmt.Sprintf("Unsupported auth mode: %d", authMode))
 	}
 }
 

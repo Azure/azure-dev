@@ -5,15 +5,10 @@ package auth
 
 import (
 	"bytes"
-	"log"
+	"fmt"
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/cache"
 )
-
-var _ cache.ExportReplace = &memoryCache{}
-
-var _ cache.Marshaler = &fixedMarshaller{}
-var _ cache.Unmarshaler = &fixedMarshaller{}
 
 type fixedMarshaller struct {
 	val []byte
@@ -32,7 +27,7 @@ func (f *fixedMarshaller) Unmarshal(cache []byte) error {
 // contents has not changed, the nested cache is not notified of a change.
 type memoryCache struct {
 	cache map[string][]byte
-	inner cache.ExportReplace
+	inner exportReplaceWithErrors
 }
 
 // cacheUpdatingUnmarshaler implements cache.Unmarshaler. During unmarshalling it updates the value in the memory
@@ -48,36 +43,35 @@ func (r *cacheUpdatingUnmarshaler) Unmarshal(b []byte) error {
 	return r.inner.Unmarshal(b)
 }
 
-func (c *memoryCache) Replace(cache cache.Unmarshaler, key string) {
+func (c *memoryCache) Replace(cache cache.Unmarshaler, key string) error {
 	if v, has := c.cache[key]; has {
 		if err := cache.Unmarshal(v); err != nil {
-			log.Printf("failed to unmarshal value into cache: %v", err)
+			return fmt.Errorf("failed to unmarshal value into cache: %w", err)
 		}
 	} else if c.inner != nil {
-		c.inner.Replace(&cacheUpdatingUnmarshaler{
+		return c.inner.Replace(&cacheUpdatingUnmarshaler{
 			c:     c,
 			key:   key,
 			inner: cache,
 		}, key)
-	} else {
-		log.Printf("no existing cache entry found with key '%s'", key)
 	}
+
+	return nil
 }
 
-func (c *memoryCache) Export(cache cache.Marshaler, key string) {
+func (c *memoryCache) Export(cache cache.Marshaler, key string) error {
 	new, err := cache.Marshal()
 	if err != nil {
-		log.Printf("error marshaling existing msal cache: %v", err)
-		return
+		return fmt.Errorf("error marshaling existing msal cache: %v", err)
 	}
 
 	old := c.cache[key]
 
 	if bytes.Equal(old, new) {
 		// no change, nothing more to do.
-		return
+		return nil
 	}
 
 	c.cache[key] = new
-	c.inner.Export(cache, key)
+	return c.inner.Export(cache, key)
 }

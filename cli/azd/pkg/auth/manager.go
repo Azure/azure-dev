@@ -17,7 +17,6 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
-	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/cache"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/public"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 )
@@ -41,7 +40,7 @@ type Manager struct {
 	out             io.Writer
 	publicClient    *public.Client
 	configManager   config.Manager
-	credentialCache cache.ExportReplace
+	credentialCache exportReplaceWithErrors
 }
 
 func NewManager(out io.Writer, configManager config.Manager) (*Manager, error) {
@@ -229,7 +228,10 @@ func persistedSecretLookupKey(tenantId, clientId string) string {
 func (m *Manager) loadSecret(key string) (*persistedSecret, error) {
 	var data fixedMarshaller
 
-	m.credentialCache.Replace(&data, key)
+	if err := m.credentialCache.Replace(&data, key); err != nil {
+		return nil, err
+	}
+
 	var ps persistedSecret
 
 	if err := json.Unmarshal(data.val, &ps); err != nil {
@@ -245,8 +247,7 @@ func (m *Manager) saveSecret(ps *persistedSecret, key string) error {
 		return err
 	}
 
-	m.credentialCache.Export(&fixedMarshaller{val: data}, key)
-	return nil
+	return m.credentialCache.Export(&fixedMarshaller{val: data}, key)
 }
 
 func (m *Manager) Logout(ctx context.Context) error {

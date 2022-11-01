@@ -15,38 +15,36 @@ import (
 
 const cacheFileFileMode = 0600
 
-var _ cache.ExportReplace = &fileCache{}
-
 type fileCache struct {
 	prefix string
 	root   string
 	ext    string
 }
 
-func (c *fileCache) Replace(cache cache.Unmarshaler, key string) {
+func (c *fileCache) Replace(cache cache.Unmarshaler, key string) error {
 	contents, err := c.readCacheWithLock(key)
 	if err != nil {
-		log.Printf("failed to read cache: %v", err)
-		return
+		return fmt.Errorf("failed to read cache: %w", err)
 	}
 
 	if err := cache.Unmarshal(contents); err != nil {
-		log.Printf("failed to unmarshal cache: %v", err)
-		return
+		return fmt.Errorf("failed to unmarshal cache: %v", err)
 	}
+
+	return nil
 }
 
-func (c *fileCache) Export(cache cache.Marshaler, key string) {
+func (c *fileCache) Export(cache cache.Marshaler, key string) error {
 	new, err := cache.Marshal()
 	if err != nil {
-		log.Printf("error marshaling existing msal cache: %v", err)
-		return
+		return fmt.Errorf("error marshaling existing msal cache: %w", err)
 	}
 
 	if err := c.writeFileWithLock(key, new); err != nil {
-		log.Printf("failed to write cache: %v", err)
-		return
+		return fmt.Errorf("failed to write cache: %w", err)
 	}
+
+	return nil
 }
 
 // readCacheWithLock reads the cache file for a given key. The read is guarded by

@@ -7,7 +7,7 @@
 package auth
 
 import (
-	"log"
+	"fmt"
 	"unsafe"
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/cache"
@@ -15,19 +15,21 @@ import (
 )
 
 func newCache(root string) cache.ExportReplace {
-	return &memoryCache{
-		cache: make(map[string][]byte),
-		inner: &encryptedCache{
-			inner: &fileCache{
-				prefix: "cache",
-				root:   root,
-				ext:    "bin",
+	return &errorDroppingCacheAdapter{
+		inner: &memoryCache{
+			cache: make(map[string][]byte),
+			inner: &encryptedCache{
+				inner: &fileCache{
+					prefix: "cache",
+					root:   root,
+					ext:    "bin",
+				},
 			},
 		},
 	}
 }
 
-func newCredentialCache(root string) cache.ExportReplace {
+func newCredentialCache(root string) exportReplaceWithErrors {
 	return &memoryCache{
 		cache: make(map[string][]byte),
 		inner: &encryptedCache{
@@ -40,27 +42,22 @@ func newCredentialCache(root string) cache.ExportReplace {
 	}
 }
 
-var _ cache.ExportReplace = &encryptedCache{}
-
-// encryptedCache is a cache.ExportReplace that wraps an existing cache.ExportReplace, encrypting and decrypting the
+// encryptedCache is a cache.ExportReplace that wraps an existing ExportReplaceWithErrors, encrypting and decrypting the
 // cached value with CryptProtectData
 type encryptedCache struct {
-	inner cache.ExportReplace
+	inner exportReplaceWithErrors
 }
 
-func (c *encryptedCache) Export(cache cache.Marshaler, key string) {
+func (c encryptedCache) Export(cache cache.Marshaler, key string) error {
 	res, err := cache.Marshal()
 	if err != nil {
-		log.Printf("failed to marshal cache from MSAL: %v", err)
-		return
+		return fmt.Errorf("failed to marshal cache: %v", err)
 	}
 
 	if len(res) == 0 {
-		c.inner.Export(&fixedMarshaller{
+		return c.inner.Export(&fixedMarshaller{
 			val: []byte{},
 		}, key)
-
-		return
 	}
 
 	plaintext := windows.DataBlob{
@@ -70,7 +67,7 @@ func (c *encryptedCache) Export(cache cache.Marshaler, key string) {
 	var encrypted windows.DataBlob
 
 	if err := windows.CryptProtectData(&plaintext, nil, nil, uintptr(0), nil, 0, &encrypted); err != nil {
-		log.Printf("failed to encrypt data: %v", err)
+		return fmt.Errorf("failed to encrypt data: %v", err)
 	}
 
 	encryptedSlice := unsafe.Slice(encrypted.Data, encrypted.Size)
@@ -79,23 +76,24 @@ func (c *encryptedCache) Export(cache cache.Marshaler, key string) {
 	copy(cs, encryptedSlice)
 
 	if _, err := windows.LocalFree(windows.Handle(unsafe.Pointer(encrypted.Data))); err != nil {
-		log.Printf("failed to free encrypted data: %v", err)
+		return fmt.Errorf("failed to free encrypted data: %v", err)
 	}
 
-	c.inner.Export(&fixedMarshaller{
+	return c.inner.Export(&fixedMarshaller{
 		val: []byte(cs),
 	}, key)
 }
 
-func (c *encryptedCache) Replace(cache cache.Unmarshaler, key string) {
+func (c *encryptedCache) Replace(cache cache.Unmarshaler, key string) error {
 	capture := &fixedMarshaller{}
-	c.inner.Replace(capture, key)
+	if err := c.inner.Replace(capture, key); err != nil {
+		return err
+	}
 
 	if len(capture.val) == 0 {
 		if err := cache.Unmarshal([]byte{}); err != nil {
-			log.Printf("failed to unmarshal decrypted cache to msal: %v", err)
+			return fmt.Errorf("failed to unmarshal decrypted cache: %w", err)
 		}
-		return
 	}
 
 	encrypted := windows.DataBlob{
@@ -106,7 +104,7 @@ func (c *encryptedCache) Replace(cache cache.Unmarshaler, key string) {
 	var plaintext windows.DataBlob
 
 	if err := windows.CryptUnprotectData(&encrypted, nil, nil, uintptr(0), nil, 0, &plaintext); err != nil {
-		log.Printf("failed to decrypt data: %v", err)
+		return fmt.Errorf("failed to decrypt data: %v", err)
 	}
 
 	decryptedSlice := unsafe.Slice(plaintext.Data, plaintext.Size)
@@ -115,10 +113,8 @@ func (c *encryptedCache) Replace(cache cache.Unmarshaler, key string) {
 	copy(cs, decryptedSlice)
 
 	if _, err := windows.LocalFree(windows.Handle(unsafe.Pointer(plaintext.Data))); err != nil {
-		log.Printf("failed to free encrypted data: %v", err)
+		return fmt.Errorf("failed to free encrypted data: %v", err)
 	}
 
-	if err := cache.Unmarshal(cs); err != nil {
-		log.Printf("failed to unmarshal decrypted cache to msal: %v", err)
-	}
+	return cache.Unmarshal(cs)
 }

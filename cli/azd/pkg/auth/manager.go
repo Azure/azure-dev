@@ -5,6 +5,7 @@ package auth
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -90,11 +91,7 @@ func (m *Manager) GetSignedInUser(ctx context.Context) (*public.Account, azcore.
 		return nil, nil, nil, ErrNoCurrentUser
 	}
 
-	currentUserData, ok := currentUser.(map[string]any)
-	if !ok {
-		log.Println("current user data is corrupted, ignoring")
-		return nil, nil, nil, ErrNoCurrentUser
-	}
+	currentUserData := currentUser.(map[string]any)
 
 	if _, has := currentUserData["homeId"]; has {
 		currentUserHomeId := currentUserData["homeId"].(string)
@@ -113,21 +110,24 @@ func (m *Manager) GetSignedInUser(ctx context.Context) (*public.Account, azcore.
 				account.HomeAccountID, currentUserHomeId)
 		}
 	} else if _, has := currentUserData["clientId"]; has {
-		var secret fixedMarshaller
+		clientId := currentUserData["clientId"].(string)
+		tenantId := currentUserData["tenantId"].(string)
 
-		m.credentialCache.Replace(&secret,
-			fmt.Sprintf("%s.%s", currentUserData["tenantId"].(string), currentUserData["clientId"].(string)),
-		)
-
-		if len(secret.val) == 0 {
-			return nil, nil, nil, ErrNoCurrentUser
+		ps, err := m.loadSecret(persistedSecretLookupKey(tenantId, clientId))
+		if err != nil {
+			return nil, nil, nil, fmt.Errorf("loading secret: %v: %w", err, ErrNoCurrentUser)
 		}
 
-		return m.LoginWithServicePrincipal(
-			ctx,
-			currentUserData["tenantId"].(string),
-			currentUserData["clientId"].(string),
-			string(secret.val))
+		cred, err := azidentity.NewClientSecretCredential(tenantId, clientId, *ps.ClientSecret, nil)
+		if err != nil {
+			return nil, nil, nil, fmt.Errorf("creating credential: %v: %w", err, ErrNoCurrentUser)
+		}
+
+		if tok, err := cred.GetToken(ctx, policy.TokenRequestOptions{Scopes: cLoginScopes}); err != nil {
+			return nil, nil, nil, fmt.Errorf("failed to get token: %v: %w", err, ErrNoCurrentUser)
+		} else {
+			return nil, cred, &tok.ExpiresOn, nil
+		}
 	}
 
 	return nil, nil, nil, ErrNoCurrentUser
@@ -146,6 +146,8 @@ func (m *Manager) Login(
 			return nil, nil, nil, err
 		}
 
+		// Display the message to the end user as to what to do next, then block waiting for them to complete
+		// the flow.
 		fmt.Fprintln(m.out, code.Result.Message)
 
 		res, err := code.AuthenticationResult(ctx)
@@ -182,16 +184,7 @@ func (m *Manager) saveCurrentUserProperties(properties map[string]any) error {
 		return fmt.Errorf("setting account id in config: %w", err)
 	}
 
-	userConfigFilePath, err := config.GetUserConfigFilePath()
-	if err != nil {
-		return fmt.Errorf("failed getting user config file path. %w", err)
-	}
-
-	if err := m.configManager.Save(cfg, userConfigFilePath); err != nil {
-		return fmt.Errorf("failed saving configuration: %w", err)
-	}
-
-	return nil
+	return config.SaveUserConfig(m.configManager, cfg)
 }
 
 func (m *Manager) LoginWithServicePrincipal(
@@ -210,11 +203,14 @@ func (m *Manager) LoginWithServicePrincipal(
 		return nil, nil, nil, fmt.Errorf("fetching token: %w", err)
 	}
 
-	m.credentialCache.Export(&fixedMarshaller{
-		val: []byte(clientSecret),
-	},
-		fmt.Sprintf("%s.%s", tenantId, clientId),
-	)
+	if err := m.saveSecret(
+		&persistedSecret{
+			ClientSecret: &clientSecret,
+		},
+		persistedSecretLookupKey(tenantId, clientId),
+	); err != nil {
+		return nil, nil, nil, err
+	}
 
 	if err := m.saveCurrentUserProperties(map[string]any{
 		"tenantId": tenantId,
@@ -224,6 +220,33 @@ func (m *Manager) LoginWithServicePrincipal(
 	}
 
 	return nil, cred, &tok.ExpiresOn, nil
+}
+
+func persistedSecretLookupKey(tenantId, clientId string) string {
+	return fmt.Sprintf("%s.%s", tenantId, clientId)
+}
+
+func (m *Manager) loadSecret(key string) (*persistedSecret, error) {
+	var data fixedMarshaller
+
+	m.credentialCache.Replace(&data, key)
+	var ps persistedSecret
+
+	if err := json.Unmarshal(data.val, &ps); err != nil {
+		return nil, err
+	}
+
+	return &ps, nil
+}
+
+func (m *Manager) saveSecret(ps *persistedSecret, key string) error {
+	data, err := json.Marshal(ps)
+	if err != nil {
+		return err
+	}
+
+	m.credentialCache.Export(&fixedMarshaller{val: data}, key)
+	return nil
 }
 
 func (m *Manager) Logout(ctx context.Context) error {
@@ -237,42 +260,41 @@ func (m *Manager) Logout(ctx context.Context) error {
 
 	if act != nil {
 		if err := m.publicClient.RemoveAccount(*act); err != nil {
-			log.Printf("error removing account from msal cache during logout. ignoring: %v", err)
+			return fmt.Errorf("removing account from msal cache: %w", err)
 		}
 	}
 
 	// Unset the current user from config, but if we fail to do so, don't fail the overall operation
 	cfg, err := config.GetUserConfig(m.configManager)
 	if err != nil {
-		log.Printf("error fetching config for current user during logout. ignoring: %v", err)
-		return nil
+		return fmt.Errorf("loading config: %w", err)
 	}
 
 	if cur, has := cfg.Get(cCurrentUserKey); has {
-		// When logged in as a service principal, remove the cached credential
-		if props, ok := cur.(map[string]any); ok {
-			clientId, _ := props["clientId"]
-			tenantId, _ := props["tenantId"]
+		props := cur.(map[string]any)
 
-			if clientId != "" && tenantId != "" {
-				m.credentialCache.Export(&fixedMarshaller{
-					val: []byte{},
-				},
-					fmt.Sprintf("%s.%s", tenantId, clientId),
-				)
+		// When logged in as a service principal, remove the stored credential
+		if _, ok := props["clientId"]; ok {
+			clientId := (props["clientId"]).(string)
+			tenantId := (props["tenantId"]).(string)
+
+			if err := m.saveSecret(&persistedSecret{}, persistedSecretLookupKey(tenantId, clientId)); err != nil {
+				return fmt.Errorf("removing authentication secrets: %w", err)
 			}
 		}
 	}
 
 	if err := cfg.Unset(cCurrentUserKey); err != nil {
-		log.Printf("error un-setting key current user during logout. ignoring: %v", err)
+		return fmt.Errorf("un-setting current user: %w", err)
 	}
 
-	if path, err := config.GetUserConfigFilePath(); err != nil {
-		log.Printf("error getting user config path during logout. ignoring: %v", err)
-	} else {
-		return m.configManager.Save(cfg, path)
+	if err := config.SaveUserConfig(m.configManager, cfg); err != nil {
+		return fmt.Errorf("saving config: %w", err)
 	}
 
 	return nil
+}
+
+type persistedSecret struct {
+	ClientSecret *string `json:"clientSecret,omitempty"`
 }

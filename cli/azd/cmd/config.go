@@ -183,17 +183,7 @@ func (a *configSetAction) Run(ctx context.Context) error {
 		return fmt.Errorf("failed setting configuration value '%s' to '%s'. %w", path, value, err)
 	}
 
-	userConfigFilePath, err := config.GetUserConfigFilePath()
-	if err != nil {
-		return fmt.Errorf("failed getting user config file path. %w", err)
-	}
-
-	err = a.configManager.Save(azdConfig, userConfigFilePath)
-	if err != nil {
-		return fmt.Errorf("failed saving configuration. %w", err)
-	}
-
-	return nil
+	return config.SaveUserConfig(a.configManager, azdConfig)
 }
 
 // azd config unset <path>
@@ -234,17 +224,7 @@ func (a *configUnsetAction) Run(ctx context.Context) error {
 		return fmt.Errorf("failed removing configuration with path '%s'. %w", path, err)
 	}
 
-	userConfigFilePath, err := config.GetUserConfigFilePath()
-	if err != nil {
-		return fmt.Errorf("failed getting user config file path. %w", err)
-	}
-
-	err = a.configManager.Save(azdConfig, userConfigFilePath)
-	if err != nil {
-		return fmt.Errorf("failed saving configuration. %w", err)
-	}
-
-	return nil
+	return config.SaveUserConfig(a.configManager, azdConfig)
 }
 
 // azd config reset
@@ -273,17 +253,6 @@ func newConfigResetAction(configManager config.Manager, args []string) *configRe
 
 // Executes the `azd config reset` action
 func (a *configResetAction) Run(ctx context.Context) error {
-	userConfigFilePath, err := config.GetUserConfigFilePath()
-	if err != nil {
-		return fmt.Errorf("failed getting user config file path. %w", err)
-	}
-
 	emptyConfig := config.NewConfig(nil)
-
-	err = a.configManager.Save(emptyConfig, userConfigFilePath)
-	if err != nil {
-		return fmt.Errorf("failed saving configuration. %w", err)
-	}
-
-	return nil
+	return config.SaveUserConfig(a.configManager, emptyConfig)
 }

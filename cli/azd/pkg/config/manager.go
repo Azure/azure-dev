@@ -122,3 +122,17 @@ func GetUserConfig(configManager Manager) (Config, error) {
 
 	return azdConfig, nil
 }
+
+func SaveUserConfig(configManager Manager, c Config) error {
+	userConfigFilePath, err := GetUserConfigFilePath()
+	if err != nil {
+		return fmt.Errorf("failed getting user config file path. %w", err)
+	}
+
+	err = configManager.Save(c, userConfigFilePath)
+	if err != nil {
+		return fmt.Errorf("failed saving configuration. %w", err)
+	}
+
+	return nil
+}

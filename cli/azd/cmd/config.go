@@ -7,6 +7,8 @@ import (
 	"io"
 	"log"
 	"os"
+	"path/filepath"
+	"runtime"
 
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
@@ -14,20 +16,40 @@ import (
 	"github.com/spf13/cobra"
 )
 
+var userConfigPath string
+
 // Setup account command category
 func configCmd(rootOptions *internal.GlobalCommandOptions) *cobra.Command {
+	userConfigDir, err := config.GetUserConfigDir()
+	if err != nil {
+		userConfigPath = output.WithBackticks(filepath.Join("$AZURE_CONFIG_DIR", "config.json"))
+	} else {
+		userConfigPath = output.WithBackticks(filepath.Join(userConfigDir, "config.json"))
+	}
+
+	var defaultConfigPath string
+	if runtime.GOOS == "windows" {
+		defaultConfigPath = filepath.Join("%USERPROFILE%", ".azd")
+	} else {
+		defaultConfigPath = filepath.Join("$HOME", ".azd")
+	}
+
 	root := &cobra.Command{
 		Use:   "config",
 		Short: "Manage Azure Developer CLI configuration",
+		Long: `Manage the Azure Developer CLI user configuration, which includes your default Azure subscription and location.
+
+The easiest way to initially configure azd is to run ` + output.WithBackticks("azd init") + `.
+The subscription and location you select will be stored at ` + userConfigPath + `.
+The default configuration path is ` + output.WithBackticks(defaultConfigPath) + `.`,
 	}
 
+	root.Flags().BoolP("help", "h", false, fmt.Sprintf("Gets help for %s.", root.Name()))
 	root.AddCommand(BuildCmd(rootOptions, configListCmdDesign, initConfigListAction, nil))
 	root.AddCommand(BuildCmd(rootOptions, configGetCmdDesign, initConfigGetAction, nil))
 	root.AddCommand(BuildCmd(rootOptions, configSetCmdDesign, initConfigSetAction, nil))
 	root.AddCommand(BuildCmd(rootOptions, configUnsetCmdDesign, initConfigUnsetAction, nil))
 	root.AddCommand(BuildCmd(rootOptions, configResetCmdDesign, initConfigResetAction, nil))
-
-	root.Flags().BoolP("help", "h", false, fmt.Sprintf("Gets help for %s.", root.Name()))
 
 	return root
 }
@@ -38,7 +60,7 @@ func configListCmdDesign(global *internal.GlobalCommandOptions) (*cobra.Command,
 	cmd := &cobra.Command{
 		Use:   "list",
 		Short: "Lists all configuration values",
-		Long:  "Lists all configuration values",
+		Long:  `Lists all configuration values in ` + userConfigPath + `.`,
 	}
 
 	output.AddOutputParam(
@@ -89,7 +111,7 @@ func configGetCmdDesign(global *internal.GlobalCommandOptions) (*cobra.Command, 
 	cmd := &cobra.Command{
 		Use:   "get <path>",
 		Short: "Gets a configuration",
-		Long:  "Gets a configuration",
+		Long:  `Gets a configuration in ` + userConfigPath + `.`,
 	}
 
 	output.AddOutputParam(
@@ -153,7 +175,9 @@ func configSetCmdDesign(global *internal.GlobalCommandOptions) (*cobra.Command, 
 	cmd := &cobra.Command{
 		Use:   "set <path> <value>",
 		Short: "Sets a configuration",
-		Long:  "Sets a configuration",
+		Long:  `Sets a configuration in ` + userConfigPath + `.`,
+		Example: `$ azd config set defaults.subscription <yourSubscriptionID>
+$ azd config set defaults.location eastus`,
 	}
 	cmd.Args = cobra.ExactArgs(2)
 	return cmd, &struct{}{}
@@ -203,9 +227,10 @@ func (a *configSetAction) Run(ctx context.Context) error {
 
 func configUnsetCmdDesign(global *internal.GlobalCommandOptions) (*cobra.Command, *struct{}) {
 	cmd := &cobra.Command{
-		Use:   "unset <path>",
-		Short: "Unsets a configuration",
-		Long:  "Unsets a configuration",
+		Use:     "unset <path>",
+		Short:   "Unsets a configuration",
+		Long:    `Removes a configuration in ` + userConfigPath + `.`,
+		Example: `$ azd config unset defaults.location`,
 	}
 	cmd.Args = cobra.ExactArgs(1)
 	return cmd, &struct{}{}
@@ -256,7 +281,7 @@ func configResetCmdDesign(global *internal.GlobalCommandOptions) (*cobra.Command
 	cmd := &cobra.Command{
 		Use:   "reset",
 		Short: "Resets configuration to default",
-		Long:  "Resets configuration to default",
+		Long:  `Resets all configuration in ` + userConfigPath + ` to the default.`,
 	}
 
 	return cmd, &struct{}{}

@@ -1,16 +1,17 @@
-param environmentName string
+param name string
 param location string = resourceGroup().location
+param tags object = {}
 
 param serviceName string = 'web'
 
 module web '../../../../../common/infra/bicep/core/host/staticwebapp.bicep' = {
   name: '${serviceName}-staticwebapp-module'
   params: {
-    environmentName: environmentName
+    name: name
     location: location
-    serviceName: serviceName
+    tags: union(tags, { 'azd-service-name': serviceName })
   }
 }
 
-output WEB_NAME string = web.outputs.name
-output WEB_URI string = web.outputs.uri
+output SERVICE_WEB_NAME string = web.outputs.name
+output SERVICE_WEB_URI string = web.outputs.uri

@@ -59,17 +59,17 @@ repo:
       - from: web-appservice.bicep
         to: web.bicep
         patterns:
-          - "**/resources.bicep"
+          - "**/main.bicep"
 
       - from: api-appservice-dotnet.bicep
         to: api.bicep
         patterns:
-          - "**/resources.bicep"
+          - "**/main.bicep"
 
       - from: /sqlserver.bicep
         to: /db.bicep
         patterns:
-          - "**/resources.bicep"
+          - "**/main.bicep"
 
   assets:
     # Common assets
@@ -116,6 +116,11 @@ repo:
         - .github/**/*
         - .devcontainer/**/*
         - "infra/**/*"
+        - .azdo/pipelines/*/azure-dev.yml
+
+    # AzDo workflows for bicep
+    - from: ../../../../../common/.azdo/pipelines/bicep/azure-dev.yml
+      to: ./.azdo/pipelines/azure-dev.yml
 
     # Github workflows for bicep
     - from: ../../../../../common/.github/workflows/bicep

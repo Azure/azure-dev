@@ -65,6 +65,12 @@ func NewZipDeployClient(
 	// We do not have a Resource provider to register
 	options.DisableRPRegistration = true
 
+	// Increase default retry attempts from 3 to 4 as zipdeploy often fails with 3 retries.
+	// With the default azcore.policy options of 800ms RetryDelay, this introduces up to 20 seconds of exponential back-off.
+	options.Retry = policy.RetryOptions{
+		MaxRetries: 4,
+	}
+
 	pipeline, err := armruntime.NewPipeline("zip-deploy", "1.0.0", credential, runtime.PipelineOptions{}, options)
 	if err != nil {
 		return nil, fmt.Errorf("failed creating HTTP pipeline: %w", err)

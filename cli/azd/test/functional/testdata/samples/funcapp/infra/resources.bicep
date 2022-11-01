@@ -44,7 +44,7 @@ resource functions 'Microsoft.Web/sites@2022-03-01' = {
   }
 }
 
-resource storage 'Microsoft.Storage/storageAccounts@2021-09-01' = {
+resource storage 'Microsoft.Storage/storageAccounts@2022-05-01' = {
   name: 'st${resourceToken}'
   location: location
   tags: tags
@@ -70,6 +70,5 @@ resource appServicePlan 'Microsoft.Web/serverfarms@2022-03-01' = {
     reserved: true
   }
 }
-
 
 output AZURE_FUNCTION_URI string = 'https://${functions.properties.defaultHostName}'

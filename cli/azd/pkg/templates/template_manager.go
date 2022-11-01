@@ -5,9 +5,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"sort"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/resources"
+	"golang.org/x/exp/maps"
 )
 
 type TemplateManager struct {
@@ -61,10 +63,9 @@ func PromptTemplate(ctx context.Context, message string) (Template, error) {
 	}
 
 	templateNames := []string{"Empty Template"}
-
-	for name := range templatesSet {
-		templateNames = append(templateNames, name)
-	}
+	names := maps.Keys(templatesSet)
+	sort.Strings(names)
+	templateNames = append(templateNames, names...)
 
 	selectedIndex, err := console.Select(ctx, input.ConsoleOptions{
 		Message:      message,

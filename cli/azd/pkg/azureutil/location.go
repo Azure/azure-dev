@@ -46,7 +46,11 @@ func PromptLocation(ctx context.Context, env *environment.Environment, message s
 
 	// If no location is set in the process environment, see what the azd config default is.
 	if defaultLocation == "" {
-		defaultConfig := accountManager.GetAccountDefaults(ctx)
+		defaultConfig, err := accountManager.GetAccountDefaults(ctx)
+		if err != nil {
+			return "", fmt.Errorf("failed retrieving azd defaults. %w", err)
+		}
+
 		defaultLocation = defaultConfig.DefaultLocation.Name
 	}
 

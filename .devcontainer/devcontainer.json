@@ -9,8 +9,12 @@
     "features": {
         // Prerequisites for running azd
         // https://github.com/Azure/azure-dev/wiki/Install
-        "github-cli": "2.3",
-        "azure-cli": "2.38"
+        "ghcr.io/devcontainers/features/github-cli:1": {
+            "version": "2.3"
+        },
+        "ghcr.io/devcontainers/features/azure-cli:1": {
+            "version": "2.38"
+        }
     }, 
     "extensions": [
         "redhat.vscode-yaml",

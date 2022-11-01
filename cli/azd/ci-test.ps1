@@ -5,8 +5,6 @@ param(
     [switch] $ShortMode
 )
 
-./azd login --check-status --output=json
-
 $goTest = "$(go env GOPATH)/bin/gotestsum -- -timeout $Timeout -v -coverprofile='$CoverageFileOut' $Package"
 
 if ($ShortMode) {

@@ -53,8 +53,7 @@ func Test_CLI_Version_PrintsVersion(t *testing.T) {
 	defer cancel()
 
 	cli := azdcli.NewCLI(t)
-	cli.Env = os.Environ()
-	out, err := cli.RunCommand(ctx, "version", "--debug")
+	out, err := cli.RunCommand(ctx, "version")
 	require.NoError(t, err)
 
 	rn := os.Getenv("GITHUB_RUN_NUMBER")
@@ -75,6 +74,7 @@ func Test_CLI_Init_FailsIfAzCliIsMissing(t *testing.T) {
 
 	cli := azdcli.NewCLI(t)
 	cli.WorkingDirectory = dir
+
 	cli.Env = filterEnviron("PATH")
 
 	out, err := cli.RunCommandWithStdIn(ctx, "", "init")

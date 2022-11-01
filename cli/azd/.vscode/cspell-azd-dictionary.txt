@@ -24,7 +24,6 @@ azureutil
 Backticks
 BOOLSLICE
 BUILDNUMBER
-ciphertext
 circleci
 cflags
 cmdsubst

@@ -2,6 +2,12 @@
 
 ## 0.3.0-beta.6 (Unreleased)
 
+### Features Added
+
+- [[#773]](https://github.com/Azure/azure-dev/pull/773) Add support for Java with Maven.
+
+### Bugs Fixed
+
 - [[#1060]](https://github.com/Azure/azure-dev/pull/1060) Fix color rendering on Windows.
 
 ## 0.3.0-beta.5 (2022-10-26)

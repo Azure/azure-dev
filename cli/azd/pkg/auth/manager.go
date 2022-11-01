@@ -101,11 +101,11 @@ func (m *Manager) GetSignedInUser(ctx context.Context) (*public.Account, azcore.
 
 		for _, account := range m.publicClient.Accounts() {
 			if account.HomeAccountID == currentUserHomeId {
-				cred := m.newCredential(&account)
+				cred := newAzdCredential(m.publicClient, &account)
 				if tok, err := cred.GetToken(ctx, policy.TokenRequestOptions{Scopes: cLoginScopes}); err != nil {
 					return nil, nil, nil, fmt.Errorf("failed to get token: %v: %w", err, ErrNoCurrentUser)
 				} else {
-					return &account, m.newCredential(&account), &tok.ExpiresOn, nil
+					return &account, cred, &tok.ExpiresOn, nil
 				}
 			}
 
@@ -169,7 +169,7 @@ func (m *Manager) Login(
 
 	log.Printf("logged in as %s (%s)", authResult.Account.PreferredUsername, authResult.Account.HomeAccountID)
 
-	return &authResult.Account, m.newCredential(&authResult.Account), &authResult.ExpiresOn, nil
+	return &authResult.Account, newAzdCredential(m.publicClient, &authResult.Account), &authResult.ExpiresOn, nil
 }
 
 func (m *Manager) saveCurrentUserProperties(properties map[string]any) error {
@@ -275,11 +275,4 @@ func (m *Manager) Logout(ctx context.Context) error {
 	}
 
 	return nil
-}
-
-func (m *Manager) newCredential(a *public.Account) azcore.TokenCredential {
-	return &azdCredential{
-		client:  m.publicClient,
-		account: a,
-	}
 }

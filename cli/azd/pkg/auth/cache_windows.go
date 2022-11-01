@@ -7,7 +7,6 @@
 package auth
 
 import (
-	"fmt"
 	"log"
 	"unsafe"
 
@@ -52,7 +51,7 @@ type encryptedCache struct {
 func (c *encryptedCache) Export(cache cache.Marshaler, key string) {
 	res, err := cache.Marshal()
 	if err != nil {
-		fmt.Printf("failed to marshal cache from MSAL: %v", err)
+		log.Printf("failed to marshal cache from MSAL: %v", err)
 		return
 	}
 
@@ -71,7 +70,7 @@ func (c *encryptedCache) Export(cache cache.Marshaler, key string) {
 	var encrypted windows.DataBlob
 
 	if err := windows.CryptProtectData(&plaintext, nil, nil, uintptr(0), nil, 0, &encrypted); err != nil {
-		fmt.Printf("failed to encrypt data: %v", err)
+		log.Printf("failed to encrypt data: %v", err)
 	}
 
 	encryptedSlice := unsafe.Slice(encrypted.Data, encrypted.Size)
@@ -107,7 +106,7 @@ func (c *encryptedCache) Replace(cache cache.Unmarshaler, key string) {
 	var plaintext windows.DataBlob
 
 	if err := windows.CryptUnprotectData(&encrypted, nil, nil, uintptr(0), nil, 0, &plaintext); err != nil {
-		fmt.Printf("failed to decrypt data: %v", err)
+		log.Printf("failed to decrypt data: %v", err)
 	}
 
 	decryptedSlice := unsafe.Slice(plaintext.Data, plaintext.Size)

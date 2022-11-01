@@ -11,11 +11,16 @@ import (
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/public"
 )
 
-var _ azcore.TokenCredential = &azdCredential{}
-
 type azdCredential struct {
 	client  *public.Client
 	account *public.Account
+}
+
+func newAzdCredential(client *public.Client, account *public.Account) *azdCredential {
+	return &azdCredential{
+		client:  client,
+		account: account,
+	}
 }
 
 func (c *azdCredential) GetToken(ctx context.Context, options policy.TokenRequestOptions) (azcore.AccessToken, error) {

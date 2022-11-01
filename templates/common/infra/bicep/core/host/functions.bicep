@@ -1,12 +1,12 @@
-param environmentName string
+param name string
 param location string = resourceGroup().location
+param tags object = {}
 
 // Reference Properties
 param applicationInsightsName string = ''
 param appServicePlanId string
 param keyVaultName string = ''
-param managedIdentity bool = !(empty(keyVaultName))
-param serviceName string
+param managedIdentity bool = !empty(keyVaultName)
 param storageAccountName string
 
 // Runtime Properties
@@ -41,10 +41,11 @@ param scmDoBuildDuringDeployment bool = true
 param use32BitWorkerProcess bool = false
 
 module functions 'appservice.bicep' = {
-  name: '${serviceName}-functions'
+  name: '${name}-functions'
   params: {
-    environmentName: environmentName
+    name: name
     location: location
+    tags: tags
     allowedOrigins: allowedOrigins
     alwaysOn: alwaysOn
     appCommandLine: appCommandLine
@@ -68,7 +69,6 @@ module functions 'appservice.bicep' = {
     runtimeVersion: runtimeVersion
     runtimeNameAndVersion: runtimeNameAndVersion
     scmDoBuildDuringDeployment: scmDoBuildDuringDeployment
-    serviceName: serviceName
     use32BitWorkerProcess: use32BitWorkerProcess
   }
 }

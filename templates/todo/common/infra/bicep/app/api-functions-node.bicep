@@ -1,5 +1,6 @@
-param environmentName string
+param name string
 param location string = resourceGroup().location
+param tags object = {}
 
 param allowedOrigins array = []
 param applicationInsightsName string = ''
@@ -12,8 +13,9 @@ param storageAccountName string
 module api '../../../../../common/infra/bicep/core/host/functions.bicep' = {
   name: '${serviceName}-functions-node-module'
   params: {
-    environmentName: environmentName
+    name: name
     location: location
+    tags: union(tags, { 'azd-service-name': serviceName })
     allowedOrigins: allowedOrigins
     alwaysOn: false
     appSettings: appSettings
@@ -22,11 +24,10 @@ module api '../../../../../common/infra/bicep/core/host/functions.bicep' = {
     keyVaultName: keyVaultName
     runtimeName: 'node'
     runtimeVersion: '16'
-    serviceName: serviceName
     storageAccountName: storageAccountName
   }
 }
 
-output API_IDENTITY_PRINCIPAL_ID string = api.outputs.identityPrincipalId
-output API_NAME string = api.outputs.name
-output API_URI string = api.outputs.uri
+output SERVICE_API_IDENTITY_PRINCIPAL_ID string = api.outputs.identityPrincipalId
+output SERVICE_API_NAME string = api.outputs.name
+output SERVICE_API_URI string = api.outputs.uri

@@ -58,21 +58,21 @@ repo:
       - from: web-appservice.bicep
         to: web.bicep
         patterns:
-          - "**/resources.bicep"
+          - "**/main.bicep"
 
       - from: api-appservice-java.bicep
         to: api.bicep
         patterns:
-          - "**/resources.bicep"
+          - "**/main.bicep"
 
       - from: cosmos-mongo-db.bicep
         to: db.bicep
         patterns:
-          - "**/resources.bicep"
+          - "**/main.bicep"
 
   assets:
     # Common assets
-    
+
     # Infra
     - from: ./infra/
       to: ./infra

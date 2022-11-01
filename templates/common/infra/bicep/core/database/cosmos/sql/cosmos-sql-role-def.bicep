@@ -1,12 +1,8 @@
-param environmentName string
-param location string = resourceGroup().location
+param accountName string
 
-var abbrs = loadJsonContent('../../../../abbreviations.json')
-var resourceToken = toLower(uniqueString(subscription().id, environmentName, location))
-
-resource roleDefinition 'Microsoft.DocumentDB/databaseAccounts/sqlRoleDefinitions@2022-05-15' = {
+resource roleDefinition 'Microsoft.DocumentDB/databaseAccounts/sqlRoleDefinitions@2022-08-15' = {
   parent: cosmos
-  name: guid(cosmos.id, resourceToken, 'sql-role')
+  name: guid(cosmos.id, accountName, 'sql-role')
   properties: {
     assignableScopes: [
       cosmos.id
@@ -26,8 +22,8 @@ resource roleDefinition 'Microsoft.DocumentDB/databaseAccounts/sqlRoleDefinition
   }
 }
 
-resource cosmos 'Microsoft.DocumentDB/databaseAccounts@2022-05-15' existing = {
-  name: '${abbrs.documentDBDatabaseAccounts}${resourceToken}'
+resource cosmos 'Microsoft.DocumentDB/databaseAccounts@2022-08-15' existing = {
+  name: accountName
 }
 
-output cosmosSqlRoleDefinitionId string = roleDefinition.id
+output id string = roleDefinition.id

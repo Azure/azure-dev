@@ -58,17 +58,17 @@ repo:
       - from: web-appservice.bicep
         to: web.bicep
         patterns:
-          - "**/resources.bicep"
+          - "**/main.bicep"
 
       - from: api-appservice-dotnet.bicep
         to: api.bicep
         patterns:
-          - "**/resources.bicep"
+          - "**/main.bicep"
 
       - from: cosmos-sql-db.bicep
         to: db.bicep
         patterns:
-          - "**/resources.bicep"
+          - "**/main.bicep"
 
   assets:
     # Common assets

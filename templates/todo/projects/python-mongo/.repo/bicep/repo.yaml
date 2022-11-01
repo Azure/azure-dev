@@ -28,7 +28,7 @@ repo:
 
       - from: ../../web/react-fluent
         to: ./src/web
-        patterns: 
+        patterns:
           - "**/azure.@(yml|yaml)"
 
       - from: "PLACEHOLDERIACTOOLS"
@@ -40,7 +40,7 @@ repo:
         to: "ToDo Application with a Python API and Azure Cosmos DB API for MongoDB on Azure App Service"
         patterns:
           - "README.md"
-      
+
       - from: "PLACEHOLDER_DESCRIPTION"
         to: "using Bicep as the IaC provider"
         patterns:
@@ -49,7 +49,7 @@ repo:
       - from: ../../../../../common/infra/bicep/core
         to: ../core
         patterns:
-          - "**/*.bicep"   
+          - "**/*.bicep"
 
       # app service modules
       - from: ../../../../../../common/infra/bicep
@@ -78,22 +78,22 @@ repo:
       - from: web-appservice.bicep
         to: web.bicep
         patterns:
-          - "**/resources.bicep"
+          - "**/main.bicep"
 
       - from: api-appservice-python.bicep
         to: api.bicep
         patterns:
-          - "**/resources.bicep"
+          - "**/main.bicep"
 
       - from: cosmos-mongo-db.bicep
         to: db.bicep
         patterns:
-          - "**/resources.bicep"
+          - "**/main.bicep"
 
       - from: cosmos-mongo-db.bicep
         to: db.bicep
         patterns:
-          - "**/resources.bicep"
+          - "**/main.bicep"
 
   assets:
     # Common assets

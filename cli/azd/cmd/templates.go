@@ -11,6 +11,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/templates"
 	"github.com/spf13/cobra"
@@ -47,6 +48,9 @@ func templatesListCmdDesign(global *internal.GlobalCommandOptions) (*cobra.Comma
 		Use:     "list",
 		Short:   "List templates.",
 		Aliases: []string{"ls"},
+		Annotations: map[string]string{
+			auth.RequireNoLoginAnnotation: "true",
+		},
 	}
 
 	flags := &templatesListFlags{}
@@ -117,6 +121,9 @@ func templatesShowCmdDesign(rootOptions *internal.GlobalCommandOptions) (*cobra.
 	cmd := &cobra.Command{
 		Use:   "show <template>",
 		Short: "Show the template details.",
+		Annotations: map[string]string{
+			auth.RequireNoLoginAnnotation: "true",
+		},
 	}
 	output.AddOutputParam(cmd, []output.Format{output.JsonFormat, output.TableFormat}, output.TableFormat)
 

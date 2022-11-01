@@ -50,6 +50,16 @@ func RegisterDependenciesInCtx(
 
 	var credential azcore.TokenCredential
 
+	if _, has := cmd.Annotations[auth.RequireNoLoginAnnotation]; !has {
+		cred, err := authManager.GetCredentialForCurrentUser(ctx)
+		if err != nil {
+			return ctx, fmt.Errorf("fetching current user: %w", err)
+		}
+		credential = cred
+	} else {
+		credential = &panicCredential{}
+	}
+
 	// TODO(ellismg): This is a hack so that we don't fail for `login` when we construct the root context if a user
 	// is not logged in. This is super fragile, but we should be able to clean it up soon with Wei's work.
 	if cmd.Use != "login" && cmd.Use != "logout" && cmd.Use != "version" {
@@ -111,5 +121,5 @@ var _ azcore.TokenCredential = &panicCredential{}
 type panicCredential struct{}
 
 func (pc *panicCredential) GetToken(_ context.Context, _ policy.TokenRequestOptions) (azcore.AccessToken, error) {
-	panic("should not have been used")
+	panic("this command should not have attempted to call GetToken, it was marked as not requiring login")
 }

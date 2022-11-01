@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log"
 
+	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/commands/pipeline"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
@@ -93,19 +94,15 @@ func newPipelineConfigAction(
 	return pca
 }
 
-func (i *pipelineConfigAction) PostRun(ctx context.Context, runResult error) error {
-	return runResult
-}
-
 // Run implements action interface
-func (p *pipelineConfigAction) Run(ctx context.Context) error {
+func (p *pipelineConfigAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	if err := ensureProject(p.azdCtx.ProjectPath()); err != nil {
-		return err
+		return nil, err
 	}
 
 	// make sure az is logged in
 	if err := ensureLoggedIn(ctx); err != nil {
-		return fmt.Errorf("failed to ensure login: %w", err)
+		return nil, fmt.Errorf("failed to ensure login: %w", err)
 	}
 
 	// Read or init env
@@ -116,7 +113,7 @@ func (p *pipelineConfigAction) Run(ctx context.Context) error {
 
 	env, ctx, err := loadOrInitEnvironment(ctx, &p.manager.RootOptions.EnvironmentName, p.azdCtx, console)
 	if err != nil {
-		return fmt.Errorf("loading environment: %w", err)
+		return nil, fmt.Errorf("loading environment: %w", err)
 	}
 
 	// Detect the SCM and CI providers based on the project directory
@@ -124,11 +121,11 @@ func (p *pipelineConfigAction) Run(ctx context.Context) error {
 		p.manager.CiProvider,
 		err = pipeline.DetectProviders(ctx, p.azdCtx, env, p.manager.PipelineProvider)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	// set context for manager
 	p.manager.Environment = env
 
-	return p.manager.Configure(ctx)
+	return nil, p.manager.Configure(ctx)
 }

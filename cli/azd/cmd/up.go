@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
@@ -77,40 +78,36 @@ func newUpAction(init *initAction, infraCreate *infraCreateAction, deploy *deplo
 	}
 }
 
-func (i *upAction) PostRun(ctx context.Context, runResult error) error {
-	return runResult
-}
-
-func (u *upAction) Run(ctx context.Context) error {
+func (u *upAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	err := u.runInit(ctx)
 	if err != nil {
-		return fmt.Errorf("running init: %w", err)
+		return nil, fmt.Errorf("running init: %w", err)
 	}
 
 	finalOutput := []string{}
 	u.infraCreate.finalOutputRedirect = &finalOutput
-	err = u.infraCreate.Run(ctx)
+	_, err = u.infraCreate.Run(ctx)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	// Print an additional newline to separate provision from deploy
 	u.console.Message(ctx, "")
 
-	err = u.deploy.Run(ctx)
+	_, err = u.deploy.Run(ctx)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	for _, message := range finalOutput {
 		u.console.Message(ctx, message)
 	}
 
-	return nil
+	return nil, nil
 }
 
 func (u *upAction) runInit(ctx context.Context) error {
-	err := u.init.Run(ctx)
+	_, err := u.init.Run(ctx)
 	var envInitError *environment.EnvironmentInitError
 	if errors.As(err, &envInitError) {
 		// We can ignore environment already initialized errors

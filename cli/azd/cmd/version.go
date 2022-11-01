@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 
+	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
@@ -58,11 +59,7 @@ func newVersionAction(
 	}
 }
 
-func (i *versionAction) PostRun(ctx context.Context, runResult error) error {
-	return runResult
-}
-
-func (v *versionAction) Run(ctx context.Context) error {
+func (v *versionAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	switch v.formatter.Kind() {
 	case output.NoneFormat:
 		fmt.Fprintf(v.console.Handles().Stdout, "azd version %s\n", internal.Version)
@@ -70,9 +67,9 @@ func (v *versionAction) Run(ctx context.Context) error {
 		versionSpec := internal.GetVersionSpec()
 		err := v.formatter.Format(versionSpec, v.writer, nil)
 		if err != nil {
-			return err
+			return nil, err
 		}
 	}
 
-	return nil
+	return nil, nil
 }

@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
@@ -109,18 +110,7 @@ func newInitAction(
 	}, nil
 }
 
-func (i *initAction) PostRun(ctx context.Context, runResult error) error {
-	if runResult == nil {
-		i.console.MessageUx(ctx, "New project initialized!", input.ResultSuccess)
-		i.console.Message(ctx, fmt.Sprintf("You can view the template code in your directory: %s", i.formattedWithColorCwd))
-	} else {
-		i.console.MessageUx(ctx, runResult.Error(), input.ResultError)
-		os.Exit(1)
-	}
-	return nil
-}
-
-func (i *initAction) Run(ctx context.Context) error {
+func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	// In the case where `init` is run and a parent folder already has an `azure.yaml` file, the
 	// current ProjectDirectory will be set to that folder. That's not what we want here. We want
 	// to force using the current working directory as a project root (since we are initializing a
@@ -128,14 +118,14 @@ func (i *initAction) Run(ctx context.Context) error {
 	wd, err := os.Getwd()
 	i.formattedWithColorCwd = output.WithLinkFormat("%s", wd)
 	if err != nil {
-		return fmt.Errorf("getting cwd: %w", err)
+		return nil, fmt.Errorf("getting cwd: %w", err)
 	}
 
 	log.Printf("forcing project directory to %s", wd)
 	i.azdCtx.SetProjectDirectory(wd)
 
 	if i.flags.templateBranch != "" && i.flags.template.Name == "" {
-		return errors.New("template name required when specifying a branch name")
+		return nil, errors.New("template name required when specifying a branch name")
 	}
 
 	requiredTools := []tools.ExternalTool{i.azCli}
@@ -146,7 +136,7 @@ func (i *initAction) Run(ctx context.Context) error {
 	}
 
 	if err := tools.EnsureInstalled(ctx, requiredTools...); err != nil {
-		return err
+		return nil, err
 	}
 
 	// Project not initialized and no template specified
@@ -159,7 +149,7 @@ func (i *initAction) Run(ctx context.Context) error {
 			i.flags.template, err = templates.PromptTemplate(ctx, "Select a project template:")
 
 			if err != nil {
-				return err
+				return nil, err
 			}
 		}
 	}
@@ -183,13 +173,14 @@ func (i *initAction) Run(ctx context.Context) error {
 			case 1:
 				templateUrl = fmt.Sprintf("https://github.com/%s", i.flags.template.RepositoryPath)
 			default:
-				return fmt.Errorf("template '%s' should be either <repository> or <repo>/<repository>", i.flags.template.RepositoryPath)
+				return nil, fmt.Errorf(
+					"template '%s' should be either <repository> or <repo>/<repository>", i.flags.template.RepositoryPath)
 			}
 		}
 
 		templateStagingDir, err := os.MkdirTemp("", "az-dev-template")
 		if err != nil {
-			return fmt.Errorf("creating temp folder: %w", err)
+			return nil, fmt.Errorf("creating temp folder: %w", err)
 		}
 
 		// Attempt to remove the temporary directory we cloned the template into, but don't fail the
@@ -208,7 +199,7 @@ func (i *initAction) Run(ctx context.Context) error {
 		i.console.StopSpinner(ctx, stepMessage, getStepResultFormat(err))
 
 		if err != nil {
-			return fmt.Errorf("\nfetching template: %w", err)
+			return nil, fmt.Errorf("\nfetching template: %w", err)
 		}
 
 		log.Printf(
@@ -243,7 +234,7 @@ func (i *initAction) Run(ctx context.Context) error {
 
 			return nil
 		}); err != nil {
-			return fmt.Errorf("enumerating template files: %w", err)
+			return nil, fmt.Errorf("enumerating template files: %w", err)
 		}
 
 		if len(duplicateFiles) > 0 {
@@ -260,26 +251,26 @@ func (i *initAction) Run(ctx context.Context) error {
 			})
 
 			if err != nil {
-				return fmt.Errorf("prompting to overwrite: %w", err)
+				return nil, fmt.Errorf("prompting to overwrite: %w", err)
 			}
 
 			if !overwrite {
-				return errors.New("confirmation declined")
+				return nil, errors.New("confirmation declined")
 			}
 		}
 
 		if err := copy.Copy(templateStagingDir, i.azdCtx.ProjectDirectory()); err != nil {
-			return fmt.Errorf("copying template contents: %w", err)
+			return nil, fmt.Errorf("copying template contents: %w", err)
 		}
 	}
 
 	envName, err := i.azdCtx.GetDefaultEnvironmentName()
 	if err != nil {
-		return fmt.Errorf("retrieving default environment name: %w", err)
+		return nil, fmt.Errorf("retrieving default environment name: %w", err)
 	}
 
 	if envName != "" {
-		return environment.NewEnvironmentInitError(envName)
+		return nil, environment.NewEnvironmentInitError(envName)
 	}
 
 	// Check to see if `azure.yaml` exists, and if it doesn't, create it.
@@ -293,7 +284,7 @@ func (i *initAction) Run(ctx context.Context) error {
 		i.console.StopSpinner(ctx, stepMessage, getStepResultFormat(err))
 
 		if err != nil {
-			return fmt.Errorf("failed to create a project file: %w", err)
+			return nil, fmt.Errorf("failed to create a project file: %w", err)
 		}
 	}
 
@@ -303,7 +294,7 @@ func (i *initAction) Run(ctx context.Context) error {
 		osutil.PermissionDirectory,
 	)
 	if err != nil {
-		return fmt.Errorf("failed to create a directory: %w", err)
+		return nil, fmt.Errorf("failed to create a directory: %w", err)
 	}
 
 	//create .gitignore or open existing .gitignore file, and contains .azure
@@ -313,7 +304,7 @@ func (i *initAction) Run(ctx context.Context) error {
 		osutil.PermissionFile,
 	)
 	if err != nil {
-		return fmt.Errorf("fail to create or open .gitignore: %w", err)
+		return nil, fmt.Errorf("fail to create or open .gitignore: %w", err)
 	}
 	defer gitignoreFile.Close()
 
@@ -330,7 +321,7 @@ func (i *initAction) Run(ctx context.Context) error {
 		newLine := osutil.GetNewLineSeparator()
 		_, err := gitignoreFile.WriteString(newLine + azdcontext.EnvironmentDirectoryName + newLine)
 		if err != nil {
-			return fmt.Errorf("fail to write '%s' in .gitignore: %w", azdcontext.EnvironmentDirectoryName, err)
+			return nil, fmt.Errorf("fail to write '%s' in .gitignore: %w", azdcontext.EnvironmentDirectoryName, err)
 		}
 	}
 
@@ -341,11 +332,11 @@ func (i *initAction) Run(ctx context.Context) error {
 	}
 	env, ctx, err := createAndInitEnvironment(ctx, &envSpec, i.azdCtx, i.console)
 	if err != nil {
-		return fmt.Errorf("loading environment: %w", err)
+		return nil, fmt.Errorf("loading environment: %w", err)
 	}
 
 	if err := i.azdCtx.SetDefaultEnvironmentName(envSpec.environmentName); err != nil {
-		return fmt.Errorf("saving default environment: %w", err)
+		return nil, fmt.Errorf("saving default environment: %w", err)
 	}
 
 	// If the configuration is empty, set default subscription & location
@@ -361,7 +352,13 @@ func (i *initAction) Run(ctx context.Context) error {
 		}
 	}
 
-	return nil
+	return &actions.ActionResult{
+		Message: &actions.ResultMessage{
+			Header:   "New project initialized!",
+			FollowUp: fmt.Sprintf("You can view the template code in your directory: %s", i.formattedWithColorCwd),
+		},
+		Console: i.console,
+	}, nil
 }
 
 func getStepResultFormat(result error) input.MessageUxType {

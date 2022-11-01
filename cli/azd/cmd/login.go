@@ -10,6 +10,7 @@ import (
 	"io"
 	"os"
 
+	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/contracts"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
@@ -80,18 +81,14 @@ func newLoginAction(
 	}
 }
 
-func (i *loginAction) PostRun(ctx context.Context, runResult error) error {
-	return runResult
-}
-
-func (la *loginAction) Run(ctx context.Context) error {
+func (la *loginAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	if err := tools.EnsureInstalled(ctx, la.azCli); err != nil {
-		return err
+		return nil, err
 	}
 
 	if !la.flags.onlyCheckStatus {
 		if err := runLogin(ctx, la.flags.useDeviceCode); err != nil {
-			return fmt.Errorf("logging in: %w", err)
+			return nil, fmt.Errorf("logging in: %w", err)
 		}
 	}
 
@@ -101,7 +98,7 @@ func (la *loginAction) Run(ctx context.Context) error {
 		errors.Is(err, azcli.ErrAzCliRefreshTokenExpired) {
 		res.Status = contracts.LoginStatusUnauthenticated
 	} else if err != nil {
-		return fmt.Errorf("checking auth status: %w", err)
+		return nil, fmt.Errorf("checking auth status: %w", err)
 	} else {
 		res.Status = contracts.LoginStatusSuccess
 		res.ExpiresOn = token.ExpiresOn
@@ -114,10 +111,10 @@ func (la *loginAction) Run(ctx context.Context) error {
 			fmt.Fprintln(la.console.Handles().Stdout, "Not logged in, run `azd login` to login to Azure.")
 		}
 
-		return nil
+		return nil, nil
 	}
 
-	return la.formatter.Format(res, la.writer, nil)
+	return nil, la.formatter.Format(res, la.writer, nil)
 }
 
 // ensureLoggedIn checks to see if the user is currently logged in. If not, the equivalent of `az login` is run.

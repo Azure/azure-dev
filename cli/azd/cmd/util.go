@@ -230,11 +230,16 @@ func ensureEnvironmentInitialized(
 
 		var subscriptionId = ""
 		for subscriptionId == "" {
-			subscriptionSelectionIndex, err := console.Select(ctx, input.ConsoleOptions{
-				Message:      "Please select an Azure Subscription to use:",
-				Options:      subscriptionOptions,
-				DefaultValue: defaultSubscription,
-			})
+			selectOptions := input.ConsoleOptions{
+				Message: "Please select an Azure Subscription to use:",
+				Options: subscriptionOptions,
+			}
+
+			if defaultSubscription != "" {
+				selectOptions.DefaultValue = defaultSubscription
+			}
+
+			subscriptionSelectionIndex, err := console.Select(ctx, selectOptions)
 
 			if err != nil {
 				return fmt.Errorf("reading subscription id: %w", err)

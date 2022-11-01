@@ -279,7 +279,7 @@ func isDebugEnabled() bool {
 	// Parse when `--help` is on the command line. Add an explicit help parameter (which we ignore)
 	// so pflag doesn't fail in this case.  If `--help` is passed, the help for `azd` will be shown later
 	// when `cmd.Execute` is run
-	flags.BoolVar(&help, "help", false, "")
+	flags.BoolVarP(&help, "help", "h", false, "")
 
 	if err := flags.Parse(os.Args[1:]); err != nil {
 		log.Printf("could not parse flags: %v", err)

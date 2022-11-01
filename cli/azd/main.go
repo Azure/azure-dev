@@ -29,11 +29,15 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/blang/semver/v4"
+	"github.com/mattn/go-colorable"
 	"github.com/spf13/pflag"
 )
 
 func main() {
 	ctx := context.Background()
+
+	restoreColorMode := colorable.EnableColorsStdout(nil)
+	defer restoreColorMode()
 
 	// Ensure random numbers from default random number generator are unpredictable
 	rand.Seed(time.Now().UTC().UnixNano())
@@ -279,7 +283,7 @@ func isDebugEnabled() bool {
 	// Parse when `--help` is on the command line. Add an explicit help parameter (which we ignore)
 	// so pflag doesn't fail in this case.  If `--help` is passed, the help for `azd` will be shown later
 	// when `cmd.Execute` is run
-	flags.BoolVar(&help, "help", false, "")
+	flags.BoolVarP(&help, "help", "h", false, "")
 
 	if err := flags.Parse(os.Args[1:]); err != nil {
 		log.Printf("could not parse flags: %v", err)

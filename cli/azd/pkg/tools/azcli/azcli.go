@@ -9,7 +9,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"regexp"
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
@@ -58,9 +57,7 @@ type AzCli interface {
 	LoginAcr(ctx context.Context, subscriptionId string, loginServer string) error
 	GetContainerRegistries(ctx context.Context, subscriptionId string) ([]*armcontainerregistry.Registry, error)
 	ListAccounts(ctx context.Context) ([]*AzCliSubscriptionInfo, error)
-	GetDefaultAccount(ctx context.Context) (*AzCliSubscriptionInfo, error)
 	GetAccount(ctx context.Context, subscriptionId string) (*AzCliSubscriptionInfo, error)
-	GetCliConfigValue(ctx context.Context, name string) (AzCliConfigValue, error)
 	GetSubscriptionDeployment(
 		ctx context.Context,
 		subscriptionId string,
@@ -436,22 +433,6 @@ func (cli *azCli) Login(ctx context.Context, useDeviceCode bool, deviceCodeWrite
 	return nil
 }
 
-func (cli *azCli) GetCliConfigValue(ctx context.Context, name string) (AzCliConfigValue, error) {
-	res, err := cli.runAzCommand(ctx, "config", "get", name, "--output", "json")
-	if isConfigurationIsNotSetMessage(res.Stderr) {
-		return AzCliConfigValue{}, ErrNoConfigurationValue
-	} else if err != nil {
-		return AzCliConfigValue{}, fmt.Errorf("failed running config get: %s: %w", res.String(), err)
-	}
-
-	var value AzCliConfigValue
-	if err := json.Unmarshal([]byte(res.Stdout), &value); err != nil {
-		return AzCliConfigValue{}, fmt.Errorf("could not unmarshal output %s as an AzCliConfigValue: %w", res.Stdout, err)
-	}
-
-	return value, nil
-}
-
 func (cli *azCli) runAzCommand(ctx context.Context, args ...string) (exec.RunResult, error) {
 	return cli.runAzCommandWithArgs(ctx, exec.RunArgs{
 		Args: args,
@@ -481,17 +462,6 @@ func (cli *azCli) createDefaultClientOptionsBuilder(ctx context.Context) *azsdk.
 	return azsdk.NewClientOptionsBuilder().
 		WithTransport(httputil.GetHttpClient(ctx)).
 		WithPerCallPolicy(azsdk.NewUserAgentPolicy(cli.UserAgent()))
-}
-
-// Azure Active Directory codes can be referenced via https://login.microsoftonline.com/error?code=<ERROR_CODE>,
-// where ERROR_CODE is the digits portion of an AAD error code. Example: AADSTS70043 has error code 70043
-// Additionally, https://learn.microsoft.com/azure/active-directory/develop/reference-aadsts-error-codes#aadsts-error-codes
-// is a helpful resource with a list of error codes and messages.
-
-var isConfigurationIsNotSetMessageRegex = regexp.MustCompile(`Configuration '.*' is not set\.`)
-
-func isConfigurationIsNotSetMessage(s string) bool {
-	return isConfigurationIsNotSetMessageRegex.MatchString(s)
 }
 
 type contextKey string

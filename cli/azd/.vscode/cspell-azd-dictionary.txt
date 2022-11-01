@@ -6,6 +6,7 @@ appinsightsstorage
 appservice
 armappconfiguration
 AZCLI
+azcorelog
 azdcli
 azdcontext
 azddeploy

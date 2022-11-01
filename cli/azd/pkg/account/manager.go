@@ -25,7 +25,6 @@ var defaultLocation Location = Location{
 }
 
 // Manages azd account configuration
-// `az cli` is not required and will only be called `azd` default have not already been set.
 type Manager struct {
 	// Path to the local azd user configuration file
 	filePath      string
@@ -61,28 +60,28 @@ func NewManager(configManager config.Manager, azCli azcli.AzCli) (*Manager, erro
 
 // Gets the default subscription for the logged in account.
 // 1. Returns AZD config defaults if exists
-// 2. Returns AZ CLI defaults if exists
-func (m *Manager) GetAccountDefaults(ctx context.Context) *Account {
+// 2. Returns Coded location default if needed
+func (m *Manager) GetAccountDefaults(ctx context.Context) (*Account, error) {
 	subscription, err := m.getDefaultSubscription(ctx)
-
-	// If we don't have a default subscription then the principal does not have any active
-	// subscriptions or the configured value is not valid.
 	if err != nil {
-		subscription = nil
+		return nil, fmt.Errorf("failed retrieving default subscription: %w", err)
 	}
 
-	location, err := m.getDefaultLocation(ctx, subscription.Id)
+	var location *Location
 
-	// If we don't have a default location then either this is the first run experience
-	// or the location specified in configuration is invalid.
-	if err != nil {
+	if subscription == nil {
 		location = &defaultLocation
+	} else {
+		location, err = m.getDefaultLocation(ctx, subscription.Id)
+		if err != nil {
+			return nil, fmt.Errorf("failed retrieving default location: %w", err)
+		}
 	}
 
 	return &Account{
 		DefaultSubscription: subscription,
 		DefaultLocation:     location,
-	}
+	}, nil
 }
 
 // Gets the available Azure subscriptions for the current logged in account.
@@ -98,9 +97,9 @@ func (m *Manager) GetSubscriptions(ctx context.Context) ([]*azcli.AzCliSubscript
 		return nil, err
 	}
 
-	// If there is only 1 account, set it as the default
-	if len(accounts) == 1 {
-		accounts[0].IsDefault = true
+	// If we don't have any default explicitly set return raw account list without and default set
+	if defaultSubscription == nil {
+		return accounts, nil
 	}
 
 	// If default subscription is set, set it in the results
@@ -225,39 +224,27 @@ func (m *Manager) getAllSubscriptions(ctx context.Context) ([]*azcli.AzCliSubscr
 func (m *Manager) getDefaultSubscription(ctx context.Context) (*Subscription, error) {
 	// Get the default subscription ID from azd configuration
 	configSubscriptionId, ok := m.config.Get(defaultSubscriptionKeyPath)
-	var defaultSubscription *Subscription
 
-	if ok {
-		subscriptionId := fmt.Sprint(configSubscriptionId)
-		subscription, err := m.azCli.GetAccount(ctx, subscriptionId)
-		if err != nil {
-			log.Printf("failed retrieving subscription with ID '%s'. %s", subscriptionId, err.Error())
-		}
-
-		defaultSubscription = &Subscription{
-			Id:       subscription.Id,
-			Name:     subscription.Name,
-			TenantId: subscription.TenantId,
-		}
-	} else {
-		// No defaults subscription has been set in azd config
-		allSubscriptions, err := m.getAllSubscriptions(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("failed retrieving subscriptions for current account. %w", err)
-		}
-
-		if len(allSubscriptions) == 0 {
-			return nil, errors.New("no subscriptions found for current account")
-		}
-
-		defaultSubscription = &Subscription{
-			Id:       allSubscriptions[0].Id,
-			Name:     allSubscriptions[0].Name,
-			TenantId: allSubscriptions[0].TenantId,
-		}
+	if !ok {
+		return nil, nil
 	}
 
-	return defaultSubscription, nil
+	subscriptionId := fmt.Sprint(configSubscriptionId)
+	subscription, err := m.azCli.GetAccount(ctx, subscriptionId)
+	if err != nil {
+		return nil, fmt.Errorf(
+			`the subscription id '%s' is either invalid or you no longer have access. 
+			Check your configuration with 'azd config list'. %w`,
+			subscriptionId,
+			err,
+		)
+	}
+
+	return &Subscription{
+		Id:       subscription.Id,
+		Name:     subscription.Name,
+		TenantId: subscription.TenantId,
+	}, nil
 }
 
 // Gets the default Azure location for the specified subscription
@@ -278,12 +265,12 @@ func (m *Manager) getDefaultLocation(ctx context.Context, subscriptionId string)
 		return l.Name == locationName
 	})
 
-	if index > -1 {
-		return &Location{
-			Name:        allLocations[index].Name,
-			DisplayName: allLocations[index].RegionalDisplayName,
-		}, nil
+	if index < 0 {
+		return nil, fmt.Errorf("the location '%s' is invalid. Check your configuration with `azd config list`", locationName)
 	}
 
-	return &defaultLocation, nil
+	return &Location{
+		Name:        allLocations[index].Name,
+		DisplayName: allLocations[index].RegionalDisplayName,
+	}, nil
 }

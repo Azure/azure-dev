@@ -1,27 +1,28 @@
-param environmentName string
+param accountName string
+param databaseName string
 param location string = resourceGroup().location
+param tags object = {}
 
 param collections array = []
-param cosmosDatabaseName string
-param cosmosConnectionStringKey string = 'AZURE-COSMOS-CONNECTION-STRING'
+param connectionStringKey string = 'AZURE-COSMOS-CONNECTION-STRING'
 param keyVaultName string
-
-var abbrs = loadJsonContent('../../../../abbreviations.json')
-var resourceToken = toLower(uniqueString(subscription().id, environmentName, location))
 
 module cosmos 'cosmos-mongo-account.bicep' = {
   name: 'cosmos-mongo-account'
   params: {
-    environmentName: environmentName
+    name: accountName
     location: location
     keyVaultName: keyVaultName
+    tags: tags
+    connectionStringKey: connectionStringKey
   }
 }
 
-resource database 'Microsoft.DocumentDB/databaseAccounts/mongodbDatabases@2022-05-15' = {
-  name: '${abbrs.documentDBDatabaseAccounts}${resourceToken}/${cosmosDatabaseName}'
+resource database 'Microsoft.DocumentDB/databaseAccounts/mongodbDatabases@2022-08-15' = {
+  name: '${accountName}/${databaseName}'
+  tags: tags
   properties: {
-    resource: { id: cosmosDatabaseName }
+    resource: { id: databaseName }
   }
 
   resource list 'collections' = [for collection in collections: {
@@ -40,6 +41,6 @@ resource database 'Microsoft.DocumentDB/databaseAccounts/mongodbDatabases@2022-0
   ]
 }
 
-output cosmosConnectionStringKey string = cosmosConnectionStringKey
-output cosmosDatabaseName string = cosmosDatabaseName
-output cosmosEndpoint string = cosmos.outputs.cosmosEndpoint
+output connectionStringKey string = connectionStringKey
+output databaseName string = databaseName
+output endpoint string = cosmos.outputs.endpoint

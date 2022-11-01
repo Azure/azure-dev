@@ -54,6 +54,8 @@ jobs:
       
       - template: /eng/pipelines/templates/steps/install-azd-live-sh.yml
 
+      - template: /eng/pipelines/templates/steps/install-ms-openjdk.yml
+
       - template: /eng/pipelines/templates/steps/az-login.yml
 
       # Required to clone repos that are not yet public
@@ -105,7 +107,8 @@ jobs:
             -e '$(EnvPrefixName)'
             -t '$(TemplateName)'
             -b '$(TemplateBranchName)'
-            -s '$(Build.BuildId)'
+            -s '$(SubscriptionId)'
+            -u '$(Build.BuildId)'
             -l '$(DeployLocation)'
             -p 'list'
           workingDirectory: templates/tests

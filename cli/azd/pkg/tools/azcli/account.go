@@ -2,7 +2,6 @@ package azcli
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"regexp"
 	"sort"
@@ -73,26 +72,6 @@ func (cli *azCli) ListAccounts(ctx context.Context) ([]*AzCliSubscriptionInfo, e
 	})
 
 	return subscriptions, nil
-}
-
-func (cli *azCli) GetDefaultAccount(ctx context.Context) (*AzCliSubscriptionInfo, error) {
-	result, err := cli.runAzCommand(
-		ctx,
-		"account", "show",
-		"--output", "json",
-	)
-
-	if err != nil {
-		return nil, fmt.Errorf("failed getting default account from az cli: %w", err)
-	}
-
-	var subscription AzCliSubscriptionInfo
-	err = json.Unmarshal([]byte(result.Stdout), &subscription)
-	if err != nil {
-		return nil, fmt.Errorf("failed unmarshalling result JSON: %w", err)
-	}
-
-	return &subscription, nil
 }
 
 func (cli *azCli) GetAccount(ctx context.Context, subscriptionId string) (*AzCliSubscriptionInfo, error) {

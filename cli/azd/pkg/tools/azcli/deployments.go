@@ -8,12 +8,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/internal"
 )
 
 func (cli *azCli) GetSubscriptionDeployment(
@@ -109,7 +111,11 @@ func (cli *azCli) DeployToSubscription(
 	// wait for deployment creation
 	deployResult, err := createFromTemplateOperation.PollUntilDone(ctx, nil)
 	if err != nil {
-		return AzCliDeploymentResult{}, fmt.Errorf("deploying to subscription: %w", err)
+		deploymentError := createDeploymentError(err)
+		return AzCliDeploymentResult{}, fmt.Errorf(
+			"deploying to subscription:\n\nDeployment Error Details:\n%w",
+			deploymentError,
+		)
 	}
 
 	return AzCliDeploymentResult{
@@ -153,7 +159,11 @@ func (cli *azCli) DeployToResourceGroup(
 	// wait for deployment creation
 	deployResult, err := createFromTemplateOperation.PollUntilDone(ctx, nil)
 	if err != nil {
-		return AzCliDeploymentResult{}, fmt.Errorf("deploying to resource group: %w", err)
+		deploymentError := createDeploymentError(err)
+		return AzCliDeploymentResult{}, fmt.Errorf(
+			"deploying to resource group:\n\nDeployment Error Details:\n%w",
+			deploymentError,
+		)
 	}
 
 	return AzCliDeploymentResult{
@@ -218,4 +228,21 @@ func CreateDeploymentOutput(rawOutputs interface{}) (result map[string]AzCliDepl
 		}
 	}
 	return result
+}
+
+// Attempts to create an Azure Deployment error from the HTTP response error
+func createDeploymentError(err error) error {
+	var responseErr *azcore.ResponseError
+	if errors.As(err, &responseErr) {
+		var errorText string
+		rawBody, err := io.ReadAll(responseErr.RawResponse.Body)
+		if err != nil {
+			errorText = responseErr.Error()
+		} else {
+			errorText = string(rawBody)
+		}
+		return internal.NewAzureDeploymentError(errorText)
+	}
+
+	return err
 }

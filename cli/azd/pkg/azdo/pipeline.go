@@ -6,10 +6,12 @@ package azdo
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/microsoft/azure-devops-go-api/azuredevops"
 	"github.com/microsoft/azure-devops-go-api/azuredevops/build"
 	"github.com/microsoft/azure-devops-go-api/azuredevops/taskagent"
@@ -106,7 +108,11 @@ func CreatePipeline(
 		// Pipeline is already created. It uses the same connection but
 		// we need to update the variables and secrets as they
 		// might have been updated
-		definition.Variables = getDefinitionVariables(env, credentials, provisioningProvider)
+		buildDefinitionVariables, err := getDefinitionVariables(env, credentials, provisioningProvider)
+		if err != nil {
+			return nil, err
+		}
+		definition.Variables = buildDefinitionVariables
 		definition, err := client.UpdateDefinition(ctx, build.UpdateDefinitionArgs{
 			Definition:   definition,
 			Project:      &projectId,
@@ -140,7 +146,7 @@ func CreatePipeline(
 func getDefinitionVariables(
 	env *environment.Environment,
 	credentials AzureServicePrincipalCredentials,
-	provisioningProvider provisioning.Options) *map[string]build.BuildDefinitionVariable {
+	provisioningProvider provisioning.Options) (*map[string]build.BuildDefinitionVariable, error) {
 	variables := map[string]build.BuildDefinitionVariable{
 		"AZURE_LOCATION":           createBuildDefinitionVariable(env.GetLocation(), false, false),
 		"AZURE_ENV_NAME":           createBuildDefinitionVariable(env.GetEnvName(), false, false),
@@ -152,8 +158,20 @@ func getDefinitionVariables(
 		variables["ARM_TENANT_ID"] = createBuildDefinitionVariable(credentials.TenantId, false, false)
 		variables["ARM_CLIENT_ID"] = createBuildDefinitionVariable(credentials.ClientId, true, false)
 		variables["ARM_CLIENT_SECRET"] = createBuildDefinitionVariable(credentials.ClientSecret, true, false)
+
+		// Sets the terraform remote state environment variables in azure devops
+		remoteStateKeys := []string{"RS_RESOURCE_GROUP", "RS_STORAGE_ACCOUNT", "RS_CONTAINER_NAME"}
+		for _, key := range remoteStateKeys {
+			value, ok := env.Values[key]
+			if !ok || strings.TrimSpace(value) == "" {
+				return nil, fmt.Errorf(fmt.Sprintf(`terraform remote state is not correctly configured,
+Visit %s for more information on configuring Terraform remote state`,
+					output.WithLinkFormat("https://aka.ms/azure-dev/terraform")))
+			}
+			variables[key] = createBuildDefinitionVariable(value, false, true)
+		}
 	}
-	return &variables
+	return &variables, nil
 }
 
 // create Azure Deploy Pipeline parameters
@@ -202,6 +220,10 @@ func createAzureDevPipelineArgs(
 		trigger,
 	}
 
+	buildDefinitionVariables, err := getDefinitionVariables(env, credentials, provisioningProvider)
+	if err != nil {
+		return nil, err
+	}
 	buildDefinition := &build.BuildDefinition{
 		Name:        &name,
 		Type:        &buildDefinitionType,
@@ -209,7 +231,7 @@ func createAzureDevPipelineArgs(
 		Repository:  buildRepository,
 		Process:     process,
 		Queue:       agentPoolQueue,
-		Variables:   getDefinitionVariables(env, credentials, provisioningProvider),
+		Variables:   buildDefinitionVariables,
 		Triggers:    &triggers,
 	}
 

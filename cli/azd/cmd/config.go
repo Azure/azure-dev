@@ -19,6 +19,11 @@ func configCmd(rootOptions *internal.GlobalCommandOptions) *cobra.Command {
 	root := &cobra.Command{
 		Use:   "config",
 		Short: "Manage Azure Developer CLI configuration",
+		Long: `Manage the Azure Developer CLI user configuration, which includes your default Azure subscription and location. 
+
+		The easiest way to configure azd is to run ` + output.WithBackticks("azd init") + `. 
+		The subscription and location you select will be stored in the config.json file located at $AZURE_CONFIG_DIR. 
+		The default value of AZURE_CONFIG_DIR is $HOME/.azd on Linux and macOS, and %USERPROFILE%\.azd on Windows.`,
 	}
 
 	root.AddCommand(BuildCmd(rootOptions, configListCmdDesign, initConfigListAction, nil))
@@ -38,7 +43,7 @@ func configListCmdDesign(global *internal.GlobalCommandOptions) (*cobra.Command,
 	cmd := &cobra.Command{
 		Use:   "list",
 		Short: "Lists all configuration values",
-		Long:  "Lists all configuration values",
+		Long:  `Lists all configuration values in $AZURE_CONFIG_DIR/config.json.`,
 	}
 
 	output.AddOutputParam(
@@ -89,7 +94,7 @@ func configGetCmdDesign(global *internal.GlobalCommandOptions) (*cobra.Command, 
 	cmd := &cobra.Command{
 		Use:   "get <path>",
 		Short: "Gets a configuration",
-		Long:  "Gets a configuration",
+		Long:  `Gets a configuration in $AZURE_CONFIG_DIR/config.json. `,
 	}
 
 	output.AddOutputParam(
@@ -153,7 +158,9 @@ func configSetCmdDesign(global *internal.GlobalCommandOptions) (*cobra.Command, 
 	cmd := &cobra.Command{
 		Use:   "set <path> <value>",
 		Short: "Sets a configuration",
-		Long:  "Sets a configuration",
+		Long:  `Sets a configuration in $AZURE_CONFIG_DIR/config.json.`,
+		Example: `$ azd config set defaults.subscription <yourSubscriptionID> 
+		$ azd config set defaults.location eastus`,
 	}
 	cmd.Args = cobra.ExactArgs(2)
 	return cmd, &struct{}{}
@@ -203,9 +210,10 @@ func (a *configSetAction) Run(ctx context.Context) error {
 
 func configUnsetCmdDesign(global *internal.GlobalCommandOptions) (*cobra.Command, *struct{}) {
 	cmd := &cobra.Command{
-		Use:   "unset <path>",
-		Short: "Unsets a configuration",
-		Long:  "Unsets a configuration",
+		Use:     "unset <path>",
+		Short:   "Unsets a configuration",
+		Long:    `Removes a configuration in $AZURE_CONFIG_DIR/config.json.`,
+		Example: `$ azd config unset defaults.location`,
 	}
 	cmd.Args = cobra.ExactArgs(1)
 	return cmd, &struct{}{}
@@ -256,7 +264,7 @@ func configResetCmdDesign(global *internal.GlobalCommandOptions) (*cobra.Command
 	cmd := &cobra.Command{
 		Use:   "reset",
 		Short: "Resets configuration to default",
-		Long:  "Resets configuration to default",
+		Long:  `Resets all configuration in $AZURE_CONFIG_DIR/config.json to the default.`,
 	}
 
 	return cmd, &struct{}{}

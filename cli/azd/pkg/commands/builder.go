@@ -59,7 +59,7 @@ func RegisterDependenciesInCtx(
 
 	// TODO(ellismg): This is a hack so that we don't fail for `login` when we construct the root context if a user
 	// is not logged in. This is super fragile, but we should be able to clean it up soon with Wei's work.
-	if cmd.Use != "login" {
+	if cmd.Use != "login" && cmd.Use != "logout" && cmd.Use != "version" {
 		cred, err := authManager.GetCredentialForCurrentUser(ctx)
 		if err != nil {
 			return ctx, fmt.Errorf("fetching current user: %w", err)

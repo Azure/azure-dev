@@ -56,6 +56,14 @@ func (c *encryptedCache) Export(cache cache.Marshaler, key string) {
 		return
 	}
 
+	if len(res) == 0 {
+		c.inner.Export(&fixedMarshaller{
+			val: []byte{},
+		}, key)
+
+		return
+	}
+
 	plaintext := windows.DataBlob{
 		Size: uint32(len(res)),
 		Data: &res[0],
@@ -85,7 +93,9 @@ func (c *encryptedCache) Replace(cache cache.Unmarshaler, key string) {
 	c.inner.Replace(capture, key)
 
 	if len(capture.val) == 0 {
-		log.Printf("encrypted cache is empty, ignoring")
+		if err := cache.Unmarshal([]byte{}); err != nil {
+			log.Printf("failed to unmarshal decrypted cache to msal: %v", err)
+		}
 		return
 	}
 

@@ -20,16 +20,22 @@ import (
 	osexec "os/exec"
 	"path"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/telemetry"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
+	"github.com/azure/azure-dev/cli/azd/pkg/identity"
+	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
+	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/test/azdcli"
 	"github.com/joho/godotenv"
 	"github.com/sethvargo/go-retry"
@@ -61,193 +67,193 @@ func Test_CLI_Version_PrintsVersion(t *testing.T) {
 	}
 }
 
-// func Test_CLI_Init_FailsIfAzCliIsMissing(t *testing.T) {
-// 	ctx, cancel := newTestContext(t)
-// 	defer cancel()
+func Test_CLI_Init_FailsIfAzCliIsMissing(t *testing.T) {
+	ctx, cancel := newTestContext(t)
+	defer cancel()
 
-// 	dir := tempDirWithDiagnostics(t)
+	dir := tempDirWithDiagnostics(t)
 
-// 	cli := azdcli.NewCLI(t)
-// 	cli.WorkingDirectory = dir
-// 	cli.Env = filterEnviron("PATH")
+	cli := azdcli.NewCLI(t)
+	cli.WorkingDirectory = dir
+	cli.Env = filterEnviron("PATH")
 
-// 	out, err := cli.RunCommandWithStdIn(ctx, "", "init")
-// 	require.Error(t, err)
+	out, err := cli.RunCommandWithStdIn(ctx, "", "init")
+	require.Error(t, err)
 
-// 	require.Contains(t, out, "Azure CLI is not installed, please see https://aka.ms/azure-dev/azure-cli-install to install")
-// }
+	require.Contains(t, out, "Azure CLI is not installed, please see https://aka.ms/azure-dev/azure-cli-install to install")
+}
 
-// func Test_CLI_Init_AsksForSubscriptionIdAndCreatesEnvAndProjectFile(t *testing.T) {
-// 	ctx, cancel := newTestContext(t)
-// 	defer cancel()
+func Test_CLI_Init_AsksForSubscriptionIdAndCreatesEnvAndProjectFile(t *testing.T) {
+	ctx, cancel := newTestContext(t)
+	defer cancel()
 
-// 	dir := tempDirWithDiagnostics(t)
+	dir := tempDirWithDiagnostics(t)
 
-// 	cli := azdcli.NewCLI(t)
-// 	cli.WorkingDirectory = dir
-// 	cli.Env = append(os.Environ(), "AZURE_LOCATION=eastus2")
+	cli := azdcli.NewCLI(t)
+	cli.WorkingDirectory = dir
+	cli.Env = append(os.Environ(), "AZURE_LOCATION=eastus2")
 
-// 	_, err := cli.RunCommandWithStdIn(
-// 		ctx,
-// 		fmt.Sprintf("Empty Template\nTESTENV\nOther (enter manually)\n%s\n\n", testSubscriptionId),
-// 		"init",
-// 	)
-// 	require.NoError(t, err)
+	_, err := cli.RunCommandWithStdIn(
+		ctx,
+		fmt.Sprintf("Empty Template\nTESTENV\nOther (enter manually)\n%s\n\n", testSubscriptionId),
+		"init",
+	)
+	require.NoError(t, err)
 
-// 	file, err := os.ReadFile(getTestEnvPath(dir, "TESTENV"))
+	file, err := os.ReadFile(getTestEnvPath(dir, "TESTENV"))
 
-// 	require.NoError(t, err)
+	require.NoError(t, err)
 
-// 	require.Regexp(t, regexp.MustCompile(fmt.Sprintf(`AZURE_SUBSCRIPTION_ID="%s"`, testSubscriptionId)+"\n"), string(file))
-// 	require.Regexp(t, regexp.MustCompile(`AZURE_ENV_NAME="TESTENV"`+"\n"), string(file))
+	require.Regexp(t, regexp.MustCompile(fmt.Sprintf(`AZURE_SUBSCRIPTION_ID="%s"`, testSubscriptionId)+"\n"), string(file))
+	require.Regexp(t, regexp.MustCompile(`AZURE_ENV_NAME="TESTENV"`+"\n"), string(file))
 
-// 	proj, err := project.LoadProjectConfig(filepath.Join(dir, azdcontext.ProjectFileName), environment.Ephemeral())
-// 	require.NoError(t, err)
+	proj, err := project.LoadProjectConfig(filepath.Join(dir, azdcontext.ProjectFileName), environment.Ephemeral())
+	require.NoError(t, err)
 
-// 	require.Equal(t, filepath.Base(dir), proj.Name)
-// }
+	require.Equal(t, filepath.Base(dir), proj.Name)
+}
 
-// func Test_CLI_Init_CanUseTemplate(t *testing.T) {
-// 	// running this test in parallel is ok as it uses a t.TempDir()
-// 	t.Parallel()
-// 	ctx, cancel := newTestContext(t)
-// 	defer cancel()
+func Test_CLI_Init_CanUseTemplate(t *testing.T) {
+	// running this test in parallel is ok as it uses a t.TempDir()
+	t.Parallel()
+	ctx, cancel := newTestContext(t)
+	defer cancel()
 
-// 	dir := tempDirWithDiagnostics(t)
+	dir := tempDirWithDiagnostics(t)
 
-// 	cli := azdcli.NewCLI(t)
-// 	cli.WorkingDirectory = dir
-// 	cli.Env = append(os.Environ(), "AZURE_LOCATION=eastus2")
+	cli := azdcli.NewCLI(t)
+	cli.WorkingDirectory = dir
+	cli.Env = append(os.Environ(), "AZURE_LOCATION=eastus2")
 
-// 	_, err := cli.RunCommandWithStdIn(
-// 		ctx,
-// 		"TESTENV\n\nOther (enter manually)\nMY_SUB_ID\n",
-// 		"init",
-// 		"--template",
-// 		"cosmos-dotnet-core-todo-app",
-// 	)
-// 	require.NoError(t, err)
+	_, err := cli.RunCommandWithStdIn(
+		ctx,
+		"TESTENV\n\nOther (enter manually)\nMY_SUB_ID\n",
+		"init",
+		"--template",
+		"cosmos-dotnet-core-todo-app",
+	)
+	require.NoError(t, err)
 
-// 	// While `init` uses git behind the scenes to pull a template, we don't want to bring the history over or initialize a
-// 	// git
-// 	// repository.
-// 	require.NoDirExists(t, filepath.Join(dir, ".git"))
+	// While `init` uses git behind the scenes to pull a template, we don't want to bring the history over or initialize a
+	// git
+	// repository.
+	require.NoDirExists(t, filepath.Join(dir, ".git"))
 
-// 	// Ensure the project was initialized from the template by checking that a file from the template is present.
-// 	require.FileExists(t, filepath.Join(dir, "README.md"))
-// }
+	// Ensure the project was initialized from the template by checking that a file from the template is present.
+	require.FileExists(t, filepath.Join(dir, "README.md"))
+}
 
-// func Test_CLI_InfraCreateAndDelete(t *testing.T) {
-// 	// running this test in parallel is ok as it uses a t.TempDir()
-// 	t.Parallel()
-// 	ctx, cancel := newTestContext(t)
-// 	defer cancel()
+func Test_CLI_InfraCreateAndDelete(t *testing.T) {
+	// running this test in parallel is ok as it uses a t.TempDir()
+	t.Parallel()
+	ctx, cancel := newTestContext(t)
+	defer cancel()
 
-// 	dir := tempDirWithDiagnostics(t)
-// 	t.Logf("DIR: %s", dir)
+	dir := tempDirWithDiagnostics(t)
+	t.Logf("DIR: %s", dir)
 
-// 	envName := randomEnvName()
-// 	t.Logf("AZURE_ENV_NAME: %s", envName)
+	envName := randomEnvName()
+	t.Logf("AZURE_ENV_NAME: %s", envName)
 
-// 	cli := azdcli.NewCLI(t)
-// 	cli.WorkingDirectory = dir
-// 	cli.Env = append(os.Environ(), "AZURE_LOCATION=eastus2")
+	cli := azdcli.NewCLI(t)
+	cli.WorkingDirectory = dir
+	cli.Env = append(os.Environ(), "AZURE_LOCATION=eastus2")
 
-// 	err := copySample(dir, "storage")
-// 	require.NoError(t, err, "failed expanding sample")
+	err := copySample(dir, "storage")
+	require.NoError(t, err, "failed expanding sample")
 
-// 	_, err = cli.RunCommandWithStdIn(ctx, stdinForTests(envName), "init")
-// 	require.NoError(t, err)
+	_, err = cli.RunCommandWithStdIn(ctx, stdinForTests(envName), "init")
+	require.NoError(t, err)
 
-// 	_, err = cli.RunCommand(ctx, "infra", "create")
-// 	require.NoError(t, err)
+	_, err = cli.RunCommand(ctx, "infra", "create")
+	require.NoError(t, err)
 
-// 	envFilePath := filepath.Join(dir, azdcontext.EnvironmentDirectoryName, envName, ".env")
-// 	env, err := environment.FromFile(envFilePath)
-// 	require.NoError(t, err)
+	envFilePath := filepath.Join(dir, azdcontext.EnvironmentDirectoryName, envName, ".env")
+	env, err := environment.FromFile(envFilePath)
+	require.NoError(t, err)
 
-// 	// AZURE_STORAGE_ACCOUNT_NAME is an output of the template, make sure it was added to the .env file.
-// 	// the name should start with 'st'
-// 	accountName, ok := env.Values["AZURE_STORAGE_ACCOUNT_NAME"]
-// 	require.True(t, ok)
-// 	require.Regexp(t, `st\S*`, accountName)
+	// AZURE_STORAGE_ACCOUNT_NAME is an output of the template, make sure it was added to the .env file.
+	// the name should start with 'st'
+	accountName, ok := env.Values["AZURE_STORAGE_ACCOUNT_NAME"]
+	require.True(t, ok)
+	require.Regexp(t, `st\S*`, accountName)
 
-// 	// NewAzureResourceManager needs a command runner right now (since it can call the AZ CLI)
-// 	ctx = exec.WithCommandRunner(ctx, exec.NewCommandRunner(os.Stdin, os.Stdout, os.Stderr))
+	// NewAzureResourceManager needs a command runner right now (since it can call the AZ CLI)
+	ctx = exec.WithCommandRunner(ctx, exec.NewCommandRunner(os.Stdin, os.Stdout, os.Stderr))
 
-// 	// GetResourceGroupsForEnvironment requires a credential since it is using the SDK now
-// 	cred, err := azidentity.NewAzureCLICredential(nil)
-// 	if err != nil {
-// 		t.Fatal("could not create credential")
-// 	}
-// 	ctx = identity.WithCredentials(ctx, cred)
+	// GetResourceGroupsForEnvironment requires a credential since it is using the SDK now
+	cred, err := azidentity.NewAzureCLICredential(nil)
+	if err != nil {
+		t.Fatal("could not create credential")
+	}
+	ctx = identity.WithCredentials(ctx, cred)
 
-// 	// Verify that resource groups are created with tag
-// 	resourceManager := infra.NewAzureResourceManager(ctx)
-// 	rgs, err := resourceManager.GetResourceGroupsForEnvironment(ctx, env)
-// 	require.NoError(t, err)
-// 	require.NotNil(t, rgs)
+	// Verify that resource groups are created with tag
+	resourceManager := infra.NewAzureResourceManager(ctx)
+	rgs, err := resourceManager.GetResourceGroupsForEnvironment(ctx, env)
+	require.NoError(t, err)
+	require.NotNil(t, rgs)
 
-// 	// Using `down` here to test the down alias to infra delete
-// 	_, err = cli.RunCommand(ctx, "down", "--force", "--purge")
-// 	require.NoError(t, err)
-// }
+	// Using `down` here to test the down alias to infra delete
+	_, err = cli.RunCommand(ctx, "down", "--force", "--purge")
+	require.NoError(t, err)
+}
 
-// func Test_CLI_InfraCreateAndDeleteUpperCase(t *testing.T) {
-// 	// running this test in parallel is ok as it uses a t.TempDir()
-// 	t.Parallel()
-// 	ctx, cancel := newTestContext(t)
-// 	defer cancel()
+func Test_CLI_InfraCreateAndDeleteUpperCase(t *testing.T) {
+	// running this test in parallel is ok as it uses a t.TempDir()
+	t.Parallel()
+	ctx, cancel := newTestContext(t)
+	defer cancel()
 
-// 	dir := tempDirWithDiagnostics(t)
-// 	t.Logf("DIR: %s", dir)
+	dir := tempDirWithDiagnostics(t)
+	t.Logf("DIR: %s", dir)
 
-// 	envName := "UpperCase" + randomEnvName()
-// 	t.Logf("AZURE_ENV_NAME: %s", envName)
+	envName := "UpperCase" + randomEnvName()
+	t.Logf("AZURE_ENV_NAME: %s", envName)
 
-// 	cli := azdcli.NewCLI(t)
-// 	cli.WorkingDirectory = dir
-// 	cli.Env = append(os.Environ(), "AZURE_LOCATION=eastus2")
+	cli := azdcli.NewCLI(t)
+	cli.WorkingDirectory = dir
+	cli.Env = append(os.Environ(), "AZURE_LOCATION=eastus2")
 
-// 	err := copySample(dir, "storage")
-// 	require.NoError(t, err, "failed expanding sample")
+	err := copySample(dir, "storage")
+	require.NoError(t, err, "failed expanding sample")
 
-// 	_, err = cli.RunCommandWithStdIn(ctx, stdinForTests(envName), "init")
-// 	require.NoError(t, err)
+	_, err = cli.RunCommandWithStdIn(ctx, stdinForTests(envName), "init")
+	require.NoError(t, err)
 
-// 	_, err = cli.RunCommand(ctx, "infra", "create")
-// 	require.NoError(t, err)
+	_, err = cli.RunCommand(ctx, "infra", "create")
+	require.NoError(t, err)
 
-// 	envFilePath := filepath.Join(dir, azdcontext.EnvironmentDirectoryName, envName, ".env")
-// 	env, err := environment.FromFile(envFilePath)
-// 	require.NoError(t, err)
+	envFilePath := filepath.Join(dir, azdcontext.EnvironmentDirectoryName, envName, ".env")
+	env, err := environment.FromFile(envFilePath)
+	require.NoError(t, err)
 
-// 	// AZURE_STORAGE_ACCOUNT_NAME is an output of the template, make sure it was added to the .env file.
-// 	// the name should start with 'st'
-// 	accountName, ok := env.Values["AZURE_STORAGE_ACCOUNT_NAME"]
-// 	require.True(t, ok)
-// 	require.Regexp(t, `st\S*`, accountName)
+	// AZURE_STORAGE_ACCOUNT_NAME is an output of the template, make sure it was added to the .env file.
+	// the name should start with 'st'
+	accountName, ok := env.Values["AZURE_STORAGE_ACCOUNT_NAME"]
+	require.True(t, ok)
+	require.Regexp(t, `st\S*`, accountName)
 
-// 	// NewAzureResourceManager needs a command runner right now (since it can call the AZ CLI)
-// 	ctx = exec.WithCommandRunner(ctx, exec.NewCommandRunner(os.Stdin, os.Stdout, os.Stderr))
+	// NewAzureResourceManager needs a command runner right now (since it can call the AZ CLI)
+	ctx = exec.WithCommandRunner(ctx, exec.NewCommandRunner(os.Stdin, os.Stdout, os.Stderr))
 
-// 	// GetResourceGroupsForEnvironment requires a credential since it is using the SDK now
-// 	cred, err := azidentity.NewAzureCLICredential(nil)
-// 	if err != nil {
-// 		t.Fatal("could not create credential")
-// 	}
-// 	ctx = identity.WithCredentials(ctx, cred)
+	// GetResourceGroupsForEnvironment requires a credential since it is using the SDK now
+	cred, err := azidentity.NewAzureCLICredential(nil)
+	if err != nil {
+		t.Fatal("could not create credential")
+	}
+	ctx = identity.WithCredentials(ctx, cred)
 
-// 	// Verify that resource groups are created with tag
-// 	resourceManager := infra.NewAzureResourceManager(ctx)
-// 	rgs, err := resourceManager.GetResourceGroupsForEnvironment(ctx, env)
-// 	require.NoError(t, err)
-// 	require.NotNil(t, rgs)
+	// Verify that resource groups are created with tag
+	resourceManager := infra.NewAzureResourceManager(ctx)
+	rgs, err := resourceManager.GetResourceGroupsForEnvironment(ctx, env)
+	require.NoError(t, err)
+	require.NotNil(t, rgs)
 
-// 	// Using `down` here to test the down alias to infra delete
-// 	_, err = cli.RunCommand(ctx, "down", "--force", "--purge")
-// 	require.NoError(t, err)
-// }
+	// Using `down` here to test the down alias to infra delete
+	_, err = cli.RunCommand(ctx, "down", "--force", "--purge")
+	require.NoError(t, err)
+}
 
 func Test_CLI_InfraCreateAndDeleteWebApp(t *testing.T) {
 	t.Skip("azure-dev/834")
@@ -377,61 +383,61 @@ func Test_CLI_InfraCreateAndDeleteWebApp(t *testing.T) {
 	require.Nil(t, service.Target.ResourceIds)
 }
 
-// // test for azd deploy, azd deploy --service
-// func Test_CLI_DeployInvalidName(t *testing.T) {
-// 	// running this test in parallel is ok as it uses a t.TempDir()
-// 	t.Parallel()
-// 	ctx, cancel := newTestContext(t)
-// 	defer cancel()
+// test for azd deploy, azd deploy --service
+func Test_CLI_DeployInvalidName(t *testing.T) {
+	// running this test in parallel is ok as it uses a t.TempDir()
+	t.Parallel()
+	ctx, cancel := newTestContext(t)
+	defer cancel()
 
-// 	dir := tempDirWithDiagnostics(t)
-// 	t.Logf("DIR: %s", dir)
+	dir := tempDirWithDiagnostics(t)
+	t.Logf("DIR: %s", dir)
 
-// 	envName := randomEnvName()
-// 	t.Logf("AZURE_ENV_NAME: %s", envName)
+	envName := randomEnvName()
+	t.Logf("AZURE_ENV_NAME: %s", envName)
 
-// 	cli := azdcli.NewCLI(t)
-// 	cli.WorkingDirectory = dir
-// 	cli.Env = append(os.Environ(), "AZURE_LOCATION=eastus2")
+	cli := azdcli.NewCLI(t)
+	cli.WorkingDirectory = dir
+	cli.Env = append(os.Environ(), "AZURE_LOCATION=eastus2")
 
-// 	err := copySample(dir, "webapp")
-// 	require.NoError(t, err, "failed expanding sample")
+	err := copySample(dir, "webapp")
+	require.NoError(t, err, "failed expanding sample")
 
-// 	_, err = cli.RunCommandWithStdIn(ctx, stdinForTests(envName), "init")
-// 	require.NoError(t, err)
+	_, err = cli.RunCommandWithStdIn(ctx, stdinForTests(envName), "init")
+	require.NoError(t, err)
 
-// 	_, err = cli.RunCommand(ctx, "deploy", "--service", "badServiceName")
-// 	require.Error(t, err)
-// }
+	_, err = cli.RunCommand(ctx, "deploy", "--service", "badServiceName")
+	require.Error(t, err)
+}
 
-// func Test_CLI_RestoreCommand(t *testing.T) {
-// 	// running this test in parallel is ok as it uses a t.TempDir()
-// 	t.Parallel()
-// 	ctx, cancel := newTestContext(t)
-// 	defer cancel()
+func Test_CLI_RestoreCommand(t *testing.T) {
+	// running this test in parallel is ok as it uses a t.TempDir()
+	t.Parallel()
+	ctx, cancel := newTestContext(t)
+	defer cancel()
 
-// 	dir := tempDirWithDiagnostics(t)
-// 	t.Logf("DIR: %s", dir)
+	dir := tempDirWithDiagnostics(t)
+	t.Logf("DIR: %s", dir)
 
-// 	envName := randomEnvName()
-// 	t.Logf("AZURE_ENV_NAME: %s", envName)
+	envName := randomEnvName()
+	t.Logf("AZURE_ENV_NAME: %s", envName)
 
-// 	cli := azdcli.NewCLI(t)
-// 	cli.WorkingDirectory = dir
-// 	cli.Env = append(os.Environ(), "AZURE_LOCATION=eastus2")
+	cli := azdcli.NewCLI(t)
+	cli.WorkingDirectory = dir
+	cli.Env = append(os.Environ(), "AZURE_LOCATION=eastus2")
 
-// 	err := copySample(dir, "restoreapp")
-// 	require.NoError(t, err, "failed expanding sample")
+	err := copySample(dir, "restoreapp")
+	require.NoError(t, err, "failed expanding sample")
 
-// 	_, err = cli.RunCommandWithStdIn(ctx, stdinForTests(envName), "restore")
-// 	require.NoError(t, err)
+	_, err = cli.RunCommandWithStdIn(ctx, stdinForTests(envName), "restore")
+	require.NoError(t, err)
 
-// 	require.DirExists(t, path.Join(dir, "nodeapp", "node_modules", "chalk"), "nodeapp not restored")
-// 	require.DirExists(t, path.Join(dir, "containerapp", "node_modules", "chalk"), "containerapp not restored")
-// 	require.DirExists(t, path.Join(dir, "pyapp", "pyapp_env"), "pyapp not restored")
-// 	require.DirExists(t, path.Join(dir, "csharpapp", "obj"), "csharpapp not restored")
-// 	require.DirExists(t, path.Join(dir, "funcapp", "funcapp_env"), "funcapp not restored")
-// }
+	require.DirExists(t, path.Join(dir, "nodeapp", "node_modules", "chalk"), "nodeapp not restored")
+	require.DirExists(t, path.Join(dir, "containerapp", "node_modules", "chalk"), "containerapp not restored")
+	require.DirExists(t, path.Join(dir, "pyapp", "pyapp_env"), "pyapp not restored")
+	require.DirExists(t, path.Join(dir, "csharpapp", "obj"), "csharpapp not restored")
+	require.DirExists(t, path.Join(dir, "funcapp", "funcapp_env"), "funcapp not restored")
+}
 
 func Test_CLI_InfraCreateAndDeleteFuncApp(t *testing.T) {
 	t.Skip("azure-dev/834")
@@ -502,67 +508,67 @@ func Test_CLI_InfraCreateAndDeleteFuncApp(t *testing.T) {
 	t.Logf("Done\n")
 }
 
-// func Test_CLI_ProjectIsNeeded(t *testing.T) {
-// 	ctx, cancel := newTestContext(t)
-// 	defer cancel()
+func Test_CLI_ProjectIsNeeded(t *testing.T) {
+	ctx, cancel := newTestContext(t)
+	defer cancel()
 
-// 	dir := tempDirWithDiagnostics(t)
-// 	t.Logf("DIR: %s", dir)
+	dir := tempDirWithDiagnostics(t)
+	t.Logf("DIR: %s", dir)
 
-// 	cli := azdcli.NewCLI(t)
-// 	cli.WorkingDirectory = dir
+	cli := azdcli.NewCLI(t)
+	cli.WorkingDirectory = dir
 
-// 	tests := []struct {
-// 		command string
-// 		args    []string
-// 	}{
-// 		{command: "deploy"},
-// 		{command: "down"},
-// 		{command: "env get-values"},
-// 		{command: "env list"},
-// 		{command: "env new"},
-// 		{command: "env refresh"},
-// 		{command: "env select", args: []string{"testEnvironmentName"}},
-// 		{command: "env set", args: []string{"testKey", "testValue"}},
-// 		{command: "infra create"},
-// 		{command: "infra delete"},
-// 		{command: "monitor"},
-// 		{command: "pipeline config"},
-// 		{command: "provision"},
-// 		{command: "restore"},
-// 	}
+	tests := []struct {
+		command string
+		args    []string
+	}{
+		{command: "deploy"},
+		{command: "down"},
+		{command: "env get-values"},
+		{command: "env list"},
+		{command: "env new"},
+		{command: "env refresh"},
+		{command: "env select", args: []string{"testEnvironmentName"}},
+		{command: "env set", args: []string{"testKey", "testValue"}},
+		{command: "infra create"},
+		{command: "infra delete"},
+		{command: "monitor"},
+		{command: "pipeline config"},
+		{command: "provision"},
+		{command: "restore"},
+	}
 
-// 	for _, test := range tests {
-// 		args := []string{"--cwd", dir}
-// 		args = append(args, strings.Split(test.command, " ")...)
-// 		if len(test.args) > 0 {
-// 			args = append(args, test.args...)
-// 		}
+	for _, test := range tests {
+		args := []string{"--cwd", dir}
+		args = append(args, strings.Split(test.command, " ")...)
+		if len(test.args) > 0 {
+			args = append(args, test.args...)
+		}
 
-// 		t.Run(test.command, func(t *testing.T) {
-// 			out, err := cli.RunCommand(ctx, args...)
-// 			assert.Error(t, err)
-// 			assert.Regexp(t, "no project exists; to create a new project, run `azd init`", out)
-// 		})
-// 	}
-// }
+		t.Run(test.command, func(t *testing.T) {
+			out, err := cli.RunCommand(ctx, args...)
+			assert.Error(t, err)
+			assert.Regexp(t, "no project exists; to create a new project, run `azd init`", out)
+		})
+	}
+}
 
-// func Test_CLI_NoDebugSpewWhenHelpPassedWithoutDebug(t *testing.T) {
-// 	stdErrBuf := bytes.Buffer{}
+func Test_CLI_NoDebugSpewWhenHelpPassedWithoutDebug(t *testing.T) {
+	stdErrBuf := bytes.Buffer{}
 
-// 	cmd := osexec.Command(azdcli.GetAzdLocation(), "--help")
-// 	cmd.Stderr = &stdErrBuf
+	cmd := osexec.Command(azdcli.GetAzdLocation(), "--help")
+	cmd.Stderr = &stdErrBuf
 
-// 	// Run the command and wait for it to complete, we don't expect any errors.
-// 	err := cmd.Start()
-// 	assert.NoError(t, err)
+	// Run the command and wait for it to complete, we don't expect any errors.
+	err := cmd.Start()
+	assert.NoError(t, err)
 
-// 	err = cmd.Wait()
-// 	assert.NoError(t, err)
+	err = cmd.Wait()
+	assert.NoError(t, err)
 
-// 	// Ensure no output was written to stderr
-// 	assert.Equal(t, "", stdErrBuf.String(), "no output should be written to stderr when --help is passed")
-// }
+	// Ensure no output was written to stderr
+	assert.Equal(t, "", stdErrBuf.String(), "no output should be written to stderr when --help is passed")
+}
 
 // filterEnviron returns a new copy of os.Environ after removing all specified keys, ignoring case.
 func filterEnviron(toExclude ...string) []string {

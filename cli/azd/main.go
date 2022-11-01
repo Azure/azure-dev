@@ -29,11 +29,15 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/blang/semver/v4"
+	"github.com/mattn/go-colorable"
 	"github.com/spf13/pflag"
 )
 
 func main() {
 	ctx := context.Background()
+
+	restoreColorMode := colorable.EnableColorsStdout(nil)
+	defer restoreColorMode()
 
 	// Ensure random numbers from default random number generator are unpredictable
 	rand.Seed(time.Now().UTC().UnixNano())

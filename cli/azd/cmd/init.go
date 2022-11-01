@@ -124,9 +124,9 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	log.Printf("forcing project directory to %s", wd)
 	i.azdCtx.SetProjectDirectory(wd)
 
-	if i.flags.templateBranch != "" && i.flags.template.Name == "" {
-		return nil, errors.New("template name required when specifying a branch name")
-	}
+	//if i.flags.templateBranch != "" && i.flags.template.Name == "" {
+	return nil, errors.New("template name required when specifying a branch name")
+	//}
 
 	requiredTools := []tools.ExternalTool{i.azCli}
 
@@ -357,7 +357,6 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 			Header:   "New project initialized!",
 			FollowUp: fmt.Sprintf("You can view the template code in your directory: %s", i.formattedWithColorCwd),
 		},
-		Console: i.console,
 	}, nil
 }
 

@@ -3,6 +3,7 @@ package actions
 
 import (
 	"context"
+	"log"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 )
@@ -24,7 +25,6 @@ type ResultMessage struct {
 // Define the Action outputs.
 type ActionResult struct {
 	Message *ResultMessage
-	Console input.Console
 }
 
 // Action is the representation of the application logic of a CLI command.
@@ -34,17 +34,21 @@ type Action interface {
 }
 
 func ShowActionResults(ctx context.Context, actionResult *ActionResult, err error) {
+	console := input.GetConsole(ctx)
+	if console == nil {
+		log.Panicln("showing actions results: console was not attached to the context")
+	}
 	if err != nil {
-		actionResult.Console.MessageUx(ctx, err.Error(), input.ResultError)
+		console.MessageUx(ctx, err.Error(), input.ResultError)
 		return
 	}
 
 	if actionResult == nil {
 		return
 	}
-	if actionResult.Message == nil || actionResult.Console == nil {
+	if actionResult.Message == nil {
 		return
 	}
-	actionResult.Console.MessageUx(ctx, actionResult.Message.Header, input.ResultSuccess)
-	actionResult.Console.Message(ctx, actionResult.Message.FollowUp)
+	console.MessageUx(ctx, actionResult.Message.Header, input.ResultSuccess)
+	console.Message(ctx, actionResult.Message.FollowUp)
 }

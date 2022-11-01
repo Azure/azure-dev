@@ -65,13 +65,6 @@ func RegisterDependenciesInCtx(
 		writer = colorable.NewNonColorable(writer)
 	}
 
-	// To support color on windows platforms which don't natively support rendering ANSI codes
-	// we use colorable.NewColorableStdout() which creates a stream that uses the Win32 APIs to
-	// change colors as it interprets the ANSI escape codes in the string it is writing.
-	if writer == os.Stdout {
-		writer = colorable.NewColorableStdout()
-	}
-
 	ctx = output.WithWriter(ctx, writer)
 
 	isTerminal := cmd.OutOrStdout() == os.Stdout &&

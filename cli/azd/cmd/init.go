@@ -124,9 +124,9 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	log.Printf("forcing project directory to %s", wd)
 	i.azdCtx.SetProjectDirectory(wd)
 
-	//if i.flags.templateBranch != "" && i.flags.template.Name == "" {
-	return nil, errors.New("template name required when specifying a branch name")
-	//}
+	if i.flags.templateBranch != "" && i.flags.template.Name == "" {
+		return nil, errors.New("template name required when specifying a branch name")
+	}
 
 	requiredTools := []tools.ExternalTool{i.azCli}
 

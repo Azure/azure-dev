@@ -231,9 +231,10 @@ func ensureEnvironmentInitialized(
 		var subscriptionId = ""
 		for subscriptionId == "" {
 			subscriptionSelectionIndex, err := console.Select(ctx, input.ConsoleOptions{
-				Message:      "Please select an Azure Subscription to use:",
-				Options:      subscriptionOptions,
-				DefaultValue: defaultSubscription,
+				Message:       "Please select an Azure Subscription to use:",
+				Options:       subscriptionOptions,
+				DefaultValue:  defaultSubscription,
+				UIOnlyDefault: true,
 			})
 
 			if err != nil {
@@ -319,6 +320,13 @@ func getSubscriptionOptions(ctx context.Context) ([]string, string, error) {
 	}
 
 	subscriptionOptions[len(subscriptionOptions)-1] = manualSubscriptionEntryOption
+
+	// Ensure a valid selection is chosen as default
+	if defaultSubscription == "" {
+		// subscriptionOptions guaranteed one element by above.
+		defaultSubscription = subscriptionOptions[0]
+	}
+
 	return subscriptionOptions, defaultSubscription, nil
 }
 

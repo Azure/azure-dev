@@ -35,8 +35,9 @@ type Console interface {
 }
 
 type AskerConsole struct {
-	asker   Asker
-	handles ConsoleHandles
+	noPrompt bool
+	asker    Asker
+	handles  ConsoleHandles
 	// the writer the console was constructed with, and what we reset to when SetWriter(nil) is called.
 	defaultWriter io.Writer
 	// the writer which output is written to.
@@ -45,9 +46,13 @@ type AskerConsole struct {
 }
 
 type ConsoleOptions struct {
-	Message      string
-	Options      []string
-	DefaultValue any
+	Message string
+	Options []string
+	// If true, DefaultValue is only used when a prompt is presented to the user.
+	// In other words, DefaultValue is not used when --no-prompt is specified.
+	// Only applicable for Select currently.
+	UIOnlyDefault bool
+	DefaultValue  any
 }
 
 type ConsoleHandles struct {
@@ -131,6 +136,11 @@ func (c *AskerConsole) Select(ctx context.Context, options ConsoleOptions) (int,
 		Default: options.DefaultValue,
 	}
 
+	if options.UIOnlyDefault && c.noPrompt {
+		// Unset any default
+		survey.Default = nil
+	}
+
 	var response int
 
 	if err := c.asker(survey, &response); err != nil {
@@ -175,6 +185,7 @@ func NewConsole(noPrompt bool, isTerminal bool, w io.Writer, handles ConsoleHand
 	asker := NewAsker(noPrompt, isTerminal, handles.Stdout, handles.Stdin)
 
 	return &AskerConsole{
+		noPrompt:      noPrompt,
 		asker:         asker,
 		handles:       handles,
 		defaultWriter: w,

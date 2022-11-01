@@ -14,22 +14,22 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 type mockResourceManager struct {
-	operations []azcli.AzCliResourceOperation
+	operations []*armresources.DeploymentOperation
 }
 
 func (mock *mockResourceManager) GetDeploymentResourceOperations(
 	ctx context.Context,
 	scope infra.Scope,
-) ([]azcli.AzCliResourceOperation, error) {
+) ([]*armresources.DeploymentOperation, error) {
 	return mock.operations, nil
 }
 
@@ -51,34 +51,38 @@ func (mock *mockResourceManager) GetWebAppResourceTypeDisplayName(
 }
 
 func (mock *mockResourceManager) AddInProgressSubResourceOperation() {
-	mock.operations = append(mock.operations, azcli.AzCliResourceOperation{Id: "website-deploy-id",
-		Properties: azcli.AzCliResourceOperationProperties{
-			ProvisioningOperation: "Create",
-			TargetResource: azcli.AzCliResourceOperationTargetResource{
-				ResourceType:  string(infra.AzureResourceTypeWebSite) + "/config",
-				Id:            fmt.Sprintf("website-resource-id-%d", len(mock.operations)),
-				ResourceName:  fmt.Sprintf("website-resource-name-%d", len(mock.operations)),
-				ResourceGroup: "resource-group-name",
+	mock.operations = append(mock.operations, &armresources.DeploymentOperation{
+		ID: to.Ptr("website-deploy-id"),
+		Properties: &armresources.DeploymentOperationProperties{
+			ProvisioningOperation: to.Ptr(armresources.ProvisioningOperation("Create")),
+			TargetResource: &armresources.TargetResource{
+				ResourceType: to.Ptr(string(infra.AzureResourceTypeWebSite) + "/config"),
+				ID:           to.Ptr(fmt.Sprintf("website-resource-id-%d", len(mock.operations))),
+				ResourceName: to.Ptr(fmt.Sprintf("website-resource-name-%d", len(mock.operations))),
 			},
+			ProvisioningState: to.Ptr("In Progress"),
+			Timestamp:         to.Ptr(time.Now().UTC()),
 		}})
 }
 
 func (mock *mockResourceManager) AddInProgressOperation() {
-	mock.operations = append(mock.operations, azcli.AzCliResourceOperation{Id: "website-deploy-id",
-		Properties: azcli.AzCliResourceOperationProperties{
-			ProvisioningOperation: "Create",
-			TargetResource: azcli.AzCliResourceOperationTargetResource{
-				ResourceType:  string(infra.AzureResourceTypeWebSite),
-				Id:            fmt.Sprintf("website-resource-id-%d", len(mock.operations)),
-				ResourceName:  fmt.Sprintf("website-resource-name-%d", len(mock.operations)),
-				ResourceGroup: "resource-group-name",
+	mock.operations = append(mock.operations, &armresources.DeploymentOperation{
+		ID: to.Ptr("website-deploy-id"),
+		Properties: &armresources.DeploymentOperationProperties{
+			ProvisioningOperation: to.Ptr(armresources.ProvisioningOperation("Create")),
+			TargetResource: &armresources.TargetResource{
+				ResourceType: to.Ptr(string(infra.AzureResourceTypeWebSite)),
+				ID:           to.Ptr(fmt.Sprintf("website-resource-id-%d", len(mock.operations))),
+				ResourceName: to.Ptr(fmt.Sprintf("website-resource-name-%d", len(mock.operations))),
 			},
+			ProvisioningState: to.Ptr("In Progress"),
+			Timestamp:         to.Ptr(time.Now().UTC()),
 		}})
 }
 
 func (mock *mockResourceManager) MarkComplete(i int) {
-	mock.operations[i].Properties.ProvisioningState = succeededProvisioningState
-	mock.operations[i].Properties.Timestamp = time.Now().UTC()
+	mock.operations[i].Properties.ProvisioningState = to.Ptr(succeededProvisioningState)
+	mock.operations[i].Properties.Timestamp = to.Ptr(time.Now().UTC())
 }
 
 func mockAzDeploymentShow(t *testing.T, m mocks.MockContext) {
@@ -94,6 +98,9 @@ func mockAzDeploymentShow(t *testing.T, m mocks.MockContext) {
 		return &http.Response{
 			StatusCode: http.StatusOK,
 			Body:       io.NopCloser(bytes.NewBuffer(deploymentJson)),
+			Request: &http.Request{
+				Method: http.MethodGet,
+			},
 		}, nil
 	})
 }
@@ -154,12 +161,12 @@ func TestReportProgress(t *testing.T) {
 	assert.Equal(t, formatProgressTitle(3, 3), progressReport.Message)
 }
 
-func assertLastOperationLogged(t *testing.T, operation azcli.AzCliResourceOperation, logOutput []string) {
+func assertLastOperationLogged(t *testing.T, operation *armresources.DeploymentOperation, logOutput []string) {
 	assert.Equal(
 		t,
 		formatCreatedResourceLog(
-			operation.Properties.TargetResource.ResourceType,
-			operation.Properties.TargetResource.ResourceName,
+			*operation.Properties.TargetResource.ResourceType,
+			*operation.Properties.TargetResource.ResourceName,
 		),
 		logOutput[len(logOutput)-1],
 	)

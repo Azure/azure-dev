@@ -1,27 +1,26 @@
-param environmentName string
+param accountName string
+param databaseName string
 param location string = resourceGroup().location
+param tags object = {}
 
 param containers array = []
-param cosmosDatabaseName string
 param keyVaultName string
 param principalIds array = []
-
-var abbrs = loadJsonContent('../../../../abbreviations.json')
-var resourceToken = toLower(uniqueString(subscription().id, environmentName, location))
 
 module cosmos 'cosmos-sql-account.bicep' = {
   name: 'cosmos-sql-account'
   params: {
-    environmentName: environmentName
+    name: accountName
     location: location
+    tags: tags
     keyVaultName: keyVaultName
   }
 }
 
 resource database 'Microsoft.DocumentDB/databaseAccounts/sqlDatabases@2022-05-15' = {
-  name: '${abbrs.documentDBDatabaseAccounts}${resourceToken}/${cosmosDatabaseName}'
+  name: '${accountName}/${databaseName}'
   properties: {
-    resource: { id: cosmosDatabaseName }
+    resource: { id: databaseName }
   }
 
   resource list 'containers' = [for container in containers: {
@@ -43,8 +42,7 @@ resource database 'Microsoft.DocumentDB/databaseAccounts/sqlDatabases@2022-05-15
 module roleDefintion 'cosmos-sql-role-def.bicep' = {
   name: 'cosmos-sql-role-definition'
   params: {
-    environmentName: environmentName
-    location: location
+    accountName: accountName
   }
   dependsOn: [
     cosmos
@@ -57,9 +55,8 @@ module roleDefintion 'cosmos-sql-role-def.bicep' = {
 module userRole 'cosmos-sql-role-assign.bicep' = [for principalId in principalIds: if (!empty(principalId)) {
   name: 'cosmos-sql-user-role-${uniqueString(principalId)}'
   params: {
-    environmentName: environmentName
-    location: location
-    cosmosRoleDefinitionId: roleDefintion.outputs.cosmosSqlRoleDefinitionId
+    accountName: accountName
+    roleDefinitionId: roleDefintion.outputs.id
     principalId: principalId
   }
   dependsOn: [
@@ -68,8 +65,9 @@ module userRole 'cosmos-sql-role-assign.bicep' = [for principalId in principalId
   ]
 }]
 
-output cosmosConnectionStringKey string = cosmos.outputs.cosmosConnectionStringKey
-output cosmosDatabaseName string = cosmosDatabaseName
-output cosmosEndpoint string = cosmos.outputs.cosmosEndpoint
-output cosmosResourceId string = cosmos.outputs.cosmosResourceId
-output cosmosSqlRoleDefinitionId string = roleDefintion.outputs.cosmosSqlRoleDefinitionId
+output accountId string = cosmos.outputs.id
+output accountName string = cosmos.outputs.name
+output connectionStringKey string = cosmos.outputs.connectionStringKey
+output databaseName string = databaseName
+output endpoint string = cosmos.outputs.endpoint
+output roleDefinitionId string = roleDefintion.outputs.id

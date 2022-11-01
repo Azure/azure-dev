@@ -1,18 +1,21 @@
-param environmentName string
+param name string
 param location string = resourceGroup().location
+param tags object = {}
 
 param keyVaultName string
 
 module cosmos '../../cosmos/cosmos-account.bicep' = {
   name: 'cosmos-account'
   params: {
-    environmentName: environmentName
+    name: name
     location: location
+    tags: tags
     keyVaultName: keyVaultName
     kind: 'GlobalDocumentDB'
   }
 }
 
-output cosmosEndpoint string = cosmos.outputs.cosmosEndpoint
-output cosmosConnectionStringKey string = cosmos.outputs.cosmosConnectionStringKey
-output cosmosResourceId string = cosmos.outputs.cosmosResourceId
+output connectionStringKey string = cosmos.outputs.connectionStringKey
+output endpoint string = cosmos.outputs.endpoint
+output id string = cosmos.outputs.id
+output name string = cosmos.outputs.name

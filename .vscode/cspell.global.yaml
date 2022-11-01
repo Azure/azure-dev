@@ -70,6 +70,7 @@ ignoreWords:
     - magefile
     - menuid
     - migr
+    - mockconfig
     - mockconsole
     - mockexec
     - mockhttp

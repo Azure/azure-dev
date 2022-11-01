@@ -14,7 +14,6 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
-	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
@@ -168,35 +167,63 @@ func TestScopeDeploy(t *testing.T) {
 }
 
 func TestScopeGetResourceOperations(t *testing.T) {
-	operations := []azcli.AzCliResourceOperation{}
-	deploymentBytes, _ := json.Marshal(operations)
-
 	t.Run("SubscriptionScopeSuccess", func(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
-		mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
-			return strings.Contains(command, "az deployment operation sub list")
-		}).Respond(exec.NewRunResult(0, string(deploymentBytes), ""))
+		mockContext.HttpClient.When(func(request *http.Request) bool {
+			return request.Method == http.MethodGet && strings.Contains(
+				request.URL.Path,
+				"/subscriptions/SUBSCRIPTION_ID/providers/Microsoft.Resources/deployments/DEPLOYMENT_NAME/operations",
+			)
+		}).RespondFn(func(request *http.Request) (*http.Response, error) {
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Body:       io.NopCloser(bytes.NewBuffer([]byte(deploymentBytes))),
+				Request: &http.Request{
+					Method: http.MethodGet,
+				},
+			}, nil
+		})
 
 		scope := NewSubscriptionScope(*mockContext.Context, "eastus2", "SUBSCRIPTION_ID", "DEPLOYMENT_NAME")
 
 		operations, err := scope.GetResourceOperations(*mockContext.Context)
 		require.NoError(t, err)
-		require.Len(t, operations, 0)
+		require.Len(t, operations, 1)
 	})
 
 	t.Run("ResourceGroupScopeSuccess", func(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
-		mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
-			return strings.Contains(command, "az deployment operation group list")
-		}).Respond(exec.NewRunResult(0, string(deploymentBytes), ""))
-
+		mockContext.HttpClient.When(func(request *http.Request) bool {
+			return request.Method == http.MethodGet && strings.Contains(
+				request.URL.Path,
+				"/subscriptions/SUBSCRIPTION_ID/resourcegroups/RESOURCE_GROUP/deployments/DEPLOYMENT_NAME/operations",
+			)
+		}).RespondFn(func(request *http.Request) (*http.Response, error) {
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Body:       io.NopCloser(bytes.NewBuffer([]byte(deploymentBytes))),
+				Request: &http.Request{
+					Method: http.MethodGet,
+				},
+			}, nil
+		})
 		scope := NewResourceGroupScope(*mockContext.Context, "SUBSCRIPTION_ID", "RESOURCE_GROUP", "DEPLOYMENT_NAME")
 
 		operations, err := scope.GetResourceOperations(*mockContext.Context)
 		require.NoError(t, err)
-		require.Len(t, operations, 0)
+		require.Len(t, operations, 1)
 	})
 }
+
+var deploymentBytes string = `{
+	"nextLink": "",
+	"value": [{
+		"id": "id",
+		"operationId": "foo",
+		"properties": {
+		}
+	}]	
+}`
 
 var testArmResponse string = `{
 	"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/providers/Microsoft.Resources/deployments/foo",

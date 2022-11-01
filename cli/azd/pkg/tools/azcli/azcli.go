@@ -9,8 +9,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"regexp"
-	"strings"
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
@@ -23,9 +21,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
 	"github.com/azure/azure-dev/cli/azd/pkg/identity"
-	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/internal"
 	"github.com/blang/semver/v4"
 )
 
@@ -60,10 +56,8 @@ type AzCli interface {
 	Login(ctx context.Context, useDeviceCode bool, deviceCodeWriter io.Writer) error
 	LoginAcr(ctx context.Context, subscriptionId string, loginServer string) error
 	GetContainerRegistries(ctx context.Context, subscriptionId string) ([]*armcontainerregistry.Registry, error)
-	ListAccounts(ctx context.Context) ([]AzCliSubscriptionInfo, error)
-	GetDefaultAccount(ctx context.Context) (*AzCliSubscriptionInfo, error)
+	ListAccounts(ctx context.Context) ([]*AzCliSubscriptionInfo, error)
 	GetAccount(ctx context.Context, subscriptionId string) (*AzCliSubscriptionInfo, error)
-	GetCliConfigValue(ctx context.Context, name string) (AzCliConfigValue, error)
 	GetSubscriptionDeployment(
 		ctx context.Context,
 		subscriptionId string,
@@ -137,13 +131,13 @@ type AzCli interface {
 		ctx context.Context,
 		subscriptionId string,
 		deploymentName string,
-	) ([]AzCliResourceOperation, error)
+	) ([]*armresources.DeploymentOperation, error)
 	ListResourceGroupDeploymentOperations(
 		ctx context.Context,
 		subscriptionId string,
 		resourceGroupName string,
 		deploymentName string,
-	) ([]AzCliResourceOperation, error)
+	) ([]*armresources.DeploymentOperation, error)
 	// ListAccountLocations lists the physical locations in Azure.
 	ListAccountLocations(ctx context.Context, subscriptionId string) ([]AzCliLocation, error)
 	// CreateOrUpdateServicePrincipal creates a service principal using a given name and returns a JSON object which
@@ -439,148 +433,6 @@ func (cli *azCli) Login(ctx context.Context, useDeviceCode bool, deviceCodeWrite
 	return nil
 }
 
-func (cli *azCli) GetCliConfigValue(ctx context.Context, name string) (AzCliConfigValue, error) {
-	res, err := cli.runAzCommand(ctx, "config", "get", name, "--output", "json")
-	if isConfigurationIsNotSetMessage(res.Stderr) {
-		return AzCliConfigValue{}, ErrNoConfigurationValue
-	} else if err != nil {
-		return AzCliConfigValue{}, fmt.Errorf("failed running config get: %s: %w", res.String(), err)
-	}
-
-	var value AzCliConfigValue
-	if err := json.Unmarshal([]byte(res.Stdout), &value); err != nil {
-		return AzCliConfigValue{}, fmt.Errorf("could not unmarshal output %s as an AzCliConfigValue: %w", res.Stdout, err)
-	}
-
-	return value, nil
-}
-
-func extractDeploymentError(stderr string) error {
-	if start, end := findDeploymentErrorJsonIndex(stderr); start != -1 && end != -1 {
-		deploymentError := internal.NewAzureDeploymentError(stderr[start:end])
-		var innerErrorDetails string
-		if len(stderr) >= end+1 {
-			innerErrorDetails = extractInnerDeploymentErrors(stderr[end+1:])
-		}
-
-		return fmt.Errorf(
-			"%s\n%w%s",
-			output.WithErrorFormat("Deployment Error Details:"),
-			deploymentError,
-			innerErrorDetails,
-		)
-	}
-
-	return nil
-}
-
-func extractInnerDeploymentErrors(stderr string) string {
-	innerErrors := getInnerDeploymentErrorsJson(stderr)
-
-	if len(innerErrors) == 0 {
-		// Return raw text to be displayed
-		return stderr
-	} else {
-		var sb strings.Builder
-		for _, innerErrorJson := range innerErrors {
-			innerError := internal.NewAzureDeploymentError(innerErrorJson)
-			sb.WriteString(output.WithErrorFormat(fmt.Sprintf("\nInner Error:\n%s", innerError.Error())))
-		}
-		return sb.String()
-	}
-}
-
-func (cli *azCli) DeleteSubscriptionDeployment(ctx context.Context, subscriptionId string, deploymentName string) error {
-	res, err := cli.runAzCommand(
-		ctx,
-		"deployment",
-		"sub",
-		"delete",
-		"--subscription",
-		subscriptionId,
-		"--name",
-		deploymentName,
-		"--output",
-		"json",
-	)
-	if isNotLoggedInMessage(res.Stderr) {
-		return ErrAzCliNotLoggedIn
-	} else if err != nil {
-		return fmt.Errorf("failed running az deployment sub delete: %s: %w", res.String(), err)
-	}
-
-	return nil
-}
-
-func (cli *azCli) ListSubscriptionDeploymentOperations(
-	ctx context.Context,
-	subscriptionId string,
-	deploymentName string,
-) ([]AzCliResourceOperation, error) {
-	res, err := cli.runAzCommand(
-		ctx,
-		"deployment",
-		"operation",
-		"sub",
-		"list",
-		"--subscription",
-		subscriptionId,
-		"--name",
-		deploymentName,
-		"--output",
-		"json",
-	)
-	if isNotLoggedInMessage(res.Stderr) {
-		return nil, ErrAzCliNotLoggedIn
-	} else if isDeploymentNotFoundMessage(res.Stderr) {
-		return nil, ErrDeploymentNotFound
-	} else if err != nil {
-		return nil, fmt.Errorf("failed running az deployment operation sub list: %s: %w", res.String(), err)
-	}
-
-	var resources []AzCliResourceOperation
-	if err := json.Unmarshal([]byte(res.Stdout), &resources); err != nil {
-		return nil, fmt.Errorf("could not unmarshal output %s as a []AzCliResourceOperation: %w", res.Stdout, err)
-	}
-	return resources, nil
-}
-
-func (cli *azCli) ListResourceGroupDeploymentOperations(
-	ctx context.Context,
-	subscriptionId string,
-	resourceGroupName string,
-	deploymentName string,
-) ([]AzCliResourceOperation, error) {
-	res, err := cli.runAzCommand(
-		ctx,
-		"deployment",
-		"operation",
-		"group",
-		"list",
-		"--subscription",
-		subscriptionId,
-		"--resource-group",
-		resourceGroupName,
-		"--name",
-		deploymentName,
-		"--output",
-		"json",
-	)
-	if isNotLoggedInMessage(res.Stderr) {
-		return nil, ErrAzCliNotLoggedIn
-	} else if isDeploymentNotFoundMessage(res.Stderr) {
-		return nil, ErrDeploymentNotFound
-	} else if err != nil {
-		return nil, fmt.Errorf("failed running az deployment operation group list: %s: %w", res.String(), err)
-	}
-
-	var resources []AzCliResourceOperation
-	if err := json.Unmarshal([]byte(res.Stdout), &resources); err != nil {
-		return nil, fmt.Errorf("could not unmarshal output %s as a []AzCliResourceOperation: %w", res.Stdout, err)
-	}
-	return resources, nil
-}
-
 func (cli *azCli) runAzCommand(ctx context.Context, args ...string) (exec.RunResult, error) {
 	return cli.runAzCommandWithArgs(ctx, exec.RunArgs{
 		Args: args,
@@ -610,53 +462,6 @@ func (cli *azCli) createDefaultClientOptionsBuilder(ctx context.Context) *azsdk.
 	return azsdk.NewClientOptionsBuilder().
 		WithTransport(httputil.GetHttpClient(ctx)).
 		WithPerCallPolicy(azsdk.NewUserAgentPolicy(cli.UserAgent()))
-}
-
-// Azure Active Directory codes can be referenced via https://login.microsoftonline.com/error?code=<ERROR_CODE>,
-// where ERROR_CODE is the digits portion of an AAD error code. Example: AADSTS70043 has error code 70043
-// Additionally, https://learn.microsoft.com/azure/active-directory/develop/reference-aadsts-error-codes#aadsts-error-codes
-// is a helpful resource with a list of error codes and messages.
-
-// Regex for "(DeploymentNotFound) Deployment '<name>' could not be found."
-var isDeploymentNotFoundMessageRegex = regexp.MustCompile(`\(DeploymentNotFound\)`)
-var isConfigurationIsNotSetMessageRegex = regexp.MustCompile(`Configuration '.*' is not set\.`)
-var isDeploymentErrorRegex = regexp.MustCompile(`ERROR: ({.+})`)
-var isInnerDeploymentErrorRegex = regexp.MustCompile(`Inner Errors:\s+({.+})`)
-
-func isDeploymentNotFoundMessage(s string) bool {
-	return isDeploymentNotFoundMessageRegex.MatchString(s)
-}
-
-func isConfigurationIsNotSetMessage(s string) bool {
-	return isConfigurationIsNotSetMessageRegex.MatchString(s)
-}
-
-func findDeploymentErrorJsonIndex(s string) (int, int) {
-	index := isDeploymentErrorRegex.FindStringSubmatchIndex(s)
-
-	if index == nil {
-		return -1, -1
-	} else if len(index) >= 4 { // [matchStart, matchEnd, submatchStart, submatchEnd]
-		return index[2], index[3]
-	}
-
-	return -1, -1
-}
-
-func getInnerDeploymentErrorsJson(s string) []string {
-	results := []string{}
-	matches := isInnerDeploymentErrorRegex.FindAllStringSubmatch(s, -1)
-	if matches == nil {
-		return results
-	}
-
-	for _, match := range matches {
-		if len(match) > 1 {
-			results = append(results, match[1])
-		}
-	}
-
-	return results
 }
 
 type contextKey string

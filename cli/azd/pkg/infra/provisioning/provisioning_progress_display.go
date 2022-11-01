@@ -11,10 +11,10 @@ import (
 	"sort"
 	"time"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 )
 
 const defaultProgressTitle string = "Provisioning Azure resources"
@@ -83,23 +83,25 @@ func (display *ProvisioningProgressDisplay) ReportProgress(ctx context.Context) 
 	}
 
 	succeededCount := 0
-	newlyDeployedResources := []*azcli.AzCliResourceOperation{}
+	newlyDeployedResources := []*armresources.DeploymentOperation{}
 
 	for i := range operations {
-		if operations[i].Properties.ProvisioningState == succeededProvisioningState {
+		if operations[i].Properties.TargetResource != nil &&
+			*operations[i].Properties.ProvisioningState == succeededProvisioningState {
 			succeededCount++
 
-			if !display.createdResources[operations[i].Properties.TargetResource.Id] &&
-				infra.IsTopLevelResourceType(infra.AzureResourceType(operations[i].Properties.TargetResource.ResourceType)) {
-				newlyDeployedResources = append(newlyDeployedResources, &operations[i])
+			if !display.createdResources[*operations[i].Properties.TargetResource.ID] &&
+				infra.IsTopLevelResourceType(
+					infra.AzureResourceType(*operations[i].Properties.TargetResource.ResourceType)) {
+				newlyDeployedResources = append(newlyDeployedResources, operations[i])
 			}
 		}
 	}
 
 	sort.Slice(newlyDeployedResources, func(i int, j int) bool {
 		return time.Time.Before(
-			newlyDeployedResources[i].Properties.Timestamp,
-			newlyDeployedResources[j].Properties.Timestamp,
+			*newlyDeployedResources[i].Properties.Timestamp,
+			*newlyDeployedResources[j].Properties.Timestamp,
 		)
 	})
 
@@ -120,14 +122,14 @@ func (display *ProvisioningProgressDisplay) ReportProgress(ctx context.Context) 
 
 func (display *ProvisioningProgressDisplay) logNewlyCreatedResources(
 	ctx context.Context,
-	resources []*azcli.AzCliResourceOperation,
+	resources []*armresources.DeploymentOperation,
 ) {
 	for _, newResource := range resources {
-		resourceTypeName := newResource.Properties.TargetResource.ResourceType
+		resourceTypeName := *newResource.Properties.TargetResource.ResourceType
 		resourceTypeDisplayName, err := display.resourceManager.GetResourceTypeDisplayName(
 			ctx,
 			display.scope.SubscriptionId(),
-			newResource.Properties.TargetResource.Id,
+			*newResource.Properties.TargetResource.ID,
 			infra.AzureResourceType(resourceTypeName),
 		)
 
@@ -141,7 +143,7 @@ func (display *ProvisioningProgressDisplay) logNewlyCreatedResources(
 		if resourceTypeDisplayName != "" {
 			display.console.Message(
 				ctx,
-				formatCreatedResourceLog(resourceTypeDisplayName, newResource.Properties.TargetResource.ResourceName),
+				formatCreatedResourceLog(resourceTypeDisplayName, *newResource.Properties.TargetResource.ResourceName),
 			)
 			resourceTypeName = resourceTypeDisplayName
 		}
@@ -150,9 +152,9 @@ func (display *ProvisioningProgressDisplay) logNewlyCreatedResources(
 			"%s - Created %s: %s",
 			newResource.Properties.Timestamp.Local().Format("2006-01-02 15:04:05"),
 			resourceTypeName,
-			newResource.Properties.TargetResource.ResourceName)
+			*newResource.Properties.TargetResource.ResourceName)
 
-		display.createdResources[newResource.Properties.TargetResource.Id] = true
+		display.createdResources[*newResource.Properties.TargetResource.ID] = true
 	}
 }
 

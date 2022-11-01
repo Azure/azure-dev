@@ -13,24 +13,24 @@ function usage {
     echo ""
     echo "Usage: delete-test-templates -t <template> -b <branch> -e <env_prefix>" 2>&1
     echo ""
-    echo "  -s    Sets the environment suffix (required)"
+    echo "  -u    Sets the environment suffix (required)"
     echo "  -e    Sets the environment name prefix. Environment prefix is used in the azd environment name along with the template name (default: whoami)"
     echo "  -f    Sets the root folder on the local machine for the test projects to be generated (default: User's HOME folder)"
     echo "  -t    Sets the template name. Use values from 'azd template list'. When omitted will run for all templates available in 'azd template list'"
     echo ""
     echo "Examples:"
     echo "  Deleting all templates with default values (must have environment suffix)"
-    echo "      bash ./delete-test-templates.sh -s \"<env_suffix>\""
+    echo "      bash ./delete-test-templates.sh -u \"<env_suffix>\""
 
     exit 1
 }
 
-while getopts "f:t:e:s:h" arg; do
+while getopts "f:t:e:u:h" arg; do
     case ${arg} in
     f) FOLDER_PATH=$OPTARG ;;
     t) TEMPLATE_NAME=$OPTARG ;;
     e) ENV_NAME_PREFIX=$OPTARG ;;
-    s) ENV_SUFFIX=$OPTARG ;;
+    u) ENV_SUFFIX=$OPTARG ;;
     h)
         usage
         ;;
@@ -60,7 +60,7 @@ function cleanupTemplate {
 if [[ -z $ENV_SUFFIX ]]; then
     echo "Must pass in environment suffix"
     echo "Examples:"
-    echo "      bash ./delete-test-templates.sh -s \"<env_suffix>\""
+    echo "      bash ./delete-test-templates.sh -u \"<env_suffix>\""
     exit 0
 else
     if [[ -z $TEMPLATE_NAME ]]; then

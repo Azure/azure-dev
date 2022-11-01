@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"log"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -42,7 +43,7 @@ func (p *GitHubScmProvider) requiredTools(ctx context.Context) []tools.ExternalT
 // preConfigureCheck check the current state of external tools and any
 // other dependency to be as expected for execution.
 func (p *GitHubScmProvider) preConfigureCheck(ctx context.Context, console input.Console) error {
-	return ensureGitHubLogin(ctx, github.GitHubHostName, console)
+	return ensureGitHubLogin(ctx, github.NewGitHubCli(ctx), github.GitHubHostName, console)
 }
 
 // name returns the name of the provider
@@ -295,7 +296,7 @@ func (p *GitHubCiProvider) requiredTools(ctx context.Context) []tools.ExternalTo
 // preConfigureCheck validates that current state of tools and GitHub is as expected to
 // execute.
 func (p *GitHubCiProvider) preConfigureCheck(ctx context.Context, console input.Console) error {
-	return ensureGitHubLogin(ctx, github.GitHubHostName, console)
+	return ensureGitHubLogin(ctx, github.NewGitHubCli(ctx), github.GitHubHostName, console)
 }
 
 // name returns the name of the provider.
@@ -304,6 +305,49 @@ func (p *GitHubCiProvider) name() string {
 }
 
 // ***  ciProvider implementation ******
+
+// ensureAuthorizedForRepoSecrets ensures the user is authorized for modifying repository-level secrets.
+// If not, the user is prompted for login.
+func (p *GitHubCiProvider) ensureAuthorizedForRepoSecrets(
+	ctx context.Context,
+	ghCli github.GitHubCli,
+	console input.Console,
+	repoSlug string) error {
+	// The actual scope for repository-level secrets is simply the `repo` scope in GitHub.
+	// Thus, listing secrets has the same access level permissions as writing secrets
+	// and can be used for probing secrets authorization.
+	err := ghCli.ListSecrets(ctx, repoSlug)
+
+	if err == nil {
+		return nil
+	}
+
+	if errors.Is(err, github.ErrUserNotAuthorized) {
+		authResult, err := ghCli.GetAuthStatus(ctx, github.GitHubHostName)
+		if err != nil {
+			return fmt.Errorf("getting auth status: %w", err)
+		}
+
+		if authResult.TokenSource == github.TokenSourceEnvVar {
+			log.Println("Switching gh to file authentication mode")
+			// Force file-based auth so that we can re-prompt for login.
+			// Otherwise, `gh auth` commands will simply report that we are authenticated.
+			ghCli.ForceConfigureAuth(github.TokenSourceFile)
+
+			// Since repository-level secrets only requires `repo` scope, and `gh auth login` always grants `repo` scope,
+			//  we can run `gh auth login`` without needing `gh auth refresh` with additional scopes
+			err = ensureGitHubLogin(ctx, ghCli, github.GitHubHostName, console)
+			if err != nil {
+				return fmt.Errorf("logging in: %w", err)
+			}
+
+			return nil
+		}
+
+	}
+
+	return fmt.Errorf("listing secrets: %w", err)
+}
 
 // configureConnection set up GitHub account with Azure Credentials for
 // GitHub actions to use a service principal account to log in to Azure
@@ -321,6 +365,10 @@ func (p *GitHubCiProvider) configureConnection(
 	console.Message(ctx, "Setting AZURE_CREDENTIALS GitHub repo secret.\n")
 
 	ghCli := github.NewGitHubCli(ctx)
+	if err := p.ensureAuthorizedForRepoSecrets(ctx, ghCli, console, repoSlug); err != nil {
+		return fmt.Errorf("ensuring authorization: %w", err)
+	}
+
 	// set azure credential for pipelines can log in to Azure
 	if err := ghCli.SetSecret(ctx, repoSlug, "AZURE_CREDENTIALS", string(credentials)); err != nil {
 		return fmt.Errorf("failed setting AZURE_CREDENTIALS secret: %w", err)
@@ -403,14 +451,13 @@ func (p *GitHubCiProvider) configurePipeline(
 
 // ensureGitHubLogin ensures the user is logged into the GitHub CLI. If not, it prompt the user
 // if they would like to log in and if so runs `gh auth login` interactively.
-func ensureGitHubLogin(ctx context.Context, hostname string, console input.Console) error {
-	ghCli := github.NewGitHubCli(ctx)
-	loggedIn, err := ghCli.CheckAuth(ctx, hostname)
+func ensureGitHubLogin(ctx context.Context, ghCli github.GitHubCli, hostname string, console input.Console) error {
+	authResult, err := ghCli.GetAuthStatus(ctx, hostname)
 	if err != nil {
 		return err
 	}
 
-	if loggedIn {
+	if authResult.LoggedIn {
 		return nil
 	}
 

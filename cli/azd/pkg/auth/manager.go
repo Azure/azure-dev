@@ -271,10 +271,7 @@ func (m *Manager) saveSecret(ps *persistedSecret, key string) error {
 
 func (m *Manager) Logout(ctx context.Context) error {
 	act, _, _, err := m.GetSignedInUser(ctx)
-	if errors.Is(err, ErrNoCurrentUser) {
-		// already signed out, that's okay
-		return nil
-	} else if err != nil {
+	if err != nil && !errors.Is(err, ErrNoCurrentUser) {
 		return fmt.Errorf("fetching current user: %w", err)
 	}
 
@@ -284,7 +281,6 @@ func (m *Manager) Logout(ctx context.Context) error {
 		}
 	}
 
-	// Unset the current user from config, but if we fail to do so, don't fail the overall operation
 	cfg, err := config.GetUserConfig(m.configManager)
 	if err != nil {
 		return fmt.Errorf("loading config: %w", err)

@@ -62,7 +62,7 @@ func (c *memoryCache) Replace(cache cache.Unmarshaler, key string) error {
 func (c *memoryCache) Export(cache cache.Marshaler, key string) error {
 	new, err := cache.Marshal()
 	if err != nil {
-		return fmt.Errorf("error marshaling existing msal cache: %v", err)
+		return fmt.Errorf("error marshaling existing msal cache: %w", err)
 	}
 
 	old := c.cache[key]

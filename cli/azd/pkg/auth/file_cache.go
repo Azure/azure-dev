@@ -28,7 +28,7 @@ func (c *fileCache) Replace(cache cache.Unmarshaler, key string) error {
 	}
 
 	if err := cache.Unmarshal(contents); err != nil {
-		return fmt.Errorf("failed to unmarshal cache: %v", err)
+		return fmt.Errorf("failed to unmarshal cache: %w", err)
 	}
 
 	return nil

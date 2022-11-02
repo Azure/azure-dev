@@ -12,6 +12,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strconv"
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
@@ -29,6 +30,10 @@ const cAZD_CLIENT_ID = "04b07795-8ddb-461a-bbee-02f9e1bf7b46"
 
 // cCurrentUserKey is the key we use in config for the storing identity information of the currently logged in user.
 const cCurrentUserKey = "auth.account.currentUser"
+
+// cUseAzCli is the key we use in config to denote that we want to use the az CLI for authentication instead of managing
+// it ourselves. The value should be a string as specified by [strconv.ParseBool]
+const cUseLegacyAzCliAuthKey = "auth.useLegacyAzCliAuth"
 
 // The scopes to request when acquiring our token during the login flow.
 var cLoginScopes = []string{"https://management.azure.com//.default"}
@@ -83,6 +88,20 @@ func (m *Manager) GetSignedInUser(ctx context.Context) (*public.Account, azcore.
 	cfg, err := config.GetUserConfig(m.configManager)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("fetching current user: %w", err)
+	}
+
+	if useLegacyAuth, has := cfg.Get(cUseLegacyAzCliAuthKey); has {
+		if use, err := strconv.ParseBool(useLegacyAuth.(string)); err != nil && use {
+			cred, err := azidentity.NewAzureCLICredential(nil)
+			if err != nil {
+				return nil, nil, nil, fmt.Errorf("failed to create credential: %v: %w", err, ErrNoCurrentUser)
+			}
+			if tok, err := cred.GetToken(ctx, policy.TokenRequestOptions{Scopes: cLoginScopes}); err != nil {
+				return nil, nil, nil, fmt.Errorf("failed to get token: %v: %w", err, ErrNoCurrentUser)
+			} else {
+				return nil, cred, &tok.ExpiresOn, nil
+			}
+		}
 	}
 
 	currentUser, has := cfg.Get(cCurrentUserKey)

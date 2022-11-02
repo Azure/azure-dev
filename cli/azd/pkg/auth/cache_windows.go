@@ -104,7 +104,7 @@ func (c *encryptedCache) Replace(cache cache.Unmarshaler, key string) error {
 	var plaintext windows.DataBlob
 
 	if err := windows.CryptUnprotectData(&encrypted, nil, nil, uintptr(0), nil, 0, &plaintext); err != nil {
-		return fmt.Errorf("failed to decrypt data: %v", err)
+		return fmt.Errorf("failed to decrypt data: %w", err)
 	}
 
 	decryptedSlice := unsafe.Slice(plaintext.Data, plaintext.Size)
@@ -113,7 +113,7 @@ func (c *encryptedCache) Replace(cache cache.Unmarshaler, key string) error {
 	copy(cs, decryptedSlice)
 
 	if _, err := windows.LocalFree(windows.Handle(unsafe.Pointer(plaintext.Data))); err != nil {
-		return fmt.Errorf("failed to free encrypted data: %v", err)
+		return fmt.Errorf("failed to free encrypted data: %w", err)
 	}
 
 	return cache.Unmarshal(cs)

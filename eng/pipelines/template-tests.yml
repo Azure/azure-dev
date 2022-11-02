@@ -111,6 +111,7 @@ jobs:
         displayName: Install npm
 
       - task: DevcontainersCI@0
+        imageName: ghcr.io/example/example-devcontainer
         displayName: Test templates with Devontainers
         inputs:
           env: |
@@ -132,7 +133,6 @@ jobs:
             git config --global credential.helper "store"
             cd templates/tests/
             curl -fsSL https://aka.ms/install-azd.sh | bash -s -- --version 'daily' --verbose
-            sudo npx playwright install-deps
             chmod +x ./test-templates.sh
             ./test-templates.sh \
               -e '$(EnvPrefixName)' \
@@ -144,7 +144,7 @@ jobs:
               -p 'list'
 
       - task: Bash@3
-        displayName: Test templates with Windows/Mac/Linux
+        displayName: Test templates
         env:             
           # Required for Terraform service principal authentication
           ARM_CLIENT_ID: $(arm-client-id)

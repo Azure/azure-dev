@@ -13,8 +13,10 @@
 
 - [[#1060]](https://github.com/Azure/azure-dev/pull/1060) Fix color rendering on Windows.
 - [[#1011]](https://github.com/Azure/azure-dev/pull/1011) Improve error printout for deployment failures.
-- [[#991]](https://github.com/Azure/azure-dev/pull/991) Fix `devcontainers.json` to not use deprecated syntax.
-- [[#996]](https://github.com/Azure/azure-dev/pull/996) ToDo templates: Fix cases where provisioning of app settings would succeed, but app settings configuration would not take place.
+- [[#991]](https://github.com/Azure/azure-dev/pull/991) Fix `devcontainers.json` to use non-deprecated syntax.
+- [[#996]](https://github.com/Azure/azure-dev/pull/996) ToDo templates:
+  - Fix cases where provisioning of app settings would succeed, but app settings configuration would not take place.
+  - Move resource naming to `main.bicep` and remove `resources.bicep` from templates.
 
 ## 0.3.0-beta.5 (2022-10-26)
 

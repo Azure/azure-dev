@@ -235,7 +235,7 @@ func ensureEnvironmentInitialized(
 				Options: subscriptionOptions,
 			}
 
-			if defaultSubscription != "" {
+			if defaultSubscription != nil {
 				selectOptions.DefaultValue = defaultSubscription
 			}
 
@@ -289,15 +289,15 @@ func ensureEnvironmentInitialized(
 	return nil
 }
 
-func getSubscriptionOptions(ctx context.Context) ([]string, string, error) {
+func getSubscriptionOptions(ctx context.Context) ([]string, *string, error) {
 	accountManager, err := account.NewManager(config.NewManager(), azcli.GetAzCli(ctx))
 	if err != nil {
-		return nil, "", fmt.Errorf("failed creating account manager: %w", err)
+		return nil, nil, fmt.Errorf("failed creating account manager: %w", err)
 	}
 
 	subscriptionInfos, err := accountManager.GetSubscriptions(ctx)
 	if err != nil {
-		return nil, "", fmt.Errorf("listing accounts: %w", err)
+		return nil, nil, fmt.Errorf("listing accounts: %w", err)
 	}
 
 	// If `AZURE_SUBSCRIPTION_ID` is set in the environment, use it to influence
@@ -313,13 +313,13 @@ func getSubscriptionOptions(ctx context.Context) ([]string, string, error) {
 	}
 
 	var subscriptionOptions = make([]string, len(subscriptionInfos)+1)
-	var defaultSubscription string = ""
+	var defaultSubscription *string
 
 	for index, info := range subscriptionInfos {
 		subscriptionOptions[index] = fmt.Sprintf("%2d. %s (%s)", index+1, info.Name, info.Id)
 
 		if info.Id == defaultSubscriptionId {
-			defaultSubscription = subscriptionOptions[index]
+			defaultSubscription = &subscriptionOptions[index]
 		}
 	}
 

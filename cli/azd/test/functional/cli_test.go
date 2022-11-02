@@ -37,6 +37,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/test/azdcli"
+	"github.com/blang/semver/v4"
 	"github.com/joho/godotenv"
 	"github.com/sethvargo/go-retry"
 	"github.com/stretchr/testify/assert"
@@ -68,17 +69,29 @@ func Test_CLI_Version_PrintsVersion(t *testing.T) {
 	defer cancel()
 
 	cli := azdcli.NewCLI(t)
-	out, err := cli.RunCommand(ctx, "version")
+	versionOut, err := cli.RunCommand(ctx, "version")
 	require.NoError(t, err)
 
-	rn := os.Getenv("GITHUB_RUN_NUMBER")
-	if rn != "" {
-		version := os.Getenv("CLI_VERSION")
-		require.NotEmpty(t, version)
-		require.Contains(t, out, version)
-	} else {
-		require.Contains(t, out, fmt.Sprintf("azd version %s", internal.Version))
+	jsonOutput, err := cli.RunCommand(ctx, "version", "--output", "json")
+	require.NoError(t, err)
+
+	versionJson := &internal.VersionSpec{}
+	err = json.Unmarshal([]byte(jsonOutput), versionJson)
+	require.NoError(t, err)
+
+	_, err = semver.Parse(versionJson.Azd.Version)
+	require.NoError(t, err)
+
+	expected := internal.Version
+	if os.Getenv("GITHUB_RUN_NUMBER") != "" {
+		// In CI, use CLI_VERSION as the expected version
+		expected = os.Getenv("CLI_VERSION")
+		require.NotEmpty(t, expected)
+		require.Contains(t, versionOut, expected)
 	}
+
+	require.Contains(t, versionOut, fmt.Sprintf("azd version %s", expected))
+	require.Equal(t, expected, versionJson.Azd.Version)
 }
 
 func Test_CLI_Init_FailsIfAzCliIsMissing(t *testing.T) {

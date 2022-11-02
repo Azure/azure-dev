@@ -112,7 +112,7 @@ func (la *loginAction) Run(ctx context.Context) error {
 
 	if !la.flags.onlyCheckStatus {
 		if la.flags.clientId != "" {
-			if _, _, _, err := la.authManager.LoginWithServicePrincipal(
+			if _, err := la.authManager.LoginWithServicePrincipal(
 				ctx, la.flags.tenantId, la.flags.clientId, la.flags.clientSecret,
 			); err != nil {
 				return fmt.Errorf("logging in: %w", err)
@@ -122,21 +122,33 @@ func (la *loginAction) Run(ctx context.Context) error {
 			useDeviceCode := la.flags.useDeviceCode || os.Getenv(CodespacesEnvVarName) == "true" ||
 				os.Getenv(RemoteContainersEnvVarName) == "true"
 
-			if _, _, _, err := la.authManager.Login(ctx, useDeviceCode); err != nil {
-				return fmt.Errorf("logging in: %w", err)
+			if useDeviceCode {
+				if _, err := la.authManager.LoginWithDeviceCode(ctx, la.writer); err != nil {
+					return fmt.Errorf("logging in: %w", err)
+				}
+			} else {
+				if _, err := la.authManager.LoginInteractive(ctx); err != nil {
+					return fmt.Errorf("logging in: %w", err)
+				}
 			}
 		}
 	}
 
 	res := contracts.LoginResult{}
 
-	if _, _, expiresOn, err := la.authManager.GetSignedInUser(ctx); errors.Is(err, auth.ErrNoCurrentUser) {
+	if cred, err := la.authManager.CredentialForCurrentUser(ctx); errors.Is(err, auth.ErrNoCurrentUser) {
 		res.Status = contracts.LoginStatusUnauthenticated
 	} else if err != nil {
 		return fmt.Errorf("checking auth status: %w", err)
 	} else {
-		res.Status = contracts.LoginStatusSuccess
-		res.ExpiresOn = expiresOn
+		if tok, err := auth.EnsureLoggedInCredential(ctx, cred); errors.Is(err, auth.ErrNoCurrentUser) {
+			res.Status = contracts.LoginStatusUnauthenticated
+		} else if err != nil {
+			return fmt.Errorf("checking auth status: %w", err)
+		} else {
+			res.Status = contracts.LoginStatusSuccess
+			res.ExpiresOn = &tok.ExpiresOn
+		}
 	}
 
 	if la.formatter.Kind() == output.NoneFormat {

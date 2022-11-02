@@ -19,7 +19,8 @@
         "ghcr.io/devcontainers/features/dotnet:1": {},
         "ghcr.io/devcontainers/features/node:1": {},
         "ghcr.io/devcontainers/features/python:1": {},
-        "ghcr.io/devcontainers/features/terraform:1": {}
+        "ghcr.io/devcontainers/features/terraform:1": {},
+        "ghcr.io/devcontainers/features/jdk:1": {}
     }, 
     "extensions": [
         "redhat.vscode-yaml",

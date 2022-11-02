@@ -69,7 +69,7 @@ func Test_CLI_Version_PrintsVersion(t *testing.T) {
 	defer cancel()
 
 	cli := azdcli.NewCLI(t)
-	versionOut, err := cli.RunCommand(ctx, "version")
+	textOutput, err := cli.RunCommand(ctx, "version")
 	require.NoError(t, err)
 
 	jsonOutput, err := cli.RunCommand(ctx, "version", "--output", "json")
@@ -87,10 +87,9 @@ func Test_CLI_Version_PrintsVersion(t *testing.T) {
 		// In CI, use CLI_VERSION as the expected version
 		expected = os.Getenv("CLI_VERSION")
 		require.NotEmpty(t, expected)
-		require.Contains(t, versionOut, expected)
 	}
 
-	require.Contains(t, versionOut, fmt.Sprintf("azd version %s", expected))
+	require.Contains(t, textOutput, fmt.Sprintf("azd version %s", expected))
 	require.Equal(t, expected, versionJson.Azd.Version)
 }
 

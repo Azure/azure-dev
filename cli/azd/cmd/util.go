@@ -236,7 +236,7 @@ func ensureEnvironmentInitialized(
 			}
 
 			if defaultSubscription != nil {
-				selectOptions.DefaultValue = defaultSubscription
+				selectOptions.DefaultValue = *defaultSubscription
 			}
 
 			subscriptionSelectionIndex, err := console.Select(ctx, selectOptions)

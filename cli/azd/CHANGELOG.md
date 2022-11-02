@@ -5,10 +5,15 @@
 ### Features Added
 
 - [[#773]](https://github.com/Azure/azure-dev/pull/773) Add support for Java with Maven.
+- [[#1026]](https://github.com/Azure/azure-dev/pull/1026), [[#1021]](https://github.com/Azure/azure-dev/pull/1021) New official templates: ToDo with Java on App Service, ToDo with Java on Azure Container Apps, ToDo with C# on Azure Functions
+- [[#967]](https://github.com/Azure/azure-dev/pull/967) New `azd config` command for managing default subscription and location selections.
+- [[#1035]](https://github.com/Azure/azure-dev/pull/1035) Add terraform support for Azure Pipelines created using `azd pipeline config`.
 
 ### Bugs Fixed
 
 - [[#1060]](https://github.com/Azure/azure-dev/pull/1060) Fix color rendering on Windows.
+- [[#1011]](https://github.com/Azure/azure-dev/pull/1011) Improve error printout for deployment failures.
+- [[#991]](https://github.com/Azure/azure-dev/pull/991) Fix `devcontainers.json` to not use deprecated syntax.
 
 ## 0.3.0-beta.5 (2022-10-26)
 

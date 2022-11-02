@@ -5,14 +5,17 @@ package bicep
 
 import (
 	"context"
-	"encoding/json"
+	"errors"
 	"fmt"
-	"log"
+	"os"
+	osexec "os/exec"
+	"os/user"
+	"path/filepath"
 	"regexp"
+	"runtime"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/blang/semver/v4"
 )
 
@@ -23,13 +26,11 @@ type BicepCli interface {
 
 func NewBicepCli(ctx context.Context) BicepCli {
 	return &bicepCli{
-		cli:           azcli.GetAzCli(ctx),
 		commandRunner: exec.GetCommandRunner(ctx),
 	}
 }
 
 type bicepCli struct {
-	cli           azcli.AzCli
 	commandRunner exec.CommandRunner
 }
 
@@ -53,37 +54,23 @@ func (cli *bicepCli) versionInfo() tools.VersionInfo {
 			Major: 0,
 			Minor: 8,
 			Patch: 9},
-		UpdateCommand: "Run \"az bicep upgrade\"  to upgrade",
+		UpdateCommand: "Visit https://aka.ms/azure-dev/bicep-install to upgrade",
 	}
 }
 
 func (cli *bicepCli) CheckInstalled(ctx context.Context) (bool, error) {
-	hasCli, err := cli.cli.CheckInstalled(ctx)
-	if err != nil || !hasCli {
-		return hasCli, err
-	}
-
-	// When installed, `az bicep install` is a no-op, otherwise it installs the latest version.
-	res, err := cli.runCommand(ctx, "bicep", "install")
-	switch {
-	case isBicepNotFoundMessage(res.Stderr):
+	bicepRes, err := cli.runCommand(ctx, "--version")
+	if errors.Is(err, osexec.ErrNotFound) {
 		return false, nil
-	case err != nil:
-		return false, fmt.Errorf(
-			"failed running az bicep install: %s (%w)",
-			res.String(),
-			err,
-		)
-	}
-
-	bicepRes, err := tools.ExecuteCommand(ctx, "az", "bicep", "version")
-	if err != nil {
+	} else if err != nil {
 		return false, fmt.Errorf("checking %s version: %w", cli.Name(), err)
 	}
-	bicepSemver, err := tools.ExtractSemver(bicepRes)
+
+	bicepSemver, err := tools.ExtractSemver(bicepRes.Stdout)
 	if err != nil {
 		return false, fmt.Errorf("converting to semver version fails: %w", err)
 	}
+
 	updateDetail := cli.versionInfo()
 	if bicepSemver.LT(updateDetail.MinimumVersion) {
 		return false, &tools.ErrSemver{ToolName: cli.Name(), VersionInfo: updateDetail}
@@ -92,34 +79,31 @@ func (cli *bicepCli) CheckInstalled(ctx context.Context) (bool, error) {
 	return true, nil
 }
 
+func getBicepCliPath() (string, error) {
+	if found, err := osexec.LookPath("bicep"); err == nil {
+		return found, nil
+	}
+
+	usr, err := user.Current()
+	if err != nil {
+		return "", osexec.ErrNotFound
+	}
+
+	cmdName := "bicep"
+	if runtime.GOOS == "windows" {
+		cmdName = "bicep.exe"
+	}
+
+	candidate := filepath.Join(usr.HomeDir, ".azure", "bin", cmdName)
+	if _, err := os.Stat(candidate); err == nil {
+		return candidate, nil
+	}
+
+	return "", osexec.ErrNotFound
+}
+
 func (cli *bicepCli) Build(ctx context.Context, file string) (string, error) {
-	sniffCliVersion := func() (string, error) {
-		verRes, err := cli.runCommand(ctx, "version", "--out", "json")
-		if err != nil {
-			return "", fmt.Errorf("failing running az version: %s (%w)", verRes.String(), err)
-		}
-
-		var jsonVer struct {
-			AzureCli string `json:"azure-cli"`
-		}
-
-		if err := json.Unmarshal([]byte(verRes.Stdout), &jsonVer); err != nil {
-			return "", fmt.Errorf("parsing cli version json: %s: %w", verRes.Stdout, err)
-		}
-
-		return jsonVer.AzureCli, nil
-	}
-
-	args := []string{"bicep", "build", "--file", file, "--stdout"}
-
-	// Workaround azure/azure-cli#22621, by passing `--no-restore` to the CLI when
-	// when version 2.37.0 is installed.
-	if ver, err := sniffCliVersion(); err != nil {
-		log.Printf("error sniffing az cli version: %s", err.Error())
-	} else if ver == "2.37.0" {
-		log.Println("appending `--no-restore` to bicep arguments to work around azure/azure-dev#22621")
-		args = append(args, "--no-restore")
-	}
+	args := []string{"build", file, "--stdout"}
 
 	buildRes, err := cli.runCommand(ctx, args...)
 	if err != nil {
@@ -133,7 +117,12 @@ func (cli *bicepCli) Build(ctx context.Context, file string) (string, error) {
 }
 
 func (cli *bicepCli) runCommand(ctx context.Context, args ...string) (exec.RunResult, error) {
-	runArgs := exec.NewRunArgs("az", args...)
+	bicepPath, err := getBicepCliPath()
+	if err != nil {
+		return exec.RunResult{}, err
+	}
+
+	runArgs := exec.NewRunArgs(bicepPath, args...)
 	return cli.commandRunner.Run(ctx, runArgs)
 }
 

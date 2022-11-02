@@ -21,13 +21,14 @@ import (
 )
 
 type loginFlags struct {
-	onlyCheckStatus bool
-	useDeviceCode   bool
-	outputFormat    string
-	tenantId        string
-	clientId        string
-	clientSecret    string
-	global          *internal.GlobalCommandOptions
+	onlyCheckStatus   bool
+	useDeviceCode     bool
+	outputFormat      string
+	tenantID          string
+	clientID          string
+	clientSecret      string
+	clientCertificate string
+	global            *internal.GlobalCommandOptions
 }
 
 func (lf *loginFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
@@ -38,13 +39,18 @@ func (lf *loginFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandO
 		false,
 		"When true, log in by using a device code instead of a browser.",
 	)
-	local.StringVar(&lf.clientId, "client-id", "", "The client id for the service principal to authenticate with.")
+	local.StringVar(&lf.clientID, "client-id", "", "The client id for the service principal to authenticate with.")
 	local.StringVar(
 		&lf.clientSecret,
 		"client-secret",
 		"",
 		"The client secret for the service principal to authenticate with.")
-	local.StringVar(&lf.tenantId, "tenant-id", "", "The tenant id for the service principal to authenticate with.")
+	local.StringVar(
+		&lf.clientCertificate,
+		"client-certificate",
+		"",
+		"The path to the client certificate for the service principal to authenticate with.")
+	local.StringVar(&lf.tenantID, "tenant-id", "", "The tenant id for the service principal to authenticate with.")
 	output.AddOutputFlag(
 		local,
 		&lf.outputFormat,
@@ -104,20 +110,44 @@ const (
 )
 
 func (la *loginAction) Run(ctx context.Context) error {
-	if la.flags.clientId != "" || la.flags.clientSecret != "" || la.flags.tenantId != "" {
-		if la.flags.clientId == "" || la.flags.clientSecret == "" || la.flags.tenantId == "" {
-			return errors.New("must set `client-id`, `client-secret` and `tenant-id` for service principal")
-		}
-	}
-
 	if !la.flags.onlyCheckStatus {
-		if la.flags.clientId != "" {
-			if _, err := la.authManager.LoginWithServicePrincipal(
-				ctx, la.flags.tenantId, la.flags.clientId, la.flags.clientSecret,
-			); err != nil {
-				return fmt.Errorf("logging in: %w", err)
+		if la.flags.clientID != "" || la.flags.tenantID != "" {
+			if la.flags.clientID == "" || la.flags.tenantID == "" {
+				return errors.New("must set both `client-id` and `tenant-id` for service principal login")
 			}
 
+			switch {
+			// only --client-secret was passed
+			case la.flags.clientSecret != "" && la.flags.clientCertificate == "":
+				if _, err := la.authManager.LoginWithServicePrincipalSecret(
+					ctx, la.flags.tenantID, la.flags.clientID, la.flags.clientSecret,
+				); err != nil {
+					return fmt.Errorf("logging in: %w", err)
+				}
+
+			// only --client-certificate was passed
+			case la.flags.clientCertificate != "" && la.flags.clientSecret == "":
+				certFile, err := os.Open(la.flags.clientCertificate)
+				if err != nil {
+					return fmt.Errorf("reading certificate: %w", err)
+				}
+				defer certFile.Close()
+
+				cert, err := io.ReadAll(certFile)
+				if err != nil {
+					return fmt.Errorf("reading certificate: %w", err)
+				}
+
+				if _, err := la.authManager.LoginWithServicePrincipalCertificate(
+					ctx, la.flags.tenantID, la.flags.clientID, cert,
+				); err != nil {
+					return fmt.Errorf("logging in: %w", err)
+				}
+
+			// some other combination was set.
+			default:
+				return errors.New("must set exactly one of `client-secret` or `client-certificate` for service principal")
+			}
 		} else {
 			useDeviceCode := la.flags.useDeviceCode || os.Getenv(CodespacesEnvVarName) == "true" ||
 				os.Getenv(RemoteContainersEnvVarName) == "true"

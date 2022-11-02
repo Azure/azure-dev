@@ -41,6 +41,21 @@ var cLoginScopes = []string{"https://management.azure.com//.default"}
 // authDirectoryFileMode is the file mode used to create the folder that is used for auth folder and sub-folders.
 const authDirectoryFileMode = 0700
 
+// Manager manages the authentication system of azd. It allows a user to log in, either as a user principal or service
+// principal. Manager stores information so that the user can stay logged in across invocations of the CLI. When logged in
+// as a user (either interactively or via a device code flow), we provide a durable cache to MSAL which is used to cache
+// information to allow silent logins across process runs. This cache is stored inside the user's home directory, ACL'd such
+// that it can only be read by the current user.  In addition, on Windows, this cache is encrypted, using CryptProtectData.
+// The home account id of the signed in user is stored as a property under [cCurrentUserKey]. This behavior matches the
+// AZ CLI.
+//
+// When logged in as a service principal, the same cache strategy that backed the MSAL cache is used to store the private
+// key or secret and the public components (the client ID and tenant ID) are stored under  [cCurrentUserKey].
+//
+// Logging out removes this cached authentication data.
+//
+// You can configure azd to ignore its native credential system and instead delegate to AZ CLI (useful for cases where azd
+// does not yet support your preferred method of authentication by setting [cUseLegacyAzCliAuthKey] in config to true.
 type Manager struct {
 	publicClient    *public.Client
 	configManager   config.Manager
@@ -174,7 +189,7 @@ func (m *Manager) LoginWithDeviceCode(ctx context.Context, deviceCodeWriter io.W
 
 }
 
-func (m *Manager) LoginWithServicePrincipal(
+func (m *Manager) LoginWithServicePrincipalSecret(
 	ctx context.Context, tenantId, clientId, clientSecret string,
 ) (azcore.TokenCredential, error) {
 	cred, err := azidentity.NewClientSecretCredential(tenantId, clientId, clientSecret, nil)

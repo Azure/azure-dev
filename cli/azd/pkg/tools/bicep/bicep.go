@@ -5,14 +5,14 @@ package bicep
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"log"
-	"regexp"
+	"os"
+	"os/user"
+	"path/filepath"
+	"runtime"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/blang/semver/v4"
 )
 
@@ -23,20 +23,14 @@ type BicepCli interface {
 
 func NewBicepCli(ctx context.Context) BicepCli {
 	return &bicepCli{
-		cli:           azcli.GetAzCli(ctx),
+		commandPath:   "bicep",
 		commandRunner: exec.GetCommandRunner(ctx),
 	}
 }
 
 type bicepCli struct {
-	cli           azcli.AzCli
+	commandPath   string
 	commandRunner exec.CommandRunner
-}
-
-var isBicepNotFoundRegex = regexp.MustCompile(`Bicep CLI not found\.`)
-
-func isBicepNotFoundMessage(s string) bool {
-	return isBicepNotFoundRegex.MatchString(s)
 }
 
 func (cli *bicepCli) Name() string {
@@ -53,37 +47,38 @@ func (cli *bicepCli) versionInfo() tools.VersionInfo {
 			Major: 0,
 			Minor: 8,
 			Patch: 9},
-		UpdateCommand: "Run \"az bicep upgrade\"  to upgrade",
+		UpdateCommand: `Run 'az bicep upgrade or Visit https://learn.microsoft.com/en-us/azure/azure-resource-manager/bicep/install to upgrade`,
 	}
 }
 
 func (cli *bicepCli) CheckInstalled(ctx context.Context) (bool, error) {
-	hasCli, err := cli.cli.CheckInstalled(ctx)
-	if err != nil || !hasCli {
-		return hasCli, err
+	// First, check if tool is found in path
+	// This typically should return true for standalone install and false for `az` bundled install
+	found, err := tools.ToolInPath("bicep")
+	if err != nil {
+		return false, err
 	}
 
-	// When installed, `az bicep install` is a no-op, otherwise it installs the latest version.
-	res, err := cli.runCommand(ctx, "bicep", "install")
-	switch {
-	case isBicepNotFoundMessage(res.Stderr):
-		return false, nil
-	case err != nil:
-		return false, fmt.Errorf(
-			"failed running az bicep install: %s (%w)",
-			res.String(),
-			err,
-		)
+	// Next, check in other known locations (ex. Azure bin)
+	if !found {
+		bicepPath, err := findBicepPath()
+		if err != nil {
+			return false, err
+		}
+
+		cli.commandPath = *bicepPath
 	}
 
-	bicepRes, err := tools.ExecuteCommand(ctx, "az", "bicep", "version")
+	bicepRes, err := cli.runCommand(ctx, "--version")
 	if err != nil {
 		return false, fmt.Errorf("checking %s version: %w", cli.Name(), err)
 	}
-	bicepSemver, err := tools.ExtractSemver(bicepRes)
+
+	bicepSemver, err := tools.ExtractSemver(bicepRes.Stdout)
 	if err != nil {
 		return false, fmt.Errorf("converting to semver version fails: %w", err)
 	}
+
 	updateDetail := cli.versionInfo()
 	if bicepSemver.LT(updateDetail.MinimumVersion) {
 		return false, &tools.ErrSemver{ToolName: cli.Name(), VersionInfo: updateDetail}
@@ -93,33 +88,33 @@ func (cli *bicepCli) CheckInstalled(ctx context.Context) (bool, error) {
 }
 
 func (cli *bicepCli) Build(ctx context.Context, file string) (string, error) {
-	sniffCliVersion := func() (string, error) {
-		verRes, err := cli.runCommand(ctx, "version", "--out", "json")
-		if err != nil {
-			return "", fmt.Errorf("failing running az version: %s (%w)", verRes.String(), err)
-		}
+	// sniffCliVersion := func() (string, error) {
+	// 	verRes, err := cli.runCommand(ctx, "--version", "--out", "json")
+	// 	if err != nil {
+	// 		return "", fmt.Errorf("failing running az version: %s (%w)", verRes.String(), err)
+	// 	}
 
-		var jsonVer struct {
-			AzureCli string `json:"azure-cli"`
-		}
+	// 	var jsonVer struct {
+	// 		AzureCli string `json:"azure-cli"`
+	// 	}
 
-		if err := json.Unmarshal([]byte(verRes.Stdout), &jsonVer); err != nil {
-			return "", fmt.Errorf("parsing cli version json: %s: %w", verRes.Stdout, err)
-		}
+	// 	if err := json.Unmarshal([]byte(verRes.Stdout), &jsonVer); err != nil {
+	// 		return "", fmt.Errorf("parsing cli version json: %s: %w", verRes.Stdout, err)
+	// 	}
 
-		return jsonVer.AzureCli, nil
-	}
+	// 	return jsonVer.AzureCli, nil
+	// }
 
-	args := []string{"bicep", "build", "--file", file, "--stdout"}
+	args := []string{"build", file, "--stdout"}
 
 	// Workaround azure/azure-cli#22621, by passing `--no-restore` to the CLI when
 	// when version 2.37.0 is installed.
-	if ver, err := sniffCliVersion(); err != nil {
-		log.Printf("error sniffing az cli version: %s", err.Error())
-	} else if ver == "2.37.0" {
-		log.Println("appending `--no-restore` to bicep arguments to work around azure/azure-dev#22621")
-		args = append(args, "--no-restore")
-	}
+	// if ver, err := sniffCliVersion(); err != nil {
+	// 	log.Printf("error sniffing az cli version: %s", err.Error())
+	// } else if ver == "2.37.0" {
+	// 	log.Println("appending `--no-restore` to bicep arguments to work around azure/azure-dev#22621")
+	// 	args = append(args, "--no-restore")
+	// }
 
 	buildRes, err := cli.runCommand(ctx, args...)
 	if err != nil {
@@ -133,7 +128,7 @@ func (cli *bicepCli) Build(ctx context.Context, file string) (string, error) {
 }
 
 func (cli *bicepCli) runCommand(ctx context.Context, args ...string) (exec.RunResult, error) {
-	runArgs := exec.NewRunArgs("az", args...)
+	runArgs := exec.NewRunArgs(cli.commandPath, args...)
 	return cli.commandRunner.Run(ctx, runArgs)
 }
 
@@ -150,4 +145,28 @@ func GetBicepCli(ctx context.Context) BicepCli {
 	}
 
 	return cli
+}
+
+func findBicepPath() (*string, error) {
+	var bicepPath string
+
+	user, err := user.Current()
+	if err != nil {
+		return nil, fmt.Errorf("failed getting current user: %w", err)
+	}
+
+	if runtime.GOOS == "windows" {
+		// When installed with 'az' it is inside the azure bin folder
+		azureBin := filepath.Join(user.HomeDir, ".azure", "bin")
+		bicepPath = filepath.Join(azureBin, "bicep.exe")
+	} else {
+		bicepPath = "/usr/local/bin/bicep"
+	}
+
+	_, err = os.Stat(bicepPath)
+	if err != nil {
+		return nil, fmt.Errorf("cannot find bicep path: %w", err)
+	}
+
+	return &bicepPath, nil
 }

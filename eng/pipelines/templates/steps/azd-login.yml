@@ -8,10 +8,13 @@ steps:
         ${{ parameters.SubscriptionConfiguration }}
       '@ | ConvertFrom-Json -AsHashtable;
 
-      ./azd login `
-        --client-id "$($subscriptionConfiguration.TestApplicationId)" `
-        --client-secret "$($subscriptionConfiguration.TestApplicationSecret)" `
-        --tenant-id "$($subscriptionConfiguration.TenantId)"
+# TODO(ellismg): Remove this before merging, want a run with it on to see how things behave.
+      ./azd config set auth.useLegacyAzCliAuth true
+
+#     ./azd login `
+#       --client-id "$($subscriptionConfiguration.TestApplicationId)" `
+#       --client-secret "$($subscriptionConfiguration.TestApplicationSecret)" `
+#       --tenant-id "$($subscriptionConfiguration.TenantId)"
         
     workingDirectory: ${{ parameters.AzdDirectory }}
     condition: and(succeeded(), ne(variables['Skip.LiveTest'], 'true'))

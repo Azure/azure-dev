@@ -132,7 +132,7 @@ jobs:
             git config --global credential.helper "store"
             cd templates/tests/
             curl -fsSL https://aka.ms/install-azd.sh | bash -s -- --version 'daily' --verbose
-            npm init playwright@latest
+            npm init playwright@latest -y
             chmod +x ./test-templates.sh
             ./test-templates.sh \
               -e '$(EnvPrefixName)' \

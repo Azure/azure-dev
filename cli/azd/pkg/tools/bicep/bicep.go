@@ -12,7 +12,6 @@ import (
 	"os/user"
 	"path/filepath"
 	"regexp"
-	"runtime"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
@@ -31,6 +30,7 @@ func NewBicepCli(ctx context.Context) BicepCli {
 }
 
 type bicepCli struct {
+	bicepPath     string
 	commandRunner exec.CommandRunner
 }
 
@@ -79,9 +79,14 @@ func (cli *bicepCli) CheckInstalled(ctx context.Context) (bool, error) {
 	return true, nil
 }
 
-func getBicepCliPath() (string, error) {
-	if found, err := osexec.LookPath("bicep"); err == nil {
-		return found, nil
+func (cli *bicepCli) getBicepCliPath() (string, error) {
+	if cli.bicepPath != "" {
+		return cli.bicepPath, nil
+	}
+
+	if bicepPath, err := osexec.LookPath(cBicepCommandName); err == nil {
+		cli.bicepPath = bicepPath
+		return cli.bicepPath, nil
 	}
 
 	usr, err := user.Current()
@@ -89,14 +94,10 @@ func getBicepCliPath() (string, error) {
 		return "", osexec.ErrNotFound
 	}
 
-	cmdName := "bicep"
-	if runtime.GOOS == "windows" {
-		cmdName = "bicep.exe"
-	}
-
-	candidate := filepath.Join(usr.HomeDir, ".azure", "bin", cmdName)
-	if _, err := os.Stat(candidate); err == nil {
-		return candidate, nil
+	bicepPath := filepath.Join(usr.HomeDir, ".azure", "bin", cBicepCommandName)
+	if _, err := os.Stat(bicepPath); err == nil {
+		cli.bicepPath = bicepPath
+		return cli.bicepPath, nil
 	}
 
 	return "", osexec.ErrNotFound
@@ -117,7 +118,7 @@ func (cli *bicepCli) Build(ctx context.Context, file string) (string, error) {
 }
 
 func (cli *bicepCli) runCommand(ctx context.Context, args ...string) (exec.RunResult, error) {
-	bicepPath, err := getBicepCliPath()
+	bicepPath, err := cli.getBicepCliPath()
 	if err != nil {
 		return exec.RunResult{}, err
 	}

@@ -10,7 +10,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -109,34 +108,26 @@ func (m *Manager) CredentialForCurrentUser(ctx context.Context) (azcore.TokenCre
 		}
 	}
 
-	currentUser, has := cfg.Get(cCurrentUserKey)
-	if !has {
+	currentUser, err := readUserProperties(cfg)
+	if err != nil {
 		return nil, ErrNoCurrentUser
 	}
 
-	currentUserData := currentUser.(map[string]any)
-
-	if _, has := currentUserData["homeId"]; has {
-		currentUserHomeId := currentUserData["homeId"].(string)
-
+	if currentUser.HomeAccountID != nil {
 		for _, account := range m.publicClient.Accounts() {
-			if account.HomeAccountID == currentUserHomeId {
+			if account.HomeAccountID == *currentUser.HomeAccountID {
 				return newAzdCredential(m.publicClient, &account), nil
 			}
-
-			log.Printf("ignoring cached account with home id '%s', does not match '%s'",
-				account.HomeAccountID, currentUserHomeId)
 		}
-	} else if _, has := currentUserData["clientId"]; has {
-		clientId := currentUserData["clientId"].(string)
-		tenantId := currentUserData["tenantId"].(string)
-
-		ps, err := m.loadSecret(persistedSecretLookupKey(tenantId, clientId))
+	} else if currentUser.TenantID != nil && currentUser.ClientID != nil {
+		ps, err := m.loadSecret(persistedSecretLookupKey(*currentUser.TenantID, *currentUser.ClientID))
 		if err != nil {
 			return nil, fmt.Errorf("loading secret: %v: %w", err, ErrNoCurrentUser)
 		}
 
-		cred, err := azidentity.NewClientSecretCredential(tenantId, clientId, *ps.ClientSecret, nil)
+		cred, err := azidentity.NewClientSecretCredential(
+			*currentUser.TenantID, *currentUser.ClientID, *ps.ClientSecret, nil,
+		)
 		if err != nil {
 			return nil, fmt.Errorf("creating credential: %v: %w", err, ErrNoCurrentUser)
 		}
@@ -250,15 +241,15 @@ func (m *Manager) Logout(ctx context.Context) error {
 		return fmt.Errorf("loading config: %w", err)
 	}
 
-	if cur, has := cfg.Get(cCurrentUserKey); has {
-		props := cur.(map[string]any)
+	// we are fine to ignore the error here, it just means there's nothing to clean up.
+	currentUser, _ := readUserProperties(cfg)
 
+	if currentUser != nil {
 		// When logged in as a service principal, remove the stored credential
-		if _, ok := props["clientId"]; ok {
-			clientId := (props["clientId"]).(string)
-			tenantId := (props["tenantId"]).(string)
-
-			if err := m.saveLoginForServicePrincipal(tenantId, clientId, &persistedSecret{}); err != nil {
+		if currentUser.TenantID != nil && currentUser.ClientID != nil {
+			if err := m.saveLoginForServicePrincipal(
+				*currentUser.TenantID, *currentUser.ClientID, &persistedSecret{},
+			); err != nil {
 				return fmt.Errorf("removing authentication secrets: %w", err)
 			}
 		}
@@ -276,7 +267,7 @@ func (m *Manager) Logout(ctx context.Context) error {
 }
 
 func (m *Manager) saveLoginForPublicClient(res public.AuthResult) error {
-	if err := m.saveCurrentUserProperties(map[string]any{"homeId": res.Account.HomeAccountID}); err != nil {
+	if err := m.saveUserProperties(&userProperties{HomeAccountID: &res.Account.HomeAccountID}); err != nil {
 		return err
 	}
 
@@ -288,7 +279,7 @@ func (m *Manager) saveLoginForServicePrincipal(tenantId, clientId string, secret
 		return err
 	}
 
-	if err := m.saveCurrentUserProperties(map[string]any{"tenantId": tenantId, "clientId": clientId}); err != nil {
+	if err := m.saveUserProperties(&userProperties{ClientID: &clientId, TenantID: &tenantId}); err != nil {
 		return err
 	}
 
@@ -303,18 +294,14 @@ func (m *Manager) getSignedInAccount(ctx context.Context) (*public.Account, erro
 		return nil, fmt.Errorf("fetching current user: %w", err)
 	}
 
-	currentUser, has := cfg.Get(cCurrentUserKey)
-	if !has {
+	currentUser, err := readUserProperties(cfg)
+	if err != nil {
 		return nil, ErrNoCurrentUser
 	}
 
-	currentUserData := currentUser.(map[string]any)
-
-	if _, has := currentUserData["homeId"]; has {
-		currentUserHomeId := currentUserData["homeId"].(string)
-
+	if currentUser.HomeAccountID != nil {
 		for _, account := range m.publicClient.Accounts() {
-			if account.HomeAccountID == currentUserHomeId {
+			if account.HomeAccountID == *currentUser.HomeAccountID {
 				return &account, nil
 			}
 		}
@@ -323,14 +310,14 @@ func (m *Manager) getSignedInAccount(ctx context.Context) (*public.Account, erro
 	return nil, nil
 }
 
-// saveCurrentUserProperties writes the properties under [cCurrentUserKey], overwriting any existing value.
-func (m *Manager) saveCurrentUserProperties(properties map[string]any) error {
+// saveUserProperties writes the properties under [cCurrentUserKey], overwriting any existing value.
+func (m *Manager) saveUserProperties(user *userProperties) error {
 	cfg, err := config.GetUserConfig(m.configManager)
 	if err != nil {
 		return fmt.Errorf("fetching current user: %w", err)
 	}
 
-	if err := cfg.Set(cCurrentUserKey, properties); err != nil {
+	if err := cfg.Set(cCurrentUserKey, *user); err != nil {
 		return fmt.Errorf("setting account id in config: %w", err)
 	}
 
@@ -378,4 +365,32 @@ type persistedSecret struct {
 	// The bytes of the client certificate, which can be presented to azidentity.ParseCertificates, encoded as a
 	// base64 string.
 	ClientCertificate *string `json:"clientCertificate,omitempty"`
+}
+
+// userProperties is the model type for the value we store in the user's config. It is logically a discriminated union of
+// either an home account id (when logging in using a public client) or a client and tenant id (when using a confidential
+// client).
+type userProperties struct {
+	HomeAccountID *string `json:"homeAccountId,omitempty"`
+	ClientID      *string `json:"clientId,omitempty"`
+	TenantID      *string `json:"tenantId,omitempty"`
+}
+
+func readUserProperties(cfg config.Config) (*userProperties, error) {
+	currentUser, has := cfg.Get(cCurrentUserKey)
+	if !has {
+		return nil, ErrNoCurrentUser
+	}
+
+	data, err := json.Marshal(currentUser)
+	if err != nil {
+		return nil, err
+	}
+
+	user := userProperties{}
+	if err := json.Unmarshal(data, &user); err != nil {
+		return nil, err
+	}
+
+	return &user, nil
 }

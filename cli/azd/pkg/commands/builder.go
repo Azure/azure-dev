@@ -43,7 +43,7 @@ func RegisterDependenciesInCtx(
 		writer = colorable.NewNonColorable(writer)
 	}
 
-	authManager, err := auth.NewManager(writer, config.NewManager())
+	authManager, err := auth.NewManager(config.NewManager())
 	if err != nil {
 		return ctx, fmt.Errorf("creating auth manager: %w", err)
 	}
@@ -53,11 +53,13 @@ func RegisterDependenciesInCtx(
 	if _, has := cmd.Annotations[RequireNoLoginAnnotation]; has {
 		credential = &panicCredential{}
 	} else {
-		cred, err := authManager.GetCredentialForCurrentUser(ctx)
+		cred, err := authManager.CredentialForCurrentUser(ctx)
 		if err != nil {
 			return ctx, fmt.Errorf("fetching current user: %w", err)
 		}
-		credential = cred
+		if _, err := auth.EnsureLoggedInCredential(ctx, cred); err != nil {
+			return ctx, err
+		}
 	}
 
 	azCliArgs := azcli.NewAzCliArgs{

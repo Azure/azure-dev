@@ -38,7 +38,7 @@ func initDeployAction(cmd *cobra.Command, o *internal.GlobalCommandOptions, flag
 	console := newConsoleFromOptions(o, formatter, writer, cmd)
 	commandRunner := newCommandRunnerFromConsole(console)
 	manager := config.NewManager()
-	authManager, err := auth.NewManager(writer, manager)
+	authManager, err := auth.NewManager(manager)
 	if err != nil {
 		return nil, err
 	}
@@ -67,7 +67,7 @@ func initInitAction(cmd *cobra.Command, o *internal.GlobalCommandOptions, flags 
 	writer := newWriter(cmd)
 	console := newConsoleFromOptions(o, formatter, writer, cmd)
 	commandRunner := newCommandRunnerFromConsole(console)
-	authManager, err := auth.NewManager(writer, manager)
+	authManager, err := auth.NewManager(manager)
 	if err != nil {
 		return nil, err
 	}
@@ -95,7 +95,7 @@ func initLoginAction(cmd *cobra.Command, o *internal.GlobalCommandOptions, flags
 	}
 	writer := newWriter(cmd)
 	manager := config.NewManager()
-	authManager, err := auth.NewManager(writer, manager)
+	authManager, err := auth.NewManager(manager)
 	if err != nil {
 		return nil, err
 	}
@@ -105,9 +105,8 @@ func initLoginAction(cmd *cobra.Command, o *internal.GlobalCommandOptions, flags
 }
 
 func initLogoutAction(cmd *cobra.Command, o *internal.GlobalCommandOptions, flags struct{}, args []string) (actions.Action, error) {
-	writer := newWriter(cmd)
 	manager := config.NewManager()
-	authManager, err := auth.NewManager(writer, manager)
+	authManager, err := auth.NewManager(manager)
 	if err != nil {
 		return nil, err
 	}
@@ -115,6 +114,7 @@ func initLogoutAction(cmd *cobra.Command, o *internal.GlobalCommandOptions, flag
 	if err != nil {
 		return nil, err
 	}
+	writer := newWriter(cmd)
 	cmdLogoutAction := newLogoutAction(authManager, formatter, writer)
 	return cmdLogoutAction, nil
 }
@@ -132,7 +132,7 @@ func initUpAction(cmd *cobra.Command, o *internal.GlobalCommandOptions, flags up
 	writer := newWriter(cmd)
 	console := newConsoleFromOptions(o, formatter, writer, cmd)
 	commandRunner := newCommandRunnerFromConsole(console)
-	authManager, err := auth.NewManager(writer, manager)
+	authManager, err := auth.NewManager(manager)
 	if err != nil {
 		return nil, err
 	}
@@ -175,7 +175,7 @@ func initMonitorAction(cmd *cobra.Command, o *internal.GlobalCommandOptions, fla
 	console := newConsoleFromOptions(o, formatter, writer, cmd)
 	commandRunner := newCommandRunnerFromConsole(console)
 	manager := config.NewManager()
-	authManager, err := auth.NewManager(writer, manager)
+	authManager, err := auth.NewManager(manager)
 	if err != nil {
 		return nil, err
 	}
@@ -242,7 +242,7 @@ func initInfraCreateAction(cmd *cobra.Command, o *internal.GlobalCommandOptions,
 	console := newConsoleFromOptions(o, formatter, writer, cmd)
 	commandRunner := newCommandRunnerFromConsole(console)
 	manager := config.NewManager()
-	authManager, err := auth.NewManager(writer, manager)
+	authManager, err := auth.NewManager(manager)
 	if err != nil {
 		return nil, err
 	}
@@ -268,7 +268,7 @@ func initInfraDeleteAction(cmd *cobra.Command, o *internal.GlobalCommandOptions,
 	console := newConsoleFromOptions(o, formatter, writer, cmd)
 	commandRunner := newCommandRunnerFromConsole(console)
 	manager := config.NewManager()
-	authManager, err := auth.NewManager(writer, manager)
+	authManager, err := auth.NewManager(manager)
 	if err != nil {
 		return nil, err
 	}
@@ -294,7 +294,7 @@ func initEnvSetAction(cmd *cobra.Command, o *internal.GlobalCommandOptions, flag
 	console := newConsoleFromOptions(o, formatter, writer, cmd)
 	commandRunner := newCommandRunnerFromConsole(console)
 	manager := config.NewManager()
-	authManager, err := auth.NewManager(writer, manager)
+	authManager, err := auth.NewManager(manager)
 	if err != nil {
 		return nil, err
 	}
@@ -343,7 +343,7 @@ func initEnvNewAction(cmd *cobra.Command, o *internal.GlobalCommandOptions, flag
 	console := newConsoleFromOptions(o, formatter, writer, cmd)
 	commandRunner := newCommandRunnerFromConsole(console)
 	manager := config.NewManager()
-	authManager, err := auth.NewManager(writer, manager)
+	authManager, err := auth.NewManager(manager)
 	if err != nil {
 		return nil, err
 	}
@@ -369,7 +369,7 @@ func initEnvRefreshAction(cmd *cobra.Command, o *internal.GlobalCommandOptions, 
 	console := newConsoleFromOptions(o, formatter, writer, cmd)
 	commandRunner := newCommandRunnerFromConsole(console)
 	manager := config.NewManager()
-	authManager, err := auth.NewManager(writer, manager)
+	authManager, err := auth.NewManager(manager)
 	if err != nil {
 		return nil, err
 	}
@@ -395,7 +395,7 @@ func initEnvGetValuesAction(cmd *cobra.Command, o *internal.GlobalCommandOptions
 	console := newConsoleFromOptions(o, formatter, writer, cmd)
 	commandRunner := newCommandRunnerFromConsole(console)
 	manager := config.NewManager()
-	authManager, err := auth.NewManager(writer, manager)
+	authManager, err := auth.NewManager(manager)
 	if err != nil {
 		return nil, err
 	}

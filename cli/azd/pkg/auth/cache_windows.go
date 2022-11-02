@@ -51,7 +51,7 @@ type encryptedCache struct {
 func (c encryptedCache) Export(cache cache.Marshaler, key string) error {
 	res, err := cache.Marshal()
 	if err != nil {
-		return fmt.Errorf("failed to marshal cache: %v", err)
+		return fmt.Errorf("failed to marshal cache: %w", err)
 	}
 
 	if len(res) == 0 {
@@ -67,7 +67,7 @@ func (c encryptedCache) Export(cache cache.Marshaler, key string) error {
 	var encrypted windows.DataBlob
 
 	if err := windows.CryptProtectData(&plaintext, nil, nil, uintptr(0), nil, 0, &encrypted); err != nil {
-		return fmt.Errorf("failed to encrypt data: %v", err)
+		return fmt.Errorf("failed to encrypt data: %w", err)
 	}
 
 	encryptedSlice := unsafe.Slice(encrypted.Data, encrypted.Size)
@@ -76,7 +76,7 @@ func (c encryptedCache) Export(cache cache.Marshaler, key string) error {
 	copy(cs, encryptedSlice)
 
 	if _, err := windows.LocalFree(windows.Handle(unsafe.Pointer(encrypted.Data))); err != nil {
-		return fmt.Errorf("failed to free encrypted data: %v", err)
+		return fmt.Errorf("failed to free encrypted data: %w", err)
 	}
 
 	return c.inner.Export(&fixedMarshaller{

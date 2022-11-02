@@ -11,12 +11,14 @@ import (
 )
 
 func newCache(root string) cache.ExportReplace {
-	return &memoryCache{
-		cache: make(map[string][]byte),
-		inner: &fileCache{
-			prefix: "cache",
-			root:   root,
-			ext:    "json",
+	return &errorDroppingCacheAdapter{
+		inner: &memoryCache{
+			cache: make(map[string][]byte),
+			inner: &fileCache{
+				prefix: "cache",
+				root:   root,
+				ext:    "json",
+			},
 		},
 	}
 }

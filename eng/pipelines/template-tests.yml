@@ -131,33 +131,6 @@ jobs:
             echo "https://azure-sdk:$(azuresdk-github-pat)@github.com" > ~/.git-credentials
             git config --global credential.helper "store"
             cd templates/tests/
-            curl -fsSL https://deb.nodesource.com/setup_19.x | sudo -E bash - &&\
-            sudo apt-get install -y nodejs
-            wget https://packages.microsoft.com/config/ubuntu/21.04/packages-microsoft-prod.deb -O packages-microsoft-prod.deb
-            sudo dpkg -i packages-microsoft-prod.deb
-            rm packages-microsoft-prod.deb
-            sudo apt-get update && sudo apt-get install -y dotnet-sdk-6.0
-            sudo apt-get update && sudo apt-get install -y gnupg software-properties-common
-            wget -O- https://apt.releases.hashicorp.com/gpg | \
-            gpg --dearmor | \
-            sudo tee /usr/share/keyrings/hashicorp-archive-keyring.gpg
-            gpg --no-default-keyring \
-            --keyring /usr/share/keyrings/hashicorp-archive-keyring.gpg \
-            --fingerprint
-            echo "deb [signed-by=/usr/share/keyrings/hashicorp-archive-keyring.gpg] \
-            https://apt.releases.hashicorp.com $(lsb_release -cs) main" | \
-            sudo tee /etc/apt/sources.list.d/hashicorp.list
-            sudo apt update && sudo apt-get install terraform
-            az bicep install --version v0.8.9 
-            ubuntu_release=`lsb_release -rs`
-            wget https://packages.microsoft.com/config/ubuntu/20.04/packages-microsoft-prod.deb -O packages-microsoft-prod.deb
-            sudo dpkg -i packages-microsoft-prod.deb
-            sudo apt-get install apt-transport-https -y
-            sudo apt-get update
-            sudo apt-get install msopenjdk-17 -y
-            curl -fsSL https://download.docker.com/linux/ubuntu/gpg | apt-key add - \
-            && add-apt-repository "deb [arch=amd64] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" \
-            && apt-get update && apt-get install -y docker-ce-cli
             curl -fsSL https://aka.ms/install-azd.sh | bash -s -- --version 'daily' --verbose
             chmod +x ./test-templates.sh
             ./test-templates.sh \

@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -114,7 +115,8 @@ func (m *Manager) CredentialForCurrentUser(ctx context.Context) (azcore.TokenCre
 	}
 
 	if useLegacyAuth, has := cfg.Get(cUseLegacyAzCliAuthKey); has {
-		if use, err := strconv.ParseBool(useLegacyAuth.(string)); err != nil && use {
+		if use, err := strconv.ParseBool(useLegacyAuth.(string)); err == nil && use {
+			log.Printf("delegating auth to az since %s is set to true", cUseLegacyAzCliAuthKey)
 			cred, err := azidentity.NewAzureCLICredential(nil)
 			if err != nil {
 				return nil, fmt.Errorf("failed to create credential: %v: %w", err, ErrNoCurrentUser)

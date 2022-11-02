@@ -1,6 +1,7 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
+// Package cli_test contains end-to-end tests for azd.
 package cli_test
 
 import (
@@ -37,7 +38,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/test/azdcli"
-	"github.com/blang/semver/v4"
 	"github.com/joho/godotenv"
 	"github.com/sethvargo/go-retry"
 	"github.com/stretchr/testify/assert"
@@ -62,35 +62,6 @@ func Test_CLI_Login_FailsIfNoAzCliIsMissing(t *testing.T) {
 	out, err := cli.RunCommandWithStdIn(ctx, "", "login")
 	require.Error(t, err)
 	require.Contains(t, out, "Azure CLI is not installed, please see https://aka.ms/azure-dev/azure-cli-install to install")
-}
-
-func Test_CLI_Version_PrintsVersion(t *testing.T) {
-	ctx, cancel := newTestContext(t)
-	defer cancel()
-
-	cli := azdcli.NewCLI(t)
-	textOutput, err := cli.RunCommand(ctx, "version")
-	require.NoError(t, err)
-
-	jsonOutput, err := cli.RunCommand(ctx, "version", "--output", "json")
-	require.NoError(t, err)
-
-	versionJson := &internal.VersionSpec{}
-	err = json.Unmarshal([]byte(jsonOutput), versionJson)
-	require.NoError(t, err)
-
-	_, err = semver.Parse(versionJson.Azd.Version)
-	require.NoError(t, err)
-
-	expected := internal.Version
-	if os.Getenv("GITHUB_RUN_NUMBER") != "" {
-		// In CI, use CLI_VERSION as the expected version
-		expected = os.Getenv("CLI_VERSION")
-		require.NotEmpty(t, expected)
-	}
-
-	require.Contains(t, textOutput, fmt.Sprintf("azd version %s", expected))
-	require.Equal(t, expected, versionJson.Azd.Version)
 }
 
 func Test_CLI_Init_FailsIfAzCliIsMissing(t *testing.T) {

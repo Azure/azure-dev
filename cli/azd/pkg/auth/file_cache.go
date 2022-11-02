@@ -15,6 +15,8 @@ import (
 
 const cacheFileFileMode = 0600
 
+// fileCache implements exportReplaceWithErrors by storing the data to disk.  The cache key is used as part of the
+// filename for the stored object. Files are stored in [root] and are named [prefix][key].[ext].
 type fileCache struct {
 	prefix string
 	root   string
@@ -92,5 +94,5 @@ func (c *fileCache) pathForCache(key string) string {
 }
 
 func (c *fileCache) pathForLock(key string) string {
-	return filepath.Join(c.root, fmt.Sprintf("%s%s.lock", c.prefix, key))
+	return filepath.Join(c.root, fmt.Sprintf("%s%s.%s.lock", c.prefix, key, c.ext))
 }

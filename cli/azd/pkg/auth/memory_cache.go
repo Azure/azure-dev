@@ -23,7 +23,7 @@ func (f *fixedMarshaller) Unmarshal(cache []byte) error {
 	return nil
 }
 
-// memoryCache is a simple memory cache that implements cache.ExportReplace. During export, if the cache
+// memoryCache is a simple memory cache that implements exportReplaceWithErrors. During export, if the cache
 // contents has not changed, the nested cache is not notified of a change.
 type memoryCache struct {
 	cache map[string][]byte

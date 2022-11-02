@@ -25,7 +25,6 @@ func newAzdCredential(client *public.Client, account *public.Account) *azdCreden
 
 func (c *azdCredential) GetToken(ctx context.Context, options policy.TokenRequestOptions) (azcore.AccessToken, error) {
 	res, err := c.client.AcquireTokenSilent(ctx, options.Scopes, public.WithSilentAccount(*c.account))
-
 	if err != nil {
 		return azcore.AccessToken{}, err
 	}

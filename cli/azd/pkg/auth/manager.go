@@ -32,7 +32,7 @@ const cAZD_CLIENT_ID = "04b07795-8ddb-461a-bbee-02f9e1bf7b46"
 const cCurrentUserKey = "auth.account.currentUser"
 
 // cUseAzCli is the key we use in config to denote that we want to use the az CLI for authentication instead of managing
-// it ourselves. The value should be a string as specified by [strconv.ParseBool]
+// it ourselves. The value should be a string as specified by [strconv.ParseBool].
 const cUseLegacyAzCliAuthKey = "auth.useLegacyAzCliAuth"
 
 // The scopes to request when acquiring our token during the login flow.

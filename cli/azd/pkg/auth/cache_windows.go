@@ -42,7 +42,7 @@ func newCredentialCache(root string) exportReplaceWithErrors {
 	}
 }
 
-// encryptedCache is a cache.ExportReplace that wraps an existing ExportReplaceWithErrors, encrypting and decrypting the
+// encryptedCache is a exportReplaceWithErrors that wraps an existing exportReplaceWithErrors, encrypting and decrypting the
 // cached value with CryptProtectData
 type encryptedCache struct {
 	inner exportReplaceWithErrors

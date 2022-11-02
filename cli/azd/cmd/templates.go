@@ -49,7 +49,7 @@ func templatesListCmdDesign(global *internal.GlobalCommandOptions) (*cobra.Comma
 		Short:   "List templates.",
 		Aliases: []string{"ls"},
 		Annotations: map[string]string{
-			auth.RequireNoLoginAnnotation: "true",
+			commands.RequireNoLoginAnnotation: "true",
 		},
 	}
 
@@ -122,7 +122,7 @@ func templatesShowCmdDesign(rootOptions *internal.GlobalCommandOptions) (*cobra.
 		Use:   "show <template>",
 		Short: "Show the template details.",
 		Annotations: map[string]string{
-			auth.RequireNoLoginAnnotation: "true",
+			commands.RequireNoLoginAnnotation: "true",
 		},
 	}
 	output.AddOutputParam(cmd, []output.Format{output.JsonFormat, output.TableFormat}, output.TableFormat)

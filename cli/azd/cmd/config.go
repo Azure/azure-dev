@@ -60,7 +60,7 @@ func configListCmdDesign(global *internal.GlobalCommandOptions) (*cobra.Command,
 		Short: "Lists all configuration values",
 		Long:  `Lists all configuration values in ` + userConfigPath + `.`,
 		Annotations: map[string]string{
-			auth.RequireNoLoginAnnotation: "true",
+			commands.RequireNoLoginAnnotation: "true",
 		},
 	}
 
@@ -114,7 +114,7 @@ func configGetCmdDesign(global *internal.GlobalCommandOptions) (*cobra.Command, 
 		Short: "Gets a configuration",
 		Long:  `Gets a configuration in ` + userConfigPath + `.`,
 		Annotations: map[string]string{
-			auth.RequireNoLoginAnnotation: "true",
+			commands.RequireNoLoginAnnotation: "true",
 		},
 	}
 
@@ -183,7 +183,7 @@ func configSetCmdDesign(global *internal.GlobalCommandOptions) (*cobra.Command, 
 		Example: `$ azd config set defaults.subscription <yourSubscriptionID>
 $ azd config set defaults.location eastus`,
 		Annotations: map[string]string{
-			auth.RequireNoLoginAnnotation: "true",
+			commands.RequireNoLoginAnnotation: "true",
 		},
 	}
 	cmd.Args = cobra.ExactArgs(2)
@@ -229,7 +229,7 @@ func configUnsetCmdDesign(global *internal.GlobalCommandOptions) (*cobra.Command
 		Long:    `Removes a configuration in ` + userConfigPath + `.`,
 		Example: `$ azd config unset defaults.location`,
 		Annotations: map[string]string{
-			auth.RequireNoLoginAnnotation: "true",
+			commands.RequireNoLoginAnnotation: "true",
 		},
 	}
 
@@ -274,7 +274,7 @@ func configResetCmdDesign(global *internal.GlobalCommandOptions) (*cobra.Command
 		Short: "Resets configuration to default",
 		Long:  `Resets all configuration in ` + userConfigPath + ` to the default.`,
 		Annotations: map[string]string{
-			auth.RequireNoLoginAnnotation: "true",
+			commands.RequireNoLoginAnnotation: "true",
 		},
 	}
 

@@ -50,26 +50,14 @@ func RegisterDependenciesInCtx(
 
 	var credential azcore.TokenCredential
 
-	if _, has := cmd.Annotations[auth.RequireNoLoginAnnotation]; !has {
+	if _, has := cmd.Annotations[RequireNoLoginAnnotation]; has {
+		credential = &panicCredential{}
+	} else {
 		cred, err := authManager.GetCredentialForCurrentUser(ctx)
 		if err != nil {
 			return ctx, fmt.Errorf("fetching current user: %w", err)
 		}
 		credential = cred
-	} else {
-		credential = &panicCredential{}
-	}
-
-	// TODO(ellismg): This is a hack so that we don't fail for `login` when we construct the root context if a user
-	// is not logged in. This is super fragile, but we should be able to clean it up soon with Wei's work.
-	if cmd.Use != "login" && cmd.Use != "logout" && cmd.Use != "version" {
-		cred, err := authManager.GetCredentialForCurrentUser(ctx)
-		if err != nil {
-			return ctx, fmt.Errorf("fetching current user: %w", err)
-		}
-		credential = cred
-	} else {
-		credential = &panicCredential{}
 	}
 
 	azCliArgs := azcli.NewAzCliArgs{
@@ -123,3 +111,9 @@ type panicCredential struct{}
 func (pc *panicCredential) GetToken(_ context.Context, _ policy.TokenRequestOptions) (azcore.AccessToken, error) {
 	panic("this command should not have attempted to call GetToken, it was marked as not requiring login")
 }
+
+// RequireNoLoginAnnotation may be set as an annotation on a `cobra.Command` to instruct the command package that the
+// command does not require the user be logged in. This is used to prevent a login check from running when adding a
+// credential to the root context object. If code with this annotation ends up trying to use the credentials object
+// which is placed on the context, it will panic.
+const RequireNoLoginAnnotation = "github.com/azure/azure-dev/cli/azd/pkg/commands/requireNoLoginAnnotation"

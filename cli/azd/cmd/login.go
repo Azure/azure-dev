@@ -59,7 +59,7 @@ func loginCmdDesign(global *internal.GlobalCommandOptions) (*cobra.Command, *log
 		Use:   "login",
 		Short: "Log in to Azure.",
 		Annotations: map[string]string{
-			auth.RequireNoLoginAnnotation: "true",
+			commands.RequireNoLoginAnnotation: "true",
 		},
 	}
 

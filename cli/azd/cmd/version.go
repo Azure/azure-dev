@@ -31,7 +31,7 @@ func versionCmdDesign(global *internal.GlobalCommandOptions) (*cobra.Command, *v
 		Use:   "version",
 		Short: "Print the version number of Azure Developer CLI.",
 		Annotations: map[string]string{
-			auth.RequireNoLoginAnnotation: "true",
+			commands.RequireNoLoginAnnotation: "true",
 		},
 	}
 

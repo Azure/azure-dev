@@ -19,7 +19,7 @@ func logoutCmdDesign(global *internal.GlobalCommandOptions) (*cobra.Command, *st
 		Short: "Log out of Azure",
 		Long:  "Log out of Azure",
 		Annotations: map[string]string{
-			auth.RequireNoLoginAnnotation: "true",
+			commands.RequireNoLoginAnnotation: "true",
 		},
 	}
 

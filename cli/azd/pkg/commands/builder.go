@@ -60,6 +60,7 @@ func RegisterDependenciesInCtx(
 		if _, err := auth.EnsureLoggedInCredential(ctx, cred); err != nil {
 			return ctx, err
 		}
+		credential = cred
 	}
 
 	azCliArgs := azcli.NewAzCliArgs{

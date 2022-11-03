@@ -73,14 +73,10 @@ func (cli *azCli) GetKeyVaultSecret(ctx context.Context, vaultName string, secre
 	response, err := client.GetSecret(ctx, secretName, "", nil)
 	if err != nil {
 		var httpErr *azcore.ResponseError
-
-		if errors.As(err, &httpErr) {
-			if httpErr.StatusCode == http.StatusNotFound {
-				return nil, ErrAzCliSecretNotFound
-			}
-		} else {
-			return nil, fmt.Errorf("getting key vault secret: %w", err)
+		if errors.As(err, &httpErr) && httpErr.StatusCode == http.StatusNotFound {
+			return nil, ErrAzCliSecretNotFound
 		}
+		return nil, fmt.Errorf("getting key vault secret: %w", err)
 	}
 
 	return &AzCliKeyVaultSecret{

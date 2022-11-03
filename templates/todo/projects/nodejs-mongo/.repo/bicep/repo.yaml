@@ -58,17 +58,17 @@ repo:
       - from: web-appservice.bicep
         to: web.bicep
         patterns:
-          - "**/resources.bicep"
+          - "**/main.bicep"
 
       - from: api-appservice-node.bicep
         to: api.bicep
         patterns:
-          - "**/resources.bicep"
+          - "**/main.bicep"
 
       - from: cosmos-mongo-db.bicep
         to: db.bicep
         patterns:
-          - "**/resources.bicep"
+          - "**/main.bicep"
 
       - from: "PLACEHOLDERIACTOOLS"
         to: ""
@@ -127,6 +127,11 @@ repo:
         - .github/**/*
         - .devcontainer/**/*
         - "infra/**/*"
+        - .azdo/pipelines/*/azure-dev.yml
+
+    # AzDo workflows for bicep
+    - from: ../../../../../common/.azdo/pipelines/bicep/azure-dev.yml
+      to: ./.azdo/pipelines/azure-dev.yml
 
     # Github workflows for bicep
     - from: ../../../../../common/.github/workflows/bicep

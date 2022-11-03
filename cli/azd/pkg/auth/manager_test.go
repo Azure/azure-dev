@@ -80,6 +80,3 @@ func (m *memoryConfigManager) Save(cfg config.Config, filePath string) error {
 	m.configs[filePath] = cfg
 	return nil
 }
-
-type mockPublicClient struct {
-}

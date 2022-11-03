@@ -21,7 +21,7 @@ resource app 'Microsoft.App/containerApps@2022-03-01' = {
   name: name
   location: location
   tags: tags
-  identity: managedIdentity ? { type: 'SystemAssigned' } : null
+  identity: { type: managedIdentity ? 'SystemAssigned' : 'None' }
   properties: {
     managedEnvironmentId: containerAppsEnvironment.id
     configuration: {

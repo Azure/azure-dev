@@ -47,6 +47,7 @@ func (cli *bicepCli) versionInfo() tools.VersionInfo {
 			Major: 0,
 			Minor: 8,
 			Patch: 9},
+		//nolint:lll
 		UpdateCommand: `Run 'az bicep upgrade or Visit https://learn.microsoft.com/en-us/azure/azure-resource-manager/bicep/install to upgrade`,
 	}
 }
@@ -88,35 +89,9 @@ func (cli *bicepCli) CheckInstalled(ctx context.Context) (bool, error) {
 }
 
 func (cli *bicepCli) Build(ctx context.Context, file string) (string, error) {
-	// sniffCliVersion := func() (string, error) {
-	// 	verRes, err := cli.runCommand(ctx, "--version", "--out", "json")
-	// 	if err != nil {
-	// 		return "", fmt.Errorf("failing running az version: %s (%w)", verRes.String(), err)
-	// 	}
-
-	// 	var jsonVer struct {
-	// 		AzureCli string `json:"azure-cli"`
-	// 	}
-
-	// 	if err := json.Unmarshal([]byte(verRes.Stdout), &jsonVer); err != nil {
-	// 		return "", fmt.Errorf("parsing cli version json: %s: %w", verRes.Stdout, err)
-	// 	}
-
-	// 	return jsonVer.AzureCli, nil
-	// }
-
 	args := []string{"build", file, "--stdout"}
-
-	// Workaround azure/azure-cli#22621, by passing `--no-restore` to the CLI when
-	// when version 2.37.0 is installed.
-	// if ver, err := sniffCliVersion(); err != nil {
-	// 	log.Printf("error sniffing az cli version: %s", err.Error())
-	// } else if ver == "2.37.0" {
-	// 	log.Println("appending `--no-restore` to bicep arguments to work around azure/azure-dev#22621")
-	// 	args = append(args, "--no-restore")
-	// }
-
 	buildRes, err := cli.runCommand(ctx, args...)
+
 	if err != nil {
 		return "", fmt.Errorf(
 			"failed running az bicep build: %s (%w)",
@@ -124,6 +99,7 @@ func (cli *bicepCli) Build(ctx context.Context, file string) (string, error) {
 			err,
 		)
 	}
+
 	return buildRes.Stdout, nil
 }
 

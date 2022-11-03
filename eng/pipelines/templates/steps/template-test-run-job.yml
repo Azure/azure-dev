@@ -25,9 +25,6 @@ parameters:
 # Consumes the following variables from Set-TemplateTestMatrixVariable.ps1:
 # - TemplateName
 # - UseUpperCase
-# - AzdContainerImage
-
-image: $(AzdContainerImage)
 
 steps:
 - template: /eng/pipelines/templates/steps/az-login.yml

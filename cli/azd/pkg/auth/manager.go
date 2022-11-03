@@ -137,7 +137,7 @@ func (m *Manager) CredentialForCurrentUser(ctx context.Context) (azcore.TokenCre
 			}
 		}
 	} else if currentUser.TenantID != nil && currentUser.ClientID != nil {
-		ps, err := m.loadSecret(persistedSecretLookupKey(*currentUser.TenantID, *currentUser.ClientID))
+		ps, err := m.loadSecret(*currentUser.TenantID, *currentUser.ClientID)
 		if err != nil {
 			return nil, fmt.Errorf("loading secret: %v: %w", err, ErrNoCurrentUser)
 		}
@@ -292,7 +292,7 @@ func (m *Manager) saveLoginForPublicClient(res public.AuthResult) error {
 }
 
 func (m *Manager) saveLoginForServicePrincipal(tenantId, clientId string, secret *persistedSecret) error {
-	if err := m.saveSecret(secret, persistedSecretLookupKey(tenantId, clientId)); err != nil {
+	if err := m.saveSecret(tenantId, clientId, secret); err != nil {
 		return err
 	}
 
@@ -346,11 +346,11 @@ func persistedSecretLookupKey(tenantId, clientId string) string {
 	return fmt.Sprintf("%s.%s", tenantId, clientId)
 }
 
-// loadSecret reads a secret from the credential cache with a given key.
-func (m *Manager) loadSecret(key string) (*persistedSecret, error) {
+// loadSecret reads a secret from the credential cache for a given client and tenant.
+func (m *Manager) loadSecret(tenantId, clientId string) (*persistedSecret, error) {
 	var data fixedMarshaller
 
-	if err := m.credentialCache.Replace(&data, key); err != nil {
+	if err := m.credentialCache.Replace(&data, persistedSecretLookupKey(tenantId, clientId)); err != nil {
 		return nil, err
 	}
 
@@ -363,14 +363,14 @@ func (m *Manager) loadSecret(key string) (*persistedSecret, error) {
 	return &ps, nil
 }
 
-// saveSecret writes a secret into the credential cache with a given key.
-func (m *Manager) saveSecret(ps *persistedSecret, key string) error {
+// saveSecret writes a secret into the credential cache for a given client and tenant.
+func (m *Manager) saveSecret(tenantId, clientId string, ps *persistedSecret) error {
 	data, err := json.Marshal(ps)
 	if err != nil {
 		return err
 	}
 
-	return m.credentialCache.Export(&fixedMarshaller{val: data}, key)
+	return m.credentialCache.Export(&fixedMarshaller{val: data}, persistedSecretLookupKey(tenantId, clientId))
 }
 
 // persistedSecret is the model type for the value we store in the credential cache. It is logically a discriminated union

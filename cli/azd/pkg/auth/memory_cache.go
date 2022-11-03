@@ -73,5 +73,9 @@ func (c *memoryCache) Export(cache cache.Marshaler, key string) error {
 	}
 
 	c.cache[key] = new
-	return c.inner.Export(cache, key)
+	if c.inner != nil {
+		return c.inner.Export(cache, key)
+	}
+
+	return nil
 }

@@ -23,7 +23,6 @@ type manager struct {
 type Manager interface {
 	Save(config Config, filePath string) error
 	Load(filePath string) (Config, error)
-	Parse(configJson []byte) (Config, error)
 }
 
 // Creates a new Configuration Manager
@@ -78,11 +77,11 @@ func (c *manager) Load(filePath string) (Config, error) {
 		return nil, fmt.Errorf("failed reading azd configuration file")
 	}
 
-	return c.Parse(jsonBytes)
+	return Parse(jsonBytes)
 }
 
 // Parses azd configuration JSON and returns a Config instance
-func (c *manager) Parse(configJson []byte) (Config, error) {
+func Parse(configJson []byte) (Config, error) {
 	var data map[string]any
 	err := json.Unmarshal(configJson, &data)
 	if err != nil {

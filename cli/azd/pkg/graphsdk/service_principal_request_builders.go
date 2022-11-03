@@ -9,6 +9,10 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
 )
 
+type ServicePrincipalListRequestBuilder struct {
+	*EntityListRequestBuilder[ServicePrincipalListRequestBuilder]
+}
+
 func NewServicePrincipalListRequestBuilder(client *GraphClient) *ServicePrincipalListRequestBuilder {
 	builder := &ServicePrincipalListRequestBuilder{}
 	builder.EntityListRequestBuilder = newEntityListRequestBuilder(builder, client)
@@ -93,4 +97,22 @@ func (b *ServicePrincipalItemRequestBuilder) Get(ctx context.Context) (*ServiceP
 	}
 
 	return httputil.ReadRawResponse[ServicePrincipal](res)
+}
+
+func (b *ServicePrincipalItemRequestBuilder) Delete(ctx context.Context) error {
+	req, err := b.createRequest(ctx, http.MethodDelete, fmt.Sprintf("%s/servicePrincipals/%s", b.client.host, b.id))
+	if err != nil {
+		return fmt.Errorf("failed creating request: %w", err)
+	}
+
+	res, err := b.client.pipeline.Do(req)
+	if err != nil {
+		return httputil.HandleRequestError(res, err)
+	}
+
+	if !runtime.HasStatusCode(res, http.StatusNoContent) {
+		return runtime.NewResponseError(res)
+	}
+
+	return nil
 }

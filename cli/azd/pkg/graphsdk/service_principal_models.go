@@ -19,7 +19,3 @@ type ServicePrincipalCreateRequest struct {
 type ServicePrincipalListResponse struct {
 	Value []ServicePrincipal `json:"value"`
 }
-
-type ServicePrincipalListRequestBuilder struct {
-	*EntityListRequestBuilder[ServicePrincipalListRequestBuilder]
-}

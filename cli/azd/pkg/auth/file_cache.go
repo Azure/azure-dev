@@ -10,10 +10,9 @@ import (
 	"path/filepath"
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/cache"
+	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/gofrs/flock"
 )
-
-const cacheFileFileMode = 0600
 
 // fileCache implements exportReplaceWithErrors by storing the data to disk.  The cache key is used as part of the
 // filename for the stored object. Files are stored in [root] and are named [prefix][key].[ext].
@@ -86,7 +85,7 @@ func (c *fileCache) writeFileWithLock(key string, data []byte) error {
 		}
 	}()
 
-	return os.WriteFile(cachePath, data, cacheFileFileMode)
+	return os.WriteFile(cachePath, data, osutil.PermissionFileOwnerOnly)
 }
 
 func (c *fileCache) pathForCache(key string) string {

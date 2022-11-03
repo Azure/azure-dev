@@ -24,7 +24,3 @@ func (m *MockConfigManager) Save(config config.Config, filePath string) error {
 func (m *MockConfigManager) Load(filePath string) (config.Config, error) {
 	return m.config, nil
 }
-
-func (m *MockConfigManager) Parse(configJson []byte) (config.Config, error) {
-	return m.config, nil
-}

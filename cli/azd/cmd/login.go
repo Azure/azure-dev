@@ -111,56 +111,8 @@ const (
 
 func (la *loginAction) Run(ctx context.Context) error {
 	if !la.flags.onlyCheckStatus {
-		if la.flags.clientID != "" || la.flags.tenantID != "" {
-			if la.flags.clientID == "" || la.flags.tenantID == "" {
-				return errors.New("must set both `client-id` and `tenant-id` for service principal login")
-			}
-
-			switch {
-			// only --client-secret was passed
-			case la.flags.clientSecret != "" && la.flags.clientCertificate == "":
-				if _, err := la.authManager.LoginWithServicePrincipalSecret(
-					ctx, la.flags.tenantID, la.flags.clientID, la.flags.clientSecret,
-				); err != nil {
-					return fmt.Errorf("logging in: %w", err)
-				}
-
-			// only --client-certificate was passed
-			case la.flags.clientCertificate != "" && la.flags.clientSecret == "":
-				certFile, err := os.Open(la.flags.clientCertificate)
-				if err != nil {
-					return fmt.Errorf("reading certificate: %w", err)
-				}
-				defer certFile.Close()
-
-				cert, err := io.ReadAll(certFile)
-				if err != nil {
-					return fmt.Errorf("reading certificate: %w", err)
-				}
-
-				if _, err := la.authManager.LoginWithServicePrincipalCertificate(
-					ctx, la.flags.tenantID, la.flags.clientID, cert,
-				); err != nil {
-					return fmt.Errorf("logging in: %w", err)
-				}
-
-			// some other combination was set.
-			default:
-				return errors.New("must set exactly one of `client-secret` or `client-certificate` for service principal")
-			}
-		} else {
-			useDeviceCode := la.flags.useDeviceCode || os.Getenv(CodespacesEnvVarName) == "true" ||
-				os.Getenv(RemoteContainersEnvVarName) == "true"
-
-			if useDeviceCode {
-				if _, err := la.authManager.LoginWithDeviceCode(ctx, la.writer); err != nil {
-					return fmt.Errorf("logging in: %w", err)
-				}
-			} else {
-				if _, err := la.authManager.LoginInteractive(ctx); err != nil {
-					return fmt.Errorf("logging in: %w", err)
-				}
-			}
+		if err := la.login(ctx); err != nil {
+			return err
 		}
 	}
 
@@ -171,13 +123,13 @@ func (la *loginAction) Run(ctx context.Context) error {
 	} else if err != nil {
 		return fmt.Errorf("checking auth status: %w", err)
 	} else {
-		if tok, err := auth.EnsureLoggedInCredential(ctx, cred); errors.Is(err, auth.ErrNoCurrentUser) {
+		if token, err := auth.EnsureLoggedInCredential(ctx, cred); errors.Is(err, auth.ErrNoCurrentUser) {
 			res.Status = contracts.LoginStatusUnauthenticated
 		} else if err != nil {
 			return fmt.Errorf("checking auth status: %w", err)
 		} else {
 			res.Status = contracts.LoginStatusSuccess
-			res.ExpiresOn = &tok.ExpiresOn
+			res.ExpiresOn = &token.ExpiresOn
 		}
 	}
 
@@ -192,4 +144,62 @@ func (la *loginAction) Run(ctx context.Context) error {
 	}
 
 	return la.formatter.Format(res, la.writer, nil)
+}
+
+func (la *loginAction) login(ctx context.Context) error {
+	if la.flags.clientID != "" || la.flags.tenantID != "" {
+		if la.flags.clientID == "" || la.flags.tenantID == "" {
+			return errors.New("must set both `client-id` and `tenant-id` for service principal login")
+		}
+
+		switch {
+		// only --client-secret was passed
+		case la.flags.clientSecret != "" && la.flags.clientCertificate == "":
+			if _, err := la.authManager.LoginWithServicePrincipalSecret(
+				ctx, la.flags.tenantID, la.flags.clientID, la.flags.clientSecret,
+			); err != nil {
+				return fmt.Errorf("logging in: %w", err)
+			}
+
+		// only --client-certificate was passed
+		case la.flags.clientCertificate != "" && la.flags.clientSecret == "":
+			certFile, err := os.Open(la.flags.clientCertificate)
+			if err != nil {
+				return fmt.Errorf("reading certificate: %w", err)
+			}
+			defer certFile.Close()
+
+			cert, err := io.ReadAll(certFile)
+			if err != nil {
+				return fmt.Errorf("reading certificate: %w", err)
+			}
+
+			if _, err := la.authManager.LoginWithServicePrincipalCertificate(
+				ctx, la.flags.tenantID, la.flags.clientID, cert,
+			); err != nil {
+				return fmt.Errorf("logging in: %w", err)
+			}
+
+		// some other combination was set.
+		default:
+			return errors.New("must set exactly one of `client-secret` or `client-certificate` for service principal")
+		}
+
+		return nil
+	}
+
+	useDeviceCode := la.flags.useDeviceCode || os.Getenv(CodespacesEnvVarName) == "true" ||
+		os.Getenv(RemoteContainersEnvVarName) == "true"
+
+	if useDeviceCode {
+		if _, err := la.authManager.LoginWithDeviceCode(ctx, la.writer); err != nil {
+			return fmt.Errorf("logging in: %w", err)
+		}
+	} else {
+		if _, err := la.authManager.LoginInteractive(ctx); err != nil {
+			return fmt.Errorf("logging in: %w", err)
+		}
+	}
+
+	return nil
 }

@@ -20,6 +20,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/public"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
+	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 )
 
 // TODO(azure/azure-dev#710): Right now, we re-use the App Id of the `az` CLI, until we have our own.
@@ -38,9 +39,6 @@ const cUseLegacyAzCliAuthKey = "auth.useLegacyAzCliAuth"
 // The scopes to request when acquiring our token during the login flow or when requesting a token to validate if the client
 // is logged in.
 var cLoginScopes = []string{"https://management.azure.com//.default"}
-
-// authDirectoryFileMode is the file mode used to create the folder that is used for auth folder and sub-folders.
-const authDirectoryFileMode = 0700
 
 // Manager manages the authentication system of azd. It allows a user to log in, either as a user principal or service
 // principal. Manager stores information so that the user can stay logged in across invocations of the CLI. When logged in
@@ -70,12 +68,12 @@ func NewManager(configManager config.Manager) (*Manager, error) {
 	}
 
 	authRoot := filepath.Join(cfgRoot, "auth")
-	if err := os.MkdirAll(authRoot, authDirectoryFileMode); err != nil {
+	if err := os.MkdirAll(authRoot, osutil.PermissionDirectoryOwnerOnly); err != nil {
 		return nil, fmt.Errorf("creating auth root: %w", err)
 	}
 
 	cacheRoot := filepath.Join(authRoot, "msal")
-	if err := os.MkdirAll(cacheRoot, authDirectoryFileMode); err != nil {
+	if err := os.MkdirAll(cacheRoot, osutil.PermissionDirectoryOwnerOnly); err != nil {
 		return nil, fmt.Errorf("creating msal cache root: %w", err)
 	}
 
@@ -95,15 +93,15 @@ var ErrNoCurrentUser = errors.New("not logged in, run `azd login` to login")
 
 // EnsureLoggedInCredential uses the credential's GetToken method to ensure an access token can be fetched. If this fails,
 // nil, ErrNoCurrentUser is returned. On success, the token we fetched is returned.
-func EnsureLoggedInCredential(ctx context.Context, credential azcore.TokenCredential) (azcore.AccessToken, error) {
-	tok, err := credential.GetToken(ctx, policy.TokenRequestOptions{
+func EnsureLoggedInCredential(ctx context.Context, credential azcore.TokenCredential) (*azcore.AccessToken, error) {
+	token, err := credential.GetToken(ctx, policy.TokenRequestOptions{
 		Scopes: cLoginScopes,
 	})
 	if err != nil {
-		return azcore.AccessToken{}, ErrNoCurrentUser
+		return &azcore.AccessToken{}, ErrNoCurrentUser
 	}
 
-	return tok, nil
+	return &token, nil
 }
 
 // CredentialForCurrentUser returns a TokenCredential instance for the current user. If `auth.useLegacyAzCliAuth` is set to
@@ -152,6 +150,7 @@ func (m *Manager) CredentialForCurrentUser(ctx context.Context) (azcore.TokenCre
 			}
 
 			return cred, nil
+
 		} else if ps.ClientCertificate != nil {
 			certData, err := base64.StdEncoding.DecodeString(*ps.ClientCertificate)
 			if err != nil {
@@ -284,14 +283,12 @@ func (m *Manager) Logout(ctx context.Context) error {
 	// we are fine to ignore the error here, it just means there's nothing to clean up.
 	currentUser, _ := readUserProperties(cfg)
 
-	if currentUser != nil {
-		// When logged in as a service principal, remove the stored credential
-		if currentUser.TenantID != nil && currentUser.ClientID != nil {
-			if err := m.saveLoginForServicePrincipal(
-				*currentUser.TenantID, *currentUser.ClientID, &persistedSecret{},
-			); err != nil {
-				return fmt.Errorf("removing authentication secrets: %w", err)
-			}
+	// When logged in as a service principal, remove the stored credential
+	if currentUser != nil && currentUser.TenantID != nil && currentUser.ClientID != nil {
+		if err := m.saveLoginForServicePrincipal(
+			*currentUser.TenantID, *currentUser.ClientID, &persistedSecret{},
+		); err != nil {
+			return fmt.Errorf("removing authentication secrets: %w", err)
 		}
 	}
 

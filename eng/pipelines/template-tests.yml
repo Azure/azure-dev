@@ -111,7 +111,6 @@ jobs:
         displayName: Install npm
 
       - task: DevcontainersCI@0
-        imageName: ghcr.io/example/example-devcontainer
         displayName: Test templates with Devontainers
         inputs:
           env: |

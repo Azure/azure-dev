@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"runtime"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/blang/semver/v4"
@@ -23,13 +24,12 @@ type BicepCli interface {
 
 func NewBicepCli(ctx context.Context) BicepCli {
 	return &bicepCli{
-		commandPath:   "bicep",
 		commandRunner: exec.GetCommandRunner(ctx),
 	}
 }
 
 type bicepCli struct {
-	commandPath   string
+	commandPath   *string
 	commandRunner exec.CommandRunner
 }
 
@@ -46,30 +46,14 @@ func (cli *bicepCli) versionInfo() tools.VersionInfo {
 		MinimumVersion: semver.Version{
 			Major: 0,
 			Minor: 8,
-			Patch: 9},
+			Patch: 9,
+		},
 		//nolint:lll
-		UpdateCommand: `Run 'az bicep upgrade or Visit https://learn.microsoft.com/en-us/azure/azure-resource-manager/bicep/install to upgrade`,
+		UpdateCommand: `Run 'az bicep upgrade or Visit https://aka.ms/azure-dev/bicep-install to upgrade`,
 	}
 }
 
 func (cli *bicepCli) CheckInstalled(ctx context.Context) (bool, error) {
-	// First, check if tool is found in path
-	// This typically should return true for standalone install and false for `az` bundled install
-	found, err := tools.ToolInPath("bicep")
-	if err != nil {
-		return false, err
-	}
-
-	// Next, check in other known locations (ex. Azure bin)
-	if !found {
-		bicepPath, err := findBicepPath()
-		if err != nil {
-			return false, err
-		}
-
-		cli.commandPath = *bicepPath
-	}
-
 	bicepRes, err := cli.runCommand(ctx, "--version")
 	if err != nil {
 		return false, fmt.Errorf("checking %s version: %w", cli.Name(), err)
@@ -104,14 +88,24 @@ func (cli *bicepCli) Build(ctx context.Context, file string) (string, error) {
 }
 
 func (cli *bicepCli) runCommand(ctx context.Context, args ...string) (exec.RunResult, error) {
-	runArgs := exec.NewRunArgs(cli.commandPath, args...)
+	if cli.commandPath == nil {
+		commandPath, err := findBicepPath()
+		if err != nil {
+			return exec.RunResult{}, err
+		}
+
+		cli.commandPath = commandPath
+	}
+
+	runArgs := exec.NewRunArgs(*cli.commandPath, args...)
 	return cli.commandRunner.Run(ctx, runArgs)
 }
 
 type contextKey string
 
 const (
-	bicepContextKey contextKey = "bicepcli"
+	bicepContextKey         contextKey = "bicepcli"
+	defaultBicepCommandPath string     = "bicep"
 )
 
 func GetBicepCli(ctx context.Context) BicepCli {
@@ -123,7 +117,23 @@ func GetBicepCli(ctx context.Context) BicepCli {
 	return cli
 }
 
+// Finds the bicep command path
+// Search in PATH, otherwise looks for standalone and az installation locations
 func findBicepPath() (*string, error) {
+	// First, check if tool is found in path
+	// This typically should return true for standalone install and false for `az` bundled install
+	found, err := tools.ToolInPath(defaultBicepCommandPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if found {
+		return convert.RefOf(defaultBicepCommandPath), nil
+	}
+
+	// If not found in path, check in 2 locations
+	// Default location for standalone install
+	// Default location for az bicep install
 	user, err := user.Current()
 	if err != nil {
 		return nil, fmt.Errorf("failed getting current user: %w", err)
@@ -135,7 +145,7 @@ func findBicepPath() (*string, error) {
 	// When installed standalone is typically located in the following locations
 	// When installed with 'az' it is inside the azure bin folder across all OSes
 	if runtime.GOOS == "windows" {
-		commonPaths = append(commonPaths, filepath.Join(user.HomeDir, "AppData/Local/Programs/Bicep CLI/bicep.exe"))
+		commonPaths = append(commonPaths, filepath.Join(user.HomeDir, "AppData\\Local\\Programs\\Bicep CLI\\bicep.exe"))
 		commonPaths = append(commonPaths, filepath.Join(azureBin, "bicep.exe"))
 	} else {
 		commonPaths = append(commonPaths, "/usr/local/bin/bicep")

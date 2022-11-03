@@ -32,5 +32,7 @@ func CreateDeployableZip(appName string, path string) (string, error) {
 		return "", err
 	}
 
+	fmt.Println(zipFile.Name())
+
 	return zipFile.Name(), nil
 }

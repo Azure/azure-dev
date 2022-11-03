@@ -8,7 +8,12 @@ steps:
         ${{ parameters.SubscriptionConfiguration }}
       '@ | ConvertFrom-Json -AsHashtable;
 
-      ./azd config set auth.useLegacyAzCliAuth true
+      ./azd login `
+        --client-id "$($subscriptionConfiguration.TestApplicationId)" `
+        --client-secret "$($subscriptionConfiguration.TestApplicationSecret)" `
+        --tenant-id "$($subscriptionConfiguration.TenantId)"
+
+      ./azd config set defaults.subscription "$($subscriptionConfiguration.SubscriptionId)"
 
     workingDirectory: ${{ parameters.AzdDirectory }}
     condition: and(succeeded(), ne(variables['Skip.LiveTest'], 'true'))

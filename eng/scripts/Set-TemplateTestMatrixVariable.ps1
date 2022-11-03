@@ -8,6 +8,16 @@ List of templates to run. By default, uses `azd template list` to run all templa
 .PARAMETER TemplateListFilter
 Regex filter expression to filter templates. Examples: 'csharp', 'terraform', 'python-mongo'.
 
+.PARAMETER AzdContainerImage
+The container image to use for templates. Will be set as a variable with the same name in the matrix job definition.
+
+.PARAMETER OutputMatrixVariable
+The output variable that will contain the matrix job definitions.
+The matrix job definition will contain:
+- TemplateName - the name of the template being tested
+- UseUpperCase - whether an upper-case version of the template name should be tested
+- AzdContainerImage - the container image for the template test
+
 #>
 param (
     [string[]]$TemplateList = $('(azd template list)'),
@@ -39,6 +49,10 @@ foreach ($template in $templateNames) {
 $firstTemplate = $templateNames[0]
 $capitalsTest = $firstTemplate.Replace('/', '_') + "-Upper-case-test"
 $matrix[$capitalsTest] = @{ TemplateName = $firstTemplate; UseUpperCase = "true" }
+
+foreach ($jobName in $matrix.Keys) {
+    $matrix[$jobName].Add("AzdContainerImage", $AzdContainerImage) | Out-Null
+}
 
 Write-Host "Matrix:"
 Write-Host ($matrix | ConvertTo-Json | Out-String)

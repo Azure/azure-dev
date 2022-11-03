@@ -148,25 +148,34 @@ func GetBicepCli(ctx context.Context) BicepCli {
 }
 
 func findBicepPath() (*string, error) {
-	var bicepPath string
-
 	user, err := user.Current()
 	if err != nil {
 		return nil, fmt.Errorf("failed getting current user: %w", err)
 	}
 
+	commonPaths := []string{}
+	azureBin := filepath.Join(user.HomeDir, ".azure", "bin")
+
+	// When installed standalone is typically located in the following locations
+	// When installed with 'az' it is inside the azure bin folder across all OSes
 	if runtime.GOOS == "windows" {
-		// When installed with 'az' it is inside the azure bin folder
-		azureBin := filepath.Join(user.HomeDir, ".azure", "bin")
-		bicepPath = filepath.Join(azureBin, "bicep.exe")
+		commonPaths = append(commonPaths, filepath.Join(user.HomeDir, "AppData/Local/Programs/Bicep CLI/bicep.exe"))
+		commonPaths = append(commonPaths, filepath.Join(azureBin, "bicep.exe"))
 	} else {
-		bicepPath = "/usr/local/bin/bicep"
+		commonPaths = append(commonPaths, "/usr/local/bin/bicep")
+		commonPaths = append(commonPaths, filepath.Join(azureBin, "bicep"))
 	}
 
-	_, err = os.Stat(bicepPath)
-	if err != nil {
-		return nil, fmt.Errorf("cannot find bicep path: %w", err)
+	var existsErr error
+
+	// Search and find first matching path
+	// Take standalone version before az cli version
+	for _, installPath := range commonPaths {
+		_, existsErr = os.Stat(installPath)
+		if existsErr == nil {
+			return &installPath, nil
+		}
 	}
 
-	return &bicepPath, nil
+	return nil, fmt.Errorf("cannot find bicep path: %w", existsErr)
 }

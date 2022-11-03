@@ -19,9 +19,6 @@
         "ghcr.io/devcontainers/features/node:1": {
             "version": "16",
             "nodeGypDependencies": false
-        },
-        "ghcr.io/devcontainers/features/python:1": {
-            "version": "os-provided"
         }
     },
     "extensions": [

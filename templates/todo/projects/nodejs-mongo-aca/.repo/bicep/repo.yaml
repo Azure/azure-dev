@@ -143,8 +143,8 @@ repo:
       to: ./infra
 
     # .devcontainer common (devcontainer.json)
-    - from: ../../../../../common/.devcontainer/devcontainer.json/nodejs
-      to: ./.devcontainer
+    - from: ../../../../../common/.devcontainer/devcontainer.json/nodejs/devcontainer.json
+      to: ./.devcontainer/devcontainer.json
 
     # .devcontainer common (Dockerfile)
     - from: ../../../../../common/.devcontainer/Dockerfile/base

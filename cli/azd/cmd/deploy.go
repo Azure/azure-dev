@@ -18,7 +18,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/pkg/spin"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
@@ -79,7 +78,6 @@ After the deployment is complete, the endpoint is printed. To start the service,
 type deployAction struct {
 	flags     deployFlags
 	azdCtx    *azdcontext.AzdContext
-	azCli     azcli.AzCli
 	formatter output.Formatter
 	writer    io.Writer
 	console   input.Console
@@ -88,7 +86,6 @@ type deployAction struct {
 func newDeployAction(
 	flags deployFlags,
 	azdCtx *azdcontext.AzdContext,
-	azCli azcli.AzCli,
 	console input.Console,
 	formatter output.Formatter,
 	writer io.Writer,
@@ -96,7 +93,6 @@ func newDeployAction(
 	da := &deployAction{
 		flags:     flags,
 		azdCtx:    azdCtx,
-		azCli:     azCli,
 		formatter: formatter,
 		writer:    writer,
 		console:   console,
@@ -112,10 +108,6 @@ type DeploymentResult struct {
 
 func (d *deployAction) Run(ctx context.Context) error {
 	if err := ensureProject(d.azdCtx.ProjectPath()); err != nil {
-		return err
-	}
-
-	if err := tools.EnsureInstalled(ctx, d.azCli); err != nil {
 		return err
 	}
 

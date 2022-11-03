@@ -13,8 +13,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 	"go.uber.org/multierr"
@@ -60,7 +58,6 @@ func infraCreateCmdDesign(rootOptions *internal.GlobalCommandOptions) (*cobra.Co
 type infraCreateAction struct {
 	flags     infraCreateFlags
 	azdCtx    *azdcontext.AzdContext
-	azCli     azcli.AzCli
 	formatter output.Formatter
 	writer    io.Writer
 	console   input.Console
@@ -71,7 +68,6 @@ type infraCreateAction struct {
 func newInfraCreateAction(
 	f infraCreateFlags,
 	azdCtx *azdcontext.AzdContext,
-	azCli azcli.AzCli,
 	console input.Console,
 	formatter output.Formatter,
 	writer io.Writer,
@@ -79,7 +75,6 @@ func newInfraCreateAction(
 	return &infraCreateAction{
 		flags:               f,
 		azdCtx:              azdCtx,
-		azCli:               azCli,
 		formatter:           formatter,
 		writer:              writer,
 		console:             console,
@@ -89,10 +84,6 @@ func newInfraCreateAction(
 
 func (i *infraCreateAction) Run(ctx context.Context) error {
 	if err := ensureProject(i.azdCtx.ProjectPath()); err != nil {
-		return err
-	}
-
-	if err := tools.EnsureInstalled(ctx, i.azCli); err != nil {
 		return err
 	}
 

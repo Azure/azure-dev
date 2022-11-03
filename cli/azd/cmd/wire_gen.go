@@ -36,18 +36,7 @@ func initDeployAction(cmd *cobra.Command, o *internal.GlobalCommandOptions, flag
 	}
 	writer := newWriter(cmd)
 	console := newConsoleFromOptions(o, formatter, writer, cmd)
-	commandRunner := newCommandRunnerFromConsole(console)
-	manager := config.NewManager()
-	authManager, err := auth.NewManager(manager)
-	if err != nil {
-		return nil, err
-	}
-	tokenCredential, err := newCredential(authManager)
-	if err != nil {
-		return nil, err
-	}
-	azCli := newAzCliFromOptions(o, commandRunner, tokenCredential)
-	cmdDeployAction, err := newDeployAction(flags, azdContext, azCli, console, formatter, writer)
+	cmdDeployAction, err := newDeployAction(flags, azdContext, console, formatter, writer)
 	if err != nil {
 		return nil, err
 	}
@@ -81,7 +70,7 @@ func initInitAction(cmd *cobra.Command, o *internal.GlobalCommandOptions, flags 
 		return nil, err
 	}
 	gitCli := git.NewGitCliFromRunner(commandRunner)
-	cmdInitAction, err := newInitAction(azdContext, accountManager, commandRunner, console, azCli, gitCli, flags)
+	cmdInitAction, err := newInitAction(azdContext, accountManager, commandRunner, console, gitCli, flags)
 	if err != nil {
 		return nil, err
 	}
@@ -147,14 +136,14 @@ func initUpAction(cmd *cobra.Command, o *internal.GlobalCommandOptions, flags up
 	}
 	gitCli := git.NewGitCliFromRunner(commandRunner)
 	cmdInitFlags := flags.initFlags
-	cmdInitAction, err := newInitAction(azdContext, accountManager, commandRunner, console, azCli, gitCli, cmdInitFlags)
+	cmdInitAction, err := newInitAction(azdContext, accountManager, commandRunner, console, gitCli, cmdInitFlags)
 	if err != nil {
 		return nil, err
 	}
 	cmdInfraCreateFlags := flags.infraCreateFlags
-	cmdInfraCreateAction := newInfraCreateAction(cmdInfraCreateFlags, azdContext, azCli, console, formatter, writer)
+	cmdInfraCreateAction := newInfraCreateAction(cmdInfraCreateFlags, azdContext, console, formatter, writer)
 	cmdDeployFlags := flags.deployFlags
-	cmdDeployAction, err := newDeployAction(cmdDeployFlags, azdContext, azCli, console, formatter, writer)
+	cmdDeployAction, err := newDeployAction(cmdDeployFlags, azdContext, console, formatter, writer)
 	if err != nil {
 		return nil, err
 	}
@@ -240,18 +229,7 @@ func initInfraCreateAction(cmd *cobra.Command, o *internal.GlobalCommandOptions,
 	}
 	writer := newWriter(cmd)
 	console := newConsoleFromOptions(o, formatter, writer, cmd)
-	commandRunner := newCommandRunnerFromConsole(console)
-	manager := config.NewManager()
-	authManager, err := auth.NewManager(manager)
-	if err != nil {
-		return nil, err
-	}
-	tokenCredential, err := newCredential(authManager)
-	if err != nil {
-		return nil, err
-	}
-	azCli := newAzCliFromOptions(o, commandRunner, tokenCredential)
-	cmdInfraCreateAction := newInfraCreateAction(flags, azdContext, azCli, console, formatter, writer)
+	cmdInfraCreateAction := newInfraCreateAction(flags, azdContext, console, formatter, writer)
 	return cmdInfraCreateAction, nil
 }
 
@@ -266,18 +244,7 @@ func initInfraDeleteAction(cmd *cobra.Command, o *internal.GlobalCommandOptions,
 	}
 	writer := newWriter(cmd)
 	console := newConsoleFromOptions(o, formatter, writer, cmd)
-	commandRunner := newCommandRunnerFromConsole(console)
-	manager := config.NewManager()
-	authManager, err := auth.NewManager(manager)
-	if err != nil {
-		return nil, err
-	}
-	tokenCredential, err := newCredential(authManager)
-	if err != nil {
-		return nil, err
-	}
-	azCli := newAzCliFromOptions(o, commandRunner, tokenCredential)
-	cmdInfraDeleteAction := newInfraDeleteAction(flags, azdContext, azCli, console)
+	cmdInfraDeleteAction := newInfraDeleteAction(flags, azdContext, console)
 	return cmdInfraDeleteAction, nil
 }
 

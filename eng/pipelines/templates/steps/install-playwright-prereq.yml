@@ -1,4 +1,4 @@
-
+steps:
 - bash: |
     sudo add-apt-repository ppa:gstreamer-developers/ppa
     sudo apt-get update

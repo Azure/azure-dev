@@ -67,6 +67,10 @@ func TestServicePrincipalLoginClientSecret(t *testing.T) {
 	err = m.Logout(context.Background())
 
 	require.NoError(t, err)
+
+	_, err = m.CredentialForCurrentUser(context.Background())
+
+	require.True(t, errors.Is(err, ErrNoCurrentUser))
 }
 
 //go:embed testdata/certificate.pem
@@ -97,6 +101,10 @@ func TestServicePrincipalLoginClientCertificate(t *testing.T) {
 	err = m.Logout(context.Background())
 
 	require.NoError(t, err)
+
+	_, err = m.CredentialForCurrentUser(context.Background())
+
+	require.True(t, errors.Is(err, ErrNoCurrentUser))
 }
 
 func TestLegacyAzCliCredentialSupport(t *testing.T) {
@@ -147,7 +155,7 @@ func TestLoginInteractive(t *testing.T) {
 
 	require.NoError(t, err)
 
-	cred, err = m.CredentialForCurrentUser(context.Background())
+	_, err = m.CredentialForCurrentUser(context.Background())
 
 	require.True(t, errors.Is(err, ErrNoCurrentUser))
 }
@@ -178,7 +186,7 @@ func TestLoginDeviceCode(t *testing.T) {
 
 	require.NoError(t, err)
 
-	cred, err = m.CredentialForCurrentUser(context.Background())
+	_, err = m.CredentialForCurrentUser(context.Background())
 
 	require.True(t, errors.Is(err, ErrNoCurrentUser))
 }

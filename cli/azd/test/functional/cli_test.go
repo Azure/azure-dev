@@ -536,27 +536,6 @@ func Test_CLI_NoDebugSpewWhenHelpPassedWithoutDebug(t *testing.T) {
 	assert.Equal(t, "", stdErrBuf.String(), "no output should be written to stderr when --help is passed")
 }
 
-// filterEnviron returns a new copy of os.Environ after removing all specified keys, ignoring case.
-func filterEnviron(toExclude ...string) []string {
-	old := os.Environ()
-	new := make([]string, 0, len(old))
-	for _, val := range old {
-		lowerVal := strings.ToLower(val)
-		keep := true
-		for _, exclude := range toExclude {
-			if strings.HasPrefix(lowerVal, strings.ToLower(exclude)+"=") {
-				keep = false
-				break
-			}
-		}
-		if keep {
-			new = append(new, val)
-		}
-	}
-
-	return new
-}
-
 //go:embed testdata/samples/*
 var samples embed.FS
 

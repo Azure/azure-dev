@@ -40,9 +40,13 @@ func configCmd(rootOptions *internal.GlobalCommandOptions) *cobra.Command {
 		Short: "Manage Azure Developer CLI configuration",
 		Long: `Manage the Azure Developer CLI user configuration, which includes your default Azure subscription and location.
 
-The easiest way to initially configure azd is to run ` + output.WithBackticks("azd init") + `.
+The easiest way to initially configure azd is to run ` + output.WithBackticks(
+			"azd init",
+		) + `.
 The subscription and location you select will be stored at ` + userConfigPath + `.
-The default configuration path is ` + output.WithBackticks(defaultConfigPath) + `.`,
+The default configuration path is ` + output.WithBackticks(
+			defaultConfigPath,
+		) + `.`,
 	}
 
 	root.Flags().BoolP("help", "h", false, fmt.Sprintf("Gets help for %s.", root.Name()))

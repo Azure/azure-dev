@@ -26,7 +26,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/pkg/templates"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/git"
 	"github.com/otiai10/copy"
 	"github.com/spf13/cobra"
@@ -85,7 +84,6 @@ type initAction struct {
 	accountManager        *account.Manager
 	console               input.Console
 	cmdRun                exec.CommandRunner
-	azCli                 azcli.AzCli
 	gitCli                git.GitCli
 	flags                 initFlags
 	formattedWithColorCwd string // this is used to print the path with color in the console
@@ -96,7 +94,6 @@ func newInitAction(
 	accountManager *account.Manager,
 	cmdRun exec.CommandRunner,
 	console input.Console,
-	azCli azcli.AzCli,
 	gitCli git.GitCli,
 	flags initFlags) (*initAction, error) {
 	return &initAction{
@@ -104,7 +101,6 @@ func newInitAction(
 		accountManager: accountManager,
 		console:        console,
 		cmdRun:         cmdRun,
-		azCli:          azCli,
 		gitCli:         gitCli,
 		flags:          flags,
 	}, nil
@@ -128,7 +124,7 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		return nil, errors.New("template name required when specifying a branch name")
 	}
 
-	requiredTools := []tools.ExternalTool{i.azCli}
+	requiredTools := []tools.ExternalTool{}
 
 	// When using a template, we also require `git`, to acquire the template.
 	if i.flags.template.Name != "" {

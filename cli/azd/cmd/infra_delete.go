@@ -10,8 +10,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
@@ -49,30 +47,23 @@ func infraDeleteCmdDesign(global *internal.GlobalCommandOptions) (*cobra.Command
 type infraDeleteAction struct {
 	flags   infraDeleteFlags
 	azdCtx  *azdcontext.AzdContext
-	azCli   azcli.AzCli
 	console input.Console
 }
 
 func newInfraDeleteAction(
 	flags infraDeleteFlags,
 	azdCtx *azdcontext.AzdContext,
-	azCli azcli.AzCli,
 	console input.Console,
 ) *infraDeleteAction {
 	return &infraDeleteAction{
 		flags:   flags,
 		azdCtx:  azdCtx,
-		azCli:   azCli,
 		console: console,
 	}
 }
 
 func (a *infraDeleteAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	if err := ensureProject(a.azdCtx.ProjectPath()); err != nil {
-		return nil, err
-	}
-
-	if err := tools.EnsureInstalled(ctx, a.azCli); err != nil {
 		return nil, err
 	}
 

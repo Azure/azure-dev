@@ -14,7 +14,10 @@ type FederatedIdentityCredentialListRequestBuilder struct {
 	applicationId string
 }
 
-func NewFederatedIdentityCredentialListRequestBuilder(client *GraphClient, applicationId string) *FederatedIdentityCredentialListRequestBuilder {
+func NewFederatedIdentityCredentialListRequestBuilder(
+	client *GraphClient,
+	applicationId string,
+) *FederatedIdentityCredentialListRequestBuilder {
 	builder := &FederatedIdentityCredentialListRequestBuilder{
 		applicationId: applicationId,
 	}
@@ -24,8 +27,14 @@ func NewFederatedIdentityCredentialListRequestBuilder(client *GraphClient, appli
 }
 
 // Gets a list of applications that the current logged in user has access to.
-func (c *FederatedIdentityCredentialListRequestBuilder) Get(ctx context.Context) (*FederatedIdentityCredentialListResponse, error) {
-	req, err := c.createRequest(ctx, http.MethodGet, fmt.Sprintf("%s/applications/%s/federatedIdentityCredentials", c.client.host, c.applicationId))
+func (c *FederatedIdentityCredentialListRequestBuilder) Get(
+	ctx context.Context,
+) (*FederatedIdentityCredentialListResponse, error) {
+	req, err := c.createRequest(
+		ctx,
+		http.MethodGet,
+		fmt.Sprintf("%s/applications/%s/federatedIdentityCredentials", c.client.host, c.applicationId),
+	)
 	if err != nil {
 		return nil, fmt.Errorf("failed creating request: %w", err)
 	}
@@ -42,8 +51,15 @@ func (c *FederatedIdentityCredentialListRequestBuilder) Get(ctx context.Context)
 	return httputil.ReadRawResponse[FederatedIdentityCredentialListResponse](res)
 }
 
-func (c *FederatedIdentityCredentialListRequestBuilder) Post(ctx context.Context, federatedIdentityCredential *FederatedIdentityCredential) (*FederatedIdentityCredential, error) {
-	req, err := c.createRequest(ctx, http.MethodPost, fmt.Sprintf("%s/applications/%s/federatedIdentityCredentials", c.client.host, c.applicationId))
+func (c *FederatedIdentityCredentialListRequestBuilder) Post(
+	ctx context.Context,
+	federatedIdentityCredential *FederatedIdentityCredential,
+) (*FederatedIdentityCredential, error) {
+	req, err := c.createRequest(
+		ctx,
+		http.MethodPost,
+		fmt.Sprintf("%s/applications/%s/federatedIdentityCredentials", c.client.host, c.applicationId),
+	)
 	if err != nil {
 		return nil, fmt.Errorf("failed creating request: %w", err)
 	}
@@ -70,7 +86,11 @@ type FederatedIdentityCredentialItemRequestBuilder struct {
 	applicationId string
 }
 
-func NewFederatedIdentityCredentialItemRequestBuilder(client *GraphClient, applicationId string, id string) *FederatedIdentityCredentialItemRequestBuilder {
+func NewFederatedIdentityCredentialItemRequestBuilder(
+	client *GraphClient,
+	applicationId string,
+	id string,
+) *FederatedIdentityCredentialItemRequestBuilder {
 	builder := &FederatedIdentityCredentialItemRequestBuilder{
 		applicationId: applicationId,
 	}
@@ -81,7 +101,11 @@ func NewFederatedIdentityCredentialItemRequestBuilder(client *GraphClient, appli
 
 // Gets a Microsoft Graph Application for the specified application identifier
 func (c *FederatedIdentityCredentialItemRequestBuilder) Get(ctx context.Context) (*FederatedIdentityCredential, error) {
-	req, err := runtime.NewRequest(ctx, http.MethodGet, fmt.Sprintf("%s/applications/%s/federatedIdentityCredentials/%s", c.client.host, c.applicationId, c.id))
+	req, err := runtime.NewRequest(
+		ctx,
+		http.MethodGet,
+		fmt.Sprintf("%s/applications/%s/federatedIdentityCredentials/%s", c.client.host, c.applicationId, c.id),
+	)
 	if err != nil {
 		return nil, fmt.Errorf("failed creating request: %w", err)
 	}
@@ -98,8 +122,15 @@ func (c *FederatedIdentityCredentialItemRequestBuilder) Get(ctx context.Context)
 	return httputil.ReadRawResponse[FederatedIdentityCredential](res)
 }
 
-func (c *FederatedIdentityCredentialItemRequestBuilder) Update(ctx context.Context, federatedIdentityCredential *FederatedIdentityCredential) error {
-	req, err := runtime.NewRequest(ctx, http.MethodPatch, fmt.Sprintf("%s/applications/%s/federatedIdentityCredentials/%s", c.client.host, c.applicationId, c.id))
+func (c *FederatedIdentityCredentialItemRequestBuilder) Update(
+	ctx context.Context,
+	federatedIdentityCredential *FederatedIdentityCredential,
+) error {
+	req, err := runtime.NewRequest(
+		ctx,
+		http.MethodPatch,
+		fmt.Sprintf("%s/applications/%s/federatedIdentityCredentials/%s", c.client.host, c.applicationId, c.id),
+	)
 	if err != nil {
 		return fmt.Errorf("failed creating request: %w", err)
 	}
@@ -123,7 +154,11 @@ func (c *FederatedIdentityCredentialItemRequestBuilder) Update(ctx context.Conte
 
 // Gets a Microsoft Graph Application for the specified application identifier
 func (c *FederatedIdentityCredentialItemRequestBuilder) Delete(ctx context.Context) error {
-	req, err := runtime.NewRequest(ctx, http.MethodDelete, fmt.Sprintf("%s/applications/%s/federatedIdentityCredentials/%s", c.client.host, c.applicationId, c.id))
+	req, err := runtime.NewRequest(
+		ctx,
+		http.MethodDelete,
+		fmt.Sprintf("%s/applications/%s/federatedIdentityCredentials/%s", c.client.host, c.applicationId, c.id),
+	)
 	if err != nil {
 		return fmt.Errorf("failed creating request: %w", err)
 	}

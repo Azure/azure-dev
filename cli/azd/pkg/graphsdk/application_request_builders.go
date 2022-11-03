@@ -78,7 +78,9 @@ func (c *ApplicationItemRequestBuilder) FederatedIdentityCredentials() *Federate
 	return NewFederatedIdentityCredentialListRequestBuilder(c.client, c.id)
 }
 
-func (c *ApplicationItemRequestBuilder) FederatedIdentityCredentialById(id string) *FederatedIdentityCredentialItemRequestBuilder {
+func (c *ApplicationItemRequestBuilder) FederatedIdentityCredentialById(
+	id string,
+) *FederatedIdentityCredentialItemRequestBuilder {
 	return NewFederatedIdentityCredentialItemRequestBuilder(c.client, c.id, id)
 }
 

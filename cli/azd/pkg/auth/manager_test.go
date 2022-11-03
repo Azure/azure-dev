@@ -1,11 +1,16 @@
 package auth
 
 import (
+	"bytes"
 	"context"
+	"errors"
 	"os"
 	"testing"
 
+	_ "embed"
+
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/public"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/stretchr/testify/require"
 )
@@ -52,12 +57,130 @@ func TestServicePrincipalLoginClientSecret(t *testing.T) {
 	)
 
 	require.NoError(t, err)
-	require.IsType(t, cred, new(azidentity.ClientSecretCredential))
+	require.IsType(t, new(azidentity.ClientSecretCredential), cred)
 
 	cred, err = m.CredentialForCurrentUser(context.Background())
 
 	require.NoError(t, err)
-	require.IsType(t, cred, new(azidentity.ClientSecretCredential))
+	require.IsType(t, new(azidentity.ClientSecretCredential), cred)
+
+	err = m.Logout(context.Background())
+
+	require.NoError(t, err)
+}
+
+//go:embed testdata/certificate.pem
+var cTestClientCertificate []byte
+
+func TestServicePrincipalLoginClientCertificate(t *testing.T) {
+	credentialCache := &memoryCache{
+		cache: make(map[string][]byte),
+	}
+
+	m := Manager{
+		configManager:   &memoryConfigManager{},
+		credentialCache: credentialCache,
+	}
+
+	cred, err := m.LoginWithServicePrincipalCertificate(
+		context.Background(), "testClientId", "testTenantId", cTestClientCertificate,
+	)
+
+	require.NoError(t, err)
+	require.IsType(t, new(azidentity.ClientCertificateCredential), cred)
+
+	cred, err = m.CredentialForCurrentUser(context.Background())
+
+	require.NoError(t, err)
+	require.IsType(t, new(azidentity.ClientCertificateCredential), cred)
+
+	err = m.Logout(context.Background())
+
+	require.NoError(t, err)
+}
+
+func TestLegacyAzCliCredentialSupport(t *testing.T) {
+	mgr := &memoryConfigManager{
+		configs: make(map[string]config.Config),
+	}
+
+	cfg := config.NewConfig(nil)
+	err := cfg.Set(cUseLegacyAzCliAuthKey, "true")
+
+	require.NoError(t, err)
+
+	path, err := config.GetUserConfigFilePath()
+	require.NoError(t, err)
+
+	mgr.configs[path] = cfg
+
+	m := Manager{
+		configManager: mgr,
+	}
+
+	cred, err := m.CredentialForCurrentUser(context.Background())
+
+	require.NoError(t, err)
+	require.IsType(t, new(azidentity.AzureCLICredential), cred)
+
+}
+
+func TestLoginInteractive(t *testing.T) {
+	m := &Manager{
+		configManager: &memoryConfigManager{
+			configs: make(map[string]config.Config),
+		},
+		publicClient: &mockPublicClient{},
+	}
+
+	cred, err := m.LoginInteractive(context.Background())
+
+	require.NoError(t, err)
+	require.IsType(t, new(azdCredential), cred)
+
+	cred, err = m.CredentialForCurrentUser(context.Background())
+
+	require.NoError(t, err)
+	require.IsType(t, new(azdCredential), cred)
+
+	err = m.Logout(context.Background())
+
+	require.NoError(t, err)
+
+	cred, err = m.CredentialForCurrentUser(context.Background())
+
+	require.True(t, errors.Is(err, ErrNoCurrentUser))
+}
+
+func TestLoginDeviceCode(t *testing.T) {
+	m := &Manager{
+		configManager: &memoryConfigManager{
+			configs: make(map[string]config.Config),
+		},
+		publicClient: &mockPublicClient{},
+	}
+
+	buf := bytes.Buffer{}
+
+	cred, err := m.LoginWithDeviceCode(context.Background(), &buf)
+
+	require.Regexp(t, "using the code 123-456", buf.String())
+
+	require.NoError(t, err)
+	require.IsType(t, new(azdCredential), cred)
+
+	cred, err = m.CredentialForCurrentUser(context.Background())
+
+	require.NoError(t, err)
+	require.IsType(t, new(azdCredential), cred)
+
+	err = m.Logout(context.Background())
+
+	require.NoError(t, err)
+
+	cred, err = m.CredentialForCurrentUser(context.Background())
+
+	require.True(t, errors.Is(err, ErrNoCurrentUser))
 }
 
 type memoryConfigManager struct {
@@ -79,4 +202,58 @@ func (m *memoryConfigManager) Save(cfg config.Config, filePath string) error {
 
 	m.configs[filePath] = cfg
 	return nil
+}
+
+type mockPublicClient struct {
+}
+
+func (m *mockPublicClient) Accounts() []public.Account {
+	return []public.Account{
+		{
+			HomeAccountID: "test.id",
+		},
+	}
+}
+
+func (m *mockPublicClient) RemoveAccount(account public.Account) error {
+	return nil
+}
+
+func (m *mockPublicClient) AcquireTokenInteractive(
+	ctx context.Context, scopes []string, options ...public.InteractiveAuthOption,
+) (public.AuthResult, error) {
+	return public.AuthResult{
+		Account: public.Account{
+			HomeAccountID: "test.id",
+		},
+	}, nil
+}
+
+func (m *mockPublicClient) AcquireTokenSilent(
+	ctx context.Context, scopes []string, options ...public.AcquireTokenSilentOption,
+) (public.AuthResult, error) {
+	return public.AuthResult{
+		Account: public.Account{
+			HomeAccountID: "test.id",
+		},
+	}, nil
+}
+
+func (m *mockPublicClient) AcquireTokenByDeviceCode(ctx context.Context, scopes []string) (deviceCodeResult, error) {
+	return &mockDeviceCode{}, nil
+}
+
+type mockDeviceCode struct {
+}
+
+func (m *mockDeviceCode) Message() string {
+	return "Complete the device code flow on your second device using the code 123-456"
+}
+
+func (m *mockDeviceCode) AuthenticationResult(ctx context.Context) (public.AuthResult, error) {
+	return public.AuthResult{
+		Account: public.Account{
+			HomeAccountID: "test.id",
+		},
+	}, nil
 }

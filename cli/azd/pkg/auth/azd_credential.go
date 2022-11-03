@@ -12,11 +12,11 @@ import (
 )
 
 type azdCredential struct {
-	client  *public.Client
+	client  publicClient
 	account *public.Account
 }
 
-func newAzdCredential(client *public.Client, account *public.Account) *azdCredential {
+func newAzdCredential(client publicClient, account *public.Account) *azdCredential {
 	return &azdCredential{
 		client:  client,
 		account: account,

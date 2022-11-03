@@ -58,7 +58,7 @@ const authDirectoryFileMode = 0700
 // You can configure azd to ignore its native credential system and instead delegate to AZ CLI (useful for cases where azd
 // does not yet support your preferred method of authentication by setting [cUseLegacyAzCliAuthKey] in config to true.
 type Manager struct {
-	publicClient    *public.Client
+	publicClient    publicClient
 	configManager   config.Manager
 	credentialCache exportReplaceWithErrors
 }
@@ -85,7 +85,7 @@ func NewManager(configManager config.Manager) (*Manager, error) {
 	}
 
 	return &Manager{
-		publicClient:    &publicClientApp,
+		publicClient:    &msalPublicClientAdapter{client: &publicClientApp},
 		configManager:   configManager,
 		credentialCache: newCredentialCache(authRoot),
 	}, nil
@@ -142,14 +142,37 @@ func (m *Manager) CredentialForCurrentUser(ctx context.Context) (azcore.TokenCre
 			return nil, fmt.Errorf("loading secret: %v: %w", err, ErrNoCurrentUser)
 		}
 
-		cred, err := azidentity.NewClientSecretCredential(
-			*currentUser.TenantID, *currentUser.ClientID, *ps.ClientSecret, nil,
-		)
-		if err != nil {
-			return nil, fmt.Errorf("creating credential: %v: %w", err, ErrNoCurrentUser)
-		}
+		if ps.ClientSecret != nil {
+			cred, err := azidentity.NewClientSecretCredential(
+				*currentUser.TenantID, *currentUser.ClientID, *ps.ClientSecret, nil,
+			)
 
-		return cred, nil
+			if err != nil {
+				return nil, fmt.Errorf("creating credential: %v: %w", err, ErrNoCurrentUser)
+			}
+
+			return cred, nil
+		} else if ps.ClientCertificate != nil {
+			certData, err := base64.StdEncoding.DecodeString(*ps.ClientCertificate)
+			if err != nil {
+				return nil, fmt.Errorf("decoding certificate: %w", err)
+			}
+
+			certs, key, err := azidentity.ParseCertificates(certData, nil)
+			if err != nil {
+				return nil, fmt.Errorf("parsing certificate: %w", err)
+			}
+
+			cred, err := azidentity.NewClientCertificateCredential(
+				*currentUser.TenantID, *currentUser.ClientID, certs, key, nil,
+			)
+
+			if err != nil {
+				return nil, fmt.Errorf("creating credential: %v: %w", err, ErrNoCurrentUser)
+			}
+
+			return cred, nil
+		}
 	}
 
 	return nil, ErrNoCurrentUser
@@ -176,7 +199,7 @@ func (m *Manager) LoginWithDeviceCode(ctx context.Context, deviceCodeWriter io.W
 
 	// Display the message to the end user as to what to do next, then block waiting for them to complete
 	// the flow.
-	fmt.Fprintln(deviceCodeWriter, code.Result.Message)
+	fmt.Fprintln(deviceCodeWriter, code.Message())
 
 	res, err := code.AuthenticationResult(ctx)
 	if err != nil {

@@ -11,7 +11,6 @@ import (
 	osexec "os/exec"
 	"os/user"
 	"path/filepath"
-	"regexp"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
@@ -32,12 +31,6 @@ func NewBicepCli(ctx context.Context) BicepCli {
 type bicepCli struct {
 	bicepPath     string
 	commandRunner exec.CommandRunner
-}
-
-var isBicepNotFoundRegex = regexp.MustCompile(`Bicep CLI not found\.`)
-
-func isBicepNotFoundMessage(s string) bool {
-	return isBicepNotFoundRegex.MatchString(s)
 }
 
 func (cli *bicepCli) Name() string {

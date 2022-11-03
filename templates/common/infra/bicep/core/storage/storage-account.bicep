@@ -3,6 +3,7 @@ param location string = resourceGroup().location
 param tags object = {}
 
 param allowBlobPublicAccess bool = false
+param containers array = []
 param kind string = 'StorageV2'
 param minimumTlsVersion string = 'TLS1_2'
 param sku object = { name: 'Standard_LRS' }
@@ -21,6 +22,17 @@ resource storage 'Microsoft.Storage/storageAccounts@2022-05-01' = {
       defaultAction: 'Allow'
     }
   }
+
+  resource blobServices 'blobServices' = if (!empty(containers)) {
+    name: 'default'
+    resource container 'containers' = [for container in containers: {
+      name: container.name
+      properties: {
+        publicAccess: container.publicAccess
+      }
+    }]
+  }
 }
 
 output name string = storage.name
+output primaryEndpoints object = storage.properties.primaryEndpoints

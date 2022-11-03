@@ -1,6 +1,7 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
+// Package cli_test contains end-to-end tests for azd.
 package cli_test
 
 import (
@@ -47,24 +48,6 @@ import (
 const (
 	testSubscriptionId = "2cd617ea-1866-46b1-90e3-fffb087ebf9b"
 )
-
-func Test_CLI_Version_PrintsVersion(t *testing.T) {
-	ctx, cancel := newTestContext(t)
-	defer cancel()
-
-	cli := azdcli.NewCLI(t)
-	out, err := cli.RunCommand(ctx, "version")
-	require.NoError(t, err)
-
-	rn := os.Getenv("GITHUB_RUN_NUMBER")
-	if rn != "" {
-		version := os.Getenv("CLI_VERSION")
-		require.NotEmpty(t, version)
-		require.Contains(t, out, version)
-	} else {
-		require.Contains(t, out, fmt.Sprintf("azd version %s", internal.Version))
-	}
-}
 
 func Test_CLI_Init_FailsIfAzCliIsMissing(t *testing.T) {
 	ctx, cancel := newTestContext(t)

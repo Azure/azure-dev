@@ -45,7 +45,7 @@ func (st *appServiceTarget) Deploy(
 		return ServiceDeploymentResult{}, fmt.Errorf("failed reading deployment zip file: %w", err)
 	}
 
-	//defer os.Remove(zipFilePath)
+	defer os.Remove(zipFilePath)
 	defer zipFile.Close()
 
 	progress <- "Publishing deployment package"

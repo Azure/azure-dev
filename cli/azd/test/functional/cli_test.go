@@ -64,23 +64,6 @@ func Test_CLI_Login_FailsIfNoAzCliIsMissing(t *testing.T) {
 	require.Contains(t, out, "Azure CLI is not installed, please see https://aka.ms/azure-dev/azure-cli-install to install")
 }
 
-func Test_CLI_Init_FailsIfAzCliIsMissing(t *testing.T) {
-	ctx, cancel := newTestContext(t)
-	defer cancel()
-
-	dir := tempDirWithDiagnostics(t)
-
-	cli := azdcli.NewCLI(t)
-	cli.WorkingDirectory = dir
-
-	cli.Env = filterEnviron("PATH")
-
-	out, err := cli.RunCommandWithStdIn(ctx, "", "init")
-	require.Error(t, err)
-
-	require.Contains(t, out, "Azure CLI is not installed, please see https://aka.ms/azure-dev/azure-cli-install to install")
-}
-
 func Test_CLI_Init_AsksForSubscriptionIdAndCreatesEnvAndProjectFile(t *testing.T) {
 	ctx, cancel := newTestContext(t)
 	defer cancel()

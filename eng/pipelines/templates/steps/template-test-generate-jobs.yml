@@ -30,13 +30,13 @@ parameters:
   default: 'Generate'
 
 steps:
-  - checkout: self
-
   - pwsh: |
       $AzdVersion = '${{ parameters.AzdVersion }}'
       if ($env:SYSTEM_PULLREQUEST_PULLREQUESTNUMBER) {
         $AzdVersion = 'pr/' + $env:SYSTEM_PULLREQUEST_PULLREQUESTNUMBER
-        Write-Host "PR build detected. Overriding version of azd used to: $AzdVersion"
+        Write-Host "PR build detected, using azd version: $AzdVersion"
+      } else {
+        Write-Host "Non PR build, using azd version: $AzdVersion."
       }
       Write-Host "##vso[task.setvariable variable=AzdVersion]$AzdVersion"
     displayName: Set azd version for PR run

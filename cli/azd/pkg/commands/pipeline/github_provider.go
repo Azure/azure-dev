@@ -382,7 +382,12 @@ func (p *GitHubCiProvider) configureConnection(
 
 	// OIDC + Terraform is not a valid combination - warn user.
 	if authType == AuthTypeOidc && infraOptions.Provider == provisioning.Terraform {
-		console.Message(ctx, output.WithWarningFormat("WARNING: Terraform provisioning does not support OIDC authentication, defaulting to Service Principal with client secret.\n"))
+		console.Message(
+			ctx,
+			output.WithWarningFormat(
+				"WARNING: Terraform provisioning does not support OIDC authentication, defaulting to Service Principal with client secret.\n",
+			),
+		)
 		authType = AuthTypeClientSecret
 	}
 
@@ -408,7 +413,14 @@ func (p *GitHubCiProvider) configureConnection(
 }
 
 // Configures Github for standard Service Principal authentication with client id & secret
-func (p *GitHubCiProvider) configureClientSecretAuth(ctx context.Context, azdEnvironment *environment.Environment, infraOptions provisioning.Options, repoSlug string, credentials json.RawMessage, console input.Console) error {
+func (p *GitHubCiProvider) configureClientSecretAuth(
+	ctx context.Context,
+	azdEnvironment *environment.Environment,
+	infraOptions provisioning.Options,
+	repoSlug string,
+	credentials json.RawMessage,
+	console input.Console,
+) error {
 	ghCli := github.NewGitHubCli(ctx)
 	console.Message(ctx, "Setting AZURE_CREDENTIALS GitHub repo secret.\n")
 
@@ -478,7 +490,14 @@ func (p *GitHubCiProvider) configureClientSecretAuth(ctx context.Context, azdEnv
 }
 
 // Configures Github for OIDC authentication using registered application with federated identity credentials
-func (p *GitHubCiProvider) configureOidcAuth(ctx context.Context, azdEnvironment *environment.Environment, infraOptions provisioning.Options, repoSlug string, credentials json.RawMessage, console input.Console) error {
+func (p *GitHubCiProvider) configureOidcAuth(
+	ctx context.Context,
+	azdEnvironment *environment.Environment,
+	infraOptions provisioning.Options,
+	repoSlug string,
+	credentials json.RawMessage,
+	console input.Console,
+) error {
 	ghCli := github.NewGitHubCli(ctx)
 
 	var azureCredentials azcli.AzureCredentials
@@ -722,11 +741,21 @@ func getRemoteUrlFromPrompt(ctx context.Context, remoteName string, console inpu
 }
 
 // Ensures that the federated credential exists on the application otherwise create a new one
-func ensureFederatedCredential(ctx context.Context, graphClient *graphsdk.GraphClient, application *graphsdk.Application, existingCredentials []graphsdk.FederatedIdentityCredential, repoCredential *graphsdk.FederatedIdentityCredential) error {
+func ensureFederatedCredential(
+	ctx context.Context,
+	graphClient *graphsdk.GraphClient,
+	application *graphsdk.Application,
+	existingCredentials []graphsdk.FederatedIdentityCredential,
+	repoCredential *graphsdk.FederatedIdentityCredential,
+) error {
 	// If a federated credential already exists for the same subject then nothing to do.
 	for _, existing := range existingCredentials {
 		if existing.Subject == repoCredential.Subject {
-			log.Printf("federated credential with subject '%s' already exists on application '%s'", repoCredential.Subject, *application.Id)
+			log.Printf(
+				"federated credential with subject '%s' already exists on application '%s'",
+				repoCredential.Subject,
+				*application.Id,
+			)
 			return nil
 		}
 	}

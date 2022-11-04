@@ -65,7 +65,7 @@ jobs:
       name: azsdk-pool-mms-ubuntu-2004-general
       vmImage: MMSUbuntu20.04
 
-    container: $[ variables['AzdContainerImage'] ]
+    #container: $[ variables['AzdContainerImage'] ]
 
     steps:
       - checkout: self

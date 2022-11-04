@@ -29,7 +29,13 @@ parameters:
 steps:
 - template: /eng/pipelines/templates/steps/az-login.yml
 
-- template: /eng/pipelines/templates/steps/install-playwright-prereq.yml
+- template: /eng/pipelines/templates/steps/install-azd-live-sh.yml
+  parameters:
+    Version: ${{ parameters.AzdVersion }}
+
+# Java pre-requisites that isn't met
+# TODO: Use azd container as a form of validation that the container works
+- template: /eng/pipelines/templates/steps/install-ms-openjdk.yml
 
 # Required to clone repos that are not yet public
 - template: /eng/pipelines/templates/steps/set-git-credentials.yml

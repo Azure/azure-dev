@@ -22,7 +22,8 @@ The matrix job definition will contain:
 param (
     [string[]]$TemplateList = $('(azd template list)'),
     [string]$TemplateListFilter = '.*',
-    [string]$OutputMatrixVariable = 'Matrix'
+    [string]$OutputMatrixVariable = 'Matrix',
+    [string]$AzdContainerImage
 )
 
 if ($TemplateList.Length -eq 1 -and ($TemplateList[0] -eq '(azd template list)')) {

@@ -49,7 +49,7 @@ func Test_GraphClientRequest(t *testing.T) {
 		createFic := graphsdk.FederatedIdentityCredential{
 			Name:        "mainfic",
 			Issuer:      "https://token.actions.githubusercontent.com",
-			Subject:     "repo:${REPO}:ref:refs/heads/main",
+			Subject:     "repo:wbreza/azd-time-sample:ref:refs/heads/main",
 			Description: convert.RefOf("main"),
 			Audiences: []string{
 				"api://AzureADTokenExchange",

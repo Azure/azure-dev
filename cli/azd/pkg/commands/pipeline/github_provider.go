@@ -14,12 +14,18 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/azsdk"
+	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	githubRemote "github.com/azure/azure-dev/cli/azd/pkg/github"
+	"github.com/azure/azure-dev/cli/azd/pkg/graphsdk"
+	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
+	"github.com/azure/azure-dev/cli/azd/pkg/identity"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/git"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/github"
 )
@@ -358,16 +364,53 @@ func (p *GitHubCiProvider) configureConnection(
 	repoDetails *gitRepositoryDetails,
 	infraOptions provisioning.Options,
 	credentials json.RawMessage,
+	authType PipelineAuthType,
 	console input.Console) error {
 
 	repoSlug := repoDetails.owner + "/" + repoDetails.repoName
 	console.Message(ctx, fmt.Sprintf("Configuring repository %s.\n", repoSlug))
-	console.Message(ctx, "Setting AZURE_CREDENTIALS GitHub repo secret.\n")
 
 	ghCli := github.NewGitHubCli(ctx)
 	if err := p.ensureAuthorizedForRepoSecrets(ctx, ghCli, console, repoSlug); err != nil {
 		return fmt.Errorf("ensuring authorization: %w", err)
 	}
+
+	// Default to OIDC if not specified
+	if authType == "" {
+		authType = AuthTypeOidc
+	}
+
+	// OIDC + Terraform is not a valid combination - warn user.
+	if authType == AuthTypeOidc && infraOptions.Provider == provisioning.Terraform {
+		console.Message(ctx, output.WithWarningFormat("WARNING: Terraform provisioning does not support OIDC authentication, defaulting to Service Principal with client secret.\n"))
+		authType = AuthTypeClientSecret
+	}
+
+	var authErr error
+
+	switch authType {
+	case AuthTypeClientSecret:
+		authErr = p.configureClientSecretAuth(ctx, azdEnvironment, infraOptions, repoSlug, credentials, console)
+	default:
+		authErr = p.configureOidcAuth(ctx, azdEnvironment, infraOptions, repoSlug, credentials, console)
+	}
+
+	if authErr != nil {
+		return fmt.Errorf("failed configuring authentication: %w", authErr)
+	}
+
+	console.Message(ctx, fmt.Sprintf(
+		`GitHub Action secrets are now configured.
+		See your .github/workflows folder for details on which actions will be enabled.
+		You can view the GitHub Actions here: https://github.com/%s/actions`, repoSlug))
+
+	return nil
+}
+
+// Configures Github for standard Service Principal authentication with client id & secret
+func (p *GitHubCiProvider) configureClientSecretAuth(ctx context.Context, azdEnvironment *environment.Environment, infraOptions provisioning.Options, repoSlug string, credentials json.RawMessage, console input.Console) error {
+	ghCli := github.NewGitHubCli(ctx)
+	console.Message(ctx, "Setting AZURE_CREDENTIALS GitHub repo secret.\n")
 
 	// set azure credential for pipelines can log in to Azure
 	if err := ghCli.SetSecret(ctx, repoSlug, "AZURE_CREDENTIALS", string(credentials)); err != nil {
@@ -431,10 +474,96 @@ func (p *GitHubCiProvider) configureConnection(
 		}
 	}
 
-	console.Message(ctx, fmt.Sprintf(
-		`GitHub Action secrets are now configured.
-		See your .github/workflows folder for details on which actions will be enabled.
-		You can view the GitHub Actions here: https://github.com/%s/actions`, repoSlug))
+	return nil
+}
+
+// Configures Github for OIDC authentication using registered application with federated identity credentials
+func (p *GitHubCiProvider) configureOidcAuth(ctx context.Context, azdEnvironment *environment.Environment, infraOptions provisioning.Options, repoSlug string, credentials json.RawMessage, console input.Console) error {
+	ghCli := github.NewGitHubCli(ctx)
+
+	var azureCredentials azcli.AzureCredentials
+	if err := json.Unmarshal(credentials, &azureCredentials); err != nil {
+		return fmt.Errorf("failed unmarshalling azure credentials: %w", err)
+	}
+
+	err := applyFederatedCredentials(ctx, repoSlug, &azureCredentials)
+	if err != nil {
+		return err
+	}
+
+	githubSecrets := map[string]string{
+		environment.EnvNameEnvVarName:        azdEnvironment.GetEnvName(),
+		environment.LocationEnvVarName:       azdEnvironment.GetLocation(),
+		environment.TenantIdEnvVarName:       azureCredentials.TenantId,
+		environment.SubscriptionIdEnvVarName: azureCredentials.SubscriptionId,
+		"AZURE_CLIENT_ID":                    azureCredentials.ClientId,
+	}
+
+	for key, value := range githubSecrets {
+		console.Message(ctx, fmt.Sprintf("Setting %s GitHub repo secret.\n", key))
+		if err := ghCli.SetSecret(ctx, repoSlug, key, value); err != nil {
+			return fmt.Errorf("failed setting github secret '%s':  %w", key, err)
+		}
+	}
+
+	return nil
+}
+
+const (
+	federatedIdentityIssuer   = "https://token.actions.githubusercontent.com"
+	federatedIdentityAudience = "api://AzureADTokenExchange"
+)
+
+func applyFederatedCredentials(ctx context.Context, repoSlug string, azureCredentails *azcli.AzureCredentials) error {
+	graphClient, err := createGraphClient(ctx)
+	if err != nil {
+		return err
+	}
+
+	appsResponse, err := graphClient.
+		Applications().
+		Filter(fmt.Sprintf("appId eq '%s'", azureCredentails.ClientId)).
+		Get(ctx)
+	if err != nil || len(appsResponse.Value) == 0 {
+		return fmt.Errorf("failed finding matching application: %w", err)
+	}
+
+	application := appsResponse.Value[0]
+
+	existingCredsResponse, err := graphClient.
+		ApplicationById(*application.Id).
+		FederatedIdentityCredentials().
+		Get(ctx)
+
+	if err != nil {
+		return fmt.Errorf("failed retrieving federated credentials: %w", err)
+	}
+
+	// List of desired federated credentials
+	federatedCredentials := []graphsdk.FederatedIdentityCredential{
+		{
+			Name:        "main",
+			Issuer:      federatedIdentityIssuer,
+			Subject:     fmt.Sprintf("repo:%s:ref:refs/heads/main", repoSlug),
+			Description: convert.RefOf("Created by Azure Developer CLI"),
+			Audiences:   []string{federatedIdentityAudience},
+		},
+		{
+			Name:        "pull_request",
+			Issuer:      federatedIdentityIssuer,
+			Subject:     fmt.Sprintf("repo:%s:pull_request", repoSlug),
+			Description: convert.RefOf("Created by Azure Developer CLI"),
+			Audiences:   []string{federatedIdentityAudience},
+		},
+	}
+
+	// Ensure the credential exists otherwise create a new one.
+	for _, fic := range federatedCredentials {
+		err := ensureFederatedCredential(ctx, graphClient, &application, existingCredsResponse.Value, &fic)
+		if err != nil {
+			return err
+		}
+	}
 
 	return nil
 }
@@ -590,4 +719,37 @@ func getRemoteUrlFromPrompt(ctx context.Context, remoteName string, console inpu
 	}
 
 	return remoteUrl, nil
+}
+
+// Ensures that the federated credential exists on the application otherwise create a new one
+func ensureFederatedCredential(ctx context.Context, graphClient *graphsdk.GraphClient, application *graphsdk.Application, existingCredentials []graphsdk.FederatedIdentityCredential, repoCredential *graphsdk.FederatedIdentityCredential) error {
+	// If a federated credential already exists for the same subject then nothing to do.
+	for _, existing := range existingCredentials {
+		if existing.Subject == repoCredential.Subject {
+			log.Printf("federated credential with subject '%s' already exists on application '%s'", repoCredential.Subject, *application.Id)
+			return nil
+		}
+	}
+
+	// Otherwise create the new federated credential
+	_, err := graphClient.
+		ApplicationById(*application.Id).
+		FederatedIdentityCredentials().
+		Post(ctx, repoCredential)
+
+	if err != nil {
+		return fmt.Errorf("failed created federated credential: %w", err)
+	}
+
+	return nil
+}
+
+func createGraphClient(ctx context.Context) (*graphsdk.GraphClient, error) {
+	creds := identity.GetCredentials(ctx)
+	graphOptions := azsdk.
+		NewClientOptionsBuilder().
+		WithTransport(httputil.GetHttpClient(ctx)).
+		BuildCoreClientOptions()
+
+	return graphsdk.NewGraphClient(creds, graphOptions)
 }

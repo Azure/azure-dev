@@ -35,6 +35,12 @@ func (pc *pipelineConfigFlags) Bind(local *pflag.FlagSet, global *internal.Globa
 		"origin",
 		"The name of the git remote to configure the pipeline to run on.",
 	)
+	local.StringVar(
+		&pc.PipelineAuthTypeName,
+		"auth-type",
+		"",
+		"The authentication type used between the pipeline provider and Azure for deployment (Only valid for GitHub provider)",
+	)
 	local.StringVar(&pc.PipelineRoleName, "principal-role", "Contributor", "The role to assign to the service principal.")
 	local.StringVar(&pc.PipelineProvider, "provider", "", "The pipeline provider to use (GitHub and Azdo supported).")
 	pc.global = global

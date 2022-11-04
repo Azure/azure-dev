@@ -90,7 +90,9 @@ type CiProvider interface {
 		gitRepo *gitRepositoryDetails,
 		provisioningProvider provisioning.Options,
 		credential json.RawMessage,
-		console input.Console) error
+		authType PipelineAuthType,
+		console input.Console,
+	) error
 }
 
 func folderExists(folderPath string) bool {

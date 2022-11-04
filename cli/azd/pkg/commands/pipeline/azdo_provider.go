@@ -596,6 +596,7 @@ func (p *AzdoCiProvider) configureConnection(
 	repoDetails *gitRepositoryDetails,
 	provisioningProvider provisioning.Options,
 	credentials json.RawMessage,
+	authType PipelineAuthType,
 	console input.Console) error {
 
 	azureCredentials, err := parseCredentials(ctx, credentials)

@@ -21,11 +21,19 @@ import (
 	"github.com/sethvargo/go-retry"
 )
 
+type PipelineAuthType string
+
+const (
+	AuthTypeOidc         PipelineAuthType = "oidc"
+	AuthTypeClientSecret PipelineAuthType = "client-secret"
+)
+
 type PipelineManagerArgs struct {
 	PipelineServicePrincipalName string
 	PipelineRemoteName           string
 	PipelineRoleName             string
 	PipelineProvider             string
+	PipelineAuthTypeName         string
 }
 
 // PipelineManager takes care of setting up the scm and pipeline.
@@ -263,6 +271,7 @@ func (manager *PipelineManager) Configure(ctx context.Context) error {
 		gitRepoInfo,
 		prj.Infra,
 		credentials,
+		PipelineAuthType(manager.PipelineAuthTypeName),
 		inputConsole)
 	if err != nil {
 		return err

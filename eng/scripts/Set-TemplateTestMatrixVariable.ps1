@@ -20,11 +20,14 @@ The matrix job definition will contain:
 
 #>
 param (
-    [string[]]$TemplateList = $('(azd template list)'),
+    [string[]]$TemplateList = @('(azd template list)'),
     [string]$TemplateListFilter = '.*',
     [string]$OutputMatrixVariable = 'Matrix',
     [string]$AzdContainerImage
 )
+
+Write-Output "Output for azd template list --output json"
+azd template list --output json 
 
 if ($TemplateList.Length -eq 1 -and ($TemplateList[0] -eq '(azd template list)')) {
     $templateNames = (azd template list --output json | ConvertFrom-Json).name
@@ -51,9 +54,9 @@ $firstTemplate = $templateNames[0]
 $capitalsTest = $firstTemplate.Replace('/', '_') + "-Upper-case-test"
 $matrix[$capitalsTest] = @{ TemplateName = $firstTemplate; UseUpperCase = "true" }
 
-foreach ($jobName in $matrix.Keys) {
-    $matrix[$jobName].Add("AzdContainerImage", $AzdContainerImage) | Out-Null
-}
+# foreach ($jobName in $matrix.Keys) {
+#     $matrix[$jobName].Add("AzdContainerImage", $AzdContainerImage) | Out-Null
+# }
 
 Write-Host "Matrix:"
 Write-Host ($matrix | ConvertTo-Json | Out-String)

@@ -40,38 +40,11 @@ variables:
     value: 16
 
 jobs:
-  - job: CreateMatrix
-    pool:
-      name: azsdk-pool-mms-ubuntu-2004-general
-      vmImage: MMSUbuntu20.04
-
-    steps:
-      - checkout: self
-      - template: /eng/pipelines/templates/steps/template-test-generate-jobs.yml
-        parameters:
-          TemplateList: ${{ parameters.TemplateList }}
-          TemplateListFilter: ${{ parameters.TemplateListFilter }}
-          OutputMatrixStepName: 'Generate'
-          OutputMatrixVariable: 'Matrix'
-
-  - job: TestTemplates
-    dependsOn: CreateMatrix
-
-    strategy:
-      matrix: $[ dependencies.CreateMatrix.outputs['Generate.Matrix'] ]
-      maxParallel: 10
-
-    pool:
-      name: azsdk-pool-mms-ubuntu-2004-general
-      vmImage: MMSUbuntu20.04
-
-    #container: $[ variables['AzdContainerImage'] ]
-
-    steps:
-      - checkout: self
-      - template: /eng/pipelines/templates/steps/template-test-run-job.yml
-        parameters:
-          AzdVersion: ${{ parameters.AzdVersion }}
-          AzureLocation: ${{ parameters.AzureLocation }}
-          TemplateBranchName: ${{ parameters.TemplateBranchName }}
-          CleanupHoursDelay: ${{ parameters.CleanupHoursDelay }}
+  - job: /eng/pipelines/templates/jobs/run-template-tests.yml
+    parameters:
+      AzdVersion: ${{ parameters.AzdVersion }}
+      TemplateList: ${{ parameters.TemplateList }}
+      TemplateListFilter: ${{ parameters.TemplateListFilter }}
+      TemplateBranchName: ${{ parameters.TemplateBranchName }}
+      AzureLocation: ${{ parameters.AzureLocation }}
+      CleanupHoursDelay: ${{ parameters.CleanupHoursDelay }}

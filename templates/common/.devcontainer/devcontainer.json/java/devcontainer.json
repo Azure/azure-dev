@@ -29,7 +29,8 @@
         "ms-azuretools.vscode-bicep",
         "ms-azuretools.vscode-docker",
         "ms-vscode.vscode-node-azure-pack",
-        "vscjava.vscode-java-pack"
+        "vscjava.vscode-java-pack",
+        "ms-azuretools.vscode-azurefunctions"
     ],
     "forwardPorts": [
         3000,

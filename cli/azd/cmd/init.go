@@ -356,7 +356,7 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	}, nil
 }
 
-func getStepResultFormat(result error) input.MessageUxType {
+func getStepResultFormat(result error) input.SpinnerUxType {
 	formatResult := input.StepDone
 	if result != nil {
 		formatResult = input.StepFailed

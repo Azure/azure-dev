@@ -21,14 +21,18 @@ import (
 )
 
 type MessageUxType int
+type SpinnerUxType int
 
 const (
 	Title MessageUxType = iota
-	Step
-	StepDone
-	StepFailed
 	ResultSuccess
 	ResultError
+)
+
+const (
+	Step SpinnerUxType = iota
+	StepDone
+	StepFailed
 )
 
 type Console interface {
@@ -38,11 +42,11 @@ type Console interface {
 	MessageUx(ctx context.Context, message string, format MessageUxType)
 	// Prints progress spinner with the given title.
 	// If a previous spinner is running, the title is updated.
-	ShowSpinner(ctx context.Context, title string, format MessageUxType)
+	ShowSpinner(ctx context.Context, title string, format SpinnerUxType)
 	// Stop the current spinner from the console and change the spinner bar for the lastMessage
 	// Set lastMessage to empty string to clear the spinner message instead of a displaying a last message
 	// If there is no spinner running, this is a no-op function
-	StopSpinner(ctx context.Context, lastMessage string, format MessageUxType)
+	StopSpinner(ctx context.Context, lastMessage string, format SpinnerUxType)
 	// Prompts the user for a single value
 	Prompt(ctx context.Context, options ConsoleOptions) (string, error)
 	// Prompts the user to select from a set of values
@@ -140,7 +144,7 @@ func addFormat(message string, format MessageUxType) (withFormat string, err err
 	return withFormat, nil
 }
 
-func (c *AskerConsole) ShowSpinner(ctx context.Context, title string, format MessageUxType) {
+func (c *AskerConsole) ShowSpinner(ctx context.Context, title string, format SpinnerUxType) {
 	// make sure spinner exists
 	if c.spinner == nil {
 		c.spinner, _ = yacspin.New(yacspin.Config{
@@ -167,7 +171,7 @@ func (c *AskerConsole) ShowSpinner(ctx context.Context, title string, format Mes
 	}
 }
 
-func getCharset(format MessageUxType) []string {
+func getCharset(format SpinnerUxType) []string {
 	customCharSet := []string{
 		"|       |", "|=      |", "|==     |", "|===    |", "|====   |", "|=====  |", "|====== |", "|=======|"}
 
@@ -178,7 +182,7 @@ func getCharset(format MessageUxType) []string {
 	return newCharSet
 }
 
-func getIndent(format MessageUxType) string {
+func getIndent(format SpinnerUxType) string {
 	spaces := 0
 	switch format {
 	case Step:
@@ -195,7 +199,7 @@ func getIndent(format MessageUxType) string {
 	return string(bytes)
 }
 
-func (c *AskerConsole) StopSpinner(ctx context.Context, lastMessage string, format MessageUxType) {
+func (c *AskerConsole) StopSpinner(ctx context.Context, lastMessage string, format SpinnerUxType) {
 	// calling stop for non existing spinner
 	if c.spinner == nil {
 		return
@@ -218,7 +222,7 @@ func (c *AskerConsole) StopSpinner(ctx context.Context, lastMessage string, form
 	c.Message(ctx, "")
 }
 
-func getStopChar(format MessageUxType) string {
+func getStopChar(format SpinnerUxType) string {
 	var stopChar string
 	switch format {
 	case StepDone:

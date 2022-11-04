@@ -40,11 +40,11 @@ variables:
     value: 16
 
 jobs:
-  - job: /eng/pipelines/templates/jobs/run-template-tests.yml
-    parameters:
-      AzdVersion: ${{ parameters.AzdVersion }}
-      TemplateList: ${{ parameters.TemplateList }}
-      TemplateListFilter: ${{ parameters.TemplateListFilter }}
-      TemplateBranchName: ${{ parameters.TemplateBranchName }}
-      AzureLocation: ${{ parameters.AzureLocation }}
-      CleanupHoursDelay: ${{ parameters.CleanupHoursDelay }}
+- template: /eng/pipelines/templates/jobs/run-template-tests.yml
+  parameters:
+    AzdVersion: ${{ parameters.AzdVersion }}
+    TemplateList: ${{ parameters.TemplateList }}
+    TemplateListFilter: ${{ parameters.TemplateListFilter }}
+    TemplateBranchName: ${{ parameters.TemplateBranchName }}
+    AzureLocation: ${{ parameters.AzureLocation }}
+    CleanupHoursDelay: ${{ parameters.CleanupHoursDelay }}

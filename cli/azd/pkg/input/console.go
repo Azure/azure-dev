@@ -115,6 +115,13 @@ func (c *AskerConsole) MessageUx(ctx context.Context, message string, format Mes
 		return
 	}
 
+	// backwards compatibility to error messages
+	// Remove any formatter before printing the Result
+	// This is can be changed in the future if we want to format any error message as Json or Table when user set output.
+	if format == ResultError {
+		c.formatter = &output.NoneFormatter{}
+	}
+
 	c.Message(ctx, formattedText)
 }
 

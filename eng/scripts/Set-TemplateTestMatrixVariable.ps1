@@ -35,6 +35,9 @@ if ($TemplateList.Length -eq 1 -and ($TemplateList[0] -eq '(azd template list)')
         Write-Error "azd template list failed"
         exit 1
     }
+
+    Write-Host "Template names:"
+    $templateNames
 } else {
     $templateNames = $TemplateList
 }

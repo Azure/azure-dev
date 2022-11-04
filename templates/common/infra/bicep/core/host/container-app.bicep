@@ -3,6 +3,7 @@ param location string = resourceGroup().location
 param tags object = {}
 
 param containerAppsEnvironmentName string = ''
+param containerName string = 'main'
 param containerRegistryName string = ''
 param env array = []
 param external bool = true
@@ -49,7 +50,7 @@ resource app 'Microsoft.App/containerApps@2022-03-01' = {
       containers: [
         {
           image: imageName
-          name: 'main'
+          name: containerName
           env: env
           resources: {
             cpu: json(containerCpuCoreCount)

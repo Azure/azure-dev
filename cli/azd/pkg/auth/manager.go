@@ -154,12 +154,12 @@ func (m *Manager) CredentialForCurrentUser(ctx context.Context) (azcore.TokenCre
 		} else if ps.ClientCertificate != nil {
 			certData, err := base64.StdEncoding.DecodeString(*ps.ClientCertificate)
 			if err != nil {
-				return nil, fmt.Errorf("decoding certificate: %w", err)
+				return nil, fmt.Errorf("decoding certificate: %v: %w", err, ErrNoCurrentUser)
 			}
 
 			certs, key, err := azidentity.ParseCertificates(certData, nil)
 			if err != nil {
-				return nil, fmt.Errorf("parsing certificate: %w", err)
+				return nil, fmt.Errorf("parsing certificate: %v: %w", err, ErrNoCurrentUser)
 			}
 
 			cred, err := azidentity.NewClientCertificateCredential(

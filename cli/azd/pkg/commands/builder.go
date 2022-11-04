@@ -119,4 +119,7 @@ func (pc *panicCredential) GetToken(_ context.Context, _ policy.TokenRequestOpti
 // command does not require the user be logged in. This is used to prevent a login check from running when adding a
 // credential to the root context object. If code with this annotation ends up trying to use the credentials object
 // which is placed on the context, it will panic.
+//
+// TODO(azure/azure-dev#899): We can remove this logic and all of it's uses when we no longer register a credential
+// in the context with [RegisterDependenciesInCtx].
 const RequireNoLoginAnnotation = "github.com/azure/azure-dev/cli/azd/pkg/commands/requireNoLoginAnnotation"

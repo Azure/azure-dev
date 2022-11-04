@@ -25,7 +25,7 @@ jobs:
           azd login `
             --client-id "$info.clientId" `
             --client-secret "$info.clientSecret" `
-            --tenant-id "$info.clientSecret"
+            --tenant-id "$info.tenantId"
         shell: pwsh
         env:
           AZURE_CREDENTIALS: ${{ secrets.AZURE_CREDENTIALS }}

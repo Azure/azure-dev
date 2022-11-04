@@ -40,9 +40,20 @@ variables:
     value: 16
 
 jobs:
+- pwsh: |
+    $AzdVersion = '${{ parameters.AzdVersion }}'
+    if ($env:SYSTEM_PULLREQUEST_PULLREQUESTNUMBER) {
+      $AzdVersion = 'pr/' + $env:SYSTEM_PULLREQUEST_PULLREQUESTNUMBER
+      Write-Host "PR build detected, overriding to use azd version: $AzdVersion"
+    } else {
+      Write-Host "Non PR build, using azd version: $AzdVersion."
+    }
+    Write-Host "##vso[task.setvariable variable=AzdVersion]$AzdVersion"
+  displayName: Set azd version for PR run
+
 - template: /eng/pipelines/templates/jobs/run-template-tests.yml
   parameters:
-    AzdVersion: ${{ parameters.AzdVersion }}
+    AzdVersion: $(AzdVersion)
     TemplateList: ${{ parameters.TemplateList }}
     TemplateListFilter: ${{ parameters.TemplateListFilter }}
     TemplateBranchName: ${{ parameters.TemplateBranchName }}

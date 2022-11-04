@@ -30,21 +30,10 @@ parameters:
   default: 'Generate'
 
 steps:
-  - pwsh: |
-      $AzdVersion = '${{ parameters.AzdVersion }}'
-      if ($env:SYSTEM_PULLREQUEST_PULLREQUESTNUMBER) {
-        $AzdVersion = 'pr/' + $env:SYSTEM_PULLREQUEST_PULLREQUESTNUMBER
-        Write-Host "PR build detected, overriding to use azd version: $AzdVersion"
-      } else {
-        Write-Host "Non PR build, using azd version: $AzdVersion."
-      }
-      Write-Host "##vso[task.setvariable variable=AzdVersion]$AzdVersion"
-    displayName: Set azd version for PR run
-
   # azd is required to list all templates if TemplateList is not provided.
   - template: /eng/pipelines/templates/steps/install-azd-live-sh.yml
     parameters:
-      Version: $(AzdVersion)
+      Version: ${{ parameters.AzdVersion }}
       OutputContainerImageVariableName: 'AzdContainerImage'
 
   - task: PowerShell@2

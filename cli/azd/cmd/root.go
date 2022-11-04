@@ -153,6 +153,8 @@ func BuildCmd[F any](
 		}
 
 		actionResult, err := action.Run(ctx)
+		// At this point, we know that there might be an error, so we can silence cobra from showing it after us.
+		cmd.SilenceErrors = true
 		actions.ShowActionResults(ctx, actionResult, err)
 
 		return err
@@ -167,9 +169,6 @@ func BuildCmd[F any](
 			return runCmdWithTelemetry(cmd, runWithContext)
 		}
 	}
-	// Error is formatted and displayed at the end of RunE depending on the format
-	// So we don't need the generic error from cobra at the end
-	cmd.SilenceErrors = true
 
 	return cmd
 }

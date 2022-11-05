@@ -58,6 +58,8 @@ When no template is supplied, you can optionally select an Azure Developer CLI t
 	uf := &upFlags{}
 	uf.Bind(cmd.Flags(), global)
 
+	cmd.RegisterFlagCompletionFunc("template", templateNameCompletion)
+
 	return cmd, uf
 }
 

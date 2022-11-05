@@ -81,7 +81,7 @@ func (cli *ghCli) CheckInstalled(ctx context.Context) (bool, error) {
 	if err != nil {
 		return false, fmt.Errorf("checking %s version: %w", cli.Name(), err)
 	}
-	ghSemver, err := tools.ExtractSemver(ghRes)
+	ghSemver, err := tools.ExtractVersion(ghRes)
 	if err != nil {
 		return false, fmt.Errorf("converting to semver version fails: %w", err)
 	}

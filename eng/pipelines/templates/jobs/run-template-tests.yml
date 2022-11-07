@@ -46,6 +46,12 @@ parameters:
   type: boolean
   default: false
 
+variables:
+- name: AzdVersion
+  value: ${{ parameters.AzdVersion }}
+
+- name: TemplateList
+  value: ${{ parameters.TemplateList }}
 
 jobs:
   - job: TemplateTest_CreateMatrix
@@ -60,20 +66,21 @@ jobs:
 
       - ${{ if parameters.UseAzdVersionFromPrNumber }}:
         - pwsh: |
-            $AzdVersion = '${{ parameters.AzdVersion }}'
+            $AzdVersion = '$(AzdVersion)'
             if ($env:SYSTEM_PULLREQUEST_PULLREQUESTNUMBER) {
               $AzdVersion = 'pr/' + $env:SYSTEM_PULLREQUEST_PULLREQUESTNUMBER
               Write-Host "PR build detected, overriding to use azd version: $AzdVersion"
+              Write-Host "##vso[task.setvariable variable=AzdVersion]$AzdVersion"
             } else {
               Write-Host "Non PR build, using azd version: $AzdVersion."
             }
-            Write-Host "##vso[task.setvariable variable=AzdVersion]$AzdVersion"
           displayName: Set azd version from PR run
 
       - template: /eng/pipelines/templates/steps/template-test-generate-jobs.yml
         parameters:
-          TemplateList: ${{ parameters.TemplateList }}
-          TemplateListFilter: ${{ parameters.TemplateListFilter }}
+          TemplateList: '$(TemplateList)'
+          TemplateListFilter: '${{ parameters.TemplateListFilter }}'
+          AzdVersion: '$(AzdVersion)'
           OutputMatrixStepName: 'Generate'
           OutputMatrixVariable: 'Matrix'
 
@@ -94,7 +101,6 @@ jobs:
       - checkout: self
       - template: /eng/pipelines/templates/steps/template-test-run-job.yml
         parameters:
-          AzdVersion: ${{ parameters.AzdVersion }}
           AzureLocation: ${{ parameters.AzureLocation }}
           TemplateBranchName: ${{ parameters.TemplateBranchName }}
           CleanupHoursDelay: ${{ parameters.CleanupHoursDelay }}

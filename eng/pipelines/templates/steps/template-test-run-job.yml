@@ -1,12 +1,4 @@
 parameters:
-- name: AzdVersion
-  displayName: |
-    Version of azd to test against.
-    For PR builds, specify 'pr/<PRNumber>'. The PR validation build must have succeeded prior.
-    For official build, 'daily', 'latest', or a specific version number: '0.3.0-beta.6-daily.1947218'.
-  type: string
-  default: daily
-
 - name: TemplateBranchName
   displayName: The template repository branch to test against
   type: string
@@ -25,13 +17,14 @@ parameters:
 # Consumes the following variables from Set-TemplateTestMatrixVariable.ps1:
 # - TemplateName
 # - UseUpperCase
+# - AzdVersion / AzdContainerImage
 
 steps:
 - template: /eng/pipelines/templates/steps/az-login.yml
 
 - template: /eng/pipelines/templates/steps/install-azd-live-sh.yml
   parameters:
-    Version: ${{ parameters.AzdVersion }}
+    Version: $(AzdVersion)
 
 # Java pre-requisites that isn't met
 # TODO: Use azd container as a form of validation that the container works

@@ -11,6 +11,9 @@ Regex filter expression to filter templates. Examples: 'csharp', 'terraform', 'p
 .PARAMETER AzdContainerImage
 The container image to use for templates. Will be set as a variable with the same name in the matrix job definition.
 
+.PARAMETER AzdVersion
+The version of azd to use for templates. Will be set as a variable with the same name in the matrix job definition.
+
 .PARAMETER OutputMatrixVariable
 The output variable that will contain the matrix job definitions.
 The matrix job definition will contain:
@@ -24,6 +27,7 @@ param (
     [string]$TemplateList = '(azd template list)',
     [string]$TemplateListFilter = '.*',
     [string]$OutputMatrixVariable = 'Matrix',
+    [string]$AzdVersion,
     [string]$AzdContainerImage
 )
 
@@ -61,6 +65,7 @@ $matrix[$capitalsTest] = @{ TemplateName = $firstTemplate; UseUpperCase = "true"
 
 foreach ($jobName in $matrix.Keys) {
     $matrix[$jobName].Add("AzdContainerImage", $AzdContainerImage) | Out-Null
+    $matrix[$jobName].Add("AzdVersion", $AzdVersion) | Out-Null
 }
 
 Write-Host "Matrix:"

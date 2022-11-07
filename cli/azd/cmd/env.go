@@ -228,6 +228,7 @@ func envNewCmdDesign(global *internal.GlobalCommandOptions) (*cobra.Command, *en
 	}
 	f := &envNewFlags{}
 	f.Bind(cmd.Flags(), global)
+	cmd.Args = cobra.MaximumNArgs(1)
 	return cmd, f
 }
 

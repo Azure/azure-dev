@@ -59,7 +59,7 @@ func (cli *bicepCli) CheckInstalled(ctx context.Context) (bool, error) {
 		return false, fmt.Errorf("checking %s version: %w", cli.Name(), err)
 	}
 
-	bicepSemver, err := tools.ExtractSemver(bicepRes.Stdout)
+	bicepSemver, err := tools.ExtractVersion(bicepRes.Stdout)
 	if err != nil {
 		return false, fmt.Errorf("converting to semver version fails: %w", err)
 	}

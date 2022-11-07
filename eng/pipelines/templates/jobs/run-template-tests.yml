@@ -46,16 +46,6 @@ parameters:
   type: boolean
   default: false
 
-variables:
-- name: AzdVersion
-  value: ${{ parameters.AzdVersion }}
-
-- name: TemplateList
-  value: ${{ parameters.TemplateList }}
-
-- name: TemplateBranchName
-  value: ${{ parameters.TemplateBranchName }}
-
 jobs:
   - job: TemplateTest_CreateMatrix
     condition: ${{ parameters.JobCondition }}
@@ -63,6 +53,16 @@ jobs:
     pool:
       name: azsdk-pool-mms-ubuntu-2004-general
       vmImage: MMSUbuntu20.04
+
+    variables:
+    - name: AzdVersion
+      value: ${{ parameters.AzdVersion }}
+
+    - name: TemplateList
+      value: ${{ parameters.TemplateList }}
+
+    - name: TemplateBranchName
+      value: ${{ parameters.TemplateBranchName }}
 
     steps:
       - checkout: self

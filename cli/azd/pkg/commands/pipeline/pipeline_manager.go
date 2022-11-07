@@ -28,6 +28,8 @@ const (
 	AuthTypeClientSecret PipelineAuthType = "client-secret"
 )
 
+var ErrAuthNotSupported = errors.New("pipeline authentication configuration is not supported")
+
 type PipelineManagerArgs struct {
 	PipelineServicePrincipalName string
 	PipelineRemoteName           string

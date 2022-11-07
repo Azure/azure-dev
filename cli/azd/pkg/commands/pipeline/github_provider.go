@@ -367,28 +367,28 @@ func (p *GitHubCiProvider) configureConnection(
 	authType PipelineAuthType,
 	console input.Console) error {
 
+	// Oidc + Terraform is not a supported combination
+	if infraOptions.Provider == provisioning.Terraform {
+		// Throw error if Oidc is explicitly requested
+		if authType == AuthTypeOidc {
+			return fmt.Errorf("Terraform does not support OIDC authentication. Service Principal with client ID and client secret must be used. %w", ErrAuthNotSupported)
+		}
+
+		// If not explicitly set, show warning
+		console.Message(
+			ctx,
+			output.WithWarningFormat(
+				"WARNING: Terraform provisioning does not support OIDC authentication, defaulting to Service Principal with client ID and client secret.\n",
+			),
+		)
+	}
+
 	repoSlug := repoDetails.owner + "/" + repoDetails.repoName
 	console.Message(ctx, fmt.Sprintf("Configuring repository %s.\n", repoSlug))
 
 	ghCli := github.NewGitHubCli(ctx)
 	if err := p.ensureAuthorizedForRepoSecrets(ctx, ghCli, console, repoSlug); err != nil {
 		return fmt.Errorf("ensuring authorization: %w", err)
-	}
-
-	// Default to OIDC if not specified
-	if authType == "" {
-		authType = AuthTypeOidc
-	}
-
-	// OIDC + Terraform is not a valid combination - warn user.
-	if authType == AuthTypeOidc && infraOptions.Provider == provisioning.Terraform {
-		console.Message(
-			ctx,
-			output.WithWarningFormat(
-				"WARNING: Terraform provisioning does not support OIDC authentication, defaulting to Service Principal with client secret.\n",
-			),
-		)
-		authType = AuthTypeClientSecret
 	}
 
 	var authErr error
@@ -533,7 +533,7 @@ const (
 	federatedIdentityAudience = "api://AzureADTokenExchange"
 )
 
-func applyFederatedCredentials(ctx context.Context, repoSlug string, azureCredentails *azcli.AzureCredentials) error {
+func applyFederatedCredentials(ctx context.Context, repoSlug string, azureCredentials *azcli.AzureCredentials) error {
 	graphClient, err := createGraphClient(ctx)
 	if err != nil {
 		return err
@@ -541,7 +541,7 @@ func applyFederatedCredentials(ctx context.Context, repoSlug string, azureCreden
 
 	appsResponse, err := graphClient.
 		Applications().
-		Filter(fmt.Sprintf("appId eq '%s'", azureCredentails.ClientId)).
+		Filter(fmt.Sprintf("appId eq '%s'", azureCredentials.ClientId)).
 		Get(ctx)
 	if err != nil || len(appsResponse.Value) == 0 {
 		return fmt.Errorf("failed finding matching application: %w", err)
@@ -767,7 +767,7 @@ func ensureFederatedCredential(
 		Post(ctx, repoCredential)
 
 	if err != nil {
-		return fmt.Errorf("failed created federated credential: %w", err)
+		return fmt.Errorf("failed creating federated credential: %w", err)
 	}
 
 	return nil

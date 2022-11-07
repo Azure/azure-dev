@@ -44,7 +44,7 @@ steps:
       targetType: filePath
       filePath: ./eng/scripts/Set-TemplateTestMatrixVariable.ps1
       arguments: >-
-        -TemplateList ${{ parameters.TemplateList }}
-        -TemplateListFilter ${{ parameters.TemplateListFilter }}
-        -AzdContainerImage $(AzdContainerImage)
-        -OutputMatrixVariable ${{ parameters.OutputMatrixVariable }}
+        -TemplateList '${{ parameters.TemplateList }}'
+        -TemplateListFilter '${{ parameters.TemplateListFilter }}'
+        -AzdContainerImage '$(AzdContainerImage)'
+        -OutputMatrixVariable '${{ parameters.OutputMatrixVariable }}'

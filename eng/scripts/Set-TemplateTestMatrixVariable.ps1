@@ -20,13 +20,14 @@ The matrix job definition will contain:
 
 #>
 param (
-    [string[]]$TemplateList = @('(azd template list)'),
+    # This is a string and not a string[] to avoid issues with parameter passing in CI yaml.
+    [string]$TemplateList = '(azd template list)',
     [string]$TemplateListFilter = '.*',
     [string]$OutputMatrixVariable = 'Matrix',
     [string]$AzdContainerImage
 )
 
-if ($TemplateList.Length -eq 1 -and ($TemplateList[0] -eq '(azd template list)')) {
+if ($TemplateList -eq '(azd template list)') {
     Write-Host "Using results of (azd template list --output json)"
     
     $templateNames = (azd template list --output json | ConvertFrom-Json).name
@@ -37,7 +38,7 @@ if ($TemplateList.Length -eq 1 -and ($TemplateList[0] -eq '(azd template list)')
 } else {
     Write-Host "Using provided TemplateList value: $TemplateList"
 
-    $templateNames = $TemplateList
+    $templateNames = ($TemplateList -split ",").Trim()
 }
 
 if ($TemplateListFilter -ne '.*') {
@@ -58,9 +59,9 @@ $firstTemplate = $templateNames[0]
 $capitalsTest = $firstTemplate.Replace('/', '_') + "-Upper-case-test"
 $matrix[$capitalsTest] = @{ TemplateName = $firstTemplate; UseUpperCase = "true" }
 
-# foreach ($jobName in $matrix.Keys) {
-#     $matrix[$jobName].Add("AzdContainerImage", $AzdContainerImage) | Out-Null
-# }
+foreach ($jobName in $matrix.Keys) {
+    $matrix[$jobName].Add("AzdContainerImage", $AzdContainerImage) | Out-Null
+}
 
 Write-Host "Matrix:"
 Write-Host ($matrix | ConvertTo-Json | Out-String)

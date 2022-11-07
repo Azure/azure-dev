@@ -106,12 +106,12 @@ stages:
 
       - template: /eng/pipelines/templates/jobs/run-template-tests.yml
         parameters:
-          TemplateList: $(ChangedTemplates)
+          TemplateList: $[ dependencies.Generate_Repos_For_PR.outputs['ChangedTemplates'] ]
           TemplateBranchName: pr/$(PRNumber)
           JobCondition: >-
             and(
               succeeded(),
-              ne(variables['ChangedTemplates'], '')
+              ne(dependencies.Generate_Repos_For_PR.outputs['ChangedTemplates'] , '')
             )
           JobDependsOn: Generate_Repos_For_PR
 

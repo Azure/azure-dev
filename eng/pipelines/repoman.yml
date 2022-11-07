@@ -69,7 +69,8 @@ stages:
               filePath: ./eng/scripts/Set-RepomanChangedRepositories.ps1
               arguments: >-
                 -ResultsFile $(RepoManResultsFile)
-                -OutputVariable "ChangedTemplates"
+                -OutputTemplatesVariable "TemplateList"
+                -OutputTemplateBranchVariable "TemplateBranch"
 
           - pwsh: |
               $repomanContent = "No changes detected."
@@ -106,12 +107,12 @@ stages:
 
       - template: /eng/pipelines/templates/jobs/run-template-tests.yml
         parameters:
-          TemplateList: $[ dependencies.Generate_Repos_For_PR.outputs['DetermineChanged.ChangedTemplates'] ]
-          TemplateBranchName: pr/$(PRNumber)
+          TemplateList: $[ dependencies.Generate_Repos_For_PR.outputs['DetermineChanged.TemplateList'] ]
+          TemplateBranchName: $[ dependencies.Generate_Repos_For_PR.outputs['DetermineChanged.TemplateBranch']
           JobCondition: >-
             and(
               succeeded(),
-              ne(dependencies.Generate_Repos_For_PR.outputs['DetermineChanged.ChangedTemplates'] , '')
+              ne(dependencies.Generate_Repos_For_PR.outputs['DetermineChanged.TemplateList'] , '')
             )
           JobDependsOn: Generate_Repos_For_PR
 

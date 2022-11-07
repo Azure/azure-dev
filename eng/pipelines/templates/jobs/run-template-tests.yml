@@ -53,6 +53,9 @@ variables:
 - name: TemplateList
   value: ${{ parameters.TemplateList }}
 
+- name: TemplateBranchName
+  value: ${{ parameters.TemplateBranchName }}
+
 jobs:
   - job: TemplateTest_CreateMatrix
     condition: ${{ parameters.JobCondition }}
@@ -78,11 +81,16 @@ jobs:
 
       - template: /eng/pipelines/templates/steps/template-test-generate-jobs.yml
         parameters:
-          TemplateList: '$(TemplateList)'
-          TemplateListFilter: '${{ parameters.TemplateListFilter }}'
-          AzdVersion: '$(AzdVersion)'
-          OutputMatrixStepName: 'Generate'
-          OutputMatrixVariable: 'Matrix'
+          # Generation parameters
+          TemplateList: $(TemplateList)
+          TemplateListFilter: ${{ parameters.TemplateListFilter }}
+          OutputMatrixStepName: Generate
+          OutputMatrixVariable: Matrix
+          # Variables to set on the matrix job below
+          AzdVersion: $(AzdVersion)
+          AzureLocation: ${{ parameters.AzureLocation }}
+          TemplateBranchName: $(TemplateBranchName)
+          CleanupHoursDelay: ${{ parameters.CleanupHoursDelay }}
 
   - job: TemplateTest_RunTest
     dependsOn: TemplateTest_CreateMatrix
@@ -100,7 +108,3 @@ jobs:
     steps:
       - checkout: self
       - template: /eng/pipelines/templates/steps/template-test-run-job.yml
-        parameters:
-          AzureLocation: ${{ parameters.AzureLocation }}
-          TemplateBranchName: ${{ parameters.TemplateBranchName }}
-          CleanupHoursDelay: ${{ parameters.CleanupHoursDelay }}

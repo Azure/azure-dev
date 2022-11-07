@@ -15,7 +15,7 @@ if (-not $WhatIf) {
 }
 
 if ($ResultsFileLocation) {
-    $additionalParameters += "--resultsFile `"$ResultsFileLocation`""
+    $additionalParameters += "--resultsFile", $ResultsFileLocation
 }
 
 foreach ($project in $projects) {

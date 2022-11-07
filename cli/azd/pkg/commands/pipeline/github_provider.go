@@ -367,12 +367,12 @@ func (p *GitHubCiProvider) configureConnection(
 	authType PipelineAuthType,
 	console input.Console) error {
 
-	// Oidc + Terraform is not a supported combination
+	// Federated Auth + Terraform is not a supported combination
 	if infraOptions.Provider == provisioning.Terraform {
-		// Throw error if Oidc is explicitly requested
-		if authType == AuthTypeOidc {
+		// Throw error if Federated auth is explicitly requested
+		if authType == AuthTypeFederated {
 			return fmt.Errorf(
-				"Terraform does not support OIDC authentication. Service Principal with client ID and client secret must be used. %w",
+				"Terraform does not support federated authentication. Service Principal with client ID and client secret must be used. %w",
 				ErrAuthNotSupported,
 			)
 		}
@@ -382,7 +382,7 @@ func (p *GitHubCiProvider) configureConnection(
 			ctx,
 			output.WithWarningFormat(
 				//nolint:lll
-				"WARNING: Terraform provisioning does not support OIDC authentication, defaulting to Service Principal with client ID and client secret.\n",
+				"WARNING: Terraform provisioning does not support federated authentication, defaulting to Service Principal with client ID and client secret.\n",
 			),
 		)
 	}
@@ -398,10 +398,10 @@ func (p *GitHubCiProvider) configureConnection(
 	var authErr error
 
 	switch authType {
-	case AuthTypeClientSecret:
-		authErr = p.configureClientSecretAuth(ctx, azdEnvironment, infraOptions, repoSlug, credentials, console)
+	case AuthTypeClientCredentials:
+		authErr = p.configureClientCredentialsAuth(ctx, azdEnvironment, infraOptions, repoSlug, credentials, console)
 	default:
-		authErr = p.configureOidcAuth(ctx, azdEnvironment, infraOptions, repoSlug, credentials, console)
+		authErr = p.configureFederatedAuth(ctx, azdEnvironment, infraOptions, repoSlug, credentials, console)
 	}
 
 	if authErr != nil {
@@ -417,7 +417,7 @@ func (p *GitHubCiProvider) configureConnection(
 }
 
 // Configures Github for standard Service Principal authentication with client id & secret
-func (p *GitHubCiProvider) configureClientSecretAuth(
+func (p *GitHubCiProvider) configureClientCredentialsAuth(
 	ctx context.Context,
 	azdEnvironment *environment.Environment,
 	infraOptions provisioning.Options,
@@ -493,8 +493,8 @@ func (p *GitHubCiProvider) configureClientSecretAuth(
 	return nil
 }
 
-// Configures Github for OIDC authentication using registered application with federated identity credentials
-func (p *GitHubCiProvider) configureOidcAuth(
+// Configures Github for federated authentication using registered application with federated identity credentials
+func (p *GitHubCiProvider) configureFederatedAuth(
 	ctx context.Context,
 	azdEnvironment *environment.Environment,
 	infraOptions provisioning.Options,

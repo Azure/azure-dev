@@ -599,9 +599,9 @@ func (p *AzdoCiProvider) configureConnection(
 	authType PipelineAuthType,
 	console input.Console) error {
 
-	if authType == AuthTypeOidc {
+	if authType == AuthTypeFederated {
 		return fmt.Errorf(
-			"Azure DevOps does not support OIDC authentication. Service Principal with client ID and client secret must be used. %w",
+			"Azure DevOps does not support federated authentication. Service Principal with client ID and client secret must be used. %w",
 			ErrAuthNotSupported,
 		)
 	}

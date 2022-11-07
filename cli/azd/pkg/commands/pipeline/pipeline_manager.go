@@ -24,8 +24,8 @@ import (
 type PipelineAuthType string
 
 const (
-	AuthTypeOidc         PipelineAuthType = "oidc"
-	AuthTypeClientSecret PipelineAuthType = "client-secret"
+	AuthTypeFederated         PipelineAuthType = "federated"
+	AuthTypeClientCredentials PipelineAuthType = "client-credentials"
 )
 
 var ErrAuthNotSupported = errors.New("pipeline authentication configuration is not supported")

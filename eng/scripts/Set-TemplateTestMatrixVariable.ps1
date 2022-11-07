@@ -26,23 +26,24 @@ param (
     [string]$AzdContainerImage
 )
 
-Write-Output "Output for azd template list --output json"
-azd template list --output json 
-
 if ($TemplateList.Length -eq 1 -and ($TemplateList[0] -eq '(azd template list)')) {
+    Write-Host "Using results of (azd template list --output json)"
+    
     $templateNames = (azd template list --output json | ConvertFrom-Json).name
     if ($LASTEXITCODE -ne 0) {
         Write-Error "azd template list failed"
         exit 1
     }
-
-    Write-Host "Template names:"
-    $templateNames
 } else {
+    Write-Host "Using provided TemplateList value: $TemplateList"
+
     $templateNames = $TemplateList
 }
 
 if ($TemplateListFilter -ne '.*') {
+} else {
+    Write-Host "Filtering with TemplateListFilter regex: $TemplateListFilter"
+
     $templateNames = $templateNames -match $TemplateListFilter
 }
 

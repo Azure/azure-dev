@@ -66,7 +66,8 @@ func RegisterApplicationDeleteItemMock(
 	statusCode int,
 ) {
 	mockContext.HttpClient.When(func(request *http.Request) bool {
-		return request.Method == http.MethodDelete && strings.Contains(request.URL.Path, fmt.Sprintf("/applications/%s", appId))
+		return request.Method == http.MethodDelete &&
+			strings.Contains(request.URL.Path, fmt.Sprintf("/applications/%s", appId))
 	}).RespondFn(func(request *http.Request) (*http.Response, error) {
 		return mocks.CreateEmptyHttpResponse(request, statusCode)
 	})
@@ -245,9 +246,15 @@ func RegisterRoleAssignmentPutMock(mockContext *mocks.MockContext, statusCode in
 	})
 }
 
-func RegisterFederatedCredentialsListMock(mockContext *mocks.MockContext, applicationId string, statusCode int, federatedCredentials []graphsdk.FederatedIdentityCredential) {
+func RegisterFederatedCredentialsListMock(
+	mockContext *mocks.MockContext,
+	applicationId string,
+	statusCode int,
+	federatedCredentials []graphsdk.FederatedIdentityCredential,
+) {
 	mockContext.HttpClient.When(func(request *http.Request) bool {
-		return request.Method == http.MethodGet && strings.Contains(request.URL.Path, fmt.Sprintf("/applications/%s/federatedIdentityCredentials", applicationId))
+		return request.Method == http.MethodGet &&
+			strings.Contains(request.URL.Path, fmt.Sprintf("/applications/%s/federatedIdentityCredentials", applicationId))
 	}).RespondFn(func(request *http.Request) (*http.Response, error) {
 		listResponse := graphsdk.FederatedIdentityCredentialListResponse{
 			Value: federatedCredentials,
@@ -261,15 +268,38 @@ func RegisterFederatedCredentialsListMock(mockContext *mocks.MockContext, applic
 	})
 }
 
-func RegisterFederatedCredentialCreateItemMock(mockContext *mocks.MockContext, applicationId string, statusCode int, federatedCredential *graphsdk.FederatedIdentityCredential) {
+func RegisterFederatedCredentialCreateItemMock(
+	mockContext *mocks.MockContext,
+	applicationId string,
+	statusCode int,
+	federatedCredential *graphsdk.FederatedIdentityCredential,
+) {
 	mockContext.HttpClient.When(func(request *http.Request) bool {
-		return request.Method == http.MethodPost && strings.Contains(request.URL.Path, fmt.Sprintf("/applications/%s", applicationId))
+		return request.Method == http.MethodPost &&
+			strings.Contains(request.URL.Path, fmt.Sprintf("/applications/%s", applicationId))
 	}).RespondFn(func(request *http.Request) (*http.Response, error) {
 		if federatedCredential == nil {
 			return mocks.CreateEmptyHttpResponse(request, statusCode)
 		}
 
 		return mocks.CreateHttpResponseWithBody(request, statusCode, federatedCredential)
+	})
+}
+
+func RegisterFederatedCredentialPatchItemMock(
+	mockContext *mocks.MockContext,
+	applicationId string,
+	credentialId string,
+	statusCode int,
+) {
+	mockContext.HttpClient.When(func(request *http.Request) bool {
+		return request.Method == http.MethodPatch &&
+			strings.Contains(
+				request.URL.Path,
+				fmt.Sprintf("/applications/%s/federatedIdentityCredentials/%s", applicationId, credentialId),
+			)
+	}).RespondFn(func(request *http.Request) (*http.Response, error) {
+		return mocks.CreateEmptyHttpResponse(request, statusCode)
 	})
 }
 
@@ -281,7 +311,11 @@ func RegisterFederatedCredentialGetItemMock(
 	federatedCredential *graphsdk.FederatedIdentityCredential,
 ) {
 	mockContext.HttpClient.When(func(request *http.Request) bool {
-		return request.Method == http.MethodGet && strings.Contains(request.URL.Path, fmt.Sprintf("/applications/%s/federatedIdentityCredentials/%s", appId, federatedCredentialId))
+		return request.Method == http.MethodGet &&
+			strings.Contains(
+				request.URL.Path,
+				fmt.Sprintf("/applications/%s/federatedIdentityCredentials/%s", appId, federatedCredentialId),
+			)
 	}).RespondFn(func(request *http.Request) (*http.Response, error) {
 		if federatedCredential == nil {
 			return mocks.CreateEmptyHttpResponse(request, statusCode)
@@ -298,7 +332,11 @@ func RegisterFederatedCredentialDeleteItemMock(
 	statusCode int,
 ) {
 	mockContext.HttpClient.When(func(request *http.Request) bool {
-		return request.Method == http.MethodDelete && strings.Contains(request.URL.Path, fmt.Sprintf("/applications/%s/federatedIdentityCredentials/%s", appId, federatedCredentialId))
+		return request.Method == http.MethodDelete &&
+			strings.Contains(
+				request.URL.Path,
+				fmt.Sprintf("/applications/%s/federatedIdentityCredentials/%s", appId, federatedCredentialId),
+			)
 	}).RespondFn(func(request *http.Request) (*http.Response, error) {
 		return mocks.CreateEmptyHttpResponse(request, statusCode)
 	})

@@ -371,13 +371,17 @@ func (p *GitHubCiProvider) configureConnection(
 	if infraOptions.Provider == provisioning.Terraform {
 		// Throw error if Oidc is explicitly requested
 		if authType == AuthTypeOidc {
-			return fmt.Errorf("Terraform does not support OIDC authentication. Service Principal with client ID and client secret must be used. %w", ErrAuthNotSupported)
+			return fmt.Errorf(
+				"Terraform does not support OIDC authentication. Service Principal with client ID and client secret must be used. %w",
+				ErrAuthNotSupported,
+			)
 		}
 
 		// If not explicitly set, show warning
 		console.Message(
 			ctx,
 			output.WithWarningFormat(
+				//nolint:lll
 				"WARNING: Terraform provisioning does not support OIDC authentication, defaulting to Service Principal with client ID and client secret.\n",
 			),
 		)

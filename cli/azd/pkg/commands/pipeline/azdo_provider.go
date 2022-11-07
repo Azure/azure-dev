@@ -600,7 +600,10 @@ func (p *AzdoCiProvider) configureConnection(
 	console input.Console) error {
 
 	if authType == AuthTypeOidc {
-		return fmt.Errorf("Azure DevOps does not support OIDC authentication. Service Principal with client ID and client secret must be used. %w", ErrAuthNotSupported)
+		return fmt.Errorf(
+			"Azure DevOps does not support OIDC authentication. Service Principal with client ID and client secret must be used. %w",
+			ErrAuthNotSupported,
+		)
 	}
 
 	azureCredentials, err := parseCredentials(ctx, credentials)

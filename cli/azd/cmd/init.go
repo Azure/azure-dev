@@ -47,7 +47,9 @@ When a template is provided, the sample code is cloned to the current directory.
 	f := &initFlags{}
 	f.Bind(cmd.Flags(), rootOptions)
 
-	cmd.RegisterFlagCompletionFunc("template", templateNameCompletion)
+	if err := cmd.RegisterFlagCompletionFunc("template", templateNameCompletion); err != nil {
+		panic(err)
+	}
 
 	return cmd, f
 }

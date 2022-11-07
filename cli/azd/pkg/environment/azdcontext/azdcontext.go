@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"sort"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/contracts"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 )
 
@@ -19,12 +20,6 @@ const InfraDirectoryName = "infra"
 
 type AzdContext struct {
 	projectDirectory string
-}
-
-type EnvironmentView struct {
-	Name       string
-	IsDefault  bool
-	DotEnvPath string
 }
 
 func (c *AzdContext) ProjectDirectory() string {
@@ -63,7 +58,7 @@ func (c *AzdContext) GetInfrastructurePath() string {
 	return filepath.Join(c.ProjectDirectory(), InfraDirectoryName)
 }
 
-func (c *AzdContext) ListEnvironments() ([]EnvironmentView, error) {
+func (c *AzdContext) ListEnvironments() ([]contracts.EnvListEnvironment, error) {
 	defaultEnv, err := c.GetDefaultEnvironmentName()
 	if err != nil {
 		return nil, err
@@ -74,10 +69,10 @@ func (c *AzdContext) ListEnvironments() ([]EnvironmentView, error) {
 		return nil, fmt.Errorf("listing entries: %w", err)
 	}
 
-	var envs []EnvironmentView
+	var envs []contracts.EnvListEnvironment
 	for _, ent := range ents {
 		if ent.IsDir() {
-			ev := EnvironmentView{
+			ev := contracts.EnvListEnvironment{
 				Name:       ent.Name(),
 				IsDefault:  ent.Name() == defaultEnv,
 				DotEnvPath: c.GetEnvironmentFilePath(ent.Name()),

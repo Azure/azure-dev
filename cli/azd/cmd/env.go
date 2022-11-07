@@ -235,6 +235,7 @@ type envNewAction struct {
 	azdCtx  *azdcontext.AzdContext
 	azCli   azcli.AzCli
 	flags   envNewFlags
+	args    []string
 	console input.Console
 }
 
@@ -242,12 +243,14 @@ func newEnvNewAction(
 	azdCtx *azdcontext.AzdContext,
 	azcli azcli.AzCli,
 	flags envNewFlags,
+	args []string,
 	console input.Console,
 ) *envNewAction {
 	return &envNewAction{
 		azdCtx:  azdCtx,
 		azCli:   azcli,
 		flags:   flags,
+		args:    args,
 		console: console,
 	}
 }
@@ -261,8 +264,13 @@ func (en *envNewAction) Run(ctx context.Context) error {
 		return err
 	}
 
+	environmentName := ""
+	if len(en.args) >= 1 {
+		environmentName = en.args[0]
+	}
+
 	envSpec := environmentSpec{
-		environmentName: en.flags.global.EnvironmentName,
+		environmentName: environmentName,
 		subscription:    en.flags.subscription,
 		location:        en.flags.location,
 	}

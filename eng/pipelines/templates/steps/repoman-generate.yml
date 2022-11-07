@@ -2,6 +2,7 @@ parameters:
   TargetBranchName: $(TargetBranchName)
   RemoteName: azure-samples-main
   GitHubPat: $(azuresdk-github-pat)
+  ResultsFileLocation: ""
 
 steps:
   - task: NodeTool@0
@@ -31,3 +32,4 @@ steps:
       arguments: >-
         -TargetBranchName "${{ parameters.TargetBranchName }}"
         -RemoteName "${{ parameters.RemoteName }}"
+        -ResultsFileLocation "${{ parameters.ResultsFileLocation }}"

@@ -2,6 +2,7 @@ package javac
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -67,7 +68,9 @@ func TestCheckInstalled_OlderJavaVersion(t *testing.T) {
 	// error when --version
 	execMock := mockexec.NewMockCommandRunner().
 		When(func(a azdexec.RunArgs, command string) bool { return a.Args[0] == "--version" }).
-		Respond(azdexec.NewRunResult(2, "", ""))
+		RespondFn(func(args azdexec.RunArgs) (azdexec.RunResult, error) {
+			return azdexec.NewRunResult(2, "", ""), errors.New("--version not recognized")
+		})
 
 	// non-zero exit code on -version
 	execMock = execMock.
@@ -78,7 +81,7 @@ func TestCheckInstalled_OlderJavaVersion(t *testing.T) {
 	ok, err := cli.CheckInstalled(context.Background())
 
 	assert.False(t, ok)
-	assert.NoError(t, err)
+	assert.ErrorContains(t, err, "need at least version")
 }
 
 func Test_getInstalledPath(t *testing.T) {

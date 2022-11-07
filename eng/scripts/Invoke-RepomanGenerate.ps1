@@ -9,16 +9,14 @@ param(
 $projectsJson = repoman list --format json | Out-String
 $projects = ConvertFrom-Json $projectsJson
 
-$additionalParametersList = @()
+$additionalParameters = @()
 if (-not $WhatIf) {
-    $additionalParametersList += '--update'
+    $additionalParameters += '--update'
 }
 
 if ($ResultsFileLocation) {
-    $additionalParametersList += "--resultsFile $ResultsFileLocation"
+    $additionalParameters += "--resultsFile $ResultsFileLocation"
 }
-
-$additionalParameters = $additionalParametersList -join (" " + [System.Environment]::NewLine)
 
 foreach ($project in $projects) {
     $projectPath = $project.projectPath
@@ -33,10 +31,10 @@ repoman generate `
     --remote "$RemoteName" `
     --https `
     --fail-on-update-error `
-    $additionalParameters
+    $($additionalParameters -join " ")
 "@
 
-    repoman generate `
+    & repoman generate `
         -s $projectPath `
         -o $RunnerTemp `
         -t $templatePath `

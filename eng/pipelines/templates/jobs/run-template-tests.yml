@@ -39,8 +39,8 @@ parameters:
   default: 'succeeded()'
 
 - name: JobDependsOn
-  type: jobList
-  default: []
+  type: string
+  default: ''
 
 - name: UseAzdVersionFromPrNumber
   type: boolean

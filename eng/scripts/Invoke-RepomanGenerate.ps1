@@ -15,7 +15,7 @@ if (-not $WhatIf) {
 }
 
 if ($ResultsFileLocation) {
-    $additionalParameters += "--resultsFile $ResultsFileLocation"
+    $additionalParameters += "--resultsFile `"$ResultsFileLocation`""
 }
 
 foreach ($project in $projects) {
@@ -31,7 +31,7 @@ repoman generate `
     --remote "$RemoteName" `
     --https `
     --fail-on-update-error `
-    $($additionalParameters -join " ")
+    $($additionalParameters -join ([System.Environment]::NewLine + "    "))
 "@
 
     & repoman generate `

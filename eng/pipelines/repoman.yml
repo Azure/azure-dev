@@ -108,6 +108,11 @@ stages:
         parameters:
           TemplateList: $(ChangedTemplates)
           TemplateBranchName: pr/$(PRNumber)
+          JobCondition: >-
+            and(
+              succeeded(),
+              ne(variables['ChangedTemplates'], '')
+            )
           JobDependsOn: Generate_Repos_For_PR
 
       - job: Publish_Staging

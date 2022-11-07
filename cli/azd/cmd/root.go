@@ -152,7 +152,12 @@ func BuildCmd[F any](
 			return err
 		}
 
-		return action.Run(ctx)
+		actionResult, err := action.Run(ctx)
+		// At this point, we know that there might be an error, so we can silence cobra from showing it after us.
+		cmd.SilenceErrors = true
+		actions.ShowActionResults(ctx, actionResult, err)
+
+		return err
 	}
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {

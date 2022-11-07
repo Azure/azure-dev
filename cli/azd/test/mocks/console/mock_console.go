@@ -45,6 +45,14 @@ func (c *MockConsole) Message(ctx context.Context, message string) {
 	c.log = append(c.log, message)
 }
 
+func (c *MockConsole) MessageUx(ctx context.Context, message string, format input.MessageUxType) {
+	c.Message(ctx, message)
+}
+
+func (c *MockConsole) ShowSpinner(ctx context.Context, title string, format input.SpinnerUxType) {}
+func (c *MockConsole) StopSpinner(ctx context.Context, lastMessage string, format input.SpinnerUxType) {
+}
+
 // Prints a confirmation message to the console for the user to confirm
 func (c *MockConsole) Confirm(ctx context.Context, options input.ConsoleOptions) (bool, error) {
 	c.log = append(c.log, options.Message)

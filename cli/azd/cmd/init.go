@@ -80,13 +80,12 @@ func (i *initFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOpt
 }
 
 type initAction struct {
-	azdCtx                *azdcontext.AzdContext
-	accountManager        *account.Manager
-	console               input.Console
-	cmdRun                exec.CommandRunner
-	gitCli                git.GitCli
-	flags                 initFlags
-	formattedWithColorCwd string // this is used to print the path with color in the console
+	azdCtx         *azdcontext.AzdContext
+	accountManager *account.Manager
+	console        input.Console
+	cmdRun         exec.CommandRunner
+	gitCli         git.GitCli
+	flags          initFlags
 }
 
 func newInitAction(
@@ -112,7 +111,7 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	// to force using the current working directory as a project root (since we are initializing a
 	// new project).
 	wd, err := os.Getwd()
-	i.formattedWithColorCwd = output.WithLinkFormat("%s", wd)
+	formattedWithColorCwd := output.WithLinkFormat("%s", wd)
 	if err != nil {
 		return nil, fmt.Errorf("getting cwd: %w", err)
 	}
@@ -185,7 +184,7 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 			_ = os.RemoveAll(templateStagingDir)
 		}()
 
-		stepMessage := fmt.Sprintf("Downloading template code to: %s", i.formattedWithColorCwd)
+		stepMessage := fmt.Sprintf("Downloading template code to: %s", formattedWithColorCwd)
 		i.console.ShowSpinner(ctx, stepMessage, input.Step)
 
 		// perform the work while the spinner is running
@@ -351,7 +350,7 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	return &actions.ActionResult{
 		Message: &actions.ResultMessage{
 			Header:   "New project initialized!",
-			FollowUp: fmt.Sprintf("You can view the template code in your directory: %s", i.formattedWithColorCwd),
+			FollowUp: fmt.Sprintf("You can view the template code in your directory: %s", formattedWithColorCwd),
 		},
 	}, nil
 }

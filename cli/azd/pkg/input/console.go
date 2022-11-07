@@ -123,7 +123,8 @@ func (c *AskerConsole) MessageUx(ctx context.Context, message string, format Mes
 	// Remove any formatter before printing the Result
 	// This is can be changed in the future if we want to format any error message as Json or Table when user set output.
 	if format == ResultError {
-		c.formatter = &output.NoneFormatter{}
+		fmt.Fprintln(c.writer, formattedText)
+		return
 	}
 
 	c.Message(ctx, formattedText)

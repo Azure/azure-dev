@@ -113,8 +113,7 @@ stages:
               succeeded(),
               ne(variables['ChangedTemplates'], '')
             )
-          JobDependsOn:
-            - Generate_Repos_For_PR
+          JobDependsOn: [ Generate_Repos_For_PR ]
 
       - job: Publish_Staging
         condition: >-

@@ -61,7 +61,7 @@ stages:
               ResultsFileLocation: $(RepoManResultsFile)
 
           - task: PowerShell@2
-            name: 
+            name: DetermineChanged
             displayName: Set repoman changed templates
             inputs:
               pwsh: true
@@ -106,12 +106,12 @@ stages:
 
       - template: /eng/pipelines/templates/jobs/run-template-tests.yml
         parameters:
-          TemplateList: $[ dependencies.Generate_Repos_For_PR.outputs['ChangedTemplates'] ]
+          TemplateList: $[ dependencies.Generate_Repos_For_PR.outputs['DetermineChanged.ChangedTemplates'] ]
           TemplateBranchName: pr/$(PRNumber)
           JobCondition: >-
             and(
               succeeded(),
-              ne(dependencies.Generate_Repos_For_PR.outputs['ChangedTemplates'] , '')
+              ne(dependencies.Generate_Repos_For_PR.outputs['DetermineChanged.ChangedTemplates'] , '')
             )
           JobDependsOn: Generate_Repos_For_PR
 

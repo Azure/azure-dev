@@ -388,7 +388,7 @@ func (p *GitHubCiProvider) configureConnection(
 	}
 
 	repoSlug := repoDetails.owner + "/" + repoDetails.repoName
-	console.Message(ctx, fmt.Sprintf("Configuring repository %s.\n", repoSlug))
+	console.Message(ctx, fmt.Sprintf("Configuring repository %s.\n", output.WithHighLightFormat(repoSlug)))
 
 	ghCli := github.NewGitHubCli(ctx)
 	if err := p.ensureAuthorizedForRepoSecrets(ctx, ghCli, console, repoSlug); err != nil {
@@ -426,7 +426,7 @@ func (p *GitHubCiProvider) configureClientCredentialsAuth(
 	console input.Console,
 ) error {
 	ghCli := github.NewGitHubCli(ctx)
-	console.Message(ctx, "Setting AZURE_CREDENTIALS GitHub repo secret.\n")
+	console.Message(ctx, fmt.Sprintf("Setting %s GitHub repo secret.\n", output.WithHighLightFormat("AZURE_CREDENTIALS")))
 
 	// set azure credential for pipelines can log in to Azure
 	if err := ghCli.SetSecret(ctx, repoSlug, "AZURE_CREDENTIALS", string(credentials)); err != nil {
@@ -483,7 +483,7 @@ func (p *GitHubCiProvider) configureClientCredentialsAuth(
 		environment.EnvNameEnvVarName,
 		environment.LocationEnvVarName,
 		environment.SubscriptionIdEnvVarName} {
-		console.Message(ctx, fmt.Sprintf("Setting %s GitHub repo secret.\n", envName))
+		console.Message(ctx, fmt.Sprintf("Setting %s GitHub repo secret.\n", output.WithHighLightFormat(envName)))
 
 		if err := ghCli.SetSecret(ctx, repoSlug, envName, azdEnvironment.Values[envName]); err != nil {
 			return fmt.Errorf("failed setting %s secret: %w", envName, err)
@@ -509,7 +509,7 @@ func (p *GitHubCiProvider) configureFederatedAuth(
 		return fmt.Errorf("failed unmarshalling azure credentials: %w", err)
 	}
 
-	err := applyFederatedCredentials(ctx, repoSlug, &azureCredentials)
+	err := applyFederatedCredentials(ctx, repoSlug, &azureCredentials, console)
 	if err != nil {
 		return err
 	}
@@ -523,7 +523,7 @@ func (p *GitHubCiProvider) configureFederatedAuth(
 	}
 
 	for key, value := range githubSecrets {
-		console.Message(ctx, fmt.Sprintf("Setting %s GitHub repo secret.\n", key))
+		console.Message(ctx, fmt.Sprintf("Setting %s GitHub repo secret.\n", output.WithHighLightFormat(key)))
 		if err := ghCli.SetSecret(ctx, repoSlug, key, value); err != nil {
 			return fmt.Errorf("failed setting github secret '%s':  %w", key, err)
 		}
@@ -537,7 +537,7 @@ const (
 	federatedIdentityAudience = "api://AzureADTokenExchange"
 )
 
-func applyFederatedCredentials(ctx context.Context, repoSlug string, azureCredentials *azcli.AzureCredentials) error {
+func applyFederatedCredentials(ctx context.Context, repoSlug string, azureCredentials *azcli.AzureCredentials, console input.Console) error {
 	graphClient, err := createGraphClient(ctx)
 	if err != nil {
 		return err
@@ -582,7 +582,7 @@ func applyFederatedCredentials(ctx context.Context, repoSlug string, azureCreden
 
 	// Ensure the credential exists otherwise create a new one.
 	for _, fic := range federatedCredentials {
-		err := ensureFederatedCredential(ctx, graphClient, &application, existingCredsResponse.Value, &fic)
+		err := ensureFederatedCredential(ctx, graphClient, &application, existingCredsResponse.Value, &fic, console)
 		if err != nil {
 			return err
 		}
@@ -751,6 +751,7 @@ func ensureFederatedCredential(
 	application *graphsdk.Application,
 	existingCredentials []graphsdk.FederatedIdentityCredential,
 	repoCredential *graphsdk.FederatedIdentityCredential,
+	console input.Console,
 ) error {
 	// If a federated credential already exists for the same subject then nothing to do.
 	for _, existing := range existingCredentials {
@@ -773,6 +774,8 @@ func ensureFederatedCredential(
 	if err != nil {
 		return fmt.Errorf("failed creating federated credential: %w", err)
 	}
+
+	console.Message(ctx, fmt.Sprintf("Created federated identity credential for GitHub with subject %s\n", output.WithHighLightFormat(repoCredential.Subject)))
 
 	return nil
 }

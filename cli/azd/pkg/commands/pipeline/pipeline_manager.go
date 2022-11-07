@@ -14,6 +14,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
@@ -243,7 +244,7 @@ func (manager *PipelineManager) Configure(ctx context.Context) error {
 
 	inputConsole.Message(
 		ctx,
-		fmt.Sprintf("Creating or updating service principal %s.\n", manager.PipelineServicePrincipalName),
+		fmt.Sprintf("Creating or updating service principal %s.\n", output.WithHighLightFormat(manager.PipelineServicePrincipalName)),
 	)
 
 	credentials, err := azCli.CreateOrUpdateServicePrincipal(

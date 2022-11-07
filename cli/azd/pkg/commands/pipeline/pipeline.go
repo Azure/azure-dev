@@ -15,6 +15,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 )
@@ -189,14 +190,14 @@ func DetectProviders(
 	if overrideWith == azdoLabel || hasAzDevOpsFolder && !hasGitHubFolder {
 		// Azdo only either by override or by finding only that folder
 		_ = savePipelineProviderToEnv(azdoLabel, env)
-		console.Message(ctx, "Using pipeline provider: Azure DevOps")
+		console.Message(ctx, fmt.Sprintf("Using pipeline provider: %s", output.WithHighLightFormat("Azure DevOps")))
 		return createAzdoScmProvider(env, azdContext), createAzdoCiProvider(env, azdContext), nil
 	}
 
 	// Both folders exists and no override value. Default to GitHub
 	// Or override value is github and the folder is available
 	_ = savePipelineProviderToEnv(gitHubLabel, env)
-	console.Message(ctx, "Using pipeline provider: GitHub")
+	console.Message(ctx, fmt.Sprintf("Using pipeline provider: %s", output.WithHighLightFormat("GitHub")))
 	return &GitHubScmProvider{}, &GitHubCiProvider{}, nil
 }
 

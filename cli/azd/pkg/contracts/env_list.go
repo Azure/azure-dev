@@ -1,7 +1,7 @@
 package contracts
 
 type EnvListEnvironment struct {
-	Name       string `json:"name"`
-	IsDefault  bool   `json:"isDefault"`
-	DotEnvPath string `json:"dotEnvPath"`
+	Name       string `json:"Name"`
+	IsDefault  bool   `json:"IsDefault"`
+	DotEnvPath string `json:"DotEnvPath"`
 }

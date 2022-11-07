@@ -18,7 +18,7 @@ if ($ResultsFileLocation) {
     $additionalParametersList += "--resultsFile $ResultsFileLocation"
 }
 
-$additionalParameters = $additionalParametersList -join " " 
+$additionalParameters = $additionalParametersList -join " \n" 
 
 foreach ($project in $projects) {
     $projectPath = $project.projectPath

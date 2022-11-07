@@ -13,7 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// Verifies that azd env commands work together to manage environments.
+// Verifies azd env commands that manage environments.
 func Test_CLI_Env_Management(t *testing.T) {
 	ctx, cancel := newTestContext(t)
 	defer cancel()
@@ -54,6 +54,7 @@ func Test_CLI_Env_Management(t *testing.T) {
 	requireIsDefault(t, environmentList, envName)
 }
 
+// Verifies azd env commands that manage environment values.
 func Test_CLI_Env_Values_Management(t *testing.T) {
 	ctx, cancel := newTestContext(t)
 	defer cancel()

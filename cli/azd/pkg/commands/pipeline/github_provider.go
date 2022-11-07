@@ -385,6 +385,8 @@ func (p *GitHubCiProvider) configureConnection(
 				"WARNING: Terraform provisioning does not support federated authentication, defaulting to Service Principal with client ID and client secret.\n",
 			),
 		)
+
+		authType = AuthTypeClientCredentials
 	}
 
 	repoSlug := repoDetails.owner + "/" + repoDetails.repoName

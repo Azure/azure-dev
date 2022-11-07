@@ -108,7 +108,7 @@ stages:
       - template: /eng/pipelines/templates/jobs/run-template-tests.yml
         parameters:
           TemplateList: $[ dependencies.Generate_Repos_For_PR.outputs['DetermineChanged.TemplateList'] ]
-          TemplateBranchName: $[ dependencies.Generate_Repos_For_PR.outputs['DetermineChanged.TemplateBranch']
+          TemplateBranchName: $[ dependencies.Generate_Repos_For_PR.outputs['DetermineChanged.TemplateBranch'] ]
           JobCondition: >-
             and(
               succeeded(),

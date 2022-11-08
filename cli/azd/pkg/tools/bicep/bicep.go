@@ -159,7 +159,7 @@ func findBicepPath() (*string, error) {
 	// If AZURE_CONFIG_DIR is defined, check there first
 	azureConfigDir := os.Getenv(EnvNameAzureConfigDir)
 	if strings.TrimSpace(azureConfigDir) != "" {
-		commonPaths = append(commonPaths, filepath.Join(azureConfigDir, bicepFilename))
+		commonPaths = append(commonPaths, filepath.Join(azureConfigDir, "bin", bicepFilename))
 	}
 
 	// Check for standalone installation

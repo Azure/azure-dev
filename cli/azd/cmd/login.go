@@ -188,7 +188,7 @@ func (la *loginAction) login(ctx context.Context) error {
 			}
 
 		// only --federated-token was passed
-		case la.flags.clientSecret != "" && la.flags.clientCertificate == "" && la.flags.federatedToken != "":
+		case la.flags.clientSecret == "" && la.flags.clientCertificate == "" && la.flags.federatedToken != "":
 			if _, err := la.authManager.LoginWithServicePrincipalFederatedToken(
 				ctx, la.flags.tenantID, la.flags.clientID, la.flags.federatedToken,
 			); err != nil {

@@ -80,7 +80,7 @@ func Test_azdo_provider_getRepoDetails(t *testing.T) {
 	})
 }
 
-func Test_azdo_provider_preConfigureCheck(t *testing.T) {
+func Test_azdo_scm_provider_preConfigureCheck(t *testing.T) {
 	t.Run("accepts a PAT via system environment variables", func(t *testing.T) {
 		// arrange
 		testPat := "12345"
@@ -119,7 +119,7 @@ func Test_azdo_provider_preConfigureCheck(t *testing.T) {
 	})
 }
 
-func Test_azdo_ci_provider_preconfigure_check(t *testing.T) {
+func Test_azdo_ci_provider_preConfigureCheck(t *testing.T) {
 	t.Run("success with default options", func(t *testing.T) {
 		ctx := context.Background()
 		provider := getAzdoCiProviderTestHarness()

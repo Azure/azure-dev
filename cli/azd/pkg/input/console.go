@@ -35,6 +35,16 @@ const (
 	StepFailed
 )
 
+// A shim to allow a single Console construction in the application.
+// To be removed once formatter and Console's responsibilities are reconciled
+type ConsoleShim interface {
+	// True if the console was instantiated with no format options.
+	IsUnformatted() bool
+
+	// Gets the underlying formatter used by the console
+	GetFormatter() output.Formatter
+}
+
 type Console interface {
 	// Prints out a message to the underlying console write
 	Message(ctx context.Context, message string)
@@ -55,8 +65,11 @@ type Console interface {
 	Confirm(ctx context.Context, options ConsoleOptions) (bool, error)
 	// Sets the underlying writer for the console
 	SetWriter(writer io.Writer)
+	// Gets the underlying writer for the console
+	GetWriter() io.Writer
 	// Gets the standard input, output and error stream
 	Handles() ConsoleHandles
+	ConsoleShim
 }
 
 type AskerConsole struct {
@@ -90,6 +103,14 @@ func (c *AskerConsole) SetWriter(writer io.Writer) {
 	}
 
 	c.writer = writer
+}
+
+func (c *AskerConsole) GetFormatter() output.Formatter {
+	return c.formatter
+}
+
+func (c *AskerConsole) IsUnformatted() bool {
+	return c.formatter == nil || c.formatter.Kind() == output.NoneFormat
 }
 
 // Prints out a message to the underlying console write
@@ -312,7 +333,7 @@ func (c *AskerConsole) Confirm(ctx context.Context, options ConsoleOptions) (boo
 }
 
 // Gets the underlying writer for the console
-func (c *AskerConsole) Writer() io.Writer {
+func (c *AskerConsole) GetWriter() io.Writer {
 	return c.writer
 }
 

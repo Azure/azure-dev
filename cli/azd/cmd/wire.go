@@ -6,16 +6,26 @@ package cmd
 // Run `go generate ./cmd` or `wire ./cmd` after modifying this file to regenerate `wire_gen.go`.
 
 import (
+	"context"
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/google/wire"
 	"github.com/spf13/cobra"
 )
 
+func initConsole(
+	cmd *cobra.Command,
+	o *internal.GlobalCommandOptions,
+) (input.Console, error) {
+	panic(wire.Build(FormattedConsoleSet))
+}
+
 //#region Root
 
 func initDeployAction(
-	cmd *cobra.Command,
+	console input.Console,
+	ctx context.Context,
 	o *internal.GlobalCommandOptions,
 	flags deployFlags,
 	args []string,
@@ -24,7 +34,8 @@ func initDeployAction(
 }
 
 func initInitAction(
-	cmd *cobra.Command,
+	console input.Console,
+	ctx context.Context,
 	o *internal.GlobalCommandOptions,
 	flags initFlags,
 	args []string,
@@ -33,7 +44,8 @@ func initInitAction(
 }
 
 func initLoginAction(
-	cmd *cobra.Command,
+	console input.Console,
+	ctx context.Context,
 	o *internal.GlobalCommandOptions,
 	flags loginFlags,
 	args []string,
@@ -42,7 +54,8 @@ func initLoginAction(
 }
 
 func initUpAction(
-	cmd *cobra.Command,
+	console input.Console,
+	ctx context.Context,
 	o *internal.GlobalCommandOptions,
 	flags upFlags,
 	args []string,
@@ -51,7 +64,8 @@ func initUpAction(
 }
 
 func initMonitorAction(
-	cmd *cobra.Command,
+	console input.Console,
+	ctx context.Context,
 	o *internal.GlobalCommandOptions,
 	flags monitorFlags,
 	args []string,
@@ -60,7 +74,8 @@ func initMonitorAction(
 }
 
 func initRestoreAction(
-	cmd *cobra.Command,
+	console input.Console,
+	ctx context.Context,
 	o *internal.GlobalCommandOptions,
 	flags restoreFlags,
 	args []string,
@@ -69,7 +84,8 @@ func initRestoreAction(
 }
 
 func initShowAction(
-	cmd *cobra.Command,
+	console input.Console,
+	ctx context.Context,
 	o *internal.GlobalCommandOptions,
 	flags showFlags,
 	args []string,
@@ -78,7 +94,8 @@ func initShowAction(
 }
 
 func initVersionAction(
-	cmd *cobra.Command,
+	console input.Console,
+	ctx context.Context,
 	o *internal.GlobalCommandOptions,
 	flags versionFlags,
 	args []string,
@@ -91,7 +108,8 @@ func initVersionAction(
 //#region Infra
 
 func initInfraCreateAction(
-	cmd *cobra.Command,
+	console input.Console,
+	ctx context.Context,
 	o *internal.GlobalCommandOptions,
 	flags infraCreateFlags,
 	args []string,
@@ -100,7 +118,8 @@ func initInfraCreateAction(
 }
 
 func initInfraDeleteAction(
-	cmd *cobra.Command,
+	console input.Console,
+	ctx context.Context,
 	o *internal.GlobalCommandOptions,
 	flags infraDeleteFlags,
 	args []string,
@@ -113,7 +132,8 @@ func initInfraDeleteAction(
 //#region Env
 
 func initEnvSetAction(
-	cmd *cobra.Command,
+	console input.Console,
+	ctx context.Context,
 	o *internal.GlobalCommandOptions,
 	flags struct{},
 	args []string,
@@ -122,7 +142,8 @@ func initEnvSetAction(
 }
 
 func initEnvSelectAction(
-	cmd *cobra.Command,
+	console input.Console,
+	ctx context.Context,
 	o *internal.GlobalCommandOptions,
 	flags struct{},
 	args []string,
@@ -131,7 +152,8 @@ func initEnvSelectAction(
 }
 
 func initEnvListAction(
-	cmd *cobra.Command,
+	console input.Console,
+	ctx context.Context,
 	o *internal.GlobalCommandOptions,
 	flags struct{},
 	args []string,
@@ -140,7 +162,8 @@ func initEnvListAction(
 }
 
 func initEnvNewAction(
-	cmd *cobra.Command,
+	console input.Console,
+	ctx context.Context,
 	o *internal.GlobalCommandOptions,
 	flags envNewFlags,
 	args []string,
@@ -149,7 +172,8 @@ func initEnvNewAction(
 }
 
 func initEnvRefreshAction(
-	cmd *cobra.Command,
+	console input.Console,
+	ctx context.Context,
 	o *internal.GlobalCommandOptions,
 	flags struct{},
 	args []string,
@@ -158,7 +182,8 @@ func initEnvRefreshAction(
 }
 
 func initEnvGetValuesAction(
-	cmd *cobra.Command,
+	console input.Console,
+	ctx context.Context,
 	o *internal.GlobalCommandOptions,
 	flags struct{},
 	args []string,
@@ -171,7 +196,8 @@ func initEnvGetValuesAction(
 //#region Pipeline
 
 func initPipelineConfigAction(
-	cmd *cobra.Command,
+	console input.Console,
+	ctx context.Context,
 	o *internal.GlobalCommandOptions,
 	flags pipelineConfigFlags,
 	args []string,
@@ -184,7 +210,8 @@ func initPipelineConfigAction(
 //#region Templates
 
 func initTemplatesListAction(
-	cmd *cobra.Command,
+	console input.Console,
+	ctx context.Context,
 	o *internal.GlobalCommandOptions,
 	flags templatesListFlags,
 	args []string,
@@ -193,7 +220,8 @@ func initTemplatesListAction(
 }
 
 func initTemplatesShowAction(
-	cmd *cobra.Command,
+	console input.Console,
+	ctx context.Context,
 	o *internal.GlobalCommandOptions,
 	flags struct{},
 	args []string,
@@ -206,7 +234,8 @@ func initTemplatesShowAction(
 //#region Config
 
 func initConfigListAction(
-	cmd *cobra.Command,
+	console input.Console,
+	ctx context.Context,
 	o *internal.GlobalCommandOptions,
 	flags struct{},
 	args []string,
@@ -215,7 +244,8 @@ func initConfigListAction(
 }
 
 func initConfigGetAction(
-	cmd *cobra.Command,
+	console input.Console,
+	ctx context.Context,
 	o *internal.GlobalCommandOptions,
 	flags struct{},
 	args []string,
@@ -224,7 +254,8 @@ func initConfigGetAction(
 }
 
 func initConfigSetAction(
-	cmd *cobra.Command,
+	console input.Console,
+	ctx context.Context,
 	o *internal.GlobalCommandOptions,
 	flags struct{},
 	args []string,
@@ -233,7 +264,8 @@ func initConfigSetAction(
 }
 
 func initConfigUnsetAction(
-	cmd *cobra.Command,
+	console input.Console,
+	ctx context.Context,
 	o *internal.GlobalCommandOptions,
 	flags struct{},
 	args []string,
@@ -242,7 +274,8 @@ func initConfigUnsetAction(
 }
 
 func initConfigResetAction(
-	cmd *cobra.Command,
+	console input.Console,
+	ctx context.Context,
 	o *internal.GlobalCommandOptions,
 	flags struct{},
 	args []string,

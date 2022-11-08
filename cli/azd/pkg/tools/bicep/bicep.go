@@ -18,8 +18,6 @@ import (
 	"github.com/blang/semver/v4"
 )
 
-const EnvNameAzureConfigDir = "AZURE_CONFIG_DIR"
-
 type BicepCli interface {
 	tools.ExternalTool
 	Build(ctx context.Context, file string) (string, error)
@@ -109,6 +107,7 @@ type contextKey string
 const (
 	bicepContextKey         contextKey = "bicepcli"
 	defaultBicepCommandPath string     = "bicep"
+	envNameAzureConfigDir   string     = "AZURE_CONFIG_DIR"
 )
 
 func GetBicepCli(ctx context.Context) BicepCli {
@@ -157,7 +156,7 @@ func findBicepPath() (*string, error) {
 	commonPaths := []string{}
 
 	// If AZURE_CONFIG_DIR is defined, check there first
-	azureConfigDir := os.Getenv(EnvNameAzureConfigDir)
+	azureConfigDir := os.Getenv(envNameAzureConfigDir)
 	if strings.TrimSpace(azureConfigDir) != "" {
 		commonPaths = append(commonPaths, filepath.Join(azureConfigDir, "bin", bicepFilename))
 	}

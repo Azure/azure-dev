@@ -601,6 +601,7 @@ func (p *AzdoCiProvider) configureConnection(
 
 	if authType == AuthTypeFederated {
 		return fmt.Errorf(
+			//nolint:lll
 			"Azure DevOps does not support federated authentication. Service Principal with client ID and client secret must be used. %w",
 			ErrAuthNotSupported,
 		)

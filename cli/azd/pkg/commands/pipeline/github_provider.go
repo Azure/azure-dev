@@ -372,6 +372,7 @@ func (p *GitHubCiProvider) configureConnection(
 		// Throw error if Federated auth is explicitly requested
 		if authType == AuthTypeFederated {
 			return fmt.Errorf(
+				//nolint:lll
 				"Terraform does not support federated authentication. Service Principal with client ID and client secret must be used. %w",
 				ErrAuthNotSupported,
 			)
@@ -539,7 +540,12 @@ const (
 	federatedIdentityAudience = "api://AzureADTokenExchange"
 )
 
-func applyFederatedCredentials(ctx context.Context, repoSlug string, azureCredentials *azcli.AzureCredentials, console input.Console) error {
+func applyFederatedCredentials(
+	ctx context.Context,
+	repoSlug string,
+	azureCredentials *azcli.AzureCredentials,
+	console input.Console,
+) error {
 	graphClient, err := createGraphClient(ctx)
 	if err != nil {
 		return err
@@ -777,7 +783,13 @@ func ensureFederatedCredential(
 		return fmt.Errorf("failed creating federated credential: %w", err)
 	}
 
-	console.Message(ctx, fmt.Sprintf("Created federated identity credential for GitHub with subject %s\n", output.WithHighLightFormat(repoCredential.Subject)))
+	console.Message(
+		ctx,
+		fmt.Sprintf(
+			"Created federated identity credential for GitHub with subject %s\n",
+			output.WithHighLightFormat(repoCredential.Subject),
+		),
+	)
 
 	return nil
 }

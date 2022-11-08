@@ -78,7 +78,11 @@ func (i *PipelineManager) preConfigureCheck(ctx context.Context) error {
 	validAuthTypes := []string{string(AuthTypeFederated), string(AuthTypeClientCredentials)}
 	pipelineAuthType := strings.TrimSpace(i.PipelineManagerArgs.PipelineAuthTypeName)
 	if pipelineAuthType != "" && !slices.Contains(validAuthTypes, pipelineAuthType) {
-		return fmt.Errorf("pipeline authentication type '%s' is not valid. Valid authentication types are '%s'", i.PipelineManagerArgs.PipelineAuthTypeName, strings.Join(validAuthTypes, ", "))
+		return fmt.Errorf(
+			"pipeline authentication type '%s' is not valid. Valid authentication types are '%s'",
+			i.PipelineManagerArgs.PipelineAuthTypeName,
+			strings.Join(validAuthTypes, ", "),
+		)
 	}
 
 	console := input.GetConsole(ctx)
@@ -254,7 +258,10 @@ func (manager *PipelineManager) Configure(ctx context.Context) error {
 
 	inputConsole.Message(
 		ctx,
-		fmt.Sprintf("Creating or updating service principal %s.\n", output.WithHighLightFormat(manager.PipelineServicePrincipalName)),
+		fmt.Sprintf(
+			"Creating or updating service principal %s.\n",
+			output.WithHighLightFormat(manager.PipelineServicePrincipalName),
+		),
 	)
 
 	credentials, err := azCli.CreateOrUpdateServicePrincipal(

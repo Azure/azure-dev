@@ -45,7 +45,7 @@ stages:
               BuildOutputName: azd
               SetExecutableBit: true
               SetShieldInfo: true
-              GenerateCoverage: true
+              # GenerateCoverage: true
               AZURE_DEV_CI_OS: lin
             Mac:
               Pool: Azure Pipelines

@@ -5,11 +5,13 @@ package pipeline
 
 import (
 	"context"
+	"errors"
 	"path"
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdo"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/console"
 	"github.com/azure/azure-dev/cli/azd/test/ostest"
@@ -89,7 +91,7 @@ func Test_azdo_provider_preConfigureCheck(t *testing.T) {
 		ctx := context.Background()
 
 		// act
-		e := provider.preConfigureCheck(ctx, testConsole)
+		e := provider.preConfigureCheck(ctx, testConsole, PipelineManagerArgs{}, provisioning.Options{})
 
 		// assert
 		require.NoError(t, e)
@@ -108,14 +110,46 @@ func Test_azdo_provider_preConfigureCheck(t *testing.T) {
 		ctx := context.Background()
 
 		// act
-		e := provider.preConfigureCheck(ctx, testConsole)
+		e := provider.preConfigureCheck(ctx, testConsole, PipelineManagerArgs{}, provisioning.Options{})
 
 		// assert
 		require.Nil(t, e)
 		// PAT is not persisted to .env
 		require.EqualValues(t, "", provider.Env.Values[azdo.AzDoPatName])
 	})
+}
 
+func Test_azdo_ci_provider_preconfigure_check(t *testing.T) {
+	t.Run("success with default options", func(t *testing.T) {
+		ctx := context.Background()
+		provider := getAzdoCiProviderTestHarness()
+		testConsole := console.NewMockConsole()
+		testPat := "testPAT12345"
+		testConsole.WhenPrompt(func(options input.ConsoleOptions) bool {
+			return options.Message == "Personal Access Token (PAT):"
+		}).Respond(testPat)
+
+		pipelineManagerArgs := PipelineManagerArgs{
+			PipelineAuthTypeName: "",
+		}
+
+		err := provider.preConfigureCheck(ctx, testConsole, pipelineManagerArgs, provisioning.Options{})
+		require.NoError(t, err)
+	})
+
+	t.Run("fails if auth type is set to federated", func(t *testing.T) {
+		ctx := context.Background()
+		provider := getAzdoCiProviderTestHarness()
+		testConsole := console.NewMockConsole()
+
+		pipelineManagerArgs := PipelineManagerArgs{
+			PipelineAuthTypeName: string(AuthTypeFederated),
+		}
+
+		err := provider.preConfigureCheck(ctx, testConsole, pipelineManagerArgs, provisioning.Options{})
+		require.Error(t, err)
+		require.True(t, errors.Is(err, ErrAuthNotSupported))
+	})
 }
 
 func Test_saveEnvironmentConfig(t *testing.T) {
@@ -139,6 +173,7 @@ func Test_saveEnvironmentConfig(t *testing.T) {
 	})
 
 }
+
 func getEmptyAzdoScmProviderTestHarness() *AzdoScmProvider {
 	return &AzdoScmProvider{
 		Env: &environment.Environment{
@@ -149,6 +184,21 @@ func getEmptyAzdoScmProviderTestHarness() *AzdoScmProvider {
 
 func getAzdoScmProviderTestHarness() *AzdoScmProvider {
 	return &AzdoScmProvider{
+		Env: &environment.Environment{
+			Values: map[string]string{
+				azdo.AzDoEnvironmentOrgName:       "fake_org",
+				azdo.AzDoEnvironmentProjectName:   "project1",
+				azdo.AzDoEnvironmentProjectIdName: "12345",
+				azdo.AzDoEnvironmentRepoName:      "repo1",
+				azdo.AzDoEnvironmentRepoIdName:    "9876",
+				azdo.AzDoEnvironmentRepoWebUrl:    "https://repo",
+			},
+		},
+	}
+}
+
+func getAzdoCiProviderTestHarness() *AzdoCiProvider {
+	return &AzdoCiProvider{
 		Env: &environment.Environment{
 			Values: map[string]string{
 				azdo.AzDoEnvironmentOrgName:       "fake_org",

@@ -48,7 +48,12 @@ func (p *GitHubScmProvider) requiredTools(ctx context.Context) []tools.ExternalT
 
 // preConfigureCheck check the current state of external tools and any
 // other dependency to be as expected for execution.
-func (p *GitHubScmProvider) preConfigureCheck(ctx context.Context, console input.Console) error {
+func (p *GitHubScmProvider) preConfigureCheck(
+	ctx context.Context,
+	console input.Console,
+	pipelineManagerArgs PipelineManagerArgs,
+	infraOptions provisioning.Options,
+) error {
 	return ensureGitHubLogin(ctx, github.NewGitHubCli(ctx), github.GitHubHostName, console)
 }
 
@@ -301,8 +306,42 @@ func (p *GitHubCiProvider) requiredTools(ctx context.Context) []tools.ExternalTo
 
 // preConfigureCheck validates that current state of tools and GitHub is as expected to
 // execute.
-func (p *GitHubCiProvider) preConfigureCheck(ctx context.Context, console input.Console) error {
-	return ensureGitHubLogin(ctx, github.NewGitHubCli(ctx), github.GitHubHostName, console)
+func (p *GitHubCiProvider) preConfigureCheck(
+	ctx context.Context,
+	console input.Console,
+	pipelineManagerArgs PipelineManagerArgs,
+	infraOptions provisioning.Options,
+) error {
+	err := ensureGitHubLogin(ctx, github.NewGitHubCli(ctx), github.GitHubHostName, console)
+	if err != nil {
+		return err
+	}
+
+	authType := PipelineAuthType(pipelineManagerArgs.PipelineAuthTypeName)
+
+	// Federated Auth + Terraform is not a supported combination
+	if infraOptions.Provider == provisioning.Terraform {
+		// Throw error if Federated auth is explicitly requested
+		if authType == AuthTypeFederated {
+			return fmt.Errorf(
+				//nolint:lll
+				"Terraform does not support federated authentication. To explicitly use client credentials set the %s flag. %w",
+				output.WithBackticks("--auth-type client-credentials"),
+				ErrAuthNotSupported,
+			)
+		} else if authType == "" {
+			// If not explicitly set, show warning
+			console.Message(
+				ctx,
+				output.WithWarningFormat(
+					//nolint:lll
+					"WARNING: Terraform provisioning does not support federated authentication, defaulting to Service Principal with client ID and client secret.\n",
+				),
+			)
+		}
+	}
+
+	return nil
 }
 
 // name returns the name of the provider.
@@ -367,35 +406,17 @@ func (p *GitHubCiProvider) configureConnection(
 	authType PipelineAuthType,
 	console input.Console) error {
 
-	// Federated Auth + Terraform is not a supported combination
-	if infraOptions.Provider == provisioning.Terraform {
-		// Throw error if Federated auth is explicitly requested
-		if authType == AuthTypeFederated {
-			return fmt.Errorf(
-				//nolint:lll
-				"Terraform does not support federated authentication. Service Principal with client ID and client secret must be used. %w",
-				ErrAuthNotSupported,
-			)
-		}
-
-		// If not explicitly set, show warning
-		console.Message(
-			ctx,
-			output.WithWarningFormat(
-				//nolint:lll
-				"WARNING: Terraform provisioning does not support federated authentication, defaulting to Service Principal with client ID and client secret.\n",
-			),
-		)
-
-		authType = AuthTypeClientCredentials
-	}
-
 	repoSlug := repoDetails.owner + "/" + repoDetails.repoName
 	console.Message(ctx, fmt.Sprintf("Configuring repository %s.\n", output.WithHighLightFormat(repoSlug)))
 
 	ghCli := github.NewGitHubCli(ctx)
 	if err := p.ensureAuthorizedForRepoSecrets(ctx, ghCli, console, repoSlug); err != nil {
 		return fmt.Errorf("ensuring authorization: %w", err)
+	}
+
+	// Default auth type to client-credentials for terraform
+	if infraOptions.Provider == provisioning.Terraform && authType == "" {
+		authType = AuthTypeClientCredentials
 	}
 
 	var authErr error

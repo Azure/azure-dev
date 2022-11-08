@@ -14,6 +14,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
+	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
@@ -72,7 +73,7 @@ func (i *PipelineManager) requiredTools(ctx context.Context) []tools.ExternalToo
 }
 
 // preConfigureCheck invoke the validations from each provider.
-func (i *PipelineManager) preConfigureCheck(ctx context.Context) error {
+func (i *PipelineManager) preConfigureCheck(ctx context.Context, infraOptions provisioning.Options) error {
 	// Validate the authentication types
 	// auth-type argument must either be an empty string or one of the following values.
 	validAuthTypes := []string{string(AuthTypeFederated), string(AuthTypeClientCredentials)}
@@ -86,11 +87,11 @@ func (i *PipelineManager) preConfigureCheck(ctx context.Context) error {
 	}
 
 	console := input.GetConsole(ctx)
-	if err := i.ScmProvider.preConfigureCheck(ctx, console); err != nil {
-		return fmt.Errorf("pre-config check error from %s provider: %w", i.ScmProvider.name(), err)
-	}
-	if err := i.CiProvider.preConfigureCheck(ctx, console); err != nil {
+	if err := i.CiProvider.preConfigureCheck(ctx, console, i.PipelineManagerArgs, infraOptions); err != nil {
 		return fmt.Errorf("pre-config check error from %s provider: %w", i.CiProvider.name(), err)
+	}
+	if err := i.ScmProvider.preConfigureCheck(ctx, console, i.PipelineManagerArgs, infraOptions); err != nil {
+		return fmt.Errorf("pre-config check error from %s provider: %w", i.ScmProvider.name(), err)
 	}
 
 	return nil
@@ -243,9 +244,15 @@ func (manager *PipelineManager) Configure(ctx context.Context) error {
 		return err
 	}
 
+	// Figure out what is the expected provider to use for provisioning
+	prj, err := project.LoadProjectConfig(manager.AzdCtx.ProjectPath(), manager.Environment)
+	if err != nil {
+		return fmt.Errorf("finding provisioning provider: %w", err)
+	}
+
 	// run pre-config validations. manager will check az cli is logged in and
 	// will invoke the per-provider validations.
-	if errorsFromPreConfig := manager.preConfigureCheck(ctx); errorsFromPreConfig != nil {
+	if errorsFromPreConfig := manager.preConfigureCheck(ctx, prj.Infra); errorsFromPreConfig != nil {
 		return errorsFromPreConfig
 	}
 
@@ -277,12 +284,6 @@ func (manager *PipelineManager) Configure(ctx context.Context) error {
 	gitRepoInfo, err := manager.getGitRepoDetails(ctx)
 	if err != nil {
 		return fmt.Errorf("ensuring git remote: %w", err)
-	}
-
-	// Figure out what is the expected provider to use for provisioning
-	prj, err := project.LoadProjectConfig(manager.AzdCtx.ProjectPath(), manager.Environment)
-	if err != nil {
-		return fmt.Errorf("finding provisioning provider: %w", err)
 	}
 
 	err = manager.CiProvider.configureConnection(

@@ -27,7 +27,12 @@ type subareaProvider interface {
 	// preConfigureCheck validates that the provider's state is ready to be used.
 	// a provider would typically use this method for checking if tools are logged in
 	// of checking if all expected input data is found.
-	preConfigureCheck(ctx context.Context, console input.Console) error
+	preConfigureCheck(
+		ctx context.Context,
+		console input.Console,
+		pipelineManagerArgs PipelineManagerArgs,
+		infraOptions provisioning.Options,
+	) error
 	// name returns the name of the provider
 	name() string
 }

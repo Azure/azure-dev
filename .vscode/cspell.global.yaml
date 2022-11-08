@@ -82,8 +82,7 @@ ignoreWords:
     - odata
     - osdisk
     - osexec
-    - OIDC
-    - Oidc
+    - oidc
     - pcert
     - pdnsz
     - Peerings

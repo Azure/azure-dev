@@ -2,11 +2,8 @@ package cmd
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io"
-	"log"
-	"os"
 	"path/filepath"
 	"runtime"
 
@@ -305,27 +302,4 @@ func newConfigResetAction(configManager config.Manager, args []string) *configRe
 func (a *configResetAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	emptyConfig := config.NewConfig(nil)
 	return nil, config.SaveUserConfig(a.configManager, emptyConfig)
-}
-
-func getUserConfig(configManager config.Manager) (config.Config, error) {
-	var azdConfig config.Config
-
-	configFilePath, err := config.GetUserConfigFilePath()
-	if err != nil {
-		return nil, err
-	}
-
-	azdConfig, err = configManager.Load(configFilePath)
-	if err != nil {
-		// Ignore missing file errors
-		// File will automatically be created on first `set` operation
-		if errors.Is(err, os.ErrNotExist) {
-			log.Printf("failed loading azd user config from '%s'. %s\n", configFilePath, err.Error())
-			return config.NewConfig(nil), nil
-		}
-
-		return nil, fmt.Errorf("failed loading azd user config from '%s'. %w", configFilePath, err)
-	}
-
-	return azdConfig, nil
 }

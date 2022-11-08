@@ -35,7 +35,7 @@ func (c *GraphClient) Me() *MeItemRequestBuilder {
 // Applications
 
 func (c *GraphClient) Applications() *ApplicationListRequestBuilder {
-	return NewApplicationsRequestBuilder(c)
+	return NewApplicationListRequestBuilder(c)
 }
 
 func (c *GraphClient) ApplicationById(id string) *ApplicationItemRequestBuilder {

@@ -47,6 +47,7 @@ import (
 
 const (
 	testSubscriptionId = "2cd617ea-1866-46b1-90e3-fffb087ebf9b"
+	defaultLocation    = "eastus2"
 )
 
 func Test_CLI_Init_AsksForSubscriptionIdAndCreatesEnvAndProjectFile(t *testing.T) {
@@ -492,7 +493,7 @@ func Test_CLI_ProjectIsNeeded(t *testing.T) {
 		{command: "down"},
 		{command: "env get-values"},
 		{command: "env list"},
-		{command: "env new"},
+		{command: "env new", args: []string{"testEnvironmentName"}},
 		{command: "env refresh"},
 		{command: "env select", args: []string{"testEnvironmentName"}},
 		{command: "env set", args: []string{"testKey", "testValue"}},

@@ -319,7 +319,7 @@ func initEnvNewAction(cmd *cobra.Command, o *internal.GlobalCommandOptions, flag
 		return nil, err
 	}
 	azCli := newAzCliFromOptions(o, commandRunner, tokenCredential)
-	cmdEnvNewAction := newEnvNewAction(azdContext, azCli, flags, console)
+	cmdEnvNewAction := newEnvNewAction(azdContext, azCli, flags, args, console)
 	return cmdEnvNewAction, nil
 }
 

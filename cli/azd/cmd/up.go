@@ -59,6 +59,10 @@ When no template is supplied, you can optionally select an Azure Developer CLI t
 	uf := &upFlags{}
 	uf.Bind(cmd.Flags(), global)
 
+	if err := cmd.RegisterFlagCompletionFunc("template", templateNameCompletion); err != nil {
+		panic(err)
+	}
+
 	return cmd, uf
 }
 

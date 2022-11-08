@@ -1,5 +1,11 @@
 # Release History
 
+## Upcoming (Unreleased)
+
+### Breaking Changes
+
+- [[#1105]](https://github.com/Azure/azure-dev/pull/1105) `azd env new` now accepts the name of the environment as the first argument, i.e. `azd env new <environment>`. Previously, this behavior was accomplished via the global environment flag `-e`, i.e. `azd env new -e <environment>`.
+
 ## 0.4.0-beta.1 (2022-11-02)
 
 ### Features Added

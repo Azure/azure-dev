@@ -14,7 +14,7 @@ type ApplicationListRequestBuilder struct {
 	*EntityListRequestBuilder[ApplicationListRequestBuilder]
 }
 
-func NewApplicationsRequestBuilder(client *GraphClient) *ApplicationListRequestBuilder {
+func NewApplicationListRequestBuilder(client *GraphClient) *ApplicationListRequestBuilder {
 	builder := &ApplicationListRequestBuilder{}
 	builder.EntityListRequestBuilder = newEntityListRequestBuilder(builder, client)
 
@@ -74,6 +74,16 @@ func NewApplicationItemRequestBuilder(client *GraphClient, id string) *Applicati
 	return builder
 }
 
+func (c *ApplicationItemRequestBuilder) FederatedIdentityCredentials() *FederatedIdentityCredentialListRequestBuilder {
+	return NewFederatedIdentityCredentialListRequestBuilder(c.client, c.id)
+}
+
+func (c *ApplicationItemRequestBuilder) FederatedIdentityCredentialById(
+	id string,
+) *FederatedIdentityCredentialItemRequestBuilder {
+	return NewFederatedIdentityCredentialItemRequestBuilder(c.client, c.id, id)
+}
+
 // Gets a Microsoft Graph Application for the specified application identifier
 func (c *ApplicationItemRequestBuilder) Get(ctx context.Context) (*Application, error) {
 	req, err := runtime.NewRequest(ctx, http.MethodGet, fmt.Sprintf("%s/applications/%s", c.client.host, c.id))
@@ -91,6 +101,25 @@ func (c *ApplicationItemRequestBuilder) Get(ctx context.Context) (*Application, 
 	}
 
 	return httputil.ReadRawResponse[Application](res)
+}
+
+// Gets a Microsoft Graph Application for the specified application identifier
+func (c *ApplicationItemRequestBuilder) Delete(ctx context.Context) error {
+	req, err := runtime.NewRequest(ctx, http.MethodDelete, fmt.Sprintf("%s/applications/%s", c.client.host, c.id))
+	if err != nil {
+		return fmt.Errorf("failed creating request: %w", err)
+	}
+
+	res, err := c.client.pipeline.Do(req)
+	if err != nil {
+		return httputil.HandleRequestError(res, err)
+	}
+
+	if !runtime.HasStatusCode(res, http.StatusNoContent) {
+		return runtime.NewResponseError(res)
+	}
+
+	return nil
 }
 
 func (c *ApplicationItemRequestBuilder) RemovePassword(ctx context.Context, keyId string) error {

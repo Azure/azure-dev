@@ -29,6 +29,7 @@ type loginFlags struct {
 	clientID          string
 	clientSecret      string
 	clientCertificate string
+	federatedToken    string
 	global            *internal.GlobalCommandOptions
 }
 
@@ -51,6 +52,11 @@ func (lf *loginFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandO
 		"client-certificate",
 		"",
 		"The path to the client certificate for the service principal to authenticate with.")
+	local.StringVar(
+		&lf.federatedToken,
+		"federated-token",
+		"",
+		"The federated token for the service principal to authenticate with.")
 	local.StringVar(&lf.tenantID, "tenant-id", "", "The tenant id for the service principal to authenticate with.")
 	output.AddOutputFlag(
 		local,
@@ -155,7 +161,7 @@ func (la *loginAction) login(ctx context.Context) error {
 
 		switch {
 		// only --client-secret was passed
-		case la.flags.clientSecret != "" && la.flags.clientCertificate == "":
+		case la.flags.clientSecret != "" && la.flags.clientCertificate == "" && la.flags.federatedToken == "":
 			if _, err := la.authManager.LoginWithServicePrincipalSecret(
 				ctx, la.flags.tenantID, la.flags.clientID, la.flags.clientSecret,
 			); err != nil {
@@ -163,7 +169,7 @@ func (la *loginAction) login(ctx context.Context) error {
 			}
 
 		// only --client-certificate was passed
-		case la.flags.clientCertificate != "" && la.flags.clientSecret == "":
+		case la.flags.clientSecret != "" && la.flags.clientCertificate != "" && la.flags.federatedToken == "":
 			certFile, err := os.Open(la.flags.clientCertificate)
 			if err != nil {
 				return fmt.Errorf("reading certificate: %w", err)
@@ -181,9 +187,18 @@ func (la *loginAction) login(ctx context.Context) error {
 				return fmt.Errorf("logging in: %w", err)
 			}
 
+		// only --federated-token was passed
+		case la.flags.clientSecret != "" && la.flags.clientCertificate == "" && la.flags.federatedToken != "":
+			if _, err := la.authManager.LoginWithServicePrincipalFederatedToken(
+				ctx, la.flags.tenantID, la.flags.clientID, la.flags.federatedToken,
+			); err != nil {
+				return fmt.Errorf("logging in: %w", err)
+			}
+
 		// some other combination was set.
 		default:
-			return errors.New("must set exactly one of `client-secret` or `client-certificate` for service principal")
+			return errors.New(
+				"must set exactly one of `client-secret`, `client-certificate` or `federated-token` for service principal")
 		}
 
 		return nil

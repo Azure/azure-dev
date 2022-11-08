@@ -171,6 +171,22 @@ func (m *Manager) CredentialForCurrentUser(ctx context.Context) (azcore.TokenCre
 			}
 
 			return cred, nil
+
+		} else if ps.FederatedToken != nil {
+			cred, err := azidentity.NewClientAssertionCredential(
+				*currentUser.TenantID,
+				*currentUser.ClientID,
+				func(_ context.Context) (string, error) {
+					return *ps.FederatedToken, nil
+				},
+				nil,
+			)
+
+			if err != nil {
+				return nil, fmt.Errorf("creating credential: %v: %w", err, ErrNoCurrentUser)
+			}
+
+			return cred, nil
 		}
 	}
 
@@ -254,6 +270,33 @@ func (m *Manager) LoginWithServicePrincipalCertificate(
 		clientId,
 		&persistedSecret{
 			ClientCertificate: &encodedCert,
+		},
+	); err != nil {
+		return nil, err
+	}
+
+	return cred, nil
+}
+
+func (m *Manager) LoginWithServicePrincipalFederatedToken(
+	ctx context.Context, tenantId, clientId, federatedToken string,
+) (azcore.TokenCredential, error) {
+	cred, err := azidentity.NewClientAssertionCredential(
+		tenantId,
+		clientId,
+		func(_ context.Context) (string, error) {
+			return federatedToken, nil
+		},
+		nil)
+	if err != nil {
+		return nil, fmt.Errorf("creating credential: %w", err)
+	}
+
+	if err := m.saveLoginForServicePrincipal(
+		tenantId,
+		clientId,
+		&persistedSecret{
+			FederatedToken: &federatedToken,
 		},
 	); err != nil {
 		return nil, err
@@ -402,6 +445,9 @@ type persistedSecret struct {
 	// The bytes of the client certificate, which can be presented to azidentity.ParseCertificates, encoded as a
 	// base64 string.
 	ClientCertificate *string `json:"clientCertificate,omitempty"`
+
+	// The federated client credential.
+	FederatedToken *string `json:"federatedToken,omitempty"`
 }
 
 // userProperties is the model type for the value we store in the user's config. It is logically a discriminated union of

@@ -62,10 +62,10 @@ steps:
         -TemplateList '${{ parameters.TemplateList }}'
         -TemplateListFilter '${{ parameters.TemplateListFilter }}'
         -OutputMatrixVariable '${{ parameters.OutputMatrixVariable }}'
-        -JobVariablesDefinition @'
+        -JobVariablesDefinition '
         AzdVersion=${{ parameters.AzdVersion }},
         AzdContainerImage=$(AzdContainerImage),
         TemplateBranchName=${{ parameters.TemplateBranchName }},
         AzureLocation=${{ parameters.AzureLocation }},
         CleanupHoursDelay=${{ parameters.CleanupHoursDelay }}
-        '@
+        '

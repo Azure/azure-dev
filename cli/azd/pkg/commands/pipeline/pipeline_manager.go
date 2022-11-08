@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"strings"
 	"time"
 
 	"github.com/azure/azure-dev/cli/azd/internal"
@@ -20,6 +21,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/git"
 	"github.com/sethvargo/go-retry"
+	"golang.org/x/exp/slices"
 )
 
 type PipelineAuthType string
@@ -71,6 +73,14 @@ func (i *PipelineManager) requiredTools(ctx context.Context) []tools.ExternalToo
 
 // preConfigureCheck invoke the validations from each provider.
 func (i *PipelineManager) preConfigureCheck(ctx context.Context) error {
+	// Validate the authentication types
+	// auth-type argument must either be an empty string or one of the following values.
+	validAuthTypes := []string{string(AuthTypeFederated), string(AuthTypeClientCredentials)}
+	pipelineAuthType := strings.TrimSpace(i.PipelineManagerArgs.PipelineAuthTypeName)
+	if pipelineAuthType != "" && !slices.Contains(validAuthTypes, pipelineAuthType) {
+		return fmt.Errorf("pipeline authentication type '%s' is not valid. Valid authentication types are '%s'", i.PipelineManagerArgs.PipelineAuthTypeName, strings.Join(validAuthTypes, ", "))
+	}
+
 	console := input.GetConsole(ctx)
 	if err := i.ScmProvider.preConfigureCheck(ctx, console); err != nil {
 		return fmt.Errorf("pre-config check error from %s provider: %w", i.ScmProvider.name(), err)

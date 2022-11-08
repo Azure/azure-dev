@@ -3,18 +3,52 @@ package actions
 
 import (
 	"context"
+	"log"
+
+	"github.com/azure/azure-dev/cli/azd/pkg/input"
 )
 
 // ActionFunc is an Action implementation for regular functions.
-type ActionFunc func(context.Context) error
+type ActionFunc func(context.Context) (*ActionResult, error)
 
 // Run implements the Action interface
-func (a ActionFunc) Run(ctx context.Context) error {
+func (a ActionFunc) Run(ctx context.Context) (*ActionResult, error) {
 	return a(ctx)
+}
+
+// Define a message as the completion of an Action.
+type ResultMessage struct {
+	Header   string
+	FollowUp string
+}
+
+// Define the Action outputs.
+type ActionResult struct {
+	Message *ResultMessage
 }
 
 // Action is the representation of the application logic of a CLI command.
 type Action interface {
 	// Run executes the CLI command.
-	Run(ctx context.Context) error
+	Run(ctx context.Context) (*ActionResult, error)
+}
+
+func ShowActionResults(ctx context.Context, actionResult *ActionResult, err error) {
+	console := input.GetConsole(ctx)
+	if console == nil {
+		log.Panicln("showing actions results: console was not attached to the context")
+	}
+	if err != nil {
+		console.MessageUx(ctx, err.Error(), input.ResultError)
+		return
+	}
+
+	if actionResult == nil {
+		return
+	}
+	if actionResult.Message == nil {
+		return
+	}
+	console.MessageUx(ctx, actionResult.Message.Header, input.ResultSuccess)
+	console.Message(ctx, actionResult.Message.FollowUp)
 }

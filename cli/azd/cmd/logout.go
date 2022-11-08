@@ -7,6 +7,7 @@ import (
 	"context"
 	"io"
 
+	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 	"github.com/azure/azure-dev/cli/azd/pkg/commands"
@@ -41,6 +42,6 @@ func newLogoutAction(authManager *auth.Manager, formatter output.Formatter, writ
 	}
 }
 
-func (la *logoutAction) Run(ctx context.Context) error {
-	return la.authManager.Logout(ctx)
+func (la *logoutAction) Run(ctx context.Context) (*actions.ActionResult, error) {
+	return nil, la.authManager.Logout(ctx)
 }

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 
+	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
@@ -82,46 +83,46 @@ func newInfraCreateAction(
 	}
 }
 
-func (i *infraCreateAction) Run(ctx context.Context) error {
+func (i *infraCreateAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	if err := ensureProject(i.azdCtx.ProjectPath()); err != nil {
-		return err
+		return nil, err
 	}
 
 	env, ctx, err := loadOrInitEnvironment(ctx, &i.flags.global.EnvironmentName, i.azdCtx, i.console)
 	if err != nil {
-		return fmt.Errorf("loading environment: %w", err)
+		return nil, fmt.Errorf("loading environment: %w", err)
 	}
 
 	prj, err := project.LoadProjectConfig(i.azdCtx.ProjectPath(), env)
 	if err != nil {
-		return fmt.Errorf("loading project: %w", err)
+		return nil, fmt.Errorf("loading project: %w", err)
 	}
 
 	if err = prj.Initialize(ctx, env); err != nil {
-		return err
+		return nil, err
 	}
 
 	infraManager, err := provisioning.NewManager(ctx, env, prj.Path, prj.Infra, !i.flags.global.NoPrompt)
 	if err != nil {
-		return fmt.Errorf("creating provisioning manager: %w", err)
+		return nil, fmt.Errorf("creating provisioning manager: %w", err)
 	}
 
 	deploymentPlan, err := infraManager.Plan(ctx)
 	if err != nil {
-		return fmt.Errorf("planning deployment: %w", err)
+		return nil, fmt.Errorf("planning deployment: %w", err)
 	}
 
 	provisioningScope := infra.NewSubscriptionScope(ctx, env.GetLocation(), env.GetSubscriptionId(), env.GetEnvName())
 	deployResult, err := infraManager.Deploy(ctx, deploymentPlan, provisioningScope)
 	if err != nil {
-		return fmt.Errorf("deploying infrastructure: %w", err)
+		return nil, fmt.Errorf("deploying infrastructure: %w", err)
 	}
 
 	if err != nil {
 		if i.formatter.Kind() == output.JsonFormat {
 			stateResult, err := infraManager.State(ctx, provisioningScope)
 			if err != nil {
-				return fmt.Errorf(
+				return nil, fmt.Errorf(
 					"deployment failed and the deployment result is unavailable: %w",
 					multierr.Combine(err, err),
 				)
@@ -129,21 +130,21 @@ func (i *infraCreateAction) Run(ctx context.Context) error {
 
 			if err := i.formatter.Format(
 				provisioning.NewEnvRefreshResultFromState(stateResult.State), i.writer, nil); err != nil {
-				return fmt.Errorf(
+				return nil, fmt.Errorf(
 					"deployment failed and the deployment result could not be displayed: %w",
 					multierr.Combine(err, err),
 				)
 			}
 		}
 
-		return fmt.Errorf("deployment failed: %w", err)
+		return nil, fmt.Errorf("deployment failed: %w", err)
 	}
 
 	for _, svc := range prj.Services {
 		if err := svc.RaiseEvent(
 			ctx, project.Deployed,
 			map[string]any{"bicepOutput": deployResult.Deployment.Outputs}); err != nil {
-			return err
+			return nil, err
 		}
 	}
 
@@ -157,7 +158,7 @@ func (i *infraCreateAction) Run(ctx context.Context) error {
 	if i.formatter.Kind() == output.JsonFormat {
 		stateResult, err := infraManager.State(ctx, provisioningScope)
 		if err != nil {
-			return fmt.Errorf(
+			return nil, fmt.Errorf(
 				"deployment succeeded but the deployment result is unavailable: %w",
 				multierr.Combine(err, err),
 			)
@@ -165,14 +166,14 @@ func (i *infraCreateAction) Run(ctx context.Context) error {
 
 		if err := i.formatter.Format(
 			provisioning.NewEnvRefreshResultFromState(stateResult.State), i.writer, nil); err != nil {
-			return fmt.Errorf(
+			return nil, fmt.Errorf(
 				"deployment succeeded but the deployment result could not be displayed: %w",
 				multierr.Combine(err, err),
 			)
 		}
 	}
 
-	return nil
+	return nil, nil
 }
 
 func (ica *infraCreateAction) displayResourceGroupCreatedMessage(

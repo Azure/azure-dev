@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
@@ -106,28 +107,28 @@ type DeploymentResult struct {
 	Services  []project.ServiceDeploymentResult `json:"services"`
 }
 
-func (d *deployAction) Run(ctx context.Context) error {
+func (d *deployAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	if err := ensureProject(d.azdCtx.ProjectPath()); err != nil {
-		return err
+		return nil, err
 	}
 
 	env, ctx, err := loadOrInitEnvironment(ctx, &d.flags.global.EnvironmentName, d.azdCtx, d.console)
 	if err != nil {
-		return fmt.Errorf("loading environment: %w", err)
+		return nil, fmt.Errorf("loading environment: %w", err)
 	}
 
 	projConfig, err := project.LoadProjectConfig(d.azdCtx.ProjectPath(), env)
 	if err != nil {
-		return fmt.Errorf("loading project: %w", err)
+		return nil, fmt.Errorf("loading project: %w", err)
 	}
 
 	if d.flags.serviceName != "" && !projConfig.HasService(d.flags.serviceName) {
-		return fmt.Errorf("service name '%s' doesn't exist", d.flags.serviceName)
+		return nil, fmt.Errorf("service name '%s' doesn't exist", d.flags.serviceName)
 	}
 
 	proj, err := projConfig.GetProject(&ctx, env)
 	if err != nil {
-		return fmt.Errorf("creating project: %w", err)
+		return nil, fmt.Errorf("creating project: %w", err)
 	}
 
 	// Collect all the tools we will need to do the deployment and validate that
@@ -141,7 +142,7 @@ func (d *deployAction) Run(ctx context.Context) error {
 	}
 
 	if err := tools.EnsureInstalled(ctx, tools.Unique(allTools)...); err != nil {
-		return err
+		return nil, err
 	}
 
 	interactive := d.formatter.Kind() == output.NoneFormat
@@ -195,7 +196,7 @@ func (d *deployAction) Run(ctx context.Context) error {
 			err = deployAndReportProgress(ctx, nil)
 		}
 		if err != nil {
-			return err
+			return nil, err
 		}
 	}
 
@@ -206,11 +207,11 @@ func (d *deployAction) Run(ctx context.Context) error {
 		}
 
 		if fmtErr := d.formatter.Format(aggregateDeploymentResult, d.writer, nil); fmtErr != nil {
-			return fmt.Errorf("deployment result could not be displayed: %w", fmtErr)
+			return nil, fmt.Errorf("deployment result could not be displayed: %w", fmtErr)
 		}
 	}
 
-	return nil
+	return nil, nil
 }
 
 func reportServiceDeploymentResultInteractive(

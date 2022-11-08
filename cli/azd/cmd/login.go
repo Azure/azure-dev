@@ -10,6 +10,7 @@ import (
 	"io"
 	"os"
 
+	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 	"github.com/azure/azure-dev/cli/azd/pkg/commands"
@@ -109,10 +110,10 @@ const (
 	RemoteContainersEnvVarName = "REMOTE_CONTAINERS"
 )
 
-func (la *loginAction) Run(ctx context.Context) error {
+func (la *loginAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	if !la.flags.onlyCheckStatus {
 		if err := la.login(ctx); err != nil {
-			return err
+			return nil, err
 		}
 	}
 
@@ -121,12 +122,12 @@ func (la *loginAction) Run(ctx context.Context) error {
 	if cred, err := la.authManager.CredentialForCurrentUser(ctx); errors.Is(err, auth.ErrNoCurrentUser) {
 		res.Status = contracts.LoginStatusUnauthenticated
 	} else if err != nil {
-		return fmt.Errorf("checking auth status: %w", err)
+		return nil, fmt.Errorf("checking auth status: %w", err)
 	} else {
 		if token, err := auth.EnsureLoggedInCredential(ctx, cred); errors.Is(err, auth.ErrNoCurrentUser) {
 			res.Status = contracts.LoginStatusUnauthenticated
 		} else if err != nil {
-			return fmt.Errorf("checking auth status: %w", err)
+			return nil, fmt.Errorf("checking auth status: %w", err)
 		} else {
 			res.Status = contracts.LoginStatusSuccess
 			res.ExpiresOn = &token.ExpiresOn
@@ -140,10 +141,10 @@ func (la *loginAction) Run(ctx context.Context) error {
 			fmt.Fprintln(la.console.Handles().Stdout, "Not logged in, run `azd login` to login to Azure.")
 		}
 
-		return nil
+		return nil, nil
 	}
 
-	return la.formatter.Format(res, la.writer, nil)
+	return nil, la.formatter.Format(res, la.writer, nil)
 }
 
 func (la *loginAction) login(ctx context.Context) error {

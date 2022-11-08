@@ -73,6 +73,9 @@ func PromptTemplate(ctx context.Context, message string) (Template, error) {
 		DefaultValue: templateNames[0],
 	})
 
+	// separate this prompt from the next log
+	console.Message(ctx, "")
+
 	if err != nil {
 		return result, fmt.Errorf("prompting for template: %w", err)
 	}

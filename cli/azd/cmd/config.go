@@ -2,11 +2,15 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
+	"log"
+	"os"
 	"path/filepath"
 	"runtime"
 
+	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/commands"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
@@ -92,10 +96,10 @@ func newConfigListAction(configManager config.Manager, formatter output.Formatte
 }
 
 // Executes the `azd config list` action
-func (a *configListAction) Run(ctx context.Context) error {
+func (a *configListAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	azdConfig, err := config.GetUserConfig(a.configManager)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	values := azdConfig.Raw()
@@ -103,11 +107,11 @@ func (a *configListAction) Run(ctx context.Context) error {
 	if a.formatter.Kind() == output.JsonFormat {
 		err := a.formatter.Format(values, a.writer, nil)
 		if err != nil {
-			return fmt.Errorf("failing formatting config values: %w", err)
+			return nil, fmt.Errorf("failing formatting config values: %w", err)
 		}
 	}
 
-	return nil
+	return nil, nil
 }
 
 // azd config get <path>
@@ -154,27 +158,27 @@ func newConfigGetAction(
 }
 
 // Executes the `azd config get <path>` action
-func (a *configGetAction) Run(ctx context.Context) error {
+func (a *configGetAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	azdConfig, err := config.GetUserConfig(a.configManager)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	key := a.args[0]
 	value, ok := azdConfig.Get(key)
 
 	if !ok {
-		return fmt.Errorf("no value stored at path '%s'", key)
+		return nil, fmt.Errorf("no value stored at path '%s'", key)
 	}
 
 	if a.formatter.Kind() == output.JsonFormat {
 		err := a.formatter.Format(value, a.writer, nil)
 		if err != nil {
-			return fmt.Errorf("failing formatting config values: %w", err)
+			return nil, fmt.Errorf("failing formatting config values: %w", err)
 		}
 	}
 
-	return nil
+	return nil, nil
 }
 
 // azd config set <path> <value>
@@ -207,10 +211,10 @@ func newConfigSetAction(configManager config.Manager, args []string) *configSetA
 }
 
 // Executes the `azd config set <path> <value>` action
-func (a *configSetAction) Run(ctx context.Context) error {
+func (a *configSetAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	azdConfig, err := config.GetUserConfig(a.configManager)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	path := a.args[0]
@@ -218,10 +222,10 @@ func (a *configSetAction) Run(ctx context.Context) error {
 
 	err = azdConfig.Set(path, value)
 	if err != nil {
-		return fmt.Errorf("failed setting configuration value '%s' to '%s'. %w", path, value, err)
+		return nil, fmt.Errorf("failed setting configuration value '%s' to '%s'. %w", path, value, err)
 	}
 
-	return config.SaveUserConfig(a.configManager, azdConfig)
+	return nil, config.SaveUserConfig(a.configManager, azdConfig)
 }
 
 // azd config unset <path>
@@ -254,20 +258,20 @@ func newConfigUnsetAction(configManager config.Manager, args []string) *configUn
 }
 
 // Executes the `azd config unset <path>` action
-func (a *configUnsetAction) Run(ctx context.Context) error {
+func (a *configUnsetAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	azdConfig, err := config.GetUserConfig(a.configManager)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	path := a.args[0]
 
 	err = azdConfig.Unset(path)
 	if err != nil {
-		return fmt.Errorf("failed removing configuration with path '%s'. %w", path, err)
+		return nil, fmt.Errorf("failed removing configuration with path '%s'. %w", path, err)
 	}
 
-	return config.SaveUserConfig(a.configManager, azdConfig)
+	return nil, config.SaveUserConfig(a.configManager, azdConfig)
 }
 
 // azd config reset
@@ -298,7 +302,30 @@ func newConfigResetAction(configManager config.Manager, args []string) *configRe
 }
 
 // Executes the `azd config reset` action
-func (a *configResetAction) Run(ctx context.Context) error {
+func (a *configResetAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	emptyConfig := config.NewConfig(nil)
-	return config.SaveUserConfig(a.configManager, emptyConfig)
+	return nil, config.SaveUserConfig(a.configManager, emptyConfig)
+}
+
+func getUserConfig(configManager config.Manager) (config.Config, error) {
+	var azdConfig config.Config
+
+	configFilePath, err := config.GetUserConfigFilePath()
+	if err != nil {
+		return nil, err
+	}
+
+	azdConfig, err = configManager.Load(configFilePath)
+	if err != nil {
+		// Ignore missing file errors
+		// File will automatically be created on first `set` operation
+		if errors.Is(err, os.ErrNotExist) {
+			log.Printf("failed loading azd user config from '%s'. %s\n", configFilePath, err.Error())
+			return config.NewConfig(nil), nil
+		}
+
+		return nil, fmt.Errorf("failed loading azd user config from '%s'. %w", configFilePath, err)
+	}
+
+	return azdConfig, nil
 }

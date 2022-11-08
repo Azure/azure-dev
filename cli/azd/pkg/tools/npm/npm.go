@@ -49,7 +49,7 @@ func (cli *npmCli) CheckInstalled(ctx context.Context) (bool, error) {
 	if err != nil {
 		return false, fmt.Errorf("checking %s version: %w", cli.Name(), err)
 	}
-	nodeSemver, err := tools.ExtractSemver(nodeRes)
+	nodeSemver, err := tools.ExtractVersion(nodeRes)
 	if err != nil {
 		return false, fmt.Errorf("converting to semver version fails: %w", err)
 	}

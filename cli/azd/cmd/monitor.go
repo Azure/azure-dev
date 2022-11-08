@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 
+	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
@@ -79,13 +80,13 @@ func newMonitorAction(
 	}
 }
 
-func (m *monitorAction) Run(ctx context.Context) error {
+func (m *monitorAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	if err := ensureProject(m.azdCtx.ProjectPath()); err != nil {
-		return err
+		return nil, err
 	}
 
 	if err := tools.EnsureInstalled(ctx, m.azCli); err != nil {
-		return err
+		return nil, err
 	}
 
 	if !m.flags.monitorLive && !m.flags.monitorLogs && !m.flags.monitorOverview {
@@ -94,18 +95,18 @@ func (m *monitorAction) Run(ctx context.Context) error {
 
 	env, ctx, err := loadOrInitEnvironment(ctx, &m.flags.global.EnvironmentName, m.azdCtx, m.console)
 	if err != nil {
-		return fmt.Errorf("loading environment: %w", err)
+		return nil, fmt.Errorf("loading environment: %w", err)
 	}
 
 	account, err := m.azCli.GetAccount(ctx, env.GetSubscriptionId())
 	if err != nil {
-		return fmt.Errorf("getting tenant id for subscription: %w", err)
+		return nil, fmt.Errorf("getting tenant id for subscription: %w", err)
 	}
 
 	resourceManager := infra.NewAzureResourceManager(ctx)
 	resourceGroups, err := resourceManager.GetResourceGroupsForEnvironment(ctx, env)
 	if err != nil {
-		return fmt.Errorf("discovering resource groups from deployment: %w", err)
+		return nil, fmt.Errorf("discovering resource groups from deployment: %w", err)
 	}
 
 	var insightsResources []azcli.AzCliResource
@@ -114,7 +115,7 @@ func (m *monitorAction) Run(ctx context.Context) error {
 	for _, resourceGroup := range resourceGroups {
 		resources, err := m.azCli.ListResourceGroupResources(ctx, env.GetSubscriptionId(), resourceGroup.Name, nil)
 		if err != nil {
-			return fmt.Errorf("listing resources: %w", err)
+			return nil, fmt.Errorf("listing resources: %w", err)
 		}
 
 		for _, resource := range resources {
@@ -128,11 +129,11 @@ func (m *monitorAction) Run(ctx context.Context) error {
 	}
 
 	if len(insightsResources) == 0 && (m.flags.monitorLive || m.flags.monitorLogs) {
-		return fmt.Errorf("application does not contain an Application Insights resource")
+		return nil, fmt.Errorf("application does not contain an Application Insights resource")
 	}
 
 	if len(portalResources) == 0 && m.flags.monitorOverview {
-		return fmt.Errorf("application does not contain an Application Insights dashboard")
+		return nil, fmt.Errorf("application does not contain an Application Insights dashboard")
 	}
 
 	openWithDefaultBrowser := func(url string) {
@@ -181,5 +182,5 @@ func (m *monitorAction) Run(ctx context.Context) error {
 		}
 	}
 
-	return nil
+	return nil, nil
 }

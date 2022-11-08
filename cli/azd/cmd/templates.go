@@ -80,11 +80,11 @@ func newTemplatesListAction(
 	}
 }
 
-func (tl *templatesListAction) Run(ctx context.Context) error {
+func (tl *templatesListAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	templateSet, err := tl.templateManager.ListTemplates()
 
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	templateList := maps.Values(templateSet)
@@ -92,7 +92,7 @@ func (tl *templatesListAction) Run(ctx context.Context) error {
 		return a.Name < b.Name
 	})
 
-	return formatTemplates(ctx, tl.formatter, tl.writer, templateList...)
+	return nil, formatTemplates(ctx, tl.formatter, tl.writer, templateList...)
 }
 
 type templatesShowAction actions.Action
@@ -103,17 +103,17 @@ func newTemplatesShowAction(
 	templateManager *templates.TemplateManager,
 	args []string,
 ) templatesShowAction {
-	return actions.ActionFunc(func(ctx context.Context) error {
+	return actions.ActionFunc(func(ctx context.Context) (*actions.ActionResult, error) {
 		templateName := args[0]
 		matchingTemplate, err := templateManager.GetTemplate(templateName)
 
 		log.Printf("Template Name: %s\n", templateName)
 
 		if err != nil {
-			return err
+			return nil, err
 		}
 
-		return formatTemplates(ctx, formatter, writer, matchingTemplate)
+		return nil, formatTemplates(ctx, formatter, writer, matchingTemplate)
 	})
 }
 

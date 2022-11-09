@@ -40,7 +40,6 @@ public class TodoItem {
     @Schema(name = "name", required = true)
     private String name;
 
-    @NotNull
     @JsonProperty("description")
     @Schema(name = "description", required = true)
     private String description;

@@ -45,7 +45,7 @@ stages:
               BuildOutputName: azd
               SetExecutableBit: true
               SetShieldInfo: true
-              # GenerateCoverage: true
+              GenerateCoverage: true
               AZURE_DEV_CI_OS: lin
             Mac:
               Pool: Azure Pipelines
@@ -105,25 +105,27 @@ stages:
           - template: /eng/pipelines/templates/steps/az-login.yml
 
           - template: /eng/pipelines/templates/steps/azd-login.yml
+            parameters:
+              AzdDirectory: cli/azd
 
-          # - task: PowerShell@2
-          #   condition: and(succeeded(), ne(variables['Skip.LiveTest'], 'true'))
-          #   inputs:
-          #     pwsh: true
-          #     targetType: filePath
-          #     filePath: cli/azd/ci-test.ps1
-          #     workingDirectory: cli/azd
-          #   displayName: Test Go Binary
-          #   env:
-          #     # Set GITHUB_RUN_NUMBER because cli_test.go is coupled to that
-          #     # environment variable.
-          #     GITHUB_RUN_NUMBER: $(Build.BuildId)
-          #     # Generate junit report to publish results
-          #     GOTESTSUM_JUNITFILE: junitTestReport.xml
-          #     # Required for Terraform service principal authentication
-          #     ARM_CLIENT_ID: $(arm-client-id)
-          #     ARM_CLIENT_SECRET: $(arm-client-secret)
-          #     ARM_TENANT_ID: $(arm-tenant-id)
+          - task: PowerShell@2
+            condition: and(succeeded(), ne(variables['Skip.LiveTest'], 'true'))
+            inputs:
+              pwsh: true
+              targetType: filePath
+              filePath: cli/azd/ci-test.ps1
+              workingDirectory: cli/azd
+            displayName: Test Go Binary
+            env:
+              # Set GITHUB_RUN_NUMBER because cli_test.go is coupled to that
+              # environment variable.
+              GITHUB_RUN_NUMBER: $(Build.BuildId)
+              # Generate junit report to publish results
+              GOTESTSUM_JUNITFILE: junitTestReport.xml
+              # Required for Terraform service principal authentication
+              ARM_CLIENT_ID: $(arm-client-id)
+              ARM_CLIENT_SECRET: $(arm-client-secret)
+              ARM_TENANT_ID: $(arm-tenant-id)
 
           - task: PublishTestResults@2
             inputs:

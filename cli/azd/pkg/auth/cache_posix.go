@@ -11,7 +11,7 @@ import (
 )
 
 func newCache(root string) cache.ExportReplace {
-	return &errorDroppingCacheAdapter{
+	return &msalCacheAdapter{
 		inner: &memoryCache{
 			cache: make(map[string][]byte),
 			inner: &fileCache{
@@ -23,7 +23,7 @@ func newCache(root string) cache.ExportReplace {
 	}
 }
 
-func newCredentialCache(root string) exportReplaceWithErrors {
+func newCredentialCache(root string) Cache {
 	return &memoryCache{
 		cache: make(map[string][]byte),
 		inner: &fileCache{

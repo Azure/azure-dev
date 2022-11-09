@@ -58,7 +58,7 @@ var cLoginScopes = []string{"https://management.azure.com//.default"}
 type Manager struct {
 	publicClient    publicClient
 	configManager   config.Manager
-	credentialCache exportReplaceWithErrors
+	credentialCache Cache
 }
 
 func NewManager(configManager config.Manager) (*Manager, error) {
@@ -449,15 +449,14 @@ func persistedSecretLookupKey(tenantId, clientId string) string {
 
 // loadSecret reads a secret from the credential cache for a given client and tenant.
 func (m *Manager) loadSecret(tenantId, clientId string) (*persistedSecret, error) {
-	var data fixedMarshaller
-
-	if err := m.credentialCache.Replace(&data, persistedSecretLookupKey(tenantId, clientId)); err != nil {
+	val, err := m.credentialCache.Read(persistedSecretLookupKey(tenantId, clientId))
+	if err != nil {
 		return nil, err
 	}
 
 	var ps persistedSecret
 
-	if err := json.Unmarshal(data.val, &ps); err != nil {
+	if err := json.Unmarshal(val, &ps); err != nil {
 		return nil, err
 	}
 
@@ -471,7 +470,7 @@ func (m *Manager) saveSecret(tenantId, clientId string, ps *persistedSecret) err
 		return err
 	}
 
-	return m.credentialCache.Export(&fixedMarshaller{val: data}, persistedSecretLookupKey(tenantId, clientId))
+	return m.credentialCache.Set(persistedSecretLookupKey(tenantId, clientId), data)
 }
 
 // persistedSecret is the model type for the value we store in the credential cache. It is logically a discriminated union

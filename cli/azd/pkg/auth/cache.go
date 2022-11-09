@@ -6,26 +6,36 @@ import (
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/cache"
 )
 
-// exportReplaceWithErrors is like cache.ExportReplace except each method is allowed to return an error.
-type exportReplaceWithErrors interface {
-	Replace(cache cache.Unmarshaler, key string) error
-	Export(cache cache.Marshaler, key string) error
+// msalCacheAdapter adapts our interface to the one expected by cache.ExportReplace. Since that
+// interface is not error returning, any errors during Export or Replace are simply logged for
+// debugging purposes.
+type msalCacheAdapter struct {
+	cache Cache
 }
 
-// errorDroppingCacheAdapter implements cache.ExportReplace using an instance of ExportReplaceWithErrors. Any errors
-// encountered are reported to log.Printf.
-type errorDroppingCacheAdapter struct {
-	inner exportReplaceWithErrors
-}
+func (a *msalCacheAdapter) Replace(cache cache.Unmarshaler, key string) {
+	val, err := a.cache.Read(key)
+	if err != nil {
+		log.Printf("ignoring error in adapter: %v", err)
+	}
 
-func (a *errorDroppingCacheAdapter) Export(cache cache.Marshaler, key string) {
-	if err := a.inner.Export(cache, key); err != nil {
-		log.Printf("ignoring error from cache implementation: %v", err)
+	if err := cache.Unmarshal(val); err != nil {
+		log.Printf("ignoring error in adapter: %v", err)
 	}
 }
 
-func (a *errorDroppingCacheAdapter) Replace(cache cache.Unmarshaler, key string) {
-	if err := a.inner.Replace(cache, key); err != nil {
-		log.Printf("ignoring error from cache implementation: %v", err)
+func (a *msalCacheAdapter) Export(cache cache.Marshaler, key string) {
+	val, err := cache.Marshal()
+	if err != nil {
+		log.Printf("ignoring error in adapter: %v", err)
 	}
+
+	if err := a.cache.Set(key, val); err != nil {
+		log.Printf("ignoring error in adapter: %v", err)
+	}
+}
+
+type Cache interface {
+	Read(key string) ([]byte, error)
+	Set(key string, value []byte) error
 }

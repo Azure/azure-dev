@@ -15,7 +15,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 )
 
-// getDelegatedTokenForAudience gets the federated token from GitHub Actions. It follows the same strategy as the
+// TokenForAudience gets the federated token from GitHub Actions. It follows the same strategy as the
 // as the getIDToken function from `@actions/core`.
 func (c *gitHubFederatedTokenClient) TokenForAudience(ctx context.Context, audience string) (string, error) {
 	idTokenUrl, has := os.LookupEnv("ACTIONS_ID_TOKEN_REQUEST_URL")
@@ -51,7 +51,9 @@ func (c *gitHubFederatedTokenClient) TokenForAudience(ctx context.Context, audie
 		Value string `json:"value"`
 	}
 
-	json.Unmarshal(buf.Bytes(), &tokenResponse)
+	if err := json.Unmarshal(buf.Bytes(), &tokenResponse); err != nil {
+		return "", fmt.Errorf("unmarshalling response: %w", err)
+	}
 
 	if tokenResponse.Value == "" {
 		return "", fmt.Errorf("no token in response")

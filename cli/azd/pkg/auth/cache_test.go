@@ -52,38 +52,37 @@ func TestCredentialCache(t *testing.T) {
 
 	c := newCredentialCache(root)
 
-	d1 := fixedMarshaller{
-		val: []byte("some data"),
-	}
+	d1 := []byte("some data")
 
-	d2 := fixedMarshaller{
-		val: []byte("some different data"),
-	}
+	d2 := []byte("some different data")
 
 	// write some data.
-	require.NoError(t, c.Export(&d1, "d1"))
-	require.NoError(t, c.Export(&d2, "d2"))
-
-	var r1 fixedMarshaller
-	var r2 fixedMarshaller
+	require.NoError(t, c.Set("d1", d1))
+	require.NoError(t, c.Set("d2", d2))
 
 	// read back that data we wrote.
-	require.NoError(t, c.Replace(&r1, "d1"))
-	require.NoError(t, c.Replace(&r2, "d2"))
+	r1, err := c.Read("d1")
+	require.NoError(t, err)
 
-	require.NotNil(t, r1.val)
-	require.NotNil(t, r2.val)
-	require.Equal(t, d1.val, r1.val)
-	require.Equal(t, d2.val, r2.val)
+	r2, err := c.Read("d2")
+	require.NoError(t, err)
+
+	require.NotNil(t, r1)
+	require.NotNil(t, r2)
+	require.Equal(t, d1, r1)
+	require.Equal(t, d2, r2)
 
 	// the data should be shared across instances.
 	c = newCredentialCache(root)
 
-	require.NoError(t, c.Replace(&r1, "d1"))
-	require.NoError(t, c.Replace(&r2, "d2"))
+	r1, err = c.Read("d1")
+	require.NoError(t, err)
 
-	require.NotNil(t, r1.val)
-	require.NotNil(t, r2.val)
-	require.Equal(t, d1.val, r1.val)
-	require.Equal(t, d2.val, r2.val)
+	r2, err = c.Read("d2")
+	require.NoError(t, err)
+
+	require.NotNil(t, r1)
+	require.NotNil(t, r2)
+	require.Equal(t, d1, r1)
+	require.Equal(t, d2, r2)
 }

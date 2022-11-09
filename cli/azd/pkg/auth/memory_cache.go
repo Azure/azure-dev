@@ -5,9 +5,6 @@ package auth
 
 import (
 	"bytes"
-	"fmt"
-
-	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/cache"
 )
 
 type fixedMarshaller struct {
@@ -23,61 +20,37 @@ func (f *fixedMarshaller) Unmarshal(cache []byte) error {
 	return nil
 }
 
-// memoryCache is a simple memory cache that implements exportReplaceWithErrors. During export, if the cache
-// contents has not changed, the nested cache is not notified of a change.
+// memoryCache is a simple memory cache that implements Cache. During export, if the cache contents has not changed, the
+// inner cache is not notified of a change.
 type memoryCache struct {
 	cache map[string][]byte
-	inner exportReplaceWithErrors
+	inner Cache
 }
 
-// cacheUpdatingUnmarshaler implements cache.Unmarshaler. During unmarshalling it updates the value in the memory
-// cache and then forwards the call to the next unmarshaler (which will typically update MSAL's internal cache).
-type cacheUpdatingUnmarshaler struct {
-	c     *memoryCache
-	key   string
-	inner cache.Unmarshaler
-}
-
-func (r *cacheUpdatingUnmarshaler) Unmarshal(b []byte) error {
-	r.c.cache[r.key] = b
-	return r.inner.Unmarshal(b)
-}
-
-func (c *memoryCache) Replace(cache cache.Unmarshaler, key string) error {
+func (c *memoryCache) Read(key string) ([]byte, error) {
 	if v, has := c.cache[key]; has {
-		if err := cache.Unmarshal(v); err != nil {
-			return fmt.Errorf("failed to unmarshal value into cache: %w", err)
-		}
+		return v, nil
 	} else if c.inner != nil {
-		return c.inner.Replace(&cacheUpdatingUnmarshaler{
-			c:     c,
-			key:   key,
-			inner: cache,
-		}, key)
+		return c.inner.Read(key)
 	}
 
-	return nil
+	return nil, nil
 }
 
-func (c *memoryCache) Export(cache cache.Marshaler, key string) error {
-	new, err := cache.Marshal()
-	if err != nil {
-		return fmt.Errorf("error marshaling existing msal cache: %w", err)
-	}
-
+func (c *memoryCache) Set(key string, value []byte) error {
 	old := c.cache[key]
 
-	if bytes.Equal(old, new) {
+	if bytes.Equal(old, value) {
 		// no change, nothing more to do.
 		return nil
 	}
 
 	if c.inner != nil {
-		if err := c.inner.Export(cache, key); err != nil {
+		if err := c.inner.Set(key, value); err != nil {
 			return err
 		}
 	}
 
-	c.cache[key] = new
+	c.cache[key] = value
 	return nil
 }

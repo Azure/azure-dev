@@ -188,7 +188,7 @@ func (c *AskerConsole) MessageUxItem(ctx context.Context, item UXItem) {
 }
 
 func (c *AskerConsole) MessageUx(ctx context.Context, message string, format MessageUxType) {
-	formattedText, err := addFormat(message, format)
+	formattedText, err := c.addFormat(message, format)
 	// Message and MessageUx don't return errors. Let's log the error and use the original message on error
 	if err != nil {
 		log.Printf("Failed adding format for MessageUx: %s. Using message with no ux format", err.Error())
@@ -206,18 +206,34 @@ func (c *AskerConsole) MessageUx(ctx context.Context, message string, format Mes
 	if c.spinner != nil && c.spinner.Status() == yacspin.SpinnerRunning {
 		c.StopSpinner(ctx, "", Step)
 		c.Message(ctx, formattedText)
-		//c.spinner.Start()
+		c.spinner.Start()
 	} else {
 		c.Message(ctx, formattedText)
 	}
 }
 
-func addFormat(message string, format MessageUxType) (withFormat string, err error) {
+func withIndentation(message, indentation string) string {
+	if indentation == "" {
+		return message
+	}
+	// Add indentation to each line in the string
+	lines := strings.Split(message, "\n")
+	updatedLines := make([]string, len(lines))
+	for i, line := range lines {
+		if len(line) > 0 {
+			updatedLines[i] = indentation + line
+		}
+	}
+	return strings.Join(updatedLines, "\n")
+}
+
+func (c *AskerConsole) addFormat(message string, format MessageUxType) (withFormat string, err error) {
 	switch format {
 	case Title:
 		withFormat = output.WithBold(fmt.Sprintf("\n%s\n", message))
 	case Progress:
-		withFormat = message
+		// a message while spinner might be running.
+		withFormat = withIndentation(message, generateIndentation(c.currentIndent))
 	case ResultSuccess:
 		withFormat = output.WithSuccessFormat("\n%s: %s", "SUCCESS", message)
 	case ResultError:
@@ -269,6 +285,14 @@ func (c *AskerConsole) getCharset(format SpinnerUxType) []string {
 	return newCharSet
 }
 
+func generateIndentation(spaces int) string {
+	bytes := make([]byte, spaces)
+	for i := range bytes {
+		bytes[i] = byte(' ')
+	}
+	return string(bytes)
+}
+
 func (c *AskerConsole) getIndent(format SpinnerUxType) string {
 	switch format {
 	case Step:
@@ -278,11 +302,8 @@ func (c *AskerConsole) getIndent(format SpinnerUxType) string {
 	case StepFailed:
 		c.currentIndent = 2
 	}
-	bytes := make([]byte, c.currentIndent)
-	for i := range bytes {
-		bytes[i] = byte(' ')
-	}
-	return string(bytes)
+
+	return generateIndentation(c.currentIndent)
 }
 
 func (c *AskerConsole) StopSpinner(ctx context.Context, lastMessage string, format SpinnerUxType) {
@@ -304,8 +325,6 @@ func (c *AskerConsole) StopSpinner(ctx context.Context, lastMessage string, form
 
 	c.spinner.StopMessage(lastMessage)
 	_ = c.spinner.Stop()
-	// Add empty line every time the spinner stops
-	c.Message(ctx, "")
 }
 
 func (c *AskerConsole) getStopChar(format SpinnerUxType) string {

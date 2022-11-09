@@ -18,7 +18,6 @@ import (
 )
 
 const defaultProgressTitle string = "Provisioning Azure resources"
-const deploymentStartedDisplayMessage string = "Provisioning Azure resources can take some time."
 const succeededProvisioningState string = "Succeeded"
 
 // ProvisioningProgressDisplay displays interactive progress for an ongoing Azure provisioning operation.
@@ -69,8 +68,7 @@ func (display *ProvisioningProgressDisplay) ReportProgress(ctx context.Context) 
 		display.console.MessageUx(
 			ctx,
 			fmt.Sprintf(
-				"%s\n\nYou can view detailed progress in the Azure Portal:\n%s",
-				deploymentStartedDisplayMessage,
+				"You can view detailed progress in the Azure Portal:\n%s",
 				deploymentUrl,
 			),
 			input.Progress,
@@ -142,9 +140,10 @@ func (display *ProvisioningProgressDisplay) logNewlyCreatedResources(
 		// Don't log resource types for Azure resources that we do not have a translation of the resource type for.
 		// This will be improved on in a future iteration.
 		if resourceTypeDisplayName != "" {
-			display.console.Message(
+			display.console.MessageUx(
 				ctx,
 				formatCreatedResourceLog(resourceTypeDisplayName, *newResource.Properties.TargetResource.ResourceName),
+				input.Progress,
 			)
 			resourceTypeName = resourceTypeDisplayName
 		}

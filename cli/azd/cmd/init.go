@@ -195,7 +195,7 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		err = i.gitCli.FetchCode(ctx, templateUrl, i.flags.templateBranch, templateStagingDir)
 
 		// stop the spinner based on the result
-		i.console.StopSpinner(ctx, stepMessage, input.GetStepResultFormat(err))
+		i.console.StopSpinner(ctx, stepMessage+"\n", input.GetStepResultFormat(err))
 
 		if err != nil {
 			return nil, fmt.Errorf("\nfetching template: %w", err)

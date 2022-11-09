@@ -26,6 +26,10 @@ func WithSuccessFormat(text string, a ...interface{}) string {
 	return color.GreenString(text, a...)
 }
 
+func WithGrayFormat(text string, a ...interface{}) string {
+	return color.HiBlackString(text, a...)
+}
+
 func WithBold(text string, a ...interface{}) string {
 	format := color.New(color.Bold)
 	return format.Sprintf(text, a...)

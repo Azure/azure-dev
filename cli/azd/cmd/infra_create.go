@@ -106,18 +106,32 @@ func (i *infraCreateAction) Run(ctx context.Context) (*actions.ActionResult, err
 		return nil, err
 	}
 
+	// Command title
+	i.console.MessageUxItem(ctx, input.NewWithNoteMessageTitle(
+		"Provisioning Azure resources (azd provision)",
+		"Provisioning Azure resources can take some time",
+	))
+
 	infraManager, err := provisioning.NewManager(ctx, env, prj.Path, prj.Infra, !i.flags.global.NoPrompt)
 	if err != nil {
 		return nil, fmt.Errorf("creating provisioning manager: %w", err)
 	}
 
+	// No expected output from plan and/or deploy until we get the link for Azure portal.
+	// Anyway, suggesting an extra step here to avoid a freeze in terminal until we get the link from deploy.
+	i.console.ShowSpinner(ctx, "Creating a plan to provision", input.Step)
 	deploymentPlan, err := infraManager.Plan(ctx)
+	i.console.StopSpinner(ctx, "Planning provisioning", input.GetStepResultFormat(err))
+
 	if err != nil {
 		return nil, fmt.Errorf("planning deployment: %w", err)
 	}
 
+	i.console.ShowSpinner(ctx, "Provisioning resources", input.Step)
 	provisioningScope := infra.NewSubscriptionScope(ctx, env.GetLocation(), env.GetSubscriptionId(), env.GetEnvName())
 	deployResult, err := infraManager.Deploy(ctx, deploymentPlan, provisioningScope)
+	i.console.StopSpinner(ctx, "Provisioning", input.GetStepResultFormat(err))
+
 	if err != nil {
 		return nil, fmt.Errorf("deploying infrastructure: %w", err)
 	}

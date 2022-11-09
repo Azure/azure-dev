@@ -66,13 +66,14 @@ func (display *ProvisioningProgressDisplay) ReportProgress(ctx context.Context) 
 			output.WithLinkFormat("https://portal.azure.com/#blade/HubsExtension/DeploymentDetailsBlade/overview/id/%s\n"),
 			url.PathEscape(display.scope.DeploymentUrl()),
 		)
-		display.console.Message(
+		display.console.MessageUx(
 			ctx,
 			fmt.Sprintf(
 				"%s\n\nYou can view detailed progress in the Azure Portal:\n%s",
 				deploymentStartedDisplayMessage,
 				deploymentUrl,
 			),
+			input.Progress,
 		)
 	}
 

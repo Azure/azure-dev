@@ -25,6 +25,7 @@ type SpinnerUxType int
 
 const (
 	Title MessageUxType = iota
+	Progress
 	ResultSuccess
 	ResultError
 )
@@ -35,11 +36,45 @@ const (
 	StepFailed
 )
 
+type UXItem interface {
+	ToString() string
+	ToJson() []byte
+	ToTable() string
+}
+
+type messageTitle struct {
+	title     string
+	titleNote string
+}
+
+func NewWithNoteMessageTitle(title, titleNote string) UXItem {
+	return &messageTitle{
+		title:     title,
+		titleNote: titleNote,
+	}
+}
+
+func (t *messageTitle) ToString() string {
+	return fmt.Sprintf("\n%s\n%s\n",
+		output.WithBold(t.title),
+		output.WithGrayFormat(t.titleNote))
+}
+
+func (t *messageTitle) ToJson() []byte {
+	return nil
+}
+
+func (t *messageTitle) ToTable() string {
+	return ""
+}
+
 type Console interface {
 	// Prints out a message to the underlying console write
 	Message(ctx context.Context, message string)
 	// Prints out a message following the UX format type
 	MessageUx(ctx context.Context, message string, format MessageUxType)
+	// Prints out a message following a contract ux item
+	MessageUxItem(ctx context.Context, item UXItem)
 	// Prints progress spinner with the given title.
 	// If a previous spinner is running, the title is updated.
 	ShowSpinner(ctx context.Context, title string, format SpinnerUxType)
@@ -65,9 +100,10 @@ type AskerConsole struct {
 	// the writer the console was constructed with, and what we reset to when SetWriter(nil) is called.
 	defaultWriter io.Writer
 	// the writer which output is written to.
-	writer    io.Writer
-	formatter output.Formatter
-	spinner   *yacspin.Spinner
+	writer        io.Writer
+	formatter     output.Formatter
+	spinner       *yacspin.Spinner
+	currentIndent int
 }
 
 type ConsoleOptions struct {
@@ -110,6 +146,26 @@ func (c *AskerConsole) Message(ctx context.Context, message string) {
 	}
 }
 
+func (c *AskerConsole) MessageUxItem(ctx context.Context, item UXItem) {
+	if c.formatter == nil {
+		log.Println(item.ToString())
+		return
+	}
+
+	if c.formatter.Kind() == output.JsonFormat {
+		fmt.Fprintln(c.writer, string(item.ToJson()))
+		return
+	}
+
+	if c.formatter.Kind() == output.EnvVarsFormat {
+		fmt.Fprintln(c.writer, item.ToTable())
+		return
+	}
+
+	// default non-format
+	fmt.Fprintln(c.writer, item.ToString())
+}
+
 func (c *AskerConsole) MessageUx(ctx context.Context, message string, format MessageUxType) {
 	formattedText, err := addFormat(message, format)
 	// Message and MessageUx don't return errors. Let's log the error and use the original message on error
@@ -123,17 +179,24 @@ func (c *AskerConsole) MessageUx(ctx context.Context, message string, format Mes
 	// Remove any formatter before printing the Result
 	// This is can be changed in the future if we want to format any error message as Json or Table when user set output.
 	if format == ResultError {
-		fmt.Fprintln(c.writer, formattedText)
-		return
+		c.formatter = &output.NoneFormatter{}
 	}
 
-	c.Message(ctx, formattedText)
+	if c.spinner != nil && c.spinner.Status() == yacspin.SpinnerRunning {
+		c.StopSpinner(ctx, "", Step)
+		c.Message(ctx, formattedText)
+		//c.spinner.Start()
+	} else {
+		c.Message(ctx, formattedText)
+	}
 }
 
 func addFormat(message string, format MessageUxType) (withFormat string, err error) {
 	switch format {
 	case Title:
 		withFormat = output.WithBold(fmt.Sprintf("\n%s\n", message))
+	case Progress:
+		withFormat = message
 	case ResultSuccess:
 		withFormat = output.WithSuccessFormat("\n%s: %s", "SUCCESS", message)
 	case ResultError:
@@ -162,7 +225,7 @@ func (c *AskerConsole) ShowSpinner(ctx context.Context, title string, format Spi
 
 	// Update style according to MessageUxType
 	c.spinner.Message(title)
-	_ = c.spinner.CharSet(getCharset(format))
+	_ = c.spinner.CharSet(c.getCharset(format))
 
 	// unpause if Paused
 	if c.spinner.Status() == yacspin.SpinnerPaused {
@@ -172,28 +235,29 @@ func (c *AskerConsole) ShowSpinner(ctx context.Context, title string, format Spi
 	}
 }
 
-func getCharset(format SpinnerUxType) []string {
-	customCharSet := []string{
-		"|       |", "|=      |", "|==     |", "|===    |", "|====   |", "|=====  |", "|====== |", "|=======|"}
+var customCharSet []string = []string{
+	"|       |", "|=      |", "|==     |", "|===    |", "|====   |", "|=====  |", "|====== |",
+	"|=======|", "| ======|", "|  =====|", "|   ====|", "|    ===|", "|     ==|", "|      =|",
+}
 
+func (c *AskerConsole) getCharset(format SpinnerUxType) []string {
 	newCharSet := make([]string, len(customCharSet))
 	for i, value := range customCharSet {
-		newCharSet[i] = fmt.Sprintf("%s%s", getIndent(format), value)
+		newCharSet[i] = fmt.Sprintf("%s%s", c.getIndent(format), value)
 	}
 	return newCharSet
 }
 
-func getIndent(format SpinnerUxType) string {
-	spaces := 0
+func (c *AskerConsole) getIndent(format SpinnerUxType) string {
 	switch format {
 	case Step:
-		spaces = 2
+		c.currentIndent = 2
 	case StepDone:
-		spaces = 2
+		c.currentIndent = 2
 	case StepFailed:
-		spaces = 2
+		c.currentIndent = 2
 	}
-	bytes := make([]byte, spaces)
+	bytes := make([]byte, c.currentIndent)
 	for i := range bytes {
 		bytes[i] = byte(' ')
 	}
@@ -214,7 +278,7 @@ func (c *AskerConsole) StopSpinner(ctx context.Context, lastMessage string, form
 	if lastMessage == "" {
 		c.spinner.StopCharacter("")
 	} else {
-		c.spinner.StopCharacter(getStopChar(format))
+		c.spinner.StopCharacter(c.getStopChar(format))
 	}
 
 	c.spinner.StopMessage(lastMessage)
@@ -223,7 +287,7 @@ func (c *AskerConsole) StopSpinner(ctx context.Context, lastMessage string, form
 	c.Message(ctx, "")
 }
 
-func getStopChar(format SpinnerUxType) string {
+func (c *AskerConsole) getStopChar(format SpinnerUxType) string {
 	var stopChar string
 	switch format {
 	case StepDone:
@@ -231,7 +295,7 @@ func getStopChar(format SpinnerUxType) string {
 	case StepFailed:
 		stopChar = output.WithErrorFormat("(x) Failed:")
 	}
-	return fmt.Sprintf("%s%s", getIndent(format), stopChar)
+	return fmt.Sprintf("%s%s", c.getIndent(format), stopChar)
 }
 
 // jsonObjectForMessage creates a json object representing a message. Any ANSI control sequences from the message are
@@ -362,4 +426,12 @@ func newConsoleMessageEvent(msg string) contracts.EventEnvelope {
 			Message: msg,
 		},
 	}
+}
+
+func GetStepResultFormat(result error) SpinnerUxType {
+	formatResult := StepDone
+	if result != nil {
+		formatResult = StepFailed
+	}
+	return formatResult
 }

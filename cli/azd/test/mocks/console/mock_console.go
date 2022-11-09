@@ -49,6 +49,10 @@ func (c *MockConsole) MessageUx(ctx context.Context, message string, format inpu
 	c.Message(ctx, message)
 }
 
+func (c *MockConsole) MessageUxItem(ctx context.Context, item input.UXItem) {
+	c.Message(ctx, item.ToString())
+}
+
 func (c *MockConsole) ShowSpinner(ctx context.Context, title string, format input.SpinnerUxType) {}
 func (c *MockConsole) StopSpinner(ctx context.Context, lastMessage string, format input.SpinnerUxType) {
 }

@@ -191,7 +191,7 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		err = i.gitCli.FetchCode(ctx, templateUrl, i.flags.templateBranch, templateStagingDir)
 
 		// stop the spinner based on the result
-		i.console.StopSpinner(ctx, stepMessage, getStepResultFormat(err))
+		i.console.StopSpinner(ctx, stepMessage, input.GetStepResultFormat(err))
 
 		if err != nil {
 			return nil, fmt.Errorf("\nfetching template: %w", err)
@@ -276,7 +276,7 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 
 		i.console.ShowSpinner(ctx, stepMessage, input.Step)
 		_, err = project.NewProject(i.azdCtx.ProjectPath(), i.azdCtx.GetDefaultProjectName())
-		i.console.StopSpinner(ctx, stepMessage, getStepResultFormat(err))
+		i.console.StopSpinner(ctx, stepMessage, input.GetStepResultFormat(err))
 
 		if err != nil {
 			return nil, fmt.Errorf("failed to create a project file: %w", err)
@@ -353,12 +353,4 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 			FollowUp: fmt.Sprintf("You can view the template code in your directory: %s", formattedWithColorCwd),
 		},
 	}, nil
-}
-
-func getStepResultFormat(result error) input.SpinnerUxType {
-	formatResult := input.StepDone
-	if result != nil {
-		formatResult = input.StepFailed
-	}
-	return formatResult
 }

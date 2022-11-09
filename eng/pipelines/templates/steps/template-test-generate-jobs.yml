@@ -1,12 +1,4 @@
 parameters:
-- name: AzdVersion
-  displayName: |
-    Version of azd to test against.
-    For PR builds, specify 'pr/<PRNumber>'. The PR validation build must have succeeded prior.
-    For official build, 'daily', 'latest', or a specific version number: '0.3.0-beta.6-daily.1947218'.
-  type: string
-  default: daily
-
 - name: TemplateList
   displayName: |
     Comma-delimited list of templates to test against (by default, results of azd template list). Example: 'Azure-Samples/todo-csharp-sql, Azure-Samples/todo-nodejs-mongo'
@@ -29,6 +21,29 @@ parameters:
   type: string
   default: 'Generate'
 
+- name: AzdVersion
+  displayName: |
+    Version of azd to test against.
+    For PR builds, specify 'pr/<PRNumber>'. The PR validation build must have succeeded prior.
+    For official build, 'daily', 'latest', or a specific version number: '0.3.0-beta.6-daily.1947218'.
+  type: string
+  default: daily
+
+- name: TemplateBranchName
+  displayName: The template repository branch to test against
+  type: string
+  default: main
+
+- name: AzureLocation
+  displayName: Azure location for templates to be deployed to
+  type: string
+  default: eastus2
+
+- name: CleanupHoursDelay
+  displayName: Delay of cleanup for Azure resources for debugging purposes
+  type: number
+  default: 0
+
 steps:
   # azd is required to list all templates if TemplateList is not provided.
   - template: /eng/pipelines/templates/steps/install-azd-live-sh.yml
@@ -46,5 +61,11 @@ steps:
       arguments: >-
         -TemplateList '${{ parameters.TemplateList }}'
         -TemplateListFilter '${{ parameters.TemplateListFilter }}'
-        -AzdContainerImage '$(AzdContainerImage)'
         -OutputMatrixVariable '${{ parameters.OutputMatrixVariable }}'
+        -JobVariablesDefinition '
+        AzdVersion=${{ parameters.AzdVersion }},
+        AzdContainerImage=$(AzdContainerImage),
+        TemplateBranchName=${{ parameters.TemplateBranchName }},
+        AzureLocation=${{ parameters.AzureLocation }},
+        CleanupHoursDelay=${{ parameters.CleanupHoursDelay }}
+        '

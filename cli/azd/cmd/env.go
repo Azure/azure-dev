@@ -351,9 +351,6 @@ func (ef *envRefreshAction) Run(ctx context.Context) (*actions.ActionResult, err
 		return nil, fmt.Errorf("loading project: %w", err)
 	}
 
-	formatter := output.GetFormatter(ctx)
-	writer := output.GetWriter(ctx)
-
 	infraManager, err := provisioning.NewManager(ctx, env, prj.Path, prj.Infra, !ef.global.NoPrompt)
 	if err != nil {
 		return nil, fmt.Errorf("creating provisioning manager: %w", err)
@@ -372,8 +369,8 @@ func (ef *envRefreshAction) Run(ctx context.Context) (*actions.ActionResult, err
 
 	ef.console.Message(ctx, "Environments setting refresh completed")
 
-	if formatter.Kind() == output.JsonFormat {
-		err = formatter.Format(provisioning.NewEnvRefreshResultFromState(getStateResult.State), writer, nil)
+	if ef.formatter.Kind() == output.JsonFormat {
+		err = ef.formatter.Format(provisioning.NewEnvRefreshResultFromState(getStateResult.State), ef.writer, nil)
 		if err != nil {
 			return nil, fmt.Errorf("writing deployment result in JSON format: %w", err)
 		}

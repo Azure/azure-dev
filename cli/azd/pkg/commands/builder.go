@@ -2,19 +2,15 @@ package commands
 
 import (
 	"context"
-	"os"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/identity"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
-	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 
-	"github.com/mattn/go-colorable"
-	"github.com/mattn/go-isatty"
 	"github.com/spf13/cobra"
 )
 
@@ -23,6 +19,7 @@ import (
 func RegisterDependenciesInCtx(
 	ctx context.Context,
 	cmd *cobra.Command,
+	console input.Console,
 	rootOptions *internal.GlobalCommandOptions,
 ) (context.Context, error) {
 	// Set the global options in the go context
@@ -49,39 +46,7 @@ func RegisterDependenciesInCtx(
 	azCli := azcli.NewAzCli(credentials, azCliArgs)
 	ctx = azcli.WithAzCli(ctx, azCli)
 
-	// Attempt to get the user specified formatter from the command args
-	formatter, err := output.GetCommandFormatter(cmd)
-	if err != nil {
-		return ctx, err
-	}
-
-	if formatter != nil {
-		ctx = output.WithFormatter(ctx, formatter)
-	}
-
-	writer := cmd.OutOrStdout()
-
-	if os.Getenv("NO_COLOR") != "" {
-		writer = colorable.NewNonColorable(writer)
-	}
-
-	ctx = output.WithWriter(ctx, writer)
-
-	isTerminal := cmd.OutOrStdout() == os.Stdout &&
-		cmd.InOrStdin() == os.Stdin && isatty.IsTerminal(os.Stdin.Fd()) &&
-		isatty.IsTerminal(os.Stdout.Fd())
-
-	// When using JSON formatting, we want to ensure we always write messages from the console to stderr.
-	if formatter != nil && formatter.Kind() == output.JsonFormat {
-		writer = cmd.ErrOrStderr()
-	}
-
-	console := input.NewConsole(rootOptions.NoPrompt, isTerminal, writer, input.ConsoleHandles{
-		Stdin:  cmd.InOrStdin(),
-		Stdout: cmd.OutOrStdout(),
-		Stderr: cmd.ErrOrStderr(),
-	}, formatter)
+	// Inject console into context
 	ctx = input.WithConsole(ctx, console)
-
 	return ctx, nil
 }

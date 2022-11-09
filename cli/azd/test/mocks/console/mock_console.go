@@ -7,6 +7,7 @@ import (
 	"io"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/output"
 )
 
 // A predicate function definition for registering expressions
@@ -22,6 +23,18 @@ func NewMockConsole() *MockConsole {
 	return &MockConsole{
 		expressions: []*MockConsoleExpression{},
 	}
+}
+
+func (c *MockConsole) IsUnformatted() bool {
+	return true
+}
+
+func (c *MockConsole) GetFormatter() output.Formatter {
+	return nil
+}
+
+func (c *MockConsole) GetWriter() io.Writer {
+	return nil
 }
 
 func (c *MockConsole) SetWriter(writer io.Writer) {

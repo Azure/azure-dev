@@ -1,17 +1,24 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 package auth
 
 import (
 	"bytes"
 	"context"
 	"errors"
+	"io"
+	"net/http"
 	"os"
 	"testing"
 
 	_ "embed"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/public"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
+	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/stretchr/testify/require"
 )
 
@@ -97,6 +104,82 @@ func TestServicePrincipalLoginClientCertificate(t *testing.T) {
 
 	require.NoError(t, err)
 	require.IsType(t, new(azidentity.ClientCertificateCredential), cred)
+
+	err = m.Logout(context.Background())
+
+	require.NoError(t, err)
+
+	_, err = m.CredentialForCurrentUser(context.Background())
+
+	require.True(t, errors.Is(err, ErrNoCurrentUser))
+}
+
+func TestServicePrincipalLoginFederatedToken(t *testing.T) {
+	credentialCache := &memoryCache{
+		cache: make(map[string][]byte),
+	}
+
+	m := Manager{
+		configManager:   &memoryConfigManager{},
+		credentialCache: credentialCache,
+	}
+
+	cred, err := m.LoginWithServicePrincipalFederatedToken(
+		context.Background(), "testClientId", "testTenantId", "testToken",
+	)
+
+	require.NoError(t, err)
+	require.IsType(t, new(azidentity.ClientAssertionCredential), cred)
+
+	cred, err = m.CredentialForCurrentUser(context.Background())
+
+	require.NoError(t, err)
+	require.IsType(t, new(azidentity.ClientAssertionCredential), cred)
+
+	err = m.Logout(context.Background())
+
+	require.NoError(t, err)
+
+	_, err = m.CredentialForCurrentUser(context.Background())
+
+	require.True(t, errors.Is(err, ErrNoCurrentUser))
+}
+
+func TestServicePrincipalLoginFederatedTokenProvider(t *testing.T) {
+	credentialCache := &memoryCache{
+		cache: make(map[string][]byte),
+	}
+
+	t.Setenv("ACTIONS_ID_TOKEN_REQUEST_URL", "http://fakehost/api/get-token")
+	t.Setenv("ACTIONS_ID_TOKEN_REQUEST_TOKEN", "fake-token")
+
+	mockContext := mocks.NewMockContext(context.Background())
+	mockContext.HttpClient.When(func(request *http.Request) bool {
+		return true
+	}).Respond(&http.Response{
+		StatusCode: 200,
+		Body:       io.NopCloser(bytes.NewBufferString(`{ "value": "abc" }`)),
+	})
+
+	m := Manager{
+		configManager:   &memoryConfigManager{},
+		credentialCache: credentialCache,
+		ghClient: newGitHubFederatedTokenClient(&policy.ClientOptions{
+			Transport: mockContext.HttpClient,
+		}),
+	}
+
+	cred, err := m.LoginWithServicePrincipalFederatedTokenProvider(
+		context.Background(), "testClientId", "testTenantId", "github",
+	)
+
+	require.NoError(t, err)
+	require.IsType(t, new(azidentity.ClientAssertionCredential), cred)
+
+	cred, err = m.CredentialForCurrentUser(context.Background())
+
+	require.NoError(t, err)
+	require.IsType(t, new(azidentity.ClientAssertionCredential), cred)
 
 	err = m.Logout(context.Background())
 

@@ -59,6 +59,7 @@ type Manager struct {
 	publicClient    publicClient
 	configManager   config.Manager
 	credentialCache Cache
+	ghClient        *gitHubFederatedTokenClient
 }
 
 func NewManager(configManager config.Manager) (*Manager, error) {
@@ -82,10 +83,13 @@ func NewManager(configManager config.Manager) (*Manager, error) {
 		return nil, fmt.Errorf("creating msal client: %w", err)
 	}
 
+	ghClient := newGitHubFederatedTokenClient(nil)
+
 	return &Manager{
 		publicClient:    &msalPublicClientAdapter{client: &publicClientApp},
 		configManager:   configManager,
 		credentialCache: newCredentialCache(authRoot),
+		ghClient:        ghClient,
 	}, nil
 }
 
@@ -312,9 +316,7 @@ func (m *Manager) LoginWithServicePrincipalFederatedTokenProvider(
 		return nil, fmt.Errorf("unsupported federated token provider: '%s'", federatedTokenProvider)
 	}
 
-	ghClient := NewGitHubFederatedTokenClient(nil)
-
-	federatedToken, err := ghClient.TokenForAudience(ctx, "api://AzureADTokenExchange")
+	federatedToken, err := m.ghClient.TokenForAudience(ctx, "api://AzureADTokenExchange")
 	if err != nil {
 		return nil, fmt.Errorf("fetching federated token: %w", err)
 	}

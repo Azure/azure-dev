@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 package auth
 
 import (
@@ -75,11 +78,13 @@ func (b *gitHubBearerTokenAuthPolicy) Do(req *policy.Request) (*http.Response, e
 	return req.Next()
 }
 
+// gitHubFederatedTokenClient is a client that can be used to fetch federated access tokens when running in GitHub actions.
+// It provides similar behavior to logic in the `@actions/core` JavaScript package that actions can use.
 type gitHubFederatedTokenClient struct {
 	pipeline runtime.Pipeline
 }
 
-func NewGitHubFederatedTokenClient(options *policy.ClientOptions) *gitHubFederatedTokenClient {
+func newGitHubFederatedTokenClient(options *policy.ClientOptions) *gitHubFederatedTokenClient {
 	pipeline := runtime.NewPipeline("github", "1.0.0", runtime.PipelineOptions{
 		PerRetry: []policy.Policy{
 			&gitHubBearerTokenAuthPolicy{},

@@ -19,7 +19,11 @@ steps:
         --client-secret "$($subscriptionConfiguration.TestApplicationSecret)" `
         --tenant-id "$($subscriptionConfiguration.TenantId)"
 
+      if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
       & $azdCmd config set defaults.subscription "$($subscriptionConfiguration.SubscriptionId)"
+
+      if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
     condition: and(succeeded(), ne(variables['Skip.LiveTest'], 'true'))
     displayName: Azure Dev Login

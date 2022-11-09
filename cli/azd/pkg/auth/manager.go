@@ -171,7 +171,6 @@ func (m *Manager) CredentialForCurrentUser(ctx context.Context) (azcore.TokenCre
 			}
 
 			return cred, nil
-
 		} else if ps.FederatedToken != nil {
 			cred, err := azidentity.NewClientAssertionCredential(
 				*currentUser.TenantID,

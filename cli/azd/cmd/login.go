@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
@@ -22,6 +23,9 @@ import (
 )
 
 type loginFlags struct {
+	// This is used to detect cases where the flag was explicitly passed but the value was the empty string. We use this
+	// to allow setting an empty value for an flag to denote its value should be read from the console.
+	flagPassedFn           func(string) bool
 	onlyCheckStatus        bool
 	useDeviceCode          bool
 	outputFormat           string
@@ -34,6 +38,13 @@ type loginFlags struct {
 	global                 *internal.GlobalCommandOptions
 }
 
+const (
+	cClientSecretFlagName                = "client-secret"
+	cClientCertificateFlagName           = "client-certificate"
+	cFederatedCredentialFlagName         = "federated-credential"
+	cFederatedCredentialProviderFlagName = "federated-credential-provider"
+)
+
 func (lf *loginFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
 	local.BoolVar(&lf.onlyCheckStatus, "check-status", false, "Checks the log-in status instead of logging in.")
 	local.BoolVar(
@@ -45,22 +56,24 @@ func (lf *loginFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandO
 	local.StringVar(&lf.clientID, "client-id", "", "The client id for the service principal to authenticate with.")
 	local.StringVar(
 		&lf.clientSecret,
-		"client-secret",
+		cClientSecretFlagName,
 		"",
-		"The client secret for the service principal to authenticate with.")
+		"The client secret for the service principal to authenticate with. "+
+			"Set to the empty string to read the value from the console.")
 	local.StringVar(
 		&lf.clientCertificate,
-		"client-certificate",
+		cClientCertificateFlagName,
 		"",
 		"The path to the client certificate for the service principal to authenticate with.")
 	local.StringVar(
 		&lf.federatedToken,
-		"federated-token",
+		cFederatedCredentialFlagName,
 		"",
-		"The federated token for the service principal to authenticate with.")
+		"The federated token for the service principal to authenticate with. "+
+			"Set to the empty string to read the value from the console.")
 	local.StringVar(
 		&lf.federatedTokenProvider,
-		"federated-token-provider",
+		cFederatedCredentialProviderFlagName,
 		"",
 		"The provider to use to acquire a federated token to authenticate with.")
 	local.StringVar(&lf.tenantID, "tenant-id", "", "The tenant id for the service principal to authenticate with.")
@@ -83,7 +96,11 @@ func loginCmdDesign(global *internal.GlobalCommandOptions) (*cobra.Command, *log
 		},
 	}
 
-	flags := &loginFlags{}
+	flags := &loginFlags{
+		flagPassedFn: func(name string) bool {
+			return cmd.Flags().Lookup(name).Changed
+		},
+	}
 	flags.Bind(cmd.Flags(), global)
 	return cmd, flags
 }
@@ -159,31 +176,57 @@ func (la *loginAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	return nil, la.formatter.Format(res, la.writer, nil)
 }
 
+func countTrue(elms ...bool) int {
+	i := 0
+
+	for _, elm := range elms {
+		if elm {
+			i++
+		}
+	}
+
+	return i
+}
+
 func (la *loginAction) login(ctx context.Context) error {
 	if la.flags.clientID != "" || la.flags.tenantID != "" {
 		if la.flags.clientID == "" || la.flags.tenantID == "" {
 			return errors.New("must set both `client-id` and `tenant-id` for service principal login")
 		}
 
-		if countNonEmpty(
-			la.flags.clientSecret,
-			la.flags.clientCertificate,
-			la.flags.federatedToken,
-			la.flags.federatedTokenProvider,
+		if countTrue(
+			la.flags.flagPassedFn(cClientSecretFlagName),
+			la.flags.flagPassedFn(cClientCertificateFlagName),
+			la.flags.flagPassedFn(cFederatedCredentialFlagName),
+			la.flags.flagPassedFn(cFederatedCredentialProviderFlagName),
 		) != 1 {
-			return errors.New(
-				"must set exactly one of `client-secret`, `client-certificate`, `federated-token` or " +
-					"`federated-token-provider` for service principal")
+			return fmt.Errorf(
+				"must set exactly one of %s for service principal", strings.Join([]string{
+					cClientSecretFlagName,
+					cClientCertificateFlagName,
+					cFederatedCredentialFlagName,
+					cFederatedCredentialProviderFlagName,
+				}, ", "))
 		}
 
 		switch {
-		case la.flags.clientSecret != "":
+		case la.flags.flagPassedFn(cClientSecretFlagName):
+			if la.flags.clientSecret == "" {
+				v, err := la.console.Prompt(ctx, input.ConsoleOptions{
+					Message: "Enter your client secret",
+				})
+				if err != nil {
+					return fmt.Errorf("prompting for client secret: %w", err)
+				}
+				la.flags.clientSecret = v
+			}
+
 			if _, err := la.authManager.LoginWithServicePrincipalSecret(
 				ctx, la.flags.tenantID, la.flags.clientID, la.flags.clientSecret,
 			); err != nil {
 				return fmt.Errorf("logging in: %w", err)
 			}
-		case la.flags.clientCertificate != "":
+		case la.flags.flagPassedFn(cClientCertificateFlagName):
 			certFile, err := os.Open(la.flags.clientCertificate)
 			if err != nil {
 				return fmt.Errorf("reading certificate: %w", err)
@@ -200,13 +243,23 @@ func (la *loginAction) login(ctx context.Context) error {
 			); err != nil {
 				return fmt.Errorf("logging in: %w", err)
 			}
-		case la.flags.federatedToken != "":
+		case la.flags.flagPassedFn(cFederatedCredentialFlagName):
+			if la.flags.clientSecret == "" {
+				v, err := la.console.Prompt(ctx, input.ConsoleOptions{
+					Message: "Enter your federated token",
+				})
+				if err != nil {
+					return fmt.Errorf("prompting for federated token: %w", err)
+				}
+				la.flags.clientSecret = v
+			}
+
 			if _, err := la.authManager.LoginWithServicePrincipalFederatedToken(
 				ctx, la.flags.tenantID, la.flags.clientID, la.flags.federatedToken,
 			); err != nil {
 				return fmt.Errorf("logging in: %w", err)
 			}
-		case la.flags.federatedTokenProvider != "":
+		case la.flags.flagPassedFn(cFederatedCredentialProviderFlagName):
 			if _, err := la.authManager.LoginWithServicePrincipalFederatedTokenProvider(
 				ctx, la.flags.tenantID, la.flags.clientID, la.flags.federatedTokenProvider,
 			); err != nil {
@@ -231,15 +284,4 @@ func (la *loginAction) login(ctx context.Context) error {
 	}
 
 	return nil
-}
-
-func countNonEmpty(ss ...string) int {
-	i := 0
-	for _, s := range ss {
-		if s != "" {
-			i++
-		}
-	}
-
-	return i
 }

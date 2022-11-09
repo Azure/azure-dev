@@ -1,17 +1,19 @@
 package com.microsoft.azure.simpletodo.repository;
 
-import java.util.List;
-
+import com.microsoft.azure.simpletodo.model.TodoItem;
 import org.springframework.data.mongodb.repository.Aggregation;
 import org.springframework.data.mongodb.repository.MongoRepository;
-import org.springframework.data.mongodb.repository.Query;
 
-import com.microsoft.azure.simpletodo.model.TodoItem;
+import java.util.List;
+import java.util.Optional;
 
 public interface TodoItemRepository extends MongoRepository<TodoItem, String> {
 
-    @Query("{ 'listId' : ?0 }")
-    List<TodoItem> findTodoItemsByTodoList(String listId);
+    TodoItem deleteTodoItemByListIdAndId(String listId, String itemId);
+
+    List<TodoItem> findTodoItemsByListId(String listId);
+
+    Optional<TodoItem> findTodoItemByListIdAndId(String listId, String id);
 
     @Aggregation(pipeline = {
         "{ '$match': { 'listId' : ?0 } }",

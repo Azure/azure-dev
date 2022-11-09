@@ -6,6 +6,7 @@ package bicep
 import (
 	"context"
 	"fmt"
+	"log"
 	"os"
 	"os/user"
 	"path/filepath"
@@ -158,6 +159,7 @@ func findBicepPath() (*string, error) {
 	// If AZURE_CONFIG_DIR is defined, check there first
 	azureConfigDir := os.Getenv(envNameAzureConfigDir)
 	if strings.TrimSpace(azureConfigDir) != "" {
+		log.Printf("Found %s with path '%s'\n", envNameAzureConfigDir, azureConfigDir)
 		commonPaths = append(commonPaths, filepath.Join(azureConfigDir, "bin", bicepFilename))
 	}
 
@@ -176,6 +178,8 @@ func findBicepPath() (*string, error) {
 		if existsErr == nil {
 			return &installPath, nil
 		}
+
+		log.Printf("Bicep CLI not found at path '%s'\n", installPath)
 	}
 
 	return nil, fmt.Errorf("cannot find bicep path: %w", existsErr)

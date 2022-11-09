@@ -369,6 +369,14 @@ func (ef *envRefreshAction) Run(ctx context.Context) error {
 		}
 	}
 
+	for _, svc := range prj.Services {
+		if err := svc.RaiseEvent(
+			ctx, project.Deployed,
+			map[string]any{"bicepOutput": getStateResult.State.Outputs}); err != nil {
+			return err
+		}
+	}
+
 	return nil
 }
 

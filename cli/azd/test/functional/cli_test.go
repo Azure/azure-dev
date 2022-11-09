@@ -370,6 +370,7 @@ func Test_CLI_InfraCreateAndDeleteWebApp(t *testing.T) {
 	err = godotenv.Write(env, filepath.Join(dir, azdcontext.EnvironmentDirectoryName, envName, ".env"))
 	require.NoError(t, err)
 
+	//clear dotnet
 	_, err = cli.RunCommand(ctx, "env", "refresh")
 	require.NoError(t, err)
 

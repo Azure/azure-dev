@@ -304,6 +304,45 @@ func (m *Manager) LoginWithServicePrincipalFederatedToken(
 	return cred, nil
 }
 
+func (m *Manager) LoginWithServicePrincipalFederatedTokenProvider(
+	ctx context.Context, tenantId, clientId, federatedTokenProvider string,
+) (azcore.TokenCredential, error) {
+
+	if federatedTokenProvider != "github" {
+		return nil, fmt.Errorf("unsupported federated token provider: '%s'", federatedTokenProvider)
+	}
+
+	ghClient := NewGitHubFederatedTokenClient(nil)
+
+	federatedToken, err := ghClient.TokenForAudience(ctx, "api://AzureADTokenExchange")
+	if err != nil {
+		return nil, fmt.Errorf("fetching federated token: %w", err)
+	}
+
+	cred, err := azidentity.NewClientAssertionCredential(
+		tenantId,
+		clientId,
+		func(_ context.Context) (string, error) {
+			return federatedToken, nil
+		},
+		nil)
+	if err != nil {
+		return nil, fmt.Errorf("creating credential: %w", err)
+	}
+
+	if err := m.saveLoginForServicePrincipal(
+		tenantId,
+		clientId,
+		&persistedSecret{
+			FederatedToken: &federatedToken,
+		},
+	); err != nil {
+		return nil, err
+	}
+
+	return cred, nil
+}
+
 // Logout signs out the current user and removes any cached authentication information
 func (m *Manager) Logout(ctx context.Context) error {
 	act, err := m.getSignedInAccount(ctx)

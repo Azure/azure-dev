@@ -22,15 +22,16 @@ import (
 )
 
 type loginFlags struct {
-	onlyCheckStatus   bool
-	useDeviceCode     bool
-	outputFormat      string
-	tenantID          string
-	clientID          string
-	clientSecret      string
-	clientCertificate string
-	federatedToken    string
-	global            *internal.GlobalCommandOptions
+	onlyCheckStatus        bool
+	useDeviceCode          bool
+	outputFormat           string
+	tenantID               string
+	clientID               string
+	clientSecret           string
+	clientCertificate      string
+	federatedToken         string
+	federatedTokenProvider string
+	global                 *internal.GlobalCommandOptions
 }
 
 func (lf *loginFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
@@ -57,6 +58,11 @@ func (lf *loginFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandO
 		"federated-token",
 		"",
 		"The federated token for the service principal to authenticate with.")
+	local.StringVar(
+		&lf.federatedTokenProvider,
+		"federated-token-provider",
+		"",
+		"The provider to use to acquire a federated token to authenticate with.")
 	local.StringVar(&lf.tenantID, "tenant-id", "", "The tenant id for the service principal to authenticate with.")
 	output.AddOutputFlag(
 		local,
@@ -159,17 +165,25 @@ func (la *loginAction) login(ctx context.Context) error {
 			return errors.New("must set both `client-id` and `tenant-id` for service principal login")
 		}
 
+		if countNonEmpty(
+			la.flags.clientSecret,
+			la.flags.clientCertificate,
+			la.flags.federatedToken,
+			la.flags.federatedTokenProvider,
+		) != 1 {
+			return errors.New(
+				"must set exactly one of `client-secret`, `client-certificate`, `federated-token` or " +
+					"`federated-token-provider` for service principal")
+		}
+
 		switch {
-		// only --client-secret was passed
-		case la.flags.clientSecret != "" && la.flags.clientCertificate == "" && la.flags.federatedToken == "":
+		case la.flags.clientSecret != "":
 			if _, err := la.authManager.LoginWithServicePrincipalSecret(
 				ctx, la.flags.tenantID, la.flags.clientID, la.flags.clientSecret,
 			); err != nil {
 				return fmt.Errorf("logging in: %w", err)
 			}
-
-		// only --client-certificate was passed
-		case la.flags.clientSecret != "" && la.flags.clientCertificate != "" && la.flags.federatedToken == "":
+		case la.flags.clientCertificate != "":
 			certFile, err := os.Open(la.flags.clientCertificate)
 			if err != nil {
 				return fmt.Errorf("reading certificate: %w", err)
@@ -186,19 +200,18 @@ func (la *loginAction) login(ctx context.Context) error {
 			); err != nil {
 				return fmt.Errorf("logging in: %w", err)
 			}
-
-		// only --federated-token was passed
-		case la.flags.clientSecret == "" && la.flags.clientCertificate == "" && la.flags.federatedToken != "":
+		case la.flags.federatedToken != "":
 			if _, err := la.authManager.LoginWithServicePrincipalFederatedToken(
 				ctx, la.flags.tenantID, la.flags.clientID, la.flags.federatedToken,
 			); err != nil {
 				return fmt.Errorf("logging in: %w", err)
 			}
-
-		// some other combination was set.
-		default:
-			return errors.New(
-				"must set exactly one of `client-secret`, `client-certificate` or `federated-token` for service principal")
+		case la.flags.federatedTokenProvider != "":
+			if _, err := la.authManager.LoginWithServicePrincipalFederatedTokenProvider(
+				ctx, la.flags.tenantID, la.flags.clientID, la.flags.federatedTokenProvider,
+			); err != nil {
+				return fmt.Errorf("logging in: %w", err)
+			}
 		}
 
 		return nil
@@ -218,4 +231,15 @@ func (la *loginAction) login(ctx context.Context) error {
 	}
 
 	return nil
+}
+
+func countNonEmpty(ss ...string) int {
+	i := 0
+	for _, s := range ss {
+		if s != "" {
+			i++
+		}
+	}
+
+	return i
 }

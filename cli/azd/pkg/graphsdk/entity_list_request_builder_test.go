@@ -36,7 +36,7 @@ func TestEntityListRequestBuilder(t *testing.T) {
 		expectedFilter := "displayName eq 'APPLICATION'"
 		expectedTop := 10
 
-		appRequestBuilder := graphsdk.NewApplicationsRequestBuilder(graphClient).
+		appRequestBuilder := graphsdk.NewApplicationListRequestBuilder(graphClient).
 			Filter(expectedFilter).
 			Top(expectedTop)
 
@@ -56,7 +56,7 @@ func TestEntityListRequestBuilder(t *testing.T) {
 		graphClient, err := graphsdk_mocks.CreateGraphClient(mockContext)
 		require.NoError(t, err)
 
-		appRequestBuilder := graphsdk.NewApplicationsRequestBuilder(graphClient)
+		appRequestBuilder := graphsdk.NewApplicationListRequestBuilder(graphClient)
 
 		var res *http.Response
 		ctx := runtime.WithCaptureResponse(*mockContext.Context, &res)

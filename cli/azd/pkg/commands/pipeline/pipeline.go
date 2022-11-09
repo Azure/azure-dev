@@ -15,6 +15,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 )
@@ -26,7 +27,12 @@ type subareaProvider interface {
 	// preConfigureCheck validates that the provider's state is ready to be used.
 	// a provider would typically use this method for checking if tools are logged in
 	// of checking if all expected input data is found.
-	preConfigureCheck(ctx context.Context, console input.Console) error
+	preConfigureCheck(
+		ctx context.Context,
+		console input.Console,
+		pipelineManagerArgs PipelineManagerArgs,
+		infraOptions provisioning.Options,
+	) error
 	// name returns the name of the provider
 	name() string
 }
@@ -90,7 +96,9 @@ type CiProvider interface {
 		gitRepo *gitRepositoryDetails,
 		provisioningProvider provisioning.Options,
 		credential json.RawMessage,
-		console input.Console) error
+		authType PipelineAuthType,
+		console input.Console,
+	) error
 }
 
 func folderExists(folderPath string) bool {
@@ -187,14 +195,14 @@ func DetectProviders(
 	if overrideWith == azdoLabel || hasAzDevOpsFolder && !hasGitHubFolder {
 		// Azdo only either by override or by finding only that folder
 		_ = savePipelineProviderToEnv(azdoLabel, env)
-		console.Message(ctx, "Using pipeline provider: Azure DevOps")
+		console.Message(ctx, fmt.Sprintf("Using pipeline provider: %s", output.WithHighLightFormat("Azure DevOps")))
 		return createAzdoScmProvider(env, azdContext), createAzdoCiProvider(env, azdContext), nil
 	}
 
 	// Both folders exists and no override value. Default to GitHub
 	// Or override value is github and the folder is available
 	_ = savePipelineProviderToEnv(gitHubLabel, env)
-	console.Message(ctx, "Using pipeline provider: GitHub")
+	console.Message(ctx, fmt.Sprintf("Using pipeline provider: %s", output.WithHighLightFormat("GitHub")))
 	return &GitHubScmProvider{}, &GitHubCiProvider{}, nil
 }
 

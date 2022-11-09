@@ -44,7 +44,7 @@ func (cli *PythonCli) CheckInstalled(ctx context.Context) (bool, error) {
 	if err != nil {
 		return false, fmt.Errorf("checking %s version: %w", cli.Name(), err)
 	}
-	pythonSemver, err := tools.ExtractSemver(pythonRes)
+	pythonSemver, err := tools.ExtractVersion(pythonRes)
 	if err != nil {
 		return false, fmt.Errorf("converting to semver version fails: %w", err)
 	}

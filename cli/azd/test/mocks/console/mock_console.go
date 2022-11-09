@@ -7,6 +7,7 @@ import (
 	"io"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/output"
 )
 
 // A predicate function definition for registering expressions
@@ -22,6 +23,18 @@ func NewMockConsole() *MockConsole {
 	return &MockConsole{
 		expressions: []*MockConsoleExpression{},
 	}
+}
+
+func (c *MockConsole) IsUnformatted() bool {
+	return true
+}
+
+func (c *MockConsole) GetFormatter() output.Formatter {
+	return nil
+}
+
+func (c *MockConsole) GetWriter() io.Writer {
+	return nil
 }
 
 func (c *MockConsole) SetWriter(writer io.Writer) {
@@ -43,6 +56,14 @@ func (c *MockConsole) Handles() input.ConsoleHandles {
 // Prints a message to the console
 func (c *MockConsole) Message(ctx context.Context, message string) {
 	c.log = append(c.log, message)
+}
+
+func (c *MockConsole) MessageUx(ctx context.Context, message string, format input.MessageUxType) {
+	c.Message(ctx, message)
+}
+
+func (c *MockConsole) ShowSpinner(ctx context.Context, title string, format input.SpinnerUxType) {}
+func (c *MockConsole) StopSpinner(ctx context.Context, lastMessage string, format input.SpinnerUxType) {
 }
 
 // Prints a confirmation message to the console for the user to confirm

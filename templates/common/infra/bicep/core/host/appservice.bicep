@@ -57,7 +57,7 @@ resource appService 'Microsoft.Web/sites@2022-03-01' = {
     httpsOnly: true
   }
 
-  identity: managedIdentity ? { type: 'SystemAssigned' } : null
+  identity: { type: managedIdentity ? 'SystemAssigned' : 'None' }
 
   resource configAppSettings 'config' = {
     name: 'appsettings'

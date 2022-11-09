@@ -28,7 +28,7 @@ func TestTemplateList(t *testing.T) {
 		templatesManager,
 	)
 
-	err := templateList.Run(context.Background())
+	_, err := templateList.Run(context.Background())
 	require.NoError(t, err)
 
 	// Should be parsable JSON and non-empty

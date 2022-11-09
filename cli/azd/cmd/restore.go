@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
@@ -64,24 +65,24 @@ func newRestoreAction(flags restoreFlags, console input.Console, azdCtx *azdcont
 	}
 }
 
-func (r *restoreAction) Run(ctx context.Context) error {
+func (r *restoreAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	if err := ensureProject(r.azdCtx.ProjectPath()); err != nil {
-		return err
+		return nil, err
 	}
 
 	env, ctx, err := loadOrInitEnvironment(ctx, &r.flags.global.EnvironmentName, r.azdCtx, r.console)
 	if err != nil {
-		return fmt.Errorf("loading environment: %w", err)
+		return nil, fmt.Errorf("loading environment: %w", err)
 	}
 
 	proj, err := project.LoadProjectConfig(r.azdCtx.ProjectPath(), env)
 
 	if err != nil {
-		return fmt.Errorf("loading project: %w", err)
+		return nil, fmt.Errorf("loading project: %w", err)
 	}
 
 	if r.flags.serviceName != "" && !proj.HasService(r.flags.serviceName) {
-		return fmt.Errorf("service name '%s' doesn't exist", r.flags.serviceName)
+		return nil, fmt.Errorf("service name '%s' doesn't exist", r.flags.serviceName)
 	}
 
 	count := 0
@@ -94,7 +95,7 @@ func (r *restoreAction) Run(ctx context.Context) error {
 		if r.flags.serviceName == "" || r.flags.serviceName == svc.Name {
 			frameworkService, err := svc.GetFrameworkService(ctx, env)
 			if err != nil {
-				return fmt.Errorf("getting framework services: %w", err)
+				return nil, fmt.Errorf("getting framework services: %w", err)
 			}
 			requiredTools := (*frameworkService).RequiredExternalTools()
 			allTools = append(allTools, requiredTools...)
@@ -102,7 +103,7 @@ func (r *restoreAction) Run(ctx context.Context) error {
 	}
 
 	if err := tools.EnsureInstalled(ctx, tools.Unique(allTools)...); err != nil {
-		return err
+		return nil, err
 	}
 
 	for _, svc := range proj.Services {
@@ -113,20 +114,20 @@ func (r *restoreAction) Run(ctx context.Context) error {
 		installMsg := fmt.Sprintf("Installing dependencies for %s service...", svc.Name)
 		frameworkService, err := svc.GetFrameworkService(ctx, env)
 		if err != nil {
-			return fmt.Errorf("getting framework services: %w", err)
+			return nil, fmt.Errorf("getting framework services: %w", err)
 		}
 
 		spinner := spin.NewSpinner(r.console.Handles().Stdout, installMsg)
 		if err = spinner.Run(func() error { return (*frameworkService).InstallDependencies(ctx) }); err != nil {
-			return err
+			return nil, err
 		}
 
 		count++
 	}
 
 	if r.flags.serviceName != "" && count == 0 {
-		return fmt.Errorf("Dependencies were not restored (%s service was not found)", r.flags.serviceName)
+		return nil, fmt.Errorf("Dependencies were not restored (%s service was not found)", r.flags.serviceName)
 	}
 
-	return nil
+	return nil, nil
 }

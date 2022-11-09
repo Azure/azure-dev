@@ -81,7 +81,7 @@ func (a *infraDeleteAction) Run(ctx context.Context) (*actions.ActionResult, err
 		return nil, fmt.Errorf("loading project: %w", err)
 	}
 
-	infraManager, err := provisioning.NewManager(ctx, env, prj.Path, prj.Infra, !a.flags.global.NoPrompt)
+	infraManager, err := provisioning.NewManager(ctx, env, prj.Path, prj.Infra, a.console.IsUnformatted())
 	if err != nil {
 		return nil, fmt.Errorf("creating provisioning manager: %w", err)
 	}

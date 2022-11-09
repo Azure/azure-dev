@@ -34,6 +34,13 @@ powershell -ex AllSigned -c "Invoke-RestMethod 'https://aka.ms/install-azd.ps1' 
 curl -fsSL https://aka.ms/install-azd.sh | bash
 ```
 
+## Set Up Shell Completion
+
+The CLI supports shell completion for `bash`, `zsh`, `fish` and `powershell`.
+
+To learn how to install shell completion for the CLI for your shell, run `azd completion [bash | zsh | fish | powershell] --help`.
+For example, to get the instructions for `bash` run `azd completion bash --help`
+
 ## Uninstall Azure Developer CLI
 
 ### Windows

@@ -19,6 +19,26 @@ import (
 	"golang.org/x/exp/slices"
 )
 
+func templateNameCompletion(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+	templateManager := templates.NewTemplateManager()
+	templateSet, err := templateManager.ListTemplates()
+
+	if err != nil {
+		cobra.CompError(fmt.Sprintf("Error listing templates: %s", err))
+		return []string{}, cobra.ShellCompDirectiveError
+	}
+
+	templateList := maps.Values(templateSet)
+	slices.SortFunc(templateList, func(a, b templates.Template) bool {
+		return a.Name < b.Name
+	})
+	templateNames := make([]string, len(templateList))
+	for i, v := range templateList {
+		templateNames[i] = v.Name
+	}
+	return templateNames, cobra.ShellCompDirectiveDefault
+}
+
 func templatesCmd(rootOptions *internal.GlobalCommandOptions) *cobra.Command {
 	root := &cobra.Command{
 		Use:   "template",

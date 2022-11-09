@@ -229,6 +229,7 @@ func envNewCmdDesign(global *internal.GlobalCommandOptions) (*cobra.Command, *en
 	}
 	f := &envNewFlags{}
 	f.Bind(cmd.Flags(), global)
+	cmd.Args = cobra.MaximumNArgs(1)
 	return cmd, f
 }
 
@@ -236,6 +237,7 @@ type envNewAction struct {
 	azdCtx  *azdcontext.AzdContext
 	azCli   azcli.AzCli
 	flags   envNewFlags
+	args    []string
 	console input.Console
 }
 
@@ -243,12 +245,14 @@ func newEnvNewAction(
 	azdCtx *azdcontext.AzdContext,
 	azcli azcli.AzCli,
 	flags envNewFlags,
+	args []string,
 	console input.Console,
 ) *envNewAction {
 	return &envNewAction{
 		azdCtx:  azdCtx,
 		azCli:   azcli,
 		flags:   flags,
+		args:    args,
 		console: console,
 	}
 }
@@ -262,8 +266,13 @@ func (en *envNewAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 		return nil, err
 	}
 
+	environmentName := ""
+	if len(en.args) >= 1 {
+		environmentName = en.args[0]
+	}
+
 	envSpec := environmentSpec{
-		environmentName: en.flags.global.EnvironmentName,
+		environmentName: environmentName,
 		subscription:    en.flags.subscription,
 		location:        en.flags.location,
 	}
@@ -342,9 +351,6 @@ func (ef *envRefreshAction) Run(ctx context.Context) (*actions.ActionResult, err
 		return nil, fmt.Errorf("loading project: %w", err)
 	}
 
-	formatter := output.GetFormatter(ctx)
-	writer := output.GetWriter(ctx)
-
 	infraManager, err := provisioning.NewManager(ctx, env, prj.Path, prj.Infra, !ef.global.NoPrompt)
 	if err != nil {
 		return nil, fmt.Errorf("creating provisioning manager: %w", err)
@@ -363,8 +369,8 @@ func (ef *envRefreshAction) Run(ctx context.Context) (*actions.ActionResult, err
 
 	ef.console.Message(ctx, "Environments setting refresh completed")
 
-	if formatter.Kind() == output.JsonFormat {
-		err = formatter.Format(provisioning.NewEnvRefreshResultFromState(getStateResult.State), writer, nil)
+	if ef.formatter.Kind() == output.JsonFormat {
+		err = ef.formatter.Format(provisioning.NewEnvRefreshResultFromState(getStateResult.State), ef.writer, nil)
 		if err != nil {
 			return nil, fmt.Errorf("writing deployment result in JSON format: %w", err)
 		}

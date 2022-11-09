@@ -111,8 +111,7 @@ func (i *infraCreateAction) Run(ctx context.Context) (*actions.ActionResult, err
 		"Provisioning Azure resources (azd provision)",
 		"Provisioning Azure resources can take some time",
 	))
-
-	infraManager, err := provisioning.NewManager(ctx, env, prj.Path, prj.Infra, !i.flags.global.NoPrompt)
+	infraManager, err := provisioning.NewManager(ctx, env, prj.Path, prj.Infra, i.console.IsUnformatted())
 	if err != nil {
 		return nil, fmt.Errorf("creating provisioning manager: %w", err)
 	}

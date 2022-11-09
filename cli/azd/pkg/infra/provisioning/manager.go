@@ -25,7 +25,6 @@ type Manager struct {
 	azCli       azcli.AzCli
 	env         *environment.Environment
 	provider    Provider
-	formatter   output.Formatter
 	writer      io.Writer
 	console     input.Console
 	interactive bool
@@ -247,7 +246,7 @@ func (m *Manager) runAction(
 ) error {
 	var spinner *spin.Spinner
 
-	if interactive && (m.formatter == nil || m.formatter.Kind() != output.JsonFormat) {
+	if interactive {
 		spinner, ctx = spin.GetOrCreateSpinner(ctx, m.console.Handles().Stdout, title)
 		defer spinner.Stop()
 		defer m.console.SetWriter(nil)
@@ -303,16 +302,12 @@ func NewManager(
 
 	azCli := azcli.GetAzCli(ctx)
 	console := input.GetConsole(ctx)
-	formatter := output.GetFormatter(ctx)
-	writer := output.GetWriter(ctx)
-	interactive = interactive && formatter.Kind() == output.NoneFormat
 
 	return &Manager{
 		azCli:       azCli,
 		env:         env,
 		provider:    infraProvider,
-		formatter:   formatter,
-		writer:      writer,
+		writer:      console.GetWriter(),
 		console:     console,
 		interactive: interactive,
 	}, nil

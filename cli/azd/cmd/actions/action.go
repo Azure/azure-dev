@@ -3,7 +3,6 @@ package actions
 
 import (
 	"context"
-	"log"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 )
@@ -33,11 +32,7 @@ type Action interface {
 	Run(ctx context.Context) (*ActionResult, error)
 }
 
-func ShowActionResults(ctx context.Context, actionResult *ActionResult, err error) {
-	console := input.GetConsole(ctx)
-	if console == nil {
-		log.Panicln("showing actions results: console was not attached to the context")
-	}
+func ShowActionResults(ctx context.Context, console input.Console, actionResult *ActionResult, err error) {
 	if err != nil {
 		console.MessageUx(ctx, err.Error(), input.ResultError)
 		return

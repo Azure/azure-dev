@@ -12,7 +12,7 @@ import (
 
 func newCache(root string) cache.ExportReplace {
 	return &msalCacheAdapter{
-		inner: &memoryCache{
+		cache: &memoryCache{
 			cache: make(map[string][]byte),
 			inner: &fileCache{
 				prefix: "cache",

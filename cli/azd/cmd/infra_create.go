@@ -92,6 +92,12 @@ func (i *infraCreateAction) Run(ctx context.Context) (*actions.ActionResult, err
 		return nil, fmt.Errorf("failed to ensure login: %w", err)
 	}
 
+	// Command title
+	i.console.MessageUxItem(ctx, input.NewWithNoteMessageTitle(
+		"Provisioning Azure resources (azd provision)",
+		"Provisioning Azure resources can take some time",
+	))
+
 	env, ctx, err := loadOrInitEnvironment(ctx, &i.flags.global.EnvironmentName, i.azdCtx, i.console)
 	if err != nil {
 		return nil, fmt.Errorf("loading environment: %w", err)
@@ -105,16 +111,6 @@ func (i *infraCreateAction) Run(ctx context.Context) (*actions.ActionResult, err
 	if err = prj.Initialize(ctx, env); err != nil {
 		return nil, err
 	}
-
-	// Command title
-	i.console.MessageUxItem(ctx, input.NewWithNoteMessageTitle(
-		"Provisioning Azure resources (azd provision)",
-		"Provisioning Azure resources can take some time",
-	))
-
-	// No expected output from plan and/or deploy until we get the link for Azure portal.
-	// Showing a temporal spinner until the link is printed by the provider
-	i.console.ShowSpinner(ctx, "Starting", input.Step)
 
 	infraManager, err := provisioning.NewManager(ctx, env, prj.Path, prj.Infra, i.console.IsUnformatted())
 	if err != nil {

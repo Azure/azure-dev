@@ -105,15 +105,14 @@ func (t *TerraformProvider) Plan(
 
 			modulePath := t.modulePath()
 
-			t.console.Message(ctx, "Initializing terraform...")
-			err = asyncContext.Interact(func() error {
-				initRes, err := t.init(ctx, isRemoteBackendConfig)
-				if err != nil {
-					return fmt.Errorf("terraform init failed: %s , err: %w", initRes, err)
-				}
+			initRes, err := t.init(ctx, isRemoteBackendConfig)
+			if err != nil {
+				asyncContext.SetError(fmt.Errorf("terraform init failed: %s , err: %w", initRes, err))
+				return
+			}
 
-				return nil
-			})
+			//return nil
+			//})
 
 			if err != nil {
 				asyncContext.SetError(err)

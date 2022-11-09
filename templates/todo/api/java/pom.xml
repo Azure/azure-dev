@@ -79,6 +79,10 @@
       <artifactId>applicationinsights-runtime-attach</artifactId>
       <version>3.3.1</version>
     </dependency>
+    <dependency>
+      <groupId>org.projectlombok</groupId>
+      <artifactId>lombok</artifactId>
+    </dependency>
   </dependencies>
   <build>
     <sourceDirectory>src/main/java</sourceDirectory>

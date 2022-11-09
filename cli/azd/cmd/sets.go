@@ -27,35 +27,32 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func newWriter(cmd *cobra.Command) io.Writer {
-	writer := cmd.OutOrStdout()
+func newWriterFromConsole(console input.Console) io.Writer {
+	return console.GetWriter()
+}
 
-	if os.Getenv("NO_COLOR") != "" {
-		writer = colorable.NewNonColorable(writer)
-	}
-
-	return writer
+func newFormatterFromConsole(console input.Console) output.Formatter {
+	return console.GetFormatter()
 }
 
 func newConsoleFromOptions(
 	rootOptions *internal.GlobalCommandOptions,
 	formatter output.Formatter,
-	writer io.Writer,
 	cmd *cobra.Command,
 ) input.Console {
-	// NOTE: There is a similar version of this code in pkg/commands/builder.go that exists while we transition
-	// from the old plan of passing everything via a context to the new plan of wiring everything up explicitly.
-	//
-	// If you make changes to this logic here, also take a look over there to make the same changes.
-
-	isTerminal := cmd.OutOrStdout() == os.Stdout &&
-		cmd.InOrStdin() == os.Stdin && isatty.IsTerminal(os.Stdin.Fd()) &&
-		isatty.IsTerminal(os.Stdout.Fd())
-
+	writer := cmd.OutOrStdout()
 	// When using JSON formatting, we want to ensure we always write messages from the console to stderr.
 	if formatter != nil && formatter.Kind() == output.JsonFormat {
 		writer = cmd.ErrOrStderr()
 	}
+
+	if os.Getenv("NO_COLOR") != "" {
+		writer = colorable.NewNonColorable(writer)
+	}
+
+	isTerminal := cmd.OutOrStdout() == os.Stdout &&
+		cmd.InOrStdin() == os.Stdin && isatty.IsTerminal(os.Stdin.Fd()) &&
+		isatty.IsTerminal(os.Stdout.Fd())
 
 	return input.NewConsole(rootOptions.NoPrompt, isTerminal, writer, input.ConsoleHandles{
 		Stdin:  cmd.InOrStdin(),
@@ -112,7 +109,6 @@ func newCredential(authManager *auth.Manager) (azcore.TokenCredential, error) {
 
 var FormattedConsoleSet = wire.NewSet(
 	output.GetCommandFormatter,
-	newWriter,
 	newConsoleFromOptions,
 )
 
@@ -120,8 +116,9 @@ var CommonSet = wire.NewSet(
 	config.NewManager,
 	account.NewManager,
 	newAzdContext,
-	FormattedConsoleSet,
 	newCommandRunnerFromConsole,
+	newFormatterFromConsole,
+	newWriterFromConsole,
 )
 
 var AzCliSet = wire.NewSet(

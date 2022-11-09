@@ -3,7 +3,6 @@ package commands
 import (
 	"context"
 	"fmt"
-	"os"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
@@ -13,12 +12,9 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/identity"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
-	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 
-	"github.com/mattn/go-colorable"
-	"github.com/mattn/go-isatty"
 	"github.com/spf13/cobra"
 )
 
@@ -27,6 +23,7 @@ import (
 func RegisterDependenciesInCtx(
 	ctx context.Context,
 	cmd *cobra.Command,
+	console input.Console,
 	rootOptions *internal.GlobalCommandOptions,
 ) (context.Context, error) {
 
@@ -37,17 +34,12 @@ func RegisterDependenciesInCtx(
 	runner := exec.NewCommandRunner(cmd.InOrStdin(), cmd.OutOrStdout(), cmd.ErrOrStderr())
 	ctx = exec.WithCommandRunner(ctx, runner)
 
-	writer := cmd.OutOrStdout()
-
-	if os.Getenv("NO_COLOR") != "" {
-		writer = colorable.NewNonColorable(writer)
-	}
-
 	authManager, err := auth.NewManager(config.NewManager())
 	if err != nil {
 		return ctx, fmt.Errorf("creating auth manager: %w", err)
 	}
 
+	// Set default credentials used for operations against azure data/control planes
 	var credential azcore.TokenCredential
 
 	if _, has := cmd.Annotations[RequireNoLoginAnnotation]; has {
@@ -63,47 +55,20 @@ func RegisterDependenciesInCtx(
 		credential = cred
 	}
 
+	ctx = identity.WithCredentials(ctx, credential)
+
 	azCliArgs := azcli.NewAzCliArgs{
 		EnableDebug:     rootOptions.EnableDebugLogging,
 		EnableTelemetry: rootOptions.EnableTelemetry,
 		CommandRunner:   runner,
 	}
 
-	// Set default credentials used for operations against azure data/control planes
-	ctx = identity.WithCredentials(ctx, credential)
-
 	// Create and set the AzCli that will be used for the command
 	azCli := azcli.NewAzCli(credential, azCliArgs)
 	ctx = azcli.WithAzCli(ctx, azCli)
 
-	// Attempt to get the user specified formatter from the command args
-	formatter, err := output.GetCommandFormatter(cmd)
-	if err != nil {
-		return ctx, err
-	}
-
-	if formatter != nil {
-		ctx = output.WithFormatter(ctx, formatter)
-	}
-
-	ctx = output.WithWriter(ctx, writer)
-
-	isTerminal := cmd.OutOrStdout() == os.Stdout &&
-		cmd.InOrStdin() == os.Stdin && isatty.IsTerminal(os.Stdin.Fd()) &&
-		isatty.IsTerminal(os.Stdout.Fd())
-
-	// When using JSON formatting, we want to ensure we always write messages from the console to stderr.
-	if formatter != nil && formatter.Kind() == output.JsonFormat {
-		writer = cmd.ErrOrStderr()
-	}
-
-	console := input.NewConsole(rootOptions.NoPrompt, isTerminal, writer, input.ConsoleHandles{
-		Stdin:  cmd.InOrStdin(),
-		Stdout: cmd.OutOrStdout(),
-		Stderr: cmd.ErrOrStderr(),
-	}, formatter)
+	// Inject console into context
 	ctx = input.WithConsole(ctx, console)
-
 	return ctx, nil
 }
 

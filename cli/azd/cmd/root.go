@@ -12,6 +12,7 @@ import (
 	// Importing for infrastructure provider plugin registrations
 	_ "github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning/bicep"
 	_ "github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning/terraform"
+	"github.com/azure/azure-dev/cli/azd/pkg/input"
 
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/telemetry"
@@ -123,7 +124,8 @@ For more information, visit the Azure Developer CLI Dev Hub: https://aka.ms/azur
 type designBuilder[F any] func(opts *internal.GlobalCommandOptions) (*cobra.Command, *F)
 
 type actionBuilder[F any] func(
-	cmd *cobra.Command,
+	console input.Console,
+	ctx context.Context,
 	o *internal.GlobalCommandOptions,
 	flags F,
 	args []string) (actions.Action, error)
@@ -141,14 +143,19 @@ func BuildCmd[F any](
 	cmd.Flags().BoolP("help", "h", false, fmt.Sprintf("Gets help for %s.", cmd.Name()))
 
 	runCmd := func(cmd *cobra.Command, ctx context.Context, args []string) error {
-		action, err := buildAction(cmd, opts, *flags, args)
+		console, err := initConsole(cmd, opts)
+		if err != nil {
+			return err
+		}
+
+		action, err := buildAction(console, ctx, opts, *flags, args)
 		if err != nil {
 			return err
 		}
 
 		// shim to register dependencies in context to maintain backwards compatibility
 		// to be removed long term
-		ctx, err = commands.RegisterDependenciesInCtx(ctx, cmd, opts)
+		ctx, err = commands.RegisterDependenciesInCtx(ctx, cmd, console, opts)
 		if err != nil {
 			return err
 		}
@@ -156,7 +163,7 @@ func BuildCmd[F any](
 		actionResult, err := action.Run(ctx)
 		// At this point, we know that there might be an error, so we can silence cobra from showing it after us.
 		cmd.SilenceErrors = true
-		actions.ShowActionResults(ctx, actionResult, err)
+		actions.ShowActionResults(ctx, console, actionResult, err)
 
 		return err
 	}

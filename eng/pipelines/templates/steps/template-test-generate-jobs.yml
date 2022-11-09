@@ -1,0 +1,71 @@
+parameters:
+- name: TemplateList
+  displayName: |
+    Comma-delimited list of templates to test against (by default, results of azd template list). Example: 'Azure-Samples/todo-csharp-sql, Azure-Samples/todo-nodejs-mongo'
+  type: string
+  default: '(azd template list)'
+
+- name: TemplateListFilter
+  displayName: | 
+    Regex filter expression to filter templates. Examples: 'csharp', 'terraform', 'python-mongo'
+  type: string
+  default: '.*'
+
+- name: OutputMatrixVariable
+  displayName: The output matrix variable to set
+  type: string
+  default: 'Matrix'
+
+- name: OutputMatrixStepName
+  displayName: The name of the output matrix step
+  type: string
+  default: 'Generate'
+
+- name: AzdVersion
+  displayName: |
+    Version of azd to test against.
+    For PR builds, specify 'pr/<PRNumber>'. The PR validation build must have succeeded prior.
+    For official build, 'daily', 'latest', or a specific version number: '0.3.0-beta.6-daily.1947218'.
+  type: string
+  default: daily
+
+- name: TemplateBranchName
+  displayName: The template repository branch to test against
+  type: string
+  default: main
+
+- name: AzureLocation
+  displayName: Azure location for templates to be deployed to
+  type: string
+  default: eastus2
+
+- name: CleanupHoursDelay
+  displayName: Delay of cleanup for Azure resources for debugging purposes
+  type: number
+  default: 0
+
+steps:
+  # azd is required to list all templates if TemplateList is not provided.
+  - template: /eng/pipelines/templates/steps/install-azd-live-sh.yml
+    parameters:
+      Version: ${{ parameters.AzdVersion }}
+      OutputContainerImageVariableName: 'AzdContainerImage'
+
+  - task: PowerShell@2
+    name: ${{ parameters.OutputMatrixStepName }}
+    displayName: Generate test jobs
+    inputs:
+      pwsh: true
+      targetType: filePath
+      filePath: ./eng/scripts/Set-TemplateTestMatrixVariable.ps1
+      arguments: >-
+        -TemplateList '${{ parameters.TemplateList }}'
+        -TemplateListFilter '${{ parameters.TemplateListFilter }}'
+        -OutputMatrixVariable '${{ parameters.OutputMatrixVariable }}'
+        -JobVariablesDefinition '
+        AzdVersion=${{ parameters.AzdVersion }},
+        AzdContainerImage=$(AzdContainerImage),
+        TemplateBranchName=${{ parameters.TemplateBranchName }},
+        AzureLocation=${{ parameters.AzureLocation }},
+        CleanupHoursDelay=${{ parameters.CleanupHoursDelay }}
+        '

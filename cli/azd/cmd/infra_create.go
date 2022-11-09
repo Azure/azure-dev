@@ -130,10 +130,6 @@ func (i *infraCreateAction) Run(ctx context.Context) (*actions.ActionResult, err
 	deployResult, err := infraManager.Deploy(ctx, deploymentPlan, provisioningScope)
 
 	if err != nil {
-		return nil, fmt.Errorf("deploying infrastructure: %w", err)
-	}
-
-	if err != nil {
 		if i.formatter.Kind() == output.JsonFormat {
 			stateResult, err := infraManager.State(ctx, provisioningScope)
 			if err != nil {
@@ -163,12 +159,13 @@ func (i *infraCreateAction) Run(ctx context.Context) (*actions.ActionResult, err
 		}
 	}
 
-	if i.formatter.Kind() != output.JsonFormat {
-		resourceGroupName, err := project.GetResourceGroupName(ctx, prj, env)
-		if err == nil { // Presentation only -- skip print if we failed to resolve the resource group
-			i.displayResourceGroupCreatedMessage(ctx, i.console, env.GetSubscriptionId(), resourceGroupName)
-		}
-	}
+	// TO BE MOVED TO DEPLOY OUTPUT
+	// if i.formatter.Kind() != output.JsonFormat {
+	// 	resourceGroupName, err := project.GetResourceGroupName(ctx, prj, env)
+	// 	if err == nil { // Presentation only -- skip print if we failed to resolve the resource group
+	// 		i.displayResourceGroupCreatedMessage(ctx, i.console, env.GetSubscriptionId(), resourceGroupName)
+	// 	}
+	// }
 
 	if i.formatter.Kind() == output.JsonFormat {
 		stateResult, err := infraManager.State(ctx, provisioningScope)

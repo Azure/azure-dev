@@ -161,7 +161,8 @@ func (m *Manager) deploy(
 		return nil, fmt.Errorf("error deploying infrastructure: %w", err)
 	}
 
-	m.console.Message(ctx, output.WithSuccessFormat("\nAzure resource provisioning completed successfully"))
+	// make sure any spinner is stopped
+	m.console.StopSpinner(ctx, "", input.StepDone)
 
 	return deployResult, nil
 }

@@ -65,6 +65,7 @@ func (display *ProvisioningProgressDisplay) ReportProgress(ctx context.Context) 
 			output.WithLinkFormat("https://portal.azure.com/#blade/HubsExtension/DeploymentDetailsBlade/overview/id/%s\n"),
 			url.PathEscape(display.scope.DeploymentUrl()),
 		)
+		display.console.ShowSpinner(ctx, "Creating resources", input.Step)
 		display.console.MessageUx(
 			ctx,
 			fmt.Sprintf(
@@ -105,17 +106,6 @@ func (display *ProvisioningProgressDisplay) ReportProgress(ctx context.Context) 
 	})
 
 	display.logNewlyCreatedResources(ctx, newlyDeployedResources)
-	status := ""
-
-	if len(operations) > 0 {
-		status = formatProgressTitle(succeededCount, len(operations))
-	} else {
-		status = defaultProgressTitle
-	}
-
-	progress.Timestamp = time.Now()
-	progress.Message = status
-
 	return &progress, nil
 }
 
@@ -142,8 +132,11 @@ func (display *ProvisioningProgressDisplay) logNewlyCreatedResources(
 		if resourceTypeDisplayName != "" {
 			display.console.MessageUx(
 				ctx,
-				formatCreatedResourceLog(resourceTypeDisplayName, *newResource.Properties.TargetResource.ResourceName),
-				input.Progress,
+				fmt.Sprintf(
+					"%s: %s",
+					resourceTypeDisplayName,
+					*newResource.Properties.TargetResource.ResourceName),
+				input.DoneCreating,
 			)
 			resourceTypeName = resourceTypeDisplayName
 		}
@@ -156,16 +149,4 @@ func (display *ProvisioningProgressDisplay) logNewlyCreatedResources(
 
 		display.createdResources[*newResource.Properties.TargetResource.ID] = true
 	}
-}
-
-func formatCreatedResourceLog(resourceTypeDisplayName string, resourceName string) string {
-	return fmt.Sprintf(
-		"%s %s: %s",
-		output.WithSuccessFormat("Created"),
-		resourceTypeDisplayName,
-		output.WithHighLightFormat(resourceName))
-}
-
-func formatProgressTitle(succeededCount int, totalCount int) string {
-	return fmt.Sprintf("Provisioning Azure resources (%d of ~%d completed)", succeededCount, totalCount)
 }

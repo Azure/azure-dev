@@ -26,6 +26,7 @@ type SpinnerUxType int
 const (
 	Title MessageUxType = iota
 	Progress
+	DoneCreating
 	ResultSuccess
 	ResultError
 )
@@ -231,6 +232,9 @@ func (c *AskerConsole) addFormat(message string, format MessageUxType) (withForm
 	switch format {
 	case Title:
 		withFormat = output.WithBold(fmt.Sprintf("\n%s\n", message))
+	case DoneCreating:
+		withFormat = withIndentation(
+			fmt.Sprintf("%s Creating %s", donePrefix, message), generateIndentation(c.currentIndent))
 	case Progress:
 		// a message while spinner might be running.
 		withFormat = withIndentation(message, generateIndentation(c.currentIndent))
@@ -327,11 +331,13 @@ func (c *AskerConsole) StopSpinner(ctx context.Context, lastMessage string, form
 	_ = c.spinner.Stop()
 }
 
+var donePrefix string = output.WithSuccessFormat("(✓) Done:")
+
 func (c *AskerConsole) getStopChar(format SpinnerUxType) string {
 	var stopChar string
 	switch format {
 	case StepDone:
-		stopChar = output.WithSuccessFormat("(✓) Done:")
+		stopChar = donePrefix
 	case StepFailed:
 		stopChar = output.WithErrorFormat("(x) Failed:")
 	}

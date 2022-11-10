@@ -146,7 +146,7 @@ func (i *infraCreateAction) Run(ctx context.Context) (*actions.ActionResult, err
 
 	for _, svc := range prj.Services {
 		if err := svc.RaiseEvent(
-			ctx, project.Deployed,
+			ctx, project.DotnetSecretSetting,
 			map[string]any{"bicepOutput": deployResult.Deployment.Outputs}); err != nil {
 			return nil, err
 		}

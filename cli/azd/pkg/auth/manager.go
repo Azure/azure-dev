@@ -58,12 +58,12 @@ var cLoginScopes = []string{"https://management.azure.com//.default"}
 // does not yet support your preferred method of authentication by setting [cUseLegacyAzCliAuthKey] in config to true.
 type Manager struct {
 	publicClient    publicClient
-	configManager   config.Manager
+	configManager   config.UserConfigManager
 	credentialCache Cache
 	ghClient        *github.FederatedTokenClient
 }
 
-func NewManager(configManager config.Manager) (*Manager, error) {
+func NewManager(configManager config.UserConfigManager) (*Manager, error) {
 	cfgRoot, err := config.GetUserConfigDir()
 	if err != nil {
 		return nil, fmt.Errorf("getting config dir: %w", err)
@@ -112,7 +112,7 @@ func EnsureLoggedInCredential(ctx context.Context, credential azcore.TokenCreden
 // CredentialForCurrentUser returns a TokenCredential instance for the current user. If `auth.useLegacyAzCliAuth` is set to
 // a truthy value in config, an instance of azidentity.AzureCLICredential is returned instead.
 func (m *Manager) CredentialForCurrentUser(ctx context.Context) (azcore.TokenCredential, error) {
-	cfg, err := config.GetUserConfig(m.configManager)
+	cfg, err := m.configManager.Load()
 	if err != nil {
 		return nil, fmt.Errorf("fetching current user: %w", err)
 	}
@@ -359,7 +359,7 @@ func (m *Manager) Logout(ctx context.Context) error {
 		}
 	}
 
-	cfg, err := config.GetUserConfig(m.configManager)
+	cfg, err := m.configManager.Load()
 	if err != nil {
 		return fmt.Errorf("loading config: %w", err)
 	}
@@ -380,7 +380,7 @@ func (m *Manager) Logout(ctx context.Context) error {
 		return fmt.Errorf("un-setting current user: %w", err)
 	}
 
-	if err := config.SaveUserConfig(m.configManager, cfg); err != nil {
+	if err := m.configManager.Save(cfg); err != nil {
 		return fmt.Errorf("saving config: %w", err)
 	}
 
@@ -410,7 +410,7 @@ func (m *Manager) saveLoginForServicePrincipal(tenantId, clientId string, secret
 // getSignedInAccount fetches the public.Account for the signed in user, or nil if one does not exist
 // (e.g when logged in with a service principal).
 func (m *Manager) getSignedInAccount(ctx context.Context) (*public.Account, error) {
-	cfg, err := config.GetUserConfig(m.configManager)
+	cfg, err := m.configManager.Load()
 	if err != nil {
 		return nil, fmt.Errorf("fetching current user: %w", err)
 	}
@@ -433,7 +433,7 @@ func (m *Manager) getSignedInAccount(ctx context.Context) (*public.Account, erro
 
 // saveUserProperties writes the properties under [cCurrentUserKey], overwriting any existing value.
 func (m *Manager) saveUserProperties(user *userProperties) error {
-	cfg, err := config.GetUserConfig(m.configManager)
+	cfg, err := m.configManager.Load()
 	if err != nil {
 		return fmt.Errorf("fetching current user: %w", err)
 	}
@@ -442,7 +442,7 @@ func (m *Manager) saveUserProperties(user *userProperties) error {
 		return fmt.Errorf("setting account id in config: %w", err)
 	}
 
-	return config.SaveUserConfig(m.configManager, cfg)
+	return m.configManager.Save(cfg)
 }
 
 // persistedSecretLookupKey returns the cache key we use for a given tenantId, clientId pair.

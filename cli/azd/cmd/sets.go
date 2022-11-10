@@ -114,6 +114,7 @@ var FormattedConsoleSet = wire.NewSet(
 
 var CommonSet = wire.NewSet(
 	config.NewManager,
+	config.NewUserConfigManager,
 	account.NewManager,
 	newAzdContext,
 	newCommandRunnerFromConsole,

@@ -9,7 +9,6 @@ import (
 	"errors"
 	"io"
 	"net/http"
-	"os"
 	"testing"
 
 	_ "embed"
@@ -192,37 +191,28 @@ func TestServicePrincipalLoginFederatedTokenProvider(t *testing.T) {
 }
 
 func TestLegacyAzCliCredentialSupport(t *testing.T) {
-	mgr := &memoryConfigManager{
-		configs: make(map[string]config.Config),
-	}
 
 	cfg := config.NewConfig(nil)
 	err := cfg.Set(cUseLegacyAzCliAuthKey, "true")
 
 	require.NoError(t, err)
 
-	path, err := config.GetUserConfigFilePath()
-	require.NoError(t, err)
-
-	mgr.configs[path] = cfg
-
 	m := Manager{
-		configManager: mgr,
+		configManager: &memoryConfigManager{
+			config: cfg,
+		},
 	}
 
 	cred, err := m.CredentialForCurrentUser(context.Background())
 
 	require.NoError(t, err)
 	require.IsType(t, new(azidentity.AzureCLICredential), cred)
-
 }
 
 func TestLoginInteractive(t *testing.T) {
 	m := &Manager{
-		configManager: &memoryConfigManager{
-			configs: make(map[string]config.Config),
-		},
-		publicClient: &mockPublicClient{},
+		configManager: &memoryConfigManager{},
+		publicClient:  &mockPublicClient{},
 	}
 
 	cred, err := m.LoginInteractive(context.Background())
@@ -246,10 +236,8 @@ func TestLoginInteractive(t *testing.T) {
 
 func TestLoginDeviceCode(t *testing.T) {
 	m := &Manager{
-		configManager: &memoryConfigManager{
-			configs: make(map[string]config.Config),
-		},
-		publicClient: &mockPublicClient{},
+		configManager: &memoryConfigManager{},
+		publicClient:  &mockPublicClient{},
 	}
 
 	buf := bytes.Buffer{}
@@ -276,23 +264,15 @@ func TestLoginDeviceCode(t *testing.T) {
 }
 
 type memoryConfigManager struct {
-	configs map[string]config.Config
+	config config.Config
 }
 
-func (m *memoryConfigManager) Load(filePath string) (config.Config, error) {
-	if cfg, has := m.configs[filePath]; has {
-		return cfg, nil
-	}
-
-	return nil, os.ErrNotExist
+func (m *memoryConfigManager) Load() (config.Config, error) {
+	return m.config, nil
 }
 
-func (m *memoryConfigManager) Save(cfg config.Config, filePath string) error {
-	if m.configs == nil {
-		m.configs = make(map[string]config.Config)
-	}
-
-	m.configs[filePath] = cfg
+func (m *memoryConfigManager) Save(cfg config.Config) error {
+	m.config = cfg
 	return nil
 }
 

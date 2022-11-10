@@ -34,7 +34,7 @@ func RegisterDependenciesInCtx(
 	runner := exec.NewCommandRunner(cmd.InOrStdin(), cmd.OutOrStdout(), cmd.ErrOrStderr())
 	ctx = exec.WithCommandRunner(ctx, runner)
 
-	authManager, err := auth.NewManager(config.NewManager())
+	authManager, err := auth.NewManager(config.NewUserConfigManager())
 	if err != nil {
 		return ctx, fmt.Errorf("creating auth manager: %w", err)
 	}

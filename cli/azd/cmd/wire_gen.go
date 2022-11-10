@@ -57,7 +57,8 @@ func initInitAction(console input.Console, ctx context.Context, o *internal.Glob
 	}
 	manager := config.NewManager()
 	commandRunner := newCommandRunnerFromConsole(console)
-	authManager, err := auth.NewManager(manager)
+	userConfigManager := config.NewUserConfigManager()
+	authManager, err := auth.NewManager(userConfigManager)
 	if err != nil {
 		return nil, err
 	}
@@ -81,24 +82,24 @@ func initInitAction(console input.Console, ctx context.Context, o *internal.Glob
 func initLoginAction(console input.Console, ctx context.Context, o *internal.GlobalCommandOptions, flags loginFlags, args []string) (actions.Action, error) {
 	formatter := newFormatterFromConsole(console)
 	writer := newWriterFromConsole(console)
-	manager := config.NewManager()
-	authManager, err := auth.NewManager(manager)
+	userConfigManager := config.NewUserConfigManager()
+	manager, err := auth.NewManager(userConfigManager)
 	if err != nil {
 		return nil, err
 	}
-	cmdLoginAction := newLoginAction(formatter, writer, authManager, flags, console)
+	cmdLoginAction := newLoginAction(formatter, writer, manager, flags, console)
 	return cmdLoginAction, nil
 }
 
 func initLogoutAction(console input.Console, ctx context.Context, o *internal.GlobalCommandOptions, flags struct{}, args []string) (actions.Action, error) {
-	manager := config.NewManager()
-	authManager, err := auth.NewManager(manager)
+	userConfigManager := config.NewUserConfigManager()
+	manager, err := auth.NewManager(userConfigManager)
 	if err != nil {
 		return nil, err
 	}
 	formatter := newFormatterFromConsole(console)
 	writer := newWriterFromConsole(console)
-	cmdLogoutAction := newLogoutAction(authManager, formatter, writer)
+	cmdLogoutAction := newLogoutAction(manager, formatter, writer)
 	return cmdLogoutAction, nil
 }
 
@@ -109,7 +110,8 @@ func initUpAction(console input.Console, ctx context.Context, o *internal.Global
 	}
 	manager := config.NewManager()
 	commandRunner := newCommandRunnerFromConsole(console)
-	authManager, err := auth.NewManager(manager)
+	userConfigManager := config.NewUserConfigManager()
+	authManager, err := auth.NewManager(userConfigManager)
 	if err != nil {
 		return nil, err
 	}
@@ -147,12 +149,12 @@ func initMonitorAction(console input.Console, ctx context.Context, o *internal.G
 		return nil, err
 	}
 	commandRunner := newCommandRunnerFromConsole(console)
-	manager := config.NewManager()
-	authManager, err := auth.NewManager(manager)
+	userConfigManager := config.NewUserConfigManager()
+	manager, err := auth.NewManager(userConfigManager)
 	if err != nil {
 		return nil, err
 	}
-	tokenCredential, err := newCredential(authManager)
+	tokenCredential, err := newCredential(manager)
 	if err != nil {
 		return nil, err
 	}
@@ -214,12 +216,12 @@ func initEnvSetAction(console input.Console, ctx context.Context, o *internal.Gl
 		return nil, err
 	}
 	commandRunner := newCommandRunnerFromConsole(console)
-	manager := config.NewManager()
-	authManager, err := auth.NewManager(manager)
+	userConfigManager := config.NewUserConfigManager()
+	manager, err := auth.NewManager(userConfigManager)
 	if err != nil {
 		return nil, err
 	}
-	tokenCredential, err := newCredential(authManager)
+	tokenCredential, err := newCredential(manager)
 	if err != nil {
 		return nil, err
 	}
@@ -254,12 +256,12 @@ func initEnvNewAction(console input.Console, ctx context.Context, o *internal.Gl
 		return nil, err
 	}
 	commandRunner := newCommandRunnerFromConsole(console)
-	manager := config.NewManager()
-	authManager, err := auth.NewManager(manager)
+	userConfigManager := config.NewUserConfigManager()
+	manager, err := auth.NewManager(userConfigManager)
 	if err != nil {
 		return nil, err
 	}
-	tokenCredential, err := newCredential(authManager)
+	tokenCredential, err := newCredential(manager)
 	if err != nil {
 		return nil, err
 	}
@@ -274,12 +276,12 @@ func initEnvRefreshAction(console input.Console, ctx context.Context, o *interna
 		return nil, err
 	}
 	commandRunner := newCommandRunnerFromConsole(console)
-	manager := config.NewManager()
-	authManager, err := auth.NewManager(manager)
+	userConfigManager := config.NewUserConfigManager()
+	manager, err := auth.NewManager(userConfigManager)
 	if err != nil {
 		return nil, err
 	}
-	tokenCredential, err := newCredential(authManager)
+	tokenCredential, err := newCredential(manager)
 	if err != nil {
 		return nil, err
 	}
@@ -298,12 +300,12 @@ func initEnvGetValuesAction(console input.Console, ctx context.Context, o *inter
 	formatter := newFormatterFromConsole(console)
 	writer := newWriterFromConsole(console)
 	commandRunner := newCommandRunnerFromConsole(console)
-	manager := config.NewManager()
-	authManager, err := auth.NewManager(manager)
+	userConfigManager := config.NewUserConfigManager()
+	manager, err := auth.NewManager(userConfigManager)
 	if err != nil {
 		return nil, err
 	}
-	tokenCredential, err := newCredential(authManager)
+	tokenCredential, err := newCredential(manager)
 	if err != nil {
 		return nil, err
 	}

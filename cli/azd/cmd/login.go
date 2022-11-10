@@ -23,19 +23,39 @@ import (
 )
 
 type loginFlags struct {
-	// This is used to detect cases where the flag was explicitly passed but the value was the empty string. We use this
-	// to allow setting an empty value for an flag to denote its value should be read from the console.
-	flagPassedFn           func(string) bool
 	onlyCheckStatus        bool
 	useDeviceCode          bool
 	outputFormat           string
 	tenantID               string
 	clientID               string
-	clientSecret           string
+	clientSecret           stringPtr
 	clientCertificate      string
-	federatedToken         string
+	federatedToken         stringPtr
 	federatedTokenProvider string
 	global                 *internal.GlobalCommandOptions
+}
+
+// stringPtr implements a pflag.Value and allows us to distinguish between a flag value being explicitly set to the empty
+// string vs not being present.
+type stringPtr struct {
+	ptr *string
+}
+
+func (p *stringPtr) Set(s string) error {
+	p.ptr = &s
+	return nil
+}
+
+func (p *stringPtr) String() string {
+	if p.ptr != nil {
+		return *p.ptr
+	}
+
+	return ""
+}
+
+func (p *stringPtr) Type() string {
+	return "string"
 }
 
 const (
@@ -54,10 +74,9 @@ func (lf *loginFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandO
 		"When true, log in by using a device code instead of a browser.",
 	)
 	local.StringVar(&lf.clientID, "client-id", "", "The client id for the service principal to authenticate with.")
-	local.StringVar(
+	local.Var(
 		&lf.clientSecret,
 		cClientSecretFlagName,
-		"",
 		"The client secret for the service principal to authenticate with. "+
 			"Set to the empty string to read the value from the console.")
 	local.StringVar(
@@ -65,10 +84,9 @@ func (lf *loginFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandO
 		cClientCertificateFlagName,
 		"",
 		"The path to the client certificate for the service principal to authenticate with.")
-	local.StringVar(
+	local.Var(
 		&lf.federatedToken,
 		cFederatedCredentialFlagName,
-		"",
 		"The federated token for the service principal to authenticate with. "+
 			"Set to the empty string to read the value from the console.")
 	local.StringVar(
@@ -77,6 +95,7 @@ func (lf *loginFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandO
 		"",
 		"The provider to use to acquire a federated token to authenticate with.")
 	local.StringVar(&lf.tenantID, "tenant-id", "", "The tenant id for the service principal to authenticate with.")
+
 	output.AddOutputFlag(
 		local,
 		&lf.outputFormat,
@@ -96,11 +115,7 @@ func loginCmdDesign(global *internal.GlobalCommandOptions) (*cobra.Command, *log
 		},
 	}
 
-	flags := &loginFlags{
-		flagPassedFn: func(name string) bool {
-			return cmd.Flags().Lookup(name).Changed
-		},
-	}
+	flags := &loginFlags{}
 	flags.Bind(cmd.Flags(), global)
 	return cmd, flags
 }
@@ -195,10 +210,10 @@ func (la *loginAction) login(ctx context.Context) error {
 		}
 
 		if countTrue(
-			la.flags.flagPassedFn(cClientSecretFlagName),
-			la.flags.flagPassedFn(cClientCertificateFlagName),
-			la.flags.flagPassedFn(cFederatedCredentialFlagName),
-			la.flags.flagPassedFn(cFederatedCredentialProviderFlagName),
+			la.flags.clientSecret.ptr != nil,
+			la.flags.clientCertificate != "",
+			la.flags.federatedToken.ptr != nil,
+			la.flags.federatedTokenProvider != "",
 		) != 1 {
 			return fmt.Errorf(
 				"must set exactly one of %s for service principal", strings.Join([]string{
@@ -210,23 +225,23 @@ func (la *loginAction) login(ctx context.Context) error {
 		}
 
 		switch {
-		case la.flags.flagPassedFn(cClientSecretFlagName):
-			if la.flags.clientSecret == "" {
+		case la.flags.clientSecret.ptr != nil:
+			if *la.flags.clientSecret.ptr == "" {
 				v, err := la.console.Prompt(ctx, input.ConsoleOptions{
 					Message: "Enter your client secret",
 				})
 				if err != nil {
 					return fmt.Errorf("prompting for client secret: %w", err)
 				}
-				la.flags.clientSecret = v
+				la.flags.clientSecret.ptr = &v
 			}
 
 			if _, err := la.authManager.LoginWithServicePrincipalSecret(
-				ctx, la.flags.tenantID, la.flags.clientID, la.flags.clientSecret,
+				ctx, la.flags.tenantID, la.flags.clientID, *la.flags.clientSecret.ptr,
 			); err != nil {
 				return fmt.Errorf("logging in: %w", err)
 			}
-		case la.flags.flagPassedFn(cClientCertificateFlagName):
+		case la.flags.clientCertificate != "":
 			certFile, err := os.Open(la.flags.clientCertificate)
 			if err != nil {
 				return fmt.Errorf("reading certificate: %w", err)
@@ -243,23 +258,23 @@ func (la *loginAction) login(ctx context.Context) error {
 			); err != nil {
 				return fmt.Errorf("logging in: %w", err)
 			}
-		case la.flags.flagPassedFn(cFederatedCredentialFlagName):
-			if la.flags.clientSecret == "" {
+		case la.flags.federatedToken.ptr != nil:
+			if *la.flags.federatedToken.ptr == "" {
 				v, err := la.console.Prompt(ctx, input.ConsoleOptions{
 					Message: "Enter your federated token",
 				})
 				if err != nil {
 					return fmt.Errorf("prompting for federated token: %w", err)
 				}
-				la.flags.clientSecret = v
+				la.flags.federatedToken.ptr = &v
 			}
 
 			if _, err := la.authManager.LoginWithServicePrincipalFederatedToken(
-				ctx, la.flags.tenantID, la.flags.clientID, la.flags.federatedToken,
+				ctx, la.flags.tenantID, la.flags.clientID, *la.flags.federatedToken.ptr,
 			); err != nil {
 				return fmt.Errorf("logging in: %w", err)
 			}
-		case la.flags.flagPassedFn(cFederatedCredentialProviderFlagName):
+		case la.flags.federatedTokenProvider != "":
 			if _, err := la.authManager.LoginWithServicePrincipalFederatedTokenProvider(
 				ctx, la.flags.tenantID, la.flags.clientID, la.flags.federatedTokenProvider,
 			); err != nil {

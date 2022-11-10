@@ -21,6 +21,7 @@ jobs:
       - name: Log in with Azure
         run: |
           $info = $Env:AZURE_CREDENTIALS | ConvertFrom-Json -AsHashtable;
+          Write-Host "::add-mask::$($info.clientSecret)"
 
           azd login `
             --client-id "$($info.clientId)" `

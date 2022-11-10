@@ -55,7 +55,7 @@ func TestServicePrincipalLoginClientSecret(t *testing.T) {
 	}
 
 	m := Manager{
-		configManager:   &memoryConfigManager{},
+		configManager:   newMemoryConfigManager(),
 		credentialCache: credentialCache,
 	}
 
@@ -89,7 +89,7 @@ func TestServicePrincipalLoginClientCertificate(t *testing.T) {
 	}
 
 	m := Manager{
-		configManager:   &memoryConfigManager{},
+		configManager:   newMemoryConfigManager(),
 		credentialCache: credentialCache,
 	}
 
@@ -120,7 +120,7 @@ func TestServicePrincipalLoginFederatedToken(t *testing.T) {
 	}
 
 	m := Manager{
-		configManager:   &memoryConfigManager{},
+		configManager:   newMemoryConfigManager(),
 		credentialCache: credentialCache,
 	}
 
@@ -162,7 +162,7 @@ func TestServicePrincipalLoginFederatedTokenProvider(t *testing.T) {
 	})
 
 	m := Manager{
-		configManager:   &memoryConfigManager{},
+		configManager:   newMemoryConfigManager(),
 		credentialCache: credentialCache,
 		ghClient: github.NewFederatedTokenClient(&policy.ClientOptions{
 			Transport: mockContext.HttpClient,
@@ -191,16 +191,19 @@ func TestServicePrincipalLoginFederatedTokenProvider(t *testing.T) {
 }
 
 func TestLegacyAzCliCredentialSupport(t *testing.T) {
+	mgr := newMemoryConfigManager()
 
-	cfg := config.NewConfig(nil)
-	err := cfg.Set(cUseLegacyAzCliAuthKey, "true")
+	cfg, err := mgr.Load()
+	require.NoError(t, err)
 
+	err = cfg.Set(cUseLegacyAzCliAuthKey, "true")
+	require.NoError(t, err)
+
+	err = mgr.Save(cfg)
 	require.NoError(t, err)
 
 	m := Manager{
-		configManager: &memoryConfigManager{
-			config: cfg,
-		},
+		configManager: mgr,
 	}
 
 	cred, err := m.CredentialForCurrentUser(context.Background())
@@ -211,7 +214,7 @@ func TestLegacyAzCliCredentialSupport(t *testing.T) {
 
 func TestLoginInteractive(t *testing.T) {
 	m := &Manager{
-		configManager: &memoryConfigManager{},
+		configManager: newMemoryConfigManager(),
 		publicClient:  &mockPublicClient{},
 	}
 
@@ -236,7 +239,7 @@ func TestLoginInteractive(t *testing.T) {
 
 func TestLoginDeviceCode(t *testing.T) {
 	m := &Manager{
-		configManager: &memoryConfigManager{},
+		configManager: newMemoryConfigManager(),
 		publicClient:  &mockPublicClient{},
 	}
 
@@ -261,6 +264,12 @@ func TestLoginDeviceCode(t *testing.T) {
 	_, err = m.CredentialForCurrentUser(context.Background())
 
 	require.True(t, errors.Is(err, ErrNoCurrentUser))
+}
+
+func newMemoryConfigManager() config.UserConfigManager {
+	return &memoryConfigManager{
+		config: config.NewConfig(nil),
+	}
 }
 
 type memoryConfigManager struct {

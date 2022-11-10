@@ -369,6 +369,10 @@ func (ef *envRefreshAction) Run(ctx context.Context) error {
 		}
 	}
 
+	if err = prj.Initialize(ctx, env); err != nil {
+		return err
+	}
+
 	for _, svc := range prj.Services {
 		if err := svc.RaiseEvent(
 			ctx, project.Deployed,

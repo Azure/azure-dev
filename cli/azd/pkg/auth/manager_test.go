@@ -196,7 +196,7 @@ func TestLegacyAzCliCredentialSupport(t *testing.T) {
 	cfg, err := mgr.Load()
 	require.NoError(t, err)
 
-	err = cfg.Set(cUseLegacyAzCliAuthKey, "true")
+	err = cfg.Set(cUseAzCliAuthKey, "true")
 	require.NoError(t, err)
 
 	err = mgr.Save(cfg)

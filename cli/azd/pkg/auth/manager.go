@@ -35,7 +35,7 @@ const cCurrentUserKey = "auth.account.currentUser"
 
 // cUseAzCli is the key we use in config to denote that we want to use the az CLI for authentication instead of managing
 // it ourselves. The value should be a string as specified by [strconv.ParseBool].
-const cUseLegacyAzCliAuthKey = "auth.useLegacyAzCliAuth"
+const cUseAzCliAuthKey = "auth.useAzCliAuth"
 
 // The scopes to request when acquiring our token during the login flow or when requesting a token to validate if the client
 // is logged in.
@@ -117,9 +117,9 @@ func (m *Manager) CredentialForCurrentUser(ctx context.Context) (azcore.TokenCre
 		return nil, fmt.Errorf("fetching current user: %w", err)
 	}
 
-	if useLegacyAuth, has := cfg.Get(cUseLegacyAzCliAuthKey); has {
+	if useLegacyAuth, has := cfg.Get(cUseAzCliAuthKey); has {
 		if use, err := strconv.ParseBool(useLegacyAuth.(string)); err == nil && use {
-			log.Printf("delegating auth to az since %s is set to true", cUseLegacyAzCliAuthKey)
+			log.Printf("delegating auth to az since %s is set to true", cUseAzCliAuthKey)
 			cred, err := azidentity.NewAzureCLICredential(nil)
 			if err != nil {
 				return nil, fmt.Errorf("failed to create credential: %v: %w", err, ErrNoCurrentUser)

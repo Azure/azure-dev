@@ -340,35 +340,35 @@ func initTemplatesShowAction(console input.Console, ctx context.Context, o *inte
 }
 
 func initConfigListAction(console input.Console, ctx context.Context, o *internal.GlobalCommandOptions, flags struct{}, args []string) (actions.Action, error) {
-	manager := config.NewManager()
+	userConfigManager := config.NewUserConfigManager()
 	formatter := newFormatterFromConsole(console)
 	writer := newWriterFromConsole(console)
-	cmdConfigListAction := newConfigListAction(manager, formatter, writer)
+	cmdConfigListAction := newConfigListAction(userConfigManager, formatter, writer)
 	return cmdConfigListAction, nil
 }
 
 func initConfigGetAction(console input.Console, ctx context.Context, o *internal.GlobalCommandOptions, flags struct{}, args []string) (actions.Action, error) {
-	manager := config.NewManager()
+	userConfigManager := config.NewUserConfigManager()
 	formatter := newFormatterFromConsole(console)
 	writer := newWriterFromConsole(console)
-	cmdConfigGetAction := newConfigGetAction(manager, formatter, writer, args)
+	cmdConfigGetAction := newConfigGetAction(userConfigManager, formatter, writer, args)
 	return cmdConfigGetAction, nil
 }
 
 func initConfigSetAction(console input.Console, ctx context.Context, o *internal.GlobalCommandOptions, flags struct{}, args []string) (actions.Action, error) {
-	manager := config.NewManager()
-	cmdConfigSetAction := newConfigSetAction(manager, args)
+	userConfigManager := config.NewUserConfigManager()
+	cmdConfigSetAction := newConfigSetAction(userConfigManager, args)
 	return cmdConfigSetAction, nil
 }
 
 func initConfigUnsetAction(console input.Console, ctx context.Context, o *internal.GlobalCommandOptions, flags struct{}, args []string) (actions.Action, error) {
-	manager := config.NewManager()
-	cmdConfigUnsetAction := newConfigUnsetAction(manager, args)
+	userConfigManager := config.NewUserConfigManager()
+	cmdConfigUnsetAction := newConfigUnsetAction(userConfigManager, args)
 	return cmdConfigUnsetAction, nil
 }
 
 func initConfigResetAction(console input.Console, ctx context.Context, o *internal.GlobalCommandOptions, flags struct{}, args []string) (actions.Action, error) {
-	manager := config.NewManager()
-	cmdConfigResetAction := newConfigResetAction(manager, args)
+	userConfigManager := config.NewUserConfigManager()
+	cmdConfigResetAction := newConfigResetAction(userConfigManager, args)
 	return cmdConfigResetAction, nil
 }

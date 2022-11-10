@@ -79,12 +79,12 @@ func configListCmdDesign(global *internal.GlobalCommandOptions) (*cobra.Command,
 }
 
 type configListAction struct {
-	configManager config.Manager
+	configManager config.UserConfigManager
 	formatter     output.Formatter
 	writer        io.Writer
 }
 
-func newConfigListAction(configManager config.Manager, formatter output.Formatter, writer io.Writer) *configListAction {
+func newConfigListAction(configManager config.UserConfigManager, formatter output.Formatter, writer io.Writer) *configListAction {
 	return &configListAction{
 		configManager: configManager,
 		formatter:     formatter,
@@ -94,7 +94,7 @@ func newConfigListAction(configManager config.Manager, formatter output.Formatte
 
 // Executes the `azd config list` action
 func (a *configListAction) Run(ctx context.Context) (*actions.ActionResult, error) {
-	azdConfig, err := config.GetUserConfig(a.configManager)
+	azdConfig, err := a.configManager.Load()
 	if err != nil {
 		return nil, err
 	}
@@ -134,14 +134,14 @@ func configGetCmdDesign(global *internal.GlobalCommandOptions) (*cobra.Command, 
 }
 
 type configGetAction struct {
-	configManager config.Manager
+	configManager config.UserConfigManager
 	formatter     output.Formatter
 	writer        io.Writer
 	args          []string
 }
 
 func newConfigGetAction(
-	configManager config.Manager,
+	configManager config.UserConfigManager,
 	formatter output.Formatter,
 	writer io.Writer,
 	args []string,
@@ -156,7 +156,7 @@ func newConfigGetAction(
 
 // Executes the `azd config get <path>` action
 func (a *configGetAction) Run(ctx context.Context) (*actions.ActionResult, error) {
-	azdConfig, err := config.GetUserConfig(a.configManager)
+	azdConfig, err := a.configManager.Load()
 	if err != nil {
 		return nil, err
 	}
@@ -196,11 +196,11 @@ $ azd config set defaults.location eastus`,
 }
 
 type configSetAction struct {
-	configManager config.Manager
+	configManager config.UserConfigManager
 	args          []string
 }
 
-func newConfigSetAction(configManager config.Manager, args []string) *configSetAction {
+func newConfigSetAction(configManager config.UserConfigManager, args []string) *configSetAction {
 	return &configSetAction{
 		configManager: configManager,
 		args:          args,
@@ -209,7 +209,7 @@ func newConfigSetAction(configManager config.Manager, args []string) *configSetA
 
 // Executes the `azd config set <path> <value>` action
 func (a *configSetAction) Run(ctx context.Context) (*actions.ActionResult, error) {
-	azdConfig, err := config.GetUserConfig(a.configManager)
+	azdConfig, err := a.configManager.Load()
 	if err != nil {
 		return nil, err
 	}
@@ -222,7 +222,7 @@ func (a *configSetAction) Run(ctx context.Context) (*actions.ActionResult, error
 		return nil, fmt.Errorf("failed setting configuration value '%s' to '%s'. %w", path, value, err)
 	}
 
-	return nil, config.SaveUserConfig(a.configManager, azdConfig)
+	return nil, a.configManager.Save(azdConfig)
 }
 
 // azd config unset <path>
@@ -243,11 +243,11 @@ func configUnsetCmdDesign(global *internal.GlobalCommandOptions) (*cobra.Command
 }
 
 type configUnsetAction struct {
-	configManager config.Manager
+	configManager config.UserConfigManager
 	args          []string
 }
 
-func newConfigUnsetAction(configManager config.Manager, args []string) *configUnsetAction {
+func newConfigUnsetAction(configManager config.UserConfigManager, args []string) *configUnsetAction {
 	return &configUnsetAction{
 		configManager: configManager,
 		args:          args,
@@ -256,7 +256,7 @@ func newConfigUnsetAction(configManager config.Manager, args []string) *configUn
 
 // Executes the `azd config unset <path>` action
 func (a *configUnsetAction) Run(ctx context.Context) (*actions.ActionResult, error) {
-	azdConfig, err := config.GetUserConfig(a.configManager)
+	azdConfig, err := a.configManager.Load()
 	if err != nil {
 		return nil, err
 	}
@@ -268,7 +268,7 @@ func (a *configUnsetAction) Run(ctx context.Context) (*actions.ActionResult, err
 		return nil, fmt.Errorf("failed removing configuration with path '%s'. %w", path, err)
 	}
 
-	return nil, config.SaveUserConfig(a.configManager, azdConfig)
+	return nil, a.configManager.Save(azdConfig)
 }
 
 // azd config reset
@@ -287,11 +287,11 @@ func configResetCmdDesign(global *internal.GlobalCommandOptions) (*cobra.Command
 }
 
 type configResetAction struct {
-	configManager config.Manager
+	configManager config.UserConfigManager
 	args          []string
 }
 
-func newConfigResetAction(configManager config.Manager, args []string) *configResetAction {
+func newConfigResetAction(configManager config.UserConfigManager, args []string) *configResetAction {
 	return &configResetAction{
 		configManager: configManager,
 		args:          args,
@@ -301,5 +301,5 @@ func newConfigResetAction(configManager config.Manager, args []string) *configRe
 // Executes the `azd config reset` action
 func (a *configResetAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	emptyConfig := config.NewConfig(nil)
-	return nil, config.SaveUserConfig(a.configManager, emptyConfig)
+	return nil, a.configManager.Save(emptyConfig)
 }

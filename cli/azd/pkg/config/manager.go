@@ -116,45 +116,6 @@ func GetUserConfigFilePath() (string, error) {
 	return filepath.Join(configPath, "config.json"), nil
 }
 
-// GetUserConfig gets the Config for the current user, given a manager. If the config file does not exist, an empty
-// configuration object is returned.
-func GetUserConfig(configManager Manager) (Config, error) {
-	var azdConfig Config
-
-	configFilePath, err := GetUserConfigFilePath()
-	if err != nil {
-		return nil, err
-	}
-
-	azdConfig, err = configManager.Load(configFilePath)
-	if err != nil {
-		// Ignore missing file errors
-		// File will automatically be created on first `set` operation
-		if errors.Is(err, os.ErrNotExist) {
-			log.Printf("creating empty config since '%s' did not exist.", configFilePath)
-			return NewConfig(nil), nil
-		}
-
-		return nil, fmt.Errorf("failed loading azd user config from '%s'. %w", configFilePath, err)
-	}
-
-	return azdConfig, nil
-}
-
-func SaveUserConfig(configManager Manager, c Config) error {
-	userConfigFilePath, err := GetUserConfigFilePath()
-	if err != nil {
-		return fmt.Errorf("failed getting user config file path. %w", err)
-	}
-
-	err = configManager.Save(c, userConfigFilePath)
-	if err != nil {
-		return fmt.Errorf("failed saving configuration. %w", err)
-	}
-
-	return nil
-}
-
 type UserConfigManager interface {
 	Save(Config) error
 	Load() (Config, error)

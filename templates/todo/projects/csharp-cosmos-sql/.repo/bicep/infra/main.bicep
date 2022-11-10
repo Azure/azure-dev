@@ -24,6 +24,9 @@ param logAnalyticsName string = ''
 param resourceGroupName string = ''
 param webServiceName string = ''
 
+@description('Flag to use Azure API Management to mediate the calls between the frontend and the backend API')
+param useAPIM bool = true
+
 @description('Id of the user or app to assign application roles')
 param principalId string = ''
 
@@ -152,6 +155,40 @@ module monitoring '../../../../../../common/infra/bicep/core/monitor/monitoring.
     logAnalyticsName: !empty(logAnalyticsName) ? logAnalyticsName : '${abbrs.operationalInsightsWorkspaces}${resourceToken}'
     applicationInsightsName: !empty(applicationInsightsName) ? applicationInsightsName : '${abbrs.insightsComponents}${resourceToken}'
     applicationInsightsDashboardName: !empty(applicationInsightsDashboardName) ? applicationInsightsDashboardName : '${abbrs.portalDashboards}${resourceToken}'
+    useAPIM: useAPIM
+  }
+}
+
+resource appInsightsService 'Microsoft.ApiManagement/service@2021-08-01' existing = {
+  name: monitoring.outputs.applicationInsightsName
+  scope: rg
+}
+
+// Creates Azure API Management (APIM) service to mediate the requests between the frontend and the backend API
+module apim '../../../../../../common/infra/bicep/core/host/apim.bicep' = if (useAPIM) {
+  name: 'apim-deployment'
+  scope: rg
+  params: {
+    name: 'apim-${resourceToken}'
+    location: location
+    sku: 'Consumption'
+    skuCount: 0
+    appInsightsResourceId: appInsightsService.id
+    appInsightsInstrumentationKey: monitoring.outputs.applicationInsightsInstrumentationKey 
+  }
+}
+
+// Configures the API in the Azure API Management (APIM) service
+module apimApi '../../../../../common/infra/bicep/app/apim-api.bicep' = if (useAPIM) {
+  name: 'apim-api-deployment'
+  scope: rg
+  params: {
+    name: 'apim-${resourceToken}'
+    apiName: 'todo-api'
+    apiDisplayName: 'Simple Todo API'
+    apiDescription: 'This is a simple Todo API'
+    apiPath: 'todo'
+    apiBackendUrl: api.outputs.SERVICE_API_URI
   }
 }
 
@@ -166,6 +203,6 @@ output AZURE_KEY_VAULT_ENDPOINT string = keyVault.outputs.endpoint
 output AZURE_KEY_VAULT_NAME string = keyVault.outputs.name
 output AZURE_LOCATION string = location
 output AZURE_TENANT_ID string = tenant().tenantId
-output REACT_APP_API_BASE_URL string = api.outputs.SERVICE_API_URI
+output REACT_APP_API_BASE_URL string = useAPIM?apimApi.outputs.SERVICE_API_URI:api.outputs.SERVICE_API_URI
 output REACT_APP_APPLICATIONINSIGHTS_CONNECTION_STRING string = monitoring.outputs.applicationInsightsConnectionString
 output REACT_APP_WEB_BASE_URL string = web.outputs.SERVICE_WEB_URI

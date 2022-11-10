@@ -3,6 +3,7 @@ param applicationInsightsName string
 param applicationInsightsDashboardName string
 param location string = resourceGroup().location
 param tags object = {}
+param useAPIM bool = false
 
 module logAnalytics 'loganalytics.bicep' = {
   name: 'loganalytics'
@@ -21,6 +22,7 @@ module applicationInsights 'applicationinsights.bicep' = {
     tags: tags
     dashboardName: applicationInsightsDashboardName
     logAnalyticsWorkspaceId: logAnalytics.outputs.id
+    useAPIM: useAPIM
   }
 }
 

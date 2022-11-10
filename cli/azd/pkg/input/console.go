@@ -207,7 +207,7 @@ func (c *AskerConsole) MessageUx(ctx context.Context, message string, format Mes
 	if c.spinner != nil && c.spinner.Status() == yacspin.SpinnerRunning {
 		c.StopSpinner(ctx, "", Step)
 		c.Message(ctx, formattedText)
-		c.spinner.Start()
+		_ = c.spinner.Start()
 	} else {
 		c.Message(ctx, formattedText)
 	}

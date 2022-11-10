@@ -188,29 +188,29 @@ func (i *infraCreateAction) Run(ctx context.Context) (*actions.ActionResult, err
 	}, nil
 }
 
-func (ica *infraCreateAction) displayResourceGroupCreatedMessage(
-	ctx context.Context,
-	console input.Console,
-	subscriptionId string,
-	resourceGroup string,
-) {
-	resourceGroupCreatedMessage := resourceGroupCreatedMessage(ctx, subscriptionId, resourceGroup)
-	if ica.finalOutputRedirect != nil {
-		*ica.finalOutputRedirect = append(*ica.finalOutputRedirect, resourceGroupCreatedMessage)
-	} else {
-		console.Message(ctx, resourceGroupCreatedMessage)
-	}
-}
+// func (ica *infraCreateAction) displayResourceGroupCreatedMessage(
+// 	ctx context.Context,
+// 	console input.Console,
+// 	subscriptionId string,
+// 	resourceGroup string,
+// ) {
+// 	resourceGroupCreatedMessage := resourceGroupCreatedMessage(ctx, subscriptionId, resourceGroup)
+// 	if ica.finalOutputRedirect != nil {
+// 		*ica.finalOutputRedirect = append(*ica.finalOutputRedirect, resourceGroupCreatedMessage)
+// 	} else {
+// 		console.Message(ctx, resourceGroupCreatedMessage)
+// 	}
+// }
 
-func resourceGroupCreatedMessage(ctx context.Context, subscriptionId string, resourceGroup string) string {
-	resourcesGroupURL := fmt.Sprintf(
-		"https://portal.azure.com/#@/resource/subscriptions/%s/resourceGroups/%s/overview",
-		subscriptionId,
-		resourceGroup)
+// func resourceGroupCreatedMessage(ctx context.Context, subscriptionId string, resourceGroup string) string {
+// 	resourcesGroupURL := fmt.Sprintf(
+// 		"https://portal.azure.com/#@/resource/subscriptions/%s/resourceGroups/%s/overview",
+// 		subscriptionId,
+// 		resourceGroup)
 
-	return fmt.Sprintf(
-		"View the resources created under the resource group %s in Azure Portal:\n%s\n",
-		output.WithHighLightFormat(resourceGroup),
-		output.WithLinkFormat(resourcesGroupURL),
-	)
-}
+// 	return fmt.Sprintf(
+// 		"View the resources created under the resource group %s in Azure Portal:\n%s\n",
+// 		output.WithHighLightFormat(resourceGroup),
+// 		output.WithLinkFormat(resourcesGroupURL),
+// 	)
+// }

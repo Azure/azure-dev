@@ -111,15 +111,10 @@ func (t *TerraformProvider) Plan(
 				return
 			}
 
-			//return nil
-			//})
-
 			if err != nil {
 				asyncContext.SetError(err)
 				return
 			}
-
-			t.console.Message(ctx, "\nGenerating terraform parameters...")
 
 			err = CreateInputParametersFile(t.parametersTemplateFilePath(), t.parametersFilePath(), t.env.Values)
 			if err != nil {
@@ -127,26 +122,16 @@ func (t *TerraformProvider) Plan(
 				return
 			}
 
-			t.console.Message(ctx, "Validating terraform template...")
 			validated, err := t.cli.Validate(ctx, modulePath)
 			if err != nil {
 				asyncContext.SetError(fmt.Errorf("terraform validate failed: %s, err %w", validated, err))
 				return
 			}
 
-			t.console.Message(ctx, "Generating terraform plan...\n")
-			err = asyncContext.Interact(func() error {
-				planArgs := t.createPlanArgs(isRemoteBackendConfig)
-				runResult, err := t.cli.Plan(ctx, modulePath, t.planFilePath(), planArgs...)
-				if err != nil {
-					return fmt.Errorf("terraform plan failed:%s err %w", runResult, err)
-				}
-
-				return nil
-			})
-
+			planArgs := t.createPlanArgs(isRemoteBackendConfig)
+			runResult, err := t.cli.Plan(ctx, modulePath, t.planFilePath(), planArgs...)
 			if err != nil {
-				asyncContext.SetError(err)
+				asyncContext.SetError(fmt.Errorf("terraform plan failed:%s err %w", runResult, err))
 				return
 			}
 
@@ -192,23 +177,15 @@ func (t *TerraformProvider) Deploy(
 				return
 			}
 
-			t.console.Message(ctx, "Deploying terraform template...")
-			err = asyncContext.Interact(func() error {
-				applyArgs, err := t.createApplyArgs(isRemoteBackendConfig, terraformDeploymentData)
-				if err != nil {
-					return err
-				}
-
-				runResult, err := t.cli.Apply(ctx, modulePath, applyArgs...)
-				if err != nil {
-					return fmt.Errorf("template Deploy failed: %s , err:%w", runResult, err)
-				}
-
-				return nil
-			})
-
+			applyArgs, err := t.createApplyArgs(isRemoteBackendConfig, terraformDeploymentData)
 			if err != nil {
 				asyncContext.SetError(err)
+				return
+			}
+
+			runResult, err := t.cli.Apply(ctx, modulePath, applyArgs...)
+			if err != nil {
+				asyncContext.SetError(fmt.Errorf("template Deploy failed: %s , err:%w", runResult, err))
 				return
 			}
 

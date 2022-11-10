@@ -14,7 +14,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/cli/browser"
 	"github.com/spf13/cobra"
@@ -82,10 +81,6 @@ func newMonitorAction(
 
 func (m *monitorAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	if err := ensureProject(m.azdCtx.ProjectPath()); err != nil {
-		return nil, err
-	}
-
-	if err := tools.EnsureInstalled(ctx, m.azCli); err != nil {
 		return nil, err
 	}
 

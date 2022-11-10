@@ -56,7 +56,6 @@ func initInitAction(console input.Console, ctx context.Context, o *internal.Glob
 		return nil, err
 	}
 	manager := config.NewManager()
-	commandRunner := newCommandRunnerFromConsole(console)
 	userConfigManager := config.NewUserConfigManager()
 	authManager, err := auth.NewManager(userConfigManager)
 	if err != nil {
@@ -66,11 +65,12 @@ func initInitAction(console input.Console, ctx context.Context, o *internal.Glob
 	if err != nil {
 		return nil, err
 	}
-	azCli := newAzCliFromOptions(o, commandRunner, tokenCredential)
+	azCli := newAzCliFromOptions(o, tokenCredential)
 	accountManager, err := account.NewManager(manager, azCli)
 	if err != nil {
 		return nil, err
 	}
+	commandRunner := newCommandRunnerFromConsole(console)
 	gitCli := git.NewGitCliFromRunner(commandRunner)
 	cmdInitAction, err := newInitAction(azdContext, accountManager, commandRunner, console, gitCli, flags)
 	if err != nil {
@@ -109,7 +109,6 @@ func initUpAction(console input.Console, ctx context.Context, o *internal.Global
 		return nil, err
 	}
 	manager := config.NewManager()
-	commandRunner := newCommandRunnerFromConsole(console)
 	userConfigManager := config.NewUserConfigManager()
 	authManager, err := auth.NewManager(userConfigManager)
 	if err != nil {
@@ -119,11 +118,12 @@ func initUpAction(console input.Console, ctx context.Context, o *internal.Global
 	if err != nil {
 		return nil, err
 	}
-	azCli := newAzCliFromOptions(o, commandRunner, tokenCredential)
+	azCli := newAzCliFromOptions(o, tokenCredential)
 	accountManager, err := account.NewManager(manager, azCli)
 	if err != nil {
 		return nil, err
 	}
+	commandRunner := newCommandRunnerFromConsole(console)
 	gitCli := git.NewGitCliFromRunner(commandRunner)
 	cmdInitFlags := flags.initFlags
 	cmdInitAction, err := newInitAction(azdContext, accountManager, commandRunner, console, gitCli, cmdInitFlags)
@@ -148,7 +148,6 @@ func initMonitorAction(console input.Console, ctx context.Context, o *internal.G
 	if err != nil {
 		return nil, err
 	}
-	commandRunner := newCommandRunnerFromConsole(console)
 	userConfigManager := config.NewUserConfigManager()
 	manager, err := auth.NewManager(userConfigManager)
 	if err != nil {
@@ -158,7 +157,7 @@ func initMonitorAction(console input.Console, ctx context.Context, o *internal.G
 	if err != nil {
 		return nil, err
 	}
-	azCli := newAzCliFromOptions(o, commandRunner, tokenCredential)
+	azCli := newAzCliFromOptions(o, tokenCredential)
 	cmdMonitorAction := newMonitorAction(azdContext, azCli, console, flags)
 	return cmdMonitorAction, nil
 }
@@ -215,7 +214,6 @@ func initEnvSetAction(console input.Console, ctx context.Context, o *internal.Gl
 	if err != nil {
 		return nil, err
 	}
-	commandRunner := newCommandRunnerFromConsole(console)
 	userConfigManager := config.NewUserConfigManager()
 	manager, err := auth.NewManager(userConfigManager)
 	if err != nil {
@@ -225,7 +223,7 @@ func initEnvSetAction(console input.Console, ctx context.Context, o *internal.Gl
 	if err != nil {
 		return nil, err
 	}
-	azCli := newAzCliFromOptions(o, commandRunner, tokenCredential)
+	azCli := newAzCliFromOptions(o, tokenCredential)
 	cmdEnvSetAction := newEnvSetAction(azdContext, azCli, console, o, args)
 	return cmdEnvSetAction, nil
 }
@@ -255,7 +253,6 @@ func initEnvNewAction(console input.Console, ctx context.Context, o *internal.Gl
 	if err != nil {
 		return nil, err
 	}
-	commandRunner := newCommandRunnerFromConsole(console)
 	userConfigManager := config.NewUserConfigManager()
 	manager, err := auth.NewManager(userConfigManager)
 	if err != nil {
@@ -265,7 +262,7 @@ func initEnvNewAction(console input.Console, ctx context.Context, o *internal.Gl
 	if err != nil {
 		return nil, err
 	}
-	azCli := newAzCliFromOptions(o, commandRunner, tokenCredential)
+	azCli := newAzCliFromOptions(o, tokenCredential)
 	cmdEnvNewAction := newEnvNewAction(azdContext, azCli, flags, args, console)
 	return cmdEnvNewAction, nil
 }
@@ -275,7 +272,6 @@ func initEnvRefreshAction(console input.Console, ctx context.Context, o *interna
 	if err != nil {
 		return nil, err
 	}
-	commandRunner := newCommandRunnerFromConsole(console)
 	userConfigManager := config.NewUserConfigManager()
 	manager, err := auth.NewManager(userConfigManager)
 	if err != nil {
@@ -285,7 +281,7 @@ func initEnvRefreshAction(console input.Console, ctx context.Context, o *interna
 	if err != nil {
 		return nil, err
 	}
-	azCli := newAzCliFromOptions(o, commandRunner, tokenCredential)
+	azCli := newAzCliFromOptions(o, tokenCredential)
 	formatter := newFormatterFromConsole(console)
 	writer := newOutputWriter(console)
 	cmdEnvRefreshAction := newEnvRefreshAction(azdContext, azCli, o, console, formatter, writer)
@@ -299,7 +295,6 @@ func initEnvGetValuesAction(console input.Console, ctx context.Context, o *inter
 	}
 	formatter := newFormatterFromConsole(console)
 	writer := newOutputWriter(console)
-	commandRunner := newCommandRunnerFromConsole(console)
 	userConfigManager := config.NewUserConfigManager()
 	manager, err := auth.NewManager(userConfigManager)
 	if err != nil {
@@ -309,7 +304,7 @@ func initEnvGetValuesAction(console input.Console, ctx context.Context, o *inter
 	if err != nil {
 		return nil, err
 	}
-	azCli := newAzCliFromOptions(o, commandRunner, tokenCredential)
+	azCli := newAzCliFromOptions(o, tokenCredential)
 	cmdEnvGetValuesAction := newEnvGetValuesAction(azdContext, console, formatter, writer, azCli, o)
 	return cmdEnvGetValuesAction, nil
 }
@@ -319,7 +314,6 @@ func initPipelineConfigAction(console input.Console, ctx context.Context, o *int
 	if err != nil {
 		return nil, err
 	}
-	commandRunner := newCommandRunnerFromConsole(console)
 	userConfigManager := config.NewUserConfigManager()
 	manager, err := auth.NewManager(userConfigManager)
 	if err != nil {
@@ -329,7 +323,7 @@ func initPipelineConfigAction(console input.Console, ctx context.Context, o *int
 	if err != nil {
 		return nil, err
 	}
-	azCli := newAzCliFromOptions(o, commandRunner, tokenCredential)
+	azCli := newAzCliFromOptions(o, tokenCredential)
 	cmdPipelineConfigAction := newPipelineConfigAction(azdContext, console, flags, azCli)
 	return cmdPipelineConfigAction, nil
 }

@@ -16,13 +16,13 @@ import javax.validation.constraints.NotNull;
 
 @Getter
 @Setter
-@ToString
+@ToString // generate `toString()`
 @EqualsAndHashCode(onlyExplicitlyIncluded = true)
 @Schema(name = "TodoList", description = " A list of related Todo items")
 @Generated(value = "org.openapitools.codegen.languages.SpringCodegen")
 public class TodoList {
 
-    @EqualsAndHashCode.Include
+    @EqualsAndHashCode.Include // lists are equal if they have the same id
     @Schema(name = "id", required = false)
     @JsonProperty("id")
     private String id;

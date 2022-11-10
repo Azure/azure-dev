@@ -181,6 +181,8 @@ paths:
       responses:
         200:
           $ref: "#/components/responses/TodoList"
+        404:
+          description: Todo list not found
         400:
           description: Todo list is invalid
     delete:

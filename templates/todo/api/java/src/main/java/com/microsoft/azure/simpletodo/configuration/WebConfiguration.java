@@ -11,6 +11,7 @@ public class WebConfiguration implements WebMvcConfigurer {
 
     @Override
     public void addFormatters(FormatterRegistry registry) {
+        // spring can not convert string "todo" to enum `TodoState.TODO` by itself without this converter.
         registry.addConverter(new StringToTodoStateConverter());
     }
 

@@ -59,6 +59,7 @@ public class TodoItemsController implements ItemsApi {
     }
 
     public ResponseEntity<List<TodoItem>> getItemsByListId(String listId, BigDecimal top, BigDecimal skip) {
+        // no need to check nullity of top and skip, because they have default values.
         return todoListRepository.findById(listId)
             .map(l -> todoItemRepository.findTodoItemsByTodoList(l.getId(), skip.intValue(), top.intValue()))
             .map(ResponseEntity::ok)
@@ -66,6 +67,7 @@ public class TodoItemsController implements ItemsApi {
     }
 
     public ResponseEntity<TodoItem> updateItemById(String listId, String itemId, TodoItem todoItem) {
+        // make sure listId and itemId are set into the todoItem, otherwise it will create a new todo item.
         todoItem.setId(itemId);
         todoItem.setListId(listId);
         return todoItemRepository.findTodoItemByListIdAndId(listId, itemId)
@@ -75,6 +77,7 @@ public class TodoItemsController implements ItemsApi {
     }
 
     public ResponseEntity<List<TodoItem>> getItemsByListIdAndState(String listId, TodoState state, BigDecimal top, BigDecimal skip) {
+        // no need to check nullity of top and skip, because they have default values.
         return todoListRepository.findById(listId)
             .map(l -> todoItemRepository.findTodoItemsByTodoListAndState(l.getId(), state.name(), skip.intValue(), top.intValue()))
             .map(ResponseEntity::ok)
@@ -82,6 +85,7 @@ public class TodoItemsController implements ItemsApi {
     }
 
     public ResponseEntity<Void> updateItemsStateByListId(String listId, TodoState state, List<String> itemIds) {
+        // update all items in list with the given state if `itemIds` is not specified.
         final List<TodoItem> items = Optional.ofNullable(itemIds).filter(ids -> !CollectionUtils.isEmpty(ids))
             .map(ids -> StreamSupport.stream(todoItemRepository.findAllById(ids).spliterator(), false)
                 .filter(i -> listId.equalsIgnoreCase(i.getListId())).toList())

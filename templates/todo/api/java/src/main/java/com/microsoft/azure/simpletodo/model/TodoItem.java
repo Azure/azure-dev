@@ -24,7 +24,7 @@ import java.time.OffsetDateTime;
 @Generated(value = "org.openapitools.codegen.languages.SpringCodegen")
 public class TodoItem {
 
-    @EqualsAndHashCode.Include
+    @EqualsAndHashCode.Include // items are equal if they have the same `listId` and `id`
     @JsonProperty("id")
     @Schema(name = "id", required = false)
     private String id;

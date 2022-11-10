@@ -42,10 +42,12 @@ public class TodoListsController implements ListsApi {
     }
 
     public ResponseEntity<List<TodoList>> getLists(BigDecimal top, BigDecimal skip) {
+        // no need to check nullity of top and skip, because they have default values.
         return ResponseEntity.ok(todoListRepository.findAll(skip.intValue(), top.intValue()));
     }
 
     public ResponseEntity<TodoList> updateListById(String listId, @NotNull TodoList todoList) {
+        // make sure listId is set into the todoItem, otherwise it will create a new todo list.
         todoList.setId(listId);
         return todoListRepository.findById(listId)
             .map(t -> ResponseEntity.ok(todoListRepository.save(todoList)))

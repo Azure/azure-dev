@@ -37,7 +37,7 @@ public enum TodoState {
     @JsonCreator
     public static TodoState fromValue(String value) {
         for (TodoState b : TodoState.values()) {
-            if (b.value.equalsIgnoreCase(value)) {
+            if (b.value.equalsIgnoreCase(value)) { // ignore case
                 return b;
             }
         }

@@ -57,6 +57,7 @@ ignoreWords:
     - execfn
     - execmock
     - fdfp
+    - fics
     - Frontdoor
     - graphsdk
     - hndl
@@ -68,6 +69,7 @@ ignoreWords:
     - kubernetes
     - kusto
     - magefile
+    - mainfic
     - menuid
     - migr
     - mockconfig
@@ -80,6 +82,7 @@ ignoreWords:
     - odata
     - osdisk
     - osexec
+    - oidc
     - pcert
     - pdnsz
     - Peerings

@@ -10,7 +10,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
@@ -97,13 +96,12 @@ func (at *containerAppTarget) Deploy(
 		return ServiceDeploymentResult{}, fmt.Errorf("saving image name to environment: %w", err)
 	}
 
-	commandOptions := internal.GetCommandOptions(ctx)
 	infraManager, err := provisioning.NewManager(
 		ctx,
 		at.env,
 		at.config.Project.Path,
 		at.config.Infra,
-		!commandOptions.NoPrompt,
+		at.console.IsUnformatted(),
 	)
 	if err != nil {
 		return ServiceDeploymentResult{}, fmt.Errorf("creating provisioning manager: %w", err)

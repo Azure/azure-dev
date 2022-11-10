@@ -68,7 +68,7 @@ func (cli *gitCli) CheckInstalled(ctx context.Context) (bool, error) {
 	if err != nil {
 		return false, fmt.Errorf("checking %s version: %w", cli.Name(), err)
 	}
-	gitSemver, err := tools.ExtractSemver(gitRes)
+	gitSemver, err := tools.ExtractVersion(gitRes)
 	if err != nil {
 		return false, fmt.Errorf("converting to semver version fails: %w", err)
 	}

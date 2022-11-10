@@ -19,6 +19,26 @@ import (
 	"golang.org/x/exp/slices"
 )
 
+func templateNameCompletion(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+	templateManager := templates.NewTemplateManager()
+	templateSet, err := templateManager.ListTemplates()
+
+	if err != nil {
+		cobra.CompError(fmt.Sprintf("Error listing templates: %s", err))
+		return []string{}, cobra.ShellCompDirectiveError
+	}
+
+	templateList := maps.Values(templateSet)
+	slices.SortFunc(templateList, func(a, b templates.Template) bool {
+		return a.Name < b.Name
+	})
+	templateNames := make([]string, len(templateList))
+	for i, v := range templateList {
+		templateNames[i] = v.Name
+	}
+	return templateNames, cobra.ShellCompDirectiveDefault
+}
+
 func templatesCmd(rootOptions *internal.GlobalCommandOptions) *cobra.Command {
 	root := &cobra.Command{
 		Use:   "template",
@@ -76,11 +96,11 @@ func newTemplatesListAction(
 	}
 }
 
-func (tl *templatesListAction) Run(ctx context.Context) error {
+func (tl *templatesListAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	templateSet, err := tl.templateManager.ListTemplates()
 
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	templateList := maps.Values(templateSet)
@@ -88,7 +108,7 @@ func (tl *templatesListAction) Run(ctx context.Context) error {
 		return a.Name < b.Name
 	})
 
-	return formatTemplates(ctx, tl.formatter, tl.writer, templateList...)
+	return nil, formatTemplates(ctx, tl.formatter, tl.writer, templateList...)
 }
 
 type templatesShowAction actions.Action
@@ -99,17 +119,17 @@ func newTemplatesShowAction(
 	templateManager *templates.TemplateManager,
 	args []string,
 ) templatesShowAction {
-	return actions.ActionFunc(func(ctx context.Context) error {
+	return actions.ActionFunc(func(ctx context.Context) (*actions.ActionResult, error) {
 		templateName := args[0]
 		matchingTemplate, err := templateManager.GetTemplate(templateName)
 
 		log.Printf("Template Name: %s\n", templateName)
 
 		if err != nil {
-			return err
+			return nil, err
 		}
 
-		return formatTemplates(ctx, formatter, writer, matchingTemplate)
+		return nil, formatTemplates(ctx, formatter, writer, matchingTemplate)
 	})
 }
 

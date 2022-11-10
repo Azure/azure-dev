@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
@@ -18,7 +19,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/pkg/spin"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
@@ -79,7 +79,6 @@ After the deployment is complete, the endpoint is printed. To start the service,
 type deployAction struct {
 	flags     deployFlags
 	azdCtx    *azdcontext.AzdContext
-	azCli     azcli.AzCli
 	formatter output.Formatter
 	writer    io.Writer
 	console   input.Console
@@ -88,7 +87,6 @@ type deployAction struct {
 func newDeployAction(
 	flags deployFlags,
 	azdCtx *azdcontext.AzdContext,
-	azCli azcli.AzCli,
 	console input.Console,
 	formatter output.Formatter,
 	writer io.Writer,
@@ -96,7 +94,6 @@ func newDeployAction(
 	da := &deployAction{
 		flags:     flags,
 		azdCtx:    azdCtx,
-		azCli:     azCli,
 		formatter: formatter,
 		writer:    writer,
 		console:   console,
@@ -110,36 +107,32 @@ type DeploymentResult struct {
 	Services  []project.ServiceDeploymentResult `json:"services"`
 }
 
-func (d *deployAction) Run(ctx context.Context) error {
+func (d *deployAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	if err := ensureProject(d.azdCtx.ProjectPath()); err != nil {
-		return err
-	}
-
-	if err := tools.EnsureInstalled(ctx, d.azCli); err != nil {
-		return err
+		return nil, err
 	}
 
 	if err := ensureLoggedIn(ctx); err != nil {
-		return fmt.Errorf("failed to ensure login: %w", err)
+		return nil, fmt.Errorf("failed to ensure login: %w", err)
 	}
 
 	env, ctx, err := loadOrInitEnvironment(ctx, &d.flags.global.EnvironmentName, d.azdCtx, d.console)
 	if err != nil {
-		return fmt.Errorf("loading environment: %w", err)
+		return nil, fmt.Errorf("loading environment: %w", err)
 	}
 
 	projConfig, err := project.LoadProjectConfig(d.azdCtx.ProjectPath(), env)
 	if err != nil {
-		return fmt.Errorf("loading project: %w", err)
+		return nil, fmt.Errorf("loading project: %w", err)
 	}
 
 	if d.flags.serviceName != "" && !projConfig.HasService(d.flags.serviceName) {
-		return fmt.Errorf("service name '%s' doesn't exist", d.flags.serviceName)
+		return nil, fmt.Errorf("service name '%s' doesn't exist", d.flags.serviceName)
 	}
 
 	proj, err := projConfig.GetProject(&ctx, env)
 	if err != nil {
-		return fmt.Errorf("creating project: %w", err)
+		return nil, fmt.Errorf("creating project: %w", err)
 	}
 
 	// Collect all the tools we will need to do the deployment and validate that
@@ -153,7 +146,7 @@ func (d *deployAction) Run(ctx context.Context) error {
 	}
 
 	if err := tools.EnsureInstalled(ctx, tools.Unique(allTools)...); err != nil {
-		return err
+		return nil, err
 	}
 
 	interactive := d.formatter.Kind() == output.NoneFormat
@@ -207,7 +200,7 @@ func (d *deployAction) Run(ctx context.Context) error {
 			err = deployAndReportProgress(ctx, nil)
 		}
 		if err != nil {
-			return err
+			return nil, err
 		}
 	}
 
@@ -218,11 +211,11 @@ func (d *deployAction) Run(ctx context.Context) error {
 		}
 
 		if fmtErr := d.formatter.Format(aggregateDeploymentResult, d.writer, nil); fmtErr != nil {
-			return fmt.Errorf("deployment result could not be displayed: %w", fmtErr)
+			return nil, fmt.Errorf("deployment result could not be displayed: %w", fmtErr)
 		}
 	}
 
-	return nil
+	return nil, nil
 }
 
 func reportServiceDeploymentResultInteractive(

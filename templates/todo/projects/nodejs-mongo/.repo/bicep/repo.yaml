@@ -74,12 +74,12 @@ repo:
         to: ""
         patterns:
           - "README.md"
-      
+
       - from: "PLACEHOLDER_TITLE"
         to: "ToDo Application with a Node.js API and Azure Cosmos DB API for MongoDB on Azure App Service"
         patterns:
           - "README.md"
-      
+
       - from: "PLACEHOLDER_DESCRIPTION"
         to: "using Bicep as the IaC provider"
         patterns:
@@ -87,7 +87,7 @@ repo:
 
   assets:
     # Common assets
-    
+
     # Infra
     - from: ./infra/
       to: ./infra
@@ -142,8 +142,8 @@ repo:
       to: ./infra
 
     # .devcontainer common (devcontainer.json)
-    - from: ../../../../../common/.devcontainer/devcontainer.json/nodejs
-      to: ./.devcontainer
+    - from: ../../../../../common/.devcontainer/devcontainer.json/nodejs/devcontainer.json
+      to: ./.devcontainer/devcontainer.json
 
     # .devcontainer common (Dockerfile)
     - from: ../../../../../common/.devcontainer/Dockerfile/base

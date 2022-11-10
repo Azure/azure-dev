@@ -33,13 +33,21 @@ func (s *Spinner) Title(title string) {
 // > Step 1 completed.
 // > Doing things... X
 func (s *Spinner) Println(message string) {
+	s.print(message, true)
+}
+
+func (s *Spinner) print(message string, addNewLine bool) {
 	if message != "" {
 		defer s.logMutex.Unlock()
 
 		s.logMutex.Lock()
 
 		s.Stop()
-		fmt.Fprint(s.writer, message)
+		if addNewLine {
+			fmt.Fprintln(s.writer, message)
+		} else {
+			fmt.Fprint(s.writer, message)
+		}
 		s.Start()
 	}
 }
@@ -47,7 +55,7 @@ func (s *Spinner) Println(message string) {
 // Implements the standard io.Writer interface
 func (s *Spinner) Write(p []byte) (int, error) {
 	message := string(p)
-	s.Println(message)
+	s.print(message, false)
 
 	return len(p), nil
 }

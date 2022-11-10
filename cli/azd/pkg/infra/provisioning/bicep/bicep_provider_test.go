@@ -371,7 +371,7 @@ func preparePlanningMocks(
 	}`
 
 	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
-		return strings.Contains(command, "az bicep build")
+		return strings.Contains(args.Cmd, "bicep") && args.Args[0] == "build"
 	}).Respond(exec.RunResult{
 		Stdout: string(bicepBytes),
 		Stderr: "",

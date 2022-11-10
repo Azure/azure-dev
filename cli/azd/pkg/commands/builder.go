@@ -60,7 +60,6 @@ func RegisterDependenciesInCtx(
 	azCliArgs := azcli.NewAzCliArgs{
 		EnableDebug:     rootOptions.EnableDebugLogging,
 		EnableTelemetry: rootOptions.EnableTelemetry,
-		CommandRunner:   runner,
 	}
 
 	// Create and set the AzCli that will be used for the command

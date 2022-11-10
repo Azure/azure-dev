@@ -18,6 +18,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/public"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
+	"github.com/azure/azure-dev/cli/azd/pkg/github"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/stretchr/testify/require"
 )
@@ -164,7 +165,7 @@ func TestServicePrincipalLoginFederatedTokenProvider(t *testing.T) {
 	m := Manager{
 		configManager:   &memoryConfigManager{},
 		credentialCache: credentialCache,
-		ghClient: newGitHubFederatedTokenClient(&policy.ClientOptions{
+		ghClient: github.NewFederatedTokenClient(&policy.ClientOptions{
 			Transport: mockContext.HttpClient,
 		}),
 	}

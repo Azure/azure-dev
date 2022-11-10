@@ -20,6 +20,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/public"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
+	"github.com/azure/azure-dev/cli/azd/pkg/github"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 )
 
@@ -59,7 +60,7 @@ type Manager struct {
 	publicClient    publicClient
 	configManager   config.Manager
 	credentialCache Cache
-	ghClient        *gitHubFederatedTokenClient
+	ghClient        *github.FederatedTokenClient
 }
 
 func NewManager(configManager config.Manager) (*Manager, error) {
@@ -83,7 +84,7 @@ func NewManager(configManager config.Manager) (*Manager, error) {
 		return nil, fmt.Errorf("creating msal client: %w", err)
 	}
 
-	ghClient := newGitHubFederatedTokenClient(nil)
+	ghClient := github.NewFederatedTokenClient(nil)
 
 	return &Manager{
 		publicClient:    &msalPublicClientAdapter{client: &publicClientApp},

@@ -11,6 +11,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/MakeNowJust/heredoc/v2"
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/auth"
@@ -110,6 +111,14 @@ func loginCmdDesign(global *internal.GlobalCommandOptions) (*cobra.Command, *log
 	cmd := &cobra.Command{
 		Use:   "login",
 		Short: "Log in to Azure.",
+		Long: heredoc.Doc(`
+		Log in to Azure.
+
+		When run without any arguments, log in interactively using a browser. To log in using a device code, pass
+		--device-code.
+
+		To log in as a service principal, pass --client-id and --tenant-id as well as one of --client-secret, 
+		--client-certificate, --client-credential or --client-credential-provider.`),
 		Annotations: map[string]string{
 			commands.RequireNoLoginAnnotation: "true",
 		},

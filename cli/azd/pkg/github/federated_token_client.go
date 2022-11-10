@@ -44,6 +44,9 @@ func (c *FederatedTokenClient) TokenForAudience(ctx context.Context, audience st
 	}
 
 	tokenResponse, err := httputil.ReadRawResponse[tokenResponse](res)
+	if err != nil {
+		return "", fmt.Errorf("reading body: %w", err)
+	}
 
 	if tokenResponse.Value == "" {
 		return "", errors.New("no token in response")

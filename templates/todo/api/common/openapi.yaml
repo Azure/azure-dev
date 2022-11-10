@@ -290,6 +290,7 @@ paths:
       tags:
         - Items
       requestBody:
+        description: unique identifiers of the Todo items to update
         content:
           application/json:
             schema:

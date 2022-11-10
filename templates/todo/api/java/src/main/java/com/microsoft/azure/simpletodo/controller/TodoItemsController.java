@@ -13,6 +13,7 @@ import com.microsoft.azure.simpletodo.repository.TodoItemRepository;
 import com.microsoft.azure.simpletodo.repository.TodoListRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
+import org.springframework.util.CollectionUtils;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 
@@ -20,6 +21,7 @@ import java.math.BigDecimal;
 import java.net.URI;
 import java.util.List;
 import java.util.Optional;
+import java.util.stream.StreamSupport;
 
 @RestController
 @RequiredArgsConstructor
@@ -79,8 +81,11 @@ public class TodoItemsController implements ItemsApi {
             .orElseGet(() -> ResponseEntity.notFound().build());
     }
 
-    public ResponseEntity<Void> updateItemsStateByListId(String listId, TodoState state, List<String> requestBody) {
-        final List<TodoItem> items = todoItemRepository.findTodoItemsByListId(listId);
+    public ResponseEntity<Void> updateItemsStateByListId(String listId, TodoState state, List<String> itemIds) {
+        final List<TodoItem> items = Optional.ofNullable(itemIds).filter(ids -> !CollectionUtils.isEmpty(ids))
+            .map(ids -> StreamSupport.stream(todoItemRepository.findAllById(ids).spliterator(), false)
+                .filter(i -> listId.equalsIgnoreCase(i.getListId())).toList())
+            .orElseGet(() -> todoItemRepository.findTodoItemsByListId(listId));
         items.forEach(item -> item.setState(state));
         todoItemRepository.saveAll(items); // save items in batch.
         return ResponseEntity.noContent().build();

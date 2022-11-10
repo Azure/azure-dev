@@ -84,7 +84,9 @@ type configListAction struct {
 	writer        io.Writer
 }
 
-func newConfigListAction(configManager config.UserConfigManager, formatter output.Formatter, writer io.Writer) *configListAction {
+func newConfigListAction(
+	configManager config.UserConfigManager, formatter output.Formatter, writer io.Writer,
+) *configListAction {
 	return &configListAction{
 		configManager: configManager,
 		formatter:     formatter,

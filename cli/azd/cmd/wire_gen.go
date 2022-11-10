@@ -62,7 +62,7 @@ func initInitAction(console input.Console, ctx context.Context, o *internal.Glob
 	if err != nil {
 		return nil, err
 	}
-	tokenCredential, err := newCredential(authManager)
+	tokenCredential, err := newCredential(ctx, authManager)
 	if err != nil {
 		return nil, err
 	}
@@ -115,7 +115,7 @@ func initUpAction(console input.Console, ctx context.Context, o *internal.Global
 	if err != nil {
 		return nil, err
 	}
-	tokenCredential, err := newCredential(authManager)
+	tokenCredential, err := newCredential(ctx, authManager)
 	if err != nil {
 		return nil, err
 	}
@@ -154,7 +154,7 @@ func initMonitorAction(console input.Console, ctx context.Context, o *internal.G
 	if err != nil {
 		return nil, err
 	}
-	tokenCredential, err := newCredential(manager)
+	tokenCredential, err := newCredential(ctx, manager)
 	if err != nil {
 		return nil, err
 	}
@@ -221,7 +221,7 @@ func initEnvSetAction(console input.Console, ctx context.Context, o *internal.Gl
 	if err != nil {
 		return nil, err
 	}
-	tokenCredential, err := newCredential(manager)
+	tokenCredential, err := newCredential(ctx, manager)
 	if err != nil {
 		return nil, err
 	}
@@ -261,7 +261,7 @@ func initEnvNewAction(console input.Console, ctx context.Context, o *internal.Gl
 	if err != nil {
 		return nil, err
 	}
-	tokenCredential, err := newCredential(manager)
+	tokenCredential, err := newCredential(ctx, manager)
 	if err != nil {
 		return nil, err
 	}
@@ -281,7 +281,7 @@ func initEnvRefreshAction(console input.Console, ctx context.Context, o *interna
 	if err != nil {
 		return nil, err
 	}
-	tokenCredential, err := newCredential(manager)
+	tokenCredential, err := newCredential(ctx, manager)
 	if err != nil {
 		return nil, err
 	}
@@ -305,7 +305,7 @@ func initEnvGetValuesAction(console input.Console, ctx context.Context, o *inter
 	if err != nil {
 		return nil, err
 	}
-	tokenCredential, err := newCredential(manager)
+	tokenCredential, err := newCredential(ctx, manager)
 	if err != nil {
 		return nil, err
 	}

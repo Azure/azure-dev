@@ -91,10 +91,7 @@ func newAzdContext() (*azdcontext.AzdContext, error) {
 	return azdCtx, nil
 }
 
-func newCredential(authManager *auth.Manager) (azcore.TokenCredential, error) {
-	// TODO(ellismg): I guess we should inject this context object at some point?
-	ctx := context.TODO()
-
+func newCredential(ctx context.Context, authManager *auth.Manager) (azcore.TokenCredential, error) {
 	credential, err := authManager.CredentialForCurrentUser(ctx)
 	if err != nil {
 		return nil, err

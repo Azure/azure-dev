@@ -33,6 +33,7 @@ openapitools
 OPTARG
 prestart
 printenv
+projectlombok
 pycache
 pytest
 Quickstart

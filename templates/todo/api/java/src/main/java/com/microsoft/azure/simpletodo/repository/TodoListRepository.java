@@ -13,4 +13,6 @@ public interface TodoListRepository extends MongoRepository<TodoList, String> {
         "{ '$limit': ?1 }",
     })
     List<TodoList> findAll(int skip, int limit);
+
+    TodoList deleteTodoListById(String id);
 }

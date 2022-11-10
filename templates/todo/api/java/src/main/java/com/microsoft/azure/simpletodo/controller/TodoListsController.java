@@ -1,4 +1,4 @@
-package com.microsoft.azure.simpletodo.web;
+package com.microsoft.azure.simpletodo.controller;
 
 import com.microsoft.azure.simpletodo.api.ListsApi;
 import com.microsoft.azure.simpletodo.model.TodoList;

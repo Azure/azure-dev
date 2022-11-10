@@ -3,7 +3,7 @@
  * Licensed under the MIT License. See License.txt in the project root for license information.
  */
 
-package com.microsoft.azure.simpletodo.web;
+package com.microsoft.azure.simpletodo.controller;
 
 import com.microsoft.azure.simpletodo.api.ItemsApi;
 import com.microsoft.azure.simpletodo.model.TodoItem;

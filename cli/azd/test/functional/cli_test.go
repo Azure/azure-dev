@@ -1,6 +1,7 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
+// Package cli_test contains end-to-end tests for azd.
 package cli_test
 
 import (
@@ -46,6 +47,7 @@ import (
 
 const (
 	testSubscriptionId = "2cd617ea-1866-46b1-90e3-fffb087ebf9b"
+	defaultLocation    = "eastus2"
 )
 
 func Test_CLI_Login_FailsIfNoAzCliIsMissing(t *testing.T) {
@@ -60,41 +62,6 @@ func Test_CLI_Login_FailsIfNoAzCliIsMissing(t *testing.T) {
 
 	out, err := cli.RunCommandWithStdIn(ctx, "", "login")
 	require.Error(t, err)
-	require.Contains(t, out, "Azure CLI is not installed, please see https://aka.ms/azure-dev/azure-cli-install to install")
-}
-
-func Test_CLI_Version_PrintsVersion(t *testing.T) {
-	ctx, cancel := newTestContext(t)
-	defer cancel()
-
-	cli := azdcli.NewCLI(t)
-	out, err := cli.RunCommand(ctx, "version")
-	require.NoError(t, err)
-
-	rn := os.Getenv("GITHUB_RUN_NUMBER")
-	if rn != "" {
-		version := os.Getenv("CLI_VERSION")
-		require.NotEmpty(t, version)
-		require.Contains(t, out, version)
-	} else {
-		require.Contains(t, out, fmt.Sprintf("azd version %s", internal.Version))
-	}
-}
-
-func Test_CLI_Init_FailsIfAzCliIsMissing(t *testing.T) {
-	ctx, cancel := newTestContext(t)
-	defer cancel()
-
-	dir := tempDirWithDiagnostics(t)
-
-	cli := azdcli.NewCLI(t)
-	cli.WorkingDirectory = dir
-
-	cli.Env = filterEnviron("PATH")
-
-	out, err := cli.RunCommandWithStdIn(ctx, "", "init")
-	require.Error(t, err)
-
 	require.Contains(t, out, "Azure CLI is not installed, please see https://aka.ms/azure-dev/azure-cli-install to install")
 }
 
@@ -541,7 +508,7 @@ func Test_CLI_ProjectIsNeeded(t *testing.T) {
 		{command: "down"},
 		{command: "env get-values"},
 		{command: "env list"},
-		{command: "env new"},
+		{command: "env new", args: []string{"testEnvironmentName"}},
 		{command: "env refresh"},
 		{command: "env select", args: []string{"testEnvironmentName"}},
 		{command: "env set", args: []string{"testKey", "testValue"}},

@@ -94,11 +94,11 @@ func Test_CreateOrUpdateServicePrincipal(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
 		graphsdk_mocks.RegisterApplicationListMock(mockContext, http.StatusOK, []graphsdk.Application{})
 		graphsdk_mocks.RegisterServicePrincipalListMock(mockContext, http.StatusOK, []graphsdk.ServicePrincipal{})
-		graphsdk_mocks.RegisterApplicationCreateMock(mockContext, http.StatusCreated, &newApplication)
-		graphsdk_mocks.RegisterServicePrincipalCreateMock(mockContext, http.StatusCreated, &servicePrincipal)
+		graphsdk_mocks.RegisterApplicationCreateItemMock(mockContext, http.StatusCreated, &newApplication)
+		graphsdk_mocks.RegisterServicePrincipalCreateItemMock(mockContext, http.StatusCreated, &servicePrincipal)
 		graphsdk_mocks.RegisterApplicationAddPasswordMock(mockContext, http.StatusOK, *newApplication.Id, credential)
 		graphsdk_mocks.RegisterRoleDefinitionListMock(mockContext, http.StatusOK, roleDefinitions)
-		graphsdk_mocks.RegisterRoleAssignmentMock(mockContext, http.StatusCreated)
+		graphsdk_mocks.RegisterRoleAssignmentPutMock(mockContext, http.StatusCreated)
 
 		azCli := GetAzCli(*mockContext.Context)
 		rawMessage, err := azCli.CreateOrUpdateServicePrincipal(
@@ -125,7 +125,7 @@ func Test_CreateOrUpdateServicePrincipal(t *testing.T) {
 		graphsdk_mocks.RegisterApplicationRemovePasswordMock(mockContext, http.StatusNoContent, *newApplication.Id)
 		graphsdk_mocks.RegisterApplicationAddPasswordMock(mockContext, http.StatusOK, *newApplication.Id, credential)
 		graphsdk_mocks.RegisterRoleDefinitionListMock(mockContext, http.StatusOK, roleDefinitions)
-		graphsdk_mocks.RegisterRoleAssignmentMock(mockContext, http.StatusCreated)
+		graphsdk_mocks.RegisterRoleAssignmentPutMock(mockContext, http.StatusCreated)
 
 		azCli := GetAzCli(*mockContext.Context)
 		rawMessage, err := azCli.CreateOrUpdateServicePrincipal(
@@ -153,7 +153,7 @@ func Test_CreateOrUpdateServicePrincipal(t *testing.T) {
 		graphsdk_mocks.RegisterApplicationAddPasswordMock(mockContext, http.StatusOK, *newApplication.Id, credential)
 		graphsdk_mocks.RegisterRoleDefinitionListMock(mockContext, http.StatusOK, roleDefinitions)
 		// Note how role assignment returns a 409 conflict
-		graphsdk_mocks.RegisterRoleAssignmentMock(mockContext, http.StatusConflict)
+		graphsdk_mocks.RegisterRoleAssignmentPutMock(mockContext, http.StatusConflict)
 
 		azCli := GetAzCli(*mockContext.Context)
 		rawMessage, err := azCli.CreateOrUpdateServicePrincipal(
@@ -172,8 +172,8 @@ func Test_CreateOrUpdateServicePrincipal(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
 		graphsdk_mocks.RegisterApplicationListMock(mockContext, http.StatusOK, []graphsdk.Application{})
 		graphsdk_mocks.RegisterServicePrincipalListMock(mockContext, http.StatusOK, []graphsdk.ServicePrincipal{})
-		graphsdk_mocks.RegisterApplicationCreateMock(mockContext, http.StatusCreated, &newApplication)
-		graphsdk_mocks.RegisterServicePrincipalCreateMock(mockContext, http.StatusCreated, &servicePrincipal)
+		graphsdk_mocks.RegisterApplicationCreateItemMock(mockContext, http.StatusCreated, &newApplication)
+		graphsdk_mocks.RegisterServicePrincipalCreateItemMock(mockContext, http.StatusCreated, &servicePrincipal)
 		graphsdk_mocks.RegisterApplicationAddPasswordMock(mockContext, http.StatusOK, *newApplication.Id, credential)
 		// Note how retrieval of matching role assignments is empty
 		graphsdk_mocks.RegisterRoleDefinitionListMock(mockContext, http.StatusOK, []*armauthorization.RoleDefinition{})
@@ -194,7 +194,7 @@ func Test_CreateOrUpdateServicePrincipal(t *testing.T) {
 		graphsdk_mocks.RegisterApplicationListMock(mockContext, http.StatusOK, []graphsdk.Application{})
 		graphsdk_mocks.RegisterServicePrincipalListMock(mockContext, http.StatusOK, []graphsdk.ServicePrincipal{})
 		// Note that the application creation returns an unauthorized error
-		graphsdk_mocks.RegisterApplicationCreateMock(mockContext, http.StatusUnauthorized, nil)
+		graphsdk_mocks.RegisterApplicationCreateItemMock(mockContext, http.StatusUnauthorized, nil)
 
 		azCli := GetAzCli(*mockContext.Context)
 		rawMessage, err := azCli.CreateOrUpdateServicePrincipal(

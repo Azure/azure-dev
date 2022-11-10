@@ -57,7 +57,12 @@ func (p *AzdoScmProvider) requiredTools(_ context.Context) []tools.ExternalTool 
 
 // preConfigureCheck check the current state of external tools and any
 // other dependency to be as expected for execution.
-func (p *AzdoScmProvider) preConfigureCheck(ctx context.Context, console input.Console) error {
+func (p *AzdoScmProvider) preConfigureCheck(
+	ctx context.Context,
+	console input.Console,
+	pipelineManagerArgs PipelineManagerArgs,
+	infraOptions provisioning.Options,
+) error {
 	_, err := azdo.EnsurePatExists(ctx, p.Env, console)
 	if err != nil {
 		return err
@@ -572,7 +577,23 @@ func (p *AzdoCiProvider) requiredTools(_ context.Context) []tools.ExternalTool {
 }
 
 // preConfigureCheck nil for Azdo
-func (p *AzdoCiProvider) preConfigureCheck(ctx context.Context, console input.Console) error {
+func (p *AzdoCiProvider) preConfigureCheck(
+	ctx context.Context,
+	console input.Console,
+	pipelineManagerArgs PipelineManagerArgs,
+	infraOptions provisioning.Options,
+) error {
+	authType := PipelineAuthType(pipelineManagerArgs.PipelineAuthTypeName)
+
+	if authType == AuthTypeFederated {
+		return fmt.Errorf(
+			//nolint:lll
+			"Azure DevOps does not support federated authentication. To explicitly use client credentials set the %s flag. %w",
+			output.WithBackticks("--auth-type client-credentials"),
+			ErrAuthNotSupported,
+		)
+	}
+
 	_, err := azdo.EnsurePatExists(ctx, p.Env, console)
 	if err != nil {
 		return err
@@ -596,6 +617,7 @@ func (p *AzdoCiProvider) configureConnection(
 	repoDetails *gitRepositoryDetails,
 	provisioningProvider provisioning.Options,
 	credentials json.RawMessage,
+	authType PipelineAuthType,
 	console input.Console) error {
 
 	azureCredentials, err := parseCredentials(ctx, credentials)

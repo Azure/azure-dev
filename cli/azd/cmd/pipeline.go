@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log"
 
+	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/commands/pipeline"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
@@ -33,6 +34,12 @@ func (pc *pipelineConfigFlags) Bind(local *pflag.FlagSet, global *internal.Globa
 		"remote-name",
 		"origin",
 		"The name of the git remote to configure the pipeline to run on.",
+	)
+	local.StringVar(
+		&pc.PipelineAuthTypeName,
+		"auth-type",
+		"",
+		"The authentication type used between the pipeline provider and Azure for deployment (Only valid for GitHub provider)",
 	)
 	local.StringVar(&pc.PipelineRoleName, "principal-role", "Contributor", "The role to assign to the service principal.")
 	local.StringVar(&pc.PipelineProvider, "provider", "", "The pipeline provider to use (GitHub and Azdo supported).")
@@ -94,14 +101,14 @@ func newPipelineConfigAction(
 }
 
 // Run implements action interface
-func (p *pipelineConfigAction) Run(ctx context.Context) error {
+func (p *pipelineConfigAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	if err := ensureProject(p.azdCtx.ProjectPath()); err != nil {
-		return err
+		return nil, err
 	}
 
 	// make sure az is logged in
 	if err := ensureLoggedIn(ctx); err != nil {
-		return fmt.Errorf("failed to ensure login: %w", err)
+		return nil, fmt.Errorf("failed to ensure login: %w", err)
 	}
 
 	// Read or init env
@@ -112,7 +119,7 @@ func (p *pipelineConfigAction) Run(ctx context.Context) error {
 
 	env, ctx, err := loadOrInitEnvironment(ctx, &p.manager.RootOptions.EnvironmentName, p.azdCtx, console)
 	if err != nil {
-		return fmt.Errorf("loading environment: %w", err)
+		return nil, fmt.Errorf("loading environment: %w", err)
 	}
 
 	// Detect the SCM and CI providers based on the project directory
@@ -120,11 +127,11 @@ func (p *pipelineConfigAction) Run(ctx context.Context) error {
 		p.manager.CiProvider,
 		err = pipeline.DetectProviders(ctx, p.azdCtx, env, p.manager.PipelineProvider)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	// set context for manager
 	p.manager.Environment = env
 
-	return p.manager.Configure(ctx)
+	return nil, p.manager.Configure(ctx)
 }

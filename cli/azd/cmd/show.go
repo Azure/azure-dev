@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/contracts"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
@@ -66,19 +67,19 @@ func newShowAction(
 	}
 }
 
-func (s *showAction) Run(ctx context.Context) error {
+func (s *showAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	if err := ensureProject(s.azdCtx.ProjectPath()); err != nil {
-		return err
+		return nil, err
 	}
 
 	env, ctx, err := loadOrInitEnvironment(ctx, &s.flags.global.EnvironmentName, s.azdCtx, s.console)
 	if err != nil {
-		return fmt.Errorf("loading environment: %w", err)
+		return nil, fmt.Errorf("loading environment: %w", err)
 	}
 
 	prj, err := project.LoadProjectConfig(s.azdCtx.ProjectPath(), env)
 	if err != nil {
-		return fmt.Errorf("loading project: %w", err)
+		return nil, fmt.Errorf("loading project: %w", err)
 	}
 
 	res := contracts.ShowResult{
@@ -89,7 +90,7 @@ func (s *showAction) Run(ctx context.Context) error {
 	for name, svc := range prj.Services {
 		path, err := getFullPathToProjectForService(svc)
 		if err != nil {
-			return err
+			return nil, err
 		}
 
 		showSvc := contracts.ShowService{
@@ -129,7 +130,7 @@ func (s *showAction) Run(ctx context.Context) error {
 			err)
 	}
 
-	return s.formatter.Format(res, s.writer, nil)
+	return nil, s.formatter.Format(res, s.writer, nil)
 }
 
 func showTypeFromLanguage(language string) contracts.ShowType {

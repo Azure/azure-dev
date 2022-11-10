@@ -32,9 +32,9 @@ jobs:
         if: ${{ env.AZURE_CLIENT_ID != '' }}
         run: |
           azd login `
-            --client-id "$($info.clientId)" `
-            --client-secret "$($info.clientSecret)" `
-            --federated-token-provider "github"
+            --client-id "$Env:AZURE_CLIENT_ID" `
+            --federated-credential-provider "github" `
+            --tenant-id "$Env:AZURE_TENANT_ID"
         shell: pwsh
 
       - name: Log in with Azure (Client Credentials)

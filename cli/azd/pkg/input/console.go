@@ -21,13 +21,7 @@ import (
 	"github.com/theckman/yacspin"
 )
 
-type MessageUxType int
 type SpinnerUxType int
-
-const (
-	ResultSuccess MessageUxType = iota
-	ResultError
-)
 
 const (
 	Step SpinnerUxType = iota
@@ -48,8 +42,6 @@ type ConsoleShim interface {
 type Console interface {
 	// Prints out a message to the underlying console write
 	Message(ctx context.Context, message string)
-	// Prints out a message following the UX format type
-	MessageUx(ctx context.Context, message string, format MessageUxType)
 	// Prints out a message following a contract ux item
 	MessageUxItem(ctx context.Context, item ux.UXItem)
 	// Prints progress spinner with the given title.
@@ -158,59 +150,6 @@ func (c *AskerConsole) MessageUxItem(ctx context.Context, item ux.UXItem) {
 	} else {
 		fmt.Fprintln(c.writer, item.ToString(c.currentIndent))
 	}
-}
-
-func (c *AskerConsole) MessageUx(ctx context.Context, message string, format MessageUxType) {
-	formattedText, err := c.addFormat(message, format)
-	// Message and MessageUx don't return errors. Let's log the error and use the original message on error
-	if err != nil {
-		log.Printf("Failed adding format for MessageUx: %s. Using message with no ux format", err.Error())
-		c.Message(ctx, message)
-		return
-	}
-
-	// backwards compatibility to error messages
-	// Remove any formatter before printing the Result
-	// This is can be changed in the future if we want to format any error message as Json or Table when user set output.
-	if format == ResultError {
-		c.formatter = &output.NoneFormatter{}
-	}
-
-	if c.spinner != nil && c.spinner.Status() == yacspin.SpinnerRunning {
-		c.StopSpinner(ctx, "", Step)
-		c.Message(ctx, formattedText)
-		_ = c.spinner.Start()
-	} else {
-		c.Message(ctx, formattedText)
-	}
-}
-
-func withIndentation(message, indentation string) string {
-	if indentation == "" {
-		return message
-	}
-	// Add indentation to each line in the string
-	lines := strings.Split(message, "\n")
-	updatedLines := make([]string, len(lines))
-	for i, line := range lines {
-		if len(line) > 0 {
-			updatedLines[i] = indentation + line
-		}
-	}
-	return strings.Join(updatedLines, "\n")
-}
-
-func (c *AskerConsole) addFormat(message string, format MessageUxType) (withFormat string, err error) {
-	switch format {
-	case ResultSuccess:
-		withFormat = output.WithSuccessFormat("\n%s: %s", "SUCCESS", message)
-	case ResultError:
-		withFormat = output.WithErrorFormat("\n%s: %s", "ERROR", message)
-	default:
-		return withFormat, fmt.Errorf("Unknown UX format type")
-	}
-
-	return withFormat, nil
 }
 
 func (c *AskerConsole) ShowSpinner(ctx context.Context, title string, format SpinnerUxType) {

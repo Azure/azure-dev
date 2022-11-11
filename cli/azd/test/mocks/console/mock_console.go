@@ -59,10 +59,6 @@ func (c *MockConsole) Message(ctx context.Context, message string) {
 	c.log = append(c.log, message)
 }
 
-func (c *MockConsole) MessageUx(ctx context.Context, message string, format input.MessageUxType) {
-	c.Message(ctx, message)
-}
-
 func (c *MockConsole) MessageUxItem(ctx context.Context, item ux.UXItem) {
 	c.Message(ctx, item.ToString(""))
 }

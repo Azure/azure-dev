@@ -67,13 +67,14 @@ func (display *ProvisioningProgressDisplay) ReportProgress(ctx context.Context) 
 			url.PathEscape(display.scope.DeploymentUrl()),
 		)
 		display.console.ShowSpinner(ctx, "Creating resources", input.Step)
-		display.console.MessageUx(
+		display.console.MessageUxItem(
 			ctx,
-			fmt.Sprintf(
-				"You can view detailed progress in the Azure Portal:\n%s",
-				deploymentUrl,
-			),
-			input.Progress,
+			&ux.MultilineMessage{
+				Lines: []string{
+					"You can view detailed progress in the Azure Portal:",
+					deploymentUrl,
+				},
+			},
 		)
 	}
 

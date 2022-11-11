@@ -31,6 +31,7 @@ type ProjectConfig struct {
 	Services          map[string]*ServiceConfig `yaml:",omitempty"`
 	Infra             provisioning.Options      `yaml:"infra"`
 	Pipeline          PipelineOptions           `yaml:"pipeline"`
+	Scripts           map[string]*ScriptConfig  `yaml:"scripts,omitempty"`
 
 	handlers map[Event][]ProjectLifecycleEventHandlerFn
 }
@@ -38,6 +39,23 @@ type ProjectConfig struct {
 // options supported in azure.yaml
 type PipelineOptions struct {
 	Provider string `yaml:"provider"`
+}
+
+type ScriptType string
+type ScriptLocation string
+
+const (
+	ScriptTypeBash       ScriptType     = "bash"
+	ScriptTypePowershell ScriptType     = "powershell"
+	ScriptLocationInline ScriptLocation = "inline"
+	ScriptLocationPath   ScriptLocation = "path"
+)
+
+type ScriptConfig struct {
+	Type     string `yaml:"type,omitempty"`
+	Location string `yaml:"location,omitempty"`
+	Path     string `yaml:"path,omitempty"`
+	Script   string `yaml:"script,omitempty"`
 }
 
 // Project lifecycle events

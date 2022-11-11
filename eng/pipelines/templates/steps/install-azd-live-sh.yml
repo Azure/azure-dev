@@ -1,16 +1,33 @@
 parameters:
-    DefaultVersion: daily
+    # For PR builds, specify 'pr/<pr number>'
+    Version: daily
+    ContainerRegistryHost: $(azdev-acr-host)
+    StorageAccountName: $(azdev-storage-account-name)
     ScriptUrl: https://aka.ms/install-azd.sh
+    # If set, the container image for `azd` will be determined and set to the specified variable name
+    OutputContainerImageVariableName: ''
+
 
 steps:
-  - pwsh: |
-      if (!$env:AZDVERSION) {
-        Write-Host "AzdVersion variable not set. Using '${{ parameters.DefaultVersion }}'"
-        Write-Host "##vso[task.setvariable variable=AzdVersion]${{ parameters.DefaultVersion }}"
-      } else {
-        Write-Host "Using specified azd version: $(AzdVersion)"
-      }
-    displayName: Ensure AzdVersion is set
+- pwsh: |
+    if ('${{ parameters.Version }}'.StartsWith('pr/')) {
+      $InstallArgs = "--base-url https://${{ parameters.StorageAccountName }}.blob.core.windows.net/azd/standalone/${{ parameters.Version }} --version ''"
+      $ContainerImageTag = '${{ parameters.Version }}' -replace '/', '-'
+    } else {
+      $InstallArgs = "--version '${{ parameters.Version }}'"
+      $ContainerImageTag = '${{ parameters.Version }}'
+    }
 
-  - bash: curl -fsSL ${{ parameters.ScriptUrl }} | bash -s -- --version '$(AzdVersion)' --verbose
-    displayName: Install azd
+    Write-Host "Arguments for installer to install azd version '${{ parameters.Version }}' : $InstallArgs"
+    Write-Host "##vso[task.setvariable variable=AzdInstallArgs]$InstallArgs"
+
+    if ('${{ parameters.OutputContainerImageVariableName }}' -ne '') {
+      $ContainerImage = "${{ parameters.ContainerRegistryHost }}/azure-dev:$ContainerImageTag"
+      Write-Host "Container image for azd version '${{ parameters.Version }}': $ContainerImage"
+      Write-Host "##vso[task.setvariable variable=${{ parameters.OutputContainerImageVariableName }}]$ContainerImage"
+    }
+  displayName: Configure azd install
+
+- bash: |
+    curl -fsSL ${{ parameters.ScriptUrl }} | bash -s -- $(AzdInstallArgs) --verbose
+  displayName: Install azd

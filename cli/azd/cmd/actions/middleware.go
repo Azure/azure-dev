@@ -4,7 +4,7 @@ import (
 	"context"
 )
 
-var middlewares []MiddlewareFn = []MiddlewareFn{}
+var middlewareChain []MiddlewareFn = []MiddlewareFn{}
 
 // Executes the next middleware in the command chain
 type NextFn func(ctx context.Context) (*ActionResult, error)
@@ -17,16 +17,15 @@ func RunWithMiddleware(
 	ctx context.Context,
 	buildOptions *ActionOptions,
 	action Action,
-	chain []MiddlewareFn,
 ) (*ActionResult, error) {
-	chainLength := len(chain)
+	chainLength := len(middlewareChain)
 	index := 0
 
 	var nextFn NextFn
 
 	nextFn = func(nextContext context.Context) (*ActionResult, error) {
 		if index < chainLength {
-			middlewareFn := chain[index]
+			middlewareFn := middlewareChain[index]
 			index++
 			return middlewareFn(nextContext, buildOptions, nextFn)
 		} else {
@@ -43,9 +42,5 @@ func RunWithMiddleware(
 }
 
 func Use(middleware MiddlewareFn) {
-	middlewares = append(middlewares, middleware)
-}
-
-func GetMiddleware() []MiddlewareFn {
-	return middlewares
+	middlewareChain = append(middlewareChain, middleware)
 }

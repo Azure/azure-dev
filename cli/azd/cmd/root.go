@@ -158,8 +158,7 @@ func BuildCmd[F any](
 
 		ctx = tools.WithInstalledCheckCache(ctx)
 
-		middlewareChain := actions.GetMiddleware()
-		actionResult, err := actions.RunWithMiddleware(ctx, actionOptions, action, middlewareChain)
+		actionResult, err := actions.RunWithMiddleware(ctx, actionOptions, action)
 		// At this point, we know that there might be an error, so we can silence cobra from showing it after us.
 		cmd.SilenceErrors = true
 		actions.ShowActionResults(ctx, console, actionResult, err)

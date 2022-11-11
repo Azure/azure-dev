@@ -93,7 +93,7 @@ func (u *upAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 
 	finalOutput := []string{}
 	u.infraCreate.finalOutputRedirect = &finalOutput
-	_, err = u.infraCreate.Run(ctx)
+	_, err = actions.RunWithMiddleware(ctx, &actions.ActionOptions{Name: "infra create"}, u.infraCreate)
 	if err != nil {
 		return nil, err
 	}
@@ -114,7 +114,7 @@ func (u *upAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 }
 
 func (u *upAction) runInit(ctx context.Context) error {
-	_, err := u.init.Run(ctx)
+	_, err := actions.RunWithMiddleware(ctx, &actions.ActionOptions{Name: "init"}, u.init)
 	var envInitError *environment.EnvironmentInitError
 	if errors.As(err, &envInitError) {
 		// We can ignore environment already initialized errors

@@ -52,10 +52,10 @@ const (
 )
 
 type ScriptConfig struct {
-	Type     string `yaml:"type,omitempty"`
-	Location string `yaml:"location,omitempty"`
-	Path     string `yaml:"path,omitempty"`
-	Script   string `yaml:"script,omitempty"`
+	Type     ScriptType     `yaml:"type,omitempty"`
+	Location ScriptLocation `yaml:"location,omitempty"`
+	Path     string         `yaml:"path,omitempty"`
+	Script   string         `yaml:"script,omitempty"`
 }
 
 // Project lifecycle events

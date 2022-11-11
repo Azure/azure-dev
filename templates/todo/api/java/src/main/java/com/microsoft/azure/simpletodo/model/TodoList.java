@@ -15,27 +15,27 @@ import java.util.Objects;
 @Generated(value = "org.openapitools.codegen.languages.SpringCodegen")
 public class TodoList {
 
-    @Schema(name = "id", required = false)
     @JsonProperty("id")
     private String id;
 
     @NotNull
-    @Schema(name = "name", required = true)
     @JsonProperty("name")
     private String name;
 
-    @Schema(name = "description", required = false)
     @JsonProperty("description")
     private String description;
 
+    @Schema(name = "id", required = false)
     public String getId() {
         return this.id;
     }
 
+    @Schema(name = "name", required = true)
     public @NotNull String getName() {
         return this.name;
     }
 
+    @Schema(name = "description", required = false)
     public String getDescription() {
         return this.description;
     }

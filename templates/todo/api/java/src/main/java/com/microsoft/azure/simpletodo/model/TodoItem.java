@@ -18,64 +18,64 @@ import java.util.Objects;
 public class TodoItem {
 
     @JsonProperty("id")
-    @Schema(name = "id", required = false)
     private String id;
 
     @NotNull
     @JsonProperty("listId")
-    @Schema(name = "listId", required = true)
     private String listId;
 
     @NotNull
     @JsonProperty("name")
-    @Schema(name = "name", required = true)
     private String name;
 
     @JsonProperty("description")
-    @Schema(name = "description", required = true)
     private String description;
 
-    @Valid
     @JsonProperty("state")
-    @Schema(name = "state", required = false)
     private TodoState state;
 
-    @Valid
     @JsonProperty("dueDate")
-    @Schema(name = "dueDate", required = false)
     @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME)
     private OffsetDateTime dueDate;
 
-    @Valid
     @JsonProperty("completedDate")
-    @Schema(name = "completedDate", required = false)
     @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME)
     private OffsetDateTime completedDate;
 
+    @Schema(name = "id", required = false)
     public String getId() {
         return this.id;
     }
 
+    @Schema(name = "listId", required = true)
     public @NotNull String getListId() {
         return this.listId;
     }
 
+    @Schema(name = "name", required = true)
     public @NotNull String getName() {
         return this.name;
     }
 
+    @Schema(name = "description", required = true)
     public String getDescription() {
         return this.description;
     }
 
+    @Valid
+    @Schema(name = "state", required = false)
     public TodoState getState() {
         return this.state;
     }
 
+    @Valid
+    @Schema(name = "dueDate", required = false)
     public OffsetDateTime getDueDate() {
         return this.dueDate;
     }
 
+    @Valid
+    @Schema(name = "completedDate", required = false)
     public OffsetDateTime getCompletedDate() {
         return this.completedDate;
     }

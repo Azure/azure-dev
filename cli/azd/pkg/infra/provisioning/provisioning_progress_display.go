@@ -66,7 +66,7 @@ func (display *ProvisioningProgressDisplay) ReportProgress(ctx context.Context) 
 			output.WithLinkFormat("https://portal.azure.com/#blade/HubsExtension/DeploymentDetailsBlade/overview/id/%s\n"),
 			url.PathEscape(display.scope.DeploymentUrl()),
 		)
-		display.console.ShowSpinner(ctx, "Creating resources", input.Step)
+
 		display.console.MessageUxItem(
 			ctx,
 			&ux.MultilineMessage{

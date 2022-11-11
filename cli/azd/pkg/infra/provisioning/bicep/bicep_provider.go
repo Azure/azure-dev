@@ -229,6 +229,7 @@ func (p *BicepProvider) Deploy(
 			}()
 
 			// Start the deployment
+			p.console.ShowSpinner(ctx, "Creating resources", input.Step)
 			bicepDeploymentData := pd.Details.(BicepDeploymentDetails)
 			deployResult, err := p.deployModule(
 				ctx, scope, bicepDeploymentData.Template, bicepDeploymentData.ParameterFilePath)

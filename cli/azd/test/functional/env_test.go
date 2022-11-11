@@ -160,11 +160,11 @@ func envNew(ctx context.Context, t *testing.T, cli *azdcli.CLI, envName string, 
 }
 
 func envList(ctx context.Context, t *testing.T, cli *azdcli.CLI) []contracts.EnvListEnvironment {
-	jsonOutput, err := cli.RunCommand(ctx, "env", "list", "--output", "json")
+	result, err := cli.RunCommand(ctx, "env", "list", "--output", "json")
 	require.NoError(t, err)
 
 	env := []contracts.EnvListEnvironment{}
-	err = json.Unmarshal([]byte(jsonOutput), &env)
+	err = json.Unmarshal([]byte(result.Stdout), &env)
 	require.NoError(t, err)
 
 	return env
@@ -181,11 +181,11 @@ func envSetValue(ctx context.Context, t *testing.T, cli *azdcli.CLI, key string,
 }
 
 func envGetValues(ctx context.Context, t *testing.T, cli *azdcli.CLI) map[string]string {
-	jsonOutput, err := cli.RunCommand(ctx, "env", "get-values", "--output", "json")
+	result, err := cli.RunCommand(ctx, "env", "get-values", "--output", "json")
 	require.NoError(t, err)
 
 	var envValues map[string]string
-	err = json.Unmarshal([]byte(jsonOutput), &envValues)
+	err = json.Unmarshal([]byte(result.Stdout), &envValues)
 	require.NoError(t, err)
 
 	return envValues

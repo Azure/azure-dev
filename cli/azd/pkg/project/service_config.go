@@ -9,6 +9,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
+	"github.com/azure/azure-dev/cli/azd/pkg/ext"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
@@ -37,6 +38,8 @@ type ServiceConfig struct {
 	Docker DockerProjectOptions `yaml:"docker"`
 	// The infrastructure provisioning configuration
 	Infra provisioning.Options `yaml:"infra"`
+	// Script configuration for service
+	Scripts map[string]*ext.ScriptConfig `yaml:"scripts,omitempty"`
 
 	handlers map[Event][]ServiceLifecycleEventHandlerFn
 }

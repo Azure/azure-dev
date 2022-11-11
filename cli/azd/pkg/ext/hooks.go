@@ -6,45 +6,73 @@ import (
 	"log"
 	"strings"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
-	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/bash"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/powershell"
 )
 
+// Generic action function that may return an error
+type ActionFn func() error
+
+// The type of command hooks. Supported values are 'pre' and 'post'
 type HookType string
 
 const (
-	HookTypePre  HookType = "pre"
+	// Executes pre-command hooks
+	HookTypePre HookType = "pre"
+	// Execute post-command hooks
 	HookTypePost HookType = "post"
 )
 
+// CommandHooks enable support to invoke integration scripts before & after commands
+// Scripts can be invoked at the project or service level or
 type CommandHooks struct {
 	commandRunner exec.CommandRunner
 	cwd           string
 	interactive   bool
-	scripts       map[string]*project.ScriptConfig
-	env           *environment.Environment
+	scripts       map[string]*ScriptConfig
+	envVars       []string
 }
 
+// NewCommandHooks creates a new instance of CommandHooks
 func NewCommandHooks(
-	cwd string,
 	commandRunner exec.CommandRunner,
+	scripts map[string]*ScriptConfig,
+	cwd string,
+	envVars []string,
 	interactive bool,
-	scripts map[string]*project.ScriptConfig,
-	env *environment.Environment,
 ) *CommandHooks {
 	return &CommandHooks{
 		commandRunner: commandRunner,
 		cwd:           cwd,
 		interactive:   interactive,
 		scripts:       scripts,
-		env:           env,
+		envVars:       envVars,
 	}
 }
 
+// Invokes an action run runs any registered pre or post script hooks for the specified command.
+func (h *CommandHooks) InvokeAction(ctx context.Context, commandName string, actionFn ActionFn) error {
+	err := h.RunScripts(ctx, HookTypePre, commandName)
+	if err != nil {
+		return fmt.Errorf("failing running pre command hooks: %w", err)
+	}
+
+	err = actionFn()
+	if err != nil {
+		return err
+	}
+
+	err = h.RunScripts(ctx, HookTypePost, commandName)
+	if err != nil {
+		return fmt.Errorf("failing running pre command hooks: %w", err)
+	}
+
+	return nil
+}
+
+// / Invokes any registered script hooks for the specified hook type and command.
 func (h *CommandHooks) RunScripts(ctx context.Context, hookType HookType, commandName string) error {
 	scripts := h.getScriptsForHook(hookType, commandName)
 	for _, scriptConfig := range scripts {
@@ -57,13 +85,13 @@ func (h *CommandHooks) RunScripts(ctx context.Context, hookType HookType, comman
 	return nil
 }
 
-func (h *CommandHooks) getScriptsForHook(prefix HookType, commandName string) []*project.ScriptConfig {
+func (h *CommandHooks) getScriptsForHook(prefix HookType, commandName string) []*ScriptConfig {
 	// Convert things like `azd config list` => 'configlist`
 	commandName = strings.TrimPrefix(commandName, "azd")
 	commandName = strings.TrimSpace(commandName)
 	commandName = strings.ReplaceAll(commandName, " ", "")
 
-	matchingScripts := []*project.ScriptConfig{}
+	matchingScripts := []*ScriptConfig{}
 	for scriptName, scriptConfig := range h.scripts {
 		if strings.Contains(scriptName, string(prefix)) && strings.Contains(scriptName, commandName) {
 			matchingScripts = append(matchingScripts, scriptConfig)
@@ -73,15 +101,10 @@ func (h *CommandHooks) getScriptsForHook(prefix HookType, commandName string) []
 	return matchingScripts
 }
 
-func (h *CommandHooks) execScript(ctx context.Context, scriptConfig *project.ScriptConfig) error {
+func (h *CommandHooks) execScript(ctx context.Context, scriptConfig *ScriptConfig) error {
 	log.Printf("Executing script '%s'", scriptConfig.Path)
 
-	envVars := []string{}
-	for k, v := range h.env.Values {
-		envVars = append(envVars, fmt.Sprintf("%s=%s", k, v))
-	}
-
-	script, err := getScript(h.commandRunner, scriptConfig.Type, h.cwd, envVars)
+	script, err := getScript(h.commandRunner, scriptConfig.Type, h.cwd, h.envVars)
 	if err != nil {
 		return err
 	}
@@ -96,14 +119,14 @@ func (h *CommandHooks) execScript(ctx context.Context, scriptConfig *project.Scr
 
 func getScript(
 	commandRunner exec.CommandRunner,
-	scriptType project.ScriptType,
+	scriptType ScriptType,
 	cwd string,
 	envVars []string,
 ) (tools.Script, error) {
 	switch scriptType {
-	case project.ScriptTypeBash:
+	case ScriptTypeBash:
 		return bash.NewBashScript(commandRunner, cwd, envVars), nil
-	case project.ScriptTypePowershell:
+	case ScriptTypePowershell:
 		return powershell.NewPowershellScript(commandRunner, cwd, envVars), nil
 	default:
 		return nil, fmt.Errorf(

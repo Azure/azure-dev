@@ -12,6 +12,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
+	"github.com/azure/azure-dev/cli/azd/pkg/ext"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
@@ -24,14 +25,14 @@ import (
 // When changing project structure, make sure to update the JSON schema file for azure.yaml (<workspace
 // root>/schemas/vN.M/azure.yaml.json).
 type ProjectConfig struct {
-	Name              string                    `yaml:"name"`
-	ResourceGroupName string                    `yaml:"resourceGroup,omitempty"`
-	Path              string                    `yaml:",omitempty"`
-	Metadata          *ProjectMetadata          `yaml:"metadata,omitempty"`
-	Services          map[string]*ServiceConfig `yaml:",omitempty"`
-	Infra             provisioning.Options      `yaml:"infra"`
-	Pipeline          PipelineOptions           `yaml:"pipeline"`
-	Scripts           map[string]*ScriptConfig  `yaml:"scripts,omitempty"`
+	Name              string                       `yaml:"name"`
+	ResourceGroupName string                       `yaml:"resourceGroup,omitempty"`
+	Path              string                       `yaml:",omitempty"`
+	Metadata          *ProjectMetadata             `yaml:"metadata,omitempty"`
+	Services          map[string]*ServiceConfig    `yaml:",omitempty"`
+	Infra             provisioning.Options         `yaml:"infra"`
+	Pipeline          PipelineOptions              `yaml:"pipeline"`
+	Scripts           map[string]*ext.ScriptConfig `yaml:"scripts,omitempty"`
 
 	handlers map[Event][]ProjectLifecycleEventHandlerFn
 }
@@ -39,23 +40,6 @@ type ProjectConfig struct {
 // options supported in azure.yaml
 type PipelineOptions struct {
 	Provider string `yaml:"provider"`
-}
-
-type ScriptType string
-type ScriptLocation string
-
-const (
-	ScriptTypeBash       ScriptType     = "bash"
-	ScriptTypePowershell ScriptType     = "powershell"
-	ScriptLocationInline ScriptLocation = "inline"
-	ScriptLocationPath   ScriptLocation = "path"
-)
-
-type ScriptConfig struct {
-	Type     ScriptType     `yaml:"type,omitempty"`
-	Location ScriptLocation `yaml:"location,omitempty"`
-	Path     string         `yaml:"path,omitempty"`
-	Script   string         `yaml:"script,omitempty"`
 }
 
 // Project lifecycle events

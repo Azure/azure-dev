@@ -15,6 +15,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
+	"github.com/azure/azure-dev/cli/azd/pkg/ext"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
@@ -107,6 +108,7 @@ func newDeployAction(
 	console input.Console,
 	formatter output.Formatter,
 	writer io.Writer,
+	commandRunner exec.CommandRunner,
 ) (*deployAction, error) {
 	da := &deployAction{
 		flags:         flags,
@@ -170,6 +172,14 @@ func (d *deployAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	var deploymentResults []project.ServiceDeploymentResult
 
 	for _, svc := range proj.Services {
+		commandHooks := ext.NewCommandHooks(
+			d.commandRunner,
+			svc.Config.Scripts,
+			svc.Config.Path(),
+			env.ToSlice(),
+			interactive,
+		)
+
 		// Skip this service if both cases are true:
 		// 1. The user specified a service name
 		// 2. This service is not the one the user specified
@@ -178,7 +188,7 @@ func (d *deployAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		}
 
 		deployAndReportProgress := func(ctx context.Context, showProgress func(string)) error {
-			result, progress := svc.Deploy(ctx, d.azdCtx)
+			result, progress := svc.Deploy(ctx, d.azdCtx, commandHooks)
 
 			// Report any progress
 			go func() {
@@ -214,6 +224,7 @@ func (d *deployAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		} else {
 			err = deployAndReportProgress(ctx, nil)
 		}
+
 		if err != nil {
 			return nil, err
 		}

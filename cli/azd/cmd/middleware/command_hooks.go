@@ -2,7 +2,6 @@ package middleware
 
 import (
 	"context"
-	"fmt"
 	"log"
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
@@ -58,27 +57,29 @@ func UseCommandHooks() actions.MiddlewareFn {
 		console := input.GetConsole(ctx)
 		formatter := console.GetFormatter()
 		interactive := formatter == nil || formatter.Kind() == output.NoneFormat
+		hooks := ext.NewCommandHooks(
+			commandRunner,
+			projectConfig.Scripts,
+			azdContext.ProjectDirectory(),
+			env.ToSlice(),
+			interactive,
+		)
 
-		hooks := ext.NewCommandHooks(azdContext.ProjectDirectory(), commandRunner, interactive, projectConfig.Scripts, env)
+		var actionResult *actions.ActionResult
 
-		// Always run prescripts
-		err = hooks.RunScripts(ctx, ext.HookTypePre, options.Name)
+		err = hooks.InvokeAction(ctx, options.Name, func() error {
+			actionResult, err = next(ctx)
+			if err != nil {
+				return err
+			}
+
+			return nil
+		})
+
 		if err != nil {
-			return nil, fmt.Errorf("failed running pre-command hooks: %w", err)
+			return nil, err
 		}
 
-		// Execute Action
-		result, err := next(ctx)
-		if err != nil {
-			return result, err
-		}
-
-		// Only run post scripts on successful action
-		err = hooks.RunScripts(ctx, ext.HookTypePost, options.Name)
-		if err != nil {
-			return nil, fmt.Errorf("failed running post-command hooks: %w", err)
-		}
-
-		return result, err
+		return actionResult, nil
 	}
 }

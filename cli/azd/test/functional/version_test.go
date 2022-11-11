@@ -48,11 +48,11 @@ func Test_CLI_Version_Json(t *testing.T) {
 	defer cancel()
 
 	cli := azdcli.NewCLI(t)
-	jsonOutput, err := cli.RunCommand(ctx, "version", "--output", "json")
+	result, err := cli.RunCommand(ctx, "version", "--output", "json")
 	require.NoError(t, err)
 
 	versionJson := &internal.VersionSpec{}
-	err = json.Unmarshal([]byte(jsonOutput), versionJson)
+	err = json.Unmarshal([]byte(result.Stdout), versionJson)
 	require.NoError(t, err)
 
 	_, err = semver.Parse(versionJson.Azd.Version)

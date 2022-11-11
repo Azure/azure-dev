@@ -25,8 +25,7 @@ type MessageUxType int
 type SpinnerUxType int
 
 const (
-	Progress MessageUxType = iota
-	ResultSuccess
+	ResultSuccess MessageUxType = iota
 	ResultError
 )
 
@@ -203,9 +202,6 @@ func withIndentation(message, indentation string) string {
 
 func (c *AskerConsole) addFormat(message string, format MessageUxType) (withFormat string, err error) {
 	switch format {
-	case Progress:
-		// a message while spinner might be running.
-		withFormat = withIndentation(message, c.currentIndent)
 	case ResultSuccess:
 		withFormat = output.WithSuccessFormat("\n%s: %s", "SUCCESS", message)
 	case ResultError:

@@ -53,6 +53,16 @@ func initLoginAction(
 	panic(wire.Build(LoginCmdSet))
 }
 
+func initLogoutAction(
+	console input.Console,
+	ctx context.Context,
+	o *internal.GlobalCommandOptions,
+	flags struct{},
+	args []string,
+) (actions.Action, error) {
+	panic(wire.Build(LogoutCmdSet))
+}
+
 func initUpAction(
 	console input.Console,
 	ctx context.Context,

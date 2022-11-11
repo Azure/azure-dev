@@ -1,15 +1,13 @@
 package config
 
 import (
-	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 )
 
 func Test_SaveAndLoadConfig(t *testing.T) {
-	defer deleteExistingConfig()
-
 	var azdConfig Config = NewConfig(
 		map[string]any{
 			"defaults": map[string]any{
@@ -19,7 +17,7 @@ func Test_SaveAndLoadConfig(t *testing.T) {
 		},
 	)
 
-	configFilePath, _ := GetUserConfigFilePath()
+	configFilePath := filepath.Join(t.TempDir(), "config.json")
 	configManager := NewManager()
 	err := configManager.Save(azdConfig, configFilePath)
 	require.NoError(t, err)
@@ -31,9 +29,7 @@ func Test_SaveAndLoadConfig(t *testing.T) {
 }
 
 func Test_SaveAndLoadEmptyConfig(t *testing.T) {
-	defer deleteExistingConfig()
-
-	configFilePath, _ := GetUserConfigFilePath()
+	configFilePath := filepath.Join(t.TempDir(), "config.json")
 	configManager := NewManager()
 	azdConfig := NewConfig(nil)
 	err := configManager.Save(azdConfig, configFilePath)
@@ -42,10 +38,4 @@ func Test_SaveAndLoadEmptyConfig(t *testing.T) {
 	existingConfig, err := configManager.Load(configFilePath)
 	require.NoError(t, err)
 	require.NotNil(t, existingConfig)
-}
-
-func deleteExistingConfig() {
-	configFilePath, _ := GetUserConfigFilePath()
-	// Remove file if it exists
-	_ = os.Remove(configFilePath)
 }

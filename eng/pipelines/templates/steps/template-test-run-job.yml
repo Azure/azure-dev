@@ -37,25 +37,49 @@ steps:
     Write-Host "##vso[task.setvariable variable=CleanupImmediate]$CleanupImmediate"
   displayName: Set test run parameters
 
-- task: Bash@3
-  displayName: Test templates
-  env:             
-    # Required secrets for Terraform service principal authentication
-    ARM_CLIENT_ID: $(arm-client-id)
-    ARM_CLIENT_SECRET: $(arm-client-secret)
-    ARM_TENANT_ID: $(arm-tenant-id)
+- pwsh: |
+    npm install -g @devcontainers/cli
+  displayName: Install devontainers
+
+- task: DevcontainersCI@0
+  displayName: Test templates in Devcontainers
   inputs:
+  # Required secrets for Terraform service principal authentication
+    env: |
+      ARM_CLIENT_ID=$(arm-client-id)
+      ARM_CLIENT_SECRET=$(arm-client-secret)
+      ARM_TENANT_ID=$(arm-tenant-id)
+      SUBSCRIPTION_ID=$(SubscriptionId)
     targetType: filePath
     filePath: templates/tests/test-templates.sh
-    arguments: >
-      -e '$(EnvPrefixName)'
-      -t '$(TemplateName)'
-      -b '$(TemplateBranchName)'
-      -s '$(SubscriptionId)'
-      -u '$(Build.BuildId)'
-      -l '$(AzureLocation)'
-      -p 'list'
-      -c '$(CleanupImmediate)'
+    runCmd: |
+      az login \
+        --service-principal \
+        -u "$(arm-client-id)" \
+        -p "$(arm-client-secret)" \
+        --tenant "$(arm-tenant-id)"
+      az account set \
+        --subscription "$(SubscriptionId)"
+      git config --global user.name "azure-sdk"
+      git config --global user.email "azuresdk@microsoft.com"
+      echo "https://azure-sdk:$(azuresdk-github-pat)@github.com" > ~/.git-credentials
+      git config --global credential.helper "store"
+      cd templates/tests/
+      curl -fsSL https://aka.ms/install-azd.sh | bash -s -- --version 'daily' --verbose
+      npm i && npx playwright install
+      sudo add-apt-repository ppa:gstreamer-developers/ppa
+      sudo apt-get update
+      sudo apt-get install gstreamer1.0*
+      sudo apt-get install -y gstreamer1.0-libav libnss3-tools libatk-bridge2.0-0 libcups2-dev libxkbcommon-x11-0 libxcomposite-dev libxrandr2 libgbm-dev libgtk-3-0
+      chmod +x ./test-templates.sh
+      ./test-templates.sh \
+        -e '$(EnvPrefixName)' \
+        -t '$(TemplateName)' \
+        -b '$(TemplateBranchName)' \
+        -s '$(SubscriptionId)' \
+        -u '$(Build.BuildId)' \
+        -l '$(DeployLocation)' \
+        -p 'list'
     workingDirectory: templates/tests
 
 # First tag the resource group (if exists) so that it can get cleaned up

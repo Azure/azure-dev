@@ -17,6 +17,10 @@ function assertSuccessfulExecution($errorMessage) {
 assertSuccessfulExecution "Install failed"
 
 try {
+    $azdCommand = Get-Command 'azd'
+    Write-Host "File info for $($azdCommand.Source)"
+    ls -lah $azdCommand.Source
+
     & azd version
     assertSuccessfulExecution "Could not execute azd"
 } catch {

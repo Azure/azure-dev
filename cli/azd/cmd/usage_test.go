@@ -1,26 +1,22 @@
-package snapshottest
+package cmd
 
 import (
 	"log"
 	"testing"
 
-	"github.com/azure/azure-dev/cli/azd/cmd"
 	"github.com/gkampitakis/go-snaps/snaps"
 	"github.com/spf13/cobra"
 )
 
-func TestCommandSnapshot(t *testing.T) {
-	root := cmd.NewRootCmd()
+func TestUsage(t *testing.T) {
+	root := NewRootCmd()
 
-	testCmdSnapshot(t, root)
+	usageSnapshot(t, root)
 }
 
-func testCmdSnapshot(t *testing.T, cmd *cobra.Command) {
+func usageSnapshot(t *testing.T, cmd *cobra.Command) {
 	t.Run(cmd.Name(), func(t *testing.T) {
 		log.Printf("Command: %s", cmd.CommandPath())
-
-		cmd.InitDefaultHelpCmd()
-		cmd.InitDefaultHelpFlag()
 		snaps.MatchSnapshot(t, cmd.UsageString())
 
 		for _, c := range cmd.Commands() {
@@ -28,7 +24,7 @@ func testCmdSnapshot(t *testing.T, cmd *cobra.Command) {
 				continue
 			}
 
-			testCmdSnapshot(t, c)
+			usageSnapshot(t, c)
 		}
 	})
 }

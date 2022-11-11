@@ -273,7 +273,11 @@ stages:
 
               Write-Host "Compressing artifacts as if publishing"
               zip hosting/azd-windows-amd64.zip -j azd-windows-amd64.exe/azd-windows-amd64.exe
+
+              chmod +x azd-darwin-amd64/azd-darwin-amd64
               zip hosting/azd-darwin-amd64.zip -j azd-darwin-amd64/azd-darwin-amd64
+
+              chmod +x azd-linux-amd64/azd-linux-amd64
               tar -C azd-linux-amd64 -cvzf hosting/azd-linux-amd64.tar.gz azd-linux-amd64
 
               Get-ChildItem hosting/ -Recurse | Select-Object -Property Name,Size

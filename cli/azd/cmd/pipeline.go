@@ -106,11 +106,6 @@ func (p *pipelineConfigAction) Run(ctx context.Context) (*actions.ActionResult, 
 		return nil, err
 	}
 
-	// make sure az is logged in
-	if err := ensureLoggedIn(ctx); err != nil {
-		return nil, fmt.Errorf("failed to ensure login: %w", err)
-	}
-
 	// Read or init env
 	console := input.GetConsole(ctx)
 	if console == nil {

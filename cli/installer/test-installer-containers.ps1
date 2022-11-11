@@ -2,7 +2,8 @@ param(
     [string] $BaseUrl='https://azure-dev.azureedge.net/azd/standalone/release',
     [string] $Version = 'latest',
     [string] $ContainerPrefix = '',
-    [string] $AdditionalArgs = '--no-cache'
+    [string] $AdditionalArgs = '--no-cache',
+    [string] $AdditionalRunArgs = ''
 )
 Write-Output "Docker version:"
 docker -v
@@ -35,7 +36,7 @@ docker build  . `
         continue
     }
 
-    docker run -t azd-test
+    docker run $AdditionalRunArgs -t azd-test
     if ($LASTEXITCODE) {
         Write-Error "Validation run failed for $dockerfile"
         $exitCode = 1

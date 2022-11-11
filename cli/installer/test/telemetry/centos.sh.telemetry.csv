@@ -1,4 +1,4 @@
 os,centos
 osVersion,7
-isWsl,true
+isWsl,false
 terminal,bash

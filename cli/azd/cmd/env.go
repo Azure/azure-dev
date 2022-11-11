@@ -45,32 +45,20 @@ You can find all environment configurations under the *.azure\<environment-name>
 	return root
 }
 
-func envSetCmdDesign(global *internal.GlobalCommandOptions) (*cobra.Command, *envSetFlags) {
+func envSetCmdDesign(global *internal.GlobalCommandOptions) (*cobra.Command, *struct{}) {
 	cmd := &cobra.Command{
 		Use:   "set <key> <value>",
 		Short: "Set a value in the environment.",
 	}
 	cmd.Args = cobra.ExactArgs(2)
-	envSetFlags := &envSetFlags{}
-	envSetFlags.Bind(cmd.Flags(), global)
-	return cmd, envSetFlags
-}
-
-type envSetFlags struct {
-	envFlag
-	global *internal.GlobalCommandOptions
-}
-
-func (f *envSetFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
-	f.envFlag.Bind(local, global)
-	f.global = global
+	return cmd, &struct{}{}
 }
 
 type envSetAction struct {
 	azCli   azcli.AzCli
 	console input.Console
 	azdCtx  *azdcontext.AzdContext
-	flags   envSetFlags
+	global  *internal.GlobalCommandOptions
 	args    []string
 }
 
@@ -78,14 +66,14 @@ func newEnvSetAction(
 	azdCtx *azdcontext.AzdContext,
 	azCli azcli.AzCli,
 	console input.Console,
-	flags envSetFlags,
+	global *internal.GlobalCommandOptions,
 	args []string,
 ) *envSetAction {
 	return &envSetAction{
 		azCli:   azCli,
 		console: console,
 		azdCtx:  azdCtx,
-		flags:   flags,
+		global:  global,
 		args:    args,
 	}
 }
@@ -102,7 +90,7 @@ func (e *envSetAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	//lint:ignore SA4006 // We want ctx overridden here for future changes
 	env, ctx, err := loadOrInitEnvironment( //nolint:ineffassign,staticcheck
 		ctx,
-		&e.flags.environmentName,
+		&e.global.EnvironmentName,
 		e.azdCtx,
 		e.console,
 	)
@@ -299,17 +287,7 @@ func (en *envNewAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 	return nil, nil
 }
 
-type envRefreshFlags struct {
-	global *internal.GlobalCommandOptions
-	envFlag
-}
-
-func (er *envRefreshFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
-	er.envFlag.Bind(local, global)
-	er.global = global
-}
-
-func envRefreshCmdDesign(global *internal.GlobalCommandOptions) (*cobra.Command, *envRefreshFlags) {
+func envRefreshCmdDesign(global *internal.GlobalCommandOptions) (*cobra.Command, *struct{}) {
 	cmd := &cobra.Command{
 		Use:   "refresh",
 		Short: "Refresh environment settings by using information from a previous infrastructure provision.",
@@ -320,16 +298,13 @@ func envRefreshCmdDesign(global *internal.GlobalCommandOptions) (*cobra.Command,
 		[]output.Format{output.JsonFormat, output.NoneFormat},
 		output.NoneFormat,
 	)
-
-	envRefreshFlags := &envRefreshFlags{}
-	envRefreshFlags.Bind(cmd.Flags(), global)
-	return cmd, envRefreshFlags
+	return cmd, &struct{}{}
 }
 
 type envRefreshAction struct {
 	azdCtx    *azdcontext.AzdContext
 	azCli     azcli.AzCli
-	flags     envRefreshFlags
+	global    *internal.GlobalCommandOptions
 	console   input.Console
 	formatter output.Formatter
 	writer    io.Writer
@@ -338,7 +313,7 @@ type envRefreshAction struct {
 func newEnvRefreshAction(
 	azdCtx *azdcontext.AzdContext,
 	azCli azcli.AzCli,
-	flags envRefreshFlags,
+	global *internal.GlobalCommandOptions,
 	console input.Console,
 	formatter output.Formatter,
 	writer io.Writer,
@@ -346,7 +321,7 @@ func newEnvRefreshAction(
 	return &envRefreshAction{
 		azdCtx:    azdCtx,
 		azCli:     azCli,
-		flags:     flags,
+		global:    global,
 		console:   console,
 		formatter: formatter,
 		writer:    writer,
@@ -362,7 +337,7 @@ func (ef *envRefreshAction) Run(ctx context.Context) (*actions.ActionResult, err
 		return nil, err
 	}
 
-	env, ctx, err := loadOrInitEnvironment(ctx, &ef.flags.environmentName, ef.azdCtx, ef.console)
+	env, ctx, err := loadOrInitEnvironment(ctx, &ef.global.EnvironmentName, ef.azdCtx, ef.console)
 	if err != nil {
 		return nil, fmt.Errorf("loading environment: %w", err)
 	}
@@ -372,7 +347,7 @@ func (ef *envRefreshAction) Run(ctx context.Context) (*actions.ActionResult, err
 		return nil, fmt.Errorf("loading project: %w", err)
 	}
 
-	infraManager, err := provisioning.NewManager(ctx, env, prj.Path, prj.Infra, !ef.flags.global.NoPrompt)
+	infraManager, err := provisioning.NewManager(ctx, env, prj.Path, prj.Infra, !ef.global.NoPrompt)
 	if err != nil {
 		return nil, fmt.Errorf("creating provisioning manager: %w", err)
 	}
@@ -400,7 +375,7 @@ func (ef *envRefreshAction) Run(ctx context.Context) (*actions.ActionResult, err
 	return nil, nil
 }
 
-func envGetValuesDesign(global *internal.GlobalCommandOptions) (*cobra.Command, *envGetValuesFlags) {
+func envGetValuesDesign(global *internal.GlobalCommandOptions) (*cobra.Command, *struct{}) {
 	cmd := &cobra.Command{
 		Use:   "get-values",
 		Short: "Get all environment values.",
@@ -411,20 +386,7 @@ func envGetValuesDesign(global *internal.GlobalCommandOptions) (*cobra.Command, 
 		[]output.Format{output.JsonFormat, output.EnvVarsFormat},
 		output.EnvVarsFormat,
 	)
-
-	envGetValuesFlags := &envGetValuesFlags{}
-	envGetValuesFlags.Bind(cmd.Flags(), global)
-	return cmd, envGetValuesFlags
-}
-
-type envGetValuesFlags struct {
-	envFlag
-	global *internal.GlobalCommandOptions
-}
-
-func (eg *envGetValuesFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
-	eg.envFlag.Bind(local, global)
-	eg.global = global
+	return cmd, &struct{}{}
 }
 
 type envGetValuesAction struct {
@@ -433,7 +395,7 @@ type envGetValuesAction struct {
 	formatter output.Formatter
 	writer    io.Writer
 	azCli     azcli.AzCli
-	flags     envGetValuesFlags
+	global    *internal.GlobalCommandOptions
 }
 
 func newEnvGetValuesAction(
@@ -442,7 +404,7 @@ func newEnvGetValuesAction(
 	formatter output.Formatter,
 	writer io.Writer,
 	azCli azcli.AzCli,
-	flags envGetValuesFlags,
+	global *internal.GlobalCommandOptions,
 ) *envGetValuesAction {
 	return &envGetValuesAction{
 		azdCtx:    azdCtx,
@@ -450,7 +412,7 @@ func newEnvGetValuesAction(
 		formatter: formatter,
 		writer:    writer,
 		azCli:     azCli,
-		flags:     flags,
+		global:    global,
 	}
 }
 
@@ -466,7 +428,7 @@ func (eg *envGetValuesAction) Run(ctx context.Context) (*actions.ActionResult, e
 	//lint:ignore SA4006 // We want ctx overridden here for future changes
 	env, ctx, err := loadOrInitEnvironment( //nolint:ineffassign,staticcheck
 		ctx,
-		&eg.flags.environmentName,
+		&eg.global.EnvironmentName,
 		eg.azdCtx,
 		eg.console,
 	)

@@ -145,7 +145,7 @@ func initEnvSetAction(
 	console input.Console,
 	ctx context.Context,
 	o *internal.GlobalCommandOptions,
-	flags envSetFlags,
+	flags struct{},
 	args []string,
 ) (actions.Action, error) {
 	panic(wire.Build(EnvSetCmdSet))
@@ -185,7 +185,7 @@ func initEnvRefreshAction(
 	console input.Console,
 	ctx context.Context,
 	o *internal.GlobalCommandOptions,
-	flags envRefreshFlags,
+	flags struct{},
 	args []string,
 ) (actions.Action, error) {
 	panic(wire.Build(EnvRefreshCmdSet))
@@ -195,7 +195,7 @@ func initEnvGetValuesAction(
 	console input.Console,
 	ctx context.Context,
 	o *internal.GlobalCommandOptions,
-	flags envGetValuesFlags,
+	flags struct{},
 	args []string,
 ) (actions.Action, error) {
 	panic(wire.Build(EnvGetValuesCmdSet))

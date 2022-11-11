@@ -27,30 +27,10 @@ type deployFlags struct {
 	serviceName  string
 	outputFormat *string // pointer to allow delay-initialization when used in "azd up"
 	global       *internal.GlobalCommandOptions
-	*envFlag
 }
 
 func (d *deployFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
-	d.bindNonCommon(local, global)
-	d.bindCommon(local, global)
-}
-
-func (d *deployFlags) bindNonCommon(
-	local *pflag.FlagSet,
-	global *internal.GlobalCommandOptions) {
-	local.StringVar(
-		&d.serviceName,
-		"service",
-		"",
-		//nolint:lll
-		"Deploys a specific service (when the string is unspecified, all services that are listed in the "+azdcontext.ProjectFileName+" file are deployed).",
-	)
-	d.global = global
-}
-
-func (d *deployFlags) bindCommon(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
-	d.envFlag = &envFlag{}
-	d.envFlag.Bind(local, global)
+	d.bindWithoutOutput(local, global)
 
 	d.outputFormat = convert.RefOf("")
 	output.AddOutputFlag(
@@ -60,9 +40,18 @@ func (d *deployFlags) bindCommon(local *pflag.FlagSet, global *internal.GlobalCo
 		output.NoneFormat)
 }
 
-func (d *deployFlags) setCommon(outputFormat *string, envFlag *envFlag) {
-	d.outputFormat = outputFormat
-	d.envFlag = envFlag
+// bindWithoutOutput binds all flags except for the output flag. This is used when multiple actions are attached
+// to the same command.
+func (d *deployFlags) bindWithoutOutput(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
+	local.StringVar(
+		&d.serviceName,
+		"service",
+		"",
+		//nolint:lll
+		"Deploys a specific service (when the string is unspecified, all services that are listed in the "+azdcontext.ProjectFileName+" file are deployed).",
+	)
+
+	d.global = global
 }
 
 func deployCmdDesign(rootOptions *internal.GlobalCommandOptions) (*cobra.Command, *deployFlags) {
@@ -123,7 +112,7 @@ func (d *deployAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		return nil, err
 	}
 
-	env, ctx, err := loadOrInitEnvironment(ctx, &d.flags.environmentName, d.azdCtx, d.console)
+	env, ctx, err := loadOrInitEnvironment(ctx, &d.flags.global.EnvironmentName, d.azdCtx, d.console)
 	if err != nil {
 		return nil, fmt.Errorf("loading environment: %w", err)
 	}

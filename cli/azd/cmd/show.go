@@ -24,12 +24,10 @@ import (
 type showFlags struct {
 	outputFormat string
 	global       *internal.GlobalCommandOptions
-	envFlag
 }
 
 func (s *showFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
 	output.AddOutputFlag(local, &s.outputFormat, []output.Format{output.JsonFormat}, output.NoneFormat)
-	s.envFlag.Bind(local, global)
 	s.global = global
 }
 
@@ -74,7 +72,7 @@ func (s *showAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		return nil, err
 	}
 
-	env, ctx, err := loadOrInitEnvironment(ctx, &s.flags.environmentName, s.azdCtx, s.console)
+	env, ctx, err := loadOrInitEnvironment(ctx, &s.flags.global.EnvironmentName, s.azdCtx, s.console)
 	if err != nil {
 		return nil, fmt.Errorf("loading environment: %w", err)
 	}

@@ -21,7 +21,6 @@ import (
 type restoreFlags struct {
 	global      *internal.GlobalCommandOptions
 	serviceName string
-	envFlag
 }
 
 func (r *restoreFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
@@ -32,7 +31,6 @@ func (r *restoreFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommand
 		//nolint:lll
 		"Restores a specific service (when the string is unspecified, all services that are listed in the "+azdcontext.ProjectFileName+" file are restored).",
 	)
-	r.envFlag.Bind(local, global)
 	r.global = global
 }
 
@@ -72,7 +70,7 @@ func (r *restoreAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 		return nil, err
 	}
 
-	env, ctx, err := loadOrInitEnvironment(ctx, &r.flags.environmentName, r.azdCtx, r.console)
+	env, ctx, err := loadOrInitEnvironment(ctx, &r.flags.global.EnvironmentName, r.azdCtx, r.console)
 	if err != nil {
 		return nil, fmt.Errorf("loading environment: %w", err)
 	}

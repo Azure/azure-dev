@@ -20,7 +20,6 @@ type upFlags struct {
 	deployFlags
 	outputFormat string
 	global       *internal.GlobalCommandOptions
-	envFlag
 }
 
 func (u *upFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
@@ -29,16 +28,14 @@ func (u *upFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptio
 		&u.outputFormat,
 		[]output.Format{output.JsonFormat, output.NoneFormat},
 		output.NoneFormat)
+	u.infraCreateFlags.outputFormat = &u.outputFormat
+	u.deployFlags.outputFormat = &u.outputFormat
 
-	u.envFlag.Bind(local, global)
+	u.initFlags.Bind(local, global)
+	u.infraCreateFlags.bindWithoutOutput(local, global)
+	u.deployFlags.bindWithoutOutput(local, global)
+
 	u.global = global
-
-	u.initFlags.bindNonCommon(local, global)
-	u.initFlags.setCommon(&u.envFlag)
-	u.infraCreateFlags.bindNonCommon(local, global)
-	u.infraCreateFlags.setCommon(&u.outputFormat, &u.envFlag)
-	u.deployFlags.bindNonCommon(local, global)
-	u.deployFlags.setCommon(&u.outputFormat, &u.envFlag)
 }
 
 func upCmdDesign(global *internal.GlobalCommandOptions) (*cobra.Command, *upFlags) {

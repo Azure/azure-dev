@@ -20,7 +20,6 @@ import (
 type pipelineConfigFlags struct {
 	pipeline.PipelineManagerArgs
 	global *internal.GlobalCommandOptions
-	envFlag
 }
 
 func (pc *pipelineConfigFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
@@ -44,7 +43,6 @@ func (pc *pipelineConfigFlags) Bind(local *pflag.FlagSet, global *internal.Globa
 	)
 	local.StringVar(&pc.PipelineRoleName, "principal-role", "Contributor", "The role to assign to the service principal.")
 	local.StringVar(&pc.PipelineProvider, "provider", "", "The pipeline provider to use (GitHub and Azdo supported).")
-	pc.envFlag.Bind(local, global)
 	pc.global = global
 }
 
@@ -114,7 +112,7 @@ func (p *pipelineConfigAction) Run(ctx context.Context) (*actions.ActionResult, 
 		log.Panic("missing input console in the provided context")
 	}
 
-	env, ctx, err := loadOrInitEnvironment(ctx, &p.flags.environmentName, p.azdCtx, console)
+	env, ctx, err := loadOrInitEnvironment(ctx, &p.manager.RootOptions.EnvironmentName, p.azdCtx, console)
 	if err != nil {
 		return nil, fmt.Errorf("loading environment: %w", err)
 	}

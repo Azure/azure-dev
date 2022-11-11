@@ -101,7 +101,7 @@ func (u *upAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	// Print an additional newline to separate provision from deploy
 	u.console.Message(ctx, "")
 
-	_, err = u.deploy.Run(ctx)
+	_, err = actions.RunWithMiddleware(ctx, &actions.ActionOptions{Name: "deploy"}, u.deploy)
 	if err != nil {
 		return nil, err
 	}

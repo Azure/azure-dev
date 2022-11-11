@@ -11,6 +11,7 @@ const (
 )
 
 type ScriptConfig struct {
+	Name     string         `yaml:"omitempty"`
 	Type     ScriptType     `yaml:"type,omitempty"`
 	Location ScriptLocation `yaml:"location,omitempty"`
 	Path     string         `yaml:"path,omitempty"`

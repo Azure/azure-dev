@@ -2,13 +2,18 @@ package ext
 
 import (
 	"context"
-	"errors"
+	"crypto/sha256"
+	"encoding/base64"
 	"fmt"
 	"log"
+	"os"
 	"path/filepath"
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
+	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
+	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/bash"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/powershell"
@@ -31,6 +36,7 @@ const (
 // Scripts can be invoked at the project or service level or
 type CommandHooks struct {
 	commandRunner exec.CommandRunner
+	console       input.Console
 	cwd           string
 	interactive   bool
 	scripts       map[string]*ScriptConfig
@@ -40,6 +46,7 @@ type CommandHooks struct {
 // NewCommandHooks creates a new instance of CommandHooks
 func NewCommandHooks(
 	commandRunner exec.CommandRunner,
+	console input.Console,
 	scripts map[string]*ScriptConfig,
 	cwd string,
 	envVars []string,
@@ -47,6 +54,7 @@ func NewCommandHooks(
 ) *CommandHooks {
 	return &CommandHooks{
 		commandRunner: commandRunner,
+		console:       console,
 		cwd:           cwd,
 		interactive:   interactive,
 		scripts:       scripts,
@@ -96,6 +104,7 @@ func (h *CommandHooks) getScriptsForHook(prefix HookType, commandName string) []
 	matchingScripts := []*ScriptConfig{}
 	for scriptName, scriptConfig := range h.scripts {
 		if strings.Contains(scriptName, string(prefix)) && strings.Contains(scriptName, commandName) {
+			scriptConfig.Name = fmt.Sprintf("%s-%s", prefix, commandName)
 			matchingScripts = append(matchingScripts, scriptConfig)
 		}
 	}
@@ -106,9 +115,30 @@ func (h *CommandHooks) getScriptsForHook(prefix HookType, commandName string) []
 func (h *CommandHooks) execScript(ctx context.Context, scriptConfig *ScriptConfig) error {
 	log.Printf("Executing script '%s'", scriptConfig.Path)
 
+	// Delete any temporary inline scripts after execution
+	defer func() {
+		if scriptConfig.Location == ScriptLocationInline {
+			os.Remove(scriptConfig.Path)
+		}
+	}()
+
 	script, err := getScript(h.commandRunner, scriptConfig, h.cwd, h.envVars)
 	if err != nil {
 		return err
+	}
+
+	// When running in an interactive terminal broadcast a message to the dev to remind them that custom hooks are running.
+	if h.interactive {
+		h.console.Message(
+			ctx,
+			output.WithBold(
+				fmt.Sprintf(
+					"Executing %s command hook => %s",
+					output.WithHighLightFormat(scriptConfig.Name),
+					output.WithHighLightFormat(scriptConfig.Path),
+				),
+			),
+		)
 	}
 
 	_, err = script.Execute(ctx, scriptConfig.Path, h.interactive)
@@ -126,11 +156,20 @@ func getScript(
 	envVars []string,
 ) (tools.Script, error) {
 	if scriptConfig.Location == "" {
-		scriptConfig.Location = ScriptLocationPath
+		if scriptConfig.Path != "" {
+			scriptConfig.Location = ScriptLocationPath
+		} else if scriptConfig.Script != "" {
+			scriptConfig.Location = ScriptLocationInline
+		}
 	}
 
 	if scriptConfig.Location == ScriptLocationInline {
-		return nil, errors.New("inline script support is coming soon.")
+		tempScript, err := createTempScript(scriptConfig)
+		if err != nil {
+			return nil, err
+		}
+
+		scriptConfig.Path = tempScript
 	}
 
 	if scriptConfig.Type == "" {
@@ -141,7 +180,10 @@ func getScript(
 		case ".ps1":
 			scriptConfig.Type = ScriptTypePowershell
 		default:
-			return nil, fmt.Errorf("script with file extension '%s' is not valid. Only '.sh' and '.ps1' are supported", fileExtension)
+			return nil, fmt.Errorf(
+				"script with file extension '%s' is not valid. Only '.sh' and '.ps1' are supported",
+				fileExtension,
+			)
 		}
 	}
 
@@ -156,4 +198,54 @@ func getScript(
 			scriptConfig.Type,
 		)
 	}
+}
+
+func createTempScript(scriptConfig *ScriptConfig) (string, error) {
+	scriptBytes := []byte(scriptConfig.Script)
+	hash := sha256.Sum256(scriptBytes)
+
+	var ext string
+	scriptHeader := []string{}
+
+	switch scriptConfig.Type {
+	case ScriptTypeBash:
+		ext = "sh"
+		scriptHeader = []string{
+			"#!/bin/bash",
+			"set -euo pipefail",
+		}
+	case ScriptTypePowershell:
+		ext = "ps1"
+	}
+
+	filename := fmt.Sprintf("%s.%s", base64.URLEncoding.
+		WithPadding(base64.NoPadding).
+		EncodeToString(hash[:]), ext)
+
+	// Write the temporary script file to .azure/hooks folder
+	filePath := filepath.Join(".azure", "hooks", filename)
+	directory := filepath.Dir(filePath)
+	_, err := os.Stat(directory)
+	if err != nil {
+		err := os.MkdirAll(directory, osutil.PermissionDirectory)
+		if err != nil {
+			return "", fmt.Errorf("failed creating command hooks directory, %w", err)
+		}
+	}
+
+	scriptBuilder := strings.Builder{}
+	for _, line := range scriptHeader {
+		scriptBuilder.WriteString(fmt.Sprintf("%s\n", line))
+	}
+	scriptBuilder.WriteString("\n")
+	scriptBuilder.WriteString("# Auto generated file from Azure Developer CLI\n")
+	scriptBuilder.Write([]byte(scriptConfig.Script))
+
+	// Temp generated files are cleaned up automatically after script execution has completed.
+	err = os.WriteFile(filePath, []byte(scriptBuilder.String()), osutil.PermissionFile)
+	if err != nil {
+		return "", fmt.Errorf("failed creating command hook file, %w", err)
+	}
+
+	return filePath, nil
 }

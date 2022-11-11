@@ -123,6 +123,7 @@ func TestDeployProgressMessages(t *testing.T) {
 
 	commandHooks := ext.NewCommandHooks(
 		mockContext.CommandRunner,
+		mockContext.Console,
 		service.Config.Scripts,
 		service.Config.Path(),
 		env.ToSlice(),

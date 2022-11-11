@@ -59,6 +59,7 @@ func UseCommandHooks() actions.MiddlewareFn {
 		interactive := formatter == nil || formatter.Kind() == output.NoneFormat
 		hooks := ext.NewCommandHooks(
 			commandRunner,
+			console,
 			projectConfig.Scripts,
 			azdContext.ProjectDirectory(),
 			env.ToSlice(),

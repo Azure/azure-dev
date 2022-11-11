@@ -174,6 +174,7 @@ func (d *deployAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	for _, svc := range proj.Services {
 		commandHooks := ext.NewCommandHooks(
 			d.commandRunner,
+			d.console,
 			svc.Config.Scripts,
 			svc.Config.Path(),
 			env.ToSlice(),

@@ -89,10 +89,6 @@ func (m *monitorAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 		return nil, err
 	}
 
-	if err := ensureLoggedIn(ctx); err != nil {
-		return nil, fmt.Errorf("failed to ensure login: %w", err)
-	}
-
 	if !m.flags.monitorLive && !m.flags.monitorLogs && !m.flags.monitorOverview {
 		m.flags.monitorOverview = true
 	}

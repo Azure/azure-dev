@@ -213,13 +213,6 @@ func ensureEnvironmentInitialized(
 		env.SetEnvName(envSpec.environmentName)
 	}
 
-	needAzureInteraction := !hasSubID || !hasLocation || !hasPrincipalID
-	if needAzureInteraction {
-		if err := ensureLoggedIn(ctx); err != nil {
-			return fmt.Errorf("logging in: %w", err)
-		}
-	}
-
 	if !hasSubID && envSpec.subscription != "" {
 		env.SetSubscriptionId(envSpec.subscription)
 	} else {

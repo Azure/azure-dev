@@ -89,10 +89,6 @@ func (i *infraCreateAction) Run(ctx context.Context) (*actions.ActionResult, err
 		return nil, err
 	}
 
-	if err := ensureLoggedIn(ctx); err != nil {
-		return nil, fmt.Errorf("failed to ensure login: %w", err)
-	}
-
 	// Command title
 	i.console.MessageUxItem(ctx, &ux.MessageTitle{
 		Title:     "Provisioning Azure resources (azd provision)",

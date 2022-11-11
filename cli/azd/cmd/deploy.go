@@ -112,10 +112,6 @@ func (d *deployAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		return nil, err
 	}
 
-	if err := ensureLoggedIn(ctx); err != nil {
-		return nil, fmt.Errorf("failed to ensure login: %w", err)
-	}
-
 	env, ctx, err := loadOrInitEnvironment(ctx, &d.flags.global.EnvironmentName, d.azdCtx, d.console)
 	if err != nil {
 		return nil, fmt.Errorf("loading environment: %w", err)

@@ -50,10 +50,6 @@ type AzCli interface {
 	// UserAgent gets the currently configured user agent
 	UserAgent() string
 
-	// Login runs the `az login` flow.  When `useDeviceCode` is true, a device code based login is preformed, otherwise
-	// the interactive browser login flow happens. In the case of a device code login, the message is written to the
-	// `deviceCodeWriter`.
-	Login(ctx context.Context, useDeviceCode bool, deviceCodeWriter io.Writer) error
 	LoginAcr(ctx context.Context, subscriptionId string, loginServer string) error
 	GetContainerRegistries(ctx context.Context, subscriptionId string) ([]*armcontainerregistry.Registry, error)
 	ListAccounts(ctx context.Context) ([]*AzCliSubscriptionInfo, error)
@@ -410,27 +406,6 @@ func (cli *azCli) SetUserAgent(userAgent string) {
 
 func (cli *azCli) UserAgent() string {
 	return cli.userAgent
-}
-
-func (cli *azCli) Login(ctx context.Context, useDeviceCode bool, deviceCodeWriter io.Writer) error {
-	args := []string{"login", "--output", "none"}
-
-	var writer io.Writer
-	if useDeviceCode {
-		writer = deviceCodeWriter
-		args = append(args, "--use-device-code")
-	}
-
-	res, err := cli.runAzCommandWithArgs(ctx, exec.RunArgs{
-		Args:   args,
-		Stderr: writer,
-	})
-
-	if err != nil {
-		return fmt.Errorf("failed running az login: %s: %w", res.String(), err)
-	}
-
-	return nil
 }
 
 func (cli *azCli) runAzCommand(ctx context.Context, args ...string) (exec.RunResult, error) {

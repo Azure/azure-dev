@@ -43,7 +43,7 @@ func NewManager(configManager config.Manager, azCli azcli.AzCli) (*Manager, erro
 	azdConfig, err := configManager.Load(filePath)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			log.Printf("configuration file '%s' does not exist. Creating new empty config.\n", filePath)
+			log.Printf("configuration file '%s' does not exist. Creating new empty config.", filePath)
 			azdConfig = config.NewConfig(nil)
 		} else {
 			return nil, err

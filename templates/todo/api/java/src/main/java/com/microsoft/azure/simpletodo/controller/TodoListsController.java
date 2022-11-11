@@ -3,7 +3,6 @@ package com.microsoft.azure.simpletodo.controller;
 import com.microsoft.azure.simpletodo.api.ListsApi;
 import com.microsoft.azure.simpletodo.model.TodoList;
 import com.microsoft.azure.simpletodo.repository.TodoListRepository;
-import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
@@ -14,9 +13,12 @@ import java.net.URI;
 import java.util.List;
 
 @RestController
-@RequiredArgsConstructor
 public class TodoListsController implements ListsApi {
     private final TodoListRepository todoListRepository;
+
+    public TodoListsController(TodoListRepository todoListRepository) {
+        this.todoListRepository = todoListRepository;
+    }
 
     public ResponseEntity<TodoList> createList(TodoList todoList) {
         final TodoList savedTodoList = todoListRepository.save(todoList);

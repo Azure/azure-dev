@@ -11,7 +11,6 @@ import com.microsoft.azure.simpletodo.model.TodoList;
 import com.microsoft.azure.simpletodo.model.TodoState;
 import com.microsoft.azure.simpletodo.repository.TodoItemRepository;
 import com.microsoft.azure.simpletodo.repository.TodoListRepository;
-import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.util.CollectionUtils;
 import org.springframework.web.bind.annotation.RestController;
@@ -24,10 +23,14 @@ import java.util.Optional;
 import java.util.stream.StreamSupport;
 
 @RestController
-@RequiredArgsConstructor
 public class TodoItemsController implements ItemsApi {
     private final TodoListRepository todoListRepository;
     private final TodoItemRepository todoItemRepository;
+
+    public TodoItemsController(TodoListRepository todoListRepository, TodoItemRepository todoItemRepository) {
+        this.todoListRepository = todoListRepository;
+        this.todoItemRepository = todoItemRepository;
+    }
 
     public ResponseEntity<TodoItem> createItem(String listId, TodoItem todoItem) {
         final Optional<TodoList> optionalTodoList = todoListRepository.findById(listId);

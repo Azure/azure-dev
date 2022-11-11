@@ -8,6 +8,7 @@ package cmd
 import (
 	"context"
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
+	"github.com/azure/azure-dev/cli/azd/cmd/middleware"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/google/wire"
@@ -308,3 +309,25 @@ func initConfigResetAction(
 }
 
 //#endregion Config
+
+//#region Middleware
+
+func initDebugMiddleware(
+	flags any,
+	rootOptions *internal.GlobalCommandOptions,
+	actionOptions *actions.ActionOptions,
+	console input.Console,
+) (middleware.Middleware, error) {
+	panic(wire.Build(DebugMiddlewareSet))
+}
+
+func initTelemetryMiddleware(
+	flags any,
+	rootOptions *internal.GlobalCommandOptions,
+	actionOptions *actions.ActionOptions,
+	console input.Console,
+) (middleware.Middleware, error) {
+	panic(wire.Build(TelemetryMiddlewareSet))
+}
+
+//#endregion Middleware

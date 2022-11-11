@@ -32,6 +32,10 @@ type Action interface {
 	Run(ctx context.Context) (*ActionResult, error)
 }
 
+type ActionOptions struct {
+	DisableTelemetry bool
+}
+
 func ShowActionResults(ctx context.Context, console input.Console, actionResult *ActionResult, err error) {
 	if err != nil {
 		console.MessageUx(ctx, err.Error(), input.ResultError)

@@ -32,7 +32,7 @@ resource restApi 'Microsoft.ApiManagement/service/apis@2021-12-01-preview' = {
     subscriptionRequired: false
     type: 'http'
     format: 'openapi'
-    value: loadTextContent('../../../../api/common/openapi.yaml')    
+    value: loadTextContent('../../../../api/common/openapi.yaml')
   }
 }
 
@@ -59,7 +59,7 @@ resource apiDiagnostics 'Microsoft.ApiManagement/service/apis/diagnostics@2021-1
       response: {
         body: {
           bytes: 1024
-        }                              
+        }
       }
     }
     frontend: {

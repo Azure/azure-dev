@@ -14,8 +14,10 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal/telemetry/fields"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
+	"github.com/azure/azure-dev/cli/azd/pkg/ext"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"gopkg.in/yaml.v3"
@@ -25,13 +27,14 @@ import (
 // When changing project structure, make sure to update the JSON schema file for azure.yaml (<workspace
 // root>/schemas/vN.M/azure.yaml.json).
 type ProjectConfig struct {
-	Name              string                    `yaml:"name"`
+	Name              string                       `yaml:"name"`
 	ResourceGroupName ExpandableString          `yaml:"resourceGroup,omitempty"`
-	Path              string                    `yaml:",omitempty"`
-	Metadata          *ProjectMetadata          `yaml:"metadata,omitempty"`
-	Services          map[string]*ServiceConfig `yaml:",omitempty"`
-	Infra             provisioning.Options      `yaml:"infra"`
-	Pipeline          PipelineOptions           `yaml:"pipeline"`
+	Path              string                       `yaml:",omitempty"`
+	Metadata          *ProjectMetadata             `yaml:"metadata,omitempty"`
+	Services          map[string]*ServiceConfig    `yaml:",omitempty"`
+	Infra             provisioning.Options         `yaml:"infra,omitempty"`
+	Pipeline          PipelineOptions              `yaml:"pipeline,omitempty"`
+	Scripts           map[string]*ext.ScriptConfig `yaml:"scripts,omitempty"`
 
 	handlers map[Event][]ProjectLifecycleEventHandlerFn
 }
@@ -211,6 +214,45 @@ func (pc *ProjectConfig) RaiseEvent(ctx context.Context, name Event, args map[st
 	return nil
 }
 
+func (p *ProjectConfig) Initialize(
+	ctx context.Context, env *environment.Environment, commandRunner exec.CommandRunner,
+) error {
+	var allTools []tools.ExternalTool
+	for _, svc := range p.Services {
+		frameworkService, err := svc.GetFrameworkService(ctx, env, commandRunner)
+		if err != nil {
+			return fmt.Errorf("getting framework services: %w", err)
+		}
+		if err := (*frameworkService).Initialize(ctx); err != nil {
+			return err
+		}
+
+		requiredTools := (*frameworkService).RequiredExternalTools()
+		allTools = append(allTools, requiredTools...)
+	}
+
+	if err := tools.EnsureInstalled(ctx, tools.Unique(allTools)...); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// Saves the current instance back to the azure.yaml file
+func (p *ProjectConfig) Save(projectPath string) error {
+	projectBytes, err := yaml.Marshal(p)
+	if err != nil {
+		return fmt.Errorf("marshalling project yaml: %w", err)
+	}
+
+	err = os.WriteFile(projectPath, projectBytes, osutil.PermissionFile)
+	if err != nil {
+		return fmt.Errorf("saving project file: %w", err)
+	}
+
+	return nil
+}
+
 // ParseProjectConfig will parse a project from a yaml string and return the project configuration
 func ParseProjectConfig(yamlContent string) (*ProjectConfig, error) {
 	var projectFile ProjectConfig
@@ -242,30 +284,6 @@ func ParseProjectConfig(yamlContent string) (*ProjectConfig, error) {
 	}
 
 	return &projectFile, nil
-}
-
-func (p *ProjectConfig) Initialize(
-	ctx context.Context, env *environment.Environment, commandRunner exec.CommandRunner,
-) error {
-	var allTools []tools.ExternalTool
-	for _, svc := range p.Services {
-		frameworkService, err := svc.GetFrameworkService(ctx, env, commandRunner)
-		if err != nil {
-			return fmt.Errorf("getting framework services: %w", err)
-		}
-		if err := (*frameworkService).Initialize(ctx); err != nil {
-			return err
-		}
-
-		requiredTools := (*frameworkService).RequiredExternalTools()
-		allTools = append(allTools, requiredTools...)
-	}
-
-	if err := tools.EnsureInstalled(ctx, tools.Unique(allTools)...); err != nil {
-		return err
-	}
-
-	return nil
 }
 
 // LoadProjectConfig loads the azure.yaml configuring into an viewable structure

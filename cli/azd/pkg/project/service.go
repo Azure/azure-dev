@@ -11,6 +11,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
+	"github.com/azure/azure-dev/cli/azd/pkg/ext"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 )
 
@@ -47,6 +48,7 @@ func (svc *Service) RequiredExternalTools() []tools.ExternalTool {
 func (svc *Service) Deploy(
 	ctx context.Context,
 	azdCtx *azdcontext.AzdContext,
+	commandHooks *ext.CommandHooks,
 ) (<-chan *ServiceDeploymentChannelResponse, <-chan string) {
 	result := make(chan *ServiceDeploymentChannelResponse, 1)
 	progress := make(chan string)
@@ -55,27 +57,45 @@ func (svc *Service) Deploy(
 		defer close(result)
 		defer close(progress)
 
-		log.Printf("packing service %s", svc.Config.Name)
+		var deploymentArtifact string
 
-		progress <- "Preparing packaging"
-		artifact, err := svc.Framework.Package(ctx, progress)
-		if err != nil {
-			result <- &ServiceDeploymentChannelResponse{
-				Error: fmt.Errorf("packaging service %s: %w", svc.Config.Name, err),
+		err := commandHooks.Invoke(ctx, []string{"package"}, func() error {
+			log.Printf("packing service %s", svc.Config.Name)
+			progress <- "Preparing packaging"
+
+			artifact, err := svc.Framework.Package(ctx, progress)
+			if err != nil {
+				result <- &ServiceDeploymentChannelResponse{
+					Error: fmt.Errorf("packaging service %s: %w", svc.Config.Name, err),
+				}
 			}
 
+			deploymentArtifact = artifact
+			return nil
+		})
+
+		if err != nil {
 			return
 		}
 
-		log.Printf("deploying service %s", svc.Config.Name)
+		var deployResult ServiceDeploymentResult
 
-		progress <- "Preparing for deployment"
-		res, err := svc.Target.Deploy(ctx, azdCtx, artifact, progress)
-		if err != nil {
-			result <- &ServiceDeploymentChannelResponse{
-				Error: fmt.Errorf("deploying service %s package: %w", svc.Config.Name, err),
+		err = commandHooks.Invoke(ctx, []string{"deploy"}, func() error {
+			log.Printf("deploying service %s", svc.Config.Name)
+
+			progress <- "Preparing for deployment"
+			res, err := svc.Target.Deploy(ctx, azdCtx, deploymentArtifact, progress)
+			if err != nil {
+				result <- &ServiceDeploymentChannelResponse{
+					Error: fmt.Errorf("deploying service %s package: %w", svc.Config.Name, err),
+				}
 			}
 
+			deployResult = res
+			return nil
+		})
+
+		if err != nil {
 			return
 		}
 
@@ -90,7 +110,7 @@ func (svc *Service) Deploy(
 		progress <- "Deployment completed"
 
 		result <- &ServiceDeploymentChannelResponse{
-			Result: &res,
+			Result: &deployResult,
 		}
 	}()
 

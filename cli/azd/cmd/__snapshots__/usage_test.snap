@@ -21,11 +21,10 @@ Available Commands:
   version     Print the version number of Azure Developer CLI.
 
 Flags:
-  -C, --cwd string           Sets the current working directory.
-      --debug                Enables debugging and diagnostics logging.
-  -e, --environment string   The name of the environment to use.
-  -h, --help                 Gets help for azd.
-      --no-prompt            Accepts the default value instead of prompting, or it fails if there is no default.
+  -C, --cwd string   Sets the current working directory.
+      --debug        Enables debugging and diagnostics logging.
+  -h, --help         Gets help for azd.
+      --no-prompt    Accepts the default value instead of prompting, or it fails if there is no default.
 
 Use "azd [command] --help" for more information about a command.
 
@@ -46,10 +45,9 @@ Flags:
   -h, --help   Gets help for config.
 
 Global Flags:
-  -C, --cwd string           Sets the current working directory.
-      --debug                Enables debugging and diagnostics logging.
-  -e, --environment string   The name of the environment to use.
-      --no-prompt            Accepts the default value instead of prompting, or it fails if there is no default.
+  -C, --cwd string   Sets the current working directory.
+      --debug        Enables debugging and diagnostics logging.
+      --no-prompt    Accepts the default value instead of prompting, or it fails if there is no default.
 
 Use "azd config [command] --help" for more information about a command.
 
@@ -64,10 +62,9 @@ Flags:
   -o, --output string   The output format (the supported formats are json). (default "json")
 
 Global Flags:
-  -C, --cwd string           Sets the current working directory.
-      --debug                Enables debugging and diagnostics logging.
-  -e, --environment string   The name of the environment to use.
-      --no-prompt            Accepts the default value instead of prompting, or it fails if there is no default.
+  -C, --cwd string   Sets the current working directory.
+      --debug        Enables debugging and diagnostics logging.
+      --no-prompt    Accepts the default value instead of prompting, or it fails if there is no default.
 
 ---
 
@@ -80,10 +77,9 @@ Flags:
   -o, --output string   The output format (the supported formats are json). (default "json")
 
 Global Flags:
-  -C, --cwd string           Sets the current working directory.
-      --debug                Enables debugging and diagnostics logging.
-  -e, --environment string   The name of the environment to use.
-      --no-prompt            Accepts the default value instead of prompting, or it fails if there is no default.
+  -C, --cwd string   Sets the current working directory.
+      --debug        Enables debugging and diagnostics logging.
+      --no-prompt    Accepts the default value instead of prompting, or it fails if there is no default.
 
 ---
 
@@ -95,10 +91,9 @@ Flags:
   -h, --help   Gets help for reset.
 
 Global Flags:
-  -C, --cwd string           Sets the current working directory.
-      --debug                Enables debugging and diagnostics logging.
-  -e, --environment string   The name of the environment to use.
-      --no-prompt            Accepts the default value instead of prompting, or it fails if there is no default.
+  -C, --cwd string   Sets the current working directory.
+      --debug        Enables debugging and diagnostics logging.
+      --no-prompt    Accepts the default value instead of prompting, or it fails if there is no default.
 
 ---
 
@@ -114,10 +109,9 @@ Flags:
   -h, --help   Gets help for set.
 
 Global Flags:
-  -C, --cwd string           Sets the current working directory.
-      --debug                Enables debugging and diagnostics logging.
-  -e, --environment string   The name of the environment to use.
-      --no-prompt            Accepts the default value instead of prompting, or it fails if there is no default.
+  -C, --cwd string   Sets the current working directory.
+      --debug        Enables debugging and diagnostics logging.
+      --no-prompt    Accepts the default value instead of prompting, or it fails if there is no default.
 
 ---
 
@@ -132,10 +126,9 @@ Flags:
   -h, --help   Gets help for unset.
 
 Global Flags:
-  -C, --cwd string           Sets the current working directory.
-      --debug                Enables debugging and diagnostics logging.
-  -e, --environment string   The name of the environment to use.
-      --no-prompt            Accepts the default value instead of prompting, or it fails if there is no default.
+  -C, --cwd string   Sets the current working directory.
+      --debug        Enables debugging and diagnostics logging.
+      --no-prompt    Accepts the default value instead of prompting, or it fails if there is no default.
 
 ---
 
@@ -144,15 +137,15 @@ Usage:
   azd deploy [flags]
 
 Flags:
-  -h, --help             Gets help for deploy.
-  -o, --output string    The output format (the supported formats are json, none). (default "none")
-      --service string   Deploys a specific service (when the string is unspecified, all services that are listed in the azure.yaml file are deployed).
+  -e, --environment string   The name of the environment to use.
+  -h, --help                 Gets help for deploy.
+  -o, --output string        The output format (the supported formats are json, none). (default "none")
+      --service string       Deploys a specific service (when the string is unspecified, all services that are listed in the azure.yaml file are deployed).
 
 Global Flags:
-  -C, --cwd string           Sets the current working directory.
-      --debug                Enables debugging and diagnostics logging.
-  -e, --environment string   The name of the environment to use.
-      --no-prompt            Accepts the default value instead of prompting, or it fails if there is no default.
+  -C, --cwd string   Sets the current working directory.
+      --debug        Enables debugging and diagnostics logging.
+      --no-prompt    Accepts the default value instead of prompting, or it fails if there is no default.
 
 ---
 
@@ -161,16 +154,16 @@ Usage:
   azd down [flags]
 
 Flags:
-      --force           Does not require confirmation before it deletes resources.
-  -h, --help            Gets help for down.
-  -o, --output string   The output format (the supported formats are json, none). (default "none")
-      --purge           Does not require confirmation before it permanently deletes resources that are soft-deleted by default (for example, key vaults).
+  -e, --environment string   The name of the environment to use.
+      --force                Does not require confirmation before it deletes resources.
+  -h, --help                 Gets help for down.
+  -o, --output string        The output format (the supported formats are json, none). (default "none")
+      --purge                Does not require confirmation before it permanently deletes resources that are soft-deleted by default (for example, key vaults).
 
 Global Flags:
-  -C, --cwd string           Sets the current working directory.
-      --debug                Enables debugging and diagnostics logging.
-  -e, --environment string   The name of the environment to use.
-      --no-prompt            Accepts the default value instead of prompting, or it fails if there is no default.
+  -C, --cwd string   Sets the current working directory.
+      --debug        Enables debugging and diagnostics logging.
+      --no-prompt    Accepts the default value instead of prompting, or it fails if there is no default.
 
 ---
 
@@ -190,10 +183,9 @@ Flags:
   -h, --help   Gets help for env.
 
 Global Flags:
-  -C, --cwd string           Sets the current working directory.
-      --debug                Enables debugging and diagnostics logging.
-  -e, --environment string   The name of the environment to use.
-      --no-prompt            Accepts the default value instead of prompting, or it fails if there is no default.
+  -C, --cwd string   Sets the current working directory.
+      --debug        Enables debugging and diagnostics logging.
+      --no-prompt    Accepts the default value instead of prompting, or it fails if there is no default.
 
 Use "azd env [command] --help" for more information about a command.
 
@@ -204,14 +196,14 @@ Usage:
   azd env get-values [flags]
 
 Flags:
-  -h, --help            Gets help for get-values.
-  -o, --output string   The output format (the supported formats are json, dotenv). (default "dotenv")
+  -e, --environment string   The name of the environment to use.
+  -h, --help                 Gets help for get-values.
+  -o, --output string        The output format (the supported formats are json, dotenv). (default "dotenv")
 
 Global Flags:
-  -C, --cwd string           Sets the current working directory.
-      --debug                Enables debugging and diagnostics logging.
-  -e, --environment string   The name of the environment to use.
-      --no-prompt            Accepts the default value instead of prompting, or it fails if there is no default.
+  -C, --cwd string   Sets the current working directory.
+      --debug        Enables debugging and diagnostics logging.
+      --no-prompt    Accepts the default value instead of prompting, or it fails if there is no default.
 
 ---
 
@@ -227,10 +219,9 @@ Flags:
   -o, --output string   The output format (the supported formats are json, table). (default "table")
 
 Global Flags:
-  -C, --cwd string           Sets the current working directory.
-      --debug                Enables debugging and diagnostics logging.
-  -e, --environment string   The name of the environment to use.
-      --no-prompt            Accepts the default value instead of prompting, or it fails if there is no default.
+  -C, --cwd string   Sets the current working directory.
+      --debug        Enables debugging and diagnostics logging.
+      --no-prompt    Accepts the default value instead of prompting, or it fails if there is no default.
 
 ---
 
@@ -244,10 +235,9 @@ Flags:
       --subscription string   Name or ID of an Azure subscription to use for the new environment
 
 Global Flags:
-  -C, --cwd string           Sets the current working directory.
-      --debug                Enables debugging and diagnostics logging.
-  -e, --environment string   The name of the environment to use.
-      --no-prompt            Accepts the default value instead of prompting, or it fails if there is no default.
+  -C, --cwd string   Sets the current working directory.
+      --debug        Enables debugging and diagnostics logging.
+      --no-prompt    Accepts the default value instead of prompting, or it fails if there is no default.
 
 ---
 
@@ -256,14 +246,14 @@ Usage:
   azd env refresh [flags]
 
 Flags:
-  -h, --help            Gets help for refresh.
-  -o, --output string   The output format (the supported formats are json, none). (default "none")
+  -e, --environment string   The name of the environment to use.
+  -h, --help                 Gets help for refresh.
+  -o, --output string        The output format (the supported formats are json, none). (default "none")
 
 Global Flags:
-  -C, --cwd string           Sets the current working directory.
-      --debug                Enables debugging and diagnostics logging.
-  -e, --environment string   The name of the environment to use.
-      --no-prompt            Accepts the default value instead of prompting, or it fails if there is no default.
+  -C, --cwd string   Sets the current working directory.
+      --debug        Enables debugging and diagnostics logging.
+      --no-prompt    Accepts the default value instead of prompting, or it fails if there is no default.
 
 ---
 
@@ -275,10 +265,9 @@ Flags:
   -h, --help   Gets help for select.
 
 Global Flags:
-  -C, --cwd string           Sets the current working directory.
-      --debug                Enables debugging and diagnostics logging.
-  -e, --environment string   The name of the environment to use.
-      --no-prompt            Accepts the default value instead of prompting, or it fails if there is no default.
+  -C, --cwd string   Sets the current working directory.
+      --debug        Enables debugging and diagnostics logging.
+      --no-prompt    Accepts the default value instead of prompting, or it fails if there is no default.
 
 ---
 
@@ -287,13 +276,13 @@ Usage:
   azd env set <key> <value> [flags]
 
 Flags:
-  -h, --help   Gets help for set.
+  -e, --environment string   The name of the environment to use.
+  -h, --help                 Gets help for set.
 
 Global Flags:
-  -C, --cwd string           Sets the current working directory.
-      --debug                Enables debugging and diagnostics logging.
-  -e, --environment string   The name of the environment to use.
-      --no-prompt            Accepts the default value instead of prompting, or it fails if there is no default.
+  -C, --cwd string   Sets the current working directory.
+      --debug        Enables debugging and diagnostics logging.
+      --no-prompt    Accepts the default value instead of prompting, or it fails if there is no default.
 
 ---
 
@@ -309,10 +298,9 @@ Flags:
   -h, --help   Gets help for infra.
 
 Global Flags:
-  -C, --cwd string           Sets the current working directory.
-      --debug                Enables debugging and diagnostics logging.
-  -e, --environment string   The name of the environment to use.
-      --no-prompt            Accepts the default value instead of prompting, or it fails if there is no default.
+  -C, --cwd string   Sets the current working directory.
+      --debug        Enables debugging and diagnostics logging.
+      --no-prompt    Accepts the default value instead of prompting, or it fails if there is no default.
 
 Use "azd infra [command] --help" for more information about a command.
 
@@ -326,15 +314,15 @@ Aliases:
   create, provision
 
 Flags:
-  -h, --help            Gets help for create.
-      --no-progress     Suppresses progress information.
-  -o, --output string   The output format (the supported formats are json, none). (default "none")
+  -e, --environment string   The name of the environment to use.
+  -h, --help                 Gets help for create.
+      --no-progress          Suppresses progress information.
+  -o, --output string        The output format (the supported formats are json, none). (default "none")
 
 Global Flags:
-  -C, --cwd string           Sets the current working directory.
-      --debug                Enables debugging and diagnostics logging.
-  -e, --environment string   The name of the environment to use.
-      --no-prompt            Accepts the default value instead of prompting, or it fails if there is no default.
+  -C, --cwd string   Sets the current working directory.
+      --debug        Enables debugging and diagnostics logging.
+      --no-prompt    Accepts the default value instead of prompting, or it fails if there is no default.
 
 ---
 
@@ -343,15 +331,15 @@ Usage:
   azd infra delete [flags]
 
 Flags:
-      --force   Does not require confirmation before it deletes resources.
-  -h, --help    Gets help for delete.
-      --purge   Does not require confirmation before it permanently deletes resources that are soft-deleted by default (for example, key vaults).
+  -e, --environment string   The name of the environment to use.
+      --force                Does not require confirmation before it deletes resources.
+  -h, --help                 Gets help for delete.
+      --purge                Does not require confirmation before it permanently deletes resources that are soft-deleted by default (for example, key vaults).
 
 Global Flags:
-  -C, --cwd string           Sets the current working directory.
-      --debug                Enables debugging and diagnostics logging.
-  -e, --environment string   The name of the environment to use.
-      --no-prompt            Accepts the default value instead of prompting, or it fails if there is no default.
+  -C, --cwd string   Sets the current working directory.
+      --debug        Enables debugging and diagnostics logging.
+      --no-prompt    Accepts the default value instead of prompting, or it fails if there is no default.
 
 ---
 
@@ -361,16 +349,16 @@ Usage:
 
 Flags:
   -b, --branch string         The template branch to initialize from.
+  -e, --environment string    The name of the environment to use.
   -h, --help                  Gets help for init.
   -l, --location string       Azure location for the new environment
       --subscription string   Name or ID of an Azure subscription to use for the new environment
   -t, --template string       The template to use when you initialize the project. You can use Full URI, <owner>/<repository>, or <repository> if it's part of the azure-samples organization.
 
 Global Flags:
-  -C, --cwd string           Sets the current working directory.
-      --debug                Enables debugging and diagnostics logging.
-  -e, --environment string   The name of the environment to use.
-      --no-prompt            Accepts the default value instead of prompting, or it fails if there is no default.
+  -C, --cwd string   Sets the current working directory.
+      --debug        Enables debugging and diagnostics logging.
+      --no-prompt    Accepts the default value instead of prompting, or it fails if there is no default.
 
 ---
 
@@ -391,10 +379,9 @@ Flags:
       --use-device-code                        When true, log in by using a device code instead of a browser.
 
 Global Flags:
-  -C, --cwd string           Sets the current working directory.
-      --debug                Enables debugging and diagnostics logging.
-  -e, --environment string   The name of the environment to use.
-      --no-prompt            Accepts the default value instead of prompting, or it fails if there is no default.
+  -C, --cwd string   Sets the current working directory.
+      --debug        Enables debugging and diagnostics logging.
+      --no-prompt    Accepts the default value instead of prompting, or it fails if there is no default.
 
 ---
 
@@ -406,10 +393,9 @@ Flags:
   -h, --help   Gets help for logout.
 
 Global Flags:
-  -C, --cwd string           Sets the current working directory.
-      --debug                Enables debugging and diagnostics logging.
-  -e, --environment string   The name of the environment to use.
-      --no-prompt            Accepts the default value instead of prompting, or it fails if there is no default.
+  -C, --cwd string   Sets the current working directory.
+      --debug        Enables debugging and diagnostics logging.
+      --no-prompt    Accepts the default value instead of prompting, or it fails if there is no default.
 
 ---
 
@@ -418,16 +404,16 @@ Usage:
   azd monitor [flags]
 
 Flags:
-  -h, --help       Gets help for monitor.
-      --live       Open a browser to Application Insights Live Metrics. Live Metrics is currently not supported for Python applications.
-      --logs       Open a browser to Application Insights Logs.
-      --overview   Open a browser to Application Insights Overview Dashboard.
+  -e, --environment string   The name of the environment to use.
+  -h, --help                 Gets help for monitor.
+      --live                 Open a browser to Application Insights Live Metrics. Live Metrics is currently not supported for Python applications.
+      --logs                 Open a browser to Application Insights Logs.
+      --overview             Open a browser to Application Insights Overview Dashboard.
 
 Global Flags:
-  -C, --cwd string           Sets the current working directory.
-      --debug                Enables debugging and diagnostics logging.
-  -e, --environment string   The name of the environment to use.
-      --no-prompt            Accepts the default value instead of prompting, or it fails if there is no default.
+  -C, --cwd string   Sets the current working directory.
+      --debug        Enables debugging and diagnostics logging.
+      --no-prompt    Accepts the default value instead of prompting, or it fails if there is no default.
 
 ---
 
@@ -442,10 +428,9 @@ Flags:
   -h, --help   Gets help for pipeline.
 
 Global Flags:
-  -C, --cwd string           Sets the current working directory.
-      --debug                Enables debugging and diagnostics logging.
-  -e, --environment string   The name of the environment to use.
-      --no-prompt            Accepts the default value instead of prompting, or it fails if there is no default.
+  -C, --cwd string   Sets the current working directory.
+      --debug        Enables debugging and diagnostics logging.
+      --no-prompt    Accepts the default value instead of prompting, or it fails if there is no default.
 
 Use "azd pipeline [command] --help" for more information about a command.
 
@@ -457,6 +442,7 @@ Usage:
 
 Flags:
       --auth-type string        The authentication type used between the pipeline provider and Azure for deployment (Only valid for GitHub provider)
+  -e, --environment string      The name of the environment to use.
   -h, --help                    Gets help for config.
       --principal-name string   The name of the service principal to use to grant access to Azure resources as part of the pipeline.
       --principal-role string   The role to assign to the service principal. (default "Contributor")
@@ -464,10 +450,9 @@ Flags:
       --remote-name string      The name of the git remote to configure the pipeline to run on. (default "origin")
 
 Global Flags:
-  -C, --cwd string           Sets the current working directory.
-      --debug                Enables debugging and diagnostics logging.
-  -e, --environment string   The name of the environment to use.
-      --no-prompt            Accepts the default value instead of prompting, or it fails if there is no default.
+  -C, --cwd string   Sets the current working directory.
+      --debug        Enables debugging and diagnostics logging.
+      --no-prompt    Accepts the default value instead of prompting, or it fails if there is no default.
 
 ---
 
@@ -476,15 +461,15 @@ Usage:
   azd provision [flags]
 
 Flags:
-  -h, --help            Gets help for provision.
-      --no-progress     Suppresses progress information.
-  -o, --output string   The output format (the supported formats are json, none). (default "none")
+  -e, --environment string   The name of the environment to use.
+  -h, --help                 Gets help for provision.
+      --no-progress          Suppresses progress information.
+  -o, --output string        The output format (the supported formats are json, none). (default "none")
 
 Global Flags:
-  -C, --cwd string           Sets the current working directory.
-      --debug                Enables debugging and diagnostics logging.
-  -e, --environment string   The name of the environment to use.
-      --no-prompt            Accepts the default value instead of prompting, or it fails if there is no default.
+  -C, --cwd string   Sets the current working directory.
+      --debug        Enables debugging and diagnostics logging.
+      --no-prompt    Accepts the default value instead of prompting, or it fails if there is no default.
 
 ---
 
@@ -493,14 +478,14 @@ Usage:
   azd restore [flags]
 
 Flags:
-  -h, --help             Gets help for restore.
-      --service string   Restores a specific service (when the string is unspecified, all services that are listed in the azure.yaml file are restored).
+  -e, --environment string   The name of the environment to use.
+  -h, --help                 Gets help for restore.
+      --service string       Restores a specific service (when the string is unspecified, all services that are listed in the azure.yaml file are restored).
 
 Global Flags:
-  -C, --cwd string           Sets the current working directory.
-      --debug                Enables debugging and diagnostics logging.
-  -e, --environment string   The name of the environment to use.
-      --no-prompt            Accepts the default value instead of prompting, or it fails if there is no default.
+  -C, --cwd string   Sets the current working directory.
+      --debug        Enables debugging and diagnostics logging.
+      --no-prompt    Accepts the default value instead of prompting, or it fails if there is no default.
 
 ---
 
@@ -516,10 +501,9 @@ Flags:
   -h, --help   Gets help for template.
 
 Global Flags:
-  -C, --cwd string           Sets the current working directory.
-      --debug                Enables debugging and diagnostics logging.
-  -e, --environment string   The name of the environment to use.
-      --no-prompt            Accepts the default value instead of prompting, or it fails if there is no default.
+  -C, --cwd string   Sets the current working directory.
+      --debug        Enables debugging and diagnostics logging.
+      --no-prompt    Accepts the default value instead of prompting, or it fails if there is no default.
 
 Use "azd template [command] --help" for more information about a command.
 
@@ -537,10 +521,9 @@ Flags:
   -o, --output string   The output format (the supported formats are json, table). (default "table")
 
 Global Flags:
-  -C, --cwd string           Sets the current working directory.
-      --debug                Enables debugging and diagnostics logging.
-  -e, --environment string   The name of the environment to use.
-      --no-prompt            Accepts the default value instead of prompting, or it fails if there is no default.
+  -C, --cwd string   Sets the current working directory.
+      --debug        Enables debugging and diagnostics logging.
+      --no-prompt    Accepts the default value instead of prompting, or it fails if there is no default.
 
 ---
 
@@ -553,10 +536,9 @@ Flags:
   -o, --output string   The output format (the supported formats are json, table). (default "table")
 
 Global Flags:
-  -C, --cwd string           Sets the current working directory.
-      --debug                Enables debugging and diagnostics logging.
-  -e, --environment string   The name of the environment to use.
-      --no-prompt            Accepts the default value instead of prompting, or it fails if there is no default.
+  -C, --cwd string   Sets the current working directory.
+      --debug        Enables debugging and diagnostics logging.
+      --no-prompt    Accepts the default value instead of prompting, or it fails if there is no default.
 
 ---
 
@@ -566,6 +548,7 @@ Usage:
 
 Flags:
   -b, --branch string         The template branch to initialize from.
+  -e, --environment string    The name of the environment to use.
   -h, --help                  Gets help for up.
   -l, --location string       Azure location for the new environment
       --no-progress           Suppresses progress information.
@@ -575,10 +558,9 @@ Flags:
   -t, --template string       The template to use when you initialize the project. You can use Full URI, <owner>/<repository>, or <repository> if it's part of the azure-samples organization.
 
 Global Flags:
-  -C, --cwd string           Sets the current working directory.
-      --debug                Enables debugging and diagnostics logging.
-  -e, --environment string   The name of the environment to use.
-      --no-prompt            Accepts the default value instead of prompting, or it fails if there is no default.
+  -C, --cwd string   Sets the current working directory.
+      --debug        Enables debugging and diagnostics logging.
+      --no-prompt    Accepts the default value instead of prompting, or it fails if there is no default.
 
 ---
 
@@ -591,9 +573,8 @@ Flags:
   -o, --output string   The output format (the supported formats are json, none). (default "none")
 
 Global Flags:
-  -C, --cwd string           Sets the current working directory.
-      --debug                Enables debugging and diagnostics logging.
-  -e, --environment string   The name of the environment to use.
-      --no-prompt            Accepts the default value instead of prompting, or it fails if there is no default.
+  -C, --cwd string   Sets the current working directory.
+      --debug        Enables debugging and diagnostics logging.
+      --no-prompt    Accepts the default value instead of prompting, or it fails if there is no default.
 
 ---

@@ -8,6 +8,13 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// To update snapshots (assuming your current directory is cli/azd):
+//
+// For Bash,
+// UPDATE_SNAPS=true go test ./cmd
+//
+// For Pwsh,
+// $env:UPDATE_SNAPS='true'; go test ./cmd; $env:UPDATE_SNAPS=$null
 func TestUsage(t *testing.T) {
 	root := NewRootCmd()
 

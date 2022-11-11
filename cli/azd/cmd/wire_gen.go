@@ -210,7 +210,7 @@ func initInfraDeleteAction(console input.Console, ctx context.Context, o *intern
 	return cmdInfraDeleteAction, nil
 }
 
-func initEnvSetAction(console input.Console, ctx context.Context, o *internal.GlobalCommandOptions, flags struct{}, args []string) (actions.Action, error) {
+func initEnvSetAction(console input.Console, ctx context.Context, o *internal.GlobalCommandOptions, flags envSetFlags, args []string) (actions.Action, error) {
 	azdContext, err := newAzdContext()
 	if err != nil {
 		return nil, err
@@ -226,7 +226,7 @@ func initEnvSetAction(console input.Console, ctx context.Context, o *internal.Gl
 		return nil, err
 	}
 	azCli := newAzCliFromOptions(o, commandRunner, tokenCredential)
-	cmdEnvSetAction := newEnvSetAction(azdContext, azCli, console, o, args)
+	cmdEnvSetAction := newEnvSetAction(azdContext, azCli, console, flags, args)
 	return cmdEnvSetAction, nil
 }
 
@@ -270,7 +270,7 @@ func initEnvNewAction(console input.Console, ctx context.Context, o *internal.Gl
 	return cmdEnvNewAction, nil
 }
 
-func initEnvRefreshAction(console input.Console, ctx context.Context, o *internal.GlobalCommandOptions, flags struct{}, args []string) (actions.Action, error) {
+func initEnvRefreshAction(console input.Console, ctx context.Context, o *internal.GlobalCommandOptions, flags envRefreshFlags, args []string) (actions.Action, error) {
 	azdContext, err := newAzdContext()
 	if err != nil {
 		return nil, err
@@ -288,11 +288,11 @@ func initEnvRefreshAction(console input.Console, ctx context.Context, o *interna
 	azCli := newAzCliFromOptions(o, commandRunner, tokenCredential)
 	formatter := newFormatterFromConsole(console)
 	writer := newWriterFromConsole(console)
-	cmdEnvRefreshAction := newEnvRefreshAction(azdContext, azCli, o, console, formatter, writer)
+	cmdEnvRefreshAction := newEnvRefreshAction(azdContext, azCli, flags, console, formatter, writer)
 	return cmdEnvRefreshAction, nil
 }
 
-func initEnvGetValuesAction(console input.Console, ctx context.Context, o *internal.GlobalCommandOptions, flags struct{}, args []string) (actions.Action, error) {
+func initEnvGetValuesAction(console input.Console, ctx context.Context, o *internal.GlobalCommandOptions, flags envGetValuesFlags, args []string) (actions.Action, error) {
 	azdContext, err := newAzdContext()
 	if err != nil {
 		return nil, err
@@ -310,7 +310,7 @@ func initEnvGetValuesAction(console input.Console, ctx context.Context, o *inter
 		return nil, err
 	}
 	azCli := newAzCliFromOptions(o, commandRunner, tokenCredential)
-	cmdEnvGetValuesAction := newEnvGetValuesAction(azdContext, console, formatter, writer, azCli, o)
+	cmdEnvGetValuesAction := newEnvGetValuesAction(azdContext, console, formatter, writer, azCli, flags)
 	return cmdEnvGetValuesAction, nil
 }
 

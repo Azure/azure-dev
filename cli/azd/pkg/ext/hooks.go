@@ -2,8 +2,10 @@ package ext
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
+	"path/filepath"
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
@@ -104,7 +106,7 @@ func (h *CommandHooks) getScriptsForHook(prefix HookType, commandName string) []
 func (h *CommandHooks) execScript(ctx context.Context, scriptConfig *ScriptConfig) error {
 	log.Printf("Executing script '%s'", scriptConfig.Path)
 
-	script, err := getScript(h.commandRunner, scriptConfig.Type, h.cwd, h.envVars)
+	script, err := getScript(h.commandRunner, scriptConfig, h.cwd, h.envVars)
 	if err != nil {
 		return err
 	}
@@ -119,19 +121,39 @@ func (h *CommandHooks) execScript(ctx context.Context, scriptConfig *ScriptConfi
 
 func getScript(
 	commandRunner exec.CommandRunner,
-	scriptType ScriptType,
+	scriptConfig *ScriptConfig,
 	cwd string,
 	envVars []string,
 ) (tools.Script, error) {
-	switch scriptType {
+	if scriptConfig.Location == "" {
+		scriptConfig.Location = ScriptLocationPath
+	}
+
+	if scriptConfig.Location == ScriptLocationInline {
+		return nil, errors.New("inline script support is coming soon.")
+	}
+
+	if scriptConfig.Type == "" {
+		fileExtension := filepath.Ext(scriptConfig.Path)
+		switch fileExtension {
+		case ".sh":
+			scriptConfig.Type = ScriptTypeBash
+		case ".ps1":
+			scriptConfig.Type = ScriptTypePowershell
+		default:
+			return nil, fmt.Errorf("script with file extension '%s' is not valid. Only '.sh' and '.ps1' are supported", fileExtension)
+		}
+	}
+
+	switch scriptConfig.Type {
 	case ScriptTypeBash:
 		return bash.NewBashScript(commandRunner, cwd, envVars), nil
 	case ScriptTypePowershell:
 		return powershell.NewPowershellScript(commandRunner, cwd, envVars), nil
 	default:
 		return nil, fmt.Errorf(
-			"script type '%s' is not a valid option. Bash and powershell scripts are the support options",
-			scriptType,
+			"script type '%s' is not a valid option. Only Bash and powershell scripts are supported",
+			scriptConfig.Type,
 		)
 	}
 }

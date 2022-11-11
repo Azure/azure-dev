@@ -23,6 +23,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
+	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/pkg/templates"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
@@ -142,7 +143,9 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	// NOTE: Adding `azure.yaml` to a folder removes the option from selecting a template
 	if _, err := os.Stat(i.azdCtx.ProjectPath()); err != nil && errors.Is(err, os.ErrNotExist) {
 		// Command title
-		i.console.MessageUx(ctx, "Initializing a new project (azd init)", input.Title)
+		i.console.MessageUxItem(ctx, &ux.MessageTitle{
+			Title: "Initializing a new project (azd init)",
+		})
 
 		if i.flags.template.Name == "" {
 			i.flags.template, err = templates.PromptTemplate(ctx, "Select a project template:")

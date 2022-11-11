@@ -16,6 +16,7 @@ import (
 	"github.com/AlecAivazis/survey/v2"
 	"github.com/azure/azure-dev/cli/azd/pkg/contracts"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
+	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/mattn/go-colorable"
 	"github.com/theckman/yacspin"
 )
@@ -24,9 +25,7 @@ type MessageUxType int
 type SpinnerUxType int
 
 const (
-	Title MessageUxType = iota
-	Progress
-	DoneCreating
+	Progress MessageUxType = iota
 	ResultSuccess
 	ResultError
 )
@@ -36,38 +35,6 @@ const (
 	StepDone
 	StepFailed
 )
-
-type UXItem interface {
-	ToString() string
-	ToJson() []byte
-	ToTable() string
-}
-
-type messageTitle struct {
-	title     string
-	titleNote string
-}
-
-func NewWithNoteMessageTitle(title, titleNote string) UXItem {
-	return &messageTitle{
-		title:     title,
-		titleNote: titleNote,
-	}
-}
-
-func (t *messageTitle) ToString() string {
-	return fmt.Sprintf("\n%s\n%s\n",
-		output.WithBold(t.title),
-		output.WithGrayFormat(t.titleNote))
-}
-
-func (t *messageTitle) ToJson() []byte {
-	return nil
-}
-
-func (t *messageTitle) ToTable() string {
-	return ""
-}
 
 // A shim to allow a single Console construction in the application.
 // To be removed once formatter and Console's responsibilities are reconciled
@@ -85,7 +52,7 @@ type Console interface {
 	// Prints out a message following the UX format type
 	MessageUx(ctx context.Context, message string, format MessageUxType)
 	// Prints out a message following a contract ux item
-	MessageUxItem(ctx context.Context, item UXItem)
+	MessageUxItem(ctx context.Context, item ux.UXItem)
 	// Prints progress spinner with the given title.
 	// If a previous spinner is running, the title is updated.
 	ShowSpinner(ctx context.Context, title string, format SpinnerUxType)
@@ -117,7 +84,7 @@ type AskerConsole struct {
 	writer        io.Writer
 	formatter     output.Formatter
 	spinner       *yacspin.Spinner
-	currentIndent int
+	currentIndent string
 }
 
 type ConsoleOptions struct {
@@ -168,9 +135,9 @@ func (c *AskerConsole) Message(ctx context.Context, message string) {
 	}
 }
 
-func (c *AskerConsole) MessageUxItem(ctx context.Context, item UXItem) {
+func (c *AskerConsole) MessageUxItem(ctx context.Context, item ux.UXItem) {
 	if c.formatter == nil {
-		log.Println(item.ToString())
+		log.Println(item.ToString(c.currentIndent))
 		return
 	}
 
@@ -184,8 +151,14 @@ func (c *AskerConsole) MessageUxItem(ctx context.Context, item UXItem) {
 		return
 	}
 
-	// default non-format
-	fmt.Fprintln(c.writer, item.ToString())
+	if c.spinner != nil && c.spinner.Status() == yacspin.SpinnerRunning {
+		c.StopSpinner(ctx, "", Step)
+		// default non-format
+		fmt.Fprintln(c.writer, item.ToString(c.currentIndent))
+		_ = c.spinner.Start()
+	} else {
+		fmt.Fprintln(c.writer, item.ToString(c.currentIndent))
+	}
 }
 
 func (c *AskerConsole) MessageUx(ctx context.Context, message string, format MessageUxType) {
@@ -230,14 +203,9 @@ func withIndentation(message, indentation string) string {
 
 func (c *AskerConsole) addFormat(message string, format MessageUxType) (withFormat string, err error) {
 	switch format {
-	case Title:
-		withFormat = output.WithBold(fmt.Sprintf("\n%s\n", message))
-	case DoneCreating:
-		withFormat = withIndentation(
-			fmt.Sprintf("%s Creating %s", donePrefix, message), generateIndentation(c.currentIndent))
 	case Progress:
 		// a message while spinner might be running.
-		withFormat = withIndentation(message, generateIndentation(c.currentIndent))
+		withFormat = withIndentation(message, c.currentIndent)
 	case ResultSuccess:
 		withFormat = output.WithSuccessFormat("\n%s: %s", "SUCCESS", message)
 	case ResultError:
@@ -289,7 +257,7 @@ func (c *AskerConsole) getCharset(format SpinnerUxType) []string {
 	return newCharSet
 }
 
-func generateIndentation(spaces int) string {
+func setIndentation(spaces int) string {
 	bytes := make([]byte, spaces)
 	for i := range bytes {
 		bytes[i] = byte(' ')
@@ -298,16 +266,19 @@ func generateIndentation(spaces int) string {
 }
 
 func (c *AskerConsole) getIndent(format SpinnerUxType) string {
+	var requiredSize int
 	switch format {
 	case Step:
-		c.currentIndent = 2
+		requiredSize = 2
 	case StepDone:
-		c.currentIndent = 2
+		requiredSize = 2
 	case StepFailed:
-		c.currentIndent = 2
+		requiredSize = 2
 	}
-
-	return generateIndentation(c.currentIndent)
+	if requiredSize != len(c.currentIndent) {
+		c.currentIndent = setIndentation(requiredSize)
+	}
+	return c.currentIndent
 }
 
 func (c *AskerConsole) StopSpinner(ctx context.Context, lastMessage string, format SpinnerUxType) {

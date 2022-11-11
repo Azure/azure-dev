@@ -15,6 +15,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
+	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 )
 
 const defaultProgressTitle string = "Provisioning Azure resources"
@@ -130,13 +131,12 @@ func (display *ProvisioningProgressDisplay) logNewlyCreatedResources(
 		// Don't log resource types for Azure resources that we do not have a translation of the resource type for.
 		// This will be improved on in a future iteration.
 		if resourceTypeDisplayName != "" {
-			display.console.MessageUx(
+			display.console.MessageUxItem(
 				ctx,
-				fmt.Sprintf(
-					"%s: %s",
-					resourceTypeDisplayName,
-					*newResource.Properties.TargetResource.ResourceName),
-				input.DoneCreating,
+				&ux.CreatedResource{
+					Type: resourceTypeDisplayName,
+					Name: *newResource.Properties.TargetResource.ResourceName,
+				},
 			)
 			resourceTypeName = resourceTypeDisplayName
 		}

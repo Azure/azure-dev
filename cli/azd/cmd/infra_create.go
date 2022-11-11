@@ -13,6 +13,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
+	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
@@ -93,10 +94,10 @@ func (i *infraCreateAction) Run(ctx context.Context) (*actions.ActionResult, err
 	}
 
 	// Command title
-	i.console.MessageUxItem(ctx, input.NewWithNoteMessageTitle(
-		"Provisioning Azure resources (azd provision)",
-		"Provisioning Azure resources can take some time",
-	))
+	i.console.MessageUxItem(ctx, &ux.MessageTitle{
+		Title:     "Provisioning Azure resources (azd provision)",
+		TitleNote: "Provisioning Azure resources can take some time"},
+	)
 
 	env, ctx, err := loadOrInitEnvironment(ctx, &i.flags.global.EnvironmentName, i.azdCtx, i.console)
 	if err != nil {

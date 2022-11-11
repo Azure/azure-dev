@@ -52,11 +52,7 @@ func TestTerraformPlan(t *testing.T) {
 
 	consoleLog := mockContext.Console.Output()
 
-	require.Len(t, consoleLog, 4)
-	require.Contains(t, consoleLog[0], "Initializing terraform...")
-	require.Contains(t, consoleLog[1], "Generating terraform parameters...")
-	require.Contains(t, consoleLog[2], "Validating terraform template...")
-	require.Contains(t, consoleLog[3], "Generating terraform plan...")
+	require.Len(t, consoleLog, 0)
 
 	require.Equal(t, infraProvider.env.Values["AZURE_LOCATION"], deploymentPlan.Deployment.Parameters["location"].Value)
 	require.Equal(

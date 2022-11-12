@@ -60,13 +60,14 @@ func (sc *ServiceConfig) GetService(
 	project *Project,
 	env *environment.Environment,
 	scope *environment.DeploymentScope,
+	azCli azcli.AzCli,
 ) (*Service, error) {
 	framework, err := sc.GetFrameworkService(ctx, env)
 	if err != nil {
 		return nil, fmt.Errorf("creating framework service: %w", err)
 	}
 
-	serviceTarget, err := sc.GetServiceTarget(ctx, env, scope)
+	serviceTarget, err := sc.GetServiceTarget(ctx, env, scope, azCli)
 	if err != nil {
 		return nil, fmt.Errorf("creating service target: %w", err)
 	}
@@ -85,10 +86,9 @@ func (sc *ServiceConfig) GetServiceTarget(
 	ctx context.Context,
 	env *environment.Environment,
 	scope *environment.DeploymentScope,
+	azCli azcli.AzCli,
 ) (*ServiceTarget, error) {
 	var target ServiceTarget
-
-	azCli := azcli.GetAzCli(ctx)
 
 	switch sc.Host {
 	case "", string(AppServiceTarget):

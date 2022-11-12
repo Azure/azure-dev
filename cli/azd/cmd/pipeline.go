@@ -6,14 +6,14 @@ package cmd
 import (
 	"context"
 	"fmt"
-	"log"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
-	"github.com/azure/azure-dev/cli/azd/pkg/commands"
 	"github.com/azure/azure-dev/cli/azd/pkg/commands/pipeline"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
@@ -70,9 +70,6 @@ func pipelineConfigCmdDesign(global *internal.GlobalCommandOptions) (*cobra.Comm
 		Long: `Create and configure your deployment pipeline by using GitHub Actions.
 
 For more information, go to https://aka.ms/azure-dev/pipeline.`,
-		Annotations: map[string]string{
-			commands.RequireNoLoginAnnotation: "true",
-		},
 	}
 
 	flags := &pipelineConfigFlags{}
@@ -85,18 +82,22 @@ For more information, go to https://aka.ms/azure-dev/pipeline.`,
 type pipelineConfigAction struct {
 	flags   pipelineConfigFlags
 	manager *pipeline.PipelineManager
+	azCli   azcli.AzCli
 	azdCtx  *azdcontext.AzdContext
 	console input.Console
 }
 
 func newPipelineConfigAction(
+	azCli azcli.AzCli,
+	credential azcore.TokenCredential,
 	azdCtx *azdcontext.AzdContext,
 	console input.Console,
 	flags pipelineConfigFlags,
 ) *pipelineConfigAction {
 	pca := &pipelineConfigAction{
 		flags:   flags,
-		manager: pipeline.NewPipelineManager(azdCtx, flags.global, flags.PipelineManagerArgs),
+		azCli:   azCli,
+		manager: pipeline.NewPipelineManager(azCli, credential, azdCtx, flags.global, flags.PipelineManagerArgs),
 		azdCtx:  azdCtx,
 		console: console,
 	}
@@ -110,13 +111,7 @@ func (p *pipelineConfigAction) Run(ctx context.Context) (*actions.ActionResult, 
 		return nil, err
 	}
 
-	// Read or init env
-	console := input.GetConsole(ctx)
-	if console == nil {
-		log.Panic("missing input console in the provided context")
-	}
-
-	env, ctx, err := loadOrInitEnvironment(ctx, &p.manager.RootOptions.EnvironmentName, p.azdCtx, console)
+	env, ctx, err := loadOrInitEnvironment(ctx, &p.manager.RootOptions.EnvironmentName, p.azdCtx, p.console, p.azCli)
 	if err != nil {
 		return nil, fmt.Errorf("loading environment: %w", err)
 	}

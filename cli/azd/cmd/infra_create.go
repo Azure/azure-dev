@@ -14,6 +14,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 	"go.uber.org/multierr"
@@ -58,6 +59,7 @@ func infraCreateCmdDesign(rootOptions *internal.GlobalCommandOptions) (*cobra.Co
 
 type infraCreateAction struct {
 	flags     infraCreateFlags
+	azCli     azcli.AzCli
 	azdCtx    *azdcontext.AzdContext
 	formatter output.Formatter
 	writer    io.Writer
@@ -68,6 +70,7 @@ type infraCreateAction struct {
 
 func newInfraCreateAction(
 	f infraCreateFlags,
+	azCli azcli.AzCli,
 	azdCtx *azdcontext.AzdContext,
 	console input.Console,
 	formatter output.Formatter,
@@ -75,6 +78,7 @@ func newInfraCreateAction(
 ) *infraCreateAction {
 	return &infraCreateAction{
 		flags:               f,
+		azCli:               azCli,
 		azdCtx:              azdCtx,
 		formatter:           formatter,
 		writer:              writer,
@@ -88,7 +92,7 @@ func (i *infraCreateAction) Run(ctx context.Context) (*actions.ActionResult, err
 		return nil, err
 	}
 
-	env, ctx, err := loadOrInitEnvironment(ctx, &i.flags.global.EnvironmentName, i.azdCtx, i.console)
+	env, ctx, err := loadOrInitEnvironment(ctx, &i.flags.global.EnvironmentName, i.azdCtx, i.console, i.azCli)
 	if err != nil {
 		return nil, fmt.Errorf("loading environment: %w", err)
 	}
@@ -102,7 +106,7 @@ func (i *infraCreateAction) Run(ctx context.Context) (*actions.ActionResult, err
 		return nil, err
 	}
 
-	infraManager, err := provisioning.NewManager(ctx, env, prj.Path, prj.Infra, i.console.IsUnformatted())
+	infraManager, err := provisioning.NewManager(ctx, env, prj.Path, prj.Infra, i.console.IsUnformatted(), i.azCli)
 	if err != nil {
 		return nil, fmt.Errorf("creating provisioning manager: %w", err)
 	}
@@ -112,7 +116,9 @@ func (i *infraCreateAction) Run(ctx context.Context) (*actions.ActionResult, err
 		return nil, fmt.Errorf("planning deployment: %w", err)
 	}
 
-	provisioningScope := infra.NewSubscriptionScope(ctx, env.GetLocation(), env.GetSubscriptionId(), env.GetEnvName())
+	provisioningScope := infra.NewSubscriptionScope(
+		ctx, i.azCli, env.GetLocation(), env.GetSubscriptionId(), env.GetEnvName(),
+	)
 	deployResult, err := infraManager.Deploy(ctx, deploymentPlan, provisioningScope)
 	if err != nil {
 		return nil, fmt.Errorf("deploying infrastructure: %w", err)
@@ -149,7 +155,7 @@ func (i *infraCreateAction) Run(ctx context.Context) (*actions.ActionResult, err
 	}
 
 	if i.formatter.Kind() != output.JsonFormat {
-		resourceGroupName, err := project.GetResourceGroupName(ctx, prj, env)
+		resourceGroupName, err := project.GetResourceGroupName(ctx, i.azCli, prj, env)
 		if err == nil { // Presentation only -- skip print if we failed to resolve the resource group
 			i.displayResourceGroupCreatedMessage(ctx, i.console, env.GetSubscriptionId(), resourceGroupName)
 		}

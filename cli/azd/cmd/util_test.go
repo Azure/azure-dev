@@ -17,6 +17,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/stretchr/testify/require"
 )
@@ -105,7 +106,12 @@ func Test_promptEnvironmentName(t *testing.T) {
 			}, nil
 		})
 
-		resourceManager := infra.NewAzureResourceManager(*mockContext.Context)
+		azCli := azcli.NewAzCli(mockContext.Credentials, azcli.NewAzCliArgs{
+			HttpClient:    mockContext.HttpClient,
+			CommandRunner: mockContext.CommandRunner,
+		})
+
+		resourceManager := infra.NewAzureResourceManager(azCli)
 		groups, err := resourceManager.GetResourceGroupsForDeployment(*mockContext.Context, "sub-id", "deployment-name")
 		require.NoError(t, err)
 
@@ -135,7 +141,13 @@ func Test_getSubscriptionOptions(t *testing.T) {
 				},
 			})
 		})
-		subList, result, err := getSubscriptionOptions(*mockContext.Context)
+
+		azCli := azcli.NewAzCli(mockContext.Credentials, azcli.NewAzCliArgs{
+			HttpClient:    mockContext.HttpClient,
+			CommandRunner: mockContext.CommandRunner,
+		})
+
+		subList, result, err := getSubscriptionOptions(*mockContext.Context, azCli)
 
 		require.Nil(t, err)
 		require.EqualValues(t, 2, len(subList))
@@ -186,8 +198,13 @@ func Test_getSubscriptionOptions(t *testing.T) {
 			})
 		})
 
+		azCli := azcli.NewAzCli(mockContext.Credentials, azcli.NewAzCliArgs{
+			HttpClient:    mockContext.HttpClient,
+			CommandRunner: mockContext.CommandRunner,
+		})
+
 		// finally invoking the test
-		subList, result, err := getSubscriptionOptions(*mockContext.Context)
+		subList, result, err := getSubscriptionOptions(*mockContext.Context, azCli)
 
 		require.Nil(t, err)
 		require.EqualValues(t, 2, len(subList))

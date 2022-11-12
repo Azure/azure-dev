@@ -16,6 +16,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/stretchr/testify/require"
 )
@@ -135,7 +136,8 @@ func TestGetDeploymentResourceOperationsSuccess(t *testing.T) {
 	groupCalls := 0
 
 	mockContext := mocks.NewMockContext(context.Background())
-	scope := NewSubscriptionScope(*mockContext.Context, "eastus2", "SUBSCRIPTION_ID", "DEPLOYMENT_NAME")
+	azCli := newAzCliFromMockContext(mockContext)
+	scope := NewSubscriptionScope(*mockContext.Context, azCli, "eastus2", "SUBSCRIPTION_ID", "DEPLOYMENT_NAME")
 
 	mockContext.HttpClient.When(func(request *http.Request) bool {
 		return request.Method == http.MethodGet && strings.Contains(
@@ -169,7 +171,7 @@ func TestGetDeploymentResourceOperationsSuccess(t *testing.T) {
 		}, nil
 	})
 
-	arm := NewAzureResourceManager(*mockContext.Context)
+	arm := NewAzureResourceManager(azCli)
 	operations, err := arm.GetDeploymentResourceOperations(*mockContext.Context, scope)
 	require.NotNil(t, operations)
 	require.Nil(t, err)
@@ -184,7 +186,8 @@ func TestGetDeploymentResourceOperationsFail(t *testing.T) {
 	groupCalls := 0
 
 	mockContext := mocks.NewMockContext(context.Background())
-	scope := NewSubscriptionScope(*mockContext.Context, "eastus2", "SUBSCRIPTION_ID", "DEPLOYMENT_NAME")
+	azCli := newAzCliFromMockContext(mockContext)
+	scope := NewSubscriptionScope(*mockContext.Context, azCli, "eastus2", "SUBSCRIPTION_ID", "DEPLOYMENT_NAME")
 
 	/*NOTE: Mocking first response as an `StatusForbidden` error which is not retried by the sdk client.
 	  Adding an extra mock to test that it is not called*/
@@ -219,7 +222,7 @@ func TestGetDeploymentResourceOperationsFail(t *testing.T) {
 		}, nil
 	})
 
-	arm := NewAzureResourceManager(*mockContext.Context)
+	arm := NewAzureResourceManager(azCli)
 	operations, err := arm.GetDeploymentResourceOperations(*mockContext.Context, scope)
 
 	require.Nil(t, operations)
@@ -234,7 +237,8 @@ func TestGetDeploymentResourceOperationsNoResourceGroup(t *testing.T) {
 	groupCalls := 0
 
 	mockContext := mocks.NewMockContext(context.Background())
-	scope := NewSubscriptionScope(*mockContext.Context, "eastus2", "SUBSCRIPTION_ID", "DEPLOYMENT_NAME")
+	azCli := newAzCliFromMockContext(mockContext)
+	scope := NewSubscriptionScope(*mockContext.Context, azCli, "eastus2", "SUBSCRIPTION_ID", "DEPLOYMENT_NAME")
 
 	mockContext.HttpClient.When(func(request *http.Request) bool {
 		return request.Method == http.MethodGet && strings.Contains(
@@ -267,7 +271,7 @@ func TestGetDeploymentResourceOperationsNoResourceGroup(t *testing.T) {
 		}, nil
 	})
 
-	arm := NewAzureResourceManager(*mockContext.Context)
+	arm := NewAzureResourceManager(azCli)
 	operations, err := arm.GetDeploymentResourceOperations(*mockContext.Context, scope)
 
 	require.NotNil(t, operations)
@@ -282,7 +286,8 @@ func TestGetDeploymentResourceOperationsWithNestedDeployments(t *testing.T) {
 	groupCalls := 0
 
 	mockContext := mocks.NewMockContext(context.Background())
-	scope := NewSubscriptionScope(*mockContext.Context, "eastus2", "SUBSCRIPTION_ID", "DEPLOYMENT_NAME")
+	azCli := newAzCliFromMockContext(mockContext)
+	scope := NewSubscriptionScope(*mockContext.Context, azCli, "eastus2", "SUBSCRIPTION_ID", "DEPLOYMENT_NAME")
 
 	mockContext.HttpClient.When(func(request *http.Request) bool {
 		return request.Method == http.MethodGet && strings.Contains(
@@ -331,7 +336,7 @@ func TestGetDeploymentResourceOperationsWithNestedDeployments(t *testing.T) {
 		}, nil
 	})
 
-	arm := NewAzureResourceManager(*mockContext.Context)
+	arm := NewAzureResourceManager(azCli)
 	operations, err := arm.GetDeploymentResourceOperations(*mockContext.Context, scope)
 
 	require.NotNil(t, operations)
@@ -402,6 +407,8 @@ func TestFindResourceGroupForEnvironment(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			mockContext := mocks.NewMockContext(context.Background())
+			azCli := newAzCliFromMockContext(mockContext)
+
 			mockContext.HttpClient.When(func(request *http.Request) bool {
 				return request.Method == "GET" && strings.Contains(request.URL.Path, "/resourcegroups") &&
 					request.URL.Query().Has("$filter")
@@ -422,7 +429,7 @@ func TestFindResourceGroupForEnvironment(t *testing.T) {
 				"AZURE_SUBSCRIPTION_ID": SUBSCRIPTION_ID,
 			})
 
-			arm := NewAzureResourceManager(*mockContext.Context)
+			arm := NewAzureResourceManager(azCli)
 			rgName, err := arm.FindResourceGroupForEnvironment(*mockContext.Context, env)
 
 			if tt.expectedErrorText == "" {
@@ -433,4 +440,11 @@ func TestFindResourceGroupForEnvironment(t *testing.T) {
 			}
 		})
 	}
+}
+
+func newAzCliFromMockContext(mockContext *mocks.MockContext) azcli.AzCli {
+	return azcli.NewAzCli(mockContext.Credentials, azcli.NewAzCliArgs{
+		HttpClient:    mockContext.HttpClient,
+		CommandRunner: mockContext.CommandRunner,
+	})
 }

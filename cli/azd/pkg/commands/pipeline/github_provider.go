@@ -14,13 +14,13 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/azure/azure-dev/cli/azd/pkg/azsdk"
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	githubRemote "github.com/azure/azure-dev/cli/azd/pkg/github"
 	"github.com/azure/azure-dev/cli/azd/pkg/graphsdk"
 	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
-	"github.com/azure/azure-dev/cli/azd/pkg/identity"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
@@ -404,7 +404,9 @@ func (p *GitHubCiProvider) configureConnection(
 	infraOptions provisioning.Options,
 	credentials json.RawMessage,
 	authType PipelineAuthType,
-	console input.Console) error {
+	console input.Console,
+	tokenCredential azcore.TokenCredential,
+) error {
 
 	repoSlug := repoDetails.owner + "/" + repoDetails.repoName
 	console.Message(ctx, fmt.Sprintf("Configuring repository %s.\n", output.WithHighLightFormat(repoSlug)))
@@ -425,7 +427,9 @@ func (p *GitHubCiProvider) configureConnection(
 	case AuthTypeClientCredentials:
 		authErr = p.configureClientCredentialsAuth(ctx, azdEnvironment, infraOptions, repoSlug, credentials, console)
 	default:
-		authErr = p.configureFederatedAuth(ctx, azdEnvironment, infraOptions, repoSlug, credentials, console)
+		authErr = p.configureFederatedAuth(
+			ctx, azdEnvironment, infraOptions, repoSlug, credentials, console, tokenCredential,
+		)
 	}
 
 	if authErr != nil {
@@ -525,6 +529,7 @@ func (p *GitHubCiProvider) configureFederatedAuth(
 	repoSlug string,
 	credentials json.RawMessage,
 	console input.Console,
+	credential azcore.TokenCredential,
 ) error {
 	ghCli := github.NewGitHubCli(ctx)
 
@@ -533,7 +538,7 @@ func (p *GitHubCiProvider) configureFederatedAuth(
 		return fmt.Errorf("failed unmarshalling azure credentials: %w", err)
 	}
 
-	err := applyFederatedCredentials(ctx, repoSlug, &azureCredentials, console)
+	err := applyFederatedCredentials(ctx, repoSlug, &azureCredentials, console, credential)
 	if err != nil {
 		return err
 	}
@@ -566,8 +571,9 @@ func applyFederatedCredentials(
 	repoSlug string,
 	azureCredentials *azcli.AzureCredentials,
 	console input.Console,
+	credential azcore.TokenCredential,
 ) error {
-	graphClient, err := createGraphClient(ctx)
+	graphClient, err := createGraphClient(ctx, credential)
 	if err != nil {
 		return err
 	}
@@ -815,12 +821,11 @@ func ensureFederatedCredential(
 	return nil
 }
 
-func createGraphClient(ctx context.Context) (*graphsdk.GraphClient, error) {
-	creds := identity.GetCredentials(ctx)
+func createGraphClient(ctx context.Context, credential azcore.TokenCredential) (*graphsdk.GraphClient, error) {
 	graphOptions := azsdk.
 		NewClientOptionsBuilder().
 		WithTransport(httputil.GetHttpClient(ctx)).
 		BuildCoreClientOptions()
 
-	return graphsdk.NewGraphClient(creds, graphOptions)
+	return graphsdk.NewGraphClient(credential, graphOptions)
 }

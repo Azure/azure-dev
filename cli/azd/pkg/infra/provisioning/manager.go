@@ -263,6 +263,7 @@ func (m *Manager) ensureLocation(ctx context.Context, deployment *Deployment) (s
 			ctx,
 			m.env,
 			"Please select an Azure location to use to store deployment metadata:",
+			m.azCli,
 		)
 		if err != nil {
 			return "", fmt.Errorf("prompting for deployment metadata region: %w", err)
@@ -325,8 +326,9 @@ func NewManager(
 	projectPath string,
 	infraOptions Options,
 	interactive bool,
+	azCli azcli.AzCli,
 ) (*Manager, error) {
-	infraProvider, err := NewProvider(ctx, env, projectPath, infraOptions)
+	infraProvider, err := NewProvider(ctx, azCli, env, projectPath, infraOptions)
 	if err != nil {
 		return nil, fmt.Errorf("error creating infra provider: %w", err)
 	}
@@ -336,7 +338,6 @@ func NewManager(
 		return nil, err
 	}
 
-	azCli := azcli.GetAzCli(ctx)
 	console := input.GetConsole(ctx)
 
 	return &Manager{

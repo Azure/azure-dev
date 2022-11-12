@@ -41,7 +41,7 @@ func Test_GetAccountDefaults(t *testing.T) {
 
 		manager, err := NewManager(
 			mockContext.ConfigManager.WithConfig(expectedConfig),
-			azcli.GetAzCli(*mockContext.Context),
+			newAzCliFromMockContext(mockContext),
 		)
 		require.NoError(t, err)
 
@@ -57,7 +57,7 @@ func Test_GetAccountDefaults(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
 		setupAccountMocks(mockContext)
 
-		manager, err := NewManager(mockContext.ConfigManager.WithConfig(emptyConfig), azcli.GetAzCli(*mockContext.Context))
+		manager, err := NewManager(mockContext.ConfigManager.WithConfig(emptyConfig), newAzCliFromMockContext(mockContext))
 		require.NoError(t, err)
 
 		accountDefaults, err := manager.GetAccountDefaults(*mockContext.Context)
@@ -81,7 +81,7 @@ func Test_GetAccountDefaults(t *testing.T) {
 		setupAccountMocks(mockContext)
 		setupGetSubscriptionMock(mockContext, &invalidSubscription, errors.New("subscription not found"))
 
-		manager, err := NewManager(mockContext.ConfigManager.WithConfig(emptyConfig), azcli.GetAzCli(*mockContext.Context))
+		manager, err := NewManager(mockContext.ConfigManager.WithConfig(emptyConfig), newAzCliFromMockContext(mockContext))
 		require.NoError(t, err)
 
 		accountDefaults, err := manager.GetAccountDefaults(*mockContext.Context)
@@ -101,7 +101,7 @@ func Test_GetAccountDefaults(t *testing.T) {
 		setupAccountMocks(mockContext)
 		setupGetSubscriptionMock(mockContext, &defaultSubscription, nil)
 
-		manager, err := NewManager(mockContext.ConfigManager.WithConfig(emptyConfig), azcli.GetAzCli(*mockContext.Context))
+		manager, err := NewManager(mockContext.ConfigManager.WithConfig(emptyConfig), newAzCliFromMockContext(mockContext))
 		require.NoError(t, err)
 
 		accountDefaults, err := manager.GetAccountDefaults(*mockContext.Context)
@@ -115,7 +115,7 @@ func Test_GetSubscriptions(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
 		setupAccountMocks(mockContext)
 
-		manager, err := NewManager(mockContext.ConfigManager, azcli.GetAzCli(*mockContext.Context))
+		manager, err := NewManager(mockContext.ConfigManager, newAzCliFromMockContext(mockContext))
 		require.NoError(t, err)
 
 		subscriptions, err := manager.GetSubscriptions(*mockContext.Context)
@@ -142,7 +142,7 @@ func Test_GetSubscriptions(t *testing.T) {
 		setupAccountMocks(mockContext)
 		setupGetSubscriptionMock(mockContext, &subscription, nil)
 
-		manager, err := NewManager(mockContext.ConfigManager.WithConfig(defaultConfig), azcli.GetAzCli(*mockContext.Context))
+		manager, err := NewManager(mockContext.ConfigManager.WithConfig(defaultConfig), newAzCliFromMockContext(mockContext))
 		require.NoError(t, err)
 
 		subscriptions, err := manager.GetSubscriptions(*mockContext.Context)
@@ -161,7 +161,7 @@ func Test_GetSubscriptions(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
 		setupAccountErrorMocks(mockContext)
 
-		manager, err := NewManager(mockContext.ConfigManager, azcli.GetAzCli(*mockContext.Context))
+		manager, err := NewManager(mockContext.ConfigManager, newAzCliFromMockContext(mockContext))
 		require.NoError(t, err)
 
 		subscriptions, err := manager.GetSubscriptions(*mockContext.Context)
@@ -190,7 +190,7 @@ func Test_GetLocations(t *testing.T) {
 		setupAccountMocks(mockContext)
 		setupGetSubscriptionMock(mockContext, &subscription, nil)
 
-		manager, err := NewManager(mockContext.ConfigManager.WithConfig(defaultConfig), azcli.GetAzCli(*mockContext.Context))
+		manager, err := NewManager(mockContext.ConfigManager.WithConfig(defaultConfig), newAzCliFromMockContext(mockContext))
 		require.NoError(t, err)
 
 		locations, err := manager.GetLocations(*mockContext.Context, subscription.Id)
@@ -203,7 +203,7 @@ func Test_GetLocations(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
 		setupAccountErrorMocks(mockContext)
 
-		manager, err := NewManager(mockContext.ConfigManager, azcli.GetAzCli(*mockContext.Context))
+		manager, err := NewManager(mockContext.ConfigManager, newAzCliFromMockContext(mockContext))
 		require.NoError(t, err)
 
 		locations, err := manager.GetLocations(*mockContext.Context, subscription.Id)
@@ -217,7 +217,7 @@ func Test_GetLocations(t *testing.T) {
 		setupAccountErrorMocks(mockContext)
 		setupGetSubscriptionMock(mockContext, &subscription, nil)
 
-		manager, err := NewManager(mockContext.ConfigManager, azcli.GetAzCli(*mockContext.Context))
+		manager, err := NewManager(mockContext.ConfigManager, newAzCliFromMockContext(mockContext))
 		require.NoError(t, err)
 
 		locations, err := manager.GetLocations(*mockContext.Context, subscription.Id)
@@ -239,7 +239,7 @@ func Test_SetDefaultSubscription(t *testing.T) {
 		setupAccountMocks(mockContext)
 		setupGetSubscriptionMock(mockContext, &expectedSubscription, nil)
 
-		manager, err := NewManager(mockContext.ConfigManager, azcli.GetAzCli(*mockContext.Context))
+		manager, err := NewManager(mockContext.ConfigManager, newAzCliFromMockContext(mockContext))
 		require.NoError(t, err)
 
 		actualSubscription, err := manager.SetDefaultSubscription(*mockContext.Context, expectedSubscription.Id)
@@ -259,7 +259,7 @@ func Test_SetDefaultSubscription(t *testing.T) {
 		setupAccountMocks(mockContext)
 		setupGetSubscriptionMock(mockContext, &expectedSubscription, errors.New("Not found"))
 
-		manager, err := NewManager(mockContext.ConfigManager, azcli.GetAzCli(*mockContext.Context))
+		manager, err := NewManager(mockContext.ConfigManager, newAzCliFromMockContext(mockContext))
 		require.NoError(t, err)
 
 		actualSubscription, err := manager.SetDefaultSubscription(*mockContext.Context, expectedSubscription.Id)
@@ -290,7 +290,7 @@ func Test_SetDefaultLocation(t *testing.T) {
 		setupAccountMocks(mockContext)
 		setupGetSubscriptionMock(mockContext, &subscription, nil)
 
-		manager, err := NewManager(mockContext.ConfigManager.WithConfig(defaultConfig), azcli.GetAzCli(*mockContext.Context))
+		manager, err := NewManager(mockContext.ConfigManager.WithConfig(defaultConfig), newAzCliFromMockContext(mockContext))
 		require.NoError(t, err)
 
 		location, err := manager.SetDefaultLocation(*mockContext.Context, subscription.Id, expectedLocation)
@@ -306,7 +306,7 @@ func Test_SetDefaultLocation(t *testing.T) {
 		setupAccountMocks(mockContext)
 		setupGetSubscriptionMock(mockContext, &subscription, nil)
 
-		manager, err := NewManager(mockContext.ConfigManager, azcli.GetAzCli(*mockContext.Context))
+		manager, err := NewManager(mockContext.ConfigManager, newAzCliFromMockContext(mockContext))
 		require.NoError(t, err)
 
 		location, err := manager.SetDefaultLocation(*mockContext.Context, subscription.Id, expectedLocation)
@@ -327,7 +327,7 @@ func Test_Clear(t *testing.T) {
 	setupAccountMocks(mockContext)
 	setupGetSubscriptionMock(mockContext, &expectedSubscription, nil)
 
-	manager, err := NewManager(mockContext.ConfigManager, azcli.GetAzCli(*mockContext.Context))
+	manager, err := NewManager(mockContext.ConfigManager, newAzCliFromMockContext(mockContext))
 	require.NoError(t, err)
 
 	subscription, err := manager.SetDefaultSubscription(*mockContext.Context, expectedSubscription.Id)
@@ -370,7 +370,7 @@ func Test_HasDefaults(t *testing.T) {
 			},
 		})
 
-		manager, err := NewManager(mockContext.ConfigManager.WithConfig(azdConfig), azcli.GetAzCli(*mockContext.Context))
+		manager, err := NewManager(mockContext.ConfigManager.WithConfig(azdConfig), newAzCliFromMockContext(mockContext))
 		require.NoError(t, err)
 
 		value := manager.HasDefaults()
@@ -380,7 +380,7 @@ func Test_HasDefaults(t *testing.T) {
 	t.Run("DefaultsNotSet", func(t *testing.T) {
 		azdConfig := config.NewConfig(nil)
 
-		manager, err := NewManager(mockContext.ConfigManager.WithConfig(azdConfig), azcli.GetAzCli(*mockContext.Context))
+		manager, err := NewManager(mockContext.ConfigManager.WithConfig(azdConfig), newAzCliFromMockContext(mockContext))
 		require.NoError(t, err)
 
 		value := manager.HasDefaults()
@@ -538,5 +538,12 @@ func setupAccountMocks(mockContext *mocks.MockContext) {
 			Header:     http.Header{},
 			Body:       io.NopCloser(bytes.NewBuffer(jsonBytes)),
 		}, nil
+	})
+}
+
+func newAzCliFromMockContext(mockContext *mocks.MockContext) azcli.AzCli {
+	return azcli.NewAzCli(mockContext.Credentials, azcli.NewAzCliArgs{
+		HttpClient:    mockContext.HttpClient,
+		CommandRunner: mockContext.CommandRunner,
 	})
 }

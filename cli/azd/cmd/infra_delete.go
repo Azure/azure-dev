@@ -10,6 +10,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
@@ -46,17 +47,20 @@ func infraDeleteCmdDesign(global *internal.GlobalCommandOptions) (*cobra.Command
 
 type infraDeleteAction struct {
 	flags   infraDeleteFlags
+	azCli   azcli.AzCli
 	azdCtx  *azdcontext.AzdContext
 	console input.Console
 }
 
 func newInfraDeleteAction(
 	flags infraDeleteFlags,
+	azCli azcli.AzCli,
 	azdCtx *azdcontext.AzdContext,
 	console input.Console,
 ) *infraDeleteAction {
 	return &infraDeleteAction{
 		flags:   flags,
+		azCli:   azCli,
 		azdCtx:  azdCtx,
 		console: console,
 	}
@@ -67,7 +71,7 @@ func (a *infraDeleteAction) Run(ctx context.Context) (*actions.ActionResult, err
 		return nil, err
 	}
 
-	env, ctx, err := loadOrInitEnvironment(ctx, &a.flags.global.EnvironmentName, a.azdCtx, a.console)
+	env, ctx, err := loadOrInitEnvironment(ctx, &a.flags.global.EnvironmentName, a.azdCtx, a.console, a.azCli)
 	if err != nil {
 		return nil, fmt.Errorf("loading environment: %w", err)
 	}
@@ -77,7 +81,7 @@ func (a *infraDeleteAction) Run(ctx context.Context) (*actions.ActionResult, err
 		return nil, fmt.Errorf("loading project: %w", err)
 	}
 
-	infraManager, err := provisioning.NewManager(ctx, env, prj.Path, prj.Infra, a.console.IsUnformatted())
+	infraManager, err := provisioning.NewManager(ctx, env, prj.Path, prj.Infra, a.console.IsUnformatted(), a.azCli)
 	if err != nil {
 		return nil, fmt.Errorf("creating provisioning manager: %w", err)
 	}

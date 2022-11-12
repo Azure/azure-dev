@@ -18,7 +18,7 @@ import (
 func Test_GetStaticWebAppProperties(t *testing.T) {
 	t.Run("NoErrors", func(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
-		azCli := GetAzCli(*mockContext.Context)
+		azCli := newAzCliFromMockContext(mockContext)
 		ran := false
 
 		mockContext.HttpClient.When(func(request *http.Request) bool {
@@ -45,7 +45,7 @@ func Test_GetStaticWebAppProperties(t *testing.T) {
 
 	t.Run("Error", func(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
-		azCli := GetAzCli(*mockContext.Context)
+		azCli := newAzCliFromMockContext(mockContext)
 		ran := false
 
 		mockContext.HttpClient.When(func(request *http.Request) bool {
@@ -66,7 +66,7 @@ func Test_GetStaticWebAppProperties(t *testing.T) {
 func Test_GetStaticWebAppEnvironmentProperties(t *testing.T) {
 	t.Run("NoErrors", func(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
-		azCli := GetAzCli(*mockContext.Context)
+		azCli := newAzCliFromMockContext(mockContext)
 		ran := false
 
 		mockContext.HttpClient.When(func(request *http.Request) bool {
@@ -101,7 +101,7 @@ func Test_GetStaticWebAppEnvironmentProperties(t *testing.T) {
 
 	t.Run("Error", func(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
-		azCli := GetAzCli(*mockContext.Context)
+		azCli := newAzCliFromMockContext(mockContext)
 		ran := false
 
 		mockContext.HttpClient.When(func(request *http.Request) bool {
@@ -128,7 +128,7 @@ func Test_GetStaticWebAppEnvironmentProperties(t *testing.T) {
 func Test_GetStaticWebAppApiKey(t *testing.T) {
 	t.Run("NoErrors", func(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
-		azCli := GetAzCli(*mockContext.Context)
+		azCli := newAzCliFromMockContext(mockContext)
 		ran := false
 
 		mockContext.HttpClient.When(func(request *http.Request) bool {
@@ -156,7 +156,7 @@ func Test_GetStaticWebAppApiKey(t *testing.T) {
 
 	t.Run("Error", func(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
-		azCli := GetAzCli(*mockContext.Context)
+		azCli := newAzCliFromMockContext(mockContext)
 		ran := false
 
 		mockContext.HttpClient.When(func(request *http.Request) bool {

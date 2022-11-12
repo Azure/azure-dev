@@ -13,6 +13,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	. "github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 
 	execmock "github.com/azure/azure-dev/cli/azd/test/mocks/exec"
@@ -84,6 +85,7 @@ func TestTerraformDeploy(t *testing.T) {
 	prepareGenericMocks(mockContext.CommandRunner)
 	preparePlanningMocks(mockContext.CommandRunner)
 	prepareDeployMocks(mockContext.CommandRunner)
+	azCli := newAzCliFromMockContext(mockContext)
 
 	infraProvider := createTerraformProvider(*mockContext.Context)
 
@@ -99,6 +101,7 @@ func TestTerraformDeploy(t *testing.T) {
 
 	scope := infra.NewSubscriptionScope(
 		*mockContext.Context,
+		azCli,
 		infraProvider.env.Values["AZURE_LOCATION"],
 		infraProvider.env.GetSubscriptionId(),
 		infraProvider.env.GetEnvName(),
@@ -175,10 +178,12 @@ func TestTerraformState(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
 	prepareGenericMocks(mockContext.CommandRunner)
 	prepareShowMocks(mockContext.CommandRunner)
+	azCli := newAzCliFromMockContext(mockContext)
 
 	infraProvider := createTerraformProvider(*mockContext.Context)
 	scope := infra.NewSubscriptionScope(
 		*mockContext.Context,
+		azCli,
 		infraProvider.env.Values["AZURE_LOCATION"],
 		infraProvider.env.GetSubscriptionId(),
 		infraProvider.env.GetEnvName(),
@@ -319,5 +324,12 @@ func prepareDestroyMocks(commandRunner *execmock.MockCommandRunner) {
 	}).Respond(exec.RunResult{
 		Stdout: "",
 		Stderr: "",
+	})
+}
+
+func newAzCliFromMockContext(mockContext *mocks.MockContext) azcli.AzCli {
+	return azcli.NewAzCli(mockContext.Credentials, azcli.NewAzCliArgs{
+		HttpClient:    mockContext.HttpClient,
+		CommandRunner: mockContext.CommandRunner,
 	})
 }

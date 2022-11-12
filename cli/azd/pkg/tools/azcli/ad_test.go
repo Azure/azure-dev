@@ -29,7 +29,7 @@ func Test_GetSignedInUserId(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
 		registerGetMeGraphMock(mockContext, http.StatusOK, &mockUserProfile)
 
-		azCli := GetAzCli(*mockContext.Context)
+		azCli := newAzCliFromMockContext(mockContext)
 
 		userId, err := azCli.GetSignedInUserId(*mockContext.Context)
 		require.NoError(t, err)
@@ -40,7 +40,7 @@ func Test_GetSignedInUserId(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
 		registerGetMeGraphMock(mockContext, http.StatusBadRequest, nil)
 
-		azCli := GetAzCli(*mockContext.Context)
+		azCli := newAzCliFromMockContext(mockContext)
 
 		userId, err := azCli.GetSignedInUserId(*mockContext.Context)
 		require.Error(t, err)
@@ -100,7 +100,7 @@ func Test_CreateOrUpdateServicePrincipal(t *testing.T) {
 		graphsdk_mocks.RegisterRoleDefinitionListMock(mockContext, http.StatusOK, roleDefinitions)
 		graphsdk_mocks.RegisterRoleAssignmentPutMock(mockContext, http.StatusCreated)
 
-		azCli := GetAzCli(*mockContext.Context)
+		azCli := newAzCliFromMockContext(mockContext)
 		rawMessage, err := azCli.CreateOrUpdateServicePrincipal(
 			*mockContext.Context,
 			expectedServicePrincipalCredential.SubscriptionId,
@@ -127,7 +127,7 @@ func Test_CreateOrUpdateServicePrincipal(t *testing.T) {
 		graphsdk_mocks.RegisterRoleDefinitionListMock(mockContext, http.StatusOK, roleDefinitions)
 		graphsdk_mocks.RegisterRoleAssignmentPutMock(mockContext, http.StatusCreated)
 
-		azCli := GetAzCli(*mockContext.Context)
+		azCli := newAzCliFromMockContext(mockContext)
 		rawMessage, err := azCli.CreateOrUpdateServicePrincipal(
 			*mockContext.Context,
 			expectedServicePrincipalCredential.SubscriptionId,
@@ -155,7 +155,7 @@ func Test_CreateOrUpdateServicePrincipal(t *testing.T) {
 		// Note how role assignment returns a 409 conflict
 		graphsdk_mocks.RegisterRoleAssignmentPutMock(mockContext, http.StatusConflict)
 
-		azCli := GetAzCli(*mockContext.Context)
+		azCli := newAzCliFromMockContext(mockContext)
 		rawMessage, err := azCli.CreateOrUpdateServicePrincipal(
 			*mockContext.Context,
 			expectedServicePrincipalCredential.SubscriptionId,
@@ -178,7 +178,7 @@ func Test_CreateOrUpdateServicePrincipal(t *testing.T) {
 		// Note how retrieval of matching role assignments is empty
 		graphsdk_mocks.RegisterRoleDefinitionListMock(mockContext, http.StatusOK, []*armauthorization.RoleDefinition{})
 
-		azCli := GetAzCli(*mockContext.Context)
+		azCli := newAzCliFromMockContext(mockContext)
 		rawMessage, err := azCli.CreateOrUpdateServicePrincipal(
 			*mockContext.Context,
 			expectedServicePrincipalCredential.SubscriptionId,
@@ -196,7 +196,7 @@ func Test_CreateOrUpdateServicePrincipal(t *testing.T) {
 		// Note that the application creation returns an unauthorized error
 		graphsdk_mocks.RegisterApplicationCreateItemMock(mockContext, http.StatusUnauthorized, nil)
 
-		azCli := GetAzCli(*mockContext.Context)
+		azCli := newAzCliFromMockContext(mockContext)
 		rawMessage, err := azCli.CreateOrUpdateServicePrincipal(
 			*mockContext.Context,
 			expectedServicePrincipalCredential.SubscriptionId,
@@ -227,5 +227,12 @@ func registerGetMeGraphMock(mockContext *mocks.MockContext, statusCode int, user
 		}
 
 		return mocks.CreateHttpResponseWithBody(request, statusCode, userProfile)
+	})
+}
+
+func newAzCliFromMockContext(mockContext *mocks.MockContext) AzCli {
+	return NewAzCli(mockContext.Credentials, NewAzCliArgs{
+		HttpClient:    mockContext.HttpClient,
+		CommandRunner: mockContext.CommandRunner,
 	})
 }

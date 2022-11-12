@@ -22,7 +22,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
-	"github.com/azure/azure-dev/cli/azd/pkg/identity"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -32,14 +31,12 @@ func TestAzCli(t *testing.T) {
 	t.Run("DebugAndTelemetryEnabled", func(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
 
-		tempCli := NewAzCli(identity.GetCredentials(*mockContext.Context), NewAzCliArgs{
+		tempCli := NewAzCli(mockContext.Credentials, NewAzCliArgs{
 			EnableDebug:     true,
 			EnableTelemetry: true,
 			CommandRunner:   mockContext.CommandRunner,
 		})
 
-		*mockContext.Context = WithAzCli(*mockContext.Context, tempCli)
-		tempCli = GetAzCli(*mockContext.Context)
 		cli := tempCli.(*azCli)
 
 		require.True(t, cli.enableDebug)
@@ -69,14 +66,12 @@ func TestAzCli(t *testing.T) {
 	t.Run("DebugAndTelemetryDisabled", func(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
 
-		tempCli := NewAzCli(identity.GetCredentials(*mockContext.Context), NewAzCliArgs{
+		tempCli := NewAzCli(mockContext.Credentials, NewAzCliArgs{
 			EnableDebug:     false,
 			EnableTelemetry: false,
 			CommandRunner:   mockContext.CommandRunner,
 		})
 
-		*mockContext.Context = WithAzCli(*mockContext.Context, tempCli)
-		tempCli = GetAzCli(*mockContext.Context)
 		cli := tempCli.(*azCli)
 
 		require.False(t, cli.enableDebug)
@@ -117,7 +112,7 @@ func runAndCaptureUserAgent(t *testing.T) string {
 	defaultRunner := exec.NewCommandRunner(os.Stdin, os.Stdout, os.Stderr)
 	mockContext := mocks.NewMockContext(context.Background())
 
-	cli := NewAzCli(identity.GetCredentials(*mockContext.Context), NewAzCliArgs{
+	cli := NewAzCli(mockContext.Credentials, NewAzCliArgs{
 		EnableDebug:     true,
 		EnableTelemetry: true,
 		CommandRunner:   mockContext.CommandRunner,
@@ -253,7 +248,7 @@ func Test_AzSdk_User_Agent_Policy(t *testing.T) {
 	var rawResponse *http.Response
 	ctx := runtime.WithCaptureResponse(*mockContext.Context, &rawResponse)
 
-	azCli := GetAzCli(ctx)
+	azCli := newAzCliFromMockContext(mockContext)
 	// We don't care about the actual response or if an error occurred
 	// Any API call that leverages the Go SDK is fine
 	_, _ = azCli.GetResource(ctx, "SUBSCRIPTION_ID", "RESOURCE_ID")

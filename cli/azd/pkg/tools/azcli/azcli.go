@@ -15,12 +15,10 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerregistry/armcontainerregistry"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	azdinternal "github.com/azure/azure-dev/cli/azd/internal"
-	"github.com/azure/azure-dev/cli/azd/internal/telemetry"
 	"github.com/azure/azure-dev/cli/azd/pkg/azsdk"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
-	"github.com/azure/azure-dev/cli/azd/pkg/identity"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/blang/semver/v4"
 )
@@ -437,38 +435,4 @@ func (cli *azCli) createDefaultClientOptionsBuilder(ctx context.Context) *azsdk.
 	return azsdk.NewClientOptionsBuilder().
 		WithTransport(httputil.GetHttpClient(ctx)).
 		WithPerCallPolicy(azsdk.NewUserAgentPolicy(cli.UserAgent()))
-}
-
-type contextKey string
-
-const (
-	azCliContextKey contextKey = "azcli"
-)
-
-func WithAzCli(ctx context.Context, azCli AzCli) context.Context {
-	return context.WithValue(ctx, azCliContextKey, azCli)
-}
-
-func GetAzCli(ctx context.Context) AzCli {
-	// Check to see if we already have an az cli in the context
-	azCli, ok := ctx.Value(azCliContextKey).(AzCli)
-	if !ok {
-		options := azdinternal.GetCommandOptions(ctx)
-		credential := identity.GetCredentials(ctx)
-
-		commandRunner := exec.GetCommandRunner(ctx)
-		args := NewAzCliArgs{
-			EnableDebug:     options.EnableDebugLogging,
-			EnableTelemetry: options.EnableTelemetry,
-			CommandRunner:   commandRunner,
-		}
-		azCli = NewAzCli(credential, args)
-	}
-
-	// Set the user agent if a template has been selected
-	template := telemetry.TemplateFromContext(ctx)
-	userAgent := azdinternal.MakeUserAgentString(template)
-	azCli.SetUserAgent(userAgent)
-
-	return azCli
 }

@@ -30,9 +30,7 @@ type ResourceManager interface {
 	GetWebAppResourceTypeDisplayName(ctx context.Context, subscriptionId string, resourceId string) (string, error)
 }
 
-func NewAzureResourceManager(ctx context.Context) *AzureResourceManager {
-	azCli := azcli.GetAzCli(ctx)
-
+func NewAzureResourceManager(azCli azcli.AzCli) *AzureResourceManager {
 	return &AzureResourceManager{
 		azCli: azCli,
 	}
@@ -127,8 +125,7 @@ func (rm *AzureResourceManager) GetResourceGroupsForEnvironment(
 	ctx context.Context,
 	env *environment.Environment,
 ) ([]azcli.AzCliResource, error) {
-	azCli := azcli.GetAzCli(ctx)
-	res, err := azCli.ListResourceGroup(ctx, env.GetSubscriptionId(), &azcli.ListResourceGroupOptions{
+	res, err := rm.azCli.ListResourceGroup(ctx, env.GetSubscriptionId(), &azcli.ListResourceGroupOptions{
 		TagFilter: &azcli.Filter{Key: "azd-env-name", Value: env.GetEnvName()},
 	})
 
@@ -152,8 +149,7 @@ func (rm *AzureResourceManager) GetDefaultResourceGroups(
 	ctx context.Context,
 	env *environment.Environment,
 ) ([]azcli.AzCliResource, error) {
-	azCli := azcli.GetAzCli(ctx)
-	allGroups, err := azCli.ListResourceGroup(ctx, env.GetSubscriptionId(), nil)
+	allGroups, err := rm.azCli.ListResourceGroup(ctx, env.GetSubscriptionId(), nil)
 
 	matchingGroups := []azcli.AzCliResource{}
 	for _, group := range allGroups {

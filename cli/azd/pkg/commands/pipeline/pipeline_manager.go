@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
@@ -51,9 +52,13 @@ type PipelineManager struct {
 	RootOptions *internal.GlobalCommandOptions
 	Environment *environment.Environment
 	PipelineManagerArgs
+	azCli      azcli.AzCli
+	credential azcore.TokenCredential
 }
 
 func NewPipelineManager(
+	azCli azcli.AzCli,
+	credential azcore.TokenCredential,
 	azdCtx *azdcontext.AzdContext,
 	global *internal.GlobalCommandOptions,
 	args PipelineManagerArgs,
@@ -62,6 +67,8 @@ func NewPipelineManager(
 		AzdCtx:              azdCtx,
 		RootOptions:         global,
 		PipelineManagerArgs: args,
+		azCli:               azCli,
+		credential:          credential,
 	}
 }
 
@@ -237,9 +244,8 @@ func (manager *PipelineManager) Configure(ctx context.Context) error {
 	inputConsole := input.GetConsole(ctx)
 
 	// check all required tools are installed
-	azCli := azcli.GetAzCli(ctx)
 	requiredTools := manager.requiredTools(ctx)
-	requiredTools = append(requiredTools, azCli)
+	requiredTools = append(requiredTools, manager.azCli)
 	if err := tools.EnsureInstalled(ctx, requiredTools...); err != nil {
 		return err
 	}
@@ -271,7 +277,7 @@ func (manager *PipelineManager) Configure(ctx context.Context) error {
 		),
 	)
 
-	credentials, err := azCli.CreateOrUpdateServicePrincipal(
+	credentials, err := manager.azCli.CreateOrUpdateServicePrincipal(
 		ctx,
 		manager.Environment.GetSubscriptionId(),
 		manager.PipelineServicePrincipalName,
@@ -293,7 +299,8 @@ func (manager *PipelineManager) Configure(ctx context.Context) error {
 		prj.Infra,
 		credentials,
 		PipelineAuthType(manager.PipelineAuthTypeName),
-		inputConsole)
+		inputConsole,
+		manager.credential)
 	if err != nil {
 		return err
 	}

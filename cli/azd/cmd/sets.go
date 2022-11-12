@@ -221,11 +221,13 @@ var PipelineConfigCmdSet = wire.NewSet(
 
 var RestoreCmdSet = wire.NewSet(
 	CommonSet,
+	AzCliSet,
 	newRestoreAction,
 	wire.Bind(new(actions.Action), new(*restoreAction)))
 
 var ShowCmdSet = wire.NewSet(
 	CommonSet,
+	AzCliSet,
 	newShowAction,
 	wire.Bind(new(actions.Action), new(*showAction)))
 

@@ -339,13 +339,11 @@ type envFlag struct {
 }
 
 func (e *envFlag) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
-	// Set the default value to AZURE_ENV_NAME value if the flag wasn't explicitly passed
-	e.environmentName = os.Getenv(environment.EnvNameEnvVarName)
-
 	local.StringVarP(
 		&e.environmentName,
 		"environment",
 		"e",
-		"",
+		// Set the default value to AZURE_ENV_NAME value if available
+		os.Getenv(environment.EnvNameEnvVarName),
 		"The name of the environment to use.")
 }

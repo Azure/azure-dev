@@ -44,12 +44,14 @@ require (
 	gopkg.in/yaml.v3 v3.0.0
 )
 
-require github.com/MakeNowJust/heredoc/v2 v2.0.1
+require (
+	github.com/MakeNowJust/heredoc/v2 v2.0.1
+	github.com/gkampitakis/go-snaps v0.4.2
+)
 
 require (
 	github.com/gkampitakis/ciinfo v0.1.1 // indirect
 	github.com/gkampitakis/go-diff v1.3.0 // indirect
-	github.com/gkampitakis/go-snaps v0.4.2 // indirect
 	github.com/kr/pretty v0.3.0 // indirect
 	github.com/kr/text v0.2.0 // indirect
 	github.com/rogpeppe/go-internal v1.9.0 // indirect

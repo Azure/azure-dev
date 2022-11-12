@@ -58,8 +58,8 @@ const (
 	Destroying Event = "destroying"
 	// Raised after project is destroyed
 	Destroyed Event = "destroyed"
-	// Raised after project is deployed or environment setting is refreshed
-	DotnetSecretSetting Event = "dotnet secrets setting"
+	// Raised after environment is updated
+	EnvironmentUpdated Event = "environment updated"
 )
 
 // Project lifecycle event arguments

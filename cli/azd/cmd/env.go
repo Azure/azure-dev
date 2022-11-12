@@ -382,7 +382,7 @@ func (ef *envRefreshAction) Run(ctx context.Context) (*actions.ActionResult, err
 
 	for _, svc := range prj.Services {
 		if err := svc.RaiseEvent(
-			ctx, project.DotnetSecretSetting,
+			ctx, project.EnvironmentUpdated,
 			map[string]any{"bicepOutput": getStateResult.State.Outputs}); err != nil {
 			return nil, err
 		}

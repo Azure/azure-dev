@@ -322,6 +322,11 @@ func Test_CLI_InfraCreateAndDeleteWebApp(t *testing.T) {
 	err = godotenv.Write(env, filepath.Join(dir, azdcontext.EnvironmentDirectoryName, envName, ".env"))
 	require.NoError(t, err)
 
+	//clear dotnet secrets to test if dotnet secrets works when running env refresh
+	runArgs = newRunArgs("dotnet", "user-secrets", "clear", "--project", filepath.Join(dir, "/src/dotnet/webapp.csproj"))
+	secrets, err = commandRunner.Run(ctx, runArgs)
+	require.NoError(t, err)
+
 	_, err = cli.RunCommand(ctx, "env", "refresh")
 	require.NoError(t, err)
 
@@ -330,6 +335,13 @@ func Test_CLI_InfraCreateAndDeleteWebApp(t *testing.T) {
 
 	_, has = env["WEBSITE_URL"]
 	require.True(t, has, "WEBSITE_URL should be in environment after refresh")
+
+	runArgs = newRunArgs("dotnet", "user-secrets", "list", "--project", filepath.Join(dir, "/src/dotnet/webapp.csproj"))
+	secrets, err = commandRunner.Run(ctx, runArgs)
+	require.NoError(t, err)
+
+	contain = strings.Contains(secrets.Stdout, fmt.Sprintf("WEBSITE_URL = %s", url))
+	require.True(t, contain)
 
 	_, err = cli.RunCommand(ctx, "infra", "delete", "--force", "--purge")
 	require.NoError(t, err)

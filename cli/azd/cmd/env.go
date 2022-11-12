@@ -379,6 +379,18 @@ func (ef *envRefreshAction) Run(ctx context.Context) (*actions.ActionResult, err
 		}
 	}
 
+	if err = prj.Initialize(ctx, env); err != nil {
+		return nil, err
+	}
+
+	for _, svc := range prj.Services {
+		if err := svc.RaiseEvent(
+			ctx, project.EnvironmentUpdated,
+			map[string]any{"bicepOutput": getStateResult.State.Outputs}); err != nil {
+			return nil, err
+		}
+	}
+
 	return nil, nil
 }
 

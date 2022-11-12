@@ -13,6 +13,50 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func Test_CLI_EnvCommandsWorkWhenLoggedOut(t *testing.T) {
+	ctx, cancel := newTestContext(t)
+	defer cancel()
+
+	dir := tempDirWithDiagnostics(t)
+	t.Logf("DIR: %s", dir)
+
+	cli := azdcli.NewCLI(t)
+	cli.WorkingDirectory = dir
+
+	err := copySample(dir, "storage")
+	require.NoError(t, err, "failed expanding sample")
+
+	// Create some environments, we do this while we are logged in because creating an
+	// environment right now requires you to be logged in since it fetches information
+	// about the current account to prompt for a subscription and location.
+	envNew(ctx, t, cli, "env1", true)
+	envNew(ctx, t, cli, "env2", true)
+
+	// set a private config dir, this well ensure we are logged out.
+	configDir := t.TempDir()
+	t.Setenv("AZD_CONFIG_DIR", configDir)
+
+	// check to make sure we are logged out as expected.
+	res, err := cli.RunCommand(ctx, "login", "--check-status", "--output", "json")
+	require.NoError(t, err)
+
+	var lr contracts.LoginResult
+	err = json.Unmarshal([]byte(res), &lr)
+	require.NoError(t, err)
+
+	require.Equal(t, contracts.LoginStatusUnauthenticated, lr.Status)
+
+	res, err = cli.RunCommand(ctx, "env", "list", "--output", "json")
+	require.NoError(t, err)
+
+	var envs []contracts.EnvListEnvironment
+	err = json.Unmarshal([]byte(res), &envs)
+	require.NoError(t, err)
+
+	// We should see the two environments.
+	require.Equal(t, 2, len(envs))
+}
+
 // Verifies azd env commands that manage environments.
 func Test_CLI_Env_Management(t *testing.T) {
 	ctx, cancel := newTestContext(t)

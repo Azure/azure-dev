@@ -6,11 +6,11 @@
 
 As part of this release, `azd` has been updated to no longer depend on `az`. As part of these changes, you must now explicitly log into `azd` instead of logging into `az`. After upgrading to this version of `azd`, please run `azd login` to log in.
 
-If you have existing pipelines that use `azd` you will also need to update your pipelines which use `azd` to make sure it can authenticate to Azure.
+If you have existing pipelines that use `azd`, you will need to update your pipelines to use the new `azd` login methods when authenticating against Azure.
 
-For Pipelines which use GitHub Actions:
+**GitHub Actions pipelines**:
 
-Update your `azure-dev.yml` to stop using the `azure/login@v1` action and log in using `azd` directly. To do so, replace:
+Update your `azure-dev.yml` to stop using the `azure/login@v1` action, and instead log in using `azd` directly. To do so, replace:
 
 ```yaml
       - name: Log in with Azure
@@ -36,9 +36,9 @@ with
           AZURE_CREDENTIALS: ${{ secrets.AZURE_CREDENTIALS }}
 ```
 
-For Pipelines which use Azure Dev Ops:
+**Azure DevOps pipelines**:
 
-Update your `azure-dev.yml` file to force `azd` to use the `az` for authentication.  To do so, add a new step before any other steps which use `azd`:
+Update your `azure-dev.yml` file to force `azd` to use `az` for authentication.  To do so, add a new step before any other steps which use `azd`:
 
 ```yaml
       - name: Configure azd to use az for authentication

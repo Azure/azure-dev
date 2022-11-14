@@ -41,7 +41,7 @@ func Test_CLI_EnvCommandsWorkWhenLoggedOut(t *testing.T) {
 	require.NoError(t, err)
 
 	var lr contracts.LoginResult
-	err = json.Unmarshal([]byte(res), &lr)
+	err = json.Unmarshal([]byte(res.Stdout), &lr)
 	require.NoError(t, err)
 
 	require.Equal(t, contracts.LoginStatusUnauthenticated, lr.Status)
@@ -50,7 +50,7 @@ func Test_CLI_EnvCommandsWorkWhenLoggedOut(t *testing.T) {
 	require.NoError(t, err)
 
 	var envs []contracts.EnvListEnvironment
-	err = json.Unmarshal([]byte(res), &envs)
+	err = json.Unmarshal([]byte(res.Stdout), &envs)
 	require.NoError(t, err)
 
 	// We should see the two environments.

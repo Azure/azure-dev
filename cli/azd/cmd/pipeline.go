@@ -10,10 +10,10 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
-	"github.com/azure/azure-dev/cli/azd/pkg/commands"
 	"github.com/azure/azure-dev/cli/azd/pkg/commands/pipeline"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
@@ -70,9 +70,6 @@ func pipelineConfigCmdDesign(global *internal.GlobalCommandOptions) (*cobra.Comm
 		Long: `Create and configure your deployment pipeline by using GitHub Actions.
 
 For more information, go to https://aka.ms/azure-dev/pipeline.`,
-		Annotations: map[string]string{
-			commands.RequireNoLoginAnnotation: "true",
-		},
 	}
 
 	flags := &pipelineConfigFlags{}
@@ -87,18 +84,21 @@ type pipelineConfigAction struct {
 	manager *pipeline.PipelineManager
 	azdCtx  *azdcontext.AzdContext
 	console input.Console
+	azCli   azcli.AzCli
 }
 
 func newPipelineConfigAction(
 	azdCtx *azdcontext.AzdContext,
 	console input.Console,
 	flags pipelineConfigFlags,
+	azCli azcli.AzCli,
 ) *pipelineConfigAction {
 	pca := &pipelineConfigAction{
 		flags:   flags,
 		manager: pipeline.NewPipelineManager(azdCtx, flags.global, flags.PipelineManagerArgs),
 		azdCtx:  azdCtx,
 		console: console,
+		azCli:   azCli,
 	}
 
 	return pca

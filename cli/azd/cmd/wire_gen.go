@@ -319,7 +319,18 @@ func initPipelineConfigAction(console input.Console, ctx context.Context, o *int
 	if err != nil {
 		return nil, err
 	}
-	cmdPipelineConfigAction := newPipelineConfigAction(azdContext, console, flags)
+	commandRunner := newCommandRunnerFromConsole(console)
+	userConfigManager := config.NewUserConfigManager()
+	manager, err := auth.NewManager(userConfigManager)
+	if err != nil {
+		return nil, err
+	}
+	tokenCredential, err := newCredential(ctx, manager)
+	if err != nil {
+		return nil, err
+	}
+	azCli := newAzCliFromOptions(o, commandRunner, tokenCredential)
+	cmdPipelineConfigAction := newPipelineConfigAction(azdContext, console, flags, azCli)
 	return cmdPipelineConfigAction, nil
 }
 

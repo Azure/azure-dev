@@ -65,6 +65,8 @@ steps:
       -c '$(SynchronousCleanup)'
     workingDirectory: templates/tests
 
+- template: /eng/pipelines/templates/steps/az-login.yml
+
 # First tag the resource group (if exists) so that it can get cleaned up
 # by the cleanup pipeline. Then attempt to delete the resource group 
 # directly. If the delete fails the cleanup pipeline will delete it.

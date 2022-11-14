@@ -30,6 +30,12 @@ steps:
     Write-Host "##vso[task.setvariable variable=ResourceGroupName]$resourceGroupName"
     Write-Host "##vso[task.setvariable variable=EnvPrefixName]$envPrefixName"
 
+    $SynchronousCleanup = 'true'
+    if ('$(Build.Reason)' -eq 'PullRequest') {
+      $SynchronousCleanup = 'false'
+    }
+    Write-Host "##vso[task.setvariable variable=SynchronousCleanup]$SynchronousCleanup"
+
     $CleanupImmediate = 'true'
     if ($(CleanupHoursDelay) -ne '0') {
       $CleanupImmediate = 'false'
@@ -48,6 +54,7 @@ steps:
     targetType: filePath
     filePath: templates/tests/test-templates.sh
     arguments: >
+      -f '$(Pipeline.Workspace)'
       -e '$(EnvPrefixName)'
       -t '$(TemplateName)'
       -b '$(TemplateBranchName)'
@@ -55,7 +62,7 @@ steps:
       -u '$(Build.BuildId)'
       -l '$(AzureLocation)'
       -p 'list'
-      -c '$(CleanupImmediate)'
+      -c '$(SynchronousCleanup)'
     workingDirectory: templates/tests
 
 # First tag the resource group (if exists) so that it can get cleaned up

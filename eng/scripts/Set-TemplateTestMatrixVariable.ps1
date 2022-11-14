@@ -67,7 +67,6 @@ if ($TemplateList -eq '(azd template list)') {
 }
 
 if ($TemplateListFilter -ne '.*') {
-} else {
     Write-Host "Filtering with TemplateListFilter regex: $TemplateListFilter"
 
     $templateNames = $templateNames -match $TemplateListFilter

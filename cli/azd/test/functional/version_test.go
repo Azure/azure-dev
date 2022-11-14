@@ -36,11 +36,11 @@ func Test_CLI_Version_Text(t *testing.T) {
 	defer cancel()
 
 	cli := azdcli.NewCLI(t)
-	textOutput, err := cli.RunCommand(ctx, "version")
+	result, err := cli.RunCommand(ctx, "version")
 	require.NoError(t, err)
 
 	expected := getExpectedVersion(t)
-	require.Contains(t, textOutput, fmt.Sprintf("azd version %s", expected))
+	require.Contains(t, result.Stdout, fmt.Sprintf("azd version %s", expected))
 }
 
 func Test_CLI_Version_Json(t *testing.T) {

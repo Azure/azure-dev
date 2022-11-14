@@ -525,9 +525,9 @@ func Test_CLI_ProjectIsNeeded(t *testing.T) {
 		}
 
 		t.Run(test.command, func(t *testing.T) {
-			out, err := cli.RunCommand(ctx, args...)
+			result, err := cli.RunCommand(ctx, args...)
 			assert.Error(t, err)
-			assert.Regexp(t, "no project exists; to create a new project, run `azd init`", out)
+			assert.Regexp(t, "no project exists; to create a new project, run `azd init`", result.Stdout)
 		})
 	}
 }
@@ -644,9 +644,8 @@ func Test_CLI_InfraCreateAndDeleteResourceTerraform(t *testing.T) {
 	_, err = cli.RunCommand(ctx, "infra", "create", "--cwd", dir)
 	require.NoError(t, err)
 
-	out, err := cli.RunCommand(ctx, "env", "get-values", "-o", "json", "--cwd", dir)
+	_, err = cli.RunCommand(ctx, "env", "get-values", "-o", "json", "--cwd", dir)
 	require.NoError(t, err)
-	_ = out
 
 	t.Logf("Starting infra delete\n")
 	_, err = cli.RunCommand(ctx, "infra", "delete", "--cwd", dir, "--force", "--purge")

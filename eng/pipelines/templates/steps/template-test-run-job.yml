@@ -4,11 +4,11 @@
 # and additional variables specified by template-test-generate-jobs.yml
 
 steps:
-- template: /eng/pipelines/templates/steps/azd-login.yml
-
 - template: /eng/pipelines/templates/steps/install-azd-live-sh.yml
   parameters:
     Version: $(AzdVersion)
+
+- template: /eng/pipelines/templates/steps/azd-login.yml
 
 # Java pre-requisites that isn't met
 # TODO: Use azd container as a form of validation that the container works

@@ -249,7 +249,7 @@ func Test_CLI_InfraCreateAndDeleteWebApp(t *testing.T) {
 	require.NoError(t, err)
 
 	t.Logf("Running show\n")
-	out, err := cli.RunCommand(ctx, "show", "-o", "json", "--cwd", dir)
+	result, err := cli.RunCommand(ctx, "show", "-o", "json", "--cwd", dir)
 	require.NoError(t, err)
 
 	var showRes struct {
@@ -263,7 +263,7 @@ func Test_CLI_InfraCreateAndDeleteWebApp(t *testing.T) {
 			} `json:"target"`
 		} `json:"services"`
 	}
-	err = json.Unmarshal([]byte(out), &showRes)
+	err = json.Unmarshal([]byte(result.Stdout), &showRes)
 	require.NoError(t, err)
 
 	service, has := showRes.Services["web"]
@@ -347,10 +347,10 @@ func Test_CLI_InfraCreateAndDeleteWebApp(t *testing.T) {
 	require.NoError(t, err)
 
 	t.Logf("Running show (again)\n")
-	out, err = cli.RunCommand(ctx, "show", "-o", "json", "--cwd", dir)
+	result, err = cli.RunCommand(ctx, "show", "-o", "json", "--cwd", dir)
 	require.NoError(t, err)
 
-	err = json.Unmarshal([]byte(out), &showRes)
+	err = json.Unmarshal([]byte(result.Stdout), &showRes)
 	require.NoError(t, err)
 
 	// Project information should be present, but since we have run infra delete, there shouldn't
@@ -449,13 +449,13 @@ func Test_CLI_InfraCreateAndDeleteFuncApp(t *testing.T) {
 	_, err = cli.RunCommand(ctx, "deploy", "--cwd", dir)
 	require.NoError(t, err)
 
-	out, err := cli.RunCommand(ctx, "env", "get-values", "-o", "json", "--cwd", dir)
+	result, err := cli.RunCommand(ctx, "env", "get-values", "-o", "json", "--cwd", dir)
 	require.NoError(t, err)
 
-	t.Logf("env get-values command output: %s\n", out)
+	t.Logf("env get-values command output: %s\n", result.Stdout)
 
 	var envValues map[string]interface{}
-	err = json.Unmarshal([]byte(out), &envValues)
+	err = json.Unmarshal([]byte(result.Stdout), &envValues)
 	require.NoError(t, err)
 
 	url := fmt.Sprintf("%s/api/httptrigger", envValues["AZURE_FUNCTION_URI"])
@@ -525,9 +525,9 @@ func Test_CLI_ProjectIsNeeded(t *testing.T) {
 		}
 
 		t.Run(test.command, func(t *testing.T) {
-			out, err := cli.RunCommand(ctx, args...)
+			result, err := cli.RunCommand(ctx, args...)
 			assert.Error(t, err)
-			assert.Regexp(t, "no project exists; to create a new project, run `azd init`", out)
+			assert.Regexp(t, "no project exists; to create a new project, run `azd init`", result.Stdout)
 		})
 	}
 }
@@ -644,9 +644,8 @@ func Test_CLI_InfraCreateAndDeleteResourceTerraform(t *testing.T) {
 	_, err = cli.RunCommand(ctx, "infra", "create", "--cwd", dir)
 	require.NoError(t, err)
 
-	out, err := cli.RunCommand(ctx, "env", "get-values", "-o", "json", "--cwd", dir)
+	_, err = cli.RunCommand(ctx, "env", "get-values", "-o", "json", "--cwd", dir)
 	require.NoError(t, err)
-	_ = out
 
 	t.Logf("Starting infra delete\n")
 	_, err = cli.RunCommand(ctx, "infra", "delete", "--cwd", dir, "--force", "--purge")

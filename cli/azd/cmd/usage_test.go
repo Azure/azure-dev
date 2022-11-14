@@ -4,17 +4,17 @@ import (
 	"log"
 	"testing"
 
-	"github.com/gkampitakis/go-snaps/snaps"
+	"github.com/azure/azure-dev/cli/azd/test/snapshot"
 	"github.com/spf13/cobra"
 )
 
 // To update snapshots (assuming your current directory is cli/azd):
 //
 // For Bash,
-// UPDATE_SNAPS=true go test ./cmd
+// UPDATE_SNAPSHOTS=true go test ./cmd
 //
 // For Pwsh,
-// $env:UPDATE_SNAPS='true'; go test ./cmd; $env:UPDATE_SNAPS=$null
+// $env:UPDATE_SNAPSHOTS='true'; go test ./cmd; $env:UPDATE_SNAPSHOTS=$null
 func TestUsage(t *testing.T) {
 	root := NewRootCmd()
 
@@ -23,8 +23,8 @@ func TestUsage(t *testing.T) {
 
 func usageSnapshot(t *testing.T, cmd *cobra.Command) {
 	t.Run(cmd.Name(), func(t *testing.T) {
-		log.Printf("Usage for command: %s", cmd.CommandPath())
-		snaps.MatchSnapshot(t, cmd.UsageString())
+		log.Printf("Command: %s", cmd.CommandPath())
+		snapshot.SnapshotT(t, cmd.UsageString())
 
 		for _, c := range cmd.Commands() {
 			if !c.IsAvailableCommand() || c.IsAdditionalHelpTopicCommand() {

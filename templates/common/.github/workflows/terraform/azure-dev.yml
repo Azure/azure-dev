@@ -13,7 +13,7 @@ jobs:
   build:
     runs-on: ubuntu-latest
     container:
-      image: mcr.microsoft.com/azure-dev-cli-apps:latest
+      image: azdevcliextacr.azurecr.io/azure-dev:pr-1153
     steps:
       - name: Checkout
         uses: actions/checkout@v2

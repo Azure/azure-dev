@@ -5,7 +5,7 @@ trigger:
 pool:
   vmImage: ubuntu-latest
 
-container: mcr.microsoft.com/azure-dev-cli-apps:latest
+container: azdevcliextacr.azurecr.io/azure-dev:pr-1153
 
 steps:
   - pwsh: |

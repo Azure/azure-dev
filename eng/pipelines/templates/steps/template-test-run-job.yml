@@ -4,7 +4,7 @@
 # and additional variables specified by template-test-generate-jobs.yml
 
 steps:
-- template: /eng/pipelines/templates/steps/az-login.yml
+- template: /eng/pipelines/templates/steps/azd-login.yml
 
 - template: /eng/pipelines/templates/steps/install-azd-live-sh.yml
   parameters:

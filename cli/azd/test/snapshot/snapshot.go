@@ -26,6 +26,7 @@
 package snapshot
 
 import (
+	"os"
 	"testing"
 
 	"github.com/bradleyjkemp/cupaloy/v2"
@@ -37,13 +38,18 @@ func init() {
 
 // NewDefaultConfig creates the default configuration that azd uses.
 func NewDefaultConfig() *cupaloy.Config {
+	isCi := os.Getenv("GITHUB_ACTIONS") == "true" ||
+		os.Getenv("TF_BUILD") == "True"
+
 	return cupaloy.NewDefaultConfig().
 		// Always use testdata
 		WithOptions(cupaloy.SnapshotSubdirectory("testdata")).
 		// Configure default extension to .snap
 		WithOptions(cupaloy.SnapshotFileExtension(".snap")).
 		// Use go-spew instead of String() and Error() outputs
-		WithOptions(cupaloy.UseStringerMethods(false))
+		WithOptions(cupaloy.UseStringerMethods(false)).
+		// Fail update on CI, but allow local to succeed
+		WithOptions(cupaloy.FailOnUpdate(isCi))
 }
 
 // SnapshotT creates a snapshot with the global config, and the current testing.T.

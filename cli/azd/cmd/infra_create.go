@@ -39,7 +39,7 @@ func (i *infraCreateFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCom
 // bindWithoutOutput binds all flags except for the output flag. This is used when multiple actions are attached
 // to the same command.
 func (i *infraCreateFlags) bindWithoutOutput(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
-	//local.BoolVar(&i.noProgress, "no-progress", false, "Suppresses progress information.")
+	local.BoolVar(&i.noProgress, "no-progress", false, "Suppresses progress information.")
 
 	i.global = global
 }

@@ -2,6 +2,52 @@
 
 ## Upcoming (Unreleased)
 
+### Important Notes
+
+As part of this release, `azd` has been updated to no longer depend on `az`. As part of these changes, you must now explicitly log into `azd` instead of logging into `az`. After upgrading to this version of `azd`, please run `azd login` to log in.
+
+If you have existing pipelines that use `azd` you will also need to update your pipelines which use `azd` to make sure it can authenticate to Azure.
+
+For Pipelines which use GitHub Actions:
+
+Update your `azure-dev.yml` to stop using the `azure/login@v1` action and log in using `azd` directly. To do so, replace:
+
+```yaml
+      - name: Log in with Azure
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+```
+
+with
+
+```yaml
+      - name: Log in with Azure
+        run: |
+          $info = $Env:AZURE_CREDENTIALS | ConvertFrom-Json -AsHashtable;
+          Write-Host "::add-mask::$($info.clientSecret)"
+
+          azd login `
+            --client-id "$($info.clientId)" `
+            --client-secret "$($info.clientSecret)" `
+            --tenant-id "$($info.tenantId)"
+        shell: pwsh
+        env:
+          AZURE_CREDENTIALS: ${{ secrets.AZURE_CREDENTIALS }}
+```
+
+For Pipelines which use Azure Dev Ops:
+
+Update your `azure-dev.yml` file to force `azd` to use the `az` for authentication.  To do so, add a new step before any other steps which use `azd`:
+
+```yaml
+      - name: Configure azd to use az for authentication
+        run: |
+          azd config set auth.useAzCliAuth "true"
+```
+
+We plan to improve this behavior with [[#1126]](https://github.com/Azure/azure-dev/issues/1126).
+
 ### Breaking Changes
 
 - [[#1105]](https://github.com/Azure/azure-dev/pull/1105) `azd env new` now accepts the name of the environment as the first argument, i.e. `azd env new <environment>`. Previously, this behavior was accomplished via the global environment flag `-e`, i.e. `azd env new -e <environment>`.

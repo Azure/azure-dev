@@ -13,6 +13,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/commands/pipeline"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
@@ -83,18 +84,21 @@ type pipelineConfigAction struct {
 	manager *pipeline.PipelineManager
 	azdCtx  *azdcontext.AzdContext
 	console input.Console
+	azCli   azcli.AzCli
 }
 
 func newPipelineConfigAction(
 	azdCtx *azdcontext.AzdContext,
 	console input.Console,
 	flags pipelineConfigFlags,
+	azCli azcli.AzCli,
 ) *pipelineConfigAction {
 	pca := &pipelineConfigAction{
 		flags:   flags,
 		manager: pipeline.NewPipelineManager(azdCtx, flags.global, flags.PipelineManagerArgs),
 		azdCtx:  azdCtx,
 		console: console,
+		azCli:   azCli,
 	}
 
 	return pca
@@ -104,11 +108,6 @@ func newPipelineConfigAction(
 func (p *pipelineConfigAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	if err := ensureProject(p.azdCtx.ProjectPath()); err != nil {
 		return nil, err
-	}
-
-	// make sure az is logged in
-	if err := ensureLoggedIn(ctx); err != nil {
-		return nil, fmt.Errorf("failed to ensure login: %w", err)
 	}
 
 	// Read or init env

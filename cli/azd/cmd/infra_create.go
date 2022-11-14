@@ -88,10 +88,6 @@ func (i *infraCreateAction) Run(ctx context.Context) (*actions.ActionResult, err
 		return nil, err
 	}
 
-	if err := ensureLoggedIn(ctx); err != nil {
-		return nil, fmt.Errorf("failed to ensure login: %w", err)
-	}
-
 	env, ctx, err := loadOrInitEnvironment(ctx, &i.flags.global.EnvironmentName, i.azdCtx, i.console)
 	if err != nil {
 		return nil, fmt.Errorf("loading environment: %w", err)
@@ -146,7 +142,7 @@ func (i *infraCreateAction) Run(ctx context.Context) (*actions.ActionResult, err
 
 	for _, svc := range prj.Services {
 		if err := svc.RaiseEvent(
-			ctx, project.Deployed,
+			ctx, project.EnvironmentUpdated,
 			map[string]any{"bicepOutput": deployResult.Deployment.Outputs}); err != nil {
 			return nil, err
 		}

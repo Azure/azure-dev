@@ -10,6 +10,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/pkg/commands"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
@@ -111,6 +112,9 @@ func envSelectCmdDesign(global *internal.GlobalCommandOptions) (*cobra.Command, 
 	cmd := &cobra.Command{
 		Use:   "select <environment>",
 		Short: "Set the default environment.",
+		Annotations: map[string]string{
+			commands.RequireNoLoginAnnotation: "true",
+		},
 	}
 	cmd.Args = cobra.ExactArgs(1)
 	return cmd, &struct{}{}
@@ -145,6 +149,9 @@ func envListCmdDesign(global *internal.GlobalCommandOptions) (*cobra.Command, *s
 		Use:     "list",
 		Short:   "List environments",
 		Aliases: []string{"ls"},
+		Annotations: map[string]string{
+			commands.RequireNoLoginAnnotation: "true",
+		},
 	}
 	output.AddOutputParam(
 		cmd,
@@ -337,10 +344,6 @@ func (ef *envRefreshAction) Run(ctx context.Context) (*actions.ActionResult, err
 		return nil, err
 	}
 
-	if err := ensureLoggedIn(ctx); err != nil {
-		return nil, fmt.Errorf("failed to ensure login: %w", err)
-	}
-
 	env, ctx, err := loadOrInitEnvironment(ctx, &ef.global.EnvironmentName, ef.azdCtx, ef.console)
 	if err != nil {
 		return nil, fmt.Errorf("loading environment: %w", err)
@@ -373,6 +376,18 @@ func (ef *envRefreshAction) Run(ctx context.Context) (*actions.ActionResult, err
 		err = ef.formatter.Format(provisioning.NewEnvRefreshResultFromState(getStateResult.State), ef.writer, nil)
 		if err != nil {
 			return nil, fmt.Errorf("writing deployment result in JSON format: %w", err)
+		}
+	}
+
+	if err = prj.Initialize(ctx, env); err != nil {
+		return nil, err
+	}
+
+	for _, svc := range prj.Services {
+		if err := svc.RaiseEvent(
+			ctx, project.EnvironmentUpdated,
+			map[string]any{"bicepOutput": getStateResult.State.Outputs}); err != nil {
+			return nil, err
 		}
 	}
 

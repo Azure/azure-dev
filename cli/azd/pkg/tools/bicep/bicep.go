@@ -6,10 +6,12 @@ package bicep
 import (
 	"context"
 	"fmt"
+	"log"
 	"os"
 	"os/user"
 	"path/filepath"
 	"runtime"
+	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
@@ -106,6 +108,7 @@ type contextKey string
 const (
 	bicepContextKey         contextKey = "bicepcli"
 	defaultBicepCommandPath string     = "bicep"
+	envNameAzureConfigDir   string     = "AZURE_CONFIG_DIR"
 )
 
 func GetBicepCli(ctx context.Context) BicepCli {
@@ -139,18 +142,32 @@ func findBicepPath() (*string, error) {
 		return nil, fmt.Errorf("failed getting current user: %w", err)
 	}
 
-	commonPaths := []string{}
-	azureBin := filepath.Join(user.HomeDir, ".azure", "bin")
+	var bicepFilename string
+	var bicepStandalonePath string
 
-	// When installed standalone is typically located in the following locations
-	// When installed with 'az' it is inside the azure bin folder across all OSes
 	if runtime.GOOS == "windows" {
-		commonPaths = append(commonPaths, filepath.Join(user.HomeDir, "AppData\\Local\\Programs\\Bicep CLI\\bicep.exe"))
-		commonPaths = append(commonPaths, filepath.Join(azureBin, "bicep.exe"))
+		bicepFilename = "bicep.exe"
+		bicepStandalonePath = filepath.Join(user.HomeDir, fmt.Sprintf("AppData\\Local\\Programs\\Bicep CLI\\%s", bicepFilename))
 	} else {
-		commonPaths = append(commonPaths, "/usr/local/bin/bicep")
-		commonPaths = append(commonPaths, filepath.Join(azureBin, "bicep"))
+		bicepFilename = "bicep"
+		bicepStandalonePath = fmt.Sprintf("/usr/local/bin/%s", bicepFilename)
 	}
+
+	azureBin := filepath.Join(user.HomeDir, ".azure", "bin")
+	commonPaths := []string{}
+
+	// If AZURE_CONFIG_DIR is defined, check there first
+	azureConfigDir := os.Getenv(envNameAzureConfigDir)
+	if strings.TrimSpace(azureConfigDir) != "" {
+		log.Printf("Found %s with path '%s'\n", envNameAzureConfigDir, azureConfigDir)
+		commonPaths = append(commonPaths, filepath.Join(azureConfigDir, "bin", bicepFilename))
+	}
+
+	// Check for standalone installation
+	commonPaths = append(commonPaths, bicepStandalonePath)
+
+	// Otherwise look in standard azure bin dir
+	commonPaths = append(commonPaths, filepath.Join(azureBin, bicepFilename))
 
 	var existsErr error
 
@@ -161,6 +178,8 @@ func findBicepPath() (*string, error) {
 		if existsErr == nil {
 			return &installPath, nil
 		}
+
+		log.Printf("Bicep CLI not found at path '%s'\n", installPath)
 	}
 
 	return nil, fmt.Errorf("cannot find bicep path: %w", existsErr)

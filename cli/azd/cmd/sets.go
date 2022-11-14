@@ -3,15 +3,16 @@ package cmd
 // Run `go generate ./cmd` or `wire ./cmd` after modifying this file to regenerate `wire_gen.go`.
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"os"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
-	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
+	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
@@ -26,8 +27,14 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func newWriterFromConsole(console input.Console) io.Writer {
-	return console.GetWriter()
+func newOutputWriter(console input.Console) io.Writer {
+	writer := console.Handles().Stdout
+
+	if os.Getenv("NO_COLOR") != "" {
+		writer = colorable.NewNonColorable(writer)
+	}
+
+	return writer
 }
 
 func newFormatterFromConsole(console input.Console) output.Formatter {
@@ -90,10 +97,14 @@ func newAzdContext() (*azdcontext.AzdContext, error) {
 	return azdCtx, nil
 }
 
-func newCredential() (azcore.TokenCredential, error) {
-	credential, err := azidentity.NewAzureCLICredential(nil)
+func newCredential(ctx context.Context, authManager *auth.Manager) (azcore.TokenCredential, error) {
+	credential, err := authManager.CredentialForCurrentUser(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to obtain Azure credentials: %w", err)
+		return nil, err
+	}
+
+	if _, err := auth.EnsureLoggedInCredential(ctx, credential); err != nil {
+		return nil, err
 	}
 
 	return credential, nil
@@ -106,14 +117,16 @@ var FormattedConsoleSet = wire.NewSet(
 
 var CommonSet = wire.NewSet(
 	config.NewManager,
+	config.NewUserConfigManager,
 	account.NewManager,
 	newAzdContext,
 	newCommandRunnerFromConsole,
 	newFormatterFromConsole,
-	newWriterFromConsole,
+	newOutputWriter,
 )
 
 var AzCliSet = wire.NewSet(
+	auth.NewManager,
 	newCredential,
 	newAzCliFromOptions,
 )
@@ -190,9 +203,15 @@ var EnvGetValuesCmdSet = wire.NewSet(
 
 var LoginCmdSet = wire.NewSet(
 	CommonSet,
-	AzCliSet,
+	auth.NewManager,
 	newLoginAction,
 	wire.Bind(new(actions.Action), new(*loginAction)))
+
+var LogoutCmdSet = wire.NewSet(
+	CommonSet,
+	auth.NewManager,
+	newLogoutAction,
+	wire.Bind(new(actions.Action), new(*logoutAction)))
 
 var MonitorCmdSet = wire.NewSet(
 	CommonSet,

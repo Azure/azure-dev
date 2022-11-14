@@ -21,7 +21,12 @@ RUN export DEBIAN_FRONTEND=noninteractive \
      # az cli
      && curl -sSL https://aka.ms/InstallAzureCLIDeb | bash \
      # bicep
-     && az bicep install \
+     # Fetch the latest Bicep CLI binary
+     && curl -Lo bicep https://github.com/Azure/bicep/releases/latest/download/bicep-linux-x64 \
+     # Mark it as executable
+     && chmod +x ./bicep \
+     # Add bicep to your PATH (requires admin)
+     && mv ./bicep /usr/local/bin/bicep \
      # nodejs
      && curl -fsSL https://deb.nodesource.com/setup_16.x | bash - \
      && apt-get install -y nodejs \
@@ -41,6 +46,8 @@ RUN export DEBIAN_FRONTEND=noninteractive \
           https://apt.releases.hashicorp.com $(lsb_release -cs) main" | \
           tee /etc/apt/sources.list.d/hashicorp.list \
      && apt update && apt-get install terraform \
+     # xdg-open
+     && apt update && apt-get install -y xdg-utils \
      # Cleanup
      && apt-get clean -y && rm -rf /var/lib/apt/lists/*
 

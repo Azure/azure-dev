@@ -23,9 +23,10 @@ param keyVaultName string = ''
 param logAnalyticsName string = ''
 param resourceGroupName string = ''
 param webServiceName string = ''
+param apimServiceName string = ''
 
 @description('Flag to use Azure API Management to mediate the calls between the frontend and the backend API')
-param useAPIM bool = true
+param useAPIM bool = false
 
 @description('Id of the user or app to assign application roles')
 param principalId string = ''
@@ -165,7 +166,7 @@ resource appInsightsService 'Microsoft.ApiManagement/service@2021-08-01' existin
 }
 
 // Creates Azure API Management (APIM) service to mediate the requests between the frontend and the backend API
-module apim '../../../../../../common/infra/bicep/core/host/apim.bicep' = if (useAPIM) {
+module apim '../../../../../../common/infra/bicep/core/gateway/apim.bicep' = if (useAPIM) {
   name: 'apim-deployment'
   scope: rg
   params: {
@@ -183,7 +184,7 @@ module apimApi '../../../../../common/infra/bicep/app/apim-api.bicep' = if (useA
   name: 'apim-api-deployment'
   scope: rg
   params: {
-    name: 'apim-${resourceToken}'
+    name: !empty(apimServiceName) ? apimServiceName : '${abbrs.apimService}${resourceToken}'
     apiName: 'todo-api'
     apiDisplayName: 'Simple Todo API'
     apiDescription: 'This is a simple Todo API'

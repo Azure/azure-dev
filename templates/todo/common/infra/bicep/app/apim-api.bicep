@@ -1,40 +1,37 @@
 param name string
 
-@description('The name of the API')
+@description('Resouce name to uniquely dentify this API within the API Management service instance')
 @minLength(1)
 param apiName string
 
 @description('The Display Name of the API')
 @minLength(1)
+@maxLength(300)
 param apiDisplayName string
 
-@description('The description of the API')
+@description('Description of the API. May include HTML formatting tags.')
 @minLength(1)
 param apiDescription string
 
-@description('The path of the API')
+@description('Relative URL uniquely identifying this API and all of its resource paths within the API Management service instance. It is appended to the API endpoint base URL specified during the service instance creation to form a public URL for this API.')
 @minLength(1)
 param apiPath string
 
-@description('URL for the backend API')
+@description('Absolute URL of the backend service implementing this API.')
 param apiBackendUrl string
-
-resource apimService 'Microsoft.ApiManagement/service@2021-08-01' existing = {
-  name: name
-}
 
 resource restApi 'Microsoft.ApiManagement/service/apis@2021-12-01-preview' = {
   name: apiName
   parent: apimService
   properties: {
-    description: apiDescription
     displayName: apiDisplayName
+    description: apiDescription
     path: apiPath
+    serviceUrl: apiBackendUrl
     protocols: [ 'https' ]
     subscriptionRequired: false
     type: 'http'
     format: 'openapi'
-    serviceUrl: apiBackendUrl
     value: loadTextContent('../../../../api/common/openapi.yaml')    
   }
 }
@@ -46,12 +43,6 @@ resource apiPolicy 'Microsoft.ApiManagement/service/apis/policies@2021-12-01-pre
     format: 'rawxml'
     value: loadTextContent('./apim-api-policy.xml')
   }
-}
-
-
-resource apimLogger 'Microsoft.ApiManagement/service/loggers@2021-12-01-preview' existing = {
-  name: 'app-insights-logger'
-  parent: apimService
 }
 
 resource apiDiagnostics 'Microsoft.ApiManagement/service/apis/diagnostics@2021-12-01-preview' = {
@@ -95,4 +86,13 @@ resource apiDiagnostics 'Microsoft.ApiManagement/service/apis/diagnostics@2021-1
   }
 }
 
-output SERVICE_API_URI string = '${apimService.properties.gatewayUrl}/${restApi.properties.path}'
+resource apimService 'Microsoft.ApiManagement/service@2021-08-01' existing = {
+  name: name
+}
+
+resource apimLogger 'Microsoft.ApiManagement/service/loggers@2021-12-01-preview' existing = {
+  name: 'app-insights-logger'
+  parent: apimService
+}
+
+output SERVICE_API_URI string = '${apimService.properties.gatewayUrl}/${apiPath}'

@@ -17,11 +17,11 @@ param publisherName string = 'n/a'
   'Standard'
   'Premium'
 ])
-param sku string
+param sku string = 'Consumption'
 
 @description('The instance size of this API Management service.')
 @allowed([ 0, 1, 2 ])
-param skuCount int
+param skuCount int = 0
 
 @description('Azure Application Insights Resource Id')
 param appInsightsResourceId string

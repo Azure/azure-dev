@@ -20,7 +20,7 @@ import (
 //   - When running in CI, the version specified by the CI pipeline.
 //   - When running locally, the version specified in source.
 func getExpectedVersion(t *testing.T) string {
-	expected := internal.Version
+	expected := internal.GetVersionNumber()
 
 	if os.Getenv("GITHUB_RUN_NUMBER") != "" {
 		// By using CLI_VERSION, we validate that azd was built with the correct version.

@@ -10,6 +10,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/pkg/commands"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
@@ -123,6 +124,9 @@ func envSelectCmdDesign(global *internal.GlobalCommandOptions) (*cobra.Command, 
 	cmd := &cobra.Command{
 		Use:   "select <environment>",
 		Short: "Set the default environment.",
+		Annotations: map[string]string{
+			commands.RequireNoLoginAnnotation: "true",
+		},
 	}
 	cmd.Args = cobra.ExactArgs(1)
 	return cmd, &struct{}{}
@@ -157,6 +161,9 @@ func envListCmdDesign(global *internal.GlobalCommandOptions) (*cobra.Command, *s
 		Use:     "list",
 		Short:   "List environments",
 		Aliases: []string{"ls"},
+		Annotations: map[string]string{
+			commands.RequireNoLoginAnnotation: "true",
+		},
 	}
 	output.AddOutputParam(
 		cmd,

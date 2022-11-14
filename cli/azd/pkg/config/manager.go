@@ -95,14 +95,17 @@ func Parse(configJson []byte) (Config, error) {
 //
 // The config directory is guaranteed to exist, otherwise an error is returned.
 func GetUserConfigDir() (string, error) {
-	user, err := user.Current()
-	if err != nil {
-		return "", fmt.Errorf("could not determine current user: %w", err)
+	configDirPath := os.Getenv("AZD_CONFIG_DIR")
+	if configDirPath == "" {
+		user, err := user.Current()
+		if err != nil {
+			return "", fmt.Errorf("could not determine current user: %w", err)
+		}
+
+		configDirPath = filepath.Join(user.HomeDir, configDir)
 	}
 
-	configDirPath := filepath.Join(user.HomeDir, configDir)
-	err = os.MkdirAll(configDirPath, osutil.PermissionDirectory)
-
+	err := os.MkdirAll(configDirPath, osutil.PermissionDirectory)
 	return configDirPath, err
 }
 

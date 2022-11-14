@@ -23,7 +23,7 @@ func TestUsage(t *testing.T) {
 
 func usageSnapshot(t *testing.T, cmd *cobra.Command) {
 	t.Run(cmd.Name(), func(t *testing.T) {
-		log.Printf("Command: %s", cmd.CommandPath())
+		log.Printf("Usage for command: %s", cmd.CommandPath())
 		snaps.MatchSnapshot(t, cmd.UsageString())
 
 		for _, c := range cmd.Commands() {

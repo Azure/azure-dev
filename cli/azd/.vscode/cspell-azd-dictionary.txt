@@ -29,6 +29,7 @@ cflags
 cmdsubst
 containerapp
 csharpapp
+cupaloy
 devel
 dockerproject
 dskip
@@ -70,6 +71,7 @@ rzip
 semconv
 serverfarms
 setenvs
+snapshotter
 sstore
 staticcheck
 staticwebapp

@@ -286,18 +286,23 @@ func TestBicepDestroy(t *testing.T) {
 
 		// Verify console prompts
 		consoleOutput := mockContext.Console.Output()
-		require.Len(t, consoleOutput, 2)
+		require.Len(t, consoleOutput, 4)
 		require.Contains(t, consoleOutput[0], "Deleted resource group")
-		require.Contains(t, consoleOutput[1], "Deleted deployment")
+		require.Contains(t, consoleOutput[1], "Purged key vault")
+		require.Contains(t, consoleOutput[2], "Purged app configuration")
+		require.Contains(t, consoleOutput[3], "Deleted deployment")
 
 		// Verify progress output
-		require.Len(t, progressLog, 6)
+		require.Len(t, progressLog, 8)
 		require.Contains(t, progressLog[0], "Fetching resource groups")
 		require.Contains(t, progressLog[1], "Fetching resources")
 		require.Contains(t, progressLog[2], "Getting Key Vaults to purge")
 		require.Contains(t, progressLog[3], "Getting App Configurations to purge")
 		require.Contains(t, progressLog[4], "Deleting resource group")
-		require.Contains(t, progressLog[5], "Deleting deployment")
+		require.Contains(t, progressLog[5], "Purging key vault")
+		require.Contains(t, progressLog[6], "Purging app configuration")
+		require.Contains(t, progressLog[7], "Deleting deployment")
+
 	})
 }
 

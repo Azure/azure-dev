@@ -356,7 +356,7 @@ func (p *BicepProvider) getAllResources(
 	for _, resourceGroup := range resourceGroups {
 		groupResources, err := p.azCli.ListResourceGroupResources(ctx, p.env.GetSubscriptionId(), resourceGroup, nil)
 		if err != nil {
-			return allResources, nil
+			return allResources, err
 		}
 
 		allResources[resourceGroup] = groupResources
@@ -479,13 +479,13 @@ func (p *BicepProvider) purgeItems(
 		if err != nil {
 			return err
 		}
-
-		for _, item := range items {
-			if err := item.purge(); err != nil {
-				return fmt.Errorf("failed to purge %s: %w", item.resourceType, err)
-			}
+	}
+	for _, item := range items {
+		if err := item.purge(); err != nil {
+			return fmt.Errorf("failed to purge %s: %w", item.resourceType, err)
 		}
 	}
+
 	return nil
 }
 

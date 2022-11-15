@@ -141,7 +141,7 @@ func (c *AskerConsole) MessageUxItem(ctx context.Context, item ux.UXItem) {
 }
 
 func (c *AskerConsole) ShowSpinner(ctx context.Context, title string, format SpinnerUxType) {
-	if c.formatter != nil || c.formatter.Kind() == output.JsonFormat {
+	if c.formatter != nil && c.formatter.Kind() == output.JsonFormat {
 		// Spinner is disabled when using json format.
 		c.Message(ctx, "Show spinner with title: "+title)
 		return
@@ -211,7 +211,7 @@ func (c *AskerConsole) getIndent(format SpinnerUxType) string {
 }
 
 func (c *AskerConsole) StopSpinner(ctx context.Context, lastMessage string, format SpinnerUxType) {
-	if c.formatter != nil || c.formatter.Kind() == output.JsonFormat {
+	if c.formatter != nil && c.formatter.Kind() == output.JsonFormat {
 		// Spinner is disabled when using json format.
 		c.Message(ctx, "Stop spinner with title: "+lastMessage)
 		return

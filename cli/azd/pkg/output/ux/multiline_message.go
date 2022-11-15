@@ -3,7 +3,12 @@
 
 package ux
 
-import "strings"
+import (
+	"encoding/json"
+	"strings"
+
+	"github.com/azure/azure-dev/cli/azd/pkg/output"
+)
 
 type MultilineMessage struct {
 	Lines []string
@@ -20,5 +25,6 @@ func (mm *MultilineMessage) ToString(currentIndentation string) string {
 }
 
 func (mm *MultilineMessage) ToJson() []byte {
-	return nil
+	jsonBytes, _ := json.Marshal(output.EventForMessage(strings.Join(mm.Lines, ",")))
+	return jsonBytes
 }

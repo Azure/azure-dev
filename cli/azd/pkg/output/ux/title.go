@@ -4,6 +4,7 @@
 package ux
 
 import (
+	"encoding/json"
 	"fmt"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
@@ -24,5 +25,6 @@ func (t *MessageTitle) ToString(currentIndentation string) string {
 }
 
 func (t *MessageTitle) ToJson() []byte {
-	return nil
+	jsonBytes, _ := json.Marshal(output.EventForMessage(fmt.Sprintf("TITLE: %s, TITLE NOTE: %s", t.Title, t.TitleNote)))
+	return jsonBytes
 }

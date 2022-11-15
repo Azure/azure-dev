@@ -4,7 +4,10 @@
 package ux
 
 import (
+	"encoding/json"
 	"fmt"
+
+	"github.com/azure/azure-dev/cli/azd/pkg/output"
 )
 
 type CreatedResource struct {
@@ -18,5 +21,7 @@ func (cr *CreatedResource) ToString(currentIndentation string) string {
 }
 
 func (cr *CreatedResource) ToJson() []byte {
-	return nil
+	jsonBytes, _ := json.Marshal(output.EventForMessage(
+		fmt.Sprintf("%s Creating %s: %s", donePrefix, cr.Type, cr.Name)))
+	return jsonBytes
 }

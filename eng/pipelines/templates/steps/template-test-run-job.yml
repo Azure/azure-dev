@@ -4,11 +4,11 @@
 # and additional variables specified by template-test-generate-jobs.yml
 
 steps:
-- template: /eng/pipelines/templates/steps/az-login.yml
-
 - template: /eng/pipelines/templates/steps/install-azd-live-sh.yml
   parameters:
     Version: $(AzdVersion)
+
+- template: /eng/pipelines/templates/steps/azd-login.yml
 
 # Java pre-requisites that isn't met
 # TODO: Use azd container as a form of validation that the container works
@@ -30,6 +30,12 @@ steps:
     Write-Host "##vso[task.setvariable variable=ResourceGroupName]$resourceGroupName"
     Write-Host "##vso[task.setvariable variable=EnvPrefixName]$envPrefixName"
 
+    $SynchronousCleanup = 'true'
+    if ('$(Build.Reason)' -eq 'PullRequest') {
+      $SynchronousCleanup = 'false'
+    }
+    Write-Host "##vso[task.setvariable variable=SynchronousCleanup]$SynchronousCleanup"
+
     $CleanupImmediate = 'true'
     if ($(CleanupHoursDelay) -ne '0') {
       $CleanupImmediate = 'false'
@@ -48,6 +54,7 @@ steps:
     targetType: filePath
     filePath: templates/tests/test-templates.sh
     arguments: >
+      -f '$(Pipeline.Workspace)'
       -e '$(EnvPrefixName)'
       -t '$(TemplateName)'
       -b '$(TemplateBranchName)'
@@ -55,8 +62,10 @@ steps:
       -u '$(Build.BuildId)'
       -l '$(AzureLocation)'
       -p 'list'
-      -c '$(CleanupImmediate)'
+      -c '$(SynchronousCleanup)'
     workingDirectory: templates/tests
+
+- template: /eng/pipelines/templates/steps/az-login.yml
 
 # First tag the resource group (if exists) so that it can get cleaned up
 # by the cleanup pipeline. Then attempt to delete the resource group 

@@ -42,7 +42,7 @@ func initDeployAction(console input.Console, ctx context.Context, o *internal.Gl
 		return nil, err
 	}
 	formatter := newFormatterFromConsole(console)
-	writer := newWriterFromConsole(console)
+	writer := newOutputWriter(console)
 	cmdDeployAction, err := newDeployAction(flags, azdContext, console, formatter, writer)
 	if err != nil {
 		return nil, err
@@ -81,7 +81,7 @@ func initInitAction(console input.Console, ctx context.Context, o *internal.Glob
 
 func initLoginAction(console input.Console, ctx context.Context, o *internal.GlobalCommandOptions, flags loginFlags, args []string) (actions.Action, error) {
 	formatter := newFormatterFromConsole(console)
-	writer := newWriterFromConsole(console)
+	writer := newOutputWriter(console)
 	userConfigManager := config.NewUserConfigManager()
 	manager, err := auth.NewManager(userConfigManager)
 	if err != nil {
@@ -98,7 +98,7 @@ func initLogoutAction(console input.Console, ctx context.Context, o *internal.Gl
 		return nil, err
 	}
 	formatter := newFormatterFromConsole(console)
-	writer := newWriterFromConsole(console)
+	writer := newOutputWriter(console)
 	cmdLogoutAction := newLogoutAction(manager, formatter, writer)
 	return cmdLogoutAction, nil
 }
@@ -132,7 +132,7 @@ func initUpAction(console input.Console, ctx context.Context, o *internal.Global
 	}
 	cmdInfraCreateFlags := flags.infraCreateFlags
 	formatter := newFormatterFromConsole(console)
-	writer := newWriterFromConsole(console)
+	writer := newOutputWriter(console)
 	cmdInfraCreateAction := newInfraCreateAction(cmdInfraCreateFlags, azdContext, console, formatter, writer)
 	cmdDeployFlags := flags.deployFlags
 	cmdDeployAction, err := newDeployAction(cmdDeployFlags, azdContext, console, formatter, writer)
@@ -174,7 +174,7 @@ func initRestoreAction(console input.Console, ctx context.Context, o *internal.G
 
 func initShowAction(console input.Console, ctx context.Context, o *internal.GlobalCommandOptions, flags showFlags, args []string) (actions.Action, error) {
 	formatter := newFormatterFromConsole(console)
-	writer := newWriterFromConsole(console)
+	writer := newOutputWriter(console)
 	azdContext, err := newAzdContext()
 	if err != nil {
 		return nil, err
@@ -185,7 +185,7 @@ func initShowAction(console input.Console, ctx context.Context, o *internal.Glob
 
 func initVersionAction(console input.Console, ctx context.Context, o *internal.GlobalCommandOptions, flags versionFlags, args []string) (actions.Action, error) {
 	formatter := newFormatterFromConsole(console)
-	writer := newWriterFromConsole(console)
+	writer := newOutputWriter(console)
 	cmdVersionAction := newVersionAction(flags, formatter, writer, console)
 	return cmdVersionAction, nil
 }
@@ -196,7 +196,7 @@ func initInfraCreateAction(console input.Console, ctx context.Context, o *intern
 		return nil, err
 	}
 	formatter := newFormatterFromConsole(console)
-	writer := newWriterFromConsole(console)
+	writer := newOutputWriter(console)
 	cmdInfraCreateAction := newInfraCreateAction(flags, azdContext, console, formatter, writer)
 	return cmdInfraCreateAction, nil
 }
@@ -245,7 +245,7 @@ func initEnvListAction(console input.Console, ctx context.Context, o *internal.G
 		return nil, err
 	}
 	formatter := newFormatterFromConsole(console)
-	writer := newWriterFromConsole(console)
+	writer := newOutputWriter(console)
 	cmdEnvListAction := newEnvListAction(azdContext, formatter, writer)
 	return cmdEnvListAction, nil
 }
@@ -287,8 +287,8 @@ func initEnvRefreshAction(console input.Console, ctx context.Context, o *interna
 	}
 	azCli := newAzCliFromOptions(o, commandRunner, tokenCredential)
 	formatter := newFormatterFromConsole(console)
-	writer := newWriterFromConsole(console)
-	cmdEnvRefreshAction := newEnvRefreshAction(azdContext, azCli, flags, console, formatter, writer)
+	writer := newOutputWriter(console)
+	cmdEnvRefreshAction := newEnvRefreshAction(azdContext, azCli, o, console, formatter, writer)
 	return cmdEnvRefreshAction, nil
 }
 
@@ -298,7 +298,7 @@ func initEnvGetValuesAction(console input.Console, ctx context.Context, o *inter
 		return nil, err
 	}
 	formatter := newFormatterFromConsole(console)
-	writer := newWriterFromConsole(console)
+	writer := newOutputWriter(console)
 	commandRunner := newCommandRunnerFromConsole(console)
 	userConfigManager := config.NewUserConfigManager()
 	manager, err := auth.NewManager(userConfigManager)
@@ -319,13 +319,24 @@ func initPipelineConfigAction(console input.Console, ctx context.Context, o *int
 	if err != nil {
 		return nil, err
 	}
-	cmdPipelineConfigAction := newPipelineConfigAction(azdContext, console, flags)
+	commandRunner := newCommandRunnerFromConsole(console)
+	userConfigManager := config.NewUserConfigManager()
+	manager, err := auth.NewManager(userConfigManager)
+	if err != nil {
+		return nil, err
+	}
+	tokenCredential, err := newCredential(ctx, manager)
+	if err != nil {
+		return nil, err
+	}
+	azCli := newAzCliFromOptions(o, commandRunner, tokenCredential)
+	cmdPipelineConfigAction := newPipelineConfigAction(azdContext, console, flags, azCli)
 	return cmdPipelineConfigAction, nil
 }
 
 func initTemplatesListAction(console input.Console, ctx context.Context, o *internal.GlobalCommandOptions, flags templatesListFlags, args []string) (actions.Action, error) {
 	formatter := newFormatterFromConsole(console)
-	writer := newWriterFromConsole(console)
+	writer := newOutputWriter(console)
 	templateManager := templates.NewTemplateManager()
 	cmdTemplatesListAction := newTemplatesListAction(flags, formatter, writer, templateManager)
 	return cmdTemplatesListAction, nil
@@ -333,7 +344,7 @@ func initTemplatesListAction(console input.Console, ctx context.Context, o *inte
 
 func initTemplatesShowAction(console input.Console, ctx context.Context, o *internal.GlobalCommandOptions, flags struct{}, args []string) (actions.Action, error) {
 	formatter := newFormatterFromConsole(console)
-	writer := newWriterFromConsole(console)
+	writer := newOutputWriter(console)
 	templateManager := templates.NewTemplateManager()
 	cmdTemplatesShowAction := newTemplatesShowAction(formatter, writer, templateManager, args)
 	return cmdTemplatesShowAction, nil
@@ -342,7 +353,7 @@ func initTemplatesShowAction(console input.Console, ctx context.Context, o *inte
 func initConfigListAction(console input.Console, ctx context.Context, o *internal.GlobalCommandOptions, flags struct{}, args []string) (actions.Action, error) {
 	userConfigManager := config.NewUserConfigManager()
 	formatter := newFormatterFromConsole(console)
-	writer := newWriterFromConsole(console)
+	writer := newOutputWriter(console)
 	cmdConfigListAction := newConfigListAction(userConfigManager, formatter, writer)
 	return cmdConfigListAction, nil
 }
@@ -350,7 +361,7 @@ func initConfigListAction(console input.Console, ctx context.Context, o *interna
 func initConfigGetAction(console input.Console, ctx context.Context, o *internal.GlobalCommandOptions, flags struct{}, args []string) (actions.Action, error) {
 	userConfigManager := config.NewUserConfigManager()
 	formatter := newFormatterFromConsole(console)
-	writer := newWriterFromConsole(console)
+	writer := newOutputWriter(console)
 	cmdConfigGetAction := newConfigGetAction(userConfigManager, formatter, writer, args)
 	return cmdConfigGetAction, nil
 }

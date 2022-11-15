@@ -39,6 +39,9 @@ stages:
           name: azsdk-pool-mms-ubuntu-2004-general
           vmImage: MMSUbuntu20.04
 
+        variables:
+          RepoManResultsFile: $(Pipeline.Workspace)/repoman.md
+
         steps:
           - checkout: self
 
@@ -55,10 +58,23 @@ stages:
             parameters:
               TargetBranchName: pr/$(PRNumber)
               RemoteName: $(StagingRemoteName)
+              ResultsFileLocation: $(RepoManResultsFile)
+
+          - task: PowerShell@2
+            name: DetermineChanged
+            displayName: Set repoman changed templates
+            inputs:
+              pwsh: true
+              targetType: filePath
+              filePath: ./eng/scripts/Set-RepomanChangedRepositories.ps1
+              arguments: >-
+                -ResultsFile $(RepoManResultsFile)
+                -OutputTemplatesVariable "TemplateList"
+                -OutputTemplateBranchVariable "TemplateBranch"
 
           - pwsh: |
               $repomanContent = "No changes detected."
-              $repomanOutputFile = "$([System.IO.Path]::GetTempPath())/repoman.md"
+              $repomanOutputFile = "$(RepoManResultsFile)"
               if (Test-Path $repomanOutputFile) {
                 $repomanContent = Get-Content $repomanOutputFile -Raw
               }
@@ -88,6 +104,17 @@ stages:
                 -Tag '<!-- #comment-repoman-generate -->'
             env:
               GH_TOKEN: $(azuresdk-github-pat)
+
+      - template: /eng/pipelines/templates/jobs/run-template-tests.yml
+        parameters:
+          TemplateList: $[ dependencies.Generate_Repos_For_PR.outputs['DetermineChanged.TemplateList'] ]
+          TemplateBranchName: $[ dependencies.Generate_Repos_For_PR.outputs['DetermineChanged.TemplateBranch'] ]
+          JobCondition: >-
+            and(
+              succeeded(),
+              ne(dependencies.Generate_Repos_For_PR.outputs['DetermineChanged.TemplateList'] , '')
+            )
+          JobDependsOn: Generate_Repos_For_PR
 
       - job: Publish_Staging
         condition: >-

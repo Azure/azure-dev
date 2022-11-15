@@ -77,13 +77,11 @@ func newCommandRunnerFromConsole(console input.Console) exec.CommandRunner {
 
 func newAzCliFromOptions(
 	rootOptions *internal.GlobalCommandOptions,
-	cmdRun exec.CommandRunner,
 	credential azcore.TokenCredential,
 ) azcli.AzCli {
 	return azcli.NewAzCli(credential, azcli.NewAzCliArgs{
 		EnableDebug:     rootOptions.EnableDebugLogging,
 		EnableTelemetry: rootOptions.EnableTelemetry,
-		CommandRunner:   cmdRun,
 		HttpClient:      nil,
 	})
 }

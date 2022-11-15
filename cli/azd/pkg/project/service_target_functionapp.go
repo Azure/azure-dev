@@ -26,7 +26,7 @@ type functionAppTarget struct {
 }
 
 func (f *functionAppTarget) RequiredExternalTools() []tools.ExternalTool {
-	return []tools.ExternalTool{f.cli}
+	return []tools.ExternalTool{}
 }
 
 func (f *functionAppTarget) Deploy(

@@ -153,16 +153,6 @@ func newLoginAction(
 	}
 }
 
-const (
-	// CodespacesEnvVarName is the name of the env variable set when you're in a Github codespace. It's
-	// just set to 'true'.
-	CodespacesEnvVarName = "CODESPACES"
-
-	// RemoteContainersEnvVarName is the name of the env variable set when you're in a remote container. It's
-	// just set to 'true'.
-	RemoteContainersEnvVarName = "REMOTE_CONTAINERS"
-)
-
 func (la *loginAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	if !la.flags.onlyCheckStatus {
 		if err := la.login(ctx); err != nil {
@@ -294,10 +284,7 @@ func (la *loginAction) login(ctx context.Context) error {
 		return nil
 	}
 
-	useDeviceCode := la.flags.useDeviceCode || os.Getenv(CodespacesEnvVarName) == "true" ||
-		os.Getenv(RemoteContainersEnvVarName) == "true"
-
-	if useDeviceCode {
+	if la.flags.useDeviceCode {
 		if _, err := la.authManager.LoginWithDeviceCode(ctx, la.writer); err != nil {
 			return fmt.Errorf("logging in: %w", err)
 		}

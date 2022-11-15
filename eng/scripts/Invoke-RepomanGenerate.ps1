@@ -1,7 +1,7 @@
 param(
     [string] $TargetBranchName,
     [string] $RemoteName,
-    [string] $ResultsFileLocation = "$([System.IO.Path]::GetTempPath())/repoman.md",
+    [string] $ResultsFileLocation,
     [string] $RunnerTemp = [System.IO.Path]::GetTempPath(),
     [switch] $WhatIf
 )
@@ -9,12 +9,16 @@ param(
 $projectsJson = repoman list --format json | Out-String
 $projects = ConvertFrom-Json $projectsJson
 
-foreach ($project in $projects) {
-    $additionalParameters = '--update'
-    if ($WhatIf) {
-        $additionalParameters = ''
-    }
+$additionalParameters = @()
+if (-not $WhatIf) {
+    $additionalParameters += '--update'
+}
 
+if ($ResultsFileLocation) {
+    $additionalParameters += "--resultsFile", $ResultsFileLocation
+}
+
+foreach ($project in $projects) {
     $projectPath = $project.projectPath
     $templatePath = $project.templatePath.Replace($projectPath, "")
 
@@ -27,11 +31,10 @@ repoman generate `
     --remote "$RemoteName" `
     --https `
     --fail-on-update-error `
-    --resultsFile $ResultsFileLocation `
-    $additionalParameters
+    $($additionalParameters -join ([System.Environment]::NewLine + "    "))
 "@
 
-    repoman generate `
+    & repoman generate `
         -s $projectPath `
         -o $RunnerTemp `
         -t $templatePath `
@@ -39,7 +42,6 @@ repoman generate `
         --remote "$RemoteName" `
         --https `
         --fail-on-update-error `
-        --resultsFile $ResultsFileLocation `
         $additionalParameters
 
     if ($LASTEXITCODE) {

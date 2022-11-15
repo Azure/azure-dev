@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/AlecAivazis/survey/v2"
+	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/telemetry"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/azureutil"
@@ -19,6 +20,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
+	"github.com/spf13/pflag"
 )
 
 type Asker func(p survey.Prompt, response interface{}) error
@@ -330,4 +332,18 @@ func ensureProject(path string) error {
 	}
 
 	return nil
+}
+
+type envFlag struct {
+	environmentName string
+}
+
+func (e *envFlag) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
+	local.StringVarP(
+		&e.environmentName,
+		"environment",
+		"e",
+		// Set the default value to AZURE_ENV_NAME value if available
+		os.Getenv(environment.EnvNameEnvVarName),
+		"The name of the environment to use.")
 }

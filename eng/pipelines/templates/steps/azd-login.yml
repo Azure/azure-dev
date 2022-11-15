@@ -25,5 +25,13 @@ steps:
 
       if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
+      # Export subscription ID
+      Write-Host "##vso[task.setvariable variable=SubscriptionId]$($subscriptionConfiguration.SubscriptionId)"
+
+      # Export service principal auth information for terraform testing
+      Write-Host "##vso[task.setvariable variable=arm-client-id;issecret=false]$($subscriptionConfiguration.TestApplicationId)"
+      Write-Host "##vso[task.setvariable variable=arm-client-secret;issecret=true]$($subscriptionConfiguration.TestApplicationSecret)"
+      Write-Host "##vso[task.setvariable variable=arm-tenant-id;issecret=false]$($subscriptionConfiguration.TenantId)"
+
     condition: and(succeeded(), ne(variables['Skip.LiveTest'], 'true'))
     displayName: Azure Dev Login

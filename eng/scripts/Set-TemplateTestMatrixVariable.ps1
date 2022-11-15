@@ -72,6 +72,12 @@ if ($TemplateListFilter -ne '.*') {
     $templateNames = $templateNames -match $TemplateListFilter
 }
 
+# If we only had a single template name, templateNames may be a string at this point
+# but we really want it to be an array, for the rest of the script.
+if ($templateNames -is [string]) {
+    $templateNames = @($templateNames)
+}
+
 $matrix = @{}
 foreach ($template in $templateNames) {
     $jobName = $template.Replace('/', '_')

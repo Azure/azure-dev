@@ -288,7 +288,7 @@ func initEnvRefreshAction(console input.Console, ctx context.Context, o *interna
 	azCli := newAzCliFromOptions(o, commandRunner, tokenCredential)
 	formatter := newFormatterFromConsole(console)
 	writer := newOutputWriter(console)
-	cmdEnvRefreshAction := newEnvRefreshAction(azdContext, azCli, o, console, formatter, writer)
+	cmdEnvRefreshAction := newEnvRefreshAction(azdContext, azCli, flags, console, formatter, writer)
 	return cmdEnvRefreshAction, nil
 }
 

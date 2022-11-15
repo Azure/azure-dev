@@ -284,9 +284,7 @@ func (la *loginAction) login(ctx context.Context) error {
 		return nil
 	}
 
-	useDeviceCode := la.flags.useDeviceCode
-
-	if useDeviceCode {
+	if la.flags.useDeviceCode {
 		if _, err := la.authManager.LoginWithDeviceCode(ctx, la.writer); err != nil {
 			return fmt.Errorf("logging in: %w", err)
 		}

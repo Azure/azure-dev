@@ -20,7 +20,3 @@ func (cr *CreatedResource) ToString(currentIndentation string) string {
 func (cr *CreatedResource) ToJson() []byte {
 	return nil
 }
-
-func (cr *CreatedResource) ToTable() string {
-	return ""
-}

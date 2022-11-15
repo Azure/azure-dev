@@ -4,6 +4,8 @@
 package ux
 
 import (
+	"encoding/json"
+
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 )
 
@@ -22,9 +24,9 @@ func (ar *ActionResult) ToString(currentIndentation string) string {
 }
 
 func (ar *ActionResult) ToJson() []byte {
+	if ar.Err != nil {
+		jsonBytes, _ := json.Marshal(output.EventForMessage(ar.Err.Error()))
+		return jsonBytes
+	}
 	return nil
-}
-
-func (ar *ActionResult) ToTable() string {
-	return ""
 }

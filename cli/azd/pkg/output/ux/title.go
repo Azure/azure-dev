@@ -26,7 +26,3 @@ func (t *MessageTitle) ToString(currentIndentation string) string {
 func (t *MessageTitle) ToJson() []byte {
 	return nil
 }
-
-func (t *MessageTitle) ToTable() string {
-	return ""
-}

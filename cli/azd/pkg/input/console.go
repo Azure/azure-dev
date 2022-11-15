@@ -4,20 +4,16 @@
 package input
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"log"
-	"strings"
 	"time"
 
 	"github.com/AlecAivazis/survey/v2"
-	"github.com/azure/azure-dev/cli/azd/pkg/contracts"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
-	"github.com/mattn/go-colorable"
 	"github.com/theckman/yacspin"
 )
 
@@ -114,7 +110,7 @@ func (c *AskerConsole) Message(ctx context.Context, message string) {
 	if c.formatter != nil && c.formatter.Kind() == output.JsonFormat {
 		// we call json.Marshal directly, because the formatter marshalls using indentation, and we would prefer
 		// these objects be written on a single line.
-		jsonMessage, err := json.Marshal(c.eventForMessage(message))
+		jsonMessage, err := json.Marshal(output.EventForMessage(message))
 		if err != nil {
 			panic(fmt.Sprintf("Message: unexpected error during marshaling for a valid object: %v", err))
 		}
@@ -127,18 +123,10 @@ func (c *AskerConsole) Message(ctx context.Context, message string) {
 }
 
 func (c *AskerConsole) MessageUxItem(ctx context.Context, item ux.UXItem) {
-	if c.formatter == nil {
-		log.Println(item.ToString(c.currentIndent))
-		return
-	}
-
-	if c.formatter.Kind() == output.JsonFormat {
+	if c.formatter != nil && c.formatter.Kind() == output.JsonFormat {
+		// no need to check the spinner for json format, as the spinner won't start when using json format
+		// instead, there would be a message about starting spinner
 		fmt.Fprintln(c.writer, string(item.ToJson()))
-		return
-	}
-
-	if c.formatter.Kind() == output.EnvVarsFormat {
-		fmt.Fprintln(c.writer, item.ToTable())
 		return
 	}
 
@@ -153,6 +141,12 @@ func (c *AskerConsole) MessageUxItem(ctx context.Context, item ux.UXItem) {
 }
 
 func (c *AskerConsole) ShowSpinner(ctx context.Context, title string, format SpinnerUxType) {
+	if c.formatter != nil || c.formatter.Kind() == output.JsonFormat {
+		// Spinner is disabled when using json format.
+		c.Message(ctx, "Show spinner with title: "+title)
+		return
+	}
+
 	// make sure spinner exists
 	if c.spinner == nil {
 		c.spinner, _ = yacspin.New(yacspin.Config{
@@ -217,6 +211,12 @@ func (c *AskerConsole) getIndent(format SpinnerUxType) string {
 }
 
 func (c *AskerConsole) StopSpinner(ctx context.Context, lastMessage string, format SpinnerUxType) {
+	if c.formatter != nil || c.formatter.Kind() == output.JsonFormat {
+		// Spinner is disabled when using json format.
+		c.Message(ctx, "Stop spinner with title: "+lastMessage)
+		return
+	}
+
 	// calling stop for non existing spinner
 	if c.spinner == nil {
 		return
@@ -248,24 +248,6 @@ func (c *AskerConsole) getStopChar(format SpinnerUxType) string {
 		stopChar = output.WithErrorFormat("(x) Failed:")
 	}
 	return fmt.Sprintf("%s%s", c.getIndent(format), stopChar)
-}
-
-// jsonObjectForMessage creates a json object representing a message. Any ANSI control sequences from the message are
-// removed. A trailing newline is added to the message.
-func (c *AskerConsole) eventForMessage(message string) contracts.EventEnvelope {
-	// Strip any ANSI colors for the message.
-	var buf bytes.Buffer
-
-	// We do not expect the io.Copy to fail since none of these sub-calls will ever return an error (other than
-	// EOF when we hit the end of the string)
-	if _, err := io.Copy(colorable.NewNonColorable(&buf), strings.NewReader(message)); err != nil {
-		panic(fmt.Sprintf("consoleMessageForMessage: did not expect error from io.Copy but got: %v", err))
-	}
-
-	// Add the newline that would have been added by fmt.Println when we wrote the message directly to the console.
-	buf.WriteByte('\n')
-
-	return newConsoleMessageEvent(buf.String())
 }
 
 // Prompts the user for a single value
@@ -368,16 +350,6 @@ func GetConsole(ctx context.Context) Console {
 	}
 
 	return console
-}
-
-func newConsoleMessageEvent(msg string) contracts.EventEnvelope {
-	return contracts.EventEnvelope{
-		Type:      contracts.ConsoleMessageEventDataType,
-		Timestamp: time.Now(),
-		Data: contracts.ConsoleMessage{
-			Message: msg,
-		},
-	}
 }
 
 func GetStepResultFormat(result error) SpinnerUxType {

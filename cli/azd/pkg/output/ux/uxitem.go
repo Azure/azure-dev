@@ -10,7 +10,6 @@ type UXItem interface {
 	// The current indentation can be used to make the string to be aligned to the previous lines.
 	ToString(currentIndentation string) string
 	ToJson() []byte
-	ToTable() string
 }
 
 var donePrefix string = output.WithSuccessFormat("(✓) Done:")

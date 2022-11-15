@@ -22,7 +22,3 @@ func (mm *MultilineMessage) ToString(currentIndentation string) string {
 func (mm *MultilineMessage) ToJson() []byte {
 	return nil
 }
-
-func (mm *MultilineMessage) ToTable() string {
-	return ""
-}

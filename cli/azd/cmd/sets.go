@@ -27,8 +27,14 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func newWriterFromConsole(console input.Console) io.Writer {
-	return console.GetWriter()
+func newOutputWriter(console input.Console) io.Writer {
+	writer := console.Handles().Stdout
+
+	if os.Getenv("NO_COLOR") != "" {
+		writer = colorable.NewNonColorable(writer)
+	}
+
+	return writer
 }
 
 func newFormatterFromConsole(console input.Console) output.Formatter {
@@ -116,7 +122,7 @@ var CommonSet = wire.NewSet(
 	newAzdContext,
 	newCommandRunnerFromConsole,
 	newFormatterFromConsole,
-	newWriterFromConsole,
+	newOutputWriter,
 )
 
 var AzCliSet = wire.NewSet(

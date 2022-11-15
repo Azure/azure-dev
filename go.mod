@@ -44,7 +44,12 @@ require (
 	gopkg.in/yaml.v3 v3.0.0
 )
 
-require github.com/MakeNowJust/heredoc/v2 v2.0.1
+require (
+	github.com/MakeNowJust/heredoc/v2 v2.0.1
+	github.com/bradleyjkemp/cupaloy/v2 v2.8.0
+)
+
+require github.com/kr/text v0.2.0 // indirect
 
 require (
 	github.com/Azure/azure-sdk-for-go/sdk/internal v1.0.1 // indirect

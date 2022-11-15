@@ -18,6 +18,7 @@ type infraDeleteFlags struct {
 	forceDelete bool
 	purgeDelete bool
 	global      *internal.GlobalCommandOptions
+	envFlag
 }
 
 func (i *infraDeleteFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
@@ -29,6 +30,7 @@ func (i *infraDeleteFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCom
 		//nolint:lll
 		"Does not require confirmation before it permanently deletes resources that are soft-deleted by default (for example, key vaults).",
 	)
+	i.envFlag.Bind(local, global)
 	i.global = global
 }
 
@@ -67,7 +69,7 @@ func (a *infraDeleteAction) Run(ctx context.Context) (*actions.ActionResult, err
 		return nil, err
 	}
 
-	env, ctx, err := loadOrInitEnvironment(ctx, &a.flags.global.EnvironmentName, a.azdCtx, a.console)
+	env, ctx, err := loadOrInitEnvironment(ctx, &a.flags.environmentName, a.azdCtx, a.console)
 	if err != nil {
 		return nil, fmt.Errorf("loading environment: %w", err)
 	}

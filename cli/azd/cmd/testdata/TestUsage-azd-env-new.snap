@@ -7,8 +7,7 @@ Flags:
       --subscription string   Name or ID of an Azure subscription to use for the new environment
 
 Global Flags:
-  -C, --cwd string           Sets the current working directory.
-      --debug                Enables debugging and diagnostics logging.
-  -e, --environment string   The name of the environment to use.
-      --no-prompt            Accepts the default value instead of prompting, or it fails if there is no default.
+  -C, --cwd string   Sets the current working directory.
+      --debug        Enables debugging and diagnostics logging.
+      --no-prompt    Accepts the default value instead of prompting, or it fails if there is no default.
 

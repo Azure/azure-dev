@@ -25,6 +25,7 @@ type monitorFlags struct {
 	monitorLogs     bool
 	monitorOverview bool
 	global          *internal.GlobalCommandOptions
+	envFlag
 }
 
 func (m *monitorFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
@@ -36,6 +37,7 @@ func (m *monitorFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommand
 	)
 	local.BoolVar(&m.monitorLogs, "logs", false, "Open a browser to Application Insights Logs.")
 	local.BoolVar(&m.monitorOverview, "overview", false, "Open a browser to Application Insights Overview Dashboard.")
+	m.envFlag.Bind(local, global)
 	m.global = global
 }
 
@@ -88,7 +90,7 @@ func (m *monitorAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 		m.flags.monitorOverview = true
 	}
 
-	env, ctx, err := loadOrInitEnvironment(ctx, &m.flags.global.EnvironmentName, m.azdCtx, m.console)
+	env, ctx, err := loadOrInitEnvironment(ctx, &m.flags.environmentName, m.azdCtx, m.console)
 	if err != nil {
 		return nil, fmt.Errorf("loading environment: %w", err)
 	}

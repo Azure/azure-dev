@@ -3,6 +3,7 @@ Usage:
 
 Flags:
   -b, --branch string         The template branch to initialize from.
+  -e, --environment string    The name of the environment to use.
   -h, --help                  Gets help for up.
   -l, --location string       Azure location for the new environment
       --no-progress           Suppresses progress information.
@@ -12,8 +13,7 @@ Flags:
   -t, --template string       The template to use when you initialize the project. You can use Full URI, <owner>/<repository>, or <repository> if it's part of the azure-samples organization.
 
 Global Flags:
-  -C, --cwd string           Sets the current working directory.
-      --debug                Enables debugging and diagnostics logging.
-  -e, --environment string   The name of the environment to use.
-      --no-prompt            Accepts the default value instead of prompting, or it fails if there is no default.
+  -C, --cwd string   Sets the current working directory.
+      --debug        Enables debugging and diagnostics logging.
+      --no-prompt    Accepts the default value instead of prompting, or it fails if there is no default.
 

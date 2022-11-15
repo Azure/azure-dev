@@ -5,13 +5,13 @@ Aliases:
   create, provision
 
 Flags:
-  -h, --help            Gets help for create.
-      --no-progress     Suppresses progress information.
-  -o, --output string   The output format (the supported formats are json, none). (default "none")
+  -e, --environment string   The name of the environment to use.
+  -h, --help                 Gets help for create.
+      --no-progress          Suppresses progress information.
+  -o, --output string        The output format (the supported formats are json, none). (default "none")
 
 Global Flags:
-  -C, --cwd string           Sets the current working directory.
-      --debug                Enables debugging and diagnostics logging.
-  -e, --environment string   The name of the environment to use.
-      --no-prompt            Accepts the default value instead of prompting, or it fails if there is no default.
+  -C, --cwd string   Sets the current working directory.
+      --debug        Enables debugging and diagnostics logging.
+      --no-prompt    Accepts the default value instead of prompting, or it fails if there is no default.
 

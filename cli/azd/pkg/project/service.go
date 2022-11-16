@@ -88,6 +88,10 @@ func (svc *Service) Deploy(
 	return result, progress
 }
 
+const (
+	defaultServiceTag = "azd-service-name"
+)
+
 // GetServiceResourceName attempts to find the name of the azure resource with the
 // 'azd-service-name' tag set to the service key.
 func GetServiceResourceName(
@@ -101,9 +105,12 @@ func GetServiceResourceName(
 		return "", err
 	}
 
+	if len(res) == 0 {
+		return "", fmt.Errorf("unable to find a provisioned resource tagged with '%s: %s'. Ensure the service resource is correctly tagged in your bicep files, and rerun provision", defaultServiceTag, serviceName)
+	}
+
 	if len(res) != 1 {
-		log.Printf("Expecting only '1' resource match to override resource name but found '%d'", len(res))
-		return fmt.Sprintf("%s%s", env.GetEnvName(), serviceName), nil
+		return "", fmt.Errorf("expecting only '1' resource tagged with '%s: %s', but found '%d", defaultServiceTag, serviceName, len(res))
 	}
 
 	return res[0].Name, nil
@@ -117,7 +124,7 @@ func GetServiceResources(
 	env *environment.Environment,
 ) ([]azcli.AzCliResource, error) {
 	azCli := azcli.GetAzCli(ctx)
-	filter := fmt.Sprintf("tagName eq 'azd-service-name' and tagValue eq '%s'", serviceName)
+	filter := fmt.Sprintf("tagName eq '%s' and tagValue eq '%s'", defaultServiceTag, serviceName)
 
 	return azCli.ListResourceGroupResources(
 		ctx,

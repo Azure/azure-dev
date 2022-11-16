@@ -227,25 +227,29 @@ func TestBicepDestroy(t *testing.T) {
 
 		// Verify console prompts
 		consoleOutput := mockContext.Console.Output()
-		require.Len(t, consoleOutput, 7)
+		require.Len(t, consoleOutput, 9)
 		require.Contains(t, consoleOutput[0], "This will delete")
 		require.Contains(t, consoleOutput[1], "Deleted resource group")
 		require.Contains(t, consoleOutput[2], "This operation will delete")
 		require.Contains(t, consoleOutput[3], "Would you like to permanently delete these Key Vaults/App Configurations")
-		require.Contains(t, consoleOutput[4], "Purged key vault")
-		require.Contains(t, consoleOutput[5], "Purged app configuration")
-		require.Contains(t, consoleOutput[6], "Deleted deployment")
+		require.Contains(t, consoleOutput[4], "Purged key vault kv-123")
+		require.Contains(t, consoleOutput[5], "Purged key vault kv2-123")
+		require.Contains(t, consoleOutput[6], "Purged app configuration ac-123")
+		require.Contains(t, consoleOutput[7], "Purged app configuration ac2-123")
+		require.Contains(t, consoleOutput[8], "Deleted deployment")
 
 		// Verify progress output
-		require.Len(t, progressLog, 8)
+		require.Len(t, progressLog, 10)
 		require.Contains(t, progressLog[0], "Fetching resource groups")
 		require.Contains(t, progressLog[1], "Fetching resources")
 		require.Contains(t, progressLog[2], "Getting Key Vaults to purge")
 		require.Contains(t, progressLog[3], "Getting App Configurations to purge")
 		require.Contains(t, progressLog[4], "Deleting resource group")
-		require.Contains(t, progressLog[5], "Purging key vault")
-		require.Contains(t, progressLog[6], "Purging app configuration")
-		require.Contains(t, progressLog[7], "Deleting deployment")
+		require.Contains(t, progressLog[5], "Purging key vault kv-123")
+		require.Contains(t, progressLog[6], "Purging key vault kv2-123")
+		require.Contains(t, progressLog[7], "Purging app configuration ac-123")
+		require.Contains(t, progressLog[8], "Purging app configuration ac2-123")
+		require.Contains(t, progressLog[9], "Deleting deployment")
 	})
 
 	t.Run("InteractiveForceAndPurge", func(t *testing.T) {
@@ -286,22 +290,26 @@ func TestBicepDestroy(t *testing.T) {
 
 		// Verify console prompts
 		consoleOutput := mockContext.Console.Output()
-		require.Len(t, consoleOutput, 4)
+		require.Len(t, consoleOutput, 6)
 		require.Contains(t, consoleOutput[0], "Deleted resource group")
-		require.Contains(t, consoleOutput[1], "Purged key vault")
-		require.Contains(t, consoleOutput[2], "Purged app configuration")
-		require.Contains(t, consoleOutput[3], "Deleted deployment")
+		require.Contains(t, consoleOutput[1], "Purged key vault kv-123")
+		require.Contains(t, consoleOutput[2], "Purged key vault kv2-123")
+		require.Contains(t, consoleOutput[3], "Purged app configuration ac-123")
+		require.Contains(t, consoleOutput[4], "Purged app configuration ac2-123")
+		require.Contains(t, consoleOutput[5], "Deleted deployment")
 
 		// Verify progress output
-		require.Len(t, progressLog, 8)
+		require.Len(t, progressLog, 10)
 		require.Contains(t, progressLog[0], "Fetching resource groups")
 		require.Contains(t, progressLog[1], "Fetching resources")
 		require.Contains(t, progressLog[2], "Getting Key Vaults to purge")
 		require.Contains(t, progressLog[3], "Getting App Configurations to purge")
 		require.Contains(t, progressLog[4], "Deleting resource group")
-		require.Contains(t, progressLog[5], "Purging key vault")
-		require.Contains(t, progressLog[6], "Purging app configuration")
-		require.Contains(t, progressLog[7], "Deleting deployment")
+		require.Contains(t, progressLog[5], "Purging key vault kv-123")
+		require.Contains(t, progressLog[6], "Purging key vault kv2-123")
+		require.Contains(t, progressLog[7], "Purging app configuration ac-123")
+		require.Contains(t, progressLog[8], "Purging app configuration ac2-123")
+		require.Contains(t, progressLog[9], "Deleting deployment")
 
 	})
 }
@@ -454,8 +462,20 @@ func prepareDestroyMocks(mockContext *mocks.MockContext) {
 				Location: convert.RefOf("eastus2"),
 			},
 			{
+				ID:       convert.RefOf("keyvault2"),
+				Name:     convert.RefOf("kv2-123"),
+				Type:     convert.RefOf(string(infra.AzureResourceTypeKeyVault)),
+				Location: convert.RefOf("eastus2"),
+			},
+			{
 				ID:       convert.RefOf("appconfiguration"),
 				Name:     convert.RefOf("ac-123"),
+				Type:     convert.RefOf(string(infra.AzureResourceTypeAppConfig)),
+				Location: convert.RefOf("eastus2"),
+			},
+			{
+				ID:       convert.RefOf("appconfiguration2"),
+				Name:     convert.RefOf("ac2-123"),
 				Type:     convert.RefOf(string(infra.AzureResourceTypeAppConfig)),
 				Location: convert.RefOf("eastus2"),
 			},
@@ -498,6 +518,29 @@ func prepareDestroyMocks(mockContext *mocks.MockContext) {
 		}, nil
 	})
 
+	mockContext.HttpClient.When(func(request *http.Request) bool {
+		return request.Method == http.MethodGet && strings.Contains(request.URL.Path, "/vaults/kv2-123")
+	}).RespondFn(func(request *http.Request) (*http.Response, error) {
+		keyVaultResponse := armkeyvault.VaultsClientGetResponse{
+			Vault: armkeyvault.Vault{
+				ID:       convert.RefOf("kv2-123"),
+				Name:     convert.RefOf("kv2-123"),
+				Location: convert.RefOf("eastus2"),
+				Properties: &armkeyvault.VaultProperties{
+					EnableSoftDelete:      convert.RefOf(true),
+					EnablePurgeProtection: convert.RefOf(false),
+				},
+			},
+		}
+
+		keyVaultBytes, _ := json.Marshal(keyVaultResponse)
+
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(bytes.NewBuffer(keyVaultBytes)),
+		}, nil
+	})
+
 	// Get App Configuration
 	mockContext.HttpClient.When(func(request *http.Request) bool {
 		return request.Method == http.MethodGet && strings.Contains(request.URL.Path, "/configurationStores/ac-123")
@@ -506,6 +549,28 @@ func prepareDestroyMocks(mockContext *mocks.MockContext) {
 			ConfigurationStore: armappconfiguration.ConfigurationStore{
 				ID:       convert.RefOf("ac-123"),
 				Name:     convert.RefOf("ac-123"),
+				Location: convert.RefOf("eastus2"),
+				Properties: &armappconfiguration.ConfigurationStoreProperties{
+					EnablePurgeProtection: convert.RefOf(false),
+				},
+			},
+		}
+
+		appConfigBytes, _ := json.Marshal(appConfigResponse)
+
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(bytes.NewBuffer(appConfigBytes)),
+		}, nil
+	})
+
+	mockContext.HttpClient.When(func(request *http.Request) bool {
+		return request.Method == http.MethodGet && strings.Contains(request.URL.Path, "/configurationStores/ac2-123")
+	}).RespondFn(func(request *http.Request) (*http.Response, error) {
+		appConfigResponse := armappconfiguration.ConfigurationStoresClientGetResponse{
+			ConfigurationStore: armappconfiguration.ConfigurationStore{
+				ID:       convert.RefOf("ac2-123"),
+				Name:     convert.RefOf("ac2-123"),
 				Location: convert.RefOf("eastus2"),
 				Properties: &armappconfiguration.ConfigurationStoreProperties{
 					EnablePurgeProtection: convert.RefOf(false),
@@ -536,7 +601,8 @@ func prepareDestroyMocks(mockContext *mocks.MockContext) {
 
 	// Purge Key vault
 	mockContext.HttpClient.When(func(request *http.Request) bool {
-		return request.Method == http.MethodPost && strings.Contains(request.URL.Path, "deletedVaults/kv-123/purge")
+		return request.Method == http.MethodPost && (strings.Contains(request.URL.Path, "deletedVaults/kv-123/purge") ||
+			strings.Contains(request.URL.Path, "deletedVaults/kv2-123/purge"))
 	}).RespondFn(func(request *http.Request) (*http.Response, error) {
 		return &http.Response{
 			Request:    request,
@@ -548,8 +614,9 @@ func prepareDestroyMocks(mockContext *mocks.MockContext) {
 
 	// Purge App configuration
 	mockContext.HttpClient.When(func(request *http.Request) bool {
-		return request.Method == http.MethodPost && strings.Contains(request.URL.Path,
-			"deletedConfigurationStores/ac-123/purge")
+		return request.Method == http.MethodPost && (strings.Contains(request.URL.Path,
+			"deletedConfigurationStores/ac-123/purge") || strings.Contains(request.URL.Path,
+			"deletedConfigurationStores/ac2-123/purge"))
 	}).RespondFn(func(request *http.Request) (*http.Response, error) {
 		return &http.Response{
 			Request:    request,

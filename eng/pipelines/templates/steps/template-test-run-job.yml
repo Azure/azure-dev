@@ -45,10 +45,10 @@ steps:
 
 - pwsh: |
     npm install -g @devcontainers/cli
-  displayName: Install devontainers
+  displayName: Install Devcontainer
 
 - task: DevcontainersCI@0
-  displayName: Test templates in Devcontainers
+  displayName: Test templates in Devcontainer
   inputs:
   # Required secrets for Terraform service principal authentication
     env: |
@@ -56,6 +56,22 @@ steps:
       ARM_CLIENT_SECRET=$(arm-client-secret)
       ARM_TENANT_ID=$(arm-tenant-id)
       SUBSCRIPTION_ID=$(SubscriptionId)
+    runCmd: 
+      azd init
+      azd version
+      dir=$(pwd)
+      az login \
+        --service-principal \
+        -u "$(arm-client-id)" \
+        -p "$(arm-client-secret)" \
+        --tenant "$(arm-tenant-id)"
+      az account set \
+        --subscription "$(SubscriptionId)"
+      git config --global user.name "azure-sdk"
+      git config --global user.email "azuresdk@microsoft.com"
+      echo "https://azure-sdk:$(azuresdk-github-pat)@github.com" > ~/.git-credentials
+      git config --global credential.helper "store"
+
     targetType: filePath
     filePath: templates/tests/test-templates.sh
     arguments: >

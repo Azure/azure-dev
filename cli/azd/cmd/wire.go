@@ -115,6 +115,20 @@ func initVersionAction(
 
 //#endregion Root
 
+//#region Auth
+
+func initAuthTokenAction(
+	console input.Console,
+	ctx context.Context,
+	o *internal.GlobalCommandOptions,
+	flags authTokenFlags,
+	args []string,
+) (actions.Action, error) {
+	panic(wire.Build(AuthTokenCmdSet))
+}
+
+//#endregion Auth
+
 //#region Infra
 
 func initInfraCreateAction(

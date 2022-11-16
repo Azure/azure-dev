@@ -276,3 +276,10 @@ var ConfigResetCmdSet = wire.NewSet(
 	CommonSet,
 	newConfigResetAction,
 	wire.Bind(new(actions.Action), new(*configResetAction)))
+
+var AuthTokenCmdSet = wire.NewSet(
+	CommonSet,
+	auth.NewManager,
+	newCredential,
+	newAuthTokenAction,
+	wire.Bind(new(actions.Action), new(*authTokenAction)))

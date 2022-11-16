@@ -18,7 +18,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal/telemetry"
 	"github.com/azure/azure-dev/cli/azd/internal/telemetry/events"
 	"github.com/azure/azure-dev/cli/azd/pkg/commands"
-	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/spf13/cobra"
 	"go.opentelemetry.io/otel/codes"
@@ -62,10 +61,6 @@ For more information, visit the Azure Developer CLI Dev Hub: https://aka.ms/azur
 				}
 			}
 
-			if opts.EnvironmentName == "" {
-				opts.EnvironmentName = os.Getenv(environment.EnvNameEnvVarName)
-			}
-
 			return nil
 		},
 		PersistentPostRunE: func(cmd *cobra.Command, args []string) error {
@@ -84,7 +79,6 @@ For more information, visit the Azure Developer CLI Dev Hub: https://aka.ms/azur
 	cmd.DisableAutoGenTag = true
 	cmd.CompletionOptions.HiddenDefaultCmd = true
 	cmd.Flags().BoolP("help", "h", false, fmt.Sprintf("Gets help for %s.", cmd.Name()))
-	cmd.PersistentFlags().StringVarP(&opts.EnvironmentName, "environment", "e", "", "The name of the environment to use.")
 	cmd.PersistentFlags().StringVarP(&opts.Cwd, "cwd", "C", "", "Sets the current working directory.")
 	cmd.PersistentFlags().BoolVar(&opts.EnableDebugLogging, "debug", false, "Enables debugging and diagnostics logging.")
 	cmd.PersistentFlags().
@@ -110,6 +104,7 @@ For more information, visit the Azure Developer CLI Dev Hub: https://aka.ms/azur
 	cmd.AddCommand(BuildCmd(opts, showCmdDesign, initShowAction, nil))
 	cmd.AddCommand(BuildCmd(opts, restoreCmdDesign, initRestoreAction, nil))
 	cmd.AddCommand(BuildCmd(opts, loginCmdDesign, initLoginAction, nil))
+	cmd.AddCommand(BuildCmd(opts, logoutCmdDesign, initLogoutAction, nil))
 	cmd.AddCommand(BuildCmd(opts, monitorCmdDesign, initMonitorAction, nil))
 	cmd.AddCommand(BuildCmd(opts, downCmdDesign, initInfraDeleteAction, nil))
 	cmd.AddCommand(BuildCmd(opts, initCmdDesign, initInitAction, nil))

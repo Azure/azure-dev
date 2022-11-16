@@ -2,16 +2,14 @@ package cmd
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io"
-	"log"
-	"os"
 	"path/filepath"
 	"runtime"
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/pkg/commands"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/spf13/cobra"
@@ -66,6 +64,9 @@ func configListCmdDesign(global *internal.GlobalCommandOptions) (*cobra.Command,
 		Use:   "list",
 		Short: "Lists all configuration values",
 		Long:  `Lists all configuration values in ` + userConfigPath + `.`,
+		Annotations: map[string]string{
+			commands.RequireNoLoginAnnotation: "true",
+		},
 	}
 
 	output.AddOutputParam(
@@ -78,12 +79,14 @@ func configListCmdDesign(global *internal.GlobalCommandOptions) (*cobra.Command,
 }
 
 type configListAction struct {
-	configManager config.Manager
+	configManager config.UserConfigManager
 	formatter     output.Formatter
 	writer        io.Writer
 }
 
-func newConfigListAction(configManager config.Manager, formatter output.Formatter, writer io.Writer) *configListAction {
+func newConfigListAction(
+	configManager config.UserConfigManager, formatter output.Formatter, writer io.Writer,
+) *configListAction {
 	return &configListAction{
 		configManager: configManager,
 		formatter:     formatter,
@@ -93,7 +96,7 @@ func newConfigListAction(configManager config.Manager, formatter output.Formatte
 
 // Executes the `azd config list` action
 func (a *configListAction) Run(ctx context.Context) (*actions.ActionResult, error) {
-	azdConfig, err := getUserConfig(a.configManager)
+	azdConfig, err := a.configManager.Load()
 	if err != nil {
 		return nil, err
 	}
@@ -117,6 +120,9 @@ func configGetCmdDesign(global *internal.GlobalCommandOptions) (*cobra.Command, 
 		Use:   "get <path>",
 		Short: "Gets a configuration",
 		Long:  `Gets a configuration in ` + userConfigPath + `.`,
+		Annotations: map[string]string{
+			commands.RequireNoLoginAnnotation: "true",
+		},
 	}
 
 	output.AddOutputParam(
@@ -130,14 +136,14 @@ func configGetCmdDesign(global *internal.GlobalCommandOptions) (*cobra.Command, 
 }
 
 type configGetAction struct {
-	configManager config.Manager
+	configManager config.UserConfigManager
 	formatter     output.Formatter
 	writer        io.Writer
 	args          []string
 }
 
 func newConfigGetAction(
-	configManager config.Manager,
+	configManager config.UserConfigManager,
 	formatter output.Formatter,
 	writer io.Writer,
 	args []string,
@@ -152,7 +158,7 @@ func newConfigGetAction(
 
 // Executes the `azd config get <path>` action
 func (a *configGetAction) Run(ctx context.Context) (*actions.ActionResult, error) {
-	azdConfig, err := getUserConfig(a.configManager)
+	azdConfig, err := a.configManager.Load()
 	if err != nil {
 		return nil, err
 	}
@@ -183,17 +189,20 @@ func configSetCmdDesign(global *internal.GlobalCommandOptions) (*cobra.Command, 
 		Long:  `Sets a configuration in ` + userConfigPath + `.`,
 		Example: `$ azd config set defaults.subscription <yourSubscriptionID>
 $ azd config set defaults.location eastus`,
+		Annotations: map[string]string{
+			commands.RequireNoLoginAnnotation: "true",
+		},
 	}
 	cmd.Args = cobra.ExactArgs(2)
 	return cmd, &struct{}{}
 }
 
 type configSetAction struct {
-	configManager config.Manager
+	configManager config.UserConfigManager
 	args          []string
 }
 
-func newConfigSetAction(configManager config.Manager, args []string) *configSetAction {
+func newConfigSetAction(configManager config.UserConfigManager, args []string) *configSetAction {
 	return &configSetAction{
 		configManager: configManager,
 		args:          args,
@@ -202,7 +211,7 @@ func newConfigSetAction(configManager config.Manager, args []string) *configSetA
 
 // Executes the `azd config set <path> <value>` action
 func (a *configSetAction) Run(ctx context.Context) (*actions.ActionResult, error) {
-	azdConfig, err := getUserConfig(a.configManager)
+	azdConfig, err := a.configManager.Load()
 	if err != nil {
 		return nil, err
 	}
@@ -215,17 +224,7 @@ func (a *configSetAction) Run(ctx context.Context) (*actions.ActionResult, error
 		return nil, fmt.Errorf("failed setting configuration value '%s' to '%s'. %w", path, value, err)
 	}
 
-	userConfigFilePath, err := config.GetUserConfigFilePath()
-	if err != nil {
-		return nil, fmt.Errorf("failed getting user config file path. %w", err)
-	}
-
-	err = a.configManager.Save(azdConfig, userConfigFilePath)
-	if err != nil {
-		return nil, fmt.Errorf("failed saving configuration. %w", err)
-	}
-
-	return nil, nil
+	return nil, a.configManager.Save(azdConfig)
 }
 
 // azd config unset <path>
@@ -236,17 +235,21 @@ func configUnsetCmdDesign(global *internal.GlobalCommandOptions) (*cobra.Command
 		Short:   "Unsets a configuration",
 		Long:    `Removes a configuration in ` + userConfigPath + `.`,
 		Example: `$ azd config unset defaults.location`,
+		Annotations: map[string]string{
+			commands.RequireNoLoginAnnotation: "true",
+		},
 	}
+
 	cmd.Args = cobra.ExactArgs(1)
 	return cmd, &struct{}{}
 }
 
 type configUnsetAction struct {
-	configManager config.Manager
+	configManager config.UserConfigManager
 	args          []string
 }
 
-func newConfigUnsetAction(configManager config.Manager, args []string) *configUnsetAction {
+func newConfigUnsetAction(configManager config.UserConfigManager, args []string) *configUnsetAction {
 	return &configUnsetAction{
 		configManager: configManager,
 		args:          args,
@@ -255,7 +258,7 @@ func newConfigUnsetAction(configManager config.Manager, args []string) *configUn
 
 // Executes the `azd config unset <path>` action
 func (a *configUnsetAction) Run(ctx context.Context) (*actions.ActionResult, error) {
-	azdConfig, err := getUserConfig(a.configManager)
+	azdConfig, err := a.configManager.Load()
 	if err != nil {
 		return nil, err
 	}
@@ -267,17 +270,7 @@ func (a *configUnsetAction) Run(ctx context.Context) (*actions.ActionResult, err
 		return nil, fmt.Errorf("failed removing configuration with path '%s'. %w", path, err)
 	}
 
-	userConfigFilePath, err := config.GetUserConfigFilePath()
-	if err != nil {
-		return nil, fmt.Errorf("failed getting user config file path. %w", err)
-	}
-
-	err = a.configManager.Save(azdConfig, userConfigFilePath)
-	if err != nil {
-		return nil, fmt.Errorf("failed saving configuration. %w", err)
-	}
-
-	return nil, nil
+	return nil, a.configManager.Save(azdConfig)
 }
 
 // azd config reset
@@ -287,17 +280,20 @@ func configResetCmdDesign(global *internal.GlobalCommandOptions) (*cobra.Command
 		Use:   "reset",
 		Short: "Resets configuration to default",
 		Long:  `Resets all configuration in ` + userConfigPath + ` to the default.`,
+		Annotations: map[string]string{
+			commands.RequireNoLoginAnnotation: "true",
+		},
 	}
 
 	return cmd, &struct{}{}
 }
 
 type configResetAction struct {
-	configManager config.Manager
+	configManager config.UserConfigManager
 	args          []string
 }
 
-func newConfigResetAction(configManager config.Manager, args []string) *configResetAction {
+func newConfigResetAction(configManager config.UserConfigManager, args []string) *configResetAction {
 	return &configResetAction{
 		configManager: configManager,
 		args:          args,
@@ -306,40 +302,6 @@ func newConfigResetAction(configManager config.Manager, args []string) *configRe
 
 // Executes the `azd config reset` action
 func (a *configResetAction) Run(ctx context.Context) (*actions.ActionResult, error) {
-	userConfigFilePath, err := config.GetUserConfigFilePath()
-	if err != nil {
-		return nil, fmt.Errorf("failed getting user config file path. %w", err)
-	}
-
 	emptyConfig := config.NewConfig(nil)
-
-	err = a.configManager.Save(emptyConfig, userConfigFilePath)
-	if err != nil {
-		return nil, fmt.Errorf("failed saving configuration. %w", err)
-	}
-
-	return nil, nil
-}
-
-func getUserConfig(configManager config.Manager) (config.Config, error) {
-	var azdConfig config.Config
-
-	configFilePath, err := config.GetUserConfigFilePath()
-	if err != nil {
-		return nil, err
-	}
-
-	azdConfig, err = configManager.Load(configFilePath)
-	if err != nil {
-		// Ignore missing file errors
-		// File will automatically be created on first `set` operation
-		if errors.Is(err, os.ErrNotExist) {
-			log.Printf("failed loading azd user config from '%s'. %s\n", configFilePath, err.Error())
-			return config.NewConfig(nil), nil
-		}
-
-		return nil, fmt.Errorf("failed loading azd user config from '%s'. %w", configFilePath, err)
-	}
-
-	return azdConfig, nil
+	return nil, a.configManager.Save(emptyConfig)
 }

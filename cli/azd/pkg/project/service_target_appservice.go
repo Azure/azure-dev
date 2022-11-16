@@ -24,7 +24,7 @@ type appServiceTarget struct {
 }
 
 func (st *appServiceTarget) RequiredExternalTools() []tools.ExternalTool {
-	return []tools.ExternalTool{st.cli}
+	return []tools.ExternalTool{}
 }
 
 func (st *appServiceTarget) Deploy(

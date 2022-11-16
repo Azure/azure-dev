@@ -1,0 +1,37 @@
+parameters:
+  SubscriptionConfiguration: $(sub-config-azure-cloud-test-resources)
+  AzdDirectory: ""
+
+steps:
+  - pwsh: |
+      $azdCmd = "azd"
+
+      if ("${{ parameters.AzdDirectory }}" -ne "") {
+        $azdCmd = "${{ parameters.AzdDirectory }}/azd"
+      }
+
+      $subscriptionConfiguration = @'
+        ${{ parameters.SubscriptionConfiguration }}
+      '@ | ConvertFrom-Json -AsHashtable;
+
+      & $azdCmd login `
+        --client-id "$($subscriptionConfiguration.TestApplicationId)" `
+        --client-secret "$($subscriptionConfiguration.TestApplicationSecret)" `
+        --tenant-id "$($subscriptionConfiguration.TenantId)"
+
+      if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      & $azdCmd config set defaults.subscription "$($subscriptionConfiguration.SubscriptionId)"
+
+      if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      # Export subscription ID
+      Write-Host "##vso[task.setvariable variable=SubscriptionId]$($subscriptionConfiguration.SubscriptionId)"
+
+      # Export service principal auth information for terraform testing
+      Write-Host "##vso[task.setvariable variable=arm-client-id;issecret=false]$($subscriptionConfiguration.TestApplicationId)"
+      Write-Host "##vso[task.setvariable variable=arm-client-secret;issecret=true]$($subscriptionConfiguration.TestApplicationSecret)"
+      Write-Host "##vso[task.setvariable variable=arm-tenant-id;issecret=false]$($subscriptionConfiguration.TenantId)"
+
+    condition: and(succeeded(), ne(variables['Skip.LiveTest'], 'true'))
+    displayName: Azure Dev Login

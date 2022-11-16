@@ -53,6 +53,16 @@ func initLoginAction(
 	panic(wire.Build(LoginCmdSet))
 }
 
+func initLogoutAction(
+	console input.Console,
+	ctx context.Context,
+	o *internal.GlobalCommandOptions,
+	flags struct{},
+	args []string,
+) (actions.Action, error) {
+	panic(wire.Build(LogoutCmdSet))
+}
+
 func initUpAction(
 	console input.Console,
 	ctx context.Context,
@@ -135,7 +145,7 @@ func initEnvSetAction(
 	console input.Console,
 	ctx context.Context,
 	o *internal.GlobalCommandOptions,
-	flags struct{},
+	flags envSetFlags,
 	args []string,
 ) (actions.Action, error) {
 	panic(wire.Build(EnvSetCmdSet))
@@ -175,7 +185,7 @@ func initEnvRefreshAction(
 	console input.Console,
 	ctx context.Context,
 	o *internal.GlobalCommandOptions,
-	flags struct{},
+	flags envRefreshFlags,
 	args []string,
 ) (actions.Action, error) {
 	panic(wire.Build(EnvRefreshCmdSet))
@@ -185,7 +195,7 @@ func initEnvGetValuesAction(
 	console input.Console,
 	ctx context.Context,
 	o *internal.GlobalCommandOptions,
-	flags struct{},
+	flags envGetValuesFlags,
 	args []string,
 ) (actions.Action, error) {
 	panic(wire.Build(EnvGetValuesCmdSet))

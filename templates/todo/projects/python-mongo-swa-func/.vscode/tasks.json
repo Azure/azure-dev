@@ -53,7 +53,7 @@
 			"isBackground": true,
 			"dependsOn": "Restore API",
             "options": {
-                "cwd": "./src/api"
+                "cwd": "${workspaceFolder}/src/api"
             }
 		},
         {

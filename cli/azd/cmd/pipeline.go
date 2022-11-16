@@ -13,6 +13,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/commands/pipeline"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
@@ -20,6 +21,7 @@ import (
 type pipelineConfigFlags struct {
 	pipeline.PipelineManagerArgs
 	global *internal.GlobalCommandOptions
+	envFlag
 }
 
 func (pc *pipelineConfigFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
@@ -43,6 +45,7 @@ func (pc *pipelineConfigFlags) Bind(local *pflag.FlagSet, global *internal.Globa
 	)
 	local.StringVar(&pc.PipelineRoleName, "principal-role", "Contributor", "The role to assign to the service principal.")
 	local.StringVar(&pc.PipelineProvider, "provider", "", "The pipeline provider to use (GitHub and Azdo supported).")
+	pc.envFlag.Bind(local, global)
 	pc.global = global
 }
 
@@ -83,18 +86,21 @@ type pipelineConfigAction struct {
 	manager *pipeline.PipelineManager
 	azdCtx  *azdcontext.AzdContext
 	console input.Console
+	azCli   azcli.AzCli
 }
 
 func newPipelineConfigAction(
 	azdCtx *azdcontext.AzdContext,
 	console input.Console,
 	flags pipelineConfigFlags,
+	azCli azcli.AzCli,
 ) *pipelineConfigAction {
 	pca := &pipelineConfigAction{
 		flags:   flags,
 		manager: pipeline.NewPipelineManager(azdCtx, flags.global, flags.PipelineManagerArgs),
 		azdCtx:  azdCtx,
 		console: console,
+		azCli:   azCli,
 	}
 
 	return pca
@@ -106,18 +112,13 @@ func (p *pipelineConfigAction) Run(ctx context.Context) (*actions.ActionResult, 
 		return nil, err
 	}
 
-	// make sure az is logged in
-	if err := ensureLoggedIn(ctx); err != nil {
-		return nil, fmt.Errorf("failed to ensure login: %w", err)
-	}
-
 	// Read or init env
 	console := input.GetConsole(ctx)
 	if console == nil {
 		log.Panic("missing input console in the provided context")
 	}
 
-	env, ctx, err := loadOrInitEnvironment(ctx, &p.manager.RootOptions.EnvironmentName, p.azdCtx, console)
+	env, ctx, err := loadOrInitEnvironment(ctx, &p.flags.environmentName, p.azdCtx, console)
 	if err != nil {
 		return nil, fmt.Errorf("loading environment: %w", err)
 	}

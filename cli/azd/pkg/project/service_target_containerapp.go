@@ -31,7 +31,7 @@ type containerAppTarget struct {
 }
 
 func (at *containerAppTarget) RequiredExternalTools() []tools.ExternalTool {
-	return []tools.ExternalTool{at.cli, at.docker}
+	return []tools.ExternalTool{at.docker}
 }
 
 func (at *containerAppTarget) Deploy(

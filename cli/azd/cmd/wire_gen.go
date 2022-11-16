@@ -11,6 +11,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
+	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
@@ -41,7 +42,7 @@ func initDeployAction(console input.Console, ctx context.Context, o *internal.Gl
 		return nil, err
 	}
 	formatter := newFormatterFromConsole(console)
-	writer := newWriterFromConsole(console)
+	writer := newOutputWriter(console)
 	cmdDeployAction, err := newDeployAction(flags, azdContext, console, formatter, writer)
 	if err != nil {
 		return nil, err
@@ -55,16 +56,21 @@ func initInitAction(console input.Console, ctx context.Context, o *internal.Glob
 		return nil, err
 	}
 	manager := config.NewManager()
-	commandRunner := newCommandRunnerFromConsole(console)
-	tokenCredential, err := newCredential()
+	userConfigManager := config.NewUserConfigManager()
+	authManager, err := auth.NewManager(userConfigManager)
 	if err != nil {
 		return nil, err
 	}
-	azCli := newAzCliFromOptions(o, commandRunner, tokenCredential)
+	tokenCredential, err := newCredential(ctx, authManager)
+	if err != nil {
+		return nil, err
+	}
+	azCli := newAzCliFromOptions(o, tokenCredential)
 	accountManager, err := account.NewManager(manager, azCli)
 	if err != nil {
 		return nil, err
 	}
+	commandRunner := newCommandRunnerFromConsole(console)
 	gitCli := git.NewGitCliFromRunner(commandRunner)
 	cmdInitAction, err := newInitAction(azdContext, accountManager, commandRunner, console, gitCli, flags)
 	if err != nil {
@@ -75,15 +81,26 @@ func initInitAction(console input.Console, ctx context.Context, o *internal.Glob
 
 func initLoginAction(console input.Console, ctx context.Context, o *internal.GlobalCommandOptions, flags loginFlags, args []string) (actions.Action, error) {
 	formatter := newFormatterFromConsole(console)
-	writer := newWriterFromConsole(console)
-	commandRunner := newCommandRunnerFromConsole(console)
-	tokenCredential, err := newCredential()
+	writer := newOutputWriter(console)
+	userConfigManager := config.NewUserConfigManager()
+	manager, err := auth.NewManager(userConfigManager)
 	if err != nil {
 		return nil, err
 	}
-	azCli := newAzCliFromOptions(o, commandRunner, tokenCredential)
-	cmdLoginAction := newLoginAction(formatter, writer, azCli, flags, console)
+	cmdLoginAction := newLoginAction(formatter, writer, manager, flags, console)
 	return cmdLoginAction, nil
+}
+
+func initLogoutAction(console input.Console, ctx context.Context, o *internal.GlobalCommandOptions, flags struct{}, args []string) (actions.Action, error) {
+	userConfigManager := config.NewUserConfigManager()
+	manager, err := auth.NewManager(userConfigManager)
+	if err != nil {
+		return nil, err
+	}
+	formatter := newFormatterFromConsole(console)
+	writer := newOutputWriter(console)
+	cmdLogoutAction := newLogoutAction(manager, formatter, writer)
+	return cmdLogoutAction, nil
 }
 
 func initUpAction(console input.Console, ctx context.Context, o *internal.GlobalCommandOptions, flags upFlags, args []string) (actions.Action, error) {
@@ -92,16 +109,21 @@ func initUpAction(console input.Console, ctx context.Context, o *internal.Global
 		return nil, err
 	}
 	manager := config.NewManager()
-	commandRunner := newCommandRunnerFromConsole(console)
-	tokenCredential, err := newCredential()
+	userConfigManager := config.NewUserConfigManager()
+	authManager, err := auth.NewManager(userConfigManager)
 	if err != nil {
 		return nil, err
 	}
-	azCli := newAzCliFromOptions(o, commandRunner, tokenCredential)
+	tokenCredential, err := newCredential(ctx, authManager)
+	if err != nil {
+		return nil, err
+	}
+	azCli := newAzCliFromOptions(o, tokenCredential)
 	accountManager, err := account.NewManager(manager, azCli)
 	if err != nil {
 		return nil, err
 	}
+	commandRunner := newCommandRunnerFromConsole(console)
 	gitCli := git.NewGitCliFromRunner(commandRunner)
 	cmdInitFlags := flags.initFlags
 	cmdInitAction, err := newInitAction(azdContext, accountManager, commandRunner, console, gitCli, cmdInitFlags)
@@ -110,7 +132,7 @@ func initUpAction(console input.Console, ctx context.Context, o *internal.Global
 	}
 	cmdInfraCreateFlags := flags.infraCreateFlags
 	formatter := newFormatterFromConsole(console)
-	writer := newWriterFromConsole(console)
+	writer := newOutputWriter(console)
 	cmdInfraCreateAction := newInfraCreateAction(cmdInfraCreateFlags, azdContext, console, formatter, writer)
 	cmdDeployFlags := flags.deployFlags
 	cmdDeployAction, err := newDeployAction(cmdDeployFlags, azdContext, console, formatter, writer)
@@ -126,12 +148,16 @@ func initMonitorAction(console input.Console, ctx context.Context, o *internal.G
 	if err != nil {
 		return nil, err
 	}
-	commandRunner := newCommandRunnerFromConsole(console)
-	tokenCredential, err := newCredential()
+	userConfigManager := config.NewUserConfigManager()
+	manager, err := auth.NewManager(userConfigManager)
 	if err != nil {
 		return nil, err
 	}
-	azCli := newAzCliFromOptions(o, commandRunner, tokenCredential)
+	tokenCredential, err := newCredential(ctx, manager)
+	if err != nil {
+		return nil, err
+	}
+	azCli := newAzCliFromOptions(o, tokenCredential)
 	cmdMonitorAction := newMonitorAction(azdContext, azCli, console, flags)
 	return cmdMonitorAction, nil
 }
@@ -147,7 +173,7 @@ func initRestoreAction(console input.Console, ctx context.Context, o *internal.G
 
 func initShowAction(console input.Console, ctx context.Context, o *internal.GlobalCommandOptions, flags showFlags, args []string) (actions.Action, error) {
 	formatter := newFormatterFromConsole(console)
-	writer := newWriterFromConsole(console)
+	writer := newOutputWriter(console)
 	azdContext, err := newAzdContext()
 	if err != nil {
 		return nil, err
@@ -158,7 +184,7 @@ func initShowAction(console input.Console, ctx context.Context, o *internal.Glob
 
 func initVersionAction(console input.Console, ctx context.Context, o *internal.GlobalCommandOptions, flags versionFlags, args []string) (actions.Action, error) {
 	formatter := newFormatterFromConsole(console)
-	writer := newWriterFromConsole(console)
+	writer := newOutputWriter(console)
 	cmdVersionAction := newVersionAction(flags, formatter, writer, console)
 	return cmdVersionAction, nil
 }
@@ -169,7 +195,7 @@ func initInfraCreateAction(console input.Console, ctx context.Context, o *intern
 		return nil, err
 	}
 	formatter := newFormatterFromConsole(console)
-	writer := newWriterFromConsole(console)
+	writer := newOutputWriter(console)
 	cmdInfraCreateAction := newInfraCreateAction(flags, azdContext, console, formatter, writer)
 	return cmdInfraCreateAction, nil
 }
@@ -183,18 +209,22 @@ func initInfraDeleteAction(console input.Console, ctx context.Context, o *intern
 	return cmdInfraDeleteAction, nil
 }
 
-func initEnvSetAction(console input.Console, ctx context.Context, o *internal.GlobalCommandOptions, flags struct{}, args []string) (actions.Action, error) {
+func initEnvSetAction(console input.Console, ctx context.Context, o *internal.GlobalCommandOptions, flags envSetFlags, args []string) (actions.Action, error) {
 	azdContext, err := newAzdContext()
 	if err != nil {
 		return nil, err
 	}
-	commandRunner := newCommandRunnerFromConsole(console)
-	tokenCredential, err := newCredential()
+	userConfigManager := config.NewUserConfigManager()
+	manager, err := auth.NewManager(userConfigManager)
 	if err != nil {
 		return nil, err
 	}
-	azCli := newAzCliFromOptions(o, commandRunner, tokenCredential)
-	cmdEnvSetAction := newEnvSetAction(azdContext, azCli, console, o, args)
+	tokenCredential, err := newCredential(ctx, manager)
+	if err != nil {
+		return nil, err
+	}
+	azCli := newAzCliFromOptions(o, tokenCredential)
+	cmdEnvSetAction := newEnvSetAction(azdContext, azCli, console, flags, args)
 	return cmdEnvSetAction, nil
 }
 
@@ -213,7 +243,7 @@ func initEnvListAction(console input.Console, ctx context.Context, o *internal.G
 		return nil, err
 	}
 	formatter := newFormatterFromConsole(console)
-	writer := newWriterFromConsole(console)
+	writer := newOutputWriter(console)
 	cmdEnvListAction := newEnvListAction(azdContext, formatter, writer)
 	return cmdEnvListAction, nil
 }
@@ -223,47 +253,59 @@ func initEnvNewAction(console input.Console, ctx context.Context, o *internal.Gl
 	if err != nil {
 		return nil, err
 	}
-	commandRunner := newCommandRunnerFromConsole(console)
-	tokenCredential, err := newCredential()
+	userConfigManager := config.NewUserConfigManager()
+	manager, err := auth.NewManager(userConfigManager)
 	if err != nil {
 		return nil, err
 	}
-	azCli := newAzCliFromOptions(o, commandRunner, tokenCredential)
+	tokenCredential, err := newCredential(ctx, manager)
+	if err != nil {
+		return nil, err
+	}
+	azCli := newAzCliFromOptions(o, tokenCredential)
 	cmdEnvNewAction := newEnvNewAction(azdContext, azCli, flags, args, console)
 	return cmdEnvNewAction, nil
 }
 
-func initEnvRefreshAction(console input.Console, ctx context.Context, o *internal.GlobalCommandOptions, flags struct{}, args []string) (actions.Action, error) {
+func initEnvRefreshAction(console input.Console, ctx context.Context, o *internal.GlobalCommandOptions, flags envRefreshFlags, args []string) (actions.Action, error) {
 	azdContext, err := newAzdContext()
 	if err != nil {
 		return nil, err
 	}
-	commandRunner := newCommandRunnerFromConsole(console)
-	tokenCredential, err := newCredential()
+	userConfigManager := config.NewUserConfigManager()
+	manager, err := auth.NewManager(userConfigManager)
 	if err != nil {
 		return nil, err
 	}
-	azCli := newAzCliFromOptions(o, commandRunner, tokenCredential)
+	tokenCredential, err := newCredential(ctx, manager)
+	if err != nil {
+		return nil, err
+	}
+	azCli := newAzCliFromOptions(o, tokenCredential)
 	formatter := newFormatterFromConsole(console)
-	writer := newWriterFromConsole(console)
-	cmdEnvRefreshAction := newEnvRefreshAction(azdContext, azCli, o, console, formatter, writer)
+	writer := newOutputWriter(console)
+	cmdEnvRefreshAction := newEnvRefreshAction(azdContext, azCli, flags, console, formatter, writer)
 	return cmdEnvRefreshAction, nil
 }
 
-func initEnvGetValuesAction(console input.Console, ctx context.Context, o *internal.GlobalCommandOptions, flags struct{}, args []string) (actions.Action, error) {
+func initEnvGetValuesAction(console input.Console, ctx context.Context, o *internal.GlobalCommandOptions, flags envGetValuesFlags, args []string) (actions.Action, error) {
 	azdContext, err := newAzdContext()
 	if err != nil {
 		return nil, err
 	}
 	formatter := newFormatterFromConsole(console)
-	writer := newWriterFromConsole(console)
-	commandRunner := newCommandRunnerFromConsole(console)
-	tokenCredential, err := newCredential()
+	writer := newOutputWriter(console)
+	userConfigManager := config.NewUserConfigManager()
+	manager, err := auth.NewManager(userConfigManager)
 	if err != nil {
 		return nil, err
 	}
-	azCli := newAzCliFromOptions(o, commandRunner, tokenCredential)
-	cmdEnvGetValuesAction := newEnvGetValuesAction(azdContext, console, formatter, writer, azCli, o)
+	tokenCredential, err := newCredential(ctx, manager)
+	if err != nil {
+		return nil, err
+	}
+	azCli := newAzCliFromOptions(o, tokenCredential)
+	cmdEnvGetValuesAction := newEnvGetValuesAction(azdContext, console, formatter, writer, azCli, flags)
 	return cmdEnvGetValuesAction, nil
 }
 
@@ -272,13 +314,23 @@ func initPipelineConfigAction(console input.Console, ctx context.Context, o *int
 	if err != nil {
 		return nil, err
 	}
-	cmdPipelineConfigAction := newPipelineConfigAction(azdContext, console, flags)
+	userConfigManager := config.NewUserConfigManager()
+	manager, err := auth.NewManager(userConfigManager)
+	if err != nil {
+		return nil, err
+	}
+	tokenCredential, err := newCredential(ctx, manager)
+	if err != nil {
+		return nil, err
+	}
+	azCli := newAzCliFromOptions(o, tokenCredential)
+	cmdPipelineConfigAction := newPipelineConfigAction(azdContext, console, flags, azCli)
 	return cmdPipelineConfigAction, nil
 }
 
 func initTemplatesListAction(console input.Console, ctx context.Context, o *internal.GlobalCommandOptions, flags templatesListFlags, args []string) (actions.Action, error) {
 	formatter := newFormatterFromConsole(console)
-	writer := newWriterFromConsole(console)
+	writer := newOutputWriter(console)
 	templateManager := templates.NewTemplateManager()
 	cmdTemplatesListAction := newTemplatesListAction(flags, formatter, writer, templateManager)
 	return cmdTemplatesListAction, nil
@@ -286,42 +338,42 @@ func initTemplatesListAction(console input.Console, ctx context.Context, o *inte
 
 func initTemplatesShowAction(console input.Console, ctx context.Context, o *internal.GlobalCommandOptions, flags struct{}, args []string) (actions.Action, error) {
 	formatter := newFormatterFromConsole(console)
-	writer := newWriterFromConsole(console)
+	writer := newOutputWriter(console)
 	templateManager := templates.NewTemplateManager()
 	cmdTemplatesShowAction := newTemplatesShowAction(formatter, writer, templateManager, args)
 	return cmdTemplatesShowAction, nil
 }
 
 func initConfigListAction(console input.Console, ctx context.Context, o *internal.GlobalCommandOptions, flags struct{}, args []string) (actions.Action, error) {
-	manager := config.NewManager()
+	userConfigManager := config.NewUserConfigManager()
 	formatter := newFormatterFromConsole(console)
-	writer := newWriterFromConsole(console)
-	cmdConfigListAction := newConfigListAction(manager, formatter, writer)
+	writer := newOutputWriter(console)
+	cmdConfigListAction := newConfigListAction(userConfigManager, formatter, writer)
 	return cmdConfigListAction, nil
 }
 
 func initConfigGetAction(console input.Console, ctx context.Context, o *internal.GlobalCommandOptions, flags struct{}, args []string) (actions.Action, error) {
-	manager := config.NewManager()
+	userConfigManager := config.NewUserConfigManager()
 	formatter := newFormatterFromConsole(console)
-	writer := newWriterFromConsole(console)
-	cmdConfigGetAction := newConfigGetAction(manager, formatter, writer, args)
+	writer := newOutputWriter(console)
+	cmdConfigGetAction := newConfigGetAction(userConfigManager, formatter, writer, args)
 	return cmdConfigGetAction, nil
 }
 
 func initConfigSetAction(console input.Console, ctx context.Context, o *internal.GlobalCommandOptions, flags struct{}, args []string) (actions.Action, error) {
-	manager := config.NewManager()
-	cmdConfigSetAction := newConfigSetAction(manager, args)
+	userConfigManager := config.NewUserConfigManager()
+	cmdConfigSetAction := newConfigSetAction(userConfigManager, args)
 	return cmdConfigSetAction, nil
 }
 
 func initConfigUnsetAction(console input.Console, ctx context.Context, o *internal.GlobalCommandOptions, flags struct{}, args []string) (actions.Action, error) {
-	manager := config.NewManager()
-	cmdConfigUnsetAction := newConfigUnsetAction(manager, args)
+	userConfigManager := config.NewUserConfigManager()
+	cmdConfigUnsetAction := newConfigUnsetAction(userConfigManager, args)
 	return cmdConfigUnsetAction, nil
 }
 
 func initConfigResetAction(console input.Console, ctx context.Context, o *internal.GlobalCommandOptions, flags struct{}, args []string) (actions.Action, error) {
-	manager := config.NewManager()
-	cmdConfigResetAction := newConfigResetAction(manager, args)
+	userConfigManager := config.NewUserConfigManager()
+	cmdConfigResetAction := newConfigResetAction(userConfigManager, args)
 	return cmdConfigResetAction, nil
 }

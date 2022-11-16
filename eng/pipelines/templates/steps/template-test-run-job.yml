@@ -4,11 +4,11 @@
 # and additional variables specified by template-test-generate-jobs.yml
 
 steps:
-- template: /eng/pipelines/templates/steps/az-login.yml
-
 - template: /eng/pipelines/templates/steps/install-azd-live-sh.yml
   parameters:
     Version: $(AzdVersion)
+
+- template: /eng/pipelines/templates/steps/azd-login.yml
 
 # Java pre-requisites that isn't met
 # TODO: Use azd container as a form of validation that the container works
@@ -29,6 +29,12 @@ steps:
     Write-Host "Resource group name: $resourceGroupName"
     Write-Host "##vso[task.setvariable variable=ResourceGroupName]$resourceGroupName"
     Write-Host "##vso[task.setvariable variable=EnvPrefixName]$envPrefixName"
+
+    $SynchronousCleanup = 'true'
+    if ('$(Build.Reason)' -eq 'PullRequest') {
+      $SynchronousCleanup = 'false'
+    }
+    Write-Host "##vso[task.setvariable variable=SynchronousCleanup]$SynchronousCleanup"
 
     $CleanupImmediate = 'true'
     if ($(CleanupHoursDelay) -ne '0') {
@@ -52,35 +58,19 @@ steps:
       SUBSCRIPTION_ID=$(SubscriptionId)
     targetType: filePath
     filePath: templates/tests/test-templates.sh
-    runCmd: |
-      az login \
-        --service-principal \
-        -u "$(arm-client-id)" \
-        -p "$(arm-client-secret)" \
-        --tenant "$(arm-tenant-id)"
-      az account set \
-        --subscription "$(SubscriptionId)"
-      git config --global user.name "azure-sdk"
-      git config --global user.email "azuresdk@microsoft.com"
-      echo "https://azure-sdk:$(azuresdk-github-pat)@github.com" > ~/.git-credentials
-      git config --global credential.helper "store"
-      cd templates/tests/
-      curl -fsSL https://aka.ms/install-azd.sh | bash -s -- --version 'daily' --verbose
-      npm i && npx playwright install
-      sudo add-apt-repository ppa:gstreamer-developers/ppa
-      sudo apt-get update
-      sudo apt-get install gstreamer1.0*
-      sudo apt-get install -y gstreamer1.0-libav libnss3-tools libatk-bridge2.0-0 libcups2-dev libxkbcommon-x11-0 libxcomposite-dev libxrandr2 libgbm-dev libgtk-3-0
-      chmod +x ./test-templates.sh
-      ./test-templates.sh \
-        -e '$(EnvPrefixName)' \
-        -t '$(TemplateName)' \
-        -b '$(TemplateBranchName)' \
-        -s '$(SubscriptionId)' \
-        -u '$(Build.BuildId)' \
-        -l '$(DeployLocation)' \
-        -p 'list'
+    arguments: >
+      -f '$(Pipeline.Workspace)'
+      -e '$(EnvPrefixName)'
+      -t '$(TemplateName)'
+      -b '$(TemplateBranchName)'
+      -s '$(SubscriptionId)'
+      -u '$(Build.BuildId)'
+      -l '$(AzureLocation)'
+      -p 'list'
+      -c '$(SynchronousCleanup)'
     workingDirectory: templates/tests
+
+- template: /eng/pipelines/templates/steps/az-login.yml
 
 # First tag the resource group (if exists) so that it can get cleaned up
 # by the cleanup pipeline. Then attempt to delete the resource group 

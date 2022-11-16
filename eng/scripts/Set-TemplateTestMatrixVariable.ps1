@@ -52,10 +52,12 @@ function Get-JobVariables() {
 
 $jobVariables = Get-JobVariables -JobVariablesDefinition $JobVariablesDefinition
 
+$templateNames = @()
+
 if ($TemplateList -eq '(azd template list)') {
     Write-Host "Using results of (azd template list --output json)"
     
-    $templateNames = (azd template list --output json | ConvertFrom-Json).name
+    $templateNames += (azd template list --output json | ConvertFrom-Json).name
     if ($LASTEXITCODE -ne 0) {
         Write-Error "azd template list failed"
         exit 1
@@ -63,11 +65,10 @@ if ($TemplateList -eq '(azd template list)') {
 } else {
     Write-Host "Using provided TemplateList value: $TemplateList"
 
-    $templateNames = ($TemplateList -split ",").Trim()
+    $templateNames += ($TemplateList -split ",").Trim()
 }
 
 if ($TemplateListFilter -ne '.*') {
-} else {
     Write-Host "Filtering with TemplateListFilter regex: $TemplateListFilter"
 
     $templateNames = $templateNames -match $TemplateListFilter

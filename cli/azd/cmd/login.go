@@ -9,24 +9,62 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 
+	"github.com/MakeNowJust/heredoc/v2"
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/pkg/auth"
+	"github.com/azure/azure-dev/cli/azd/pkg/commands"
 	"github.com/azure/azure-dev/cli/azd/pkg/contracts"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
 
 type loginFlags struct {
-	onlyCheckStatus bool
-	useDeviceCode   bool
-	outputFormat    string
-	global          *internal.GlobalCommandOptions
+	onlyCheckStatus        bool
+	useDeviceCode          bool
+	outputFormat           string
+	tenantID               string
+	clientID               string
+	clientSecret           stringPtr
+	clientCertificate      string
+	federatedToken         stringPtr
+	federatedTokenProvider string
+	global                 *internal.GlobalCommandOptions
 }
+
+// stringPtr implements a pflag.Value and allows us to distinguish between a flag value being explicitly set to the empty
+// string vs not being present.
+type stringPtr struct {
+	ptr *string
+}
+
+func (p *stringPtr) Set(s string) error {
+	p.ptr = &s
+	return nil
+}
+
+func (p *stringPtr) String() string {
+	if p.ptr != nil {
+		return *p.ptr
+	}
+
+	return ""
+}
+
+func (p *stringPtr) Type() string {
+	return "string"
+}
+
+const (
+	cClientSecretFlagName                = "client-secret"
+	cClientCertificateFlagName           = "client-certificate"
+	cFederatedCredentialFlagName         = "federated-credential"
+	cFederatedCredentialProviderFlagName = "federated-credential-provider"
+)
 
 func (lf *loginFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
 	local.BoolVar(&lf.onlyCheckStatus, "check-status", false, "Checks the log-in status instead of logging in.")
@@ -36,6 +74,29 @@ func (lf *loginFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandO
 		false,
 		"When true, log in by using a device code instead of a browser.",
 	)
+	local.StringVar(&lf.clientID, "client-id", "", "The client id for the service principal to authenticate with.")
+	local.Var(
+		&lf.clientSecret,
+		cClientSecretFlagName,
+		"The client secret for the service principal to authenticate with. "+
+			"Set to the empty string to read the value from the console.")
+	local.StringVar(
+		&lf.clientCertificate,
+		cClientCertificateFlagName,
+		"",
+		"The path to the client certificate for the service principal to authenticate with.")
+	local.Var(
+		&lf.federatedToken,
+		cFederatedCredentialFlagName,
+		"The federated token for the service principal to authenticate with. "+
+			"Set to the empty string to read the value from the console.")
+	local.StringVar(
+		&lf.federatedTokenProvider,
+		cFederatedCredentialProviderFlagName,
+		"",
+		"The provider to use to acquire a federated token to authenticate with.")
+	local.StringVar(&lf.tenantID, "tenant-id", "", "The tenant id for the service principal to authenticate with.")
+
 	output.AddOutputFlag(
 		local,
 		&lf.outputFormat,
@@ -50,6 +111,17 @@ func loginCmdDesign(global *internal.GlobalCommandOptions) (*cobra.Command, *log
 	cmd := &cobra.Command{
 		Use:   "login",
 		Short: "Log in to Azure.",
+		Long: heredoc.Doc(`
+		Log in to Azure.
+
+		When run without any arguments, log in interactively using a browser. To log in using a device code, pass
+		--device-code.
+
+		To log in as a service principal, pass --client-id and --tenant-id as well as one of --client-secret, 
+		--client-certificate, --client-credential or --client-credential-provider.`),
+		Annotations: map[string]string{
+			commands.RequireNoLoginAnnotation: "true",
+		},
 	}
 
 	flags := &loginFlags{}
@@ -58,50 +130,51 @@ func loginCmdDesign(global *internal.GlobalCommandOptions) (*cobra.Command, *log
 }
 
 type loginAction struct {
-	formatter output.Formatter
-	writer    io.Writer
-	console   input.Console
-	azCli     azcli.AzCli
-	flags     loginFlags
+	formatter   output.Formatter
+	writer      io.Writer
+	console     input.Console
+	authManager *auth.Manager
+	flags       loginFlags
 }
 
 func newLoginAction(
 	formatter output.Formatter,
 	writer io.Writer,
-	azcli azcli.AzCli,
+	authManager *auth.Manager,
 	flags loginFlags,
 	console input.Console,
 ) *loginAction {
 	return &loginAction{
-		formatter: formatter,
-		writer:    writer,
-		console:   console,
-		azCli:     azcli,
-		flags:     flags,
+		formatter:   formatter,
+		writer:      writer,
+		console:     console,
+		authManager: authManager,
+		flags:       flags,
 	}
 }
 
 func (la *loginAction) Run(ctx context.Context) (*actions.ActionResult, error) {
-	if err := tools.EnsureInstalled(ctx, la.azCli); err != nil {
-		return nil, err
-	}
-
 	if !la.flags.onlyCheckStatus {
-		if err := runLogin(ctx, la.flags.useDeviceCode); err != nil {
-			return nil, fmt.Errorf("logging in: %w", err)
+		if err := la.login(ctx); err != nil {
+			return nil, err
 		}
 	}
 
 	res := contracts.LoginResult{}
 
-	if token, err := la.azCli.GetAccessToken(ctx); errors.Is(err, azcli.ErrAzCliNotLoggedIn) ||
-		errors.Is(err, azcli.ErrAzCliRefreshTokenExpired) {
+	if cred, err := la.authManager.CredentialForCurrentUser(ctx); errors.Is(err, auth.ErrNoCurrentUser) {
 		res.Status = contracts.LoginStatusUnauthenticated
 	} else if err != nil {
 		return nil, fmt.Errorf("checking auth status: %w", err)
 	} else {
-		res.Status = contracts.LoginStatusSuccess
-		res.ExpiresOn = token.ExpiresOn
+		if token, err := auth.EnsureLoggedInCredential(ctx, cred); errors.Is(err, auth.ErrNoCurrentUser) {
+			res.Status = contracts.LoginStatusUnauthenticated
+		} else if err != nil {
+			return nil, fmt.Errorf("checking auth status: %w", err)
+		} else {
+			res.Status = contracts.LoginStatusSuccess
+			res.ExpiresOn = &token.ExpiresOn
+		}
 	}
 
 	if la.formatter.Kind() == output.NoneFormat {
@@ -117,42 +190,109 @@ func (la *loginAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	return nil, la.formatter.Format(res, la.writer, nil)
 }
 
-// ensureLoggedIn checks to see if the user is currently logged in. If not, the equivalent of `az login` is run.
-func ensureLoggedIn(ctx context.Context) error {
-	azCli := azcli.GetAzCli(ctx)
-	_, err := azCli.GetAccessToken(ctx)
-	if errors.Is(err, azcli.ErrAzCliNotLoggedIn) || errors.Is(err, azcli.ErrAzCliRefreshTokenExpired) {
-		if err := runLogin(ctx, false); err != nil {
+func countTrue(elms ...bool) int {
+	i := 0
+
+	for _, elm := range elms {
+		if elm {
+			i++
+		}
+	}
+
+	return i
+}
+
+func (la *loginAction) login(ctx context.Context) error {
+	if la.flags.clientID != "" || la.flags.tenantID != "" {
+		if la.flags.clientID == "" || la.flags.tenantID == "" {
+			return errors.New("must set both `client-id` and `tenant-id` for service principal login")
+		}
+
+		if countTrue(
+			la.flags.clientSecret.ptr != nil,
+			la.flags.clientCertificate != "",
+			la.flags.federatedToken.ptr != nil,
+			la.flags.federatedTokenProvider != "",
+		) != 1 {
+			return fmt.Errorf(
+				"must set exactly one of %s for service principal", strings.Join([]string{
+					cClientSecretFlagName,
+					cClientCertificateFlagName,
+					cFederatedCredentialFlagName,
+					cFederatedCredentialProviderFlagName,
+				}, ", "))
+		}
+
+		switch {
+		case la.flags.clientSecret.ptr != nil:
+			if *la.flags.clientSecret.ptr == "" {
+				v, err := la.console.Prompt(ctx, input.ConsoleOptions{
+					Message: "Enter your client secret",
+				})
+				if err != nil {
+					return fmt.Errorf("prompting for client secret: %w", err)
+				}
+				la.flags.clientSecret.ptr = &v
+			}
+
+			if _, err := la.authManager.LoginWithServicePrincipalSecret(
+				ctx, la.flags.tenantID, la.flags.clientID, *la.flags.clientSecret.ptr,
+			); err != nil {
+				return fmt.Errorf("logging in: %w", err)
+			}
+		case la.flags.clientCertificate != "":
+			certFile, err := os.Open(la.flags.clientCertificate)
+			if err != nil {
+				return fmt.Errorf("reading certificate: %w", err)
+			}
+			defer certFile.Close()
+
+			cert, err := io.ReadAll(certFile)
+			if err != nil {
+				return fmt.Errorf("reading certificate: %w", err)
+			}
+
+			if _, err := la.authManager.LoginWithServicePrincipalCertificate(
+				ctx, la.flags.tenantID, la.flags.clientID, cert,
+			); err != nil {
+				return fmt.Errorf("logging in: %w", err)
+			}
+		case la.flags.federatedToken.ptr != nil:
+			if *la.flags.federatedToken.ptr == "" {
+				v, err := la.console.Prompt(ctx, input.ConsoleOptions{
+					Message: "Enter your federated token",
+				})
+				if err != nil {
+					return fmt.Errorf("prompting for federated token: %w", err)
+				}
+				la.flags.federatedToken.ptr = &v
+			}
+
+			if _, err := la.authManager.LoginWithServicePrincipalFederatedToken(
+				ctx, la.flags.tenantID, la.flags.clientID, *la.flags.federatedToken.ptr,
+			); err != nil {
+				return fmt.Errorf("logging in: %w", err)
+			}
+		case la.flags.federatedTokenProvider != "":
+			if _, err := la.authManager.LoginWithServicePrincipalFederatedTokenProvider(
+				ctx, la.flags.tenantID, la.flags.clientID, la.flags.federatedTokenProvider,
+			); err != nil {
+				return fmt.Errorf("logging in: %w", err)
+			}
+		}
+
+		return nil
+	}
+
+	if la.flags.useDeviceCode {
+		if _, err := la.authManager.LoginWithDeviceCode(ctx, la.writer); err != nil {
 			return fmt.Errorf("logging in: %w", err)
 		}
-	} else if err != nil {
-		return fmt.Errorf("fetching access token: %w", err)
+	} else {
+		if _, err := la.authManager.LoginInteractive(ctx); err != nil {
+			return fmt.Errorf("logging in: %w", err)
+		}
 	}
 
 	return nil
-}
-
-// runLogin runs an interactive login. When running in a Codespace or Remote Container, a device code based is
-// preformed since the default browser login needs UI. A device code login can be forced with `forceDeviceCode`.
-func runLogin(ctx context.Context, forceDeviceCode bool) error {
-	console := input.GetConsole(ctx)
-	if console == nil {
-		panic("need console")
-	}
-
-	const (
-		// CodespacesEnvVarName is the name of the env variable set when you're in a Github codespace. It's
-		// just set to 'true'.
-		CodespacesEnvVarName = "CODESPACES"
-
-		// RemoteContainersEnvVarName is the name of the env variable set when you're in a remote container. It's
-		// just set to 'true'.
-		RemoteContainersEnvVarName = "REMOTE_CONTAINERS"
-	)
-
-	azCli := azcli.GetAzCli(ctx)
-	useDeviceCode := forceDeviceCode || os.Getenv(CodespacesEnvVarName) == "true" ||
-		os.Getenv(RemoteContainersEnvVarName) == "true"
-
-	return azCli.Login(ctx, useDeviceCode, console.Handles().Stdout)
 }

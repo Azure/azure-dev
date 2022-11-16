@@ -3,7 +3,12 @@
 # - UseUpperCase
 # and additional variables specified by template-test-generate-jobs.yml
 
+
 steps:
+- pwsh: |
+    npm install -g @devcontainers/cli
+  displayName: Install Devcontainer
+
 - template: /eng/pipelines/templates/steps/install-azd-live-sh.yml
   parameters:
     Version: $(AzdVersion)
@@ -42,10 +47,6 @@ steps:
     }
     Write-Host "##vso[task.setvariable variable=CleanupImmediate]$CleanupImmediate"
   displayName: Set test run parameters
-
-- pwsh: |
-    npm install -g @devcontainers/cli
-  displayName: Install Devcontainer
 
 - task: DevcontainersCI@0
   displayName: Test templates in Devcontainer

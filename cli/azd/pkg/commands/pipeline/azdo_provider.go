@@ -11,7 +11,6 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdo"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
@@ -620,7 +619,6 @@ func (p *AzdoCiProvider) configureConnection(
 	credentials json.RawMessage,
 	authType PipelineAuthType,
 	console input.Console,
-	_ azcore.TokenCredential,
 ) error {
 
 	azureCredentials, err := parseCredentials(ctx, credentials)

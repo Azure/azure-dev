@@ -293,6 +293,13 @@ func notifyWhenGitHubActionsAreDisabled(
 // GitHubCiProvider implements a CiProvider using GitHub to manage CI pipelines as
 // GitHub actions.
 type GitHubCiProvider struct {
+	credential azcore.TokenCredential
+}
+
+func NewGitHubCiProvider(credential azcore.TokenCredential) *GitHubCiProvider {
+	return &GitHubCiProvider{
+		credential: credential,
+	}
 }
 
 // ***  subareaProvider implementation ******
@@ -405,7 +412,6 @@ func (p *GitHubCiProvider) configureConnection(
 	credentials json.RawMessage,
 	authType PipelineAuthType,
 	console input.Console,
-	tokenCredential azcore.TokenCredential,
 ) error {
 
 	repoSlug := repoDetails.owner + "/" + repoDetails.repoName
@@ -428,7 +434,7 @@ func (p *GitHubCiProvider) configureConnection(
 		authErr = p.configureClientCredentialsAuth(ctx, azdEnvironment, infraOptions, repoSlug, credentials, console)
 	default:
 		authErr = p.configureFederatedAuth(
-			ctx, azdEnvironment, infraOptions, repoSlug, credentials, console, tokenCredential,
+			ctx, azdEnvironment, infraOptions, repoSlug, credentials, console, p.credential,
 		)
 	}
 

@@ -11,7 +11,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
@@ -52,13 +51,11 @@ type PipelineManager struct {
 	RootOptions *internal.GlobalCommandOptions
 	Environment *environment.Environment
 	PipelineManagerArgs
-	azCli      azcli.AzCli
-	credential azcore.TokenCredential
+	azCli azcli.AzCli
 }
 
 func NewPipelineManager(
 	azCli azcli.AzCli,
-	credential azcore.TokenCredential,
 	azdCtx *azdcontext.AzdContext,
 	global *internal.GlobalCommandOptions,
 	args PipelineManagerArgs,
@@ -68,7 +65,6 @@ func NewPipelineManager(
 		RootOptions:         global,
 		PipelineManagerArgs: args,
 		azCli:               azCli,
-		credential:          credential,
 	}
 }
 
@@ -298,8 +294,7 @@ func (manager *PipelineManager) Configure(ctx context.Context) error {
 		prj.Infra,
 		credentials,
 		PipelineAuthType(manager.PipelineAuthTypeName),
-		inputConsole,
-		manager.credential)
+		inputConsole)
 	if err != nil {
 		return err
 	}

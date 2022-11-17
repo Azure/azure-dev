@@ -82,11 +82,12 @@ For more information, go to https://aka.ms/azure-dev/pipeline.`,
 
 // pipelineConfigAction defines the action for pipeline config command
 type pipelineConfigAction struct {
-	flags   pipelineConfigFlags
-	manager *pipeline.PipelineManager
-	azCli   azcli.AzCli
-	azdCtx  *azdcontext.AzdContext
-	console input.Console
+	flags      pipelineConfigFlags
+	manager    *pipeline.PipelineManager
+	azCli      azcli.AzCli
+	azdCtx     *azdcontext.AzdContext
+	console    input.Console
+	credential azcore.TokenCredential
 }
 
 func newPipelineConfigAction(
@@ -97,11 +98,12 @@ func newPipelineConfigAction(
 	flags pipelineConfigFlags,
 ) *pipelineConfigAction {
 	pca := &pipelineConfigAction{
-		flags:   flags,
-		azCli:   azCli,
-		manager: pipeline.NewPipelineManager(azCli, credential, azdCtx, flags.global, flags.PipelineManagerArgs),
-		azdCtx:  azdCtx,
-		console: console,
+		flags:      flags,
+		azCli:      azCli,
+		credential: credential,
+		manager:    pipeline.NewPipelineManager(azCli, azdCtx, flags.global, flags.PipelineManagerArgs),
+		azdCtx:     azdCtx,
+		console:    console,
 	}
 
 	return pca
@@ -121,7 +123,7 @@ func (p *pipelineConfigAction) Run(ctx context.Context) (*actions.ActionResult, 
 	// Detect the SCM and CI providers based on the project directory
 	p.manager.ScmProvider,
 		p.manager.CiProvider,
-		err = pipeline.DetectProviders(ctx, p.azdCtx, env, p.manager.PipelineProvider)
+		err = pipeline.DetectProviders(ctx, p.azdCtx, env, p.manager.PipelineProvider, p.credential)
 	if err != nil {
 		return nil, err
 	}

@@ -18,15 +18,6 @@ var tagFilterExpression = regexp.MustCompile("tagName eq '(.+)' and tagValue eq 
 
 var nameFilterExpression = regexp.MustCompile("name eq '(.+)'")
 
-// Register the default behavior to return an empty list for resources
-func RegisterEmptyResources(c *httputil.MockHttpClient) {
-	// This is harmless but should be removed long-term.
-	// By default, mock returning an empty list of azure resources instead of crashing.
-	// This is an unfortunate mock required due to the side-effect of
-	// running "az resource list" as part of loading a project in project.GetProject.
-	AddAzResourceListMock(c, nil, []*armresources.GenericResourceExpanded{})
-}
-
 func AddAzResourceListMock(c *httputil.MockHttpClient, matchResourceGroupName *string, result []*armresources.GenericResourceExpanded) {
 	c.When(func(request *http.Request) bool {
 		isMatch := strings.Contains(request.URL.Path, "/resources")

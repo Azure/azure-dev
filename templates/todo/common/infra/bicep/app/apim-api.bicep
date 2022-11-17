@@ -99,4 +99,4 @@ resource apimLogger 'Microsoft.ApiManagement/service/loggers@2021-12-01-preview'
   parent: apimService
 }
 
-output SERVICE_API_URI string = '${apimService.properties.gatewayUrl}/${restApi.properties.path}'
+output SERVICE_API_URI string = '${apimService.properties.gatewayUrl}/${apiPath}'

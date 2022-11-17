@@ -58,16 +58,13 @@ steps:
       ARM_TENANT_ID=$(arm-tenant-id)
       SUBSCRIPTION_ID=$(SubscriptionId)
     runCmd: 
-      azd init
+      azd init -t $templateName
       azd version
       dir=$(pwd)
-      az login \
-        --service-principal \
-        -u "$(arm-client-id)" \
-        -p "$(arm-client-secret)" \
-        --tenant "$(arm-tenant-id)"
-      az account set \
-        --subscription "$(SubscriptionId)"
+      azd login \
+        --client-id "$(arm-client-id)" \
+        --client-secret "$(arm-client-secret)" \
+        --tenant-id "$(arm-tenant-id)"
       git config --global user.name "azure-sdk"
       git config --global user.email "azuresdk@microsoft.com"
       echo "https://azure-sdk:$(azuresdk-github-pat)@github.com" > ~/.git-credentials
@@ -86,6 +83,7 @@ steps:
       -p 'list'
       -c '$(SynchronousCleanup)'
     workingDirectory: templates/tests
+    
 
 - template: /eng/pipelines/templates/steps/az-login.yml
 

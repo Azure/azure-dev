@@ -495,135 +495,37 @@ func prepareDestroyMocks(mockContext *mocks.MockContext) {
 	})
 
 	// Get Key Vault
-	mockContext.HttpClient.When(func(request *http.Request) bool {
-		return request.Method == http.MethodGet && strings.Contains(request.URL.Path, "/vaults/kv-123")
-	}).RespondFn(func(request *http.Request) (*http.Response, error) {
-		keyVaultResponse := armkeyvault.VaultsClientGetResponse{
-			Vault: armkeyvault.Vault{
-				ID:       convert.RefOf("kv-123"),
-				Name:     convert.RefOf("kv-123"),
-				Location: convert.RefOf("eastus2"),
-				Properties: &armkeyvault.VaultProperties{
-					EnableSoftDelete:      convert.RefOf(true),
-					EnablePurgeProtection: convert.RefOf(false),
-				},
-			},
-		}
-
-		keyVaultBytes, _ := json.Marshal(keyVaultResponse)
-
-		return &http.Response{
-			StatusCode: http.StatusOK,
-			Body:       io.NopCloser(bytes.NewBuffer(keyVaultBytes)),
-		}, nil
-	})
-
-	mockContext.HttpClient.When(func(request *http.Request) bool {
-		return request.Method == http.MethodGet && strings.Contains(request.URL.Path, "/vaults/kv2-123")
-	}).RespondFn(func(request *http.Request) (*http.Response, error) {
-		keyVaultResponse := armkeyvault.VaultsClientGetResponse{
-			Vault: armkeyvault.Vault{
-				ID:       convert.RefOf("kv2-123"),
-				Name:     convert.RefOf("kv2-123"),
-				Location: convert.RefOf("eastus2"),
-				Properties: &armkeyvault.VaultProperties{
-					EnableSoftDelete:      convert.RefOf(true),
-					EnablePurgeProtection: convert.RefOf(false),
-				},
-			},
-		}
-
-		keyVaultBytes, _ := json.Marshal(keyVaultResponse)
-
-		return &http.Response{
-			StatusCode: http.StatusOK,
-			Body:       io.NopCloser(bytes.NewBuffer(keyVaultBytes)),
-		}, nil
-	})
+	getKeyVaultMock(mockContext, "/vaults/kv-123", "kv-123", "eastus2")
+	getKeyVaultMock(mockContext, "/vaults/kv2-123", "kv2-123", "eastus2")
 
 	// Get App Configuration
-	mockContext.HttpClient.When(func(request *http.Request) bool {
-		return request.Method == http.MethodGet && strings.Contains(request.URL.Path, "/configurationStores/ac-123")
-	}).RespondFn(func(request *http.Request) (*http.Response, error) {
-		appConfigResponse := armappconfiguration.ConfigurationStoresClientGetResponse{
-			ConfigurationStore: armappconfiguration.ConfigurationStore{
-				ID:       convert.RefOf("ac-123"),
-				Name:     convert.RefOf("ac-123"),
-				Location: convert.RefOf("eastus2"),
-				Properties: &armappconfiguration.ConfigurationStoreProperties{
-					EnablePurgeProtection: convert.RefOf(false),
-				},
-			},
-		}
-
-		appConfigBytes, _ := json.Marshal(appConfigResponse)
-
-		return &http.Response{
-			StatusCode: http.StatusOK,
-			Body:       io.NopCloser(bytes.NewBuffer(appConfigBytes)),
-		}, nil
-	})
-
-	mockContext.HttpClient.When(func(request *http.Request) bool {
-		return request.Method == http.MethodGet && strings.Contains(request.URL.Path, "/configurationStores/ac2-123")
-	}).RespondFn(func(request *http.Request) (*http.Response, error) {
-		appConfigResponse := armappconfiguration.ConfigurationStoresClientGetResponse{
-			ConfigurationStore: armappconfiguration.ConfigurationStore{
-				ID:       convert.RefOf("ac2-123"),
-				Name:     convert.RefOf("ac2-123"),
-				Location: convert.RefOf("eastus2"),
-				Properties: &armappconfiguration.ConfigurationStoreProperties{
-					EnablePurgeProtection: convert.RefOf(false),
-				},
-			},
-		}
-
-		appConfigBytes, _ := json.Marshal(appConfigResponse)
-
-		return &http.Response{
-			StatusCode: http.StatusOK,
-			Body:       io.NopCloser(bytes.NewBuffer(appConfigBytes)),
-		}, nil
-	})
+	getAppConfigMock(mockContext, "/configurationStores/ac-123", "ac-123", "eastus2")
+	getAppConfigMock(mockContext, "/configurationStores/ac2-123", "ac2-123", "eastus2")
 
 	// Delete resource group
 	mockContext.HttpClient.When(func(request *http.Request) bool {
 		return request.Method == http.MethodDelete &&
 			strings.Contains(request.URL.Path, "subscriptions/SUBSCRIPTION_ID/resourcegroups/RESOURCE_GROUP")
 	}).RespondFn(func(request *http.Request) (*http.Response, error) {
-		return &http.Response{
-			Request:    request,
-			Header:     http.Header{},
-			StatusCode: http.StatusOK,
-			Body:       http.NoBody,
-		}, nil
+		return httpRespondFn(request)
 	})
 
 	// Purge Key vault
 	mockContext.HttpClient.When(func(request *http.Request) bool {
-		return request.Method == http.MethodPost && (strings.Contains(request.URL.Path, "deletedVaults/kv-123/purge") ||
-			strings.Contains(request.URL.Path, "deletedVaults/kv2-123/purge"))
+		return request.Method == http.MethodPost &&
+			(strings.Contains(request.URL.Path, "deletedVaults/kv-123/purge") ||
+				strings.Contains(request.URL.Path, "deletedVaults/kv2-123/purge"))
 	}).RespondFn(func(request *http.Request) (*http.Response, error) {
-		return &http.Response{
-			Request:    request,
-			Header:     http.Header{},
-			StatusCode: http.StatusOK,
-			Body:       http.NoBody,
-		}, nil
+		return httpRespondFn(request)
 	})
 
 	// Purge App configuration
 	mockContext.HttpClient.When(func(request *http.Request) bool {
-		return request.Method == http.MethodPost && (strings.Contains(request.URL.Path,
-			"deletedConfigurationStores/ac-123/purge") || strings.Contains(request.URL.Path,
-			"deletedConfigurationStores/ac2-123/purge"))
+		return request.Method == http.MethodPost &&
+			(strings.Contains(request.URL.Path, "deletedConfigurationStores/ac-123/purge") ||
+				strings.Contains(request.URL.Path, "deletedConfigurationStores/ac2-123/purge"))
 	}).RespondFn(func(request *http.Request) (*http.Response, error) {
-		return &http.Response{
-			Request:    request,
-			Header:     http.Header{},
-			StatusCode: http.StatusOK,
-			Body:       http.NoBody,
-		}, nil
+		return httpRespondFn(request)
 	})
 
 	// Delete deployment
@@ -654,3 +556,61 @@ var testArmParametersFile string = `{
 		}
 	}
 }`
+
+func getKeyVaultMock(mockContext *mocks.MockContext, keyVaultString string, name string, location string) {
+	mockContext.HttpClient.When(func(request *http.Request) bool {
+		return request.Method == http.MethodGet && strings.Contains(request.URL.Path, keyVaultString)
+	}).RespondFn(func(request *http.Request) (*http.Response, error) {
+		keyVaultResponse := armkeyvault.VaultsClientGetResponse{
+			Vault: armkeyvault.Vault{
+				ID:       convert.RefOf(name),
+				Name:     convert.RefOf(name),
+				Location: convert.RefOf(location),
+				Properties: &armkeyvault.VaultProperties{
+					EnableSoftDelete:      convert.RefOf(true),
+					EnablePurgeProtection: convert.RefOf(false),
+				},
+			},
+		}
+
+		keyVaultBytes, _ := json.Marshal(keyVaultResponse)
+
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(bytes.NewBuffer(keyVaultBytes)),
+		}, nil
+	})
+}
+
+func getAppConfigMock(mockContext *mocks.MockContext, appConfigString string, name string, location string) {
+	mockContext.HttpClient.When(func(request *http.Request) bool {
+		return request.Method == http.MethodGet && strings.Contains(request.URL.Path, appConfigString)
+	}).RespondFn(func(request *http.Request) (*http.Response, error) {
+		appConfigResponse := armappconfiguration.ConfigurationStoresClientGetResponse{
+			ConfigurationStore: armappconfiguration.ConfigurationStore{
+				ID:       convert.RefOf(name),
+				Name:     convert.RefOf(name),
+				Location: convert.RefOf(location),
+				Properties: &armappconfiguration.ConfigurationStoreProperties{
+					EnablePurgeProtection: convert.RefOf(false),
+				},
+			},
+		}
+
+		appConfigBytes, _ := json.Marshal(appConfigResponse)
+
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(bytes.NewBuffer(appConfigBytes)),
+		}, nil
+	})
+}
+
+func httpRespondFn(request *http.Request) (*http.Response, error) {
+	return &http.Response{
+		Request:    request,
+		Header:     http.Header{},
+		StatusCode: http.StatusOK,
+		Body:       http.NoBody,
+	}, nil
+}

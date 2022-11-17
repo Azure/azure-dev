@@ -1,25 +1,26 @@
 param name string
 
-@description('The name of the API')
+@description('Resouce name to uniquely dentify this API within the API Management service instance')
 @minLength(1)
 param apiName string
 
 @description('The Display Name of the API')
 @minLength(1)
+@maxLength(300)
 param apiDisplayName string
 
-@description('The description of the API')
+@description('Description of the API. May include HTML formatting tags.')
 @minLength(1)
 param apiDescription string
 
-@description('The path of the API')
+@description('Relative URL uniquely identifying this API and all of its resource paths within the API Management service instance. It is appended to the API endpoint base URL specified during the service instance creation to form a public URL for this API.')
 @minLength(1)
 param apiPath string
 
-@description('URL for the web frontend')
+@description('Absolute URL of the web frontend')
 param webFrontendUrl string
 
-@description('URL for the backend API')
+@description('Absolute URL of the backend service implementing this API.')
 param apiBackendUrl string
 
 var apiPolicyContent = replace(loadTextContent('../../../../../common/infra/bicep/core/gateway/apim-api-policy.xml'), '{0}', webFrontendUrl)

@@ -25,7 +25,7 @@ param resourceGroupName string = ''
 param webServiceName string = ''
 param apimServiceName string = ''
 
-@description('Flag to use Azure API Management to mediate the calls between the frontend and the backend API')
+@description('Flag to use Azure API Management to mediate the calls between the Web frontend and the backend API')
 param useAPIM bool = false
 
 @description('Id of the user or app to assign application roles')
@@ -156,13 +156,7 @@ module monitoring '../../../../../../common/infra/bicep/core/monitor/monitoring.
     logAnalyticsName: !empty(logAnalyticsName) ? logAnalyticsName : '${abbrs.operationalInsightsWorkspaces}${resourceToken}'
     applicationInsightsName: !empty(applicationInsightsName) ? applicationInsightsName : '${abbrs.insightsComponents}${resourceToken}'
     applicationInsightsDashboardName: !empty(applicationInsightsDashboardName) ? applicationInsightsDashboardName : '${abbrs.portalDashboards}${resourceToken}'
-    useAPIM: useAPIM
   }
-}
-
-resource appInsightsService 'Microsoft.ApiManagement/service@2021-08-01' existing = {
-  name: monitoring.outputs.applicationInsightsName
-  scope: rg
 }
 
 // Creates Azure API Management (APIM) service to mediate the requests between the frontend and the backend API
@@ -170,12 +164,10 @@ module apim '../../../../../../common/infra/bicep/core/gateway/apim.bicep' = if 
   name: 'apim-deployment'
   scope: rg
   params: {
-    name: 'apim-${resourceToken}'
+    name: !empty(apimServiceName) ? apimServiceName : '${abbrs.apiManagementService}${resourceToken}'
     location: location
-    sku: 'Consumption'
-    skuCount: 0
-    appInsightsResourceId: appInsightsService.id
-    appInsightsInstrumentationKey: monitoring.outputs.applicationInsightsInstrumentationKey 
+    tags: tags
+    applicationInsightsName: monitoring.outputs.applicationInsightsName
   }
 }
 
@@ -184,11 +176,12 @@ module apimApi '../../../../../common/infra/bicep/app/apim-api.bicep' = if (useA
   name: 'apim-api-deployment'
   scope: rg
   params: {
-    name: !empty(apimServiceName) ? apimServiceName : '${abbrs.apimService}${resourceToken}'
+    name: apim.outputs.apimServiceName
     apiName: 'todo-api'
     apiDisplayName: 'Simple Todo API'
     apiDescription: 'This is a simple Todo API'
     apiPath: 'todo'
+    webFrontendUrl: web.outputs.SERVICE_WEB_URI
     apiBackendUrl: api.outputs.SERVICE_API_URI
   }
 }

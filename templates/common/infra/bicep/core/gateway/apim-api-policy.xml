@@ -5,13 +5,14 @@
         <!-- This policy is needed to handle preflight requests using the OPTIONS method. Learn more at https://learn.microsoft.com/en-us/azure/api-management/api-management-cross-domain-policies  -->
         <cors allow-credentials="false">
             <allowed-origins>
-                <origin>*</origin>
+                <origin>{0}</origin>
             </allowed-origins>
             <allowed-methods>
                 <method>PUT</method>
                 <method>GET</method>
                 <method>POST</method>
                 <method>DELETE</method>
+                <method>PATCH</method>
             </allowed-methods>
             <allowed-headers>
                 <header>*</header>

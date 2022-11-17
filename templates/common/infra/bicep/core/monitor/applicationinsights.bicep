@@ -4,7 +4,6 @@ param location string = resourceGroup().location
 param tags object = {}
 
 param logAnalyticsWorkspaceId string
-param useAPIM bool
 
 resource applicationInsights 'Microsoft.Insights/components@2020-02-02' = {
   name: name
@@ -17,17 +16,8 @@ resource applicationInsights 'Microsoft.Insights/components@2020-02-02' = {
   }
 }
 
-module applicationInsightsDashboard 'applicationinsights-dashboard.bicep' = if (!useAPIM) {
+module applicationInsightsDashboard 'applicationinsights-dashboard.bicep' = {
   name: 'application-insights-dashboard'
-  params: {
-    name: dashboardName
-    location: location
-    applicationInsightsName: applicationInsights.name
-  }
-}
-
-module applicationInsightsAPIMDashboard 'applicationinsights-dashboard.bicep' = if (useAPIM) {
-  name: 'application-insights-apim-dashboard'
   params: {
     name: dashboardName
     location: location

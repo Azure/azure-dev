@@ -1,37 +1,41 @@
 param name string
 
-@description('Resouce name to uniquely dentify this API within the API Management service instance')
+@description('The name of the API')
 @minLength(1)
 param apiName string
 
 @description('The Display Name of the API')
 @minLength(1)
-@maxLength(300)
 param apiDisplayName string
 
-@description('Description of the API. May include HTML formatting tags.')
+@description('The description of the API')
 @minLength(1)
 param apiDescription string
 
-@description('Relative URL uniquely identifying this API and all of its resource paths within the API Management service instance. It is appended to the API endpoint base URL specified during the service instance creation to form a public URL for this API.')
+@description('The path of the API')
 @minLength(1)
 param apiPath string
 
-@description('Absolute URL of the backend service implementing this API.')
+@description('URL for the web frontend')
+param webFrontendUrl string
+
+@description('URL for the backend API')
 param apiBackendUrl string
+
+var apiPolicyContent = replace(loadTextContent('../../../../../common/infra/bicep/core/gateway/apim-api-policy.xml'), '{0}', webFrontendUrl)
 
 resource restApi 'Microsoft.ApiManagement/service/apis@2021-12-01-preview' = {
   name: apiName
   parent: apimService
   properties: {
-    displayName: apiDisplayName
     description: apiDescription
+    displayName: apiDisplayName
     path: apiPath
-    serviceUrl: apiBackendUrl
     protocols: [ 'https' ]
     subscriptionRequired: false
     type: 'http'
     format: 'openapi'
+    serviceUrl: apiBackendUrl
     value: loadTextContent('../../../../api/common/openapi.yaml')
   }
 }
@@ -41,7 +45,7 @@ resource apiPolicy 'Microsoft.ApiManagement/service/apis/policies@2021-12-01-pre
   parent: restApi
   properties: {
     format: 'rawxml'
-    value: loadTextContent('./apim-api-policy.xml')
+    value: apiPolicyContent
   }
 }
 
@@ -95,4 +99,4 @@ resource apimLogger 'Microsoft.ApiManagement/service/loggers@2021-12-01-preview'
   parent: apimService
 }
 
-output SERVICE_API_URI string = '${apimService.properties.gatewayUrl}/${apiPath}'
+output SERVICE_API_URI string = '${apimService.properties.gatewayUrl}/${restApi.properties.path}'

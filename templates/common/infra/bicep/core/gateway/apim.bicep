@@ -23,11 +23,8 @@ param sku string = 'Consumption'
 @allowed([ 0, 1, 2 ])
 param skuCount int = 0
 
-@description('Azure Application Insights Resource Id')
-param appInsightsResourceId string
-
-@description('Azure Application Insights Instrumentation Key')
-param appInsightsInstrumentationKey string
+@description('Azure Application Insights Name')
+param applicationInsightsName string
 
 resource apimService 'Microsoft.ApiManagement/service@2021-08-01' = {
   name: name
@@ -35,7 +32,7 @@ resource apimService 'Microsoft.ApiManagement/service@2021-08-01' = {
   tags: union(tags, { 'azd-service-name': name })
   sku: {
     name: sku
-    capacity: skuCount
+    capacity: (sku == 'Consumption') ? 0 : ((sku == 'Developer') ? 1 : skuCount)
   }
   properties: {
     publisherEmail: publisherEmail
@@ -43,18 +40,22 @@ resource apimService 'Microsoft.ApiManagement/service@2021-08-01' = {
   }
 }
 
-resource apimLogger 'Microsoft.ApiManagement/service/loggers@2021-12-01-preview' = {
+resource apimLogger 'Microsoft.ApiManagement/service/loggers@2021-12-01-preview' = if (!empty(applicationInsightsName)) {
   name: 'app-insights-logger'
   parent: apimService
   properties: {
     credentials: {
-      instrumentationKey: appInsightsInstrumentationKey
+      instrumentationKey: applicationInsights.properties.InstrumentationKey
     }
     description: 'Logger to Azure Application Insights'
     isBuffered: false
     loggerType: 'applicationInsights'
-    resourceId: appInsightsResourceId
+    resourceId: applicationInsights.id
   }
 }
 
+resource applicationInsights 'Microsoft.Insights/components@2020-02-02' existing = if (!empty(applicationInsightsName)) {
+  name: applicationInsightsName
+}
 
+output apimServiceName string = apimService.name

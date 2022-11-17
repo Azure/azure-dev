@@ -4,10 +4,14 @@ import (
 	"context"
 	"testing"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
+	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
+	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
+	"github.com/azure/azure-dev/cli/azd/test/mocks/mockarmresources"
 	"github.com/stretchr/testify/require"
 )
 
@@ -80,6 +84,17 @@ func (st *mockServiceTarget) Endpoints(_ context.Context) ([]string, error) {
 
 func TestDeployProgressMessages(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
+	mockarmresources.AddAzResourceListMock(mockContext.HttpClient, convert.RefOf("test-resource-group-name"), []*armresources.GenericResourceExpanded{
+		{
+			ID:       convert.RefOf("test-api"),
+			Name:     convert.RefOf("test-api"),
+			Type:     convert.RefOf(string(infra.AzureResourceTypeWebSite)),
+			Location: convert.RefOf("eastus2"),
+			Tags: map[string]*string{
+				defaultServiceTag: convert.RefOf("api"),
+			},
+		},
+	})
 
 	env := environment.Ephemeral()
 	env.SetSubscriptionId("SUBSCRIPTION_ID")

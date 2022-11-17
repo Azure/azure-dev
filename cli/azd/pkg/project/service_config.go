@@ -115,7 +115,7 @@ func (sc *ServiceConfig) GetServiceTarget(
 	}
 
 	if err != nil {
-		return nil, fmt.Errorf("failed validation for host '%s'", sc.Host)
+		return nil, fmt.Errorf("failed validation for host '%s': %w", sc.Host, err)
 	}
 
 	return &target, nil

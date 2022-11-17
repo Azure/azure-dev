@@ -13,6 +13,7 @@ import (
 	mockconsole "github.com/azure/azure-dev/cli/azd/test/mocks/console"
 	mockexec "github.com/azure/azure-dev/cli/azd/test/mocks/exec"
 	mockhttp "github.com/azure/azure-dev/cli/azd/test/mocks/httputil"
+	"github.com/azure/azure-dev/cli/azd/test/mocks/mockarmresources"
 )
 
 type MockContext struct {
@@ -31,7 +32,7 @@ func NewMockContext(ctx context.Context) *MockContext {
 	configManager := mockconfig.NewMockConfigManager()
 
 	mockexec.AddAzLoginMocks(commandRunner)
-	httpClient.AddDefaultMocks()
+	mockarmresources.RegisterEmptyResources(httpClient)
 
 	ctx = internal.WithCommandOptions(ctx, internal.GlobalCommandOptions{})
 	ctx = input.WithConsole(ctx, mockConsole)

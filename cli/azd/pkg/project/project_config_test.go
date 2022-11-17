@@ -6,8 +6,12 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
+	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
+	"github.com/azure/azure-dev/cli/azd/test/mocks/mockarmresources"
 	"github.com/stretchr/testify/require"
 )
 
@@ -94,7 +98,26 @@ services:
     host: appservice
 `
 	mockContext := mocks.NewMockContext(context.Background())
-
+	mockarmresources.AddAzResourceListMock(mockContext.HttpClient, convert.RefOf("rg-test"), []*armresources.GenericResourceExpanded{
+		{
+			ID:       convert.RefOf("test-api"),
+			Name:     convert.RefOf("test-api"),
+			Type:     convert.RefOf(string(infra.AzureResourceTypeWebSite)),
+			Location: convert.RefOf("eastus"),
+			Tags: map[string]*string{
+				defaultServiceTag: convert.RefOf("api"),
+			},
+		},
+		{
+			ID:       convert.RefOf("test-web"),
+			Name:     convert.RefOf("test-web"),
+			Type:     convert.RefOf(string(infra.AzureResourceTypeWebSite)),
+			Location: convert.RefOf("eastus"),
+			Tags: map[string]*string{
+				defaultServiceTag: convert.RefOf("web"),
+			},
+		},
+	})
 	e := environment.EphemeralWithValues("test-env", map[string]string{
 		environment.SubscriptionIdEnvVarName: "SUBSCRIPTION_ID",
 	})

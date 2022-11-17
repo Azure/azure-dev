@@ -245,7 +245,6 @@ func (manager *PipelineManager) Configure(ctx context.Context) error {
 
 	// check all required tools are installed
 	requiredTools := manager.requiredTools(ctx)
-	requiredTools = append(requiredTools, manager.azCli)
 	if err := tools.EnsureInstalled(ctx, requiredTools...); err != nil {
 		return err
 	}

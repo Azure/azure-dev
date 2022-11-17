@@ -176,7 +176,6 @@ func assertLastOperationLogged(t *testing.T, operation *armresources.DeploymentO
 
 func newAzCliFromMockContext(mockContext *mocks.MockContext) azcli.AzCli {
 	return azcli.NewAzCli(mockContext.Credentials, azcli.NewAzCliArgs{
-		HttpClient:    mockContext.HttpClient,
-		CommandRunner: mockContext.CommandRunner,
+		HttpClient: mockContext.HttpClient,
 	})
 }

@@ -25,8 +25,7 @@ func Test_GetAccessToken(t *testing.T) {
 
 	mockContext := mocks.NewMockContext(context.Background())
 	azCli := NewAzCli(&mockCredential, NewAzCliArgs{
-		HttpClient:    mockContext.HttpClient,
-		CommandRunner: mockContext.CommandRunner,
+		HttpClient: mockContext.HttpClient,
 	})
 
 	actual, err := azCli.GetAccessToken(*mockContext.Context)

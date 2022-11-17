@@ -24,10 +24,23 @@ type infraCreateFlags struct {
 	noProgress   bool
 	outputFormat *string // pointer to allow delay-initialization when used in "azd up"
 	global       *internal.GlobalCommandOptions
+	*envFlag
 }
 
 func (i *infraCreateFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
-	i.bindWithoutOutput(local, global)
+	i.bindNonCommon(local, global)
+	i.bindCommon(local, global)
+}
+
+func (i *infraCreateFlags) bindNonCommon(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
+	local.BoolVar(&i.noProgress, "no-progress", false, "Suppresses progress information.")
+
+	i.global = global
+}
+
+func (i *infraCreateFlags) bindCommon(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
+	i.envFlag = &envFlag{}
+	i.envFlag.Bind(local, global)
 
 	i.outputFormat = convert.RefOf("")
 	output.AddOutputFlag(
@@ -37,12 +50,9 @@ func (i *infraCreateFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCom
 		output.NoneFormat)
 }
 
-// bindWithoutOutput binds all flags except for the output flag. This is used when multiple actions are attached
-// to the same command.
-func (i *infraCreateFlags) bindWithoutOutput(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
-	local.BoolVar(&i.noProgress, "no-progress", false, "Suppresses progress information.")
-
-	i.global = global
+func (i *infraCreateFlags) setCommon(outputFormat *string, envFlag *envFlag) {
+	i.envFlag = envFlag
+	i.outputFormat = outputFormat
 }
 
 func infraCreateCmdDesign(rootOptions *internal.GlobalCommandOptions) (*cobra.Command, *infraCreateFlags) {
@@ -92,7 +102,7 @@ func (i *infraCreateAction) Run(ctx context.Context) (*actions.ActionResult, err
 		return nil, err
 	}
 
-	env, ctx, err := loadOrInitEnvironment(ctx, &i.flags.global.EnvironmentName, i.azdCtx, i.console, i.azCli)
+	env, ctx, err := loadOrInitEnvironment(ctx, &i.flags.environmentName, i.azdCtx, i.console, i.azCli)
 	if err != nil {
 		return nil, fmt.Errorf("loading environment: %w", err)
 	}

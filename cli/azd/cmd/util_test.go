@@ -107,8 +107,7 @@ func Test_promptEnvironmentName(t *testing.T) {
 		})
 
 		azCli := azcli.NewAzCli(mockContext.Credentials, azcli.NewAzCliArgs{
-			HttpClient:    mockContext.HttpClient,
-			CommandRunner: mockContext.CommandRunner,
+			HttpClient: mockContext.HttpClient,
 		})
 
 		resourceManager := infra.NewAzureResourceManager(azCli)
@@ -143,8 +142,7 @@ func Test_getSubscriptionOptions(t *testing.T) {
 		})
 
 		azCli := azcli.NewAzCli(mockContext.Credentials, azcli.NewAzCliArgs{
-			HttpClient:    mockContext.HttpClient,
-			CommandRunner: mockContext.CommandRunner,
+			HttpClient: mockContext.HttpClient,
 		})
 
 		subList, result, err := getSubscriptionOptions(*mockContext.Context, azCli)
@@ -199,8 +197,7 @@ func Test_getSubscriptionOptions(t *testing.T) {
 		})
 
 		azCli := azcli.NewAzCli(mockContext.Credentials, azcli.NewAzCliArgs{
-			HttpClient:    mockContext.HttpClient,
-			CommandRunner: mockContext.CommandRunner,
+			HttpClient: mockContext.HttpClient,
 		})
 
 		// finally invoking the test

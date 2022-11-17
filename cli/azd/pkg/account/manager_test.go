@@ -543,7 +543,6 @@ func setupAccountMocks(mockContext *mocks.MockContext) {
 
 func newAzCliFromMockContext(mockContext *mocks.MockContext) azcli.AzCli {
 	return azcli.NewAzCli(mockContext.Credentials, azcli.NewAzCliArgs{
-		HttpClient:    mockContext.HttpClient,
-		CommandRunner: mockContext.CommandRunner,
+		HttpClient: mockContext.HttpClient,
 	})
 }

@@ -318,8 +318,7 @@ func createBicepProvider(mockContext *mocks.MockContext) *BicepProvider {
 	})
 
 	azCli := azcli.NewAzCli(mockContext.Credentials, azcli.NewAzCliArgs{
-		CommandRunner: mockContext.CommandRunner,
-		HttpClient:    mockContext.HttpClient,
+		HttpClient: mockContext.HttpClient,
 	})
 
 	return NewBicepProvider(*mockContext.Context, azCli, env, projectDir, options)
@@ -595,7 +594,6 @@ var testArmParametersFile string = `{
 
 func newAzCliFromMockContext(mockContext *mocks.MockContext) azcli.AzCli {
 	return azcli.NewAzCli(mockContext.Credentials, azcli.NewAzCliArgs{
-		HttpClient:    mockContext.HttpClient,
-		CommandRunner: mockContext.CommandRunner,
+		HttpClient: mockContext.HttpClient,
 	})
 }

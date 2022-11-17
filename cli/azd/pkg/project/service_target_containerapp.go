@@ -171,7 +171,11 @@ func NewContainerAppTarget(
 	azCli azcli.AzCli,
 	docker *docker.Docker,
 	console input.Console,
-) ServiceTarget {
+) (ServiceTarget, error) {
+	if scope.ResourceType() != string(infra.AzureResourceTypeContainerApp) {
+		return nil, resourceTypeMismatchError(scope.ResourceName(), scope.ResourceType(), infra.AzureResourceTypeContainerApp)
+	}
+
 	return &containerAppTarget{
 		config:  config,
 		env:     env,
@@ -179,5 +183,5 @@ func NewContainerAppTarget(
 		cli:     azCli,
 		docker:  docker,
 		console: console,
-	}
+	}, nil
 }

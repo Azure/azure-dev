@@ -27,6 +27,7 @@ services:
 		"test-subscription-id",
 		"test-resource-group-name",
 		"test-resource-name",
+		"resource/type",
 	)
 	mockEndpoints = []string{"https://test-resource.azurewebsites.net"}
 )

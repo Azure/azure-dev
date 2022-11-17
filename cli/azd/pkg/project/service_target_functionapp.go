@@ -11,6 +11,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
+	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/project/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
@@ -101,11 +102,15 @@ func NewFunctionAppTarget(
 	env *environment.Environment,
 	scope *environment.DeploymentScope,
 	azCli azcli.AzCli,
-) ServiceTarget {
+) (ServiceTarget, error) {
+	if scope.ResourceType() != string(infra.AzureResourceTypeWebSite) {
+		return nil, resourceTypeMismatchError(scope.ResourceName(), scope.ResourceType(), infra.AzureResourceTypeWebSite)
+	}
+
 	return &functionAppTarget{
 		config: config,
 		env:    env,
 		scope:  scope,
 		cli:    azCli,
-	}
+	}, nil
 }

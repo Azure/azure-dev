@@ -13,6 +13,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
+	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/swa"
@@ -152,12 +153,16 @@ func NewStaticWebAppTarget(
 	scope *environment.DeploymentScope,
 	azCli azcli.AzCli,
 	swaCli swa.SwaCli,
-) ServiceTarget {
+) (ServiceTarget, error) {
+	if scope.ResourceType() != string(infra.AzureResourceTypeStaticWebSite) {
+		return nil, resourceTypeMismatchError(scope.ResourceName(), scope.ResourceType(), infra.AzureResourceTypeStaticWebSite)
+	}
+
 	return &staticWebAppTarget{
 		config: config,
 		env:    env,
 		scope:  scope,
 		cli:    azCli,
 		swa:    swaCli,
-	}
+	}, nil
 }

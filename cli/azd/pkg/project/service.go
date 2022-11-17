@@ -11,7 +11,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 )
 
 type Service struct {
@@ -86,52 +85,4 @@ func (svc *Service) Deploy(
 	}()
 
 	return result, progress
-}
-
-const (
-	defaultServiceTag = "azd-service-name"
-)
-
-// GetServiceResourceName attempts to find the name of the azure resource with the
-// 'azd-service-name' tag set to the service key.
-func GetServiceResourceName(
-	ctx context.Context,
-	resourceGroupName string,
-	serviceName string,
-	env *environment.Environment,
-) (string, error) {
-	res, err := GetServiceResources(ctx, resourceGroupName, serviceName, env)
-	if err != nil {
-		return "", err
-	}
-
-	if len(res) == 0 {
-		return "", fmt.Errorf("unable to find a provisioned resource tagged with '%s: %s'. Ensure the service resource is correctly tagged in your bicep files, and rerun provision", defaultServiceTag, serviceName)
-	}
-
-	if len(res) != 1 {
-		return "", fmt.Errorf("expecting only '1' resource tagged with '%s: %s', but found '%d", defaultServiceTag, serviceName, len(res))
-	}
-
-	return res[0].Name, nil
-}
-
-// GetServiceResources gets the resources tagged for a given service
-func GetServiceResources(
-	ctx context.Context,
-	resourceGroupName string,
-	serviceName string,
-	env *environment.Environment,
-) ([]azcli.AzCliResource, error) {
-	azCli := azcli.GetAzCli(ctx)
-	filter := fmt.Sprintf("tagName eq '%s' and tagValue eq '%s'", defaultServiceTag, serviceName)
-
-	return azCli.ListResourceGroupResources(
-		ctx,
-		env.GetSubscriptionId(),
-		resourceGroupName,
-		&azcli.ListResourceGroupResourcesOptions{
-			Filter: &filter,
-		},
-	)
 }

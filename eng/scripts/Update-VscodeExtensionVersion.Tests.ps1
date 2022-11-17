@@ -46,14 +46,12 @@ AfterAll {
 Describe 'Update-VscodeExtensionVersion' ` {
     Context "Increments version number" {
         It "Increments from <existing> to <expected>" -TestCases @(
-            @{ existing = '0.1.0'; expected = '0.2.0-alpha' },
-            @{ existing = '0.1.0-alpha'; expected = '0.2.0-alpha' },
-            @{ existing = '0.1.0-beta'; expected = '0.2.0-alpha' },
-            @{ existing = '1.0.0'; expected = '1.1.0-alpha' }
+            @{ existing = '0.1.0'; expected = '0.2.0-alpha.1' },
+            @{ existing = '1.0.0'; expected = '1.1.0-alpha.1' }
         ) {
             SetPackageJsonVersion $existing
             & $PSScriptRoot/Update-VscodeExtensionVersion.ps1
-            GetPackageVersion | Should -Be $expected
+            GetPackageVersion | Should -BeExactly $expected
         }
     }
 
@@ -64,12 +62,11 @@ Describe 'Update-VscodeExtensionVersion' ` {
         It "Sets version number from <existing> to <newVersion>" -TestCases @(
             @{ existing = '0.1.0'; newVersion = '1.0.0' },
             @{ existing = '1.2.3'; newVersion = '1.2.4' },
-            @{ existing = '0.1.0-alpha'; newVersion = '0.1.0' },
-            @{ existing = '0.1.0-alpha'; newVersion = '1.1.0-alpha' }
+            @{ existing = '0.1.0-alpha.1'; newVersion = '1.1.0-alpha.1' }
         ) {
             SetPackageJsonVersion $existing
             & $PSScriptRoot/Update-VscodeExtensionVersion.ps1 -NewVersion $newVersion
-            GetPackageVersion | Should -Be $newVersion
+            GetPackageVersion | Should -BeExactly $newVersion
         }
     }
 
@@ -78,11 +75,28 @@ Describe 'Update-VscodeExtensionVersion' ` {
             ResetChangeLog
         }
 
-        It "Adds the expected version to the CHANGELOG.md file" {
+        It "Updates CHANGELOG entry when version is directly specified" {
             $newVersionNumber = "1.2.3"
-            $ExtChangelogFile | Should -Not -FileContentMatchMultiline "## $newVersionNumber"
+            $newVersionNumberRegex = "1\.2\.3"
+            # Ensure file doesn't contain expected version before running test
+            $ExtChangelogFile | Should -Not -FileContentMatch "^## $newVersionNumberRegex"
+
             & $PSScriptRoot/Update-VscodeExtensionVersion.ps1 -NewVersion $newVersionNumber
-            $ExtChangelogFile | Should -FileContentMatchMultiline "## $newVersionNumber"
+            $ExtChangelogFile | Should -FileContentMatch "^## $newVersionNumberRegex "
+        }
+
+        It "Adds new CHANGELOG entry when version is not specified" {
+            # Set existing package version
+            SetPackageJsonVersion "0.1.0-alpha.1"
+
+            $newVersionNumber = "0.2.0-alpha.1"
+            $newVersionNumberRegex = "0\.2\.0-alpha\.1"
+            # Ensure file doesn't contain expected version before running test
+            $ExtChangelogFile | Should -Not -FileContentMatch "^## $newVersionNumberRegex"
+
+            & $PSScriptRoot/Update-VscodeExtensionVersion.ps1 -NewVersion $newVersionNumber
+
+            $ExtChangelogFile | Should -FileContentMatch "^## $newVersionNumberRegex "
         }
     }
 }

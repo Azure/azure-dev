@@ -90,7 +90,7 @@ func (m *monitorAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 		m.flags.monitorOverview = true
 	}
 
-	env, ctx, err := loadOrInitEnvironment(ctx, &m.flags.environmentName, m.azdCtx, m.console)
+	env, ctx, err := loadOrInitEnvironment(ctx, &m.flags.environmentName, m.azdCtx, m.console, m.azCli)
 	if err != nil {
 		return nil, fmt.Errorf("loading environment: %w", err)
 	}
@@ -100,7 +100,7 @@ func (m *monitorAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 		return nil, fmt.Errorf("getting tenant id for subscription: %w", err)
 	}
 
-	resourceManager := infra.NewAzureResourceManager(ctx)
+	resourceManager := infra.NewAzureResourceManager(m.azCli)
 	resourceGroups, err := resourceManager.GetResourceGroupsForEnvironment(ctx, env)
 	if err != nil {
 		return nil, fmt.Errorf("discovering resource groups from deployment: %w", err)

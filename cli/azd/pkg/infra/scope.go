@@ -69,9 +69,10 @@ func (s *ResourceGroupScope) DeploymentUrl() string {
 }
 
 func NewResourceGroupScope(
-	ctx context.Context, subscriptionId string, resourceGroup string, deploymentName string) Scope {
+	azCli azcli.AzCli, subscriptionId string, resourceGroup string, deploymentName string,
+) Scope {
 	return &ResourceGroupScope{
-		azCli:          azcli.GetAzCli(ctx),
+		azCli:          azCli,
 		name:           deploymentName,
 		subscriptionId: subscriptionId,
 		resourceGroup:  resourceGroup,
@@ -121,9 +122,11 @@ func (s *SubscriptionScope) GetResourceOperations(ctx context.Context) ([]*armre
 	return s.azCli.ListSubscriptionDeploymentOperations(ctx, s.subscriptionId, s.name)
 }
 
-func NewSubscriptionScope(ctx context.Context, location string, subscriptionId string, deploymentName string) Scope {
+func NewSubscriptionScope(
+	azCli azcli.AzCli, location string, subscriptionId string, deploymentName string,
+) Scope {
 	return &SubscriptionScope{
-		azCli:          azcli.GetAzCli(ctx),
+		azCli:          azCli,
 		name:           deploymentName,
 		subscriptionId: subscriptionId,
 		location:       location,

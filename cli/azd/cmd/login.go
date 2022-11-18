@@ -15,7 +15,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/auth"
-	"github.com/azure/azure-dev/cli/azd/pkg/commands"
 	"github.com/azure/azure-dev/cli/azd/pkg/contracts"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
@@ -119,9 +118,6 @@ func loginCmdDesign(global *internal.GlobalCommandOptions) (*cobra.Command, *log
 
 		To log in as a service principal, pass --client-id and --tenant-id as well as one of --client-secret, 
 		--client-certificate, --client-credential or --client-credential-provider.`),
-		Annotations: map[string]string{
-			commands.RequireNoLoginAnnotation: "true",
-		},
 	}
 
 	flags := &loginFlags{}

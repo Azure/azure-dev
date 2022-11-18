@@ -7,7 +7,6 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
-	"github.com/azure/azure-dev/cli/azd/pkg/identity"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/stretchr/testify/require"
 )
@@ -25,10 +24,11 @@ func Test_GetAccessToken(t *testing.T) {
 	}
 
 	mockContext := mocks.NewMockContext(context.Background())
-	ctx := identity.WithCredentials(*mockContext.Context, &mockCredential)
-	azCli := GetAzCli(ctx)
+	azCli := NewAzCli(&mockCredential, NewAzCliArgs{
+		HttpClient: mockContext.HttpClient,
+	})
 
-	actual, err := azCli.GetAccessToken(ctx)
+	actual, err := azCli.GetAccessToken(*mockContext.Context)
 	require.NoError(t, err)
 	require.Equal(t, expected.Token, actual.AccessToken)
 	require.Equal(t, expected.ExpiresOn, *actual.ExpiresOn)

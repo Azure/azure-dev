@@ -10,15 +10,13 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azsdk"
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/graphsdk"
-	"github.com/azure/azure-dev/cli/azd/pkg/identity"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 )
 
 func CreateGraphClient(mockContext *mocks.MockContext) (*graphsdk.GraphClient, error) {
-	credential := identity.GetCredentials(*mockContext.Context)
 	clientOptions := CreateDefaultClientOptions(mockContext)
 
-	return graphsdk.NewGraphClient(credential, clientOptions)
+	return graphsdk.NewGraphClient(mockContext.Credentials, clientOptions)
 }
 
 func CreateDefaultClientOptions(mockContext *mocks.MockContext) *azcore.ClientOptions {

@@ -95,8 +95,9 @@ func GetServiceResourceName(
 	resourceGroupName string,
 	serviceName string,
 	env *environment.Environment,
+	azCli azcli.AzCli,
 ) (string, error) {
-	res, err := GetServiceResources(ctx, resourceGroupName, serviceName, env)
+	res, err := GetServiceResources(ctx, resourceGroupName, serviceName, env, azCli)
 	if err != nil {
 		return "", err
 	}
@@ -115,8 +116,8 @@ func GetServiceResources(
 	resourceGroupName string,
 	serviceName string,
 	env *environment.Environment,
+	azCli azcli.AzCli,
 ) ([]azcli.AzCliResource, error) {
-	azCli := azcli.GetAzCli(ctx)
 	filter := fmt.Sprintf("tagName eq 'azd-service-name' and tagValue eq '%s'", serviceName)
 
 	return azCli.ListResourceGroupResources(

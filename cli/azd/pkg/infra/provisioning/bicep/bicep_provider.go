@@ -199,7 +199,7 @@ func (p *BicepProvider) Deploy(
 
 			// Report incremental progress
 			go func() {
-				resourceManager := infra.NewAzureResourceManager(ctx)
+				resourceManager := infra.NewAzureResourceManager(p.azCli)
 				progressDisplay := NewProvisioningProgressDisplay(resourceManager, p.console, scope)
 				// Make initial delay shorter to be more responsive in displaying initial progress
 				initialDelay := 3 * time.Second
@@ -338,7 +338,7 @@ func (p *BicepProvider) Destroy(
 }
 
 func (p *BicepProvider) getResourceGroups(ctx context.Context) ([]string, error) {
-	resourceManager := infra.NewAzureResourceManager(ctx)
+	resourceManager := infra.NewAzureResourceManager(p.azCli)
 	resourceGroups, err := resourceManager.GetResourceGroupsForDeployment(ctx, p.env.GetSubscriptionId(), p.env.GetEnvName())
 	if err != nil {
 		return []string{}, err
@@ -356,7 +356,7 @@ func (p *BicepProvider) getAllResources(
 	for _, resourceGroup := range resourceGroups {
 		groupResources, err := p.azCli.ListResourceGroupResources(ctx, p.env.GetSubscriptionId(), resourceGroup, nil)
 		if err != nil {
-			return allResources, nil
+			return allResources, err
 		}
 
 		allResources[resourceGroup] = groupResources
@@ -479,13 +479,13 @@ func (p *BicepProvider) purgeItems(
 		if err != nil {
 			return err
 		}
-
-		for _, item := range items {
-			if err := item.purge(); err != nil {
-				return fmt.Errorf("failed to purge %s: %w", item.resourceType, err)
-			}
+	}
+	for _, item := range items {
+		if err := item.purge(); err != nil {
+			return fmt.Errorf("failed to purge %s: %w", item.resourceType, err)
 		}
 	}
+
 	return nil
 }
 
@@ -950,11 +950,11 @@ func (p *BicepProvider) ensureParameters(ctx context.Context, deployment *Deploy
 // NewBicepProvider creates a new instance of a Bicep Infra provider
 func NewBicepProvider(
 	ctx context.Context,
+	azCli azcli.AzCli,
 	env *environment.Environment,
 	projectPath string,
 	infraOptions Options,
 ) *BicepProvider {
-	azCli := azcli.GetAzCli(ctx)
 	bicepCli := bicep.GetBicepCli(ctx)
 	console := input.GetConsole(ctx)
 
@@ -976,8 +976,10 @@ func NewBicepProvider(
 func init() {
 	err := RegisterProvider(
 		Bicep,
-		func(ctx context.Context, env *environment.Environment, projectPath string, options Options) (Provider, error) {
-			return NewBicepProvider(ctx, env, projectPath, options), nil
+		func(
+			ctx context.Context, env *environment.Environment, projectPath string, options Options, azCli azcli.AzCli,
+		) (Provider, error) {
+			return NewBicepProvider(ctx, azCli, env, projectPath, options), nil
 		},
 	)
 

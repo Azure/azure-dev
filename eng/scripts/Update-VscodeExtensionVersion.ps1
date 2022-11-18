@@ -38,11 +38,14 @@ function getVersion {
 }
 
 function setVersion([string] $version) {
-    $packageJson = getPackageJson
-    $packageJson.version = $version
+    $currentLocation = Get-Location
+    try {
+        Set-Location (Resolve-Path (Split-Path $PACKAGE_JSON -Parent))
+        npm version $version
+    } finally {
+        Set-Location $currentLocation
+    }
 
-    $packageJsonString = ConvertTo-Json $packageJson -Depth 100
-    Set-Content -Path $PACKAGE_JSON -Value $packageJsonString
 }
 
 $version = $NewVersion

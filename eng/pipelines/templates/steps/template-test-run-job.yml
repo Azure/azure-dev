@@ -9,18 +9,18 @@ steps:
     npm install -g @devcontainers/cli
   displayName: Install Devcontainer
 
-- template: /eng/pipelines/templates/steps/install-azd-live-sh.yml
-  parameters:
-    Version: $(AzdVersion)
+# - template: /eng/pipelines/templates/steps/install-azd-live-sh.yml
+#   parameters:
+#     Version: $(AzdVersion)
 
-- template: /eng/pipelines/templates/steps/azd-login.yml
+# - template: /eng/pipelines/templates/steps/azd-login.yml
 
-# Java pre-requisites that isn't met
-# TODO: Use azd container as a form of validation that the container works
-- template: /eng/pipelines/templates/steps/install-ms-openjdk.yml
+# # Java pre-requisites that isn't met
+# # TODO: Use azd container as a form of validation that the container works
+# - template: /eng/pipelines/templates/steps/install-ms-openjdk.yml
 
-# Required to clone repos that are not yet public
-- template: /eng/pipelines/templates/steps/set-git-credentials.yml
+# # Required to clone repos that are not yet public
+# - template: /eng/pipelines/templates/steps/set-git-credentials.yml
 
 - pwsh: |
     $templateName = '$(TemplateName)'.Substring(14)
@@ -48,8 +48,20 @@ steps:
     Write-Host "##vso[task.setvariable variable=CleanupImmediate]$CleanupImmediate"
   displayName: Set test run parameters
 
+- pwsh:
+    echo "Clone template repository"
+    sudo apt install git-all
+    git config --global user.name "azure-sdk"
+    git config --global user.email "azuresdk@microsoft.com"
+    echo "https://azure-sdk:$(azuresdk-github-pat)@github.com" > ~/.git-credentials
+    git config --global credential.helper "store"
+    git clone https://github.com/Azure-Samples/$templateName.git/
+    pwd
+    dir = $pwd
+
 - task: DevcontainersCI@0
   displayName: Test templates in Devcontainer
+  subFolder: dir
   inputs:
   # Required secrets for Terraform service principal authentication
     env: |
@@ -58,17 +70,12 @@ steps:
       ARM_TENANT_ID=$(arm-tenant-id)
       SUBSCRIPTION_ID=$(SubscriptionId)
     runCmd: 
-      azd init -t $templateName
+      pwd
       azd version
-      dir=$(pwd)
       azd login \
         --client-id "$(arm-client-id)" \
         --client-secret "$(arm-client-secret)" \
         --tenant-id "$(arm-tenant-id)"
-      git config --global user.name "azure-sdk"
-      git config --global user.email "azuresdk@microsoft.com"
-      echo "https://azure-sdk:$(azuresdk-github-pat)@github.com" > ~/.git-credentials
-      git config --global credential.helper "store"
 
     targetType: filePath
     filePath: templates/tests/test-templates.sh

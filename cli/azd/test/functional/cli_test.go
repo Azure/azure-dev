@@ -28,7 +28,6 @@ import (
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
-	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/telemetry"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
@@ -611,7 +610,6 @@ func getTestEnvPath(dir string, envName string) string {
 // respects the deadline.
 func newTestContext(t *testing.T) (context.Context, context.CancelFunc) {
 	ctx := context.Background()
-	ctx = internal.WithCommandOptions(ctx, internal.GlobalCommandOptions{})
 
 	if deadline, ok := t.Deadline(); ok {
 		return context.WithDeadline(ctx, deadline)

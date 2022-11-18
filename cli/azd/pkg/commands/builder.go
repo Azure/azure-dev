@@ -20,8 +20,6 @@ func RegisterDependenciesInCtx(
 	rootOptions *internal.GlobalCommandOptions,
 ) (context.Context, error) {
 
-	// Set the global options in the go context
-	ctx = internal.WithCommandOptions(ctx, *rootOptions)
 	ctx = tools.WithInstalledCheckCache(ctx)
 
 	runner := exec.NewCommandRunner(cmd.InOrStdin(), cmd.OutOrStdout(), cmd.ErrOrStderr())

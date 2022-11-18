@@ -61,7 +61,7 @@ steps:
 
 - task: DevcontainersCI@0
   displayName: Test templates in Devcontainer
-  subFolder: dir
+  # subFolder: dir
   inputs:
   # Required secrets for Terraform service principal authentication
     env: |

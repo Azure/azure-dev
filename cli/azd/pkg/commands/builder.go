@@ -3,8 +3,6 @@ package commands
 import (
 	"context"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
@@ -32,12 +30,4 @@ func RegisterDependenciesInCtx(
 	// Inject console into context
 	ctx = input.WithConsole(ctx, console)
 	return ctx, nil
-}
-
-var _ azcore.TokenCredential = &panicCredential{}
-
-type panicCredential struct{}
-
-func (pc *panicCredential) GetToken(_ context.Context, _ policy.TokenRequestOptions) (azcore.AccessToken, error) {
-	panic("this command should not have attempted to call GetToken, it was marked as not requiring login")
 }

@@ -1,5 +1,15 @@
 # Release History
 
+## 0.4.0-beta.3 (Unreleased)
+
+### Features Added
+
+### Breaking Changes
+
+### Bugs Fixed
+
+### Other Changes
+
 ## 0.4.0-beta.2 (Unreleased)
 
 ### Breaking Changes
@@ -73,7 +83,7 @@ We plan to improve this behavior with [[#1126]](https://github.com/Azure/azure-d
 
 - [[#979]](https://github.com/Azure/azure-dev/pull/979) Fix provisioning template with non string outputs.
 
-## 0.3.0-beta.4 (2022-10-25) **DEPRECATED**
+## 0.3.0-beta.4 (2022-10-25)
 
 ### Bugs Fixed
 

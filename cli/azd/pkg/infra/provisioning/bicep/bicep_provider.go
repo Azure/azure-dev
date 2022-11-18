@@ -157,7 +157,7 @@ func (p *BicepProvider) Plan(
 				}
 			}
 
-			updated, err := p.ensureParameters(ctx, deployment)
+			updated, err := p.ensureParameters(ctx, asyncContext, deployment)
 			if err != nil {
 				asyncContext.SetError(err)
 				return
@@ -906,7 +906,10 @@ func (p *BicepProvider) modulePath() string {
 }
 
 // Ensures the provisioning parameters are valid and prompts the user for input as needed
-func (p *BicepProvider) ensureParameters(ctx context.Context, deployment *Deployment) (bool, error) {
+func (p *BicepProvider) ensureParameters(
+	ctx context.Context,
+	asyncContext *async.InteractiveTaskContextWithProgress[*DeploymentPlan, *DeploymentPlanningProgress],
+	deployment *Deployment) (bool, error) {
 	if len(deployment.Parameters) == 0 {
 		return false, nil
 	}
@@ -918,29 +921,39 @@ func (p *BicepProvider) ensureParameters(ctx context.Context, deployment *Deploy
 			continue
 		}
 		if !param.HasValue() {
-			userValue, err := p.console.Prompt(ctx, input.ConsoleOptions{
-				Message: fmt.Sprintf("Please enter a value for the '%s' deployment parameter:", key),
+			interactionError := asyncContext.Interact(func() error {
+				userValue, err := p.console.Prompt(ctx, input.ConsoleOptions{
+					Message: fmt.Sprintf("Please enter a value for the '%s' deployment parameter:", key),
+				})
+
+				if err != nil {
+					return fmt.Errorf("prompting for deployment parameter: %w", err)
+				}
+
+				deployment.Parameters[key] = InputParameter{
+					Value:        userValue,
+					Type:         param.Type,
+					DefaultValue: param.DefaultValue,
+				}
+
+				saveParameter, err := p.console.Confirm(ctx, input.ConsoleOptions{
+					Message: "Save the value in the environment for future use",
+				})
+
+				if err != nil {
+					return fmt.Errorf("prompting to save deployment parameter: %w", err)
+				}
+
+				if saveParameter {
+					p.env.Values[key] = userValue
+				}
+
+				updatedParameters = true
+				return nil
 			})
-
-			if err != nil {
-				return false, fmt.Errorf("prompting for deployment parameter: %w", err)
+			if interactionError != nil {
+				return false, interactionError
 			}
-
-			param.Value = userValue
-
-			saveParameter, err := p.console.Confirm(ctx, input.ConsoleOptions{
-				Message: "Save the value in the environment for future use",
-			})
-
-			if err != nil {
-				return false, fmt.Errorf("prompting to save deployment parameter: %w", err)
-			}
-
-			if saveParameter {
-				p.env.Values[key] = userValue
-			}
-
-			updatedParameters = true
 		}
 	}
 

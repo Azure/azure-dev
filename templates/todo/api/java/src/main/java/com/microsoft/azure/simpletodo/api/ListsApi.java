@@ -8,21 +8,26 @@ package com.microsoft.azure.simpletodo.api;
 import com.microsoft.azure.simpletodo.model.TodoList;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.Parameters;
 import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import javax.annotation.Generated;
 import javax.validation.Valid;
+import javax.validation.constraints.*;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.context.request.NativeWebRequest;
+import org.springframework.web.multipart.MultipartFile;
 
 @Generated(value = "org.openapitools.codegen.languages.SpringCodegen")
 @Validated
@@ -34,9 +39,10 @@ public interface ListsApi {
 
     /**
      * POST /lists : Creates a new Todo list
+     *
      * @param todoList The Todo List (optional)
-     * @return A Todo list result (status code 201) or Invalid request schema (status code
-     * 400)
+     * @return A Todo list result (status code 201)
+     *         or Invalid request schema (status code 400)
      */
     @Operation(
         operationId = "createList",
@@ -75,9 +81,10 @@ public interface ListsApi {
 
     /**
      * DELETE /lists/{listId} : Deletes a Todo list by unique identifier
+     *
      * @param listId The Todo list unique identifier (required)
-     * @return Todo list deleted successfully (status code 204) or Todo list not found
-     * (status code 404)
+     * @return Todo list deleted successfully (status code 204)
+     *         or Todo list not found (status code 404)
      */
     @Operation(
         operationId = "deleteListById",
@@ -99,9 +106,10 @@ public interface ListsApi {
 
     /**
      * GET /lists/{listId} : Gets a Todo list by unique identifier
+     *
      * @param listId The Todo list unique identifier (required)
-     * @return A Todo list result (status code 200) or Todo list not found (status code
-     * 404)
+     * @return A Todo list result (status code 200)
+     *         or Todo list not found (status code 404)
      */
     @Operation(
         operationId = "getListById",
@@ -137,6 +145,7 @@ public interface ListsApi {
 
     /**
      * GET /lists : Gets an array of Todo lists
+     *
      * @param top The max number of items to returns in a result (optional, default to 20)
      * @param skip The number of items to skip within the results (optional, default to 0)
      * @return An array of Todo lists (status code 200)
@@ -181,10 +190,12 @@ public interface ListsApi {
 
     /**
      * PUT /lists/{listId} : Updates a Todo list by unique identifier
+     *
      * @param listId The Todo list unique identifier (required)
      * @param todoList The Todo List (optional)
-     * @return A Todo list result (status code 200) or Todo list not found (status code
-     * 404) or Todo list is invalid (status code 400)
+     * @return A Todo list result (status code 200)
+     *         or Todo list not found (status code 404)
+     *         or Todo list is invalid (status code 400)
      */
     @Operation(
         operationId = "updateListById",

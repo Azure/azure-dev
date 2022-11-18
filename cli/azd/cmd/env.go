@@ -17,7 +17,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
@@ -93,10 +92,6 @@ func newEnvSetAction(
 
 func (e *envSetAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	if err := ensureProject(e.azdCtx.ProjectPath()); err != nil {
-		return nil, err
-	}
-
-	if err := tools.EnsureInstalled(ctx, e.azCli); err != nil {
 		return nil, err
 	}
 
@@ -281,10 +276,6 @@ func (en *envNewAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 		return nil, err
 	}
 
-	if err := tools.EnsureInstalled(ctx, en.azCli); err != nil {
-		return nil, err
-	}
-
 	environmentName := ""
 	if len(en.args) >= 1 {
 		environmentName = en.args[0]
@@ -362,10 +353,6 @@ func newEnvRefreshAction(
 
 func (ef *envRefreshAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	if err := ensureProject(ef.azdCtx.ProjectPath()); err != nil {
-		return nil, err
-	}
-
-	if err := tools.EnsureInstalled(ctx, ef.azCli); err != nil {
 		return nil, err
 	}
 
@@ -475,10 +462,6 @@ func newEnvGetValuesAction(
 
 func (eg *envGetValuesAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	if err := ensureProject(eg.azdCtx.ProjectPath()); err != nil {
-		return nil, err
-	}
-
-	if err := tools.EnsureInstalled(ctx, eg.azCli); err != nil {
 		return nil, err
 	}
 

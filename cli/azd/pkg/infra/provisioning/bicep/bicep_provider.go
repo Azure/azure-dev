@@ -79,7 +79,7 @@ func (p *BicepProvider) Name() string {
 }
 
 func (p *BicepProvider) RequiredExternalTools() []tools.ExternalTool {
-	return []tools.ExternalTool{p.bicepCli, p.azCli}
+	return []tools.ExternalTool{p.bicepCli}
 }
 
 func (p *BicepProvider) State(

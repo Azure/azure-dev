@@ -31,7 +31,7 @@ type staticWebAppTarget struct {
 }
 
 func (at *staticWebAppTarget) RequiredExternalTools() []tools.ExternalTool {
-	return []tools.ExternalTool{at.cli, at.swa}
+	return []tools.ExternalTool{at.swa}
 }
 
 func (at *staticWebAppTarget) Deploy(

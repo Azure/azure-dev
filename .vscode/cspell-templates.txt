@@ -24,6 +24,7 @@ immer
 inprogress
 INPROGRESS
 Instrumentor
+javaformat
 mkdir
 mvnw
 networkidle

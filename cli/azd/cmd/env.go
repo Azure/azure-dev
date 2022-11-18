@@ -391,7 +391,7 @@ func (ef *envRefreshAction) Run(ctx context.Context) (*actions.ActionResult, err
 		}
 	}
 
-	if err = prj.Initialize(ctx, env); err != nil {
+	if err = prj.Initialize(ctx, env, ef.commandRunner); err != nil {
 		return nil, err
 	}
 

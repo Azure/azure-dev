@@ -58,12 +58,12 @@ services:
 
 	service := prj.Services[0]
 
-	docker := docker.NewDocker(*mockContext.Context)
+	docker := docker.NewDocker(mockContext.CommandRunner)
 
 	progress := make(chan string)
 	done := make(chan bool)
 
-	internalFramework := NewNpmProject(*mockContext.Context, service.Config, env)
+	internalFramework := NewNpmProject(mockContext.CommandRunner, service.Config, env)
 	progressMessages := []string{}
 
 	go func() {
@@ -127,7 +127,7 @@ services:
 		}, nil
 	})
 
-	docker := docker.NewDocker(*mockContext.Context)
+	docker := docker.NewDocker(mockContext.CommandRunner)
 
 	projectConfig, err := ParseProjectConfig(testProj, env)
 	require.NoError(t, err)
@@ -140,7 +140,7 @@ services:
 	progress := make(chan string)
 	done := make(chan bool)
 
-	internalFramework := NewNpmProject(*mockContext.Context, service.Config, env)
+	internalFramework := NewNpmProject(mockContext.CommandRunner, service.Config, env)
 	status := ""
 
 	go func() {

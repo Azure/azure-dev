@@ -14,6 +14,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azdo"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
+	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
@@ -31,6 +32,7 @@ type AzdoScmProvider struct {
 	Env            *environment.Environment
 	AzdContext     *azdcontext.AzdContext
 	azdoConnection *azuredevops.Connection
+	commandRunner  exec.CommandRunner
 }
 
 // AzdoRepositoryDetails provides extra state needed for the AzDo provider.
@@ -324,7 +326,7 @@ func (p *AzdoScmProvider) configureGitRemote(
 }
 
 func (p *AzdoScmProvider) getCurrentGitBranch(ctx context.Context, repoPath string) (string, error) {
-	gitCli := git.NewGitCli(ctx)
+	gitCli := git.NewGitCli(p.commandRunner)
 	branch, err := gitCli.GetCurrentBranch(ctx, repoPath)
 	if err != nil {
 		return "", err

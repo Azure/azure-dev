@@ -52,8 +52,7 @@ func ToolInPath(name string) (bool, error) {
 	}
 }
 
-func ExecuteCommand(ctx context.Context, cmd string, args ...string) (string, error) {
-	commandRunner := exec.GetCommandRunner(ctx)
+func ExecuteCommand(ctx context.Context, commandRunner exec.CommandRunner, cmd string, args ...string) (string, error) {
 	runResult, err := commandRunner.Run(ctx, exec.RunArgs{
 		Cmd:  cmd,
 		Args: args,

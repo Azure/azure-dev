@@ -33,9 +33,9 @@ type GitHubCli interface {
 	GitHubActionsExists(ctx context.Context, repoSlug string) (bool, error)
 }
 
-func NewGitHubCli(ctx context.Context) GitHubCli {
+func NewGitHubCli(commandRunner exec.CommandRunner) GitHubCli {
 	return &ghCli{
-		commandRunner: exec.GetCommandRunner(ctx),
+		commandRunner: commandRunner,
 	}
 }
 
@@ -77,7 +77,7 @@ func (cli *ghCli) CheckInstalled(ctx context.Context) (bool, error) {
 	if !found {
 		return false, err
 	}
-	ghRes, err := tools.ExecuteCommand(ctx, "gh", "--version")
+	ghRes, err := tools.ExecuteCommand(ctx, cli.commandRunner, "gh", "--version")
 	if err != nil {
 		return false, fmt.Errorf("checking %s version: %w", cli.Name(), err)
 	}

@@ -130,7 +130,7 @@ func (pc *ProjectConfig) GetProject(
 			project.ResourceGroupName,
 			serviceConfig.ResourceName,
 		)
-		service, err := serviceConfig.GetService(ctx, &project, env, deploymentScope, azCli, mockContext.CommandRunner)
+		service, err := serviceConfig.GetService(ctx, &project, env, deploymentScope, azCli, commandRunner)
 
 		if err != nil {
 			return nil, fmt.Errorf("creating service %s: %w", key, err)
@@ -274,10 +274,12 @@ func ParseProjectConfig(yamlContent string, env *environment.Environment) (*Proj
 	return &projectFile, nil
 }
 
-func (p *ProjectConfig) Initialize(ctx context.Context, env *environment.Environment) error {
+func (p *ProjectConfig) Initialize(
+	ctx context.Context, env *environment.Environment, commandRunner exec.CommandRunner,
+) error {
 	var allTools []tools.ExternalTool
 	for _, svc := range p.Services {
-		frameworkService, err := svc.GetFrameworkService(ctx, env)
+		frameworkService, err := svc.GetFrameworkService(ctx, env, commandRunner)
 		if err != nil {
 			return fmt.Errorf("getting framework services: %w", err)
 		}

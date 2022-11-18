@@ -4,7 +4,6 @@ import (
 	"context"
 
 	"github.com/azure/azure-dev/cli/azd/internal"
-	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 
@@ -21,9 +20,6 @@ func RegisterDependenciesInCtx(
 ) (context.Context, error) {
 
 	ctx = tools.WithInstalledCheckCache(ctx)
-
-	runner := exec.NewCommandRunner(cmd.InOrStdin(), cmd.OutOrStdout(), cmd.ErrOrStderr())
-	ctx = exec.WithCommandRunner(ctx, runner)
 
 	// Inject console into context
 	ctx = input.WithConsole(ctx, console)

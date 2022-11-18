@@ -106,7 +106,7 @@ func (cli *terraformCli) runInteractive(ctx context.Context, args ...string) (ex
 }
 
 func (cli *terraformCli) unmarshalCliVersion(ctx context.Context, component string) (string, error) {
-	azRes, err := tools.ExecuteCommand(ctx, "terraform", "version", "-json")
+	azRes, err := tools.ExecuteCommand(ctx, cli.commandRunner, "terraform", "version", "-json")
 	if err != nil {
 		return "", err
 	}

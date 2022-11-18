@@ -116,7 +116,7 @@ func (i *infraCreateAction) Run(ctx context.Context) (*actions.ActionResult, err
 		return nil, fmt.Errorf("loading project: %w", err)
 	}
 
-	if err = prj.Initialize(ctx, env); err != nil {
+	if err = prj.Initialize(ctx, env, i.commandRunner); err != nil {
 		return nil, err
 	}
 

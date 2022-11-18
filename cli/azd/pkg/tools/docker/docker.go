@@ -13,9 +13,9 @@ import (
 	"github.com/blang/semver/v4"
 )
 
-func NewDocker(ctx context.Context) *Docker {
+func NewDocker(commandRunner exec.CommandRunner) *Docker {
 	return &Docker{
-		commandRunner: exec.GetCommandRunner(ctx),
+		commandRunner: commandRunner,
 	}
 }
 
@@ -168,7 +168,7 @@ func (d *Docker) CheckInstalled(ctx context.Context) (bool, error) {
 	if !found {
 		return false, err
 	}
-	dockerRes, err := tools.ExecuteCommand(ctx, "docker", "--version")
+	dockerRes, err := tools.ExecuteCommand(ctx, d.commandRunner, "docker", "--version")
 	if err != nil {
 		return false, fmt.Errorf("checking %s version: %w", d.Name(), err)
 	}

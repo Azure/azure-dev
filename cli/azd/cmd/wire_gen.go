@@ -82,7 +82,7 @@ func initInitAction(console input.Console, ctx context.Context, o *internal.Glob
 		return nil, err
 	}
 	commandRunner := newCommandRunnerFromConsole(console)
-	gitCli := git.NewGitCliFromRunner(commandRunner)
+	gitCli := git.NewGitCli(commandRunner)
 	cmdInitAction, err := newInitAction(azCli, azdContext, accountManager, commandRunner, console, gitCli, flags)
 	if err != nil {
 		return nil, err
@@ -135,7 +135,7 @@ func initUpAction(console input.Console, ctx context.Context, o *internal.Global
 		return nil, err
 	}
 	commandRunner := newCommandRunnerFromConsole(console)
-	gitCli := git.NewGitCliFromRunner(commandRunner)
+	gitCli := git.NewGitCli(commandRunner)
 	cmdInitFlags := flags.initFlags
 	cmdInitAction, err := newInitAction(azCli, azdContext, accountManager, commandRunner, console, gitCli, cmdInitFlags)
 	if err != nil {
@@ -188,7 +188,8 @@ func initRestoreAction(console input.Console, ctx context.Context, o *internal.G
 	if err != nil {
 		return nil, err
 	}
-	cmdRestoreAction := newRestoreAction(flags, azCli, console, azdContext)
+	commandRunner := newCommandRunnerFromConsole(console)
+	cmdRestoreAction := newRestoreAction(flags, azCli, console, azdContext, commandRunner)
 	return cmdRestoreAction, nil
 }
 
@@ -378,7 +379,8 @@ func initPipelineConfigAction(console input.Console, ctx context.Context, o *int
 	if err != nil {
 		return nil, err
 	}
-	cmdPipelineConfigAction := newPipelineConfigAction(azCli, tokenCredential, azdContext, console, flags)
+	commandRunner := newCommandRunnerFromConsole(console)
+	cmdPipelineConfigAction := newPipelineConfigAction(azCli, tokenCredential, azdContext, console, flags, commandRunner)
 	return cmdPipelineConfigAction, nil
 }
 

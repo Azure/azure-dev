@@ -36,14 +36,10 @@ type gitCli struct {
 	commandRunner exec.CommandRunner
 }
 
-func NewGitCliFromRunner(commandRunner exec.CommandRunner) GitCli {
+func NewGitCli(commandRunner exec.CommandRunner) GitCli {
 	return &gitCli{
 		commandRunner: commandRunner,
 	}
-}
-
-func NewGitCli(ctx context.Context) GitCli {
-	return NewGitCliFromRunner(exec.GetCommandRunner(ctx))
 }
 
 func (cli *gitCli) versionInfo() tools.VersionInfo {
@@ -64,7 +60,7 @@ func (cli *gitCli) CheckInstalled(ctx context.Context) (bool, error) {
 	if !found {
 		return false, err
 	}
-	gitRes, err := tools.ExecuteCommand(ctx, "git", "--version")
+	gitRes, err := tools.ExecuteCommand(ctx, cli.commandRunner, "git", "--version")
 	if err != nil {
 		return false, fmt.Errorf("checking %s version: %w", cli.Name(), err)
 	}

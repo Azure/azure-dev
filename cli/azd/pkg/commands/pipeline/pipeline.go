@@ -14,6 +14,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
+	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
@@ -136,6 +137,7 @@ func DetectProviders(
 	env *environment.Environment,
 	overrideProvider string,
 	credential azcore.TokenCredential,
+	commandRunner exec.CommandRunner,
 ) (ScmProvider, CiProvider, error) {
 	projectDir := azdContext.ProjectDirectory()
 
@@ -199,14 +201,14 @@ func DetectProviders(
 		// Azdo only either by override or by finding only that folder
 		_ = savePipelineProviderToEnv(azdoLabel, env)
 		console.Message(ctx, fmt.Sprintf("Using pipeline provider: %s", output.WithHighLightFormat("Azure DevOps")))
-		return createAzdoScmProvider(env, azdContext), createAzdoCiProvider(env, azdContext), nil
+		return createAzdoScmProvider(env, azdContext, commandRunner), createAzdoCiProvider(env, azdContext), nil
 	}
 
 	// Both folders exists and no override value. Default to GitHub
 	// Or override value is github and the folder is available
 	_ = savePipelineProviderToEnv(gitHubLabel, env)
 	console.Message(ctx, fmt.Sprintf("Using pipeline provider: %s", output.WithHighLightFormat("GitHub")))
-	return &GitHubScmProvider{}, NewGitHubCiProvider(credential), nil
+	return NewGitHubScmProvider(commandRunner), NewGitHubCiProvider(credential, commandRunner), nil
 }
 
 func savePipelineProviderToEnv(provider string, env *environment.Environment) error {
@@ -225,9 +227,14 @@ func createAzdoCiProvider(env *environment.Environment, azdCtx *azdcontext.AzdCo
 	}
 }
 
-func createAzdoScmProvider(env *environment.Environment, azdCtx *azdcontext.AzdContext) *AzdoScmProvider {
+func createAzdoScmProvider(
+	env *environment.Environment,
+	azdCtx *azdcontext.AzdContext,
+	commandRunner exec.CommandRunner,
+) *AzdoScmProvider {
 	return &AzdoScmProvider{
-		Env:        env,
-		AzdContext: azdCtx,
+		Env:           env,
+		AzdContext:    azdCtx,
+		commandRunner: commandRunner,
 	}
 }

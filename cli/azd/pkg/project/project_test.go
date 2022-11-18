@@ -148,7 +148,7 @@ services:
 	projectConfig, err := ParseProjectConfig(testProj, e)
 	assert.Nil(t, err)
 
-	project, err := projectConfig.GetProject(*mockContext.Context, e, azCli)
+	project, err := projectConfig.GetProject(*mockContext.Context, e, azCli, mockContext.CommandRunner)
 	assert.Nil(t, err)
 
 	// Deployment resource name comes from the found tag on the graph query request
@@ -185,7 +185,7 @@ services:
 	projectConfig, err := ParseProjectConfig(testProj, e)
 	assert.Nil(t, err)
 
-	project, err := projectConfig.GetProject(*mockContext.Context, e, azCli)
+	project, err := projectConfig.GetProject(*mockContext.Context, e, azCli, mockContext.CommandRunner)
 	assert.Nil(t, err)
 
 	assertHasService(t,
@@ -230,7 +230,7 @@ services:
 	projectConfig, err := ParseProjectConfig(testProj, e)
 	assert.Nil(t, err)
 
-	project, err := projectConfig.GetProject(*mockContext.Context, e, azCli)
+	project, err := projectConfig.GetProject(*mockContext.Context, e, azCli, mockContext.CommandRunner)
 	assert.Nil(t, err)
 
 	assertHasService(t,

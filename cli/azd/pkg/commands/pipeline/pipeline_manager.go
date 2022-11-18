@@ -14,6 +14,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
+	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
@@ -51,13 +52,15 @@ type PipelineManager struct {
 	RootOptions *internal.GlobalCommandOptions
 	Environment *environment.Environment
 	PipelineManagerArgs
-	azCli azcli.AzCli
+	azCli         azcli.AzCli
+	commandRunner exec.CommandRunner
 }
 
 func NewPipelineManager(
 	azCli azcli.AzCli,
 	azdCtx *azdcontext.AzdContext,
 	global *internal.GlobalCommandOptions,
+	commandRunner exec.CommandRunner,
 	args PipelineManagerArgs,
 ) *PipelineManager {
 	return &PipelineManager{
@@ -65,6 +68,7 @@ func NewPipelineManager(
 		RootOptions:         global,
 		PipelineManagerArgs: args,
 		azCli:               azCli,
+		commandRunner:       commandRunner,
 	}
 }
 
@@ -106,7 +110,7 @@ func (i *PipelineManager) ensureRemote(
 	repositoryPath string,
 	remoteName string,
 ) (*gitRepositoryDetails, error) {
-	gitCli := git.NewGitCli(ctx)
+	gitCli := git.NewGitCli(i.commandRunner)
 	remoteUrl, err := gitCli.GetRemoteUrl(ctx, repositoryPath, remoteName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get remote url: %w", err)
@@ -123,7 +127,7 @@ func (i *PipelineManager) ensureRemote(
 
 // getGitRepoDetails get the details about a git project using the azd context to discover the project path.
 func (i *PipelineManager) getGitRepoDetails(ctx context.Context) (*gitRepositoryDetails, error) {
-	gitCli := git.NewGitCli(ctx)
+	gitCli := git.NewGitCli(i.commandRunner)
 	console := input.GetConsole(ctx)
 	repoPath := i.AzdCtx.ProjectDirectory()
 	for {
@@ -205,7 +209,7 @@ func validateDependencyInjection(ctx context.Context, manager *PipelineManager) 
 
 // pushGitRepo commit all changes in the git project and push it to upstream.
 func (i *PipelineManager) pushGitRepo(ctx context.Context, currentBranch string) error {
-	gitCli := git.NewGitCli(ctx)
+	gitCli := git.NewGitCli(i.commandRunner)
 	console := input.GetConsole(ctx)
 
 	if err := gitCli.AddFile(ctx, i.AzdCtx.ProjectDirectory(), "."); err != nil {
@@ -315,7 +319,7 @@ func (manager *PipelineManager) Configure(ctx context.Context) error {
 		return fmt.Errorf("prompting to push: %w", err)
 	}
 
-	currentBranch, err := git.NewGitCli(ctx).GetCurrentBranch(ctx, manager.AzdCtx.ProjectDirectory())
+	currentBranch, err := git.NewGitCli(manager.commandRunner).GetCurrentBranch(ctx, manager.AzdCtx.ProjectDirectory())
 	if err != nil {
 		return fmt.Errorf("getting current branch: %w", err)
 	}

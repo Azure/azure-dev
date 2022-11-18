@@ -24,38 +24,38 @@ steps:
           -OutputName "GH_RELEASE_TAG"
           -DevOpsOutputFormat
       displayName: Verify and set GitHub Release Tag
+  # TODO: Uncomment before merge
+  # - pwsh: |
+  #     New-Item -ItemType Directory -Path release -Force
+  #     Copy-Item signed/vsix/*.vsix release/
+  #     Write-Host "Signed:"
+  #     Get-ChildItem signed/
+  #   displayName: Copy signed vsix to release location
 
-  - pwsh: |
-      New-Item -ItemType Directory -Path release -Force
-      Copy-Item signed/vsix/*.vsix release/
-      Write-Host "Signed:"
-      Get-ChildItem signed/
-    displayName: Copy signed vsix to release location
+  # - pwsh: |
+  #     $publishLocations = "${{ parameters.PublishLocations }}" -split ';'
+  #     foreach ($location in $publishLocations) {
+  #       Write-Host "Publishing to $location"
+  #       az storage blob upload-batch `
+  #         --account-name '${{ parameters.StorageAccountName }}' `
+  #         --account-key '${{ parameters.StorageAccountKey }}' `
+  #         --auth-mode key `
+  #         -s release `
+  #         -d "${{ parameters.StorageContainerName }}/$location" `
+  #         --overwrite
+  #     }
+  #   displayName: Publish files to storage locations
 
-  - pwsh: |
-      $publishLocations = "${{ parameters.PublishLocations }}" -split ';'
-      foreach ($location in $publishLocations) {
-        Write-Host "Publishing to $location"
-        az storage blob upload-batch `
-          --account-name '${{ parameters.StorageAccountName }}' `
-          --account-key '${{ parameters.StorageAccountKey }}' `
-          --auth-mode key `
-          -s release `
-          -d "${{ parameters.StorageContainerName }}/$location" `
-          --overwrite
-      }
-    displayName: Publish files to storage locations
-
-  - ${{ if eq('true', parameters.UpdateShield) }}:
-    - template: /eng/pipelines/templates/steps/publish-shield.yml
-      parameters:
-        ArtifactName: shield-vscode
-        ArtifactDownloadPath: shields/vscode
-        ArtifactFilename: vscode.json
-        StorageAccountName: ${{ parameters.StorageAccountName }}
-        StorageAccountKey: ${{ parameters.StorageAccountKey }}
-        StorageContainerName: ${{ parameters.StorageContainerName }}
-        PublishDestination: vscode/latest
+  # - ${{ if eq('true', parameters.UpdateShield) }}:
+  #   - template: /eng/pipelines/templates/steps/publish-shield.yml
+  #     parameters:
+  #       ArtifactName: shield-vscode
+  #       ArtifactDownloadPath: shields/vscode
+  #       ArtifactFilename: vscode.json
+  #       StorageAccountName: ${{ parameters.StorageAccountName }}
+  #       StorageAccountKey: ${{ parameters.StorageAccountKey }}
+  #       StorageContainerName: ${{ parameters.StorageContainerName }}
+  #       PublishDestination: vscode/latest
 
   - ${{ if eq('true', parameters.TagRepository) }}:
     - task: PowerShell@2

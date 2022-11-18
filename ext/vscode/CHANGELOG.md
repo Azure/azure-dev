@@ -1,5 +1,11 @@
 # Release History
 
+## 0.0.0-beta.0
+
+### Testing
+
+Testing release notes
+
 ## 0.3.0 (2022-09-14)
 ### Added
 - [[#493]](https://github.com/Azure/azure-dev/pull/493)  Show README file after successful init/up.

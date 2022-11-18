@@ -1,5 +1,11 @@
 # Release History
 
+## 0.0.0-beta.0 (Unreleased)
+
+### Testing
+
+Testing release notes
+
 ## 0.4.0-beta.2 (Unreleased)
 
 ### Breaking Changes

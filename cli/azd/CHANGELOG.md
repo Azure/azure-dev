@@ -1,6 +1,6 @@
 # Release History
 
-## Upcoming (Unreleased)
+## 0.4.0-beta.2 (Unreleased)
 
 ### Breaking Changes
 

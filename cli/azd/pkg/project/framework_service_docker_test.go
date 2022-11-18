@@ -7,9 +7,9 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/docker"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
+	azcli_mock "github.com/azure/azure-dev/cli/azd/test/mocks/azcli"
 	"github.com/stretchr/testify/require"
 )
 
@@ -30,7 +30,7 @@ services:
 
 	env := environment.EphemeralWithValues("test-env", nil)
 	mockContext := mocks.NewMockContext(context.Background())
-	azCli := newAzCliFromMockContext(mockContext)
+	azCli := azcli_mock.NewAzCliFromMockContext(mockContext)
 
 	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 		return strings.Contains(command, "docker build")
@@ -104,7 +104,7 @@ services:
 
 	env := environment.EphemeralWithValues("test-env", nil)
 	mockContext := mocks.NewMockContext(context.Background())
-	azCli := newAzCliFromMockContext(mockContext)
+	azCli := azcli_mock.NewAzCliFromMockContext(mockContext)
 
 	ran := false
 
@@ -159,10 +159,4 @@ services:
 	require.Nil(t, err)
 	require.Equal(t, "Building docker image", status)
 	require.Equal(t, true, ran)
-}
-
-func newAzCliFromMockContext(mockContext *mocks.MockContext) azcli.AzCli {
-	return azcli.NewAzCli(mockContext.Credentials, azcli.NewAzCliArgs{
-		HttpClient: mockContext.HttpClient,
-	})
 }

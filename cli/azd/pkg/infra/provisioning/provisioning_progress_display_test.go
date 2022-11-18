@@ -17,8 +17,8 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
+	azcli_mock "github.com/azure/azure-dev/cli/azd/test/mocks/azcli"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -108,7 +108,7 @@ func mockAzDeploymentShow(t *testing.T, m mocks.MockContext) {
 
 func TestReportProgress(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
-	azCli := newAzCliFromMockContext(mockContext)
+	azCli := azcli_mock.NewAzCliFromMockContext(mockContext)
 
 	scope := infra.NewSubscriptionScope(*mockContext.Context, azCli, "eastus2", "SUBSCRIPTION_ID", "DEPLOYMENT_NAME")
 	mockAzDeploymentShow(t, *mockContext)
@@ -172,10 +172,4 @@ func assertLastOperationLogged(t *testing.T, operation *armresources.DeploymentO
 		),
 		logOutput[len(logOutput)-1],
 	)
-}
-
-func newAzCliFromMockContext(mockContext *mocks.MockContext) azcli.AzCli {
-	return azcli.NewAzCli(mockContext.Credentials, azcli.NewAzCliArgs{
-		HttpClient: mockContext.HttpClient,
-	})
 }

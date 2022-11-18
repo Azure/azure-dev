@@ -17,6 +17,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
+	azcli_mock "github.com/azure/azure-dev/cli/azd/test/mocks/azcli"
 	"github.com/stretchr/testify/require"
 )
 
@@ -45,7 +46,7 @@ func TestScopeGetDeployment(t *testing.T) {
 
 	t.Run("SubscriptionScopeSuccess", func(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
-		azCli := newAzCliFromMockContext(mockContext)
+		azCli := azcli_mock.NewAzCliFromMockContext(mockContext)
 
 		subscriptionId := "SUBSCRIPTION_ID"
 		deploymentName := "DEPLOYMENT_NAME"
@@ -78,7 +79,7 @@ func TestScopeGetDeployment(t *testing.T) {
 
 	t.Run("ResourceGroupScopeSuccess", func(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
-		azCli := newAzCliFromMockContext(mockContext)
+		azCli := azcli_mock.NewAzCliFromMockContext(mockContext)
 
 		subscriptionId := "SUBSCRIPTION_ID"
 		deploymentName := "DEPLOYMENT_NAME"
@@ -120,7 +121,7 @@ func TestScopeDeploy(t *testing.T) {
 
 	t.Run("SubscriptionScopeSuccess", func(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
-		azCli := newAzCliFromMockContext(mockContext)
+		azCli := azcli_mock.NewAzCliFromMockContext(mockContext)
 
 		mockContext.HttpClient.When(func(request *http.Request) bool {
 			return request.Method == http.MethodPut && strings.Contains(
@@ -146,7 +147,7 @@ func TestScopeDeploy(t *testing.T) {
 
 	t.Run("ResourceGroupScopeSuccess", func(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
-		azCli := newAzCliFromMockContext(mockContext)
+		azCli := azcli_mock.NewAzCliFromMockContext(mockContext)
 
 		mockContext.HttpClient.When(func(request *http.Request) bool {
 			return request.Method == http.MethodPut && strings.Contains(
@@ -175,7 +176,7 @@ func TestScopeDeploy(t *testing.T) {
 func TestScopeGetResourceOperations(t *testing.T) {
 	t.Run("SubscriptionScopeSuccess", func(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
-		azCli := newAzCliFromMockContext(mockContext)
+		azCli := azcli_mock.NewAzCliFromMockContext(mockContext)
 
 		mockContext.HttpClient.When(func(request *http.Request) bool {
 			return request.Method == http.MethodGet && strings.Contains(
@@ -201,7 +202,7 @@ func TestScopeGetResourceOperations(t *testing.T) {
 
 	t.Run("ResourceGroupScopeSuccess", func(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
-		azCli := newAzCliFromMockContext(mockContext)
+		azCli := azcli_mock.NewAzCliFromMockContext(mockContext)
 
 		mockContext.HttpClient.When(func(request *http.Request) bool {
 			return request.Method == http.MethodGet && strings.Contains(

@@ -11,6 +11,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
+	azcli_mock "github.com/azure/azure-dev/cli/azd/test/mocks/azcli"
 	"github.com/stretchr/testify/assert"
 	"golang.org/x/exp/slices"
 )
@@ -37,7 +38,7 @@ services:
     host: containerapp
 `
 	mockContext := mocks.NewMockContext(context.Background())
-	azCli := newAzCliFromMockContext(mockContext)
+	azCli := azcli_mock.NewAzCliFromMockContext(mockContext)
 
 	e := environment.EphemeralWithValues("envA", map[string]string{
 		environment.SubscriptionIdEnvVarName: "SUBSCRIPTION_ID",
@@ -84,7 +85,7 @@ services:
     host: appservice
 `
 	mockContext := mocks.NewMockContext(context.Background())
-	azCli := newAzCliFromMockContext(mockContext)
+	azCli := azcli_mock.NewAzCliFromMockContext(mockContext)
 
 	e := environment.EphemeralWithValues("envA", map[string]string{
 		environment.SubscriptionIdEnvVarName: "SUBSCRIPTION_ID",
@@ -127,7 +128,7 @@ services:
 	resourceType := string(infra.AzureResourceTypeWebSite)
 	resourceLocation := "westus2"
 	mockContext := mocks.NewMockContext(context.Background())
-	azCli := newAzCliFromMockContext(mockContext)
+	azCli := azcli_mock.NewAzCliFromMockContext(mockContext)
 
 	mockContext.HttpClient.AddAzResourceListMock(&rg,
 		armresources.ResourceListResult{
@@ -176,7 +177,7 @@ services:
     host: appservice
 `
 	mockContext := mocks.NewMockContext(context.Background())
-	azCli := newAzCliFromMockContext(mockContext)
+	azCli := azcli_mock.NewAzCliFromMockContext(mockContext)
 
 	e := environment.EphemeralWithValues("envA", map[string]string{
 		environment.SubscriptionIdEnvVarName: "SUBSCRIPTION_ID",
@@ -217,7 +218,7 @@ services:
     host: appservice
 `
 	mockContext := mocks.NewMockContext(context.Background())
-	azCli := newAzCliFromMockContext(mockContext)
+	azCli := azcli_mock.NewAzCliFromMockContext(mockContext)
 
 	expectedResourceGroupName := "custom-name-from-env-rg"
 

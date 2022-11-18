@@ -152,3 +152,9 @@ func Test_AzSdk_User_Agent_Policy(t *testing.T) {
 	require.Contains(t, userAgent[0], "azsdk-go")
 	require.Contains(t, userAgent[0], "azdev")
 }
+
+func newAzCliFromMockContext(mockContext *mocks.MockContext) AzCli {
+	return NewAzCli(mockContext.Credentials, NewAzCliArgs{
+		HttpClient: mockContext.HttpClient,
+	})
+}

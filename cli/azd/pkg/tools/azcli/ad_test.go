@@ -229,9 +229,3 @@ func registerGetMeGraphMock(mockContext *mocks.MockContext, statusCode int, user
 		return mocks.CreateHttpResponseWithBody(request, statusCode, userProfile)
 	})
 }
-
-func newAzCliFromMockContext(mockContext *mocks.MockContext) AzCli {
-	return NewAzCli(mockContext.Credentials, NewAzCliArgs{
-		HttpClient: mockContext.HttpClient,
-	})
-}

@@ -8,6 +8,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
+	azcli_mock "github.com/azure/azure-dev/cli/azd/test/mocks/azcli"
 	"github.com/stretchr/testify/require"
 )
 
@@ -79,7 +80,7 @@ func (st *mockServiceTarget) Endpoints(_ context.Context) ([]string, error) {
 
 func TestDeployProgressMessages(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
-	azCli := newAzCliFromMockContext(mockContext)
+	azCli := azcli_mock.NewAzCliFromMockContext(mockContext)
 
 	env := environment.Ephemeral()
 	env.SetSubscriptionId("SUBSCRIPTION_ID")

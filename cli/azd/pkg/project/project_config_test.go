@@ -8,6 +8,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
+	mock_azcli "github.com/azure/azure-dev/cli/azd/test/mocks/azcli"
 	"github.com/stretchr/testify/require"
 )
 
@@ -94,7 +95,7 @@ services:
     host: appservice
 `
 	mockContext := mocks.NewMockContext(context.Background())
-	azCli := newAzCliFromMockContext(mockContext)
+	azCli := mock_azcli.NewAzCliFromMockContext(mockContext)
 
 	e := environment.EphemeralWithValues("test-env", map[string]string{
 		environment.SubscriptionIdEnvVarName: "SUBSCRIPTION_ID",

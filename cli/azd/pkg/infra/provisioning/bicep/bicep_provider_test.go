@@ -28,6 +28,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
+	azcli_mock "github.com/azure/azure-dev/cli/azd/test/mocks/azcli"
 	execmock "github.com/azure/azure-dev/cli/azd/test/mocks/exec"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/httputil"
 	"github.com/stretchr/testify/require"
@@ -87,7 +88,7 @@ func TestBicepState(t *testing.T) {
 	preparePlanningMocks(mockContext)
 	prepareDeployShowMocks(mockContext.HttpClient)
 	prepareDeployMocks(mockContext.CommandRunner)
-	azCli := newAzCliFromMockContext(mockContext)
+	azCli := azcli_mock.NewAzCliFromMockContext(mockContext)
 
 	infraProvider := createBicepProvider(mockContext)
 	scope := infra.NewSubscriptionScope(
@@ -136,7 +137,7 @@ func TestBicepDeploy(t *testing.T) {
 	preparePlanningMocks(mockContext)
 	prepareDeployShowMocks(mockContext.HttpClient)
 	prepareDeployMocks(mockContext.CommandRunner)
-	azCli := newAzCliFromMockContext(mockContext)
+	azCli := azcli_mock.NewAzCliFromMockContext(mockContext)
 
 	infraProvider := createBicepProvider(mockContext)
 	tmpPath := t.TempDir()
@@ -591,9 +592,3 @@ var testArmParametersFile string = `{
 		}
 	}
 }`
-
-func newAzCliFromMockContext(mockContext *mocks.MockContext) azcli.AzCli {
-	return azcli.NewAzCli(mockContext.Credentials, azcli.NewAzCliArgs{
-		HttpClient: mockContext.HttpClient,
-	})
-}

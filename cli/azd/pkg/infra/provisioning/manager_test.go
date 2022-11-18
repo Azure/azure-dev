@@ -13,8 +13,8 @@ import (
 	. "github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	_ "github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning/test"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
+	azcli_mock "github.com/azure/azure-dev/cli/azd/test/mocks/azcli"
 	"github.com/stretchr/testify/require"
 )
 
@@ -26,7 +26,7 @@ func TestManagerPlan(t *testing.T) {
 	interactive := false
 
 	mockContext := mocks.NewMockContext(context.Background())
-	azCli := newAzCliFromMockContext(mockContext)
+	azCli := azcli_mock.NewAzCliFromMockContext(mockContext)
 	mgr, _ := NewManager(*mockContext.Context, env, "", options, interactive, azCli)
 
 	deploymentPlan, err := mgr.Plan(*mockContext.Context)
@@ -44,7 +44,7 @@ func TestManagerGetState(t *testing.T) {
 	interactive := false
 
 	mockContext := mocks.NewMockContext(context.Background())
-	azCli := newAzCliFromMockContext(mockContext)
+	azCli := azcli_mock.NewAzCliFromMockContext(mockContext)
 	mgr, _ := NewManager(*mockContext.Context, env, "", options, interactive, azCli)
 
 	provisioningScope := infra.NewSubscriptionScope(
@@ -68,7 +68,7 @@ func TestManagerDeploy(t *testing.T) {
 	interactive := false
 
 	mockContext := mocks.NewMockContext(context.Background())
-	azCli := newAzCliFromMockContext(mockContext)
+	azCli := azcli_mock.NewAzCliFromMockContext(mockContext)
 	mgr, _ := NewManager(*mockContext.Context, env, "", options, interactive, azCli)
 
 	deploymentPlan, _ := mgr.Plan(*mockContext.Context)
@@ -93,7 +93,7 @@ func TestManagerDestroyWithPositiveConfirmation(t *testing.T) {
 	interactive := false
 
 	mockContext := mocks.NewMockContext(context.Background())
-	azCli := newAzCliFromMockContext(mockContext)
+	azCli := azcli_mock.NewAzCliFromMockContext(mockContext)
 
 	mockContext.Console.WhenConfirm(func(options input.ConsoleOptions) bool {
 		return strings.Contains(options.Message, "Are you sure you want to destroy?")
@@ -118,7 +118,7 @@ func TestManagerDestroyWithNegativeConfirmation(t *testing.T) {
 	interactive := false
 
 	mockContext := mocks.NewMockContext(context.Background())
-	azCli := newAzCliFromMockContext(mockContext)
+	azCli := azcli_mock.NewAzCliFromMockContext(mockContext)
 
 	mockContext.Console.WhenConfirm(func(options input.ConsoleOptions) bool {
 		return strings.Contains(options.Message, "Are you sure you want to destroy?")
@@ -133,10 +133,4 @@ func TestManagerDestroyWithNegativeConfirmation(t *testing.T) {
 	require.Nil(t, destroyResult)
 	require.NotNil(t, err)
 	require.Contains(t, mockContext.Console.Output(), "Are you sure you want to destroy?")
-}
-
-func newAzCliFromMockContext(mockContext *mocks.MockContext) azcli.AzCli {
-	return azcli.NewAzCli(mockContext.Credentials, azcli.NewAzCliArgs{
-		HttpClient: mockContext.HttpClient,
-	})
 }

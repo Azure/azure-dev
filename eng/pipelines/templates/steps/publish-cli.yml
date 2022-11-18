@@ -117,7 +117,10 @@ steps:
 
     - pwsh: |
         # TODO: Remove TEST_IGNORE_ before merge
-        gh release create TEST_IGNORE_$(GH_RELEASE_TAG) --notes-file $(ReleaseChangeLogPath)
+        gh release create `
+          "TEST_IGNORE_$(GH_RELEASE_TAG)" `
+          --title "TEST_IGNORE_$(GH_RELEASE_TAG)" `
+          --notes-file $(ReleaseChangeLogPath)
         # TODO: Re-enable before merge
         # gh release upload $(GH_RELEASE_TAG) release/*
       displayName: Create GitHub Release and upload artifacts

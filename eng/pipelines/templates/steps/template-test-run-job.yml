@@ -70,7 +70,9 @@ steps:
       ARM_TENANT_ID=$(arm-tenant-id)
       SUBSCRIPTION_ID=$(SubscriptionId)
     runCmd: 
+      echo "path"
       pwd
+      echo "azd version"
       azd version
       azd login \
         --client-id "$(arm-client-id)" \

@@ -12,6 +12,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockarmresources"
+	"github.com/azure/azure-dev/cli/azd/test/mocks/mockazcli"
 	"github.com/stretchr/testify/require"
 )
 
@@ -122,6 +123,8 @@ services:
 			},
 		},
 	)
+	azCli := mockazcli.NewAzCliFromMockContext(mockContext)
+
 	e := environment.EphemeralWithValues("test-env", map[string]string{
 		environment.SubscriptionIdEnvVarName: "SUBSCRIPTION_ID",
 	})
@@ -129,7 +132,7 @@ services:
 	projectConfig, err := ParseProjectConfig(testProj, e)
 	require.Nil(t, err)
 
-	project, err := projectConfig.GetProject(mockContext.Context, e)
+	project, err := projectConfig.GetProject(*mockContext.Context, e, azCli)
 	require.Nil(t, err)
 	require.NotNil(t, project)
 

@@ -7,7 +7,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
-	"github.com/azure/azure-dev/cli/azd/pkg/identity"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	mockconfig "github.com/azure/azure-dev/cli/azd/test/mocks/config"
 	mockconsole "github.com/azure/azure-dev/cli/azd/test/mocks/console"
@@ -16,6 +15,7 @@ import (
 )
 
 type MockContext struct {
+	Credentials   *MockCredentials
 	Context       *context.Context
 	Console       *mockconsole.MockConsole
 	HttpClient    *mockhttp.MockHttpClient
@@ -36,10 +36,10 @@ func NewMockContext(ctx context.Context) *MockContext {
 	ctx = input.WithConsole(ctx, mockConsole)
 	ctx = exec.WithCommandRunner(ctx, commandRunner)
 	ctx = httputil.WithHttpClient(ctx, httpClient)
-	ctx = identity.WithCredentials(ctx, &credentials)
 	ctx = config.WithConfigManager(ctx, configManager)
 
 	mockContext := &MockContext{
+		Credentials:   &credentials,
 		Context:       &ctx,
 		Console:       mockConsole,
 		CommandRunner: commandRunner,

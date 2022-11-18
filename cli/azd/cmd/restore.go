@@ -14,6 +14,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/pkg/spin"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
@@ -56,14 +57,21 @@ For the best local run and debug experience, go to https://aka.ms/azure-dev/vsco
 type restoreAction struct {
 	flags   restoreFlags
 	console input.Console
+	azCli   azcli.AzCli
 	azdCtx  *azdcontext.AzdContext
 }
 
-func newRestoreAction(flags restoreFlags, console input.Console, azdCtx *azdcontext.AzdContext) *restoreAction {
+func newRestoreAction(
+	flags restoreFlags,
+	azCli azcli.AzCli,
+	console input.Console,
+	azdCtx *azdcontext.AzdContext,
+) *restoreAction {
 	return &restoreAction{
 		flags:   flags,
 		console: console,
 		azdCtx:  azdCtx,
+		azCli:   azCli,
 	}
 }
 
@@ -72,7 +80,7 @@ func (r *restoreAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 		return nil, err
 	}
 
-	env, ctx, err := loadOrInitEnvironment(ctx, &r.flags.environmentName, r.azdCtx, r.console)
+	env, ctx, err := loadOrInitEnvironment(ctx, &r.flags.environmentName, r.azdCtx, r.console, r.azCli)
 	if err != nil {
 		return nil, fmt.Errorf("loading environment: %w", err)
 	}

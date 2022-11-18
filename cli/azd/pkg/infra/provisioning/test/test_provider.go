@@ -196,7 +196,9 @@ func NewTestProvider(ctx context.Context, env *environment.Environment, projectP
 func init() {
 	err := RegisterProvider(
 		Test,
-		func(ctx context.Context, env *environment.Environment, projectPath string, options Options) (Provider, error) {
+		func(
+			ctx context.Context, env *environment.Environment, projectPath string, options Options, _ azcli.AzCli,
+		) (Provider, error) {
 			return NewTestProvider(ctx, env, projectPath, options), nil
 		},
 	)

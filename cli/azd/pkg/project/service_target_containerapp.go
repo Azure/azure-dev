@@ -102,6 +102,7 @@ func (at *containerAppTarget) Deploy(
 		at.config.Project.Path,
 		at.config.Infra,
 		at.console.IsUnformatted(),
+		at.cli,
 	)
 	if err != nil {
 		return ServiceDeploymentResult{}, fmt.Errorf("creating provisioning manager: %w", err)
@@ -116,7 +117,7 @@ func (at *containerAppTarget) Deploy(
 	progress <- "Updating container app image reference"
 	deploymentName := fmt.Sprintf("%s-%s", at.env.GetEnvName(), at.config.Name)
 	scope := infra.NewResourceGroupScope(
-		ctx,
+		at.cli,
 		at.env.GetSubscriptionId(),
 		at.targetResource.ResourceGroupName(),
 		deploymentName,

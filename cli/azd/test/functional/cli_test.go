@@ -33,10 +33,10 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
-	"github.com/azure/azure-dev/cli/azd/pkg/identity"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/test/azdcli"
 	"github.com/joho/godotenv"
 	"github.com/sethvargo/go-retry"
@@ -153,10 +153,11 @@ func Test_CLI_InfraCreateAndDelete(t *testing.T) {
 	if err != nil {
 		t.Fatal("could not create credential")
 	}
-	ctx = identity.WithCredentials(ctx, cred)
+
+	azCli := azcli.NewAzCli(cred, azcli.NewAzCliArgs{})
 
 	// Verify that resource groups are created with tag
-	resourceManager := infra.NewAzureResourceManager(ctx)
+	resourceManager := infra.NewAzureResourceManager(azCli)
 	rgs, err := resourceManager.GetResourceGroupsForEnvironment(ctx, env)
 	require.NoError(t, err)
 	require.NotNil(t, rgs)
@@ -209,10 +210,11 @@ func Test_CLI_InfraCreateAndDeleteUpperCase(t *testing.T) {
 	if err != nil {
 		t.Fatal("could not create credential")
 	}
-	ctx = identity.WithCredentials(ctx, cred)
+
+	azCli := azcli.NewAzCli(cred, azcli.NewAzCliArgs{})
 
 	// Verify that resource groups are created with tag
-	resourceManager := infra.NewAzureResourceManager(ctx)
+	resourceManager := infra.NewAzureResourceManager(azCli)
 	rgs, err := resourceManager.GetResourceGroupsForEnvironment(ctx, env)
 	require.NoError(t, err)
 	require.NotNil(t, rgs)

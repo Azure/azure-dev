@@ -13,6 +13,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/docker"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockarmresources"
+	"github.com/azure/azure-dev/cli/azd/test/mocks/mockazcli"
 	"github.com/stretchr/testify/require"
 )
 
@@ -46,6 +47,7 @@ services:
 				Location: convert.RefOf("eastus2"),
 			},
 		})
+	azCli := mockazcli.NewAzCliFromMockContext(mockContext)
 
 	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 		return strings.Contains(command, "docker build")
@@ -68,7 +70,7 @@ services:
 
 	projectConfig, err := ParseProjectConfig(testProj, env)
 	require.NoError(t, err)
-	prj, err := projectConfig.GetProject(mockContext.Context, env)
+	prj, err := projectConfig.GetProject(*mockContext.Context, env, azCli)
 	require.NoError(t, err)
 
 	service := prj.Services[0]
@@ -131,6 +133,8 @@ services:
 				Location: convert.RefOf("eastus2"),
 			},
 		})
+	azCli := mockazcli.NewAzCliFromMockContext(mockContext)
+
 	ran := false
 
 	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
@@ -157,7 +161,7 @@ services:
 	projectConfig, err := ParseProjectConfig(testProj, env)
 	require.NoError(t, err)
 
-	prj, err := projectConfig.GetProject(mockContext.Context, env)
+	prj, err := projectConfig.GetProject(*mockContext.Context, env, azCli)
 	require.NoError(t, err)
 
 	service := prj.Services[0]

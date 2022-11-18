@@ -12,6 +12,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockarmresources"
+	"github.com/azure/azure-dev/cli/azd/test/mocks/mockazcli"
 	"github.com/stretchr/testify/require"
 )
 
@@ -99,12 +100,13 @@ func TestDeployProgressMessages(t *testing.T) {
 			},
 		},
 	)
+	azCli := mockazcli.NewAzCliFromMockContext(mockContext)
 
 	env := environment.Ephemeral()
 	env.SetSubscriptionId("SUBSCRIPTION_ID")
 
 	projectConfig, _ := ParseProjectConfig(projectYaml, env)
-	project, _ := projectConfig.GetProject(mockContext.Context, env)
+	project, _ := projectConfig.GetProject(*mockContext.Context, env, azCli)
 	azdContext, _ := azdcontext.NewAzdContext()
 
 	mockFramework := &mockFrameworkService{}

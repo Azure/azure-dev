@@ -27,6 +27,7 @@ import (
 	. "github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/terraform"
 )
 
@@ -686,7 +687,9 @@ func (t *TerraformProvider) isRemoteBackendConfig() (bool, error) {
 func init() {
 	err := RegisterProvider(
 		Terraform,
-		func(ctx context.Context, env *environment.Environment, projectPath string, options Options) (Provider, error) {
+		func(
+			ctx context.Context, env *environment.Environment, projectPath string, options Options, _ azcli.AzCli,
+		) (Provider, error) {
 			return NewTerraformProvider(ctx, env, projectPath, options), nil
 		},
 	)

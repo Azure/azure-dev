@@ -40,9 +40,7 @@ func TestAZCLIWithUserAgent(t *testing.T) {
 	var rawResponse *http.Response
 	ctx := runtime.WithCaptureResponse(*mockContext.Context, &rawResponse)
 
-	azCli := GetAzCli(ctx)
-	azCli.SetUserAgent("AZTesting=yes")
-
+	azCli := newAzCliFromMockContext(mockContext)
 	// We don't care about the actual response or if an error occurred
 	// Any API call that leverages the Go SDK is fine
 	_, _ = azCli.GetResource(ctx, "SUBSCRIPTION_ID", "RESOURCE_ID")
@@ -52,7 +50,8 @@ func TestAZCLIWithUserAgent(t *testing.T) {
 		require.Fail(t, "missing User-Agent header")
 	}
 
-	require.Contains(t, userAgent[0], "AZTesting=yes")
+	require.Contains(t, userAgent[0], "azsdk-go")
+	require.Contains(t, userAgent[0], "azdev")
 }
 
 func TestAZCliGetAccessTokenTranslatesErrors(t *testing.T) {
@@ -140,7 +139,7 @@ func Test_AzSdk_User_Agent_Policy(t *testing.T) {
 	var rawResponse *http.Response
 	ctx := runtime.WithCaptureResponse(*mockContext.Context, &rawResponse)
 
-	azCli := GetAzCli(ctx)
+	azCli := newAzCliFromMockContext(mockContext)
 	// We don't care about the actual response or if an error occurred
 	// Any API call that leverages the Go SDK is fine
 	_, _ = azCli.GetResource(ctx, "SUBSCRIPTION_ID", "RESOURCE_ID")
@@ -152,4 +151,10 @@ func Test_AzSdk_User_Agent_Policy(t *testing.T) {
 
 	require.Contains(t, userAgent[0], "azsdk-go")
 	require.Contains(t, userAgent[0], "azdev")
+}
+
+func newAzCliFromMockContext(mockContext *mocks.MockContext) AzCli {
+	return NewAzCli(mockContext.Credentials, NewAzCliArgs{
+		HttpClient: mockContext.HttpClient,
+	})
 }

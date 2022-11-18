@@ -59,8 +59,14 @@ func (sc *ServiceConfig) GetService(
 	ctx context.Context,
 	project *Project,
 	env *environment.Environment,
+	azCli azcli.AzCli,
 ) (*Service, error) {
-	targetResource, err := sc.GetServiceResource(ctx, project.ResourceGroupName, env)
+	framework, err := sc.GetFrameworkService(ctx, env)
+	if err != nil {
+		return nil, fmt.Errorf("creating framework service: %w", err)
+	}
+
+	targetResource, err := sc.GetServiceResource(ctx, project.ResourceGroupName, env, azCli)
 	if err != nil {
 		return nil, err
 	}
@@ -72,12 +78,7 @@ func (sc *ServiceConfig) GetService(
 		targetResource.Type,
 	)
 
-	framework, err := sc.GetFrameworkService(ctx, env)
-	if err != nil {
-		return nil, fmt.Errorf("creating framework service: %w", err)
-	}
-
-	serviceTarget, err := sc.GetServiceTarget(ctx, env, scope)
+	serviceTarget, err := sc.GetServiceTarget(ctx, env, scope, azCli)
 	if err != nil {
 		return nil, fmt.Errorf("creating service target: %w", err)
 	}
@@ -96,10 +97,10 @@ func (sc *ServiceConfig) GetServiceTarget(
 	ctx context.Context,
 	env *environment.Environment,
 	scope *environment.TargetResource,
+	azCli azcli.AzCli,
 ) (*ServiceTarget, error) {
 	var target ServiceTarget
 	var err error
-	azCli := azcli.GetAzCli(ctx)
 
 	switch sc.Host {
 	case "", string(AppServiceTarget):
@@ -229,8 +230,9 @@ func (sc *ServiceConfig) GetServiceResource(
 	ctx context.Context,
 	resourceGroupName string,
 	env *environment.Environment,
+	azCli azcli.AzCli,
 ) (azcli.AzCliResource, error) {
-	resources, err := sc.GetServiceResources(ctx, resourceGroupName, env)
+	resources, err := sc.GetServiceResources(ctx, resourceGroupName, env, azCli)
 	if err != nil {
 		return azcli.AzCliResource{}, fmt.Errorf("getting service resource: %w", err)
 	}
@@ -285,8 +287,8 @@ func (sc *ServiceConfig) GetServiceResources(
 	ctx context.Context,
 	resourceGroupName string,
 	env *environment.Environment,
+	azCli azcli.AzCli,
 ) ([]azcli.AzCliResource, error) {
-	azCli := azcli.GetAzCli(ctx)
 	filter := fmt.Sprintf("tagName eq '%s' and tagValue eq '%s'", defaultServiceTag, sc.Name)
 
 	if strings.TrimSpace(sc.ResourceName) != "" {

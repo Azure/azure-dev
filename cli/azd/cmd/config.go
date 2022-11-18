@@ -9,7 +9,6 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
-	"github.com/azure/azure-dev/cli/azd/pkg/commands"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/spf13/cobra"
@@ -64,9 +63,6 @@ func configListCmdDesign(global *internal.GlobalCommandOptions) (*cobra.Command,
 		Use:   "list",
 		Short: "Lists all configuration values",
 		Long:  `Lists all configuration values in ` + userConfigPath + `.`,
-		Annotations: map[string]string{
-			commands.RequireNoLoginAnnotation: "true",
-		},
 	}
 
 	output.AddOutputParam(
@@ -120,9 +116,6 @@ func configGetCmdDesign(global *internal.GlobalCommandOptions) (*cobra.Command, 
 		Use:   "get <path>",
 		Short: "Gets a configuration",
 		Long:  `Gets a configuration in ` + userConfigPath + `.`,
-		Annotations: map[string]string{
-			commands.RequireNoLoginAnnotation: "true",
-		},
 	}
 
 	output.AddOutputParam(
@@ -189,9 +182,6 @@ func configSetCmdDesign(global *internal.GlobalCommandOptions) (*cobra.Command, 
 		Long:  `Sets a configuration in ` + userConfigPath + `.`,
 		Example: `$ azd config set defaults.subscription <yourSubscriptionID>
 $ azd config set defaults.location eastus`,
-		Annotations: map[string]string{
-			commands.RequireNoLoginAnnotation: "true",
-		},
 	}
 	cmd.Args = cobra.ExactArgs(2)
 	return cmd, &struct{}{}
@@ -235,9 +225,6 @@ func configUnsetCmdDesign(global *internal.GlobalCommandOptions) (*cobra.Command
 		Short:   "Unsets a configuration",
 		Long:    `Removes a configuration in ` + userConfigPath + `.`,
 		Example: `$ azd config unset defaults.location`,
-		Annotations: map[string]string{
-			commands.RequireNoLoginAnnotation: "true",
-		},
 	}
 
 	cmd.Args = cobra.ExactArgs(1)
@@ -280,9 +267,6 @@ func configResetCmdDesign(global *internal.GlobalCommandOptions) (*cobra.Command
 		Use:   "reset",
 		Short: "Resets configuration to default",
 		Long:  `Resets all configuration in ` + userConfigPath + ` to the default.`,
-		Annotations: map[string]string{
-			commands.RequireNoLoginAnnotation: "true",
-		},
 	}
 
 	return cmd, &struct{}{}

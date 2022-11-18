@@ -13,6 +13,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockarmresources"
+	"github.com/azure/azure-dev/cli/azd/test/mocks/mockazcli"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/exp/slices"
@@ -44,6 +45,7 @@ services:
 				Location: convert.RefOf("eastus2"),
 			},
 		})
+	azCli := mockazcli.NewAzCliFromMockContext(mockContext)
 
 	e := environment.EphemeralWithValues("envA", map[string]string{
 		environment.SubscriptionIdEnvVarName: "SUBSCRIPTION_ID",
@@ -51,7 +53,7 @@ services:
 	projectConfig, err := ParseProjectConfig(testProj, e)
 	require.NoError(t, err)
 
-	project, err := projectConfig.GetProject(mockContext.Context, e)
+	project, err := projectConfig.GetProject(*mockContext.Context, e, azCli)
 	require.NoError(t, err)
 
 	assertHasService(t,
@@ -88,7 +90,9 @@ services:
 					defaultServiceTag: convert.RefOf("api"),
 				},
 			},
-		})
+		},
+	)
+	azCli := mockazcli.NewAzCliFromMockContext(mockContext)
 
 	e := environment.EphemeralWithValues("envA", map[string]string{
 		environment.SubscriptionIdEnvVarName: "SUBSCRIPTION_ID",
@@ -96,7 +100,7 @@ services:
 	projectConfig, err := ParseProjectConfig(testProj, e)
 	require.NoError(t, err)
 
-	project, err := projectConfig.GetProject(mockContext.Context, e)
+	project, err := projectConfig.GetProject(*mockContext.Context, e, azCli)
 	require.NoError(t, err)
 
 	// Deployment resource name comes from the found tag on the graph query request
@@ -146,13 +150,15 @@ services:
 				},
 			},
 		})
+	azCli := mockazcli.NewAzCliFromMockContext(mockContext)
+
 	e := environment.EphemeralWithValues("envA", map[string]string{
 		environment.SubscriptionIdEnvVarName: "SUBSCRIPTION_ID",
 	})
 	projectConfig, err := ParseProjectConfig(testProj, e)
 	require.NoError(t, err)
 
-	project, err := projectConfig.GetProject(mockContext.Context, e)
+	project, err := projectConfig.GetProject(*mockContext.Context, e, azCli)
 	require.NoError(t, err)
 
 	assertHasService(t,
@@ -185,6 +191,7 @@ services:
     host: appservice
 `
 	mockContext := mocks.NewMockContext(context.Background())
+
 	expectedResourceGroupName := "custom-name-from-env-rg"
 
 	mockarmresources.AddAzResourceListMock(
@@ -207,6 +214,7 @@ services:
 				},
 			},
 		})
+	azCli := mockazcli.NewAzCliFromMockContext(mockContext)
 
 	e := environment.EphemeralWithValues("envA", map[string]string{
 		environment.ResourceGroupEnvVarName:  expectedResourceGroupName,
@@ -216,7 +224,7 @@ services:
 	projectConfig, err := ParseProjectConfig(testProj, e)
 	require.NoError(t, err)
 
-	project, err := projectConfig.GetProject(mockContext.Context, e)
+	project, err := projectConfig.GetProject(*mockContext.Context, e, azCli)
 	require.NoError(t, err)
 
 	assertHasService(t,

@@ -17,6 +17,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
@@ -49,6 +50,7 @@ type showAction struct {
 	console   input.Console
 	formatter output.Formatter
 	writer    io.Writer
+	azCli     azcli.AzCli
 	azdCtx    *azdcontext.AzdContext
 	flags     showFlags
 }
@@ -57,6 +59,7 @@ func newShowAction(
 	console input.Console,
 	formatter output.Formatter,
 	writer io.Writer,
+	azCli azcli.AzCli,
 	azdCtx *azdcontext.AzdContext,
 	flags showFlags,
 ) *showAction {
@@ -64,6 +67,7 @@ func newShowAction(
 		console:   console,
 		formatter: formatter,
 		writer:    writer,
+		azCli:     azCli,
 		azdCtx:    azdCtx,
 		flags:     flags,
 	}
@@ -74,7 +78,7 @@ func (s *showAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		return nil, err
 	}
 
-	env, ctx, err := loadOrInitEnvironment(ctx, &s.flags.environmentName, s.azdCtx, s.console)
+	env, ctx, err := loadOrInitEnvironment(ctx, &s.flags.environmentName, s.azdCtx, s.console, s.azCli)
 	if err != nil {
 		return nil, fmt.Errorf("loading environment: %w", err)
 	}
@@ -107,11 +111,11 @@ func (s *showAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 
 	// Add information about the target of each service, if we can determine it (if the infrastructure has
 	// not been deployed, for example, we'll just not include target information)
-	resourceManager := infra.NewAzureResourceManager(ctx)
+	resourceManager := infra.NewAzureResourceManager(s.azCli)
 
 	if resourceGroupName, err := resourceManager.FindResourceGroupForEnvironment(ctx, env); err == nil {
 		for name, serviceConfig := range prj.Services {
-			if resources, err := serviceConfig.GetServiceResources(ctx, resourceGroupName, env); err == nil {
+			if resources, err := serviceConfig.GetServiceResources(ctx, resourceGroupName, env, s.azCli); err == nil {
 				resourceIds := make([]string, len(resources))
 				for idx, res := range resources {
 					resourceIds[idx] = res.Id

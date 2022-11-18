@@ -11,6 +11,7 @@ import (
 	"path"
 	"strings"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
@@ -133,7 +134,9 @@ func DetectProviders(
 	ctx context.Context,
 	azdContext *azdcontext.AzdContext,
 	env *environment.Environment,
-	overrideProvider string) (ScmProvider, CiProvider, error) {
+	overrideProvider string,
+	credential azcore.TokenCredential,
+) (ScmProvider, CiProvider, error) {
 	projectDir := azdContext.ProjectDirectory()
 
 	// get the override value
@@ -203,7 +206,7 @@ func DetectProviders(
 	// Or override value is github and the folder is available
 	_ = savePipelineProviderToEnv(gitHubLabel, env)
 	console.Message(ctx, fmt.Sprintf("Using pipeline provider: %s", output.WithHighLightFormat("GitHub")))
-	return &GitHubScmProvider{}, &GitHubCiProvider{}, nil
+	return &GitHubScmProvider{}, NewGitHubCiProvider(credential), nil
 }
 
 func savePipelineProviderToEnv(provider string, env *environment.Environment) error {

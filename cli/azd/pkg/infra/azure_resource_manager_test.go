@@ -17,7 +17,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
-	azcli_mock "github.com/azure/azure-dev/cli/azd/test/mocks/azcli"
+	"github.com/azure/azure-dev/cli/azd/test/mocks/mockazcli"
 	"github.com/stretchr/testify/require"
 )
 
@@ -136,8 +136,8 @@ func TestGetDeploymentResourceOperationsSuccess(t *testing.T) {
 	groupCalls := 0
 
 	mockContext := mocks.NewMockContext(context.Background())
-	azCli := azcli_mock.NewAzCliFromMockContext(mockContext)
-	scope := NewSubscriptionScope(*mockContext.Context, azCli, "eastus2", "SUBSCRIPTION_ID", "DEPLOYMENT_NAME")
+	azCli := mockazcli.NewAzCliFromMockContext(mockContext)
+	scope := NewSubscriptionScope(azCli, "eastus2", "SUBSCRIPTION_ID", "DEPLOYMENT_NAME")
 
 	mockContext.HttpClient.When(func(request *http.Request) bool {
 		return request.Method == http.MethodGet && strings.Contains(
@@ -186,8 +186,8 @@ func TestGetDeploymentResourceOperationsFail(t *testing.T) {
 	groupCalls := 0
 
 	mockContext := mocks.NewMockContext(context.Background())
-	azCli := azcli_mock.NewAzCliFromMockContext(mockContext)
-	scope := NewSubscriptionScope(*mockContext.Context, azCli, "eastus2", "SUBSCRIPTION_ID", "DEPLOYMENT_NAME")
+	azCli := mockazcli.NewAzCliFromMockContext(mockContext)
+	scope := NewSubscriptionScope(azCli, "eastus2", "SUBSCRIPTION_ID", "DEPLOYMENT_NAME")
 
 	/*NOTE: Mocking first response as an `StatusForbidden` error which is not retried by the sdk client.
 	  Adding an extra mock to test that it is not called*/
@@ -237,8 +237,8 @@ func TestGetDeploymentResourceOperationsNoResourceGroup(t *testing.T) {
 	groupCalls := 0
 
 	mockContext := mocks.NewMockContext(context.Background())
-	azCli := azcli_mock.NewAzCliFromMockContext(mockContext)
-	scope := NewSubscriptionScope(*mockContext.Context, azCli, "eastus2", "SUBSCRIPTION_ID", "DEPLOYMENT_NAME")
+	azCli := mockazcli.NewAzCliFromMockContext(mockContext)
+	scope := NewSubscriptionScope(azCli, "eastus2", "SUBSCRIPTION_ID", "DEPLOYMENT_NAME")
 
 	mockContext.HttpClient.When(func(request *http.Request) bool {
 		return request.Method == http.MethodGet && strings.Contains(
@@ -286,8 +286,8 @@ func TestGetDeploymentResourceOperationsWithNestedDeployments(t *testing.T) {
 	groupCalls := 0
 
 	mockContext := mocks.NewMockContext(context.Background())
-	azCli := azcli_mock.NewAzCliFromMockContext(mockContext)
-	scope := NewSubscriptionScope(*mockContext.Context, azCli, "eastus2", "SUBSCRIPTION_ID", "DEPLOYMENT_NAME")
+	azCli := mockazcli.NewAzCliFromMockContext(mockContext)
+	scope := NewSubscriptionScope(azCli, "eastus2", "SUBSCRIPTION_ID", "DEPLOYMENT_NAME")
 
 	mockContext.HttpClient.When(func(request *http.Request) bool {
 		return request.Method == http.MethodGet && strings.Contains(
@@ -407,7 +407,7 @@ func TestFindResourceGroupForEnvironment(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			mockContext := mocks.NewMockContext(context.Background())
-			azCli := azcli_mock.NewAzCliFromMockContext(mockContext)
+			azCli := mockazcli.NewAzCliFromMockContext(mockContext)
 
 			mockContext.HttpClient.When(func(request *http.Request) bool {
 				return request.Method == "GET" && strings.Contains(request.URL.Path, "/resourcegroups") &&

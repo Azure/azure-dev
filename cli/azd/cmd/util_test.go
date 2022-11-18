@@ -19,6 +19,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
+	"github.com/azure/azure-dev/cli/azd/test/mocks/mockazcli"
 	"github.com/stretchr/testify/require"
 )
 
@@ -196,9 +197,7 @@ func Test_getSubscriptionOptions(t *testing.T) {
 			})
 		})
 
-		azCli := azcli.NewAzCli(mockContext.Credentials, azcli.NewAzCliArgs{
-			HttpClient: mockContext.HttpClient,
-		})
+		azCli := mockazcli.NewAzCliFromMockContext(mockContext)
 
 		// finally invoking the test
 		subList, result, err := getSubscriptionOptions(*mockContext.Context, azCli)

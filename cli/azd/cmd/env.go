@@ -365,7 +365,7 @@ func (ef *envRefreshAction) Run(ctx context.Context) (*actions.ActionResult, err
 		return nil, fmt.Errorf("creating provisioning manager: %w", err)
 	}
 
-	scope := infra.NewSubscriptionScope(ctx, ef.azCli, env.GetLocation(), env.GetSubscriptionId(), env.GetEnvName())
+	scope := infra.NewSubscriptionScope(ef.azCli, env.GetLocation(), env.GetSubscriptionId(), env.GetEnvName())
 
 	getStateResult, err := infraManager.State(ctx, scope)
 	if err != nil {

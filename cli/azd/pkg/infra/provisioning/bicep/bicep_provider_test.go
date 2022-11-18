@@ -28,9 +28,9 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
-	azcli_mock "github.com/azure/azure-dev/cli/azd/test/mocks/azcli"
 	execmock "github.com/azure/azure-dev/cli/azd/test/mocks/exec"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/httputil"
+	"github.com/azure/azure-dev/cli/azd/test/mocks/mockazcli"
 	"github.com/stretchr/testify/require"
 )
 
@@ -88,11 +88,10 @@ func TestBicepState(t *testing.T) {
 	preparePlanningMocks(mockContext)
 	prepareDeployShowMocks(mockContext.HttpClient)
 	prepareDeployMocks(mockContext.CommandRunner)
-	azCli := azcli_mock.NewAzCliFromMockContext(mockContext)
+	azCli := mockazcli.NewAzCliFromMockContext(mockContext)
 
 	infraProvider := createBicepProvider(mockContext)
 	scope := infra.NewSubscriptionScope(
-		*mockContext.Context,
 		azCli,
 		infraProvider.env.Values["AZURE_LOCATION"],
 		infraProvider.env.GetSubscriptionId(),
@@ -137,7 +136,7 @@ func TestBicepDeploy(t *testing.T) {
 	preparePlanningMocks(mockContext)
 	prepareDeployShowMocks(mockContext.HttpClient)
 	prepareDeployMocks(mockContext.CommandRunner)
-	azCli := azcli_mock.NewAzCliFromMockContext(mockContext)
+	azCli := mockazcli.NewAzCliFromMockContext(mockContext)
 
 	infraProvider := createBicepProvider(mockContext)
 	tmpPath := t.TempDir()
@@ -153,7 +152,6 @@ func TestBicepDeploy(t *testing.T) {
 	}
 
 	scope := infra.NewSubscriptionScope(
-		*mockContext.Context,
 		azCli,
 		infraProvider.env.Values["AZURE_LOCATION"],
 		infraProvider.env.GetSubscriptionId(),

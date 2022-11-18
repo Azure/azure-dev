@@ -1,4 +1,4 @@
-package azcli
+package mockazcli
 
 import (
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"

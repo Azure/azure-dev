@@ -49,7 +49,7 @@ func ReadProject(
 	}
 
 	// Evaluate project
-	project, err := projectConfig.GetProject(&ctx, env, azCli)
+	project, err := projectConfig.GetProject(ctx, env, azCli)
 	if err != nil {
 		return nil, fmt.Errorf("reading project: %w", err)
 	}

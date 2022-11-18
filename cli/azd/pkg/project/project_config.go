@@ -92,7 +92,7 @@ func (p *ProjectConfig) HasService(name string) bool {
 // GetProject constructs a Project from the project configuration
 // This also performs project validation
 func (pc *ProjectConfig) GetProject(
-	ctx *context.Context,
+	ctx context.Context,
 	env *environment.Environment,
 	azCli azcli.AzCli,
 ) (*Project, error) {
@@ -105,7 +105,7 @@ func (pc *ProjectConfig) GetProject(
 		Services: make([]*Service, 0),
 	}
 
-	resourceGroupName, err := GetResourceGroupName(*ctx, azCli, pc, env)
+	resourceGroupName, err := GetResourceGroupName(ctx, azCli, pc, env)
 	if err != nil {
 		return nil, err
 	}
@@ -115,7 +115,7 @@ func (pc *ProjectConfig) GetProject(
 		// If the 'resourceName' was not overridden in the project yaml
 		// Retrieve the resource name from the provisioned resources if available
 		if strings.TrimSpace(serviceConfig.ResourceName) == "" {
-			resolvedResourceName, err := GetServiceResourceName(*ctx, project.ResourceGroupName, serviceConfig.Name, env, azCli)
+			resolvedResourceName, err := GetServiceResourceName(ctx, project.ResourceGroupName, serviceConfig.Name, env, azCli)
 			if err != nil {
 				return nil, fmt.Errorf("getting resource name: %w", err)
 			}
@@ -128,7 +128,7 @@ func (pc *ProjectConfig) GetProject(
 			project.ResourceGroupName,
 			serviceConfig.ResourceName,
 		)
-		service, err := serviceConfig.GetService(*ctx, &project, env, deploymentScope, azCli)
+		service, err := serviceConfig.GetService(ctx, &project, env, deploymentScope, azCli)
 
 		if err != nil {
 			return nil, fmt.Errorf("creating service %s: %w", key, err)

@@ -116,7 +116,7 @@ func (at *containerAppTarget) Deploy(
 
 	progress <- "Updating container app image reference"
 	deploymentName := fmt.Sprintf("%s-%s", at.env.GetEnvName(), at.config.Name)
-	scope := infra.NewResourceGroupScope(ctx, at.cli, at.env.GetSubscriptionId(), at.scope.ResourceGroupName(), deploymentName)
+	scope := infra.NewResourceGroupScope(at.cli, at.env.GetSubscriptionId(), at.scope.ResourceGroupName(), deploymentName)
 	deployResult, err := infraManager.Deploy(ctx, deploymentPlan, scope)
 
 	if err != nil {

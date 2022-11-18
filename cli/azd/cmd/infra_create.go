@@ -127,7 +127,7 @@ func (i *infraCreateAction) Run(ctx context.Context) (*actions.ActionResult, err
 	}
 
 	provisioningScope := infra.NewSubscriptionScope(
-		ctx, i.azCli, env.GetLocation(), env.GetSubscriptionId(), env.GetEnvName(),
+		i.azCli, env.GetLocation(), env.GetSubscriptionId(), env.GetEnvName(),
 	)
 	deployResult, err := infraManager.Deploy(ctx, deploymentPlan, provisioningScope)
 	if err != nil {

@@ -1,5 +1,15 @@
 # Release History
 
+## 0.5.0-alpha.1 (Unreleased)
+
+### Features Added
+
+### Breaking Changes
+
+### Bugs Fixed
+
+### Other Changes
+
 ## 0.3.0 (2022-09-14)
 ### Added
 - [[#493]](https://github.com/Azure/azure-dev/pull/493)  Show README file after successful init/up.

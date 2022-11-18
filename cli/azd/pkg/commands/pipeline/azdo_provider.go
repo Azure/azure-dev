@@ -618,7 +618,8 @@ func (p *AzdoCiProvider) configureConnection(
 	provisioningProvider provisioning.Options,
 	credentials json.RawMessage,
 	authType PipelineAuthType,
-	console input.Console) error {
+	console input.Console,
+) error {
 
 	azureCredentials, err := parseCredentials(ctx, credentials)
 	if err != nil {

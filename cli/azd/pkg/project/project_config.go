@@ -10,10 +10,10 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/azure/azure-dev/cli/azd/internal/telemetry"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/drone/envsubst"
 	"gopkg.in/yaml.v3"
 )
@@ -91,7 +91,11 @@ func (p *ProjectConfig) HasService(name string) bool {
 
 // GetProject constructs a Project from the project configuration
 // This also performs project validation
-func (pc *ProjectConfig) GetProject(ctx *context.Context, env *environment.Environment) (*Project, error) {
+func (pc *ProjectConfig) GetProject(
+	ctx context.Context,
+	env *environment.Environment,
+	azCli azcli.AzCli,
+) (*Project, error) {
 	serviceMap := map[string]*Service{}
 
 	project := Project{
@@ -101,13 +105,7 @@ func (pc *ProjectConfig) GetProject(ctx *context.Context, env *environment.Envir
 		Services: make([]*Service, 0),
 	}
 
-	// This sets the current template within the go context
-	// The context is then used when the AzCli is instantiated to set the correct user agent
-	if project.Metadata != nil && strings.TrimSpace(project.Metadata.Template) != "" {
-		*ctx = telemetry.ContextWithTemplate(*ctx, project.Metadata.Template)
-	}
-
-	resourceGroupName, err := GetResourceGroupName(*ctx, pc, env)
+	resourceGroupName, err := GetResourceGroupName(ctx, azCli, pc, env)
 	if err != nil {
 		return nil, err
 	}
@@ -117,7 +115,7 @@ func (pc *ProjectConfig) GetProject(ctx *context.Context, env *environment.Envir
 		// If the 'resourceName' was not overridden in the project yaml
 		// Retrieve the resource name from the provisioned resources if available
 		if strings.TrimSpace(serviceConfig.ResourceName) == "" {
-			resolvedResourceName, err := GetServiceResourceName(*ctx, project.ResourceGroupName, serviceConfig.Name, env)
+			resolvedResourceName, err := GetServiceResourceName(ctx, project.ResourceGroupName, serviceConfig.Name, env, azCli)
 			if err != nil {
 				return nil, fmt.Errorf("getting resource name: %w", err)
 			}
@@ -130,7 +128,7 @@ func (pc *ProjectConfig) GetProject(ctx *context.Context, env *environment.Envir
 			project.ResourceGroupName,
 			serviceConfig.ResourceName,
 		)
-		service, err := serviceConfig.GetService(*ctx, &project, env, deploymentScope)
+		service, err := serviceConfig.GetService(ctx, &project, env, deploymentScope, azCli)
 
 		if err != nil {
 			return nil, fmt.Errorf("creating service %s: %w", key, err)

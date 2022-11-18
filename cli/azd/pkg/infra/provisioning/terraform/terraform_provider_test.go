@@ -16,6 +16,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 
 	execmock "github.com/azure/azure-dev/cli/azd/test/mocks/exec"
+	"github.com/azure/azure-dev/cli/azd/test/mocks/mockazcli"
 	"github.com/stretchr/testify/require"
 )
 
@@ -84,6 +85,7 @@ func TestTerraformDeploy(t *testing.T) {
 	prepareGenericMocks(mockContext.CommandRunner)
 	preparePlanningMocks(mockContext.CommandRunner)
 	prepareDeployMocks(mockContext.CommandRunner)
+	azCli := mockazcli.NewAzCliFromMockContext(mockContext)
 
 	infraProvider := createTerraformProvider(*mockContext.Context)
 
@@ -98,7 +100,7 @@ func TestTerraformDeploy(t *testing.T) {
 	}
 
 	scope := infra.NewSubscriptionScope(
-		*mockContext.Context,
+		azCli,
 		infraProvider.env.Values["AZURE_LOCATION"],
 		infraProvider.env.GetSubscriptionId(),
 		infraProvider.env.GetEnvName(),
@@ -175,10 +177,11 @@ func TestTerraformState(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
 	prepareGenericMocks(mockContext.CommandRunner)
 	prepareShowMocks(mockContext.CommandRunner)
+	azCli := mockazcli.NewAzCliFromMockContext(mockContext)
 
 	infraProvider := createTerraformProvider(*mockContext.Context)
 	scope := infra.NewSubscriptionScope(
-		*mockContext.Context,
+		azCli,
 		infraProvider.env.Values["AZURE_LOCATION"],
 		infraProvider.env.GetSubscriptionId(),
 		infraProvider.env.GetEnvName(),

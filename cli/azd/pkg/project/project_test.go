@@ -5,17 +5,14 @@ package project
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"testing"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
+	"github.com/azure/azure-dev/cli/azd/test/mocks/mockazcli"
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 	"golang.org/x/exp/slices"
 )
 
@@ -41,6 +38,7 @@ services:
     host: containerapp
 `
 	mockContext := mocks.NewMockContext(context.Background())
+	azCli := mockazcli.NewAzCliFromMockContext(mockContext)
 
 	e := environment.EphemeralWithValues("envA", map[string]string{
 		environment.SubscriptionIdEnvVarName: "SUBSCRIPTION_ID",
@@ -48,10 +46,8 @@ services:
 	projectConfig, err := ParseProjectConfig(testProj, e)
 	assert.Nil(t, err)
 
-	project, err := projectConfig.GetProject(mockContext.Context, e)
+	project, err := projectConfig.GetProject(*mockContext.Context, e, azCli)
 	assert.Nil(t, err)
-
-	azCli := azcli.GetAzCli(*mockContext.Context)
 
 	assertHasService(t,
 		project.Services,
@@ -68,10 +64,6 @@ services:
 		func(s *Service) bool { return s.Scope.ResourceName() == "envAworker" },
 		"worker service does not have expected resource name",
 	)
-
-	sha := sha256.Sum256([]byte("test-proj-template"))
-	hash := hex.EncodeToString(sha[:])
-	require.Contains(t, azCli.UserAgent(), "azdtempl/"+hash)
 }
 
 // Specifying resource name in the project file should override the default
@@ -93,6 +85,7 @@ services:
     host: appservice
 `
 	mockContext := mocks.NewMockContext(context.Background())
+	azCli := mockazcli.NewAzCliFromMockContext(mockContext)
 
 	e := environment.EphemeralWithValues("envA", map[string]string{
 		environment.SubscriptionIdEnvVarName: "SUBSCRIPTION_ID",
@@ -100,7 +93,7 @@ services:
 	projectConfig, err := ParseProjectConfig(testProj, e)
 	assert.Nil(t, err)
 
-	project, err := projectConfig.GetProject(mockContext.Context, e)
+	project, err := projectConfig.GetProject(*mockContext.Context, e, azCli)
 	assert.Nil(t, err)
 
 	assertHasService(t,
@@ -135,6 +128,8 @@ services:
 	resourceType := string(infra.AzureResourceTypeWebSite)
 	resourceLocation := "westus2"
 	mockContext := mocks.NewMockContext(context.Background())
+	azCli := mockazcli.NewAzCliFromMockContext(mockContext)
+
 	mockContext.HttpClient.AddAzResourceListMock(&rg,
 		armresources.ResourceListResult{
 			Value: []*armresources.GenericResourceExpanded{
@@ -153,7 +148,7 @@ services:
 	projectConfig, err := ParseProjectConfig(testProj, e)
 	assert.Nil(t, err)
 
-	project, err := projectConfig.GetProject(mockContext.Context, e)
+	project, err := projectConfig.GetProject(*mockContext.Context, e, azCli)
 	assert.Nil(t, err)
 
 	// Deployment resource name comes from the found tag on the graph query request
@@ -182,6 +177,7 @@ services:
     host: appservice
 `
 	mockContext := mocks.NewMockContext(context.Background())
+	azCli := mockazcli.NewAzCliFromMockContext(mockContext)
 
 	e := environment.EphemeralWithValues("envA", map[string]string{
 		environment.SubscriptionIdEnvVarName: "SUBSCRIPTION_ID",
@@ -189,7 +185,7 @@ services:
 	projectConfig, err := ParseProjectConfig(testProj, e)
 	assert.Nil(t, err)
 
-	project, err := projectConfig.GetProject(mockContext.Context, e)
+	project, err := projectConfig.GetProject(*mockContext.Context, e, azCli)
 	assert.Nil(t, err)
 
 	assertHasService(t,
@@ -222,6 +218,7 @@ services:
     host: appservice
 `
 	mockContext := mocks.NewMockContext(context.Background())
+	azCli := mockazcli.NewAzCliFromMockContext(mockContext)
 
 	expectedResourceGroupName := "custom-name-from-env-rg"
 
@@ -233,7 +230,7 @@ services:
 	projectConfig, err := ParseProjectConfig(testProj, e)
 	assert.Nil(t, err)
 
-	project, err := projectConfig.GetProject(mockContext.Context, e)
+	project, err := projectConfig.GetProject(*mockContext.Context, e, azCli)
 	assert.Nil(t, err)
 
 	assertHasService(t,

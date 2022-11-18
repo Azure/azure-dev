@@ -19,8 +19,7 @@ import (
 // (via ad sp signed-in-user), falling back to extracting the
 // `oid` claim from an access token a principal can not be
 // obtained in this way.
-func GetCurrentPrincipalId(ctx context.Context) (*string, error) {
-	azCli := azcli.GetAzCli(ctx)
+func GetCurrentPrincipalId(ctx context.Context, azCli azcli.AzCli) (*string, error) {
 	principalId, err := azCli.GetSignedInUserId(ctx)
 	if err == nil {
 		return principalId, nil

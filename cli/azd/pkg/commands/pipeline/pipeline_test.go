@@ -25,7 +25,7 @@ func Test_detectProviders(t *testing.T) {
 	azdContext.SetProjectDirectory(tempDir)
 
 	t.Run("no folders error", func(t *testing.T) {
-		scmProvider, ciProvider, err := DetectProviders(ctx, azdContext, &environment.Environment{}, "")
+		scmProvider, ciProvider, err := DetectProviders(ctx, azdContext, &environment.Environment{}, "", nil)
 		assert.Nil(t, scmProvider)
 		assert.Nil(t, ciProvider)
 		assert.EqualError(
@@ -40,7 +40,7 @@ func Test_detectProviders(t *testing.T) {
 		err := os.Mkdir(ghFolder, osutil.PermissionDirectory)
 		assert.NoError(t, err)
 
-		scmProvider, ciProvider, err := DetectProviders(ctx, azdContext, &environment.Environment{}, "")
+		scmProvider, ciProvider, err := DetectProviders(ctx, azdContext, &environment.Environment{}, "", nil)
 		assert.Nil(t, scmProvider)
 		assert.Nil(t, ciProvider)
 		assert.ErrorContains(
@@ -65,7 +65,7 @@ func Test_detectProviders(t *testing.T) {
 		}
 		// set a console for ctx
 		ctx = input.WithConsole(ctx, console.NewMockConsole())
-		scmProvider, ciProvider, err := DetectProviders(ctx, azdContext, env, "")
+		scmProvider, ciProvider, err := DetectProviders(ctx, azdContext, env, "", nil)
 		assert.Nil(t, scmProvider)
 		assert.Nil(t, ciProvider)
 		assert.EqualError(t, err, ".azdo folder is missing. Can't use selected provider.")
@@ -83,7 +83,7 @@ func Test_detectProviders(t *testing.T) {
 			Values: envValues,
 		}
 
-		scmProvider, ciProvider, err := DetectProviders(ctx, azdContext, env, "")
+		scmProvider, ciProvider, err := DetectProviders(ctx, azdContext, env, "", nil)
 		assert.IsType(t, &AzdoScmProvider{}, scmProvider)
 		assert.IsType(t, &AzdoCiProvider{}, ciProvider)
 		assert.NoError(t, err)
@@ -100,7 +100,7 @@ func Test_detectProviders(t *testing.T) {
 		env := &environment.Environment{
 			Values: envValues,
 		}
-		scmProvider, ciProvider, err := DetectProviders(ctx, azdContext, env, "")
+		scmProvider, ciProvider, err := DetectProviders(ctx, azdContext, env, "", nil)
 		assert.Nil(t, scmProvider)
 		assert.Nil(t, ciProvider)
 		assert.EqualError(t, err, ".github folder is missing. Can't use selected provider.")
@@ -118,7 +118,7 @@ func Test_detectProviders(t *testing.T) {
 			Values: envValues,
 		}
 
-		scmProvider, ciProvider, err := DetectProviders(ctx, azdContext, env, "")
+		scmProvider, ciProvider, err := DetectProviders(ctx, azdContext, env, "", nil)
 		assert.IsType(t, &GitHubScmProvider{}, scmProvider)
 		assert.IsType(t, &GitHubCiProvider{}, ciProvider)
 		assert.NoError(t, err)
@@ -136,10 +136,11 @@ func Test_detectProviders(t *testing.T) {
 			azdContext,
 			&environment.Environment{Values: map[string]string{}},
 			"other",
+			nil,
 		)
 		assert.Nil(t, scmProvider)
 		assert.Nil(t, ciProvider)
-		assert.EqualError(t, err, "other is not a known pipeline provider.")
+		assert.EqualError(t, err, "other is not a known pipeline provider.", nil)
 
 		// Remove folder - reset state
 		os.Remove(ghFolder)
@@ -155,7 +156,7 @@ func Test_detectProviders(t *testing.T) {
 			Values: envValues,
 		}
 
-		scmProvider, ciProvider, err := DetectProviders(ctx, azdContext, env, "")
+		scmProvider, ciProvider, err := DetectProviders(ctx, azdContext, env, "", nil)
 		assert.Nil(t, scmProvider)
 		assert.Nil(t, ciProvider)
 		assert.EqualError(t, err, "other is not a known pipeline provider.")
@@ -171,7 +172,7 @@ func Test_detectProviders(t *testing.T) {
 		_, err = projectFile.WriteString("pipeline:\n\r  provider: other")
 		assert.NoError(t, err)
 
-		scmProvider, ciProvider, err := DetectProviders(ctx, azdContext, &environment.Environment{}, "")
+		scmProvider, ciProvider, err := DetectProviders(ctx, azdContext, &environment.Environment{}, "", nil)
 		assert.Nil(t, scmProvider)
 		assert.Nil(t, ciProvider)
 		assert.EqualError(t, err, "other is not a known pipeline provider.")
@@ -197,7 +198,7 @@ func Test_detectProviders(t *testing.T) {
 			Values: envValues,
 		}
 
-		scmProvider, ciProvider, err := DetectProviders(ctx, azdContext, env, "")
+		scmProvider, ciProvider, err := DetectProviders(ctx, azdContext, env, "", nil)
 		assert.Nil(t, scmProvider)
 		assert.Nil(t, ciProvider)
 		assert.EqualError(t, err, "fromYaml is not a known pipeline provider.")
@@ -223,7 +224,7 @@ func Test_detectProviders(t *testing.T) {
 			Values: envValues,
 		}
 
-		scmProvider, ciProvider, err := DetectProviders(ctx, azdContext, env, "arg")
+		scmProvider, ciProvider, err := DetectProviders(ctx, azdContext, env, "arg", nil)
 		assert.Nil(t, scmProvider)
 		assert.Nil(t, ciProvider)
 		assert.EqualError(t, err, "arg is not a known pipeline provider.")
@@ -245,6 +246,7 @@ func Test_detectProviders(t *testing.T) {
 			azdContext,
 			&environment.Environment{Values: map[string]string{}},
 			"",
+			nil,
 		)
 		assert.IsType(t, &GitHubScmProvider{}, scmProvider)
 		assert.IsType(t, &GitHubCiProvider{}, ciProvider)
@@ -262,6 +264,7 @@ func Test_detectProviders(t *testing.T) {
 			azdContext,
 			&environment.Environment{Values: map[string]string{}},
 			"",
+			nil,
 		)
 		assert.IsType(t, &AzdoScmProvider{}, scmProvider)
 		assert.IsType(t, &AzdoCiProvider{}, ciProvider)
@@ -282,6 +285,7 @@ func Test_detectProviders(t *testing.T) {
 			azdContext,
 			&environment.Environment{Values: map[string]string{}},
 			"",
+			nil,
 		)
 		assert.IsType(t, &GitHubScmProvider{}, scmProvider)
 		assert.IsType(t, &GitHubCiProvider{}, ciProvider)
@@ -297,7 +301,7 @@ func Test_detectProviders(t *testing.T) {
 
 		env := &environment.Environment{Values: map[string]string{}}
 
-		scmProvider, ciProvider, err := DetectProviders(ctx, azdContext, env, azdoLabel)
+		scmProvider, ciProvider, err := DetectProviders(ctx, azdContext, env, azdoLabel, nil)
 		assert.IsType(t, &AzdoScmProvider{}, scmProvider)
 		assert.IsType(t, &AzdoCiProvider{}, ciProvider)
 		assert.NoError(t, err)
@@ -307,7 +311,7 @@ func Test_detectProviders(t *testing.T) {
 		assert.Equal(t, azdoLabel, envValue)
 
 		// Calling function again with same env and without override arg should use the persisted
-		scmProvider, ciProvider, err = DetectProviders(ctx, azdContext, env, "")
+		scmProvider, ciProvider, err = DetectProviders(ctx, azdContext, env, "", nil)
 		assert.IsType(t, &AzdoScmProvider{}, scmProvider)
 		assert.IsType(t, &AzdoCiProvider{}, ciProvider)
 		assert.NoError(t, err)
@@ -327,13 +331,13 @@ func Test_detectProviders(t *testing.T) {
 
 		env := &environment.Environment{Values: map[string]string{}}
 
-		scmProvider, ciProvider, err := DetectProviders(ctx, azdContext, env, azdoLabel)
+		scmProvider, ciProvider, err := DetectProviders(ctx, azdContext, env, azdoLabel, nil)
 		assert.IsType(t, &AzdoScmProvider{}, scmProvider)
 		assert.IsType(t, &AzdoCiProvider{}, ciProvider)
 		assert.NoError(t, err)
 
 		// Calling function again with same env and without override arg should use the persisted
-		scmProvider, ciProvider, err = DetectProviders(ctx, azdContext, env, "")
+		scmProvider, ciProvider, err = DetectProviders(ctx, azdContext, env, "", nil)
 		assert.IsType(t, &AzdoScmProvider{}, scmProvider)
 		assert.IsType(t, &AzdoCiProvider{}, ciProvider)
 		assert.NoError(t, err)
@@ -344,7 +348,7 @@ func Test_detectProviders(t *testing.T) {
 
 		// Calling function again with same env and without override arg should detect yaml change and override
 		// persisted
-		scmProvider, ciProvider, err = DetectProviders(ctx, azdContext, env, "")
+		scmProvider, ciProvider, err = DetectProviders(ctx, azdContext, env, "", nil)
 		assert.IsType(t, &GitHubScmProvider{}, scmProvider)
 		assert.IsType(t, &GitHubCiProvider{}, ciProvider)
 		assert.NoError(t, err)
@@ -355,13 +359,13 @@ func Test_detectProviders(t *testing.T) {
 		assert.Equal(t, gitHubLabel, envValue)
 
 		// Call again to check persisted(github) after one change (and yaml is still present)
-		scmProvider, ciProvider, err = DetectProviders(ctx, azdContext, env, "")
+		scmProvider, ciProvider, err = DetectProviders(ctx, azdContext, env, "", nil)
 		assert.IsType(t, &GitHubScmProvider{}, scmProvider)
 		assert.IsType(t, &GitHubCiProvider{}, ciProvider)
 		assert.NoError(t, err)
 
 		// Check argument override having yaml(github) config and persisted config(github)
-		scmProvider, ciProvider, err = DetectProviders(ctx, azdContext, env, azdoLabel)
+		scmProvider, ciProvider, err = DetectProviders(ctx, azdContext, env, azdoLabel, nil)
 		assert.IsType(t, &AzdoScmProvider{}, scmProvider)
 		assert.IsType(t, &AzdoCiProvider{}, ciProvider)
 		assert.NoError(t, err)
@@ -373,7 +377,7 @@ func Test_detectProviders(t *testing.T) {
 
 		// persisted = azdo (per last run) and yaml = github, should return github
 		// as yaml overrides a persisted run
-		scmProvider, ciProvider, err = DetectProviders(ctx, azdContext, env, "")
+		scmProvider, ciProvider, err = DetectProviders(ctx, azdContext, env, "", nil)
 		assert.IsType(t, &GitHubScmProvider{}, scmProvider)
 		assert.IsType(t, &GitHubCiProvider{}, ciProvider)
 		assert.NoError(t, err)

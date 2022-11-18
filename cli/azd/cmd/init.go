@@ -26,6 +26,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/pkg/templates"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/git"
 	"github.com/otiai10/copy"
 	"github.com/spf13/cobra"
@@ -98,6 +99,7 @@ func (i *initFlags) setCommon(envFlag *envFlag) {
 }
 
 type initAction struct {
+	azCli          azcli.AzCli
 	azdCtx         *azdcontext.AzdContext
 	accountManager *account.Manager
 	console        input.Console
@@ -107,6 +109,7 @@ type initAction struct {
 }
 
 func newInitAction(
+	azCli azcli.AzCli,
 	azdCtx *azdcontext.AzdContext,
 	accountManager *account.Manager,
 	cmdRun exec.CommandRunner,
@@ -114,6 +117,7 @@ func newInitAction(
 	gitCli git.GitCli,
 	flags initFlags) (*initAction, error) {
 	return &initAction{
+		azCli:          azCli,
 		azdCtx:         azdCtx,
 		accountManager: accountManager,
 		console:        console,
@@ -343,7 +347,7 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		subscription:    i.flags.subscription,
 		location:        i.flags.location,
 	}
-	env, ctx, err := createAndInitEnvironment(ctx, &envSpec, i.azdCtx, i.console)
+	env, ctx, err := createAndInitEnvironment(ctx, &envSpec, i.azdCtx, i.console, i.azCli)
 	if err != nil {
 		return nil, fmt.Errorf("loading environment: %w", err)
 	}

@@ -13,7 +13,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/graphsdk"
-	"github.com/azure/azure-dev/cli/azd/pkg/identity"
 	"github.com/google/uuid"
 	"github.com/sethvargo/go-retry"
 )
@@ -310,9 +309,8 @@ func (cli *azCli) getRoleDefinition(
 
 // Creates a graph users client using credentials from the Go context.
 func (cli *azCli) createGraphClient(ctx context.Context) (*graphsdk.GraphClient, error) {
-	cred := identity.GetCredentials(ctx)
 	options := cli.createDefaultClientOptionsBuilder(ctx).BuildCoreClientOptions()
-	client, err := graphsdk.NewGraphClient(cred, options)
+	client, err := graphsdk.NewGraphClient(cli.credential, options)
 	if err != nil {
 		return nil, fmt.Errorf("creating Graph Users client: %w", err)
 	}
@@ -322,9 +320,8 @@ func (cli *azCli) createGraphClient(ctx context.Context) (*graphsdk.GraphClient,
 
 // Creates a graph users client using credentials from the Go context.
 func (cli *azCli) createRoleDefinitionsClient(ctx context.Context) (*armauthorization.RoleDefinitionsClient, error) {
-	cred := identity.GetCredentials(ctx)
 	options := cli.createDefaultClientOptionsBuilder(ctx).BuildArmClientOptions()
-	client, err := armauthorization.NewRoleDefinitionsClient(cred, options)
+	client, err := armauthorization.NewRoleDefinitionsClient(cli.credential, options)
 	if err != nil {
 		return nil, fmt.Errorf("creating ARM Role Definitions client: %w", err)
 	}
@@ -337,9 +334,8 @@ func (cli *azCli) createRoleAssignmentsClient(
 	ctx context.Context,
 	subscriptionId string,
 ) (*armauthorization.RoleAssignmentsClient, error) {
-	cred := identity.GetCredentials(ctx)
 	options := cli.createDefaultClientOptionsBuilder(ctx).BuildArmClientOptions()
-	client, err := armauthorization.NewRoleAssignmentsClient(subscriptionId, cred, options)
+	client, err := armauthorization.NewRoleAssignmentsClient(subscriptionId, cli.credential, options)
 	if err != nil {
 		return nil, fmt.Errorf("creating ARM Role Assignments client: %w", err)
 	}

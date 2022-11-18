@@ -10,7 +10,6 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
-	"github.com/azure/azure-dev/cli/azd/pkg/commands"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/spf13/cobra"
@@ -31,9 +30,6 @@ func versionCmdDesign(global *internal.GlobalCommandOptions) (*cobra.Command, *v
 	cmd := &cobra.Command{
 		Use:   "version",
 		Short: "Print the version number of Azure Developer CLI.",
-		Annotations: map[string]string{
-			commands.RequireNoLoginAnnotation: "true",
-		},
 	}
 
 	flags := &versionFlags{}

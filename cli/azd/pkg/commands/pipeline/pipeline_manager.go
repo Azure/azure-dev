@@ -51,9 +51,11 @@ type PipelineManager struct {
 	RootOptions *internal.GlobalCommandOptions
 	Environment *environment.Environment
 	PipelineManagerArgs
+	azCli azcli.AzCli
 }
 
 func NewPipelineManager(
+	azCli azcli.AzCli,
 	azdCtx *azdcontext.AzdContext,
 	global *internal.GlobalCommandOptions,
 	args PipelineManagerArgs,
@@ -62,6 +64,7 @@ func NewPipelineManager(
 		AzdCtx:              azdCtx,
 		RootOptions:         global,
 		PipelineManagerArgs: args,
+		azCli:               azCli,
 	}
 }
 
@@ -237,7 +240,6 @@ func (manager *PipelineManager) Configure(ctx context.Context) error {
 	inputConsole := input.GetConsole(ctx)
 
 	// check all required tools are installed
-	azCli := azcli.GetAzCli(ctx)
 	requiredTools := manager.requiredTools(ctx)
 	if err := tools.EnsureInstalled(ctx, requiredTools...); err != nil {
 		return err
@@ -270,7 +272,7 @@ func (manager *PipelineManager) Configure(ctx context.Context) error {
 		),
 	)
 
-	credentials, err := azCli.CreateOrUpdateServicePrincipal(
+	credentials, err := manager.azCli.CreateOrUpdateServicePrincipal(
 		ctx,
 		manager.Environment.GetSubscriptionId(),
 		manager.PipelineServicePrincipalName,

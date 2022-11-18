@@ -19,6 +19,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/pkg/spin"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
@@ -89,6 +90,7 @@ After the deployment is complete, the endpoint is printed. To start the service,
 
 type deployAction struct {
 	flags     deployFlags
+	azCli     azcli.AzCli
 	azdCtx    *azdcontext.AzdContext
 	formatter output.Formatter
 	writer    io.Writer
@@ -97,6 +99,7 @@ type deployAction struct {
 
 func newDeployAction(
 	flags deployFlags,
+	azCli azcli.AzCli,
 	azdCtx *azdcontext.AzdContext,
 	console input.Console,
 	formatter output.Formatter,
@@ -104,6 +107,7 @@ func newDeployAction(
 ) (*deployAction, error) {
 	da := &deployAction{
 		flags:     flags,
+		azCli:     azCli,
 		azdCtx:    azdCtx,
 		formatter: formatter,
 		writer:    writer,
@@ -123,7 +127,7 @@ func (d *deployAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		return nil, err
 	}
 
-	env, ctx, err := loadOrInitEnvironment(ctx, &d.flags.environmentName, d.azdCtx, d.console)
+	env, ctx, err := loadOrInitEnvironment(ctx, &d.flags.environmentName, d.azdCtx, d.console, d.azCli)
 	if err != nil {
 		return nil, fmt.Errorf("loading environment: %w", err)
 	}
@@ -137,7 +141,7 @@ func (d *deployAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		return nil, fmt.Errorf("service name '%s' doesn't exist", d.flags.serviceName)
 	}
 
-	proj, err := projConfig.GetProject(&ctx, env)
+	proj, err := projConfig.GetProject(ctx, env, d.azCli)
 	if err != nil {
 		return nil, fmt.Errorf("creating project: %w", err)
 	}

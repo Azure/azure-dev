@@ -21,7 +21,7 @@ func Test_GetFunctionAppProperties(t *testing.T) {
 	t.Run("Success", func(t *testing.T) {
 		ran := false
 		mockContext := mocks.NewMockContext(context.Background())
-		azCli := GetAzCli(*mockContext.Context)
+		azCli := newAzCliFromMockContext(mockContext)
 
 		mockContext.HttpClient.When(func(request *http.Request) bool {
 			return request.Method == http.MethodGet &&
@@ -57,7 +57,7 @@ func Test_GetFunctionAppProperties(t *testing.T) {
 	t.Run("Error", func(t *testing.T) {
 		ran := false
 		mockContext := mocks.NewMockContext(context.Background())
-		azCli := GetAzCli(*mockContext.Context)
+		azCli := newAzCliFromMockContext(mockContext)
 
 		mockContext.HttpClient.When(func(request *http.Request) bool {
 			return request.Method == http.MethodGet &&
@@ -85,7 +85,7 @@ func Test_DeployFunctionAppUsingZipFile(t *testing.T) {
 	t.Run("Success", func(t *testing.T) {
 		ran := false
 		mockContext := mocks.NewMockContext(context.Background())
-		azCli := GetAzCli(*mockContext.Context)
+		azCli := newAzCliFromMockContext(mockContext)
 
 		registerDeployMocks(mockContext, &ran)
 		registerPollingMocks(mockContext, &ran)
@@ -108,7 +108,7 @@ func Test_DeployFunctionAppUsingZipFile(t *testing.T) {
 	t.Run("Error", func(t *testing.T) {
 		ran := false
 		mockContext := mocks.NewMockContext(context.Background())
-		azCli := GetAzCli(*mockContext.Context)
+		azCli := newAzCliFromMockContext(mockContext)
 
 		registerConflictMocks(mockContext, &ran)
 

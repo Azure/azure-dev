@@ -134,6 +134,7 @@
                     <delegatePattern>false</delegatePattern>
                     <interfaceOnly>true</interfaceOnly>
                     <hideGenerationTimestamp>true</hideGenerationTimestamp>
+                    <useTags>true</useTags>
                   </configOptions>
                 </configuration>
               </execution>

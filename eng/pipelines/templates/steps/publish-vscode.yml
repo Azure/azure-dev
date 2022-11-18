@@ -64,7 +64,7 @@ steps:
         filePath: eng/scripts/New-ReleaseNotesFile.ps1
         arguments: >-
           -ChangeLogPath cli/azd/CHANGELOG.md
-          -Version $(CLI_VERSION)
+          -Version ${{ parameters.VsixVersion }}
           -DevOpsOutputFormat
       displayName: Set release changelog content
 

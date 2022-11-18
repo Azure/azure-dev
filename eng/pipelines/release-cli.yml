@@ -608,7 +608,7 @@ stages:
                   inputs:
                     pwsh: true
                     targetType: filePath
-                  filePath: eng/scripts/Update-CliVersion.ps1
+                    filePath: eng/scripts/Update-CliVersion.ps1
                   displayName: Increment CLI version
 
                 - template: /eng/common/pipelines/templates/steps/create-pull-request.yml

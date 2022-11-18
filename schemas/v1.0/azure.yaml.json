@@ -64,7 +64,7 @@
                     "resourceName": {
                         "type": "string",
                         "title": "Name of the Azure resource that implements the service",
-                        "description": "Optional. If not specified, the resource name will be constructed from current environment name concatenated with service name (<environment-name><resource-name>, for example 'prodapi')."
+                        "description": "By default, the CLI will discover the Azure resource with tag 'azd-service-name' set to the current service's name. When specified, the CLI will instead find the Azure resource with the matching resource name."
                     },
                     "project": {
                         "type": "string",
@@ -128,6 +128,11 @@
                                 "type": "string",
                                 "title": "The platform target",
                                 "default": "amd64"
+                            },
+                            "tag": {
+                                "type": "string",
+                                "title": "The tag that will be applied to the built container image.",
+                                "description": ""
                             }
                         }
                     }

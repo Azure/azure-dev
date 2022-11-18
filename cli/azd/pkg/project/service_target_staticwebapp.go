@@ -24,11 +24,11 @@ import (
 const DefaultStaticWebAppEnvironmentName = "default"
 
 type staticWebAppTarget struct {
-	config *ServiceConfig
-	env    *environment.Environment
-	scope  *environment.DeploymentScope
-	cli    azcli.AzCli
-	swa    swa.SwaCli
+	config         *ServiceConfig
+	env            *environment.Environment
+	targetResource *environment.TargetResource
+	cli            azcli.AzCli
+	swa            swa.SwaCli
 }
 
 func (at *staticWebAppTarget) RequiredExternalTools() []tools.ExternalTool {
@@ -50,8 +50,8 @@ func (at *staticWebAppTarget) Deploy(
 	deploymentToken, err := at.cli.GetStaticWebAppApiKey(
 		ctx,
 		at.env.GetSubscriptionId(),
-		at.scope.ResourceGroupName(),
-		at.scope.ResourceName(),
+		at.targetResource.ResourceGroupName(),
+		at.targetResource.ResourceName(),
 	)
 	if err != nil {
 		return ServiceDeploymentResult{}, fmt.Errorf("failed retrieving static web app deployment token: %w", err)
@@ -63,8 +63,8 @@ func (at *staticWebAppTarget) Deploy(
 		at.config.Project.Path,
 		at.env.GetTenantId(),
 		at.env.GetSubscriptionId(),
-		at.scope.ResourceGroupName(),
-		at.scope.ResourceName(),
+		at.targetResource.ResourceGroupName(),
+		at.targetResource.ResourceName(),
 		at.config.RelativePath,
 		at.config.OutputPath,
 		DefaultStaticWebAppEnvironmentName,
@@ -87,7 +87,7 @@ func (at *staticWebAppTarget) Deploy(
 	}
 
 	sdr := NewServiceDeploymentResult(
-		azure.StaticWebAppRID(at.env.GetSubscriptionId(), at.scope.ResourceGroupName(), at.scope.ResourceName()),
+		azure.StaticWebAppRID(at.env.GetSubscriptionId(), at.targetResource.ResourceGroupName(), at.targetResource.ResourceName()),
 		StaticWebAppTarget,
 		res,
 		endpoints,
@@ -102,8 +102,8 @@ func (at *staticWebAppTarget) Endpoints(ctx context.Context) ([]string, error) {
 	if envProps, err := at.cli.GetStaticWebAppEnvironmentProperties(
 		ctx,
 		at.env.GetSubscriptionId(),
-		at.scope.ResourceGroupName(),
-		at.scope.ResourceName(),
+		at.targetResource.ResourceGroupName(),
+		at.targetResource.ResourceName(),
 		DefaultStaticWebAppEnvironmentName,
 	); err != nil {
 		return nil, fmt.Errorf("fetching service properties: %w", err)
@@ -122,8 +122,8 @@ func (at *staticWebAppTarget) verifyDeployment(ctx context.Context, progress cha
 		envProps, err := at.cli.GetStaticWebAppEnvironmentProperties(
 			ctx,
 			at.env.GetSubscriptionId(),
-			at.scope.ResourceGroupName(),
-			at.scope.ResourceName(),
+			at.targetResource.ResourceGroupName(),
+			at.targetResource.ResourceName(),
 			DefaultStaticWebAppEnvironmentName,
 		)
 		if err != nil {
@@ -150,19 +150,19 @@ func (at *staticWebAppTarget) verifyDeployment(ctx context.Context, progress cha
 func NewStaticWebAppTarget(
 	config *ServiceConfig,
 	env *environment.Environment,
-	scope *environment.DeploymentScope,
+	targetResource *environment.TargetResource,
 	azCli azcli.AzCli,
 	swaCli swa.SwaCli,
 ) (ServiceTarget, error) {
-	if scope.ResourceType() != string(infra.AzureResourceTypeStaticWebSite) {
-		return nil, resourceTypeMismatchError(scope.ResourceName(), scope.ResourceType(), infra.AzureResourceTypeStaticWebSite)
+	if targetResource.ResourceType() != string(infra.AzureResourceTypeStaticWebSite) {
+		return nil, resourceTypeMismatchError(targetResource.ResourceName(), targetResource.ResourceType(), infra.AzureResourceTypeStaticWebSite)
 	}
 
 	return &staticWebAppTarget{
-		config: config,
-		env:    env,
-		scope:  scope,
-		cli:    azCli,
-		swa:    swaCli,
+		config:         config,
+		env:            env,
+		targetResource: targetResource,
+		cli:            azCli,
+		swa:            swaCli,
 	}, nil
 }

@@ -27,7 +27,7 @@ services:
     language: js
     host: appservice
 `
-	deploymentScope = environment.NewDeploymentScope(
+	target = environment.NewTargetResource(
 		"test-subscription-id",
 		"test-resource-group-name",
 		"test-resource-name",
@@ -111,7 +111,7 @@ func TestDeployProgressMessages(t *testing.T) {
 		Config:    project.Config.Services["api"],
 		Framework: mockFramework,
 		Target:    mockTarget,
-		Scope:     deploymentScope,
+		Scope:     target,
 	}
 
 	result, progress := service.Deploy(*mockContext.Context, azdContext)

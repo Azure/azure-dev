@@ -18,10 +18,10 @@ import (
 )
 
 type appServiceTarget struct {
-	config *ServiceConfig
-	env    *environment.Environment
-	scope  *environment.DeploymentScope
-	cli    azcli.AzCli
+	config         *ServiceConfig
+	env            *environment.Environment
+	targetResource *environment.TargetResource
+	cli            azcli.AzCli
 }
 
 func (st *appServiceTarget) RequiredExternalTools() []tools.ExternalTool {
@@ -53,8 +53,8 @@ func (st *appServiceTarget) Deploy(
 	res, err := st.cli.DeployAppServiceZip(
 		ctx,
 		st.env.GetSubscriptionId(),
-		st.scope.ResourceGroupName(),
-		st.scope.ResourceName(),
+		st.targetResource.ResourceGroupName(),
+		st.targetResource.ResourceName(),
 		zipFile,
 	)
 	if err != nil {
@@ -68,7 +68,7 @@ func (st *appServiceTarget) Deploy(
 	}
 
 	sdr := NewServiceDeploymentResult(
-		azure.WebsiteRID(st.env.GetSubscriptionId(), st.scope.ResourceGroupName(), st.scope.ResourceName()),
+		azure.WebsiteRID(st.env.GetSubscriptionId(), st.targetResource.ResourceGroupName(), st.targetResource.ResourceName()),
 		AppServiceTarget,
 		*res,
 		endpoints,
@@ -80,8 +80,8 @@ func (st *appServiceTarget) Endpoints(ctx context.Context) ([]string, error) {
 	appServiceProperties, err := st.cli.GetAppServiceProperties(
 		ctx,
 		st.env.GetSubscriptionId(),
-		st.scope.ResourceGroupName(),
-		st.scope.ResourceName(),
+		st.targetResource.ResourceGroupName(),
+		st.targetResource.ResourceName(),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("fetching service properties: %w", err)
@@ -98,17 +98,17 @@ func (st *appServiceTarget) Endpoints(ctx context.Context) ([]string, error) {
 func NewAppServiceTarget(
 	config *ServiceConfig,
 	env *environment.Environment,
-	scope *environment.DeploymentScope,
+	targetResource *environment.TargetResource,
 	azCli azcli.AzCli,
 ) (ServiceTarget, error) {
-	if scope.ResourceType() != string(infra.AzureResourceTypeWebSite) {
-		return nil, resourceTypeMismatchError(scope.ResourceName(), scope.ResourceType(), infra.AzureResourceTypeWebSite)
+	if targetResource.ResourceType() != string(infra.AzureResourceTypeWebSite) {
+		return nil, resourceTypeMismatchError(targetResource.ResourceName(), targetResource.ResourceType(), infra.AzureResourceTypeWebSite)
 	}
 
 	return &appServiceTarget{
-		config: config,
-		env:    env,
-		scope:  scope,
-		cli:    azCli,
+		config:         config,
+		env:            env,
+		targetResource: targetResource,
+		cli:            azCli,
 	}, nil
 }

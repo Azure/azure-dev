@@ -23,7 +23,7 @@ type Service struct {
 	// The application target service used to deploy the service to azure
 	Target ServiceTarget
 	// The deployment scope of the service, ex) subscriptionId, resource group name & resource name
-	Scope *environment.DeploymentScope
+	Scope *environment.TargetResource
 }
 
 type ServiceDeploymentChannelResponse struct {

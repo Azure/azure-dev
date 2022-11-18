@@ -20,10 +20,10 @@ import (
 // functionAppTarget specifies an Azure Function to deploy to.
 // Implements `project.ServiceTarget`
 type functionAppTarget struct {
-	config *ServiceConfig
-	env    *environment.Environment
-	scope  *environment.DeploymentScope
-	cli    azcli.AzCli
+	config         *ServiceConfig
+	env            *environment.Environment
+	targetResource *environment.TargetResource
+	cli            azcli.AzCli
 }
 
 func (f *functionAppTarget) RequiredExternalTools() []tools.ExternalTool {
@@ -55,8 +55,8 @@ func (f *functionAppTarget) Deploy(
 	res, err := f.cli.DeployFunctionAppUsingZipFile(
 		ctx,
 		f.env.GetSubscriptionId(),
-		f.scope.ResourceGroupName(),
-		f.scope.ResourceName(),
+		f.targetResource.ResourceGroupName(),
+		f.targetResource.ResourceName(),
 		zipFile,
 	)
 	if err != nil {
@@ -70,7 +70,7 @@ func (f *functionAppTarget) Deploy(
 	}
 
 	sdr := NewServiceDeploymentResult(
-		azure.WebsiteRID(f.env.GetSubscriptionId(), f.scope.ResourceGroupName(), f.scope.ResourceName()),
+		azure.WebsiteRID(f.env.GetSubscriptionId(), f.targetResource.ResourceGroupName(), f.targetResource.ResourceName()),
 		AzureFunctionTarget,
 		*res,
 		endpoints,
@@ -84,8 +84,8 @@ func (f *functionAppTarget) Endpoints(ctx context.Context) ([]string, error) {
 	// an empty array and nil error will mean "no endpoints".
 	if props, err := f.cli.GetFunctionAppProperties(
 		ctx, f.env.GetSubscriptionId(),
-		f.scope.ResourceGroupName(),
-		f.scope.ResourceName()); err != nil {
+		f.targetResource.ResourceGroupName(),
+		f.targetResource.ResourceName()); err != nil {
 		return nil, fmt.Errorf("fetching service properties: %w", err)
 	} else {
 		endpoints := make([]string, len(props.HostNames))
@@ -100,17 +100,17 @@ func (f *functionAppTarget) Endpoints(ctx context.Context) ([]string, error) {
 func NewFunctionAppTarget(
 	config *ServiceConfig,
 	env *environment.Environment,
-	scope *environment.DeploymentScope,
+	targetResource *environment.TargetResource,
 	azCli azcli.AzCli,
 ) (ServiceTarget, error) {
-	if scope.ResourceType() != string(infra.AzureResourceTypeWebSite) {
-		return nil, resourceTypeMismatchError(scope.ResourceName(), scope.ResourceType(), infra.AzureResourceTypeWebSite)
+	if targetResource.ResourceType() != string(infra.AzureResourceTypeWebSite) {
+		return nil, resourceTypeMismatchError(targetResource.ResourceName(), targetResource.ResourceType(), infra.AzureResourceTypeWebSite)
 	}
 
 	return &functionAppTarget{
-		config: config,
-		env:    env,
-		scope:  scope,
-		cli:    azCli,
+		config:         config,
+		env:            env,
+		targetResource: targetResource,
+		cli:            azCli,
 	}, nil
 }

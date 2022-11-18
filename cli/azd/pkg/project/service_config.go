@@ -65,7 +65,7 @@ func (sc *ServiceConfig) GetService(
 		return nil, err
 	}
 
-	scope := environment.NewDeploymentScope(
+	scope := environment.NewTargetResource(
 		env.GetSubscriptionId(),
 		project.ResourceGroupName,
 		targetResource.Name,
@@ -95,7 +95,7 @@ func (sc *ServiceConfig) GetService(
 func (sc *ServiceConfig) GetServiceTarget(
 	ctx context.Context,
 	env *environment.Environment,
-	scope *environment.DeploymentScope,
+	scope *environment.TargetResource,
 ) (*ServiceTarget, error) {
 	var target ServiceTarget
 	var err error

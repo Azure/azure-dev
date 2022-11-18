@@ -69,8 +69,8 @@ func applyFilter(filter string, result []*armresources.GenericResourceExpanded) 
 	for _, resource := range result {
 		if tagNameFilter != "" {
 			tagVal := resource.Tags[tagNameFilter]
-			// treat nil as-if it's empty
 			if tagVal == nil {
+				// treat nil as empty string
 				tagVal = convert.RefOf("")
 			}
 
@@ -82,6 +82,7 @@ func applyFilter(filter string, result []*armresources.GenericResourceExpanded) 
 		if nameFilter != "" {
 			name := resource.Name
 			if name == nil {
+				// treat nil as empty string
 				name = convert.RefOf("")
 			}
 

@@ -333,7 +333,7 @@ func createBicepProvider(mockContext *mocks.MockContext) *BicepProvider {
 		HttpClient: mockContext.HttpClient,
 	})
 
-	return NewBicepProvider(*mockContext.Context, azCli, env, projectDir, options)
+	return NewBicepProvider(*mockContext.Context, azCli, env, projectDir, options, mockContext.CommandRunner)
 }
 
 func prepareGenericMocks(commandRunner *execmock.MockCommandRunner) {

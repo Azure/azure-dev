@@ -24,9 +24,9 @@ type BicepCli interface {
 	Build(ctx context.Context, file string) (string, error)
 }
 
-func NewBicepCli(ctx context.Context) BicepCli {
+func NewBicepCli(commandRunner exec.CommandRunner) BicepCli {
 	return &bicepCli{
-		commandRunner: exec.GetCommandRunner(ctx),
+		commandRunner: commandRunner,
 	}
 }
 
@@ -103,22 +103,10 @@ func (cli *bicepCli) runCommand(ctx context.Context, args ...string) (exec.RunRe
 	return cli.commandRunner.Run(ctx, runArgs)
 }
 
-type contextKey string
-
 const (
-	bicepContextKey         contextKey = "bicepcli"
-	defaultBicepCommandPath string     = "bicep"
-	envNameAzureConfigDir   string     = "AZURE_CONFIG_DIR"
+	defaultBicepCommandPath string = "bicep"
+	envNameAzureConfigDir   string = "AZURE_CONFIG_DIR"
 )
-
-func GetBicepCli(ctx context.Context) BicepCli {
-	cli, ok := ctx.Value(bicepContextKey).(BicepCli)
-	if !ok {
-		cli = NewBicepCli(ctx)
-	}
-
-	return cli
-}
 
 // Finds the bicep command path
 // Search in PATH, otherwise looks for standalone and az installation locations

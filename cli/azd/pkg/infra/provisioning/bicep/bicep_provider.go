@@ -955,8 +955,9 @@ func NewBicepProvider(
 	env *environment.Environment,
 	projectPath string,
 	infraOptions Options,
+	commandRunner exec.CommandRunner,
 ) *BicepProvider {
-	bicepCli := bicep.GetBicepCli(ctx)
+	bicepCli := bicep.NewBicepCli(commandRunner)
 	console := input.GetConsole(ctx)
 
 	// Default to a module named "main" if not specified.
@@ -983,9 +984,9 @@ func init() {
 			projectPath string,
 			options Options,
 			azCli azcli.AzCli,
-			_ exec.CommandRunner,
+			commandRunner exec.CommandRunner,
 		) (Provider, error) {
-			return NewBicepProvider(ctx, azCli, env, projectPath, options), nil
+			return NewBicepProvider(ctx, azCli, env, projectPath, options, commandRunner), nil
 		},
 	)
 

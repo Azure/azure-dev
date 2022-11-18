@@ -12,28 +12,26 @@ import org.springframework.data.mongodb.core.convert.MongoCustomConversions;
 @Configuration
 public class MongoDBConfiguration {
 
-	@Bean
-	public MongoCustomConversions mongoCustomConversions() {
-		return new MongoCustomConversions(
-				Arrays.asList(new OffsetDateTimeReadConverter(), new OffsetDateTimeWriteConverter()));
-	}
+    @Bean
+    public MongoCustomConversions mongoCustomConversions() {
+        return new MongoCustomConversions(
+            Arrays.asList(new OffsetDateTimeReadConverter(), new OffsetDateTimeWriteConverter())
+        );
+    }
 
-	static class OffsetDateTimeWriteConverter implements Converter<OffsetDateTime, Date> {
+    static class OffsetDateTimeWriteConverter implements Converter<OffsetDateTime, Date> {
 
-		@Override
-		public Date convert(OffsetDateTime source) {
-			return Date.from(source.toInstant().atZone(ZoneOffset.UTC).toInstant());
-		}
+        @Override
+        public Date convert(OffsetDateTime source) {
+            return Date.from(source.toInstant().atZone(ZoneOffset.UTC).toInstant());
+        }
+    }
 
-	}
+    static class OffsetDateTimeReadConverter implements Converter<Date, OffsetDateTime> {
 
-	static class OffsetDateTimeReadConverter implements Converter<Date, OffsetDateTime> {
-
-		@Override
-		public OffsetDateTime convert(Date source) {
-			return source.toInstant().atOffset(ZoneOffset.UTC);
-		}
-
-	}
-
+        @Override
+        public OffsetDateTime convert(Date source) {
+            return source.toInstant().atOffset(ZoneOffset.UTC);
+        }
+    }
 }

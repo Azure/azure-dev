@@ -10,9 +10,8 @@ import org.springframework.core.convert.converter.Converter;
 
 public class StringToTodoStateConverter implements Converter<String, TodoState> {
 
-	@Override
-	public TodoState convert(String source) {
-		return TodoState.fromValue(source);
-	}
-
+    @Override
+    public TodoState convert(String source) {
+        return TodoState.fromValue(source);
+    }
 }

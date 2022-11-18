@@ -182,6 +182,24 @@ stages:
         )
       )
     jobs:
+      - deployment: Publish_Release
+        environment: azure-dev
+        pool:
+          name: azsdk-pool-mms-ubuntu-2004-general
+          OSVmImage: MMSUbuntu20.04
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - checkout: self
+
+                - template: /eng/pipelines/templates/steps/set-vscode-version.yml
+
+                - template: /eng/pipelines/templates/steps/publish-vscode.yml
+                  parameters:
+                    PublishLocations: vscode/release/$(VSIX_VERSION);vscode/release/latest
+                    TagRepository: true
+                    UpdateShield: true
 
       - deployment: Increment_Version
         condition: >-
@@ -189,14 +207,12 @@ stages:
             succeeded(),
             ne('true', variables['Skip.IncrementVersion'])
           )
+        dependsOn: Publish_Release
         environment: azure-dev
 
         pool:
           name: azsdk-pool-mms-ubuntu-2004-general
           OSVmImage: MMSUbuntu20.04
-
-        # TODO: Should this have a dependsOn and only increment on successful
-        # tag and release?
 
         strategy:
           runOnce:
@@ -216,30 +232,6 @@ stages:
                     PRBranchName: vscode-version-increment-$(Build.BuildId)
                     CommitMsg: Increment VSCode Extension version after release
                     PRTitle: Increment VSCode Extension version after release
-                    # TODO: Remove before merge
-                    OpenAsDraft: true
-                    CloseAfterOpenForTesting: true
-
-      # TODO: Uncomment before merge
-      # - deployment: Publish_Release
-      #   environment: azure-dev
-      #   pool:
-      #     name: azsdk-pool-mms-ubuntu-2004-general
-      #     OSVmImage: MMSUbuntu20.04
-      #   strategy:
-      #     runOnce:
-      #       deploy:
-      #         steps:
-      #           - checkout: self
-
-      #           - template: /eng/pipelines/templates/steps/set-vscode-version.yml
-
-      #           - template: /eng/pipelines/templates/steps/publish-vscode.yml
-      #             parameters:
-      #               PublishLocations: vscode/release/$(VSIX_VERSION);vscode/release/latest
-      #               TagRepository: true
-      #               UpdateShield: true
-
 
   - stage: PublishIntegration
     dependsOn: Sign

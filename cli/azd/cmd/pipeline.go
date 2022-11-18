@@ -101,10 +101,12 @@ func newPipelineConfigAction(
 	commandRunner exec.CommandRunner,
 ) *pipelineConfigAction {
 	pca := &pipelineConfigAction{
-		flags:         flags,
-		azCli:         azCli,
-		credential:    credential,
-		manager:       pipeline.NewPipelineManager(azCli, azdCtx, flags.global, commandRunner, flags.PipelineManagerArgs),
+		flags:      flags,
+		azCli:      azCli,
+		credential: credential,
+		manager: pipeline.NewPipelineManager(
+			azCli, azdCtx, flags.global, commandRunner, console, flags.PipelineManagerArgs,
+		),
 		azdCtx:        azdCtx,
 		console:       console,
 		commandRunner: commandRunner,
@@ -127,7 +129,9 @@ func (p *pipelineConfigAction) Run(ctx context.Context) (*actions.ActionResult, 
 	// Detect the SCM and CI providers based on the project directory
 	p.manager.ScmProvider,
 		p.manager.CiProvider,
-		err = pipeline.DetectProviders(ctx, p.azdCtx, env, p.manager.PipelineProvider, p.credential, p.commandRunner)
+		err = pipeline.DetectProviders(
+		ctx, p.azdCtx, env, p.manager.PipelineProvider, p.console, p.credential, p.commandRunner,
+	)
 	if err != nil {
 		return nil, err
 	}

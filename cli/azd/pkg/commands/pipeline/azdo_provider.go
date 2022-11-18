@@ -33,6 +33,7 @@ type AzdoScmProvider struct {
 	AzdContext     *azdcontext.AzdContext
 	azdoConnection *azuredevops.Connection
 	commandRunner  exec.CommandRunner
+	console        input.Console
 }
 
 // AzdoRepositoryDetails provides extra state needed for the AzDo provider.
@@ -200,12 +201,11 @@ func (p *AzdoScmProvider) getRepoDetails() *AzdoRepositoryDetails {
 
 // helper function to return an azuredevops.Connection for use with AzDo Go SDK
 func (p *AzdoScmProvider) getAzdoConnection(ctx context.Context) (*azuredevops.Connection, error) {
-	console := input.GetConsole(ctx)
 	if p.azdoConnection != nil {
 		return p.azdoConnection, nil
 	}
 
-	org, err := azdo.EnsureOrgNameExists(ctx, p.Env, console)
+	org, err := azdo.EnsureOrgNameExists(ctx, p.Env, p.console)
 	if err != nil {
 		return nil, err
 	}
@@ -213,7 +213,7 @@ func (p *AzdoScmProvider) getAzdoConnection(ctx context.Context) (*azuredevops.C
 	repoDetails := p.getRepoDetails()
 	repoDetails.orgName = org
 
-	pat, err := azdo.EnsurePatExists(ctx, p.Env, console)
+	pat, err := azdo.EnsurePatExists(ctx, p.Env, p.console)
 	if err != nil {
 		return nil, err
 	}
@@ -569,6 +569,7 @@ type AzdoCiProvider struct {
 	Env         *environment.Environment
 	AzdContext  *azdcontext.AzdContext
 	credentials *azdo.AzureServicePrincipalCredentials
+	console     input.Console
 }
 
 // ***  subareaProvider implementation ******
@@ -665,13 +666,12 @@ func (p *AzdoCiProvider) configurePipeline(
 	provisioningProvider provisioning.Options,
 ) error {
 	details := repoDetails.details.(*AzdoRepositoryDetails)
-	console := input.GetConsole(ctx)
 
-	org, err := azdo.EnsureOrgNameExists(ctx, p.Env, console)
+	org, err := azdo.EnsureOrgNameExists(ctx, p.Env, p.console)
 	if err != nil {
 		return err
 	}
-	pat, err := azdo.EnsurePatExists(ctx, p.Env, console)
+	pat, err := azdo.EnsurePatExists(ctx, p.Env, p.console)
 	if err != nil {
 		return err
 	}
@@ -687,7 +687,7 @@ func (p *AzdoCiProvider) configurePipeline(
 		connection,
 		*p.credentials,
 		p.Env,
-		console,
+		p.console,
 		provisioningProvider,
 	)
 	if err != nil {

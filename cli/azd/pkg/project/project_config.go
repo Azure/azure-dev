@@ -13,6 +13,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
+	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/drone/envsubst"
@@ -95,6 +96,7 @@ func (p *ProjectConfig) HasService(name string) bool {
 func (pc *ProjectConfig) GetProject(
 	ctx context.Context,
 	env *environment.Environment,
+	console input.Console,
 	azCli azcli.AzCli,
 	commandRunner exec.CommandRunner,
 ) (*Project, error) {
@@ -130,7 +132,7 @@ func (pc *ProjectConfig) GetProject(
 			project.ResourceGroupName,
 			serviceConfig.ResourceName,
 		)
-		service, err := serviceConfig.GetService(ctx, &project, env, deploymentScope, azCli, commandRunner)
+		service, err := serviceConfig.GetService(ctx, &project, env, deploymentScope, console, azCli, commandRunner)
 
 		if err != nil {
 			return nil, fmt.Errorf("creating service %s: %w", key, err)

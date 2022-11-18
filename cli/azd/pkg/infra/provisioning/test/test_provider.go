@@ -184,12 +184,12 @@ func (p *TestProvider) Destroy(
 		})
 }
 
-func NewTestProvider(ctx context.Context, env *environment.Environment, projectPath string, options Options) Provider {
+func NewTestProvider(env *environment.Environment, projectPath string, console input.Console, options Options) Provider {
 	return &TestProvider{
 		env:         env,
 		projectPath: projectPath,
 		options:     options,
-		console:     input.GetConsole(ctx),
+		console:     console,
 	}
 }
 
@@ -202,10 +202,11 @@ func init() {
 			env *environment.Environment,
 			projectPath string,
 			options Options,
+			console input.Console,
 			_ azcli.AzCli,
 			_ exec.CommandRunner,
 		) (Provider, error) {
-			return NewTestProvider(ctx, env, projectPath, options), nil
+			return NewTestProvider(env, projectPath, console, options), nil
 		},
 	)
 

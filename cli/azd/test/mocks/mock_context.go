@@ -5,7 +5,6 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
-	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	mockconfig "github.com/azure/azure-dev/cli/azd/test/mocks/config"
 	mockconsole "github.com/azure/azure-dev/cli/azd/test/mocks/console"
 	mockexec "github.com/azure/azure-dev/cli/azd/test/mocks/exec"
@@ -31,7 +30,6 @@ func NewMockContext(ctx context.Context) *MockContext {
 	mockexec.AddAzLoginMocks(commandRunner)
 	httpClient.AddDefaultMocks()
 
-	ctx = input.WithConsole(ctx, mockConsole)
 	ctx = httputil.WithHttpClient(ctx, httpClient)
 	ctx = config.WithConfigManager(ctx, configManager)
 

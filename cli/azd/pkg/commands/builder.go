@@ -21,7 +21,5 @@ func RegisterDependenciesInCtx(
 
 	ctx = tools.WithInstalledCheckCache(ctx)
 
-	// Inject console into context
-	ctx = input.WithConsole(ctx, console)
 	return ctx, nil
 }

@@ -27,7 +27,9 @@ func TestManagerPlan(t *testing.T) {
 
 	mockContext := mocks.NewMockContext(context.Background())
 	azCli := mockazcli.NewAzCliFromMockContext(mockContext)
-	mgr, _ := NewManager(*mockContext.Context, env, "", options, interactive, azCli, mockContext.CommandRunner)
+	mgr, _ := NewManager(
+		*mockContext.Context, env, "", options, interactive, azCli, mockContext.Console, mockContext.CommandRunner,
+	)
 
 	deploymentPlan, err := mgr.Plan(*mockContext.Context)
 
@@ -45,7 +47,9 @@ func TestManagerGetState(t *testing.T) {
 
 	mockContext := mocks.NewMockContext(context.Background())
 	azCli := mockazcli.NewAzCliFromMockContext(mockContext)
-	mgr, _ := NewManager(*mockContext.Context, env, "", options, interactive, azCli, mockContext.CommandRunner)
+	mgr, _ := NewManager(
+		*mockContext.Context, env, "", options, interactive, azCli, mockContext.Console, mockContext.CommandRunner,
+	)
 
 	provisioningScope := infra.NewSubscriptionScope(
 		azCli,
@@ -68,7 +72,9 @@ func TestManagerDeploy(t *testing.T) {
 
 	mockContext := mocks.NewMockContext(context.Background())
 	azCli := mockazcli.NewAzCliFromMockContext(mockContext)
-	mgr, _ := NewManager(*mockContext.Context, env, "", options, interactive, azCli, mockContext.CommandRunner)
+	mgr, _ := NewManager(
+		*mockContext.Context, env, "", options, interactive, azCli, mockContext.Console, mockContext.CommandRunner,
+	)
 
 	deploymentPlan, _ := mgr.Plan(*mockContext.Context)
 	provisioningScope := infra.NewSubscriptionScope(
@@ -97,7 +103,9 @@ func TestManagerDestroyWithPositiveConfirmation(t *testing.T) {
 		return strings.Contains(options.Message, "Are you sure you want to destroy?")
 	}).Respond(true)
 
-	mgr, _ := NewManager(*mockContext.Context, env, "", options, interactive, azCli, mockContext.CommandRunner)
+	mgr, _ := NewManager(
+		*mockContext.Context, env, "", options, interactive, azCli, mockContext.Console, mockContext.CommandRunner,
+	)
 
 	deploymentPlan, _ := mgr.Plan(*mockContext.Context)
 	destroyOptions := NewDestroyOptions(false, false)
@@ -122,7 +130,9 @@ func TestManagerDestroyWithNegativeConfirmation(t *testing.T) {
 		return strings.Contains(options.Message, "Are you sure you want to destroy?")
 	}).Respond(false)
 
-	mgr, _ := NewManager(*mockContext.Context, env, "", options, interactive, azCli, mockContext.CommandRunner)
+	mgr, _ := NewManager(
+		*mockContext.Context, env, "", options, interactive, azCli, mockContext.Console, mockContext.CommandRunner,
+	)
 
 	deploymentPlan, _ := mgr.Plan(*mockContext.Context)
 	destroyOptions := NewDestroyOptions(false, false)

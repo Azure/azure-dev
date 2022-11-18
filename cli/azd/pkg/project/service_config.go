@@ -61,6 +61,7 @@ func (sc *ServiceConfig) GetService(
 	project *Project,
 	env *environment.Environment,
 	scope *environment.DeploymentScope,
+	console input.Console,
 	azCli azcli.AzCli,
 	commandRunner exec.CommandRunner,
 ) (*Service, error) {
@@ -69,7 +70,7 @@ func (sc *ServiceConfig) GetService(
 		return nil, fmt.Errorf("creating framework service: %w", err)
 	}
 
-	serviceTarget, err := sc.GetServiceTarget(ctx, env, scope, azCli, commandRunner)
+	serviceTarget, err := sc.GetServiceTarget(ctx, env, scope, console, azCli, commandRunner)
 	if err != nil {
 		return nil, fmt.Errorf("creating service target: %w", err)
 	}
@@ -88,6 +89,7 @@ func (sc *ServiceConfig) GetServiceTarget(
 	ctx context.Context,
 	env *environment.Environment,
 	scope *environment.DeploymentScope,
+	console input.Console,
 	azCli azcli.AzCli,
 	commandRunner exec.CommandRunner,
 ) (*ServiceTarget, error) {
@@ -98,7 +100,7 @@ func (sc *ServiceConfig) GetServiceTarget(
 		target = NewAppServiceTarget(sc, env, scope, azCli)
 	case string(ContainerAppTarget):
 		target = NewContainerAppTarget(
-			sc, env, scope, azCli, docker.NewDocker(commandRunner), input.GetConsole(ctx), commandRunner,
+			sc, env, scope, azCli, docker.NewDocker(commandRunner), console, commandRunner,
 		)
 	case string(AzureFunctionTarget):
 		target = NewFunctionAppTarget(sc, env, scope, azCli)

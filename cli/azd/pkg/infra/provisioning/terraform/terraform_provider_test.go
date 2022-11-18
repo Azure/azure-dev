@@ -227,7 +227,9 @@ func createTerraformProvider(mockContext *mocks.MockContext) *TerraformProvider 
 		"AZURE_LOCATION": "westus2",
 	})
 
-	return NewTerraformProvider(*mockContext.Context, env, projectDir, options, mockContext.CommandRunner)
+	return NewTerraformProvider(
+		*mockContext.Context, env, projectDir, options, mockContext.Console, mockContext.CommandRunner,
+	)
 }
 
 func prepareGenericMocks(commandRunner *execmock.MockCommandRunner) {

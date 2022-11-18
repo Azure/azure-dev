@@ -163,7 +163,7 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		i.console.MessageUx(ctx, "Initializing a new project (azd init)", input.Title)
 
 		if i.flags.template.Name == "" {
-			i.flags.template, err = templates.PromptTemplate(ctx, "Select a project template:")
+			i.flags.template, err = templates.PromptTemplate(ctx, "Select a project template:", i.console)
 
 			if err != nil {
 				return nil, err

@@ -144,7 +144,7 @@ func (d *deployAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		return nil, fmt.Errorf("service name '%s' doesn't exist", d.flags.serviceName)
 	}
 
-	proj, err := projConfig.GetProject(ctx, env, d.azCli, d.commandRunner)
+	proj, err := projConfig.GetProject(ctx, env, d.console, d.azCli, d.commandRunner)
 	if err != nil {
 		return nil, fmt.Errorf("creating project: %w", err)
 	}

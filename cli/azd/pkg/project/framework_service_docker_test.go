@@ -53,7 +53,7 @@ services:
 
 	projectConfig, err := ParseProjectConfig(testProj, env)
 	require.NoError(t, err)
-	prj, err := projectConfig.GetProject(*mockContext.Context, env, azCli, mockContext.CommandRunner)
+	prj, err := projectConfig.GetProject(*mockContext.Context, env, mockContext.Console, azCli, mockContext.CommandRunner)
 	require.NoError(t, err)
 
 	service := prj.Services[0]
@@ -132,7 +132,7 @@ services:
 	projectConfig, err := ParseProjectConfig(testProj, env)
 	require.NoError(t, err)
 
-	prj, err := projectConfig.GetProject(*mockContext.Context, env, azCli, mockContext.CommandRunner)
+	prj, err := projectConfig.GetProject(*mockContext.Context, env, mockContext.Console, azCli, mockContext.CommandRunner)
 	require.NoError(t, err)
 
 	service := prj.Services[0]

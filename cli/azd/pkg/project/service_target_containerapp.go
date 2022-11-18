@@ -105,6 +105,7 @@ func (at *containerAppTarget) Deploy(
 		at.config.Infra,
 		at.console.IsUnformatted(),
 		at.cli,
+		at.console,
 		at.commandRunner,
 	)
 	if err != nil {

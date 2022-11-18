@@ -62,10 +62,10 @@ func NewTerraformProvider(
 	env *environment.Environment,
 	projectPath string,
 	infraOptions Options,
+	console input.Console,
 	commandRunner exec.CommandRunner,
 ) *TerraformProvider {
 	terraformCli := terraform.NewTerraformCli(commandRunner)
-	console := input.GetConsole(ctx)
 
 	// Default to a module named "main" if not specified.
 	if strings.TrimSpace(infraOptions.Module) == "" {
@@ -694,10 +694,11 @@ func init() {
 			env *environment.Environment,
 			projectPath string,
 			options Options,
+			console input.Console,
 			_ azcli.AzCli,
 			commandRunner exec.CommandRunner,
 		) (Provider, error) {
-			return NewTerraformProvider(ctx, env, projectPath, options, commandRunner), nil
+			return NewTerraformProvider(ctx, env, projectPath, options, console, commandRunner), nil
 		},
 	)
 

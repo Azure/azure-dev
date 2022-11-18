@@ -51,9 +51,7 @@ func NewTemplateManager() *TemplateManager {
 
 // PromptTemplate ask the user to select a template.
 // An empty Template with default values is returned if the user selects 'Empty Template' from the choices
-func PromptTemplate(ctx context.Context, message string) (Template, error) {
-	console := input.GetConsole(ctx)
-
+func PromptTemplate(ctx context.Context, message string, console input.Console) (Template, error) {
 	var result Template
 	templateManager := NewTemplateManager()
 	templatesSet, err := templateManager.ListTemplates()

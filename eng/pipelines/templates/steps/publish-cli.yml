@@ -104,8 +104,18 @@ steps:
 
   # Create release
   - ${{ if eq('true', parameters.CreateGitHubRelease ) }}:
+    - task: PowerShell@2
+      inputs:
+        targetType: filePath
+        filePath: eng/scripts/New-ReleaseNotesFile.ps1
+        arguments: >-
+          -ChangeLogPath cli/azd/CHANGELOG.md
+          -Version $(CLI_VERSION)
+          -DevOpsOutputFormat
+      displayName: Set release changelog content
+
     - pwsh: |
-        gh release create $(GH_RELEASE_TAG)
+        gh release create $(GH_RELEASE_TAG) --notes-file $(ReleaseChangeLogPath)
         gh release upload $(GH_RELEASE_TAG) release/*
       displayName: Create GitHub Release and upload artifacts
       env:

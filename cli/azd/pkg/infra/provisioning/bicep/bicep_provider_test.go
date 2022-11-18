@@ -506,27 +506,21 @@ func prepareDestroyMocks(mockContext *mocks.MockContext) {
 	mockContext.HttpClient.When(func(request *http.Request) bool {
 		return request.Method == http.MethodDelete &&
 			strings.Contains(request.URL.Path, "subscriptions/SUBSCRIPTION_ID/resourcegroups/RESOURCE_GROUP")
-	}).RespondFn(func(request *http.Request) (*http.Response, error) {
-		return httpRespondFn(request)
-	})
+	}).RespondFn(httpRespondFn)
 
 	// Purge Key vault
 	mockContext.HttpClient.When(func(request *http.Request) bool {
 		return request.Method == http.MethodPost &&
 			(strings.Contains(request.URL.Path, "deletedVaults/kv-123/purge") ||
 				strings.Contains(request.URL.Path, "deletedVaults/kv2-123/purge"))
-	}).RespondFn(func(request *http.Request) (*http.Response, error) {
-		return httpRespondFn(request)
-	})
+	}).RespondFn(httpRespondFn)
 
 	// Purge App configuration
 	mockContext.HttpClient.When(func(request *http.Request) bool {
 		return request.Method == http.MethodPost &&
 			(strings.Contains(request.URL.Path, "deletedConfigurationStores/ac-123/purge") ||
 				strings.Contains(request.URL.Path, "deletedConfigurationStores/ac2-123/purge"))
-	}).RespondFn(func(request *http.Request) (*http.Response, error) {
-		return httpRespondFn(request)
-	})
+	}).RespondFn(httpRespondFn)
 
 	// Delete deployment
 	mockPollingUrl := "https://url-to-poll.net/keep-deleting"

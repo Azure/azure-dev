@@ -143,7 +143,7 @@ services:
 		require.NotNil(t, svc.Config)
 		require.NotNil(t, svc.Framework)
 		require.NotNil(t, svc.Target)
-		require.NotNil(t, svc.Scope)
+		require.NotNil(t, svc.TargetResource)
 	}
 }
 

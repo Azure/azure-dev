@@ -20,10 +20,10 @@ import (
 // functionAppTarget specifies an Azure Function to deploy to.
 // Implements `project.ServiceTarget`
 type functionAppTarget struct {
-	config         *ServiceConfig
-	env            *environment.Environment
-	targetResource *environment.TargetResource
-	cli            azcli.AzCli
+	config   *ServiceConfig
+	env      *environment.Environment
+	resource *environment.TargetResource
+	cli      azcli.AzCli
 }
 
 func (f *functionAppTarget) RequiredExternalTools() []tools.ExternalTool {
@@ -55,8 +55,8 @@ func (f *functionAppTarget) Deploy(
 	res, err := f.cli.DeployFunctionAppUsingZipFile(
 		ctx,
 		f.env.GetSubscriptionId(),
-		f.targetResource.ResourceGroupName(),
-		f.targetResource.ResourceName(),
+		f.resource.ResourceGroupName(),
+		f.resource.ResourceName(),
 		zipFile,
 	)
 	if err != nil {
@@ -70,7 +70,7 @@ func (f *functionAppTarget) Deploy(
 	}
 
 	sdr := NewServiceDeploymentResult(
-		azure.WebsiteRID(f.env.GetSubscriptionId(), f.targetResource.ResourceGroupName(), f.targetResource.ResourceName()),
+		azure.WebsiteRID(f.env.GetSubscriptionId(), f.resource.ResourceGroupName(), f.resource.ResourceName()),
 		AzureFunctionTarget,
 		*res,
 		endpoints,
@@ -84,8 +84,8 @@ func (f *functionAppTarget) Endpoints(ctx context.Context) ([]string, error) {
 	// an empty array and nil error will mean "no endpoints".
 	if props, err := f.cli.GetFunctionAppProperties(
 		ctx, f.env.GetSubscriptionId(),
-		f.targetResource.ResourceGroupName(),
-		f.targetResource.ResourceName()); err != nil {
+		f.resource.ResourceGroupName(),
+		f.resource.ResourceName()); err != nil {
 		return nil, fmt.Errorf("fetching service properties: %w", err)
 	} else {
 		endpoints := make([]string, len(props.HostNames))
@@ -100,21 +100,21 @@ func (f *functionAppTarget) Endpoints(ctx context.Context) ([]string, error) {
 func NewFunctionAppTarget(
 	config *ServiceConfig,
 	env *environment.Environment,
-	targetResource *environment.TargetResource,
+	resource *environment.TargetResource,
 	azCli azcli.AzCli,
 ) (ServiceTarget, error) {
-	if targetResource.ResourceType() != string(infra.AzureResourceTypeWebSite) {
+	if resource.ResourceType() != string(infra.AzureResourceTypeWebSite) {
 		return nil, resourceTypeMismatchError(
-			targetResource.ResourceName(),
-			targetResource.ResourceType(),
+			resource.ResourceName(),
+			resource.ResourceType(),
 			infra.AzureResourceTypeWebSite,
 		)
 	}
 
 	return &functionAppTarget{
-		config:         config,
-		env:            env,
-		targetResource: targetResource,
-		cli:            azCli,
+		config:   config,
+		env:      env,
+		resource: resource,
+		cli:      azCli,
 	}, nil
 }

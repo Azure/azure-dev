@@ -22,8 +22,8 @@ type Service struct {
 	Framework FrameworkService
 	// The application target service used to deploy the service to azure
 	Target ServiceTarget
-	// The deployment scope of the service, ex) subscriptionId, resource group name & resource name
-	Scope *environment.TargetResource
+	// The target resource of the service, ex) subscriptionId, resource group name & resource name
+	TargetResource *environment.TargetResource
 }
 
 type ServiceDeploymentChannelResponse struct {

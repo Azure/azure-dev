@@ -58,7 +58,7 @@ services:
 
 	assertHasService(t,
 		project.Services,
-		func(s *Service) bool { return s.Scope.ResourceName() == "deployedApiSvc" },
+		func(s *Service) bool { return s.TargetResource.ResourceName() == "deployedApiSvc" },
 		"api service does not have expected resource name",
 	)
 }
@@ -106,7 +106,7 @@ services:
 	// Deployment resource name comes from the found tag on the graph query request
 	assertHasService(t,
 		project.Services,
-		func(s *Service) bool { return s.Scope.ResourceName() == resourceName },
+		func(s *Service) bool { return s.TargetResource.ResourceName() == resourceName },
 		"api service does not have expected resource name",
 	)
 }
@@ -163,13 +163,13 @@ services:
 
 	assertHasService(t,
 		project.Services,
-		func(s *Service) bool { return s.Scope.ResourceGroupName() == resourceGroupName },
+		func(s *Service) bool { return s.TargetResource.ResourceGroupName() == resourceGroupName },
 		"api service does not have expected resource group name",
 	)
 
 	assertHasService(t,
 		project.Services,
-		func(s *Service) bool { return s.Scope.ResourceGroupName() == resourceGroupName },
+		func(s *Service) bool { return s.TargetResource.ResourceGroupName() == resourceGroupName },
 		"web service does not have expected resource group name",
 	)
 }
@@ -229,13 +229,13 @@ services:
 
 	assertHasService(t,
 		project.Services,
-		func(s *Service) bool { return s.Scope.ResourceGroupName() == expectedResourceGroupName },
+		func(s *Service) bool { return s.TargetResource.ResourceGroupName() == expectedResourceGroupName },
 		"api service does not have expected resource group name",
 	)
 
 	assertHasService(t,
 		project.Services,
-		func(s *Service) bool { return s.Scope.ResourceGroupName() == expectedResourceGroupName },
+		func(s *Service) bool { return s.TargetResource.ResourceGroupName() == expectedResourceGroupName },
 		"web service does not have expected resource group name",
 	)
 }

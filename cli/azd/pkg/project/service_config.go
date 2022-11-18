@@ -66,29 +66,29 @@ func (sc *ServiceConfig) GetService(
 		return nil, fmt.Errorf("creating framework service: %w", err)
 	}
 
-	targetResource, err := sc.GetServiceResource(ctx, project.ResourceGroupName, env, azCli)
+	azureResource, err := sc.GetServiceResource(ctx, project.ResourceGroupName, env, azCli)
 	if err != nil {
 		return nil, err
 	}
 
-	scope := environment.NewTargetResource(
+	targetResource := environment.NewTargetResource(
 		env.GetSubscriptionId(),
 		project.ResourceGroupName,
-		targetResource.Name,
-		targetResource.Type,
+		azureResource.Name,
+		azureResource.Type,
 	)
 
-	serviceTarget, err := sc.GetServiceTarget(ctx, env, scope, azCli)
+	serviceTarget, err := sc.GetServiceTarget(ctx, env, targetResource, azCli)
 	if err != nil {
 		return nil, fmt.Errorf("creating service target: %w", err)
 	}
 
 	return &Service{
-		Project:   project,
-		Config:    sc,
-		Framework: *framework,
-		Target:    *serviceTarget,
-		Scope:     scope,
+		Project:        project,
+		Config:         sc,
+		Framework:      *framework,
+		Target:         *serviceTarget,
+		TargetResource: targetResource,
 	}, nil
 }
 
@@ -96,7 +96,7 @@ func (sc *ServiceConfig) GetService(
 func (sc *ServiceConfig) GetServiceTarget(
 	ctx context.Context,
 	env *environment.Environment,
-	scope *environment.TargetResource,
+	resource *environment.TargetResource,
 	azCli azcli.AzCli,
 ) (*ServiceTarget, error) {
 	var target ServiceTarget
@@ -104,13 +104,13 @@ func (sc *ServiceConfig) GetServiceTarget(
 
 	switch sc.Host {
 	case "", string(AppServiceTarget):
-		target, err = NewAppServiceTarget(sc, env, scope, azCli)
+		target, err = NewAppServiceTarget(sc, env, resource, azCli)
 	case string(ContainerAppTarget):
-		target, err = NewContainerAppTarget(sc, env, scope, azCli, docker.NewDocker(ctx), input.GetConsole(ctx))
+		target, err = NewContainerAppTarget(sc, env, resource, azCli, docker.NewDocker(ctx), input.GetConsole(ctx))
 	case string(AzureFunctionTarget):
-		target, err = NewFunctionAppTarget(sc, env, scope, azCli)
+		target, err = NewFunctionAppTarget(sc, env, resource, azCli)
 	case string(StaticWebAppTarget):
-		target, err = NewStaticWebAppTarget(sc, env, scope, azCli, swa.NewSwaCli(ctx))
+		target, err = NewStaticWebAppTarget(sc, env, resource, azCli, swa.NewSwaCli(ctx))
 	default:
 		return nil, fmt.Errorf("unsupported host '%s' for service '%s'", sc.Host, sc.Name)
 	}

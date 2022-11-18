@@ -84,17 +84,21 @@ func (st *mockServiceTarget) Endpoints(_ context.Context) ([]string, error) {
 
 func TestDeployProgressMessages(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
-	mockarmresources.AddAzResourceListMock(mockContext.HttpClient, convert.RefOf("test-resource-group-name"), []*armresources.GenericResourceExpanded{
-		{
-			ID:       convert.RefOf("test-api"),
-			Name:     convert.RefOf("test-api"),
-			Type:     convert.RefOf(string(infra.AzureResourceTypeWebSite)),
-			Location: convert.RefOf("eastus2"),
-			Tags: map[string]*string{
-				defaultServiceTag: convert.RefOf("api"),
+	mockarmresources.AddAzResourceListMock(
+		mockContext.HttpClient,
+		convert.RefOf("test-resource-group-name"),
+		[]*armresources.GenericResourceExpanded{
+			{
+				ID:       convert.RefOf("test-api"),
+				Name:     convert.RefOf("test-api"),
+				Type:     convert.RefOf(string(infra.AzureResourceTypeWebSite)),
+				Location: convert.RefOf("eastus2"),
+				Tags: map[string]*string{
+					defaultServiceTag: convert.RefOf("api"),
+				},
 			},
 		},
-	})
+	)
 
 	env := environment.Ephemeral()
 	env.SetSubscriptionId("SUBSCRIPTION_ID")

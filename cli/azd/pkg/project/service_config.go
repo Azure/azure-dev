@@ -237,20 +237,40 @@ func (sc *ServiceConfig) GetServiceResource(
 
 	if strings.TrimSpace(sc.ResourceName) == "" { // A tag search was performed
 		if len(resources) == 0 {
-			return azcli.AzCliResource{}, fmt.Errorf("unable to find a provisioned resource tagged with '%s: %s'. Ensure the service resource is correctly tagged in your bicep files, and rerun provision", defaultServiceTag, sc.Name)
+			return azcli.AzCliResource{}, fmt.Errorf(
+				//nolint:lll
+				"unable to find a provisioned resource tagged with '%s: %s'. Ensure the service resource is correctly tagged in your bicep files, and rerun provision",
+				defaultServiceTag,
+				sc.Name,
+			)
 		}
 
 		if len(resources) != 1 {
-			return azcli.AzCliResource{}, fmt.Errorf("expecting only '1' resource tagged with '%s: %s', but found '%d'. Ensure a unique service resource is correctly tagged in your bicep files, and rerun provision", defaultServiceTag, sc.Name, len(resources))
+			return azcli.AzCliResource{}, fmt.Errorf(
+				//nolint:lll
+				"expecting only '1' resource tagged with '%s: %s', but found '%d'. Ensure a unique service resource is correctly tagged in your bicep files, and rerun provision",
+				defaultServiceTag,
+				sc.Name,
+				len(resources),
+			)
 		}
 	} else { // Name based search
 		if len(resources) == 0 {
-			return azcli.AzCliResource{}, fmt.Errorf("unable to find a provisioned resource with name '%s'. Ensure that a previous provision was successful", sc.ResourceName)
+			return azcli.AzCliResource{},
+				fmt.Errorf(
+					"unable to find a provisioned resource with name '%s'. Ensure that a previous provision was successful",
+					sc.ResourceName)
 		}
 
 		// This can happen if multiple resources with different resource types are given the same name.
 		if len(resources) != 1 {
-			return azcli.AzCliResource{}, fmt.Errorf("expecting only '1' resource named '%s', but found '%d'. Use a unique name for the service resource in the resource group '%s'", sc.ResourceName, len(resources), resourceGroupName)
+			return azcli.AzCliResource{},
+				fmt.Errorf(
+					//nolint:lll
+					"expecting only '1' resource named '%s', but found '%d'. Use a unique name for the service resource in the resource group '%s'",
+					sc.ResourceName,
+					len(resources),
+					resourceGroupName)
 		}
 	}
 

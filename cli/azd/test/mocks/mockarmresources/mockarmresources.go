@@ -18,7 +18,11 @@ var tagFilterExpression = regexp.MustCompile("tagName eq '(.+)' and tagValue eq 
 
 var nameFilterExpression = regexp.MustCompile("name eq '(.+)'")
 
-func AddAzResourceListMock(c *httputil.MockHttpClient, matchResourceGroupName *string, result []*armresources.GenericResourceExpanded) {
+func AddAzResourceListMock(
+	c *httputil.MockHttpClient,
+	matchResourceGroupName *string,
+	result []*armresources.GenericResourceExpanded,
+) {
 	c.When(func(request *http.Request) bool {
 		isMatch := strings.Contains(request.URL.Path, "/resources")
 		if matchResourceGroupName != nil {

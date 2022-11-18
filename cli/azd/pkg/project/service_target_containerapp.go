@@ -115,7 +115,12 @@ func (at *containerAppTarget) Deploy(
 
 	progress <- "Updating container app image reference"
 	deploymentName := fmt.Sprintf("%s-%s", at.env.GetEnvName(), at.config.Name)
-	scope := infra.NewResourceGroupScope(ctx, at.env.GetSubscriptionId(), at.targetResource.ResourceGroupName(), deploymentName)
+	scope := infra.NewResourceGroupScope(
+		ctx,
+		at.env.GetSubscriptionId(),
+		at.targetResource.ResourceGroupName(),
+		deploymentName,
+	)
 	deployResult, err := infraManager.Deploy(ctx, deploymentPlan, scope)
 
 	if err != nil {
@@ -173,7 +178,11 @@ func NewContainerAppTarget(
 	console input.Console,
 ) (ServiceTarget, error) {
 	if targetResource.ResourceType() != string(infra.AzureResourceTypeContainerApp) {
-		return nil, resourceTypeMismatchError(targetResource.ResourceName(), targetResource.ResourceType(), infra.AzureResourceTypeContainerApp)
+		return nil, resourceTypeMismatchError(
+			targetResource.ResourceName(),
+			targetResource.ResourceType(),
+			infra.AzureResourceTypeContainerApp,
+		)
 	}
 
 	return &containerAppTarget{

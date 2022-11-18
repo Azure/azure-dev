@@ -104,7 +104,11 @@ func NewFunctionAppTarget(
 	azCli azcli.AzCli,
 ) (ServiceTarget, error) {
 	if targetResource.ResourceType() != string(infra.AzureResourceTypeWebSite) {
-		return nil, resourceTypeMismatchError(targetResource.ResourceName(), targetResource.ResourceType(), infra.AzureResourceTypeWebSite)
+		return nil, resourceTypeMismatchError(
+			targetResource.ResourceName(),
+			targetResource.ResourceType(),
+			infra.AzureResourceTypeWebSite,
+		)
 	}
 
 	return &functionAppTarget{

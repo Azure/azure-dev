@@ -70,8 +70,17 @@ func NewServiceDeploymentResult(
 	return returnValue
 }
 
-func resourceTypeMismatchError(resourceName string, resourceType string, expectedResourceType infra.AzureResourceType) error {
-	return fmt.Errorf("resource '%s' with type '%s' does not match expected resource type '%s'", resourceName, resourceType, string(expectedResourceType))
+func resourceTypeMismatchError(
+	resourceName string,
+	resourceType string,
+	expectedResourceType infra.AzureResourceType,
+) error {
+	return fmt.Errorf(
+		"resource '%s' with type '%s' does not match expected resource type '%s'",
+		resourceName,
+		resourceType,
+		string(expectedResourceType),
+	)
 }
 
 var _ ServiceTarget = &appServiceTarget{}

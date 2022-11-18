@@ -7,8 +7,18 @@ type TargetResource struct {
 	resourceType      string
 }
 
-func NewTargetResource(subscriptionId string, resourceGroupName string, resourceName string, resourceType string) *TargetResource {
-	return &TargetResource{subscriptionId: subscriptionId, resourceGroupName: resourceGroupName, resourceName: resourceName, resourceType: resourceType}
+func NewTargetResource(
+	subscriptionId string,
+	resourceGroupName string,
+	resourceName string,
+	resourceType string,
+) *TargetResource {
+	return &TargetResource{
+		subscriptionId:    subscriptionId,
+		resourceGroupName: resourceGroupName,
+		resourceName:      resourceName,
+		resourceType:      resourceType,
+	}
 }
 
 func (ds *TargetResource) SubscriptionId() string {

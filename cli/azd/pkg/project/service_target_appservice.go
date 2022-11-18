@@ -68,7 +68,11 @@ func (st *appServiceTarget) Deploy(
 	}
 
 	sdr := NewServiceDeploymentResult(
-		azure.WebsiteRID(st.env.GetSubscriptionId(), st.targetResource.ResourceGroupName(), st.targetResource.ResourceName()),
+		azure.WebsiteRID(
+			st.env.GetSubscriptionId(),
+			st.targetResource.ResourceGroupName(),
+			st.targetResource.ResourceName(),
+		),
 		AppServiceTarget,
 		*res,
 		endpoints,
@@ -102,7 +106,11 @@ func NewAppServiceTarget(
 	azCli azcli.AzCli,
 ) (ServiceTarget, error) {
 	if targetResource.ResourceType() != string(infra.AzureResourceTypeWebSite) {
-		return nil, resourceTypeMismatchError(targetResource.ResourceName(), targetResource.ResourceType(), infra.AzureResourceTypeWebSite)
+		return nil, resourceTypeMismatchError(
+			targetResource.ResourceName(),
+			targetResource.ResourceType(),
+			infra.AzureResourceTypeWebSite,
+		)
 	}
 
 	return &appServiceTarget{

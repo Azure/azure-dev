@@ -87,7 +87,11 @@ func (at *staticWebAppTarget) Deploy(
 	}
 
 	sdr := NewServiceDeploymentResult(
-		azure.StaticWebAppRID(at.env.GetSubscriptionId(), at.targetResource.ResourceGroupName(), at.targetResource.ResourceName()),
+		azure.StaticWebAppRID(
+			at.env.GetSubscriptionId(),
+			at.targetResource.ResourceGroupName(),
+			at.targetResource.ResourceName(),
+		),
 		StaticWebAppTarget,
 		res,
 		endpoints,
@@ -155,7 +159,11 @@ func NewStaticWebAppTarget(
 	swaCli swa.SwaCli,
 ) (ServiceTarget, error) {
 	if targetResource.ResourceType() != string(infra.AzureResourceTypeStaticWebSite) {
-		return nil, resourceTypeMismatchError(targetResource.ResourceName(), targetResource.ResourceType(), infra.AzureResourceTypeStaticWebSite)
+		return nil, resourceTypeMismatchError(
+			targetResource.ResourceName(),
+			targetResource.ResourceType(),
+			infra.AzureResourceTypeStaticWebSite,
+		)
 	}
 
 	return &staticWebAppTarget{

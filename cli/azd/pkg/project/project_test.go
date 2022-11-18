@@ -46,7 +46,7 @@ services:
 	projectConfig, err := ParseProjectConfig(testProj, e)
 	assert.Nil(t, err)
 
-	project, err := projectConfig.GetProject(*mockContext.Context, e, azCli)
+	project, err := projectConfig.GetProject(*mockContext.Context, e, azCli, mockContext.CommandRunner)
 	assert.Nil(t, err)
 
 	assertHasService(t,
@@ -93,7 +93,7 @@ services:
 	projectConfig, err := ParseProjectConfig(testProj, e)
 	assert.Nil(t, err)
 
-	project, err := projectConfig.GetProject(*mockContext.Context, e, azCli)
+	project, err := projectConfig.GetProject(*mockContext.Context, e, azCli, mockContext.CommandRunner)
 	assert.Nil(t, err)
 
 	assertHasService(t,

@@ -9,6 +9,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
+	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
@@ -68,12 +69,13 @@ func infraCreateCmdDesign(rootOptions *internal.GlobalCommandOptions) (*cobra.Co
 }
 
 type infraCreateAction struct {
-	flags     infraCreateFlags
-	azCli     azcli.AzCli
-	azdCtx    *azdcontext.AzdContext
-	formatter output.Formatter
-	writer    io.Writer
-	console   input.Console
+	flags         infraCreateFlags
+	azCli         azcli.AzCli
+	azdCtx        *azdcontext.AzdContext
+	formatter     output.Formatter
+	writer        io.Writer
+	console       input.Console
+	commandRunner exec.CommandRunner
 	// If set, redirects the final command printout to the channel
 	finalOutputRedirect *[]string
 }
@@ -85,6 +87,7 @@ func newInfraCreateAction(
 	console input.Console,
 	formatter output.Formatter,
 	writer io.Writer,
+	commandRunner exec.CommandRunner,
 ) *infraCreateAction {
 	return &infraCreateAction{
 		flags:               f,
@@ -93,6 +96,7 @@ func newInfraCreateAction(
 		formatter:           formatter,
 		writer:              writer,
 		console:             console,
+		commandRunner:       commandRunner,
 		finalOutputRedirect: nil,
 	}
 }
@@ -116,7 +120,9 @@ func (i *infraCreateAction) Run(ctx context.Context) (*actions.ActionResult, err
 		return nil, err
 	}
 
-	infraManager, err := provisioning.NewManager(ctx, env, prj.Path, prj.Infra, i.console.IsUnformatted(), i.azCli)
+	infraManager, err := provisioning.NewManager(
+		ctx, env, prj.Path, prj.Infra, i.console.IsUnformatted(), i.azCli, i.commandRunner,
+	)
 	if err != nil {
 		return nil, fmt.Errorf("creating provisioning manager: %w", err)
 	}

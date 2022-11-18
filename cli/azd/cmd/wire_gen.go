@@ -47,13 +47,14 @@ func initDeployAction(console input.Console, ctx context.Context, o *internal.Gl
 		return nil, err
 	}
 	azCli := newAzCliFromOptions(o, tokenCredential)
+	commandRunner := newCommandRunnerFromConsole(console)
 	azdContext, err := newAzdContext()
 	if err != nil {
 		return nil, err
 	}
 	formatter := newFormatterFromConsole(console)
 	writer := newOutputWriter(console)
-	cmdDeployAction, err := newDeployAction(flags, azCli, azdContext, console, formatter, writer)
+	cmdDeployAction, err := newDeployAction(flags, azCli, commandRunner, azdContext, console, formatter, writer)
 	if err != nil {
 		return nil, err
 	}
@@ -143,9 +144,9 @@ func initUpAction(console input.Console, ctx context.Context, o *internal.Global
 	cmdInfraCreateFlags := flags.infraCreateFlags
 	formatter := newFormatterFromConsole(console)
 	writer := newOutputWriter(console)
-	cmdInfraCreateAction := newInfraCreateAction(cmdInfraCreateFlags, azCli, azdContext, console, formatter, writer)
+	cmdInfraCreateAction := newInfraCreateAction(cmdInfraCreateFlags, azCli, azdContext, console, formatter, writer, commandRunner)
 	cmdDeployFlags := flags.deployFlags
-	cmdDeployAction, err := newDeployAction(cmdDeployFlags, azCli, azdContext, console, formatter, writer)
+	cmdDeployAction, err := newDeployAction(cmdDeployFlags, azCli, commandRunner, azdContext, console, formatter, writer)
 	if err != nil {
 		return nil, err
 	}
@@ -236,7 +237,8 @@ func initInfraCreateAction(console input.Console, ctx context.Context, o *intern
 	}
 	formatter := newFormatterFromConsole(console)
 	writer := newOutputWriter(console)
-	cmdInfraCreateAction := newInfraCreateAction(flags, azCli, azdContext, console, formatter, writer)
+	commandRunner := newCommandRunnerFromConsole(console)
+	cmdInfraCreateAction := newInfraCreateAction(flags, azCli, azdContext, console, formatter, writer, commandRunner)
 	return cmdInfraCreateAction, nil
 }
 
@@ -255,7 +257,8 @@ func initInfraDeleteAction(console input.Console, ctx context.Context, o *intern
 	if err != nil {
 		return nil, err
 	}
-	cmdInfraDeleteAction := newInfraDeleteAction(flags, azCli, azdContext, console)
+	commandRunner := newCommandRunnerFromConsole(console)
+	cmdInfraDeleteAction := newInfraDeleteAction(flags, azCli, azdContext, console, commandRunner)
 	return cmdInfraDeleteAction, nil
 }
 
@@ -332,9 +335,10 @@ func initEnvRefreshAction(console input.Console, ctx context.Context, o *interna
 		return nil, err
 	}
 	azCli := newAzCliFromOptions(o, tokenCredential)
+	commandRunner := newCommandRunnerFromConsole(console)
 	formatter := newFormatterFromConsole(console)
 	writer := newOutputWriter(console)
-	cmdEnvRefreshAction := newEnvRefreshAction(azdContext, azCli, flags, console, formatter, writer)
+	cmdEnvRefreshAction := newEnvRefreshAction(azdContext, azCli, commandRunner, flags, console, formatter, writer)
 	return cmdEnvRefreshAction, nil
 }
 

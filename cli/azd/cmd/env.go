@@ -11,6 +11,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
+	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
@@ -319,29 +320,32 @@ func envRefreshCmdDesign(global *internal.GlobalCommandOptions) (*cobra.Command,
 }
 
 type envRefreshAction struct {
-	azdCtx    *azdcontext.AzdContext
-	azCli     azcli.AzCli
-	flags     envRefreshFlags
-	console   input.Console
-	formatter output.Formatter
-	writer    io.Writer
+	azdCtx        *azdcontext.AzdContext
+	azCli         azcli.AzCli
+	flags         envRefreshFlags
+	console       input.Console
+	formatter     output.Formatter
+	writer        io.Writer
+	commandRunner exec.CommandRunner
 }
 
 func newEnvRefreshAction(
 	azdCtx *azdcontext.AzdContext,
 	azCli azcli.AzCli,
+	commandRunner exec.CommandRunner,
 	flags envRefreshFlags,
 	console input.Console,
 	formatter output.Formatter,
 	writer io.Writer,
 ) *envRefreshAction {
 	return &envRefreshAction{
-		azdCtx:    azdCtx,
-		azCli:     azCli,
-		flags:     flags,
-		console:   console,
-		formatter: formatter,
-		writer:    writer,
+		azdCtx:        azdCtx,
+		azCli:         azCli,
+		flags:         flags,
+		console:       console,
+		formatter:     formatter,
+		writer:        writer,
+		commandRunner: commandRunner,
 	}
 }
 
@@ -360,7 +364,9 @@ func (ef *envRefreshAction) Run(ctx context.Context) (*actions.ActionResult, err
 		return nil, fmt.Errorf("loading project: %w", err)
 	}
 
-	infraManager, err := provisioning.NewManager(ctx, env, prj.Path, prj.Infra, !ef.flags.global.NoPrompt, ef.azCli)
+	infraManager, err := provisioning.NewManager(
+		ctx, env, prj.Path, prj.Infra, !ef.flags.global.NoPrompt, ef.azCli, ef.commandRunner,
+	)
 	if err != nil {
 		return nil, fmt.Errorf("creating provisioning manager: %w", err)
 	}

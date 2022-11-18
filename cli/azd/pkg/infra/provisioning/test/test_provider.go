@@ -19,6 +19,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	. "github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
@@ -197,7 +198,12 @@ func init() {
 	err := RegisterProvider(
 		Test,
 		func(
-			ctx context.Context, env *environment.Environment, projectPath string, options Options, _ azcli.AzCli,
+			ctx context.Context,
+			env *environment.Environment,
+			projectPath string,
+			options Options,
+			_ azcli.AzCli,
+			_ exec.CommandRunner,
 		) (Provider, error) {
 			return NewTestProvider(ctx, env, projectPath, options), nil
 		},

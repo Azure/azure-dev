@@ -86,7 +86,7 @@ func TestDeployProgressMessages(t *testing.T) {
 	env.SetSubscriptionId("SUBSCRIPTION_ID")
 
 	projectConfig, _ := ParseProjectConfig(projectYaml, env)
-	project, _ := projectConfig.GetProject(*mockContext.Context, env, azCli)
+	project, _ := projectConfig.GetProject(*mockContext.Context, env, azCli, mockContext.CommandRunner)
 	azdContext, _ := azdcontext.NewAzdContext()
 
 	mockFramework := &mockFrameworkService{}

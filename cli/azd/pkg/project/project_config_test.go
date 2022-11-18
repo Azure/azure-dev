@@ -104,7 +104,7 @@ services:
 	projectConfig, err := ParseProjectConfig(testProj, e)
 	require.Nil(t, err)
 
-	project, err := projectConfig.GetProject(*mockContext.Context, e, azCli)
+	project, err := projectConfig.GetProject(*mockContext.Context, e, azCli, mockContext.CommandRunner)
 	require.Nil(t, err)
 	require.NotNil(t, project)
 

@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
@@ -37,6 +38,7 @@ type Project struct {
 func ReadProject(
 	ctx context.Context,
 	azCli azcli.AzCli,
+	commandRunner exec.CommandRunner,
 	projectPath string,
 	env *environment.Environment,
 ) (*Project, error) {
@@ -49,7 +51,7 @@ func ReadProject(
 	}
 
 	// Evaluate project
-	project, err := projectConfig.GetProject(ctx, env, azCli)
+	project, err := projectConfig.GetProject(ctx, env, azCli, commandRunner)
 	if err != nil {
 		return nil, fmt.Errorf("reading project: %w", err)
 	}

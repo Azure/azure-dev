@@ -13,6 +13,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
+	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
@@ -22,12 +23,13 @@ import (
 )
 
 type containerAppTarget struct {
-	config  *ServiceConfig
-	env     *environment.Environment
-	scope   *environment.DeploymentScope
-	cli     azcli.AzCli
-	docker  *docker.Docker
-	console input.Console
+	config        *ServiceConfig
+	env           *environment.Environment
+	scope         *environment.DeploymentScope
+	cli           azcli.AzCli
+	commandRunner exec.CommandRunner
+	docker        *docker.Docker
+	console       input.Console
 }
 
 func (at *containerAppTarget) RequiredExternalTools() []tools.ExternalTool {
@@ -103,6 +105,7 @@ func (at *containerAppTarget) Deploy(
 		at.config.Infra,
 		at.console.IsUnformatted(),
 		at.cli,
+		at.commandRunner,
 	)
 	if err != nil {
 		return ServiceDeploymentResult{}, fmt.Errorf("creating provisioning manager: %w", err)
@@ -172,13 +175,15 @@ func NewContainerAppTarget(
 	azCli azcli.AzCli,
 	docker *docker.Docker,
 	console input.Console,
+	commandRunner exec.CommandRunner,
 ) ServiceTarget {
 	return &containerAppTarget{
-		config:  config,
-		env:     env,
-		scope:   scope,
-		cli:     azCli,
-		docker:  docker,
-		console: console,
+		config:        config,
+		env:           env,
+		scope:         scope,
+		cli:           azCli,
+		docker:        docker,
+		console:       console,
+		commandRunner: commandRunner,
 	}
 }

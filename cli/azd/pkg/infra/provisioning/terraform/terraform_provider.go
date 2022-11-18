@@ -23,6 +23,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	. "github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
@@ -61,8 +62,9 @@ func NewTerraformProvider(
 	env *environment.Environment,
 	projectPath string,
 	infraOptions Options,
+	commandRunner exec.CommandRunner,
 ) *TerraformProvider {
-	terraformCli := terraform.GetTerraformCli(ctx)
+	terraformCli := terraform.NewTerraformCli(commandRunner)
 	console := input.GetConsole(ctx)
 
 	// Default to a module named "main" if not specified.
@@ -688,9 +690,14 @@ func init() {
 	err := RegisterProvider(
 		Terraform,
 		func(
-			ctx context.Context, env *environment.Environment, projectPath string, options Options, _ azcli.AzCli,
+			ctx context.Context,
+			env *environment.Environment,
+			projectPath string,
+			options Options,
+			_ azcli.AzCli,
+			commandRunner exec.CommandRunner,
 		) (Provider, error) {
-			return NewTerraformProvider(ctx, env, projectPath, options), nil
+			return NewTerraformProvider(ctx, env, projectPath, options, commandRunner), nil
 		},
 	)
 

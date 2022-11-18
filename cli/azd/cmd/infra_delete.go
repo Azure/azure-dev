@@ -7,6 +7,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
+	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
@@ -48,10 +49,11 @@ func infraDeleteCmdDesign(global *internal.GlobalCommandOptions) (*cobra.Command
 }
 
 type infraDeleteAction struct {
-	flags   infraDeleteFlags
-	azCli   azcli.AzCli
-	azdCtx  *azdcontext.AzdContext
-	console input.Console
+	flags         infraDeleteFlags
+	azCli         azcli.AzCli
+	azdCtx        *azdcontext.AzdContext
+	console       input.Console
+	commandRunner exec.CommandRunner
 }
 
 func newInfraDeleteAction(
@@ -59,12 +61,14 @@ func newInfraDeleteAction(
 	azCli azcli.AzCli,
 	azdCtx *azdcontext.AzdContext,
 	console input.Console,
+	commandRunner exec.CommandRunner,
 ) *infraDeleteAction {
 	return &infraDeleteAction{
-		flags:   flags,
-		azCli:   azCli,
-		azdCtx:  azdCtx,
-		console: console,
+		flags:         flags,
+		azCli:         azCli,
+		azdCtx:        azdCtx,
+		console:       console,
+		commandRunner: commandRunner,
 	}
 }
 
@@ -83,7 +87,9 @@ func (a *infraDeleteAction) Run(ctx context.Context) (*actions.ActionResult, err
 		return nil, fmt.Errorf("loading project: %w", err)
 	}
 
-	infraManager, err := provisioning.NewManager(ctx, env, prj.Path, prj.Infra, a.console.IsUnformatted(), a.azCli)
+	infraManager, err := provisioning.NewManager(
+		ctx, env, prj.Path, prj.Infra, a.console.IsUnformatted(), a.azCli, a.commandRunner,
+	)
 	if err != nil {
 		return nil, fmt.Errorf("creating provisioning manager: %w", err)
 	}

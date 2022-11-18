@@ -38,17 +38,9 @@ type terraformCli struct {
 	env           []string
 }
 
-type NewTerraformCliArgs struct {
-	commandRunner exec.CommandRunner
-}
-
-func NewTerraformCli(args NewTerraformCliArgs) TerraformCli {
-	if args.commandRunner == nil {
-		panic("NewTerraformCli: must set args.commandRunner")
-	}
-
+func NewTerraformCli(commandRunner exec.CommandRunner) TerraformCli {
 	return &terraformCli{
-		commandRunner: args.commandRunner,
+		commandRunner: commandRunner,
 	}
 }
 
@@ -255,24 +247,4 @@ func (cli *terraformCli) Destroy(ctx context.Context, modulePath string, additio
 		)
 	}
 	return cmdRes.Stdout, nil
-}
-
-type contextKey string
-
-const (
-	terraformContextKey contextKey = "terraformcli"
-)
-
-func GetTerraformCli(ctx context.Context) TerraformCli {
-	cli, ok := ctx.Value(terraformContextKey).(TerraformCli)
-	if !ok {
-		newCommandRunner := exec.GetCommandRunner(ctx)
-		args := NewTerraformCliArgs{
-			commandRunner: newCommandRunner,
-		}
-
-		cli = NewTerraformCli(args)
-	}
-
-	return cli
 }

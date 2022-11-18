@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
@@ -61,13 +62,14 @@ func (sc *ServiceConfig) GetService(
 	env *environment.Environment,
 	scope *environment.DeploymentScope,
 	azCli azcli.AzCli,
+	commandRunner exec.CommandRunner,
 ) (*Service, error) {
 	framework, err := sc.GetFrameworkService(ctx, env)
 	if err != nil {
 		return nil, fmt.Errorf("creating framework service: %w", err)
 	}
 
-	serviceTarget, err := sc.GetServiceTarget(ctx, env, scope, azCli)
+	serviceTarget, err := sc.GetServiceTarget(ctx, env, scope, azCli, commandRunner)
 	if err != nil {
 		return nil, fmt.Errorf("creating service target: %w", err)
 	}
@@ -87,6 +89,7 @@ func (sc *ServiceConfig) GetServiceTarget(
 	env *environment.Environment,
 	scope *environment.DeploymentScope,
 	azCli azcli.AzCli,
+	commandRunner exec.CommandRunner,
 ) (*ServiceTarget, error) {
 	var target ServiceTarget
 
@@ -94,7 +97,7 @@ func (sc *ServiceConfig) GetServiceTarget(
 	case "", string(AppServiceTarget):
 		target = NewAppServiceTarget(sc, env, scope, azCli)
 	case string(ContainerAppTarget):
-		target = NewContainerAppTarget(sc, env, scope, azCli, docker.NewDocker(ctx), input.GetConsole(ctx))
+		target = NewContainerAppTarget(sc, env, scope, azCli, docker.NewDocker(ctx), input.GetConsole(ctx), commandRunner)
 	case string(AzureFunctionTarget):
 		target = NewFunctionAppTarget(sc, env, scope, azCli)
 	case string(StaticWebAppTarget):

@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
@@ -95,6 +96,7 @@ func (pc *ProjectConfig) GetProject(
 	ctx context.Context,
 	env *environment.Environment,
 	azCli azcli.AzCli,
+	commandRunner exec.CommandRunner,
 ) (*Project, error) {
 	serviceMap := map[string]*Service{}
 
@@ -128,7 +130,7 @@ func (pc *ProjectConfig) GetProject(
 			project.ResourceGroupName,
 			serviceConfig.ResourceName,
 		)
-		service, err := serviceConfig.GetService(ctx, &project, env, deploymentScope, azCli)
+		service, err := serviceConfig.GetService(ctx, &project, env, deploymentScope, azCli, mockContext.CommandRunner)
 
 		if err != nil {
 			return nil, fmt.Errorf("creating service %s: %w", key, err)

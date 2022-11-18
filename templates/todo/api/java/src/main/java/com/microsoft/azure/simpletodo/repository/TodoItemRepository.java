@@ -9,23 +9,16 @@ import java.util.Optional;
 
 public interface TodoItemRepository extends MongoRepository<TodoItem, String> {
 
-    TodoItem deleteTodoItemByListIdAndId(String listId, String itemId);
+	TodoItem deleteTodoItemByListIdAndId(String listId, String itemId);
 
-    List<TodoItem> findTodoItemsByListId(String listId);
+	List<TodoItem> findTodoItemsByListId(String listId);
 
-    Optional<TodoItem> findTodoItemByListIdAndId(String listId, String id);
+	Optional<TodoItem> findTodoItemByListIdAndId(String listId, String id);
 
-    @Aggregation(pipeline = {
-        "{ '$match': { 'listId' : ?0 } }",
-        "{ '$skip': ?1 }",
-        "{ '$limit': ?2 }",
-    })
-    List<TodoItem> findTodoItemsByTodoList(String listId, int skip, int limit);
+	@Aggregation(pipeline = { "{ '$match': { 'listId' : ?0 } }", "{ '$skip': ?1 }", "{ '$limit': ?2 }", })
+	List<TodoItem> findTodoItemsByTodoList(String listId, int skip, int limit);
 
-    @Aggregation(pipeline = {
-        "{ '$match': { 'listId' : ?0, 'state' : ?1 } }",
-        "{ '$skip': ?2 }",
-        "{ '$limit': ?3 }",
-    })
-    List<TodoItem> findTodoItemsByTodoListAndState(String listId, String state, int skip, int limit);
+	@Aggregation(pipeline = { "{ '$match': { 'listId' : ?0, 'state' : ?1 } }", "{ '$skip': ?2 }", "{ '$limit': ?3 }", })
+	List<TodoItem> findTodoItemsByTodoListAndState(String listId, String state, int skip, int limit);
+
 }

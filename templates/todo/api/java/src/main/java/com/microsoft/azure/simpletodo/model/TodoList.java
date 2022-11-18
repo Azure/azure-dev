@@ -15,61 +15,80 @@ import java.util.Objects;
 @Generated(value = "org.openapitools.codegen.languages.SpringCodegen")
 public class TodoList {
 
-    @JsonProperty("id")
-    private String id;
+	@JsonProperty("id")
+	private String id;
 
-    @NotNull
-    @JsonProperty("name")
-    private String name;
+	@JsonProperty("name")
+	private String name;
 
-    @JsonProperty("description")
-    private String description;
+	@JsonProperty("description")
+	private String description;
 
-    @Schema(name = "id", required = false)
-    public String getId() {
-        return this.id;
-    }
+	/**
+	 * Get id
+	 * @return id
+	 */
 
-    @Schema(name = "name", required = true)
-    public @NotNull String getName() {
-        return this.name;
-    }
+	@Schema(name = "id", required = false)
+	public String getId() {
+		return id;
+	}
 
-    @Schema(name = "description", required = false)
-    public String getDescription() {
-        return this.description;
-    }
+	public void setId(String id) {
+		this.id = id;
+	}
 
-    public void setId(String id) {
-        this.id = id;
-    }
+	/**
+	 * Get name
+	 * @return name
+	 */
+	@NotNull
+	@Schema(name = "name", required = true)
+	public String getName() {
+		return name;
+	}
 
-    public void setName(@NotNull String name) {
-        this.name = name;
-    }
+	public void setName(String name) {
+		this.name = name;
+	}
 
-    public void setDescription(String description) {
-        this.description = description;
-    }
+	/**
+	 * Get description
+	 * @return description
+	 */
 
-    public boolean equals(final Object o) {
-        if (o == this) return true;
-        if (!(o instanceof TodoList)) return false;
-        final TodoList other = (TodoList) o;
-        if (!((Object) this instanceof TodoList)) return false;
-        final Object this$id = this.getId();
-        final Object other$id = other.getId();
-        // lists are equal if they have the same id
-        if (this$id == null ? other$id != null : !this$id.equals(other$id)) return false;
-        return true;
-    }
+	@Schema(name = "description", required = false)
+	public String getDescription() {
+		return description;
+	}
 
-    public int hashCode() {
-        return Objects.hash(this.getId());
-    }
+	public void setDescription(String description) {
+		this.description = description;
+	}
 
-    public String toString() {
-        return "TodoList(id=" + this.getId() + ", name=" + this.getName() + ", description=" + this.getDescription() + ")";
-    }
+	public boolean equals(final Object o) {
+		if (o == this)
+			return true;
+		if (!(o instanceof TodoList))
+			return false;
+		final TodoList other = (TodoList) o;
+		if (!((Object) this instanceof TodoList))
+			return false;
+		final Object this$id = this.getId();
+		final Object other$id = other.getId();
+		// lists are equal if they have the same id
+		if (this$id == null ? other$id != null : !this$id.equals(other$id))
+			return false;
+		return true;
+	}
+
+	public int hashCode() {
+		return Objects.hash(this.getId());
+	}
+
+	public String toString() {
+		return "TodoList(id=" + this.getId() + ", name=" + this.getName() + ", description=" + this.getDescription()
+				+ ")";
+	}
+
 }
-

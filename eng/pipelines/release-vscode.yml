@@ -218,6 +218,7 @@ stages:
                     PRTitle: Increment VSCode Extension version after release
                     # TODO: Remove before merge
                     OpenAsDraft: true
+                    CloseAfterOpenForTesting: true
 
       # TODO: Uncomment before merge
       # - deployment: Publish_Release

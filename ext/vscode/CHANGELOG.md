@@ -1,5 +1,11 @@
 # Release History
 
+## 0.4.0-alpha.1 (Unreleased)
+
+### Added
+
+### Fixed
+
 ## 0.3.0 (2022-09-14)
 ### Added
 - [[#493]](https://github.com/Azure/azure-dev/pull/493)  Show README file after successful init/up.

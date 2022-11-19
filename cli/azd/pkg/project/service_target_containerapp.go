@@ -65,11 +65,9 @@ func (at *containerAppTarget) Deploy(
 	}
 
 	fullTag := fmt.Sprintf(
-		"%s/%s/%s:azdev-deploy-%d",
+		"%s/%s",
 		loginServer,
-		at.resource.ResourceName(),
-		at.resource.ResourceName(),
-		time.Now().Unix(),
+		at.generateImageTag(),
 	)
 
 	// Tag image.
@@ -135,6 +133,25 @@ func (at *containerAppTarget) Deploy(
 		}
 	}
 
+	if at.resource.ResourceName() == "" {
+		targetResource, err := at.config.GetServiceResource(ctx, at.resource.ResourceGroupName(), at.env, at.cli, "deploy")
+		if err != nil {
+			return ServiceDeploymentResult{}, err
+		}
+
+		// Fill in the target resource
+		at.resource = environment.NewTargetResource(
+			at.env.GetSubscriptionId(),
+			at.resource.ResourceGroupName(),
+			targetResource.Name,
+			targetResource.Type,
+		)
+
+		if err := checkResourceType(at.resource); err != nil {
+			return ServiceDeploymentResult{}, err
+		}
+	}
+
 	progress <- "Fetching endpoints for container app service"
 	endpoints, err := at.Endpoints(ctx)
 	if err != nil {
@@ -170,6 +187,28 @@ func (at *containerAppTarget) Endpoints(ctx context.Context) ([]string, error) {
 	}
 }
 
+func (at *containerAppTarget) generateImageTag() string {
+	imageName := at.config.Docker.ImageName
+	if imageName != "" {
+		imageName = strings.ToLower(fmt.Sprintf("%s/%s-%s", at.config.Project.Name, at.config.Name, at.env.GetEnvName()))
+	}
+
+	imageTag := at.config.Docker.ImageTag
+	if imageTag != "" {
+		imageTag = fmt.Sprintf("azdev-deploy-%d", time.Now().Unix())
+	}
+
+	return fmt.Sprintf(
+		"%s:%s",
+		imageName,
+		imageTag,
+	)
+}
+
+// NewContainerAppTarget creates the container app service target.
+//
+// The target resource can be partially filled with only ResourceGroupName, since container apps
+// can be provisioned during deployment.
 func NewContainerAppTarget(
 	config *ServiceConfig,
 	env *environment.Environment,
@@ -178,12 +217,14 @@ func NewContainerAppTarget(
 	docker *docker.Docker,
 	console input.Console,
 ) (ServiceTarget, error) {
-	if resource.ResourceType() != string(infra.AzureResourceTypeContainerApp) {
-		return nil, resourceTypeMismatchError(
-			resource.ResourceName(),
-			resource.ResourceType(),
-			infra.AzureResourceTypeContainerApp,
-		)
+	if resource.ResourceGroupName() == "" {
+		return nil, fmt.Errorf("missing resource group name: %s", resource.ResourceGroupName())
+	}
+
+	if resource.ResourceType() != "" {
+		if err := checkResourceType(resource); err != nil {
+			return nil, err
+		}
 	}
 
 	return &containerAppTarget{
@@ -194,4 +235,16 @@ func NewContainerAppTarget(
 		docker:   docker,
 		console:  console,
 	}, nil
+}
+
+func checkResourceType(resource *environment.TargetResource) error {
+	if resource.ResourceType() != string(infra.AzureResourceTypeContainerApp) {
+		return resourceTypeMismatchError(
+			resource.ResourceName(),
+			resource.ResourceType(),
+			infra.AzureResourceTypeContainerApp,
+		)
+	}
+
+	return nil
 }

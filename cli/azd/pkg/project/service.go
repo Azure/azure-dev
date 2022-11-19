@@ -11,7 +11,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 )
 
 type Service struct {
@@ -23,8 +22,8 @@ type Service struct {
 	Framework FrameworkService
 	// The application target service used to deploy the service to azure
 	Target ServiceTarget
-	// The deployment scope of the service, ex) subscriptionId, resource group name & resource name
-	Scope *environment.DeploymentScope
+	// The target resource of the service, ex) subscriptionId, resource group name & resource name
+	TargetResource *environment.TargetResource
 }
 
 type ServiceDeploymentChannelResponse struct {
@@ -86,46 +85,4 @@ func (svc *Service) Deploy(
 	}()
 
 	return result, progress
-}
-
-// GetServiceResourceName attempts to find the name of the azure resource with the
-// 'azd-service-name' tag set to the service key.
-func GetServiceResourceName(
-	ctx context.Context,
-	resourceGroupName string,
-	serviceName string,
-	env *environment.Environment,
-	azCli azcli.AzCli,
-) (string, error) {
-	res, err := GetServiceResources(ctx, resourceGroupName, serviceName, env, azCli)
-	if err != nil {
-		return "", err
-	}
-
-	if len(res) != 1 {
-		log.Printf("Expecting only '1' resource match to override resource name but found '%d'", len(res))
-		return fmt.Sprintf("%s%s", env.GetEnvName(), serviceName), nil
-	}
-
-	return res[0].Name, nil
-}
-
-// GetServiceResources gets the resources tagged for a given service
-func GetServiceResources(
-	ctx context.Context,
-	resourceGroupName string,
-	serviceName string,
-	env *environment.Environment,
-	azCli azcli.AzCli,
-) ([]azcli.AzCliResource, error) {
-	filter := fmt.Sprintf("tagName eq 'azd-service-name' and tagValue eq '%s'", serviceName)
-
-	return azCli.ListResourceGroupResources(
-		ctx,
-		env.GetSubscriptionId(),
-		resourceGroupName,
-		&azcli.ListResourceGroupResourcesOptions{
-			Filter: &filter,
-		},
-	)
 }

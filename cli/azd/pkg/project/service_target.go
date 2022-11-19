@@ -6,8 +6,10 @@ package project
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
+	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 )
 
@@ -66,6 +68,19 @@ func NewServiceDeploymentResult(
 	}
 
 	return returnValue
+}
+
+func resourceTypeMismatchError(
+	resourceName string,
+	resourceType string,
+	expectedResourceType infra.AzureResourceType,
+) error {
+	return fmt.Errorf(
+		"resource '%s' with type '%s' does not match expected resource type '%s'",
+		resourceName,
+		resourceType,
+		string(expectedResourceType),
+	)
 }
 
 var _ ServiceTarget = &appServiceTarget{}

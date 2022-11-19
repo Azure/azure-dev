@@ -5,10 +5,14 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
+	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
+	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/docker"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
+	"github.com/azure/azure-dev/cli/azd/test/mocks/mockarmresources"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockazcli"
 	"github.com/stretchr/testify/require"
 )
@@ -29,7 +33,20 @@ services:
 	ran := false
 
 	env := environment.EphemeralWithValues("test-env", nil)
+	env.SetSubscriptionId("sub")
+
 	mockContext := mocks.NewMockContext(context.Background())
+	mockarmresources.AddAzResourceListMock(
+		mockContext.HttpClient,
+		convert.RefOf("rg-test"),
+		[]*armresources.GenericResourceExpanded{
+			{
+				ID:       convert.RefOf("app-api-abc123"),
+				Name:     convert.RefOf("test-containerapp-web"),
+				Type:     convert.RefOf(string(infra.AzureResourceTypeContainerApp)),
+				Location: convert.RefOf("eastus2"),
+			},
+		})
 	azCli := mockazcli.NewAzCliFromMockContext(mockContext)
 
 	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
@@ -103,7 +120,19 @@ services:
 `
 
 	env := environment.EphemeralWithValues("test-env", nil)
+	env.SetSubscriptionId("sub")
 	mockContext := mocks.NewMockContext(context.Background())
+	mockarmresources.AddAzResourceListMock(
+		mockContext.HttpClient,
+		convert.RefOf("rg-test"),
+		[]*armresources.GenericResourceExpanded{
+			{
+				ID:       convert.RefOf("app-api-abc123"),
+				Name:     convert.RefOf("test-containerapp-web"),
+				Type:     convert.RefOf(string(infra.AzureResourceTypeContainerApp)),
+				Location: convert.RefOf("eastus2"),
+			},
+		})
 	azCli := mockazcli.NewAzCliFromMockContext(mockContext)
 
 	ran := false

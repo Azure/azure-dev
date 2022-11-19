@@ -31,7 +31,6 @@ func NewMockContext(ctx context.Context) *MockContext {
 	configManager := mockconfig.NewMockConfigManager()
 
 	mockexec.AddAzLoginMocks(commandRunner)
-	httpClient.AddDefaultMocks()
 
 	ctx = internal.WithCommandOptions(ctx, internal.GlobalCommandOptions{})
 	ctx = input.WithConsole(ctx, mockConsole)

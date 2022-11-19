@@ -93,7 +93,9 @@ func normalizeDotNetSecret(key string) string {
 	return strings.ReplaceAll(key, "__", ":")
 }
 
-func NewDotNetProject(commandRunner exec.CommandRunner, config *ServiceConfig, env *environment.Environment) FrameworkService {
+func NewDotNetProject(
+	commandRunner exec.CommandRunner, config *ServiceConfig, env *environment.Environment,
+) FrameworkService {
 	return &dotnetProject{
 		config:    config,
 		env:       env,

@@ -1,12 +1,10 @@
-# Release History
+# Change Log
 
-## 0.0.0-beta.0
+All notable changes to the Azure Dev CLI extension will be documented in this file.
 
-### Testing
+Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
 
-Testing release notes
-
-## 0.3.0 (2022-09-14)
+## [0.3.0] 2022-09-14
 ### Added
 - [[#493]](https://github.com/Azure/azure-dev/pull/493)  Show README file after successful init/up.
 
@@ -14,7 +12,7 @@ Testing release notes
 - [[#498]](https://github.com/Azure/azure-dev/pull/498) Use `azd template list` to populate template list in VS Code (now always consistent with the CLI).
 - [[#556]](https://github.com/Azure/azure-dev/pull/556) Improve error message when no environments are found.
 
-## 0.2.0 (2022-08-02)
+## [0.2.0] 2022-08-02
 
 ### Changed
 - [[#189]](https://github.com/Azure/azure-dev/pull/189) Bump bicep minimum version to v0.8.9
@@ -26,6 +24,6 @@ Testing release notes
 - [[#159]](https://github.com/Azure/azure-dev/pull/159) Enable user feedback via surveys.
 - [[#170]](https://github.com/Azure/azure-dev/pull/170) Enable gradual rollout of new features.
 
-## 0.1.0 (2022-07-11)
+## [0.1.0] 2022-07-11
 
 - Initial release.

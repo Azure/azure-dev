@@ -194,17 +194,11 @@ func (i *PipelineManager) getGitRepoDetails(ctx context.Context) (*gitRepository
 // validateDependencyInjection panic if the manager did not received all the
 // mandatory dependencies to work
 func validateDependencyInjection(ctx context.Context, manager *PipelineManager) {
-	if manager.AzdCtx == nil {
-		log.Panic("missing azd context for pipeline manager")
-	}
 	if manager.ScmProvider == nil {
 		log.Panic("missing scm provider for pipeline manager")
 	}
 	if manager.CiProvider == nil {
 		log.Panic("missing CI provider for pipeline manager")
-	}
-	if manager.console == nil {
-		log.Panic("missing console for pipeline manager")
 	}
 }
 

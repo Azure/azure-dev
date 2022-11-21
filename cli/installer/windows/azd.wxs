@@ -47,12 +47,20 @@
             <!-- @Guid will be automatically and durably assigned based on key path -->
             <Component Directory="INSTALLDIR">
                 <File Name="azd.exe"/>
-                <Environment Id="Path" Action="set" Name="PATH" Part="last" System="yes" Value="[INSTALLDIR]"/>
             </Component>
 
             <!-- Persist the INSTALLDIR and restore it in subsequent installs -->
             <Component Directory="INSTALLDIR">
-                <RegistryValue Root="HKMU" Key="SOFTWARE\Microsoft\$(var.ProductFolder)" Name="InstallDir" Type="string" Value="[INSTALLDIR]"/>
+                <!-- Per-user registry key path to set per-user PATH environment variable. -->
+                <Condition>NOT ALLUSERS</Condition>
+                <RegistryValue Root="HKCU" Key="SOFTWARE\Microsoft\$(var.ProductFolder)" Name="InstallDir" Type="string" Value="[INSTALLDIR]"/>
+                <Environment Id="UserPath" Action="set" Name="PATH" Part="last" System="no" Value="[INSTALLDIR]"/>
+            </Component>
+            <Component Directory="INSTALLDIR">
+                <!-- Per-machine registry key path to set per-machine PATH environment variable. -->
+                <Condition>ALLUSERS=1</Condition>
+                <RegistryValue Root="HKLM" Key="SOFTWARE\Microsoft\$(var.ProductFolder)" Name="InstallDir" Type="string" Value="[INSTALLDIR]"/>
+                <Environment Id="SystemPath" Action="set" Name="PATH" Part="last" System="yes" Value="[INSTALLDIR]"/>
             </Component>
         </Feature>
 

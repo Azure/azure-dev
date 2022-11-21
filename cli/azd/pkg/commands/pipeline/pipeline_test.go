@@ -426,7 +426,15 @@ func Test_detectProviders(t *testing.T) {
 
 		env := &environment.Environment{Values: map[string]string{}}
 
-		scmProvider, ciProvider, err := DetectProviders(ctx, azdContext, env, azdoLabel, mockContext.Console, mockContext.Credentials, mockContext.CommandRunner)
+		scmProvider, ciProvider, err := DetectProviders(
+			ctx,
+			azdContext,
+			env,
+			azdoLabel,
+			mockContext.Console,
+			mockContext.Credentials,
+			mockContext.CommandRunner,
+		)
 		assert.IsType(t, &AzdoScmProvider{}, scmProvider)
 		assert.IsType(t, &AzdoCiProvider{}, ciProvider)
 		assert.NoError(t, err)

@@ -25,11 +25,11 @@ import (
 type containerAppTarget struct {
 	config        *ServiceConfig
 	env           *environment.Environment
-	scope         *environment.DeploymentScope
+	resource      *environment.TargetResource
 	cli           azcli.AzCli
-	commandRunner exec.CommandRunner
 	docker        *docker.Docker
 	console       input.Console
+	commandRunner exec.CommandRunner
 }
 
 func (at *containerAppTarget) RequiredExternalTools() []tools.ExternalTool {
@@ -69,8 +69,8 @@ func (at *containerAppTarget) Deploy(
 	fullTag := fmt.Sprintf(
 		"%s/%s/%s:azdev-deploy-%d",
 		loginServer,
-		at.scope.ResourceName(),
-		at.scope.ResourceName(),
+		at.resource.ResourceName(),
+		at.resource.ResourceName(),
 		time.Now().Unix(),
 	)
 
@@ -120,7 +120,12 @@ func (at *containerAppTarget) Deploy(
 
 	progress <- "Updating container app image reference"
 	deploymentName := fmt.Sprintf("%s-%s", at.env.GetEnvName(), at.config.Name)
-	scope := infra.NewResourceGroupScope(at.cli, at.env.GetSubscriptionId(), at.scope.ResourceGroupName(), deploymentName)
+	scope := infra.NewResourceGroupScope(
+		at.cli,
+		at.env.GetSubscriptionId(),
+		at.resource.ResourceGroupName(),
+		deploymentName,
+	)
 	deployResult, err := infraManager.Deploy(ctx, deploymentPlan, scope)
 
 	if err != nil {
@@ -143,8 +148,8 @@ func (at *containerAppTarget) Deploy(
 	return ServiceDeploymentResult{
 		TargetResourceId: azure.ContainerAppRID(
 			at.env.GetSubscriptionId(),
-			at.scope.ResourceGroupName(),
-			at.scope.ResourceName(),
+			at.resource.ResourceGroupName(),
+			at.resource.ResourceName(),
 		),
 		Kind:      ContainerAppTarget,
 		Details:   deployResult,
@@ -155,8 +160,8 @@ func (at *containerAppTarget) Deploy(
 func (at *containerAppTarget) Endpoints(ctx context.Context) ([]string, error) {
 	if containerAppProperties, err := at.cli.GetContainerAppProperties(
 		ctx, at.env.GetSubscriptionId(),
-		at.scope.ResourceGroupName(),
-		at.scope.ResourceName(),
+		at.resource.ResourceGroupName(),
+		at.resource.ResourceName(),
 	); err != nil {
 		return nil, fmt.Errorf("fetching service properties: %w", err)
 	} else {
@@ -172,19 +177,27 @@ func (at *containerAppTarget) Endpoints(ctx context.Context) ([]string, error) {
 func NewContainerAppTarget(
 	config *ServiceConfig,
 	env *environment.Environment,
-	scope *environment.DeploymentScope,
+	resource *environment.TargetResource,
 	azCli azcli.AzCli,
 	docker *docker.Docker,
 	console input.Console,
 	commandRunner exec.CommandRunner,
-) ServiceTarget {
+) (ServiceTarget, error) {
+	if resource.ResourceType() != string(infra.AzureResourceTypeContainerApp) {
+		return nil, resourceTypeMismatchError(
+			resource.ResourceName(),
+			resource.ResourceType(),
+			infra.AzureResourceTypeContainerApp,
+		)
+	}
+
 	return &containerAppTarget{
 		config:        config,
 		env:           env,
-		scope:         scope,
+		resource:      resource,
 		cli:           azCli,
 		docker:        docker,
 		console:       console,
 		commandRunner: commandRunner,
-	}
+	}, nil
 }

@@ -116,23 +116,7 @@ func (pc *ProjectConfig) GetProject(
 	project.ResourceGroupName = resourceGroupName
 
 	for key, serviceConfig := range pc.Services {
-		// If the 'resourceName' was not overridden in the project yaml
-		// Retrieve the resource name from the provisioned resources if available
-		if strings.TrimSpace(serviceConfig.ResourceName) == "" {
-			resolvedResourceName, err := GetServiceResourceName(ctx, project.ResourceGroupName, serviceConfig.Name, env, azCli)
-			if err != nil {
-				return nil, fmt.Errorf("getting resource name: %w", err)
-			}
-
-			serviceConfig.ResourceName = resolvedResourceName
-		}
-
-		deploymentScope := environment.NewDeploymentScope(
-			env.GetSubscriptionId(),
-			project.ResourceGroupName,
-			serviceConfig.ResourceName,
-		)
-		service, err := serviceConfig.GetService(ctx, &project, env, deploymentScope, console, azCli, commandRunner)
+		service, err := serviceConfig.GetService(ctx, &project, env, azCli, commandRunner, console)
 
 		if err != nil {
 			return nil, fmt.Errorf("creating service %s: %w", key, err)

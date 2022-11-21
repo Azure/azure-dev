@@ -1,4 +1,4 @@
 os,alpine
-osVersion,3.15.4
-isWsl,true
+osVersion,3.15.6
+isWsl,false
 terminal,bash

@@ -1,4 +1,4 @@
 os,ubuntu
 osVersion,20.04
-isWsl,true
+isWsl,false
 terminal,bash

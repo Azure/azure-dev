@@ -277,7 +277,11 @@ stages:
 
               Write-Host "Compressing artifacts as if publishing"
               zip hosting/azd-windows-amd64.zip -j azd-windows-amd64.exe/azd-windows-amd64.exe
+
+              chmod +x azd-darwin-amd64/azd-darwin-amd64
               zip hosting/azd-darwin-amd64.zip -j azd-darwin-amd64/azd-darwin-amd64
+
+              chmod +x azd-linux-amd64/azd-linux-amd64
               tar -C azd-linux-amd64 -cvzf hosting/azd-linux-amd64.tar.gz azd-linux-amd64
 
               Get-ChildItem hosting/ -Recurse | Select-Object -Property Name,Size
@@ -398,9 +402,10 @@ stages:
               TestShell: pwsh
               TestInstallCommand: >
                 ./test-installer-containers.ps1
-                -BaseUrl "http://localhost:8080"
+                -BaseUrl "http://host.docker.internal:8080"
                 -Version ''
                 -ContainerPrefix '$(docker-mirror-tag-prefix)/'
+                -AdditionalRunArgs '--add-host=host.docker.internal:host-gateway'
             LinuxSh:
               Pool: azsdk-pool-mms-ubuntu-2004-general
               OSVmImage:  MMSUbuntu20.04

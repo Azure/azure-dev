@@ -60,27 +60,38 @@ func (sc *ServiceConfig) GetService(
 	ctx context.Context,
 	project *Project,
 	env *environment.Environment,
-	scope *environment.DeploymentScope,
-	console input.Console,
 	azCli azcli.AzCli,
 	commandRunner exec.CommandRunner,
+	console input.Console,
 ) (*Service, error) {
 	framework, err := sc.GetFrameworkService(ctx, env, commandRunner)
 	if err != nil {
 		return nil, fmt.Errorf("creating framework service: %w", err)
 	}
 
-	serviceTarget, err := sc.GetServiceTarget(ctx, env, scope, console, azCli, commandRunner)
+	azureResource, err := sc.GetServiceResource(ctx, project.ResourceGroupName, env, azCli)
+	if err != nil {
+		return nil, err
+	}
+
+	targetResource := environment.NewTargetResource(
+		env.GetSubscriptionId(),
+		project.ResourceGroupName,
+		azureResource.Name,
+		azureResource.Type,
+	)
+
+	serviceTarget, err := sc.GetServiceTarget(ctx, env, targetResource, azCli, commandRunner, console)
 	if err != nil {
 		return nil, fmt.Errorf("creating service target: %w", err)
 	}
 
 	return &Service{
-		Project:   project,
-		Config:    sc,
-		Framework: *framework,
-		Target:    *serviceTarget,
-		Scope:     scope,
+		Project:        project,
+		Config:         sc,
+		Framework:      *framework,
+		Target:         *serviceTarget,
+		TargetResource: targetResource,
 	}, nil
 }
 
@@ -88,26 +99,31 @@ func (sc *ServiceConfig) GetService(
 func (sc *ServiceConfig) GetServiceTarget(
 	ctx context.Context,
 	env *environment.Environment,
-	scope *environment.DeploymentScope,
-	console input.Console,
+	resource *environment.TargetResource,
 	azCli azcli.AzCli,
 	commandRunner exec.CommandRunner,
+	console input.Console,
 ) (*ServiceTarget, error) {
 	var target ServiceTarget
+	var err error
 
 	switch sc.Host {
 	case "", string(AppServiceTarget):
-		target = NewAppServiceTarget(sc, env, scope, azCli)
+		target, err = NewAppServiceTarget(sc, env, resource, azCli)
 	case string(ContainerAppTarget):
-		target = NewContainerAppTarget(
-			sc, env, scope, azCli, docker.NewDocker(commandRunner), console, commandRunner,
+		target, err = NewContainerAppTarget(
+			sc, env, resource, azCli, docker.NewDocker(commandRunner), console, commandRunner,
 		)
 	case string(AzureFunctionTarget):
-		target = NewFunctionAppTarget(sc, env, scope, azCli)
+		target, err = NewFunctionAppTarget(sc, env, resource, azCli)
 	case string(StaticWebAppTarget):
-		target = NewStaticWebAppTarget(sc, env, scope, azCli, swa.NewSwaCli(commandRunner))
+		target, err = NewStaticWebAppTarget(sc, env, resource, azCli, swa.NewSwaCli(commandRunner))
 	default:
 		return nil, fmt.Errorf("unsupported host '%s' for service '%s'", sc.Host, sc.Name)
+	}
+
+	if err != nil {
+		return nil, fmt.Errorf("failed validation for host '%s': %w", sc.Host, err)
 	}
 
 	return &target, nil
@@ -210,4 +226,88 @@ func (sc *ServiceConfig) RaiseEvent(ctx context.Context, name Event, args map[st
 	}
 
 	return nil
+}
+
+const (
+	defaultServiceTag = "azd-service-name"
+)
+
+// GetServiceResources gets the specific azure service resource targeted by the service.
+func (sc *ServiceConfig) GetServiceResource(
+	ctx context.Context,
+	resourceGroupName string,
+	env *environment.Environment,
+	azCli azcli.AzCli,
+) (azcli.AzCliResource, error) {
+	resources, err := sc.GetServiceResources(ctx, resourceGroupName, env, azCli)
+	if err != nil {
+		return azcli.AzCliResource{}, fmt.Errorf("getting service resource: %w", err)
+	}
+
+	if strings.TrimSpace(sc.ResourceName) == "" { // A tag search was performed
+		if len(resources) == 0 {
+			return azcli.AzCliResource{}, fmt.Errorf(
+				//nolint:lll
+				"unable to find a provisioned resource tagged with '%s: %s'. Ensure the service resource is correctly tagged in your bicep files, and rerun provision",
+				defaultServiceTag,
+				sc.Name,
+			)
+		}
+
+		if len(resources) != 1 {
+			return azcli.AzCliResource{}, fmt.Errorf(
+				//nolint:lll
+				"expecting only '1' resource tagged with '%s: %s', but found '%d'. Ensure a unique service resource is correctly tagged in your bicep files, and rerun provision",
+				defaultServiceTag,
+				sc.Name,
+				len(resources),
+			)
+		}
+	} else { // Name based search
+		if len(resources) == 0 {
+			return azcli.AzCliResource{},
+				fmt.Errorf(
+					"unable to find a provisioned resource with name '%s'. Ensure that a previous provision was successful",
+					sc.ResourceName)
+		}
+
+		// This can happen if multiple resources with different resource types are given the same name.
+		if len(resources) != 1 {
+			return azcli.AzCliResource{},
+				fmt.Errorf(
+					//nolint:lll
+					"expecting only '1' resource named '%s', but found '%d'. Use a unique name for the service resource in the resource group '%s'",
+					sc.ResourceName,
+					len(resources),
+					resourceGroupName)
+		}
+	}
+
+	return resources[0], nil
+}
+
+// GetServiceResources finds azure service resources targeted by the service.
+//
+// If an explicit `ResourceName` is specified in `azure.yaml`, a resource with that name is searched for.
+// Otherwise, searches for resources with 'azd-service-name' tag set to the service key.
+func (sc *ServiceConfig) GetServiceResources(
+	ctx context.Context,
+	resourceGroupName string,
+	env *environment.Environment,
+	azCli azcli.AzCli,
+) ([]azcli.AzCliResource, error) {
+	filter := fmt.Sprintf("tagName eq '%s' and tagValue eq '%s'", defaultServiceTag, sc.Name)
+
+	if strings.TrimSpace(sc.ResourceName) != "" {
+		filter = fmt.Sprintf("name eq '%s'", sc.ResourceName)
+	}
+
+	return azCli.ListResourceGroupResources(
+		ctx,
+		env.GetSubscriptionId(),
+		resourceGroupName,
+		&azcli.ListResourceGroupResourcesOptions{
+			Filter: &filter,
+		},
+	)
 }

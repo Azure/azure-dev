@@ -1,14 +1,8 @@
 package httputil
 
 import (
-	"bytes"
-	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
-	"strings"
-
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 )
 
 type MockHttpClient struct {
@@ -81,38 +75,4 @@ func (e *HttpExpression) RespondFn(responseFn RespondFn) *MockHttpClient {
 func (e *HttpExpression) SetError(err error) *MockHttpClient {
 	e.error = err
 	return e.http
-}
-
-func (c *MockHttpClient) AddAzResourceListMock(matchResourceGroupName *string, result any) {
-	c.When(func(request *http.Request) bool {
-		isMatch := strings.Contains(request.URL.Path, "/resources")
-		if matchResourceGroupName != nil {
-			isMatch = isMatch &&
-				strings.Contains(request.URL.Path, fmt.Sprintf("/resourceGroups/%s/resources", *matchResourceGroupName))
-		}
-
-		return isMatch
-	}).RespondFn(func(request *http.Request) (*http.Response, error) {
-		jsonBytes, err := json.Marshal(result)
-		if err != nil {
-			panic(err)
-		}
-
-		return &http.Response{
-			StatusCode: 200,
-			Body:       io.NopCloser(bytes.NewBuffer(jsonBytes)),
-		}, nil
-	})
-}
-
-func (c *MockHttpClient) AddDefaultMocks() {
-	// This is harmless but should be removed long-term.
-	// By default, mock returning an empty list of azure resources instead of crashing.
-	// This is an unfortunate mock required due to the side-effect of
-	// running "az resource list" as part of loading a project in project.GetProject.
-	emptyResult := armresources.ResourceListResult{
-		Value: []*armresources.GenericResourceExpanded{},
-	}
-
-	c.AddAzResourceListMock(nil, emptyResult)
 }

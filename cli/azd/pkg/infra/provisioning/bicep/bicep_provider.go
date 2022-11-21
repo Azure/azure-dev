@@ -48,9 +48,7 @@ type BicepTemplate struct {
 }
 
 type BicepInputParameter struct {
-	Type         string      `json:"type"`
-	DefaultValue interface{} `json:"defaultValue"`
-	Value        interface{} `json:"value"`
+	Value interface{} `json:"value"`
 }
 
 type BicepOutputParameter struct {
@@ -678,7 +676,9 @@ func (p *BicepProvider) updateParametersFile(ctx context.Context, deployment *De
 	parameters := make(map[string]BicepInputParameter)
 
 	for key, param := range deployment.Parameters {
-		parameters[key] = BicepInputParameter(param)
+		parameters[key] = BicepInputParameter{
+			Value: param.Value,
+		}
 	}
 
 	bicepFile.Parameters = parameters
@@ -829,7 +829,9 @@ func (p *BicepProvider) convertToDeployment(bicepTemplate BicepTemplate) (*Deplo
 	outputs := make(map[string]OutputParameter)
 
 	for key, param := range bicepTemplate.Parameters {
-		parameters[key] = InputParameter(param)
+		parameters[key] = InputParameter{
+			Value: param.Value,
+		}
 	}
 
 	for key, param := range bicepTemplate.Outputs {

@@ -14,6 +14,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
+	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
@@ -89,17 +90,19 @@ After the deployment is complete, the endpoint is printed. To start the service,
 }
 
 type deployAction struct {
-	flags     deployFlags
-	azCli     azcli.AzCli
-	azdCtx    *azdcontext.AzdContext
-	formatter output.Formatter
-	writer    io.Writer
-	console   input.Console
+	flags         deployFlags
+	azCli         azcli.AzCli
+	azdCtx        *azdcontext.AzdContext
+	formatter     output.Formatter
+	writer        io.Writer
+	console       input.Console
+	commandRunner exec.CommandRunner
 }
 
 func newDeployAction(
 	flags deployFlags,
 	azCli azcli.AzCli,
+	commandRunner exec.CommandRunner,
 	azdCtx *azdcontext.AzdContext,
 	console input.Console,
 	formatter output.Formatter,
@@ -141,7 +144,7 @@ func (d *deployAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		return nil, fmt.Errorf("service name '%s' doesn't exist", d.flags.serviceName)
 	}
 
-	proj, err := projConfig.GetProject(ctx, env, d.azCli)
+	proj, err := projConfig.GetProject(ctx, env, d.console, d.azCli, d.commandRunner)
 	if err != nil {
 		return nil, fmt.Errorf("creating project: %w", err)
 	}

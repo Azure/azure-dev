@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
@@ -60,8 +61,10 @@ func (sc *ServiceConfig) GetService(
 	project *Project,
 	env *environment.Environment,
 	azCli azcli.AzCli,
+	commandRunner exec.CommandRunner,
+	console input.Console,
 ) (*Service, error) {
-	framework, err := sc.GetFrameworkService(ctx, env)
+	framework, err := sc.GetFrameworkService(ctx, env, commandRunner)
 	if err != nil {
 		return nil, fmt.Errorf("creating framework service: %w", err)
 	}
@@ -78,7 +81,7 @@ func (sc *ServiceConfig) GetService(
 		azureResource.Type,
 	)
 
-	serviceTarget, err := sc.GetServiceTarget(ctx, env, targetResource, azCli)
+	serviceTarget, err := sc.GetServiceTarget(ctx, env, targetResource, azCli, commandRunner, console)
 	if err != nil {
 		return nil, fmt.Errorf("creating service target: %w", err)
 	}
@@ -98,6 +101,8 @@ func (sc *ServiceConfig) GetServiceTarget(
 	env *environment.Environment,
 	resource *environment.TargetResource,
 	azCli azcli.AzCli,
+	commandRunner exec.CommandRunner,
+	console input.Console,
 ) (*ServiceTarget, error) {
 	var target ServiceTarget
 	var err error
@@ -106,11 +111,13 @@ func (sc *ServiceConfig) GetServiceTarget(
 	case "", string(AppServiceTarget):
 		target, err = NewAppServiceTarget(sc, env, resource, azCli)
 	case string(ContainerAppTarget):
-		target, err = NewContainerAppTarget(sc, env, resource, azCli, docker.NewDocker(ctx), input.GetConsole(ctx))
+		target, err = NewContainerAppTarget(
+			sc, env, resource, azCli, docker.NewDocker(commandRunner), console, commandRunner,
+		)
 	case string(AzureFunctionTarget):
 		target, err = NewFunctionAppTarget(sc, env, resource, azCli)
 	case string(StaticWebAppTarget):
-		target, err = NewStaticWebAppTarget(sc, env, resource, azCli, swa.NewSwaCli(ctx))
+		target, err = NewStaticWebAppTarget(sc, env, resource, azCli, swa.NewSwaCli(commandRunner))
 	default:
 		return nil, fmt.Errorf("unsupported host '%s' for service '%s'", sc.Host, sc.Name)
 	}
@@ -124,18 +131,18 @@ func (sc *ServiceConfig) GetServiceTarget(
 
 // GetFrameworkService constructs a framework service from the underlying service configuration
 func (sc *ServiceConfig) GetFrameworkService(
-	ctx context.Context, env *environment.Environment) (*FrameworkService, error) {
+	ctx context.Context, env *environment.Environment, commandRunner exec.CommandRunner) (*FrameworkService, error) {
 	var frameworkService FrameworkService
 
 	switch sc.Language {
 	case "", "dotnet", "csharp", "fsharp":
-		frameworkService = NewDotNetProject(ctx, sc, env)
+		frameworkService = NewDotNetProject(commandRunner, sc, env)
 	case "py", "python":
-		frameworkService = NewPythonProject(ctx, sc, env)
+		frameworkService = NewPythonProject(commandRunner, sc, env)
 	case "js", "ts":
-		frameworkService = NewNpmProject(ctx, sc, env)
+		frameworkService = NewNpmProject(commandRunner, sc, env)
 	case "java":
-		frameworkService = NewMavenProject(ctx, sc, env)
+		frameworkService = NewMavenProject(commandRunner, sc, env)
 	default:
 		return nil, fmt.Errorf("unsupported language '%s' for service '%s'", sc.Language, sc.Name)
 	}
@@ -143,7 +150,7 @@ func (sc *ServiceConfig) GetFrameworkService(
 	// For containerized applications we use a nested framework service
 	if sc.Host == string(ContainerAppTarget) {
 		sourceFramework := frameworkService
-		frameworkService = NewDockerProject(sc, env, docker.NewDocker(ctx), sourceFramework)
+		frameworkService = NewDockerProject(sc, env, docker.NewDocker(commandRunner), sourceFramework)
 	}
 
 	return &frameworkService, nil

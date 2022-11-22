@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/npm"
 	"github.com/otiai10/copy"
@@ -69,8 +70,7 @@ func (np *npmProject) Package(ctx context.Context, progress chan<- string) (stri
 }
 
 func (np *npmProject) InstallDependencies(ctx context.Context) error {
-	npmCli := npm.NewNpmCli(ctx)
-	if err := npmCli.Install(ctx, np.config.Path(), false); err != nil {
+	if err := np.cli.Install(ctx, np.config.Path(), false); err != nil {
 		return err
 	}
 	return nil
@@ -80,10 +80,10 @@ func (np *npmProject) Initialize(ctx context.Context) error {
 	return nil
 }
 
-func NewNpmProject(ctx context.Context, config *ServiceConfig, env *environment.Environment) FrameworkService {
+func NewNpmProject(commandRunner exec.CommandRunner, config *ServiceConfig, env *environment.Environment) FrameworkService {
 	return &npmProject{
 		config: config,
 		env:    env,
-		cli:    npm.NewNpmCli(ctx),
+		cli:    npm.NewNpmCli(commandRunner),
 	}
 }

@@ -18,6 +18,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azsdk"
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	githubRemote "github.com/azure/azure-dev/cli/azd/pkg/github"
 	"github.com/azure/azure-dev/cli/azd/pkg/graphsdk"
 	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
@@ -34,6 +35,13 @@ import (
 // for source control manager.
 type GitHubScmProvider struct {
 	newGitHubRepoCreated bool
+	commandRunner        exec.CommandRunner
+}
+
+func NewGitHubScmProvider(commandRunner exec.CommandRunner) *GitHubScmProvider {
+	return &GitHubScmProvider{
+		commandRunner: commandRunner,
+	}
 }
 
 // ***  subareaProvider implementation ******
@@ -41,9 +49,7 @@ type GitHubScmProvider struct {
 // requiredTools return the list of external tools required by
 // GitHub provider during its execution.
 func (p *GitHubScmProvider) requiredTools(ctx context.Context) []tools.ExternalTool {
-	return []tools.ExternalTool{
-		github.NewGitHubCli(ctx),
-	}
+	return []tools.ExternalTool{github.NewGitHubCli(p.commandRunner)}
 }
 
 // preConfigureCheck check the current state of external tools and any
@@ -54,7 +60,7 @@ func (p *GitHubScmProvider) preConfigureCheck(
 	pipelineManagerArgs PipelineManagerArgs,
 	infraOptions provisioning.Options,
 ) error {
-	return ensureGitHubLogin(ctx, github.NewGitHubCli(ctx), github.GitHubHostName, console)
+	return ensureGitHubLogin(ctx, github.NewGitHubCli(p.commandRunner), github.GitHubHostName, console)
 }
 
 // name returns the name of the provider
@@ -91,7 +97,7 @@ func (p *GitHubScmProvider) configureGitRemote(
 	}
 
 	var remoteUrl string
-	ghCli := github.NewGitHubCli(ctx)
+	ghCli := github.NewGitHubCli(p.commandRunner)
 
 	switch idx {
 	// Select from an existing GitHub project
@@ -161,7 +167,9 @@ func (p *GitHubScmProvider) preventGitPush(
 	// Only check when using an existing repo in case github actions are disabled
 	if !p.newGitHubRepoCreated {
 		slug := gitRepo.owner + "/" + gitRepo.repoName
-		return notifyWhenGitHubActionsAreDisabled(ctx, gitRepo.gitProjectPath, slug, remoteName, branchName, console)
+		return notifyWhenGitHubActionsAreDisabled(
+			ctx, gitRepo.gitProjectPath, slug, remoteName, branchName, console, p.commandRunner,
+		)
 	}
 	return false, nil
 }
@@ -204,10 +212,12 @@ func notifyWhenGitHubActionsAreDisabled(
 	repoSlug string,
 	origin string,
 	branch string,
-	console input.Console) (bool, error) {
+	console input.Console,
+	commandRunner exec.CommandRunner,
+) (bool, error) {
+	ghCli := github.NewGitHubCli(commandRunner)
+	gitCli := git.NewGitCli(commandRunner)
 
-	ghCli := github.NewGitHubCli(ctx)
-	gitCli := git.NewGitCli(ctx)
 	ghActionsInUpstreamRepo, err := ghCli.GitHubActionsExists(ctx, repoSlug)
 	if err != nil {
 		return false, err
@@ -293,12 +303,14 @@ func notifyWhenGitHubActionsAreDisabled(
 // GitHubCiProvider implements a CiProvider using GitHub to manage CI pipelines as
 // GitHub actions.
 type GitHubCiProvider struct {
-	credential azcore.TokenCredential
+	credential    azcore.TokenCredential
+	commandRunner exec.CommandRunner
 }
 
-func NewGitHubCiProvider(credential azcore.TokenCredential) *GitHubCiProvider {
+func NewGitHubCiProvider(credential azcore.TokenCredential, commandRunner exec.CommandRunner) *GitHubCiProvider {
 	return &GitHubCiProvider{
-		credential: credential,
+		credential:    credential,
+		commandRunner: commandRunner,
 	}
 }
 
@@ -306,9 +318,7 @@ func NewGitHubCiProvider(credential azcore.TokenCredential) *GitHubCiProvider {
 
 // requiredTools defines the requires tools for GitHub to be used as CI manager
 func (p *GitHubCiProvider) requiredTools(ctx context.Context) []tools.ExternalTool {
-	return []tools.ExternalTool{
-		github.NewGitHubCli(ctx),
-	}
+	return []tools.ExternalTool{github.NewGitHubCli(p.commandRunner)}
 }
 
 // preConfigureCheck validates that current state of tools and GitHub is as expected to
@@ -319,7 +329,7 @@ func (p *GitHubCiProvider) preConfigureCheck(
 	pipelineManagerArgs PipelineManagerArgs,
 	infraOptions provisioning.Options,
 ) error {
-	err := ensureGitHubLogin(ctx, github.NewGitHubCli(ctx), github.GitHubHostName, console)
+	err := ensureGitHubLogin(ctx, github.NewGitHubCli(p.commandRunner), github.GitHubHostName, console)
 	if err != nil {
 		return err
 	}
@@ -417,7 +427,7 @@ func (p *GitHubCiProvider) configureConnection(
 	repoSlug := repoDetails.owner + "/" + repoDetails.repoName
 	console.Message(ctx, fmt.Sprintf("Configuring repository %s.\n", output.WithHighLightFormat(repoSlug)))
 
-	ghCli := github.NewGitHubCli(ctx)
+	ghCli := github.NewGitHubCli(p.commandRunner)
 	if err := p.ensureAuthorizedForRepoSecrets(ctx, ghCli, console, repoSlug); err != nil {
 		return fmt.Errorf("ensuring authorization: %w", err)
 	}
@@ -459,7 +469,7 @@ func (p *GitHubCiProvider) configureClientCredentialsAuth(
 	credentials json.RawMessage,
 	console input.Console,
 ) error {
-	ghCli := github.NewGitHubCli(ctx)
+	ghCli := github.NewGitHubCli(p.commandRunner)
 	console.Message(ctx, fmt.Sprintf("Setting %s GitHub repo secret.\n", output.WithHighLightFormat("AZURE_CREDENTIALS")))
 
 	// set azure credential for pipelines can log in to Azure
@@ -537,7 +547,7 @@ func (p *GitHubCiProvider) configureFederatedAuth(
 	console input.Console,
 	credential azcore.TokenCredential,
 ) error {
-	ghCli := github.NewGitHubCli(ctx)
+	ghCli := github.NewGitHubCli(p.commandRunner)
 
 	var azureCredentials azcli.AzureCredentials
 	if err := json.Unmarshal(credentials, &azureCredentials); err != nil {

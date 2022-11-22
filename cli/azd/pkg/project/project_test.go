@@ -53,7 +53,7 @@ services:
 	projectConfig, err := ParseProjectConfig(testProj, e)
 	require.NoError(t, err)
 
-	project, err := projectConfig.GetProject(*mockContext.Context, e, azCli)
+	project, err := projectConfig.GetProject(*mockContext.Context, e, mockContext.Console, azCli, mockContext.CommandRunner)
 	require.NoError(t, err)
 
 	assertHasService(t,
@@ -100,7 +100,7 @@ services:
 	projectConfig, err := ParseProjectConfig(testProj, e)
 	require.NoError(t, err)
 
-	project, err := projectConfig.GetProject(*mockContext.Context, e, azCli)
+	project, err := projectConfig.GetProject(*mockContext.Context, e, mockContext.Console, azCli, mockContext.CommandRunner)
 	require.NoError(t, err)
 
 	// Deployment resource name comes from the found tag on the graph query request
@@ -158,7 +158,7 @@ services:
 	projectConfig, err := ParseProjectConfig(testProj, e)
 	require.NoError(t, err)
 
-	project, err := projectConfig.GetProject(*mockContext.Context, e, azCli)
+	project, err := projectConfig.GetProject(*mockContext.Context, e, mockContext.Console, azCli, mockContext.CommandRunner)
 	require.NoError(t, err)
 
 	assertHasService(t,
@@ -224,7 +224,7 @@ services:
 	projectConfig, err := ParseProjectConfig(testProj, e)
 	require.NoError(t, err)
 
-	project, err := projectConfig.GetProject(*mockContext.Context, e, azCli)
+	project, err := projectConfig.GetProject(*mockContext.Context, e, mockContext.Console, azCli, mockContext.CommandRunner)
 	require.NoError(t, err)
 
 	assertHasService(t,

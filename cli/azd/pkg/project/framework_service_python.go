@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/python"
 	"github.com/otiai10/copy"
@@ -116,10 +117,12 @@ func skipPatterns(patterns ...string) copy.Options {
 	}
 }
 
-func NewPythonProject(ctx context.Context, config *ServiceConfig, env *environment.Environment) FrameworkService {
+func NewPythonProject(
+	commandRunner exec.CommandRunner, config *ServiceConfig, env *environment.Environment,
+) FrameworkService {
 	return &pythonProject{
 		config: config,
 		env:    env,
-		cli:    python.NewPythonCli(ctx),
+		cli:    python.NewPythonCli(commandRunner),
 	}
 }

@@ -28,6 +28,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/cmdsubst"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	. "github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
@@ -954,9 +955,10 @@ func NewBicepProvider(
 	env *environment.Environment,
 	projectPath string,
 	infraOptions Options,
+	commandRunner exec.CommandRunner,
+	console input.Console,
 ) *BicepProvider {
-	bicepCli := bicep.GetBicepCli(ctx)
-	console := input.GetConsole(ctx)
+	bicepCli := bicep.NewBicepCli(commandRunner)
 
 	// Default to a module named "main" if not specified.
 	if strings.TrimSpace(infraOptions.Module) == "" {
@@ -977,9 +979,15 @@ func init() {
 	err := RegisterProvider(
 		Bicep,
 		func(
-			ctx context.Context, env *environment.Environment, projectPath string, options Options, azCli azcli.AzCli,
+			ctx context.Context,
+			env *environment.Environment,
+			projectPath string,
+			options Options,
+			console input.Console,
+			azCli azcli.AzCli,
+			commandRunner exec.CommandRunner,
 		) (Provider, error) {
-			return NewBicepProvider(ctx, azCli, env, projectPath, options), nil
+			return NewBicepProvider(ctx, azCli, env, projectPath, options, commandRunner, console), nil
 		},
 	)
 

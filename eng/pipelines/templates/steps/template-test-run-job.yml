@@ -69,9 +69,8 @@ steps:
     runCmd: |
       curl -fsSL https://aka.ms/install-azd.sh | bash -s -- --version 'daily' --verbose
       echo "Path"
-      pwd
+      echo "$PWD"
       echo "ls"
-      ls
       cd cli
       ls
       echo "azd version"
@@ -82,7 +81,7 @@ steps:
         --tenant-id "$(arm-tenant-id)"
 
       set -euo pipefail
-      FOLDER_PATH=$pwd/temp/
+      FOLDER_PATH=$(pwd)/temp/
       BRANCH_NAME=$(TemplateBranchName)
       ENV_NAME_PREFIX=$(EnvPrefixName)
       TEMPLATE_NAME=$(TemplateName)

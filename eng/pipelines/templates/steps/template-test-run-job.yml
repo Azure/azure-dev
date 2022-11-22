@@ -68,6 +68,7 @@ steps:
       SUBSCRIPTION_ID=$(SubscriptionId)
     runCmd: |
       curl -fsSL https://aka.ms/install-azd.sh | bash -s -- --version 'daily' --verbose
+      sudo apt install npm
       echo "Path"
       echo "$PWD"
       mkdir temp

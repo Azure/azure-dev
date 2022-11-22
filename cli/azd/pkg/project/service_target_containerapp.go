@@ -183,7 +183,7 @@ func NewContainerAppTarget(
 	console input.Console,
 	commandRunner exec.CommandRunner,
 ) (ServiceTarget, error) {
-	if resource.ResourceType() != string(infra.AzureResourceTypeContainerApp) {
+	if !strings.EqualFold(resource.ResourceType(), string(infra.AzureResourceTypeContainerApp)) {
 		return nil, resourceTypeMismatchError(
 			resource.ResourceName(),
 			resource.ResourceType(),

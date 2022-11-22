@@ -70,8 +70,11 @@ steps:
       ARM_TENANT_ID=$(arm-tenant-id)
       SUBSCRIPTION_ID=$(SubscriptionId)
     runCmd: |
+      curl -fsSL https://aka.ms/install-azd.sh | bash -s -- --version 'daily' --verbose
       echo "path"
       pwd
+      echo "ls"
+      ls
       echo "azd version"
       azd version
       azd login \

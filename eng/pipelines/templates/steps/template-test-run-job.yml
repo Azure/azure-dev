@@ -56,12 +56,9 @@ steps:
     echo "https://azure-sdk:$(azuresdk-github-pat)@github.com" > ~/.git-credentials
     git config --global credential.helper "store"
     git clone https://github.com/Azure-Samples/$templateName.git/
-    pwd
-    dir = $pwd
 
 - task: DevcontainersCI@0
   displayName: Test templates in Devcontainer
-  # subFolder: dir
   inputs:
   # Required secrets for Terraform service principal authentication
     env: |
@@ -71,7 +68,7 @@ steps:
       SUBSCRIPTION_ID=$(SubscriptionId)
     runCmd: |
       curl -fsSL https://aka.ms/install-azd.sh | bash -s -- --version 'daily' --verbose
-      echo "path"
+      echo "Path"
       pwd
       echo "ls"
       ls
@@ -85,7 +82,7 @@ steps:
         --tenant-id "$(arm-tenant-id)"
 
       set -euo pipefail
-      FOLDER_PATH=$(Pipeline.Workspace)
+      FOLDER_PATH=$pwd/temp/
       BRANCH_NAME=$(TemplateBranchName)
       ENV_NAME_PREFIX=$(EnvPrefixName)
       TEMPLATE_NAME=$(TemplateName)

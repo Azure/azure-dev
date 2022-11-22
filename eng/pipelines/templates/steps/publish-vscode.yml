@@ -63,7 +63,7 @@ steps:
         targetType: filePath
         filePath: eng/scripts/New-ReleaseNotesFile.ps1
         arguments: >-
-          -ChangeLogPath cli/azd/CHANGELOG.md
+          -ChangeLogPath ext/vscode/CHANGELOG.md
           -Version ${{ parameters.VsixVersion }}
           -DevOpsOutputFormat
       displayName: Set release changelog content

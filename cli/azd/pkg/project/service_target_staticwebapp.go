@@ -158,7 +158,7 @@ func NewStaticWebAppTarget(
 	azCli azcli.AzCli,
 	swaCli swa.SwaCli,
 ) (ServiceTarget, error) {
-	if resource.ResourceType() != string(infra.AzureResourceTypeStaticWebSite) {
+	if !strings.EqualFold(resource.ResourceType(), string(infra.AzureResourceTypeStaticWebSite)) {
 		return nil, resourceTypeMismatchError(
 			resource.ResourceName(),
 			resource.ResourceType(),

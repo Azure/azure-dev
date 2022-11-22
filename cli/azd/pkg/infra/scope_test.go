@@ -7,14 +7,11 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
-	"path"
 	"strings"
 	"testing"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
-	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockazcli"
@@ -114,10 +111,6 @@ func TestScopeGetDeployment(t *testing.T) {
 }
 
 func TestScopeDeploy(t *testing.T) {
-	tmpPath := t.TempDir()
-	parametersPath := path.Join(tmpPath, "params.json")
-	createTmpFile := os.WriteFile(parametersPath, []byte(testArmParametersFile), osutil.PermissionFile)
-	require.NoError(t, createTmpFile)
 
 	t.Run("SubscriptionScopeSuccess", func(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
@@ -141,7 +134,7 @@ func TestScopeDeploy(t *testing.T) {
 		scope := NewSubscriptionScope(azCli, "eastus2", "SUBSCRIPTION_ID", "DEPLOYMENT_NAME")
 
 		armTemplate := azure.ArmTemplate(testArmTemplate)
-		err := scope.Deploy(*mockContext.Context, &armTemplate, parametersPath)
+		err := scope.Deploy(*mockContext.Context, &armTemplate, testArmParameters)
 		require.NoError(t, err)
 	})
 
@@ -168,7 +161,7 @@ func TestScopeDeploy(t *testing.T) {
 		scope := NewResourceGroupScope(azCli, "SUBSCRIPTION_ID", "RESOURCE_GROUP", "DEPLOYMENT_NAME")
 
 		armTemplate := azure.ArmTemplate(testArmTemplate)
-		err := scope.Deploy(*mockContext.Context, &armTemplate, parametersPath)
+		err := scope.Deploy(*mockContext.Context, &armTemplate, testArmParameters)
 		require.NoError(t, err)
 	})
 }
@@ -251,13 +244,11 @@ var testArmResponse string = `{
 }
 `
 
-var testArmParametersFile string = `{
-	"parameters": {
-		"location": {
-			"value": "West US"
-		}
-	}
-}`
+var testArmParameters = azure.ArmParameters{
+	"location": {
+		Value: "West US",
+	},
+}
 
 var testArmTemplate string = `{
 "$schema": "https://schema.management.azure.com/schemas/2015-01-01/deploymentTemplate.json#",

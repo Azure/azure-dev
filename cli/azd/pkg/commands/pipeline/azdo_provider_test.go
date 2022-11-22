@@ -6,7 +6,7 @@ package pipeline
 import (
 	"context"
 	"errors"
-	"path"
+	"path/filepath"
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdo"
@@ -160,8 +160,8 @@ func Test_saveEnvironmentConfig(t *testing.T) {
 		key := "test"
 		value := "12345"
 		provider := getEmptyAzdoScmProviderTestHarness()
-		envPath := path.Join(tempDir, ".test.env")
-		provider.Env = environment.EmptyWithRoot(tempDir)
+		envPath := filepath.Join(tempDir, "test")
+		provider.Env = environment.EmptyWithRoot(envPath)
 		// act
 		e := provider.saveEnvironmentConfig(key, value)
 		// assert

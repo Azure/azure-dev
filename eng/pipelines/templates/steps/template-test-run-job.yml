@@ -49,12 +49,12 @@ steps:
   displayName: Set test run parameters
 
 - pwsh: |
-    sudo apt install git-all
+    sudo apt update && sudo apt install git
     git config --global user.name "azure-sdk"
     git config --global user.email "azuresdk@microsoft.com"
     echo "https://azure-sdk:$(azuresdk-github-pat)@github.com" > ~/.git-credentials
     git config --global credential.helper "store"
-    git clone https://github.com/Azure-Samples/$templateName.git/
+    git clone https://github.com/Azure-Samples/$(TemplateName).git/
   displayName: Clone template repository
 
 - task: DevcontainersCI@0

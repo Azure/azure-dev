@@ -55,7 +55,7 @@ steps:
     git config --global credential.helper "store"
     echo "$templateName"
     $folderPath = '$pwd'
-    git clone https://github.com/$(TemplateName).git/ temp
+    git clone --branch pr/1000 https://github.com/$(TemplateName).git/ temp
     ls
     dir
     cd temp

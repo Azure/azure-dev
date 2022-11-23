@@ -27,6 +27,7 @@
         <Compile Include="ui.wxs"/>
     </ItemGroup>
     <ItemGroup>
+        <BindInputPaths Include="$(RepositoryPath)"/>
         <BindInputPaths Include="$(RepositoryPath)\cli\azd"/>
         <BindInputPaths Include="$(RepositoryPath)\cli\azd\build"/>
     </ItemGroup>

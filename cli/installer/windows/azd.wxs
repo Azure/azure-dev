@@ -48,6 +48,9 @@
             <Component Directory="INSTALLDIR">
                 <File Name="azd.exe"/>
             </Component>
+            <Component Directory="INSTALLDIR">
+                <File Name="NOTICE.txt"/>
+            </Component>
 
             <!-- Persist the INSTALLDIR and restore it in subsequent installs -->
             <Component Directory="INSTALLDIR">

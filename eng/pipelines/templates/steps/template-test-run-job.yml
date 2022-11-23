@@ -49,12 +49,12 @@ steps:
   displayName: Set test run parameters
 
 - pwsh: |
-    sudo apt update && sudo apt install git
     git config --global user.name "azure-sdk"
     git config --global user.email "azuresdk@microsoft.com"
     echo "https://azure-sdk:$(azuresdk-github-pat)@github.com" > ~/.git-credentials
     git config --global credential.helper "store"
     git clone https://github.com/$(TemplateName).git/
+    echo "$PWD"
   displayName: Clone template repository
 
 - task: DevcontainersCI@0
@@ -68,8 +68,6 @@ steps:
       SUBSCRIPTION_ID=$(SubscriptionId)
     runCmd: |
       curl -fsSL https://aka.ms/install-azd.sh | bash -s -- --version 'daily' --verbose
-      curl -sL https://deb.nodesource.com/setup_6.x | sudo bash -
-      sudo apt-get install -y npm
       echo "Path"
       echo "$PWD"
       mkdir temp

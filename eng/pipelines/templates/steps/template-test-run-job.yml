@@ -84,7 +84,7 @@ steps:
         --tenant-id "$(arm-tenant-id)"
 
       set -euo pipefail
-      FOLDER_PATH="/mnt/vss/_work/1/s/temp"
+      FOLDER_PATH="/workspaces/temp"
       BRANCH_NAME=$(TemplateBranchName)
       ENV_NAME_PREFIX=$(EnvPrefixName)
       TEMPLATE_NAME=$(TemplateName)

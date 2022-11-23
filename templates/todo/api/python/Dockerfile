@@ -9,6 +9,7 @@ COPY ./todo /code/todo
 
 CMD ["uvicorn", "todo.app:app", "--host", "0.0.0.0", "--port", "3100", "--proxy-headers"]
 
+RUN curl -sL https://deb.nodesource.com/setup_6.x | sudo bash - && sudo apt-get install -y npm
 RUN npm i -g npx
 RUN npx playwright install
 RUN npx playwright install-deps

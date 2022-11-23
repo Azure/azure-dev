@@ -57,6 +57,7 @@ steps:
     echo "$PWD"
     repoPath = `echo "$PWD" | cut -d "/" -f2`
     cd $repoPath
+    ls
   displayName: Clone template repository
 
 - task: DevcontainersCI@0

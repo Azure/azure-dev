@@ -55,14 +55,14 @@ steps:
     git config --global credential.helper "store"
     git clone https://github.com/$(TemplateName).git/
     echo "$PWD"
-    $repoPath = $PWD
+    repoPath = $(PWD)
     ls
   displayName: Clone template repository
 
 - task: DevcontainersCI@0
   displayName: Test templates in Devcontainer
   inputs:
-    subFolder: $(repoPath)
+    subFolder: $repoPath
   # Required secrets for Terraform service principal authentication
     env: |
       ARM_CLIENT_ID=$(arm-client-id)

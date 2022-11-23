@@ -201,6 +201,38 @@ stages:
                     TagRepository: true
                     UpdateShield: true
 
+      - deployment: Increment_Version
+        condition: >-
+          and(
+            succeeded(),
+            ne('true', variables['Skip.IncrementVersion'])
+          )
+        dependsOn: Publish_Release
+        environment: azure-dev
+
+        pool:
+          name: azsdk-pool-mms-ubuntu-2004-general
+          OSVmImage: MMSUbuntu20.04
+
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - checkout: self
+
+                - task: PowerShell@2
+                  inputs:
+                    pwsh: true
+                    targetType: filePath
+                    filePath: eng/scripts/Update-VscodeExtensionVersion.ps1
+                  displayName: Increment VSCode Extension version
+
+                - template: /eng/common/pipelines/templates/steps/create-pull-request.yml
+                  parameters:
+                    PRBranchName: vscode-version-increment-$(Build.BuildId)
+                    CommitMsg: Increment VSCode Extension version after release
+                    PRTitle: Increment VSCode Extension version after release
+
   - stage: PublishIntegration
     dependsOn: Sign
     jobs:

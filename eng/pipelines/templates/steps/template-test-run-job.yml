@@ -55,11 +55,13 @@ steps:
     git config --global credential.helper "store"
     git clone https://github.com/$(TemplateName).git/
     echo "$PWD"
+    $repoPath = $PWD
   displayName: Clone template repository
 
 - task: DevcontainersCI@0
   displayName: Test templates in Devcontainer
   inputs:
+    subFolder: $(repoPath)
   # Required secrets for Terraform service principal authentication
     env: |
       ARM_CLIENT_ID=$(arm-client-id)
@@ -68,7 +70,6 @@ steps:
       SUBSCRIPTION_ID=$(SubscriptionId)
     runCmd: |
       curl -fsSL https://aka.ms/install-azd.sh | bash -s -- --version 'daily' --verbose
-      echo "Path"
       echo "$PWD"
       mkdir temp
       echo "azd version"

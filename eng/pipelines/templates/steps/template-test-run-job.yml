@@ -69,7 +69,7 @@ steps:
 - task: DevcontainersCI@0
   displayName: Test templates in Devcontainer
   inputs:
-    subFolder: '$folderPath/temp'
+    subFolder: '/mnt/vss/_work/1/s/temp'
   # Required secrets for Terraform service principal authentication
     env: |
       ARM_CLIENT_ID=$(arm-client-id)

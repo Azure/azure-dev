@@ -54,7 +54,7 @@ steps:
     git config --global user.email "azuresdk@microsoft.com"
     echo "https://azure-sdk:$(azuresdk-github-pat)@github.com" > ~/.git-credentials
     git config --global credential.helper "store"
-    git clone https://github.com/Azure-Samples/$(TemplateName).git/
+    git clone https://github.com/$(TemplateName).git/
   displayName: Clone template repository
 
 - task: DevcontainersCI@0

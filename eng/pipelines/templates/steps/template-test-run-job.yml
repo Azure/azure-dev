@@ -54,7 +54,7 @@ steps:
     echo "https://azure-sdk:$(azuresdk-github-pat)@github.com" > ~/.git-credentials
     git config --global credential.helper "store"
     echo "$templateName"
-    $folderPath = '$(pwd)'
+    $folderPath = '$pwd'
     git clone https://github.com/$(TemplateName).git/ temp
     ls
     dir
@@ -69,7 +69,7 @@ steps:
 - task: DevcontainersCI@0
   displayName: Test templates in Devcontainer
   inputs:
-    subFolder: '/mnt/vss/_work/1/s/temp'
+    subFolder: '$folderPath/temp'
   # Required secrets for Terraform service principal authentication
     env: |
       ARM_CLIENT_ID=$(arm-client-id)
@@ -88,7 +88,7 @@ steps:
 
       set -euo pipefail
       FOLDER_PATH="/workspaces/temp"
-      BRANCH_NAME=$(TemplateBranchName)
+      BRANCH_NAME="staging"
       ENV_NAME_PREFIX=$(EnvPrefixName)
       TEMPLATE_NAME=$(TemplateName)
       PLAYWRIGHT_RETRIES="1"

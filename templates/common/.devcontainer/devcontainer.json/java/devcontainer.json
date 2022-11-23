@@ -19,6 +19,9 @@
         "ghcr.io/devcontainers/features/node:1": {
             "version": "16",
             "nodeGypDependencies": false
+        },
+        "ghcr.io/rchaganti/vsc-devcontainer-features/azurebicep:1":{
+            "version":"latest"
         }
     },
     "extensions": [

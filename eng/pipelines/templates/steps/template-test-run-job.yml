@@ -55,8 +55,8 @@ steps:
     git config --global credential.helper "store"
     git clone https://github.com/$(TemplateName).git/
     echo "$PWD"
-    $repoPath = $PWD
-    ls
+    repoPath = `echo "$PWD" | cut -d "/" -f2`
+    cd $repoPath
   displayName: Clone template repository
 
 - task: DevcontainersCI@0

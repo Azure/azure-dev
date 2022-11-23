@@ -73,7 +73,6 @@ steps:
     runCmd: |
       curl -fsSL https://aka.ms/install-azd.sh | bash -s -- --version 'daily' --verbose
       echo "$PWD"
-      mkdir temp
       echo "azd version"
       azd version
       azd login \

@@ -37,6 +37,7 @@ stages:
               OSVmImage: MMS2019
               BuildTarget: azd-windows-amd64.exe
               BuildOutputName: azd.exe
+              BuildTestMsi: true
               AZURE_DEV_CI_OS: win
             Linux:
               Pool: azsdk-pool-mms-ubuntu-2004-general
@@ -91,6 +92,15 @@ stages:
                 -SourceVersion $(Build.SourceVersion)
               workingDirectory: cli/azd
             displayName: Build Go Binary
+
+          - task: PowerShell@2
+            condition: and(succeeded(), eq(variables['BuildTestMsi'], 'true'))
+            inputs:
+              pwsh: true
+              targetType: filePath
+              filePath: cli/installer/windows/ci-build.ps1
+              arguments: -Version "$(CLI_VERSION)"
+            displayName: Build Windows MSI for testing
 
           # Live testing uses dotnet 6.0.x in the WebApp project deployment
           - task: UseDotNet@2
@@ -189,6 +199,11 @@ stages:
             artifact: $(BuildTarget)
             condition: always()
             displayName: Upload azd binary to artifact store
+
+          - publish: cli/installer/windows/bin/Release
+            artifact: test-msi
+            condition: and(succeeded(), eq(variables['BuildTestMsi'], 'true'))
+            displayName: Upload test MSI
 
       - job: GenerateReleaseArtifacts
         pool:
@@ -367,6 +382,23 @@ stages:
   - stage: Verify_Installers
     dependsOn: BuildAndTest
     jobs:
+      - job: Verify_MSI
+        pool: azsdk-pool-mms-win-2019-general
+        steps:
+          - checkout: self
+          
+          - task: DownloadPipelineArtifact@2
+            inputs:
+              artifact: test-msi
+              path: msi
+          
+          - task: PowerShell@2
+            inputs:
+              pwsh: true
+              targetType: filePath
+              filePath: cli/installer/windows/test-win-msi.ps1
+            displayName: Test MSI
+
       - job: Verify_Mac_InstallOver
         pool:
           name: Azure Pipelines

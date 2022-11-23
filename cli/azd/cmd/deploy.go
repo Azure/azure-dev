@@ -109,12 +109,13 @@ func newDeployAction(
 	writer io.Writer,
 ) (*deployAction, error) {
 	da := &deployAction{
-		flags:     flags,
-		azCli:     azCli,
-		azdCtx:    azdCtx,
-		formatter: formatter,
-		writer:    writer,
-		console:   console,
+		flags:         flags,
+		azCli:         azCli,
+		azdCtx:        azdCtx,
+		formatter:     formatter,
+		writer:        writer,
+		console:       console,
+		commandRunner: commandRunner,
 	}
 
 	return da, nil

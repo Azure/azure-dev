@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"regexp"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/joho/godotenv"
@@ -39,6 +40,10 @@ const ResourceGroupEnvVarName = "AZURE_RESOURCE_GROUP"
 type Environment struct {
 	// Values is a map of setting names to values.
 	Values map[string]string
+
+	// Config is environment specific config
+	Config config.Config
+
 	// File is a path to the directory that backs this environment. If empty, the Environment
 	// will not be persisted when `Save` is called. This allows the zero value to be used
 	// for testing.
@@ -58,8 +63,7 @@ func IsValidEnvironmentName(name string) bool {
 // to this directory, is returned.
 func FromRoot(root string) (*Environment, error) {
 	env := &Environment{
-		Root:   root,
-		Values: make(map[string]string),
+		Root: root,
 	}
 
 	envPath := filepath.Join(root, azdcontext.DotEnvFileName)
@@ -67,8 +71,17 @@ func FromRoot(root string) (*Environment, error) {
 	if err != nil {
 		return EmptyWithRoot(root), fmt.Errorf("loading .env: %w", err)
 	}
-
 	env.Values = e
+
+	cfgPath := filepath.Join(root, azdcontext.ConfigFileName)
+
+	cfgMgr := config.NewManager()
+	cfg, err := cfgMgr.Load(cfgPath)
+	if err != nil {
+		return EmptyWithRoot(root), fmt.Errorf("loading config: %w", err)
+	}
+	env.Config = cfg
+
 	return env, nil
 }
 
@@ -82,12 +95,14 @@ func EmptyWithRoot(root string) *Environment {
 	return &Environment{
 		Root:   root,
 		Values: make(map[string]string),
+		Config: config.NewConfig(nil),
 	}
 }
 
 func Ephemeral() *Environment {
 	return &Environment{
 		Values: make(map[string]string),
+		Config: config.NewConfig(nil),
 	}
 }
 
@@ -122,6 +137,13 @@ func (e *Environment) Save() error {
 	err = godotenv.Write(e.Values, filepath.Join(e.Root, azdcontext.DotEnvFileName))
 	if err != nil {
 		return fmt.Errorf("saving .env: %w", err)
+	}
+
+	cfgMgr := config.NewManager()
+
+	err = cfgMgr.Save(e.Config, filepath.Join(e.Root, azdcontext.ConfigFileName))
+	if err != nil {
+		return fmt.Errorf("saving config: %w", err)
 	}
 
 	return nil

@@ -9,5 +9,6 @@ COPY ./todo /code/todo
 
 CMD ["uvicorn", "todo.app:app", "--host", "0.0.0.0", "--port", "3100", "--proxy-headers"]
 
+RUN npm i -g npx
 RUN npx playwright install
 RUN npx playwright install-deps

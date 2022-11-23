@@ -16,7 +16,4 @@ check_packages apt-transport-https curl ca-certificates gnupg2 dirmngr
 
 echo "(*) Installing Azure Dev CLI"
 
-curl -fsSLO https://aka.ms/install-azd.sh
-chmod +x ./install-azd.sh
-
-./install-azd.sh --version $AZ_VERSION
+curl -fsSL https://aka.ms/uninstall-azd.sh | bash -s -- --version $AZ_VERSION

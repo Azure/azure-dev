@@ -1,0 +1,77 @@
+<?xml version="1.0" encoding="utf-8"?>
+
+<?define ProductName = "Azure Developer CLI"?>
+<?define ProductFolder = "Azure Dev CLI"?>
+
+<?ifndef ProductVersion?>
+<?error ProductVersion property not defined?>
+<?endif?>
+
+<!-- Define a unique UpgradeCode per platform -->
+<?if $(var.Platform) = "x64"?>
+<?define UpgradeCode = "37533D38-361D-4CDB-939C-B05A9A17B2DA"?>
+<?define ProgramFilesFolder = "ProgramFiles64Folder"?>
+<?elseif $(var.Platform) = "x86"?>
+<?define UpgradeCode = "FFE2BCD7-17E0-4C2D-A263-1FDE565F9A3F"?>
+<?define ProgramFilesFolder = "ProgramFilesFolder"?>
+<?elseif $(var.Platform) = "arm64"?>
+<?define UpgradeCode = "E5F7ECD9-D391-4278-80FA-820F81A5BCDD"?>
+<?define ProgramFilesFolder = "ProgramFiles64Folder"?>
+<?endif?>
+
+<Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
+    <Product Id="*" Name="$(var.ProductName)" Version="$(var.ProductVersion)" Language="1033" Manufacturer="Microsoft Corporation" UpgradeCode="$(var.UpgradeCode)">
+        <Package Compressed="yes" InstallerVersion="500" InstallScope="perUser"/>
+        <MediaTemplate EmbedCab="yes"/>
+
+        <!-- Use single package to installer per-user (default) or per-machine -->
+        <Property Id="ALLUSERS" Value="2"/>
+        <Property Id="MSIINSTALLPERUSER" Value="1"/>
+
+        <!-- Remove older product(s) early but within the transaction -->
+        <MajorUpgrade Schedule="afterInstallInitialize" DowngradeErrorMessage="A newer version of !(bind.property.ProductName) is already installed."/>
+
+        <Directory Id="TARGETDIR" Name="SourceDir">
+            <Directory Id="$(var.ProgramFilesFolder)" Name="Program Files">
+                <Directory Id="INSTALLDIR" Name="$(var.ProductFolder)"/>
+            </Directory>
+        </Directory>
+
+        <!-- Restore the INSTALLDIR if previously persisted to the registry -->
+        <Property Id="INSTALLDIR">
+            <RegistrySearch Id="HKCUInstallDir" Root="HKCU" Key="SOFTWARE\Microsoft\$(var.ProductFolder)" Name="InstallDir" Type="directory"/>
+            <RegistrySearch Id="HKLMInstallDir" Root="HKLM" Key="SOFTWARE\Microsoft\$(var.ProductFolder)" Name="InstallDir" Type="directory"/>
+        </Property>
+
+        <Feature Id="DefaultFeature" ConfigurableDirectory="INSTALLDIR">
+            <!-- @Guid will be automatically and durably assigned based on key path -->
+            <Component Directory="INSTALLDIR">
+                <File Name="azd.exe"/>
+            </Component>
+            <Component Directory="INSTALLDIR">
+                <File Name="NOTICE.txt"/>
+            </Component>
+
+            <!-- Persist the INSTALLDIR and restore it in subsequent installs -->
+            <Component Directory="INSTALLDIR">
+                <!-- Per-user registry key path to set per-user PATH environment variable. -->
+                <Condition>NOT ALLUSERS</Condition>
+                <RegistryValue Root="HKCU" Key="SOFTWARE\Microsoft\$(var.ProductFolder)" Name="InstallDir" Type="string" Value="[INSTALLDIR]"/>
+                <Environment Id="UserPath" Action="set" Name="PATH" Part="last" System="no" Value="[INSTALLDIR]"/>
+            </Component>
+            <Component Directory="INSTALLDIR">
+                <!-- Per-machine registry key path to set per-machine PATH environment variable. -->
+                <Condition>ALLUSERS=1</Condition>
+                <RegistryValue Root="HKLM" Key="SOFTWARE\Microsoft\$(var.ProductFolder)" Name="InstallDir" Type="string" Value="[INSTALLDIR]"/>
+                <Environment Id="SystemPath" Action="set" Name="PATH" Part="last" System="yes" Value="[INSTALLDIR]"/>
+            </Component>
+        </Feature>
+
+        <!-- Broadcast environment variable changes even if a reboot is pending -->
+        <CustomActionRef Id="WixBroadcastEnvironmentChange" />
+
+        <!-- Use customized WixUI_InstallDir that removes WixUI_LicenseAgreementDlg -->
+        <Property Id="WIXUI_INSTALLDIR" Value="INSTALLDIR"/>
+        <UIRef Id="AzureDevCLI_InstallDir"/>
+    </Product>
+</Wix>

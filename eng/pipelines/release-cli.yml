@@ -93,6 +93,20 @@ stages:
               workingDirectory: cli/azd
             displayName: Build Go Binary
 
+          # Live testing uses dotnet 6.0.x in the WebApp project deployment
+          # MSI build requires msbuild
+          - task: UseDotNet@2
+            condition: >-
+              and(
+                succeeded(), 
+                or(
+                  ne(variables['Skip.LiveTest'], 'true'),
+                  eq(variables['BuildTestMsi'], 'true')
+                )
+              )
+            inputs:
+              version: 6.0.x
+
           - task: PowerShell@2
             condition: and(succeeded(), eq(variables['BuildTestMsi'], 'true'))
             inputs:
@@ -101,12 +115,6 @@ stages:
               filePath: cli/installer/windows/ci-build.ps1
               arguments: -Version "$(CLI_VERSION)"
             displayName: Build Windows MSI for testing
-
-          # Live testing uses dotnet 6.0.x in the WebApp project deployment
-          - task: UseDotNet@2
-            condition: and(succeeded(), ne(variables['Skip.LiveTest'], 'true'))
-            inputs:
-              version: 6.0.x
 
           - template: /eng/pipelines/templates/steps/az-login.yml
 
@@ -382,8 +390,13 @@ stages:
   - stage: Verify_Installers
     dependsOn: BuildAndTest
     jobs:
-      - job: Verify_MSI
+      - job: Verify_MSI_PerUser
         pool: azsdk-pool-mms-win-2019-general
+        strategy:
+          matrix:
+            PerUser:
+            AllUsers:
+              AdditionalTestParameters: ALLUSERS=1
         steps:
           - checkout: self
           
@@ -397,6 +410,7 @@ stages:
               pwsh: true
               targetType: filePath
               filePath: cli/installer/windows/test-win-msi.ps1
+              arguments: $(AdditionalTestParameters)
             displayName: Test MSI
 
       - job: Verify_Mac_InstallOver

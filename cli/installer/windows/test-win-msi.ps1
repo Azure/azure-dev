@@ -1,10 +1,21 @@
 param(
     [string] $MsiPath = "azd-windows-amd64.msi",
-    [string] $InstallFolder = "$($env:USERPROFILE)\azd-install-test"
+    [switch] $PerMachine
 )
 
 $MSIEXEC = "${env:SystemRoot}\System32\msiexec.exe"
 $MsiPath = Resolve-Path $MsiPath
+
+$installFolder = "$($env:LocalAppData)\Programs\Azure Dev CLI"
+$registry = [Microsoft.Win32.Registry]::CurrentUser
+$environmentSubkeyPath = 'Environment'
+$additionalParameters = ""
+if ($PerMachine) { 
+    $installFolder = "$($env:ProgramFiles)\Azure Dev CLI"
+    $registry = [Microsoft.Win32.Registry]::LocalMachine
+    $environmentSubkeyPath = "SYSTEM\CurrentControlSet\Control\Session Manager\Environment"
+    $additionalParameters = "ALLUSERS=1"
+}
 
 
 function assertSuccessfulExecution($errorMessage, $process) {
@@ -22,7 +33,7 @@ function assertSuccessfulExecution($errorMessage, $process) {
     }
 }
 
-$regKey = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Environment', $false)
+$regKey = $registry.OpenSubKey($environmentSubkeyPath, $false)
 $originalPath = $regKey.GetValue( `
     'PATH', `
     '', `
@@ -31,7 +42,7 @@ $originalPath = $regKey.GetValue( `
 $originalPathType = $regKey.GetValueKind('PATH')
 
 $process = Start-Process $MSIEXEC `
-    -ArgumentList "/i", $MsiPath, "/qn", "InstallDir=$InstallFolder" `
+    -ArgumentList "/i", $MsiPath, "/qn", $additionalParameters `
     -PassThru `
     -Wait
 assertSuccessfulExecution "Install failed. Last exit code: $($process.ExitCode)" $process
@@ -41,7 +52,7 @@ $currentPath = $regKey.GetValue( `
     '', `
     [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames `
 )
-$expectedPathEntry = $InstallFolder
+$expectedPathEntry = $installFolder
 
 if (!$currentPath.Contains($expectedPathEntry)) {
   Write-Error "Could not find path entry"
@@ -58,7 +69,7 @@ if ($originalPathType -ne $afterInstallPathType) {
     exit 1
 }
 
-& $InstallFolder/azd version
+& $installFolder/azd version
 assertSuccessfulExecution "Could not execute 'azd version'"
 
 $process = Start-Process $MSIEXEC `
@@ -91,7 +102,7 @@ if ($originalPathType -ne $afterUninstallPathType) {
 $azdCommand = Get-Command azd -ErrorAction Ignore
 if ($azdCommand) {
     $sourceFolder = Split-Path -Parent (Resolve-Path $azdCommand.Source)
-    if ($sourceFolder -eq $InstallFolder) {
+    if ($sourceFolder -eq $installFolder) {
         Write-Error "Command still availble in tested install location"
         exit 1
     }

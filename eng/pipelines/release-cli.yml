@@ -93,19 +93,12 @@ stages:
               workingDirectory: cli/azd
             displayName: Build Go Binary
 
-          # Live testing uses dotnet 6.0.x in the WebApp project deployment
-          # MSI build requires msbuild
-          - task: UseDotNet@2
-            condition: >-
-              and(
-                succeeded(), 
-                or(
-                  ne(variables['Skip.LiveTest'], 'true'),
-                  eq(variables['BuildTestMsi'], 'true')
-                )
-              )
+          - task: MSBuild@1
+            displayName: Build test MSI
+            condition: and(succeeded(), eq(variables['BuildTestMsi'], 'true'))
             inputs:
-              version: 6.0.x
+              solution: cli/installer/windows/azd.wixproj
+              msbuildArguments: /p:ProductVersion=$(CLI_VERSION)
 
           - task: PowerShell@2
             condition: and(succeeded(), eq(variables['BuildTestMsi'], 'true'))
@@ -115,6 +108,12 @@ stages:
               filePath: cli/installer/windows/ci-build.ps1
               arguments: -Version "$(CLI_VERSION)"
             displayName: Build Windows MSI for testing
+
+          # Live testing uses dotnet 6.0.x in the WebApp project deployment
+          - task: UseDotNet@2
+            condition: and(succeeded(), ne(variables['Skip.LiveTest'], 'true'))
+            inputs:
+              version: 6.0.x
 
           - template: /eng/pipelines/templates/steps/az-login.yml
 

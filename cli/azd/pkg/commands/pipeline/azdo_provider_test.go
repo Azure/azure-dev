@@ -161,11 +161,11 @@ func Test_saveEnvironmentConfig(t *testing.T) {
 		value := "12345"
 		provider := getEmptyAzdoScmProviderTestHarness()
 		envPath := path.Join(tempDir, ".test.env")
-		provider.Env = environment.EmptyWithFile(envPath)
+		provider.Env = environment.EmptyWithRoot(tempDir)
 		// act
 		e := provider.saveEnvironmentConfig(key, value)
 		// assert
-		writtenEnv, err := environment.FromFile(envPath)
+		writtenEnv, err := environment.FromRoot(envPath)
 		require.NoError(t, err)
 
 		require.EqualValues(t, writtenEnv.Values[key], value)

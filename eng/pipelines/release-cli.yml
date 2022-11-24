@@ -66,15 +66,6 @@ stages:
 
           - template: /eng/pipelines/templates/steps/set-cli-version-cd.yml
 
-          - template: /eng/pipelines/templates/steps/install-terraform.yml
-
-          - task: DockerInstaller@0
-            displayName: Docker Installer
-            condition: and(succeeded(), contains(variables['OSVmImage'], 'macOS'))
-            inputs:
-              dockerVersion: 17.09.0-ce
-              releaseType: stable
-
           - task: PowerShell@2
             inputs:
               pwsh: true
@@ -100,14 +91,18 @@ stages:
               solution: cli/installer/windows/azd.wixproj
               msbuildArguments: /p:ProductVersion=$(CLI_VERSION)
 
-          - task: PowerShell@2
-            condition: and(succeeded(), eq(variables['BuildTestMsi'], 'true'))
+          - template: /eng/pipelines/templates/steps/install-bicep.yml
+            parameters:
+              Condition: and(succeeded(), ne(variables['Skip.LiveTest'], 'true'))
+
+          - template: /eng/pipelines/templates/steps/install-terraform.yml
+
+          - task: DockerInstaller@0
+            displayName: Docker Installer
+            condition: and(succeeded(), contains(variables['OSVmImage'], 'macOS'))
             inputs:
-              pwsh: true
-              targetType: filePath
-              filePath: cli/installer/windows/ci-build.ps1
-              arguments: -Version "$(CLI_VERSION)"
-            displayName: Build Windows MSI for testing
+              dockerVersion: 17.09.0-ce
+              releaseType: stable
 
           # Live testing uses dotnet 6.0.x in the WebApp project deployment
           - task: UseDotNet@2

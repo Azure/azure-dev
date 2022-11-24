@@ -5,73 +5,219 @@ package bicep
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io"
 	"log"
+	"net/http"
 	"os"
-	"os/user"
 	"path/filepath"
 	"runtime"
-	"strings"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/convert"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
+	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
+	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/blang/semver/v4"
 )
 
+// cBicepVersion is the minimum version of bicep that we require (and the one we fetch when we fetch bicep on behalf of a
+// user).
+var cBicepVersion semver.Version = semver.MustParse("0.12.40")
+
 type BicepCli interface {
-	tools.ExternalTool
 	Build(ctx context.Context, file string) (string, error)
 }
 
-func NewBicepCli(commandRunner exec.CommandRunner) BicepCli {
-	return &bicepCli{
-		commandRunner: commandRunner,
+// NewBicepCli creates a new BicepCli. Azd manages its own copy of the bicep CLI, stored in `$AZD_CONFIG_DIR/bin`. If
+// bicep is not present at this location, or if it is present but is older than the minimum supported version, it is
+// downloaded.
+func NewBicepCli(
+	ctx context.Context,
+	console input.Console,
+	commandRunner exec.CommandRunner,
+) (BicepCli, error) {
+	return newBicepCliWithTransporter(ctx, console, commandRunner, http.DefaultClient)
+}
+
+// newBicepCliWithTransporter is like NewBicepCli but allows providing a custom transport to use when downloading the
+// bicep CLI, for testing purposes.
+func newBicepCliWithTransporter(
+	ctx context.Context,
+	console input.Console,
+	commandRunner exec.CommandRunner,
+	transporter policy.Transporter,
+) (BicepCli, error) {
+	if override := os.Getenv("AZD_BICEP_TOOL_PATH"); override != "" {
+		log.Printf("using external bicep tool: %s", override)
+
+		return &bicepCli{
+			path:   override,
+			runner: commandRunner,
+		}, nil
 	}
+
+	bicepPath, err := cachedBicepPath()
+	if err != nil {
+		return nil, fmt.Errorf("finding bicep: %w", err)
+	}
+
+	if _, err = os.Stat(bicepPath); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return nil, fmt.Errorf("finding bicep: %w", err)
+	}
+	if errors.Is(err, os.ErrNotExist) {
+		if err := os.MkdirAll(filepath.Dir(bicepPath), osutil.PermissionDirectory); err != nil {
+			return nil, fmt.Errorf("downloading bicep: %w", err)
+		}
+
+		if err := runStep(
+			ctx, console, "Downloading Bicep", func() error {
+				return downloadBicep(ctx, transporter, cBicepVersion, bicepPath)
+			},
+		); err != nil {
+			return nil, fmt.Errorf("downloading bicep: %w", err)
+		}
+	}
+
+	cli := &bicepCli{
+		path:   bicepPath,
+		runner: commandRunner,
+	}
+
+	ver, err := cli.version(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("checking bicep version: %w", err)
+	}
+
+	if ver.LT(cBicepVersion) {
+		log.Printf("installed bicep version %s is older than %s; updating.", ver.String(), cBicepVersion.String())
+
+		if err := runStep(
+			ctx, console, "Upgrading Bicep", func() error {
+				return downloadBicep(ctx, transporter, cBicepVersion, bicepPath)
+			},
+		); err != nil {
+			return nil, fmt.Errorf("upgrading bicep: %w", err)
+		}
+	}
+
+	log.Printf("using local bicep: %s", bicepPath)
+
+	return cli, nil
+}
+
+// runStep runs a long running operation, using the console to show a spinner for progress and status.
+func runStep(ctx context.Context, console input.Console, title string, action func() error) error {
+	console.ShowSpinner(ctx, title, input.Step)
+	err := action()
+
+	if err != nil {
+		console.StopSpinner(ctx, title, input.StepFailed)
+		return err
+	}
+
+	console.StopSpinner(ctx, title, input.StepDone)
+	return nil
 }
 
 type bicepCli struct {
-	commandPath   *string
-	commandRunner exec.CommandRunner
+	path   string
+	runner exec.CommandRunner
 }
 
-func (cli *bicepCli) Name() string {
-	return "Bicep CLI"
-}
-
-func (cli *bicepCli) InstallUrl() string {
-	return "https://aka.ms/azure-dev/bicep-install"
-}
-
-func (cli *bicepCli) versionInfo() tools.VersionInfo {
-	return tools.VersionInfo{
-		MinimumVersion: semver.Version{
-			Major: 0,
-			Minor: 8,
-			Patch: 9,
-		},
-		//nolint:lll
-		UpdateCommand: `Run 'az bicep upgrade or Visit https://aka.ms/azure-dev/bicep-install to upgrade`,
+// cachedBicepPath returns the path where we cache our local copy of bicep ($AZD_CONFIG_DIR/bin).
+func cachedBicepPath() (string, error) {
+	configDir, err := config.GetUserConfigDir()
+	if err != nil {
+		return "", err
 	}
+
+	if runtime.GOOS == "windows" {
+		return filepath.Join(configDir, "bin", "bicep.exe"), nil
+	}
+
+	return filepath.Join(configDir, "bin", "bicep"), nil
 }
 
-func (cli *bicepCli) CheckInstalled(ctx context.Context) (bool, error) {
+// downloadBicep downloads a given version of bicep from the release site, writing the output to name.
+func downloadBicep(ctx context.Context, transporter policy.Transporter, bicepVersion semver.Version, name string) error {
+	var releaseName string
+	switch runtime.GOOS {
+	case "windows":
+		releaseName = "bicep-win-x64.exe"
+	case "darwin":
+		releaseName = "bicep-osx-x64"
+	case "linux":
+		if _, err := os.Stat("/lib/ld-musl-x86_64.so.1"); err == nil {
+			releaseName = "bicep-linux-musl-x64"
+		} else {
+			releaseName = "bicep-linux-x64"
+		}
+	default:
+		return fmt.Errorf("unsupported platform")
+	}
+
+	bicepReleaseUrl := fmt.Sprintf("https://downloads.bicep.azure.com/v%s/%s", bicepVersion, releaseName)
+
+	log.Printf("downloading bicep release %s -> %s", bicepReleaseUrl, name)
+
+	req, err := http.NewRequestWithContext(ctx, "GET", bicepReleaseUrl, nil)
+	if err != nil {
+		return err
+	}
+
+	resp, err := transporter.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("http error %d", resp.StatusCode)
+	}
+
+	f, err := os.CreateTemp(filepath.Dir(name), fmt.Sprintf("%s.tmp*", filepath.Base(name)))
+	if err != nil {
+		return err
+	}
+	defer func() {
+		_ = f.Close()
+		_ = os.Remove(f.Name())
+	}()
+
+	if _, err := io.Copy(f, resp.Body); err != nil {
+		return err
+	}
+
+	if err := f.Chmod(osutil.PermissionExecutableFile); err != nil {
+		return err
+	}
+
+	if err := f.Close(); err != nil {
+		return err
+	}
+
+	if err := os.Rename(f.Name(), name); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (cli *bicepCli) version(ctx context.Context) (semver.Version, error) {
 	bicepRes, err := cli.runCommand(ctx, "--version")
 	if err != nil {
-		return false, fmt.Errorf("checking %s version: %w", cli.Name(), err)
+		return semver.Version{}, err
 	}
 
 	bicepSemver, err := tools.ExtractVersion(bicepRes.Stdout)
 	if err != nil {
-		return false, fmt.Errorf("converting to semver version fails: %w", err)
+		return semver.Version{}, err
 	}
 
-	updateDetail := cli.versionInfo()
-	if bicepSemver.LT(updateDetail.MinimumVersion) {
-		return false, &tools.ErrSemver{ToolName: cli.Name(), VersionInfo: updateDetail}
-	}
+	return bicepSemver, nil
 
-	return true, nil
 }
 
 func (cli *bicepCli) Build(ctx context.Context, file string) (string, error) {
@@ -80,7 +226,7 @@ func (cli *bicepCli) Build(ctx context.Context, file string) (string, error) {
 
 	if err != nil {
 		return "", fmt.Errorf(
-			"failed running az bicep build: %s (%w)",
+			"failed running bicep build: %s (%w)",
 			buildRes.String(),
 			err,
 		)
@@ -90,85 +236,6 @@ func (cli *bicepCli) Build(ctx context.Context, file string) (string, error) {
 }
 
 func (cli *bicepCli) runCommand(ctx context.Context, args ...string) (exec.RunResult, error) {
-	if cli.commandPath == nil {
-		commandPath, err := findBicepPath()
-		if err != nil {
-			return exec.RunResult{}, err
-		}
-
-		cli.commandPath = commandPath
-	}
-
-	runArgs := exec.NewRunArgs(*cli.commandPath, args...)
-	return cli.commandRunner.Run(ctx, runArgs)
-}
-
-const (
-	defaultBicepCommandPath string = "bicep"
-	envNameAzureConfigDir   string = "AZURE_CONFIG_DIR"
-)
-
-// Finds the bicep command path
-// Search in PATH, otherwise looks for standalone and az installation locations
-func findBicepPath() (*string, error) {
-	// First, check if tool is found in path
-	// This typically should return true for standalone install and false for `az` bundled install
-	found, err := tools.ToolInPath(defaultBicepCommandPath)
-	if err != nil {
-		return nil, err
-	}
-
-	if found {
-		return convert.RefOf(defaultBicepCommandPath), nil
-	}
-
-	// If not found in path, check in 2 locations
-	// Default location for standalone install
-	// Default location for az bicep install
-	user, err := user.Current()
-	if err != nil {
-		return nil, fmt.Errorf("failed getting current user: %w", err)
-	}
-
-	var bicepFilename string
-	var bicepStandalonePath string
-
-	if runtime.GOOS == "windows" {
-		bicepFilename = "bicep.exe"
-		bicepStandalonePath = filepath.Join(user.HomeDir, fmt.Sprintf("AppData\\Local\\Programs\\Bicep CLI\\%s", bicepFilename))
-	} else {
-		bicepFilename = "bicep"
-		bicepStandalonePath = fmt.Sprintf("/usr/local/bin/%s", bicepFilename)
-	}
-
-	azureBin := filepath.Join(user.HomeDir, ".azure", "bin")
-	commonPaths := []string{}
-
-	// If AZURE_CONFIG_DIR is defined, check there first
-	azureConfigDir := os.Getenv(envNameAzureConfigDir)
-	if strings.TrimSpace(azureConfigDir) != "" {
-		log.Printf("Found %s with path '%s'\n", envNameAzureConfigDir, azureConfigDir)
-		commonPaths = append(commonPaths, filepath.Join(azureConfigDir, "bin", bicepFilename))
-	}
-
-	// Check for standalone installation
-	commonPaths = append(commonPaths, bicepStandalonePath)
-
-	// Otherwise look in standard azure bin dir
-	commonPaths = append(commonPaths, filepath.Join(azureBin, bicepFilename))
-
-	var existsErr error
-
-	// Search and find first matching path
-	// Take standalone version before az cli version
-	for _, installPath := range commonPaths {
-		_, existsErr = os.Stat(installPath)
-		if existsErr == nil {
-			return &installPath, nil
-		}
-
-		log.Printf("Bicep CLI not found at path '%s'\n", installPath)
-	}
-
-	return nil, fmt.Errorf("cannot find bicep path: %w", existsErr)
+	runArgs := exec.NewRunArgs(cli.path, args...)
+	return cli.runner.Run(ctx, runArgs)
 }

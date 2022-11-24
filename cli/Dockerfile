@@ -20,13 +20,6 @@ RUN export DEBIAN_FRONTEND=noninteractive \
      && apt-get update && apt-get install -y gh \ 
      # az cli
      && curl -sSL https://aka.ms/InstallAzureCLIDeb | bash \
-     # bicep
-     # Fetch the latest Bicep CLI binary
-     && curl -Lo bicep https://github.com/Azure/bicep/releases/latest/download/bicep-linux-x64 \
-     # Mark it as executable
-     && chmod +x ./bicep \
-     # Add bicep to your PATH (requires admin)
-     && mv ./bicep /usr/local/bin/bicep \
      # nodejs
      && curl -fsSL https://deb.nodesource.com/setup_16.x | bash - \
      && apt-get install -y nodejs \

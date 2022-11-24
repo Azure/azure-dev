@@ -157,7 +157,7 @@ func loadOrInitEnvironment(
 			return nil, false, err
 		}
 
-		return environment.EmptyWithFile(azdCtx.GetEnvironmentFilePath(*environmentName)), true, nil
+		return environment.EmptyWithRoot(azdCtx.EnvironmentRoot(*environmentName)), true, nil
 	}
 
 	env, isNew, err := loadOrCreateEnvironment()

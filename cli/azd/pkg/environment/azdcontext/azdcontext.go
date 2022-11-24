@@ -14,6 +14,7 @@ import (
 
 const ProjectFileName = "azure.yaml"
 const EnvironmentDirectoryName = ".azure"
+const DotEnvFileName = ".env"
 const ConfigFileName = "config.json"
 const ConfigFileVersion = 1
 const InfraDirectoryName = "infra"
@@ -46,12 +47,16 @@ func (c *AzdContext) GetDefaultProjectName() string {
 	return filepath.Base(c.ProjectDirectory())
 }
 
-func (c *AzdContext) GetEnvironmentFilePath(name string) string {
-	return filepath.Join(c.EnvironmentDirectory(), name, ".env")
+func (c *AzdContext) EnvironmentDotEnvPath(name string) string {
+	return filepath.Join(c.EnvironmentDirectory(), name, DotEnvFileName)
+}
+
+func (c *AzdContext) EnvironmentRoot(name string) string {
+	return filepath.Join(c.EnvironmentDirectory(), name)
 }
 
 func (c *AzdContext) GetEnvironmentWorkDirectory(name string) string {
-	return filepath.Join(c.GetEnvironmentFilePath(name), "wd")
+	return filepath.Join(c.EnvironmentRoot(name), "wd")
 }
 
 func (c *AzdContext) GetInfrastructurePath() string {
@@ -75,7 +80,7 @@ func (c *AzdContext) ListEnvironments() ([]contracts.EnvListEnvironment, error) 
 			ev := contracts.EnvListEnvironment{
 				Name:       ent.Name(),
 				IsDefault:  ent.Name() == defaultEnv,
-				DotEnvPath: c.GetEnvironmentFilePath(ent.Name()),
+				DotEnvPath: c.EnvironmentDotEnvPath(ent.Name()),
 			}
 			envs = append(envs, ev)
 		}

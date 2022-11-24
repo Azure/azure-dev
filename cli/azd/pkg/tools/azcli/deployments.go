@@ -9,7 +9,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
@@ -77,9 +76,12 @@ func (cli *azCli) createDeploymentsClient(
 }
 
 func (cli *azCli) DeployToSubscription(
-	ctx context.Context, subscriptionId, deploymentName string,
-	armTemplate *azure.ArmTemplate, parametersFile, location string) (
-	AzCliDeploymentResult, error) {
+	ctx context.Context,
+	subscriptionId, deploymentName string,
+	armTemplate *azure.ArmTemplate,
+	parameters azure.ArmParameters,
+	location string,
+) (AzCliDeploymentResult, error) {
 	deploymentClient, err := cli.createDeploymentsClient(ctx, subscriptionId)
 	if err != nil {
 		return AzCliDeploymentResult{}, fmt.Errorf("creating deployments client: %w", err)
@@ -89,17 +91,13 @@ func (cli *azCli) DeployToSubscription(
 	if err != nil {
 		return AzCliDeploymentResult{}, fmt.Errorf("reading template file: %w", err)
 	}
-	parametersFileJsonAsMap, err := readJson(parametersFile)
-	if err != nil {
-		return AzCliDeploymentResult{}, fmt.Errorf("reading parameters file: %w", err)
-	}
 
 	createFromTemplateOperation, err := deploymentClient.BeginCreateOrUpdateAtSubscriptionScope(
 		ctx, deploymentName,
 		armresources.Deployment{
 			Properties: &armresources.DeploymentProperties{
 				Template:   templateJsonAsMap,
-				Parameters: parametersFileJsonAsMap["parameters"],
+				Parameters: parameters,
 				Mode:       to.Ptr(armresources.DeploymentModeIncremental),
 			},
 			Location: to.Ptr(location),
@@ -126,9 +124,11 @@ func (cli *azCli) DeployToSubscription(
 }
 
 func (cli *azCli) DeployToResourceGroup(
-	ctx context.Context, subscriptionId, resourceGroup, deploymentName string,
-	armTemplate *azure.ArmTemplate, parametersFile string) (
-	AzCliDeploymentResult, error) {
+	ctx context.Context,
+	subscriptionId, resourceGroup, deploymentName string,
+	armTemplate *azure.ArmTemplate,
+	parameters azure.ArmParameters,
+) (AzCliDeploymentResult, error) {
 	deploymentClient, err := cli.createDeploymentsClient(ctx, subscriptionId)
 	if err != nil {
 		return AzCliDeploymentResult{}, fmt.Errorf("creating deployments client: %w", err)
@@ -138,17 +138,13 @@ func (cli *azCli) DeployToResourceGroup(
 	if err != nil {
 		return AzCliDeploymentResult{}, fmt.Errorf("reading template file: %w", err)
 	}
-	parametersFileJsonAsMap, err := readJson(parametersFile)
-	if err != nil {
-		return AzCliDeploymentResult{}, fmt.Errorf("reading parameters file: %w", err)
-	}
 
 	createFromTemplateOperation, err := deploymentClient.BeginCreateOrUpdate(
 		ctx, resourceGroup, deploymentName,
 		armresources.Deployment{
 			Properties: &armresources.DeploymentProperties{
 				Template:   templateJsonAsMap,
-				Parameters: parametersFileJsonAsMap["parameters"],
+				Parameters: parameters,
 				Mode:       to.Ptr(armresources.DeploymentModeIncremental),
 			},
 		}, nil)
@@ -191,14 +187,6 @@ func (cli *azCli) DeleteSubscriptionDeployment(ctx context.Context, subscription
 	}
 
 	return nil
-}
-
-func readJson(path string) (map[string]interface{}, error) {
-	templateFile, err := os.ReadFile(path)
-	if err != nil {
-		return nil, err
-	}
-	return readFromString(templateFile)
 }
 
 func readFromString(jsonBytes []byte) (map[string]interface{}, error) {

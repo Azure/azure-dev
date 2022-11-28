@@ -132,7 +132,7 @@ var AzCliSet = wire.NewSet(
 var InitCmdSet = wire.NewSet(
 	CommonSet,
 	AzCliSet,
-	git.NewGitCliFromRunner,
+	git.NewGitCli,
 	newInitAction,
 	wire.Bind(new(actions.Action), new(*initAction)))
 
@@ -157,7 +157,7 @@ var DeployCmdSet = wire.NewSet(
 var UpCmdSet = wire.NewSet(
 	CommonSet,
 	AzCliSet,
-	git.NewGitCliFromRunner,
+	git.NewGitCli,
 	newInitAction,
 	newInfraCreateAction,
 	newDeployAction,

@@ -1,4 +1,4 @@
 os,debian
 osVersion,11
-isWsl,true
+isWsl,false
 terminal,bash

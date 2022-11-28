@@ -18,6 +18,11 @@
     <maven.compiler.source>${java.version}</maven.compiler.source>
     <maven.compiler.target>${java.version}</maven.compiler.target>
     <springdoc.version>1.6.11</springdoc.version>
+    <!-- By default, set to write which formats the code.
+        This sample does not include format check failures on CI.
+        To see how to enable this, visit https://github.com/HubSpot/prettier-maven-plugin
+      -->
+    <plugin.prettier.goal>write</plugin.prettier.goal>
   </properties>
 
   <dependencies>
@@ -105,6 +110,27 @@
           </execution>
         </executions>
       </plugin>
+      <plugin>
+        <groupId>com.hubspot.maven.plugins</groupId>
+        <artifactId>prettier-maven-plugin</artifactId>
+        <version>0.16</version>
+        <configuration>
+          <prettierJavaVersion>1.5.0</prettierJavaVersion>
+          <printWidth>125</printWidth>
+          <tabWidth>4</tabWidth>
+          <useTabs>false</useTabs>
+          <ignoreConfigFile>true</ignoreConfigFile>
+          <ignoreEditorConfig>true</ignoreEditorConfig>
+        </configuration>
+        <executions>
+          <execution>
+            <phase>validate</phase>
+            <goals>
+              <goal>${plugin.prettier.goal}</goal>
+            </goals>
+          </execution>
+        </executions>
+      </plugin>
     </plugins>
   </build>
   <profiles>
@@ -134,8 +160,21 @@
                     <delegatePattern>false</delegatePattern>
                     <interfaceOnly>true</interfaceOnly>
                     <hideGenerationTimestamp>true</hideGenerationTimestamp>
+                    <useTags>true</useTags>
                   </configOptions>
                 </configuration>
+              </execution>
+            </executions>
+          </plugin>
+          <plugin>
+            <groupId>com.hubspot.maven.plugins</groupId>
+            <artifactId>prettier-maven-plugin</artifactId>
+            <executions>
+              <execution>
+                <phase>compile</phase>
+                <goals>
+                  <goal>${plugin.prettier.goal}</goal>
+                </goals>
               </execution>
             </executions>
           </plugin>

@@ -9,8 +9,6 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
-	"os"
-	"path"
 	"strings"
 	"testing"
 
@@ -25,7 +23,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	. "github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
-	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	execmock "github.com/azure/azure-dev/cli/azd/test/mocks/exec"
@@ -139,15 +136,13 @@ func TestBicepDeploy(t *testing.T) {
 	azCli := mockazcli.NewAzCliFromMockContext(mockContext)
 
 	infraProvider := createBicepProvider(mockContext)
-	tmpPath := t.TempDir()
-	parametersPath := path.Join(tmpPath, "params.json")
-	createTmpFile := os.WriteFile(parametersPath, []byte(testArmParametersFile), osutil.PermissionFile)
-	require.NoError(t, createTmpFile)
 
 	deploymentPlan := DeploymentPlan{
+		Deployment: Deployment{
+			Parameters: testArmParameters,
+		},
 		Details: BicepDeploymentDetails{
-			ParameterFilePath: parametersPath,
-			Template:          to.Ptr(azure.ArmTemplate("{}")),
+			Template: to.Ptr(azure.ArmTemplate("{}")),
 		},
 	}
 
@@ -333,7 +328,9 @@ func createBicepProvider(mockContext *mocks.MockContext) *BicepProvider {
 		HttpClient: mockContext.HttpClient,
 	})
 
-	return NewBicepProvider(*mockContext.Context, azCli, env, projectDir, options)
+	return NewBicepProvider(
+		*mockContext.Context, azCli, env, projectDir, options, mockContext.CommandRunner, mockContext.Console,
+	)
 }
 
 func prepareGenericMocks(commandRunner *execmock.MockCommandRunner) {
@@ -551,13 +548,11 @@ func prepareDestroyMocks(mockContext *mocks.MockContext) {
 	})
 }
 
-var testArmParametersFile string = `{
-	"parameters": {
-		"location": {
-			"value": "West US"
-		}
-	}
-}`
+var testArmParameters = map[string]InputParameter{
+	"location": {
+		Value: "West US",
+	},
+}
 
 func getKeyVaultMock(mockContext *mocks.MockContext, keyVaultString string, name string, location string) {
 	mockContext.HttpClient.When(func(request *http.Request) bool {

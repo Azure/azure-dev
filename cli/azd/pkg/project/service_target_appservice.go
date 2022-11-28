@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
@@ -105,7 +106,7 @@ func NewAppServiceTarget(
 	resource *environment.TargetResource,
 	azCli azcli.AzCli,
 ) (ServiceTarget, error) {
-	if resource.ResourceType() != string(infra.AzureResourceTypeWebSite) {
+	if !strings.EqualFold(resource.ResourceType(), string(infra.AzureResourceTypeWebSite)) {
 		return nil, resourceTypeMismatchError(
 			resource.ResourceName(),
 			resource.ResourceType(),

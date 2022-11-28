@@ -354,27 +354,6 @@ func NewConsole(noPrompt bool, isTerminal bool, w io.Writer, handles ConsoleHand
 	}
 }
 
-type contextKey string
-
-const (
-	consoleContextKey contextKey = "console"
-)
-
-// Sets the console instance in the go context and returns the new context
-func WithConsole(ctx context.Context, console Console) context.Context {
-	return context.WithValue(ctx, consoleContextKey, console)
-}
-
-// Gets the console from the go context or nil if not found
-func GetConsole(ctx context.Context) Console {
-	console, ok := ctx.Value(consoleContextKey).(Console)
-	if !ok {
-		return nil
-	}
-
-	return console
-}
-
 func newConsoleMessageEvent(msg string) contracts.EventEnvelope {
 	return contracts.EventEnvelope{
 		Type:      contracts.ConsoleMessageEventDataType,

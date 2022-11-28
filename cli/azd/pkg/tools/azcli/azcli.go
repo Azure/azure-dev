@@ -16,6 +16,7 @@ import (
 	azdinternal "github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/azsdk"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
+	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
 )
 
@@ -36,7 +37,7 @@ type AzCli interface {
 	// UserAgent gets the currently configured user agent
 	UserAgent() string
 
-	LoginAcr(ctx context.Context, subscriptionId string, loginServer string) error
+	LoginAcr(ctx context.Context, commandRunner exec.CommandRunner, subscriptionId string, loginServer string) error
 	GetContainerRegistries(ctx context.Context, subscriptionId string) ([]*armcontainerregistry.Registry, error)
 	ListAccounts(ctx context.Context) ([]*AzCliSubscriptionInfo, error)
 	GetAccount(ctx context.Context, subscriptionId string) (*AzCliSubscriptionInfo, error)
@@ -86,7 +87,8 @@ type AzCli interface {
 	DeployToSubscription(
 		ctx context.Context, subscriptionId, deploymentName string,
 		armTemplate *azure.ArmTemplate,
-		parametersPath, location string) (
+		parameters azure.ArmParameters,
+		location string) (
 		AzCliDeploymentResult, error)
 	DeployToResourceGroup(
 		ctx context.Context,
@@ -94,7 +96,7 @@ type AzCli interface {
 		resourceGroup,
 		deploymentName string,
 		armTemplate *azure.ArmTemplate,
-		parametersPath string,
+		parameters azure.ArmParameters,
 	) (AzCliDeploymentResult, error)
 	DeleteSubscriptionDeployment(ctx context.Context, subscriptionId string, deploymentName string) error
 	DeleteResourceGroup(ctx context.Context, subscriptionId string, resourceGroupName string) error

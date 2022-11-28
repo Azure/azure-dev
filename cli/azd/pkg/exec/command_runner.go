@@ -29,29 +29,6 @@ func NewCommandRunner(stdin io.Reader, stdout io.Writer, stderr io.Writer) Comma
 	}
 }
 
-type contextKey string
-
-const (
-	execFnContextKey contextKey = "commandrunner"
-)
-
-// Gets the exec util implementation used for executing CLI commands on the host machine
-// This override should ONLY be called during unit testing, otherwise the default implementation is used.
-func WithCommandRunner(ctx context.Context, commandRunner CommandRunner) context.Context {
-	return context.WithValue(ctx, execFnContextKey, commandRunner)
-}
-
-// Gets the exec util implementation used for executing CLI commands on the host machine
-// If a value is not found in the context, panic.
-func GetCommandRunner(ctx context.Context) CommandRunner {
-	execFn, ok := ctx.Value(execFnContextKey).(CommandRunner)
-	if !ok {
-		panic("GetCommandRunner: no runner in context")
-	}
-
-	return execFn
-}
-
 // commandRunner is the default private implementation of the CommandRunner interface
 // This implementation executes actual commands on the underlying console/shell
 type commandRunner struct {

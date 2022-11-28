@@ -308,3 +308,11 @@ func initConfigResetAction(
 }
 
 //#endregion Config
+
+//#region Middleware
+
+func initDebugMiddleware() actions.MiddlewareFn {
+	panic(wire.Build(DebugMiddlewareSet))
+}
+
+//#endregion Middleware

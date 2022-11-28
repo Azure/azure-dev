@@ -113,7 +113,7 @@ For more information, visit the Azure Developer CLI Dev Hub: https://aka.ms/azur
 	cmd.AddCommand(BuildCmd(opts, provisionCmdDesign, initInfraCreateAction, nil))
 	cmd.AddCommand(BuildCmd(opts, deployCmdDesign, initDeployAction, nil))
 
-	actions.Use(middleware.UseDebug())
+	actions.Use(initDebugMiddleware())
 	actions.Use(middleware.UseTelemetry())
 
 	return cmd

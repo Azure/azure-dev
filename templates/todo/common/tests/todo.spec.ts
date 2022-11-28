@@ -21,12 +21,13 @@ test("Create and delete item test", async ({ page }) => {
   await expect(page.locator(`text=${guid}`).first()).toBeVisible()
 
   await page.locator(`text=${guid}`).click();
+  await page.locator('button');
+  await page.$$('button');
   const itemMoreOperation = await page.locator('button[role="menuitem"]:has-text("Delete")')
   if(itemMoreOperation){
     await itemMoreOperation.click();
   };
-  await page.locator('button');
-  await page.$$('button');
+
   await page.locator('button[role="menuitem"]:has-text("Delete")').click();
 
   await expect(page.locator(`text=${guid}`).first()).toBeHidden()

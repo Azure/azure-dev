@@ -99,7 +99,8 @@ steps:
       PLAYWRIGHT_REPORTER='list'
       LOCATION=$(AzureLocation)
       SUBSCRIPTION=$(SubscriptionId)
-      ENV_SUFFIX=$(Build.BuildId)
+      # ENV_SUFFIX=$(Build.BuildId)
+      ENV_SUFFIX='2016527'
       TEST_ONLY=false
       CLEANUP=$(SynchronousCleanup)
 
@@ -193,11 +194,6 @@ steps:
 # by the cleanup pipeline. Then attempt to delete the resource group 
 # directly. If the delete fails the cleanup pipeline will delete it.
 - pwsh: |
-    azd login \
-      --client-id "$(arm-client-id)" \
-      --client-secret "$(arm-client-secret)" \
-      --tenant-id "$(arm-tenant-id)"
-
     $resourceGroupId = az group show `
       --resource-group '$(ResourceGroupName)' `
       --query id

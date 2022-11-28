@@ -85,7 +85,7 @@ $currentPath = $regKey.GetValue( `
 )
 $afterUninstallPathType = $regKey.GetValueKind('PATH')
 
-if ($currentPath -ne $originalPath) {
+if ($currentPath.TrimEnd(";") -ne $originalPath.TrimEnd(";")) {
     Write-Error "Path does not match original path after uninstall"
     Write-Error "Expected: $originalPath"
     Write-Error "Actual: $currentPath"

@@ -389,9 +389,9 @@ stages:
         strategy:
           matrix:
             PerUser: 
-              PerMachine: 0
+              PerMachine: $false
             AllUsers:
-              PerMachine: 1
+              PerMachine: $true
         steps:
           - checkout: self
           

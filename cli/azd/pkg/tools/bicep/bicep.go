@@ -15,6 +15,8 @@ import (
 	"runtime"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
+	"github.com/azure/azure-dev/cli/azd/internal/telemetry"
+	"github.com/azure/azure-dev/cli/azd/internal/telemetry/events"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
@@ -59,7 +61,7 @@ func newBicepCliWithTransporter(
 		}, nil
 	}
 
-	bicepPath, err := cachedBicepPath()
+	bicepPath, err := azdBicepPath()
 	if err != nil {
 		return nil, fmt.Errorf("finding bicep: %w", err)
 	}
@@ -127,8 +129,8 @@ type bicepCli struct {
 	runner exec.CommandRunner
 }
 
-// cachedBicepPath returns the path where we cache our local copy of bicep ($AZD_CONFIG_DIR/bin).
-func cachedBicepPath() (string, error) {
+// azdBicepPath returns the path where we store our local copy of bicep ($AZD_CONFIG_DIR/bin).
+func azdBicepPath() (string, error) {
 	configDir, err := config.GetUserConfigDir()
 	if err != nil {
 		return "", err
@@ -163,7 +165,10 @@ func downloadBicep(ctx context.Context, transporter policy.Transporter, bicepVer
 
 	log.Printf("downloading bicep release %s -> %s", bicepReleaseUrl, name)
 
-	req, err := http.NewRequestWithContext(ctx, "GET", bicepReleaseUrl, nil)
+	spanCtx, span := telemetry.GetTracer().Start(ctx, events.BicepInstallEvent)
+	defer span.End()
+
+	req, err := http.NewRequestWithContext(spanCtx, "GET", bicepReleaseUrl, nil)
 	if err != nil {
 		return err
 	}

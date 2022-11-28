@@ -60,7 +60,7 @@ func TestNewBicepCli(t *testing.T) {
 		Format:  input.StepDone,
 	}, mockContext.Console.SpinnerOps()[1])
 
-	bicepPath, err := cachedBicepPath()
+	bicepPath, err := azdBicepPath()
 	require.NoError(t, err)
 
 	contents, err := os.ReadFile(bicepPath)
@@ -76,7 +76,7 @@ func TestNewBicepCliWillUpgrade(t *testing.T) {
 	configRoot := t.TempDir()
 	t.Setenv("AZD_CONFIG_DIR", configRoot)
 
-	bicepPath, err := cachedBicepPath()
+	bicepPath, err := azdBicepPath()
 	require.NoError(t, err)
 
 	err = os.MkdirAll(filepath.Dir(bicepPath), osutil.PermissionDirectory)

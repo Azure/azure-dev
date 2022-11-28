@@ -9,6 +9,7 @@ package cmd
 import (
 	"context"
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
+	"github.com/azure/azure-dev/cli/azd/cmd/middleware"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/auth"
@@ -432,4 +433,10 @@ func initConfigResetAction(console input.Console, ctx context.Context, o *intern
 	userConfigManager := config.NewUserConfigManager()
 	cmdConfigResetAction := newConfigResetAction(userConfigManager, args)
 	return cmdConfigResetAction, nil
+}
+
+func initDebugMiddleware() actions.MiddlewareFn {
+	console := newGenericConsole()
+	middlewareFn := middleware.UseDebug(console)
+	return middlewareFn
 }

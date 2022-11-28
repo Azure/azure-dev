@@ -13,7 +13,12 @@ type NextFn func(ctx context.Context) (*ActionResult, error)
 type MiddlewareFn func(ctx context.Context, buildOptions *ActionOptions, next NextFn) (*ActionResult, error)
 
 // Executes the middleware chain for the specified action
-func RunWithMiddleware(ctx context.Context, buildOptions *ActionOptions, action Action, chain []MiddlewareFn) (*ActionResult, error) {
+func RunWithMiddleware(
+	ctx context.Context,
+	buildOptions *ActionOptions,
+	action Action,
+	chain []MiddlewareFn,
+) (*ActionResult, error) {
 	chainLength := len(chain)
 	index := 0
 

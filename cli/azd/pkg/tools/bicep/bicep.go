@@ -135,7 +135,10 @@ func findBicepPath() (*string, error) {
 
 	if runtime.GOOS == "windows" {
 		bicepFilename = "bicep.exe"
-		bicepStandalonePath = filepath.Join(user.HomeDir, fmt.Sprintf("AppData\\Local\\Programs\\Bicep CLI\\%s", bicepFilename))
+		bicepStandalonePath = filepath.Join(
+			user.HomeDir,
+			fmt.Sprintf("AppData\\Local\\Programs\\Bicep CLI\\%s", bicepFilename),
+		)
 	} else {
 		bicepFilename = "bicep"
 		bicepStandalonePath = fmt.Sprintf("/usr/local/bin/%s", bicepFilename)

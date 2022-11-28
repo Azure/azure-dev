@@ -10,6 +10,7 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
+	"github.com/azure/azure-dev/cli/azd/cmd/middleware"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/auth"
@@ -39,6 +40,18 @@ func newOutputWriter(console input.Console) io.Writer {
 
 func newFormatterFromConsole(console input.Console) output.Formatter {
 	return console.GetFormatter()
+}
+
+func newGenericConsole() input.Console {
+	return input.NewConsole(
+		false,
+		true,
+		colorable.NewColorableStdout(),
+		input.ConsoleHandles{
+			Stdin:  os.Stdin,
+			Stdout: os.Stdout,
+			Stderr: os.Stderr,
+		}, &output.NoneFormatter{})
 }
 
 func newConsoleFromOptions(
@@ -276,3 +289,9 @@ var ConfigResetCmdSet = wire.NewSet(
 	CommonSet,
 	newConfigResetAction,
 	wire.Bind(new(actions.Action), new(*configResetAction)))
+
+var DebugMiddlewareSet = wire.NewSet(
+	newGenericConsole,
+	CommonSet,
+	middleware.UseDebug,
+)

@@ -89,8 +89,7 @@ stages:
             condition: and(succeeded(), eq(variables['BuildTestMsi'], 'true'))
             inputs:
               solution: cli/installer/windows/azd.wixproj
-              msbuildArguments: /p:ProductVersion=$(CLI_VERSION)
-              logFileVerbosity: diagnostic
+              msbuildArguments: /p:ProductVersion=$(CLI_VERSION) /v:diagnostic
 
           - template: /eng/pipelines/templates/steps/install-bicep.yml
             parameters:

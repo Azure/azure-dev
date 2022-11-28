@@ -187,12 +187,17 @@ steps:
 
     
 
-- template: /eng/pipelines/templates/steps/azd-login.yml
+- template: /eng/pipelines/templates/steps/az-login.yml
 
 # First tag the resource group (if exists) so that it can get cleaned up
 # by the cleanup pipeline. Then attempt to delete the resource group 
 # directly. If the delete fails the cleanup pipeline will delete it.
 - pwsh: |
+    azd login \
+      --client-id "$(arm-client-id)" \
+      --client-secret "$(arm-client-secret)" \
+      --tenant-id "$(arm-tenant-id)"
+
     $resourceGroupId = az group show `
       --resource-group '$(ResourceGroupName)' `
       --query id

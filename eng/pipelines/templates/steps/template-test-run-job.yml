@@ -86,6 +86,10 @@ steps:
         --client-secret "$(arm-client-secret)" \
         --tenant-id "$(arm-tenant-id)"
 
+      sudo add-apt-repository ppa:gstreamer-developers/ppa
+      sudo apt-get update
+      sudo apt-get install gstreamer1.0*
+      sudo apt-get install -y gstreamer1.0-libav libnss3-tools libatk-bridge2.0-0 libcups2-dev libxkbcommon-x11-0 libxcomposite-dev libxrandr2 libgbm-dev libgtk-3-0
       set -euo pipefail
       FOLDER_PATH="/workspaces/temp"
       BRANCH_NAME="pr/1000"
@@ -183,7 +187,7 @@ steps:
 
     
 
-- template: /eng/pipelines/templates/steps/az-login.yml
+- template: /eng/pipelines/templates/steps/azd-login.yml
 
 # First tag the resource group (if exists) so that it can get cleaned up
 # by the cleanup pipeline. Then attempt to delete the resource group 

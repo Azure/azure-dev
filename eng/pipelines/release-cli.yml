@@ -90,6 +90,7 @@ stages:
             inputs:
               solution: cli/installer/windows/azd.wixproj
               msbuildArguments: /p:ProductVersion=$(CLI_VERSION)
+              logFileVerbosity: diagnostic
 
           - template: /eng/pipelines/templates/steps/install-bicep.yml
             parameters:

@@ -21,6 +21,7 @@ test("Create and delete item test", async ({ page }) => {
   await expect(page.locator(`text=${guid}`).first()).toBeVisible()
 
   await page.locator(`text=${guid}`).click();
+  await page.locator('button');
   const itemMoreOperation = await page.locator('button[role="menuitem"]:has-text("Delete")')
   if(itemMoreOperation){
     await itemMoreOperation.click();

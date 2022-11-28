@@ -389,9 +389,9 @@ stages:
         strategy:
           matrix:
             PerUser: 
-              PerMachine: "false"
+              PerMachine: 0
             AllUsers:
-              PerMachine: "true"
+              PerMachine: 1
         steps:
           - checkout: self
           
@@ -405,7 +405,9 @@ stages:
               pwsh: true
               targetType: filePath
               filePath: cli/installer/windows/test-win-msi.ps1
-              arguments: -PerMachine:$$(PerMachine)
+              arguments: >-
+                -PerMachine:$(PerMachine) 
+                -MsiPath msi/azd-windows-amd64.msi
             displayName: Test MSI
 
       - job: Verify_Mac_InstallOver

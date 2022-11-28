@@ -408,6 +408,9 @@ stages:
               arguments: >-
                 -PerMachine:$(PerMachine) 
                 -MsiPath msi/azd-windows-amd64.msi
+              # Do not exit on first Write-Error, write all messages and let the 
+              # script handle exiting with an error status.
+              errorActionPreference: continue
             displayName: Test MSI
 
       - job: Verify_Mac_InstallOver

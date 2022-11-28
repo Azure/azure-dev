@@ -55,8 +55,7 @@ func initDeployAction(console input.Console, ctx context.Context, o *internal.Gl
 	}
 	formatter := newFormatterFromConsole(console)
 	writer := newOutputWriter(console)
-	commandRunner := newCommandRunnerFromConsole(console)
-	cmdDeployAction, err := newDeployAction(flags, azdContext, console, formatter, writer, commandRunner)
+	cmdDeployAction, err := newDeployAction(flags, azCli, commandRunner, azdContext, console, formatter, writer)
 	if err != nil {
 		return nil, err
 	}
@@ -148,7 +147,7 @@ func initUpAction(console input.Console, ctx context.Context, o *internal.Global
 	writer := newOutputWriter(console)
 	cmdInfraCreateAction := newInfraCreateAction(cmdInfraCreateFlags, azCli, azdContext, console, formatter, writer, commandRunner)
 	cmdDeployFlags := flags.deployFlags
-	cmdDeployAction, err := newDeployAction(cmdDeployFlags, azdContext, console, formatter, writer, commandRunner)
+	cmdDeployAction, err := newDeployAction(cmdDeployFlags, azCli, commandRunner, azdContext, console, formatter, writer)
 	if err != nil {
 		return nil, err
 	}
@@ -455,5 +454,12 @@ func initConfigResetAction(console input.Console, ctx context.Context, o *intern
 func initDebugMiddleware() actions.MiddlewareFn {
 	console := newGenericConsole()
 	middlewareFn := middleware.UseDebug(console)
+	return middlewareFn
+}
+
+func initCommandHooksMiddleware(rootOptions *internal.GlobalCommandOptions) actions.MiddlewareFn {
+	console := newGenericConsole()
+	commandRunner := newCommandRunnerFromConsole(console)
+	middlewareFn := middleware.UseCommandHooks(rootOptions, console, commandRunner)
 	return middlewareFn
 }

@@ -315,4 +315,8 @@ func initDebugMiddleware() actions.MiddlewareFn {
 	panic(wire.Build(DebugMiddlewareSet))
 }
 
+func initCommandHooksMiddleware(rootOptions *internal.GlobalCommandOptions) actions.MiddlewareFn {
+	panic(wire.Build(CommandHooksMiddlewareSet))
+}
+
 //#endregion Middleware

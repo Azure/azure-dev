@@ -108,7 +108,6 @@ func newDeployAction(
 	console input.Console,
 	formatter output.Formatter,
 	writer io.Writer,
-	commandRunner exec.CommandRunner,
 ) (*deployAction, error) {
 	da := &deployAction{
 		flags:         flags,

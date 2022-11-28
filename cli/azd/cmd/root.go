@@ -115,7 +115,7 @@ For more information, visit the Azure Developer CLI Dev Hub: https://aka.ms/azur
 
 	actions.Use(initDebugMiddleware())
 	actions.Use(middleware.UseTelemetry())
-	actions.Use(middleware.UseCommandHooks())
+	actions.Use(initCommandHooksMiddleware(opts))
 
 	return cmd
 }

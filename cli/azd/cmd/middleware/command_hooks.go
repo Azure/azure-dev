@@ -15,7 +15,11 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 )
 
-func UseCommandHooks() actions.MiddlewareFn {
+func UseCommandHooks(
+	commandOptions *internal.GlobalCommandOptions,
+	console input.Console,
+	commandRunner exec.CommandRunner,
+) actions.MiddlewareFn {
 	return func(ctx context.Context, options *actions.ActionOptions, next actions.NextFn) (*actions.ActionResult, error) {
 		azdContext, err := azdcontext.NewAzdContext()
 		if err != nil {
@@ -23,7 +27,6 @@ func UseCommandHooks() actions.MiddlewareFn {
 			return nil, err
 		}
 
-		commandOptions := internal.GetCommandOptions(ctx)
 		environmentName := &commandOptions.EnvironmentName
 		if *environmentName == "" {
 			*environmentName, err = azdContext.GetDefaultEnvironmentName()
@@ -53,8 +56,6 @@ func UseCommandHooks() actions.MiddlewareFn {
 			return next(ctx)
 		}
 
-		commandRunner := exec.GetCommandRunner(ctx)
-		console := input.GetConsole(ctx)
 		formatter := console.GetFormatter()
 		interactive := formatter == nil || formatter.Kind() == output.NoneFormat
 		hooks := ext.NewCommandHooks(

@@ -296,6 +296,12 @@ var DebugMiddlewareSet = wire.NewSet(
 	middleware.UseDebug,
 )
 
+var CommandHooksMiddlewareSet = wire.NewSet(
+	newGenericConsole,
+	CommonSet,
+	middleware.UseCommandHooks,
+)
+
 var AuthTokenCmdSet = wire.NewSet(
 	CommonSet,
 	auth.NewManager,

@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"log"
 	"strings"
-	"time"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
@@ -20,6 +19,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/docker"
+	"github.com/benbjohnson/clock"
 )
 
 type containerAppTarget struct {
@@ -30,6 +30,9 @@ type containerAppTarget struct {
 	docker        *docker.Docker
 	console       input.Console
 	commandRunner exec.CommandRunner
+
+	// Standard time library clock, unless mocked in tests
+	clock clock.Clock
 }
 
 func (at *containerAppTarget) RequiredExternalTools() []tools.ExternalTool {
@@ -193,13 +196,13 @@ func (at *containerAppTarget) Endpoints(ctx context.Context) ([]string, error) {
 
 func (at *containerAppTarget) generateImageTag() string {
 	imageName := at.config.Docker.ImageName
-	if imageName != "" {
+	if imageName == "" {
 		imageName = strings.ToLower(fmt.Sprintf("%s/%s-%s", at.config.Project.Name, at.config.Name, at.env.GetEnvName()))
 	}
 
 	imageTag := at.config.Docker.ImageTag
-	if imageTag != "" {
-		imageTag = fmt.Sprintf("azdev-deploy-%d", time.Now().Unix())
+	if imageTag == "" {
+		imageTag = fmt.Sprintf("azdev-deploy-%d", at.clock.Now().Unix())
 	}
 
 	return fmt.Sprintf(
@@ -240,6 +243,7 @@ func NewContainerAppTarget(
 		docker:        docker,
 		console:       console,
 		commandRunner: commandRunner,
+		clock:         clock.New(),
 	}, nil
 }
 

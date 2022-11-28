@@ -261,7 +261,8 @@ func (sc *ServiceConfig) resolveServiceResource(
 
 // GetServiceResources gets the specific azure service resource targeted by the service.
 //
-// rerunCommand specifies the command that users should rerun in case of misconfiguration. This is included in the error message if applicable
+// rerunCommand specifies the command that users should rerun in case of misconfiguration.
+// This is included in the error message if applicable
 func (sc *ServiceConfig) GetServiceResource(
 	ctx context.Context,
 	resourceGroupName string,

@@ -1,0 +1,9 @@
+name: containerapp
+metadata: 
+  template: azd-test/containerapptest@v1
+services:
+  api:
+    project: src/dotnet
+    module: app/api
+    host: containerapp
+    language: csharp

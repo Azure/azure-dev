@@ -39,7 +39,6 @@ $originalPath = $regKey.GetValue( `
     '', `
     [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames `
 )
-$originalPathType = $regKey.GetValueKind('PATH')
 
 $process = Start-Process $MSIEXEC `
     -ArgumentList "/i", $MsiPath, "/qn", $additionalParameters `
@@ -59,14 +58,6 @@ if (!$currentPath.Contains($expectedPathEntry)) {
   Write-Error "Expected substring: $expectedPathEntry"
   Write-Error "Actual: $path"
   exit 1
-}
-
-$afterInstallPathType = $regKey.GetValueKind('PATH')
-if ($originalPathType -ne $afterInstallPathType) {
-    Write-Error "Path registry key type does not match"
-    Write-Error "Expected: $originalPathType"
-    Write-Error "Actual: $afterInstallPathType"
-    exit 1
 }
 
 & $installFolder/azd version
@@ -89,13 +80,6 @@ if ($currentPath.TrimEnd(";") -ne $originalPath.TrimEnd(";")) {
     Write-Error "Path does not match original path after uninstall"
     Write-Error "Expected: $originalPath"
     Write-Error "Actual: $currentPath"
-    exit 1
-}
-
-if ($originalPathType -ne $afterUninstallPathType) {
-    Write-Error "Path registry key type does not match"
-    Write-Error "Expected: $originalPathType"
-    Write-Error "Actual: $afterUninstallPathType"
     exit 1
 }
 

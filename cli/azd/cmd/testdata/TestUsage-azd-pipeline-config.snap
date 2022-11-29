@@ -7,7 +7,7 @@ Flags:
   -h, --help                    Gets help for config.
       --principal-name string   The name of the service principal to use to grant access to Azure resources as part of the pipeline.
       --principal-role string   The role to assign to the service principal. (default "Contributor")
-      --provider string         The pipeline provider to use (GitHub and Azdo supported).
+      --provider string         The pipeline provider to use (github for Github Actions and AzDo for Azure Pipelines). (default "GitHub")
       --remote-name string      The name of the git remote to configure the pipeline to run on. (default "origin")
 
 Global Flags:

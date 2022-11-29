@@ -1,6 +1,7 @@
 import { AppConfig, DatabaseConfig, ObservabilityConfig } from "./appConfig";
 import dotenv from "dotenv";
-import { DefaultAzureCredential } from "@azure/identity";
+import { ChainedTokenCredential, DefaultAzureCredential } from "@azure/identity";
+import { AzureDeveloperCliCredential } from "../azureDeveloperCliCredential";
 import { SecretClient } from "@azure/keyvault-secrets";
 import { logger } from "../config/observability";
 import { IConfig } from "config";
@@ -52,7 +53,7 @@ const populateEnvironmentFromKeyVault = async () => {
 
     try {
         logger.info("Populating environment from Azure KeyVault...");
-        const credential = new DefaultAzureCredential();
+        const credential = new ChainedTokenCredential(new AzureDeveloperCliCredential(), new DefaultAzureCredential());
         const secretClient = new SecretClient(keyVaultEndpoint, credential);
 
         for await (const secretProperties of secretClient.listPropertiesOfSecrets()) {

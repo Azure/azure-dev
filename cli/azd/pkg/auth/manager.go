@@ -19,6 +19,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/public"
+	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/github"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
@@ -39,7 +40,7 @@ const cUseAzCliAuthKey = "auth.useAzCliAuth"
 
 // The scopes to request when acquiring our token during the login flow or when requesting a token to validate if the client
 // is logged in.
-var cLoginScopes = []string{"https://management.azure.com//.default"}
+var cLoginScopes = []string{azure.ManagementScope}
 
 // Manager manages the authentication system of azd. It allows a user to log in, either as a user principal or service
 // principal. Manager stores information so that the user can stay logged in across invocations of the CLI. When logged in

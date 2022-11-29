@@ -221,6 +221,22 @@ func initVersionAction(console input.Console, ctx context.Context, o *internal.G
 	return cmdVersionAction, nil
 }
 
+func initAuthTokenAction(console input.Console, ctx context.Context, o *internal.GlobalCommandOptions, flags authTokenFlags, args []string) (actions.Action, error) {
+	userConfigManager := config.NewUserConfigManager()
+	manager, err := auth.NewManager(userConfigManager)
+	if err != nil {
+		return nil, err
+	}
+	tokenCredential, err := newCredential(ctx, manager)
+	if err != nil {
+		return nil, err
+	}
+	formatter := newFormatterFromConsole(console)
+	writer := newOutputWriter(console)
+	cmdAuthTokenAction := newAuthTokenAction(tokenCredential, formatter, writer, flags)
+	return cmdAuthTokenAction, nil
+}
+
 func initInfraCreateAction(console input.Console, ctx context.Context, o *internal.GlobalCommandOptions, flags infraCreateFlags, args []string) (actions.Action, error) {
 	userConfigManager := config.NewUserConfigManager()
 	manager, err := auth.NewManager(userConfigManager)

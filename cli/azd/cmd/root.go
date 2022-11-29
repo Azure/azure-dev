@@ -99,6 +99,7 @@ For more information, visit the Azure Developer CLI Dev Hub: https://aka.ms/azur
 	cmd.AddCommand(pipelineCmd(opts))
 	cmd.AddCommand(telemetryCmd(opts))
 	cmd.AddCommand(templatesCmd(opts))
+	cmd.AddCommand(authCmd(opts))
 
 	cmd.AddCommand(BuildCmd(opts, versionCmdDesign, initVersionAction, &buildOptions{disableTelemetry: true}))
 	cmd.AddCommand(BuildCmd(opts, showCmdDesign, initShowAction, nil))

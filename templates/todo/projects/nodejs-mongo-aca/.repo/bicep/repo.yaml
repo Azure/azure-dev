@@ -158,6 +158,10 @@ repo:
     - from: ../../../../common/tests
       to: ./tests
 
+    # Auth JS common
+    - from: ../../../../common/auth/js
+      to: ./src/api/src
+
     # Node JS API
     - from: ../../../../api/js
       to: ./src/api

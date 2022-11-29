@@ -53,14 +53,14 @@ steps:
     git config --global user.email "azuresdk@microsoft.com"
     echo "https://azure-sdk:$(azuresdk-github-pat)@github.com" > ~/.git-credentials
     git config --global credential.helper "store"
-    export $folderPath = '$pwd'
+    $folderPath = 'echo $pwd'
     git clone --branch pr/1000 https://github.com/$(TemplateName).git/ temp
   displayName: Clone template repository
 
 - task: DevcontainersCI@0
   displayName: Test templates in Devcontainer
   inputs:
-    subFolder: '{$folderPath}/temp'
+    subFolder: '$folderPath/temp'
   # Required secrets for Terraform service principal authentication
     env: |
       ARM_CLIENT_ID=$(arm-client-id)

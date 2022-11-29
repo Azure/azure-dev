@@ -57,14 +57,7 @@ steps:
     git clone --branch pr/1000 https://github.com/$(TemplateName).git/ temp
   displayName: Clone template repository
 
-- pwsh: |
-    echo $Env:FOLDER_PATH
-  env:
-    FOLDER_PATH: $(folderPath)
-  displayName: folderPath
-
 - task: DevcontainersCI@0
-  displayName: Test templates in Devcontainer
   inputs:
     env: |
       # Required secrets for Terraform service principal authentication
@@ -75,11 +68,7 @@ steps:
       FOLDER_PATH=$(folderPath)
     subFolder: '$(folderPath)/temp'
     runCmd: |
-      echo "!!! $(Pipeline.Workspace)"
-      exit
       curl -fsSL https://aka.ms/install-azd.sh | bash -s -- --version 'daily' --verbose
-      echo "$PWD"
-      echo "azd version"
       azd version
       azd login \
         --client-id "$(arm-client-id)" \
@@ -92,7 +81,7 @@ steps:
       sudo apt-get install -y gstreamer1.0-libav libnss3-tools libatk-bridge2.0-0 libcups2-dev libxkbcommon-x11-0 libxcomposite-dev libxrandr2 libgbm-dev libgtk-3-0
       
       set -euo pipefail
-      FOLDER_PATH="/workspaces/temp"
+      FOLDER_PATH=$(Pipeline.Workspace)
       BRANCH_NAME=$(TemplateBranchName)
       ENV_NAME_PREFIX=$(EnvPrefixName)
       TEMPLATE_NAME=$(TemplateName)
@@ -185,8 +174,7 @@ steps:
               cleanupTemplate "$TEMPLATE_NAME" "$BRANCH_NAME" "$ENV_NAME"
           fi
       fi
-
-    
+  displayName: Test templates in Devcontainer
 
 - template: /eng/pipelines/templates/steps/az-login.yml
 

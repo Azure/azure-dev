@@ -328,17 +328,15 @@ stages:
             -DestinationPath mac/azd-darwin-amd64.zip
           displayName: Package mac binary for signing
 
-        # TODO: Uncomment before merge
-        # - ${{ if in(variables['Build.Reason'], 'IndividualCI', 'BatchedCI', 'Manual') }}:
-        # TODO: Update ref to appropriate tag before merging
-        - template: pipelines/steps/azd-cli-mac-signing.yml@azure-sdk-build-tools
-          parameters:
-            MacPath: mac
+        - ${{ if in(variables['Build.Reason'], 'IndividualCI', 'BatchedCI', 'Manual') }}:
+          # TODO: Update ref to appropriate tag before merging
+          - template: pipelines/steps/azd-cli-mac-signing.yml@azure-sdk-build-tools
+            parameters:
+              MacPath: mac
 
-        # TODO: Uncomment before merge
-        # - ${{ else }}:
-        #   - pwsh: Write-Host "Skipping signing. Build reason - $(Build.Reason)"
-        #     displayName: Signing process skipped for non-release build
+        - ${{ else }}:
+          - pwsh: Write-Host "Skipping signing. Build reason - $(Build.Reason)"
+            displayName: Signing process skipped for non-release build
 
         - pwsh: |
             Expand-Archive -Path mac/azd-darwin-amd64.zip -DestinationPath mac/
@@ -390,18 +388,16 @@ stages:
         - pwsh: Copy-Item installer/*.ps1 win
           displayName: Copy install scripts to win/
 
-        # TODO: Uncomment before merge
-        # - ${{ if in(variables['Build.Reason'], 'IndividualCI', 'BatchedCI', 'Manual') }}:
-        # TODO: Update ref to appropriate tag before merging
-        - template: pipelines/steps/azd-cli-win-signing.yml@azure-sdk-build-tools
-          parameters:
-            WinPath:  win
-            WinPattern: '**'
+        - ${{ if in(variables['Build.Reason'], 'IndividualCI', 'BatchedCI', 'Manual') }}:
+          # TODO: Update ref to appropriate tagging before merge
+          - template: pipelines/steps/azd-cli-win-signing.yml@azure-sdk-build-tools
+            parameters:
+              WinPath:  win
+              WinPattern: '**'
 
-        # TODO: Uncomment before merge
-        # - ${{ else }}:
-        #   - pwsh: Write-Host "Skipping signing. Build reason - $(Build.Reason)"
-        #     displayName: Signing process skipped for non-release build
+        - ${{ else }}:
+          - pwsh: Write-Host "Skipping signing. Build reason - $(Build.Reason)"
+            displayName: Signing process skipped for non-release build
 
         - pwsh: |
             New-Item -ItemType Directory -Path signed-win
@@ -429,7 +425,7 @@ stages:
         #   - pwsh: Write-Host "Skipping signing. Build reason - $(Build.Reason)"
         #     displayName: Signing process skipped for non-release build
 
-        - pwsh: Copy-Item cli/installer/windows/bin/Release/azd-windows-amd64.msi signed-win/
+        - pwsh: Copy-Item cli/installer/windows/bin/Release/* signed-win/
           displayName: Copy MSI for publishing
 
         # TODO: Replace with https://github.com/Azure/azure-sdk-tools/blob/main/eng/common/pipelines/templates/steps/publish-artifact.yml
@@ -841,6 +837,7 @@ stages:
               PublishUploadLocations: pr/$(PRNumber)
               UploadInstaller: true
               DockerImageTags: pr-$(PRNumber)
+              UploadMsi: true
 
           - pwsh: |
               $urlBase = "https://$(azdev-storage-account-name).blob.core.windows.net/azd/standalone/pr/$(PRNumber)"
@@ -853,6 +850,7 @@ stages:
               $linuxReleaseUrl = "$urlBase/azd-linux-amd64.tar.gz"
               $macosReleaseUrl = "$urlBase/azd-darwin-amd64.zip"
               $windowsReleaseUrl = "$urlBase/azd-windows-amd64.zip"
+              $msiReleaseUrl = "$urlBase/azd-windows-amd64.msi"
 
               $content = @"
               <!-- #comment-cli-pr -->
@@ -878,9 +876,17 @@ stages:
 
 
               #### Windows
+              
+              PowerShell install
+
               ``````
               powershell -c "Set-ExecutionPolicy Bypass Process; irm '$urlBase/uninstall-azd.ps1' > uninstall-azd.ps1; ./uninstall-azd.ps1;"
               powershell -c "Set-ExecutionPolicy Bypass Process; irm '$urlBase/install-azd.ps1' > install-azd.ps1; ./install-azd.ps1 -BaseUrl '$urlBase' -Version '' -Verbose;"
+              ``````
+
+              MSI install
+              ``````
+              powershell -c "irm '$msiReleaseUrl' -OutFile azd-windows-amd64.msi; msiexec /i azd-windows-amd64.msi"
               ``````
 
               ### Standalone Binary
@@ -888,6 +894,10 @@ stages:
               * Linux - $linuxReleaseUrl
               * MacOS - $macosReleaseUrl
               * Windows - $windowsReleaseUrl
+
+              ### MSI 
+
+              $msiReleaseUrl
 
               ### Container
               ``````

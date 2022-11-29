@@ -11,3 +11,6 @@ package events
 //   - cmd.init
 //   - cmd.up
 const CommandEventPrefix = "cmd."
+
+// BicepInstallEvent is the name of the event which tracks the overall bicep install operation.
+const BicepInstallEvent = "tools.bicep.install"

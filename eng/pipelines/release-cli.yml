@@ -65,10 +65,6 @@ stages:
 
           - template: /eng/pipelines/templates/steps/set-cli-version-cd.yml
 
-          - template: /eng/pipelines/templates/steps/install-bicep.yml
-            parameters:
-              Condition: and(succeeded(), ne(variables['Skip.LiveTest'], 'true'))
-
           - template: /eng/pipelines/templates/steps/install-terraform.yml
 
           - task: DockerInstaller@0

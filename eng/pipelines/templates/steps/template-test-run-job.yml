@@ -74,7 +74,7 @@ steps:
       SUBSCRIPTION_ID=$(SubscriptionId)
       FOLDER_PATH=$(folderPath)
     subFolder: '$(folderPath)/temp'
-  runCmd: |
+    runCmd: |
       echo "!!! $(Pipeline.Workspace)"
       exit
       curl -fsSL https://aka.ms/install-azd.sh | bash -s -- --version 'daily' --verbose

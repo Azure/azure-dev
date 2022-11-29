@@ -58,20 +58,23 @@ steps:
   displayName: Clone template repository
 
 - pwsh: |
-    echo "$folderPath"
+    echo $Env:FOLDER_PATH
+  env:
+    FOLDER_PATH: $(folderPath)
   displayName: folderPath
 
 - task: DevcontainersCI@0
   displayName: Test templates in Devcontainer
   inputs:
-    subFolder: '$folderPath/temp'
-  # Required secrets for Terraform service principal authentication
     env: |
+      # Required secrets for Terraform service principal authentication
       ARM_CLIENT_ID=$(arm-client-id)
       ARM_CLIENT_SECRET=$(arm-client-secret)
       ARM_TENANT_ID=$(arm-tenant-id)
       SUBSCRIPTION_ID=$(SubscriptionId)
-    runCmd: |
+      FOLDER_PATH=$(folderPath)
+    subFolder: '$(folderPath)/temp'
+  runCmd: |
       echo "!!! $(Pipeline.Workspace)"
       exit
       curl -fsSL https://aka.ms/install-azd.sh | bash -s -- --version 'daily' --verbose

@@ -81,6 +81,7 @@ steps:
       sudo apt-get install -y gstreamer1.0-libav libnss3-tools libatk-bridge2.0-0 libcups2-dev libxkbcommon-x11-0 libxcomposite-dev libxrandr2 libgbm-dev libgtk-3-0
       
       set -euo pipefail
+      # Use fixed path inside the container
       FOLDER_PATH="/workspaces/temp"
       BRANCH_NAME=$(TemplateBranchName)
       ENV_NAME_PREFIX=$(EnvPrefixName)
@@ -147,6 +148,7 @@ steps:
 
           # Test the templates serially
           for TEMPLATE in "${!ENV_TEMPLATE_MAP[@]}"; do
+              #TODO - Add a function where it checks api/lists and get a response of 200 and empty json output
               testTemplate "$TEMPLATE" "$BRANCH_NAME" "${ENV_TEMPLATE_MAP[$TEMPLATE]}" || continue
           done
 

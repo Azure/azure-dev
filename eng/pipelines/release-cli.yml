@@ -308,12 +308,73 @@ stages:
   - stage: Sign
     dependsOn: BuildAndTest
     jobs:
-    - job: Sign
+
+    - job: SignMac
       pool:
         name: azsdk-pool-mms-win-2019-general
         vmImage: MMS2019
 
       steps:
+        - task: DownloadPipelineArtifact@2
+          inputs:
+            artifact: azd-darwin-amd64
+            path: mac-artifacts
+
+        - pwsh: |
+            New-Item -ItemType Directory -Path mac
+            Compress-Archive `
+            -Path mac-artifacts/azd-darwin-amd64 `
+            -DestinationPath mac/azd-darwin-amd64.zip
+          displayName: Package mac binary for signing
+        # TODO: Uncomment before merge
+        # - ${{ if in(variables['Build.Reason'], 'IndividualCI', 'BatchedCI', 'Manual') }}:
+        # TODO: Update ref to appropriate tag before merging
+        - template: pipelines/steps/azd-cli-mac-signing.yml@djurek/azd-msi-signing
+          parameters:
+            MacPath: mac
+
+        # TODO: Uncomment before merge
+        # - ${{ else }}:
+        #   - pwsh: Write-Host "Skipping signing. Build reason - $(Build.Reason)"
+        #     displayName: Signing process skipped for non-release build
+
+        - pwsh: |
+            Expand-Archive -Path mac/azd-darwin-amd64.zip -DestinationPath mac/
+            Remove-Item mac/azd-darwin-amd64.zip
+          displayName: Extract azd-darwin-amd64 from zip and remove zip
+
+        - pwsh: |
+            New-Item -ItemType Directory -Path signed-mac
+            Copy-Item mac/ signed-mac/ -Recurse
+          displayName: Copy signing outputs
+          condition: always()
+
+        # TODO: Replace with https://github.com/Azure/azure-sdk-tools/blob/main/eng/common/pipelines/templates/steps/publish-artifact.yml
+        # when the common engsys is imported.
+        # https://github.com/Azure/azure-dev/issues/956
+        - task: PublishPipelineArtifact@1
+          condition: succeeded()
+          displayName: Publish Signed Artifacts
+          inputs:
+            artifactName: signed-mac
+            path: signed-mac/
+
+        - task: PublishPipelineArtifact@1
+          condition: failed()
+          displayName: Publish failed Signed Artifacts
+          inputs:
+            artifactName: signed-mac-FailedAttempt$(System.JobAttempt)
+            path: signed-mac/
+
+    - job: SignWindows
+      pool:
+        name: azsdk-pool-mms-win-2019-general
+        vmImage: MMS2019
+
+      steps:
+        # Checkout required to build MSI
+        - checkout: self
+
         - task: DownloadPipelineArtifact@2
           inputs:
             artifact: azd-windows-amd64.exe
@@ -327,44 +388,47 @@ stages:
         - pwsh: Copy-Item installer/*.ps1 win
           displayName: Copy install scripts to win/
 
-        - task: DownloadPipelineArtifact@2
-          inputs:
-            artifact: azd-darwin-amd64
-            path: mac-artifacts
+        # TODO: Uncomment before merge
+        # - ${{ if in(variables['Build.Reason'], 'IndividualCI', 'BatchedCI', 'Manual') }}:
+        # TODO: Update ref to appropriate tag before merging
+        - template: pipelines/steps/azd-cli-win-signing.yml@djurek/azd-msi-signing
+          parameters:
+            WinPath:  win
+            WinPattern: '**'
+
+        # TODO: Uncomment before merge
+        # - ${{ else }}:
+        #   - pwsh: Write-Host "Skipping signing. Build reason - $(Build.Reason)"
+        #     displayName: Signing process skipped for non-release build
 
         - pwsh: |
-            New-Item -ItemType Directory -Path mac
-            Compress-Archive `
-            -Path mac-artifacts/azd-darwin-amd64 `
-            -DestinationPath mac/azd-darwin-amd64.zip
-          displayName: Package mac binary for signing
-
-        - ${{ if in(variables['Build.Reason'], 'IndividualCI', 'BatchedCI', 'Manual') }}:
-          - template: pipelines/steps/azd-cli-signing.yml@azure-sdk-build-tools
-            parameters:
-              WinPath:  win
-              WinPattern: '**'
-              MacPath: mac
-
-        - ${{ else }}:
-          - pwsh: Write-Host "Skipping signing. Build reason - $(Build.Reason)"
-            displayName: Signing process skipped for non-release build
-
-        - pwsh: |
-            Expand-Archive -Path mac/azd-darwin-amd64.zip -DestinationPath mac/
-            Remove-Item mac/azd-darwin-amd64.zip
-          displayName: Extract azd-darwin-amd64 from zip and remove zip
-
-        - pwsh: |
-            New-Item -ItemType Directory -Path signed
-            Copy-Item win/ signed/ -Recurse
-            Copy-Item mac/ signed/ -Recurse
-          displayName: Copy signing outputs
+            New-Item -ItemType Directory -Path signed-win
+            Copy-Item win/ signed-win/ -Recurse
+            Copy-Item win/azd-windows-amd64.exe cli/azd/azd.exe
+          displayName: Copy signing outputs for publishing and MSI build
           condition: always()
 
-        - publish: signed/
-          artifact: signed
-          condition: succeeded()
+        - task: MSBuild@1
+          displayName: Build release MSI
+          inputs:
+            solution: cli/installer/windows/azd.wixproj
+            msbuildArguments: /p:RunWixToolsOutOfProc=true
+
+        # TODO: Uncomment before merge
+        # - ${{ if in(variables['Build.Reason'], 'IndividualCI', 'BatchedCI', 'Manual') }}:
+        # TODO: Update ref to appropriate tag before merging
+        - template: pipelines/steps/azd-cli-win-signing.yml@djurek/azd-msi-signing
+          parameters:
+            WinPath:  cli/installer/windows/bin/Release
+            WinPattern: '*.msi'
+
+        # TODO: Uncomment before merge
+        # - ${{ else }}:
+        #   - pwsh: Write-Host "Skipping signing. Build reason - $(Build.Reason)"
+        #     displayName: Signing process skipped for non-release build
+
+        - pwsh: Copy-Item cli/installer/windows/bin/Release/azd-windows-amd64.msi signed-win/
+          displayName: Copy MSI for publishing
 
         # TODO: Replace with https://github.com/Azure/azure-sdk-tools/blob/main/eng/common/pipelines/templates/steps/publish-artifact.yml
         # when the common engsys is imported.
@@ -373,15 +437,15 @@ stages:
           condition: succeeded()
           displayName: Publish Signed Artifacts
           inputs:
-            artifactName: signed
-            path: signed/
+            artifactName: signed-win
+            path: signed-win/
 
         - task: PublishPipelineArtifact@1
           condition: failed()
           displayName: Publish failed Signed Artifacts
           inputs:
-            artifactName: signed-FailedAttempt$(System.JobAttempt)
-            path: signed/
+            artifactName: signed-win-FailedAttempt$(System.JobAttempt)
+            path: signed-win/
 
   - stage: Verify_Installers
     dependsOn: BuildAndTest

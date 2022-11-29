@@ -6,14 +6,13 @@ package bicep
 import (
 	"bytes"
 	"context"
+	_ "embed"
 	"encoding/json"
 	"io"
 	"net/http"
-	"os"
 	"strings"
 	"testing"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appconfiguration/armappconfiguration"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/keyvault/armkeyvault"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
@@ -26,7 +25,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
-	execmock "github.com/azure/azure-dev/cli/azd/test/mocks/exec"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/httputil"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockazcli"
 	"github.com/stretchr/testify/require"
@@ -38,9 +36,7 @@ func TestBicepPlan(t *testing.T) {
 	progressDone := make(chan bool)
 
 	mockContext := mocks.NewMockContext(context.Background())
-	prepareGenericMocks(mockContext.CommandRunner)
 	preparePlanningMocks(mockContext)
-	prepareDeployShowMocks(mockContext.HttpClient)
 	infraProvider := createBicepProvider(t, mockContext)
 	planningTask := infraProvider.Plan(*mockContext.Context)
 
@@ -67,12 +63,75 @@ func TestBicepPlan(t *testing.T) {
 	require.Contains(t, progressLog[0], "Generating Bicep parameters file")
 	require.Contains(t, progressLog[1], "Compiling Bicep template")
 
-	require.Equal(t, infraProvider.env.Values["AZURE_LOCATION"], deploymentPlan.Deployment.Parameters["location"].Value)
+	require.IsType(t, BicepDeploymentDetails{}, deploymentPlan.Details)
+	configuredParameters := deploymentPlan.Details.(BicepDeploymentDetails).Parameters
+
+	require.Equal(t, infraProvider.env.Values["AZURE_LOCATION"], configuredParameters["location"].Value)
 	require.Equal(
 		t,
 		infraProvider.env.Values["AZURE_ENV_NAME"],
-		deploymentPlan.Deployment.Parameters["environmentName"].Value,
+		configuredParameters["environmentName"].Value,
 	)
+}
+
+//go:generate bicep build testdata/params.bicep --outfile testdata/params.json
+//go:embed testdata/params.json
+var paramsArmJson []byte
+
+func TestBicepPlanPrompt(t *testing.T) {
+	progressLog := []string{}
+	interactiveLog := []bool{}
+	progressDone := make(chan bool)
+
+	mockContext := mocks.NewMockContext(context.Background())
+
+	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
+		return strings.Contains(args.Cmd, "bicep") && args.Args[0] == "--version"
+	}).Respond(exec.RunResult{
+		Stdout: "Bicep CLI version 0.12.40 (41892bd0fb)",
+		Stderr: "",
+	})
+
+	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
+		return strings.Contains(args.Cmd, "bicep") && args.Args[0] == "build"
+	}).Respond(exec.RunResult{
+		Stdout: string(paramsArmJson),
+		Stderr: "",
+	})
+
+	mockContext.Console.WhenConfirm(func(options input.ConsoleOptions) bool {
+		return strings.Contains(options.Message, "Save the value in the environment for future use")
+	}).Respond(false)
+
+	mockContext.Console.WhenPrompt(func(options input.ConsoleOptions) bool {
+		return strings.Contains(options.Message, "for the 'stringParam' infrastructure parameter")
+	}).RespondFn(func(options input.ConsoleOptions) (any, error) {
+		require.Equal(t, "A required string parameter", options.Help)
+
+		return "value", nil
+	})
+
+	infraProvider := createBicepProvider(t, mockContext)
+	planningTask := infraProvider.Plan(*mockContext.Context)
+
+	go func() {
+		for progressReport := range planningTask.Progress() {
+			progressLog = append(progressLog, progressReport.Message)
+		}
+		progressDone <- true
+	}()
+
+	go func() {
+		for planningInteractive := range planningTask.Interactive() {
+			interactiveLog = append(interactiveLog, planningInteractive)
+		}
+	}()
+
+	plan, err := planningTask.Await()
+	<-progressDone
+
+	require.NoError(t, err)
+	require.Equal(t, "value", plan.Details.(BicepDeploymentDetails).Parameters["stringParam"].Value)
 }
 
 func TestBicepState(t *testing.T) {
@@ -82,10 +141,8 @@ func TestBicepState(t *testing.T) {
 	expectedWebsiteUrl := "http://myapp.azurewebsites.net"
 
 	mockContext := mocks.NewMockContext(context.Background())
-	prepareGenericMocks(mockContext.CommandRunner)
 	preparePlanningMocks(mockContext)
 	prepareDeployShowMocks(mockContext.HttpClient)
-	prepareDeployMocks(mockContext.CommandRunner)
 	azCli := mockazcli.NewAzCliFromMockContext(mockContext)
 
 	infraProvider := createBicepProvider(t, mockContext)
@@ -130,20 +187,17 @@ func TestBicepDeploy(t *testing.T) {
 	progressDone := make(chan bool)
 
 	mockContext := mocks.NewMockContext(context.Background())
-	prepareGenericMocks(mockContext.CommandRunner)
 	preparePlanningMocks(mockContext)
 	prepareDeployShowMocks(mockContext.HttpClient)
-	prepareDeployMocks(mockContext.CommandRunner)
 	azCli := mockazcli.NewAzCliFromMockContext(mockContext)
 
 	infraProvider := createBicepProvider(t, mockContext)
 
 	deploymentPlan := DeploymentPlan{
-		Deployment: Deployment{
-			Parameters: testArmParameters,
-		},
+		Deployment: Deployment{},
 		Details: BicepDeploymentDetails{
-			Template: to.Ptr(azure.ArmTemplate("{}")),
+			Template:   azure.RawArmTemplate("{}"),
+			Parameters: testArmParameters,
 		},
 	}
 
@@ -179,7 +233,6 @@ func TestBicepDeploy(t *testing.T) {
 func TestBicepDestroy(t *testing.T) {
 	t.Run("Interactive", func(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
-		prepareGenericMocks(mockContext.CommandRunner)
 		preparePlanningMocks(mockContext)
 		prepareDeployShowMocks(mockContext.HttpClient)
 		prepareDestroyMocks(mockContext)
@@ -254,7 +307,6 @@ func TestBicepDestroy(t *testing.T) {
 
 	t.Run("InteractiveForceAndPurge", func(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
-		prepareGenericMocks(mockContext.CommandRunner)
 		preparePlanningMocks(mockContext)
 		prepareDeployShowMocks(mockContext.HttpClient)
 		prepareDestroyMocks(mockContext)
@@ -331,7 +383,7 @@ func createBicepProvider(t *testing.T, mockContext *mocks.MockContext) *BicepPro
 
 	provider, err := NewBicepProvider(
 		*mockContext.Context, azCli, env, projectDir, options,
-		exec.NewCommandRunner(os.Stdin, os.Stdout, os.Stderr),
+		mockContext.CommandRunner,
 		mockContext.Console,
 	)
 
@@ -339,50 +391,22 @@ func createBicepProvider(t *testing.T, mockContext *mocks.MockContext) *BicepPro
 	return provider
 }
 
-func prepareGenericMocks(commandRunner *execmock.MockCommandRunner) {
-	// Setup expected values for exec
-	commandRunner.When(func(args exec.RunArgs, command string) bool {
-		return strings.Contains(command, "az version")
-	}).Respond(exec.RunResult{
-		Stdout: `{"azure-cli": "2.38.0"}`,
-		Stderr: "",
-	})
-}
-
-// Sets up all the mocks required for the bicep plan & deploy operation
-func prepareDeployMocks(commandRunner *execmock.MockCommandRunner) {
-	// Gets deployment progress
-	commandRunner.When(
-		func(args exec.RunArgs, command string) bool {
-			return strings.Contains(command, "az deployment operation sub list")
-		}).Respond(exec.RunResult{
-		Stdout: "",
-		Stderr: "",
-	})
-
-	// Gets deployment progress
-	commandRunner.When(func(args exec.RunArgs, command string) bool {
-		return strings.Contains(command, "deployment operation group list")
-	}).Respond(exec.RunResult{
-		Stdout: "",
-		Stderr: "",
-	})
-}
-
 func preparePlanningMocks(
 	mockContext *mocks.MockContext) {
-	bicepInputParams := make(map[string]BicepInputParameter)
-	bicepInputParams["environmentName"] = BicepInputParameter{Value: "${AZURE_ENV_NAME}"}
-	bicepInputParams["location"] = BicepInputParameter{Value: "${AZURE_LOCATION}"}
 
-	bicepOutputParams := make(map[string]BicepOutputParameter)
-
-	bicepTemplate := BicepTemplate{
-		Parameters: bicepInputParams,
-		Outputs:    bicepOutputParams,
+	armTemplate := azure.ArmTemplate{
+		Schema:         "https://schema.management.azure.com/schemas/2018-05-01/subscriptionDeploymentTemplate.json#",
+		ContentVersion: "1.0.0.0",
+		Parameters: azure.ArmTemplateParameters{
+			"environmentName": {Type: "string"},
+			"location":        {Type: "string"},
+		},
+		Outputs: azure.ArmTemplateOutputs{
+			"WEBSITE_URL": {Type: "string"},
+		},
 	}
 
-	bicepBytes, _ := json.Marshal(bicepTemplate)
+	bicepBytes, _ := json.Marshal(armTemplate)
 	deployResult := `
 	{
 		"id":"DEPLOYMENT_ID",
@@ -395,11 +419,19 @@ func preparePlanningMocks(
 	}`
 
 	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
+		return strings.Contains(args.Cmd, "bicep") && args.Args[0] == "--version"
+	}).Respond(exec.RunResult{
+		Stdout: "Bicep CLI version 0.12.40 (41892bd0fb)",
+		Stderr: "",
+	})
+
+	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 		return strings.Contains(args.Cmd, "bicep") && args.Args[0] == "build"
 	}).Respond(exec.RunResult{
 		Stdout: string(bicepBytes),
 		Stderr: "",
 	})
+
 	mockContext.HttpClient.When(func(request *http.Request) bool {
 		return request.Method == http.MethodPut && strings.Contains(
 			request.URL.Path,
@@ -554,7 +586,7 @@ func prepareDestroyMocks(mockContext *mocks.MockContext) {
 	})
 }
 
-var testArmParameters = map[string]InputParameter{
+var testArmParameters = azure.ArmParameters{
 	"location": {
 		Value: "West US",
 	},

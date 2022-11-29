@@ -1,0 +1,36 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2018-05-01/subscriptionDeploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "metadata": {
+    "_generator": {
+      "name": "bicep",
+      "version": "0.12.40.16777",
+      "templateHash": "8507582225040531537"
+    }
+  },
+  "parameters": {
+    "stringParam": {
+      "type": "string",
+      "metadata": {
+        "description": "A required string parameter"
+      }
+    },
+    "optionalStringParam": {
+      "type": "string",
+      "defaultValue": "",
+      "metadata": {
+        "description": "An optional string parameter"
+      }
+    }
+  },
+  "resources": [],
+  "outputs": {
+    "allParameters": {
+      "type": "object",
+      "value": {
+        "stringParam": "[parameters('stringParam')]",
+        "optionalStringParam": "[parameters('optionalStringParam')]"
+      }
+    }
+  }
+}

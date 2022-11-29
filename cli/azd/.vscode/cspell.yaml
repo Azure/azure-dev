@@ -30,6 +30,9 @@ overrides:
       - puichan
       - devx
       - azdevcli
+  - filename: pkg/infra/provisioning/bicep/bicep_provider_test.go
+    words:
+      - outfile
   - filename: pkg/tools/python/python.go
     words:
       - venv

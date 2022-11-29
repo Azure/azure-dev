@@ -53,7 +53,7 @@ steps:
     git config --global user.email "azuresdk@microsoft.com"
     echo "https://azure-sdk:$(azuresdk-github-pat)@github.com" > ~/.git-credentials
     git config --global credential.helper "store"
-    $folderPath = '$pwd'
+    export $folderPath = '$pwd'
     git clone --branch pr/1000 https://github.com/$(TemplateName).git/ temp
   displayName: Clone template repository
 
@@ -68,6 +68,7 @@ steps:
       ARM_TENANT_ID=$(arm-tenant-id)
       SUBSCRIPTION_ID=$(SubscriptionId)
     runCmd: |
+      echo "!!! $(Pipeline.Workspace)"
       exit
       curl -fsSL https://aka.ms/install-azd.sh | bash -s -- --version 'daily' --verbose
       echo "$PWD"
@@ -85,15 +86,14 @@ steps:
       
       set -euo pipefail
       FOLDER_PATH="/workspaces/temp"
-      BRANCH_NAME="pr/1000"
+      BRANCH_NAME=$(TemplateBranchName)
       ENV_NAME_PREFIX=$(EnvPrefixName)
       TEMPLATE_NAME=$(TemplateName)
       PLAYWRIGHT_RETRIES="1"
       PLAYWRIGHT_REPORTER='list'
       LOCATION=$(AzureLocation)
       SUBSCRIPTION=$(SubscriptionId)
-      # ENV_SUFFIX=$(Build.BuildId)
-      ENV_SUFFIX='2016527'
+      ENV_SUFFIX=$(Build.BuildId)
       TEST_ONLY=false
       CLEANUP=$(SynchronousCleanup)
 

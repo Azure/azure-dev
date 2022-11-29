@@ -46,7 +46,7 @@ func (pc *pipelineConfigFlags) Bind(local *pflag.FlagSet, global *internal.Globa
 	)
 	local.StringVar(&pc.PipelineRoleName, "principal-role", "Contributor", "The role to assign to the service principal.")
 	local.StringVar(&pc.PipelineProvider, "provider", "",
-		"The pipeline provider to use (Github for Github Actions and AzDo for Azure Pipelines). (default \"GitHub\")")
+		"The pipeline provider to use (github for Github Actions or azdo for Azure Pipelines). (default \"GitHub\")")
 	pc.envFlag.Bind(local, global)
 	pc.global = global
 }
@@ -70,8 +70,8 @@ For more information, go to https://aka.ms/azure-dev/pipeline.`,
 func pipelineConfigCmdDesign(global *internal.GlobalCommandOptions) (*cobra.Command, *pipelineConfigFlags) {
 	cmd := &cobra.Command{
 		Use:   "config",
-		Short: "Create and configure your deployment pipeline by using GitHub Actions and Azure Pipelines.",
-		Long: `Create and configure your deployment pipeline by using GitHub Actions and Azure Pipelines.
+		Short: "Create and configure your deployment pipeline by using GitHub Actions or Azure Pipelines.",
+		Long: `Create and configure your deployment pipeline by using GitHub Actions or Azure Pipelines.
 
 For more information, go to https://aka.ms/azure-dev/pipeline.`,
 	}

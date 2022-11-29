@@ -25,7 +25,7 @@ func TestPipelineConfigCmd(t *testing.T) {
 	globalOpt := &internal.GlobalCommandOptions{}
 	command, _ := pipelineConfigCmdDesign(globalOpt)
 	assert.EqualValues(t, "config", command.Use)
-	assert.EqualValues(t, "Create and configure your deployment pipeline by using GitHub Actions and Azure Pipelines.",
+	assert.EqualValues(t, "Create and configure your deployment pipeline by using GitHub Actions or Azure Pipelines.",
 		command.Short)
 
 	childCommands := command.Commands()

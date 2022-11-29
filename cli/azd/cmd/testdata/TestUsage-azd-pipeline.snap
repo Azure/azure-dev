@@ -2,7 +2,7 @@ Usage:
   azd pipeline [command]
 
 Available Commands:
-  config      Create and configure your deployment pipeline by using GitHub Actions and Azure Pipelines.
+  config      Create and configure your deployment pipeline by using GitHub Actions or Azure Pipelines.
 
 Flags:
   -h, --help   Gets help for pipeline.

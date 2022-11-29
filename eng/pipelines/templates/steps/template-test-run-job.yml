@@ -53,7 +53,7 @@ steps:
     git config --global user.email "azuresdk@microsoft.com"
     echo "https://azure-sdk:$(azuresdk-github-pat)@github.com" > ~/.git-credentials
     git config --global credential.helper "store"
-    Write-Host "##vso[task.setvariable variable=folderPath]$pwd"
+    Write-Host "##vso[task.setvariable variable=folderPath;]$pwd"
     git clone --branch pr/1000 https://github.com/$(TemplateName).git/ temp
   displayName: Clone template repository
 

@@ -53,23 +53,14 @@ steps:
     git config --global user.email "azuresdk@microsoft.com"
     echo "https://azure-sdk:$(azuresdk-github-pat)@github.com" > ~/.git-credentials
     git config --global credential.helper "store"
-    echo "$templateName"
     $folderPath = '$pwd'
     git clone --branch pr/1000 https://github.com/$(TemplateName).git/ temp
-    ls
-    dir
-    cd temp
-    ls
-    dir
-    cd .devcontainer
-    ls
-    dir
   displayName: Clone template repository
 
 - task: DevcontainersCI@0
   displayName: Test templates in Devcontainer
   inputs:
-    subFolder: '/mnt/vss/_work/1/s/temp'
+    subFolder: '{$folderPath}/temp'
   # Required secrets for Terraform service principal authentication
     env: |
       ARM_CLIENT_ID=$(arm-client-id)
@@ -77,6 +68,7 @@ steps:
       ARM_TENANT_ID=$(arm-tenant-id)
       SUBSCRIPTION_ID=$(SubscriptionId)
     runCmd: |
+      exit
       curl -fsSL https://aka.ms/install-azd.sh | bash -s -- --version 'daily' --verbose
       echo "$PWD"
       echo "azd version"
@@ -90,6 +82,7 @@ steps:
       sudo apt-get update
       sudo apt-get install gstreamer1.0*
       sudo apt-get install -y gstreamer1.0-libav libnss3-tools libatk-bridge2.0-0 libcups2-dev libxkbcommon-x11-0 libxcomposite-dev libxrandr2 libgbm-dev libgtk-3-0
+      
       set -euo pipefail
       FOLDER_PATH="/workspaces/temp"
       BRANCH_NAME="pr/1000"

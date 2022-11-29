@@ -69,8 +69,8 @@ For more information, go to https://aka.ms/azure-dev/pipeline.`,
 func pipelineConfigCmdDesign(global *internal.GlobalCommandOptions) (*cobra.Command, *pipelineConfigFlags) {
 	cmd := &cobra.Command{
 		Use:   "config",
-		Short: "Create and configure your deployment pipeline by using GitHub Actions and Azure pipelines.",
-		Long: `Create and configure your deployment pipeline by using GitHub Actions and Azure pipelines.
+		Short: "Create and configure your deployment pipeline by using GitHub Actions and Azure Pipelines.",
+		Long: `Create and configure your deployment pipeline by using GitHub Actions and Azure Pipelines.
 
 For more information, go to https://aka.ms/azure-dev/pipeline.`,
 	}

@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/AlecAivazis/survey/v2"
-	"github.com/azure/azure-dev/cli/azd/pkg/contracts"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/theckman/yacspin"
@@ -338,14 +337,4 @@ func GetStepResultFormat(result error) SpinnerUxType {
 		formatResult = StepFailed
 	}
 	return formatResult
-}
-
-func newConsoleMessageEvent(msg string) contracts.EventEnvelope {
-	return contracts.EventEnvelope{
-		Type:      contracts.ConsoleMessageEventDataType,
-		Timestamp: time.Now(),
-		Data: contracts.ConsoleMessage{
-			Message: msg,
-		},
-	}
 }

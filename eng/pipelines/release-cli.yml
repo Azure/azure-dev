@@ -3,7 +3,8 @@ resources:
     - repository: azure-sdk-build-tools
       type: git
       name: internal/azure-sdk-build-tools
-      ref: refs/tags/azure-sdk-build-tools_20221201.2
+      # TODO: Use appropriate value before merge
+      ref: djurek/azd-msi-signing
 
 # Continuous deployment trigger
 trigger:
@@ -329,7 +330,7 @@ stages:
         # TODO: Uncomment before merge
         # - ${{ if in(variables['Build.Reason'], 'IndividualCI', 'BatchedCI', 'Manual') }}:
         # TODO: Update ref to appropriate tag before merging
-        - template: pipelines/steps/azd-cli-mac-signing.yml@djurek/azd-msi-signing
+        - template: pipelines/steps/azd-cli-mac-signing.yml@azure-sdk-build-tools
           parameters:
             MacPath: mac
 
@@ -391,7 +392,7 @@ stages:
         # TODO: Uncomment before merge
         # - ${{ if in(variables['Build.Reason'], 'IndividualCI', 'BatchedCI', 'Manual') }}:
         # TODO: Update ref to appropriate tag before merging
-        - template: pipelines/steps/azd-cli-win-signing.yml@djurek/azd-msi-signing
+        - template: pipelines/steps/azd-cli-win-signing.yml@azure-sdk-build-tools
           parameters:
             WinPath:  win
             WinPattern: '**'
@@ -417,7 +418,7 @@ stages:
         # TODO: Uncomment before merge
         # - ${{ if in(variables['Build.Reason'], 'IndividualCI', 'BatchedCI', 'Manual') }}:
         # TODO: Update ref to appropriate tag before merging
-        - template: pipelines/steps/azd-cli-win-signing.yml@djurek/azd-msi-signing
+        - template: pipelines/steps/azd-cli-win-signing.yml@azure-sdk-build-tools
           parameters:
             WinPath:  cli/installer/windows/bin/Release
             WinPattern: '*.msi'

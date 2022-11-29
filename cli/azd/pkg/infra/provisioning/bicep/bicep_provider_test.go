@@ -8,6 +8,7 @@ import (
 	"context"
 	_ "embed"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -103,13 +104,29 @@ func TestBicepPlanPrompt(t *testing.T) {
 		return strings.Contains(options.Message, "Save the value in the environment for future use")
 	}).Respond(false)
 
-	mockContext.Console.WhenPrompt(func(options input.ConsoleOptions) bool {
-		return strings.Contains(options.Message, "for the 'stringParam' infrastructure parameter")
-	}).RespondFn(func(options input.ConsoleOptions) (any, error) {
-		require.Equal(t, "A required string parameter", options.Help)
+	for _, cc := range []struct {
+		name  string
+		value any
+	}{
+		{"stringParam", "value"},
+		{"intParam", "100"},
+		{"boolParam", 1},
+		{"arrayParam", `["hello", "world"]`},
+		{"objectParam", `{"hello": "world"}`},
+	} {
+		resp := cc
 
-		return "value", nil
-	})
+		if _, ok := resp.value.(int); ok {
+			mockContext.Console.WhenSelect(func(options input.ConsoleOptions) bool {
+				return strings.Contains(options.Message, fmt.Sprintf("for the '%s' infrastructure parameter", resp.name))
+			}).Respond(resp.value)
+		} else {
+			mockContext.Console.WhenPrompt(func(options input.ConsoleOptions) bool {
+				return strings.Contains(options.Message, fmt.Sprintf("for the '%s' infrastructure parameter", resp.name))
+			}).Respond(resp.value)
+		}
+
+	}
 
 	infraProvider := createBicepProvider(t, mockContext)
 	planningTask := infraProvider.Plan(*mockContext.Context)
@@ -131,7 +148,17 @@ func TestBicepPlanPrompt(t *testing.T) {
 	<-progressDone
 
 	require.NoError(t, err)
-	require.Equal(t, "value", plan.Details.(BicepDeploymentDetails).Parameters["stringParam"].Value)
+
+	bicepDetails := plan.Details.(BicepDeploymentDetails)
+
+	require.Equal(t, "value", bicepDetails.Parameters["stringParam"].Value)
+	require.Equal(t, int64(100), bicepDetails.Parameters["intParam"].Value)
+	require.Equal(t, true, bicepDetails.Parameters["boolParam"].Value)
+	require.IsType(t, []any{}, bicepDetails.Parameters["arrayParam"].Value)
+	require.Equal(t, "hello", bicepDetails.Parameters["arrayParam"].Value.([]any)[0])
+	require.Equal(t, "world", bicepDetails.Parameters["arrayParam"].Value.([]any)[1])
+	require.IsType(t, map[string]any{}, bicepDetails.Parameters["objectParam"].Value)
+	require.Equal(t, "world", bicepDetails.Parameters["objectParam"].Value.(map[string]any)["hello"])
 }
 
 func TestBicepState(t *testing.T) {

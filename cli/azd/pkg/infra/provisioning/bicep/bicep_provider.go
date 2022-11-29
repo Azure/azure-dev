@@ -20,6 +20,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -881,12 +882,95 @@ func (p *BicepProvider) ensureParameters(
 		err := asyncContext.Interact(func() error {
 			desc, _ := param.Description()
 
-			userValue, err := p.console.Prompt(ctx, input.ConsoleOptions{
-				Message: fmt.Sprintf("Please enter a value for the '%s' infrastructure parameter:", key),
-				Help:    desc,
-			})
-			if err != nil {
-				return fmt.Errorf("prompting for deployment parameter: %w", err)
+			var value any
+
+			switch p.mapBicepTypeToInterfaceType(param.Type) {
+			case ParameterTypeBoolean:
+				options := []string{"False", "True"}
+				choice, err := p.console.Select(ctx, input.ConsoleOptions{
+					Message: fmt.Sprintf("Please enter a value for the '%s' infrastructure parameter:", key),
+					Help:    desc,
+					Options: options,
+				})
+				if err != nil {
+					return fmt.Errorf("prompting for deployment parameter: %w", err)
+				}
+				value = (options[choice] == "True")
+			case ParameterTypeNumber:
+				for {
+					userValue, err := p.console.Prompt(ctx, input.ConsoleOptions{
+						Message: fmt.Sprintf("Please enter a value for the '%s' infrastructure parameter:", key),
+						Help:    desc,
+					})
+					if err != nil {
+						return fmt.Errorf("prompting for deployment parameter: %w", err)
+					}
+					i, err := strconv.ParseInt(userValue, 10, 64)
+					if err != nil {
+						p.console.Message(
+							ctx,
+							output.WithErrorFormat("Error: failed to convert %s to an integer: %v.", err),
+						)
+						continue
+					}
+					value = i
+					break
+				}
+			case ParameterTypeString:
+				userValue, err := p.console.Prompt(ctx, input.ConsoleOptions{
+					Message: fmt.Sprintf("Please enter a value for the '%s' infrastructure parameter:", key),
+					Help:    desc,
+				})
+				if err != nil {
+					return fmt.Errorf("prompting for deployment parameter: %w", err)
+				}
+				value = userValue
+			case ParameterTypeArray:
+				for {
+					userJson, err := p.console.Prompt(ctx, input.ConsoleOptions{
+						Message: fmt.Sprintf("Please enter a value for the '%s' infrastructure parameter:", key),
+						Help:    desc,
+					})
+					if err != nil {
+						return fmt.Errorf("prompting for deployment parameter: %w", err)
+					}
+
+					var userValue []any
+					err = json.Unmarshal([]byte(userJson), &userValue)
+					if err != nil {
+						p.console.Message(
+							ctx,
+							output.WithErrorFormat("Error: failed to parse value as JSON array: %v.", err),
+						)
+						continue
+					}
+					value = userValue
+					break
+				}
+			case ParameterTypeObject:
+				for {
+					userJson, err := p.console.Prompt(ctx, input.ConsoleOptions{
+						Message: fmt.Sprintf("Please enter a value for the '%s' infrastructure parameter:", key),
+						Help:    desc,
+					})
+					if err != nil {
+						return fmt.Errorf("prompting for deployment parameter: %w", err)
+					}
+
+					var userValue map[string]any
+					err = json.Unmarshal([]byte(userJson), &userValue)
+					if err != nil {
+						p.console.Message(
+							ctx,
+							output.WithErrorFormat("Error: failed to parse value as JSON object: %v.", err),
+						)
+						continue
+					}
+					value = userValue
+					break
+				}
+			default:
+				panic(fmt.Sprintf("unknown parameter type: %s", p.mapBicepTypeToInterfaceType(param.Type)))
 			}
 
 			saveParameter, err := p.console.Confirm(ctx, input.ConsoleOptions{
@@ -898,7 +982,7 @@ func (p *BicepProvider) ensureParameters(
 			}
 
 			if saveParameter {
-				if err := p.env.Config.Set(configKey, userValue); err == nil {
+				if err := p.env.Config.Set(configKey, value); err == nil {
 					if err := p.env.Save(); err == nil {
 						// everything went as expected.
 					} else {
@@ -910,7 +994,7 @@ func (p *BicepProvider) ensureParameters(
 			}
 
 			configuredParameters[key] = azure.ArmParameterValue{
-				Value: userValue,
+				Value: value,
 			}
 
 			return nil

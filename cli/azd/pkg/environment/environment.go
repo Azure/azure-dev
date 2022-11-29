@@ -4,6 +4,7 @@
 package environment
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -62,25 +63,33 @@ func IsValidEnvironmentName(name string) bool {
 // an valid empty environment file, configured to persist its contents
 // to this directory, is returned.
 func FromRoot(root string) (*Environment, error) {
+	if _, err := os.Stat(root); err != nil {
+		return EmptyWithRoot(root), err
+	}
+
 	env := &Environment{
 		Root: root,
 	}
 
 	envPath := filepath.Join(root, azdcontext.DotEnvFileName)
-	e, err := godotenv.Read(envPath)
-	if err != nil {
+	if e, err := godotenv.Read(envPath); errors.Is(err, os.ErrNotExist) {
+		env.Values = make(map[string]string)
+	} else if err != nil {
 		return EmptyWithRoot(root), fmt.Errorf("loading .env: %w", err)
+	} else {
+		env.Values = e
 	}
-	env.Values = e
 
 	cfgPath := filepath.Join(root, azdcontext.ConfigFileName)
 
 	cfgMgr := config.NewManager()
-	cfg, err := cfgMgr.Load(cfgPath)
-	if err != nil {
+	if cfg, err := cfgMgr.Load(cfgPath); errors.Is(err, os.ErrNotExist) {
+		env.Config = config.NewConfig(nil)
+	} else if err != nil {
 		return EmptyWithRoot(root), fmt.Errorf("loading config: %w", err)
+	} else {
+		env.Config = cfg
 	}
-	env.Config = cfg
 
 	return env, nil
 }

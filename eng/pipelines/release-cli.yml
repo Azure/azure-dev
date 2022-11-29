@@ -327,6 +327,7 @@ stages:
             -Path mac-artifacts/azd-darwin-amd64 `
             -DestinationPath mac/azd-darwin-amd64.zip
           displayName: Package mac binary for signing
+
         # TODO: Uncomment before merge
         # - ${{ if in(variables['Build.Reason'], 'IndividualCI', 'BatchedCI', 'Manual') }}:
         # TODO: Update ref to appropriate tag before merging
@@ -346,7 +347,7 @@ stages:
 
         - pwsh: |
             New-Item -ItemType Directory -Path signed-mac
-            Copy-Item mac/ signed-mac/ -Recurse
+            Copy-Item mac/* signed-mac/ -Recurse
           displayName: Copy signing outputs
           condition: always()
 
@@ -404,7 +405,7 @@ stages:
 
         - pwsh: |
             New-Item -ItemType Directory -Path signed-win
-            Copy-Item win/ signed-win/ -Recurse
+            Copy-Item win/* signed-win/ -Recurse
             Copy-Item win/azd-windows-amd64.exe cli/azd/azd.exe
           displayName: Copy signing outputs for publishing and MSI build
           condition: always()

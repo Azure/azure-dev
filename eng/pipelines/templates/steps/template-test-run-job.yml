@@ -57,6 +57,10 @@ steps:
     git clone --branch pr/1000 https://github.com/$(TemplateName).git/ temp
   displayName: Clone template repository
 
+- pwsh: |
+    echo "$folderPath"
+  displayName: folderPath
+  
 - task: DevcontainersCI@0
   displayName: Test templates in Devcontainer
   inputs:

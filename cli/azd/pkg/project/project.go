@@ -12,8 +12,11 @@ import (
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
+	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"gopkg.in/yaml.v3"
 )
 
@@ -33,7 +36,14 @@ type Project struct {
 
 // ReadProject reads a project file and sets the configured template
 // to include the template name in `metadata/template` from the yaml in projectPath.
-func ReadProject(ctx context.Context, projectPath string, env *environment.Environment) (*Project, error) {
+func ReadProject(
+	ctx context.Context,
+	console input.Console,
+	azCli azcli.AzCli,
+	commandRunner exec.CommandRunner,
+	projectPath string,
+	env *environment.Environment,
+) (*Project, error) {
 	projectRootDir := filepath.Dir(projectPath)
 
 	// Load Project configuration
@@ -43,7 +53,7 @@ func ReadProject(ctx context.Context, projectPath string, env *environment.Envir
 	}
 
 	// Evaluate project
-	project, err := projectConfig.GetProject(&ctx, env)
+	project, err := projectConfig.GetProject(ctx, env, console, azCli, commandRunner)
 	if err != nil {
 		return nil, fmt.Errorf("reading project: %w", err)
 	}
@@ -88,6 +98,7 @@ func NewProject(path string, name string) (*Project, error) {
 // details)
 func GetResourceGroupName(
 	ctx context.Context,
+	azCli azcli.AzCli,
 	projectConfig *ProjectConfig,
 	env *environment.Environment) (string, error) {
 	if strings.TrimSpace(projectConfig.ResourceGroupName) != "" {
@@ -99,7 +110,7 @@ func GetResourceGroupName(
 		return envResourceGroupName, nil
 	}
 
-	resourceManager := infra.NewAzureResourceManager(ctx)
+	resourceManager := infra.NewAzureResourceManager(azCli)
 	resourceGroupName, err := resourceManager.FindResourceGroupForEnvironment(ctx, env)
 	if err != nil {
 		return "", err

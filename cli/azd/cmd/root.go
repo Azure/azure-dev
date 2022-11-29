@@ -13,11 +13,11 @@ import (
 	_ "github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning/bicep"
 	_ "github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning/terraform"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/telemetry"
 	"github.com/azure/azure-dev/cli/azd/internal/telemetry/events"
-	"github.com/azure/azure-dev/cli/azd/pkg/commands"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/spf13/cobra"
 	"go.opentelemetry.io/otel/codes"
@@ -147,12 +147,7 @@ func BuildCmd[F any](
 			return err
 		}
 
-		// shim to register dependencies in context to maintain backwards compatibility
-		// to be removed long term
-		ctx, err = commands.RegisterDependenciesInCtx(ctx, cmd, console, opts)
-		if err != nil {
-			return err
-		}
+		ctx = tools.WithInstalledCheckCache(ctx)
 
 		actionResult, err := action.Run(ctx)
 		// At this point, we know that there might be an error, so we can silence cobra from showing it after us.

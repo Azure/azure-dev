@@ -92,6 +92,17 @@ module apiCosmosSqlRoleAssign '../../../../../../common/infra/bicep/core/databas
   }
 }
 
+// Give the API the role to access Cosmos
+module userComsosSqlRoleAssign '../../../../../../common/infra/bicep/core/database/cosmos/sql/cosmos-sql-role-assign.bicep' = if (principalId != '') {
+  name: 'user-cosmos-access'
+  scope: rg
+  params: {
+    accountName: cosmos.outputs.accountName
+    roleDefinitionId: cosmos.outputs.roleDefinitionId
+    principalId: principalId
+  }
+}
+
 // The application database
 module cosmos '../../../../../common/infra/bicep/app/cosmos-sql-db.bicep' = {
   name: 'cosmos'
@@ -145,6 +156,7 @@ module monitoring '../../../../../../common/infra/bicep/core/monitor/monitoring.
 }
 
 // Data outputs
+output AZURE_COSMOS_ENDPOINT string = cosmos.outputs.endpoint
 output AZURE_COSMOS_CONNECTION_STRING_KEY string = cosmos.outputs.connectionStringKey
 output AZURE_COSMOS_DATABASE_NAME string = cosmos.outputs.databaseName
 

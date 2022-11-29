@@ -99,8 +99,9 @@ func (m *mavenProject) Initialize(ctx context.Context) error {
 	return nil
 }
 
-func NewMavenProject(ctx context.Context, config *ServiceConfig, env *environment.Environment) FrameworkService {
-	runner := exec.GetCommandRunner(ctx)
+func NewMavenProject(
+	runner exec.CommandRunner, config *ServiceConfig, env *environment.Environment,
+) FrameworkService {
 	return &mavenProject{
 		config:   config,
 		env:      env,

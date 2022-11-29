@@ -7,7 +7,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"time"
 
@@ -15,14 +14,10 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerregistry/armcontainerregistry"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	azdinternal "github.com/azure/azure-dev/cli/azd/internal"
-	"github.com/azure/azure-dev/cli/azd/internal/telemetry"
 	"github.com/azure/azure-dev/cli/azd/pkg/azsdk"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
-	"github.com/azure/azure-dev/cli/azd/pkg/identity"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools"
-	"github.com/blang/semver/v4"
 )
 
 var (
@@ -34,15 +29,7 @@ var (
 	ErrAzCliSecretNotFound      = errors.New("secret not found")
 )
 
-const (
-	// CollectTelemetryEnvVarName is the name of the variable that the Azure CLI uses to disable telemetry
-	// when you're not using persistent configuration via `az config`
-	collectTelemetryEnvVarName = "AZURE_CORE_COLLECT_TELEMETRY"
-)
-
 type AzCli interface {
-	tools.ExternalTool
-
 	// SetUserAgent sets the user agent that's sent with each call to the Azure
 	// CLI via the `AZURE_HTTP_USER_AGENT` environment variable.
 	SetUserAgent(userAgent string)
@@ -50,7 +37,7 @@ type AzCli interface {
 	// UserAgent gets the currently configured user agent
 	UserAgent() string
 
-	LoginAcr(ctx context.Context, subscriptionId string, loginServer string) error
+	LoginAcr(ctx context.Context, commandRunner exec.CommandRunner, subscriptionId string, loginServer string) error
 	GetContainerRegistries(ctx context.Context, subscriptionId string) ([]*armcontainerregistry.Registry, error)
 	ListAccounts(ctx context.Context) ([]*AzCliSubscriptionInfo, error)
 	GetAccount(ctx context.Context, subscriptionId string) (*AzCliSubscriptionInfo, error)
@@ -100,7 +87,8 @@ type AzCli interface {
 	DeployToSubscription(
 		ctx context.Context, subscriptionId, deploymentName string,
 		armTemplate *azure.ArmTemplate,
-		parametersPath, location string) (
+		parameters azure.ArmParameters,
+		location string) (
 		AzCliDeploymentResult, error)
 	DeployToResourceGroup(
 		ctx context.Context,
@@ -108,7 +96,7 @@ type AzCli interface {
 		resourceGroup,
 		deploymentName string,
 		armTemplate *azure.ArmTemplate,
-		parametersPath string,
+		parameters azure.ArmParameters,
 	) (AzCliDeploymentResult, error)
 	DeleteSubscriptionDeployment(ctx context.Context, subscriptionId string, deploymentName string) error
 	DeleteResourceGroup(ctx context.Context, subscriptionId string, resourceGroupName string) error
@@ -310,20 +298,14 @@ type Filter struct {
 type NewAzCliArgs struct {
 	EnableDebug     bool
 	EnableTelemetry bool
-	// CommandRunner allows us to stub out the command execution for testing
-	CommandRunner exec.CommandRunner
-	HttpClient    httputil.HttpClient
+	HttpClient      httputil.HttpClient
 }
 
 func NewAzCli(credential azcore.TokenCredential, args NewAzCliArgs) AzCli {
-	if args.CommandRunner == nil {
-		panic("NewAzCli: must set args.CommandRunner")
-	}
 	return &azCli{
 		userAgent:       azdinternal.MakeUserAgentString(""),
 		enableDebug:     args.EnableDebug,
 		enableTelemetry: args.EnableTelemetry,
-		commandRunner:   args.CommandRunner,
 		httpClient:      args.HttpClient,
 		credential:      credential,
 	}
@@ -334,68 +316,10 @@ type azCli struct {
 	enableDebug     bool
 	enableTelemetry bool
 
-	// commandRunner allows us to stub out the exec.CommandRunner, for testing.
-	commandRunner exec.CommandRunner
-
 	// Allows us to mock the Http Requests from the go modules
 	httpClient httputil.HttpClient
 
 	credential azcore.TokenCredential
-}
-
-func (cli *azCli) Name() string {
-	return "Azure CLI"
-}
-
-func (cli *azCli) InstallUrl() string {
-	return "https://aka.ms/azure-dev/azure-cli-install"
-}
-
-func (cli *azCli) versionInfo() tools.VersionInfo {
-	return tools.VersionInfo{
-		MinimumVersion: semver.Version{
-			Major: 2,
-			Minor: 38,
-			Patch: 0},
-		UpdateCommand: "Run \"az upgrade\" to upgrade",
-	}
-}
-
-func (cli *azCli) unmarshalCliVersion(ctx context.Context, component string) (string, error) {
-	azRes, err := tools.ExecuteCommand(ctx, "az", "version", "--output", "json")
-	if err != nil {
-		return "", err
-	}
-	var azVerMap map[string]interface{}
-	err = json.Unmarshal([]byte(azRes), &azVerMap)
-	if err != nil {
-		return "", err
-	}
-	version, ok := azVerMap[component].(string)
-	if !ok {
-		return "", fmt.Errorf("reading %s component '%s' version failed", cli.Name(), component)
-	}
-	return version, nil
-}
-
-func (cli *azCli) CheckInstalled(ctx context.Context) (bool, error) {
-	found, err := tools.ToolInPath("az")
-	if !found {
-		return false, err
-	}
-	azVer, err := cli.unmarshalCliVersion(ctx, "azure-cli")
-	if err != nil {
-		return false, fmt.Errorf("checking %s version:  %w", cli.Name(), err)
-	}
-	azSemver, err := semver.Parse(azVer)
-	if err != nil {
-		return false, fmt.Errorf("converting to semver version fails: %w", err)
-	}
-	updateDetail := cli.versionInfo()
-	if azSemver.LT(updateDetail.MinimumVersion) {
-		return false, &tools.ErrSemver{ToolName: cli.Name(), VersionInfo: updateDetail}
-	}
-	return true, nil
 }
 
 // SetUserAgent sets the user agent that's sent with each call to the Azure
@@ -408,67 +332,8 @@ func (cli *azCli) UserAgent() string {
 	return cli.userAgent
 }
 
-func (cli *azCli) runAzCommand(ctx context.Context, args ...string) (exec.RunResult, error) {
-	return cli.runAzCommandWithArgs(ctx, exec.RunArgs{
-		Args: args,
-	})
-}
-
-// runAzCommandWithArgs will run the 'args', ignoring 'Cmd' in favor of injecting the proper
-// 'az' alias.
-func (cli *azCli) runAzCommandWithArgs(ctx context.Context, args exec.RunArgs) (exec.RunResult, error) {
-	if cli.enableDebug {
-		args.Args = append(args.Args, "--debug")
-	}
-
-	args.Cmd = "az"
-	args.Env = append(args.Env, fmt.Sprintf("AZURE_HTTP_USER_AGENT=%s", cli.userAgent))
-
-	if !cli.enableTelemetry {
-		args.Env = append(args.Env, fmt.Sprintf("%s=no", collectTelemetryEnvVarName))
-	}
-
-	args.Debug = cli.enableDebug
-
-	return cli.commandRunner.Run(ctx, args)
-}
-
 func (cli *azCli) createDefaultClientOptionsBuilder(ctx context.Context) *azsdk.ClientOptionsBuilder {
 	return azsdk.NewClientOptionsBuilder().
 		WithTransport(httputil.GetHttpClient(ctx)).
 		WithPerCallPolicy(azsdk.NewUserAgentPolicy(cli.UserAgent()))
-}
-
-type contextKey string
-
-const (
-	azCliContextKey contextKey = "azcli"
-)
-
-func WithAzCli(ctx context.Context, azCli AzCli) context.Context {
-	return context.WithValue(ctx, azCliContextKey, azCli)
-}
-
-func GetAzCli(ctx context.Context) AzCli {
-	// Check to see if we already have an az cli in the context
-	azCli, ok := ctx.Value(azCliContextKey).(AzCli)
-	if !ok {
-		options := azdinternal.GetCommandOptions(ctx)
-		credential := identity.GetCredentials(ctx)
-
-		commandRunner := exec.GetCommandRunner(ctx)
-		args := NewAzCliArgs{
-			EnableDebug:     options.EnableDebugLogging,
-			EnableTelemetry: options.EnableTelemetry,
-			CommandRunner:   commandRunner,
-		}
-		azCli = NewAzCli(credential, args)
-	}
-
-	// Set the user agent if a template has been selected
-	template := telemetry.TemplateFromContext(ctx)
-	userAgent := azdinternal.MakeUserAgentString(template)
-	azCli.SetUserAgent(userAgent)
-
-	return azCli
 }

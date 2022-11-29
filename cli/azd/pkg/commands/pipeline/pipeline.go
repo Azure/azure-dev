@@ -11,8 +11,10 @@ import (
 	"path"
 	"strings"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
+	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
@@ -133,7 +135,11 @@ func DetectProviders(
 	ctx context.Context,
 	azdContext *azdcontext.AzdContext,
 	env *environment.Environment,
-	overrideProvider string) (ScmProvider, CiProvider, error) {
+	overrideProvider string,
+	console input.Console,
+	credential azcore.TokenCredential,
+	commandRunner exec.CommandRunner,
+) (ScmProvider, CiProvider, error) {
 	projectDir := azdContext.ProjectDirectory()
 
 	// get the override value
@@ -185,8 +191,6 @@ func DetectProviders(
 		return nil, nil, fmt.Errorf("%s is not a known pipeline provider.", overrideWith)
 	}
 
-	console := input.GetConsole(ctx)
-
 	// At this point, we know that override value has either:
 	// - github or azdo value
 	// - OR is not set
@@ -196,14 +200,19 @@ func DetectProviders(
 		// Azdo only either by override or by finding only that folder
 		_ = savePipelineProviderToEnv(azdoLabel, env)
 		console.Message(ctx, fmt.Sprintf("Using pipeline provider: %s", output.WithHighLightFormat("Azure DevOps")))
-		return createAzdoScmProvider(env, azdContext), createAzdoCiProvider(env, azdContext), nil
+		scmProvider := createAzdoScmProvider(env, azdContext, commandRunner, console)
+		ciProvider := createAzdoCiProvider(env, azdContext, console)
+
+		return scmProvider, ciProvider, nil
 	}
 
 	// Both folders exists and no override value. Default to GitHub
 	// Or override value is github and the folder is available
 	_ = savePipelineProviderToEnv(gitHubLabel, env)
 	console.Message(ctx, fmt.Sprintf("Using pipeline provider: %s", output.WithHighLightFormat("GitHub")))
-	return &GitHubScmProvider{}, &GitHubCiProvider{}, nil
+	scmProvider := NewGitHubScmProvider(commandRunner)
+	ciProvider := NewGitHubCiProvider(credential, commandRunner)
+	return scmProvider, ciProvider, nil
 }
 
 func savePipelineProviderToEnv(provider string, env *environment.Environment) error {
@@ -215,16 +224,26 @@ func savePipelineProviderToEnv(provider string, env *environment.Environment) er
 	return nil
 }
 
-func createAzdoCiProvider(env *environment.Environment, azdCtx *azdcontext.AzdContext) *AzdoCiProvider {
+func createAzdoCiProvider(
+	env *environment.Environment, azdCtx *azdcontext.AzdContext, console input.Console,
+) *AzdoCiProvider {
 	return &AzdoCiProvider{
 		Env:        env,
 		AzdContext: azdCtx,
+		console:    console,
 	}
 }
 
-func createAzdoScmProvider(env *environment.Environment, azdCtx *azdcontext.AzdContext) *AzdoScmProvider {
+func createAzdoScmProvider(
+	env *environment.Environment,
+	azdCtx *azdcontext.AzdContext,
+	commandRunner exec.CommandRunner,
+	console input.Console,
+) *AzdoScmProvider {
 	return &AzdoScmProvider{
-		Env:        env,
-		AzdContext: azdCtx,
+		Env:           env,
+		AzdContext:    azdCtx,
+		commandRunner: commandRunner,
+		console:       console,
 	}
 }

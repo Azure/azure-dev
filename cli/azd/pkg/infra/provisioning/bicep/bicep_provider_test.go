@@ -9,8 +9,6 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
-	"os"
-	"path"
 	"strings"
 	"testing"
 
@@ -25,10 +23,11 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	. "github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
-	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	execmock "github.com/azure/azure-dev/cli/azd/test/mocks/exec"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/httputil"
+	"github.com/azure/azure-dev/cli/azd/test/mocks/mockazcli"
 	"github.com/stretchr/testify/require"
 )
 
@@ -41,7 +40,7 @@ func TestBicepPlan(t *testing.T) {
 	prepareGenericMocks(mockContext.CommandRunner)
 	preparePlanningMocks(mockContext)
 	prepareDeployShowMocks(mockContext.HttpClient)
-	infraProvider := createBicepProvider(*mockContext.Context)
+	infraProvider := createBicepProvider(mockContext)
 	planningTask := infraProvider.Plan(*mockContext.Context)
 
 	go func() {
@@ -86,10 +85,11 @@ func TestBicepState(t *testing.T) {
 	preparePlanningMocks(mockContext)
 	prepareDeployShowMocks(mockContext.HttpClient)
 	prepareDeployMocks(mockContext.CommandRunner)
+	azCli := mockazcli.NewAzCliFromMockContext(mockContext)
 
-	infraProvider := createBicepProvider(*mockContext.Context)
+	infraProvider := createBicepProvider(mockContext)
 	scope := infra.NewSubscriptionScope(
-		*mockContext.Context,
+		azCli,
 		infraProvider.env.Values["AZURE_LOCATION"],
 		infraProvider.env.GetSubscriptionId(),
 		infraProvider.env.GetEnvName(),
@@ -133,22 +133,21 @@ func TestBicepDeploy(t *testing.T) {
 	preparePlanningMocks(mockContext)
 	prepareDeployShowMocks(mockContext.HttpClient)
 	prepareDeployMocks(mockContext.CommandRunner)
+	azCli := mockazcli.NewAzCliFromMockContext(mockContext)
 
-	infraProvider := createBicepProvider(*mockContext.Context)
-	tmpPath := t.TempDir()
-	parametersPath := path.Join(tmpPath, "params.json")
-	createTmpFile := os.WriteFile(parametersPath, []byte(testArmParametersFile), osutil.PermissionFile)
-	require.NoError(t, createTmpFile)
+	infraProvider := createBicepProvider(mockContext)
 
 	deploymentPlan := DeploymentPlan{
+		Deployment: Deployment{
+			Parameters: testArmParameters,
+		},
 		Details: BicepDeploymentDetails{
-			ParameterFilePath: parametersPath,
-			Template:          to.Ptr(azure.ArmTemplate("{}")),
+			Template: to.Ptr(azure.ArmTemplate("{}")),
 		},
 	}
 
 	scope := infra.NewSubscriptionScope(
-		*mockContext.Context,
+		azCli,
 		infraProvider.env.Values["AZURE_LOCATION"],
 		infraProvider.env.GetSubscriptionId(),
 		infraProvider.env.GetEnvName(),
@@ -200,7 +199,7 @@ func TestBicepDestroy(t *testing.T) {
 			)
 		}).Respond(true)
 
-		infraProvider := createBicepProvider(*mockContext.Context)
+		infraProvider := createBicepProvider(mockContext)
 		deployment := Deployment{}
 
 		destroyOptions := NewDestroyOptions(false, false)
@@ -227,25 +226,29 @@ func TestBicepDestroy(t *testing.T) {
 
 		// Verify console prompts
 		consoleOutput := mockContext.Console.Output()
-		require.Len(t, consoleOutput, 7)
+		require.Len(t, consoleOutput, 9)
 		require.Contains(t, consoleOutput[0], "This will delete")
 		require.Contains(t, consoleOutput[1], "Deleted resource group")
 		require.Contains(t, consoleOutput[2], "This operation will delete")
 		require.Contains(t, consoleOutput[3], "Would you like to permanently delete these Key Vaults/App Configurations")
-		require.Contains(t, consoleOutput[4], "Purged key vault")
-		require.Contains(t, consoleOutput[5], "Purged app configuration")
-		require.Contains(t, consoleOutput[6], "Deleted deployment")
+		require.Contains(t, consoleOutput[4], "Purged key vault kv-123")
+		require.Contains(t, consoleOutput[5], "Purged key vault kv2-123")
+		require.Contains(t, consoleOutput[6], "Purged app configuration ac-123")
+		require.Contains(t, consoleOutput[7], "Purged app configuration ac2-123")
+		require.Contains(t, consoleOutput[8], "Deleted deployment")
 
 		// Verify progress output
-		require.Len(t, progressLog, 8)
+		require.Len(t, progressLog, 10)
 		require.Contains(t, progressLog[0], "Fetching resource groups")
 		require.Contains(t, progressLog[1], "Fetching resources")
 		require.Contains(t, progressLog[2], "Getting Key Vaults to purge")
 		require.Contains(t, progressLog[3], "Getting App Configurations to purge")
 		require.Contains(t, progressLog[4], "Deleting resource group")
-		require.Contains(t, progressLog[5], "Purging key vault")
-		require.Contains(t, progressLog[6], "Purging app configuration")
-		require.Contains(t, progressLog[7], "Deleting deployment")
+		require.Contains(t, progressLog[5], "Purging key vault kv-123")
+		require.Contains(t, progressLog[6], "Purging key vault kv2-123")
+		require.Contains(t, progressLog[7], "Purging app configuration ac-123")
+		require.Contains(t, progressLog[8], "Purging app configuration ac2-123")
+		require.Contains(t, progressLog[9], "Deleting deployment")
 	})
 
 	t.Run("InteractiveForceAndPurge", func(t *testing.T) {
@@ -259,7 +262,7 @@ func TestBicepDestroy(t *testing.T) {
 		interactiveLog := []bool{}
 		progressDone := make(chan bool)
 
-		infraProvider := createBicepProvider(*mockContext.Context)
+		infraProvider := createBicepProvider(mockContext)
 		deployment := Deployment{}
 
 		destroyOptions := NewDestroyOptions(true, true)
@@ -286,22 +289,31 @@ func TestBicepDestroy(t *testing.T) {
 
 		// Verify console prompts
 		consoleOutput := mockContext.Console.Output()
-		require.Len(t, consoleOutput, 2)
+		require.Len(t, consoleOutput, 6)
 		require.Contains(t, consoleOutput[0], "Deleted resource group")
-		require.Contains(t, consoleOutput[1], "Deleted deployment")
+		require.Contains(t, consoleOutput[1], "Purged key vault kv-123")
+		require.Contains(t, consoleOutput[2], "Purged key vault kv2-123")
+		require.Contains(t, consoleOutput[3], "Purged app configuration ac-123")
+		require.Contains(t, consoleOutput[4], "Purged app configuration ac2-123")
+		require.Contains(t, consoleOutput[5], "Deleted deployment")
 
 		// Verify progress output
-		require.Len(t, progressLog, 6)
+		require.Len(t, progressLog, 10)
 		require.Contains(t, progressLog[0], "Fetching resource groups")
 		require.Contains(t, progressLog[1], "Fetching resources")
 		require.Contains(t, progressLog[2], "Getting Key Vaults to purge")
 		require.Contains(t, progressLog[3], "Getting App Configurations to purge")
 		require.Contains(t, progressLog[4], "Deleting resource group")
-		require.Contains(t, progressLog[5], "Deleting deployment")
+		require.Contains(t, progressLog[5], "Purging key vault kv-123")
+		require.Contains(t, progressLog[6], "Purging key vault kv2-123")
+		require.Contains(t, progressLog[7], "Purging app configuration ac-123")
+		require.Contains(t, progressLog[8], "Purging app configuration ac2-123")
+		require.Contains(t, progressLog[9], "Deleting deployment")
+
 	})
 }
 
-func createBicepProvider(ctx context.Context) *BicepProvider {
+func createBicepProvider(mockContext *mocks.MockContext) *BicepProvider {
 	projectDir := "../../../../test/functional/testdata/samples/webapp"
 	options := Options{
 		Module: "main",
@@ -312,7 +324,13 @@ func createBicepProvider(ctx context.Context) *BicepProvider {
 		environment.SubscriptionIdEnvVarName: "SUBSCRIPTION_ID",
 	})
 
-	return NewBicepProvider(ctx, env, projectDir, options)
+	azCli := azcli.NewAzCli(mockContext.Credentials, azcli.NewAzCliArgs{
+		HttpClient: mockContext.HttpClient,
+	})
+
+	return NewBicepProvider(
+		*mockContext.Context, azCli, env, projectDir, options, mockContext.CommandRunner, mockContext.Console,
+	)
 }
 
 func prepareGenericMocks(commandRunner *execmock.MockCommandRunner) {
@@ -449,8 +467,20 @@ func prepareDestroyMocks(mockContext *mocks.MockContext) {
 				Location: convert.RefOf("eastus2"),
 			},
 			{
+				ID:       convert.RefOf("keyvault2"),
+				Name:     convert.RefOf("kv2-123"),
+				Type:     convert.RefOf(string(infra.AzureResourceTypeKeyVault)),
+				Location: convert.RefOf("eastus2"),
+			},
+			{
 				ID:       convert.RefOf("appconfiguration"),
 				Name:     convert.RefOf("ac-123"),
+				Type:     convert.RefOf(string(infra.AzureResourceTypeAppConfig)),
+				Location: convert.RefOf("eastus2"),
+			},
+			{
+				ID:       convert.RefOf("appconfiguration2"),
+				Name:     convert.RefOf("ac2-123"),
 				Type:     convert.RefOf(string(infra.AzureResourceTypeAppConfig)),
 				Location: convert.RefOf("eastus2"),
 			},
@@ -470,89 +500,32 @@ func prepareDestroyMocks(mockContext *mocks.MockContext) {
 	})
 
 	// Get Key Vault
-	mockContext.HttpClient.When(func(request *http.Request) bool {
-		return request.Method == http.MethodGet && strings.Contains(request.URL.Path, "/vaults/kv-123")
-	}).RespondFn(func(request *http.Request) (*http.Response, error) {
-		keyVaultResponse := armkeyvault.VaultsClientGetResponse{
-			Vault: armkeyvault.Vault{
-				ID:       convert.RefOf("kv-123"),
-				Name:     convert.RefOf("kv-123"),
-				Location: convert.RefOf("eastus2"),
-				Properties: &armkeyvault.VaultProperties{
-					EnableSoftDelete:      convert.RefOf(true),
-					EnablePurgeProtection: convert.RefOf(false),
-				},
-			},
-		}
-
-		keyVaultBytes, _ := json.Marshal(keyVaultResponse)
-
-		return &http.Response{
-			StatusCode: http.StatusOK,
-			Body:       io.NopCloser(bytes.NewBuffer(keyVaultBytes)),
-		}, nil
-	})
+	getKeyVaultMock(mockContext, "/vaults/kv-123", "kv-123", "eastus2")
+	getKeyVaultMock(mockContext, "/vaults/kv2-123", "kv2-123", "eastus2")
 
 	// Get App Configuration
-	mockContext.HttpClient.When(func(request *http.Request) bool {
-		return request.Method == http.MethodGet && strings.Contains(request.URL.Path, "/configurationStores/ac-123")
-	}).RespondFn(func(request *http.Request) (*http.Response, error) {
-		appConfigResponse := armappconfiguration.ConfigurationStoresClientGetResponse{
-			ConfigurationStore: armappconfiguration.ConfigurationStore{
-				ID:       convert.RefOf("ac-123"),
-				Name:     convert.RefOf("ac-123"),
-				Location: convert.RefOf("eastus2"),
-				Properties: &armappconfiguration.ConfigurationStoreProperties{
-					EnablePurgeProtection: convert.RefOf(false),
-				},
-			},
-		}
-
-		appConfigBytes, _ := json.Marshal(appConfigResponse)
-
-		return &http.Response{
-			StatusCode: http.StatusOK,
-			Body:       io.NopCloser(bytes.NewBuffer(appConfigBytes)),
-		}, nil
-	})
+	getAppConfigMock(mockContext, "/configurationStores/ac-123", "ac-123", "eastus2")
+	getAppConfigMock(mockContext, "/configurationStores/ac2-123", "ac2-123", "eastus2")
 
 	// Delete resource group
 	mockContext.HttpClient.When(func(request *http.Request) bool {
 		return request.Method == http.MethodDelete &&
 			strings.Contains(request.URL.Path, "subscriptions/SUBSCRIPTION_ID/resourcegroups/RESOURCE_GROUP")
-	}).RespondFn(func(request *http.Request) (*http.Response, error) {
-		return &http.Response{
-			Request:    request,
-			Header:     http.Header{},
-			StatusCode: http.StatusOK,
-			Body:       http.NoBody,
-		}, nil
-	})
+	}).RespondFn(httpRespondFn)
 
 	// Purge Key vault
 	mockContext.HttpClient.When(func(request *http.Request) bool {
-		return request.Method == http.MethodPost && strings.Contains(request.URL.Path, "deletedVaults/kv-123/purge")
-	}).RespondFn(func(request *http.Request) (*http.Response, error) {
-		return &http.Response{
-			Request:    request,
-			Header:     http.Header{},
-			StatusCode: http.StatusOK,
-			Body:       http.NoBody,
-		}, nil
-	})
+		return request.Method == http.MethodPost &&
+			(strings.Contains(request.URL.Path, "deletedVaults/kv-123/purge") ||
+				strings.Contains(request.URL.Path, "deletedVaults/kv2-123/purge"))
+	}).RespondFn(httpRespondFn)
 
 	// Purge App configuration
 	mockContext.HttpClient.When(func(request *http.Request) bool {
-		return request.Method == http.MethodPost && strings.Contains(request.URL.Path,
-			"deletedConfigurationStores/ac-123/purge")
-	}).RespondFn(func(request *http.Request) (*http.Response, error) {
-		return &http.Response{
-			Request:    request,
-			Header:     http.Header{},
-			StatusCode: http.StatusOK,
-			Body:       http.NoBody,
-		}, nil
-	})
+		return request.Method == http.MethodPost &&
+			(strings.Contains(request.URL.Path, "deletedConfigurationStores/ac-123/purge") ||
+				strings.Contains(request.URL.Path, "deletedConfigurationStores/ac2-123/purge"))
+	}).RespondFn(httpRespondFn)
 
 	// Delete deployment
 	mockPollingUrl := "https://url-to-poll.net/keep-deleting"
@@ -575,10 +548,66 @@ func prepareDestroyMocks(mockContext *mocks.MockContext) {
 	})
 }
 
-var testArmParametersFile string = `{
-	"parameters": {
-		"location": {
-			"value": "West US"
+var testArmParameters = map[string]InputParameter{
+	"location": {
+		Value: "West US",
+	},
+}
+
+func getKeyVaultMock(mockContext *mocks.MockContext, keyVaultString string, name string, location string) {
+	mockContext.HttpClient.When(func(request *http.Request) bool {
+		return request.Method == http.MethodGet && strings.Contains(request.URL.Path, keyVaultString)
+	}).RespondFn(func(request *http.Request) (*http.Response, error) {
+		keyVaultResponse := armkeyvault.VaultsClientGetResponse{
+			Vault: armkeyvault.Vault{
+				ID:       convert.RefOf(name),
+				Name:     convert.RefOf(name),
+				Location: convert.RefOf(location),
+				Properties: &armkeyvault.VaultProperties{
+					EnableSoftDelete:      convert.RefOf(true),
+					EnablePurgeProtection: convert.RefOf(false),
+				},
+			},
 		}
-	}
-}`
+
+		keyVaultBytes, _ := json.Marshal(keyVaultResponse)
+
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(bytes.NewBuffer(keyVaultBytes)),
+		}, nil
+	})
+}
+
+func getAppConfigMock(mockContext *mocks.MockContext, appConfigString string, name string, location string) {
+	mockContext.HttpClient.When(func(request *http.Request) bool {
+		return request.Method == http.MethodGet && strings.Contains(request.URL.Path, appConfigString)
+	}).RespondFn(func(request *http.Request) (*http.Response, error) {
+		appConfigResponse := armappconfiguration.ConfigurationStoresClientGetResponse{
+			ConfigurationStore: armappconfiguration.ConfigurationStore{
+				ID:       convert.RefOf(name),
+				Name:     convert.RefOf(name),
+				Location: convert.RefOf(location),
+				Properties: &armappconfiguration.ConfigurationStoreProperties{
+					EnablePurgeProtection: convert.RefOf(false),
+				},
+			},
+		}
+
+		appConfigBytes, _ := json.Marshal(appConfigResponse)
+
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(bytes.NewBuffer(appConfigBytes)),
+		}, nil
+	})
+}
+
+func httpRespondFn(request *http.Request) (*http.Response, error) {
+	return &http.Response{
+		Request:    request,
+		Header:     http.Header{},
+		StatusCode: http.StatusOK,
+		Body:       http.NoBody,
+	}, nil
+}

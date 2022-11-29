@@ -3,12 +3,8 @@ package mocks
 import (
 	"context"
 
-	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
-	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
-	"github.com/azure/azure-dev/cli/azd/pkg/identity"
-	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	mockconfig "github.com/azure/azure-dev/cli/azd/test/mocks/config"
 	mockconsole "github.com/azure/azure-dev/cli/azd/test/mocks/console"
 	mockexec "github.com/azure/azure-dev/cli/azd/test/mocks/exec"
@@ -16,6 +12,7 @@ import (
 )
 
 type MockContext struct {
+	Credentials   *MockCredentials
 	Context       *context.Context
 	Console       *mockconsole.MockConsole
 	HttpClient    *mockhttp.MockHttpClient
@@ -31,16 +28,12 @@ func NewMockContext(ctx context.Context) *MockContext {
 	configManager := mockconfig.NewMockConfigManager()
 
 	mockexec.AddAzLoginMocks(commandRunner)
-	httpClient.AddDefaultMocks()
 
-	ctx = internal.WithCommandOptions(ctx, internal.GlobalCommandOptions{})
-	ctx = input.WithConsole(ctx, mockConsole)
-	ctx = exec.WithCommandRunner(ctx, commandRunner)
 	ctx = httputil.WithHttpClient(ctx, httpClient)
-	ctx = identity.WithCredentials(ctx, &credentials)
 	ctx = config.WithConfigManager(ctx, configManager)
 
 	mockContext := &MockContext{
+		Credentials:   &credentials,
 		Context:       &ctx,
 		Console:       mockConsole,
 		CommandRunner: commandRunner,

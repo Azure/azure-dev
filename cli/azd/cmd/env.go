@@ -10,14 +10,13 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
-	"github.com/azure/azure-dev/cli/azd/pkg/commands"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
+	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
@@ -96,16 +95,13 @@ func (e *envSetAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		return nil, err
 	}
 
-	if err := tools.EnsureInstalled(ctx, e.azCli); err != nil {
-		return nil, err
-	}
-
 	//lint:ignore SA4006 // We want ctx overridden here for future changes
 	env, ctx, err := loadOrInitEnvironment( //nolint:ineffassign,staticcheck
 		ctx,
 		&e.flags.environmentName,
 		e.azdCtx,
 		e.console,
+		e.azCli,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("loading environment: %w", err)
@@ -124,9 +120,6 @@ func envSelectCmdDesign(global *internal.GlobalCommandOptions) (*cobra.Command, 
 	cmd := &cobra.Command{
 		Use:   "select <environment>",
 		Short: "Set the default environment.",
-		Annotations: map[string]string{
-			commands.RequireNoLoginAnnotation: "true",
-		},
 	}
 	cmd.Args = cobra.ExactArgs(1)
 	return cmd, &struct{}{}
@@ -161,9 +154,6 @@ func envListCmdDesign(global *internal.GlobalCommandOptions) (*cobra.Command, *s
 		Use:     "list",
 		Short:   "List environments",
 		Aliases: []string{"ls"},
-		Annotations: map[string]string{
-			commands.RequireNoLoginAnnotation: "true",
-		},
 	}
 	output.AddOutputParam(
 		cmd,
@@ -281,10 +271,6 @@ func (en *envNewAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 		return nil, err
 	}
 
-	if err := tools.EnsureInstalled(ctx, en.azCli); err != nil {
-		return nil, err
-	}
-
 	environmentName := ""
 	if len(en.args) >= 1 {
 		environmentName = en.args[0]
@@ -295,7 +281,7 @@ func (en *envNewAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 		subscription:    en.flags.subscription,
 		location:        en.flags.location,
 	}
-	if _, _, err := createAndInitEnvironment(ctx, &envSpec, en.azdCtx, en.console); err != nil {
+	if _, _, err := createAndInitEnvironment(ctx, &envSpec, en.azdCtx, en.console, en.azCli); err != nil {
 		return nil, fmt.Errorf("creating new environment: %w", err)
 	}
 
@@ -334,29 +320,32 @@ func envRefreshCmdDesign(global *internal.GlobalCommandOptions) (*cobra.Command,
 }
 
 type envRefreshAction struct {
-	azdCtx    *azdcontext.AzdContext
-	azCli     azcli.AzCli
-	flags     envRefreshFlags
-	console   input.Console
-	formatter output.Formatter
-	writer    io.Writer
+	azdCtx        *azdcontext.AzdContext
+	azCli         azcli.AzCli
+	flags         envRefreshFlags
+	console       input.Console
+	formatter     output.Formatter
+	writer        io.Writer
+	commandRunner exec.CommandRunner
 }
 
 func newEnvRefreshAction(
 	azdCtx *azdcontext.AzdContext,
 	azCli azcli.AzCli,
+	commandRunner exec.CommandRunner,
 	flags envRefreshFlags,
 	console input.Console,
 	formatter output.Formatter,
 	writer io.Writer,
 ) *envRefreshAction {
 	return &envRefreshAction{
-		azdCtx:    azdCtx,
-		azCli:     azCli,
-		flags:     flags,
-		console:   console,
-		formatter: formatter,
-		writer:    writer,
+		azdCtx:        azdCtx,
+		azCli:         azCli,
+		flags:         flags,
+		console:       console,
+		formatter:     formatter,
+		writer:        writer,
+		commandRunner: commandRunner,
 	}
 }
 
@@ -365,11 +354,7 @@ func (ef *envRefreshAction) Run(ctx context.Context) (*actions.ActionResult, err
 		return nil, err
 	}
 
-	if err := tools.EnsureInstalled(ctx, ef.azCli); err != nil {
-		return nil, err
-	}
-
-	env, ctx, err := loadOrInitEnvironment(ctx, &ef.flags.environmentName, ef.azdCtx, ef.console)
+	env, ctx, err := loadOrInitEnvironment(ctx, &ef.flags.environmentName, ef.azdCtx, ef.console, ef.azCli)
 	if err != nil {
 		return nil, fmt.Errorf("loading environment: %w", err)
 	}
@@ -379,12 +364,14 @@ func (ef *envRefreshAction) Run(ctx context.Context) (*actions.ActionResult, err
 		return nil, fmt.Errorf("loading project: %w", err)
 	}
 
-	infraManager, err := provisioning.NewManager(ctx, env, prj.Path, prj.Infra, !ef.flags.global.NoPrompt)
+	infraManager, err := provisioning.NewManager(
+		ctx, env, prj.Path, prj.Infra, !ef.flags.global.NoPrompt, ef.azCli, ef.console, ef.commandRunner,
+	)
 	if err != nil {
 		return nil, fmt.Errorf("creating provisioning manager: %w", err)
 	}
 
-	scope := infra.NewSubscriptionScope(ctx, env.GetLocation(), env.GetSubscriptionId(), env.GetEnvName())
+	scope := infra.NewSubscriptionScope(ef.azCli, env.GetLocation(), env.GetSubscriptionId(), env.GetEnvName())
 
 	getStateResult, err := infraManager.State(ctx, scope)
 	if err != nil {
@@ -404,7 +391,7 @@ func (ef *envRefreshAction) Run(ctx context.Context) (*actions.ActionResult, err
 		}
 	}
 
-	if err = prj.Initialize(ctx, env); err != nil {
+	if err = prj.Initialize(ctx, env, ef.commandRunner); err != nil {
 		return nil, err
 	}
 
@@ -478,16 +465,13 @@ func (eg *envGetValuesAction) Run(ctx context.Context) (*actions.ActionResult, e
 		return nil, err
 	}
 
-	if err := tools.EnsureInstalled(ctx, eg.azCli); err != nil {
-		return nil, err
-	}
-
 	//lint:ignore SA4006 // We want ctx overridden here for future changes
 	env, ctx, err := loadOrInitEnvironment( //nolint:ineffassign,staticcheck
 		ctx,
 		&eg.flags.environmentName,
 		eg.azdCtx,
 		eg.console,
+		eg.azCli,
 	)
 	if err != nil {
 		return nil, err

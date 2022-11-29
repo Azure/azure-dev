@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"regexp"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/joho/godotenv"
@@ -39,10 +40,14 @@ const ResourceGroupEnvVarName = "AZURE_RESOURCE_GROUP"
 type Environment struct {
 	// Values is a map of setting names to values.
 	Values map[string]string
-	// File is a path to the file that backs this environment. If empty, the Environment
+
+	// Config is environment specific config
+	Config config.Config
+
+	// File is a path to the directory that backs this environment. If empty, the Environment
 	// will not be persisted when `Save` is called. This allows the zero value to be used
 	// for testing.
-	File string
+	Root string
 }
 
 // Same restrictions as a deployment name (ref:
@@ -53,41 +58,51 @@ func IsValidEnvironmentName(name string) bool {
 	return environmentNameRegexp.MatchString(name)
 }
 
-// FromFile loads an environment from a file on disk. On error,
+// FromRoot loads an environment located in a directory. On error,
 // an valid empty environment file, configured to persist its contents
-// to file, is returned.
-func FromFile(file string) (*Environment, error) {
+// to this directory, is returned.
+func FromRoot(root string) (*Environment, error) {
 	env := &Environment{
-		File:   file,
-		Values: make(map[string]string),
+		Root: root,
 	}
 
-	e, err := godotenv.Read(file)
+	envPath := filepath.Join(root, azdcontext.DotEnvFileName)
+	e, err := godotenv.Read(envPath)
 	if err != nil {
-		env.Values = make(map[string]string)
-		return env, fmt.Errorf("can't read %s: %w", file, err)
+		return EmptyWithRoot(root), fmt.Errorf("loading .env: %w", err)
 	}
-
 	env.Values = e
+
+	cfgPath := filepath.Join(root, azdcontext.ConfigFileName)
+
+	cfgMgr := config.NewManager()
+	cfg, err := cfgMgr.Load(cfgPath)
+	if err != nil {
+		return EmptyWithRoot(root), fmt.Errorf("loading config: %w", err)
+	}
+	env.Config = cfg
+
 	return env, nil
 }
 
 func GetEnvironment(azdContext *azdcontext.AzdContext, name string) (*Environment, error) {
-	return FromFile(azdContext.GetEnvironmentFilePath(name))
+	return FromRoot(azdContext.EnvironmentRoot(name))
 }
 
-// EmptyWithFile returns an empty environment, which will be persisted
-// to a given file when saved.
-func EmptyWithFile(file string) *Environment {
+// EmptyWithRoot returns an empty environment, which will be persisted
+// to a given directory when saved.
+func EmptyWithRoot(root string) *Environment {
 	return &Environment{
-		File:   file,
+		Root:   root,
 		Values: make(map[string]string),
+		Config: config.NewConfig(nil),
 	}
 }
 
 func Ephemeral() *Environment {
 	return &Environment{
 		Values: make(map[string]string),
+		Config: config.NewConfig(nil),
 	}
 }
 
@@ -107,21 +122,28 @@ func EphemeralWithValues(name string, values map[string]string) *Environment {
 	return env
 }
 
-// If `File` is set, Save writes the current contents of the environment to
-// the given file, creating it and any intermediate directories as needed.
+// If `Root` is set, Save writes the current contents of the environment to
+// the given directory, creating it and any intermediate directories as needed.
 func (e *Environment) Save() error {
-	if e.File == "" {
+	if e.Root == "" {
 		return nil
 	}
 
-	err := os.MkdirAll(filepath.Dir(e.File), osutil.PermissionDirectory)
+	err := os.MkdirAll(e.Root, osutil.PermissionDirectory)
 	if err != nil {
 		return fmt.Errorf("failed to create a directory: %w", err)
 	}
 
-	err = godotenv.Write(e.Values, e.File)
+	err = godotenv.Write(e.Values, filepath.Join(e.Root, azdcontext.DotEnvFileName))
 	if err != nil {
-		return fmt.Errorf("can't write '%s': %w", e.File, err)
+		return fmt.Errorf("saving .env: %w", err)
+	}
+
+	cfgMgr := config.NewManager()
+
+	err = cfgMgr.Save(e.Config, filepath.Join(e.Root, azdcontext.ConfigFileName))
+	if err != nil {
+		return fmt.Errorf("saving config: %w", err)
 	}
 
 	return nil

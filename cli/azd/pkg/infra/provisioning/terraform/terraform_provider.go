@@ -23,10 +23,12 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	. "github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/terraform"
 )
 
@@ -60,9 +62,10 @@ func NewTerraformProvider(
 	env *environment.Environment,
 	projectPath string,
 	infraOptions Options,
+	console input.Console,
+	commandRunner exec.CommandRunner,
 ) *TerraformProvider {
-	terraformCli := terraform.GetTerraformCli(ctx)
-	console := input.GetConsole(ctx)
+	terraformCli := terraform.NewTerraformCli(commandRunner)
 
 	// Default to a module named "main" if not specified.
 	if strings.TrimSpace(infraOptions.Module) == "" {
@@ -662,8 +665,16 @@ func (t *TerraformProvider) isRemoteBackendConfig() (bool, error) {
 func init() {
 	err := RegisterProvider(
 		Terraform,
-		func(ctx context.Context, env *environment.Environment, projectPath string, options Options) (Provider, error) {
-			return NewTerraformProvider(ctx, env, projectPath, options), nil
+		func(
+			ctx context.Context,
+			env *environment.Environment,
+			projectPath string,
+			options Options,
+			console input.Console,
+			_ azcli.AzCli,
+			commandRunner exec.CommandRunner,
+		) (Provider, error) {
+			return NewTerraformProvider(ctx, env, projectPath, options, console, commandRunner), nil
 		},
 	)
 

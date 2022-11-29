@@ -11,7 +11,9 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
+	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 )
@@ -22,7 +24,11 @@ type NewProviderFn func(
 	ctx context.Context,
 	env *environment.Environment,
 	projectPath string,
-	infraOptions Options) (Provider, error)
+	infraOptions Options,
+	console input.Console,
+	cli azcli.AzCli,
+	commandRunner exec.CommandRunner,
+) (Provider, error)
 
 var (
 	providers map[ProviderKind]NewProviderFn = make(map[ProviderKind]NewProviderFn)
@@ -113,6 +119,9 @@ func RegisterProvider(kind ProviderKind, newFn NewProviderFn) error {
 
 func NewProvider(
 	ctx context.Context,
+	console input.Console,
+	azCli azcli.AzCli,
+	commandRunner exec.CommandRunner,
 	env *environment.Environment,
 	projectPath string,
 	infraOptions Options,
@@ -129,7 +138,7 @@ func NewProvider(
 		return nil, fmt.Errorf("provider '%s' is not supported", infraOptions.Provider)
 	}
 
-	provider, err := newProviderFn(ctx, env, projectPath, infraOptions)
+	provider, err := newProviderFn(ctx, env, projectPath, infraOptions, console, azCli, commandRunner)
 	if err != nil {
 		return nil, fmt.Errorf("error creating provider for type '%s' : %w", infraOptions.Provider, err)
 	}

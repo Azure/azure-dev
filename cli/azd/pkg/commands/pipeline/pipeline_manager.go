@@ -14,6 +14,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
+	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
@@ -51,17 +52,26 @@ type PipelineManager struct {
 	RootOptions *internal.GlobalCommandOptions
 	Environment *environment.Environment
 	PipelineManagerArgs
+	azCli         azcli.AzCli
+	commandRunner exec.CommandRunner
+	console       input.Console
 }
 
 func NewPipelineManager(
+	azCli azcli.AzCli,
 	azdCtx *azdcontext.AzdContext,
 	global *internal.GlobalCommandOptions,
+	commandRunner exec.CommandRunner,
+	console input.Console,
 	args PipelineManagerArgs,
 ) *PipelineManager {
 	return &PipelineManager{
 		AzdCtx:              azdCtx,
 		RootOptions:         global,
 		PipelineManagerArgs: args,
+		azCli:               azCli,
+		commandRunner:       commandRunner,
+		console:             console,
 	}
 }
 
@@ -86,11 +96,10 @@ func (i *PipelineManager) preConfigureCheck(ctx context.Context, infraOptions pr
 		)
 	}
 
-	console := input.GetConsole(ctx)
-	if err := i.CiProvider.preConfigureCheck(ctx, console, i.PipelineManagerArgs, infraOptions); err != nil {
+	if err := i.CiProvider.preConfigureCheck(ctx, i.console, i.PipelineManagerArgs, infraOptions); err != nil {
 		return fmt.Errorf("pre-config check error from %s provider: %w", i.CiProvider.name(), err)
 	}
-	if err := i.ScmProvider.preConfigureCheck(ctx, console, i.PipelineManagerArgs, infraOptions); err != nil {
+	if err := i.ScmProvider.preConfigureCheck(ctx, i.console, i.PipelineManagerArgs, infraOptions); err != nil {
 		return fmt.Errorf("pre-config check error from %s provider: %w", i.ScmProvider.name(), err)
 	}
 
@@ -103,7 +112,7 @@ func (i *PipelineManager) ensureRemote(
 	repositoryPath string,
 	remoteName string,
 ) (*gitRepositoryDetails, error) {
-	gitCli := git.NewGitCli(ctx)
+	gitCli := git.NewGitCli(i.commandRunner)
 	remoteUrl, err := gitCli.GetRemoteUrl(ctx, repositoryPath, remoteName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get remote url: %w", err)
@@ -120,15 +129,14 @@ func (i *PipelineManager) ensureRemote(
 
 // getGitRepoDetails get the details about a git project using the azd context to discover the project path.
 func (i *PipelineManager) getGitRepoDetails(ctx context.Context) (*gitRepositoryDetails, error) {
-	gitCli := git.NewGitCli(ctx)
-	console := input.GetConsole(ctx)
+	gitCli := git.NewGitCli(i.commandRunner)
 	repoPath := i.AzdCtx.ProjectDirectory()
 	for {
 		repoRemoteDetails, err := i.ensureRemote(ctx, repoPath, i.PipelineRemoteName)
 		switch {
 		case errors.Is(err, git.ErrNotRepository):
 			// Offer the user a chance to init a new repository if one does not exist.
-			initRepo, err := console.Confirm(ctx, input.ConsoleOptions{
+			initRepo, err := i.console.Confirm(ctx, input.ConsoleOptions{
 				Message:      "Initialize a new git repository?",
 				DefaultValue: true,
 			})
@@ -148,7 +156,7 @@ func (i *PipelineManager) getGitRepoDetails(ctx context.Context) (*gitRepository
 			continue
 		case errors.Is(err, git.ErrNoSuchRemote):
 			// Offer the user a chance to create the remote if one does not exist.
-			addRemote, err := console.Confirm(ctx, input.ConsoleOptions{
+			addRemote, err := i.console.Confirm(ctx, input.ConsoleOptions{
 				Message: fmt.Sprintf(
 					"A remote named \"%s\" was not found. Would you like to configure one?",
 					i.PipelineRemoteName,
@@ -164,7 +172,7 @@ func (i *PipelineManager) getGitRepoDetails(ctx context.Context) (*gitRepository
 			}
 
 			// the scm provider returns the repo url that is used as git remote
-			remoteUrl, err := i.ScmProvider.configureGitRemote(ctx, repoPath, i.PipelineRemoteName, console)
+			remoteUrl, err := i.ScmProvider.configureGitRemote(ctx, repoPath, i.PipelineRemoteName, i.console)
 			if err != nil {
 				return nil, err
 			}
@@ -186,24 +194,17 @@ func (i *PipelineManager) getGitRepoDetails(ctx context.Context) (*gitRepository
 // validateDependencyInjection panic if the manager did not received all the
 // mandatory dependencies to work
 func validateDependencyInjection(ctx context.Context, manager *PipelineManager) {
-	if manager.AzdCtx == nil {
-		log.Panic("missing azd context for pipeline manager")
-	}
 	if manager.ScmProvider == nil {
 		log.Panic("missing scm provider for pipeline manager")
 	}
 	if manager.CiProvider == nil {
 		log.Panic("missing CI provider for pipeline manager")
 	}
-	if input.GetConsole(ctx) == nil {
-		log.Panic("missing input console in the provided context")
-	}
 }
 
 // pushGitRepo commit all changes in the git project and push it to upstream.
 func (i *PipelineManager) pushGitRepo(ctx context.Context, currentBranch string) error {
-	gitCli := git.NewGitCli(ctx)
-	console := input.GetConsole(ctx)
+	gitCli := git.NewGitCli(i.commandRunner)
 
 	if err := gitCli.AddFile(ctx, i.AzdCtx.ProjectDirectory(), "."); err != nil {
 		return fmt.Errorf("adding files: %w", err)
@@ -213,7 +214,7 @@ func (i *PipelineManager) pushGitRepo(ctx context.Context, currentBranch string)
 		return fmt.Errorf("commit changes: %w", err)
 	}
 
-	console.Message(ctx, "Pushing changes")
+	i.console.Message(ctx, "Pushing changes")
 
 	// If user has a git credential manager with some cached credentials
 	// and the credentials are rotated, the push operation will fail and the credential manager would remove the cache
@@ -233,13 +234,8 @@ func (manager *PipelineManager) Configure(ctx context.Context) error {
 	// check that scm and ci providers are set
 	validateDependencyInjection(ctx, manager)
 
-	// after previous check, we know we can get the input console from the context
-	inputConsole := input.GetConsole(ctx)
-
 	// check all required tools are installed
-	azCli := azcli.GetAzCli(ctx)
 	requiredTools := manager.requiredTools(ctx)
-	requiredTools = append(requiredTools, azCli)
 	if err := tools.EnsureInstalled(ctx, requiredTools...); err != nil {
 		return err
 	}
@@ -263,7 +259,7 @@ func (manager *PipelineManager) Configure(ctx context.Context) error {
 		manager.PipelineServicePrincipalName = fmt.Sprintf("az-dev-%s", time.Now().UTC().Format("01-02-2006-15-04-05"))
 	}
 
-	inputConsole.Message(
+	manager.console.Message(
 		ctx,
 		fmt.Sprintf(
 			"Creating or updating service principal %s.\n",
@@ -271,7 +267,7 @@ func (manager *PipelineManager) Configure(ctx context.Context) error {
 		),
 	)
 
-	credentials, err := azCli.CreateOrUpdateServicePrincipal(
+	credentials, err := manager.azCli.CreateOrUpdateServicePrincipal(
 		ctx,
 		manager.Environment.GetSubscriptionId(),
 		manager.PipelineServicePrincipalName,
@@ -293,7 +289,7 @@ func (manager *PipelineManager) Configure(ctx context.Context) error {
 		prj.Infra,
 		credentials,
 		PipelineAuthType(manager.PipelineAuthTypeName),
-		inputConsole)
+		manager.console)
 	if err != nil {
 		return err
 	}
@@ -306,7 +302,7 @@ func (manager *PipelineManager) Configure(ctx context.Context) error {
 
 	// The CI pipeline should be set-up and ready at this point.
 	// azd offers to push changes to the scm to start a new pipeline run
-	doPush, err := inputConsole.Confirm(ctx, input.ConsoleOptions{
+	doPush, err := manager.console.Confirm(ctx, input.ConsoleOptions{
 		Message:      "Would you like to commit and push your local changes to start the configured CI pipeline?",
 		DefaultValue: true,
 	})
@@ -314,7 +310,7 @@ func (manager *PipelineManager) Configure(ctx context.Context) error {
 		return fmt.Errorf("prompting to push: %w", err)
 	}
 
-	currentBranch, err := git.NewGitCli(ctx).GetCurrentBranch(ctx, manager.AzdCtx.ProjectDirectory())
+	currentBranch, err := git.NewGitCli(manager.commandRunner).GetCurrentBranch(ctx, manager.AzdCtx.ProjectDirectory())
 	if err != nil {
 		return fmt.Errorf("getting current branch: %w", err)
 	}
@@ -328,7 +324,7 @@ func (manager *PipelineManager) Configure(ctx context.Context) error {
 			gitRepoInfo,
 			manager.PipelineRemoteName,
 			currentBranch,
-			inputConsole)
+			manager.console)
 		if err != nil {
 			return fmt.Errorf("check git push prevent: %w", err)
 		}
@@ -348,12 +344,12 @@ func (manager *PipelineManager) Configure(ctx context.Context) error {
 			gitRepoInfo,
 			manager.PipelineRemoteName,
 			currentBranch,
-			inputConsole)
+			manager.console)
 		if err != nil {
 			return fmt.Errorf("post git push hook: %w", err)
 		}
 	} else {
-		inputConsole.Message(ctx,
+		manager.console.Message(ctx,
 			fmt.Sprintf(
 				"To fully enable pipeline you need to push this repo to the upstream using 'git push --set-upstream %s %s'.\n",
 				manager.PipelineRemoteName,

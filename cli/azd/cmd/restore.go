@@ -10,10 +10,12 @@ import (
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
+	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/pkg/spin"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
@@ -54,16 +56,26 @@ For the best local run and debug experience, go to https://aka.ms/azure-dev/vsco
 }
 
 type restoreAction struct {
-	flags   restoreFlags
-	console input.Console
-	azdCtx  *azdcontext.AzdContext
+	flags         restoreFlags
+	console       input.Console
+	azCli         azcli.AzCli
+	azdCtx        *azdcontext.AzdContext
+	commandRunner exec.CommandRunner
 }
 
-func newRestoreAction(flags restoreFlags, console input.Console, azdCtx *azdcontext.AzdContext) *restoreAction {
+func newRestoreAction(
+	flags restoreFlags,
+	azCli azcli.AzCli,
+	console input.Console,
+	azdCtx *azdcontext.AzdContext,
+	commandRunner exec.CommandRunner,
+) *restoreAction {
 	return &restoreAction{
-		flags:   flags,
-		console: console,
-		azdCtx:  azdCtx,
+		flags:         flags,
+		console:       console,
+		azdCtx:        azdCtx,
+		azCli:         azCli,
+		commandRunner: commandRunner,
 	}
 }
 
@@ -72,7 +84,7 @@ func (r *restoreAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 		return nil, err
 	}
 
-	env, ctx, err := loadOrInitEnvironment(ctx, &r.flags.environmentName, r.azdCtx, r.console)
+	env, ctx, err := loadOrInitEnvironment(ctx, &r.flags.environmentName, r.azdCtx, r.console, r.azCli)
 	if err != nil {
 		return nil, fmt.Errorf("loading environment: %w", err)
 	}
@@ -95,7 +107,7 @@ func (r *restoreAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 	allTools := []tools.ExternalTool{}
 	for _, svc := range proj.Services {
 		if r.flags.serviceName == "" || r.flags.serviceName == svc.Name {
-			frameworkService, err := svc.GetFrameworkService(ctx, env)
+			frameworkService, err := svc.GetFrameworkService(ctx, env, r.commandRunner)
 			if err != nil {
 				return nil, fmt.Errorf("getting framework services: %w", err)
 			}
@@ -114,7 +126,7 @@ func (r *restoreAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 		}
 
 		installMsg := fmt.Sprintf("Installing dependencies for %s service...", svc.Name)
-		frameworkService, err := svc.GetFrameworkService(ctx, env)
+		frameworkService, err := svc.GetFrameworkService(ctx, env, r.commandRunner)
 		if err != nil {
 			return nil, fmt.Errorf("getting framework services: %w", err)
 		}

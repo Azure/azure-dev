@@ -9,12 +9,14 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
+	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 	"go.uber.org/multierr"
@@ -68,28 +70,34 @@ func infraCreateCmdDesign(rootOptions *internal.GlobalCommandOptions) (*cobra.Co
 }
 
 type infraCreateAction struct {
-	flags     infraCreateFlags
-	azdCtx    *azdcontext.AzdContext
-	formatter output.Formatter
-	writer    io.Writer
-	console   input.Console
+	flags         infraCreateFlags
+	azCli         azcli.AzCli
+	azdCtx        *azdcontext.AzdContext
+	formatter     output.Formatter
+	writer        io.Writer
+	console       input.Console
+	commandRunner exec.CommandRunner
 	// If set, redirects the final command printout to the channel
 	finalOutputRedirect *[]string
 }
 
 func newInfraCreateAction(
 	f infraCreateFlags,
+	azCli azcli.AzCli,
 	azdCtx *azdcontext.AzdContext,
 	console input.Console,
 	formatter output.Formatter,
 	writer io.Writer,
+	commandRunner exec.CommandRunner,
 ) *infraCreateAction {
 	return &infraCreateAction{
 		flags:               f,
+		azCli:               azCli,
 		azdCtx:              azdCtx,
 		formatter:           formatter,
 		writer:              writer,
 		console:             console,
+		commandRunner:       commandRunner,
 		finalOutputRedirect: nil,
 	}
 }
@@ -105,7 +113,7 @@ func (i *infraCreateAction) Run(ctx context.Context) (*actions.ActionResult, err
 		TitleNote: "Provisioning Azure resources can take some time"},
 	)
 
-	env, ctx, err := loadOrInitEnvironment(ctx, &i.flags.environmentName, i.azdCtx, i.console)
+	env, ctx, err := loadOrInitEnvironment(ctx, &i.flags.environmentName, i.azdCtx, i.console, i.azCli)
 	if err != nil {
 		return nil, fmt.Errorf("loading environment: %w", err)
 	}
@@ -115,11 +123,13 @@ func (i *infraCreateAction) Run(ctx context.Context) (*actions.ActionResult, err
 		return nil, fmt.Errorf("loading project: %w", err)
 	}
 
-	if err = prj.Initialize(ctx, env); err != nil {
+	if err = prj.Initialize(ctx, env, i.commandRunner); err != nil {
 		return nil, err
 	}
 
-	infraManager, err := provisioning.NewManager(ctx, env, prj.Path, prj.Infra, i.console.IsUnformatted())
+	infraManager, err := provisioning.NewManager(
+		ctx, env, prj.Path, prj.Infra, i.console.IsUnformatted(), i.azCli, i.console, i.commandRunner,
+	)
 	if err != nil {
 		return nil, fmt.Errorf("creating provisioning manager: %w", err)
 	}
@@ -129,7 +139,9 @@ func (i *infraCreateAction) Run(ctx context.Context) (*actions.ActionResult, err
 		return nil, fmt.Errorf("planning deployment: %w", err)
 	}
 
-	provisioningScope := infra.NewSubscriptionScope(ctx, env.GetLocation(), env.GetSubscriptionId(), env.GetEnvName())
+	provisioningScope := infra.NewSubscriptionScope(
+		i.azCli, env.GetLocation(), env.GetSubscriptionId(), env.GetEnvName(),
+	)
 	deployResult, err := infraManager.Deploy(ctx, deploymentPlan, provisioningScope)
 
 	if err != nil {
@@ -164,7 +176,7 @@ func (i *infraCreateAction) Run(ctx context.Context) (*actions.ActionResult, err
 
 	// TO BE MOVED TO DEPLOY OUTPUT
 	// if i.formatter.Kind() != output.JsonFormat {
-	// 	resourceGroupName, err := project.GetResourceGroupName(ctx, prj, env)
+	// 	resourceGroupName, err := project.GetResourceGroupName(ctx, i.azCli, prj, env)
 	// 	if err == nil { // Presentation only -- skip print if we failed to resolve the resource group
 	// 		i.displayResourceGroupCreatedMessage(ctx, i.console, env.GetSubscriptionId(), resourceGroupName)
 	// 	}

@@ -71,6 +71,7 @@ func createAndInitEnvironment(
 	envSpec *environmentSpec,
 	azdCtx *azdcontext.AzdContext,
 	console input.Console,
+	azCli azcli.AzCli,
 ) (*environment.Environment, context.Context, error) {
 	if envSpec.environmentName != "" && !environment.IsValidEnvironmentName(envSpec.environmentName) {
 		errMsg := invalidEnvironmentNameMsg(envSpec.environmentName)
@@ -92,7 +93,7 @@ func createAndInitEnvironment(
 		return nil, nil, fmt.Errorf("environment '%s' already exists", envSpec.environmentName)
 	}
 
-	if err := ensureEnvironmentInitialized(ctx, *envSpec, env, console); err != nil {
+	if err := ensureEnvironmentInitialized(ctx, *envSpec, env, console, azCli); err != nil {
 		return nil, nil, fmt.Errorf("initializing environment: %w", err)
 	}
 
@@ -104,6 +105,7 @@ func loadOrInitEnvironment(
 	environmentName *string,
 	azdCtx *azdcontext.AzdContext,
 	console input.Console,
+	azCli azcli.AzCli,
 ) (*environment.Environment, context.Context, error) {
 	loadOrCreateEnvironment := func() (*environment.Environment, bool, error) {
 		// If there's a default environment, use that
@@ -155,7 +157,7 @@ func loadOrInitEnvironment(
 			return nil, false, err
 		}
 
-		return environment.EmptyWithFile(azdCtx.GetEnvironmentFilePath(*environmentName)), true, nil
+		return environment.EmptyWithRoot(azdCtx.EnvironmentRoot(*environmentName)), true, nil
 	}
 
 	env, isNew, err := loadOrCreateEnvironment()
@@ -170,7 +172,8 @@ func loadOrInitEnvironment(
 		ctx,
 		environmentSpec{environmentName: *environmentName},
 		env,
-		console); err != nil {
+		console,
+		azCli); err != nil {
 		return nil, nil, fmt.Errorf("initializing environment: %w", err)
 	}
 
@@ -192,6 +195,7 @@ func ensureEnvironmentInitialized(
 	envSpec environmentSpec,
 	env *environment.Environment,
 	console input.Console,
+	azCli azcli.AzCli,
 ) error {
 	if env.Values == nil {
 		env.Values = make(map[string]string)
@@ -218,7 +222,7 @@ func ensureEnvironmentInitialized(
 	if !hasSubID && envSpec.subscription != "" {
 		env.SetSubscriptionId(envSpec.subscription)
 	} else {
-		subscriptionOptions, defaultSubscription, err := getSubscriptionOptions(ctx)
+		subscriptionOptions, defaultSubscription, err := getSubscriptionOptions(ctx, azCli)
 		if err != nil {
 			return err
 		}
@@ -257,7 +261,7 @@ func ensureEnvironmentInitialized(
 	if !hasLocation && envSpec.location != "" {
 		env.SetLocation(envSpec.location)
 	} else {
-		location, err := azureutil.PromptLocation(ctx, env, "Please select an Azure location to use:")
+		location, err := azureutil.PromptLocation(ctx, env, "Please select an Azure location to use:", console, azCli)
 		if err != nil {
 			return fmt.Errorf("prompting for location: %w", err)
 		}
@@ -265,7 +269,7 @@ func ensureEnvironmentInitialized(
 	}
 
 	if !hasPrincipalID {
-		principalID, err := azureutil.GetCurrentPrincipalId(ctx)
+		principalID, err := azureutil.GetCurrentPrincipalId(ctx, azCli)
 		if err != nil {
 			return fmt.Errorf("fetching current user information: %w", err)
 		}
@@ -279,8 +283,8 @@ func ensureEnvironmentInitialized(
 	return nil
 }
 
-func getSubscriptionOptions(ctx context.Context) ([]string, any, error) {
-	accountManager, err := account.NewManager(config.GetConfigManager(ctx), azcli.GetAzCli(ctx))
+func getSubscriptionOptions(ctx context.Context, azCli azcli.AzCli) ([]string, any, error) {
+	accountManager, err := account.NewManager(config.GetConfigManager(ctx), azCli)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed creating account manager: %w", err)
 	}

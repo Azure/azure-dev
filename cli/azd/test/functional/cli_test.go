@@ -28,15 +28,14 @@ import (
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
-	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/telemetry"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
-	"github.com/azure/azure-dev/cli/azd/pkg/identity"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/test/azdcli"
 	"github.com/joho/godotenv"
 	"github.com/sethvargo/go-retry"
@@ -135,8 +134,8 @@ func Test_CLI_InfraCreateAndDelete(t *testing.T) {
 	_, err = cli.RunCommand(ctx, "infra", "create")
 	require.NoError(t, err)
 
-	envFilePath := filepath.Join(dir, azdcontext.EnvironmentDirectoryName, envName, ".env")
-	env, err := environment.FromFile(envFilePath)
+	envPath := filepath.Join(dir, azdcontext.EnvironmentDirectoryName, envName)
+	env, err := environment.FromRoot(envPath)
 	require.NoError(t, err)
 
 	// AZURE_STORAGE_ACCOUNT_NAME is an output of the template, make sure it was added to the .env file.
@@ -145,18 +144,16 @@ func Test_CLI_InfraCreateAndDelete(t *testing.T) {
 	require.True(t, ok)
 	require.Regexp(t, `st\S*`, accountName)
 
-	// NewAzureResourceManager needs a command runner right now (since it can call the AZ CLI)
-	ctx = exec.WithCommandRunner(ctx, exec.NewCommandRunner(os.Stdin, os.Stdout, os.Stderr))
-
 	// GetResourceGroupsForEnvironment requires a credential since it is using the SDK now
 	cred, err := azidentity.NewAzureCLICredential(nil)
 	if err != nil {
 		t.Fatal("could not create credential")
 	}
-	ctx = identity.WithCredentials(ctx, cred)
+
+	azCli := azcli.NewAzCli(cred, azcli.NewAzCliArgs{})
 
 	// Verify that resource groups are created with tag
-	resourceManager := infra.NewAzureResourceManager(ctx)
+	resourceManager := infra.NewAzureResourceManager(azCli)
 	rgs, err := resourceManager.GetResourceGroupsForEnvironment(ctx, env)
 	require.NoError(t, err)
 	require.NotNil(t, rgs)
@@ -191,8 +188,8 @@ func Test_CLI_InfraCreateAndDeleteUpperCase(t *testing.T) {
 	_, err = cli.RunCommand(ctx, "infra", "create")
 	require.NoError(t, err)
 
-	envFilePath := filepath.Join(dir, azdcontext.EnvironmentDirectoryName, envName, ".env")
-	env, err := environment.FromFile(envFilePath)
+	envPath := filepath.Join(dir, azdcontext.EnvironmentDirectoryName, envName)
+	env, err := environment.FromRoot(envPath)
 	require.NoError(t, err)
 
 	// AZURE_STORAGE_ACCOUNT_NAME is an output of the template, make sure it was added to the .env file.
@@ -201,18 +198,16 @@ func Test_CLI_InfraCreateAndDeleteUpperCase(t *testing.T) {
 	require.True(t, ok)
 	require.Regexp(t, `st\S*`, accountName)
 
-	// NewAzureResourceManager needs a command runner right now (since it can call the AZ CLI)
-	ctx = exec.WithCommandRunner(ctx, exec.NewCommandRunner(os.Stdin, os.Stdout, os.Stderr))
-
 	// GetResourceGroupsForEnvironment requires a credential since it is using the SDK now
 	cred, err := azidentity.NewAzureCLICredential(nil)
 	if err != nil {
 		t.Fatal("could not create credential")
 	}
-	ctx = identity.WithCredentials(ctx, cred)
+
+	azCli := azcli.NewAzCli(cred, azcli.NewAzCliArgs{})
 
 	// Verify that resource groups are created with tag
-	resourceManager := infra.NewAzureResourceManager(ctx)
+	resourceManager := infra.NewAzureResourceManager(azCli)
 	rgs, err := resourceManager.GetResourceGroupsForEnvironment(ctx, env)
 	require.NoError(t, err)
 	require.NotNil(t, rgs)
@@ -609,7 +604,6 @@ func getTestEnvPath(dir string, envName string) string {
 // respects the deadline.
 func newTestContext(t *testing.T) (context.Context, context.CancelFunc) {
 	ctx := context.Background()
-	ctx = internal.WithCommandOptions(ctx, internal.GlobalCommandOptions{})
 
 	if deadline, ok := t.Deadline(); ok {
 		return context.WithDeadline(ctx, deadline)

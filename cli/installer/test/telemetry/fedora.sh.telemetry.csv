@@ -1,4 +1,4 @@
 os,fedora
 osVersion,37
-isWsl,true
+isWsl,false
 terminal,bash

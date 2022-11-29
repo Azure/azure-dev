@@ -77,13 +77,11 @@ func newCommandRunnerFromConsole(console input.Console) exec.CommandRunner {
 
 func newAzCliFromOptions(
 	rootOptions *internal.GlobalCommandOptions,
-	cmdRun exec.CommandRunner,
 	credential azcore.TokenCredential,
 ) azcli.AzCli {
 	return azcli.NewAzCli(credential, azcli.NewAzCliArgs{
 		EnableDebug:     rootOptions.EnableDebugLogging,
 		EnableTelemetry: rootOptions.EnableTelemetry,
-		CommandRunner:   cmdRun,
 		HttpClient:      nil,
 	})
 }
@@ -134,7 +132,7 @@ var AzCliSet = wire.NewSet(
 var InitCmdSet = wire.NewSet(
 	CommonSet,
 	AzCliSet,
-	git.NewGitCliFromRunner,
+	git.NewGitCli,
 	newInitAction,
 	wire.Bind(new(actions.Action), new(*initAction)))
 
@@ -159,7 +157,7 @@ var DeployCmdSet = wire.NewSet(
 var UpCmdSet = wire.NewSet(
 	CommonSet,
 	AzCliSet,
-	git.NewGitCliFromRunner,
+	git.NewGitCli,
 	newInitAction,
 	newInfraCreateAction,
 	newDeployAction,
@@ -227,11 +225,13 @@ var PipelineConfigCmdSet = wire.NewSet(
 
 var RestoreCmdSet = wire.NewSet(
 	CommonSet,
+	AzCliSet,
 	newRestoreAction,
 	wire.Bind(new(actions.Action), new(*restoreAction)))
 
 var ShowCmdSet = wire.NewSet(
 	CommonSet,
+	AzCliSet,
 	newShowAction,
 	wire.Bind(new(actions.Action), new(*showAction)))
 

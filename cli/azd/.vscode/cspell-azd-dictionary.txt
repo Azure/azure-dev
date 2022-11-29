@@ -50,6 +50,8 @@ javac
 jmes
 keychain
 ldflags
+mockarmresources
+mockazcli
 mgmt
 mgutz
 mvnw

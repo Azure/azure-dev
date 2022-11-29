@@ -6,12 +6,13 @@ package cmd
 import (
 	"context"
 	"fmt"
-	"log"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/commands/pipeline"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
+	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/spf13/cobra"
@@ -82,25 +83,33 @@ For more information, go to https://aka.ms/azure-dev/pipeline.`,
 
 // pipelineConfigAction defines the action for pipeline config command
 type pipelineConfigAction struct {
-	flags   pipelineConfigFlags
-	manager *pipeline.PipelineManager
-	azdCtx  *azdcontext.AzdContext
-	console input.Console
-	azCli   azcli.AzCli
+	flags         pipelineConfigFlags
+	manager       *pipeline.PipelineManager
+	azCli         azcli.AzCli
+	azdCtx        *azdcontext.AzdContext
+	console       input.Console
+	credential    azcore.TokenCredential
+	commandRunner exec.CommandRunner
 }
 
 func newPipelineConfigAction(
+	azCli azcli.AzCli,
+	credential azcore.TokenCredential,
 	azdCtx *azdcontext.AzdContext,
 	console input.Console,
 	flags pipelineConfigFlags,
-	azCli azcli.AzCli,
+	commandRunner exec.CommandRunner,
 ) *pipelineConfigAction {
 	pca := &pipelineConfigAction{
-		flags:   flags,
-		manager: pipeline.NewPipelineManager(azdCtx, flags.global, flags.PipelineManagerArgs),
-		azdCtx:  azdCtx,
-		console: console,
-		azCli:   azCli,
+		flags:      flags,
+		azCli:      azCli,
+		credential: credential,
+		manager: pipeline.NewPipelineManager(
+			azCli, azdCtx, flags.global, commandRunner, console, flags.PipelineManagerArgs,
+		),
+		azdCtx:        azdCtx,
+		console:       console,
+		commandRunner: commandRunner,
 	}
 
 	return pca
@@ -112,13 +121,7 @@ func (p *pipelineConfigAction) Run(ctx context.Context) (*actions.ActionResult, 
 		return nil, err
 	}
 
-	// Read or init env
-	console := input.GetConsole(ctx)
-	if console == nil {
-		log.Panic("missing input console in the provided context")
-	}
-
-	env, ctx, err := loadOrInitEnvironment(ctx, &p.flags.environmentName, p.azdCtx, console)
+	env, ctx, err := loadOrInitEnvironment(ctx, &p.flags.environmentName, p.azdCtx, p.console, p.azCli)
 	if err != nil {
 		return nil, fmt.Errorf("loading environment: %w", err)
 	}
@@ -126,7 +129,9 @@ func (p *pipelineConfigAction) Run(ctx context.Context) (*actions.ActionResult, 
 	// Detect the SCM and CI providers based on the project directory
 	p.manager.ScmProvider,
 		p.manager.CiProvider,
-		err = pipeline.DetectProviders(ctx, p.azdCtx, env, p.manager.PipelineProvider)
+		err = pipeline.DetectProviders(
+		ctx, p.azdCtx, env, p.manager.PipelineProvider, p.console, p.credential, p.commandRunner,
+	)
 	if err != nil {
 		return nil, err
 	}

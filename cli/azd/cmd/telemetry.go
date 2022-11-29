@@ -6,7 +6,6 @@ package cmd
 import (
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/telemetry"
-	"github.com/azure/azure-dev/cli/azd/pkg/commands"
 	"github.com/spf13/cobra"
 )
 
@@ -38,9 +37,6 @@ func uploadCmd(rootOptions *internal.GlobalCommandOptions) *cobra.Command {
 			}
 
 			return telemetrySystem.RunBackgroundUpload(cmd.Context(), rootOptions.EnableDebugLogging)
-		},
-		Annotations: map[string]string{
-			commands.RequireNoLoginAnnotation: "true",
 		},
 	}
 	return cmd

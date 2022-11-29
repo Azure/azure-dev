@@ -15,7 +15,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/auth"
-	"github.com/azure/azure-dev/cli/azd/pkg/commands"
 	"github.com/azure/azure-dev/cli/azd/pkg/contracts"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
@@ -119,9 +118,6 @@ func loginCmdDesign(global *internal.GlobalCommandOptions) (*cobra.Command, *log
 
 		To log in as a service principal, pass --client-id and --tenant-id as well as one of --client-secret, 
 		--client-certificate, --client-credential or --client-credential-provider.`),
-		Annotations: map[string]string{
-			commands.RequireNoLoginAnnotation: "true",
-		},
 	}
 
 	flags := &loginFlags{}
@@ -152,16 +148,6 @@ func newLoginAction(
 		flags:       flags,
 	}
 }
-
-const (
-	// CodespacesEnvVarName is the name of the env variable set when you're in a Github codespace. It's
-	// just set to 'true'.
-	CodespacesEnvVarName = "CODESPACES"
-
-	// RemoteContainersEnvVarName is the name of the env variable set when you're in a remote container. It's
-	// just set to 'true'.
-	RemoteContainersEnvVarName = "REMOTE_CONTAINERS"
-)
 
 func (la *loginAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	if !la.flags.onlyCheckStatus {
@@ -294,10 +280,7 @@ func (la *loginAction) login(ctx context.Context) error {
 		return nil
 	}
 
-	useDeviceCode := la.flags.useDeviceCode || os.Getenv(CodespacesEnvVarName) == "true" ||
-		os.Getenv(RemoteContainersEnvVarName) == "true"
-
-	if useDeviceCode {
+	if la.flags.useDeviceCode {
 		if _, err := la.authManager.LoginWithDeviceCode(ctx, la.writer); err != nil {
 			return fmt.Errorf("logging in: %w", err)
 		}

@@ -12,6 +12,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azureutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
@@ -228,6 +229,8 @@ func (m *Manager) ensureLocation(ctx context.Context, deployment *Deployment) (s
 			ctx,
 			m.env,
 			"Please select an Azure location to use to store deployment metadata:",
+			m.console,
+			m.azCli,
 		)
 		if err != nil {
 			return "", fmt.Errorf("prompting for deployment metadata region: %w", err)
@@ -290,8 +293,11 @@ func NewManager(
 	projectPath string,
 	infraOptions Options,
 	interactive bool,
+	azCli azcli.AzCli,
+	console input.Console,
+	commandRunner exec.CommandRunner,
 ) (*Manager, error) {
-	infraProvider, err := NewProvider(ctx, env, projectPath, infraOptions)
+	infraProvider, err := NewProvider(ctx, console, azCli, commandRunner, env, projectPath, infraOptions)
 	if err != nil {
 		return nil, fmt.Errorf("error creating infra provider: %w", err)
 	}
@@ -300,9 +306,6 @@ func NewManager(
 	if err := tools.EnsureInstalled(ctx, requiredTools...); err != nil {
 		return nil, err
 	}
-
-	azCli := azcli.GetAzCli(ctx)
-	console := input.GetConsole(ctx)
 
 	return &Manager{
 		azCli:       azCli,

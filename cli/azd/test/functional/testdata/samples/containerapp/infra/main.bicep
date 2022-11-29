@@ -12,7 +12,7 @@ param location string
 param deleteAfterTime string = dateTimeAdd(utcNow('o'), 'PT1H')
 
 @description('If true, a dummy container app instance is created during infrastructure provisioning. Otherwise, the container app instance is created during deploy.')
-param preprovisionContainerApp bool
+param provisionContainerApp string = 'false'
 
 var tags = { 'azd-env-name': environmentName, DeleteAfter: deleteAfterTime }
 
@@ -22,8 +22,8 @@ resource rg 'Microsoft.Resources/resourceGroups@2021-04-01' = {
   tags: tags
 }
 
-module cr 'container-registry.bicep' = {
-  name: 'container-registry'
+module resources 'resources.bicep' = {
+  name: 'resources'
   scope: rg
   params: {
     environmentName: environmentName
@@ -32,16 +32,19 @@ module cr 'container-registry.bicep' = {
 }
 
 
-module api './api.bicep' = if(preprovisionContainerApp) {
+module api 'api.bicep' = if(provisionContainerApp == 'true') {
   name: 'api'
   scope: rg
   params: {
-    containerRegistryName: cr.outputs.containerRegistryName
+    containerRegistryName: resources.outputs.containerRegistryName
+    containerAppsEnvironmentName: resources.outputs.containerAppsEnvironmentName
     environmentName: environmentName
     location: location
     imageName: 'nginx:latest'
   }
-  dependsOn: [cr]
+  dependsOn: [resources]
 }
 
-output AZURE_CONTAINER_REGISTRY_NAME string = cr.outputs.containerRegistryName
+output AZURE_CONTAINER_REGISTRY_NAME string = resources.outputs.containerRegistryName
+output AZURE_CONTAINER_ENVIRONMENT_NAME string = resources.outputs.containerAppsEnvironmentName
+output AZURE_CONTAINER_REGISTRY_ENDPOINT string = resources.outputs.containerRegistryloginServer

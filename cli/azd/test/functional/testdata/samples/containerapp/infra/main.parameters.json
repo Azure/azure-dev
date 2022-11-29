@@ -8,8 +8,8 @@
     "location": {
       "value": "${AZURE_LOCATION}"
     },
-    "preprovisionContainerApp": {
-      "value": "${AZURE_PREPROVISION_CONTAINER_APP}"
+    "provisionContainerApp": {
+      "value": "${AZURE_PROVISION_CONTAINER_APP}"
     }
   }
 }

@@ -122,7 +122,7 @@ func (h *CommandHooks) execScript(ctx context.Context, scriptConfig *ScriptConfi
 		}
 	}()
 
-	script, err := getScript(h.commandRunner, scriptConfig, h.cwd, h.envVars)
+	script, err := h.GetScript(scriptConfig)
 	if err != nil {
 		return err
 	}
@@ -149,12 +149,7 @@ func (h *CommandHooks) execScript(ctx context.Context, scriptConfig *ScriptConfi
 	return nil
 }
 
-func getScript(
-	commandRunner exec.CommandRunner,
-	scriptConfig *ScriptConfig,
-	cwd string,
-	envVars []string,
-) (tools.Script, error) {
+func (h *CommandHooks) GetScript(scriptConfig *ScriptConfig) (tools.Script, error) {
 	if scriptConfig.Location == "" {
 		if scriptConfig.Path != "" {
 			scriptConfig.Location = ScriptLocationPath
@@ -189,9 +184,9 @@ func getScript(
 
 	switch scriptConfig.Type {
 	case ScriptTypeBash:
-		return bash.NewBashScript(commandRunner, cwd, envVars), nil
+		return bash.NewBashScript(h.commandRunner, h.cwd, h.envVars), nil
 	case ScriptTypePowershell:
-		return powershell.NewPowershellScript(commandRunner, cwd, envVars), nil
+		return powershell.NewPowershellScript(h.commandRunner, h.cwd, h.envVars), nil
 	default:
 		return nil, fmt.Errorf(
 			"script type '%s' is not a valid option. Only Bash and powershell scripts are supported",

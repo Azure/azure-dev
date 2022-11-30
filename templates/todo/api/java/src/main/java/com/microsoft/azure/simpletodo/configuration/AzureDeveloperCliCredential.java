@@ -52,7 +52,7 @@ public class AzureDeveloperCliCredential implements TokenCredential {
     private static final String DEFAULT_MAC_LINUX_PATH = "/bin/";
     private static final String WINDOWS_PROCESS_ERROR_MESSAGE = "'azd' is not recognized";
     private static final Pattern LINUX_MAC_PROCESS_ERROR_MESSAGE = Pattern.compile("(.*)azd:(.*)not found");
-    private static final Pattern ACCESS_TOKEN_PATTERN = Pattern.compile("\"accessToken\": \"(.*?)(\"|$)");
+    private static final Pattern ACCESS_TOKEN_PATTERN = Pattern.compile("\"token\": \"(.*?)(\"|$)");
     private static final SerializerAdapter SERIALIZER_ADAPTER = JacksonAdapter.createDefaultSerializerAdapter();
 
     /**

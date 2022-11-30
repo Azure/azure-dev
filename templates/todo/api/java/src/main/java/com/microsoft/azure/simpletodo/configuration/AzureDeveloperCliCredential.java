@@ -72,7 +72,7 @@ public class AzureDeveloperCliCredential implements TokenCredential {
     private Mono<AccessToken> authenticateWithAzureCli(TokenRequestContext request) {
         StringBuilder azCommand = new StringBuilder("azd auth token --output json --scope ");
 
-        String scopes = ScopeUtil.scopesToResource(request.getScopes());
+        var scopes = String.join(" ", request.getScopes());
 
         try {
             ScopeUtil.validateScope(scopes);
@@ -80,7 +80,7 @@ public class AzureDeveloperCliCredential implements TokenCredential {
             return Mono.error(LOGGER.logExceptionAsError(ex));
         }
 
-        azCommand.append(scopes + "/.default");
+        azCommand.append(scopes);
 
         AccessToken token;
         try {

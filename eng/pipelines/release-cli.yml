@@ -901,7 +901,7 @@ stages:
 
               ### MSI 
 
-              $msiReleaseUrl
+              * $msiReleaseUrl
 
               ### Container
               ``````

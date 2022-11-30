@@ -423,18 +423,16 @@ stages:
               /p:RunWixToolsOutOfProc=true
               /p:Configuration=Release
 
-        # TODO: Uncomment before merge
-        # - ${{ if in(variables['Build.Reason'], 'IndividualCI', 'BatchedCI', 'Manual') }}:
+        - ${{ if in(variables['Build.Reason'], 'IndividualCI', 'BatchedCI', 'Manual') }}:
         # TODO: Update ref to appropriate tag before merging
-        - template: pipelines/steps/azd-cli-win-signing.yml@azure-sdk-build-tools
-          parameters:
-            WinPath:  cli/installer/windows/bin/Release
-            WinPattern: '*.msi'
+          - template: pipelines/steps/azd-cli-win-signing.yml@azure-sdk-build-tools
+            parameters:
+              WinPath:  cli/installer/windows/bin/Release
+              WinPattern: '*.msi'
 
-        # TODO: Uncomment before merge
-        # - ${{ else }}:
-        #   - pwsh: Write-Host "Skipping signing. Build reason - $(Build.Reason)"
-        #     displayName: Signing process skipped for non-release build
+        - ${{ else }}:
+          - pwsh: Write-Host "Skipping signing. Build reason - $(Build.Reason)"
+            displayName: Signing process skipped for non-release build
 
         - pwsh: Copy-Item cli/installer/windows/bin/Release/* signed-win/
           displayName: Copy MSI for publishing

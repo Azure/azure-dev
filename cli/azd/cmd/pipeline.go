@@ -44,8 +44,8 @@ func (pc *pipelineConfigFlags) Bind(local *pflag.FlagSet, global *internal.Globa
 		"",
 		"The authentication type used between the pipeline provider and Azure for deployment (Only valid for GitHub provider)",
 	)
-	local.StringVar(&pc.PipelineRoleName, "principal-role", "Contributor", "The role to assign to the service principal.")
-	local.StringVar(&pc.PipelineProvider, "provider", "",
+	local.StringVar(&pc.PipelineRoleName, "principal-role", "contributor", "The role to assign to the service principal.")
+	local.StringVar(&pc.PipelineProvider, "provider", "github",
 		"The pipeline provider to use (github for Github Actions and azdo for Azure Pipelines).")
 	pc.envFlag.Bind(local, global)
 	pc.global = global

@@ -175,9 +175,9 @@ public class AzureDeveloperCliCredential implements TokenCredential {
             String time = objectMap.get("expiresOn");
             // az expiresOn format = "2022-11-30 02:38:42.000000" vs
             // azd expiresOn format = "2022-11-30T02:05:08Z"
-            String standartTime = time.substring(0, time.indexOf("Z"));
+            String standardTime = time.substring(0, time.indexOf("Z"));
             OffsetDateTime expiresOn = LocalDateTime
-                .parse(standartTime, DateTimeFormatter.ISO_LOCAL_DATE_TIME)
+                .parse(standardTime, DateTimeFormatter.ISO_LOCAL_DATE_TIME)
                 .atZone(ZoneId.systemDefault())
                 .toOffsetDateTime()
                 .withOffsetSameInstant(ZoneOffset.UTC);

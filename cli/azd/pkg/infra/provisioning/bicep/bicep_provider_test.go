@@ -165,6 +165,101 @@ func TestBicepPlanPrompt(t *testing.T) {
 	require.Equal(t, float64(30), bicepDetails.Parameters["requiredIntWithAllowedValues"].Value)
 }
 
+//go:generate bicep build testdata/ranges.bicep --outfile testdata/ranges.json
+//go:embed testdata/ranges.json
+var rangesArmJson []byte
+
+func TestBicepPlanPromptRanges(t *testing.T) {
+	progressLog := []string{}
+	interactiveLog := []bool{}
+	progressDone := make(chan bool)
+
+	mockContext := mocks.NewMockContext(context.Background())
+
+	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
+		return strings.Contains(args.Cmd, "bicep") && args.Args[0] == "--version"
+	}).Respond(exec.RunResult{
+		Stdout: "Bicep CLI version 0.12.40 (41892bd0fb)",
+		Stderr: "",
+	})
+
+	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
+		return strings.Contains(args.Cmd, "bicep") && args.Args[0] == "build"
+	}).Respond(exec.RunResult{
+		Stdout: string(rangesArmJson),
+		Stderr: "",
+	})
+
+	mockContext.Console.WhenConfirm(func(options input.ConsoleOptions) bool {
+		return strings.Contains(options.Message, "Save the value in the environment for future use")
+	}).Respond(false)
+
+	for _, cc := range []struct {
+		name      string
+		responses []string
+	}{
+		{"requiredIntWithMin", []string{"0", "1"}},
+		{"requiredIntWithMax", []string{"11", "10"}},
+		{"requiredIntWithRange", []string{"0", "11", "5"}},
+		{"requiredStringWithMin", []string{"", "ok"}},
+		{"requiredStringWithMax", []string{"this string is very long and will be rejected", "ok"}},
+		{"requiredStringWithRange", []string{"", "this string is very long and will be rejected", "ok"}},
+	} {
+		resp := cc
+
+		mockContext.Console.WhenPrompt(func(options input.ConsoleOptions) bool {
+			targetMessage := fmt.Sprintf("for the '%s' infrastructure parameter", resp.name)
+			return strings.Contains(options.Message, targetMessage) && len(resp.responses) > 0
+		}).RespondFn(func(options input.ConsoleOptions) (any, error) {
+			ret := resp.responses[0]
+			resp.responses = resp.responses[1:]
+			return ret, nil
+		})
+	}
+
+	infraProvider := createBicepProvider(t, mockContext)
+	planningTask := infraProvider.Plan(*mockContext.Context)
+
+	go func() {
+		for progressReport := range planningTask.Progress() {
+			progressLog = append(progressLog, progressReport.Message)
+		}
+		progressDone <- true
+	}()
+
+	go func() {
+		for planningInteractive := range planningTask.Interactive() {
+			interactiveLog = append(interactiveLog, planningInteractive)
+		}
+	}()
+
+	plan, err := planningTask.Await()
+	<-progressDone
+
+	require.NoError(t, err)
+
+	bicepDetails := plan.Details.(BicepDeploymentDetails)
+
+	require.Equal(t, "ok", bicepDetails.Parameters["requiredStringWithMin"].Value)
+	require.Equal(t, "ok", bicepDetails.Parameters["requiredStringWithMax"].Value)
+	require.Equal(t, "ok", bicepDetails.Parameters["requiredStringWithRange"].Value)
+	require.Equal(t, 1, bicepDetails.Parameters["requiredIntWithMin"].Value)
+	require.Equal(t, 10, bicepDetails.Parameters["requiredIntWithMax"].Value)
+	require.Equal(t, 5, bicepDetails.Parameters["requiredIntWithRange"].Value)
+
+	outputLog := mockContext.Console.Output()
+
+	require.Equal(t, "Error: value for 'requiredIntWithMax' must be at most '10'.", outputLog[1])
+	require.Equal(t, "Error: value for 'requiredIntWithMin' must be at least '1'.", outputLog[5])
+	require.Equal(t, "Error: value for 'requiredIntWithRange' must be at least '1'.", outputLog[9])
+	require.Equal(t, "Error: value for 'requiredIntWithRange' must be at most '10'.", outputLog[11])
+
+	require.Equal(t, "Error: value for 'requiredStringWithMax' must be at most '10' in length.", outputLog[15])
+	require.Equal(t, "Error: value for 'requiredStringWithMin' must be at least '1' in length.", outputLog[19])
+	require.Equal(t, "Error: value for 'requiredStringWithRange' must be at least '1' in length.", outputLog[23])
+	require.Equal(t, "Error: value for 'requiredStringWithRange' must be at most '10' in length.", outputLog[25])
+}
+
 func TestBicepState(t *testing.T) {
 	progressLog := []string{}
 	interactiveLog := []bool{}

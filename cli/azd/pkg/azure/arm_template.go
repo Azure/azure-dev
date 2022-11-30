@@ -28,6 +28,10 @@ type ArmTemplateParameter struct {
 	Type          string         `json:"type"`
 	DefaultValue  any            `json:"defaultValue"`
 	AllowedValues *[]any         `json:"allowedValues,omitempty"`
+	MinValue      *int           `json:"minValue,omitempty"`
+	MaxValue      *int           `json:"maxValue,omitempty"`
+	MinLength     *int           `json:"minLength,omitempty"`
+	MaxLength     *int           `json:"maxLength,omitempty"`
 	Metadata      map[string]any `json:"metadata"`
 }
 

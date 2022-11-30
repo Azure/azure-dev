@@ -1,0 +1,71 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2018-05-01/subscriptionDeploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "metadata": {
+    "_generator": {
+      "name": "bicep",
+      "version": "0.12.40.16777",
+      "templateHash": "17540200030586674162"
+    }
+  },
+  "parameters": {
+    "requiredIntWithMin": {
+      "type": "int",
+      "metadata": {
+        "description": "A required int parameter which much be at least 1"
+      },
+      "minValue": 1
+    },
+    "requiredIntWithMax": {
+      "type": "int",
+      "metadata": {
+        "description": "A required int parameter which much at most 10"
+      },
+      "maxValue": 10
+    },
+    "requiredIntWithRange": {
+      "type": "int",
+      "metadata": {
+        "description": "A required int parameter which must be in the range 1-10"
+      },
+      "maxValue": 10,
+      "minValue": 1
+    },
+    "requiredStringWithMin": {
+      "type": "string",
+      "metadata": {
+        "description": "A required string parameter which must have length of at least 1"
+      },
+      "minLength": 1
+    },
+    "requiredStringWithMax": {
+      "type": "string",
+      "metadata": {
+        "description": "A required string parameter which must have length of at most 10"
+      },
+      "maxLength": 10
+    },
+    "requiredStringWithRange": {
+      "type": "string",
+      "metadata": {
+        "description": "A required string parameter which must have length in the range 1-10"
+      },
+      "maxLength": 10,
+      "minLength": 1
+    }
+  },
+  "resources": [],
+  "outputs": {
+    "allParameters": {
+      "type": "object",
+      "value": {
+        "requiredIntWithMin": "[parameters('requiredIntWithMin')]",
+        "requiredIntWithMax": "[parameters('requiredIntWithMax')]",
+        "requiredIntWithRange": "[parameters('requiredIntWithRange')]",
+        "requiredStringWithMin": "[parameters('requiredStringWithMin')]",
+        "requiredStringWithMax": "[parameters('requiredStringWithMax')]",
+        "requiredStringWithRange": "[parameters('requiredStringWithRange')]"
+      }
+    }
+  }
+}

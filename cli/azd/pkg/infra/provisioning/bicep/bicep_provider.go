@@ -39,6 +39,8 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/bicep"
 	"github.com/drone/envsubst"
 	"github.com/sethvargo/go-retry"
+	"golang.org/x/exp/maps"
+	"golang.org/x/exp/slices"
 )
 
 type BicepDeploymentDetails struct {
@@ -855,7 +857,12 @@ func (p *BicepProvider) ensureParameters(
 
 	configuredParameters := make(azure.ArmParameters, len(template.Parameters))
 
-	for key, param := range template.Parameters {
+	sortedKeys := maps.Keys(template.Parameters)
+	slices.Sort(sortedKeys)
+
+	for _, key := range sortedKeys {
+		param := template.Parameters[key]
+
 		// If a value is explicitly configured via a parameters file, use it.
 		if v, has := parameters[key]; has {
 			configuredParameters[key] = v
@@ -914,14 +921,15 @@ func (p *BicepProvider) ensureParameters(
 					value = (options[choice] == "True")
 				case ParameterTypeNumber:
 					for {
-						userValue, err := p.console.Prompt(ctx, input.ConsoleOptions{
+						valueString, err := p.console.Prompt(ctx, input.ConsoleOptions{
 							Message: fmt.Sprintf("Please enter a value for the '%s' infrastructure parameter:", key),
 							Help:    desc,
 						})
 						if err != nil {
 							return fmt.Errorf("prompting for deployment parameter: %w", err)
 						}
-						i, err := strconv.ParseInt(userValue, 10, 0)
+
+						userValue, err := strconv.ParseInt(valueString, 10, 0)
 						if err != nil {
 							p.console.Message(
 								ctx,
@@ -929,18 +937,53 @@ func (p *BicepProvider) ensureParameters(
 							)
 							continue
 						}
-						value = int(i)
+						if param.MinValue != nil && userValue < int64(*param.MinValue) {
+							p.console.Message(
+								ctx,
+								output.WithErrorFormat("Error: value for '%s' must be at least '%d'.", key, *param.MinValue),
+							)
+							continue
+						}
+						if param.MaxValue != nil && userValue > int64(*param.MaxValue) {
+							p.console.Message(
+								ctx,
+								output.WithErrorFormat("Error: value for '%s' must be at most '%d'.", key, *param.MaxValue),
+							)
+							continue
+						}
+
+						value = int(userValue)
 						break
 					}
 				case ParameterTypeString:
-					userValue, err := p.console.Prompt(ctx, input.ConsoleOptions{
-						Message: fmt.Sprintf("Please enter a value for the '%s' infrastructure parameter:", key),
-						Help:    desc,
-					})
-					if err != nil {
-						return fmt.Errorf("prompting for deployment parameter: %w", err)
+					for {
+						userValue, err := p.console.Prompt(ctx, input.ConsoleOptions{
+							Message: fmt.Sprintf("Please enter a value for the '%s' infrastructure parameter:", key),
+							Help:    desc,
+						})
+						if err != nil {
+							return fmt.Errorf("prompting for deployment parameter: %w", err)
+						}
+						if param.MinLength != nil && len(userValue) < (*param.MinLength) {
+							p.console.Message(
+								ctx,
+								output.WithErrorFormat(
+									"Error: value for '%s' must be at least '%d' in length.", key, *param.MinLength),
+							)
+							continue
+						}
+						if param.MaxLength != nil && len(userValue) > (*param.MaxLength) {
+							p.console.Message(
+								ctx,
+								output.WithErrorFormat(
+									"Error: value for '%s' must be at most '%d' in length.", key, *param.MaxLength),
+							)
+							continue
+						}
+
+						value = userValue
+						break
 					}
-					value = userValue
 				case ParameterTypeArray:
 					for {
 						userJson, err := p.console.Prompt(ctx, input.ConsoleOptions{

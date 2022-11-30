@@ -98,6 +98,8 @@ stages:
             inputs:
               version: 6.0.x
 
+          - template: /eng/pipelines/templates/steps/az-login.yml
+
           - template: /eng/pipelines/templates/steps/azd-login.yml
             parameters:
               AzdDirectory: cli/azd

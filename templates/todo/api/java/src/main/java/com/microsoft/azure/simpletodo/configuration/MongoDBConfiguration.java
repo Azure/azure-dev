@@ -29,7 +29,7 @@ public class MongoDBConfiguration {
 
     @Bean
     public MongoClientSettingsBuilderCustomizer customizer(
-        @Value("${custom.azure.keyvault.secret.endpoint}") String keyVaultSettings
+        @Value("${custom.azure.keyvault.secret.mongodb}") String keyVaultSettings
     ) {
         var config = keyVaultSettings.split(",", 0);
         var connString = ConfigurationSources.KeyVaultSecrets.get(config[0], config[1]);

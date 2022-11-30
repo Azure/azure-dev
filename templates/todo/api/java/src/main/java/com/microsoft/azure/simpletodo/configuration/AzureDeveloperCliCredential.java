@@ -64,12 +64,12 @@ public class AzureDeveloperCliCredential implements TokenCredential {
 
     @Override
     public Mono<AccessToken> getToken(TokenRequestContext request) {
-        return authenticateWithAzureCli(request)
+        return authenticateWithAzureDeveloperCli(request)
             .doOnNext(token -> LoggingUtil.logTokenSuccess(LOGGER, request))
             .doOnError(error -> LoggingUtil.logTokenError(LOGGER, identityClientOptions, request, error));
     }
 
-    private Mono<AccessToken> authenticateWithAzureCli(TokenRequestContext request) {
+    private Mono<AccessToken> authenticateWithAzureDeveloperCli(TokenRequestContext request) {
         StringBuilder azCommand = new StringBuilder("azd auth token --output json --scope ");
 
         var scopes = String.join(" --scope ", request.getScopes());

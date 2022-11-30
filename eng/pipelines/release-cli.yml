@@ -92,7 +92,9 @@ stages:
             condition: and(succeeded(), eq(variables['BuildTestMsi'], 'true'))
             inputs:
               solution: cli/installer/windows/azd.wixproj
-              msbuildArguments: /p:RunWixToolsOutOfProc=true
+              msbuildArguments: >-
+                /p:RunWixToolsOutOfProc=true
+                /p:Configuration=Release
 
           - template: /eng/pipelines/templates/steps/install-bicep.yml
             parameters:
@@ -410,7 +412,9 @@ stages:
           displayName: Build release MSI
           inputs:
             solution: cli/installer/windows/azd.wixproj
-            msbuildArguments: /p:RunWixToolsOutOfProc=true
+            msbuildArguments: >-
+              /p:RunWixToolsOutOfProc=true
+              /p:Configuration=Release
 
         # TODO: Uncomment before merge
         # - ${{ if in(variables['Build.Reason'], 'IndividualCI', 'BatchedCI', 'Manual') }}:

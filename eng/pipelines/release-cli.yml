@@ -895,7 +895,7 @@ stages:
 
               MSI install
               ``````
-              powershell -c "irm '$msiReleaseUrl' -OutFile azd-windows-amd64.msi; msiexec /i azd-windows-amd64.msi"
+              powershell -c "irm '$msiReleaseUrl' -OutFile azd-windows-amd64.msi; msiexec /i azd-windows-amd64.msi /qn"
               ``````
 
               ### Standalone Binary

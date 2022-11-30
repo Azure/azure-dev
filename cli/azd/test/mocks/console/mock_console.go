@@ -135,7 +135,7 @@ func (c *MockConsole) respond(command string, options input.ConsoleOptions) (any
 	}
 
 	if match == nil {
-		panic(fmt.Sprintf("No mock found for command: '%s'", command))
+		panic(fmt.Sprintf("No mock found for command: '%s' with options: '%+v'", command, options))
 	}
 
 	return match.respond(options)

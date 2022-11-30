@@ -30,6 +30,14 @@ param objectParam object
 @description('An optional object parameter')
 param optionalObjectParam object = {}
 
+@allowed(['All', 'Good', 'Options'])
+@description('A required string parameter from a fixed set of options')
+param requiredStringWithAllowedValues string
+
+@allowed([10, 20, 30])
+@description('A required int parameter from a fixed set of options')
+param requiredIntWithAllowedValues int
+
 output allParameters object = {
   stringParam: stringParam
   optionalStringParam: optionalStringParam
@@ -41,4 +49,6 @@ output allParameters object = {
   optionalArrayParam: optionalArrayParam
   objectParam: objectParam
   optionalObjectParam: optionalObjectParam
+  requiredStringWithAllowedValues: requiredStringWithAllowedValues
+  requiredIntWithAllowedValues: requiredIntWithAllowedValues
 }

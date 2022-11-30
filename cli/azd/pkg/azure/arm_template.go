@@ -25,9 +25,10 @@ type ArmTemplateParameters map[string]ArmTemplateParameter
 type ArmTemplateOutputs map[string]ArmTemplateOutput
 
 type ArmTemplateParameter struct {
-	Type         string         `json:"type"`
-	DefaultValue any            `json:"defaultValue"`
-	Metadata     map[string]any `json:"metadata"`
+	Type          string         `json:"type"`
+	DefaultValue  any            `json:"defaultValue"`
+	AllowedValues *[]any         `json:"allowedValues,omitempty"`
+	Metadata      map[string]any `json:"metadata"`
 }
 
 // Description returns the value of the "Description" string metadata for this parameter or empty if it can not be found.

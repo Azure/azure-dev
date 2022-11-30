@@ -920,114 +920,54 @@ func (p *BicepProvider) ensureParameters(
 					}
 					value = (options[choice] == "True")
 				case ParameterTypeNumber:
-					for {
-						valueString, err := p.console.Prompt(ctx, input.ConsoleOptions{
-							Message: fmt.Sprintf("Please enter a value for the '%s' infrastructure parameter:", key),
-							Help:    desc,
-						})
-						if err != nil {
-							return fmt.Errorf("prompting for deployment parameter: %w", err)
-						}
-
-						userValue, err := strconv.ParseInt(valueString, 10, 0)
-						if err != nil {
-							p.console.Message(
-								ctx,
-								output.WithErrorFormat("Error: failed to convert %s to an integer: %v.", err),
-							)
-							continue
-						}
-						if param.MinValue != nil && userValue < int64(*param.MinValue) {
-							p.console.Message(
-								ctx,
-								output.WithErrorFormat("Error: value for '%s' must be at least '%d'.", key, *param.MinValue),
-							)
-							continue
-						}
-						if param.MaxValue != nil && userValue > int64(*param.MaxValue) {
-							p.console.Message(
-								ctx,
-								output.WithErrorFormat("Error: value for '%s' must be at most '%d'.", key, *param.MaxValue),
-							)
-							continue
-						}
-
-						value = int(userValue)
-						break
+					valueString, err := promptWithValidation(ctx, p.console, input.ConsoleOptions{
+						Message: fmt.Sprintf("Please enter a value for the '%s' infrastructure parameter:", key),
+						Help:    desc,
+					}, validateValueRange(key, param.MinValue, param.MaxValue))
+					if err != nil {
+						return fmt.Errorf("prompting for deployment parameter: %w", err)
 					}
+
+					// validateValueRange ensures this will not fail.
+					userValue, _ := strconv.ParseInt(valueString, 10, 0)
+					value = int(userValue)
 				case ParameterTypeString:
-					for {
-						userValue, err := p.console.Prompt(ctx, input.ConsoleOptions{
-							Message: fmt.Sprintf("Please enter a value for the '%s' infrastructure parameter:", key),
-							Help:    desc,
-						})
-						if err != nil {
-							return fmt.Errorf("prompting for deployment parameter: %w", err)
-						}
-						if param.MinLength != nil && len(userValue) < (*param.MinLength) {
-							p.console.Message(
-								ctx,
-								output.WithErrorFormat(
-									"Error: value for '%s' must be at least '%d' in length.", key, *param.MinLength),
-							)
-							continue
-						}
-						if param.MaxLength != nil && len(userValue) > (*param.MaxLength) {
-							p.console.Message(
-								ctx,
-								output.WithErrorFormat(
-									"Error: value for '%s' must be at most '%d' in length.", key, *param.MaxLength),
-							)
-							continue
-						}
-
-						value = userValue
-						break
+					userValue, err := promptWithValidation(ctx, p.console, input.ConsoleOptions{
+						Message: fmt.Sprintf("Please enter a value for the '%s' infrastructure parameter:", key),
+						Help:    desc,
+					}, validateLengthRange(key, param.MinLength, param.MaxLength))
+					if err != nil {
+						return fmt.Errorf("prompting for deployment parameter: %w", err)
 					}
+					value = userValue
 				case ParameterTypeArray:
-					for {
-						userJson, err := p.console.Prompt(ctx, input.ConsoleOptions{
-							Message: fmt.Sprintf("Please enter a value for the '%s' infrastructure parameter:", key),
-							Help:    desc,
-						})
-						if err != nil {
-							return fmt.Errorf("prompting for deployment parameter: %w", err)
-						}
-
-						var userValue []any
-						err = json.Unmarshal([]byte(userJson), &userValue)
-						if err != nil {
-							p.console.Message(
-								ctx,
-								output.WithErrorFormat("Error: failed to parse value as JSON array: %v.", err),
-							)
-							continue
-						}
-						value = userValue
-						break
+					userJson, err := promptWithValidation(ctx, p.console, input.ConsoleOptions{
+						Message: fmt.Sprintf("Please enter a value for the '%s' infrastructure parameter:", key),
+						Help:    desc,
+					}, validateJsonArray)
+					if err != nil {
+						return fmt.Errorf("prompting for deployment parameter: %w", err)
 					}
+
+					var userValue []any
+
+					// validateJsonArray ensures this will not fail.
+					_ = json.Unmarshal([]byte(userJson), &userValue)
+					value = userValue
 				case ParameterTypeObject:
-					for {
-						userJson, err := p.console.Prompt(ctx, input.ConsoleOptions{
-							Message: fmt.Sprintf("Please enter a value for the '%s' infrastructure parameter:", key),
-							Help:    desc,
-						})
-						if err != nil {
-							return fmt.Errorf("prompting for deployment parameter: %w", err)
-						}
-
-						var userValue map[string]any
-						err = json.Unmarshal([]byte(userJson), &userValue)
-						if err != nil {
-							p.console.Message(
-								ctx,
-								output.WithErrorFormat("Error: failed to parse value as JSON object: %v.", err),
-							)
-							continue
-						}
-						value = userValue
-						break
+					userJson, err := promptWithValidation(ctx, p.console, input.ConsoleOptions{
+						Message: fmt.Sprintf("Please enter a value for the '%s' infrastructure parameter:", key),
+						Help:    desc,
+					}, validateJsonObject)
+					if err != nil {
+						return fmt.Errorf("prompting for deployment parameter: %w", err)
 					}
+
+					var userValue map[string]any
+
+					// validateJsonObject ensures this will not fail.
+					_ = json.Unmarshal([]byte(userJson), &userValue)
+					value = userValue
 				default:
 					panic(fmt.Sprintf("unknown parameter type: %s", p.mapBicepTypeToInterfaceType(param.Type)))
 				}
@@ -1065,6 +1005,92 @@ func (p *BicepProvider) ensureParameters(
 	}
 
 	return configuredParameters, nil
+}
+
+// validateValueRange ensures the string can be parsed as an integer with strconv.ParseInt and is within the provided min
+// and max (nil meaning there is no min or max)
+func validateValueRange(key string, minValue *int, maxValue *int) func(string) error {
+	return func(s string) error {
+		v, err := strconv.ParseInt(s, 10, 0)
+		if err != nil {
+			return fmt.Errorf("failed to convert %s to an integer: %w", s, err)
+		}
+
+		if minValue != nil && int(v) < *minValue {
+			return fmt.Errorf("value for '%s' must be at least '%d'", key, *minValue)
+		}
+
+		if maxValue != nil && int(v) > *maxValue {
+			return fmt.Errorf("value for '%s' must be at most '%d'", key, *maxValue)
+		}
+
+		return nil
+	}
+}
+
+// validateLengthRange ensures the length of the string is within the provided min and max (nil meaning there is no bound)
+func validateLengthRange(key string, minLength *int, maxLength *int) func(string) error {
+	return func(s string) error {
+		if minLength != nil && len(s) < *minLength {
+			return fmt.Errorf("value for '%s' must be at least '%d' in length", key, *minLength)
+		}
+
+		if maxLength != nil && len(s) > *maxLength {
+			return fmt.Errorf("value for '%s' must be at most '%d' in length", key, *maxLength)
+		}
+
+		return nil
+	}
+}
+
+// validateJsonObject returns an error if json.Unmarshal fails to unmarshal s as an []any
+func validateJsonArray(s string) error {
+	var v []any
+	err := json.Unmarshal([]byte(s), &v)
+	if err != nil {
+		return fmt.Errorf("failed to parse value as JSON array: %w", err)
+	}
+
+	return nil
+}
+
+// validateJsonObject returns an error if json.Unmarshal fails to unmarshal s as a map[string]any
+func validateJsonObject(s string) error {
+	var v map[string]any
+	err := json.Unmarshal([]byte(s), &v)
+	if err != nil {
+		return fmt.Errorf("failed to parse value as JSON object: %w", err)
+	}
+
+	return nil
+}
+
+// promptWithValidation prompts for a value using the console and then validates that it satisfies all the validation
+// functions. If any fail, the prompt is retried after printing the error (prefixed with "Error: ") to the console.
+// If there are is an error prompting it is returned as is.
+func promptWithValidation(
+	ctx context.Context, console input.Console, options input.ConsoleOptions, validators ...func(string) error,
+) (string, error) {
+	for {
+		userValue, err := console.Prompt(ctx, options)
+		if err != nil {
+			return "", err
+		}
+
+		isValid := true
+
+		for _, validator := range validators {
+			if err := validator(userValue); err != nil {
+				console.Message(ctx, output.WithErrorFormat("Error: %s.", err))
+				isValid = false
+				break
+			}
+		}
+
+		if isValid {
+			return userValue, nil
+		}
+	}
 }
 
 // NewBicepProvider creates a new instance of a Bicep Infra provider

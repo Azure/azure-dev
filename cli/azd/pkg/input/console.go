@@ -35,6 +35,8 @@ type ConsoleShim interface {
 	GetFormatter() output.Formatter
 }
 
+type PromptValidator func(response string) error
+
 type Console interface {
 	// Prints out a message to the underlying console write
 	Message(ctx context.Context, message string)

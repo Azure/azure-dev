@@ -48,7 +48,9 @@ func (s *ResourceGroupScope) ResourceGroup() string {
 	return s.resourceGroup
 }
 
-func (s *ResourceGroupScope) Deploy(ctx context.Context, template azure.RawArmTemplate, parameters azure.ArmParameters) error {
+func (s *ResourceGroupScope) Deploy(
+	ctx context.Context, template azure.RawArmTemplate, parameters azure.ArmParameters,
+) error {
 	_, err := s.azCli.DeployToResourceGroup(ctx, s.subscriptionId, s.resourceGroup, s.name, template, parameters)
 	return err
 }
@@ -107,7 +109,9 @@ func (s *SubscriptionScope) Location() string {
 }
 
 // Deploy a given template with a set of parameters.
-func (s *SubscriptionScope) Deploy(ctx context.Context, template azure.RawArmTemplate, parameters azure.ArmParameters) error {
+func (s *SubscriptionScope) Deploy(
+	ctx context.Context, template azure.RawArmTemplate, parameters azure.ArmParameters,
+) error {
 	_, err := s.azCli.DeployToSubscription(ctx, s.subscriptionId, s.name, template, parameters, s.location)
 	return err
 }

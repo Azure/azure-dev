@@ -8,7 +8,7 @@ import (
 )
 
 // RawArmTemplate is a JSON encoded ARM template.
-type RawArmTemplate json.RawMessage
+type RawArmTemplate = json.RawMessage
 
 // ArmTemplate represents an Azure Resource Manager deployment template. It follows the structure outlined
 // at https://learn.microsoft.com/azure/azure-resource-manager/templates/syntax, but only exposes portions of the

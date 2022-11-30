@@ -14,8 +14,8 @@ param serviceName string = 'api'
 param javaRuntimeOptions array = []
 
 // applicationinsights-runtime-attach (and other plugins) that uses runtime attach
-// require allowAttachSelf to be enabled on App Service. Otherwise, the plugin fails to load
-// when writing to the temp directory on App Service.
+// require allowAttachSelf to be enabled on App Service. Otherwise, plugins will fail to attach
+// on App Service.
 var defaultJavaRuntimeOptions = ['-Djdk.attach.allowAttachSelf=true']
 
 module api '../../../../../common/infra/bicep/core/host/appservice.bicep' = {

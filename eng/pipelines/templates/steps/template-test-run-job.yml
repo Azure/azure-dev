@@ -77,11 +77,11 @@ steps:
     if ($LASTEXITCODE) {
       if ($errOutput -match "ResourceGroupNotFound") {
         Write-Host "Resource group $(ResourceGroupName) has already been deleted."
-        return
+        exit 0
       }
 
       Write-Error "Error querying for resource group. Exit code: $LASTEXITCODE, $errOutput"
-      return
+      exit 1
     }
 
     $resourceGroupId = $output

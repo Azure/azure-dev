@@ -72,7 +72,7 @@ public class AzureDeveloperCliCredential implements TokenCredential {
     private Mono<AccessToken> authenticateWithAzureCli(TokenRequestContext request) {
         StringBuilder azCommand = new StringBuilder("azd auth token --output json --scope ");
 
-        var scopes = String.join(" ", request.getScopes());
+        var scopes = String.join(" --scope ", request.getScopes());
 
         try {
             ScopeUtil.validateScope(scopes);

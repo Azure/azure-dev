@@ -257,7 +257,7 @@ func Test_CLI_Up_Down_ContainerApp(t *testing.T) {
 			require.NoError(t, err)
 
 			url, has := env["WEBSITE_URL"]
-			require.True(t, has, "WEBSITE_URL should be in environment after infra create")
+			require.True(t, has, "WEBSITE_URL should be in environment after deploy")
 
 			probeServiceHealth(t, ctx, url, expectedTestAppResponse)
 			require.NoError(t, err)
@@ -283,13 +283,12 @@ func probeServiceHealth(t *testing.T, ctx context.Context, url string, expectedB
 		_, err = buf.ReadFrom(res.Body)
 		require.NoError(t, err)
 
-		testString := "Hello, `azd`."
 		bodyString := buf.String()
 
-		if bodyString != testString {
-			return retry.RetryableError(fmt.Errorf("expected %s but got %s for request to %s", testString, bodyString, url))
+		if bodyString != expectedBody {
+			return retry.RetryableError(fmt.Errorf("expected %s but got %s for request to %s", expectedBody, bodyString, url))
 		} else {
-			assert.Equal(t, testString, bodyString)
+			assert.Equal(t, expectedBody, bodyString)
 			return nil
 		}
 	})

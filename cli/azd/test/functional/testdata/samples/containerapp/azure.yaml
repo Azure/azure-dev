@@ -4,6 +4,6 @@ metadata:
 services:
   api:
     project: src/dotnet
-    module: api
+    module: web
     host: containerapp
     language: csharp

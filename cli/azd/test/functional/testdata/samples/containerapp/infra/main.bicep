@@ -32,8 +32,8 @@ module resources 'resources.bicep' = {
 }
 
 
-module api 'api.bicep' = if(provisionContainerApp == 'true') {
-  name: 'api'
+module web 'web.bicep' = if(provisionContainerApp == 'true') {
+  name: 'web'
   scope: rg
   params: {
     containerRegistryName: resources.outputs.containerRegistryName
@@ -48,3 +48,4 @@ module api 'api.bicep' = if(provisionContainerApp == 'true') {
 output AZURE_CONTAINER_REGISTRY_NAME string = resources.outputs.containerRegistryName
 output AZURE_CONTAINER_ENVIRONMENT_NAME string = resources.outputs.containerAppsEnvironmentName
 output AZURE_CONTAINER_REGISTRY_ENDPOINT string = resources.outputs.containerRegistryloginServer
+output WEBSITE_URL string = provisionContainerApp == 'true' ? web.outputs.WEBSITE_URL : ''

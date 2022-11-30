@@ -17,7 +17,7 @@ resource containerAppsEnvironment 'Microsoft.App/managedEnvironments@2022-03-01'
 resource app 'Microsoft.App/containerApps@2022-03-01' = {
   name: 'ca-${resourceToken}'
   location: location
-  tags: union(tags, { 'azd-service-name': 'api' })
+  tags: union(tags, { 'azd-service-name': 'web' })
   properties: {
     managedEnvironmentId: containerAppsEnvironment.id
     configuration: {
@@ -52,3 +52,5 @@ resource app 'Microsoft.App/containerApps@2022-03-01' = {
     }
   }
 }
+
+output WEBSITE_URL string = 'https://${app.properties.configuration.ingress.fqdn}'

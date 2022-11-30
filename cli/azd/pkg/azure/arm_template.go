@@ -25,24 +25,41 @@ type ArmTemplateParameters map[string]ArmTemplateParameter
 type ArmTemplateOutputs map[string]ArmTemplateOutput
 
 type ArmTemplateParameter struct {
-	Type          string         `json:"type"`
-	DefaultValue  any            `json:"defaultValue"`
-	AllowedValues *[]any         `json:"allowedValues,omitempty"`
-	MinValue      *int           `json:"minValue,omitempty"`
-	MaxValue      *int           `json:"maxValue,omitempty"`
-	MinLength     *int           `json:"minLength,omitempty"`
-	MaxLength     *int           `json:"maxLength,omitempty"`
-	Metadata      map[string]any `json:"metadata"`
+	Type          string                     `json:"type"`
+	DefaultValue  any                        `json:"defaultValue"`
+	AllowedValues *[]any                     `json:"allowedValues,omitempty"`
+	MinValue      *int                       `json:"minValue,omitempty"`
+	MaxValue      *int                       `json:"maxValue,omitempty"`
+	MinLength     *int                       `json:"minLength,omitempty"`
+	MaxLength     *int                       `json:"maxLength,omitempty"`
+	Metadata      map[string]json.RawMessage `json:"metadata"`
+}
+
+type AzdMetadata struct {
+	Type *string `json:"type,omitempty"`
 }
 
 // Description returns the value of the "Description" string metadata for this parameter or empty if it can not be found.
-func (p ArmTemplateParameter) Description() (d string, has bool) {
+func (p ArmTemplateParameter) Description() (string, bool) {
 	if v, has := p.Metadata["description"]; has {
-		if s, ok := v.(string); ok {
-			return s, true
+		var description string
+		if err := json.Unmarshal(v, &description); err == nil {
+			return description, true
 		}
 	}
+
 	return "", false
+}
+
+func (p ArmTemplateParameter) AzdMetadata() (AzdMetadata, bool) {
+	if v, has := p.Metadata["azd"]; has {
+		var metadata AzdMetadata
+		if err := json.Unmarshal(v, &metadata); err == nil {
+			return metadata, true
+		}
+	}
+
+	return AzdMetadata{}, false
 }
 
 type ArmTemplateOutput struct {

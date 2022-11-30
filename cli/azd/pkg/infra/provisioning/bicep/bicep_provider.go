@@ -27,6 +27,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
+	"github.com/azure/azure-dev/cli/azd/pkg/azureutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/cmdsubst"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
@@ -887,19 +888,38 @@ func (p *BicepProvider) ensureParameters(
 
 		// Otherwise, prompt for the value.
 		err := asyncContext.Interact(func() error {
-			desc, _ := param.Description()
+			msg := fmt.Sprintf("Please enter a value for the '%s' infrastructure parameter:", key)
+			help, _ := param.Description()
+			azdMetadata, _ := param.AzdMetadata()
+			paramType := p.mapBicepTypeToInterfaceType(param.Type)
 
 			var value any
 
-			// If there's a set of allowable values, just have the user pick from the set
-			if param.AllowedValues != nil {
+			if paramType == ParameterTypeString && azdMetadata.Type != nil && *azdMetadata.Type == "location" {
+				location, err := azureutil.PromptLocationWithFilter(
+					ctx, p.env, msg, help, p.console, p.azCli, func(loc azcli.AzCliLocation) bool {
+						if param.AllowedValues == nil {
+							return true
+						}
+
+						return slices.IndexFunc(*param.AllowedValues, func(v any) bool {
+							s, ok := v.(string)
+							return ok && loc.Name == s
+						}) != -1
+					},
+				)
+				if err != nil {
+					return fmt.Errorf("prompting for deployment parameter: %w", err)
+				}
+				value = location
+			} else if param.AllowedValues != nil {
 				options := make([]string, len(*param.AllowedValues))
 				for _, option := range *param.AllowedValues {
 					options = append(options, fmt.Sprintf("%v", option))
 				}
 				choice, err := p.console.Select(ctx, input.ConsoleOptions{
-					Message: fmt.Sprintf("Please enter a value for the '%s' infrastructure parameter:", key),
-					Help:    desc,
+					Message: msg,
+					Help:    help,
 					Options: options,
 				})
 				if err != nil {
@@ -907,12 +927,12 @@ func (p *BicepProvider) ensureParameters(
 				}
 				value = (*param.AllowedValues)[choice]
 			} else {
-				switch p.mapBicepTypeToInterfaceType(param.Type) {
+				switch paramType {
 				case ParameterTypeBoolean:
 					options := []string{"False", "True"}
 					choice, err := p.console.Select(ctx, input.ConsoleOptions{
-						Message: fmt.Sprintf("Please enter a value for the '%s' infrastructure parameter:", key),
-						Help:    desc,
+						Message: msg,
+						Help:    help,
 						Options: options,
 					})
 					if err != nil {
@@ -921,8 +941,8 @@ func (p *BicepProvider) ensureParameters(
 					value = (options[choice] == "True")
 				case ParameterTypeNumber:
 					valueString, err := promptWithValidation(ctx, p.console, input.ConsoleOptions{
-						Message: fmt.Sprintf("Please enter a value for the '%s' infrastructure parameter:", key),
-						Help:    desc,
+						Message: msg,
+						Help:    help,
 					}, validateValueRange(key, param.MinValue, param.MaxValue))
 					if err != nil {
 						return fmt.Errorf("prompting for deployment parameter: %w", err)
@@ -933,8 +953,8 @@ func (p *BicepProvider) ensureParameters(
 					value = int(userValue)
 				case ParameterTypeString:
 					userValue, err := promptWithValidation(ctx, p.console, input.ConsoleOptions{
-						Message: fmt.Sprintf("Please enter a value for the '%s' infrastructure parameter:", key),
-						Help:    desc,
+						Message: msg,
+						Help:    help,
 					}, validateLengthRange(key, param.MinLength, param.MaxLength))
 					if err != nil {
 						return fmt.Errorf("prompting for deployment parameter: %w", err)
@@ -942,8 +962,8 @@ func (p *BicepProvider) ensureParameters(
 					value = userValue
 				case ParameterTypeArray:
 					userJson, err := promptWithValidation(ctx, p.console, input.ConsoleOptions{
-						Message: fmt.Sprintf("Please enter a value for the '%s' infrastructure parameter:", key),
-						Help:    desc,
+						Message: msg,
+						Help:    help,
 					}, validateJsonArray)
 					if err != nil {
 						return fmt.Errorf("prompting for deployment parameter: %w", err)
@@ -956,8 +976,8 @@ func (p *BicepProvider) ensureParameters(
 					value = userValue
 				case ParameterTypeObject:
 					userJson, err := promptWithValidation(ctx, p.console, input.ConsoleOptions{
-						Message: fmt.Sprintf("Please enter a value for the '%s' infrastructure parameter:", key),
-						Help:    desc,
+						Message: msg,
+						Help:    help,
 					}, validateJsonObject)
 					if err != nil {
 						return fmt.Errorf("prompting for deployment parameter: %w", err)

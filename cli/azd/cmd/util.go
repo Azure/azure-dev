@@ -261,7 +261,7 @@ func ensureEnvironmentInitialized(
 	if !hasLocation && envSpec.location != "" {
 		env.SetLocation(envSpec.location)
 	} else {
-		location, err := azureutil.PromptLocation(ctx, env, "Please select an Azure location to use:", console, azCli)
+		location, err := azureutil.PromptLocation(ctx, env, "Please select an Azure location to use:", "", console, azCli)
 		if err != nil {
 			return fmt.Errorf("prompting for location: %w", err)
 		}

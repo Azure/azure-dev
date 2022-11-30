@@ -65,69 +65,49 @@ func TestNewContainerAppTargetTypeValidation(t *testing.T) {
 
 func Test_containerAppTarget_generateImageTag(t *testing.T) {
 	mockClock := clock.NewMock()
+	envName := "dev"
+	projectName := "my-app"
+	serviceName := "web"
+	defaultImageName := fmt.Sprintf("%s/%s-%s", projectName, serviceName, envName)
 	tests := []struct {
-		name string
-		at   *containerAppTarget
-		want string
+		name         string
+		dockerConfig DockerProjectOptions
+		want         string
 	}{
-		{"Default", &containerAppTarget{
-			env: environment.EphemeralWithValues("dev", map[string]string{}),
-			config: &ServiceConfig{
-				Name: "web",
-				Host: "containerapp",
-				Project: &ProjectConfig{
-					Name: "my-app",
-				},
+		{"Default",
+			DockerProjectOptions{},
+			fmt.Sprintf("%s:azdev-deploy-%d", defaultImageName, mockClock.Now().Unix())},
+		{"ImageNameSpecified",
+			DockerProjectOptions{
+				ImageName: "contoso-image",
 			},
-			clock: mockClock},
-			fmt.Sprintf("my-app/web-dev:azdev-deploy-%d", mockClock.Now().Unix())},
-		{"ImageNameSpecified", &containerAppTarget{
-			env: environment.EphemeralWithValues("dev", map[string]string{}),
-			config: &ServiceConfig{
-				Name: "web",
-				Host: "containerapp",
-				Docker: DockerProjectOptions{
-					ImageName: "contoso-image",
-				},
-				Project: &ProjectConfig{
-					Name: "my-app",
-				},
-			},
-			clock: mockClock},
 			fmt.Sprintf("contoso-image:azdev-deploy-%d", mockClock.Now().Unix())},
-		{"ImageTagSpecified", &containerAppTarget{
-			env: environment.EphemeralWithValues("dev", map[string]string{}),
-			config: &ServiceConfig{
-				Name: "web",
-				Host: "containerapp",
-				Docker: DockerProjectOptions{
-					ImageTag: "latest",
-				},
-				Project: &ProjectConfig{
-					Name: "my-app",
-				},
+		{"ImageTagSpecified",
+			DockerProjectOptions{
+				ImageTag: "latest",
 			},
-			clock: mockClock},
-			"my-app/web-dev:latest"},
-		{"ImageNameAndTagSpecified", &containerAppTarget{
-			env: environment.EphemeralWithValues("dev", map[string]string{}),
-			config: &ServiceConfig{
-				Name: "web",
-				Host: "containerapp",
-				Docker: DockerProjectOptions{
-					ImageName: "contoso-image",
-					ImageTag:  "latest",
-				},
-				Project: &ProjectConfig{
-					Name: "my-app",
-				},
+			fmt.Sprintf("%s:latest", defaultImageName)},
+		{"ImageNameAndTagSpecified",
+			DockerProjectOptions{
+				ImageName: "contoso-image",
+				ImageTag:  "latest",
 			},
-			clock: mockClock},
 			"contoso-image:latest"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			tag := tt.at.generateImageTag()
+			containerAppTarget := &containerAppTarget{
+				env: environment.EphemeralWithValues(envName, map[string]string{}),
+				config: &ServiceConfig{
+					Name: serviceName,
+					Host: "containerapp",
+					Project: &ProjectConfig{
+						Name: projectName,
+					},
+					Docker: tt.dockerConfig,
+				},
+				clock: mockClock}
+			tag := containerAppTarget.generateImageTag()
 			assert.Equal(t, tt.want, tag)
 		})
 	}

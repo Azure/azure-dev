@@ -70,7 +70,7 @@ public class AzureDeveloperCliCredential implements TokenCredential {
     }
 
     private Mono<AccessToken> authenticateWithAzureDeveloperCli(TokenRequestContext request) {
-        StringBuilder azCommand = new StringBuilder("azd auth token --output json --scope ");
+        StringBuilder azdCommand = new StringBuilder("azd auth token --output json --scope ");
 
         var scopes = request.getScopes();
 
@@ -96,7 +96,7 @@ public class AzureDeveloperCliCredential implements TokenCredential {
                 switcher = LINUX_MAC_SWITCHER;
             }
 
-            ProcessBuilder builder = new ProcessBuilder(starter, switcher, azCommand.toString());
+            ProcessBuilder builder = new ProcessBuilder(starter, switcher, azdCommand.toString());
 
             String workingDirectory = getSafeWorkingDirectory();
             if (workingDirectory != null) {
@@ -143,8 +143,6 @@ public class AzureDeveloperCliCredential implements TokenCredential {
             }
             String processOutput = output.toString();
 
-            process.waitFor(10, TimeUnit.SECONDS);
-
             if (process.exitValue() != 0) {
                 if (processOutput.length() > 0) {
                     String redactedOutput = redactInfo(processOutput);
@@ -184,7 +182,7 @@ public class AzureDeveloperCliCredential implements TokenCredential {
                 .toOffsetDateTime()
                 .withOffsetSameInstant(ZoneOffset.UTC);
             token = new AccessToken(accessToken, expiresOn);
-        } catch (IOException | InterruptedException e) {
+        } catch (IOException e) {
             throw LOGGER.logExceptionAsError(new IllegalStateException(e));
         } catch (RuntimeException e) {
             return Mono.error(

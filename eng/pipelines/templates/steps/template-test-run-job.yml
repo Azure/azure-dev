@@ -66,19 +66,25 @@ steps:
     workingDirectory: templates/tests
 
 - template: /eng/pipelines/templates/steps/az-login.yml
+  parameters:
+    Condition: always()
 
 # First tag the resource group (if exists) so that it can get cleaned up
 # by the cleanup pipeline. Then attempt to delete the resource group 
 # directly. If the delete fails the cleanup pipeline will delete it.
 - pwsh: |
-    $resourceGroupId = az group show `
-      --resource-group '$(ResourceGroupName)' `
-      --query id
-
+    $errOutput = ($( $output = & az group show --resource-group '$(ResourceGroupName)' --query id ) 2>&1) -join [System.Environment]::NewLine
     if ($LASTEXITCODE) {
-      Write-Host "Could not get information for resource group: $(ResourceGroupName)"
-      exit 0
+      if ($errOutput -match "ResourceGroupNotFound") {
+        Write-Host "Resource group $(ResourceGroupName) has already been deleted."
+        exit 0
+      }
+
+      Write-Error "Error querying for resource group. Exit code: $LASTEXITCODE, $errOutput"
+      exit 1
     }
+
+    $resourceGroupId = $output
 
     if ('$(CleanupImmediate)' -eq 'true') {
       # Tag the resource group so it gets cleaned up later if delete fails

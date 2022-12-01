@@ -7,5 +7,3 @@ services:
     module: web
     host: containerapp
     language: csharp
-    docker:
-      platform: linux/amd64

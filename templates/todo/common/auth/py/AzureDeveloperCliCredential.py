@@ -17,9 +17,7 @@ from azure.core.credentials import AccessToken
 from azure.core.exceptions import ClientAuthenticationError
 
 from .. import CredentialUnavailableError
-from .._internal import _scopes_to_resource
 from .._internal.decorators import log_get_token
-
 
 CLI_NOT_FOUND = "Azure Developer CLI could not be found. Please visit https://aka.ms/azure-dev for installation instructions and then, once installed, authenticate to your Azure account using 'azd login'."
 COMMAND_LINE = "azd auth token --output json --scope {}"
@@ -38,8 +36,7 @@ class AzureDeveloperCliCredential(object):
 
     @log_get_token("AzureDeveloperCliCredential")
     def get_token(self, *scopes: str, **kwargs) -> AccessToken:
-        resource = _scopes_to_resource(*scopes)
-        commandString = ' --scope '.join(resource)
+        commandString = ' --scope '.join(*scopes)
         command = COMMAND_LINE.format(commandString)
         output = _run_command(command)
         token = parse_token(output)
@@ -62,7 +59,7 @@ def parse_token(output):
             # taken from Python 3.5's datetime.timestamp()
             expires_on = time.mktime((dt.year, dt.month, dt.day, dt.hour, dt.minute, dt.second, -1, -1, -1))
 
-        return AccessToken(token["accessToken"], int(expires_on))
+        return AccessToken(token["token"], int(expires_on))
     except (KeyError, ValueError):
         return None
 
@@ -78,8 +75,8 @@ def get_safe_working_dir():
 
 
 def sanitize_output(output):
-    """Redact access tokens from CLI output to prevent error messages revealing them"""
-    return re.sub(r"\"accessToken\": \"(.*?)(\"|$)", "****", output)
+    """Redact tokens from CLI output to prevent error messages revealing them"""
+    return re.sub(r"\"token\": \"(.*?)(\"|$)", "****", output)
 
 
 def _run_command(command):

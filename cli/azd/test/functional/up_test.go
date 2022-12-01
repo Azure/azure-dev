@@ -85,7 +85,7 @@ func Test_CLI_Up_Down_WebApp(t *testing.T) {
 	url, has := env["WEBSITE_URL"]
 	require.True(t, has, "WEBSITE_URL should be in environment after infra create")
 
-	probeServiceHealth(t, ctx, url, expectedTestAppResponse)
+	err = probeServiceHealth(t, ctx, url, expectedTestAppResponse)
 	require.NoError(t, err)
 
 	commandRunner := exec.NewCommandRunner(os.Stdin, os.Stdout, os.Stderr)
@@ -259,7 +259,7 @@ func Test_CLI_Up_Down_ContainerApp(t *testing.T) {
 			url, has := env["WEBSITE_URL"]
 			require.True(t, has, "WEBSITE_URL should be in environment after deploy")
 
-			probeServiceHealth(t, ctx, url, expectedTestAppResponse)
+			err = probeServiceHealth(t, ctx, url, expectedTestAppResponse)
 			require.NoError(t, err)
 
 			_, err = cli.RunCommand(ctx, "infra", "delete", "--force", "--purge")

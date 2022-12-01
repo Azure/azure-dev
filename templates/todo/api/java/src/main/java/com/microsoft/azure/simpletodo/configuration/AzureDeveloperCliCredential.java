@@ -158,7 +158,9 @@ public class AzureDeveloperCliCredential implements TokenCredential {
                     }
                     throw LOGGER.logExceptionAsError(new ClientAuthenticationException(redactedOutput, null));
                 } else {
-                    throw LOGGER.logExceptionAsError(new ClientAuthenticationException("Failed to invoke Azure Developer CLI ", null));
+                    throw LOGGER.logExceptionAsError(
+                        new ClientAuthenticationException("Failed to invoke Azure Developer CLI ", null)
+                    );
                 }
             }
 

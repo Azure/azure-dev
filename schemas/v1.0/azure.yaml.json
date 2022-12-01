@@ -281,7 +281,44 @@
                         "description": "When `location` is set to `inline` contains the full script to execute"
                     }
                 }
-            }
+            },
+            "allOf": [
+                {
+                    "if": {
+                        "properties": {
+                            "location": {
+                                "const": "inline"
+                            }
+                        }
+                    },
+                    "then": {
+                        "required": [
+                            "type",
+                            "script"
+                        ],
+                        "properties": {
+                            "path": false
+                        }
+                    }
+                },
+                {
+                    "if": {
+                        "properties": {
+                            "location": {
+                                "const": "path"
+                            }
+                        }
+                    },
+                    "then": {
+                        "required": [
+                            "path"
+                        ],
+                        "properties": {
+                            "script": false
+                        }
+                    }
+                }
+            ]
         }
     }
 }

@@ -212,6 +212,10 @@ func Test_CLI_Up_Down_FuncApp(t *testing.T) {
 }
 
 func Test_CLI_Up_Down_ContainerApp(t *testing.T) {
+	if ci_os := os.Getenv("AZURE_DEV_CI_OS"); ci_os != "" && ci_os != "lin" {
+		t.Skip("Skipping due to docker limitations for non-linux systems on CI")
+	}
+
 	tests := []struct {
 		name                  string
 		provisionContainerApp bool

@@ -130,7 +130,7 @@ public class AzureDeveloperCliCredential implements TokenCredential {
                             LOGGER,
                             identityClientOptions,
                             new CredentialUnavailableException(
-                                "AzureCliCredential authentication unavailable. Azure CLI not installed." +
+                                "AzureDeveloperCliCredential authentication unavailable. Azure Developer CLI not installed." +
                                 "To mitigate this issue, please refer to the troubleshooting guidelines here at " +
                                 "https://aka.ms/azsdk/java/identity/azclicredential/troubleshoot"
                             )
@@ -151,19 +151,19 @@ public class AzureDeveloperCliCredential implements TokenCredential {
                             LOGGER,
                             identityClientOptions,
                             new CredentialUnavailableException(
-                                "AzureCliCredential authentication unavailable." +
+                                "AzureDeveloperCliCredential authentication unavailable." +
                                 " Please run 'azd login' to set up account."
                             )
                         );
                     }
                     throw LOGGER.logExceptionAsError(new ClientAuthenticationException(redactedOutput, null));
                 } else {
-                    throw LOGGER.logExceptionAsError(new ClientAuthenticationException("Failed to invoke Azure CLI ", null));
+                    throw LOGGER.logExceptionAsError(new ClientAuthenticationException("Failed to invoke Azure Developer CLI ", null));
                 }
             }
 
             LOGGER.verbose(
-                "Azure CLI Authentication => A token response was received from Azure Developer CLI, deserializing the" +
+                "Azure Developer CLI Authentication => A token response was received from Azure Developer CLI, deserializing the" +
                 " response into an Access Token."
             );
             Map<String, String> objectMap = SERIALIZER_ADAPTER.deserialize(

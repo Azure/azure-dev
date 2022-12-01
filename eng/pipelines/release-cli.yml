@@ -75,7 +75,7 @@ stages:
             displayName: Docker Installer
             condition: and(succeeded(), contains(variables['OSVmImage'], 'macOS'))
             inputs:
-              dockerVersion: 17.09.0-ce
+              dockerVersion: 20.10.21
               releaseType: stable
 
           - task: PowerShell@2

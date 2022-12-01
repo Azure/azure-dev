@@ -2,8 +2,10 @@ name: containerapp
 metadata: 
   template: azd-test/containerapptest@v1
 services:
-  api:
+  web:
     project: src/dotnet
     module: web
     host: containerapp
     language: csharp
+    docker:
+      platform: linux/amd64

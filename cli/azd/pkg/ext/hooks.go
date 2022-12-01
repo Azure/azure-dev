@@ -82,7 +82,7 @@ func (h *CommandHooks) InvokeAction(ctx context.Context, commandName string, act
 	return nil
 }
 
-// / Invokes any registered script hooks for the specified hook type and command.
+// Invokes any registered script hooks for the specified hook type and command.
 func (h *CommandHooks) RunScripts(ctx context.Context, hookType HookType, commandName string) error {
 	scripts := h.getScriptsForHook(hookType, commandName)
 	for _, scriptConfig := range scripts {
@@ -113,8 +113,6 @@ func (h *CommandHooks) getScriptsForHook(prefix HookType, commandName string) []
 }
 
 func (h *CommandHooks) execScript(ctx context.Context, scriptConfig *ScriptConfig) error {
-	log.Printf("Executing script '%s'", scriptConfig.Path)
-
 	// Delete any temporary inline scripts after execution
 	defer func() {
 		if scriptConfig.Location == ScriptLocationInline {
@@ -141,6 +139,7 @@ func (h *CommandHooks) execScript(ctx context.Context, scriptConfig *ScriptConfi
 		)
 	}
 
+	log.Printf("Executing script '%s'", scriptConfig.Path)
 	_, err = script.Execute(ctx, scriptConfig.Path, h.interactive)
 	if err != nil {
 		return fmt.Errorf("failed executing script '%s' : %w", scriptConfig.Path, err)
@@ -149,6 +148,8 @@ func (h *CommandHooks) execScript(ctx context.Context, scriptConfig *ScriptConfi
 	return nil
 }
 
+// Gets the script to execute based on the script configuration values
+// For inline scripts this will also create a temporary script file to execute
 func (h *CommandHooks) GetScript(scriptConfig *ScriptConfig) (tools.Script, error) {
 	if scriptConfig.Location == "" {
 		if scriptConfig.Path != "" {

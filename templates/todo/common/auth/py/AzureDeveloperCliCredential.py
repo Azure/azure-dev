@@ -26,7 +26,7 @@ COMMAND_LINE = "azd auth token --output json --scope {}"
 NOT_LOGGED_IN = "Please run 'azd login' from a command prompt to authenticate before using this credential."
 
 
-class AzureCliCredential(object):
+class AzureDeveloperCliCredential(object):
     def __enter__(self):
         return self
 
@@ -39,11 +39,9 @@ class AzureCliCredential(object):
     @log_get_token("AzureDeveloperCliCredential")
     def get_token(self, *scopes: str, **kwargs) -> AccessToken:
         resource = _scopes_to_resource(*scopes)
-        command = COMMAND_LINE.format(resource)
-        commandString = []
-        for c in command:
-            commandString = list.append(c,commandString)
-        output = _run_command(commandString)
+        commandString = ' --scope '.join(resource)
+        command = COMMAND_LINE.format(commandString)
+        output = _run_command(command)
         token = parse_token(output)
         if not token:
             sanitized_output = sanitize_output(output)

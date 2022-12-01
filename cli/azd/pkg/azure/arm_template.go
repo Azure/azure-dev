@@ -51,6 +51,7 @@ func (p ArmTemplateParameter) Description() (string, bool) {
 	return "", false
 }
 
+// AzdMetadata returns the value of the "azd" object metadata for this parameter or the zero value if it can not be found.
 func (p ArmTemplateParameter) AzdMetadata() (AzdMetadata, bool) {
 	if v, has := p.Metadata["azd"]; has {
 		var metadata AzdMetadata
@@ -66,14 +67,4 @@ type ArmTemplateOutput struct {
 	Type     string         `json:"type"`
 	Value    any            `json:"value"`
 	Metadata map[string]any `json:"metadata"`
-}
-
-// Description returns the value of the "Description" string metadata for this output or empty if it can not be found.
-func (o ArmTemplateOutput) Description() (d string, has bool) {
-	if v, has := o.Metadata["description"]; has {
-		if s, ok := v.(string); ok {
-			return s, true
-		}
-	}
-	return "", false
 }

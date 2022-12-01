@@ -8,7 +8,6 @@ import (
 	"context"
 	_ "embed"
 	"encoding/json"
-	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -75,9 +74,20 @@ func TestBicepPlan(t *testing.T) {
 	)
 }
 
-//go:generate bicep build testdata/params.bicep --outfile testdata/params.json
-//go:embed testdata/params.json
-var paramsArmJson []byte
+const paramsArmJson = `{
+	"$schema": "https://schema.management.azure.com/schemas/2018-05-01/subscriptionDeploymentTemplate.json#",
+	"contentVersion": "1.0.0.0",
+	"parameters": {
+	  "stringParam": {
+		"type": "string",
+		"metadata": {
+		  "description": "A required string parameter"
+		}
+	  }
+	},
+	"resources": [],
+	"outputs": {}
+  }`
 
 func TestBicepPlanPrompt(t *testing.T) {
 	progressLog := []string{}
@@ -96,39 +106,17 @@ func TestBicepPlanPrompt(t *testing.T) {
 	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 		return strings.Contains(args.Cmd, "bicep") && args.Args[0] == "build"
 	}).Respond(exec.RunResult{
-		Stdout: string(paramsArmJson),
+		Stdout: paramsArmJson,
 		Stderr: "",
 	})
+
+	mockContext.Console.WhenPrompt(func(options input.ConsoleOptions) bool {
+		return strings.Contains(options.Message, "for the 'stringParam' infrastructure parameter")
+	}).Respond("value")
 
 	mockContext.Console.WhenConfirm(func(options input.ConsoleOptions) bool {
 		return strings.Contains(options.Message, "Save the value in the environment for future use")
 	}).Respond(false)
-
-	for _, cc := range []struct {
-		name  string
-		value any
-	}{
-		{"stringParam", "value"},
-		{"intParam", "100"},
-		{"boolParam", 1},
-		{"arrayParam", `["hello", "world"]`},
-		{"objectParam", `{"hello": "world"}`},
-		{"requiredStringWithAllowedValues", 1},
-		{"requiredIntWithAllowedValues", 2},
-	} {
-		resp := cc
-
-		if _, ok := resp.value.(int); ok {
-			mockContext.Console.WhenSelect(func(options input.ConsoleOptions) bool {
-				return strings.Contains(options.Message, fmt.Sprintf("for the '%s' infrastructure parameter", resp.name))
-			}).Respond(resp.value)
-		} else {
-			mockContext.Console.WhenPrompt(func(options input.ConsoleOptions) bool {
-				return strings.Contains(options.Message, fmt.Sprintf("for the '%s' infrastructure parameter", resp.name))
-			}).Respond(resp.value)
-		}
-
-	}
 
 	infraProvider := createBicepProvider(t, mockContext)
 	planningTask := infraProvider.Plan(*mockContext.Context)
@@ -154,110 +142,6 @@ func TestBicepPlanPrompt(t *testing.T) {
 	bicepDetails := plan.Details.(BicepDeploymentDetails)
 
 	require.Equal(t, "value", bicepDetails.Parameters["stringParam"].Value)
-	require.Equal(t, 100, bicepDetails.Parameters["intParam"].Value)
-	require.Equal(t, true, bicepDetails.Parameters["boolParam"].Value)
-	require.IsType(t, []any{}, bicepDetails.Parameters["arrayParam"].Value)
-	require.Equal(t, "hello", bicepDetails.Parameters["arrayParam"].Value.([]any)[0])
-	require.Equal(t, "world", bicepDetails.Parameters["arrayParam"].Value.([]any)[1])
-	require.IsType(t, map[string]any{}, bicepDetails.Parameters["objectParam"].Value)
-	require.Equal(t, "world", bicepDetails.Parameters["objectParam"].Value.(map[string]any)["hello"])
-	require.Equal(t, "Good", bicepDetails.Parameters["requiredStringWithAllowedValues"].Value)
-	require.Equal(t, float64(30), bicepDetails.Parameters["requiredIntWithAllowedValues"].Value)
-}
-
-//go:generate bicep build testdata/ranges.bicep --outfile testdata/ranges.json
-//go:embed testdata/ranges.json
-var rangesArmJson []byte
-
-func TestBicepPlanPromptRanges(t *testing.T) {
-	progressLog := []string{}
-	interactiveLog := []bool{}
-	progressDone := make(chan bool)
-
-	mockContext := mocks.NewMockContext(context.Background())
-
-	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
-		return strings.Contains(args.Cmd, "bicep") && args.Args[0] == "--version"
-	}).Respond(exec.RunResult{
-		Stdout: "Bicep CLI version 0.12.40 (41892bd0fb)",
-		Stderr: "",
-	})
-
-	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
-		return strings.Contains(args.Cmd, "bicep") && args.Args[0] == "build"
-	}).Respond(exec.RunResult{
-		Stdout: string(rangesArmJson),
-		Stderr: "",
-	})
-
-	mockContext.Console.WhenConfirm(func(options input.ConsoleOptions) bool {
-		return strings.Contains(options.Message, "Save the value in the environment for future use")
-	}).Respond(false)
-
-	for _, cc := range []struct {
-		name      string
-		responses []string
-	}{
-		{"requiredIntWithMin", []string{"0", "1"}},
-		{"requiredIntWithMax", []string{"11", "10"}},
-		{"requiredIntWithRange", []string{"0", "11", "5"}},
-		{"requiredStringWithMin", []string{"", "ok"}},
-		{"requiredStringWithMax", []string{"this string is very long and will be rejected", "ok"}},
-		{"requiredStringWithRange", []string{"", "this string is very long and will be rejected", "ok"}},
-	} {
-		resp := cc
-
-		mockContext.Console.WhenPrompt(func(options input.ConsoleOptions) bool {
-			targetMessage := fmt.Sprintf("for the '%s' infrastructure parameter", resp.name)
-			return strings.Contains(options.Message, targetMessage) && len(resp.responses) > 0
-		}).RespondFn(func(options input.ConsoleOptions) (any, error) {
-			ret := resp.responses[0]
-			resp.responses = resp.responses[1:]
-			return ret, nil
-		})
-	}
-
-	infraProvider := createBicepProvider(t, mockContext)
-	planningTask := infraProvider.Plan(*mockContext.Context)
-
-	go func() {
-		for progressReport := range planningTask.Progress() {
-			progressLog = append(progressLog, progressReport.Message)
-		}
-		progressDone <- true
-	}()
-
-	go func() {
-		for planningInteractive := range planningTask.Interactive() {
-			interactiveLog = append(interactiveLog, planningInteractive)
-		}
-	}()
-
-	plan, err := planningTask.Await()
-	<-progressDone
-
-	require.NoError(t, err)
-
-	bicepDetails := plan.Details.(BicepDeploymentDetails)
-
-	require.Equal(t, "ok", bicepDetails.Parameters["requiredStringWithMin"].Value)
-	require.Equal(t, "ok", bicepDetails.Parameters["requiredStringWithMax"].Value)
-	require.Equal(t, "ok", bicepDetails.Parameters["requiredStringWithRange"].Value)
-	require.Equal(t, 1, bicepDetails.Parameters["requiredIntWithMin"].Value)
-	require.Equal(t, 10, bicepDetails.Parameters["requiredIntWithMax"].Value)
-	require.Equal(t, 5, bicepDetails.Parameters["requiredIntWithRange"].Value)
-
-	outputLog := mockContext.Console.Output()
-
-	require.Equal(t, "Error: value for 'requiredIntWithMax' must be at most '10'.", outputLog[1])
-	require.Equal(t, "Error: value for 'requiredIntWithMin' must be at least '1'.", outputLog[5])
-	require.Equal(t, "Error: value for 'requiredIntWithRange' must be at least '1'.", outputLog[9])
-	require.Equal(t, "Error: value for 'requiredIntWithRange' must be at most '10'.", outputLog[11])
-
-	require.Equal(t, "Error: value for 'requiredStringWithMax' must be at most '10' in length.", outputLog[15])
-	require.Equal(t, "Error: value for 'requiredStringWithMin' must be at least '1' in length.", outputLog[19])
-	require.Equal(t, "Error: value for 'requiredStringWithRange' must be at least '1' in length.", outputLog[23])
-	require.Equal(t, "Error: value for 'requiredStringWithRange' must be at most '10' in length.", outputLog[25])
 }
 
 func TestBicepState(t *testing.T) {

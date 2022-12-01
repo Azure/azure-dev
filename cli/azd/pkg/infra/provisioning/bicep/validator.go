@@ -4,13 +4,9 @@
 package bicep
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"strconv"
-
-	"github.com/azure/azure-dev/cli/azd/pkg/input"
-	"github.com/azure/azure-dev/cli/azd/pkg/output"
 )
 
 // validateValueRange ensures the string can be parsed as an integer with strconv.ParseInt and is within the provided min
@@ -19,7 +15,7 @@ func validateValueRange(key string, minValue *int, maxValue *int) func(string) e
 	return func(s string) error {
 		v, err := strconv.ParseInt(s, 10, 0)
 		if err != nil {
-			return fmt.Errorf("failed to convert %s to an integer: %w", s, err)
+			return fmt.Errorf("failed to convert '%s' to an integer: %w", s, err)
 		}
 
 		if minValue != nil && int(v) < *minValue {
@@ -54,7 +50,7 @@ func validateJsonArray(s string) error {
 	var v []any
 	err := json.Unmarshal([]byte(s), &v)
 	if err != nil {
-		return fmt.Errorf("failed to parse value as JSON array: %w", err)
+		return fmt.Errorf("failed to parse value as a JSON array: %w", err)
 	}
 
 	return nil
@@ -65,36 +61,8 @@ func validateJsonObject(s string) error {
 	var v map[string]any
 	err := json.Unmarshal([]byte(s), &v)
 	if err != nil {
-		return fmt.Errorf("failed to parse value as JSON object: %w", err)
+		return fmt.Errorf("failed to parse value as a JSON object: %w", err)
 	}
 
 	return nil
-}
-
-// promptWithValidation prompts for a value using the console and then validates that it satisfies all the validation
-// functions. If any fail, the prompt is retried after printing the error (prefixed with "Error: ") to the console.
-// If there are is an error prompting it is returned as is.
-func promptWithValidation(
-	ctx context.Context, console input.Console, options input.ConsoleOptions, validators ...func(string) error,
-) (string, error) {
-	for {
-		userValue, err := console.Prompt(ctx, options)
-		if err != nil {
-			return "", err
-		}
-
-		isValid := true
-
-		for _, validator := range validators {
-			if err := validator(userValue); err != nil {
-				console.Message(ctx, output.WithErrorFormat("Error: %s.", err))
-				isValid = false
-				break
-			}
-		}
-
-		if isValid {
-			return userValue, nil
-		}
-	}
 }

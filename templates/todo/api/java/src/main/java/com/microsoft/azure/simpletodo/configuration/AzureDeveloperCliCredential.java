@@ -72,15 +72,17 @@ public class AzureDeveloperCliCredential implements TokenCredential {
     private Mono<AccessToken> authenticateWithAzureDeveloperCli(TokenRequestContext request) {
         StringBuilder azCommand = new StringBuilder("azd auth token --output json --scope ");
 
-        var scopes = String.join(" --scope ", request.getScopes());
+        var scopes = request.getScopes();
 
-        try {
-            ScopeUtil.validateScope(scopes);
-        } catch (IllegalArgumentException ex) {
-            return Mono.error(LOGGER.logExceptionAsError(ex));
+        // It's really unlikely that the request comes with no scope, but we want to
+        // validate it as we are adding `--scope` arg to the azd command.
+        if (scopes.size() == 0) {
+            return Mono.error(LOGGER.logExceptionAsError(new IllegalArgumentException("Missing scope in request")));
         }
 
-        azCommand.append(scopes);
+        // At least one scope is appended to the azd command.
+        // If there are more than one scope, we add `--scope` before each.
+        azdCommand.append(String.join(" --scope ", scopes));
 
         AccessToken token;
         try {

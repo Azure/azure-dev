@@ -282,7 +282,7 @@
                     }
                 }
             },
-            "allOf": [
+            "anyOf": [
                 {
                     "if": {
                         "properties": {

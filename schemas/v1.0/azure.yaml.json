@@ -145,6 +145,7 @@
                         "type": "object",
                         "title": "Definition of command hooks for developer integration",
                         "descriptions": "Command hooks should match `azd` command names prefixed with `pre` or `post` depending on when the script should execute relative to the command",
+                        "minProperties": 1,
                         "additionalProperties": {
                             "type": "object",
                             "additionalProperties": false,
@@ -177,7 +178,81 @@
                                     "title": "The inline script to execute for the command hook",
                                     "description": "When `location` is set to `inline` contains the full script to execute"
                                 }
-                            }
+                            },
+                            "allOf": [
+                                {
+                                    "if": {
+                                        "properties": {
+                                            "location": {
+                                                "const": "inline"
+                                            }
+                                        },
+                                        "required": [
+                                            "location"
+                                        ]
+                                    },
+                                    "then": {
+                                        "required": [
+                                            "script",
+                                            "type"
+                                        ],
+                                        "properties": {
+                                            "path": false
+                                        }
+                                    }
+                                },
+                                {
+                                    "if": {
+                                        "properties": {
+                                            "location": {
+                                                "const": "path"
+                                            }
+                                        },
+                                        "required": [
+                                            "location"
+                                        ]
+                                    },
+                                    "then": {
+                                        "required": [
+                                            "path"
+                                        ],
+                                        "properties": {
+                                            "script": false
+                                        }
+                                    }
+                                },
+                                {
+                                    "if": {
+                                        "required": [
+                                            "path"
+                                        ]
+                                    },
+                                    "then": {
+                                        "required": [
+                                            "path"
+                                        ],
+                                        "properties": {
+                                            "script": false
+                                        }
+                                    }
+                                },
+                                {
+                                    "if": {
+                                        "required": [
+                                            "script"
+                                        ]
+                                    },
+                                    "then": {
+                                        "required": [
+                                            "script",
+                                            "type"
+                                        ],
+                                        "properties": {
+                                            "path": false
+                                        }
+                                    }
+                                }
+                            ]
                         }
                     }
                 },
@@ -248,6 +323,7 @@
             "type": "object",
             "title": "Definition of command hooks for developer integration",
             "descriptions": "Command hooks should match `azd` command names prefixed with `pre` or `post` depending on when the script should execute relative to the command",
+            "minProperties": 1,
             "additionalProperties": {
                 "type": "object",
                 "additionalProperties": false,
@@ -259,7 +335,8 @@
                         "enum": [
                             "bash",
                             "powershell"
-                        ]
+                        ],
+                        "default": "bash"
                     },
                     "location": {
                         "type": "string",
@@ -268,7 +345,8 @@
                         "enum": [
                             "path",
                             "inline"
-                        ]
+                        ],
+                        "default": "path"
                     },
                     "path": {
                         "type": "string",
@@ -289,7 +367,9 @@
                                     "const": "inline"
                                 }
                             },
-                            "required": []
+                            "required": [
+                                "location"
+                            ]
                         },
                         "then": {
                             "required": [
@@ -308,7 +388,9 @@
                                     "const": "path"
                                 }
                             },
-                            "required": []
+                            "required": [
+                                "location"
+                            ]
                         },
                         "then": {
                             "required": [
@@ -316,6 +398,37 @@
                             ],
                             "properties": {
                                 "script": false
+                            }
+                        }
+                    },
+                    {
+                        "if": {
+                            "required": [
+                                "path"
+                            ]
+                        },
+                        "then": {
+                            "required": [
+                                "path"
+                            ],
+                            "properties": {
+                                "script": false
+                            }
+                        }
+                    },
+                    {
+                        "if": {
+                            "required": [
+                                "script"
+                            ]
+                        },
+                        "then": {
+                            "required": [
+                                "script",
+                                "type"
+                            ],
+                            "properties": {
+                                "path": false
                             }
                         }
                     }

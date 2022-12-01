@@ -280,45 +280,47 @@
                         "title": "The inline script to execute for the command hook",
                         "description": "When `location` is set to `inline` contains the full script to execute"
                     }
-                }
-            },
-            "anyOf": [
-                {
-                    "if": {
-                        "properties": {
-                            "location": {
-                                "const": "inline"
-                            }
-                        }
-                    },
-                    "then": {
-                        "required": [
-                            "type",
-                            "script"
-                        ],
-                        "properties": {
-                            "path": false
-                        }
-                    }
                 },
-                {
-                    "if": {
-                        "properties": {
-                            "location": {
-                                "const": "path"
+                "allOf": [
+                    {
+                        "if": {
+                            "properties": {
+                                "location": {
+                                    "const": "inline"
+                                }
+                            },
+                            "required": []
+                        },
+                        "then": {
+                            "required": [
+                                "script",
+                                "type"
+                            ],
+                            "properties": {
+                                "path": false
                             }
                         }
                     },
-                    "then": {
-                        "required": [
-                            "path"
-                        ],
-                        "properties": {
-                            "script": false
+                    {
+                        "if": {
+                            "properties": {
+                                "location": {
+                                    "const": "path"
+                                }
+                            },
+                            "required": []
+                        },
+                        "then": {
+                            "required": [
+                                "path"
+                            ],
+                            "properties": {
+                                "script": false
+                            }
                         }
                     }
-                }
-            ]
+                ]
+            }
         }
     }
 }

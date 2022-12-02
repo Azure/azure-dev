@@ -196,7 +196,7 @@ func (e *Environment) GetPrincipalId() string {
 
 // Creates a slice of key value pairs like `KEY=VALUE` that
 // can be used to pass into command runner or similar constructs
-func (e *Environment) ToSlice() []string {
+func (e *Environment) Environ() []string {
 	envVars := []string{}
 	for k, v := range e.Values {
 		envVars = append(envVars, fmt.Sprintf("%s=%s", k, v))

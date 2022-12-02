@@ -75,7 +75,7 @@ func (m *CommandHooksMiddleware) Run(ctx context.Context, next NextFn) (*actions
 		m.console,
 		projectConfig.Scripts,
 		m.azdContext.ProjectDirectory(),
-		env.ToSlice(),
+		env.Environ(),
 	)
 
 	var actionResult *actions.ActionResult

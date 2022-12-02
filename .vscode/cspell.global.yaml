@@ -92,6 +92,7 @@ ignoreWords:
     - PLACEHOLDERIACTOOLS
     - postcommand
     - precommand
+    - preinteractive
     - provs
     - psql
     - pview

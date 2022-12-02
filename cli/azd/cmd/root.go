@@ -113,10 +113,6 @@ For more information, visit the Azure Developer CLI Dev Hub: https://aka.ms/azur
 	cmd.AddCommand(BuildCmd(opts, provisionCmdDesign, initInfraCreateAction, nil))
 	cmd.AddCommand(BuildCmd(opts, deployCmdDesign, initDeployAction, nil))
 
-	actions.Use(initDebugMiddleware())
-	actions.Use(middleware.UseTelemetry())
-	actions.Use(initCommandHooksMiddleware(opts))
-
 	return cmd
 }
 
@@ -158,7 +154,11 @@ func BuildCmd[F any](
 
 		ctx = tools.WithInstalledCheckCache(ctx)
 
-		actionResult, err := actions.RunWithMiddleware(ctx, actionOptions, action)
+		middleware.Use(middleware.Build(opts, actionOptions, console, initDebugMiddleware))
+		middleware.Use(middleware.Build(opts, actionOptions, console, initTelemetryMiddleware))
+		middleware.Use(middleware.Build(opts, actionOptions, console, initCommandHooksMiddleware))
+
+		actionResult, err := middleware.RunAction(ctx, action)
 		// At this point, we know that there might be an error, so we can silence cobra from showing it after us.
 		cmd.SilenceErrors = true
 		actions.ShowActionResults(ctx, console, actionResult, err)

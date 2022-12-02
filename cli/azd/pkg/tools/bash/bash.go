@@ -28,7 +28,7 @@ type bashScript struct {
 // When interactive is true will attach to stdin, stdout & stderr
 func (bs *bashScript) Execute(ctx context.Context, path string, interactive bool) (exec.RunResult, error) {
 	var runArgs exec.RunArgs
-	// Bash likes all path seperators in POSIX format
+	// Bash likes all path separators in POSIX format
 	path = strings.ReplaceAll(path, "\\", "/")
 
 	if runtime.GOOS == "windows" {

@@ -38,7 +38,6 @@ type CommandHooks struct {
 	commandRunner exec.CommandRunner
 	console       input.Console
 	cwd           string
-	interactive   bool
 	scripts       map[string]*ScriptConfig
 	envVars       []string
 }
@@ -50,13 +49,11 @@ func NewCommandHooks(
 	scripts map[string]*ScriptConfig,
 	cwd string,
 	envVars []string,
-	interactive bool,
 ) *CommandHooks {
 	return &CommandHooks{
 		commandRunner: commandRunner,
 		console:       console,
 		cwd:           cwd,
-		interactive:   interactive,
 		scripts:       scripts,
 		envVars:       envVars,
 	}
@@ -125,8 +122,12 @@ func (h *CommandHooks) execScript(ctx context.Context, scriptConfig *ScriptConfi
 		return err
 	}
 
+	formatter := h.console.GetFormatter()
+	consoleInteractive := formatter == nil || formatter.Kind() == output.NoneFormat
+	scriptInteractive := consoleInteractive && scriptConfig.Interactive
+
 	// When running in an interactive terminal broadcast a message to the dev to remind them that custom hooks are running.
-	if h.interactive {
+	if consoleInteractive {
 		h.console.Message(
 			ctx,
 			output.WithBold(
@@ -140,9 +141,21 @@ func (h *CommandHooks) execScript(ctx context.Context, scriptConfig *ScriptConfi
 	}
 
 	log.Printf("Executing script '%s'", scriptConfig.Path)
-	_, err = script.Execute(ctx, scriptConfig.Path, h.interactive)
+	_, err = script.Execute(ctx, scriptConfig.Path, scriptInteractive)
 	if err != nil {
-		return fmt.Errorf("failed executing script '%s' : %w", scriptConfig.Path, err)
+		execErr := fmt.Errorf("failed executing script '%s' : %w", scriptConfig.Path, err)
+
+		// If an error occurred log the failure but continue
+		if scriptConfig.ContinueOnError {
+			h.console.Message(ctx, output.WithBold(output.WithWarningFormat("WARNING: %s", execErr.Error())))
+			h.console.Message(
+				ctx,
+				output.WithWarningFormat("'%s' script has been configured to continue on error.", scriptConfig.Name),
+			)
+			log.Println(execErr.Error())
+		} else {
+			return execErr
+		}
 	}
 
 	return nil

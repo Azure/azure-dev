@@ -11,9 +11,18 @@ const (
 )
 
 type ScriptConfig struct {
-	Name     string         `yaml:",omitempty"`
-	Type     ScriptType     `yaml:"type,omitempty"`
+	// Internal name of the hook running for a given command
+	Name string `yaml:",omitempty"`
+	// The type of script hook (bash or powershell)
+	Type ScriptType `yaml:"type,omitempty"`
+	// The location of the script hook (file path or inline)
 	Location ScriptLocation `yaml:"location,omitempty"`
-	Path     string         `yaml:"path,omitempty"`
-	Script   string         `yaml:"script,omitempty"`
+	// When location is `path` a file path must be specified relative to the project or service
+	Path string `yaml:"path,omitempty"`
+	// When location is `inline` a script must be defined inline
+	Script string `yaml:"script,omitempty"`
+	// When set to true will not halt command execution even when a script error occurs.
+	ContinueOnError bool `yaml:"continueOnError,omitempty"`
+	// When set to true will bind the stdin, stdout & stderr to the running console
+	Interactive bool `yaml:"interactive,omitempty"`
 }

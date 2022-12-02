@@ -20,4 +20,7 @@ type GlobalCommandOptions struct {
 	// AZURE_DEV_COLLECT_TELEMETRY is set to 'no'.
 	// Defaults to true.
 	EnableTelemetry bool
+
+	// When supported by a command has the specified output format. ex) JSON, table, None.
+	Output string
 }

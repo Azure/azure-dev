@@ -451,15 +451,22 @@ func initConfigResetAction(console input.Console, ctx context.Context, o *intern
 	return cmdConfigResetAction, nil
 }
 
-func initDebugMiddleware() actions.MiddlewareFn {
-	console := newGenericConsole()
-	middlewareFn := middleware.UseDebug(console)
-	return middlewareFn
+func initDebugMiddleware(rootOptions *internal.GlobalCommandOptions, actionOptions *actions.ActionOptions, console input.Console) (middleware.Middleware, error) {
+	debugMiddleware := middleware.NewDebugMiddleware(console)
+	return debugMiddleware, nil
 }
 
-func initCommandHooksMiddleware(rootOptions *internal.GlobalCommandOptions) actions.MiddlewareFn {
-	console := newGenericConsole()
+func initTelemetryMiddleware(rootOptions *internal.GlobalCommandOptions, actionOptions *actions.ActionOptions, console input.Console) (middleware.Middleware, error) {
+	telemetryMiddleware := middleware.NewTelemetryMiddleware(actionOptions)
+	return telemetryMiddleware, nil
+}
+
+func initCommandHooksMiddleware(rootOptions *internal.GlobalCommandOptions, actionOptions *actions.ActionOptions, console input.Console) (middleware.Middleware, error) {
+	azdContext, err := newAzdContext()
+	if err != nil {
+		return nil, err
+	}
 	commandRunner := newCommandRunnerFromConsole(console)
-	middlewareFn := middleware.UseCommandHooks(rootOptions, console, commandRunner)
-	return middlewareFn
+	commandHooksMiddleware := middleware.NewCommandHooksMiddleware(azdContext, console, commandRunner, actionOptions, rootOptions)
+	return commandHooksMiddleware, nil
 }

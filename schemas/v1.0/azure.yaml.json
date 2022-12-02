@@ -177,6 +177,18 @@
                                     "type": "string",
                                     "title": "The inline script to execute for the command hook",
                                     "description": "When `location` is set to `inline` contains the full script to execute"
+                                },
+                                "continueOnError": {
+                                    "type": "boolean",
+                                    "default": false,
+                                    "title": "Whether or not a script error will halt the azd command",
+                                    "description": "Optional. When set to true will continue to run the command even after a script error has occurred. (Default: false)"
+                                },
+                                "interactive": {
+                                    "type": "boolean",
+                                    "default": true,
+                                    "title": "Whether the script will run in interactive mode",
+                                    "description": "Optional. When set to true will bind the script to stdin, stdout & stderr of the running console. (Default: false)"
                                 }
                             },
                             "allOf": [
@@ -357,6 +369,18 @@
                         "type": "string",
                         "title": "The inline script to execute for the command hook",
                         "description": "When `location` is set to `inline` contains the full script to execute"
+                    },
+                    "continueOnError": {
+                        "type": "boolean",
+                        "default": false,
+                        "title": "Whether or not a script error will halt the azd command",
+                        "description": "Optional. When set to true will continue to run the command even after a script error has occurred. (Default: false)"
+                    },
+                    "interactive": {
+                        "type": "boolean",
+                        "default": true,
+                        "title": "Whether the script will run in interactive mode",
+                        "description": "Optional. When set to true will bind the script to stdin, stdout & stderr of the running console. (Default: false)"
                     }
                 },
                 "allOf": [

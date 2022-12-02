@@ -31,6 +31,12 @@ func Test_Hooks_Execute(t *testing.T) {
 			Location: ScriptLocationPath,
 			Path:     "scripts/postcommand.sh",
 		},
+		"preinteractive": {
+			Type:        ScriptTypeBash,
+			Location:    ScriptLocationPath,
+			Path:        "scripts/preinteractive.sh",
+			Interactive: true,
+		},
 	}
 
 	t.Run("Execute", func(t *testing.T) {
@@ -46,11 +52,12 @@ func Test_Hooks_Execute(t *testing.T) {
 				require.Equal(t, "scripts/precommand.sh", args.Args[0])
 				require.Equal(t, cwd, args.Cwd)
 				require.Equal(t, env, args.Env)
+				require.Equal(t, false, args.Interactive)
 
 				return exec.NewRunResult(0, "", ""), nil
 			})
 
-			hooks := NewCommandHooks(mockContext.CommandRunner, mockContext.Console, scripts, cwd, env, true)
+			hooks := NewCommandHooks(mockContext.CommandRunner, mockContext.Console, scripts, cwd, env)
 			err := hooks.RunScripts(*mockContext.Context, HookTypePre, "command")
 
 			require.True(t, ranPreHook)
@@ -70,12 +77,38 @@ func Test_Hooks_Execute(t *testing.T) {
 				require.Equal(t, "scripts/postcommand.sh", args.Args[0])
 				require.Equal(t, cwd, args.Cwd)
 				require.Equal(t, env, args.Env)
+				require.Equal(t, false, args.Interactive)
 
 				return exec.NewRunResult(0, "", ""), nil
 			})
 
-			hooks := NewCommandHooks(mockContext.CommandRunner, mockContext.Console, scripts, cwd, env, true)
+			hooks := NewCommandHooks(mockContext.CommandRunner, mockContext.Console, scripts, cwd, env)
 			err := hooks.RunScripts(*mockContext.Context, HookTypePost, "command")
+
+			require.False(t, ranPreHook)
+			require.True(t, ranPostHook)
+			require.NoError(t, err)
+		})
+
+		t.Run("Interactive", func(t *testing.T) {
+			ranPreHook := false
+			ranPostHook := false
+
+			mockContext := mocks.NewMockContext(context.Background())
+			mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
+				return strings.Contains(command, "preinteractive.sh")
+			}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+				ranPostHook = true
+				require.Equal(t, "scripts/preinteractive.sh", args.Args[0])
+				require.Equal(t, cwd, args.Cwd)
+				require.Equal(t, env, args.Env)
+				require.Equal(t, true, args.Interactive)
+
+				return exec.NewRunResult(0, "", ""), nil
+			})
+
+			hooks := NewCommandHooks(mockContext.CommandRunner, mockContext.Console, scripts, cwd, env)
+			err := hooks.RunScripts(*mockContext.Context, HookTypePre, "interactive")
 
 			require.False(t, ranPreHook)
 			require.True(t, ranPostHook)
@@ -111,7 +144,7 @@ func Test_Hooks_Execute(t *testing.T) {
 			return exec.NewRunResult(0, "", ""), nil
 		})
 
-		hooks := NewCommandHooks(mockContext.CommandRunner, mockContext.Console, scripts, cwd, env, true)
+		hooks := NewCommandHooks(mockContext.CommandRunner, mockContext.Console, scripts, cwd, env)
 		err := hooks.InvokeAction(*mockContext.Context, "command", func() error {
 			ranAction = true
 			hookLog = append(hookLog, "action")
@@ -156,7 +189,7 @@ func Test_Hooks_GetScript(t *testing.T) {
 	t.Run("Bash", func(t *testing.T) {
 		scriptConfig := scripts["bash"]
 		mockContext := mocks.NewMockContext(context.Background())
-		hooks := NewCommandHooks(mockContext.CommandRunner, mockContext.Console, scripts, cwd, env, true)
+		hooks := NewCommandHooks(mockContext.CommandRunner, mockContext.Console, scripts, cwd, env)
 
 		script, err := hooks.GetScript(scriptConfig)
 		require.NotNil(t, script)
@@ -169,7 +202,7 @@ func Test_Hooks_GetScript(t *testing.T) {
 	t.Run("Powershell", func(t *testing.T) {
 		scriptConfig := scripts["pwsh"]
 		mockContext := mocks.NewMockContext(context.Background())
-		hooks := NewCommandHooks(mockContext.CommandRunner, mockContext.Console, scripts, cwd, env, true)
+		hooks := NewCommandHooks(mockContext.CommandRunner, mockContext.Console, scripts, cwd, env)
 
 		script, err := hooks.GetScript(scriptConfig)
 		require.NotNil(t, script)
@@ -184,7 +217,7 @@ func Test_Hooks_GetScript(t *testing.T) {
 
 		scriptConfig := scripts["inline"]
 		mockContext := mocks.NewMockContext(context.Background())
-		hooks := NewCommandHooks(mockContext.CommandRunner, mockContext.Console, scripts, tempDir, env, true)
+		hooks := NewCommandHooks(mockContext.CommandRunner, mockContext.Console, scripts, tempDir, env)
 
 		script, err := hooks.GetScript(scriptConfig)
 		require.NotNil(t, script)

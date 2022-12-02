@@ -43,7 +43,9 @@ ignoreWords:
     - bicepcli
     - cdne
     - cdnp
+    - chooks
     - commandrunner
+    - configlist
     - conjunction
     - containerregistry
     - databricks
@@ -86,7 +88,10 @@ ignoreWords:
     - pcert
     - pdnsz
     - Peerings
+    - pipefail
     - PLACEHOLDERIACTOOLS
+    - postcommand
+    - precommand
     - provs
     - psql
     - pview

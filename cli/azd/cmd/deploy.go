@@ -177,7 +177,6 @@ func (d *deployAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 			svc.Config.Scripts,
 			svc.Config.Path(),
 			env.ToSlice(),
-			interactive,
 		)
 
 		// Skip this service if both cases are true:

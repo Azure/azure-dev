@@ -17,188 +17,223 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func Test_CommandHooks_Middleware(t *testing.T) {
-	t.Run("WithValidProjectAndMatchingCommand", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
-		azdContext, err := createAzdContext(t)
-		require.NoError(t, err)
+func Test_CommandHooks_Middleware_WithValidProjectAndMatchingCommand(t *testing.T) {
+	mockContext := mocks.NewMockContext(context.Background())
+	azdContext, err := createAzdContext(t)
+	require.NoError(t, err)
 
-		envName := "test"
-		commandName := "command"
+	envName := "test"
+	commandName := "command"
 
-		projectConfig := project.ProjectConfig{
-			Name: envName,
-			Scripts: map[string]*ext.ScriptConfig{
-				"precommand": {
-					Script: "echo 'hello'",
-					Type:   ext.ScriptTypeBash,
-				},
+	projectConfig := project.ProjectConfig{
+		Name: envName,
+		Scripts: map[string]*ext.ScriptConfig{
+			"precommand": {
+				Script: "echo 'hello'",
+				Type:   ext.ScriptTypeBash,
 			},
-		}
+		},
+	}
 
-		err = ensureAzdValid(azdContext, envName, &projectConfig)
-		require.NoError(t, err)
+	err = ensureAzdValid(azdContext, envName, &projectConfig)
+	require.NoError(t, err)
 
-		nextFn, actionRan := createNextFn()
-		hookRan := setupHookMock(mockContext, 0)
-		result, err := runMiddleware(mockContext, azdContext, envName, commandName, nextFn)
+	nextFn, actionRan := createNextFn()
+	hookRan := setupHookMock(mockContext, 0)
+	result, err := runMiddleware(mockContext, azdContext, envName, commandName, nextFn)
 
-		require.NotNil(t, result)
-		require.NoError(t, err)
+	require.NotNil(t, result)
+	require.NoError(t, err)
 
-		// Hook will run with valid project, env & matching command name
-		require.True(t, *hookRan)
-		require.True(t, *actionRan)
-	})
+	// Hook will run with valid project, env & matching command name
+	require.True(t, *hookRan)
+	require.True(t, *actionRan)
+}
 
-	t.Run("ValidProjectWithDifferentCommand", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
-		azdContext, err := createAzdContext(t)
-		require.NoError(t, err)
+func Test_CommandHooks_Middleware_ValidProjectWithDifferentCommand(t *testing.T) {
+	mockContext := mocks.NewMockContext(context.Background())
+	azdContext, err := createAzdContext(t)
+	require.NoError(t, err)
 
-		envName := "test"
-		commandName := "another command"
+	envName := "test"
+	commandName := "another command"
 
-		projectConfig := project.ProjectConfig{
-			Name: envName,
-			Scripts: map[string]*ext.ScriptConfig{
-				"precommand": {
-					Script: "echo 'hello'",
-					Type:   ext.ScriptTypeBash,
-				},
+	projectConfig := project.ProjectConfig{
+		Name: envName,
+		Scripts: map[string]*ext.ScriptConfig{
+			"precommand": {
+				Script: "echo 'hello'",
+				Type:   ext.ScriptTypeBash,
 			},
-		}
+		},
+	}
 
-		err = ensureAzdValid(azdContext, envName, &projectConfig)
-		require.NoError(t, err)
+	err = ensureAzdValid(azdContext, envName, &projectConfig)
+	require.NoError(t, err)
 
-		nextFn, actionRan := createNextFn()
-		hookRan := setupHookMock(mockContext, 0)
-		result, err := runMiddleware(mockContext, azdContext, envName, commandName, nextFn)
+	nextFn, actionRan := createNextFn()
+	hookRan := setupHookMock(mockContext, 0)
+	result, err := runMiddleware(mockContext, azdContext, envName, commandName, nextFn)
 
-		require.NotNil(t, result)
-		require.NoError(t, err)
+	require.NotNil(t, result)
+	require.NoError(t, err)
 
-		// Hook will not run since the running command is different from the registered command
-		require.False(t, *hookRan)
-		require.True(t, *actionRan)
-	})
+	// Hook will not run since the running command is different from the registered command
+	require.False(t, *hookRan)
+	require.True(t, *actionRan)
+}
 
-	t.Run("ValidProjectWithNoHooks", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
-		azdContext, err := createAzdContext(t)
-		require.NoError(t, err)
+func Test_CommandHooks_Middleware_ValidProjectWithNoHooks(t *testing.T) {
+	mockContext := mocks.NewMockContext(context.Background())
+	azdContext, err := createAzdContext(t)
+	require.NoError(t, err)
 
-		envName := "test"
-		commandName := "another command"
+	envName := "test"
+	commandName := "another command"
 
-		projectConfig := project.ProjectConfig{
-			Name: envName,
-		}
+	projectConfig := project.ProjectConfig{
+		Name: envName,
+	}
 
-		err = ensureAzdValid(azdContext, envName, &projectConfig)
-		require.NoError(t, err)
+	err = ensureAzdValid(azdContext, envName, &projectConfig)
+	require.NoError(t, err)
 
-		nextFn, actionRan := createNextFn()
-		hookRan := setupHookMock(mockContext, 0)
-		result, err := runMiddleware(mockContext, azdContext, envName, commandName, nextFn)
+	nextFn, actionRan := createNextFn()
+	hookRan := setupHookMock(mockContext, 0)
+	result, err := runMiddleware(mockContext, azdContext, envName, commandName, nextFn)
 
-		require.NotNil(t, result)
-		require.NoError(t, err)
+	require.NotNil(t, result)
+	require.NoError(t, err)
 
-		// Hook will not run since there aren't any hooks registered
-		require.False(t, *hookRan)
-		require.True(t, *actionRan)
-	})
+	// Hook will not run since there aren't any hooks registered
+	require.False(t, *hookRan)
+	require.True(t, *actionRan)
+}
 
-	t.Run("WithoutEnv", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
-		azdContext, err := createAzdContext(t)
-		require.NoError(t, err)
+func Test_CommandHooks_Middleware_WithoutEnv(t *testing.T) {
+	mockContext := mocks.NewMockContext(context.Background())
+	azdContext, err := createAzdContext(t)
+	require.NoError(t, err)
 
-		envName := "test"
-		commandName := "command"
+	envName := "test"
+	commandName := "command"
 
-		projectConfig := project.ProjectConfig{
-			Name: envName,
-			Scripts: map[string]*ext.ScriptConfig{
-				"precommand": {
-					Script: "echo 'hello'",
-					Type:   ext.ScriptTypeBash,
-				},
+	projectConfig := project.ProjectConfig{
+		Name: envName,
+		Scripts: map[string]*ext.ScriptConfig{
+			"precommand": {
+				Script: "echo 'hello'",
+				Type:   ext.ScriptTypeBash,
 			},
-		}
+		},
+	}
 
-		err = ensureAzdProject(azdContext, &projectConfig)
-		require.NoError(t, err)
+	err = ensureAzdProject(azdContext, &projectConfig)
+	require.NoError(t, err)
 
-		nextFn, actionRan := createNextFn()
-		hookRan := setupHookMock(mockContext, 0)
-		result, err := runMiddleware(mockContext, azdContext, envName, commandName, nextFn)
+	nextFn, actionRan := createNextFn()
+	hookRan := setupHookMock(mockContext, 0)
+	result, err := runMiddleware(mockContext, azdContext, envName, commandName, nextFn)
 
-		require.NotNil(t, result)
-		require.NoError(t, err)
+	require.NotNil(t, result)
+	require.NoError(t, err)
 
-		// Hook will not run because the project env has not been set
-		require.False(t, *hookRan)
-		require.True(t, *actionRan)
-	})
+	// Hook will not run because the project env has not been set
+	require.False(t, *hookRan)
+	require.True(t, *actionRan)
+}
 
-	t.Run("WithoutProject", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
-		azdContext, err := createAzdContext(t)
-		require.NoError(t, err)
+func Test_CommandHooks_Middleware_WithoutProject(t *testing.T) {
+	mockContext := mocks.NewMockContext(context.Background())
+	azdContext, err := createAzdContext(t)
+	require.NoError(t, err)
 
-		envName := "test"
-		commandName := "command"
+	envName := "test"
+	commandName := "command"
 
-		nextFn, actionRan := createNextFn()
-		hookRan := setupHookMock(mockContext, 0)
-		result, err := runMiddleware(mockContext, azdContext, envName, commandName, nextFn)
+	nextFn, actionRan := createNextFn()
+	hookRan := setupHookMock(mockContext, 0)
+	result, err := runMiddleware(mockContext, azdContext, envName, commandName, nextFn)
 
-		require.NotNil(t, result)
-		require.NoError(t, err)
+	require.NotNil(t, result)
+	require.NoError(t, err)
 
-		// Hook will not run because azure.yaml project doesn't exist
-		require.False(t, *hookRan)
-		require.True(t, *actionRan)
-	})
+	// Hook will not run because azure.yaml project doesn't exist
+	require.False(t, *hookRan)
+	require.True(t, *actionRan)
+}
 
-	t.Run("PreHookWithError", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
-		azdContext, err := createAzdContext(t)
-		require.NoError(t, err)
+func Test_CommandHooks_Middleware_PreHookWithError(t *testing.T) {
+	mockContext := mocks.NewMockContext(context.Background())
+	azdContext, err := createAzdContext(t)
+	require.NoError(t, err)
 
-		envName := "test"
-		commandName := "command"
+	envName := "test"
+	commandName := "command"
 
-		projectConfig := project.ProjectConfig{
-			Name: envName,
-			Scripts: map[string]*ext.ScriptConfig{
-				"precommand": {
-					Script: "exit 1",
-					Type:   ext.ScriptTypeBash,
-				},
+	projectConfig := project.ProjectConfig{
+		Name: envName,
+		Scripts: map[string]*ext.ScriptConfig{
+			"precommand": {
+				Script: "exit 1",
+				Type:   ext.ScriptTypeBash,
 			},
-		}
+		},
+	}
 
-		err = ensureAzdValid(azdContext, envName, &projectConfig)
-		require.NoError(t, err)
+	err = ensureAzdValid(azdContext, envName, &projectConfig)
+	require.NoError(t, err)
 
-		nextFn, actionRan := createNextFn()
-		// Set a non-zero exit code to simulate failure
-		hookRan := setupHookMock(mockContext, 1)
-		result, err := runMiddleware(mockContext, azdContext, envName, commandName, nextFn)
+	nextFn, actionRan := createNextFn()
+	// Set a non-zero exit code to simulate failure
+	hookRan := setupHookMock(mockContext, 1)
+	result, err := runMiddleware(mockContext, azdContext, envName, commandName, nextFn)
 
-		require.Nil(t, result)
-		require.Error(t, err)
+	require.Nil(t, result)
+	require.Error(t, err)
 
-		// Hook will run with matching command
-		require.True(t, *hookRan)
+	// Hook will run with matching command
+	require.True(t, *hookRan)
 
-		// Action will not run because of pre-hook non zero exit code
-		require.False(t, *actionRan)
-	})
+	// Action will not run because of pre-hook non zero exit code
+	require.False(t, *actionRan)
+}
+
+func Test_CommandHooks_Middleware_PreHookWithErrorAndContinue(t *testing.T) {
+	mockContext := mocks.NewMockContext(context.Background())
+	azdContext, err := createAzdContext(t)
+	require.NoError(t, err)
+
+	envName := "test"
+	commandName := "command"
+
+	projectConfig := project.ProjectConfig{
+		Name: envName,
+		Scripts: map[string]*ext.ScriptConfig{
+			"precommand": {
+				Script:          "exit 1",
+				Type:            ext.ScriptTypeBash,
+				ContinueOnError: true,
+			},
+		},
+	}
+
+	err = ensureAzdValid(azdContext, envName, &projectConfig)
+	require.NoError(t, err)
+
+	nextFn, actionRan := createNextFn()
+	// Set a non-zero exit code to simulate failure
+	hookRan := setupHookMock(mockContext, 1)
+	result, err := runMiddleware(mockContext, azdContext, envName, commandName, nextFn)
+
+	require.NotNil(t, result)
+	require.NoError(t, err)
+
+	// Hook will run with matching command
+	require.True(t, *hookRan)
+
+	// Action will still run despite a script error because it has been configured to "ContinueOnError"
+	require.True(t, *actionRan)
 }
 
 func createAzdContext(t *testing.T) (*azdcontext.AzdContext, error) {
@@ -223,7 +258,7 @@ func createAzdContext(t *testing.T) (*azdcontext.AzdContext, error) {
 	return azdContext, nil
 }
 
-func createNextFn() (actions.NextFn, *bool) {
+func createNextFn() (NextFn, *bool) {
 	actionRan := false
 
 	nextFn := func(context context.Context) (*actions.ActionResult, error) {
@@ -262,7 +297,7 @@ func runMiddleware(
 	azdContext *azdcontext.AzdContext,
 	envName string,
 	commandName string,
-	nextFn actions.NextFn,
+	nextFn NextFn,
 ) (*actions.ActionResult, error) {
 	commandOptions := internal.GlobalCommandOptions{
 		EnvironmentName: envName,
@@ -274,8 +309,14 @@ func runMiddleware(
 		Name: commandName,
 	}
 
-	middlewareFn := UseCommandHooks(&commandOptions, mockContext.Console, mockContext.CommandRunner)
-	result, err := middlewareFn(*mockContext.Context, &actionOptions, nextFn)
+	middleware := NewCommandHooksMiddleware(
+		azdContext,
+		mockContext.Console,
+		mockContext.CommandRunner,
+		&actionOptions,
+		&commandOptions,
+	)
+	result, err := middleware.Run(*mockContext.Context, nextFn)
 
 	return result, err
 }

@@ -127,7 +127,6 @@ func TestDeployProgressMessages(t *testing.T) {
 		service.Config.Scripts,
 		service.Config.Path(),
 		env.ToSlice(),
-		true,
 	)
 	result, progress := service.Deploy(*mockContext.Context, azdContext, commandHooks)
 	progressMessages := []string{}

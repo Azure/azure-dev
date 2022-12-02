@@ -42,18 +42,6 @@ func newFormatterFromConsole(console input.Console) output.Formatter {
 	return console.GetFormatter()
 }
 
-func newGenericConsole() input.Console {
-	return input.NewConsole(
-		false,
-		true,
-		colorable.NewColorableStdout(),
-		input.ConsoleHandles{
-			Stdin:  os.Stdin,
-			Stdout: os.Stdout,
-			Stderr: os.Stderr,
-		}, &output.NoneFormatter{})
-}
-
 func newConsoleFromOptions(
 	rootOptions *internal.GlobalCommandOptions,
 	formatter output.Formatter,
@@ -291,16 +279,19 @@ var ConfigResetCmdSet = wire.NewSet(
 	wire.Bind(new(actions.Action), new(*configResetAction)))
 
 var DebugMiddlewareSet = wire.NewSet(
-	newGenericConsole,
 	CommonSet,
-	middleware.UseDebug,
-)
+	middleware.NewDebugMiddleware,
+	wire.Bind(new(middleware.Middleware), new(*middleware.DebugMiddleware)))
+
+var TelemetryMiddlewareSet = wire.NewSet(
+	CommonSet,
+	middleware.NewTelemetryMiddleware,
+	wire.Bind(new(middleware.Middleware), new(*middleware.TelemetryMiddleware)))
 
 var CommandHooksMiddlewareSet = wire.NewSet(
-	newGenericConsole,
 	CommonSet,
-	middleware.UseCommandHooks,
-)
+	middleware.NewCommandHooksMiddleware,
+	wire.Bind(new(middleware.Middleware), new(*middleware.CommandHooksMiddleware)))
 
 var AuthTokenCmdSet = wire.NewSet(
 	CommonSet,

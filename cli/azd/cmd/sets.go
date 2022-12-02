@@ -15,10 +15,13 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
+	"github.com/azure/azure-dev/cli/azd/pkg/ext"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
+	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/pkg/templates"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/git"
@@ -107,6 +110,57 @@ func newCredential(ctx context.Context, authManager *auth.Manager) (azcore.Token
 	}
 
 	return credential, nil
+}
+
+func newEnvironmentFromAzdContext(
+	azdContext *azdcontext.AzdContext,
+	commandOptions *internal.GlobalCommandOptions,
+) (*environment.Environment, error) {
+	environmentName := commandOptions.EnvironmentName
+	var err error
+
+	if environmentName == "" {
+		defaultEnvName, err := azdContext.GetDefaultEnvironmentName()
+		if err != nil {
+			return nil, err
+		}
+
+		environmentName = defaultEnvName
+	}
+
+	env, err := environment.GetEnvironment(azdContext, environmentName)
+	if err != nil {
+		return nil, err
+	}
+
+	return env, nil
+}
+
+func newProjectConfigFromEnv(
+	azdContext *azdcontext.AzdContext,
+	env *environment.Environment,
+) (*project.ProjectConfig, error) {
+	projectConfig, err := project.LoadProjectConfig(azdContext.ProjectPath(), env)
+	if err != nil {
+		return nil, err
+	}
+
+	return projectConfig, nil
+}
+
+func newCommandHooksFromEnv(
+	console input.Console,
+	commandRunner exec.CommandRunner,
+	azdContext *azdcontext.AzdContext,
+	env *environment.Environment,
+	projectConfig *project.ProjectConfig) *ext.CommandHooks {
+	return ext.NewCommandHooks(
+		commandRunner,
+		console,
+		projectConfig.Scripts,
+		azdContext.ProjectDirectory(),
+		env.Environ(),
+	)
 }
 
 var FormattedConsoleSet = wire.NewSet(
@@ -290,6 +344,9 @@ var TelemetryMiddlewareSet = wire.NewSet(
 
 var CommandHooksMiddlewareSet = wire.NewSet(
 	CommonSet,
+	newEnvironmentFromAzdContext,
+	newProjectConfigFromEnv,
+	newCommandHooksFromEnv,
 	middleware.NewCommandHooksMiddleware,
 	wire.Bind(new(middleware.Middleware), new(*middleware.CommandHooksMiddleware)))
 

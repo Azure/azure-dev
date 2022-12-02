@@ -7,8 +7,9 @@ import (
 
 func provisionCmdDesign(rootOptions *internal.GlobalCommandOptions) (*cobra.Command, *infraCreateFlags) {
 	cmd := &cobra.Command{
-		Use:   "provision",
-		Short: "Provision the Azure resources for an application.",
+		Use:     "provision",
+		Aliases: []string{"infra create"},
+		Short:   "Provision the Azure resources for an application.",
 		//nolint:lll
 		Long: `Provision the Azure resources for an application.
 

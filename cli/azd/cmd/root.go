@@ -136,12 +136,6 @@ func BuildCmd[F any](
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		ctx := cmd.Context()
 
-		if actionOptions == nil {
-			actionOptions = &actions.ActionOptions{}
-		}
-
-		actionOptions.Name = cmd.CommandPath()
-
 		console, err := initConsole(cmd, opts)
 		if err != nil {
 			return err
@@ -158,7 +152,11 @@ func BuildCmd[F any](
 		middleware.Use(middleware.Build(opts, actionOptions, console, initTelemetryMiddleware))
 		middleware.Use(middleware.Build(opts, actionOptions, console, initCommandHooksMiddleware))
 
-		actionResult, err := middleware.RunAction(ctx, action)
+		runOptions := middleware.Options{
+			Name:    cmd.CommandPath(),
+			Aliases: cmd.Aliases,
+		}
+		actionResult, err := middleware.RunAction(ctx, runOptions, action)
 		// At this point, we know that there might be an error, so we can silence cobra from showing it after us.
 		cmd.SilenceErrors = true
 		actions.ShowActionResults(ctx, console, actionResult, err)

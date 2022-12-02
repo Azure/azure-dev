@@ -7,7 +7,6 @@ import (
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
-	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
@@ -23,7 +22,7 @@ func Test_CommandHooks_Middleware_WithValidProjectAndMatchingCommand(t *testing.
 	require.NoError(t, err)
 
 	envName := "test"
-	commandName := "command"
+	runOptions := Options{Name: "command"}
 
 	projectConfig := project.ProjectConfig{
 		Name: envName,
@@ -40,7 +39,7 @@ func Test_CommandHooks_Middleware_WithValidProjectAndMatchingCommand(t *testing.
 
 	nextFn, actionRan := createNextFn()
 	hookRan := setupHookMock(mockContext, 0)
-	result, err := runMiddleware(mockContext, azdContext, envName, commandName, nextFn)
+	result, err := runMiddleware(mockContext, azdContext, envName, &projectConfig, runOptions, nextFn)
 
 	require.NotNil(t, result)
 	require.NoError(t, err)
@@ -56,7 +55,7 @@ func Test_CommandHooks_Middleware_ValidProjectWithDifferentCommand(t *testing.T)
 	require.NoError(t, err)
 
 	envName := "test"
-	commandName := "another command"
+	runOptions := Options{Name: "another command"}
 
 	projectConfig := project.ProjectConfig{
 		Name: envName,
@@ -73,7 +72,7 @@ func Test_CommandHooks_Middleware_ValidProjectWithDifferentCommand(t *testing.T)
 
 	nextFn, actionRan := createNextFn()
 	hookRan := setupHookMock(mockContext, 0)
-	result, err := runMiddleware(mockContext, azdContext, envName, commandName, nextFn)
+	result, err := runMiddleware(mockContext, azdContext, envName, &projectConfig, runOptions, nextFn)
 
 	require.NotNil(t, result)
 	require.NoError(t, err)
@@ -89,7 +88,7 @@ func Test_CommandHooks_Middleware_ValidProjectWithNoHooks(t *testing.T) {
 	require.NoError(t, err)
 
 	envName := "test"
-	commandName := "another command"
+	runOptions := Options{Name: "another command"}
 
 	projectConfig := project.ProjectConfig{
 		Name: envName,
@@ -100,65 +99,12 @@ func Test_CommandHooks_Middleware_ValidProjectWithNoHooks(t *testing.T) {
 
 	nextFn, actionRan := createNextFn()
 	hookRan := setupHookMock(mockContext, 0)
-	result, err := runMiddleware(mockContext, azdContext, envName, commandName, nextFn)
+	result, err := runMiddleware(mockContext, azdContext, envName, &projectConfig, runOptions, nextFn)
 
 	require.NotNil(t, result)
 	require.NoError(t, err)
 
 	// Hook will not run since there aren't any hooks registered
-	require.False(t, *hookRan)
-	require.True(t, *actionRan)
-}
-
-func Test_CommandHooks_Middleware_WithoutEnv(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
-	azdContext, err := createAzdContext(t)
-	require.NoError(t, err)
-
-	envName := "test"
-	commandName := "command"
-
-	projectConfig := project.ProjectConfig{
-		Name: envName,
-		Scripts: map[string]*ext.ScriptConfig{
-			"precommand": {
-				Script: "echo 'hello'",
-				Type:   ext.ScriptTypeBash,
-			},
-		},
-	}
-
-	err = ensureAzdProject(azdContext, &projectConfig)
-	require.NoError(t, err)
-
-	nextFn, actionRan := createNextFn()
-	hookRan := setupHookMock(mockContext, 0)
-	result, err := runMiddleware(mockContext, azdContext, envName, commandName, nextFn)
-
-	require.NotNil(t, result)
-	require.NoError(t, err)
-
-	// Hook will not run because the project env has not been set
-	require.False(t, *hookRan)
-	require.True(t, *actionRan)
-}
-
-func Test_CommandHooks_Middleware_WithoutProject(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
-	azdContext, err := createAzdContext(t)
-	require.NoError(t, err)
-
-	envName := "test"
-	commandName := "command"
-
-	nextFn, actionRan := createNextFn()
-	hookRan := setupHookMock(mockContext, 0)
-	result, err := runMiddleware(mockContext, azdContext, envName, commandName, nextFn)
-
-	require.NotNil(t, result)
-	require.NoError(t, err)
-
-	// Hook will not run because azure.yaml project doesn't exist
 	require.False(t, *hookRan)
 	require.True(t, *actionRan)
 }
@@ -169,7 +115,7 @@ func Test_CommandHooks_Middleware_PreHookWithError(t *testing.T) {
 	require.NoError(t, err)
 
 	envName := "test"
-	commandName := "command"
+	runOptions := Options{Name: "command"}
 
 	projectConfig := project.ProjectConfig{
 		Name: envName,
@@ -187,7 +133,7 @@ func Test_CommandHooks_Middleware_PreHookWithError(t *testing.T) {
 	nextFn, actionRan := createNextFn()
 	// Set a non-zero exit code to simulate failure
 	hookRan := setupHookMock(mockContext, 1)
-	result, err := runMiddleware(mockContext, azdContext, envName, commandName, nextFn)
+	result, err := runMiddleware(mockContext, azdContext, envName, &projectConfig, runOptions, nextFn)
 
 	require.Nil(t, result)
 	require.Error(t, err)
@@ -205,7 +151,7 @@ func Test_CommandHooks_Middleware_PreHookWithErrorAndContinue(t *testing.T) {
 	require.NoError(t, err)
 
 	envName := "test"
-	commandName := "command"
+	runOptions := Options{Name: "command"}
 
 	projectConfig := project.ProjectConfig{
 		Name: envName,
@@ -224,7 +170,7 @@ func Test_CommandHooks_Middleware_PreHookWithErrorAndContinue(t *testing.T) {
 	nextFn, actionRan := createNextFn()
 	// Set a non-zero exit code to simulate failure
 	hookRan := setupHookMock(mockContext, 1)
-	result, err := runMiddleware(mockContext, azdContext, envName, commandName, nextFn)
+	result, err := runMiddleware(mockContext, azdContext, envName, &projectConfig, runOptions, nextFn)
 
 	require.NotNil(t, result)
 	require.NoError(t, err)
@@ -233,6 +179,39 @@ func Test_CommandHooks_Middleware_PreHookWithErrorAndContinue(t *testing.T) {
 	require.True(t, *hookRan)
 
 	// Action will still run despite a script error because it has been configured to "ContinueOnError"
+	require.True(t, *actionRan)
+}
+
+func Test_CommandHooks_Middleware_WithCmdAlias(t *testing.T) {
+	mockContext := mocks.NewMockContext(context.Background())
+	azdContext, err := createAzdContext(t)
+	require.NoError(t, err)
+
+	envName := "test"
+	runOptions := Options{Name: "command", Aliases: []string{"alias"}}
+
+	projectConfig := project.ProjectConfig{
+		Name: envName,
+		Scripts: map[string]*ext.ScriptConfig{
+			"prealias": {
+				Script: "echo 'hello'",
+				Type:   ext.ScriptTypeBash,
+			},
+		},
+	}
+
+	err = ensureAzdValid(azdContext, envName, &projectConfig)
+	require.NoError(t, err)
+
+	nextFn, actionRan := createNextFn()
+	hookRan := setupHookMock(mockContext, 0)
+	result, err := runMiddleware(mockContext, azdContext, envName, &projectConfig, runOptions, nextFn)
+
+	require.NotNil(t, result)
+	require.NoError(t, err)
+
+	// Hook will run with matching alias command
+	require.True(t, *hookRan)
 	require.True(t, *actionRan)
 }
 
@@ -296,27 +275,31 @@ func runMiddleware(
 	mockContext *mocks.MockContext,
 	azdContext *azdcontext.AzdContext,
 	envName string,
-	commandName string,
+	projectConfig *project.ProjectConfig,
+	runOptions Options,
 	nextFn NextFn,
 ) (*actions.ActionResult, error) {
-	commandOptions := internal.GlobalCommandOptions{
-		EnvironmentName: envName,
-		Cwd:             azdContext.ProjectDirectory(),
-		NoPrompt:        false,
-	}
+	env := environment.EphemeralWithValues(envName, nil)
+
+	commandHooks := ext.NewCommandHooks(
+		mockContext.CommandRunner,
+		mockContext.Console,
+		projectConfig.Scripts,
+		azdContext.ProjectDirectory(),
+		env.Environ(),
+	)
 
 	actionOptions := actions.ActionOptions{
-		Name: commandName,
+		DisableTelemetry: false,
 	}
 
 	middleware := NewCommandHooksMiddleware(
-		azdContext,
-		mockContext.Console,
-		mockContext.CommandRunner,
 		&actionOptions,
-		&commandOptions,
+		projectConfig,
+		commandHooks,
 	)
-	result, err := middleware.Run(*mockContext.Context, nextFn)
+
+	result, err := middleware.Run(*mockContext.Context, runOptions, nextFn)
 
 	return result, err
 }

@@ -17,10 +17,11 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/bash"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/powershell"
+	"golang.org/x/exp/slices"
 )
 
 // Generic action function that may return an error
-type ActionFn func() error
+type InvokeFn func() error
 
 // The type of command hooks. Supported values are 'pre' and 'post'
 type HookType string
@@ -60,8 +61,8 @@ func NewCommandHooks(
 }
 
 // Invokes an action run runs any registered pre or post script hooks for the specified command.
-func (h *CommandHooks) InvokeAction(ctx context.Context, commandName string, actionFn ActionFn) error {
-	err := h.RunScripts(ctx, HookTypePre, commandName)
+func (h *CommandHooks) Invoke(ctx context.Context, commands []string, actionFn InvokeFn) error {
+	err := h.RunScripts(ctx, HookTypePre, commands)
 	if err != nil {
 		return fmt.Errorf("failing running pre command hooks: %w", err)
 	}
@@ -71,7 +72,7 @@ func (h *CommandHooks) InvokeAction(ctx context.Context, commandName string, act
 		return err
 	}
 
-	err = h.RunScripts(ctx, HookTypePost, commandName)
+	err = h.RunScripts(ctx, HookTypePost, commands)
 	if err != nil {
 		return fmt.Errorf("failing running pre command hooks: %w", err)
 	}
@@ -80,8 +81,8 @@ func (h *CommandHooks) InvokeAction(ctx context.Context, commandName string, act
 }
 
 // Invokes any registered script hooks for the specified hook type and command.
-func (h *CommandHooks) RunScripts(ctx context.Context, hookType HookType, commandName string) error {
-	scripts := h.getScriptsForHook(hookType, commandName)
+func (h *CommandHooks) RunScripts(ctx context.Context, hookType HookType, commands []string) error {
+	scripts := h.getScriptsForHook(hookType, commands)
 	for _, scriptConfig := range scripts {
 		err := h.execScript(ctx, scriptConfig)
 		if err != nil {
@@ -92,16 +93,26 @@ func (h *CommandHooks) RunScripts(ctx context.Context, hookType HookType, comman
 	return nil
 }
 
-func (h *CommandHooks) getScriptsForHook(prefix HookType, commandName string) []*ScriptConfig {
-	// Convert things like `azd config list` => 'configlist`
-	commandName = strings.TrimPrefix(commandName, "azd")
-	commandName = strings.TrimSpace(commandName)
-	commandName = strings.ReplaceAll(commandName, " ", "")
+func (h *CommandHooks) getScriptsForHook(prefix HookType, commands []string) []*ScriptConfig {
+	validHookNames := []string{}
+
+	for _, commandName := range commands {
+		// Convert things like `azd config list` => 'configlist`
+		commandName = strings.TrimPrefix(commandName, "azd")
+		commandName = strings.TrimSpace(commandName)
+		commandName = strings.ReplaceAll(commandName, " ", "")
+
+		validHookNames = append(validHookNames, strings.ToLower(string(prefix)+commandName))
+	}
 
 	matchingScripts := []*ScriptConfig{}
 	for scriptName, scriptConfig := range h.scripts {
-		if strings.Contains(scriptName, string(prefix)) && strings.Contains(scriptName, commandName) {
-			scriptConfig.Name = fmt.Sprintf("%s-%s", prefix, commandName)
+		index := slices.IndexFunc(validHookNames, func(hookName string) bool {
+			return hookName == scriptName
+		})
+
+		if index > -1 {
+			scriptConfig.Name = scriptName
 			matchingScripts = append(matchingScripts, scriptConfig)
 		}
 	}

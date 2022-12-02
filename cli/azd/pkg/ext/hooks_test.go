@@ -14,7 +14,7 @@ import (
 )
 
 func Test_Hooks_Execute(t *testing.T) {
-	cwd := "cwd"
+	cwd := t.TempDir()
 	env := []string{
 		"a=apple",
 		"b=banana",
@@ -58,7 +58,7 @@ func Test_Hooks_Execute(t *testing.T) {
 			})
 
 			hooks := NewCommandHooks(mockContext.CommandRunner, mockContext.Console, scripts, cwd, env)
-			err := hooks.RunScripts(*mockContext.Context, HookTypePre, "command")
+			err := hooks.RunScripts(*mockContext.Context, HookTypePre, []string{"command"})
 
 			require.True(t, ranPreHook)
 			require.False(t, ranPostHook)
@@ -83,7 +83,7 @@ func Test_Hooks_Execute(t *testing.T) {
 			})
 
 			hooks := NewCommandHooks(mockContext.CommandRunner, mockContext.Console, scripts, cwd, env)
-			err := hooks.RunScripts(*mockContext.Context, HookTypePost, "command")
+			err := hooks.RunScripts(*mockContext.Context, HookTypePost, []string{"command"})
 
 			require.False(t, ranPreHook)
 			require.True(t, ranPostHook)
@@ -108,7 +108,7 @@ func Test_Hooks_Execute(t *testing.T) {
 			})
 
 			hooks := NewCommandHooks(mockContext.CommandRunner, mockContext.Console, scripts, cwd, env)
-			err := hooks.RunScripts(*mockContext.Context, HookTypePre, "interactive")
+			err := hooks.RunScripts(*mockContext.Context, HookTypePre, []string{"interactive"})
 
 			require.False(t, ranPreHook)
 			require.True(t, ranPostHook)
@@ -145,7 +145,7 @@ func Test_Hooks_Execute(t *testing.T) {
 		})
 
 		hooks := NewCommandHooks(mockContext.CommandRunner, mockContext.Console, scripts, cwd, env)
-		err := hooks.InvokeAction(*mockContext.Context, "command", func() error {
+		err := hooks.Invoke(*mockContext.Context, []string{"command"}, func() error {
 			ranAction = true
 			hookLog = append(hookLog, "action")
 			return nil
@@ -167,7 +167,7 @@ func Test_Hooks_Execute(t *testing.T) {
 }
 
 func Test_Hooks_GetScript(t *testing.T) {
-	cwd := "cwd"
+	cwd := t.TempDir()
 	env := []string{
 		"a=apple",
 		"b=banana",
@@ -213,7 +213,17 @@ func Test_Hooks_GetScript(t *testing.T) {
 	})
 
 	t.Run("Inline Script", func(t *testing.T) {
+		wd, err := os.Getwd()
+		require.NoError(t, err)
+
 		tempDir := t.TempDir()
+		err = os.Chdir(tempDir)
+		require.NoError(t, err)
+
+		t.Cleanup(func() {
+			err := os.Chdir(wd)
+			require.NoError(t, err)
+		})
 
 		scriptConfig := scripts["inline"]
 		mockContext := mocks.NewMockContext(context.Background())

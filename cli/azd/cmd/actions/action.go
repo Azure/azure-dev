@@ -33,7 +33,6 @@ type Action interface {
 }
 
 type ActionOptions struct {
-	Name             string
 	DisableTelemetry bool
 }
 

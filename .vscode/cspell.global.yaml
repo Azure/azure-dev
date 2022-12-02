@@ -93,6 +93,7 @@ ignoreWords:
     - postcommand
     - precommand
     - preinteractive
+    - prealias
     - provs
     - psql
     - pview

@@ -56,7 +56,7 @@ func (svc *Service) Deploy(
 
 		var deploymentArtifact string
 
-		err := commandHooks.InvokeAction(ctx, "package", func() error {
+		err := commandHooks.Invoke(ctx, []string{"package"}, func() error {
 			log.Printf("packing service %s", svc.Config.Name)
 			progress <- "Preparing packaging"
 
@@ -77,7 +77,7 @@ func (svc *Service) Deploy(
 
 		var deployResult ServiceDeploymentResult
 
-		err = commandHooks.InvokeAction(ctx, "deploy", func() error {
+		err = commandHooks.Invoke(ctx, []string{"deploy"}, func() error {
 			log.Printf("deploying service %s", svc.Config.Name)
 
 			progress <- "Preparing for deployment"

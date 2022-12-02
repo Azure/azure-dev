@@ -94,7 +94,12 @@ func (u *upAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 
 	finalOutput := []string{}
 	u.infraCreate.finalOutputRedirect = &finalOutput
-	_, err = middleware.RunAction(ctx, u.infraCreate)
+
+	provisionRunOptions := middleware.Options{
+		Name:    "infra create",
+		Aliases: []string{"provision"},
+	}
+	_, err = middleware.RunAction(ctx, provisionRunOptions, u.infraCreate)
 	if err != nil {
 		return nil, err
 	}
@@ -102,7 +107,10 @@ func (u *upAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	// Print an additional newline to separate provision from deploy
 	u.console.Message(ctx, "")
 
-	_, err = middleware.RunAction(ctx, u.deploy)
+	deployRunOptions := middleware.Options{
+		Name: "deploy",
+	}
+	_, err = middleware.RunAction(ctx, deployRunOptions, u.deploy)
 	if err != nil {
 		return nil, err
 	}
@@ -115,7 +123,10 @@ func (u *upAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 }
 
 func (u *upAction) runInit(ctx context.Context) error {
-	_, err := middleware.RunAction(ctx, u.init)
+	initRunOptions := middleware.Options{
+		Name: "init",
+	}
+	_, err := middleware.RunAction(ctx, initRunOptions, u.init)
 	var envInitError *environment.EnvironmentInitError
 	if errors.As(err, &envInitError) {
 		// We can ignore environment already initialized errors

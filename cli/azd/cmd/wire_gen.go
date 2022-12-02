@@ -466,7 +466,16 @@ func initCommandHooksMiddleware(rootOptions *internal.GlobalCommandOptions, acti
 	if err != nil {
 		return nil, err
 	}
+	environment, err := newEnvironmentFromAzdContext(azdContext, rootOptions)
+	if err != nil {
+		return nil, err
+	}
+	projectConfig, err := newProjectConfigFromEnv(azdContext, environment)
+	if err != nil {
+		return nil, err
+	}
 	commandRunner := newCommandRunnerFromConsole(console)
-	commandHooksMiddleware := middleware.NewCommandHooksMiddleware(azdContext, console, commandRunner, actionOptions, rootOptions)
+	commandHooks := newCommandHooksFromEnv(console, commandRunner, azdContext, environment, projectConfig)
+	commandHooksMiddleware := middleware.NewCommandHooksMiddleware(actionOptions, projectConfig, commandHooks)
 	return commandHooksMiddleware, nil
 }

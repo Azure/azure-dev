@@ -93,6 +93,7 @@ ignoreWords:
     - PLACEHOLDERIACTOOLS
     - postcommand
     - precommand
+    - predeploy
     - preinteractive
     - prealias
     - provs

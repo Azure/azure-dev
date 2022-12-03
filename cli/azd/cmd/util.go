@@ -338,6 +338,12 @@ func ensureProject(path string) error {
 	return nil
 }
 
+// Flag structs that support environment flag
+// Used by command hooks middleware to attempt retrieval of environment name
+type flagsWithEnv interface {
+	Env() *envFlag
+}
+
 type envFlag struct {
 	environmentName string
 }

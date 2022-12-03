@@ -28,6 +28,10 @@ type infraCreateFlags struct {
 	*envFlag
 }
 
+func (i *infraCreateFlags) Env() *envFlag {
+	return i.envFlag
+}
+
 func (i *infraCreateFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
 	i.bindNonCommon(local, global)
 	i.bindCommon(local, global)

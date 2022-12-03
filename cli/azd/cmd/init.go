@@ -64,6 +64,10 @@ type initFlags struct {
 	*envFlag
 }
 
+func (i *initFlags) Env() *envFlag {
+	return i.envFlag
+}
+
 func (i *initFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
 	i.bindNonCommon(local, global)
 	i.bindCommon(local, global)

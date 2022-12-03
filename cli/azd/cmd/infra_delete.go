@@ -23,6 +23,10 @@ type infraDeleteFlags struct {
 	envFlag
 }
 
+func (i *infraDeleteFlags) Env() *envFlag {
+	return &i.envFlag
+}
+
 func (i *infraDeleteFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
 	local.BoolVar(&i.forceDelete, "force", false, "Does not require confirmation before it deletes resources.")
 	local.BoolVar(

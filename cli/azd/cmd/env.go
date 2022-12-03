@@ -61,6 +61,10 @@ type envSetFlags struct {
 	global *internal.GlobalCommandOptions
 }
 
+func (d *envSetFlags) Env() *envFlag {
+	return &d.envFlag
+}
+
 func (f *envSetFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
 	f.envFlag.Bind(local, global)
 	f.global = global

@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log"
 	"os"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
@@ -112,11 +113,29 @@ func newCredential(ctx context.Context, authManager *auth.Manager) (azcore.Token
 	return credential, nil
 }
 
+// Attempts to retrieve any environment flags available
+// If found, return the envFlags otherwise an empty flag set.
+func newEnvFlagsFromCmd(flags any, commandOptions *internal.GlobalCommandOptions) *envFlag {
+	flagsWithEnv, ok := flags.(flagsWithEnv)
+	if !ok {
+		return &envFlag{}
+	}
+
+	envFlags := flagsWithEnv.Env()
+	if envFlags.environmentName != "" {
+		log.Printf("Found environment name with value '%s'", envFlags.environmentName)
+	}
+
+	return envFlags
+}
+
+// Creates a new azd environment from the azd context and command flags/options
 func newEnvironmentFromAzdContext(
 	azdContext *azdcontext.AzdContext,
+	envFlags *envFlag,
 	commandOptions *internal.GlobalCommandOptions,
 ) (*environment.Environment, error) {
-	environmentName := commandOptions.EnvironmentName
+	environmentName := envFlags.environmentName
 	var err error
 
 	if environmentName == "" {
@@ -136,6 +155,7 @@ func newEnvironmentFromAzdContext(
 	return env, nil
 }
 
+// Creates a new project config for the specified environment
 func newProjectConfigFromEnv(
 	azdContext *azdcontext.AzdContext,
 	env *environment.Environment,
@@ -148,6 +168,7 @@ func newProjectConfigFromEnv(
 	return projectConfig, nil
 }
 
+// Creates extensibility command hooks from azd context, environment & project configuration
 func newCommandHooksFromEnv(
 	console input.Console,
 	commandRunner exec.CommandRunner,
@@ -344,6 +365,7 @@ var TelemetryMiddlewareSet = wire.NewSet(
 
 var CommandHooksMiddlewareSet = wire.NewSet(
 	CommonSet,
+	newEnvFlagsFromCmd,
 	newEnvironmentFromAzdContext,
 	newProjectConfigFromEnv,
 	newCommandHooksFromEnv,

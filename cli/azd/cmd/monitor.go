@@ -28,6 +28,10 @@ type monitorFlags struct {
 	envFlag
 }
 
+func (m *monitorFlags) Env() *envFlag {
+	return &m.envFlag
+}
+
 func (m *monitorFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
 	local.BoolVar(
 		&m.monitorLive,

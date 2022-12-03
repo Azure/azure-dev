@@ -451,22 +451,23 @@ func initConfigResetAction(console input.Console, ctx context.Context, o *intern
 	return cmdConfigResetAction, nil
 }
 
-func initDebugMiddleware(rootOptions *internal.GlobalCommandOptions, actionOptions *actions.ActionOptions, console input.Console) (middleware.Middleware, error) {
+func initDebugMiddleware(flags any, rootOptions *internal.GlobalCommandOptions, actionOptions *actions.ActionOptions, console input.Console) (middleware.Middleware, error) {
 	debugMiddleware := middleware.NewDebugMiddleware(console)
 	return debugMiddleware, nil
 }
 
-func initTelemetryMiddleware(rootOptions *internal.GlobalCommandOptions, actionOptions *actions.ActionOptions, console input.Console) (middleware.Middleware, error) {
+func initTelemetryMiddleware(flags any, rootOptions *internal.GlobalCommandOptions, actionOptions *actions.ActionOptions, console input.Console) (middleware.Middleware, error) {
 	telemetryMiddleware := middleware.NewTelemetryMiddleware(actionOptions)
 	return telemetryMiddleware, nil
 }
 
-func initCommandHooksMiddleware(rootOptions *internal.GlobalCommandOptions, actionOptions *actions.ActionOptions, console input.Console) (middleware.Middleware, error) {
+func initCommandHooksMiddleware(flags any, rootOptions *internal.GlobalCommandOptions, actionOptions *actions.ActionOptions, console input.Console) (middleware.Middleware, error) {
 	azdContext, err := newAzdContext()
 	if err != nil {
 		return nil, err
 	}
-	environment, err := newEnvironmentFromAzdContext(azdContext, rootOptions)
+	cmdEnvFlag := newEnvFlagsFromCmd(flags, rootOptions)
+	environment, err := newEnvironmentFromAzdContext(azdContext, cmdEnvFlag, rootOptions)
 	if err != nil {
 		return nil, err
 	}

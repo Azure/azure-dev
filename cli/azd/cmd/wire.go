@@ -313,6 +313,7 @@ func initConfigResetAction(
 //#region Middleware
 
 func initDebugMiddleware(
+	flags any,
 	rootOptions *internal.GlobalCommandOptions,
 	actionOptions *actions.ActionOptions,
 	console input.Console,
@@ -321,6 +322,7 @@ func initDebugMiddleware(
 }
 
 func initTelemetryMiddleware(
+	flags any,
 	rootOptions *internal.GlobalCommandOptions,
 	actionOptions *actions.ActionOptions,
 	console input.Console,
@@ -329,6 +331,7 @@ func initTelemetryMiddleware(
 }
 
 func initCommandHooksMiddleware(
+	flags any,
 	rootOptions *internal.GlobalCommandOptions,
 	actionOptions *actions.ActionOptions,
 	console input.Console,

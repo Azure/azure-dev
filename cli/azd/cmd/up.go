@@ -24,6 +24,10 @@ type upFlags struct {
 	envFlag
 }
 
+func (u *upFlags) Env() *envFlag {
+	return &u.envFlag
+}
+
 func (u *upFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
 	output.AddOutputFlag(
 		local,

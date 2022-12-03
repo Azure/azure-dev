@@ -26,6 +26,10 @@ type restoreFlags struct {
 	envFlag
 }
 
+func (r *restoreFlags) Env() *envFlag {
+	return &r.envFlag
+}
+
 func (r *restoreFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
 	local.StringVar(
 		&r.serviceName,

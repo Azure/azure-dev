@@ -28,6 +28,10 @@ type showFlags struct {
 	envFlag
 }
 
+func (s *showFlags) Env() *envFlag {
+	return &s.envFlag
+}
+
 func (s *showFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
 	output.AddOutputFlag(local, &s.outputFormat, []output.Format{output.JsonFormat}, output.NoneFormat)
 	s.envFlag.Bind(local, global)

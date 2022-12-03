@@ -148,9 +148,9 @@ func BuildCmd[F any](
 
 		ctx = tools.WithInstalledCheckCache(ctx)
 
-		middleware.Use(middleware.Build(opts, actionOptions, console, initDebugMiddleware))
-		middleware.Use(middleware.Build(opts, actionOptions, console, initTelemetryMiddleware))
-		middleware.Use(middleware.Build(opts, actionOptions, console, initCommandHooksMiddleware))
+		middleware.Use(middleware.Build(flags, opts, actionOptions, console, initDebugMiddleware))
+		middleware.Use(middleware.Build(flags, opts, actionOptions, console, initTelemetryMiddleware))
+		middleware.Use(middleware.Build(flags, opts, actionOptions, console, initCommandHooksMiddleware))
 
 		runOptions := middleware.Options{
 			Name:    cmd.CommandPath(),

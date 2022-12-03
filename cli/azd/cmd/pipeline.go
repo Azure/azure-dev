@@ -25,6 +25,10 @@ type pipelineConfigFlags struct {
 	envFlag
 }
 
+func (pc *pipelineConfigFlags) Env() *envFlag {
+	return &pc.envFlag
+}
+
 func (pc *pipelineConfigFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
 	local.StringVar(
 		&pc.PipelineServicePrincipalName,

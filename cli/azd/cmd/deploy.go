@@ -33,6 +33,10 @@ type deployFlags struct {
 	*envFlag
 }
 
+func (d *deployFlags) Env() *envFlag {
+	return d.envFlag
+}
+
 func (d *deployFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
 	d.bindNonCommon(local, global)
 	d.bindCommon(local, global)

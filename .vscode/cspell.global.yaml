@@ -73,6 +73,7 @@ ignoreWords:
     - magefile
     - mainfic
     - menuid
+    - middlewares
     - migr
     - mockconfig
     - mockconsole

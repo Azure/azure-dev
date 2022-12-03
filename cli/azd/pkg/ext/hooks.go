@@ -2,8 +2,6 @@ package ext
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/base64"
 	"fmt"
 	"log"
 	"os"
@@ -221,9 +219,6 @@ func (h *CommandHooks) GetScript(scriptConfig *ScriptConfig) (tools.Script, erro
 }
 
 func createTempScript(scriptConfig *ScriptConfig) (string, error) {
-	scriptBytes := []byte(scriptConfig.Script)
-	hash := sha256.Sum256(scriptBytes)
-
 	var ext string
 	scriptHeader := []string{}
 
@@ -231,20 +226,16 @@ func createTempScript(scriptConfig *ScriptConfig) (string, error) {
 	case ScriptTypeBash:
 		ext = "sh"
 		scriptHeader = []string{
-			"#!/bin/bash",
-			"set -euo pipefail",
+			"#!/bin/sh",
 		}
 	case ScriptTypePowershell:
 		ext = "ps1"
 	}
 
-	filename := fmt.Sprintf("%s.%s", base64.URLEncoding.
-		WithPadding(base64.NoPadding).
-		EncodeToString(hash[:]), ext)
-
-	// Write the temporary script file to .azure/hooks folder
-	filePath := filepath.Join(".azure", "hooks", filename)
-	directory := filepath.Dir(filePath)
+	// Creates .azure/hooks directory if it doesn't already exist
+	// In the future any scripts with names like "predeploy.sh" or similar would
+	// automatically be invoked base on our command hook naming convention
+	directory := filepath.Join(".azure", "hooks")
 	_, err := os.Stat(directory)
 	if err != nil {
 		err := os.MkdirAll(directory, osutil.PermissionDirectory)
@@ -252,6 +243,14 @@ func createTempScript(scriptConfig *ScriptConfig) (string, error) {
 			return "", fmt.Errorf("failed creating command hooks directory, %w", err)
 		}
 	}
+
+	// Write the temporary script file to .azure/hooks folder
+	file, err := os.CreateTemp(directory, fmt.Sprintf("%s-*.%s", scriptConfig.Name, ext))
+	if err != nil {
+		return "", fmt.Errorf("failed creating command hook file: %w", err)
+	}
+
+	defer file.Close()
 
 	scriptBuilder := strings.Builder{}
 	for _, line := range scriptHeader {
@@ -262,10 +261,10 @@ func createTempScript(scriptConfig *ScriptConfig) (string, error) {
 	scriptBuilder.Write([]byte(scriptConfig.Script))
 
 	// Temp generated files are cleaned up automatically after script execution has completed.
-	err = os.WriteFile(filePath, []byte(scriptBuilder.String()), osutil.PermissionFile)
+	_, err = file.WriteString(scriptBuilder.String())
 	if err != nil {
-		return "", fmt.Errorf("failed creating command hook file, %w", err)
+		return "", fmt.Errorf("failed writing command hook file, %w", err)
 	}
 
-	return filePath, nil
+	return file.Name(), nil
 }

@@ -7,29 +7,16 @@ set -u
 
 set pipefail
 
-# TODO: These can be greatly simplified by condensing down `apt-get install -y`
-# commands to a single invocation
-
 # Install PowerShell
-# https://learn.microsoft.com/en-us/powershell/scripting/install/install-ubuntu?view=powershell-7.3
-sudo apt-get update
-sudo apt-get install -y wget apt-transport-https software-properties-common
-wget "https://packages.microsoft.com/config/ubuntu/$(lsb_release -rs)/packages-microsoft-prod.deb"
-sudo dpkg -i packages-microsoft-prod.deb
-sudo apt-get update
-sudo apt-get install -y powershell
+# https://learn.microsoft.com/en-us/powershell/scripting/install/install-other-linux?view=powershell-7.3#binary-archives
+
+curl -L -o /tmp/powershell.tar.gz https://github.com/PowerShell/PowerShell/releases/download/v7.3.0/powershell-7.3.0-linux-arm64.tar.gz
+sudo mkdir -p /opt/microsoft/powershell/7
+sudo tar zxf /tmp/powershell.tar.gz -C /opt/microsoft/powershell/7
+sudo chmod +x /opt/microsoft/powershell/7/pwsh
+sudo ln -s /opt/microsoft/powershell/7/pwsh /usr/bin/pwsh
 
 # Install az CLI
-# https://learn.microsoft.com/en-us/cli/azure/install-azure-cli-linux?pivots=apt
-sudo apt-get update
-sudo apt-get install ca-certificates curl apt-transport-https lsb-release gnupg
-curl -sL https://packages.microsoft.com/keys/microsoft.asc |
-    gpg --dearmor |
-    sudo tee /etc/apt/trusted.gpg.d/microsoft.gpg > /dev/null
-AZ_REPO=$(lsb_release -cs)
-echo "deb [arch=amd64] https://packages.microsoft.com/repos/azure-cli/ $AZ_REPO main" |
-    sudo tee /etc/apt/sources.list.d/azure-cli.list
-sudo apt-get update
-sudo apt-get install azure-cli
+curl -L https://aka.ms/InstallAzureCli | bash
 
 echo "Pre-reqs installed"

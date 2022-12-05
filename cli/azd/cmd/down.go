@@ -8,9 +8,8 @@ import (
 
 func downCmdDesign(global *internal.GlobalCommandOptions) (*cobra.Command, *infraDeleteFlags) {
 	cmd := &cobra.Command{
-		Use:     "down",
-		Short:   "Delete Azure resources for an application.",
-		Aliases: []string{"infra delete"},
+		Use:   "down",
+		Short: "Delete Azure resources for an application.",
 	}
 
 	idf := &infraDeleteFlags{}

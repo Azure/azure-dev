@@ -42,9 +42,8 @@ func (i *infraDeleteFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCom
 
 func infraDeleteCmdDesign(global *internal.GlobalCommandOptions) (*cobra.Command, *infraDeleteFlags) {
 	cmd := &cobra.Command{
-		Use:     "delete",
-		Short:   "Delete Azure resources for an application.",
-		Aliases: []string{"down"},
+		Use:   "delete",
+		Short: "Delete Azure resources for an application.",
 	}
 
 	idf := &infraDeleteFlags{}

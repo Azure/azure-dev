@@ -70,7 +70,7 @@ stages:
           - checkout: self
 
           # In some runs the hosted image does not have prerequisites installed
-          - bash: eng/scripts/preinstall-tools.sh
+          - bash: lsb_release -a && eng/scripts/preinstall-tools.sh
             displayName: Pre-install tools
             condition: and(succeeded(), eq(variables['RunPreinstallTools'], 'true'))
 

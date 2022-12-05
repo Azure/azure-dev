@@ -16,8 +16,8 @@ import six
 from azure.core.credentials import AccessToken
 from azure.core.exceptions import ClientAuthenticationError
 
-from .. import CredentialUnavailableError
-from .._internal.decorators import log_get_token
+from azure.identity import CredentialUnavailableError
+from azure.identity._internal.decorators import log_get_token
 
 CLI_NOT_FOUND = "Azure Developer CLI could not be found. Please visit https://aka.ms/azure-dev for installation instructions and then, once installed, authenticate to your Azure account using 'azd login'."
 COMMAND_LINE = "azd auth token --output json --scope {}"

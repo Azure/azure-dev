@@ -1,12 +1,13 @@
 param(
-    [string] $CliVersion = $env:CLI_VERSION
+    [string] $CliVersion = $env:CLI_VERSION,
+    [switch] $DevOpsOutput
 )
 
 . "$PSScriptRoot../../common/scripts/common.ps1"
 
 Set-StrictMode -Version 4
 
-# Convert valid semver 
+# Convert given semver to parseable semver
 # 0.4.0-beta.2-pr.2021242 -> 0.4.0-beta.2
 # 0.4.0-beta.2-daily.2026027 -> 0.4.0-beta.2
 function getSemverParsedVersion($version) { 
@@ -24,7 +25,7 @@ function getSemverParsedVersion($version) {
         return $parsedVersion
     }
 
-    throw "Could not parse $version into valid format for creating an MSI version like 'x.y.z'"
+    throw "Could not parse `"$version`" into valid format for creating an MSI version like 'x.y.z'"
 }
 
 $parsedVersion = getSemverParsedVersion $CliVersion
@@ -32,6 +33,10 @@ $parsedVersion = getSemverParsedVersion $CliVersion
 $patch = ($parsedVersion.Patch + 1) * 100
 if ($parsedVersion.IsPrerelease) { 
     $patch = $parsedVersion.Patch * 100 + $parsedVersion.PrereleaseNumber
-} 
+}
+
+if ($DevOpsOutput) { 
+    Write-Host "##vso[task.setvariable variable=MSI_VERSION]$true"
+}
 
 return "$($parsedVersion.Major).$($parsedVersion.Minor).$patch"

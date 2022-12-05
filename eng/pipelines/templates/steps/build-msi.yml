@@ -1,0 +1,24 @@
+parameters: 
+  CliVersion: $(CLI_VERSION)
+  Title: Build MSI
+
+steps:
+  - task: PowerShell@2
+    displayName: Get MSI version from CLI version
+    inputs:
+      pwsh: true
+      targetType: filePath
+      filePath: eng/scripts/Get-MsiVersion.ps1
+      arguments: >-
+        -CliVersion "${{ parameters.CliVersion }}"
+        -DevOpsOutput
+      
+  - task: MSBuild@1
+    displayName: ${{ parameters.Title }}
+    condition: and(succeeded(), eq(variables['BuildTestMsi'], 'true'))
+    inputs:
+      solution: cli/installer/windows/azd.wixproj
+      msbuildArguments: >-
+        /p:RunWixToolsOutOfProc=true
+        /p:Configuration=Release
+        /p:ProductVersion=$(MSI_VERSION)

@@ -87,14 +87,9 @@ stages:
               workingDirectory: cli/azd
             displayName: Build Go Binary
 
-          - task: MSBuild@1
-            displayName: Build test MSI
-            condition: and(succeeded(), eq(variables['BuildTestMsi'], 'true'))
-            inputs:
-              solution: cli/installer/windows/azd.wixproj
-              msbuildArguments: >-
-                /p:RunWixToolsOutOfProc=true
-                /p:Configuration=Release
+          - template: /eng/pipelines/templates/steps/build-msi.yml
+            parameters:
+              Title: Build Test MSI
 
           - template: /eng/pipelines/templates/steps/install-bicep.yml
             parameters:
@@ -415,13 +410,9 @@ stages:
             filePath: eng/scripts/Set-CliVersionVariable.ps1
           displayName: Set CLI_VERSION for MSI build
 
-        - task: MSBuild@1
-          displayName: Build release MSI
-          inputs:
-            solution: cli/installer/windows/azd.wixproj
-            msbuildArguments: >-
-              /p:RunWixToolsOutOfProc=true
-              /p:Configuration=Release
+        - template: /eng/pipelines/templates/steps/build-msi.yml
+          parameters:
+            Title: Build Release MSI
 
         - ${{ if in(variables['Build.Reason'], 'IndividualCI', 'BatchedCI', 'Manual') }}:
         # TODO: Update ref to appropriate tag before merging

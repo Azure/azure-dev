@@ -4,8 +4,7 @@ from typing import Optional
 
 from azure.identity import DefaultAzureCredential, ChainedTokenCredential
 from azure.keyvault.secrets import SecretClient
-from beanie import Document, Pydan
-ticObjectId
+from beanie import Document, PydanticObjectId
 from pydantic import BaseModel, BaseSettings 
 from src.azureDeveloperCliCredential import AzureDeveloperCliCredential
 

@@ -3,8 +3,7 @@ resources:
     - repository: azure-sdk-build-tools
       type: git
       name: internal/azure-sdk-build-tools
-      # TODO: Use appropriate value before merge
-      ref: djurek/azd-msi-signing
+      ref: refs/tags/azure-sdk-build-tools_20221201.3
 
 # Continuous deployment trigger
 trigger:

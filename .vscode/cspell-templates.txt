@@ -20,6 +20,7 @@ eastus
 envconfig
 ezfunc
 fasterxml
+hubspot
 immer
 inprogress
 INPROGRESS

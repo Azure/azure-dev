@@ -3,7 +3,7 @@ resources:
     - repository: azure-sdk-build-tools
       type: git
       name: internal/azure-sdk-build-tools
-      ref: refs/tags/azure-sdk-build-tools_20220920.1
+      ref: refs/tags/azure-sdk-build-tools_20221201.2
 
 # Continuous deployment trigger
 trigger:
@@ -64,10 +64,6 @@ stages:
           - template: /eng/pipelines/templates/steps/setup-go.yml
 
           - template: /eng/pipelines/templates/steps/set-cli-version-cd.yml
-
-          - template: /eng/pipelines/templates/steps/install-bicep.yml
-            parameters:
-              Condition: and(succeeded(), ne(variables['Skip.LiveTest'], 'true'))
 
           - template: /eng/pipelines/templates/steps/install-terraform.yml
 
@@ -277,7 +273,11 @@ stages:
 
               Write-Host "Compressing artifacts as if publishing"
               zip hosting/azd-windows-amd64.zip -j azd-windows-amd64.exe/azd-windows-amd64.exe
+
+              chmod +x azd-darwin-amd64/azd-darwin-amd64
               zip hosting/azd-darwin-amd64.zip -j azd-darwin-amd64/azd-darwin-amd64
+
+              chmod +x azd-linux-amd64/azd-linux-amd64
               tar -C azd-linux-amd64 -cvzf hosting/azd-linux-amd64.tar.gz azd-linux-amd64
 
               Get-ChildItem hosting/ -Recurse | Select-Object -Property Name,Size
@@ -398,9 +398,10 @@ stages:
               TestShell: pwsh
               TestInstallCommand: >
                 ./test-installer-containers.ps1
-                -BaseUrl "http://localhost:8080"
+                -BaseUrl "http://host.docker.internal:8080"
                 -Version ''
                 -ContainerPrefix '$(docker-mirror-tag-prefix)/'
+                -AdditionalRunArgs '--add-host=host.docker.internal:host-gateway'
             LinuxSh:
               Pool: azsdk-pool-mms-ubuntu-2004-general
               OSVmImage:  MMSUbuntu20.04
@@ -584,6 +585,11 @@ stages:
       )
     jobs:
       - deployment: Publish_Release
+        condition: >-
+          and(
+            succeeded(),
+            ne('true', variables['Skip.Publish'])
+          )
         environment: azure-dev
 
         pool:
@@ -609,6 +615,38 @@ stages:
                     PublishShield: true
                     DockerImageTags: $(CLI_VERSION);latest
                     ReleaseSyndicatedDockerContainer: true
+
+      - deployment: Increment_Version
+        condition: >-
+          and(
+            succeeded(),
+            ne('true', variables['Skip.IncrementVersion'])
+          )
+        dependsOn: Publish_Release
+        environment: azure-dev
+
+        pool:
+          name: azsdk-pool-mms-ubuntu-2004-general
+          OSVmImage: MMSUbuntu20.04
+
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - checkout: self
+
+                - task: PowerShell@2
+                  inputs:
+                    pwsh: true
+                    targetType: filePath
+                    filePath: eng/scripts/Update-CliVersion.ps1
+                  displayName: Increment CLI version
+
+                - template: /eng/common/pipelines/templates/steps/create-pull-request.yml
+                  parameters:
+                    PRBranchName: cli-version-increment-$(Build.BuildId)
+                    CommitMsg: Increment CLI version after release
+                    PRTitle: Increment CLI version after release
 
   - stage: PublishIntegration
     dependsOn: Sign

@@ -1,132 +1,87 @@
 package com.microsoft.azure.simpletodo.model;
 
-import java.net.URI;
-import java.util.Objects;
 import com.fasterxml.jackson.annotation.JsonProperty;
-import com.fasterxml.jackson.annotation.JsonCreator;
-import org.openapitools.jackson.nullable.JsonNullable;
-import java.time.OffsetDateTime;
-import javax.validation.Valid;
-import javax.validation.constraints.*;
 import io.swagger.v3.oas.annotations.media.Schema;
-
-
-import java.util.*;
+import java.util.Objects;
 import javax.annotation.Generated;
+import javax.validation.constraints.NotNull;
 
 /**
- *  A list of related Todo items
+ * A list of related Todo items
  */
 
 @Schema(name = "TodoList", description = " A list of related Todo items")
 @Generated(value = "org.openapitools.codegen.languages.SpringCodegen")
 public class TodoList {
 
-  @JsonProperty("id")
-  private String id;
+    @JsonProperty("id")
+    private String id;
 
-  @JsonProperty("name")
-  private String name;
+    @JsonProperty("name")
+    private String name;
 
-  @JsonProperty("description")
-  private String description;
+    @JsonProperty("description")
+    private String description;
 
-  public TodoList id(String id) {
-    this.id = id;
-    return this;
-  }
+    /**
+     * Get id
+     * @return id
+     */
 
-  /**
-   * Get id
-   * @return id
-  */
-  
-  @Schema(name = "id", required = false)
-  public String getId() {
-    return id;
-  }
-
-  public void setId(String id) {
-    this.id = id;
-  }
-
-  public TodoList name(String name) {
-    this.name = name;
-    return this;
-  }
-
-  /**
-   * Get name
-   * @return name
-  */
-  @NotNull 
-  @Schema(name = "name", required = true)
-  public String getName() {
-    return name;
-  }
-
-  public void setName(String name) {
-    this.name = name;
-  }
-
-  public TodoList description(String description) {
-    this.description = description;
-    return this;
-  }
-
-  /**
-   * Get description
-   * @return description
-  */
-  
-  @Schema(name = "description", required = false)
-  public String getDescription() {
-    return description;
-  }
-
-  public void setDescription(String description) {
-    this.description = description;
-  }
-
-  @Override
-  public boolean equals(Object o) {
-    if (this == o) {
-      return true;
+    @Schema(name = "id", required = false)
+    public String getId() {
+        return id;
     }
-    if (o == null || getClass() != o.getClass()) {
-      return false;
+
+    public void setId(String id) {
+        this.id = id;
     }
-    TodoList todoList = (TodoList) o;
-    return Objects.equals(this.id, todoList.id) &&
-        Objects.equals(this.name, todoList.name) &&
-        Objects.equals(this.description, todoList.description);
-  }
 
-  @Override
-  public int hashCode() {
-    return Objects.hash(id, name, description);
-  }
-
-  @Override
-  public String toString() {
-    StringBuilder sb = new StringBuilder();
-    sb.append("class TodoList {\n");
-    sb.append("    id: ").append(toIndentedString(id)).append("\n");
-    sb.append("    name: ").append(toIndentedString(name)).append("\n");
-    sb.append("    description: ").append(toIndentedString(description)).append("\n");
-    sb.append("}");
-    return sb.toString();
-  }
-
-  /**
-   * Convert the given object to string with each line indented by 4 spaces
-   * (except the first line).
-   */
-  private String toIndentedString(Object o) {
-    if (o == null) {
-      return "null";
+    /**
+     * Get name
+     * @return name
+     */
+    @NotNull
+    @Schema(name = "name", required = true)
+    public String getName() {
+        return name;
     }
-    return o.toString().replace("\n", "\n    ");
-  }
+
+    public void setName(String name) {
+        this.name = name;
+    }
+
+    /**
+     * Get description
+     * @return description
+     */
+
+    @Schema(name = "description", required = false)
+    public String getDescription() {
+        return description;
+    }
+
+    public void setDescription(String description) {
+        this.description = description;
+    }
+
+    public boolean equals(final Object o) {
+        if (o == this) return true;
+        if (!(o instanceof TodoList)) return false;
+        final TodoList other = (TodoList) o;
+        if (!((Object) this instanceof TodoList)) return false;
+        final Object this$id = this.getId();
+        final Object other$id = other.getId();
+        // lists are equal if they have the same id
+        if (this$id == null ? other$id != null : !this$id.equals(other$id)) return false;
+        return true;
+    }
+
+    public int hashCode() {
+        return Objects.hash(this.getId());
+    }
+
+    public String toString() {
+        return "TodoList(id=" + this.getId() + ", name=" + this.getName() + ", description=" + this.getDescription() + ")";
+    }
 }
-

@@ -2,7 +2,8 @@ param(
     [string] $BaseUrl='https://azure-dev.azureedge.net/azd/standalone/release',
     [string] $Version = 'latest',
     [string] $ContainerPrefix = '',
-    [string] $AdditionalArgs = '--no-cache'
+    [string] $AdditionalBuildArgs = '--no-cache',
+    [string] $AdditionalRunArgs = ''
 )
 Write-Output "Docker version:"
 docker -v
@@ -17,7 +18,7 @@ docker build  . `
     --build-arg baseUrl="$BaseUrl" `
     --build-arg version="$Version" `
     --build-arg prefix="$ContainerPrefix" `
-    $AdditionalArgs
+    $AdditionalBuildArgs
 "@
     docker build  . `
         -f $dockerfile `
@@ -25,17 +26,22 @@ docker build  . `
         --build-arg baseUrl="$BaseUrl" `
         --build-arg version="$Version" `
         --build-arg prefix="$ContainerPrefix" `
-        $AdditionalArgs
+        $AdditionalBuildArgs
     if ($LASTEXITCODE) {
         Write-Error "Could not build for $dockerfile"
-        $exitCode = 1
 
-        # Build failed, don't execute the container becuase we'll be executing
-        # the last successfully built container with the name azd-test
+        # Build failed. Set exit code to error and move on to build the next
+        # test container
+        $exitCode = 1
         continue
     }
 
-    docker run -t azd-test
+    docker run $AdditionalRunArgs -t azd-test
+    if ($LASTEXITCODE) {
+        Write-Error "Validation run failed for $dockerfile"
+        $exitCode = 1
+        continue
+    }
 }
 
 exit $exitCode

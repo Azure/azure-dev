@@ -19,9 +19,9 @@ type PythonCli struct {
 	commandRunner exec.CommandRunner
 }
 
-func NewPythonCli(ctx context.Context) *PythonCli {
+func NewPythonCli(commandRunner exec.CommandRunner) *PythonCli {
 	return &PythonCli{
-		commandRunner: exec.GetCommandRunner(ctx),
+		commandRunner: commandRunner,
 	}
 }
 
@@ -40,7 +40,7 @@ func (cli *PythonCli) CheckInstalled(ctx context.Context) (bool, error) {
 	if !found {
 		return false, err
 	}
-	pythonRes, err := tools.ExecuteCommand(ctx, pythonExe(), "--version")
+	pythonRes, err := tools.ExecuteCommand(ctx, cli.commandRunner, pythonExe(), "--version")
 	if err != nil {
 		return false, fmt.Errorf("checking %s version: %w", cli.Name(), err)
 	}

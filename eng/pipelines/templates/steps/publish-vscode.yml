@@ -58,8 +58,22 @@ steps:
         PublishDestination: vscode/latest
 
   - ${{ if eq('true', parameters.TagRepository) }}:
+    - task: PowerShell@2
+      inputs:
+        targetType: filePath
+        filePath: eng/scripts/New-ReleaseNotesFile.ps1
+        arguments: >-
+          -ChangeLogPath ext/vscode/CHANGELOG.md
+          -Version ${{ parameters.VsixVersion }}
+          -DevOpsOutputFormat
+      displayName: Set release changelog content
+
     - pwsh: |
-        gh release create $(GH_RELEASE_TAG)
+        gh release create `
+          "$(GH_RELEASE_TAG)" `
+          --title "$(GH_RELEASE_TAG)" `
+          --notes-file $(ReleaseChangeLogPath)
+
         gh release upload $(GH_RELEASE_TAG) release/*
       displayName: Create GitHub Release and upload artifacts
       env:

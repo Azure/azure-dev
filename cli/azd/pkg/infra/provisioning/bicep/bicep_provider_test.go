@@ -10,7 +10,6 @@ import (
 	"io"
 	"net/http"
 	"os"
-	"path"
 	"strings"
 	"testing"
 
@@ -25,7 +24,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	. "github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
-	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	execmock "github.com/azure/azure-dev/cli/azd/test/mocks/exec"
@@ -43,7 +41,7 @@ func TestBicepPlan(t *testing.T) {
 	prepareGenericMocks(mockContext.CommandRunner)
 	preparePlanningMocks(mockContext)
 	prepareDeployShowMocks(mockContext.HttpClient)
-	infraProvider := createBicepProvider(mockContext)
+	infraProvider := createBicepProvider(t, mockContext)
 	planningTask := infraProvider.Plan(*mockContext.Context)
 
 	go func() {
@@ -90,7 +88,7 @@ func TestBicepState(t *testing.T) {
 	prepareDeployMocks(mockContext.CommandRunner)
 	azCli := mockazcli.NewAzCliFromMockContext(mockContext)
 
-	infraProvider := createBicepProvider(mockContext)
+	infraProvider := createBicepProvider(t, mockContext)
 	scope := infra.NewSubscriptionScope(
 		azCli,
 		infraProvider.env.Values["AZURE_LOCATION"],
@@ -138,16 +136,14 @@ func TestBicepDeploy(t *testing.T) {
 	prepareDeployMocks(mockContext.CommandRunner)
 	azCli := mockazcli.NewAzCliFromMockContext(mockContext)
 
-	infraProvider := createBicepProvider(mockContext)
-	tmpPath := t.TempDir()
-	parametersPath := path.Join(tmpPath, "params.json")
-	createTmpFile := os.WriteFile(parametersPath, []byte(testArmParametersFile), osutil.PermissionFile)
-	require.NoError(t, createTmpFile)
+	infraProvider := createBicepProvider(t, mockContext)
 
 	deploymentPlan := DeploymentPlan{
+		Deployment: Deployment{
+			Parameters: testArmParameters,
+		},
 		Details: BicepDeploymentDetails{
-			ParameterFilePath: parametersPath,
-			Template:          to.Ptr(azure.ArmTemplate("{}")),
+			Template: to.Ptr(azure.ArmTemplate("{}")),
 		},
 	}
 
@@ -204,7 +200,7 @@ func TestBicepDestroy(t *testing.T) {
 			)
 		}).Respond(true)
 
-		infraProvider := createBicepProvider(mockContext)
+		infraProvider := createBicepProvider(t, mockContext)
 		deployment := Deployment{}
 
 		destroyOptions := NewDestroyOptions(false, false)
@@ -267,7 +263,7 @@ func TestBicepDestroy(t *testing.T) {
 		interactiveLog := []bool{}
 		progressDone := make(chan bool)
 
-		infraProvider := createBicepProvider(mockContext)
+		infraProvider := createBicepProvider(t, mockContext)
 		deployment := Deployment{}
 
 		destroyOptions := NewDestroyOptions(true, true)
@@ -318,7 +314,7 @@ func TestBicepDestroy(t *testing.T) {
 	})
 }
 
-func createBicepProvider(mockContext *mocks.MockContext) *BicepProvider {
+func createBicepProvider(t *testing.T, mockContext *mocks.MockContext) *BicepProvider {
 	projectDir := "../../../../test/functional/testdata/samples/webapp"
 	options := Options{
 		Module: "main",
@@ -333,7 +329,14 @@ func createBicepProvider(mockContext *mocks.MockContext) *BicepProvider {
 		HttpClient: mockContext.HttpClient,
 	})
 
-	return NewBicepProvider(*mockContext.Context, azCli, env, projectDir, options)
+	provider, err := NewBicepProvider(
+		*mockContext.Context, azCli, env, projectDir, options,
+		exec.NewCommandRunner(os.Stdin, os.Stdout, os.Stderr),
+		mockContext.Console,
+	)
+
+	require.NoError(t, err)
+	return provider
 }
 
 func prepareGenericMocks(commandRunner *execmock.MockCommandRunner) {
@@ -551,13 +554,11 @@ func prepareDestroyMocks(mockContext *mocks.MockContext) {
 	})
 }
 
-var testArmParametersFile string = `{
-	"parameters": {
-		"location": {
-			"value": "West US"
-		}
-	}
-}`
+var testArmParameters = map[string]InputParameter{
+	"location": {
+		Value: "West US",
+	},
+}
 
 func getKeyVaultMock(mockContext *mocks.MockContext, keyVaultString string, name string, location string) {
 	mockContext.HttpClient.When(func(request *http.Request) bool {

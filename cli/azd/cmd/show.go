@@ -114,8 +114,8 @@ func (s *showAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	resourceManager := infra.NewAzureResourceManager(s.azCli)
 
 	if resourceGroupName, err := resourceManager.FindResourceGroupForEnvironment(ctx, env); err == nil {
-		for name := range prj.Services {
-			if resources, err := project.GetServiceResources(ctx, resourceGroupName, name, env, s.azCli); err == nil {
+		for name, serviceConfig := range prj.Services {
+			if resources, err := serviceConfig.GetServiceResources(ctx, resourceGroupName, env, s.azCli); err == nil {
 				resourceIds := make([]string, len(resources))
 				for idx, res := range resources {
 					resourceIds[idx] = res.Id

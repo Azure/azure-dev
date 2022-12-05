@@ -29,7 +29,7 @@ func TestBicepOutputsWithDoubleUnderscoresAreConverted(t *testing.T) {
 		return exec.NewRunResult(0, "", ""), nil
 	})
 
-	dp := NewDotNetProject(*mockContext.Context, &ServiceConfig{
+	dp := NewDotNetProject(mockContext.CommandRunner, &ServiceConfig{
 		Project: &ProjectConfig{
 			Path: "/sample/path/for/test",
 		},

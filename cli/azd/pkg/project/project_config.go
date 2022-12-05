@@ -11,7 +11,9 @@ import (
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
+	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/drone/envsubst"
@@ -94,7 +96,9 @@ func (p *ProjectConfig) HasService(name string) bool {
 func (pc *ProjectConfig) GetProject(
 	ctx context.Context,
 	env *environment.Environment,
+	console input.Console,
 	azCli azcli.AzCli,
+	commandRunner exec.CommandRunner,
 ) (*Project, error) {
 	serviceMap := map[string]*Service{}
 
@@ -112,23 +116,7 @@ func (pc *ProjectConfig) GetProject(
 	project.ResourceGroupName = resourceGroupName
 
 	for key, serviceConfig := range pc.Services {
-		// If the 'resourceName' was not overridden in the project yaml
-		// Retrieve the resource name from the provisioned resources if available
-		if strings.TrimSpace(serviceConfig.ResourceName) == "" {
-			resolvedResourceName, err := GetServiceResourceName(ctx, project.ResourceGroupName, serviceConfig.Name, env, azCli)
-			if err != nil {
-				return nil, fmt.Errorf("getting resource name: %w", err)
-			}
-
-			serviceConfig.ResourceName = resolvedResourceName
-		}
-
-		deploymentScope := environment.NewDeploymentScope(
-			env.GetSubscriptionId(),
-			project.ResourceGroupName,
-			serviceConfig.ResourceName,
-		)
-		service, err := serviceConfig.GetService(ctx, &project, env, deploymentScope, azCli)
+		service, err := serviceConfig.GetService(ctx, &project, env, azCli, commandRunner, console)
 
 		if err != nil {
 			return nil, fmt.Errorf("creating service %s: %w", key, err)
@@ -272,10 +260,12 @@ func ParseProjectConfig(yamlContent string, env *environment.Environment) (*Proj
 	return &projectFile, nil
 }
 
-func (p *ProjectConfig) Initialize(ctx context.Context, env *environment.Environment) error {
+func (p *ProjectConfig) Initialize(
+	ctx context.Context, env *environment.Environment, commandRunner exec.CommandRunner,
+) error {
 	var allTools []tools.ExternalTool
 	for _, svc := range p.Services {
-		frameworkService, err := svc.GetFrameworkService(ctx, env)
+		frameworkService, err := svc.GetFrameworkService(ctx, env, commandRunner)
 		if err != nil {
 			return fmt.Errorf("getting framework services: %w", err)
 		}

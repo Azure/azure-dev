@@ -12,9 +12,9 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 )
 
-func NewSwaCli(ctx context.Context) SwaCli {
+func NewSwaCli(commandRunner exec.CommandRunner) SwaCli {
 	return &swaCli{
-		commandRunner: exec.GetCommandRunner(ctx),
+		commandRunner: commandRunner,
 	}
 }
 

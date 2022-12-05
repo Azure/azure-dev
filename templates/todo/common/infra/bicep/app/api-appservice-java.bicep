@@ -10,6 +10,14 @@ param appSettings object = {}
 param keyVaultName string
 param serviceName string = 'api'
 
+@description('JVM runtime options. Use this instead of defining JAVA_OPTS manually on appSettings.')
+param javaRuntimeOptions array = []
+
+// applicationinsights-runtime-attach (and other plugins) that uses runtime attach
+// require allowAttachSelf to be enabled on App Service. Otherwise, plugins will fail to attach
+// on App Service.
+var defaultJavaRuntimeOptions = ['-Djdk.attach.allowAttachSelf=true']
+
 module api '../../../../../common/infra/bicep/core/host/appservice.bicep' = {
   name: '${name}-app-module'
   params: {
@@ -20,7 +28,13 @@ module api '../../../../../common/infra/bicep/core/host/appservice.bicep' = {
     appCommandLine: appCommandLine
     applicationInsightsName: applicationInsightsName
     appServicePlanId: appServicePlanId
-    appSettings: appSettings
+    appSettings: union(appSettings, {
+      JAVA_OPTS: join(
+        concat(
+            javaRuntimeOptions,
+            defaultJavaRuntimeOptions),
+          ' ')
+     })
     keyVaultName: keyVaultName
     runtimeName: 'java'
     runtimeVersion: '17-java17'

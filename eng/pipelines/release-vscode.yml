@@ -3,7 +3,7 @@ resources:
     - repository: azure-sdk-build-tools
       type: git
       name: internal/azure-sdk-build-tools
-      ref: refs/tags/azure-sdk-build-tools_20220920.1
+      ref: refs/tags/azure-sdk-build-tools_20221201.2
 
 # Continuous deployment trigger
 trigger:
@@ -200,6 +200,38 @@ stages:
                     PublishLocations: vscode/release/$(VSIX_VERSION);vscode/release/latest
                     TagRepository: true
                     UpdateShield: true
+
+      - deployment: Increment_Version
+        condition: >-
+          and(
+            succeeded(),
+            ne('true', variables['Skip.IncrementVersion'])
+          )
+        dependsOn: Publish_Release
+        environment: azure-dev
+
+        pool:
+          name: azsdk-pool-mms-ubuntu-2004-general
+          OSVmImage: MMSUbuntu20.04
+
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - checkout: self
+
+                - task: PowerShell@2
+                  inputs:
+                    pwsh: true
+                    targetType: filePath
+                    filePath: eng/scripts/Update-VscodeExtensionVersion.ps1
+                  displayName: Increment VSCode Extension version
+
+                - template: /eng/common/pipelines/templates/steps/create-pull-request.yml
+                  parameters:
+                    PRBranchName: vscode-version-increment-$(Build.BuildId)
+                    CommitMsg: Increment VSCode Extension version after release
+                    PRTitle: Increment VSCode Extension version after release
 
   - stage: PublishIntegration
     dependsOn: Sign

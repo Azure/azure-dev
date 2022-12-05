@@ -29,7 +29,7 @@ func TestTerraformPlan(t *testing.T) {
 	prepareGenericMocks(mockContext.CommandRunner)
 	preparePlanningMocks(mockContext.CommandRunner)
 
-	infraProvider := createTerraformProvider(*mockContext.Context)
+	infraProvider := createTerraformProvider(mockContext)
 	planningTask := infraProvider.Plan(*mockContext.Context)
 
 	go func() {
@@ -87,7 +87,7 @@ func TestTerraformDeploy(t *testing.T) {
 	prepareDeployMocks(mockContext.CommandRunner)
 	azCli := mockazcli.NewAzCliFromMockContext(mockContext)
 
-	infraProvider := createTerraformProvider(*mockContext.Context)
+	infraProvider := createTerraformProvider(mockContext)
 
 	envPath := path.Join(infraProvider.projectPath, ".azure", infraProvider.env.Values["AZURE_ENV_NAME"])
 
@@ -140,7 +140,7 @@ func TestTerraformDestroy(t *testing.T) {
 	interactiveLog := []bool{}
 	progressDone := make(chan bool)
 
-	infraProvider := createTerraformProvider(*mockContext.Context)
+	infraProvider := createTerraformProvider(mockContext)
 	deployment := Deployment{}
 
 	destroyOptions := NewDestroyOptions(false, false)
@@ -179,7 +179,7 @@ func TestTerraformState(t *testing.T) {
 	prepareShowMocks(mockContext.CommandRunner)
 	azCli := mockazcli.NewAzCliFromMockContext(mockContext)
 
-	infraProvider := createTerraformProvider(*mockContext.Context)
+	infraProvider := createTerraformProvider(mockContext)
 	scope := infra.NewSubscriptionScope(
 		azCli,
 		infraProvider.env.Values["AZURE_LOCATION"],
@@ -217,7 +217,7 @@ func TestTerraformState(t *testing.T) {
 	)
 }
 
-func createTerraformProvider(ctx context.Context) *TerraformProvider {
+func createTerraformProvider(mockContext *mocks.MockContext) *TerraformProvider {
 	projectDir := "../../../../test/functional/testdata/samples/resourcegroupterraform"
 	options := Options{
 		Module: "main",
@@ -227,7 +227,9 @@ func createTerraformProvider(ctx context.Context) *TerraformProvider {
 		"AZURE_LOCATION": "westus2",
 	})
 
-	return NewTerraformProvider(ctx, env, projectDir, options)
+	return NewTerraformProvider(
+		*mockContext.Context, env, projectDir, options, mockContext.Console, mockContext.CommandRunner,
+	)
 }
 
 func prepareGenericMocks(commandRunner *execmock.MockCommandRunner) {

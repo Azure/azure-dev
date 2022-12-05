@@ -36,7 +36,7 @@ class AzureDeveloperCliCredential(object):
 
     @log_get_token("AzureDeveloperCliCredential")
     def get_token(self, *scopes: str, **kwargs) -> AccessToken:
-        commandString = ' --scope '.join(*scopes)
+        commandString = ' --scope '.join(scopes)
         command = COMMAND_LINE.format(commandString)
         output = _run_command(command)
         token = parse_token(output)
@@ -51,7 +51,7 @@ class AzureDeveloperCliCredential(object):
 def parse_token(output):
     try:
         token = json.loads(output)
-        dt = datetime.strptime(token["expiresOn"], "%Y-%m-%d %H:%M:%S.%f")
+        dt = datetime.strptime(token["expiresOn"], "%Y-%m-%dT%H:%M:%SZ")
         if hasattr(dt, "timestamp"):
             # Python >= 3.3
             expires_on = dt.timestamp()

@@ -89,6 +89,7 @@ stages:
           - template: /eng/pipelines/templates/steps/build-msi.yml
             parameters:
               Title: Build Test MSI
+              Condition: and(succeeded(), eq(variables['BuildTestMsi'], 'true'))
 
           - template: /eng/pipelines/templates/steps/install-bicep.yml
             parameters:

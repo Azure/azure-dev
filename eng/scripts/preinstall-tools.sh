@@ -32,7 +32,9 @@ echo "Go install complete:"
 /usr/local/go/bin/go version
 
 # Install Terraform (workaround ms-devlabs.custom-terraform-tasks.custom-terraform-installer-task.TerraformInstaller@0)
-# https://developer.hashicorp.com/terraform/downloads
+# Tool issue: https://github.com/microsoft/azure-pipelines-terraform/issues/116
+# Instructions: https://developer.hashicorp.com/terraform/downloads
+# Research: 
 # Hashicorp does not support packaging for ARM64. Use zip release instead
 # https://developer.hashicorp.com/terraform/cli/install/apt#supported-architectures
 # https://github.com/hashicorp/terraform/issues/27378

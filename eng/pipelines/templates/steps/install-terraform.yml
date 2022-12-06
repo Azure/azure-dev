@@ -4,5 +4,6 @@ parameters:
 steps:
   - task: ms-devlabs.custom-terraform-tasks.custom-terraform-installer-task.TerraformInstaller@0
     displayName: "Install Terraform - ${{ parameters.TerraformVersion }}"
+    condition: and(succeeded(), ne(variables['RunPreinstallTools'], 'true'))
     inputs:
       terraformVersion: "${{ parameters.TerraformVersion }}"

@@ -59,7 +59,7 @@ func TestSetupFlags(t *testing.T) {
 	flagName = "principal-role"
 	principalRoleNameFlag := command.LocalFlags().Lookup(flagName)
 	assert.NotEqual(t, (*pflag.Flag)(nil), principalRoleNameFlag)
-	assert.Equal(t, "Contributor", principalRoleNameFlag.Value.String())
+	assert.Equal(t, "contributor", principalRoleNameFlag.Value.String())
 	assert.Equal(t, "The role to assign to the service principal.", principalRoleNameFlag.Usage)
 	principalRoleNameFlag = command.PersistentFlags().Lookup(flagName)
 	assert.Equal(t, (*pflag.Flag)(nil), principalRoleNameFlag)

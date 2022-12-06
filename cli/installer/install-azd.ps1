@@ -272,10 +272,12 @@ try {
         if ($rawArchitecture -eq 'arm64' -and $IsMacOS) {
             # In the case of Apple silicon, use amd64
             $architecture = 'amd64'
-        }
-
-        if ($architecture -ne 'amd64') {
+        } elseif ($rawArchitecture -eq 'aarch64' -and $IsLinux) { 
+            # In the case of "aarch64" on Linux, translate URL to "arm64"
+            $architecture = "arm64"
+        } elseif ($architecture -ne 'amd64') {
             Write-Error "Architecture not supported: $rawArchitecture on platform: $platform"
+            exit 1
         }
 
         Write-Verbose "Platform: $platform"

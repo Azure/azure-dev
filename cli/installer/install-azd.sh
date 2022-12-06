@@ -113,8 +113,12 @@ get_architecture() {
     if [ "$architecture_raw" = "x86_64" ]; then
         echo 'amd64';
         return;
+    elif [ "$architecture_raw" = "aarch64" ] && [ "$platform" = 'linux' ]; then
+        # Translate "aarch64" to "arm64" when building Linux URL
+        echo 'arm64';
+        return;
     elif [ "$architecture_raw" = "arm64" ] && [ "$platform" = 'darwin' ]; then
-        # In the case of Apple Silicon use the existing ARM64 environment
+        # In the case of Apple Silicon use the existing ARM64 environment with Rosetta 2
         echo 'amd64';
         return;
     else
@@ -139,6 +143,7 @@ extract() {
 
 DEFAULT_BASE_URL="https://azure-dev.azureedge.net/azd/standalone/release"
 
+no_telemetry=0
 base_url="$DEFAULT_BASE_URL"
 platform="$(get_platform)"
 extension="$(get_extension_for_platform "$platform")"
@@ -146,7 +151,6 @@ architecture="$(get_architecture "$platform")"
 version="latest"
 dry_run=false
 install_folder="/usr/local/bin"
-no_telemetry=0
 verbose=false
 
 while [[ $# -ne 0 ]];

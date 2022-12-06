@@ -114,4 +114,7 @@ echo "##vso[task.prependpath]/$HOME/bin"
 echo "az installed"
 "$HOME/bin/az" version
 
+# Required for azd testing
+sudo apt update && sudo apt install -y apt python3.8-venv
+
 echo "Pre-reqs installed"

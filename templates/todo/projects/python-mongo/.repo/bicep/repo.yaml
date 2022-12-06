@@ -172,7 +172,7 @@ repo:
 
     # Auth Python common
     - from: ../../../../common/auth/py
-      to: ./src/api/src
+      to: ./src/api/todo
 
     # Python API
     - from: ../../../../api/python

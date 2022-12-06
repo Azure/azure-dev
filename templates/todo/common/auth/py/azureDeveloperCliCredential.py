@@ -112,3 +112,4 @@ def _run_command(command):
         # could be a timeout, for example
         error = CredentialUnavailableError(message="Failed to invoke the Azure Developer CLI")
         six.raise_from(error, ex)
+        

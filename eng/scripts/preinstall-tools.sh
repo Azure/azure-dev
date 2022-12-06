@@ -92,11 +92,25 @@ while true; do
         echo "Docker is active"
         break
     fi
-    echo "Docker is not active. Waiting..."
+    echo "Docker is not active. Waiting ($wait_count)..."
 
     sleep 1
 done
-
 sudo docker version 
+
+sudo apt update
+sudo apt install -y software-properties-common 
+sudo add-apt-repository -y ppa:deadsnakes/ppa
+sudo apt update
+sudo apt install python3.10 python3.10-distutils python3.10-dev
+
+python3 --version
+
+sudo apt update && sudo apt install -y curl
+curl -L https://azurecliprod.blob.core.windows.net/install.py -o install-az.py && printf "\n\n" | python3 install-az.py 
+echo "##vso[task.prependpath]/$HOME/bin"
+
+echo "az installed"
+"$HOME/bin/az" version
 
 echo "Pre-reqs installed"

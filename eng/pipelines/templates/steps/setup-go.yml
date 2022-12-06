@@ -3,6 +3,7 @@ parameters:
 
 steps:
   - task: GoTool@0
+    condition: and(succeeded(), ne(variables['RunPreinstallTools'], 'true'))
     inputs:
       version: ${{ parameters.GoVersion }}
 

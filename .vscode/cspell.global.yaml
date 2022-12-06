@@ -15,6 +15,7 @@ words:
     - bson
     - azdo
 ignoreWords:
+    - AADSTS
     - afwp
     - apim
     - appcontainers

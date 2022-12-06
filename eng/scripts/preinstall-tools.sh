@@ -23,7 +23,7 @@ pwsh --version
 # Install Go (work around GoTool ADO task)
 go_file="go1.19.3.linux-arm64.tar.gz"
 curl -L https://golang.google.cn/dl/$go_file -o $go_file
-rm -rf /usr/local/go && tar -C /usr/local -xzf $go_file
+sudo rm -rf /usr/local/go && sudo tar -C /usr/local -xzf $go_file
 echo "##vso[task.prependpath]/usr/local/go/bin"
 
 echo "Go install complete:"

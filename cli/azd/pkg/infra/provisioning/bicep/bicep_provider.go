@@ -132,7 +132,7 @@ func (p *BicepProvider) Plan(
 ) *async.InteractiveTaskWithProgress[*DeploymentPlan, *DeploymentPlanningProgress] {
 	return async.RunInteractiveTaskWithProgress(
 		func(asyncContext *async.InteractiveTaskContextWithProgress[*DeploymentPlan, *DeploymentPlanningProgress]) {
-			p.console.ShowSpinner(ctx, "bicep is making a plan", input.Step)
+			p.console.ShowSpinner(ctx, "Creating a deployment plan", input.Step)
 			asyncContext.SetProgress(
 				&DeploymentPlanningProgress{Message: "Generating Bicep parameters file", Timestamp: time.Now()},
 			)

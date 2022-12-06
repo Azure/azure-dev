@@ -42,7 +42,7 @@ terraform_url="https://releases.hashicorp.com/terraform/1.3.6/$terraform_archive
 curl $terraform_url -o "$temp_dir/$terraform_archive"
 
 # Unzip terraform directly to /usr/local/bin
-unzip "$temp_dir/$terraform_archive" -d /usr/local/bin
+sudo unzip "$temp_dir/$terraform_archive" -d /usr/local/bin
 
 echo "Terraform install complete"
 terraform version 

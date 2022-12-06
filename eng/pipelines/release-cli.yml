@@ -32,21 +32,21 @@ stages:
       - job: BuildCLI
         strategy:
           matrix:
-            # Windows:
-            #   Pool: azsdk-pool-mms-win-2019-general
-            #   OSVmImage: MMS2019
-            #   BuildTarget: azd-windows-amd64.exe
-            #   BuildOutputName: azd.exe
-            #   AZURE_DEV_CI_OS: win
-            # Linux:
-            #   Pool: azsdk-pool-mms-ubuntu-2004-general
-            #   OSVmImage:  MMSUbuntu20.04
-            #   BuildTarget: azd-linux-amd64
-            #   BuildOutputName: azd
-            #   SetExecutableBit: true
-            #   SetShieldInfo: true
-            #   GenerateCoverage: true
-            #   AZURE_DEV_CI_OS: lin
+            Windows:
+              Pool: azsdk-pool-mms-win-2019-general
+              OSVmImage: MMS2019
+              BuildTarget: azd-windows-amd64.exe
+              BuildOutputName: azd.exe
+              AZURE_DEV_CI_OS: win
+            Linux:
+              Pool: azsdk-pool-mms-ubuntu-2004-general
+              OSVmImage:  MMSUbuntu20.04
+              BuildTarget: azd-linux-amd64
+              BuildOutputName: azd
+              SetExecutableBit: true
+              SetShieldInfo: true
+              GenerateCoverage: true
+              AZURE_DEV_CI_OS: lin
             LinuxARM64:
               Pool: azsdk-pool-mms-ubuntu-2004-arm
               # TODO: Is this a good name for the executable?
@@ -55,16 +55,13 @@ stages:
               SetExecutableBit: true
               RunPreinstallTools: true
               AZURE_DEV_CI_OS: lin
-              # az login not required to validate ARM64 scenarios
-              # Prevent errors when running pwsh
-              # DOTNET_SYSTEM_GLOBALIZATION_INVARIANT: 1
-            # Mac:
-            #   Pool: Azure Pipelines
-            #   OSVmImage: macOS-11
-            #   BuildTarget: azd-darwin-amd64
-            #   BuildOutputName: azd
-            #   SetExecutableBit: true
-            #   AZURE_DEV_CI_OS: mac
+            Mac:
+              Pool: Azure Pipelines
+              OSVmImage: macOS-11
+              BuildTarget: azd-darwin-amd64
+              BuildOutputName: azd
+              SetExecutableBit: true
+              AZURE_DEV_CI_OS: mac
         pool:
             name: $(Pool)
             vmImage: $(OSVmImage)

@@ -277,6 +277,11 @@ stages:
 
           - task: DownloadPipelineArtifact@2
             inputs:
+              artifact: azd-linux-arm64
+              path: azd-linux-arm64
+
+          - task: DownloadPipelineArtifact@2
+            inputs:
               artifact: azd-darwin-amd64
               path: azd-darwin-amd64
 
@@ -292,6 +297,9 @@ stages:
 
               chmod +x azd-linux-amd64/azd-linux-amd64
               tar -C azd-linux-amd64 -cvzf hosting/azd-linux-amd64.tar.gz azd-linux-amd64
+
+              chmod +x azd-linux-arm64/azd-linux-arm64
+              tar -C azd-linux-arm64 -cvzf hosting/azd-linux-arm64.tar.gz azd-linux-arm64
 
               Get-ChildItem hosting/ -Recurse | Select-Object -Property Name,Size
             displayName: Move folders to hosting location
@@ -415,6 +423,15 @@ stages:
                 -Version ''
                 -ContainerPrefix '$(docker-mirror-tag-prefix)/'
                 -AdditionalRunArgs '--add-host=host.docker.internal:host-gateway'
+            # LinuxDockerShARM64:
+            #   Pool: azsdk-pool-mms-ubuntu-2004-arm
+            #   TestShell: pwsh
+            #   TestInstallCommand: >
+            #     ./test-installer-containers.ps1
+            #     -BaseUrl "http://host.docker.internal:8080"
+            #     -Version ''
+            #     -ContainerPrefix '$(docker-mirror-tag-prefix)/'
+            #     -AdditionalRunArgs '--add-host=host.docker.internal:host-gateway'
             LinuxSh:
               Pool: azsdk-pool-mms-ubuntu-2004-general
               OSVmImage:  MMSUbuntu20.04

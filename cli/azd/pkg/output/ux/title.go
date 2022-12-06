@@ -6,13 +6,15 @@ package ux
 import (
 	"encoding/json"
 	"fmt"
+	"time"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/contracts"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 )
 
 type MessageTitle struct {
-	Title     string
-	TitleNote string
+	Title     string `json:"Title"`
+	TitleNote string `json:"Note"`
 }
 
 func (t *MessageTitle) ToString(currentIndentation string) string {
@@ -25,6 +27,13 @@ func (t *MessageTitle) ToString(currentIndentation string) string {
 }
 
 func (t *MessageTitle) ToJson() []byte {
-	jsonBytes, _ := json.Marshal(output.EventForMessage(fmt.Sprintf("TITLE: %s, TITLE NOTE: %s", t.Title, t.TitleNote)))
+	// reusing the same envelope from console messages
+	jsonBytes, _ := json.Marshal(
+		contracts.EventEnvelope{
+			Type:      contracts.OperationStart,
+			Timestamp: time.Now(),
+			Data:      t,
+		},
+	)
 	return jsonBytes
 }

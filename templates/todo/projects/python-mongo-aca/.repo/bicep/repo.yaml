@@ -157,6 +157,11 @@ repo:
     # Tests common
     - from: ../../../../common/tests
       to: ./tests
+
+    # Auth Python common
+    - from: ../../../../common/auth/py
+      to: ./src/api/todo
+      
     # Python API
     - from: ../../../../api/python
       to: ./src/api

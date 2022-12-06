@@ -102,7 +102,7 @@ sudo apt update
 sudo apt install -y software-properties-common 
 sudo add-apt-repository -y ppa:deadsnakes/ppa
 sudo apt update
-sudo apt install -y python3.10 python3.10-distutils python3.10-dev
+sudo apt install -y python3 python3-distutils python3-dev
 
 python3 --version
 

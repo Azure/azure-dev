@@ -121,7 +121,6 @@ namespace Azure.Identity
                 argument = $"-c \"{command}\"";
             }
 
-
             return new ProcessStartInfo
             {
                 FileName = fileName,

@@ -107,7 +107,8 @@ sudo apt install -y python3 python3-distutils python3-dev
 python3 --version
 
 sudo apt update && sudo apt install -y curl
-curl -L https://azurecliprod.blob.core.windows.net/install.py -o install-az.py && printf "\n\n" | python3 install-az.py 
+curl -L https://azurecliprod.blob.core.windows.net/install.py -o $temp_dir/install-az.py 
+printf "\n\n" | python3 $temp_dir/install-az.py 
 echo "##vso[task.prependpath]/$HOME/bin"
 
 echo "az installed"

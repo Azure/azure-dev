@@ -52,12 +52,7 @@ def parse_token(output):
     try:
         token = json.loads(output)
         dt = datetime.strptime(token["expiresOn"], "%Y-%m-%dT%H:%M:%SZ")
-        if hasattr(dt, "timestamp"):
-            # Python >= 3.3
-            expires_on = dt.timestamp()
-        else:
-            # taken from Python 3.5's datetime.timestamp()
-            expires_on = time.mktime((dt.year, dt.month, dt.day, dt.hour, dt.minute, dt.second, -1, -1, -1))
+        expires_on = dt.timestamp()
 
         return AccessToken(token["token"], int(expires_on))
     except (KeyError, ValueError):
@@ -92,9 +87,8 @@ def _run_command(command):
             "cwd": working_directory,
             "universal_newlines": True,
             "env": dict(os.environ, NO_COLOR="true"),
+            "timeout": 10,
         }
-        if platform.python_version() >= "3.3":
-            kwargs["timeout"] = 10
 
         return subprocess.check_output(args, **kwargs)
     except subprocess.CalledProcessError as ex:

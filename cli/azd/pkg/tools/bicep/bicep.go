@@ -143,25 +143,66 @@ func azdBicepPath() (string, error) {
 	return filepath.Join(configDir, "bin", "bicep"), nil
 }
 
-// downloadBicep downloads a given version of bicep from the release site, writing the output to name.
-func downloadBicep(ctx context.Context, transporter policy.Transporter, bicepVersion semver.Version, name string) error {
-	var releaseName string
-	switch runtime.GOOS {
-	case "windows":
-		releaseName = "bicep-win-x64.exe"
-	case "darwin":
-		releaseName = "bicep-osx-x64"
-	case "linux":
-		if _, err := os.Stat("/lib/ld-musl-x86_64.so.1"); err == nil {
-			releaseName = "bicep-linux-musl-x64"
-		} else {
-			releaseName = "bicep-linux-x64"
-		}
+func isLinuxMusl() (bool, error) {
+	var libraryName string
+
+	switch runtime.GOARCH {
+	case "amd64":
+		libraryName = "ld-musl-x86_64.so.1"
+	case "arm64":
+		libraryName = "ld-musl-aarch64.so.1"
 	default:
-		return fmt.Errorf("unsupported platform")
+		return false, fmt.Errorf("unsupported architecture")
 	}
 
-	bicepReleaseUrl := fmt.Sprintf("https://downloads.bicep.azure.com/v%s/%s", bicepVersion, releaseName)
+	libMuslPath := fmt.Sprintf("/lib/%s", libraryName)
+
+	if _, err := os.Stat(libMuslPath); err == nil {
+		// File exists => using musl
+		return true, nil
+	} else {
+		// File does not exist => not using musl
+		return false, nil
+	}
+
+}
+
+// downloadBicep downloads a given version of bicep from the release site, writing the output to name.
+func downloadBicep(ctx context.Context, transporter policy.Transporter, bicepVersion semver.Version, name string) error {
+	var releaseOs string
+	var releaseArch string
+	releaseExtension := ""
+
+	switch runtime.GOOS {
+	case "windows":
+		releaseOs = "win"
+		releaseExtension = ".exe"
+	case "darwin":
+		releaseOs = "osx"
+	case "linux":
+		if isMusl, err := isLinuxMusl(); err != nil {
+			// TODO: Proper error surfacing
+			fmt.Errorf("Could not determine linux musl status")
+		} else if isMusl {
+			releaseOs = "linux-musl"
+		} else {
+			releaseOs = "linux"
+		}
+
+	default:
+		return fmt.Errorf("unsupported OS platform")
+	}
+
+	switch runtime.GOARCH {
+	case "amd64":
+		releaseArch = "x64"
+	case "arm64":
+		releaseArch = "arm64"
+	default:
+		return fmt.Errorf("unsupported architecture")
+	}
+
+	bicepReleaseUrl := fmt.Sprintf("https://downloads.bicep.azure.com/v%s/bicep-%s-%s%s", bicepVersion, releaseOs, releaseArch, releaseExtension)
 
 	log.Printf("downloading bicep release %s -> %s", bicepReleaseUrl, name)
 

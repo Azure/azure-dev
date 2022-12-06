@@ -109,7 +109,7 @@ python3 --version
 sudo apt update && sudo apt install -y curl
 curl -L https://azurecliprod.blob.core.windows.net/install.py -o $temp_dir/install-az.py 
 printf "\n\n" | python3 $temp_dir/install-az.py 
-echo "##vso[task.prependpath]/$HOME/bin"
+echo "##vso[task.prependpath]$HOME/bin"
 
 echo "az installed"
 "$HOME/bin/az" version

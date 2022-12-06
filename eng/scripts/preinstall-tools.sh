@@ -49,4 +49,9 @@ sudo unzip "$temp_dir/$terraform_archive" -d /usr/local/bin
 echo "Terraform install complete"
 terraform version 
 
+sudo apt update && sudo apt install -y gcc 
+
+echo "GCC installed"
+gcc --version
+
 echo "Pre-reqs installed"

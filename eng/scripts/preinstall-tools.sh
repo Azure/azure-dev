@@ -8,6 +8,8 @@ set pipefail
 
 temp_dir=$(mktemp -d /tmp/tool-preinstall-XXXXXXXX)
 
+# TODO: Be explicit about version pinning.
+
 # Install PowerShell
 # https://learn.microsoft.com/en-us/powershell/scripting/install/install-other-linux?view=powershell-7.3#binary-archives
 sudo apt update

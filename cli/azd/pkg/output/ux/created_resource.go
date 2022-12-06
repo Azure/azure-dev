@@ -11,7 +11,6 @@ import (
 )
 
 type CreatedResource struct {
-	// The name of the created resource
 	Type string
 	Name string
 }

@@ -1,5 +1,6 @@
 parameters:
   SubscriptionConfiguration: $(sub-config-azure-cloud-test-resources)
+  Condition: succeeded()
 
 steps:
   - pwsh: |
@@ -24,5 +25,5 @@ steps:
       Write-Host "##vso[task.setvariable variable=arm-client-secret;issecret=true]$($subscriptionConfiguration.TestApplicationSecret)"
       Write-Host "##vso[task.setvariable variable=arm-tenant-id;issecret=false]$($subscriptionConfiguration.TenantId)"
 
-    condition: and(succeeded(), ne(variables['Skip.LiveTest'], 'true'))
+    condition: ${{ parameters.Condition }}
     displayName: Azure Login

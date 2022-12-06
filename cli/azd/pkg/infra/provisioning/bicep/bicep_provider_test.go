@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"os"
 	"strings"
 	"testing"
 
@@ -40,7 +41,7 @@ func TestBicepPlan(t *testing.T) {
 	prepareGenericMocks(mockContext.CommandRunner)
 	preparePlanningMocks(mockContext)
 	prepareDeployShowMocks(mockContext.HttpClient)
-	infraProvider := createBicepProvider(mockContext)
+	infraProvider := createBicepProvider(t, mockContext)
 	planningTask := infraProvider.Plan(*mockContext.Context)
 
 	go func() {
@@ -87,7 +88,7 @@ func TestBicepState(t *testing.T) {
 	prepareDeployMocks(mockContext.CommandRunner)
 	azCli := mockazcli.NewAzCliFromMockContext(mockContext)
 
-	infraProvider := createBicepProvider(mockContext)
+	infraProvider := createBicepProvider(t, mockContext)
 	scope := infra.NewSubscriptionScope(
 		azCli,
 		infraProvider.env.Values["AZURE_LOCATION"],
@@ -135,7 +136,7 @@ func TestBicepDeploy(t *testing.T) {
 	prepareDeployMocks(mockContext.CommandRunner)
 	azCli := mockazcli.NewAzCliFromMockContext(mockContext)
 
-	infraProvider := createBicepProvider(mockContext)
+	infraProvider := createBicepProvider(t, mockContext)
 
 	deploymentPlan := DeploymentPlan{
 		Deployment: Deployment{
@@ -199,7 +200,7 @@ func TestBicepDestroy(t *testing.T) {
 			)
 		}).Respond(true)
 
-		infraProvider := createBicepProvider(mockContext)
+		infraProvider := createBicepProvider(t, mockContext)
 		deployment := Deployment{}
 
 		destroyOptions := NewDestroyOptions(false, false)
@@ -262,7 +263,7 @@ func TestBicepDestroy(t *testing.T) {
 		interactiveLog := []bool{}
 		progressDone := make(chan bool)
 
-		infraProvider := createBicepProvider(mockContext)
+		infraProvider := createBicepProvider(t, mockContext)
 		deployment := Deployment{}
 
 		destroyOptions := NewDestroyOptions(true, true)
@@ -313,7 +314,7 @@ func TestBicepDestroy(t *testing.T) {
 	})
 }
 
-func createBicepProvider(mockContext *mocks.MockContext) *BicepProvider {
+func createBicepProvider(t *testing.T, mockContext *mocks.MockContext) *BicepProvider {
 	projectDir := "../../../../test/functional/testdata/samples/webapp"
 	options := Options{
 		Module: "main",
@@ -328,9 +329,14 @@ func createBicepProvider(mockContext *mocks.MockContext) *BicepProvider {
 		HttpClient: mockContext.HttpClient,
 	})
 
-	return NewBicepProvider(
-		*mockContext.Context, azCli, env, projectDir, options, mockContext.CommandRunner, mockContext.Console,
+	provider, err := NewBicepProvider(
+		*mockContext.Context, azCli, env, projectDir, options,
+		exec.NewCommandRunner(os.Stdin, os.Stdout, os.Stderr),
+		mockContext.Console,
 	)
+
+	require.NoError(t, err)
+	return provider
 }
 
 func prepareGenericMocks(commandRunner *execmock.MockCommandRunner) {

@@ -79,7 +79,7 @@ func (p *BicepProvider) Name() string {
 }
 
 func (p *BicepProvider) RequiredExternalTools() []tools.ExternalTool {
-	return []tools.ExternalTool{p.bicepCli}
+	return []tools.ExternalTool{}
 }
 
 func (p *BicepProvider) State(
@@ -949,8 +949,11 @@ func NewBicepProvider(
 	infraOptions Options,
 	commandRunner exec.CommandRunner,
 	console input.Console,
-) *BicepProvider {
-	bicepCli := bicep.NewBicepCli(commandRunner)
+) (*BicepProvider, error) {
+	bicepCli, err := bicep.NewBicepCli(ctx, console, commandRunner)
+	if err != nil {
+		return nil, err
+	}
 
 	// Default to a module named "main" if not specified.
 	if strings.TrimSpace(infraOptions.Module) == "" {
@@ -964,7 +967,7 @@ func NewBicepProvider(
 		console:     console,
 		bicepCli:    bicepCli,
 		azCli:       azCli,
-	}
+	}, nil
 }
 
 func init() {
@@ -979,7 +982,7 @@ func init() {
 			azCli azcli.AzCli,
 			commandRunner exec.CommandRunner,
 		) (Provider, error) {
-			return NewBicepProvider(ctx, azCli, env, projectPath, options, commandRunner, console), nil
+			return NewBicepProvider(ctx, azCli, env, projectPath, options, commandRunner, console)
 		},
 	)
 

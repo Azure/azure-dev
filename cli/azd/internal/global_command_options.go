@@ -1,8 +1,6 @@
 package internal
 
 type GlobalCommandOptions struct {
-	EnvironmentName string
-
 	// Cwd allows the user to override the current working directory, temporarily.
 	// The root command will take care of cd'ing into that folder before your command
 	// and cd'ing back to the original folder after the commands complete (to make testing

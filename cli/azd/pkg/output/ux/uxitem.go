@@ -5,7 +5,7 @@ package ux
 
 import "github.com/azure/azure-dev/cli/azd/pkg/output"
 
-type UXItem interface {
+type UxItem interface {
 	// Defines how the object is transformed into a printable string.
 	// The current indentation can be used to make the string to be aligned to the previous lines.
 	ToString(currentIndentation string) string

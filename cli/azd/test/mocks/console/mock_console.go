@@ -75,7 +75,7 @@ func (c *MockConsole) Message(ctx context.Context, message string) {
 	c.log = append(c.log, message)
 }
 
-func (c *MockConsole) MessageUxItem(ctx context.Context, item ux.UXItem) {
+func (c *MockConsole) MessageUxItem(ctx context.Context, item ux.UxItem) {
 	c.Message(ctx, item.ToString(""))
 }
 

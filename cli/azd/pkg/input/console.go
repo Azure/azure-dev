@@ -39,7 +39,7 @@ type Console interface {
 	// Prints out a message to the underlying console write
 	Message(ctx context.Context, message string)
 	// Prints out a message following a contract ux item
-	MessageUxItem(ctx context.Context, item ux.UXItem)
+	MessageUxItem(ctx context.Context, item ux.UxItem)
 	// Prints progress spinner with the given title.
 	// If a previous spinner is running, the title is updated.
 	ShowSpinner(ctx context.Context, title string, format SpinnerUxType)
@@ -122,7 +122,7 @@ func (c *AskerConsole) Message(ctx context.Context, message string) {
 	}
 }
 
-func (c *AskerConsole) MessageUxItem(ctx context.Context, item ux.UXItem) {
+func (c *AskerConsole) MessageUxItem(ctx context.Context, item ux.UxItem) {
 	if c.formatter != nil && c.formatter.Kind() == output.JsonFormat {
 		// no need to check the spinner for json format, as the spinner won't start when using json format
 		// instead, there would be a message about starting spinner

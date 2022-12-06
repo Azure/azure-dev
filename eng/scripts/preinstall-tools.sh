@@ -80,6 +80,23 @@ sudo apt-get install -y docker-ce docker-ce-cli
 
 echo "Docker installed"
 sudo systemctl start docker
-docker version
+
+wait_count=1
+while true; do
+    if [ $wait_count -gt 30 ]; then
+        echo "Wait count expired"
+        exit 1
+    fi
+    wait_count=$wait_count+1
+    if [ "$(systemctl is-active docker)" == "active" ]; then\
+        echo "Docker is active"
+        break
+    fi
+    echo "Docker is not active. Waiting..."
+
+    sleep 1
+done
+
+sudo docker version 
 
 echo "Pre-reqs installed"

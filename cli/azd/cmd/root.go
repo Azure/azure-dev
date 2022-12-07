@@ -101,7 +101,7 @@ For more information, visit the Azure Developer CLI Dev Hub: https://aka.ms/azur
 	cmd.AddCommand(templatesCmd(opts))
 	cmd.AddCommand(authCmd(opts))
 
-	cmd.AddCommand(BuildCmd(opts, versionCmdDesign, initVersionAction, &actions.ActionOptions{DisableTelemetry: true}))
+	cmd.AddCommand(BuildCmd(opts, versionCmdDesign, initVersionAction, &actions.BuildOptions{DisableTelemetry: true}))
 	cmd.AddCommand(BuildCmd(opts, showCmdDesign, initShowAction, nil))
 	cmd.AddCommand(BuildCmd(opts, restoreCmdDesign, initRestoreAction, nil))
 	cmd.AddCommand(BuildCmd(opts, loginCmdDesign, initLoginAction, nil))
@@ -129,7 +129,7 @@ func BuildCmd[F any](
 	opts *internal.GlobalCommandOptions,
 	buildDesign designBuilder[F],
 	buildAction actionBuilder[F],
-	actionOptions *actions.ActionOptions) *cobra.Command {
+	buildOptions *actions.BuildOptions) *cobra.Command {
 	cmd, flags := buildDesign(opts)
 	cmd.Flags().BoolP("help", "h", false, fmt.Sprintf("Gets help for %s.", cmd.Name()))
 
@@ -148,8 +148,8 @@ func BuildCmd[F any](
 
 		ctx = tools.WithInstalledCheckCache(ctx)
 
-		middleware.Use(middleware.Build(flags, opts, actionOptions, console, initDebugMiddleware))
-		middleware.Use(middleware.Build(flags, opts, actionOptions, console, initTelemetryMiddleware))
+		middleware.Use(middleware.Build(flags, opts, buildOptions, console, initDebugMiddleware))
+		middleware.Use(middleware.Build(flags, opts, buildOptions, console, initTelemetryMiddleware))
 
 		runOptions := middleware.Options{
 			Name:    cmd.CommandPath(),

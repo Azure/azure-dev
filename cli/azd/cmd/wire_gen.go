@@ -448,12 +448,12 @@ func initConfigResetAction(console input.Console, ctx context.Context, o *intern
 	return cmdConfigResetAction, nil
 }
 
-func initDebugMiddleware(flags any, rootOptions *internal.GlobalCommandOptions, actionOptions *actions.ActionOptions, console input.Console) (middleware.Middleware, error) {
+func initDebugMiddleware(flags any, rootOptions *internal.GlobalCommandOptions, buildOptions *actions.BuildOptions, console input.Console) (middleware.Middleware, error) {
 	debugMiddleware := middleware.NewDebugMiddleware(console)
 	return debugMiddleware, nil
 }
 
-func initTelemetryMiddleware(flags any, rootOptions *internal.GlobalCommandOptions, actionOptions *actions.ActionOptions, console input.Console) (middleware.Middleware, error) {
-	telemetryMiddleware := middleware.NewTelemetryMiddleware(actionOptions)
+func initTelemetryMiddleware(flags any, rootOptions *internal.GlobalCommandOptions, buildOptions *actions.BuildOptions, console input.Console) (middleware.Middleware, error) {
+	telemetryMiddleware := middleware.NewTelemetryMiddleware(buildOptions)
 	return telemetryMiddleware, nil
 }

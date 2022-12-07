@@ -23,7 +23,7 @@ type Middleware interface {
 type BuildFn func(
 	flags any,
 	commandOptions *internal.GlobalCommandOptions,
-	actionOptions *actions.ActionOptions,
+	buildOptions *actions.BuildOptions,
 	console input.Console) (Middleware, error)
 
 // Middleware Run options
@@ -36,12 +36,12 @@ type Options struct {
 func Build(
 	flags any,
 	commandOptions *internal.GlobalCommandOptions,
-	actionOptions *actions.ActionOptions,
+	buildOptions *actions.BuildOptions,
 	console input.Console,
 	buildFn BuildFn,
 ) ResolveFn {
 	return func() Middleware {
-		middleware, err := buildFn(flags, commandOptions, actionOptions, console)
+		middleware, err := buildFn(flags, commandOptions, buildOptions, console)
 		if err != nil {
 			log.Printf("Unable to create middleware: %s\n", err.Error())
 			return nil

@@ -10,18 +10,18 @@ import (
 )
 
 type TelemetryMiddleware struct {
-	actionOptions *actions.ActionOptions
+	buildOptions *actions.BuildOptions
 }
 
-func NewTelemetryMiddleware(actionOptions *actions.ActionOptions) *TelemetryMiddleware {
+func NewTelemetryMiddleware(buildOptions *actions.BuildOptions) *TelemetryMiddleware {
 	return &TelemetryMiddleware{
-		actionOptions: actionOptions,
+		buildOptions: buildOptions,
 	}
 }
 
 func (m *TelemetryMiddleware) Run(ctx context.Context, options Options, next NextFn) (*actions.ActionResult, error) {
 	// When telemetry is disabled for an action just continue the middleware chain
-	if m.actionOptions != nil && m.actionOptions.DisableTelemetry {
+	if m.buildOptions != nil && m.buildOptions.DisableTelemetry {
 		return next(ctx)
 	}
 

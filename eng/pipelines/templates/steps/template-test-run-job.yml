@@ -66,7 +66,7 @@ steps:
       ARM_TENANT_ID=$(arm-tenant-id)
       SUBSCRIPTION_ID=$(SubscriptionId)
       FOLDER_PATH=$(folderPath)
-      AZD_DEBUG_FORCE_NO_TTY=1
+      AZD_DEBUG_FORCE_NO_TTY="1"
     subFolder: '$(folderPath)/temp'
     runCmd: |
       curl -fsSL https://aka.ms/install-azd.sh | bash -s -- --version 'daily' --verbose

@@ -63,9 +63,9 @@ steps:
 
   - bash: >- 
       chmod +x 
-        signed/mac/azd-darwin-amd64 
-        release-staging/azd-linux-amd64
-        release-staging/azd-linux-arm64
+      signed/mac/azd-darwin-amd64 
+      release-staging/azd-linux-amd64
+      release-staging/azd-linux-arm64
     displayName: Set execute bit for the mac and linux release
 
   - pwsh: |

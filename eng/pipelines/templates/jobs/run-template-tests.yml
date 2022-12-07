@@ -100,9 +100,14 @@ jobs:
       maxParallel: 10
 
     pool:
-      name: azsdk-pool-mms-ubuntu-2004-general
-      vmImage: MMSUbuntu20.04
+      name: azsdk-pool-mms-ubuntu-2004-arm
 
     steps:
       - checkout: self
+
+      # TODO: Pre-install tools should only run if the tools are not already 
+      # installed (i.e. only on ARM64 images)
+      - bash: lsb_release -a && uname -a && eng/scripts/preinstall-tools.sh
+        displayName: Pre-install tools
+
       - template: /eng/pipelines/templates/steps/template-test-run-job.yml

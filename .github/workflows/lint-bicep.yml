@@ -1,5 +1,13 @@
 on:
   workflow_call:
+  pull_request:
+    branches: 
+      - main
+    paths:
+      - eng/scripts/Test-BicepLint.ps1
+      - .github/workflows/lint-bicep.yml
+    
+
 
 jobs:
   bicep-lint:

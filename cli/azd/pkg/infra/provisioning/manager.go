@@ -136,8 +136,6 @@ func (m *Manager) plan(ctx context.Context) (*DeploymentPlan, error) {
 		return nil, fmt.Errorf("planning infrastructure provisioning: %w", err)
 	}
 
-	log.Println("\nInfrastructure provisioning plan completed successfully")
-
 	return deploymentPlan, nil
 }
 

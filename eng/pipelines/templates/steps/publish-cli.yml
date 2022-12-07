@@ -54,7 +54,18 @@ steps:
       # Copy the item from artifacts straight to where it will go
       path: release-staging
 
-  - bash: chmod +x signed/mac/azd-darwin-amd64 release-staging/azd-linux-amd64
+  # Linux binary is not signed today so download from output artifacts
+  - task: DownloadPipelineArtifact@2
+    inputs:
+      artifact: azd-linux-arm64
+      # Copy the item from artifacts straight to where it will go
+      path: release-staging
+
+  - bash: >- 
+      chmod +x 
+        signed/mac/azd-darwin-amd64 
+        release-staging/azd-linux-amd64
+        release-staging/azd-linux-arm64
     displayName: Set execute bit for the mac and linux release
 
   - pwsh: |
@@ -66,6 +77,7 @@ steps:
       # the same place in the directory structure
       Copy-Item NOTICE.txt ./release-staging/
       tar -C ./release-staging/ -cvzf release/azd-linux-amd64.tar.gz azd-linux-amd64 NOTICE.txt
+      tar -C ./release-staging/ -cvzf release/azd-linux-arm64.tar.gz azd-linux-arm64 NOTICE.txt
     displayName: Compress standalone binary for release
 
   - ${{ if eq('true', parameters.UploadInstaller) }}:
@@ -78,6 +90,7 @@ steps:
       displayName: Copy install scripts to release (PR only)
 
   # Docker build
+  # TODO: Do we need to do a Docker Build in ARM64?
   - pwsh: |
       # Move the binary to a folder where Docker can pick it up
       New-Item -ItemType Directory -Path cli/bin

@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/azure/azure-dev/cli/azd/pkg/azureutil"
@@ -20,7 +21,8 @@ type AzureResourceManager struct {
 }
 
 type ResourceManager interface {
-	GetDeploymentResourceOperations(ctx context.Context, scope Scope) ([]*armresources.DeploymentOperation, error)
+	GetDeploymentResourceOperations(
+		ctx context.Context, scope Scope, queryStart *time.Time) ([]*armresources.DeploymentOperation, error)
 	GetResourceTypeDisplayName(
 		ctx context.Context,
 		subscriptionId string,
@@ -39,6 +41,7 @@ func NewAzureResourceManager(azCli azcli.AzCli) *AzureResourceManager {
 func (rm *AzureResourceManager) GetDeploymentResourceOperations(
 	ctx context.Context,
 	scope Scope,
+	queryStart *time.Time,
 ) ([]*armresources.DeploymentOperation, error) {
 	// Gets all the scope level resource operations
 	resourceOperations, err := scope.GetResourceOperations(ctx)
@@ -69,22 +72,27 @@ func (rm *AzureResourceManager) GetDeploymentResourceOperations(
 
 	// Find all resource group deployments within the subscription operations
 	// Recursively append any resource group deployments that are found
+	deploymentOperations := make(map[string]*armresources.DeploymentOperation)
 	for _, operation := range resourceOperations {
 		if operation.Properties.TargetResource != nil &&
-			*operation.Properties.TargetResource.ResourceType == string(AzureResourceTypeDeployment) {
+			*operation.Properties.TargetResource.ResourceType == string(AzureResourceTypeDeployment) &&
+			*operation.Properties.ProvisioningOperation == armresources.ProvisioningOperationCreate {
 			err = rm.appendDeploymentResourcesRecursive(
 				ctx,
 				scope.SubscriptionId(),
 				resourceGroupName,
 				*operation.Properties.TargetResource.ResourceName,
-				&resourceOperations,
+				&deploymentOperations,
+				queryStart,
 			)
 			if err != nil {
 				return nil, fmt.Errorf("appending deployment resources: %w", err)
 			}
 		}
 	}
-
+	for _, op := range deploymentOperations {
+		resourceOperations = append(resourceOperations, op)
+	}
 	return resourceOperations, nil
 }
 
@@ -268,7 +276,8 @@ func (rm *AzureResourceManager) appendDeploymentResourcesRecursive(
 	subscriptionId string,
 	resourceGroupName string,
 	deploymentName string,
-	resourceOperations *[]*armresources.DeploymentOperation,
+	resourceOperations *map[string]*armresources.DeploymentOperation,
+	queryStart *time.Time,
 ) error {
 	operations, err := rm.azCli.ListResourceGroupDeploymentOperations(
 		ctx, subscriptionId, resourceGroupName, deploymentName)
@@ -277,7 +286,9 @@ func (rm *AzureResourceManager) appendDeploymentResourcesRecursive(
 	}
 
 	for _, operation := range operations {
-		if operation.Properties.TargetResource != nil {
+		if operation.Properties.TargetResource != nil &&
+			operation.Properties.Timestamp != nil {
+			_, alreadyAdded := (*resourceOperations)[*operation.OperationID]
 			if *operation.Properties.TargetResource.ResourceType == string(AzureResourceTypeDeployment) {
 				err := rm.appendDeploymentResourcesRecursive(
 					ctx,
@@ -285,13 +296,16 @@ func (rm *AzureResourceManager) appendDeploymentResourcesRecursive(
 					resourceGroupName,
 					*operation.Properties.TargetResource.ResourceName,
 					resourceOperations,
+					queryStart,
 				)
 				if err != nil {
 					return fmt.Errorf("appending deployment resources: %w", err)
 				}
 			} else if *operation.Properties.ProvisioningOperation == "Create" &&
-				strings.TrimSpace(*operation.Properties.TargetResource.ResourceType) != "" {
-				*resourceOperations = append(*resourceOperations, operation)
+				strings.TrimSpace(*operation.Properties.TargetResource.ResourceType) != "" &&
+				!alreadyAdded &&
+				operation.Properties.Timestamp.After(*queryStart) {
+				(*resourceOperations)[*operation.OperationID] = operation
 			}
 		}
 	}

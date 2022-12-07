@@ -23,6 +23,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
+	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/pkg/templates"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
@@ -160,7 +161,9 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	// NOTE: Adding `azure.yaml` to a folder removes the option from selecting a template
 	if _, err := os.Stat(i.azdCtx.ProjectPath()); err != nil && errors.Is(err, os.ErrNotExist) {
 		// Command title
-		i.console.MessageUx(ctx, "Initializing a new project (azd init)", input.Title)
+		i.console.MessageUxItem(ctx, &ux.MessageTitle{
+			Title: "Initializing a new project (azd init)",
+		})
 
 		if i.flags.template.Name == "" {
 			i.flags.template, err = templates.PromptTemplate(ctx, "Select a project template:", i.console)
@@ -213,7 +216,7 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		err = i.gitCli.FetchCode(ctx, templateUrl, i.flags.templateBranch, templateStagingDir)
 
 		// stop the spinner based on the result
-		i.console.StopSpinner(ctx, stepMessage, getStepResultFormat(err))
+		i.console.StopSpinner(ctx, stepMessage+"\n", input.GetStepResultFormat(err))
 
 		if err != nil {
 			return nil, fmt.Errorf("\nfetching template: %w", err)
@@ -298,7 +301,7 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 
 		i.console.ShowSpinner(ctx, stepMessage, input.Step)
 		_, err = project.NewProject(i.azdCtx.ProjectPath(), i.azdCtx.GetDefaultProjectName())
-		i.console.StopSpinner(ctx, stepMessage, getStepResultFormat(err))
+		i.console.StopSpinner(ctx, stepMessage, input.GetStepResultFormat(err))
 
 		if err != nil {
 			return nil, fmt.Errorf("failed to create a project file: %w", err)
@@ -375,12 +378,4 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 			FollowUp: fmt.Sprintf("You can view the template code in your directory: %s", formattedWithColorCwd),
 		},
 	}, nil
-}
-
-func getStepResultFormat(result error) input.SpinnerUxType {
-	formatResult := input.StepDone
-	if result != nil {
-		formatResult = input.StepFailed
-	}
-	return formatResult
 }

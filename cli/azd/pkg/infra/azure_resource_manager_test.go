@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
@@ -27,26 +28,28 @@ var mockSubDeploymentOperations string = `
 	"value": [
 		{
 			"id": "resource-group-id",
-			"operationId": "foo",
+			"operationId": "foo1",
 			"properties": {
 				"provisioningOperation":"Create",
 				"targetResource": {
 					"resourceType": "Microsoft.Resources/resourceGroups",
 					"id":"resource-group-id",
 					"resourceName": "resource-group-name"
-				}
+				},
+				"timestamp":"9999-10-31T14:00:00Z"
 			}
 		},
 		{
 			"id": "deployment-id",
-			"operationId": "foo",
+			"operationId": "foo2",
 			"properties": {
 				"provisioningOperation":"Create",
 				"targetResource": {
 					"resourceType": "Microsoft.Resources/deployments",
 					"id":"group-deployment-id",
 					"resourceName": "group-deployment-id"
-				}
+				},
+				"timestamp":"9999-10-31T14:00:00Z"
 			}
 		}
 	]
@@ -59,24 +62,28 @@ var mockGroupDeploymentOperations string = `
 	"value": [
 		{
 			"id": "website-resource-id",
+			"operationId": "foo3",
 			"properties": {
 				"provisioningOperation":"Create",
 				"targetResource": {
 					"resourceType": "Microsoft.Web/sites",
 					"id":"website-resource-id",
 					"resourceName": "website-resource-name"
-				}
+				},
+				"timestamp":"9999-10-31T14:00:00Z"
 			}
 		},
 		{
 			"id": "storage-resource-id",
+			"operationId": "foo4",
 			"properties": {
 				"provisioningOperation":"Create",
 				"targetResource": {
 					"resourceType": "Microsoft.Storage/storageAccounts",
 					"id":"storage-resource-id",
 					"resourceName": "storage-resource-name"
-				}
+				},
+				"timestamp":"9999-10-31T14:00:00Z"
 			}
 		}
 	]
@@ -89,35 +96,41 @@ var mockNestedGroupDeploymentOperations string = `
 	"value": [
 		{
 			"id": "website-resource-id",
+			"operationId": "foo5",
 			"properties": {
 				"provisioningOperation":"Create",
 				"targetResource": {
 					"resourceType": "Microsoft.Web/sites",
 					"id":"website-resource-id",
 					"resourceName": "website-resource-name"
-				}
+				},
+				"timestamp":"9999-10-31T14:00:00Z"
 			}
 		},
 		{
 			"id": "storage-resource-id",
+			"operationId": "foo6",
 			"properties": {
 				"provisioningOperation":"Create",
 				"targetResource": {
 					"resourceType": "Microsoft.Storage/storageAccounts",
 					"id":"storage-resource-id",
 					"resourceName": "storage-resource-name"
-				}
+				},
+				"timestamp":"9999-10-31T14:00:00Z"
 			}
 		},
 		{
 			"id": "nested-deployment-id",
+			"operationId": "foo7",
 			"properties": {
 				"provisioningOperation":"Create",
 				"targetResource": {
 					"resourceType": "Microsoft.Resources/deployments",
 					"id":"nested-group-deployment-id",
 					"resourceName": "nested-group-deployment-name"
-				}
+				},
+				"timestamp":"9999-10-31T14:00:00Z"
 			}
 		}
 	]
@@ -130,6 +143,7 @@ var mockSubDeploymentOperationsEmpty string = `
 	"value": []
 }
 `
+var qStart = time.Now()
 
 func TestGetDeploymentResourceOperationsSuccess(t *testing.T) {
 	subCalls := 0
@@ -172,7 +186,7 @@ func TestGetDeploymentResourceOperationsSuccess(t *testing.T) {
 	})
 
 	arm := NewAzureResourceManager(azCli)
-	operations, err := arm.GetDeploymentResourceOperations(*mockContext.Context, scope)
+	operations, err := arm.GetDeploymentResourceOperations(*mockContext.Context, scope, &qStart)
 	require.NotNil(t, operations)
 	require.Nil(t, err)
 
@@ -223,7 +237,7 @@ func TestGetDeploymentResourceOperationsFail(t *testing.T) {
 	})
 
 	arm := NewAzureResourceManager(azCli)
-	operations, err := arm.GetDeploymentResourceOperations(*mockContext.Context, scope)
+	operations, err := arm.GetDeploymentResourceOperations(*mockContext.Context, scope, &qStart)
 
 	require.Nil(t, operations)
 	require.NotNil(t, err)
@@ -272,7 +286,7 @@ func TestGetDeploymentResourceOperationsNoResourceGroup(t *testing.T) {
 	})
 
 	arm := NewAzureResourceManager(azCli)
-	operations, err := arm.GetDeploymentResourceOperations(*mockContext.Context, scope)
+	operations, err := arm.GetDeploymentResourceOperations(*mockContext.Context, scope, &qStart)
 
 	require.NotNil(t, operations)
 	require.Nil(t, err)
@@ -337,7 +351,7 @@ func TestGetDeploymentResourceOperationsWithNestedDeployments(t *testing.T) {
 	})
 
 	arm := NewAzureResourceManager(azCli)
-	operations, err := arm.GetDeploymentResourceOperations(*mockContext.Context, scope)
+	operations, err := arm.GetDeploymentResourceOperations(*mockContext.Context, scope, &qStart)
 
 	require.NotNil(t, operations)
 	require.Nil(t, err)

@@ -1,5 +1,3 @@
-_INVALIDINVIALIDINVALIDINVALID ***&*#*&$*&%*&#*&$ }{][]}
-
 targetScope = 'subscription'
 
 @minLength(1)

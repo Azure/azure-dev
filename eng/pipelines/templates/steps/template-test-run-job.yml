@@ -54,7 +54,7 @@ steps:
     echo "https://azure-sdk:$(azuresdk-github-pat)@github.com" > ~/.git-credentials
     git config --global credential.helper "store"
     Write-Host "##vso[task.setvariable variable=folderPath;]$pwd"
-    git clone --branch pr/1000 https://github.com/$(TemplateName).git/ temp
+    git clone --branch staging https://github.com/$(TemplateName).git/ temp
   displayName: Clone template repository
 
 - task: DevcontainersCI@0
@@ -75,6 +75,7 @@ steps:
         --client-secret "$(arm-client-secret)" \
         --tenant-id "$(arm-tenant-id)"
 
+      # install these packages for error of playwright missing libraries 
       sudo add-apt-repository ppa:gstreamer-developers/ppa
       sudo apt-get update
       sudo apt-get install gstreamer1.0*
@@ -93,6 +94,7 @@ steps:
       ENV_SUFFIX=$(Build.BuildId)
       TEST_ONLY=false
       CLEANUP=$(SynchronousCleanup)
+      AZD_DEBUG_FORCE_NO_TTY="1"
 
       function deployTemplate {
           echo "Creating new project folder @ '$FOLDER_PATH/$3'..."

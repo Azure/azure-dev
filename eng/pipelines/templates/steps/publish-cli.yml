@@ -4,6 +4,7 @@ parameters:
   DockerImageTags:
   PublishUploadLocations:
   UploadInstaller: false
+  UploadMsi: false
   PublishShield: false
   StorageAccountName: $(azdev-storage-account-name)
   StorageAccountKey: $(azdev-storage-account-key)
@@ -43,9 +44,16 @@ steps:
 
   # Download signed artifacts, prepare packaging
   - task: DownloadPipelineArtifact@2
+    displayName: Download signed Windows binaries
     inputs:
-      artifact: signed
-      path: signed
+      artifact: signed-win
+      path: signed/win
+
+  - task: DownloadPipelineArtifact@2
+    displayName: Download signed Mac binaries
+    inputs:
+      artifact: signed-mac
+      path: signed/mac
 
   # Linux binary is not signed today so download from output artifacts
   - task: DownloadPipelineArtifact@2
@@ -67,6 +75,10 @@ steps:
       Copy-Item NOTICE.txt ./release-staging/
       tar -C ./release-staging/ -cvzf release/azd-linux-amd64.tar.gz azd-linux-amd64 NOTICE.txt
     displayName: Compress standalone binary for release
+
+  - ${{ if eq('true', parameters.UploadMsi) }}: 
+    - pwsh: Copy-Item signed/win/azd-windows-amd64.msi release/
+      displayName: Copy MSI to release
 
   - ${{ if eq('true', parameters.UploadInstaller) }}:
     - pwsh: |

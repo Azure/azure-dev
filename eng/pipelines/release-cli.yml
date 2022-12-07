@@ -326,7 +326,6 @@ stages:
           displayName: Package mac binary for signing
 
         - ${{ if in(variables['Build.Reason'], 'IndividualCI', 'BatchedCI', 'Manual') }}:
-          # TODO: Update ref to appropriate tag before merging
           - template: pipelines/steps/azd-cli-mac-signing.yml@azure-sdk-build-tools
             parameters:
               MacPath: mac
@@ -386,7 +385,6 @@ stages:
           displayName: Copy install scripts to win/
 
         - ${{ if in(variables['Build.Reason'], 'IndividualCI', 'BatchedCI', 'Manual') }}:
-          # TODO: Update ref to appropriate tagging before merge
           - template: pipelines/steps/azd-cli-win-signing.yml@azure-sdk-build-tools
             parameters:
               WinPath:  win
@@ -415,7 +413,6 @@ stages:
             Title: Build Release MSI
 
         - ${{ if in(variables['Build.Reason'], 'IndividualCI', 'BatchedCI', 'Manual') }}:
-        # TODO: Update ref to appropriate tag before merging
           - template: pipelines/steps/azd-cli-win-signing.yml@azure-sdk-build-tools
             parameters:
               WinPath:  cli/installer/windows/bin/Release

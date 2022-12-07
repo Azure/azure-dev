@@ -129,15 +129,10 @@
                                 "title": "The platform target",
                                 "default": "amd64"
                             },
-                            "imageName": {
-                                "type": "string",
-                                "title": "The image name that will be applied to the built container image.",
-                                "description": "If omitted, the name will be generated based on the format: appName/serviceName-environmentName."
-                            },
-                            "imageTag": {
+                            "tag": {
                                 "type": "string",
                                 "title": "The tag that will be applied to the built container image.",
-                                "description": "If omitted, the name will be generated based on the format: azdev-deploy-<unix time (seconds)>. A recommended way to configure the image tag for publishing scenarios is via environment variable substitution. For example, ${DOCKER_IMAGE_TAG=latest} sets this based on DOCKER_IMAGE_TAG environment variable if available, otherwise 'latest'."
+                                "description": "If omitted, a unique tag will be generated based on the format: {appName}/{serviceName}-{environmentName}:azdev-deploy-{unix time (seconds)}. Use environment variable substitution to generate unique tags for a given release. For example, myapp/myimage:${DOCKER_IMAGE_TAG}."
                             }
                         }
                     }

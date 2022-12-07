@@ -77,22 +77,11 @@ func Test_containerAppTarget_generateImageTag(t *testing.T) {
 		{"Default",
 			DockerProjectOptions{},
 			fmt.Sprintf("%s:azdev-deploy-%d", defaultImageName, mockClock.Now().Unix())},
-		{"ImageNameSpecified",
-			DockerProjectOptions{
-				ImageName: "contoso-image",
-			},
-			fmt.Sprintf("contoso-image:azdev-deploy-%d", mockClock.Now().Unix())},
 		{"ImageTagSpecified",
 			DockerProjectOptions{
-				ImageTag: "latest",
+				Tag: "contoso/contoso-image:latest",
 			},
-			fmt.Sprintf("%s:latest", defaultImageName)},
-		{"ImageNameAndTagSpecified",
-			DockerProjectOptions{
-				ImageName: "contoso-image",
-				ImageTag:  "latest",
-			},
-			"contoso-image:latest"},
+			"contoso/contoso-image:latest"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

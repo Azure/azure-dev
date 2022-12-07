@@ -42,7 +42,6 @@ module web 'web.bicep' = if(provisionContainerApp == 'true') {
     location: location
     imageName: 'nginx:latest'
   }
-  dependsOn: [resources]
 }
 
 output AZURE_CONTAINER_REGISTRY_NAME string = resources.outputs.containerRegistryName

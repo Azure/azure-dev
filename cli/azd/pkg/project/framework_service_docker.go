@@ -14,11 +14,10 @@ import (
 )
 
 type DockerProjectOptions struct {
-	Path      string `json:"path"`
-	Context   string `json:"context"`
-	Platform  string `json:"platform"`
-	ImageName string `json:"imageName"`
-	ImageTag  string `json:"imageTag"`
+	Path     string `json:"path"`
+	Context  string `json:"context"`
+	Platform string `json:"platform"`
+	Tag      string `json:"tag"`
 }
 
 type dockerProject struct {

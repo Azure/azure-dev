@@ -195,20 +195,15 @@ func (at *containerAppTarget) Endpoints(ctx context.Context) ([]string, error) {
 }
 
 func (at *containerAppTarget) generateImageTag() string {
-	imageName := at.config.Docker.ImageName
-	if imageName == "" {
-		imageName = strings.ToLower(fmt.Sprintf("%s/%s-%s", at.config.Project.Name, at.config.Name, at.env.GetEnvName()))
+	if at.config.Docker.Tag != "" {
+		return at.config.Docker.Tag
 	}
 
-	imageTag := at.config.Docker.ImageTag
-	if imageTag == "" {
-		imageTag = fmt.Sprintf("azdev-deploy-%d", at.clock.Now().Unix())
-	}
-
-	return fmt.Sprintf(
-		"%s:%s",
-		imageName,
-		imageTag,
+	return fmt.Sprintf("%s/%s-%s:azdev-deploy-%d",
+		strings.ToLower(at.config.Project.Name),
+		strings.ToLower(at.config.Name),
+		strings.ToLower(at.env.GetEnvName()),
+		at.clock.Now().Unix(),
 	)
 }
 

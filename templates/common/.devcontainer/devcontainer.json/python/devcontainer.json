@@ -19,9 +19,6 @@
         },
         "ghcr.io/devcontainers/features/python:1": {
             "version": "os-provided"
-        },
-        "ghcr.io/rchaganti/vsc-devcontainer-features/azurebicep:1":{
-            "version":"latest"
         }
     },
     "extensions": [

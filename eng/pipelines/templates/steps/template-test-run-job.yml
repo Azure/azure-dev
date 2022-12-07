@@ -128,55 +128,16 @@ steps:
           rm -rf "$FOLDER_PATH/${3:?}"
       }
 
-      if [[ -z $TEMPLATE_NAME ]]; then
-          declare -A ENV_TEMPLATE_MAP
+      # Run test for the specified template name
+      ENV_NAME="${ENV_NAME_PREFIX}-${TEMPLATE_NAME:14}-$ENV_SUFFIX"
+      if [ $TEST_ONLY == false ]; then
+          deployTemplate "$TEMPLATE_NAME" "$BRANCH_NAME" "$ENV_NAME" "${SUBSCRIPTION}" "${LOCATION}" 
+      fi
 
-          echo "Getting list of available templates..."
-          TEMPLATES_JSON=$(azd template list --output json)
+      testTemplate "$TEMPLATE_NAME" "$BRANCH_NAME" "$ENV_NAME"
 
-          while read -r TEMPLATE; do
-              ENV_NAME="${ENV_NAME_PREFIX}-${TEMPLATE:14}-$ENV_SUFFIX"
-              ENV_TEMPLATE_MAP[$TEMPLATE]=$ENV_NAME
-          done < <(echo "$TEMPLATES_JSON" | jq -r '.[].name' | sed 's/\\n/\n/g')
-
-          if [ $TEST_ONLY == false ]; then
-              # Deploy the templates in parallel
-              for TEMPLATE in "${!ENV_TEMPLATE_MAP[@]}"; do
-                  (deployTemplate "$TEMPLATE" "$BRANCH_NAME" "${ENV_TEMPLATE_MAP[$TEMPLATE]}" "${SUBSCRIPTION}" "${LOCATION}" || continue) &
-              done
-
-              wait
-          fi
-
-          # Test the templates serially
-          for TEMPLATE in "${!ENV_TEMPLATE_MAP[@]}"; do
-              #TODO - Add a function where it checks api/lists and get a response of 200 and empty json output
-              testTemplate "$TEMPLATE" "$BRANCH_NAME" "${ENV_TEMPLATE_MAP[$TEMPLATE]}" || continue
-          done
-
-          if [ "$CLEANUP" == true ]; then
-              # Cleanup the templates in parallel
-              for TEMPLATE in "${!ENV_TEMPLATE_MAP[@]}"; do
-                  (cleanupTemplate "$TEMPLATE" "$BRANCH_NAME" "${ENV_TEMPLATE_MAP[$TEMPLATE]}" || continue) &
-              done
-
-              wait
-          fi
-
-          echo ""
-          echo "Done!"
-      else
-          # Run test for the specified template name
-          ENV_NAME="${ENV_NAME_PREFIX}-${TEMPLATE_NAME:14}-$ENV_SUFFIX"
-          if [ $TEST_ONLY == false ]; then
-              deployTemplate "$TEMPLATE_NAME" "$BRANCH_NAME" "$ENV_NAME" "${SUBSCRIPTION}" "${LOCATION}" 
-          fi
-
-          testTemplate "$TEMPLATE_NAME" "$BRANCH_NAME" "$ENV_NAME"
-
-          if [ "$CLEANUP" == true ]; then
-              cleanupTemplate "$TEMPLATE_NAME" "$BRANCH_NAME" "$ENV_NAME"
-          fi
+      if [ "$CLEANUP" == true ]; then
+          cleanupTemplate "$TEMPLATE_NAME" "$BRANCH_NAME" "$ENV_NAME"
       fi
   displayName: Test templates in Devcontainer
 

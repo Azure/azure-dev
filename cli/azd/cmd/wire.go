@@ -315,7 +315,7 @@ func initConfigResetAction(
 func initDebugMiddleware(
 	flags any,
 	rootOptions *internal.GlobalCommandOptions,
-	actionOptions *actions.ActionOptions,
+	buildOptions *actions.BuildOptions,
 	console input.Console,
 ) (middleware.Middleware, error) {
 	panic(wire.Build(DebugMiddlewareSet))
@@ -324,7 +324,7 @@ func initDebugMiddleware(
 func initTelemetryMiddleware(
 	flags any,
 	rootOptions *internal.GlobalCommandOptions,
-	actionOptions *actions.ActionOptions,
+	buildOptions *actions.BuildOptions,
 	console input.Console,
 ) (middleware.Middleware, error) {
 	panic(wire.Build(TelemetryMiddlewareSet))

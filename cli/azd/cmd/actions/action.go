@@ -32,7 +32,7 @@ type Action interface {
 	Run(ctx context.Context) (*ActionResult, error)
 }
 
-type ActionOptions struct {
+type BuildOptions struct {
 	DisableTelemetry bool
 }
 

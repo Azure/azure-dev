@@ -423,15 +423,15 @@ stages:
                 -Version ''
                 -ContainerPrefix '$(docker-mirror-tag-prefix)/'
                 -AdditionalRunArgs '--add-host=host.docker.internal:host-gateway'
-            # LinuxDockerShARM64:
-            #   Pool: azsdk-pool-mms-ubuntu-2004-arm
-            #   TestShell: pwsh
-            #   TestInstallCommand: >
-            #     ./test-installer-containers.ps1
-            #     -BaseUrl "http://host.docker.internal:8080"
-            #     -Version ''
-            #     -ContainerPrefix '$(docker-mirror-tag-prefix)/'
-            #     -AdditionalRunArgs '--add-host=host.docker.internal:host-gateway'
+            LinuxDockerShARM64:
+              Pool: azsdk-pool-mms-ubuntu-2004-arm
+              TestShell: pwsh
+              TestInstallCommand: >
+                ./test-installer-containers.ps1
+                -BaseUrl "http://host.docker.internal:8080"
+                -Version ''
+                -ContainerPrefix '$(docker-mirror-tag-prefix)/'
+                -AdditionalRunArgs '--add-host=host.docker.internal:host-gateway'
             LinuxSh:
               Pool: azsdk-pool-mms-ubuntu-2004-general
               OSVmImage:  MMSUbuntu20.04
@@ -446,6 +446,21 @@ stages:
               TestInstallCommand: >
                 ./test-pwsh-xplat-install.ps1 -BaseUrl $env:BASEURL -Version '';
                 ./test-telemetry-functions.ps1 -NonInteractive -Shell pwsh -ExpectedFieldMap telemetry/linux.telemetry.json
+            LinuxShARM64:
+              Pool: azsdk-pool-mms-ubuntu-2004-arm
+              OSVmImage:  MMSUbuntu20.04
+              TestShell: bash
+              TestInstallCommand: >
+                ./test-sh-install.sh "bash" "$BASEURL" "" &&
+                ./test-telemetry-functions.sh "telemetry/linux.sh.telemetry.csv"
+            LinuxPwshARM64:
+              Pool: azsdk-pool-mms-ubuntu-2004-arm
+              OSVmImage:  MMSUbuntu20.04
+              TestShell: pwsh
+              TestInstallCommand: >
+                ./test-pwsh-xplat-install.ps1 -BaseUrl $env:BASEURL -Version '';
+                ./test-telemetry-functions.ps1 -NonInteractive -Shell pwsh -ExpectedFieldMap telemetry/linux.telemetry.json
+              RunPreinstallTools: true
 
             Mac11Sh:
               Pool: Azure Pipelines
@@ -513,6 +528,11 @@ stages:
 
         steps:
           - checkout: self
+
+          # TODO: This can be significantly curtaled 
+          - bash: lsb_release -a && uname -a && eng/scripts/preinstall-tools.sh
+            displayName: Pre-install tools
+            condition: and(succeeded(), eq(variables['RunPreinstallTools'], 'true'))
 
           - task: DownloadPipelineArtifact@2
             inputs:

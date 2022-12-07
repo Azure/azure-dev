@@ -9,6 +9,7 @@ import (
 	"log"
 	"net/url"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
@@ -20,6 +21,7 @@ import (
 
 const defaultProgressTitle string = "Provisioning Azure resources"
 const succeededProvisioningState string = "Succeeded"
+const runningProvisioningState string = "Running"
 
 // ProvisioningProgressDisplay displays interactive progress for an ongoing Azure provisioning operation.
 type ProvisioningProgressDisplay struct {
@@ -47,7 +49,8 @@ func NewProvisioningProgressDisplay(
 
 // ReportProgress reports the current deployment progress, setting the currently executing operation title and logging
 // progress.
-func (display *ProvisioningProgressDisplay) ReportProgress(ctx context.Context) (*DeployProgress, error) {
+func (display *ProvisioningProgressDisplay) ReportProgress(
+	ctx context.Context, queryStart *time.Time) (*DeployProgress, error) {
 	progress := DeployProgress{
 		Timestamp: time.Now(),
 		Message:   defaultProgressTitle,
@@ -78,24 +81,28 @@ func (display *ProvisioningProgressDisplay) ReportProgress(ctx context.Context) 
 		)
 	}
 
-	operations, err := display.resourceManager.GetDeploymentResourceOperations(ctx, display.scope)
+	operations, err := display.resourceManager.GetDeploymentResourceOperations(ctx, display.scope, queryStart)
 	if err != nil {
 		// Status display is best-effort activity.
 		return &progress, err
 	}
 
-	succeededCount := 0
 	newlyDeployedResources := []*armresources.DeploymentOperation{}
+	runningDeployments := []*armresources.DeploymentOperation{}
 
 	for i := range operations {
-		if operations[i].Properties.TargetResource != nil &&
-			*operations[i].Properties.ProvisioningState == succeededProvisioningState {
-			succeededCount++
+		if operations[i].Properties.TargetResource != nil {
+			resourceId := *operations[i].Properties.TargetResource.ResourceName
 
-			if !display.createdResources[*operations[i].Properties.TargetResource.ID] &&
+			if !display.createdResources[resourceId] &&
 				infra.IsTopLevelResourceType(
 					infra.AzureResourceType(*operations[i].Properties.TargetResource.ResourceType)) {
-				newlyDeployedResources = append(newlyDeployedResources, operations[i])
+
+				if *operations[i].Properties.ProvisioningState == succeededProvisioningState {
+					newlyDeployedResources = append(newlyDeployedResources, operations[i])
+				} else if *operations[i].Properties.ProvisioningState == runningProvisioningState {
+					runningDeployments = append(runningDeployments, operations[i])
+				}
 			}
 		}
 	}
@@ -107,13 +114,14 @@ func (display *ProvisioningProgressDisplay) ReportProgress(ctx context.Context) 
 		)
 	})
 
-	display.logNewlyCreatedResources(ctx, newlyDeployedResources)
+	display.logNewlyCreatedResources(ctx, newlyDeployedResources, runningDeployments)
 	return &progress, nil
 }
 
 func (display *ProvisioningProgressDisplay) logNewlyCreatedResources(
 	ctx context.Context,
 	resources []*armresources.DeploymentOperation,
+	inProgressResources []*armresources.DeploymentOperation,
 ) {
 	for _, newResource := range resources {
 		resourceTypeName := *newResource.Properties.TargetResource.ResourceType
@@ -148,6 +156,34 @@ func (display *ProvisioningProgressDisplay) logNewlyCreatedResources(
 			resourceTypeName,
 			*newResource.Properties.TargetResource.ResourceName)
 
-		display.createdResources[*newResource.Properties.TargetResource.ID] = true
+		display.createdResources[*newResource.Properties.TargetResource.ResourceName] = true
+	}
+	// update progress
+	inProgress := []string{}
+	for _, inProgResource := range inProgressResources {
+		resourceTypeName := *inProgResource.Properties.TargetResource.ResourceType
+		resourceTypeDisplayName, err := display.resourceManager.GetResourceTypeDisplayName(
+			ctx,
+			display.scope.SubscriptionId(),
+			*inProgResource.Properties.TargetResource.ID,
+			infra.AzureResourceType(resourceTypeName),
+		)
+
+		if err != nil {
+			// Dynamic resource type translation failed -- fallback to static translation
+			resourceTypeDisplayName = infra.GetResourceTypeDisplayName(infra.AzureResourceType(resourceTypeName))
+		}
+
+		// Don't log resource types for Azure resources that we do not have a translation of the resource type for.
+		// This will be improved on in a future iteration.
+		if resourceTypeDisplayName != "" {
+			inProgress = append(inProgress, resourceTypeDisplayName)
+		}
+	}
+	if len(inProgress) > 0 {
+		display.console.ShowSpinner(ctx,
+			fmt.Sprintf("Creating/Updating resources (%s)", strings.Join(inProgress, ", ")), input.Step)
+	} else {
+		display.console.ShowSpinner(ctx, "Creating/Updating resources", input.Step)
 	}
 }

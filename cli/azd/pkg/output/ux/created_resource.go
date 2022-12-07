@@ -16,7 +16,7 @@ type CreatedResource struct {
 }
 
 func (cr *CreatedResource) ToString(currentIndentation string) string {
-	return fmt.Sprintf("%s%s Creating %s: %s", currentIndentation, donePrefix, cr.Type, cr.Name)
+	return fmt.Sprintf("%s%s %s: %s", currentIndentation, donePrefix, cr.Type, cr.Name)
 }
 
 func (cr *CreatedResource) ToJson() []byte {

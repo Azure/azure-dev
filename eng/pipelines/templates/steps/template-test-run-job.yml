@@ -158,7 +158,7 @@ steps:
           deployTemplate "$TEMPLATE_NAME" "$BRANCH_NAME" "$ENV_NAME" "${SUBSCRIPTION}" "${LOCATION}" 
       fi
 
-      waitForApiService "$TEMPLATE" "$BRANCH_NAME" "${ENV_TEMPLATE_MAP[$TEMPLATE]}"
+      waitForApiService "$TEMPLATE" "$BRANCH_NAME" "$ENV_NAME"
       testTemplate "$TEMPLATE_NAME" "$BRANCH_NAME" "$ENV_NAME"
 
       if [ "$CLEANUP" == true ]; then

@@ -13,10 +13,15 @@ steps:
     if ('${{ parameters.Version }}'.StartsWith('pr/')) {
       $InstallArgs = "--base-url https://${{ parameters.StorageAccountName }}.blob.core.windows.net/azd/standalone/${{ parameters.Version }} --version ''"
       $ContainerImageTag = '${{ parameters.Version }}' -replace '/', '-'
+      $InstallScriptUrl = "https://${{ parameters.StorageAccountName }}.blob.core.windows.net/azd/standalone/${{ parameters.Version }}/install-azd.sh"
     } else {
       $InstallArgs = "--version '${{ parameters.Version }}'"
       $ContainerImageTag = '${{ parameters.Version }}'
+      $InstallScriptUrl = "${{ parameters.ScriptUrl }}"
     }
+
+    Write-Host "Install script URL: $InstallScriptUrl"
+    Write-Host "##vso[task.setvariable variable=AzdInstallScriptUrl]$InstallScriptUrl"
 
     Write-Host "Arguments for installer to install azd version '${{ parameters.Version }}' : $InstallArgs"
     Write-Host "##vso[task.setvariable variable=AzdInstallArgs]$InstallArgs"
@@ -29,5 +34,5 @@ steps:
   displayName: Configure azd install
 
 - bash: |
-    curl -fsSL ${{ parameters.ScriptUrl }} | bash -s -- $(AzdInstallArgs) --verbose
+    curl -fsSL $(AzdInstallScriptUrl) | bash -s -- $(AzdInstallArgs) --verbose
   displayName: Install azd

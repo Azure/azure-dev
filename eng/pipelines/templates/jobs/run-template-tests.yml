@@ -97,7 +97,8 @@ jobs:
 
     strategy:
       matrix: $[ dependencies.TemplateTest_CreateMatrix.outputs['Generate.Matrix'] ]
-      maxParallel: 10
+      # TODO: Use maxParallel of 10 before merge
+      maxParallel: 3
 
     pool:
       name: azsdk-pool-mms-ubuntu-2004-arm
@@ -108,6 +109,6 @@ jobs:
       # TODO: Pre-install tools should only run if the tools are not already 
       # installed (i.e. only on ARM64 images)
       - bash: lsb_release -a && uname -a && eng/scripts/preinstall-tools.sh
-        displayName: Pre-install tools
+        displayName: Pre-install tools 
 
       - template: /eng/pipelines/templates/steps/template-test-run-job.yml

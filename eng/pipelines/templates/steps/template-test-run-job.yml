@@ -54,7 +54,7 @@ steps:
     echo "https://azure-sdk:$(azuresdk-github-pat)@github.com" > ~/.git-credentials
     git config --global credential.helper "store"
     Write-Host "##vso[task.setvariable variable=folderPath;]$pwd"
-    git clone --branch staging https://github.com/$(TemplateName).git/ temp
+    git clone --branch $(TemplateBranchName) https://github.com/$(TemplateName).git/ temp
   displayName: Clone template repository
 
 - task: DevcontainersCI@0

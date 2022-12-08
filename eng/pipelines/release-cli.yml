@@ -425,6 +425,7 @@ stages:
                 -AdditionalRunArgs '--add-host=host.docker.internal:host-gateway'
             LinuxDockerShARM64:
               Pool: azsdk-pool-mms-ubuntu-2004-arm
+              RunPreinstallTools: true
               TestShell: pwsh
               TestInstallCommand: >
                 ./test-installer-containers.ps1
@@ -449,6 +450,7 @@ stages:
             LinuxShARM64:
               Pool: azsdk-pool-mms-ubuntu-2004-arm
               OSVmImage:  MMSUbuntu20.04
+              RunPreinstallTools: true
               TestShell: bash
               TestInstallCommand: >
                 ./test-sh-install.sh "bash" "$BASEURL" "" &&

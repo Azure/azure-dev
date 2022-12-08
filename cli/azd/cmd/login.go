@@ -32,6 +32,7 @@ type loginFlags struct {
 	clientCertificate      string
 	federatedToken         stringPtr
 	federatedTokenProvider string
+	redirectPort           int
 	global                 *internal.GlobalCommandOptions
 }
 
@@ -95,6 +96,7 @@ func (lf *loginFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandO
 		"",
 		"The provider to use to acquire a federated token to authenticate with.")
 	local.StringVar(&lf.tenantID, "tenant-id", "", "The tenant id for the service principal to authenticate with.")
+	local.IntVar(&lf.redirectPort, "redirect-port", 0, "Choose the port to use when doing interactive login.")
 
 	output.AddOutputFlag(
 		local,
@@ -285,7 +287,7 @@ func (la *loginAction) login(ctx context.Context) error {
 			return fmt.Errorf("logging in: %w", err)
 		}
 	} else {
-		if _, err := la.authManager.LoginInteractive(ctx); err != nil {
+		if _, err := la.authManager.LoginInteractive(ctx, la.flags.redirectPort); err != nil {
 			return fmt.Errorf("logging in: %w", err)
 		}
 	}

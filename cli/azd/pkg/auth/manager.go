@@ -197,8 +197,12 @@ func (m *Manager) CredentialForCurrentUser(ctx context.Context) (azcore.TokenCre
 	return nil, ErrNoCurrentUser
 }
 
-func (m *Manager) LoginInteractive(ctx context.Context) (azcore.TokenCredential, error) {
-	res, err := m.publicClient.AcquireTokenInteractive(ctx, cLoginScopes)
+func (m *Manager) LoginInteractive(ctx context.Context, redirectPort int) (azcore.TokenCredential, error) {
+	options := []public.InteractiveAuthOption{}
+	if redirectPort > 0 {
+		options = append(options, public.WithRedirectURI(fmt.Sprintf("http://localhost:%d", redirectPort)))
+	}
+	res, err := m.publicClient.AcquireTokenInteractive(ctx, cLoginScopes, options...)
 	if err != nil {
 		return nil, err
 	}

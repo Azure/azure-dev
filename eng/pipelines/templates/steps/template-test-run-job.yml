@@ -4,15 +4,19 @@
 # and additional variables specified by template-test-generate-jobs.yml
 
 steps:
-- template: /eng/pipelines/templates/steps/install-azd-live-sh.yml
-  parameters:
-    Version: $(AzdVersion)
-
 # TODO: Pre-install tools should only run if the tools are not already 
 # installed (i.e. only on ARM64 images)
 - bash: lsb_release -a && uname -a && eng/scripts/preinstall-tools.sh
   displayName: Pre-install tools 
+# TODO: This may only need to be run if we're in ARM64 Linux
+- task: UseDotNet@2
+  condition: and(succeeded(), ne(variables['Skip.LiveTest'], 'true'))
+  inputs:
+    version: 6.0.x
 
+- template: /eng/pipelines/templates/steps/install-azd-live-sh.yml
+  parameters:
+    Version: $(AzdVersion)
 
 - template: /eng/pipelines/templates/steps/azd-login.yml
 
@@ -48,6 +52,7 @@ steps:
     }
     Write-Host "##vso[task.setvariable variable=CleanupImmediate]$CleanupImmediate"
   displayName: Set test run parameters
+
 
 - task: Bash@3
   displayName: Test templates

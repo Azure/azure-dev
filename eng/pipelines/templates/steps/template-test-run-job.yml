@@ -23,6 +23,8 @@ steps:
 # Java pre-requisites that isn't met
 # TODO: Use azd container as a form of validation that the container works
 - template: /eng/pipelines/templates/steps/install-ms-openjdk.yml
+  parameters:
+    Condition: and(succeeded(), contains(variables['TemplateName'], 'java'))
 
 # Required to clone repos that are not yet public
 - template: /eng/pipelines/templates/steps/set-git-credentials.yml

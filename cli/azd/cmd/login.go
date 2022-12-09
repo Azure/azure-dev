@@ -96,7 +96,7 @@ func (lf *loginFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandO
 		"",
 		"The provider to use to acquire a federated token to authenticate with.")
 	local.StringVar(&lf.tenantID, "tenant-id", "", "The tenant id for the service principal to authenticate with.")
-	local.IntVar(&lf.redirectPort, "redirect-port", 0, "Choose the port to use when doing interactive login.")
+	local.IntVar(&lf.redirectPort, "redirect-port", 0, "Choose the port to be used as part of the redirect URI during interactive login.")
 
 	output.AddOutputFlag(
 		local,

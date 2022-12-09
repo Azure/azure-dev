@@ -72,7 +72,7 @@ module api '../../../../../common/infra/bicep/app/api-appservice-node.bicep' = {
 }
 
 // Give the API access to KeyVault
-module apiKeyVaultAccess '../../../../../../common/infra/bicep/core/security/keyvault-access.bicep' = {
+module apiKeyVaultAccess 'br/azd:security/keyvault-access:v1' = {
   name: 'api-keyvault-access'
   scope: rg
   params: {
@@ -95,7 +95,7 @@ module cosmos '../../../../../common/infra/bicep/app/cosmos-mongo-db.bicep' = {
 }
 
 // Create an App Service Plan to group applications under the same payment plan and SKU
-module appServicePlan '../../../../../../common/infra/bicep/core/host/appserviceplan.bicep' = {
+module appServicePlan 'br/azd:host/appserviceplan:v1' = {
   name: 'appserviceplan'
   scope: rg
   params: {
@@ -109,7 +109,7 @@ module appServicePlan '../../../../../../common/infra/bicep/core/host/appservice
 }
 
 // Store secrets in a keyvault
-module keyVault '../../../../../../common/infra/bicep/core/security/keyvault.bicep' = {
+module keyVault 'br/azd:security/keyvault:v1' = {
   name: 'keyvault'
   scope: rg
   params: {
@@ -121,7 +121,7 @@ module keyVault '../../../../../../common/infra/bicep/core/security/keyvault.bic
 }
 
 // Monitor application with Azure Monitor
-module monitoring '../../../../../../common/infra/bicep/core/monitor/monitoring.bicep' = {
+module monitoring 'br/azd:monitor/monitoring:v1' = {
   name: 'monitoring'
   scope: rg
   params: {

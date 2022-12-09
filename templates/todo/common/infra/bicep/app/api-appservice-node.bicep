@@ -10,7 +10,7 @@ param appSettings object = {}
 param keyVaultName string
 param serviceName string = 'api'
 
-module api '../../../../../common/infra/bicep/core/host/appservice.bicep' = {
+module api 'br/azd:host/appservice:v1' = {
   name: '${name}-app-module'
   params: {
     name: name

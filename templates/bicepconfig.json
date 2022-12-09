@@ -1,0 +1,9 @@
+{
+    "moduleAliases": {
+      "br": {
+        "azd": {
+          "registry": "azdtestcr.azurecr.io"
+        }
+      }
+    }
+  }

@@ -23,7 +23,7 @@ param keyVaultName string
 var defaultDatabaseName = 'Todo'
 var actualDatabaseName = !empty(databaseName) ? databaseName : defaultDatabaseName
 
-module cosmos '../../../../../common/infra/bicep/core/database/cosmos/mongo/cosmos-mongo-db.bicep' = {
+module cosmos 'br/azd:database/cosmos/mongo/cosmos-mongo-db:v1' = {
   name: 'cosmos-mongo'
   params: {
     accountName: accountName

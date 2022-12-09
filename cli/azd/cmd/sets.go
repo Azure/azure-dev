@@ -122,6 +122,12 @@ var CommonSet = wire.NewSet(
 	newCommandRunnerFromConsole,
 	newFormatterFromConsole,
 	newOutputWriter,
+	MiddlewareRunnerSet,
+)
+
+var MiddlewareRunnerSet = wire.NewSet(
+	middleware.NewMiddlewareRunner,
+	wire.Bind(new(actions.MiddlewareEnabledAction), new(*middleware.MiddlewareRunner)),
 )
 
 var AzCliSet = wire.NewSet(
@@ -173,7 +179,7 @@ var EnvSetCmdSet = wire.NewSet(
 	wire.Bind(new(actions.Action), new(*envSetAction)))
 
 var EnvSelectCmdSet = wire.NewSet(
-	newAzdContext,
+	CommonSet,
 	newEnvSelectAction,
 	wire.Bind(new(actions.Action), new(*envSelectAction)))
 
@@ -277,16 +283,6 @@ var ConfigResetCmdSet = wire.NewSet(
 	CommonSet,
 	newConfigResetAction,
 	wire.Bind(new(actions.Action), new(*configResetAction)))
-
-var DebugMiddlewareSet = wire.NewSet(
-	CommonSet,
-	middleware.NewDebugMiddleware,
-	wire.Bind(new(middleware.Middleware), new(*middleware.DebugMiddleware)))
-
-var TelemetryMiddlewareSet = wire.NewSet(
-	CommonSet,
-	middleware.NewTelemetryMiddleware,
-	wire.Bind(new(middleware.Middleware), new(*middleware.TelemetryMiddleware)))
 
 var AuthTokenCmdSet = wire.NewSet(
 	CommonSet,

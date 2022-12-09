@@ -15,7 +15,6 @@ import (
 	_ "github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning/bicep"
 	_ "github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning/terraform"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/telemetry"
@@ -121,9 +120,10 @@ type designBuilder[F any] func(opts *internal.GlobalCommandOptions) (*cobra.Comm
 type actionBuilder[F any] func(
 	console input.Console,
 	ctx context.Context,
+	chain []middleware.Middleware,
 	o *internal.GlobalCommandOptions,
 	flags F,
-	args []string) (actions.Action, error)
+	args []string) (actions.MiddlewareEnabledAction, error)
 
 func BuildCmd[F any](
 	opts *internal.GlobalCommandOptions,
@@ -141,21 +141,20 @@ func BuildCmd[F any](
 			return err
 		}
 
-		action, err := buildAction(console, ctx, opts, *flags, args)
+		middlewareChain := []middleware.Middleware{
+			middleware.NewDebugMiddleware(console),
+		}
+
+		if !buildOptions.DisableTelemetry {
+			middlewareChain = append(middlewareChain, middleware.NewTelemetryMiddleware(cmd.Name()))
+		}
+
+		action, err := buildAction(console, ctx, middlewareChain, opts, *flags, args)
 		if err != nil {
 			return err
 		}
 
-		ctx = tools.WithInstalledCheckCache(ctx)
-
-		middleware.Use(middleware.Build(flags, opts, buildOptions, console, initDebugMiddleware))
-		middleware.Use(middleware.Build(flags, opts, buildOptions, console, initTelemetryMiddleware))
-
-		runOptions := middleware.Options{
-			Name:    cmd.CommandPath(),
-			Aliases: cmd.Aliases,
-		}
-		actionResult, err := middleware.RunAction(ctx, runOptions, action)
+		actionResult, err := action.Run(ctx)
 		// At this point, we know that there might be an error, so we can silence cobra from showing it after us.
 		cmd.SilenceErrors = true
 		actions.ShowActionResults(ctx, console, actionResult, err)

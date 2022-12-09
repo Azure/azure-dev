@@ -30,6 +30,9 @@ func versionCmdDesign(global *internal.GlobalCommandOptions) (*cobra.Command, *v
 	cmd := &cobra.Command{
 		Use:   "version",
 		Short: "Print the version number of Azure Developer CLI.",
+		Annotations: map[string]string{
+			actions.AnnotationName: "version",
+		},
 	}
 
 	flags := &versionFlags{}

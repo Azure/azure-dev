@@ -40,6 +40,9 @@ func infraDeleteCmdDesign(global *internal.GlobalCommandOptions) (*cobra.Command
 	cmd := &cobra.Command{
 		Use:   "delete",
 		Short: "Delete Azure resources for an application.",
+		Annotations: map[string]string{
+			actions.AnnotationName: "infra-delete",
+		},
 	}
 
 	idf := &infraDeleteFlags{}

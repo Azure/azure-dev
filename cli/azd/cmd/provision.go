@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/spf13/cobra"
 )
@@ -18,6 +19,9 @@ The command prompts you for the following:
 - Azure subscription: The Azure subscription where your resources will be deployed.
 
 Depending on what Azure resources are created, running this command might take a while. To view progress, go to the Azure portal and search for the resource group that contains your environment name.`,
+		Annotations: map[string]string{
+			actions.AnnotationName: "provision",
+		},
 	}
 
 	f := &infraCreateFlags{}

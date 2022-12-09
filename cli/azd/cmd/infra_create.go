@@ -62,6 +62,9 @@ func infraCreateCmdDesign(rootOptions *internal.GlobalCommandOptions) (*cobra.Co
 		Use:     "create",
 		Short:   "Create Azure resources for an application.",
 		Aliases: []string{"provision"},
+		Annotations: map[string]string{
+			actions.AnnotationName: "infra-create",
+		},
 	}
 	f := &infraCreateFlags{}
 	f.Bind(cmd.Flags(), rootOptions)

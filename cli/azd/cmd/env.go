@@ -32,6 +32,9 @@ func envCmd(rootOptions *internal.GlobalCommandOptions) *cobra.Command {
 With this command group, you can create a new environment or get, set, and list your application environments. An application can have multiple environments (for example, dev, test, prod), each with a different configuration (that is, connectivity information) for accessing Azure resources. 
 
 You can find all environment configurations under the *.azure\<environment-name>* folder. The environment name is stored as the AZURE_ENV_NAME environment variable in the *.azure\<environment-name>\folder\.env* file.`,
+		Annotations: map[string]string{
+			actions.AnnotationName: "env",
+		},
 	}
 
 	root.Flags().BoolP("help", "h", false, fmt.Sprintf("Gets help for %s.", root.Name()))
@@ -49,6 +52,9 @@ func envSetCmdDesign(global *internal.GlobalCommandOptions) (*cobra.Command, *en
 	cmd := &cobra.Command{
 		Use:   "set <key> <value>",
 		Short: "Set a value in the environment.",
+		Annotations: map[string]string{
+			actions.AnnotationName: "env-set",
+		},
 	}
 	cmd.Args = cobra.ExactArgs(2)
 	envSetFlags := &envSetFlags{}
@@ -115,6 +121,9 @@ func envSelectCmdDesign(global *internal.GlobalCommandOptions) (*cobra.Command, 
 	cmd := &cobra.Command{
 		Use:   "select <environment>",
 		Short: "Set the default environment.",
+		Annotations: map[string]string{
+			actions.AnnotationName: "env-select",
+		},
 	}
 	cmd.Args = cobra.ExactArgs(1)
 	return cmd, &struct{}{}
@@ -145,6 +154,9 @@ func envListCmdDesign(global *internal.GlobalCommandOptions) (*cobra.Command, *s
 		Use:     "list",
 		Short:   "List environments",
 		Aliases: []string{"ls"},
+		Annotations: map[string]string{
+			actions.AnnotationName: "env-list",
+		},
 	}
 	output.AddOutputParam(
 		cmd,
@@ -222,6 +234,9 @@ func envNewCmdDesign(global *internal.GlobalCommandOptions) (*cobra.Command, *en
 	cmd := &cobra.Command{
 		Use:   "new <environment>",
 		Short: "Create a new environment.",
+		Annotations: map[string]string{
+			actions.AnnotationName: "env-new",
+		},
 	}
 	f := &envNewFlags{}
 	f.Bind(cmd.Flags(), global)
@@ -289,6 +304,9 @@ func envRefreshCmdDesign(global *internal.GlobalCommandOptions) (*cobra.Command,
 	cmd := &cobra.Command{
 		Use:   "refresh",
 		Short: "Refresh environment settings by using information from a previous infrastructure provision.",
+		Annotations: map[string]string{
+			actions.AnnotationName: "env-refresh",
+		},
 	}
 
 	output.AddOutputParam(
@@ -389,6 +407,9 @@ func envGetValuesDesign(global *internal.GlobalCommandOptions) (*cobra.Command, 
 	cmd := &cobra.Command{
 		Use:   "get-values",
 		Short: "Get all environment values.",
+		Annotations: map[string]string{
+			actions.AnnotationName: "env-get",
+		},
 	}
 
 	output.AddOutputParam(

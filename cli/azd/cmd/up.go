@@ -57,6 +57,9 @@ This command executes the following in one step:
 When no template is supplied, you can optionally select an Azure Developer CLI template for cloning. Otherwise, running ` + output.WithBackticks(
 			"azd up",
 		) + ` initializes the current directory so that your project is compatible with Azure Developer CLI.`,
+		Annotations: map[string]string{
+			actions.AnnotationName: "up",
+		},
 	}
 
 	uf := &upFlags{}
@@ -76,7 +79,12 @@ type upAction struct {
 	console     input.Console
 }
 
-func newUpAction(init *initAction, infraCreate *infraCreateAction, deploy *deployAction, console input.Console) actions.Action {
+func newUpAction(
+	init *initAction,
+	infraCreate *infraCreateAction,
+	deploy *deployAction,
+	console input.Console,
+) actions.Action {
 	return &upAction{
 		init:        init,
 		infraCreate: infraCreate,

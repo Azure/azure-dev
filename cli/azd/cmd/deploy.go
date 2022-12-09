@@ -82,6 +82,9 @@ Examples:
 	$ azd deploy --service web
 	
 After the deployment is complete, the endpoint is printed. To start the service, select the endpoint or paste it in a browser.`,
+		Annotations: map[string]string{
+			actions.AnnotationName: "deploy",
+		},
 	}
 	df := deployFlags{}
 	df.Bind(cmd.Flags(), rootOptions)

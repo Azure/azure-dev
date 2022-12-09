@@ -31,6 +31,9 @@ func authTokenCmdDesign(global *internal.GlobalCommandOptions) (*cobra.Command, 
 	cmd := &cobra.Command{
 		Use:    "token",
 		Hidden: true,
+		Annotations: map[string]string{
+			actions.AnnotationName: "auth-token",
+		},
 	}
 
 	getAccessTokenFlags := &authTokenFlags{}

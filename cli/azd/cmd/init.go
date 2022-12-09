@@ -39,6 +39,9 @@ func initCmdDesign(rootOptions *internal.GlobalCommandOptions) (*cobra.Command, 
 When no template is supplied, you can optionally select an Azure Developer CLI template for cloning. Otherwise, ` + output.WithBackticks("azd init") + ` initializes the current directory and creates resources so that your project is compatible with Azure Developer CLI.
 
 When a template is provided, the sample code is cloned to the current directory.`,
+		Annotations: map[string]string{
+			actions.AnnotationName: "init",
+		},
 	}
 
 	f := &initFlags{}

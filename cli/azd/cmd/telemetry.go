@@ -4,6 +4,7 @@
 package cmd
 
 import (
+	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/telemetry"
 	"github.com/spf13/cobra"
@@ -18,6 +19,9 @@ func telemetryCmd(rootOptions *internal.GlobalCommandOptions) *cobra.Command {
 		Short:  "Manage telemetry",
 		Long:   "Manage telemetry",
 		Hidden: true,
+		Annotations: map[string]string{
+			actions.AnnotationName: "telemetry",
+		},
 	}
 	cmd.AddCommand(uploadCmd(rootOptions))
 	return cmd
@@ -29,6 +33,9 @@ func uploadCmd(rootOptions *internal.GlobalCommandOptions) *cobra.Command {
 		Short:  "Upload telemetry",
 		Long:   "Upload telemetry",
 		Hidden: true,
+		Annotations: map[string]string{
+			actions.AnnotationName: "telemetry-upload",
+		},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			telemetrySystem := telemetry.GetTelemetrySystem()
 

@@ -19,6 +19,9 @@ func logoutCmdDesign(global *internal.GlobalCommandOptions) (*cobra.Command, *st
 		Use:   "logout",
 		Short: "Log out of Azure",
 		Long:  "Log out of Azure",
+		Annotations: map[string]string{
+			actions.AnnotationName: "logout",
+		},
 	}
 
 	return cmd, &struct{}{}

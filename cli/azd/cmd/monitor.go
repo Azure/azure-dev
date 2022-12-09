@@ -54,6 +54,9 @@ Examples:
 	$ azd monitor --logs
 		
 For more information, go to https://aka.ms/azure-dev/monitor.`,
+		Annotations: map[string]string{
+			actions.AnnotationName: "monitor",
+		},
 	}
 	flags := &monitorFlags{}
 	flags.Bind(cmd.Flags(), global)

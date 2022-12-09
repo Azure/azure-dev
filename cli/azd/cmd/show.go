@@ -39,6 +39,9 @@ func showCmdDesign(global *internal.GlobalCommandOptions) (*cobra.Command, *show
 		Use:    "show",
 		Short:  "Display information about your application and its resources.",
 		Hidden: true,
+		Annotations: map[string]string{
+			actions.AnnotationName: "show",
+		},
 	}
 
 	flags := &showFlags{}

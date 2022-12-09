@@ -48,6 +48,9 @@ func restoreCmdDesign(global *internal.GlobalCommandOptions) (*cobra.Command, *r
 Run this command to download and install all the required libraries so that you can build, run, and debug the application locally.
 
 For the best local run and debug experience, go to https://aka.ms/azure-dev/vscode to learn how to use the Visual Studio Code extension.`,
+		Annotations: map[string]string{
+			actions.AnnotationName: "restore",
+		},
 	}
 
 	flags := &restoreFlags{}

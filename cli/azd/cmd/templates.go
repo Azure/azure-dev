@@ -42,6 +42,9 @@ func templatesCmd(rootOptions *internal.GlobalCommandOptions) *cobra.Command {
 	root := &cobra.Command{
 		Use:   "template",
 		Short: "Manage templates.",
+		Annotations: map[string]string{
+			actions.AnnotationName: "template",
+		},
 	}
 
 	root.AddCommand(BuildCmd(rootOptions, templatesListCmdDesign, newTemplatesListAction, nil))
@@ -66,6 +69,9 @@ func templatesListCmdDesign(global *internal.GlobalCommandOptions) (*cobra.Comma
 		Use:     "list",
 		Short:   "List templates.",
 		Aliases: []string{"ls"},
+		Annotations: map[string]string{
+			actions.AnnotationName: "template-list",
+		},
 	}
 
 	flags := &templatesListFlags{}
@@ -145,6 +151,9 @@ func templatesShowCmdDesign(rootOptions *internal.GlobalCommandOptions) (*cobra.
 	cmd := &cobra.Command{
 		Use:   "show <template>",
 		Short: "Show the template details.",
+		Annotations: map[string]string{
+			actions.AnnotationName: "template-show",
+		},
 	}
 	output.AddOutputParam(cmd, []output.Format{output.JsonFormat, output.TableFormat}, output.TableFormat)
 

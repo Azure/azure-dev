@@ -83,6 +83,6 @@ func RunAction(
 
 // Registers middleware components that will be run for all actions
 func Use(name string, resolveFn any) {
-	ioc.NamedSingletonLazy(name, resolveFn)
+	container.MustNamedSingletonLazy(ioc, name, resolveFn)
 	middlewareChain = append(middlewareChain, name)
 }

@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/spf13/cobra"
@@ -10,6 +11,9 @@ func downCmdDesign(global *internal.GlobalCommandOptions) (*cobra.Command, *infr
 	cmd := &cobra.Command{
 		Use:   "down",
 		Short: "Delete Azure resources for an application.",
+		Annotations: map[string]string{
+			actions.AnnotationName: "down",
+		},
 	}
 
 	idf := &infraDeleteFlags{}

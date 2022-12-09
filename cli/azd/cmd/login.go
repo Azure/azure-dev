@@ -127,6 +127,9 @@ func loginCmdDesign(global *internal.GlobalCommandOptions) (*cobra.Command, *log
 
 		To log in as a service principal, pass --client-id and --tenant-id as well as one of --client-secret, 
 		--client-certificate, --client-credential or --client-credential-provider.`),
+		Annotations: map[string]string{
+			actions.AnnotationName: "login",
+		},
 	}
 
 	flags := &loginFlags{}

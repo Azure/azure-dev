@@ -4,7 +4,6 @@
 package cmd
 
 import (
-	"context"
 	"fmt"
 	"os"
 	"strings"
@@ -49,6 +48,9 @@ The most common next commands are:
 	$ azd monitor --overview
 
 For more information, visit the Azure Developer CLI Dev Hub: https://aka.ms/azure-dev/devhub.`,
+		Annotations: map[string]string{
+			actions.AnnotationName: "azd",
+		},
 		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 			if opts.Cwd != "" {
 				current, err := os.Getwd()
@@ -96,8 +98,6 @@ For more information, visit the Azure Developer CLI Dev Hub: https://aka.ms/azur
 
 	opts.EnableTelemetry = telemetry.IsTelemetryEnabled()
 
-	//attachDebugger()
-
 	cmd.AddCommand(configCmd(opts))
 	cmd.AddCommand(envCmd(opts))
 	cmd.AddCommand(infraCmd(opts))
@@ -118,42 +118,54 @@ For more information, visit the Azure Developer CLI Dev Hub: https://aka.ms/azur
 	cmd.AddCommand(BuildCmd(opts, provisionCmdDesign, newInfraCreateAction, nil))
 	cmd.AddCommand(BuildCmd(opts, deployCmdDesign, newDeployAction, nil))
 
+	middleware.SetContainer(container.Global)
+	middleware.Use("debug", middleware.NewDebugMiddleware)
+	middleware.Use("telemetry", middleware.NewTelemetryMiddleware)
+
 	return cmd
 }
 
-func attachDebugger() {
-	console := input.NewConsole(false, true, os.Stdout, input.ConsoleHandles{
-		Stdin:  os.Stdin,
-		Stdout: os.Stdout,
-		Stderr: os.Stderr,
-	}, &output.NoneFormatter{})
+type commandBuilder[F any] func(opts *internal.GlobalCommandOptions) (*cobra.Command, *F)
 
-	console.Confirm(context.Background(), input.ConsoleOptions{
-		Message:      "Ready?",
-		DefaultValue: true,
-	})
-}
+func createActionName(cmd *cobra.Command) (string, error) {
+	if cmd.Annotations == nil {
+		cmd.Annotations = map[string]string{}
+	}
 
-type designBuilder[F any] func(opts *internal.GlobalCommandOptions) (*cobra.Command, *F)
+	actionName, exists := cmd.Annotations[actions.AnnotationName]
+	if !exists {
+		return "", fmt.Errorf(
+			"cobra command '%s' is missing required annotation '%s'",
+			cmd.CommandPath(),
+			actions.AnnotationName,
+		)
+	}
 
-func createActionName(commandPath string) string {
-	actionName := strings.TrimPrefix(commandPath, "azd")
 	actionName = strings.TrimSpace(actionName)
 	actionName = strings.ReplaceAll(actionName, " ", "-")
-	return strings.ToLower(actionName)
+	return strings.ToLower(fmt.Sprintf("%s-action", actionName)), nil
 }
 
 func BuildCmd[F any](
 	opts *internal.GlobalCommandOptions,
-	buildDesign designBuilder[F],
+	buildCommand commandBuilder[F],
 	buildAction any,
 	buildOptions *actions.BuildOptions) *cobra.Command {
-	cmd, flags := buildDesign(opts)
+	cmd, flags := buildCommand(opts)
 	cmd.Flags().BoolP("help", "h", false, fmt.Sprintf("Gets help for %s.", cmd.Name()))
 
 	if buildOptions == nil {
 		buildOptions = &actions.BuildOptions{}
 	}
+
+	// Register all action resolvers and flag instances
+	actionName, err := createActionName(cmd)
+	if err != nil {
+		panic(err)
+	}
+
+	container.MustNamedSingletonLazy(container.Global, actionName, buildAction)
+	registerInstance(container.Global, flags)
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		ctx := cmd.Context()
@@ -161,14 +173,10 @@ func BuildCmd[F any](
 
 		registerCommonDependencies(container.Global)
 		registerInstance(container.Global, ctx)
-		registerInstance(container.Global, flags)
 		registerInstance(container.Global, buildOptions)
 		registerInstance(container.Global, opts)
 		registerInstance(container.Global, cmd)
 		registerInstance(container.Global, args)
-
-		actionName := createActionName(cmd.CommandPath())
-		container.NamedSingletonLazy(actionName, buildAction)
 
 		var console input.Console
 		err := container.Resolve(&console)
@@ -181,10 +189,6 @@ func BuildCmd[F any](
 		if err != nil {
 			return fmt.Errorf("failed resolving action '%s' : %w", actionName, err)
 		}
-
-		middleware.SetContainer(container.Global)
-		middleware.Use("debug", middleware.NewDebugMiddleware)
-		middleware.Use("telemetry", middleware.NewTelemetryMiddleware)
 
 		runOptions := middleware.Options{
 			Name:    cmd.CommandPath(),

@@ -127,25 +127,6 @@ For more information, visit the Azure Developer CLI Dev Hub: https://aka.ms/azur
 
 type commandDesignBuilder[F any] func(opts *internal.GlobalCommandOptions) (*cobra.Command, *F)
 
-func createActionName(cmd *cobra.Command) (string, error) {
-	if cmd.Annotations == nil {
-		cmd.Annotations = map[string]string{}
-	}
-
-	actionName, exists := cmd.Annotations[actions.AnnotationName]
-	if !exists {
-		return "", fmt.Errorf(
-			"cobra command '%s' is missing required annotation '%s'",
-			cmd.CommandPath(),
-			actions.AnnotationName,
-		)
-	}
-
-	actionName = strings.TrimSpace(actionName)
-	actionName = strings.ReplaceAll(actionName, " ", "-")
-	return strings.ToLower(fmt.Sprintf("%s-action", actionName)), nil
-}
-
 func BuildCmd[F any](
 	opts *internal.GlobalCommandOptions,
 	buildCommandDesign commandDesignBuilder[F],
@@ -212,4 +193,23 @@ func BuildCmd[F any](
 	}
 
 	return cmd
+}
+
+func createActionName(cmd *cobra.Command) (string, error) {
+	if cmd.Annotations == nil {
+		cmd.Annotations = map[string]string{}
+	}
+
+	actionName, exists := cmd.Annotations[actions.AnnotationName]
+	if !exists {
+		return "", fmt.Errorf(
+			"cobra command '%s' is missing required annotation '%s'",
+			cmd.CommandPath(),
+			actions.AnnotationName,
+		)
+	}
+
+	actionName = strings.TrimSpace(actionName)
+	actionName = strings.ReplaceAll(actionName, " ", "-")
+	return strings.ToLower(fmt.Sprintf("%s-action", actionName)), nil
 }

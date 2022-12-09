@@ -1,3 +1,5 @@
+// Modules referenced from br:azdcrtest are in the azd shared registry.  You can find the source for those modules here: https://aka.ms/azd/bicep
+
 targetScope = 'subscription'
 
 @minLength(1)

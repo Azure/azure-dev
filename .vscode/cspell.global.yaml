@@ -60,6 +60,7 @@ ignoreWords:
     - fdfp
     - fics
     - Frontdoor
+    - golobby
     - graphsdk
     - hndl
     - httpclient

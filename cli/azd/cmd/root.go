@@ -125,7 +125,7 @@ For more information, visit the Azure Developer CLI Dev Hub: https://aka.ms/azur
 	return cmd
 }
 
-type commandBuilder[F any] func(opts *internal.GlobalCommandOptions) (*cobra.Command, *F)
+type commandDesignBuilder[F any] func(opts *internal.GlobalCommandOptions) (*cobra.Command, *F)
 
 func createActionName(cmd *cobra.Command) (string, error) {
 	if cmd.Annotations == nil {
@@ -148,22 +148,22 @@ func createActionName(cmd *cobra.Command) (string, error) {
 
 func BuildCmd[F any](
 	opts *internal.GlobalCommandOptions,
-	buildCommand commandBuilder[F],
-	buildAction any,
+	buildCommandDesign commandDesignBuilder[F],
+	buildAction any, // IoC will validate that is a proper resolver function
 	buildOptions *actions.BuildOptions) *cobra.Command {
-	cmd, flags := buildCommand(opts)
+	cmd, flags := buildCommandDesign(opts)
 	cmd.Flags().BoolP("help", "h", false, fmt.Sprintf("Gets help for %s.", cmd.Name()))
 
 	if buildOptions == nil {
 		buildOptions = &actions.BuildOptions{}
 	}
 
-	// Register all action resolvers and flag instances
 	actionName, err := createActionName(cmd)
 	if err != nil {
 		panic(err)
 	}
 
+	// Register action resolver and flag instances
 	container.MustNamedSingletonLazy(container.Global, actionName, buildAction)
 	registerInstance(container.Global, flags)
 
@@ -171,7 +171,10 @@ func BuildCmd[F any](
 		ctx := cmd.Context()
 		ctx = tools.WithInstalledCheckCache(ctx)
 
+		// Azd components
 		registerCommonDependencies(container.Global)
+
+		// Register global instances
 		registerInstance(container.Global, ctx)
 		registerInstance(container.Global, buildOptions)
 		registerInstance(container.Global, opts)

@@ -13,7 +13,7 @@ type TelemetryMiddleware struct {
 	buildOptions *actions.BuildOptions
 }
 
-func NewTelemetryMiddleware(buildOptions *actions.BuildOptions) *TelemetryMiddleware {
+func NewTelemetryMiddleware(buildOptions *actions.BuildOptions) Middleware {
 	return &TelemetryMiddleware{
 		buildOptions: buildOptions,
 	}

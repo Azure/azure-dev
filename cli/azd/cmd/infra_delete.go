@@ -49,7 +49,7 @@ func infraDeleteCmdDesign(global *internal.GlobalCommandOptions) (*cobra.Command
 }
 
 type infraDeleteAction struct {
-	flags         infraDeleteFlags
+	flags         *infraDeleteFlags
 	azCli         azcli.AzCli
 	azdCtx        *azdcontext.AzdContext
 	console       input.Console
@@ -57,12 +57,12 @@ type infraDeleteAction struct {
 }
 
 func newInfraDeleteAction(
-	flags infraDeleteFlags,
+	flags *infraDeleteFlags,
 	azCli azcli.AzCli,
 	azdCtx *azdcontext.AzdContext,
 	console input.Console,
 	commandRunner exec.CommandRunner,
-) *infraDeleteAction {
+) actions.Action {
 	return &infraDeleteAction{
 		flags:         flags,
 		azCli:         azCli,

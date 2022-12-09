@@ -49,15 +49,15 @@ type authTokenAction struct {
 	credentialProvider func(context.Context, *auth.CredentialForCurrentUserOptions) (azcore.TokenCredential, error)
 	formatter          output.Formatter
 	writer             io.Writer
-	flags              authTokenFlags
+	flags      *authTokenFlags
 }
 
 func newAuthTokenAction(
 	credentialProvider func(context.Context, *auth.CredentialForCurrentUserOptions) (azcore.TokenCredential, error),
 	formatter output.Formatter,
 	writer io.Writer,
-	flags authTokenFlags,
-) *authTokenAction {
+	flags *authTokenFlags,
+) actions.Action {
 	return &authTokenAction{
 		credentialProvider: credentialProvider,
 		formatter:          formatter,

@@ -5,11 +5,11 @@ import (
 	"log"
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
-	"github.com/azure/azure-dev/cli/azd/internal"
-	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/golobby/container/v3"
 )
 
-var middlewareChain []ResolveFn = []ResolveFn{}
+var ioc container.Container = container.Global
+var middlewareChain []string = []string{}
 
 // Registration function that returns a constructed middleware
 type ResolveFn func() Middleware
@@ -19,40 +19,18 @@ type Middleware interface {
 	Run(ctx context.Context, options Options, nextFn NextFn) (*actions.ActionResult, error)
 }
 
-// Creates and builds a middleware from command flags & options
-type BuildFn func(
-	flags any,
-	commandOptions *internal.GlobalCommandOptions,
-	buildOptions *actions.BuildOptions,
-	console input.Console) (Middleware, error)
-
 // Middleware Run options
 type Options struct {
 	Name    string
 	Aliases []string
 }
 
-// Creates a resolver to lazily construct middleware components
-func Build(
-	flags any,
-	commandOptions *internal.GlobalCommandOptions,
-	buildOptions *actions.BuildOptions,
-	console input.Console,
-	buildFn BuildFn,
-) ResolveFn {
-	return func() Middleware {
-		middleware, err := buildFn(flags, commandOptions, buildOptions, console)
-		if err != nil {
-			log.Printf("Unable to create middleware: %s\n", err.Error())
-			return nil
-		}
-
-		return middleware
-	}
-}
-
 // Executes the next middleware in the command chain
 type NextFn func(ctx context.Context) (*actions.ActionResult, error)
+
+func SetContainer(c container.Container) {
+	ioc = c
+}
 
 // Executes the middleware chain for the specified action
 func RunAction(
@@ -72,10 +50,15 @@ func RunAction(
 	// and the chain is unwrapped back out through the call stack.
 	nextFn = func(nextContext context.Context) (*actions.ActionResult, error) {
 		if index < chainLength {
-			resolver := middlewareChain[index]
+			middlewareName := middlewareChain[index]
 			index++
 
-			middleware := resolver()
+			var middleware Middleware
+			err := ioc.NamedResolve(&middleware, middlewareName)
+			if err != nil {
+				log.Printf("failed resolving middleware '%s' : %s\n", middlewareName, err.Error())
+			}
+
 			// It is an expected scenario that the middleware cannot be resolved
 			// due to missing dependency or other project configuration.
 			// In this case simply continue the chain with `nextFn`
@@ -83,6 +66,7 @@ func RunAction(
 				return nextFn(nextContext)
 			}
 
+			log.Printf("running middleware '%s'\n", middlewareName)
 			return middleware.Run(nextContext, options, nextFn)
 		} else {
 			return action.Run(ctx)
@@ -98,6 +82,7 @@ func RunAction(
 }
 
 // Registers middleware components that will be run for all actions
-func Use(resolveMiddleware ResolveFn) {
-	middlewareChain = append(middlewareChain, resolveMiddleware)
+func Use(name string, resolveFn any) {
+	ioc.NamedSingletonLazy(name, resolveFn)
+	middlewareChain = append(middlewareChain, name)
 }

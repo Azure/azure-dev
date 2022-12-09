@@ -90,7 +90,7 @@ After the deployment is complete, the endpoint is printed. To start the service,
 }
 
 type deployAction struct {
-	flags         deployFlags
+	flags         *deployFlags
 	azCli         azcli.AzCli
 	azdCtx        *azdcontext.AzdContext
 	formatter     output.Formatter
@@ -100,14 +100,14 @@ type deployAction struct {
 }
 
 func newDeployAction(
-	flags deployFlags,
+	flags *deployFlags,
 	azCli azcli.AzCli,
 	commandRunner exec.CommandRunner,
 	azdCtx *azdcontext.AzdContext,
 	console input.Console,
 	formatter output.Formatter,
 	writer io.Writer,
-) (*deployAction, error) {
+) (actions.Action, error) {
 	da := &deployAction{
 		flags:         flags,
 		azCli:         azCli,

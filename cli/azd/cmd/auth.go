@@ -15,7 +15,7 @@ func authCmd(rootOptions *internal.GlobalCommandOptions) *cobra.Command {
 
 	root.Flags().BoolP("help", "h", false, fmt.Sprintf("Gets help for %s.", root.Name()))
 
-	root.AddCommand(BuildCmd(rootOptions, authTokenCmdDesign, initAuthTokenAction, nil))
+	root.AddCommand(BuildCmd(rootOptions, authTokenCmdDesign, newAuthTokenAction, nil))
 
 	return root
 }

@@ -56,7 +56,7 @@ For the best local run and debug experience, go to https://aka.ms/azure-dev/vsco
 }
 
 type restoreAction struct {
-	flags         restoreFlags
+	flags         *restoreFlags
 	console       input.Console
 	azCli         azcli.AzCli
 	azdCtx        *azdcontext.AzdContext
@@ -64,12 +64,12 @@ type restoreAction struct {
 }
 
 func newRestoreAction(
-	flags restoreFlags,
+	flags *restoreFlags,
 	azCli azcli.AzCli,
 	console input.Console,
 	azdCtx *azdcontext.AzdContext,
 	commandRunner exec.CommandRunner,
-) *restoreAction {
+) actions.Action {
 	return &restoreAction{
 		flags:         flags,
 		console:       console,

@@ -63,7 +63,7 @@ The Azure Developer CLI template includes a GitHub Actions pipeline configuratio
 For more information, go to https://aka.ms/azure-dev/pipeline.`,
 	}
 	cmd.Flags().BoolP("help", "h", false, fmt.Sprintf("Gets help for %s.", cmd.Name()))
-	cmd.AddCommand(BuildCmd(global, pipelineConfigCmdDesign, initPipelineConfigAction, nil))
+	cmd.AddCommand(BuildCmd(global, pipelineConfigCmdDesign, newPipelineConfigAction, nil))
 	return cmd
 }
 
@@ -84,7 +84,7 @@ For more information, go to https://aka.ms/azure-dev/pipeline.`,
 
 // pipelineConfigAction defines the action for pipeline config command
 type pipelineConfigAction struct {
-	flags         pipelineConfigFlags
+	flags         *pipelineConfigFlags
 	manager       *pipeline.PipelineManager
 	azCli         azcli.AzCli
 	azdCtx        *azdcontext.AzdContext
@@ -98,9 +98,9 @@ func newPipelineConfigAction(
 	credential azcore.TokenCredential,
 	azdCtx *azdcontext.AzdContext,
 	console input.Console,
-	flags pipelineConfigFlags,
+	flags *pipelineConfigFlags,
 	commandRunner exec.CommandRunner,
-) *pipelineConfigAction {
+) actions.Action {
 	pca := &pipelineConfigAction{
 		flags:      flags,
 		azCli:      azCli,

@@ -52,7 +52,7 @@ type showAction struct {
 	writer    io.Writer
 	azCli     azcli.AzCli
 	azdCtx    *azdcontext.AzdContext
-	flags     showFlags
+	flags     *showFlags
 }
 
 func newShowAction(
@@ -61,8 +61,8 @@ func newShowAction(
 	writer io.Writer,
 	azCli azcli.AzCli,
 	azdCtx *azdcontext.AzdContext,
-	flags showFlags,
-) *showAction {
+	flags *showFlags,
+) actions.Action {
 	return &showAction{
 		console:   console,
 		formatter: formatter,

@@ -39,18 +39,18 @@ func versionCmdDesign(global *internal.GlobalCommandOptions) (*cobra.Command, *v
 }
 
 type versionAction struct {
-	flags     versionFlags
+	flags     *versionFlags
 	formatter output.Formatter
 	writer    io.Writer
 	console   input.Console
 }
 
 func newVersionAction(
-	flags versionFlags,
+	flags *versionFlags,
 	formatter output.Formatter,
 	writer io.Writer,
 	console input.Console,
-) *versionAction {
+) actions.Action {
 	return &versionAction{
 		flags:     flags,
 		formatter: formatter,

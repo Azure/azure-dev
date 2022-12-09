@@ -35,12 +35,12 @@ You can find all environment configurations under the *.azure\<environment-name>
 	}
 
 	root.Flags().BoolP("help", "h", false, fmt.Sprintf("Gets help for %s.", root.Name()))
-	root.AddCommand(BuildCmd(rootOptions, envSetCmdDesign, initEnvSetAction, nil))
-	root.AddCommand(BuildCmd(rootOptions, envSelectCmdDesign, initEnvSelectAction, nil))
-	root.AddCommand(BuildCmd(rootOptions, envNewCmdDesign, initEnvNewAction, nil))
-	root.AddCommand(BuildCmd(rootOptions, envListCmdDesign, initEnvListAction, nil))
-	root.AddCommand(BuildCmd(rootOptions, envRefreshCmdDesign, initEnvRefreshAction, nil))
-	root.AddCommand(BuildCmd(rootOptions, envGetValuesDesign, initEnvGetValuesAction, nil))
+	root.AddCommand(BuildCmd(rootOptions, envSetCmdDesign, newEnvSetAction, nil))
+	root.AddCommand(BuildCmd(rootOptions, envSelectCmdDesign, newEnvSelectAction, nil))
+	root.AddCommand(BuildCmd(rootOptions, envNewCmdDesign, newEnvNewAction, nil))
+	root.AddCommand(BuildCmd(rootOptions, envListCmdDesign, newEnvListAction, nil))
+	root.AddCommand(BuildCmd(rootOptions, envRefreshCmdDesign, newEnvRefreshAction, nil))
+	root.AddCommand(BuildCmd(rootOptions, envGetValuesDesign, newEnvGetValuesAction, nil))
 
 	return root
 }
@@ -70,7 +70,7 @@ type envSetAction struct {
 	azCli   azcli.AzCli
 	console input.Console
 	azdCtx  *azdcontext.AzdContext
-	flags   envSetFlags
+	flags   *envSetFlags
 	args    []string
 }
 
@@ -78,9 +78,9 @@ func newEnvSetAction(
 	azdCtx *azdcontext.AzdContext,
 	azCli azcli.AzCli,
 	console input.Console,
-	flags envSetFlags,
+	flags *envSetFlags,
 	args []string,
-) *envSetAction {
+) actions.Action {
 	return &envSetAction{
 		azCli:   azCli,
 		console: console,
@@ -125,7 +125,7 @@ type envSelectAction struct {
 	args   []string
 }
 
-func newEnvSelectAction(azdCtx *azdcontext.AzdContext, args []string) *envSelectAction {
+func newEnvSelectAction(azdCtx *azdcontext.AzdContext, args []string) actions.Action {
 	return &envSelectAction{
 		azdCtx: azdCtx,
 		args:   args,
@@ -160,7 +160,7 @@ type envListAction struct {
 	writer    io.Writer
 }
 
-func newEnvListAction(azdCtx *azdcontext.AzdContext, formatter output.Formatter, writer io.Writer) *envListAction {
+func newEnvListAction(azdCtx *azdcontext.AzdContext, formatter output.Formatter, writer io.Writer) actions.Action {
 	return &envListAction{
 		azdCtx:    azdCtx,
 		formatter: formatter,
@@ -232,7 +232,7 @@ func envNewCmdDesign(global *internal.GlobalCommandOptions) (*cobra.Command, *en
 type envNewAction struct {
 	azdCtx  *azdcontext.AzdContext
 	azCli   azcli.AzCli
-	flags   envNewFlags
+	flags   *envNewFlags
 	args    []string
 	console input.Console
 }
@@ -240,10 +240,10 @@ type envNewAction struct {
 func newEnvNewAction(
 	azdCtx *azdcontext.AzdContext,
 	azcli azcli.AzCli,
-	flags envNewFlags,
+	flags *envNewFlags,
 	args []string,
 	console input.Console,
-) *envNewAction {
+) actions.Action {
 	return &envNewAction{
 		azdCtx:  azdCtx,
 		azCli:   azcli,
@@ -305,7 +305,7 @@ func envRefreshCmdDesign(global *internal.GlobalCommandOptions) (*cobra.Command,
 type envRefreshAction struct {
 	azdCtx        *azdcontext.AzdContext
 	azCli         azcli.AzCli
-	flags         envRefreshFlags
+	flags         *envRefreshFlags
 	console       input.Console
 	formatter     output.Formatter
 	writer        io.Writer
@@ -316,11 +316,11 @@ func newEnvRefreshAction(
 	azdCtx *azdcontext.AzdContext,
 	azCli azcli.AzCli,
 	commandRunner exec.CommandRunner,
-	flags envRefreshFlags,
+	flags *envRefreshFlags,
 	console input.Console,
 	formatter output.Formatter,
 	writer io.Writer,
-) *envRefreshAction {
+) actions.Action {
 	return &envRefreshAction{
 		azdCtx:        azdCtx,
 		azCli:         azCli,
@@ -418,7 +418,7 @@ type envGetValuesAction struct {
 	formatter output.Formatter
 	writer    io.Writer
 	azCli     azcli.AzCli
-	flags     envGetValuesFlags
+	flags     *envGetValuesFlags
 }
 
 func newEnvGetValuesAction(
@@ -427,8 +427,8 @@ func newEnvGetValuesAction(
 	formatter output.Formatter,
 	writer io.Writer,
 	azCli azcli.AzCli,
-	flags envGetValuesFlags,
-) *envGetValuesAction {
+	flags *envGetValuesFlags,
+) actions.Action {
 	return &envGetValuesAction{
 		azdCtx:    azdCtx,
 		console:   console,

@@ -19,7 +19,7 @@ func TestTemplateList(t *testing.T) {
 	var result bytes.Buffer
 	templatesManager := templates.NewTemplateManager()
 	templateList := newTemplatesListAction(
-		templatesListFlags{
+		&templatesListFlags{
 			outputFormat: string(output.JsonFormat),
 			global:       &internal.GlobalCommandOptions{},
 		},

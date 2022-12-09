@@ -76,7 +76,7 @@ type upAction struct {
 	console     input.Console
 }
 
-func newUpAction(init *initAction, infraCreate *infraCreateAction, deploy *deployAction, console input.Console) *upAction {
+func newUpAction(init *initAction, infraCreate *infraCreateAction, deploy *deployAction, console input.Console) actions.Action {
 	return &upAction{
 		init:        init,
 		infraCreate: infraCreate,

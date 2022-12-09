@@ -70,7 +70,7 @@ func infraCreateCmdDesign(rootOptions *internal.GlobalCommandOptions) (*cobra.Co
 }
 
 type infraCreateAction struct {
-	flags         infraCreateFlags
+	flags         *infraCreateFlags
 	azCli         azcli.AzCli
 	azdCtx        *azdcontext.AzdContext
 	formatter     output.Formatter
@@ -80,16 +80,16 @@ type infraCreateAction struct {
 }
 
 func newInfraCreateAction(
-	f infraCreateFlags,
+	flags *infraCreateFlags,
 	azCli azcli.AzCli,
 	azdCtx *azdcontext.AzdContext,
 	console input.Console,
 	formatter output.Formatter,
 	writer io.Writer,
 	commandRunner exec.CommandRunner,
-) *infraCreateAction {
+) actions.Action {
 	return &infraCreateAction{
-		flags:         f,
+		flags:         flags,
 		azCli:         azCli,
 		azdCtx:        azdCtx,
 		formatter:     formatter,

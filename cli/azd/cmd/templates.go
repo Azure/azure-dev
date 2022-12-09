@@ -7,7 +7,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"log"
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
@@ -45,8 +44,8 @@ func templatesCmd(rootOptions *internal.GlobalCommandOptions) *cobra.Command {
 		Short: "Manage templates.",
 	}
 
-	root.AddCommand(BuildCmd(rootOptions, templatesListCmdDesign, initTemplatesListAction, nil))
-	root.AddCommand(BuildCmd(rootOptions, templatesShowCmdDesign, initTemplatesShowAction, nil))
+	root.AddCommand(BuildCmd(rootOptions, templatesListCmdDesign, newTemplatesListAction, nil))
+	root.AddCommand(BuildCmd(rootOptions, templatesShowCmdDesign, newTemplatesShowAction, nil))
 	root.Flags().BoolP("help", "h", false, fmt.Sprintf("Gets help for %s.", root.Name()))
 
 	return root
@@ -76,18 +75,18 @@ func templatesListCmdDesign(global *internal.GlobalCommandOptions) (*cobra.Comma
 }
 
 type templatesListAction struct {
-	flags           templatesListFlags
+	flags           *templatesListFlags
 	formatter       output.Formatter
 	writer          io.Writer
 	templateManager *templates.TemplateManager
 }
 
 func newTemplatesListAction(
-	flags templatesListFlags,
+	flags *templatesListFlags,
 	formatter output.Formatter,
 	writer io.Writer,
 	templateManager *templates.TemplateManager,
-) *templatesListAction {
+) actions.Action {
 	return &templatesListAction{
 		flags:           flags,
 		formatter:       formatter,
@@ -111,26 +110,35 @@ func (tl *templatesListAction) Run(ctx context.Context) (*actions.ActionResult, 
 	return nil, formatTemplates(ctx, tl.formatter, tl.writer, templateList...)
 }
 
-type templatesShowAction actions.Action
+type templatesShowAction struct {
+	formatter       output.Formatter
+	writer          io.Writer
+	templateManager *templates.TemplateManager
+	templateName    string
+}
 
 func newTemplatesShowAction(
 	formatter output.Formatter,
 	writer io.Writer,
 	templateManager *templates.TemplateManager,
 	args []string,
-) templatesShowAction {
-	return actions.ActionFunc(func(ctx context.Context) (*actions.ActionResult, error) {
-		templateName := args[0]
-		matchingTemplate, err := templateManager.GetTemplate(templateName)
+) actions.Action {
+	return &templatesShowAction{
+		formatter:       formatter,
+		writer:          writer,
+		templateManager: templateManager,
+		templateName:    args[0],
+	}
+}
 
-		log.Printf("Template Name: %s\n", templateName)
+func (a *templatesShowAction) Run(ctx context.Context) (*actions.ActionResult, error) {
+	matchingTemplate, err := a.templateManager.GetTemplate(a.templateName)
 
-		if err != nil {
-			return nil, err
-		}
+	if err != nil {
+		return nil, err
+	}
 
-		return nil, formatTemplates(ctx, formatter, writer, matchingTemplate)
-	})
+	return nil, formatTemplates(ctx, a.formatter, a.writer, matchingTemplate)
 }
 
 func templatesShowCmdDesign(rootOptions *internal.GlobalCommandOptions) (*cobra.Command, *struct{}) {

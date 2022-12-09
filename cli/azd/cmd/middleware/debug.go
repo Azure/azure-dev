@@ -15,7 +15,7 @@ type DebugMiddleware struct {
 	console input.Console
 }
 
-func NewDebugMiddleware(console input.Console) *DebugMiddleware {
+func NewDebugMiddleware(console input.Console) Middleware {
 	return &DebugMiddleware{
 		console: console,
 	}

@@ -7,11 +7,14 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/cmd/middleware"
+	"github.com/golobby/container/v3"
 
 	// Importing for infrastructure provider plugin registrations
+
 	_ "github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning/bicep"
 	_ "github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning/terraform"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
@@ -93,6 +96,8 @@ For more information, visit the Azure Developer CLI Dev Hub: https://aka.ms/azur
 
 	opts.EnableTelemetry = telemetry.IsTelemetryEnabled()
 
+	//attachDebugger()
+
 	cmd.AddCommand(configCmd(opts))
 	cmd.AddCommand(envCmd(opts))
 	cmd.AddCommand(infraCmd(opts))
@@ -101,60 +106,91 @@ For more information, visit the Azure Developer CLI Dev Hub: https://aka.ms/azur
 	cmd.AddCommand(templatesCmd(opts))
 	cmd.AddCommand(authCmd(opts))
 
-	cmd.AddCommand(BuildCmd(opts, versionCmdDesign, initVersionAction, &actions.BuildOptions{DisableTelemetry: true}))
-	cmd.AddCommand(BuildCmd(opts, showCmdDesign, initShowAction, nil))
-	cmd.AddCommand(BuildCmd(opts, restoreCmdDesign, initRestoreAction, nil))
-	cmd.AddCommand(BuildCmd(opts, loginCmdDesign, initLoginAction, nil))
-	cmd.AddCommand(BuildCmd(opts, logoutCmdDesign, initLogoutAction, nil))
-	cmd.AddCommand(BuildCmd(opts, monitorCmdDesign, initMonitorAction, nil))
-	cmd.AddCommand(BuildCmd(opts, downCmdDesign, initInfraDeleteAction, nil))
-	cmd.AddCommand(BuildCmd(opts, initCmdDesign, initInitAction, nil))
-	cmd.AddCommand(BuildCmd(opts, upCmdDesign, initUpAction, nil))
-	cmd.AddCommand(BuildCmd(opts, provisionCmdDesign, initInfraCreateAction, nil))
-	cmd.AddCommand(BuildCmd(opts, deployCmdDesign, initDeployAction, nil))
+	cmd.AddCommand(BuildCmd(opts, versionCmdDesign, newVersionAction, &actions.BuildOptions{DisableTelemetry: true}))
+	cmd.AddCommand(BuildCmd(opts, showCmdDesign, newShowAction, nil))
+	cmd.AddCommand(BuildCmd(opts, restoreCmdDesign, newRestoreAction, nil))
+	cmd.AddCommand(BuildCmd(opts, loginCmdDesign, newLoginAction, nil))
+	cmd.AddCommand(BuildCmd(opts, logoutCmdDesign, newLogoutAction, nil))
+	cmd.AddCommand(BuildCmd(opts, monitorCmdDesign, newMonitorAction, nil))
+	cmd.AddCommand(BuildCmd(opts, downCmdDesign, newInfraDeleteAction, nil))
+	cmd.AddCommand(BuildCmd(opts, initCmdDesign, newInitAction, nil))
+	cmd.AddCommand(BuildCmd(opts, upCmdDesign, newUpAction, nil))
+	cmd.AddCommand(BuildCmd(opts, provisionCmdDesign, newInfraCreateAction, nil))
+	cmd.AddCommand(BuildCmd(opts, deployCmdDesign, newDeployAction, nil))
 
 	return cmd
 }
 
+func attachDebugger() {
+	console := input.NewConsole(false, true, os.Stdout, input.ConsoleHandles{
+		Stdin:  os.Stdin,
+		Stdout: os.Stdout,
+		Stderr: os.Stderr,
+	}, &output.NoneFormatter{})
+
+	console.Confirm(context.Background(), input.ConsoleOptions{
+		Message:      "Ready?",
+		DefaultValue: true,
+	})
+}
+
 type designBuilder[F any] func(opts *internal.GlobalCommandOptions) (*cobra.Command, *F)
 
-type actionBuilder[F any] func(
-	console input.Console,
-	ctx context.Context,
-	o *internal.GlobalCommandOptions,
-	flags F,
-	args []string) (actions.Action, error)
+func createActionName(commandPath string) string {
+	actionName := strings.TrimPrefix(commandPath, "azd")
+	actionName = strings.TrimSpace(actionName)
+	actionName = strings.ReplaceAll(actionName, " ", "-")
+	return strings.ToLower(actionName)
+}
 
 func BuildCmd[F any](
 	opts *internal.GlobalCommandOptions,
 	buildDesign designBuilder[F],
-	buildAction actionBuilder[F],
+	buildAction any,
 	buildOptions *actions.BuildOptions) *cobra.Command {
 	cmd, flags := buildDesign(opts)
 	cmd.Flags().BoolP("help", "h", false, fmt.Sprintf("Gets help for %s.", cmd.Name()))
 
+	if buildOptions == nil {
+		buildOptions = &actions.BuildOptions{}
+	}
+
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		ctx := cmd.Context()
-
-		console, err := initConsole(cmd, opts)
-		if err != nil {
-			return err
-		}
-
-		action, err := buildAction(console, ctx, opts, *flags, args)
-		if err != nil {
-			return err
-		}
-
 		ctx = tools.WithInstalledCheckCache(ctx)
 
-		middleware.Use(middleware.Build(flags, opts, buildOptions, console, initDebugMiddleware))
-		middleware.Use(middleware.Build(flags, opts, buildOptions, console, initTelemetryMiddleware))
+		registerCommonDependencies(container.Global)
+		registerInstance(container.Global, ctx)
+		registerInstance(container.Global, flags)
+		registerInstance(container.Global, buildOptions)
+		registerInstance(container.Global, opts)
+		registerInstance(container.Global, cmd)
+		registerInstance(container.Global, args)
+
+		actionName := createActionName(cmd.CommandPath())
+		container.NamedSingletonLazy(actionName, buildAction)
+
+		var console input.Console
+		err := container.Resolve(&console)
+		if err != nil {
+			return fmt.Errorf("failed resolving console : %w", err)
+		}
+
+		var action actions.Action
+		err = container.NamedResolve(&action, actionName)
+		if err != nil {
+			return fmt.Errorf("failed resolving action '%s' : %w", actionName, err)
+		}
+
+		middleware.SetContainer(container.Global)
+		middleware.Use("debug", middleware.NewDebugMiddleware)
+		middleware.Use("telemetry", middleware.NewTelemetryMiddleware)
 
 		runOptions := middleware.Options{
 			Name:    cmd.CommandPath(),
 			Aliases: cmd.Aliases,
 		}
+
 		actionResult, err := middleware.RunAction(ctx, runOptions, action)
 		// At this point, we know that there might be an error, so we can silence cobra from showing it after us.
 		cmd.SilenceErrors = true

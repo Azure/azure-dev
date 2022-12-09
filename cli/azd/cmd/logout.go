@@ -30,7 +30,7 @@ type logoutAction struct {
 	writer      io.Writer
 }
 
-func newLogoutAction(authManager *auth.Manager, formatter output.Formatter, writer io.Writer) *logoutAction {
+func newLogoutAction(authManager *auth.Manager, formatter output.Formatter, writer io.Writer) actions.Action {
 	return &logoutAction{
 		authManager: authManager,
 		formatter:   formatter,

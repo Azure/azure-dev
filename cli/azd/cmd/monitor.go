@@ -64,15 +64,15 @@ type monitorAction struct {
 	azdCtx  *azdcontext.AzdContext
 	azCli   azcli.AzCli
 	console input.Console
-	flags   monitorFlags
+	flags   *monitorFlags
 }
 
 func newMonitorAction(
 	azdCtx *azdcontext.AzdContext,
 	azCli azcli.AzCli,
 	console input.Console,
-	flags monitorFlags,
-) *monitorAction {
+	flags *monitorFlags,
+) actions.Action {
 	return &monitorAction{
 		azdCtx:  azdCtx,
 		azCli:   azCli,

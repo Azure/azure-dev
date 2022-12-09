@@ -7,6 +7,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
+	"github.com/golobby/container/v3"
 	"github.com/stretchr/testify/require"
 )
 
@@ -20,8 +21,9 @@ func Test_Middleware(t *testing.T) {
 		runLog := []string{}
 
 		mockContext := mocks.NewMockContext(context.Background())
+		SetContainer(container.New())
 
-		Use(func() Middleware {
+		Use("test", func() Middleware {
 			return &testMiddleware{
 				preFn: func() error {
 					preRan = true
@@ -58,8 +60,9 @@ func Test_Middleware(t *testing.T) {
 		runLog := []string{}
 
 		mockContext := mocks.NewMockContext(context.Background())
+		SetContainer(container.New())
 
-		Use(func() Middleware {
+		Use("test", func() Middleware {
 			return &testMiddleware{
 				preFn: func() error {
 					preRan = true
@@ -89,9 +92,10 @@ func Test_Middleware(t *testing.T) {
 		t.Cleanup(reset)
 
 		mockContext := mocks.NewMockContext(context.Background())
+		SetContainer(container.New())
 		runLog := []string{}
 
-		Use(func() Middleware {
+		Use("A", func() Middleware {
 			return &testMiddleware{
 				preFn: func() error {
 					runLog = append(runLog, "Pre-A")
@@ -104,7 +108,7 @@ func Test_Middleware(t *testing.T) {
 			}
 		})
 
-		Use(func() Middleware {
+		Use("B", func() Middleware {
 			return &testMiddleware{
 				preFn: func() error {
 					runLog = append(runLog, "Pre-B")
@@ -184,5 +188,5 @@ func (a *testMiddleware) Run(ctx context.Context, options Options, nextFn NextFn
 }
 
 func reset() {
-	middlewareChain = []ResolveFn{}
+	middlewareChain = []string{}
 }

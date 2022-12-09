@@ -41,7 +41,7 @@ func TestAuthToken(t *testing.T) {
 		credentialProviderForTokenFn(token),
 		&output.JsonFormatter{},
 		buf,
-		authTokenFlags{
+		&authTokenFlags{
 			outputFormat: string(output.JsonFormat),
 		},
 	)
@@ -74,7 +74,7 @@ func TestAuthTokenCustomScopes(t *testing.T) {
 		credentialProviderForTokenFn(token),
 		&output.JsonFormatter{},
 		io.Discard,
-		authTokenFlags{
+		&authTokenFlags{
 			outputFormat: string(output.JsonFormat),
 			scopes:       scopes,
 		},
@@ -94,7 +94,7 @@ func TestAuthTokenFailure(t *testing.T) {
 		credentialProviderForTokenFn(token),
 		&output.JsonFormatter{},
 		io.Discard,
-		authTokenFlags{
+		&authTokenFlags{
 			outputFormat: string(output.JsonFormat),
 		},
 	)

@@ -73,11 +73,11 @@ func configCmd(rootOptions *internal.GlobalCommandOptions) *cobra.Command {
 	}
 
 	root.Flags().BoolP("help", "h", false, fmt.Sprintf("Gets help for %s.", root.Name()))
-	root.AddCommand(BuildCmd(rootOptions, configListCmdDesign, initConfigListAction, nil))
-	root.AddCommand(BuildCmd(rootOptions, configGetCmdDesign, initConfigGetAction, nil))
-	root.AddCommand(BuildCmd(rootOptions, configSetCmdDesign, initConfigSetAction, nil))
-	root.AddCommand(BuildCmd(rootOptions, configUnsetCmdDesign, initConfigUnsetAction, nil))
-	root.AddCommand(BuildCmd(rootOptions, configResetCmdDesign, initConfigResetAction, nil))
+	root.AddCommand(BuildCmd(rootOptions, configListCmdDesign, newConfigListAction, nil))
+	root.AddCommand(BuildCmd(rootOptions, configGetCmdDesign, newConfigGetAction, nil))
+	root.AddCommand(BuildCmd(rootOptions, configSetCmdDesign, newConfigSetAction, nil))
+	root.AddCommand(BuildCmd(rootOptions, configUnsetCmdDesign, newConfigUnsetAction, nil))
+	root.AddCommand(BuildCmd(rootOptions, configResetCmdDesign, newConfigResetAction, nil))
 
 	return root
 }
@@ -108,7 +108,7 @@ type configListAction struct {
 
 func newConfigListAction(
 	configManager config.UserConfigManager, formatter output.Formatter, writer io.Writer,
-) *configListAction {
+) actions.Action {
 	return &configListAction{
 		configManager: configManager,
 		formatter:     formatter,
@@ -166,7 +166,7 @@ func newConfigGetAction(
 	formatter output.Formatter,
 	writer io.Writer,
 	args []string,
-) *configGetAction {
+) actions.Action {
 	return &configGetAction{
 		configManager: configManager,
 		formatter:     formatter,
@@ -218,7 +218,7 @@ type configSetAction struct {
 	args          []string
 }
 
-func newConfigSetAction(configManager config.UserConfigManager, args []string) *configSetAction {
+func newConfigSetAction(configManager config.UserConfigManager, args []string) actions.Action {
 	return &configSetAction{
 		configManager: configManager,
 		args:          args,
@@ -262,7 +262,7 @@ type configUnsetAction struct {
 	args          []string
 }
 
-func newConfigUnsetAction(configManager config.UserConfigManager, args []string) *configUnsetAction {
+func newConfigUnsetAction(configManager config.UserConfigManager, args []string) actions.Action {
 	return &configUnsetAction{
 		configManager: configManager,
 		args:          args,
@@ -303,7 +303,7 @@ type configResetAction struct {
 	args          []string
 }
 
-func newConfigResetAction(configManager config.UserConfigManager, args []string) *configResetAction {
+func newConfigResetAction(configManager config.UserConfigManager, args []string) actions.Action {
 	return &configResetAction{
 		configManager: configManager,
 		args:          args,

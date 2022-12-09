@@ -3,7 +3,7 @@ using Microsoft.ApplicationInsights.AspNetCore.Extensions;
 using Microsoft.Azure.Cosmos;
 using SimpleTodo.Api;
 
-var credential = new DefaultAzureCredential();
+var credential = new ChainedTokenCredential(new AzureDeveloperCliCredential(), new DefaultAzureCredential());
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddSingleton<ListsRepository>();

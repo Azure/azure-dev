@@ -151,7 +151,7 @@ func newLoginAction(
 	authManager *auth.Manager,
 	flags *loginFlags,
 	console input.Console,
-) *loginAction {
+) actions.Action {
 	return &loginAction{
 		formatter:   formatter,
 		writer:      writer,

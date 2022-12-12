@@ -585,6 +585,7 @@ stages:
 
         variables:
           BaseUrl: http://127.0.0.1:8080
+          AZD_SKIP_UPDATE_CHECK: true
 
         timeoutInMinutes: 10
 

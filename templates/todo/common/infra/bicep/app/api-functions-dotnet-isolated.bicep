@@ -10,7 +10,7 @@ param keyVaultName string
 param serviceName string = 'api'
 param storageAccountName string
 
-module api '../../../../../common/infra/bicep/core/host/functions.bicep' = {
+module api 'br:publicazdbicepmodules.azurecr.io/bicep/staging/core/host/functions:v1.0' = {
   name: '${serviceName}-functions-dotnet-isolated-module'
   params: {
     name: name

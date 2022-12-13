@@ -46,7 +46,7 @@ resource rg 'Microsoft.Resources/resourceGroups@2021-04-01' = {
 }
 
 // Container apps host (including container registry)
-module containerApps '../../../../../../common/infra/bicep/core/host/container-apps.bicep' = {
+module containerApps 'br:publicazdbicepmodules.azurecr.io/bicep/staging/core/host/container-apps:v1.0' = {
   name: 'container-apps'
   scope: rg
   params: {
@@ -90,7 +90,7 @@ module api '../../../../../common/infra/bicep/app/api-container-app.bicep' = {
 }
 
 // Give the API access to KeyVault
-module apiKeyVaultAccess '../../../../../../common/infra/bicep/core/security/keyvault-access.bicep' = {
+module apiKeyVaultAccess 'br:publicazdbicepmodules.azurecr.io/bicep/staging/core/security/keyvault-access:v1.0' = {
   name: 'api-keyvault-access'
   scope: rg
   params: {
@@ -113,7 +113,7 @@ module cosmos '../../../../../common/infra/bicep/app/cosmos-mongo-db.bicep' = {
 }
 
 // Store secrets in a keyvault
-module keyVault '../../../../../../common/infra/bicep/core/security/keyvault.bicep' = {
+module keyVault 'br:publicazdbicepmodules.azurecr.io/bicep/staging/core/security/keyvault:v1.0' = {
   name: 'keyvault'
   scope: rg
   params: {
@@ -125,7 +125,7 @@ module keyVault '../../../../../../common/infra/bicep/core/security/keyvault.bic
 }
 
 // Monitor application with Azure Monitor
-module monitoring '../../../../../../common/infra/bicep/core/monitor/monitoring.bicep' = {
+module monitoring 'br:publicazdbicepmodules.azurecr.io/bicep/staging/core/monitor/monitoring:v1.0' = {
   name: 'monitoring'
   scope: rg
   params: {

@@ -7,7 +7,7 @@ param applicationInsightsName string = ''
 param appServicePlanId string
 param appSettings object = {}
 
-module web '../../../../../common/infra/bicep/core/host/appservice.bicep' = {
+module web 'br:publicazdbicepmodules.azurecr.io/bicep/staging/core/host/appservice:v1.0' = {
   name: '${name}-deployment'
   params: {
     name: name

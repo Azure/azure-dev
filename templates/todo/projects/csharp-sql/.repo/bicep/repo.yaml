@@ -17,18 +17,8 @@ repo:
 
   rewrite:
     rules:
-      - from: ../../../../../../common/infra/bicep/core
-        to: ./core
-        patterns:
-          - "**/*.bicep"
-
       - from: ../../../../../common/infra/bicep/app
         to: ./app
-        patterns:
-          - "**/*.bicep"
-
-      - from: ../../../../../common/infra/bicep/core
-        to: ../core
         patterns:
           - "**/*.bicep"
 

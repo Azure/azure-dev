@@ -4,7 +4,7 @@ param tags object = {}
 
 param serviceName string = 'web'
 
-module web '../../../../../common/infra/bicep/core/host/staticwebapp.bicep' = {
+module web 'br:publicazdbicepmodules.azurecr.io/bicep/staging/core/host/staticwebapp:v1.0' = {
   name: '${serviceName}-staticwebapp-module'
   params: {
     name: name

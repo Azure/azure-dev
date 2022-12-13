@@ -14,6 +14,7 @@ import (
 	_ "github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning/bicep"
 	_ "github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning/terraform"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/telemetry"
@@ -144,6 +145,8 @@ func BuildCmd[F any](
 		if err != nil {
 			return err
 		}
+
+		ctx = tools.WithInstalledCheckCache(ctx)
 
 		actionResult, err := action.Run(ctx)
 		// At this point, we know that there might be an error, so we can silence cobra from showing it after us.

@@ -28,6 +28,7 @@ circleci
 cflags
 cmdsubst
 containerapp
+contoso
 csharpapp
 cupaloy
 devel

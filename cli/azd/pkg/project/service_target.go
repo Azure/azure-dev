@@ -83,6 +83,15 @@ func resourceTypeMismatchError(
 	)
 }
 
+// SupportsDelayedProvisioning returns true if the service target kind
+// supports delayed provisioning resources at deployment time, otherwise false.
+//
+// As an example, ContainerAppTarget is able to provision the container app as part of deployment,
+// and thus returns true.
+func (st ServiceTargetKind) SupportsDelayedProvisioning() bool {
+	return st == ContainerAppTarget
+}
+
 var _ ServiceTarget = &appServiceTarget{}
 var _ ServiceTarget = &containerAppTarget{}
 var _ ServiceTarget = &functionAppTarget{}

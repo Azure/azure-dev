@@ -1,0 +1,9 @@
+{
+    "moduleAliases": {
+        "br": {
+            "azd": {
+                "registry": "publicazdbicepmodules.azurecr.io"
+            }
+        }
+    }
+}

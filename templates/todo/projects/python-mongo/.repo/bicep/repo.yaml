@@ -91,6 +91,9 @@ repo:
       to: ./infra
       ignore: core/**
 
+    - from: ../../../../../bicepconfig.json
+      to: ./infra/bicepconfig.json
+
     - from: ../../../../common/infra/bicep/app/web-appservice.bicep
       to: ./infra/app/web.bicep
 

@@ -69,8 +69,7 @@ func NewProject(path string, name string) (*Project, error) {
 		return nil, fmt.Errorf("marshaling project file to yaml: %w", err)
 	}
 
-	newLine := osutil.GetNewLineSeparator()
-	projectFileContents := bytes.NewBufferString(projectSchemaAnnotation + newLine + newLine)
+	projectFileContents := bytes.NewBufferString(projectSchemaAnnotation + "\n\n")
 	_, err = projectFileContents.Write(projectBytes)
 	if err != nil {
 		return nil, fmt.Errorf("preparing new project file contents: %w", err)

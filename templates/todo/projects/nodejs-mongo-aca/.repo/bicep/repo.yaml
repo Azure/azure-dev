@@ -29,13 +29,6 @@ repo:
         ignore:
           - "**/main.bicep"
 
-      - from: ../../../../../common/infra/bicep
-        to: ../
-        patterns:
-          - "**/*.bicep"
-        ignore:
-          - "**/main.bicep"
-
       # main.bicep
       - from: ../../../../../../common/infra/bicep
         to: ./
@@ -76,6 +69,7 @@ repo:
 
     - from: ../../../../../common/infra/bicep
       to: ./infra
+      ignore: core/**
 
     - from: ../../../../common/infra/bicep/app/web-container-app.bicep
       to: ./infra/app/web.bicep
@@ -127,10 +121,6 @@ repo:
     # Github workflows for bicep
     - from: ../../../../../common/.github/workflows/bicep
       to: ./.github/workflows
-
-    # azd core modules
-    - from: ../../../../../common/infra/bicep
-      to: ./infra
 
     # .devcontainer common (devcontainer.json)
     - from: ../../../../../common/.devcontainer/devcontainer.json/nodejs/devcontainer.json

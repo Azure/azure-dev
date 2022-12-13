@@ -130,6 +130,7 @@ repo:
     # azd core modules
     - from: ../../../../../common/infra/bicep
       to: ./infra
+      ignore: core/**
 
     # .devcontainer common (devcontainer.json)
     - from: ../../../../../common/.devcontainer/devcontainer.json/nodejs/devcontainer.json

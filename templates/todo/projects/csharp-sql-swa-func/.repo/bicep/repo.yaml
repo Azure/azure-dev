@@ -69,6 +69,7 @@ repo:
 
     - from: ../../../../../common/infra/bicep
       to: ./infra
+      ignore: core/**
 
     - from: ../../../../common/infra/bicep/app/web-staticwebapp.bicep
       to: ./infra/app/web.bicep
@@ -114,10 +115,6 @@ repo:
     # Github workflows for bicep
     - from: ../../../../../common/.github/workflows/bicep
       to: ./.github/workflows
-
-    # azd core modules
-    - from: ../../../../../common/infra/bicep
-      to: ./infra
 
     # .devcontainer common (devcontainer.json)
     - from: ../../../../../common/.devcontainer/devcontainer.json/csharp

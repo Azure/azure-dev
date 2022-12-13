@@ -859,6 +859,8 @@ func (p *BicepProvider) ensureParameters(
 	sortedKeys := maps.Keys(template.Parameters)
 	slices.Sort(sortedKeys)
 
+	configModified := false
+
 	for _, key := range sortedKeys {
 		param := template.Parameters[key]
 
@@ -901,11 +903,7 @@ func (p *BicepProvider) ensureParameters(
 
 			if saveParameter {
 				if err := p.env.Config.Set(configKey, value); err == nil {
-					if err := p.env.Save(); err == nil {
-						// everything went as expected.
-					} else {
-						p.console.Message(ctx, fmt.Sprintf("warning: failed to save value: %v", err))
-					}
+					configModified = true
 				} else {
 					p.console.Message(ctx, fmt.Sprintf("warning: failed to set value: %v", err))
 				}
@@ -919,6 +917,12 @@ func (p *BicepProvider) ensureParameters(
 		})
 		if err != nil {
 			return nil, err
+		}
+	}
+
+	if configModified {
+		if err := p.env.Save(); err != nil {
+			p.console.Message(ctx, fmt.Sprintf("warning: failed to save configured values: %v", err))
 		}
 	}
 

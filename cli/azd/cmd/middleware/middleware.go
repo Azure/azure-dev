@@ -21,12 +21,14 @@ func NewMiddlewareRunner(
 	// Middleware registration
 	debug *DebugMiddleware,
 	telemetry *TelemetryMiddleware,
+	hook *CommandHooksMiddleware,
 ) *MiddlewareRunner {
 	return &MiddlewareRunner{
 		// Middleware chain, in order of execution
 		middlewareChain: []Middleware{
 			debug,
-			telemetry},
+			telemetry,
+			hook},
 		action: action,
 	}
 }

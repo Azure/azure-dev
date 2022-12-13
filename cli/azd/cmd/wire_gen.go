@@ -61,7 +61,8 @@ func initDeployAction(console input.Console, ctx context.Context, buildOptions *
 	}
 	debugMiddleware := middleware.NewDebugMiddleware(console)
 	telemetryMiddleware := middleware.NewTelemetryMiddleware(buildOptions)
-	middlewareRunner := middleware.NewMiddlewareRunner(cmdDeployAction, debugMiddleware, telemetryMiddleware)
+	commandHooksMiddleware := middleware.NewCommandHooksMiddleware(buildOptions, commandRunner, console)
+	middlewareRunner := middleware.NewMiddlewareRunner(cmdDeployAction, debugMiddleware, telemetryMiddleware, commandHooksMiddleware)
 	return middlewareRunner, nil
 }
 
@@ -93,7 +94,8 @@ func initInitAction(console input.Console, ctx context.Context, buildOptions *ac
 	}
 	debugMiddleware := middleware.NewDebugMiddleware(console)
 	telemetryMiddleware := middleware.NewTelemetryMiddleware(buildOptions)
-	middlewareRunner := middleware.NewMiddlewareRunner(cmdInitAction, debugMiddleware, telemetryMiddleware)
+	commandHooksMiddleware := middleware.NewCommandHooksMiddleware(buildOptions, commandRunner, console)
+	middlewareRunner := middleware.NewMiddlewareRunner(cmdInitAction, debugMiddleware, telemetryMiddleware, commandHooksMiddleware)
 	return middlewareRunner, nil
 }
 
@@ -108,7 +110,9 @@ func initLoginAction(console input.Console, ctx context.Context, buildOptions *a
 	cmdLoginAction := newLoginAction(formatter, writer, manager, flags, console)
 	debugMiddleware := middleware.NewDebugMiddleware(console)
 	telemetryMiddleware := middleware.NewTelemetryMiddleware(buildOptions)
-	middlewareRunner := middleware.NewMiddlewareRunner(cmdLoginAction, debugMiddleware, telemetryMiddleware)
+	commandRunner := newCommandRunnerFromConsole(console)
+	commandHooksMiddleware := middleware.NewCommandHooksMiddleware(buildOptions, commandRunner, console)
+	middlewareRunner := middleware.NewMiddlewareRunner(cmdLoginAction, debugMiddleware, telemetryMiddleware, commandHooksMiddleware)
 	return middlewareRunner, nil
 }
 
@@ -123,7 +127,9 @@ func initLogoutAction(console input.Console, ctx context.Context, buildOptions *
 	cmdLogoutAction := newLogoutAction(manager, formatter, writer)
 	debugMiddleware := middleware.NewDebugMiddleware(console)
 	telemetryMiddleware := middleware.NewTelemetryMiddleware(buildOptions)
-	middlewareRunner := middleware.NewMiddlewareRunner(cmdLogoutAction, debugMiddleware, telemetryMiddleware)
+	commandRunner := newCommandRunnerFromConsole(console)
+	commandHooksMiddleware := middleware.NewCommandHooksMiddleware(buildOptions, commandRunner, console)
+	middlewareRunner := middleware.NewMiddlewareRunner(cmdLogoutAction, debugMiddleware, telemetryMiddleware, commandHooksMiddleware)
 	return middlewareRunner, nil
 }
 
@@ -166,7 +172,8 @@ func initUpAction(console input.Console, ctx context.Context, buildOptions *acti
 	cmdUpAction := newUpAction(cmdInitAction, cmdInfraCreateAction, cmdDeployAction, console)
 	debugMiddleware := middleware.NewDebugMiddleware(console)
 	telemetryMiddleware := middleware.NewTelemetryMiddleware(buildOptions)
-	middlewareRunner := middleware.NewMiddlewareRunner(cmdUpAction, debugMiddleware, telemetryMiddleware)
+	commandHooksMiddleware := middleware.NewCommandHooksMiddleware(buildOptions, commandRunner, console)
+	middlewareRunner := middleware.NewMiddlewareRunner(cmdUpAction, debugMiddleware, telemetryMiddleware, commandHooksMiddleware)
 	return middlewareRunner, nil
 }
 
@@ -188,7 +195,9 @@ func initMonitorAction(console input.Console, ctx context.Context, buildOptions 
 	cmdMonitorAction := newMonitorAction(azdContext, azCli, console, flags)
 	debugMiddleware := middleware.NewDebugMiddleware(console)
 	telemetryMiddleware := middleware.NewTelemetryMiddleware(buildOptions)
-	middlewareRunner := middleware.NewMiddlewareRunner(cmdMonitorAction, debugMiddleware, telemetryMiddleware)
+	commandRunner := newCommandRunnerFromConsole(console)
+	commandHooksMiddleware := middleware.NewCommandHooksMiddleware(buildOptions, commandRunner, console)
+	middlewareRunner := middleware.NewMiddlewareRunner(cmdMonitorAction, debugMiddleware, telemetryMiddleware, commandHooksMiddleware)
 	return middlewareRunner, nil
 }
 
@@ -211,7 +220,8 @@ func initRestoreAction(console input.Console, ctx context.Context, buildOptions 
 	cmdRestoreAction := newRestoreAction(flags, azCli, console, azdContext, commandRunner)
 	debugMiddleware := middleware.NewDebugMiddleware(console)
 	telemetryMiddleware := middleware.NewTelemetryMiddleware(buildOptions)
-	middlewareRunner := middleware.NewMiddlewareRunner(cmdRestoreAction, debugMiddleware, telemetryMiddleware)
+	commandHooksMiddleware := middleware.NewCommandHooksMiddleware(buildOptions, commandRunner, console)
+	middlewareRunner := middleware.NewMiddlewareRunner(cmdRestoreAction, debugMiddleware, telemetryMiddleware, commandHooksMiddleware)
 	return middlewareRunner, nil
 }
 
@@ -235,7 +245,9 @@ func initShowAction(console input.Console, ctx context.Context, buildOptions *ac
 	cmdShowAction := newShowAction(console, formatter, writer, azCli, azdContext, flags)
 	debugMiddleware := middleware.NewDebugMiddleware(console)
 	telemetryMiddleware := middleware.NewTelemetryMiddleware(buildOptions)
-	middlewareRunner := middleware.NewMiddlewareRunner(cmdShowAction, debugMiddleware, telemetryMiddleware)
+	commandRunner := newCommandRunnerFromConsole(console)
+	commandHooksMiddleware := middleware.NewCommandHooksMiddleware(buildOptions, commandRunner, console)
+	middlewareRunner := middleware.NewMiddlewareRunner(cmdShowAction, debugMiddleware, telemetryMiddleware, commandHooksMiddleware)
 	return middlewareRunner, nil
 }
 
@@ -245,7 +257,9 @@ func initVersionAction(console input.Console, ctx context.Context, buildOptions 
 	cmdVersionAction := newVersionAction(flags, formatter, writer, console)
 	debugMiddleware := middleware.NewDebugMiddleware(console)
 	telemetryMiddleware := middleware.NewTelemetryMiddleware(buildOptions)
-	middlewareRunner := middleware.NewMiddlewareRunner(cmdVersionAction, debugMiddleware, telemetryMiddleware)
+	commandRunner := newCommandRunnerFromConsole(console)
+	commandHooksMiddleware := middleware.NewCommandHooksMiddleware(buildOptions, commandRunner, console)
+	middlewareRunner := middleware.NewMiddlewareRunner(cmdVersionAction, debugMiddleware, telemetryMiddleware, commandHooksMiddleware)
 	return middlewareRunner, nil
 }
 
@@ -264,7 +278,9 @@ func initAuthTokenAction(console input.Console, ctx context.Context, buildOption
 	cmdAuthTokenAction := newAuthTokenAction(tokenCredential, formatter, writer, flags)
 	debugMiddleware := middleware.NewDebugMiddleware(console)
 	telemetryMiddleware := middleware.NewTelemetryMiddleware(buildOptions)
-	middlewareRunner := middleware.NewMiddlewareRunner(cmdAuthTokenAction, debugMiddleware, telemetryMiddleware)
+	commandRunner := newCommandRunnerFromConsole(console)
+	commandHooksMiddleware := middleware.NewCommandHooksMiddleware(buildOptions, commandRunner, console)
+	middlewareRunner := middleware.NewMiddlewareRunner(cmdAuthTokenAction, debugMiddleware, telemetryMiddleware, commandHooksMiddleware)
 	return middlewareRunner, nil
 }
 
@@ -289,7 +305,8 @@ func initInfraCreateAction(console input.Console, ctx context.Context, buildOpti
 	cmdInfraCreateAction := newInfraCreateAction(flags, azCli, azdContext, console, formatter, writer, commandRunner)
 	debugMiddleware := middleware.NewDebugMiddleware(console)
 	telemetryMiddleware := middleware.NewTelemetryMiddleware(buildOptions)
-	middlewareRunner := middleware.NewMiddlewareRunner(cmdInfraCreateAction, debugMiddleware, telemetryMiddleware)
+	commandHooksMiddleware := middleware.NewCommandHooksMiddleware(buildOptions, commandRunner, console)
+	middlewareRunner := middleware.NewMiddlewareRunner(cmdInfraCreateAction, debugMiddleware, telemetryMiddleware, commandHooksMiddleware)
 	return middlewareRunner, nil
 }
 
@@ -312,7 +329,8 @@ func initInfraDeleteAction(console input.Console, ctx context.Context, buildOpti
 	cmdInfraDeleteAction := newInfraDeleteAction(flags, azCli, azdContext, console, commandRunner)
 	debugMiddleware := middleware.NewDebugMiddleware(console)
 	telemetryMiddleware := middleware.NewTelemetryMiddleware(buildOptions)
-	middlewareRunner := middleware.NewMiddlewareRunner(cmdInfraDeleteAction, debugMiddleware, telemetryMiddleware)
+	commandHooksMiddleware := middleware.NewCommandHooksMiddleware(buildOptions, commandRunner, console)
+	middlewareRunner := middleware.NewMiddlewareRunner(cmdInfraDeleteAction, debugMiddleware, telemetryMiddleware, commandHooksMiddleware)
 	return middlewareRunner, nil
 }
 
@@ -334,7 +352,9 @@ func initEnvSetAction(console input.Console, ctx context.Context, buildOptions *
 	cmdEnvSetAction := newEnvSetAction(azdContext, azCli, console, flags, args)
 	debugMiddleware := middleware.NewDebugMiddleware(console)
 	telemetryMiddleware := middleware.NewTelemetryMiddleware(buildOptions)
-	middlewareRunner := middleware.NewMiddlewareRunner(cmdEnvSetAction, debugMiddleware, telemetryMiddleware)
+	commandRunner := newCommandRunnerFromConsole(console)
+	commandHooksMiddleware := middleware.NewCommandHooksMiddleware(buildOptions, commandRunner, console)
+	middlewareRunner := middleware.NewMiddlewareRunner(cmdEnvSetAction, debugMiddleware, telemetryMiddleware, commandHooksMiddleware)
 	return middlewareRunner, nil
 }
 
@@ -346,7 +366,9 @@ func initEnvSelectAction(console input.Console, ctx context.Context, buildOption
 	cmdEnvSelectAction := newEnvSelectAction(azdContext, args)
 	debugMiddleware := middleware.NewDebugMiddleware(console)
 	telemetryMiddleware := middleware.NewTelemetryMiddleware(buildOptions)
-	middlewareRunner := middleware.NewMiddlewareRunner(cmdEnvSelectAction, debugMiddleware, telemetryMiddleware)
+	commandRunner := newCommandRunnerFromConsole(console)
+	commandHooksMiddleware := middleware.NewCommandHooksMiddleware(buildOptions, commandRunner, console)
+	middlewareRunner := middleware.NewMiddlewareRunner(cmdEnvSelectAction, debugMiddleware, telemetryMiddleware, commandHooksMiddleware)
 	return middlewareRunner, nil
 }
 
@@ -360,7 +382,9 @@ func initEnvListAction(console input.Console, ctx context.Context, buildOptions 
 	cmdEnvListAction := newEnvListAction(azdContext, formatter, writer)
 	debugMiddleware := middleware.NewDebugMiddleware(console)
 	telemetryMiddleware := middleware.NewTelemetryMiddleware(buildOptions)
-	middlewareRunner := middleware.NewMiddlewareRunner(cmdEnvListAction, debugMiddleware, telemetryMiddleware)
+	commandRunner := newCommandRunnerFromConsole(console)
+	commandHooksMiddleware := middleware.NewCommandHooksMiddleware(buildOptions, commandRunner, console)
+	middlewareRunner := middleware.NewMiddlewareRunner(cmdEnvListAction, debugMiddleware, telemetryMiddleware, commandHooksMiddleware)
 	return middlewareRunner, nil
 }
 
@@ -382,7 +406,9 @@ func initEnvNewAction(console input.Console, ctx context.Context, buildOptions *
 	cmdEnvNewAction := newEnvNewAction(azdContext, azCli, flags, args, console)
 	debugMiddleware := middleware.NewDebugMiddleware(console)
 	telemetryMiddleware := middleware.NewTelemetryMiddleware(buildOptions)
-	middlewareRunner := middleware.NewMiddlewareRunner(cmdEnvNewAction, debugMiddleware, telemetryMiddleware)
+	commandRunner := newCommandRunnerFromConsole(console)
+	commandHooksMiddleware := middleware.NewCommandHooksMiddleware(buildOptions, commandRunner, console)
+	middlewareRunner := middleware.NewMiddlewareRunner(cmdEnvNewAction, debugMiddleware, telemetryMiddleware, commandHooksMiddleware)
 	return middlewareRunner, nil
 }
 
@@ -407,7 +433,8 @@ func initEnvRefreshAction(console input.Console, ctx context.Context, buildOptio
 	cmdEnvRefreshAction := newEnvRefreshAction(azdContext, azCli, commandRunner, flags, console, formatter, writer)
 	debugMiddleware := middleware.NewDebugMiddleware(console)
 	telemetryMiddleware := middleware.NewTelemetryMiddleware(buildOptions)
-	middlewareRunner := middleware.NewMiddlewareRunner(cmdEnvRefreshAction, debugMiddleware, telemetryMiddleware)
+	commandHooksMiddleware := middleware.NewCommandHooksMiddleware(buildOptions, commandRunner, console)
+	middlewareRunner := middleware.NewMiddlewareRunner(cmdEnvRefreshAction, debugMiddleware, telemetryMiddleware, commandHooksMiddleware)
 	return middlewareRunner, nil
 }
 
@@ -431,7 +458,9 @@ func initEnvGetValuesAction(console input.Console, ctx context.Context, buildOpt
 	cmdEnvGetValuesAction := newEnvGetValuesAction(azdContext, console, formatter, writer, azCli, flags)
 	debugMiddleware := middleware.NewDebugMiddleware(console)
 	telemetryMiddleware := middleware.NewTelemetryMiddleware(buildOptions)
-	middlewareRunner := middleware.NewMiddlewareRunner(cmdEnvGetValuesAction, debugMiddleware, telemetryMiddleware)
+	commandRunner := newCommandRunnerFromConsole(console)
+	commandHooksMiddleware := middleware.NewCommandHooksMiddleware(buildOptions, commandRunner, console)
+	middlewareRunner := middleware.NewMiddlewareRunner(cmdEnvGetValuesAction, debugMiddleware, telemetryMiddleware, commandHooksMiddleware)
 	return middlewareRunner, nil
 }
 
@@ -454,7 +483,8 @@ func initPipelineConfigAction(console input.Console, ctx context.Context, buildO
 	cmdPipelineConfigAction := newPipelineConfigAction(azCli, tokenCredential, azdContext, console, flags, commandRunner)
 	debugMiddleware := middleware.NewDebugMiddleware(console)
 	telemetryMiddleware := middleware.NewTelemetryMiddleware(buildOptions)
-	middlewareRunner := middleware.NewMiddlewareRunner(cmdPipelineConfigAction, debugMiddleware, telemetryMiddleware)
+	commandHooksMiddleware := middleware.NewCommandHooksMiddleware(buildOptions, commandRunner, console)
+	middlewareRunner := middleware.NewMiddlewareRunner(cmdPipelineConfigAction, debugMiddleware, telemetryMiddleware, commandHooksMiddleware)
 	return middlewareRunner, nil
 }
 
@@ -465,7 +495,9 @@ func initTemplatesListAction(console input.Console, ctx context.Context, buildOp
 	cmdTemplatesListAction := newTemplatesListAction(flags, formatter, writer, templateManager)
 	debugMiddleware := middleware.NewDebugMiddleware(console)
 	telemetryMiddleware := middleware.NewTelemetryMiddleware(buildOptions)
-	middlewareRunner := middleware.NewMiddlewareRunner(cmdTemplatesListAction, debugMiddleware, telemetryMiddleware)
+	commandRunner := newCommandRunnerFromConsole(console)
+	commandHooksMiddleware := middleware.NewCommandHooksMiddleware(buildOptions, commandRunner, console)
+	middlewareRunner := middleware.NewMiddlewareRunner(cmdTemplatesListAction, debugMiddleware, telemetryMiddleware, commandHooksMiddleware)
 	return middlewareRunner, nil
 }
 
@@ -476,7 +508,9 @@ func initTemplatesShowAction(console input.Console, ctx context.Context, buildOp
 	cmdTemplatesShowAction := newTemplatesShowAction(formatter, writer, templateManager, args)
 	debugMiddleware := middleware.NewDebugMiddleware(console)
 	telemetryMiddleware := middleware.NewTelemetryMiddleware(buildOptions)
-	middlewareRunner := middleware.NewMiddlewareRunner(cmdTemplatesShowAction, debugMiddleware, telemetryMiddleware)
+	commandRunner := newCommandRunnerFromConsole(console)
+	commandHooksMiddleware := middleware.NewCommandHooksMiddleware(buildOptions, commandRunner, console)
+	middlewareRunner := middleware.NewMiddlewareRunner(cmdTemplatesShowAction, debugMiddleware, telemetryMiddleware, commandHooksMiddleware)
 	return middlewareRunner, nil
 }
 
@@ -487,7 +521,9 @@ func initConfigListAction(console input.Console, ctx context.Context, buildOptio
 	cmdConfigListAction := newConfigListAction(userConfigManager, formatter, writer)
 	debugMiddleware := middleware.NewDebugMiddleware(console)
 	telemetryMiddleware := middleware.NewTelemetryMiddleware(buildOptions)
-	middlewareRunner := middleware.NewMiddlewareRunner(cmdConfigListAction, debugMiddleware, telemetryMiddleware)
+	commandRunner := newCommandRunnerFromConsole(console)
+	commandHooksMiddleware := middleware.NewCommandHooksMiddleware(buildOptions, commandRunner, console)
+	middlewareRunner := middleware.NewMiddlewareRunner(cmdConfigListAction, debugMiddleware, telemetryMiddleware, commandHooksMiddleware)
 	return middlewareRunner, nil
 }
 
@@ -498,7 +534,9 @@ func initConfigGetAction(console input.Console, ctx context.Context, buildOption
 	cmdConfigGetAction := newConfigGetAction(userConfigManager, formatter, writer, args)
 	debugMiddleware := middleware.NewDebugMiddleware(console)
 	telemetryMiddleware := middleware.NewTelemetryMiddleware(buildOptions)
-	middlewareRunner := middleware.NewMiddlewareRunner(cmdConfigGetAction, debugMiddleware, telemetryMiddleware)
+	commandRunner := newCommandRunnerFromConsole(console)
+	commandHooksMiddleware := middleware.NewCommandHooksMiddleware(buildOptions, commandRunner, console)
+	middlewareRunner := middleware.NewMiddlewareRunner(cmdConfigGetAction, debugMiddleware, telemetryMiddleware, commandHooksMiddleware)
 	return middlewareRunner, nil
 }
 
@@ -507,7 +545,9 @@ func initConfigSetAction(console input.Console, ctx context.Context, buildOption
 	cmdConfigSetAction := newConfigSetAction(userConfigManager, args)
 	debugMiddleware := middleware.NewDebugMiddleware(console)
 	telemetryMiddleware := middleware.NewTelemetryMiddleware(buildOptions)
-	middlewareRunner := middleware.NewMiddlewareRunner(cmdConfigSetAction, debugMiddleware, telemetryMiddleware)
+	commandRunner := newCommandRunnerFromConsole(console)
+	commandHooksMiddleware := middleware.NewCommandHooksMiddleware(buildOptions, commandRunner, console)
+	middlewareRunner := middleware.NewMiddlewareRunner(cmdConfigSetAction, debugMiddleware, telemetryMiddleware, commandHooksMiddleware)
 	return middlewareRunner, nil
 }
 
@@ -516,7 +556,9 @@ func initConfigUnsetAction(console input.Console, ctx context.Context, buildOpti
 	cmdConfigUnsetAction := newConfigUnsetAction(userConfigManager, args)
 	debugMiddleware := middleware.NewDebugMiddleware(console)
 	telemetryMiddleware := middleware.NewTelemetryMiddleware(buildOptions)
-	middlewareRunner := middleware.NewMiddlewareRunner(cmdConfigUnsetAction, debugMiddleware, telemetryMiddleware)
+	commandRunner := newCommandRunnerFromConsole(console)
+	commandHooksMiddleware := middleware.NewCommandHooksMiddleware(buildOptions, commandRunner, console)
+	middlewareRunner := middleware.NewMiddlewareRunner(cmdConfigUnsetAction, debugMiddleware, telemetryMiddleware, commandHooksMiddleware)
 	return middlewareRunner, nil
 }
 
@@ -525,6 +567,8 @@ func initConfigResetAction(console input.Console, ctx context.Context, buildOpti
 	cmdConfigResetAction := newConfigResetAction(userConfigManager, args)
 	debugMiddleware := middleware.NewDebugMiddleware(console)
 	telemetryMiddleware := middleware.NewTelemetryMiddleware(buildOptions)
-	middlewareRunner := middleware.NewMiddlewareRunner(cmdConfigResetAction, debugMiddleware, telemetryMiddleware)
+	commandRunner := newCommandRunnerFromConsole(console)
+	commandHooksMiddleware := middleware.NewCommandHooksMiddleware(buildOptions, commandRunner, console)
+	middlewareRunner := middleware.NewMiddlewareRunner(cmdConfigResetAction, debugMiddleware, telemetryMiddleware, commandHooksMiddleware)
 	return middlewareRunner, nil
 }

@@ -122,13 +122,14 @@ var CommonSet = wire.NewSet(
 	newCommandRunnerFromConsole,
 	newFormatterFromConsole,
 	newOutputWriter,
-	MiddlewareSet,
+	GlobalMiddlewareSet,
 )
 
-var MiddlewareSet = wire.NewSet(
+var GlobalMiddlewareSet = wire.NewSet(
 	middleware.NewDebugMiddleware,
 	middleware.NewTelemetryMiddleware,
 	middleware.NewMiddlewareRunner,
+	middleware.NewCommandHooksMiddleware,
 	wire.Bind(new(actions.MiddlewareEnabledAction), new(*middleware.MiddlewareRunner)),
 )
 

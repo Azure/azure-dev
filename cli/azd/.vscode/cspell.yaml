@@ -15,6 +15,10 @@ words:
   - Retryable
   - Canonicalize
   - devcontainers
+languageSettings:
+  - languageId: go
+    ignoreRegExpList:
+      - /mock.*/
 dictionaryDefinitions:
   - name: azdProjectDictionary
     path: ./cspell-azd-dictionary.txt

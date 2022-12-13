@@ -10,6 +10,7 @@ import (
 	"context"
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/internal/azd/repository"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
@@ -83,7 +84,8 @@ func initInitAction(console input.Console, ctx context.Context, o *internal.Glob
 	}
 	commandRunner := newCommandRunnerFromConsole(console)
 	gitCli := git.NewGitCli(commandRunner)
-	cmdInitAction, err := newInitAction(azCli, azdContext, accountManager, commandRunner, console, gitCli, flags)
+	initializer := repository.NewInitializer(azdContext, console, gitCli)
+	cmdInitAction, err := newInitAction(azCli, azdContext, accountManager, commandRunner, console, gitCli, flags, initializer)
 	if err != nil {
 		return nil, err
 	}
@@ -137,7 +139,8 @@ func initUpAction(console input.Console, ctx context.Context, o *internal.Global
 	commandRunner := newCommandRunnerFromConsole(console)
 	gitCli := git.NewGitCli(commandRunner)
 	cmdInitFlags := flags.initFlags
-	cmdInitAction, err := newInitAction(azCli, azdContext, accountManager, commandRunner, console, gitCli, cmdInitFlags)
+	initializer := repository.NewInitializer(azdContext, console, gitCli)
+	cmdInitAction, err := newInitAction(azCli, azdContext, accountManager, commandRunner, console, gitCli, cmdInitFlags, initializer)
 	if err != nil {
 		return nil, err
 	}

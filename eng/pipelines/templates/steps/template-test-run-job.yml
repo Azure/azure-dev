@@ -49,11 +49,7 @@ steps:
   displayName: Set test run parameters
 
 - pwsh: |
-    git config --global user.name "azure-sdk"
-    git config --global user.email "azuresdk@microsoft.com"
-    echo "https://azure-sdk:$(azuresdk-github-pat)@github.com" > ~/.git-credentials
-    git config --global credential.helper "store"
-    Write-Host "##vso[task.setvariable variable=folderPath;]$pwd"
+    # Write-Host "##vso[task.setvariable variable=folderPath;]$pwd"
     git clone --branch $(TemplateBranchName) https://github.com/$(TemplateName).git/ temp
   displayName: Clone template repository
 
@@ -65,9 +61,9 @@ steps:
       ARM_CLIENT_SECRET=$(arm-client-secret)
       ARM_TENANT_ID=$(arm-tenant-id)
       SUBSCRIPTION_ID=$(SubscriptionId)
-      FOLDER_PATH=$(folderPath)
+      # FOLDER_PATH=$(folderPath)
       AZD_DEBUG_FORCE_NO_TTY="1"
-    subFolder: '$(folderPath)/temp'
+    subFolder: '$(Build.SourcesDirectory)/temp'
     runCmd: |
       curl -fsSL https://aka.ms/install-azd.sh | bash -s -- --version 'daily' --verbose
       azd version

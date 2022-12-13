@@ -14,7 +14,7 @@ param appUserPassword string
 var defaultDatabaseName = 'Todo'
 var actualDatabaseName = !empty(databaseName) ? databaseName : defaultDatabaseName
 
-module sqlServer 'br:publicazdbicepmodules.azurecr.io/bicep/staging/core/database/sqlserver/sqlserver:v1.0' = {
+module sqlServer 'br/azd:bicep/staging/core/database/sqlserver/sqlserver:v1.0' = {
   name: 'sqlserver'
   params: {
     name: name

@@ -23,7 +23,7 @@ param principalIds array = []
 var defaultDatabaseName = 'Todo'
 var actualDatabaseName = !empty(databaseName) ? databaseName : defaultDatabaseName
 
-module cosmos 'br:publicazdbicepmodules.azurecr.io/bicep/staging/core/database/cosmos/sql/cosmos-sql-db:v1.0' = {
+module cosmos 'br/azd:bicep/staging/core/database/cosmos/sql/cosmos-sql-db:v1.0' = {
   name: 'cosmos-sql'
   params: {
     accountName: accountName

@@ -10,7 +10,7 @@ param appSettings object = {}
 param keyVaultName string
 param serviceName string = 'api'
 
-module api 'br:publicazdbicepmodules.azurecr.io/bicep/staging/core/host/appservice:v1.0' = {
+module api 'br/azd:bicep/staging/core/host/appservice:v1.0' = {
   name: '${name}-app-module'
   params: {
     name: name

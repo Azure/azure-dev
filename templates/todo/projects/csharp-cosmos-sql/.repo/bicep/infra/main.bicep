@@ -72,7 +72,7 @@ module api '../../../../../common/infra/bicep/app/api-appservice-dotnet.bicep' =
 }
 
 // Give the API access to KeyVault
-module apiKeyVaultAccess 'br:publicazdbicepmodules.azurecr.io/bicep/staging/core/security/keyvault-access:v1.0' = {
+module apiKeyVaultAccess 'br/azd:bicep/staging/core/security/keyvault-access:v1.0' = {
   name: 'api-keyvault-access'
   scope: rg
   params: {
@@ -82,7 +82,7 @@ module apiKeyVaultAccess 'br:publicazdbicepmodules.azurecr.io/bicep/staging/core
 }
 
 // Give the API the role to access Cosmos
-module apiCosmosSqlRoleAssign 'br:publicazdbicepmodules.azurecr.io/bicep/staging/core/database/cosmos/sql/cosmos-sql-role-assign:v1.0' = {
+module apiCosmosSqlRoleAssign 'br/azd:bicep/staging/core/database/cosmos/sql/cosmos-sql-role-assign:v1.0' = {
   name: 'api-cosmos-access'
   scope: rg
   params: {
@@ -93,7 +93,7 @@ module apiCosmosSqlRoleAssign 'br:publicazdbicepmodules.azurecr.io/bicep/staging
 }
 
 // Give the API the role to access Cosmos
-module userComsosSqlRoleAssign 'br:publicazdbicepmodules.azurecr.io/bicep/staging/core/database/cosmos/sql/cosmos-sql-role-assign:v1.0' = if (principalId != '') {
+module userComsosSqlRoleAssign 'br/azd:bicep/staging/core/database/cosmos/sql/cosmos-sql-role-assign:v1.0' = if (principalId != '') {
   name: 'user-cosmos-access'
   scope: rg
   params: {
@@ -117,7 +117,7 @@ module cosmos '../../../../../common/infra/bicep/app/cosmos-sql-db.bicep' = {
 }
 
 // Create an App Service Plan to group applications under the same payment plan and SKU
-module appServicePlan 'br:publicazdbicepmodules.azurecr.io/bicep/staging/core/host/appserviceplan:v1.0' = {
+module appServicePlan 'br/azd:bicep/staging/core/host/appserviceplan:v1.0' = {
   name: 'appserviceplan'
   scope: rg
   params: {
@@ -131,7 +131,7 @@ module appServicePlan 'br:publicazdbicepmodules.azurecr.io/bicep/staging/core/ho
 }
 
 // Store secrets in a keyvault
-module keyVault 'br:publicazdbicepmodules.azurecr.io/bicep/staging/core/security/keyvault:v1.0' = {
+module keyVault 'br/azd:bicep/staging/core/security/keyvault:v1.0' = {
   name: 'keyvault'
   scope: rg
   params: {
@@ -143,7 +143,7 @@ module keyVault 'br:publicazdbicepmodules.azurecr.io/bicep/staging/core/security
 }
 
 // Monitor application with Azure Monitor
-module monitoring 'br:publicazdbicepmodules.azurecr.io/bicep/staging/core/monitor/monitoring:v1.0' = {
+module monitoring 'br/azd:bicep/staging/core/monitor/monitoring:v1.0' = {
   name: 'monitoring'
   scope: rg
   params: {

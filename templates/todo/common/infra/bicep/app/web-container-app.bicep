@@ -10,7 +10,7 @@ param imageName string = ''
 param keyVaultName string
 param serviceName string = 'web'
 
-module app 'br:publicazdbicepmodules.azurecr.io/bicep/staging/core/host/container-app:v1.0' = {
+module app 'br/azd:bicep/staging/core/host/container-app:v1.0' = {
   name: '${serviceName}-container-app-module'
   params: {
     name: name

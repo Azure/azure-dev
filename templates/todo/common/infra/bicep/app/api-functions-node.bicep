@@ -10,7 +10,7 @@ param keyVaultName string
 param serviceName string = 'api'
 param storageAccountName string
 
-module api 'br:publicazdbicepmodules.azurecr.io/bicep/staging/core/host/functions:v1.0' = {
+module api 'br/azd:bicep/staging/core/host/functions:v1.0' = {
   name: '${serviceName}-functions-node-module'
   params: {
     name: name

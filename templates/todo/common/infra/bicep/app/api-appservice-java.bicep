@@ -18,7 +18,7 @@ param javaRuntimeOptions array = []
 // on App Service.
 var defaultJavaRuntimeOptions = ['-Djdk.attach.allowAttachSelf=true']
 
-module api 'br:publicazdbicepmodules.azurecr.io/bicep/staging/core/host/appservice:v1.0' = {
+module api 'br/azd:bicep/staging/core/host/appservice:v1.0' = {
   name: '${name}-app-module'
   params: {
     name: name

@@ -23,7 +23,7 @@ param keyVaultName string
 var defaultDatabaseName = 'Todo'
 var actualDatabaseName = !empty(databaseName) ? databaseName : defaultDatabaseName
 
-module cosmos 'br:publicazdbicepmodules.azurecr.io/bicep/staging/core/database/cosmos/mongo/cosmos-mongo-db:v1.0' = {
+module cosmos 'br/azd:bicep/staging/core/database/cosmos/mongo/cosmos-mongo-db:v1.0' = {
   name: 'cosmos-mongo'
   params: {
     accountName: accountName

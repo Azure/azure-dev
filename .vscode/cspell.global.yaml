@@ -10,7 +10,7 @@ ignorePaths:
     - ./go.sum
     - ./NOTICE.txt
     - ./templates/common/NOTICE.txt
-    - ./templates/common/infra/bicep/bicepconfig.json
+    - ./templates/bicepconfig.json
 words:
     - opentelemetry
     - bson

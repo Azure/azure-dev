@@ -14,6 +14,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
+	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/spf13/cobra"
@@ -106,6 +107,12 @@ func (i *infraCreateAction) Run(ctx context.Context) (*actions.ActionResult, err
 		return nil, err
 	}
 
+	// Command title
+	i.console.MessageUxItem(ctx, &ux.MessageTitle{
+		Title:     "Provisioning Azure resources (azd provision)",
+		TitleNote: "Provisioning Azure resources can take some time"},
+	)
+
 	env, ctx, err := loadOrInitEnvironment(ctx, &i.flags.environmentName, i.azdCtx, i.console, i.azCli)
 	if err != nil {
 		return nil, fmt.Errorf("loading environment: %w", err)
@@ -136,9 +143,6 @@ func (i *infraCreateAction) Run(ctx context.Context) (*actions.ActionResult, err
 		i.azCli, env.GetLocation(), env.GetSubscriptionId(), env.GetEnvName(),
 	)
 	deployResult, err := infraManager.Deploy(ctx, deploymentPlan, provisioningScope)
-	if err != nil {
-		return nil, fmt.Errorf("deploying infrastructure: %w", err)
-	}
 
 	if err != nil {
 		if i.formatter.Kind() == output.JsonFormat {
@@ -170,12 +174,13 @@ func (i *infraCreateAction) Run(ctx context.Context) (*actions.ActionResult, err
 		}
 	}
 
-	if i.formatter.Kind() != output.JsonFormat {
-		resourceGroupName, err := project.GetResourceGroupName(ctx, i.azCli, prj, env)
-		if err == nil { // Presentation only -- skip print if we failed to resolve the resource group
-			i.displayResourceGroupCreatedMessage(ctx, i.console, env.GetSubscriptionId(), resourceGroupName)
-		}
-	}
+	// TO BE MOVED TO DEPLOY OUTPUT
+	// if i.formatter.Kind() != output.JsonFormat {
+	// 	resourceGroupName, err := project.GetResourceGroupName(ctx, i.azCli, prj, env)
+	// 	if err == nil { // Presentation only -- skip print if we failed to resolve the resource group
+	// 		i.displayResourceGroupCreatedMessage(ctx, i.console, env.GetSubscriptionId(), resourceGroupName)
+	// 	}
+	// }
 
 	if i.formatter.Kind() == output.JsonFormat {
 		stateResult, err := infraManager.State(ctx, provisioningScope)
@@ -195,32 +200,36 @@ func (i *infraCreateAction) Run(ctx context.Context) (*actions.ActionResult, err
 		}
 	}
 
-	return nil, nil
+	return &actions.ActionResult{
+		Message: &actions.ResultMessage{
+			Header: "Your project has been provisioned!",
+		},
+	}, nil
 }
 
-func (ica *infraCreateAction) displayResourceGroupCreatedMessage(
-	ctx context.Context,
-	console input.Console,
-	subscriptionId string,
-	resourceGroup string,
-) {
-	resourceGroupCreatedMessage := resourceGroupCreatedMessage(ctx, subscriptionId, resourceGroup)
-	if ica.finalOutputRedirect != nil {
-		*ica.finalOutputRedirect = append(*ica.finalOutputRedirect, resourceGroupCreatedMessage)
-	} else {
-		console.Message(ctx, resourceGroupCreatedMessage)
-	}
-}
+// func (ica *infraCreateAction) displayResourceGroupCreatedMessage(
+// 	ctx context.Context,
+// 	console input.Console,
+// 	subscriptionId string,
+// 	resourceGroup string,
+// ) {
+// 	resourceGroupCreatedMessage := resourceGroupCreatedMessage(ctx, subscriptionId, resourceGroup)
+// 	if ica.finalOutputRedirect != nil {
+// 		*ica.finalOutputRedirect = append(*ica.finalOutputRedirect, resourceGroupCreatedMessage)
+// 	} else {
+// 		console.Message(ctx, resourceGroupCreatedMessage)
+// 	}
+// }
 
-func resourceGroupCreatedMessage(ctx context.Context, subscriptionId string, resourceGroup string) string {
-	resourcesGroupURL := fmt.Sprintf(
-		"https://portal.azure.com/#@/resource/subscriptions/%s/resourceGroups/%s/overview",
-		subscriptionId,
-		resourceGroup)
+// func resourceGroupCreatedMessage(ctx context.Context, subscriptionId string, resourceGroup string) string {
+// 	resourcesGroupURL := fmt.Sprintf(
+// 		"https://portal.azure.com/#@/resource/subscriptions/%s/resourceGroups/%s/overview",
+// 		subscriptionId,
+// 		resourceGroup)
 
-	return fmt.Sprintf(
-		"View the resources created under the resource group %s in Azure Portal:\n%s\n",
-		output.WithHighLightFormat(resourceGroup),
-		output.WithLinkFormat(resourcesGroupURL),
-	)
-}
+// 	return fmt.Sprintf(
+// 		"View the resources created under the resource group %s in Azure Portal:\n%s\n",
+// 		output.WithHighLightFormat(resourceGroup),
+// 		output.WithLinkFormat(resourcesGroupURL),
+// 	)
+// }

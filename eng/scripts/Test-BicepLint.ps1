@@ -1,3 +1,4 @@
+[cmdletbinding()]
 param(
     $Path = "$PSScriptRoot/../..",
     $GhActionsOutput = $env:GITHUB_ACTIONS
@@ -26,13 +27,14 @@ function parseErrorLine($line) {
     }
 }
 
-$bicepFiles = Get-ChildItem "$Path/*.bicep" -Recurse
+$bicepFiles = Get-ChildItem "$Path/*.bicep" -Recurse -Force
 
 # Running bicep in parallel reduce run time from ~52 seconds to ~11 seconds on a
 # machine with 4 cores with hyper threading. No significant improvements seen
 # when increasing `-ThrottleLimit`.
 $outputs = $bicepFiles |
     ForEach-Object -Parallel {
+        Write-Verbose "Linting $_..." -Verbose:$Verbose
         $err = $( $result = bicep build $_ ) 2>&1
         return [PSCustomObject]@{
             File = $_;

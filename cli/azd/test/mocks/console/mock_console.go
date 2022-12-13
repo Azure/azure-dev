@@ -8,6 +8,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
+	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 )
 
 // A predicate function definition for registering expressions
@@ -74,8 +75,8 @@ func (c *MockConsole) Message(ctx context.Context, message string) {
 	c.log = append(c.log, message)
 }
 
-func (c *MockConsole) MessageUx(ctx context.Context, message string, format input.MessageUxType) {
-	c.Message(ctx, message)
+func (c *MockConsole) MessageUxItem(ctx context.Context, item ux.UxItem) {
+	c.Message(ctx, item.ToString(""))
 }
 
 func (c *MockConsole) ShowSpinner(ctx context.Context, title string, format input.SpinnerUxType) {

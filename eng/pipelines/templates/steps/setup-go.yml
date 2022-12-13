@@ -1,5 +1,6 @@
 parameters:
   GoVersion: 1.19
+  Condition: succeeded()
 
 steps:
   - task: GoTool@0
@@ -7,4 +8,5 @@ steps:
       version: ${{ parameters.GoVersion }}
 
   - pwsh: go install gotest.tools/gotestsum@latest
+    condition: ${{ parameters.Condition }}
     displayName: Install gotest

@@ -4,7 +4,7 @@ package actions
 import (
 	"context"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 )
 
 // ActionFunc is an Action implementation for regular functions.
@@ -32,18 +32,32 @@ type Action interface {
 	Run(ctx context.Context) (*ActionResult, error)
 }
 
-func ShowActionResults(ctx context.Context, console input.Console, actionResult *ActionResult, err error) {
+func ToActionResult(actionResult *ActionResult, err error) ux.UxItem {
 	if err != nil {
-		console.MessageUx(ctx, err.Error(), input.ResultError)
-		return
+		return &ux.ActionResult{
+			SuccessMessage: "",
+			FollowUp:       "",
+			Err:            err,
+		}
 	}
 
 	if actionResult == nil {
-		return
+		return &ux.ActionResult{
+			SuccessMessage: "",
+			FollowUp:       "",
+			Err:            nil,
+		}
 	}
 	if actionResult.Message == nil {
-		return
+		return &ux.ActionResult{
+			SuccessMessage: "",
+			FollowUp:       "",
+			Err:            nil,
+		}
 	}
-	console.MessageUx(ctx, actionResult.Message.Header, input.ResultSuccess)
-	console.Message(ctx, actionResult.Message.FollowUp)
+	return &ux.ActionResult{
+		SuccessMessage: actionResult.Message.Header,
+		FollowUp:       actionResult.Message.FollowUp,
+		Err:            nil,
+	}
 }

@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log"
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azureutil"
@@ -122,39 +123,18 @@ func (m *Manager) Destroy(ctx context.Context, deployment *Deployment, options D
 
 // Plans the infrastructure provisioning and orchestrates interactive terminal operations
 func (m *Manager) plan(ctx context.Context) (*DeploymentPlan, error) {
-	var deploymentPlan *DeploymentPlan
 
-	err := m.runAction(
-		ctx,
-		"Planning infrastructure provisioning",
-		m.interactive,
-		func(ctx context.Context, spinner *spin.Spinner) error {
-			planningTask := m.provider.Plan(ctx)
+	planningTask := m.provider.Plan(ctx)
+	go func() {
+		for progress := range planningTask.Progress() {
+			log.Println(progress.Message)
+		}
+	}()
 
-			go func() {
-				for progress := range planningTask.Progress() {
-					m.updateSpinnerTitle(spinner, progress.Message)
-				}
-			}()
-
-			go m.monitorInteraction(spinner, planningTask.Interactive())
-
-			result, err := planningTask.Await()
-			if err != nil {
-				return err
-			}
-
-			deploymentPlan = result
-
-			return nil
-		},
-	)
-
+	deploymentPlan, err := planningTask.Await()
 	if err != nil {
 		return nil, fmt.Errorf("planning infrastructure provisioning: %w", err)
 	}
-
-	m.console.Message(ctx, output.WithSuccessFormat("\nInfrastructure provisioning plan completed successfully"))
 
 	return deploymentPlan, nil
 }
@@ -166,39 +146,22 @@ func (m *Manager) deploy(
 	plan *DeploymentPlan,
 	scope infra.Scope,
 ) (*DeployResult, error) {
-	var deployResult *DeployResult
 
-	err := m.runAction(
-		ctx,
-		"Provisioning Azure resources",
-		m.interactive,
-		func(ctx context.Context, spinner *spin.Spinner) error {
-			deployTask := m.provider.Deploy(ctx, plan, scope)
+	deployTask := m.provider.Deploy(ctx, plan, scope)
 
-			go func() {
-				for progress := range deployTask.Progress() {
-					m.updateSpinnerTitle(spinner, progress.Message)
-				}
-			}()
+	go func() {
+		for progress := range deployTask.Progress() {
+			log.Println(progress.Message)
+		}
+	}()
 
-			go m.monitorInteraction(spinner, deployTask.Interactive())
-
-			result, err := deployTask.Await()
-			if err != nil {
-				return err
-			}
-
-			deployResult = result
-
-			return nil
-		},
-	)
-
+	deployResult, err := deployTask.Await()
 	if err != nil {
 		return nil, fmt.Errorf("error deploying infrastructure: %w", err)
 	}
 
-	m.console.Message(ctx, output.WithSuccessFormat("\nAzure resource provisioning completed successfully"))
+	// make sure any spinner is stopped
+	m.console.StopSpinner(ctx, "", input.StepDone)
 
 	return deployResult, nil
 }

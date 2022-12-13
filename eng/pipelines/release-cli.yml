@@ -3,7 +3,7 @@ resources:
     - repository: azure-sdk-build-tools
       type: git
       name: internal/azure-sdk-build-tools
-      ref: refs/tags/azure-sdk-build-tools_20221201.2
+      ref: refs/tags/azure-sdk-build-tools_20221201.3
 
 # Continuous deployment trigger
 trigger:
@@ -37,6 +37,7 @@ stages:
               OSVmImage: MMS2019
               BuildTarget: azd-windows-amd64.exe
               BuildOutputName: azd.exe
+              BuildTestMsi: true
               AZURE_DEV_CI_OS: win
             Linux:
               Pool: azsdk-pool-mms-ubuntu-2004-general
@@ -62,17 +63,10 @@ stages:
         steps:
           - checkout: self
           - template: /eng/pipelines/templates/steps/setup-go.yml
+            parameters:
+              Condition: and(succeeded(), ne(variables['Skip.LiveTest'], 'true'))
 
           - template: /eng/pipelines/templates/steps/set-cli-version-cd.yml
-
-          - template: /eng/pipelines/templates/steps/install-terraform.yml
-
-          - task: DockerInstaller@0
-            displayName: Docker Installer
-            condition: and(succeeded(), contains(variables['OSVmImage'], 'macOS'))
-            inputs:
-              dockerVersion: 17.09.0-ce
-              releaseType: stable
 
           - task: PowerShell@2
             inputs:
@@ -91,6 +85,24 @@ stages:
                 -SourceVersion $(Build.SourceVersion)
               workingDirectory: cli/azd
             displayName: Build Go Binary
+
+          - template: /eng/pipelines/templates/steps/build-msi.yml
+            parameters:
+              Title: Build Test MSI
+              Condition: and(succeeded(), eq(variables['BuildTestMsi'], 'true'))
+
+          - template: /eng/pipelines/templates/steps/install-bicep.yml
+            parameters:
+              Condition: and(succeeded(), ne(variables['Skip.LiveTest'], 'true'))
+
+          - template: /eng/pipelines/templates/steps/install-terraform.yml
+
+          - task: DockerInstaller@0
+            displayName: Docker Installer
+            condition: and(succeeded(), contains(variables['OSVmImage'], 'macOS'))
+            inputs:
+              dockerVersion: 17.09.0-ce
+              releaseType: stable
 
           # Live testing uses dotnet 6.0.x in the WebApp project deployment
           - task: UseDotNet@2
@@ -189,6 +201,11 @@ stages:
             artifact: $(BuildTarget)
             condition: always()
             displayName: Upload azd binary to artifact store
+
+          - publish: cli/installer/windows/bin/Release
+            artifact: test-msi
+            condition: and(succeeded(), eq(variables['BuildTestMsi'], 'true'))
+            displayName: Upload test MSI
 
       - job: GenerateReleaseArtifacts
         pool:
@@ -289,25 +306,13 @@ stages:
   - stage: Sign
     dependsOn: BuildAndTest
     jobs:
-    - job: Sign
+
+    - job: SignMac
       pool:
         name: azsdk-pool-mms-win-2019-general
         vmImage: MMS2019
 
       steps:
-        - task: DownloadPipelineArtifact@2
-          inputs:
-            artifact: azd-windows-amd64.exe
-            path: win
-
-        - task: DownloadPipelineArtifact@2
-          inputs:
-            artifact: install-pwsh
-            path: installer
-
-        - pwsh: Copy-Item installer/*.ps1 win
-          displayName: Copy install scripts to win/
-
         - task: DownloadPipelineArtifact@2
           inputs:
             artifact: azd-darwin-amd64
@@ -321,10 +326,8 @@ stages:
           displayName: Package mac binary for signing
 
         - ${{ if in(variables['Build.Reason'], 'IndividualCI', 'BatchedCI', 'Manual') }}:
-          - template: pipelines/steps/azd-cli-signing.yml@azure-sdk-build-tools
+          - template: pipelines/steps/azd-cli-mac-signing.yml@azure-sdk-build-tools
             parameters:
-              WinPath:  win
-              WinPattern: '**'
               MacPath: mac
 
         - ${{ else }}:
@@ -337,15 +340,10 @@ stages:
           displayName: Extract azd-darwin-amd64 from zip and remove zip
 
         - pwsh: |
-            New-Item -ItemType Directory -Path signed
-            Copy-Item win/ signed/ -Recurse
-            Copy-Item mac/ signed/ -Recurse
+            New-Item -ItemType Directory -Path signed-mac
+            Copy-Item mac/* signed-mac/ -Recurse
           displayName: Copy signing outputs
           condition: always()
-
-        - publish: signed/
-          artifact: signed
-          condition: succeeded()
 
         # TODO: Replace with https://github.com/Azure/azure-sdk-tools/blob/main/eng/common/pipelines/templates/steps/publish-artifact.yml
         # when the common engsys is imported.
@@ -354,19 +352,128 @@ stages:
           condition: succeeded()
           displayName: Publish Signed Artifacts
           inputs:
-            artifactName: signed
-            path: signed/
+            artifactName: signed-mac
+            path: signed-mac/
 
         - task: PublishPipelineArtifact@1
           condition: failed()
           displayName: Publish failed Signed Artifacts
           inputs:
-            artifactName: signed-FailedAttempt$(System.JobAttempt)
-            path: signed/
+            artifactName: signed-mac-FailedAttempt$(System.JobAttempt)
+            path: signed-mac/
+
+    - job: SignWindows
+      pool:
+        name: azsdk-pool-mms-win-2019-general
+        vmImage: MMS2019
+
+      steps:
+        # Checkout required to build MSI
+        - checkout: self
+
+        - task: DownloadPipelineArtifact@2
+          inputs:
+            artifact: azd-windows-amd64.exe
+            path: win
+
+        - task: DownloadPipelineArtifact@2
+          inputs:
+            artifact: install-pwsh
+            path: installer
+
+        - pwsh: Copy-Item installer/*.ps1 win
+          displayName: Copy install scripts to win/
+
+        - ${{ if in(variables['Build.Reason'], 'IndividualCI', 'BatchedCI', 'Manual') }}:
+          - template: pipelines/steps/azd-cli-win-signing.yml@azure-sdk-build-tools
+            parameters:
+              WinPath:  win
+              WinPattern: '**'
+
+        - ${{ else }}:
+          - pwsh: Write-Host "Skipping signing. Build reason - $(Build.Reason)"
+            displayName: Signing process skipped for non-release build
+
+        - pwsh: |
+            New-Item -ItemType Directory -Path signed-win
+            Copy-Item win/* signed-win/ -Recurse
+            Copy-Item win/azd-windows-amd64.exe cli/azd/azd.exe
+          displayName: Copy signing outputs for publishing and MSI build
+          condition: always()
+
+        - task: PowerShell@2
+          inputs:
+            pwsh: true
+            targetType: filePath
+            filePath: eng/scripts/Set-CliVersionVariable.ps1
+          displayName: Set CLI_VERSION for MSI build
+
+        - template: /eng/pipelines/templates/steps/build-msi.yml
+          parameters:
+            Title: Build Release MSI
+
+        - ${{ if in(variables['Build.Reason'], 'IndividualCI', 'BatchedCI', 'Manual') }}:
+          - template: pipelines/steps/azd-cli-win-signing.yml@azure-sdk-build-tools
+            parameters:
+              WinPath:  cli/installer/windows/bin/Release
+              WinPattern: '*.msi'
+
+        - ${{ else }}:
+          - pwsh: Write-Host "Skipping signing. Build reason - $(Build.Reason)"
+            displayName: Signing process skipped for non-release build
+
+        - pwsh: Copy-Item cli/installer/windows/bin/Release/* signed-win/
+          displayName: Copy MSI for publishing
+
+        # TODO: Replace with https://github.com/Azure/azure-sdk-tools/blob/main/eng/common/pipelines/templates/steps/publish-artifact.yml
+        # when the common engsys is imported.
+        # https://github.com/Azure/azure-dev/issues/956
+        - task: PublishPipelineArtifact@1
+          condition: succeeded()
+          displayName: Publish Signed Artifacts
+          inputs:
+            artifactName: signed-win
+            path: signed-win/
+
+        - task: PublishPipelineArtifact@1
+          condition: failed()
+          displayName: Publish failed Signed Artifacts
+          inputs:
+            artifactName: signed-win-FailedAttempt$(System.JobAttempt)
+            path: signed-win/
 
   - stage: Verify_Installers
     dependsOn: BuildAndTest
     jobs:
+      - job: Verify_MSI
+        pool: azsdk-pool-mms-win-2019-general
+        strategy:
+          matrix:
+            PerUser: 
+              PerMachine: $false
+            AllUsers:
+              PerMachine: $true
+        steps:
+          - checkout: self
+          
+          - task: DownloadPipelineArtifact@2
+            inputs:
+              artifact: test-msi
+              path: msi
+          
+          - task: PowerShell@2
+            inputs:
+              pwsh: true
+              targetType: filePath
+              filePath: cli/installer/windows/test-win-msi.ps1
+              arguments: >-
+                -PerMachine:$(PerMachine) 
+                -MsiPath msi/azd-windows-amd64.msi
+              # Do not exit on first Write-Error, write all messages and let the 
+              # script handle exiting with an error status.
+              errorActionPreference: continue
+            displayName: Test MSI
+
       - job: Verify_Mac_InstallOver
         pool:
           name: Azure Pipelines
@@ -727,6 +834,7 @@ stages:
               PublishUploadLocations: pr/$(PRNumber)
               UploadInstaller: true
               DockerImageTags: pr-$(PRNumber)
+              UploadMsi: true
 
           - pwsh: |
               $urlBase = "https://$(azdev-storage-account-name).blob.core.windows.net/azd/standalone/pr/$(PRNumber)"
@@ -739,6 +847,7 @@ stages:
               $linuxReleaseUrl = "$urlBase/azd-linux-amd64.tar.gz"
               $macosReleaseUrl = "$urlBase/azd-darwin-amd64.zip"
               $windowsReleaseUrl = "$urlBase/azd-windows-amd64.zip"
+              $msiReleaseUrl = "$urlBase/azd-windows-amd64.msi"
 
               $content = @"
               <!-- #comment-cli-pr -->
@@ -764,9 +873,17 @@ stages:
 
 
               #### Windows
+              
+              PowerShell install
+
               ``````
               powershell -c "Set-ExecutionPolicy Bypass Process; irm '$urlBase/uninstall-azd.ps1' > uninstall-azd.ps1; ./uninstall-azd.ps1;"
               powershell -c "Set-ExecutionPolicy Bypass Process; irm '$urlBase/install-azd.ps1' > install-azd.ps1; ./install-azd.ps1 -BaseUrl '$urlBase' -Version '' -Verbose;"
+              ``````
+
+              MSI install
+              ``````
+              powershell -c "irm '$msiReleaseUrl' -OutFile azd-windows-amd64.msi; msiexec /i azd-windows-amd64.msi /qn"
               ``````
 
               ### Standalone Binary
@@ -774,6 +891,10 @@ stages:
               * Linux - $linuxReleaseUrl
               * MacOS - $macosReleaseUrl
               * Windows - $windowsReleaseUrl
+
+              ### MSI 
+
+              * $msiReleaseUrl
 
               ### Container
               ``````

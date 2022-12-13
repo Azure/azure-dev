@@ -132,6 +132,7 @@ func (p *BicepProvider) Plan(
 ) *async.InteractiveTaskWithProgress[*DeploymentPlan, *DeploymentPlanningProgress] {
 	return async.RunInteractiveTaskWithProgress(
 		func(asyncContext *async.InteractiveTaskContextWithProgress[*DeploymentPlan, *DeploymentPlanningProgress]) {
+			p.console.ShowSpinner(ctx, "Creating a deployment plan", input.Step)
 			asyncContext.SetProgress(
 				&DeploymentPlanningProgress{Message: "Generating Bicep parameters file", Timestamp: time.Now()},
 			)
@@ -169,7 +170,8 @@ func (p *BicepProvider) Plan(
 					Template: armTemplate,
 				},
 			}
-
+			// remove the spinner with no message as no message is expected
+			p.console.StopSpinner(ctx, "", input.StepDone)
 			asyncContext.SetResult(&result)
 		})
 }
@@ -197,6 +199,7 @@ func (p *BicepProvider) Deploy(
 				initialDelay := 3 * time.Second
 				regularDelay := 10 * time.Second
 				timer := time.NewTimer(initialDelay)
+				queryStartTime := time.Now()
 
 				for {
 					select {
@@ -204,7 +207,7 @@ func (p *BicepProvider) Deploy(
 						timer.Stop()
 						return
 					case <-timer.C:
-						progressReport, err := progressDisplay.ReportProgress(ctx)
+						progressReport, err := progressDisplay.ReportProgress(ctx, &queryStartTime)
 						if err != nil {
 							// We don't want to fail the whole deployment if a progress reporting error occurs
 							log.Printf("error while reporting progress: %s", err.Error())
@@ -219,6 +222,7 @@ func (p *BicepProvider) Deploy(
 			}()
 
 			// Start the deployment
+			p.console.ShowSpinner(ctx, "Creating/Updating resources", input.Step)
 			bicepDeploymentData := pd.Details.(BicepDeploymentDetails)
 			deployResult, err := p.deployModule(
 				ctx, scope, bicepDeploymentData.Template, pd.Deployment.Parameters)

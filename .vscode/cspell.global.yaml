@@ -15,6 +15,9 @@ words:
     - opentelemetry
     - bson
     - azdo
+    - azdev
+    - myapp
+    - myimage
 ignoreWords:
     - AADSTS
     - afwp

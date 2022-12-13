@@ -37,7 +37,7 @@ func initConsole(cmd *cobra.Command, o *internal.GlobalCommandOptions) (input.Co
 	return console, nil
 }
 
-func initDeployAction(console input.Console, ctx context.Context, chain []middleware.Middleware, o *internal.GlobalCommandOptions, flags deployFlags, args []string) (actions.MiddlewareEnabledAction, error) {
+func initDeployAction(console input.Console, ctx context.Context, buildOptions *actions.BuildOptions, o *internal.GlobalCommandOptions, flags deployFlags, args []string) (actions.MiddlewareEnabledAction, error) {
 	userConfigManager := config.NewUserConfigManager()
 	manager, err := auth.NewManager(userConfigManager)
 	if err != nil {
@@ -59,11 +59,13 @@ func initDeployAction(console input.Console, ctx context.Context, chain []middle
 	if err != nil {
 		return nil, err
 	}
-	middlewareRunner := middleware.NewMiddlewareRunner(chain, cmdDeployAction)
+	debugMiddleware := middleware.NewDebugMiddleware(console)
+	telemetryMiddleware := middleware.NewTelemetryMiddleware(buildOptions)
+	middlewareRunner := middleware.NewMiddlewareRunner(cmdDeployAction, debugMiddleware, telemetryMiddleware)
 	return middlewareRunner, nil
 }
 
-func initInitAction(console input.Console, ctx context.Context, chain []middleware.Middleware, o *internal.GlobalCommandOptions, flags initFlags, args []string) (actions.MiddlewareEnabledAction, error) {
+func initInitAction(console input.Console, ctx context.Context, buildOptions *actions.BuildOptions, o *internal.GlobalCommandOptions, flags initFlags, args []string) (actions.MiddlewareEnabledAction, error) {
 	userConfigManager := config.NewUserConfigManager()
 	manager, err := auth.NewManager(userConfigManager)
 	if err != nil {
@@ -89,11 +91,13 @@ func initInitAction(console input.Console, ctx context.Context, chain []middlewa
 	if err != nil {
 		return nil, err
 	}
-	middlewareRunner := middleware.NewMiddlewareRunner(chain, cmdInitAction)
+	debugMiddleware := middleware.NewDebugMiddleware(console)
+	telemetryMiddleware := middleware.NewTelemetryMiddleware(buildOptions)
+	middlewareRunner := middleware.NewMiddlewareRunner(cmdInitAction, debugMiddleware, telemetryMiddleware)
 	return middlewareRunner, nil
 }
 
-func initLoginAction(console input.Console, ctx context.Context, chain []middleware.Middleware, o *internal.GlobalCommandOptions, flags loginFlags, args []string) (actions.MiddlewareEnabledAction, error) {
+func initLoginAction(console input.Console, ctx context.Context, buildOptions *actions.BuildOptions, o *internal.GlobalCommandOptions, flags loginFlags, args []string) (actions.MiddlewareEnabledAction, error) {
 	formatter := newFormatterFromConsole(console)
 	writer := newOutputWriter(console)
 	userConfigManager := config.NewUserConfigManager()
@@ -102,11 +106,13 @@ func initLoginAction(console input.Console, ctx context.Context, chain []middlew
 		return nil, err
 	}
 	cmdLoginAction := newLoginAction(formatter, writer, manager, flags, console)
-	middlewareRunner := middleware.NewMiddlewareRunner(chain, cmdLoginAction)
+	debugMiddleware := middleware.NewDebugMiddleware(console)
+	telemetryMiddleware := middleware.NewTelemetryMiddleware(buildOptions)
+	middlewareRunner := middleware.NewMiddlewareRunner(cmdLoginAction, debugMiddleware, telemetryMiddleware)
 	return middlewareRunner, nil
 }
 
-func initLogoutAction(console input.Console, ctx context.Context, chain []middleware.Middleware, o *internal.GlobalCommandOptions, flags struct{}, args []string) (actions.MiddlewareEnabledAction, error) {
+func initLogoutAction(console input.Console, ctx context.Context, buildOptions *actions.BuildOptions, o *internal.GlobalCommandOptions, flags struct{}, args []string) (actions.MiddlewareEnabledAction, error) {
 	userConfigManager := config.NewUserConfigManager()
 	manager, err := auth.NewManager(userConfigManager)
 	if err != nil {
@@ -115,11 +121,13 @@ func initLogoutAction(console input.Console, ctx context.Context, chain []middle
 	formatter := newFormatterFromConsole(console)
 	writer := newOutputWriter(console)
 	cmdLogoutAction := newLogoutAction(manager, formatter, writer)
-	middlewareRunner := middleware.NewMiddlewareRunner(chain, cmdLogoutAction)
+	debugMiddleware := middleware.NewDebugMiddleware(console)
+	telemetryMiddleware := middleware.NewTelemetryMiddleware(buildOptions)
+	middlewareRunner := middleware.NewMiddlewareRunner(cmdLogoutAction, debugMiddleware, telemetryMiddleware)
 	return middlewareRunner, nil
 }
 
-func initUpAction(console input.Console, ctx context.Context, chain []middleware.Middleware, o *internal.GlobalCommandOptions, flags upFlags, args []string) (actions.MiddlewareEnabledAction, error) {
+func initUpAction(console input.Console, ctx context.Context, buildOptions *actions.BuildOptions, o *internal.GlobalCommandOptions, flags upFlags, args []string) (actions.MiddlewareEnabledAction, error) {
 	userConfigManager := config.NewUserConfigManager()
 	manager, err := auth.NewManager(userConfigManager)
 	if err != nil {
@@ -156,11 +164,13 @@ func initUpAction(console input.Console, ctx context.Context, chain []middleware
 		return nil, err
 	}
 	cmdUpAction := newUpAction(cmdInitAction, cmdInfraCreateAction, cmdDeployAction, console)
-	middlewareRunner := middleware.NewMiddlewareRunner(chain, cmdUpAction)
+	debugMiddleware := middleware.NewDebugMiddleware(console)
+	telemetryMiddleware := middleware.NewTelemetryMiddleware(buildOptions)
+	middlewareRunner := middleware.NewMiddlewareRunner(cmdUpAction, debugMiddleware, telemetryMiddleware)
 	return middlewareRunner, nil
 }
 
-func initMonitorAction(console input.Console, ctx context.Context, chain []middleware.Middleware, o *internal.GlobalCommandOptions, flags monitorFlags, args []string) (actions.MiddlewareEnabledAction, error) {
+func initMonitorAction(console input.Console, ctx context.Context, buildOptions *actions.BuildOptions, o *internal.GlobalCommandOptions, flags monitorFlags, args []string) (actions.MiddlewareEnabledAction, error) {
 	azdContext, err := newAzdContext()
 	if err != nil {
 		return nil, err
@@ -176,11 +186,13 @@ func initMonitorAction(console input.Console, ctx context.Context, chain []middl
 	}
 	azCli := newAzCliFromOptions(o, tokenCredential)
 	cmdMonitorAction := newMonitorAction(azdContext, azCli, console, flags)
-	middlewareRunner := middleware.NewMiddlewareRunner(chain, cmdMonitorAction)
+	debugMiddleware := middleware.NewDebugMiddleware(console)
+	telemetryMiddleware := middleware.NewTelemetryMiddleware(buildOptions)
+	middlewareRunner := middleware.NewMiddlewareRunner(cmdMonitorAction, debugMiddleware, telemetryMiddleware)
 	return middlewareRunner, nil
 }
 
-func initRestoreAction(console input.Console, ctx context.Context, chain []middleware.Middleware, o *internal.GlobalCommandOptions, flags restoreFlags, args []string) (actions.MiddlewareEnabledAction, error) {
+func initRestoreAction(console input.Console, ctx context.Context, buildOptions *actions.BuildOptions, o *internal.GlobalCommandOptions, flags restoreFlags, args []string) (actions.MiddlewareEnabledAction, error) {
 	userConfigManager := config.NewUserConfigManager()
 	manager, err := auth.NewManager(userConfigManager)
 	if err != nil {
@@ -197,11 +209,13 @@ func initRestoreAction(console input.Console, ctx context.Context, chain []middl
 	}
 	commandRunner := newCommandRunnerFromConsole(console)
 	cmdRestoreAction := newRestoreAction(flags, azCli, console, azdContext, commandRunner)
-	middlewareRunner := middleware.NewMiddlewareRunner(chain, cmdRestoreAction)
+	debugMiddleware := middleware.NewDebugMiddleware(console)
+	telemetryMiddleware := middleware.NewTelemetryMiddleware(buildOptions)
+	middlewareRunner := middleware.NewMiddlewareRunner(cmdRestoreAction, debugMiddleware, telemetryMiddleware)
 	return middlewareRunner, nil
 }
 
-func initShowAction(console input.Console, ctx context.Context, chain []middleware.Middleware, o *internal.GlobalCommandOptions, flags showFlags, args []string) (actions.MiddlewareEnabledAction, error) {
+func initShowAction(console input.Console, ctx context.Context, buildOptions *actions.BuildOptions, o *internal.GlobalCommandOptions, flags showFlags, args []string) (actions.MiddlewareEnabledAction, error) {
 	formatter := newFormatterFromConsole(console)
 	writer := newOutputWriter(console)
 	userConfigManager := config.NewUserConfigManager()
@@ -219,19 +233,23 @@ func initShowAction(console input.Console, ctx context.Context, chain []middlewa
 		return nil, err
 	}
 	cmdShowAction := newShowAction(console, formatter, writer, azCli, azdContext, flags)
-	middlewareRunner := middleware.NewMiddlewareRunner(chain, cmdShowAction)
+	debugMiddleware := middleware.NewDebugMiddleware(console)
+	telemetryMiddleware := middleware.NewTelemetryMiddleware(buildOptions)
+	middlewareRunner := middleware.NewMiddlewareRunner(cmdShowAction, debugMiddleware, telemetryMiddleware)
 	return middlewareRunner, nil
 }
 
-func initVersionAction(console input.Console, ctx context.Context, chain []middleware.Middleware, o *internal.GlobalCommandOptions, flags versionFlags, args []string) (actions.MiddlewareEnabledAction, error) {
+func initVersionAction(console input.Console, ctx context.Context, buildOptions *actions.BuildOptions, o *internal.GlobalCommandOptions, flags versionFlags, args []string) (actions.MiddlewareEnabledAction, error) {
 	formatter := newFormatterFromConsole(console)
 	writer := newOutputWriter(console)
 	cmdVersionAction := newVersionAction(flags, formatter, writer, console)
-	middlewareRunner := middleware.NewMiddlewareRunner(chain, cmdVersionAction)
+	debugMiddleware := middleware.NewDebugMiddleware(console)
+	telemetryMiddleware := middleware.NewTelemetryMiddleware(buildOptions)
+	middlewareRunner := middleware.NewMiddlewareRunner(cmdVersionAction, debugMiddleware, telemetryMiddleware)
 	return middlewareRunner, nil
 }
 
-func initAuthTokenAction(console input.Console, ctx context.Context, chain []middleware.Middleware, o *internal.GlobalCommandOptions, flags authTokenFlags, args []string) (actions.MiddlewareEnabledAction, error) {
+func initAuthTokenAction(console input.Console, ctx context.Context, buildOptions *actions.BuildOptions, o *internal.GlobalCommandOptions, flags authTokenFlags, args []string) (actions.MiddlewareEnabledAction, error) {
 	userConfigManager := config.NewUserConfigManager()
 	manager, err := auth.NewManager(userConfigManager)
 	if err != nil {
@@ -244,11 +262,13 @@ func initAuthTokenAction(console input.Console, ctx context.Context, chain []mid
 	formatter := newFormatterFromConsole(console)
 	writer := newOutputWriter(console)
 	cmdAuthTokenAction := newAuthTokenAction(tokenCredential, formatter, writer, flags)
-	middlewareRunner := middleware.NewMiddlewareRunner(chain, cmdAuthTokenAction)
+	debugMiddleware := middleware.NewDebugMiddleware(console)
+	telemetryMiddleware := middleware.NewTelemetryMiddleware(buildOptions)
+	middlewareRunner := middleware.NewMiddlewareRunner(cmdAuthTokenAction, debugMiddleware, telemetryMiddleware)
 	return middlewareRunner, nil
 }
 
-func initInfraCreateAction(console input.Console, ctx context.Context, chain []middleware.Middleware, o *internal.GlobalCommandOptions, flags infraCreateFlags, args []string) (actions.MiddlewareEnabledAction, error) {
+func initInfraCreateAction(console input.Console, ctx context.Context, buildOptions *actions.BuildOptions, o *internal.GlobalCommandOptions, flags infraCreateFlags, args []string) (actions.MiddlewareEnabledAction, error) {
 	userConfigManager := config.NewUserConfigManager()
 	manager, err := auth.NewManager(userConfigManager)
 	if err != nil {
@@ -267,11 +287,13 @@ func initInfraCreateAction(console input.Console, ctx context.Context, chain []m
 	writer := newOutputWriter(console)
 	commandRunner := newCommandRunnerFromConsole(console)
 	cmdInfraCreateAction := newInfraCreateAction(flags, azCli, azdContext, console, formatter, writer, commandRunner)
-	middlewareRunner := middleware.NewMiddlewareRunner(chain, cmdInfraCreateAction)
+	debugMiddleware := middleware.NewDebugMiddleware(console)
+	telemetryMiddleware := middleware.NewTelemetryMiddleware(buildOptions)
+	middlewareRunner := middleware.NewMiddlewareRunner(cmdInfraCreateAction, debugMiddleware, telemetryMiddleware)
 	return middlewareRunner, nil
 }
 
-func initInfraDeleteAction(console input.Console, ctx context.Context, chain []middleware.Middleware, o *internal.GlobalCommandOptions, flags infraDeleteFlags, args []string) (actions.MiddlewareEnabledAction, error) {
+func initInfraDeleteAction(console input.Console, ctx context.Context, buildOptions *actions.BuildOptions, o *internal.GlobalCommandOptions, flags infraDeleteFlags, args []string) (actions.MiddlewareEnabledAction, error) {
 	userConfigManager := config.NewUserConfigManager()
 	manager, err := auth.NewManager(userConfigManager)
 	if err != nil {
@@ -288,11 +310,13 @@ func initInfraDeleteAction(console input.Console, ctx context.Context, chain []m
 	}
 	commandRunner := newCommandRunnerFromConsole(console)
 	cmdInfraDeleteAction := newInfraDeleteAction(flags, azCli, azdContext, console, commandRunner)
-	middlewareRunner := middleware.NewMiddlewareRunner(chain, cmdInfraDeleteAction)
+	debugMiddleware := middleware.NewDebugMiddleware(console)
+	telemetryMiddleware := middleware.NewTelemetryMiddleware(buildOptions)
+	middlewareRunner := middleware.NewMiddlewareRunner(cmdInfraDeleteAction, debugMiddleware, telemetryMiddleware)
 	return middlewareRunner, nil
 }
 
-func initEnvSetAction(console input.Console, ctx context.Context, chain []middleware.Middleware, o *internal.GlobalCommandOptions, flags envSetFlags, args []string) (actions.MiddlewareEnabledAction, error) {
+func initEnvSetAction(console input.Console, ctx context.Context, buildOptions *actions.BuildOptions, o *internal.GlobalCommandOptions, flags envSetFlags, args []string) (actions.MiddlewareEnabledAction, error) {
 	azdContext, err := newAzdContext()
 	if err != nil {
 		return nil, err
@@ -308,21 +332,25 @@ func initEnvSetAction(console input.Console, ctx context.Context, chain []middle
 	}
 	azCli := newAzCliFromOptions(o, tokenCredential)
 	cmdEnvSetAction := newEnvSetAction(azdContext, azCli, console, flags, args)
-	middlewareRunner := middleware.NewMiddlewareRunner(chain, cmdEnvSetAction)
+	debugMiddleware := middleware.NewDebugMiddleware(console)
+	telemetryMiddleware := middleware.NewTelemetryMiddleware(buildOptions)
+	middlewareRunner := middleware.NewMiddlewareRunner(cmdEnvSetAction, debugMiddleware, telemetryMiddleware)
 	return middlewareRunner, nil
 }
 
-func initEnvSelectAction(console input.Console, ctx context.Context, chain []middleware.Middleware, o *internal.GlobalCommandOptions, flags struct{}, args []string) (actions.MiddlewareEnabledAction, error) {
+func initEnvSelectAction(console input.Console, ctx context.Context, buildOptions *actions.BuildOptions, o *internal.GlobalCommandOptions, flags struct{}, args []string) (actions.MiddlewareEnabledAction, error) {
 	azdContext, err := newAzdContext()
 	if err != nil {
 		return nil, err
 	}
 	cmdEnvSelectAction := newEnvSelectAction(azdContext, args)
-	middlewareRunner := middleware.NewMiddlewareRunner(chain, cmdEnvSelectAction)
+	debugMiddleware := middleware.NewDebugMiddleware(console)
+	telemetryMiddleware := middleware.NewTelemetryMiddleware(buildOptions)
+	middlewareRunner := middleware.NewMiddlewareRunner(cmdEnvSelectAction, debugMiddleware, telemetryMiddleware)
 	return middlewareRunner, nil
 }
 
-func initEnvListAction(console input.Console, ctx context.Context, chain []middleware.Middleware, o *internal.GlobalCommandOptions, flags struct{}, args []string) (actions.MiddlewareEnabledAction, error) {
+func initEnvListAction(console input.Console, ctx context.Context, buildOptions *actions.BuildOptions, o *internal.GlobalCommandOptions, flags struct{}, args []string) (actions.MiddlewareEnabledAction, error) {
 	azdContext, err := newAzdContext()
 	if err != nil {
 		return nil, err
@@ -330,11 +358,13 @@ func initEnvListAction(console input.Console, ctx context.Context, chain []middl
 	formatter := newFormatterFromConsole(console)
 	writer := newOutputWriter(console)
 	cmdEnvListAction := newEnvListAction(azdContext, formatter, writer)
-	middlewareRunner := middleware.NewMiddlewareRunner(chain, cmdEnvListAction)
+	debugMiddleware := middleware.NewDebugMiddleware(console)
+	telemetryMiddleware := middleware.NewTelemetryMiddleware(buildOptions)
+	middlewareRunner := middleware.NewMiddlewareRunner(cmdEnvListAction, debugMiddleware, telemetryMiddleware)
 	return middlewareRunner, nil
 }
 
-func initEnvNewAction(console input.Console, ctx context.Context, chain []middleware.Middleware, o *internal.GlobalCommandOptions, flags envNewFlags, args []string) (actions.MiddlewareEnabledAction, error) {
+func initEnvNewAction(console input.Console, ctx context.Context, buildOptions *actions.BuildOptions, o *internal.GlobalCommandOptions, flags envNewFlags, args []string) (actions.MiddlewareEnabledAction, error) {
 	azdContext, err := newAzdContext()
 	if err != nil {
 		return nil, err
@@ -350,11 +380,13 @@ func initEnvNewAction(console input.Console, ctx context.Context, chain []middle
 	}
 	azCli := newAzCliFromOptions(o, tokenCredential)
 	cmdEnvNewAction := newEnvNewAction(azdContext, azCli, flags, args, console)
-	middlewareRunner := middleware.NewMiddlewareRunner(chain, cmdEnvNewAction)
+	debugMiddleware := middleware.NewDebugMiddleware(console)
+	telemetryMiddleware := middleware.NewTelemetryMiddleware(buildOptions)
+	middlewareRunner := middleware.NewMiddlewareRunner(cmdEnvNewAction, debugMiddleware, telemetryMiddleware)
 	return middlewareRunner, nil
 }
 
-func initEnvRefreshAction(console input.Console, ctx context.Context, chain []middleware.Middleware, o *internal.GlobalCommandOptions, flags envRefreshFlags, args []string) (actions.MiddlewareEnabledAction, error) {
+func initEnvRefreshAction(console input.Console, ctx context.Context, buildOptions *actions.BuildOptions, o *internal.GlobalCommandOptions, flags envRefreshFlags, args []string) (actions.MiddlewareEnabledAction, error) {
 	azdContext, err := newAzdContext()
 	if err != nil {
 		return nil, err
@@ -373,11 +405,13 @@ func initEnvRefreshAction(console input.Console, ctx context.Context, chain []mi
 	formatter := newFormatterFromConsole(console)
 	writer := newOutputWriter(console)
 	cmdEnvRefreshAction := newEnvRefreshAction(azdContext, azCli, commandRunner, flags, console, formatter, writer)
-	middlewareRunner := middleware.NewMiddlewareRunner(chain, cmdEnvRefreshAction)
+	debugMiddleware := middleware.NewDebugMiddleware(console)
+	telemetryMiddleware := middleware.NewTelemetryMiddleware(buildOptions)
+	middlewareRunner := middleware.NewMiddlewareRunner(cmdEnvRefreshAction, debugMiddleware, telemetryMiddleware)
 	return middlewareRunner, nil
 }
 
-func initEnvGetValuesAction(console input.Console, ctx context.Context, chain []middleware.Middleware, o *internal.GlobalCommandOptions, flags envGetValuesFlags, args []string) (actions.MiddlewareEnabledAction, error) {
+func initEnvGetValuesAction(console input.Console, ctx context.Context, buildOptions *actions.BuildOptions, o *internal.GlobalCommandOptions, flags envGetValuesFlags, args []string) (actions.MiddlewareEnabledAction, error) {
 	azdContext, err := newAzdContext()
 	if err != nil {
 		return nil, err
@@ -395,11 +429,13 @@ func initEnvGetValuesAction(console input.Console, ctx context.Context, chain []
 	}
 	azCli := newAzCliFromOptions(o, tokenCredential)
 	cmdEnvGetValuesAction := newEnvGetValuesAction(azdContext, console, formatter, writer, azCli, flags)
-	middlewareRunner := middleware.NewMiddlewareRunner(chain, cmdEnvGetValuesAction)
+	debugMiddleware := middleware.NewDebugMiddleware(console)
+	telemetryMiddleware := middleware.NewTelemetryMiddleware(buildOptions)
+	middlewareRunner := middleware.NewMiddlewareRunner(cmdEnvGetValuesAction, debugMiddleware, telemetryMiddleware)
 	return middlewareRunner, nil
 }
 
-func initPipelineConfigAction(console input.Console, ctx context.Context, chain []middleware.Middleware, o *internal.GlobalCommandOptions, flags pipelineConfigFlags, args []string) (actions.MiddlewareEnabledAction, error) {
+func initPipelineConfigAction(console input.Console, ctx context.Context, buildOptions *actions.BuildOptions, o *internal.GlobalCommandOptions, flags pipelineConfigFlags, args []string) (actions.MiddlewareEnabledAction, error) {
 	userConfigManager := config.NewUserConfigManager()
 	manager, err := auth.NewManager(userConfigManager)
 	if err != nil {
@@ -416,63 +452,79 @@ func initPipelineConfigAction(console input.Console, ctx context.Context, chain 
 	}
 	commandRunner := newCommandRunnerFromConsole(console)
 	cmdPipelineConfigAction := newPipelineConfigAction(azCli, tokenCredential, azdContext, console, flags, commandRunner)
-	middlewareRunner := middleware.NewMiddlewareRunner(chain, cmdPipelineConfigAction)
+	debugMiddleware := middleware.NewDebugMiddleware(console)
+	telemetryMiddleware := middleware.NewTelemetryMiddleware(buildOptions)
+	middlewareRunner := middleware.NewMiddlewareRunner(cmdPipelineConfigAction, debugMiddleware, telemetryMiddleware)
 	return middlewareRunner, nil
 }
 
-func initTemplatesListAction(console input.Console, ctx context.Context, chain []middleware.Middleware, o *internal.GlobalCommandOptions, flags templatesListFlags, args []string) (actions.MiddlewareEnabledAction, error) {
+func initTemplatesListAction(console input.Console, ctx context.Context, buildOptions *actions.BuildOptions, o *internal.GlobalCommandOptions, flags templatesListFlags, args []string) (actions.MiddlewareEnabledAction, error) {
 	formatter := newFormatterFromConsole(console)
 	writer := newOutputWriter(console)
 	templateManager := templates.NewTemplateManager()
 	cmdTemplatesListAction := newTemplatesListAction(flags, formatter, writer, templateManager)
-	middlewareRunner := middleware.NewMiddlewareRunner(chain, cmdTemplatesListAction)
+	debugMiddleware := middleware.NewDebugMiddleware(console)
+	telemetryMiddleware := middleware.NewTelemetryMiddleware(buildOptions)
+	middlewareRunner := middleware.NewMiddlewareRunner(cmdTemplatesListAction, debugMiddleware, telemetryMiddleware)
 	return middlewareRunner, nil
 }
 
-func initTemplatesShowAction(console input.Console, ctx context.Context, chain []middleware.Middleware, o *internal.GlobalCommandOptions, flags struct{}, args []string) (actions.MiddlewareEnabledAction, error) {
+func initTemplatesShowAction(console input.Console, ctx context.Context, buildOptions *actions.BuildOptions, o *internal.GlobalCommandOptions, flags struct{}, args []string) (actions.MiddlewareEnabledAction, error) {
 	formatter := newFormatterFromConsole(console)
 	writer := newOutputWriter(console)
 	templateManager := templates.NewTemplateManager()
 	cmdTemplatesShowAction := newTemplatesShowAction(formatter, writer, templateManager, args)
-	middlewareRunner := middleware.NewMiddlewareRunner(chain, cmdTemplatesShowAction)
+	debugMiddleware := middleware.NewDebugMiddleware(console)
+	telemetryMiddleware := middleware.NewTelemetryMiddleware(buildOptions)
+	middlewareRunner := middleware.NewMiddlewareRunner(cmdTemplatesShowAction, debugMiddleware, telemetryMiddleware)
 	return middlewareRunner, nil
 }
 
-func initConfigListAction(console input.Console, ctx context.Context, chain []middleware.Middleware, o *internal.GlobalCommandOptions, flags struct{}, args []string) (actions.MiddlewareEnabledAction, error) {
+func initConfigListAction(console input.Console, ctx context.Context, buildOptions *actions.BuildOptions, o *internal.GlobalCommandOptions, flags struct{}, args []string) (actions.MiddlewareEnabledAction, error) {
 	userConfigManager := config.NewUserConfigManager()
 	formatter := newFormatterFromConsole(console)
 	writer := newOutputWriter(console)
 	cmdConfigListAction := newConfigListAction(userConfigManager, formatter, writer)
-	middlewareRunner := middleware.NewMiddlewareRunner(chain, cmdConfigListAction)
+	debugMiddleware := middleware.NewDebugMiddleware(console)
+	telemetryMiddleware := middleware.NewTelemetryMiddleware(buildOptions)
+	middlewareRunner := middleware.NewMiddlewareRunner(cmdConfigListAction, debugMiddleware, telemetryMiddleware)
 	return middlewareRunner, nil
 }
 
-func initConfigGetAction(console input.Console, ctx context.Context, chain []middleware.Middleware, o *internal.GlobalCommandOptions, flags struct{}, args []string) (actions.MiddlewareEnabledAction, error) {
+func initConfigGetAction(console input.Console, ctx context.Context, buildOptions *actions.BuildOptions, o *internal.GlobalCommandOptions, flags struct{}, args []string) (actions.MiddlewareEnabledAction, error) {
 	userConfigManager := config.NewUserConfigManager()
 	formatter := newFormatterFromConsole(console)
 	writer := newOutputWriter(console)
 	cmdConfigGetAction := newConfigGetAction(userConfigManager, formatter, writer, args)
-	middlewareRunner := middleware.NewMiddlewareRunner(chain, cmdConfigGetAction)
+	debugMiddleware := middleware.NewDebugMiddleware(console)
+	telemetryMiddleware := middleware.NewTelemetryMiddleware(buildOptions)
+	middlewareRunner := middleware.NewMiddlewareRunner(cmdConfigGetAction, debugMiddleware, telemetryMiddleware)
 	return middlewareRunner, nil
 }
 
-func initConfigSetAction(console input.Console, ctx context.Context, chain []middleware.Middleware, o *internal.GlobalCommandOptions, flags struct{}, args []string) (actions.MiddlewareEnabledAction, error) {
+func initConfigSetAction(console input.Console, ctx context.Context, buildOptions *actions.BuildOptions, o *internal.GlobalCommandOptions, flags struct{}, args []string) (actions.MiddlewareEnabledAction, error) {
 	userConfigManager := config.NewUserConfigManager()
 	cmdConfigSetAction := newConfigSetAction(userConfigManager, args)
-	middlewareRunner := middleware.NewMiddlewareRunner(chain, cmdConfigSetAction)
+	debugMiddleware := middleware.NewDebugMiddleware(console)
+	telemetryMiddleware := middleware.NewTelemetryMiddleware(buildOptions)
+	middlewareRunner := middleware.NewMiddlewareRunner(cmdConfigSetAction, debugMiddleware, telemetryMiddleware)
 	return middlewareRunner, nil
 }
 
-func initConfigUnsetAction(console input.Console, ctx context.Context, chain []middleware.Middleware, o *internal.GlobalCommandOptions, flags struct{}, args []string) (actions.MiddlewareEnabledAction, error) {
+func initConfigUnsetAction(console input.Console, ctx context.Context, buildOptions *actions.BuildOptions, o *internal.GlobalCommandOptions, flags struct{}, args []string) (actions.MiddlewareEnabledAction, error) {
 	userConfigManager := config.NewUserConfigManager()
 	cmdConfigUnsetAction := newConfigUnsetAction(userConfigManager, args)
-	middlewareRunner := middleware.NewMiddlewareRunner(chain, cmdConfigUnsetAction)
+	debugMiddleware := middleware.NewDebugMiddleware(console)
+	telemetryMiddleware := middleware.NewTelemetryMiddleware(buildOptions)
+	middlewareRunner := middleware.NewMiddlewareRunner(cmdConfigUnsetAction, debugMiddleware, telemetryMiddleware)
 	return middlewareRunner, nil
 }
 
-func initConfigResetAction(console input.Console, ctx context.Context, chain []middleware.Middleware, o *internal.GlobalCommandOptions, flags struct{}, args []string) (actions.MiddlewareEnabledAction, error) {
+func initConfigResetAction(console input.Console, ctx context.Context, buildOptions *actions.BuildOptions, o *internal.GlobalCommandOptions, flags struct{}, args []string) (actions.MiddlewareEnabledAction, error) {
 	userConfigManager := config.NewUserConfigManager()
 	cmdConfigResetAction := newConfigResetAction(userConfigManager, args)
-	middlewareRunner := middleware.NewMiddlewareRunner(chain, cmdConfigResetAction)
+	debugMiddleware := middleware.NewDebugMiddleware(console)
+	telemetryMiddleware := middleware.NewTelemetryMiddleware(buildOptions)
+	middlewareRunner := middleware.NewMiddlewareRunner(cmdConfigResetAction, debugMiddleware, telemetryMiddleware)
 	return middlewareRunner, nil
 }

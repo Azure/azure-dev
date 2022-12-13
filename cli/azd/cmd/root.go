@@ -9,7 +9,6 @@ import (
 	"os"
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
-	"github.com/azure/azure-dev/cli/azd/cmd/middleware"
 
 	// Importing for infrastructure provider plugin registrations
 	_ "github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning/bicep"
@@ -120,7 +119,7 @@ type designBuilder[F any] func(opts *internal.GlobalCommandOptions) (*cobra.Comm
 type actionBuilder[F any] func(
 	console input.Console,
 	ctx context.Context,
-	chain []middleware.Middleware,
+	buildOptions *actions.BuildOptions,
 	o *internal.GlobalCommandOptions,
 	flags F,
 	args []string) (actions.MiddlewareEnabledAction, error)
@@ -141,15 +140,7 @@ func BuildCmd[F any](
 			return err
 		}
 
-		middlewareChain := []middleware.Middleware{
-			middleware.NewDebugMiddleware(console),
-		}
-
-		if !buildOptions.DisableTelemetry {
-			middlewareChain = append(middlewareChain, middleware.NewTelemetryMiddleware(cmd.Name()))
-		}
-
-		action, err := buildAction(console, ctx, middlewareChain, opts, *flags, args)
+		action, err := buildAction(console, ctx, buildOptions, opts, *flags, args)
 		if err != nil {
 			return err
 		}

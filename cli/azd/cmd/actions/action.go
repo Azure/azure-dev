@@ -36,6 +36,7 @@ type MiddlewareEnabledAction Action
 
 type BuildOptions struct {
 	DisableTelemetry bool
+	CommandName      string
 }
 
 func ShowActionResults(ctx context.Context, console input.Console, actionResult *ActionResult, err error) {

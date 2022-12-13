@@ -10,19 +10,23 @@ import (
 )
 
 type TelemetryMiddleware struct {
-	commandName string
+	opt *actions.BuildOptions
 }
 
-func NewTelemetryMiddleware(commandName string) *TelemetryMiddleware {
+func NewTelemetryMiddleware(opt *actions.BuildOptions) *TelemetryMiddleware {
 	return &TelemetryMiddleware{
-		commandName,
+		opt,
 	}
 }
 
 func (m *TelemetryMiddleware) Run(ctx context.Context, next NextFn) (*actions.ActionResult, error) {
+	if m.opt.DisableTelemetry {
+		return next(ctx)
+	}
+
 	// Note: CommandPath is constructed using the Use member on each command up to the root.
 	// It does not contain user input, and is safe for telemetry emission.
-	spanCtx, span := telemetry.GetTracer().Start(ctx, events.GetCommandEventName(m.commandName))
+	spanCtx, span := telemetry.GetTracer().Start(ctx, events.GetCommandEventName(m.opt.CommandName))
 	defer span.End()
 
 	result, err := next(spanCtx)

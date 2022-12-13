@@ -16,10 +16,18 @@ type MiddlewareRunner struct {
 	action          actions.Action
 }
 
-func NewMiddlewareRunner(middlewareChain []Middleware, action actions.Action) *MiddlewareRunner {
+func NewMiddlewareRunner(
+	action actions.Action,
+	// Middleware registration
+	debug *DebugMiddleware,
+	telemetry *TelemetryMiddleware,
+) *MiddlewareRunner {
 	return &MiddlewareRunner{
-		middlewareChain: middlewareChain,
-		action:          action,
+		// Middleware chain, in order of execution
+		middlewareChain: []Middleware{
+			debug,
+			telemetry},
+		action: action,
 	}
 }
 

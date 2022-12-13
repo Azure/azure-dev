@@ -8,7 +8,6 @@ package cmd
 import (
 	"context"
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
-	"github.com/azure/azure-dev/cli/azd/cmd/middleware"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/google/wire"
@@ -27,7 +26,7 @@ func initConsole(
 func initDeployAction(
 	console input.Console,
 	ctx context.Context,
-	chain []middleware.Middleware,
+	buildOptions *actions.BuildOptions,
 	o *internal.GlobalCommandOptions,
 	flags deployFlags,
 	args []string,
@@ -38,7 +37,7 @@ func initDeployAction(
 func initInitAction(
 	console input.Console,
 	ctx context.Context,
-	chain []middleware.Middleware,
+	buildOptions *actions.BuildOptions,
 	o *internal.GlobalCommandOptions,
 	flags initFlags,
 	args []string,
@@ -49,7 +48,7 @@ func initInitAction(
 func initLoginAction(
 	console input.Console,
 	ctx context.Context,
-	chain []middleware.Middleware,
+	buildOptions *actions.BuildOptions,
 	o *internal.GlobalCommandOptions,
 	flags loginFlags,
 	args []string,
@@ -60,7 +59,7 @@ func initLoginAction(
 func initLogoutAction(
 	console input.Console,
 	ctx context.Context,
-	chain []middleware.Middleware,
+	buildOptions *actions.BuildOptions,
 	o *internal.GlobalCommandOptions,
 	flags struct{},
 	args []string,
@@ -71,7 +70,7 @@ func initLogoutAction(
 func initUpAction(
 	console input.Console,
 	ctx context.Context,
-	chain []middleware.Middleware,
+	buildOptions *actions.BuildOptions,
 	o *internal.GlobalCommandOptions,
 	flags upFlags,
 	args []string,
@@ -82,7 +81,7 @@ func initUpAction(
 func initMonitorAction(
 	console input.Console,
 	ctx context.Context,
-	chain []middleware.Middleware,
+	buildOptions *actions.BuildOptions,
 	o *internal.GlobalCommandOptions,
 	flags monitorFlags,
 	args []string,
@@ -93,7 +92,7 @@ func initMonitorAction(
 func initRestoreAction(
 	console input.Console,
 	ctx context.Context,
-	chain []middleware.Middleware,
+	buildOptions *actions.BuildOptions,
 	o *internal.GlobalCommandOptions,
 	flags restoreFlags,
 	args []string,
@@ -104,7 +103,7 @@ func initRestoreAction(
 func initShowAction(
 	console input.Console,
 	ctx context.Context,
-	chain []middleware.Middleware,
+	buildOptions *actions.BuildOptions,
 	o *internal.GlobalCommandOptions,
 	flags showFlags,
 	args []string,
@@ -115,7 +114,7 @@ func initShowAction(
 func initVersionAction(
 	console input.Console,
 	ctx context.Context,
-	chain []middleware.Middleware,
+	buildOptions *actions.BuildOptions,
 	o *internal.GlobalCommandOptions,
 	flags versionFlags,
 	args []string,
@@ -130,7 +129,7 @@ func initVersionAction(
 func initAuthTokenAction(
 	console input.Console,
 	ctx context.Context,
-	chain []middleware.Middleware,
+	buildOptions *actions.BuildOptions,
 	o *internal.GlobalCommandOptions,
 	flags authTokenFlags,
 	args []string,
@@ -145,7 +144,7 @@ func initAuthTokenAction(
 func initInfraCreateAction(
 	console input.Console,
 	ctx context.Context,
-	chain []middleware.Middleware,
+	buildOptions *actions.BuildOptions,
 	o *internal.GlobalCommandOptions,
 	flags infraCreateFlags,
 	args []string,
@@ -156,7 +155,7 @@ func initInfraCreateAction(
 func initInfraDeleteAction(
 	console input.Console,
 	ctx context.Context,
-	chain []middleware.Middleware,
+	buildOptions *actions.BuildOptions,
 	o *internal.GlobalCommandOptions,
 	flags infraDeleteFlags,
 	args []string,
@@ -171,7 +170,7 @@ func initInfraDeleteAction(
 func initEnvSetAction(
 	console input.Console,
 	ctx context.Context,
-	chain []middleware.Middleware,
+	buildOptions *actions.BuildOptions,
 	o *internal.GlobalCommandOptions,
 	flags envSetFlags,
 	args []string,
@@ -182,7 +181,7 @@ func initEnvSetAction(
 func initEnvSelectAction(
 	console input.Console,
 	ctx context.Context,
-	chain []middleware.Middleware,
+	buildOptions *actions.BuildOptions,
 	o *internal.GlobalCommandOptions,
 	flags struct{},
 	args []string,
@@ -193,7 +192,7 @@ func initEnvSelectAction(
 func initEnvListAction(
 	console input.Console,
 	ctx context.Context,
-	chain []middleware.Middleware,
+	buildOptions *actions.BuildOptions,
 	o *internal.GlobalCommandOptions,
 	flags struct{},
 	args []string,
@@ -204,7 +203,7 @@ func initEnvListAction(
 func initEnvNewAction(
 	console input.Console,
 	ctx context.Context,
-	chain []middleware.Middleware,
+	buildOptions *actions.BuildOptions,
 	o *internal.GlobalCommandOptions,
 	flags envNewFlags,
 	args []string,
@@ -215,7 +214,7 @@ func initEnvNewAction(
 func initEnvRefreshAction(
 	console input.Console,
 	ctx context.Context,
-	chain []middleware.Middleware,
+	buildOptions *actions.BuildOptions,
 	o *internal.GlobalCommandOptions,
 	flags envRefreshFlags,
 	args []string,
@@ -226,7 +225,7 @@ func initEnvRefreshAction(
 func initEnvGetValuesAction(
 	console input.Console,
 	ctx context.Context,
-	chain []middleware.Middleware,
+	buildOptions *actions.BuildOptions,
 	o *internal.GlobalCommandOptions,
 	flags envGetValuesFlags,
 	args []string,
@@ -241,7 +240,7 @@ func initEnvGetValuesAction(
 func initPipelineConfigAction(
 	console input.Console,
 	ctx context.Context,
-	chain []middleware.Middleware,
+	buildOptions *actions.BuildOptions,
 	o *internal.GlobalCommandOptions,
 	flags pipelineConfigFlags,
 	args []string,
@@ -256,7 +255,7 @@ func initPipelineConfigAction(
 func initTemplatesListAction(
 	console input.Console,
 	ctx context.Context,
-	chain []middleware.Middleware,
+	buildOptions *actions.BuildOptions,
 	o *internal.GlobalCommandOptions,
 	flags templatesListFlags,
 	args []string,
@@ -267,7 +266,7 @@ func initTemplatesListAction(
 func initTemplatesShowAction(
 	console input.Console,
 	ctx context.Context,
-	chain []middleware.Middleware,
+	buildOptions *actions.BuildOptions,
 	o *internal.GlobalCommandOptions,
 	flags struct{},
 	args []string,
@@ -282,7 +281,7 @@ func initTemplatesShowAction(
 func initConfigListAction(
 	console input.Console,
 	ctx context.Context,
-	chain []middleware.Middleware,
+	buildOptions *actions.BuildOptions,
 	o *internal.GlobalCommandOptions,
 	flags struct{},
 	args []string,
@@ -293,7 +292,7 @@ func initConfigListAction(
 func initConfigGetAction(
 	console input.Console,
 	ctx context.Context,
-	chain []middleware.Middleware,
+	buildOptions *actions.BuildOptions,
 	o *internal.GlobalCommandOptions,
 	flags struct{},
 	args []string,
@@ -304,7 +303,7 @@ func initConfigGetAction(
 func initConfigSetAction(
 	console input.Console,
 	ctx context.Context,
-	chain []middleware.Middleware,
+	buildOptions *actions.BuildOptions,
 	o *internal.GlobalCommandOptions,
 	flags struct{},
 	args []string,
@@ -315,7 +314,7 @@ func initConfigSetAction(
 func initConfigUnsetAction(
 	console input.Console,
 	ctx context.Context,
-	chain []middleware.Middleware,
+	buildOptions *actions.BuildOptions,
 	o *internal.GlobalCommandOptions,
 	flags struct{},
 	args []string,
@@ -326,7 +325,7 @@ func initConfigUnsetAction(
 func initConfigResetAction(
 	console input.Console,
 	ctx context.Context,
-	chain []middleware.Middleware,
+	buildOptions *actions.BuildOptions,
 	o *internal.GlobalCommandOptions,
 	flags struct{},
 	args []string,

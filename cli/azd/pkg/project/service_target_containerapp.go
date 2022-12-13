@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"log"
 	"strings"
-	"time"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
@@ -20,6 +19,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/docker"
+	"github.com/benbjohnson/clock"
 )
 
 type containerAppTarget struct {
@@ -30,6 +30,9 @@ type containerAppTarget struct {
 	docker        *docker.Docker
 	console       input.Console
 	commandRunner exec.CommandRunner
+
+	// Standard time library clock, unless mocked in tests
+	clock clock.Clock
 }
 
 func (at *containerAppTarget) RequiredExternalTools() []tools.ExternalTool {
@@ -67,11 +70,9 @@ func (at *containerAppTarget) Deploy(
 	}
 
 	fullTag := fmt.Sprintf(
-		"%s/%s/%s:azdev-deploy-%d",
+		"%s/%s",
 		loginServer,
-		at.resource.ResourceName(),
-		at.resource.ResourceName(),
-		time.Now().Unix(),
+		at.generateImageTag(),
 	)
 
 	// Tag image.
@@ -139,6 +140,25 @@ func (at *containerAppTarget) Deploy(
 		}
 	}
 
+	if at.resource.ResourceName() == "" {
+		targetResource, err := at.config.GetServiceResource(ctx, at.resource.ResourceGroupName(), at.env, at.cli, "deploy")
+		if err != nil {
+			return ServiceDeploymentResult{}, err
+		}
+
+		// Fill in the target resource
+		at.resource = environment.NewTargetResource(
+			at.env.GetSubscriptionId(),
+			at.resource.ResourceGroupName(),
+			targetResource.Name,
+			targetResource.Type,
+		)
+
+		if err := checkResourceType(at.resource); err != nil {
+			return ServiceDeploymentResult{}, err
+		}
+	}
+
 	progress <- "Fetching endpoints for container app service"
 	endpoints, err := at.Endpoints(ctx)
 	if err != nil {
@@ -174,6 +194,23 @@ func (at *containerAppTarget) Endpoints(ctx context.Context) ([]string, error) {
 	}
 }
 
+func (at *containerAppTarget) generateImageTag() string {
+	if at.config.Docker.Tag != "" {
+		return at.config.Docker.Tag
+	}
+
+	return fmt.Sprintf("%s/%s-%s:azdev-deploy-%d",
+		strings.ToLower(at.config.Project.Name),
+		strings.ToLower(at.config.Name),
+		strings.ToLower(at.env.GetEnvName()),
+		at.clock.Now().Unix(),
+	)
+}
+
+// NewContainerAppTarget creates the container app service target.
+//
+// The target resource can be partially filled with only ResourceGroupName, since container apps
+// can be provisioned during deployment.
 func NewContainerAppTarget(
 	config *ServiceConfig,
 	env *environment.Environment,
@@ -183,12 +220,14 @@ func NewContainerAppTarget(
 	console input.Console,
 	commandRunner exec.CommandRunner,
 ) (ServiceTarget, error) {
-	if !strings.EqualFold(resource.ResourceType(), string(infra.AzureResourceTypeContainerApp)) {
-		return nil, resourceTypeMismatchError(
-			resource.ResourceName(),
-			resource.ResourceType(),
-			infra.AzureResourceTypeContainerApp,
-		)
+	if resource.ResourceGroupName() == "" {
+		return nil, fmt.Errorf("missing resource group name: %s", resource.ResourceGroupName())
+	}
+
+	if resource.ResourceType() != "" {
+		if err := checkResourceType(resource); err != nil {
+			return nil, err
+		}
 	}
 
 	return &containerAppTarget{
@@ -199,5 +238,18 @@ func NewContainerAppTarget(
 		docker:        docker,
 		console:       console,
 		commandRunner: commandRunner,
+		clock:         clock.New(),
 	}, nil
+}
+
+func checkResourceType(resource *environment.TargetResource) error {
+	if !strings.EqualFold(resource.ResourceType(), string(infra.AzureResourceTypeContainerApp)) {
+		return resourceTypeMismatchError(
+			resource.ResourceName(),
+			resource.ResourceType(),
+			infra.AzureResourceTypeContainerApp,
+		)
+	}
+
+	return nil
 }

@@ -1,10 +1,7 @@
 package httputil
 
 import (
-	"bytes"
-	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 )
 
@@ -67,21 +64,6 @@ func (c *MockHttpClient) Reset() {
 
 func (e *HttpExpression) Respond(response *http.Response) *MockHttpClient {
 	e.response = response
-	return e.http
-}
-
-// RespondJSON responds with a 200 response with the JSON encoding of value as the body of the response.
-func (e *HttpExpression) RespondJSON(value any) *MockHttpClient {
-	body, err := json.Marshal(value)
-	if err != nil {
-		panic(err)
-	}
-
-	e.response = &http.Response{
-		StatusCode: http.StatusOK,
-		Body:       io.NopCloser(bytes.NewBuffer(body)),
-	}
-
 	return e.http
 }
 

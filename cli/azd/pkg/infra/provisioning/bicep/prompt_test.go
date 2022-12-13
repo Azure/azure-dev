@@ -261,41 +261,45 @@ func TestPromptForParametersLocation(t *testing.T) {
 
 	mockContext.HttpClient.When(func(request *http.Request) bool {
 		return request.URL.Path == "/subscriptions/SUBSCRIPTION_ID/locations"
-	}).RespondJSON(armsubscriptions.LocationListResult{
-		Value: []*armsubscriptions.Location{
-			{
-				Name:                to.Ptr("eastus"),
-				DisplayName:         to.Ptr("East US"),
-				RegionalDisplayName: to.Ptr("(US) East US"),
-				Metadata: &armsubscriptions.LocationMetadata{
-					RegionType: to.Ptr(armsubscriptions.RegionType("Physical")),
+	}).RespondFn(func(request *http.Request) (*http.Response, error) {
+		return mocks.CreateHttpResponseWithBody(request, 200, armsubscriptions.LocationListResult{
+			Value: []*armsubscriptions.Location{
+				{
+					Name:                to.Ptr("eastus"),
+					DisplayName:         to.Ptr("East US"),
+					RegionalDisplayName: to.Ptr("(US) East US"),
+					Metadata: &armsubscriptions.LocationMetadata{
+						RegionType: to.Ptr(armsubscriptions.RegionType("Physical")),
+					},
+				},
+				{
+					Name:                to.Ptr("eastus2"),
+					DisplayName:         to.Ptr("East US 2"),
+					RegionalDisplayName: to.Ptr("(US) East US 2"),
+					Metadata: &armsubscriptions.LocationMetadata{
+						RegionType: to.Ptr(armsubscriptions.RegionType("Physical")),
+					},
+				},
+				{
+					Name:                to.Ptr("westus"),
+					DisplayName:         to.Ptr("West US"),
+					RegionalDisplayName: to.Ptr("(US) West US"),
+					Metadata: &armsubscriptions.LocationMetadata{
+						RegionType: to.Ptr(armsubscriptions.RegionType("Physical")),
+					},
 				},
 			},
-			{
-				Name:                to.Ptr("eastus2"),
-				DisplayName:         to.Ptr("East US 2"),
-				RegionalDisplayName: to.Ptr("(US) East US 2"),
-				Metadata: &armsubscriptions.LocationMetadata{
-					RegionType: to.Ptr(armsubscriptions.RegionType("Physical")),
-				},
-			},
-			{
-				Name:                to.Ptr("westus"),
-				DisplayName:         to.Ptr("West US"),
-				RegionalDisplayName: to.Ptr("(US) West US"),
-				Metadata: &armsubscriptions.LocationMetadata{
-					RegionType: to.Ptr(armsubscriptions.RegionType("Physical")),
-				},
-			},
-		},
+		})
 	})
 
 	mockContext.HttpClient.When(func(request *http.Request) bool {
 		return strings.HasPrefix(request.URL.Path, "/subscriptions/") && strings.Count(request.URL.Path, "/") == 2
-	}).RespondJSON(armsubscriptions.Subscription{
-		SubscriptionID: to.Ptr("SUBSCRIPTION_ID"),
-		TenantID:       to.Ptr("TENANT_ID"),
-		DisplayName:    to.Ptr("A test subscription"),
+	}).RespondFn(func(request *http.Request) (*http.Response, error) {
+		return mocks.CreateHttpResponseWithBody(request, 200, armsubscriptions.Subscription{
+			SubscriptionID: to.Ptr("SUBSCRIPTION_ID"),
+			TenantID:       to.Ptr("TENANT_ID"),
+			DisplayName:    to.Ptr("A test subscription"),
+		})
 	})
 
 	p := createBicepProvider(t, mockContext)

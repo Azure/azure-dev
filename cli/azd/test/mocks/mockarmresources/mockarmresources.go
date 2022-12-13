@@ -11,7 +11,7 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
-	"github.com/azure/azure-dev/cli/azd/test/mocks/httputil"
+	"github.com/azure/azure-dev/cli/azd/test/mocks/mockhttp"
 )
 
 var tagFilterExpression = regexp.MustCompile("tagName eq '(.+)' and tagValue eq '(.*?)'")
@@ -19,7 +19,7 @@ var tagFilterExpression = regexp.MustCompile("tagName eq '(.+)' and tagValue eq 
 var nameFilterExpression = regexp.MustCompile("name eq '(.+)'")
 
 func AddAzResourceListMock(
-	c *httputil.MockHttpClient,
+	c *mockhttp.MockHttpClient,
 	matchResourceGroupName *string,
 	result []*armresources.GenericResourceExpanded,
 ) {

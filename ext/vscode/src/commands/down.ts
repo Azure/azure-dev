@@ -42,7 +42,7 @@ export async function down(context: IActionContext, selectedItem?: vscode.Uri | 
         command = command.withNamedArg('-t', {value: templateUrl, quoting: vscode.ShellQuoting.Strong});
     }
 
-    // TODO: Prompt user to confirm delection (as well as for Key Vaults?).
+    // TODO: Prompt user to confirm deletion (as well as for Key Vaults?).
     //       Add `--force` flag to skip prompt.
     //       Separate option for `--purge` to skip prompt for soft-delete? (or just always use `--purge`?) (or --no-prompt?)
 

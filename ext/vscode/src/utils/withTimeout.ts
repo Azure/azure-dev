@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 import { localize } from '../localize';
 
 export function withTimeout<T>(promise: Promise<T>, timeout: number, message?: string): Promise<T> {

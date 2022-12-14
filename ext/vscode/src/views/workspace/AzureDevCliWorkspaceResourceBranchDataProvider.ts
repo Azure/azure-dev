@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 import * as vscode from 'vscode';
 import { ProviderResult, TreeItem } from "vscode";
 import { AzureDevCliApplication } from "./AzureDevCliApplication";

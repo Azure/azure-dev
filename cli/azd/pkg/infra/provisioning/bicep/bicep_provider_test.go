@@ -26,9 +26,9 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
-	execmock "github.com/azure/azure-dev/cli/azd/test/mocks/exec"
-	"github.com/azure/azure-dev/cli/azd/test/mocks/httputil"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockazcli"
+	"github.com/azure/azure-dev/cli/azd/test/mocks/mockexec"
+	"github.com/azure/azure-dev/cli/azd/test/mocks/mockhttp"
 	"github.com/stretchr/testify/require"
 )
 
@@ -339,7 +339,7 @@ func createBicepProvider(t *testing.T, mockContext *mocks.MockContext) *BicepPro
 	return provider
 }
 
-func prepareGenericMocks(commandRunner *execmock.MockCommandRunner) {
+func prepareGenericMocks(commandRunner *mockexec.MockCommandRunner) {
 	// Setup expected values for exec
 	commandRunner.When(func(args exec.RunArgs, command string) bool {
 		return strings.Contains(command, "az version")
@@ -350,7 +350,7 @@ func prepareGenericMocks(commandRunner *execmock.MockCommandRunner) {
 }
 
 // Sets up all the mocks required for the bicep plan & deploy operation
-func prepareDeployMocks(commandRunner *execmock.MockCommandRunner) {
+func prepareDeployMocks(commandRunner *mockexec.MockCommandRunner) {
 	// Gets deployment progress
 	commandRunner.When(
 		func(args exec.RunArgs, command string) bool {
@@ -417,7 +417,7 @@ func preparePlanningMocks(
 }
 
 func prepareDeployShowMocks(
-	httpClient *httputil.MockHttpClient) {
+	httpClient *mockhttp.MockHttpClient) {
 	expectedWebsiteUrl := "http://myapp.azurewebsites.net"
 
 	deployOutputs := make(map[string]interface{})

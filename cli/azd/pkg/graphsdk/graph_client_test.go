@@ -7,7 +7,7 @@ import (
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
-	graphsdk_mocks "github.com/azure/azure-dev/cli/azd/test/mocks/graphsdk"
+	"github.com/azure/azure-dev/cli/azd/test/mocks/mockgraphsdk"
 	"github.com/stretchr/testify/require"
 )
 
@@ -15,7 +15,7 @@ import (
 // acquiring token or DNS issues (host not found)
 func Test_GraphClientRequest_With_Preflight_Error(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
-	client, err := graphsdk_mocks.CreateGraphClient(mockContext)
+	client, err := mockgraphsdk.CreateGraphClient(mockContext)
 	require.NoError(t, err)
 	require.NotNil(t, client)
 

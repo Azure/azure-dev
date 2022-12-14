@@ -1,4 +1,4 @@
-package httputil
+package mockhttp
 
 import (
 	"fmt"

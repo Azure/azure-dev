@@ -1,4 +1,4 @@
-package config
+package mockconfig
 
 import "github.com/azure/azure-dev/cli/azd/pkg/config"
 

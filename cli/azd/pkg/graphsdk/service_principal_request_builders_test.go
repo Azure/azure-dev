@@ -10,7 +10,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/graphsdk"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
-	graphsdk_mocks "github.com/azure/azure-dev/cli/azd/test/mocks/graphsdk"
+	"github.com/azure/azure-dev/cli/azd/test/mocks/mockgraphsdk"
 	"github.com/stretchr/testify/require"
 )
 
@@ -32,9 +32,9 @@ func TestGetServicePrincipalList(t *testing.T) {
 		expected := append([]graphsdk.ServicePrincipal{}, servicePrincipals...)
 
 		mockContext := mocks.NewMockContext(context.Background())
-		graphsdk_mocks.RegisterServicePrincipalListMock(mockContext, http.StatusOK, expected)
+		mockgraphsdk.RegisterServicePrincipalListMock(mockContext, http.StatusOK, expected)
 
-		client, err := graphsdk_mocks.CreateGraphClient(mockContext)
+		client, err := mockgraphsdk.CreateGraphClient(mockContext)
 		require.NoError(t, err)
 
 		servicePrincipals, err := client.
@@ -48,9 +48,9 @@ func TestGetServicePrincipalList(t *testing.T) {
 
 	t.Run("Error", func(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
-		graphsdk_mocks.RegisterServicePrincipalListMock(mockContext, http.StatusUnauthorized, nil)
+		mockgraphsdk.RegisterServicePrincipalListMock(mockContext, http.StatusUnauthorized, nil)
 
-		client, err := graphsdk_mocks.CreateGraphClient(mockContext)
+		client, err := mockgraphsdk.CreateGraphClient(mockContext)
 		require.NoError(t, err)
 
 		res, err := client.
@@ -67,9 +67,9 @@ func TestGetServicePrincipalById(t *testing.T) {
 		expected := servicePrincipals[0]
 
 		mockContext := mocks.NewMockContext(context.Background())
-		graphsdk_mocks.RegisterServicePrincipalGetItemMock(mockContext, http.StatusOK, *expected.Id, &expected)
+		mockgraphsdk.RegisterServicePrincipalGetItemMock(mockContext, http.StatusOK, *expected.Id, &expected)
 
-		client, err := graphsdk_mocks.CreateGraphClient(mockContext)
+		client, err := mockgraphsdk.CreateGraphClient(mockContext)
 		require.NoError(t, err)
 
 		actual, err := client.
@@ -85,9 +85,9 @@ func TestGetServicePrincipalById(t *testing.T) {
 
 	t.Run("Error", func(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
-		graphsdk_mocks.RegisterServicePrincipalGetItemMock(mockContext, http.StatusNotFound, "bad-id", nil)
+		mockgraphsdk.RegisterServicePrincipalGetItemMock(mockContext, http.StatusNotFound, "bad-id", nil)
 
-		client, err := graphsdk_mocks.CreateGraphClient(mockContext)
+		client, err := mockgraphsdk.CreateGraphClient(mockContext)
 		require.NoError(t, err)
 
 		res, err := client.
@@ -104,9 +104,9 @@ func TestCreateServicePrincipal(t *testing.T) {
 		expected := servicePrincipals[0]
 
 		mockContext := mocks.NewMockContext(context.Background())
-		graphsdk_mocks.RegisterServicePrincipalCreateItemMock(mockContext, http.StatusCreated, &expected)
+		mockgraphsdk.RegisterServicePrincipalCreateItemMock(mockContext, http.StatusCreated, &expected)
 
-		client, err := graphsdk_mocks.CreateGraphClient(mockContext)
+		client, err := mockgraphsdk.CreateGraphClient(mockContext)
 		require.NoError(t, err)
 
 		actual, err := client.
@@ -122,9 +122,9 @@ func TestCreateServicePrincipal(t *testing.T) {
 
 	t.Run("Error", func(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
-		graphsdk_mocks.RegisterServicePrincipalCreateItemMock(mockContext, http.StatusBadRequest, nil)
+		mockgraphsdk.RegisterServicePrincipalCreateItemMock(mockContext, http.StatusBadRequest, nil)
 
-		client, err := graphsdk_mocks.CreateGraphClient(mockContext)
+		client, err := mockgraphsdk.CreateGraphClient(mockContext)
 		require.NoError(t, err)
 
 		res, err := client.
@@ -142,9 +142,9 @@ func TestDeleteServicePrincipal(t *testing.T) {
 	t.Run("Success", func(t *testing.T) {
 
 		mockContext := mocks.NewMockContext(context.Background())
-		graphsdk_mocks.RegisterServicePrincipalDeleteItemMock(mockContext, servicePrincipalId, http.StatusNoContent)
+		mockgraphsdk.RegisterServicePrincipalDeleteItemMock(mockContext, servicePrincipalId, http.StatusNoContent)
 
-		client, err := graphsdk_mocks.CreateGraphClient(mockContext)
+		client, err := mockgraphsdk.CreateGraphClient(mockContext)
 		require.NoError(t, err)
 
 		err = client.
@@ -156,9 +156,9 @@ func TestDeleteServicePrincipal(t *testing.T) {
 
 	t.Run("Error", func(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
-		graphsdk_mocks.RegisterServicePrincipalDeleteItemMock(mockContext, servicePrincipalId, http.StatusNotFound)
+		mockgraphsdk.RegisterServicePrincipalDeleteItemMock(mockContext, servicePrincipalId, http.StatusNotFound)
 
-		client, err := graphsdk_mocks.CreateGraphClient(mockContext)
+		client, err := mockgraphsdk.CreateGraphClient(mockContext)
 		require.NoError(t, err)
 
 		err = client.

@@ -1,0 +1,21 @@
+Usage:
+  azd login [flags]
+
+Flags:
+      --check-status                           Checks the log-in status instead of logging in.
+      --client-certificate string              The path to the client certificate for the service principal to authenticate with.
+      --client-id string                       The client id for the service principal to authenticate with.
+      --client-secret string                   The client secret for the service principal to authenticate with. Set to the empty string to read the value from the console.
+      --federated-credential string            The federated token for the service principal to authenticate with. Set to the empty string to read the value from the console.
+      --federated-credential-provider string   The provider to use to acquire a federated token to authenticate with.
+  -h, --help                                   Gets help for login.
+  -o, --output string                          The output format (the supported formats are json, none). (default "none")
+      --redirect-port int                      Choose the port to be used as part of the redirect URI during interactive login.
+      --tenant-id string                       The tenant id for the service principal to authenticate with.
+      --use-device-code                        When true, log in by using a device code instead of a browser.
+
+Global Flags:
+  -C, --cwd string   Sets the current working directory.
+      --debug        Enables debugging and diagnostics logging.
+      --no-prompt    Accepts the default value instead of prompting, or it fails if there is no default.
+

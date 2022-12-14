@@ -5,9 +5,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"sort"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/resources"
+	"golang.org/x/exp/maps"
 )
 
 type TemplateManager struct {
@@ -49,9 +51,7 @@ func NewTemplateManager() *TemplateManager {
 
 // PromptTemplate ask the user to select a template.
 // An empty Template with default values is returned if the user selects 'Empty Template' from the choices
-func PromptTemplate(ctx context.Context, message string) (Template, error) {
-	console := input.GetConsole(ctx)
-
+func PromptTemplate(ctx context.Context, message string, console input.Console) (Template, error) {
 	var result Template
 	templateManager := NewTemplateManager()
 	templatesSet, err := templateManager.ListTemplates()
@@ -61,16 +61,18 @@ func PromptTemplate(ctx context.Context, message string) (Template, error) {
 	}
 
 	templateNames := []string{"Empty Template"}
-
-	for name := range templatesSet {
-		templateNames = append(templateNames, name)
-	}
+	names := maps.Keys(templatesSet)
+	sort.Strings(names)
+	templateNames = append(templateNames, names...)
 
 	selectedIndex, err := console.Select(ctx, input.ConsoleOptions{
 		Message:      message,
 		Options:      templateNames,
 		DefaultValue: templateNames[0],
 	})
+
+	// separate this prompt from the next log
+	console.Message(ctx, "")
 
 	if err != nil {
 		return result, fmt.Errorf("prompting for template: %w", err)

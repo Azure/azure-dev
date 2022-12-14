@@ -9,13 +9,15 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/azure/azure-dev/cli/azd/cmd/contracts"
+	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/pkg/contracts"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
@@ -23,10 +25,12 @@ import (
 type showFlags struct {
 	outputFormat string
 	global       *internal.GlobalCommandOptions
+	envFlag
 }
 
 func (s *showFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
 	output.AddOutputFlag(local, &s.outputFormat, []output.Format{output.JsonFormat}, output.NoneFormat)
+	s.envFlag.Bind(local, global)
 	s.global = global
 }
 
@@ -46,6 +50,7 @@ type showAction struct {
 	console   input.Console
 	formatter output.Formatter
 	writer    io.Writer
+	azCli     azcli.AzCli
 	azdCtx    *azdcontext.AzdContext
 	flags     showFlags
 }
@@ -54,6 +59,7 @@ func newShowAction(
 	console input.Console,
 	formatter output.Formatter,
 	writer io.Writer,
+	azCli azcli.AzCli,
 	azdCtx *azdcontext.AzdContext,
 	flags showFlags,
 ) *showAction {
@@ -61,24 +67,25 @@ func newShowAction(
 		console:   console,
 		formatter: formatter,
 		writer:    writer,
+		azCli:     azCli,
 		azdCtx:    azdCtx,
 		flags:     flags,
 	}
 }
 
-func (s *showAction) Run(ctx context.Context) error {
+func (s *showAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	if err := ensureProject(s.azdCtx.ProjectPath()); err != nil {
-		return err
+		return nil, err
 	}
 
-	env, ctx, err := loadOrInitEnvironment(ctx, &s.flags.global.EnvironmentName, s.azdCtx, s.console)
+	env, ctx, err := loadOrInitEnvironment(ctx, &s.flags.environmentName, s.azdCtx, s.console, s.azCli)
 	if err != nil {
-		return fmt.Errorf("loading environment: %w", err)
+		return nil, fmt.Errorf("loading environment: %w", err)
 	}
 
 	prj, err := project.LoadProjectConfig(s.azdCtx.ProjectPath(), env)
 	if err != nil {
-		return fmt.Errorf("loading project: %w", err)
+		return nil, fmt.Errorf("loading project: %w", err)
 	}
 
 	res := contracts.ShowResult{
@@ -89,7 +96,7 @@ func (s *showAction) Run(ctx context.Context) error {
 	for name, svc := range prj.Services {
 		path, err := getFullPathToProjectForService(svc)
 		if err != nil {
-			return err
+			return nil, err
 		}
 
 		showSvc := contracts.ShowService{
@@ -104,11 +111,11 @@ func (s *showAction) Run(ctx context.Context) error {
 
 	// Add information about the target of each service, if we can determine it (if the infrastructure has
 	// not been deployed, for example, we'll just not include target information)
-	resourceManager := infra.NewAzureResourceManager(ctx)
+	resourceManager := infra.NewAzureResourceManager(s.azCli)
 
 	if resourceGroupName, err := resourceManager.FindResourceGroupForEnvironment(ctx, env); err == nil {
-		for name := range prj.Services {
-			if resources, err := project.GetServiceResources(ctx, resourceGroupName, name, env); err == nil {
+		for name, serviceConfig := range prj.Services {
+			if resources, err := serviceConfig.GetServiceResources(ctx, resourceGroupName, env, s.azCli); err == nil {
 				resourceIds := make([]string, len(resources))
 				for idx, res := range resources {
 					resourceIds[idx] = res.Id
@@ -129,7 +136,7 @@ func (s *showAction) Run(ctx context.Context) error {
 			err)
 	}
 
-	return s.formatter.Format(res, s.writer, nil)
+	return nil, s.formatter.Format(res, s.writer, nil)
 }
 
 func showTypeFromLanguage(language string) contracts.ShowType {

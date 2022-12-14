@@ -13,6 +13,7 @@ import (
 	armruntime "github.com/Azure/azure-sdk-for-go/sdk/azcore/arm/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
+	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
 )
 
 const (
@@ -64,6 +65,12 @@ func NewZipDeployClient(
 	// We do not have a Resource provider to register
 	options.DisableRPRegistration = true
 
+	// Increase default retry attempts from 3 to 4 as zipdeploy often fails with 3 retries.
+	// With the default azcore.policy options of 800ms RetryDelay, this introduces up to 20 seconds of exponential back-off.
+	options.Retry = policy.RetryOptions{
+		MaxRetries: 4,
+	}
+
 	pipeline, err := armruntime.NewPipeline("zip-deploy", "1.0.0", credential, runtime.PipelineOptions{}, options)
 	if err != nil {
 		return nil, fmt.Errorf("failed creating HTTP pipeline: %w", err)
@@ -88,7 +95,7 @@ func (c *ZipDeployClient) BeginDeploy(
 
 	response, err := c.pipeline.Do(request)
 	if err != nil {
-		return nil, runtime.NewResponseError(response)
+		return nil, httputil.HandleRequestError(response, err)
 	}
 
 	defer response.Body.Close()
@@ -180,7 +187,7 @@ func (h *deployPollingHandler) Poll(ctx context.Context) (*http.Response, error)
 
 	response, err := h.pipeline.Do(req)
 	if err != nil {
-		return nil, runtime.NewResponseError(response)
+		return nil, httputil.HandleRequestError(response, err)
 	}
 
 	if !runtime.HasStatusCode(response, http.StatusAccepted) && !runtime.HasStatusCode(response, http.StatusOK) {
@@ -193,7 +200,7 @@ func (h *deployPollingHandler) Poll(ctx context.Context) (*http.Response, error)
 	}
 
 	// Status code is 200 if we get to this point - transform the response
-	deploymentStatus, err := ReadRawResponse[DeployStatusResponse](response)
+	deploymentStatus, err := httputil.ReadRawResponse[DeployStatusResponse](response)
 	if err != nil {
 		return nil, err
 	}

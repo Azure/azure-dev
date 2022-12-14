@@ -1,12 +1,12 @@
-param environmentName string
+param name string
 param location string = resourceGroup().location
+param tags object = {}
 
 // Reference Properties
 param applicationInsightsName string = ''
 param appServicePlanId string
 param keyVaultName string = ''
-param managedIdentity bool = !(empty(keyVaultName))
-param serviceName string
+param managedIdentity bool = !empty(keyVaultName)
 
 // Runtime Properties
 @allowed([
@@ -33,16 +33,10 @@ param numberOfWorkers int = -1
 param scmDoBuildDuringDeployment bool = false
 param use32BitWorkerProcess bool = false
 
-var abbrs = loadJsonContent('../../abbreviations.json')
-var tags = { 'azd-env-name': environmentName }
-var resourceToken = toLower(uniqueString(subscription().id, environmentName, location))
-
-var prefix = contains(kind, 'function') ? abbrs.webSitesFunctions : abbrs.webSitesAppService
-
 resource appService 'Microsoft.Web/sites@2022-03-01' = {
-  name: '${prefix}${serviceName}-${resourceToken}'
+  name: name
   location: location
-  tags: union(tags, { 'azd-service-name': serviceName })
+  tags: tags
   kind: kind
   properties: {
     serverFarmId: appServicePlanId
@@ -63,17 +57,17 @@ resource appService 'Microsoft.Web/sites@2022-03-01' = {
     httpsOnly: true
   }
 
-  identity: managedIdentity ? { type: 'SystemAssigned' } : null
+  identity: { type: managedIdentity ? 'SystemAssigned' : 'None' }
 
   resource configAppSettings 'config' = {
     name: 'appsettings'
     properties: union(appSettings,
       {
         SCM_DO_BUILD_DURING_DEPLOYMENT: string(scmDoBuildDuringDeployment)
-        ENABLE_ORYX_BUILD: enableOryxBuild
+        ENABLE_ORYX_BUILD: string(enableOryxBuild)
       },
-      !(empty(applicationInsightsName)) ? { APPLICATIONINSIGHTS_CONNECTION_STRING: applicationInsights.properties.ConnectionString } : {},
-      !(empty(keyVaultName)) ? { AZURE_KEY_VAULT_ENDPOINT: keyVault.properties.vaultUri } : {})
+      !empty(applicationInsightsName) ? { APPLICATIONINSIGHTS_CONNECTION_STRING: applicationInsights.properties.ConnectionString } : {},
+      !empty(keyVaultName) ? { AZURE_KEY_VAULT_ENDPOINT: keyVault.properties.vaultUri } : {})
   }
 
   resource configLogs 'config' = {
@@ -84,6 +78,9 @@ resource appService 'Microsoft.Web/sites@2022-03-01' = {
       failedRequestsTracing: { enabled: true }
       httpLogs: { fileSystem: { enabled: true, retentionInDays: 1, retentionInMb: 35 } }
     }
+    dependsOn: [
+      configAppSettings
+    ]
   }
 }
 
@@ -91,7 +88,7 @@ resource keyVault 'Microsoft.KeyVault/vaults@2022-07-01' existing = if (!(empty(
   name: keyVaultName
 }
 
-resource applicationInsights 'Microsoft.Insights/components@2020-02-02' existing = if (!(empty(applicationInsightsName))) {
+resource applicationInsights 'Microsoft.Insights/components@2020-02-02' existing = if (!empty(applicationInsightsName)) {
   name: applicationInsightsName
 }
 

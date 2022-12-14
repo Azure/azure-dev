@@ -16,6 +16,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 
 	execmock "github.com/azure/azure-dev/cli/azd/test/mocks/exec"
+	"github.com/azure/azure-dev/cli/azd/test/mocks/mockazcli"
 	"github.com/stretchr/testify/require"
 )
 
@@ -28,7 +29,7 @@ func TestTerraformPlan(t *testing.T) {
 	prepareGenericMocks(mockContext.CommandRunner)
 	preparePlanningMocks(mockContext.CommandRunner)
 
-	infraProvider := createTerraformProvider(*mockContext.Context)
+	infraProvider := createTerraformProvider(mockContext)
 	planningTask := infraProvider.Plan(*mockContext.Context)
 
 	go func() {
@@ -52,11 +53,7 @@ func TestTerraformPlan(t *testing.T) {
 
 	consoleLog := mockContext.Console.Output()
 
-	require.Len(t, consoleLog, 4)
-	require.Contains(t, consoleLog[0], "Initializing terraform...")
-	require.Contains(t, consoleLog[1], "Generating terraform parameters...")
-	require.Contains(t, consoleLog[2], "Validating terraform template...")
-	require.Contains(t, consoleLog[3], "Generating terraform plan...")
+	require.Len(t, consoleLog, 0)
 
 	require.Equal(t, infraProvider.env.Values["AZURE_LOCATION"], deploymentPlan.Deployment.Parameters["location"].Value)
 	require.Equal(
@@ -84,8 +81,9 @@ func TestTerraformDeploy(t *testing.T) {
 	prepareGenericMocks(mockContext.CommandRunner)
 	preparePlanningMocks(mockContext.CommandRunner)
 	prepareDeployMocks(mockContext.CommandRunner)
+	azCli := mockazcli.NewAzCliFromMockContext(mockContext)
 
-	infraProvider := createTerraformProvider(*mockContext.Context)
+	infraProvider := createTerraformProvider(mockContext)
 
 	envPath := path.Join(infraProvider.projectPath, ".azure", infraProvider.env.Values["AZURE_ENV_NAME"])
 
@@ -98,7 +96,7 @@ func TestTerraformDeploy(t *testing.T) {
 	}
 
 	scope := infra.NewSubscriptionScope(
-		*mockContext.Context,
+		azCli,
 		infraProvider.env.Values["AZURE_LOCATION"],
 		infraProvider.env.GetSubscriptionId(),
 		infraProvider.env.GetEnvName(),
@@ -138,7 +136,7 @@ func TestTerraformDestroy(t *testing.T) {
 	interactiveLog := []bool{}
 	progressDone := make(chan bool)
 
-	infraProvider := createTerraformProvider(*mockContext.Context)
+	infraProvider := createTerraformProvider(mockContext)
 	deployment := Deployment{}
 
 	destroyOptions := NewDestroyOptions(false, false)
@@ -175,10 +173,11 @@ func TestTerraformState(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
 	prepareGenericMocks(mockContext.CommandRunner)
 	prepareShowMocks(mockContext.CommandRunner)
+	azCli := mockazcli.NewAzCliFromMockContext(mockContext)
 
-	infraProvider := createTerraformProvider(*mockContext.Context)
+	infraProvider := createTerraformProvider(mockContext)
 	scope := infra.NewSubscriptionScope(
-		*mockContext.Context,
+		azCli,
 		infraProvider.env.Values["AZURE_LOCATION"],
 		infraProvider.env.GetSubscriptionId(),
 		infraProvider.env.GetEnvName(),
@@ -214,7 +213,7 @@ func TestTerraformState(t *testing.T) {
 	)
 }
 
-func createTerraformProvider(ctx context.Context) *TerraformProvider {
+func createTerraformProvider(mockContext *mocks.MockContext) *TerraformProvider {
 	projectDir := "../../../../test/functional/testdata/samples/resourcegroupterraform"
 	options := Options{
 		Module: "main",
@@ -224,7 +223,9 @@ func createTerraformProvider(ctx context.Context) *TerraformProvider {
 		"AZURE_LOCATION": "westus2",
 	})
 
-	return NewTerraformProvider(ctx, env, projectDir, options)
+	return NewTerraformProvider(
+		*mockContext.Context, env, projectDir, options, mockContext.Console, mockContext.CommandRunner,
+	)
 }
 
 func prepareGenericMocks(commandRunner *execmock.MockCommandRunner) {

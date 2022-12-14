@@ -47,11 +47,11 @@ func (cli *dotNetCli) CheckInstalled(ctx context.Context) (bool, error) {
 	if !found {
 		return false, err
 	}
-	dotnetRes, err := tools.ExecuteCommand(ctx, "dotnet", "--version")
+	dotnetRes, err := tools.ExecuteCommand(ctx, cli.commandRunner, "dotnet", "--version")
 	if err != nil {
 		return false, fmt.Errorf("checking %s version: %w", cli.Name(), err)
 	}
-	dotnetSemver, err := tools.ExtractSemver(dotnetRes)
+	dotnetSemver, err := tools.ExtractVersion(dotnetRes)
 	if err != nil {
 		return false, fmt.Errorf("converting to semver version fails: %w", err)
 	}
@@ -98,8 +98,8 @@ func (cli *dotNetCli) SetSecret(ctx context.Context, key string, value string, p
 	return nil
 }
 
-func NewDotNetCli(ctx context.Context) DotNetCli {
+func NewDotNetCli(commandRunner exec.CommandRunner) DotNetCli {
 	return &dotNetCli{
-		commandRunner: exec.GetCommandRunner(ctx),
+		commandRunner: commandRunner,
 	}
 }

@@ -50,10 +50,22 @@ func (j *javacCli) CheckInstalled(ctx context.Context) (bool, error) {
 		Args: []string{"--version"},
 	})
 	if err != nil {
+		// On older versions of javac (8 and below), `javac -version` is supported instead.
+		// If this returns successfully, we know that it's an older version
+		// and can safely recommend an upgrade.
+		_, err := j.cmdRun.Run(ctx, exec.RunArgs{
+			Cmd:  path,
+			Args: []string{"-version"},
+		})
+
+		if err == nil {
+			return false, &tools.ErrSemver{ToolName: j.Name(), VersionInfo: j.VersionInfo()}
+		}
+
 		return false, fmt.Errorf("checking javac version: %w", err)
 	}
 
-	jdkVer, err := tools.ExtractSemver(runResult.Stdout)
+	jdkVer, err := tools.ExtractVersion(runResult.Stdout)
 	if err != nil {
 		return false, fmt.Errorf("converting to semver version fails: %w", err)
 	}

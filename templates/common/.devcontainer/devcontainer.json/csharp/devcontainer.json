@@ -7,11 +7,16 @@
         }
     },
     "features": {
-        "github-cli": "2",
-        "azure-cli": "2.38",
-        "dotnet": "6.0",
-        "docker-from-docker": "20.10",
-        "node": {
+        "ghcr.io/devcontainers/features/docker-from-docker:1": {
+            "version": "20.10"
+        },
+        "ghcr.io/devcontainers/features/dotnet:1": {
+            "version": "6.0"
+        },
+        "ghcr.io/devcontainers/features/github-cli:1": {
+            "version": "2"
+        },
+        "ghcr.io/devcontainers/features/node:1": {
             "version": "16",
             "nodeGypDependencies": false
         }
@@ -22,12 +27,16 @@
         "ms-azuretools.vscode-docker",
         "ms-vscode.vscode-node-azure-pack",
         "ms-dotnettools.csharp",
-        "ms-dotnettools.vscode-dotnet-runtime"
+        "ms-dotnettools.vscode-dotnet-runtime",
+        "ms-azuretools.vscode-azurefunctions"
     ],
     "forwardPorts": [
         3000,
         3100
     ],
     "postCreateCommand": "",
-    "remoteUser": "vscode"
+    "remoteUser": "vscode",
+    "hostRequirements": {
+        "memory": "8gb"
+    }
 }

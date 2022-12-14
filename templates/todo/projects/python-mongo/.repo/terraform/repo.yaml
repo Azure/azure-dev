@@ -109,6 +109,11 @@ repo:
         - .github/**/*
         - .devcontainer/**/*
         - "infra/**/*"
+        - .azdo/pipelines/*/azure-dev.yml
+
+    # AzDo workflows for bicep
+    - from: ../../../../../common/.azdo/pipelines/terraform/azure-dev.yml
+      to: ./.azdo/pipelines/azure-dev.yml
 
     # Github workflows for terraform
     - from: ../../../../../common/.github/workflows/terraform
@@ -151,6 +156,10 @@ repo:
     - from: ../../../../common/tests
       to: ./tests
 
+    # Auth Python common
+    - from: ../../../../common/auth/py
+      to: ./src/api/todo
+      
     # Python API
     - from: ../../../../api/python
       to: ./src/api

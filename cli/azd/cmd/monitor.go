@@ -9,11 +9,11 @@ import (
 	"os"
 	"os/exec"
 
+	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/cli/browser"
 	"github.com/spf13/cobra"
@@ -25,6 +25,7 @@ type monitorFlags struct {
 	monitorLogs     bool
 	monitorOverview bool
 	global          *internal.GlobalCommandOptions
+	envFlag
 }
 
 func (m *monitorFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
@@ -36,6 +37,7 @@ func (m *monitorFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommand
 	)
 	local.BoolVar(&m.monitorLogs, "logs", false, "Open a browser to Application Insights Logs.")
 	local.BoolVar(&m.monitorOverview, "overview", false, "Open a browser to Application Insights Overview Dashboard.")
+	m.envFlag.Bind(local, global)
 	m.global = global
 }
 
@@ -79,37 +81,29 @@ func newMonitorAction(
 	}
 }
 
-func (m *monitorAction) Run(ctx context.Context) error {
+func (m *monitorAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	if err := ensureProject(m.azdCtx.ProjectPath()); err != nil {
-		return err
-	}
-
-	if err := tools.EnsureInstalled(ctx, m.azCli); err != nil {
-		return err
-	}
-
-	if err := ensureLoggedIn(ctx); err != nil {
-		return fmt.Errorf("failed to ensure login: %w", err)
+		return nil, err
 	}
 
 	if !m.flags.monitorLive && !m.flags.monitorLogs && !m.flags.monitorOverview {
 		m.flags.monitorOverview = true
 	}
 
-	env, ctx, err := loadOrInitEnvironment(ctx, &m.flags.global.EnvironmentName, m.azdCtx, m.console)
+	env, ctx, err := loadOrInitEnvironment(ctx, &m.flags.environmentName, m.azdCtx, m.console, m.azCli)
 	if err != nil {
-		return fmt.Errorf("loading environment: %w", err)
+		return nil, fmt.Errorf("loading environment: %w", err)
 	}
 
 	account, err := m.azCli.GetAccount(ctx, env.GetSubscriptionId())
 	if err != nil {
-		return fmt.Errorf("getting tenant id for subscription: %w", err)
+		return nil, fmt.Errorf("getting tenant id for subscription: %w", err)
 	}
 
-	resourceManager := infra.NewAzureResourceManager(ctx)
+	resourceManager := infra.NewAzureResourceManager(m.azCli)
 	resourceGroups, err := resourceManager.GetResourceGroupsForEnvironment(ctx, env)
 	if err != nil {
-		return fmt.Errorf("discovering resource groups from deployment: %w", err)
+		return nil, fmt.Errorf("discovering resource groups from deployment: %w", err)
 	}
 
 	var insightsResources []azcli.AzCliResource
@@ -118,7 +112,7 @@ func (m *monitorAction) Run(ctx context.Context) error {
 	for _, resourceGroup := range resourceGroups {
 		resources, err := m.azCli.ListResourceGroupResources(ctx, env.GetSubscriptionId(), resourceGroup.Name, nil)
 		if err != nil {
-			return fmt.Errorf("listing resources: %w", err)
+			return nil, fmt.Errorf("listing resources: %w", err)
 		}
 
 		for _, resource := range resources {
@@ -132,11 +126,11 @@ func (m *monitorAction) Run(ctx context.Context) error {
 	}
 
 	if len(insightsResources) == 0 && (m.flags.monitorLive || m.flags.monitorLogs) {
-		return fmt.Errorf("application does not contain an Application Insights resource")
+		return nil, fmt.Errorf("application does not contain an Application Insights resource")
 	}
 
 	if len(portalResources) == 0 && m.flags.monitorOverview {
-		return fmt.Errorf("application does not contain an Application Insights dashboard")
+		return nil, fmt.Errorf("application does not contain an Application Insights dashboard")
 	}
 
 	openWithDefaultBrowser := func(url string) {
@@ -151,7 +145,11 @@ func (m *monitorAction) Run(ctx context.Context) error {
 
 		if envBrowser := os.Getenv(BrowserEnvVarName); len(envBrowser) > 0 {
 			if err := exec.Command(envBrowser, url).Run(); err != nil {
-				fmt.Fprintf(m.console.Handles().Stderr, "warning: failed to open browser configured by $BROWSER: %s\n", err.Error())
+				fmt.Fprintf(
+					m.console.Handles().Stderr,
+					"warning: failed to open browser configured by $BROWSER: %s\n",
+					err.Error(),
+				)
 			}
 			return
 		}
@@ -181,5 +179,5 @@ func (m *monitorAction) Run(ctx context.Context) error {
 		}
 	}
 
-	return nil
+	return nil, nil
 }

@@ -11,12 +11,16 @@ import (
 	"strings"
 
 	"github.com/AlecAivazis/survey/v2"
+	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/telemetry"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/azureutil"
+	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
+	"github.com/spf13/pflag"
 )
 
 type Asker func(p survey.Prompt, response interface{}) error
@@ -67,6 +71,7 @@ func createAndInitEnvironment(
 	envSpec *environmentSpec,
 	azdCtx *azdcontext.AzdContext,
 	console input.Console,
+	azCli azcli.AzCli,
 ) (*environment.Environment, context.Context, error) {
 	if envSpec.environmentName != "" && !environment.IsValidEnvironmentName(envSpec.environmentName) {
 		errMsg := invalidEnvironmentNameMsg(envSpec.environmentName)
@@ -88,7 +93,7 @@ func createAndInitEnvironment(
 		return nil, nil, fmt.Errorf("environment '%s' already exists", envSpec.environmentName)
 	}
 
-	if err := ensureEnvironmentInitialized(ctx, *envSpec, env, console); err != nil {
+	if err := ensureEnvironmentInitialized(ctx, *envSpec, env, console, azCli); err != nil {
 		return nil, nil, fmt.Errorf("initializing environment: %w", err)
 	}
 
@@ -100,6 +105,7 @@ func loadOrInitEnvironment(
 	environmentName *string,
 	azdCtx *azdcontext.AzdContext,
 	console input.Console,
+	azCli azcli.AzCli,
 ) (*environment.Environment, context.Context, error) {
 	loadOrCreateEnvironment := func() (*environment.Environment, bool, error) {
 		// If there's a default environment, use that
@@ -151,7 +157,7 @@ func loadOrInitEnvironment(
 			return nil, false, err
 		}
 
-		return environment.EmptyWithFile(azdCtx.GetEnvironmentFilePath(*environmentName)), true, nil
+		return environment.EmptyWithRoot(azdCtx.EnvironmentRoot(*environmentName)), true, nil
 	}
 
 	env, isNew, err := loadOrCreateEnvironment()
@@ -166,7 +172,8 @@ func loadOrInitEnvironment(
 		ctx,
 		environmentSpec{environmentName: *environmentName},
 		env,
-		console); err != nil {
+		console,
+		azCli); err != nil {
 		return nil, nil, fmt.Errorf("initializing environment: %w", err)
 	}
 
@@ -188,6 +195,7 @@ func ensureEnvironmentInitialized(
 	envSpec environmentSpec,
 	env *environment.Environment,
 	console input.Console,
+	azCli azcli.AzCli,
 ) error {
 	if env.Values == nil {
 		env.Values = make(map[string]string)
@@ -211,17 +219,10 @@ func ensureEnvironmentInitialized(
 		env.SetEnvName(envSpec.environmentName)
 	}
 
-	needAzureInteraction := !hasSubID || !hasLocation || !hasPrincipalID
-	if needAzureInteraction {
-		if err := ensureLoggedIn(ctx); err != nil {
-			return fmt.Errorf("logging in: %w", err)
-		}
-	}
-
 	if !hasSubID && envSpec.subscription != "" {
 		env.SetSubscriptionId(envSpec.subscription)
 	} else {
-		subscriptionOptions, defaultSubscription, err := getSubscriptionOptions(ctx)
+		subscriptionOptions, defaultSubscription, err := getSubscriptionOptions(ctx, azCli)
 		if err != nil {
 			return err
 		}
@@ -260,7 +261,7 @@ func ensureEnvironmentInitialized(
 	if !hasLocation && envSpec.location != "" {
 		env.SetLocation(envSpec.location)
 	} else {
-		location, err := azureutil.PromptLocation(ctx, "Please select an Azure location to use:")
+		location, err := azureutil.PromptLocation(ctx, env, "Please select an Azure location to use:", console, azCli)
 		if err != nil {
 			return fmt.Errorf("prompting for location: %w", err)
 		}
@@ -268,11 +269,11 @@ func ensureEnvironmentInitialized(
 	}
 
 	if !hasPrincipalID {
-		principalID, err := azureutil.GetCurrentPrincipalId(ctx)
+		principalID, err := azureutil.GetCurrentPrincipalId(ctx, azCli)
 		if err != nil {
 			return fmt.Errorf("fetching current user information: %w", err)
 		}
-		env.SetPrincipalId(principalID)
+		env.SetPrincipalId(*principalID)
 	}
 
 	if err := env.Save(); err != nil {
@@ -282,11 +283,15 @@ func ensureEnvironmentInitialized(
 	return nil
 }
 
-func getSubscriptionOptions(ctx context.Context) ([]string, string, error) {
-	accountManager := account.NewManager(ctx)
+func getSubscriptionOptions(ctx context.Context, azCli azcli.AzCli) ([]string, any, error) {
+	accountManager, err := account.NewManager(config.GetConfigManager(ctx), azCli)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed creating account manager: %w", err)
+	}
+
 	subscriptionInfos, err := accountManager.GetSubscriptions(ctx)
 	if err != nil {
-		return nil, "", fmt.Errorf("listing accounts: %w", err)
+		return nil, nil, fmt.Errorf("listing accounts: %w", err)
 	}
 
 	// If `AZURE_SUBSCRIPTION_ID` is set in the environment, use it to influence
@@ -302,7 +307,7 @@ func getSubscriptionOptions(ctx context.Context) ([]string, string, error) {
 	}
 
 	var subscriptionOptions = make([]string, len(subscriptionInfos)+1)
-	var defaultSubscription string = ""
+	var defaultSubscription any
 
 	for index, info := range subscriptionInfos {
 		subscriptionOptions[index] = fmt.Sprintf("%2d. %s (%s)", index+1, info.Name, info.Id)
@@ -331,4 +336,18 @@ func ensureProject(path string) error {
 	}
 
 	return nil
+}
+
+type envFlag struct {
+	environmentName string
+}
+
+func (e *envFlag) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
+	local.StringVarP(
+		&e.environmentName,
+		"environment",
+		"e",
+		// Set the default value to AZURE_ENV_NAME value if available
+		os.Getenv(environment.EnvNameEnvVarName),
+		"The name of the environment to use.")
 }

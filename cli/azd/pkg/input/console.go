@@ -4,24 +4,49 @@
 package input
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"log"
-	"strings"
+	"time"
 
 	"github.com/AlecAivazis/survey/v2"
-	"github.com/azure/azure-dev/cli/azd/pkg/contracts"
-	input_contracts "github.com/azure/azure-dev/cli/azd/pkg/input/contracts"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
-	"github.com/mattn/go-colorable"
+	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
+	"github.com/theckman/yacspin"
 )
+
+type SpinnerUxType int
+
+const (
+	Step SpinnerUxType = iota
+	StepDone
+	StepFailed
+)
+
+// A shim to allow a single Console construction in the application.
+// To be removed once formatter and Console's responsibilities are reconciled
+type ConsoleShim interface {
+	// True if the console was instantiated with no format options.
+	IsUnformatted() bool
+
+	// Gets the underlying formatter used by the console
+	GetFormatter() output.Formatter
+}
 
 type Console interface {
 	// Prints out a message to the underlying console write
 	Message(ctx context.Context, message string)
+	// Prints out a message following a contract ux item
+	MessageUxItem(ctx context.Context, item ux.UxItem)
+	// Prints progress spinner with the given title.
+	// If a previous spinner is running, the title is updated.
+	ShowSpinner(ctx context.Context, title string, format SpinnerUxType)
+	// Stop the current spinner from the console and change the spinner bar for the lastMessage
+	// Set lastMessage to empty string to clear the spinner message instead of a displaying a last message
+	// If there is no spinner running, this is a no-op function
+	StopSpinner(ctx context.Context, lastMessage string, format SpinnerUxType)
 	// Prompts the user for a single value
 	Prompt(ctx context.Context, options ConsoleOptions) (string, error)
 	// Prompts the user to select from a set of values
@@ -30,8 +55,11 @@ type Console interface {
 	Confirm(ctx context.Context, options ConsoleOptions) (bool, error)
 	// Sets the underlying writer for the console
 	SetWriter(writer io.Writer)
+	// Gets the underlying writer for the console
+	GetWriter() io.Writer
 	// Gets the standard input, output and error stream
 	Handles() ConsoleHandles
+	ConsoleShim
 }
 
 type AskerConsole struct {
@@ -40,8 +68,10 @@ type AskerConsole struct {
 	// the writer the console was constructed with, and what we reset to when SetWriter(nil) is called.
 	defaultWriter io.Writer
 	// the writer which output is written to.
-	writer    io.Writer
-	formatter output.Formatter
+	writer        io.Writer
+	formatter     output.Formatter
+	spinner       *yacspin.Spinner
+	currentIndent string
 }
 
 type ConsoleOptions struct {
@@ -66,13 +96,21 @@ func (c *AskerConsole) SetWriter(writer io.Writer) {
 	c.writer = writer
 }
 
+func (c *AskerConsole) GetFormatter() output.Formatter {
+	return c.formatter
+}
+
+func (c *AskerConsole) IsUnformatted() bool {
+	return c.formatter == nil || c.formatter.Kind() == output.NoneFormat
+}
+
 // Prints out a message to the underlying console write
 func (c *AskerConsole) Message(ctx context.Context, message string) {
 	// Disable output when formatting is enabled
 	if c.formatter != nil && c.formatter.Kind() == output.JsonFormat {
 		// we call json.Marshal directly, because the formatter marshalls using indentation, and we would prefer
 		// these objects be written on a single line.
-		jsonMessage, err := json.Marshal(c.eventForMessage(message))
+		jsonMessage, err := json.Marshal(output.EventForMessage(message))
 		if err != nil {
 			panic(fmt.Sprintf("Message: unexpected error during marshaling for a valid object: %v", err))
 		}
@@ -84,22 +122,132 @@ func (c *AskerConsole) Message(ctx context.Context, message string) {
 	}
 }
 
-// jsonObjectForMessage creates a json object representing a message. Any ANSI control sequences from the message are
-// removed. A trailing newline is added to the message.
-func (c *AskerConsole) eventForMessage(message string) contracts.EventEnvelope {
-	// Strip any ANSI colors for the message.
-	var buf bytes.Buffer
-
-	// We do not expect the io.Copy to fail since none of these sub-calls will ever return an error (other than
-	// EOF when we hit the end of the string)
-	if _, err := io.Copy(colorable.NewNonColorable(&buf), strings.NewReader(message)); err != nil {
-		panic(fmt.Sprintf("consoleMessageForMessage: did not expect error from io.Copy but got: %v", err))
+func (c *AskerConsole) MessageUxItem(ctx context.Context, item ux.UxItem) {
+	if c.formatter != nil && c.formatter.Kind() == output.JsonFormat {
+		// no need to check the spinner for json format, as the spinner won't start when using json format
+		// instead, there would be a message about starting spinner
+		fmt.Fprintln(c.writer, string(item.ToJson()))
+		return
 	}
 
-	// Add the newline that would have been added by fmt.Println when we wrote the message directly to the console.
-	buf.WriteByte('\n')
+	if c.spinner != nil && c.spinner.Status() == yacspin.SpinnerRunning {
+		c.StopSpinner(ctx, "", Step)
+		// default non-format
+		fmt.Fprintln(c.writer, item.ToString(c.currentIndent))
+		_ = c.spinner.Start()
+	} else {
+		fmt.Fprintln(c.writer, item.ToString(c.currentIndent))
+	}
+}
 
-	return input_contracts.NewConsoleMessage(buf.String())
+func (c *AskerConsole) ShowSpinner(ctx context.Context, title string, format SpinnerUxType) {
+	if c.formatter != nil && c.formatter.Kind() == output.JsonFormat {
+		// Spinner is disabled when using json format.
+		c.Message(ctx, "Show spinner with title: "+title)
+		return
+	}
+
+	// make sure spinner exists
+	if c.spinner == nil {
+		c.spinner, _ = yacspin.New(yacspin.Config{
+			Frequency:       200 * time.Millisecond,
+			Writer:          c.writer,
+			Suffix:          " ",
+			SuffixAutoColon: true,
+		})
+	}
+	// If running, pause to apply style changes
+	if c.spinner.Status() == yacspin.SpinnerRunning {
+		_ = c.spinner.Pause()
+	}
+
+	// Update style according to MessageUxType
+	c.spinner.Message(title)
+	_ = c.spinner.CharSet(c.getCharset(format))
+
+	// unpause if Paused
+	if c.spinner.Status() == yacspin.SpinnerPaused {
+		_ = c.spinner.Unpause()
+	} else if c.spinner.Status() == yacspin.SpinnerStopped {
+		_ = c.spinner.Start()
+	}
+}
+
+var customCharSet []string = []string{
+	"|       |", "|=      |", "|==     |", "|===    |", "|====   |", "|=====  |", "|====== |",
+	"|=======|", "| ======|", "|  =====|", "|   ====|", "|    ===|", "|     ==|", "|      =|",
+}
+
+func (c *AskerConsole) getCharset(format SpinnerUxType) []string {
+	newCharSet := make([]string, len(customCharSet))
+	for i, value := range customCharSet {
+		newCharSet[i] = fmt.Sprintf("%s%s", c.getIndent(format), value)
+	}
+	return newCharSet
+}
+
+func setIndentation(spaces int) string {
+	bytes := make([]byte, spaces)
+	for i := range bytes {
+		bytes[i] = byte(' ')
+	}
+	return string(bytes)
+}
+
+func (c *AskerConsole) getIndent(format SpinnerUxType) string {
+	var requiredSize int
+	switch format {
+	case Step:
+		requiredSize = 2
+	case StepDone:
+		requiredSize = 2
+	case StepFailed:
+		requiredSize = 2
+	}
+	if requiredSize != len(c.currentIndent) {
+		c.currentIndent = setIndentation(requiredSize)
+	}
+	return c.currentIndent
+}
+
+func (c *AskerConsole) StopSpinner(ctx context.Context, lastMessage string, format SpinnerUxType) {
+	if c.formatter != nil && c.formatter.Kind() == output.JsonFormat {
+		// Spinner is disabled when using json format.
+		c.Message(ctx, "Stop spinner with title: "+lastMessage)
+		return
+	}
+
+	// calling stop for non existing spinner
+	if c.spinner == nil {
+		return
+	}
+	// Do nothing when it is already stopped
+	if c.spinner.Status() == yacspin.SpinnerStopped {
+		return
+	}
+
+	// Update style according to MessageUxType
+	if lastMessage == "" {
+		c.spinner.StopCharacter("")
+	} else {
+		c.spinner.StopCharacter(c.getStopChar(format))
+	}
+
+	c.spinner.StopMessage(lastMessage)
+	_ = c.spinner.Stop()
+}
+
+var donePrefix string = output.WithSuccessFormat("(✓) Done:")
+
+func (c *AskerConsole) getStopChar(format SpinnerUxType) string {
+	var stopChar string
+	switch format {
+	case StepDone:
+		stopChar = donePrefix
+	case StepFailed:
+		stopChar = output.WithErrorFormat("(x) Failed:")
+	}
+	return fmt.Sprintf("%s%s", c.getIndent(format), stopChar)
 }
 
 // Prompts the user for a single value
@@ -162,7 +310,7 @@ func (c *AskerConsole) Confirm(ctx context.Context, options ConsoleOptions) (boo
 }
 
 // Gets the underlying writer for the console
-func (c *AskerConsole) Writer() io.Writer {
+func (c *AskerConsole) GetWriter() io.Writer {
 	return c.writer
 }
 
@@ -183,23 +331,10 @@ func NewConsole(noPrompt bool, isTerminal bool, w io.Writer, handles ConsoleHand
 	}
 }
 
-type contextKey string
-
-const (
-	consoleContextKey contextKey = "console"
-)
-
-// Sets the console instance in the go context and returns the new context
-func WithConsole(ctx context.Context, console Console) context.Context {
-	return context.WithValue(ctx, consoleContextKey, console)
-}
-
-// Gets the console from the go context or nil if not found
-func GetConsole(ctx context.Context) Console {
-	console, ok := ctx.Value(consoleContextKey).(Console)
-	if !ok {
-		return nil
+func GetStepResultFormat(result error) SpinnerUxType {
+	formatResult := StepDone
+	if result != nil {
+		formatResult = StepFailed
 	}
-
-	return console
+	return formatResult
 }

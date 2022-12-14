@@ -6,6 +6,7 @@ appinsightsstorage
 appservice
 armappconfiguration
 AZCLI
+azcorelog
 azdcli
 azdcontext
 azddeploy
@@ -27,7 +28,9 @@ circleci
 cflags
 cmdsubst
 containerapp
+contoso
 csharpapp
+cupaloy
 devel
 dockerproject
 dskip
@@ -48,6 +51,8 @@ javac
 jmes
 keychain
 ldflags
+mockarmresources
+mockazcli
 mgmt
 mgutz
 mvnw
@@ -69,6 +74,7 @@ rzip
 semconv
 serverfarms
 setenvs
+snapshotter
 sstore
 staticcheck
 staticwebapp

@@ -4,12 +4,13 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
+	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
@@ -19,6 +20,7 @@ type infraDeleteFlags struct {
 	forceDelete bool
 	purgeDelete bool
 	global      *internal.GlobalCommandOptions
+	envFlag
 }
 
 func (i *infraDeleteFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
@@ -30,6 +32,7 @@ func (i *infraDeleteFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCom
 		//nolint:lll
 		"Does not require confirmation before it permanently deletes resources that are soft-deleted by default (for example, key vaults).",
 	)
+	i.envFlag.Bind(local, global)
 	i.global = global
 }
 
@@ -46,63 +49,60 @@ func infraDeleteCmdDesign(global *internal.GlobalCommandOptions) (*cobra.Command
 }
 
 type infraDeleteAction struct {
-	flags   infraDeleteFlags
-	azdCtx  *azdcontext.AzdContext
-	azCli   azcli.AzCli
-	console input.Console
+	flags         infraDeleteFlags
+	azCli         azcli.AzCli
+	azdCtx        *azdcontext.AzdContext
+	console       input.Console
+	commandRunner exec.CommandRunner
 }
 
 func newInfraDeleteAction(
 	flags infraDeleteFlags,
-	azdCtx *azdcontext.AzdContext,
 	azCli azcli.AzCli,
+	azdCtx *azdcontext.AzdContext,
 	console input.Console,
+	commandRunner exec.CommandRunner,
 ) *infraDeleteAction {
 	return &infraDeleteAction{
-		flags:   flags,
-		azdCtx:  azdCtx,
-		azCli:   azCli,
-		console: console,
+		flags:         flags,
+		azCli:         azCli,
+		azdCtx:        azdCtx,
+		console:       console,
+		commandRunner: commandRunner,
 	}
 }
 
-func (a *infraDeleteAction) Run(ctx context.Context) error {
+func (a *infraDeleteAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	if err := ensureProject(a.azdCtx.ProjectPath()); err != nil {
-		return err
+		return nil, err
 	}
 
-	if err := tools.EnsureInstalled(ctx, a.azCli); err != nil {
-		return err
-	}
-
-	if err := ensureLoggedIn(ctx); err != nil {
-		return fmt.Errorf("failed to ensure login: %w", err)
-	}
-
-	env, ctx, err := loadOrInitEnvironment(ctx, &a.flags.global.EnvironmentName, a.azdCtx, a.console)
+	env, ctx, err := loadOrInitEnvironment(ctx, &a.flags.environmentName, a.azdCtx, a.console, a.azCli)
 	if err != nil {
-		return fmt.Errorf("loading environment: %w", err)
+		return nil, fmt.Errorf("loading environment: %w", err)
 	}
 
 	prj, err := project.LoadProjectConfig(a.azdCtx.ProjectPath(), env)
 	if err != nil {
-		return fmt.Errorf("loading project: %w", err)
+		return nil, fmt.Errorf("loading project: %w", err)
 	}
 
-	infraManager, err := provisioning.NewManager(ctx, env, prj.Path, prj.Infra, !a.flags.global.NoPrompt)
+	infraManager, err := provisioning.NewManager(
+		ctx, env, prj.Path, prj.Infra, a.console.IsUnformatted(), a.azCli, a.console, a.commandRunner,
+	)
 	if err != nil {
-		return fmt.Errorf("creating provisioning manager: %w", err)
+		return nil, fmt.Errorf("creating provisioning manager: %w", err)
 	}
 
 	deploymentPlan, err := infraManager.Plan(ctx)
 	if err != nil {
-		return fmt.Errorf("planning destroy: %w", err)
+		return nil, fmt.Errorf("planning destroy: %w", err)
 	}
 
 	destroyOptions := provisioning.NewDestroyOptions(a.flags.forceDelete, a.flags.purgeDelete)
 	destroyResult, err := infraManager.Destroy(ctx, &deploymentPlan.Deployment, destroyOptions)
 	if err != nil {
-		return fmt.Errorf("destroying infrastructure: %w", err)
+		return nil, fmt.Errorf("destroying infrastructure: %w", err)
 	}
 
 	// Remove any outputs from the template from the environment since destroying the infrastructure
@@ -112,8 +112,8 @@ func (a *infraDeleteAction) Run(ctx context.Context) error {
 	}
 
 	if err := env.Save(); err != nil {
-		return fmt.Errorf("saving environment: %w", err)
+		return nil, fmt.Errorf("saving environment: %w", err)
 	}
 
-	return nil
+	return nil, nil
 }

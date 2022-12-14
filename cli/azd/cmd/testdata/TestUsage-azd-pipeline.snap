@@ -1,0 +1,16 @@
+Usage:
+  azd pipeline [command]
+
+Available Commands:
+  config      Create and configure your deployment pipeline by using GitHub Actions or Azure Pipelines.
+
+Flags:
+  -h, --help   Gets help for pipeline.
+
+Global Flags:
+  -C, --cwd string   Sets the current working directory.
+      --debug        Enables debugging and diagnostics logging.
+      --no-prompt    Accepts the default value instead of prompting, or it fails if there is no default.
+
+Use "azd pipeline [command] --help" for more information about a command.
+

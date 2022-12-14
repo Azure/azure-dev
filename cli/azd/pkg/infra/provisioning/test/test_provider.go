@@ -19,6 +19,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	. "github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
@@ -183,12 +184,12 @@ func (p *TestProvider) Destroy(
 		})
 }
 
-func NewTestProvider(ctx context.Context, env *environment.Environment, projectPath string, options Options) Provider {
+func NewTestProvider(env *environment.Environment, projectPath string, console input.Console, options Options) Provider {
 	return &TestProvider{
 		env:         env,
 		projectPath: projectPath,
 		options:     options,
-		console:     input.GetConsole(ctx),
+		console:     console,
 	}
 }
 
@@ -196,8 +197,16 @@ func NewTestProvider(ctx context.Context, env *environment.Environment, projectP
 func init() {
 	err := RegisterProvider(
 		Test,
-		func(ctx context.Context, env *environment.Environment, projectPath string, options Options) (Provider, error) {
-			return NewTestProvider(ctx, env, projectPath, options), nil
+		func(
+			ctx context.Context,
+			env *environment.Environment,
+			projectPath string,
+			options Options,
+			console input.Console,
+			_ azcli.AzCli,
+			_ exec.CommandRunner,
+		) (Provider, error) {
+			return NewTestProvider(env, projectPath, console, options), nil
 		},
 	)
 

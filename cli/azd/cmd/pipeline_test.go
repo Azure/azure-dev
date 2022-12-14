@@ -25,7 +25,8 @@ func TestPipelineConfigCmd(t *testing.T) {
 	globalOpt := &internal.GlobalCommandOptions{}
 	command, _ := pipelineConfigCmdDesign(globalOpt)
 	assert.EqualValues(t, "config", command.Use)
-	assert.EqualValues(t, "Create and configure your deployment pipeline by using GitHub Actions.", command.Short)
+	assert.EqualValues(t, "Create and configure your deployment pipeline by using GitHub Actions or Azure Pipelines.",
+		command.Short)
 
 	childCommands := command.Commands()
 	assert.EqualValues(t, 0, len(childCommands))
@@ -58,7 +59,7 @@ func TestSetupFlags(t *testing.T) {
 	flagName = "principal-role"
 	principalRoleNameFlag := command.LocalFlags().Lookup(flagName)
 	assert.NotEqual(t, (*pflag.Flag)(nil), principalRoleNameFlag)
-	assert.Equal(t, "Contributor", principalRoleNameFlag.Value.String())
+	assert.Equal(t, "contributor", principalRoleNameFlag.Value.String())
 	assert.Equal(t, "The role to assign to the service principal.", principalRoleNameFlag.Usage)
 	principalRoleNameFlag = command.PersistentFlags().Lookup(flagName)
 	assert.Equal(t, (*pflag.Flag)(nil), principalRoleNameFlag)

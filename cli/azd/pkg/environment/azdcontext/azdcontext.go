@@ -8,23 +8,19 @@ import (
 	"path/filepath"
 	"sort"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/contracts"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 )
 
 const ProjectFileName = "azure.yaml"
 const EnvironmentDirectoryName = ".azure"
+const DotEnvFileName = ".env"
 const ConfigFileName = "config.json"
 const ConfigFileVersion = 1
 const InfraDirectoryName = "infra"
 
 type AzdContext struct {
 	projectDirectory string
-}
-
-type EnvironmentView struct {
-	Name       string
-	IsDefault  bool
-	DotEnvPath string
 }
 
 func (c *AzdContext) ProjectDirectory() string {
@@ -51,19 +47,23 @@ func (c *AzdContext) GetDefaultProjectName() string {
 	return filepath.Base(c.ProjectDirectory())
 }
 
-func (c *AzdContext) GetEnvironmentFilePath(name string) string {
-	return filepath.Join(c.EnvironmentDirectory(), name, ".env")
+func (c *AzdContext) EnvironmentDotEnvPath(name string) string {
+	return filepath.Join(c.EnvironmentDirectory(), name, DotEnvFileName)
+}
+
+func (c *AzdContext) EnvironmentRoot(name string) string {
+	return filepath.Join(c.EnvironmentDirectory(), name)
 }
 
 func (c *AzdContext) GetEnvironmentWorkDirectory(name string) string {
-	return filepath.Join(c.GetEnvironmentFilePath(name), "wd")
+	return filepath.Join(c.EnvironmentRoot(name), "wd")
 }
 
 func (c *AzdContext) GetInfrastructurePath() string {
 	return filepath.Join(c.ProjectDirectory(), InfraDirectoryName)
 }
 
-func (c *AzdContext) ListEnvironments() ([]EnvironmentView, error) {
+func (c *AzdContext) ListEnvironments() ([]contracts.EnvListEnvironment, error) {
 	defaultEnv, err := c.GetDefaultEnvironmentName()
 	if err != nil {
 		return nil, err
@@ -74,13 +74,13 @@ func (c *AzdContext) ListEnvironments() ([]EnvironmentView, error) {
 		return nil, fmt.Errorf("listing entries: %w", err)
 	}
 
-	var envs []EnvironmentView
+	var envs []contracts.EnvListEnvironment
 	for _, ent := range ents {
 		if ent.IsDir() {
-			ev := EnvironmentView{
+			ev := contracts.EnvListEnvironment{
 				Name:       ent.Name(),
 				IsDefault:  ent.Name() == defaultEnv,
-				DotEnvPath: c.GetEnvironmentFilePath(ent.Name()),
+				DotEnvPath: c.EnvironmentDotEnvPath(ent.Name()),
 			}
 			envs = append(envs, ev)
 		}

@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/dotnet"
@@ -79,7 +80,7 @@ func (dp *dotnetProject) Initialize(ctx context.Context) error {
 	handler := func(ctx context.Context, args ServiceLifecycleEventArgs) error {
 		return dp.setUserSecretsFromOutputs(ctx, args)
 	}
-	if err := dp.config.AddHandler(Deployed, handler); err != nil {
+	if err := dp.config.AddHandler(EnvironmentUpdated, handler); err != nil {
 		return err
 	}
 
@@ -92,10 +93,12 @@ func normalizeDotNetSecret(key string) string {
 	return strings.ReplaceAll(key, "__", ":")
 }
 
-func NewDotNetProject(ctx context.Context, config *ServiceConfig, env *environment.Environment) FrameworkService {
+func NewDotNetProject(
+	commandRunner exec.CommandRunner, config *ServiceConfig, env *environment.Environment,
+) FrameworkService {
 	return &dotnetProject{
 		config:    config,
 		env:       env,
-		dotnetCli: dotnet.NewDotNetCli(ctx),
+		dotnetCli: dotnet.NewDotNetCli(commandRunner),
 	}
 }

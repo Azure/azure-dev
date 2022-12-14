@@ -7,11 +7,16 @@
         }
     },
     "features": {
-        "github-cli": "2",
-        "azure-cli": "2.38",
-        "docker-from-docker": "20.10",
-        "java": "17.0",
-        "node": {
+        "ghcr.io/devcontainers/features/docker-from-docker:1": {
+            "version": "20.10"
+        },
+        "ghcr.io/devcontainers/features/java:1": {
+            "version": "17.0"
+        },
+        "ghcr.io/devcontainers/features/github-cli:1": {
+            "version": "2"
+        },
+        "ghcr.io/devcontainers/features/node:1": {
             "version": "16",
             "nodeGypDependencies": false
         }
@@ -21,12 +26,16 @@
         "ms-azuretools.vscode-bicep",
         "ms-azuretools.vscode-docker",
         "ms-vscode.vscode-node-azure-pack",
-        "vscjava.vscode-java-pack"
+        "vscjava.vscode-java-pack",
+        "ms-azuretools.vscode-azurefunctions"
     ],
     "forwardPorts": [
         3000,
         3100
     ],
     "postCreateCommand": "",
-    "remoteUser": "vscode"
+    "remoteUser": "vscode",
+    "hostRequirements": {
+        "memory": "8gb"
+    }
 }

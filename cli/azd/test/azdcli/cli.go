@@ -8,6 +8,7 @@
 package azdcli
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -23,23 +24,35 @@ const (
 	HeartbeatInterval = 10 * time.Second
 )
 
+// The result of calling an azd CLI command
+type CliResult struct {
+	ExitCode int
+	Stdout   string
+	Stderr   string
+}
+
+// The azd CLI.
+//
+// Consumers should use the NewCLI constructor to initialize this struct.
 type CLI struct {
 	T                *testing.T
 	WorkingDirectory string
-	ConfigFilePath   string
 	Env              []string
+	// The location of azd to invoke. By default, set to GetAzdLocation()
+	AzdLocation string
 }
 
 func NewCLI(t *testing.T) *CLI {
 	return &CLI{
-		T: t,
+		T:           t,
+		AzdLocation: GetAzdLocation(),
 	}
 }
 
-func (cli *CLI) RunCommandWithStdIn(ctx context.Context, stdin string, args ...string) (string, error) {
+func (cli *CLI) RunCommandWithStdIn(ctx context.Context, stdin string, args ...string) (*CliResult, error) {
 	description := "azd " + strings.Join(args, " ") + " in " + cli.WorkingDirectory
 
-	cmd := exec.CommandContext(ctx, GetAzdLocation(), args...)
+	cmd := exec.CommandContext(ctx, cli.AzdLocation, args...)
 	if cli.WorkingDirectory != "" {
 		cmd.Dir = cli.WorkingDirectory
 	}
@@ -60,31 +73,42 @@ func (cli *CLI) RunCommandWithStdIn(ctx context.Context, stdin string, args ...s
 		done <- struct{}{}
 	}()
 
-	out, err := cmd.CombinedOutput()
+	var stderr, stdout bytes.Buffer
+	cmd.Stderr = &stderr
+	cmd.Stdout = &stdout
+	err := cmd.Run()
 
-	// If there's no context error, we know the command completed (or error).
-	for _, line := range strings.Split(string(out), "\n") {
-		cli.T.Logf("[out] %s", line)
+	result := &CliResult{}
+	result.Stdout = stdout.String()
+	result.Stderr = stderr.String()
+	result.ExitCode = cmd.ProcessState.ExitCode()
+
+	for _, line := range strings.Split(result.Stdout, "\n") {
+		cli.T.Logf("[stdout] %s", line)
+	}
+
+	for _, line := range strings.Split(result.Stderr, "\n") {
+		cli.T.Logf("[stderr] %s", line)
 	}
 
 	if errors.Is(ctx.Err(), context.DeadlineExceeded) {
-		return string(out), fmt.Errorf("command '%s' timed out: %w", description, err)
+		return result, fmt.Errorf("command '%s' timed out: %w", description, err)
 	}
 
 	if errors.Is(ctx.Err(), context.Canceled) {
 		// bubble up errors due to cancellation with their output, and let the caller
 		// decide how to handle it.
-		return string(out), ctx.Err()
+		return result, ctx.Err()
 	}
 
 	if err != nil {
-		return string(out), fmt.Errorf("command '%s' had non-zero exit code: %w", description, err)
+		return result, fmt.Errorf("command '%s' had non-zero exit code: %w", description, err)
 	}
 
-	return string(out), nil
+	return result, nil
 }
 
-func (cli *CLI) RunCommand(ctx context.Context, args ...string) (string, error) {
+func (cli *CLI) RunCommand(ctx context.Context, args ...string) (*CliResult, error) {
 	return cli.RunCommandWithStdIn(ctx, "", args...)
 }
 

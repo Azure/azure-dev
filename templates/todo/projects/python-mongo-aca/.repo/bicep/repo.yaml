@@ -65,17 +65,17 @@ repo:
       - from: web-container-app.bicep
         to: web.bicep
         patterns:
-          - "**/resources.bicep"
+          - "**/main.bicep"
 
       - from: api-container-app.bicep
         to: api.bicep
         patterns:
-          - "**/resources.bicep"
+          - "**/main.bicep"
 
       - from: cosmos-mongo-db.bicep
         to: db.bicep
         patterns:
-          - "**/resources.bicep"
+          - "**/main.bicep"
 
   assets:
     # # Common assets
@@ -128,6 +128,11 @@ repo:
         - .github/**/*
         - .devcontainer/**/*
         - "infra/**/*"
+        - .azdo/pipelines/*/azure-dev.yml
+
+    # AzDo workflows for bicep
+    - from: ../../../../../common/.azdo/pipelines/bicep/azure-dev.yml
+      to: ./.azdo/pipelines/azure-dev.yml
 
     # Github workflows for bicep
     - from: ../../../../../common/.github/workflows/bicep
@@ -138,8 +143,8 @@ repo:
       to: ./infra
 
     # .devcontainer common (devcontainer.json)
-    - from: ../../../../../common/.devcontainer/devcontainer.json/python
-      to: ./.devcontainer
+    - from: ../../../../../common/.devcontainer/devcontainer.json/python/devcontainer.json
+      to: ./.devcontainer/devcontainer.json
 
     # .devcontainer common (Dockerfile)
     - from: ../../../../../common/.devcontainer/Dockerfile/base
@@ -152,6 +157,11 @@ repo:
     # Tests common
     - from: ../../../../common/tests
       to: ./tests
+
+    # Auth Python common
+    - from: ../../../../common/auth/py
+      to: ./src/api/todo
+      
     # Python API
     - from: ../../../../api/python
       to: ./src/api

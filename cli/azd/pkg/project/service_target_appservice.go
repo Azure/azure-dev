@@ -7,24 +7,26 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
+	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/project/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 )
 
 type appServiceTarget struct {
-	config *ServiceConfig
-	env    *environment.Environment
-	scope  *environment.DeploymentScope
-	cli    azcli.AzCli
+	config   *ServiceConfig
+	env      *environment.Environment
+	resource *environment.TargetResource
+	cli      azcli.AzCli
 }
 
 func (st *appServiceTarget) RequiredExternalTools() []tools.ExternalTool {
-	return []tools.ExternalTool{st.cli}
+	return []tools.ExternalTool{}
 }
 
 func (st *appServiceTarget) Deploy(
@@ -52,8 +54,8 @@ func (st *appServiceTarget) Deploy(
 	res, err := st.cli.DeployAppServiceZip(
 		ctx,
 		st.env.GetSubscriptionId(),
-		st.scope.ResourceGroupName(),
-		st.scope.ResourceName(),
+		st.resource.ResourceGroupName(),
+		st.resource.ResourceName(),
 		zipFile,
 	)
 	if err != nil {
@@ -67,7 +69,11 @@ func (st *appServiceTarget) Deploy(
 	}
 
 	sdr := NewServiceDeploymentResult(
-		azure.WebsiteRID(st.env.GetSubscriptionId(), st.scope.ResourceGroupName(), st.scope.ResourceName()),
+		azure.WebsiteRID(
+			st.env.GetSubscriptionId(),
+			st.resource.ResourceGroupName(),
+			st.resource.ResourceName(),
+		),
 		AppServiceTarget,
 		*res,
 		endpoints,
@@ -79,8 +85,8 @@ func (st *appServiceTarget) Endpoints(ctx context.Context) ([]string, error) {
 	appServiceProperties, err := st.cli.GetAppServiceProperties(
 		ctx,
 		st.env.GetSubscriptionId(),
-		st.scope.ResourceGroupName(),
-		st.scope.ResourceName(),
+		st.resource.ResourceGroupName(),
+		st.resource.ResourceName(),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("fetching service properties: %w", err)
@@ -97,13 +103,21 @@ func (st *appServiceTarget) Endpoints(ctx context.Context) ([]string, error) {
 func NewAppServiceTarget(
 	config *ServiceConfig,
 	env *environment.Environment,
-	scope *environment.DeploymentScope,
+	resource *environment.TargetResource,
 	azCli azcli.AzCli,
-) ServiceTarget {
-	return &appServiceTarget{
-		config: config,
-		env:    env,
-		scope:  scope,
-		cli:    azCli,
+) (ServiceTarget, error) {
+	if !strings.EqualFold(resource.ResourceType(), string(infra.AzureResourceTypeWebSite)) {
+		return nil, resourceTypeMismatchError(
+			resource.ResourceName(),
+			resource.ResourceType(),
+			infra.AzureResourceTypeWebSite,
+		)
 	}
+
+	return &appServiceTarget{
+		config:   config,
+		env:      env,
+		resource: resource,
+		cli:      azCli,
+	}, nil
 }

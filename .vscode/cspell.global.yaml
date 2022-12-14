@@ -15,12 +15,14 @@ words:
     - bson
     - azdo
 ignoreWords:
+    - AADSTS
     - afwp
     - apim
     - appcontainers
     - appcs
     - appi
     - arck
+    - armauthorization
     - armappcontainers
     - armappservice
     - armkeyvault
@@ -56,7 +58,9 @@ ignoreWords:
     - execfn
     - execmock
     - fdfp
+    - fics
     - Frontdoor
+    - graphsdk
     - hndl
     - httpclient
     - httptrigger
@@ -66,16 +70,20 @@ ignoreWords:
     - kubernetes
     - kusto
     - magefile
+    - mainfic
     - menuid
     - migr
+    - mockconfig
     - mockconsole
     - mockexec
     - mockhttp
     - MYDIR
     - nsgsr
     - ntfns
+    - odata
     - osdisk
     - osexec
+    - oidc
     - pcert
     - pdnsz
     - Peerings
@@ -99,6 +107,7 @@ ignoreWords:
     - srch
     - ssimp
     - stapp
+    - startswith
     - stvm
     - syndp
     - synsp

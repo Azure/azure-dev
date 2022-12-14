@@ -22,9 +22,9 @@ type npmCli struct {
 	commandRunner exec.CommandRunner
 }
 
-func NewNpmCli(ctx context.Context) NpmCli {
+func NewNpmCli(commandRunner exec.CommandRunner) NpmCli {
 	return &npmCli{
-		commandRunner: exec.GetCommandRunner(ctx),
+		commandRunner: commandRunner,
 	}
 }
 
@@ -45,11 +45,11 @@ func (cli *npmCli) CheckInstalled(ctx context.Context) (bool, error) {
 	}
 
 	//check node version
-	nodeRes, err := tools.ExecuteCommand(ctx, "node", "--version")
+	nodeRes, err := tools.ExecuteCommand(ctx, cli.commandRunner, "node", "--version")
 	if err != nil {
 		return false, fmt.Errorf("checking %s version: %w", cli.Name(), err)
 	}
-	nodeSemver, err := tools.ExtractSemver(nodeRes)
+	nodeSemver, err := tools.ExtractVersion(nodeRes)
 	if err != nil {
 		return false, fmt.Errorf("converting to semver version fails: %w", err)
 	}

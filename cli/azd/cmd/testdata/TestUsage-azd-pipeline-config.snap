@@ -1,0 +1,17 @@
+Usage:
+  azd pipeline config [flags]
+
+Flags:
+      --auth-type string        The authentication type used between the pipeline provider and Azure for deployment (Only valid for GitHub provider)
+  -e, --environment string      The name of the environment to use.
+  -h, --help                    Gets help for config.
+      --principal-name string   The name of the service principal to use to grant access to Azure resources as part of the pipeline.
+      --principal-role string   The role to assign to the service principal. (default "contributor")
+      --provider string         The pipeline provider to use (github for Github Actions and azdo for Azure Pipelines). (default "github")
+      --remote-name string      The name of the git remote to configure the pipeline to run on. (default "origin")
+
+Global Flags:
+  -C, --cwd string   Sets the current working directory.
+      --debug        Enables debugging and diagnostics logging.
+      --no-prompt    Accepts the default value instead of prompting, or it fails if there is no default.
+

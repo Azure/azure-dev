@@ -20,11 +20,13 @@ eastus
 envconfig
 ezfunc
 fasterxml
+hubspot
 immer
 inprogress
 INPROGRESS
 Instrumentor
 mkdir
+mktime
 mvnw
 networkidle
 noverify

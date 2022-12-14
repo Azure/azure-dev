@@ -16,7 +16,7 @@ type CommandExecutor interface {
 	Run(ctx context.Context, commandName string, args []string) (bool, string, error)
 }
 
-// This package is designed to be used in the context of Azure CLI parameter file templates,
+// This package is designed to be used in the context of ARM parameter file templates,
 // which are relatively simple, JSON-format documents.
 // The package relies on regular expressions and does not include a full parser.
 //

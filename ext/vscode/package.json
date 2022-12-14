@@ -2,7 +2,7 @@
     "name": "azure-dev",
     "displayName": "Azure Developer CLI",
     "description": "Makes it easy to run, provision, and deploy Azure applications using the Azure Developer CLI",
-    "version": "0.4.0-alpha",
+    "version": "0.4.0-alpha.1",
     "license": "MIT",
     "icon": "resources/icon.png",
     "preview": true,
@@ -303,13 +303,13 @@
             }
         ],
         "x-azResources": {
-          "commands": [
-              {
-                  "command": "azure-dev.commands.cli.provision",
-                  "title": "Create application infrastructure using azd...",
-                  "detail": "Use the Azure Developer CLI to set up application infrastructure resources (azd provision)."
-              }
-          ]
+            "commands": [
+                {
+                    "command": "azure-dev.commands.cli.provision",
+                    "title": "Create application infrastructure using azd...",
+                    "detail": "Use the Azure Developer CLI to set up application infrastructure resources (azd provision)."
+                }
+            ]
         },
         "x-azResourcesV2": {
             "workspace": {
@@ -337,11 +337,9 @@
     },
     "devDependencies": {
         "@types/chai": "~4.3",
-        "@types/fs-extra": "~9",
         "@types/glob": "~7",
         "@types/mocha": "~9",
         "@types/node": "~16",
-        "@types/temp": "~0.9",
         "@types/vscode": "~1.64",
         "@typescript-eslint/eslint-plugin": "~5",
         "@typescript-eslint/parser": "~5",
@@ -349,9 +347,9 @@
         "chai": "~4.3",
         "copy-webpack-plugin": "~11.0",
         "eslint": "~8.23",
+        "glob": "~8.0",
         "mocha": "~9.2",
         "node-loader": "~2.0",
-        "temp": "~0.9",
         "ts-loader": "~9.3",
         "typescript": "~4.8",
         "vsce": "~2.11",
@@ -362,13 +360,6 @@
     "dependencies": {
         "@microsoft/vscode-azext-utils": "~0.3.15",
         "dayjs": "~1.11",
-        "dotenv": "~16.0",
-        "glob": "~8.0",
-        "rxjs": "^7.5.7",
-        "vscode-tas-client": "~0.1",
-        "yaml": "^2.1.1"
-    },
-    "extensionDependencies": [
-        "ms-vscode.azure-account"
-    ]
+        "dotenv": "~16.0"
+    }
 }

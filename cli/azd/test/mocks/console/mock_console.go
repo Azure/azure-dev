@@ -7,15 +7,29 @@ import (
 	"io"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/output"
+	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 )
 
 // A predicate function definition for registering expressions
 type WhenPredicate func(options input.ConsoleOptions) bool
 
+type SpinnerOpType string
+
+const SpinnerOpShow SpinnerOpType = "show"
+const SpinnerOpStop SpinnerOpType = "stop"
+
+type SpinnerOp struct {
+	Op      SpinnerOpType
+	Message string
+	Format  input.SpinnerUxType
+}
+
 // A mock implementation of the input.Console interface
 type MockConsole struct {
 	expressions []*MockConsoleExpression
 	log         []string
+	spinnerOps  []SpinnerOp
 }
 
 func NewMockConsole() *MockConsole {
@@ -24,12 +38,28 @@ func NewMockConsole() *MockConsole {
 	}
 }
 
+func (c *MockConsole) IsUnformatted() bool {
+	return true
+}
+
+func (c *MockConsole) GetFormatter() output.Formatter {
+	return nil
+}
+
+func (c *MockConsole) GetWriter() io.Writer {
+	return nil
+}
+
 func (c *MockConsole) SetWriter(writer io.Writer) {
 
 }
 
 func (c *MockConsole) Output() []string {
 	return c.log
+}
+
+func (c *MockConsole) SpinnerOps() []SpinnerOp {
+	return c.spinnerOps
 }
 
 func (c *MockConsole) Handles() input.ConsoleHandles {
@@ -43,6 +73,26 @@ func (c *MockConsole) Handles() input.ConsoleHandles {
 // Prints a message to the console
 func (c *MockConsole) Message(ctx context.Context, message string) {
 	c.log = append(c.log, message)
+}
+
+func (c *MockConsole) MessageUxItem(ctx context.Context, item ux.UxItem) {
+	c.Message(ctx, item.ToString(""))
+}
+
+func (c *MockConsole) ShowSpinner(ctx context.Context, title string, format input.SpinnerUxType) {
+	c.spinnerOps = append(c.spinnerOps, SpinnerOp{
+		Op:      SpinnerOpShow,
+		Message: title,
+		Format:  format,
+	})
+}
+
+func (c *MockConsole) StopSpinner(ctx context.Context, lastMessage string, format input.SpinnerUxType) {
+	c.spinnerOps = append(c.spinnerOps, SpinnerOp{
+		Op:      SpinnerOpStop,
+		Message: lastMessage,
+		Format:  format,
+	})
 }
 
 // Prints a confirmation message to the console for the user to confirm

@@ -3,14 +3,17 @@ package cmd
 // Run `go generate ./cmd` or `wire ./cmd` after modifying this file to regenerate `wire_gen.go`.
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"os"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
-	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/pkg/account"
+	"github.com/azure/azure-dev/cli/azd/pkg/auth"
+	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
@@ -24,42 +27,38 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func newWriter(cmd *cobra.Command) io.Writer {
-	writer := cmd.OutOrStdout()
+func newOutputWriter(console input.Console) io.Writer {
+	writer := console.Handles().Stdout
 
 	if os.Getenv("NO_COLOR") != "" {
 		writer = colorable.NewNonColorable(writer)
 	}
 
-	// To support color on windows platforms which don't natively support rendering ANSI codes
-	// we use colorable.NewColorableStdout() which creates a stream that uses the Win32 APIs to
-	// change colors as it interprets the ANSI escape codes in the string it is writing.
-	if writer == os.Stdout {
-		writer = colorable.NewColorableStdout()
-	}
-
 	return writer
+}
+
+func newFormatterFromConsole(console input.Console) output.Formatter {
+	return console.GetFormatter()
 }
 
 func newConsoleFromOptions(
 	rootOptions *internal.GlobalCommandOptions,
 	formatter output.Formatter,
-	writer io.Writer,
 	cmd *cobra.Command,
 ) input.Console {
-	// NOTE: There is a similar version of this code in pkg/commands/builder.go that exists while we transition
-	// from the old plan of passing everything via a context to the new plan of wiring everything up explicitly.
-	//
-	// If you make changes to this logic here, also take a look over there to make the same changes.
-
-	isTerminal := cmd.OutOrStdout() == os.Stdout &&
-		cmd.InOrStdin() == os.Stdin && isatty.IsTerminal(os.Stdin.Fd()) &&
-		isatty.IsTerminal(os.Stdout.Fd())
-
+	writer := cmd.OutOrStdout()
 	// When using JSON formatting, we want to ensure we always write messages from the console to stderr.
 	if formatter != nil && formatter.Kind() == output.JsonFormat {
 		writer = cmd.ErrOrStderr()
 	}
+
+	if os.Getenv("NO_COLOR") != "" {
+		writer = colorable.NewNonColorable(writer)
+	}
+
+	isTerminal := cmd.OutOrStdout() == os.Stdout &&
+		cmd.InOrStdin() == os.Stdin && isatty.IsTerminal(os.Stdin.Fd()) &&
+		isatty.IsTerminal(os.Stdout.Fd())
 
 	return input.NewConsole(rootOptions.NoPrompt, isTerminal, writer, input.ConsoleHandles{
 		Stdin:  cmd.InOrStdin(),
@@ -78,13 +77,11 @@ func newCommandRunnerFromConsole(console input.Console) exec.CommandRunner {
 
 func newAzCliFromOptions(
 	rootOptions *internal.GlobalCommandOptions,
-	cmdRun exec.CommandRunner,
 	credential azcore.TokenCredential,
 ) azcli.AzCli {
 	return azcli.NewAzCli(credential, azcli.NewAzCliArgs{
 		EnableDebug:     rootOptions.EnableDebugLogging,
 		EnableTelemetry: rootOptions.EnableTelemetry,
-		CommandRunner:   cmdRun,
 		HttpClient:      nil,
 	})
 }
@@ -98,10 +95,14 @@ func newAzdContext() (*azdcontext.AzdContext, error) {
 	return azdCtx, nil
 }
 
-func newCredential() (azcore.TokenCredential, error) {
-	credential, err := azidentity.NewAzureCLICredential(nil)
+func newCredential(ctx context.Context, authManager *auth.Manager) (azcore.TokenCredential, error) {
+	credential, err := authManager.CredentialForCurrentUser(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to obtain Azure credentials: %w", err)
+		return nil, err
+	}
+
+	if _, err := auth.EnsureLoggedInCredential(ctx, credential); err != nil {
+		return nil, err
 	}
 
 	return credential, nil
@@ -109,17 +110,21 @@ func newCredential() (azcore.TokenCredential, error) {
 
 var FormattedConsoleSet = wire.NewSet(
 	output.GetCommandFormatter,
-	newWriter,
 	newConsoleFromOptions,
 )
 
 var CommonSet = wire.NewSet(
+	config.NewManager,
+	config.NewUserConfigManager,
+	account.NewManager,
 	newAzdContext,
-	FormattedConsoleSet,
 	newCommandRunnerFromConsole,
+	newFormatterFromConsole,
+	newOutputWriter,
 )
 
 var AzCliSet = wire.NewSet(
+	auth.NewManager,
 	newCredential,
 	newAzCliFromOptions,
 )
@@ -127,7 +132,7 @@ var AzCliSet = wire.NewSet(
 var InitCmdSet = wire.NewSet(
 	CommonSet,
 	AzCliSet,
-	git.NewGitCliFromRunner,
+	git.NewGitCli,
 	newInitAction,
 	wire.Bind(new(actions.Action), new(*initAction)))
 
@@ -152,7 +157,7 @@ var DeployCmdSet = wire.NewSet(
 var UpCmdSet = wire.NewSet(
 	CommonSet,
 	AzCliSet,
-	git.NewGitCliFromRunner,
+	git.NewGitCli,
 	newInitAction,
 	newInfraCreateAction,
 	newDeployAction,
@@ -196,9 +201,15 @@ var EnvGetValuesCmdSet = wire.NewSet(
 
 var LoginCmdSet = wire.NewSet(
 	CommonSet,
-	AzCliSet,
+	auth.NewManager,
 	newLoginAction,
 	wire.Bind(new(actions.Action), new(*loginAction)))
+
+var LogoutCmdSet = wire.NewSet(
+	CommonSet,
+	auth.NewManager,
+	newLogoutAction,
+	wire.Bind(new(actions.Action), new(*logoutAction)))
 
 var MonitorCmdSet = wire.NewSet(
 	CommonSet,
@@ -214,11 +225,13 @@ var PipelineConfigCmdSet = wire.NewSet(
 
 var RestoreCmdSet = wire.NewSet(
 	CommonSet,
+	AzCliSet,
 	newRestoreAction,
 	wire.Bind(new(actions.Action), new(*restoreAction)))
 
 var ShowCmdSet = wire.NewSet(
 	CommonSet,
+	AzCliSet,
 	newShowAction,
 	wire.Bind(new(actions.Action), new(*showAction)))
 
@@ -238,3 +251,35 @@ var VersionCmdSet = wire.NewSet(
 	CommonSet,
 	newVersionAction,
 	wire.Bind(new(actions.Action), new(*versionAction)))
+
+var ConfigListCmdSet = wire.NewSet(
+	CommonSet,
+	newConfigListAction,
+	wire.Bind(new(actions.Action), new(*configListAction)))
+
+var ConfigGetCmdSet = wire.NewSet(
+	CommonSet,
+	newConfigGetAction,
+	wire.Bind(new(actions.Action), new(*configGetAction)))
+
+var ConfigSetCmdSet = wire.NewSet(
+	CommonSet,
+	newConfigSetAction,
+	wire.Bind(new(actions.Action), new(*configSetAction)))
+
+var ConfigUnsetCmdSet = wire.NewSet(
+	CommonSet,
+	newConfigUnsetAction,
+	wire.Bind(new(actions.Action), new(*configUnsetAction)))
+
+var ConfigResetCmdSet = wire.NewSet(
+	CommonSet,
+	newConfigResetAction,
+	wire.Bind(new(actions.Action), new(*configResetAction)))
+
+var AuthTokenCmdSet = wire.NewSet(
+	CommonSet,
+	auth.NewManager,
+	newCredential,
+	newAuthTokenAction,
+	wire.Bind(new(actions.Action), new(*authTokenAction)))

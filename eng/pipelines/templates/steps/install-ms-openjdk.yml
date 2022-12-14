@@ -1,0 +1,13 @@
+steps:
+- bash: |
+    ubuntu_release=`lsb_release -rs`
+    wget https://packages.microsoft.com/config/ubuntu/${ubuntu_release}/packages-microsoft-prod.deb -O packages-microsoft-prod.deb
+    sudo dpkg -i packages-microsoft-prod.deb
+    sudo apt-get install apt-transport-https
+    sudo apt-get update
+    sudo apt-get install msopenjdk-17
+    sudo update-java-alternatives --set msopenjdk-17-amd64
+
+    # Set JAVA_HOME explicitly as an override since the build agent has existing JAVA_HOME defined
+    echo "##vso[task.setvariable variable=JAVA_HOME]/usr/lib/jvm/msopenjdk-17-amd64"
+  displayName: Install msopenjdk-17

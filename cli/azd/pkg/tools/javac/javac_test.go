@@ -2,6 +2,7 @@ package javac
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -31,7 +32,9 @@ func TestCheckInstalledVersion(t *testing.T) {
 	}{
 		{name: "MetExact", stdOut: "javac 17.0.0.0", want: true},
 		{name: "Met", stdOut: "javac 18.0.2.1", want: true},
+		{name: "MetMajorOnly", stdOut: "javac 19", want: true},
 		{name: "NotMet", stdOut: "javac 15.0.0.0", wantErr: true},
+		{name: "NotMetMajorOnly", stdOut: "javac 11", wantErr: true},
 		{name: "InvalidSemVer", stdOut: "javac NoVer", wantErr: true},
 	}
 
@@ -44,14 +47,41 @@ func TestCheckInstalledVersion(t *testing.T) {
 			cli := NewCli(execMock)
 			ok, err := cli.CheckInstalled(context.Background())
 			if tt.wantErr {
-				assert.Error(t, err)
+				require.Error(t, err)
 			} else {
-				assert.NoError(t, err)
+				require.NoError(t, err)
 			}
 
 			assert.Equal(t, tt.want, ok)
 		})
 	}
+}
+
+func TestCheckInstalled_OlderJavaVersion(t *testing.T) {
+	javaHome := t.TempDir()
+	javaHomeBin := filepath.Join(javaHome, "bin")
+	require.NoError(t, os.Mkdir(javaHomeBin, 0755))
+
+	placeJavac(t, javaHomeBin)
+	t.Setenv("JAVA_HOME", javaHome)
+
+	// error when --version
+	execMock := mockexec.NewMockCommandRunner().
+		When(func(a azdexec.RunArgs, command string) bool { return a.Args[0] == "--version" }).
+		RespondFn(func(args azdexec.RunArgs) (azdexec.RunResult, error) {
+			return azdexec.NewRunResult(2, "", ""), errors.New("--version not recognized")
+		})
+
+	// non-zero exit code on -version
+	execMock = execMock.
+		When(func(a azdexec.RunArgs, command string) bool { return a.Args[0] == "-version" }).
+		Respond(azdexec.NewRunResult(0, "", "javac 1.8_353"))
+
+	cli := NewCli(execMock)
+	ok, err := cli.CheckInstalled(context.Background())
+
+	assert.False(t, ok)
+	assert.ErrorContains(t, err, "need at least version")
 }
 
 func Test_getInstalledPath(t *testing.T) {

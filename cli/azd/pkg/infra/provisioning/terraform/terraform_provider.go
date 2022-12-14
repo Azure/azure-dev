@@ -23,10 +23,12 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	. "github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/terraform"
 )
 
@@ -60,9 +62,10 @@ func NewTerraformProvider(
 	env *environment.Environment,
 	projectPath string,
 	infraOptions Options,
+	console input.Console,
+	commandRunner exec.CommandRunner,
 ) *TerraformProvider {
-	terraformCli := terraform.GetTerraformCli(ctx)
-	console := input.GetConsole(ctx)
+	terraformCli := terraform.NewTerraformCli(commandRunner)
 
 	// Default to a module named "main" if not specified.
 	if strings.TrimSpace(infraOptions.Module) == "" {
@@ -105,22 +108,16 @@ func (t *TerraformProvider) Plan(
 
 			modulePath := t.modulePath()
 
-			t.console.Message(ctx, "Initializing terraform...")
-			err = asyncContext.Interact(func() error {
-				initRes, err := t.init(ctx, isRemoteBackendConfig)
-				if err != nil {
-					return fmt.Errorf("terraform init failed: %s , err: %w", initRes, err)
-				}
-
-				return nil
-			})
+			initRes, err := t.init(ctx, isRemoteBackendConfig)
+			if err != nil {
+				asyncContext.SetError(fmt.Errorf("terraform init failed: %s , err: %w", initRes, err))
+				return
+			}
 
 			if err != nil {
 				asyncContext.SetError(err)
 				return
 			}
-
-			t.console.Message(ctx, "\nGenerating terraform parameters...")
 
 			err = CreateInputParametersFile(t.parametersTemplateFilePath(), t.parametersFilePath(), t.env.Values)
 			if err != nil {
@@ -128,26 +125,16 @@ func (t *TerraformProvider) Plan(
 				return
 			}
 
-			t.console.Message(ctx, "Validating terraform template...")
 			validated, err := t.cli.Validate(ctx, modulePath)
 			if err != nil {
 				asyncContext.SetError(fmt.Errorf("terraform validate failed: %s, err %w", validated, err))
 				return
 			}
 
-			t.console.Message(ctx, "Generating terraform plan...\n")
-			err = asyncContext.Interact(func() error {
-				planArgs := t.createPlanArgs(isRemoteBackendConfig)
-				runResult, err := t.cli.Plan(ctx, modulePath, t.planFilePath(), planArgs...)
-				if err != nil {
-					return fmt.Errorf("terraform plan failed:%s err %w", runResult, err)
-				}
-
-				return nil
-			})
-
+			planArgs := t.createPlanArgs(isRemoteBackendConfig)
+			runResult, err := t.cli.Plan(ctx, modulePath, t.planFilePath(), planArgs...)
 			if err != nil {
-				asyncContext.SetError(err)
+				asyncContext.SetError(fmt.Errorf("terraform plan failed:%s err %w", runResult, err))
 				return
 			}
 
@@ -193,23 +180,15 @@ func (t *TerraformProvider) Deploy(
 				return
 			}
 
-			t.console.Message(ctx, "Deploying terraform template...")
-			err = asyncContext.Interact(func() error {
-				applyArgs, err := t.createApplyArgs(isRemoteBackendConfig, terraformDeploymentData)
-				if err != nil {
-					return err
-				}
-
-				runResult, err := t.cli.Apply(ctx, modulePath, applyArgs...)
-				if err != nil {
-					return fmt.Errorf("template Deploy failed: %s , err:%w", runResult, err)
-				}
-
-				return nil
-			})
-
+			applyArgs, err := t.createApplyArgs(isRemoteBackendConfig, terraformDeploymentData)
 			if err != nil {
 				asyncContext.SetError(err)
+				return
+			}
+
+			runResult, err := t.cli.Apply(ctx, modulePath, applyArgs...)
+			if err != nil {
+				asyncContext.SetError(fmt.Errorf("template Deploy failed: %s , err:%w", runResult, err))
 				return
 			}
 
@@ -686,8 +665,16 @@ func (t *TerraformProvider) isRemoteBackendConfig() (bool, error) {
 func init() {
 	err := RegisterProvider(
 		Terraform,
-		func(ctx context.Context, env *environment.Environment, projectPath string, options Options) (Provider, error) {
-			return NewTerraformProvider(ctx, env, projectPath, options), nil
+		func(
+			ctx context.Context,
+			env *environment.Environment,
+			projectPath string,
+			options Options,
+			console input.Console,
+			_ azcli.AzCli,
+			commandRunner exec.CommandRunner,
+		) (Provider, error) {
+			return NewTerraformProvider(ctx, env, projectPath, options, console, commandRunner), nil
 		},
 	)
 

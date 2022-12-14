@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+    <PropertyGroup>
+        <Configuration>Release</Configuration>
+        <Platform Condition="'$(Platform)' == ''">x64</Platform>
+        <ProductVersion Condition="'$(CLI_VERSION)' != ''">$(CLI_VERSION)</ProductVersion>
+        <ProductVersion Condition="'$(ProductVersion)' == ''">0.1.0</ProductVersion>
+        <!-- Windows Installer ProductVersion uses only major.minor.patch -->
+        <ProductVersion Condition="$(ProductVersion.IndexOf('-')) &gt; 0">$(ProductVersion.Substring(0, $(ProductVersion.IndexOf('-'))))</ProductVersion>
+        <OutputType>package</OutputType>
+        <OutputNamePlatform>$(Platform)</OutputNamePlatform>
+        <OutputNamePlatform Condition="'$(Platform)' == 'x64'">amd64</OutputNamePlatform>
+        <OutputName Condition="'$(OutputName)' == ''">$(MSBuildProjectName)-windows-$(OutputNamePlatform)</OutputName>
+        <RepositoryPath>$([MSBuild]::NormalizeDirectory($(MSBuildProjectDirectory)\..\..\..))</RepositoryPath>
+        <OutputPath>bin\$(Configuration)</OutputPath>
+        <IntermediateOutputPath>obj\$(Configuration)</IntermediateOutputPath>
+        <DefineConstants>
+            $(DefineConstants);
+            ProductVersion=$(ProductVersion);
+        </DefineConstants>
+        <SuppressIces Condition="'$(Platform)' == 'arm' Or '$(Platform)' == 'arm64'">ICE39</SuppressIces>
+        <DefineSolutionProperties>false</DefineSolutionProperties>
+        <WixTargetsPath Condition="'$(WixTargetsPath)' == ''">$(MSBuildExtensionsPath)\Microsoft\WiX\v3.x\Wix.targets</WixTargetsPath>
+    </PropertyGroup>
+    <ItemGroup>
+        <Compile Include="azd.wxs"/>
+        <Compile Include="ui.wxs"/>
+    </ItemGroup>
+    <ItemGroup>
+        <BindInputPaths Include="$(RepositoryPath)"/>
+        <BindInputPaths Include="$(RepositoryPath)\cli\azd"/>
+        <BindInputPaths Include="$(RepositoryPath)\cli\azd\build"/>
+    </ItemGroup>
+    <ItemGroup>
+        <WixExtension Include="WixUIExtension"/>
+        <WixExtension Include="WixUtilExtension"/>
+    </ItemGroup>
+    <Target Name="SetMsiOutputPath" AfterTargets="Build" Condition="'$(TF_BUILD)' != ''">
+        <!-- Make sure the correct target path is always set as the step output -->
+        <Message Importance="high" Text="##vso[task.setvariable variable=MsiOutputPath;isoutput=true]$(TargetPath)"/>
+    </Target>
+    <Import Project="$(WixTargetsPath)"/>
+</Project>

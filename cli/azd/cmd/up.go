@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
@@ -19,6 +20,7 @@ type upFlags struct {
 	deployFlags
 	outputFormat string
 	global       *internal.GlobalCommandOptions
+	envFlag
 }
 
 func (u *upFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
@@ -27,14 +29,16 @@ func (u *upFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptio
 		&u.outputFormat,
 		[]output.Format{output.JsonFormat, output.NoneFormat},
 		output.NoneFormat)
-	u.infraCreateFlags.outputFormat = &u.outputFormat
-	u.deployFlags.outputFormat = &u.outputFormat
 
-	u.initFlags.Bind(local, global)
-	u.infraCreateFlags.bindWithoutOutput(local, global)
-	u.deployFlags.bindWithoutOutput(local, global)
-
+	u.envFlag.Bind(local, global)
 	u.global = global
+
+	u.initFlags.bindNonCommon(local, global)
+	u.initFlags.setCommon(&u.envFlag)
+	u.infraCreateFlags.bindNonCommon(local, global)
+	u.infraCreateFlags.setCommon(&u.outputFormat, &u.envFlag)
+	u.deployFlags.bindNonCommon(local, global)
+	u.deployFlags.setCommon(&u.outputFormat, &u.envFlag)
 }
 
 func upCmdDesign(global *internal.GlobalCommandOptions) (*cobra.Command, *upFlags) {
@@ -58,6 +62,10 @@ When no template is supplied, you can optionally select an Azure Developer CLI t
 	uf := &upFlags{}
 	uf.Bind(cmd.Flags(), global)
 
+	if err := cmd.RegisterFlagCompletionFunc("template", templateNameCompletion); err != nil {
+		panic(err)
+	}
+
 	return cmd, uf
 }
 
@@ -77,36 +85,36 @@ func newUpAction(init *initAction, infraCreate *infraCreateAction, deploy *deplo
 	}
 }
 
-func (u *upAction) Run(ctx context.Context) error {
+func (u *upAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	err := u.runInit(ctx)
 	if err != nil {
-		return fmt.Errorf("running init: %w", err)
+		return nil, fmt.Errorf("running init: %w", err)
 	}
 
 	finalOutput := []string{}
 	u.infraCreate.finalOutputRedirect = &finalOutput
-	err = u.infraCreate.Run(ctx)
+	_, err = u.infraCreate.Run(ctx)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	// Print an additional newline to separate provision from deploy
 	u.console.Message(ctx, "")
 
-	err = u.deploy.Run(ctx)
+	_, err = u.deploy.Run(ctx)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	for _, message := range finalOutput {
 		u.console.Message(ctx, message)
 	}
 
-	return nil
+	return nil, nil
 }
 
 func (u *upAction) runInit(ctx context.Context) error {
-	err := u.init.Run(ctx)
+	_, err := u.init.Run(ctx)
 	var envInitError *environment.EnvironmentInitError
 	if errors.As(err, &envInitError) {
 		// We can ignore environment already initialized errors

@@ -58,28 +58,28 @@ repo:
       - from: web-appservice.bicep
         to: web.bicep
         patterns:
-          - "**/resources.bicep"
+          - "**/main.bicep"
 
       - from: api-appservice-node.bicep
         to: api.bicep
         patterns:
-          - "**/resources.bicep"
+          - "**/main.bicep"
 
       - from: cosmos-mongo-db.bicep
         to: db.bicep
         patterns:
-          - "**/resources.bicep"
+          - "**/main.bicep"
 
       - from: "PLACEHOLDERIACTOOLS"
         to: ""
         patterns:
           - "README.md"
-      
+
       - from: "PLACEHOLDER_TITLE"
         to: "ToDo Application with a Node.js API and Azure Cosmos DB API for MongoDB on Azure App Service"
         patterns:
           - "README.md"
-      
+
       - from: "PLACEHOLDER_DESCRIPTION"
         to: "using Bicep as the IaC provider"
         patterns:
@@ -87,7 +87,7 @@ repo:
 
   assets:
     # Common assets
-    
+
     # Infra
     - from: ./infra/
       to: ./infra
@@ -127,6 +127,11 @@ repo:
         - .github/**/*
         - .devcontainer/**/*
         - "infra/**/*"
+        - .azdo/pipelines/*/azure-dev.yml
+
+    # AzDo workflows for bicep
+    - from: ../../../../../common/.azdo/pipelines/bicep/azure-dev.yml
+      to: ./.azdo/pipelines/azure-dev.yml
 
     # Github workflows for bicep
     - from: ../../../../../common/.github/workflows/bicep
@@ -137,8 +142,8 @@ repo:
       to: ./infra
 
     # .devcontainer common (devcontainer.json)
-    - from: ../../../../../common/.devcontainer/devcontainer.json/nodejs
-      to: ./.devcontainer
+    - from: ../../../../../common/.devcontainer/devcontainer.json/nodejs/devcontainer.json
+      to: ./.devcontainer/devcontainer.json
 
     # .devcontainer common (Dockerfile)
     - from: ../../../../../common/.devcontainer/Dockerfile/base
@@ -151,6 +156,10 @@ repo:
     # Tests common
     - from: ../../../../common/tests
       to: ./tests
+
+    # Auth JS common
+    - from: ../../../../common/auth/js
+      to: ./src/api/src
 
     # Node JS API
     - from: ../../../../api/js

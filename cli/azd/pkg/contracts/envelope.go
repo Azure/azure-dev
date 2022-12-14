@@ -9,6 +9,7 @@ type EventDataType string
 
 const (
 	ConsoleMessageEventDataType EventDataType = "consoleMessage"
+	OperationStart              EventDataType = "operationStart"
 )
 
 type EventEnvelope struct {

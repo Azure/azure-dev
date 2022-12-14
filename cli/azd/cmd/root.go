@@ -12,12 +12,12 @@ import (
 	// Importing for infrastructure provider plugin registrations
 	_ "github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning/bicep"
 	_ "github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning/terraform"
+	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/telemetry"
 	"github.com/azure/azure-dev/cli/azd/internal/telemetry/events"
-	"github.com/azure/azure-dev/cli/azd/pkg/commands"
-	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/spf13/cobra"
 	"go.opentelemetry.io/otel/codes"
@@ -61,10 +61,6 @@ For more information, visit the Azure Developer CLI Dev Hub: https://aka.ms/azur
 				}
 			}
 
-			if opts.EnvironmentName == "" {
-				opts.EnvironmentName = os.Getenv(environment.EnvNameEnvVarName)
-			}
-
 			return nil
 		},
 		PersistentPostRunE: func(cmd *cobra.Command, args []string) error {
@@ -83,7 +79,6 @@ For more information, visit the Azure Developer CLI Dev Hub: https://aka.ms/azur
 	cmd.DisableAutoGenTag = true
 	cmd.CompletionOptions.HiddenDefaultCmd = true
 	cmd.Flags().BoolP("help", "h", false, fmt.Sprintf("Gets help for %s.", cmd.Name()))
-	cmd.PersistentFlags().StringVarP(&opts.EnvironmentName, "environment", "e", "", "The name of the environment to use.")
 	cmd.PersistentFlags().StringVarP(&opts.Cwd, "cwd", "C", "", "Sets the current working directory.")
 	cmd.PersistentFlags().BoolVar(&opts.EnableDebugLogging, "debug", false, "Enables debugging and diagnostics logging.")
 	cmd.PersistentFlags().
@@ -98,16 +93,19 @@ For more information, visit the Azure Developer CLI Dev Hub: https://aka.ms/azur
 
 	opts.EnableTelemetry = telemetry.IsTelemetryEnabled()
 
+	cmd.AddCommand(configCmd(opts))
 	cmd.AddCommand(envCmd(opts))
 	cmd.AddCommand(infraCmd(opts))
 	cmd.AddCommand(pipelineCmd(opts))
 	cmd.AddCommand(telemetryCmd(opts))
 	cmd.AddCommand(templatesCmd(opts))
+	cmd.AddCommand(authCmd(opts))
 
 	cmd.AddCommand(BuildCmd(opts, versionCmdDesign, initVersionAction, &buildOptions{disableTelemetry: true}))
 	cmd.AddCommand(BuildCmd(opts, showCmdDesign, initShowAction, nil))
 	cmd.AddCommand(BuildCmd(opts, restoreCmdDesign, initRestoreAction, nil))
 	cmd.AddCommand(BuildCmd(opts, loginCmdDesign, initLoginAction, nil))
+	cmd.AddCommand(BuildCmd(opts, logoutCmdDesign, initLogoutAction, nil))
 	cmd.AddCommand(BuildCmd(opts, monitorCmdDesign, initMonitorAction, nil))
 	cmd.AddCommand(BuildCmd(opts, downCmdDesign, initInfraDeleteAction, nil))
 	cmd.AddCommand(BuildCmd(opts, initCmdDesign, initInitAction, nil))
@@ -121,7 +119,8 @@ For more information, visit the Azure Developer CLI Dev Hub: https://aka.ms/azur
 type designBuilder[F any] func(opts *internal.GlobalCommandOptions) (*cobra.Command, *F)
 
 type actionBuilder[F any] func(
-	cmd *cobra.Command,
+	console input.Console,
+	ctx context.Context,
 	o *internal.GlobalCommandOptions,
 	flags F,
 	args []string) (actions.Action, error)
@@ -139,19 +138,24 @@ func BuildCmd[F any](
 	cmd.Flags().BoolP("help", "h", false, fmt.Sprintf("Gets help for %s.", cmd.Name()))
 
 	runCmd := func(cmd *cobra.Command, ctx context.Context, args []string) error {
-		action, err := buildAction(cmd, opts, *flags, args)
+		console, err := initConsole(cmd, opts)
 		if err != nil {
 			return err
 		}
 
-		// shim to register dependencies in context to maintain backwards compatibility
-		// to be removed long term
-		ctx, err = commands.RegisterDependenciesInCtx(ctx, cmd, opts)
+		action, err := buildAction(console, ctx, opts, *flags, args)
 		if err != nil {
 			return err
 		}
 
-		return action.Run(ctx)
+		ctx = tools.WithInstalledCheckCache(ctx)
+
+		actionResult, err := action.Run(ctx)
+		// At this point, we know that there might be an error, so we can silence cobra from showing it after us.
+		cmd.SilenceErrors = true
+		console.MessageUxItem(ctx, actions.ToActionResult(actionResult, err))
+
+		return err
 	}
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {

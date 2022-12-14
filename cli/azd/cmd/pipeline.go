@@ -6,12 +6,15 @@ package cmd
 import (
 	"context"
 	"fmt"
-	"log"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/commands/pipeline"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
+	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
@@ -19,6 +22,7 @@ import (
 type pipelineConfigFlags struct {
 	pipeline.PipelineManagerArgs
 	global *internal.GlobalCommandOptions
+	envFlag
 }
 
 func (pc *pipelineConfigFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
@@ -34,8 +38,16 @@ func (pc *pipelineConfigFlags) Bind(local *pflag.FlagSet, global *internal.Globa
 		"origin",
 		"The name of the git remote to configure the pipeline to run on.",
 	)
-	local.StringVar(&pc.PipelineRoleName, "principal-role", "Contributor", "The role to assign to the service principal.")
-	local.StringVar(&pc.PipelineProvider, "provider", "", "The pipeline provider to use (GitHub and Azdo supported).")
+	local.StringVar(
+		&pc.PipelineAuthTypeName,
+		"auth-type",
+		"",
+		"The authentication type used between the pipeline provider and Azure for deployment (Only valid for GitHub provider)",
+	)
+	local.StringVar(&pc.PipelineRoleName, "principal-role", "contributor", "The role to assign to the service principal.")
+	local.StringVar(&pc.PipelineProvider, "provider", "github",
+		"The pipeline provider to use (github for Github Actions and azdo for Azure Pipelines).")
+	pc.envFlag.Bind(local, global)
 	pc.global = global
 }
 
@@ -58,8 +70,8 @@ For more information, go to https://aka.ms/azure-dev/pipeline.`,
 func pipelineConfigCmdDesign(global *internal.GlobalCommandOptions) (*cobra.Command, *pipelineConfigFlags) {
 	cmd := &cobra.Command{
 		Use:   "config",
-		Short: "Create and configure your deployment pipeline by using GitHub Actions.",
-		Long: `Create and configure your deployment pipeline by using GitHub Actions.
+		Short: "Create and configure your deployment pipeline by using GitHub Actions or Azure Pipelines.",
+		Long: `Create and configure your deployment pipeline by using GitHub Actions or Azure Pipelines.
 
 For more information, go to https://aka.ms/azure-dev/pipeline.`,
 	}
@@ -72,59 +84,61 @@ For more information, go to https://aka.ms/azure-dev/pipeline.`,
 
 // pipelineConfigAction defines the action for pipeline config command
 type pipelineConfigAction struct {
-	flags   pipelineConfigFlags
-	manager *pipeline.PipelineManager
-	azdCtx  *azdcontext.AzdContext
-	console input.Console
+	flags         pipelineConfigFlags
+	manager       *pipeline.PipelineManager
+	azCli         azcli.AzCli
+	azdCtx        *azdcontext.AzdContext
+	console       input.Console
+	credential    azcore.TokenCredential
+	commandRunner exec.CommandRunner
 }
 
 func newPipelineConfigAction(
+	azCli azcli.AzCli,
+	credential azcore.TokenCredential,
 	azdCtx *azdcontext.AzdContext,
 	console input.Console,
 	flags pipelineConfigFlags,
+	commandRunner exec.CommandRunner,
 ) *pipelineConfigAction {
 	pca := &pipelineConfigAction{
-		flags:   flags,
-		manager: pipeline.NewPipelineManager(azdCtx, flags.global, flags.PipelineManagerArgs),
-		azdCtx:  azdCtx,
-		console: console,
+		flags:      flags,
+		azCli:      azCli,
+		credential: credential,
+		manager: pipeline.NewPipelineManager(
+			azCli, azdCtx, flags.global, commandRunner, console, flags.PipelineManagerArgs,
+		),
+		azdCtx:        azdCtx,
+		console:       console,
+		commandRunner: commandRunner,
 	}
 
 	return pca
 }
 
 // Run implements action interface
-func (p *pipelineConfigAction) Run(ctx context.Context) error {
+func (p *pipelineConfigAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	if err := ensureProject(p.azdCtx.ProjectPath()); err != nil {
-		return err
+		return nil, err
 	}
 
-	// make sure az is logged in
-	if err := ensureLoggedIn(ctx); err != nil {
-		return fmt.Errorf("failed to ensure login: %w", err)
-	}
-
-	// Read or init env
-	console := input.GetConsole(ctx)
-	if console == nil {
-		log.Panic("missing input console in the provided context")
-	}
-
-	env, ctx, err := loadOrInitEnvironment(ctx, &p.manager.RootOptions.EnvironmentName, p.azdCtx, console)
+	env, ctx, err := loadOrInitEnvironment(ctx, &p.flags.environmentName, p.azdCtx, p.console, p.azCli)
 	if err != nil {
-		return fmt.Errorf("loading environment: %w", err)
+		return nil, fmt.Errorf("loading environment: %w", err)
 	}
 
 	// Detect the SCM and CI providers based on the project directory
 	p.manager.ScmProvider,
 		p.manager.CiProvider,
-		err = pipeline.DetectProviders(ctx, p.azdCtx, env, p.manager.PipelineProvider)
+		err = pipeline.DetectProviders(
+		ctx, p.azdCtx, env, p.manager.PipelineProvider, p.console, p.credential, p.commandRunner,
+	)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	// set context for manager
 	p.manager.Environment = env
 
-	return p.manager.Configure(ctx)
+	return nil, p.manager.Configure(ctx)
 }

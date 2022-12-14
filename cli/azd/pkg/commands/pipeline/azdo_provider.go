@@ -14,6 +14,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azdo"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
+	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
@@ -31,6 +32,8 @@ type AzdoScmProvider struct {
 	Env            *environment.Environment
 	AzdContext     *azdcontext.AzdContext
 	azdoConnection *azuredevops.Connection
+	commandRunner  exec.CommandRunner
+	console        input.Console
 }
 
 // AzdoRepositoryDetails provides extra state needed for the AzDo provider.
@@ -57,7 +60,12 @@ func (p *AzdoScmProvider) requiredTools(_ context.Context) []tools.ExternalTool 
 
 // preConfigureCheck check the current state of external tools and any
 // other dependency to be as expected for execution.
-func (p *AzdoScmProvider) preConfigureCheck(ctx context.Context, console input.Console) error {
+func (p *AzdoScmProvider) preConfigureCheck(
+	ctx context.Context,
+	console input.Console,
+	pipelineManagerArgs PipelineManagerArgs,
+	infraOptions provisioning.Options,
+) error {
 	_, err := azdo.EnsurePatExists(ctx, p.Env, console)
 	if err != nil {
 		return err
@@ -193,12 +201,11 @@ func (p *AzdoScmProvider) getRepoDetails() *AzdoRepositoryDetails {
 
 // helper function to return an azuredevops.Connection for use with AzDo Go SDK
 func (p *AzdoScmProvider) getAzdoConnection(ctx context.Context) (*azuredevops.Connection, error) {
-	console := input.GetConsole(ctx)
 	if p.azdoConnection != nil {
 		return p.azdoConnection, nil
 	}
 
-	org, err := azdo.EnsureOrgNameExists(ctx, p.Env, console)
+	org, err := azdo.EnsureOrgNameExists(ctx, p.Env, p.console)
 	if err != nil {
 		return nil, err
 	}
@@ -206,7 +213,7 @@ func (p *AzdoScmProvider) getAzdoConnection(ctx context.Context) (*azuredevops.C
 	repoDetails := p.getRepoDetails()
 	repoDetails.orgName = org
 
-	pat, err := azdo.EnsurePatExists(ctx, p.Env, console)
+	pat, err := azdo.EnsurePatExists(ctx, p.Env, p.console)
 	if err != nil {
 		return nil, err
 	}
@@ -319,7 +326,7 @@ func (p *AzdoScmProvider) configureGitRemote(
 }
 
 func (p *AzdoScmProvider) getCurrentGitBranch(ctx context.Context, repoPath string) (string, error) {
-	gitCli := git.NewGitCli(ctx)
+	gitCli := git.NewGitCli(p.commandRunner)
 	branch, err := gitCli.GetCurrentBranch(ctx, repoPath)
 	if err != nil {
 		return "", err
@@ -562,6 +569,7 @@ type AzdoCiProvider struct {
 	Env         *environment.Environment
 	AzdContext  *azdcontext.AzdContext
 	credentials *azdo.AzureServicePrincipalCredentials
+	console     input.Console
 }
 
 // ***  subareaProvider implementation ******
@@ -572,7 +580,23 @@ func (p *AzdoCiProvider) requiredTools(_ context.Context) []tools.ExternalTool {
 }
 
 // preConfigureCheck nil for Azdo
-func (p *AzdoCiProvider) preConfigureCheck(ctx context.Context, console input.Console) error {
+func (p *AzdoCiProvider) preConfigureCheck(
+	ctx context.Context,
+	console input.Console,
+	pipelineManagerArgs PipelineManagerArgs,
+	infraOptions provisioning.Options,
+) error {
+	authType := PipelineAuthType(pipelineManagerArgs.PipelineAuthTypeName)
+
+	if authType == AuthTypeFederated {
+		return fmt.Errorf(
+			//nolint:lll
+			"Azure DevOps does not support federated authentication. To explicitly use client credentials set the %s flag. %w",
+			output.WithBackticks("--auth-type client-credentials"),
+			ErrAuthNotSupported,
+		)
+	}
+
 	_, err := azdo.EnsurePatExists(ctx, p.Env, console)
 	if err != nil {
 		return err
@@ -596,7 +620,9 @@ func (p *AzdoCiProvider) configureConnection(
 	repoDetails *gitRepositoryDetails,
 	provisioningProvider provisioning.Options,
 	credentials json.RawMessage,
-	console input.Console) error {
+	authType PipelineAuthType,
+	console input.Console,
+) error {
 
 	azureCredentials, err := parseCredentials(ctx, credentials)
 	if err != nil {
@@ -640,13 +666,12 @@ func (p *AzdoCiProvider) configurePipeline(
 	provisioningProvider provisioning.Options,
 ) error {
 	details := repoDetails.details.(*AzdoRepositoryDetails)
-	console := input.GetConsole(ctx)
 
-	org, err := azdo.EnsureOrgNameExists(ctx, p.Env, console)
+	org, err := azdo.EnsureOrgNameExists(ctx, p.Env, p.console)
 	if err != nil {
 		return err
 	}
-	pat, err := azdo.EnsurePatExists(ctx, p.Env, console)
+	pat, err := azdo.EnsurePatExists(ctx, p.Env, p.console)
 	if err != nil {
 		return err
 	}
@@ -662,7 +687,7 @@ func (p *AzdoCiProvider) configurePipeline(
 		connection,
 		*p.credentials,
 		p.Env,
-		console,
+		p.console,
 		provisioningProvider,
 	)
 	if err != nil {

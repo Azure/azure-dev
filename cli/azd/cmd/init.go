@@ -14,15 +14,17 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
+	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
-	"github.com/azure/azure-dev/cli/azd/pkg/spin"
 	"github.com/azure/azure-dev/cli/azd/pkg/templates"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
@@ -47,6 +49,10 @@ When a template is provided, the sample code is cloned to the current directory.
 	f := &initFlags{}
 	f.Bind(cmd.Flags(), rootOptions)
 
+	if err := cmd.RegisterFlagCompletionFunc("template", templateNameCompletion); err != nil {
+		panic(err)
+	}
+
 	return cmd, f
 }
 
@@ -55,10 +61,16 @@ type initFlags struct {
 	templateBranch string
 	subscription   string
 	location       string
-	rootOptions    *internal.GlobalCommandOptions
+	global         *internal.GlobalCommandOptions
+	*envFlag
 }
 
 func (i *initFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
+	i.bindNonCommon(local, global)
+	i.bindCommon(local, global)
+}
+
+func (i *initFlags) bindNonCommon(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
 	local.StringVarP(
 		&i.template.Name,
 		"template",
@@ -75,54 +87,66 @@ func (i *initFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOpt
 		"Name or ID of an Azure subscription to use for the new environment",
 	)
 	local.StringVarP(&i.location, "location", "l", "", "Azure location for the new environment")
+	i.global = global
+}
 
-	i.rootOptions = global
+func (i *initFlags) bindCommon(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
+	i.envFlag = &envFlag{}
+	i.envFlag.Bind(local, global)
+}
+
+func (i *initFlags) setCommon(envFlag *envFlag) {
+	i.envFlag = envFlag
 }
 
 type initAction struct {
-	azdCtx  *azdcontext.AzdContext
-	console input.Console
-	cmdRun  exec.CommandRunner
-	azCli   azcli.AzCli
-	gitCli  git.GitCli
-	flags   initFlags
+	azCli          azcli.AzCli
+	azdCtx         *azdcontext.AzdContext
+	accountManager *account.Manager
+	console        input.Console
+	cmdRun         exec.CommandRunner
+	gitCli         git.GitCli
+	flags          initFlags
 }
 
 func newInitAction(
+	azCli azcli.AzCli,
 	azdCtx *azdcontext.AzdContext,
+	accountManager *account.Manager,
 	cmdRun exec.CommandRunner,
 	console input.Console,
-	azCli azcli.AzCli,
 	gitCli git.GitCli,
 	flags initFlags) (*initAction, error) {
 	return &initAction{
-		azdCtx:  azdCtx,
-		console: console,
-		cmdRun:  cmdRun,
-		azCli:   azCli,
-		gitCli:  gitCli,
-		flags:   flags,
+		azCli:          azCli,
+		azdCtx:         azdCtx,
+		accountManager: accountManager,
+		console:        console,
+		cmdRun:         cmdRun,
+		gitCli:         gitCli,
+		flags:          flags,
 	}, nil
 }
 
-func (i *initAction) Run(ctx context.Context) error {
+func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	// In the case where `init` is run and a parent folder already has an `azure.yaml` file, the
 	// current ProjectDirectory will be set to that folder. That's not what we want here. We want
 	// to force using the current working directory as a project root (since we are initializing a
 	// new project).
 	wd, err := os.Getwd()
+	formattedWithColorCwd := output.WithLinkFormat("%s", wd)
 	if err != nil {
-		return fmt.Errorf("getting cwd: %w", err)
+		return nil, fmt.Errorf("getting cwd: %w", err)
 	}
 
 	log.Printf("forcing project directory to %s", wd)
 	i.azdCtx.SetProjectDirectory(wd)
 
 	if i.flags.templateBranch != "" && i.flags.template.Name == "" {
-		return errors.New("template name required when specifying a branch name")
+		return nil, errors.New("template name required when specifying a branch name")
 	}
 
-	requiredTools := []tools.ExternalTool{i.azCli}
+	requiredTools := []tools.ExternalTool{}
 
 	// When using a template, we also require `git`, to acquire the template.
 	if i.flags.template.Name != "" {
@@ -130,18 +154,22 @@ func (i *initAction) Run(ctx context.Context) error {
 	}
 
 	if err := tools.EnsureInstalled(ctx, requiredTools...); err != nil {
-		return err
+		return nil, err
 	}
 
 	// Project not initialized and no template specified
+	// NOTE: Adding `azure.yaml` to a folder removes the option from selecting a template
 	if _, err := os.Stat(i.azdCtx.ProjectPath()); err != nil && errors.Is(err, os.ErrNotExist) {
-		fmt.Fprintf(i.console.Handles().Stdout, "Initializing a new project in %s\n\n", wd)
+		// Command title
+		i.console.MessageUxItem(ctx, &ux.MessageTitle{
+			Title: "Initializing a new project (azd init)",
+		})
 
 		if i.flags.template.Name == "" {
-			i.flags.template, err = templates.PromptTemplate(ctx, "Select a project template")
+			i.flags.template, err = templates.PromptTemplate(ctx, "Select a project template:", i.console)
 
 			if err != nil {
-				return err
+				return nil, err
 			}
 		}
 	}
@@ -165,13 +193,14 @@ func (i *initAction) Run(ctx context.Context) error {
 			case 1:
 				templateUrl = fmt.Sprintf("https://github.com/%s", i.flags.template.RepositoryPath)
 			default:
-				return fmt.Errorf("template '%s' should be either <repository> or <repo>/<repository>", i.flags.template.RepositoryPath)
+				return nil, fmt.Errorf(
+					"template '%s' should be either <repository> or <repo>/<repository>", i.flags.template.RepositoryPath)
 			}
 		}
 
 		templateStagingDir, err := os.MkdirTemp("", "az-dev-template")
 		if err != nil {
-			return fmt.Errorf("creating temp folder: %w", err)
+			return nil, fmt.Errorf("creating temp folder: %w", err)
 		}
 
 		// Attempt to remove the temporary directory we cloned the template into, but don't fail the
@@ -180,13 +209,17 @@ func (i *initAction) Run(ctx context.Context) error {
 			_ = os.RemoveAll(templateStagingDir)
 		}()
 
-		spinner := spin.NewSpinner(i.console.Handles().Stdout, "Downloading template")
-		err = spinner.Run(func() error {
-			return i.gitCli.FetchCode(ctx, templateUrl, i.flags.templateBranch, templateStagingDir)
-		})
+		stepMessage := fmt.Sprintf("Downloading template code to: %s", formattedWithColorCwd)
+		i.console.ShowSpinner(ctx, stepMessage, input.Step)
+
+		// perform the work while the spinner is running
+		err = i.gitCli.FetchCode(ctx, templateUrl, i.flags.templateBranch, templateStagingDir)
+
+		// stop the spinner based on the result
+		i.console.StopSpinner(ctx, stepMessage+"\n", input.GetStepResultFormat(err))
 
 		if err != nil {
-			return fmt.Errorf("fetching template: %w", err)
+			return nil, fmt.Errorf("\nfetching template: %w", err)
 		}
 
 		log.Printf(
@@ -221,7 +254,7 @@ func (i *initAction) Run(ctx context.Context) error {
 
 			return nil
 		}); err != nil {
-			return fmt.Errorf("enumerating template files: %w", err)
+			return nil, fmt.Errorf("enumerating template files: %w", err)
 		}
 
 		if len(duplicateFiles) > 0 {
@@ -238,38 +271,40 @@ func (i *initAction) Run(ctx context.Context) error {
 			})
 
 			if err != nil {
-				return fmt.Errorf("prompting to overwrite: %w", err)
+				return nil, fmt.Errorf("prompting to overwrite: %w", err)
 			}
 
 			if !overwrite {
-				return errors.New("confirmation declined")
+				return nil, errors.New("confirmation declined")
 			}
 		}
 
 		if err := copy.Copy(templateStagingDir, i.azdCtx.ProjectDirectory()); err != nil {
-			return fmt.Errorf("copying template contents: %w", err)
+			return nil, fmt.Errorf("copying template contents: %w", err)
 		}
 	}
 
 	envName, err := i.azdCtx.GetDefaultEnvironmentName()
 	if err != nil {
-		return fmt.Errorf("retrieving default environment name: %w", err)
+		return nil, fmt.Errorf("retrieving default environment name: %w", err)
 	}
 
 	if envName != "" {
-		return environment.NewEnvironmentInitError(envName)
+		return nil, environment.NewEnvironmentInitError(envName)
 	}
 
 	// Check to see if `azure.yaml` exists, and if it doesn't, create it.
 	_, err = os.Stat(i.azdCtx.ProjectPath())
 
 	if errors.Is(err, os.ErrNotExist) {
-		fmt.Fprintf(i.console.Handles().Stdout, "Creating a new %s file.\n", azdcontext.ProjectFileName)
+		stepMessage := fmt.Sprintf("Creating a new %s file.", azdcontext.ProjectFileName)
 
+		i.console.ShowSpinner(ctx, stepMessage, input.Step)
 		_, err = project.NewProject(i.azdCtx.ProjectPath(), i.azdCtx.GetDefaultProjectName())
+		i.console.StopSpinner(ctx, stepMessage, input.GetStepResultFormat(err))
 
 		if err != nil {
-			return fmt.Errorf("failed to create a project file: %w", err)
+			return nil, fmt.Errorf("failed to create a project file: %w", err)
 		}
 	}
 
@@ -279,7 +314,7 @@ func (i *initAction) Run(ctx context.Context) error {
 		osutil.PermissionDirectory,
 	)
 	if err != nil {
-		return fmt.Errorf("failed to create a directory: %w", err)
+		return nil, fmt.Errorf("failed to create a directory: %w", err)
 	}
 
 	//create .gitignore or open existing .gitignore file, and contains .azure
@@ -289,7 +324,7 @@ func (i *initAction) Run(ctx context.Context) error {
 		osutil.PermissionFile,
 	)
 	if err != nil {
-		return fmt.Errorf("fail to create or open .gitignore: %w", err)
+		return nil, fmt.Errorf("fail to create or open .gitignore: %w", err)
 	}
 	defer gitignoreFile.Close()
 
@@ -306,23 +341,41 @@ func (i *initAction) Run(ctx context.Context) error {
 		newLine := osutil.GetNewLineSeparator()
 		_, err := gitignoreFile.WriteString(newLine + azdcontext.EnvironmentDirectoryName + newLine)
 		if err != nil {
-			return fmt.Errorf("fail to write '%s' in .gitignore: %w", azdcontext.EnvironmentDirectoryName, err)
+			return nil, fmt.Errorf("fail to write '%s' in .gitignore: %w", azdcontext.EnvironmentDirectoryName, err)
 		}
 	}
 
 	envSpec := environmentSpec{
-		environmentName: i.flags.rootOptions.EnvironmentName,
+		environmentName: i.flags.environmentName,
 		subscription:    i.flags.subscription,
 		location:        i.flags.location,
 	}
-	_, ctx, err = createAndInitEnvironment(ctx, &envSpec, i.azdCtx, i.console)
+	env, ctx, err := createAndInitEnvironment(ctx, &envSpec, i.azdCtx, i.console, i.azCli)
 	if err != nil {
-		return fmt.Errorf("loading environment: %w", err)
+		return nil, fmt.Errorf("loading environment: %w", err)
 	}
 
 	if err := i.azdCtx.SetDefaultEnvironmentName(envSpec.environmentName); err != nil {
-		return fmt.Errorf("saving default environment: %w", err)
+		return nil, fmt.Errorf("saving default environment: %w", err)
 	}
 
-	return nil
+	// If the configuration is empty, set default subscription & location
+	// This will be the case for first run experience
+	if !i.accountManager.HasDefaults() {
+		_, err = i.accountManager.SetDefaultSubscription(ctx, env.GetSubscriptionId())
+		if err != nil {
+			log.Printf("failed setting default subscription. %s\n", err.Error())
+		}
+		_, err = i.accountManager.SetDefaultLocation(ctx, env.GetSubscriptionId(), env.GetLocation())
+		if err != nil {
+			log.Printf("failed setting default location. %s\n", err.Error())
+		}
+	}
+
+	return &actions.ActionResult{
+		Message: &actions.ResultMessage{
+			Header:   "New project initialized!",
+			FollowUp: fmt.Sprintf("You can view the template code in your directory: %s", formattedWithColorCwd),
+		},
+	}, nil
 }

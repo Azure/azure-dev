@@ -7,10 +7,13 @@
         }
     },
     "features": {
-        "github-cli": "2",
-        "azure-cli": "2.38",
-        "docker-from-docker": "20.10",
-        "node": {
+        "ghcr.io/devcontainers/features/docker-from-docker:1": {
+            "version": "20.10"
+        },
+        "ghcr.io/devcontainers/features/github-cli:1": {
+            "version": "2"
+        },
+        "ghcr.io/devcontainers/features/node:1": {
             "version": "16",
             "nodeGypDependencies": false
         }
@@ -23,12 +26,16 @@
         "ms-vscode.js-debug",
         "esbenp.prettier-vscode",
         "eg2.vscode-npm-script",
-        "dbaeumer.vscode-eslint"
+        "dbaeumer.vscode-eslint",
+        "ms-azuretools.vscode-azurefunctions"
     ],
     "forwardPorts": [
         3000,
         3100
     ],
     "postCreateCommand": "",
-    "remoteUser": "vscode"
+    "remoteUser": "vscode",
+    "hostRequirements": {
+        "memory": "8gb"
+    }
 }

@@ -4,10 +4,15 @@ import (
 	"context"
 	"testing"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
+	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
+	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
+	"github.com/azure/azure-dev/cli/azd/test/mocks/mockarmresources"
+	"github.com/azure/azure-dev/cli/azd/test/mocks/mockazcli"
 	"github.com/stretchr/testify/require"
 )
 
@@ -23,10 +28,11 @@ services:
     language: js
     host: appservice
 `
-	deploymentScope = environment.NewDeploymentScope(
+	mockTarget = environment.NewTargetResource(
 		"test-subscription-id",
 		"test-resource-group-name",
 		"test-resource-name",
+		"resource/type",
 	)
 	mockEndpoints = []string{"https://test-resource.azurewebsites.net"}
 )
@@ -79,23 +85,39 @@ func (st *mockServiceTarget) Endpoints(_ context.Context) ([]string, error) {
 
 func TestDeployProgressMessages(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
+	mockarmresources.AddAzResourceListMock(
+		mockContext.HttpClient,
+		convert.RefOf("test-resource-group-name"),
+		[]*armresources.GenericResourceExpanded{
+			{
+				ID:       convert.RefOf("test-api"),
+				Name:     convert.RefOf("test-api"),
+				Type:     convert.RefOf(string(infra.AzureResourceTypeWebSite)),
+				Location: convert.RefOf("eastus2"),
+				Tags: map[string]*string{
+					defaultServiceTag: convert.RefOf("api"),
+				},
+			},
+		},
+	)
+	azCli := mockazcli.NewAzCliFromMockContext(mockContext)
 
 	env := environment.Ephemeral()
 	env.SetSubscriptionId("SUBSCRIPTION_ID")
 
 	projectConfig, _ := ParseProjectConfig(projectYaml, env)
-	project, _ := projectConfig.GetProject(mockContext.Context, env)
+	project, _ := projectConfig.GetProject(*mockContext.Context, env, mockContext.Console, azCli, mockContext.CommandRunner)
 	azdContext, _ := azdcontext.NewAzdContext()
 
 	mockFramework := &mockFrameworkService{}
-	mockTarget := &mockServiceTarget{}
+	mockServiceTarget := &mockServiceTarget{}
 
 	service := Service{
-		Project:   project,
-		Config:    project.Config.Services["api"],
-		Framework: mockFramework,
-		Target:    mockTarget,
-		Scope:     deploymentScope,
+		Project:        project,
+		Config:         project.Config.Services["api"],
+		Framework:      mockFramework,
+		Target:         mockServiceTarget,
+		TargetResource: mockTarget,
 	}
 
 	result, progress := service.Deploy(*mockContext.Context, azdContext)

@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"runtime"
 
+	"github.com/MakeNowJust/heredoc/v2"
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
@@ -17,9 +18,17 @@ import (
 var userConfigPath string
 
 // Setup account command category
-func configCmd(rootOptions *internal.GlobalCommandOptions) *cobra.Command {
+func configCmd(rootOptions *internal.GlobalCommandOptions, platformAgnosticHelp bool) *cobra.Command {
 	userConfigDir, err := config.GetUserConfigDir()
-	if err != nil {
+	if platformAgnosticHelp {
+		userConfigPath = heredoc.Doc(`the configuration path. 
+
+		The default value of the config directory is: 
+		* $HOME/.azd on Linux and MacOS
+		* %USERPROFILE%\.azd on Windows
+		
+		The configuration directory can be overridden by specifying a path in the AZD_CONFIG_DIR environment variable`)
+	} else if err != nil {
 		userConfigPath = output.WithBackticks(filepath.Join("$AZURE_CONFIG_DIR", "config.json"))
 	} else {
 		userConfigPath = output.WithBackticks(filepath.Join(userConfigDir, "config.json"))
@@ -32,18 +41,35 @@ func configCmd(rootOptions *internal.GlobalCommandOptions) *cobra.Command {
 		defaultConfigPath = filepath.Join("$HOME", ".azd")
 	}
 
+	var helpConfigPaths string
+	if platformAgnosticHelp {
+		helpConfigPaths = heredoc.Doc(`
+		The default value of the config directory is: 
+		* $HOME/.azd on Linux and MacOS
+		* %USERPROFILE%\.azd on Windows
+		`)
+	} else {
+		helpConfigPaths = heredoc.Docf(`
+		The easiest way to initially configure azd is to run %s.
+		The subscription and location you select will be stored at %s.
+		The default configuration path is %s.`,
+			output.WithBackticks("azd init"),
+			userConfigPath,
+			output.WithBackticks(defaultConfigPath))
+	}
+
+	longDescription := heredoc.Docf(`
+		Manage the Azure Developer CLI user configuration, which includes your default Azure subscription and location.
+
+		%s
+
+		The configuration directory can be overridden by specifying a path in the AZD_CONFIG_DIR environment variable.`,
+		helpConfigPaths)
+
 	root := &cobra.Command{
 		Use:   "config",
 		Short: "Manage Azure Developer CLI configuration",
-		Long: `Manage the Azure Developer CLI user configuration, which includes your default Azure subscription and location.
-
-The easiest way to initially configure azd is to run ` + output.WithBackticks(
-			"azd init",
-		) + `.
-The subscription and location you select will be stored at ` + userConfigPath + `.
-The default configuration path is ` + output.WithBackticks(
-			defaultConfigPath,
-		) + `.`,
+		Long:  longDescription,
 	}
 
 	root.Flags().BoolP("help", "h", false, fmt.Sprintf("Gets help for %s.", root.Name()))

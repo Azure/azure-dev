@@ -23,7 +23,7 @@ import (
 	"go.opentelemetry.io/otel/codes"
 )
 
-func NewRootCmd() *cobra.Command {
+func NewRootCmd(platformAgnosticHelp bool) *cobra.Command {
 	prevDir := ""
 	opts := &internal.GlobalCommandOptions{}
 
@@ -93,13 +93,13 @@ For more information, visit the Azure Developer CLI Dev Hub: https://aka.ms/azur
 
 	opts.EnableTelemetry = telemetry.IsTelemetryEnabled()
 
-	cmd.AddCommand(configCmd(opts))
-	cmd.AddCommand(envCmd(opts))
-	cmd.AddCommand(infraCmd(opts))
-	cmd.AddCommand(pipelineCmd(opts))
-	cmd.AddCommand(telemetryCmd(opts))
-	cmd.AddCommand(templatesCmd(opts))
-	cmd.AddCommand(authCmd(opts))
+	cmd.AddCommand(configCmd(opts, platformAgnosticHelp)) // Dynamic
+	cmd.AddCommand(envCmd(opts))                          // Static
+	cmd.AddCommand(infraCmd(opts))                        // Static
+	cmd.AddCommand(pipelineCmd(opts))                     // Static
+	cmd.AddCommand(telemetryCmd(opts))                    // Static
+	cmd.AddCommand(templatesCmd(opts))                    // Static
+	cmd.AddCommand(authCmd(opts))                         // Static
 
 	cmd.AddCommand(BuildCmd(opts, versionCmdDesign, initVersionAction, &buildOptions{disableTelemetry: true}))
 	cmd.AddCommand(BuildCmd(opts, showCmdDesign, initShowAction, nil))
@@ -108,8 +108,8 @@ For more information, visit the Azure Developer CLI Dev Hub: https://aka.ms/azur
 	cmd.AddCommand(BuildCmd(opts, logoutCmdDesign, initLogoutAction, nil))
 	cmd.AddCommand(BuildCmd(opts, monitorCmdDesign, initMonitorAction, nil))
 	cmd.AddCommand(BuildCmd(opts, downCmdDesign, initInfraDeleteAction, nil))
-	cmd.AddCommand(BuildCmd(opts, initCmdDesign, initInitAction, nil))
-	cmd.AddCommand(BuildCmd(opts, upCmdDesign, initUpAction, nil))
+	cmd.AddCommand(BuildCmd(opts, initCmdDesign, initInitAction, nil)) // Static with formatting functions
+	cmd.AddCommand(BuildCmd(opts, upCmdDesign, initUpAction, nil))     // Static with formatting functions
 	cmd.AddCommand(BuildCmd(opts, provisionCmdDesign, initInfraCreateAction, nil))
 	cmd.AddCommand(BuildCmd(opts, deployCmdDesign, initDeployAction, nil))
 

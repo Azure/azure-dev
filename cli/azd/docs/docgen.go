@@ -46,7 +46,9 @@ const directoryMode fs.FileMode = 0755
 func main() {
 	fmt.Println("Generating documentation")
 
-	cmd := azd.NewRootCmd()
+	// platformAgnosticHelp is true to inform commands to use generate help text
+	// instead of generating help text that includes execution-specific state.
+	cmd := azd.NewRootCmd(true)
 
 	basename := strings.Replace(cmd.CommandPath(), " ", "_", -1) + ".md"
 	filename := filepath.Join("./md", basename)
@@ -101,6 +103,13 @@ func addCodeFencesToSampleCommands(s string) string {
 				newLines = append(newLines, line)
 			}
 		} else {
+			if inBlock && strings.HasPrefix(line, "\t$") {
+				// Replace first instance of "\t$" with "\t" to eliminate superfluous leading "$"s from documentation
+				// TODO: This technically works but a better approach may exist
+				// TODO: Can space be trimmed only from the left?
+				// TODO: String interpolation?
+				line = "\t" + strings.TrimSpace(strings.Replace(line, "\t$", "\t", 1))
+			}
 			newLines = append(newLines, line)
 		}
 	}

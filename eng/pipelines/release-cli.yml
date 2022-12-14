@@ -842,6 +842,11 @@ stages:
             name: GenerateUrlBase
             displayName: Set UrlBase
 
+          - task: DownloadPipelineArtifact@2
+            inputs:
+              artifact: docs
+              path: docs
+
           - pwsh: |
               $urlBase = "$(GenerateUrlBase.UrlBase)"
               $linuxReleaseUrl = "$urlBase/azd-linux-amd64.tar.gz"
@@ -849,6 +854,8 @@ stages:
               $windowsReleaseUrl = "$urlBase/azd-windows-amd64.zip"
               $msiReleaseUrl = "$urlBase/azd-windows-amd64.msi"
 
+              $refDocContent = Get-Content docs/azd.md -Raw
+              
               $content = @"
               <!-- #comment-cli-pr -->
               ## Azure Dev CLI Install Instructions
@@ -897,9 +904,19 @@ stages:
               * $msiReleaseUrl
 
               ### Container
+
               ``````
               docker run -it $(azdev-acr-host)/azure-dev:pr-$(PRNumber)
               ``````
+
+              ## Documentation
+
+              <details open>
+              <summary>learn.microsoft.com documentation</summary>
+
+              $refDocContent
+
+              </details>
               "@
               $file = New-TemporaryFile
               Set-Content -Path $file -Value $content

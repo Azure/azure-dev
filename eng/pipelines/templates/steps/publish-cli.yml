@@ -192,6 +192,9 @@ steps:
       PRBranchName: azure-dev-cli/$(CLI_VERSION)
       CommitMsg: Update reference documents for Azure CLI @ $(CLI_VERSION)
       PRTitle: Update reference documents for Azure CLI @ $(CLI_VERSION)
+      WorkingDirectory: $(System.DefaultWorkingDirectory)/docs  
+      RepoOwner: MicrosoftDocs
+      RepoName: azure-dev-docs
       # Eliminate these after testing
       CloseAfterOpenForTesting: true
       OpenAsDraft: true

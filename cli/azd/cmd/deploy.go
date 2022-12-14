@@ -188,7 +188,7 @@ func (d *deployAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		// This thread is required to drain all the string messages sent by the `progress`.
 		go func() {
 			for message := range progress {
-				log.Println(fmt.Sprintf("- %s...", message))
+				log.Printf("- %s...", message)
 			}
 		}()
 

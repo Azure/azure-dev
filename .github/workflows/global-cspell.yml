@@ -1,0 +1,27 @@
+name: global-cspell
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [main]
+    paths-ignore:
+      - 'cli/**' # Covered by CLI-specific spell
+      - 'ext/**' # Covered by VSCode-specific cspell
+      - ".github/workflows/global-cspell.yml"
+
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  cspell-lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - uses: actions/setup-node@v1
+        name: Run spell check for templates
+        with:
+          node-version: "16"
+      - run: npm install -g cspell
+      - run: cspell lint '**/*' --config ./.vscode/cspell.yaml --relative --no-progress

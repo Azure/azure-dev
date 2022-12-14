@@ -1,8 +1,8 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
+import { ResourceModelBase } from '@microsoft/vscode-azext-utils/hostapi.v2';
 import * as vscode from 'vscode';
-import { ResourceModelBase } from "./ResourceGroupsApi";
 
 export interface AzureDevCliModelContext {
     readonly configurationFile: vscode.Uri;

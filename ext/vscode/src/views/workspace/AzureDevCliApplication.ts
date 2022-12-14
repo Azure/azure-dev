@@ -1,6 +1,7 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
+import { WorkspaceResource } from '@microsoft/vscode-azext-utils/hostapi.v2';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { callWithTelemetryAndErrorHandling } from '@microsoft/vscode-azext-utils';
@@ -11,7 +12,6 @@ import { withTimeout } from '../../utils/withTimeout';
 import { AzureDevCliEnvironments } from './AzureDevCliEnvironments';
 import { AzureDevCliModel, AzureDevCliModelContext, RefreshHandler } from './AzureDevCliModel';
 import { AzureDevCliServices } from './AzureDevCliServices';
-import { WorkspaceResource } from './ResourceGroupsApi';
 
 interface ShowResults {
     name?: string;

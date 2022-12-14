@@ -1,11 +1,11 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
+import { BranchDataProvider, WorkspaceResource } from '@microsoft/vscode-azext-utils/hostapi.v2';
 import * as vscode from 'vscode';
-import { ProviderResult, TreeItem } from "vscode";
-import { AzureDevCliApplication } from "./AzureDevCliApplication";
-import { AzureDevCliModel } from "./AzureDevCliModel";
-import { BranchDataProvider, WorkspaceResource } from "./ResourceGroupsApi";
+import { ProviderResult, TreeItem } from 'vscode';
+import { AzureDevCliApplication } from './AzureDevCliApplication';
+import { AzureDevCliModel } from './AzureDevCliModel';
 
 export class AzureDevCliWorkspaceResourceBranchDataProvider extends vscode.Disposable implements BranchDataProvider<WorkspaceResource, AzureDevCliModel> {
     private readonly onDidChangeTreeDataEmitter = new vscode.EventEmitter<void | AzureDevCliModel | null | undefined>();

@@ -1,12 +1,11 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
+import { isWrapper, Wrapper } from '@microsoft/vscode-azext-utils';
 import * as vscode from 'vscode';
 
-export interface TreeViewModel {
-    unwrap<T>(): T;
-}
+export type TreeViewModel = Wrapper;
 
-export function isTreeViewModel(selectedItem: vscode.Uri | TreeViewModel | undefined): selectedItem is TreeViewModel {
-    return selectedItem !== undefined && (selectedItem as TreeViewModel).unwrap !== undefined;
+export function isTreeViewModel(selectedItem: vscode.Uri | TreeViewModel | undefined | unknown): selectedItem is TreeViewModel {
+    return isWrapper(selectedItem);
 }

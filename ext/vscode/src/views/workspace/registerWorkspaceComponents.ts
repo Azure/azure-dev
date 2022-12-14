@@ -1,30 +1,20 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
+import { AzureResourcesApi } from '@microsoft/vscode-azext-utils/hostapi.v2';
 import * as vscode from 'vscode';
 import { AzureDevCliWorkspaceResourceProvider } from './AzureDevCliWorkspaceResourceProvider';
 import { AzureDevCliWorkspaceResourceBranchDataProvider } from './AzureDevCliWorkspaceResourceBranchDataProvider';
-import { AzureResourcesApiManager, GetApiOptions, V2AzureResourcesApi } from './ResourceGroupsApi';
 import { WorkspaceAzureDevApplicationProvider } from '../../services/AzureDevApplicationProvider';
+import { getExtensionExports } from '@microsoft/vscode-azext-utils';
+import { AzureExtensionApiProvider } from '@microsoft/vscode-azext-utils/api';
 
-export async function getApiExport<T>(extensionId: string): Promise<T | undefined> {
-    const extension: vscode.Extension<T> | undefined = vscode.extensions.getExtension(extensionId);
-    if (extension) {
-        if (!extension.isActive) {
-            await extension.activate();
-        }
-
-        return extension.exports;
-    }
-
-    return undefined;
-}
-
-async function getResourceGroupsApi(extensionId: string): Promise<V2AzureResourcesApi> {
-    const rgApiOptions: GetApiOptions = { extensionId };
-    const rgApiProvider = await getApiExport<AzureResourcesApiManager>('ms-azuretools.vscode-azureresourcegroups');
+async function getResourceGroupsApi(extensionId: string): Promise<AzureResourcesApi> {
+    // TODO: need to get these options in after changes to AzureExtensionApiProvider
+    //const rgApiOptions: GetApiOptions = { extensionId };
+    const rgApiProvider = await getExtensionExports<AzureExtensionApiProvider>('ms-azuretools.vscode-azureresourcegroups');
     if (rgApiProvider) {
-        const v2Api = rgApiProvider.getApi<V2AzureResourcesApi>('2', rgApiOptions);
+        const v2Api = rgApiProvider.getApi<AzureResourcesApi>('2');
 
         if (v2Api === undefined) {
             throw new Error('Could not find the V2 Azure Resource Groups API.');
@@ -45,8 +35,8 @@ export async function registerWorkspaceComponents(extensionId: string): Promise<
 
     disposables.push(workspaceResourceProvider);
 
-    disposables.push(api.registerWorkspaceResourceProvider(workspaceResourceProvider));
-    disposables.push(api.registerWorkspaceResourceBranchDataProvider('ms-azuretools.azure-dev.application', new AzureDevCliWorkspaceResourceBranchDataProvider()));
+    disposables.push(api.resources.registerWorkspaceResourceProvider(workspaceResourceProvider));
+    disposables.push(api.resources.registerWorkspaceResourceBranchDataProvider('ms-azuretools.azure-dev.application', new AzureDevCliWorkspaceResourceBranchDataProvider()));
 
     return disposables;
 }

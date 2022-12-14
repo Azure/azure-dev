@@ -2,7 +2,7 @@
 // Licensed under the MIT License.
 
 import * as vscode from 'vscode';
-import { merge, mergeMap, Observable, startWith } from "rxjs";
+import { merge, mergeMap, Observable, startWith } from 'rxjs';
 
 export interface AzureDevApplication {
     configurationPath: vscode.Uri;

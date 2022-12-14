@@ -295,11 +295,6 @@ func NewManager(
 	console input.Console,
 	commandRunner exec.CommandRunner,
 ) (*Manager, error) {
-	// Use silent console when console is not provided
-	if console == nil {
-		console = input.NewSilentConsole()
-	}
-
 	infraProvider, err := NewProvider(ctx, console, azCli, commandRunner, env, projectPath, infraOptions)
 	if err != nil {
 		return nil, fmt.Errorf("error creating infra provider: %w", err)

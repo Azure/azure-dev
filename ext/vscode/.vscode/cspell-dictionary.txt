@@ -1,3 +1,5 @@
 azuretools
 pseudoterminal
 randomizer
+hostapi
+azureresourcegroups

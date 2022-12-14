@@ -17,169 +17,181 @@ parameters:
   SyndicatedAcrPassword: $(azdev-acr-syndicated-password)
 
 steps:
-  - ${{ if eq('true', parameters.CreateGitHubRelease) }}:
-    # This step must run first because a duplicated tag means we don't need to
-    # continue with any of the subsequent steps.
-    - task: PowerShell@2
-      inputs:
-        pwsh: true
-        targetType: filePath
-        filePath: ./eng/scripts/Set-GitHubReleaseTag.ps1
-        arguments: >-
-          -Tag "azure-dev-cli_$(CLI_VERSION)"
-          -OutputName "GH_RELEASE_TAG"
-          -DevOpsOutputFormat
-      displayName: Verify and set GitHub Release Tag
+  # TODO: Uncomment before merge
+  # - ${{ if eq('true', parameters.CreateGitHubRelease) }}:
+  #   # This step must run first because a duplicated tag means we don't need to
+  #   # continue with any of the subsequent steps.
+  #   - task: PowerShell@2
+  #     inputs:
+  #       pwsh: true
+  #       targetType: filePath
+  #       filePath: ./eng/scripts/Set-GitHubReleaseTag.ps1
+  #       arguments: >-
+  #         -Tag "azure-dev-cli_$(CLI_VERSION)"
+  #         -OutputName "GH_RELEASE_TAG"
+  #         -DevOpsOutputFormat
+  #     displayName: Verify and set GitHub Release Tag
 
-  - pwsh: |
-      docker login `
-        -u '${{ parameters.AcrUsername }}' `
-        -p '${{ parameters.AcrPassword }}' `
-        ${{ parameters.AcrHost }}
-      docker login `
-        -u '${{ parameters.SyndicatedAcrUsername }}' `
-        -p '${{ parameters.SyndicatedAcrPassword }}' `
-        ${{ parameters.SyndicatedAcrHost }}
-    displayName: Authenticate for publishing
+  # - pwsh: |
+  #     docker login `
+  #       -u '${{ parameters.AcrUsername }}' `
+  #       -p '${{ parameters.AcrPassword }}' `
+  #       ${{ parameters.AcrHost }}
+  #     docker login `
+  #       -u '${{ parameters.SyndicatedAcrUsername }}' `
+  #       -p '${{ parameters.SyndicatedAcrPassword }}' `
+  #       ${{ parameters.SyndicatedAcrHost }}
+  #   displayName: Authenticate for publishing
 
-  # Download signed artifacts, prepare packaging
+  # # Download signed artifacts, prepare packaging
+  # - task: DownloadPipelineArtifact@2
+  #   inputs:
+  #     artifact: signed
+  #     path: signed
+
+  # # Linux binary is not signed today so download from output artifacts
+  # - task: DownloadPipelineArtifact@2
+  #   inputs:
+  #     artifact: azd-linux-amd64
+  #     # Copy the item from artifacts straight to where it will go
+  #     path: release-staging
+
+  # - bash: chmod +x signed/mac/azd-darwin-amd64 release-staging/azd-linux-amd64
+  #   displayName: Set execute bit for the mac and linux release
+
+  # - pwsh: |
+  #     New-Item -ItemType Directory -Path release -Force
+  #     zip release/azd-darwin-amd64.zip -j signed/mac/azd-darwin-amd64 NOTICE.txt
+  #     zip release/azd-windows-amd64.zip -j signed/win/azd-windows-amd64.exe NOTICE.txt
+
+  #     # Must place NOTICE.txt in file tree for tar to pick it up and place it in
+  #     # the same place in the directory structure
+  #     Copy-Item NOTICE.txt ./release-staging/
+  #     tar -C ./release-staging/ -cvzf release/azd-linux-amd64.tar.gz azd-linux-amd64 NOTICE.txt
+  #   displayName: Compress standalone binary for release
+
+  # - ${{ if eq('true', parameters.UploadInstaller) }}:
+  #   - pwsh: |
+  #       Copy-Item cli/installer/install-azd.sh release/
+  #       Copy-Item cli/installer/install-azd-report.sh release/
+  #       Copy-Item cli/installer/uninstall-azd.sh release/
+  #       Copy-Item cli/installer/install-azd.ps1 release/
+  #       Copy-Item cli/installer/uninstall-azd.ps1 release/
+  #     displayName: Copy install scripts to release (PR only)
+
+  # # Docker build
+  # - pwsh: |
+  #     # Move the binary to a folder where Docker can pick it up
+  #     New-Item -ItemType Directory -Path cli/bin
+  #     Copy-Item release-staging/azd-linux-amd64 cli/bin/
+
+  #     docker build . -f cli/Dockerfile -t release
+
+  #     $tags = "${{ parameters.DockerImageTags }}" -split ';'
+  #     foreach ($tag in $tags) {
+  #       Write-Host "docker tag release ${{ parameters.AcrHost }}/azure-dev:$tag"
+  #       docker tag release ${{ parameters.AcrHost }}/azure-dev:$tag
+  #     }
+  #   displayName: Docker build release container (latest)
+
+  # - ${{ if eq('true', parameters.ReleaseSyndicatedDockerContainer) }}:
+  #   # Syndicated release
+  #   - pwsh: |
+  #       $tags = "${{ parameters.DockerImageTags }}" -split ';'
+  #       foreach ($tag in $tags) {
+  #         Write-Host "docker tag release ${{ parameters.SyndicatedAcrHost }}/public/azure-dev-cli-apps:$tag"
+  #         docker tag release ${{ parameters.SyndicatedAcrHost }}/public/azure-dev-cli-apps:$tag
+  #       }
+  #     displayName: Build and tag release container (Release)
+
+  # # Create release
+  # - ${{ if eq('true', parameters.CreateGitHubRelease ) }}:
+  #   - task: PowerShell@2
+  #     inputs:
+  #       targetType: filePath
+  #       filePath: eng/scripts/New-ReleaseNotesFile.ps1
+  #       arguments: >-
+  #         -ChangeLogPath cli/azd/CHANGELOG.md
+  #         -Version $(CLI_VERSION)
+  #         -DevOpsOutputFormat
+  #     displayName: Set release changelog content
+
+  #   - pwsh: |
+  #       gh release create `
+  #         "$(GH_RELEASE_TAG)" `
+  #         --title "$(GH_RELEASE_TAG)" `
+  #         --notes-file $(ReleaseChangeLogPath)
+
+  #       gh release upload $(GH_RELEASE_TAG) release/*
+  #     displayName: Create GitHub Release and upload artifacts
+  #     env:
+  #       GH_TOKEN: $(azuresdk-github-pat)
+
+  # # Write a version.txt file into the `release` folder which we upload to blob storage. The CLI uses
+  # # this file to detect if there is a newer version to use
+  # - pwsh: |
+  #     Write-Output $(CLI_VERSION) | Out-File -Encoding utf8 -FilePath ./release/version.txt
+  #   displayName: Write version.txt file for release
+
+  # - pwsh: |
+  #     $uploadLocations = "${{ parameters.PublishUploadLocations }}" -split ';'
+
+  #     Get-ChildItem release/
+
+  #     foreach ($folder in $uploadLocations) {
+  #         Write-Host "Upload to ${{ parameters.StorageContainerName }}/standalone/$folder"
+  #         az storage blob upload-batch `
+  #           --account-name '${{ parameters.StorageAccountName }}' `
+  #           --account-key '${{ parameters.StorageAccountKey }}' `
+  #           --auth-mode key `
+  #           -s release/ `
+  #           -d "${{ parameters.StorageContainerName }}/standalone/$folder" `
+  #           --overwrite
+  #         if ($LASTEXITCODE) {
+  #           Write-Error "Upload failed"
+  #           exit 1
+  #         }
+  #     }
+  #   displayName: Upload release to storage account
+
+  # - ${{ if eq('true', parameters.PublishShield) }}:
+  #   - template: /eng/pipelines/templates/steps/publish-shield.yml
+  #     parameters:
+  #       ArtifactName: shield-standalone
+  #       ArtifactDownloadPath: shields/standalone
+  #       ArtifactFilename: standalone.json
+  #       StorageAccountName: ${{ parameters.StorageAccountName }}
+  #       StorageAccountKey: ${{ parameters.StorageAccountKey }}
+  #       StorageContainerName: ${{ parameters.StorageContainerName }}
+  #       PublishDestination: standalone/latest
+
+  # - pwsh: |
+  #     docker push ${{ parameters.AcrHost }}/azure-dev --all-tags
+  #   displayName: Push container tags (latest)
+
+  # - ${{ if eq('true', parameters.ReleaseSyndicatedDockerContainer) }}:
+  #   - pwsh: |
+  #       docker push ${{ parameters.SyndicatedAcrHost }}/public/azure-dev-cli-apps --all-tags
+  #     displayName: Push container tags (syndicated release)
+
+  # Update docs
   - task: DownloadPipelineArtifact@2
     displayName: Download signed Windows binaries
     inputs:
-      artifact: signed-win
-      path: signed/win
-
-  - task: DownloadPipelineArtifact@2
-    displayName: Download signed Mac binaries
-    inputs:
-      artifact: signed-mac
-      path: signed/mac
-
-  # Linux binary is not signed today so download from output artifacts
-  - task: DownloadPipelineArtifact@2
-    inputs:
-      artifact: azd-linux-amd64
-      # Copy the item from artifacts straight to where it will go
-      path: release-staging
-
-  - bash: chmod +x signed/mac/azd-darwin-amd64 release-staging/azd-linux-amd64
-    displayName: Set execute bit for the mac and linux release
+      artifact: docs
+      path: docs
 
   - pwsh: |
-      New-Item -ItemType Directory -Path release -Force
-      zip release/azd-darwin-amd64.zip -j signed/mac/azd-darwin-amd64 NOTICE.txt
-      zip release/azd-windows-amd64.zip -j signed/win/azd-windows-amd64.exe NOTICE.txt
-
-      # Must place NOTICE.txt in file tree for tar to pick it up and place it in
-      # the same place in the directory structure
-      Copy-Item NOTICE.txt ./release-staging/
-      tar -C ./release-staging/ -cvzf release/azd-linux-amd64.tar.gz azd-linux-amd64 NOTICE.txt
-    displayName: Compress standalone binary for release
-
-  - ${{ if eq('true', parameters.UploadMsi) }}: 
-    - pwsh: Copy-Item signed/win/azd-windows-amd64.msi release/
-      displayName: Copy MSI to release
-
-  - ${{ if eq('true', parameters.UploadInstaller) }}:
-    - pwsh: |
-        Copy-Item cli/installer/install-azd.sh release/
-        Copy-Item cli/installer/install-azd-report.sh release/
-        Copy-Item cli/installer/uninstall-azd.sh release/
-        Copy-Item cli/installer/install-azd.ps1 release/
-        Copy-Item cli/installer/uninstall-azd.ps1 release/
-      displayName: Copy install scripts to release (PR only)
-
-  # Docker build
-  - pwsh: |
-      # Move the binary to a folder where Docker can pick it up
-      New-Item -ItemType Directory -Path cli/bin
-      Copy-Item release-staging/azd-linux-amd64 cli/bin/
-
-      docker build . -f cli/Dockerfile -t release
-
-      $tags = "${{ parameters.DockerImageTags }}" -split ';'
-      foreach ($tag in $tags) {
-        Write-Host "docker tag release ${{ parameters.AcrHost }}/azure-dev:$tag"
-        docker tag release ${{ parameters.AcrHost }}/azure-dev:$tag
-      }
-    displayName: Docker build release container (latest)
-
-  - ${{ if eq('true', parameters.ReleaseSyndicatedDockerContainer) }}:
-    # Syndicated release
-    - pwsh: |
-        $tags = "${{ parameters.DockerImageTags }}" -split ';'
-        foreach ($tag in $tags) {
-          Write-Host "docker tag release ${{ parameters.SyndicatedAcrHost }}/public/azure-dev-cli-apps:$tag"
-          docker tag release ${{ parameters.SyndicatedAcrHost }}/public/azure-dev-cli-apps:$tag
-        }
-      displayName: Build and tag release container (Release)
-
-  # Create release
-  - ${{ if eq('true', parameters.CreateGitHubRelease ) }}:
-    - task: PowerShell@2
-      inputs:
-        targetType: filePath
-        filePath: eng/scripts/New-ReleaseNotesFile.ps1
-        arguments: >-
-          -ChangeLogPath cli/azd/CHANGELOG.md
-          -Version $(CLI_VERSION)
-          -DevOpsOutputFormat
-      displayName: Set release changelog content
-
-    - pwsh: |
-        gh release create `
-          "$(GH_RELEASE_TAG)" `
-          --title "$(GH_RELEASE_TAG)" `
-          --notes-file $(ReleaseChangeLogPath)
-
-        gh release upload $(GH_RELEASE_TAG) release/*
-      displayName: Create GitHub Release and upload artifacts
-      env:
-        GH_TOKEN: $(azuresdk-github-pat)
-
-  # Write a version.txt file into the `release` folder which we upload to blob storage. The CLI uses
-  # this file to detect if there is a newer version to use
-  - pwsh: |
-      Write-Output $(CLI_VERSION) | Out-File -Encoding utf8 -FilePath ./release/version.txt
-    displayName: Write version.txt file for release
-
-  - pwsh: |
-      $uploadLocations = "${{ parameters.PublishUploadLocations }}" -split ';'
-
-      Get-ChildItem release/
-
-      foreach ($folder in $uploadLocations) {
-          Write-Host "Upload to ${{ parameters.StorageContainerName }}/standalone/$folder"
-          az storage blob upload-batch `
-            --account-name '${{ parameters.StorageAccountName }}' `
-            --account-key '${{ parameters.StorageAccountKey }}' `
-            --auth-mode key `
-            -s release/ `
-            -d "${{ parameters.StorageContainerName }}/standalone/$folder" `
-            --overwrite
-          if ($LASTEXITCODE) {
-            Write-Error "Upload failed"
-            exit 1
-          }
-      }
-    displayName: Upload release to storage account
-
-  - ${{ if eq('true', parameters.PublishShield) }}:
-    - template: /eng/pipelines/templates/steps/publish-shield.yml
-      parameters:
-        ArtifactName: shield-standalone
-        ArtifactDownloadPath: shields/standalone
-        ArtifactFilename: standalone.json
-        StorageAccountName: ${{ parameters.StorageAccountName }}
-        StorageAccountKey: ${{ parameters.StorageAccountKey }}
-        StorageContainerName: ${{ parameters.StorageContainerName }}
-        PublishDestination: standalone/latest
-
-  - pwsh: |
-      docker push ${{ parameters.AcrHost }}/azure-dev --all-tags
-    displayName: Push container tags (latest)
-
-  - ${{ if eq('true', parameters.ReleaseSyndicatedDockerContainer) }}:
-    - pwsh: |
-        docker push ${{ parameters.SyndicatedAcrHost }}/public/azure-dev-cli-apps --all-tags
-      displayName: Push container tags (syndicated release)
+      git clone https://github.com/azure-sdk/azure-dev-docs/
+      cd azure-dev-docs
+      Copy-Item ../docs/azd.md articles/azure-developer-cli/reference.md -Force
+    displayName: Clone azure-dev-docs and update reference.md
+      
+  - template: /eng/common/pipelines/templates/steps/create-pull-request.yml
+    parameters: 
+      PRBranchName: azure-dev-cli/$(CLI_VERSION)
+      CommitMsg: Update reference documents for Azure CLI @ $(CLI_VERSION)
+      PRTitle: Update reference documents for Azure CLI @ $(CLI_VERSION)
+      # Eliminate these after testing
+      CloseAfterOpenForTesting: true
+      OpenAsDraft: true

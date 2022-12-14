@@ -723,37 +723,38 @@ stages:
                     DockerImageTags: $(CLI_VERSION);latest
                     ReleaseSyndicatedDockerContainer: true
 
-      - deployment: Increment_Version
-        condition: >-
-          and(
-            succeeded(),
-            ne('true', variables['Skip.IncrementVersion'])
-          )
-        dependsOn: Publish_Release
-        environment: azure-dev
+      # TODO: Uncomment before merge
+      # - deployment: Increment_Version
+      #   condition: >-
+      #     and(
+      #       succeeded(),
+      #       ne('true', variables['Skip.IncrementVersion'])
+      #     )
+      #   dependsOn: Publish_Release
+      #   environment: azure-dev
 
-        pool:
-          name: azsdk-pool-mms-ubuntu-2004-general
-          OSVmImage: MMSUbuntu20.04
+      #   pool:
+      #     name: azsdk-pool-mms-ubuntu-2004-general
+      #     OSVmImage: MMSUbuntu20.04
 
-        strategy:
-          runOnce:
-            deploy:
-              steps:
-                - checkout: self
+      #   strategy:
+      #     runOnce:
+      #       deploy:
+      #         steps:
+      #           - checkout: self
 
-                - task: PowerShell@2
-                  inputs:
-                    pwsh: true
-                    targetType: filePath
-                    filePath: eng/scripts/Update-CliVersion.ps1
-                  displayName: Increment CLI version
+      #           - task: PowerShell@2
+      #             inputs:
+      #               pwsh: true
+      #               targetType: filePath
+      #               filePath: eng/scripts/Update-CliVersion.ps1
+      #             displayName: Increment CLI version
 
-                - template: /eng/common/pipelines/templates/steps/create-pull-request.yml
-                  parameters:
-                    PRBranchName: cli-version-increment-$(Build.BuildId)
-                    CommitMsg: Increment CLI version after release
-                    PRTitle: Increment CLI version after release
+      #           - template: /eng/common/pipelines/templates/steps/create-pull-request.yml
+      #             parameters:
+      #               PRBranchName: cli-version-increment-$(Build.BuildId)
+      #               CommitMsg: Increment CLI version after release
+      #               PRTitle: Increment CLI version after release
 
   - stage: PublishIntegration
     dependsOn: Sign
@@ -855,7 +856,7 @@ stages:
               $msiReleaseUrl = "$urlBase/azd-windows-amd64.msi"
 
               $refDocContent = Get-Content docs/azd.md -Raw
-              
+
               $content = @"
               <!-- #comment-cli-pr -->
               ## Azure Dev CLI Install Instructions

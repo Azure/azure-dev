@@ -7,7 +7,7 @@ on:
     paths-ignore:
       - 'cli/**' # Covered by CLI-specific spell
       - 'ext/**' # Covered by VSCode-specific cspell
-      - ".github/workflows/global-cspell.yml"
+      - 'eng/**' # Not required
 
 
 permissions:

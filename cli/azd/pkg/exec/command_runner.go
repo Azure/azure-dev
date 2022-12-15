@@ -215,8 +215,16 @@ func redactSensitiveData(msg string) string {
 			"\"accessToken\": \"<redacted>\"",
 		},
 		"deployment token": {
-			regexp.MustCompile("--deployment-token .*"),
+			regexp.MustCompile(`--deployment-token \S+`),
 			"--deployment-token <redacted>",
+		},
+		"username": {
+			regexp.MustCompile(`--username \S+`),
+			"--username <redacted>",
+		},
+		"password": {
+			regexp.MustCompile(`--password \S+`),
+			"--password <redacted>",
 		}}
 
 	for _, redactRule := range regexpRedactRules {

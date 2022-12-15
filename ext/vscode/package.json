@@ -358,7 +358,7 @@
         "webpack-cli": "~4.10"
     },
     "dependencies": {
-        "@microsoft/vscode-azext-utils": "~0.3.18",
+        "@microsoft/vscode-azext-utils": "~0.3.19",
         "dayjs": "~1.11",
         "dotenv": "~16.0",
         "rxjs": "~7.6.0"

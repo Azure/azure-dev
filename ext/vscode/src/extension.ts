@@ -46,7 +46,7 @@ export async function activateInternal(vscodeCtx: vscode.ExtensionContext, loadS
         ext.activitySvc = new ActivityStatisticsService(vscodeCtx.globalState);
         registerCommands();
         registerDisposable(vscode.tasks.registerTaskProvider('dotenv', new DotEnvTaskProvider()));
-        vscodeCtx.subscriptions.push(...await registerWorkspaceComponents(vscodeCtx.extension.id));
+        vscodeCtx.subscriptions.push(...await registerWorkspaceComponents());
         scheduleSurveys(vscodeCtx.globalState, activeSurveys);
         scheduleAzdInstalledCheck();
     });

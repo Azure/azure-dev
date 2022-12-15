@@ -185,7 +185,7 @@ func (d *deployAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		result, progress := svc.Deploy(ctx, d.azdCtx)
 
 		// Report any progress to logs only. Changes for the console are managed by the console object.
-		// This thread is required to drain all the string messages sent by the `progress`.
+		// This routine is required to drain all the string messages sent by the `progress`.
 		go func() {
 			for message := range progress {
 				log.Printf("- %s...", message)

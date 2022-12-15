@@ -9,7 +9,6 @@ import (
 
 	"github.com/MakeNowJust/heredoc/v2"
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
-	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/spf13/cobra"
@@ -18,7 +17,7 @@ import (
 var userConfigPath string
 
 // Setup account command category
-func configCmd(rootOptions *internal.GlobalCommandOptions) *cobra.Command {
+func configActions(root *actions.ActionDescriptor) *actions.ActionDescriptor {
 	userConfigDir, err := config.GetUserConfigDir()
 	if rootOptions.GenerateStaticHelp {
 		userConfigPath = heredoc.Doc(`the configuration path. 
@@ -66,45 +65,72 @@ func configCmd(rootOptions *internal.GlobalCommandOptions) *cobra.Command {
 		The configuration directory can be overridden by specifying a path in the AZD_CONFIG_DIR environment variable.`,
 		helpConfigPaths)
 
-	root := &cobra.Command{
 		Use:   "config",
 		Short: "Manage Azure Developer CLI configuration",
 		Long:  longDescription,
-		Annotations: map[string]string{
-			actions.AnnotationName: "config",
-		},
 	}
 
-	root.Flags().BoolP("help", "h", false, fmt.Sprintf("Gets help for %s.", root.Name()))
-	root.AddCommand(BuildCmd(rootOptions, configListCmdDesign, newConfigListAction, nil))
-	root.AddCommand(BuildCmd(rootOptions, configGetCmdDesign, newConfigGetAction, nil))
-	root.AddCommand(BuildCmd(rootOptions, configSetCmdDesign, newConfigSetAction, nil))
-	root.AddCommand(BuildCmd(rootOptions, configUnsetCmdDesign, newConfigUnsetAction, nil))
-	root.AddCommand(BuildCmd(rootOptions, configResetCmdDesign, newConfigResetAction, nil))
+	group := root.Add("config", &actions.ActionDescriptorOptions{
+		Command: category,
+	})
 
-	return root
+	group.Add("list", &actions.ActionDescriptorOptions{
+		Command: &cobra.Command{
+			Short: "Lists all configuration values",
+			Long:  `Lists all configuration values in ` + userConfigPath + `.`,
+		},
+		ActionResolver: newConfigListAction,
+		OutputFormats:  []output.Format{output.JsonFormat},
+		DefaultFormat:  output.JsonFormat,
+	})
+
+	group.Add("get", &actions.ActionDescriptorOptions{
+		Command: &cobra.Command{
+			Use:   "get <path>",
+			Short: "Gets a configuration",
+			Long:  `Gets a configuration in ` + userConfigPath + `.`,
+			Args:  cobra.ExactArgs(1),
+		},
+		ActionResolver: newConfigGetAction,
+		OutputFormats:  []output.Format{output.JsonFormat},
+		DefaultFormat:  output.JsonFormat,
+	})
+
+	group.Add("set", &actions.ActionDescriptorOptions{
+		Command: &cobra.Command{
+			Use:   "set <path> <value>",
+			Short: "Sets a configuration",
+			Long:  `Sets a configuration in ` + userConfigPath + `.`,
+			Args:  cobra.ExactArgs(2),
+			Example: `$ azd config set defaults.subscription <yourSubscriptionID>
+	$ azd config set defaults.location eastus`,
+		},
+		ActionResolver: newConfigSetAction,
+	})
+
+	group.Add("unset", &actions.ActionDescriptorOptions{
+		Command: &cobra.Command{
+			Use:     "unset <path>",
+			Short:   "Unsets a configuration",
+			Long:    `Removes a configuration in ` + userConfigPath + `.`,
+			Example: `$ azd config unset defaults.location`,
+			Args:    cobra.ExactArgs(1),
+		},
+		ActionResolver: newConfigUnsetAction,
+	})
+
+	group.Add("reset", &actions.ActionDescriptorOptions{
+		Command: &cobra.Command{
+			Short: "Resets configuration to default",
+			Long:  `Resets all configuration in ` + userConfigPath + ` to the default.`,
+		},
+		ActionResolver: newConfigResetAction,
+	})
+
+	return group
 }
 
 // azd config list
-
-func configListCmdDesign(global *internal.GlobalCommandOptions) (*cobra.Command, *struct{}) {
-	cmd := &cobra.Command{
-		Use:   "list",
-		Short: "Lists all configuration values",
-		Long:  `Lists all configuration values in ` + userConfigPath + `.`,
-		Annotations: map[string]string{
-			actions.AnnotationName: "config-list",
-		},
-	}
-
-	output.AddOutputParam(
-		cmd,
-		[]output.Format{output.JsonFormat},
-		output.JsonFormat,
-	)
-
-	return cmd, &struct{}{}
-}
 
 type configListAction struct {
 	configManager config.UserConfigManager
@@ -142,26 +168,6 @@ func (a *configListAction) Run(ctx context.Context) (*actions.ActionResult, erro
 }
 
 // azd config get <path>
-
-func configGetCmdDesign(global *internal.GlobalCommandOptions) (*cobra.Command, *struct{}) {
-	cmd := &cobra.Command{
-		Use:   "get <path>",
-		Short: "Gets a configuration",
-		Long:  `Gets a configuration in ` + userConfigPath + `.`,
-		Annotations: map[string]string{
-			actions.AnnotationName: "config-get",
-		},
-	}
-
-	output.AddOutputParam(
-		cmd,
-		[]output.Format{output.JsonFormat},
-		output.JsonFormat,
-	)
-
-	cmd.Args = cobra.ExactArgs(1)
-	return cmd, &struct{}{}
-}
 
 type configGetAction struct {
 	configManager config.UserConfigManager
@@ -210,21 +216,6 @@ func (a *configGetAction) Run(ctx context.Context) (*actions.ActionResult, error
 
 // azd config set <path> <value>
 
-func configSetCmdDesign(global *internal.GlobalCommandOptions) (*cobra.Command, *struct{}) {
-	cmd := &cobra.Command{
-		Use:   "set <path> <value>",
-		Short: "Sets a configuration",
-		Long:  `Sets a configuration in ` + userConfigPath + `.`,
-		Example: `$ azd config set defaults.subscription <yourSubscriptionID>
-$ azd config set defaults.location eastus`,
-		Annotations: map[string]string{
-			actions.AnnotationName: "config-set",
-		},
-	}
-	cmd.Args = cobra.ExactArgs(2)
-	return cmd, &struct{}{}
-}
-
 type configSetAction struct {
 	configManager config.UserConfigManager
 	args          []string
@@ -257,21 +248,6 @@ func (a *configSetAction) Run(ctx context.Context) (*actions.ActionResult, error
 
 // azd config unset <path>
 
-func configUnsetCmdDesign(global *internal.GlobalCommandOptions) (*cobra.Command, *struct{}) {
-	cmd := &cobra.Command{
-		Use:     "unset <path>",
-		Short:   "Unsets a configuration",
-		Long:    `Removes a configuration in ` + userConfigPath + `.`,
-		Example: `$ azd config unset defaults.location`,
-		Annotations: map[string]string{
-			actions.AnnotationName: "config-unset",
-		},
-	}
-
-	cmd.Args = cobra.ExactArgs(1)
-	return cmd, &struct{}{}
-}
-
 type configUnsetAction struct {
 	configManager config.UserConfigManager
 	args          []string
@@ -302,19 +278,6 @@ func (a *configUnsetAction) Run(ctx context.Context) (*actions.ActionResult, err
 }
 
 // azd config reset
-
-func configResetCmdDesign(global *internal.GlobalCommandOptions) (*cobra.Command, *struct{}) {
-	cmd := &cobra.Command{
-		Use:   "reset",
-		Short: "Resets configuration to default",
-		Long:  `Resets all configuration in ` + userConfigPath + ` to the default.`,
-		Annotations: map[string]string{
-			actions.AnnotationName: "config-reset",
-		},
-	}
-
-	return cmd, &struct{}{}
-}
 
 type configResetAction struct {
 	configManager config.UserConfigManager

@@ -27,18 +27,18 @@ type authTokenFlags struct {
 	global       *internal.GlobalCommandOptions
 }
 
-func authTokenCmdDesign(global *internal.GlobalCommandOptions) (*cobra.Command, *authTokenFlags) {
-	cmd := &cobra.Command{
+func newAuthTokenFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *authTokenFlags {
+	flags := &authTokenFlags{}
+	flags.Bind(cmd.Flags(), global)
+
+	return flags
+}
+
+func newAuthTokenCmd() *cobra.Command {
+	return &cobra.Command{
 		Use:    "token",
 		Hidden: true,
-		Annotations: map[string]string{
-			actions.AnnotationName: "auth-token",
-		},
 	}
-
-	getAccessTokenFlags := &authTokenFlags{}
-	getAccessTokenFlags.Bind(cmd.Flags(), global)
-	return cmd, getAccessTokenFlags
 }
 
 func (f *authTokenFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {

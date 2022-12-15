@@ -23,30 +23,30 @@ import (
 )
 
 type showFlags struct {
-	outputFormat string
-	global       *internal.GlobalCommandOptions
+	global *internal.GlobalCommandOptions
 	envFlag
 }
 
 func (s *showFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
-	output.AddOutputFlag(local, &s.outputFormat, []output.Format{output.JsonFormat}, output.NoneFormat)
 	s.envFlag.Bind(local, global)
 	s.global = global
 }
 
-func showCmdDesign(global *internal.GlobalCommandOptions) (*cobra.Command, *showFlags) {
+func newShowFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *showFlags {
+	flags := &showFlags{}
+	flags.Bind(cmd.Flags(), global)
+
+	return flags
+}
+
+func newShowCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:    "show",
 		Short:  "Display information about your application and its resources.",
 		Hidden: true,
-		Annotations: map[string]string{
-			actions.AnnotationName: "show",
-		},
 	}
 
-	flags := &showFlags{}
-	flags.Bind(cmd.Flags(), global)
-	return cmd, flags
+	return cmd
 }
 
 type showAction struct {

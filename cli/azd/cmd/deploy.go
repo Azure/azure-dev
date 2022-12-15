@@ -12,7 +12,6 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
-	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
@@ -26,9 +25,8 @@ import (
 )
 
 type deployFlags struct {
-	serviceName  string
-	outputFormat *string // pointer to allow delay-initialization when used in "azd up"
-	global       *internal.GlobalCommandOptions
+	serviceName string
+	global      *internal.GlobalCommandOptions
 	*envFlag
 }
 
@@ -53,22 +51,21 @@ func (d *deployFlags) bindNonCommon(
 func (d *deployFlags) bindCommon(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
 	d.envFlag = &envFlag{}
 	d.envFlag.Bind(local, global)
-
-	d.outputFormat = convert.RefOf("")
-	output.AddOutputFlag(
-		local,
-		d.outputFormat,
-		[]output.Format{output.JsonFormat, output.NoneFormat},
-		output.NoneFormat)
 }
 
-func (d *deployFlags) setCommon(outputFormat *string, envFlag *envFlag) {
-	d.outputFormat = outputFormat
+func (d *deployFlags) setCommon(envFlag *envFlag) {
 	d.envFlag = envFlag
 }
 
-func deployCmdDesign(rootOptions *internal.GlobalCommandOptions) (*cobra.Command, *deployFlags) {
-	cmd := &cobra.Command{
+func newDeployFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *deployFlags {
+	flags := &deployFlags{}
+	flags.Bind(cmd.Flags(), global)
+
+	return flags
+}
+
+func newDeployCmd() *cobra.Command {
+	return &cobra.Command{
 		Use:   "deploy",
 		Short: "Deploy the application's code to Azure.",
 		//nolint:lll
@@ -82,14 +79,7 @@ Examples:
 	$ azd deploy --service web
 	
 After the deployment is complete, the endpoint is printed. To start the service, select the endpoint or paste it in a browser.`,
-		Annotations: map[string]string{
-			actions.AnnotationName: "deploy",
-		},
 	}
-	df := deployFlags{}
-	df.Bind(cmd.Flags(), rootOptions)
-
-	return cmd, &df
 }
 
 type deployAction struct {

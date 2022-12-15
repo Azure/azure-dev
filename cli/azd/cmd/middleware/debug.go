@@ -21,7 +21,7 @@ func NewDebugMiddleware(console input.Console) Middleware {
 	}
 }
 
-func (m *DebugMiddleware) Run(ctx context.Context, _ Options, next NextFn) (*actions.ActionResult, error) {
+func (m *DebugMiddleware) Run(ctx context.Context, next NextFn) (*actions.ActionResult, error) {
 	debug, err := strconv.ParseBool(os.Getenv("AZD_DEBUG"))
 	if err != nil {
 		log.Printf("failed converting AZD_DEBUG to boolean: %s", err.Error())

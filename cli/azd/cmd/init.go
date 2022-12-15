@@ -29,7 +29,14 @@ import (
 	"github.com/spf13/pflag"
 )
 
-func initCmdDesign(rootOptions *internal.GlobalCommandOptions) (*cobra.Command, *initFlags) {
+func newInitFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *initFlags {
+	flags := &initFlags{}
+	flags.Bind(cmd.Flags(), global)
+
+	return flags
+}
+
+func newInitCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "init",
 		Short: "Initialize a new application.",
@@ -39,19 +46,9 @@ func initCmdDesign(rootOptions *internal.GlobalCommandOptions) (*cobra.Command, 
 When no template is supplied, you can optionally select an Azure Developer CLI template for cloning. Otherwise, ` + output.WithBackticks("azd init") + ` initializes the current directory and creates resources so that your project is compatible with Azure Developer CLI.
 
 When a template is provided, the sample code is cloned to the current directory.`,
-		Annotations: map[string]string{
-			actions.AnnotationName: "init",
-		},
 	}
 
-	f := &initFlags{}
-	f.Bind(cmd.Flags(), rootOptions)
-
-	if err := cmd.RegisterFlagCompletionFunc("template", templateNameCompletion); err != nil {
-		panic(err)
-	}
-
-	return cmd, f
+	return cmd
 }
 
 type initFlags struct {

@@ -2,21 +2,19 @@ package middleware
 
 import (
 	"context"
+	"fmt"
 	"log"
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
-	"github.com/golobby/container/v3"
+	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 )
-
-var ioc container.Container = container.Global
-var middlewareChain []string = []string{}
 
 // Registration function that returns a constructed middleware
 type ResolveFn func() Middleware
 
 // Defines a middleware component
 type Middleware interface {
-	Run(ctx context.Context, options Options, nextFn NextFn) (*actions.ActionResult, error)
+	Run(ctx context.Context, nextFn NextFn) (*actions.ActionResult, error)
 }
 
 // Middleware Run options
@@ -28,20 +26,31 @@ type Options struct {
 // Executes the next middleware in the command chain
 type NextFn func(ctx context.Context) (*actions.ActionResult, error)
 
-func SetContainer(c container.Container) {
-	ioc = c
+type MiddlewareRunner struct {
+	chain     []string
+	container *ioc.NestedContainer
+}
+
+func NewMiddlewareRunner(container *ioc.NestedContainer) *MiddlewareRunner {
+	return &MiddlewareRunner{
+		container: container,
+		chain:     []string{},
+	}
 }
 
 // Executes the middleware chain for the specified action
-func RunAction(
+func (r *MiddlewareRunner) RunAction(
 	ctx context.Context,
-	options Options,
+	runOptions *Options,
 	action actions.Action,
 ) (*actions.ActionResult, error) {
-	chainLength := len(middlewareChain)
+	chainLength := len(r.chain)
 	index := 0
 
 	var nextFn NextFn
+
+	actionContainer := ioc.NewNestedContainer(r.container)
+	ioc.RegisterInstance(actionContainer, runOptions)
 
 	// This recursive function executes the middleware chain in the order that
 	// the middlewares were registered. nextFn is passed into the middleware run
@@ -50,11 +59,11 @@ func RunAction(
 	// and the chain is unwrapped back out through the call stack.
 	nextFn = func(nextContext context.Context) (*actions.ActionResult, error) {
 		if index < chainLength {
-			middlewareName := middlewareChain[index]
+			middlewareName := r.chain[index]
 			index++
 
 			var middleware Middleware
-			err := ioc.NamedResolve(&middleware, middlewareName)
+			err := actionContainer.ResolveNamed(middlewareName, &middleware)
 			if err != nil {
 				log.Printf("failed resolving middleware '%s' : %s\n", middlewareName, err.Error())
 			}
@@ -67,7 +76,7 @@ func RunAction(
 			}
 
 			log.Printf("running middleware '%s'\n", middlewareName)
-			return middleware.Run(nextContext, options, nextFn)
+			return middleware.Run(nextContext, nextFn)
 		} else {
 			return action.Run(ctx)
 		}
@@ -82,7 +91,13 @@ func RunAction(
 }
 
 // Registers middleware components that will be run for all actions
-func Use(name string, resolveFn any) {
-	container.MustNamedSingletonLazy(ioc, name, resolveFn)
-	middlewareChain = append(middlewareChain, name)
+func (r *MiddlewareRunner) Use(name string, resolveFn any) error {
+	err := r.container.RegisterNamedTransient(name, resolveFn)
+	if err != nil {
+		return fmt.Errorf("failed registering middleware '%s'. Ensure the resolver is a go function. %w", name, err)
+	}
+
+	r.chain = append(r.chain, name)
+
+	return nil
 }

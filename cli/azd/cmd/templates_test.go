@@ -7,7 +7,6 @@ import (
 	"sort"
 	"testing"
 
-	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/templates"
 	"github.com/stretchr/testify/assert"
@@ -19,10 +18,6 @@ func TestTemplateList(t *testing.T) {
 	var result bytes.Buffer
 	templatesManager := templates.NewTemplateManager()
 	templateList := newTemplatesListAction(
-		&templatesListFlags{
-			outputFormat: string(output.JsonFormat),
-			global:       &internal.GlobalCommandOptions{},
-		},
 		&output.JsonFormatter{},
 		&result,
 		templatesManager,

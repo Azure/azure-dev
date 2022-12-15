@@ -22,8 +22,8 @@ import (
 	"github.com/spf13/pflag"
 )
 
-func envCmd(rootOptions *internal.GlobalCommandOptions) *cobra.Command {
-	root := &cobra.Command{
+func envActions(root *actions.ActionDescriptor) *actions.ActionDescriptor {
+	envCmd := &cobra.Command{
 		Use:   "env",
 		Short: "Manage environments.",
 		//nolint:lll
@@ -32,34 +32,68 @@ func envCmd(rootOptions *internal.GlobalCommandOptions) *cobra.Command {
 With this command group, you can create a new environment or get, set, and list your application environments. An application can have multiple environments (for example, dev, test, prod), each with a different configuration (that is, connectivity information) for accessing Azure resources. 
 
 You can find all environment configurations under the *.azure\<environment-name>* folder. The environment name is stored as the AZURE_ENV_NAME environment variable in the *.azure\<environment-name>\folder\.env* file.`,
-		Annotations: map[string]string{
-			actions.AnnotationName: "env",
-		},
 	}
 
-	root.Flags().BoolP("help", "h", false, fmt.Sprintf("Gets help for %s.", root.Name()))
-	root.AddCommand(BuildCmd(rootOptions, envSetCmdDesign, newEnvSetAction, nil))
-	root.AddCommand(BuildCmd(rootOptions, envSelectCmdDesign, newEnvSelectAction, nil))
-	root.AddCommand(BuildCmd(rootOptions, envNewCmdDesign, newEnvNewAction, nil))
-	root.AddCommand(BuildCmd(rootOptions, envListCmdDesign, newEnvListAction, nil))
-	root.AddCommand(BuildCmd(rootOptions, envRefreshCmdDesign, newEnvRefreshAction, nil))
-	root.AddCommand(BuildCmd(rootOptions, envGetValuesDesign, newEnvGetValuesAction, nil))
+	group := root.Add("env", &actions.ActionDescriptorOptions{
+		Command: envCmd,
+	})
 
-	return root
+	group.Add("set", &actions.ActionDescriptorOptions{
+		Command:        newEnvSetCmd(),
+		FlagsResolver:  newEnvSetFlags,
+		ActionResolver: newEnvSetAction,
+	})
+
+	group.Add("select", &actions.ActionDescriptorOptions{
+		Command:        newEnvSelectCmd(),
+		ActionResolver: newEnvSelectAction,
+	})
+
+	group.Add("new", &actions.ActionDescriptorOptions{
+		Command:        newEnvNewCmd(),
+		FlagsResolver:  newEnvNewFlags,
+		ActionResolver: newEnvNewAction,
+	})
+
+	group.Add("list", &actions.ActionDescriptorOptions{
+		Command:        newEnvListCmd(),
+		ActionResolver: newEnvListAction,
+		OutputFormats:  []output.Format{output.JsonFormat, output.TableFormat},
+		DefaultFormat:  output.TableFormat,
+	})
+
+	group.Add("refresh", &actions.ActionDescriptorOptions{
+		Command:        newEnvRefreshCmd(),
+		FlagsResolver:  newEnvRefreshFlags,
+		ActionResolver: newEnvRefreshAction,
+		OutputFormats:  []output.Format{output.JsonFormat, output.NoneFormat},
+		DefaultFormat:  output.NoneFormat,
+	})
+
+	group.Add("get-values", &actions.ActionDescriptorOptions{
+		Command:        newEnvGetValuesCmd(),
+		FlagsResolver:  newEnvGetValuesFlags,
+		ActionResolver: newEnvGetValuesAction,
+		OutputFormats:  []output.Format{output.JsonFormat, output.EnvVarsFormat},
+		DefaultFormat:  output.EnvVarsFormat,
+	})
+
+	return group
 }
 
-func envSetCmdDesign(global *internal.GlobalCommandOptions) (*cobra.Command, *envSetFlags) {
-	cmd := &cobra.Command{
+func newEnvSetFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *envSetFlags {
+	flags := &envSetFlags{}
+	flags.Bind(cmd.Flags(), global)
+
+	return flags
+}
+
+func newEnvSetCmd() *cobra.Command {
+	return &cobra.Command{
 		Use:   "set <key> <value>",
 		Short: "Set a value in the environment.",
-		Annotations: map[string]string{
-			actions.AnnotationName: "env-set",
-		},
+		Args:  cobra.ExactArgs(2),
 	}
-	cmd.Args = cobra.ExactArgs(2)
-	envSetFlags := &envSetFlags{}
-	envSetFlags.Bind(cmd.Flags(), global)
-	return cmd, envSetFlags
 }
 
 type envSetFlags struct {
@@ -117,16 +151,12 @@ func (e *envSetAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	return nil, nil
 }
 
-func envSelectCmdDesign(global *internal.GlobalCommandOptions) (*cobra.Command, *struct{}) {
-	cmd := &cobra.Command{
+func newEnvSelectCmd() *cobra.Command {
+	return &cobra.Command{
 		Use:   "select <environment>",
 		Short: "Set the default environment.",
-		Annotations: map[string]string{
-			actions.AnnotationName: "env-select",
-		},
+		Args:  cobra.ExactArgs(1),
 	}
-	cmd.Args = cobra.ExactArgs(1)
-	return cmd, &struct{}{}
 }
 
 type envSelectAction struct {
@@ -149,21 +179,12 @@ func (e *envSelectAction) Run(ctx context.Context) (*actions.ActionResult, error
 	return nil, nil
 }
 
-func envListCmdDesign(global *internal.GlobalCommandOptions) (*cobra.Command, *struct{}) {
-	cmd := &cobra.Command{
+func newEnvListCmd() *cobra.Command {
+	return &cobra.Command{
 		Use:     "list",
 		Short:   "List environments",
 		Aliases: []string{"ls"},
-		Annotations: map[string]string{
-			actions.AnnotationName: "env-list",
-		},
 	}
-	output.AddOutputParam(
-		cmd,
-		[]output.Format{output.JsonFormat, output.TableFormat},
-		output.TableFormat,
-	)
-	return cmd, &struct{}{}
 }
 
 type envListAction struct {
@@ -230,18 +251,21 @@ func (f *envNewFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandO
 	f.global = global
 }
 
-func envNewCmdDesign(global *internal.GlobalCommandOptions) (*cobra.Command, *envNewFlags) {
+func newEnvNewFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *envNewFlags {
+	flags := &envNewFlags{}
+	flags.Bind(cmd.Flags(), global)
+
+	return flags
+}
+
+func newEnvNewCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "new <environment>",
 		Short: "Create a new environment.",
-		Annotations: map[string]string{
-			actions.AnnotationName: "env-new",
-		},
 	}
-	f := &envNewFlags{}
-	f.Bind(cmd.Flags(), global)
 	cmd.Args = cobra.MaximumNArgs(1)
-	return cmd, f
+
+	return cmd
 }
 
 type envNewAction struct {
@@ -300,24 +324,18 @@ func (er *envRefreshFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCom
 	er.global = global
 }
 
-func envRefreshCmdDesign(global *internal.GlobalCommandOptions) (*cobra.Command, *envRefreshFlags) {
-	cmd := &cobra.Command{
+func newEnvRefreshFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *envRefreshFlags {
+	flags := &envRefreshFlags{}
+	flags.Bind(cmd.Flags(), global)
+
+	return flags
+}
+
+func newEnvRefreshCmd() *cobra.Command {
+	return &cobra.Command{
 		Use:   "refresh",
 		Short: "Refresh environment settings by using information from a previous infrastructure provision.",
-		Annotations: map[string]string{
-			actions.AnnotationName: "env-refresh",
-		},
 	}
-
-	output.AddOutputParam(
-		cmd,
-		[]output.Format{output.JsonFormat, output.NoneFormat},
-		output.NoneFormat,
-	)
-
-	envRefreshFlags := &envRefreshFlags{}
-	envRefreshFlags.Bind(cmd.Flags(), global)
-	return cmd, envRefreshFlags
 }
 
 type envRefreshAction struct {
@@ -403,24 +421,18 @@ func (ef *envRefreshAction) Run(ctx context.Context) (*actions.ActionResult, err
 	return nil, nil
 }
 
-func envGetValuesDesign(global *internal.GlobalCommandOptions) (*cobra.Command, *envGetValuesFlags) {
-	cmd := &cobra.Command{
+func newEnvGetValuesFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *envGetValuesFlags {
+	flags := &envGetValuesFlags{}
+	flags.Bind(cmd.Flags(), global)
+
+	return flags
+}
+
+func newEnvGetValuesCmd() *cobra.Command {
+	return &cobra.Command{
 		Use:   "get-values",
 		Short: "Get all environment values.",
-		Annotations: map[string]string{
-			actions.AnnotationName: "env-get",
-		},
 	}
-
-	output.AddOutputParam(
-		cmd,
-		[]output.Format{output.JsonFormat, output.EnvVarsFormat},
-		output.EnvVarsFormat,
-	)
-
-	envGetValuesFlags := &envGetValuesFlags{}
-	envGetValuesFlags.Bind(cmd.Flags(), global)
-	return cmd, envGetValuesFlags
 }
 
 type envGetValuesFlags struct {

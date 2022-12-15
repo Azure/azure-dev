@@ -17,28 +17,18 @@ import (
 )
 
 type versionFlags struct {
-	outputFormat string
-	global       *internal.GlobalCommandOptions
+	global *internal.GlobalCommandOptions
 }
 
 func (v *versionFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
-	output.AddOutputFlag(local, &v.outputFormat, []output.Format{output.JsonFormat, output.NoneFormat}, output.NoneFormat)
 	v.global = global
 }
 
-func versionCmdDesign(global *internal.GlobalCommandOptions) (*cobra.Command, *versionFlags) {
-	cmd := &cobra.Command{
-		Use:   "version",
-		Short: "Print the version number of Azure Developer CLI.",
-		Annotations: map[string]string{
-			actions.AnnotationName: "version",
-		},
-	}
-
+func newVersionFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *versionFlags {
 	flags := &versionFlags{}
 	flags.Bind(cmd.Flags(), global)
 
-	return cmd, flags
+	return flags
 }
 
 type versionAction struct {

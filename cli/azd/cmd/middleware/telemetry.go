@@ -11,15 +11,17 @@ import (
 
 type TelemetryMiddleware struct {
 	buildOptions *actions.BuildOptions
+	options      *Options
 }
 
-func NewTelemetryMiddleware(buildOptions *actions.BuildOptions) Middleware {
+func NewTelemetryMiddleware(buildOptions *actions.BuildOptions, options *Options) Middleware {
 	return &TelemetryMiddleware{
 		buildOptions: buildOptions,
+		options:      options,
 	}
 }
 
-func (m *TelemetryMiddleware) Run(ctx context.Context, options Options, next NextFn) (*actions.ActionResult, error) {
+func (m *TelemetryMiddleware) Run(ctx context.Context, next NextFn) (*actions.ActionResult, error) {
 	// When telemetry is disabled for an action just continue the middleware chain
 	if m.buildOptions != nil && m.buildOptions.DisableTelemetry {
 		return next(ctx)
@@ -27,7 +29,7 @@ func (m *TelemetryMiddleware) Run(ctx context.Context, options Options, next Nex
 
 	// Note: CommandPath is constructed using the Use member on each command up to the root.
 	// It does not contain user input, and is safe for telemetry emission.
-	spanCtx, span := telemetry.GetTracer().Start(ctx, events.GetCommandEventName(options.Name))
+	spanCtx, span := telemetry.GetTracer().Start(ctx, events.GetCommandEventName(m.options.Name))
 	defer span.End()
 
 	result, err := next(spanCtx)

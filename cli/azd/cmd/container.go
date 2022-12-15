@@ -17,30 +17,23 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/templates"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/git"
-	"github.com/golobby/container/v3"
 	"github.com/mattn/go-colorable"
 	"github.com/mattn/go-isatty"
 	"github.com/spf13/cobra"
 )
 
-// Registers a singleton instance for the specified type
-func registerInstance[F any](ioc container.Container, instance F) {
-	container.MustSingletonLazy(ioc, func() F {
-		return instance
-	})
-}
-
 // Registers a singleton action for the specified action name
 // This finds the action for a named instance and casts it to the correct type for injection
-func registerAction[T any](ioc container.Container, actionName string) {
-	container.MustSingletonLazy(ioc, func() (T, error) {
+func registerAction[T any](container *ioc.NestedContainer, actionName string) {
+	container.RegisterSingleton(func() (T, error) {
 		var zero T
 		var action actions.Action
-		err := ioc.NamedResolve(&action, actionName)
+		err := container.ResolveNamed(actionName, &action)
 		if err != nil {
 			return zero, err
 		}
@@ -55,10 +48,10 @@ func registerAction[T any](ioc container.Container, actionName string) {
 }
 
 // Registers common Azd dependencies
-func registerCommonDependencies(ioc container.Container) {
-	container.MustSingletonLazy(ioc, output.GetCommandFormatter)
+func registerCommonDependencies(container *ioc.NestedContainer) {
+	container.RegisterSingleton(output.GetCommandFormatter)
 
-	container.MustSingletonLazy(ioc, func(
+	container.RegisterSingleton(func(
 		rootOptions *internal.GlobalCommandOptions,
 		formatter output.Formatter,
 		cmd *cobra.Command) input.Console {
@@ -83,7 +76,7 @@ func registerCommonDependencies(ioc container.Container) {
 		}, formatter)
 	})
 
-	container.MustSingletonLazy(ioc, func(console input.Console) exec.CommandRunner {
+	container.RegisterSingleton(func(console input.Console) exec.CommandRunner {
 		return exec.NewCommandRunner(
 			console.Handles().Stdin,
 			console.Handles().Stdout,
@@ -92,8 +85,8 @@ func registerCommonDependencies(ioc container.Container) {
 	})
 
 	// Tools
-	container.MustSingletonLazy(ioc, git.NewGitCli)
-	container.MustSingletonLazy(ioc, func(rootOptions *internal.GlobalCommandOptions,
+	container.RegisterSingleton(git.NewGitCli)
+	container.RegisterSingleton(func(rootOptions *internal.GlobalCommandOptions,
 		credential azcore.TokenCredential) azcli.AzCli {
 		return azcli.NewAzCli(credential, azcli.NewAzCliArgs{
 			EnableDebug:     rootOptions.EnableDebugLogging,
@@ -102,9 +95,9 @@ func registerCommonDependencies(ioc container.Container) {
 		})
 	})
 
-	container.MustSingletonLazy(ioc, azdcontext.NewAzdContext)
+	container.RegisterSingleton(azdcontext.NewAzdContext)
 
-	container.MustSingletonLazy(ioc, func(ctx context.Context, authManager *auth.Manager) (azcore.TokenCredential, error) {
+	container.RegisterSingleton(func(ctx context.Context, authManager *auth.Manager) (azcore.TokenCredential, error) {
 		credential, err := authManager.CredentialForCurrentUser(ctx)
 		if err != nil {
 			return nil, err
@@ -117,7 +110,7 @@ func registerCommonDependencies(ioc container.Container) {
 		return credential, nil
 	})
 
-	container.MustSingletonLazy(ioc, func(console input.Console) io.Writer {
+	container.RegisterSingleton(func(console input.Console) io.Writer {
 		writer := console.Handles().Stdout
 
 		if os.Getenv("NO_COLOR") != "" {
@@ -127,18 +120,18 @@ func registerCommonDependencies(ioc container.Container) {
 		return writer
 	})
 
-	container.MustSingletonLazy(ioc, config.NewUserConfigManager)
-	container.MustSingletonLazy(ioc, config.NewManager)
-	container.MustSingletonLazy(ioc, templates.NewTemplateManager)
-	container.MustSingletonLazy(ioc, auth.NewManager)
-	container.MustSingletonLazy(ioc, account.NewManager)
+	container.RegisterSingleton(config.NewUserConfigManager)
+	container.RegisterSingleton(config.NewManager)
+	container.RegisterSingleton(templates.NewTemplateManager)
+	container.RegisterSingleton(auth.NewManager)
+	container.RegisterSingleton(account.NewManager)
 
 	// Required for nested actions called from composite actions like 'up'
-	container.MustSingletonLazy(ioc, newInitAction)
-	container.MustSingletonLazy(ioc, newDeployAction)
-	container.MustSingletonLazy(ioc, newInfraCreateAction)
+	container.RegisterSingleton(newInitAction)
+	container.RegisterSingleton(newDeployAction)
+	container.RegisterSingleton(newInfraCreateAction)
 
-	registerAction[*initAction](ioc, "init-action")
-	registerAction[*deployAction](ioc, "deploy-action")
-	registerAction[*infraCreateAction](ioc, "infra-create-action")
+	registerAction[*initAction](container, "azd-init-action")
+	registerAction[*deployAction](container, "azd-deploy-action")
+	registerAction[*infraCreateAction](container, "azd-infra-create-action")
 }

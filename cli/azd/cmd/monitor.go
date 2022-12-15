@@ -41,26 +41,29 @@ func (m *monitorFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommand
 	m.global = global
 }
 
-func monitorCmdDesign(global *internal.GlobalCommandOptions) (*cobra.Command, *monitorFlags) {
+func newMonitorFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *monitorFlags {
+	flags := &monitorFlags{}
+	flags.Bind(cmd.Flags(), global)
+
+	return flags
+}
+
+func newMonitorCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "monitor",
 		Short: "Monitor a deployed application.",
 		Long: `Monitor a deployed application.
-		
+
 Examples:
 
 	$ azd monitor --overview
 	$ azd monitor -–live
 	$ azd monitor --logs
-		
-For more information, go to https://aka.ms/azure-dev/monitor.`,
-		Annotations: map[string]string{
-			actions.AnnotationName: "monitor",
-		},
+
+	For more information, go to https://aka.ms/azure-dev/monitor.`,
 	}
-	flags := &monitorFlags{}
-	flags.Bind(cmd.Flags(), global)
-	return cmd, flags
+
+	return cmd
 }
 
 type monitorAction struct {

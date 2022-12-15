@@ -34,12 +34,19 @@ func (r *restoreFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommand
 		//nolint:lll
 		"Restores a specific service (when the string is unspecified, all services that are listed in the "+azdcontext.ProjectFileName+" file are restored).",
 	)
-	r.envFlag.Bind(local, global)
-	r.global = global
 }
 
-func restoreCmdDesign(global *internal.GlobalCommandOptions) (*cobra.Command, *restoreFlags) {
-	cmd := &cobra.Command{
+func newRestoreFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *restoreFlags {
+	flags := &restoreFlags{}
+	flags.Bind(cmd.Flags(), global)
+	flags.envFlag.Bind(cmd.Flags(), global)
+	flags.global = global
+
+	return flags
+}
+
+func restoreCmdDesign() *cobra.Command {
+	return &cobra.Command{
 		Use:   "restore",
 		Short: "Restore application dependencies.",
 		//nolint:lll
@@ -48,14 +55,7 @@ func restoreCmdDesign(global *internal.GlobalCommandOptions) (*cobra.Command, *r
 Run this command to download and install all the required libraries so that you can build, run, and debug the application locally.
 
 For the best local run and debug experience, go to https://aka.ms/azure-dev/vscode to learn how to use the Visual Studio Code extension.`,
-		Annotations: map[string]string{
-			actions.AnnotationName: "restore",
-		},
 	}
-
-	flags := &restoreFlags{}
-	flags.Bind(cmd.Flags(), global)
-	return cmd, flags
 }
 
 type restoreAction struct {

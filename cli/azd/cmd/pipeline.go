@@ -51,8 +51,8 @@ func (pc *pipelineConfigFlags) Bind(local *pflag.FlagSet, global *internal.Globa
 	pc.global = global
 }
 
-func pipelineCmd(global *internal.GlobalCommandOptions) *cobra.Command {
-	cmd := &cobra.Command{
+func pipelineActions(root *actions.ActionDescriptor) *actions.ActionDescriptor {
+	infraCmd := &cobra.Command{
 		Use:   "pipeline",
 		Short: "Manage GitHub Actions pipelines.",
 		//nolint:lll
@@ -61,31 +61,36 @@ func pipelineCmd(global *internal.GlobalCommandOptions) *cobra.Command {
 The Azure Developer CLI template includes a GitHub Actions pipeline configuration file (in the *.github/workflows* folder) that deploys your application whenever code is pushed to the main branch.
 
 For more information, go to https://aka.ms/azure-dev/pipeline.`,
-		Annotations: map[string]string{
-			actions.AnnotationName: "pipeline",
-		},
 	}
-	cmd.Flags().BoolP("help", "h", false, fmt.Sprintf("Gets help for %s.", cmd.Name()))
-	cmd.AddCommand(BuildCmd(global, pipelineConfigCmdDesign, newPipelineConfigAction, nil))
-	return cmd
+
+	group := root.Add("pipeline", &actions.ActionDescriptorOptions{
+		Command: infraCmd,
+	})
+
+	group.Add("config", &actions.ActionDescriptorOptions{
+		Command:        newPipelineConfigCmd(),
+		FlagsResolver:  newPipelineConfigFlags,
+		ActionResolver: newPipelineConfigAction,
+	})
+
+	return group
 }
 
-func pipelineConfigCmdDesign(global *internal.GlobalCommandOptions) (*cobra.Command, *pipelineConfigFlags) {
-	cmd := &cobra.Command{
+func newPipelineConfigFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *pipelineConfigFlags {
+	flags := &pipelineConfigFlags{}
+	flags.Bind(cmd.Flags(), global)
+
+	return flags
+}
+
+func newPipelineConfigCmd() *cobra.Command {
+	return &cobra.Command{
 		Use:   "config",
 		Short: "Create and configure your deployment pipeline by using GitHub Actions or Azure Pipelines.",
 		Long: `Create and configure your deployment pipeline by using GitHub Actions or Azure Pipelines.
 
 For more information, go to https://aka.ms/azure-dev/pipeline.`,
-		Annotations: map[string]string{
-			actions.AnnotationName: "pipeline-config",
-		},
 	}
-
-	flags := &pipelineConfigFlags{}
-	flags.Bind(cmd.Flags(), global)
-
-	return cmd, flags
 }
 
 // pipelineConfigAction defines the action for pipeline config command

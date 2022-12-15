@@ -4,20 +4,19 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"os"
-	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/cmd/middleware"
-	"github.com/golobby/container/v3"
 
 	// Importing for infrastructure provider plugin registrations
 
 	_ "github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning/bicep"
 	_ "github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning/terraform"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools"
+	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/telemetry"
@@ -29,7 +28,7 @@ func NewRootCmd(staticHelp bool) *cobra.Command {
 	prevDir := ""
 	opts := &internal.GlobalCommandOptions{GenerateStaticHelp: staticHelp}
 
-	cmd := &cobra.Command{
+	rootCmd := &cobra.Command{
 		Use:   "azd",
 		Short: "Azure Developer CLI is a command-line interface for developers who build Azure solutions.",
 		//nolint:lll
@@ -48,9 +47,6 @@ The most common next commands are:
 	$ azd monitor --overview
 
 For more information, visit the Azure Developer CLI Dev Hub: https://aka.ms/azure-dev/devhub.`,
-		Annotations: map[string]string{
-			actions.AnnotationName: "azd",
-		},
 		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 			if opts.Cwd != "" {
 				current, err := os.Getwd()
@@ -78,110 +74,145 @@ For more information, visit the Azure Developer CLI Dev Hub: https://aka.ms/azur
 
 			return nil
 		},
-		SilenceUsage: true,
+		SilenceUsage:      true,
+		DisableAutoGenTag: true,
 	}
 
-	cmd.DisableAutoGenTag = true
-	cmd.CompletionOptions.HiddenDefaultCmd = true
-	cmd.Flags().BoolP("help", "h", false, fmt.Sprintf("Gets help for %s.", cmd.Name()))
-	cmd.PersistentFlags().StringVarP(&opts.Cwd, "cwd", "C", "", "Sets the current working directory.")
-	cmd.PersistentFlags().BoolVar(&opts.EnableDebugLogging, "debug", false, "Enables debugging and diagnostics logging.")
-	cmd.PersistentFlags().
-		BoolVar(
-			&opts.NoPrompt,
-			"no-prompt",
-			false,
-			"Accepts the default value instead of prompting, or it fails if there is no default.")
-	cmd.SetHelpTemplate(
-		fmt.Sprintf("%s\nPlease let us know how we are doing: https://aka.ms/azure-dev/hats\n", cmd.HelpTemplate()),
+	rootCmd.CompletionOptions.HiddenDefaultCmd = true
+	rootCmd.SetHelpTemplate(
+		fmt.Sprintf("%s\nPlease let us know how we are doing: https://aka.ms/azure-dev/hats\n", rootCmd.HelpTemplate()),
 	)
+
+	root := actions.NewActionDescriptor("azd", &actions.ActionDescriptorOptions{
+		Command: rootCmd,
+		FlagsResolver: func(cmd *cobra.Command) *internal.GlobalCommandOptions {
+			rootCmd.PersistentFlags().StringVarP(&opts.Cwd, "cwd", "C", "", "Sets the current working directory.")
+			rootCmd.PersistentFlags().
+				BoolVar(&opts.EnableDebugLogging, "debug", false, "Enables debugging and diagnostics logging.")
+			rootCmd.PersistentFlags().
+				BoolVar(
+					&opts.NoPrompt,
+					"no-prompt",
+					false,
+					"Accepts the default value instead of prompting, or it fails if there is no default.")
+
+			return opts
+		},
+	})
 
 	opts.EnableTelemetry = telemetry.IsTelemetryEnabled()
 
-	cmd.AddCommand(configCmd(opts))
-	cmd.AddCommand(envCmd(opts))
-	cmd.AddCommand(infraCmd(opts))
-	cmd.AddCommand(pipelineCmd(opts))
-	cmd.AddCommand(telemetryCmd(opts))
-	cmd.AddCommand(templatesCmd(opts))
-	cmd.AddCommand(authCmd(opts))
+	configActions(root)
+	envActions(root)
+	infraActions(root)
+	pipelineActions(root)
+	telemetryActions(root)
+	templatesActions(root)
+	authActions(root)
 
-	cmd.AddCommand(BuildCmd(opts, versionCmdDesign, newVersionAction, &actions.BuildOptions{DisableTelemetry: true}))
-	cmd.AddCommand(BuildCmd(opts, showCmdDesign, newShowAction, nil))
-	cmd.AddCommand(BuildCmd(opts, restoreCmdDesign, newRestoreAction, nil))
-	cmd.AddCommand(BuildCmd(opts, loginCmdDesign, newLoginAction, nil))
-	cmd.AddCommand(BuildCmd(opts, logoutCmdDesign, newLogoutAction, nil))
-	cmd.AddCommand(BuildCmd(opts, monitorCmdDesign, newMonitorAction, nil))
-	cmd.AddCommand(BuildCmd(opts, downCmdDesign, newInfraDeleteAction, nil))
-	cmd.AddCommand(BuildCmd(opts, initCmdDesign, newInitAction, nil))
-	cmd.AddCommand(BuildCmd(opts, upCmdDesign, newUpAction, nil))
-	cmd.AddCommand(BuildCmd(opts, provisionCmdDesign, newInfraCreateAction, nil))
-	cmd.AddCommand(BuildCmd(opts, deployCmdDesign, newDeployAction, nil))
+	root.Add("version", &actions.ActionDescriptorOptions{
+		Command: &cobra.Command{
+			Short: "Print the version number of Azure Developer CLI.",
+		},
+		ActionResolver:   newVersionAction,
+		FlagsResolver:    newVersionFlags,
+		DisableTelemetry: true,
+		OutputFormats:    []output.Format{output.JsonFormat, output.NoneFormat},
+		DefaultFormat:    output.NoneFormat,
+	})
 
-	middleware.SetContainer(container.Global)
-	middleware.Use("debug", middleware.NewDebugMiddleware)
-	middleware.Use("telemetry", middleware.NewTelemetryMiddleware)
+	root.Add("show", &actions.ActionDescriptorOptions{
+		Command:        newShowCmd(),
+		FlagsResolver:  newShowFlags,
+		ActionResolver: newShowAction,
+		OutputFormats:  []output.Format{output.JsonFormat},
+		DefaultFormat:  output.NoneFormat,
+	})
 
-	return cmd
-}
+	root.
+		Add("restore", &actions.ActionDescriptorOptions{
+			Command:        restoreCmdDesign(),
+			FlagsResolver:  newRestoreFlags,
+			ActionResolver: newRestoreAction,
+		})
 
-type commandDesignBuilder[F any] func(opts *internal.GlobalCommandOptions) (*cobra.Command, *F)
+	root.Add("login", &actions.ActionDescriptorOptions{
+		Command:        newLoginCmd(),
+		FlagsResolver:  newLoginFlags,
+		ActionResolver: newLoginAction,
+		OutputFormats:  []output.Format{output.JsonFormat, output.NoneFormat},
+		DefaultFormat:  output.NoneFormat,
+	})
 
-func BuildCmd[F any](
-	opts *internal.GlobalCommandOptions,
-	buildCommandDesign commandDesignBuilder[F],
-	buildAction any, // IoC will validate that is a proper resolver function
-	buildOptions *actions.BuildOptions) *cobra.Command {
-	cmd, flags := buildCommandDesign(opts)
-	cmd.Flags().BoolP("help", "h", false, fmt.Sprintf("Gets help for %s.", cmd.Name()))
+	root.Add("logout", &actions.ActionDescriptorOptions{
+		Command:        newLogoutCmd(),
+		ActionResolver: newLogoutAction,
+	})
 
-	if buildOptions == nil {
-		buildOptions = &actions.BuildOptions{}
-	}
+	root.Add("monitor", &actions.ActionDescriptorOptions{
+		Command:        newMonitorCmd(),
+		FlagsResolver:  newMonitorFlags,
+		ActionResolver: newMonitorAction,
+	})
 
-	actionName, err := createActionName(cmd)
-	if err != nil {
-		panic(err)
-	}
+	root.
+		Add("down", &actions.ActionDescriptorOptions{
+			Command:        newDownCmd(),
+			FlagsResolver:  newDownFlags,
+			ActionResolver: newInfraDeleteAction,
+			OutputFormats:  []output.Format{output.JsonFormat, output.NoneFormat},
+			DefaultFormat:  output.NoneFormat,
+		})
 
-	// Register action resolver and flag instances
-	container.MustNamedSingletonLazy(container.Global, actionName, buildAction)
-	registerInstance(container.Global, flags)
+	root.
+		Add("init", &actions.ActionDescriptorOptions{
+			Command:        newInitCmd(),
+			FlagsResolver:  newInitFlags,
+			ActionResolver: newInitAction,
+		}).
+		AddFlagCompletion("template", templateNameCompletion)
 
-	cmd.RunE = func(cmd *cobra.Command, args []string) error {
-		ctx := cmd.Context()
-		ctx = tools.WithInstalledCheckCache(ctx)
+	root.
+		Add("up", &actions.ActionDescriptorOptions{
+			Command:        newUpCmd(),
+			FlagsResolver:  newUpFlags,
+			ActionResolver: newUpAction,
+			OutputFormats:  []output.Format{output.JsonFormat, output.NoneFormat},
+			DefaultFormat:  output.NoneFormat,
+		}).
+		AddFlagCompletion("template", templateNameCompletion)
 
-		// Azd components
-		registerCommonDependencies(container.Global)
+	root.
+		Add("provision", &actions.ActionDescriptorOptions{
+			Command:        newProvisionCmd(),
+			FlagsResolver:  newProvisionFlags,
+			ActionResolver: newInfraCreateAction,
+			OutputFormats:  []output.Format{output.JsonFormat, output.NoneFormat},
+			DefaultFormat:  output.NoneFormat,
+		})
 
-		// Register global instances
-		registerInstance(container.Global, ctx)
-		registerInstance(container.Global, buildOptions)
-		registerInstance(container.Global, opts)
-		registerInstance(container.Global, cmd)
-		registerInstance(container.Global, args)
+	root.
+		Add("deploy", &actions.ActionDescriptorOptions{
+			Command:        newDeployCmd(),
+			FlagsResolver:  newDeployFlags,
+			ActionResolver: newDeployAction,
+			OutputFormats:  []output.Format{output.JsonFormat, output.NoneFormat},
+			DefaultFormat:  output.NoneFormat,
+		})
 
-		var console input.Console
-		err := container.Resolve(&console)
-		if err != nil {
-			return fmt.Errorf("failed resolving console : %w", err)
-		}
+	//attachDebugger()
 
-		var action actions.Action
-		err = container.NamedResolve(&action, actionName)
-		if err != nil {
-			return fmt.Errorf("failed resolving action '%s' : %w", actionName, err)
-		}
+	// Global middleware registration
+	root.
+		UseMiddleware("debug", middleware.NewDebugMiddleware).
+		UseMiddlewareWhen("telemetry", middleware.NewDebugMiddleware, func(descriptor *actions.ActionDescriptor) bool {
+			return !descriptor.Options.DisableTelemetry
+		}).
+		UseMiddleware("ux", middleware.NewUxMiddleware)
 
-		runOptions := middleware.Options{
-			Name:    cmd.CommandPath(),
-			Aliases: cmd.Aliases,
-		}
-
-		actionResult, err := middleware.RunAction(ctx, runOptions, action)
-		// At this point, we know that there might be an error, so we can silence cobra from showing it after us.
-		cmd.SilenceErrors = true
+	// Configure application
+	registerCommonDependencies(ioc.Global)
+	ioc.RegisterInstance(ioc.Global, opts)
 
 		// It is valid for a command to return a nil action result and error. If we have a result or an error, display it,
 		// otherwise don't print anything.
@@ -189,27 +220,24 @@ func BuildCmd[F any](
 			console.MessageUxItem(ctx, actions.ToUxItem(actionResult, err))
 		}
 
-		return err
+	cmd, err := cobraBuilder.BuildCommand(root)
+	if err != nil {
+		panic(err)
 	}
 
 	return cmd
 }
 
-func createActionName(cmd *cobra.Command) (string, error) {
-	if cmd.Annotations == nil {
-		cmd.Annotations = map[string]string{}
-	}
+//nolint:unused
+func attachDebugger() {
+	console := input.NewConsole(false, true, os.Stdout, input.ConsoleHandles{
+		Stdin:  os.Stdin,
+		Stdout: os.Stdout,
+		Stderr: os.Stderr,
+	}, &output.NoneFormatter{})
 
-	actionName, exists := cmd.Annotations[actions.AnnotationName]
-	if !exists {
-		return "", fmt.Errorf(
-			"cobra command '%s' is missing required annotation '%s'",
-			cmd.CommandPath(),
-			actions.AnnotationName,
-		)
-	}
-
-	actionName = strings.TrimSpace(actionName)
-	actionName = strings.ReplaceAll(actionName, " ", "-")
-	return strings.ToLower(fmt.Sprintf("%s-action", actionName)), nil
+	_, _ = console.Confirm(context.Background(), input.ConsoleOptions{
+		Message:      "Ready?",
+		DefaultValue: true,
+	})
 }

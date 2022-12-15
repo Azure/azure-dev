@@ -1,25 +1,22 @@
 package cmd
 
 import (
-	"fmt"
-
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
-	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/spf13/cobra"
 )
 
-func authCmd(rootOptions *internal.GlobalCommandOptions) *cobra.Command {
-	root := &cobra.Command{
-		Use:    "auth",
-		Hidden: true,
-		Annotations: map[string]string{
-			actions.AnnotationName: "auth",
+func authActions(root *actions.ActionDescriptor) *actions.ActionDescriptor {
+	group := root.Add("auth", &actions.ActionDescriptorOptions{
+		Command: &cobra.Command{
+			Hidden: true,
 		},
-	}
+	})
 
-	root.Flags().BoolP("help", "h", false, fmt.Sprintf("Gets help for %s.", root.Name()))
+	group.Add("token", &actions.ActionDescriptorOptions{
+		Command:        newAuthTokenCmd(),
+		FlagsResolver:  newAuthTokenFlags,
+		ActionResolver: newAuthTokenAction,
+	})
 
-	root.AddCommand(BuildCmd(rootOptions, authTokenCmdDesign, newAuthTokenAction, nil))
-
-	return root
+	return group
 }

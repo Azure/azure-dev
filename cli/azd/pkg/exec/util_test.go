@@ -223,7 +223,9 @@ func TestRedactSensitiveData(t *testing.T) {
 }`},
 
 		{scenario: "SWADeploymentToken",
-			input:    `npx -y @azure/static-web-apps-cli@1.0.0 deploy --tenant-id abc-123 --subscription-id abc-123 --resource-group r --app-name app-name --app-location / --output-location . --env default --no-use-keychain --deployment-token abc-123`,
+			// nolint:lll
+			input: `npx -y @azure/static-web-apps-cli@1.0.0 deploy --tenant-id abc-123 --subscription-id abc-123 --resource-group r --app-name app-name --app-location / --output-location . --env default --no-use-keychain --deployment-token abc-123`,
+			// nolint:lll
 			expected: `npx -y @azure/static-web-apps-cli@1.0.0 deploy --tenant-id abc-123 --subscription-id abc-123 --resource-group r --app-name app-name --app-location / --output-location . --env default --no-use-keychain --deployment-token <redacted>`},
 
 		{scenario: "DockerLoginUsernameAndPassword",

@@ -728,7 +728,7 @@ stages:
 
                 # Update ref docs (TODO: Move into its own template)
                 - task: DownloadPipelineArtifact@2
-                  displayName: Download signed Windows binaries
+                  displayName: Download docs
                   inputs:
                     artifact: docs
                     path: docs
@@ -746,6 +746,7 @@ stages:
                     WorkingDirectory: $(System.DefaultWorkingDirectory)/azure-dev-docs  
                     RepoOwner: MicrosoftDocs
                     RepoName: azure-dev-docs
+                    BaseBranchName: main
                     # Eliminate these after testing
                     CloseAfterOpenForTesting: true
                     OpenAsDraft: true

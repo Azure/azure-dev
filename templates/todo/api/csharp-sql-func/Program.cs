@@ -9,10 +9,11 @@ class Program
 {
     static async Task Main(string[] args)
     {
+        var credential = new ChainedTokenCredential(new AzureDeveloperCliCredential(), new DefaultAzureCredential());
         var host = new HostBuilder()
             .ConfigureFunctionsWorkerDefaults()
             .ConfigureAppConfiguration(config => 
-                config.AddAzureKeyVault(new Uri(Environment.GetEnvironmentVariable("AZURE_KEY_VAULT_ENDPOINT")!), new DefaultAzureCredential()))
+                config.AddAzureKeyVault(new Uri(Environment.GetEnvironmentVariable("AZURE_KEY_VAULT_ENDPOINT")!), credential))
             .ConfigureServices((config, services) =>
             {
                 services.AddScoped<ListsRepository>();

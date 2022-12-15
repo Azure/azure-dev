@@ -32,6 +32,7 @@ type loginFlags struct {
 	clientCertificate      string
 	federatedToken         stringPtr
 	federatedTokenProvider string
+	redirectPort           int
 	global                 *internal.GlobalCommandOptions
 }
 
@@ -70,7 +71,10 @@ func (lf *loginFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandO
 	local.BoolVar(
 		&lf.useDeviceCode,
 		"use-device-code",
-		false,
+		// For Codespaces in VSCode Browser, interactive browser login will 404 when attempting to redirect to localhost
+		// (since azd cannot launch a localhost server when running remotely).
+		// Hence, we default to device-code. See https://github.com/Azure/azure-dev/issues/1006
+		os.Getenv("CODESPACES") == "true",
 		"When true, log in by using a device code instead of a browser.",
 	)
 	local.StringVar(&lf.clientID, "client-id", "", "The client id for the service principal to authenticate with.")
@@ -95,6 +99,11 @@ func (lf *loginFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandO
 		"",
 		"The provider to use to acquire a federated token to authenticate with.")
 	local.StringVar(&lf.tenantID, "tenant-id", "", "The tenant id for the service principal to authenticate with.")
+	local.IntVar(
+		&lf.redirectPort,
+		"redirect-port",
+		0,
+		"Choose the port to be used as part of the redirect URI during interactive login.")
 
 	output.AddOutputFlag(
 		local,
@@ -285,7 +294,7 @@ func (la *loginAction) login(ctx context.Context) error {
 			return fmt.Errorf("logging in: %w", err)
 		}
 	} else {
-		if _, err := la.authManager.LoginInteractive(ctx); err != nil {
+		if _, err := la.authManager.LoginInteractive(ctx, la.flags.redirectPort); err != nil {
 			return fmt.Errorf("logging in: %w", err)
 		}
 	}

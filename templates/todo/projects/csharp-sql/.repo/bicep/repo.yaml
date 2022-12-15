@@ -154,6 +154,10 @@ repo:
         - obj
         - .vs
 
+    # Auth C# common
+    - from: ../../../../common/auth/csharp
+      to: ./src/api
+
     # React Frontend
     - from: ../../../../web/react-fluent
       to: ./src/web

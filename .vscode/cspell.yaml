@@ -41,3 +41,6 @@ overrides:
           - appservice
           - containerapp
           - staticwebapp
+          - myapp
+          - azdev
+          - myimage

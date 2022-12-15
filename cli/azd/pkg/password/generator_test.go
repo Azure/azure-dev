@@ -62,7 +62,7 @@ func TestPasswordShuffled(t *testing.T) {
 	require.NoError(t, err)
 
 	// Should be super improbable for the lowercase letters to remain at the front
-	require.Less(t, countCharsFrom(string(pwd[0:20]), LowercaseLetters), 20)
+	require.Less(t, countCharsFrom(string(pwd[0:10]), LowercaseLetters), 10)
 }
 
 func countCharsFrom(s, choices string) int {

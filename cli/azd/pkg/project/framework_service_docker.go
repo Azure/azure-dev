@@ -17,6 +17,7 @@ type DockerProjectOptions struct {
 	Path     string `json:"path"`
 	Context  string `json:"context"`
 	Platform string `json:"platform"`
+	Tag      string `json:"tag"`
 }
 
 type dockerProject struct {

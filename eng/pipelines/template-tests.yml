@@ -1,3 +1,9 @@
+pr:
+  paths:
+    include: 
+      - eng/templates/**/*template-test*.yml
+      - eng/pipelines/template-tests.yml
+
 parameters:
 - name: AzdVersion
   displayName: |
@@ -22,7 +28,7 @@ parameters:
 - name: TemplateBranchName
   displayName: The template repository branch to test against
   type: string
-  default: main
+  default: staging
 
 - name: AzureLocation
   displayName: Azure location for templates to be deployed to

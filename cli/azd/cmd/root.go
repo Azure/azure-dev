@@ -25,7 +25,7 @@ import (
 
 func NewRootCmd(platformAgnosticHelp bool) *cobra.Command {
 	prevDir := ""
-	opts := &internal.GlobalCommandOptions{}
+	opts := &internal.GlobalCommandOptions{PlatformAgnosticHelp: platformAgnosticHelp}
 
 	cmd := &cobra.Command{
 		Use:   "azd",
@@ -93,13 +93,13 @@ For more information, visit the Azure Developer CLI Dev Hub: https://aka.ms/azur
 
 	opts.EnableTelemetry = telemetry.IsTelemetryEnabled()
 
-	cmd.AddCommand(configCmd(opts, platformAgnosticHelp)) // Dynamic
-	cmd.AddCommand(envCmd(opts))                          // Static
-	cmd.AddCommand(infraCmd(opts))                        // Static
-	cmd.AddCommand(pipelineCmd(opts))                     // Static
-	cmd.AddCommand(telemetryCmd(opts))                    // Static
-	cmd.AddCommand(templatesCmd(opts))                    // Static
-	cmd.AddCommand(authCmd(opts))                         // Static
+	cmd.AddCommand(configCmd(opts))    // Dynamic
+	cmd.AddCommand(envCmd(opts))       // Static
+	cmd.AddCommand(infraCmd(opts))     // Static
+	cmd.AddCommand(pipelineCmd(opts))  // Static
+	cmd.AddCommand(telemetryCmd(opts)) // Static
+	cmd.AddCommand(templatesCmd(opts)) // Static
+	cmd.AddCommand(authCmd(opts))      // Static
 
 	cmd.AddCommand(BuildCmd(opts, versionCmdDesign, initVersionAction, &buildOptions{disableTelemetry: true}))
 	cmd.AddCommand(BuildCmd(opts, showCmdDesign, initShowAction, nil))

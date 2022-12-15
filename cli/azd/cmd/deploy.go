@@ -220,21 +220,10 @@ func (d *deployAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		}
 	}
 
-	var followUp string
-	if d.formatter.Kind() != output.JsonFormat {
-		if resourceGroupName, err := project.GetResourceGroupName(ctx, d.azCli, projConfig, env); err == nil {
-			followUp = fmt.Sprintf("You can view the resources created under the resource group %s in Azure Portal:\n%s",
-				resourceGroupName, output.WithLinkFormat(fmt.Sprintf(
-					"https://portal.azure.com/#@/resource/subscriptions/%s/resourceGroups/%s/overview",
-					env.GetSubscriptionId(),
-					resourceGroupName)))
-		}
-	}
-
 	return &actions.ActionResult{
 		Message: &actions.ResultMessage{
 			Header:   "Your Azure app has been deployed!",
-			FollowUp: followUp,
+			FollowUp: getResourceGroupFollowUp(ctx, d.formatter, d.azCli, projConfig, env),
 		},
 	}, nil
 }

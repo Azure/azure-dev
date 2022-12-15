@@ -91,8 +91,6 @@ func (u *upAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		return nil, fmt.Errorf("running init: %w", err)
 	}
 
-	finalOutput := []string{}
-	u.infraCreate.finalOutputRedirect = &finalOutput
 	_, err = u.infraCreate.Run(ctx)
 	if err != nil {
 		return nil, err
@@ -101,16 +99,12 @@ func (u *upAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	// Print an additional newline to separate provision from deploy
 	u.console.Message(ctx, "")
 
-	_, err = u.deploy.Run(ctx)
+	deployResult, err := u.deploy.Run(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	for _, message := range finalOutput {
-		u.console.Message(ctx, message)
-	}
-
-	return nil, nil
+	return deployResult, nil
 }
 
 func (u *upAction) runInit(ctx context.Context) error {

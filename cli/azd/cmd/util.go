@@ -19,6 +19,8 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/output"
+	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/spf13/pflag"
 )
@@ -350,4 +352,23 @@ func (e *envFlag) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptio
 		// Set the default value to AZURE_ENV_NAME value if available
 		os.Getenv(environment.EnvNameEnvVarName),
 		"The name of the environment to use.")
+}
+
+func getResourceGroupFollowUp(
+	ctx context.Context,
+	formatter output.Formatter,
+	azCli azcli.AzCli,
+	projectConfig *project.ProjectConfig,
+	env *environment.Environment,
+) (followUp string) {
+	if formatter.Kind() != output.JsonFormat {
+		if resourceGroupName, err := project.GetResourceGroupName(ctx, azCli, projectConfig, env); err == nil {
+			followUp = fmt.Sprintf("You can view the resources created under the resource group %s in Azure Portal:\n%s",
+				resourceGroupName, output.WithLinkFormat(fmt.Sprintf(
+					"https://portal.azure.com/#@/resource/subscriptions/%s/resourceGroups/%s/overview",
+					env.GetSubscriptionId(),
+					resourceGroupName)))
+		}
+	}
+	return followUp
 }

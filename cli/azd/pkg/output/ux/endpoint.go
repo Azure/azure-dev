@@ -20,14 +20,13 @@ func (e *Endpoint) ToString(currentIndentation string) string {
 	return fmt.Sprintf("%s- Endpoint: %s", currentIndentation, output.WithLinkFormat(e.Endpoint))
 }
 
-func (e *Endpoint) ToJson() []byte {
+func (e *Endpoint) MarshalJSON() ([]byte, error) {
 	// reusing the same envelope from console messages
-	jsonBytes, _ := json.Marshal(
+	return json.Marshal(
 		contracts.EventEnvelope{
 			Type:      contracts.Endpoint,
 			Timestamp: time.Now(),
 			Data:      e,
 		},
 	)
-	return jsonBytes
 }

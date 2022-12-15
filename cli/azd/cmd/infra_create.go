@@ -77,8 +77,6 @@ type infraCreateAction struct {
 	writer        io.Writer
 	console       input.Console
 	commandRunner exec.CommandRunner
-	// If set, redirects the final command printout to the channel
-	finalOutputRedirect *[]string
 }
 
 func newInfraCreateAction(
@@ -91,14 +89,13 @@ func newInfraCreateAction(
 	commandRunner exec.CommandRunner,
 ) *infraCreateAction {
 	return &infraCreateAction{
-		flags:               f,
-		azCli:               azCli,
-		azdCtx:              azdCtx,
-		formatter:           formatter,
-		writer:              writer,
-		console:             console,
-		commandRunner:       commandRunner,
-		finalOutputRedirect: nil,
+		flags:         f,
+		azCli:         azCli,
+		azdCtx:        azdCtx,
+		formatter:     formatter,
+		writer:        writer,
+		console:       console,
+		commandRunner: commandRunner,
 	}
 }
 
@@ -194,7 +191,8 @@ func (i *infraCreateAction) Run(ctx context.Context) (*actions.ActionResult, err
 
 	return &actions.ActionResult{
 		Message: &actions.ResultMessage{
-			Header: "Your project has been provisioned!",
+			Header:   "Your project has been provisioned!",
+			FollowUp: getResourceGroupFollowUp(ctx, i.formatter, i.azCli, prj, env),
 		},
 	}, nil
 }

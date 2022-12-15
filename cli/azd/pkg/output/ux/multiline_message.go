@@ -24,7 +24,7 @@ func (mm *MultilineMessage) ToString(currentIndentation string) string {
 	return strings.Join(updatedLines, "\n")
 }
 
-func (mm *MultilineMessage) ToJson() []byte {
-	jsonBytes, _ := json.Marshal(output.EventForMessage(strings.Join(mm.Lines, ",")))
-	return jsonBytes
+func (mm *MultilineMessage) MarshalJSON() ([]byte, error) {
+	// reusing the same envelope from console messages
+	return json.Marshal(output.EventForMessage(strings.Join(mm.Lines, ",")))
 }

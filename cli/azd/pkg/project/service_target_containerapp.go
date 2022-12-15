@@ -20,6 +20,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/docker"
 	"github.com/benbjohnson/clock"
+	"github.com/drone/envsubst"
 )
 
 type containerAppTarget struct {
@@ -69,10 +70,15 @@ func (at *containerAppTarget) Deploy(
 		return ServiceDeploymentResult{}, fmt.Errorf("logging into registry '%s': %w", loginServer, err)
 	}
 
+	imageTag, err := at.generateImageTag()
+	if err != nil {
+		return ServiceDeploymentResult{}, fmt.Errorf("generating image tag: %w", err)
+	}
+
 	fullTag := fmt.Sprintf(
 		"%s/%s",
 		loginServer,
-		at.generateImageTag(),
+		imageTag,
 	)
 
 	// Tag image.
@@ -194,9 +200,9 @@ func (at *containerAppTarget) Endpoints(ctx context.Context) ([]string, error) {
 	}
 }
 
-func (at *containerAppTarget) generateImageTag() string {
+func (at *containerAppTarget) generateImageTag() (string, error) {
 	if at.config.Docker.Tag != "" {
-		return at.config.Docker.Tag
+		return envsubst.Eval(at.config.Docker.Tag, at.env.Getenv)
 	}
 
 	return fmt.Sprintf("%s/%s-%s:azdev-deploy-%d",
@@ -204,7 +210,7 @@ func (at *containerAppTarget) generateImageTag() string {
 		strings.ToLower(at.config.Name),
 		strings.ToLower(at.env.GetEnvName()),
 		at.clock.Now().Unix(),
-	)
+	), nil
 }
 
 // NewContainerAppTarget creates the container app service target.

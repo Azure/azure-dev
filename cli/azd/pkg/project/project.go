@@ -17,6 +17,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
+	"github.com/drone/envsubst"
 	"gopkg.in/yaml.v3"
 )
 
@@ -47,7 +48,7 @@ func ReadProject(
 	projectRootDir := filepath.Dir(projectPath)
 
 	// Load Project configuration
-	projectConfig, err := LoadProjectConfig(projectRootDir, env)
+	projectConfig, err := LoadProjectConfig(projectRootDir)
 	if err != nil {
 		return nil, fmt.Errorf("reading project config: %w", err)
 	}
@@ -101,8 +102,9 @@ func GetResourceGroupName(
 	azCli azcli.AzCli,
 	projectConfig *ProjectConfig,
 	env *environment.Environment) (string, error) {
+
 	if strings.TrimSpace(projectConfig.ResourceGroupName) != "" {
-		return projectConfig.ResourceGroupName, nil
+		return envsubst.Eval(projectConfig.ResourceGroupName, env.Getenv)
 	}
 
 	envResourceGroupName := environment.GetResourceGroupNameFromEnvVar(env)

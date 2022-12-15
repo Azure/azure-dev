@@ -89,7 +89,7 @@ func (r *restoreAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 		return nil, fmt.Errorf("loading environment: %w", err)
 	}
 
-	proj, err := project.LoadProjectConfig(r.azdCtx.ProjectPath(), env)
+	proj, err := project.LoadProjectConfig(r.azdCtx.ProjectPath())
 
 	if err != nil {
 		return nil, fmt.Errorf("loading project: %w", err)

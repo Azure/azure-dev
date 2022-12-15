@@ -96,7 +96,8 @@ func Test_containerAppTarget_generateImageTag(t *testing.T) {
 					Docker: tt.dockerConfig,
 				},
 				clock: mockClock}
-			tag := containerAppTarget.generateImageTag()
+			tag, err := containerAppTarget.generateImageTag()
+			assert.NoError(t, err)
 			assert.Equal(t, tt.want, tag)
 		})
 	}

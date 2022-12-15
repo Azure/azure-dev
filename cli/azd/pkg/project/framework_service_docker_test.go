@@ -68,7 +68,7 @@ services:
 		}, nil
 	})
 
-	projectConfig, err := ParseProjectConfig(testProj, env)
+	projectConfig, err := ParseProjectConfig(testProj)
 	require.NoError(t, err)
 	prj, err := projectConfig.GetProject(*mockContext.Context, env, mockContext.Console, azCli, mockContext.CommandRunner)
 	require.NoError(t, err)
@@ -158,7 +158,7 @@ services:
 
 	docker := docker.NewDocker(mockContext.CommandRunner)
 
-	projectConfig, err := ParseProjectConfig(testProj, env)
+	projectConfig, err := ParseProjectConfig(testProj)
 	require.NoError(t, err)
 
 	prj, err := projectConfig.GetProject(*mockContext.Context, env, mockContext.Console, azCli, mockContext.CommandRunner)

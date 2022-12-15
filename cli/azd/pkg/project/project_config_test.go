@@ -37,7 +37,7 @@ services:
 		environment.SubscriptionIdEnvVarName: "SUBSCRIPTION_ID",
 	})
 
-	projectConfig, err := ParseProjectConfig(testProj, e)
+	projectConfig, err := ParseProjectConfig(testProj)
 	require.Nil(t, err)
 	require.NotNil(t, projectConfig)
 
@@ -70,11 +70,7 @@ services:
     host: appservice
 `
 
-	e := environment.EphemeralWithValues("test-env", map[string]string{
-		environment.SubscriptionIdEnvVarName: "SUBSCRIPTION_ID",
-	})
-
-	projectConfig, err := ParseProjectConfig(testProj, e)
+	projectConfig, err := ParseProjectConfig(testProj)
 	require.Nil(t, err)
 
 	require.True(t, projectConfig.HasService("web"))
@@ -129,7 +125,7 @@ services:
 		environment.SubscriptionIdEnvVarName: "SUBSCRIPTION_ID",
 	})
 
-	projectConfig, err := ParseProjectConfig(testProj, e)
+	projectConfig, err := ParseProjectConfig(testProj)
 	require.Nil(t, err)
 
 	project, err := projectConfig.GetProject(*mockContext.Context, e, mockContext.Console, azCli, mockContext.CommandRunner)
@@ -162,11 +158,8 @@ services:
       path: ./Dockerfile.dev
       context: ../
 `
-	e := environment.EphemeralWithValues("test-env", map[string]string{
-		environment.SubscriptionIdEnvVarName: "SUBSCRIPTION_ID",
-	})
 
-	projectConfig, err := ParseProjectConfig(testProj, e)
+	projectConfig, err := ParseProjectConfig(testProj)
 
 	require.NotNil(t, projectConfig)
 	require.Nil(t, err)
@@ -191,11 +184,7 @@ services:
     module: ./api/api
 `
 
-	e := environment.EphemeralWithValues("test-env", map[string]string{
-		environment.SubscriptionIdEnvVarName: "SUBSCRIPTION_ID",
-	})
-
-	projectConfig, err := ParseProjectConfig(testProj, e)
+	projectConfig, err := ParseProjectConfig(testProj)
 
 	require.NotNil(t, projectConfig)
 	require.Nil(t, err)
@@ -356,11 +345,7 @@ services:
     module: ./api/api
 `
 
-	e := environment.EphemeralWithValues("test-env", map[string]string{
-		environment.SubscriptionIdEnvVarName: "SUBSCRIPTION_ID",
-	})
-
-	projectConfig, _ := ParseProjectConfig(testProj, e)
+	projectConfig, _ := ParseProjectConfig(testProj)
 
 	return projectConfig
 }

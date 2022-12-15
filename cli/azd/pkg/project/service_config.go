@@ -15,6 +15,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/docker"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/swa"
+	"github.com/drone/envsubst"
 )
 
 type ServiceConfig struct {
@@ -270,12 +271,18 @@ func (sc *ServiceConfig) GetServiceResource(
 	azCli azcli.AzCli,
 	rerunCommand string,
 ) (azcli.AzCliResource, error) {
+
+	expandedResourceName, err := envsubst.Eval(sc.ResourceName, env.Getenv)
+	if err != nil {
+		return azcli.AzCliResource{}, fmt.Errorf("expanding name: %w", err)
+	}
+
 	resources, err := sc.GetServiceResources(ctx, resourceGroupName, env, azCli)
 	if err != nil {
 		return azcli.AzCliResource{}, fmt.Errorf("getting service resource: %w", err)
 	}
 
-	if strings.TrimSpace(sc.ResourceName) == "" { // A tag search was performed
+	if expandedResourceName == "" { // A tag search was performed
 		if len(resources) == 0 {
 			err := fmt.Errorf(
 				//nolint:lll
@@ -301,7 +308,7 @@ func (sc *ServiceConfig) GetServiceResource(
 		if len(resources) == 0 {
 			err := fmt.Errorf(
 				"unable to find a resource with name '%s'. Ensure that resourceName in azure.yaml is valid, and rerun %s",
-				sc.ResourceName,
+				expandedResourceName,
 				rerunCommand)
 			return azcli.AzCliResource{}, azureutil.ResourceNotFound(err)
 		}
@@ -312,7 +319,7 @@ func (sc *ServiceConfig) GetServiceResource(
 				fmt.Errorf(
 					//nolint:lll
 					"expecting only '1' resource named '%s', but found '%d'. Use a unique name for the service resource in the resource group '%s'",
-					sc.ResourceName,
+					expandedResourceName,
 					len(resources),
 					resourceGroupName)
 		}
@@ -334,7 +341,12 @@ func (sc *ServiceConfig) GetServiceResources(
 	filter := fmt.Sprintf("tagName eq '%s' and tagValue eq '%s'", defaultServiceTag, sc.Name)
 
 	if strings.TrimSpace(sc.ResourceName) != "" {
-		filter = fmt.Sprintf("name eq '%s'", sc.ResourceName)
+		subst, err := envsubst.Eval(sc.ResourceName, env.Getenv)
+		if err != nil {
+			return nil, err
+		}
+
+		filter = fmt.Sprintf("name eq '%s'", subst)
 	}
 
 	return azCli.ListResourceGroupResources(

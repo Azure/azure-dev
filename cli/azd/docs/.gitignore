@@ -1,3 +1,2 @@
 # Exclude the generated documentation.
-# TODO: Undo this change when finished verifying
-# md/
+md/

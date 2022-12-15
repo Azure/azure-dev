@@ -32,7 +32,12 @@ export class AzureDevCliWorkspaceResourceProvider extends vscode.Disposable impl
 
     readonly onDidChangeResource = this.onDidChangeResourceEmitter.event;
 
-    async getResources(source: vscode.WorkspaceFolder): Promise<WorkspaceResource[]> {
+    async getResources(source: vscode.WorkspaceFolder | undefined): Promise<WorkspaceResource[]> {
+        if (!source) {
+            // No system-wide resources are provided by this extension, only workspace-specific
+            return [];
+        }
+
         const resources: WorkspaceResource[] = [];
 
         for (const application of this.applications.filter(application => application.workspaceFolder === source)) {

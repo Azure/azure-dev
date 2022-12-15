@@ -43,7 +43,7 @@ services:
 
 	require.Equal(t, "test-proj", projectConfig.Name)
 	require.Equal(t, "test-proj-template", projectConfig.Metadata.Template)
-	require.Equal(t, fmt.Sprintf("rg-%s", e.GetEnvName()), projectConfig.ResourceGroupName)
+	require.Equal(t, fmt.Sprintf("rg-%s", e.GetEnvName()), projectConfig.ResourceGroupName.MustEnvsubst(e.Getenv))
 	require.Equal(t, 2, len(projectConfig.Services))
 
 	for key, svc := range projectConfig.Services {
@@ -396,4 +396,30 @@ func TestProjectConfigRaiseEventWithArgs(t *testing.T) {
 	err = project.RaiseEvent(*mockContext.Context, Deployed, eventArgs)
 	require.Nil(t, err)
 	require.True(t, handlerCalled)
+}
+
+func TestExpandableStringsInProjectConfig(t *testing.T) {
+
+	const testProj = `
+name: test-proj
+metadata:
+  template: test-proj-template
+resourceGroup: ${foo}
+services:
+  api:
+    project: src/api
+    language: js
+    host: containerapp
+    module: ./api/api
+    `
+
+	projectConfig, err := ParseProjectConfig(testProj)
+	require.NoError(t, err)
+
+	env := environment.EphemeralWithValues("", map[string]string{
+		"foo": "hello",
+		"bar": "goodbye",
+	})
+
+	require.Equal(t, "hello", projectConfig.ResourceGroupName.MustEnvsubst(env.Getenv))
 }

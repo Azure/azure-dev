@@ -15,7 +15,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/docker"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/swa"
-	"github.com/drone/envsubst"
 )
 
 type ServiceConfig struct {
@@ -24,7 +23,7 @@ type ServiceConfig struct {
 	// The friendly name/key of the project from the azure.yaml file
 	Name string
 	// The name used to override the default azure resource name
-	ResourceName string `yaml:"resourceName"`
+	ResourceName ExpandableString `yaml:"resourceName"`
 	// The relative path to the project folder from the project root
 	RelativePath string `yaml:"project"`
 	// The azure hosting model to use, ex) appservice, function, containerapp
@@ -272,7 +271,7 @@ func (sc *ServiceConfig) GetServiceResource(
 	rerunCommand string,
 ) (azcli.AzCliResource, error) {
 
-	expandedResourceName, err := envsubst.Eval(sc.ResourceName, env.Getenv)
+	expandedResourceName, err := sc.ResourceName.Envsubst(env.Getenv)
 	if err != nil {
 		return azcli.AzCliResource{}, fmt.Errorf("expanding name: %w", err)
 	}
@@ -340,12 +339,12 @@ func (sc *ServiceConfig) GetServiceResources(
 ) ([]azcli.AzCliResource, error) {
 	filter := fmt.Sprintf("tagName eq '%s' and tagValue eq '%s'", defaultServiceTag, sc.Name)
 
-	if strings.TrimSpace(sc.ResourceName) != "" {
-		subst, err := envsubst.Eval(sc.ResourceName, env.Getenv)
-		if err != nil {
-			return nil, err
-		}
+	subst, err := sc.ResourceName.Envsubst(env.Getenv)
+	if err != nil {
+		return nil, err
+	}
 
+	if strings.TrimSpace(subst) != "" {
 		filter = fmt.Sprintf("name eq '%s'", subst)
 	}
 

@@ -17,7 +17,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
-	"github.com/drone/envsubst"
 	"gopkg.in/yaml.v3"
 )
 
@@ -101,10 +100,16 @@ func GetResourceGroupName(
 	ctx context.Context,
 	azCli azcli.AzCli,
 	projectConfig *ProjectConfig,
-	env *environment.Environment) (string, error) {
+	env *environment.Environment,
+) (string, error) {
 
-	if strings.TrimSpace(projectConfig.ResourceGroupName) != "" {
-		return envsubst.Eval(projectConfig.ResourceGroupName, env.Getenv)
+	name, err := projectConfig.ResourceGroupName.Envsubst(env.Getenv)
+	if err != nil {
+		return "", err
+	}
+
+	if strings.TrimSpace(name) != "" {
+		return name, nil
 	}
 
 	envResourceGroupName := environment.GetResourceGroupNameFromEnvVar(env)

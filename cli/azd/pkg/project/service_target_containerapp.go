@@ -20,7 +20,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/docker"
 	"github.com/benbjohnson/clock"
-	"github.com/drone/envsubst"
 )
 
 type containerAppTarget struct {
@@ -201,8 +200,13 @@ func (at *containerAppTarget) Endpoints(ctx context.Context) ([]string, error) {
 }
 
 func (at *containerAppTarget) generateImageTag() (string, error) {
-	if at.config.Docker.Tag != "" {
-		return envsubst.Eval(at.config.Docker.Tag, at.env.Getenv)
+	configuredTag, err := at.config.Docker.Tag.Envsubst(at.env.Getenv)
+	if err != nil {
+		return "", err
+	}
+
+	if configuredTag != "" {
+		return configuredTag, nil
 	}
 
 	return fmt.Sprintf("%s/%s-%s:azdev-deploy-%d",

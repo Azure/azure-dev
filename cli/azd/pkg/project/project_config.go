@@ -24,7 +24,7 @@ import (
 // root>/schemas/vN.M/azure.yaml.json).
 type ProjectConfig struct {
 	Name              string                    `yaml:"name"`
-	ResourceGroupName string                    `yaml:"resourceGroup,omitempty"`
+	ResourceGroupName ExpandableString          `yaml:"resourceGroup,omitempty"`
 	Path              string                    `yaml:",omitempty"`
 	Metadata          *ProjectMetadata          `yaml:"metadata,omitempty"`
 	Services          map[string]*ServiceConfig `yaml:",omitempty"`

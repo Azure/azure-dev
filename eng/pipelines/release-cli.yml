@@ -739,8 +739,10 @@ stages:
                   displayName: Clone azure-dev-docs and update reference.md
                     
                 - template: /eng/common/pipelines/templates/steps/create-pull-request.yml
-                  parameters: 
-                    PRBranchName: azure-dev-cli/$(CLI_VERSION)
+                  parameters:
+                    # Use a unique branch name per-build and per-attempt to prevent
+                    # collisions
+                    PRBranchName: azure-dev-cli/$(CLI_VERSION)-$(Build.BuildId).$(System.JobAttempt)
                     CommitMsg: Update reference documents for Azure CLI @ $(CLI_VERSION)
                     PRTitle: Update reference documents for Azure CLI @ $(CLI_VERSION)
                     WorkingDirectory: $(System.DefaultWorkingDirectory)/azure-dev-docs  

@@ -4,39 +4,18 @@ import (
 	"context"
 	"os"
 	"path/filepath"
-	"reflect"
+	"strings"
 	"testing"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
-	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/git"
-	"github.com/azure/azure-dev/cli/azd/test/mocks/mockexec"
-	"github.com/azure/azure-dev/cli/azd/test/mocks/mockinput"
+	mockinput "github.com/azure/azure-dev/cli/azd/test/mocks/console"
+	mockexec "github.com/azure/azure-dev/cli/azd/test/mocks/exec"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
-
-func TestNewInitializer(t *testing.T) {
-	type args struct {
-		azdCtx  *azdcontext.AzdContext
-		console input.Console
-		gitCli  git.GitCli
-	}
-	tests := []struct {
-		name string
-		args args
-		want Initializer
-	}{
-		// TODO: Add test cases.
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if got := NewInitializer(tt.args.azdCtx, tt.args.console, tt.args.gitCli); !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("NewInitializer() = %v, want %v", got, tt.want)
-			}
-		})
-	}
-}
 
 func Test_initializer_Initialize(t *testing.T) {
 	type args struct {
@@ -62,26 +41,85 @@ func Test_initializer_Initialize(t *testing.T) {
 }
 
 func Test_initializer_InitializeEmpty(t *testing.T) {
-	type args struct {
-		ctx context.Context
+	type setup struct {
+		projectFile   string
+		gitignoreFile string
 	}
+
+	type expected struct {
+		projectFile   string
+		gitignoreFile string
+	}
+
 	tests := []struct {
-		name    string
-		args    args
-		wantErr bool
+		name     string
+		setup    setup
+		expected expected
 	}{
-		// TODO: Add test cases.
+		{"CreateAll", setup{"", ""}, expected{projectFile: "azureyaml_created.txt", gitignoreFile: "gitignore_created.txt"}},
+		{"AppendGitignore", setup{"azureyaml_existing.txt", "gitignore_existing.txt"}, expected{projectFile: "azureyaml_existing.txt", gitignoreFile: "gitignore_with_env.txt"}},
+		{"Unmodified", setup{"azureyaml_existing.txt", "gitignore_with_env.txt"}, expected{projectFile: "azureyaml_existing.txt", gitignoreFile: "gitignore_with_env.txt"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			azdctx := &azdcontext.AzdContext{}
-			console := mockinput.NewMockConsole()
-			i := NewInitializer(azdctx, console, git.NewGitCli(mockexec.NewMockCommandRunner()))
-			if err := i.InitializeEmpty(tt.args.ctx); (err != nil) != tt.wantErr {
-				t.Errorf("initializer.InitializeEmpty() error = %v, wantErr %v", err, tt.wantErr)
+			projectDir := t.TempDir()
+			azdCtx, err := azdcontext.NewAzdContext()
+			require.NoError(t, err)
+			azdCtx.SetProjectDirectory(projectDir)
+
+			if tt.setup.gitignoreFile != "" {
+				copyFile(t, "empty", tt.setup.gitignoreFile, filepath.Join(azdCtx.ProjectDirectory(), ".gitignore"))
 			}
+
+			if tt.setup.projectFile != "" {
+				copyFile(t, "empty", tt.setup.projectFile, azdCtx.ProjectPath())
+			}
+
+			console := mockinput.NewMockConsole()
+			runner := mockexec.NewMockCommandRunner()
+			i := NewInitializer(azdCtx, console, git.NewGitCli(runner))
+			err = i.InitializeEmpty(context.Background())
+			require.NoError(t, err)
+
+			projectFileContent := readFile(t, "empty", tt.expected.projectFile)
+			gitIgnoreFileContent := readFile(t, "empty", tt.expected.gitignoreFile)
+
+			verifyProjectFile(t, azdCtx, projectFileContent)
+
+			gitignore := filepath.Join(projectDir, ".gitignore")
+			verifyFileContent(t, gitignore, gitIgnoreFileContent)
+
+			require.DirExists(t, azdCtx.EnvironmentDirectory())
 		})
 	}
+}
+
+func copyFile(t *testing.T, testCase string, source string, target string) {
+	err := os.WriteFile(target, []byte(readFile(t, testCase, source)), 0644)
+	require.NoError(t, err)
+}
+
+func readFile(t *testing.T, testCase string, file string) string {
+	bytes, err := os.ReadFile(filepath.Join("testdata", testCase, file))
+	require.NoError(t, err)
+	content := string(bytes)
+	return content
+}
+
+func verifyFileContent(t *testing.T, file string, content string) {
+	require.FileExists(t, file)
+
+	actualContent, err := os.ReadFile(file)
+	require.NoError(t, err)
+	require.Equal(t, content, string(actualContent))
+}
+
+func verifyProjectFile(t *testing.T, azdCtx *azdcontext.AzdContext, content string) {
+	content = strings.Replace(content, "<project>", azdCtx.GetDefaultProjectName(), 1)
+	verifyFileContent(t, azdCtx.ProjectPath(), content)
+
+	_, err := project.LoadProjectConfig(azdCtx.ProjectPath(), environment.Ephemeral())
+	require.NoError(t, err)
 }
 
 func Test_determineDuplicates(t *testing.T) {
@@ -99,12 +137,10 @@ func Test_determineDuplicates(t *testing.T) {
 			[]string{
 				"a.txt", "b.txt", "c.txt",
 				"dir1/a.txt",
-				"dir1/dir2/b.txt",
-				"dir1/dir2/d.txt"},
+				"dir1/dir2/b.txt", "dir1/dir2/d.txt"},
 			[]string{
 				"a.txt", "c.txt",
-				"dir1/a.txt",
-				"dir1/c.txt",
+				"dir1/a.txt", "dir1/c.txt",
 				"dir1/dir2/b.txt"}},
 			[]string{
 				"a.txt", "c.txt",

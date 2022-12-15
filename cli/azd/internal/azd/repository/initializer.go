@@ -149,17 +149,58 @@ func (i *initializer) writeAzdAssets(ctx context.Context) error {
 	defer gitignoreFile.Close()
 
 	writeGitignoreFile := true
+	// Determines newline based on the last line containing a newline
+	useCrlf := false
+	// default to true, since if the file is empty, no preceding newline is needed.
+	hasTrailingSlash := true
 	//bufio scanner splits on new lines by default
-	scanner := bufio.NewScanner(gitignoreFile)
-	for scanner.Scan() {
-		if azdcontext.EnvironmentDirectoryName == scanner.Text() {
+	reader := bufio.NewReader(gitignoreFile)
+	for {
+		useCrlf = false
+		text, err := reader.ReadString('\n')
+		if err != nil && len(text) > 0 {
+			// err != nil means no delimiter (newline) was found
+			// if text is present, that must mean non trailing newline
+			hasTrailingSlash = false
+		}
+
+		if len(text) > 0 && text[len(text)-1] == '\n' {
+			text = text[0 : len(text)-1]
+		}
+
+		if len(text) > 0 && text[len(text)-1] == '\r' {
+			text = text[0 : len(text)-1]
+			useCrlf = true
+		}
+
+		if azdcontext.EnvironmentDirectoryName == text {
 			writeGitignoreFile = false
+			break
+		}
+
+		if err != nil {
+			break
 		}
 	}
 
+	// for scanner.Scan() {
+	// 	// gitignore files can't have comments inline
+	// 	if azdcontext.EnvironmentDirectoryName == scanner.Text() {
+	// 		writeGitignoreFile = false
+	// 	}
+	// }
+
 	if writeGitignoreFile {
-		newLine := osutil.GetNewLineSeparator()
-		_, err := gitignoreFile.WriteString(newLine + azdcontext.EnvironmentDirectoryName + newLine)
+		newLine := "\n"
+		if useCrlf {
+			newLine = "\r" + newLine
+		}
+
+		appendContents := azdcontext.EnvironmentDirectoryName + newLine
+		if !hasTrailingSlash {
+			appendContents = newLine + appendContents
+		}
+		_, err := gitignoreFile.WriteString(appendContents)
 		if err != nil {
 			return fmt.Errorf("fail to write '%s' in .gitignore: %w", azdcontext.EnvironmentDirectoryName, err)
 		}

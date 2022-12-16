@@ -66,8 +66,7 @@ func (r *MiddlewareRunner) RunAction(
 			index++
 
 			var middleware Middleware
-			err := actionContainer.ResolveNamed(middlewareName, &middleware)
-			if err != nil {
+			if err := actionContainer.ResolveNamed(middlewareName, &middleware); err != nil {
 				log.Printf("failed resolving middleware '%s' : %s\n", middlewareName, err.Error())
 			}
 
@@ -95,8 +94,7 @@ func (r *MiddlewareRunner) RunAction(
 
 // Registers middleware components that will be run for all actions
 func (r *MiddlewareRunner) Use(name string, resolveFn any) error {
-	err := r.container.RegisterNamedTransient(name, resolveFn)
-	if err != nil {
+	if err := r.container.RegisterNamedTransient(name, resolveFn); err != nil {
 		return fmt.Errorf("failed registering middleware '%s'. Ensure the resolver is a go function. %w", name, err)
 	}
 

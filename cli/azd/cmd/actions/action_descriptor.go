@@ -29,6 +29,16 @@ type ActionDescriptor struct {
 
 // Creates a new action descriptor
 func NewActionDescriptor(name string, options *ActionDescriptorOptions) *ActionDescriptor {
+	if options == nil {
+		options = &ActionDescriptorOptions{}
+	}
+
+	if options.Command == nil {
+		options.Command = &cobra.Command{
+			Use: name,
+		}
+	}
+
 	return &ActionDescriptor{
 		Name:            name,
 		Options:         options,

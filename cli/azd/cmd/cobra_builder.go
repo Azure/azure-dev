@@ -47,8 +47,7 @@ func (cb *CobraBuilder) BuildCommand(descriptor *actions.ActionDescriptor) (*cob
 	// Bind root command after command tree has been established
 	// This ensures the command path is ready and consistent across all nested commands
 	if descriptor.Parent() == nil {
-		err := cb.bindCommand(cmd, descriptor)
-		if err != nil {
+		if err := cb.bindCommand(cmd, descriptor); err != nil {
 			return nil, err
 		}
 	}
@@ -77,15 +76,13 @@ func (cb *CobraBuilder) configureActionResolver(cmd *cobra.Command, descriptor *
 		ioc.RegisterInstance(ioc.Global, cmd)
 		ioc.RegisterInstance(ioc.Global, args)
 
-		err := cb.registerMiddleware(descriptor)
-		if err != nil {
+		if err := cb.registerMiddleware(descriptor); err != nil {
 			return err
 		}
 
 		actionName := createActionName(cmd)
 		var action actions.Action
-		err = cb.container.ResolveNamed(actionName, &action)
-		if err != nil {
+		if err := cb.container.ResolveNamed(actionName, &action); err != nil {
 			return fmt.Errorf(
 				//nolint:lll
 				"failed resolving action '%s'. Ensure the ActionResolver is a valid go function that returns an `actions.Action` interface, %w",
@@ -100,7 +97,7 @@ func (cb *CobraBuilder) configureActionResolver(cmd *cobra.Command, descriptor *
 		}
 
 		// Run the middleware chain with action
-		_, err = cb.runner.RunAction(ctx, runOptions, action)
+		_, err := cb.runner.RunAction(ctx, runOptions, action)
 
 		return err
 	}
@@ -125,8 +122,7 @@ func (cb *CobraBuilder) bindCommand(cmd *cobra.Command, descriptor *actions.Acti
 
 		// The flags resolver is constructed and bound to the cobra command via dependency injection
 		// This allows flags to be options and support any set of required dependencies
-		err := cb.container.RegisterSingletonAndInvoke(descriptor.Options.FlagsResolver)
-		if err != nil {
+		if err := cb.container.RegisterSingletonAndInvoke(descriptor.Options.FlagsResolver); err != nil {
 			return fmt.Errorf(
 				"failed registering FlagsResolver for action '%s'. Ensure the resolver is a valid go function. %w",
 				actionName,
@@ -141,8 +137,7 @@ func (cb *CobraBuilder) bindCommand(cmd *cobra.Command, descriptor *actions.Acti
 	// Action resolvers can take any number of dependencies and instantiated via the IoC container
 	if descriptor.Options.ActionResolver != nil {
 		log.Printf("registering resolver for action '%s'\n", actionName)
-		err := cb.container.RegisterNamedSingleton(actionName, descriptor.Options.ActionResolver)
-		if err != nil {
+		if err := cb.container.RegisterNamedSingleton(actionName, descriptor.Options.ActionResolver); err != nil {
 			return fmt.Errorf(
 				"failed registering ActionResolver for action'%s'. Ensure the resolver is a valid go function. %w",
 				actionName,
@@ -156,15 +151,14 @@ func (cb *CobraBuilder) bindCommand(cmd *cobra.Command, descriptor *actions.Acti
 	// any flag completion functions are registered
 	for flag, completionFn := range descriptor.FlagCompletions() {
 		if err := cmd.RegisterFlagCompletionFunc(flag, completionFn); err != nil {
-			panic(err)
+			return fmt.Errorf("failed registering flag completion function for '%s', %w", flag, err)
 		}
 	}
 
 	// Bind the child commands for the current descriptor
 	for _, childDescriptor := range descriptor.Children() {
 		childCmd := childDescriptor.Options.Command
-		err := cb.bindCommand(childCmd, childDescriptor)
-		if err != nil {
+		if err := cb.bindCommand(childCmd, childDescriptor); err != nil {
 			return err
 		}
 	}
@@ -206,8 +200,7 @@ func (cb *CobraBuilder) registerMiddleware(descriptor *actions.ActionDescriptor)
 	// higher up the command structure are resolved before lower registrations
 	for i := len(chain) - 1; i > -1; i-- {
 		registration := chain[i]
-		err := cb.runner.Use(registration.Name, registration.Resolver)
-		if err != nil {
+		if err := cb.runner.Use(registration.Name, registration.Resolver); err != nil {
 			return err
 		}
 	}

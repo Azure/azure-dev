@@ -10,6 +10,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azureutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
+	"github.com/azure/azure-dev/cli/azd/pkg/ext"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
@@ -38,6 +39,8 @@ type ServiceConfig struct {
 	Docker DockerProjectOptions `yaml:"docker"`
 	// The infrastructure provisioning configuration
 	Infra provisioning.Options `yaml:"infra"`
+	// Hook configuration for service
+	Hooks map[string]*ext.HookConfig `yaml:"hooks,omitempty"`
 
 	handlers map[Event][]ServiceLifecycleEventHandlerFn
 }

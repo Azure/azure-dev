@@ -2,7 +2,10 @@
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "$id": "https://raw.githubusercontent.com/Azure/azure-dev/main/schemas/v1.0/azure.yaml.json",
     "type": "object",
-    "required": ["name", "services"],
+    "required": [
+        "name",
+        "services"
+    ],
     "additionalProperties": false,
     "properties": {
         "name": {
@@ -23,7 +26,9 @@
                 "template": {
                     "type": "string",
                     "title": "Identifier of the template from which the application was created. Optional.",
-                    "examples": ["todo-nodejs-mongo@0.0.1-beta"]
+                    "examples": [
+                        "todo-nodejs-mongo@0.0.1-beta"
+                    ]
                 }
             }
         },
@@ -33,7 +38,7 @@
             "description": "Optional. Provides additional configuration for Azure infrastructure provisioning.",
             "additionalProperties": true,
             "properties": {
-                "provider":{
+                "provider": {
                     "type": "string",
                     "title": "Type of infrastructure provisioning provider",
                     "description": "Optional. The infrastructure provisioning provider used to provision the Azure resources for the application. (Default: bicep)",
@@ -135,9 +140,137 @@
                                 "description": "If omitted, a unique tag will be generated based on the format: {appName}/{serviceName}-{environmentName}:azdev-deploy-{unix time (seconds)}. Supports environment variable substitution. For example, to generate unique tags for a given release: myapp/myimage:${DOCKER_IMAGE_TAG}"
                             }
                         }
+                    },
+                    "scripts": {
+                        "type": "object",
+                        "title": "Definition of command hooks for developer integration",
+                        "descriptions": "Command hooks should match `azd` command names prefixed with `pre` or `post` depending on when the script should execute relative to the command",
+                        "minProperties": 1,
+                        "additionalProperties": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "properties": {
+                                "type": {
+                                    "type": "string",
+                                    "title": "Type of script",
+                                    "description": "Optional. The type of script to use for the command hook. (Default: bash)",
+                                    "enum": [
+                                        "bash",
+                                        "powershell"
+                                    ]
+                                },
+                                "location": {
+                                    "type": "string",
+                                    "title": "The location of the script",
+                                    "description": "Optional. The script can reference a file system path or be declared inline. (Default: path)",
+                                    "enum": [
+                                        "path",
+                                        "inline"
+                                    ]
+                                },
+                                "path": {
+                                    "type": "string",
+                                    "title": "Path to the command hook script relative to the azure.yaml file",
+                                    "description": "When `location` is set to `path` contains the full relative path to the command hook to execute"
+                                },
+                                "script": {
+                                    "type": "string",
+                                    "title": "The inline script to execute for the command hook",
+                                    "description": "When `location` is set to `inline` contains the full script to execute"
+                                },
+                                "continueOnError": {
+                                    "type": "boolean",
+                                    "default": false,
+                                    "title": "Whether or not a script error will halt the azd command",
+                                    "description": "Optional. When set to true will continue to run the command even after a script error has occurred. (Default: false)"
+                                },
+                                "interactive": {
+                                    "type": "boolean",
+                                    "default": true,
+                                    "title": "Whether the script will run in interactive mode",
+                                    "description": "Optional. When set to true will bind the script to stdin, stdout & stderr of the running console. (Default: false)"
+                                }
+                            },
+                            "allOf": [
+                                {
+                                    "if": {
+                                        "properties": {
+                                            "location": {
+                                                "const": "inline"
+                                            }
+                                        },
+                                        "required": [
+                                            "location"
+                                        ]
+                                    },
+                                    "then": {
+                                        "required": [
+                                            "script",
+                                            "type"
+                                        ],
+                                        "properties": {
+                                            "path": false
+                                        }
+                                    }
+                                },
+                                {
+                                    "if": {
+                                        "properties": {
+                                            "location": {
+                                                "const": "path"
+                                            }
+                                        },
+                                        "required": [
+                                            "location"
+                                        ]
+                                    },
+                                    "then": {
+                                        "required": [
+                                            "path"
+                                        ],
+                                        "properties": {
+                                            "script": false
+                                        }
+                                    }
+                                },
+                                {
+                                    "if": {
+                                        "required": [
+                                            "path"
+                                        ]
+                                    },
+                                    "then": {
+                                        "required": [
+                                            "path"
+                                        ],
+                                        "properties": {
+                                            "script": false
+                                        }
+                                    }
+                                },
+                                {
+                                    "if": {
+                                        "required": [
+                                            "script"
+                                        ]
+                                    },
+                                    "then": {
+                                        "required": [
+                                            "script",
+                                            "type"
+                                        ],
+                                        "properties": {
+                                            "path": false
+                                        }
+                                    }
+                                }
+                            ]
+                        }
                     }
                 },
-                "required": ["project"],
+                "required": [
+                    "project"
+                ],
                 "allOf": [
                     {
                         "if": {
@@ -158,7 +291,9 @@
                     {
                         "if": {
                             "properties": {
-                                "language": { "const": "java" }
+                                "language": {
+                                    "const": "java"
+                                }
                             }
                         },
                         "then": {
@@ -185,7 +320,7 @@
             "type": "object",
             "title": "Definition of continuous integration pipeline",
             "properties": {
-                "provider":{
+                "provider": {
                     "type": "string",
                     "title": "Type of pipeline provider",
                     "description": "Optional. The pipeline provider to be used for continuous integration. (Default: github)",
@@ -194,6 +329,134 @@
                         "azdo"
                     ]
                 }
+            }
+        },
+        "scripts": {
+            "type": "object",
+            "title": "Definition of command hooks for developer integration",
+            "descriptions": "Command hooks should match `azd` command names prefixed with `pre` or `post` depending on when the script should execute relative to the command",
+            "minProperties": 1,
+            "additionalProperties": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                    "type": {
+                        "type": "string",
+                        "title": "Type of script",
+                        "description": "Optional. The type of script to use for the command hook. (Default: bash)",
+                        "enum": [
+                            "bash",
+                            "powershell"
+                        ],
+                        "default": "bash"
+                    },
+                    "location": {
+                        "type": "string",
+                        "title": "The location of the script",
+                        "description": "Optional. The script can reference a file system path or be declared inline. (Default: path)",
+                        "enum": [
+                            "path",
+                            "inline"
+                        ],
+                        "default": "path"
+                    },
+                    "path": {
+                        "type": "string",
+                        "title": "Path to the command hook script relative to the azure.yaml file",
+                        "description": "When `location` is set to `path` contains the full relative path to the command hook to execute"
+                    },
+                    "script": {
+                        "type": "string",
+                        "title": "The inline script to execute for the command hook",
+                        "description": "When `location` is set to `inline` contains the full script to execute"
+                    },
+                    "continueOnError": {
+                        "type": "boolean",
+                        "default": false,
+                        "title": "Whether or not a script error will halt the azd command",
+                        "description": "Optional. When set to true will continue to run the command even after a script error has occurred. (Default: false)"
+                    },
+                    "interactive": {
+                        "type": "boolean",
+                        "default": true,
+                        "title": "Whether the script will run in interactive mode",
+                        "description": "Optional. When set to true will bind the script to stdin, stdout & stderr of the running console. (Default: false)"
+                    }
+                },
+                "allOf": [
+                    {
+                        "if": {
+                            "properties": {
+                                "location": {
+                                    "const": "inline"
+                                }
+                            },
+                            "required": [
+                                "location"
+                            ]
+                        },
+                        "then": {
+                            "required": [
+                                "script",
+                                "type"
+                            ],
+                            "properties": {
+                                "path": false
+                            }
+                        }
+                    },
+                    {
+                        "if": {
+                            "properties": {
+                                "location": {
+                                    "const": "path"
+                                }
+                            },
+                            "required": [
+                                "location"
+                            ]
+                        },
+                        "then": {
+                            "required": [
+                                "path"
+                            ],
+                            "properties": {
+                                "script": false
+                            }
+                        }
+                    },
+                    {
+                        "if": {
+                            "required": [
+                                "path"
+                            ]
+                        },
+                        "then": {
+                            "required": [
+                                "path"
+                            ],
+                            "properties": {
+                                "script": false
+                            }
+                        }
+                    },
+                    {
+                        "if": {
+                            "required": [
+                                "script"
+                            ]
+                        },
+                        "then": {
+                            "required": [
+                                "script",
+                                "type"
+                            ],
+                            "properties": {
+                                "path": false
+                            }
+                        }
+                    }
+                ]
             }
         }
     }

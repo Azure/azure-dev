@@ -9,15 +9,17 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
-	"github.com/azure/azure-dev/cli/azd/internal/repository"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
+	"github.com/azure/azure-dev/cli/azd/pkg/ext"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
+	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/pkg/templates"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/git"
@@ -123,7 +125,78 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 		return writer
 	})
 
-	container.RegisterSingleton(repository.NewInitializer)
+	container.RegisterSingleton(func() *envFlag {
+		// Get the current cmd flags for the executing command
+		var currentFlags flags
+		err := container.Resolve(&currentFlags)
+		if err != nil {
+			return &envFlag{}
+		}
+
+		// Attempt to cast to flags with env
+		flagsWithEnv, ok := currentFlags.(flagsWithEnv)
+		if !ok {
+			return &envFlag{}
+		}
+
+		return flagsWithEnv.Env()
+	})
+
+	container.RegisterSingleton(
+		func(azdContext *azdcontext.AzdContext, envFlags *envFlag) (*environment.Environment, error) {
+			environmentName := envFlags.environmentName
+			var err error
+
+			if environmentName == "" {
+				defaultEnvName, err := azdContext.GetDefaultEnvironmentName()
+				if err != nil {
+					return nil, err
+				}
+
+				environmentName = defaultEnvName
+			}
+
+			env, err := environment.GetEnvironment(azdContext, environmentName)
+			if err != nil {
+				return nil, err
+			}
+
+			return env, nil
+		},
+	)
+
+	container.RegisterSingleton(
+		func(azdContext *azdcontext.AzdContext) (*project.ProjectConfig, error) {
+			projectConfig, err := project.LoadProjectConfig(azdContext.ProjectPath())
+			if err != nil {
+				return nil, err
+			}
+
+			return projectConfig, nil
+		},
+	)
+
+	container.RegisterSingleton(func(azdContext *azdcontext.AzdContext) *ext.HooksManager {
+		return ext.NewHooksManager(azdContext.ProjectDirectory())
+	})
+
+	container.RegisterSingleton(func(
+		console input.Console,
+		commandRunner exec.CommandRunner,
+		azdContext *azdcontext.AzdContext,
+		env *environment.Environment,
+		hooksManager *ext.HooksManager,
+		projectConfig *project.ProjectConfig) *ext.HooksRunner {
+		return ext.NewHooksRunner(
+			hooksManager,
+			commandRunner,
+			console,
+			azdContext.ProjectDirectory(),
+			projectConfig.Hooks,
+			env.Environ(),
+		)
+	})
+
 	container.RegisterSingleton(config.NewUserConfigManager)
 	container.RegisterSingleton(config.NewManager)
 	container.RegisterSingleton(templates.NewTemplateManager)

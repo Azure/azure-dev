@@ -14,8 +14,10 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal/telemetry/fields"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
+	"github.com/azure/azure-dev/cli/azd/pkg/ext"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"gopkg.in/yaml.v3"
@@ -25,13 +27,14 @@ import (
 // When changing project structure, make sure to update the JSON schema file for azure.yaml (<workspace
 // root>/schemas/vN.M/azure.yaml.json).
 type ProjectConfig struct {
-	Name              string                    `yaml:"name"`
-	ResourceGroupName ExpandableString          `yaml:"resourceGroup,omitempty"`
-	Path              string                    `yaml:",omitempty"`
-	Metadata          *ProjectMetadata          `yaml:"metadata,omitempty"`
-	Services          map[string]*ServiceConfig `yaml:",omitempty"`
-	Infra             provisioning.Options      `yaml:"infra"`
-	Pipeline          PipelineOptions           `yaml:"pipeline"`
+	Name              string                     `yaml:"name"`
+	ResourceGroupName ExpandableString           `yaml:"resourceGroup,omitempty"`
+	Path              string                     `yaml:",omitempty"`
+	Metadata          *ProjectMetadata           `yaml:"metadata,omitempty"`
+	Services          map[string]*ServiceConfig  `yaml:",omitempty"`
+	Infra             provisioning.Options       `yaml:"infra"`
+	Pipeline          PipelineOptions            `yaml:"pipeline"`
+	Hooks             map[string]*ext.HookConfig `yaml:"hooks,omitempty"`
 
 	handlers map[Event][]ProjectLifecycleEventHandlerFn
 }
@@ -206,6 +209,21 @@ func (pc *ProjectConfig) RaiseEvent(ctx context.Context, name Event, args map[st
 		}
 
 		return errors.New(strings.Join(lines, ","))
+	}
+
+	return nil
+}
+
+// Saves the current instance back to the azure.yaml file
+func (p *ProjectConfig) Save(projectPath string) error {
+	projectBytes, err := yaml.Marshal(p)
+	if err != nil {
+		return fmt.Errorf("marshalling project yaml: %w", err)
+	}
+
+	err = os.WriteFile(projectPath, projectBytes, osutil.PermissionFile)
+	if err != nil {
+		return fmt.Errorf("saving project file: %w", err)
 	}
 
 	return nil

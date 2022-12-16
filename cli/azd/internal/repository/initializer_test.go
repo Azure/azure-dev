@@ -285,7 +285,7 @@ func verifyProjectFile(t *testing.T, azdCtx *azdcontext.AzdContext, content stri
 	content = strings.Replace(content, "<project>", azdCtx.GetDefaultProjectName(), 1)
 	verifyFileContent(t, azdCtx.ProjectPath(), content)
 
-	_, err := project.LoadProjectConfig(azdCtx.ProjectPath(), environment.Ephemeral())
+	_, err := project.LoadProjectConfig(azdCtx.ProjectPath())
 	require.NoError(t, err)
 }
 

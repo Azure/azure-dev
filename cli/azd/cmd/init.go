@@ -197,12 +197,12 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 
 		err = i.repoInitializer.Initialize(ctx, templateUrl, i.flags.templateBranch)
 		if err != nil {
-			return nil, fmt.Errorf("init from template repository: %s", err)
+			return nil, fmt.Errorf("init from template repository: %w", err)
 		}
 	} else {
 		err = i.repoInitializer.InitializeEmpty(ctx)
 		if err != nil {
-			return nil, fmt.Errorf("init empty repository: %s", err)
+			return nil, fmt.Errorf("init empty repository: %w", err)
 		}
 	}
 

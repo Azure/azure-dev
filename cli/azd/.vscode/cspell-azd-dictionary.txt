@@ -21,6 +21,7 @@ AZURECLI
 azurestaticapps
 azuretools
 azureutil
+azureyaml
 Backticks
 BOOLSLICE
 BUILDNUMBER
@@ -59,6 +60,7 @@ mvnw
 nobanner
 nodeapp
 nolint
+notrail
 omitempty
 opentelemetry
 osutil

@@ -16,7 +16,11 @@ import (
 	. "github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 )
 
-func (p *BicepProvider) promptForParameter(ctx context.Context, key string, param azure.ArmTemplateParameter) (any, error) {
+func (p *BicepProvider) promptForParameter(
+	ctx context.Context,
+	key string,
+	param azure.ArmTemplateParameterDefinition,
+) (any, error) {
 	msg := fmt.Sprintf("Please enter a value for the '%s' infrastructure parameter:", key)
 	help, _ := param.Description()
 	azdMetadata, _ := param.AzdMetadata()

@@ -18,6 +18,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"math"
 	"os"
 	"path/filepath"
 	"strings"
@@ -880,6 +881,13 @@ func (p *BicepProvider) ensureParameters(
 		configKey := fmt.Sprintf("infra.parameters.%s", key)
 
 		if v, has := p.env.Config.Get(configKey); has {
+
+			if !isValueAssignableToParameterType(p.mapBicepTypeToInterfaceType(param.Type), v) {
+				// The saved value is no longer valid (perhaps the user edited their template to change the type of a)
+				// parameter and then re-ran `azd provision`. Forget the saved value (if we can) and prompt for a new one.
+				_ = p.env.Config.Unset("infra.parameters.%s")
+			}
+
 			configuredParameters[key] = azure.ArmParameterValue{
 				Value: v,
 			}
@@ -927,6 +935,43 @@ func (p *BicepProvider) ensureParameters(
 	}
 
 	return configuredParameters, nil
+}
+
+func isValueAssignableToParameterType(paramType ParameterType, value any) bool {
+	switch paramType {
+	case ParameterTypeArray:
+		_, ok := value.([]any)
+		return ok
+	case ParameterTypeBoolean:
+		_, ok := value.(bool)
+		return ok
+	case ParameterTypeNumber:
+		switch t := value.(type) {
+		case int, int8, int16, int32, int64:
+			return true
+		case uint, uint8, uint16, uint32, uint64:
+			return true
+		case float32:
+			return float64(t) == math.Trunc(float64(t))
+		case float64:
+			return t == math.Trunc(t)
+		case json.Number:
+			_, err := t.Int64()
+			return err == nil
+		default:
+			return false
+		}
+	case ParameterTypeObject:
+		_, ok := value.(map[string]any)
+		return ok
+	case ParameterTypeString:
+		_, ok := value.(string)
+		return ok
+	default:
+		panic(fmt.Sprintf("unexpected type: %v", paramType))
+	}
+
+	return false
 }
 
 // NewBicepProvider creates a new instance of a Bicep Infra provider

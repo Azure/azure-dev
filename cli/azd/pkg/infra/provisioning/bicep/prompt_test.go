@@ -65,7 +65,7 @@ func TestPromptForParameter(t *testing.T) {
 				return true
 			}).Respond(tc.provided)
 
-			value, err := p.promptForParameter(*mockContext.Context, "testParam", azure.ArmTemplateParameter{
+			value, err := p.promptForParameter(*mockContext.Context, "testParam", azure.ArmTemplateParameterDefinition{
 				Type: tc.paramType,
 			})
 
@@ -80,14 +80,14 @@ func TestPromptForParameterValidation(t *testing.T) {
 
 	for _, cc := range []struct {
 		name     string
-		param    azure.ArmTemplateParameter
+		param    azure.ArmTemplateParameterDefinition
 		provided []string
 		expected any
 		messages []string
 	}{
 		{
 			name: "minValue",
-			param: azure.ArmTemplateParameter{
+			param: azure.ArmTemplateParameterDefinition{
 				Type:     "int",
 				MinValue: convert.RefOf(1),
 			},
@@ -97,7 +97,7 @@ func TestPromptForParameterValidation(t *testing.T) {
 		},
 		{
 			name: "maxValue",
-			param: azure.ArmTemplateParameter{
+			param: azure.ArmTemplateParameterDefinition{
 				Type:     "int",
 				MaxValue: convert.RefOf(10),
 			},
@@ -107,7 +107,7 @@ func TestPromptForParameterValidation(t *testing.T) {
 		},
 		{
 			name: "rangeValue",
-			param: azure.ArmTemplateParameter{
+			param: azure.ArmTemplateParameterDefinition{
 				Type:     "int",
 				MinValue: convert.RefOf(1),
 				MaxValue: convert.RefOf(10),
@@ -118,7 +118,7 @@ func TestPromptForParameterValidation(t *testing.T) {
 		},
 		{
 			name: "minLength",
-			param: azure.ArmTemplateParameter{
+			param: azure.ArmTemplateParameterDefinition{
 				Type:      "string",
 				MinLength: convert.RefOf(1),
 			},
@@ -128,7 +128,7 @@ func TestPromptForParameterValidation(t *testing.T) {
 		},
 		{
 			name: "maxLength",
-			param: azure.ArmTemplateParameter{
+			param: azure.ArmTemplateParameterDefinition{
 				Type:      "string",
 				MaxLength: convert.RefOf(10),
 			},
@@ -138,7 +138,7 @@ func TestPromptForParameterValidation(t *testing.T) {
 		},
 		{
 			name: "rangeLength",
-			param: azure.ArmTemplateParameter{
+			param: azure.ArmTemplateParameterDefinition{
 				Type:      "string",
 				MinLength: convert.RefOf(1),
 				MaxLength: convert.RefOf(10),
@@ -149,7 +149,7 @@ func TestPromptForParameterValidation(t *testing.T) {
 		},
 		{
 			name: "badInt",
-			param: azure.ArmTemplateParameter{
+			param: azure.ArmTemplateParameterDefinition{
 				Type: "int",
 			},
 			provided: []string{"bad", "100"},
@@ -158,7 +158,7 @@ func TestPromptForParameterValidation(t *testing.T) {
 		},
 		{
 			name: "badJsonObject",
-			param: azure.ArmTemplateParameter{
+			param: azure.ArmTemplateParameterDefinition{
 				Type: "object",
 			},
 			provided: []string{"[]", "{}"},
@@ -167,7 +167,7 @@ func TestPromptForParameterValidation(t *testing.T) {
 		},
 		{
 			name: "badJsonArray",
-			param: azure.ArmTemplateParameter{
+			param: azure.ArmTemplateParameterDefinition{
 				Type: "array",
 			},
 			provided: []string{"{}", "[]"},
@@ -230,7 +230,7 @@ func TestPromptForParameterAllowedValues(t *testing.T) {
 		return 1, nil
 	})
 
-	value, err := p.promptForParameter(*mockContext.Context, "testParam", azure.ArmTemplateParameter{
+	value, err := p.promptForParameter(*mockContext.Context, "testParam", azure.ArmTemplateParameterDefinition{
 		Type:          "string",
 		AllowedValues: convert.RefOf([]any{"three", "good", "choices"}),
 	})
@@ -238,7 +238,7 @@ func TestPromptForParameterAllowedValues(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "good", value)
 
-	value, err = p.promptForParameter(*mockContext.Context, "testParam", azure.ArmTemplateParameter{
+	value, err = p.promptForParameter(*mockContext.Context, "testParam", azure.ArmTemplateParameterDefinition{
 		Type:          "int",
 		AllowedValues: convert.RefOf([]any{10, 20, 30}),
 	})
@@ -311,7 +311,7 @@ func TestPromptForParametersLocation(t *testing.T) {
 		return 1, nil
 	})
 
-	value, err := p.promptForParameter(*mockContext.Context, "unfilteredLocation", azure.ArmTemplateParameter{
+	value, err := p.promptForParameter(*mockContext.Context, "unfilteredLocation", azure.ArmTemplateParameterDefinition{
 		Type: "string",
 		Metadata: map[string]json.RawMessage{
 			"azd": json.RawMessage(`{"type": "location"}`),
@@ -328,7 +328,7 @@ func TestPromptForParametersLocation(t *testing.T) {
 		return 0, nil
 	})
 
-	value, err = p.promptForParameter(*mockContext.Context, "filteredLocation", azure.ArmTemplateParameter{
+	value, err = p.promptForParameter(*mockContext.Context, "filteredLocation", azure.ArmTemplateParameterDefinition{
 		Type: "string",
 		Metadata: map[string]json.RawMessage{
 			"azd": json.RawMessage(`{"type": "location"}`),

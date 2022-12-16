@@ -27,6 +27,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockazcli"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockhttp"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -376,6 +377,33 @@ func TestBicepDestroy(t *testing.T) {
 	})
 }
 
+func TestIsValueAssignableToParameterType(t *testing.T) {
+	cases := map[ParameterType]any{
+		ParameterTypeNumber:  1,
+		ParameterTypeBoolean: true,
+		ParameterTypeString:  "hello",
+		ParameterTypeArray:   []any{},
+		ParameterTypeObject:  map[string]any{},
+	}
+
+	for k := range cases {
+		assert.True(t, isValueAssignableToParameterType(k, cases[k]), "%v should be assignable to %v", cases[k], k)
+
+		for j := range cases {
+			if j != k {
+				assert.False(
+					t, isValueAssignableToParameterType(k, cases[j]), "%v should not be assignable to %v", cases[j], k,
+				)
+			}
+		}
+	}
+
+	assert.True(t, isValueAssignableToParameterType(ParameterTypeNumber, 1.0))
+	assert.True(t, isValueAssignableToParameterType(ParameterTypeNumber, json.Number("1")))
+	assert.False(t, isValueAssignableToParameterType(ParameterTypeNumber, 1.5))
+	assert.False(t, isValueAssignableToParameterType(ParameterTypeNumber, json.Number("1.5")))
+}
+
 func createBicepProvider(t *testing.T, mockContext *mocks.MockContext) *BicepProvider {
 	projectDir := "../../../../test/functional/testdata/samples/webapp"
 	options := Options{
@@ -407,7 +435,7 @@ func preparePlanningMocks(
 	armTemplate := azure.ArmTemplate{
 		Schema:         "https://schema.management.azure.com/schemas/2018-05-01/subscriptionDeploymentTemplate.json#",
 		ContentVersion: "1.0.0.0",
-		Parameters: azure.ArmTemplateParameters{
+		Parameters: azure.ArmTemplateParameterDefinitions{
 			"environmentName": {Type: "string"},
 			"location":        {Type: "string"},
 		},

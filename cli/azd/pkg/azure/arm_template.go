@@ -14,17 +14,17 @@ type RawArmTemplate = json.RawMessage
 // at https://learn.microsoft.com/azure/azure-resource-manager/templates/syntax, but only exposes portions of the
 // object that azd cares about.
 type ArmTemplate struct {
-	Schema         string                `json:"$schema"`
-	ContentVersion string                `json:"contentVersion"`
-	Parameters     ArmTemplateParameters `json:"parameters"`
-	Outputs        ArmTemplateOutputs    `json:"outputs"`
+	Schema         string                          `json:"$schema"`
+	ContentVersion string                          `json:"contentVersion"`
+	Parameters     ArmTemplateParameterDefinitions `json:"parameters"`
+	Outputs        ArmTemplateOutputs              `json:"outputs"`
 }
 
-type ArmTemplateParameters map[string]ArmTemplateParameter
+type ArmTemplateParameterDefinitions map[string]ArmTemplateParameterDefinition
 
 type ArmTemplateOutputs map[string]ArmTemplateOutput
 
-type ArmTemplateParameter struct {
+type ArmTemplateParameterDefinition struct {
 	Type          string                     `json:"type"`
 	DefaultValue  any                        `json:"defaultValue"`
 	AllowedValues *[]any                     `json:"allowedValues,omitempty"`
@@ -40,7 +40,7 @@ type AzdMetadata struct {
 }
 
 // Description returns the value of the "Description" string metadata for this parameter or empty if it can not be found.
-func (p ArmTemplateParameter) Description() (string, bool) {
+func (p ArmTemplateParameterDefinition) Description() (string, bool) {
 	if v, has := p.Metadata["description"]; has {
 		var description string
 		if err := json.Unmarshal(v, &description); err == nil {
@@ -52,7 +52,7 @@ func (p ArmTemplateParameter) Description() (string, bool) {
 }
 
 // AzdMetadata returns the value of the "azd" object metadata for this parameter or the zero value if it can not be found.
-func (p ArmTemplateParameter) AzdMetadata() (AzdMetadata, bool) {
+func (p ArmTemplateParameterDefinition) AzdMetadata() (AzdMetadata, bool) {
 	if v, has := p.Metadata["azd"]; has {
 		var metadata AzdMetadata
 		if err := json.Unmarshal(v, &metadata); err == nil {

@@ -156,11 +156,15 @@ func (i *initializer) writeAzdAssets(ctx context.Context) error {
 	//bufio scanner splits on new lines by default
 	reader := bufio.NewReader(gitignoreFile)
 	for {
-		useCrlf = false
 		text, err := reader.ReadString('\n')
+		if err == nil {
+			// reset unless we're on the last line
+			useCrlf = false
+		}
+
 		if err != nil && len(text) > 0 {
 			// err != nil means no delimiter (newline) was found
-			// if text is present, that must mean non trailing newline
+			// if text is present, that must mean the last line doesn't contain newline
 			hasTrailingSlash = false
 		}
 
@@ -189,7 +193,7 @@ func (i *initializer) writeAzdAssets(ctx context.Context) error {
 	if writeGitignoreFile {
 		newLine := "\n"
 		if useCrlf {
-			newLine = "\r" + newLine
+			newLine = "\r\n"
 		}
 
 		appendContents := azdcontext.EnvironmentDirectoryName + newLine

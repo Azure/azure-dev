@@ -77,8 +77,6 @@ type infraCreateAction struct {
 	writer        io.Writer
 	console       input.Console
 	commandRunner exec.CommandRunner
-	// If set, redirects the final command printout to the channel
-	finalOutputRedirect *[]string
 }
 
 func newInfraCreateAction(
@@ -91,14 +89,13 @@ func newInfraCreateAction(
 	commandRunner exec.CommandRunner,
 ) *infraCreateAction {
 	return &infraCreateAction{
-		flags:               f,
-		azCli:               azCli,
-		azdCtx:              azdCtx,
-		formatter:           formatter,
-		writer:              writer,
-		console:             console,
-		commandRunner:       commandRunner,
-		finalOutputRedirect: nil,
+		flags:         f,
+		azCli:         azCli,
+		azdCtx:        azdCtx,
+		formatter:     formatter,
+		writer:        writer,
+		console:       console,
+		commandRunner: commandRunner,
 	}
 }
 
@@ -174,14 +171,6 @@ func (i *infraCreateAction) Run(ctx context.Context) (*actions.ActionResult, err
 		}
 	}
 
-	// TO BE MOVED TO DEPLOY OUTPUT
-	// if i.formatter.Kind() != output.JsonFormat {
-	// 	resourceGroupName, err := project.GetResourceGroupName(ctx, i.azCli, prj, env)
-	// 	if err == nil { // Presentation only -- skip print if we failed to resolve the resource group
-	// 		i.displayResourceGroupCreatedMessage(ctx, i.console, env.GetSubscriptionId(), resourceGroupName)
-	// 	}
-	// }
-
 	if i.formatter.Kind() == output.JsonFormat {
 		stateResult, err := infraManager.State(ctx, provisioningScope)
 		if err != nil {
@@ -202,34 +191,8 @@ func (i *infraCreateAction) Run(ctx context.Context) (*actions.ActionResult, err
 
 	return &actions.ActionResult{
 		Message: &actions.ResultMessage{
-			Header: "Your project has been provisioned!",
+			Header:   "Your project has been provisioned!",
+			FollowUp: getResourceGroupFollowUp(ctx, i.formatter, i.azCli, prj, env),
 		},
 	}, nil
 }
-
-// func (ica *infraCreateAction) displayResourceGroupCreatedMessage(
-// 	ctx context.Context,
-// 	console input.Console,
-// 	subscriptionId string,
-// 	resourceGroup string,
-// ) {
-// 	resourceGroupCreatedMessage := resourceGroupCreatedMessage(ctx, subscriptionId, resourceGroup)
-// 	if ica.finalOutputRedirect != nil {
-// 		*ica.finalOutputRedirect = append(*ica.finalOutputRedirect, resourceGroupCreatedMessage)
-// 	} else {
-// 		console.Message(ctx, resourceGroupCreatedMessage)
-// 	}
-// }
-
-// func resourceGroupCreatedMessage(ctx context.Context, subscriptionId string, resourceGroup string) string {
-// 	resourcesGroupURL := fmt.Sprintf(
-// 		"https://portal.azure.com/#@/resource/subscriptions/%s/resourceGroups/%s/overview",
-// 		subscriptionId,
-// 		resourceGroup)
-
-// 	return fmt.Sprintf(
-// 		"View the resources created under the resource group %s in Azure Portal:\n%s\n",
-// 		output.WithHighLightFormat(resourceGroup),
-// 		output.WithLinkFormat(resourcesGroupURL),
-// 	)
-// }

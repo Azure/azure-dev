@@ -167,7 +167,7 @@ func (la *loginAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 
 	res := contracts.LoginResult{}
 
-	if cred, err := la.authManager.CredentialForCurrentUser(ctx); errors.Is(err, auth.ErrNoCurrentUser) {
+	if cred, err := la.authManager.CredentialForCurrentUser(ctx, nil); errors.Is(err, auth.ErrNoCurrentUser) {
 		res.Status = contracts.LoginStatusUnauthenticated
 	} else if err != nil {
 		return nil, fmt.Errorf("checking auth status: %w", err)

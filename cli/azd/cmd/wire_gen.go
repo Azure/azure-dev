@@ -227,13 +227,9 @@ func initAuthTokenAction(console input.Console, ctx context.Context, o *internal
 	if err != nil {
 		return nil, err
 	}
-	tokenCredential, err := newCredential(ctx, manager)
-	if err != nil {
-		return nil, err
-	}
 	formatter := newFormatterFromConsole(console)
 	writer := newOutputWriter(console)
-	cmdAuthTokenAction := newAuthTokenAction(tokenCredential, formatter, writer, flags)
+	cmdAuthTokenAction := newAuthTokenAction(manager, formatter, writer, flags)
 	return cmdAuthTokenAction, nil
 }
 

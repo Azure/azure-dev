@@ -96,7 +96,7 @@ func newAzdContext() (*azdcontext.AzdContext, error) {
 }
 
 func newCredential(ctx context.Context, authManager *auth.Manager) (azcore.TokenCredential, error) {
-	credential, err := authManager.CredentialForCurrentUser(ctx)
+	credential, err := authManager.CredentialForCurrentUser(ctx, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -280,6 +280,5 @@ var ConfigResetCmdSet = wire.NewSet(
 var AuthTokenCmdSet = wire.NewSet(
 	CommonSet,
 	auth.NewManager,
-	newCredential,
 	newAuthTokenAction,
 	wire.Bind(new(actions.Action), new(*authTokenAction)))

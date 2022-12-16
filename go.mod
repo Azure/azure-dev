@@ -15,8 +15,10 @@ require (
 	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources v1.0.0
 	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armsubscriptions v1.0.0
 	github.com/AzureAD/microsoft-authentication-library-for-go v0.7.0
+	github.com/MakeNowJust/heredoc/v2 v2.0.1
 	github.com/benbjohnson/clock v1.3.0
 	github.com/blang/semver/v4 v4.0.0
+	github.com/bradleyjkemp/cupaloy/v2 v2.8.0
 	github.com/drone/envsubst v1.0.3
 	github.com/fatih/color v1.13.0
 	github.com/gofrs/flock v0.8.1
@@ -42,14 +44,8 @@ require (
 	golang.org/x/exp v0.0.0-20220428152302-39d4317da171
 	golang.org/x/sys v0.2.0
 	gopkg.in/yaml.v3 v3.0.0
-)
 
-require (
-	github.com/MakeNowJust/heredoc/v2 v2.0.1
-	github.com/bradleyjkemp/cupaloy/v2 v2.8.0
 )
-
-require github.com/kr/text v0.2.0 // indirect
 
 require (
 	github.com/Azure/azure-sdk-for-go/sdk/internal v1.0.1 // indirect
@@ -63,6 +59,7 @@ require (
 	github.com/google/subcommands v1.0.1 // indirect
 	github.com/inconshreveable/mousetrap v1.0.0 // indirect
 	github.com/kballard/go-shellquote v0.0.0-20180428030007-95032a82bc51 // indirect
+	github.com/kr/text v0.2.0 // indirect
 	github.com/kylelemons/godebug v1.1.0 // indirect
 	github.com/mattn/go-runewidth v0.0.13 // indirect
 	github.com/mgutz/ansi v0.0.0-20170206155736-9520e82c474b // indirect

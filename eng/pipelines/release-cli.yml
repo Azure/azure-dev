@@ -718,74 +718,46 @@ stages:
                     filePath: eng/scripts/Set-CliVersionVariable.ps1
                   displayName: Set CLI_VERSION
 
-                # - template: /eng/pipelines/templates/steps/publish-cli.yml
-                #   parameters:
-                #     CreateGitHubRelease: true
-                #     PublishUploadLocations: release/$(CLI_VERSION);release/latest
-                #     PublishShield: true
-                #     DockerImageTags: $(CLI_VERSION);latest
-                #     ReleaseSyndicatedDockerContainer: true
+                - template: /eng/pipelines/templates/steps/publish-cli.yml
+                  parameters:
+                    CreateGitHubRelease: true
+                    PublishUploadLocations: release/$(CLI_VERSION);release/latest
+                    PublishShield: true
+                    DockerImageTags: $(CLI_VERSION);latest
+                    ReleaseSyndicatedDockerContainer: true
+                    PublishUpdatedDocs: true
 
-                # Update ref docs (TODO: Move into its own template)
-                - task: DownloadPipelineArtifact@2
-                  displayName: Download docs
+      - deployment: Increment_Version
+        condition: >-
+          and(
+            succeeded(),
+            ne('true', variables['Skip.IncrementVersion'])
+          )
+        dependsOn: Publish_Release
+        environment: azure-dev
+
+        pool:
+          name: azsdk-pool-mms-ubuntu-2004-general
+          OSVmImage: MMSUbuntu20.04
+
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - checkout: self
+
+                - task: PowerShell@2
                   inputs:
-                    artifact: docs
-                    path: docs
+                    pwsh: true
+                    targetType: filePath
+                    filePath: eng/scripts/Update-CliVersion.ps1
+                  displayName: Increment CLI version
 
-                - pwsh: |
-                    git clone https://github.com/azure-sdk/azure-dev-docs/
-                    Copy-Item docs/azd.md azure-dev-docs/articles/azure-developer-cli/reference.md -Force
-                  displayName: Clone azure-dev-docs and update reference.md
-                    
                 - template: /eng/common/pipelines/templates/steps/create-pull-request.yml
                   parameters:
-                    # Use a unique branch name per-build and per-attempt to prevent
-                    # collisions
-                    PRBranchName: azure-dev-cli/$(CLI_VERSION)-$(Build.BuildId).$(System.JobAttempt)
-                    CommitMsg: Update reference documents for Azure CLI @ $(CLI_VERSION)
-                    PRTitle: Update reference documents for Azure CLI @ $(CLI_VERSION)
-                    WorkingDirectory: $(System.DefaultWorkingDirectory)/azure-dev-docs  
-                    RepoOwner: MicrosoftDocs
-                    RepoName: azure-dev-docs
-                    BaseBranchName: main
-                    # Eliminate these after testing
-                    CloseAfterOpenForTesting: true
-                    OpenAsDraft: true
-
-
-      # TODO: Uncomment before merge
-      # - deployment: Increment_Version
-      #   condition: >-
-      #     and(
-      #       succeeded(),
-      #       ne('true', variables['Skip.IncrementVersion'])
-      #     )
-      #   dependsOn: Publish_Release
-      #   environment: azure-dev
-
-      #   pool:
-      #     name: azsdk-pool-mms-ubuntu-2004-general
-      #     OSVmImage: MMSUbuntu20.04
-
-      #   strategy:
-      #     runOnce:
-      #       deploy:
-      #         steps:
-      #           - checkout: self
-
-      #           - task: PowerShell@2
-      #             inputs:
-      #               pwsh: true
-      #               targetType: filePath
-      #               filePath: eng/scripts/Update-CliVersion.ps1
-      #             displayName: Increment CLI version
-
-      #           - template: /eng/common/pipelines/templates/steps/create-pull-request.yml
-      #             parameters:
-      #               PRBranchName: cli-version-increment-$(Build.BuildId)
-      #               CommitMsg: Increment CLI version after release
-      #               PRTitle: Increment CLI version after release
+                    PRBranchName: cli-version-increment-$(Build.BuildId)
+                    CommitMsg: Increment CLI version after release
+                    PRTitle: Increment CLI version after release
 
   - stage: PublishIntegration
     dependsOn: Sign

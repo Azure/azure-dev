@@ -6,6 +6,7 @@ parameters:
   UploadInstaller: false
   UploadMsi: false
   PublishShield: false
+  PublishUpdatedDocs: false
   StorageAccountName: $(azdev-storage-account-name)
   StorageAccountKey: $(azdev-storage-account-key)
   StorageContainerName: azd
@@ -183,3 +184,27 @@ steps:
     - pwsh: |
         docker push ${{ parameters.SyndicatedAcrHost }}/public/azure-dev-cli-apps --all-tags
       displayName: Push container tags (syndicated release)
+
+  - ${{ if eq('true', parameters.PublishUpdatedDocs) }}:
+    - task: DownloadPipelineArtifact@2
+      displayName: Download docs
+      inputs:
+        artifact: docs
+        path: docs
+
+    - pwsh: |
+        git clone https://github.com/azure-sdk/azure-dev-docs/
+        Copy-Item docs/azd.md azure-dev-docs/articles/azure-developer-cli/reference.md -Force
+      displayName: Clone azure-dev-docs and update reference.md
+        
+    - template: /eng/common/pipelines/templates/steps/create-pull-request.yml
+      parameters:
+        # Use a unique branch name per-build and per-attempt to prevent
+        # collisions
+        PRBranchName: azure-dev-cli/$(CLI_VERSION)-$(Build.BuildId).$(System.JobAttempt)
+        CommitMsg: Update reference documents for Azure CLI @ $(CLI_VERSION)
+        PRTitle: Update reference documents for Azure CLI @ $(CLI_VERSION)
+        WorkingDirectory: $(System.DefaultWorkingDirectory)/azure-dev-docs  
+        RepoOwner: MicrosoftDocs
+        RepoName: azure-dev-docs
+        BaseBranchName: main

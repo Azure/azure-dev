@@ -116,7 +116,7 @@ func addCodeFencesToSampleCommands(s string) string {
 	return strings.Join(newLines, "\n")
 }
 
-var preceedingDollarRegexp = regexp.MustCompile(`^([\s]*)\$ (.*)$`)
+var precedingDollarRegexp = regexp.MustCompile(`^([\s]*)\$ (.*)$`)
 
 // Formats a command line by removing the dollar sign at the beginning of the
 // command while preserving any leading whitespace. line should be a string with
@@ -128,7 +128,7 @@ var preceedingDollarRegexp = regexp.MustCompile(`^([\s]*)\$ (.*)$`)
 // `  some string with a $ in the middle` -> `  some string with a $ in the middle`
 // `hello world` -> `hello world`
 func formatCommandLine(line string) string {
-	return preceedingDollarRegexp.ReplaceAllString(line, "$1$2")
+	return precedingDollarRegexp.ReplaceAllString(line, "$1$2")
 }
 
 // genMarkdownFile writes the help document for a single command (and all sub commands) to an

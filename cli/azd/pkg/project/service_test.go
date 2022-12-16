@@ -8,6 +8,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
+	"github.com/azure/azure-dev/cli/azd/pkg/ext"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
@@ -120,7 +121,14 @@ func TestDeployProgressMessages(t *testing.T) {
 		TargetResource: mockTarget,
 	}
 
-	result, progress := service.Deploy(*mockContext.Context, azdContext)
+	commandHooks := ext.NewCommandHooks(
+		mockContext.CommandRunner,
+		mockContext.Console,
+		service.Config.Scripts,
+		service.Config.Path(),
+		env.Environ(),
+	)
+	result, progress := service.Deploy(*mockContext.Context, azdContext, commandHooks)
 	progressMessages := []string{}
 
 	go func() {

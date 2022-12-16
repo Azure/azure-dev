@@ -12,9 +12,9 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
-	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
+	"github.com/azure/azure-dev/cli/azd/pkg/ext"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
@@ -26,9 +26,8 @@ import (
 )
 
 type deployFlags struct {
-	serviceName  string
-	outputFormat *string // pointer to allow delay-initialization when used in "azd up"
-	global       *internal.GlobalCommandOptions
+	serviceName string
+	global      *internal.GlobalCommandOptions
 	*envFlag
 }
 
@@ -53,22 +52,21 @@ func (d *deployFlags) bindNonCommon(
 func (d *deployFlags) bindCommon(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
 	d.envFlag = &envFlag{}
 	d.envFlag.Bind(local, global)
-
-	d.outputFormat = convert.RefOf("")
-	output.AddOutputFlag(
-		local,
-		d.outputFormat,
-		[]output.Format{output.JsonFormat, output.NoneFormat},
-		output.NoneFormat)
 }
 
-func (d *deployFlags) setCommon(outputFormat *string, envFlag *envFlag) {
-	d.outputFormat = outputFormat
+func (d *deployFlags) setCommon(envFlag *envFlag) {
 	d.envFlag = envFlag
 }
 
-func deployCmdDesign(rootOptions *internal.GlobalCommandOptions) (*cobra.Command, *deployFlags) {
-	cmd := &cobra.Command{
+func newDeployFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *deployFlags {
+	flags := &deployFlags{}
+	flags.Bind(cmd.Flags(), global)
+
+	return flags
+}
+
+func newDeployCmd() *cobra.Command {
+	return &cobra.Command{
 		Use:   "deploy",
 		Short: "Deploy the application's code to Azure.",
 		//nolint:lll
@@ -83,14 +81,10 @@ Examples:
 	
 After the deployment is complete, the endpoint is printed. To start the service, select the endpoint or paste it in a browser.`,
 	}
-	df := deployFlags{}
-	df.Bind(cmd.Flags(), rootOptions)
-
-	return cmd, &df
 }
 
 type deployAction struct {
-	flags         deployFlags
+	flags         *deployFlags
 	azCli         azcli.AzCli
 	azdCtx        *azdcontext.AzdContext
 	formatter     output.Formatter
@@ -100,14 +94,14 @@ type deployAction struct {
 }
 
 func newDeployAction(
-	flags deployFlags,
+	flags *deployFlags,
 	azCli azcli.AzCli,
 	commandRunner exec.CommandRunner,
 	azdCtx *azdcontext.AzdContext,
 	console input.Console,
 	formatter output.Formatter,
 	writer io.Writer,
-) (*deployAction, error) {
+) (actions.Action, error) {
 	da := &deployAction{
 		flags:         flags,
 		azCli:         azCli,
@@ -173,6 +167,14 @@ func (d *deployAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	var deploymentResults []project.ServiceDeploymentResult
 
 	for _, svc := range proj.Services {
+		commandHooks := ext.NewCommandHooks(
+			d.commandRunner,
+			d.console,
+			svc.Config.Scripts,
+			svc.Config.Path(),
+			env.Environ(),
+		)
+
 		// Skip this service if both cases are true:
 		// 1. The user specified a service name
 		// 2. This service is not the one the user specified
@@ -182,7 +184,7 @@ func (d *deployAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 
 		stepMessage := fmt.Sprintf("Deploying service %s", svc.Config.Name)
 		d.console.ShowSpinner(ctx, stepMessage, input.Step)
-		result, progress := svc.Deploy(ctx, d.azdCtx)
+		result, progress := svc.Deploy(ctx, d.azdCtx, commandHooks)
 
 		// Report any progress to logs only. Changes for the console are managed by the console object.
 		// This routine is required to drain all the string messages sent by the `progress`.

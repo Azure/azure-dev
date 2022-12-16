@@ -372,3 +372,17 @@ func getResourceGroupFollowUp(
 	}
 	return followUp
 }
+
+func (e *envFlag) Env() *envFlag {
+	return e
+}
+
+// Represent command flags that accept an environment name argument
+type flagsWithEnv interface {
+	Env() *envFlag
+}
+
+// Represents and command flags
+type flags interface {
+	Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions)
+}

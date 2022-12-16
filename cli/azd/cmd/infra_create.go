@@ -7,7 +7,6 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
-	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
@@ -23,9 +22,8 @@ import (
 )
 
 type infraCreateFlags struct {
-	noProgress   bool
-	outputFormat *string // pointer to allow delay-initialization when used in "azd up"
-	global       *internal.GlobalCommandOptions
+	noProgress bool
+	global     *internal.GlobalCommandOptions
 	*envFlag
 }
 
@@ -43,34 +41,29 @@ func (i *infraCreateFlags) bindNonCommon(local *pflag.FlagSet, global *internal.
 func (i *infraCreateFlags) bindCommon(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
 	i.envFlag = &envFlag{}
 	i.envFlag.Bind(local, global)
-
-	i.outputFormat = convert.RefOf("")
-	output.AddOutputFlag(
-		local,
-		i.outputFormat,
-		[]output.Format{output.JsonFormat, output.NoneFormat},
-		output.NoneFormat)
 }
 
-func (i *infraCreateFlags) setCommon(outputFormat *string, envFlag *envFlag) {
+func (i *infraCreateFlags) setCommon(envFlag *envFlag) {
 	i.envFlag = envFlag
-	i.outputFormat = outputFormat
 }
 
-func infraCreateCmdDesign(rootOptions *internal.GlobalCommandOptions) (*cobra.Command, *infraCreateFlags) {
-	cmd := &cobra.Command{
+func newInfraCreateFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *infraCreateFlags {
+	flags := &infraCreateFlags{}
+	flags.Bind(cmd.Flags(), global)
+
+	return flags
+}
+
+func newInfraCreateCmd() *cobra.Command {
+	return &cobra.Command{
 		Use:     "create",
 		Short:   "Create Azure resources for an application.",
 		Aliases: []string{"provision"},
 	}
-	f := &infraCreateFlags{}
-	f.Bind(cmd.Flags(), rootOptions)
-
-	return cmd, f
 }
 
 type infraCreateAction struct {
-	flags         infraCreateFlags
+	flags         *infraCreateFlags
 	azCli         azcli.AzCli
 	azdCtx        *azdcontext.AzdContext
 	formatter     output.Formatter
@@ -80,16 +73,16 @@ type infraCreateAction struct {
 }
 
 func newInfraCreateAction(
-	f infraCreateFlags,
+	flags *infraCreateFlags,
 	azCli azcli.AzCli,
 	azdCtx *azdcontext.AzdContext,
 	console input.Console,
 	formatter output.Formatter,
 	writer io.Writer,
 	commandRunner exec.CommandRunner,
-) *infraCreateAction {
+) actions.Action {
 	return &infraCreateAction{
-		flags:         f,
+		flags:         flags,
 		azCli:         azCli,
 		azdCtx:        azdCtx,
 		formatter:     formatter,

@@ -202,3 +202,14 @@ func (e *Environment) SetPrincipalId(principalID string) {
 func (e *Environment) GetPrincipalId() string {
 	return e.Values[PrincipalIdEnvVarName]
 }
+
+// Creates a slice of key value pairs like `KEY=VALUE` that
+// can be used to pass into command runner or similar constructs
+func (e *Environment) Environ() []string {
+	envVars := []string{}
+	for k, v := range e.Values {
+		envVars = append(envVars, fmt.Sprintf("%s=%s", k, v))
+	}
+
+	return envVars
+}

@@ -49,7 +49,10 @@ require (
 	github.com/bradleyjkemp/cupaloy/v2 v2.8.0
 )
 
-require github.com/kr/text v0.2.0 // indirect
+require (
+	github.com/golobby/container/v3 v3.3.1 // indirect
+	github.com/kr/text v0.2.0 // indirect
+)
 
 require (
 	github.com/Azure/azure-sdk-for-go/sdk/internal v1.0.1 // indirect

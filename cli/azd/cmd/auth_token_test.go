@@ -36,9 +36,7 @@ func TestAuthToken(t *testing.T) {
 		}, nil
 	})
 
-	a := newAuthTokenAction(token, &output.JsonFormatter{}, buf, authTokenFlags{
-		outputFormat: string(output.JsonFormat),
-	})
+	a := newAuthTokenAction(token, &output.JsonFormatter{}, buf, &authTokenFlags{})
 
 	_, err := a.Run(context.Background())
 	require.NoError(t, err)
@@ -64,9 +62,8 @@ func TestAuthTokenCustomScopes(t *testing.T) {
 		return azcore.AccessToken{}, nil
 	})
 
-	a := newAuthTokenAction(token, &output.JsonFormatter{}, io.Discard, authTokenFlags{
-		outputFormat: string(output.JsonFormat),
-		scopes:       scopes,
+	a := newAuthTokenAction(token, &output.JsonFormatter{}, io.Discard, &authTokenFlags{
+		scopes: scopes,
 	})
 
 	_, err := a.Run(context.Background())
@@ -79,9 +76,7 @@ func TestAuthTokenFailure(t *testing.T) {
 		return azcore.AccessToken{}, errors.New("could not fetch token")
 	})
 
-	a := newAuthTokenAction(token, &output.JsonFormatter{}, io.Discard, authTokenFlags{
-		outputFormat: string(output.JsonFormat),
-	})
+	a := newAuthTokenAction(token, &output.JsonFormatter{}, io.Discard, &authTokenFlags{})
 
 	_, err := a.Run(context.Background())
 	require.ErrorContains(t, err, "could not fetch token")

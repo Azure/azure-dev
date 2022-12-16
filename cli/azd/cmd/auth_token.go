@@ -20,25 +20,26 @@ import (
 )
 
 type authTokenFlags struct {
-	outputFormat string
-	scopes       []string
-	global       *internal.GlobalCommandOptions
+	scopes []string
+	global *internal.GlobalCommandOptions
 }
 
-func authTokenCmdDesign(global *internal.GlobalCommandOptions) (*cobra.Command, *authTokenFlags) {
-	cmd := &cobra.Command{
+func newAuthTokenFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *authTokenFlags {
+	flags := &authTokenFlags{}
+	flags.Bind(cmd.Flags(), global)
+
+	return flags
+}
+
+func newAuthTokenCmd() *cobra.Command {
+	return &cobra.Command{
 		Use:    "token",
 		Hidden: true,
 	}
-
-	getAccessTokenFlags := &authTokenFlags{}
-	getAccessTokenFlags.Bind(cmd.Flags(), global)
-	return cmd, getAccessTokenFlags
 }
 
 func (f *authTokenFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
 	f.global = global
-	output.AddOutputFlag(local, &f.outputFormat, []output.Format{output.JsonFormat}, output.NoneFormat)
 	local.StringArrayVar(&f.scopes, "scope", nil, "The scope to use when requesting an access token")
 }
 
@@ -46,15 +47,15 @@ type authTokenAction struct {
 	credential azcore.TokenCredential
 	formatter  output.Formatter
 	writer     io.Writer
-	flags      authTokenFlags
+	flags      *authTokenFlags
 }
 
 func newAuthTokenAction(
 	credential azcore.TokenCredential,
 	formatter output.Formatter,
 	writer io.Writer,
-	flags authTokenFlags,
-) *authTokenAction {
+	flags *authTokenFlags,
+) actions.Action {
 	return &authTokenAction{
 		credential: credential,
 		formatter:  formatter,

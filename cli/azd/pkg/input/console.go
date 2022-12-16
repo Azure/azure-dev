@@ -129,7 +129,8 @@ func (c *AskerConsole) MessageUxItem(ctx context.Context, item ux.UxItem) {
 	if c.formatter != nil && c.formatter.Kind() == output.JsonFormat {
 		// no need to check the spinner for json format, as the spinner won't start when using json format
 		// instead, there would be a message about starting spinner
-		fmt.Fprintln(c.writer, string(item.ToJson()))
+		json, _ := json.Marshal(item)
+		fmt.Fprintln(c.writer, string(json))
 		return
 	}
 

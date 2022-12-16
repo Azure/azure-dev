@@ -5,7 +5,6 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/stretchr/testify/require"
 )
 
@@ -162,9 +161,7 @@ services:
     module: ./api/api
 `
 
-	e := environment.EphemeralWithValues("test-env", nil)
-
-	projectConfig, _ := ParseProjectConfig(testProj, e)
+	projectConfig, _ := ParseProjectConfig(testProj)
 
 	return projectConfig.Services["api"]
 }

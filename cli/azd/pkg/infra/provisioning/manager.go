@@ -227,6 +227,7 @@ func (m *Manager) ensureLocation(ctx context.Context, deployment *Deployment) (s
 			ctx,
 			m.env,
 			"Please select an Azure location to use to store deployment metadata:",
+			"",
 			m.console,
 			m.azCli,
 		)

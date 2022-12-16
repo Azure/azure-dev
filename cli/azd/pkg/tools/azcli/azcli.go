@@ -86,7 +86,7 @@ type AzCli interface {
 	) (*AzCliFunctionAppProperties, error)
 	DeployToSubscription(
 		ctx context.Context, subscriptionId, deploymentName string,
-		armTemplate *azure.ArmTemplate,
+		armTemplate azure.RawArmTemplate,
 		parameters azure.ArmParameters,
 		location string) (
 		AzCliDeploymentResult, error)
@@ -95,7 +95,7 @@ type AzCli interface {
 		subscriptionId,
 		resourceGroup,
 		deploymentName string,
-		armTemplate *azure.ArmTemplate,
+		armTemplate azure.RawArmTemplate,
 		parameters azure.ArmParameters,
 	) (AzCliDeploymentResult, error)
 	DeleteSubscriptionDeployment(ctx context.Context, subscriptionId string, deploymentName string) error

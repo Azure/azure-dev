@@ -173,22 +173,18 @@ func (i *initializer) writeAzdAssets(ctx context.Context) error {
 			useCrlf = true
 		}
 
+		// match on entire line
+		// gitignore files can't have comments inline
 		if azdcontext.EnvironmentDirectoryName == text {
 			writeGitignoreFile = false
 			break
 		}
 
+		// EOF
 		if err != nil {
 			break
 		}
 	}
-
-	// for scanner.Scan() {
-	// 	// gitignore files can't have comments inline
-	// 	if azdcontext.EnvironmentDirectoryName == scanner.Text() {
-	// 		writeGitignoreFile = false
-	// 	}
-	// }
 
 	if writeGitignoreFile {
 		newLine := "\n"

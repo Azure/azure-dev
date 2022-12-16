@@ -2,42 +2,184 @@ package repository
 
 import (
 	"context"
+	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
+	"github.com/azure/azure-dev/cli/azd/pkg/exec"
+	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/git"
-	mockinput "github.com/azure/azure-dev/cli/azd/test/mocks/console"
-	mockexec "github.com/azure/azure-dev/cli/azd/test/mocks/exec"
+	"github.com/azure/azure-dev/cli/azd/test/mocks/mockexec"
+	"github.com/azure/azure-dev/cli/azd/test/mocks/mockinput"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/exp/slices"
 )
 
 func Test_initializer_Initialize(t *testing.T) {
-	type args struct {
-		ctx            context.Context
-		templateUrl    string
-		templateBranch string
-	}
 	tests := []struct {
-		name    string
-		i       *initializer
-		args    args
-		wantErr bool
+		name        string
+		templateDir string
 	}{
-		// TODO: Add test cases.
+		{"RegularTemplate", "template"},
+		{"MinimalTemplate", "template-minimal"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if err := tt.i.Initialize(tt.args.ctx, tt.args.templateUrl, tt.args.templateBranch); (err != nil) != tt.wantErr {
-				t.Errorf("initializer.Initialize() error = %v, wantErr %v", err, tt.wantErr)
-			}
+			projectDir := t.TempDir()
+			azdCtx, err := azdcontext.NewAzdContext()
+			require.NoError(t, err)
+			azdCtx.SetProjectDirectory(projectDir)
+
+			console := mockinput.NewMockConsole()
+			realRunner := exec.NewCommandRunner(os.Stdin, os.Stdout, os.Stderr)
+			mockRunner := mockexec.NewMockCommandRunner()
+			mockRunner.When(func(args exec.RunArgs, command string) bool { return true }).
+				RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+					// Stub out git clone, otherwise run actual command
+					if slices.Contains(args.Args, "clone") && slices.Contains(args.Args, "local") {
+						stagingDir := args.Args[len(args.Args)-1]
+						copyTemplate(t, tt.templateDir, stagingDir)
+						return exec.NewRunResult(0, "", ""), nil
+					}
+
+					return realRunner.Run(context.Background(), args)
+				})
+
+			i := NewInitializer(azdCtx, console, git.NewGitCli(mockRunner))
+			err = i.Initialize(context.Background(), "local", "")
+			require.NoError(t, err)
+
+			verifyTemplateCopied(t, tt.templateDir, projectDir)
+
+			require.FileExists(t, filepath.Join(projectDir, ".gitignore"))
+			require.FileExists(t, azdCtx.ProjectPath())
+			require.DirExists(t, azdCtx.EnvironmentDirectory())
 		})
 	}
+}
+
+func Test_initializer_InitializeWithOverwritePrompt(t *testing.T) {
+	templateDir := "template"
+	tests := []struct {
+		name             string
+		confirmOverwrite bool
+	}{
+		{"Confirm", true},
+		{"Deny", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			projectDir := t.TempDir()
+			azdCtx, err := azdcontext.NewAzdContext()
+			require.NoError(t, err)
+			azdCtx.SetProjectDirectory(projectDir)
+			// Copy all files to project to set up duplicate files
+			copyTemplate(t, templateDir, projectDir)
+
+			console := mockinput.NewMockConsole()
+			console.WhenConfirm(func(options input.ConsoleOptions) bool {
+				return strings.Contains(options.Message, "Overwrite files with versions from template?")
+			}).Respond(tt.confirmOverwrite)
+
+			realRunner := exec.NewCommandRunner(os.Stdin, os.Stdout, os.Stderr)
+			mockRunner := mockexec.NewMockCommandRunner()
+			mockRunner.When(func(args exec.RunArgs, command string) bool { return true }).
+				RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+					// Stub out git clone, otherwise run actual command
+					if slices.Contains(args.Args, "clone") && slices.Contains(args.Args, "local") {
+						stagingDir := args.Args[len(args.Args)-1]
+						copyTemplate(t, templateDir, stagingDir)
+						return exec.NewRunResult(0, "", ""), nil
+					}
+
+					return realRunner.Run(context.Background(), args)
+				})
+
+			i := NewInitializer(azdCtx, console, git.NewGitCli(mockRunner))
+			err = i.Initialize(context.Background(), "local", "")
+
+			if !tt.confirmOverwrite {
+				require.Error(t, err)
+				return
+			}
+
+			require.NoError(t, err)
+
+			verifyTemplateCopied(t, templateDir, projectDir)
+
+			require.FileExists(t, filepath.Join(projectDir, ".gitignore"))
+			require.FileExists(t, azdCtx.ProjectPath())
+			require.DirExists(t, azdCtx.EnvironmentDirectory())
+		})
+	}
+}
+
+// Copy all files from source to target, removing *.txt suffix.
+func copyTemplate(t *testing.T, source string, target string) {
+	sourceFull := testDataPath(source)
+	err := filepath.WalkDir(sourceFull, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			require.NoError(t, err)
+		}
+
+		if d.IsDir() {
+			relDir, err := filepath.Rel(sourceFull, path)
+			if err != nil {
+				return fmt.Errorf("computing relative path: %w", err)
+			}
+
+			return os.MkdirAll(filepath.Join(target, relDir), 0755)
+		}
+
+		rel, err := filepath.Rel(sourceFull, path)
+		if err != nil {
+			return fmt.Errorf("computing relative path: %w", err)
+		}
+
+		relTarget := strings.TrimSuffix(rel, ".txt")
+
+		copyFile(t, source, rel, filepath.Join(target, relTarget))
+
+		return nil
+	})
+
+	require.NoError(t, err)
+	require.NoError(t, os.MkdirAll(filepath.Join(target, ".git"), 0755))
+}
+
+// Verify all template code was copied to the destination.
+func verifyTemplateCopied(t *testing.T, original string, copied string) {
+	originalFull := testDataPath(original)
+
+	err := filepath.WalkDir(originalFull, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			require.NoError(t, err)
+		}
+
+		if d.IsDir() {
+			return nil
+		}
+
+		rel, err := filepath.Rel(originalFull, path)
+		if err != nil {
+			return fmt.Errorf("computing relative path: %w", err)
+		}
+
+		relCopied := strings.TrimSuffix(rel, ".txt")
+		verifyFileContent(t, filepath.Join(copied, relCopied), readFile(t, original, rel))
+
+		return nil
+	})
+
+	require.NoError(t, err)
 }
 
 func Test_initializer_InitializeEmpty(t *testing.T) {
@@ -58,6 +200,7 @@ func Test_initializer_InitializeEmpty(t *testing.T) {
 	}{
 		{"CreateAll", setup{"", ""}, expected{projectFile: "azureyaml_created.txt", gitignoreFile: "gitignore_created.txt"}},
 		{"AppendGitignore", setup{"azureyaml_existing.txt", "gitignore_existing.txt"}, expected{projectFile: "azureyaml_existing.txt", gitignoreFile: "gitignore_with_env.txt"}},
+		{"AppendGitignoreNoTrailing", setup{"azureyaml_existing.txt", "gitignore_existing_notrail.txt"}, expected{projectFile: "azureyaml_existing.txt", gitignoreFile: "gitignore_with_env.txt"}},
 		{"Unmodified", setup{"azureyaml_existing.txt", "gitignore_with_env.txt"}, expected{projectFile: "azureyaml_existing.txt", gitignoreFile: "gitignore_with_env.txt"}},
 	}
 	for _, tt := range tests {
@@ -68,7 +211,7 @@ func Test_initializer_InitializeEmpty(t *testing.T) {
 			azdCtx.SetProjectDirectory(projectDir)
 
 			if tt.setup.gitignoreFile != "" {
-				copyFile(t, "empty", tt.setup.gitignoreFile, filepath.Join(azdCtx.ProjectDirectory(), ".gitignore"))
+				copyFile(t, "empty", tt.setup.gitignoreFile, filepath.Join(projectDir, ".gitignore"))
 			}
 
 			if tt.setup.projectFile != "" {
@@ -94,15 +237,28 @@ func Test_initializer_InitializeEmpty(t *testing.T) {
 	}
 }
 
+func testDataPath(elem ...string) string {
+	elem = append([]string{"testdata"}, elem...)
+	return filepath.Join(elem...)
+}
+
 func copyFile(t *testing.T, testCase string, source string, target string) {
-	err := os.WriteFile(target, []byte(readFile(t, testCase, source)), 0644)
+	content := readFile(t, testCase, source)
+	err := os.WriteFile(target, []byte(content), 0644)
+
 	require.NoError(t, err)
 }
 
 func readFile(t *testing.T, testCase string, file string) string {
-	bytes, err := os.ReadFile(filepath.Join("testdata", testCase, file))
+	bytes, err := os.ReadFile(testDataPath(testCase, file))
 	require.NoError(t, err)
 	content := string(bytes)
+	// All asset files are stored in LF.
+	// By replacing LF with CRLF here, we ensure all line ending tests are covered.
+	if runtime.GOOS == "windows" {
+		content = strings.ReplaceAll(content, "\n", "\r\n")
+	}
+
 	return content
 }
 

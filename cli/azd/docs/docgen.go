@@ -104,11 +104,7 @@ func addCodeFencesToSampleCommands(s string) string {
 			}
 		} else {
 			if inBlock && strings.HasPrefix(line, "\t$") {
-				// Replace first instance of "\t$" with "\t" to eliminate superfluous leading "$"s from documentation
-				// TODO: This technically works but a better approach may exist
-				// TODO: Can space be trimmed only from the left?
-				// TODO: String interpolation?
-				line = "\t" + strings.TrimSpace(strings.Replace(line, "\t$", "\t", 1))
+				line = formatCommandLine(line)
 			}
 			newLines = append(newLines, line)
 		}
@@ -118,6 +114,21 @@ func addCodeFencesToSampleCommands(s string) string {
 	}
 
 	return strings.Join(newLines, "\n")
+}
+
+var preceedingDollarRegexp = regexp.MustCompile(`^([\s]*)\$ (.*)$`)
+
+// Formats a command line by removing the dollar sign at the beginning of the
+// command while preserving any leading whitespace. line should be a string with
+// no newline "\n" characters.
+// Example:
+// `$ command --with someParameters` -> `command --with someParameters`
+// `  $ command --with someParameters` -> `  command --with someParameters`
+// No change if there are non-whitespace characters before the $
+// `  some string with a $ in the middle` -> `  some string with a $ in the middle`
+// `hello world` -> `hello world`
+func formatCommandLine(line string) string {
+	return preceedingDollarRegexp.ReplaceAllString(line, "$1$2")
 }
 
 // genMarkdownFile writes the help document for a single command (and all sub commands) to an
@@ -205,8 +216,12 @@ func genMarkdownCustom(cmd *cobra.Command, w io.Writer, linkHandler func(string)
 	}
 
 	if len(cmd.Example) > 0 {
-		buf.WriteString("### Examples\n\n")
-		buf.WriteString(fmt.Sprintf("```\n%s\n```\n\n", cmd.Example))
+		buf.WriteString("### Examples\n\n```\n")
+		lines := strings.Split(cmd.Example, "\n")
+		for _, line := range lines {
+			buf.WriteString(formatCommandLine(line) + "\n")
+		}
+		buf.WriteString("```\n\n")
 	}
 
 	if err := printOptions(buf, cmd, name); err != nil {

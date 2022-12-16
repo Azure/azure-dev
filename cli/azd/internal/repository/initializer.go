@@ -74,7 +74,7 @@ func (i *initializer) Initialize(ctx context.Context, templateUrl string, templa
 
 	duplicateFiles, err := determineDuplicates(staging, target)
 	if err != nil {
-		return fmt.Errorf("checking for overwrites: %s", err)
+		return fmt.Errorf("checking for overwrites: %w", err)
 	}
 
 	if len(duplicateFiles) > 0 {

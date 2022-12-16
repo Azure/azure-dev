@@ -193,12 +193,24 @@ func Test_initializer_InitializeEmpty(t *testing.T) {
 		setup    setup
 		expected expected
 	}{
-		{"CreateAll", setup{"", "", false}, expected{projectFile: "azureyaml_created.txt", gitignoreFile: "gitignore_created.txt"}},
-		{"AppendGitignore", setup{"azureyaml_existing.txt", "gitignore_existing.txt", false}, expected{projectFile: "azureyaml_existing.txt", gitignoreFile: "gitignore_with_env.txt"}},
-		{"AppendGitignoreNoTrailing", setup{"azureyaml_existing.txt", "gitignore_existing_notrail.txt", false}, expected{projectFile: "azureyaml_existing.txt", gitignoreFile: "gitignore_with_env.txt"}},
-		{"AppendGitignoreCrlf", setup{"azureyaml_existing.txt", "gitignore_existing.txt", true}, expected{projectFile: "azureyaml_existing.txt", gitignoreFile: "gitignore_with_env.txt"}},
-		{"AppendGitignoreNoTrailingCrlf", setup{"azureyaml_existing.txt", "gitignore_existing_notrail.txt", true}, expected{projectFile: "azureyaml_existing.txt", gitignoreFile: "gitignore_with_env.txt"}},
-		{"Unmodified", setup{"azureyaml_existing.txt", "gitignore_with_env.txt", false}, expected{projectFile: "azureyaml_existing.txt", gitignoreFile: "gitignore_with_env.txt"}},
+		{"CreateAll",
+			setup{"", "", false},
+			expected{projectFile: "azureyaml_created.txt", gitignoreFile: "gitignore_created.txt"}},
+		{"AppendGitignore",
+			setup{"azureyaml_existing.txt", "gitignore_existing.txt", false},
+			expected{projectFile: "azureyaml_existing.txt", gitignoreFile: "gitignore_with_env.txt"}},
+		{"AppendGitignoreNoTrailing",
+			setup{"azureyaml_existing.txt", "gitignore_existing_notrail.txt", false},
+			expected{projectFile: "azureyaml_existing.txt", gitignoreFile: "gitignore_with_env.txt"}},
+		{"AppendGitignoreCrlf",
+			setup{"azureyaml_existing.txt", "gitignore_existing.txt", true},
+			expected{projectFile: "azureyaml_existing.txt", gitignoreFile: "gitignore_with_env.txt"}},
+		{"AppendGitignoreNoTrailingCrlf",
+			setup{"azureyaml_existing.txt", "gitignore_existing_notrail.txt", true},
+			expected{projectFile: "azureyaml_existing.txt", gitignoreFile: "gitignore_with_env.txt"}},
+		{"Unmodified",
+			setup{"azureyaml_existing.txt", "gitignore_with_env.txt", false},
+			expected{projectFile: "azureyaml_existing.txt", gitignoreFile: "gitignore_with_env.txt"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

@@ -72,6 +72,7 @@ func (cb *CobraBuilder) configureActionResolver(cmd *cobra.Command, descriptor *
 		ctx = tools.WithInstalledCheckCache(ctx)
 
 		// Registers the following to enable injection into actions that require them
+		ioc.RegisterInstance(ioc.Global, cb.runner)
 		ioc.RegisterInstance(ioc.Global, ctx)
 		ioc.RegisterInstance(ioc.Global, cmd)
 		ioc.RegisterInstance(ioc.Global, args)

@@ -154,7 +154,7 @@ For more information, visit the Azure Developer CLI Dev Hub: https://aka.ms/azur
 	root.Add("down", &actions.ActionDescriptorOptions{
 		Command:        newDownCmd(),
 		FlagsResolver:  newDownFlags,
-		ActionResolver: newInfraDeleteAction,
+		ActionResolver: newDownAction,
 		OutputFormats:  []output.Format{output.JsonFormat, output.NoneFormat},
 		DefaultFormat:  output.NoneFormat,
 	})

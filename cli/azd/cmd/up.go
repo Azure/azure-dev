@@ -72,12 +72,18 @@ type upAction struct {
 }
 
 func newUpAction(
+	flags *upFlags,
 	init *initAction,
 	infraCreate *infraCreateAction,
 	deploy *deployAction,
 	console input.Console,
 	runner *middleware.MiddlewareRunner,
 ) actions.Action {
+	// Required to ensure the sub action flags are bound correctly to the actions
+	init.flags = &flags.initFlags
+	infraCreate.flags = &flags.infraCreateFlags
+	deploy.flags = &flags.deployFlags
+
 	return &upAction{
 		init:        init,
 		infraCreate: infraCreate,

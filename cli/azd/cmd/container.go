@@ -126,12 +126,13 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	container.RegisterSingleton(auth.NewManager)
 	container.RegisterSingleton(account.NewManager)
 
-	// Required for nested actions called from composite actions like 'up'
 	container.RegisterSingleton(newInitAction)
 	container.RegisterSingleton(newDeployAction)
 	container.RegisterSingleton(newInfraCreateAction)
 
+	// Required for nested actions called from composite actions like 'up' and 'down'
 	registerAction[*initAction](container, "azd-init-action")
 	registerAction[*deployAction](container, "azd-deploy-action")
 	registerAction[*infraCreateAction](container, "azd-infra-create-action")
+	registerAction[*infraDeleteAction](container, "azd-infra-delete-action")
 }

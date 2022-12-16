@@ -10,7 +10,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/graphsdk"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
-	graphsdk_mocks "github.com/azure/azure-dev/cli/azd/test/mocks/graphsdk"
+	"github.com/azure/azure-dev/cli/azd/test/mocks/mockgraphsdk"
 	"github.com/stretchr/testify/require"
 )
 
@@ -28,9 +28,9 @@ func TestEntityListRequestBuilder(t *testing.T) {
 
 	t.Run("WithProperties", func(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
-		graphsdk_mocks.RegisterApplicationListMock(mockContext, http.StatusOK, applications)
+		mockgraphsdk.RegisterApplicationListMock(mockContext, http.StatusOK, applications)
 
-		graphClient, err := graphsdk_mocks.CreateGraphClient(mockContext)
+		graphClient, err := mockgraphsdk.CreateGraphClient(mockContext)
 		require.NoError(t, err)
 
 		expectedFilter := "displayName eq 'APPLICATION'"
@@ -51,9 +51,9 @@ func TestEntityListRequestBuilder(t *testing.T) {
 
 	t.Run("NoProperties", func(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
-		graphsdk_mocks.RegisterApplicationListMock(mockContext, http.StatusOK, applications)
+		mockgraphsdk.RegisterApplicationListMock(mockContext, http.StatusOK, applications)
 
-		graphClient, err := graphsdk_mocks.CreateGraphClient(mockContext)
+		graphClient, err := mockgraphsdk.CreateGraphClient(mockContext)
 		require.NoError(t, err)
 
 		appRequestBuilder := graphsdk.NewApplicationListRequestBuilder(graphClient)

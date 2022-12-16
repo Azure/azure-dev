@@ -1,4 +1,4 @@
-package graphsdk
+package mockgraphsdk
 
 import (
 	"fmt"

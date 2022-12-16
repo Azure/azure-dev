@@ -11,7 +11,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/graphsdk"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
-	graphsdk_mocks "github.com/azure/azure-dev/cli/azd/test/mocks/graphsdk"
+	"github.com/azure/azure-dev/cli/azd/test/mocks/mockgraphsdk"
 	"github.com/stretchr/testify/require"
 )
 
@@ -92,13 +92,13 @@ func Test_CreateOrUpdateServicePrincipal(t *testing.T) {
 	// Tests the use case for a brand new service principal
 	t.Run("NewServicePrincipal", func(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
-		graphsdk_mocks.RegisterApplicationListMock(mockContext, http.StatusOK, []graphsdk.Application{})
-		graphsdk_mocks.RegisterServicePrincipalListMock(mockContext, http.StatusOK, []graphsdk.ServicePrincipal{})
-		graphsdk_mocks.RegisterApplicationCreateItemMock(mockContext, http.StatusCreated, &newApplication)
-		graphsdk_mocks.RegisterServicePrincipalCreateItemMock(mockContext, http.StatusCreated, &servicePrincipal)
-		graphsdk_mocks.RegisterApplicationAddPasswordMock(mockContext, http.StatusOK, *newApplication.Id, credential)
-		graphsdk_mocks.RegisterRoleDefinitionListMock(mockContext, http.StatusOK, roleDefinitions)
-		graphsdk_mocks.RegisterRoleAssignmentPutMock(mockContext, http.StatusCreated)
+		mockgraphsdk.RegisterApplicationListMock(mockContext, http.StatusOK, []graphsdk.Application{})
+		mockgraphsdk.RegisterServicePrincipalListMock(mockContext, http.StatusOK, []graphsdk.ServicePrincipal{})
+		mockgraphsdk.RegisterApplicationCreateItemMock(mockContext, http.StatusCreated, &newApplication)
+		mockgraphsdk.RegisterServicePrincipalCreateItemMock(mockContext, http.StatusCreated, &servicePrincipal)
+		mockgraphsdk.RegisterApplicationAddPasswordMock(mockContext, http.StatusOK, *newApplication.Id, credential)
+		mockgraphsdk.RegisterRoleDefinitionListMock(mockContext, http.StatusOK, roleDefinitions)
+		mockgraphsdk.RegisterRoleAssignmentPutMock(mockContext, http.StatusCreated)
 
 		azCli := newAzCliFromMockContext(mockContext)
 		rawMessage, err := azCli.CreateOrUpdateServicePrincipal(
@@ -116,16 +116,16 @@ func Test_CreateOrUpdateServicePrincipal(t *testing.T) {
 	// Tests the use case for updating an existing service principal
 	t.Run("ExistingServicePrincipal", func(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
-		graphsdk_mocks.RegisterApplicationListMock(mockContext, http.StatusOK, []graphsdk.Application{existingApplication})
-		graphsdk_mocks.RegisterServicePrincipalListMock(
+		mockgraphsdk.RegisterApplicationListMock(mockContext, http.StatusOK, []graphsdk.Application{existingApplication})
+		mockgraphsdk.RegisterServicePrincipalListMock(
 			mockContext,
 			http.StatusOK,
 			[]graphsdk.ServicePrincipal{servicePrincipal},
 		)
-		graphsdk_mocks.RegisterApplicationRemovePasswordMock(mockContext, http.StatusNoContent, *newApplication.Id)
-		graphsdk_mocks.RegisterApplicationAddPasswordMock(mockContext, http.StatusOK, *newApplication.Id, credential)
-		graphsdk_mocks.RegisterRoleDefinitionListMock(mockContext, http.StatusOK, roleDefinitions)
-		graphsdk_mocks.RegisterRoleAssignmentPutMock(mockContext, http.StatusCreated)
+		mockgraphsdk.RegisterApplicationRemovePasswordMock(mockContext, http.StatusNoContent, *newApplication.Id)
+		mockgraphsdk.RegisterApplicationAddPasswordMock(mockContext, http.StatusOK, *newApplication.Id, credential)
+		mockgraphsdk.RegisterRoleDefinitionListMock(mockContext, http.StatusOK, roleDefinitions)
+		mockgraphsdk.RegisterRoleAssignmentPutMock(mockContext, http.StatusCreated)
 
 		azCli := newAzCliFromMockContext(mockContext)
 		rawMessage, err := azCli.CreateOrUpdateServicePrincipal(
@@ -143,17 +143,17 @@ func Test_CreateOrUpdateServicePrincipal(t *testing.T) {
 	// Tests the use case for an existing service principal that already has the required role assignment.
 	t.Run("RoleAssignmentExists", func(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
-		graphsdk_mocks.RegisterApplicationListMock(mockContext, http.StatusOK, []graphsdk.Application{existingApplication})
-		graphsdk_mocks.RegisterServicePrincipalListMock(
+		mockgraphsdk.RegisterApplicationListMock(mockContext, http.StatusOK, []graphsdk.Application{existingApplication})
+		mockgraphsdk.RegisterServicePrincipalListMock(
 			mockContext,
 			http.StatusOK,
 			[]graphsdk.ServicePrincipal{servicePrincipal},
 		)
-		graphsdk_mocks.RegisterApplicationRemovePasswordMock(mockContext, http.StatusNoContent, *newApplication.Id)
-		graphsdk_mocks.RegisterApplicationAddPasswordMock(mockContext, http.StatusOK, *newApplication.Id, credential)
-		graphsdk_mocks.RegisterRoleDefinitionListMock(mockContext, http.StatusOK, roleDefinitions)
+		mockgraphsdk.RegisterApplicationRemovePasswordMock(mockContext, http.StatusNoContent, *newApplication.Id)
+		mockgraphsdk.RegisterApplicationAddPasswordMock(mockContext, http.StatusOK, *newApplication.Id, credential)
+		mockgraphsdk.RegisterRoleDefinitionListMock(mockContext, http.StatusOK, roleDefinitions)
 		// Note how role assignment returns a 409 conflict
-		graphsdk_mocks.RegisterRoleAssignmentPutMock(mockContext, http.StatusConflict)
+		mockgraphsdk.RegisterRoleAssignmentPutMock(mockContext, http.StatusConflict)
 
 		azCli := newAzCliFromMockContext(mockContext)
 		rawMessage, err := azCli.CreateOrUpdateServicePrincipal(
@@ -170,13 +170,13 @@ func Test_CreateOrUpdateServicePrincipal(t *testing.T) {
 
 	t.Run("InvalidRole", func(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
-		graphsdk_mocks.RegisterApplicationListMock(mockContext, http.StatusOK, []graphsdk.Application{})
-		graphsdk_mocks.RegisterServicePrincipalListMock(mockContext, http.StatusOK, []graphsdk.ServicePrincipal{})
-		graphsdk_mocks.RegisterApplicationCreateItemMock(mockContext, http.StatusCreated, &newApplication)
-		graphsdk_mocks.RegisterServicePrincipalCreateItemMock(mockContext, http.StatusCreated, &servicePrincipal)
-		graphsdk_mocks.RegisterApplicationAddPasswordMock(mockContext, http.StatusOK, *newApplication.Id, credential)
+		mockgraphsdk.RegisterApplicationListMock(mockContext, http.StatusOK, []graphsdk.Application{})
+		mockgraphsdk.RegisterServicePrincipalListMock(mockContext, http.StatusOK, []graphsdk.ServicePrincipal{})
+		mockgraphsdk.RegisterApplicationCreateItemMock(mockContext, http.StatusCreated, &newApplication)
+		mockgraphsdk.RegisterServicePrincipalCreateItemMock(mockContext, http.StatusCreated, &servicePrincipal)
+		mockgraphsdk.RegisterApplicationAddPasswordMock(mockContext, http.StatusOK, *newApplication.Id, credential)
 		// Note how retrieval of matching role assignments is empty
-		graphsdk_mocks.RegisterRoleDefinitionListMock(mockContext, http.StatusOK, []*armauthorization.RoleDefinition{})
+		mockgraphsdk.RegisterRoleDefinitionListMock(mockContext, http.StatusOK, []*armauthorization.RoleDefinition{})
 
 		azCli := newAzCliFromMockContext(mockContext)
 		rawMessage, err := azCli.CreateOrUpdateServicePrincipal(
@@ -191,10 +191,10 @@ func Test_CreateOrUpdateServicePrincipal(t *testing.T) {
 
 	t.Run("ErrorCreatingApplication", func(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
-		graphsdk_mocks.RegisterApplicationListMock(mockContext, http.StatusOK, []graphsdk.Application{})
-		graphsdk_mocks.RegisterServicePrincipalListMock(mockContext, http.StatusOK, []graphsdk.ServicePrincipal{})
+		mockgraphsdk.RegisterApplicationListMock(mockContext, http.StatusOK, []graphsdk.Application{})
+		mockgraphsdk.RegisterServicePrincipalListMock(mockContext, http.StatusOK, []graphsdk.ServicePrincipal{})
 		// Note that the application creation returns an unauthorized error
-		graphsdk_mocks.RegisterApplicationCreateItemMock(mockContext, http.StatusUnauthorized, nil)
+		mockgraphsdk.RegisterApplicationCreateItemMock(mockContext, http.StatusUnauthorized, nil)
 
 		azCli := newAzCliFromMockContext(mockContext)
 		rawMessage, err := azCli.CreateOrUpdateServicePrincipal(

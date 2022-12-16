@@ -25,8 +25,8 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
-	"github.com/azure/azure-dev/cli/azd/test/mocks/httputil"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockazcli"
+	"github.com/azure/azure-dev/cli/azd/test/mocks/mockhttp"
 	"github.com/stretchr/testify/require"
 )
 
@@ -459,7 +459,7 @@ func preparePlanningMocks(
 }
 
 func prepareDeployShowMocks(
-	httpClient *httputil.MockHttpClient) {
+	httpClient *mockhttp.MockHttpClient) {
 	expectedWebsiteUrl := "http://myapp.azurewebsites.net"
 
 	deployOutputs := make(map[string]interface{})

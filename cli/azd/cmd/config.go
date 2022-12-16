@@ -71,7 +71,7 @@ func configActions(root *actions.ActionDescriptor) *actions.ActionDescriptor {
 	}
 
 	group := root.Add("config", &actions.ActionDescriptorOptions{
-		Command: category,
+		Command: groupCmd,
 	})
 
 	group.Add("list", &actions.ActionDescriptorOptions{

@@ -127,12 +127,11 @@ For more information, visit the Azure Developer CLI Dev Hub: https://aka.ms/azur
 		DefaultFormat:  output.NoneFormat,
 	})
 
-	root.
-		Add("restore", &actions.ActionDescriptorOptions{
-			Command:        restoreCmdDesign(),
-			FlagsResolver:  newRestoreFlags,
-			ActionResolver: newRestoreAction,
-		})
+	root.Add("restore", &actions.ActionDescriptorOptions{
+		Command:        restoreCmdDesign(),
+		FlagsResolver:  newRestoreFlags,
+		ActionResolver: newRestoreAction,
+	})
 
 	root.Add("login", &actions.ActionDescriptorOptions{
 		Command:        newLoginCmd(),
@@ -153,50 +152,43 @@ For more information, visit the Azure Developer CLI Dev Hub: https://aka.ms/azur
 		ActionResolver: newMonitorAction,
 	})
 
-	root.
-		Add("down", &actions.ActionDescriptorOptions{
-			Command:        newDownCmd(),
-			FlagsResolver:  newDownFlags,
-			ActionResolver: newInfraDeleteAction,
-			OutputFormats:  []output.Format{output.JsonFormat, output.NoneFormat},
-			DefaultFormat:  output.NoneFormat,
-		})
+	root.Add("down", &actions.ActionDescriptorOptions{
+		Command:        newDownCmd(),
+		FlagsResolver:  newDownFlags,
+		ActionResolver: newInfraDeleteAction,
+		OutputFormats:  []output.Format{output.JsonFormat, output.NoneFormat},
+		DefaultFormat:  output.NoneFormat,
+	})
 
-	root.
-		Add("init", &actions.ActionDescriptorOptions{
-			Command:        newInitCmd(),
-			FlagsResolver:  newInitFlags,
-			ActionResolver: newInitAction,
-		}).
-		AddFlagCompletion("template", templateNameCompletion)
+	root.Add("init", &actions.ActionDescriptorOptions{
+		Command:        newInitCmd(),
+		FlagsResolver:  newInitFlags,
+		ActionResolver: newInitAction,
+	}).AddFlagCompletion("template", templateNameCompletion)
 
-	root.
-		Add("up", &actions.ActionDescriptorOptions{
-			Command:        newUpCmd(),
-			FlagsResolver:  newUpFlags,
-			ActionResolver: newUpAction,
-			OutputFormats:  []output.Format{output.JsonFormat, output.NoneFormat},
-			DefaultFormat:  output.NoneFormat,
-		}).
-		AddFlagCompletion("template", templateNameCompletion)
+	root.Add("up", &actions.ActionDescriptorOptions{
+		Command:        newUpCmd(),
+		FlagsResolver:  newUpFlags,
+		ActionResolver: newUpAction,
+		OutputFormats:  []output.Format{output.JsonFormat, output.NoneFormat},
+		DefaultFormat:  output.NoneFormat,
+	}).AddFlagCompletion("template", templateNameCompletion)
 
-	root.
-		Add("provision", &actions.ActionDescriptorOptions{
-			Command:        newProvisionCmd(),
-			FlagsResolver:  newProvisionFlags,
-			ActionResolver: newInfraCreateAction,
-			OutputFormats:  []output.Format{output.JsonFormat, output.NoneFormat},
-			DefaultFormat:  output.NoneFormat,
-		})
+	root.Add("provision", &actions.ActionDescriptorOptions{
+		Command:        newProvisionCmd(),
+		FlagsResolver:  newProvisionFlags,
+		ActionResolver: newInfraCreateAction,
+		OutputFormats:  []output.Format{output.JsonFormat, output.NoneFormat},
+		DefaultFormat:  output.NoneFormat,
+	})
 
-	root.
-		Add("deploy", &actions.ActionDescriptorOptions{
-			Command:        newDeployCmd(),
-			FlagsResolver:  newDeployFlags,
-			ActionResolver: newDeployAction,
-			OutputFormats:  []output.Format{output.JsonFormat, output.NoneFormat},
-			DefaultFormat:  output.NoneFormat,
-		})
+	root.Add("deploy", &actions.ActionDescriptorOptions{
+		Command:        newDeployCmd(),
+		FlagsResolver:  newDeployFlags,
+		ActionResolver: newDeployAction,
+		OutputFormats:  []output.Format{output.JsonFormat, output.NoneFormat},
+		DefaultFormat:  output.NoneFormat,
+	})
 
 	// Global middleware registration
 	root.

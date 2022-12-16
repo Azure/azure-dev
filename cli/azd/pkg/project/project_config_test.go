@@ -37,13 +37,13 @@ services:
 		environment.SubscriptionIdEnvVarName: "SUBSCRIPTION_ID",
 	})
 
-	projectConfig, err := ParseProjectConfig(testProj, e)
+	projectConfig, err := ParseProjectConfig(testProj)
 	require.Nil(t, err)
 	require.NotNil(t, projectConfig)
 
 	require.Equal(t, "test-proj", projectConfig.Name)
 	require.Equal(t, "test-proj-template", projectConfig.Metadata.Template)
-	require.Equal(t, fmt.Sprintf("rg-%s", e.GetEnvName()), projectConfig.ResourceGroupName)
+	require.Equal(t, fmt.Sprintf("rg-%s", e.GetEnvName()), projectConfig.ResourceGroupName.MustEnvsubst(e.Getenv))
 	require.Equal(t, 2, len(projectConfig.Services))
 
 	for key, svc := range projectConfig.Services {
@@ -70,11 +70,7 @@ services:
     host: appservice
 `
 
-	e := environment.EphemeralWithValues("test-env", map[string]string{
-		environment.SubscriptionIdEnvVarName: "SUBSCRIPTION_ID",
-	})
-
-	projectConfig, err := ParseProjectConfig(testProj, e)
+	projectConfig, err := ParseProjectConfig(testProj)
 	require.Nil(t, err)
 
 	require.True(t, projectConfig.HasService("web"))
@@ -129,7 +125,7 @@ services:
 		environment.SubscriptionIdEnvVarName: "SUBSCRIPTION_ID",
 	})
 
-	projectConfig, err := ParseProjectConfig(testProj, e)
+	projectConfig, err := ParseProjectConfig(testProj)
 	require.Nil(t, err)
 
 	project, err := projectConfig.GetProject(*mockContext.Context, e, mockContext.Console, azCli, mockContext.CommandRunner)
@@ -162,11 +158,8 @@ services:
       path: ./Dockerfile.dev
       context: ../
 `
-	e := environment.EphemeralWithValues("test-env", map[string]string{
-		environment.SubscriptionIdEnvVarName: "SUBSCRIPTION_ID",
-	})
 
-	projectConfig, err := ParseProjectConfig(testProj, e)
+	projectConfig, err := ParseProjectConfig(testProj)
 
 	require.NotNil(t, projectConfig)
 	require.Nil(t, err)
@@ -191,11 +184,7 @@ services:
     module: ./api/api
 `
 
-	e := environment.EphemeralWithValues("test-env", map[string]string{
-		environment.SubscriptionIdEnvVarName: "SUBSCRIPTION_ID",
-	})
-
-	projectConfig, err := ParseProjectConfig(testProj, e)
+	projectConfig, err := ParseProjectConfig(testProj)
 
 	require.NotNil(t, projectConfig)
 	require.Nil(t, err)
@@ -356,11 +345,7 @@ services:
     module: ./api/api
 `
 
-	e := environment.EphemeralWithValues("test-env", map[string]string{
-		environment.SubscriptionIdEnvVarName: "SUBSCRIPTION_ID",
-	})
-
-	projectConfig, _ := ParseProjectConfig(testProj, e)
+	projectConfig, _ := ParseProjectConfig(testProj)
 
 	return projectConfig
 }
@@ -411,4 +396,30 @@ func TestProjectConfigRaiseEventWithArgs(t *testing.T) {
 	err = project.RaiseEvent(*mockContext.Context, Deployed, eventArgs)
 	require.Nil(t, err)
 	require.True(t, handlerCalled)
+}
+
+func TestExpandableStringsInProjectConfig(t *testing.T) {
+
+	const testProj = `
+name: test-proj
+metadata:
+  template: test-proj-template
+resourceGroup: ${foo}
+services:
+  api:
+    project: src/api
+    language: js
+    host: containerapp
+    module: ./api/api
+    `
+
+	projectConfig, err := ParseProjectConfig(testProj)
+	require.NoError(t, err)
+
+	env := environment.EphemeralWithValues("", map[string]string{
+		"foo": "hello",
+		"bar": "goodbye",
+	})
+
+	require.Equal(t, "hello", projectConfig.ResourceGroupName.MustEnvsubst(env.Getenv))
 }

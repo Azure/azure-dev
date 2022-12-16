@@ -26,14 +26,13 @@ func (t *MessageTitle) ToString(currentIndentation string) string {
 	return fmt.Sprintf("\n%s\n", output.WithBold(t.Title))
 }
 
-func (t *MessageTitle) ToJson() []byte {
+func (t *MessageTitle) MarshalJSON() ([]byte, error) {
 	// reusing the same envelope from console messages
-	jsonBytes, _ := json.Marshal(
+	return json.Marshal(
 		contracts.EventEnvelope{
 			Type:      contracts.OperationStart,
 			Timestamp: time.Now(),
 			Data:      t,
 		},
 	)
-	return jsonBytes
 }

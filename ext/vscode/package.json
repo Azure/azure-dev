@@ -309,9 +309,7 @@
                     "title": "Create application infrastructure using azd...",
                     "detail": "Use the Azure Developer CLI to set up application infrastructure resources (azd provision)."
                 }
-            ]
-        },
-        "x-azResourcesV2": {
+            ],
             "workspace": {
                 "resources": true,
                 "branches": [

@@ -1,3 +1,4 @@
 {
-    "azureFunctions.showProjectWarning": false
+    "azureFunctions.projectLanguage": "C#",
+    "azureFunctions.projectRuntime": "~4"
 }

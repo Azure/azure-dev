@@ -66,6 +66,7 @@ ignoreWords:
     - httpclient
     - httptrigger
     - infracreate
+    - infradelete
     - inputhelper
     - ippre
     - JOBOBJECT

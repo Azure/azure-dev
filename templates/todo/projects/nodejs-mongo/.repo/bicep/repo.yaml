@@ -85,6 +85,11 @@ repo:
         patterns:
           - "README.md"
 
+      - from: ../../../../api/common/openapi.yaml
+        to: ../../src/api/wwwroot/openapi.yaml
+        patterns:
+          - "apim-api.bicep"
+
   assets:
     # Common assets
 
@@ -97,6 +102,9 @@ repo:
 
     - from: ../../../../common/infra/bicep/app/api-appservice-node.bicep
       to: ./infra/app/api.bicep
+
+    - from: ../../../../common/infra/bicep/app/apim-api.bicep
+      to: ./infra/app/apim-api.bicep
 
     - from: ../../../../common/infra/bicep/app/cosmos-mongo-db.bicep
       to: ./infra/app/db.bicep

@@ -103,7 +103,7 @@ func (u *upAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	u.console.Message(ctx, "")
 
 	deployOptions := &middleware.Options{Name: "deploy"}
-	_, err = u.runner.RunAction(ctx, deployOptions, u.deploy)
+	deployResult, err := u.runner.RunAction(ctx, deployOptions, u.deploy)
 	if err != nil {
 		return nil, err
 	}

@@ -943,7 +943,7 @@ stages:
 
               ## Documentation
 
-              <details open>
+              <details>
               <summary>learn.microsoft.com documentation</summary>
 
               $refDocContent

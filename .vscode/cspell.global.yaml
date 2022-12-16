@@ -65,6 +65,7 @@ ignoreWords:
     - hndl
     - httpclient
     - httptrigger
+    - infracreate
     - inputhelper
     - ippre
     - JOBOBJECT

@@ -47,7 +47,7 @@ func ReadProject(
 	projectRootDir := filepath.Dir(projectPath)
 
 	// Load Project configuration
-	projectConfig, err := LoadProjectConfig(projectRootDir, env)
+	projectConfig, err := LoadProjectConfig(projectRootDir)
 	if err != nil {
 		return nil, fmt.Errorf("reading project config: %w", err)
 	}
@@ -100,9 +100,16 @@ func GetResourceGroupName(
 	ctx context.Context,
 	azCli azcli.AzCli,
 	projectConfig *ProjectConfig,
-	env *environment.Environment) (string, error) {
-	if strings.TrimSpace(projectConfig.ResourceGroupName) != "" {
-		return projectConfig.ResourceGroupName, nil
+	env *environment.Environment,
+) (string, error) {
+
+	name, err := projectConfig.ResourceGroupName.Envsubst(env.Getenv)
+	if err != nil {
+		return "", err
+	}
+
+	if strings.TrimSpace(name) != "" {
+		return name, nil
 	}
 
 	envResourceGroupName := environment.GetResourceGroupNameFromEnvVar(env)

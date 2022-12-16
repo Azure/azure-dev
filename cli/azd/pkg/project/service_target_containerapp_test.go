@@ -79,7 +79,7 @@ func Test_containerAppTarget_generateImageTag(t *testing.T) {
 			fmt.Sprintf("%s:azdev-deploy-%d", defaultImageName, mockClock.Now().Unix())},
 		{"ImageTagSpecified",
 			DockerProjectOptions{
-				Tag: "contoso/contoso-image:latest",
+				Tag: NewExpandableString("contoso/contoso-image:latest"),
 			},
 			"contoso/contoso-image:latest"},
 	}
@@ -96,7 +96,8 @@ func Test_containerAppTarget_generateImageTag(t *testing.T) {
 					Docker: tt.dockerConfig,
 				},
 				clock: mockClock}
-			tag := containerAppTarget.generateImageTag()
+			tag, err := containerAppTarget.generateImageTag()
+			assert.NoError(t, err)
 			assert.Equal(t, tt.want, tag)
 		})
 	}

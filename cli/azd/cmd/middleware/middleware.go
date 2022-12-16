@@ -26,11 +26,14 @@ type Options struct {
 // Executes the next middleware in the command chain
 type NextFn func(ctx context.Context) (*actions.ActionResult, error)
 
+// Middleware runner stores middleware registrations and orchestrates the
+// invocation of middleware components and actions.
 type MiddlewareRunner struct {
 	chain     []string
 	container *ioc.NestedContainer
 }
 
+// Creates a new middleware runner
 func NewMiddlewareRunner(container *ioc.NestedContainer) *MiddlewareRunner {
 	return &MiddlewareRunner{
 		container: container,

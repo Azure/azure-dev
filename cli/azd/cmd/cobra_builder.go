@@ -13,11 +13,13 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// CobraBuilder manages the construction of the cobra command tree from nested ActionDescriptors
 type CobraBuilder struct {
 	container *ioc.NestedContainer
 	runner    *middleware.MiddlewareRunner
 }
 
+// Creates a new instance of the Cobra builder
 func NewCobraBuilder(container *ioc.NestedContainer) *CobraBuilder {
 	return &CobraBuilder{
 		container: container,
@@ -25,6 +27,7 @@ func NewCobraBuilder(container *ioc.NestedContainer) *CobraBuilder {
 	}
 }
 
+// Builds a cobra Command for the specified action descriptor
 func (cb *CobraBuilder) BuildCommand(descriptor *actions.ActionDescriptor) (*cobra.Command, error) {
 	cmd := descriptor.Options.Command
 	if cmd.Use == "" {
@@ -42,7 +45,7 @@ func (cb *CobraBuilder) BuildCommand(descriptor *actions.ActionDescriptor) (*cob
 	}
 
 	// Bind root command after command tree has been established
-	// This ensures the command path is ready
+	// This ensures the command path is ready and consistent across all nested commands
 	if descriptor.Parent() == nil {
 		err := cb.bindCommand(cmd, descriptor)
 		if err != nil {
@@ -55,6 +58,8 @@ func (cb *CobraBuilder) BuildCommand(descriptor *actions.ActionDescriptor) (*cob
 	return cmd, nil
 }
 
+// Configures the cobra command 'RunE' function to running the composed middleware and action for the
+// current action descriptor
 func (cb *CobraBuilder) configureActionResolver(cmd *cobra.Command, descriptor *actions.ActionDescriptor) {
 	// Only bind command to action if an action resolver had been defined
 	// and when a RunE hasn't already been set
@@ -66,6 +71,7 @@ func (cb *CobraBuilder) configureActionResolver(cmd *cobra.Command, descriptor *
 		ctx := cmd.Context()
 		ctx = tools.WithInstalledCheckCache(ctx)
 
+		// Registers the following to enable injection into actions that require them
 		ioc.RegisterInstance(ioc.Global, ctx)
 		ioc.RegisterInstance(ioc.Global, cmd)
 		ioc.RegisterInstance(ioc.Global, args)
@@ -99,19 +105,25 @@ func (cb *CobraBuilder) configureActionResolver(cmd *cobra.Command, descriptor *
 	}
 }
 
+// Binds the intersection of cobra command options and action descriptor options
 func (cb *CobraBuilder) bindCommand(cmd *cobra.Command, descriptor *actions.ActionDescriptor) error {
 	actionName := createActionName(cmd)
 
+	// Automatically adds a consistent help flag
 	cmd.Flags().BoolP("help", "h", false, fmt.Sprintf("Gets help for %s.", descriptor.Name))
 
+	// Consistently registers output formats for the descriptor
 	if len(descriptor.Options.OutputFormats) > 0 {
 		output.AddOutputParam(cmd, descriptor.Options.OutputFormats, descriptor.Options.DefaultFormat)
 	}
 
-	// Create, register and bind flags
+	// Create, register and bind flags when required
 	if descriptor.Options.FlagsResolver != nil {
 		log.Printf("registering flags for action '%s'\n", actionName)
 		ioc.RegisterInstance(cb.container, cmd)
+
+		// The flags resolver is constructed and bound to the cobra command via dependency injection
+		// This allows flags to be options and support any set of required dependencies
 		err := cb.container.RegisterSingletonAndInvoke(descriptor.Options.FlagsResolver)
 		if err != nil {
 			return fmt.Errorf(
@@ -122,7 +134,10 @@ func (cb *CobraBuilder) bindCommand(cmd *cobra.Command, descriptor *actions.Acti
 		}
 	}
 
-	// Bind action resolvers
+	// Registers and bind action resolves when required
+	// Action resolvers are essential go functions that create the instance of the required actions.Action
+	// These functions are typically the constructor function for the action. ex) newDeployAction(...)
+	// Action resolvers can take any number of dependencies and instantiated via the IoC container
 	if descriptor.Options.ActionResolver != nil {
 		log.Printf("registering resolver for action '%s'\n", actionName)
 		err := cb.container.RegisterNamedSingleton(actionName, descriptor.Options.ActionResolver)
@@ -136,13 +151,15 @@ func (cb *CobraBuilder) bindCommand(cmd *cobra.Command, descriptor *actions.Acti
 	}
 
 	// Bind flag completions
+	// Since flags are lazily loaded we need to wait until after command flags are wired up before
+	// any flag completion functions are registered
 	for flag, completionFn := range descriptor.FlagCompletions() {
 		if err := cmd.RegisterFlagCompletionFunc(flag, completionFn); err != nil {
 			panic(err)
 		}
 	}
 
-	// Bind the child commands
+	// Bind the child commands for the current descriptor
 	for _, childDescriptor := range descriptor.Children() {
 		childCmd := childDescriptor.Options.Command
 		err := cb.bindCommand(childCmd, childDescriptor)
@@ -154,10 +171,14 @@ func (cb *CobraBuilder) bindCommand(cmd *cobra.Command, descriptor *actions.Acti
 	return nil
 }
 
+// Registers all middleware components for the current command and any parent descriptors
+// Middleware components are insure to run in the order that they were registered from the
+// root registration, down through action groups and ultimately individual actions
 func (cb *CobraBuilder) registerMiddleware(descriptor *actions.ActionDescriptor) error {
 	chain := []*actions.MiddlewareRegistration{}
 	current := descriptor
 
+	// Recursively loop through any action describer and their parents
 	for {
 		middleware := current.Middleware()
 
@@ -165,6 +186,9 @@ func (cb *CobraBuilder) registerMiddleware(descriptor *actions.ActionDescriptor)
 			registration := middleware[i]
 
 			// Only use the middleware when the predicate resolves truthy or if not defined
+			// Registration predicates are useful for when you want to selectively want to
+			// register a middleware based on the descriptor options
+			// Ex) Telemetry middleware registered for all actions except 'version'
 			if registration.Predicate == nil || registration.Predicate(descriptor) {
 				chain = append(chain, middleware[i])
 			}
@@ -190,6 +214,8 @@ func (cb *CobraBuilder) registerMiddleware(descriptor *actions.ActionDescriptor)
 	return nil
 }
 
+// Composes a consistent action name for the specified cobra command
+// ex) azd config list becomes 'azd-config-list-action'
 func createActionName(cmd *cobra.Command) string {
 	actionName := cmd.CommandPath()
 	actionName = strings.TrimSpace(actionName)

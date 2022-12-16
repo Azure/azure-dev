@@ -11,16 +11,20 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 )
 
+// Adds support to easily debug and attach a debugger to AZD for development purposes
 type DebugMiddleware struct {
 	console input.Console
 }
 
+// Creates a new instance of the Debug middleware
 func NewDebugMiddleware(console input.Console) Middleware {
 	return &DebugMiddleware{
 		console: console,
 	}
 }
 
+// Invokes the debug middleware. When AZD_DEBUG is set will prompt the user to attach
+// a debugger before continuing invocation of the action
 func (m *DebugMiddleware) Run(ctx context.Context, next NextFn) (*actions.ActionResult, error) {
 	debug, err := strconv.ParseBool(os.Getenv("AZD_DEBUG"))
 	if err != nil {

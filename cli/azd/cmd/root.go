@@ -4,7 +4,6 @@
 package cmd
 
 import (
-	"context"
 	"fmt"
 	"os"
 
@@ -15,7 +14,6 @@ import (
 
 	_ "github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning/bicep"
 	_ "github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning/terraform"
-	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 
 	"github.com/azure/azure-dev/cli/azd/internal"
@@ -200,8 +198,6 @@ For more information, visit the Azure Developer CLI Dev Hub: https://aka.ms/azur
 			DefaultFormat:  output.NoneFormat,
 		})
 
-	//attachDebugger()
-
 	// Global middleware registration
 	root.
 		UseMiddleware("debug", middleware.NewDebugMiddleware).
@@ -210,9 +206,7 @@ For more information, visit the Azure Developer CLI Dev Hub: https://aka.ms/azur
 		}).
 		UseMiddleware("ux", middleware.NewUxMiddleware)
 
-	// Configure application
 	registerCommonDependencies(ioc.Global)
-	ioc.RegisterInstance(ioc.Global, opts)
 
 		// It is valid for a command to return a nil action result and error. If we have a result or an error, display it,
 		// otherwise don't print anything.
@@ -220,24 +214,13 @@ For more information, visit the Azure Developer CLI Dev Hub: https://aka.ms/azur
 			console.MessageUxItem(ctx, actions.ToUxItem(actionResult, err))
 		}
 
+	// Compose the hierarchy of action descriptions into cobra commands
 	cmd, err := cobraBuilder.BuildCommand(root)
 	if err != nil {
+		// If their is a container registration issue or similar we'll get an error at this point
+		// Error descriptions should be clear enough to resolve the issue
 		panic(err)
 	}
 
 	return cmd
-}
-
-//nolint:unused
-func attachDebugger() {
-	console := input.NewConsole(false, true, os.Stdout, input.ConsoleHandles{
-		Stdin:  os.Stdin,
-		Stdout: os.Stdout,
-		Stderr: os.Stderr,
-	}, &output.NoneFormatter{})
-
-	_, _ = console.Confirm(context.Background(), input.ConsoleOptions{
-		Message:      "Ready?",
-		DefaultValue: true,
-	})
 }

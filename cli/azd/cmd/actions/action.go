@@ -34,10 +34,6 @@ type Action interface {
 	Run(ctx context.Context) (*ActionResult, error)
 }
 
-type BuildOptions struct {
-	DisableTelemetry bool
-}
-
 	if err != nil {
 		return &ux.ActionResult{
 			SuccessMessage: "",

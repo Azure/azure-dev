@@ -9,24 +9,20 @@ import (
 	"go.opentelemetry.io/otel/codes"
 )
 
+// Telemetry middleware tracks telemetry for the given action
 type TelemetryMiddleware struct {
-	buildOptions *actions.BuildOptions
-	options      *Options
+	options *Options
 }
 
-func NewTelemetryMiddleware(buildOptions *actions.BuildOptions, options *Options) Middleware {
+// Creates a new Telemetry middleware instance
+func NewTelemetryMiddleware(options *Options) Middleware {
 	return &TelemetryMiddleware{
-		buildOptions: buildOptions,
-		options:      options,
+		options: options,
 	}
 }
 
+// Invokes the middleware and wraps the action with a telemetry span for telemetry reporting
 func (m *TelemetryMiddleware) Run(ctx context.Context, next NextFn) (*actions.ActionResult, error) {
-	// When telemetry is disabled for an action just continue the middleware chain
-	if m.buildOptions != nil && m.buildOptions.DisableTelemetry {
-		return next(ctx)
-	}
-
 	// Note: CommandPath is constructed using the Use member on each command up to the root.
 	// It does not contain user input, and is safe for telemetry emission.
 	spanCtx, span := telemetry.GetTracer().Start(ctx, events.GetCommandEventName(m.options.Name))

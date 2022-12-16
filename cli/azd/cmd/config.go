@@ -20,7 +20,7 @@ var userConfigPath string
 // Setup account command category
 func configCmd(rootOptions *internal.GlobalCommandOptions) *cobra.Command {
 	userConfigDir, err := config.GetUserConfigDir()
-	if rootOptions.PlatformAgnosticHelp {
+	if rootOptions.GenerateStaticHelp {
 		userConfigPath = heredoc.Doc(`the configuration path. 
 
 		The default value of the config directory is: 
@@ -42,7 +42,7 @@ func configCmd(rootOptions *internal.GlobalCommandOptions) *cobra.Command {
 	}
 
 	var helpConfigPaths string
-	if rootOptions.PlatformAgnosticHelp {
+	if rootOptions.GenerateStaticHelp {
 		helpConfigPaths = heredoc.Doc(`
 		The default value of the config directory is: 
 		* $HOME/.azd on Linux and MacOS

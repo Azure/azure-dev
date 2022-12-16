@@ -46,8 +46,8 @@ const directoryMode fs.FileMode = 0755
 func main() {
 	fmt.Println("Generating documentation")
 
-	// platformAgnosticHelp is true to inform commands to use generate help text
-	// instead of generating help text that includes execution-specific state.
+	// staticHelp is true to inform commands to use generate help text instead
+	// of generating help text that includes execution-specific state.
 	cmd := azd.NewRootCmd(true)
 
 	basename := strings.Replace(cmd.CommandPath(), " ", "_", -1) + ".md"
@@ -118,15 +118,6 @@ func addCodeFencesToSampleCommands(s string) string {
 
 var precedingDollarRegexp = regexp.MustCompile(`^([\s]*)\$ (.*)$`)
 
-// Formats a command line by removing the dollar sign at the beginning of the
-// command while preserving any leading whitespace. line should be a string with
-// no newline "\n" characters.
-// Example:
-// `$ command --with someParameters` -> `command --with someParameters`
-// `  $ command --with someParameters` -> `  command --with someParameters`
-// No change if there are non-whitespace characters before the $
-// `  some string with a $ in the middle` -> `  some string with a $ in the middle`
-// `hello world` -> `hello world`
 func formatCommandLine(line string) string {
 	return precedingDollarRegexp.ReplaceAllString(line, "$1$2")
 }

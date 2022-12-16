@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
+	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/spf13/pflag"
 	"github.com/stretchr/testify/assert"
 )
@@ -33,6 +34,7 @@ func TestPipelineConfigCmd(t *testing.T) {
 
 func TestSetupFlags(t *testing.T) {
 	command := newPipelineConfigCmd()
+	_ = newPipelineConfigFlags(command, &internal.GlobalCommandOptions{})
 	flagName := "principal-name"
 	principalNameFlag := command.LocalFlags().Lookup(flagName)
 	assert.NotEqual(t, (*pflag.Flag)(nil), principalNameFlag)

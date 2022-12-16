@@ -25,6 +25,7 @@ import (
 func NewRootCmd(staticHelp bool) *cobra.Command {
 	prevDir := ""
 	opts := &internal.GlobalCommandOptions{GenerateStaticHelp: staticHelp}
+	opts.EnableTelemetry = telemetry.IsTelemetryEnabled()
 
 	rootCmd := &cobra.Command{
 		Use:   "azd",
@@ -97,8 +98,6 @@ For more information, visit the Azure Developer CLI Dev Hub: https://aka.ms/azur
 			return opts
 		},
 	})
-
-	opts.EnableTelemetry = telemetry.IsTelemetryEnabled()
 
 	configActions(root)
 	envActions(root)

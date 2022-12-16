@@ -30,7 +30,8 @@ func telemetryActions(root *actions.ActionDescriptor) *actions.ActionDescriptor 
 			Long:   "Upload telemetry",
 			Hidden: true,
 		},
-		ActionResolver: newUploadAction,
+		ActionResolver:   newUploadAction,
+		DisableTelemetry: true,
 	})
 
 	return group

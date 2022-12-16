@@ -21,10 +21,9 @@ import (
 )
 
 type authTokenFlags struct {
-	outputFormat string
 	tenantID     string
-	scopes       []string
-	global       *internal.GlobalCommandOptions
+	scopes []string
+	global *internal.GlobalCommandOptions
 }
 
 func newAuthTokenFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *authTokenFlags {
@@ -43,7 +42,6 @@ func newAuthTokenCmd() *cobra.Command {
 
 func (f *authTokenFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
 	f.global = global
-	output.AddOutputFlag(local, &f.outputFormat, []output.Format{output.JsonFormat}, output.NoneFormat)
 	local.StringArrayVar(&f.scopes, "scope", nil, "The scope to use when requesting an access token")
 	local.StringVar(&f.tenantID, "tenant-id", "", "The tenant id to use when requesting an access token.")
 }

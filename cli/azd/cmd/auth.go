@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
+	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/spf13/cobra"
 )
 
@@ -16,6 +17,8 @@ func authActions(root *actions.ActionDescriptor) *actions.ActionDescriptor {
 		Command:        newAuthTokenCmd(),
 		FlagsResolver:  newAuthTokenFlags,
 		ActionResolver: newAuthTokenAction,
+		OutputFormats:  []output.Format{output.JsonFormat},
+		DefaultFormat:  output.NoneFormat,
 	})
 
 	return group

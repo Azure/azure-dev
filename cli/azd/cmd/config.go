@@ -103,7 +103,7 @@ func configActions(root *actions.ActionDescriptor) *actions.ActionDescriptor {
 			Long:  `Sets a configuration in ` + userConfigPath + `.`,
 			Args:  cobra.ExactArgs(2),
 			Example: `$ azd config set defaults.subscription <yourSubscriptionID>
-	$ azd config set defaults.location eastus`,
+$ azd config set defaults.location eastus`,
 		},
 		ActionResolver: newConfigSetAction,
 	})

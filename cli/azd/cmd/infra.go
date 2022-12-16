@@ -5,6 +5,7 @@ package cmd
 
 import (
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
+	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/spf13/cobra"
 )
 
@@ -19,6 +20,8 @@ func infraActions(root *actions.ActionDescriptor) *actions.ActionDescriptor {
 		Command:        newInfraCreateCmd(),
 		FlagsResolver:  newInfraCreateFlags,
 		ActionResolver: newInfraCreateAction,
+		OutputFormats:  []output.Format{output.JsonFormat, output.NoneFormat},
+		DefaultFormat:  output.NoneFormat,
 	})
 
 	group.Add("delete", &actions.ActionDescriptorOptions{

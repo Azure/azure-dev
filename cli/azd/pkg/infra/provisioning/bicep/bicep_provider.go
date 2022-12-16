@@ -970,8 +970,6 @@ func isValueAssignableToParameterType(paramType ParameterType, value any) bool {
 	default:
 		panic(fmt.Sprintf("unexpected type: %v", paramType))
 	}
-
-	return false
 }
 
 // NewBicepProvider creates a new instance of a Bicep Infra provider

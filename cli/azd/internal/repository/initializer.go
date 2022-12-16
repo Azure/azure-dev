@@ -1,3 +1,4 @@
+// Package repository provides handling of files in the user's code repository.
 package repository
 
 import (

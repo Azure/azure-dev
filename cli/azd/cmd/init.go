@@ -4,14 +4,11 @@
 package cmd
 
 import (
-	"bufio"
 	"context"
 	"errors"
 	"fmt"
-	"io/fs"
 	"log"
 	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
@@ -22,15 +19,12 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
-	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
-	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/pkg/templates"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/git"
-	"github.com/otiai10/copy"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
@@ -203,10 +197,13 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 
 		err = i.repoInitializer.Initialize(ctx, templateUrl, i.flags.templateBranch)
 		if err != nil {
-			return nil, fmt.Errorf("cloning from template repository: %s", err)
+			return nil, fmt.Errorf("init from template repository: %s", err)
 		}
 	} else {
 		err = i.repoInitializer.InitializeEmpty(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("init empty repository: %s", err)
+		}
 	}
 
 	envName, err := i.azdCtx.GetDefaultEnvironmentName()
@@ -251,138 +248,4 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 			FollowUp: fmt.Sprintf("You can view the template code in your directory: %s", output.WithLinkFormat("%s", wd)),
 		},
 	}, nil
-}
-
-func (i *initAction) initializeRepo(ctx context.Context, templateUrl string, staging string) error {
-	target := i.azdCtx.ProjectDirectory()
-
-	err := i.gitCli.FetchCode(ctx, templateUrl, i.flags.templateBranch, staging)
-	if err != nil {
-		return fmt.Errorf("\nfetching template: %w", err)
-	}
-
-	log.Printf(
-		"template init, checking for duplicates. source: %s target: %s",
-		staging,
-		target,
-	)
-
-	duplicateFiles, err := determineDuplicates(staging, target)
-	if err != nil {
-		return fmt.Errorf("checking for overwrites: %s", err)
-	}
-
-	if len(duplicateFiles) > 0 {
-		fmt.Fprintf(
-			i.console.Handles().Stdout,
-			"warning: the following files will be overwritten with the versions from the template: \n")
-		for _, file := range duplicateFiles {
-			fmt.Fprintf(i.console.Handles().Stdout, " * %s\n", file)
-		}
-
-		overwrite, err := i.console.Confirm(ctx, input.ConsoleOptions{
-			Message:      "Overwrite files with versions from template?",
-			DefaultValue: false,
-		})
-
-		if err != nil {
-			return fmt.Errorf("prompting to overwrite: %w", err)
-		}
-
-		if !overwrite {
-			return errors.New("confirmation declined")
-		}
-	}
-
-	if err := copy.Copy(staging, target); err != nil {
-		return fmt.Errorf("copying template contents: %w", err)
-	}
-
-	err = i.writeAzdAssets(ctx)
-	if err != nil {
-		return err
-	}
-
-	return nil
-}
-
-func (i *initAction) writeAzdAssets(ctx context.Context) error {
-	// Check to see if `azure.yaml` exists, and if it doesn't, create it.
-	if _, err := os.Stat(i.azdCtx.ProjectPath()); errors.Is(err, os.ErrNotExist) {
-		stepMessage := fmt.Sprintf("Creating a new %s file.", azdcontext.ProjectFileName)
-
-		i.console.ShowSpinner(ctx, stepMessage, input.Step)
-		_, err = project.NewProject(i.azdCtx.ProjectPath(), i.azdCtx.GetDefaultProjectName())
-		i.console.StopSpinner(ctx, stepMessage, input.GetStepResultFormat(err))
-
-		if err != nil {
-			return fmt.Errorf("failed to create a project file: %w", err)
-		}
-	}
-
-	//create .azure when running azd init
-	err := os.MkdirAll(
-		filepath.Join(i.azdCtx.ProjectDirectory(), azdcontext.EnvironmentDirectoryName),
-		osutil.PermissionDirectory,
-	)
-	if err != nil {
-		return fmt.Errorf("failed to create a directory: %w", err)
-	}
-
-	//create .gitignore or open existing .gitignore file, and contains .azure
-	gitignoreFile, err := os.OpenFile(
-		filepath.Join(i.azdCtx.ProjectDirectory(), ".gitignore"),
-		os.O_APPEND|os.O_RDWR|os.O_CREATE,
-		osutil.PermissionFile,
-	)
-	if err != nil {
-		return fmt.Errorf("fail to create or open .gitignore: %w", err)
-	}
-	defer gitignoreFile.Close()
-
-	writeGitignoreFile := true
-	//bufio scanner splits on new lines by default
-	scanner := bufio.NewScanner(gitignoreFile)
-	for scanner.Scan() {
-		if azdcontext.EnvironmentDirectoryName == scanner.Text() {
-			writeGitignoreFile = false
-		}
-	}
-
-	if writeGitignoreFile {
-		newLine := osutil.GetNewLineSeparator()
-		_, err := gitignoreFile.WriteString(newLine + azdcontext.EnvironmentDirectoryName + newLine)
-		if err != nil {
-			return fmt.Errorf("fail to write '%s' in .gitignore: %w", azdcontext.EnvironmentDirectoryName, err)
-		}
-	}
-
-	return nil
-}
-
-func determineDuplicates(source string, target string) ([]string, error) {
-	var duplicateFiles []string
-	if err := filepath.WalkDir(source, func(path string, d fs.DirEntry, walkErr error) error {
-		if walkErr != nil {
-			return walkErr
-		}
-
-		if d.IsDir() {
-			return nil
-		}
-
-		partial, err := filepath.Rel(source, path)
-		if err != nil {
-			return fmt.Errorf("computing relative path: %w", err)
-		}
-
-		if _, err := os.Stat(filepath.Join(target, partial)); err == nil {
-			duplicateFiles = append(duplicateFiles, partial)
-		}
-
-		return nil
-	}); err != nil {
-		return nil, fmt.Errorf("enumerating template files: %w", err)
-	}
-	return duplicateFiles, nil
 }

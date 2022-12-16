@@ -1,5 +1,5 @@
 ARG VARIANT=bullseye
-FROM mcr.microsoft.com/vscode/devcontainers/base:0-${VARIANT}
+FROM --platform=amd64 mcr.microsoft.com/vscode/devcontainers/base:0-${VARIANT}
 RUN curl https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor > microsoft.gpg \
     && mv microsoft.gpg /etc/apt/trusted.gpg.d/microsoft.gpg \
     && sh -c 'echo "deb [arch=amd64] https://packages.microsoft.com/debian/$(lsb_release -rs | cut -d'.' -f 1)/prod $(lsb_release -cs) main" > /etc/apt/sources.list.d/dotnetdev.list' \

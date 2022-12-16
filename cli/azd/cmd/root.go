@@ -23,9 +23,9 @@ import (
 	"go.opentelemetry.io/otel/codes"
 )
 
-func NewRootCmd() *cobra.Command {
+func NewRootCmd(staticHelp bool) *cobra.Command {
 	prevDir := ""
-	opts := &internal.GlobalCommandOptions{}
+	opts := &internal.GlobalCommandOptions{GenerateStaticHelp: staticHelp}
 
 	cmd := &cobra.Command{
 		Use:   "azd",

@@ -15,7 +15,7 @@ import (
 // For Pwsh,
 // $env:UPDATE_SNAPSHOTS='true'; go test ./cmd; $env:UPDATE_SNAPSHOTS=$null
 func TestUsage(t *testing.T) {
-	root := NewRootCmd()
+	root := NewRootCmd(false)
 
 	usageSnapshot(t, root)
 }

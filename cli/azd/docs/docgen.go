@@ -46,7 +46,9 @@ const directoryMode fs.FileMode = 0755
 func main() {
 	fmt.Println("Generating documentation")
 
-	cmd := azd.NewRootCmd()
+	// staticHelp is true to inform commands to use generate help text instead
+	// of generating help text that includes execution-specific state.
+	cmd := azd.NewRootCmd(true)
 
 	basename := strings.Replace(cmd.CommandPath(), " ", "_", -1) + ".md"
 	filename := filepath.Join("./md", basename)
@@ -101,6 +103,9 @@ func addCodeFencesToSampleCommands(s string) string {
 				newLines = append(newLines, line)
 			}
 		} else {
+			if inBlock && strings.HasPrefix(line, "\t$") {
+				line = formatCommandLine(line)
+			}
 			newLines = append(newLines, line)
 		}
 	}
@@ -109,6 +114,12 @@ func addCodeFencesToSampleCommands(s string) string {
 	}
 
 	return strings.Join(newLines, "\n")
+}
+
+var precedingDollarRegexp = regexp.MustCompile(`^([\s]*)\$ (.*)$`)
+
+func formatCommandLine(line string) string {
+	return precedingDollarRegexp.ReplaceAllString(line, "$1$2")
 }
 
 // genMarkdownFile writes the help document for a single command (and all sub commands) to an
@@ -196,8 +207,12 @@ func genMarkdownCustom(cmd *cobra.Command, w io.Writer, linkHandler func(string)
 	}
 
 	if len(cmd.Example) > 0 {
-		buf.WriteString("### Examples\n\n")
-		buf.WriteString(fmt.Sprintf("```\n%s\n```\n\n", cmd.Example))
+		buf.WriteString("### Examples\n\n```\n")
+		lines := strings.Split(cmd.Example, "\n")
+		for _, line := range lines {
+			buf.WriteString(formatCommandLine(line) + "\n")
+		}
+		buf.WriteString("```\n\n")
 	}
 
 	if err := printOptions(buf, cmd, name); err != nil {

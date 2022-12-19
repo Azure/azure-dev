@@ -30,6 +30,8 @@ stages:
   - stage: BuildAndTest
     jobs:
       - job: BuildCLI
+        # TODO: revert condition before merge
+        condition: false
         strategy:
           matrix:
             Windows:
@@ -680,7 +682,9 @@ stages:
             displayName: Test install script (cmd)
 
   - stage: PublishCLI
-    dependsOn: Sign
+    # TODO: Revert back to depending on Sign
+    # dependsOn: Sign
+    dependsOn: BuildAndTest
     condition: >-
       and(
         succeeded(),
@@ -739,7 +743,7 @@ stages:
 
                 - pwsh: |
                     git clone https://github.com/azure-sdk/azure-dev-docs-pr/
-                    Get-ChildItem -Path azure-dev-docs-pr
+                    Get-ChildItem -Path azure-dev-docs-pr -Recurse | Foreach-Object { $_.FullName }
                     Copy-Item docs/azd.md azure-dev-docs-pr/articles/azure-developer-cli/reference.md -Force
                   displayName: Clone azure-dev-docs-pr and update reference.md
                     

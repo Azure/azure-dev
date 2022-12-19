@@ -192,8 +192,10 @@ steps:
         artifact: docs
         path: docs
 
+    - template: /eng/pipelines/templates/steps/set-git-credentials.yml
+
     - pwsh: |
-        git clone https://github.com/azure-sdk/azure-dev-docs/
+        git clone https://github.com/azure-sdk/azure-dev-docs-pr/
         Copy-Item docs/azd.md azure-dev-docs/articles/azure-developer-cli/reference.md -Force
       displayName: Clone azure-dev-docs and update reference.md
         

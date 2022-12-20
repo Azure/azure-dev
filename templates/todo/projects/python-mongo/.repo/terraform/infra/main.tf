@@ -137,7 +137,7 @@ module "api" {
 # Deploy app service apim
 # ------------------------------------------------------------------------------------------------------
 module "apim"  {
-  count                   = useAPIM ? true : false
+  count                   = var.useAPIM ? true : false
   source                  = "../../../../../../common/infra/terraform/core/host/apimservice"
   location                = var.location
   rg_name                 = azurerm_resource_group.name   
@@ -150,7 +150,7 @@ module "apim"  {
 # Deploy app service apim-api
 # ------------------------------------------------------------------------------------------------------
 module "apimApi" {
-  count                   = useAPIM ? true : false
+  count                   = var.useAPIM ? true : false
   source = "../../../../../../common/infra/terraform/core/host/apim-apiservice"
   location                = var.location
   rg_name                 = azurerm_resource_group.name   
@@ -160,7 +160,7 @@ module "apimApi" {
   apiDescription          = "This is a simple Todo API"
   apiPath                 = "todo"
   app_settings = {
-    "WEB_ENDPOINT"  = module.web.output.URI
-    "API_ENDPOINT"  = module.api.output.URI
+    "WEB_ENDPOINT"  = module.web.URI
+    "API_ENDPOINT"  = module.api.URI
   }
 }

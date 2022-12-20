@@ -13,31 +13,9 @@ variable "service_name" {
   type        = string
 }
 
-variable "app_settings" {
-  description = "A list of app settings pairs to be assigned to the app service"
-  type        = map(string)
-}
-
-variable "identity" {
-  description = "A list of application identity"
-  type        = list(any)
-  default     = []
-}
-
 variable "tags" {
   description = "A list of tags used for deployed services."
   type        = map(string)
-}
-
-variable "resource_token" {
-  description = "A suffix string to centrally mitigate resource name collisions."
-  type        = string
-}
-
-variable "python_version" {
-  description = "the application stack python version to set for the app service."
-  type        = string
-  default     = "3.8"
 }
 
 variable "sku" {
@@ -46,7 +24,7 @@ variable "sku" {
   default     = "Consumption"
 }
 
-variable "applicationInsightsName" {
+variable "application_insights_name" {
   description = "Azure Application Insights Name."
   type        = string
 }
@@ -61,13 +39,13 @@ variable "name" {
   type = string
 }
 
-variable "publisherEmail" {
+variable "publisher_email" {
   description = "The email address of the owner of the service."
   type        = string
   default     = "noreply@microsoft.com"
 }
 
-variable "publisherName" {
+variable "publisher_name" {
   description = "The name of the owner of the service"
   type = string
   default = "n/a"

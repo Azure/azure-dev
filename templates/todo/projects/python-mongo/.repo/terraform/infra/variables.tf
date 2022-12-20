@@ -13,3 +13,9 @@ variable "principal_id" {
   type        = string
   default     = ""
 }
+
+variable "useAPIM" {
+  description = "When true, use Azure API Management to mediate the calls between the Web frontend and the backend API."
+  type        = string
+  default     = "false"
+}

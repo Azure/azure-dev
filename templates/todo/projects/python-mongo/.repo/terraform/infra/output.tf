@@ -33,3 +33,11 @@ output "REACT_APP_APPLICATIONINSIGHTS_CONNECTION_STRING" {
   sensitive = true
 }
 
+output "REACT_APP_API_BASE_URL" {
+  value = (useAPIM == "true" ) ? module.apimApi.output.SERVICE_API_URI : module.api.outputs.SERVICE_API_URI
+}
+
+output "USE_APIM" {
+  value = useAPIM
+}
+

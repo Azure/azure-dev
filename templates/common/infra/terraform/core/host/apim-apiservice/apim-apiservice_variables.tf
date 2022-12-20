@@ -77,7 +77,4 @@ variable "API_ENDPOINT" {
   type        = string
 }
 
-variable "apiPolicyContent" {
-  description = ""
-  type        = 
-}
+# var apiPolicyContent = replace(loadTextContent('../core/gateway/apim-api-policy.xml'), '{0}', webFrontendUrl)

@@ -56,3 +56,19 @@ variable "skuCount" {
   type        = list(0,1,2) 
   default     = "0"
 }
+
+variable "name" {
+  type = string
+}
+
+variable "publisherEmail" {
+  description = "The email address of the owner of the service."
+  type        = string
+  default     = "noreply@microsoft.com"
+}
+
+variable "publisherName" {
+  description = "The name of the owner of the service"
+  type = string
+  default = "n/a"
+}

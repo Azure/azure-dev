@@ -131,11 +131,11 @@ resource apiDiagnostics 'Microsoft.ApiManagement/service/apis/diagnostics@2021-1
   }
 }
 
-resource apimService 'Microsoft.ApiManagement/service@2021-08-01' existing = {
-  name: name
+resource "apimService" {
+  name = name
 }
 
-resource apimLogger 'Microsoft.ApiManagement/service/loggers@2021-12-01-preview' existing = {
-  name: 'app-insights-logger'
-  parent: apimService
+resource "apimLogger" {
+  name   = "app-insights-logger"
+  parent = apimService
 }

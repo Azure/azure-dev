@@ -16,7 +16,6 @@ variable "apiDisplayName" {
 
   description = "The Display Name of the API"
   type        = string
-  default     = length()
 }
 
 variable "apiPath" {

@@ -142,7 +142,7 @@ module "apim"  {
   location                = var.location
   rg_name                 = azurerm_resource_group.rg.name
   tags                    = merge(local.tags, { "azd-service-name" : var.environment_name })
-  applicationInsightsName = module.applicationinsights.name
+  applicationInsightsName = local.resource_token
   sku                     = "Consumption"
 } 
 

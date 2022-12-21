@@ -13,10 +13,13 @@ terraform {
 
 data "azurerm_api_management" "myapim"{
   name = var.name
+  resource_group_name = var.rg_name
 }
 
-data "azurerm_api_management_logger" "mylogger"{
+resource "azurerm_api_management_logger" "logger"{
   name   = "app-insights-logger"
+  resource_group_name = var.rg_name
+  api_management_name = data.azurerm_api_management.myapim.name
 }
 
 # ------------------------------------------------------------------------------------------------------
@@ -24,12 +27,12 @@ data "azurerm_api_management_logger" "mylogger"{
 # ------------------------------------------------------------------------------------------------------
 resource "azurerm_api_management_api" "api" {
   name   = var.apiName
-  resource_group_name  = var.rg_name
-  api_management_name  = azurerm_api_management.myapim.name
-  revision            = "1"
-  display_name = var.apiDisplayName
-  path = var.apiPath
-  protocols = [ "https"]
+  resource_group_name   = var.rg_name
+  api_management_name   = data.azurerm_api_management.myapim.name
+  revision              = "1"
+  display_name          = var.apiDisplayName
+  path                  = var.apiPath
+  protocols             = [ "https"]
 
   import {
     content_format = "openapi"
@@ -50,7 +53,7 @@ resource "azurerm_api_management_api_diagnostic" "diagnostics"{
   resource_group_name = var.rg_name
   api_management_name = azurerm_api_management_api.api.api_management_name
   api_name = azurerm_api_management_api.api.name
-  api_management_logger_id = azurerm_api_management_logger.mylogger.id
+  api_management_logger_id = azurerm_api_management_logger.logger.id
 
   sampling_percentage       = 100.0
   always_log_errors = true

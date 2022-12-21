@@ -26,7 +26,7 @@ variable "application_insights_name" {
 
 variable "skuCount" {
   description = "The instance size of this API Management service. @allowed([ 0, 1, 2 ])"
-  type        = list(0,1,2) 
+  type        = string
   default     = "0"
 }
 

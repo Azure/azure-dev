@@ -45,7 +45,7 @@ resource "azurerm_api_management_api_policy" "policies"{
   api_management_name   = azurerm_api_management_api.api.api_management_name
   resource_group_name   = var.rg_name
 
-  xml_content           = "../../../../../../common/infra/terraform/core/gateway/apim-api-policy.xml"
+  xml_content           = "../../../../../../common/infra/terraform/core/gateway/apim/apim-api-policy.xml"
 }
 
 resource "azurerm_api_management_api_diagnostic" "diagnostics"{

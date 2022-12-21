@@ -139,7 +139,7 @@ module "api" {
 module "apim"  {
   count                     = "${var.useAPIM == true ? 1 : 0}"
   source                    = "../../../../../../common/infra/terraform/core/gateway/apim"
-  name                      = "apim-deployment"
+  name                      = "apim-${local.resource_token}"
   location                  = var.location
   rg_name                   = azurerm_resource_group.rg.name
   tags                      = merge(local.tags, { "azd-service-name" : var.environment_name })
@@ -153,7 +153,7 @@ module "apim"  {
 module "apimApi" {
   count                     = "${var.useAPIM == true ? 1 : 0}"
   source                    = "../../../../../../common/infra/terraform/core/gateway/apim-api"
-  name                      = "apim-api-deployment"
+  name                      = "apim-${local.resource_token}"
   rg_name                   = azurerm_resource_group.rg.name
   apiName                   = "todo-api"
   apiDisplayName            = "Simple Todo API"

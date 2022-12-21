@@ -11,6 +11,9 @@ terraform {
   }
 }
 
+data "azurerm_application_insights" "myappinsights"{
+  name = var.application_insights_name
+}
 # ------------------------------------------------------------------------------------------------------
 # Deploy api management service
 # ------------------------------------------------------------------------------------------------------
@@ -36,16 +39,6 @@ resource "azurerm_api_management_logger" "logger" {
   resource_group_name = var.rg_name
   
   application_insights {
-    instrumentation_key = azurerm_application_insights.ai.instrumentation_key
+    instrumentation_key = azurerm_application_insights.myappinsights.instrumentation_key
   }
 }
-
-# Create Application Insights
-resource "azurerm_application_insights" "ai" {
-  name                = var.application_insights_name
-  location            = var.location
-  resource_group_name = var.rg_name
-  application_type    = var.service_name
-  tags                = var.tags
-}
-

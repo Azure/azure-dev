@@ -8,11 +8,6 @@ variable "rg_name" {
   type        = string
 }
 
-variable "service_name" {
-  description = "A name to reflect the type of the app service e.g: web, api."
-  type        = string
-}
-
 variable "tags" {
   description = "A list of tags used for deployed services."
   type        = map(string)

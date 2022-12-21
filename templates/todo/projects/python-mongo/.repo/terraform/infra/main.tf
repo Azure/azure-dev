@@ -137,30 +137,23 @@ module "api" {
 # Deploy app service apim
 # ------------------------------------------------------------------------------------------------------
 module "apim"  {
-  count                   = var.useAPIM ? true : false
-  source                  = "../../../../../../common/infra/terraform/core/host/apimservice"
+  source                  = "../../../../../../common/infra/terraform/core/gateway"
+  name                    = "apim-deployment"
   location                = var.location
-  rg_name                 = azurerm_resource_group.name   
-  resource_token          = local.resource_token
+  rg_name                 = azurerm_resource_group.rg.name
   tags                    = merge(local.tags, { "azd-service-name" : var.environment_name })
   applicationInsightsName = module.applicationinsights.name
+  sku                     = "Consumption"
 } 
 
 # ------------------------------------------------------------------------------------------------------
 # Deploy app service apim-api
 # ------------------------------------------------------------------------------------------------------
 module "apimApi" {
-  count                   = var.useAPIM ? true : false
-  source = "../../../../../../common/infra/terraform/core/host/apim-apiservice"
-  location                = var.location
-  rg_name                 = azurerm_resource_group.name   
-  resource_token          = local.resource_token
-  service_name            = "todo-api"
+  source                  = "../../../../../common/infra/terraform/app"
+  name                    = "apim-api-deployment"
+  rg_name                 = azurerm_resource_group.rg.name
+  apiName                 = "todo-api"
   apiDisplayName          = "Simple Todo API"
-  apiDescription          = "This is a simple Todo API"
   apiPath                 = "todo"
-  app_settings = {
-    "WEB_ENDPOINT"  = module.web.URI
-    "API_ENDPOINT"  = module.api.URI
-  }
 }

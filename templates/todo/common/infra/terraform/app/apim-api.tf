@@ -11,80 +11,86 @@ terraform {
   }
 }
 
+data "azurerm_api_management" "myapim"{
+  name = var.name
+}
+
+data "azurerm_api_management_logger" "mylogger"{
+  name   = "app-insights-logger"
+}
+
 # ------------------------------------------------------------------------------------------------------
 # Deploy apim-api service 
 # ------------------------------------------------------------------------------------------------------
-resource "restApi" "api" {
-  name   = apiName
-  parent = apimService
-  properties{
-    description          = apiDescription
-    displayName          = apiDisplayName
-    path                 = apiPath
-    protocols            = [ "https"]
-    subscriptionRequired = false
-    type                 = "http"
-    format               = "openapi"
-    serviceUrl           = API_ENDPOINT
-    value                = loadTextContent("../../src/api/openapi.yaml")
+resource "azurerm_api_management_api" "api" {
+  name   = var.apiName
+  resource_group_name  = var.rg_name
+  api_management_name  = azurerm_api_management.myapim.name
+  revision            = "1"
+  display_name = var.apiDisplayName
+  path = var.apiPath
+  protocols = [ "https"]
+
+  import {
+    content_format = "openapi"
+    content_value  = file("../../../../api/common/openapi.yaml")
   }
 }
 
-resource "apiPolicy" "policies"{
-  name   = "policy"
-  parent = "restApi"
-  properties {
-    format = "rawxml"
-    value  = apiPolicyContent
+resource "azurerm_api_management_api_policy" "policies"{
+  api_name = azurerm_api_management_api.api.name
+  api_management_name   = azurerm_api_management_api.api.api_management_name
+  resource_group_name  = var.rg_name
+
+  xml_content = file("../../../../../common/infra/terraform/core/gateway/apim-api-policy.xml")
+}
+
+resource "azurerm_api_management_api_diagnostic" "diagnostics"{
+  identifier   = "applicationinsights"
+  resource_group_name = var.rg_name
+  api_management_name = azurerm_api_management_api.api.api_management_name
+  api_name = azurerm_api_management_api.api.name
+  api_management_logger_id = azurerm_api_management_logger.mylogger.id
+
+  sampling_percentage       = 100.0
+  always_log_errors = true
+  log_client_ip  = true
+  verbosity                 = "verbose"
+  http_correlation_protocol = "W3C"
+
+  frontend_request {
+    body_bytes = 1024
+    headers_to_log = [
+      "content-type",
+      "accept",
+      "origin",
+    ]
   }
-}
 
-resource "apiDiagnostics" "diagnostics"{
-  name   = "applicationinsights"
-  parent = restApi
-  properties {
-    alwaysLog = "llErrors"
-    backend {
-      request {
-        body {
-          bytes = 1024
-        }
-      }
-      response {
-        body {
-          bytes = 1024
-        }
-      }
-    }
-    frontend {
-      request {
-        body {
-          bytes = 1024
-        }
-      }
-      response {
-        body {
-          bytes = 1024
-        }
-      }
-    }
-    httpCorrelationProtocol = "W3C"
-    logClientIp             = true
-    loggerId                = apimLogger.id
-    metrics                 = true
-    sampling {
-      percentage = 100
-      samplingType = "fixed"
-    }
-    verbosity = "verbose"
+  frontend_response {
+    body_bytes = 1024
+    headers_to_log = [
+      "content-type",
+      "content-length",
+      "origin",
+    ]
   }
-}
 
-resource "apimService" {
-  name = name
-}
+  backend_request {
+    body_bytes = 32
+    headers_to_log = [
+      "content-type",
+      "accept",
+      "origin",
+    ]
+  }
 
-resource "apimLogger" {
-  name   = "app-insights-logger"
-  parent = apimService
+  backend_response {
+    body_bytes = 32
+    headers_to_log = [
+      "content-type",
+      "content-length",
+      "origin",
+    ]
+  }
 }

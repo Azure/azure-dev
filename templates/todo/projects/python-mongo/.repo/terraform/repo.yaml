@@ -96,7 +96,7 @@ repo:
         patterns:
           - "apim-api.tf"
 
-      - from: ../../../../../common/infra/terraform/core/gateway/apim-api-policy.xml
+      - from: ../../../../../../common/infra/terraform/core/gateway/apim-api-policy.xml
         to: ./modules/apim-api-policy.xml
         patterns:
           - "apim-api.tf"

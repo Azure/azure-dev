@@ -16,7 +16,7 @@ output "REACT_APP_WEB_BASE_URL" {
 }
 
 output "REACT_APP_API_BASE_URL" {
-  value = (var.useAPIM == "true" ) ? module.apimApi. : module.api.URI
+  value = (var.useAPIM == "true" ) ? module.apimApi.SERVICE_API_URI : module.api.URI
 }
 
 output "AZURE_LOCATION" {

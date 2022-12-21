@@ -35,9 +35,9 @@ resource "azurerm_api_management" "apim" {
 
 # Create Logger
 resource "azurerm_api_management_logger" "logger" {
-  name   = "app-insights-logger"
-  api_management_name = azurerm_api_management.apim.name
-  resource_group_name = var.rg_name
+  name                  = "app-insights-logger"
+  api_management_name   = azurerm_api_management.apim.name
+  resource_group_name   = var.rg_name
   
   application_insights {
     instrumentation_key = data.azurerm_application_insights.myappinsights.instrumentation_key

@@ -56,6 +56,11 @@ repo:
         patterns:
           - "**/*.tf"
 
+      - from: ../../../../../../common/infra/terraform/core/gateway/apim-api
+        to: ./modules/apim-api
+        patterns:
+          - "**/*.tf"
+
       - from: ../../api/python
         to: ./src/api
         patterns:
@@ -85,11 +90,6 @@ repo:
         to: "todo-python-mongo-terraform"
         patterns:
           - "README.md"
-      
-      - from: ../../../../api/common/openapi.yaml
-        to: ../../src/api/openapi.yaml
-        patterns:
-          - "**/*.tf"
 
   assets:
     # Common assets
@@ -150,7 +150,10 @@ repo:
     - from: ../../../../../common/infra/terraform/core/host/appservice/appservicepython
       to: ./infra/modules/appservicepython
 
-    - from: ../../../../../common/infra/terraform/app/apim-api
+    - from: ../../../../../common/infra/terraform/core/gateway/apim
+      to: ./infra/modules/apim
+
+    - from: ../../../../../common/infra/terraform/core/gateway/apim-api
       to: ./infra/modules/apim-api
 
     # .devcontainer common (devcontainer.json)

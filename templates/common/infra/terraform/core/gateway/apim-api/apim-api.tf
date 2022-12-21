@@ -36,7 +36,7 @@ resource "azurerm_api_management_api" "api" {
 
   import {
     content_format      = "openapi"
-    content_value       = file("../../../../api/common/openapi.yaml")
+    content_value       = "../../../../api/common/openapi.yaml"
   }
 }
 
@@ -45,7 +45,7 @@ resource "azurerm_api_management_api_policy" "policies"{
   api_management_name   = azurerm_api_management_api.api.api_management_name
   resource_group_name   = var.rg_name
 
-  xml_content           = file("../../../../../common/infra/terraform/core/gateway/apim-api-policy.xml")
+  xml_content           = "../../../../../common/infra/terraform/core/gateway/apim-api-policy.xml"
 }
 
 resource "azurerm_api_management_api_diagnostic" "diagnostics"{

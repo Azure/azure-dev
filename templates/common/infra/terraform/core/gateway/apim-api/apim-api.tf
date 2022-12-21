@@ -12,7 +12,7 @@ terraform {
 }
 
 data "azurerm_api_management" "myapim"{
-  name = var.name
+  name                  = var.name
   resource_group_name   = var.rg_name
 }
 
@@ -26,7 +26,7 @@ resource "azurerm_api_management_logger" "logger"{
 # Deploy apim-api service 
 # ------------------------------------------------------------------------------------------------------
 resource "azurerm_api_management_api" "api" {
-  name   = var.apiName
+  name                  = var.apiName
   resource_group_name   = var.rg_name
   api_management_name   = data.azurerm_api_management.myapim.name
   revision              = "1"
@@ -45,7 +45,7 @@ resource "azurerm_api_management_api_policy" "policies"{
   api_management_name   = azurerm_api_management_api.api.api_management_name
   resource_group_name   = var.rg_name
 
-  xml_content           = "../../../../../common/infra/terraform/core/gateway/apim-api-policy.xml"
+  xml_content           = "../../../../../../common/infra/terraform/core/gateway/apim-api-policy.xml"
 }
 
 resource "azurerm_api_management_api_diagnostic" "diagnostics"{

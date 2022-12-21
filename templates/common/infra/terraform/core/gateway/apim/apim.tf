@@ -12,7 +12,7 @@ terraform {
 }
 
 data "azurerm_application_insights" "myappinsights"{
-  name = var.application_insights_name
+  name                = var.application_insights_name
   resource_group_name = var.rg_name
 }
 # ------------------------------------------------------------------------------------------------------

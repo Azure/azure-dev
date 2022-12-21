@@ -137,12 +137,13 @@ module "api" {
 # Deploy app service apim
 # ------------------------------------------------------------------------------------------------------
 module "apim"  {
+  count                     = "${var.useAPIM == true ? 1 : 0}"
   source                    = "../../../../../../common/infra/terraform/core/gateway/apim"
   name                      = "apim-deployment"
   location                  = var.location
   rg_name                   = azurerm_resource_group.rg.name
   tags                      = merge(local.tags, { "azd-service-name" : var.environment_name })
-  application_insights_name = local.resource_token
+  application_insights_name = module.applicationinsights.APPLICATIONINSIGHTS_NAME//local.resource_token
   sku                       = "Consumption"
 } 
 
@@ -150,6 +151,7 @@ module "apim"  {
 # Deploy app service apim-api
 # ------------------------------------------------------------------------------------------------------
 module "apimApi" {
+  count                     = "${var.useAPIM == true ? 1 : 0}"
   source                    = "../../../../../../common/infra/terraform/core/gateway/apim-api"
   name                      = "apim-api-deployment"
   rg_name                   = azurerm_resource_group.rg.name

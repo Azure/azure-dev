@@ -150,7 +150,7 @@ module "apim"  {
 # Deploy app service apim-api
 # ------------------------------------------------------------------------------------------------------
 module "apimApi" {
-  source                  = "../../../../../common/infra/terraform/app/apim-api"
+  source                  = "../../../../../../common/infra/terraform/core/gateway/apim-api"
   name                    = "apim-api-deployment"
   rg_name                 = azurerm_resource_group.rg.name
   apiName                 = "todo-api"

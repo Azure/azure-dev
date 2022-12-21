@@ -101,7 +101,7 @@ func (at *containerAppTarget) Deploy(
 	log.Printf("writing image name to environment")
 
 	// Save the name of the image we pushed into the environment with a well known key.
-	at.env.Values[fmt.Sprintf("SERVICE_%s_IMAGE_NAME", strings.ToUpper(at.config.Name))] = fullTag
+	at.env.Values[fmt.Sprintf("SERVICE_%s_IMAGE_NAME", strings.ReplaceAll("-", strings.ToUpper(at.config.Name), "_"))] = fullTag
 
 	if err := at.env.Save(); err != nil {
 		return ServiceDeploymentResult{}, fmt.Errorf("saving image name to environment: %w", err)

@@ -51,19 +51,15 @@ repo:
         patterns:
           - "**/*.tf"
 
-      - from: ../../../../../../common/infra/terraform/core/gateway
-        to: ./modules/gateway
+      - from: ../../../../../../common/infra/terraform/core/gateway/apim
+        to: ./modules/apim
         patterns:
           - "**/*.tf"
-      # - from: ../../../../../../common/infra/terraform/core/gateway/apim
-      #   to: ./modules/apim
-      #   patterns:
-      #     - "**/*.tf"
 
-      # - from: ../../../../../../common/infra/terraform/core/gateway/apim-api
-      #   to: ./modules/apim-api
-      #   patterns:
-      #     - "**/*.tf"
+      - from: ../../../../../../common/infra/terraform/core/gateway/apim-api
+        to: ./modules/apim-api
+        patterns:
+          - "**/*.tf"
 
       - from: ../../api/python
         to: ./src/api
@@ -97,6 +93,11 @@ repo:
 
       - from: ../../../../api/common/openapi.yaml
         to: ../../../src/api/openapi.yaml
+        patterns:
+          - "apim-api.tf"
+
+      - from: ../../../../../common/infra/terraform/core/gateway/apim-api-policy.xml
+        to: ./modules/apim-api-policy.xml
         patterns:
           - "apim-api.tf"
 

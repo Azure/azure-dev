@@ -7,6 +7,16 @@ variable "rg_name" {
   type        = string
 }
 
+variable "api_management_logger_id" {
+  description = "The name of the resource application insights"
+  type        = string
+}
+
+variable "web_front_end_url" {
+  description = "The url of the web"
+  type        = string
+}
+
 variable "apiName" {
   description = "Resouce name to uniquely dentify this API within the API Management service instance"
   type        = string

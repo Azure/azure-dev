@@ -153,8 +153,10 @@ module "apim"  {
 module "apimApi" {
   count                     = "${var.useAPIM == true ? 1 : 0}"
   source                    = "../../../../../../common/infra/terraform/core/gateway/apim-api"
-  name                      = "apim-${local.resource_token}"
+  name                      = module.apim[0].APIM_SERVICE_NAME
   rg_name                   = azurerm_resource_group.rg.name
+  web_front_end_url         = module.web.URI
+  api_management_logger_id  = module.apim[0].API_MANAGEMENT_LOGGER_ID
   apiName                   = "todo-api"
   apiDisplayName            = "Simple Todo API"
   apiPath                   = "todo"

@@ -16,12 +16,6 @@ data "azurerm_api_management" "myapim"{
   resource_group_name   = var.rg_name
 }
 
-resource "azurerm_api_management_logger" "logger"{
-  name                  = "app-insights-logger"
-  resource_group_name   = var.rg_name
-  api_management_name   = data.azurerm_api_management.myapim.name
-}
-
 # ------------------------------------------------------------------------------------------------------
 # Deploy apim-api service 
 # ------------------------------------------------------------------------------------------------------
@@ -36,7 +30,7 @@ resource "azurerm_api_management_api" "api" {
 
   import {
     content_format      = "openapi"
-    content_value       = "../../../../api/common/openapi.yaml"
+    content_value       = file("${path.module}/../../../src/api/openapi.yaml")
   }
 }
 
@@ -45,7 +39,7 @@ resource "azurerm_api_management_api_policy" "policies"{
   api_management_name   = azurerm_api_management_api.api.api_management_name
   resource_group_name   = var.rg_name
 
-  xml_content           = "../../../../../../common/infra/terraform/core/gateway/apim/apim-api-policy.xml"
+  xml_content           = replace(file("${path.module}/../apim/apim-api-policy.xml"),"{0}",var.web_front_end_url)
 }
 
 resource "azurerm_api_management_api_diagnostic" "diagnostics"{
@@ -53,7 +47,7 @@ resource "azurerm_api_management_api_diagnostic" "diagnostics"{
   resource_group_name       = var.rg_name
   api_management_name       = azurerm_api_management_api.api.api_management_name
   api_name                  = azurerm_api_management_api.api.name
-  api_management_logger_id  = azurerm_api_management_logger.logger.id
+  api_management_logger_id  = var.api_management_logger_id
 
   sampling_percentage       = 100.0
   always_log_errors = true

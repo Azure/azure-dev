@@ -58,3 +58,8 @@ overrides:
     words:
       - ents
       - unmarshalled
+  - filename: pkg/exec/util_test.go
+    words:
+      - keychain
+      - crusername
+      - azurecr

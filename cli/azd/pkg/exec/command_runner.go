@@ -76,7 +76,7 @@ func (r *commandRunner) Run(ctx context.Context, args RunArgs) (RunResult, error
 		}
 	}
 
-	log.Printf("Run exec: '%s %s'", args.Cmd, strings.Join(args.Args, " "))
+	log.Printf("Run exec: '%s %s'", args.Cmd, redactSensitiveData(strings.Join(args.Args, " ")))
 
 	if args.Debug && len(args.Env) > 0 {
 		log.Println("Additional env:")
@@ -213,11 +213,23 @@ func redactSensitiveData(msg string) string {
 		"access token": {
 			regexp.MustCompile("\"accessToken\": \".*\""),
 			"\"accessToken\": \"<redacted>\"",
+		},
+		"deployment token": {
+			regexp.MustCompile(`--deployment-token \S+`),
+			"--deployment-token <redacted>",
+		},
+		"username": {
+			regexp.MustCompile(`--username \S+`),
+			"--username <redacted>",
+		},
+		"password": {
+			regexp.MustCompile(`--password \S+`),
+			"--password <redacted>",
 		}}
 
 	for _, redactRule := range regexpRedactRules {
 		regMatchString := redactRule.matchString
-		return regMatchString.ReplaceAllString(msg, redactRule.replaceString)
+		msg = regMatchString.ReplaceAllString(msg, redactRule.replaceString)
 	}
 	return msg
 }

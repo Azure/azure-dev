@@ -35,6 +35,10 @@ type ArmTemplateParameterDefinition struct {
 	Metadata      map[string]json.RawMessage `json:"metadata"`
 }
 
+func (d *ArmTemplateParameterDefinition) Secure() bool {
+	return d.Type == "secureObject" || d.Type == "secureString"
+}
+
 type AzdMetadata struct {
 	Type *string `json:"type,omitempty"`
 }

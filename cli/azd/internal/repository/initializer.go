@@ -22,16 +22,14 @@ import (
 
 // Initializer handles the initialization of a local repository.
 type Initializer struct {
-	azdCtx  *azdcontext.AzdContext
 	console input.Console
 	gitCli  git.GitCli
 }
 
-func NewInitializer(azdCtx *azdcontext.AzdContext,
+func NewInitializer(
 	console input.Console,
 	gitCli git.GitCli) *Initializer {
 	return &Initializer{
-		azdCtx:  azdCtx,
 		console: console,
 		gitCli:  gitCli,
 	}
@@ -40,9 +38,9 @@ func NewInitializer(azdCtx *azdcontext.AzdContext,
 // Initializes a local repository in the project directory from a remote repository.
 //
 // A confirmation prompt is displayed for any existing files to be overwritten.
-func (i *Initializer) Initialize(ctx context.Context, templateUrl string, templateBranch string) error {
+func (i *Initializer) Initialize(ctx context.Context, azdCtx *azdcontext.AzdContext, templateUrl string, templateBranch string) error {
 	var err error
-	stepMessage := fmt.Sprintf("Downloading template code to: %s", output.WithLinkFormat("%s", i.azdCtx.ProjectDirectory()))
+	stepMessage := fmt.Sprintf("Downloading template code to: %s", output.WithLinkFormat("%s", azdCtx.ProjectDirectory()))
 	i.console.ShowSpinner(ctx, stepMessage, input.Step)
 	defer i.console.StopSpinner(ctx, stepMessage+"\n", input.GetStepResultFormat(err))
 
@@ -58,7 +56,7 @@ func (i *Initializer) Initialize(ctx context.Context, templateUrl string, templa
 		_ = os.RemoveAll(staging)
 	}()
 
-	target := i.azdCtx.ProjectDirectory()
+	target := azdCtx.ProjectDirectory()
 
 	err = i.gitCli.FetchCode(ctx, templateUrl, templateBranch, staging)
 	if err != nil {
@@ -106,7 +104,7 @@ func (i *Initializer) Initialize(ctx context.Context, templateUrl string, templa
 	}
 
 	i.console.StopSpinner(ctx, stepMessage+"\n", input.GetStepResultFormat(err))
-	err = i.writeAzdAssets(ctx)
+	err = i.writeAzdAssets(ctx, azdCtx)
 	if err != nil {
 		return err
 	}
@@ -115,17 +113,17 @@ func (i *Initializer) Initialize(ctx context.Context, templateUrl string, templa
 }
 
 // Initializes an empty (bare minimum) azd repository.
-func (i *Initializer) InitializeEmpty(ctx context.Context) error {
-	return i.writeAzdAssets(ctx)
+func (i *Initializer) InitializeEmpty(ctx context.Context, azdCtx *azdcontext.AzdContext) error {
+	return i.writeAzdAssets(ctx, azdCtx)
 }
 
-func (i *Initializer) writeAzdAssets(ctx context.Context) error {
+func (i *Initializer) writeAzdAssets(ctx context.Context, azdCtx *azdcontext.AzdContext) error {
 	// Check to see if `azure.yaml` exists, and if it doesn't, create it.
-	if _, err := os.Stat(i.azdCtx.ProjectPath()); errors.Is(err, os.ErrNotExist) {
+	if _, err := os.Stat(azdCtx.ProjectPath()); errors.Is(err, os.ErrNotExist) {
 		stepMessage := fmt.Sprintf("Creating a new %s file.", azdcontext.ProjectFileName)
 
 		i.console.ShowSpinner(ctx, stepMessage, input.Step)
-		_, err = project.NewProject(i.azdCtx.ProjectPath(), i.azdCtx.GetDefaultProjectName())
+		_, err = project.NewProject(azdCtx.ProjectPath(), azdCtx.GetDefaultProjectName())
 		i.console.StopSpinner(ctx, stepMessage, input.GetStepResultFormat(err))
 
 		if err != nil {
@@ -135,7 +133,7 @@ func (i *Initializer) writeAzdAssets(ctx context.Context) error {
 
 	//create .azure when running azd init
 	err := os.MkdirAll(
-		filepath.Join(i.azdCtx.ProjectDirectory(), azdcontext.EnvironmentDirectoryName),
+		filepath.Join(azdCtx.ProjectDirectory(), azdcontext.EnvironmentDirectoryName),
 		osutil.PermissionDirectory,
 	)
 	if err != nil {
@@ -144,7 +142,7 @@ func (i *Initializer) writeAzdAssets(ctx context.Context) error {
 
 	//create .gitignore or open existing .gitignore file, and contains .azure
 	gitignoreFile, err := os.OpenFile(
-		filepath.Join(i.azdCtx.ProjectDirectory(), ".gitignore"),
+		filepath.Join(azdCtx.ProjectDirectory(), ".gitignore"),
 		os.O_APPEND|os.O_RDWR|os.O_CREATE,
 		osutil.PermissionFile,
 	)

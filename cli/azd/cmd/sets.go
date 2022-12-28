@@ -4,7 +4,6 @@ package cmd
 
 import (
 	"context"
-	"fmt"
 	"io"
 	"os"
 
@@ -87,15 +86,6 @@ func newAzCliFromOptions(
 	})
 }
 
-func newAzdContext() (*azdcontext.AzdContext, error) {
-	azdCtx, err := azdcontext.NewAzdContext()
-	if err != nil {
-		return nil, fmt.Errorf("creating context: %w", err)
-	}
-
-	return azdCtx, nil
-}
-
 func newCredential(ctx context.Context, authManager *auth.Manager) (azcore.TokenCredential, error) {
 	credential, err := authManager.CredentialForCurrentUser(ctx)
 	if err != nil {
@@ -118,7 +108,7 @@ var CommonSet = wire.NewSet(
 	config.NewManager,
 	config.NewUserConfigManager,
 	account.NewManager,
-	newAzdContext,
+	azdcontext.NewAzdContext,
 	newCommandRunnerFromConsole,
 	newFormatterFromConsole,
 	newOutputWriter,
@@ -175,7 +165,7 @@ var EnvSetCmdSet = wire.NewSet(
 	wire.Bind(new(actions.Action), new(*envSetAction)))
 
 var EnvSelectCmdSet = wire.NewSet(
-	newAzdContext,
+	azdcontext.NewAzdContext,
 	newEnvSelectAction,
 	wire.Bind(new(actions.Action), new(*envSelectAction)))
 

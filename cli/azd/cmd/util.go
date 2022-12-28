@@ -323,23 +323,6 @@ func getSubscriptionOptions(ctx context.Context, azCli azcli.AzCli) ([]string, a
 	return subscriptionOptions, defaultSubscription, nil
 }
 
-var (
-	errNoProject = errors.New("no project exists; to create a new project, run `azd init`.")
-)
-
-// ensureProject ensures that a project file exists, using the given
-// context. If a project is missing, errNoProject is returned.
-func ensureProject(path string) error {
-	_, err := os.Stat(path)
-	if errors.Is(err, os.ErrNotExist) {
-		return errNoProject
-	} else if err != nil {
-		return fmt.Errorf("checking for project: %w", err)
-	}
-
-	return nil
-}
-
 type envFlag struct {
 	environmentName string
 }

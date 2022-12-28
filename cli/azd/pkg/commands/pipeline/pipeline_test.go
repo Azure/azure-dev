@@ -20,8 +20,7 @@ func Test_detectProviders(t *testing.T) {
 	tempDir := t.TempDir()
 	ctx := context.Background()
 
-	azdContext := &azdcontext.AzdContext{}
-	azdContext.SetProjectDirectory(tempDir)
+	azdContext := azdcontext.NewAzdContextWithDirectory(tempDir)
 
 	mockContext := mocks.NewMockContext(ctx)
 

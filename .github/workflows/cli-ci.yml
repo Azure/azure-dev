@@ -29,16 +29,5 @@ jobs:
           args: -v --timeout 5m0s
           working-directory: cli/azd
 
-  cspell-lint:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v2
-      - uses: actions/setup-node@v1
-        name: Run spell check for project and for azd
-        with:
-          node-version: "16"
-      - run: npm install -g cspell
-      - run: cspell lint '**/*.go' --config ./cli/azd/.vscode/cspell.yaml --root ./cli/azd --no-progress
-
   bicep-lint:
     uses: ./.github/workflows/lint-bicep.yml

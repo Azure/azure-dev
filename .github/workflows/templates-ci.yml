@@ -16,5 +16,3 @@ permissions:
 jobs:
   bicep-lint:
     uses: ./.github/workflows/lint-bicep.yml
-  
-  # cspell-lint : runs as part of global-cspell.

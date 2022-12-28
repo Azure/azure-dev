@@ -4,32 +4,27 @@
 package cmd
 
 import (
-	"bufio"
 	"context"
 	"errors"
 	"fmt"
-	"io/fs"
 	"log"
 	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/internal/repository"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
-	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
-	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/pkg/templates"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/git"
-	"github.com/otiai10/copy"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
@@ -100,13 +95,14 @@ func (i *initFlags) setCommon(envFlag *envFlag) {
 }
 
 type initAction struct {
-	azCli          azcli.AzCli
-	azdCtx         *azdcontext.AzdContext
-	accountManager *account.Manager
-	console        input.Console
-	cmdRun         exec.CommandRunner
-	gitCli         git.GitCli
-	flags          initFlags
+	azCli           azcli.AzCli
+	azdCtx          *azdcontext.AzdContext
+	accountManager  *account.Manager
+	console         input.Console
+	cmdRun          exec.CommandRunner
+	gitCli          git.GitCli
+	flags           initFlags
+	repoInitializer *repository.Initializer
 }
 
 func newInitAction(
@@ -116,15 +112,17 @@ func newInitAction(
 	cmdRun exec.CommandRunner,
 	console input.Console,
 	gitCli git.GitCli,
-	flags initFlags) (*initAction, error) {
+	flags initFlags,
+	repoInitializer *repository.Initializer) (*initAction, error) {
 	return &initAction{
-		azCli:          azCli,
-		azdCtx:         azdCtx,
-		accountManager: accountManager,
-		console:        console,
-		cmdRun:         cmdRun,
-		gitCli:         gitCli,
-		flags:          flags,
+		azCli:           azCli,
+		azdCtx:          azdCtx,
+		accountManager:  accountManager,
+		console:         console,
+		cmdRun:          cmdRun,
+		gitCli:          gitCli,
+		flags:           flags,
+		repoInitializer: repoInitializer,
 	}, nil
 }
 
@@ -134,7 +132,6 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	// to force using the current working directory as a project root (since we are initializing a
 	// new project).
 	wd, err := os.Getwd()
-	formattedWithColorCwd := output.WithLinkFormat("%s", wd)
 	if err != nil {
 		return nil, fmt.Errorf("getting cwd: %w", err)
 	}
@@ -157,13 +154,14 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		return nil, err
 	}
 
+	// Command title
+	i.console.MessageUxItem(ctx, &ux.MessageTitle{
+		Title: "Initializing a new project (azd init)",
+	})
+
 	// Project not initialized and no template specified
 	// NOTE: Adding `azure.yaml` to a folder removes the option from selecting a template
 	if _, err := os.Stat(i.azdCtx.ProjectPath()); err != nil && errors.Is(err, os.ErrNotExist) {
-		// Command title
-		i.console.MessageUxItem(ctx, &ux.MessageTitle{
-			Title: "Initializing a new project (azd init)",
-		})
 
 		if i.flags.template.Name == "" {
 			i.flags.template, err = templates.PromptTemplate(ctx, "Select a project template:", i.console)
@@ -198,89 +196,14 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 			}
 		}
 
-		templateStagingDir, err := os.MkdirTemp("", "az-dev-template")
+		err = i.repoInitializer.Initialize(ctx, templateUrl, i.flags.templateBranch)
 		if err != nil {
-			return nil, fmt.Errorf("creating temp folder: %w", err)
+			return nil, fmt.Errorf("init from template repository: %w", err)
 		}
-
-		// Attempt to remove the temporary directory we cloned the template into, but don't fail the
-		// overall operation if we can't.
-		defer func() {
-			_ = os.RemoveAll(templateStagingDir)
-		}()
-
-		stepMessage := fmt.Sprintf("Downloading template code to: %s", formattedWithColorCwd)
-		i.console.ShowSpinner(ctx, stepMessage, input.Step)
-
-		// perform the work while the spinner is running
-		err = i.gitCli.FetchCode(ctx, templateUrl, i.flags.templateBranch, templateStagingDir)
-
-		// stop the spinner based on the result
-		i.console.StopSpinner(ctx, stepMessage+"\n", input.GetStepResultFormat(err))
-
+	} else {
+		err = i.repoInitializer.InitializeEmpty(ctx)
 		if err != nil {
-			return nil, fmt.Errorf("\nfetching template: %w", err)
-		}
-
-		log.Printf(
-			"template init, checking for duplicates. source: %s target: %s",
-			templateStagingDir,
-			i.azdCtx.ProjectDirectory(),
-		)
-
-		// If there are any existing files in the destination that would be overwritten by files from the
-		// template, have the user confirm they would like to overwrite these files. This is a more relaxed
-		// check than just failing the init operation when a template is provided if there are any files
-		// present (a scenario we'd like to support for cases where someone may say initialize a git repository
-		// in the target directory or create a virtual env before running init).
-		var duplicateFiles []string
-		if err := filepath.WalkDir(templateStagingDir, func(path string, d fs.DirEntry, walkErr error) error {
-			if walkErr != nil {
-				return walkErr
-			}
-
-			if d.IsDir() {
-				return nil
-			}
-
-			partial, err := filepath.Rel(templateStagingDir, path)
-			if err != nil {
-				return fmt.Errorf("computing relative path: %w", err)
-			}
-
-			if _, err := os.Stat(filepath.Join(i.azdCtx.ProjectDirectory(), partial)); err == nil {
-				duplicateFiles = append(duplicateFiles, partial)
-			}
-
-			return nil
-		}); err != nil {
-			return nil, fmt.Errorf("enumerating template files: %w", err)
-		}
-
-		if len(duplicateFiles) > 0 {
-			fmt.Fprintf(
-				i.console.Handles().Stdout,
-				"warning: the following files will be overwritten with the versions from the template: \n")
-			for _, file := range duplicateFiles {
-				fmt.Fprintf(i.console.Handles().Stdout, " * %s\n", file)
-			}
-
-			overwrite, err := i.console.Confirm(ctx, input.ConsoleOptions{
-				Message:      "Overwrite files with versions from template?",
-				DefaultValue: false,
-			})
-
-			if err != nil {
-				return nil, fmt.Errorf("prompting to overwrite: %w", err)
-			}
-
-			if !overwrite {
-				return nil, errors.New("confirmation declined")
-			}
-		}
-
-		if err := copy.Copy(templateStagingDir, i.azdCtx.ProjectDirectory()); err != nil {
-			return nil, fmt.Errorf("copying template contents: %w", err)
+			return nil, fmt.Errorf("init empty repository: %w", err)
 		}
 	}
 
@@ -291,58 +214,6 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 
 	if envName != "" {
 		return nil, environment.NewEnvironmentInitError(envName)
-	}
-
-	// Check to see if `azure.yaml` exists, and if it doesn't, create it.
-	_, err = os.Stat(i.azdCtx.ProjectPath())
-
-	if errors.Is(err, os.ErrNotExist) {
-		stepMessage := fmt.Sprintf("Creating a new %s file.", azdcontext.ProjectFileName)
-
-		i.console.ShowSpinner(ctx, stepMessage, input.Step)
-		_, err = project.NewProject(i.azdCtx.ProjectPath(), i.azdCtx.GetDefaultProjectName())
-		i.console.StopSpinner(ctx, stepMessage, input.GetStepResultFormat(err))
-
-		if err != nil {
-			return nil, fmt.Errorf("failed to create a project file: %w", err)
-		}
-	}
-
-	//create .azure when running azd init
-	err = os.MkdirAll(
-		filepath.Join(i.azdCtx.ProjectDirectory(), azdcontext.EnvironmentDirectoryName),
-		osutil.PermissionDirectory,
-	)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create a directory: %w", err)
-	}
-
-	//create .gitignore or open existing .gitignore file, and contains .azure
-	gitignoreFile, err := os.OpenFile(
-		filepath.Join(i.azdCtx.ProjectDirectory(), ".gitignore"),
-		os.O_APPEND|os.O_RDWR|os.O_CREATE,
-		osutil.PermissionFile,
-	)
-	if err != nil {
-		return nil, fmt.Errorf("fail to create or open .gitignore: %w", err)
-	}
-	defer gitignoreFile.Close()
-
-	writeGitignoreFile := true
-	//bufio scanner splits on new lines by default
-	scanner := bufio.NewScanner(gitignoreFile)
-	for scanner.Scan() {
-		if azdcontext.EnvironmentDirectoryName == scanner.Text() {
-			writeGitignoreFile = false
-		}
-	}
-
-	if writeGitignoreFile {
-		newLine := osutil.GetNewLineSeparator()
-		_, err := gitignoreFile.WriteString(newLine + azdcontext.EnvironmentDirectoryName + newLine)
-		if err != nil {
-			return nil, fmt.Errorf("fail to write '%s' in .gitignore: %w", azdcontext.EnvironmentDirectoryName, err)
-		}
 	}
 
 	envSpec := environmentSpec{
@@ -375,7 +246,7 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	return &actions.ActionResult{
 		Message: &actions.ResultMessage{
 			Header:   "New project initialized!",
-			FollowUp: fmt.Sprintf("You can view the template code in your directory: %s", formattedWithColorCwd),
+			FollowUp: fmt.Sprintf("You can view the template code in your directory: %s", output.WithLinkFormat("%s", wd)),
 		},
 	}, nil
 }

@@ -11,6 +11,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/internal/repository"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
@@ -134,6 +135,7 @@ var InitCmdSet = wire.NewSet(
 	AzCliSet,
 	git.NewGitCli,
 	newInitAction,
+	repository.NewInitializer,
 	wire.Bind(new(actions.Action), new(*initAction)))
 
 var InfraCreateCmdSet = wire.NewSet(
@@ -158,6 +160,7 @@ var UpCmdSet = wire.NewSet(
 	CommonSet,
 	AzCliSet,
 	git.NewGitCli,
+	repository.NewInitializer,
 	newInitAction,
 	newInfraCreateAction,
 	newDeployAction,

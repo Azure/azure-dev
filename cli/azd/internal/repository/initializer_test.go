@@ -21,7 +21,7 @@ import (
 	"golang.org/x/exp/slices"
 )
 
-func Test_initializer_Initialize(t *testing.T) {
+func Test_Initializer_Initialize(t *testing.T) {
 	tests := []struct {
 		name        string
 		templateDir string
@@ -64,7 +64,7 @@ func Test_initializer_Initialize(t *testing.T) {
 	}
 }
 
-func Test_initializer_InitializeWithOverwritePrompt(t *testing.T) {
+func Test_Initializer_InitializeWithOverwritePrompt(t *testing.T) {
 	templateDir := "template"
 	tests := []struct {
 		name             string
@@ -176,7 +176,7 @@ func verifyTemplateCopied(t *testing.T, original string, copied string) {
 	require.NoError(t, err)
 }
 
-func Test_initializer_InitializeEmpty(t *testing.T) {
+func Test_Initializer_InitializeEmpty(t *testing.T) {
 	type setup struct {
 		projectFile   string
 		gitignoreFile string

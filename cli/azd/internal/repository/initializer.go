@@ -20,12 +20,8 @@ import (
 	"github.com/otiai10/copy"
 )
 
-type Initializer interface {
-	Initialize(ctx context.Context, templateUrl string, templateBranch string) error
-	InitializeEmpty(ctx context.Context) error
-}
-
-type initializer struct {
+// Initializer handles the initialization of a local repository.
+type Initializer struct {
 	azdCtx  *azdcontext.AzdContext
 	console input.Console
 	gitCli  git.GitCli
@@ -33,15 +29,18 @@ type initializer struct {
 
 func NewInitializer(azdCtx *azdcontext.AzdContext,
 	console input.Console,
-	gitCli git.GitCli) Initializer {
-	return &initializer{
+	gitCli git.GitCli) *Initializer {
+	return &Initializer{
 		azdCtx:  azdCtx,
 		console: console,
 		gitCli:  gitCli,
 	}
 }
 
-func (i *initializer) Initialize(ctx context.Context, templateUrl string, templateBranch string) error {
+// Initializes a local repository in the project directory from a remote repository.
+//
+// A confirmation prompt is displayed for any existing files to be overwritten.
+func (i *Initializer) Initialize(ctx context.Context, templateUrl string, templateBranch string) error {
 	var err error
 	stepMessage := fmt.Sprintf("Downloading template code to: %s", output.WithLinkFormat("%s", i.azdCtx.ProjectDirectory()))
 	i.console.ShowSpinner(ctx, stepMessage, input.Step)
@@ -78,9 +77,10 @@ func (i *initializer) Initialize(ctx context.Context, templateUrl string, templa
 	}
 
 	if len(duplicateFiles) > 0 {
-		i.console.Message(ctx, "warning: the following files will be overwritten with the versions from the template:")
+		i.console.StopSpinner(ctx, "", input.StepDone)
+		i.console.Message(ctx, output.WithWarningFormat("warning: the following files will be overwritten with the versions from the template:"))
 		for _, file := range duplicateFiles {
-			i.console.Message(ctx, fmt.Sprintf(" * %s\n", file))
+			i.console.Message(ctx, fmt.Sprintf(" * %s", file))
 		}
 
 		overwrite, err := i.console.Confirm(ctx, input.ConsoleOptions{
@@ -95,6 +95,8 @@ func (i *initializer) Initialize(ctx context.Context, templateUrl string, templa
 		if !overwrite {
 			return errors.New("confirmation declined")
 		}
+
+		i.console.ShowSpinner(ctx, stepMessage, input.Step)
 	}
 
 	if err := copy.Copy(staging, target); err != nil {
@@ -111,11 +113,11 @@ func (i *initializer) Initialize(ctx context.Context, templateUrl string, templa
 }
 
 // Initializes an empty (bare minimum) azd repository.
-func (i *initializer) InitializeEmpty(ctx context.Context) error {
+func (i *Initializer) InitializeEmpty(ctx context.Context) error {
 	return i.writeAzdAssets(ctx)
 }
 
-func (i *initializer) writeAzdAssets(ctx context.Context) error {
+func (i *Initializer) writeAzdAssets(ctx context.Context) error {
 	// Check to see if `azure.yaml` exists, and if it doesn't, create it.
 	if _, err := os.Stat(i.azdCtx.ProjectPath()); errors.Is(err, os.ErrNotExist) {
 		stepMessage := fmt.Sprintf("Creating a new %s file.", azdcontext.ProjectFileName)
@@ -153,7 +155,7 @@ func (i *initializer) writeAzdAssets(ctx context.Context) error {
 	// Determines newline based on the last line containing a newline
 	useCrlf := false
 	// default to true, since if the file is empty, no preceding newline is needed.
-	hasTrailingSlash := true
+	hasTrailingNewLine := true
 	//bufio scanner splits on new lines by default
 	reader := bufio.NewReader(gitignoreFile)
 	for {
@@ -166,7 +168,7 @@ func (i *initializer) writeAzdAssets(ctx context.Context) error {
 		if err != nil && len(text) > 0 {
 			// err != nil means no delimiter (newline) was found
 			// if text is present, that must mean the last line doesn't contain newline
-			hasTrailingSlash = false
+			hasTrailingNewLine = false
 		}
 
 		if len(text) > 0 && text[len(text)-1] == '\n' {
@@ -198,7 +200,7 @@ func (i *initializer) writeAzdAssets(ctx context.Context) error {
 		}
 
 		appendContents := azdcontext.EnvironmentDirectoryName + newLine
-		if !hasTrailingSlash {
+		if !hasTrailingNewLine {
 			appendContents = newLine + appendContents
 		}
 		_, err := gitignoreFile.WriteString(appendContents)

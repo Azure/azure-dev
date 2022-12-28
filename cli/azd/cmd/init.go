@@ -102,7 +102,7 @@ type initAction struct {
 	cmdRun          exec.CommandRunner
 	gitCli          git.GitCli
 	flags           initFlags
-	repoInitializer repository.Initializer
+	repoInitializer *repository.Initializer
 }
 
 func newInitAction(
@@ -113,7 +113,7 @@ func newInitAction(
 	console input.Console,
 	gitCli git.GitCli,
 	flags initFlags,
-	repoInitializer repository.Initializer) (*initAction, error) {
+	repoInitializer *repository.Initializer) (*initAction, error) {
 	return &initAction{
 		azCli:           azCli,
 		azdCtx:          azdCtx,
@@ -154,13 +154,14 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		return nil, err
 	}
 
+	// Command title
+	i.console.MessageUxItem(ctx, &ux.MessageTitle{
+		Title: "Initializing a new project (azd init)",
+	})
+
 	// Project not initialized and no template specified
 	// NOTE: Adding `azure.yaml` to a folder removes the option from selecting a template
 	if _, err := os.Stat(i.azdCtx.ProjectPath()); err != nil && errors.Is(err, os.ErrNotExist) {
-		// Command title
-		i.console.MessageUxItem(ctx, &ux.MessageTitle{
-			Title: "Initializing a new project (azd init)",
-		})
 
 		if i.flags.template.Name == "" {
 			i.flags.template, err = templates.PromptTemplate(ctx, "Select a project template:", i.console)

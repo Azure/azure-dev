@@ -78,7 +78,9 @@ func (i *Initializer) Initialize(ctx context.Context, templateUrl string, templa
 
 	if len(duplicateFiles) > 0 {
 		i.console.StopSpinner(ctx, "", input.StepDone)
-		i.console.Message(ctx, output.WithWarningFormat("warning: the following files will be overwritten with the versions from the template:"))
+		i.console.Message(
+			ctx,
+			output.WithWarningFormat("warning: the following files will be overwritten with the versions from the template:"))
 		for _, file := range duplicateFiles {
 			i.console.Message(ctx, fmt.Sprintf(" * %s", file))
 		}

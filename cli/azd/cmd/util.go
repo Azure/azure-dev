@@ -13,6 +13,7 @@ import (
 	"github.com/AlecAivazis/survey/v2"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/telemetry"
+	"github.com/azure/azure-dev/cli/azd/internal/telemetry/fields"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/azureutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
@@ -99,7 +100,7 @@ func createAndInitEnvironment(
 		return nil, fmt.Errorf("initializing environment: %w", err)
 	}
 
-	telemetry.SetEnvironment(env)
+	telemetry.SetGlobalAttributes(fields.StringHashed(fields.SubscriptionIdKey, env.GetSubscriptionId()))
 	return env, nil
 }
 
@@ -186,7 +187,7 @@ func loadOrInitEnvironment(
 		}
 	}
 
-	telemetry.SetEnvironment(env)
+	telemetry.SetGlobalAttributes(fields.StringHashed(fields.SubscriptionIdKey, env.GetSubscriptionId()))
 
 	return env, nil
 }

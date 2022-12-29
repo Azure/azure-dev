@@ -8,6 +8,11 @@ on:
     types: [completed]
   issue_comment:
     types: [created]
+  # Trigger off other github actions, because otherwise a check_suite completed event consisting
+  # entirely of github actions won't trigger this action.
+  workflow_run:
+    types: [completed]
+    workflows: ["cli-ci", "templates-ci", "vscode-ci"]
 
 permissions: {}
 

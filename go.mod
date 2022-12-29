@@ -2,6 +2,8 @@ module github.com/azure/azure-dev
 
 go 1.19
 
+// TESTING 1
+
 require (
 	github.com/AlecAivazis/survey/v2 v2.3.2
 	github.com/Azure/azure-sdk-for-go/sdk/azcore v1.2.0

@@ -106,7 +106,7 @@ func (i *infraCreateAction) Run(ctx context.Context) (*actions.ActionResult, err
 		TitleNote: "Provisioning Azure resources can take some time"},
 	)
 
-	env, ctx, err := loadOrInitEnvironment(ctx, &i.flags.environmentName, i.azdCtx, i.console, i.azCli)
+	env, err := loadOrInitEnvironment(ctx, &i.flags.environmentName, i.azdCtx, i.console, i.azCli)
 	if err != nil {
 		return nil, fmt.Errorf("loading environment: %w", err)
 	}

@@ -73,7 +73,7 @@ func newInfraDeleteAction(
 }
 
 func (a *infraDeleteAction) Run(ctx context.Context) (*actions.ActionResult, error) {
-	env, ctx, err := loadOrInitEnvironment(ctx, &a.flags.environmentName, a.azdCtx, a.console, a.azCli)
+	env, err := loadOrInitEnvironment(ctx, &a.flags.environmentName, a.azdCtx, a.console, a.azCli)
 	if err != nil {
 		return nil, fmt.Errorf("loading environment: %w", err)
 	}

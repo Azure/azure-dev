@@ -18,6 +18,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
+	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/pkg/templates"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/git"
@@ -99,6 +100,10 @@ func newCredential(ctx context.Context, authManager *auth.Manager) (azcore.Token
 	return credential, nil
 }
 
+func loadProjectConfig(azdCtx *azdcontext.AzdContext) (*project.ProjectConfig, error) {
+	return project.LoadProjectConfig(azdCtx.ProjectPath())
+}
+
 var FormattedConsoleSet = wire.NewSet(
 	output.GetCommandFormatter,
 	newConsoleFromOptions,
@@ -109,6 +114,7 @@ var CommonSet = wire.NewSet(
 	config.NewUserConfigManager,
 	account.NewManager,
 	azdcontext.NewAzdContext,
+	loadProjectConfig,
 	newCommandRunnerFromConsole,
 	newFormatterFromConsole,
 	newOutputWriter,

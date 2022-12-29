@@ -74,15 +74,15 @@ func createAndInitEnvironment(
 	azdCtx *azdcontext.AzdContext,
 	console input.Console,
 	azCli azcli.AzCli,
-) (*environment.Environment, context.Context, error) {
+) (*environment.Environment, error) {
 	if envSpec.environmentName != "" && !environment.IsValidEnvironmentName(envSpec.environmentName) {
 		errMsg := invalidEnvironmentNameMsg(envSpec.environmentName)
 		fmt.Fprint(console.Handles().Stdout, errMsg)
-		return nil, nil, fmt.Errorf(errMsg)
+		return nil, fmt.Errorf(errMsg)
 	}
 
 	if err := ensureValidEnvironmentName(ctx, &envSpec.environmentName, console); err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
 	// Ensure the environment does not already exist:
@@ -90,16 +90,17 @@ func createAndInitEnvironment(
 	switch {
 	case errors.Is(err, os.ErrNotExist):
 	case err != nil:
-		return nil, nil, fmt.Errorf("checking for existing environment: %w", err)
+		return nil, fmt.Errorf("checking for existing environment: %w", err)
 	case err == nil:
-		return nil, nil, fmt.Errorf("environment '%s' already exists", envSpec.environmentName)
+		return nil, fmt.Errorf("environment '%s' already exists", envSpec.environmentName)
 	}
 
 	if err := ensureEnvironmentInitialized(ctx, *envSpec, env, console, azCli); err != nil {
-		return nil, nil, fmt.Errorf("initializing environment: %w", err)
+		return nil, fmt.Errorf("initializing environment: %w", err)
 	}
 
-	return env, telemetry.ContextWithEnvironment(ctx, env), nil
+	telemetry.SetEnvironment(env)
+	return env, nil
 }
 
 func loadOrInitEnvironment(
@@ -108,7 +109,7 @@ func loadOrInitEnvironment(
 	azdCtx *azdcontext.AzdContext,
 	console input.Console,
 	azCli azcli.AzCli,
-) (*environment.Environment, context.Context, error) {
+) (*environment.Environment, error) {
 	loadOrCreateEnvironment := func() (*environment.Environment, bool, error) {
 		// If there's a default environment, use that
 		if *environmentName == "" {
@@ -165,9 +166,9 @@ func loadOrInitEnvironment(
 	env, isNew, err := loadOrCreateEnvironment()
 	switch {
 	case errors.Is(err, os.ErrNotExist):
-		return nil, nil, fmt.Errorf("environment %s does not exist", *environmentName)
+		return nil, fmt.Errorf("environment %s does not exist", *environmentName)
 	case err != nil:
-		return nil, nil, err
+		return nil, err
 	}
 
 	if err := ensureEnvironmentInitialized(
@@ -176,16 +177,18 @@ func loadOrInitEnvironment(
 		env,
 		console,
 		azCli); err != nil {
-		return nil, nil, fmt.Errorf("initializing environment: %w", err)
+		return nil, fmt.Errorf("initializing environment: %w", err)
 	}
 
 	if isNew {
 		if err := azdCtx.SetDefaultEnvironmentName(*environmentName); err != nil {
-			return nil, nil, fmt.Errorf("saving default environment name: %w", err)
+			return nil, fmt.Errorf("saving default environment name: %w", err)
 		}
 	}
 
-	return env, telemetry.ContextWithEnvironment(ctx, env), nil
+	telemetry.SetEnvironment(env)
+
+	return env, nil
 }
 
 // ensureEnvironmentInitialized ensures the environment is initialized, i.e. it contains values for `AZURE_ENV_NAME`,

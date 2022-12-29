@@ -92,7 +92,7 @@ func newEnvSetAction(
 
 func (e *envSetAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	//lint:ignore SA4006 // We want ctx overridden here for future changes
-	env, ctx, err := loadOrInitEnvironment( //nolint:ineffassign,staticcheck
+	env, err := loadOrInitEnvironment( //nolint:ineffassign,staticcheck
 		ctx,
 		&e.flags.environmentName,
 		e.azdCtx,
@@ -265,7 +265,7 @@ func (en *envNewAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 		subscription:    en.flags.subscription,
 		location:        en.flags.location,
 	}
-	if _, _, err := createAndInitEnvironment(ctx, &envSpec, en.azdCtx, en.console, en.azCli); err != nil {
+	if _, err := createAndInitEnvironment(ctx, &envSpec, en.azdCtx, en.console, en.azCli); err != nil {
 		return nil, fmt.Errorf("creating new environment: %w", err)
 	}
 
@@ -334,7 +334,7 @@ func newEnvRefreshAction(
 }
 
 func (ef *envRefreshAction) Run(ctx context.Context) (*actions.ActionResult, error) {
-	env, ctx, err := loadOrInitEnvironment(ctx, &ef.flags.environmentName, ef.azdCtx, ef.console, ef.azCli)
+	env, err := loadOrInitEnvironment(ctx, &ef.flags.environmentName, ef.azdCtx, ef.console, ef.azCli)
 	if err != nil {
 		return nil, fmt.Errorf("loading environment: %w", err)
 	}
@@ -442,7 +442,7 @@ func newEnvGetValuesAction(
 
 func (eg *envGetValuesAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	//lint:ignore SA4006 // We want ctx overridden here for future changes
-	env, ctx, err := loadOrInitEnvironment( //nolint:ineffassign,staticcheck
+	env, err := loadOrInitEnvironment( //nolint:ineffassign,staticcheck
 		ctx,
 		&eg.flags.environmentName,
 		eg.azdCtx,

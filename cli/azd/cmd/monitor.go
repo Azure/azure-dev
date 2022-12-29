@@ -86,7 +86,7 @@ func (m *monitorAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 		m.flags.monitorOverview = true
 	}
 
-	env, ctx, err := loadOrInitEnvironment(ctx, &m.flags.environmentName, m.azdCtx, m.console, m.azCli)
+	env, err := loadOrInitEnvironment(ctx, &m.flags.environmentName, m.azdCtx, m.console, m.azCli)
 	if err != nil {
 		return nil, fmt.Errorf("loading environment: %w", err)
 	}

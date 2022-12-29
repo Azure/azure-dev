@@ -310,7 +310,7 @@ func Test_CLI_ProjectIsNeeded(t *testing.T) {
 		t.Run(test.command, func(t *testing.T) {
 			result, err := cli.RunCommand(ctx, args...)
 			assert.Error(t, err)
-			assert.Regexp(t, "no project exists; to create a new project, run `azd init`", result.Stdout)
+			assert.Regexp(t, "no project exists; to create a new project, run `azd init`", result.Stderr)
 		})
 	}
 }

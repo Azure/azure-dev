@@ -38,7 +38,10 @@ func NewInitializer(
 // Initializes a local repository in the project directory from a remote repository.
 //
 // A confirmation prompt is displayed for any existing files to be overwritten.
-func (i *Initializer) Initialize(ctx context.Context, azdCtx *azdcontext.AzdContext, templateUrl string, templateBranch string) error {
+func (i *Initializer) Initialize(ctx context.Context,
+	azdCtx *azdcontext.AzdContext,
+	templateUrl string,
+	templateBranch string) error {
 	var err error
 	stepMessage := fmt.Sprintf("Downloading template code to: %s", output.WithLinkFormat("%s", azdCtx.ProjectDirectory()))
 	i.console.ShowSpinner(ctx, stepMessage, input.Step)

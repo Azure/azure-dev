@@ -24,58 +24,42 @@ func SetAttributesInContext(ctx context.Context, attributes ...attribute.KeyValu
 }
 
 // Attributes that are global and set on all events
-var global atomic.Value
+var globalVal = valSynced{}
 
 // Attributes that are only set on command-level usage events
-var usage atomic.Value
+var usageVal = valSynced{}
 
-// mutex for multiple writers
-var globalMu sync.Mutex
-var usageMu sync.Mutex
+// Atomic value with mutex for multiple writers
+type valSynced struct {
+	val atomic.Value
+	mu  sync.Mutex
+}
 
 func init() {
-	global.Store(baggage.NewBaggage())
-	usage.Store(baggage.NewBaggage())
+	globalVal.val.Store(baggage.NewBaggage())
+	usageVal.val.Store(baggage.NewBaggage())
 }
 
-// Sets global attributes that are included with all telemetry events emitted.
-// If the attribute already exists, the value is replaced.
-func SetGlobalAttributes(attributes ...attribute.KeyValue) {
-	globalMu.Lock()
-	defer globalMu.Unlock()
+func set(v *valSynced, attributes []attribute.KeyValue) {
+	v.mu.Lock()
+	defer v.mu.Unlock()
 
-	baggage := global.Load().(baggage.Baggage)
+	baggage := v.val.Load().(baggage.Baggage)
 	newBaggage := baggage.Set(attributes...)
 
-	global.Store(newBaggage)
+	v.val.Store(newBaggage)
 }
 
-// Returns all global attributes set.
-func GetGlobalAttributes() []attribute.KeyValue {
-	baggage := global.Load().(baggage.Baggage)
+func get(v *valSynced) []attribute.KeyValue {
+	baggage := v.val.Load().(baggage.Baggage)
 	return baggage.Attributes()
 }
 
-// Sets usage attributes that are included with usage events emitted.
-// If the attribute already exists, the value is replaced.
-func SetUsageAttributes(attributes ...attribute.KeyValue) {
-	usageMu.Lock()
-	defer usageMu.Unlock()
+func appendTo(v *valSynced, attr attribute.KeyValue) {
+	v.mu.Lock()
+	defer v.mu.Unlock()
 
-	baggage := usage.Load().(baggage.Baggage)
-	newBaggage := baggage.Set(attributes...)
-
-	usage.Store(newBaggage)
-}
-
-// Sets or appends a value to a slice-type usage attribute that possibly exists.
-// The attribute is expected to be a slice-type value, and matches the existing type.
-// Otherwise, a strict replacement is performed.
-func AppendUsageAttribute(attr attribute.KeyValue) {
-	usageMu.Lock()
-	defer usageMu.Unlock()
-
-	baggage := usage.Load().(baggage.Baggage)
+	baggage := v.val.Load().(baggage.Baggage)
 	val, ok := baggage.Lookup(attr.Key)
 	if ok && val.Type() == attr.Value.Type() {
 		switch attr.Value.Type() {
@@ -91,11 +75,34 @@ func AppendUsageAttribute(attr attribute.KeyValue) {
 	}
 
 	newBaggage := baggage.Set(attr)
-	usage.Store(newBaggage)
+	v.val.Store(newBaggage)
+}
+
+// Sets global attributes that are included with all telemetry events emitted.
+// If the attribute already exists, the value is replaced.
+func SetGlobalAttributes(attributes ...attribute.KeyValue) {
+	set(&globalVal, attributes)
+}
+
+// Returns all global attributes set.
+func GetGlobalAttributes() []attribute.KeyValue {
+	return get(&globalVal)
+}
+
+// Sets usage attributes that are included with usage events emitted.
+// If the attribute already exists, the value is replaced.
+func SetUsageAttributes(attributes ...attribute.KeyValue) {
+	set(&usageVal, attributes)
 }
 
 // Returns all usage attributes set.
 func GetUsageAttributes() []attribute.KeyValue {
-	baggage := usage.Load().(baggage.Baggage)
-	return baggage.Attributes()
+	return get(&usageVal)
+}
+
+// Sets or appends a value to a slice-type usage attribute that possibly exists.
+// The attribute is expected to be a slice-type value, and matches the existing type.
+// Otherwise, a strict replacement is performed.
+func AppendUsageAttribute(attr attribute.KeyValue) {
+	appendTo(&usageVal, attr)
 }

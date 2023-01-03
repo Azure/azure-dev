@@ -38,8 +38,7 @@ func NewInitializer(
 // Initializes a local repository in the project directory from a remote repository.
 //
 // A confirmation prompt is displayed for any existing files to be overwritten.
-func (i *Initializer) Initialize(
-	ctx context.Context,
+func (i *Initializer) Initialize(ctx context.Context,
 	azdCtx *azdcontext.AzdContext,
 	templateUrl string,
 	templateBranch string) error {

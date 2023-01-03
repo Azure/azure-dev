@@ -26,7 +26,8 @@ func Test_Command_Actions(t *testing.T) {
 	require.NoError(t, err)
 
 	// Create a empty azure.yaml to ensure AzdContext can be constructed
-	os.WriteFile("azure.yaml", nil, osutil.PermissionFile)
+	err = os.WriteFile("azure.yaml", nil, osutil.PermissionFile)
+	require.NoError(t, err)
 
 	chain := []*actions.MiddlewareRegistration{
 		{

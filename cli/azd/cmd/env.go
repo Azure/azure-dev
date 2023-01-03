@@ -91,8 +91,7 @@ func newEnvSetAction(
 }
 
 func (e *envSetAction) Run(ctx context.Context) (*actions.ActionResult, error) {
-	//lint:ignore SA4006 // We want ctx overridden here for future changes
-	env, err := loadOrInitEnvironment( //nolint:ineffassign,staticcheck
+	env, err := loadOrInitEnvironment(
 		ctx,
 		&e.flags.environmentName,
 		e.azdCtx,
@@ -441,8 +440,7 @@ func newEnvGetValuesAction(
 }
 
 func (eg *envGetValuesAction) Run(ctx context.Context) (*actions.ActionResult, error) {
-	//lint:ignore SA4006 // We want ctx overridden here for future changes
-	env, err := loadOrInitEnvironment( //nolint:ineffassign,staticcheck
+	env, err := loadOrInitEnvironment(
 		ctx,
 		&eg.flags.environmentName,
 		eg.azdCtx,

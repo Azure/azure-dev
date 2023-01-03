@@ -134,6 +134,7 @@ stages:
               ARM_CLIENT_ID: $(arm-client-id)
               ARM_CLIENT_SECRET: $(arm-client-secret)
               ARM_TENANT_ID: $(arm-tenant-id)
+              AZD_DEBUG_FORCE_TELEMETRY_SYNC_UPLOAD: true
 
           - task: PublishTestResults@2
             inputs:

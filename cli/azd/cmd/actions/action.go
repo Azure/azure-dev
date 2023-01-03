@@ -34,6 +34,7 @@ type Action interface {
 	Run(ctx context.Context) (*ActionResult, error)
 }
 
+func ToUxItem(actionResult *ActionResult, err error) ux.UxItem {
 	if err != nil {
 		return &ux.ActionResult{
 			SuccessMessage: "",

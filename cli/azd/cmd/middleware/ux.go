@@ -25,7 +25,7 @@ func (r *UxMiddleware) Run(ctx context.Context, next NextFn) (*actions.ActionRes
 	result, err := next(ctx)
 
 	if result != nil {
-		r.console.MessageUxItem(ctx, actions.ToActionResult(result, err))
+		r.console.MessageUxItem(ctx, actions.ToUxItem(result, err))
 	}
 
 	return result, err

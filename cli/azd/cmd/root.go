@@ -208,12 +208,7 @@ For more information, visit the Azure Developer CLI Dev Hub: https://aka.ms/azur
 		UseMiddleware("ux", middleware.NewUxMiddleware)
 
 	registerCommonDependencies(ioc.Global)
-
-		// It is valid for a command to return a nil action result and error. If we have a result or an error, display it,
-		// otherwise don't print anything.
-		if actionResult != nil || err != nil {
-			console.MessageUxItem(ctx, actions.ToUxItem(actionResult, err))
-		}
+	cobraBuilder := NewCobraBuilder(ioc.Global)
 
 	// Compose the hierarchy of action descriptions into cobra commands
 	cmd, err := cobraBuilder.BuildCommand(root)

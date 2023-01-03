@@ -100,7 +100,7 @@ type initAction struct {
 	console         input.Console
 	cmdRun          exec.CommandRunner
 	gitCli          git.GitCli
-	flags          *initFlags
+	flags           *initFlags
 	repoInitializer *repository.Initializer
 }
 
@@ -111,7 +111,7 @@ func newInitAction(
 	console input.Console,
 	gitCli git.GitCli,
 	flags *initFlags,
-	repoInitializer *repository.Initializer) (*initAction, error) {
+	repoInitializer *repository.Initializer) actions.Action {
 	return &initAction{
 		azCli:           azCli,
 		accountManager:  accountManager,
@@ -120,7 +120,7 @@ func newInitAction(
 		gitCli:          gitCli,
 		flags:           flags,
 		repoInitializer: repoInitializer,
-	}, nil
+	}
 }
 
 func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {

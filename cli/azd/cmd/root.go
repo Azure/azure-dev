@@ -22,7 +22,10 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func NewRootCmd(staticHelp bool) *cobra.Command {
+// Creates the root Cobra command for AZD.
+// staticHelp - False, except for running for doc generation
+// middlewareChain - nil, except for running unit tests
+func NewRootCmd(staticHelp bool, middlewareChain []*actions.MiddlewareRegistration) *cobra.Command {
 	prevDir := ""
 	opts := &internal.GlobalCommandOptions{GenerateStaticHelp: staticHelp}
 	opts.EnableTelemetry = telemetry.IsTelemetryEnabled()
@@ -188,6 +191,13 @@ For more information, visit the Azure Developer CLI Dev Hub: https://aka.ms/azur
 		OutputFormats:  []output.Format{output.JsonFormat, output.NoneFormat},
 		DefaultFormat:  output.NoneFormat,
 	})
+
+	// Register any global middleware defined by the caller
+	if len(middlewareChain) > 0 {
+		for _, registration := range middlewareChain {
+			root.UseMiddlewareWhen(registration.Name, registration.Resolver, registration.Predicate)
+		}
+	}
 
 	// Global middleware registration
 	root.

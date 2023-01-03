@@ -18,7 +18,7 @@ func authActions(root *actions.ActionDescriptor) *actions.ActionDescriptor {
 		FlagsResolver:  newAuthTokenFlags,
 		ActionResolver: newAuthTokenAction,
 		OutputFormats:  []output.Format{output.JsonFormat},
-		DefaultFormat:  output.NoneFormat,
+		DefaultFormat:  output.JsonFormat,
 	})
 
 	return group

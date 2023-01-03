@@ -97,6 +97,7 @@ func (cb *CobraBuilder) configureActionResolver(cmd *cobra.Command, descriptor *
 		}
 
 		// Run the middleware chain with action
+		log.Printf("Resolved action '%s'\n", actionName)
 		_, err := cb.runner.RunAction(ctx, runOptions, action)
 
 		return err

@@ -153,7 +153,12 @@ func BuildCmd[F any](
 		actionResult, err := action.Run(ctx)
 		// At this point, we know that there might be an error, so we can silence cobra from showing it after us.
 		cmd.SilenceErrors = true
-		console.MessageUxItem(ctx, actions.ToActionResult(actionResult, err))
+
+		// It is valid for a command to return a nil action result and error. If we have a result or an error, display it,
+		// otherwise don't print anything.
+		if actionResult != nil || err != nil {
+			console.MessageUxItem(ctx, actions.ToUxItem(actionResult, err))
+		}
 
 		return err
 	}

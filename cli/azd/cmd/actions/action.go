@@ -32,7 +32,7 @@ type Action interface {
 	Run(ctx context.Context) (*ActionResult, error)
 }
 
-func ToActionResult(actionResult *ActionResult, err error) ux.UxItem {
+func ToUxItem(actionResult *ActionResult, err error) ux.UxItem {
 	if err != nil {
 		return &ux.ActionResult{
 			SuccessMessage: "",

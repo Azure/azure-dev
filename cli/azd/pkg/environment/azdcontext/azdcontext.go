@@ -155,7 +155,7 @@ func NewAzdContextWithDirectory(projectDirectory string) *AzdContext {
 }
 
 var (
-	errNoProject = errors.New("no project exists; to create a new project, run `azd init`")
+	ErrNoProject = errors.New("no project exists; to create a new project, run `azd init`")
 )
 
 // Creates context with project directory set to the nearest project file found.
@@ -181,7 +181,7 @@ func NewAzdContext() (*AzdContext, error) {
 		if os.IsNotExist(err) || (err == nil && stat.IsDir()) {
 			parent := filepath.Dir(searchDir)
 			if parent == searchDir {
-				return nil, errNoProject
+				return nil, ErrNoProject
 			}
 			searchDir = parent
 		} else if err == nil {

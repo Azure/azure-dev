@@ -114,7 +114,6 @@ var CommonSet = wire.NewSet(
 	config.NewUserConfigManager,
 	account.NewManager,
 	azdcontext.NewAzdContext,
-	loadProjectConfig,
 	newCommandRunnerFromConsole,
 	newFormatterFromConsole,
 	newOutputWriter,

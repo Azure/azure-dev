@@ -100,10 +100,6 @@ func newInfraCreateAction(
 }
 
 func (i *infraCreateAction) Run(ctx context.Context) (*actions.ActionResult, error) {
-	if err := ensureProject(i.azdCtx.ProjectPath()); err != nil {
-		return nil, err
-	}
-
 	// Command title
 	i.console.MessageUxItem(ctx, &ux.MessageTitle{
 		Title:     "Provisioning Azure resources (azd provision)",

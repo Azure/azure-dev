@@ -82,10 +82,6 @@ func newMonitorAction(
 }
 
 func (m *monitorAction) Run(ctx context.Context) (*actions.ActionResult, error) {
-	if err := ensureProject(m.azdCtx.ProjectPath()); err != nil {
-		return nil, err
-	}
-
 	if !m.flags.monitorLive && !m.flags.monitorLogs && !m.flags.monitorOverview {
 		m.flags.monitorOverview = true
 	}

@@ -14,6 +14,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/templates"
@@ -49,7 +50,7 @@ func initDeployAction(console input.Console, ctx context.Context, o *internal.Gl
 	}
 	azCli := newAzCliFromOptions(o, tokenCredential)
 	commandRunner := newCommandRunnerFromConsole(console)
-	azdContext, err := newAzdContext()
+	azdContext, err := azdcontext.NewAzdContext()
 	if err != nil {
 		return nil, err
 	}
@@ -73,10 +74,6 @@ func initInitAction(console input.Console, ctx context.Context, o *internal.Glob
 		return nil, err
 	}
 	azCli := newAzCliFromOptions(o, tokenCredential)
-	azdContext, err := newAzdContext()
-	if err != nil {
-		return nil, err
-	}
 	configManager := config.NewManager()
 	accountManager, err := account.NewManager(configManager, azCli)
 	if err != nil {
@@ -84,8 +81,8 @@ func initInitAction(console input.Console, ctx context.Context, o *internal.Glob
 	}
 	commandRunner := newCommandRunnerFromConsole(console)
 	gitCli := git.NewGitCli(commandRunner)
-	initializer := repository.NewInitializer(azdContext, console, gitCli)
-	cmdInitAction, err := newInitAction(azCli, azdContext, accountManager, commandRunner, console, gitCli, flags, initializer)
+	initializer := repository.NewInitializer(console, gitCli)
+	cmdInitAction, err := newInitAction(azCli, accountManager, commandRunner, console, gitCli, flags, initializer)
 	if err != nil {
 		return nil, err
 	}
@@ -127,10 +124,6 @@ func initUpAction(console input.Console, ctx context.Context, o *internal.Global
 		return nil, err
 	}
 	azCli := newAzCliFromOptions(o, tokenCredential)
-	azdContext, err := newAzdContext()
-	if err != nil {
-		return nil, err
-	}
 	configManager := config.NewManager()
 	accountManager, err := account.NewManager(configManager, azCli)
 	if err != nil {
@@ -139,12 +132,16 @@ func initUpAction(console input.Console, ctx context.Context, o *internal.Global
 	commandRunner := newCommandRunnerFromConsole(console)
 	gitCli := git.NewGitCli(commandRunner)
 	cmdInitFlags := flags.initFlags
-	initializer := repository.NewInitializer(azdContext, console, gitCli)
-	cmdInitAction, err := newInitAction(azCli, azdContext, accountManager, commandRunner, console, gitCli, cmdInitFlags, initializer)
+	initializer := repository.NewInitializer(console, gitCli)
+	cmdInitAction, err := newInitAction(azCli, accountManager, commandRunner, console, gitCli, cmdInitFlags, initializer)
 	if err != nil {
 		return nil, err
 	}
 	cmdInfraCreateFlags := flags.infraCreateFlags
+	azdContext, err := azdcontext.NewAzdContext()
+	if err != nil {
+		return nil, err
+	}
 	formatter := newFormatterFromConsole(console)
 	writer := newOutputWriter(console)
 	cmdInfraCreateAction := newInfraCreateAction(cmdInfraCreateFlags, azCli, azdContext, console, formatter, writer, commandRunner)
@@ -158,7 +155,7 @@ func initUpAction(console input.Console, ctx context.Context, o *internal.Global
 }
 
 func initMonitorAction(console input.Console, ctx context.Context, o *internal.GlobalCommandOptions, flags monitorFlags, args []string) (actions.Action, error) {
-	azdContext, err := newAzdContext()
+	azdContext, err := azdcontext.NewAzdContext()
 	if err != nil {
 		return nil, err
 	}
@@ -187,7 +184,7 @@ func initRestoreAction(console input.Console, ctx context.Context, o *internal.G
 		return nil, err
 	}
 	azCli := newAzCliFromOptions(o, tokenCredential)
-	azdContext, err := newAzdContext()
+	azdContext, err := azdcontext.NewAzdContext()
 	if err != nil {
 		return nil, err
 	}
@@ -209,7 +206,7 @@ func initShowAction(console input.Console, ctx context.Context, o *internal.Glob
 		return nil, err
 	}
 	azCli := newAzCliFromOptions(o, tokenCredential)
-	azdContext, err := newAzdContext()
+	azdContext, err := azdcontext.NewAzdContext()
 	if err != nil {
 		return nil, err
 	}
@@ -251,7 +248,7 @@ func initInfraCreateAction(console input.Console, ctx context.Context, o *intern
 		return nil, err
 	}
 	azCli := newAzCliFromOptions(o, tokenCredential)
-	azdContext, err := newAzdContext()
+	azdContext, err := azdcontext.NewAzdContext()
 	if err != nil {
 		return nil, err
 	}
@@ -273,7 +270,7 @@ func initInfraDeleteAction(console input.Console, ctx context.Context, o *intern
 		return nil, err
 	}
 	azCli := newAzCliFromOptions(o, tokenCredential)
-	azdContext, err := newAzdContext()
+	azdContext, err := azdcontext.NewAzdContext()
 	if err != nil {
 		return nil, err
 	}
@@ -283,7 +280,7 @@ func initInfraDeleteAction(console input.Console, ctx context.Context, o *intern
 }
 
 func initEnvSetAction(console input.Console, ctx context.Context, o *internal.GlobalCommandOptions, flags envSetFlags, args []string) (actions.Action, error) {
-	azdContext, err := newAzdContext()
+	azdContext, err := azdcontext.NewAzdContext()
 	if err != nil {
 		return nil, err
 	}
@@ -302,7 +299,7 @@ func initEnvSetAction(console input.Console, ctx context.Context, o *internal.Gl
 }
 
 func initEnvSelectAction(console input.Console, ctx context.Context, o *internal.GlobalCommandOptions, flags struct{}, args []string) (actions.Action, error) {
-	azdContext, err := newAzdContext()
+	azdContext, err := azdcontext.NewAzdContext()
 	if err != nil {
 		return nil, err
 	}
@@ -311,7 +308,7 @@ func initEnvSelectAction(console input.Console, ctx context.Context, o *internal
 }
 
 func initEnvListAction(console input.Console, ctx context.Context, o *internal.GlobalCommandOptions, flags struct{}, args []string) (actions.Action, error) {
-	azdContext, err := newAzdContext()
+	azdContext, err := azdcontext.NewAzdContext()
 	if err != nil {
 		return nil, err
 	}
@@ -322,7 +319,7 @@ func initEnvListAction(console input.Console, ctx context.Context, o *internal.G
 }
 
 func initEnvNewAction(console input.Console, ctx context.Context, o *internal.GlobalCommandOptions, flags envNewFlags, args []string) (actions.Action, error) {
-	azdContext, err := newAzdContext()
+	azdContext, err := azdcontext.NewAzdContext()
 	if err != nil {
 		return nil, err
 	}
@@ -341,7 +338,7 @@ func initEnvNewAction(console input.Console, ctx context.Context, o *internal.Gl
 }
 
 func initEnvRefreshAction(console input.Console, ctx context.Context, o *internal.GlobalCommandOptions, flags envRefreshFlags, args []string) (actions.Action, error) {
-	azdContext, err := newAzdContext()
+	azdContext, err := azdcontext.NewAzdContext()
 	if err != nil {
 		return nil, err
 	}
@@ -363,7 +360,7 @@ func initEnvRefreshAction(console input.Console, ctx context.Context, o *interna
 }
 
 func initEnvGetValuesAction(console input.Console, ctx context.Context, o *internal.GlobalCommandOptions, flags envGetValuesFlags, args []string) (actions.Action, error) {
-	azdContext, err := newAzdContext()
+	azdContext, err := azdcontext.NewAzdContext()
 	if err != nil {
 		return nil, err
 	}
@@ -394,7 +391,7 @@ func initPipelineConfigAction(console input.Console, ctx context.Context, o *int
 		return nil, err
 	}
 	azCli := newAzCliFromOptions(o, tokenCredential)
-	azdContext, err := newAzdContext()
+	azdContext, err := azdcontext.NewAzdContext()
 	if err != nil {
 		return nil, err
 	}

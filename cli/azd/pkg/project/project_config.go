@@ -284,7 +284,9 @@ func LoadProjectConfig(projectPath string) (*ProjectConfig, error) {
 		return nil, fmt.Errorf("parsing project file: %w", err)
 	}
 
-	telemetry.SetUsageAttributes(fields.StringHashed(fields.TemplateIdKey, projectConfig.Metadata.Template))
+	if projectConfig.Metadata != nil {
+		telemetry.SetUsageAttributes(fields.StringHashed(fields.TemplateIdKey, projectConfig.Metadata.Template))
+	}
 
 	projectConfig.Path = filepath.Dir(projectPath)
 	return projectConfig, nil

@@ -20,7 +20,7 @@ func Test_Command_Actions(t *testing.T) {
 	chain := []*actions.MiddlewareRegistration{
 		{
 			Name:     "skip",
-			Resolver: middleware.NewSkipMiddleware,
+			Resolver: newSkipMiddleware,
 		},
 	}
 
@@ -54,4 +54,20 @@ func resetOsArgs(t *testing.T) {
 	t.Cleanup(func() {
 		os.Args = defaultArgs
 	})
+}
+
+// SkipMiddleware is used in select testing scenarios where we
+// need to skip the invocation of the middleware & action pipeline
+// and just return a value
+type skipMiddleware struct {
+}
+
+// Creates a new Skip Middleware
+func newSkipMiddleware() middleware.Middleware {
+	return &skipMiddleware{}
+}
+
+// Skips the middleware pipeline and returns a nil value
+func (r *skipMiddleware) Run(ctx context.Context, next middleware.NextFn) (*actions.ActionResult, error) {
+	return nil, nil
 }

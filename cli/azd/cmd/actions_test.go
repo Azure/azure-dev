@@ -9,6 +9,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/cmd/middleware"
+	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/require"
 )
@@ -16,6 +17,16 @@ import (
 // Tests that the command and action can be initialized successfully
 func Test_Command_Actions(t *testing.T) {
 	resetOsArgs(t)
+
+	wd, err := os.Getwd()
+	require.NoError(t, err)
+
+	tempDir := t.TempDir()
+	err = os.Chdir(tempDir)
+	require.NoError(t, err)
+
+	// Create a empty azure.yaml to ensure AzdContext can be constructed
+	os.WriteFile("azure.yaml", nil, osutil.PermissionFile)
 
 	chain := []*actions.MiddlewareRegistration{
 		{
@@ -28,6 +39,11 @@ func Test_Command_Actions(t *testing.T) {
 	// of the underlying command / actions
 	rootCmd := NewRootCmd(true, chain)
 	testCommand(t, rootCmd)
+
+	t.Cleanup(func() {
+		err = os.Chdir(wd)
+		require.NoError(t, err)
+	})
 }
 
 func testCommand(t *testing.T, cmd *cobra.Command) {

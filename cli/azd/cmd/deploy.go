@@ -100,8 +100,8 @@ func newDeployAction(
 	console input.Console,
 	formatter output.Formatter,
 	writer io.Writer,
-) (actions.Action, error) {
-	da := &deployAction{
+) actions.Action {
+	return &deployAction{
 		flags:         flags,
 		azCli:         azCli,
 		azdCtx:        azdCtx,
@@ -110,8 +110,6 @@ func newDeployAction(
 		console:       console,
 		commandRunner: commandRunner,
 	}
-
-	return da, nil
 }
 
 type DeploymentResult struct {

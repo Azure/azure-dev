@@ -34,6 +34,8 @@ func TestPromptForParameter(t *testing.T) {
 		{"boolFalse", "bool", 1, true},
 		{"arrayParam", "array", `["hello", "world"]`, []any{"hello", "world"}},
 		{"objectParam", "object", `{"hello": "world"}`, map[string]any{"hello": "world"}},
+		{"secureObject", "secureObject", `{"hello": "world"}`, map[string]any{"hello": "world"}},
+		{"secureString", "secureString", "value", "value"},
 	} {
 		tc := cc
 

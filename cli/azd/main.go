@@ -44,7 +44,9 @@ func main() {
 
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
 
-	if isDebugEnabled() {
+	debugEnabled := isDebugEnabled()
+
+	if debugEnabled {
 		azcorelog.SetListener(func(event azcorelog.Event, msg string) {
 			log.Printf("%s: %s\n", event, msg)
 		})
@@ -102,9 +104,16 @@ func main() {
 		}
 
 		if ts.EmittedAnyTelemetry() {
-			err := startBackgroundUploadProcess()
-			if err != nil {
-				log.Printf("failed to start background telemetry upload: %v\n", err)
+			if ts.UploadSynchronously() {
+				err := ts.RunBackgroundUpload(ctx, debugEnabled)
+				if err != nil {
+					log.Printf("synchronous telemetry upload failed: %v\n", err)
+				}
+			} else {
+				err := startBackgroundUploadProcess()
+				if err != nil {
+					log.Printf("failed to start background  telemetry upload: %v\n", err)
+				}
 			}
 		}
 	}

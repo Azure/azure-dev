@@ -55,24 +55,27 @@ var nonNullEnvVarRules = []struct {
 	{"bamboo.buildKey", fields.EnvBamboo},
 	// BitBucket - https://support.atlassian.com/bitbucket-cloud/docs/variables-and-secrets/
 	{"BITBUCKET_BUILD_NUMBER", fields.EnvBitBucketPipelines},
-	// GitHub Codespaces -
-	// https://docs.github.com/en/codespaces/developing-in-codespaces/default-environment-variables-for-your-codespace
-	{"CODESPACES", fields.EnvCodespaces},
 	// Unknown CI cases
 	{"CI", fields.EnvUnknownCI},
 	{"BUILD_ID", fields.EnvUnknownCI},
 }
 
 func getExecutionEnvironment() string {
-	hostedEnv, ok := getExecutionEnvironmentForHosted()
+	hostedEnv, ok := GetExecutionEnvironmentForCI()
 	if ok {
 		return hostedEnv
+	}
+
+	// GitHub Codespaces -
+	// https://docs.github.com/en/codespaces/developing-in-codespaces/default-environment-variables-for-your-codespace
+	if _, ok := os.LookupEnv("CODESPACES"); ok {
+		return fields.EnvCodespaces
 	}
 
 	return getExecutionEnvironmentForDesktop()
 }
 
-func getExecutionEnvironmentForHosted() (string, bool) {
+func GetExecutionEnvironmentForCI() (string, bool) {
 	for _, rule := range booleanEnvVarRules {
 		// Some CI providers specify 'True' on Windows vs 'true' on Linux, while others use `True` always
 		// Thus, it's better to err on the side of being generous and be case-insensitive

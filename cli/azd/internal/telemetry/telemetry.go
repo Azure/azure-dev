@@ -17,6 +17,7 @@ import (
 	appinsightsexporter "github.com/azure/azure-dev/cli/azd/internal/telemetry/appinsights-exporter"
 	"github.com/azure/azure-dev/cli/azd/internal/telemetry/resource"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
+	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/benbjohnson/clock"
 	"github.com/gofrs/flock"
 	"go.opentelemetry.io/otel"
@@ -189,4 +190,24 @@ func (ts *TelemetrySystem) tryUploadLock() (*flock.Flock, bool, error) {
 	fileLock := flock.New(filepath.Join(ts.telemetryDirectory, "upload.lock"))
 	locked, err := fileLock.TryLock()
 	return fileLock, locked, err
+}
+
+func (ts *TelemetrySystem) UploadSynchronously() bool {
+	// debug flag for enabling sync upload and ensuring everything works as expected
+	if osutil.GetEnvAsBool("AZD_DEBUG_FORCE_TELEMETRY_SYNC_UPLOAD") {
+		return true
+	}
+
+	// escape hatch for users where sync upload isn't working as expected
+	if osutil.GetEnvAsBool("AZD_FORCE_TELEMETRY_ASYNC_UPLOAD") {
+		return false
+	}
+
+	// Todo: docker detection
+	// _, isCI := resource.GetExecutionEnvironmentForCI()
+	// if isCI {
+
+	// }
+
+	return false
 }

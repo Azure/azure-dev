@@ -6,6 +6,7 @@ package osutil
 import (
 	"os"
 	"runtime"
+	"strconv"
 )
 
 // GetenvOrDefault behaves like `os.Getenv`, except it returns
@@ -16,6 +17,17 @@ func GetenvOrDefault(key string, def string) string {
 		return v
 	}
 	return def
+}
+
+// GetEnvAsBool returns true if the environment variable named by key is set to a truthy value.
+func GetEnvAsBool(key string) bool {
+	if value, has := os.LookupEnv(key); has {
+		if setting, err := strconv.ParseBool(value); err == nil {
+			return setting
+		}
+	}
+
+	return false
 }
 
 func GetNewLineSeparator() string {

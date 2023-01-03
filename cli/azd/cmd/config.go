@@ -9,6 +9,7 @@ import (
 
 	"github.com/MakeNowJust/heredoc/v2"
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
+	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/spf13/cobra"
@@ -17,15 +18,15 @@ import (
 var userConfigPath string
 
 // Setup account command category
-func configActions(root *actions.ActionDescriptor) *actions.ActionDescriptor {
+func configActions(root *actions.ActionDescriptor, rootOptions *internal.GlobalCommandOptions) *actions.ActionDescriptor {
 	userConfigDir, err := config.GetUserConfigDir()
 	if rootOptions.GenerateStaticHelp {
-		userConfigPath = heredoc.Doc(`the configuration path. 
+		userConfigPath = heredoc.Doc(`the configuration path.
 
-		The default value of the config directory is: 
+		The default value of the config directory is:
 		* $HOME/.azd on Linux and MacOS
 		* %USERPROFILE%\.azd on Windows
-		
+
 		The configuration directory can be overridden by specifying a path in the AZD_CONFIG_DIR environment variable`)
 	} else if err != nil {
 		userConfigPath = output.WithBackticks(filepath.Join("$AZURE_CONFIG_DIR", "config.json"))
@@ -65,6 +66,7 @@ func configActions(root *actions.ActionDescriptor) *actions.ActionDescriptor {
 		The configuration directory can be overridden by specifying a path in the AZD_CONFIG_DIR environment variable.`,
 		helpConfigPaths)
 
+	groupCmd := &cobra.Command{
 		Use:   "config",
 		Short: "Manage Azure Developer CLI configuration",
 		Long:  longDescription,

@@ -99,7 +99,7 @@ For more information, visit the Azure Developer CLI Dev Hub: https://aka.ms/azur
 		},
 	})
 
-	configActions(root)
+	configActions(root, opts)
 	envActions(root)
 	infraActions(root)
 	pipelineActions(root)

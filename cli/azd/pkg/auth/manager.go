@@ -178,6 +178,8 @@ func (m *Manager) CredentialForCurrentUser(
 			return nil, fmt.Errorf("loading secret: %v: %w", err, ErrNoCurrentUser)
 		}
 
+		// by default we used the stored tenant (i.e. the one provided with the tenant id parameter when a user ran
+		// `azd login`) but we allow an override using the options bag.
 		tenantID := *currentUser.TenantID
 
 		if options.TenantID != "" {
@@ -185,55 +187,71 @@ func (m *Manager) CredentialForCurrentUser(
 		}
 
 		if ps.ClientSecret != nil {
-			cred, err := azidentity.NewClientSecretCredential(
-				tenantID, *currentUser.ClientID, *ps.ClientSecret, nil,
-			)
-
-			if err != nil {
-				return nil, fmt.Errorf("creating credential: %v: %w", err, ErrNoCurrentUser)
-			}
-
-			return cred, nil
-
+			return newCredentialFromClientSecret(tenantID, *currentUser.ClientID, *ps.ClientSecret)
 		} else if ps.ClientCertificate != nil {
-			certData, err := base64.StdEncoding.DecodeString(*ps.ClientCertificate)
-			if err != nil {
-				return nil, fmt.Errorf("decoding certificate: %v: %w", err, ErrNoCurrentUser)
-			}
-
-			certs, key, err := azidentity.ParseCertificates(certData, nil)
-			if err != nil {
-				return nil, fmt.Errorf("parsing certificate: %v: %w", err, ErrNoCurrentUser)
-			}
-
-			cred, err := azidentity.NewClientCertificateCredential(
-				tenantID, *currentUser.ClientID, certs, key, nil,
-			)
-
-			if err != nil {
-				return nil, fmt.Errorf("creating credential: %v: %w", err, ErrNoCurrentUser)
-			}
-
-			return cred, nil
+			return newCredentialFromClientCertificate(tenantID, *currentUser.ClientID, *ps.ClientCertificate)
 		} else if ps.FederatedToken != nil {
-			cred, err := azidentity.NewClientAssertionCredential(
-				tenantID,
-				*currentUser.ClientID,
-				func(_ context.Context) (string, error) {
-					return *ps.FederatedToken, nil
-				},
-				nil,
-			)
-
-			if err != nil {
-				return nil, fmt.Errorf("creating credential: %v: %w", err, ErrNoCurrentUser)
-			}
-
-			return cred, nil
+			return newCredentialFromClientAssertion(tenantID, *currentUser.ClientID, *ps.FederatedToken)
 		}
 	}
 
 	return nil, ErrNoCurrentUser
+}
+
+func newCredentialFromClientSecret(tenantID string, clientID string, clientSecret string) (azcore.TokenCredential, error) {
+	cred, err := azidentity.NewClientSecretCredential(tenantID, clientID, clientSecret, nil)
+	if err != nil {
+		return nil, fmt.Errorf("creating credential: %v: %w", err, ErrNoCurrentUser)
+	}
+
+	return cred, nil
+}
+
+func newCredentialFromClientCertificate(
+	tenantID string,
+	clientID string,
+	clientCertificate string,
+) (azcore.TokenCredential, error) {
+	certData, err := base64.StdEncoding.DecodeString(clientCertificate)
+	if err != nil {
+		return nil, fmt.Errorf("decoding certificate: %v: %w", err, ErrNoCurrentUser)
+	}
+
+	certs, key, err := azidentity.ParseCertificates(certData, nil)
+	if err != nil {
+		return nil, fmt.Errorf("parsing certificate: %v: %w", err, ErrNoCurrentUser)
+	}
+
+	cred, err := azidentity.NewClientCertificateCredential(
+		tenantID, clientID, certs, key, nil,
+	)
+
+	if err != nil {
+		return nil, fmt.Errorf("creating credential: %v: %w", err, ErrNoCurrentUser)
+	}
+
+	return cred, nil
+}
+
+func newCredentialFromClientAssertion(
+	tenantID string,
+	clientID string,
+	clientAssertion string,
+) (azcore.TokenCredential, error) {
+	cred, err := azidentity.NewClientAssertionCredential(
+		tenantID,
+		clientID,
+		func(_ context.Context) (string, error) {
+			return clientAssertion, nil
+		},
+		nil,
+	)
+
+	if err != nil {
+		return nil, fmt.Errorf("creating credential: %v: %w", err, ErrNoCurrentUser)
+	}
+
+	return cred, nil
 }
 
 func (m *Manager) LoginInteractive(ctx context.Context, redirectPort int) (azcore.TokenCredential, error) {

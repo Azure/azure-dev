@@ -38,7 +38,7 @@ func TestAuthToken(t *testing.T) {
 	})
 
 	a := newAuthTokenActionWithCredentialProvider(
-		token.GetCredentialForCurrentUser,
+		credentialProviderForTokenFn(token),
 		&output.JsonFormatter{},
 		buf,
 		authTokenFlags{
@@ -71,7 +71,7 @@ func TestAuthTokenCustomScopes(t *testing.T) {
 	})
 
 	a := newAuthTokenActionWithCredentialProvider(
-		token.GetCredentialForCurrentUser,
+		credentialProviderForTokenFn(token),
 		&output.JsonFormatter{},
 		io.Discard,
 		authTokenFlags{
@@ -91,7 +91,7 @@ func TestAuthTokenFailure(t *testing.T) {
 	})
 
 	a := newAuthTokenActionWithCredentialProvider(
-		token.GetCredentialForCurrentUser,
+		credentialProviderForTokenFn(token),
 		&output.JsonFormatter{},
 		io.Discard,
 		authTokenFlags{
@@ -110,8 +110,12 @@ func (f authTokenFn) GetToken(ctx context.Context, options policy.TokenRequestOp
 	return f(ctx, options)
 }
 
-func (f authTokenFn) GetCredentialForCurrentUser(
-	_ context.Context, _ *auth.CredentialForCurrentUserOptions,
-) (azcore.TokenCredential, error) {
-	return f, nil
+// credentialProviderForTokenFn creates a provider that returns the given token, regardless of what options are set.
+func credentialProviderForTokenFn(
+	fn authTokenFn,
+) func(context.Context, *auth.CredentialForCurrentUserOptions) (azcore.TokenCredential, error) {
+	return func(_ context.Context, _ *auth.CredentialForCurrentUserOptions) (azcore.TokenCredential, error) {
+		return fn, nil
+	}
+
 }

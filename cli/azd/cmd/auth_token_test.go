@@ -14,6 +14,7 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
+	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/contracts"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
@@ -36,9 +37,14 @@ func TestAuthToken(t *testing.T) {
 		}, nil
 	})
 
-	a := newAuthTokenAction(token, &output.JsonFormatter{}, buf, authTokenFlags{
-		outputFormat: string(output.JsonFormat),
-	})
+	a := newAuthTokenAction(
+		credentialProviderForTokenFn(token),
+		&output.JsonFormatter{},
+		buf,
+		authTokenFlags{
+			outputFormat: string(output.JsonFormat),
+		},
+	)
 
 	_, err := a.Run(context.Background())
 	require.NoError(t, err)
@@ -64,10 +70,15 @@ func TestAuthTokenCustomScopes(t *testing.T) {
 		return azcore.AccessToken{}, nil
 	})
 
-	a := newAuthTokenAction(token, &output.JsonFormatter{}, io.Discard, authTokenFlags{
-		outputFormat: string(output.JsonFormat),
-		scopes:       scopes,
-	})
+	a := newAuthTokenAction(
+		credentialProviderForTokenFn(token),
+		&output.JsonFormatter{},
+		io.Discard,
+		authTokenFlags{
+			outputFormat: string(output.JsonFormat),
+			scopes:       scopes,
+		},
+	)
 
 	_, err := a.Run(context.Background())
 	require.NoError(t, err)
@@ -79,9 +90,14 @@ func TestAuthTokenFailure(t *testing.T) {
 		return azcore.AccessToken{}, errors.New("could not fetch token")
 	})
 
-	a := newAuthTokenAction(token, &output.JsonFormatter{}, io.Discard, authTokenFlags{
-		outputFormat: string(output.JsonFormat),
-	})
+	a := newAuthTokenAction(
+		credentialProviderForTokenFn(token),
+		&output.JsonFormatter{},
+		io.Discard,
+		authTokenFlags{
+			outputFormat: string(output.JsonFormat),
+		},
+	)
 
 	_, err := a.Run(context.Background())
 	require.ErrorContains(t, err, "could not fetch token")
@@ -92,4 +108,14 @@ type authTokenFn func(ctx context.Context, options policy.TokenRequestOptions) (
 
 func (f authTokenFn) GetToken(ctx context.Context, options policy.TokenRequestOptions) (azcore.AccessToken, error) {
 	return f(ctx, options)
+}
+
+// credentialProviderForTokenFn creates a provider that returns the given token, regardless of what options are set.
+func credentialProviderForTokenFn(
+	fn authTokenFn,
+) func(context.Context, *auth.CredentialForCurrentUserOptions) (azcore.TokenCredential, error) {
+	return func(_ context.Context, _ *auth.CredentialForCurrentUserOptions) (azcore.TokenCredential, error) {
+		return fn, nil
+	}
+
 }

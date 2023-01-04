@@ -87,7 +87,7 @@ func newAzCliFromOptions(
 }
 
 func newCredential(ctx context.Context, authManager *auth.Manager) (azcore.TokenCredential, error) {
-	credential, err := authManager.CredentialForCurrentUser(ctx)
+	credential, err := authManager.CredentialForCurrentUser(ctx, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -97,6 +97,12 @@ func newCredential(ctx context.Context, authManager *auth.Manager) (azcore.Token
 	}
 
 	return credential, nil
+}
+
+func newCredentialProviderFromManager(
+	mgr *auth.Manager,
+) func(context.Context, *auth.CredentialForCurrentUserOptions) (azcore.TokenCredential, error) {
+	return mgr.CredentialForCurrentUser
 }
 
 var FormattedConsoleSet = wire.NewSet(
@@ -273,6 +279,6 @@ var ConfigResetCmdSet = wire.NewSet(
 var AuthTokenCmdSet = wire.NewSet(
 	CommonSet,
 	auth.NewManager,
-	newCredential,
+	newCredentialProviderFromManager,
 	newAuthTokenAction,
 	wire.Bind(new(actions.Action), new(*authTokenAction)))

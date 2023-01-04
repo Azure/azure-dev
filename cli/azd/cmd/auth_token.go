@@ -12,6 +12,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/contracts"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
@@ -21,6 +22,7 @@ import (
 
 type authTokenFlags struct {
 	outputFormat string
+	tenantID     string
 	scopes       []string
 	global       *internal.GlobalCommandOptions
 }
@@ -40,26 +42,27 @@ func (f *authTokenFlags) Bind(local *pflag.FlagSet, global *internal.GlobalComma
 	f.global = global
 	output.AddOutputFlag(local, &f.outputFormat, []output.Format{output.JsonFormat}, output.NoneFormat)
 	local.StringArrayVar(&f.scopes, "scope", nil, "The scope to use when requesting an access token")
+	local.StringVar(&f.tenantID, "tenant-id", "", "The tenant id to use when requesting an access token.")
 }
 
 type authTokenAction struct {
-	credential azcore.TokenCredential
-	formatter  output.Formatter
-	writer     io.Writer
-	flags      authTokenFlags
+	credentialProvider func(context.Context, *auth.CredentialForCurrentUserOptions) (azcore.TokenCredential, error)
+	formatter          output.Formatter
+	writer             io.Writer
+	flags              authTokenFlags
 }
 
 func newAuthTokenAction(
-	credential azcore.TokenCredential,
+	credentialProvider func(context.Context, *auth.CredentialForCurrentUserOptions) (azcore.TokenCredential, error),
 	formatter output.Formatter,
 	writer io.Writer,
 	flags authTokenFlags,
 ) *authTokenAction {
 	return &authTokenAction{
-		credential: credential,
-		formatter:  formatter,
-		writer:     writer,
-		flags:      flags,
+		credentialProvider: credentialProvider,
+		formatter:          formatter,
+		writer:             writer,
+		flags:              flags,
 	}
 }
 
@@ -68,7 +71,16 @@ func (a *authTokenAction) Run(ctx context.Context) (*actions.ActionResult, error
 		a.flags.scopes = []string{azure.ManagementScope}
 	}
 
-	token, err := a.credential.GetToken(ctx, policy.TokenRequestOptions{
+	var cred azcore.TokenCredential
+
+	cred, err := a.credentialProvider(ctx, &auth.CredentialForCurrentUserOptions{
+		TenantID: a.flags.tenantID,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	token, err := cred.GetToken(ctx, policy.TokenRequestOptions{
 		Scopes: a.flags.scopes,
 	})
 	if err != nil {

@@ -23,7 +23,7 @@ param webFrontendUrl string
 @description('Absolute URL of the backend service implementing this API.')
 param apiBackendUrl string
 
-var apiPolicyContent = replace(loadTextContent('../../../../../common/infra/gateway/apim/apim-api-policy.xml'), '{0}', webFrontendUrl)
+var apiPolicyContent = replace(loadTextContent('../gateway/apim-api-policy.xml'), '{0}', webFrontendUrl)
 
 resource restApi 'Microsoft.ApiManagement/service/apis@2021-12-01-preview' = {
   name: apiName

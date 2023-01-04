@@ -110,7 +110,7 @@ func RegisterInstance[F any](c *NestedContainer, instance F) {
 	})
 }
 
-// Registers a named constructed instance of the spcified type
+// Registers a named constructed instance of the specified type
 // Panics if the registration fails
 func RegisterNamedInstance[F any](c *NestedContainer, name string, instance F) {
 	container.MustNamedSingletonLazy(c.inner, name, func() F {

@@ -96,10 +96,10 @@ repo:
         patterns:
           - "apim-api.tf"
 
-      - from: ../../../../../../common/infra/gateway/apim-api-policy.xml
-        to: ./modules/apim-api-policy.xml
+      - from: ../../../../../../common/infra/gateway/apim
+        to: ./modules/gateway
         patterns:
-          - "apim-api.tf"
+          - "**/*.tf"
 
   assets:
     # Common assets

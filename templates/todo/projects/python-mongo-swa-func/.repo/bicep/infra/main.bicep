@@ -71,7 +71,7 @@ module api '../../../../../common/infra/bicep/app/api-functions-python.bicep' = 
     appSettings: {
       AZURE_COSMOS_CONNECTION_STRING_KEY: cosmos.outputs.connectionStringKey
       AZURE_COSMOS_DATABASE_NAME: cosmos.outputs.databaseName
-      AZURE_COSMOS_ENDPOINT: cosmos.outputs.endpoint    }
+      AZURE_COSMOS_ENDPOINT: cosmos.outputs.endpoint }
   }
 }
 

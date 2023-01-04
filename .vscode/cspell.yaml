@@ -44,3 +44,4 @@ overrides:
           - myapp
           - azdev
           - myimage
+          - appinsights

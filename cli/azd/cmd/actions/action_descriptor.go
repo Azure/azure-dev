@@ -113,7 +113,7 @@ func (ad *ActionDescriptor) AddFlagCompletion(flagName string, flagCompletionFn 
 // Predicate function used to evaluate middleware registrations
 type UseMiddlewareWhenPredicate func(descriptor *ActionDescriptor) bool
 
-// ActionDescriptionOptions specified all the options for a given azd command and action
+// ActionDescriptionOptions specifies all options for a given azd command and action
 type ActionDescriptorOptions struct {
 	// Cobra command configuration
 	*cobra.Command

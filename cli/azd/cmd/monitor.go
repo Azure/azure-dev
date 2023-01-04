@@ -60,7 +60,7 @@ Examples:
 	$ azd monitor -–live
 	$ azd monitor --logs
 
-	For more information, go to https://aka.ms/azure-dev/monitor.`,
+For more information, go to https://aka.ms/azure-dev/monitor.`,
 	}
 
 	return cmd

@@ -41,7 +41,7 @@ func registerAction[T any](container *ioc.NestedContainer, actionName string) {
 
 		instance, ok := action.(T)
 		if !ok {
-			return zero, fmt.Errorf("failed converting action to initAction")
+			return zero, fmt.Errorf("failed converting action to '%T'", zero)
 		}
 
 		return instance, nil

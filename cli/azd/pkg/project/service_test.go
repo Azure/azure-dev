@@ -120,7 +120,7 @@ func TestDeployProgressMessages(t *testing.T) {
 		TargetResource: mockTarget,
 	}
 
-	result, progress := service.Deploy(*mockContext.Context, azdContext)
+	result, progress := service.Deploy(*mockContext.Context, azdContext, env)
 	progressMessages := []string{}
 
 	go func() {

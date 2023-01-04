@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
@@ -44,6 +45,7 @@ func (svc *Service) RequiredExternalTools() []tools.ExternalTool {
 func (svc *Service) Deploy(
 	ctx context.Context,
 	azdCtx *azdcontext.AzdContext,
+	env *environment.Environment,
 ) (<-chan *ServiceDeploymentChannelResponse, <-chan string) {
 	result := make(chan *ServiceDeploymentChannelResponse, 1)
 	progress := make(chan string)
@@ -74,6 +76,12 @@ func (svc *Service) Deploy(
 			}
 
 			return
+		}
+
+		// Allow users to specify their own endpoints, in cases where they've configured their own front-end load balancers,
+		// reverse proxies or DNS host names outside of the service target (and prefer that to be used instead).
+		if endpointsOverride := env.GetServiceProperty(svc.Config.Name, "ENDPOINTS"); endpointsOverride != "" {
+			res.Endpoints = strings.Split(endpointsOverride, ",")
 		}
 
 		log.Printf("deployed service %s", svc.Config.Name)

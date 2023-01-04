@@ -91,11 +91,6 @@ repo:
         patterns:
           - "apim-api.tf"
 
-      - from: ../../../../../../common/infra/gateway/apim-api-policy.xml
-        to: ./modules/apim-api-policy.xml
-        patterns:
-          - "apim-api.tf"
-
   assets:
     # Common assets
     - from: ./../../
@@ -157,6 +152,9 @@ repo:
 
     - from: ../../../../../common/infra/terraform/core/gateway/apim-api
       to: ./infra/modules/apim-api
+
+    - from: ../../../../../common/infra/gateway/apim
+      to: ./infra/modules/gateway
       
     # .devcontainer common (devcontainer.json)
     - from: ../../../../../common/.devcontainer/devcontainer.json/nodejs/terraform

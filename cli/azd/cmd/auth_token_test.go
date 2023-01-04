@@ -37,7 +37,7 @@ func TestAuthToken(t *testing.T) {
 		}, nil
 	})
 
-	a := newAuthTokenActionWithCredentialProvider(
+	a := newAuthTokenAction(
 		credentialProviderForTokenFn(token),
 		&output.JsonFormatter{},
 		buf,
@@ -70,7 +70,7 @@ func TestAuthTokenCustomScopes(t *testing.T) {
 		return azcore.AccessToken{}, nil
 	})
 
-	a := newAuthTokenActionWithCredentialProvider(
+	a := newAuthTokenAction(
 		credentialProviderForTokenFn(token),
 		&output.JsonFormatter{},
 		io.Discard,
@@ -90,7 +90,7 @@ func TestAuthTokenFailure(t *testing.T) {
 		return azcore.AccessToken{}, errors.New("could not fetch token")
 	})
 
-	a := newAuthTokenActionWithCredentialProvider(
+	a := newAuthTokenAction(
 		credentialProviderForTokenFn(token),
 		&output.JsonFormatter{},
 		io.Discard,

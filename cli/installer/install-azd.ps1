@@ -62,6 +62,8 @@ param(
     [switch] $NoTelemetry
 )
 
+$MSIEXEC = "${env:SystemRoot}\System32\msiexec.exe"
+
 function isLinuxOrMac {
     return $IsLinux -or $IsMacOS
 }
@@ -255,8 +257,8 @@ try {
         }
     }
 
-    $binFilename = 'azd-windows-amd64.exe'
-    $extension = 'zip'
+    $binFilename = ''
+    $extension = 'msi'
     $packageFilename = "azd-windows-amd64.$extension"
 
     if (isLinuxOrMac) {
@@ -301,7 +303,7 @@ try {
     }
 
     $tempFolder = "$([System.IO.Path]::GetTempPath())$([System.IO.Path]::GetRandomFileName())"
-    Write-Verbose "Creating temporary folder for downloading and extracting binary: $tempFolder"
+    Write-Verbose "Creating temporary folder for downloading package: $tempFolder"
     New-Item -ItemType Directory -Path $tempFolder | Out-Null
 
     Write-Verbose "Downloading build from $downloadUrl" -Verbose:$Verbose
@@ -364,7 +366,16 @@ try {
                 Copy-Item "$tempFolder/decompress/$binFilename" $outputFilename  -ErrorAction Stop | Out-Null
             }
         } else {
-            Copy-Item "$tempFolder/decompress/$binFilename" $outputFilename  -ErrorAction Stop | Out-Null
+            $installProcess = Start-Process $MSIEXEC `
+                -ArgumentList "/i", $releaseArchiveFileName, "INSTALLDIR=`"$InstallFolder`"", "/qn" `
+                -PassThru `
+                -Wait
+
+            if ($installProcess.ExitCode) {
+                Write-Error "Could not install MSI at $releaseArchiveFileName"
+                reportTelemetryIfEnabled 'InstallFailed' 'MsiFailure'
+                exit 1
+            }
         }
     } catch {
         Write-Error "Could not copy to $InstallFolder"
@@ -375,57 +386,6 @@ try {
 
     Write-Verbose "Cleaning temporary install directory: $tempFolder" -Verbose:$Verbose
     Remove-Item $tempFolder -Recurse -Force | Out-Null
-
-    # $env:Path, [Environment]::GetEnvironmentVariable('PATH'), Get-ItemProperty,
-    # and setx all expand variables (e.g. %JAVA_HOME%) in the value. Writing the
-    # expanded paths back into the environment would be destructive so instead, read
-    # the PATH entry directly from the registry with the DoNotExpandEnvironmentNames
-    # option and update the PATH entry in the registry.
-    if (!$NoPath -and !(isLinuxOrMac)) {
-        try {
-            # Wrap the Microsoft.Win32.Registry calls in a script block to prevent
-            # the type intializer from attempting to initialize those objects in
-            # non-Windows environments.
-            . {
-                $registryKey = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Environment', $true)
-                $originalPath = $registryKey.GetValue(`
-                    'PATH', `
-                    '', `
-                    [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames `
-                )
-                $originalValueKind = $registryKey.GetValueKind('PATH')
-            }
-            $pathParts = $originalPath -split ';'
-
-            if (!($pathParts -contains $InstallFolder)) {
-                Write-Host "Adding $InstallFolder to PATH"
-
-                $registryKey.SetValue( `
-                    'PATH', `
-                    "$originalPath;$InstallFolder", `
-                    $originalValueKind `
-                )
-
-                # Calling this method ensures that a WM_SETTINGCHANGE message is
-                # sent to top level windows without having to pinvoke from
-                # PowerShell. Setting to $null deletes the variable if it exists.
-                [Environment]::SetEnvironmentVariable( `
-                    'AZD_INSTALLER_NOOP', `
-                    $null, `
-                    [EnvironmentVariableTarget]::User `
-                )
-
-                # Also add the path to the current session
-                $env:PATH += ";$InstallFolder"
-            } else {
-                Write-Host "An entry for $InstallFolder is already in PATH"
-            }
-        } finally {
-            if ($registryKey) {
-                $registryKey.Close()
-            }
-        }
-    }
 
     if (isLinuxOrMac) {
         Write-Host "Successfully installed to $InstallFolder"

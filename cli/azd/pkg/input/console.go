@@ -35,6 +35,8 @@ type ConsoleShim interface {
 	GetFormatter() output.Formatter
 }
 
+type PromptValidator func(response string) error
+
 type Console interface {
 	// Prints out a message to the underlying console write
 	Message(ctx context.Context, message string)
@@ -76,6 +78,7 @@ type AskerConsole struct {
 
 type ConsoleOptions struct {
 	Message      string
+	Help         string
 	Options      []string
 	DefaultValue any
 }
@@ -126,7 +129,8 @@ func (c *AskerConsole) MessageUxItem(ctx context.Context, item ux.UxItem) {
 	if c.formatter != nil && c.formatter.Kind() == output.JsonFormat {
 		// no need to check the spinner for json format, as the spinner won't start when using json format
 		// instead, there would be a message about starting spinner
-		fmt.Fprintln(c.writer, string(item.ToJson()))
+		json, _ := json.Marshal(item)
+		fmt.Fprintln(c.writer, string(json))
 		return
 	}
 
@@ -260,6 +264,7 @@ func (c *AskerConsole) Prompt(ctx context.Context, options ConsoleOptions) (stri
 	survey := &survey.Input{
 		Message: options.Message,
 		Default: defaultValue,
+		Help:    options.Help,
 	}
 
 	var response string
@@ -277,6 +282,7 @@ func (c *AskerConsole) Select(ctx context.Context, options ConsoleOptions) (int,
 		Message: options.Message,
 		Options: options.Options,
 		Default: options.DefaultValue,
+		Help:    options.Help,
 	}
 
 	var response int
@@ -297,6 +303,7 @@ func (c *AskerConsole) Confirm(ctx context.Context, options ConsoleOptions) (boo
 
 	survey := &survey.Confirm{
 		Message: options.Message,
+		Help:    options.Help,
 		Default: defaultValue,
 	}
 

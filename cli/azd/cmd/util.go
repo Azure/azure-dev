@@ -19,6 +19,8 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/output"
+	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/spf13/pflag"
 )
@@ -261,7 +263,7 @@ func ensureEnvironmentInitialized(
 	if !hasLocation && envSpec.location != "" {
 		env.SetLocation(envSpec.location)
 	} else {
-		location, err := azureutil.PromptLocation(ctx, env, "Please select an Azure location to use:", console, azCli)
+		location, err := azureutil.PromptLocation(ctx, env, "Please select an Azure location to use:", "", console, azCli)
 		if err != nil {
 			return fmt.Errorf("prompting for location: %w", err)
 		}
@@ -321,23 +323,6 @@ func getSubscriptionOptions(ctx context.Context, azCli azcli.AzCli) ([]string, a
 	return subscriptionOptions, defaultSubscription, nil
 }
 
-var (
-	errNoProject = errors.New("no project exists; to create a new project, run `azd init`.")
-)
-
-// ensureProject ensures that a project file exists, using the given
-// context. If a project is missing, errNoProject is returned.
-func ensureProject(path string) error {
-	_, err := os.Stat(path)
-	if errors.Is(err, os.ErrNotExist) {
-		return errNoProject
-	} else if err != nil {
-		return fmt.Errorf("checking for project: %w", err)
-	}
-
-	return nil
-}
-
 type envFlag struct {
 	environmentName string
 }
@@ -350,4 +335,23 @@ func (e *envFlag) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptio
 		// Set the default value to AZURE_ENV_NAME value if available
 		os.Getenv(environment.EnvNameEnvVarName),
 		"The name of the environment to use.")
+}
+
+func getResourceGroupFollowUp(
+	ctx context.Context,
+	formatter output.Formatter,
+	azCli azcli.AzCli,
+	projectConfig *project.ProjectConfig,
+	env *environment.Environment,
+) (followUp string) {
+	if formatter.Kind() != output.JsonFormat {
+		if resourceGroupName, err := project.GetResourceGroupName(ctx, azCli, projectConfig, env); err == nil {
+			followUp = fmt.Sprintf("You can view the resources created under the resource group %s in Azure Portal:\n%s",
+				resourceGroupName, output.WithLinkFormat(fmt.Sprintf(
+					"https://portal.azure.com/#@/resource/subscriptions/%s/resourceGroups/%s/overview",
+					env.GetSubscriptionId(),
+					resourceGroupName)))
+		}
+	}
+	return followUp
 }

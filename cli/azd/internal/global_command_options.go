@@ -20,4 +20,9 @@ type GlobalCommandOptions struct {
 	// AZURE_DEV_COLLECT_TELEMETRY is set to 'no'.
 	// Defaults to true.
 	EnableTelemetry bool
+
+	// Generates platform-agnostic help for use on static documentation sites
+	// like learn.microsoft.com. This is set directly when calling NewRootCmd
+	// and not bound to any command flags.
+	GenerateStaticHelp bool
 }

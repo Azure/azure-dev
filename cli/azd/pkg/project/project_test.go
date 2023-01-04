@@ -50,7 +50,7 @@ services:
 	e := environment.EphemeralWithValues("envA", map[string]string{
 		environment.SubscriptionIdEnvVarName: "SUBSCRIPTION_ID",
 	})
-	projectConfig, err := ParseProjectConfig(testProj, e)
+	projectConfig, err := ParseProjectConfig(testProj)
 	require.NoError(t, err)
 
 	project, err := projectConfig.GetProject(*mockContext.Context, e, mockContext.Console, azCli, mockContext.CommandRunner)
@@ -97,7 +97,7 @@ services:
 	e := environment.EphemeralWithValues("envA", map[string]string{
 		environment.SubscriptionIdEnvVarName: "SUBSCRIPTION_ID",
 	})
-	projectConfig, err := ParseProjectConfig(testProj, e)
+	projectConfig, err := ParseProjectConfig(testProj)
 	require.NoError(t, err)
 
 	project, err := projectConfig.GetProject(*mockContext.Context, e, mockContext.Console, azCli, mockContext.CommandRunner)
@@ -155,7 +155,7 @@ services:
 	e := environment.EphemeralWithValues("envA", map[string]string{
 		environment.SubscriptionIdEnvVarName: "SUBSCRIPTION_ID",
 	})
-	projectConfig, err := ParseProjectConfig(testProj, e)
+	projectConfig, err := ParseProjectConfig(testProj)
 	require.NoError(t, err)
 
 	project, err := projectConfig.GetProject(*mockContext.Context, e, mockContext.Console, azCli, mockContext.CommandRunner)
@@ -221,7 +221,7 @@ services:
 		environment.SubscriptionIdEnvVarName: "SUBSCRIPTION_ID",
 	})
 
-	projectConfig, err := ParseProjectConfig(testProj, e)
+	projectConfig, err := ParseProjectConfig(testProj)
 	require.NoError(t, err)
 
 	project, err := projectConfig.GetProject(*mockContext.Context, e, mockContext.Console, azCli, mockContext.CommandRunner)

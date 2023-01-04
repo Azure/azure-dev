@@ -91,10 +91,6 @@ func newEnvSetAction(
 }
 
 func (e *envSetAction) Run(ctx context.Context) (*actions.ActionResult, error) {
-	if err := ensureProject(e.azdCtx.ProjectPath()); err != nil {
-		return nil, err
-	}
-
 	//lint:ignore SA4006 // We want ctx overridden here for future changes
 	env, ctx, err := loadOrInitEnvironment( //nolint:ineffassign,staticcheck
 		ctx,
@@ -138,10 +134,6 @@ func newEnvSelectAction(azdCtx *azdcontext.AzdContext, args []string) *envSelect
 }
 
 func (e *envSelectAction) Run(ctx context.Context) (*actions.ActionResult, error) {
-	if err := ensureProject(e.azdCtx.ProjectPath()); err != nil {
-		return nil, err
-	}
-
 	if err := e.azdCtx.SetDefaultEnvironmentName(e.args[0]); err != nil {
 		return nil, fmt.Errorf("setting default environment: %w", err)
 	}
@@ -178,10 +170,6 @@ func newEnvListAction(azdCtx *azdcontext.AzdContext, formatter output.Formatter,
 }
 
 func (e *envListAction) Run(ctx context.Context) (*actions.ActionResult, error) {
-	if err := ensureProject(e.azdCtx.ProjectPath()); err != nil {
-		return nil, err
-	}
-
 	envs, err := e.azdCtx.ListEnvironments()
 
 	if err != nil {
@@ -267,10 +255,6 @@ func newEnvNewAction(
 }
 
 func (en *envNewAction) Run(ctx context.Context) (*actions.ActionResult, error) {
-	if err := ensureProject(en.azdCtx.ProjectPath()); err != nil {
-		return nil, err
-	}
-
 	environmentName := ""
 	if len(en.args) >= 1 {
 		environmentName = en.args[0]
@@ -350,16 +334,12 @@ func newEnvRefreshAction(
 }
 
 func (ef *envRefreshAction) Run(ctx context.Context) (*actions.ActionResult, error) {
-	if err := ensureProject(ef.azdCtx.ProjectPath()); err != nil {
-		return nil, err
-	}
-
 	env, ctx, err := loadOrInitEnvironment(ctx, &ef.flags.environmentName, ef.azdCtx, ef.console, ef.azCli)
 	if err != nil {
 		return nil, fmt.Errorf("loading environment: %w", err)
 	}
 
-	prj, err := project.LoadProjectConfig(ef.azdCtx.ProjectPath(), env)
+	prj, err := project.LoadProjectConfig(ef.azdCtx.ProjectPath())
 	if err != nil {
 		return nil, fmt.Errorf("loading project: %w", err)
 	}
@@ -461,10 +441,6 @@ func newEnvGetValuesAction(
 }
 
 func (eg *envGetValuesAction) Run(ctx context.Context) (*actions.ActionResult, error) {
-	if err := ensureProject(eg.azdCtx.ProjectPath()); err != nil {
-		return nil, err
-	}
-
 	//lint:ignore SA4006 // We want ctx overridden here for future changes
 	env, ctx, err := loadOrInitEnvironment( //nolint:ineffassign,staticcheck
 		ctx,

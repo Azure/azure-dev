@@ -10,7 +10,7 @@ import (
 	"testing"
 
 	azdexec "github.com/azure/azure-dev/cli/azd/pkg/exec"
-	mockexec "github.com/azure/azure-dev/cli/azd/test/mocks/exec"
+	"github.com/azure/azure-dev/cli/azd/test/mocks/mockexec"
 	"github.com/azure/azure-dev/cli/azd/test/ostest"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"

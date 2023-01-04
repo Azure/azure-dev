@@ -15,8 +15,8 @@ import (
 	. "github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 
-	execmock "github.com/azure/azure-dev/cli/azd/test/mocks/exec"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockazcli"
+	"github.com/azure/azure-dev/cli/azd/test/mocks/mockexec"
 	"github.com/stretchr/testify/require"
 )
 
@@ -228,7 +228,7 @@ func createTerraformProvider(mockContext *mocks.MockContext) *TerraformProvider 
 	)
 }
 
-func prepareGenericMocks(commandRunner *execmock.MockCommandRunner) {
+func prepareGenericMocks(commandRunner *mockexec.MockCommandRunner) {
 	commandRunner.When(func(args exec.RunArgs, command string) bool {
 		return strings.Contains(command, "terraform version")
 	}).Respond(exec.RunResult{
@@ -238,7 +238,7 @@ func prepareGenericMocks(commandRunner *execmock.MockCommandRunner) {
 
 }
 
-func preparePlanningMocks(commandRunner *execmock.MockCommandRunner) {
+func preparePlanningMocks(commandRunner *mockexec.MockCommandRunner) {
 	commandRunner.When(func(args exec.RunArgs, command string) bool {
 		return args.Cmd == "terraform" && strings.Contains(command, "init")
 	}).Respond(exec.RunResult{
@@ -261,7 +261,7 @@ func preparePlanningMocks(commandRunner *execmock.MockCommandRunner) {
 	})
 }
 
-func prepareDeployMocks(commandRunner *execmock.MockCommandRunner) {
+func prepareDeployMocks(commandRunner *mockexec.MockCommandRunner) {
 	commandRunner.When(func(args exec.RunArgs, command string) bool {
 		return args.Cmd == "terraform" && strings.Contains(command, "validate")
 	}).Respond(exec.RunResult{
@@ -289,7 +289,7 @@ func prepareDeployMocks(commandRunner *execmock.MockCommandRunner) {
 //go:embed testdata/terraform_show_mock.json
 var terraformShowMockOutput string
 
-func prepareShowMocks(commandRunner *execmock.MockCommandRunner) {
+func prepareShowMocks(commandRunner *mockexec.MockCommandRunner) {
 	commandRunner.When(func(args exec.RunArgs, command string) bool {
 		return args.Cmd == "terraform" && strings.Contains(command, "show")
 	}).Respond(exec.RunResult{
@@ -298,7 +298,7 @@ func prepareShowMocks(commandRunner *execmock.MockCommandRunner) {
 	})
 }
 
-func prepareDestroyMocks(commandRunner *execmock.MockCommandRunner) {
+func prepareDestroyMocks(commandRunner *mockexec.MockCommandRunner) {
 	commandRunner.When(func(args exec.RunArgs, command string) bool {
 		return args.Cmd == "terraform" && strings.Contains(command, "init")
 	}).Respond(exec.RunResult{

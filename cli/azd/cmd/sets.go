@@ -4,13 +4,13 @@ package cmd
 
 import (
 	"context"
-	"fmt"
 	"io"
 	"os"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/internal/repository"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
@@ -86,15 +86,6 @@ func newAzCliFromOptions(
 	})
 }
 
-func newAzdContext() (*azdcontext.AzdContext, error) {
-	azdCtx, err := azdcontext.NewAzdContext()
-	if err != nil {
-		return nil, fmt.Errorf("creating context: %w", err)
-	}
-
-	return azdCtx, nil
-}
-
 func newCredential(ctx context.Context, authManager *auth.Manager) (azcore.TokenCredential, error) {
 	credential, err := authManager.CredentialForCurrentUser(ctx)
 	if err != nil {
@@ -117,7 +108,7 @@ var CommonSet = wire.NewSet(
 	config.NewManager,
 	config.NewUserConfigManager,
 	account.NewManager,
-	newAzdContext,
+	azdcontext.NewAzdContext,
 	newCommandRunnerFromConsole,
 	newFormatterFromConsole,
 	newOutputWriter,
@@ -134,6 +125,7 @@ var InitCmdSet = wire.NewSet(
 	AzCliSet,
 	git.NewGitCli,
 	newInitAction,
+	repository.NewInitializer,
 	wire.Bind(new(actions.Action), new(*initAction)))
 
 var InfraCreateCmdSet = wire.NewSet(
@@ -158,6 +150,7 @@ var UpCmdSet = wire.NewSet(
 	CommonSet,
 	AzCliSet,
 	git.NewGitCli,
+	repository.NewInitializer,
 	newInitAction,
 	newInfraCreateAction,
 	newDeployAction,
@@ -172,7 +165,7 @@ var EnvSetCmdSet = wire.NewSet(
 	wire.Bind(new(actions.Action), new(*envSetAction)))
 
 var EnvSelectCmdSet = wire.NewSet(
-	newAzdContext,
+	azdcontext.NewAzdContext,
 	newEnvSelectAction,
 	wire.Bind(new(actions.Action), new(*envSelectAction)))
 

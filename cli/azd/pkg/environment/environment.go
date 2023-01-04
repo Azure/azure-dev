@@ -131,6 +131,15 @@ func EphemeralWithValues(name string, values map[string]string) *Environment {
 	return env
 }
 
+// Getenv fetches a key from e.Values, falling back to os.Getenv if it is not present.
+func (e *Environment) Getenv(key string) string {
+	if v, has := e.Values[key]; has {
+		return v
+	}
+
+	return os.Getenv(key)
+}
+
 // If `Root` is set, Save writes the current contents of the environment to
 // the given directory, creating it and any intermediate directories as needed.
 func (e *Environment) Save() error {

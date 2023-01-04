@@ -12,7 +12,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/azure/azure-dev/cli/azd/pkg/graphsdk"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
-	graphsdk_mocks "github.com/azure/azure-dev/cli/azd/test/mocks/graphsdk"
+	"github.com/azure/azure-dev/cli/azd/test/mocks/mockgraphsdk"
 	"github.com/stretchr/testify/require"
 )
 
@@ -45,7 +45,7 @@ func TestNewPipeline(t *testing.T) {
 		},
 	}
 
-	clientOptions := graphsdk_mocks.CreateDefaultClientOptions(mockContext)
+	clientOptions := mockgraphsdk.CreateDefaultClientOptions(mockContext)
 	pipeline := graphsdk.NewPipeline(&credential, graphsdk.ServiceConfig, clientOptions)
 	require.False(t, ran)
 	require.NotNil(t, pipeline)

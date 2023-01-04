@@ -262,47 +262,6 @@ stages:
             artifact: docs
             displayName: Upload generated documentation
 
-      - job: Compress_For_Hosting
-        dependsOn: BuildCLI
-        pool:
-          name: azsdk-pool-mms-ubuntu-2004-general
-          vmImage: MMSUbuntu20.04
-
-        steps:
-          - task: DownloadPipelineArtifact@2
-            inputs:
-              artifact: azd-windows-amd64.exe
-              path: azd-windows-amd64.exe
-
-          - task: DownloadPipelineArtifact@2
-            inputs:
-              artifact: azd-linux-amd64
-              path: azd-linux-amd64
-
-          - task: DownloadPipelineArtifact@2
-            inputs:
-              artifact: azd-darwin-amd64
-              path: azd-darwin-amd64
-
-          - pwsh: |
-              Write-Host "Moving downloaded files to hosting folder"
-              New-Item -ItemType Directory -Path hosting
-
-              Write-Host "Compressing artifacts as if publishing"
-              zip hosting/azd-windows-amd64.zip -j azd-windows-amd64.exe/azd-windows-amd64.exe
-
-              chmod +x azd-darwin-amd64/azd-darwin-amd64
-              zip hosting/azd-darwin-amd64.zip -j azd-darwin-amd64/azd-darwin-amd64
-
-              chmod +x azd-linux-amd64/azd-linux-amd64
-              tar -C azd-linux-amd64 -cvzf hosting/azd-linux-amd64.tar.gz azd-linux-amd64
-
-              Get-ChildItem hosting/ -Recurse | Select-Object -Property Name,Size
-            displayName: Move folders to hosting location
-
-          - publish: hosting
-            artifact: test-hosting
-
   - stage: Sign
     dependsOn: BuildAndTest
     jobs:
@@ -443,9 +402,51 @@ stages:
             path: signed-win/
 
   - stage: Verify_Installers
+    condition: and(succeeded(), ne(variables['Skip.VerifyInstallers'], 'true'))
     dependsOn: BuildAndTest
     jobs:
+      - job: Compress_For_Hosting
+        pool:
+          name: azsdk-pool-mms-ubuntu-2004-general
+          vmImage: MMSUbuntu20.04
+
+        steps:
+          - task: DownloadPipelineArtifact@2
+            inputs:
+              artifact: azd-windows-amd64.exe
+              path: azd-windows-amd64.exe
+
+          - task: DownloadPipelineArtifact@2
+            inputs:
+              artifact: azd-linux-amd64
+              path: azd-linux-amd64
+
+          - task: DownloadPipelineArtifact@2
+            inputs:
+              artifact: azd-darwin-amd64
+              path: azd-darwin-amd64
+
+          - pwsh: |
+              Write-Host "Moving downloaded files to hosting folder"
+              New-Item -ItemType Directory -Path hosting
+
+              Write-Host "Compressing artifacts as if publishing"
+              zip hosting/azd-windows-amd64.zip -j azd-windows-amd64.exe/azd-windows-amd64.exe
+
+              chmod +x azd-darwin-amd64/azd-darwin-amd64
+              zip hosting/azd-darwin-amd64.zip -j azd-darwin-amd64/azd-darwin-amd64
+
+              chmod +x azd-linux-amd64/azd-linux-amd64
+              tar -C azd-linux-amd64 -cvzf hosting/azd-linux-amd64.tar.gz azd-linux-amd64
+
+              Get-ChildItem hosting/ -Recurse | Select-Object -Property Name,Size
+            displayName: Move folders to hosting location
+
+          - publish: hosting
+            artifact: test-hosting
+
       - job: Verify_MSI
+        dependsOn: Compress_For_Hosting
         pool: azsdk-pool-mms-win-2019-general
         strategy:
           matrix:
@@ -475,6 +476,7 @@ stages:
             displayName: Test MSI
 
       - job: Verify_Mac_InstallOver
+        dependsOn: Compress_For_Hosting
         pool:
           name: Azure Pipelines
           vmImage: macOS-12
@@ -497,6 +499,7 @@ stages:
             displayName: Run azd version (expect no failure)
 
       - job: Verify_Installers
+        dependsOn: Compress_For_Hosting
         strategy:
           matrix:
             LinuxDockerSh:
@@ -722,6 +725,7 @@ stages:
                     PublishShield: true
                     DockerImageTags: $(CLI_VERSION);latest
                     ReleaseSyndicatedDockerContainer: true
+                    PublishUpdatedDocs: true
 
       - deployment: Increment_Version
         condition: >-
@@ -842,12 +846,19 @@ stages:
             name: GenerateUrlBase
             displayName: Set UrlBase
 
+          - task: DownloadPipelineArtifact@2
+            inputs:
+              artifact: docs
+              path: docs
+
           - pwsh: |
               $urlBase = "$(GenerateUrlBase.UrlBase)"
               $linuxReleaseUrl = "$urlBase/azd-linux-amd64.tar.gz"
               $macosReleaseUrl = "$urlBase/azd-darwin-amd64.zip"
               $windowsReleaseUrl = "$urlBase/azd-windows-amd64.zip"
               $msiReleaseUrl = "$urlBase/azd-windows-amd64.msi"
+
+              $refDocContent = Get-Content docs/azd.md -Raw
 
               $content = @"
               <!-- #comment-cli-pr -->
@@ -897,9 +908,19 @@ stages:
               * $msiReleaseUrl
 
               ### Container
+
               ``````
               docker run -it $(azdev-acr-host)/azure-dev:pr-$(PRNumber)
               ``````
+
+              ## Documentation
+
+              <details>
+              <summary>learn.microsoft.com documentation</summary>
+
+              $refDocContent
+
+              </details>
               "@
               $file = New-TemporaryFile
               Set-Content -Path $file -Value $content

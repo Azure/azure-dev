@@ -1,4 +1,4 @@
-package console
+package mockinput
 
 import (
 	"bytes"
@@ -13,6 +13,9 @@ import (
 
 // A predicate function definition for registering expressions
 type WhenPredicate func(options input.ConsoleOptions) bool
+
+// An action definition for providing responses or errors for an interaction
+type RespondFn func(options input.ConsoleOptions) (any, error)
 
 type SpinnerOpType string
 
@@ -132,10 +135,10 @@ func (c *MockConsole) respond(command string, options input.ConsoleOptions) (any
 	}
 
 	if match == nil {
-		panic(fmt.Sprintf("No mock found for command: '%s'", command))
+		panic(fmt.Sprintf("No mock found for command: '%s' with options: '%+v'", command, options))
 	}
 
-	return match.response, match.error
+	return match.respond(options)
 }
 
 // Registers a prompt expression for mocking in unit tests
@@ -177,20 +180,25 @@ func (c *MockConsole) WhenSelect(predicate WhenPredicate) *MockConsoleExpression
 // MockConsoleExpression is an expression with options response or error
 type MockConsoleExpression struct {
 	command     string
-	response    any
-	error       error
+	respond     RespondFn
 	console     *MockConsole
 	predicateFn WhenPredicate
 }
 
 // Sets the response that will be returned for the current expression
 func (e *MockConsoleExpression) Respond(value any) *MockConsole {
-	e.response = value
+	e.respond = func(_ input.ConsoleOptions) (any, error) { return value, nil }
 	return e.console
 }
 
 // Sets the error that will be returned for the current expression
 func (e *MockConsoleExpression) SetError(err error) *MockConsole {
-	e.error = err
+	e.respond = func(_ input.ConsoleOptions) (any, error) { return nil, err }
+	return e.console
+}
+
+// Sets the function that will be used to provide the response or error for the current expression
+func (e *MockConsoleExpression) RespondFn(respond RespondFn) *MockConsole {
+	e.respond = respond
 	return e.console
 }

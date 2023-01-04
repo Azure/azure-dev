@@ -15,7 +15,7 @@
             "minLength": 3,
             "maxLength": 64,
             "title": "Name of the Azure resource group",
-            "description": "When specified will override the resource group name used for infrastructure provisioning."
+            "description": "When specified will override the resource group name used for infrastructure provisioning. Supports environment variable substitution."
         },
         "metadata": {
             "type": "object",
@@ -64,7 +64,7 @@
                     "resourceName": {
                         "type": "string",
                         "title": "Name of the Azure resource that implements the service",
-                        "description": "By default, the CLI will discover the Azure resource with tag 'azd-service-name' set to the current service's name. When specified, the CLI will instead find the Azure resource with the matching resource name."
+                        "description": "By default, the CLI will discover the Azure resource with tag 'azd-service-name' set to the current service's name. When specified, the CLI will instead find the Azure resource with the matching resource name. Supports environment variable substitution."
                     },
                     "project": {
                         "type": "string",
@@ -132,7 +132,7 @@
                             "tag": {
                                 "type": "string",
                                 "title": "The tag that will be applied to the built container image.",
-                                "description": "If omitted, a unique tag will be generated based on the format: {appName}/{serviceName}-{environmentName}:azdev-deploy-{unix time (seconds)}. Use environment variable substitution to generate unique tags for a given release. For example, myapp/myimage:${DOCKER_IMAGE_TAG}."
+                                "description": "If omitted, a unique tag will be generated based on the format: {appName}/{serviceName}-{environmentName}:azdev-deploy-{unix time (seconds)}. Supports environment variable substitution. For example, to generate unique tags for a given release: myapp/myimage:${DOCKER_IMAGE_TAG}"
                             }
                         }
                     }

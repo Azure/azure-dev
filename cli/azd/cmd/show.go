@@ -74,16 +74,12 @@ func newShowAction(
 }
 
 func (s *showAction) Run(ctx context.Context) (*actions.ActionResult, error) {
-	if err := ensureProject(s.azdCtx.ProjectPath()); err != nil {
-		return nil, err
-	}
-
 	env, ctx, err := loadOrInitEnvironment(ctx, &s.flags.environmentName, s.azdCtx, s.console, s.azCli)
 	if err != nil {
 		return nil, fmt.Errorf("loading environment: %w", err)
 	}
 
-	prj, err := project.LoadProjectConfig(s.azdCtx.ProjectPath(), env)
+	prj, err := project.LoadProjectConfig(s.azdCtx.ProjectPath())
 	if err != nil {
 		return nil, fmt.Errorf("loading project: %w", err)
 	}

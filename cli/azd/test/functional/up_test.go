@@ -225,6 +225,7 @@ func Test_CLI_Up_Down_ContainerApp(t *testing.T) {
 	}
 
 	for _, tt := range tests {
+		tc := tt
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
@@ -241,7 +242,7 @@ func Test_CLI_Up_Down_ContainerApp(t *testing.T) {
 			cli.WorkingDirectory = dir
 			cli.Env = append(os.Environ(),
 				"AZURE_LOCATION=eastus2",
-				fmt.Sprintf("AZURE_PROVISION_CONTAINER_APP=%t", tt.provisionContainerApp))
+				fmt.Sprintf("AZURE_PROVISION_CONTAINER_APP=%t", tc.provisionContainerApp))
 
 			err := copySample(dir, "containerapp")
 			require.NoError(t, err, "failed expanding sample")

@@ -57,7 +57,7 @@ func main() {
 	latest := make(chan semver.Version)
 	go fetchLatestVersion(latest)
 
-	cmdErr := cmd.NewRootCmd().ExecuteContext(ctx)
+	cmdErr := cmd.NewRootCmd(false).ExecuteContext(ctx)
 	latestVersion, ok := <-latest
 
 	// If we were able to fetch a latest version, check to see if we are up to date and

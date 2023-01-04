@@ -47,7 +47,7 @@ func ReadProject(
 	projectRootDir := filepath.Dir(projectPath)
 
 	// Load Project configuration
-	projectConfig, err := LoadProjectConfig(projectRootDir, env)
+	projectConfig, err := LoadProjectConfig(projectRootDir)
 	if err != nil {
 		return nil, fmt.Errorf("reading project config: %w", err)
 	}
@@ -69,8 +69,7 @@ func NewProject(path string, name string) (*Project, error) {
 		return nil, fmt.Errorf("marshaling project file to yaml: %w", err)
 	}
 
-	newLine := osutil.GetNewLineSeparator()
-	projectFileContents := bytes.NewBufferString(projectSchemaAnnotation + newLine + newLine)
+	projectFileContents := bytes.NewBufferString(projectSchemaAnnotation + "\n\n")
 	_, err = projectFileContents.Write(projectBytes)
 	if err != nil {
 		return nil, fmt.Errorf("preparing new project file contents: %w", err)
@@ -100,9 +99,16 @@ func GetResourceGroupName(
 	ctx context.Context,
 	azCli azcli.AzCli,
 	projectConfig *ProjectConfig,
-	env *environment.Environment) (string, error) {
-	if strings.TrimSpace(projectConfig.ResourceGroupName) != "" {
-		return projectConfig.ResourceGroupName, nil
+	env *environment.Environment,
+) (string, error) {
+
+	name, err := projectConfig.ResourceGroupName.Envsubst(env.Getenv)
+	if err != nil {
+		return "", err
+	}
+
+	if strings.TrimSpace(name) != "" {
+		return name, nil
 	}
 
 	envResourceGroupName := environment.GetResourceGroupNameFromEnvVar(env)

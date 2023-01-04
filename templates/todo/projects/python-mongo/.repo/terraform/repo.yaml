@@ -51,16 +51,6 @@ repo:
         patterns:
           - "**/*.tf"
 
-      - from: ../../../../../../common/infra/terraform/core/gateway/apim
-        to: ./modules/apim
-        patterns:
-          - "**/*.tf"
-
-      - from: ../../../../../../common/infra/terraform/core/gateway/apim-api
-        to: ./modules/apim-api
-        patterns:
-          - "**/*.tf"
-
       - from: ../../api/python
         to: ./src/api
         patterns:
@@ -95,11 +85,6 @@ repo:
         to: ../../../src/api/openapi.yaml
         patterns:
           - "apim-api.tf"
-
-      - from: ../../../../../../common/infra/gateway/apim
-        to: ./modules/gateway
-        patterns:
-          - "**/*.tf"
 
   assets:
     # Common assets
@@ -165,6 +150,9 @@ repo:
 
     - from: ../../../../../common/infra/terraform/core/gateway/apim-api
       to: ./infra/modules/apim-api
+
+    - from: ../../../../../common/infra/gateway/apim
+      to: ./infra/modules/gateway
 
     # .devcontainer common (devcontainer.json)
     - from: ../../../../../common/.devcontainer/devcontainer.json/python/terraform

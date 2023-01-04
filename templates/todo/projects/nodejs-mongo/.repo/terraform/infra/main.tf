@@ -157,7 +157,7 @@ module "apimApi" {
   rg_name                   = azurerm_resource_group.rg.name
   web_front_end_url         = module.web.URI
   api_management_logger_id  = module.apim[0].API_MANAGEMENT_LOGGER_ID
-  apiName                   = "todo-api"
-  apiDisplayName            = "Simple Todo API"
-  apiPath                   = "todo"
+  api_name                   = "todo-api"
+  api_display_name            = "Simple Todo API"
+  api_path                   = "todo"
 }

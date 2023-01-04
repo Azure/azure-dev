@@ -18,7 +18,7 @@ variable "web_front_end_url" {
 }
 
 variable "api_name" {
-  description = "Resouce name to uniquely dentify this API within the API Management service instance"
+  description = "Resource name to uniquely identify this API within the API Management service instance"
   type        = string
 }
 

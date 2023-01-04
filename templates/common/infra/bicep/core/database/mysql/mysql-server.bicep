@@ -8,22 +8,28 @@ param keyVaultName string
 
 @description('Database administrator login name')
 @minLength(1)
-param adminName string
+param adminName string = 'mySqlAdmin'
 
-param adminPassKey string = 'MYSQL-PASS'
+// this is not the password, but the key used to load password from Key Vault
+#disable-next-line secure-secrets-in-params
+param adminPasswordKey string = 'MYSQL-PASS'
 
 @description('Database administrator password')
 @minLength(8)
 @secure()
 param adminPassword string
 
-@description('Azure database for MySQL sku name ')
+@description('Azure database for MySQL sku name')
 param skuName string = 'Standard_B1s'
 
+@allowed([
+  'Enabled'
+  'Disabled'
+])
 @description('Enable Storage Auto Grow or not')
-param enableAutoGrow bool = true
+param autoGrow string = 'Enabled'
 
-@description('Azure database for MySQL storage Size ')
+@description('Azure database for MySQL storage Size')
 param storageSizeGB int = 20
 
 @description('Azure database for MySQL storage Iops')
@@ -69,7 +75,7 @@ resource server 'Microsoft.DBforMySQL/flexibleServers@2021-05-01' = {
     administratorLogin: adminName
     administratorLoginPassword: adminPassword
     storage: {
-      autoGrow: enableAutoGrow ? 'Enabled' : 'Disabled'
+      autoGrow: autoGrow
       iops: storageIops
       storageSizeGB: storageSizeGB
     }
@@ -94,9 +100,9 @@ resource firewallRuleAllowAllAzureIps 'Microsoft.DBforMySQL/flexibleServers/fire
   }
 }
 
-resource mySQLAdminPasswordSecret 'Microsoft.KeyVault/vaults/secrets@2022-07-01' = {
+resource mySqlAdminPasswordSecret 'Microsoft.KeyVault/vaults/secrets@2022-07-01' = {
   parent: keyVault
-  name: adminPassKey
+  name: adminPasswordKey
   properties: {
     value: adminPassword
   }
@@ -108,6 +114,8 @@ resource keyVault 'Microsoft.KeyVault/vaults@2022-07-01' existing = {
 
 output name string = server.name
 output adminName string = adminName
-output adminPassKey string = adminPassKey
+// this is not the password, but the key used to load password from Key Vault
+#disable-next-line outputs-should-not-contain-secrets
+output adminPasswordKey string = adminPasswordKey
 output fullyQualifiedDomainName string = server.properties.fullyQualifiedDomainName
 output endpoint string = 'jdbc:mysql://${server.properties.fullyQualifiedDomainName}:3306/?useSSL=true&requireSSL=false'

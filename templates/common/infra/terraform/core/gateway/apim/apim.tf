@@ -40,6 +40,6 @@ resource "azurerm_api_management_logger" "logger" {
   resource_group_name   = var.rg_name
   
   application_insights {
-    instrumentation_key = data.azurerm_application_insights.myappinsights.instrumentation_key
+    instrumentation_key = data.azurerm_application_insights.appinsights.instrumentation_key
   }
 }

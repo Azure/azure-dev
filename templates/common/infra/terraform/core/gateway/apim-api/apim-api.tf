@@ -22,7 +22,7 @@ data "azurerm_api_management" "apim"{
 resource "azurerm_api_management_api" "api" {
   name                  = var.api_name
   resource_group_name   = var.rg_name
-  api_management_name   = data.azurerm_api_management.myapim.name
+  api_management_name   = data.azurerm_api_management.apim.name
   revision              = "1"
   display_name          = var.api_display_name
   path                  = var.api_path

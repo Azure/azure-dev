@@ -7,8 +7,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 )
 
-const AnnotationName string = "actionName"
-
 // ActionFunc is an Action implementation for regular functions.
 type ActionFunc func(context.Context) (*ActionResult, error)
 

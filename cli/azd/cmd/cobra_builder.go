@@ -7,6 +7,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/cmd/middleware"
+	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
@@ -123,10 +124,19 @@ func (cb *CobraBuilder) configureActionResolver(cmd *cobra.Command, descriptor *
 
 		// Run the middleware chain with action
 		log.Printf("Resolved action '%s'\n", actionName)
-		_, err := cb.runner.RunAction(ctx, runOptions, action)
+		actionResult, err := cb.runner.RunAction(ctx, runOptions, action)
 
 		// At this point, we know that there might be an error, so we can silence cobra from showing it after us.
 		cmd.SilenceErrors = true
+
+		// TODO: Consider refactoring to move the UX writing to a middleware
+		err = ioc.Global.Invoke(func(console input.Console) {
+			// It is valid for a command to return a nil action result and error. If we have a result or an error, display it,
+			// otherwise don't print anything.
+			if actionResult != nil || err != nil {
+				console.MessageUxItem(ctx, actions.ToUxItem(actionResult, err))
+			}
+		})
 
 		return err
 	}

@@ -11,7 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func Test_Middleware(t *testing.T) {
+func Test_Middleware_RunAction(t *testing.T) {
 	// In a standard success case both the action and the middleware will succeed
 	t.Run("success", func(t *testing.T) {
 		preRan := false
@@ -125,6 +125,25 @@ func Test_Middleware(t *testing.T) {
 		// Notice the order in which the middleware components execute in a FILO stack similar to golang defer statements
 		require.Equal(t, []string{"Pre-A", "Pre-B", "action", "Post-B", "Post-A"}, runLog)
 	})
+}
+
+func Test_Middleware_RunChildAction(t *testing.T) {
+	mockContext := mocks.NewMockContext(context.Background())
+	middlewareRunner := NewMiddlewareRunner(ioc.NewNestedContainer(nil))
+	runLog := []string{}
+
+	action, actionRan := createAction(&runLog)
+	runOptions := &Options{Name: "test"}
+
+	require.False(t, runOptions.IsChildAction())
+	result, err := middlewareRunner.RunChildAction(*mockContext.Context, runOptions, action)
+
+	// Executing RunChildAction sets a marker on the options that this is a child action
+	require.True(t, runOptions.IsChildAction())
+
+	require.NotNil(t, result)
+	require.NoError(t, err)
+	require.True(t, *actionRan)
 }
 
 func createAction(runLog *[]string) (actions.Action, *bool) {

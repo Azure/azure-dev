@@ -30,6 +30,11 @@ repo:
         to: ../core
         patterns:
           - "**/*.bicep"
+      
+      - from: ../../../../../common/infra/gateway/apim
+        to: ../gateway
+        patterns:
+          - "**/*.bicep"
 
       # app service modules
       - from: ../../../../../../common/infra/bicep

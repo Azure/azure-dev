@@ -118,7 +118,7 @@ func newPipelineConfigAction(
 
 // Run implements action interface
 func (p *pipelineConfigAction) Run(ctx context.Context) (*actions.ActionResult, error) {
-	env, ctx, err := loadOrInitEnvironment(ctx, &p.flags.environmentName, p.azdCtx, p.console, p.azCli)
+	env, err := loadOrInitEnvironment(ctx, &p.flags.environmentName, p.azdCtx, p.console, p.azCli)
 	if err != nil {
 		return nil, fmt.Errorf("loading environment: %w", err)
 	}

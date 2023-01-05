@@ -74,7 +74,7 @@ func newShowAction(
 }
 
 func (s *showAction) Run(ctx context.Context) (*actions.ActionResult, error) {
-	env, ctx, err := loadOrInitEnvironment(ctx, &s.flags.environmentName, s.azdCtx, s.console, s.azCli)
+	env, err := loadOrInitEnvironment(ctx, &s.flags.environmentName, s.azdCtx, s.console, s.azCli)
 	if err != nil {
 		return nil, fmt.Errorf("loading environment: %w", err)
 	}

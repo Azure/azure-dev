@@ -180,7 +180,13 @@ func runCmdWithTelemetry(cmd *cobra.Command, runCmd func(ctx context.Context) er
 	// Note: CommandPath is constructed using the Use member on each command up to the root.
 	// It does not contain user input, and is safe for telemetry emission.
 	spanCtx, span := telemetry.GetTracer().Start(cmd.Context(), events.GetCommandEventName(cmd.CommandPath()))
-	defer span.End()
+	end := func() {
+		// Include any usage attributes set
+		span.SetAttributes(telemetry.GetUsageAttributes()...)
+		span.End()
+	}
+
+	defer end()
 
 	err := runCmd(spanCtx)
 	if err != nil {

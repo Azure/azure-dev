@@ -213,7 +213,7 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		subscription:    i.flags.subscription,
 		location:        i.flags.location,
 	}
-	env, ctx, err := createAndInitEnvironment(ctx, &envSpec, azdCtx, i.console, i.azCli)
+	env, err := createAndInitEnvironment(ctx, &envSpec, azdCtx, i.console, i.azCli)
 	if err != nil {
 		return nil, fmt.Errorf("loading environment: %w", err)
 	}

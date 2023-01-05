@@ -29,6 +29,7 @@ type MiddlewareContext interface {
 
 // Middleware Run options
 type Options struct {
+	CommandPath   string
 	Name          string
 	Aliases       []string
 	isChildAction bool

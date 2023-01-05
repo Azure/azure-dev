@@ -26,7 +26,11 @@ func (m *TelemetryMiddleware) Run(ctx context.Context, next NextFn) (*actions.Ac
 	// Note: CommandPath is constructed using the Use member on each command up to the root.
 	// It does not contain user input, and is safe for telemetry emission.
 	spanCtx, span := telemetry.GetTracer().Start(ctx, events.GetCommandEventName(m.options.Name))
-	defer span.End()
+	defer func() {
+		// Include any usage attributes set
+		span.SetAttributes(telemetry.GetUsageAttributes()...)
+		span.End()
+	}()
 
 	result, err := next(spanCtx)
 	if err != nil {

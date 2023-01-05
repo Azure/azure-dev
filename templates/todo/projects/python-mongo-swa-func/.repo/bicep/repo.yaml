@@ -31,7 +31,7 @@ repo:
         patterns:
           - "**/*.bicep"
 
-      - from: ../../../../../common/infra/gateway/apim
+      - from: ../../../../../common/infra/shared/gateway/apim
         to: ../gateway
         patterns:
           - "**/*.bicep"
@@ -99,7 +99,7 @@ repo:
     - from: ../../../../common/infra/bicep/app/apim-api.bicep
       to: ./infra/app/apim-api.bicep
 
-    - from: ../../../../../common/infra/gateway/apim/apim-api-policy.xml
+    - from: ../../../../../common/infra/shared/gateway/apim/apim-api-policy.xml
       to: ./infra/gateway/apim-api-policy.xml
       
     - from: ../../../../common/infra/bicep/app/cosmos-mongo-db.bicep

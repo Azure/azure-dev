@@ -155,7 +155,7 @@ repo:
     - from: ../../../../../common/infra/terraform/core/host/appservice/appservicepython
       to: ./infra/modules/appservicepython
 
-    - from: ../../../../../common/infra/gateway/apim
+    - from: ../../../../../common/infra/shared/gateway/apim
       to: ./infra/modules/apim
 
     - from: ../../../../../common/infra/terraform/core/gateway/apim

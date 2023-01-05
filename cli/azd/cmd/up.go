@@ -68,7 +68,7 @@ type upAction struct {
 	infraCreate *infraCreateAction
 	deploy      *deployAction
 	console     input.Console
-	runner      *middleware.MiddlewareRunner
+	runner      middleware.MiddlewareContext
 }
 
 func newUpAction(
@@ -77,7 +77,7 @@ func newUpAction(
 	infraCreate *infraCreateAction,
 	deploy *deployAction,
 	console input.Console,
-	runner *middleware.MiddlewareRunner,
+	runner middleware.MiddlewareContext,
 ) actions.Action {
 	// Required to ensure the sub action flags are bound correctly to the actions
 	init.flags = &flags.initFlags
@@ -100,7 +100,7 @@ func (u *upAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	}
 
 	provisionOptions := &middleware.Options{Name: "infracreate", Aliases: []string{"provision"}}
-	_, err = u.runner.RunAction(ctx, provisionOptions, u.infraCreate)
+	_, err = u.runner.RunChildAction(ctx, provisionOptions, u.infraCreate)
 	if err != nil {
 		return nil, err
 	}
@@ -109,7 +109,7 @@ func (u *upAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	u.console.Message(ctx, "")
 
 	deployOptions := &middleware.Options{Name: "deploy"}
-	deployResult, err := u.runner.RunAction(ctx, deployOptions, u.deploy)
+	deployResult, err := u.runner.RunChildAction(ctx, deployOptions, u.deploy)
 	if err != nil {
 		return nil, err
 	}
@@ -119,7 +119,7 @@ func (u *upAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 
 func (u *upAction) runInit(ctx context.Context) error {
 	initOptions := &middleware.Options{Name: "init"}
-	_, err := u.runner.RunAction(ctx, initOptions, u.init)
+	_, err := u.runner.RunChildAction(ctx, initOptions, u.init)
 	var envInitError *environment.EnvironmentInitError
 	if errors.As(err, &envInitError) {
 		// We can ignore environment already initialized errors

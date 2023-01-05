@@ -17,10 +17,25 @@ type Middleware interface {
 	Run(ctx context.Context, nextFn NextFn) (*actions.ActionResult, error)
 }
 
+// MiddlewareContext allow composite actions to orchestrate invoking child actions
+type MiddlewareContext interface {
+	// Executes the middleware chain for the specified child action
+	RunChildAction(
+		ctx context.Context,
+		runOptions *Options,
+		action actions.Action,
+	) (*actions.ActionResult, error)
+}
+
 // Middleware Run options
 type Options struct {
-	Name    string
-	Aliases []string
+	Name          string
+	Aliases       []string
+	isChildAction bool
+}
+
+func (o *Options) IsChildAction() bool {
+	return o.isChildAction
 }
 
 // Executes the next middleware in the command chain
@@ -39,6 +54,16 @@ func NewMiddlewareRunner(container *ioc.NestedContainer) *MiddlewareRunner {
 		container: container,
 		chain:     []string{},
 	}
+}
+
+// Executes the middleware chain for the specified child action
+func (r *MiddlewareRunner) RunChildAction(
+	ctx context.Context,
+	runOptions *Options,
+	action actions.Action,
+) (*actions.ActionResult, error) {
+	runOptions.isChildAction = true
+	return r.RunAction(ctx, runOptions, action)
 }
 
 // Executes the middleware chain for the specified action

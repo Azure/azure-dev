@@ -28,12 +28,12 @@ func newDownCmd() *cobra.Command {
 }
 
 type downAction struct {
-	runner      *middleware.MiddlewareRunner
+	runner      middleware.MiddlewareContext
 	infraDelete infraDeleteAction
 }
 
 func newDownAction(
-	runner *middleware.MiddlewareRunner,
+	runner middleware.MiddlewareContext,
 	downFlags *downFlags,
 	infraDelete *infraDeleteAction,
 ) actions.Action {
@@ -48,5 +48,5 @@ func newDownAction(
 
 func (a *downAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	runOptions := &middleware.Options{Name: "infradelete"}
-	return a.runner.RunAction(ctx, runOptions, &a.infraDelete)
+	return a.runner.RunChildAction(ctx, runOptions, &a.infraDelete)
 }

@@ -204,7 +204,8 @@ For more information, visit the Azure Developer CLI Dev Hub: https://aka.ms/azur
 		UseMiddleware("debug", middleware.NewDebugMiddleware).
 		UseMiddlewareWhen("telemetry", middleware.NewTelemetryMiddleware, func(descriptor *actions.ActionDescriptor) bool {
 			return !descriptor.Options.DisableTelemetry
-		})
+		}).
+		UseMiddleware("ux", middleware.NewUxMiddleware)
 
 	registerCommonDependencies(ioc.Global)
 	cobraBuilder := NewCobraBuilder(ioc.Global)

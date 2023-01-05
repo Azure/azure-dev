@@ -7,7 +7,6 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/cmd/middleware"
-	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
@@ -96,6 +95,7 @@ func (cb *CobraBuilder) configureActionResolver(cmd *cobra.Command, descriptor *
 
 		// Registers the following to enable injection into actions that require them
 		ioc.RegisterInstance(ioc.Global, cb.runner)
+		ioc.RegisterInstance(ioc.Global, middleware.MiddlewareContext(cb.runner))
 		ioc.RegisterInstance(ioc.Global, ctx)
 		ioc.RegisterInstance(ioc.Global, cmd)
 		ioc.RegisterInstance(ioc.Global, args)
@@ -122,23 +122,10 @@ func (cb *CobraBuilder) configureActionResolver(cmd *cobra.Command, descriptor *
 
 		// Run the middleware chain with action
 		log.Printf("Resolved action '%s'\n", actionName)
-		actionResult, err := cb.runner.RunAction(ctx, runOptions, action)
+		_, err := cb.runner.RunAction(ctx, runOptions, action)
 
 		// At this point, we know that there might be an error, so we can silence cobra from showing it after us.
 		cmd.SilenceErrors = true
-
-		// TODO: Opportunity to refactor this to a middleware that only runs on top level cmd/action and not for composite
-		// commands
-		// It is valid for a command to return a nil action result and error. If we have a result or an error, display it,
-		// otherwise don't print anything.
-		if actionResult != nil || err != nil {
-			var console input.Console
-			if err := ioc.Global.Resolve(&console); err != nil {
-				return err
-			}
-
-			console.MessageUxItem(ctx, actions.ToUxItem(actionResult, err))
-		}
 
 		return err
 	}

@@ -102,6 +102,12 @@ func (c *NestedContainer) ResolveNamed(name string, instance any) error {
 	}
 }
 
+// Invokes the specified function and resolves any arguments specified
+// from the container resolver registrations
+func (c *NestedContainer) Invoke(resolver any) error {
+	return c.inner.Call(resolver)
+}
+
 // Registers a constructed instance of the specified type
 // Panics if the registration fails
 func RegisterInstance[F any](c *NestedContainer, instance F) {

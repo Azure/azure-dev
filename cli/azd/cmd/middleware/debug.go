@@ -13,12 +13,14 @@ import (
 
 // Adds support to easily debug and attach a debugger to AZD for development purposes
 type DebugMiddleware struct {
+	options *Options
 	console input.Console
 }
 
 // Creates a new instance of the Debug middleware
-func NewDebugMiddleware(console input.Console) Middleware {
+func NewDebugMiddleware(options *Options, console input.Console) Middleware {
 	return &DebugMiddleware{
+		options: options,
 		console: console,
 	}
 }
@@ -26,6 +28,11 @@ func NewDebugMiddleware(console input.Console) Middleware {
 // Invokes the debug middleware. When AZD_DEBUG is set will prompt the user to attach
 // a debugger before continuing invocation of the action
 func (m *DebugMiddleware) Run(ctx context.Context, next NextFn) (*actions.ActionResult, error) {
+	// Don't run for sub actions
+	if m.options.IsChildAction() {
+		return next(ctx)
+	}
+
 	debug, err := strconv.ParseBool(os.Getenv("AZD_DEBUG"))
 	if err != nil {
 		log.Printf("failed converting AZD_DEBUG to boolean: %s", err.Error())

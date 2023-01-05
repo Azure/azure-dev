@@ -1,7 +1,5 @@
 package cmd
 
-// Run `go generate ./cmd` or `wire ./cmd` after modifying this file to regenerate `wire_gen.go`.
-
 import (
 	"context"
 	"fmt"
@@ -99,7 +97,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	container.RegisterSingleton(azdcontext.NewAzdContext)
 
 	container.RegisterSingleton(func(ctx context.Context, authManager *auth.Manager) (azcore.TokenCredential, error) {
-		credential, err := authManager.CredentialForCurrentUser(ctx)
+		credential, err := authManager.CredentialForCurrentUser(ctx, nil)
 		if err != nil {
 			return nil, err
 		}
@@ -109,6 +107,10 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 		}
 
 		return credential, nil
+	})
+
+	container.RegisterSingleton(func(mgr *auth.Manager) CredentialProviderFn {
+		return mgr.CredentialForCurrentUser
 	})
 
 	container.RegisterSingleton(func(console input.Console) io.Writer {

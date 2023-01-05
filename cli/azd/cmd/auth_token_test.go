@@ -41,9 +41,7 @@ func TestAuthToken(t *testing.T) {
 		credentialProviderForTokenFn(token),
 		&output.JsonFormatter{},
 		buf,
-		&authTokenFlags{
-			outputFormat: string(output.JsonFormat),
-		},
+		&authTokenFlags{},
 	)
 
 	_, err := a.Run(context.Background())
@@ -75,8 +73,7 @@ func TestAuthTokenCustomScopes(t *testing.T) {
 		&output.JsonFormatter{},
 		io.Discard,
 		&authTokenFlags{
-			outputFormat: string(output.JsonFormat),
-			scopes:       scopes,
+			scopes: scopes,
 		},
 	)
 
@@ -94,9 +91,7 @@ func TestAuthTokenFailure(t *testing.T) {
 		credentialProviderForTokenFn(token),
 		&output.JsonFormatter{},
 		io.Discard,
-		&authTokenFlags{
-			outputFormat: string(output.JsonFormat),
-		},
+		&authTokenFlags{},
 	)
 
 	_, err := a.Run(context.Background())

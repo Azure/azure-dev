@@ -10,23 +10,18 @@ import (
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/cmd/middleware"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
+	"github.com/azure/azure-dev/cli/azd/test/ostest"
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/require"
 )
 
 // Tests that the command and action can be initialized successfully
 func Test_Command_Actions(t *testing.T) {
-	resetOsArgs(t)
-
-	wd, err := os.Getwd()
-	require.NoError(t, err)
-
 	tempDir := t.TempDir()
-	err = os.Chdir(tempDir)
-	require.NoError(t, err)
+	ostest.Chdir(t, tempDir)
 
 	// Create a empty azure.yaml to ensure AzdContext can be constructed
-	err = os.WriteFile("azure.yaml", nil, osutil.PermissionFile)
+	err := os.WriteFile("azure.yaml", nil, osutil.PermissionFile)
 	require.NoError(t, err)
 
 	chain := []*actions.MiddlewareRegistration{
@@ -40,37 +35,23 @@ func Test_Command_Actions(t *testing.T) {
 	// of the underlying command / actions
 	rootCmd := NewRootCmd(true, chain)
 	testCommand(t, rootCmd)
-
-	t.Cleanup(func() {
-		err = os.Chdir(wd)
-		require.NoError(t, err)
-	})
 }
 
 func testCommand(t *testing.T, cmd *cobra.Command) {
 	// Run the command when we find a leaf command
-	if len(cmd.Commands()) == 0 {
+	if cmd.Runnable() {
 		t.Run(cmd.CommandPath(), func(t *testing.T) {
 			fullCmd := fmt.Sprintf("%s %s", cmd.Parent().CommandPath(), cmd.Use)
-			os.Args = strings.Split(fullCmd, " ")
+			cmd.SetArgs(strings.Split(fullCmd, " "))
 			err := cmd.ExecuteContext(context.Background())
 			require.NoError(t, err)
 		})
+	} else {
+		// Find and run commands for all child commands
+		for _, child := range cmd.Commands() {
+			testCommand(t, child)
+		}
 	}
-
-	// Find and run commands for all child commands
-	for _, child := range cmd.Commands() {
-		testCommand(t, child)
-	}
-}
-
-// Reset the OS args after all command tests have completed.
-func resetOsArgs(t *testing.T) {
-	defaultArgs := os.Args
-
-	t.Cleanup(func() {
-		os.Args = defaultArgs
-	})
 }
 
 // SkipMiddleware is used in select testing scenarios where we

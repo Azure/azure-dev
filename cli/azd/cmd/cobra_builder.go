@@ -7,6 +7,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/cmd/middleware"
+	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
@@ -52,18 +53,41 @@ func (cb *CobraBuilder) BuildCommand(descriptor *actions.ActionDescriptor) (*cob
 		}
 	}
 
-	cb.configureActionResolver(cmd, descriptor)
+	// Configure action resolver for leaf commands
+	if !cmd.HasSubCommands() {
+		if err := cb.configureActionResolver(cmd, descriptor); err != nil {
+			return nil, err
+		}
+	}
 
 	return cmd, nil
 }
 
 // Configures the cobra command 'RunE' function to running the composed middleware and action for the
 // current action descriptor
-func (cb *CobraBuilder) configureActionResolver(cmd *cobra.Command, descriptor *actions.ActionDescriptor) {
+func (cb *CobraBuilder) configureActionResolver(cmd *cobra.Command, descriptor *actions.ActionDescriptor) error {
+	// Dev Error: Either an action resolver or RunE must be set
+	if descriptor.Options.ActionResolver == nil && cmd.RunE == nil {
+		return fmt.Errorf(
+			//nolint:lll
+			"action descriptor for '%s' must be configured with either an ActionResolver or a Cobra RunE command",
+			cmd.CommandPath(),
+		)
+	}
+
+	// Dev Error: Both action resolver and RunE have been defined
+	if descriptor.Options.ActionResolver != nil && cmd.RunE != nil {
+		return fmt.Errorf(
+			//nolint:lll
+			"action descriptor for '%s' must be configured with either an ActionResolver or a Cobra RunE command but NOT both",
+			cmd.CommandPath(),
+		)
+	}
+
 	// Only bind command to action if an action resolver had been defined
 	// and when a RunE hasn't already been set
 	if descriptor.Options.ActionResolver == nil || cmd.RunE != nil {
-		return
+		return nil
 	}
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
@@ -98,10 +122,28 @@ func (cb *CobraBuilder) configureActionResolver(cmd *cobra.Command, descriptor *
 
 		// Run the middleware chain with action
 		log.Printf("Resolved action '%s'\n", actionName)
-		_, err := cb.runner.RunAction(ctx, runOptions, action)
+		actionResult, err := cb.runner.RunAction(ctx, runOptions, action)
+
+		// At this point, we know that there might be an error, so we can silence cobra from showing it after us.
+		cmd.SilenceErrors = true
+
+		// TODO: Opportunity to refactor this to a middleware that only runs on top level cmd/action and not for composite
+		// commands
+		// It is valid for a command to return a nil action result and error. If we have a result or an error, display it,
+		// otherwise don't print anything.
+		if actionResult != nil || err != nil {
+			var console input.Console
+			if err := ioc.Global.Resolve(&console); err != nil {
+				return err
+			}
+
+			console.MessageUxItem(ctx, actions.ToUxItem(actionResult, err))
+		}
 
 		return err
 	}
+
+	return nil
 }
 
 // Binds the intersection of cobra command options and action descriptor options
@@ -109,7 +151,7 @@ func (cb *CobraBuilder) bindCommand(cmd *cobra.Command, descriptor *actions.Acti
 	actionName := createActionName(cmd)
 
 	// Automatically adds a consistent help flag
-	cmd.Flags().BoolP("help", "h", false, fmt.Sprintf("Gets help for %s.", descriptor.Name))
+	cmd.Flags().BoolP("help", "h", false, fmt.Sprintf("Gets help for %s.", cmd.Name()))
 
 	// Consistently registers output formats for the descriptor
 	if len(descriptor.Options.OutputFormats) > 0 {
@@ -125,7 +167,8 @@ func (cb *CobraBuilder) bindCommand(cmd *cobra.Command, descriptor *actions.Acti
 		// This allows flags to be options and support any set of required dependencies
 		if err := cb.container.RegisterSingletonAndInvoke(descriptor.Options.FlagsResolver); err != nil {
 			return fmt.Errorf(
-				"failed registering FlagsResolver for action '%s'. Ensure the resolver is a valid go function. %w",
+				//nolint:lll
+				"failed registering FlagsResolver for action '%s'. Ensure the resolver is a valid go function and resolves without error. %w",
 				actionName,
 				err,
 			)
@@ -140,7 +183,8 @@ func (cb *CobraBuilder) bindCommand(cmd *cobra.Command, descriptor *actions.Acti
 		log.Printf("registering resolver for action '%s'\n", actionName)
 		if err := cb.container.RegisterNamedSingleton(actionName, descriptor.Options.ActionResolver); err != nil {
 			return fmt.Errorf(
-				"failed registering ActionResolver for action'%s'. Ensure the resolver is a valid go function. %w",
+				//nolint:lll
+				"failed registering ActionResolver for action'%s'. Ensure the resolver is a valid go function and resolves without error. %w",
 				actionName,
 				err,
 			)

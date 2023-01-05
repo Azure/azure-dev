@@ -21,9 +21,9 @@ import (
 )
 
 type authTokenFlags struct {
-	tenantID     string
-	scopes []string
-	global *internal.GlobalCommandOptions
+	tenantID string
+	scopes   []string
+	global   *internal.GlobalCommandOptions
 }
 
 func newAuthTokenFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *authTokenFlags {
@@ -35,7 +35,7 @@ func newAuthTokenFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions
 
 func newAuthTokenCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:    "token",
+		Use:    "token --output json",
 		Hidden: true,
 	}
 }
@@ -46,15 +46,17 @@ func (f *authTokenFlags) Bind(local *pflag.FlagSet, global *internal.GlobalComma
 	local.StringVar(&f.tenantID, "tenant-id", "", "The tenant id to use when requesting an access token.")
 }
 
+type CredentialProviderFn func(context.Context, *auth.CredentialForCurrentUserOptions) (azcore.TokenCredential, error)
+
 type authTokenAction struct {
-	credentialProvider func(context.Context, *auth.CredentialForCurrentUserOptions) (azcore.TokenCredential, error)
+	credentialProvider CredentialProviderFn
 	formatter          output.Formatter
 	writer             io.Writer
-	flags      *authTokenFlags
+	flags              *authTokenFlags
 }
 
 func newAuthTokenAction(
-	credentialProvider func(context.Context, *auth.CredentialForCurrentUserOptions) (azcore.TokenCredential, error),
+	credentialProvider CredentialProviderFn,
 	formatter output.Formatter,
 	writer io.Writer,
 	flags *authTokenFlags,

@@ -41,7 +41,7 @@ func newShowFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *sh
 
 func newShowCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:    "show",
+		Use:    "show --output json",
 		Short:  "Display information about your application and its resources.",
 		Hidden: true,
 	}

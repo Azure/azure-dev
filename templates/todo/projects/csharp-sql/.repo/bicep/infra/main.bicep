@@ -26,8 +26,7 @@ param webServiceName string = ''
 param apimServiceName string = ''
 
 @description('Flag to use Azure API Management to mediate the calls between the Web frontend and the backend API')
-@allowed([ 'true', 'false', '' ])
-param useAPIM string
+param useAPIM bool = false
 
 @description('Id of the user or app to assign application roles')
 param principalId string = ''
@@ -147,7 +146,7 @@ module monitoring '../../../../../../common/infra/bicep/core/monitor/monitoring.
 }
 
 // Creates Azure API Management (APIM) service to mediate the requests between the frontend and the backend API
-module apim '../../../../../../common/infra/bicep/core/gateway/apim.bicep' = if (useAPIM == 'true') {
+module apim '../../../../../../common/infra/bicep/core/gateway/apim.bicep' = if (useAPIM) {
   name: 'apim-deployment'
   scope: rg
   params: {
@@ -159,7 +158,7 @@ module apim '../../../../../../common/infra/bicep/core/gateway/apim.bicep' = if 
 }
 
 // Configures the API in the Azure API Management (APIM) service
-module apimApi '../../../../../common/infra/bicep/app/apim-api.bicep' = if (useAPIM == 'true') {
+module apimApi '../../../../../common/infra/bicep/app/apim-api.bicep' = if (useAPIM) {
   name: 'apim-api-deployment'
   scope: rg
   params: {
@@ -182,7 +181,7 @@ output AZURE_KEY_VAULT_ENDPOINT string = keyVault.outputs.endpoint
 output AZURE_KEY_VAULT_NAME string = keyVault.outputs.name
 output AZURE_LOCATION string = location
 output AZURE_TENANT_ID string = tenant().tenantId
-output REACT_APP_API_BASE_URL string = (useAPIM == 'true') ? apimApi.outputs.SERVICE_API_URI : api.outputs.SERVICE_API_URI
+output REACT_APP_API_BASE_URL string = useAPIM ? apimApi.outputs.SERVICE_API_URI : api.outputs.SERVICE_API_URI
 output REACT_APP_APPLICATIONINSIGHTS_CONNECTION_STRING string = monitoring.outputs.applicationInsightsConnectionString
 output REACT_APP_WEB_BASE_URL string = web.outputs.SERVICE_WEB_URI
-output USE_APIM string = useAPIM
+output USE_APIM bool = useAPIM

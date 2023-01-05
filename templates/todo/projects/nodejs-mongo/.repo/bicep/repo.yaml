@@ -111,6 +111,9 @@ repo:
     - from: ../../../../common/infra/bicep/app/apim-api.bicep
       to: ./infra/app/apim-api.bicep
 
+    - from: ../../../../../common/infra/gateway/apim/apim-api-policy.xml
+      to: ./infra/gateway/apim-api-policy.xml
+
     - from: ../../../../common/infra/bicep/app/cosmos-mongo-db.bicep
       to: ./infra/app/db.bicep
 

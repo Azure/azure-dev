@@ -52,9 +52,9 @@ repo:
           - "**/*.bicep"
 
       - from: ../../../../../common/infra/shared/gateway/apim
-        to: ../gateway
+        to: ./
         patterns:
-          - "**/*.bicep"
+          - apim-api.bicep
 
       # app service modules
       - from: ../../../../../../common/infra/bicep
@@ -125,7 +125,7 @@ repo:
       to: ./infra/app/apim-api.bicep  
     
     - from: ../../../../../common/infra/shared/gateway/apim/apim-api-policy.xml
-      to: ./infra/gateway/apim-api-policy.xml
+      to: ./infra/app/apim-api-policy.xml
 
     - from: ../../../../common/infra/bicep/app/cosmos-mongo-db.bicep
       to: ./infra/app/db.bicep

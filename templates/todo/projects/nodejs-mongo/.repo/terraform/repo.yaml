@@ -147,14 +147,14 @@ repo:
     - from: ../../../../../common/infra/terraform/core/host/appservice/appservicenode
       to: ./infra/modules/appservicenode
 
+    - from: ../../../../../common/infra/shared/gateway/apim
+      to: ./infra/modules/apim-api
+
     - from: ../../../../../common/infra/terraform/core/gateway/apim
       to: ./infra/modules/apim
 
     - from: ../../../../../common/infra/terraform/core/gateway/apim-api
       to: ./infra/modules/apim-api
-
-    - from: ../../../../../common/infra/shared/gateway/apim
-      to: ./infra/modules/apim
       
     # .devcontainer common (devcontainer.json)
     - from: ../../../../../common/.devcontainer/devcontainer.json/nodejs/terraform

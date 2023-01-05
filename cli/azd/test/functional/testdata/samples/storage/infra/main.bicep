@@ -12,7 +12,6 @@ param location string
 param deleteAfterTime string = dateTimeAdd(utcNow('o'), 'PT1H')
 
 var tags = { 'azd-env-name': environmentName, DeleteAfter: deleteAfterTime }
-var isProdBool = isProd == 'true' ? true : false
 
 resource rg 'Microsoft.Resources/resourceGroups@2021-04-01' = {
   name: 'rg-${environmentName}'

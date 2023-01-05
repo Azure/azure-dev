@@ -154,7 +154,7 @@ repo:
       to: ./infra/modules/apim-api
 
     - from: ../../../../../common/infra/gateway/apim
-      to: ./infra/modules/gateway
+      to: ./infra/modules/apim
       
     # .devcontainer common (devcontainer.json)
     - from: ../../../../../common/.devcontainer/devcontainer.json/nodejs/terraform

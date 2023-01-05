@@ -19,6 +19,8 @@ type Service struct {
 	Project *Project
 	// The reference to the service configuration from the azure.yaml file
 	Config *ServiceConfig
+	// The environment the service is executing in
+	Environment *environment.Environment
 	// The framework/platform service used to build and package the service
 	Framework FrameworkService
 	// The application target service used to deploy the service to azure
@@ -45,7 +47,6 @@ func (svc *Service) RequiredExternalTools() []tools.ExternalTool {
 func (svc *Service) Deploy(
 	ctx context.Context,
 	azdCtx *azdcontext.AzdContext,
-	env *environment.Environment,
 ) (<-chan *ServiceDeploymentChannelResponse, <-chan string) {
 	result := make(chan *ServiceDeploymentChannelResponse, 1)
 	progress := make(chan string)
@@ -80,8 +81,8 @@ func (svc *Service) Deploy(
 
 		// Allow users to specify their own endpoints, in cases where they've configured their own front-end load balancers,
 		// reverse proxies or DNS host names outside of the service target (and prefer that to be used instead).
-		if endpointsOverride := env.GetServiceProperty(svc.Config.Name, "ENDPOINTS"); endpointsOverride != "" {
-			res.Endpoints = strings.Split(endpointsOverride, ",")
+		if overriddenEndpoints := svc.Environment.GetServiceProperty(svc.Config.Name, "ENDPOINTS"); overriddenEndpoints != "" {
+			res.Endpoints = strings.Split(overriddenEndpoints, ",")
 		}
 
 		log.Printf("deployed service %s", svc.Config.Name)

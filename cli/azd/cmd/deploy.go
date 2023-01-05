@@ -178,7 +178,7 @@ func (d *deployAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 
 		stepMessage := fmt.Sprintf("Deploying service %s", svc.Config.Name)
 		d.console.ShowSpinner(ctx, stepMessage, input.Step)
-		result, progress := svc.Deploy(ctx, d.azdCtx, env)
+		result, progress := svc.Deploy(ctx, d.azdCtx)
 
 		// Report any progress to logs only. Changes for the console are managed by the console object.
 		// This routine is required to drain all the string messages sent by the `progress`.

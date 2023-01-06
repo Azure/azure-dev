@@ -5,22 +5,12 @@ import (
 	"fmt"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/apimanagement/armapimanagement"
-	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 )
 
 type AzCliAPIM struct {
-	Id         string `json:"id"`
-	Name       string `json:"name"`
-	Location   string `json:"location"`
-	Properties struct {
-		ScheduledPurgeDate string `json:"scheduledPurgeDate"`
-	} `json:"properties"`
-}
-
-type AzCliAPIMSecret struct {
-	Id    string `json:"id"`
-	Name  string `json:"name"`
-	Value string `json:"value"`
+	Id       string `json:"id"`
+	Name     string `json:"name"`
+	Location string `json:"location"`
 }
 
 func (cli *azCli) GetAPIM(
@@ -28,14 +18,13 @@ func (cli *azCli) GetAPIM(
 	subscriptionId string,
 	resourceGroupName string,
 	apimName string,
-	apimId string,
 ) (*AzCliAPIM, error) {
 	apimClient, err := cli.createAPIMClient(ctx, subscriptionId)
 	if err != nil {
 		return nil, err
 	}
 
-	apim, err := apimClient.Get(ctx, resourceGroupName, apimName, apimId, nil)
+	apim, err := apimClient.Get(ctx, resourceGroupName, apimName, nil)
 	if err != nil {
 		return nil, fmt.Errorf("getting api management: %w", err)
 	}
@@ -44,11 +33,6 @@ func (cli *azCli) GetAPIM(
 		Id:       *apim.ID,
 		Name:     *apim.Name,
 		Location: *apim.Location,
-		Properties: struct {
-			ScheduledPurgeDate string "json:\"scheduledPurgeDate\""
-		}{
-			ScheduledPurgeDate: convert.ToValueWithDefault(apim.Properties.ScheduledPurgeDate, ""),
-		},
 	}, nil
 }
 
@@ -72,7 +56,7 @@ func (cli *azCli) PurgeAPIM(ctx context.Context, subscriptionId string, apimName
 	return nil
 }
 
-// Creates a APIM client for ARM control plane operations
+// Creates a APIM soft-deleted service client for ARM control plane operations
 func (cli *azCli) createAPIMDeletedClient(
 	ctx context.Context,
 	subscriptionId string,
@@ -86,13 +70,13 @@ func (cli *azCli) createAPIMDeletedClient(
 	return apimClient, nil
 }
 
-// Creates a APIM client for ARM control plane operations
+// Creates a APIM service client for ARM control plane operations
 func (cli *azCli) createAPIMClient(
 	ctx context.Context,
 	subscriptionId string,
-) (*armapimanagement.APIClient, error) {
+) (*armapimanagement.ServiceClient, error) {
 	options := cli.createDefaultClientOptionsBuilder(ctx).BuildArmClientOptions()
-	apimClient, err := armapimanagement.NewAPIClient(subscriptionId, cli.credential, options)
+	apimClient, err := armapimanagement.NewServiceClient(subscriptionId, cli.credential, options)
 	if err != nil {
 		return nil, fmt.Errorf("creating Resource client: %w", err)
 	}

@@ -65,7 +65,7 @@ type AzCli interface {
 		ctx context.Context, subscriptionId string, resourceGroupName string, configName string) (*AzCliAppConfig, error)
 	PurgeAppConfig(ctx context.Context, subscriptionId string, configName string, location string) error
 	GetAPIM(
-		ctx context.Context, subscriptionId string, resourceGroupName string, apimName string, apimId string) (*AzCliAPIM, error)
+		ctx context.Context, subscriptionId string, resourceGroupName string, apimName string) (*AzCliAPIM, error)
 	PurgeAPIM(ctx context.Context, subscriptionId string, apimName string, location string) error
 	DeployAppServiceZip(
 		ctx context.Context,

@@ -318,7 +318,7 @@ func (p *BicepProvider) Destroy(
 			purgeItem := []itemToPurge{keyVaultsPurge, appConfigsPurge, aPIManagement}
 
 			if err := p.purgeItems(ctx, asyncContext, purgeItem, options); err != nil {
-				asyncContext.SetError(fmt.Errorf("purging key vaults or app configurations or api managements: %w", err))
+				asyncContext.SetError(fmt.Errorf("purging resources: %w", err))
 				return
 			}
 
@@ -608,14 +608,12 @@ func (p *BicepProvider) getAPIManagementsToPurge(
 	for resourceGroup, groupResources := range groupedResources {
 		for _, resource := range groupResources {
 			if resource.Type == string(infra.AzureResourceTypeAPIM) {
-				apim, err := p.azCli.GetAPIM(ctx, p.env.GetSubscriptionId(), resourceGroup, resource.Name, resource.Id)
+				apim, err := p.azCli.GetAPIM(ctx, p.env.GetSubscriptionId(), resourceGroup, resource.Name)
 				if err != nil {
 					return nil, fmt.Errorf("listing api management %s properties: %w", resource.Name, err)
 				}
 
-				if apim.Properties.ScheduledPurgeDate != "" {
-					apims = append(apims, apim)
-				}
+				apims = append(apims, apim)
 			}
 		}
 	}

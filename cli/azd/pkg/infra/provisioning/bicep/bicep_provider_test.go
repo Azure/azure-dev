@@ -13,6 +13,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/apimanagement/armapimanagement"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appconfiguration/armappconfiguration"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/keyvault/armkeyvault"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
@@ -291,7 +292,7 @@ func TestBicepDestroy(t *testing.T) {
 
 		// Verify console prompts
 		consoleOutput := mockContext.Console.Output()
-		require.Len(t, consoleOutput, 9)
+		require.Len(t, consoleOutput, 11)
 		require.Contains(t, consoleOutput[0], "This will delete")
 		require.Contains(t, consoleOutput[1], "Deleted resource group")
 		require.Contains(t, consoleOutput[2], "This operation will delete")
@@ -300,10 +301,12 @@ func TestBicepDestroy(t *testing.T) {
 		require.Contains(t, consoleOutput[5], "Purged key vault kv2-123")
 		require.Contains(t, consoleOutput[6], "Purged app configuration ac-123")
 		require.Contains(t, consoleOutput[7], "Purged app configuration ac2-123")
-		require.Contains(t, consoleOutput[8], "Deleted deployment")
+		require.Contains(t, consoleOutput[8], "Purged api management apim-123")
+		require.Contains(t, consoleOutput[9], "Purged api management apim2-123")
+		require.Contains(t, consoleOutput[10], "Deleted deployment")
 
 		// Verify progress output
-		require.Len(t, progressLog, 10)
+		require.Len(t, progressLog, 12)
 		require.Contains(t, progressLog[0], "Fetching resource groups")
 		require.Contains(t, progressLog[1], "Fetching resources")
 		require.Contains(t, progressLog[2], "Getting Key Vaults to purge")
@@ -313,7 +316,9 @@ func TestBicepDestroy(t *testing.T) {
 		require.Contains(t, progressLog[6], "Purging key vault kv2-123")
 		require.Contains(t, progressLog[7], "Purging app configuration ac-123")
 		require.Contains(t, progressLog[8], "Purging app configuration ac2-123")
-		require.Contains(t, progressLog[9], "Deleting deployment")
+		require.Contains(t, progressLog[9], "Purging api management apim-123")
+		require.Contains(t, progressLog[10], "Purging api management apim2-123")
+		require.Contains(t, progressLog[11], "Deleting deployment")
 	})
 
 	t.Run("InteractiveForceAndPurge", func(t *testing.T) {
@@ -353,16 +358,18 @@ func TestBicepDestroy(t *testing.T) {
 
 		// Verify console prompts
 		consoleOutput := mockContext.Console.Output()
-		require.Len(t, consoleOutput, 6)
+		require.Len(t, consoleOutput, 8)
 		require.Contains(t, consoleOutput[0], "Deleted resource group")
 		require.Contains(t, consoleOutput[1], "Purged key vault kv-123")
 		require.Contains(t, consoleOutput[2], "Purged key vault kv2-123")
 		require.Contains(t, consoleOutput[3], "Purged app configuration ac-123")
 		require.Contains(t, consoleOutput[4], "Purged app configuration ac2-123")
-		require.Contains(t, consoleOutput[5], "Deleted deployment")
+		require.Contains(t, consoleOutput[5], "Purged api management apim-123")
+		require.Contains(t, consoleOutput[6], "Purged api management apim2-123")
+		require.Contains(t, consoleOutput[7], "Deleted deployment")
 
 		// Verify progress output
-		require.Len(t, progressLog, 10)
+		require.Len(t, progressLog, 12)
 		require.Contains(t, progressLog[0], "Fetching resource groups")
 		require.Contains(t, progressLog[1], "Fetching resources")
 		require.Contains(t, progressLog[2], "Getting Key Vaults to purge")
@@ -372,7 +379,9 @@ func TestBicepDestroy(t *testing.T) {
 		require.Contains(t, progressLog[6], "Purging key vault kv2-123")
 		require.Contains(t, progressLog[7], "Purging app configuration ac-123")
 		require.Contains(t, progressLog[8], "Purging app configuration ac2-123")
-		require.Contains(t, progressLog[9], "Deleting deployment")
+		require.Contains(t, progressLog[9], "Purging api management apim-123")
+		require.Contains(t, progressLog[10], "Purging api management apim2-123")
+		require.Contains(t, progressLog[11], "Deleting deployment")
 
 	})
 }
@@ -561,13 +570,13 @@ func prepareDestroyMocks(mockContext *mocks.MockContext) {
 				Location: convert.RefOf("eastus2"),
 			},
 			{
-				ID:       convert.RefOf("apim"),
+				ID:       convert.RefOf("ApiManagement"),
 				Name:     convert.RefOf("apim-123"),
 				Type:     convert.RefOf(string(infra.AzureResourceTypeAPIM)),
 				Location: convert.RefOf("eastus2"),
 			},
 			{
-				ID:       convert.RefOf("apim2"),
+				ID:       convert.RefOf("ApiManagement"),
 				Name:     convert.RefOf("apim2-123"),
 				Type:     convert.RefOf(string(infra.AzureResourceTypeAPIM)),
 				Location: convert.RefOf("eastus2"),
@@ -617,6 +626,13 @@ func prepareDestroyMocks(mockContext *mocks.MockContext) {
 		return request.Method == http.MethodPost &&
 			(strings.Contains(request.URL.Path, "deletedConfigurationStores/ac-123/purge") ||
 				strings.Contains(request.URL.Path, "deletedConfigurationStores/ac2-123/purge"))
+	}).RespondFn(httpRespondFn)
+
+	// Purge APIM
+	mockContext.HttpClient.When(func(request *http.Request) bool {
+		return request.Method == http.MethodPost &&
+			(strings.Contains(request.URL.Path, "deletedservices/apim-123") ||
+				strings.Contains(request.URL.Path, "deletedservices/apim2-123"))
 	}).RespondFn(httpRespondFn)
 
 	// Delete deployment
@@ -699,22 +715,19 @@ func getAPIMMock(mockContext *mocks.MockContext, apimString string, name string,
 	mockContext.HttpClient.When(func(request *http.Request) bool {
 		return request.Method == http.MethodGet && strings.Contains(request.URL.Path, apimString)
 	}).RespondFn(func(request *http.Request) (*http.Response, error) {
-		appConfigResponse := armappconfiguration.ConfigurationStoresClientGetResponse{
-			ConfigurationStore: armappconfiguration.ConfigurationStore{
+		apimResponse := armapimanagement.ServiceClientGetResponse{
+			ServiceResource: armapimanagement.ServiceResource{
 				ID:       convert.RefOf(name),
 				Name:     convert.RefOf(name),
 				Location: convert.RefOf(location),
-				Properties: &armappconfiguration.ConfigurationStoreProperties{
-					EnablePurgeProtection: convert.RefOf(false),
-				},
 			},
 		}
 
-		appConfigBytes, _ := json.Marshal(appConfigResponse)
+		apimBytes, _ := json.Marshal(apimResponse)
 
 		return &http.Response{
 			StatusCode: http.StatusOK,
-			Body:       io.NopCloser(bytes.NewBuffer(appConfigBytes)),
+			Body:       io.NopCloser(bytes.NewBuffer(apimBytes)),
 		}, nil
 	})
 }

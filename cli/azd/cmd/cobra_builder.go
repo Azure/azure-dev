@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
 	"log"
 	"strings"
@@ -108,12 +109,16 @@ func (cb *CobraBuilder) configureActionResolver(cmd *cobra.Command, descriptor *
 		actionName := createActionName(cmd)
 		var action actions.Action
 		if err := cb.container.ResolveNamed(actionName, &action); err != nil {
-			return fmt.Errorf(
-				//nolint:lll
-				"failed resolving action '%s'. Ensure the ActionResolver is a valid go function that returns an `actions.Action` interface, %w",
-				actionName,
-				err,
-			)
+			if errors.Is(err, ioc.ErrResolveInstance) {
+				return fmt.Errorf(
+					//nolint:lll
+					"failed resolving action '%s'. Ensure the ActionResolver is a valid go function that returns an `actions.Action` interface, %w",
+					actionName,
+					err,
+				)
+			}
+
+			return err
 		}
 
 		runOptions := &middleware.Options{
@@ -131,7 +136,8 @@ func (cb *CobraBuilder) configureActionResolver(cmd *cobra.Command, descriptor *
 
 		// TODO: Consider refactoring to move the UX writing to a middleware
 		invokeErr := ioc.Global.Invoke(func(console input.Console) {
-			// It is valid for a command to return a nil action result and error. If we have a result or an error, display it,
+			// It is valid for a command to return a nil action result and error. If we have a result or an error, display
+			// it,
 			// otherwise don't print anything.
 			if actionResult != nil || err != nil {
 				console.MessageUxItem(ctx, actions.ToUxItem(actionResult, err))

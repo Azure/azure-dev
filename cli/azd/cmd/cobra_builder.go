@@ -136,9 +136,8 @@ func (cb *CobraBuilder) configureActionResolver(cmd *cobra.Command, descriptor *
 
 		// TODO: Consider refactoring to move the UX writing to a middleware
 		invokeErr := ioc.Global.Invoke(func(console input.Console) {
-			// It is valid for a command to return a nil action result and error. If we have a result or an error, display
-			// it,
-			// otherwise don't print anything.
+			// It is valid for a command to return a nil action result and error.
+			// If we have a result or an error, display it, otherwise don't print anything.
 			if actionResult != nil || err != nil {
 				console.MessageUxItem(ctx, actions.ToUxItem(actionResult, err))
 			}

@@ -248,7 +248,7 @@ function reportTelemetryIfEnabled($eventName, $reason='', $additionalProperties 
 }
 
 try {
-    if (isLinuxOrMac && !$InstallFolder) {
+    if (isLinuxOrMac -and !$InstallFolder) {
         $InstallFolder = "/usr/local/bin"
     }
 
@@ -293,16 +293,12 @@ try {
         exit 0
     }
 
-    if (!(Test-Path $InstallFolder)) {
-        New-Item -ItemType Directory -Path $InstallFolder -Force | Out-Null
-    }
-
     $tempFolder = "$([System.IO.Path]::GetTempPath())$([System.IO.Path]::GetRandomFileName())"
     Write-Verbose "Creating temporary folder for downloading package: $tempFolder"
     New-Item -ItemType Directory -Path $tempFolder | Out-Null
 
     Write-Verbose "Downloading build from $downloadUrl" -Verbose:$Verbose
-    $releaseArtifactFilename = "$tempFolder/$packageFilename"
+    $releaseArtifactFilename = Join-Path $tempFolder $packageFilename
     try {
         $LASTEXITCODE = 0
         Invoke-WebRequest -Uri $downloadUrl -OutFile $releaseArtifactFilename -TimeoutSec $DownloadTimeoutSeconds
@@ -346,6 +342,9 @@ try {
     try {
         if (isLinuxOrMac) {
             Write-Verbose "Installing azd in $InstallFolder" -Verbose:$Verbose
+            if (!(Test-Path $InstallFolder)) {
+                New-Item -ItemType Directory -Path $InstallFolder -Force | Out-Null
+            }
             $outputFilename = "$InstallFolder/azd"
             test -w "$InstallFolder/"
             if ($LASTEXITCODE) {
@@ -363,7 +362,7 @@ try {
             Write-Verbose "Installing MSI" -Verbose:$Verbose
             $MSIEXEC = "${env:SystemRoot}\System32\msiexec.exe"
             $installProcess = Start-Process $MSIEXEC `
-                -ArgumentList "/i", $releaseArtifactFilename, "INSTALLDIR=`"$InstallFolder`"", "/qn" `
+                -ArgumentList @("/i", $releaseArtifactFilename, "/qn", "INSTALLDIR=`"$InstallFolder`"") `
                 -PassThru `
                 -Wait
 

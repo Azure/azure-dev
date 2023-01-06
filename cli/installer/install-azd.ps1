@@ -62,8 +62,6 @@ param(
     [switch] $NoTelemetry
 )
 
-$MSIEXEC = "${env:SystemRoot}\System32\msiexec.exe"
-
 function isLinuxOrMac {
     return $IsLinux -or $IsMacOS
 }
@@ -251,7 +249,8 @@ function reportTelemetryIfEnabled($eventName, $reason='', $additionalProperties 
 
 try {
     if (!$InstallFolder) {
-        $InstallFolder = "$($env:LocalAppData)\Programs\Azure Dev CLI"
+         # MSI defaults to "$($env:LocalAppData)\Programs\Azure Dev CLI"
+        $InstallFolder = ""
         if (isLinuxOrMac) {
             $InstallFolder = "/usr/local/bin"
         }
@@ -307,10 +306,10 @@ try {
     New-Item -ItemType Directory -Path $tempFolder | Out-Null
 
     Write-Verbose "Downloading build from $downloadUrl" -Verbose:$Verbose
-    $releaseArchiveFileName = "$tempFolder/$packageFilename"
+    $releaseArtifactFilename = "$tempFolder/$packageFilename"
     try {
         $LASTEXITCODE = 0
-        Invoke-WebRequest -Uri $downloadUrl -OutFile $releaseArchiveFileName -TimeoutSec $DownloadTimeoutSeconds
+        Invoke-WebRequest -Uri $downloadUrl -OutFile $releaseArtifactFilename -TimeoutSec $DownloadTimeoutSeconds
         if ($LASTEXITCODE) {
             throw "Invoke-WebRequest failed with nonzero exit code: $LASTEXITCODE"
         }
@@ -324,9 +323,9 @@ try {
     Write-Verbose "Decompressing artifacts" -Verbose:$Verbose
     if ($extension -eq 'zip') {
         try {
-            Expand-Archive -Path $releaseArchiveFileName -DestinationPath $tempFolder/decompress
+            Expand-Archive -Path $releaseArtifactFilename -DestinationPath $tempFolder/decompress
         } catch {
-            Write-Error "Cannot expand $releaseArchiveFileName"
+            Write-Error "Cannot expand $releaseArtifactFilename"
             Write-Error $_
             reportTelemetryIfEnabled 'InstallFailed' 'ArchiveDecompressionFailed'
             exit 1
@@ -334,25 +333,24 @@ try {
     } elseif ($extension -eq 'tar.gz') {
         Write-Verbose "Extracting to $tempFolder/decompress"
         New-Item -ItemType Directory -Path "$tempFolder/decompress" | Out-Null
-        Write-Host "tar -zxvf $releaseArchiveFileName -C `"$tempFolder/decompress`" $binFilename"
-        tar -zxvf $releaseArchiveFileName -C "$tempFolder/decompress" $binFilename
+        Write-Host "tar -zxvf $releaseArtifactFilename -C `"$tempFolder/decompress`" $binFilename"
+        tar -zxvf $releaseArtifactFilename -C "$tempFolder/decompress" $binFilename
 
         if ($LASTEXITCODE) {
-            Write-Error "Cannot expand $releaseArchiveFileName"
+            Write-Error "Cannot expand $releaseArtifactFilename"
             reportTelemetryIfEnabled 'InstallFailed' 'ArchiveDecompressionFailed'
             exit $LASTEXITCODE
         }
+    } else { 
+        Write-Verbose "Decompression not required" -Verbose:$Verbose
     }
 
-    Write-Verbose "Installing azd in $InstallFolder" -Verbose:$Verbose
-
-    $outputFilename = "$InstallFolder/azd.exe"
-    if (isLinuxOrMac) {
-        $outputFilename = "$InstallFolder/azd"
-    }
+    
 
     try {
         if (isLinuxOrMac) {
+            Write-Verbose "Installing azd in $InstallFolder" -Verbose:$Verbose
+            $outputFilename = "$InstallFolder/azd"
             test -w "$InstallFolder/"
             if ($LASTEXITCODE) {
                 Write-Host "Writing to $InstallFolder/ requires elevated permission. You may be prompted to enter credentials."
@@ -366,13 +364,15 @@ try {
                 Copy-Item "$tempFolder/decompress/$binFilename" $outputFilename  -ErrorAction Stop | Out-Null
             }
         } else {
+            Write-Verbose "Installing MSI" -Verbose:$Verbose
+            $MSIEXEC = "${env:SystemRoot}\System32\msiexec.exe"
             $installProcess = Start-Process $MSIEXEC `
-                -ArgumentList "/i", $releaseArchiveFileName, "INSTALLDIR=`"$InstallFolder`"", "/qn" `
+                -ArgumentList "/i", $releaseArtifactFilename, "INSTALLDIR=`"$InstallFolder`"", "/qn" `
                 -PassThru `
                 -Wait
 
             if ($installProcess.ExitCode) {
-                Write-Error "Could not install MSI at $releaseArchiveFileName"
+                Write-Error "Could not install MSI at $releaseArtifactFilename"
                 reportTelemetryIfEnabled 'InstallFailed' 'MsiFailure'
                 exit 1
             }
@@ -390,6 +390,7 @@ try {
     if (isLinuxOrMac) {
         Write-Host "Successfully installed to $InstallFolder"
     } else {
+        Write-Host "Successfully install azd"
         # Installed on Windows
         Write-Host "Azure Developer CLI (azd) installed successfully. You may need to restart running programs for installation to take effect."
         Write-Host "- For Windows Terminal, start a new Windows Terminal instance."

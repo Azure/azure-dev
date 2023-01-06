@@ -103,10 +103,10 @@ func (svc *Service) getOverriddenEndpoints() []string {
 		var endpoints []string
 		err := json.Unmarshal([]byte(overriddenEndpoints), &endpoints)
 		if err != nil {
-			// This can only happen if the environment file is manually edited.
-			// For typical infra provider output passthrough, the infra provider would guarantee well-formed syntax
+			// This can only happen if the environment output was not a valid JSON array, which would be due to an authoring
+			// error. For typical infra provider output passthrough, the infra provider would guarantee well-formed syntax
 			log.Printf(
-				"failed to unmarshal endpoints override for service '%s' as JSON: %v, skipping override",
+				"failed to unmarshal endpoints override for service '%s' as JSON array of strings: %v, skipping override",
 				svc.Config.Name,
 				err)
 		}

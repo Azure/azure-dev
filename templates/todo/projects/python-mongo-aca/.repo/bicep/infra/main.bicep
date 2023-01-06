@@ -158,7 +158,7 @@ module apimApi '../../../../../common/infra/bicep/app/apim-api.bicep' = if (useA
   name: 'apim-api-deployment'
   scope: rg
   params: {
-    name: useAPIM == 'true' ? apim.outputs.apimServiceName : ''
+    name: useAPIM ? apim.outputs.apimServiceName : ''
     apiName: 'todo-api'
     apiDisplayName: 'Simple Todo API'
     apiDescription: 'This is a simple Todo API'
@@ -188,3 +188,4 @@ output REACT_APP_WEB_BASE_URL string = web.outputs.SERVICE_WEB_URI
 output SERVICE_API_NAME string = api.outputs.SERVICE_API_NAME
 output SERVICE_WEB_NAME string = web.outputs.SERVICE_WEB_NAME
 output USE_APIM bool = useAPIM
+output SERVICE_API_ENDPOINTS array = useAPIM ? [apimApi.outputs.SERVICE_API_URI ]: []

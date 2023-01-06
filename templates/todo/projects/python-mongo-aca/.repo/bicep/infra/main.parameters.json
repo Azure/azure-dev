@@ -18,7 +18,7 @@
       "value": "${SERVICE_WEB_IMAGE_NAME}"
     },
     "useAPIM": {
-      "value": "${USE_APIM}"
+      "value": "${USE_APIM=false}"
     }
   }
 }

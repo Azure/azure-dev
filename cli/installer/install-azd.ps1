@@ -248,12 +248,8 @@ function reportTelemetryIfEnabled($eventName, $reason='', $additionalProperties 
 }
 
 try {
-    if (!$InstallFolder) {
-         # MSI defaults to "$($env:LocalAppData)\Programs\Azure Dev CLI"
-        $InstallFolder = ""
-        if (isLinuxOrMac) {
-            $InstallFolder = "/usr/local/bin"
-        }
+    if (isLinuxOrMac && !$InstallFolder) {
+        $InstallFolder = "/usr/local/bin"
     }
 
     $binFilename = ''

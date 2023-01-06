@@ -31,8 +31,8 @@ func Test_Resolve(t *testing.T) {
 		err := container.Resolve(&instance)
 
 		require.Error(t, err)
-		require.False(t, errors.Is(err, ErrResolveInstance))
-		require.True(t, errors.Is(err, azdcontext.ErrNoProject))
+		require.True(t, errors.Is(err, ErrResolveInstance))
+		require.False(t, errors.Is(err, azdcontext.ErrNoProject))
 	})
 
 	t.Run("FailWithOtherError", func(t *testing.T) {

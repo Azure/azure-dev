@@ -426,6 +426,11 @@ stages:
               artifact: azd-darwin-amd64
               path: azd-darwin-amd64
 
+          - task: DownloadPipelineArtifact@2
+            inputs:
+              artifact: test-msi
+              path: msi
+
           - pwsh: |
               Write-Host "Moving downloaded files to hosting folder"
               New-Item -ItemType Directory -Path hosting
@@ -438,6 +443,8 @@ stages:
 
               chmod +x azd-linux-amd64/azd-linux-amd64
               tar -C azd-linux-amd64 -cvzf hosting/azd-linux-amd64.tar.gz azd-linux-amd64
+
+              Copy-Item msi/azd-windows-amd64.msi hosting/
 
               Get-ChildItem hosting/ -Recurse | Select-Object -Property Name,Size
             displayName: Move folders to hosting location

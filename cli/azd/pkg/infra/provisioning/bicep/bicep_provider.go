@@ -282,7 +282,7 @@ func (p *BicepProvider) Destroy(
 				return
 			}
 
-			asyncContext.SetProgress(&DestroyProgress{Message: "Getting API Managements to purge", Timestamp: time.Now()})
+			asyncContext.SetProgress(&DestroyProgress{Message: "Getting API Management Services to purge", Timestamp: time.Now()})
 			aPIManagements, err := p.getAPIManagementsToPurge(ctx, groupedResources)
 			if err != nil {
 				asyncContext.SetError(fmt.Errorf("getting API managements to purge: %w", err))
@@ -610,9 +610,11 @@ func (p *BicepProvider) getAPIManagementsToPurge(
 			if resource.Type == string(infra.AzureResourceTypeAPIM) {
 				apim, err := p.azCli.GetAPIM(ctx, p.env.GetSubscriptionId(), resourceGroup, resource.Name)
 				if err != nil {
-					return nil, fmt.Errorf("listing api management %s properties: %w", resource.Name, err)
+					return nil, fmt.Errorf("listing api management service %s properties: %w", resource.Name, err)
 				}
 
+				//No filtering needed like it does in key vaults or app configuration
+				//as soft-delete happens for all Api Management resources
 				apims = append(apims, apim)
 			}
 		}
@@ -678,7 +680,7 @@ func (p *BicepProvider) purgeAPIManagement(
 		progressReport := DestroyProgress{
 			Timestamp: time.Now(),
 			Message: fmt.Sprintf(
-				"%s api management %s",
+				"%s api management service %s",
 				output.WithErrorFormat("Purging"),
 				output.WithHighLightFormat(apim.Name),
 			),
@@ -688,13 +690,13 @@ func (p *BicepProvider) purgeAPIManagement(
 
 		err := p.azCli.PurgeAPIM(ctx, p.env.GetSubscriptionId(), apim.Name, apim.Location)
 		if err != nil {
-			return fmt.Errorf("purging api management %s: %w", apim.Name, err)
+			return fmt.Errorf("purging api management service %s: %w", apim.Name, err)
 		}
 
 		p.console.Message(
 			ctx,
 			fmt.Sprintf(
-				"%s api management %s",
+				"%s api management service %s",
 				output.WithErrorFormat("Purged"),
 				output.WithHighLightFormat(apim.Name),
 			),

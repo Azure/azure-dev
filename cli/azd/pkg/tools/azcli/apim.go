@@ -26,7 +26,7 @@ func (cli *azCli) GetAPIM(
 
 	apim, err := apimClient.Get(ctx, resourceGroupName, apimName, nil)
 	if err != nil {
-		return nil, fmt.Errorf("getting api management: %w", err)
+		return nil, fmt.Errorf("getting api management service: %w", err)
 	}
 
 	return &AzCliAPIM{
@@ -45,12 +45,12 @@ func (cli *azCli) PurgeAPIM(ctx context.Context, subscriptionId string, apimName
 
 	poller, err := apimClient.BeginPurge(ctx, apimName, location, nil)
 	if err != nil {
-		return fmt.Errorf("starting purging api management: %w", err)
+		return fmt.Errorf("starting purging api management service: %w", err)
 	}
 
 	_, err = poller.PollUntilDone(ctx, nil)
 	if err != nil {
-		return fmt.Errorf("purging api management: %w", err)
+		return fmt.Errorf("purging api management service: %w", err)
 	}
 
 	return nil

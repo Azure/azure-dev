@@ -27,16 +27,37 @@ func (s Locs) Swap(i, j int) { s[i], s[j] = s[j], s[i] }
 
 // PromptLocation asks the user to select a location from a list of supported azure location
 func PromptLocation(
-	ctx context.Context, env *environment.Environment, message string, console input.Console, azCli azcli.AzCli,
+	ctx context.Context, env *environment.Environment, message string, help string, console input.Console, azCli azcli.AzCli,
+) (string, error) {
+	return PromptLocationWithFilter(ctx, env, message, help, console, azCli, func(acl azcli.AzCliLocation) bool {
+		return true
+	})
+}
+
+func PromptLocationWithFilter(
+	ctx context.Context,
+	env *environment.Environment,
+	message string,
+	help string,
+	console input.Console,
+	azCli azcli.AzCli,
+	filter func(azcli.AzCliLocation) bool,
 ) (string, error) {
 	accountManager, err := account.NewManager(config.NewManager(), azCli)
 	if err != nil {
 		return "", fmt.Errorf("failed creating account manager: %w", err)
 	}
 
-	locations, err := accountManager.GetLocations(ctx, env.GetSubscriptionId())
+	allLocations, err := accountManager.GetLocations(ctx, env.GetSubscriptionId())
 	if err != nil {
 		return "", fmt.Errorf("listing locations: %w", err)
+	}
+
+	locations := make([]azcli.AzCliLocation, 0, len(allLocations))
+	for _, location := range allLocations {
+		if filter(location) {
+			locations = append(locations, location)
+		}
 	}
 
 	sort.Sort(Locs(locations))
@@ -69,6 +90,7 @@ func PromptLocation(
 
 	selectedIndex, err := console.Select(ctx, input.ConsoleOptions{
 		Message:      message,
+		Help:         help,
 		Options:      locationOptions,
 		DefaultValue: defaultOption,
 	})

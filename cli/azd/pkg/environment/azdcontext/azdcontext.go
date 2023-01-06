@@ -147,6 +147,21 @@ func (c *AzdContext) NewEnvironment(name string) error {
 	return nil
 }
 
+// Creates context with project directory set to the desired directory.
+func NewAzdContextWithDirectory(projectDirectory string) *AzdContext {
+	return &AzdContext{
+		projectDirectory: projectDirectory,
+	}
+}
+
+var (
+	ErrNoProject = errors.New("no project exists; to create a new project, run `azd init`")
+)
+
+// Creates context with project directory set to the nearest project file found.
+//
+// The project file is first searched for in the current directory, if not found, the parent directory is searched
+// recursively up to root. If no project file is found, errNoProject is returned.
 func NewAzdContext() (*AzdContext, error) {
 	wd, err := os.Getwd()
 	if err != nil {
@@ -154,8 +169,7 @@ func NewAzdContext() (*AzdContext, error) {
 	}
 
 	// Walk up from the CWD to the root, looking for a project file. If we find one, that's
-	// the root for our project. If we don't use the CWD as the root (as it's the place that
-	// we would `init` into).
+	// the root project directory.
 	searchDir, err := filepath.Abs(wd)
 	if err != nil {
 		return nil, fmt.Errorf("resolving path: %w", err)
@@ -167,10 +181,7 @@ func NewAzdContext() (*AzdContext, error) {
 		if os.IsNotExist(err) || (err == nil && stat.IsDir()) {
 			parent := filepath.Dir(searchDir)
 			if parent == searchDir {
-				// hit the root without finding anything. Behave as if we had
-				// found an `azure.yaml` file in the CWD.
-				searchDir = wd
-				break
+				return nil, ErrNoProject
 			}
 			searchDir = parent
 		} else if err == nil {

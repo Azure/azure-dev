@@ -61,3 +61,14 @@ func Test_CLI_Version_Json(t *testing.T) {
 	expected := getExpectedVersion(t)
 	require.Equal(t, expected, versionJson.Azd.Version)
 }
+
+func Test_CLI_Version_NoExtraConsoleMessages(t *testing.T) {
+	ctx, cancel := newTestContext(t)
+	defer cancel()
+
+	cli := azdcli.NewCLI(t)
+	result, err := cli.RunCommand(ctx, "version", "--output", "json")
+	require.NoError(t, err)
+
+	require.Empty(t, result.Stderr)
+}

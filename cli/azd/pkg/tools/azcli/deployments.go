@@ -5,7 +5,6 @@ package azcli
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -78,7 +77,7 @@ func (cli *azCli) createDeploymentsClient(
 func (cli *azCli) DeployToSubscription(
 	ctx context.Context,
 	subscriptionId, deploymentName string,
-	armTemplate *azure.ArmTemplate,
+	armTemplate azure.RawArmTemplate,
 	parameters azure.ArmParameters,
 	location string,
 ) (AzCliDeploymentResult, error) {
@@ -87,16 +86,11 @@ func (cli *azCli) DeployToSubscription(
 		return AzCliDeploymentResult{}, fmt.Errorf("creating deployments client: %w", err)
 	}
 
-	templateJsonAsMap, err := readFromString([]byte(*armTemplate))
-	if err != nil {
-		return AzCliDeploymentResult{}, fmt.Errorf("reading template file: %w", err)
-	}
-
 	createFromTemplateOperation, err := deploymentClient.BeginCreateOrUpdateAtSubscriptionScope(
 		ctx, deploymentName,
 		armresources.Deployment{
 			Properties: &armresources.DeploymentProperties{
-				Template:   templateJsonAsMap,
+				Template:   armTemplate,
 				Parameters: parameters,
 				Mode:       to.Ptr(armresources.DeploymentModeIncremental),
 			},
@@ -126,7 +120,7 @@ func (cli *azCli) DeployToSubscription(
 func (cli *azCli) DeployToResourceGroup(
 	ctx context.Context,
 	subscriptionId, resourceGroup, deploymentName string,
-	armTemplate *azure.ArmTemplate,
+	armTemplate azure.RawArmTemplate,
 	parameters azure.ArmParameters,
 ) (AzCliDeploymentResult, error) {
 	deploymentClient, err := cli.createDeploymentsClient(ctx, subscriptionId)
@@ -134,16 +128,11 @@ func (cli *azCli) DeployToResourceGroup(
 		return AzCliDeploymentResult{}, fmt.Errorf("creating deployments client: %w", err)
 	}
 
-	templateJsonAsMap, err := readFromString([]byte(*armTemplate))
-	if err != nil {
-		return AzCliDeploymentResult{}, fmt.Errorf("reading template file: %w", err)
-	}
-
 	createFromTemplateOperation, err := deploymentClient.BeginCreateOrUpdate(
 		ctx, resourceGroup, deploymentName,
 		armresources.Deployment{
 			Properties: &armresources.DeploymentProperties{
-				Template:   templateJsonAsMap,
+				Template:   armTemplate,
 				Parameters: parameters,
 				Mode:       to.Ptr(armresources.DeploymentModeIncremental),
 			},
@@ -187,15 +176,6 @@ func (cli *azCli) DeleteSubscriptionDeployment(ctx context.Context, subscription
 	}
 
 	return nil
-}
-
-func readFromString(jsonBytes []byte) (map[string]interface{}, error) {
-	template := make(map[string]interface{})
-	if err := json.Unmarshal(jsonBytes, &template); err != nil {
-		return nil, err
-	}
-
-	return template, nil
 }
 
 // convert from: sdk client outputs: interface{} to map[string]azcli.AzCliDeploymentOutput

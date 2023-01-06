@@ -13,6 +13,7 @@ import (
 	"github.com/AlecAivazis/survey/v2"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/telemetry"
+	"github.com/azure/azure-dev/cli/azd/internal/telemetry/fields"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/azureutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
@@ -74,15 +75,15 @@ func createAndInitEnvironment(
 	azdCtx *azdcontext.AzdContext,
 	console input.Console,
 	azCli azcli.AzCli,
-) (*environment.Environment, context.Context, error) {
+) (*environment.Environment, error) {
 	if envSpec.environmentName != "" && !environment.IsValidEnvironmentName(envSpec.environmentName) {
 		errMsg := invalidEnvironmentNameMsg(envSpec.environmentName)
 		fmt.Fprint(console.Handles().Stdout, errMsg)
-		return nil, nil, fmt.Errorf(errMsg)
+		return nil, fmt.Errorf(errMsg)
 	}
 
 	if err := ensureValidEnvironmentName(ctx, &envSpec.environmentName, console); err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
 	// Ensure the environment does not already exist:
@@ -90,16 +91,17 @@ func createAndInitEnvironment(
 	switch {
 	case errors.Is(err, os.ErrNotExist):
 	case err != nil:
-		return nil, nil, fmt.Errorf("checking for existing environment: %w", err)
+		return nil, fmt.Errorf("checking for existing environment: %w", err)
 	case err == nil:
-		return nil, nil, fmt.Errorf("environment '%s' already exists", envSpec.environmentName)
+		return nil, fmt.Errorf("environment '%s' already exists", envSpec.environmentName)
 	}
 
 	if err := ensureEnvironmentInitialized(ctx, *envSpec, env, console, azCli); err != nil {
-		return nil, nil, fmt.Errorf("initializing environment: %w", err)
+		return nil, fmt.Errorf("initializing environment: %w", err)
 	}
 
-	return env, telemetry.ContextWithEnvironment(ctx, env), nil
+	telemetry.SetGlobalAttributes(fields.StringHashed(fields.SubscriptionIdKey, env.GetSubscriptionId()))
+	return env, nil
 }
 
 func loadOrInitEnvironment(
@@ -108,7 +110,7 @@ func loadOrInitEnvironment(
 	azdCtx *azdcontext.AzdContext,
 	console input.Console,
 	azCli azcli.AzCli,
-) (*environment.Environment, context.Context, error) {
+) (*environment.Environment, error) {
 	loadOrCreateEnvironment := func() (*environment.Environment, bool, error) {
 		// If there's a default environment, use that
 		if *environmentName == "" {
@@ -165,9 +167,9 @@ func loadOrInitEnvironment(
 	env, isNew, err := loadOrCreateEnvironment()
 	switch {
 	case errors.Is(err, os.ErrNotExist):
-		return nil, nil, fmt.Errorf("environment %s does not exist", *environmentName)
+		return nil, fmt.Errorf("environment %s does not exist", *environmentName)
 	case err != nil:
-		return nil, nil, err
+		return nil, err
 	}
 
 	if err := ensureEnvironmentInitialized(
@@ -176,16 +178,18 @@ func loadOrInitEnvironment(
 		env,
 		console,
 		azCli); err != nil {
-		return nil, nil, fmt.Errorf("initializing environment: %w", err)
+		return nil, fmt.Errorf("initializing environment: %w", err)
 	}
 
 	if isNew {
 		if err := azdCtx.SetDefaultEnvironmentName(*environmentName); err != nil {
-			return nil, nil, fmt.Errorf("saving default environment name: %w", err)
+			return nil, fmt.Errorf("saving default environment name: %w", err)
 		}
 	}
 
-	return env, telemetry.ContextWithEnvironment(ctx, env), nil
+	telemetry.SetGlobalAttributes(fields.StringHashed(fields.SubscriptionIdKey, env.GetSubscriptionId()))
+
+	return env, nil
 }
 
 // ensureEnvironmentInitialized ensures the environment is initialized, i.e. it contains values for `AZURE_ENV_NAME`,
@@ -263,7 +267,7 @@ func ensureEnvironmentInitialized(
 	if !hasLocation && envSpec.location != "" {
 		env.SetLocation(envSpec.location)
 	} else {
-		location, err := azureutil.PromptLocation(ctx, env, "Please select an Azure location to use:", console, azCli)
+		location, err := azureutil.PromptLocation(ctx, env, "Please select an Azure location to use:", "", console, azCli)
 		if err != nil {
 			return fmt.Errorf("prompting for location: %w", err)
 		}
@@ -321,23 +325,6 @@ func getSubscriptionOptions(ctx context.Context, azCli azcli.AzCli) ([]string, a
 
 	subscriptionOptions[len(subscriptionOptions)-1] = manualSubscriptionEntryOption
 	return subscriptionOptions, defaultSubscription, nil
-}
-
-var (
-	errNoProject = errors.New("no project exists; to create a new project, run `azd init`.")
-)
-
-// ensureProject ensures that a project file exists, using the given
-// context. If a project is missing, errNoProject is returned.
-func ensureProject(path string) error {
-	_, err := os.Stat(path)
-	if errors.Is(err, os.ErrNotExist) {
-		return errNoProject
-	} else if err != nil {
-		return fmt.Errorf("checking for project: %w", err)
-	}
-
-	return nil
 }
 
 type envFlag struct {

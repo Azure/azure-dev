@@ -221,6 +221,16 @@ func TestRedactSensitiveData(t *testing.T) {
 "tokenType": "Bearer",
 "accessToken": "<redacted>"
 }`},
+
+		{scenario: "SWADeploymentToken",
+			// nolint:lll
+			input: `npx -y @azure/static-web-apps-cli@1.0.0 deploy --tenant-id abc-123 --subscription-id abc-123 --resource-group r --app-name app-name --app-location / --output-location . --env default --no-use-keychain --deployment-token abc-123`,
+			// nolint:lll
+			expected: `npx -y @azure/static-web-apps-cli@1.0.0 deploy --tenant-id abc-123 --subscription-id abc-123 --resource-group r --app-name app-name --app-location / --output-location . --env default --no-use-keychain --deployment-token <redacted>`},
+
+		{scenario: "DockerLoginUsernameAndPassword",
+			input:    `docker login --username crusername123 --password abc123 some.azurecr.io`,
+			expected: `docker login --username <redacted> --password <redacted> some.azurecr.io`},
 	}
 
 	for _, test := range tests {

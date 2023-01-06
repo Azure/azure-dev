@@ -34,12 +34,19 @@ func (r *restoreFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommand
 		//nolint:lll
 		"Restores a specific service (when the string is unspecified, all services that are listed in the "+azdcontext.ProjectFileName+" file are restored).",
 	)
-	r.envFlag.Bind(local, global)
-	r.global = global
 }
 
-func restoreCmdDesign(global *internal.GlobalCommandOptions) (*cobra.Command, *restoreFlags) {
-	cmd := &cobra.Command{
+func newRestoreFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *restoreFlags {
+	flags := &restoreFlags{}
+	flags.Bind(cmd.Flags(), global)
+	flags.envFlag.Bind(cmd.Flags(), global)
+	flags.global = global
+
+	return flags
+}
+
+func restoreCmdDesign() *cobra.Command {
+	return &cobra.Command{
 		Use:   "restore",
 		Short: "Restore application dependencies.",
 		//nolint:lll
@@ -49,14 +56,10 @@ Run this command to download and install all the required libraries so that you 
 
 For the best local run and debug experience, go to https://aka.ms/azure-dev/vscode to learn how to use the Visual Studio Code extension.`,
 	}
-
-	flags := &restoreFlags{}
-	flags.Bind(cmd.Flags(), global)
-	return cmd, flags
 }
 
 type restoreAction struct {
-	flags         restoreFlags
+	flags         *restoreFlags
 	console       input.Console
 	azCli         azcli.AzCli
 	azdCtx        *azdcontext.AzdContext
@@ -64,12 +67,12 @@ type restoreAction struct {
 }
 
 func newRestoreAction(
-	flags restoreFlags,
+	flags *restoreFlags,
 	azCli azcli.AzCli,
 	console input.Console,
 	azdCtx *azdcontext.AzdContext,
 	commandRunner exec.CommandRunner,
-) *restoreAction {
+) actions.Action {
 	return &restoreAction{
 		flags:         flags,
 		console:       console,
@@ -80,11 +83,7 @@ func newRestoreAction(
 }
 
 func (r *restoreAction) Run(ctx context.Context) (*actions.ActionResult, error) {
-	if err := ensureProject(r.azdCtx.ProjectPath()); err != nil {
-		return nil, err
-	}
-
-	env, ctx, err := loadOrInitEnvironment(ctx, &r.flags.environmentName, r.azdCtx, r.console, r.azCli)
+	env, err := loadOrInitEnvironment(ctx, &r.flags.environmentName, r.azdCtx, r.console, r.azCli)
 	if err != nil {
 		return nil, fmt.Errorf("loading environment: %w", err)
 	}

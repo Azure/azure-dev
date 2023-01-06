@@ -29,7 +29,7 @@ const (
 	AzureResourceTypeCosmosMongo             AzureResourceType = "Microsoft.DocumentDB/databaseAccounts/mongodbDatabases"
 )
 
-const resourceLevelSeparator = "/"
+const resourceLevelSeparator = "/?"
 
 // GetResourceTypeDisplayName retrieves the display name for the given resource type.
 // If the display name was not found for the given resource type, an empty string is returned instead.

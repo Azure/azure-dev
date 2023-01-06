@@ -105,11 +105,11 @@ For more information, visit the Azure Developer CLI Dev Hub: https://aka.ms/azur
 			var traceLogEndpoint string
 
 			rootCmd.PersistentFlags().StringVar(&traceLogFile, "trace-log-file", "", "Write a diagnostics trace to a file.")
-			rootCmd.PersistentFlags().MarkHidden("trace-log-file")
+			_ = rootCmd.PersistentFlags().MarkHidden("trace-log-file")
 
 			rootCmd.PersistentFlags().StringVar(
 				&traceLogEndpoint, "trace-log-url", "", "Send traces to an Open Telemetry compatible endpoint.")
-			rootCmd.PersistentFlags().MarkHidden("trace-log-url")
+			_ = rootCmd.PersistentFlags().MarkHidden("trace-log-url")
 
 			return opts
 		},

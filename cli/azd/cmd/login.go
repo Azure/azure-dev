@@ -25,7 +25,6 @@ import (
 type loginFlags struct {
 	onlyCheckStatus        bool
 	useDeviceCode          bool
-	outputFormat           string
 	tenantID               string
 	clientID               string
 	clientSecret           stringPtr
@@ -105,17 +104,17 @@ func (lf *loginFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandO
 		0,
 		"Choose the port to be used as part of the redirect URI during interactive login.")
 
-	output.AddOutputFlag(
-		local,
-		&lf.outputFormat,
-		[]output.Format{output.JsonFormat, output.NoneFormat},
-		output.NoneFormat,
-	)
-
 	lf.global = global
 }
 
-func loginCmdDesign(global *internal.GlobalCommandOptions) (*cobra.Command, *loginFlags) {
+func newLoginFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *loginFlags {
+	flags := &loginFlags{}
+	flags.Bind(cmd.Flags(), global)
+
+	return flags
+}
+
+func newLoginCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "login",
 		Short: "Log in to Azure.",
@@ -129,9 +128,7 @@ func loginCmdDesign(global *internal.GlobalCommandOptions) (*cobra.Command, *log
 		--client-certificate, --client-credential or --client-credential-provider.`),
 	}
 
-	flags := &loginFlags{}
-	flags.Bind(cmd.Flags(), global)
-	return cmd, flags
+	return cmd
 }
 
 type loginAction struct {
@@ -139,16 +136,16 @@ type loginAction struct {
 	writer      io.Writer
 	console     input.Console
 	authManager *auth.Manager
-	flags       loginFlags
+	flags       *loginFlags
 }
 
 func newLoginAction(
 	formatter output.Formatter,
 	writer io.Writer,
 	authManager *auth.Manager,
-	flags loginFlags,
+	flags *loginFlags,
 	console input.Console,
-) *loginAction {
+) actions.Action {
 	return &loginAction{
 		formatter:   formatter,
 		writer:      writer,

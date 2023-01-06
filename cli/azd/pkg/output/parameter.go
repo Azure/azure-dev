@@ -39,7 +39,7 @@ func GetCommandFormatter(cmd *cobra.Command) (Formatter, error) {
 	// If the command does not specify any output params just return nil Formatter pointer
 	outputVal, err := cmd.Flags().GetString(outputFlagName)
 	if err != nil {
-		return nil, nil
+		return &NoneFormatter{}, nil
 	}
 
 	desiredFormatter := strings.ToLower(strings.TrimSpace(outputVal))

@@ -13,6 +13,8 @@ import (
 )
 
 var (
+	// The golobby project does not support types errors,
+	// but all the error messages are prefixed with `container:`
 	containerErrorRegex *regexp.Regexp = regexp.MustCompile("container:")
 
 	// The global/root level container

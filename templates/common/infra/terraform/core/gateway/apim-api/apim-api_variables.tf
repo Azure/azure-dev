@@ -17,6 +17,11 @@ variable "web_front_end_url" {
   type        = string
 }
 
+variable "api_backend_url" {
+  description = "Absolute URL of the backend service implementing this API."
+  type        = string
+}
+
 variable "api_name" {
   description = "Resource name to uniquely identify this API within the API Management service instance"
   type        = string

@@ -423,11 +423,9 @@ func (t *TerraformProvider) mapTerraformTypeToInterfaceType(typ any) ParameterTy
 		// in this case we have a complex type, which in json looked like ["type", <schema parts>...], just pull out the
 		// first part and map to either and object or array.
 		switch v[0].(string) {
-		case "list":
-		case "tuple":
+		case "list", "tuple":
 			return ParameterTypeArray
-		case "object":
-		case "map":
+		case "object", "map":
 			return ParameterTypeObject
 		default:
 			panic(fmt.Sprintf("unknown complex type tag: %s (full type: %+v)", v, typ))

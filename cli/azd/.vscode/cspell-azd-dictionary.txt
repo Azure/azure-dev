@@ -68,6 +68,10 @@ ostest
 osutil
 osversion
 otel
+otlp
+otlpconfig
+otlptrace
+otlptracehttp
 pflag
 pulumi
 pyapp
@@ -81,6 +85,7 @@ snapshotter
 sstore
 staticcheck
 staticwebapp
+stdouttrace
 STRINGSLICE
 structs
 swacli

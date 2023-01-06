@@ -560,6 +560,18 @@ func prepareDestroyMocks(mockContext *mocks.MockContext) {
 				Type:     convert.RefOf(string(infra.AzureResourceTypeAppConfig)),
 				Location: convert.RefOf("eastus2"),
 			},
+			{
+				ID:       convert.RefOf("apim"),
+				Name:     convert.RefOf("apim-123"),
+				Type:     convert.RefOf(string(infra.AzureResourceTypeAPIM)),
+				Location: convert.RefOf("eastus2"),
+			},
+			{
+				ID:       convert.RefOf("apim2"),
+				Name:     convert.RefOf("apim2-123"),
+				Type:     convert.RefOf(string(infra.AzureResourceTypeAPIM)),
+				Location: convert.RefOf("eastus2"),
+			},
 		},
 	}
 
@@ -582,6 +594,10 @@ func prepareDestroyMocks(mockContext *mocks.MockContext) {
 	// Get App Configuration
 	getAppConfigMock(mockContext, "/configurationStores/ac-123", "ac-123", "eastus2")
 	getAppConfigMock(mockContext, "/configurationStores/ac2-123", "ac2-123", "eastus2")
+
+	// Get APIM
+	getAPIMMock(mockContext, "/service/apim-123", "apim-123", "eastus2")
+	getAPIMMock(mockContext, "/service/apim2-123", "apim2-123", "eastus2")
 
 	// Delete resource group
 	mockContext.HttpClient.When(func(request *http.Request) bool {
@@ -658,6 +674,30 @@ func getKeyVaultMock(mockContext *mocks.MockContext, keyVaultString string, name
 func getAppConfigMock(mockContext *mocks.MockContext, appConfigString string, name string, location string) {
 	mockContext.HttpClient.When(func(request *http.Request) bool {
 		return request.Method == http.MethodGet && strings.Contains(request.URL.Path, appConfigString)
+	}).RespondFn(func(request *http.Request) (*http.Response, error) {
+		appConfigResponse := armappconfiguration.ConfigurationStoresClientGetResponse{
+			ConfigurationStore: armappconfiguration.ConfigurationStore{
+				ID:       convert.RefOf(name),
+				Name:     convert.RefOf(name),
+				Location: convert.RefOf(location),
+				Properties: &armappconfiguration.ConfigurationStoreProperties{
+					EnablePurgeProtection: convert.RefOf(false),
+				},
+			},
+		}
+
+		appConfigBytes, _ := json.Marshal(appConfigResponse)
+
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(bytes.NewBuffer(appConfigBytes)),
+		}, nil
+	})
+}
+
+func getAPIMMock(mockContext *mocks.MockContext, apimString string, name string, location string) {
+	mockContext.HttpClient.When(func(request *http.Request) bool {
+		return request.Method == http.MethodGet && strings.Contains(request.URL.Path, apimString)
 	}).RespondFn(func(request *http.Request) (*http.Response, error) {
 		appConfigResponse := armappconfiguration.ConfigurationStoresClientGetResponse{
 			ConfigurationStore: armappconfiguration.ConfigurationStore{

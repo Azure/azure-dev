@@ -282,6 +282,13 @@ func (p *BicepProvider) Destroy(
 				return
 			}
 
+			asyncContext.SetProgress(&DestroyProgress{Message: "Getting API Managements to purge", Timestamp: time.Now()})
+			aPIManagements, err := p.getAPIManagementsToPurge(ctx, groupedResources)
+			if err != nil {
+				asyncContext.SetError(fmt.Errorf("getting API managements to purge: %w", err))
+				return
+			}
+
 			if err := p.destroyResourceGroups(ctx, asyncContext, options, groupedResources, len(allResources)); err != nil {
 				asyncContext.SetError(fmt.Errorf("destroying resource groups: %w", err))
 				return
@@ -301,10 +308,17 @@ func (p *BicepProvider) Destroy(
 					return p.purgeAppConfigs(ctx, asyncContext, appConfigs, options)
 				},
 			}
-			purgeItem := []itemToPurge{keyVaultsPurge, appConfigsPurge}
+			aPIManagement := itemToPurge{
+				resourceType: "API Managements",
+				count:        len(aPIManagements),
+				purge: func() error {
+					return p.purgeAPIManagement(ctx, asyncContext, aPIManagements, options)
+				},
+			}
+			purgeItem := []itemToPurge{keyVaultsPurge, appConfigsPurge, aPIManagement}
 
 			if err := p.purgeItems(ctx, asyncContext, purgeItem, options); err != nil {
-				asyncContext.SetError(fmt.Errorf("purging key vaults or app configurations: %w", err))
+				asyncContext.SetError(fmt.Errorf("purging key vaults or app configurations or api managements: %w", err))
 				return
 			}
 
@@ -585,6 +599,30 @@ func (p *BicepProvider) getAppConfigsToPurge(
 	return configs, nil
 }
 
+func (p *BicepProvider) getAPIManagementsToPurge(
+	ctx context.Context,
+	groupedResources map[string][]azcli.AzCliResource,
+) ([]*azcli.AzCliAPIM, error) {
+	apims := []*azcli.AzCliAPIM{}
+
+	for resourceGroup, groupResources := range groupedResources {
+		for _, resource := range groupResources {
+			if resource.Type == string(infra.AzureResourceTypeAPIM) {
+				apim, err := p.azCli.GetAPIM(ctx, p.env.GetSubscriptionId(), resourceGroup, resource.Name, resource.Id)
+				if err != nil {
+					return nil, fmt.Errorf("listing api management %s properties: %w", resource.Name, err)
+				}
+
+				if apim.Properties.ScheduledPurgeDate != "" {
+					apims = append(apims, apim)
+				}
+			}
+		}
+	}
+
+	return apims, nil
+}
+
 // Azure AppConfigurations have a "soft delete" functionality (now enabled by default) where a configuration store
 // may be marked such that when it is deleted it can be recovered for a period of time. During that time,
 // the name may not be reused.
@@ -625,6 +663,42 @@ func (p *BicepProvider) purgeAppConfigs(
 				"%s app configuration %s",
 				output.WithErrorFormat("Purged"),
 				output.WithHighLightFormat(appConfig.Name),
+			),
+		)
+	}
+
+	return nil
+}
+
+func (p *BicepProvider) purgeAPIManagement(
+	ctx context.Context,
+	asyncContext *async.InteractiveTaskContextWithProgress[*DestroyResult, *DestroyProgress],
+	apims []*azcli.AzCliAPIM,
+	options DestroyOptions,
+) error {
+	for _, apim := range apims {
+		progressReport := DestroyProgress{
+			Timestamp: time.Now(),
+			Message: fmt.Sprintf(
+				"%s api management %s",
+				output.WithErrorFormat("Purging"),
+				output.WithHighLightFormat(apim.Name),
+			),
+		}
+
+		asyncContext.SetProgress(&progressReport)
+
+		err := p.azCli.PurgeAPIM(ctx, p.env.GetSubscriptionId(), apim.Name, apim.Location)
+		if err != nil {
+			return fmt.Errorf("purging api management %s: %w", apim.Name, err)
+		}
+
+		p.console.Message(
+			ctx,
+			fmt.Sprintf(
+				"%s api management %s",
+				output.WithErrorFormat("Purged"),
+				output.WithHighLightFormat(apim.Name),
 			),
 		)
 	}

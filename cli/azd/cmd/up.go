@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
+	"github.com/azure/azure-dev/cli/azd/cmd/middleware"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
@@ -18,30 +19,30 @@ type upFlags struct {
 	initFlags
 	infraCreateFlags
 	deployFlags
-	outputFormat string
-	global       *internal.GlobalCommandOptions
+	global *internal.GlobalCommandOptions
 	envFlag
 }
 
 func (u *upFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
-	output.AddOutputFlag(
-		local,
-		&u.outputFormat,
-		[]output.Format{output.JsonFormat, output.NoneFormat},
-		output.NoneFormat)
-
 	u.envFlag.Bind(local, global)
 	u.global = global
 
 	u.initFlags.bindNonCommon(local, global)
 	u.initFlags.setCommon(&u.envFlag)
 	u.infraCreateFlags.bindNonCommon(local, global)
-	u.infraCreateFlags.setCommon(&u.outputFormat, &u.envFlag)
+	u.infraCreateFlags.setCommon(&u.envFlag)
 	u.deployFlags.bindNonCommon(local, global)
-	u.deployFlags.setCommon(&u.outputFormat, &u.envFlag)
+	u.deployFlags.setCommon(&u.envFlag)
 }
 
-func upCmdDesign(global *internal.GlobalCommandOptions) (*cobra.Command, *upFlags) {
+func newUpFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *upFlags {
+	flags := &upFlags{}
+	flags.Bind(cmd.Flags(), global)
+
+	return flags
+}
+
+func newUpCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "up",
 		Short: "Initialize application, provision Azure resources, and deploy your project with a single command.",
@@ -59,14 +60,7 @@ When no template is supplied, you can optionally select an Azure Developer CLI t
 		) + ` initializes the current directory so that your project is compatible with Azure Developer CLI.`,
 	}
 
-	uf := &upFlags{}
-	uf.Bind(cmd.Flags(), global)
-
-	if err := cmd.RegisterFlagCompletionFunc("template", templateNameCompletion); err != nil {
-		panic(err)
-	}
-
-	return cmd, uf
+	return cmd
 }
 
 type upAction struct {
@@ -74,14 +68,28 @@ type upAction struct {
 	infraCreate *infraCreateAction
 	deploy      *deployAction
 	console     input.Console
+	runner      middleware.MiddlewareContext
 }
 
-func newUpAction(init *initAction, infraCreate *infraCreateAction, deploy *deployAction, console input.Console) *upAction {
+func newUpAction(
+	flags *upFlags,
+	init *initAction,
+	infraCreate *infraCreateAction,
+	deploy *deployAction,
+	console input.Console,
+	runner middleware.MiddlewareContext,
+) actions.Action {
+	// Required to ensure the sub action flags are bound correctly to the actions
+	init.flags = &flags.initFlags
+	infraCreate.flags = &flags.infraCreateFlags
+	deploy.flags = &flags.deployFlags
+
 	return &upAction{
 		init:        init,
 		infraCreate: infraCreate,
 		deploy:      deploy,
 		console:     console,
+		runner:      runner,
 	}
 }
 
@@ -91,7 +99,8 @@ func (u *upAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		return nil, fmt.Errorf("running init: %w", err)
 	}
 
-	_, err = u.infraCreate.Run(ctx)
+	provisionOptions := &middleware.Options{Name: "infracreate", Aliases: []string{"provision"}}
+	_, err = u.runner.RunChildAction(ctx, provisionOptions, u.infraCreate)
 	if err != nil {
 		return nil, err
 	}
@@ -99,7 +108,8 @@ func (u *upAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	// Print an additional newline to separate provision from deploy
 	u.console.Message(ctx, "")
 
-	deployResult, err := u.deploy.Run(ctx)
+	deployOptions := &middleware.Options{Name: "deploy"}
+	deployResult, err := u.runner.RunChildAction(ctx, deployOptions, u.deploy)
 	if err != nil {
 		return nil, err
 	}
@@ -108,7 +118,8 @@ func (u *upAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 }
 
 func (u *upAction) runInit(ctx context.Context) error {
-	_, err := u.init.Run(ctx)
+	initOptions := &middleware.Options{Name: "init"}
+	_, err := u.runner.RunChildAction(ctx, initOptions, u.init)
 	var envInitError *environment.EnvironmentInitError
 	if errors.As(err, &envInitError) {
 		// We can ignore environment already initialized errors

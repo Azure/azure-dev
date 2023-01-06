@@ -21,6 +21,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -867,7 +868,9 @@ func (p *BicepProvider) ensureParameters(
 
 		// If a value is explicitly configured via a parameters file, use it.
 		if v, has := parameters[key]; has {
-			configuredParameters[key] = v
+			configuredParameters[key] = azure.ArmParameterValue{
+				Value: armParameterFileValue(p.mapBicepTypeToInterfaceType(param.Type), v.Value),
+			}
 			continue
 		}
 
@@ -937,6 +940,31 @@ func (p *BicepProvider) ensureParameters(
 	}
 
 	return configuredParameters, nil
+}
+
+// Convert the ARM parameters file value into a value suitable for deployment
+func armParameterFileValue(paramType ParameterType, value any) any {
+	// Relax the handling of bool and number types to accept convertible strings
+	switch paramType {
+	case ParameterTypeBoolean:
+		if val, ok := value.(string); ok {
+			if boolVal, err := strconv.ParseBool(val); err == nil {
+				return boolVal
+			}
+		}
+	case ParameterTypeNumber:
+		if val, ok := value.(string); ok {
+			if intVal, err := strconv.ParseInt(val, 10, 64); err == nil {
+				return intVal
+			}
+
+			if floatVal, err := strconv.ParseFloat(val, 64); err == nil {
+				return floatVal
+			}
+		}
+	}
+
+	return value
 }
 
 func isValueAssignableToParameterType(paramType ParameterType, value any) bool {

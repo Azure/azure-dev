@@ -144,7 +144,9 @@ func (display *ProvisioningProgressDisplay) logNewlyCreatedResources(
 				ctx,
 				&ux.CreatedResource{
 					Type: resourceTypeDisplayName,
-					Name: *newResource.Properties.TargetResource.ResourceName,
+					// Part of the patch to display Mongo and SQL. We don't want to show the /Account in the name of the
+					// resource (i.e. Azure Cosmos SQL DB: cosmos-some-id/Todo)
+					Name: strings.Split(*newResource.Properties.TargetResource.ResourceName, "/")[0],
 				},
 			)
 			resourceTypeName = resourceTypeDisplayName

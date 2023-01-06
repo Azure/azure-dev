@@ -25,6 +25,8 @@ const (
 	AzureResourceTypeContainerAppEnvironment AzureResourceType = "Microsoft.App/managedEnvironments"
 	AzureResourceTypeApim                    AzureResourceType = "Microsoft.ApiManagement/service"
 	AzureResourceTypeCacheForRedis           AzureResourceType = "Microsoft.Cache/redis"
+	AzureResourceTypeCosmosSQL               AzureResourceType = "Microsoft.DocumentDB/databaseAccounts/sqlDatabases"
+	AzureResourceTypeCosmosMongo             AzureResourceType = "Microsoft.DocumentDB/databaseAccounts/mongodbDatabases"
 )
 
 const resourceLevelSeparator = "/"
@@ -64,6 +66,10 @@ func GetResourceTypeDisplayName(resourceType AzureResourceType) string {
 		return "Azure API Management"
 	case AzureResourceTypeCacheForRedis:
 		return "Cache for Redis"
+	case AzureResourceTypeCosmosMongo:
+		return "Azure Cosmos MongoDB"
+	case AzureResourceTypeCosmosSQL:
+		return "Azure Cosmos SQL DB"
 	}
 
 	return ""
@@ -76,6 +82,17 @@ func IsTopLevelResourceType(resourceType AzureResourceType) bool {
 	// a deployment is not top level, but grouping level
 	if resourceType == AzureResourceTypeDeployment {
 		return false
+	}
+
+	// Temporal patch displaying Azure SQL and Azure Mongo instead of only Azure Cosmos DB
+	// Both resources uses the same top-level grouper Microsoft.DocumentDB/databaseAccounts
+	// We need a more general solution in the future for naming resources
+	// This patch let the known-resource-type name to be used for static translation
+	if resourceType == AzureResourceTypeCosmosSQL || resourceType == AzureResourceTypeCosmosMongo {
+		return true
+	}
+	if resourceType == AzureResourceTypeCosmosDb {
+		return false // So we don't try to translate the grouping resource for mongo or SQL when using Cosmos
 	}
 
 	resType := string(resourceType)

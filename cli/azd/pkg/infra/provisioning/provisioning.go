@@ -4,6 +4,7 @@
 package provisioning
 
 import (
+	"encoding/json"
 	"fmt"
 	"log"
 	"os"
@@ -18,7 +19,16 @@ import (
 func UpdateEnvironment(env *environment.Environment, outputs map[string]OutputParameter) error {
 	if len(outputs) > 0 {
 		for key, param := range outputs {
-			env.Values[key] = fmt.Sprintf("%v", param.Value)
+			// Complex types marshalled as JSON strings, simple types marshalled as simple strings
+			if param.Type == ParameterTypeArray || param.Type == ParameterTypeObject {
+				bytes, err := json.Marshal(param.Value)
+				if err != nil {
+					return fmt.Errorf("invalid value for output parameter '%s' (%s): %w", key, string(param.Type), err)
+				}
+				env.Values[key] = string(bytes)
+			} else {
+				env.Values[key] = fmt.Sprintf("%v", param.Value)
+			}
 		}
 
 		if err := env.Save(); err != nil {

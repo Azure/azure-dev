@@ -115,6 +115,7 @@ func TestDeployProgressMessages(t *testing.T) {
 	service := Service{
 		Project:        project,
 		Config:         project.Config.Services["api"],
+		Environment:    env,
 		Framework:      mockFramework,
 		Target:         mockServiceTarget,
 		TargetResource: mockTarget,

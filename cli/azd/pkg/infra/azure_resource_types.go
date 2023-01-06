@@ -58,6 +58,8 @@ func GetResourceTypeDisplayName(resourceType AzureResourceType) string {
 		return "App Service plan"
 	case AzureResourceTypeCosmosDb:
 		return "Azure Cosmos DB"
+	case AzureResourceTypeSqlDatabase:
+		return "Azure SQL DB"
 	}
 
 	return ""

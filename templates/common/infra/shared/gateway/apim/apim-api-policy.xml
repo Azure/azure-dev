@@ -86,7 +86,7 @@
         <!-- Optional policy to hide error details and provide a custom generic message. Learn more at https://learn.microsoft.com/en-us/azure/api-management/api-management-advanced-policies#ReturnResponse -->
         <return-response>
             <set-status code="500" reason="Internal Server Error" />
-            <set-body>We're Sorry. An unexpected error has occurred. If this continues please contact Tech Support.</set-body>
+            <set-body>An unexpected error has occurred.</set-body>
         </return-response>
     </on-error>
 </policies>

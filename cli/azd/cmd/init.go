@@ -29,7 +29,14 @@ import (
 	"github.com/spf13/pflag"
 )
 
-func initCmdDesign(rootOptions *internal.GlobalCommandOptions) (*cobra.Command, *initFlags) {
+func newInitFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *initFlags {
+	flags := &initFlags{}
+	flags.Bind(cmd.Flags(), global)
+
+	return flags
+}
+
+func newInitCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "init",
 		Short: "Initialize a new application.",
@@ -41,14 +48,7 @@ When no template is supplied, you can optionally select an Azure Developer CLI t
 When a template is provided, the sample code is cloned to the current directory.`,
 	}
 
-	f := &initFlags{}
-	f.Bind(cmd.Flags(), rootOptions)
-
-	if err := cmd.RegisterFlagCompletionFunc("template", templateNameCompletion); err != nil {
-		panic(err)
-	}
-
-	return cmd, f
+	return cmd
 }
 
 type initFlags struct {
@@ -96,48 +96,40 @@ func (i *initFlags) setCommon(envFlag *envFlag) {
 
 type initAction struct {
 	azCli           azcli.AzCli
-	azdCtx          *azdcontext.AzdContext
 	accountManager  *account.Manager
 	console         input.Console
 	cmdRun          exec.CommandRunner
 	gitCli          git.GitCli
-	flags           initFlags
+	flags           *initFlags
 	repoInitializer *repository.Initializer
 }
 
 func newInitAction(
 	azCli azcli.AzCli,
-	azdCtx *azdcontext.AzdContext,
 	accountManager *account.Manager,
 	cmdRun exec.CommandRunner,
 	console input.Console,
 	gitCli git.GitCli,
-	flags initFlags,
-	repoInitializer *repository.Initializer) (*initAction, error) {
+	flags *initFlags,
+	repoInitializer *repository.Initializer) actions.Action {
 	return &initAction{
 		azCli:           azCli,
-		azdCtx:          azdCtx,
 		accountManager:  accountManager,
 		console:         console,
 		cmdRun:          cmdRun,
 		gitCli:          gitCli,
 		flags:           flags,
 		repoInitializer: repoInitializer,
-	}, nil
+	}
 }
 
 func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
-	// In the case where `init` is run and a parent folder already has an `azure.yaml` file, the
-	// current ProjectDirectory will be set to that folder. That's not what we want here. We want
-	// to force using the current working directory as a project root (since we are initializing a
-	// new project).
 	wd, err := os.Getwd()
 	if err != nil {
 		return nil, fmt.Errorf("getting cwd: %w", err)
 	}
 
-	log.Printf("forcing project directory to %s", wd)
-	i.azdCtx.SetProjectDirectory(wd)
+	azdCtx := azdcontext.NewAzdContextWithDirectory(wd)
 
 	if i.flags.templateBranch != "" && i.flags.template.Name == "" {
 		return nil, errors.New("template name required when specifying a branch name")
@@ -161,7 +153,7 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 
 	// Project not initialized and no template specified
 	// NOTE: Adding `azure.yaml` to a folder removes the option from selecting a template
-	if _, err := os.Stat(i.azdCtx.ProjectPath()); err != nil && errors.Is(err, os.ErrNotExist) {
+	if _, err := os.Stat(azdCtx.ProjectPath()); err != nil && errors.Is(err, os.ErrNotExist) {
 
 		if i.flags.template.Name == "" {
 			i.flags.template, err = templates.PromptTemplate(ctx, "Select a project template:", i.console)
@@ -196,18 +188,18 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 			}
 		}
 
-		err = i.repoInitializer.Initialize(ctx, templateUrl, i.flags.templateBranch)
+		err = i.repoInitializer.Initialize(ctx, azdCtx, templateUrl, i.flags.templateBranch)
 		if err != nil {
 			return nil, fmt.Errorf("init from template repository: %w", err)
 		}
 	} else {
-		err = i.repoInitializer.InitializeEmpty(ctx)
+		err = i.repoInitializer.InitializeEmpty(ctx, azdCtx)
 		if err != nil {
 			return nil, fmt.Errorf("init empty repository: %w", err)
 		}
 	}
 
-	envName, err := i.azdCtx.GetDefaultEnvironmentName()
+	envName, err := azdCtx.GetDefaultEnvironmentName()
 	if err != nil {
 		return nil, fmt.Errorf("retrieving default environment name: %w", err)
 	}
@@ -221,12 +213,12 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		subscription:    i.flags.subscription,
 		location:        i.flags.location,
 	}
-	env, ctx, err := createAndInitEnvironment(ctx, &envSpec, i.azdCtx, i.console, i.azCli)
+	env, err := createAndInitEnvironment(ctx, &envSpec, azdCtx, i.console, i.azCli)
 	if err != nil {
 		return nil, fmt.Errorf("loading environment: %w", err)
 	}
 
-	if err := i.azdCtx.SetDefaultEnvironmentName(envSpec.environmentName); err != nil {
+	if err := azdCtx.SetDefaultEnvironmentName(envSpec.environmentName); err != nil {
 		return nil, fmt.Errorf("saving default environment: %w", err)
 	}
 

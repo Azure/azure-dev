@@ -24,6 +24,8 @@ const (
 	AzureResourceTypeCosmosDb                AzureResourceType = "Microsoft.DocumentDB/databaseAccounts"
 	AzureResourceTypeContainerApp            AzureResourceType = "Microsoft.App/containerApps"
 	AzureResourceTypeContainerAppEnvironment AzureResourceType = "Microsoft.App/managedEnvironments"
+	AzureResourceTypeApim                    AzureResourceType = "Microsoft.ApiManagement/service"
+	AzureResourceTypeCacheForRedis           AzureResourceType = "Microsoft.Cache/redis"
 )
 
 const resourceLevelSeparator = "/"
@@ -59,6 +61,10 @@ func GetResourceTypeDisplayName(resourceType AzureResourceType) string {
 		return "App Service plan"
 	case AzureResourceTypeCosmosDb:
 		return "Azure Cosmos DB"
+	case AzureResourceTypeApim:
+		return "Azure API Management"
+	case AzureResourceTypeCacheForRedis:
+		return "Cache for Redis"
 	}
 
 	return ""

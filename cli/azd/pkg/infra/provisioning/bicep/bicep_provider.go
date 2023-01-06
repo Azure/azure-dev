@@ -727,13 +727,13 @@ func (p *BicepProvider) deleteDeployment(
 
 func (p *BicepProvider) mapBicepTypeToInterfaceType(s string) ParameterType {
 	switch s {
-	case "String", "string":
+	case "String", "string", "secureString":
 		return ParameterTypeString
 	case "Bool", "bool":
 		return ParameterTypeBoolean
 	case "Int", "int":
 		return ParameterTypeNumber
-	case "Object", "object":
+	case "Object", "object", "secureObject":
 		return ParameterTypeObject
 	case "Array", "array":
 		return ParameterTypeArray
@@ -973,19 +973,21 @@ func (p *BicepProvider) ensureParameters(
 				return fmt.Errorf("prompting for value: %w", err)
 			}
 
-			saveParameter, err := p.console.Confirm(ctx, input.ConsoleOptions{
-				Message: "Save the value in the environment for future use",
-			})
+			if !param.Secure() {
+				saveParameter, err := p.console.Confirm(ctx, input.ConsoleOptions{
+					Message: "Save the value in the environment for future use",
+				})
 
-			if err != nil {
-				return fmt.Errorf("prompting to save deployment parameter: %w", err)
-			}
+				if err != nil {
+					return fmt.Errorf("prompting to save deployment parameter: %w", err)
+				}
 
-			if saveParameter {
-				if err := p.env.Config.Set(configKey, value); err == nil {
-					configModified = true
-				} else {
-					p.console.Message(ctx, fmt.Sprintf("warning: failed to set value: %v", err))
+				if saveParameter {
+					if err := p.env.Config.Set(configKey, value); err == nil {
+						configModified = true
+					} else {
+						p.console.Message(ctx, fmt.Sprintf("warning: failed to set value: %v", err))
+					}
 				}
 			}
 

@@ -32,10 +32,7 @@ func Test_Initializer_Initialize(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			projectDir := t.TempDir()
-			azdCtx, err := azdcontext.NewAzdContext()
-			require.NoError(t, err)
-			azdCtx.SetProjectDirectory(projectDir)
-
+			azdCtx := azdcontext.NewAzdContextWithDirectory(projectDir)
 			console := mockinput.NewMockConsole()
 			realRunner := exec.NewCommandRunner(os.Stdin, os.Stdout, os.Stderr)
 			mockRunner := mockexec.NewMockCommandRunner()
@@ -51,8 +48,8 @@ func Test_Initializer_Initialize(t *testing.T) {
 					return realRunner.Run(context.Background(), args)
 				})
 
-			i := NewInitializer(azdCtx, console, git.NewGitCli(mockRunner))
-			err = i.Initialize(context.Background(), "local", "")
+			i := NewInitializer(console, git.NewGitCli(mockRunner))
+			err := i.Initialize(context.Background(), azdCtx, "local", "")
 			require.NoError(t, err)
 
 			verifyTemplateCopied(t, testDataPath(tt.templateDir), projectDir)
@@ -76,9 +73,7 @@ func Test_Initializer_InitializeWithOverwritePrompt(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			projectDir := t.TempDir()
-			azdCtx, err := azdcontext.NewAzdContext()
-			require.NoError(t, err)
-			azdCtx.SetProjectDirectory(projectDir)
+			azdCtx := azdcontext.NewAzdContextWithDirectory(projectDir)
 			// Copy all files to project to set up duplicate files
 			copyTemplate(t, testDataPath(templateDir), projectDir)
 
@@ -101,8 +96,8 @@ func Test_Initializer_InitializeWithOverwritePrompt(t *testing.T) {
 					return realRunner.Run(context.Background(), args)
 				})
 
-			i := NewInitializer(azdCtx, console, git.NewGitCli(mockRunner))
-			err = i.Initialize(context.Background(), "local", "")
+			i := NewInitializer(console, git.NewGitCli(mockRunner))
+			err := i.Initialize(context.Background(), azdCtx, "local", "")
 
 			if !tt.confirmOverwrite {
 				require.Error(t, err)
@@ -215,9 +210,7 @@ func Test_Initializer_InitializeEmpty(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			projectDir := t.TempDir()
-			azdCtx, err := azdcontext.NewAzdContext()
-			require.NoError(t, err)
-			azdCtx.SetProjectDirectory(projectDir)
+			azdCtx := azdcontext.NewAzdContextWithDirectory(projectDir)
 
 			if tt.setup.gitignoreFile != "" {
 				if tt.setup.gitIgnoreCrlf {
@@ -233,8 +226,8 @@ func Test_Initializer_InitializeEmpty(t *testing.T) {
 
 			console := mockinput.NewMockConsole()
 			runner := mockexec.NewMockCommandRunner()
-			i := NewInitializer(azdCtx, console, git.NewGitCli(runner))
-			err = i.InitializeEmpty(context.Background())
+			i := NewInitializer(console, git.NewGitCli(runner))
+			err := i.InitializeEmpty(context.Background(), azdCtx)
 			require.NoError(t, err)
 
 			projectFileContent := readFile(t, testDataPath("empty", tt.expected.projectFile))
@@ -310,7 +303,11 @@ func Test_determineDuplicates(t *testing.T) {
 		args     args
 		expected []string
 	}{
-		{"NoDuplicates", args{[]string{"a.txt", "b.txt", "dir1/a.txt"}, []string{"c.txt", "d.txt", "dir2/a.txt"}}, []string{}},
+		{
+			"NoDuplicates",
+			args{[]string{"a.txt", "b.txt", "dir1/a.txt"}, []string{"c.txt", "d.txt", "dir2/a.txt"}},
+			[]string{},
+		},
 		{"Duplicates", args{
 			[]string{
 				"a.txt", "b.txt", "c.txt",

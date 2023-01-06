@@ -137,7 +137,7 @@ module "api" {
 # Deploy app service apim
 # ------------------------------------------------------------------------------------------------------
 module "apim"  {
-  count                     = "${var.useAPIM == true ? 1 : 0}"
+  count                     = "${var.useAPIM ? 1 : 0}"
   source                    = "../../../../../../common/infra/terraform/core/gateway/apim"
   name                      = "apim-${local.resource_token}"
   location                  = var.location
@@ -151,7 +151,7 @@ module "apim"  {
 # Deploy app service apim-api
 # ------------------------------------------------------------------------------------------------------
 module "apimApi" {
-  count                     = "${var.useAPIM == true ? 1 : 0}"
+  count                     = "${var.useAPIM ? 1 : 0}"
   source                    = "../../../../../../common/infra/terraform/core/gateway/apim-api"
   name                      = module.apim[0].APIM_SERVICE_NAME
   rg_name                   = azurerm_resource_group.rg.name

@@ -574,13 +574,13 @@ func prepareDestroyMocks(mockContext *mocks.MockContext) {
 			{
 				ID:       convert.RefOf("ApiManagement"),
 				Name:     convert.RefOf("apim-123"),
-				Type:     convert.RefOf(string(infra.AzureResourceTypeAPIM)),
+				Type:     convert.RefOf(string(infra.AzureResourceTypeApim)),
 				Location: convert.RefOf("eastus2"),
 			},
 			{
 				ID:       convert.RefOf("ApiManagement"),
 				Name:     convert.RefOf("apim2-123"),
-				Type:     convert.RefOf(string(infra.AzureResourceTypeAPIM)),
+				Type:     convert.RefOf(string(infra.AzureResourceTypeApim)),
 				Location: convert.RefOf("eastus2"),
 			},
 		},

@@ -283,7 +283,7 @@ func (p *BicepProvider) Destroy(
 			}
 
 			asyncContext.SetProgress(&DestroyProgress{Message: "Getting API Management Services to purge", Timestamp: time.Now()})
-			aPIManagements, err := p.getAPIManagementsToPurge(ctx, groupedResources)
+			apiManagements, err := p.getApiManagementsToPurge(ctx, groupedResources)
 			if err != nil {
 				asyncContext.SetError(fmt.Errorf("getting API managements to purge: %w", err))
 				return
@@ -310,9 +310,9 @@ func (p *BicepProvider) Destroy(
 			}
 			aPIManagement := itemToPurge{
 				resourceType: "API Managements",
-				count:        len(aPIManagements),
+				count:        len(apiManagements),
 				purge: func() error {
-					return p.purgeAPIManagement(ctx, asyncContext, aPIManagements, options)
+					return p.purgeAPIManagement(ctx, asyncContext, apiManagements, options)
 				},
 			}
 			purgeItem := []itemToPurge{keyVaultsPurge, appConfigsPurge, aPIManagement}
@@ -599,16 +599,16 @@ func (p *BicepProvider) getAppConfigsToPurge(
 	return configs, nil
 }
 
-func (p *BicepProvider) getAPIManagementsToPurge(
+func (p *BicepProvider) getApiManagementsToPurge(
 	ctx context.Context,
 	groupedResources map[string][]azcli.AzCliResource,
-) ([]*azcli.AzCliAPIM, error) {
-	apims := []*azcli.AzCliAPIM{}
+) ([]*azcli.AzCliApim, error) {
+	apims := []*azcli.AzCliApim{}
 
 	for resourceGroup, groupResources := range groupedResources {
 		for _, resource := range groupResources {
-			if resource.Type == string(infra.AzureResourceTypeAPIM) {
-				apim, err := p.azCli.GetAPIM(ctx, p.env.GetSubscriptionId(), resourceGroup, resource.Name)
+			if resource.Type == string(infra.AzureResourceTypeApim) {
+				apim, err := p.azCli.GetApim(ctx, p.env.GetSubscriptionId(), resourceGroup, resource.Name)
 				if err != nil {
 					return nil, fmt.Errorf("listing api management service %s properties: %w", resource.Name, err)
 				}
@@ -673,7 +673,7 @@ func (p *BicepProvider) purgeAppConfigs(
 func (p *BicepProvider) purgeAPIManagement(
 	ctx context.Context,
 	asyncContext *async.InteractiveTaskContextWithProgress[*DestroyResult, *DestroyProgress],
-	apims []*azcli.AzCliAPIM,
+	apims []*azcli.AzCliApim,
 	options DestroyOptions,
 ) error {
 	for _, apim := range apims {
@@ -688,7 +688,7 @@ func (p *BicepProvider) purgeAPIManagement(
 
 		asyncContext.SetProgress(&progressReport)
 
-		err := p.azCli.PurgeAPIM(ctx, p.env.GetSubscriptionId(), apim.Name, apim.Location)
+		err := p.azCli.PurgeApim(ctx, p.env.GetSubscriptionId(), apim.Name, apim.Location)
 		if err != nil {
 			return fmt.Errorf("purging api management service %s: %w", apim.Name, err)
 		}

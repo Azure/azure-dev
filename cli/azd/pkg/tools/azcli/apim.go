@@ -7,19 +7,19 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/apimanagement/armapimanagement"
 )
 
-type AzCliAPIM struct {
+type AzCliApim struct {
 	Id       string `json:"id"`
 	Name     string `json:"name"`
 	Location string `json:"location"`
 }
 
-func (cli *azCli) GetAPIM(
+func (cli *azCli) GetApim(
 	ctx context.Context,
 	subscriptionId string,
 	resourceGroupName string,
 	apimName string,
-) (*AzCliAPIM, error) {
-	apimClient, err := cli.createAPIMClient(ctx, subscriptionId)
+) (*AzCliApim, error) {
+	apimClient, err := cli.createApimClient(ctx, subscriptionId)
 	if err != nil {
 		return nil, err
 	}
@@ -29,15 +29,15 @@ func (cli *azCli) GetAPIM(
 		return nil, fmt.Errorf("getting api management service: %w", err)
 	}
 
-	return &AzCliAPIM{
+	return &AzCliApim{
 		Id:       *apim.ID,
 		Name:     *apim.Name,
 		Location: *apim.Location,
 	}, nil
 }
 
-func (cli *azCli) PurgeAPIM(ctx context.Context, subscriptionId string, apimName string, location string) error {
-	apimClient, err := cli.createAPIMDeletedClient(ctx, subscriptionId)
+func (cli *azCli) PurgeApim(ctx context.Context, subscriptionId string, apimName string, location string) error {
+	apimClient, err := cli.createApimDeletedClient(ctx, subscriptionId)
 
 	if err != nil {
 		return err
@@ -57,7 +57,7 @@ func (cli *azCli) PurgeAPIM(ctx context.Context, subscriptionId string, apimName
 }
 
 // Creates a APIM soft-deleted service client for ARM control plane operations
-func (cli *azCli) createAPIMDeletedClient(
+func (cli *azCli) createApimDeletedClient(
 	ctx context.Context,
 	subscriptionId string,
 ) (*armapimanagement.DeletedServicesClient, error) {
@@ -71,7 +71,7 @@ func (cli *azCli) createAPIMDeletedClient(
 }
 
 // Creates a APIM service client for ARM control plane operations
-func (cli *azCli) createAPIMClient(
+func (cli *azCli) createApimClient(
 	ctx context.Context,
 	subscriptionId string,
 ) (*armapimanagement.ServiceClient, error) {

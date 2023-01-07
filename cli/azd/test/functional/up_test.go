@@ -291,7 +291,9 @@ func probeServiceHealth(t *testing.T, ctx context.Context, url string, expectedB
 		bodyString := buf.String()
 
 		if bodyString != expectedBody {
-			return retry.RetryableError(fmt.Errorf("expected %s but got %s for request to %s", expectedBody, bodyString, url))
+			return retry.RetryableError(
+				fmt.Errorf("expected %s but got %s for request to %s", expectedBody, bodyString, url),
+			)
 		} else {
 			assert.Equal(t, expectedBody, bodyString)
 			return nil

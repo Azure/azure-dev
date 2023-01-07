@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
@@ -201,4 +202,18 @@ func (e *Environment) SetPrincipalId(principalID string) {
 
 func (e *Environment) GetPrincipalId() string {
 	return e.Values[PrincipalIdEnvVarName]
+}
+
+func normalize(key string) string {
+	return strings.ReplaceAll(strings.ToUpper(key), "-", "_")
+}
+
+// Returns the value of a service-namespaced property in the environment.
+func (e *Environment) GetServiceProperty(serviceName string, propertyName string) string {
+	return e.Values[fmt.Sprintf("SERVICE_%s_%s", normalize(serviceName), propertyName)]
+}
+
+// Sets the value of a service-namespaced property in the environment.
+func (e *Environment) SetServiceProperty(serviceName string, propertyName string, value string) {
+	e.Values[fmt.Sprintf("SERVICE_%s_%s", normalize(serviceName), propertyName)] = value
 }

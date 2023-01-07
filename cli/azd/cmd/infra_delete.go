@@ -36,20 +36,22 @@ func (i *infraDeleteFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCom
 	i.global = global
 }
 
-func infraDeleteCmdDesign(global *internal.GlobalCommandOptions) (*cobra.Command, *infraDeleteFlags) {
-	cmd := &cobra.Command{
+func newInfraDeleteFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *infraDeleteFlags {
+	flags := &infraDeleteFlags{}
+	flags.Bind(cmd.Flags(), global)
+
+	return flags
+}
+
+func newInfraDeleteCmd() *cobra.Command {
+	return &cobra.Command{
 		Use:   "delete",
 		Short: "Delete Azure resources for an application.",
 	}
-
-	idf := &infraDeleteFlags{}
-	idf.Bind(cmd.Flags(), global)
-
-	return cmd, idf
 }
 
 type infraDeleteAction struct {
-	flags         infraDeleteFlags
+	flags         *infraDeleteFlags
 	azCli         azcli.AzCli
 	azdCtx        *azdcontext.AzdContext
 	console       input.Console
@@ -57,12 +59,12 @@ type infraDeleteAction struct {
 }
 
 func newInfraDeleteAction(
-	flags infraDeleteFlags,
+	flags *infraDeleteFlags,
 	azCli azcli.AzCli,
 	azdCtx *azdcontext.AzdContext,
 	console input.Console,
 	commandRunner exec.CommandRunner,
-) *infraDeleteAction {
+) actions.Action {
 	return &infraDeleteAction{
 		flags:         flags,
 		azCli:         azCli,

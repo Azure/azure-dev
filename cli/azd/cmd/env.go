@@ -22,8 +22,8 @@ import (
 	"github.com/spf13/pflag"
 )
 
-func envCmd(rootOptions *internal.GlobalCommandOptions) *cobra.Command {
-	root := &cobra.Command{
+func envActions(root *actions.ActionDescriptor) *actions.ActionDescriptor {
+	envCmd := &cobra.Command{
 		Use:   "env",
 		Short: "Manage environments.",
 		//nolint:lll
@@ -34,26 +34,66 @@ With this command group, you can create a new environment or get, set, and list 
 You can find all environment configurations under the *.azure\<environment-name>* folder. The environment name is stored as the AZURE_ENV_NAME environment variable in the *.azure\<environment-name>\folder\.env* file.`,
 	}
 
-	root.Flags().BoolP("help", "h", false, fmt.Sprintf("Gets help for %s.", root.Name()))
-	root.AddCommand(BuildCmd(rootOptions, envSetCmdDesign, initEnvSetAction, nil))
-	root.AddCommand(BuildCmd(rootOptions, envSelectCmdDesign, initEnvSelectAction, nil))
-	root.AddCommand(BuildCmd(rootOptions, envNewCmdDesign, initEnvNewAction, nil))
-	root.AddCommand(BuildCmd(rootOptions, envListCmdDesign, initEnvListAction, nil))
-	root.AddCommand(BuildCmd(rootOptions, envRefreshCmdDesign, initEnvRefreshAction, nil))
-	root.AddCommand(BuildCmd(rootOptions, envGetValuesDesign, initEnvGetValuesAction, nil))
+	group := root.Add("env", &actions.ActionDescriptorOptions{
+		Command: envCmd,
+	})
 
-	return root
+	group.Add("set", &actions.ActionDescriptorOptions{
+		Command:        newEnvSetCmd(),
+		FlagsResolver:  newEnvSetFlags,
+		ActionResolver: newEnvSetAction,
+	})
+
+	group.Add("select", &actions.ActionDescriptorOptions{
+		Command:        newEnvSelectCmd(),
+		ActionResolver: newEnvSelectAction,
+	})
+
+	group.Add("new", &actions.ActionDescriptorOptions{
+		Command:        newEnvNewCmd(),
+		FlagsResolver:  newEnvNewFlags,
+		ActionResolver: newEnvNewAction,
+	})
+
+	group.Add("list", &actions.ActionDescriptorOptions{
+		Command:        newEnvListCmd(),
+		ActionResolver: newEnvListAction,
+		OutputFormats:  []output.Format{output.JsonFormat, output.TableFormat},
+		DefaultFormat:  output.TableFormat,
+	})
+
+	group.Add("refresh", &actions.ActionDescriptorOptions{
+		Command:        newEnvRefreshCmd(),
+		FlagsResolver:  newEnvRefreshFlags,
+		ActionResolver: newEnvRefreshAction,
+		OutputFormats:  []output.Format{output.JsonFormat, output.NoneFormat},
+		DefaultFormat:  output.NoneFormat,
+	})
+
+	group.Add("get-values", &actions.ActionDescriptorOptions{
+		Command:        newEnvGetValuesCmd(),
+		FlagsResolver:  newEnvGetValuesFlags,
+		ActionResolver: newEnvGetValuesAction,
+		OutputFormats:  []output.Format{output.JsonFormat, output.EnvVarsFormat},
+		DefaultFormat:  output.EnvVarsFormat,
+	})
+
+	return group
 }
 
-func envSetCmdDesign(global *internal.GlobalCommandOptions) (*cobra.Command, *envSetFlags) {
-	cmd := &cobra.Command{
+func newEnvSetFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *envSetFlags {
+	flags := &envSetFlags{}
+	flags.Bind(cmd.Flags(), global)
+
+	return flags
+}
+
+func newEnvSetCmd() *cobra.Command {
+	return &cobra.Command{
 		Use:   "set <key> <value>",
 		Short: "Set a value in the environment.",
+		Args:  cobra.ExactArgs(2),
 	}
-	cmd.Args = cobra.ExactArgs(2)
-	envSetFlags := &envSetFlags{}
-	envSetFlags.Bind(cmd.Flags(), global)
-	return cmd, envSetFlags
 }
 
 type envSetFlags struct {
@@ -70,7 +110,7 @@ type envSetAction struct {
 	azCli   azcli.AzCli
 	console input.Console
 	azdCtx  *azdcontext.AzdContext
-	flags   envSetFlags
+	flags   *envSetFlags
 	args    []string
 }
 
@@ -78,9 +118,9 @@ func newEnvSetAction(
 	azdCtx *azdcontext.AzdContext,
 	azCli azcli.AzCli,
 	console input.Console,
-	flags envSetFlags,
+	flags *envSetFlags,
 	args []string,
-) *envSetAction {
+) actions.Action {
 	return &envSetAction{
 		azCli:   azCli,
 		console: console,
@@ -111,13 +151,12 @@ func (e *envSetAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	return nil, nil
 }
 
-func envSelectCmdDesign(global *internal.GlobalCommandOptions) (*cobra.Command, *struct{}) {
-	cmd := &cobra.Command{
+func newEnvSelectCmd() *cobra.Command {
+	return &cobra.Command{
 		Use:   "select <environment>",
 		Short: "Set the default environment.",
+		Args:  cobra.ExactArgs(1),
 	}
-	cmd.Args = cobra.ExactArgs(1)
-	return cmd, &struct{}{}
 }
 
 type envSelectAction struct {
@@ -125,7 +164,7 @@ type envSelectAction struct {
 	args   []string
 }
 
-func newEnvSelectAction(azdCtx *azdcontext.AzdContext, args []string) *envSelectAction {
+func newEnvSelectAction(azdCtx *azdcontext.AzdContext, args []string) actions.Action {
 	return &envSelectAction{
 		azdCtx: azdCtx,
 		args:   args,
@@ -140,18 +179,12 @@ func (e *envSelectAction) Run(ctx context.Context) (*actions.ActionResult, error
 	return nil, nil
 }
 
-func envListCmdDesign(global *internal.GlobalCommandOptions) (*cobra.Command, *struct{}) {
-	cmd := &cobra.Command{
+func newEnvListCmd() *cobra.Command {
+	return &cobra.Command{
 		Use:     "list",
 		Short:   "List environments",
 		Aliases: []string{"ls"},
 	}
-	output.AddOutputParam(
-		cmd,
-		[]output.Format{output.JsonFormat, output.TableFormat},
-		output.TableFormat,
-	)
-	return cmd, &struct{}{}
 }
 
 type envListAction struct {
@@ -160,7 +193,7 @@ type envListAction struct {
 	writer    io.Writer
 }
 
-func newEnvListAction(azdCtx *azdcontext.AzdContext, formatter output.Formatter, writer io.Writer) *envListAction {
+func newEnvListAction(azdCtx *azdcontext.AzdContext, formatter output.Formatter, writer io.Writer) actions.Action {
 	return &envListAction{
 		azdCtx:    azdCtx,
 		formatter: formatter,
@@ -218,21 +251,27 @@ func (f *envNewFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandO
 	f.global = global
 }
 
-func envNewCmdDesign(global *internal.GlobalCommandOptions) (*cobra.Command, *envNewFlags) {
+func newEnvNewFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *envNewFlags {
+	flags := &envNewFlags{}
+	flags.Bind(cmd.Flags(), global)
+
+	return flags
+}
+
+func newEnvNewCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "new <environment>",
 		Short: "Create a new environment.",
 	}
-	f := &envNewFlags{}
-	f.Bind(cmd.Flags(), global)
 	cmd.Args = cobra.MaximumNArgs(1)
-	return cmd, f
+
+	return cmd
 }
 
 type envNewAction struct {
 	azdCtx  *azdcontext.AzdContext
 	azCli   azcli.AzCli
-	flags   envNewFlags
+	flags   *envNewFlags
 	args    []string
 	console input.Console
 }
@@ -240,10 +279,10 @@ type envNewAction struct {
 func newEnvNewAction(
 	azdCtx *azdcontext.AzdContext,
 	azcli azcli.AzCli,
-	flags envNewFlags,
+	flags *envNewFlags,
 	args []string,
 	console input.Console,
-) *envNewAction {
+) actions.Action {
 	return &envNewAction{
 		azdCtx:  azdCtx,
 		azCli:   azcli,
@@ -285,27 +324,24 @@ func (er *envRefreshFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCom
 	er.global = global
 }
 
-func envRefreshCmdDesign(global *internal.GlobalCommandOptions) (*cobra.Command, *envRefreshFlags) {
-	cmd := &cobra.Command{
+func newEnvRefreshFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *envRefreshFlags {
+	flags := &envRefreshFlags{}
+	flags.Bind(cmd.Flags(), global)
+
+	return flags
+}
+
+func newEnvRefreshCmd() *cobra.Command {
+	return &cobra.Command{
 		Use:   "refresh",
 		Short: "Refresh environment settings by using information from a previous infrastructure provision.",
 	}
-
-	output.AddOutputParam(
-		cmd,
-		[]output.Format{output.JsonFormat, output.NoneFormat},
-		output.NoneFormat,
-	)
-
-	envRefreshFlags := &envRefreshFlags{}
-	envRefreshFlags.Bind(cmd.Flags(), global)
-	return cmd, envRefreshFlags
 }
 
 type envRefreshAction struct {
 	azdCtx        *azdcontext.AzdContext
 	azCli         azcli.AzCli
-	flags         envRefreshFlags
+	flags         *envRefreshFlags
 	console       input.Console
 	formatter     output.Formatter
 	writer        io.Writer
@@ -316,11 +352,11 @@ func newEnvRefreshAction(
 	azdCtx *azdcontext.AzdContext,
 	azCli azcli.AzCli,
 	commandRunner exec.CommandRunner,
-	flags envRefreshFlags,
+	flags *envRefreshFlags,
 	console input.Console,
 	formatter output.Formatter,
 	writer io.Writer,
-) *envRefreshAction {
+) actions.Action {
 	return &envRefreshAction{
 		azdCtx:        azdCtx,
 		azCli:         azCli,
@@ -385,21 +421,18 @@ func (ef *envRefreshAction) Run(ctx context.Context) (*actions.ActionResult, err
 	return nil, nil
 }
 
-func envGetValuesDesign(global *internal.GlobalCommandOptions) (*cobra.Command, *envGetValuesFlags) {
-	cmd := &cobra.Command{
+func newEnvGetValuesFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *envGetValuesFlags {
+	flags := &envGetValuesFlags{}
+	flags.Bind(cmd.Flags(), global)
+
+	return flags
+}
+
+func newEnvGetValuesCmd() *cobra.Command {
+	return &cobra.Command{
 		Use:   "get-values",
 		Short: "Get all environment values.",
 	}
-
-	output.AddOutputParam(
-		cmd,
-		[]output.Format{output.JsonFormat, output.EnvVarsFormat},
-		output.EnvVarsFormat,
-	)
-
-	envGetValuesFlags := &envGetValuesFlags{}
-	envGetValuesFlags.Bind(cmd.Flags(), global)
-	return cmd, envGetValuesFlags
 }
 
 type envGetValuesFlags struct {
@@ -418,7 +451,7 @@ type envGetValuesAction struct {
 	formatter output.Formatter
 	writer    io.Writer
 	azCli     azcli.AzCli
-	flags     envGetValuesFlags
+	flags     *envGetValuesFlags
 }
 
 func newEnvGetValuesAction(
@@ -427,8 +460,8 @@ func newEnvGetValuesAction(
 	formatter output.Formatter,
 	writer io.Writer,
 	azCli azcli.AzCli,
-	flags envGetValuesFlags,
-) *envGetValuesAction {
+	flags *envGetValuesFlags,
+) actions.Action {
 	return &envGetValuesAction{
 		azdCtx:    azdCtx,
 		console:   console,

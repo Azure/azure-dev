@@ -86,7 +86,7 @@ func (r *MiddlewareRunner) RunAction(
 	// allowing the middleware to choose to execute logic before and/or after
 	// the action. After we have executed all of the middlewares the action is run
 	// and the chain is unwrapped back out through the call stack.
-	nextFn = func(nextContext context.Context) (*actions.ActionResult, error) {
+	nextFn = func(ctx context.Context) (*actions.ActionResult, error) {
 		if index < chainLength {
 			middlewareName := r.chain[index]
 			index++
@@ -100,11 +100,11 @@ func (r *MiddlewareRunner) RunAction(
 			// due to missing dependency or other project configuration.
 			// In this case simply continue the chain with `nextFn`
 			if middleware == nil {
-				return nextFn(nextContext)
+				return nextFn(ctx)
 			}
 
 			log.Printf("running middleware '%s'\n", middlewareName)
-			return middleware.Run(nextContext, nextFn)
+			return middleware.Run(ctx, nextFn)
 		} else {
 			return action.Run(ctx)
 		}

@@ -17,12 +17,6 @@ type AzCliAppConfig struct {
 	} `json:"properties"`
 }
 
-type AzCliAppConfigSecret struct {
-	Id    string `json:"id"`
-	Name  string `json:"name"`
-	Value string `json:"value"`
-}
-
 func (cli *azCli) GetAppConfig(
 	ctx context.Context,
 	subscriptionId string,

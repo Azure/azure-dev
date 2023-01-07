@@ -2,7 +2,7 @@ param name string
 param location string = resourceGroup().location
 param tags object = {}
 
-param apiContainerAppName string
+param apiUrl string
 param applicationInsightsName string
 param containerAppsEnvironmentName string
 param containerRegistryName string
@@ -25,7 +25,7 @@ module app '../../../../../common/infra/bicep/core/host/container-app.bicep' = {
       }
       {
         name: 'REACT_APP_API_BASE_URL'
-        value: 'https://${api.properties.configuration.ingress.fqdn}'
+        value: apiUrl
       }
       {
         name: 'APPLICATIONINSIGHTS_CONNECTION_STRING'
@@ -44,10 +44,6 @@ resource applicationInsights 'Microsoft.Insights/components@2020-02-02' existing
 
 resource keyVault 'Microsoft.KeyVault/vaults@2022-07-01' existing = {
   name: keyVaultName
-}
-
-resource api 'Microsoft.App/containerApps@2022-03-01' existing = {
-  name: apiContainerAppName
 }
 
 output SERVICE_WEB_IDENTITY_PRINCIPAL_ID string = app.outputs.identityPrincipalId

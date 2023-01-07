@@ -70,7 +70,7 @@ module web '../../../../../common/infra/bicep/app/web-container-app.bicep' = {
     name: !empty(webContainerAppName) ? webContainerAppName : '${abbrs.appContainerApps}web-${resourceToken}'
     location: location
     imageName: webImageName
-    apiContainerAppName: api.outputs.SERVICE_API_NAME
+    apiUrl: api.outputs.SERVICE_API_URI
     applicationInsightsName: monitoring.outputs.applicationInsightsName
     containerAppsEnvironmentName: containerApps.outputs.environmentName
     containerRegistryName: containerApps.outputs.registryName

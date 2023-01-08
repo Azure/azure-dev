@@ -70,8 +70,9 @@
         <!-- Broadcast environment variable changes even if a reboot is pending -->
         <CustomActionRef Id="WixBroadcastEnvironmentChange" />
 
-        <!-- Use customized WixUI_InstallDir that removes WixUI_LicenseAgreementDlg -->
+        <!-- Show notices as "license" in dialog -->
         <Property Id="WIXUI_INSTALLDIR" Value="INSTALLDIR"/>
-        <UIRef Id="AzureDevCLI_InstallDir"/>
+        <UIRef Id="WixUI_InstallDir"/>
+        <WixVariable Id="WixUILicenseRtf" Value="notices.rtf" />
     </Product>
 </Wix>

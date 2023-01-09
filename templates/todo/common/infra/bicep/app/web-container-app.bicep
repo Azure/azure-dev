@@ -2,7 +2,7 @@ param name string
 param location string = resourceGroup().location
 param tags object = {}
 
-param apiUrl string
+param apiBaseUrl string
 param applicationInsightsName string
 param containerAppsEnvironmentName string
 param containerRegistryName string
@@ -25,7 +25,7 @@ module app '../../../../../common/infra/bicep/core/host/container-app.bicep' = {
       }
       {
         name: 'REACT_APP_API_BASE_URL'
-        value: apiUrl
+        value: apiBaseUrl
       }
       {
         name: 'APPLICATIONINSIGHTS_CONNECTION_STRING'

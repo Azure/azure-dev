@@ -38,6 +38,9 @@ param apiImageName string = ''
 @description('The image name for the web service')
 param webImageName string = ''
 
+@description('The base URL used by the web service for sending API requests')
+param webApiBaseUrl string = ''
+
 var abbrs = loadJsonContent('../../../../../../common/infra/bicep/abbreviations.json')
 var resourceToken = toLower(uniqueString(subscription().id, environmentName, location))
 var tags = { 'azd-env-name': environmentName }
@@ -70,7 +73,7 @@ module web '../../../../../common/infra/bicep/app/web-container-app.bicep' = {
     name: !empty(webContainerAppName) ? webContainerAppName : '${abbrs.appContainerApps}web-${resourceToken}'
     location: location
     imageName: webImageName
-    apiUrl: api.outputs.SERVICE_API_URI
+    apiBaseUrl: !empty(webApiBaseUrl) ? webApiBaseUrl : api.outputs.SERVICE_API_URI
     applicationInsightsName: monitoring.outputs.applicationInsightsName
     containerAppsEnvironmentName: containerApps.outputs.environmentName
     containerRegistryName: containerApps.outputs.registryName

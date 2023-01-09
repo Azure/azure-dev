@@ -39,6 +39,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/otel/attribute"
+	"golang.org/x/exp/slices"
 )
 
 const (
@@ -141,6 +142,8 @@ func Test_CLI_InfraCreateAndDelete(t *testing.T) {
 	require.True(t, ok)
 	require.Regexp(t, `st\S*`, accountName)
 
+	assertEnvValuesStored(t, env)
+
 	// GetResourceGroupsForEnvironment requires a credential since it is using the SDK now
 	cred, err := azidentity.NewAzureCLICredential(nil)
 	if err != nil {
@@ -194,6 +197,8 @@ func Test_CLI_InfraCreateAndDeleteUpperCase(t *testing.T) {
 	accountName, ok := env.Values["AZURE_STORAGE_ACCOUNT_NAME"]
 	require.True(t, ok)
 	require.Regexp(t, `st\S*`, accountName)
+
+	assertEnvValuesStored(t, env)
 
 	// GetResourceGroupsForEnvironment requires a credential since it is using the SDK now
 	cred, err := azidentity.NewAzureCLICredential(nil)
@@ -310,7 +315,7 @@ func Test_CLI_ProjectIsNeeded(t *testing.T) {
 		t.Run(test.command, func(t *testing.T) {
 			result, err := cli.RunCommand(ctx, args...)
 			assert.Error(t, err)
-			assert.Regexp(t, "no project exists; to create a new project, run `azd init`", result.Stdout)
+			assert.Contains(t, result.Stderr, azdcontext.ErrNoProject.Error())
 		})
 	}
 }
@@ -426,8 +431,10 @@ func Test_CLI_InfraCreateAndDeleteResourceTerraform(t *testing.T) {
 	_, err = cli.RunCommand(ctx, "infra", "create", "--cwd", dir)
 	require.NoError(t, err)
 
-	_, err = cli.RunCommand(ctx, "env", "get-values", "-o", "json", "--cwd", dir)
+	envPath := filepath.Join(dir, azdcontext.EnvironmentDirectoryName, envName)
+	env, err := environment.FromRoot(envPath)
 	require.NoError(t, err)
+	assertEnvValuesStored(t, env)
 
 	t.Logf("Starting infra delete\n")
 	_, err = cli.RunCommand(ctx, "infra", "delete", "--cwd", dir, "--force", "--purge")
@@ -609,4 +616,22 @@ func removeAllWithDiagnostics(t *testing.T, path string) error {
 			return retry.RetryableError(removeErr)
 		},
 	)
+}
+
+// Assert that all supported types from the infrastructure provider is marshalled and stored correctly in the environment.
+func assertEnvValuesStored(t *testing.T, env *environment.Environment) {
+	expectedEnv, err := environment.FromRoot("testdata/expected-output-types")
+	require.NoError(t, err)
+	primitives := []string{"STRING", "BOOL", "INT"}
+
+	for k, v := range expectedEnv.Values {
+		assert.Contains(t, env.Values, k)
+		actual := env.Values[k]
+
+		if slices.Contains(primitives, k) {
+			assert.Equal(t, v, actual)
+		} else {
+			assert.JSONEq(t, v, actual)
+		}
+	}
 }

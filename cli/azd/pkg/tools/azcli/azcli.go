@@ -64,6 +64,9 @@ type AzCli interface {
 	GetAppConfig(
 		ctx context.Context, subscriptionId string, resourceGroupName string, configName string) (*AzCliAppConfig, error)
 	PurgeAppConfig(ctx context.Context, subscriptionId string, configName string, location string) error
+	GetApim(
+		ctx context.Context, subscriptionId string, resourceGroupName string, apimName string) (*AzCliApim, error)
+	PurgeApim(ctx context.Context, subscriptionId string, apimName string, location string) error
 	DeployAppServiceZip(
 		ctx context.Context,
 		subscriptionId string,
@@ -86,7 +89,7 @@ type AzCli interface {
 	) (*AzCliFunctionAppProperties, error)
 	DeployToSubscription(
 		ctx context.Context, subscriptionId, deploymentName string,
-		armTemplate *azure.ArmTemplate,
+		armTemplate azure.RawArmTemplate,
 		parameters azure.ArmParameters,
 		location string) (
 		AzCliDeploymentResult, error)
@@ -95,7 +98,7 @@ type AzCli interface {
 		subscriptionId,
 		resourceGroup,
 		deploymentName string,
-		armTemplate *azure.ArmTemplate,
+		armTemplate azure.RawArmTemplate,
 		parameters azure.ArmParameters,
 	) (AzCliDeploymentResult, error)
 	DeleteSubscriptionDeployment(ctx context.Context, subscriptionId string, deploymentName string) error

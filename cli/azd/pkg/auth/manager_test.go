@@ -66,7 +66,7 @@ func TestServicePrincipalLoginClientSecret(t *testing.T) {
 	require.NoError(t, err)
 	require.IsType(t, new(azidentity.ClientSecretCredential), cred)
 
-	cred, err = m.CredentialForCurrentUser(context.Background())
+	cred, err = m.CredentialForCurrentUser(context.Background(), nil)
 
 	require.NoError(t, err)
 	require.IsType(t, new(azidentity.ClientSecretCredential), cred)
@@ -75,7 +75,7 @@ func TestServicePrincipalLoginClientSecret(t *testing.T) {
 
 	require.NoError(t, err)
 
-	_, err = m.CredentialForCurrentUser(context.Background())
+	_, err = m.CredentialForCurrentUser(context.Background(), nil)
 
 	require.True(t, errors.Is(err, ErrNoCurrentUser))
 }
@@ -100,7 +100,7 @@ func TestServicePrincipalLoginClientCertificate(t *testing.T) {
 	require.NoError(t, err)
 	require.IsType(t, new(azidentity.ClientCertificateCredential), cred)
 
-	cred, err = m.CredentialForCurrentUser(context.Background())
+	cred, err = m.CredentialForCurrentUser(context.Background(), nil)
 
 	require.NoError(t, err)
 	require.IsType(t, new(azidentity.ClientCertificateCredential), cred)
@@ -109,7 +109,7 @@ func TestServicePrincipalLoginClientCertificate(t *testing.T) {
 
 	require.NoError(t, err)
 
-	_, err = m.CredentialForCurrentUser(context.Background())
+	_, err = m.CredentialForCurrentUser(context.Background(), nil)
 
 	require.True(t, errors.Is(err, ErrNoCurrentUser))
 }
@@ -131,7 +131,7 @@ func TestServicePrincipalLoginFederatedToken(t *testing.T) {
 	require.NoError(t, err)
 	require.IsType(t, new(azidentity.ClientAssertionCredential), cred)
 
-	cred, err = m.CredentialForCurrentUser(context.Background())
+	cred, err = m.CredentialForCurrentUser(context.Background(), nil)
 
 	require.NoError(t, err)
 	require.IsType(t, new(azidentity.ClientAssertionCredential), cred)
@@ -140,7 +140,7 @@ func TestServicePrincipalLoginFederatedToken(t *testing.T) {
 
 	require.NoError(t, err)
 
-	_, err = m.CredentialForCurrentUser(context.Background())
+	_, err = m.CredentialForCurrentUser(context.Background(), nil)
 
 	require.True(t, errors.Is(err, ErrNoCurrentUser))
 }
@@ -176,7 +176,7 @@ func TestServicePrincipalLoginFederatedTokenProvider(t *testing.T) {
 	require.NoError(t, err)
 	require.IsType(t, new(azidentity.ClientAssertionCredential), cred)
 
-	cred, err = m.CredentialForCurrentUser(context.Background())
+	cred, err = m.CredentialForCurrentUser(context.Background(), nil)
 
 	require.NoError(t, err)
 	require.IsType(t, new(azidentity.ClientAssertionCredential), cred)
@@ -185,7 +185,7 @@ func TestServicePrincipalLoginFederatedTokenProvider(t *testing.T) {
 
 	require.NoError(t, err)
 
-	_, err = m.CredentialForCurrentUser(context.Background())
+	_, err = m.CredentialForCurrentUser(context.Background(), nil)
 
 	require.True(t, errors.Is(err, ErrNoCurrentUser))
 }
@@ -206,7 +206,7 @@ func TestLegacyAzCliCredentialSupport(t *testing.T) {
 		configManager: mgr,
 	}
 
-	cred, err := m.CredentialForCurrentUser(context.Background())
+	cred, err := m.CredentialForCurrentUser(context.Background(), nil)
 
 	require.NoError(t, err)
 	require.IsType(t, new(azidentity.AzureCLICredential), cred)
@@ -223,7 +223,7 @@ func TestLoginInteractive(t *testing.T) {
 	require.NoError(t, err)
 	require.IsType(t, new(azdCredential), cred)
 
-	cred, err = m.CredentialForCurrentUser(context.Background())
+	cred, err = m.CredentialForCurrentUser(context.Background(), nil)
 
 	require.NoError(t, err)
 	require.IsType(t, new(azdCredential), cred)
@@ -232,7 +232,7 @@ func TestLoginInteractive(t *testing.T) {
 
 	require.NoError(t, err)
 
-	_, err = m.CredentialForCurrentUser(context.Background())
+	_, err = m.CredentialForCurrentUser(context.Background(), nil)
 
 	require.True(t, errors.Is(err, ErrNoCurrentUser))
 }
@@ -252,7 +252,7 @@ func TestLoginDeviceCode(t *testing.T) {
 	require.NoError(t, err)
 	require.IsType(t, new(azdCredential), cred)
 
-	cred, err = m.CredentialForCurrentUser(context.Background())
+	cred, err = m.CredentialForCurrentUser(context.Background(), nil)
 
 	require.NoError(t, err)
 	require.IsType(t, new(azdCredential), cred)
@@ -261,7 +261,7 @@ func TestLoginDeviceCode(t *testing.T) {
 
 	require.NoError(t, err)
 
-	_, err = m.CredentialForCurrentUser(context.Background())
+	_, err = m.CredentialForCurrentUser(context.Background(), nil)
 
 	require.True(t, errors.Is(err, ErrNoCurrentUser))
 }

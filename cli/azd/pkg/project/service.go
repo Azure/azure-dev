@@ -5,6 +5,7 @@ package project
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 
@@ -18,6 +19,8 @@ type Service struct {
 	Project *Project
 	// The reference to the service configuration from the azure.yaml file
 	Config *ServiceConfig
+	// The environment the service is executing in
+	Environment *environment.Environment
 	// The framework/platform service used to build and package the service
 	Framework FrameworkService
 	// The application target service used to deploy the service to azure
@@ -76,6 +79,13 @@ func (svc *Service) Deploy(
 			return
 		}
 
+		// Allow users to specify their own endpoints, in cases where they've configured their own front-end load balancers,
+		// reverse proxies or DNS host names outside of the service target (and prefer that to be used instead).
+		overriddenEndpoints := svc.getOverriddenEndpoints()
+		if len(overriddenEndpoints) > 0 {
+			res.Endpoints = overriddenEndpoints
+		}
+
 		log.Printf("deployed service %s", svc.Config.Name)
 		progress <- "Deployment completed"
 
@@ -85,4 +95,24 @@ func (svc *Service) Deploy(
 	}()
 
 	return result, progress
+}
+
+func (svc *Service) getOverriddenEndpoints() []string {
+	overriddenEndpoints := svc.Environment.GetServiceProperty(svc.Config.Name, "ENDPOINTS")
+	if overriddenEndpoints != "" {
+		var endpoints []string
+		err := json.Unmarshal([]byte(overriddenEndpoints), &endpoints)
+		if err != nil {
+			// This can only happen if the environment output was not a valid JSON array, which would be due to an authoring
+			// error. For typical infra provider output passthrough, the infra provider would guarantee well-formed syntax
+			log.Printf(
+				"failed to unmarshal endpoints override for service '%s' as JSON array of strings: %v, skipping override",
+				svc.Config.Name,
+				err)
+		}
+
+		return endpoints
+	}
+
+	return nil
 }

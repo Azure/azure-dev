@@ -60,10 +60,13 @@ ignoreWords:
     - fdfp
     - fics
     - Frontdoor
+    - golobby
     - graphsdk
     - hndl
     - httpclient
     - httptrigger
+    - infracreate
+    - infradelete
     - inputhelper
     - ippre
     - JOBOBJECT
@@ -72,6 +75,7 @@ ignoreWords:
     - magefile
     - mainfic
     - menuid
+    - middlewares
     - migr
     - mockconfig
     - mockconsole

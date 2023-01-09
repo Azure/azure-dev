@@ -12,12 +12,15 @@ import (
 
 func TestBaggage(t *testing.T) {
 	baggage := NewBaggage()
-	newBaggage := baggage.Set(attribute.String("key1", "val1"))
+	attr := attribute.String("key1", "val1")
+	newBaggage := baggage.Set(attr)
 	assert.Equal(t, newBaggage.Get("key1").AsString(), "val1")
 
-	newBaggage = newBaggage.Set(attribute.String("key2", "val2"), attribute.Int("key3", 3))
+	attributes := []attribute.KeyValue{attribute.String("key2", "val2"), attribute.Int("key3", 3)}
+	newBaggage = newBaggage.Set(attributes...)
 	assert.Equal(t, newBaggage.Len(), 3)
 	assert.ElementsMatch(t, newBaggage.Keys(), []attribute.Key{"key1", "key2", "key3"})
+	assert.ElementsMatch(t, newBaggage.Attributes(), append(attributes, attr))
 	assert.Equal(t, newBaggage.Get("key1").AsString(), "val1")
 	assert.Equal(t, newBaggage.Get("key2").AsString(), "val2")
 	assert.Equal(t, newBaggage.Get("key3").AsInt64(), int64(3))

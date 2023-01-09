@@ -10,6 +10,8 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/azure/azure-dev/cli/azd/internal/telemetry"
+	"github.com/azure/azure-dev/cli/azd/internal/telemetry/fields"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
@@ -280,6 +282,10 @@ func LoadProjectConfig(projectPath string) (*ProjectConfig, error) {
 	projectConfig, err := ParseProjectConfig(yaml)
 	if err != nil {
 		return nil, fmt.Errorf("parsing project file: %w", err)
+	}
+
+	if projectConfig.Metadata != nil {
+		telemetry.SetUsageAttributes(fields.StringHashed(fields.TemplateIdKey, projectConfig.Metadata.Template))
 	}
 
 	projectConfig.Path = filepath.Dir(projectPath)

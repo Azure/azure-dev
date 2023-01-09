@@ -134,14 +134,10 @@ func (c *AskerConsole) MessageUxItem(ctx context.Context, item ux.UxItem) {
 		return
 	}
 
-	if c.spinner != nil && c.spinner.Status() == yacspin.SpinnerRunning {
-		c.StopSpinner(ctx, "", Step)
-		// default non-format
+	_ = c.doInteraction(func(c *AskerConsole) error {
 		fmt.Fprintln(c.writer, item.ToString(c.currentIndent))
-		_ = c.spinner.Start()
-	} else {
-		fmt.Fprintln(c.writer, item.ToString(c.currentIndent))
-	}
+		return nil
+	})
 }
 
 func (c *AskerConsole) ShowSpinner(ctx context.Context, title string, format SpinnerUxType) {
@@ -269,8 +265,11 @@ func (c *AskerConsole) Prompt(ctx context.Context, options ConsoleOptions) (stri
 
 	var response string
 
-	if err := c.asker(survey, &response); err != nil {
-		return "", err
+	err := c.doInteraction(func(c *AskerConsole) error {
+		return c.asker(survey, &response)
+	})
+	if err != nil {
+		return response, err
 	}
 
 	return response, nil
@@ -287,7 +286,10 @@ func (c *AskerConsole) Select(ctx context.Context, options ConsoleOptions) (int,
 
 	var response int
 
-	if err := c.asker(survey, &response); err != nil {
+	err := c.doInteraction(func(c *AskerConsole) error {
+		return c.asker(survey, &response)
+	})
+	if err != nil {
 		return -1, err
 	}
 
@@ -309,7 +311,10 @@ func (c *AskerConsole) Confirm(ctx context.Context, options ConsoleOptions) (boo
 
 	var response bool
 
-	if err := c.asker(survey, &response); err != nil {
+	err := c.doInteraction(func(c *AskerConsole) error {
+		return c.asker(survey, &response)
+	})
+	if err != nil {
 		return false, err
 	}
 
@@ -344,4 +349,24 @@ func GetStepResultFormat(result error) SpinnerUxType {
 		formatResult = StepFailed
 	}
 	return formatResult
+}
+
+// Handle doing interactive calls. It check if there's a spinner running to pause it before doing interactive actions.
+func (c *AskerConsole) doInteraction(fn func(c *AskerConsole) error) error {
+	var resumeSpinner bool
+	if c.spinner != nil && c.spinner.Status() == yacspin.SpinnerRunning {
+		_ = c.spinner.Pause()
+		resumeSpinner = true
+	}
+
+	if err := fn(c); err != nil {
+		return err
+	}
+
+	// unpause if Paused
+	if resumeSpinner {
+		_ = c.spinner.Unpause()
+	}
+
+	return nil
 }

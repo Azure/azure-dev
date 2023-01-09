@@ -53,7 +53,7 @@ func TestAuthToken(t *testing.T) {
 	err = json.Unmarshal(buf.Bytes(), &res)
 	require.NoError(t, err)
 	require.Equal(t, "ABC123", res.Token)
-	require.Equal(t, time.Unix(1669153000, 0).UTC(), res.ExpiresOn)
+	require.Equal(t, time.Unix(1669153000, 0).UTC(), time.Time(res.ExpiresOn))
 }
 
 func TestAuthTokenCustomScopes(t *testing.T) {

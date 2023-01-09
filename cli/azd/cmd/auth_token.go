@@ -92,7 +92,7 @@ func (a *authTokenAction) Run(ctx context.Context) (*actions.ActionResult, error
 
 	res := contracts.AuthTokenResult{
 		Token:     token.Token,
-		ExpiresOn: token.ExpiresOn,
+		ExpiresOn: contracts.RFC3339Time(token.ExpiresOn),
 	}
 
 	return nil, a.formatter.Format(res, a.writer, nil)

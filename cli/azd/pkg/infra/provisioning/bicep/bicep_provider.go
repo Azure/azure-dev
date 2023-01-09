@@ -1031,10 +1031,6 @@ func armParameterFileValue(paramType ParameterType, value any) any {
 			if intVal, err := strconv.ParseInt(val, 10, 64); err == nil {
 				return intVal
 			}
-
-			if floatVal, err := strconv.ParseFloat(val, 64); err == nil {
-				return floatVal
-			}
 		}
 	}
 

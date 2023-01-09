@@ -7,7 +7,8 @@ import { init } from './init';
 import { provision } from './provision';
 import { deploy } from './deploy';
 import { restore } from './restore';
-import { infraDelete } from './infra';
+import { infraCreate } from './infraCreate';
+import { infraDelete } from './infraDelete';
 import { up } from './up';
 import { down } from './down';
 import { monitor } from './monitor';
@@ -15,7 +16,6 @@ import { selectEnvironment, newEnvironment, refreshEnvironment, editEnvironment,
 import { pipelineConfig } from './pipeline';
 import { getDotEnvFilePath } from './getDotEnvFilePath';
 import ext from '../ext';
-import { infraCreate } from './infraCreate';
 
 export function registerCommands(): void {
     registerActivityCommand('azure-dev.commands.cli.init', init);

@@ -88,7 +88,6 @@ export async function deleteEnvironment(context: IActionContext, selectedItem?: 
     }
 }
 
-
 export async function selectEnvironment(context: IActionContext, selectedItem?: vscode.Uri | TreeViewModel): Promise<void> {
     const selectedEnvironment = isTreeViewModel(selectedItem) ? selectedItem.unwrap<AzureDevCliEnvironment>() : undefined;
     const selectedFile = isTreeViewModel(selectedItem) ? selectedItem.unwrap<AzureDevCliEnvironments>().context.configurationFile : selectedItem;

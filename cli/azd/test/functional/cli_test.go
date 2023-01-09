@@ -35,6 +35,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/test/azdcli"
+	"github.com/joho/godotenv"
 	"github.com/sethvargo/go-retry"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -620,11 +621,11 @@ func removeAllWithDiagnostics(t *testing.T, path string) error {
 
 // Assert that all supported types from the infrastructure provider is marshalled and stored correctly in the environment.
 func assertEnvValuesStored(t *testing.T, env *environment.Environment) {
-	expectedEnv, err := environment.FromRoot("testdata/expected-output-types")
+	expectedEnv, err := godotenv.Read(filepath.Join("testdata", "expected-output-types", "typed-values.env"))
 	require.NoError(t, err)
 	primitives := []string{"STRING", "BOOL", "INT"}
 
-	for k, v := range expectedEnv.Values {
+	for k, v := range expectedEnv {
 		assert.Contains(t, env.Values, k)
 		actual := env.Values[k]
 

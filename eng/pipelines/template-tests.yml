@@ -57,3 +57,4 @@ jobs:
     TemplateBranchName: ${{ parameters.TemplateBranchName }}
     AzureLocation: ${{ parameters.AzureLocation }}
     CleanupHoursDelay: ${{ parameters.CleanupHoursDelay }}
+    USE_APIM: true

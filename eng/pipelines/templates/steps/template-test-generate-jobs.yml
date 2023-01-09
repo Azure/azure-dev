@@ -67,5 +67,6 @@ steps:
         AzdContainerImage=$(AzdContainerImage),
         TemplateBranchName=${{ parameters.TemplateBranchName }},
         AzureLocation=${{ parameters.AzureLocation }},
-        CleanupHoursDelay=${{ parameters.CleanupHoursDelay }}
+        CleanupHoursDelay=${{ parameters.CleanupHoursDelay }},
+        USE_APIM=true
         '

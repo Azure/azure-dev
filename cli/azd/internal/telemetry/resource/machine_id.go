@@ -4,13 +4,12 @@
 package resource
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"log"
 	"net"
 	"os"
 	"path/filepath"
 
+	"github.com/azure/azure-dev/cli/azd/internal/telemetry/fields"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/google/uuid"
@@ -24,13 +23,6 @@ var invalidMacAddresses = map[string]struct{}{
 	"ac:de:48:00:11:22": {},
 }
 
-// Sha256Hash returns the hex-encoded Sha256 hash of the given string.
-func Sha256Hash(val string) string {
-	sha := sha256.Sum256([]byte(val))
-	hash := hex.EncodeToString(sha[:])
-	return hash
-}
-
 // getMachineId returns a unique ID for the machine.
 func getMachineId() string {
 	// We store the machine ID on the filesystem not due to performance,
@@ -42,7 +34,7 @@ func calculateMachineId() string {
 	mac, ok := getMacAddress()
 
 	if ok {
-		return Sha256Hash(mac)
+		return fields.Sha256Hash(mac)
 	} else {
 		// No valid mac address, return a GUID instead.
 		return uuid.NewString()

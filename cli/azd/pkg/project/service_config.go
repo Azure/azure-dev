@@ -90,6 +90,7 @@ func (sc *ServiceConfig) GetService(
 	return &Service{
 		Project:        project,
 		Config:         sc,
+		Environment:    env,
 		Framework:      *framework,
 		Target:         *serviceTarget,
 		TargetResource: targetResource,

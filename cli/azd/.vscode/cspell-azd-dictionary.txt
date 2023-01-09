@@ -4,7 +4,10 @@ appinsights
 appinsightsexporter
 appinsightsstorage
 appservice
+apimanagement
+apims
 armappconfiguration
+armapimanagement
 AZCLI
 azcorelog
 azdcli
@@ -33,6 +36,7 @@ contoso
 csharpapp
 cupaloy
 devel
+deletedservices
 docf
 dockerproject
 dskip

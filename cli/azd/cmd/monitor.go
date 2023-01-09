@@ -41,38 +41,44 @@ func (m *monitorFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommand
 	m.global = global
 }
 
-func monitorCmdDesign(global *internal.GlobalCommandOptions) (*cobra.Command, *monitorFlags) {
+func newMonitorFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *monitorFlags {
+	flags := &monitorFlags{}
+	flags.Bind(cmd.Flags(), global)
+
+	return flags
+}
+
+func newMonitorCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "monitor",
 		Short: "Monitor a deployed application.",
 		Long: `Monitor a deployed application.
-		
+
 Examples:
 
 	$ azd monitor --overview
 	$ azd monitor -–live
 	$ azd monitor --logs
-		
+
 For more information, go to https://aka.ms/azure-dev/monitor.`,
 	}
-	flags := &monitorFlags{}
-	flags.Bind(cmd.Flags(), global)
-	return cmd, flags
+
+	return cmd
 }
 
 type monitorAction struct {
 	azdCtx  *azdcontext.AzdContext
 	azCli   azcli.AzCli
 	console input.Console
-	flags   monitorFlags
+	flags   *monitorFlags
 }
 
 func newMonitorAction(
 	azdCtx *azdcontext.AzdContext,
 	azCli azcli.AzCli,
 	console input.Console,
-	flags monitorFlags,
-) *monitorAction {
+	flags *monitorFlags,
+) actions.Action {
 	return &monitorAction{
 		azdCtx:  azdCtx,
 		azCli:   azCli,
@@ -86,7 +92,7 @@ func (m *monitorAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 		m.flags.monitorOverview = true
 	}
 
-	env, ctx, err := loadOrInitEnvironment(ctx, &m.flags.environmentName, m.azdCtx, m.console, m.azCli)
+	env, err := loadOrInitEnvironment(ctx, &m.flags.environmentName, m.azdCtx, m.console, m.azCli)
 	if err != nil {
 		return nil, fmt.Errorf("loading environment: %w", err)
 	}

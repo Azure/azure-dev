@@ -58,10 +58,11 @@ var cLoginScopes = []string{azure.ManagementScope}
 // You can configure azd to ignore its native credential system and instead delegate to AZ CLI (useful for cases where azd
 // does not yet support your preferred method of authentication by setting [cUseLegacyAzCliAuthKey] in config to true.
 type Manager struct {
-	publicClient    publicClient
-	configManager   config.UserConfigManager
-	credentialCache Cache
-	ghClient        *github.FederatedTokenClient
+	publicClient        publicClient
+	publicClientOptions []public.Option
+	configManager       config.UserConfigManager
+	credentialCache     Cache
+	ghClient            *github.FederatedTokenClient
 }
 
 func NewManager(configManager config.UserConfigManager) (*Manager, error) {
@@ -80,7 +81,11 @@ func NewManager(configManager config.UserConfigManager) (*Manager, error) {
 		return nil, fmt.Errorf("creating msal cache root: %w", err)
 	}
 
-	publicClientApp, err := public.New(cAZD_CLIENT_ID, public.WithCache(newCache(cacheRoot)))
+	options := []public.Option{
+		public.WithCache(newCache(cacheRoot)),
+	}
+
+	publicClientApp, err := public.New(cAZD_CLIENT_ID, options...)
 	if err != nil {
 		return nil, fmt.Errorf("creating msal client: %w", err)
 	}
@@ -88,10 +93,11 @@ func NewManager(configManager config.UserConfigManager) (*Manager, error) {
 	ghClient := github.NewFederatedTokenClient(nil)
 
 	return &Manager{
-		publicClient:    &msalPublicClientAdapter{client: &publicClientApp},
-		configManager:   configManager,
-		credentialCache: newCredentialCache(authRoot),
-		ghClient:        ghClient,
+		publicClient:        &msalPublicClientAdapter{client: &publicClientApp},
+		publicClientOptions: options,
+		configManager:       configManager,
+		credentialCache:     newCredentialCache(authRoot),
+		ghClient:            ghClient,
 	}, nil
 }
 
@@ -111,8 +117,17 @@ func EnsureLoggedInCredential(ctx context.Context, credential azcore.TokenCreden
 }
 
 // CredentialForCurrentUser returns a TokenCredential instance for the current user. If `auth.useLegacyAzCliAuth` is set to
-// a truthy value in config, an instance of azidentity.AzureCLICredential is returned instead.
-func (m *Manager) CredentialForCurrentUser(ctx context.Context) (azcore.TokenCredential, error) {
+// a truthy value in config, an instance of azidentity.AzureCLICredential is returned instead. To accept the default options,
+// pass nil.
+func (m *Manager) CredentialForCurrentUser(
+	ctx context.Context,
+	options *CredentialForCurrentUserOptions,
+) (azcore.TokenCredential, error) {
+
+	if options == nil {
+		options = &CredentialForCurrentUserOptions{}
+	}
+
 	cfg, err := m.configManager.Load()
 	if err != nil {
 		return nil, fmt.Errorf("fetching current user: %w", err)
@@ -121,7 +136,9 @@ func (m *Manager) CredentialForCurrentUser(ctx context.Context) (azcore.TokenCre
 	if useLegacyAuth, has := cfg.Get(cUseAzCliAuthKey); has {
 		if use, err := strconv.ParseBool(useLegacyAuth.(string)); err == nil && use {
 			log.Printf("delegating auth to az since %s is set to true", cUseAzCliAuthKey)
-			cred, err := azidentity.NewAzureCLICredential(nil)
+			cred, err := azidentity.NewAzureCLICredential(&azidentity.AzureCLICredentialOptions{
+				TenantID: options.TenantID,
+			})
 			if err != nil {
 				return nil, fmt.Errorf("failed to create credential: %v: %w", err, ErrNoCurrentUser)
 			}
@@ -137,7 +154,22 @@ func (m *Manager) CredentialForCurrentUser(ctx context.Context) (azcore.TokenCre
 	if currentUser.HomeAccountID != nil {
 		for _, account := range m.publicClient.Accounts() {
 			if account.HomeAccountID == *currentUser.HomeAccountID {
-				return newAzdCredential(m.publicClient, &account), nil
+				if options.TenantID == "" {
+					return newAzdCredential(m.publicClient, &account), nil
+				} else {
+					newAuthority := "https://login.microsoftonline.com/" + options.TenantID
+
+					newOptions := make([]public.Option, 0, len(m.publicClientOptions)+1)
+					newOptions = append(newOptions, m.publicClientOptions...)
+					newOptions = append(newOptions, public.WithAuthority(newAuthority))
+
+					clientWithNewTenant, err := public.New(cAZD_CLIENT_ID, newOptions...)
+					if err != nil {
+						return nil, err
+					}
+
+					return newAzdCredential(&msalPublicClientAdapter{client: &clientWithNewTenant}, &account), nil
+				}
 			}
 		}
 	} else if currentUser.TenantID != nil && currentUser.ClientID != nil {
@@ -146,56 +178,80 @@ func (m *Manager) CredentialForCurrentUser(ctx context.Context) (azcore.TokenCre
 			return nil, fmt.Errorf("loading secret: %v: %w", err, ErrNoCurrentUser)
 		}
 
+		// by default we used the stored tenant (i.e. the one provided with the tenant id parameter when a user ran
+		// `azd login`) but we allow an override using the options bag.
+		tenantID := *currentUser.TenantID
+
+		if options.TenantID != "" {
+			tenantID = options.TenantID
+		}
+
 		if ps.ClientSecret != nil {
-			cred, err := azidentity.NewClientSecretCredential(
-				*currentUser.TenantID, *currentUser.ClientID, *ps.ClientSecret, nil,
-			)
-
-			if err != nil {
-				return nil, fmt.Errorf("creating credential: %v: %w", err, ErrNoCurrentUser)
-			}
-
-			return cred, nil
-
+			return newCredentialFromClientSecret(tenantID, *currentUser.ClientID, *ps.ClientSecret)
 		} else if ps.ClientCertificate != nil {
-			certData, err := base64.StdEncoding.DecodeString(*ps.ClientCertificate)
-			if err != nil {
-				return nil, fmt.Errorf("decoding certificate: %v: %w", err, ErrNoCurrentUser)
-			}
-
-			certs, key, err := azidentity.ParseCertificates(certData, nil)
-			if err != nil {
-				return nil, fmt.Errorf("parsing certificate: %v: %w", err, ErrNoCurrentUser)
-			}
-
-			cred, err := azidentity.NewClientCertificateCredential(
-				*currentUser.TenantID, *currentUser.ClientID, certs, key, nil,
-			)
-
-			if err != nil {
-				return nil, fmt.Errorf("creating credential: %v: %w", err, ErrNoCurrentUser)
-			}
-
-			return cred, nil
+			return newCredentialFromClientCertificate(tenantID, *currentUser.ClientID, *ps.ClientCertificate)
 		} else if ps.FederatedToken != nil {
-			cred, err := azidentity.NewClientAssertionCredential(
-				*currentUser.TenantID,
-				*currentUser.ClientID,
-				func(_ context.Context) (string, error) {
-					return *ps.FederatedToken, nil
-				},
-				nil,
-			)
-
-			if err != nil {
-				return nil, fmt.Errorf("creating credential: %v: %w", err, ErrNoCurrentUser)
-			}
-
-			return cred, nil
+			return newCredentialFromClientAssertion(tenantID, *currentUser.ClientID, *ps.FederatedToken)
 		}
 	}
 
 	return nil, ErrNoCurrentUser
+}
+
+func newCredentialFromClientSecret(tenantID string, clientID string, clientSecret string) (azcore.TokenCredential, error) {
+	cred, err := azidentity.NewClientSecretCredential(tenantID, clientID, clientSecret, nil)
+	if err != nil {
+		return nil, fmt.Errorf("creating credential: %v: %w", err, ErrNoCurrentUser)
+	}
+
+	return cred, nil
+}
+
+func newCredentialFromClientCertificate(
+	tenantID string,
+	clientID string,
+	clientCertificate string,
+) (azcore.TokenCredential, error) {
+	certData, err := base64.StdEncoding.DecodeString(clientCertificate)
+	if err != nil {
+		return nil, fmt.Errorf("decoding certificate: %v: %w", err, ErrNoCurrentUser)
+	}
+
+	certs, key, err := azidentity.ParseCertificates(certData, nil)
+	if err != nil {
+		return nil, fmt.Errorf("parsing certificate: %v: %w", err, ErrNoCurrentUser)
+	}
+
+	cred, err := azidentity.NewClientCertificateCredential(
+		tenantID, clientID, certs, key, nil,
+	)
+
+	if err != nil {
+		return nil, fmt.Errorf("creating credential: %v: %w", err, ErrNoCurrentUser)
+	}
+
+	return cred, nil
+}
+
+func newCredentialFromClientAssertion(
+	tenantID string,
+	clientID string,
+	clientAssertion string,
+) (azcore.TokenCredential, error) {
+	cred, err := azidentity.NewClientAssertionCredential(
+		tenantID,
+		clientID,
+		func(_ context.Context) (string, error) {
+			return clientAssertion, nil
+		},
+		nil,
+	)
+
+	if err != nil {
+		return nil, fmt.Errorf("creating credential: %v: %w", err, ErrNoCurrentUser)
+	}
+
+	return cred, nil
 }
 
 func (m *Manager) LoginInteractive(ctx context.Context, redirectPort int) (azcore.TokenCredential, error) {
@@ -479,6 +535,11 @@ func (m *Manager) saveSecret(tenantId, clientId string, ps *persistedSecret) err
 	}
 
 	return m.credentialCache.Set(persistedSecretLookupKey(tenantId, clientId), data)
+}
+
+type CredentialForCurrentUserOptions struct {
+	// The tenant ID to use when constructing the credential, instead of the default tenant.
+	TenantID string
 }
 
 // persistedSecret is the model type for the value we store in the credential cache. It is logically a discriminated union

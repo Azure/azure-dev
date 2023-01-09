@@ -303,7 +303,11 @@ func Test_determineDuplicates(t *testing.T) {
 		args     args
 		expected []string
 	}{
-		{"NoDuplicates", args{[]string{"a.txt", "b.txt", "dir1/a.txt"}, []string{"c.txt", "d.txt", "dir2/a.txt"}}, []string{}},
+		{
+			"NoDuplicates",
+			args{[]string{"a.txt", "b.txt", "dir1/a.txt"}, []string{"c.txt", "d.txt", "dir2/a.txt"}},
+			[]string{},
+		},
 		{"Duplicates", args{
 			[]string{
 				"a.txt", "b.txt", "c.txt",

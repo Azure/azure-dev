@@ -29,7 +29,14 @@ import (
 	"github.com/spf13/pflag"
 )
 
-func initCmdDesign(rootOptions *internal.GlobalCommandOptions) (*cobra.Command, *initFlags) {
+func newInitFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *initFlags {
+	flags := &initFlags{}
+	flags.Bind(cmd.Flags(), global)
+
+	return flags
+}
+
+func newInitCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "init",
 		Short: "Initialize a new application.",
@@ -41,14 +48,7 @@ When no template is supplied, you can optionally select an Azure Developer CLI t
 When a template is provided, the sample code is cloned to the current directory.`,
 	}
 
-	f := &initFlags{}
-	f.Bind(cmd.Flags(), rootOptions)
-
-	if err := cmd.RegisterFlagCompletionFunc("template", templateNameCompletion); err != nil {
-		panic(err)
-	}
-
-	return cmd, f
+	return cmd
 }
 
 type initFlags struct {
@@ -100,7 +100,7 @@ type initAction struct {
 	console         input.Console
 	cmdRun          exec.CommandRunner
 	gitCli          git.GitCli
-	flags           initFlags
+	flags           *initFlags
 	repoInitializer *repository.Initializer
 }
 
@@ -110,8 +110,8 @@ func newInitAction(
 	cmdRun exec.CommandRunner,
 	console input.Console,
 	gitCli git.GitCli,
-	flags initFlags,
-	repoInitializer *repository.Initializer) (*initAction, error) {
+	flags *initFlags,
+	repoInitializer *repository.Initializer) actions.Action {
 	return &initAction{
 		azCli:           azCli,
 		accountManager:  accountManager,
@@ -120,7 +120,7 @@ func newInitAction(
 		gitCli:          gitCli,
 		flags:           flags,
 		repoInitializer: repoInitializer,
-	}, nil
+	}
 }
 
 func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
@@ -213,7 +213,7 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		subscription:    i.flags.subscription,
 		location:        i.flags.location,
 	}
-	env, ctx, err := createAndInitEnvironment(ctx, &envSpec, azdCtx, i.console, i.azCli)
+	env, err := createAndInitEnvironment(ctx, &envSpec, azdCtx, i.console, i.azCli)
 	if err != nil {
 		return nil, fmt.Errorf("loading environment: %w", err)
 	}

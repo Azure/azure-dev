@@ -969,38 +969,31 @@ func (p *BicepProvider) ensureParameters(
 		}
 
 		// Otherwise, prompt for the value.
-		err := asyncContext.Interact(func() error {
-			value, err := p.promptForParameter(ctx, key, param)
-			if err != nil {
-				return fmt.Errorf("prompting for value: %w", err)
-			}
-
-			if !param.Secure() {
-				saveParameter, err := p.console.Confirm(ctx, input.ConsoleOptions{
-					Message: "Save the value in the environment for future use",
-				})
-
-				if err != nil {
-					return fmt.Errorf("prompting to save deployment parameter: %w", err)
-				}
-
-				if saveParameter {
-					if err := p.env.Config.Set(configKey, value); err == nil {
-						configModified = true
-					} else {
-						p.console.Message(ctx, fmt.Sprintf("warning: failed to set value: %v", err))
-					}
-				}
-			}
-
-			configuredParameters[key] = azure.ArmParameterValue{
-				Value: value,
-			}
-
-			return nil
-		})
+		value, err := p.promptForParameter(ctx, key, param)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("prompting for value: %w", err)
+		}
+
+		if !param.Secure() {
+			saveParameter, err := p.console.Confirm(ctx, input.ConsoleOptions{
+				Message: "Save the value in the environment for future use",
+			})
+
+			if err != nil {
+				return nil, fmt.Errorf("prompting to save deployment parameter: %w", err)
+			}
+
+			if saveParameter {
+				if err := p.env.Config.Set(configKey, value); err == nil {
+					configModified = true
+				} else {
+					p.console.Message(ctx, fmt.Sprintf("warning: failed to set value: %v", err))
+				}
+			}
+		}
+
+		configuredParameters[key] = azure.ArmParameterValue{
+			Value: value,
 		}
 	}
 

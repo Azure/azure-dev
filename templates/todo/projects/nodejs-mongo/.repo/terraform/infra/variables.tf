@@ -16,6 +16,6 @@ variable "principal_id" {
 
 variable "useAPIM" {
   description = "Flag to use Azure API Management to mediate the calls between the Web frontend and the backend API."
-  type        = string
-  default     = "false"
+  type        = bool
+  default     = false
 }

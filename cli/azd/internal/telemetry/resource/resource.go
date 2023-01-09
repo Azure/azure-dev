@@ -5,6 +5,7 @@
 package resource
 
 import (
+	"fmt"
 	"runtime"
 
 	"github.com/azure/azure-dev/cli/azd/internal"
@@ -16,7 +17,7 @@ import (
 
 // New creates a resource with all application-level fields populated.
 func New() *resource.Resource {
-	r, _ := resource.Merge(
+	r, err := resource.Merge(
 		resource.Default(),
 		resource.NewWithAttributes(
 			semconv.SchemaURL,
@@ -30,6 +31,14 @@ func New() *resource.Resource {
 			fields.MachineIdKey.String(getMachineId()),
 		),
 	)
+
+	// One possible reason this might fail is if there's a mismatch between the semconv.SchemaURL and the schema used
+	// by resource.Default(). This can happen if we upgrade our open telemetry package version but don't update the import
+	// path of `semconv` above to point to the correct version. Instead of returning an empty resource without any attributes
+	// just fail eagerly.
+	if err != nil {
+		panic(fmt.Sprintf("failed to create resource: %v", err))
+	}
 
 	return r
 }

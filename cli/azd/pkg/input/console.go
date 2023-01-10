@@ -269,8 +269,11 @@ func (c *AskerConsole) Prompt(ctx context.Context, options ConsoleOptions) (stri
 
 	var response string
 
-	if err := c.asker(survey, &response); err != nil {
-		return "", err
+	err := c.doInteraction(func(c *AskerConsole) error {
+		return c.asker(survey, &response)
+	})
+	if err != nil {
+		return response, err
 	}
 
 	return response, nil
@@ -287,7 +290,10 @@ func (c *AskerConsole) Select(ctx context.Context, options ConsoleOptions) (int,
 
 	var response int
 
-	if err := c.asker(survey, &response); err != nil {
+	err := c.doInteraction(func(c *AskerConsole) error {
+		return c.asker(survey, &response)
+	})
+	if err != nil {
 		return -1, err
 	}
 
@@ -309,7 +315,10 @@ func (c *AskerConsole) Confirm(ctx context.Context, options ConsoleOptions) (boo
 
 	var response bool
 
-	if err := c.asker(survey, &response); err != nil {
+	err := c.doInteraction(func(c *AskerConsole) error {
+		return c.asker(survey, &response)
+	})
+	if err != nil {
 		return false, err
 	}
 
@@ -344,4 +353,23 @@ func GetStepResultFormat(result error) SpinnerUxType {
 		formatResult = StepFailed
 	}
 	return formatResult
+}
+
+// Handle doing interactive calls. It check if there's a spinner running to pause it before doing interactive actions.
+func (c *AskerConsole) doInteraction(fn func(c *AskerConsole) error) error {
+
+	if c.spinner != nil && c.spinner.Status() == yacspin.SpinnerRunning {
+		_ = c.spinner.Pause()
+
+		// calling fn might return an error. This defer make sure to recover the spinner
+		// status.
+		defer func() {
+			_ = c.spinner.Unpause()
+		}()
+	}
+
+	if err := fn(c); err != nil {
+		return err
+	}
+	return nil
 }

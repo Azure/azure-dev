@@ -38,5 +38,5 @@ output "USE_APIM" {
 }
 
 output "SERVICE_API_ENDPOINTS" {
-  value = var.useAPIM ? [ module.apimApi[0].SERVICE_API_URI ] : [] 
+  value = var.useAPIM ? [ module.apimApi[0].SERVICE_API_URI, module.api.SERVICE_API_URI ] : [] 
 }

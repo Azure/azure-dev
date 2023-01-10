@@ -21,15 +21,25 @@ output "INT" {
 }
 
 output "ARRAY" {
-  value = [true, "abc", 1234]
+  value = var.dummy_tuple
+}
+
+output "ARRAY_INT" {
+  value = var.dummy_set_numbers
+}
+
+output "ARRAY_STRING" {
+  value = var.dummy_list_string
+}
+
+output "NULL" {
+  value = null
 }
 
 output "OBJECT" {
   value = {
     foo : "bar"
-    inner: {
-      foo: "bar"
-    }
-    array: [true, "abc", 1234]
+    inner: var.dummy_map
+    array: var.dummy_tuple
   }
 }

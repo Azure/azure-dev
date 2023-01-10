@@ -238,7 +238,7 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	return &actions.ActionResult{
 		Message: &actions.ResultMessage{
 			Header:   "New project initialized!",
-			FollowUp: fmt.Sprintf("You can view the template code in your directory: %s", output.WithLinkFormat("%s", wd)),
+			FollowUp: fmt.Sprintf("You can view the template code in your directory: %s\nLearn more about running 3rd party code on our DevHub: https://learn.microsoft.com/en-us/azure/developer/azure-developer-cli/azd-templates?tabs=csharp#guidelines-for-using-azd-templates", output.WithLinkFormat("%s", wd)),
 		},
 	}, nil
 }

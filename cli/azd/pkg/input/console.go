@@ -134,10 +134,14 @@ func (c *AskerConsole) MessageUxItem(ctx context.Context, item ux.UxItem) {
 		return
 	}
 
-	_ = c.doInteraction(func(c *AskerConsole) error {
+	if c.spinner != nil && c.spinner.Status() == yacspin.SpinnerRunning {
+		c.StopSpinner(ctx, "", Step)
+		// default non-format
 		fmt.Fprintln(c.writer, item.ToString(c.currentIndent))
-		return nil
-	})
+		_ = c.spinner.Start()
+	} else {
+		fmt.Fprintln(c.writer, item.ToString(c.currentIndent))
+	}
 }
 
 func (c *AskerConsole) ShowSpinner(ctx context.Context, title string, format SpinnerUxType) {

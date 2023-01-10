@@ -125,6 +125,36 @@ func Test_Middleware_RunAction(t *testing.T) {
 		// Notice the order in which the middleware components execute in a FILO stack similar to golang defer statements
 		require.Equal(t, []string{"Pre-A", "Pre-B", "action", "Post-B", "Post-A"}, runLog)
 	})
+
+	t.Run("context propagated to action", func(t *testing.T) {
+		mockContext := mocks.NewMockContext(context.Background())
+		middlewareRunner := NewMiddlewareRunner(ioc.NewNestedContainer(nil))
+
+		key := cxtKey{}
+
+		_ = middlewareRunner.Use("addValue", func() Middleware {
+			return middlewareFunc(func(ctx context.Context, nextFn NextFn) (*actions.ActionResult, error) {
+				return nextFn(context.WithValue(ctx, key, "pass"))
+			})
+		})
+
+		action := actionFunc(func(ctx context.Context) (*actions.ActionResult, error) {
+			// ensure we can recover the value added by the middleware above.
+
+			a := ctx.Value(key)
+			require.NotNil(t, a)
+
+			v, ok := a.(string)
+			require.True(t, ok)
+			require.Equal(t, "pass", v)
+
+			return nil, nil
+		})
+
+		result, err := middlewareRunner.RunAction(*mockContext.Context, &Options{Name: "test"}, action)
+		require.Nil(t, result)
+		require.NoError(t, err)
+	})
 }
 
 func Test_Middleware_RunChildAction(t *testing.T) {
@@ -198,4 +228,20 @@ func (a *testMiddleware) Run(ctx context.Context, nextFn NextFn) (*actions.Actio
 
 	// Ultimately return the result
 	return result, nil
+}
+
+type cxtKey struct{}
+
+// middlewareFunc is a func that implements the Middleware interface
+type middlewareFunc func(ctx context.Context, nextFn NextFn) (*actions.ActionResult, error)
+
+func (f middlewareFunc) Run(ctx context.Context, nextFn NextFn) (*actions.ActionResult, error) {
+	return f(ctx, nextFn)
+}
+
+// actionFunc is a func that implements the actions.RunAction interface
+type actionFunc func(ctx context.Context) (*actions.ActionResult, error)
+
+func (f actionFunc) Run(ctx context.Context) (*actions.ActionResult, error) {
+	return f(ctx)
 }

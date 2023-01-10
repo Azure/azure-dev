@@ -64,6 +64,8 @@ func GetResourceTypeDisplayName(resourceType AzureResourceType) string {
 		return "Azure API Management"
 	case AzureResourceTypeCacheForRedis:
 		return "Cache for Redis"
+	case AzureResourceTypeSqlDatabase:
+		return "Azure SQL DB"
 	}
 
 	return ""

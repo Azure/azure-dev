@@ -5,14 +5,26 @@
 package ioc
 
 import (
+	"errors"
+	"fmt"
+	"regexp"
+
 	"github.com/golobby/container/v3"
 )
 
-// The global/root level container
-var Global *NestedContainer = &NestedContainer{
-	inner:  container.Global,
-	parent: nil,
-}
+var (
+	// The golobby project does not support types errors,
+	// but all the error messages are prefixed with `container:`
+	containerErrorRegex *regexp.Regexp = regexp.MustCompile("container:")
+
+	// The global/root level container
+	Global *NestedContainer = &NestedContainer{
+		inner:  container.Global,
+		parent: nil,
+	}
+
+	ErrResolveInstance error = errors.New("failed resolving instance from container")
+)
 
 // NestedContainer is an IoC container that support nested containers
 // Used for more complex registration scenarios such as scop based registration/resolution.
@@ -79,7 +91,7 @@ func (c *NestedContainer) Resolve(instance any) error {
 		}
 
 		if current.parent == nil {
-			return err
+			return inspectResolveError(err)
 		}
 		current = current.parent
 	}
@@ -96,7 +108,7 @@ func (c *NestedContainer) ResolveNamed(name string, instance any) error {
 		}
 
 		if current.parent == nil {
-			return err
+			return inspectResolveError(err)
 		}
 		current = current.parent
 	}
@@ -122,4 +134,15 @@ func RegisterNamedInstance[F any](c *NestedContainer, name string, instance F) {
 	container.MustNamedSingletonLazy(c.inner, name, func() F {
 		return instance
 	})
+}
+
+// Inspects the specified error to determine whether the error is a
+// developer container registration error or an error that was
+// returned while instantiating a dependency.
+func inspectResolveError(err error) error {
+	if containerErrorRegex.Match([]byte(err.Error())) {
+		return fmt.Errorf("%w: %s", ErrResolveInstance, err.Error())
+	}
+
+	return err
 }

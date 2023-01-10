@@ -423,7 +423,7 @@ func (t *TerraformProvider) mapTerraformTypeToInterfaceType(typ any) ParameterTy
 		// in this case we have a complex type, which in json looked like ["type", <schema parts>...], just pull out the
 		// first part and map to either and object or array.
 		switch v[0].(string) {
-		case "list", "tuple":
+		case "list", "tuple", "set":
 			return ParameterTypeArray
 		case "object", "map":
 			return ParameterTypeObject
@@ -439,7 +439,8 @@ func (t *TerraformProvider) mapTerraformTypeToInterfaceType(typ any) ParameterTy
 func (t *TerraformProvider) convertOutputs(outputMap map[string]terraformOutput) map[string]OutputParameter {
 	outputParameters := make(map[string]OutputParameter)
 	for k, v := range outputMap {
-		if v.Type == "null" {
+		if val, ok := v.Value.(string); ok && val == "null" {
+			// omit null
 			continue
 		}
 

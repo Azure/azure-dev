@@ -44,7 +44,7 @@ func (m *DebugMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 
 	for {
 		isReady, err := m.console.Confirm(ctx, input.ConsoleOptions{
-			Message:      "Debugger Ready?",
+			Message:      fmt.Sprintf("Debugger Ready? (pid: %d)", os.Getpid()),
 			DefaultValue: true,
 		})
 

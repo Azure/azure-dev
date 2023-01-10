@@ -48,7 +48,7 @@
 		{
             "label": "Start Functions",
 			"type": "func",
-			"command": "host start --port 3100 --cors *",
+			"command": "host start --port 3100 --cors '*'",
 			"problemMatcher": "$func-python-watch",
 			"isBackground": true,
 			"dependsOn": "Restore API",

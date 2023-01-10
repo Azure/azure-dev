@@ -28,6 +28,7 @@ resource "azurerm_api_management_api" "api" {
   path                = var.api_path
   protocols           = ["https"]
   service_url         = var.api_backend_url
+  subscription_required = false
 
   import {
     content_format = "openapi"

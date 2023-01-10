@@ -353,20 +353,19 @@ func GetStepResultFormat(result error) SpinnerUxType {
 
 // Handle doing interactive calls. It check if there's a spinner running to pause it before doing interactive actions.
 func (c *AskerConsole) doInteraction(fn func(c *AskerConsole) error) error {
-	var resumeSpinner bool
+
 	if c.spinner != nil && c.spinner.Status() == yacspin.SpinnerRunning {
 		_ = c.spinner.Pause()
-		resumeSpinner = true
+
+		// calling fn might return an error. This defer make sure to recover the spinner
+		// status.
+		defer func() {
+			_ = c.spinner.Unpause()
+		}()
 	}
 
 	if err := fn(c); err != nil {
 		return err
 	}
-
-	// unpause if Paused
-	if resumeSpinner {
-		_ = c.spinner.Unpause()
-	}
-
 	return nil
 }

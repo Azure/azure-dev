@@ -24,6 +24,7 @@
     </PropertyGroup>
     <ItemGroup>
         <Compile Include="azd.wxs"/>
+        <Compile Include="ui.wxs"/>
     </ItemGroup>
     <ItemGroup>
         <BindInputPaths Include="$(RepositoryPath)"/>

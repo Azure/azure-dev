@@ -11,7 +11,7 @@ import { scheduleSurveys } from './telemetry/surveyScheduler';
 import { ActivityStatisticsService } from './telemetry/activityStatisticsService';
 import { scheduleAzdInstalledCheck } from './utils/azureDevCli';
 import { activeSurveys } from './telemetry/activeSurveys';
-import { registerWorkspaceComponents } from './views/workspace/registerWorkspaceComponents';
+import { scheduleRegisterWorkspaceComponents } from './views/workspace/scheduleRegisterWorkspaceComponents';
 
 type LoadStats = {
     // Both are the values returned by Date.now()==milliseconds since Unix epoch.
@@ -46,7 +46,7 @@ export async function activateInternal(vscodeCtx: vscode.ExtensionContext, loadS
         ext.activitySvc = new ActivityStatisticsService(vscodeCtx.globalState);
         registerCommands();
         registerDisposable(vscode.tasks.registerTaskProvider('dotenv', new DotEnvTaskProvider()));
-        vscodeCtx.subscriptions.push(...await registerWorkspaceComponents());
+        scheduleRegisterWorkspaceComponents(vscodeCtx);
         scheduleSurveys(vscodeCtx.globalState, activeSurveys);
         scheduleAzdInstalledCheck();
     });

@@ -15,6 +15,7 @@ import { monitor } from './monitor';
 import { selectEnvironment, newEnvironment, refreshEnvironment, editEnvironment, deleteEnvironment } from './env';
 import { pipelineConfig } from './pipeline';
 import { getDotEnvFilePath } from './getDotEnvFilePath';
+import { revealAzureResource, revealAzureResourceGroup } from './azureWorkspace/reveal';
 import ext from '../ext';
 
 export function registerCommands(): void {
@@ -33,6 +34,9 @@ export function registerCommands(): void {
     registerActivityCommand('azure-dev.commands.cli.env-new', newEnvironment);
     registerActivityCommand('azure-dev.commands.cli.env-refresh', refreshEnvironment);
     registerActivityCommand('azure-dev.commands.cli.pipeline-config', pipelineConfig);
+
+    registerActivityCommand('azure-dev.commands.azureWorkspace.revealAzureResource', revealAzureResource);
+    registerActivityCommand('azure-dev.commands.azureWorkspace.revealAzureResourceGroup', revealAzureResourceGroup);
 
     // getDotEnvFilePath() is a utility command that does not deserve "user activity" designation.
     registerCommandAzUI('azure-dev.commands.getDotEnvFilePath', getDotEnvFilePath);

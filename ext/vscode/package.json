@@ -38,6 +38,8 @@
         "onCommand:azure-dev.commands.cli.env-refresh",
         "onCommand:azure-dev.commands.cli.pipeline-config",
         "onCommand:azure-dev.commands.getDotEnvFilePath",
+        "onCommand:azure-dev.commands.azureWorkspace.revealAzureResource",
+        "onCommand:azure-dev.commands.azureWorkspace.revealAzureResourceGroup",
         "onTaskType:dotenv"
     ],
     "main": "./main.js",
@@ -126,6 +128,16 @@
                 "category": "%azure-dev.commands_category%",
                 "command": "azure-dev.commands.getDotEnvFilePath",
                 "title": "%azure-dev.commands.getDotEnvFilePath.title%"
+            },
+            {
+                "category": "%azure-dev.commands_category%",
+                "command": "azure-dev.commands.azureWorkspace.revealAzureResource",
+                "title": "%azure-dev.commands.azureWorkspace.revealAzureResource.title%"
+            },
+            {
+                "category": "%azure-dev.commands_category%",
+                "command": "azure-dev.commands.azureWorkspace.revealAzureResourceGroup",
+                "title": "%azure-dev.commands.azureWorkspace.revealAzureResourceGroup.title%"
             }
         ],
         "configuration": {
@@ -191,6 +203,14 @@
                 },
                 {
                     "command": "azure-dev.commands.cli.env-edit",
+                    "when": "false"
+                },
+                {
+                    "command": "azure-dev.commands.azureWorkspace.revealAzureResource",
+                    "when": "false"
+                },
+                {
+                    "command": "azure-dev.commands.azureWorkspace.revealAzureResourceGroup",
                     "when": "false"
                 }
             ],
@@ -270,6 +290,18 @@
                 {
                     "command": "azure-dev.commands.cli.restore",
                     "when": "viewItem == ms-azuretools.azure-dev.views.workspace.service"
+                },
+                {
+                    "command": "azure-dev.commands.azureWorkspace.revealAzureResource",
+                    "when": "viewItem == ms-azuretools.azure-dev.views.workspace.service"
+                },
+                {
+                    "command": "azure-dev.commands.azureWorkspace.revealAzureResourceGroup",
+                    "when": "viewItem == ms-azuretools.azure-dev.views.workspace.application"
+                },
+                {
+                    "command": "azure-dev.commands.azureWorkspace.revealAzureResourceGroup",
+                    "when": "viewItem == ms-azuretools.azure-dev.views.workspace.environment"
                 }
             ]
         },

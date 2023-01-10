@@ -62,6 +62,10 @@
     "azure-dev.commands.getDotEnvFilePath.noDefaultEnvironment": "There is no default Azure developer environment, cannot determine environment settings file path",
     "azure-dev.commands.getDotEnvFilePath.noWorkingFolder": "Working directory could not be determined",
 
+    "azure-dev.commands.azureWorkspace.revealAzureResource.title": "Show Azure Resource",
+
+    "azure-dev.commands.azureWorkspace.revealAzureResourceGroup.title": "Show Azure Resource Group",
+
     "azure-dev.utils.quickPickWorkspaceFolder.title": "Open Folder",
     "azure-dev.utils.spawn.exited": "Process '{0}' exited with code {1}",
     "azure-dev.utils.spawn.exitError": "\nError: {0}",

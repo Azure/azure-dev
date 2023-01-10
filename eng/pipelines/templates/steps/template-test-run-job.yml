@@ -41,6 +41,9 @@ steps:
       $CleanupImmediate = 'false'
     }
     Write-Host "##vso[task.setvariable variable=CleanupImmediate]$CleanupImmediate"
+
+
+    Write-Host "USE_APIM value: $env:USE_APIM"
   displayName: Set test run parameters
 
 - task: Bash@3

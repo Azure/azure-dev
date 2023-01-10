@@ -29,9 +29,9 @@ func envActions(root *actions.ActionDescriptor) *actions.ActionDescriptor {
 		//nolint:lll
 		Long: `Manage environments.
 
-With this command group, you can create a new environment or get, set, and list your application environments. An application can have multiple environments (for example, dev, test, prod), each with a different configuration (that is, connectivity information) for accessing Azure resources. 
+With this command group, you can create a new environment or get, set, and list your app environments. An app can have multiple environments (for example, dev, test, prod), each with a different configuration (that is, connectivity information) for accessing Azure resources.
 
-You can find all environment configurations under the *.azure\<environment-name>* folder. The environment name is stored as the AZURE_ENV_NAME environment variable in the *.azure\<environment-name>\folder\.env* file.`,
+You can find all environment configurations under the ` + output.WithBackticks(`.azure\<environment-name>`) + ` directories. The environment name is stored as the AZURE_ENV_NAME environment variable in the ` + output.WithBackticks(`.azure\<environment-name>\directory\.env`) + ` file.`,
 	}
 
 	group := root.Add("env", &actions.ActionDescriptorOptions{
@@ -182,7 +182,7 @@ func (e *envSelectAction) Run(ctx context.Context) (*actions.ActionResult, error
 func newEnvListCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:     "list",
-		Short:   "List environments",
+		Short:   "List environments.",
 		Aliases: []string{"ls"},
 	}
 }

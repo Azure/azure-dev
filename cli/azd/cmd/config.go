@@ -24,8 +24,8 @@ func configActions(root *actions.ActionDescriptor, rootOptions *internal.GlobalC
 		userConfigPath = heredoc.Doc(`the configuration path.
 
 		The default value of the config directory is:
-		* $HOME/.azd on Linux and MacOS
-		* %USERPROFILE%\.azd on Windows
+		* ` + output.WithBackticks(`$HOME/.azd`) + ` on Linux and macOS
+		* ` + output.WithBackticks(`%USERPROFILE%\.azd`) + ` on Windows
 
 		The configuration directory can be overridden by specifying a path in the AZD_CONFIG_DIR environment variable`)
 	} else if err != nil {
@@ -44,8 +44,12 @@ func configActions(root *actions.ActionDescriptor, rootOptions *internal.GlobalC
 	var helpConfigPaths string
 	if rootOptions.GenerateStaticHelp {
 		helpConfigPaths = heredoc.Doc(`
+		Available since ` + output.WithBackticks("azure-dev-cli_0.4.0-beta.1") + `.
+
+		The easiest way to configure ` + output.WithBackticks("azd") + ` for the first time is to run [` + output.WithBackticks("azd init") + `](#azd-init). The subscription and location you select will be stored in the ` + output.WithBackticks("config.json") + ` file located in the config directory. To configure ` + output.WithBackticks("azd") + ` anytime afterwards, you'll use [` + output.WithBackticks("azd config set") + `](#azd-config-set).
+
 		The default value of the config directory is: 
-		* $HOME/.azd on Linux and MacOS
+		* $HOME/.azd on Linux and macOS
 		* %USERPROFILE%\.azd on Windows
 		`)
 	} else {
@@ -68,7 +72,7 @@ func configActions(root *actions.ActionDescriptor, rootOptions *internal.GlobalC
 
 	groupCmd := &cobra.Command{
 		Use:   "config",
-		Short: "Manage Azure Developer CLI configuration",
+		Short: "Manage the Azure Developer CLI user configuration.",
 		Long:  longDescription,
 	}
 

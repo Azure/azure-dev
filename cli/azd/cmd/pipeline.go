@@ -14,6 +14,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
@@ -54,11 +55,11 @@ func (pc *pipelineConfigFlags) Bind(local *pflag.FlagSet, global *internal.Globa
 func pipelineActions(root *actions.ActionDescriptor) *actions.ActionDescriptor {
 	infraCmd := &cobra.Command{
 		Use:   "pipeline",
-		Short: "Manage GitHub Actions pipelines.",
+		Short: "Manage GitHub Actions or Azure Pipelines.",
 		//nolint:lll
-		Long: `Manage GitHub Actions pipelines.
+		Long: `Manage GitHub Actions or Azure Pipelines.
 
-The Azure Developer CLI template includes a GitHub Actions pipeline configuration file (in the *.github/workflows* folder) that deploys your application whenever code is pushed to the main branch.
+The Azure Developer CLI template includes a GitHub Actions and an Azure Pipeline configuration file in the ` + output.WithBackticks(`.github/workflows`) + ` and ` + output.WithBackticks(`.azdo/pipelines`) + ` directories respectively. The configuration file deploys your app whenever code is pushed to the main branch.
 
 For more information, go to https://aka.ms/azure-dev/pipeline.`,
 	}

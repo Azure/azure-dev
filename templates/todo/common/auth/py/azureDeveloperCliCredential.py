@@ -25,6 +25,11 @@ NOT_LOGGED_IN = "Please run 'azd login' from a command prompt to authenticate be
 
 
 class AzureDeveloperCliCredential(object):
+    def __init__(self, *, tenant_id: str = "", additionally_allowed_tenants: List[str] = None):
+
+    self.tenant_id = tenant_id
+    self._additionally_allowed_tenants = additionally_allowed_tenants or []
+
     def __enter__(self):
         return self
 
@@ -38,7 +43,16 @@ class AzureDeveloperCliCredential(object):
     def get_token(self, *scopes: str, **kwargs) -> AccessToken:
         commandString = ' --scope '.join(scopes)
         command = COMMAND_LINE.format(commandString)
-        output = _run_command(command)
+        tenant = resolve_tenant(
+            default_tenant=self.tenant_id,
+            additionally_allowed_tenants=self._additionally_allowed_tenants,
+            **kwargs
+        )
+
+        if tenant:
+            command += " --tenant-id " + tenant
+        output = await _run_command(command)
+        
         token = parse_token(output)
         if not token:
             sanitized_output = sanitize_output(output)

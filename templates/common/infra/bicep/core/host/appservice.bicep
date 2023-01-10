@@ -96,4 +96,3 @@ resource applicationInsights 'Microsoft.Insights/components@2020-02-02' existing
 output identityPrincipalId string = managedIdentity ? appService.identity.principalId : ''
 output name string = appService.name
 output uri string = 'https://${appService.properties.defaultHostName}'
-

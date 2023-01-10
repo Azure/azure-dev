@@ -3,8 +3,8 @@
 ## ## 0.5.0-beta.1 (2023-01-11)
 
 ### Features Added
-- [[#1253]](https://github.com/Azure/azure-dev/pull/1253) Add middleware pipeline to AZD actions (IoC).
 - [[#1311]](https://github.com/Azure/azure-dev/pull/1311) Add support to install script with MSI on Windows.
+- [[#1312]](https://github.com/Azure/azure-dev/pull/1312) Allow users to configure service endpoints using `SERVICE_<service>_ENDPOINTS`.
 - [[#1323]](https://github.com/Azure/azure-dev/pull/1323) Add API Management Service support for all templates.
 - [[#1326]](https://github.com/Azure/azure-dev/pull/1326) Add purge support for API Management Service.
 
@@ -12,7 +12,6 @@
 
 - [[#1105]](https://github.com/Azure/azure-dev/pull/1105) `azd env new` now accepts the name of the environment as the first argument, i.e. `azd env new <environment>`. Previously, this behavior was accomplished via the global environment flag `-e`, i.e. `azd env new -e <environment>`.
 - [[#1022]](https://github.com/Azure/azure-dev/pull/1022) `azd` no longer uses the `az` CLI to authenticate with Azure by default. You will need to run `azd login` after upgrading. You may run `azd config set auth.useAzCliAuth true` to restore the old behavior of using `az` for authentication.
-- [[#1312]](https://github.com/Azure/azure-dev/pull/1312) Allow users to configure service endpoints using `SERVICE_<service>_ENDPOINTS`.
 
 ### Bugs Fixed
 - [[#1168]](https://github.com/Azure/azure-dev/pull/1168) Fix purge option for command `azd down --force --purge` to purge key vaults and app configurations resources.

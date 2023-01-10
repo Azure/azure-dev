@@ -89,9 +89,6 @@ function deployTemplate {
     echo "Initializing template '$1' with branch '$2'"
     azd init -t "$1" -b "$2" -e "$3" --subscription "$4" --location "$5" --no-prompt
 
-    echo "Current value of USE_APIM: $USE_APIM"
-    azd env set USE_APIM true
-
     echo "Provisioning infrastructure for $3..."
     azd provision -e "$3"
 

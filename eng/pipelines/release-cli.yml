@@ -33,8 +33,8 @@ stages:
         strategy:
           matrix:
             Windows:
-              Pool: azsdk-pool-mms-win-2019-general
-              OSVmImage: MMS2019
+              Pool: azsdk-pool-mms-win-2022-general
+              OSVmImage: MMS2022
               BuildTarget: azd-windows-amd64.exe
               BuildOutputName: azd.exe
               BuildTestMsi: true
@@ -268,8 +268,8 @@ stages:
 
     - job: SignMac
       pool:
-        name: azsdk-pool-mms-win-2019-general
-        vmImage: MMS2019
+        name: azsdk-pool-mms-win-2022-general
+        vmImage: MMS2022
 
       steps:
         - task: DownloadPipelineArtifact@2
@@ -323,8 +323,8 @@ stages:
 
     - job: SignWindows
       pool:
-        name: azsdk-pool-mms-win-2019-general
-        vmImage: MMS2019
+        name: azsdk-pool-mms-win-2022-general
+        vmImage: MMS2022
 
       steps:
         # Checkout required to build MSI
@@ -426,6 +426,11 @@ stages:
               artifact: azd-darwin-amd64
               path: azd-darwin-amd64
 
+          - task: DownloadPipelineArtifact@2
+            inputs:
+              artifact: test-msi
+              path: msi
+
           - pwsh: |
               Write-Host "Moving downloaded files to hosting folder"
               New-Item -ItemType Directory -Path hosting
@@ -439,6 +444,8 @@ stages:
               chmod +x azd-linux-amd64/azd-linux-amd64
               tar -C azd-linux-amd64 -cvzf hosting/azd-linux-amd64.tar.gz azd-linux-amd64
 
+              Copy-Item msi/azd-windows-amd64.msi hosting/
+
               Get-ChildItem hosting/ -Recurse | Select-Object -Property Name,Size
             displayName: Move folders to hosting location
 
@@ -447,7 +454,7 @@ stages:
 
       - job: Verify_MSI
         dependsOn: Compress_For_Hosting
-        pool: azsdk-pool-mms-win-2019-general
+        pool: azsdk-pool-mms-win-2022-general
         strategy:
           matrix:
             PerUser: 
@@ -563,20 +570,20 @@ stages:
                 ./test-pwsh-xplat-install.ps1 -BaseUrl $env:BASEURL -Version ''
 
             WindowsCmd:
-              Pool: azsdk-pool-mms-win-2019-general
-              OSVmImage: MMS2019
+              Pool: azsdk-pool-mms-win-2022-general
+              OSVmImage: MMS2022
               TestShell: cmd
               TestInstallCommand: cmd /c test-windows-install.cmd %BASEURL%
             WindowsPwsh:
-              Pool: azsdk-pool-mms-win-2019-general
-              OSVmImage: MMS2019
+              Pool: azsdk-pool-mms-win-2022-general
+              OSVmImage: MMS2022
               TestShell: pwsh
               TestInstallCommand: >
                 ./test-win-install.ps1 -BaseUrl $env:BASEURL -Version '';
                 ./test-telemetry-functions.ps1 -Shell pwsh -ExpectedFieldMap telemetry/windows.pwsh.telemetry.json
             WindowsPowerShell:
-              Pool: azsdk-pool-mms-win-2019-general
-              OSVmImage: MMS2019
+              Pool: azsdk-pool-mms-win-2022-general
+              OSVmImage: MMS2022
               TestShell: powershell
               TestInstallCommand: >
                 ./test-win-install.ps1 -BaseUrl $env:BASEURL -Version '';
@@ -726,6 +733,7 @@ stages:
                     DockerImageTags: $(CLI_VERSION);latest
                     ReleaseSyndicatedDockerContainer: true
                     PublishUpdatedDocs: true
+                    UploadMsi: true
 
       - deployment: Increment_Version
         condition: >-
@@ -796,6 +804,7 @@ stages:
               PublishUploadLocations: release/daily;daily/archive/$(Build.BuildId)-$(Build.SourceVersion)
               PublishShield: false
               DockerImageTags: daily;$(CLI_VERSION)
+              UploadMsi: true
 
       - job: Publish_For_PR
         condition: >-

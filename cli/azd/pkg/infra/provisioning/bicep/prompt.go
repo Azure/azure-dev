@@ -154,7 +154,7 @@ func convertString(s string) string {
 }
 
 func convertInt(s string) int {
-	if i, err := strconv.ParseInt(s, 10, 0); err != nil {
+	if i, err := strconv.ParseInt(s, 10, 64); err != nil {
 		panic(fmt.Sprintf("convertInt: %v", err))
 	} else {
 		return int(i)

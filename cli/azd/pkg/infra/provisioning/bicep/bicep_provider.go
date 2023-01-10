@@ -21,6 +21,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -941,7 +942,9 @@ func (p *BicepProvider) ensureParameters(
 
 		// If a value is explicitly configured via a parameters file, use it.
 		if v, has := parameters[key]; has {
-			configuredParameters[key] = v
+			configuredParameters[key] = azure.ArmParameterValue{
+				Value: armParameterFileValue(p.mapBicepTypeToInterfaceType(param.Type), v.Value),
+			}
 			continue
 		}
 
@@ -969,38 +972,31 @@ func (p *BicepProvider) ensureParameters(
 		}
 
 		// Otherwise, prompt for the value.
-		err := asyncContext.Interact(func() error {
-			value, err := p.promptForParameter(ctx, key, param)
-			if err != nil {
-				return fmt.Errorf("prompting for value: %w", err)
-			}
-
-			if !param.Secure() {
-				saveParameter, err := p.console.Confirm(ctx, input.ConsoleOptions{
-					Message: "Save the value in the environment for future use",
-				})
-
-				if err != nil {
-					return fmt.Errorf("prompting to save deployment parameter: %w", err)
-				}
-
-				if saveParameter {
-					if err := p.env.Config.Set(configKey, value); err == nil {
-						configModified = true
-					} else {
-						p.console.Message(ctx, fmt.Sprintf("warning: failed to set value: %v", err))
-					}
-				}
-			}
-
-			configuredParameters[key] = azure.ArmParameterValue{
-				Value: value,
-			}
-
-			return nil
-		})
+		value, err := p.promptForParameter(ctx, key, param)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("prompting for value: %w", err)
+		}
+
+		if !param.Secure() {
+			saveParameter, err := p.console.Confirm(ctx, input.ConsoleOptions{
+				Message: "Save the value in the environment for future use",
+			})
+
+			if err != nil {
+				return nil, fmt.Errorf("prompting to save deployment parameter: %w", err)
+			}
+
+			if saveParameter {
+				if err := p.env.Config.Set(configKey, value); err == nil {
+					configModified = true
+				} else {
+					p.console.Message(ctx, fmt.Sprintf("warning: failed to set value: %v", err))
+				}
+			}
+		}
+
+		configuredParameters[key] = azure.ArmParameterValue{
+			Value: value,
 		}
 	}
 
@@ -1011,6 +1007,27 @@ func (p *BicepProvider) ensureParameters(
 	}
 
 	return configuredParameters, nil
+}
+
+// Convert the ARM parameters file value into a value suitable for deployment
+func armParameterFileValue(paramType ParameterType, value any) any {
+	// Relax the handling of bool and number types to accept convertible strings
+	switch paramType {
+	case ParameterTypeBoolean:
+		if val, ok := value.(string); ok {
+			if boolVal, err := strconv.ParseBool(val); err == nil {
+				return boolVal
+			}
+		}
+	case ParameterTypeNumber:
+		if val, ok := value.(string); ok {
+			if intVal, err := strconv.ParseInt(val, 10, 64); err == nil {
+				return intVal
+			}
+		}
+	}
+
+	return value
 }
 
 func isValueAssignableToParameterType(paramType ParameterType, value any) bool {

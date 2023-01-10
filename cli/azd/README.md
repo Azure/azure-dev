@@ -6,4 +6,4 @@ Install Go extension https://marketplace.visualstudio.com/items?itemName=golang.
 
 ## Contribute
 
-See [CONTRIBUTING.md] for information on contributing.
+See [CONTRIBUTING.md](./CONTRIBUTING.md) for information on contributing.

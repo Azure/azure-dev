@@ -40,6 +40,10 @@ function Get-JobVariables() {
 
     foreach ($definition in $definitions) {
         $keyValue = ($definition -split '=').Trim()
+        if ($keyValue.Length -eq 0) {
+            continue
+        }
+
         if ($keyValue.Length -ne 2) {
             throw "Invalid job variable definition: $definition"
         }
@@ -48,6 +52,23 @@ function Get-JobVariables() {
     }
 
     return $result
+}
+
+function Copy-RandomJob([System.Collections.Hashtable]$JobMatrix) {
+    $randIndex = Get-Random -Maximum $JobMatrix.Keys.Count #[0, Keys.Count]
+    $i = 0
+    $copyJob = @{}
+
+    foreach ($jobName in $JobMatrix.Keys) {
+        if ($i -eq $randIndex) {
+            foreach ($jobProperty in $JobMatrix[$jobName].Keys) {
+                $copyJob[$jobProperty] = $JobMatrix[$jobName][$jobProperty]
+            }
+        }
+        $i++
+    }
+
+    return $copyJob
 }
 
 $jobVariables = Get-JobVariables -JobVariablesDefinition $JobVariablesDefinition
@@ -74,22 +95,34 @@ if ($TemplateListFilter -ne '.*') {
     $templateNames = $templateNames -match $TemplateListFilter
 }
 
+if ($templateNames.Length -eq 0) {
+    Write-Error "No matched templates found."
+    exit 1
+}
+
 $matrix = @{}
 foreach ($template in $templateNames) {
     $jobName = $template.Replace('/', '_')
     $matrix[$jobName] = @{ TemplateName = $template }
 }
 
-# Adding extra test for capitals letters support. Using first template
-$firstTemplate = $templateNames[0]
-$capitalsTest = $firstTemplate.Replace('/', '_') + "-Upper-case-test"
-$matrix[$capitalsTest] = @{ TemplateName = $firstTemplate; UseUpperCase = "true" }
-
 foreach ($jobName in $matrix.Keys) {
     foreach ($key in $jobVariables.Keys) {
         $matrix[$jobName].Add($key, $jobVariables[$key]) | Out-Null
     }
 }
+
+# Generated test cases from existing templates
+$upperTestCase = Copy-RandomJob -JobMatrix $matrix
+$upperTestCase.TemplateName += '-Upper-case-test'
+$upperTestCase.UseUpperCase = 'true'
+
+$apimEnabledTestCase = Copy-RandomJob -JobMatrix $matrix
+$apimEnabledTestCase.TemplateName += "-apim-enabled"
+$apimEnabledTestCase.USE_APIM = 'true'
+
+$matrix[$upperTestCase.TemplateName] = $upperTestCase
+$matrix[$apimEnabledTestCase.TemplateName] = $apimEnabledTestCase
 
 Write-Host "Matrix:"
 Write-Host ($matrix | ConvertTo-Json | Out-String)

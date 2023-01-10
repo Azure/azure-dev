@@ -30,6 +30,12 @@ parameters:
   type: string
   default: staging
 
+- name: TemplateRunEnvironmentVariables
+  displayName: |
+    Comma-delimited list of environment variables in the format of (KEY=VALUE) to set for the template test run.
+    Example: USE_APIM=true,ENV_SUFFIX=MYSUFFIX
+  type: string
+
 - name: AzureLocation
   displayName: Azure location for templates to be deployed to
   type: string
@@ -55,5 +61,6 @@ jobs:
     TemplateList: ${{ parameters.TemplateList }}
     TemplateListFilter: ${{ parameters.TemplateListFilter }}
     TemplateBranchName: ${{ parameters.TemplateBranchName }}
+    TemplateRunEnvironmentVariables: ${{ parameters.TemplateRunEnvironmentVariables }}
     AzureLocation: ${{ parameters.AzureLocation }}
     CleanupHoursDelay: ${{ parameters.CleanupHoursDelay }}

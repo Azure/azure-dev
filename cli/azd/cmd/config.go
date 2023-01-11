@@ -43,6 +43,7 @@ func configActions(root *actions.ActionDescriptor, rootOptions *internal.GlobalC
 
 	var helpConfigPaths string
 	if rootOptions.GenerateStaticHelp {
+		//nolint:lll
 		helpConfigPaths = heredoc.Doc(`
 		Available since ` + output.WithBackticks("azure-dev-cli_0.4.0-beta.1") + `.
 

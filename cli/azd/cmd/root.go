@@ -42,6 +42,7 @@ func NewRootCmd(staticHelp bool, middlewareChain []*actions.MiddlewareRegistrati
 	if opts.GenerateStaticHelp {
 		synopsisHeading = ""
 	}
+	//nolint:lll
 	longDescription := heredoc.Docf(`%sTo begin working with Azure Developer CLI, run the `+output.WithBackticks("azd up")+` command by supplying a sample template in an empty directory:
 
 		$ azd up –-template todo-nodejs-mongo

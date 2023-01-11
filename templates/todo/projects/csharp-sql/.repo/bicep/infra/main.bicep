@@ -23,6 +23,10 @@ param resourceGroupName string = ''
 param sqlServerName string = ''
 param sqlDatabaseName string = ''
 param webServiceName string = ''
+param apimServiceName string = ''
+
+@description('Flag to use Azure API Management to mediate the calls between the Web frontend and the backend API')
+param useAPIM bool = false
 
 @description('Id of the user or app to assign application roles')
 param principalId string = ''
@@ -141,6 +145,33 @@ module monitoring '../../../../../../common/infra/bicep/core/monitor/monitoring.
   }
 }
 
+// Creates Azure API Management (APIM) service to mediate the requests between the frontend and the backend API
+module apim '../../../../../../common/infra/bicep/core/gateway/apim.bicep' = if (useAPIM) {
+  name: 'apim-deployment'
+  scope: rg
+  params: {
+    name: !empty(apimServiceName) ? apimServiceName : '${abbrs.apiManagementService}${resourceToken}'
+    location: location
+    tags: tags
+    applicationInsightsName: monitoring.outputs.applicationInsightsName
+  }
+}
+
+// Configures the API in the Azure API Management (APIM) service
+module apimApi '../../../../../common/infra/bicep/app/apim-api.bicep' = if (useAPIM) {
+  name: 'apim-api-deployment'
+  scope: rg
+  params: {
+    name: useAPIM ? apim.outputs.apimServiceName : ''
+    apiName: 'todo-api'
+    apiDisplayName: 'Simple Todo API'
+    apiDescription: 'This is a simple Todo API'
+    apiPath: 'todo'
+    webFrontendUrl: web.outputs.SERVICE_WEB_URI
+    apiBackendUrl: api.outputs.SERVICE_API_URI
+  }
+}
+
 // Data outputs
 output AZURE_SQL_CONNECTION_STRING_KEY string = sqlServer.outputs.connectionStringKey
 
@@ -150,6 +181,8 @@ output AZURE_KEY_VAULT_ENDPOINT string = keyVault.outputs.endpoint
 output AZURE_KEY_VAULT_NAME string = keyVault.outputs.name
 output AZURE_LOCATION string = location
 output AZURE_TENANT_ID string = tenant().tenantId
-output REACT_APP_API_BASE_URL string = api.outputs.SERVICE_API_URI
+output REACT_APP_API_BASE_URL string = useAPIM ? apimApi.outputs.SERVICE_API_URI : api.outputs.SERVICE_API_URI
 output REACT_APP_APPLICATIONINSIGHTS_CONNECTION_STRING string = monitoring.outputs.applicationInsightsConnectionString
 output REACT_APP_WEB_BASE_URL string = web.outputs.SERVICE_WEB_URI
+output USE_APIM bool = useAPIM
+output SERVICE_API_ENDPOINTS array = useAPIM ? [ apimApi.outputs.SERVICE_API_URI, api.outputs.SERVICE_API_URI ]: []

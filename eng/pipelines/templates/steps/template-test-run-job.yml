@@ -1,6 +1,6 @@
 # Consumes the following variables from Set-TemplateTestMatrixVariable.ps1:
 # - TemplateName
-# - UseUpperCase
+# - TEST_SCENARIO
 # and additional variables specified by template-test-generate-jobs.yml
 
 steps:
@@ -19,13 +19,12 @@ steps:
 
 - pwsh: |
     $templateName = '$(TemplateName)'.Substring(14)
-    $useUpperCaseName = '$(UseUpperCase)'
+    $scenario = $env:TEST_SCENARIO
     $envPrefixName = "azd-template-test"
-    if($useUpperCaseName -eq "true") {
-      # Use upper case name for env prefix name
-      $envPrefixName = "AZD-TEMPLATE-UPPER-TEST"
+    if($scenario -ne '') {
+      $envPrefixName += "-$scenario"
     } 
-    $resourceGroupName = "rg-$envPrefixName-$templateName-$(Build.BuildId)"
+    $resourceGroupName = "rg-$envPrefixName-$templateName-$(Build.BuildId)-$(System.JobAttempt)"
     Write-Host "Resource group name: $resourceGroupName"
     Write-Host "##vso[task.setvariable variable=ResourceGroupName]$resourceGroupName"
     Write-Host "##vso[task.setvariable variable=EnvPrefixName]$envPrefixName"
@@ -59,7 +58,7 @@ steps:
       -t '$(TemplateName)'
       -b '$(TemplateBranchName)'
       -s '$(SubscriptionId)'
-      -u '$(Build.BuildId)'
+      -u '$(Build.BuildId)-$(System.JobAttempt)'
       -l '$(AzureLocation)'
       -p 'list'
       -c '$(SynchronousCleanup)'

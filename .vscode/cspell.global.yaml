@@ -148,6 +148,7 @@ ignoreWords:
     - PLACEHOLDERIACTOOLS
     - LOGANALYTICS
     - zipdeploy
+    - appinsights
 useGitignore: true
 dictionaryDefinitions:
     - name: gitHubUserAliases

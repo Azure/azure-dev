@@ -66,7 +66,7 @@ func main() {
 	defer docFile.Close()
 
 	// Write front-matter to the file:
-	if _, err := docFile.WriteString(fmt.Sprintf(fontMatterFormatString, time.Now().Format("01/02/06"))); err != nil {
+	if _, err := docFile.WriteString(fmt.Sprintf(fontMatterFormatString, time.Now().Format("01/02/2006"))); err != nil {
 		fmt.Printf("Error: %v", err)
 		os.Exit(1)
 	}

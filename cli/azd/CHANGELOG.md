@@ -8,7 +8,7 @@
 - [[#1312]](https://github.com/Azure/azure-dev/pull/1312) Allow users to configure service endpoints using `SERVICE_<service>_ENDPOINTS`.
 - [[#1323]](https://github.com/Azure/azure-dev/pull/1323) Add API Management Service support for all templates.
 - [[#1326]](https://github.com/Azure/azure-dev/pull/1326) Add purge support for API Management Service.
-- [[#1076]](https://github.com/Azure/azure-dev/pull/1076) Refactors the Bicep tool in azd to use the standalone API vs az command wrapper.
+- [[#1076]](https://github.com/Azure/azure-dev/pull/1076) Refactor the Bicep tool in azd to use the standalone API vs az command wrapper.
 - [[#1087]](https://github.com/Azure/azure-dev/pull/1087) Add NodeJs and Terraform devcontainer.
 - [[#965]](https://github.com/Azure/azure-dev/pull/965) Add Ux style for `azd init`.
 - [[#1100]](https://github.com/Azure/azure-dev/pull/1100) Add Shell completion.

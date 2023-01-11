@@ -45,6 +45,14 @@ For example, to get the instructions for `bash` run `azd completion bash --help`
 
 ### Windows
 
+#### Uninstalling 0.5.0-beta.1 and later
+
+The Azure Developer CLI uses MSI to install on Windows. Use the "Add or remove programs" dialog in Windows to remove the "Azure Developer CLI" application. 
+
+#### Uninstalling version 0.4.0-beta.1 and earlier
+
+Use this PowerShell script to uninstall Azure Developer CLI 0.4.0-beta.1 and earlier.
+
 ```powershell
 powershell -ex AllSigned -c "Invoke-RestMethod 'https://aka.ms/uninstall-azd.ps1' | Invoke-Expression"
 ```

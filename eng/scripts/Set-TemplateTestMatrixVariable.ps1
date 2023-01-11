@@ -115,12 +115,13 @@ foreach ($jobName in $matrix.Keys) {
 # Generated test cases from existing templates
 $upperTestCase = Copy-RandomJob -JobMatrix $matrix
 $upperTestCase.UseUpperCase = 'true'
+$matrix[$upperTestCase.TemplateName.Replace('/', '_') + '-Upper-case-test'] = $upperTestCase
 
-$apimEnabledTestCase = Copy-RandomJob -JobMatrix $matrix
-$apimEnabledTestCase.USE_APIM = 'true'
-
-$matrix[$upperTestCase.TemplateName + '-Upper-case-test'] = $upperTestCase
-$matrix[$apimEnabledTestCase.TemplateName + '-apim-enabled'] = $apimEnabledTestCase
+if ($jobVariables.USE_APIM -ne 'true') { # If USE_APIM is specified, avoid creating a new job
+    $apimEnabledTestCase = Copy-RandomJob -JobMatrix $matrix
+    $apimEnabledTestCase.USE_APIM = 'true'
+    $matrix[$apimEnabledTestCase.TemplateName.Replace('/', '_') + '-apim-enabled'] = $apimEnabledTestCase
+}
 
 Write-Host "Matrix:"
 Write-Host ($matrix | ConvertTo-Json | Out-String)

@@ -3,6 +3,7 @@
 ## ## 0.5.0-beta.1 (2023-01-11)
 
 ### Features Added
+
 - [[#1311]](https://github.com/Azure/azure-dev/pull/1311) Add support to install script with MSI on Windows.
 - [[#1312]](https://github.com/Azure/azure-dev/pull/1312) Allow users to configure service endpoints using `SERVICE_<service>_ENDPOINTS`.
 - [[#1323]](https://github.com/Azure/azure-dev/pull/1323) Add API Management Service support for all templates.
@@ -14,6 +15,7 @@
 - [[#1022]](https://github.com/Azure/azure-dev/pull/1022) `azd` no longer uses the `az` CLI to authenticate with Azure by default. You will need to run `azd login` after upgrading. You may run `azd config set auth.useAzCliAuth true` to restore the old behavior of using `az` for authentication.
 
 ### Bugs Fixed
+
 - [[#1168]](https://github.com/Azure/azure-dev/pull/1168) Fix purge option for command `azd down --force --purge` to purge key vaults and app configurations resources.
 
 If you have existing pipelines that use `azd`, you will need to update your pipelines to use the new `azd` login methods when authenticating against Azure.

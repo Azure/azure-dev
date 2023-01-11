@@ -11,6 +11,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/MakeNowJust/heredoc/v2"
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/repository"
@@ -235,10 +236,17 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		}
 	}
 
+	//nolint:lll
+	azdTrustNotice := "https://learn.microsoft.com/azure/developer/azure-developer-cli/azd-templates#guidelines-for-using-azd-templates"
+
 	return &actions.ActionResult{
 		Message: &actions.ResultMessage{
-			Header:   "New project initialized!",
-			FollowUp: fmt.Sprintf("You can view the template code in your directory: %s", output.WithLinkFormat("%s", wd)),
+			Header: "New project initialized!",
+			FollowUp: heredoc.Docf(`
+			You can view the template code in your directory: %s
+			Learn more about running 3rd party code on our DevHub: %s`,
+				output.WithLinkFormat("%s", wd),
+				output.WithLinkFormat("%s", azdTrustNotice)),
 		},
 	}, nil
 }

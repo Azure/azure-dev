@@ -10,14 +10,14 @@
 - [[#1326]](https://github.com/Azure/azure-dev/pull/1326) Add purge support for API Management Service.
 - [[#1076]](https://github.com/Azure/azure-dev/pull/1076) Refactor the Bicep tool in azd to use the standalone API vs az command wrapper.
 - [[#1087]](https://github.com/Azure/azure-dev/pull/1087) Add NodeJs and Terraform devcontainer.
-- [[#965]](https://github.com/Azure/azure-dev/pull/965) Add Ux style for `azd init`.
+- [[#965]](https://github.com/Azure/azure-dev/pull/965) Add UX style for `azd init`.
 - [[#1100]](https://github.com/Azure/azure-dev/pull/1100) Add Shell completion.
 - [[#1086]](https://github.com/Azure/azure-dev/pull/1086) Add FederatedIdentityCredentials (FICS).
 - [[#1177]](https://github.com/Azure/azure-dev/pull/1177) Add command `azd auth token`.
 - [[#1210]](https://github.com/Azure/azure-dev/pull/1210) Have azd acquire Bicep.
-- [[#1133]](https://github.com/Azure/azure-dev/pull/1133) Add Ux style for `azd provision`.
+- [[#1133]](https://github.com/Azure/azure-dev/pull/1133) Add UX style for `azd provision`.
 - [[#1248]](https://github.com/Azure/azure-dev/pull/1248) Support `redirect port` for `azd login`.
-- [[#1269]](https://github.com/Azure/azure-dev/pull/1269) Add Ux style for `azd deploy`.
+- [[#1269]](https://github.com/Azure/azure-dev/pull/1269) Add UX style for `azd deploy`.
 
 ### Breaking Changes
 
@@ -28,8 +28,8 @@
 ### Bugs Fixed
 
 - [[#1107]](https://github.com/Azure/azure-dev/pull/1107) Fix Bicep path not found.
-- [[#1096]](https://github.com/Azure/azure-dev/pull/1096) Fix java version check for major-only release.
-- [[#1105]](https://github.com/Azure/azure-dev/pull/1105) Fix env new to use positional argument.
+- [[#1096]](https://github.com/Azure/azure-dev/pull/1096) Fix Java version check for major-only release.
+- [[#1105]](https://github.com/Azure/azure-dev/pull/1105) Fix `env new` to use positional argument.
 - [[#1168]](https://github.com/Azure/azure-dev/pull/1168) Fix purge option for command `azd down --force --purge` to purge key vaults and app configurations resources.
 
 If you have existing pipelines that use `azd`, you will need to update your pipelines to use the new `azd` login methods when authenticating against Azure.

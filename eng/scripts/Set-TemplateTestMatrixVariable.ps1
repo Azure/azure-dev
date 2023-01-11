@@ -114,12 +114,12 @@ foreach ($jobName in $matrix.Keys) {
 
 # Generated test cases from existing templates
 $upperTestCase = Copy-RandomJob -JobMatrix $matrix
-$upperTestCase.TestScenario = 'UPPER' # Use UPPER case for env name
+$upperTestCase.TEST_SCENARIO = 'UPPER' # Use UPPER case for env name
 $matrix[$upperTestCase.TemplateName.Replace('/', '_') + '-Upper-case-test'] = $upperTestCase
 
 if ($jobVariables.USE_APIM -ne 'true') { # If USE_APIM is specified, avoid creating a new job
     $apimEnabledTestCase = Copy-RandomJob -JobMatrix $matrix
-    $apimEnabledTestCase.TestScenario = 'apim'
+    $apimEnabledTestCase.TEST_SCENARIO = 'apim'
     $apimEnabledTestCase.USE_APIM = 'true'
     $matrix[$apimEnabledTestCase.TemplateName.Replace('/', '_') + '-apim-enabled'] = $apimEnabledTestCase
 }

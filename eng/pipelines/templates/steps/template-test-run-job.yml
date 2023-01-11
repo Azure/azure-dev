@@ -1,6 +1,6 @@
 # Consumes the following variables from Set-TemplateTestMatrixVariable.ps1:
 # - TemplateName
-# - TestScenario
+# - TEST_SCENARIO
 # and additional variables specified by template-test-generate-jobs.yml
 
 steps:
@@ -19,7 +19,7 @@ steps:
 
 - pwsh: |
     $templateName = '$(TemplateName)'.Substring(14)
-    $scenario = '$(TestScenario)'
+    $scenario = $env:TEST_SCENARIO
     $envPrefixName = "azd-template-test"
     if($scenario -ne '') {
       $envPrefixName += "-$scenario"

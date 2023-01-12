@@ -59,3 +59,4 @@ resource applicationInsights 'Microsoft.Insights/components@2020-02-02' existing
 }
 
 output apimServiceName string = apimService.name
+output apimLoggerName string = apimLogger.name

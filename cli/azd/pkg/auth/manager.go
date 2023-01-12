@@ -38,6 +38,11 @@ const cCurrentUserKey = "auth.account.currentUser"
 // it ourselves. The value should be a string as specified by [strconv.ParseBool].
 const cUseAzCliAuthKey = "auth.useAzCliAuth"
 
+// cDefaultAuthority is the default authority to use when a specific tenant is not presented. We use "organizations" to
+// allow both work/school accounts and personal accounts (this matches the default authority the `az` CLI uses when logging
+// in).
+const cDefaultAuthority = "https://login.microsoftonline.com/organizations"
+
 // The scopes to request when acquiring our token during the login flow or when requesting a token to validate if the client
 // is logged in.
 var cLoginScopes = []string{azure.ManagementScope}
@@ -83,6 +88,7 @@ func NewManager(configManager config.UserConfigManager) (*Manager, error) {
 
 	options := []public.Option{
 		public.WithCache(newCache(cacheRoot)),
+		public.WithAuthority(cDefaultAuthority),
 	}
 
 	publicClientApp, err := public.New(cAZD_CLIENT_ID, options...)
@@ -161,6 +167,9 @@ func (m *Manager) CredentialForCurrentUser(
 
 					newOptions := make([]public.Option, 0, len(m.publicClientOptions)+1)
 					newOptions = append(newOptions, m.publicClientOptions...)
+
+					// It is important that this option comes after the saved public client options since it will
+					// override the default authority.
 					newOptions = append(newOptions, public.WithAuthority(newAuthority))
 
 					clientWithNewTenant, err := public.New(cAZD_CLIENT_ID, newOptions...)

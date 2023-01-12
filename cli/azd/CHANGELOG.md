@@ -1,5 +1,11 @@
 # Release History
 
+## 0.5.0-beta.2 (2023-01-12)
+
+### Bugs Fixed
+
+- [[#1366]](https://github.com/Azure/azure-dev/issues/1366) Login not possible with personal account after upgrade to 0.5.0.
+
 ## 0.5.0-beta.1 (2023-01-11)
 
 ### Features Added

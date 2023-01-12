@@ -33,7 +33,12 @@ func (m *DebugMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 		return next(ctx)
 	}
 
-	debug, err := strconv.ParseBool(os.Getenv("AZD_DEBUG"))
+	debugStr := os.Getenv("AZD_DEBUG")
+	if debugStr == "" {
+		return next(ctx)
+	}
+
+	debug, err := strconv.ParseBool(debugStr)
 	if err != nil {
 		log.Printf("failed converting AZD_DEBUG to boolean: %s", err.Error())
 	}

@@ -124,8 +124,8 @@ func newLoginCmd() *cobra.Command {
 		When run without any arguments, log in interactively using a browser. To log in using a device code, pass
 		--use-device-code.
 
-		To log in as a service principal, pass --client-id and --tenant-id as well as one of --client-secret, 
-		--client-certificate, --client-credential or --client-credential-provider.`),
+		To log in as a service principal, pass --client-id and --tenant-id as well as one of: --client-secret, 
+		--client-certificate, --federated-credential, or --federated-credential-provider.`),
 	}
 
 	return cmd

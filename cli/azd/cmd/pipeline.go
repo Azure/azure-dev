@@ -14,6 +14,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
@@ -133,6 +134,11 @@ func (p *pipelineConfigAction) Run(ctx context.Context) (*actions.ActionResult, 
 	if err != nil {
 		return nil, fmt.Errorf("loading environment: %w", err)
 	}
+
+	// Command title
+	p.console.MessageUxItem(ctx, &ux.MessageTitle{
+		Title: "Configure your azd pipeline",
+	})
 
 	// Detect the SCM and CI providers based on the project directory
 	p.manager.ScmProvider,

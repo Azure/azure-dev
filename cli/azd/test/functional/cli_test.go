@@ -108,6 +108,42 @@ func Test_CLI_Init_CanUseTemplate(t *testing.T) {
 	require.FileExists(t, filepath.Join(dir, "README.md"))
 }
 
+// Test_CLI_Up_CanUseTemplateWithoutExistingProject ensures that you can run `azd up --template <some-template>` in an
+// empty directory and the project will be initialize as expected.
+func Test_CLI_Up_CanUseTemplateWithoutExistingProject(t *testing.T) {
+	// running this test in parallel is ok as it uses a t.TempDir()
+	t.Parallel()
+	ctx, cancel := newTestContext(t)
+	defer cancel()
+
+	dir := tempDirWithDiagnostics(t)
+
+	cli := azdcli.NewCLI(t)
+	cli.WorkingDirectory = dir
+	cli.Env = append(os.Environ(), "AZURE_LOCATION=eastus2")
+
+	// Since we provide a bogus Azure Subscription ID, we expect that this overall command will fail (the provision step of
+	// up will fail).  That's fine - we only care about validating that we were allowed to run `azd up --template` in an
+	// empty directory and that it brings down the template as expected.
+	res, _ := cli.RunCommandWithStdIn(
+		ctx,
+		"TESTENV\n\nOther (enter manually)\nMY_SUB_ID\n",
+		"up",
+		"--template",
+		"cosmos-dotnet-core-todo-app",
+	)
+
+	require.Contains(t, res.Stdout, "Initializing a new project")
+
+	// While `init` uses git behind the scenes to pull a template, we don't want to bring the history over or initialize a
+	// git
+	// repository.
+	require.NoDirExists(t, filepath.Join(dir, ".git"))
+
+	// Ensure the project was initialized from the template by checking that a file from the template is present.
+	require.FileExists(t, filepath.Join(dir, "README.md"))
+}
+
 func Test_CLI_InfraCreateAndDelete(t *testing.T) {
 	// running this test in parallel is ok as it uses a t.TempDir()
 	t.Parallel()
@@ -287,10 +323,11 @@ func Test_CLI_ProjectIsNeeded(t *testing.T) {
 	cli.WorkingDirectory = dir
 
 	tests := []struct {
-		command string
-		args    []string
+		command       string
+		args          []string
+		errorToStdOut bool
 	}{
-		{command: "deploy"},
+		{command: "deploy", errorToStdOut: true},
 		{command: "down"},
 		{command: "env get-values"},
 		{command: "env list"},
@@ -298,15 +335,16 @@ func Test_CLI_ProjectIsNeeded(t *testing.T) {
 		{command: "env refresh"},
 		{command: "env select", args: []string{"testEnvironmentName"}},
 		{command: "env set", args: []string{"testKey", "testValue"}},
-		{command: "infra create"},
+		{command: "infra create", errorToStdOut: true},
 		{command: "infra delete"},
 		{command: "monitor"},
 		{command: "pipeline config"},
-		{command: "provision"},
+		{command: "provision", errorToStdOut: true},
 		{command: "restore"},
 	}
 
-	for _, test := range tests {
+	for _, tt := range tests {
+		test := tt
 		args := []string{"--cwd", dir}
 		args = append(args, strings.Split(test.command, " ")...)
 		if len(test.args) > 0 {
@@ -316,7 +354,11 @@ func Test_CLI_ProjectIsNeeded(t *testing.T) {
 		t.Run(test.command, func(t *testing.T) {
 			result, err := cli.RunCommand(ctx, args...)
 			assert.Error(t, err)
-			assert.Contains(t, result.Stderr, azdcontext.ErrNoProject.Error())
+			if test.errorToStdOut {
+				assert.Contains(t, result.Stdout, azdcontext.ErrNoProject.Error())
+			} else {
+				assert.Contains(t, result.Stderr, azdcontext.ErrNoProject.Error())
+			}
 		})
 	}
 }

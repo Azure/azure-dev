@@ -65,7 +65,6 @@ func newInfraCreateCmd() *cobra.Command {
 type infraCreateAction struct {
 	flags         *infraCreateFlags
 	azCli         azcli.AzCli
-	azdCtx        *azdcontext.AzdContext
 	formatter     output.Formatter
 	writer        io.Writer
 	console       input.Console
@@ -75,7 +74,6 @@ type infraCreateAction struct {
 func newInfraCreateAction(
 	flags *infraCreateFlags,
 	azCli azcli.AzCli,
-	azdCtx *azdcontext.AzdContext,
 	console input.Console,
 	formatter output.Formatter,
 	writer io.Writer,
@@ -84,7 +82,6 @@ func newInfraCreateAction(
 	return &infraCreateAction{
 		flags:         flags,
 		azCli:         azCli,
-		azdCtx:        azdCtx,
 		formatter:     formatter,
 		writer:        writer,
 		console:       console,
@@ -93,18 +90,27 @@ func newInfraCreateAction(
 }
 
 func (i *infraCreateAction) Run(ctx context.Context) (*actions.ActionResult, error) {
+	// We call `NewAzdContext` here instead of having the value injected because we want to delay the
+	// walk for the context until this command has started to execute (for example, in the case of `up`,
+	// the context is not created until the init action actually runs, which is after the infraCreateAction
+	// object is created.
+	azdCtx, err := azdcontext.NewAzdContext()
+	if err != nil {
+		return nil, err
+	}
+
 	// Command title
 	i.console.MessageUxItem(ctx, &ux.MessageTitle{
 		Title:     "Provisioning Azure resources (azd provision)",
 		TitleNote: "Provisioning Azure resources can take some time"},
 	)
 
-	env, err := loadOrInitEnvironment(ctx, &i.flags.environmentName, i.azdCtx, i.console, i.azCli)
+	env, err := loadOrInitEnvironment(ctx, &i.flags.environmentName, azdCtx, i.console, i.azCli)
 	if err != nil {
 		return nil, fmt.Errorf("loading environment: %w", err)
 	}
 
-	prj, err := project.LoadProjectConfig(i.azdCtx.ProjectPath())
+	prj, err := project.LoadProjectConfig(azdCtx.ProjectPath())
 	if err != nil {
 		return nil, fmt.Errorf("loading project: %w", err)
 	}

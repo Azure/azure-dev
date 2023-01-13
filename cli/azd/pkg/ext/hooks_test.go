@@ -70,8 +70,9 @@ func Test_Hooks_Execute(t *testing.T) {
 				return exec.NewRunResult(0, "", ""), nil
 			})
 
-			hooks := NewHooks(mockContext.CommandRunner, mockContext.Console, scripts, cwd, env)
-			err := hooks.RunScripts(*mockContext.Context, HookTypePre, []string{"command"})
+			hooksManager := NewHooksManager(cwd)
+			runner := NewHooksRunner(hooksManager, mockContext.CommandRunner, mockContext.Console, cwd, scripts, env)
+			err := runner.RunHooks(*mockContext.Context, HookTypePre, []string{"command"})
 
 			require.True(t, ranPreHook)
 			require.False(t, ranPostHook)
@@ -95,8 +96,9 @@ func Test_Hooks_Execute(t *testing.T) {
 				return exec.NewRunResult(0, "", ""), nil
 			})
 
-			hooks := NewHooks(mockContext.CommandRunner, mockContext.Console, scripts, cwd, env)
-			err := hooks.RunScripts(*mockContext.Context, HookTypePost, []string{"command"})
+			hooksManager := NewHooksManager(cwd)
+			runner := NewHooksRunner(hooksManager, mockContext.CommandRunner, mockContext.Console, cwd, scripts, env)
+			err := runner.RunHooks(*mockContext.Context, HookTypePre, []string{"command"})
 
 			require.False(t, ranPreHook)
 			require.True(t, ranPostHook)
@@ -120,8 +122,9 @@ func Test_Hooks_Execute(t *testing.T) {
 				return exec.NewRunResult(0, "", ""), nil
 			})
 
-			hooks := NewHooks(mockContext.CommandRunner, mockContext.Console, scripts, cwd, env)
-			err := hooks.RunScripts(*mockContext.Context, HookTypePre, []string{"interactive"})
+			hooksManager := NewHooksManager(cwd)
+			runner := NewHooksRunner(hooksManager, mockContext.CommandRunner, mockContext.Console, cwd, scripts, env)
+			err := runner.RunHooks(*mockContext.Context, HookTypePre, []string{"command"})
 
 			require.False(t, ranPreHook)
 			require.True(t, ranPostHook)
@@ -157,8 +160,9 @@ func Test_Hooks_Execute(t *testing.T) {
 			return exec.NewRunResult(0, "", ""), nil
 		})
 
-		hooks := NewHooks(mockContext.CommandRunner, mockContext.Console, scripts, cwd, env)
-		err := hooks.Invoke(*mockContext.Context, []string{"command"}, func() error {
+		hooksManager := NewHooksManager(cwd)
+		runner := NewHooksRunner(hooksManager, mockContext.CommandRunner, mockContext.Console, cwd, scripts, env)
+		err := runner.Invoke(*mockContext.Context, []string{"command"}, func() error {
 			ranAction = true
 			hookLog = append(hookLog, "action")
 			return nil
@@ -209,9 +213,10 @@ func Test_Hooks_GetScript(t *testing.T) {
 	t.Run("Bash", func(t *testing.T) {
 		scriptConfig := scripts["bash"]
 		mockContext := mocks.NewMockContext(context.Background())
-		hooks := NewHooks(mockContext.CommandRunner, mockContext.Console, scripts, cwd, env)
+		hooksManager := NewHooksManager(cwd)
+		runner := NewHooksRunner(hooksManager, mockContext.CommandRunner, mockContext.Console, cwd, scripts, env)
 
-		script, err := hooks.GetScript(scriptConfig)
+		script, err := runner.GetScript(scriptConfig)
 		require.NotNil(t, script)
 		require.Equal(t, "*bash.bashScript", reflect.TypeOf(script).String())
 		require.Equal(t, ScriptLocationPath, scriptConfig.Location)
@@ -222,9 +227,10 @@ func Test_Hooks_GetScript(t *testing.T) {
 	t.Run("Powershell", func(t *testing.T) {
 		scriptConfig := scripts["pwsh"]
 		mockContext := mocks.NewMockContext(context.Background())
-		hooks := NewHooks(mockContext.CommandRunner, mockContext.Console, scripts, cwd, env)
+		hooksManager := NewHooksManager(cwd)
+		runner := NewHooksRunner(hooksManager, mockContext.CommandRunner, mockContext.Console, cwd, scripts, env)
 
-		script, err := hooks.GetScript(scriptConfig)
+		script, err := runner.GetScript(scriptConfig)
 		require.NotNil(t, script)
 		require.Equal(t, "*powershell.powershellScript", reflect.TypeOf(script).String())
 		require.Equal(t, ScriptLocationPath, scriptConfig.Location)
@@ -238,9 +244,10 @@ func Test_Hooks_GetScript(t *testing.T) {
 
 		scriptConfig := scripts["inline"]
 		mockContext := mocks.NewMockContext(context.Background())
-		hooks := NewHooks(mockContext.CommandRunner, mockContext.Console, scripts, tempDir, env)
+		hooksManager := NewHooksManager(cwd)
+		runner := NewHooksRunner(hooksManager, mockContext.CommandRunner, mockContext.Console, cwd, scripts, env)
 
-		script, err := hooks.GetScript(scriptConfig)
+		script, err := runner.GetScript(scriptConfig)
 		require.NotNil(t, script)
 		require.Equal(t, "*bash.bashScript", reflect.TypeOf(script).String())
 		require.Equal(t, ScriptLocationInline, scriptConfig.Location)
@@ -271,7 +278,8 @@ func Test_GetScript_Validation(t *testing.T) {
 	env := []string{}
 
 	mockContext := mocks.NewMockContext(context.Background())
-	hooks := NewHooks(mockContext.CommandRunner, mockContext.Console, map[string]*ScriptConfig{}, tempDir, env)
+	hooksManager := NewHooksManager(tempDir)
+	runner := NewHooksRunner(hooksManager, mockContext.CommandRunner, mockContext.Console, tempDir, map[string]*ScriptConfig{}, env)
 
 	scriptValidations := []scriptValidationTest{
 		{
@@ -335,7 +343,7 @@ func Test_GetScript_Validation(t *testing.T) {
 
 	for _, test := range scriptValidations {
 		t.Run(test.name, func(t *testing.T) {
-			res, err := hooks.GetScript(test.config)
+			res, err := runner.GetScript(test.config)
 			if test.expectedError != nil {
 				require.Nil(t, res)
 				require.ErrorIs(t, err, test.expectedError)

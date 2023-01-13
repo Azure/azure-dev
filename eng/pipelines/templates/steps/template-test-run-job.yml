@@ -71,7 +71,7 @@ steps:
         --client-secret "$(arm-client-secret)" \
         --tenant-id "$(arm-tenant-id)"
 
-      # install these packages for error of playwright missing libraries 
+      # install these packages for playwright missing libraries error and start run playwright
       sudo add-apt-repository ppa:gstreamer-developers/ppa
       sudo apt-get update
       sudo apt-get install gstreamer1.0*
@@ -87,7 +87,7 @@ steps:
       PLAYWRIGHT_REPORTER='list'
       LOCATION=$(AzureLocation)
       SUBSCRIPTION=$(SubscriptionId)
-      ENV_SUFFIX=$(Build.BuildId)
+      ENV_SUFFIX=$(Build.BuildId)-$(System.JobAttempt)
       TEST_ONLY=false
       CLEANUP=$(SynchronousCleanup)
 

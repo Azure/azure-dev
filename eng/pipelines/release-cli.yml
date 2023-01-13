@@ -686,86 +686,86 @@ stages:
               workingDirectory: cli/installer/
             displayName: Test install script (cmd)
 
-  - stage: PublishCLI
-    dependsOn: Sign
-    condition: >-
-      and(
-        succeeded(),
-        ne(variables['Skip.Release'], 'true'),
-        or(
-          eq('Manual', variables['BuildReasonOverride']),
-          and(
-            eq('', variables['BuildReasonOverride']),
-            eq('Manual', variables['Build.Reason'])
-          )
-        )
-      )
-    jobs:
-      - deployment: Publish_Release
-        condition: >-
-          and(
-            succeeded(),
-            ne('true', variables['Skip.Publish'])
-          )
-        environment: azure-dev
+  # - stage: PublishCLI
+  #   dependsOn: Sign
+  #   condition: >-
+  #     and(
+  #       succeeded(),
+  #       ne(variables['Skip.Release'], 'true'),
+  #       or(
+  #         eq('Manual', variables['BuildReasonOverride']),
+  #         and(
+  #           eq('', variables['BuildReasonOverride']),
+  #           eq('Manual', variables['Build.Reason'])
+  #         )
+  #       )
+  #     )
+  #   jobs:
+      # - deployment: Publish_Release
+      #   condition: >-
+      #     and(
+      #       succeeded(),
+      #       ne('true', variables['Skip.Publish'])
+      #     )
+      #   environment: azure-dev
 
-        pool:
-          name: azsdk-pool-mms-ubuntu-2004-general
-          OSVmImage: MMSUbuntu20.04
+      #   pool:
+      #     name: azsdk-pool-mms-ubuntu-2004-general
+      #     OSVmImage: MMSUbuntu20.04
 
-        strategy:
-          runOnce:
-            deploy:
-              steps:
-                - checkout: self
-                - task: PowerShell@2
-                  inputs:
-                    pwsh: true
-                    targetType: filePath
-                    filePath: eng/scripts/Set-CliVersionVariable.ps1
-                  displayName: Set CLI_VERSION
+      #   strategy:
+      #     runOnce:
+      #       deploy:
+      #         steps:
+      #           - checkout: self
+      #           - task: PowerShell@2
+      #             inputs:
+      #               pwsh: true
+      #               targetType: filePath
+      #               filePath: eng/scripts/Set-CliVersionVariable.ps1
+      #             displayName: Set CLI_VERSION
 
-                - template: /eng/pipelines/templates/steps/publish-cli.yml
-                  parameters:
-                    CreateGitHubRelease: true
-                    PublishUploadLocations: release/$(CLI_VERSION);release/latest
-                    PublishShield: true
-                    DockerImageTags: $(CLI_VERSION);latest
-                    ReleaseSyndicatedDockerContainer: true
-                    PublishUpdatedDocs: true
-                    UploadMsi: true
+      #           - template: /eng/pipelines/templates/steps/publish-cli.yml
+      #             parameters:
+      #               CreateGitHubRelease: true
+      #               PublishUploadLocations: release/$(CLI_VERSION);release/latest
+      #               PublishShield: true
+      #               DockerImageTags: $(CLI_VERSION);latest
+      #               ReleaseSyndicatedDockerContainer: true
+      #               PublishUpdatedDocs: true
+      #               UploadMsi: true
 
-      - deployment: Increment_Version
-        condition: >-
-          and(
-            succeeded(),
-            ne('true', variables['Skip.IncrementVersion'])
-          )
-        dependsOn: Publish_Release
-        environment: azure-dev
+      # - deployment: Increment_Version
+      #   condition: >-
+      #     and(
+      #       succeeded(),
+      #       ne('true', variables['Skip.IncrementVersion'])
+      #     )
+      #   dependsOn: Publish_Release
+      #   environment: azure-dev
 
-        pool:
-          name: azsdk-pool-mms-ubuntu-2004-general
-          OSVmImage: MMSUbuntu20.04
+      #   pool:
+      #     name: azsdk-pool-mms-ubuntu-2004-general
+      #     OSVmImage: MMSUbuntu20.04
 
-        strategy:
-          runOnce:
-            deploy:
-              steps:
-                - checkout: self
+      #   strategy:
+      #     runOnce:
+      #       deploy:
+      #         steps:
+      #           - checkout: self
 
-                - task: PowerShell@2
-                  inputs:
-                    pwsh: true
-                    targetType: filePath
-                    filePath: eng/scripts/Update-CliVersion.ps1
-                  displayName: Increment CLI version
+      #           - task: PowerShell@2
+      #             inputs:
+      #               pwsh: true
+      #               targetType: filePath
+      #               filePath: eng/scripts/Update-CliVersion.ps1
+      #             displayName: Increment CLI version
 
-                - template: /eng/common/pipelines/templates/steps/create-pull-request.yml
-                  parameters:
-                    PRBranchName: cli-version-increment-$(Build.BuildId)
-                    CommitMsg: Increment CLI version after release
-                    PRTitle: Increment CLI version after release
+      #           - template: /eng/common/pipelines/templates/steps/create-pull-request.yml
+      #             parameters:
+      #               PRBranchName: cli-version-increment-$(Build.BuildId)
+      #               CommitMsg: Increment CLI version after release
+      #               PRTitle: Increment CLI version after release
 
   - stage: PublishIntegration
     dependsOn: Sign
@@ -950,7 +950,7 @@ stages:
             env:
               GH_TOKEN: $(azuresdk-github-pat)
 
-  - stage: Publish_Installers
+  - stage: PublishInstallers
     dependsOn: Sign
     condition: >-
       and(
@@ -965,7 +965,7 @@ stages:
         )
       )
     jobs:
-      - deployment: Publish_Installers
+      - deployment: PublishInstallers
         environment: azure-dev
         pool:
           name: azsdk-pool-mms-ubuntu-2004-general

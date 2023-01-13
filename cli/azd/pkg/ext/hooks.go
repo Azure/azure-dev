@@ -2,6 +2,7 @@ package ext
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -23,19 +24,26 @@ import (
 // Generic action function that may return an error
 type InvokeFn func() error
 
-// The type of command hooks. Supported values are 'pre' and 'post'
+// The type of hooks. Supported values are 'pre' and 'post'
 type HookType string
 
 const (
-	// Executes pre-command hooks
+	// Executes pre hooks
 	HookTypePre HookType = "pre"
-	// Execute post-command hooks
+	// Execute post hooks
 	HookTypePost HookType = "post"
 )
 
-// CommandHooks enable support to invoke integration scripts before & after commands
+var (
+	ErrScriptTypeUnknown     error = errors.New("unable to determine script type. Ensure 'Type' parameter is set in configuration options")
+	ErrScriptRequired        error = errors.New("script is required when location is set to 'Inline'")
+	ErrPathRequired          error = errors.New("path is required when location is set to 'Path'")
+	ErrUnsupportedScriptType error = errors.New("script type is not valid. Only '.sh' and '.ps1' are supported")
+)
+
+// Hooks enable support to invoke integration scripts before & after commands
 // Scripts can be invoked at the project or service level or
-type CommandHooks struct {
+type Hooks struct {
 	commandRunner exec.CommandRunner
 	console       input.Console
 	cwd           string
@@ -43,14 +51,15 @@ type CommandHooks struct {
 	envVars       []string
 }
 
-// NewCommandHooks creates a new instance of CommandHooks
-func NewCommandHooks(
+// NewHooks creates a new instance of CommandHooks
+// When `cwd` is empty defaults to current shell working directory
+func NewHooks(
 	commandRunner exec.CommandRunner,
 	console input.Console,
 	scripts map[string]*ScriptConfig,
 	cwd string,
 	envVars []string,
-) *CommandHooks {
+) *Hooks {
 	if cwd == "" {
 		osWd, err := os.Getwd()
 		if err != nil {
@@ -60,7 +69,7 @@ func NewCommandHooks(
 		cwd = osWd
 	}
 
-	return &CommandHooks{
+	return &Hooks{
 		commandRunner: commandRunner,
 		console:       console,
 		cwd:           cwd,
@@ -70,10 +79,10 @@ func NewCommandHooks(
 }
 
 // Invokes an action run runs any registered pre or post script hooks for the specified command.
-func (h *CommandHooks) Invoke(ctx context.Context, commands []string, actionFn InvokeFn) error {
+func (h *Hooks) Invoke(ctx context.Context, commands []string, actionFn InvokeFn) error {
 	err := h.RunScripts(ctx, HookTypePre, commands)
 	if err != nil {
-		return fmt.Errorf("failing running pre command hooks: %w", err)
+		return fmt.Errorf("failed running pre hooks: %w", err)
 	}
 
 	err = actionFn()
@@ -83,14 +92,14 @@ func (h *CommandHooks) Invoke(ctx context.Context, commands []string, actionFn I
 
 	err = h.RunScripts(ctx, HookTypePost, commands)
 	if err != nil {
-		return fmt.Errorf("failing running pre command hooks: %w", err)
+		return fmt.Errorf("failed running post hooks: %w", err)
 	}
 
 	return nil
 }
 
 // Invokes any registered script hooks for the specified hook type and command.
-func (h *CommandHooks) RunScripts(ctx context.Context, hookType HookType, commands []string) error {
+func (h *Hooks) RunScripts(ctx context.Context, hookType HookType, commands []string) error {
 	scripts := h.getScriptsForHook(hookType, commands)
 	for _, scriptConfig := range scripts {
 		err := h.execScript(ctx, scriptConfig)
@@ -104,8 +113,13 @@ func (h *CommandHooks) RunScripts(ctx context.Context, hookType HookType, comman
 
 // Gets the script to execute based on the script configuration values
 // For inline scripts this will also create a temporary script file to execute
-func (h *CommandHooks) GetScript(scriptConfig *ScriptConfig) (tools.Script, error) {
-	if scriptConfig.Location == "" {
+func (h *Hooks) GetScript(scriptConfig *ScriptConfig) (tools.Script, error) {
+	err := h.validateScriptConfig(scriptConfig)
+	if err != nil {
+		return nil, err
+	}
+
+	if scriptConfig.Location == ScriptLocationUnknown {
 		if scriptConfig.Path != "" {
 			scriptConfig.Location = ScriptLocationPath
 		} else if scriptConfig.Script != "" {
@@ -122,13 +136,18 @@ func (h *CommandHooks) GetScript(scriptConfig *ScriptConfig) (tools.Script, erro
 		scriptConfig.Path = tempScript
 	}
 
-	if scriptConfig.Type == "" {
+	if scriptConfig.Type == ScriptTypeUnknown {
 		scriptType, err := inferScriptTypeFromFilePath(scriptConfig.Path)
 		if err != nil {
 			return nil, err
 		}
 
 		scriptConfig.Type = scriptType
+	}
+
+	_, err = os.Stat(scriptConfig.Path)
+	if err != nil {
+		return nil, fmt.Errorf("script at '%s' is invalid, %w", scriptConfig.Path, err)
 	}
 
 	switch scriptConfig.Type {
@@ -144,7 +163,23 @@ func (h *CommandHooks) GetScript(scriptConfig *ScriptConfig) (tools.Script, erro
 	}
 }
 
-func (h *CommandHooks) getScriptsForHook(prefix HookType, commands []string) []*ScriptConfig {
+func (h *Hooks) validateScriptConfig(scriptConfig *ScriptConfig) error {
+	if scriptConfig.Type == ScriptTypeUnknown && scriptConfig.Path == "" {
+		return ErrScriptTypeUnknown
+	}
+
+	if scriptConfig.Location == ScriptLocationInline && scriptConfig.Script == "" {
+		return ErrScriptRequired
+	}
+
+	if scriptConfig.Location == ScriptLocationPath && scriptConfig.Path == "" {
+		return ErrPathRequired
+	}
+
+	return nil
+}
+
+func (h *Hooks) getScriptsForHook(prefix HookType, commands []string) []*ScriptConfig {
 	validHookNames := []string{}
 
 	for _, commandName := range commands {
@@ -170,7 +205,7 @@ func (h *CommandHooks) getScriptsForHook(prefix HookType, commands []string) []*
 
 		if index >= 0 {
 			log.Printf(
-				"Skipping command hook @ '%s'. An explicit hook for '%s' was already defined in azure.yaml.\n",
+				"Skipping hook @ '%s'. An explicit hook for '%s' was already defined in azure.yaml.\n",
 				implicitHook.Path,
 				implicitHook.Name,
 			)
@@ -183,7 +218,7 @@ func (h *CommandHooks) getScriptsForHook(prefix HookType, commands []string) []*
 	return allHooks
 }
 
-func (h *CommandHooks) getExplicitHooks(prefix HookType, validHookNames []string) []*ScriptConfig {
+func (h *Hooks) getExplicitHooks(prefix HookType, validHookNames []string) []*ScriptConfig {
 	matchingScripts := []*ScriptConfig{}
 
 	// Find explicitly configured hooks from azure.yaml
@@ -200,8 +235,8 @@ func (h *CommandHooks) getExplicitHooks(prefix HookType, validHookNames []string
 			// If the script config includes an OS specific configuration use that instead
 			if runtime.GOOS == "windows" && scriptConfig.Windows != nil {
 				scriptConfig = scriptConfig.Windows
-			} else if (runtime.GOOS == "linux" || runtime.GOOS == "darwin") && scriptConfig.Linux != nil {
-				scriptConfig = scriptConfig.Linux
+			} else if (runtime.GOOS == "linux" || runtime.GOOS == "darwin") && scriptConfig.Posix != nil {
+				scriptConfig = scriptConfig.Posix
 			}
 
 			scriptConfig.Name = scriptName
@@ -213,12 +248,18 @@ func (h *CommandHooks) getExplicitHooks(prefix HookType, validHookNames []string
 	return matchingScripts
 }
 
-func (h *CommandHooks) getImplicitHooks(prefix HookType, validHookNames []string) []*ScriptConfig {
+func (h *Hooks) getImplicitHooks(prefix HookType, validHookNames []string) []*ScriptConfig {
 	matchingScripts := []*ScriptConfig{}
 
 	hooksDir := filepath.Join(h.cwd, ".azure", "hooks")
 	files, err := os.ReadDir(hooksDir)
 	if err != nil {
+		// Most common error would be `ErrNotExist`.
+		// Log error for other error conditions (Permissions, etc)
+		if !errors.Is(err, os.ErrNotExist) {
+			log.Printf("failed to read azd hooks directory: %s", err.Error())
+		}
+
 		return matchingScripts
 	}
 
@@ -227,9 +268,10 @@ func (h *CommandHooks) getImplicitHooks(prefix HookType, validHookNames []string
 	for _, file := range files {
 		fileName := file.Name()
 		fileNameWithoutExt := strings.TrimSuffix(fileName, path.Ext(fileName))
+		isDir := file.IsDir()
 
 		index := slices.IndexFunc(validHookNames, func(hookName string) bool {
-			return !file.IsDir() && hookName == fileNameWithoutExt
+			return !isDir && hookName == fileNameWithoutExt
 		})
 
 		if index > -1 {
@@ -260,7 +302,7 @@ func (h *CommandHooks) getImplicitHooks(prefix HookType, validHookNames []string
 	return matchingScripts
 }
 
-func (h *CommandHooks) execScript(ctx context.Context, scriptConfig *ScriptConfig) error {
+func (h *Hooks) execScript(ctx context.Context, scriptConfig *ScriptConfig) error {
 	// Delete any temporary inline scripts after execution
 	defer func() {
 		if scriptConfig.Location == ScriptLocationInline {
@@ -283,7 +325,7 @@ func (h *CommandHooks) execScript(ctx context.Context, scriptConfig *ScriptConfi
 			ctx,
 			output.WithBold(
 				fmt.Sprintf(
-					"Executing %s command hook => %s",
+					"Executing %s hook => %s",
 					output.WithHighLightFormat(scriptConfig.Name),
 					output.WithHighLightFormat(scriptConfig.Path),
 				),
@@ -292,16 +334,16 @@ func (h *CommandHooks) execScript(ctx context.Context, scriptConfig *ScriptConfi
 	}
 
 	log.Printf("Executing script '%s'\n", scriptConfig.Path)
-	_, err = script.Execute(ctx, scriptConfig.Path, scriptInteractive)
+	res, err := script.Execute(ctx, scriptConfig.Path, scriptInteractive)
 	if err != nil {
-		execErr := fmt.Errorf("failed executing script '%s' : %w", scriptConfig.Path, err)
+		execErr := fmt.Errorf("'%s' hook failed with exit code: '%d', Path: '%s'. : %w", scriptConfig.Name, res.ExitCode, scriptConfig.Path, err)
 
 		// If an error occurred log the failure but continue
 		if scriptConfig.ContinueOnError {
 			h.console.Message(ctx, output.WithBold(output.WithWarningFormat("WARNING: %s", execErr.Error())))
 			h.console.Message(
 				ctx,
-				output.WithWarningFormat("'%s' script has been configured to continue on error.", scriptConfig.Name),
+				output.WithWarningFormat("Execution will continue since ContinueOnError has been set to true."),
 			)
 			log.Println(execErr.Error())
 		} else {
@@ -321,8 +363,9 @@ func inferScriptTypeFromFilePath(path string) (ScriptType, error) {
 		return ScriptTypePowershell, nil
 	default:
 		return "", fmt.Errorf(
-			"script with file extension '%s' is not valid. Only '.sh' and '.ps1' are supported",
+			"script with file extension '%s' is not valid. %w.",
 			fileExtension,
+			ErrUnsupportedScriptType,
 		)
 	}
 }
@@ -343,20 +386,20 @@ func createTempScript(scriptConfig *ScriptConfig) (string, error) {
 
 	// Creates .azure/hooks directory if it doesn't already exist
 	// In the future any scripts with names like "predeploy.sh" or similar would
-	// automatically be invoked base on our command hook naming convention
+	// automatically be invoked base on our hook naming convention
 	directory := filepath.Join(".azure", "hooks")
 	_, err := os.Stat(directory)
 	if err != nil {
 		err := os.MkdirAll(directory, osutil.PermissionDirectory)
 		if err != nil {
-			return "", fmt.Errorf("failed creating command hooks directory, %w", err)
+			return "", fmt.Errorf("failed creating hooks directory, %w", err)
 		}
 	}
 
 	// Write the temporary script file to .azure/hooks folder
 	file, err := os.CreateTemp(directory, fmt.Sprintf("%s-*.%s", scriptConfig.Name, ext))
 	if err != nil {
-		return "", fmt.Errorf("failed creating command hook file: %w", err)
+		return "", fmt.Errorf("failed creating hook file: %w", err)
 	}
 
 	defer file.Close()
@@ -367,12 +410,12 @@ func createTempScript(scriptConfig *ScriptConfig) (string, error) {
 	}
 	scriptBuilder.WriteString("\n")
 	scriptBuilder.WriteString("# Auto generated file from Azure Developer CLI\n")
-	scriptBuilder.Write([]byte(scriptConfig.Script))
+	scriptBuilder.WriteString(scriptConfig.Script)
 
 	// Temp generated files are cleaned up automatically after script execution has completed.
 	_, err = file.WriteString(scriptBuilder.String())
 	if err != nil {
-		return "", fmt.Errorf("failed writing command hook file, %w", err)
+		return "", fmt.Errorf("failed writing hook file, %w", err)
 	}
 
 	return file.Name(), nil

@@ -4,10 +4,12 @@ type ScriptType string
 type ScriptLocation string
 
 const (
-	ScriptTypeBash       ScriptType     = "bash"
-	ScriptTypePowershell ScriptType     = "powershell"
-	ScriptLocationInline ScriptLocation = "inline"
-	ScriptLocationPath   ScriptLocation = "path"
+	ScriptTypeBash        ScriptType     = "bash"
+	ScriptTypePowershell  ScriptType     = "powershell"
+	ScriptTypeUnknown     ScriptType     = ""
+	ScriptLocationInline  ScriptLocation = "inline"
+	ScriptLocationPath    ScriptLocation = "path"
+	ScriptLocationUnknown ScriptLocation = ""
 )
 
 type ScriptConfig struct {
@@ -28,5 +30,5 @@ type ScriptConfig struct {
 	// When running on windows use this override config
 	Windows *ScriptConfig `yaml:"windows,omitempty"`
 	// When running on linux/macos use this override config
-	Linux *ScriptConfig `yaml:"linux,omitempty"`
+	Posix *ScriptConfig `yaml:"linux,omitempty"`
 }

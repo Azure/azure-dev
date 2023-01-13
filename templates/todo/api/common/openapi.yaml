@@ -115,6 +115,7 @@ components:
       content:
         application/json:
           schema:
+            type: array
             items:
               $ref: "#/components/schemas/TodoList"
     TodoItem:
@@ -128,6 +129,7 @@ components:
       content:
         application/json:
           schema:
+            type: array
             items:
               $ref: "#/components/schemas/TodoItem"
 

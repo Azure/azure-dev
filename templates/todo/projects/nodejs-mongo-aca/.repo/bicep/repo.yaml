@@ -31,6 +31,11 @@ repo:
         patterns:
           - "**/*.bicep"
 
+      - from: ../../../../../common/infra/shared/gateway/apim
+        to: ./
+        patterns:
+          - apim-api.bicep
+
       # app service modules
       - from: ../../../../../../common/infra/bicep
         to: ../
@@ -77,6 +82,11 @@ repo:
         patterns:
           - "**/main.bicep"
 
+      - from: ../../../../api/common/openapi.yaml
+        to: ../../src/api/openapi.yaml
+        patterns:
+          - "apim-api.bicep"
+
   assets:
     # # Common assets
 
@@ -98,6 +108,12 @@ repo:
 
     - from: ../../../../common/infra/bicep/app/api-container-app.parameters.json
       to: ./infra/app/api.parameters.json
+
+    - from: ../../../../common/infra/bicep/app/apim-api.bicep
+      to: ./infra/app/apim-api.bicep
+
+    - from: ../../../../../common/infra/shared/gateway/apim/apim-api-policy.xml
+      to: ./infra/app/apim-api-policy.xml
 
     - from: ../../../../common/infra/bicep/app/cosmos-mongo-db.bicep
       to: ./infra/app/db.bicep

@@ -10,13 +10,14 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/azure/azure-dev/cli/azd/internal/telemetry"
+	"github.com/azure/azure-dev/cli/azd/internal/telemetry/fields"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
-	"github.com/drone/envsubst"
 	"gopkg.in/yaml.v3"
 )
 
@@ -25,7 +26,7 @@ import (
 // root>/schemas/vN.M/azure.yaml.json).
 type ProjectConfig struct {
 	Name              string                    `yaml:"name"`
-	ResourceGroupName string                    `yaml:"resourceGroup,omitempty"`
+	ResourceGroupName ExpandableString          `yaml:"resourceGroup,omitempty"`
 	Path              string                    `yaml:",omitempty"`
 	Metadata          *ProjectMetadata          `yaml:"metadata,omitempty"`
 	Services          map[string]*ServiceConfig `yaml:",omitempty"`
@@ -211,27 +212,10 @@ func (pc *ProjectConfig) RaiseEvent(ctx context.Context, name Event, args map[st
 }
 
 // ParseProjectConfig will parse a project from a yaml string and return the project configuration
-func ParseProjectConfig(yamlContent string, env *environment.Environment) (*ProjectConfig, error) {
-	log.Printf("Parsing file contents, %s\n", yamlContent)
-	rawFile, err := envsubst.Parse(yamlContent)
-	if err != nil {
-		return nil, fmt.Errorf("parsing environment references in project file: %w", err)
-	}
-
-	file, err := rawFile.Execute(func(name string) string {
-		if val, has := env.Values[name]; has {
-			return val
-		}
-		return os.Getenv(name)
-	})
-
-	if err != nil {
-		return nil, fmt.Errorf("replacing environment references: %w", err)
-	}
-
+func ParseProjectConfig(yamlContent string) (*ProjectConfig, error) {
 	var projectFile ProjectConfig
 
-	if err = yaml.Unmarshal([]byte(file), &projectFile); err != nil {
+	if err := yaml.Unmarshal([]byte(yamlContent), &projectFile); err != nil {
 		return nil, fmt.Errorf(
 			"unable to parse azure.yaml file. Please check the format of the file, "+
 				"and also verify you have the latest version of the CLI: %w",
@@ -286,7 +270,7 @@ func (p *ProjectConfig) Initialize(
 
 // LoadProjectConfig loads the azure.yaml configuring into an viewable structure
 // This does not evaluate any tooling
-func LoadProjectConfig(projectPath string, env *environment.Environment) (*ProjectConfig, error) {
+func LoadProjectConfig(projectPath string) (*ProjectConfig, error) {
 	log.Printf("Reading project from file '%s'\n", projectPath)
 	bytes, err := os.ReadFile(projectPath)
 	if err != nil {
@@ -295,9 +279,13 @@ func LoadProjectConfig(projectPath string, env *environment.Environment) (*Proje
 
 	yaml := string(bytes)
 
-	projectConfig, err := ParseProjectConfig(yaml, env)
+	projectConfig, err := ParseProjectConfig(yaml)
 	if err != nil {
 		return nil, fmt.Errorf("parsing project file: %w", err)
+	}
+
+	if projectConfig.Metadata != nil {
+		telemetry.SetUsageAttributes(fields.StringHashed(fields.TemplateIdKey, projectConfig.Metadata.Template))
 	}
 
 	projectConfig.Path = filepath.Dir(projectPath)

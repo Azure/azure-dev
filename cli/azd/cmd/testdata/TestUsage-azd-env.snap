@@ -3,7 +3,7 @@ Usage:
 
 Available Commands:
   get-values  Get all environment values.
-  list        List environments
+  list        List environments.
   new         Create a new environment.
   refresh     Refresh environment settings by using information from a previous infrastructure provision.
   select      Set the default environment.

@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/azureutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
@@ -22,7 +23,7 @@ type ServiceConfig struct {
 	// The friendly name/key of the project from the azure.yaml file
 	Name string
 	// The name used to override the default azure resource name
-	ResourceName string `yaml:"resourceName"`
+	ResourceName ExpandableString `yaml:"resourceName"`
 	// The relative path to the project folder from the project root
 	RelativePath string `yaml:"project"`
 	// The azure hosting model to use, ex) appservice, function, containerapp
@@ -69,7 +70,7 @@ func (sc *ServiceConfig) GetService(
 		return nil, fmt.Errorf("creating framework service: %w", err)
 	}
 
-	azureResource, err := sc.GetServiceResource(ctx, project.ResourceGroupName, env, azCli)
+	azureResource, err := sc.resolveServiceResource(ctx, project.ResourceGroupName, env, azCli, "provision")
 	if err != nil {
 		return nil, err
 	}
@@ -89,6 +90,7 @@ func (sc *ServiceConfig) GetService(
 	return &Service{
 		Project:        project,
 		Config:         sc,
+		Environment:    env,
 		Framework:      *framework,
 		Target:         *serviceTarget,
 		TargetResource: targetResource,
@@ -232,43 +234,83 @@ const (
 	defaultServiceTag = "azd-service-name"
 )
 
+// resolveServiceResource resolves the service resource during service construction
+func (sc *ServiceConfig) resolveServiceResource(
+	ctx context.Context,
+	resourceGroupName string,
+	env *environment.Environment,
+	azCli azcli.AzCli,
+	rerunCommand string,
+) (azcli.AzCliResource, error) {
+	azureResource, err := sc.GetServiceResource(ctx, resourceGroupName, env, azCli, rerunCommand)
+
+	// If the service target supports delayed provisioning, the resource isn't expected to be found yet.
+	// Return the empty resource
+	var resourceNotFoundError *azureutil.ResourceNotFoundError
+	if err != nil &&
+		errors.As(err, &resourceNotFoundError) &&
+		ServiceTargetKind(sc.Host).SupportsDelayedProvisioning() {
+		return azureResource, nil
+	}
+
+	if err != nil {
+		return azcli.AzCliResource{}, err
+	}
+
+	return azureResource, nil
+}
+
 // GetServiceResources gets the specific azure service resource targeted by the service.
+//
+// rerunCommand specifies the command that users should rerun in case of misconfiguration.
+// This is included in the error message if applicable
 func (sc *ServiceConfig) GetServiceResource(
 	ctx context.Context,
 	resourceGroupName string,
 	env *environment.Environment,
 	azCli azcli.AzCli,
+	rerunCommand string,
 ) (azcli.AzCliResource, error) {
+
+	expandedResourceName, err := sc.ResourceName.Envsubst(env.Getenv)
+	if err != nil {
+		return azcli.AzCliResource{}, fmt.Errorf("expanding name: %w", err)
+	}
+
 	resources, err := sc.GetServiceResources(ctx, resourceGroupName, env, azCli)
 	if err != nil {
 		return azcli.AzCliResource{}, fmt.Errorf("getting service resource: %w", err)
 	}
 
-	if strings.TrimSpace(sc.ResourceName) == "" { // A tag search was performed
+	if expandedResourceName == "" { // A tag search was performed
 		if len(resources) == 0 {
-			return azcli.AzCliResource{}, fmt.Errorf(
+			err := fmt.Errorf(
 				//nolint:lll
-				"unable to find a provisioned resource tagged with '%s: %s'. Ensure the service resource is correctly tagged in your bicep files, and rerun provision",
+				"unable to find a resource tagged with '%s: %s'. Ensure the service resource is correctly tagged in your bicep files, and rerun %s",
 				defaultServiceTag,
 				sc.Name,
+				rerunCommand,
 			)
+			return azcli.AzCliResource{}, azureutil.ResourceNotFound(err)
 		}
 
 		if len(resources) != 1 {
 			return azcli.AzCliResource{}, fmt.Errorf(
 				//nolint:lll
-				"expecting only '1' resource tagged with '%s: %s', but found '%d'. Ensure a unique service resource is correctly tagged in your bicep files, and rerun provision",
+				"expecting only '1' resource tagged with '%s: %s', but found '%d'. Ensure a unique service resource is correctly tagged in your bicep files, and rerun %s",
 				defaultServiceTag,
 				sc.Name,
 				len(resources),
+				rerunCommand,
 			)
 		}
 	} else { // Name based search
 		if len(resources) == 0 {
-			return azcli.AzCliResource{},
-				fmt.Errorf(
-					"unable to find a provisioned resource with name '%s'. Ensure that a previous provision was successful",
-					sc.ResourceName)
+			err := fmt.Errorf(
+				"unable to find a resource with name '%s'. Ensure that resourceName in azure.yaml is valid, and rerun %s",
+				expandedResourceName,
+				rerunCommand)
+			return azcli.AzCliResource{}, azureutil.ResourceNotFound(err)
 		}
 
 		// This can happen if multiple resources with different resource types are given the same name.
@@ -277,7 +319,7 @@ func (sc *ServiceConfig) GetServiceResource(
 				fmt.Errorf(
 					//nolint:lll
 					"expecting only '1' resource named '%s', but found '%d'. Use a unique name for the service resource in the resource group '%s'",
-					sc.ResourceName,
+					expandedResourceName,
 					len(resources),
 					resourceGroupName)
 		}
@@ -298,8 +340,13 @@ func (sc *ServiceConfig) GetServiceResources(
 ) ([]azcli.AzCliResource, error) {
 	filter := fmt.Sprintf("tagName eq '%s' and tagValue eq '%s'", defaultServiceTag, sc.Name)
 
-	if strings.TrimSpace(sc.ResourceName) != "" {
-		filter = fmt.Sprintf("name eq '%s'", sc.ResourceName)
+	subst, err := sc.ResourceName.Envsubst(env.Getenv)
+	if err != nil {
+		return nil, err
+	}
+
+	if strings.TrimSpace(subst) != "" {
+		filter = fmt.Sprintf("name eq '%s'", subst)
 	}
 
 	return azCli.ListResourceGroupResources(

@@ -1,24 +1,52 @@
 package cmd
 
 import (
+	"context"
+
+	"github.com/azure/azure-dev/cli/azd/cmd/actions"
+	"github.com/azure/azure-dev/cli/azd/cmd/middleware"
 	"github.com/azure/azure-dev/cli/azd/internal"
-	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/spf13/cobra"
 )
 
-func downCmdDesign(global *internal.GlobalCommandOptions) (*cobra.Command, *infraDeleteFlags) {
-	cmd := &cobra.Command{
+type downFlags struct {
+	infraDeleteFlags
+}
+
+func newDownFlags(cmd *cobra.Command, infraDeleteFlags *infraDeleteFlags, global *internal.GlobalCommandOptions) *downFlags {
+	flags := &downFlags{}
+	flags.Bind(cmd.Flags(), global)
+
+	return flags
+}
+
+func newDownCmd() *cobra.Command {
+	return &cobra.Command{
 		Use:   "down",
-		Short: "Delete Azure resources for an application.",
+		Short: "Delete Azure resources for an app.",
 	}
+}
 
-	idf := &infraDeleteFlags{}
-	idf.Bind(cmd.Flags(), global)
+type downAction struct {
+	runner      middleware.MiddlewareContext
+	infraDelete infraDeleteAction
+}
 
-	output.AddOutputParam(cmd,
-		[]output.Format{output.JsonFormat, output.NoneFormat},
-		output.NoneFormat,
-	)
+func newDownAction(
+	runner middleware.MiddlewareContext,
+	downFlags *downFlags,
+	infraDelete *infraDeleteAction,
+) actions.Action {
+	// Required to ensure the sub action flags are bound correctly to the actions
+	infraDelete.flags = &downFlags.infraDeleteFlags
 
-	return cmd, idf
+	return &downAction{
+		infraDelete: *infraDelete,
+		runner:      runner,
+	}
+}
+
+func (a *downAction) Run(ctx context.Context) (*actions.ActionResult, error) {
+	runOptions := &middleware.Options{Name: "infradelete"}
+	return a.runner.RunChildAction(ctx, runOptions, &a.infraDelete)
 }

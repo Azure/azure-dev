@@ -15,7 +15,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
-	"github.com/azure/azure-dev/cli/azd/test/mocks/console"
+	"github.com/azure/azure-dev/cli/azd/test/mocks/mockinput"
 	"github.com/stretchr/testify/require"
 )
 
@@ -48,14 +48,14 @@ func TestNewBicepCli(t *testing.T) {
 
 	require.Equal(t, 2, len(mockContext.Console.SpinnerOps()))
 
-	require.Equal(t, console.SpinnerOp{
-		Op:      console.SpinnerOpShow,
+	require.Equal(t, mockinput.SpinnerOp{
+		Op:      mockinput.SpinnerOpShow,
 		Message: "Downloading Bicep",
 		Format:  input.Step,
 	}, mockContext.Console.SpinnerOps()[0])
 
-	require.Equal(t, console.SpinnerOp{
-		Op:      console.SpinnerOpStop,
+	require.Equal(t, mockinput.SpinnerOp{
+		Op:      mockinput.SpinnerOpStop,
 		Message: "Downloading Bicep",
 		Format:  input.StepDone,
 	}, mockContext.Console.SpinnerOps()[1])
@@ -120,14 +120,14 @@ func TestNewBicepCliWillUpgrade(t *testing.T) {
 
 	require.Equal(t, 2, len(mockContext.Console.SpinnerOps()))
 
-	require.Equal(t, console.SpinnerOp{
-		Op:      console.SpinnerOpShow,
+	require.Equal(t, mockinput.SpinnerOp{
+		Op:      mockinput.SpinnerOpShow,
 		Message: "Upgrading Bicep",
 		Format:  input.Step,
 	}, mockContext.Console.SpinnerOps()[0])
 
-	require.Equal(t, console.SpinnerOp{
-		Op:      console.SpinnerOpStop,
+	require.Equal(t, mockinput.SpinnerOp{
+		Op:      mockinput.SpinnerOpStop,
 		Message: "Upgrading Bicep",
 		Format:  input.StepDone,
 	}, mockContext.Console.SpinnerOps()[1])

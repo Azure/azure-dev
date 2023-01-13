@@ -29,10 +29,9 @@ func (ar *ActionResult) ToString(currentIndentation string) (result string) {
 	return result
 }
 
-func (ar *ActionResult) ToJson() (jsonBytes []byte) {
+func (ar *ActionResult) MarshalJSON() ([]byte, error) {
 	if ar.Err != nil {
-		jsonBytes, _ = json.Marshal(output.EventForMessage(ar.Err.Error()))
-		return jsonBytes
+		return json.Marshal(output.EventForMessage(ar.Err.Error()))
 	}
 	result := ""
 	if ar.SuccessMessage != "" {
@@ -41,6 +40,5 @@ func (ar *ActionResult) ToJson() (jsonBytes []byte) {
 	if ar.FollowUp != "" {
 		result += fmt.Sprintf(". FOLLOW UP: %s", ar.FollowUp)
 	}
-	jsonBytes, _ = json.Marshal(output.EventForMessage(result))
-	return jsonBytes
+	return json.Marshal(output.EventForMessage(result))
 }

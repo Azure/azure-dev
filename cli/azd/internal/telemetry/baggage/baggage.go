@@ -78,8 +78,10 @@ func (mb Baggage) Keys() []attribute.Key {
 // Attributes returns a copy of the key-value attributes contained.
 func (mb Baggage) Attributes() []attribute.KeyValue {
 	res := make([]attribute.KeyValue, mb.Len())
+	i := 0
 	for k, v := range mb.m {
-		res = append(res, attribute.KeyValue{Key: k, Value: v})
+		res[i] = attribute.KeyValue{Key: k, Value: v}
+		i++
 	}
 
 	return res

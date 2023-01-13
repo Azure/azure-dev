@@ -98,6 +98,7 @@ type wrapperSpan struct {
 // is called. Therefore, updates to the Span are not allowed after this
 // method has been called.
 func (s *wrapperSpan) End(options ...trace.SpanEndOption) {
+	s.span.SetAttributes(GetGlobalAttributes()...)
 	s.span.End(options...)
 }
 

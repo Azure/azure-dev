@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
@@ -131,6 +132,15 @@ func EphemeralWithValues(name string, values map[string]string) *Environment {
 	return env
 }
 
+// Getenv fetches a key from e.Values, falling back to os.Getenv if it is not present.
+func (e *Environment) Getenv(key string) string {
+	if v, has := e.Values[key]; has {
+		return v
+	}
+
+	return os.Getenv(key)
+}
+
 // If `Root` is set, Save writes the current contents of the environment to
 // the given directory, creating it and any intermediate directories as needed.
 func (e *Environment) Save() error {
@@ -192,4 +202,18 @@ func (e *Environment) SetPrincipalId(principalID string) {
 
 func (e *Environment) GetPrincipalId() string {
 	return e.Values[PrincipalIdEnvVarName]
+}
+
+func normalize(key string) string {
+	return strings.ReplaceAll(strings.ToUpper(key), "-", "_")
+}
+
+// Returns the value of a service-namespaced property in the environment.
+func (e *Environment) GetServiceProperty(serviceName string, propertyName string) string {
+	return e.Values[fmt.Sprintf("SERVICE_%s_%s", normalize(serviceName), propertyName)]
+}
+
+// Sets the value of a service-namespaced property in the environment.
+func (e *Environment) SetServiceProperty(serviceName string, propertyName string, value string) {
+	e.Values[fmt.Sprintf("SERVICE_%s_%s", normalize(serviceName), propertyName)] = value
 }

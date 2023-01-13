@@ -13,7 +13,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
-	"github.com/azure/azure-dev/cli/azd/test/mocks/console"
+	"github.com/azure/azure-dev/cli/azd/test/mocks/mockinput"
 	"github.com/azure/azure-dev/cli/azd/test/ostest"
 	"github.com/stretchr/testify/require"
 )
@@ -87,7 +87,7 @@ func Test_azdo_scm_provider_preConfigureCheck(t *testing.T) {
 		provider := getEmptyAzdoScmProviderTestHarness()
 		t.Setenv(azdo.AzDoEnvironmentOrgName, "testOrg")
 		t.Setenv(azdo.AzDoPatName, testPat)
-		testConsole := console.NewMockConsole()
+		testConsole := mockinput.NewMockConsole()
 		ctx := context.Background()
 
 		// act
@@ -102,7 +102,7 @@ func Test_azdo_scm_provider_preConfigureCheck(t *testing.T) {
 		ostest.Unsetenv(t, azdo.AzDoPatName)
 		ostest.Setenv(t, azdo.AzDoEnvironmentOrgName, "testOrg")
 		provider := getEmptyAzdoScmProviderTestHarness()
-		testConsole := console.NewMockConsole()
+		testConsole := mockinput.NewMockConsole()
 		testPat := "testPAT12345"
 		testConsole.WhenPrompt(func(options input.ConsoleOptions) bool {
 			return options.Message == "Personal Access Token (PAT):"
@@ -123,7 +123,7 @@ func Test_azdo_ci_provider_preConfigureCheck(t *testing.T) {
 	t.Run("success with default options", func(t *testing.T) {
 		ctx := context.Background()
 		provider := getAzdoCiProviderTestHarness()
-		testConsole := console.NewMockConsole()
+		testConsole := mockinput.NewMockConsole()
 		testPat := "testPAT12345"
 		testConsole.WhenPrompt(func(options input.ConsoleOptions) bool {
 			return options.Message == "Personal Access Token (PAT):"
@@ -140,7 +140,7 @@ func Test_azdo_ci_provider_preConfigureCheck(t *testing.T) {
 	t.Run("fails if auth type is set to federated", func(t *testing.T) {
 		ctx := context.Background()
 		provider := getAzdoCiProviderTestHarness()
-		testConsole := console.NewMockConsole()
+		testConsole := mockinput.NewMockConsole()
 
 		pipelineManagerArgs := PipelineManagerArgs{
 			PipelineAuthTypeName: string(AuthTypeFederated),

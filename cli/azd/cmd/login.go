@@ -25,7 +25,6 @@ import (
 type loginFlags struct {
 	onlyCheckStatus        bool
 	useDeviceCode          bool
-	outputFormat           string
 	tenantID               string
 	clientID               string
 	clientSecret           stringPtr
@@ -71,7 +70,10 @@ func (lf *loginFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandO
 	local.BoolVar(
 		&lf.useDeviceCode,
 		"use-device-code",
-		false,
+		// For Codespaces in VSCode Browser, interactive browser login will 404 when attempting to redirect to localhost
+		// (since azd cannot launch a localhost server when running remotely).
+		// Hence, we default to device-code. See https://github.com/Azure/azure-dev/issues/1006
+		os.Getenv("CODESPACES") == "true",
 		"When true, log in by using a device code instead of a browser.",
 	)
 	local.StringVar(&lf.clientID, "client-id", "", "The client id for the service principal to authenticate with.")
@@ -102,17 +104,17 @@ func (lf *loginFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandO
 		0,
 		"Choose the port to be used as part of the redirect URI during interactive login.")
 
-	output.AddOutputFlag(
-		local,
-		&lf.outputFormat,
-		[]output.Format{output.JsonFormat, output.NoneFormat},
-		output.NoneFormat,
-	)
-
 	lf.global = global
 }
 
-func loginCmdDesign(global *internal.GlobalCommandOptions) (*cobra.Command, *loginFlags) {
+func newLoginFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *loginFlags {
+	flags := &loginFlags{}
+	flags.Bind(cmd.Flags(), global)
+
+	return flags
+}
+
+func newLoginCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "login",
 		Short: "Log in to Azure.",
@@ -120,15 +122,13 @@ func loginCmdDesign(global *internal.GlobalCommandOptions) (*cobra.Command, *log
 		Log in to Azure.
 
 		When run without any arguments, log in interactively using a browser. To log in using a device code, pass
-		--device-code.
+		--use-device-code.
 
-		To log in as a service principal, pass --client-id and --tenant-id as well as one of --client-secret, 
-		--client-certificate, --client-credential or --client-credential-provider.`),
+		To log in as a service principal, pass --client-id and --tenant-id as well as one of: --client-secret, 
+		--client-certificate, --federated-credential, or --federated-credential-provider.`),
 	}
 
-	flags := &loginFlags{}
-	flags.Bind(cmd.Flags(), global)
-	return cmd, flags
+	return cmd
 }
 
 type loginAction struct {
@@ -136,16 +136,16 @@ type loginAction struct {
 	writer      io.Writer
 	console     input.Console
 	authManager *auth.Manager
-	flags       loginFlags
+	flags       *loginFlags
 }
 
 func newLoginAction(
 	formatter output.Formatter,
 	writer io.Writer,
 	authManager *auth.Manager,
-	flags loginFlags,
+	flags *loginFlags,
 	console input.Console,
-) *loginAction {
+) actions.Action {
 	return &loginAction{
 		formatter:   formatter,
 		writer:      writer,
@@ -164,7 +164,7 @@ func (la *loginAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 
 	res := contracts.LoginResult{}
 
-	if cred, err := la.authManager.CredentialForCurrentUser(ctx); errors.Is(err, auth.ErrNoCurrentUser) {
+	if cred, err := la.authManager.CredentialForCurrentUser(ctx, nil); errors.Is(err, auth.ErrNoCurrentUser) {
 		res.Status = contracts.LoginStatusUnauthenticated
 	} else if err != nil {
 		return nil, fmt.Errorf("checking auth status: %w", err)

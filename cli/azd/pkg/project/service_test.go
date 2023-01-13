@@ -105,7 +105,7 @@ func TestDeployProgressMessages(t *testing.T) {
 	env := environment.Ephemeral()
 	env.SetSubscriptionId("SUBSCRIPTION_ID")
 
-	projectConfig, _ := ParseProjectConfig(projectYaml, env)
+	projectConfig, _ := ParseProjectConfig(projectYaml)
 	project, _ := projectConfig.GetProject(*mockContext.Context, env, mockContext.Console, azCli, mockContext.CommandRunner)
 	azdContext, _ := azdcontext.NewAzdContext()
 
@@ -115,6 +115,7 @@ func TestDeployProgressMessages(t *testing.T) {
 	service := Service{
 		Project:        project,
 		Config:         project.Config.Services["api"],
+		Environment:    env,
 		Framework:      mockFramework,
 		Target:         mockServiceTarget,
 		TargetResource: mockTarget,

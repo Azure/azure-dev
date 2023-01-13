@@ -33,7 +33,7 @@ func (m *monitorFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommand
 		&m.monitorLive,
 		"live",
 		false,
-		"Open a browser to Application Insights Live Metrics. Live Metrics is currently not supported for Python applications.",
+		"Open a browser to Application Insights Live Metrics. Live Metrics is currently not supported for Python apps.",
 	)
 	local.BoolVar(&m.monitorLogs, "logs", false, "Open a browser to Application Insights Logs.")
 	local.BoolVar(&m.monitorOverview, "overview", false, "Open a browser to Application Insights Overview Dashboard.")
@@ -41,38 +41,44 @@ func (m *monitorFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommand
 	m.global = global
 }
 
-func monitorCmdDesign(global *internal.GlobalCommandOptions) (*cobra.Command, *monitorFlags) {
+func newMonitorFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *monitorFlags {
+	flags := &monitorFlags{}
+	flags.Bind(cmd.Flags(), global)
+
+	return flags
+}
+
+func newMonitorCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "monitor",
-		Short: "Monitor a deployed application.",
-		Long: `Monitor a deployed application.
-		
+		Short: "Monitor a deployed app.",
+		Long: `Monitor a deployed app.
+
 Examples:
 
 	$ azd monitor --overview
 	$ azd monitor -–live
 	$ azd monitor --logs
-		
+
 For more information, go to https://aka.ms/azure-dev/monitor.`,
 	}
-	flags := &monitorFlags{}
-	flags.Bind(cmd.Flags(), global)
-	return cmd, flags
+
+	return cmd
 }
 
 type monitorAction struct {
 	azdCtx  *azdcontext.AzdContext
 	azCli   azcli.AzCli
 	console input.Console
-	flags   monitorFlags
+	flags   *monitorFlags
 }
 
 func newMonitorAction(
 	azdCtx *azdcontext.AzdContext,
 	azCli azcli.AzCli,
 	console input.Console,
-	flags monitorFlags,
-) *monitorAction {
+	flags *monitorFlags,
+) actions.Action {
 	return &monitorAction{
 		azdCtx:  azdCtx,
 		azCli:   azCli,
@@ -82,15 +88,11 @@ func newMonitorAction(
 }
 
 func (m *monitorAction) Run(ctx context.Context) (*actions.ActionResult, error) {
-	if err := ensureProject(m.azdCtx.ProjectPath()); err != nil {
-		return nil, err
-	}
-
 	if !m.flags.monitorLive && !m.flags.monitorLogs && !m.flags.monitorOverview {
 		m.flags.monitorOverview = true
 	}
 
-	env, ctx, err := loadOrInitEnvironment(ctx, &m.flags.environmentName, m.azdCtx, m.console, m.azCli)
+	env, err := loadOrInitEnvironment(ctx, &m.flags.environmentName, m.azdCtx, m.console, m.azCli)
 	if err != nil {
 		return nil, fmt.Errorf("loading environment: %w", err)
 	}

@@ -11,11 +11,18 @@ param location string
 @description('A time to mark on created resource groups, so they can be cleaned up via an automated process.')
 param deleteAfterTime string = dateTimeAdd(utcNow('o'), 'PT1H')
 
-@description('A simple sentinel that can be used to change behavior between PROD and non-PROD')
-param isProd string = 'false'
+@description('Test parameter for int-typed values.')
+param intTagValue int
 
-var tags = { 'azd-env-name': environmentName, DeleteAfter: deleteAfterTime }
-var isProdBool = isProd == 'true' ? true : false
+@description('Test parameter for bool-typed values.')
+param boolTagValue bool
+
+var tags = {
+  'azd-env-name': environmentName
+  DeleteAfter: deleteAfterTime
+  IntTag: string(intTagValue)
+  BoolTag: string(boolTagValue)
+}
 
 resource rg 'Microsoft.Resources/resourceGroups@2021-04-01' = {
   name: 'rg-${environmentName}'
@@ -34,5 +41,18 @@ module resources 'resources.bicep' = {
 
 output AZURE_STORAGE_ACCOUNT_ID string = resources.outputs.AZURE_STORAGE_ACCOUNT_ID
 output AZURE_STORAGE_ACCOUNT_NAME string = resources.outputs.AZURE_STORAGE_ACCOUNT_NAME
-// test support for non string output
-output AZURE_STORAGE_IS_PROD bool = isProdBool
+
+// test cases for all supported types
+output STRING string = 'abc'
+output BOOL bool = true
+output INT int = 1234
+output ARRAY array = [true, 'abc', 1234]
+output ARRAY_INT array = [1,2,3]
+output ARRAY_STRING array = ['elem1', 'elem2', 'elem3']
+output OBJECT object = {
+  foo : 'bar'
+  inner: {
+    foo: 'bar'
+  }
+  array: [true, 'abc', 1234]
+}

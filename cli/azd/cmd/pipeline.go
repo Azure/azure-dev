@@ -14,6 +14,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
@@ -51,40 +52,51 @@ func (pc *pipelineConfigFlags) Bind(local *pflag.FlagSet, global *internal.Globa
 	pc.global = global
 }
 
-func pipelineCmd(global *internal.GlobalCommandOptions) *cobra.Command {
-	cmd := &cobra.Command{
+func pipelineActions(root *actions.ActionDescriptor) *actions.ActionDescriptor {
+	infraCmd := &cobra.Command{
 		Use:   "pipeline",
-		Short: "Manage GitHub Actions pipelines.",
+		Short: "Manage GitHub Actions or Azure Pipelines.",
 		//nolint:lll
-		Long: `Manage GitHub Actions pipelines.
+		Long: `Manage GitHub Actions or Azure Pipelines.
 
-The Azure Developer CLI template includes a GitHub Actions pipeline configuration file (in the *.github/workflows* folder) that deploys your application whenever code is pushed to the main branch.
+The Azure Developer CLI template includes a GitHub Actions and an Azure Pipeline configuration file in the ` + output.WithBackticks(`.github/workflows`) + ` and ` + output.WithBackticks(`.azdo/pipelines`) + ` directories respectively. The configuration file deploys your app whenever code is pushed to the main branch.
 
 For more information, go to https://aka.ms/azure-dev/pipeline.`,
 	}
-	cmd.Flags().BoolP("help", "h", false, fmt.Sprintf("Gets help for %s.", cmd.Name()))
-	cmd.AddCommand(BuildCmd(global, pipelineConfigCmdDesign, initPipelineConfigAction, nil))
-	return cmd
+
+	group := root.Add("pipeline", &actions.ActionDescriptorOptions{
+		Command: infraCmd,
+	})
+
+	group.Add("config", &actions.ActionDescriptorOptions{
+		Command:        newPipelineConfigCmd(),
+		FlagsResolver:  newPipelineConfigFlags,
+		ActionResolver: newPipelineConfigAction,
+	})
+
+	return group
 }
 
-func pipelineConfigCmdDesign(global *internal.GlobalCommandOptions) (*cobra.Command, *pipelineConfigFlags) {
-	cmd := &cobra.Command{
+func newPipelineConfigFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *pipelineConfigFlags {
+	flags := &pipelineConfigFlags{}
+	flags.Bind(cmd.Flags(), global)
+
+	return flags
+}
+
+func newPipelineConfigCmd() *cobra.Command {
+	return &cobra.Command{
 		Use:   "config",
 		Short: "Create and configure your deployment pipeline by using GitHub Actions or Azure Pipelines.",
 		Long: `Create and configure your deployment pipeline by using GitHub Actions or Azure Pipelines.
 
 For more information, go to https://aka.ms/azure-dev/pipeline.`,
 	}
-
-	flags := &pipelineConfigFlags{}
-	flags.Bind(cmd.Flags(), global)
-
-	return cmd, flags
 }
 
 // pipelineConfigAction defines the action for pipeline config command
 type pipelineConfigAction struct {
-	flags         pipelineConfigFlags
+	flags         *pipelineConfigFlags
 	manager       *pipeline.PipelineManager
 	azCli         azcli.AzCli
 	azdCtx        *azdcontext.AzdContext
@@ -98,9 +110,9 @@ func newPipelineConfigAction(
 	credential azcore.TokenCredential,
 	azdCtx *azdcontext.AzdContext,
 	console input.Console,
-	flags pipelineConfigFlags,
+	flags *pipelineConfigFlags,
 	commandRunner exec.CommandRunner,
-) *pipelineConfigAction {
+) actions.Action {
 	pca := &pipelineConfigAction{
 		flags:      flags,
 		azCli:      azCli,
@@ -118,11 +130,7 @@ func newPipelineConfigAction(
 
 // Run implements action interface
 func (p *pipelineConfigAction) Run(ctx context.Context) (*actions.ActionResult, error) {
-	if err := ensureProject(p.azdCtx.ProjectPath()); err != nil {
-		return nil, err
-	}
-
-	env, ctx, err := loadOrInitEnvironment(ctx, &p.flags.environmentName, p.azdCtx, p.console, p.azCli)
+	env, err := loadOrInitEnvironment(ctx, &p.flags.environmentName, p.azdCtx, p.console, p.azCli)
 	if err != nil {
 		return nil, fmt.Errorf("loading environment: %w", err)
 	}

@@ -36,20 +36,22 @@ func (i *infraDeleteFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCom
 	i.global = global
 }
 
-func infraDeleteCmdDesign(global *internal.GlobalCommandOptions) (*cobra.Command, *infraDeleteFlags) {
-	cmd := &cobra.Command{
+func newInfraDeleteFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *infraDeleteFlags {
+	flags := &infraDeleteFlags{}
+	flags.Bind(cmd.Flags(), global)
+
+	return flags
+}
+
+func newInfraDeleteCmd() *cobra.Command {
+	return &cobra.Command{
 		Use:   "delete",
-		Short: "Delete Azure resources for an application.",
+		Short: "Delete Azure resources for an app.",
 	}
-
-	idf := &infraDeleteFlags{}
-	idf.Bind(cmd.Flags(), global)
-
-	return cmd, idf
 }
 
 type infraDeleteAction struct {
-	flags         infraDeleteFlags
+	flags         *infraDeleteFlags
 	azCli         azcli.AzCli
 	azdCtx        *azdcontext.AzdContext
 	console       input.Console
@@ -57,12 +59,12 @@ type infraDeleteAction struct {
 }
 
 func newInfraDeleteAction(
-	flags infraDeleteFlags,
+	flags *infraDeleteFlags,
 	azCli azcli.AzCli,
 	azdCtx *azdcontext.AzdContext,
 	console input.Console,
 	commandRunner exec.CommandRunner,
-) *infraDeleteAction {
+) actions.Action {
 	return &infraDeleteAction{
 		flags:         flags,
 		azCli:         azCli,
@@ -73,16 +75,12 @@ func newInfraDeleteAction(
 }
 
 func (a *infraDeleteAction) Run(ctx context.Context) (*actions.ActionResult, error) {
-	if err := ensureProject(a.azdCtx.ProjectPath()); err != nil {
-		return nil, err
-	}
-
-	env, ctx, err := loadOrInitEnvironment(ctx, &a.flags.environmentName, a.azdCtx, a.console, a.azCli)
+	env, err := loadOrInitEnvironment(ctx, &a.flags.environmentName, a.azdCtx, a.console, a.azCli)
 	if err != nil {
 		return nil, fmt.Errorf("loading environment: %w", err)
 	}
 
-	prj, err := project.LoadProjectConfig(a.azdCtx.ProjectPath(), env)
+	prj, err := project.LoadProjectConfig(a.azdCtx.ProjectPath())
 	if err != nil {
 		return nil, fmt.Errorf("loading project: %w", err)
 	}

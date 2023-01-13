@@ -15,6 +15,10 @@ words:
   - Retryable
   - Canonicalize
   - devcontainers
+languageSettings:
+  - languageId: go
+    ignoreRegExpList:
+      - /mock.*/
 dictionaryDefinitions:
   - name: azdProjectDictionary
     path: ./cspell-azd-dictionary.txt
@@ -30,6 +34,9 @@ overrides:
       - puichan
       - devx
       - azdevcli
+      - azdeveloper
+      - hannahhunter
+      - hhunter
   - filename: pkg/tools/python/python.go
     words:
       - venv
@@ -54,3 +61,8 @@ overrides:
     words:
       - ents
       - unmarshalled
+  - filename: pkg/exec/util_test.go
+    words:
+      - keychain
+      - crusername
+      - azurecr

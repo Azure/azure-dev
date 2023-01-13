@@ -16,6 +16,9 @@
     },
     "appUserPassword": {
       "value": "$(secretOrRandomPassword ${AZURE_KEY_VAULT_NAME} appUserPassword)"
+    },
+    "useAPIM": {
+      "value": "${USE_APIM=false}"
     }
   }
 }

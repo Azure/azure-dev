@@ -994,6 +994,6 @@ stages:
                       --account-key '$(azdev-storage-account-key-test)' `
                       --auth-mode key `
                       -s script-release/ `
-                      -d "azd/standalone/installer" `
+                      -d "azd/standalone/installer-testing" `
                       --overwrite
                   displayName: Upload installer to storage location

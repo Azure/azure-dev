@@ -35,7 +35,9 @@ const (
 )
 
 var (
-	ErrScriptTypeUnknown     error = errors.New("unable to determine script type. Ensure 'Type' parameter is set in configuration options")
+	ErrScriptTypeUnknown error = errors.New(
+		"unable to determine script type. Ensure 'Type' parameter is set in configuration options",
+	)
 	ErrScriptRequired        error = errors.New("script is required when location is set to 'Inline'")
 	ErrPathRequired          error = errors.New("path is required when location is set to 'Path'")
 	ErrUnsupportedScriptType error = errors.New("script type is not valid. Only '.sh' and '.ps1' are supported")
@@ -336,7 +338,13 @@ func (h *Hooks) execScript(ctx context.Context, scriptConfig *ScriptConfig) erro
 	log.Printf("Executing script '%s'\n", scriptConfig.Path)
 	res, err := script.Execute(ctx, scriptConfig.Path, scriptInteractive)
 	if err != nil {
-		execErr := fmt.Errorf("'%s' hook failed with exit code: '%d', Path: '%s'. : %w", scriptConfig.Name, res.ExitCode, scriptConfig.Path, err)
+		execErr := fmt.Errorf(
+			"'%s' hook failed with exit code: '%d', Path: '%s'. : %w",
+			scriptConfig.Name,
+			res.ExitCode,
+			scriptConfig.Path,
+			err,
+		)
 
 		// If an error occurred log the failure but continue
 		if scriptConfig.ContinueOnError {

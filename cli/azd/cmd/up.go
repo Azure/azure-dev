@@ -45,7 +45,7 @@ func newUpFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *upFl
 func newUpCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "up",
-		Short: "Initialize application, provision Azure resources, and deploy your project with a single command.",
+		Short: "Initialize the app, provision Azure resources, and deploy your project with a single command.",
 		//nolint:lll
 		Long: `Initialize the project (if the project folder has not been initialized or cloned from a template), provision Azure resources, and deploy your project with a single command.
 

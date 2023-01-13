@@ -1,14 +1,10 @@
 # Release History
 
-## 0.5.0-beta.3 (Unreleased)
-
-### Features Added
-
-### Breaking Changes
+## 0.5.0-beta.3 (2023-01-13)
 
 ### Bugs Fixed
 
-### Other Changes
+- [[#1392]](https://github.com/Azure/azure-dev/issues/1392) Bug when running azd up with a template.
 
 ## 0.5.0-beta.2 (2023-01-12)
 

@@ -979,19 +979,19 @@ stages:
 
                 - task: DownloadPipelineArtifact@2
                   inputs:
-                    artifact: signed
-                    path: signed
+                    artifact: signed-win
+                    path: signed-win
 
                 - pwsh: |
                     New-Item -ItemType Directory -Path script-release
-                    Copy-Item signed/win/*.ps1 script-release/
+                    Copy-Item signed-win/*.ps1 script-release/
                     Copy-Item cli/installer/*.sh script-release/
                   displayName: Copy scripts for release upload
 
                 - pwsh: |
                     az storage blob upload-batch `
-                      --account-name '$(azdev-storage-account-name)' `
-                      --account-key '$(azdev-storage-account-key)' `
+                      --account-name '$(azdev-storage-account-name-test)' `
+                      --account-key '$(azdev-storage-account-key-test)' `
                       --auth-mode key `
                       -s script-release/ `
                       -d "azd/standalone/installer" `

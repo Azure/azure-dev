@@ -95,6 +95,10 @@ func (h *HooksRunner) RunHooks(ctx context.Context, hookType HookType, commands 
 // Gets the script to execute based on the script configuration values
 // For inline scripts this will also create a temporary script file to execute
 func (h *HooksRunner) GetScript(scriptConfig *ScriptConfig) (tools.Script, error) {
+	if err := scriptConfig.validate(); err != nil {
+		return nil, err
+	}
+
 	switch scriptConfig.Type {
 	case ScriptTypeBash:
 		return bash.NewBashScript(h.commandRunner, h.cwd, h.envVars), nil

@@ -40,11 +40,19 @@ func NewHooksManager(
 	}
 }
 
+// Gets an array of all script configurations
+// Will return an error if any configuration errors are found
 func (h *HooksManager) GetAllScriptConfigs(scripts map[string]*ScriptConfig) ([]*ScriptConfig, error) {
 	return h.filterScriptConfigs(scripts, nil)
 }
 
-func (h *HooksManager) GetScriptConfigsForHook(scripts map[string]*ScriptConfig, prefix HookType, commands ...string) ([]*ScriptConfig, error) {
+// Gets an array of script configurations matching the specified hook type and commands
+// Will return an error if any configuration errors are found
+func (h *HooksManager) GetScriptConfigsForHook(
+	scripts map[string]*ScriptConfig,
+	prefix HookType,
+	commands ...string,
+) ([]*ScriptConfig, error) {
 	validHookNames := []string{}
 
 	for _, commandName := range commands {
@@ -67,7 +75,12 @@ func (h *HooksManager) GetScriptConfigsForHook(scripts map[string]*ScriptConfig,
 	return h.filterScriptConfigs(scripts, predicate)
 }
 
-func (h *HooksManager) filterScriptConfigs(scripts map[string]*ScriptConfig, predicate HookFilterPredicateFn) ([]*ScriptConfig, error) {
+// Filters the specified script configurations based on the predicate
+// Will return an error if any configuration errors are found
+func (h *HooksManager) filterScriptConfigs(
+	scripts map[string]*ScriptConfig,
+	predicate HookFilterPredicateFn,
+) ([]*ScriptConfig, error) {
 	allHooks := []*ScriptConfig{}
 	explicitHooks, err := h.getExplicitHooks(scripts, predicate)
 	if err != nil {
@@ -102,63 +115,10 @@ func (h *HooksManager) filterScriptConfigs(scripts map[string]*ScriptConfig, pre
 	return allHooks, nil
 }
 
-func (h *HooksManager) normalizeScriptConfig(scriptConfig *ScriptConfig) (*ScriptConfig, error) {
-	err := h.validateScriptConfig(scriptConfig)
-	if err != nil {
-		return nil, err
-	}
-
-	if scriptConfig.Location == ScriptLocationUnknown {
-		if scriptConfig.Path != "" {
-			scriptConfig.Location = ScriptLocationPath
-		} else if scriptConfig.Script != "" {
-			scriptConfig.Location = ScriptLocationInline
-		}
-	}
-
-	if scriptConfig.Location == ScriptLocationInline {
-		tempScript, err := createTempScript(scriptConfig)
-		if err != nil {
-			return nil, err
-		}
-
-		scriptConfig.Path = tempScript
-	}
-
-	if scriptConfig.Type == ScriptTypeUnknown {
-		scriptType, err := inferScriptTypeFromFilePath(scriptConfig.Path)
-		if err != nil {
-			return nil, err
-		}
-
-		scriptConfig.Type = scriptType
-	}
-
-	_, err = os.Stat(scriptConfig.Path)
-	if err != nil {
-		return nil, fmt.Errorf("script at '%s' is invalid, %w", scriptConfig.Path, err)
-	}
-
-	return scriptConfig, nil
-}
-
-func (h *HooksManager) validateScriptConfig(scriptConfig *ScriptConfig) error {
-	if scriptConfig.Type == ScriptTypeUnknown && scriptConfig.Path == "" {
-		return ErrScriptTypeUnknown
-	}
-
-	if scriptConfig.Location == ScriptLocationInline && scriptConfig.Script == "" {
-		return ErrScriptRequired
-	}
-
-	if scriptConfig.Location == ScriptLocationPath && scriptConfig.Path == "" {
-		return ErrPathRequired
-	}
-
-	return nil
-}
-
-func (h *HooksManager) getExplicitHooks(scripts map[string]*ScriptConfig, predicate HookFilterPredicateFn) ([]*ScriptConfig, error) {
+func (h *HooksManager) getExplicitHooks(
+	scripts map[string]*ScriptConfig,
+	predicate HookFilterPredicateFn,
+) ([]*ScriptConfig, error) {
 	matchingScripts := []*ScriptConfig{}
 
 	// Find explicitly configured hooks from azure.yaml
@@ -167,7 +127,7 @@ func (h *HooksManager) getExplicitHooks(scripts map[string]*ScriptConfig, predic
 			continue
 		}
 
-		if predicate == nil || !predicate(scriptName, scriptConfig) {
+		if predicate != nil && !predicate(scriptName, scriptConfig) {
 			continue
 		}
 
@@ -181,8 +141,7 @@ func (h *HooksManager) getExplicitHooks(scripts map[string]*ScriptConfig, predic
 		scriptConfig.Name = scriptName
 		scriptConfig.Path = strings.ReplaceAll(scriptConfig.Path, "/", string(os.PathSeparator))
 
-		scriptConfig, err := h.normalizeScriptConfig(scriptConfig)
-		if err != nil {
+		if err := scriptConfig.validate(); err != nil {
 			return nil, fmt.Errorf("hook configuration for '%s' is invalid, %w", scriptName, err)
 		}
 
@@ -230,12 +189,11 @@ func (h *HooksManager) getImplicitHooks(predicate HookFilterPredicateFn) ([]*Scr
 			Path: relativePath,
 		}
 
-		if predicate == nil || !predicate(fileNameWithoutExt, scriptConfig) {
+		if predicate != nil && !predicate(fileNameWithoutExt, scriptConfig) {
 			continue
 		}
 
-		scriptConfig, err = h.normalizeScriptConfig(scriptConfig)
-		if err != nil {
+		if err := scriptConfig.validate(); err != nil {
 			return nil, fmt.Errorf("hook configuration for '%s' is invalid, %w", fileNameWithoutExt, err)
 		}
 

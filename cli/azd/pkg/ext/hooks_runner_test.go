@@ -24,15 +24,6 @@ func Test_Hooks_Execute(t *testing.T) {
 		"b=banana",
 	}
 
-	err := os.Mkdir("scripts", osutil.PermissionDirectory)
-	require.NoError(t, err)
-	err = os.WriteFile("scripts/precommand.sh", []byte("echo 'precommand'"), osutil.PermissionExecutableFile)
-	require.NoError(t, err)
-	err = os.WriteFile("scripts/postcommand.sh", []byte("echo 'postcommand'"), osutil.PermissionExecutableFile)
-	require.NoError(t, err)
-	err = os.WriteFile("scripts/preinteractive.sh", []byte("echo 'preinteractive'"), osutil.PermissionExecutableFile)
-	require.NoError(t, err)
-
 	scripts := map[string]*ScriptConfig{
 		"precommand": {
 			Type:     ScriptTypeBash,
@@ -52,84 +43,84 @@ func Test_Hooks_Execute(t *testing.T) {
 		},
 	}
 
-	t.Run("Execute", func(t *testing.T) {
-		t.Run("PreHook", func(t *testing.T) {
-			ranPreHook := false
-			ranPostHook := false
+	ensureScriptsExist(t, scripts)
 
-			mockContext := mocks.NewMockContext(context.Background())
-			mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
-				return strings.Contains(command, "precommand.sh")
-			}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
-				ranPreHook = true
-				require.Equal(t, "scripts/precommand.sh", args.Args[0])
-				require.Equal(t, cwd, args.Cwd)
-				require.Equal(t, env, args.Env)
-				require.Equal(t, false, args.Interactive)
+	t.Run("PreHook", func(t *testing.T) {
+		ranPreHook := false
+		ranPostHook := false
 
-				return exec.NewRunResult(0, "", ""), nil
-			})
+		mockContext := mocks.NewMockContext(context.Background())
+		mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
+			return strings.Contains(command, "precommand.sh")
+		}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+			ranPreHook = true
+			require.Equal(t, "scripts/precommand.sh", args.Args[0])
+			require.Equal(t, cwd, args.Cwd)
+			require.Equal(t, env, args.Env)
+			require.Equal(t, false, args.Interactive)
 
-			hooksManager := NewHooksManager(cwd)
-			runner := NewHooksRunner(hooksManager, mockContext.CommandRunner, mockContext.Console, cwd, scripts, env)
-			err := runner.RunHooks(*mockContext.Context, HookTypePre, []string{"command"})
-
-			require.True(t, ranPreHook)
-			require.False(t, ranPostHook)
-			require.NoError(t, err)
+			return exec.NewRunResult(0, "", ""), nil
 		})
 
-		t.Run("PostHook", func(t *testing.T) {
-			ranPreHook := false
-			ranPostHook := false
+		hooksManager := NewHooksManager(cwd)
+		runner := NewHooksRunner(hooksManager, mockContext.CommandRunner, mockContext.Console, cwd, scripts, env)
+		err := runner.RunHooks(*mockContext.Context, HookTypePre, []string{"command"})
 
-			mockContext := mocks.NewMockContext(context.Background())
-			mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
-				return strings.Contains(command, "postcommand.sh")
-			}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
-				ranPostHook = true
-				require.Equal(t, "scripts/postcommand.sh", args.Args[0])
-				require.Equal(t, cwd, args.Cwd)
-				require.Equal(t, env, args.Env)
-				require.Equal(t, false, args.Interactive)
+		require.True(t, ranPreHook)
+		require.False(t, ranPostHook)
+		require.NoError(t, err)
+	})
 
-				return exec.NewRunResult(0, "", ""), nil
-			})
+	t.Run("PostHook", func(t *testing.T) {
+		ranPreHook := false
+		ranPostHook := false
 
-			hooksManager := NewHooksManager(cwd)
-			runner := NewHooksRunner(hooksManager, mockContext.CommandRunner, mockContext.Console, cwd, scripts, env)
-			err := runner.RunHooks(*mockContext.Context, HookTypePre, []string{"command"})
+		mockContext := mocks.NewMockContext(context.Background())
+		mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
+			return strings.Contains(command, "postcommand.sh")
+		}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+			ranPostHook = true
+			require.Equal(t, "scripts/postcommand.sh", args.Args[0])
+			require.Equal(t, cwd, args.Cwd)
+			require.Equal(t, env, args.Env)
+			require.Equal(t, false, args.Interactive)
 
-			require.False(t, ranPreHook)
-			require.True(t, ranPostHook)
-			require.NoError(t, err)
+			return exec.NewRunResult(0, "", ""), nil
 		})
 
-		t.Run("Interactive", func(t *testing.T) {
-			ranPreHook := false
-			ranPostHook := false
+		hooksManager := NewHooksManager(cwd)
+		runner := NewHooksRunner(hooksManager, mockContext.CommandRunner, mockContext.Console, cwd, scripts, env)
+		err := runner.RunHooks(*mockContext.Context, HookTypePost, []string{"command"})
 
-			mockContext := mocks.NewMockContext(context.Background())
-			mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
-				return strings.Contains(command, "preinteractive.sh")
-			}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
-				ranPostHook = true
-				require.Equal(t, "scripts/preinteractive.sh", args.Args[0])
-				require.Equal(t, cwd, args.Cwd)
-				require.Equal(t, env, args.Env)
-				require.Equal(t, true, args.Interactive)
+		require.False(t, ranPreHook)
+		require.True(t, ranPostHook)
+		require.NoError(t, err)
+	})
 
-				return exec.NewRunResult(0, "", ""), nil
-			})
+	t.Run("Interactive", func(t *testing.T) {
+		ranPreHook := false
+		ranPostHook := false
 
-			hooksManager := NewHooksManager(cwd)
-			runner := NewHooksRunner(hooksManager, mockContext.CommandRunner, mockContext.Console, cwd, scripts, env)
-			err := runner.RunHooks(*mockContext.Context, HookTypePre, []string{"command"})
+		mockContext := mocks.NewMockContext(context.Background())
+		mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
+			return strings.Contains(command, "preinteractive.sh")
+		}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+			ranPostHook = true
+			require.Equal(t, "scripts/preinteractive.sh", args.Args[0])
+			require.Equal(t, cwd, args.Cwd)
+			require.Equal(t, env, args.Env)
+			require.Equal(t, true, args.Interactive)
 
-			require.False(t, ranPreHook)
-			require.True(t, ranPostHook)
-			require.NoError(t, err)
+			return exec.NewRunResult(0, "", ""), nil
 		})
+
+		hooksManager := NewHooksManager(cwd)
+		runner := NewHooksRunner(hooksManager, mockContext.CommandRunner, mockContext.Console, cwd, scripts, env)
+		err := runner.RunHooks(*mockContext.Context, HookTypePre, []string{"interactive"})
+
+		require.False(t, ranPreHook)
+		require.True(t, ranPostHook)
+		require.NoError(t, err)
 	})
 
 	t.Run("InvokeAction", func(t *testing.T) {
@@ -192,23 +183,20 @@ func Test_Hooks_GetScript(t *testing.T) {
 		"b=banana",
 	}
 
-	err := os.WriteFile("script.sh", []byte("echo 'Hello'"), osutil.PermissionFile)
-	require.NoError(t, err)
-	err = os.WriteFile("script.ps1", []byte("Write-Host \"Hello\""), osutil.PermissionFile)
-	require.NoError(t, err)
-
 	scripts := map[string]*ScriptConfig{
 		"bash": {
-			Path: "script.sh",
+			Path: "scripts/script.sh",
 		},
 		"pwsh": {
-			Path: "script.ps1",
+			Path: "scripts/script.ps1",
 		},
 		"inline": {
 			Type:   ScriptTypeBash,
 			Script: "echo 'hello'",
 		},
 	}
+
+	ensureScriptsExist(t, scripts)
 
 	t.Run("Bash", func(t *testing.T) {
 		scriptConfig := scripts["bash"]
@@ -279,7 +267,14 @@ func Test_GetScript_Validation(t *testing.T) {
 
 	mockContext := mocks.NewMockContext(context.Background())
 	hooksManager := NewHooksManager(tempDir)
-	runner := NewHooksRunner(hooksManager, mockContext.CommandRunner, mockContext.Console, tempDir, map[string]*ScriptConfig{}, env)
+	runner := NewHooksRunner(
+		hooksManager,
+		mockContext.CommandRunner,
+		mockContext.Console,
+		tempDir,
+		map[string]*ScriptConfig{},
+		env,
+	)
 
 	scriptValidations := []scriptValidationTest{
 		{

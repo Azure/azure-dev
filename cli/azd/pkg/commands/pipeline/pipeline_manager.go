@@ -18,6 +18,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
+	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
@@ -131,13 +132,25 @@ func (i *PipelineManager) ensureRemote(
 func (i *PipelineManager) getGitRepoDetails(ctx context.Context) (*gitRepositoryDetails, error) {
 	gitCli := git.NewGitCli(i.commandRunner)
 	repoPath := i.AzdCtx.ProjectDirectory()
+
+	checkGitMessage := "Checking current directory for Git repository"
+	var err error
+	i.console.ShowSpinner(ctx, checkGitMessage, input.Step)
+	defer i.console.StopSpinner(ctx, checkGitMessage+"\n", input.GetStepResultFormat(err))
+
 	for {
 		repoRemoteDetails, err := i.ensureRemote(ctx, repoPath, i.PipelineRemoteName)
 		switch {
 		case errors.Is(err, git.ErrNotRepository):
+			// remove spinner and display warning
+			i.console.StopSpinner(ctx, "", input.StepDone)
+			i.console.MessageUxItem(ctx, &ux.WarningMessage{
+				Description: "No GitHub repository detected.\n",
+			})
+
 			// Offer the user a chance to init a new repository if one does not exist.
 			initRepo, err := i.console.Confirm(ctx, input.ConsoleOptions{
-				Message:      "Initialize a new git repository?",
+				Message:      "Do you want to initialize a new Git repository in this directory?",
 				DefaultValue: true,
 			})
 			if err != nil {
@@ -148,29 +161,18 @@ func (i *PipelineManager) getGitRepoDetails(ctx context.Context) (*gitRepository
 				return nil, errors.New("confirmation declined")
 			}
 
+			initRepoMsg := "Creating Git repository locally."
+			i.console.Message(ctx, "") // we need a new line here
+			i.console.ShowSpinner(ctx, initRepoMsg, input.Step)
 			if err := gitCli.InitRepo(ctx, repoPath); err != nil {
 				return nil, fmt.Errorf("initializing repository: %w", err)
 			}
+			i.console.StopSpinner(ctx, initRepoMsg, input.StepDone)
+			i.console.Message(ctx, "") // any next line should be one line apart from the step finish
 
 			// Recovered from this error, try again
 			continue
 		case errors.Is(err, git.ErrNoSuchRemote):
-			// Offer the user a chance to create the remote if one does not exist.
-			addRemote, err := i.console.Confirm(ctx, input.ConsoleOptions{
-				Message: fmt.Sprintf(
-					"A remote named \"%s\" was not found. Would you like to configure one?",
-					i.PipelineRemoteName,
-				),
-				DefaultValue: true,
-			})
-			if err != nil {
-				return nil, fmt.Errorf("prompting for remote init: %w", err)
-			}
-
-			if !addRemote {
-				return nil, errors.New("confirmation declined")
-			}
-
 			// the scm provider returns the repo url that is used as git remote
 			remoteUrl, err := i.ScmProvider.configureGitRemote(ctx, repoPath, i.PipelineRemoteName, i.console)
 			if err != nil {
@@ -259,6 +261,12 @@ func (manager *PipelineManager) Configure(ctx context.Context) error {
 		manager.PipelineServicePrincipalName = fmt.Sprintf("az-dev-%s", time.Now().UTC().Format("01-02-2006-15-04-05"))
 	}
 
+	// Get git repo details
+	gitRepoInfo, err := manager.getGitRepoDetails(ctx)
+	if err != nil {
+		return fmt.Errorf("ensuring git remote: %w", err)
+	}
+
 	manager.console.Message(
 		ctx,
 		fmt.Sprintf(
@@ -274,12 +282,6 @@ func (manager *PipelineManager) Configure(ctx context.Context) error {
 		manager.PipelineRoleName)
 	if err != nil {
 		return fmt.Errorf("failed to create or update service principal: %w", err)
-	}
-
-	// Get git repo details
-	gitRepoInfo, err := manager.getGitRepoDetails(ctx)
-	if err != nil {
-		return fmt.Errorf("ensuring git remote: %w", err)
 	}
 
 	err = manager.CiProvider.configureConnection(

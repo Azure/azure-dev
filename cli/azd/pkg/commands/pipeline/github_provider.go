@@ -83,7 +83,7 @@ func (p *GitHubScmProvider) configureGitRemote(
 
 	// There are a few ways to configure the remote so offer a choice to the user.
 	idx, err := console.Select(ctx, input.ConsoleOptions{
-		Message: "How would you like to configure your remote?",
+		Message: "How would you like to configure your git remote to GitHub?",
 		Options: []string{
 			"Select an existing GitHub project",
 			"Create a new private GitHub repository",

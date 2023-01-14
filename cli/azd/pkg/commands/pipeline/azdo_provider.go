@@ -232,7 +232,7 @@ func (p *AzdoScmProvider) ensureProjectExists(ctx context.Context, console input
 		return p.repoDetails.projectName, p.repoDetails.projectId, false, nil
 	}
 	idx, err := console.Select(ctx, input.ConsoleOptions{
-		Message: "How would you like to configure your project?",
+		Message: "How would you like to configure your git remote to Azure DevOps?",
 		Options: []string{
 			"Select an existing Azure DevOps project",
 			"Create a new Azure DevOps Project",

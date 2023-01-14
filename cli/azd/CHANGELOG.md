@@ -4,7 +4,7 @@
 
 ### Bugs Fixed
 
-- [[#1394]](https://github.com/Azure/azure-dev/issues/1394) Bug when running azd up with a template.
+- [[#1394]](https://github.com/Azure/azure-dev/pull/1394) Bug when running azd up with a template.
 
 ## 0.5.0-beta.2 (2023-01-12)
 

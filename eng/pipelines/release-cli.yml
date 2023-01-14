@@ -111,6 +111,8 @@ stages:
               version: 6.0.x
 
           - template: /eng/pipelines/templates/steps/az-login.yml
+            parameters:
+              Condition: and(succeeded(), ne(variables['Skip.LiveTest'], 'true'))
 
           - template: /eng/pipelines/templates/steps/azd-login.yml
             parameters:
@@ -950,7 +952,7 @@ stages:
             env:
               GH_TOKEN: $(azuresdk-github-pat)
 
-  - stage: Publish_Installers
+  - stage: PublishInstallers
     dependsOn: Sign
     condition: >-
       and(
@@ -965,7 +967,7 @@ stages:
         )
       )
     jobs:
-      - deployment: Publish_Installers
+      - deployment: PublishInstallers
         environment: azure-dev
         pool:
           name: azsdk-pool-mms-ubuntu-2004-general
@@ -979,12 +981,12 @@ stages:
 
                 - task: DownloadPipelineArtifact@2
                   inputs:
-                    artifact: signed
-                    path: signed
+                    artifact: signed-win
+                    path: signed-win
 
                 - pwsh: |
                     New-Item -ItemType Directory -Path script-release
-                    Copy-Item signed/win/*.ps1 script-release/
+                    Copy-Item signed-win/*.ps1 script-release/
                     Copy-Item cli/installer/*.sh script-release/
                   displayName: Copy scripts for release upload
 

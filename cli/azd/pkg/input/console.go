@@ -152,21 +152,21 @@ func (c *AskerConsole) ShowSpinner(ctx context.Context, title string, format Spi
 		return
 	}
 
-	config := yacspin.Config{
-		Frequency:       200 * time.Millisecond,
-		Writer:          c.writer,
-		Suffix:          " ",
-		SuffixAutoColon: true,
-	}
-
 	// make sure spinner exists
 	if c.spinner == nil {
+		config := yacspin.Config{
+			Frequency:       200 * time.Millisecond,
+			Writer:          c.writer,
+			Suffix:          " ",
+			SuffixAutoColon: true,
+		}
 		c.spinner, _ = yacspin.New(config)
+
+		if os.Getenv("AZD_DEBUG_FORCE_NO_TTY") == "1" {
+			config.TerminalMode = yacspin.ForceNoTTYMode | yacspin.ForceDumbTerminalMode
+		}
 	}
 
-	if os.Getenv("AZD_DEBUG_FORCE_NO_TTY") == "1" {
-		config.TerminalMode = yacspin.ForceNoTTYMode | yacspin.ForceDumbTerminalMode
-	}
 	// If running, pause to apply style changes
 	if c.spinner.Status() == yacspin.SpinnerRunning {
 		_ = c.spinner.Pause()

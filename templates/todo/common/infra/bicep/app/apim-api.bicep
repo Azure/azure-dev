@@ -39,7 +39,7 @@ resource restApi 'Microsoft.ApiManagement/service/apis@2021-12-01-preview' = {
     subscriptionRequired: false
     type: 'http'
     format: 'openapi'
-    serviceUrl: apiAppName
+    serviceUrl: apiBackendUrl
     value: loadTextContent('../../../../api/common/openapi.yaml')
   }
 }

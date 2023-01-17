@@ -59,7 +59,7 @@ func (p *GitHubScmProvider) preConfigureCheck(
 	console input.Console,
 	pipelineManagerArgs PipelineManagerArgs,
 	infraOptions provisioning.Options,
-) error {
+) (bool, error) {
 	return ensureGitHubLogin(ctx, github.NewGitHubCli(p.commandRunner), github.GitHubHostName, console)
 }
 
@@ -328,10 +328,10 @@ func (p *GitHubCiProvider) preConfigureCheck(
 	console input.Console,
 	pipelineManagerArgs PipelineManagerArgs,
 	infraOptions provisioning.Options,
-) error {
-	err := ensureGitHubLogin(ctx, github.NewGitHubCli(p.commandRunner), github.GitHubHostName, console)
+) (bool, error) {
+	updated, err := ensureGitHubLogin(ctx, github.NewGitHubCli(p.commandRunner), github.GitHubHostName, console)
 	if err != nil {
-		return err
+		return updated, err
 	}
 
 	authType := PipelineAuthType(pipelineManagerArgs.PipelineAuthTypeName)
@@ -340,7 +340,7 @@ func (p *GitHubCiProvider) preConfigureCheck(
 	if infraOptions.Provider == provisioning.Terraform {
 		// Throw error if Federated auth is explicitly requested
 		if authType == AuthTypeFederated {
-			return fmt.Errorf(
+			return false, fmt.Errorf(
 				//nolint:lll
 				"Terraform does not support federated authentication. To explicitly use client credentials set the %s flag. %w",
 				output.WithBackticks("--auth-type client-credentials"),
@@ -358,7 +358,7 @@ func (p *GitHubCiProvider) preConfigureCheck(
 		}
 	}
 
-	return nil
+	return updated, nil
 }
 
 // name returns the name of the provider.
@@ -398,7 +398,7 @@ func (p *GitHubCiProvider) ensureAuthorizedForRepoSecrets(
 
 			// Since repository-level secrets only requires `repo` scope, and `gh auth login` always grants `repo` scope,
 			//  we can run `gh auth login`` without needing `gh auth refresh` with additional scopes
-			err = ensureGitHubLogin(ctx, ghCli, github.GitHubHostName, console)
+			_, err = ensureGitHubLogin(ctx, ghCli, github.GitHubHostName, console)
 			if err != nil {
 				return fmt.Errorf("logging in: %w", err)
 			}
@@ -654,14 +654,14 @@ func (p *GitHubCiProvider) configurePipeline(
 
 // ensureGitHubLogin ensures the user is logged into the GitHub CLI. If not, it prompt the user
 // if they would like to log in and if so runs `gh auth login` interactively.
-func ensureGitHubLogin(ctx context.Context, ghCli github.GitHubCli, hostname string, console input.Console) error {
+func ensureGitHubLogin(ctx context.Context, ghCli github.GitHubCli, hostname string, console input.Console) (bool, error) {
 	authResult, err := ghCli.GetAuthStatus(ctx, hostname)
 	if err != nil {
-		return err
+		return false, err
 	}
 
 	if authResult.LoggedIn {
-		return nil
+		return false, nil
 	}
 
 	for {
@@ -671,15 +671,15 @@ func ensureGitHubLogin(ctx context.Context, ghCli github.GitHubCli, hostname str
 			DefaultValue: true,
 		})
 		if err != nil {
-			return fmt.Errorf("prompting to log in to github: %w", err)
+			return false, fmt.Errorf("prompting to log in to github: %w", err)
 		}
 
 		if !accept {
-			return errors.New("interactive GitHub login declined; use `gh auth login` to log into GitHub")
+			return false, errors.New("interactive GitHub login declined; use `gh auth login` to log into GitHub")
 		}
 
 		if err := ghCli.Login(ctx, hostname); err == nil {
-			return nil
+			return true, nil
 		}
 
 		fmt.Fprintln(console.Handles().Stdout, "There was an issue logging into GitHub.")

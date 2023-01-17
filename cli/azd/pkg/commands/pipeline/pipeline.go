@@ -30,12 +30,14 @@ type subareaProvider interface {
 	// preConfigureCheck validates that the provider's state is ready to be used.
 	// a provider would typically use this method for checking if tools are logged in
 	// of checking if all expected input data is found.
+	// The returned configurationWasUpdated indicates if the current settings were updated during the check,
+	// for example, if Azdo prompt for a PAT or OrgName to the user and updated.
 	preConfigureCheck(
 		ctx context.Context,
 		console input.Console,
 		pipelineManagerArgs PipelineManagerArgs,
 		infraOptions provisioning.Options,
-	) error
+	) (bool, error)
 	// name returns the name of the provider
 	name() string
 }

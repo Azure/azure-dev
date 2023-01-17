@@ -13,10 +13,15 @@ import (
 
 type WarningMessage struct {
 	Description string `json:"Description"`
+	HidePrefix  bool
 }
 
 func (t *WarningMessage) ToString(currentIndentation string) string {
-	return output.WithWarningFormat("Warning: %s", t.Description)
+	var prefix string
+	if !t.HidePrefix {
+		prefix = "Warning: "
+	}
+	return output.WithWarningFormat("%s%s%s", currentIndentation, prefix, t.Description)
 }
 
 func (t *WarningMessage) MarshalJSON() ([]byte, error) {

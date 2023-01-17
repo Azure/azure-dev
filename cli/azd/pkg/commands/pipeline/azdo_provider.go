@@ -65,14 +65,14 @@ func (p *AzdoScmProvider) preConfigureCheck(
 	console input.Console,
 	pipelineManagerArgs PipelineManagerArgs,
 	infraOptions provisioning.Options,
-) error {
-	_, err := azdo.EnsurePatExists(ctx, p.Env, console)
+) (bool, error) {
+	_, updatedPat, err := azdo.EnsurePatExists(ctx, p.Env, console)
 	if err != nil {
-		return err
+		return updatedPat, err
 	}
 
-	_, err = azdo.EnsureOrgNameExists(ctx, p.Env, console)
-	return err
+	_, updatedOrg, err := azdo.EnsureOrgNameExists(ctx, p.Env, console)
+	return (updatedPat || updatedOrg), err
 }
 
 // helper function to save configuration values to .env file
@@ -205,7 +205,7 @@ func (p *AzdoScmProvider) getAzdoConnection(ctx context.Context) (*azuredevops.C
 		return p.azdoConnection, nil
 	}
 
-	org, err := azdo.EnsureOrgNameExists(ctx, p.Env, p.console)
+	org, _, err := azdo.EnsureOrgNameExists(ctx, p.Env, p.console)
 	if err != nil {
 		return nil, err
 	}
@@ -213,7 +213,7 @@ func (p *AzdoScmProvider) getAzdoConnection(ctx context.Context) (*azuredevops.C
 	repoDetails := p.getRepoDetails()
 	repoDetails.orgName = org
 
-	pat, err := azdo.EnsurePatExists(ctx, p.Env, p.console)
+	pat, _, err := azdo.EnsurePatExists(ctx, p.Env, p.console)
 	if err != nil {
 		return nil, err
 	}
@@ -585,11 +585,11 @@ func (p *AzdoCiProvider) preConfigureCheck(
 	console input.Console,
 	pipelineManagerArgs PipelineManagerArgs,
 	infraOptions provisioning.Options,
-) error {
+) (bool, error) {
 	authType := PipelineAuthType(pipelineManagerArgs.PipelineAuthTypeName)
 
 	if authType == AuthTypeFederated {
-		return fmt.Errorf(
+		return false, fmt.Errorf(
 			//nolint:lll
 			"Azure DevOps does not support federated authentication. To explicitly use client credentials set the %s flag. %w",
 			output.WithBackticks("--auth-type client-credentials"),
@@ -597,13 +597,13 @@ func (p *AzdoCiProvider) preConfigureCheck(
 		)
 	}
 
-	_, err := azdo.EnsurePatExists(ctx, p.Env, console)
+	_, updatedPat, err := azdo.EnsurePatExists(ctx, p.Env, console)
 	if err != nil {
-		return err
+		return updatedPat, err
 	}
 
-	_, err = azdo.EnsureOrgNameExists(ctx, p.Env, console)
-	return err
+	_, updatedOrg, err := azdo.EnsureOrgNameExists(ctx, p.Env, console)
+	return (updatedPat || updatedOrg), err
 }
 
 // name returns the name of the provider.
@@ -631,11 +631,11 @@ func (p *AzdoCiProvider) configureConnection(
 
 	p.credentials = azureCredentials
 	details := repoDetails.details.(*AzdoRepositoryDetails)
-	org, err := azdo.EnsureOrgNameExists(ctx, p.Env, console)
+	org, _, err := azdo.EnsureOrgNameExists(ctx, p.Env, console)
 	if err != nil {
 		return err
 	}
-	pat, err := azdo.EnsurePatExists(ctx, p.Env, console)
+	pat, _, err := azdo.EnsurePatExists(ctx, p.Env, console)
 	if err != nil {
 		return err
 	}
@@ -667,11 +667,11 @@ func (p *AzdoCiProvider) configurePipeline(
 ) error {
 	details := repoDetails.details.(*AzdoRepositoryDetails)
 
-	org, err := azdo.EnsureOrgNameExists(ctx, p.Env, p.console)
+	org, _, err := azdo.EnsureOrgNameExists(ctx, p.Env, p.console)
 	if err != nil {
 		return err
 	}
-	pat, err := azdo.EnsurePatExists(ctx, p.Env, p.console)
+	pat, _, err := azdo.EnsurePatExists(ctx, p.Env, p.console)
 	if err != nil {
 		return err
 	}

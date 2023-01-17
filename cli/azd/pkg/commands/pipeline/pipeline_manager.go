@@ -84,27 +84,37 @@ func (i *PipelineManager) requiredTools(ctx context.Context) []tools.ExternalToo
 }
 
 // preConfigureCheck invoke the validations from each provider.
-func (i *PipelineManager) preConfigureCheck(ctx context.Context, infraOptions provisioning.Options) error {
+// the returned configurationWasUpdated indicates if the current settings were updated during the check,
+// for example, if Azdo prompt for a PAT or OrgName to the user and updated.
+func (i *PipelineManager) preConfigureCheck(ctx context.Context, infraOptions provisioning.Options) (
+	configurationWasUpdated bool,
+	err error) {
 	// Validate the authentication types
 	// auth-type argument must either be an empty string or one of the following values.
 	validAuthTypes := []string{string(AuthTypeFederated), string(AuthTypeClientCredentials)}
 	pipelineAuthType := strings.TrimSpace(i.PipelineManagerArgs.PipelineAuthTypeName)
 	if pipelineAuthType != "" && !slices.Contains(validAuthTypes, pipelineAuthType) {
-		return fmt.Errorf(
+		return configurationWasUpdated, fmt.Errorf(
 			"pipeline authentication type '%s' is not valid. Valid authentication types are '%s'",
 			i.PipelineManagerArgs.PipelineAuthTypeName,
 			strings.Join(validAuthTypes, ", "),
 		)
 	}
 
-	if err := i.CiProvider.preConfigureCheck(ctx, i.console, i.PipelineManagerArgs, infraOptions); err != nil {
-		return fmt.Errorf("pre-config check error from %s provider: %w", i.CiProvider.name(), err)
-	}
-	if err := i.ScmProvider.preConfigureCheck(ctx, i.console, i.PipelineManagerArgs, infraOptions); err != nil {
-		return fmt.Errorf("pre-config check error from %s provider: %w", i.ScmProvider.name(), err)
+	ciConfigurationWasUpdated, err := i.CiProvider.preConfigureCheck(
+		ctx, i.console, i.PipelineManagerArgs, infraOptions)
+	if err != nil {
+		return configurationWasUpdated, fmt.Errorf("pre-config check error from %s provider: %w", i.CiProvider.name(), err)
 	}
 
-	return nil
+	scmConfigurationWasUpdated, err := i.ScmProvider.preConfigureCheck(
+		ctx, i.console, i.PipelineManagerArgs, infraOptions)
+	if err != nil {
+		return configurationWasUpdated, fmt.Errorf("pre-config check error from %s provider: %w", i.ScmProvider.name(), err)
+	}
+
+	configurationWasUpdated = ciConfigurationWasUpdated || scmConfigurationWasUpdated
+	return configurationWasUpdated, nil
 }
 
 // ensureRemote get the git project details from a path and remote name using the scm provider.
@@ -143,9 +153,10 @@ func (i *PipelineManager) getGitRepoDetails(ctx context.Context) (*gitRepository
 		switch {
 		case errors.Is(err, git.ErrNotRepository):
 			// remove spinner and display warning
-			i.console.StopSpinner(ctx, "", input.StepDone)
+			i.console.StopSpinner(ctx, checkGitMessage, input.StepWarning)
 			i.console.MessageUxItem(ctx, &ux.WarningMessage{
 				Description: "No GitHub repository detected.\n",
+				HidePrefix:  true,
 			})
 
 			// Offer the user a chance to init a new repository if one does not exist.
@@ -250,8 +261,18 @@ func (manager *PipelineManager) Configure(ctx context.Context) error {
 
 	// run pre-config validations. manager will check az cli is logged in and
 	// will invoke the per-provider validations.
-	if errorsFromPreConfig := manager.preConfigureCheck(ctx, prj.Infra); errorsFromPreConfig != nil {
+	updatedConfig, errorsFromPreConfig := manager.preConfigureCheck(ctx, prj.Infra)
+	if errorsFromPreConfig != nil {
 		return errorsFromPreConfig
+	}
+	if updatedConfig {
+		manager.console.Message(ctx, "")
+	}
+
+	// Get git repo details
+	gitRepoInfo, err := manager.getGitRepoDetails(ctx)
+	if err != nil {
+		return fmt.Errorf("ensuring git remote: %w", err)
 	}
 
 	// *********** Create or update Azure Principal ***********
@@ -259,12 +280,6 @@ func (manager *PipelineManager) Configure(ctx context.Context) error {
 		// This format matches what the `az` cli uses when a name is not provided, with the prefix
 		// changed from "az-cli" to "az-dev"
 		manager.PipelineServicePrincipalName = fmt.Sprintf("az-dev-%s", time.Now().UTC().Format("01-02-2006-15-04-05"))
-	}
-
-	// Get git repo details
-	gitRepoInfo, err := manager.getGitRepoDetails(ctx)
-	if err != nil {
-		return fmt.Errorf("ensuring git remote: %w", err)
 	}
 
 	manager.console.Message(

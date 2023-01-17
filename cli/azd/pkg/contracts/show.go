@@ -13,8 +13,15 @@ const (
 
 // ShowResult is the contract for the output of `azd show`
 type ShowResult struct {
-	Name     string                 `json:"name"`
-	Services map[string]ShowService `json:"services"`
+	Name            string                 `json:"name"`
+	EnvironmentName string                 `json:"environmentName"`
+	Services        map[string]ShowService `json:"services"`
+	Resources       []ShowResource         `json:"resources"`
+}
+
+type ShowResource struct {
+	Id   string `json:"id"`
+	Type string `json:"type"`
 }
 
 // ShowService is the contract for a service returned by `azd show`

@@ -88,8 +88,9 @@ func (s *showAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	}
 
 	res := contracts.ShowResult{
-		Name:     prj.Name,
-		Services: make(map[string]contracts.ShowService, len(prj.Services)),
+		Name:            prj.Name,
+		EnvironmentName: env.GetEnvName(),
+		Services:        make(map[string]contracts.ShowService, len(prj.Services)),
 	}
 
 	for name, svc := range prj.Services {
@@ -134,6 +135,27 @@ func (s *showAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 			env.GetEnvName(),
 			err)
 	}
+
+	resourceGroups, err := resourceManager.GetResourceGroupsForEnvironment(ctx, env)
+	if err != nil {
+		return nil, fmt.Errorf("discovering resource groups from deployment: %w", err)
+	}
+
+	var resourceIds []contracts.ShowResource
+
+	for _, resourceGroup := range resourceGroups {
+		resourceIds = append(resourceIds, contracts.ShowResource{Type: resourceGroup.Type, Id: resourceGroup.Id})
+		resources, err := s.azCli.ListResourceGroupResources(ctx, env.GetSubscriptionId(), resourceGroup.Name, nil)
+		if err != nil {
+			return nil, fmt.Errorf("listing resources: %w", err)
+		}
+
+		for _, resource := range resources {
+			resourceIds = append(resourceIds, contracts.ShowResource{Type: resource.Type, Id: resource.Id})
+		}
+	}
+
+	res.Resources = resourceIds
 
 	return nil, s.formatter.Format(res, s.writer, nil)
 }

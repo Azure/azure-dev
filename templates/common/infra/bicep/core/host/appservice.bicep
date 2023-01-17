@@ -32,6 +32,7 @@ param minimumElasticInstanceCount int = -1
 param numberOfWorkers int = -1
 param scmDoBuildDuringDeployment bool = false
 param use32BitWorkerProcess bool = false
+param ftpsState string = 'FtpsOnly'
 
 resource appService 'Microsoft.Web/sites@2022-03-01' = {
   name: name
@@ -43,7 +44,7 @@ resource appService 'Microsoft.Web/sites@2022-03-01' = {
     siteConfig: {
       linuxFxVersion: linuxFxVersion
       alwaysOn: alwaysOn
-      ftpsState: 'FtpsOnly'
+      ftpsState: ftpsState
       appCommandLine: appCommandLine
       numberOfWorkers: numberOfWorkers != -1 ? numberOfWorkers : null
       minimumElasticInstanceCount: minimumElasticInstanceCount != -1 ? minimumElasticInstanceCount : null

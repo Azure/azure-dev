@@ -96,6 +96,7 @@ ignoreWords:
     - pipefail
     - PLACEHOLDERIACTOOLS
     - postcommand
+    - postinit
     - precommand
     - predeploy
     - preinteractive

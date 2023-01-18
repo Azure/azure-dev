@@ -778,12 +778,11 @@ stages:
                 # TODO: Remove the above section before merge
                 # ==============================================================
 
-
-                - template: /eng/pipelines/templates/steps/set-git-credentials.yml
-
                 - pwsh: git clone https://github.com/Azure/homebrew-azd
+                  displayName: Clone Azure/homebrew-azd
 
                 - task: PowerShell@2
+                  displayName: Update brew formula
                   inputs:
                     targetType: filePath
                     filePath: eng/scripts/Update-HomebrewFormula.ps1
@@ -800,6 +799,10 @@ stages:
                     CommitMsg: Update formula for azd release $(CLI_VERSION)
                     TargetRepoName: homebrew-azd
                     WorkingDirectory: homebrew-azd
+
+                # TODO: Add to end of publish-cli.yml
+                - publish: release
+                  artifact: release
 
       - deployment: Increment_Version
         condition: >-

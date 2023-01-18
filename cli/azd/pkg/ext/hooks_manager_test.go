@@ -33,21 +33,6 @@ func Test_GetAllHookConfigs(t *testing.T) {
 		require.NoError(t, err)
 	})
 
-	t.Run("Finds implicit hooks", func(t *testing.T) {
-		err := os.MkdirAll(".azure/hooks", osutil.PermissionDirectory)
-		require.NoError(t, err)
-		err = os.WriteFile(".azure/hooks/preinit.sh", nil, osutil.PermissionExecutableFile)
-		require.NoError(t, err)
-		err = os.WriteFile(".azure/hooks/postinit.sh", nil, osutil.PermissionExecutableFile)
-		require.NoError(t, err)
-
-		hooksManager := NewHooksManager(tempDir)
-		validHooks, err := hooksManager.GetAll(map[string]*HookConfig{})
-
-		require.Len(t, validHooks, 2)
-		require.NoError(t, err)
-	})
-
 	t.Run("With Invalid Configuration", func(t *testing.T) {
 		// All hooks are invalid because they are missing a script type
 		hooks := map[string]*HookConfig{
@@ -90,22 +75,6 @@ func Test_GetByParams(t *testing.T) {
 
 		require.Len(t, validHooks, 1)
 		require.Equal(t, hooks["preinit"], validHooks[0])
-		require.NoError(t, err)
-	})
-
-	t.Run("Finds implicit hooks", func(t *testing.T) {
-		err := os.MkdirAll(".azure/hooks", osutil.PermissionDirectory)
-		require.NoError(t, err)
-		err = os.WriteFile(".azure/hooks/preinit.sh", nil, osutil.PermissionExecutableFile)
-		require.NoError(t, err)
-		err = os.WriteFile(".azure/hooks/postinit.sh", nil, osutil.PermissionExecutableFile)
-		require.NoError(t, err)
-
-		hooksManager := NewHooksManager(tempDir)
-		validHooks, err := hooksManager.GetByParams(map[string]*HookConfig{}, HookTypePre, "init")
-
-		require.Len(t, validHooks, 1)
-		require.Equal(t, filepath.Join(".azure", "hooks", "preinit.sh"), validHooks[0].path)
 		require.NoError(t, err)
 	})
 

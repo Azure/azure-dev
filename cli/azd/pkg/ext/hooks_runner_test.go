@@ -2,7 +2,6 @@ package ext
 
 import (
 	"context"
-	"fmt"
 	"os"
 	"reflect"
 	"strings"
@@ -263,7 +262,7 @@ func Test_Hooks_GetScript(t *testing.T) {
 		require.Equal(t, "*bash.bashScript", reflect.TypeOf(script).String())
 		require.Equal(t, ScriptLocationInline, hookConfig.location)
 		require.Equal(t, ShellTypeBash, hookConfig.Shell)
-		require.Contains(t, hookConfig.path, fmt.Sprintf(".azure%chooks", os.PathSeparator))
+		require.Contains(t, hookConfig.path, os.TempDir())
 		require.Contains(t, hookConfig.path, ".sh")
 		require.NoError(t, err)
 

@@ -6,16 +6,14 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-
-	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 )
 
 type ShellType string
 type ScriptLocation string
 
 const (
-	ShellTypeBash         ShellType      = "bash"
-	ShellTypePowershell   ShellType      = "powershell"
+	ShellTypeBash         ShellType      = "sh"
+	ShellTypePowershell   ShellType      = "pwsh"
 	ScriptTypeUnknown     ShellType      = ""
 	ScriptLocationInline  ScriptLocation = "inline"
 	ScriptLocationPath    ScriptLocation = "path"
@@ -28,7 +26,7 @@ const (
 
 var (
 	ErrScriptTypeUnknown error = errors.New(
-		"unable to determine script type. Ensure 'Type' parameter is set in configuration options",
+		"unable to determine script type. Ensure 'Shell' parameter is set in configuration options",
 	)
 	ErrRunRequired           error = errors.New("run is always required")
 	ErrUnsupportedScriptType error = errors.New("script type is not valid. Only '.sh' and '.ps1' are supported")
@@ -160,16 +158,9 @@ func createTempScript(hookConfig *HookConfig) (string, error) {
 		ext = "ps1"
 	}
 
-	// Creates .azure/hooks directory if it doesn't already exist
-	// In the future any scripts with names like "predeploy.sh" or similar would
-	// automatically be invoked base on our hook naming convention
-	directory := filepath.Join(".azure", "hooks")
-	_, err := os.Stat(directory)
+	directory, err := os.MkdirTemp(os.TempDir(), "azd-*")
 	if err != nil {
-		err := os.MkdirAll(directory, osutil.PermissionDirectory)
-		if err != nil {
-			return "", fmt.Errorf("failed creating hooks directory, %w", err)
-		}
+		return "", fmt.Errorf("failed creating temp directory, %w", err)
 	}
 
 	// Write the temporary script file to .azure/hooks folder

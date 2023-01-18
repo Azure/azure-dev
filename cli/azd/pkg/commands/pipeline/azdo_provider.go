@@ -18,6 +18,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
+	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/git"
 	"github.com/microsoft/azure-devops-go-api/azuredevops"
@@ -355,9 +356,6 @@ func (p *AzdoScmProvider) getDefaultRepoRemote(
 		return "", err
 	}
 
-	message := fmt.Sprintf("using default repo (%s) in newly created project(%s)", *repo.Name, projectName)
-	console.Message(ctx, message)
-
 	return *repo.RemoteUrl, nil
 }
 
@@ -647,6 +645,13 @@ func (p *AzdoCiProvider) configureConnection(
 	if err != nil {
 		return err
 	}
+
+	console.MessageUxItem(ctx, &ux.MultilineMessage{
+		Lines: []string{
+			"",
+			"Azure DevOps project and connection is now configured.",
+			""},
+	})
 	return nil
 }
 

@@ -17,7 +17,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
-	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
@@ -146,8 +145,13 @@ func (i *PipelineManager) getGitRepoDetails(ctx context.Context) (*gitRepository
 	checkGitMessage := "Checking current directory for Git repository"
 	var err error
 	i.console.ShowSpinner(ctx, checkGitMessage, input.Step)
-	defer i.console.StopSpinner(ctx, checkGitMessage+"\n", input.GetStepResultFormat(err))
+	defer i.console.StopSpinner(ctx, checkGitMessage, input.GetStepResultFormat(err))
 
+	// the warningCount makes sure we only ever show one single warning for the repo missing setup
+	// if there is no git repo, the warning is for no git repo detected, but if there is a git repo
+	// and the remote is not setup, the warning is for the remote. But we don't want double warning
+	// if git repo and remote are missing.
+	var warningCount int
 	for {
 		repoRemoteDetails, err := i.ensureRemote(ctx, repoPath, i.PipelineRemoteName)
 		switch {
@@ -158,6 +162,7 @@ func (i *PipelineManager) getGitRepoDetails(ctx context.Context) (*gitRepository
 				Description: "No GitHub repository detected.\n",
 				HidePrefix:  true,
 			})
+			warningCount++
 
 			// Offer the user a chance to init a new repository if one does not exist.
 			initRepo, err := i.console.Confirm(ctx, input.ConsoleOptions{
@@ -184,6 +189,16 @@ func (i *PipelineManager) getGitRepoDetails(ctx context.Context) (*gitRepository
 			// Recovered from this error, try again
 			continue
 		case errors.Is(err, git.ErrNoSuchRemote):
+			// Show warning only if no other warning was shown before.
+			if warningCount == 0 {
+				i.console.StopSpinner(ctx, checkGitMessage, input.StepWarning)
+				i.console.MessageUxItem(ctx, &ux.WarningMessage{
+					Description: fmt.Sprintf("Remote \"%s\" is not configured.\n", i.PipelineRemoteName),
+					HidePrefix:  true,
+				})
+				warningCount++
+			}
+
 			// the scm provider returns the repo url that is used as git remote
 			remoteUrl, err := i.ScmProvider.configureGitRemote(ctx, repoPath, i.PipelineRemoteName, i.console)
 			if err != nil {
@@ -194,6 +209,7 @@ func (i *PipelineManager) getGitRepoDetails(ctx context.Context) (*gitRepository
 			if err := gitCli.AddRemote(ctx, repoPath, i.PipelineRemoteName, remoteUrl); err != nil {
 				return nil, fmt.Errorf("initializing repository: %w", err)
 			}
+			i.console.Message(ctx, "") // any next line should be one line apart from the step finish
 
 			continue
 		case err != nil:
@@ -282,22 +298,22 @@ func (manager *PipelineManager) Configure(ctx context.Context) error {
 		manager.PipelineServicePrincipalName = fmt.Sprintf("az-dev-%s", time.Now().UTC().Format("01-02-2006-15-04-05"))
 	}
 
-	manager.console.Message(
-		ctx,
-		fmt.Sprintf(
-			"Creating or updating service principal %s.\n",
-			output.WithHighLightFormat(manager.PipelineServicePrincipalName),
-		),
-	)
-
+	displayMsg := fmt.Sprintf("Creating or updating service principal %s", manager.PipelineServicePrincipalName)
+	manager.console.ShowSpinner(ctx, displayMsg, input.Step)
 	credentials, err := manager.azCli.CreateOrUpdateServicePrincipal(
 		ctx,
 		manager.Environment.GetSubscriptionId(),
 		manager.PipelineServicePrincipalName,
 		manager.PipelineRoleName)
+	manager.console.StopSpinner(ctx, displayMsg, input.GetStepResultFormat(err))
 	if err != nil {
 		return fmt.Errorf("failed to create or update service principal: %w", err)
 	}
+
+	repoSlug := gitRepoInfo.owner + "/" + gitRepoInfo.repoName
+	displayMsg = fmt.Sprintf(
+		"Configuring repository %s to use credentials for %s", repoSlug, manager.PipelineServicePrincipalName)
+	manager.console.ShowSpinner(ctx, displayMsg, input.Step)
 
 	err = manager.CiProvider.configureConnection(
 		ctx,
@@ -307,6 +323,7 @@ func (manager *PipelineManager) Configure(ctx context.Context) error {
 		credentials,
 		PipelineAuthType(manager.PipelineAuthTypeName),
 		manager.console)
+	manager.console.StopSpinner(ctx, "", input.GetStepResultFormat(err))
 	if err != nil {
 		return err
 	}

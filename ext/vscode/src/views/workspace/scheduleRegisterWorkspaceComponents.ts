@@ -1,14 +1,11 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
-import { getAzureExtensionApi } from '@microsoft/vscode-azext-utils';
-import { AzureResourcesApi } from '@microsoft/vscode-azext-utils/hostapi.v2';
 import * as vscode from 'vscode';
 import { AzureDevCliWorkspaceResourceProvider } from './AzureDevCliWorkspaceResourceProvider';
 import { AzureDevCliWorkspaceResourceBranchDataProvider } from './AzureDevCliWorkspaceResourceBranchDataProvider';
 import { WorkspaceAzureDevApplicationProvider } from '../../services/AzureDevApplicationProvider';
-
-const AzureResourcesExtensionId = 'ms-azuretools.vscode-azureresourcegroups';
+import { getAzureResourceExtensionApi, isResourcesExtensionInstalled } from '../../utils/getAzureResourceExtensionApi';
 
 export function scheduleRegisterWorkspaceComponents(extensionContext: vscode.ExtensionContext): void {
     if (isResourcesExtensionInstalled()) {
@@ -30,12 +27,8 @@ export function scheduleRegisterWorkspaceComponents(extensionContext: vscode.Ext
     }
 }
 
-function isResourcesExtensionInstalled(): boolean {
-    return !!vscode.extensions.getExtension(AzureResourcesExtensionId);
-}
-
 async function registerWorkspaceComponents(extensionContext: vscode.ExtensionContext): Promise<void> {
-    const api = await getAzureExtensionApi<AzureResourcesApi>(AzureResourcesExtensionId, '2');
+    const api = await getAzureResourceExtensionApi();
 
     const disposables: vscode.Disposable[] = [];
 

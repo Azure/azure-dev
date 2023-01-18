@@ -243,8 +243,6 @@ func (i *PipelineManager) pushGitRepo(ctx context.Context, currentBranch string)
 		return fmt.Errorf("commit changes: %w", err)
 	}
 
-	i.console.Message(ctx, "Pushing changes")
-
 	// If user has a git credential manager with some cached credentials
 	// and the credentials are rotated, the push operation will fail and the credential manager would remove the cache
 	// Then, on the next intent to push code, there should be a prompt for credentials.

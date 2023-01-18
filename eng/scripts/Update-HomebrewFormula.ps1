@@ -1,5 +1,5 @@
 param(
-    [string] $TemplatePath = "$PSSCriptRoot/../templates/brew.template"
+    [string] $TemplatePath = "$PSSCriptRoot/../templates/brew.template",
     [string] $ZipFilePath,
     [string] $Version,
     [string] $OutFile

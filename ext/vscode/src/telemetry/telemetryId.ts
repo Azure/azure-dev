@@ -57,5 +57,6 @@ export enum TelemetryId {
     // Captures the result of a survey prompt
     SurveyPromptResponse = 'azure-dev.survey-prompt-response',
 
-    WorkspaceViewApplicationResolve = 'azure-dev.views.workspace.application.resolve'
+    WorkspaceViewApplicationResolve = 'azure-dev.views.workspace.application.resolve',
+    WorkspaceViewEnvironmentResolve = 'azure-dev.views.workspace.environment.resolve'
 }

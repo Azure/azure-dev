@@ -35,8 +35,33 @@ export class AzureDevCliEnvironments implements AzureDevCliModel {
     readonly context: AzureDevCliEnvironmentsModelContext;
 
     async getChildren(): Promise<AzureDevCliModel[]> {
+        const envListResults = await this.getResults() ?? [];
+
+        const environments: AzureDevCliModel[] = [];
+        
+        for (const environment of envListResults) {
+            environments.push(
+                new AzureDevCliEnvironment(
+                    this.context,
+                    environment.Name ?? '<unknown>',
+                    environment.IsDefault ?? false,
+                    environment.DotEnvPath ? vscode.Uri.file(environment.DotEnvPath) : undefined));
+        }
+
+        return environments;
+    }
+
+    getTreeItem(): vscode.TreeItem {
+        const treeItem = new vscode.TreeItem(localize('azure-dev.views.workspace.environments.label', 'Environments'), vscode.TreeItemCollapsibleState.Expanded);
+
+        treeItem.contextValue = 'ms-azuretools.azure-dev.views.workspace.environments';
+
+        return treeItem;
+    }
+
+    private async getResults(): Promise<EnvListResults | undefined> {
         return await callWithTelemetryAndErrorHandling(
-            TelemetryId.WorkspaceViewApplicationResolve,
+            TelemetryId.WorkspaceViewEnvironmentResolve,
             async context => {
                 const azureCli = await createAzureDevCli(context);
 
@@ -52,28 +77,7 @@ export class AzureDevCliEnvironments implements AzureDevCliModel {
 
                 const envListResultsJson = await withTimeout(execAsync(command), 30000);
 
-                const envListResults = JSON.parse(envListResultsJson.stdout) as EnvListResults;
-
-                const environments: AzureDevCliModel[] = [];
-
-                for (const environment of envListResults) {
-                    environments.push(
-                        new AzureDevCliEnvironment(
-                            this.context,
-                            environment.Name ?? '<unknown>',
-                            environment.IsDefault ?? false,
-                            environment.DotEnvPath ? vscode.Uri.file(environment.DotEnvPath) : undefined));
-                }
-
-                return environments;
-            }) ?? [];
-    }
-
-    getTreeItem(): vscode.TreeItem {
-        const treeItem = new vscode.TreeItem(localize('azure-dev.views.workspace.environments.label', 'Environments'), vscode.TreeItemCollapsibleState.Expanded);
-
-        treeItem.contextValue = 'ms-azuretools.azure-dev.views.workspace.environments';
-
-        return treeItem;
+                return JSON.parse(envListResultsJson.stdout) as EnvListResults;
+            });
     }
 }

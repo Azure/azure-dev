@@ -32,24 +32,22 @@ export class AzureDevCliWorkspaceResourceProvider extends vscode.Disposable impl
 
     readonly onDidChangeResource = this.onDidChangeResourceEmitter.event;
 
-    async getResources(source: vscode.WorkspaceFolder | undefined): Promise<WorkspaceResource[]> {
-        if (!source) {
-            // No system-wide resources are provided by this extension, only workspace-specific
-            return [];
-        }
-
+    async getResources(): Promise<WorkspaceResource[]> {
         const resources: WorkspaceResource[] = [];
+    
+        for (const folder of vscode.workspace.workspaceFolders || []) {
+            for (const application of this.applications.filter(application => application.workspaceFolder === folder)) {
+                const configurationFilePath = application.configurationPath.fsPath;
+                const configurationFolderName = path.basename(path.dirname(configurationFilePath));
 
-        for (const application of this.applications.filter(application => application.workspaceFolder === source)) {
-            const configurationFilePath = application.configurationPath.fsPath;
-            const configurationFolderName = path.basename(path.dirname(configurationFilePath));
+                resources.push({
+                    folder,
+                    id: application.configurationPath.fsPath,
+                    name: configurationFolderName,
+                    resourceType: 'ms-azuretools.azure-dev.application'
+                });
+            }
 
-            resources.push({
-                folder: source,
-                id: application.configurationPath.fsPath,
-                name: configurationFolderName,
-                resourceType: 'ms-azuretools.azure-dev.application'
-            });
         }
 
         return resources;

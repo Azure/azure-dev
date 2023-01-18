@@ -2,38 +2,25 @@
 // Licensed under the MIT License.
 
 import { WorkspaceResource } from '@microsoft/vscode-azext-utils/hostapi.v2';
-import * as path from 'path';
 import * as vscode from 'vscode';
 import { callWithTelemetryAndErrorHandling } from '@microsoft/vscode-azext-utils';
 import { TelemetryId } from '../../telemetry/telemetryId';
-import { createAzureDevCli } from '../../utils/azureDevCli';
-import { execAsync } from '../../utils/process';
-import { withTimeout } from '../../utils/withTimeout';
 import { AzureDevCliEnvironments } from './AzureDevCliEnvironments';
 import { AzureDevCliModel, AzureDevCliModelContext, RefreshHandler } from './AzureDevCliModel';
 import { AzureDevCliServices } from './AzureDevCliServices';
-
-interface ShowResults {
-    name?: string;
-    services?: {
-        [name: string]: {
-            project?: {
-                path?: string;
-                language?: string;
-            }
-            target?: {
-                resourceIds?: string[];
-            }
-        }
-    }
-}
+import { AzDevShowResults, AzureDevShowProvider } from '../../services/AzureDevShowProvider';
+import { AsyncLazy } from '../../utils/lazy';
+import { AzureDevEnvListProvider } from '../../services/AzureDevEnvListProvider';
 
 export class AzureDevCliApplication implements AzureDevCliModel {
-    private results: ShowResults | undefined;
+    private results: AsyncLazy<AzDevShowResults>;
 
     constructor(
         private readonly resource: WorkspaceResource,
-        private readonly refresh: RefreshHandler) {
+        private readonly refresh: RefreshHandler,
+        private readonly showProvider: AzureDevShowProvider,
+        private readonly envListProvider: AzureDevEnvListProvider) {
+        this.results = new AsyncLazy(() => this.getResults());
     }
 
     readonly context: AzureDevCliModelContext = {
@@ -41,11 +28,11 @@ export class AzureDevCliApplication implements AzureDevCliModel {
     };
 
     async getChildren(): Promise<AzureDevCliModel[]> {
-        const results = await this.getResults();
+        const results = await this.results.getValue();
 
         return [
             new AzureDevCliServices(this.context, Object.keys(results?.services ?? {})),
-            new AzureDevCliEnvironments(this.context, this.refresh)
+            new AzureDevCliEnvironments(this.context, this.refresh, this.envListProvider)
         ];
     }
 
@@ -60,28 +47,12 @@ export class AzureDevCliApplication implements AzureDevCliModel {
         return treeItem;
     }
 
-    private getResults(): Promise<ShowResults | undefined> {
+    private getResults(): Promise<AzDevShowResults> {
         return callWithTelemetryAndErrorHandling(
             TelemetryId.WorkspaceViewApplicationResolve,
-            async context => {
-                if (!this.results) {
-                    const azureCli = await createAzureDevCli(context);
-
-                    const configurationFilePath = this.context.configurationFile.fsPath;
-                    const configurationFileDirectory = path.dirname(configurationFilePath);
-
-                    const command = azureCli.commandBuilder
-                        .withArg('show')
-                        .withNamedArg('--cwd', configurationFileDirectory)
-                        .withNamedArg('--output', 'json')
-                        .build();
-
-                    const showResultsJson = await withTimeout(execAsync(command), 30000);
-
-                    this.results = JSON.parse(showResultsJson.stdout) as ShowResults;
-                }
-
-                return this.results;
-            });
+            async actionContext => {
+                return await this.showProvider.getShowResults(actionContext, this.context.configurationFile);
+            }
+        ) as Promise<AzDevShowResults>;
     }
 }

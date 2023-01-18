@@ -4,13 +4,18 @@
 import { BranchDataProvider, WorkspaceResource } from '@microsoft/vscode-azext-utils/hostapi.v2';
 import * as vscode from 'vscode';
 import { ProviderResult, TreeItem } from 'vscode';
+import { AzureDevEnvListProvider, WorkspaceAzureDevEnvListProvider } from '../../services/AzureDevEnvListProvider';
+import { AzureDevShowProvider, WorkspaceAzureDevShowProvider } from '../../services/AzureDevShowProvider';
 import { AzureDevCliApplication } from './AzureDevCliApplication';
 import { AzureDevCliModel } from './AzureDevCliModel';
 
 export class AzureDevCliWorkspaceResourceBranchDataProvider extends vscode.Disposable implements BranchDataProvider<WorkspaceResource, AzureDevCliModel> {
     private readonly onDidChangeTreeDataEmitter = new vscode.EventEmitter<void | AzureDevCliModel | null | undefined>();
 
-    constructor() {
+    constructor(
+        private readonly showProvider: AzureDevShowProvider = new WorkspaceAzureDevShowProvider(),
+        private readonly envListProvider: AzureDevEnvListProvider = new WorkspaceAzureDevEnvListProvider()
+    ) {
         super(
             () => {
                 this.onDidChangeTreeDataEmitter.dispose();
@@ -22,7 +27,7 @@ export class AzureDevCliWorkspaceResourceBranchDataProvider extends vscode.Dispo
     }
 
     getResourceItem(element: WorkspaceResource): AzureDevCliModel | Thenable<AzureDevCliModel> {
-        return new AzureDevCliApplication(element, model => this.onDidChangeTreeDataEmitter.fire(model));
+        return new AzureDevCliApplication(element, model => this.onDidChangeTreeDataEmitter.fire(model), this.showProvider, this.envListProvider);
     }
 
     createResourceItem?: (() => ProviderResult<WorkspaceResource>) | undefined;

@@ -727,82 +727,17 @@ stages:
                     filePath: eng/scripts/Set-CliVersionVariable.ps1
                   displayName: Set CLI_VERSION
 
-                # TODO: Uncomment before merge
-                # - template: /eng/pipelines/templates/steps/publish-cli.yml
-                #   parameters:
-                #     CreateGitHubRelease: true
-                #     PublishUploadLocations: release/$(CLI_VERSION);release/latest
-                #     PublishShield: true
-                #     DockerImageTags: $(CLI_VERSION);latest
-                #     ReleaseSyndicatedDockerContainer: true
-                #     PublishUpdatedDocs: true
-                #     UploadMsi: true
-
-                # copied from publish-cli.yml. Remove this section before merge
-                # ==============================================================
-
-                # Download signed artifacts, prepare packaging
-                - task: DownloadPipelineArtifact@2
-                  displayName: Download signed Windows binaries
-                  inputs:
-                    artifact: signed-win
-                    path: signed/win
-
-                - task: DownloadPipelineArtifact@2
-                  displayName: Download signed Mac binaries
-                  inputs:
-                    artifact: signed-mac
-                    path: signed/mac
-
-                # Linux binary is not signed today so download from output artifacts
-                - task: DownloadPipelineArtifact@2
-                  inputs:
-                    artifact: azd-linux-amd64
-                    # Copy the item from artifacts straight to where it will go
-                    path: release-staging
-
-                - bash: chmod +x signed/mac/azd-darwin-amd64 release-staging/azd-linux-amd64
-                  displayName: Set execute bit for the mac and linux release
-
-                - pwsh: |
-                    New-Item -ItemType Directory -Path release -Force
-                    zip release/azd-darwin-amd64.zip -j signed/mac/azd-darwin-amd64 NOTICE.txt
-                    zip release/azd-windows-amd64.zip -j signed/win/azd-windows-amd64.exe NOTICE.txt
-
-                    # Must place NOTICE.txt in file tree for tar to pick it up and place it in
-                    # the same place in the directory structure
-                    Copy-Item NOTICE.txt ./release-staging/
-                    tar -C ./release-staging/ -cvzf release/azd-linux-amd64.tar.gz azd-linux-amd64 NOTICE.txt
-                  displayName: Compress standalone binary for release
-
-                # TODO: Remove the above section before merge
-                # ==============================================================
-
-                - pwsh: git clone https://github.com/Azure/homebrew-azd
-                  displayName: Clone Azure/homebrew-azd
-
-                - task: PowerShell@2
-                  displayName: Update brew formula
-                  inputs:
-                    targetType: filePath
-                    filePath: eng/scripts/Update-HomebrewFormula.ps1
-                    arguments: >-
-                      -ZipFilePath release/azd-darwin-amd64.zip
-                      -Version $(CLI_VERSION)
-                      -OutFile homebrew-azd/Formula/azd.rb
-
-                - template: /eng/common/pipelines/templates/steps/git-push-changes.yml
+                - template: /eng/pipelines/templates/steps/publish-cli.yml
                   parameters:
-                    # TODO: Use 'main' when merging
-                    BaseRepoBranch: test-devops-publish
-                    BaseRepoOwner: Azure
-                    CommitMsg: Update formula for azd release $(CLI_VERSION)
-                    TargetRepoName: homebrew-azd
-                    WorkingDirectory: homebrew-azd
+                    CreateGitHubRelease: true
+                    PublishUploadLocations: release/$(CLI_VERSION);release/latest
+                    PublishShield: true
+                    DockerImageTags: $(CLI_VERSION);latest
+                    ReleaseSyndicatedDockerContainer: true
+                    PublishUpdatedDocs: true
+                    UploadMsi: true
+                    PublishBrewFormula: true
 
-                # TODO: Add to end of publish-cli.yml
-                - publish: release
-                  artifact: release
 
       - deployment: Increment_Version
         condition: >-

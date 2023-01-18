@@ -97,7 +97,9 @@ stages:
 
           - template: /eng/pipelines/templates/steps/install-terraform.yml
 
-          - task: DockerInstaller@0
+          # Pinning DockerInstaller to 0.209.0 because 0.214.0 has failures.
+          # Remove this pin when later versions succeed.
+          - task: DockerInstaller@0.209.0
             displayName: Docker Installer
             condition: and(succeeded(), contains(variables['OSVmImage'], 'macOS'))
             inputs:

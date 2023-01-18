@@ -4,6 +4,7 @@
 import { IActionContext, IAzureQuickPickItem } from '@microsoft/vscode-azext-utils';
 import * as vscode from 'vscode';
 import { localize } from '../../../localize';
+import { AzureDevEnvListProvider, WorkspaceAzureDevEnvListProvider } from '../../../services/AzureDevEnvListProvider';
 import { SkipIfOneStep } from './SkipIfOneStep';
 
 export interface RevealWizardContext extends IActionContext {
@@ -11,8 +12,11 @@ export interface RevealWizardContext extends IActionContext {
     environment?: string;
 }
 
+// TODO: this may be able to be changed to use a pick experience from @microsoft/vscode-azext-utils
 export class PickEnvironmentStep extends SkipIfOneStep<RevealWizardContext, string> {
-    public constructor() {
+    public constructor(
+        private readonly azureDevEnvListProvider: AzureDevEnvListProvider = new WorkspaceAzureDevEnvListProvider(),
+    ) {
         super(
             localize('azure-dev.commands.azureWorkspace.revealAzureResource.selectEnvironment', 'Select an environment'),
             localize('azure-dev.commands.azureWorkspace.revealAzureResource.noEnvironments', 'No environments found')
@@ -28,6 +32,12 @@ export class PickEnvironmentStep extends SkipIfOneStep<RevealWizardContext, stri
     }
 
     protected override async getPicks(context: RevealWizardContext): Promise<IAzureQuickPickItem<string>[]> {
-        return []; // TODO
+        const envListResults = await this.azureDevEnvListProvider.getEnvListResults(context, context.configurationFile);
+        return envListResults.map(env => {
+            return {
+                label: env.Name,
+                data: env.Name,
+            };
+        });
     }
 }

@@ -16,7 +16,7 @@ export async function revealAzureResource(context: IActionContext, selectedItem:
 
     const wizardContext = context as RevealResourceWizardContext;
     wizardContext.configurationFile = selectedItem.context.configurationFile;
-    wizardContext.service = selectedItem;
+    wizardContext.service = selectedItem.name;
 
     const wizard = new AzureWizard(context,
         {

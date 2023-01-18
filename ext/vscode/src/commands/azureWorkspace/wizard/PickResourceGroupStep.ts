@@ -40,7 +40,13 @@ export class PickResourceGroupStep extends SkipIfOneStep<RevealResourceGroupWiza
         const resourceGroupIds = new Set<string>();
 
         for (const serviceName of Object.keys(showResults.services)) {
-            for (const resourceId of showResults.services[serviceName].target.resourceIds) {
+            const service = showResults.services[serviceName];
+
+            if (!service?.target?.resourceIds) {
+                continue;
+            }
+
+            for (const resourceId of service.target.resourceIds) {
                 const { subscription, resourceGroup } = parseAzureResourceId(resourceId);
                 resourceGroupIds.add(`/subscriptions/${subscription}/resourceGroups/${resourceGroup}`);
             }

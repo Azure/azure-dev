@@ -34,7 +34,7 @@ export class PickResourceStep extends SkipIfOneStep<RevealResourceWizardContext,
     protected override async getPicks(context: RevealResourceWizardContext): Promise<IAzureQuickPickItem<string>[]> {
         const showResults = await this.showProvider.getShowResults(context, context.configurationFile, context.environment);
 
-        if (!showResults?.services?.[context.service]) {
+        if (!showResults?.services?.[context.service]?.target?.resourceIds) {
             return [];
         }
 

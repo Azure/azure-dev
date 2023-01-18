@@ -3,6 +3,7 @@
 
 import { AzureWizard, IActionContext } from '@microsoft/vscode-azext-utils';
 import { localize } from '../../localize';
+import { TreeViewModel } from '../../utils/isTreeViewModel';
 import { AzureDevCliApplication } from '../../views/workspace/AzureDevCliApplication';
 import { AzureDevCliEnvironment } from '../../views/workspace/AzureDevCliEnvironment';
 import { AzureDevCliService } from '../../views/workspace/AzureDevCliService';
@@ -11,7 +12,8 @@ import { PickResourceGroupStep, RevealResourceGroupWizardContext } from './wizar
 import { PickResourceStep, RevealResourceWizardContext } from './wizard/PickResourceStep';
 import { RevealStep } from './wizard/RevealStep';
 
-export async function revealAzureResource(context: IActionContext, selectedItem: AzureDevCliService): Promise<void> {
+export async function revealAzureResource(context: IActionContext, treeItem: TreeViewModel): Promise<void> {
+    const selectedItem = treeItem.unwrap<AzureDevCliService>();
     context.telemetry.properties.revealSource = selectedItem.constructor.name;
 
     const wizardContext = context as RevealResourceWizardContext;
@@ -35,7 +37,8 @@ export async function revealAzureResource(context: IActionContext, selectedItem:
     await wizard.execute();
 }
 
-export async function revealAzureResourceGroup(context: IActionContext, selectedItem: AzureDevCliApplication | AzureDevCliEnvironment): Promise<void> {
+export async function revealAzureResourceGroup(context: IActionContext, treeItem: TreeViewModel): Promise<void> {
+    const selectedItem = treeItem.unwrap<AzureDevCliApplication | AzureDevCliEnvironment>();
     context.telemetry.properties.revealSource = selectedItem.constructor.name;
 
     const wizardContext = context as RevealResourceGroupWizardContext;

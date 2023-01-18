@@ -15,6 +15,7 @@ export abstract class SkipIfOneStep<TWizardContext extends IActionContext, TItem
         const picks = await this.getPicks(context);
 
         if (picks.length === 0) {
+            context.errorHandling.suppressReportIssue = true;
             throw new Error(this.noItemsMessage);
         } else if (picks.length === 1) {
             return picks[0].data;

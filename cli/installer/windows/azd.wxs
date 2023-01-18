@@ -70,7 +70,7 @@
         <!-- Broadcast environment variable changes even if a reboot is pending -->
         <CustomActionRef Id="WixBroadcastEnvironmentChange" />
 
-        <!-- Use customized WixUI_InstallDir that removes WixUI_LicenseAgreementDlg -->
+        <!-- Use customized WixUI_InstallDir that changes the license agreement to just a notice -->
         <Property Id="WIXUI_INSTALLDIR" Value="INSTALLDIR"/>
         <UIRef Id="AzureDevCLI_InstallDir"/>
     </Product>

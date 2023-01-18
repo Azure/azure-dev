@@ -48,11 +48,11 @@ func newRestoreFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) 
 func restoreCmdDesign() *cobra.Command {
 	return &cobra.Command{
 		Use:   "restore",
-		Short: "Restore application dependencies.",
+		Short: "Restore app dependencies.",
 		//nolint:lll
-		Long: `Restore application dependencies.
+		Long: `Restore app dependencies.
 
-Run this command to download and install all the required libraries so that you can build, run, and debug the application locally.
+Run this command to download and install all the required libraries so that you can build, run, and debug the app locally.
 
 For the best local run and debug experience, go to https://aka.ms/azure-dev/vscode to learn how to use the Visual Studio Code extension.`,
 	}

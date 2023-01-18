@@ -16,7 +16,7 @@ func TestPipelineCmd(t *testing.T) {
 	root := actions.NewActionDescriptor("azd", &actions.ActionDescriptorOptions{})
 	group := pipelineActions(root)
 	assert.EqualValues(t, "pipeline", group.Options.Command.Use)
-	assert.EqualValues(t, "Manage GitHub Actions pipelines.", group.Options.Command.Short)
+	assert.EqualValues(t, "Manage GitHub Actions or Azure Pipelines.", group.Options.Command.Short)
 
 	childCommands := group.Children()
 	assert.EqualValues(t, 1, len(childCommands))

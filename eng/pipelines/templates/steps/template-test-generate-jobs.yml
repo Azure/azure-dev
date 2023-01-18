@@ -34,6 +34,13 @@ parameters:
   type: string
   default: main
 
+- name: TemplateRunEnvironmentVariables
+  displayName: |
+    Comma-delimited list of environment variables in the format of (KEY=VALUE) to set for the template test run.
+    Example: USE_APIM=true,ENV_SUFFIX=MYSUFFIX
+  type: string
+  default: ''
+
 - name: AzureLocation
   displayName: Azure location for templates to be deployed to
   type: string
@@ -67,5 +74,6 @@ steps:
         AzdContainerImage=$(AzdContainerImage),
         TemplateBranchName=${{ parameters.TemplateBranchName }},
         AzureLocation=${{ parameters.AzureLocation }},
-        CleanupHoursDelay=${{ parameters.CleanupHoursDelay }}
+        CleanupHoursDelay=${{ parameters.CleanupHoursDelay }},
+        ${{ parameters.TemplateRunEnvironmentVariables }}
         '

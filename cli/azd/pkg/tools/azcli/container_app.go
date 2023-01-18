@@ -25,8 +25,18 @@ func (cli *azCli) GetContainerAppProperties(
 		return nil, fmt.Errorf("failed retrieving container app properties: %w", err)
 	}
 
+	var hostNames []string
+	if containerApp.Properties != nil &&
+		containerApp.Properties.Configuration != nil &&
+		containerApp.Properties.Configuration.Ingress != nil &&
+		containerApp.Properties.Configuration.Ingress.Fqdn != nil {
+		hostNames = []string{*containerApp.Properties.Configuration.Ingress.Fqdn}
+	} else {
+		hostNames = []string{}
+	}
+
 	return &AzCliContainerAppProperties{
-		HostNames: []string{*containerApp.Properties.Configuration.Ingress.Fqdn},
+		HostNames: hostNames,
 	}, nil
 }
 

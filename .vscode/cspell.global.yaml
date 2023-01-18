@@ -97,6 +97,7 @@ ignoreWords:
     - PLACEHOLDERIACTOOLS
     - postcommand
     - postinit
+    - preinline
     - precommand
     - predeploy
     - preinteractive

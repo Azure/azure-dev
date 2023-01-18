@@ -10,26 +10,26 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func Test_GetAllScriptConfigs(t *testing.T) {
+func Test_GetAllHookConfigs(t *testing.T) {
 	tempDir := t.TempDir()
 	ostest.Chdir(t, tempDir)
 
 	t.Run("With Valid Configuration", func(t *testing.T) {
-		scripts := map[string]*ScriptConfig{
+		hooks := map[string]*HookConfig{
 			"preinit": {
-				Path: "scripts/preinit.sh",
+				Run: "scripts/preinit.sh",
 			},
 			"postinit": {
-				Path: "scripts/postinit.sh",
+				Run: "scripts/postinit.sh",
 			},
 		}
 
-		ensureScriptsExist(t, scripts)
+		ensureScriptsExist(t, hooks)
 
 		hooksManager := NewHooksManager(tempDir)
-		validScripts, err := hooksManager.GetAllScriptConfigs(scripts)
+		validHooks, err := hooksManager.GetAll(hooks)
 
-		require.Len(t, validScripts, len(scripts))
+		require.Len(t, validHooks, len(hooks))
 		require.NoError(t, err)
 	})
 
@@ -42,54 +42,54 @@ func Test_GetAllScriptConfigs(t *testing.T) {
 		require.NoError(t, err)
 
 		hooksManager := NewHooksManager(tempDir)
-		validScripts, err := hooksManager.GetAllScriptConfigs(map[string]*ScriptConfig{})
+		validHooks, err := hooksManager.GetAll(map[string]*HookConfig{})
 
-		require.Len(t, validScripts, 2)
+		require.Len(t, validHooks, 2)
 		require.NoError(t, err)
 	})
 
 	t.Run("With Invalid Configuration", func(t *testing.T) {
-		// All scripts are invalid because they are missing a script type
-		scripts := map[string]*ScriptConfig{
+		// All hooks are invalid because they are missing a script type
+		hooks := map[string]*HookConfig{
 			"preinit": {
-				Script: "echo 'Hello'",
+				Run: "echo 'Hello'",
 			},
 			"postinit": {
-				Script: "echo 'Hello'",
+				Run: "echo 'Hello'",
 			},
 		}
 
-		ensureScriptsExist(t, scripts)
+		ensureScriptsExist(t, hooks)
 
 		hooksManager := NewHooksManager(tempDir)
-		validScripts, err := hooksManager.GetAllScriptConfigs(scripts)
+		validHooks, err := hooksManager.GetAll(hooks)
 
-		require.Nil(t, validScripts)
+		require.Nil(t, validHooks)
 		require.Error(t, err)
 	})
 }
 
-func Test_GetScriptConfigsForHook(t *testing.T) {
+func Test_GetByParams(t *testing.T) {
 	tempDir := t.TempDir()
 	ostest.Chdir(t, tempDir)
 
 	t.Run("With Valid Configuration", func(t *testing.T) {
-		scripts := map[string]*ScriptConfig{
+		hooks := map[string]*HookConfig{
 			"preinit": {
-				Path: "scripts/preinit.sh",
+				Run: "scripts/preinit.sh",
 			},
 			"postinit": {
-				Path: "scripts/postinit.sh",
+				Run: "scripts/postinit.sh",
 			},
 		}
 
-		ensureScriptsExist(t, scripts)
+		ensureScriptsExist(t, hooks)
 
 		hooksManager := NewHooksManager(tempDir)
-		validScripts, err := hooksManager.GetScriptConfigsForHook(scripts, HookTypePre, "init")
+		validHooks, err := hooksManager.GetByParams(hooks, HookTypePre, "init")
 
-		require.Len(t, validScripts, 1)
-		require.Equal(t, scripts["preinit"], validScripts[0])
+		require.Len(t, validHooks, 1)
+		require.Equal(t, hooks["preinit"], validHooks[0])
 		require.NoError(t, err)
 	})
 
@@ -102,40 +102,42 @@ func Test_GetScriptConfigsForHook(t *testing.T) {
 		require.NoError(t, err)
 
 		hooksManager := NewHooksManager(tempDir)
-		validScripts, err := hooksManager.GetScriptConfigsForHook(map[string]*ScriptConfig{}, HookTypePre, "init")
+		validHooks, err := hooksManager.GetByParams(map[string]*HookConfig{}, HookTypePre, "init")
 
-		require.Len(t, validScripts, 1)
-		require.Equal(t, filepath.Join(".azure", "hooks", "preinit.sh"), validScripts[0].Path)
+		require.Len(t, validHooks, 1)
+		require.Equal(t, filepath.Join(".azure", "hooks", "preinit.sh"), validHooks[0].path)
 		require.NoError(t, err)
 	})
 
 	t.Run("With Invalid Configuration", func(t *testing.T) {
-		// All scripts are invalid because they are missing a script type
-		scripts := map[string]*ScriptConfig{
+		// All hooks are invalid because they are missing a script type
+		hooks := map[string]*HookConfig{
 			"preinit": {
-				Script: "echo 'Hello'",
+				Run: "echo 'Hello'",
 			},
 			"postinit": {
-				Script: "echo 'Hello'",
+				Run: "echo 'Hello'",
 			},
 		}
 
-		ensureScriptsExist(t, scripts)
+		ensureScriptsExist(t, hooks)
 
 		hooksManager := NewHooksManager(tempDir)
-		validScripts, err := hooksManager.GetScriptConfigsForHook(scripts, HookTypePre, "init")
+		validHooks, err := hooksManager.GetByParams(hooks, HookTypePre, "init")
 
-		require.Nil(t, validScripts)
+		require.Nil(t, validHooks)
 		require.Error(t, err)
 	})
 }
 
-func ensureScriptsExist(t *testing.T, scripts map[string]*ScriptConfig) {
-	for _, scriptConfig := range scripts {
-		if scriptConfig.Path != "" {
-			err := os.MkdirAll(filepath.Dir(scriptConfig.Path), osutil.PermissionDirectory)
+func ensureScriptsExist(t *testing.T, configs map[string]*HookConfig) {
+	for _, hook := range configs {
+		ext := filepath.Ext(hook.Run)
+
+		if ext != "" {
+			err := os.MkdirAll(filepath.Dir(hook.Run), osutil.PermissionDirectory)
 			require.NoError(t, err)
-			err = os.WriteFile(scriptConfig.Path, nil, osutil.PermissionExecutableFile)
+			err = os.WriteFile(hook.Run, nil, osutil.PermissionExecutableFile)
 			require.NoError(t, err)
 		}
 	}

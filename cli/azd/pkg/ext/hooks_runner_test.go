@@ -24,26 +24,27 @@ func Test_Hooks_Execute(t *testing.T) {
 		"b=banana",
 	}
 
-	scripts := map[string]*ScriptConfig{
+	hooks := map[string]*HookConfig{
+		"preinline": {
+			Shell: ShellTypeBash,
+			Run:   "echo 'Hello'",
+		},
 		"precommand": {
-			Type:     ScriptTypeBash,
-			Location: ScriptLocationPath,
-			Path:     "scripts/precommand.sh",
+			Shell: ShellTypeBash,
+			Run:   "scripts/precommand.sh",
 		},
 		"postcommand": {
-			Type:     ScriptTypeBash,
-			Location: ScriptLocationPath,
-			Path:     "scripts/postcommand.sh",
+			Shell: ShellTypeBash,
+			Run:   "scripts/postcommand.sh",
 		},
 		"preinteractive": {
-			Type:        ScriptTypeBash,
-			Location:    ScriptLocationPath,
-			Path:        "scripts/preinteractive.sh",
+			Shell:       ShellTypeBash,
+			Run:         "scripts/preinteractive.sh",
 			Interactive: true,
 		},
 	}
 
-	ensureScriptsExist(t, scripts)
+	ensureScriptsExist(t, hooks)
 
 	t.Run("PreHook", func(t *testing.T) {
 		ranPreHook := false
@@ -63,7 +64,7 @@ func Test_Hooks_Execute(t *testing.T) {
 		})
 
 		hooksManager := NewHooksManager(cwd)
-		runner := NewHooksRunner(hooksManager, mockContext.CommandRunner, mockContext.Console, cwd, scripts, env)
+		runner := NewHooksRunner(hooksManager, mockContext.CommandRunner, mockContext.Console, cwd, hooks, env)
 		err := runner.RunHooks(*mockContext.Context, HookTypePre, []string{"command"})
 
 		require.True(t, ranPreHook)
@@ -89,7 +90,7 @@ func Test_Hooks_Execute(t *testing.T) {
 		})
 
 		hooksManager := NewHooksManager(cwd)
-		runner := NewHooksRunner(hooksManager, mockContext.CommandRunner, mockContext.Console, cwd, scripts, env)
+		runner := NewHooksRunner(hooksManager, mockContext.CommandRunner, mockContext.Console, cwd, hooks, env)
 		err := runner.RunHooks(*mockContext.Context, HookTypePost, []string{"command"})
 
 		require.False(t, ranPreHook)
@@ -115,8 +116,30 @@ func Test_Hooks_Execute(t *testing.T) {
 		})
 
 		hooksManager := NewHooksManager(cwd)
-		runner := NewHooksRunner(hooksManager, mockContext.CommandRunner, mockContext.Console, cwd, scripts, env)
+		runner := NewHooksRunner(hooksManager, mockContext.CommandRunner, mockContext.Console, cwd, hooks, env)
 		err := runner.RunHooks(*mockContext.Context, HookTypePre, []string{"interactive"})
+
+		require.False(t, ranPreHook)
+		require.True(t, ranPostHook)
+		require.NoError(t, err)
+	})
+
+	t.Run("Inline Hook", func(t *testing.T) {
+		ranPreHook := false
+		ranPostHook := false
+
+		mockContext := mocks.NewMockContext(context.Background())
+		mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
+			return strings.Contains(command, "preinline")
+		}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+			ranPostHook = true
+
+			return exec.NewRunResult(0, "", ""), nil
+		})
+
+		hooksManager := NewHooksManager(cwd)
+		runner := NewHooksRunner(hooksManager, mockContext.CommandRunner, mockContext.Console, cwd, hooks, env)
+		err := runner.RunHooks(*mockContext.Context, HookTypePre, []string{"inline"})
 
 		require.False(t, ranPreHook)
 		require.True(t, ranPostHook)
@@ -152,7 +175,7 @@ func Test_Hooks_Execute(t *testing.T) {
 		})
 
 		hooksManager := NewHooksManager(cwd)
-		runner := NewHooksRunner(hooksManager, mockContext.CommandRunner, mockContext.Console, cwd, scripts, env)
+		runner := NewHooksRunner(hooksManager, mockContext.CommandRunner, mockContext.Console, cwd, hooks, env)
 		err := runner.Invoke(*mockContext.Context, []string{"command"}, func() error {
 			ranAction = true
 			hookLog = append(hookLog, "action")
@@ -183,46 +206,46 @@ func Test_Hooks_GetScript(t *testing.T) {
 		"b=banana",
 	}
 
-	scripts := map[string]*ScriptConfig{
+	hooks := map[string]*HookConfig{
 		"bash": {
-			Path: "scripts/script.sh",
+			Run: "scripts/script.sh",
 		},
 		"pwsh": {
-			Path: "scripts/script.ps1",
+			Run: "scripts/script.ps1",
 		},
 		"inline": {
-			Type:   ScriptTypeBash,
-			Script: "echo 'hello'",
+			Shell: ShellTypeBash,
+			Run:   "echo 'hello'",
 		},
 	}
 
-	ensureScriptsExist(t, scripts)
+	ensureScriptsExist(t, hooks)
 
 	t.Run("Bash", func(t *testing.T) {
-		scriptConfig := scripts["bash"]
+		hookConfig := hooks["bash"]
 		mockContext := mocks.NewMockContext(context.Background())
 		hooksManager := NewHooksManager(cwd)
-		runner := NewHooksRunner(hooksManager, mockContext.CommandRunner, mockContext.Console, cwd, scripts, env)
+		runner := NewHooksRunner(hooksManager, mockContext.CommandRunner, mockContext.Console, cwd, hooks, env)
 
-		script, err := runner.GetScript(scriptConfig)
+		script, err := runner.GetScript(hookConfig)
 		require.NotNil(t, script)
 		require.Equal(t, "*bash.bashScript", reflect.TypeOf(script).String())
-		require.Equal(t, ScriptLocationPath, scriptConfig.Location)
-		require.Equal(t, ScriptTypeBash, scriptConfig.Type)
+		require.Equal(t, ScriptLocationPath, hookConfig.location)
+		require.Equal(t, ShellTypeBash, hookConfig.Shell)
 		require.NoError(t, err)
 	})
 
 	t.Run("Powershell", func(t *testing.T) {
-		scriptConfig := scripts["pwsh"]
+		hookConfig := hooks["pwsh"]
 		mockContext := mocks.NewMockContext(context.Background())
 		hooksManager := NewHooksManager(cwd)
-		runner := NewHooksRunner(hooksManager, mockContext.CommandRunner, mockContext.Console, cwd, scripts, env)
+		runner := NewHooksRunner(hooksManager, mockContext.CommandRunner, mockContext.Console, cwd, hooks, env)
 
-		script, err := runner.GetScript(scriptConfig)
+		script, err := runner.GetScript(hookConfig)
 		require.NotNil(t, script)
 		require.Equal(t, "*powershell.powershellScript", reflect.TypeOf(script).String())
-		require.Equal(t, ScriptLocationPath, scriptConfig.Location)
-		require.Equal(t, ScriptTypePowershell, scriptConfig.Type)
+		require.Equal(t, ScriptLocationPath, hookConfig.location)
+		require.Equal(t, ShellTypePowershell, hookConfig.Shell)
 		require.NoError(t, err)
 	})
 
@@ -230,21 +253,21 @@ func Test_Hooks_GetScript(t *testing.T) {
 		tempDir := t.TempDir()
 		ostest.Chdir(t, tempDir)
 
-		scriptConfig := scripts["inline"]
+		hookConfig := hooks["inline"]
 		mockContext := mocks.NewMockContext(context.Background())
 		hooksManager := NewHooksManager(cwd)
-		runner := NewHooksRunner(hooksManager, mockContext.CommandRunner, mockContext.Console, cwd, scripts, env)
+		runner := NewHooksRunner(hooksManager, mockContext.CommandRunner, mockContext.Console, cwd, hooks, env)
 
-		script, err := runner.GetScript(scriptConfig)
+		script, err := runner.GetScript(hookConfig)
 		require.NotNil(t, script)
 		require.Equal(t, "*bash.bashScript", reflect.TypeOf(script).String())
-		require.Equal(t, ScriptLocationInline, scriptConfig.Location)
-		require.Equal(t, ScriptTypeBash, scriptConfig.Type)
-		require.Contains(t, scriptConfig.Path, fmt.Sprintf(".azure%chooks", os.PathSeparator))
-		require.Contains(t, scriptConfig.Path, ".sh")
+		require.Equal(t, ScriptLocationInline, hookConfig.location)
+		require.Equal(t, ShellTypeBash, hookConfig.Shell)
+		require.Contains(t, hookConfig.path, fmt.Sprintf(".azure%chooks", os.PathSeparator))
+		require.Contains(t, hookConfig.path, ".sh")
 		require.NoError(t, err)
 
-		fileInfo, err := os.Stat(scriptConfig.Path)
+		fileInfo, err := os.Stat(hookConfig.path)
 		require.NotNil(t, fileInfo)
 		require.NoError(t, err)
 	})
@@ -252,8 +275,9 @@ func Test_Hooks_GetScript(t *testing.T) {
 
 type scriptValidationTest struct {
 	name          string
-	config        *ScriptConfig
+	config        *HookConfig
 	expectedError error
+	createFile    bool
 }
 
 func Test_GetScript_Validation(t *testing.T) {
@@ -272,71 +296,59 @@ func Test_GetScript_Validation(t *testing.T) {
 		mockContext.CommandRunner,
 		mockContext.Console,
 		tempDir,
-		map[string]*ScriptConfig{},
+		map[string]*HookConfig{},
 		env,
 	)
 
 	scriptValidations := []scriptValidationTest{
 		{
 			name: "Missing Script Type",
-			config: &ScriptConfig{
-				Name:   "test1",
-				Script: "echo 'Hello'",
+			config: &HookConfig{
+				Name: "test1",
+				Run:  "echo 'Hello'",
 			},
 			expectedError: ErrScriptTypeUnknown,
 		},
 		{
-			name: "Missing Script for Location Inline",
-			config: &ScriptConfig{
-				Name:     "test2",
-				Type:     ScriptTypeBash,
-				Location: ScriptLocationInline,
+			name: "Missing Run param",
+			config: &HookConfig{
+				Name:  "test2",
+				Shell: ShellTypeBash,
 			},
-			expectedError: ErrScriptRequired,
-		},
-		{
-			name: "Missing Path for Location Path",
-			config: &ScriptConfig{
-				Name:     "test3",
-				Type:     ScriptTypeBash,
-				Location: ScriptLocationPath,
-			},
-			expectedError: ErrPathRequired,
+			expectedError: ErrRunRequired,
 		},
 		{
 			name: "Unsupported Script Type",
-			config: &ScriptConfig{
+			config: &HookConfig{
 				Name: "test4",
-				Path: "my-script.go",
+				Run:  "my-script.go",
 			},
 			expectedError: ErrUnsupportedScriptType,
-		},
-		{
-			name: "Invalid External Script",
-			config: &ScriptConfig{
-				Name: "test5",
-				Path: "no-exist.ps1",
-			},
-			expectedError: os.ErrNotExist,
+			createFile:    true,
 		},
 		{
 			name: "Valid External Script",
-			config: &ScriptConfig{
+			config: &HookConfig{
 				Name: "test5",
-				Path: "my-script.ps1",
+				Run:  "my-script.ps1",
 			},
+			createFile: true,
 		},
 		{
 			name: "Valid Inline",
-			config: &ScriptConfig{
-				Name:   "test5",
-				Type:   ScriptTypeBash,
-				Script: "echo 'Hello'",
+			config: &HookConfig{
+				Name:  "test5",
+				Shell: ShellTypeBash,
+				Run:   "echo 'Hello'",
 			},
 		},
 	}
 
 	for _, test := range scriptValidations {
+		if test.createFile {
+			ensureScriptsExist(t, map[string]*HookConfig{"test": test.config})
+		}
+
 		t.Run(test.name, func(t *testing.T) {
 			res, err := runner.GetScript(test.config)
 			if test.expectedError != nil {

@@ -13,7 +13,7 @@ import (
 	"golang.org/x/exp/slices"
 )
 
-type HookFilterPredicateFn func(scriptName string, scriptConfig *ScriptConfig) bool
+type HookFilterPredicateFn func(scriptName string, hookConfig *HookConfig) bool
 
 // Hooks enable support to invoke integration scripts before & after commands
 // Scripts can be invoked at the project or service level or
@@ -40,19 +40,19 @@ func NewHooksManager(
 	}
 }
 
-// Gets an array of all script configurations
+// Gets an array of all hook configurations
 // Will return an error if any configuration errors are found
-func (h *HooksManager) GetAllScriptConfigs(scripts map[string]*ScriptConfig) ([]*ScriptConfig, error) {
-	return h.filterScriptConfigs(scripts, nil)
+func (h *HooksManager) GetAll(hooks map[string]*HookConfig) ([]*HookConfig, error) {
+	return h.filterConfigs(hooks, nil)
 }
 
-// Gets an array of script configurations matching the specified hook type and commands
+// Gets an array of hook configurations matching the specified hook type and commands
 // Will return an error if any configuration errors are found
-func (h *HooksManager) GetScriptConfigsForHook(
-	scripts map[string]*ScriptConfig,
+func (h *HooksManager) GetByParams(
+	hooks map[string]*HookConfig,
 	prefix HookType,
 	commands ...string,
-) ([]*ScriptConfig, error) {
+) ([]*HookConfig, error) {
 	validHookNames := []string{}
 
 	for _, commandName := range commands {
@@ -64,7 +64,7 @@ func (h *HooksManager) GetScriptConfigsForHook(
 		validHookNames = append(validHookNames, strings.ToLower(string(prefix)+commandName))
 	}
 
-	predicate := func(scriptName string, scriptConfig *ScriptConfig) bool {
+	predicate := func(scriptName string, hookConfig *HookConfig) bool {
 		index := slices.IndexFunc(validHookNames, func(hookName string) bool {
 			return hookName == scriptName
 		})
@@ -72,17 +72,17 @@ func (h *HooksManager) GetScriptConfigsForHook(
 		return index > -1
 	}
 
-	return h.filterScriptConfigs(scripts, predicate)
+	return h.filterConfigs(hooks, predicate)
 }
 
-// Filters the specified script configurations based on the predicate
+// Filters the specified hook configurations based on the predicate
 // Will return an error if any configuration errors are found
-func (h *HooksManager) filterScriptConfigs(
-	scripts map[string]*ScriptConfig,
+func (h *HooksManager) filterConfigs(
+	hooks map[string]*HookConfig,
 	predicate HookFilterPredicateFn,
-) ([]*ScriptConfig, error) {
-	allHooks := []*ScriptConfig{}
-	explicitHooks, err := h.getExplicitHooks(scripts, predicate)
+) ([]*HookConfig, error) {
+	allHooks := []*HookConfig{}
+	explicitHooks, err := h.getExplicitHooks(hooks, predicate)
 	if err != nil {
 		return nil, err
 	}
@@ -96,14 +96,14 @@ func (h *HooksManager) filterScriptConfigs(
 
 	// Only append implicit hooks that were not already wired up explicitly.
 	for _, implicitHook := range implicitHooks {
-		index := slices.IndexFunc(allHooks, func(hook *ScriptConfig) bool {
+		index := slices.IndexFunc(allHooks, func(hook *HookConfig) bool {
 			return implicitHook.Name == hook.Name
 		})
 
 		if index >= 0 {
 			log.Printf(
 				"Skipping hook @ '%s'. An explicit hook for '%s' was already defined in azure.yaml.\n",
-				implicitHook.Path,
+				implicitHook.path,
 				implicitHook.Name,
 			)
 			continue
@@ -116,43 +116,43 @@ func (h *HooksManager) filterScriptConfigs(
 }
 
 func (h *HooksManager) getExplicitHooks(
-	scripts map[string]*ScriptConfig,
+	hooks map[string]*HookConfig,
 	predicate HookFilterPredicateFn,
-) ([]*ScriptConfig, error) {
-	matchingScripts := []*ScriptConfig{}
+) ([]*HookConfig, error) {
+	matchingHooks := []*HookConfig{}
 
 	// Find explicitly configured hooks from azure.yaml
-	for scriptName, scriptConfig := range scripts {
-		if scriptConfig == nil {
+	for scriptName, hookConfig := range hooks {
+		if hookConfig == nil {
 			continue
 		}
 
-		if predicate != nil && !predicate(scriptName, scriptConfig) {
+		if predicate != nil && !predicate(scriptName, hookConfig) {
 			continue
 		}
 
-		// If the script config includes an OS specific configuration use that instead
-		if runtime.GOOS == "windows" && scriptConfig.Windows != nil {
-			scriptConfig = scriptConfig.Windows
-		} else if (runtime.GOOS == "linux" || runtime.GOOS == "darwin") && scriptConfig.Posix != nil {
-			scriptConfig = scriptConfig.Posix
+		// If the hook config includes an OS specific configuration use that instead
+		if runtime.GOOS == "windows" && hookConfig.Windows != nil {
+			hookConfig = hookConfig.Windows
+		} else if (runtime.GOOS == "linux" || runtime.GOOS == "darwin") && hookConfig.Posix != nil {
+			hookConfig = hookConfig.Posix
 		}
 
-		scriptConfig.Name = scriptName
-		scriptConfig.Path = strings.ReplaceAll(scriptConfig.Path, "/", string(os.PathSeparator))
+		hookConfig.Name = scriptName
+		hookConfig.cwd = h.cwd
 
-		if err := scriptConfig.validate(); err != nil {
+		if err := hookConfig.validate(); err != nil {
 			return nil, fmt.Errorf("hook configuration for '%s' is invalid, %w", scriptName, err)
 		}
 
-		matchingScripts = append(matchingScripts, scriptConfig)
+		matchingHooks = append(matchingHooks, hookConfig)
 	}
 
-	return matchingScripts, nil
+	return matchingHooks, nil
 }
 
-func (h *HooksManager) getImplicitHooks(predicate HookFilterPredicateFn) ([]*ScriptConfig, error) {
-	matchingScripts := []*ScriptConfig{}
+func (h *HooksManager) getImplicitHooks(predicate HookFilterPredicateFn) ([]*HookConfig, error) {
+	matchingHooks := []*HookConfig{}
 
 	hooksDir := filepath.Join(h.cwd, ".azure", "hooks")
 	files, err := os.ReadDir(hooksDir)
@@ -163,7 +163,7 @@ func (h *HooksManager) getImplicitHooks(predicate HookFilterPredicateFn) ([]*Scr
 			log.Printf("failed to read azd hooks directory: %s", err.Error())
 		}
 
-		return matchingScripts, nil
+		return matchingHooks, nil
 	}
 
 	// Find implicit / convention based hooks in the .azure/hooks directory
@@ -184,21 +184,22 @@ func (h *HooksManager) getImplicitHooks(predicate HookFilterPredicateFn) ([]*Scr
 			continue
 		}
 
-		scriptConfig := &ScriptConfig{
+		hookConfig := &HookConfig{
 			Name: fileNameWithoutExt,
-			Path: relativePath,
+			cwd:  h.cwd,
+			Run:  relativePath,
 		}
 
-		if predicate != nil && !predicate(fileNameWithoutExt, scriptConfig) {
+		if predicate != nil && !predicate(fileNameWithoutExt, hookConfig) {
 			continue
 		}
 
-		if err := scriptConfig.validate(); err != nil {
+		if err := hookConfig.validate(); err != nil {
 			return nil, fmt.Errorf("hook configuration for '%s' is invalid, %w", fileNameWithoutExt, err)
 		}
 
-		matchingScripts = append(matchingScripts, scriptConfig)
+		matchingHooks = append(matchingHooks, hookConfig)
 	}
 
-	return matchingScripts, nil
+	return matchingHooks, nil
 }

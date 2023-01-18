@@ -10,13 +10,13 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 )
 
-type ScriptType string
+type ShellType string
 type ScriptLocation string
 
 const (
-	ScriptTypeBash        ScriptType     = "bash"
-	ScriptTypePowershell  ScriptType     = "powershell"
-	ScriptTypeUnknown     ScriptType     = ""
+	ShellTypeBash         ShellType      = "bash"
+	ShellTypePowershell   ShellType      = "powershell"
+	ScriptTypeUnknown     ShellType      = ""
 	ScriptLocationInline  ScriptLocation = "inline"
 	ScriptLocationPath    ScriptLocation = "path"
 	ScriptLocationUnknown ScriptLocation = ""
@@ -30,8 +30,7 @@ var (
 	ErrScriptTypeUnknown error = errors.New(
 		"unable to determine script type. Ensure 'Type' parameter is set in configuration options",
 	)
-	ErrScriptRequired        error = errors.New("script is required when location is set to 'Inline'")
-	ErrPathRequired          error = errors.New("path is required when location is set to 'Path'")
+	ErrRunRequired           error = errors.New("run is always required")
 	ErrUnsupportedScriptType error = errors.New("script type is not valid. Only '.sh' and '.ps1' are supported")
 )
 
@@ -41,90 +40,103 @@ type InvokeFn func() error
 // The type of hooks. Supported values are 'pre' and 'post'
 type HookType string
 
-type ScriptConfig struct {
+// Azd hook configuration
+type HookConfig struct {
+	// The location of the script hook (file path or inline)
+	location ScriptLocation
+	// When location is `path` a file path must be specified relative to the project or service
+	path string
+	// Stores a value whether or not this hook config has been previously validated
 	validated bool
+	// Stores the working directory set for this hook config
+	cwd string
+	// When location is `inline` a script must be defined inline
+	script string
 
 	// Internal name of the hook running for a given command
 	Name string `yaml:",omitempty"`
 	// The type of script hook (bash or powershell)
-	Type ScriptType `yaml:"type,omitempty"`
-	// The location of the script hook (file path or inline)
-	Location ScriptLocation `yaml:"location,omitempty"`
-	// When location is `path` a file path must be specified relative to the project or service
-	Path string `yaml:"path,omitempty"`
-	// When location is `inline` a script must be defined inline
-	Script string `yaml:"script,omitempty"`
+	Shell ShellType `yaml:"shell,omitempty"`
+	// The inline script to execute or path to existing file
+	Run string `yaml:"run,omitempty"`
 	// When set to true will not halt command execution even when a script error occurs.
 	ContinueOnError bool `yaml:"continueOnError,omitempty"`
 	// When set to true will bind the stdin, stdout & stderr to the running console
 	Interactive bool `yaml:"interactive,omitempty"`
 	// When running on windows use this override config
-	Windows *ScriptConfig `yaml:"windows,omitempty"`
+	Windows *HookConfig `yaml:"windows,omitempty"`
 	// When running on linux/macos use this override config
-	Posix *ScriptConfig `yaml:"linux,omitempty"`
+	Posix *HookConfig `yaml:"linux,omitempty"`
 }
 
-// Validates and normalizes the script configuration
-func (sc *ScriptConfig) validate() error {
-	if sc.validated {
+// Validates and normalizes the hook configuration
+func (hc *HookConfig) validate() error {
+	if hc.validated {
 		return nil
 	}
 
-	if sc.Type == ScriptTypeUnknown && sc.Path == "" {
+	if hc.Run == "" {
+		return ErrRunRequired
+	}
+
+	hc.Run = strings.ReplaceAll(hc.Run, "/", string(os.PathSeparator))
+
+	scriptPath := hc.Run
+	if hc.cwd != "" {
+		scriptPath = filepath.Join(hc.cwd, hc.Run)
+	}
+
+	stats, err := os.Stat(scriptPath)
+	if err == nil && !stats.IsDir() {
+		hc.location = ScriptLocationPath
+		hc.path = hc.Run
+	} else {
+		hc.location = ScriptLocationInline
+		hc.script = hc.Run
+	}
+
+	if hc.Shell == ScriptTypeUnknown && hc.path == "" {
 		return ErrScriptTypeUnknown
 	}
 
-	if sc.Location == ScriptLocationInline && sc.Script == "" {
-		return ErrScriptRequired
-	}
-
-	if sc.Location == ScriptLocationPath && sc.Path == "" {
-		return ErrPathRequired
-	}
-
-	if sc.Location == ScriptLocationUnknown {
-		if sc.Path != "" {
-			sc.Location = ScriptLocationPath
-		} else if sc.Script != "" {
-			sc.Location = ScriptLocationInline
+	if hc.location == ScriptLocationUnknown {
+		if hc.path != "" {
+			hc.location = ScriptLocationPath
+		} else if hc.script != "" {
+			hc.location = ScriptLocationInline
 		}
 	}
 
-	if sc.Location == ScriptLocationInline {
-		tempScript, err := createTempScript(sc)
+	if hc.location == ScriptLocationInline {
+		tempScript, err := createTempScript(hc)
 		if err != nil {
 			return err
 		}
 
-		sc.Path = tempScript
+		hc.path = tempScript
 	}
 
-	if sc.Type == ScriptTypeUnknown {
-		scriptType, err := inferScriptTypeFromFilePath(sc.Path)
+	if hc.Shell == ScriptTypeUnknown {
+		scriptType, err := inferScriptTypeFromFilePath(hc.path)
 		if err != nil {
 			return err
 		}
 
-		sc.Type = scriptType
+		hc.Shell = scriptType
 	}
 
-	_, err := os.Stat(sc.Path)
-	if err != nil {
-		return fmt.Errorf("script at '%s' is invalid, %w", sc.Path, err)
-	}
-
-	sc.validated = true
+	hc.validated = true
 
 	return nil
 }
 
-func inferScriptTypeFromFilePath(path string) (ScriptType, error) {
+func inferScriptTypeFromFilePath(path string) (ShellType, error) {
 	fileExtension := filepath.Ext(path)
 	switch fileExtension {
 	case ".sh":
-		return ScriptTypeBash, nil
+		return ShellTypeBash, nil
 	case ".ps1":
-		return ScriptTypePowershell, nil
+		return ShellTypePowershell, nil
 	default:
 		return "", fmt.Errorf(
 			"script with file extension '%s' is not valid. %w.",
@@ -134,17 +146,17 @@ func inferScriptTypeFromFilePath(path string) (ScriptType, error) {
 	}
 }
 
-func createTempScript(scriptConfig *ScriptConfig) (string, error) {
+func createTempScript(hookConfig *HookConfig) (string, error) {
 	var ext string
 	scriptHeader := []string{}
 
-	switch scriptConfig.Type {
-	case ScriptTypeBash:
+	switch hookConfig.Shell {
+	case ShellTypeBash:
 		ext = "sh"
 		scriptHeader = []string{
 			"#!/bin/sh",
 		}
-	case ScriptTypePowershell:
+	case ShellTypePowershell:
 		ext = "ps1"
 	}
 
@@ -161,7 +173,7 @@ func createTempScript(scriptConfig *ScriptConfig) (string, error) {
 	}
 
 	// Write the temporary script file to .azure/hooks folder
-	file, err := os.CreateTemp(directory, fmt.Sprintf("%s-*.%s", scriptConfig.Name, ext))
+	file, err := os.CreateTemp(directory, fmt.Sprintf("%s-*.%s", hookConfig.Name, ext))
 	if err != nil {
 		return "", fmt.Errorf("failed creating hook file: %w", err)
 	}
@@ -174,7 +186,7 @@ func createTempScript(scriptConfig *ScriptConfig) (string, error) {
 	}
 	scriptBuilder.WriteString("\n")
 	scriptBuilder.WriteString("# Auto generated file from Azure Developer CLI\n")
-	scriptBuilder.WriteString(scriptConfig.Script)
+	scriptBuilder.WriteString(hookConfig.script)
 
 	// Temp generated files are cleaned up automatically after script execution has completed.
 	_, err = file.WriteString(scriptBuilder.String())

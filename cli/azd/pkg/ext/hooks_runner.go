@@ -22,7 +22,7 @@ type HooksRunner struct {
 	commandRunner exec.CommandRunner
 	console       input.Console
 	cwd           string
-	scripts       map[string]*ScriptConfig
+	hooks         map[string]*HookConfig
 	envVars       []string
 }
 
@@ -33,7 +33,7 @@ func NewHooksRunner(
 	commandRunner exec.CommandRunner,
 	console input.Console,
 	cwd string,
-	scripts map[string]*ScriptConfig,
+	hooks map[string]*HookConfig,
 	envVars []string,
 ) *HooksRunner {
 	if cwd == "" {
@@ -50,7 +50,7 @@ func NewHooksRunner(
 		commandRunner: commandRunner,
 		console:       console,
 		cwd:           cwd,
-		scripts:       scripts,
+		hooks:         hooks,
 		envVars:       envVars,
 	}
 }
@@ -77,13 +77,13 @@ func (h *HooksRunner) Invoke(ctx context.Context, commands []string, actionFn In
 
 // Invokes any registered script hooks for the specified hook type and command.
 func (h *HooksRunner) RunHooks(ctx context.Context, hookType HookType, commands []string) error {
-	scripts, err := h.hooksManager.GetScriptConfigsForHook(h.scripts, hookType, commands...)
+	hooks, err := h.hooksManager.GetByParams(h.hooks, hookType, commands...)
 	if err != nil {
 		return fmt.Errorf("failed running scripts for hooks '%s', %w", strings.Join(commands, ","), err)
 	}
 
-	for _, scriptConfig := range scripts {
-		err := h.execScriptConfig(ctx, scriptConfig)
+	for _, hookConfig := range hooks {
+		err := h.execHook(ctx, hookConfig)
 		if err != nil {
 			return err
 		}
@@ -92,42 +92,40 @@ func (h *HooksRunner) RunHooks(ctx context.Context, hookType HookType, commands 
 	return nil
 }
 
-// Gets the script to execute based on the script configuration values
+// Gets the script to execute based on the hook configuration values
 // For inline scripts this will also create a temporary script file to execute
-func (h *HooksRunner) GetScript(scriptConfig *ScriptConfig) (tools.Script, error) {
-	if err := scriptConfig.validate(); err != nil {
+func (h *HooksRunner) GetScript(hookConfig *HookConfig) (tools.Script, error) {
+	if err := hookConfig.validate(); err != nil {
 		return nil, err
 	}
 
-	switch scriptConfig.Type {
-	case ScriptTypeBash:
+	switch hookConfig.Shell {
+	case ShellTypeBash:
 		return bash.NewBashScript(h.commandRunner, h.cwd, h.envVars), nil
-	case ScriptTypePowershell:
+	case ShellTypePowershell:
 		return powershell.NewPowershellScript(h.commandRunner, h.cwd, h.envVars), nil
 	default:
 		return nil, fmt.Errorf(
 			"script type '%s' is not a valid option. Only Bash and powershell scripts are supported",
-			scriptConfig.Type,
+			hookConfig.Shell,
 		)
 	}
 }
 
-func (h *HooksRunner) execScriptConfig(ctx context.Context, scriptConfig *ScriptConfig) error {
+func (h *HooksRunner) execHook(ctx context.Context, hookConfig *HookConfig) error {
 	// Delete any temporary inline scripts after execution
-	defer func() {
-		if scriptConfig.Location == ScriptLocationInline {
-			os.Remove(scriptConfig.Path)
-		}
-	}()
+	if hookConfig.location == ScriptLocationInline {
+		defer os.Remove(hookConfig.path)
+	}
 
-	script, err := h.GetScript(scriptConfig)
+	script, err := h.GetScript(hookConfig)
 	if err != nil {
 		return err
 	}
 
 	formatter := h.console.GetFormatter()
 	consoleInteractive := formatter == nil || formatter.Kind() == output.NoneFormat
-	scriptInteractive := consoleInteractive && scriptConfig.Interactive
+	scriptInteractive := consoleInteractive && hookConfig.Interactive
 
 	// When running in an interactive terminal broadcast a message to the dev to remind them that custom hooks are running.
 	if consoleInteractive {
@@ -136,26 +134,26 @@ func (h *HooksRunner) execScriptConfig(ctx context.Context, scriptConfig *Script
 			output.WithBold(
 				fmt.Sprintf(
 					"Executing %s hook => %s",
-					output.WithHighLightFormat(scriptConfig.Name),
-					output.WithHighLightFormat(scriptConfig.Path),
+					output.WithHighLightFormat(hookConfig.Name),
+					output.WithHighLightFormat(hookConfig.path),
 				),
 			),
 		)
 	}
 
-	log.Printf("Executing script '%s'\n", scriptConfig.Path)
-	res, err := script.Execute(ctx, scriptConfig.Path, scriptInteractive)
+	log.Printf("Executing script '%s'\n", hookConfig.path)
+	res, err := script.Execute(ctx, hookConfig.path, scriptInteractive)
 	if err != nil {
 		execErr := fmt.Errorf(
 			"'%s' hook failed with exit code: '%d', Path: '%s'. : %w",
-			scriptConfig.Name,
+			hookConfig.Name,
 			res.ExitCode,
-			scriptConfig.Path,
+			hookConfig.path,
 			err,
 		)
 
 		// If an error occurred log the failure but continue
-		if scriptConfig.ContinueOnError {
+		if hookConfig.ContinueOnError {
 			h.console.Message(ctx, output.WithBold(output.WithWarningFormat("WARNING: %s", execErr.Error())))
 			h.console.Message(
 				ctx,

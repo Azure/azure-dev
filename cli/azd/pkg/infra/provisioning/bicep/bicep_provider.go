@@ -283,7 +283,9 @@ func (p *BicepProvider) Destroy(
 				return
 			}
 
-			asyncContext.SetProgress(&DestroyProgress{Message: "Getting API Management Services to purge", Timestamp: time.Now()})
+			asyncContext.SetProgress(
+				&DestroyProgress{Message: "Getting API Management Services to purge", Timestamp: time.Now()},
+			)
 			apiManagements, err := p.getApiManagementsToPurge(ctx, groupedResources)
 			if err != nil {
 				asyncContext.SetError(fmt.Errorf("getting API managements to purge: %w", err))

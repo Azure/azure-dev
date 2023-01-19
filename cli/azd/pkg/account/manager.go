@@ -27,10 +27,11 @@ var defaultLocation Location = Location{
 // Manages azd account configuration
 type Manager struct {
 	// Path to the local azd user configuration file
-	filePath      string
-	configManager config.Manager
-	config        config.Config
-	azCli         azcli.AzCli
+	filePath                  string
+	configManager             config.Manager
+	config                    config.Config
+	azCli                     azcli.AzCli
+	defaultConfigUnaccessible bool
 }
 
 // Creates a new Account Manager instance
@@ -182,19 +183,17 @@ func (m *Manager) SetDefaultLocation(ctx context.Context, subscriptionId string,
 }
 
 // Checks whether account related defaults of subscription and location have previously been set
-func (m *Manager) HasDefaults(ctx context.Context) (hasDefaults bool, areDefaultAccessible bool) {
-	sub, hasDefaultSubscription := m.config.Get(defaultSubscriptionKeyPath)
+func (m *Manager) HasDefaults() bool {
+	_, hasDefaultSubscription := m.config.Get(defaultSubscriptionKeyPath)
 	_, hasDefaultLocation := m.config.Get(defaultLocationKeyPath)
 
-	// check if the defaults are valid/accessible
-	if hasDefaultSubscription {
-		if _, err := m.azCli.GetAccount(ctx, fmt.Sprint(sub)); err == nil {
-			areDefaultAccessible = true
-		}
-	}
-
 	// when inaccessibleDefaults is set to True, the current defaults can't be used
-	return hasDefaultSubscription && hasDefaultLocation, areDefaultAccessible
+	return hasDefaultSubscription && hasDefaultLocation
+}
+
+// Checks whether account related defaults of subscription and location have previously been set and can be access
+func (m *Manager) HasAccessibleDefaults() bool {
+	return m.HasDefaults() && !m.defaultConfigUnaccessible
 }
 
 // Clears any persisted defaults in the AZD config
@@ -248,6 +247,7 @@ func (m *Manager) getDefaultSubscription(ctx context.Context) (*Subscription, er
 		msg := "is either invalid or you no longer have access. Check your configuration with 'azd config list'."
 		log.Printf("the subscription id %s %s Error: %s. Default subscription will be ignored.",
 			subscriptionId, msg, err.Error())
+		m.defaultConfigUnaccessible = true
 		return nil, nil
 	}
 

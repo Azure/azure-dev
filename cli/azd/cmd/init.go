@@ -224,8 +224,8 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	}
 
 	// If defaults exists but somehow became invalid, ask user if they want to override with current selection
-	defaultsExists, defaultsAreValid := i.accountManager.HasDefaults(ctx)
-	if !defaultsAreValid {
+	defaultsExists := i.accountManager.HasDefaults()
+	if defaultsExists && !i.accountManager.HasAccessibleDefaults() {
 		confirmMsg := "Do you want to use your current selection as defaults?"
 		confirmOverride, err := i.console.Confirm(ctx, input.ConsoleOptions{
 			Message:      confirmMsg,
@@ -234,6 +234,8 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		if err != nil {
 			return nil, fmt.Errorf("confirm for override default settings: %w", err)
 		}
+		// `defaultsExists` is used by init command to know when to persist default settings to the local config
+		// in case `confirmOverride` by the user, setting `defaultExists` to false will ensure config to be persisted locally
 		if confirmOverride {
 			defaultsExists = !confirmOverride
 		}

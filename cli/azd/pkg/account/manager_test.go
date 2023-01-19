@@ -411,7 +411,7 @@ func Test_HasDefaults(t *testing.T) {
 			})
 		})
 
-		value, valid := manager.HasDefaults(*mockContext.Context)
+		value, valid := manager.HasDefaults(), manager.HasAccessibleDefaults()
 		require.True(t, value)
 		require.True(t, valid)
 	})
@@ -444,7 +444,7 @@ func Test_HasDefaults(t *testing.T) {
 			}, nil
 		})
 
-		value, valid := manager.HasDefaults(*mockContext.Context)
+		value, valid := manager.HasDefaults(), manager.HasAccessibleDefaults()
 		require.True(t, value)
 		require.False(t, valid)
 	})
@@ -458,7 +458,7 @@ func Test_HasDefaults(t *testing.T) {
 		)
 		require.NoError(t, err)
 
-		value, valid := manager.HasDefaults(*mockContext.Context)
+		value, valid := manager.HasDefaults(), manager.HasAccessibleDefaults()
 		require.False(t, value)
 		require.False(t, valid)
 	})

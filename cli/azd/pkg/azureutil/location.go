@@ -11,9 +11,9 @@ import (
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
-	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 )
 
@@ -43,7 +43,8 @@ func PromptLocationWithFilter(
 	azCli azcli.AzCli,
 	filter func(azcli.AzCliLocation) bool,
 ) (string, error) {
-	accountManager, err := account.NewManager(config.NewManager(), azCli)
+	var accountManager *account.Manager
+	err := ioc.Global.Resolve(&accountManager)
 	if err != nil {
 		return "", fmt.Errorf("failed creating account manager: %w", err)
 	}

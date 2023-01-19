@@ -33,7 +33,7 @@ resource postgresServer 'Microsoft.DBforPostgreSQL/flexibleServers@2022-01-20-pr
   }]
 
   resource firewall 'firewallRules' = if (enableFirewall) {
-    name: 'postgresql-firwall'
+    name: 'postgresql-firewall'
     properties: {
         startIpAddress: '0.0.0.0'
         endIpAddress: '255.255.255.255'

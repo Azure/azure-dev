@@ -92,8 +92,10 @@ func Test_GetAccountDefaults(t *testing.T) {
 		require.NoError(t, err)
 
 		accountDefaults, err := manager.GetAccountDefaults(*mockContext.Context)
-		require.Nil(t, accountDefaults)
-		require.Error(t, err)
+		require.NotNil(t, accountDefaults)
+		require.Nil(t, accountDefaults.DefaultSubscription)
+		require.EqualValues(t, *accountDefaults.DefaultLocation, defaultLocation)
+		require.NoError(t, err)
 	})
 
 	t.Run("InvalidLocation", func(t *testing.T) {

@@ -70,6 +70,7 @@ func GetResourceTypeDisplayName(resourceType AzureResourceType) string {
 	case AzureResourceTypePostgreSqlServer:
 		return "Azure PostgreSQL Server"
 	}
+
 	return ""
 }
 

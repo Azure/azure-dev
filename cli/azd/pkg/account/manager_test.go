@@ -414,6 +414,39 @@ func Test_HasDefaults(t *testing.T) {
 		require.True(t, valid)
 	})
 
+	t.Run("DefaultsSetButNotAccessible", func(t *testing.T) {
+		azdConfig := config.NewConfig(map[string]any{
+			"defaults": map[string]any{
+				"subscription": "SUBSCRIPTION_ID",
+				"location":     "LOCATION",
+			},
+		})
+
+		manager, err := NewManager(
+			mockContext.ConfigManager.WithConfig(azdConfig),
+			mockazcli.NewAzCliFromMockContext(mockContext),
+		)
+		require.NoError(t, err)
+
+		mockContext.HttpClient.When(func(request *http.Request) bool {
+			return request.Method == http.MethodGet && strings.Contains(
+				request.URL.Path,
+				"/subscriptions/SUBSCRIPTION_ID",
+			)
+		}).RespondFn(func(request *http.Request) (*http.Response, error) {
+			return &http.Response{
+				Request:    request,
+				StatusCode: http.StatusNotFound,
+				Header:     http.Header{},
+				Body:       http.NoBody,
+			}, nil
+		})
+
+		value, valid := manager.HasDefaults(*mockContext.Context)
+		require.True(t, value)
+		require.False(t, valid)
+	})
+
 	t.Run("DefaultsNotSet", func(t *testing.T) {
 		azdConfig := config.NewConfig(nil)
 

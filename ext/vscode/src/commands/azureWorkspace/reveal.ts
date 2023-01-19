@@ -30,6 +30,7 @@ export async function revealAzureResource(context: IActionContext, treeItem: Tre
             executeSteps: [
                 new RevealStep(),
             ],
+            hideStepCount: true, // Steps are very frequently going to be skipped with a default selection made, so don't show the step count
         }
     );
 
@@ -58,6 +59,7 @@ export async function revealAzureResourceGroup(context: IActionContext, treeItem
             executeSteps: [
                 new RevealStep(),
             ],
+            hideStepCount: true, // Steps are very frequently going to be skipped with a default selection made, so don't show the step count
         }
     );
 

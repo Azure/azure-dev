@@ -136,26 +136,26 @@ func (s *showAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 			err)
 	}
 
-	resourceGroups, err := resourceManager.GetResourceGroupsForEnvironment(ctx, env)
-	if err != nil {
-		return nil, fmt.Errorf("discovering resource groups from deployment: %w", err)
-	}
+	res.Resources = []contracts.ShowResource{}
 
-	var resourceIds []contracts.ShowResource
+	if resourceGroups, err := resourceManager.GetResourceGroupsForEnvironment(ctx, env); err == nil {
+		for _, resourceGroup := range resourceGroups {
+			res.Resources = append(res.Resources, contracts.ShowResource{Type: resourceGroup.Type, Id: resourceGroup.Id})
+			resources, err := s.azCli.ListResourceGroupResources(ctx, env.GetSubscriptionId(), resourceGroup.Name, nil)
+			if err != nil {
+				log.Printf("ignoring error listing resources for group %s: %v", resourceGroup.Name, err)
+				continue
+			}
 
-	for _, resourceGroup := range resourceGroups {
-		resourceIds = append(resourceIds, contracts.ShowResource{Type: resourceGroup.Type, Id: resourceGroup.Id})
-		resources, err := s.azCli.ListResourceGroupResources(ctx, env.GetSubscriptionId(), resourceGroup.Name, nil)
-		if err != nil {
-			return nil, fmt.Errorf("listing resources: %w", err)
+			for _, resource := range resources {
+				res.Resources = append(res.Resources, contracts.ShowResource{Type: resource.Type, Id: resource.Id})
+			}
 		}
-
-		for _, resource := range resources {
-			resourceIds = append(resourceIds, contracts.ShowResource{Type: resource.Type, Id: resource.Id})
-		}
+	} else {
+		log.Printf("ignoring error determining resource group for environment %s, resources will not be available: %v",
+			env.GetEnvName(),
+			err)
 	}
-
-	res.Resources = resourceIds
 
 	return nil, s.formatter.Format(res, s.writer, nil)
 }

@@ -182,11 +182,21 @@ func (m *Manager) SetDefaultLocation(ctx context.Context, subscriptionId string,
 }
 
 // Checks whether account related defaults of subscription and location have previously been set
-func (m *Manager) HasDefaults() bool {
-	_, hasDefaultSubscription := m.config.Get(defaultSubscriptionKeyPath)
+func (m *Manager) HasDefaults(ctx context.Context) (hasDefaults bool, areDefaultAccessible bool) {
+	sub, hasDefaultSubscription := m.config.Get(defaultSubscriptionKeyPath)
 	_, hasDefaultLocation := m.config.Get(defaultLocationKeyPath)
+	areDefaultAccessible = true
 
-	return hasDefaultSubscription && hasDefaultLocation
+	// check if the defaults are valid/accessible
+	if hasDefaultSubscription {
+		_, err := m.azCli.GetAccount(ctx, fmt.Sprint(sub))
+		if err != nil {
+			areDefaultAccessible = false
+		}
+	}
+
+	// when inaccessibleDefaults is set to True, the current defaults can't be used
+	return hasDefaultSubscription && hasDefaultLocation, areDefaultAccessible
 }
 
 // Clears any persisted defaults in the AZD config
@@ -219,31 +229,35 @@ func (m *Manager) getAllSubscriptions(ctx context.Context) ([]*azcli.AzCliSubscr
 }
 
 // Returns the default subscription for the current logged in principal
-// If set in config will return the configured subscription
-// otherwise will return the first subscription found.
+// If set in config will return the configured subscription when it is accessible by the logged in user
+// otherwise will return nil for the subscription
 func (m *Manager) getDefaultSubscription(ctx context.Context) (*Subscription, error) {
 	// Get the default subscription ID from azd configuration
-	configSubscriptionId, ok := m.config.Get(defaultSubscriptionKeyPath)
+	configSubscriptionId, isDefaultSet := m.config.Get(defaultSubscriptionKeyPath)
 
-	if !ok {
+	if !isDefaultSet {
 		return nil, nil
 	}
 
 	subscriptionId := fmt.Sprint(configSubscriptionId)
-	subscription, err := m.azCli.GetAccount(ctx, subscriptionId)
+	subscriptionRecord, err := m.azCli.GetAccount(ctx, subscriptionId)
 	if err != nil {
-		return nil, fmt.Errorf(
-			`the subscription id '%s' is either invalid or you no longer have access. 
-			Check your configuration with 'azd config list'. %w`,
-			subscriptionId,
-			err,
+		// if azd can't get the stored default account, it could means:
+		// - customer access was removed for the subscription
+		// - customer switched to a different account w/o access to the account
+		// - subscription was deleted.
+		// At any case, we don't want to fail on any of these cases, we should only return
+		log.Printf("the subscription id " + subscriptionId + " is either invalid or you no longer have access. " +
+			"Check your configuration with 'azd config list'. Error: " + err.Error() +
+			". Default subscription will be ignored.",
 		)
+		return nil, nil
 	}
 
 	return &Subscription{
-		Id:       subscription.Id,
-		Name:     subscription.Name,
-		TenantId: subscription.TenantId,
+		Id:       subscriptionRecord.Id,
+		Name:     subscriptionRecord.Name,
+		TenantId: subscriptionRecord.TenantId,
 	}, nil
 }
 

@@ -223,9 +223,25 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		return nil, fmt.Errorf("saving default environment: %w", err)
 	}
 
+	// If defaults exists but somehow became invalid, ask user if they want to override with current selection
+	defaultsExists, defaultsAreValid := i.accountManager.HasDefaults(ctx)
+	if !defaultsAreValid {
+		confirmMsg := "Do you want to use your current selection as defaults?"
+		confirmOverride, err := i.console.Confirm(ctx, input.ConsoleOptions{
+			Message:      confirmMsg,
+			DefaultValue: false,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("confirm for override default settings: %w", err)
+		}
+		if confirmOverride {
+			defaultsExists = !confirmOverride
+		}
+	}
+
 	// If the configuration is empty, set default subscription & location
 	// This will be the case for first run experience
-	if !i.accountManager.HasDefaults() {
+	if !defaultsExists {
 		_, err = i.accountManager.SetDefaultSubscription(ctx, env.GetSubscriptionId())
 		if err != nil {
 			log.Printf("failed setting default subscription. %s\n", err.Error())

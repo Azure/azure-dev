@@ -236,7 +236,7 @@ func (m *Manager) getDefaultSubscription(ctx context.Context) (*Subscription, er
 	}
 
 	subscriptionId := fmt.Sprint(configSubscriptionId)
-	subscriptionRecord, err := m.azCli.GetAccount(ctx, subscriptionId)
+	subscription, err := m.azCli.GetAccount(ctx, subscriptionId)
 	if err != nil {
 		// if azd can't get the stored default account, it could means:
 		// - customer access was removed for the subscription
@@ -251,9 +251,9 @@ func (m *Manager) getDefaultSubscription(ctx context.Context) (*Subscription, er
 	}
 
 	return &Subscription{
-		Id:       subscriptionRecord.Id,
-		Name:     subscriptionRecord.Name,
-		TenantId: subscriptionRecord.TenantId,
+		Id:       subscription.Id,
+		Name:     subscription.Name,
+		TenantId: subscription.TenantId,
 	}, nil
 }
 

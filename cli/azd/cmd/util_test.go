@@ -13,10 +13,12 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armsubscriptions"
+	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockazcli"
@@ -123,6 +125,17 @@ func Test_promptEnvironmentName(t *testing.T) {
 func Test_getSubscriptionOptions(t *testing.T) {
 	t.Run("no default config set", func(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
+
+		ioc.Global.RegisterSingleton(func() azcli.AzCli {
+			return azcli.NewAzCli(mockContext.Credentials, azcli.NewAzCliArgs{
+				HttpClient: mockContext.HttpClient,
+			})
+		})
+		ioc.Global.RegisterSingleton(func() config.Manager {
+			return mockContext.ConfigManager
+		})
+		ioc.Global.RegisterSingleton(account.NewManager)
+
 		// set empty config as mock
 		mockContext.ConfigManager.WithConfig(config.NewConfig(nil))
 		mockContext.HttpClient.When(func(request *http.Request) bool {
@@ -166,6 +179,16 @@ func Test_getSubscriptionOptions(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
 		mockContext.ConfigManager.WithConfig(c)
 
+		ioc.Global.RegisterSingleton(func() azcli.AzCli {
+			return azcli.NewAzCli(mockContext.Credentials, azcli.NewAzCliArgs{
+				HttpClient: mockContext.HttpClient,
+			})
+		})
+		ioc.Global.RegisterSingleton(func() config.Manager {
+			return mockContext.ConfigManager
+		})
+		ioc.Global.RegisterSingleton(account.NewManager)
+
 		// Mock the account returned when a config is found
 		// the url path should contain the sub name from the config file
 		mockContext.HttpClient.When(func(request *http.Request) bool {
@@ -204,7 +227,6 @@ func Test_getSubscriptionOptions(t *testing.T) {
 
 		require.Nil(t, err)
 		require.EqualValues(t, 2, len(subList))
-		require.NotNil(t, result)
 		defSub, ok := result.(string)
 		require.True(t, ok)
 		require.EqualValues(t, " 1. DISPLAY (SUBSCRIPTION_ID)", defSub)

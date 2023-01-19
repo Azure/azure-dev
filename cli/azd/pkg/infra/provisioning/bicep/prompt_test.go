@@ -9,10 +9,14 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armsubscriptions"
+	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
+	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/stretchr/testify/require"
 )
@@ -253,6 +257,15 @@ func TestPromptForParametersLocation(t *testing.T) {
 	t.Parallel()
 
 	mockContext := mocks.NewMockContext(context.Background())
+	ioc.Global.RegisterSingleton(func() azcli.AzCli {
+		return azcli.NewAzCli(mockContext.Credentials, azcli.NewAzCliArgs{
+			HttpClient: mockContext.HttpClient,
+		})
+	})
+	ioc.Global.RegisterSingleton(func() config.Manager {
+		return mockContext.ConfigManager
+	})
+	ioc.Global.RegisterSingleton(account.NewManager)
 
 	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 		return strings.Contains(args.Cmd, "bicep") && args.Args[0] == "--version"

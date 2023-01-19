@@ -446,6 +446,14 @@ func Test_HasDefaults(t *testing.T) {
 
 		value, valid := manager.HasDefaults(), manager.HasAccessibleDefaults()
 		require.True(t, value)
+		require.True(t, valid)
+
+		sub, err := manager.getDefaultSubscription(*mockContext.Context)
+		// HasAccessibleDefaults() is updated with getDefaultSubscription
+		value, valid = manager.HasDefaults(), manager.HasAccessibleDefaults()
+		require.NoError(t, err)
+		require.Nil(t, sub)
+		require.True(t, value)
 		require.False(t, valid)
 	})
 

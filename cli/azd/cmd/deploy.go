@@ -168,7 +168,7 @@ func (d *deployAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 
 	for _, svc := range proj.Services {
 		hooksManager := ext.NewHooksManager(svc.Config.Path())
-		commandHooks := ext.NewHooksRunner(
+		hooksRunner := ext.NewHooksRunner(
 			hooksManager,
 			d.commandRunner,
 			d.console,
@@ -186,7 +186,7 @@ func (d *deployAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 
 		stepMessage := fmt.Sprintf("Deploying service %s", svc.Config.Name)
 		d.console.ShowSpinner(ctx, stepMessage, input.Step)
-		result, progress := svc.Deploy(ctx, azdCtx, commandHooks)
+		result, progress := svc.Deploy(ctx, azdCtx, hooksRunner)
 
 		// Report any progress to logs only. Changes for the console are managed by the console object.
 		// This routine is required to drain all the string messages sent by the `progress`.

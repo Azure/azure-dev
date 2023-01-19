@@ -102,8 +102,6 @@ ignoreWords:
     - predeploy
     - preinteractive
     - prealias
-    - preinteractive
-    - prealias
     - provs
     - psql
     - pview

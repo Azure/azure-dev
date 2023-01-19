@@ -7,8 +7,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 )
 
-const AnnotationName string = "actionName"
-
 // ActionFunc is an Action implementation for regular functions.
 type ActionFunc func(context.Context) (*ActionResult, error)
 
@@ -32,10 +30,6 @@ type ActionResult struct {
 type Action interface {
 	// Run executes the CLI command.
 	Run(ctx context.Context) (*ActionResult, error)
-}
-
-type BuildOptions struct {
-	DisableTelemetry bool
 }
 
 func ToUxItem(actionResult *ActionResult, err error) ux.UxItem {

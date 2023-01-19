@@ -61,8 +61,8 @@ func (svc *Service) Deploy(
 
 		err := hooksRunner.Invoke(ctx, []string{"package"}, func() error {
 			log.Printf("packing service %s", svc.Config.Name)
-			progress <- "Preparing packaging"
 
+			progress <- "Preparing packaging"
 			artifact, err := svc.Framework.Package(ctx, progress)
 			if err != nil {
 				result <- &ServiceDeploymentChannelResponse{

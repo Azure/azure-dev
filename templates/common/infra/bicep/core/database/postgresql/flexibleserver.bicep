@@ -4,14 +4,13 @@ param tags object = {}
 
 param sku object
 param storage object
-
-param databaseName string
 param administratorLogin string
 @secure()
 param administratorLoginPassword string
+param databaseNames array = []
+param enableFirewall bool = false
 
 // PostgreSQL version
-@allowed(['11', '12', '13', '14', '15'])
 param version string
 
 resource postgresServer 'Microsoft.DBforPostgreSQL/flexibleServers@2022-01-20-preview' = {
@@ -29,16 +28,15 @@ resource postgresServer 'Microsoft.DBforPostgreSQL/flexibleServers@2022-01-20-pr
     }
   }
 
-  resource database 'databases' = {
-    name: databaseName
-  }
+  resource database 'databases' = [for name in databaseNames: {
+    name: name
+  }]
 
-  resource firewall 'firewallRules' = {
-    name: 'AllowAllWindowsAzureIps'
+  resource firewall 'firewallRules' = if (enableFirewall) {
+    name: 'postgresql-firwall'
     properties: {
         startIpAddress: '0.0.0.0'
-        endIpAddress: '0.0.0.0'
+        endIpAddress: '255.255.255.255'
     }
   }
 }
-

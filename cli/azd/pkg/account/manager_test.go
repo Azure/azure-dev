@@ -92,8 +92,9 @@ func Test_GetAccountDefaults(t *testing.T) {
 		require.NoError(t, err)
 
 		accountDefaults, err := manager.GetAccountDefaults(*mockContext.Context)
-		require.Nil(t, accountDefaults)
-		require.Error(t, err)
+		require.EqualValues(
+			t, &Account{DefaultSubscription: (*Subscription)(nil), DefaultLocation: &defaultLocation}, accountDefaults)
+		require.NoError(t, err)
 	})
 
 	t.Run("InvalidLocation", func(t *testing.T) {
@@ -115,7 +116,7 @@ func Test_GetAccountDefaults(t *testing.T) {
 		require.NoError(t, err)
 
 		accountDefaults, err := manager.GetAccountDefaults(*mockContext.Context)
-		require.Nil(t, accountDefaults)
+		require.EqualValues(t, (*Account)(nil), accountDefaults)
 		require.Error(t, err)
 	})
 }
@@ -281,7 +282,8 @@ func Test_SetDefaultSubscription(t *testing.T) {
 		actualSubscription, err := manager.SetDefaultSubscription(*mockContext.Context, expectedSubscription.Id)
 
 		require.Error(t, err)
-		require.Nil(t, actualSubscription)
+		require.EqualValues(t, (*Subscription)(nil), actualSubscription)
+		require.Error(t, err)
 	})
 }
 

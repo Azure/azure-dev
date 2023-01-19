@@ -5,8 +5,6 @@ import (
 	"os"
 	"runtime"
 	"strings"
-
-	"golang.org/x/exp/slices"
 )
 
 type HookFilterPredicateFn func(scriptName string, hookConfig *HookConfig) bool
@@ -49,23 +47,20 @@ func (h *HooksManager) GetByParams(
 	prefix HookType,
 	commands ...string,
 ) ([]*HookConfig, error) {
-	validHookNames := []string{}
+	validHookNames := map[string]struct{}{}
 
 	for _, commandName := range commands {
 		// Convert things like `azd infra create` => 'infracreate`
 		commandName = strings.TrimPrefix(commandName, "azd")
 		commandName = strings.TrimSpace(commandName)
 		commandName = strings.ReplaceAll(commandName, " ", "")
-
-		validHookNames = append(validHookNames, strings.ToLower(string(prefix)+commandName))
+		commandName = strings.ToLower(string(prefix) + commandName)
+		validHookNames[commandName] = struct{}{}
 	}
 
 	predicate := func(scriptName string, hookConfig *HookConfig) bool {
-		index := slices.IndexFunc(validHookNames, func(hookName string) bool {
-			return hookName == scriptName
-		})
-
-		return index > -1
+		_, has := validHookNames[scriptName]
+		return has
 	}
 
 	return h.filterConfigs(hooks, predicate)

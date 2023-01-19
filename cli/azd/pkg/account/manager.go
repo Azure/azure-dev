@@ -185,13 +185,11 @@ func (m *Manager) SetDefaultLocation(ctx context.Context, subscriptionId string,
 func (m *Manager) HasDefaults(ctx context.Context) (hasDefaults bool, areDefaultAccessible bool) {
 	sub, hasDefaultSubscription := m.config.Get(defaultSubscriptionKeyPath)
 	_, hasDefaultLocation := m.config.Get(defaultLocationKeyPath)
-	areDefaultAccessible = true
 
 	// check if the defaults are valid/accessible
 	if hasDefaultSubscription {
-		_, err := m.azCli.GetAccount(ctx, fmt.Sprint(sub))
-		if err != nil {
-			areDefaultAccessible = false
+		if _, err := m.azCli.GetAccount(ctx, fmt.Sprint(sub)); err == nil {
+			areDefaultAccessible = true
 		}
 	}
 

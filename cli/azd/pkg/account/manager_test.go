@@ -395,8 +395,23 @@ func Test_HasDefaults(t *testing.T) {
 		)
 		require.NoError(t, err)
 
-		value, _ := manager.HasDefaults(*mockContext.Context)
+		mockContext.HttpClient.When(func(request *http.Request) bool {
+			return request.Method == http.MethodGet && strings.Contains(
+				request.URL.Path,
+				"/subscriptions/SUBSCRIPTION_ID",
+			)
+		}).RespondFn(func(request *http.Request) (*http.Response, error) {
+			return mocks.CreateHttpResponseWithBody(request, 200, armsubscriptions.Subscription{
+				ID:             convert.RefOf("SUBSCRIPTION"),
+				SubscriptionID: convert.RefOf("SUBSCRIPTION_ID"),
+				DisplayName:    convert.RefOf("DISPLAY"),
+				TenantID:       convert.RefOf("TENANT"),
+			})
+		})
+
+		value, valid := manager.HasDefaults(*mockContext.Context)
 		require.True(t, value)
+		require.True(t, valid)
 	})
 
 	t.Run("DefaultsNotSet", func(t *testing.T) {
@@ -408,8 +423,9 @@ func Test_HasDefaults(t *testing.T) {
 		)
 		require.NoError(t, err)
 
-		value, _ := manager.HasDefaults(*mockContext.Context)
+		value, valid := manager.HasDefaults(*mockContext.Context)
 		require.False(t, value)
+		require.False(t, valid)
 	})
 }
 

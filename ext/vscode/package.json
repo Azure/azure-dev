@@ -217,7 +217,8 @@
             "view/item/context": [
                 {
                     "command": "azure-dev.commands.cli.up",
-                    "when": "viewItem == ms-azuretools.azure-dev.views.workspace.application"
+                    "when": "viewItem == ms-azuretools.azure-dev.views.workspace.application",
+                    "group": "default@1"
                 },
                 {
                     "command": "azure-dev.commands.cli.up",
@@ -226,7 +227,8 @@
                 },
                 {
                     "command": "azure-dev.commands.cli.down",
-                    "when": "viewItem == ms-azuretools.azure-dev.views.workspace.application"
+                    "when": "viewItem == ms-azuretools.azure-dev.views.workspace.application",
+                    "group": "default@2"
                 },
                 {
                     "command": "azure-dev.commands.cli.down",
@@ -235,73 +237,88 @@
                 },
                 {
                     "command": "azure-dev.commands.cli.deploy",
-                    "when": "viewItem == ms-azuretools.azure-dev.views.workspace.application"
+                    "when": "viewItem == ms-azuretools.azure-dev.views.workspace.application",
+                    "group": "default@3"
                 },
                 {
                     "command": "azure-dev.commands.cli.infra-create",
-                    "when": "viewItem == ms-azuretools.azure-dev.views.workspace.application"
+                    "when": "viewItem == ms-azuretools.azure-dev.views.workspace.application",
+                    "group": "default@4"
                 },
                 {
                     "command": "azure-dev.commands.cli.infra-delete",
-                    "when": "viewItem == ms-azuretools.azure-dev.views.workspace.application"
-                },
-                {
-                    "command": "azure-dev.commands.cli.monitor",
-                    "when": "viewItem == ms-azuretools.azure-dev.views.workspace.application"
+                    "when": "viewItem == ms-azuretools.azure-dev.views.workspace.application",
+                    "group": "default@5"
                 },
                 {
                     "command": "azure-dev.commands.cli.monitor",
                     "when": "viewItem == ms-azuretools.azure-dev.views.workspace.application",
-                    "group": "inline@3"
+                    "group": "default@6"
+                },
+                {
+                    "command": "azure-dev.commands.cli.monitor",
+                    "when": "viewItem == ms-azuretools.azure-dev.views.workspace.application",
+                    "group": "inline@6"
                 },
                 {
                     "command": "azure-dev.commands.cli.pipeline-config",
-                    "when": "viewItem == ms-azuretools.azure-dev.views.workspace.application"
-                },
-                {
-                    "command": "azure-dev.commands.cli.env-new",
-                    "when": "viewItem == ms-azuretools.azure-dev.views.workspace.environments"
+                    "when": "viewItem == ms-azuretools.azure-dev.views.workspace.application",
+                    "group": "default@7"
                 },
                 {
                     "command": "azure-dev.commands.cli.env-new",
                     "when": "viewItem == ms-azuretools.azure-dev.views.workspace.environments",
-                    "group": "inline@1"
+                    "group": "default@8"
+                },
+                {
+                    "command": "azure-dev.commands.cli.env-new",
+                    "when": "viewItem == ms-azuretools.azure-dev.views.workspace.environments",
+                    "group": "inline@8"
                 },
                 {
                     "command": "azure-dev.commands.cli.env-select",
-                    "when": "viewItem == ms-azuretools.azure-dev.views.workspace.environment"
+                    "when": "viewItem == ms-azuretools.azure-dev.views.workspace.environment",
+                    "group": "default@9"
                 },
                 {
                     "command": "azure-dev.commands.cli.env-refresh",
-                    "when": "viewItem == ms-azuretools.azure-dev.views.workspace.environment"
-                },
-                {
-                    "command": "azure-dev.commands.cli.env-edit",
-                    "when": "viewItem == ms-azuretools.azure-dev.views.workspace.environment"
+                    "when": "viewItem == ms-azuretools.azure-dev.views.workspace.environment",
+                    "group": "default@10"
                 },
                 {
                     "command": "azure-dev.commands.cli.env-delete",
-                    "when": "viewItem == ms-azuretools.azure-dev.views.workspace.environment"
+                    "when": "viewItem == ms-azuretools.azure-dev.views.workspace.environment",
+                    "group": "default@11"
                 },
                 {
                     "command": "azure-dev.commands.cli.restore",
-                    "when": "viewItem == ms-azuretools.azure-dev.views.workspace.services"
+                    "when": "viewItem == ms-azuretools.azure-dev.views.workspace.services",
+                    "group": "default@12"
                 },
                 {
                     "command": "azure-dev.commands.cli.restore",
-                    "when": "viewItem == ms-azuretools.azure-dev.views.workspace.service"
+                    "when": "viewItem == ms-azuretools.azure-dev.views.workspace.service",
+                    "group": "default@12"
+                },
+                {
+                    "command": "azure-dev.commands.cli.env-edit",
+                    "when": "viewItem == ms-azuretools.azure-dev.views.workspace.environment",
+                    "group": "nonDefault@1"
                 },
                 {
                     "command": "azure-dev.commands.azureWorkspace.revealAzureResource",
-                    "when": "viewItem == ms-azuretools.azure-dev.views.workspace.service"
+                    "when": "viewItem == ms-azuretools.azure-dev.views.workspace.service",
+                    "group": "nonDefault@9"
                 },
                 {
                     "command": "azure-dev.commands.azureWorkspace.revealAzureResourceGroup",
-                    "when": "viewItem == ms-azuretools.azure-dev.views.workspace.application"
+                    "when": "viewItem == ms-azuretools.azure-dev.views.workspace.application",
+                    "group": "nonDefault@9"
                 },
                 {
                     "command": "azure-dev.commands.azureWorkspace.revealAzureResourceGroup",
-                    "when": "viewItem == ms-azuretools.azure-dev.views.workspace.environment"
+                    "when": "viewItem == ms-azuretools.azure-dev.views.workspace.environment",
+                    "group": "nonDefault@9"
                 }
             ]
         },

@@ -245,10 +245,9 @@ func (m *Manager) getDefaultSubscription(ctx context.Context) (*Subscription, er
 		// - customer switched to a different account w/o access to the account
 		// - subscription was deleted.
 		// At any case, we don't want to fail on any of these cases, we should only return
-		log.Printf("the subscription id " + subscriptionId + " is either invalid or you no longer have access. " +
-			"Check your configuration with 'azd config list'. Error: " + err.Error() +
-			". Default subscription will be ignored.",
-		)
+		msg := "is either invalid or you no longer have access. Check your configuration with 'azd config list'."
+		log.Printf("the subscription id %s %s Error: %s. Default subscription will be ignored.",
+			subscriptionId, msg, err.Error())
 		return nil, nil
 	}
 

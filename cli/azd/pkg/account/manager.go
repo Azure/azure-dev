@@ -187,7 +187,6 @@ func (m *Manager) HasDefaults() bool {
 	_, hasDefaultSubscription := m.config.Get(defaultSubscriptionKeyPath)
 	_, hasDefaultLocation := m.config.Get(defaultLocationKeyPath)
 
-	// when inaccessibleDefaults is set to True, the current defaults can't be used
 	return hasDefaultSubscription && hasDefaultLocation
 }
 

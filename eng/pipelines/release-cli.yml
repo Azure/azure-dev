@@ -738,6 +738,8 @@ stages:
                     ReleaseSyndicatedDockerContainer: true
                     PublishUpdatedDocs: true
                     UploadMsi: true
+                    PublishBrewFormula: true
+
 
       - deployment: Increment_Version
         condition: >-

@@ -395,7 +395,7 @@ func Test_HasDefaults(t *testing.T) {
 		)
 		require.NoError(t, err)
 
-		value := manager.HasDefaults()
+		value, _ := manager.HasDefaults(*mockContext.Context)
 		require.True(t, value)
 	})
 
@@ -408,7 +408,7 @@ func Test_HasDefaults(t *testing.T) {
 		)
 		require.NoError(t, err)
 
-		value := manager.HasDefaults()
+		value, _ := manager.HasDefaults(*mockContext.Context)
 		require.False(t, value)
 	})
 }

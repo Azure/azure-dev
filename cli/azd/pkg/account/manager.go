@@ -27,11 +27,10 @@ var defaultLocation Location = Location{
 // Manages azd account configuration
 type Manager struct {
 	// Path to the local azd user configuration file
-	filePath                  string
-	configManager             config.Manager
-	config                    config.Config
-	azCli                     azcli.AzCli
-	defaultConfigUnaccessible bool
+	filePath      string
+	configManager config.Manager
+	config        config.Config
+	azCli         azcli.AzCli
 }
 
 // Creates a new Account Manager instance
@@ -190,11 +189,6 @@ func (m *Manager) HasDefaults() bool {
 	return hasDefaultSubscription && hasDefaultLocation
 }
 
-// Checks whether account related defaults of subscription and location have previously been set and can be access
-func (m *Manager) HasAccessibleDefaults() bool {
-	return m.HasDefaults() && !m.defaultConfigUnaccessible
-}
-
 // Clears any persisted defaults in the AZD config
 func (m *Manager) Clear(ctx context.Context) error {
 	err := m.config.Unset("defaults")
@@ -246,7 +240,6 @@ func (m *Manager) getDefaultSubscription(ctx context.Context) (*Subscription, er
 		msg := "is either invalid or you no longer have access. Check your configuration with 'azd config list'."
 		log.Printf("the subscription id %s %s Error: %s. Default subscription will be ignored.",
 			subscriptionId, msg, err.Error())
-		m.defaultConfigUnaccessible = true
 		return nil, nil
 	}
 

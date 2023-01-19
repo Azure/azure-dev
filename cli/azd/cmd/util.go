@@ -16,10 +16,10 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal/telemetry/fields"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/azureutil"
+	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
-	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
@@ -290,8 +290,7 @@ func ensureEnvironmentInitialized(
 }
 
 func getSubscriptionOptions(ctx context.Context, azCli azcli.AzCli) ([]string, any, error) {
-	var accountManager *account.Manager
-	err := ioc.Global.Resolve(&accountManager)
+	accountManager, err := account.NewManager(config.GetConfigManager(ctx), azCli)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed creating account manager: %w", err)
 	}

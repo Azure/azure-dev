@@ -92,10 +92,8 @@ func Test_GetAccountDefaults(t *testing.T) {
 		require.NoError(t, err)
 
 		accountDefaults, err := manager.GetAccountDefaults(*mockContext.Context)
-		require.NotNil(t, accountDefaults)
-		require.Nil(t, accountDefaults.DefaultSubscription)
-		require.EqualValues(t, *accountDefaults.DefaultLocation, defaultLocation)
-		require.NoError(t, err)
+		require.Nil(t, accountDefaults)
+		require.Error(t, err)
 	})
 
 	t.Run("InvalidLocation", func(t *testing.T) {
@@ -397,64 +395,8 @@ func Test_HasDefaults(t *testing.T) {
 		)
 		require.NoError(t, err)
 
-		mockContext.HttpClient.When(func(request *http.Request) bool {
-			return request.Method == http.MethodGet && strings.Contains(
-				request.URL.Path,
-				"/subscriptions/SUBSCRIPTION_ID",
-			)
-		}).RespondFn(func(request *http.Request) (*http.Response, error) {
-			return mocks.CreateHttpResponseWithBody(request, 200, armsubscriptions.Subscription{
-				ID:             convert.RefOf("SUBSCRIPTION"),
-				SubscriptionID: convert.RefOf("SUBSCRIPTION_ID"),
-				DisplayName:    convert.RefOf("DISPLAY"),
-				TenantID:       convert.RefOf("TENANT"),
-			})
-		})
-
-		value, valid := manager.HasDefaults(), manager.HasAccessibleDefaults()
+		value := manager.HasDefaults()
 		require.True(t, value)
-		require.True(t, valid)
-	})
-
-	t.Run("DefaultsSetButNotAccessible", func(t *testing.T) {
-		azdConfig := config.NewConfig(map[string]any{
-			"defaults": map[string]any{
-				"subscription": "SUBSCRIPTION_ID",
-				"location":     "LOCATION",
-			},
-		})
-
-		manager, err := NewManager(
-			mockContext.ConfigManager.WithConfig(azdConfig),
-			mockazcli.NewAzCliFromMockContext(mockContext),
-		)
-		require.NoError(t, err)
-
-		mockContext.HttpClient.When(func(request *http.Request) bool {
-			return request.Method == http.MethodGet && strings.Contains(
-				request.URL.Path,
-				"/subscriptions/SUBSCRIPTION_ID",
-			)
-		}).RespondFn(func(request *http.Request) (*http.Response, error) {
-			return &http.Response{
-				Request:    request,
-				StatusCode: http.StatusNotFound,
-				Header:     http.Header{},
-				Body:       http.NoBody,
-			}, nil
-		})
-
-		value, valid := manager.HasDefaults(), manager.HasAccessibleDefaults()
-		require.True(t, value)
-		require.True(t, valid)
-
-		sub, err := manager.getDefaultSubscription(*mockContext.Context)
-		// HasAccessibleDefaults() is updated with getDefaultSubscription
-		value, valid = manager.HasDefaults(), manager.HasAccessibleDefaults()
-		require.NoError(t, err)
-		require.Nil(t, sub)
-		require.True(t, value)
-		require.False(t, valid)
 	})
 
 	t.Run("DefaultsNotSet", func(t *testing.T) {
@@ -466,9 +408,8 @@ func Test_HasDefaults(t *testing.T) {
 		)
 		require.NoError(t, err)
 
-		value, valid := manager.HasDefaults(), manager.HasAccessibleDefaults()
+		value := manager.HasDefaults()
 		require.False(t, value)
-		require.False(t, valid)
 	})
 }
 

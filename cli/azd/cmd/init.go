@@ -223,27 +223,9 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		return nil, fmt.Errorf("saving default environment: %w", err)
 	}
 
-	// If defaults exists but somehow became invalid, ask user if they want to override with current selection
-	defaultsExists := i.accountManager.HasDefaults()
-	if defaultsExists && !i.accountManager.HasAccessibleDefaults() {
-		confirmMsg := "Do you want to use your current selection as defaults?"
-		confirmOverride, err := i.console.Confirm(ctx, input.ConsoleOptions{
-			Message:      confirmMsg,
-			DefaultValue: false,
-		})
-		if err != nil {
-			return nil, fmt.Errorf("confirm for override default settings: %w", err)
-		}
-		// `defaultsExists` is used by init command to know when to persist default settings to the local config
-		// in case `confirmOverride` by the user, setting `defaultExists` to false will ensure config to be persisted locally
-		if confirmOverride {
-			defaultsExists = !confirmOverride
-		}
-	}
-
 	// If the configuration is empty, set default subscription & location
 	// This will be the case for first run experience
-	if !defaultsExists {
+	if !i.accountManager.HasDefaults() {
 		_, err = i.accountManager.SetDefaultSubscription(ctx, env.GetSubscriptionId())
 		if err != nil {
 			log.Printf("failed setting default subscription. %s\n", err.Error())

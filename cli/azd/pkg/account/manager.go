@@ -229,9 +229,9 @@ func (m *Manager) getAllSubscriptions(ctx context.Context) ([]*azcli.AzCliSubscr
 // otherwise will return nil for the subscription
 func (m *Manager) getDefaultSubscription(ctx context.Context) (*Subscription, error) {
 	// Get the default subscription ID from azd configuration
-	configSubscriptionId, isDefaultSet := m.config.Get(defaultSubscriptionKeyPath)
+	configSubscriptionId, ok := m.config.Get(defaultSubscriptionKeyPath)
 
-	if !isDefaultSet {
+	if !ok {
 		return nil, nil
 	}
 

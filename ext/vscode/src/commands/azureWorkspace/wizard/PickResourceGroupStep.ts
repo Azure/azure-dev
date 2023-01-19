@@ -8,6 +8,8 @@ import { parseAzureResourceId } from '../../../utils/parseAzureResourceId';
 import { RevealWizardContext } from './PickEnvironmentStep';
 import { SkipIfOneStep } from './SkipIfOneStep';
 
+const resourceGroupType = 'Microsoft.Resources/resourceGroups';
+
 export interface RevealResourceGroupWizardContext extends RevealWizardContext {
     azureResourceId?: string;
 }
@@ -33,32 +35,46 @@ export class PickResourceGroupStep extends SkipIfOneStep<RevealResourceGroupWiza
     protected override async getPicks(context: RevealResourceGroupWizardContext): Promise<IAzureQuickPickItem<string>[]> {
         const showResults = await this.showProvider.getShowResults(context, context.configurationFile, context.environment);
 
-        if (!showResults?.services) {
+        if (!showResults?.services && !showResults?.resources) {
             return [];
         }
-    
-        const resourceGroupIds = new Set<string>();
 
-        for (const serviceName of Object.keys(showResults.services)) {
-            const service = showResults.services[serviceName];
 
-            if (!service?.target?.resourceIds) {
-                continue;
+        if (showResults.resources?.length) {
+            // If showResults.resource is available and has items, it is easier and more accurate than parsing RGs out of the services
+            return showResults.resources
+                .filter(resource => resource.type.toLowerCase() === resourceGroupType.toLowerCase())
+                .map(resource => {
+                    const { subscription, resourceGroup } = parseAzureResourceId(resource.id);
+                    return {
+                        label: resourceGroup,
+                        detail: subscription, // TODO: do we want to show subscription ID?
+                        data: resource.id
+                    };
+                });
+        } else {
+            const resourceGroupIds = new Set<string>();
+            for (const serviceName of Object.keys(showResults.services)) {
+                const service = showResults.services[serviceName];
+
+                if (!service?.target?.resourceIds) {
+                    continue;
+                }
+
+                for (const resourceId of service.target.resourceIds) {
+                    const { subscription, resourceGroup } = parseAzureResourceId(resourceId);
+                    resourceGroupIds.add(`/subscriptions/${subscription}/resourceGroups/${resourceGroup}`);
+                }
             }
 
-            for (const resourceId of service.target.resourceIds) {
-                const { subscription, resourceGroup } = parseAzureResourceId(resourceId);
-                resourceGroupIds.add(`/subscriptions/${subscription}/resourceGroups/${resourceGroup}`);
-            }
+            return Array.from(resourceGroupIds).map(resourceGroupId => {
+                const { subscription, resourceGroup } = parseAzureResourceId(resourceGroupId);
+                return {
+                    label: resourceGroup,
+                    detail: subscription, // TODO: do we want to show subscription ID?
+                    data: resourceGroupId
+                };
+            });
         }
-
-        return Array.from(resourceGroupIds).map(resourceGroupId => {
-            const { subscription, resourceGroup } = parseAzureResourceId(resourceGroupId);
-            return {
-                label: resourceGroup,
-                detail: subscription, // TODO: do we want to show subscription ID?
-                data: resourceGroupId
-            };
-        });
     }
 }

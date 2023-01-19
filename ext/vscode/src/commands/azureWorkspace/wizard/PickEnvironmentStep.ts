@@ -18,8 +18,8 @@ export class PickEnvironmentStep extends SkipIfOneStep<RevealWizardContext, stri
         private readonly azureDevEnvListProvider: AzureDevEnvListProvider = new WorkspaceAzureDevEnvListProvider(),
     ) {
         super(
-            localize('azure-dev.commands.azureWorkspace.revealAzureResource.selectEnvironment', 'Select an environment'),
-            localize('azure-dev.commands.azureWorkspace.revealAzureResource.noEnvironments', 'No environments found')
+            localize('azure-dev.commands.azureWorkspace.pickEnvironmentStep.selectEnvironment', 'Select an environment'),
+            localize('azure-dev.commands.azureWorkspace.pickEnvironmentStep.noEnvironments', 'No environments found')
         );
     }
 
@@ -36,6 +36,7 @@ export class PickEnvironmentStep extends SkipIfOneStep<RevealWizardContext, stri
         return envListResults.map(env => {
             return {
                 label: env.Name,
+                detail: env.IsDefault ? localize('azure-dev.commands.azureWorkspace.pickEnvironmentStep.defaultEnvironment', 'Default') : undefined,
                 data: env.Name,
             };
         });

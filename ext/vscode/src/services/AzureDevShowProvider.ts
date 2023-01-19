@@ -18,9 +18,16 @@ interface AzureDevService {
     };
 }
 
+interface AzureDevResource {
+    readonly id: string;
+    readonly type: string;
+}
+
 export interface AzDevShowResults {
     readonly name: string;
     readonly services: { readonly [name: string]: AzureDevService };
+    readonly environmentName?: string; // Available in version 0.6.0+
+    readonly resources?: AzureDevResource[];
 }
 
 export interface AzureDevShowProvider {

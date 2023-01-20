@@ -160,11 +160,10 @@ func (c *AskerConsole) ShowSpinner(ctx context.Context, title string, format Spi
 			Suffix:          " ",
 			SuffixAutoColon: true,
 		}
-		c.spinner, _ = yacspin.New(config)
-
 		if os.Getenv("AZD_DEBUG_FORCE_NO_TTY") == "1" {
 			config.TerminalMode = yacspin.ForceNoTTYMode | yacspin.ForceDumbTerminalMode
 		}
+		c.spinner, _ = yacspin.New(config)
 	}
 
 	// If running, pause to apply style changes

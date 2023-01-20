@@ -44,27 +44,12 @@ type PipelineOptions struct {
 }
 
 const (
-	// Raised before project is initialized
-	Initializing ext.Event = "initializing"
-	// Raised after project is initialized
-	Initialized ext.Event = "initialized"
-	// Raised before project is provisioned
-	Provisioning ext.Event = "provisioning"
-	// Raised after project is provisioned
-	Provisioned ext.Event = "provisioned"
-	// Raised before project is deployed
-	Deploying ext.Event = "deploying"
-	// Raised after project is deployed
-	Deployed ext.Event = "deployed"
-	// Raised before project is destroyed
-	Destroying ext.Event = "destroying"
-	// Raised after project is destroyed
-	Destroyed ext.Event = "destroyed"
-	// Raised after environment is updated
-	EnvironmentUpdated  ext.Event = "environment updated"
-	ServiceEventRestore ext.Event = "restore"
-	ServiceEventPackage ext.Event = "package"
-	ServiceEventDeploy  ext.Event = "deploy"
+	ProjectEventDeploy     ext.Event = "deploy"
+	ProjectEventProvision  ext.Event = "provision"
+	ServiceEventEnvUpdated ext.Event = "environment updated"
+	ServiceEventRestore    ext.Event = "restore"
+	ServiceEventPackage    ext.Event = "package"
+	ServiceEventDeploy     ext.Event = "deploy"
 )
 
 // Project lifecycle event arguments

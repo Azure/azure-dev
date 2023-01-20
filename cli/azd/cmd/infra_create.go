@@ -167,7 +167,7 @@ func (i *infraCreateAction) Run(ctx context.Context) (*actions.ActionResult, err
 			},
 		}
 
-		if err := svc.RaiseEvent(ctx, project.EnvironmentUpdated, eventArgs); err != nil {
+		if err := svc.RaiseEvent(ctx, project.ServiceEventEnvUpdated, eventArgs); err != nil {
 			return nil, err
 		}
 	}

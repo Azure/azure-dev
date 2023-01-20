@@ -98,14 +98,12 @@ resource apimService 'Microsoft.ApiManagement/service@2021-08-01' existing = {
   name: name
 }
 
-resource apiApp 'Microsoft.Web/sites@2022-03-01' existing = if (!empty(apiAppName)) {
-  name: apiAppName
-}
+// Necessary due to https://github.com/Azure/bicep/issues/9594
+var appNameForBicep = !empty(apiAppName) ? apiAppName : 'placeholderName'
 
 resource apiAppProperties 'Microsoft.Web/sites/config@2022-03-01' = if (!empty(apiAppName)) {
-  name: 'web'
+  name: '${appNameForBicep}/web'
   kind: 'string'
-  parent: apiApp
   properties: {
       apiManagementConfig: {
         id: '${apimService.id}/apis/${apiName}'

@@ -57,7 +57,7 @@ func (c *manager) Save(config Config, filePath string) error {
 
 	err = os.WriteFile(filePath, configJson, osutil.PermissionFile)
 	if err != nil {
-		return fmt.Errorf("failed writing configuration data")
+		return fmt.Errorf("failed writing configuration data: %w", err)
 	}
 
 	return nil

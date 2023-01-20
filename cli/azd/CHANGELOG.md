@@ -1,5 +1,27 @@
 # Release History
 
+## 0.5.0-beta.4 (Unreleased)
+
+### Features Added
+
+### Breaking Changes
+
+### Bugs Fixed
+
+### Other Changes
+
+## 0.5.0-beta.3 (2023-01-13)
+
+### Bugs Fixed
+
+- [[#1394]](https://github.com/Azure/azure-dev/pull/1394) Bug when running azd up with a template.
+
+## 0.5.0-beta.2 (2023-01-12)
+
+### Bugs Fixed
+
+- [[#1366]](https://github.com/Azure/azure-dev/issues/1366) Login not possible with personal account after upgrade to 0.5.0.
+
 ## 0.5.0-beta.1 (2023-01-11)
 
 ### Features Added

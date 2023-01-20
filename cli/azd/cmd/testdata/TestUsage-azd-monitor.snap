@@ -4,7 +4,7 @@ Usage:
 Flags:
   -e, --environment string   The name of the environment to use.
   -h, --help                 Gets help for monitor.
-      --live                 Open a browser to Application Insights Live Metrics. Live Metrics is currently not supported for Python applications.
+      --live                 Open a browser to Application Insights Live Metrics. Live Metrics is currently not supported for Python apps.
       --logs                 Open a browser to Application Insights Logs.
       --overview             Open a browser to Application Insights Overview Dashboard.
 

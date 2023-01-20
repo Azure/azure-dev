@@ -16,7 +16,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
-	"github.com/azure/azure-dev/cli/azd/pkg/ext"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
@@ -176,27 +175,6 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 			return projectConfig, nil
 		},
 	)
-
-	container.RegisterSingleton(func(azdContext *azdcontext.AzdContext) *ext.HooksManager {
-		return ext.NewHooksManager(azdContext.ProjectDirectory())
-	})
-
-	container.RegisterSingleton(func(
-		console input.Console,
-		commandRunner exec.CommandRunner,
-		azdContext *azdcontext.AzdContext,
-		env *environment.Environment,
-		hooksManager *ext.HooksManager,
-		projectConfig *project.ProjectConfig) *ext.HooksRunner {
-		return ext.NewHooksRunner(
-			hooksManager,
-			commandRunner,
-			console,
-			azdContext.ProjectDirectory(),
-			projectConfig.Hooks,
-			env.Environ(),
-		)
-	})
 
 	container.RegisterSingleton(repository.NewInitializer)
 	container.RegisterSingleton(config.NewUserConfigManager)

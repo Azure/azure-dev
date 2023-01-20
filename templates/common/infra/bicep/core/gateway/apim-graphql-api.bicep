@@ -68,7 +68,7 @@ resource graphqlPolicy 'Microsoft.ApiManagement/service/apis/policies@2022-04-01
   parent: graphqlApi
   properties: {
     format: 'rawxml'
-    value: policy
+    value: realPolicy
   }
 }
 

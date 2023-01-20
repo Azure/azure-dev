@@ -2,13 +2,11 @@ package project
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"log"
 	"os"
 	"path/filepath"
 	"sort"
-	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/internal/telemetry"
 	"github.com/azure/azure-dev/cli/azd/internal/telemetry/fields"
@@ -17,6 +15,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/ext"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
@@ -36,7 +35,7 @@ type ProjectConfig struct {
 	Pipeline          PipelineOptions            `yaml:"pipeline"`
 	Hooks             map[string]*ext.HookConfig `yaml:"hooks,omitempty"`
 
-	handlers map[Event][]ProjectLifecycleEventHandlerFn
+	*ext.EventDispatcher[ProjectLifecycleEventArgs] `yaml:",omitempty"`
 }
 
 // options supported in azure.yaml
@@ -44,28 +43,28 @@ type PipelineOptions struct {
 	Provider string `yaml:"provider"`
 }
 
-// Project lifecycle events
-type Event string
-
 const (
 	// Raised before project is initialized
-	Initializing Event = "initializing"
+	Initializing ext.Event = "initializing"
 	// Raised after project is initialized
-	Initialized Event = "initialized"
+	Initialized ext.Event = "initialized"
 	// Raised before project is provisioned
-	Provisioning Event = "provisioning"
+	Provisioning ext.Event = "provisioning"
 	// Raised after project is provisioned
-	Provisioned Event = "provisioned"
+	Provisioned ext.Event = "provisioned"
 	// Raised before project is deployed
-	Deploying Event = "deploying"
+	Deploying ext.Event = "deploying"
 	// Raised after project is deployed
-	Deployed Event = "deployed"
+	Deployed ext.Event = "deployed"
 	// Raised before project is destroyed
-	Destroying Event = "destroying"
+	Destroying ext.Event = "destroying"
 	// Raised after project is destroyed
-	Destroyed Event = "destroyed"
+	Destroyed ext.Event = "destroyed"
 	// Raised after environment is updated
-	EnvironmentUpdated Event = "environment updated"
+	EnvironmentUpdated  ext.Event = "environment updated"
+	ServiceEventRestore ext.Event = "restore"
+	ServiceEventPackage ext.Event = "package"
+	ServiceEventDeploy  ext.Event = "deploy"
 )
 
 // Project lifecycle event arguments
@@ -143,77 +142,6 @@ func (pc *ProjectConfig) GetProject(
 	return &project, nil
 }
 
-// Adds an event handler for the specified event name
-func (pc *ProjectConfig) AddHandler(name Event, handler ProjectLifecycleEventHandlerFn) error {
-	newHandler := fmt.Sprintf("%v", handler)
-	events := pc.handlers[name]
-
-	for _, ref := range events {
-		existingHandler := fmt.Sprintf("%v", ref)
-
-		if newHandler == existingHandler {
-			return fmt.Errorf("event handler has already been registered for %s event", name)
-		}
-	}
-
-	events = append(events, handler)
-	pc.handlers[name] = events
-
-	return nil
-}
-
-// Removes the event handler for the specified event name
-func (pc *ProjectConfig) RemoveHandler(name Event, handler ProjectLifecycleEventHandlerFn) error {
-	newHandler := fmt.Sprintf("%v", handler)
-	events := pc.handlers[name]
-	for i, ref := range events {
-		existingHandler := fmt.Sprintf("%v", ref)
-
-		if newHandler == existingHandler {
-			pc.handlers[name] = append(events[:i], events[i+1:]...)
-			return nil
-		}
-	}
-
-	return fmt.Errorf("specified handler was not found in %s event registrations", name)
-}
-
-// Raises the specified event and calls any registered event handlers
-func (pc *ProjectConfig) RaiseEvent(ctx context.Context, name Event, args map[string]any) error {
-	handlerErrors := []error{}
-
-	if args == nil {
-		args = make(map[string]any)
-	}
-
-	eventArgs := ProjectLifecycleEventArgs{
-		Args:    args,
-		Project: pc,
-	}
-
-	handlers := pc.handlers[name]
-
-	// TODO: Opportunity to dispatch these event handlers in parallel if needed
-	for _, handler := range handlers {
-		err := handler(ctx, eventArgs)
-		if err != nil {
-			handlerErrors = append(handlerErrors, err)
-		}
-	}
-
-	// Build final error string if their are any failures
-	if len(handlerErrors) > 0 {
-		lines := make([]string, len(handlerErrors))
-		for i, err := range handlerErrors {
-			lines[i] = err.Error()
-		}
-
-		return errors.New(strings.Join(lines, ","))
-	}
-
-	return nil
-}
-
 // Saves the current instance back to the azure.yaml file
 func (p *ProjectConfig) Save(projectPath string) error {
 	projectBytes, err := yaml.Marshal(p)
@@ -225,6 +153,8 @@ func (p *ProjectConfig) Save(projectPath string) error {
 	if err != nil {
 		return fmt.Errorf("saving project file: %w", err)
 	}
+
+	p.Path = projectPath
 
 	return nil
 }
@@ -241,12 +171,12 @@ func ParseProjectConfig(yamlContent string) (*ProjectConfig, error) {
 		)
 	}
 
-	projectFile.handlers = make(map[Event][]ProjectLifecycleEventHandlerFn)
+	projectFile.EventDispatcher = ext.NewEventDispatcher[ProjectLifecycleEventArgs]()
 
 	for key, svc := range projectFile.Services {
-		svc.handlers = make(map[Event][]ServiceLifecycleEventHandlerFn)
 		svc.Name = key
 		svc.Project = &projectFile
+		svc.EventDispatcher = ext.NewEventDispatcher[ServiceLifecycleEventArgs]()
 
 		// By convention, the name of the infrastructure module to use when doing an IaC based deployment is the friendly
 		// name of the service. This may be overridden by the `module` property of `azure.yaml`
@@ -271,11 +201,11 @@ func (p *ProjectConfig) Initialize(
 		if err != nil {
 			return fmt.Errorf("getting framework services: %w", err)
 		}
-		if err := (*frameworkService).Initialize(ctx); err != nil {
+		if err := frameworkService.Initialize(ctx); err != nil {
 			return err
 		}
 
-		requiredTools := (*frameworkService).RequiredExternalTools()
+		requiredTools := frameworkService.RequiredExternalTools()
 		allTools = append(allTools, requiredTools...)
 	}
 
@@ -307,5 +237,14 @@ func LoadProjectConfig(projectPath string) (*ProjectConfig, error) {
 	}
 
 	projectConfig.Path = filepath.Dir(projectPath)
+	return projectConfig, nil
+}
+
+func GetCurrent() (*ProjectConfig, error) {
+	var projectConfig *ProjectConfig
+	if err := ioc.Global.Resolve(&projectConfig); err != nil {
+		return nil, err
+	}
+
 	return projectConfig, nil
 }

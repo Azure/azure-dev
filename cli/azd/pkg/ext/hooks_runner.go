@@ -57,7 +57,7 @@ func NewHooksRunner(
 
 // Invokes an action run runs any registered pre or post script hooks for the specified command.
 func (h *HooksRunner) Invoke(ctx context.Context, commands []string, actionFn InvokeFn) error {
-	err := h.RunHooks(ctx, HookTypePre, commands)
+	err := h.RunHooks(ctx, HookTypePre, commands...)
 	if err != nil {
 		return fmt.Errorf("failed running pre hooks: %w", err)
 	}
@@ -67,7 +67,7 @@ func (h *HooksRunner) Invoke(ctx context.Context, commands []string, actionFn In
 		return err
 	}
 
-	err = h.RunHooks(ctx, HookTypePost, commands)
+	err = h.RunHooks(ctx, HookTypePost, commands...)
 	if err != nil {
 		return fmt.Errorf("failed running post hooks: %w", err)
 	}
@@ -76,7 +76,7 @@ func (h *HooksRunner) Invoke(ctx context.Context, commands []string, actionFn In
 }
 
 // Invokes any registered script hooks for the specified hook type and command.
-func (h *HooksRunner) RunHooks(ctx context.Context, hookType HookType, commands []string) error {
+func (h *HooksRunner) RunHooks(ctx context.Context, hookType HookType, commands ...string) error {
 	hooks, err := h.hooksManager.GetByParams(h.hooks, hookType, commands...)
 	if err != nil {
 		return fmt.Errorf("failed running scripts for hooks '%s', %w", strings.Join(commands, ","), err)
@@ -106,7 +106,7 @@ func (h *HooksRunner) GetScript(hookConfig *HookConfig) (tools.Script, error) {
 		return powershell.NewPowershellScript(h.commandRunner, h.cwd, h.envVars), nil
 	default:
 		return nil, fmt.Errorf(
-			"script type '%s' is not a valid option. Only Bash and powershell scripts are supported",
+			"shell type '%s' is not a valid option. Only 'sh' and 'pwsh' are supported",
 			hookConfig.Shell,
 		)
 	}

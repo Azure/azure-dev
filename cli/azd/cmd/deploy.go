@@ -14,7 +14,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
-	"github.com/azure/azure-dev/cli/azd/pkg/ext"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
@@ -130,7 +129,7 @@ func (d *deployAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		return nil, fmt.Errorf("loading environment: %w", err)
 	}
 
-	projConfig, err := project.LoadProjectConfig(azdCtx.ProjectPath())
+	projConfig, err := project.GetCurrent()
 	if err != nil {
 		return nil, fmt.Errorf("loading project: %w", err)
 	}
@@ -167,16 +166,6 @@ func (d *deployAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	var deploymentResults []project.ServiceDeploymentResult
 
 	for _, svc := range proj.Services {
-		hooksManager := ext.NewHooksManager(svc.Config.Path())
-		hooksRunner := ext.NewHooksRunner(
-			hooksManager,
-			d.commandRunner,
-			d.console,
-			svc.Config.Path(),
-			svc.Config.Hooks,
-			env.Environ(),
-		)
-
 		// Skip this service if both cases are true:
 		// 1. The user specified a service name
 		// 2. This service is not the one the user specified
@@ -186,7 +175,7 @@ func (d *deployAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 
 		stepMessage := fmt.Sprintf("Deploying service %s", svc.Config.Name)
 		d.console.ShowSpinner(ctx, stepMessage, input.Step)
-		result, progress := svc.Deploy(ctx, azdCtx, hooksRunner)
+		result, progress := svc.Deploy(ctx, azdCtx)
 
 		// Report any progress to logs only. Changes for the console are managed by the console object.
 		// This routine is required to drain all the string messages sent by the `progress`.

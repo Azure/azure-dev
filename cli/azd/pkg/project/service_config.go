@@ -13,6 +13,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/ext"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/docker"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/swa"
@@ -42,7 +43,7 @@ type ServiceConfig struct {
 	// Hook configuration for service
 	Hooks map[string]*ext.HookConfig `yaml:"hooks,omitempty"`
 
-	handlers map[Event][]ServiceLifecycleEventHandlerFn
+	*ext.EventDispatcher[ServiceLifecycleEventArgs] `yaml:",omitempty"`
 }
 
 type ServiceLifecycleEventArgs struct {
@@ -50,9 +51,6 @@ type ServiceLifecycleEventArgs struct {
 	Service *ServiceConfig
 	Args    map[string]any
 }
-
-// Function definition for project events
-type ServiceLifecycleEventHandlerFn func(ctx context.Context, args ServiceLifecycleEventArgs) error
 
 // Path returns the fully qualified path to the project
 func (sc *ServiceConfig) Path() string {
@@ -94,8 +92,8 @@ func (sc *ServiceConfig) GetService(
 		Project:        project,
 		Config:         sc,
 		Environment:    env,
-		Framework:      *framework,
-		Target:         *serviceTarget,
+		Framework:      framework,
+		Target:         serviceTarget,
 		TargetResource: targetResource,
 	}, nil
 }
@@ -108,7 +106,7 @@ func (sc *ServiceConfig) GetServiceTarget(
 	azCli azcli.AzCli,
 	commandRunner exec.CommandRunner,
 	console input.Console,
-) (*ServiceTarget, error) {
+) (ServiceTarget, error) {
 	var target ServiceTarget
 	var err error
 
@@ -131,12 +129,12 @@ func (sc *ServiceConfig) GetServiceTarget(
 		return nil, fmt.Errorf("failed validation for host '%s': %w", sc.Host, err)
 	}
 
-	return &target, nil
+	return target, nil
 }
 
 // GetFrameworkService constructs a framework service from the underlying service configuration
 func (sc *ServiceConfig) GetFrameworkService(
-	ctx context.Context, env *environment.Environment, commandRunner exec.CommandRunner) (*FrameworkService, error) {
+	ctx context.Context, env *environment.Environment, commandRunner exec.CommandRunner) (FrameworkService, error) {
 	var frameworkService FrameworkService
 
 	switch sc.Language {
@@ -158,79 +156,7 @@ func (sc *ServiceConfig) GetFrameworkService(
 		frameworkService = NewDockerProject(sc, env, docker.NewDocker(commandRunner), sourceFramework)
 	}
 
-	return &frameworkService, nil
-}
-
-// Adds an event handler for the specified event name
-func (sc *ServiceConfig) AddHandler(name Event, handler ServiceLifecycleEventHandlerFn) error {
-	newHandler := fmt.Sprintf("%v", handler)
-	events := sc.handlers[name]
-
-	for _, ref := range events {
-		existingHandler := fmt.Sprintf("%v", ref)
-
-		if newHandler == existingHandler {
-			return fmt.Errorf("event handler has already been registered for %s event", name)
-		}
-	}
-
-	events = append(events, handler)
-	sc.handlers[name] = events
-
-	return nil
-}
-
-// Removes the event handler for the specified event name
-func (sc *ServiceConfig) RemoveHandler(name Event, handler ServiceLifecycleEventHandlerFn) error {
-	newHandler := fmt.Sprintf("%v", handler)
-	events := sc.handlers[name]
-	for i, ref := range events {
-		existingHandler := fmt.Sprintf("%v", ref)
-
-		if newHandler == existingHandler {
-			sc.handlers[name] = append(events[:i], events[i+1:]...)
-			return nil
-		}
-	}
-
-	return fmt.Errorf("specified handler was not found in %s event registrations", name)
-}
-
-// Raises the specified event and calls any registered event handlers
-func (sc *ServiceConfig) RaiseEvent(ctx context.Context, name Event, args map[string]any) error {
-	handlerErrors := []error{}
-
-	if args == nil {
-		args = make(map[string]any)
-	}
-
-	eventArgs := ServiceLifecycleEventArgs{
-		Project: sc.Project,
-		Service: sc,
-		Args:    args,
-	}
-
-	handlers := sc.handlers[name]
-
-	// TODO: Opportunity to dispatch these event handlers in parallel if needed
-	for _, handler := range handlers {
-		err := handler(ctx, eventArgs)
-		if err != nil {
-			handlerErrors = append(handlerErrors, err)
-		}
-	}
-
-	// Build final error string if their are any failures
-	if len(handlerErrors) > 0 {
-		lines := make([]string, len(handlerErrors))
-		for i, err := range handlerErrors {
-			lines[i] = err.Error()
-		}
-
-		return errors.New(strings.Join(lines, ","))
-	}
-
-	return nil
+	return frameworkService, nil
 }
 
 const (
@@ -360,4 +286,39 @@ func (sc *ServiceConfig) GetServiceResources(
 			Filter: &filter,
 		},
 	)
+}
+
+// Gets a list of required tools for the current service
+func (sc *ServiceConfig) GetRequiredTools(
+	ctx context.Context,
+	env *environment.Environment,
+	commandRunner exec.CommandRunner,
+) ([]tools.ExternalTool, error) {
+	frameworkService, err := sc.GetFrameworkService(ctx, env, commandRunner)
+	if err != nil {
+		return nil, fmt.Errorf("getting framework services: %w", err)
+	}
+
+	return frameworkService.RequiredExternalTools(), nil
+}
+
+// Restores dependencies for the current service
+func (sc *ServiceConfig) Restore(ctx context.Context, env *environment.Environment, commandRunner exec.CommandRunner) error {
+	eventArgs := ServiceLifecycleEventArgs{
+		Project: sc.Project,
+		Service: sc,
+	}
+
+	return sc.Invoke(ctx, ServiceEventRestore, eventArgs, func() error {
+		frameworkService, err := sc.GetFrameworkService(ctx, env, commandRunner)
+		if err != nil {
+			return fmt.Errorf("getting framework services: %w", err)
+		}
+
+		if err := frameworkService.InstallDependencies(ctx); err != nil {
+			return fmt.Errorf("failed installing dependencies, %w", err)
+		}
+
+		return nil
+	})
 }

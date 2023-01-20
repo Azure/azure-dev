@@ -25,7 +25,7 @@ func TestServiceConfigAddHandler(t *testing.T) {
 	err = service.AddHandler(Deployed, handler)
 	require.NotNil(t, err)
 
-	err = service.RaiseEvent(ctx, Deployed, nil)
+	err = service.RaiseEvent(ctx, Deployed, ServiceLifecycleEventArgs{Service: service})
 	require.Nil(t, err)
 	require.True(t, handlerCalled)
 }
@@ -58,7 +58,7 @@ func TestServiceConfigRemoveHandler(t *testing.T) {
 	require.NotNil(t, err)
 
 	// No events are registered at the time event was raised
-	err = service.RaiseEvent(ctx, Deployed, nil)
+	err = service.RaiseEvent(ctx, Deployed, ServiceLifecycleEventArgs{Service: service})
 	require.Nil(t, err)
 	require.False(t, handler1Called)
 	require.False(t, handler2Called)
@@ -89,7 +89,10 @@ func TestServiceConfigWithMultipleEventHandlers(t *testing.T) {
 	err = service.AddHandler(Deployed, handler2)
 	require.Nil(t, err)
 
-	err = service.RaiseEvent(ctx, Deployed, nil)
+	err = service.RaiseEvent(ctx, Deployed, ServiceLifecycleEventArgs{
+		Project: service.Project,
+		Service: service,
+	})
 	require.Nil(t, err)
 	require.True(t, handlerCalled1)
 	require.True(t, handlerCalled2)
@@ -117,7 +120,7 @@ func TestServiceConfigWithMultipleEvents(t *testing.T) {
 	err = service.AddHandler(Deployed, deployHandler)
 	require.Nil(t, err)
 
-	err = service.RaiseEvent(ctx, Provisioned, nil)
+	err = service.RaiseEvent(ctx, Provisioned, ServiceLifecycleEventArgs{Service: service})
 	require.Nil(t, err)
 
 	require.True(t, provisionHandlerCalled)
@@ -141,7 +144,7 @@ func TestServiceConfigWithEventHandlerErrors(t *testing.T) {
 	err = service.AddHandler(Provisioned, handler2)
 	require.Nil(t, err)
 
-	err = service.RaiseEvent(ctx, Provisioned, nil)
+	err = service.RaiseEvent(ctx, Provisioned, ServiceLifecycleEventArgs{Service: service})
 	require.NotNil(t, err)
 	require.Contains(t, err.Error(), "sample error 1")
 	require.Contains(t, err.Error(), "sample error 2")
@@ -184,7 +187,7 @@ func TestServiceConfigRaiseEventWithoutArgs(t *testing.T) {
 	err = service.AddHandler(Deployed, handler)
 	require.NotNil(t, err)
 
-	err = service.RaiseEvent(ctx, Deployed, nil)
+	err = service.RaiseEvent(ctx, Deployed, ServiceLifecycleEventArgs{Service: service})
 	require.Nil(t, err)
 	require.True(t, handlerCalled)
 }
@@ -193,8 +196,10 @@ func TestServiceConfigRaiseEventWithArgs(t *testing.T) {
 	ctx := context.Background()
 	service := getServiceConfig()
 	handlerCalled := false
-	eventArgs := make(map[string]any)
-	eventArgs["foo"] = "bar"
+	eventArgs := ServiceLifecycleEventArgs{
+		Service: service,
+		Args:    map[string]any{"foo": "bar"},
+	}
 
 	handler := func(ctx context.Context, args ServiceLifecycleEventArgs) error {
 		handlerCalled = true

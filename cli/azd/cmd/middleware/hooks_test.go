@@ -3,7 +3,6 @@ package middleware
 import (
 	"context"
 	"errors"
-	"os"
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
@@ -11,15 +10,16 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/ext"
+	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
+	"github.com/azure/azure-dev/cli/azd/test/ostest"
 	"github.com/stretchr/testify/require"
 )
 
 func Test_CommandHooks_Middleware_WithValidProjectAndMatchingCommand(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
-	azdContext, err := createAzdContext(t)
-	require.NoError(t, err)
+	azdContext := createAzdContext(t)
 
 	envName := "test"
 	runOptions := Options{Name: "command"}
@@ -34,7 +34,7 @@ func Test_CommandHooks_Middleware_WithValidProjectAndMatchingCommand(t *testing.
 		},
 	}
 
-	err = ensureAzdValid(azdContext, envName, &projectConfig)
+	err := ensureAzdValid(azdContext, envName, &projectConfig)
 	require.NoError(t, err)
 
 	nextFn, actionRan := createNextFn()
@@ -51,8 +51,7 @@ func Test_CommandHooks_Middleware_WithValidProjectAndMatchingCommand(t *testing.
 
 func Test_CommandHooks_Middleware_ValidProjectWithDifferentCommand(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
-	azdContext, err := createAzdContext(t)
-	require.NoError(t, err)
+	azdContext := createAzdContext(t)
 
 	envName := "test"
 	runOptions := Options{Name: "another command"}
@@ -67,7 +66,7 @@ func Test_CommandHooks_Middleware_ValidProjectWithDifferentCommand(t *testing.T)
 		},
 	}
 
-	err = ensureAzdValid(azdContext, envName, &projectConfig)
+	err := ensureAzdValid(azdContext, envName, &projectConfig)
 	require.NoError(t, err)
 
 	nextFn, actionRan := createNextFn()
@@ -84,8 +83,7 @@ func Test_CommandHooks_Middleware_ValidProjectWithDifferentCommand(t *testing.T)
 
 func Test_CommandHooks_Middleware_ValidProjectWithNoHooks(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
-	azdContext, err := createAzdContext(t)
-	require.NoError(t, err)
+	azdContext := createAzdContext(t)
 
 	envName := "test"
 	runOptions := Options{Name: "another command"}
@@ -94,7 +92,7 @@ func Test_CommandHooks_Middleware_ValidProjectWithNoHooks(t *testing.T) {
 		Name: envName,
 	}
 
-	err = ensureAzdValid(azdContext, envName, &projectConfig)
+	err := ensureAzdValid(azdContext, envName, &projectConfig)
 	require.NoError(t, err)
 
 	nextFn, actionRan := createNextFn()
@@ -111,8 +109,7 @@ func Test_CommandHooks_Middleware_ValidProjectWithNoHooks(t *testing.T) {
 
 func Test_CommandHooks_Middleware_PreHookWithError(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
-	azdContext, err := createAzdContext(t)
-	require.NoError(t, err)
+	azdContext := createAzdContext(t)
 
 	envName := "test"
 	runOptions := Options{Name: "command"}
@@ -127,7 +124,7 @@ func Test_CommandHooks_Middleware_PreHookWithError(t *testing.T) {
 		},
 	}
 
-	err = ensureAzdValid(azdContext, envName, &projectConfig)
+	err := ensureAzdValid(azdContext, envName, &projectConfig)
 	require.NoError(t, err)
 
 	nextFn, actionRan := createNextFn()
@@ -147,8 +144,7 @@ func Test_CommandHooks_Middleware_PreHookWithError(t *testing.T) {
 
 func Test_CommandHooks_Middleware_PreHookWithErrorAndContinue(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
-	azdContext, err := createAzdContext(t)
-	require.NoError(t, err)
+	azdContext := createAzdContext(t)
 
 	envName := "test"
 	runOptions := Options{Name: "command"}
@@ -164,7 +160,7 @@ func Test_CommandHooks_Middleware_PreHookWithErrorAndContinue(t *testing.T) {
 		},
 	}
 
-	err = ensureAzdValid(azdContext, envName, &projectConfig)
+	err := ensureAzdValid(azdContext, envName, &projectConfig)
 	require.NoError(t, err)
 
 	nextFn, actionRan := createNextFn()
@@ -184,8 +180,7 @@ func Test_CommandHooks_Middleware_PreHookWithErrorAndContinue(t *testing.T) {
 
 func Test_CommandHooks_Middleware_WithCmdAlias(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
-	azdContext, err := createAzdContext(t)
-	require.NoError(t, err)
+	azdContext := createAzdContext(t)
 
 	envName := "test"
 	runOptions := Options{Name: "command", Aliases: []string{"alias"}}
@@ -200,7 +195,7 @@ func Test_CommandHooks_Middleware_WithCmdAlias(t *testing.T) {
 		},
 	}
 
-	err = ensureAzdValid(azdContext, envName, &projectConfig)
+	err := ensureAzdValid(azdContext, envName, &projectConfig)
 	require.NoError(t, err)
 
 	nextFn, actionRan := createNextFn()
@@ -215,26 +210,14 @@ func Test_CommandHooks_Middleware_WithCmdAlias(t *testing.T) {
 	require.True(t, *actionRan)
 }
 
-func createAzdContext(t *testing.T) (*azdcontext.AzdContext, error) {
-	wd, err := os.Getwd()
-	require.NoError(t, err)
-
+func createAzdContext(t *testing.T) *azdcontext.AzdContext {
 	tempDir := t.TempDir()
-	err = os.Chdir(tempDir)
-	require.NoError(t, err)
+	ostest.Chdir(t, tempDir)
 
-	t.Cleanup(func() {
-		err := os.Chdir(wd)
-		require.NoError(t, err)
-	})
+	azdContext := azdcontext.NewAzdContextWithDirectory(tempDir)
+	ioc.RegisterInstance(ioc.Global, azdContext)
 
-	azdContext, err := azdcontext.NewAzdContext()
-	if err != nil {
-		return nil, err
-	}
-
-	azdContext.SetProjectDirectory(tempDir)
-	return azdContext, nil
+	return azdContext
 }
 
 func createNextFn() (NextFn, *bool) {
@@ -281,20 +264,11 @@ func runMiddleware(
 ) (*actions.ActionResult, error) {
 	env := environment.EphemeralWithValues(envName, nil)
 
-	hooksManager := ext.NewHooksManager(azdContext.ProjectDirectory())
-	commandHooks := ext.NewHooksRunner(
-		hooksManager,
+	middleware := NewHooksMiddleware(
+		env,
 		mockContext.CommandRunner,
 		mockContext.Console,
-		azdContext.ProjectDirectory(),
-		projectConfig.Hooks,
-		env.Environ(),
-	)
-
-	middleware := NewCommandHooksMiddleware(
-		projectConfig,
 		runOptions,
-		commandHooks,
 	)
 
 	result, err := middleware.Run(*mockContext.Context, nextFn)
@@ -345,6 +319,8 @@ func ensureAzdProject(azdContext *azdcontext.AzdContext, projectConfig *project.
 	if err != nil {
 		return err
 	}
+
+	ioc.RegisterInstance(ioc.Global, projectConfig)
 
 	return nil
 }

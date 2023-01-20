@@ -11,7 +11,6 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
-	"github.com/azure/azure-dev/cli/azd/pkg/ext"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 )
 
@@ -48,10 +47,14 @@ func (svc *Service) RequiredExternalTools() []tools.ExternalTool {
 func (svc *Service) Deploy(
 	ctx context.Context,
 	azdCtx *azdcontext.AzdContext,
-	hooksRunner *ext.HooksRunner,
 ) (<-chan *ServiceDeploymentChannelResponse, <-chan string) {
 	result := make(chan *ServiceDeploymentChannelResponse, 1)
 	progress := make(chan string)
+
+	serviceEventArgs := ServiceLifecycleEventArgs{
+		Project: svc.Config.Project,
+		Service: svc.Config,
+	}
 
 	go func() {
 		defer close(result)
@@ -59,7 +62,7 @@ func (svc *Service) Deploy(
 
 		var deploymentArtifact string
 
-		err := hooksRunner.Invoke(ctx, []string{"package"}, func() error {
+		err := svc.Config.Invoke(ctx, ServiceEventPackage, serviceEventArgs, func() error {
 			log.Printf("packing service %s", svc.Config.Name)
 
 			progress <- "Preparing packaging"
@@ -83,7 +86,7 @@ func (svc *Service) Deploy(
 
 		var deployResult ServiceDeploymentResult
 
-		err = hooksRunner.Invoke(ctx, []string{"deploy"}, func() error {
+		err = svc.Config.Invoke(ctx, ServiceEventDeploy, serviceEventArgs, func() error {
 			log.Printf("deploying service %s", svc.Config.Name)
 
 			progress <- "Preparing for deployment"

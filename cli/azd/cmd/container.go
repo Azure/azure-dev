@@ -144,6 +144,10 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 
 	container.RegisterSingleton(
 		func(azdContext *azdcontext.AzdContext, envFlags *envFlag) (*environment.Environment, error) {
+			if azdContext == nil {
+				return nil, azdcontext.ErrNoProject
+			}
+
 			environmentName := envFlags.environmentName
 			var err error
 
@@ -167,6 +171,10 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 
 	container.RegisterSingleton(
 		func(azdContext *azdcontext.AzdContext) (*project.ProjectConfig, error) {
+			if azdContext == nil {
+				return nil, azdcontext.ErrNoProject
+			}
+
 			projectConfig, err := project.LoadProjectConfig(azdContext.ProjectPath())
 			if err != nil {
 				return nil, err

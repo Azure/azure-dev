@@ -3,11 +3,11 @@ package cmd
 import (
 	"context"
 	"errors"
-	"os"
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/cmd/middleware"
+	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/spf13/cobra"
@@ -22,6 +22,7 @@ const middlewareBName contextKey = "middleware-B"
 
 func Test_BuildAndRunSimpleCommand(t *testing.T) {
 	ran := false
+	container := ioc.NewNestedContainer(nil)
 
 	root := actions.NewActionDescriptor("root", &actions.ActionDescriptorOptions{
 		Command: &cobra.Command{
@@ -32,7 +33,7 @@ func Test_BuildAndRunSimpleCommand(t *testing.T) {
 		},
 	})
 
-	builder := NewCobraBuilder(ioc.Global)
+	builder := NewCobraBuilder(container)
 	cmd, err := builder.BuildCommand(root)
 
 	require.NotNil(t, cmd)
@@ -45,34 +46,36 @@ func Test_BuildAndRunSimpleCommand(t *testing.T) {
 }
 
 func Test_BuildAndRunSimpleAction(t *testing.T) {
-	resetOsArgs(t)
+	container := ioc.NewNestedContainer(nil)
+	setup(container)
 
 	root := actions.NewActionDescriptor("root", &actions.ActionDescriptorOptions{
 		ActionResolver: newTestAction,
 		FlagsResolver:  newTestFlags,
 	})
 
-	builder := NewCobraBuilder(ioc.Global)
+	builder := NewCobraBuilder(container)
 	cmd, err := builder.BuildCommand(root)
 
 	require.NotNil(t, cmd)
 	require.NoError(t, err)
 
-	os.Args = []string{"", "-r"}
+	cmd.SetArgs([]string{"-r"})
 	err = cmd.ExecuteContext(context.Background())
 
 	require.NoError(t, err)
 }
 
 func Test_BuildAndRunSimpleActionWithMiddleware(t *testing.T) {
-	resetOsArgs(t)
+	container := ioc.NewNestedContainer(nil)
+	setup(container)
 
 	root := actions.NewActionDescriptor("root", &actions.ActionDescriptorOptions{
 		ActionResolver: newTestAction,
 		FlagsResolver:  newTestFlags,
 	}).UseMiddleware("A", newTestMiddlewareA)
 
-	builder := NewCobraBuilder(ioc.Global)
+	builder := NewCobraBuilder(container)
 	cmd, err := builder.BuildCommand(root)
 
 	require.NotNil(t, cmd)
@@ -85,7 +88,7 @@ func Test_BuildAndRunSimpleActionWithMiddleware(t *testing.T) {
 	ctx = context.WithValue(ctx, actionName, &actionRan)
 	ctx = context.WithValue(ctx, middlewareAName, &middlewareRan)
 
-	os.Args = []string{"", "-r"}
+	cmd.SetArgs([]string{"-r"})
 	err = cmd.ExecuteContext(ctx)
 
 	require.NoError(t, err)
@@ -94,7 +97,8 @@ func Test_BuildAndRunSimpleActionWithMiddleware(t *testing.T) {
 }
 
 func Test_BuildAndRunActionWithNestedMiddleware(t *testing.T) {
-	resetOsArgs(t)
+	container := ioc.NewNestedContainer(nil)
+	setup(container)
 
 	root := actions.NewActionDescriptor("root", nil).
 		UseMiddleware("A", newTestMiddlewareA)
@@ -104,7 +108,7 @@ func Test_BuildAndRunActionWithNestedMiddleware(t *testing.T) {
 		FlagsResolver:  newTestFlags,
 	}).UseMiddleware("B", newTestMiddlewareB)
 
-	builder := NewCobraBuilder(ioc.Global)
+	builder := NewCobraBuilder(container)
 	cmd, err := builder.BuildCommand(root)
 
 	require.NotNil(t, cmd)
@@ -119,7 +123,7 @@ func Test_BuildAndRunActionWithNestedMiddleware(t *testing.T) {
 	ctx = context.WithValue(ctx, middlewareAName, &middlewareARan)
 	ctx = context.WithValue(ctx, middlewareBName, &middlewareBRan)
 
-	os.Args = []string{"", "child", "-r"}
+	cmd.SetArgs([]string{"child", "-r"})
 	err = cmd.ExecuteContext(ctx)
 
 	require.NoError(t, err)
@@ -129,7 +133,8 @@ func Test_BuildAndRunActionWithNestedMiddleware(t *testing.T) {
 }
 
 func Test_BuildAndRunActionWithNestedAndConditionalMiddleware(t *testing.T) {
-	resetOsArgs(t)
+	container := ioc.NewNestedContainer(nil)
+	setup(container)
 
 	root := actions.NewActionDescriptor("root", nil).
 		// This middleware will always run because its registered at the root
@@ -145,7 +150,7 @@ func Test_BuildAndRunActionWithNestedAndConditionalMiddleware(t *testing.T) {
 			return false
 		})
 
-	builder := NewCobraBuilder(ioc.Global)
+	builder := NewCobraBuilder(container)
 	cmd, err := builder.BuildCommand(root)
 
 	require.NotNil(t, cmd)
@@ -160,7 +165,7 @@ func Test_BuildAndRunActionWithNestedAndConditionalMiddleware(t *testing.T) {
 	ctx = context.WithValue(ctx, middlewareAName, &middlewareARan)
 	ctx = context.WithValue(ctx, middlewareBName, &middlewareBRan)
 
-	os.Args = []string{"", "child", "-r"}
+	cmd.SetArgs([]string{"child", "-r"})
 	err = cmd.ExecuteContext(ctx)
 
 	require.NoError(t, err)
@@ -170,12 +175,19 @@ func Test_BuildAndRunActionWithNestedAndConditionalMiddleware(t *testing.T) {
 }
 
 func Test_BuildCommandsWithAutomaticHelpAndOutputFlags(t *testing.T) {
+	container := ioc.NewNestedContainer(nil)
+
 	root := actions.NewActionDescriptor("root", &actions.ActionDescriptorOptions{
 		OutputFormats: []output.Format{output.JsonFormat, output.TableFormat},
 		DefaultFormat: output.TableFormat,
+		Command: &cobra.Command{
+			RunE: func(cmd *cobra.Command, args []string) error {
+				return nil
+			},
+		},
 	})
 
-	cobraBuilder := NewCobraBuilder(ioc.Global)
+	cobraBuilder := NewCobraBuilder(container)
 	cmd, err := cobraBuilder.BuildCommand(root)
 
 	require.NoError(t, err)
@@ -195,12 +207,13 @@ func Test_BuildCommandsWithAutomaticHelpAndOutputFlags(t *testing.T) {
 	require.Equal(t, "The output format (the supported formats are json, table).", outputFlag.Usage)
 }
 
-func resetOsArgs(t *testing.T) {
-	defaultArgs := os.Args
-
-	t.Cleanup(func() {
-		os.Args = defaultArgs
-	})
+func setup(container *ioc.NestedContainer) {
+	registerCommonDependencies(container)
+	globalOptions := &internal.GlobalCommandOptions{
+		EnableTelemetry:    false,
+		EnableDebugLogging: false,
+	}
+	ioc.RegisterInstance(container, globalOptions)
 }
 
 // Types for test

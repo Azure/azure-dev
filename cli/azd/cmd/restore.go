@@ -125,7 +125,9 @@ func (r *restoreAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 
 		installMsg := fmt.Sprintf("Installing dependencies for %s service...", svc.Name)
 		spinner := spin.NewSpinner(r.console.Handles().Stdout, installMsg)
-		if err = spinner.Run(func() error { return svc.Restore(ctx, env, r.commandRunner) }); err != nil {
+		if err = spinner.Run(func() error {
+			return svc.Restore(ctx, env, r.commandRunner)
+		}); err != nil {
 			return nil, err
 		}
 

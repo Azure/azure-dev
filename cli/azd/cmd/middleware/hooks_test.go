@@ -10,7 +10,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/ext"
-	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/ostest"
@@ -214,10 +213,7 @@ func createAzdContext(t *testing.T) *azdcontext.AzdContext {
 	tempDir := t.TempDir()
 	ostest.Chdir(t, tempDir)
 
-	azdContext := azdcontext.NewAzdContextWithDirectory(tempDir)
-	ioc.RegisterInstance(ioc.Global, azdContext)
-
-	return azdContext
+	return azdcontext.NewAzdContextWithDirectory(tempDir)
 }
 
 func createNextFn() (NextFn, *bool) {
@@ -266,6 +262,7 @@ func runMiddleware(
 
 	middleware := NewHooksMiddleware(
 		env,
+		projectConfig,
 		mockContext.CommandRunner,
 		mockContext.Console,
 		runOptions,
@@ -319,8 +316,6 @@ func ensureAzdProject(azdContext *azdcontext.AzdContext, projectConfig *project.
 	if err != nil {
 		return err
 	}
-
-	ioc.RegisterInstance(ioc.Global, projectConfig)
 
 	return nil
 }

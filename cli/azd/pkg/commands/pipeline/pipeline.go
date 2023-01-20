@@ -169,7 +169,7 @@ func DetectProviders(
 			overrideWith = lastUsedProvider
 		}
 		// Figure out what is the expected provider to use for provisioning
-		prj, err := project.LoadProjectConfig(azdContext.ProjectPath())
+		prj, err := project.GetCurrent()
 		if err != nil {
 			return nil, nil, fmt.Errorf("finding pipeline provider: %w", err)
 		}

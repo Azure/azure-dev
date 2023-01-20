@@ -110,7 +110,7 @@ func (i *infraCreateAction) Run(ctx context.Context) (*actions.ActionResult, err
 		return nil, fmt.Errorf("loading environment: %w", err)
 	}
 
-	prj, err := project.LoadProjectConfig(azdCtx.ProjectPath())
+	prj, err := project.GetCurrent()
 	if err != nil {
 		return nil, fmt.Errorf("loading project: %w", err)
 	}

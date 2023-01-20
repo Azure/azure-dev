@@ -15,6 +15,7 @@ import (
 
 type HooksMiddleware struct {
 	env           *environment.Environment
+	projectConfig *project.ProjectConfig
 	commandRunner exec.CommandRunner
 	console       input.Console
 	options       *Options
@@ -23,12 +24,14 @@ type HooksMiddleware struct {
 // Creates a new instance of the Hooks middleware
 func NewHooksMiddleware(
 	env *environment.Environment,
+	projectConfig *project.ProjectConfig,
 	commandRunner exec.CommandRunner,
 	console input.Console,
 	options *Options,
 ) Middleware {
 	return &HooksMiddleware{
 		env:           env,
+		projectConfig: projectConfig,
 		commandRunner: commandRunner,
 		console:       console,
 		options:       options,
@@ -37,38 +40,28 @@ func NewHooksMiddleware(
 
 // Runs the Hooks middleware
 func (m *HooksMiddleware) Run(ctx context.Context, next NextFn) (*actions.ActionResult, error) {
-	projectConfig, err := project.GetCurrent()
-	if err != nil {
-		log.Println("current project is not available, skipping hook registrations")
-		return next(ctx)
-	}
-
-	if err := m.registerServiceHooks(ctx, projectConfig); err != nil {
+	if err := m.registerServiceHooks(ctx); err != nil {
 		return nil, fmt.Errorf("failed registering service hooks, %w", err)
 	}
 
-	return m.registerCommandHooks(ctx, projectConfig, next)
+	return m.registerCommandHooks(ctx, next)
 }
 
 // Register command level hooks for the executing cobra command & action
 // Invokes the middleware next function
-func (m *HooksMiddleware) registerCommandHooks(
-	ctx context.Context,
-	projectConfig *project.ProjectConfig,
-	next NextFn,
-) (*actions.ActionResult, error) {
-	if projectConfig.Hooks == nil || len(projectConfig.Hooks) == 0 {
+func (m *HooksMiddleware) registerCommandHooks(ctx context.Context, next NextFn) (*actions.ActionResult, error) {
+	if m.projectConfig.Hooks == nil || len(m.projectConfig.Hooks) == 0 {
 		log.Println("project does not contain any command hooks.")
 		return next(ctx)
 	}
 
-	hooksManager := ext.NewHooksManager(projectConfig.Path)
+	hooksManager := ext.NewHooksManager(m.projectConfig.Path)
 	hooksRunner := ext.NewHooksRunner(
 		hooksManager,
 		m.commandRunner,
 		m.console,
-		projectConfig.Path,
-		projectConfig.Hooks,
+		m.projectConfig.Path,
+		m.projectConfig.Hooks,
 		m.env.Environ(),
 	)
 
@@ -96,8 +89,8 @@ func (m *HooksMiddleware) registerCommandHooks(
 
 // Registers event handlers for all services within the project configuration
 // Runs hooks for each matching event handler
-func (m *HooksMiddleware) registerServiceHooks(ctx context.Context, projectConfig *project.ProjectConfig) error {
-	for serviceName, service := range projectConfig.Services {
+func (m *HooksMiddleware) registerServiceHooks(ctx context.Context) error {
+	for serviceName, service := range m.projectConfig.Services {
 		// If the service hasn't configured any hooks we can continue on.
 		if service.Hooks == nil || len(service.Hooks) == 0 {
 			log.Printf("service '%s' does not require any command hooks.\n", serviceName)

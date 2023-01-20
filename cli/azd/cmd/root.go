@@ -43,11 +43,18 @@ func NewRootCmd(staticHelp bool, middlewareChain []*actions.MiddlewareRegistrati
 		synopsisHeading = ""
 	}
 	//nolint:lll
-	longDescription := heredoc.Docf(`%sTo begin working with Azure Developer CLI, run the `+output.WithBackticks("azd up")+` command by supplying a sample template in an empty directory:
+	longDescription := heredoc.Docf(
+		`%sTo begin working with Azure Developer CLI, run the `+output.WithBackticks(
+			"azd up",
+		)+` command by supplying a sample template in an empty directory:
 
 		$ azd up –-template todo-nodejs-mongo
 
-	You can pick a template by running `+output.WithBackticks("azd template list")+` and then supplying the repo name as a value to `+output.WithBackticks("--template")+`.
+	You can pick a template by running `+output.WithBackticks(
+			"azd template list",
+		)+` and then supplying the repo name as a value to `+output.WithBackticks(
+			"--template",
+		)+`.
 
 	The most common next commands are:
 
@@ -55,7 +62,9 @@ func NewRootCmd(staticHelp bool, middlewareChain []*actions.MiddlewareRegistrati
 		$ azd deploy
 		$ azd monitor --overview
 
-	For more information, visit the Azure Developer CLI Dev Hub: https://aka.ms/azure-dev/devhub.`, synopsisHeading)
+	For more information, visit the Azure Developer CLI Dev Hub: https://aka.ms/azure-dev/devhub.`,
+		synopsisHeading,
+	)
 
 	rootCmd := &cobra.Command{
 		Use:   "azd",
@@ -192,14 +201,11 @@ func NewRootCmd(staticHelp bool, middlewareChain []*actions.MiddlewareRegistrati
 		}).
 		UseMiddleware("hooks", middleware.NewHooksMiddleware)
 
-	root.
-		Add("init", &actions.ActionDescriptorOptions{
-			Command:        newInitCmd(),
-			FlagsResolver:  newInitFlags,
-			ActionResolver: newInitAction,
-		}).
-		AddFlagCompletion("template", templateNameCompletion).
-		UseMiddleware("hooks", middleware.NewHooksMiddleware)
+	root.Add("init", &actions.ActionDescriptorOptions{
+		Command:        newInitCmd(),
+		FlagsResolver:  newInitFlags,
+		ActionResolver: newInitAction,
+	}).AddFlagCompletion("template", templateNameCompletion)
 
 	root.
 		Add("up", &actions.ActionDescriptorOptions{

@@ -225,6 +225,10 @@ func LoadProjectConfig(projectPath string) (*ProjectConfig, error) {
 	return projectConfig, nil
 }
 
+// Gets the current project config from the IoC container
+// This method ensures the same instance is returned that can be referenced from any component
+// ex) Can be referenced from within middleware as well as command actions
+// Returns and error when the project is not found
 func GetCurrent() (*ProjectConfig, error) {
 	var projectConfig *ProjectConfig
 	if err := ioc.Global.Resolve(&projectConfig); err != nil {

@@ -48,7 +48,6 @@ steps:
   displayName: Set test run parameters
 
 - pwsh: |
-    # Write-Host "##vso[task.setvariable variable=folderPath;]$pwd"
     git clone --branch $(TemplateBranchName) https://github.com/$(TemplateName).git/ temp
   displayName: Clone template repository
 
@@ -60,82 +59,20 @@ steps:
       ARM_CLIENT_SECRET=$(arm-client-secret)
       ARM_TENANT_ID=$(arm-tenant-id)
       SUBSCRIPTION_ID=$(SubscriptionId)
-      # FOLDER_PATH=$(folderPath)
       AZD_DEBUG_FORCE_NO_TTY="1"
-    subFolder: '$(Build.SourcesDirectory)/temp'
-    runCmd: |
-      curl -fsSL https://aka.ms/install-azd.sh | bash -s -- --version 'daily' --verbose
-      azd version
-      azd login \
-        --client-id "$(arm-client-id)" \
-        --client-secret "$(arm-client-secret)" \
-        --tenant-id "$(arm-tenant-id)"
-
-      # install these packages for playwright missing libraries error and start run playwright
-      sudo add-apt-repository ppa:gstreamer-developers/ppa
-      sudo apt-get update
-      sudo apt-get install gstreamer1.0*
-      sudo apt-get install -y gstreamer1.0-libav libnss3-tools libatk-bridge2.0-0 libcups2-dev libxkbcommon-x11-0 libxcomposite-dev libxrandr2 libgbm-dev libgtk-3-0
-      
-      set -euo pipefail
-      # Use fixed path inside the container
       FOLDER_PATH="/workspaces/temp"
       BRANCH_NAME=$(TemplateBranchName)
       ENV_NAME_PREFIX=$(EnvPrefixName)
       TEMPLATE_NAME=$(TemplateName)
-      PLAYWRIGHT_RETRIES="1"
       PLAYWRIGHT_REPORTER='list'
       LOCATION=$(AzureLocation)
       SUBSCRIPTION=$(SubscriptionId)
       ENV_SUFFIX=$(Build.BuildId)-$(System.JobAttempt)
       TEST_ONLY=false
       CLEANUP=$(SynchronousCleanup)
-
-      export AZURE_LOCATION="$LOCATION"
-
-      function deployTemplate {
-          echo "Creating new project folder @ '$FOLDER_PATH/$3'..."
-          cd "$FOLDER_PATH"
-          mkdir "$3"
-          cd "$3"
-
-          echo "Initializing template '$1' with branch '$2'"
-          azd init -t "$1" -b "$2" -e "$3" --subscription "$4" --location "$5" --no-prompt
-
-          echo "Provisioning infrastructure for $3..."
-          azd provision -e "$3"
-
-          echo "Deploying apps for $3..."
-          azd deploy -e "$3"
-      }
-
-      function testTemplate {
-          echo "Running template smoke tests for $3..."
-          cd "$FOLDER_PATH/$3/tests"
-          npm i && npx playwright install
-          npx -y playwright test --retries="$PLAYWRIGHT_RETRIES" --reporter="$PLAYWRIGHT_REPORTER"
-      }
-
-      function cleanupTemplate {
-          echo "Deprovisioning infrastructure for $3..."
-          cd "$FOLDER_PATH/$3"
-          azd down -e "$3" --force --purge
-
-          echo "Cleaning up local project @ '$FOLDER_PATH/$3'..."
-          rm -rf "$FOLDER_PATH/${3:?}"
-      }
-
-      # Run test for the specified template name
-      ENV_NAME="${ENV_NAME_PREFIX}-${TEMPLATE_NAME:14}-$ENV_SUFFIX"
-      if [ $TEST_ONLY == false ]; then
-          deployTemplate "$TEMPLATE_NAME" "$BRANCH_NAME" "$ENV_NAME" "${SUBSCRIPTION}" "${LOCATION}" 
-      fi
-
-      testTemplate "$TEMPLATE_NAME" "$BRANCH_NAME" "$ENV_NAME"
-
-      if [ "$CLEANUP" == true ]; then
-          cleanupTemplate "$TEMPLATE_NAME" "$BRANCH_NAME" "$ENV_NAME"
-      fi
+    subFolder: '$(Build.SourcesDirectory)/temp'
+    runCmd: |
+      - template: /eng/pipelines/templates/steps/template-test-devcontainer.yml
   displayName: Test templates in Devcontainer
 
 - template: /eng/pipelines/templates/steps/az-login.yml

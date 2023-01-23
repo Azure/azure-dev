@@ -13,6 +13,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerregistry/armcontainerregistry"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armsubscriptions"
 	azdinternal "github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/azsdk"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
@@ -40,6 +41,7 @@ type AzCli interface {
 	LoginAcr(ctx context.Context, commandRunner exec.CommandRunner, subscriptionId string, loginServer string) error
 	GetContainerRegistries(ctx context.Context, subscriptionId string) ([]*armcontainerregistry.Registry, error)
 	ListAccounts(ctx context.Context) ([]*AzCliSubscriptionInfo, error)
+	ListAccountsWithCredential(ctx context.Context, credential azcore.TokenCredential) ([]*AzCliSubscriptionInfo, error)
 	GetAccount(ctx context.Context, subscriptionId string) (*AzCliSubscriptionInfo, error)
 	GetSubscriptionDeployment(
 		ctx context.Context,
@@ -167,6 +169,7 @@ type AzCli interface {
 	GetSignedInUserId(ctx context.Context) (*string, error)
 
 	GetAccessToken(ctx context.Context) (*AzCliAccessToken, error)
+	ListTenants(ctx context.Context) ([]*armsubscriptions.TenantIDDescription, error)
 }
 
 type AzCliDeployment struct {

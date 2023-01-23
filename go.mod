@@ -1,5 +1,9 @@
 module github.com/azure/azure-dev
 
+replace github.com/AzureAD/microsoft-authentication-library-for-go => github.com/vhvb1989/microsoft-authentication-library-for-go v1.0.0
+
+replace github.com/Azure/azure-sdk-for-go/sdk/azidentity v1.2.0 => github.com/vhvb1989/azure-sdk-for-go/sdk/azidentity v1.88.0
+
 go 1.19
 
 require (

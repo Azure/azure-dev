@@ -7,6 +7,7 @@ import (
 	"sort"
 	"time"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/cloud"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armsubscriptions"
@@ -42,8 +43,9 @@ type AzCliAccessToken struct {
 	ExpiresOn   *time.Time
 }
 
-func (cli *azCli) ListAccounts(ctx context.Context) ([]*AzCliSubscriptionInfo, error) {
-	client, err := cli.createSubscriptionsClient(ctx)
+func (cli *azCli) ListAccountsWithCredential(
+	ctx context.Context, credential azcore.TokenCredential) ([]*AzCliSubscriptionInfo, error) {
+	client, err := cli.createSubscriptionsClient(ctx, credential)
 	if err != nil {
 		return nil, err
 	}
@@ -74,8 +76,37 @@ func (cli *azCli) ListAccounts(ctx context.Context) ([]*AzCliSubscriptionInfo, e
 	return subscriptions, nil
 }
 
+func (cli *azCli) ListAccounts(ctx context.Context) ([]*AzCliSubscriptionInfo, error) {
+	return cli.ListAccountsWithCredential(ctx, cli.credential)
+}
+
+func (cli *azCli) ListTenants(ctx context.Context) ([]*armsubscriptions.TenantIDDescription, error) {
+	client, err := cli.createTenantsClient(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	tenants := []*armsubscriptions.TenantIDDescription{}
+	pager := client.NewListPager(nil)
+
+	for pager.More() {
+		page, err := pager.NextPage(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed getting next page of subscriptions: %w", err)
+		}
+
+		tenants = append(tenants, page.TenantListResult.Value...)
+	}
+
+	sort.Slice(tenants, func(i, j int) bool {
+		return *tenants[i].DisplayName < *tenants[j].DisplayName
+	})
+
+	return tenants, nil
+}
+
 func (cli *azCli) GetAccount(ctx context.Context, subscriptionId string) (*AzCliSubscriptionInfo, error) {
-	client, err := cli.createSubscriptionsClient(ctx)
+	client, err := cli.createDefaultSubscriptionsClient(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -93,7 +124,7 @@ func (cli *azCli) GetAccount(ctx context.Context, subscriptionId string) (*AzCli
 }
 
 func (cli *azCli) ListAccountLocations(ctx context.Context, subscriptionId string) ([]AzCliLocation, error) {
-	client, err := cli.createSubscriptionsClient(ctx)
+	client, err := cli.createDefaultSubscriptionsClient(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -128,11 +159,26 @@ func (cli *azCli) ListAccountLocations(ctx context.Context, subscriptionId strin
 	return locations, nil
 }
 
-func (cli *azCli) createSubscriptionsClient(ctx context.Context) (*armsubscriptions.Client, error) {
+func (cli *azCli) createDefaultSubscriptionsClient(ctx context.Context) (*armsubscriptions.Client, error) {
+	return cli.createSubscriptionsClient(ctx, cli.credential)
+}
+
+func (cli *azCli) createSubscriptionsClient(
+	ctx context.Context, credential azcore.TokenCredential) (*armsubscriptions.Client, error) {
 	options := cli.createDefaultClientOptionsBuilder(ctx).BuildArmClientOptions()
-	client, err := armsubscriptions.NewClient(cli.credential, options)
+	client, err := armsubscriptions.NewClient(credential, options)
 	if err != nil {
 		return nil, fmt.Errorf("creating Subscriptions client: %w", err)
+	}
+
+	return client, nil
+}
+
+func (cli *azCli) createTenantsClient(ctx context.Context) (*armsubscriptions.TenantsClient, error) {
+	options := cli.createDefaultClientOptionsBuilder(ctx).BuildArmClientOptions()
+	client, err := armsubscriptions.NewTenantsClient(cli.credential, options)
+	if err != nil {
+		return nil, fmt.Errorf("creating Tenants client: %w", err)
 	}
 
 	return client, nil

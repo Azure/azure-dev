@@ -18,6 +18,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armsubscriptions"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/public"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
@@ -264,7 +265,7 @@ func newCredentialFromClientAssertion(
 }
 
 func (m *Manager) LoginInteractive(ctx context.Context, redirectPort int) (azcore.TokenCredential, error) {
-	options := []public.InteractiveAuthOption{}
+	options := []public.AcquireInteractiveOption{}
 	if redirectPort > 0 {
 		options = append(options, public.WithRedirectURI(fmt.Sprintf("http://localhost:%d", redirectPort)))
 	}
@@ -276,6 +277,48 @@ func (m *Manager) LoginInteractive(ctx context.Context, redirectPort int) (azcor
 	if err := m.saveLoginForPublicClient(res); err != nil {
 		return nil, err
 	}
+
+	userCredential := newAzdCredential(m.publicClient, &res.Account)
+	tenantClient, err := armsubscriptions.NewTenantsClient(userCredential, nil)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	allTenants := []string{}
+	pager := tenantClient.NewListPager(nil)
+	for pager.More() {
+		res, err := pager.NextPage(ctx)
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		for _, tenantDescription := range res.Value {
+			fmt.Printf("*** discovered tenant: %v (%v)\n", *tenantDescription.DisplayName, *tenantDescription.TenantID)
+			allTenants = append(allTenants, *tenantDescription.TenantID)
+		}
+	}
+	//tenants, err := clii.ListTenants(ctx)
+	// if err != nil {
+	// 	return nil, fmt.Errorf("failed listing azure tenants: %w", err)
+	// }
+
+	// results := []*azcli.AzCliSubscriptionInfo{}
+	// for _, tenant := range tenants {
+	// 	tenantCredential, err := m.CredentialForCurrentUser(ctx, &CredentialForCurrentUserOptions{
+	// 		TenantID: *tenant.TenantID,
+	// 	})
+	// 	if err != nil {
+	// 		return nil, fmt.Errorf("failed creating credential for tenant: %w", err)
+	// 	}
+
+	// 	accounts, err := clii.ListAccountsWithCredential(ctx, tenantCredential)
+	// 	if err != nil {
+	// 		return nil, fmt.Errorf("failed listing azure subscriptions: %w", err)
+	// 	}
+
+	// 	// If default subscription is set, set it in the results
+	// 	results = append(results, accounts...)
+	// }
 
 	return newAzdCredential(m.publicClient, &res.Account), nil
 }

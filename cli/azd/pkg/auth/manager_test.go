@@ -301,7 +301,7 @@ func (m *mockPublicClient) RemoveAccount(account public.Account) error {
 }
 
 func (m *mockPublicClient) AcquireTokenInteractive(
-	ctx context.Context, scopes []string, options ...public.InteractiveAuthOption,
+	ctx context.Context, scopes []string, options ...public.AcquireInteractiveOption,
 ) (public.AuthResult, error) {
 	return public.AuthResult{
 		Account: public.Account{
@@ -311,7 +311,7 @@ func (m *mockPublicClient) AcquireTokenInteractive(
 }
 
 func (m *mockPublicClient) AcquireTokenSilent(
-	ctx context.Context, scopes []string, options ...public.AcquireTokenSilentOption,
+	ctx context.Context, scopes []string, options ...public.AcquireSilentOption,
 ) (public.AuthResult, error) {
 	return public.AuthResult{
 		Account: public.Account{

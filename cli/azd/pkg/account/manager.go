@@ -7,6 +7,7 @@ import (
 	"log"
 	"os"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"golang.org/x/exp/slices"
@@ -205,15 +206,39 @@ func (m *Manager) Clear(ctx context.Context) error {
 }
 
 // Gets the available Azure subscriptions for the current logged in principal.
+// TODO: Use the singleton credential to list all tenants from the account
+//
+//	then, get a new credential per tenant and use it to fetch the list of subs
 func (m *Manager) getAllSubscriptions(ctx context.Context) ([]*azcli.AzCliSubscriptionInfo, error) {
-	accounts, err := m.azCli.ListAccounts(ctx)
+
+	tenants, err := m.azCli.ListTenants(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed listing azure subscriptions: %w", err)
+		return nil, fmt.Errorf("failed listing azure tenants: %w", err)
 	}
 
-	// If default subscription is set, set it in the results
 	results := []*azcli.AzCliSubscriptionInfo{}
-	results = append(results, accounts...)
+	for _, tenant := range tenants {
+		authMangerForTenant, err := auth.NewManager(config.NewUserConfigManager())
+		if err != nil {
+			return nil, fmt.Errorf("failed creating auth manager: %w", err)
+		}
+
+		tenantCredential, err := authMangerForTenant.CredentialForCurrentUser(ctx, &auth.CredentialForCurrentUserOptions{
+			TenantID: *tenant.TenantID,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("failed creating credential for tenant: %w", err)
+		}
+
+		accounts, err := m.azCli.ListAccountsWithCredential(ctx, tenantCredential)
+		if err != nil {
+			log.Printf("Unable to fetch subscriptions from tenant: %s. Error: %s", *tenant.TenantID, err.Error())
+			continue
+		}
+
+		// If default subscription is set, set it in the results
+		results = append(results, accounts...)
+	}
 
 	return results, nil
 }

@@ -1,11 +1,71 @@
 {
-    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$schema": "https://json-schema.org/draft/2019-09/schema",
     "$id": "https://raw.githubusercontent.com/Azure/azure-dev/main/schemas/v1.0/azure.yaml.json",
     "type": "object",
     "required": [
         "name",
         "services"
     ],
+    "definitions": {
+        "hooks": {
+            "title": "Definition of hooks for developer integration",
+            "description": "Hooks should match `azd` command names or `service` event names prefixed with `pre` or `post` depending on when the script should execute. When specifying paths they should be relative to the project or service path.",
+            "additionalProperties": {
+                "$ref": "#/definitions/hook"
+            }
+        },
+        "hook": {
+            "type": "object",
+            "title": "Definition of hooks for developer integration",
+            "description": "Hooks should match `azd` command names or `service` event names prefixed with `pre` or `post` depending on when the script should execute relative to the command",
+            "minProperties": 1,
+            "additionalProperties": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                    "shell": {
+                        "type": "string",
+                        "title": "Type of shell to execute scripts",
+                        "description": "Optional. The type of shell to use for the hook. (Default: sh)",
+                        "enum": [
+                            "sh",
+                            "pwsh"
+                        ],
+                        "default": "sh"
+                    },
+                    "run": {
+                        "type": "string",
+                        "title": "Required. The inline script or relative path of your scripts from the project or service path",
+                        "description": "When specifying an inline script you also must specify the `shell` to use. This is automatically inferred when using paths."
+                    },
+                    "continueOnError": {
+                        "type": "boolean",
+                        "default": false,
+                        "title": "Whether or not a script error will halt the azd command",
+                        "description": "Optional. When set to true will continue to run the command even after a script error has occurred. (Default: false)"
+                    },
+                    "interactive": {
+                        "type": "boolean",
+                        "default": true,
+                        "title": "Whether the script will run in interactive mode",
+                        "description": "Optional. When set to true will bind the script to stdin, stdout & stderr of the running console. (Default: false)"
+                    },
+                    "windows": {
+                        "title": "The hook configuration used for Windows environments",
+                        "description": "When specified overrides the hook configuration when executed in Windows environments",
+                        "default": null,
+                        "$ref": "#/definitions/hook"
+                    },
+                    "posix": {
+                        "title": "The hook configuration used for POSIX (Linux & MacOS) environments",
+                        "description": "When specified overrides the hook configuration when executed in POSIX environments",
+                        "default": null,
+                        "$ref": "#/definitions/hook"
+                    }
+                }
+            }
+        }
+    },
     "additionalProperties": false,
     "properties": {
         "name": {
@@ -141,131 +201,8 @@
                             }
                         }
                     },
-                    "scripts": {
-                        "type": "object",
-                        "title": "Definition of command hooks for developer integration",
-                        "descriptions": "Command hooks should match `azd` command names prefixed with `pre` or `post` depending on when the script should execute relative to the command",
-                        "minProperties": 1,
-                        "additionalProperties": {
-                            "type": "object",
-                            "additionalProperties": false,
-                            "properties": {
-                                "type": {
-                                    "type": "string",
-                                    "title": "Type of script",
-                                    "description": "Optional. The type of script to use for the command hook. (Default: bash)",
-                                    "enum": [
-                                        "bash",
-                                        "powershell"
-                                    ]
-                                },
-                                "location": {
-                                    "type": "string",
-                                    "title": "The location of the script",
-                                    "description": "Optional. The script can reference a file system path or be declared inline. (Default: path)",
-                                    "enum": [
-                                        "path",
-                                        "inline"
-                                    ]
-                                },
-                                "path": {
-                                    "type": "string",
-                                    "title": "Path to the command hook script relative to the azure.yaml file",
-                                    "description": "When `location` is set to `path` contains the full relative path to the command hook to execute"
-                                },
-                                "script": {
-                                    "type": "string",
-                                    "title": "The inline script to execute for the command hook",
-                                    "description": "When `location` is set to `inline` contains the full script to execute"
-                                },
-                                "continueOnError": {
-                                    "type": "boolean",
-                                    "default": false,
-                                    "title": "Whether or not a script error will halt the azd command",
-                                    "description": "Optional. When set to true will continue to run the command even after a script error has occurred. (Default: false)"
-                                },
-                                "interactive": {
-                                    "type": "boolean",
-                                    "default": true,
-                                    "title": "Whether the script will run in interactive mode",
-                                    "description": "Optional. When set to true will bind the script to stdin, stdout & stderr of the running console. (Default: false)"
-                                }
-                            },
-                            "allOf": [
-                                {
-                                    "if": {
-                                        "properties": {
-                                            "location": {
-                                                "const": "inline"
-                                            }
-                                        },
-                                        "required": [
-                                            "location"
-                                        ]
-                                    },
-                                    "then": {
-                                        "required": [
-                                            "script",
-                                            "type"
-                                        ],
-                                        "properties": {
-                                            "path": false
-                                        }
-                                    }
-                                },
-                                {
-                                    "if": {
-                                        "properties": {
-                                            "location": {
-                                                "const": "path"
-                                            }
-                                        },
-                                        "required": [
-                                            "location"
-                                        ]
-                                    },
-                                    "then": {
-                                        "required": [
-                                            "path"
-                                        ],
-                                        "properties": {
-                                            "script": false
-                                        }
-                                    }
-                                },
-                                {
-                                    "if": {
-                                        "required": [
-                                            "path"
-                                        ]
-                                    },
-                                    "then": {
-                                        "required": [
-                                            "path"
-                                        ],
-                                        "properties": {
-                                            "script": false
-                                        }
-                                    }
-                                },
-                                {
-                                    "if": {
-                                        "required": [
-                                            "script"
-                                        ]
-                                    },
-                                    "then": {
-                                        "required": [
-                                            "script",
-                                            "type"
-                                        ],
-                                        "properties": {
-                                            "path": false
-                                        }
-                                    }
-                                }
-                            ]
-                        }
+                    "hooks": {
+                        "$ref": "#/definitions/hooks"
                     }
                 },
                 "required": [
@@ -331,133 +268,8 @@
                 }
             }
         },
-        "scripts": {
-            "type": "object",
-            "title": "Definition of command hooks for developer integration",
-            "descriptions": "Command hooks should match `azd` command names prefixed with `pre` or `post` depending on when the script should execute relative to the command",
-            "minProperties": 1,
-            "additionalProperties": {
-                "type": "object",
-                "additionalProperties": false,
-                "properties": {
-                    "type": {
-                        "type": "string",
-                        "title": "Type of script",
-                        "description": "Optional. The type of script to use for the command hook. (Default: bash)",
-                        "enum": [
-                            "bash",
-                            "powershell"
-                        ],
-                        "default": "bash"
-                    },
-                    "location": {
-                        "type": "string",
-                        "title": "The location of the script",
-                        "description": "Optional. The script can reference a file system path or be declared inline. (Default: path)",
-                        "enum": [
-                            "path",
-                            "inline"
-                        ],
-                        "default": "path"
-                    },
-                    "path": {
-                        "type": "string",
-                        "title": "Path to the command hook script relative to the azure.yaml file",
-                        "description": "When `location` is set to `path` contains the full relative path to the command hook to execute"
-                    },
-                    "script": {
-                        "type": "string",
-                        "title": "The inline script to execute for the command hook",
-                        "description": "When `location` is set to `inline` contains the full script to execute"
-                    },
-                    "continueOnError": {
-                        "type": "boolean",
-                        "default": false,
-                        "title": "Whether or not a script error will halt the azd command",
-                        "description": "Optional. When set to true will continue to run the command even after a script error has occurred. (Default: false)"
-                    },
-                    "interactive": {
-                        "type": "boolean",
-                        "default": true,
-                        "title": "Whether the script will run in interactive mode",
-                        "description": "Optional. When set to true will bind the script to stdin, stdout & stderr of the running console. (Default: false)"
-                    }
-                },
-                "allOf": [
-                    {
-                        "if": {
-                            "properties": {
-                                "location": {
-                                    "const": "inline"
-                                }
-                            },
-                            "required": [
-                                "location"
-                            ]
-                        },
-                        "then": {
-                            "required": [
-                                "script",
-                                "type"
-                            ],
-                            "properties": {
-                                "path": false
-                            }
-                        }
-                    },
-                    {
-                        "if": {
-                            "properties": {
-                                "location": {
-                                    "const": "path"
-                                }
-                            },
-                            "required": [
-                                "location"
-                            ]
-                        },
-                        "then": {
-                            "required": [
-                                "path"
-                            ],
-                            "properties": {
-                                "script": false
-                            }
-                        }
-                    },
-                    {
-                        "if": {
-                            "required": [
-                                "path"
-                            ]
-                        },
-                        "then": {
-                            "required": [
-                                "path"
-                            ],
-                            "properties": {
-                                "script": false
-                            }
-                        }
-                    },
-                    {
-                        "if": {
-                            "required": [
-                                "script"
-                            ]
-                        },
-                        "then": {
-                            "required": [
-                                "script",
-                                "type"
-                            ],
-                            "properties": {
-                                "path": false
-                            }
-                        }
-                    }
-                ]
-            }
+        "hooks": {
+            "$ref": "#/definitions/hooks"
         }
     }
 }

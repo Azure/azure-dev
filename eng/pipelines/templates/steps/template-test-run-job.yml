@@ -59,7 +59,8 @@ steps:
       ARM_CLIENT_SECRET=$(arm-client-secret)
       ARM_TENANT_ID=$(arm-tenant-id)
       SUBSCRIPTION_ID=$(SubscriptionId)
-      AZD_DEBUG_FORCE_NO_TTY="1"
+      
+      # Bash Script parameters
       FOLDER_PATH="/workspaces/temp"
       BRANCH_NAME=$(TemplateBranchName)
       ENV_NAME_PREFIX=$(EnvPrefixName)
@@ -68,11 +69,33 @@ steps:
       LOCATION=$(AzureLocation)
       SUBSCRIPTION=$(SubscriptionId)
       ENV_SUFFIX=$(Build.BuildId)-$(System.JobAttempt)
-      TEST_ONLY=false
       CLEANUP=$(SynchronousCleanup)
+
+      Version=$(AzdVersion)
+      AZD_DEBUG_FORCE_NO_TTY="1"
     subFolder: '$(Build.SourcesDirectory)/temp'
     runCmd: |
-      - template: /eng/pipelines/templates/steps/template-test-devcontainer.yml
+      # Install azd
+      curl -fsSL https://aka.ms/install-azd.sh | bash -s -- $(AzdInstallArgs) --verbose
+
+      # Check azd version
+      azd version
+
+      # Login
+      azd login \
+        --client-id "$(arm-client-id)" \
+        --client-secret "$(arm-client-secret)" \
+        --tenant-id "$(arm-tenant-id)"
+
+      # Install these packages for playwright tests. Otherwise, it will cause a error of playwright missing libraries 
+      sudo add-apt-repository ppa:gstreamer-developers/ppa
+      sudo apt-get update
+      sudo apt-get install gstreamer1.0*
+      sudo apt-get install -y gstreamer1.0-libav libnss3-tools libatk-bridge2.0-0 libcups2-dev libxkbcommon-x11-0 libxcomposite-dev libxrandr2 libgbm-dev libgtk-3-0
+
+      # Run template test bash script
+      ./../tests/test-templates.sh
+      
   displayName: Test templates in Devcontainer
 
 - template: /eng/pipelines/templates/steps/az-login.yml

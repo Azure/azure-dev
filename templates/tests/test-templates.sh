@@ -18,6 +18,8 @@ ENV_SUFFIX="$RANDOM"
 TEST_ONLY=false
 # When set will clean up local and remote resources
 CLEANUP=true
+# Used for internal pipeline testing. When set will skip azd init
+DEVCONTAINERTEST=false
 
 function usage {
     echo "Tests azd template init, provision & deploy"
@@ -59,6 +61,7 @@ while getopts "f:t:b:e:r:p:l:s:u:n:c:h" arg; do
     u) ENV_SUFFIX=$OPTARG ;;
     n) TEST_ONLY=true ;;
     c) CLEANUP=$OPTARG ;;
+    d) DEVCONTAINERTEST=true ;;
     h)
         usage
         ;;
@@ -80,14 +83,17 @@ done
 # $3 - The environment name
 # $4 - The Azure subscription name or ID
 # $5 - The Azure location
+# $6 - The Devcontainer Test
 function deployTemplate {
-    echo "Creating new project folder @ '$FOLDER_PATH/$3'..."
-    cd "$FOLDER_PATH"
-    mkdir "$3"
-    cd "$3"
+    if [ $DEVCONTAINERTEST == false ]; then
+        echo "Creating new project folder @ '$FOLDER_PATH/$3'..."
+        cd "$FOLDER_PATH"
+        mkdir "$3"
+        cd "$3"
 
-    echo "Initializing template '$1' with branch '$2'"
-    azd init -t "$1" -b "$2" -e "$3" --subscription "$4" --location "$5" --no-prompt
+        echo "Initializing template '$1' with branch '$2'"
+        azd init -t "$1" -b "$2" -e "$3" --subscription "$4" --location "$5" --no-prompt
+    fi
 
     echo "Provisioning infrastructure for $3..."
     azd provision -e "$3"
@@ -137,7 +143,7 @@ if [[ -z $TEMPLATE_NAME ]]; then
     if [ $TEST_ONLY == false ]; then
         # Deploy the templates in parallel
         for TEMPLATE in "${!ENV_TEMPLATE_MAP[@]}"; do
-            (deployTemplate "$TEMPLATE" "$BRANCH_NAME" "${ENV_TEMPLATE_MAP[$TEMPLATE]}" "${SUBSCRIPTION}" "${LOCATION}" || continue) &
+            (deployTemplate "$TEMPLATE" "$BRANCH_NAME" "${ENV_TEMPLATE_MAP[$TEMPLATE]}" "${SUBSCRIPTION}" "${LOCATION}" "$DEVCONTAINERTEST"|| continue) &
         done
 
         wait
@@ -163,7 +169,7 @@ else
     # Run test for the specified template name
     ENV_NAME="${ENV_NAME_PREFIX}-${TEMPLATE_NAME:14}-$ENV_SUFFIX"
     if [ $TEST_ONLY == false ]; then
-        deployTemplate "$TEMPLATE_NAME" "$BRANCH_NAME" "$ENV_NAME" "${SUBSCRIPTION}" "${LOCATION}" 
+        deployTemplate "$TEMPLATE_NAME" "$BRANCH_NAME" "$ENV_NAME" "${SUBSCRIPTION}" "${LOCATION}" "$DEVCONTAINERTEST"
     fi
 
     testTemplate "$TEMPLATE_NAME" "$BRANCH_NAME" "$ENV_NAME"

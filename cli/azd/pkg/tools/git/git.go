@@ -223,7 +223,7 @@ func (cli *gitCli) ListStagedFiles(ctx context.Context, repositoryPath string) (
 }
 
 func (cli *gitCli) AddFileExecPermission(ctx context.Context, repositoryPath string, file string) error {
-	runArgs := exec.NewRunArgs("git", "-C", repositoryPath, "update-index", "--chmod=+x", file)
+	runArgs := exec.NewRunArgs("git", "-C", repositoryPath, "update-index", "--add", "--chmod=+x", file)
 	res, err := cli.commandRunner.Run(ctx, runArgs)
 	if err != nil {
 		return fmt.Errorf("failed to add file exec permission: %s: %w", res.String(), err)

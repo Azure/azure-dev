@@ -218,7 +218,9 @@ func TestLoginInteractive(t *testing.T) {
 		publicClient:  &mockPublicClient{},
 	}
 
-	cred, err := m.LoginInteractive(context.Background(), 0)
+	cred, err := m.LoginInteractive(context.Background(), &LoginInteractiveOptions{
+		RedirectPort: 0,
+	})
 
 	require.NoError(t, err)
 	require.IsType(t, new(azdCredential), cred)

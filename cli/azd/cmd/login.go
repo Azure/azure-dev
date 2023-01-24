@@ -205,8 +205,8 @@ func countTrue(elms ...bool) int {
 }
 
 func (la *loginAction) login(ctx context.Context) error {
-	if la.flags.clientID != "" || la.flags.tenantID != "" {
-		if la.flags.clientID == "" || la.flags.tenantID == "" {
+	if la.flags.clientID != "" {
+		if la.flags.tenantID == "" {
 			return errors.New("must set both `client-id` and `tenant-id` for service principal login")
 		}
 
@@ -291,7 +291,10 @@ func (la *loginAction) login(ctx context.Context) error {
 			return fmt.Errorf("logging in: %w", err)
 		}
 	} else {
-		if _, err := la.authManager.LoginInteractive(ctx, la.flags.redirectPort); err != nil {
+		if _, err := la.authManager.LoginInteractive(ctx, &auth.LoginInteractiveOptions{
+			RedirectPort: la.flags.redirectPort,
+			TenantId:     la.flags.tenantID,
+		}); err != nil {
 			return fmt.Errorf("logging in: %w", err)
 		}
 	}

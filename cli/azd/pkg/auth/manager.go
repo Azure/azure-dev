@@ -41,7 +41,9 @@ const cUseAzCliAuthKey = "auth.useAzCliAuth"
 // cDefaultAuthority is the default authority to use when a specific tenant is not presented. We use "organizations" to
 // allow both work/school accounts and personal accounts (this matches the default authority the `az` CLI uses when logging
 // in).
-const cDefaultAuthority = "https://login.microsoftonline.com/organizations"
+const cDefaultAuthority = "https://login.microsoftonline.com"
+
+const cDefaultRealm = "organizations"
 
 // The scopes to request when acquiring our token during the login flow or when requesting a token to validate if the client
 // is logged in.
@@ -86,9 +88,10 @@ func NewManager(configManager config.UserConfigManager) (*Manager, error) {
 		return nil, fmt.Errorf("creating msal cache root: %w", err)
 	}
 
+	authority := fmt.Sprintf("%s/%s", cDefaultAuthority, cDefaultRealm)
 	options := []public.Option{
 		public.WithCache(newCache(cacheRoot)),
-		public.WithAuthority(cDefaultAuthority),
+		public.WithAuthority(authority),
 	}
 
 	publicClientApp, err := public.New(cAZD_CLIENT_ID, options...)
@@ -120,6 +123,19 @@ func EnsureLoggedInCredential(ctx context.Context, credential azcore.TokenCreden
 	}
 
 	return &token, nil
+}
+
+func rebuildMsalClient(clientOptions []public.Option, tenantId string) (public.Client, error) {
+	newAuthority := fmt.Sprintf("%s/%s", cDefaultAuthority, tenantId)
+
+	newOptions := make([]public.Option, 0, len(clientOptions)+1)
+	newOptions = append(newOptions, clientOptions...)
+
+	// It is important that this option comes after the saved public client options since it will
+	// override the default authority.
+	newOptions = append(newOptions, public.WithAuthority(newAuthority))
+
+	return public.New(cAZD_CLIENT_ID, newOptions...)
 }
 
 // CredentialForCurrentUser returns a TokenCredential instance for the current user. If `auth.useLegacyAzCliAuth` is set to
@@ -160,25 +176,16 @@ func (m *Manager) CredentialForCurrentUser(
 	if currentUser.HomeAccountID != nil {
 		for _, account := range m.publicClient.Accounts() {
 			if account.HomeAccountID == *currentUser.HomeAccountID {
-				if options.TenantID == "" {
-					return newAzdCredential(m.publicClient, &account), nil
-				} else {
-					newAuthority := "https://login.microsoftonline.com/" + options.TenantID
-
-					newOptions := make([]public.Option, 0, len(m.publicClientOptions)+1)
-					newOptions = append(newOptions, m.publicClientOptions...)
-
-					// It is important that this option comes after the saved public client options since it will
-					// override the default authority.
-					newOptions = append(newOptions, public.WithAuthority(newAuthority))
-
-					clientWithNewTenant, err := public.New(cAZD_CLIENT_ID, newOptions...)
-					if err != nil {
-						return nil, err
-					}
-
-					return newAzdCredential(&msalPublicClientAdapter{client: &clientWithNewTenant}, &account), nil
+				realm := account.Realm
+				if options.TenantID != "" {
+					realm = options.TenantID
 				}
+				clientWithNewTenant, err := rebuildMsalClient(m.publicClientOptions, realm)
+				if err != nil {
+					return nil, err
+				}
+				return newAzdCredential(&msalPublicClientAdapter{client: &clientWithNewTenant}, &account), nil
+
 			}
 		}
 	} else if currentUser.TenantID != nil && currentUser.ClientID != nil {
@@ -263,10 +270,28 @@ func newCredentialFromClientAssertion(
 	return cred, nil
 }
 
-func (m *Manager) LoginInteractive(ctx context.Context, redirectPort int) (azcore.TokenCredential, error) {
+type LoginInteractiveOptions struct {
+	RedirectPort int
+	TenantId     string
+}
+
+func (m *Manager) LoginInteractive(
+	ctx context.Context, loginOptions *LoginInteractiveOptions) (azcore.TokenCredential, error) {
+
+	// tenantId allow to set an specific tenant id for doing log in, when this is set, the client is re-built using
+	// the tenant as the authority
+	if loginOptions.TenantId != "" {
+		newClient, err := rebuildMsalClient(m.publicClientOptions, loginOptions.TenantId)
+		if err != nil {
+			return nil, err
+		}
+		m.publicClient = &msalPublicClientAdapter{client: &newClient}
+	}
+
 	options := []public.InteractiveAuthOption{}
-	if redirectPort > 0 {
-		options = append(options, public.WithRedirectURI(fmt.Sprintf("http://localhost:%d", redirectPort)))
+	if loginOptions.RedirectPort > 0 {
+		options = append(
+			options, public.WithRedirectURI(fmt.Sprintf("http://localhost:%d", loginOptions.RedirectPort)))
 	}
 	res, err := m.publicClient.AcquireTokenInteractive(ctx, cLoginScopes, options...)
 	if err != nil {

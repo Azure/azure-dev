@@ -191,7 +191,6 @@ func (i *Initializer) gitInitialize(ctx context.Context,
 	return nil
 }
 
-// Ensures a git repository is initialized in repoPath. Returns true if a new repository was initialized.
 func (i *Initializer) ensureGitRepository(ctx context.Context, repoPath string) error {
 	_, err := i.gitCli.GetCurrentBranch(ctx, repoPath)
 	if err != nil {
@@ -211,11 +210,12 @@ func (i *Initializer) ensureGitRepository(ctx context.Context, repoPath string) 
 }
 
 func parseExecutableFiles(stagedFilesOutput string) ([]string, error) {
-	// Format:
-	// <mode> <object> <stage>\t<file>
 	scanner := bufio.NewScanner(strings.NewReader(stagedFilesOutput))
 	executableFiles := []string{}
 	for scanner.Scan() {
+		// Format:
+		// <mode> <object> <stage>\t<file>
+
 		advance, word, err := bufio.ScanWords(scanner.Bytes(), false)
 		if err != nil {
 			return nil, err

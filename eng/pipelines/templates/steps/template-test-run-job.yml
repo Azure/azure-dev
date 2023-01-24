@@ -51,6 +51,13 @@ steps:
     git clone --branch $(TemplateBranchName) https://github.com/$(TemplateName).git/ temp
   displayName: Clone template repository
 
+- task: CopyFiles@2
+  inputs:
+    SourceFolder: 'templates/tests'
+    Contents:'test-templates.sh'
+    TargetFolder: '$(Build.SourcesDirectory)/temp'
+  displayName: Copy test-templates.sh
+
 - task: DevcontainersCI@0
   inputs:
     env: |
@@ -94,7 +101,7 @@ steps:
       sudo apt-get install -y gstreamer1.0-libav libnss3-tools libatk-bridge2.0-0 libcups2-dev libxkbcommon-x11-0 libxcomposite-dev libxrandr2 libgbm-dev libgtk-3-0
 
       # Run template test bash script
-      ./../../../../templates/tests/test-templates.sh
+      ./test-templates.sh -d
       
   displayName: Test templates in Devcontainer
 

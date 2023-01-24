@@ -59,7 +59,7 @@ steps:
       ARM_CLIENT_SECRET=$(arm-client-secret)
       ARM_TENANT_ID=$(arm-tenant-id)
       SUBSCRIPTION_ID=$(SubscriptionId)
-      
+
       # Bash Script parameters
       FOLDER_PATH="/workspaces/temp"
       BRANCH_NAME=$(TemplateBranchName)
@@ -94,7 +94,7 @@ steps:
       sudo apt-get install -y gstreamer1.0-libav libnss3-tools libatk-bridge2.0-0 libcups2-dev libxkbcommon-x11-0 libxcomposite-dev libxrandr2 libgbm-dev libgtk-3-0
 
       # Run template test bash script
-      ./../tests/test-templates.sh
+      ./../../../../templates/tests/test-templates.sh
       
   displayName: Test templates in Devcontainer
 

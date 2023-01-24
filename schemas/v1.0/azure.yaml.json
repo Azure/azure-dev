@@ -46,7 +46,7 @@
                     },
                     "interactive": {
                         "type": "boolean",
-                        "default": true,
+                        "default": false,
                         "title": "Whether the script will run in interactive mode",
                         "description": "Optional. When set to true will bind the script to stdin, stdout & stderr of the running console. (Default: false)"
                     },

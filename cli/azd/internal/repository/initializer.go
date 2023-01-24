@@ -10,6 +10,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
@@ -61,9 +62,23 @@ func (i *Initializer) Initialize(ctx context.Context,
 
 	target := azdCtx.ProjectDirectory()
 
-	err = i.gitCli.FetchCode(ctx, templateUrl, templateBranch, staging)
+	err = i.gitCli.ShallowClone(ctx, templateUrl, templateBranch, staging)
 	if err != nil {
-		return fmt.Errorf("\nfetching template: %w", err)
+		return fmt.Errorf("fetching template: %w", err)
+	}
+
+	stagedFilesOutput, err := i.gitCli.ListStagedFiles(ctx, staging)
+	if err != nil {
+		return fmt.Errorf("listing files with permissions: %w", err)
+	}
+
+	executableFiles, err := parseExecutableFiles(stagedFilesOutput)
+	if err != nil {
+		return fmt.Errorf("parsing file permissions output: %w", err)
+	}
+
+	if err := os.RemoveAll(filepath.Join(target, ".git")); err != nil {
+		return fmt.Errorf("removing .git folder after clone: %w", err)
 	}
 
 	log.Printf(
@@ -109,6 +124,26 @@ func (i *Initializer) Initialize(ctx context.Context,
 		return fmt.Errorf("copying template contents: %w", err)
 	}
 
+	newlyInitialized, err := i.ensureGitRepository(ctx, target)
+	if err != nil {
+		return err
+	}
+
+	// Set executable files
+	for _, executableFile := range executableFiles {
+		err = i.gitCli.AddFileExecPermission(ctx, target, executableFile)
+		if err != nil {
+			return err
+		}
+	}
+
+	if newlyInitialized {
+		err = i.gitCli.AddFile(ctx, target, "*")
+		if err != nil {
+			return fmt.Errorf("staging newly fetched template files: %w", err)
+		}
+	}
+
 	i.console.StopSpinner(ctx, stepMessage+"\n", input.GetStepResultFormat(err))
 	err = i.writeAzdAssets(ctx, azdCtx)
 	if err != nil {
@@ -116,6 +151,58 @@ func (i *Initializer) Initialize(ctx context.Context,
 	}
 
 	return nil
+}
+
+// Ensures a git repository is initialized in repoPath. Returns true if a new repository was initialized.
+func (i *Initializer) ensureGitRepository(ctx context.Context, repoPath string) (bool, error) {
+	_, err := i.gitCli.GetCurrentBranch(ctx, repoPath)
+	if err != nil {
+		if !errors.Is(err, git.ErrNotRepository) {
+			return false, fmt.Errorf("determining current git repository state: %w", err)
+		}
+
+		err = i.gitCli.InitRepo(ctx, repoPath)
+		if err != nil {
+			return false, fmt.Errorf("initializing git repository: %w", err)
+		}
+
+		return true, nil
+	}
+
+	return false, nil
+}
+
+func parseExecutableFiles(stagedFilesOutput string) ([]string, error) {
+	// Format:
+	// [<tag> ]<mode> <object> <stage>\t<file>
+	scanner := bufio.NewScanner(strings.NewReader(stagedFilesOutput))
+	executableFiles := []string{}
+	for scanner.Scan() {
+		parseLine := false
+		index := 0
+		// Optional <tag> before hitting mode, advance twice.
+		for i := 0; i < 2; i++ {
+			advance, word, err := bufio.ScanWords(scanner.Bytes()[index:], false)
+			index += advance
+			if err != nil {
+				return nil, err
+			}
+
+			if string(word) == "100755" {
+				parseLine = true
+				break
+			}
+		}
+
+		if parseLine {
+			after := strings.SplitAfterN(scanner.Text()[index:], "\t", 1)
+			if len(after) >= 1 {
+				file := after[0]
+				executableFiles = append(executableFiles, file)
+			}
+		}
+	}
+	return executableFiles, nil
 }
 
 // Initializes an empty (bare minimum) azd repository.

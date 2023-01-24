@@ -360,13 +360,13 @@ func getResourceGroupFollowUp(
 	return followUp
 }
 
-func (e *envFlag) Env() *envFlag {
-	return e
+func (e *envFlag) EnvironmentName() string {
+	return e.environmentName
 }
 
 // Represent command flags that accept an environment name argument
 type flagsWithEnv interface {
-	Env() *envFlag
+	EnvironmentName() string
 }
 
 // Represents and command flags

@@ -52,6 +52,19 @@ const (
 	ServiceEventDeploy     ext.Event = "deploy"
 )
 
+var (
+	ProjectEvents []ext.Event = []ext.Event{
+		ProjectEventProvision,
+		ProjectEventDeploy,
+	}
+	ServiceEvents []ext.Event = []ext.Event{
+		ServiceEventEnvUpdated,
+		ServiceEventRestore,
+		ServiceEventPackage,
+		ServiceEventDeploy,
+	}
+)
+
 // Project lifecycle event arguments
 type ProjectLifecycleEventArgs struct {
 	Project *ProjectConfig
@@ -156,12 +169,12 @@ func ParseProjectConfig(yamlContent string) (*ProjectConfig, error) {
 		)
 	}
 
-	projectFile.EventDispatcher = ext.NewEventDispatcher[ProjectLifecycleEventArgs]()
+	projectFile.EventDispatcher = ext.NewEventDispatcher[ProjectLifecycleEventArgs](ProjectEvents...)
 
 	for key, svc := range projectFile.Services {
 		svc.Name = key
 		svc.Project = &projectFile
-		svc.EventDispatcher = ext.NewEventDispatcher[ServiceLifecycleEventArgs]()
+		svc.EventDispatcher = ext.NewEventDispatcher[ServiceLifecycleEventArgs](ServiceEvents...)
 
 		// By convention, the name of the infrastructure module to use when doing an IaC based deployment is the friendly
 		// name of the service. This may be overridden by the `module` property of `azure.yaml`

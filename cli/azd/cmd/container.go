@@ -125,7 +125,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 		return writer
 	})
 
-	container.RegisterSingleton(func() *envFlag {
+	container.RegisterSingleton(func() flagsWithEnv {
 		// Get the current cmd flags for the executing command
 		var currentFlags flags
 		err := container.Resolve(&currentFlags)
@@ -139,16 +139,16 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 			return &envFlag{}
 		}
 
-		return flagsWithEnv.Env()
+		return flagsWithEnv
 	})
 
 	container.RegisterSingleton(
-		func(azdContext *azdcontext.AzdContext, envFlags *envFlag) (*environment.Environment, error) {
+		func(azdContext *azdcontext.AzdContext, envFlags flagsWithEnv) (*environment.Environment, error) {
 			if azdContext == nil {
 				return nil, azdcontext.ErrNoProject
 			}
 
-			environmentName := envFlags.environmentName
+			environmentName := envFlags.EnvironmentName()
 			var err error
 
 			if environmentName == "" {

@@ -54,7 +54,7 @@ steps:
 - task: CopyFiles@2
   inputs:
     SourceFolder: 'templates/tests'
-    Contents:'test-templates.sh'
+    Contents: 'test-templates.sh'
     TargetFolder: '$(Build.SourcesDirectory)/temp'
   displayName: Copy test-templates.sh
 

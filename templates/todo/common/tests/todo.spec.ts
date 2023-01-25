@@ -21,6 +21,8 @@ test("Create and delete item test", async ({ page }) => {
   await expect(page.locator(`text=${guid}`).first()).toBeVisible()
 
   await page.locator(`text=${guid}`).click();
+  
+  {% comment %} when delete option is hide behind "..." button {% endcomment %}
   const itemMoreDeleteButton = await page.$('button[role="menuitem"]:has-text("")');
   if(itemMoreDeleteButton){
     await itemMoreDeleteButton.click();

@@ -104,7 +104,16 @@ steps:
 
       # Run template test bash script
       chmod u+x test-templates.sh
-      ./test-templates.sh -d
+      ./test-templates.sh -d \
+        -f '$(Pipeline.Workspace)' \
+        -e '$(EnvPrefixName)' \
+        -t '$(TemplateName)' \
+        -b '$(TemplateBranchName)' \
+        -s '$(SubscriptionId)' \
+        -u '$(Build.BuildId)-$(System.JobAttempt)' \
+        -l '$(AzureLocation)' \
+        -p 'list' \
+        -c '$(SynchronousCleanup)' \
       
   displayName: Test templates in Devcontainer
 

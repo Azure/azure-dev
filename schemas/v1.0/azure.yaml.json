@@ -2,7 +2,157 @@
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "$id": "https://raw.githubusercontent.com/Azure/azure-dev/main/schemas/v1.0/azure.yaml.json",
     "type": "object",
-    "required": ["name", "services"],
+    "required": ["name","services"],
+    "$defs": {
+        "commandHooks": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "preprovision": {
+                    "type": "object",
+                    "$ref": "#/$defs/hook"
+                },
+                "postprovision": {
+                    "type": "object",
+                    "$ref": "#/$defs/hook"
+                },
+                "preinfracreate": {
+                    "type": "object",
+                    "$ref": "#/$defs/hook"
+                },
+                "postinfracreate": {
+                    "type": "object",
+                    "$ref": "#/$defs/hook"
+                },
+                "preinfradelete": {
+                    "type": "object",
+                    "$ref": "#/$defs/hook"
+                },
+                "postinfradelete": {
+                    "type": "object",
+                    "$ref": "#/$defs/hook"
+                },
+                "predown": {
+                    "type": "object",
+                    "$ref": "#/$defs/hook"
+                },
+                "postdown": {
+                    "type": "object",
+                    "$ref": "#/$defs/hook"
+                },
+                "preup": {
+                    "type": "object",
+                    "$ref": "#/$defs/hook"
+                },
+                "postup": {
+                    "type": "object",
+                    "$ref": "#/$defs/hook"
+                },
+                "predeploy": {
+                    "type": "object",
+                    "$ref": "#/$defs/hook"
+                },
+                "postdeploy": {
+                    "type": "object",
+                    "$ref": "#/$defs/hook"
+                },
+                "prerestore": {
+                    "type": "object",
+                    "$ref": "#/$defs/hook"
+                },
+                "postrestore": {
+                    "type": "object",
+                    "$ref": "#/$defs/hook"
+                },
+                "prepackage": {
+                    "type": "object",
+                    "$ref": "#/$defs/hook"
+                },
+                "postpackage": {
+                    "type": "object",
+                    "$ref": "#/$defs/hook"
+                }
+            }
+        },
+        "serviceHooks": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "predeploy": {
+                    "type": "object",
+                    "$ref": "#/$defs/hook"
+                },
+                "postdeploy": {
+                    "type": "object",
+                    "$ref": "#/$defs/hook"
+                },
+                "prerestore": {
+                    "type": "object",
+                    "$ref": "#/$defs/hook"
+                },
+                "postrestore": {
+                    "type": "object",
+                    "$ref": "#/$defs/hook"
+                },
+                "prepackage": {
+                    "type": "object",
+                    "$ref": "#/$defs/hook"
+                },
+                "postpackage": {
+                    "type": "object",
+                    "$ref": "#/$defs/hook"
+                }
+            }
+        },
+        "hook": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "shell": {
+                    "type": "string",
+                    "title": "Type of shell to execute scripts",
+                    "description": "Optional. The type of shell to use for the hook. (Default: sh)",
+                    "enum": [
+                        "sh",
+                        "pwsh"
+                    ],
+                    "default": "sh"
+                },
+                "run": {
+                    "type": "string",
+                    "title": "Required. The inline script or relative path of your scripts from the project or service path",
+                    "description": "When specifying an inline script you also must specify the `shell` to use. This is automatically inferred when using paths."
+                },
+                "continueOnError": {
+                    "type": "boolean",
+                    "default": false,
+                    "title": "Whether or not a script error will halt the azd command",
+                    "description": "Optional. When set to true will continue to run the command even after a script error has occurred. (Default: false)"
+                },
+                "interactive": {
+                    "type": "boolean",
+                    "default": false,
+                    "title": "Whether the script will run in interactive mode",
+                    "description": "Optional. When set to true will bind the script to stdin, stdout & stderr of the running console. (Default: false)"
+                },
+                "windows": {
+                    "title": "The hook configuration used for Windows environments",
+                    "description": "When specified overrides the hook configuration when executed in Windows environments",
+                    "default": null,
+                    "$ref": "#/$defs/hook"
+                },
+                "posix": {
+                    "title": "The hook configuration used for POSIX (Linux & MacOS) environments",
+                    "description": "When specified overrides the hook configuration when executed in POSIX environments",
+                    "default": null,
+                    "$ref": "#/$defs/hook"
+                }
+            },
+            "required": [
+                "run"
+            ]
+        }
+    },
     "additionalProperties": false,
     "properties": {
         "name": {
@@ -135,6 +285,10 @@
                                 "description": "If omitted, a unique tag will be generated based on the format: {appName}/{serviceName}-{environmentName}:azdev-deploy-{unix time (seconds)}. Supports environment variable substitution. For example, to generate unique tags for a given release: myapp/myimage:${DOCKER_IMAGE_TAG}"
                             }
                         }
+                    },
+                    "hooks": {
+                        "title": "Service-level hooks",
+                        "$ref": "#/$defs/serviceHooks"
                     }
                 },
                 "required": ["project"],
@@ -195,6 +349,10 @@
                     ]
                 }
             }
+        },
+        "hooks": {
+            "title": "Command-level hooks",
+            "$ref": "#/$defs/commandHooks"
         }
     }
 }

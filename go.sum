@@ -76,6 +76,8 @@ github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources v1.
 github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources v1.0.0/go.mod h1:s1tW/At+xHqjNFvWU4G0c0Qv33KOhvbGNj0RCTQDV8s=
 github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armsubscriptions v1.0.0 h1:xXmHA6JxGDHOY2anNQhpgIibZOiEaOvPLZOiAs07/4k=
 github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armsubscriptions v1.0.0/go.mod h1:qkZjuhvy20x2Ckq4BzopZ8UjZLhib6nRJbRQiC6EFXY=
+github.com/AzureAD/microsoft-authentication-library-for-go v0.8.1 h1:oPdPEZFSbl7oSPEAIPMPBMUmiL+mqgzBJwM/9qYcwNg=
+github.com/AzureAD/microsoft-authentication-library-for-go v0.8.1/go.mod h1:4qFor3D/HDsvBME35Xy9rwW9DecL+M2sNw1ybjPtwA0=
 github.com/BurntSushi/toml v0.3.1/go.mod h1:xHWCNGjB5oqiDr8zfno3MHue2Ht5sIBksp03qcyfWMU=
 github.com/BurntSushi/xgb v0.0.0-20160522181843-27f122750802/go.mod h1:IVnqGOEym/WlBOVXweHU+Q+/VP0lqqI8lqeDx9IjBqo=
 github.com/DataDog/datadog-go v3.2.0+incompatible/go.mod h1:LButxg5PwREeZtORoXG3tL4fMGNddJ+vMq1mwgfaqoQ=
@@ -448,8 +450,6 @@ github.com/theckman/yacspin v0.13.12/go.mod h1:Rd2+oG2LmQi5f3zC3yeZAOl245z8QOvrH
 github.com/tv42/httpunix v0.0.0-20150427012821-b75d8614f926/go.mod h1:9ESjWnEqriFuLhtthL60Sar/7RFoluCcXsuvEwTV5KM=
 github.com/vhvb1989/azure-sdk-for-go/sdk/azidentity v1.88.0 h1:eqmWiueGLxPmbeMMgi4BabE0TrGyp5lW1aPwjL0D6yo=
 github.com/vhvb1989/azure-sdk-for-go/sdk/azidentity v1.88.0/go.mod h1:xHzL4LDnipr98+k3onIP1qYNhuP4qC2DAj82nJWYJoI=
-github.com/vhvb1989/microsoft-authentication-library-for-go v1.9.0 h1:tgcFjlpw+nHIycqNlksfnaoxKtrHauY5t7f0Bwia+E4=
-github.com/vhvb1989/microsoft-authentication-library-for-go v1.9.0/go.mod h1:4qFor3D/HDsvBME35Xy9rwW9DecL+M2sNw1ybjPtwA0=
 github.com/yuin/goldmark v1.1.25/go.mod h1:3hX8gzYuyVAZsxl0MRgGTJEmQBFcNTphYh9decYSb74=
 github.com/yuin/goldmark v1.1.27/go.mod h1:3hX8gzYuyVAZsxl0MRgGTJEmQBFcNTphYh9decYSb74=
 github.com/yuin/goldmark v1.1.32/go.mod h1:3hX8gzYuyVAZsxl0MRgGTJEmQBFcNTphYh9decYSb74=

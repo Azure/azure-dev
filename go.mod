@@ -1,8 +1,5 @@
 module github.com/azure/azure-dev
 
-// contains the fix for v0.8.0
-replace github.com/AzureAD/microsoft-authentication-library-for-go => github.com/vhvb1989/microsoft-authentication-library-for-go v1.9.0
-
 // fixes the breaking changes from smal to sdk identity
 replace github.com/Azure/azure-sdk-for-go/sdk/azidentity v1.2.0 => github.com/vhvb1989/azure-sdk-for-go/sdk/azidentity v1.88.0
 
@@ -20,7 +17,7 @@ require (
 	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/keyvault/armkeyvault v1.0.0
 	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources v1.0.0
 	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armsubscriptions v1.0.0
-	github.com/AzureAD/microsoft-authentication-library-for-go v0.8.0
+	github.com/AzureAD/microsoft-authentication-library-for-go v0.8.1
 	github.com/MakeNowJust/heredoc/v2 v2.0.1
 	github.com/benbjohnson/clock v1.3.0
 	github.com/blang/semver/v4 v4.0.0

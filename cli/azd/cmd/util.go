@@ -15,7 +15,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal/telemetry"
 	"github.com/azure/azure-dev/cli/azd/internal/telemetry/fields"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
-	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 	"github.com/azure/azure-dev/cli/azd/pkg/azureutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
@@ -31,6 +30,7 @@ type Asker func(p survey.Prompt, response interface{}) error
 
 const (
 	manualSubscriptionEntryOption = "Other (enter manually)"
+	azdEnvTenant                  = "tenantId"
 )
 
 func invalidEnvironmentNameMsg(environmentName string) string {
@@ -218,6 +218,11 @@ func ensureEnvironmentInitialized(
 	hasSubID := hasValue(environment.SubscriptionIdEnvVarName)
 	hasPrincipalID := hasValue(environment.PrincipalIdEnvVarName)
 
+	if tenantId, found := env.Config.Get(azdEnvTenant); found {
+		// ask azCli to use tokens for this tenant id for the rest of this command
+		azCli.SetTenantId(tenantId.(string))
+	}
+
 	if hasEnvName && hasLocation && hasSubID && hasPrincipalID {
 		return nil
 	}
@@ -270,18 +275,14 @@ func ensureEnvironmentInitialized(
 				tenantId = subscriptionInfo.TenantId
 			}
 		}
-		authManager, err := auth.NewManager(config.NewUserConfigManager())
+		// ask azCli to use tokens for this tenant id for the rest of this command
+		azCli.SetTenantId(tenantId)
+		// the tenantid from the selected subscription must be persisted with the env configuration. It is used when loading
+		// the environment from other commands like provision/deploy to set the tenantId for the azCli.
+		err = env.Config.Set(azdEnvTenant, tenantId)
 		if err != nil {
-			return err
+			return fmt.Errorf("Persisting tenant information for new environment: %w", err)
 		}
-		updatedCredential, err := authManager.CredentialForCurrentUser(ctx, &auth.CredentialForCurrentUserOptions{
-			TenantID: tenantId,
-		})
-		if err != nil {
-			return err
-		}
-		azCli.SetCredential(updatedCredential)
-		env.SetTenantId(tenantId)
 	}
 
 	if !hasLocation && envSpec.location != "" {

@@ -85,9 +85,12 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 
 	// Tools
 	container.RegisterSingleton(git.NewGitCli)
+	container.RegisterSingleton(func(mgr *auth.Manager) azcli.TokenCredentialProvider {
+		return mgr.CredentialForCurrentUser
+	})
 	container.RegisterSingleton(func(rootOptions *internal.GlobalCommandOptions,
-		credential azcore.TokenCredential) azcli.AzCli {
-		return azcli.NewAzCli(credential, azcli.NewAzCliArgs{
+		credentialProvider azcli.TokenCredentialProvider) azcli.AzCli {
+		return azcli.NewAzCli(credentialProvider, azcli.NewAzCliArgs{
 			EnableDebug:     rootOptions.EnableDebugLogging,
 			EnableTelemetry: rootOptions.EnableTelemetry,
 			HttpClient:      nil,

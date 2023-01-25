@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appcontainers/armappcontainers"
+	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 )
 
 type AzCliContainerAppProperties struct {
@@ -45,7 +46,13 @@ func (cli *azCli) createContainerAppsClient(
 	subscriptionId string,
 ) (*armappcontainers.ContainerAppsClient, error) {
 	options := cli.createDefaultClientOptionsBuilder(ctx).BuildArmClientOptions()
-	client, err := armappcontainers.NewContainerAppsClient(subscriptionId, cli.credential, options)
+	credential, err := cli.credentialProvider(ctx, &auth.CredentialForCurrentUserOptions{
+		TenantID: cli.tenantId,
+	})
+	if err != nil {
+		return nil, err
+	}
+	client, err := armappcontainers.NewContainerAppsClient(subscriptionId, credential, options)
 	if err != nil {
 		return nil, fmt.Errorf("creating ContainerApps client: %w", err)
 	}

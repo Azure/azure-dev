@@ -160,11 +160,6 @@ func (m *Manager) CredentialForCurrentUser(
 	if currentUser.HomeAccountID != nil {
 		for _, account := range m.publicClient.Accounts() {
 			if account.HomeAccountID == *currentUser.HomeAccountID {
-				// The tenantId is saved in the azd environment after azd init and it is used to
-				// construct the right credential after a multi-tenant selection
-				// if savedTenant := m.env.GetTenantId(); savedTenant != "" {
-				// 	options.TenantID = savedTenant
-				// }
 				if options.TenantID == "" {
 					return newAzdCredential(m.publicClient, &account), nil
 				} else {

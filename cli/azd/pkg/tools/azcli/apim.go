@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/apimanagement/armapimanagement"
+	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 )
 
 type AzCliApim struct {
@@ -62,7 +63,13 @@ func (cli *azCli) createApimDeletedClient(
 	subscriptionId string,
 ) (*armapimanagement.DeletedServicesClient, error) {
 	options := cli.createDefaultClientOptionsBuilder(ctx).BuildArmClientOptions()
-	apimClient, err := armapimanagement.NewDeletedServicesClient(subscriptionId, cli.credential, options)
+	credential, err := cli.credentialProvider(ctx, &auth.CredentialForCurrentUserOptions{
+		TenantID: cli.tenantId,
+	})
+	if err != nil {
+		return nil, err
+	}
+	apimClient, err := armapimanagement.NewDeletedServicesClient(subscriptionId, credential, options)
 	if err != nil {
 		return nil, fmt.Errorf("creating Resource client: %w", err)
 	}
@@ -76,7 +83,13 @@ func (cli *azCli) createApimClient(
 	subscriptionId string,
 ) (*armapimanagement.ServiceClient, error) {
 	options := cli.createDefaultClientOptionsBuilder(ctx).BuildArmClientOptions()
-	apimClient, err := armapimanagement.NewServiceClient(subscriptionId, cli.credential, options)
+	credential, err := cli.credentialProvider(ctx, &auth.CredentialForCurrentUserOptions{
+		TenantID: cli.tenantId,
+	})
+	if err != nil {
+		return nil, err
+	}
+	apimClient, err := armapimanagement.NewServiceClient(subscriptionId, credential, options)
 	if err != nil {
 		return nil, fmt.Errorf("creating Resource client: %w", err)
 	}

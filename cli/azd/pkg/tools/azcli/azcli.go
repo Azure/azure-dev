@@ -15,6 +15,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armsubscriptions"
 	azdinternal "github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 	"github.com/azure/azure-dev/cli/azd/pkg/azsdk"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
@@ -170,7 +171,7 @@ type AzCli interface {
 
 	GetAccessToken(ctx context.Context) (*AzCliAccessToken, error)
 	ListTenants(ctx context.Context) ([]*armsubscriptions.TenantIDDescription, error)
-	SetCredential(credential azcore.TokenCredential)
+	SetTenantId(tenantId string)
 }
 
 type AzCliDeployment struct {
@@ -308,13 +309,15 @@ type NewAzCliArgs struct {
 	HttpClient      httputil.HttpClient
 }
 
-func NewAzCli(credential azcore.TokenCredential, args NewAzCliArgs) AzCli {
+type TokenCredentialProvider func(context.Context, *auth.CredentialForCurrentUserOptions) (azcore.TokenCredential, error)
+
+func NewAzCli(credentialProvider TokenCredentialProvider, args NewAzCliArgs) AzCli {
 	return &azCli{
-		userAgent:       azdinternal.MakeUserAgentString(""),
-		enableDebug:     args.EnableDebug,
-		enableTelemetry: args.EnableTelemetry,
-		httpClient:      args.HttpClient,
-		credential:      credential,
+		userAgent:          azdinternal.MakeUserAgentString(""),
+		enableDebug:        args.EnableDebug,
+		enableTelemetry:    args.EnableTelemetry,
+		httpClient:         args.HttpClient,
+		credentialProvider: credentialProvider,
 	}
 }
 
@@ -326,12 +329,21 @@ type azCli struct {
 	// Allows us to mock the Http Requests from the go modules
 	httpClient httputil.HttpClient
 
-	credential azcore.TokenCredential
+	credentialProvider TokenCredentialProvider
+
+	// By default, azCli is created without any tenant information which is meant to let the TokenCredential callback to
+	// generate a credential based on msal cache (when azd login has already defined an account) or using a default realm
+	// (/organization) for login in.
+	// Then, when an azd environment is loaded (meaning azd init has already ran), the tenantId for the user's
+	// selected subscription can be set to azCli which will create a token credential for that tenant only.
+	// use cli.SetTenantId(tenant-id-string) to ask msal to fetch tokens for this tenant id
+	// use cli.SetTenantId("") to let msal pick the tenantId
+	// This is required to support using live account (aka personal accounts)
+	tenantId string
 }
 
-// enable setting a credential for the client
-func (az *azCli) SetCredential(credential azcore.TokenCredential) {
-	az.credential = credential
+func (az *azCli) SetTenantId(tenantId string) {
+	az.tenantId = tenantId
 }
 
 // SetUserAgent sets the user agent that's sent with each call to the Azure

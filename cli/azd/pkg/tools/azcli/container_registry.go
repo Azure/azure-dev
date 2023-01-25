@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerregistry/armcontainerregistry"
+	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/docker"
@@ -107,7 +108,13 @@ func (cli *azCli) createRegistriesClient(
 	subscriptionId string,
 ) (*armcontainerregistry.RegistriesClient, error) {
 	options := cli.createDefaultClientOptionsBuilder(ctx).BuildArmClientOptions()
-	client, err := armcontainerregistry.NewRegistriesClient(subscriptionId, cli.credential, options)
+	credential, err := cli.credentialProvider(ctx, &auth.CredentialForCurrentUserOptions{
+		TenantID: cli.tenantId,
+	})
+	if err != nil {
+		return nil, err
+	}
+	client, err := armcontainerregistry.NewRegistriesClient(subscriptionId, credential, options)
 	if err != nil {
 		return nil, fmt.Errorf("creating registries client: %w", err)
 	}

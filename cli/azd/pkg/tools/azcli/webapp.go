@@ -6,6 +6,7 @@ import (
 	"io"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appservice/armappservice"
+	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 	"github.com/azure/azure-dev/cli/azd/pkg/azsdk"
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 )
@@ -57,7 +58,13 @@ func (cli *azCli) DeployAppServiceZip(
 
 func (cli *azCli) createWebAppsClient(ctx context.Context, subscriptionId string) (*armappservice.WebAppsClient, error) {
 	options := cli.createDefaultClientOptionsBuilder(ctx).BuildArmClientOptions()
-	client, err := armappservice.NewWebAppsClient(subscriptionId, cli.credential, options)
+	credential, err := cli.credentialProvider(ctx, &auth.CredentialForCurrentUserOptions{
+		TenantID: cli.tenantId,
+	})
+	if err != nil {
+		return nil, err
+	}
+	client, err := armappservice.NewWebAppsClient(subscriptionId, credential, options)
 	if err != nil {
 		return nil, fmt.Errorf("creating WebApps client: %w", err)
 	}
@@ -68,7 +75,13 @@ func (cli *azCli) createWebAppsClient(ctx context.Context, subscriptionId string
 func (cli *azCli) createZipDeployClient(ctx context.Context, subscriptionId string) (*azsdk.ZipDeployClient, error) {
 
 	options := cli.createDefaultClientOptionsBuilder(ctx).BuildArmClientOptions()
-	client, err := azsdk.NewZipDeployClient(subscriptionId, cli.credential, options)
+	credential, err := cli.credentialProvider(ctx, &auth.CredentialForCurrentUserOptions{
+		TenantID: cli.tenantId,
+	})
+	if err != nil {
+		return nil, err
+	}
+	client, err := azsdk.NewZipDeployClient(subscriptionId, credential, options)
 	if err != nil {
 		return nil, fmt.Errorf("creating WebApps client: %w", err)
 	}

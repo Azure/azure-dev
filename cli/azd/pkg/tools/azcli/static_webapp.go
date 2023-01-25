@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appservice/armappservice"
+	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 )
 
 type AzCliStaticWebAppProperties struct {
@@ -90,7 +91,13 @@ func (cli *azCli) createStaticSitesClient(
 	subscriptionId string,
 ) (*armappservice.StaticSitesClient, error) {
 	options := cli.createDefaultClientOptionsBuilder(ctx).BuildArmClientOptions()
-	client, err := armappservice.NewStaticSitesClient(subscriptionId, cli.credential, options)
+	credential, err := cli.credentialProvider(ctx, &auth.CredentialForCurrentUserOptions{
+		TenantID: cli.tenantId,
+	})
+	if err != nil {
+		return nil, err
+	}
+	client, err := armappservice.NewStaticSitesClient(subscriptionId, credential, options)
 	if err != nil {
 		return nil, fmt.Errorf("creating Static Sites client: %w", err)
 	}

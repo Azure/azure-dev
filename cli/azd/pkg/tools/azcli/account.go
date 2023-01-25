@@ -11,6 +11,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/cloud"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armsubscriptions"
+	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 )
 
 var (
@@ -77,7 +78,13 @@ func (cli *azCli) ListAccountsWithCredential(
 }
 
 func (cli *azCli) ListAccounts(ctx context.Context) ([]*AzCliSubscriptionInfo, error) {
-	return cli.ListAccountsWithCredential(ctx, cli.credential)
+	credential, err := cli.credentialProvider(ctx, &auth.CredentialForCurrentUserOptions{
+		TenantID: cli.tenantId,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return cli.ListAccountsWithCredential(ctx, credential)
 }
 
 func (cli *azCli) ListTenants(ctx context.Context) ([]*armsubscriptions.TenantIDDescription, error) {
@@ -160,7 +167,13 @@ func (cli *azCli) ListAccountLocations(ctx context.Context, subscriptionId strin
 }
 
 func (cli *azCli) createDefaultSubscriptionsClient(ctx context.Context) (*armsubscriptions.Client, error) {
-	return cli.createSubscriptionsClient(ctx, cli.credential)
+	credential, err := cli.credentialProvider(ctx, &auth.CredentialForCurrentUserOptions{
+		TenantID: cli.tenantId,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return cli.createSubscriptionsClient(ctx, credential)
 }
 
 func (cli *azCli) createSubscriptionsClient(
@@ -176,7 +189,13 @@ func (cli *azCli) createSubscriptionsClient(
 
 func (cli *azCli) createTenantsClient(ctx context.Context) (*armsubscriptions.TenantsClient, error) {
 	options := cli.createDefaultClientOptionsBuilder(ctx).BuildArmClientOptions()
-	client, err := armsubscriptions.NewTenantsClient(cli.credential, options)
+	credential, err := cli.credentialProvider(ctx, &auth.CredentialForCurrentUserOptions{
+		TenantID: cli.tenantId,
+	})
+	if err != nil {
+		return nil, err
+	}
+	client, err := armsubscriptions.NewTenantsClient(credential, options)
 	if err != nil {
 		return nil, fmt.Errorf("creating Tenants client: %w", err)
 	}
@@ -185,7 +204,13 @@ func (cli *azCli) createTenantsClient(ctx context.Context) (*armsubscriptions.Te
 }
 
 func (cli *azCli) GetAccessToken(ctx context.Context) (*AzCliAccessToken, error) {
-	token, err := cli.credential.GetToken(ctx, policy.TokenRequestOptions{
+	credential, err := cli.credentialProvider(ctx, &auth.CredentialForCurrentUserOptions{
+		TenantID: cli.tenantId,
+	})
+	if err != nil {
+		return nil, err
+	}
+	token, err := credential.GetToken(ctx, policy.TokenRequestOptions{
 		Scopes: []string{
 			fmt.Sprintf("%s/.default", cloud.AzurePublic.Services[cloud.ResourceManager].Audience),
 		},

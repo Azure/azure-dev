@@ -426,7 +426,7 @@ func createBicepProvider(t *testing.T, mockContext *mocks.MockContext) *BicepPro
 		environment.SubscriptionIdEnvVarName: "SUBSCRIPTION_ID",
 	})
 
-	azCli := azcli.NewAzCli(mockContext.Credentials, azcli.NewAzCliArgs{
+	azCli := azcli.NewAzCli(mockContext.CredentialProvider, azcli.NewAzCliArgs{
 		HttpClient: mockContext.HttpClient,
 	})
 

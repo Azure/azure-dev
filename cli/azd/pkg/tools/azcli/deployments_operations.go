@@ -10,7 +10,6 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
-	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 )
 
 func (cli *azCli) createDeploymentsOperationsClient(
@@ -18,8 +17,8 @@ func (cli *azCli) createDeploymentsOperationsClient(
 	subscriptionId string,
 ) (*armresources.DeploymentOperationsClient, error) {
 	options := cli.createDefaultClientOptionsBuilder(ctx).BuildArmClientOptions()
-	credential, err := cli.credentialProvider(ctx, &auth.CredentialForCurrentUserOptions{
-		TenantID: cli.tenantId,
+	credential, err := cli.credentialProvider(ctx, &TokenCredentialProviderOptions{
+		TenantId: cli.tenantId,
 	})
 	if err != nil {
 		return nil, err

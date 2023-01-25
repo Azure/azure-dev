@@ -24,9 +24,12 @@ func Test_GetAccessToken(t *testing.T) {
 	}
 
 	mockContext := mocks.NewMockContext(context.Background())
-	azCli := NewAzCli(&mockCredential, NewAzCliArgs{
-		HttpClient: mockContext.HttpClient,
-	})
+	azCli := NewAzCli(
+		func(ctx context.Context, options *TokenCredentialProviderOptions) (azcore.TokenCredential, error) {
+			return &mockCredential, nil
+		}, NewAzCliArgs{
+			HttpClient: mockContext.HttpClient,
+		})
 
 	actual, err := azCli.GetAccessToken(*mockContext.Context)
 	require.NoError(t, err)

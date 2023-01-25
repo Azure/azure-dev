@@ -25,6 +25,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/azure/azure-dev/cli/azd/internal/telemetry"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
@@ -187,7 +188,10 @@ func Test_CLI_InfraCreateAndDelete(t *testing.T) {
 		t.Fatal("could not create credential")
 	}
 
-	azCli := azcli.NewAzCli(cred, azcli.NewAzCliArgs{})
+	azCli := azcli.NewAzCli(
+		func(ctx context.Context, options *azcli.TokenCredentialProviderOptions) (azcore.TokenCredential, error) {
+			return cred, nil
+		}, azcli.NewAzCliArgs{})
 
 	// Verify that resource groups are created with tag
 	resourceManager := infra.NewAzureResourceManager(azCli)
@@ -243,7 +247,10 @@ func Test_CLI_InfraCreateAndDeleteUpperCase(t *testing.T) {
 		t.Fatal("could not create credential")
 	}
 
-	azCli := azcli.NewAzCli(cred, azcli.NewAzCliArgs{})
+	azCli := azcli.NewAzCli(
+		func(ctx context.Context, options *azcli.TokenCredentialProviderOptions) (azcore.TokenCredential, error) {
+			return cred, nil
+		}, azcli.NewAzCliArgs{})
 
 	// Verify that resource groups are created with tag
 	resourceManager := infra.NewAzureResourceManager(azCli)

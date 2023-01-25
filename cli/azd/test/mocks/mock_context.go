@@ -4,18 +4,20 @@ import (
 	"context"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
-	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockconfig"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockexec"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockhttp"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockinput"
 )
 
+type TokenCredentialProviderOptions struct {
+	TenantId string
+}
+type TokenCredentialProvider func(context.Context, *TokenCredentialProviderOptions) (azcore.TokenCredential, error)
 type MockContext struct {
-	CredentialProvider azcli.TokenCredentialProvider
+	CredentialProvider TokenCredentialProvider
 	Context            *context.Context
 	Console            *mockinput.MockConsole
 	HttpClient         *mockhttp.MockHttpClient
@@ -36,7 +38,7 @@ func NewMockContext(ctx context.Context) *MockContext {
 	ctx = config.WithConfigManager(ctx, configManager)
 
 	mockContext := &MockContext{
-		CredentialProvider: func(context.Context, *auth.CredentialForCurrentUserOptions) (azcore.TokenCredential, error) {
+		CredentialProvider: func(context.Context, *TokenCredentialProviderOptions) (azcore.TokenCredential, error) {
 			return &credentials, nil
 		},
 		Context:       &ctx,

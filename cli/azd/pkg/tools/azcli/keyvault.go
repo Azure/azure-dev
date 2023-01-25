@@ -10,7 +10,6 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/keyvault/azsecrets"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/keyvault/armkeyvault"
-	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 )
 
@@ -109,8 +108,8 @@ func (cli *azCli) PurgeKeyVault(ctx context.Context, subscriptionId string, vaul
 // Creates a KeyVault client for ARM control plane operations
 func (cli *azCli) createKeyVaultClient(ctx context.Context, subscriptionId string) (*armkeyvault.VaultsClient, error) {
 	options := cli.createDefaultClientOptionsBuilder(ctx).BuildArmClientOptions()
-	credential, err := cli.credentialProvider(ctx, &auth.CredentialForCurrentUserOptions{
-		TenantID: cli.tenantId,
+	credential, err := cli.credentialProvider(ctx, &TokenCredentialProviderOptions{
+		TenantId: cli.tenantId,
 	})
 	if err != nil {
 		return nil, err
@@ -131,8 +130,8 @@ func (cli *azCli) createSecretsDataClient(ctx context.Context, vaultUrl string) 
 		ClientOptions:                        *coreOptions,
 		DisableChallengeResourceVerification: false,
 	}
-	credential, err := cli.credentialProvider(ctx, &auth.CredentialForCurrentUserOptions{
-		TenantID: cli.tenantId,
+	credential, err := cli.credentialProvider(ctx, &TokenCredentialProviderOptions{
+		TenantId: cli.tenantId,
 	})
 	if err != nil {
 		return nil, err

@@ -107,10 +107,13 @@ func TestAZCliGetAccessTokenTranslatesErrors(t *testing.T) {
 				},
 			}
 
-			azCli := NewAzCli(&mockCredential, NewAzCliArgs{
-				EnableDebug:     true,
-				EnableTelemetry: true,
-			})
+			azCli := NewAzCli(
+				func(ctx context.Context, options *TokenCredentialProviderOptions) (azcore.TokenCredential, error) {
+					return &mockCredential, nil
+				}, NewAzCliArgs{
+					EnableDebug:     true,
+					EnableTelemetry: true,
+				})
 
 			_, err := azCli.GetAccessToken(*mockContext.Context)
 			assert.True(t, errors.Is(err, test.expect))
@@ -154,7 +157,9 @@ func Test_AzSdk_User_Agent_Policy(t *testing.T) {
 }
 
 func newAzCliFromMockContext(mockContext *mocks.MockContext) AzCli {
-	return NewAzCli(mockContext.Credentials, NewAzCliArgs{
+	return NewAzCli(func(ctx context.Context, options *TokenCredentialProviderOptions) (azcore.TokenCredential, error) {
+		return mockContext.CredentialProvider(ctx, nil)
+	}, NewAzCliArgs{
 		HttpClient: mockContext.HttpClient,
 	})
 }

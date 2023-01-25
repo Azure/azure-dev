@@ -15,7 +15,6 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armsubscriptions"
 	azdinternal "github.com/azure/azure-dev/cli/azd/internal"
-	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 	"github.com/azure/azure-dev/cli/azd/pkg/azsdk"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
@@ -309,7 +308,10 @@ type NewAzCliArgs struct {
 	HttpClient      httputil.HttpClient
 }
 
-type TokenCredentialProvider func(context.Context, *auth.CredentialForCurrentUserOptions) (azcore.TokenCredential, error)
+type TokenCredentialProviderOptions struct {
+	TenantId string
+}
+type TokenCredentialProvider func(context.Context, *TokenCredentialProviderOptions) (azcore.TokenCredential, error)
 
 func NewAzCli(credentialProvider TokenCredentialProvider, args NewAzCliArgs) AzCli {
 	return &azCli{

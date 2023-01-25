@@ -10,7 +10,6 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/authorization/armauthorization"
-	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/graphsdk"
@@ -311,8 +310,8 @@ func (cli *azCli) getRoleDefinition(
 // Creates a graph users client using credentials from the Go context.
 func (cli *azCli) createGraphClient(ctx context.Context) (*graphsdk.GraphClient, error) {
 	options := cli.createDefaultClientOptionsBuilder(ctx).BuildCoreClientOptions()
-	credential, err := cli.credentialProvider(ctx, &auth.CredentialForCurrentUserOptions{
-		TenantID: cli.tenantId,
+	credential, err := cli.credentialProvider(ctx, &TokenCredentialProviderOptions{
+		TenantId: cli.tenantId,
 	})
 	if err != nil {
 		return nil, err
@@ -328,8 +327,8 @@ func (cli *azCli) createGraphClient(ctx context.Context) (*graphsdk.GraphClient,
 // Creates a graph users client using credentials from the Go context.
 func (cli *azCli) createRoleDefinitionsClient(ctx context.Context) (*armauthorization.RoleDefinitionsClient, error) {
 	options := cli.createDefaultClientOptionsBuilder(ctx).BuildArmClientOptions()
-	credential, err := cli.credentialProvider(ctx, &auth.CredentialForCurrentUserOptions{
-		TenantID: cli.tenantId,
+	credential, err := cli.credentialProvider(ctx, &TokenCredentialProviderOptions{
+		TenantId: cli.tenantId,
 	})
 	if err != nil {
 		return nil, err
@@ -348,8 +347,8 @@ func (cli *azCli) createRoleAssignmentsClient(
 	subscriptionId string,
 ) (*armauthorization.RoleAssignmentsClient, error) {
 	options := cli.createDefaultClientOptionsBuilder(ctx).BuildArmClientOptions()
-	credential, err := cli.credentialProvider(ctx, &auth.CredentialForCurrentUserOptions{
-		TenantID: cli.tenantId,
+	credential, err := cli.credentialProvider(ctx, &TokenCredentialProviderOptions{
+		TenantId: cli.tenantId,
 	})
 	if err != nil {
 		return nil, err

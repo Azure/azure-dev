@@ -11,7 +11,6 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/cloud"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armsubscriptions"
-	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 )
 
 var (
@@ -78,8 +77,8 @@ func (cli *azCli) ListAccountsWithCredential(
 }
 
 func (cli *azCli) ListAccounts(ctx context.Context) ([]*AzCliSubscriptionInfo, error) {
-	credential, err := cli.credentialProvider(ctx, &auth.CredentialForCurrentUserOptions{
-		TenantID: cli.tenantId,
+	credential, err := cli.credentialProvider(ctx, &TokenCredentialProviderOptions{
+		TenantId: cli.tenantId,
 	})
 	if err != nil {
 		return nil, err
@@ -167,8 +166,8 @@ func (cli *azCli) ListAccountLocations(ctx context.Context, subscriptionId strin
 }
 
 func (cli *azCli) createDefaultSubscriptionsClient(ctx context.Context) (*armsubscriptions.Client, error) {
-	credential, err := cli.credentialProvider(ctx, &auth.CredentialForCurrentUserOptions{
-		TenantID: cli.tenantId,
+	credential, err := cli.credentialProvider(ctx, &TokenCredentialProviderOptions{
+		TenantId: cli.tenantId,
 	})
 	if err != nil {
 		return nil, err
@@ -189,8 +188,8 @@ func (cli *azCli) createSubscriptionsClient(
 
 func (cli *azCli) createTenantsClient(ctx context.Context) (*armsubscriptions.TenantsClient, error) {
 	options := cli.createDefaultClientOptionsBuilder(ctx).BuildArmClientOptions()
-	credential, err := cli.credentialProvider(ctx, &auth.CredentialForCurrentUserOptions{
-		TenantID: cli.tenantId,
+	credential, err := cli.credentialProvider(ctx, &TokenCredentialProviderOptions{
+		TenantId: cli.tenantId,
 	})
 	if err != nil {
 		return nil, err
@@ -204,8 +203,8 @@ func (cli *azCli) createTenantsClient(ctx context.Context) (*armsubscriptions.Te
 }
 
 func (cli *azCli) GetAccessToken(ctx context.Context) (*AzCliAccessToken, error) {
-	credential, err := cli.credentialProvider(ctx, &auth.CredentialForCurrentUserOptions{
-		TenantID: cli.tenantId,
+	credential, err := cli.credentialProvider(ctx, &TokenCredentialProviderOptions{
+		TenantId: cli.tenantId,
 	})
 	if err != nil {
 		return nil, err

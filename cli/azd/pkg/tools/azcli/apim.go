@@ -5,7 +5,6 @@ import (
 	"fmt"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/apimanagement/armapimanagement"
-	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 )
 
 type AzCliApim struct {
@@ -63,8 +62,8 @@ func (cli *azCli) createApimDeletedClient(
 	subscriptionId string,
 ) (*armapimanagement.DeletedServicesClient, error) {
 	options := cli.createDefaultClientOptionsBuilder(ctx).BuildArmClientOptions()
-	credential, err := cli.credentialProvider(ctx, &auth.CredentialForCurrentUserOptions{
-		TenantID: cli.tenantId,
+	credential, err := cli.credentialProvider(ctx, &TokenCredentialProviderOptions{
+		TenantId: cli.tenantId,
 	})
 	if err != nil {
 		return nil, err
@@ -83,8 +82,8 @@ func (cli *azCli) createApimClient(
 	subscriptionId string,
 ) (*armapimanagement.ServiceClient, error) {
 	options := cli.createDefaultClientOptionsBuilder(ctx).BuildArmClientOptions()
-	credential, err := cli.credentialProvider(ctx, &auth.CredentialForCurrentUserOptions{
-		TenantID: cli.tenantId,
+	credential, err := cli.credentialProvider(ctx, &TokenCredentialProviderOptions{
+		TenantId: cli.tenantId,
 	})
 	if err != nil {
 		return nil, err

@@ -8,6 +8,7 @@ if ($IsWindows) {
     Write-Host "Windows build, set verison info and run 'go generate'"
     if (! (Get-Command "goversioninfo" -ErrorAction SilentlyContinue)) {
         Write-Host "goversioninfo not found, installing"
+        go env
         go install github.com/josephspurrier/goversioninfo/cmd/goversioninfo
         Get-Command "goversioninfo" -ErrorAction Stop
     }

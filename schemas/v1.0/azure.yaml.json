@@ -66,6 +66,9 @@
             "additionalProperties": {
                 "type": "object",
                 "additionalProperties": false,
+                "required": [
+                    "project"
+                ],
                 "properties": {
                     "resourceName": {
                         "type": "string",
@@ -143,14 +146,44 @@
                         }
                     },
                     "hooks": {
-                        "title": "Definition of hooks for developer integration",
+                        "type": "object",
+                        "title": "Service level hooks",
                         "description": "Hooks should match `service` event names prefixed with `pre` or `post` depending on when the script should execute. When specifying paths they should be relative to the service path.",
-                        "$ref": "#/definitions/hooks"
+                        "additionalProperties": false,
+                        "properties": {
+                            "predeploy": {
+                                "title": "pre deploy hook",
+                                "description": "Runs before the service is deployed to Azure",
+                                "$ref": "#/definitions/hook"
+                            },
+                            "postdeploy": {
+                                "title": "post deploy hook",
+                                "description": "Runs after the service is deployed to Azure",
+                                "$ref": "#/definitions/hook"
+                            },
+                            "prerestore": {
+                                "title": "pre restore hook",
+                                "description": "Runs before the service dependencies are restored",
+                                "$ref": "#/definitions/hook"
+                            },
+                            "postrestore": {
+                                "title": "post restore hook",
+                                "description": "Runs after the service dependencies are restored",
+                                "$ref": "#/definitions/hook"
+                            },
+                            "prepackage": {
+                                "title": "pre package hook",
+                                "description": "Runs before the service is deployment package is created",
+                                "$ref": "#/definitions/hook"
+                            },
+                            "postpackage": {
+                                "title": "post package hook",
+                                "description": "Runs after the service is deployment package is created",
+                                "$ref": "#/definitions/hook"
+                            }
+                        }
                     }
                 },
-                "required": [
-                    "project"
-                ],
                 "allOf": [
                     {
                         "if": {
@@ -212,24 +245,87 @@
             }
         },
         "hooks": {
-            "title": "Definition of hooks for developer integration",
+            "type": "object",
+            "title": "Command level hooks",
             "description": "Hooks should match `azd` command names prefixed with `pre` or `post` depending on when the script should execute. When specifying paths they should be relative to the project path.",
-            "$ref": "#/definitions/hooks"
+            "additionalProperties": false,
+            "properties": {
+                "preprovision": {
+                    "title": "pre provision hook",
+                    "description": "Runs before the `provision` command",
+                    "$ref": "#/definitions/hook"
+                },
+                "postprovision": {
+                    "title": "post provision hook",
+                    "description": "Runs after the `provision` command",
+                    "$ref": "#/definitions/hook"
+                },
+                "preinfracreate": {
+                    "title": "pre infra create hook",
+                    "description": "Runs before the `infra create` or `provision` commands",
+                    "$ref": "#/definitions/hook"
+                },
+                "postinfracreate": {
+                    "title": "post infra create hook",
+                    "description": "Runs after the `infra create` or `provision` commands",
+                    "$ref": "#/definitions/hook"
+                },
+                "preinfradelete": {
+                    "title": "pre infra delete hook",
+                    "description": "Runs before the `infra delete` or `down` commands",
+                    "$ref": "#/definitions/hook"
+                },
+                "postinfradelete": {
+                    "title": "post infra delete hook",
+                    "description": "Runs after the `infra delete` or `down` commands",
+                    "$ref": "#/definitions/hook"
+                },
+                "predown": {
+                    "title": "pre down hook",
+                    "description": "Runs before the `infra delete` or `down` commands",
+                    "$ref": "#/definitions/hook"
+                },
+                "postdown": {
+                    "title": "post down hook",
+                    "description": "Runs after the `infra delete` or `down` commands",
+                    "$ref": "#/definitions/hook"
+                },
+                "preup": {
+                    "title": "pre up hook",
+                    "description": "Runs before the `up` command",
+                    "$ref": "#/definitions/hook"
+                },
+                "postup": {
+                    "title": "post up hook",
+                    "description": "Runs after the `up` command",
+                    "$ref": "#/definitions/hook"
+                },
+                "predeploy": {
+                    "title": "pre deploy hook",
+                    "description": "Runs before the `deploy` command",
+                    "$ref": "#/definitions/hook"
+                },
+                "postdeploy": {
+                    "title": "post deploy hook",
+                    "description": "Runs after the `deploy` command",
+                    "$ref": "#/definitions/hook"
+                },
+                "prerestore": {
+                    "title": "pre restore hook",
+                    "description": "Runs before the `restore` command",
+                    "$ref": "#/definitions/hook"
+                },
+                "postrestore": {
+                    "title": "post restore hook",
+                    "description": "Runs after the `restore` command",
+                    "$ref": "#/definitions/hook"
+                }
+            }
         }
     },
     "definitions": {
-        "hooks": {
-            "title": "Definition of hooks for developer integration",
-            "description": "Hooks should match `azd` command names or `service` event names prefixed with `pre` or `post` depending on when the script should execute. When specifying paths they should be relative to the project or service path.",
-            "minProperties": 1,
-            "additionalProperties": {
-                "$ref": "#/definitions/hook"
-            }
-        },
         "hook": {
             "type": "object",
-            "title": "Definition of hooks for developer integration",
-            "description": "Hooks should match `azd` command names or `service` event names prefixed with `pre` or `post` depending on when the script should execute relative to the command",
             "additionalProperties": false,
             "required": [
                 "run"

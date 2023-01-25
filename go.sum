@@ -448,8 +448,8 @@ github.com/theckman/yacspin v0.13.12/go.mod h1:Rd2+oG2LmQi5f3zC3yeZAOl245z8QOvrH
 github.com/tv42/httpunix v0.0.0-20150427012821-b75d8614f926/go.mod h1:9ESjWnEqriFuLhtthL60Sar/7RFoluCcXsuvEwTV5KM=
 github.com/vhvb1989/azure-sdk-for-go/sdk/azidentity v1.88.0 h1:eqmWiueGLxPmbeMMgi4BabE0TrGyp5lW1aPwjL0D6yo=
 github.com/vhvb1989/azure-sdk-for-go/sdk/azidentity v1.88.0/go.mod h1:xHzL4LDnipr98+k3onIP1qYNhuP4qC2DAj82nJWYJoI=
-github.com/vhvb1989/microsoft-authentication-library-for-go v1.0.0 h1:oBaPA1EtSnDa4ATgoNLamysZGGvzVlgM9jep2CiHbpk=
-github.com/vhvb1989/microsoft-authentication-library-for-go v1.0.0/go.mod h1:4qFor3D/HDsvBME35Xy9rwW9DecL+M2sNw1ybjPtwA0=
+github.com/vhvb1989/microsoft-authentication-library-for-go v1.9.0 h1:tgcFjlpw+nHIycqNlksfnaoxKtrHauY5t7f0Bwia+E4=
+github.com/vhvb1989/microsoft-authentication-library-for-go v1.9.0/go.mod h1:4qFor3D/HDsvBME35Xy9rwW9DecL+M2sNw1ybjPtwA0=
 github.com/yuin/goldmark v1.1.25/go.mod h1:3hX8gzYuyVAZsxl0MRgGTJEmQBFcNTphYh9decYSb74=
 github.com/yuin/goldmark v1.1.27/go.mod h1:3hX8gzYuyVAZsxl0MRgGTJEmQBFcNTphYh9decYSb74=
 github.com/yuin/goldmark v1.1.32/go.mod h1:3hX8gzYuyVAZsxl0MRgGTJEmQBFcNTphYh9decYSb74=

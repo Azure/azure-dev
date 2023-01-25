@@ -21,7 +21,6 @@ if ($IsWindows) {
     $versionInfo.FixedFileInfo.FileVersion.Major = [int]$splitExeFileVersion[0]
     $versionInfo.FixedFileInfo.FileVersion.Minor = [int]$splitExeFileVersion[1]
     $versionInfo.FixedFileInfo.FileVersion.Patch = [int]$splitExeFileVersion[2]
-    # Build number is ignored in MSI upgrade logic
     $versionInfo.FixedFileInfo.FileVersion.Build = 0
 
     # Product verison is the same as the file version

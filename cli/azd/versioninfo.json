@@ -20,11 +20,11 @@
   },
   "StringFileInfo": {
     "Comments": "",
-    "CompanyName": "Microsoft",
+    "CompanyName": "Microsoft Corporation",
     "FileDescription": "",
     "FileVersion": "",
     "InternalName": "",
-    "LegalCopyright": "",
+    "LegalCopyright": "(c) Microsoft Corporation. All rights reserved.",
     "LegalTrademarks": "",
     "OriginalFilename": "",
     "PrivateBuild": "",

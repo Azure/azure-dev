@@ -6,66 +6,6 @@
         "name",
         "services"
     ],
-    "definitions": {
-        "hooks": {
-            "title": "Definition of hooks for developer integration",
-            "description": "Hooks should match `azd` command names or `service` event names prefixed with `pre` or `post` depending on when the script should execute. When specifying paths they should be relative to the project or service path.",
-            "additionalProperties": {
-                "$ref": "#/definitions/hook"
-            }
-        },
-        "hook": {
-            "type": "object",
-            "title": "Definition of hooks for developer integration",
-            "description": "Hooks should match `azd` command names or `service` event names prefixed with `pre` or `post` depending on when the script should execute relative to the command",
-            "minProperties": 1,
-            "additionalProperties": {
-                "type": "object",
-                "additionalProperties": false,
-                "properties": {
-                    "shell": {
-                        "type": "string",
-                        "title": "Type of shell to execute scripts",
-                        "description": "Optional. The type of shell to use for the hook. (Default: sh)",
-                        "enum": [
-                            "sh",
-                            "pwsh"
-                        ],
-                        "default": "sh"
-                    },
-                    "run": {
-                        "type": "string",
-                        "title": "Required. The inline script or relative path of your scripts from the project or service path",
-                        "description": "When specifying an inline script you also must specify the `shell` to use. This is automatically inferred when using paths."
-                    },
-                    "continueOnError": {
-                        "type": "boolean",
-                        "default": false,
-                        "title": "Whether or not a script error will halt the azd command",
-                        "description": "Optional. When set to true will continue to run the command even after a script error has occurred. (Default: false)"
-                    },
-                    "interactive": {
-                        "type": "boolean",
-                        "default": false,
-                        "title": "Whether the script will run in interactive mode",
-                        "description": "Optional. When set to true will bind the script to stdin, stdout & stderr of the running console. (Default: false)"
-                    },
-                    "windows": {
-                        "title": "The hook configuration used for Windows environments",
-                        "description": "When specified overrides the hook configuration when executed in Windows environments",
-                        "default": null,
-                        "$ref": "#/definitions/hook"
-                    },
-                    "posix": {
-                        "title": "The hook configuration used for POSIX (Linux & MacOS) environments",
-                        "description": "When specified overrides the hook configuration when executed in POSIX environments",
-                        "default": null,
-                        "$ref": "#/definitions/hook"
-                    }
-                }
-            }
-        }
-    },
     "additionalProperties": false,
     "properties": {
         "name": {
@@ -122,6 +62,7 @@
         "services": {
             "type": "object",
             "title": "Definition of services that comprise the application",
+            "minProperties": 1,
             "additionalProperties": {
                 "type": "object",
                 "additionalProperties": false,
@@ -202,6 +143,8 @@
                         }
                     },
                     "hooks": {
+                        "title": "Definition of hooks for developer integration",
+                        "description": "Hooks should match `service` event names prefixed with `pre` or `post` depending on when the script should execute. When specifying paths they should be relative to the service path.",
                         "$ref": "#/definitions/hooks"
                     }
                 },
@@ -269,7 +212,69 @@
             }
         },
         "hooks": {
+            "title": "Definition of hooks for developer integration",
+            "description": "Hooks should match `azd` command names prefixed with `pre` or `post` depending on when the script should execute. When specifying paths they should be relative to the project path.",
             "$ref": "#/definitions/hooks"
+        }
+    },
+    "definitions": {
+        "hooks": {
+            "title": "Definition of hooks for developer integration",
+            "description": "Hooks should match `azd` command names or `service` event names prefixed with `pre` or `post` depending on when the script should execute. When specifying paths they should be relative to the project or service path.",
+            "minProperties": 1,
+            "additionalProperties": {
+                "$ref": "#/definitions/hook"
+            }
+        },
+        "hook": {
+            "type": "object",
+            "title": "Definition of hooks for developer integration",
+            "description": "Hooks should match `azd` command names or `service` event names prefixed with `pre` or `post` depending on when the script should execute relative to the command",
+            "additionalProperties": false,
+            "required": [
+                "run"
+            ],
+            "properties": {
+                "shell": {
+                    "type": "string",
+                    "title": "Type of shell to execute scripts",
+                    "description": "Optional. The type of shell to use for the hook. (Default: sh)",
+                    "enum": [
+                        "sh",
+                        "pwsh"
+                    ],
+                    "default": "sh"
+                },
+                "run": {
+                    "type": "string",
+                    "title": "Required. The inline script or relative path of your scripts from the project or service path",
+                    "description": "When specifying an inline script you also must specify the `shell` to use. This is automatically inferred when using paths."
+                },
+                "continueOnError": {
+                    "type": "boolean",
+                    "default": false,
+                    "title": "Whether or not a script error will halt the azd command",
+                    "description": "Optional. When set to true will continue to run the command even after a script error has occurred. (Default: false)"
+                },
+                "interactive": {
+                    "type": "boolean",
+                    "default": false,
+                    "title": "Whether the script will run in interactive mode",
+                    "description": "Optional. When set to true will bind the script to stdin, stdout & stderr of the running console. (Default: false)"
+                },
+                "windows": {
+                    "title": "The hook configuration used for Windows environments",
+                    "description": "When specified overrides the hook configuration when executed in Windows environments",
+                    "default": null,
+                    "$ref": "#/definitions/hook"
+                },
+                "posix": {
+                    "title": "The hook configuration used for POSIX (Linux & MacOS) environments",
+                    "description": "When specified overrides the hook configuration when executed in POSIX environments",
+                    "default": null,
+                    "$ref": "#/definitions/hook"
+                }
+            }
         }
     }
 }

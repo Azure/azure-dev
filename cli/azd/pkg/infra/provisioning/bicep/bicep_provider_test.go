@@ -13,6 +13,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/apimanagement/armapimanagement"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appconfiguration/armappconfiguration"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/keyvault/armkeyvault"
@@ -426,9 +427,14 @@ func createBicepProvider(t *testing.T, mockContext *mocks.MockContext) *BicepPro
 		environment.SubscriptionIdEnvVarName: "SUBSCRIPTION_ID",
 	})
 
-	azCli := azcli.NewAzCli(mockContext.CredentialProvider, azcli.NewAzCliArgs{
-		HttpClient: mockContext.HttpClient,
-	})
+	azCli := azcli.NewAzCli(
+		func(ctx context.Context, options *azcli.TokenCredentialProviderOptions) (azcore.TokenCredential, error) {
+			return mockContext.CredentialProvider(*mockContext.Context, &mocks.TokenCredentialProviderOptions{
+				TenantId: options.TenantId,
+			})
+		}, azcli.NewAzCliArgs{
+			HttpClient: mockContext.HttpClient,
+		})
 
 	provider, err := NewBicepProvider(
 		*mockContext.Context, azCli, env, projectDir, options,

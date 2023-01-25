@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armsubscriptions"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
@@ -107,9 +108,14 @@ func Test_promptEnvironmentName(t *testing.T) {
 			}, nil
 		})
 
-		azCli := azcli.NewAzCli(mockContext.CredentialProvider, azcli.NewAzCliArgs{
-			HttpClient: mockContext.HttpClient,
-		})
+		azCli := azcli.NewAzCli(
+			func(ctx context.Context, options *azcli.TokenCredentialProviderOptions) (azcore.TokenCredential, error) {
+				return mockContext.CredentialProvider(*mockContext.Context, &mocks.TokenCredentialProviderOptions{
+					TenantId: options.TenantId,
+				})
+			}, azcli.NewAzCliArgs{
+				HttpClient: mockContext.HttpClient,
+			})
 
 		resourceManager := infra.NewAzureResourceManager(azCli)
 		groups, err := resourceManager.GetResourceGroupsForDeployment(*mockContext.Context, "sub-id", "deployment-name")
@@ -157,9 +163,14 @@ func Test_getSubscriptionOptions(t *testing.T) {
 				},
 			})
 		})
-		azCli := azcli.NewAzCli(mockContext.CredentialProvider, azcli.NewAzCliArgs{
-			HttpClient: mockContext.HttpClient,
-		})
+		azCli := azcli.NewAzCli(
+			func(ctx context.Context, options *azcli.TokenCredentialProviderOptions) (azcore.TokenCredential, error) {
+				return mockContext.CredentialProvider(*mockContext.Context, &mocks.TokenCredentialProviderOptions{
+					TenantId: options.TenantId,
+				})
+			}, azcli.NewAzCliArgs{
+				HttpClient: mockContext.HttpClient,
+			})
 
 		subList, result, _, err := getSubscriptionOptions(*mockContext.Context, azCli)
 

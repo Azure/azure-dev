@@ -170,6 +170,7 @@ type AzCli interface {
 
 	GetAccessToken(ctx context.Context) (*AzCliAccessToken, error)
 	ListTenants(ctx context.Context) ([]*armsubscriptions.TenantIDDescription, error)
+	SetCredential(credential azcore.TokenCredential)
 }
 
 type AzCliDeployment struct {
@@ -326,6 +327,11 @@ type azCli struct {
 	httpClient httputil.HttpClient
 
 	credential azcore.TokenCredential
+}
+
+// enable setting a credential for the client
+func (az *azCli) SetCredential(credential azcore.TokenCredential) {
+	az.credential = credential
 }
 
 // SetUserAgent sets the user agent that's sent with each call to the Azure

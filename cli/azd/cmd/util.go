@@ -15,6 +15,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal/telemetry"
 	"github.com/azure/azure-dev/cli/azd/internal/telemetry/fields"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
+	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 	"github.com/azure/azure-dev/cli/azd/pkg/azureutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
@@ -228,7 +229,7 @@ func ensureEnvironmentInitialized(
 	if !hasSubID && envSpec.subscription != "" {
 		env.SetSubscriptionId(envSpec.subscription)
 	} else {
-		subscriptionOptions, defaultSubscription, err := getSubscriptionOptions(ctx, azCli)
+		subscriptionOptions, defaultSubscription, rawData, err := getSubscriptionOptions(ctx, azCli)
 		if err != nil {
 			return err
 		}
@@ -260,8 +261,27 @@ func ensureEnvironmentInitialized(
 					len("(00000000-0000-0000-0000-000000000000)")+1 : len(subscriptionSelection)-1]
 			}
 		}
-
 		env.SetSubscriptionId(strings.TrimSpace(subscriptionId))
+		// recover the tenant for the selected subscription, as we are listing all the subscriptions for all available
+		// tenants
+		var tenantId string
+		for _, subscriptionInfo := range rawData {
+			if subscriptionInfo.Id == subscriptionId {
+				tenantId = subscriptionInfo.TenantId
+			}
+		}
+		authManager, err := auth.NewManager(config.NewUserConfigManager())
+		if err != nil {
+			return err
+		}
+		updatedCredential, err := authManager.CredentialForCurrentUser(ctx, &auth.CredentialForCurrentUserOptions{
+			TenantID: tenantId,
+		})
+		if err != nil {
+			return err
+		}
+		azCli.SetCredential(updatedCredential)
+		env.SetTenantId(tenantId)
 	}
 
 	if !hasLocation && envSpec.location != "" {
@@ -289,15 +309,15 @@ func ensureEnvironmentInitialized(
 	return nil
 }
 
-func getSubscriptionOptions(ctx context.Context, azCli azcli.AzCli) ([]string, any, error) {
+func getSubscriptionOptions(ctx context.Context, azCli azcli.AzCli) (
+	[]string, any, []*azcli.AzCliSubscriptionInfo, error) {
 	accountManager, err := account.NewManager(config.GetConfigManager(ctx), azCli)
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed creating account manager: %w", err)
+		return nil, nil, nil, fmt.Errorf("failed creating account manager: %w", err)
 	}
-
 	subscriptionInfos, err := accountManager.GetSubscriptions(ctx)
 	if err != nil {
-		return nil, nil, fmt.Errorf("listing accounts: %w", err)
+		return nil, nil, nil, fmt.Errorf("listing accounts: %w", err)
 	}
 
 	// If `AZURE_SUBSCRIPTION_ID` is set in the environment, use it to influence
@@ -324,7 +344,7 @@ func getSubscriptionOptions(ctx context.Context, azCli azcli.AzCli) ([]string, a
 	}
 
 	subscriptionOptions[len(subscriptionOptions)-1] = manualSubscriptionEntryOption
-	return subscriptionOptions, defaultSubscription, nil
+	return subscriptionOptions, defaultSubscription, subscriptionInfos, nil
 }
 
 type envFlag struct {

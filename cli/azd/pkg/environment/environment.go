@@ -184,6 +184,10 @@ func (e *Environment) GetTenantId() string {
 	return e.Values[TenantIdEnvVarName]
 }
 
+func (e *Environment) SetTenantId(id string) {
+	e.Values[TenantIdEnvVarName] = id
+}
+
 func (e *Environment) SetSubscriptionId(id string) {
 	e.Values[SubscriptionIdEnvVarName] = id
 }

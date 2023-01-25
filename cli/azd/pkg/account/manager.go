@@ -63,16 +63,15 @@ func NewManager(configManager config.Manager, azCli azcli.AzCli) (*Manager, erro
 // 1. Returns AZD config defaults if exists
 // 2. Returns Coded location default if needed
 func (m *Manager) GetAccountDefaults(ctx context.Context) (*Account, error) {
-	subscription, err := m.getDefaultSubscription(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed retrieving default subscription: %w", err)
-	}
+	// the default config might become invalid after switching accounts
+	subscription, _ := m.getDefaultSubscription(ctx)
 
 	var location *Location
 
 	if subscription == nil {
 		location = &defaultLocation
 	} else {
+		var err error
 		location, err = m.getDefaultLocation(ctx, subscription.Id)
 		if err != nil {
 			return nil, fmt.Errorf("failed retrieving default location: %w", err)
@@ -88,10 +87,8 @@ func (m *Manager) GetAccountDefaults(ctx context.Context) (*Account, error) {
 // Gets the available Azure subscriptions for the current logged in account.
 // Applies the default subscription on the matching account
 func (m *Manager) GetSubscriptions(ctx context.Context) ([]*azcli.AzCliSubscriptionInfo, error) {
-	defaultSubscription, err := m.getDefaultSubscription(ctx)
-	if err != nil {
-		return nil, err
-	}
+	// the default config might become invalid after switching accounts
+	defaultSubscription, _ := m.getDefaultSubscription(ctx)
 
 	accounts, err := m.getAllSubscriptions(ctx)
 	if err != nil {
@@ -206,9 +203,6 @@ func (m *Manager) Clear(ctx context.Context) error {
 }
 
 // Gets the available Azure subscriptions for the current logged in principal.
-// TODO: Use the singleton credential to list all tenants from the account
-//
-//	then, get a new credential per tenant and use it to fetch the list of subs
 func (m *Manager) getAllSubscriptions(ctx context.Context) ([]*azcli.AzCliSubscriptionInfo, error) {
 
 	tenants, err := m.azCli.ListTenants(ctx)

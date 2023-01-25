@@ -67,6 +67,8 @@ steps:
       ARM_TENANT_ID=$(arm-tenant-id)
       SUBSCRIPTION_ID=$(SubscriptionId)
 
+      $(VARIABLE_LIST)
+
       # Bash Script parameters
       FOLDER_PATH="/workspaces/temp"
       BRANCH_NAME=$(TemplateBranchName)

@@ -7,7 +7,6 @@ import (
 	"log"
 	"os"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"golang.org/x/exp/slices"
@@ -212,19 +211,8 @@ func (m *Manager) getAllSubscriptions(ctx context.Context) ([]*azcli.AzCliSubscr
 
 	results := []*azcli.AzCliSubscriptionInfo{}
 	for _, tenant := range tenants {
-		authMangerForTenant, err := auth.NewManager(config.NewUserConfigManager())
-		if err != nil {
-			return nil, fmt.Errorf("failed creating auth manager: %w", err)
-		}
-
-		tenantCredential, err := authMangerForTenant.CredentialForCurrentUser(ctx, &auth.CredentialForCurrentUserOptions{
-			TenantID: *tenant.TenantID,
-		})
-		if err != nil {
-			return nil, fmt.Errorf("failed creating credential for tenant: %w", err)
-		}
-
-		accounts, err := m.azCli.ListAccountsWithCredential(ctx, tenantCredential)
+		m.azCli.SetTenantId(*tenant.TenantID)
+		accounts, err := m.azCli.ListAccounts(ctx)
 		if err != nil {
 			log.Printf("Unable to fetch subscriptions from tenant: %s. Error: %s", *tenant.TenantID, err.Error())
 			continue

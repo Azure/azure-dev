@@ -3,8 +3,11 @@ package mocks
 import (
 	"context"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockconfig"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockexec"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockhttp"
@@ -12,12 +15,12 @@ import (
 )
 
 type MockContext struct {
-	Credentials   *MockCredentials
-	Context       *context.Context
-	Console       *mockinput.MockConsole
-	HttpClient    *mockhttp.MockHttpClient
-	CommandRunner *mockexec.MockCommandRunner
-	ConfigManager *mockconfig.MockConfigManager
+	CredentialProvider azcli.TokenCredentialProvider
+	Context            *context.Context
+	Console            *mockinput.MockConsole
+	HttpClient         *mockhttp.MockHttpClient
+	CommandRunner      *mockexec.MockCommandRunner
+	ConfigManager      *mockconfig.MockConfigManager
 }
 
 func NewMockContext(ctx context.Context) *MockContext {
@@ -33,7 +36,9 @@ func NewMockContext(ctx context.Context) *MockContext {
 	ctx = config.WithConfigManager(ctx, configManager)
 
 	mockContext := &MockContext{
-		Credentials:   &credentials,
+		CredentialProvider: func(context.Context, *auth.CredentialForCurrentUserOptions) (azcore.TokenCredential, error) {
+			return &credentials, nil
+		},
 		Context:       &ctx,
 		Console:       mockConsole,
 		CommandRunner: commandRunner,

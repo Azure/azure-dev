@@ -8,7 +8,7 @@ import (
 // NewAzCliFromMockContext creates a new instance of AzCli, configured to use the credential and pipeline from the
 // provided mock context.
 func NewAzCliFromMockContext(mockContext *mocks.MockContext) azcli.AzCli {
-	return azcli.NewAzCli(mockContext.Credentials, azcli.NewAzCliArgs{
+	return azcli.NewAzCli(mockContext.CredentialProvider, azcli.NewAzCliArgs{
 		HttpClient: mockContext.HttpClient,
 	})
 }

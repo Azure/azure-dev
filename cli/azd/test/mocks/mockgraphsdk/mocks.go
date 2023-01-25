@@ -15,8 +15,8 @@ import (
 
 func CreateGraphClient(mockContext *mocks.MockContext) (*graphsdk.GraphClient, error) {
 	clientOptions := CreateDefaultClientOptions(mockContext)
-
-	return graphsdk.NewGraphClient(mockContext.Credentials, clientOptions)
+	credential, _ := mockContext.CredentialProvider(*mockContext.Context, nil)
+	return graphsdk.NewGraphClient(credential, clientOptions)
 }
 
 func CreateDefaultClientOptions(mockContext *mocks.MockContext) *azcore.ClientOptions {

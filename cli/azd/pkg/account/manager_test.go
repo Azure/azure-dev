@@ -92,8 +92,9 @@ func Test_GetAccountDefaults(t *testing.T) {
 		require.NoError(t, err)
 
 		accountDefaults, err := manager.GetAccountDefaults(*mockContext.Context)
-		require.Nil(t, accountDefaults)
-		require.Error(t, err)
+		require.Equal(t, &Account{
+			DefaultSubscription: (*Subscription)(nil), DefaultLocation: (&defaultLocation)}, accountDefaults)
+		require.NoError(t, err)
 	})
 
 	t.Run("InvalidLocation", func(t *testing.T) {
@@ -179,8 +180,8 @@ func Test_GetSubscriptions(t *testing.T) {
 
 		subscriptions, err := manager.GetSubscriptions(*mockContext.Context)
 
-		require.Error(t, err)
-		require.Nil(t, subscriptions)
+		require.NoError(t, err)
+		require.EqualValues(t, []*azcli.AzCliSubscriptionInfo{}, subscriptions)
 	})
 }
 
@@ -467,6 +468,21 @@ func setupGetSubscriptionMock(mockContext *mocks.MockContext, subscription *Subs
 
 func setupAccountErrorMocks(mockContext *mocks.MockContext) {
 	mockContext.HttpClient.When(func(request *http.Request) bool {
+		return request.URL.Path == "/tenants"
+	}).RespondFn(func(request *http.Request) (*http.Response, error) {
+		return mocks.CreateHttpResponseWithBody(request, 200, armsubscriptions.TenantsClientListResponse{
+			TenantListResult: armsubscriptions.TenantListResult{
+				Value: []*armsubscriptions.TenantIDDescription{
+					{
+						ID:          convert.RefOf("SUBSCRIPTION"),
+						DisplayName: convert.RefOf("TENANT"),
+						TenantID:    convert.RefOf("TENANTID"),
+					},
+				},
+			},
+		})
+	})
+	mockContext.HttpClient.When(func(request *http.Request) bool {
 		return request.Method == http.MethodGet && request.URL.Path == "/subscriptions"
 	}).RespondFn(func(request *http.Request) (*http.Response, error) {
 		return &http.Response{
@@ -490,6 +506,21 @@ func setupAccountErrorMocks(mockContext *mocks.MockContext) {
 }
 
 func setupAccountMocks(mockContext *mocks.MockContext) {
+	mockContext.HttpClient.When(func(request *http.Request) bool {
+		return request.URL.Path == "/tenants"
+	}).RespondFn(func(request *http.Request) (*http.Response, error) {
+		return mocks.CreateHttpResponseWithBody(request, 200, armsubscriptions.TenantsClientListResponse{
+			TenantListResult: armsubscriptions.TenantListResult{
+				Value: []*armsubscriptions.TenantIDDescription{
+					{
+						ID:          convert.RefOf("SUBSCRIPTION"),
+						DisplayName: convert.RefOf("TENANT"),
+						TenantID:    convert.RefOf("TENANTID"),
+					},
+				},
+			},
+		})
+	})
 	mockContext.HttpClient.When(func(request *http.Request) bool {
 		return request.Method == http.MethodGet && request.URL.Path == "/subscriptions"
 	}).RespondFn(func(request *http.Request) (*http.Response, error) {

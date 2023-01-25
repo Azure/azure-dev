@@ -25,13 +25,14 @@ func Test_detectProviders(t *testing.T) {
 	mockContext := mocks.NewMockContext(ctx)
 
 	t.Run("no folders error", func(t *testing.T) {
+		credential, _ := mockContext.CredentialProvider(ctx, nil)
 		scmProvider, ciProvider, err := DetectProviders(
 			ctx,
 			azdContext,
 			environment.Ephemeral(),
 			"",
 			mockContext.Console,
-			mockContext.Credentials,
+			credential,
 			mockContext.CommandRunner,
 		)
 		assert.Nil(t, scmProvider)
@@ -48,13 +49,14 @@ func Test_detectProviders(t *testing.T) {
 		err := os.Mkdir(ghFolder, osutil.PermissionDirectory)
 		assert.NoError(t, err)
 
+		credential, _ := mockContext.CredentialProvider(ctx, nil)
 		scmProvider, ciProvider, err := DetectProviders(
 			ctx,
 			azdContext,
 			environment.Ephemeral(),
 			"",
 			mockContext.Console,
-			mockContext.Credentials,
+			credential,
 			mockContext.CommandRunner,
 		)
 		assert.Nil(t, scmProvider)
@@ -80,13 +82,14 @@ func Test_detectProviders(t *testing.T) {
 			Values: envValues,
 		}
 
+		credential, _ := mockContext.CredentialProvider(ctx, nil)
 		scmProvider, ciProvider, err := DetectProviders(
 			ctx,
 			azdContext,
 			env,
 			"",
 			mockContext.Console,
-			mockContext.Credentials,
+			credential,
 			mockContext.CommandRunner,
 		)
 		assert.Nil(t, scmProvider)
@@ -106,13 +109,14 @@ func Test_detectProviders(t *testing.T) {
 			Values: envValues,
 		}
 
+		credential, _ := mockContext.CredentialProvider(ctx, nil)
 		scmProvider, ciProvider, err := DetectProviders(
 			ctx,
 			azdContext,
 			env,
 			"",
 			mockContext.Console,
-			mockContext.Credentials,
+			credential,
 			mockContext.CommandRunner,
 		)
 		assert.IsType(t, &AzdoScmProvider{}, scmProvider)
@@ -131,12 +135,13 @@ func Test_detectProviders(t *testing.T) {
 		env := &environment.Environment{
 			Values: envValues,
 		}
+		credential, _ := mockContext.CredentialProvider(ctx, nil)
 		scmProvider, ciProvider, err := DetectProviders(ctx,
 			azdContext,
 			env,
 			"",
 			mockContext.Console,
-			mockContext.Credentials,
+			credential,
 			mockContext.CommandRunner,
 		)
 		assert.Nil(t, scmProvider)
@@ -156,12 +161,13 @@ func Test_detectProviders(t *testing.T) {
 			Values: envValues,
 		}
 
+		credential, _ := mockContext.CredentialProvider(ctx, nil)
 		scmProvider, ciProvider, err := DetectProviders(ctx,
 			azdContext,
 			env,
 			"",
 			mockContext.Console,
-			mockContext.Credentials,
+			credential,
 			mockContext.CommandRunner,
 		)
 		assert.IsType(t, &GitHubScmProvider{}, scmProvider)
@@ -176,13 +182,14 @@ func Test_detectProviders(t *testing.T) {
 		err := os.Mkdir(ghFolder, osutil.PermissionDirectory)
 		assert.NoError(t, err)
 
+		credential, _ := mockContext.CredentialProvider(ctx, nil)
 		scmProvider, ciProvider, err := DetectProviders(
 			ctx,
 			azdContext,
 			&environment.Environment{Values: map[string]string{}},
 			"other",
 			mockContext.Console,
-			mockContext.Credentials,
+			credential,
 			mockContext.CommandRunner,
 		)
 		assert.Nil(t, scmProvider)
@@ -203,12 +210,13 @@ func Test_detectProviders(t *testing.T) {
 			Values: envValues,
 		}
 
+		credential, _ := mockContext.CredentialProvider(ctx, nil)
 		scmProvider, ciProvider, err := DetectProviders(ctx,
 			azdContext,
 			env,
 			"",
 			mockContext.Console,
-			mockContext.Credentials,
+			credential,
 			mockContext.CommandRunner,
 		)
 		assert.Nil(t, scmProvider)
@@ -226,12 +234,13 @@ func Test_detectProviders(t *testing.T) {
 		_, err = projectFile.WriteString("pipeline:\n\r  provider: other")
 		assert.NoError(t, err)
 
+		credential, _ := mockContext.CredentialProvider(ctx, nil)
 		scmProvider, ciProvider, err := DetectProviders(
 			ctx,
 			azdContext,
 			environment.Ephemeral(),
 			"", mockContext.Console,
-			mockContext.Credentials,
+			credential,
 			mockContext.CommandRunner,
 		)
 		assert.Nil(t, scmProvider)
@@ -259,12 +268,13 @@ func Test_detectProviders(t *testing.T) {
 			Values: envValues,
 		}
 
+		credential, _ := mockContext.CredentialProvider(ctx, nil)
 		scmProvider, ciProvider, err := DetectProviders(ctx,
 			azdContext,
 			env,
 			"",
 			mockContext.Console,
-			mockContext.Credentials,
+			credential,
 			mockContext.CommandRunner,
 		)
 		assert.Nil(t, scmProvider)
@@ -292,13 +302,14 @@ func Test_detectProviders(t *testing.T) {
 			Values: envValues,
 		}
 
+		credential, _ := mockContext.CredentialProvider(ctx, nil)
 		scmProvider, ciProvider, err := DetectProviders(
 			ctx,
 			azdContext,
 			env,
 			"arg",
 			mockContext.Console,
-			mockContext.Credentials,
+			credential,
 			mockContext.CommandRunner,
 		)
 		assert.Nil(t, scmProvider)
@@ -317,13 +328,14 @@ func Test_detectProviders(t *testing.T) {
 		err := os.Mkdir(ghFolder, osutil.PermissionDirectory)
 		assert.NoError(t, err)
 
+		credential, _ := mockContext.CredentialProvider(ctx, nil)
 		scmProvider, ciProvider, err := DetectProviders(
 			ctx,
 			azdContext,
 			&environment.Environment{Values: map[string]string{}},
 			"",
 			mockContext.Console,
-			mockContext.Credentials,
+			credential,
 			mockContext.CommandRunner,
 		)
 		assert.IsType(t, &GitHubScmProvider{}, scmProvider)
@@ -337,13 +349,14 @@ func Test_detectProviders(t *testing.T) {
 		err := os.Mkdir(azdoFolder, osutil.PermissionDirectory)
 		assert.NoError(t, err)
 
+		credential, _ := mockContext.CredentialProvider(ctx, nil)
 		scmProvider, ciProvider, err := DetectProviders(
 			ctx,
 			azdContext,
 			&environment.Environment{Values: map[string]string{}},
 			"",
 			mockContext.Console,
-			mockContext.Credentials,
+			credential,
 			mockContext.CommandRunner,
 		)
 		assert.IsType(t, &AzdoScmProvider{}, scmProvider)
@@ -360,13 +373,14 @@ func Test_detectProviders(t *testing.T) {
 		err = os.Mkdir(azdoFolder, osutil.PermissionDirectory)
 		assert.NoError(t, err)
 
+		credential, _ := mockContext.CredentialProvider(ctx, nil)
 		scmProvider, ciProvider, err := DetectProviders(
 			ctx,
 			azdContext,
 			&environment.Environment{Values: map[string]string{}},
 			"",
 			mockContext.Console,
-			mockContext.Credentials,
+			credential,
 			mockContext.CommandRunner,
 		)
 		assert.IsType(t, &GitHubScmProvider{}, scmProvider)
@@ -383,13 +397,14 @@ func Test_detectProviders(t *testing.T) {
 
 		env := &environment.Environment{Values: map[string]string{}}
 
+		credential, _ := mockContext.CredentialProvider(ctx, nil)
 		scmProvider, ciProvider, err := DetectProviders(
 			ctx,
 			azdContext,
 			env,
 			azdoLabel,
 			mockContext.Console,
-			mockContext.Credentials,
+			credential,
 			mockContext.CommandRunner,
 		)
 		assert.IsType(t, &AzdoScmProvider{}, scmProvider)
@@ -406,7 +421,7 @@ func Test_detectProviders(t *testing.T) {
 			env,
 			"",
 			mockContext.Console,
-			mockContext.Credentials,
+			credential,
 			mockContext.CommandRunner,
 		)
 		assert.IsType(t, &AzdoScmProvider{}, scmProvider)
@@ -425,13 +440,14 @@ func Test_detectProviders(t *testing.T) {
 
 		env := &environment.Environment{Values: map[string]string{}}
 
+		credential, _ := mockContext.CredentialProvider(ctx, nil)
 		scmProvider, ciProvider, err := DetectProviders(
 			ctx,
 			azdContext,
 			env,
 			azdoLabel,
 			mockContext.Console,
-			mockContext.Credentials,
+			credential,
 			mockContext.CommandRunner,
 		)
 		assert.IsType(t, &AzdoScmProvider{}, scmProvider)
@@ -444,7 +460,7 @@ func Test_detectProviders(t *testing.T) {
 			env,
 			"",
 			mockContext.Console,
-			mockContext.Credentials,
+			credential,
 			mockContext.CommandRunner,
 		)
 		assert.IsType(t, &AzdoScmProvider{}, scmProvider)
@@ -462,7 +478,7 @@ func Test_detectProviders(t *testing.T) {
 			env,
 			"",
 			mockContext.Console,
-			mockContext.Credentials,
+			credential,
 			mockContext.CommandRunner,
 		)
 		assert.IsType(t, &GitHubScmProvider{}, scmProvider)
@@ -480,7 +496,7 @@ func Test_detectProviders(t *testing.T) {
 			env,
 			"",
 			mockContext.Console,
-			mockContext.Credentials,
+			credential,
 			mockContext.CommandRunner,
 		)
 		assert.IsType(t, &GitHubScmProvider{}, scmProvider)
@@ -494,7 +510,7 @@ func Test_detectProviders(t *testing.T) {
 			env,
 			azdoLabel,
 			mockContext.Console,
-			mockContext.Credentials,
+			credential,
 			mockContext.CommandRunner,
 		)
 		assert.IsType(t, &AzdoScmProvider{}, scmProvider)
@@ -513,7 +529,7 @@ func Test_detectProviders(t *testing.T) {
 			env,
 			"",
 			mockContext.Console,
-			mockContext.Credentials,
+			credential,
 			mockContext.CommandRunner,
 		)
 		assert.IsType(t, &GitHubScmProvider{}, scmProvider)

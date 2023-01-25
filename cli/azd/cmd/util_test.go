@@ -107,7 +107,7 @@ func Test_promptEnvironmentName(t *testing.T) {
 			}, nil
 		})
 
-		azCli := azcli.NewAzCli(mockContext.Credentials, azcli.NewAzCliArgs{
+		azCli := azcli.NewAzCli(mockContext.CredentialProvider, azcli.NewAzCliArgs{
 			HttpClient: mockContext.HttpClient,
 		})
 
@@ -142,11 +142,26 @@ func Test_getSubscriptionOptions(t *testing.T) {
 			})
 		})
 
-		azCli := azcli.NewAzCli(mockContext.Credentials, azcli.NewAzCliArgs{
+		mockContext.HttpClient.When(func(request *http.Request) bool {
+			return request.URL.Path == "/tenants"
+		}).RespondFn(func(request *http.Request) (*http.Response, error) {
+			return mocks.CreateHttpResponseWithBody(request, 200, armsubscriptions.TenantsClientListResponse{
+				TenantListResult: armsubscriptions.TenantListResult{
+					Value: []*armsubscriptions.TenantIDDescription{
+						{
+							ID:          convert.RefOf("SUBSCRIPTION"),
+							DisplayName: convert.RefOf("TENANT"),
+							TenantID:    convert.RefOf("TENANTID"),
+						},
+					},
+				},
+			})
+		})
+		azCli := azcli.NewAzCli(mockContext.CredentialProvider, azcli.NewAzCliArgs{
 			HttpClient: mockContext.HttpClient,
 		})
 
-		subList, result, err := getSubscriptionOptions(*mockContext.Context, azCli)
+		subList, result, _, err := getSubscriptionOptions(*mockContext.Context, azCli)
 
 		require.Nil(t, err)
 		require.EqualValues(t, 2, len(subList))
@@ -178,6 +193,21 @@ func Test_getSubscriptionOptions(t *testing.T) {
 				TenantID:       convert.RefOf("TENANT"),
 			})
 		})
+		mockContext.HttpClient.When(func(request *http.Request) bool {
+			return request.URL.Path == "/tenants"
+		}).RespondFn(func(request *http.Request) (*http.Response, error) {
+			return mocks.CreateHttpResponseWithBody(request, 200, armsubscriptions.TenantsClientListResponse{
+				TenantListResult: armsubscriptions.TenantListResult{
+					Value: []*armsubscriptions.TenantIDDescription{
+						{
+							ID:          convert.RefOf("SUBSCRIPTION"),
+							DisplayName: convert.RefOf("TENANT"),
+							TenantID:    convert.RefOf("TENANTID"),
+						},
+					},
+				},
+			})
+		})
 		// Mock other subscriptions for the user, as azd will merge
 		// the default account with all others accessible
 		mockContext.HttpClient.When(func(request *http.Request) bool {
@@ -200,7 +230,7 @@ func Test_getSubscriptionOptions(t *testing.T) {
 		azCli := mockazcli.NewAzCliFromMockContext(mockContext)
 
 		// finally invoking the test
-		subList, result, err := getSubscriptionOptions(*mockContext.Context, azCli)
+		subList, result, _, err := getSubscriptionOptions(*mockContext.Context, azCli)
 
 		require.Nil(t, err)
 		require.EqualValues(t, 2, len(subList))

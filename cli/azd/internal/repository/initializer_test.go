@@ -57,9 +57,6 @@ func Test_Initializer_Initialize(t *testing.T) {
 						_, err = realRunner.Run(ctx, gitArgs.AppendParams("add", "*"))
 						require.NoError(t, err)
 
-						_, err = realRunner.Run(ctx, gitArgs.AppendParams("commit", "-m", "'Initial commit.'"))
-						require.NoError(t, err)
-
 						for _, file := range tt.executableFiles {
 							_, err = realRunner.Run(
 								ctx,
@@ -412,7 +409,7 @@ func Test_parseExecutableFiles(t *testing.T) {
 				100644 9b69faf15e1ba7232aa2004940ac3419bfe8192e 0	src/any3.csv
 				100644 0a5ec605ae4bdfdf384780e1b713f9404d41d97f 0	src/any4.txt
 				100755 de6afa7b4a15f3ef63a1756160a026e2284c514d 0	script/script3.sh
-				100644 21df4a08f368817971d2b3da7f471b97874f572f 0	anydoc.md`),
+				100644 21df4a08f368817971d2b3da7f471b97874f572f 0	doc.md`),
 			[]string{
 				"init.sh",
 				"script/script1.sh",
@@ -429,7 +426,7 @@ func Test_parseExecutableFiles(t *testing.T) {
 				100644 7c6cfd932637e4e89ce03c79563ad4044bf5c030 0	src/any2.json
 				100644 9b69faf15e1ba7232aa2004940ac3419bfe8192e 0	src/any3.csv
 				100644 0a5ec605ae4bdfdf384780e1b713f9404d41d97f 0	src/any4.txt
-				100644 21df4a08f368817971d2b3da7f471b97874f572f 0	anydoc.md`),
+				100644 21df4a08f368817971d2b3da7f471b97874f572f 0	doc.md`),
 			[]string{},
 			false,
 		},

@@ -99,10 +99,12 @@ func Test_CLI_Init_CanUseTemplate(t *testing.T) {
 	)
 	require.NoError(t, err)
 
-	// While `init` uses git behind the scenes to pull a template, we don't want to bring the history over or initialize a
-	// git
+	// While `init` uses git behind the scenes to pull a template, we don't want to bring the history over in the new git
 	// repository.
-	require.NoDirExists(t, filepath.Join(dir, ".git"))
+	cmdRun := exec.NewCommandRunner(os.Stdin, os.Stdout, os.Stderr)
+	cmdRes, err := cmdRun.Run(ctx, exec.NewRunArgs("git", "log", "--oneline", "-n", "1").WithEnrichError(true))
+	require.Error(t, err)
+	require.Contains(t, cmdRes.Stderr, "does not have any commits yet")
 
 	// Ensure the project was initialized from the template by checking that a file from the template is present.
 	require.FileExists(t, filepath.Join(dir, "README.md"))
@@ -135,10 +137,12 @@ func Test_CLI_Up_CanUseTemplateWithoutExistingProject(t *testing.T) {
 
 	require.Contains(t, res.Stdout, "Initializing a new project")
 
-	// While `init` uses git behind the scenes to pull a template, we don't want to bring the history over or initialize a
-	// git
+	// While `init` uses git behind the scenes to pull a template, we don't want to bring the history over in the new git
 	// repository.
-	require.NoDirExists(t, filepath.Join(dir, ".git"))
+	cmdRun := exec.NewCommandRunner(os.Stdin, os.Stdout, os.Stderr)
+	cmdRes, err := cmdRun.Run(ctx, exec.NewRunArgs("git", "log", "--oneline", "-n", "1").WithEnrichError(true))
+	require.Error(t, err)
+	require.Contains(t, cmdRes.Stderr, "does not have any commits yet")
 
 	// Ensure the project was initialized from the template by checking that a file from the template is present.
 	require.FileExists(t, filepath.Join(dir, "README.md"))

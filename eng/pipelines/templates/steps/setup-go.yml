@@ -7,7 +7,7 @@ steps:
     inputs:
       version: ${{ parameters.GoVersion }}
 
-  - task:
+  - pwsh:
       $goBin = go env GOBIN
       if (!$goBin) {
         $goBin = Join-Path (go env GOPATH) "bin"

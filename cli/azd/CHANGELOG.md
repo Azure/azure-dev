@@ -1,5 +1,17 @@
 # Release History
 
+## 0.5.0-beta.4 (Unreleased)
+
+### Features Added
+
+### Breaking Changes
+
+### Bugs Fixed
+
+- [[#1406]](https://github.com/Azure/azure-dev/issues/1406) MSI Upgrades from pre-MSI versions fail in some cases (reported by @lechnerc77, fixed by @heaths)
+
+### Other Changes
+
 ## 0.5.0-beta.3 (2023-01-13)
 
 ### Bugs Fixed

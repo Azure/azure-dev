@@ -28,6 +28,9 @@
         <Property Id="ALLUSERS" Value="2"/>
         <Property Id="MSIINSTALLPERUSER" Value="1"/>
 
+        <!-- Make sure any unversioned files including azd.exe (currently) are overwritten on install -->
+        <Property Id="REINSTALLMODE" Value="amus"/>
+
         <!-- Remove older product(s) early but within the transaction -->
         <MajorUpgrade Schedule="afterInstallInitialize" DowngradeErrorMessage="A newer version of !(bind.property.ProductName) is already installed."/>
 

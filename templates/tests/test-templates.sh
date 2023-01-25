@@ -19,7 +19,7 @@ TEST_ONLY=false
 # When set will clean up local and remote resources
 CLEANUP=true
 # Used for internal pipeline testing. When set will skip azd init
-DEVCONTAINERTEST=false
+DEVCONTAINER=false
 
 function usage {
     echo "Tests azd template init, provision & deploy"
@@ -61,7 +61,7 @@ while getopts "f:t:b:e:r:p:l:s:u:n:c:h:d" arg; do
     u) ENV_SUFFIX=$OPTARG ;;
     n) TEST_ONLY=true ;;
     c) CLEANUP=$OPTARG ;;
-    d) DEVCONTAINERTEST=true ;;
+    d) DEVCONTAINER=true ;;
     h)
         usage
         ;;
@@ -85,7 +85,7 @@ done
 # $5 - The Azure location
 # $6 - The Devcontainer Test
 function deployTemplate {
-    if [ $DEVCONTAINERTEST == false ]; then
+    if [ $DEVCONTAINER == false ]; then
         echo "Creating new project folder @ '$FOLDER_PATH/$3'..."
         cd "$FOLDER_PATH"
         mkdir "$3"
@@ -111,7 +111,7 @@ function deployTemplate {
 # $3 - The environment name
 function testTemplate {
     echo "Running template smoke tests for $3..."
-    if [ $DEVCONTAINERTEST == false ]; then
+    if [ $DEVCONTAINER == false ]; then
         cd "$FOLDER_PATH/$3/tests"
     else
         cd "tests"
@@ -126,7 +126,7 @@ function testTemplate {
 # $3 - The environment name
 function cleanupTemplate {
     echo "Deprovisioning infrastructure for $3..."
-    if [ $DEVCONTAINERTEST == false ]; then
+    if [ $DEVCONTAINER == false ]; then
         cd "$FOLDER_PATH/$3"
     else
         cd ..
@@ -154,7 +154,7 @@ if [[ -z $TEMPLATE_NAME ]]; then
     if [ $TEST_ONLY == false ]; then
         # Deploy the templates in parallel
         for TEMPLATE in "${!ENV_TEMPLATE_MAP[@]}"; do
-            (deployTemplate "$TEMPLATE" "$BRANCH_NAME" "${ENV_TEMPLATE_MAP[$TEMPLATE]}" "${SUBSCRIPTION}" "${LOCATION}" "$DEVCONTAINERTEST"|| continue) &
+            (deployTemplate "$TEMPLATE" "$BRANCH_NAME" "${ENV_TEMPLATE_MAP[$TEMPLATE]}" "${SUBSCRIPTION}" "${LOCATION}" "$DEVCONTAINER"|| continue) &
         done
 
         wait
@@ -180,7 +180,7 @@ else
     # Run test for the specified template name
     ENV_NAME="${ENV_NAME_PREFIX}-${TEMPLATE_NAME:14}-$ENV_SUFFIX"
     if [ $TEST_ONLY == false ]; then
-        deployTemplate "$TEMPLATE_NAME" "$BRANCH_NAME" "$ENV_NAME" "${SUBSCRIPTION}" "${LOCATION}" "$DEVCONTAINERTEST"
+        deployTemplate "$TEMPLATE_NAME" "$BRANCH_NAME" "$ENV_NAME" "${SUBSCRIPTION}" "${LOCATION}" "$DEVCONTAINER"
     fi
 
     testTemplate "$TEMPLATE_NAME" "$BRANCH_NAME" "$ENV_NAME"

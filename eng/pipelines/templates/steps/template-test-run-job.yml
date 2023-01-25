@@ -70,7 +70,6 @@ steps:
       $(VARIABLE_LIST)
 
       # Bash Script parameters
-      FOLDER_PATH="/workspaces/temp"
       BRANCH_NAME=$(TemplateBranchName)
       ENV_NAME_PREFIX=$(EnvPrefixName)
       TEMPLATE_NAME=$(TemplateName)
@@ -105,7 +104,6 @@ steps:
       # Run template test bash script
       chmod u+x test-templates.sh
       ./test-templates.sh -d \
-        -f '$(Pipeline.Workspace)' \
         -e '$(EnvPrefixName)' \
         -t '$(TemplateName)' \
         -b '$(TemplateBranchName)' \

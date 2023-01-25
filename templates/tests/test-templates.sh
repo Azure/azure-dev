@@ -111,7 +111,11 @@ function deployTemplate {
 # $3 - The environment name
 function testTemplate {
     echo "Running template smoke tests for $3..."
-    cd "$FOLDER_PATH/$3/tests"
+    if [ $DEVCONTAINERTEST == false ]; then
+        cd "$FOLDER_PATH/$3/tests"
+    else
+        cd "tests"
+    fi
     npm i && npx playwright install
     npx -y playwright test --retries="$PLAYWRIGHT_RETRIES" --reporter="$PLAYWRIGHT_REPORTER"
 }
@@ -122,7 +126,11 @@ function testTemplate {
 # $3 - The environment name
 function cleanupTemplate {
     echo "Deprovisioning infrastructure for $3..."
-    cd "$FOLDER_PATH/$3"
+    if [ $DEVCONTAINERTEST == false ]; then
+        cd "$FOLDER_PATH/$3"
+    else
+        cd ..
+    fi
     azd down -e "$3" --force --purge
 
     echo "Cleaning up local project @ '$FOLDER_PATH/$3'..."

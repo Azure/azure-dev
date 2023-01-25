@@ -7,7 +7,7 @@ param(
 if ($IsWindows) {
     Write-Host "Windows build, set verison info and run 'go generate'"
     if (! (Get-Command "goversioninfo" -ErrorAction SilentlyContinue)) {
-        go install github.com/josephspurrier/goversioninfo/cmd/goversioninfo
+        go get github.com/josephspurrier/goversioninfo/cmd/goversioninfo
     }
 
     $VERSION_INFO_PATH = "$PSScriptRoot/versioninfo.json"

@@ -8,7 +8,7 @@ if ($IsWindows) {
     Write-Host "Windows build, set verison info and run 'go generate'"
     if (! (Get-Command "goversioninfo" -ErrorAction SilentlyContinue)) {
         Write-Host "goversioninfo not found, installing"
-        go install github.com/josephspurrier/goversioninfo/cmd/goversioninfo
+        go install github.com/josephspurrier/goversioninfo/cmd/goversioninfo@1.4.0
         Get-Command "goversioninfo" -ErrorAction Stop
     }
 
@@ -27,8 +27,7 @@ if ($IsWindows) {
     # Product verison is the same as the file version
     $versioninfo.FixedFileInfo.ProductVersion = $versionInfo.FixedFileInfo.FileVersion
 
-    $versionInfo.StringFileInfo.ProductVersion = "v$Version"
-    $versionInfo.StringFileInfo.Comments = "commit $SourceVersion"
+    $versionInfo.StringFileInfo.ProductVersion = $Version
 
     $versionInfoJson = ConvertTo-Json $versionInfo -Depth 10
     Set-Content $VERSION_INFO_PATH $versionInfoJson

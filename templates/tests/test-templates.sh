@@ -93,6 +93,9 @@ function deployTemplate {
 
         echo "Initializing template '$1' with branch '$2'"
         azd init -t "$1" -b "$2" -e "$3" --subscription "$4" --location "$5" --no-prompt
+    else
+        echo "Setting environment name '$3'"
+        azd env new "$3" --subscription "$4" --location "$5" --no-prompt
     fi
 
     echo "Provisioning infrastructure for $3..."

@@ -9,6 +9,8 @@ on:
       - ".github/workflows/templates-ci.yml"
 
 
+# TESTING
+#
 permissions:
   contents: read
   pull-requests: write
@@ -16,7 +18,7 @@ permissions:
 jobs:
   bicep-lint:
     uses: ./.github/workflows/lint-bicep.yml
-  
+
   cspell-lint:
     runs-on: ubuntu-latest
     steps:

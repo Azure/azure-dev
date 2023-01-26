@@ -1,0 +1,7 @@
+
+name: backend-db
+metadata: 
+  template: backend-db@v1
+  templateRules:
+    rewrite:
+      - ./infra/app/api-{lang}.bicep

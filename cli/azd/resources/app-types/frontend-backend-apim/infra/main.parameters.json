@@ -1,0 +1,19 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "environmentName": {
+      // azd-specific parameter. The name of the environment.
+      "value": "${AZURE_ENV_NAME}"
+    },
+    "location": {
+      // azd-specific parameter. The location of the resources.
+      "value": "${AZURE_LOCATION}"
+    },
+    "principalId": {
+      // azd-specific parameter. The user or service principal that will be assigned permissions.
+      // This is used to assign required permissions to the user for secrets access.
+      "value": "${AZURE_PRINCIPAL_ID}"
+    }
+  }
+}

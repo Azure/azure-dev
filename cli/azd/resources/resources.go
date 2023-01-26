@@ -1,6 +1,12 @@
 package resources
 
-import _ "embed"
+import (
+	"embed"
+	_ "embed"
+)
 
 //go:embed templates.json
 var TemplatesJson []byte
+
+//go:embed app-types/*
+var AppTypes embed.FS

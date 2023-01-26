@@ -49,7 +49,6 @@ module api './app/api.bicep' = {
     applicationInsightsName: monitoring.outputs.applicationInsightsName
     appServicePlanId: appServicePlan.outputs.id
     keyVaultName: keyVault.outputs.name
-    allowedOrigins: [ web.outputs.SERVICE_WEB_URI ]
     appSettings: {
       AZURE_COSMOS_CONNECTION_STRING_KEY: cosmos.outputs.connectionStringKey
       AZURE_COSMOS_DATABASE_NAME: cosmos.outputs.databaseName

@@ -18,7 +18,7 @@ param javaRuntimeOptions array = []
 // on App Service.
 var defaultJavaRuntimeOptions = ['-Djdk.attach.allowAttachSelf=true']
 
-module api '../../../../../common/infra/bicep/core/host/appservice.bicep' = {
+module api '../core/host/appservice.bicep' = {
   name: '${name}-app-module'
   params: {
     name: name

@@ -3,7 +3,12 @@
 # - TEST_SCENARIO
 # and additional variables specified by template-test-generate-jobs.yml
 
+
 steps:
+- pwsh: |
+    npm install -g @devcontainers/cli
+  displayName: Install Devcontainer
+
 - template: /eng/pipelines/templates/steps/install-azd-live-sh.yml
   parameters:
     Version: $(AzdVersion)
@@ -42,27 +47,74 @@ steps:
     Write-Host "##vso[task.setvariable variable=CleanupImmediate]$CleanupImmediate"
   displayName: Set test run parameters
 
-- task: Bash@3
-  displayName: Test templates
-  env:             
-    # Required secrets for Terraform service principal authentication
-    ARM_CLIENT_ID: $(arm-client-id)
-    ARM_CLIENT_SECRET: $(arm-client-secret)
-    ARM_TENANT_ID: $(arm-tenant-id)
+- pwsh: |
+    git clone --branch $(TemplateBranchName) https://github.com/$(TemplateName).git/ temp
+  displayName: Clone template repository
+
+- task: CopyFiles@2
   inputs:
-    targetType: filePath
-    filePath: templates/tests/test-templates.sh
-    arguments: >
-      -f '$(Pipeline.Workspace)'
-      -e '$(EnvPrefixName)'
-      -t '$(TemplateName)'
-      -b '$(TemplateBranchName)'
-      -s '$(SubscriptionId)'
-      -u '$(Build.BuildId)-$(System.JobAttempt)'
-      -l '$(AzureLocation)'
-      -p 'list'
-      -c '$(SynchronousCleanup)'
-    workingDirectory: templates/tests
+    SourceFolder: 'templates/tests'
+    Contents: 'test-templates.sh'
+    TargetFolder: '$(Build.SourcesDirectory)/temp'
+  displayName: Copy test-templates.sh
+
+- task: DevcontainersCI@0
+  inputs:
+    env: |
+      # Required secrets for Terraform service principal authentication
+      ARM_CLIENT_ID=$(arm-client-id)
+      ARM_CLIENT_SECRET=$(arm-client-secret)
+      ARM_TENANT_ID=$(arm-tenant-id)
+      SUBSCRIPTION_ID=$(SubscriptionId)
+
+      # Pass in TemplateRunEnvironmentVariables
+      $(VARIABLE_LIST)
+
+      # Bash Script parameters
+      BRANCH_NAME=$(TemplateBranchName)
+      ENV_NAME_PREFIX=$(EnvPrefixName)
+      TEMPLATE_NAME=$(TemplateName)
+      PLAYWRIGHT_REPORTER='list'
+      LOCATION=$(AzureLocation)
+      SUBSCRIPTION=$(SubscriptionId)
+      ENV_SUFFIX=$(Build.BuildId)-$(System.JobAttempt)
+      CLEANUP=$(SynchronousCleanup)
+
+      AZD_VERSION=$(AzdVersion)
+      AZD_DEBUG_FORCE_NO_TTY="1"
+    subFolder: '$(Build.SourcesDirectory)/temp'
+    runCmd: |
+      # Install azd
+      curl -fsSL https://aka.ms/install-azd.sh | bash -s -- $(AzdVersion) --verbose
+
+      # Check azd version
+      azd version
+
+      # Login
+      azd login \
+        --client-id "$(arm-client-id)" \
+        --client-secret "$(arm-client-secret)" \
+        --tenant-id "$(arm-tenant-id)"
+
+      # Install these packages for playwright tests. Otherwise, it will cause a error of playwright missing libraries 
+      sudo add-apt-repository ppa:gstreamer-developers/ppa
+      sudo apt-get update
+      sudo apt-get install gstreamer1.0*
+      sudo apt-get install -y gstreamer1.0-libav libnss3-tools libatk-bridge2.0-0 libcups2-dev libxkbcommon-x11-0 libxcomposite-dev libxrandr2 libgbm-dev libgtk-3-0
+
+      # Run template test bash script
+      chmod u+x test-templates.sh
+      ./test-templates.sh -d \
+        -e '$(EnvPrefixName)' \
+        -t '$(TemplateName)' \
+        -b '$(TemplateBranchName)' \
+        -s '$(SubscriptionId)' \
+        -u '$(Build.BuildId)-$(System.JobAttempt)' \
+        -l '$(AzureLocation)' \
+        -p 'list' \
+        -c '$(SynchronousCleanup)' \
+      
+  displayName: Test templates in Devcontainer
 
 - template: /eng/pipelines/templates/steps/az-login.yml
   parameters:

@@ -79,12 +79,12 @@ steps:
       ENV_SUFFIX=$(Build.BuildId)-$(System.JobAttempt)
       CLEANUP=$(SynchronousCleanup)
 
-      Version=$(AzdVersion)
+      AzdVersion=$(AzdVersion)
       AZD_DEBUG_FORCE_NO_TTY="1"
     subFolder: '$(Build.SourcesDirectory)/temp'
     runCmd: |
       # Install azd
-      curl -fsSL https://aka.ms/install-azd.sh | bash -s -- $(AzdInstallArgs) --verbose
+      curl -fsSL https://aka.ms/install-azd.sh | bash -s -- $(AzdVersion) --verbose
 
       # Check azd version
       azd version

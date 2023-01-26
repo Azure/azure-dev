@@ -16,6 +16,7 @@ parameters:
   SyndicatedAcrHost: $(azdev-acr-syndicated-host)
   SyndicatedAcrUsername: $(azdev-acr-syndicated-username)
   SyndicatedAcrPassword: $(azdev-acr-syndicated-password)
+  PublishBrewFormula: false
 
 steps:
   - ${{ if eq('true', parameters.CreateGitHubRelease) }}:
@@ -165,6 +166,9 @@ steps:
       }
     displayName: Upload release to storage account
 
+  - publish: release
+    artifact: UploadedReleaseArtifacts
+
   - ${{ if eq('true', parameters.PublishShield) }}:
     - template: /eng/pipelines/templates/steps/publish-shield.yml
       parameters:
@@ -184,6 +188,30 @@ steps:
     - pwsh: |
         docker push ${{ parameters.SyndicatedAcrHost }}/public/azure-dev-cli-apps --all-tags
       displayName: Push container tags (syndicated release)
+
+  - ${{ if eq('true', parameters.PublishBrewFormula) }}:
+    - pwsh: git clone https://github.com/Azure/homebrew-azd
+      displayName: Clone Azure/homebrew-azd
+
+    - task: PowerShell@2
+      displayName: Update brew formula
+      inputs:
+        targetType: filePath
+        filePath: eng/scripts/Update-HomebrewFormula.ps1
+        arguments: >-
+          -ZipFilePath release/azd-darwin-amd64.zip
+          -Version $(CLI_VERSION)
+          -OutFile homebrew-azd/Formula/azd.rb
+
+    - template: /eng/common/pipelines/templates/steps/git-push-changes.yml
+      parameters:
+        # The azure-sdk user has permission to push directly to main
+        BaseRepoBranch: main
+        BaseRepoOwner: Azure
+        CommitMsg: Update formula for azd release $(CLI_VERSION)
+        TargetRepoName: homebrew-azd
+        WorkingDirectory: homebrew-azd
+
 
   - ${{ if eq('true', parameters.PublishUpdatedDocs) }}:
     - task: DownloadPipelineArtifact@2

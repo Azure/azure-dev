@@ -87,3 +87,67 @@ func PromptTemplate(ctx context.Context, message string, console input.Console) 
 
 	return templatesSet[selectedTemplateName], nil
 }
+
+func getAppTypeDisplayName(appType string) string {
+	switch appType {
+	case "api":
+		return "API"
+	case "api-web":
+		return "API with Single-Page Application"
+	case "web":
+		return "Web Application"
+	}
+
+	return ""
+}
+
+var appTypes = map[string]string{
+	"API":                              "api",
+	"API with Single-Page Application": "api-web",
+	"Web Application":                  "web",
+}
+
+func PromptInfraTemplate(ctx context.Context, console input.Console) (Template, error) {
+	options := maps.Keys(appTypes)
+	sort.Strings(options)
+	appTypeIndex, err := console.Select(ctx, input.ConsoleOptions{
+		Message: "Which best describes your existing application?",
+		Options: options,
+	})
+
+	if err != nil {
+		return Template{}, err
+	}
+
+	displayOption := options[appTypeIndex]
+	appTypeOption := appTypes[displayOption]
+	if appTypeOption == "api" {
+		db, err := console.Confirm(ctx, input.ConsoleOptions{
+			Message: "Do you need a database?",
+		})
+
+		if err != nil {
+			return Template{}, err
+		}
+
+		if db {
+			appTypeOption += "-db"
+		}
+	}
+
+	entries, err := resources.AppTypes.ReadDir("app-types")
+	if err != nil {
+		return Template{}, fmt.Errorf("reading app types FS: %w", err)
+	}
+
+	for _, entry := range entries {
+		if entry.Name() == appTypeOption {
+			return Template{
+				Name:           displayOption,
+				RepositoryPath: appTypeOption,
+			}, nil
+		}
+	}
+
+	return Template{}, fmt.Errorf("unable to find a matching template.")
+}

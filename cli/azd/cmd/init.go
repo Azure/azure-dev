@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"sort"
 	"strings"
 
 	"github.com/MakeNowJust/heredoc/v2"
@@ -28,6 +29,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/git"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
+	"golang.org/x/exp/maps"
 )
 
 func newInitFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *initFlags {
@@ -152,51 +154,111 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		Title: "Initializing a new project (azd init)",
 	})
 
-	// Project not initialized and no template specified
-	// NOTE: Adding `azure.yaml` to a folder removes the option from selecting a template
-	if _, err := os.Stat(azdCtx.ProjectPath()); err != nil && errors.Is(err, os.ErrNotExist) {
+	existingApplication, err := i.console.Confirm(ctx, input.ConsoleOptions{
+		Message:      "Do you have an existing application?",
+		DefaultValue: false,
+	})
 
-		if i.flags.template.Name == "" {
-			i.flags.template, err = templates.PromptTemplate(ctx, "Select a project template:", i.console)
+	if err != nil {
+		return nil, err
+	}
+
+	if existingApplication {
+		appLocationIndex, err := i.console.Select(ctx, input.ConsoleOptions{
+			Message: "Where is your existing application?",
+			Options: []string{
+				"Under the current directory",
+				"On GitHub",
+			},
+			DefaultValue: "Under the current directory",
+		})
+
+		if err != nil {
+			return nil, err
+		}
+
+		if appLocationIndex == 1 {
+			_, err := i.console.Prompt(ctx, input.ConsoleOptions{
+				Message: "Please enter a GitHub URL:",
+			})
 
 			if err != nil {
 				return nil, err
 			}
 		}
-	}
 
-	if i.flags.template.Name != "" {
-		var templateUrl string
+		i.flags.template, err = templates.PromptInfraTemplate(ctx, i.console)
 
-		if i.flags.template.RepositoryPath == "" {
-			// using template name directly from command line
-			i.flags.template.RepositoryPath = i.flags.template.Name
+		if err != nil {
+			return nil, err
 		}
 
-		// treat names that start with http or git as full URLs and don't change them
-		if strings.HasPrefix(i.flags.template.RepositoryPath, "git") ||
-			strings.HasPrefix(i.flags.template.RepositoryPath, "http") {
-			templateUrl = i.flags.template.RepositoryPath
-		} else {
-			switch strings.Count(i.flags.template.RepositoryPath, "/") {
-			case 0:
-				templateUrl = fmt.Sprintf("https://github.com/Azure-Samples/%s", i.flags.template.RepositoryPath)
-			case 1:
-				templateUrl = fmt.Sprintf("https://github.com/%s", i.flags.template.RepositoryPath)
-			default:
-				return nil, fmt.Errorf(
-					"template '%s' should be either <repository> or <repo>/<repository>", i.flags.template.RepositoryPath)
+		displayOptions := repository.LanguageDisplayOptions()
+		langSelection := maps.Keys(displayOptions)
+		sort.Strings(langSelection)
+		langIndex, err := i.console.Select(ctx, input.ConsoleOptions{
+			Message: "What language do you work on?",
+			Options: langSelection,
+		})
+
+		if err != nil {
+			return nil, err
+		}
+
+		selectedDisplayOption := langSelection[langIndex]
+		language := displayOptions[selectedDisplayOption]
+
+		err = i.repoInitializer.InitializeInfra(ctx, azdCtx, i.flags.template.RepositoryPath, "", repository.InfraUseOptions{Language: language})
+		if err != nil {
+			return nil, fmt.Errorf("initializing infrastructure from template: %w", err)
+		}
+	} else {
+		// Project not initialized and no template specified
+		// NOTE: Adding `azure.yaml` to a folder removes the option from selecting a template
+		if _, err := os.Stat(azdCtx.ProjectPath()); err != nil && errors.Is(err, os.ErrNotExist) {
+
+			if i.flags.template.Name == "" {
+				i.flags.template, err = templates.PromptTemplate(ctx, "Select a project template:", i.console)
+
+				if err != nil {
+					return nil, err
+				}
 			}
 		}
 
-		err = i.repoInitializer.Initialize(ctx, azdCtx, templateUrl, i.flags.templateBranch)
-		if err != nil {
-			return nil, fmt.Errorf("init from template repository: %w", err)
-		}
-	} else {
-		err = i.repoInitializer.InitializeEmpty(ctx, azdCtx)
-		if err != nil {
-			return nil, fmt.Errorf("init empty repository: %w", err)
+		if i.flags.template.Name != "" {
+			var templateUrl string
+
+			if i.flags.template.RepositoryPath == "" {
+				// using template name directly from command line
+				i.flags.template.RepositoryPath = i.flags.template.Name
+			}
+
+			// treat names that start with http or git as full URLs and don't change them
+			if strings.HasPrefix(i.flags.template.RepositoryPath, "git") ||
+				strings.HasPrefix(i.flags.template.RepositoryPath, "http") {
+				templateUrl = i.flags.template.RepositoryPath
+			} else {
+				switch strings.Count(i.flags.template.RepositoryPath, "/") {
+				case 0:
+					templateUrl = fmt.Sprintf("https://github.com/Azure-Samples/%s", i.flags.template.RepositoryPath)
+				case 1:
+					templateUrl = fmt.Sprintf("https://github.com/%s", i.flags.template.RepositoryPath)
+				default:
+					return nil, fmt.Errorf(
+						"template '%s' should be either <repository> or <repo>/<repository>", i.flags.template.RepositoryPath)
+				}
+			}
+
+			err = i.repoInitializer.Initialize(ctx, azdCtx, templateUrl, i.flags.templateBranch)
+			if err != nil {
+				return nil, fmt.Errorf("init from template repository: %w", err)
+			}
+		} else {
+			err = i.repoInitializer.InitializeEmpty(ctx, azdCtx)
+			if err != nil {
+				return nil, fmt.Errorf("init empty repository: %w", err)
+			}
 		}
 	}
 

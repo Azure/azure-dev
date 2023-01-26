@@ -4,12 +4,15 @@ package repository
 import (
 	"bufio"
 	"context"
+	"embed"
 	"errors"
 	"fmt"
 	"io/fs"
 	"log"
 	"os"
+	"path"
 	"path/filepath"
+	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
@@ -17,7 +20,9 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/git"
+	"github.com/azure/azure-dev/cli/azd/resources"
 	"github.com/otiai10/copy"
+	"golang.org/x/exp/maps"
 )
 
 // Initializer handles the initialization of a local repository.
@@ -33,6 +38,143 @@ func NewInitializer(
 		console: console,
 		gitCli:  gitCli,
 	}
+}
+
+type InfraUseOptions struct {
+	Language string
+	Host     string
+}
+
+func LanguageDisplayOptions() map[string]string {
+	return map[string]string{
+		".NET / C# / F#": "dotnet",
+		"Python":         "python",
+		"NodeJS":         "node",
+		"Java":           "java",
+	}
+}
+
+func (i *Initializer) InitializeInfra(ctx context.Context,
+	azdCtx *azdcontext.AzdContext,
+	templateUrl string,
+	templateBranch string,
+	useOptions InfraUseOptions) error {
+	var err error
+	stepMessage := fmt.Sprintf("Downloading template code to: %s", output.WithLinkFormat("%s", azdCtx.ProjectDirectory()))
+	i.console.ShowSpinner(ctx, stepMessage, input.Step)
+	defer i.console.StopSpinner(ctx, stepMessage+"\n", input.GetStepResultFormat(err))
+
+	err = copyTemplateFS(resources.AppTypes, useOptions, templateUrl, azdCtx.ProjectDirectory())
+	if err != nil {
+		return fmt.Errorf("copying from template : %w", err)
+	}
+
+	err = copyCoreFS(resources.AppTypes, useOptions, azdCtx.ProjectDirectory())
+	if err != nil {
+		return fmt.Errorf("copying core lib : %w", err)
+	}
+	return nil
+}
+
+// copyTemplate copies the given infrastructure template.
+func copyTemplateFS(templateFs embed.FS, useOptions InfraUseOptions, template string, target string) error {
+	root := path.Join("app-types", template)
+	infraRoot := path.Join(root, "infra")
+	projectContent, err := templateFs.ReadFile(path.Join(root, azdcontext.ProjectFileName))
+	if err != nil {
+		return fmt.Errorf("missing azure.yaml, %w", err)
+	}
+
+	_, err = project.ParseProjectConfig(string(projectContent))
+	if err != nil {
+		return err
+	}
+
+	possibleLanguages := maps.Values(LanguageDisplayOptions())
+	unmatchedLanguageSuffixes := []string{}
+	for _, lang := range possibleLanguages {
+		if lang != useOptions.Language {
+			unmatchedLanguageSuffixes = append(unmatchedLanguageSuffixes, fmt.Sprintf("-%s.bicep", lang))
+		}
+	}
+	langSpecificSuffix := fmt.Sprintf("-%s.bicep", useOptions.Language)
+
+	return fs.WalkDir(templateFs, infraRoot, func(name string, d fs.DirEntry, err error) error {
+		// If there was some error that was preventing is from walking into the directory, just fail now,
+		// not much we can do to recover.
+		if err != nil {
+			return err
+		}
+		targetPath := filepath.Join(target, "infra", name[len(infraRoot):])
+
+		if d.IsDir() {
+			return os.MkdirAll(targetPath, osutil.PermissionDirectory)
+		}
+
+		// TODO: This currently does not read the project Config to figure out this option
+		languageMatched := strings.HasSuffix(name, langSpecificSuffix)
+		if languageMatched {
+			targetPath = strings.TrimSuffix(targetPath, langSpecificSuffix) + ".bicep"
+		}
+
+		// An unmatched language, do not copy
+		for _, langSuffix := range unmatchedLanguageSuffixes {
+			if strings.HasSuffix(name, langSuffix) {
+				return nil
+			}
+		}
+
+		contents, err := fs.ReadFile(templateFs, name)
+		if err != nil {
+			return fmt.Errorf("reading sample file: %w", err)
+		}
+		return os.WriteFile(targetPath, contents, osutil.PermissionFile)
+	})
+}
+
+func copyCoreFS(templateFs embed.FS, useOptions InfraUseOptions, target string) error {
+	root := path.Join("app-types", "core")
+
+	possibleLanguages := maps.Values(LanguageDisplayOptions())
+	unmatchedLanguageSuffixes := []string{}
+	for _, lang := range possibleLanguages {
+		if lang != useOptions.Language {
+			unmatchedLanguageSuffixes = append(unmatchedLanguageSuffixes, fmt.Sprintf("-%s.bicep", lang))
+		}
+	}
+	langSpecificSuffix := fmt.Sprintf("-%s.bicep", useOptions.Language)
+
+	return fs.WalkDir(templateFs, root, func(name string, d fs.DirEntry, err error) error {
+		// If there was some error that was preventing is from walking into the directory, just fail now,
+		// not much we can do to recover.
+		if err != nil {
+			return err
+		}
+		targetPath := filepath.Join(target, "infra", "core", name[len(root):])
+
+		if d.IsDir() {
+			return os.MkdirAll(targetPath, osutil.PermissionDirectory)
+		}
+
+		// TODO: This currently does not read the project Config to figure out this option
+		languageMatched := strings.HasSuffix(name, langSpecificSuffix)
+		if languageMatched {
+			targetPath = strings.TrimSuffix(targetPath, langSpecificSuffix) + ".bicep"
+		}
+
+		// An unmatched language, do not copy
+		for _, langSuffix := range unmatchedLanguageSuffixes {
+			if strings.HasSuffix(name, langSuffix) {
+				return nil
+			}
+		}
+
+		contents, err := fs.ReadFile(templateFs, name)
+		if err != nil {
+			return fmt.Errorf("reading sample file: %w", err)
+		}
+		return os.WriteFile(targetPath, contents, osutil.PermissionFile)
+	})
 }
 
 // Initializes a local repository in the project directory from a remote repository.

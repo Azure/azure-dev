@@ -67,6 +67,7 @@ steps:
       ARM_TENANT_ID=$(arm-tenant-id)
       SUBSCRIPTION_ID=$(SubscriptionId)
 
+      # Pass in TemplateRunEnvironmentVariables
       $(VARIABLE_LIST)
 
       # Bash Script parameters
@@ -79,7 +80,7 @@ steps:
       ENV_SUFFIX=$(Build.BuildId)-$(System.JobAttempt)
       CLEANUP=$(SynchronousCleanup)
 
-      AzdVersion=$(AzdVersion)
+      AZD_VERSION=$(AzdVersion)
       AZD_DEBUG_FORCE_NO_TTY="1"
     subFolder: '$(Build.SourcesDirectory)/temp'
     runCmd: |

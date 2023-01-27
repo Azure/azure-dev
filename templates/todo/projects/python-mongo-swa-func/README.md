@@ -16,7 +16,7 @@ The following prerequisites are required to use this application. Please ensure 
 
 - [Azure Developer CLI](https://aka.ms/azd-install)
 - [Azure Functions Core Tools (4+)](https://docs.microsoft.com/azure/azure-functions/functions-run-local)
-- [Python (3.8+)](https://www.python.org/downloads/) - for the API backend
+- [Python (3.9+)](https://www.python.org/downloads/) - for the API backend
 
 ### Quickstart
 

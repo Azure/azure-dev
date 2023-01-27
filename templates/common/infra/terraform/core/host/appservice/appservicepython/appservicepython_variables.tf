@@ -47,5 +47,5 @@ variable "resource_token" {
 variable "python_version" {
   description = "the application stack python version to set for the app service."
   type        = string
-  default     = "3.8"
+  default     = "3.9"
 }

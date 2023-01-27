@@ -15,7 +15,7 @@ Let's jump in and get the ToDo app up and running in Azure. When you are finishe
 The following prerequisites are required to use this application. Please ensure that you have them all installed locally.
 
 - [Azure Developer CLI](https://aka.ms/azd-install)
-- [Python (3.8+)](https://www.python.org/downloads/) - for the API backend
+- [Python (3.9+)](https://www.python.org/downloads/) - for the API backend
 - [Node.js with npm (16.13.1+)](https://nodejs.org/) - for the Web frontend
 PLACEHOLDERIACTOOLS
 

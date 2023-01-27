@@ -44,7 +44,7 @@ type Environment struct {
 	Values map[string]string
 
 	// Config is environment specific config
-	Config config.Config
+	Config Config
 
 	// File is a path to the directory that backs this environment. If empty, the Environment
 	// will not be persisted when `Save` is called. This allows the zero value to be used
@@ -81,17 +81,13 @@ func FromRoot(root string) (*Environment, error) {
 		env.Values = e
 	}
 
-	cfgPath := filepath.Join(root, azdcontext.ConfigFileName)
-
-	cfgMgr := config.NewManager()
-	if cfg, err := cfgMgr.Load(cfgPath); errors.Is(err, os.ErrNotExist) {
-		env.Config = config.NewConfig(nil)
-	} else if err != nil {
-		return EmptyWithRoot(root), fmt.Errorf("loading config: %w", err)
-	} else {
-		env.Config = cfg
+	cfgMgr := NewConfigManagerFromRoot(root, config.NewManager())
+	cfg, err := cfgMgr.Load()
+	if err != nil {
+		return nil, err
 	}
 
+	env.Config = cfg
 	return env, nil
 }
 
@@ -158,11 +154,10 @@ func (e *Environment) Save() error {
 		return fmt.Errorf("saving .env: %w", err)
 	}
 
-	cfgMgr := config.NewManager()
-
-	err = cfgMgr.Save(e.Config, filepath.Join(e.Root, azdcontext.ConfigFileName))
+	cfgMgr := NewConfigManagerFromRoot(e.Root, config.NewManager())
+	err = cfgMgr.Save(e.Config)
 	if err != nil {
-		return fmt.Errorf("saving config: %w", err)
+		return err
 	}
 
 	return nil

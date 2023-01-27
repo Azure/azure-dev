@@ -32,6 +32,9 @@ type Action interface {
 	Run(ctx context.Context) (*ActionResult, error)
 }
 
+// A function that lazily returns the specified action type T
+type ActionInitializer[T Action] func() T
+
 func ToUxItem(actionResult *ActionResult, err error) ux.UxItem {
 	if err != nil {
 		return &ux.ActionResult{

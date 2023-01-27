@@ -28,25 +28,26 @@ func newDownCmd() *cobra.Command {
 }
 
 type downAction struct {
-	runner      middleware.MiddlewareContext
-	infraDelete infraDeleteAction
+	flags                  *downFlags
+	runner                 middleware.MiddlewareContext
+	infraDeleteInitializer actions.ActionInitializer[*infraDeleteAction]
 }
 
 func newDownAction(
 	runner middleware.MiddlewareContext,
 	downFlags *downFlags,
-	infraDelete *infraDeleteAction,
+	infraDeleteInitializer actions.ActionInitializer[*infraDeleteAction],
 ) actions.Action {
-	// Required to ensure the sub action flags are bound correctly to the actions
-	infraDelete.flags = &downFlags.infraDeleteFlags
-
 	return &downAction{
-		infraDelete: *infraDelete,
-		runner:      runner,
+		flags:                  downFlags,
+		infraDeleteInitializer: infraDeleteInitializer,
+		runner:                 runner,
 	}
 }
 
 func (a *downAction) Run(ctx context.Context) (*actions.ActionResult, error) {
+	infraDeleteAction := a.infraDeleteInitializer()
+	infraDeleteAction.flags = &a.flags.infraDeleteFlags
 	runOptions := &middleware.Options{Name: "infradelete"}
-	return a.runner.RunChildAction(ctx, runOptions, &a.infraDelete)
+	return a.runner.RunChildAction(ctx, runOptions, infraDeleteAction)
 }

@@ -30,21 +30,23 @@ import (
 
 // Registers a singleton action for the specified action name
 // This finds the action for a named instance and casts it to the correct type for injection
-func registerAction[T any](container *ioc.NestedContainer, actionName string) {
-	container.RegisterSingleton(func() (T, error) {
-		var zero T
-		var action actions.Action
-		err := container.ResolveNamed(actionName, &action)
-		if err != nil {
-			return zero, err
-		}
+func registerAction[T actions.Action](container *ioc.NestedContainer, actionName string) {
+	container.RegisterSingleton(func() actions.ActionInitializer[T] {
+		return func() T {
+			var zero T
+			var action actions.Action
+			err := container.ResolveNamed(actionName, &action)
+			if err != nil {
+				panic(fmt.Errorf("failed resolving action '%s', %w", actionName, err))
+			}
 
-		instance, ok := action.(T)
-		if !ok {
-			return zero, fmt.Errorf("failed converting action to '%T'", zero)
-		}
+			instance, ok := action.(T)
+			if !ok {
+				panic(fmt.Errorf("failed converting action to '%T'", zero))
+			}
 
-		return instance, nil
+			return instance
+		}
 	})
 }
 

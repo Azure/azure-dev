@@ -64,32 +64,29 @@ When no template is supplied, you can optionally select an Azure Developer CLI t
 }
 
 type upAction struct {
-	init        *initAction
-	infraCreate *infraCreateAction
-	deploy      *deployAction
-	console     input.Console
-	runner      middleware.MiddlewareContext
+	flags                        *upFlags
+	initActionInitializer        actions.ActionInitializer[*initAction]
+	infraCreateActionInitializer actions.ActionInitializer[*infraCreateAction]
+	deployActionInitializer      actions.ActionInitializer[*deployAction]
+	console                      input.Console
+	runner                       middleware.MiddlewareContext
 }
 
 func newUpAction(
 	flags *upFlags,
-	init *initAction,
-	infraCreate *infraCreateAction,
-	deploy *deployAction,
+	initActionInitializer actions.ActionInitializer[*initAction],
+	infraCreateActionInitializer actions.ActionInitializer[*infraCreateAction],
+	deployActionInitializer actions.ActionInitializer[*deployAction],
 	console input.Console,
 	runner middleware.MiddlewareContext,
 ) actions.Action {
-	// Required to ensure the sub action flags are bound correctly to the actions
-	init.flags = &flags.initFlags
-	infraCreate.flags = &flags.infraCreateFlags
-	deploy.flags = &flags.deployFlags
-
 	return &upAction{
-		init:        init,
-		infraCreate: infraCreate,
-		deploy:      deploy,
-		console:     console,
-		runner:      runner,
+		flags:                        flags,
+		initActionInitializer:        initActionInitializer,
+		infraCreateActionInitializer: infraCreateActionInitializer,
+		deployActionInitializer:      deployActionInitializer,
+		console:                      console,
+		runner:                       runner,
 	}
 }
 
@@ -99,8 +96,10 @@ func (u *upAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		return nil, fmt.Errorf("running init: %w", err)
 	}
 
+	infraCreateAction := u.infraCreateActionInitializer()
+	infraCreateAction.flags = &u.flags.infraCreateFlags
 	provisionOptions := &middleware.Options{Name: "infracreate", Aliases: []string{"provision"}}
-	_, err = u.runner.RunChildAction(ctx, provisionOptions, u.infraCreate)
+	_, err = u.runner.RunChildAction(ctx, provisionOptions, infraCreateAction)
 	if err != nil {
 		return nil, err
 	}
@@ -108,8 +107,10 @@ func (u *upAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	// Print an additional newline to separate provision from deploy
 	u.console.Message(ctx, "")
 
+	deployAction := u.deployActionInitializer()
+	deployAction.flags = &u.flags.deployFlags
 	deployOptions := &middleware.Options{Name: "deploy"}
-	deployResult, err := u.runner.RunChildAction(ctx, deployOptions, u.deploy)
+	deployResult, err := u.runner.RunChildAction(ctx, deployOptions, deployAction)
 	if err != nil {
 		return nil, err
 	}
@@ -118,8 +119,10 @@ func (u *upAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 }
 
 func (u *upAction) runInit(ctx context.Context) error {
+	initAction := u.initActionInitializer()
+	initAction.flags = &u.flags.initFlags
 	initOptions := &middleware.Options{Name: "init"}
-	_, err := u.runner.RunChildAction(ctx, initOptions, u.init)
+	_, err := u.runner.RunChildAction(ctx, initOptions, initAction)
 	var envInitError *environment.EnvironmentInitError
 	if errors.As(err, &envInitError) {
 		// We can ignore environment already initialized errors

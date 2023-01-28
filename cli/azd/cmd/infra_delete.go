@@ -43,9 +43,9 @@ func newInfraDeleteFlags(cmd *cobra.Command, global *internal.GlobalCommandOptio
 	return flags
 }
 
-func newInfraDeleteCmd() *cobra.Command {
+func newInfraDeleteCmd(commandName string) *cobra.Command {
 	return &cobra.Command{
-		Use:   "delete",
+		Use:   commandName,
 		Short: "Delete Azure resources for an app.",
 	}
 }

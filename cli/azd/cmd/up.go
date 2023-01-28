@@ -96,7 +96,11 @@ func (u *upAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		return nil, fmt.Errorf("running init: %w", err)
 	}
 
-	infraCreateAction := u.infraCreateActionInitializer()
+	infraCreateAction, err := u.infraCreateActionInitializer()
+	if err != nil {
+		return nil, err
+	}
+
 	infraCreateAction.flags = &u.flags.infraCreateFlags
 	provisionOptions := &middleware.Options{Name: "infracreate", Aliases: []string{"provision"}}
 	_, err = u.runner.RunChildAction(ctx, provisionOptions, infraCreateAction)
@@ -107,7 +111,11 @@ func (u *upAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	// Print an additional newline to separate provision from deploy
 	u.console.Message(ctx, "")
 
-	deployAction := u.deployActionInitializer()
+	deployAction, err := u.deployActionInitializer()
+	if err != nil {
+		return nil, err
+	}
+
 	deployAction.flags = &u.flags.deployFlags
 	deployOptions := &middleware.Options{Name: "deploy"}
 	deployResult, err := u.runner.RunChildAction(ctx, deployOptions, deployAction)
@@ -119,10 +127,14 @@ func (u *upAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 }
 
 func (u *upAction) runInit(ctx context.Context) error {
-	initAction := u.initActionInitializer()
+	initAction, err := u.initActionInitializer()
+	if err != nil {
+		return err
+	}
+
 	initAction.flags = &u.flags.initFlags
 	initOptions := &middleware.Options{Name: "init"}
-	_, err := u.runner.RunChildAction(ctx, initOptions, initAction)
+	_, err = u.runner.RunChildAction(ctx, initOptions, initAction)
 	var envInitError *environment.EnvironmentInitError
 	if errors.As(err, &envInitError) {
 		// We can ignore environment already initialized errors

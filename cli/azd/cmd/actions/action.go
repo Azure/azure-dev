@@ -33,7 +33,7 @@ type Action interface {
 }
 
 // A function that lazily returns the specified action type T
-type ActionInitializer[T Action] func() T
+type ActionInitializer[T Action] func() (T, error)
 
 func ToUxItem(actionResult *ActionResult, err error) ux.UxItem {
 	if err != nil {

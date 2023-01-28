@@ -176,27 +176,31 @@ func NewRootCmd(staticHelp bool, middlewareChain []*actions.MiddlewareRegistrati
 		ActionResolver: newLogoutAction,
 	})
 
-	root.Add("monitor", &actions.ActionDescriptorOptions{
-		Command:        newMonitorCmd(),
-		FlagsResolver:  newMonitorFlags,
-		ActionResolver: newMonitorAction,
-	})
-
-	root.
-		Add("down", &actions.ActionDescriptorOptions{
-			Command:        newDownCmd(),
-			FlagsResolver:  newDownFlags,
-			ActionResolver: newDownAction,
-			OutputFormats:  []output.Format{output.JsonFormat, output.NoneFormat},
-			DefaultFormat:  output.NoneFormat,
-		}).
-		UseMiddleware("hooks", middleware.NewHooksMiddleware)
-
 	root.Add("init", &actions.ActionDescriptorOptions{
 		Command:        newInitCmd(),
 		FlagsResolver:  newInitFlags,
 		ActionResolver: newInitAction,
 	}).AddFlagCompletion("template", templateNameCompletion)
+
+	root.
+		Add("provision", &actions.ActionDescriptorOptions{
+			Command:        newInfraCreateCmd("provision"),
+			FlagsResolver:  newInfraCreateFlags,
+			ActionResolver: newInfraCreateAction,
+			OutputFormats:  []output.Format{output.JsonFormat, output.NoneFormat},
+			DefaultFormat:  output.NoneFormat,
+		}).
+		UseMiddleware("hooks", middleware.NewHooksMiddleware)
+
+	root.
+		Add("deploy", &actions.ActionDescriptorOptions{
+			Command:        newDeployCmd(),
+			FlagsResolver:  newDeployFlags,
+			ActionResolver: newDeployAction,
+			OutputFormats:  []output.Format{output.JsonFormat, output.NoneFormat},
+			DefaultFormat:  output.NoneFormat,
+		}).
+		UseMiddleware("hooks", middleware.NewHooksMiddleware)
 
 	root.
 		Add("up", &actions.ActionDescriptorOptions{
@@ -209,21 +213,17 @@ func NewRootCmd(staticHelp bool, middlewareChain []*actions.MiddlewareRegistrati
 		AddFlagCompletion("template", templateNameCompletion).
 		UseMiddleware("hooks", middleware.NewHooksMiddleware)
 
-	root.
-		Add("provision", &actions.ActionDescriptorOptions{
-			Command:        newProvisionCmd(),
-			FlagsResolver:  newProvisionFlags,
-			ActionResolver: newInfraCreateAction,
-			OutputFormats:  []output.Format{output.JsonFormat, output.NoneFormat},
-			DefaultFormat:  output.NoneFormat,
-		}).
-		UseMiddleware("hooks", middleware.NewHooksMiddleware)
+	root.Add("monitor", &actions.ActionDescriptorOptions{
+		Command:        newMonitorCmd(),
+		FlagsResolver:  newMonitorFlags,
+		ActionResolver: newMonitorAction,
+	})
 
 	root.
-		Add("deploy", &actions.ActionDescriptorOptions{
-			Command:        newDeployCmd(),
-			FlagsResolver:  newDeployFlags,
-			ActionResolver: newDeployAction,
+		Add("down", &actions.ActionDescriptorOptions{
+			Command:        newInfraDeleteCmd("down"),
+			FlagsResolver:  newInfraDeleteFlags,
+			ActionResolver: newInfraDeleteAction,
 			OutputFormats:  []output.Format{output.JsonFormat, output.NoneFormat},
 			DefaultFormat:  output.NoneFormat,
 		}).

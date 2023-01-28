@@ -124,6 +124,22 @@ if ($jobVariables.USE_APIM -ne 'true') { # If USE_APIM is specified, avoid creat
     $matrix[$apimEnabledTestCase.TemplateName.Replace('/', '_') + '-apim-enabled'] = $apimEnabledTestCase
 }
 
+
+foreach ($jobName in $matrix.Keys) {
+    $keyNames = @()
+    $job = $matrix[$jobName]
+    foreach ($key in $job.Keys) {
+        $environmentVariableName = $key.ToUpper().Replace(".", "_")
+        $keyNames += $environmentVariableName
+    }
+
+    # "%0A" is the URL-encoded value of \n
+    # This escapes the newline and can be safely encoded in the JSON-string,
+    # while Azure DevOps task runner will be able to decode the value into \n
+    # which then can be used to import the list of variables we want.
+    $job.VARIABLE_LIST = $keyNames -join "%0A"
+}
+
 Write-Host "Matrix:"
 Write-Host ($matrix | ConvertTo-Json | Out-String)
 

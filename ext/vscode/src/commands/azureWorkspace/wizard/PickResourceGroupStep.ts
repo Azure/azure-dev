@@ -45,10 +45,9 @@ export class PickResourceGroupStep extends SkipIfOneStep<RevealResourceGroupWiza
             return showResults.resources
                 .filter(resource => resource.type.toLowerCase() === resourceGroupType.toLowerCase())
                 .map(resource => {
-                    const { subscription, resourceGroup } = parseAzureResourceId(resource.id);
+                    const { resourceGroup } = parseAzureResourceId(resource.id);
                     return {
                         label: resourceGroup,
-                        detail: subscription, // TODO: do we want to show subscription ID?
                         data: resource.id
                     };
                 });
@@ -68,10 +67,9 @@ export class PickResourceGroupStep extends SkipIfOneStep<RevealResourceGroupWiza
             }
 
             return Array.from(resourceGroupIds).map(resourceGroupId => {
-                const { subscription, resourceGroup } = parseAzureResourceId(resourceGroupId);
+                const { resourceGroup } = parseAzureResourceId(resourceGroupId);
                 return {
                     label: resourceGroup,
-                    detail: subscription, // TODO: do we want to show subscription ID?
                     data: resourceGroupId
                 };
             });

@@ -266,6 +266,11 @@
                     "group": "default@7"
                 },
                 {
+                    "command": "azure-dev.commands.cli.restore",
+                    "when": "viewItem == ms-azuretools.azure-dev.views.workspace.application",
+                    "group": "default@8"
+                },
+                {
                     "command": "azure-dev.commands.cli.env-new",
                     "when": "viewItem == ms-azuretools.azure-dev.views.workspace.environments",
                     "group": "default@8"

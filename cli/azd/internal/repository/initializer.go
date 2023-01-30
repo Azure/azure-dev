@@ -40,9 +40,16 @@ func NewInitializer(
 	}
 }
 
+type ProjectSpec struct {
+	Language  string
+	Host      string
+	Path      string
+	HackIsWeb bool
+}
+
 type InfraUseOptions struct {
 	Language string
-	Host     string
+	Projects []ProjectSpec
 }
 
 func LanguageDisplayOptions() map[string]string {
@@ -73,6 +80,32 @@ func (i *Initializer) InitializeInfra(ctx context.Context,
 	if err != nil {
 		return fmt.Errorf("copying core lib : %w", err)
 	}
+
+	prj := project.ProjectConfig{}
+	prj.Name = azdCtx.GetDefaultProjectName()
+	prj.Services = map[string]*project.ServiceConfig{}
+	for _, spec := range useOptions.Projects {
+		// TODO: This is a hack while prompts are not yet supported.
+		serviceName := "api"
+		if spec.HackIsWeb {
+			serviceName = "web"
+		}
+		rel, err := filepath.Rel(azdCtx.ProjectDirectory(), spec.Path)
+		if err != nil {
+			return fmt.Errorf("creating azure.yaml: %w", err)
+		}
+		prj.Services[serviceName] = &project.ServiceConfig{
+			RelativePath: rel,
+			Host:         spec.Host,
+			Language:     spec.Language,
+		}
+	}
+
+	err = project.Save(azdCtx.ProjectPath(), prj)
+	if err != nil {
+		return fmt.Errorf("creating azure.yaml: %w", err)
+	}
+
 	return nil
 }
 

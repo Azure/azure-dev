@@ -9,12 +9,14 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 
 	"github.com/MakeNowJust/heredoc/v2"
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/internal/apphint"
 	"github.com/azure/azure-dev/cli/azd/internal/repository"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
@@ -149,6 +151,10 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		return nil, err
 	}
 
+	if _, err := os.Stat(azdCtx.ProjectPath()); err == nil {
+		return nil, nil
+	}
+
 	// Command title
 	i.console.MessageUxItem(ctx, &ux.MessageTitle{
 		Title: "Initializing a new project (azd init)",
@@ -187,28 +193,60 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 			}
 		}
 
-		i.flags.template, err = templates.PromptInfraTemplate(ctx, i.console)
-
-		if err != nil {
-			return nil, err
+		appHint, err := apphint.Analyze(azdCtx.ProjectDirectory())
+		if err != nil || appHint == nil {
+			appHint, err = apphint.Analyze(filepath.Join(azdCtx.ProjectDirectory(), "src"))
 		}
 
-		displayOptions := repository.LanguageDisplayOptions()
-		langSelection := maps.Keys(displayOptions)
-		sort.Strings(langSelection)
-		langIndex, err := i.console.Select(ctx, input.ConsoleOptions{
-			Message: "What language do you work on?",
-			Options: langSelection,
-		})
+		useOptions := repository.InfraUseOptions{}
+		if err == nil && appHint != nil {
+			i.flags.template = templates.Template{
+				RepositoryPath: string(appHint.Type),
+			}
 
-		if err != nil {
-			return nil, err
+			// Pick one non-web language
+			for _, project := range appHint.Projects {
+				isWeb := true
+				if project.WebFrameworks == nil || len(project.WebFrameworks) == 0 {
+					useOptions.Language = project.Language
+					isWeb = false
+				}
+
+				useOptions.Projects = append(useOptions.Projects, repository.ProjectSpec{
+					Language:  project.Language,
+					Host:      "appservice",
+					Path:      project.Path,
+					HackIsWeb: isWeb,
+				})
+			}
+
+			appHintConfirm, err := i.console.Confirm(
+				ctx,
+				input.ConsoleOptions{
+					//nolint:lll
+					Message: fmt.Sprintf(
+						"We found that your existing application is described by '%s'. Is that right?",
+						appHint.DisplayName),
+				})
+
+			if err != nil {
+				return nil, err
+			}
+
+			if !appHintConfirm {
+				useOptions, err = i.explicitPrompt(ctx, useOptions)
+				if err != nil {
+					return nil, err
+				}
+			}
+		} else {
+			useOptions, err = i.explicitPrompt(ctx, useOptions)
+			if err != nil {
+				return nil, err
+			}
 		}
 
-		selectedDisplayOption := langSelection[langIndex]
-		language := displayOptions[selectedDisplayOption]
-
-		err = i.repoInitializer.InitializeInfra(ctx, azdCtx, i.flags.template.RepositoryPath, "", repository.InfraUseOptions{Language: language})
+		err = i.repoInitializer.InitializeInfra(ctx, azdCtx, i.flags.template.RepositoryPath, "", useOptions)
 		if err != nil {
 			return nil, fmt.Errorf("initializing infrastructure from template: %w", err)
 		}
@@ -311,4 +349,31 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 				output.WithLinkFormat("%s", azdTrustNotice)),
 		},
 	}, nil
+}
+
+func (i *initAction) explicitPrompt(
+	ctx context.Context,
+	useOptions repository.InfraUseOptions) (repository.InfraUseOptions, error) {
+	template, err := templates.PromptInfraTemplate(ctx, i.console)
+	if err != nil {
+		return useOptions, err
+	}
+	i.flags.template = template
+
+	displayOptions := repository.LanguageDisplayOptions()
+	langSelection := maps.Keys(displayOptions)
+	sort.Strings(langSelection)
+	langIndex, err := i.console.Select(ctx, input.ConsoleOptions{
+		Message: "What language do you work on?",
+		Options: langSelection,
+	})
+
+	if err != nil {
+		return useOptions, err
+	}
+
+	selectedDisplayOption := langSelection[langIndex]
+	useOptions.Language = displayOptions[selectedDisplayOption]
+
+	return useOptions, err
 }

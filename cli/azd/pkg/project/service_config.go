@@ -19,11 +19,11 @@ import (
 
 type ServiceConfig struct {
 	// Reference to the parent project configuration
-	Project *ProjectConfig `yaml:"omitempty"`
+	Project *ProjectConfig `yaml:"projectConfig,omitempty"`
 	// The friendly name/key of the project from the azure.yaml file
-	Name string
+	Name string `yaml:",omitempty"`
 	// The name used to override the default azure resource name
-	ResourceName ExpandableString `yaml:"resourceName"`
+	ResourceName ExpandableString `yaml:"resourceName,omitempty"`
 	// The relative path to the project folder from the project root
 	RelativePath string `yaml:"project"`
 	// The azure hosting model to use, ex) appservice, function, containerapp
@@ -31,13 +31,13 @@ type ServiceConfig struct {
 	// The programming language of the project
 	Language string `yaml:"language"`
 	// The output path for build artifacts
-	OutputPath string `yaml:"dist"`
+	OutputPath string `yaml:"dist,omitempty"`
 	// The infrastructure module path relative to the root infra folder to use for this project
-	Module string `yaml:"module"`
+	Module string `yaml:"module,omitempty"`
 	// The optional docker options
-	Docker DockerProjectOptions `yaml:"docker"`
+	Docker DockerProjectOptions `yaml:"docker,omitempty"`
 	// The infrastructure provisioning configuration
-	Infra provisioning.Options `yaml:"infra"`
+	Infra provisioning.Options `yaml:"infra,omitempty"`
 
 	handlers map[Event][]ServiceLifecycleEventHandlerFn
 }

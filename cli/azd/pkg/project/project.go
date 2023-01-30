@@ -62,28 +62,37 @@ func ReadProject(
 }
 
 func NewProject(path string, name string) (*Project, error) {
-	projectBytes, err := yaml.Marshal(ProjectConfig{
+	err := Save(path, ProjectConfig{
 		Name: name,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("marshaling project file to yaml: %w", err)
-	}
-
-	projectFileContents := bytes.NewBufferString(projectSchemaAnnotation + "\n\n")
-	_, err = projectFileContents.Write(projectBytes)
-	if err != nil {
-		return nil, fmt.Errorf("preparing new project file contents: %w", err)
-	}
-
-	err = os.WriteFile(path, projectFileContents.Bytes(), osutil.PermissionFile)
-	if err != nil {
-		return nil, fmt.Errorf("writing project file: %w", err)
+		return nil, err
 	}
 
 	return &Project{
 		Name:     name,
 		Services: make([]*Service, 0),
 	}, nil
+}
+
+func Save(path string, projectConfig ProjectConfig) error {
+	projectBytes, err := yaml.Marshal(projectConfig)
+	if err != nil {
+		return fmt.Errorf("marshaling project file to yaml: %w", err)
+	}
+
+	projectFileContents := bytes.NewBufferString(projectSchemaAnnotation + "\n\n")
+	_, err = projectFileContents.Write(projectBytes)
+	if err != nil {
+		return fmt.Errorf("preparing new project file contents: %w", err)
+	}
+
+	err = os.WriteFile(path, projectFileContents.Bytes(), osutil.PermissionFile)
+	if err != nil {
+		return fmt.Errorf("writing project file: %w", err)
+	}
+
+	return nil
 }
 
 // GetResourceGroupName gets the resource group name for the project.

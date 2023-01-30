@@ -30,8 +30,8 @@ type ProjectConfig struct {
 	Path              string                    `yaml:",omitempty"`
 	Metadata          *ProjectMetadata          `yaml:"metadata,omitempty"`
 	Services          map[string]*ServiceConfig `yaml:",omitempty"`
-	Infra             provisioning.Options      `yaml:"infra"`
-	Pipeline          PipelineOptions           `yaml:"pipeline"`
+	Infra             provisioning.Options      `yaml:"infra,omitempty"`
+	Pipeline          PipelineOptions           `yaml:"pipeline,omitempty"`
 
 	handlers map[Event][]ProjectLifecycleEventHandlerFn
 }

@@ -8,12 +8,14 @@ param administratorLogin string
 @secure()
 param administratorLoginPassword string
 param databaseNames array = []
-param enableFirewall bool = false
+param allowAzureIPsFirewall bool = false
+param allowAllIPsFirewall bool = false
+param allowedSingleIPs array = []
 
 // PostgreSQL version
 param version string
 
-resource postgresServer 'Microsoft.DBforPostgreSQL/flexibleServers@2022-01-20-preview' = {
+resource postgresServer 'Microsoft.DBforPostgreSQL/flexibleServers@2022-12-01' = {
   location: location
   tags: tags
   name: name
@@ -32,11 +34,30 @@ resource postgresServer 'Microsoft.DBforPostgreSQL/flexibleServers@2022-01-20-pr
     name: name
   }]
 
-  resource firewall 'firewallRules' = if (enableFirewall) {
-    name: 'postgresql-firewall'
+  resource firewall_all 'firewallRules' = if (allowAllIPsFirewall) {
+    name: 'allow-all-IPS'
     properties: {
         startIpAddress: '0.0.0.0'
         endIpAddress: '255.255.255.255'
     }
   }
+
+  resource firewall_azure 'firewallRules' = if (allowAzureIPsFirewall) {
+    name: 'allow-all-azure-internal-IPs'
+    properties: {
+        startIpAddress: '0.0.0.0'
+        endIpAddress: '0.0.0.0'
+    }
+  }
+
+  resource firewall_single 'firewallRules' = [for ip in allowedSingleIPs: {
+    name: 'allow-single-${replace(ip, '.', '')}'
+    properties: {
+        startIpAddress: ip
+        endIpAddress: ip
+    }
+  }]
+
 }
+
+output POSTGRES_DOMAIN_NAME string = postgresServer.properties.fullyQualifiedDomainName

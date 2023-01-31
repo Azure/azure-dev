@@ -143,13 +143,13 @@ func fetchLatestVersion(version chan<- semver.Version) {
 
 	// To avoid fetching the latest version of the CLI on every invocation, we cache the result for a period
 	// of time, in the user's home directory.
-	user, err := user.Current()
+	homeDir, err := os.UserHomeDir()
 	if err != nil {
-		log.Printf("could not determine current user: %v, skipping update check", err)
+		log.Printf("could not determine current home directory: %v, skipping update check", err)
 		return
 	}
 
-	cacheFilePath := filepath.Join(user.HomeDir, azdConfigDir, updateCheckCacheFileName)
+	cacheFilePath := filepath.Join(homeDir, azdConfigDir, updateCheckCacheFileName)
 	cacheFile, err := os.ReadFile(cacheFilePath)
 	if err != nil && !errors.Is(err, fs.ErrNotExist) {
 		log.Printf("error reading update cache file: %v, skipping update check", err)

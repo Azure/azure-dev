@@ -54,10 +54,11 @@ func newInfraCreateFlags(cmd *cobra.Command, global *internal.GlobalCommandOptio
 	return flags
 }
 
-func newInfraCreateCmd(commandName string) *cobra.Command {
+func newInfraCreateCmd(commandName string, aliases ...string) *cobra.Command {
 	return &cobra.Command{
-		Use:   commandName,
-		Short: "Create Azure resources for an app.",
+		Use:     commandName,
+		Short:   "Provision the Azure resources for an app.",
+		Aliases: aliases,
 	}
 }
 

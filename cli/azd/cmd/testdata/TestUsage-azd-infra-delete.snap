@@ -1,6 +1,9 @@
 Usage:
   azd infra delete [flags]
 
+Aliases:
+  delete, down
+
 Flags:
   -e, --environment string   The name of the environment to use.
       --force                Does not require confirmation before it deletes resources.

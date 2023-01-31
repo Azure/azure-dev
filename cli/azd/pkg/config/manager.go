@@ -8,7 +8,6 @@ import (
 	"io"
 	"log"
 	"os"
-	"os/user"
 	"path/filepath"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"

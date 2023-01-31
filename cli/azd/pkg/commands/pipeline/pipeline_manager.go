@@ -257,27 +257,28 @@ func (i *PipelineManager) pushGitRepo(ctx context.Context, currentBranch string)
 
 // Configure is the main function from the pipeline manager which takes care
 // of creating or setting up the git project, the ci pipeline and the Azure connection.
-func (manager *PipelineManager) Configure(ctx context.Context) error {
+func (manager *PipelineManager) Configure(ctx context.Context) (
+	repoLink string, pipelineLink string, err error) {
 	// check that scm and ci providers are set
 	validateDependencyInjection(ctx, manager)
 
 	// check all required tools are installed
 	requiredTools := manager.requiredTools(ctx)
 	if err := tools.EnsureInstalled(ctx, requiredTools...); err != nil {
-		return err
+		return repoLink, pipelineLink, err
 	}
 
 	// Figure out what is the expected provider to use for provisioning
 	prj, err := project.LoadProjectConfig(manager.AzdCtx.ProjectPath())
 	if err != nil {
-		return fmt.Errorf("finding provisioning provider: %w", err)
+		return repoLink, pipelineLink, fmt.Errorf("finding provisioning provider: %w", err)
 	}
 
 	// run pre-config validations. manager will check az cli is logged in and
 	// will invoke the per-provider validations.
 	updatedConfig, errorsFromPreConfig := manager.preConfigureCheck(ctx, prj.Infra)
 	if errorsFromPreConfig != nil {
-		return errorsFromPreConfig
+		return repoLink, pipelineLink, errorsFromPreConfig
 	}
 	if updatedConfig {
 		manager.console.Message(ctx, "")
@@ -286,7 +287,7 @@ func (manager *PipelineManager) Configure(ctx context.Context) error {
 	// Get git repo details
 	gitRepoInfo, err := manager.getGitRepoDetails(ctx)
 	if err != nil {
-		return fmt.Errorf("ensuring git remote: %w", err)
+		return repoLink, pipelineLink, fmt.Errorf("ensuring git remote: %w", err)
 	}
 
 	// *********** Create or update Azure Principal ***********
@@ -305,7 +306,7 @@ func (manager *PipelineManager) Configure(ctx context.Context) error {
 		manager.PipelineRoleName)
 	manager.console.StopSpinner(ctx, displayMsg, input.GetStepResultFormat(err))
 	if err != nil {
-		return fmt.Errorf("failed to create or update service principal: %w", err)
+		return repoLink, pipelineLink, fmt.Errorf("failed to create or update service principal: %w", err)
 	}
 
 	repoSlug := gitRepoInfo.owner + "/" + gitRepoInfo.repoName
@@ -323,13 +324,13 @@ func (manager *PipelineManager) Configure(ctx context.Context) error {
 		manager.console)
 	manager.console.StopSpinner(ctx, "", input.GetStepResultFormat(err))
 	if err != nil {
-		return err
+		return repoLink, pipelineLink, err
 	}
 
 	// config pipeline handles setting or creating the provider pipeline to be used
 	err = manager.CiProvider.configurePipeline(ctx, gitRepoInfo, prj.Infra)
 	if err != nil {
-		return err
+		return repoLink, pipelineLink, err
 	}
 
 	// The CI pipeline should be set-up and ready at this point.
@@ -339,12 +340,12 @@ func (manager *PipelineManager) Configure(ctx context.Context) error {
 		DefaultValue: true,
 	})
 	if err != nil {
-		return fmt.Errorf("prompting to push: %w", err)
+		return repoLink, pipelineLink, fmt.Errorf("prompting to push: %w", err)
 	}
 
 	currentBranch, err := git.NewGitCli(manager.commandRunner).GetCurrentBranch(ctx, manager.AzdCtx.ProjectDirectory())
 	if err != nil {
-		return fmt.Errorf("getting current branch: %w", err)
+		return repoLink, pipelineLink, fmt.Errorf("getting current branch: %w", err)
 	}
 
 	// scm provider can prevent from pushing changes and/or use the
@@ -358,7 +359,7 @@ func (manager *PipelineManager) Configure(ctx context.Context) error {
 			currentBranch,
 			manager.console)
 		if err != nil {
-			return fmt.Errorf("check git push prevent: %w", err)
+			return repoLink, pipelineLink, fmt.Errorf("check git push prevent: %w", err)
 		}
 		// revert user's choice when prevent git push returns true
 		doPush = !preventPush
@@ -367,7 +368,7 @@ func (manager *PipelineManager) Configure(ctx context.Context) error {
 	if doPush {
 		err = manager.pushGitRepo(ctx, currentBranch)
 		if err != nil {
-			return fmt.Errorf("git push: %w", err)
+			return repoLink, pipelineLink, fmt.Errorf("git push: %w", err)
 		}
 
 		gitRepoInfo.pushStatus = true
@@ -378,7 +379,7 @@ func (manager *PipelineManager) Configure(ctx context.Context) error {
 			currentBranch,
 			manager.console)
 		if err != nil {
-			return fmt.Errorf("post git push hook: %w", err)
+			return repoLink, pipelineLink, fmt.Errorf("post git push hook: %w", err)
 		}
 	} else {
 		manager.console.Message(ctx,
@@ -388,5 +389,5 @@ func (manager *PipelineManager) Configure(ctx context.Context) error {
 				currentBranch))
 	}
 
-	return nil
+	return repoLink, pipelineLink, nil
 }

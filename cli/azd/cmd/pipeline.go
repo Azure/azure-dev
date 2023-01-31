@@ -8,6 +8,7 @@ import (
 	"fmt"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/MakeNowJust/heredoc/v2"
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/commands/pipeline"
@@ -154,5 +155,19 @@ func (p *pipelineConfigAction) Run(ctx context.Context) (*actions.ActionResult, 
 	// set context for manager
 	p.manager.Environment = env
 
-	return nil, p.manager.Configure(ctx)
+	repoLink, pipelineLink, err := p.manager.Configure(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return &actions.ActionResult{
+		Message: &actions.ResultMessage{
+			Header: "Your azd pipeline has been configured!",
+			FollowUp: heredoc.Docf(`
+			Link to view your new repo: %s
+			Link to view your pipeline status: %s`,
+				output.WithLinkFormat("%s", repoLink),
+				output.WithLinkFormat("%s", pipelineLink)),
+		},
+	}, nil
 }

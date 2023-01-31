@@ -91,10 +91,11 @@ func Test_azdo_scm_provider_preConfigureCheck(t *testing.T) {
 		ctx := context.Background()
 
 		// act
-		e := provider.preConfigureCheck(ctx, testConsole, PipelineManagerArgs{}, provisioning.Options{})
+		updatedConfig, e := provider.preConfigureCheck(ctx, testConsole, PipelineManagerArgs{}, provisioning.Options{})
 
 		// assert
 		require.NoError(t, e)
+		require.False(t, updatedConfig)
 	})
 
 	t.Run("returns an error if no pat is provided", func(t *testing.T) {
@@ -110,12 +111,13 @@ func Test_azdo_scm_provider_preConfigureCheck(t *testing.T) {
 		ctx := context.Background()
 
 		// act
-		e := provider.preConfigureCheck(ctx, testConsole, PipelineManagerArgs{}, provisioning.Options{})
+		updatedConfig, e := provider.preConfigureCheck(ctx, testConsole, PipelineManagerArgs{}, provisioning.Options{})
 
 		// assert
 		require.Nil(t, e)
 		// PAT is not persisted to .env
 		require.EqualValues(t, "", provider.Env.Values[azdo.AzDoPatName])
+		require.False(t, updatedConfig)
 	})
 }
 
@@ -133,8 +135,9 @@ func Test_azdo_ci_provider_preConfigureCheck(t *testing.T) {
 			PipelineAuthTypeName: "",
 		}
 
-		err := provider.preConfigureCheck(ctx, testConsole, pipelineManagerArgs, provisioning.Options{})
+		updatedConfig, err := provider.preConfigureCheck(ctx, testConsole, pipelineManagerArgs, provisioning.Options{})
 		require.NoError(t, err)
+		require.False(t, updatedConfig)
 	})
 
 	t.Run("fails if auth type is set to federated", func(t *testing.T) {
@@ -146,8 +149,9 @@ func Test_azdo_ci_provider_preConfigureCheck(t *testing.T) {
 			PipelineAuthTypeName: string(AuthTypeFederated),
 		}
 
-		err := provider.preConfigureCheck(ctx, testConsole, pipelineManagerArgs, provisioning.Options{})
+		updatedConfig, err := provider.preConfigureCheck(ctx, testConsole, pipelineManagerArgs, provisioning.Options{})
 		require.Error(t, err)
+		require.False(t, updatedConfig)
 		require.True(t, errors.Is(err, ErrAuthNotSupported))
 	})
 }

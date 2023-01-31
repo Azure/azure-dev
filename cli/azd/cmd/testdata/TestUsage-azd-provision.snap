@@ -1,6 +1,9 @@
 Usage:
   azd provision [flags]
 
+Aliases:
+  provision, infra create
+
 Flags:
   -e, --environment string   The name of the environment to use.
   -h, --help                 Gets help for provision.

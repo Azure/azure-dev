@@ -11,7 +11,7 @@ const AzureResourcesExtensionId = 'ms-azuretools.vscode-azureresourcegroups';
 export async function getAzureResourceExtensionApi(): Promise<AzureResourcesApi> {
     return await getAzureExtensionApi<AzureResourcesApi>(
         AzureResourcesExtensionId,
-        '2',
+        '2', // API version ~2
         {
             extensionId: ext.azureDevExtensionId
         }

@@ -23,7 +23,7 @@
             ]
         },
         {
-            "name": "Run Extensions",
+            "name": "Run AZD + Azure Resources Extensions",
             "type": "extensionHost",
             "request": "launch",
             "args": [

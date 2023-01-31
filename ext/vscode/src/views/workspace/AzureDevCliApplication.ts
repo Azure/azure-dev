@@ -37,7 +37,7 @@ export class AzureDevCliApplication implements AzureDevCliModel {
     }
 
     async getTreeItem(): Promise<vscode.TreeItem> {
-        const results = await this.getResults();
+        const results = await this.results.getValue();
 
         const treeItem = new vscode.TreeItem(results?.name ?? this.resource.name, vscode.TreeItemCollapsibleState.Expanded);
 

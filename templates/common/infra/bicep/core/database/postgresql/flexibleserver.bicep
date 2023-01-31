@@ -16,7 +16,7 @@ param allowedSingleIPs array = []
 param version string
 
 // Latest official version 2022-12-01 does not have Bicep types available
-resource postgresServer 'Microsoft.DBforPostgreSQL/flexibleServers@2022-12-01-preview' = {
+resource postgresServer 'Microsoft.DBforPostgreSQL/flexibleServers@2022-12-01' = {
   location: location
   tags: tags
   name: name

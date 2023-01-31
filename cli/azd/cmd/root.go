@@ -155,11 +155,13 @@ func NewRootCmd(staticHelp bool, middlewareChain []*actions.MiddlewareRegistrati
 		DefaultFormat:  output.NoneFormat,
 	})
 
-	root.Add("restore", &actions.ActionDescriptorOptions{
-		Command:        restoreCmdDesign(),
-		FlagsResolver:  newRestoreFlags,
-		ActionResolver: newRestoreAction,
-	})
+	root.
+		Add("restore", &actions.ActionDescriptorOptions{
+			Command:        restoreCmdDesign(),
+			FlagsResolver:  newRestoreFlags,
+			ActionResolver: newRestoreAction,
+		}).
+		UseMiddleware("hooks", middleware.NewHooksMiddleware)
 
 	root.Add("login", &actions.ActionDescriptorOptions{
 		Command:        newLoginCmd(),
@@ -180,13 +182,15 @@ func NewRootCmd(staticHelp bool, middlewareChain []*actions.MiddlewareRegistrati
 		ActionResolver: newMonitorAction,
 	})
 
-	root.Add("down", &actions.ActionDescriptorOptions{
-		Command:        newDownCmd(),
-		FlagsResolver:  newDownFlags,
-		ActionResolver: newDownAction,
-		OutputFormats:  []output.Format{output.JsonFormat, output.NoneFormat},
-		DefaultFormat:  output.NoneFormat,
-	})
+	root.
+		Add("down", &actions.ActionDescriptorOptions{
+			Command:        newDownCmd(),
+			FlagsResolver:  newDownFlags,
+			ActionResolver: newDownAction,
+			OutputFormats:  []output.Format{output.JsonFormat, output.NoneFormat},
+			DefaultFormat:  output.NoneFormat,
+		}).
+		UseMiddleware("hooks", middleware.NewHooksMiddleware)
 
 	root.Add("init", &actions.ActionDescriptorOptions{
 		Command:        newInitCmd(),
@@ -194,29 +198,36 @@ func NewRootCmd(staticHelp bool, middlewareChain []*actions.MiddlewareRegistrati
 		ActionResolver: newInitAction,
 	}).AddFlagCompletion("template", templateNameCompletion)
 
-	root.Add("up", &actions.ActionDescriptorOptions{
-		Command:        newUpCmd(),
-		FlagsResolver:  newUpFlags,
-		ActionResolver: newUpAction,
-		OutputFormats:  []output.Format{output.JsonFormat, output.NoneFormat},
-		DefaultFormat:  output.NoneFormat,
-	}).AddFlagCompletion("template", templateNameCompletion)
+	root.
+		Add("up", &actions.ActionDescriptorOptions{
+			Command:        newUpCmd(),
+			FlagsResolver:  newUpFlags,
+			ActionResolver: newUpAction,
+			OutputFormats:  []output.Format{output.JsonFormat, output.NoneFormat},
+			DefaultFormat:  output.NoneFormat,
+		}).
+		AddFlagCompletion("template", templateNameCompletion).
+		UseMiddleware("hooks", middleware.NewHooksMiddleware)
 
-	root.Add("provision", &actions.ActionDescriptorOptions{
-		Command:        newProvisionCmd(),
-		FlagsResolver:  newProvisionFlags,
-		ActionResolver: newInfraCreateAction,
-		OutputFormats:  []output.Format{output.JsonFormat, output.NoneFormat},
-		DefaultFormat:  output.NoneFormat,
-	})
+	root.
+		Add("provision", &actions.ActionDescriptorOptions{
+			Command:        newProvisionCmd(),
+			FlagsResolver:  newProvisionFlags,
+			ActionResolver: newInfraCreateAction,
+			OutputFormats:  []output.Format{output.JsonFormat, output.NoneFormat},
+			DefaultFormat:  output.NoneFormat,
+		}).
+		UseMiddleware("hooks", middleware.NewHooksMiddleware)
 
-	root.Add("deploy", &actions.ActionDescriptorOptions{
-		Command:        newDeployCmd(),
-		FlagsResolver:  newDeployFlags,
-		ActionResolver: newDeployAction,
-		OutputFormats:  []output.Format{output.JsonFormat, output.NoneFormat},
-		DefaultFormat:  output.NoneFormat,
-	})
+	root.
+		Add("deploy", &actions.ActionDescriptorOptions{
+			Command:        newDeployCmd(),
+			FlagsResolver:  newDeployFlags,
+			ActionResolver: newDeployAction,
+			OutputFormats:  []output.Format{output.JsonFormat, output.NoneFormat},
+			DefaultFormat:  output.NoneFormat,
+		}).
+		UseMiddleware("hooks", middleware.NewHooksMiddleware)
 
 	// Register any global middleware defined by the caller
 	if len(middlewareChain) > 0 {

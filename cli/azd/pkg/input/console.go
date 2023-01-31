@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"os"
 	"time"
 
 	"github.com/AlecAivazis/survey/v2"
@@ -157,14 +158,18 @@ func (c *AskerConsole) ShowSpinner(ctx context.Context, title string, format Spi
 	if c.spinner != nil {
 		c.spinner.Stop()
 	}
-	c.spinner, _ = yacspin.New(yacspin.Config{
+	spinnerConfig := yacspin.Config{
 		Frequency:       200 * time.Millisecond,
 		Writer:          c.writer,
 		Suffix:          " ",
 		SuffixAutoColon: true,
 		Message:         title,
 		CharSet:         c.getCharset(format),
-	})
+	}
+	if os.Getenv("AZD_DEBUG_FORCE_NO_TTY") == "1" {
+		spinnerConfig.TerminalMode = yacspin.ForceNoTTYMode | yacspin.ForceDumbTerminalMode
+	}
+	c.spinner, _ = yacspin.New(spinnerConfig)
 
 	_ = c.spinner.Start()
 }

@@ -129,7 +129,7 @@ func (d *deployAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		return nil, fmt.Errorf("loading environment: %w", err)
 	}
 
-	projConfig, err := project.LoadProjectConfig(azdCtx.ProjectPath())
+	projConfig, err := project.GetCurrent()
 	if err != nil {
 		return nil, fmt.Errorf("loading project: %w", err)
 	}

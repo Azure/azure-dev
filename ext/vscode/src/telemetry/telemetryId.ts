@@ -45,6 +45,9 @@ export enum TelemetryId {
 
     // Reported when 'init' CLI command is invoked.
     InitCli = 'azure-dev.commands.cli.init.task',
+
+    // Reported when 'env new' CLI command is invoked.
+    EnvNewCli = 'azure-dev.commands.cli.env-new.task',
     
     // Reported when the product evaluates whether to prompt the user for a survey.
     // We capture 

@@ -37,6 +37,7 @@ export async function up(context: IActionContext, selectedItem?: vscode.Uri | Tr
 
     // Don't wait
     void executeAsTask(command.build(), getAzDevTerminalTitle(), {
+        focus: true,
         alwaysRunNew: true,
         cwd: workingDir.fsPath,
         env: azureCli.env

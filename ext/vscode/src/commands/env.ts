@@ -7,11 +7,12 @@ import { localize } from '../localize';
 import { createAzureDevCli } from '../utils/azureDevCli';
 import { quickPickWorkspaceFolder } from '../utils/quickPickWorkspaceFolder';
 import { EnvironmentInfo, getAzDevTerminalTitle, getEnvironments } from './cmdUtil';
-import { executeInTerminal } from '../utils/executeInTerminal';
+import { executeAsTask } from '../utils/executeAsTask';
 import { spawnAsync } from '../utils/process';
 import { isTreeViewModel, TreeViewModel } from '../utils/isTreeViewModel';
 import { AzureDevCliEnvironments } from '../views/workspace/AzureDevCliEnvironments';
 import { AzureDevCliEnvironment } from '../views/workspace/AzureDevCliEnvironment';
+import { TelemetryId } from '../telemetry/telemetryId';
 
 export async function editEnvironment(context: IActionContext, selectedEnvironment?: TreeViewModel): Promise<void> {
     if (selectedEnvironment) {
@@ -136,7 +137,8 @@ export async function selectEnvironment(context: IActionContext, selectedItem?: 
 }
 
 export async function newEnvironment(context: IActionContext, selectedItem?: vscode.Uri | TreeViewModel): Promise<void> {
-    const selectedFile = isTreeViewModel(selectedItem) ? selectedItem.unwrap<AzureDevCliEnvironments>().context.configurationFile : selectedItem;
+    const environmentsNode = isTreeViewModel(selectedItem) ? selectedItem.unwrap<AzureDevCliEnvironments>() : undefined;
+    const selectedFile = environmentsNode?.context.configurationFile ?? selectedItem as vscode.Uri;
     let folder: vscode.WorkspaceFolder | undefined = (selectedFile ? vscode.workspace.getWorkspaceFolder(selectedFile) : undefined);
     if (!folder) {
         folder = await quickPickWorkspaceFolder(context, localize('azure-dev.commands.util.needWorkspaceFolder', "To run '{0}' command you must first open a folder or workspace in VS Code", 'env new'));
@@ -144,15 +146,17 @@ export async function newEnvironment(context: IActionContext, selectedItem?: vsc
 
     const azureCli = await createAzureDevCli(context);
     const command = azureCli.commandBuilder.withArg('env').withArg('new');
-    const options: vscode.TerminalOptions = {
-        name: getAzDevTerminalTitle(),
-        cwd: folder.uri,
+    
+    void executeAsTask(command.build(), getAzDevTerminalTitle(), {
+        focus: true,
+        alwaysRunNew: true,
+        cwd: folder.uri.fsPath,
         env: azureCli.env
-    };
-
-    void executeInTerminal(command.build(), options);
-
-    // NOTE: We can't refresh the tree view because we don't know when creation is complete.
+    }, TelemetryId.EnvNewCli).then(() => {
+        if (environmentsNode) {
+            environmentsNode.context.refreshEnvironments();
+        }
+    });
 }
 
 export async function refreshEnvironment(context: IActionContext, selectedItem?: vscode.Uri | TreeViewModel): Promise<void> {

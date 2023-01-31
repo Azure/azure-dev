@@ -122,7 +122,7 @@ We plan to improve this behavior with [[#1126]](https://github.com/Azure/azure-d
 
 - [[#979]](https://github.com/Azure/azure-dev/pull/979) Fix provisioning template with non string outputs.
 
-## 0.3.0-beta.4 (2022-10-25) **DEPRECATED**
+## 0.3.0-beta.4 (2022-10-25 **DEPRECATED**)
 
 ### Bugs Fixed
 

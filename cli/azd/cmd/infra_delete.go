@@ -80,7 +80,7 @@ func (a *infraDeleteAction) Run(ctx context.Context) (*actions.ActionResult, err
 		return nil, fmt.Errorf("loading environment: %w", err)
 	}
 
-	prj, err := project.LoadProjectConfig(a.azdCtx.ProjectPath())
+	prj, err := project.GetCurrent()
 	if err != nil {
 		return nil, fmt.Errorf("loading project: %w", err)
 	}

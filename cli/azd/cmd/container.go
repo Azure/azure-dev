@@ -13,11 +13,13 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
+	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/pkg/templates"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/git"
@@ -130,6 +132,65 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 
 		return writer
 	})
+
+	container.RegisterSingleton(func() flagsWithEnv {
+		// Get the current cmd flags for the executing command
+		var currentFlags flags
+		err := container.Resolve(&currentFlags)
+		if err != nil {
+			return &envFlag{}
+		}
+
+		// Attempt to cast to flags with env
+		flagsWithEnv, ok := currentFlags.(flagsWithEnv)
+		if !ok {
+			return &envFlag{}
+		}
+
+		return flagsWithEnv
+	})
+
+	container.RegisterSingleton(
+		func(azdContext *azdcontext.AzdContext, envFlags flagsWithEnv) (*environment.Environment, error) {
+			if azdContext == nil {
+				return nil, azdcontext.ErrNoProject
+			}
+
+			environmentName := envFlags.EnvironmentName()
+			var err error
+
+			if environmentName == "" {
+				defaultEnvName, err := azdContext.GetDefaultEnvironmentName()
+				if err != nil {
+					return nil, err
+				}
+
+				environmentName = defaultEnvName
+			}
+
+			env, err := environment.GetEnvironment(azdContext, environmentName)
+			if err != nil {
+				return nil, err
+			}
+
+			return env, nil
+		},
+	)
+
+	container.RegisterSingleton(
+		func(azdContext *azdcontext.AzdContext) (*project.ProjectConfig, error) {
+			if azdContext == nil {
+				return nil, azdcontext.ErrNoProject
+			}
+
+			projectConfig, err := project.LoadProjectConfig(azdContext.ProjectPath())
+			if err != nil {
+				return nil, err
+			}
+
+			return projectConfig, nil
+		},
+	)
 
 	container.RegisterSingleton(repository.NewInitializer)
 	container.RegisterSingleton(config.NewUserConfigManager)

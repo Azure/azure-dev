@@ -7,6 +7,14 @@ steps:
     inputs:
       version: ${{ parameters.GoVersion }}
 
+  - pwsh: |
+      $goBin = go env GOBIN
+      if (!$goBin) {
+        $goBin = Join-Path (go env GOPATH) "bin"
+      }
+      Write-Host "##vso[task.prependpath]$goBin"
+    displayName: Add Go bin to PATH
+
   - pwsh: go install gotest.tools/gotestsum@latest
     condition: ${{ parameters.Condition }}
     displayName: Install gotest

@@ -1,17 +1,16 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
-import { getAzureExtensionApi } from '@microsoft/vscode-azext-utils';
-import { AzureResourcesApi } from '@microsoft/vscode-azext-utils/hostapi.v2';
+import { AzureResourcesExtensionApi, getAzureResourcesExtensionApi } from '@microsoft/vscode-azureresources-api';
 import * as vscode from 'vscode';
 import ext from '../ext';
 
 const AzureResourcesExtensionId = 'ms-azuretools.vscode-azureresourcegroups';
 
-export async function getAzureResourceExtensionApi(): Promise<AzureResourcesApi> {
-    return await getAzureExtensionApi<AzureResourcesApi>(
-        AzureResourcesExtensionId,
-        '2', // API version ~2
+export async function getAzureResourceExtensionApi(): Promise<AzureResourcesExtensionApi> {
+    return await getAzureResourcesExtensionApi(
+        ext.context,
+        '2.0.0', // API version 2.0.0
         {
             extensionId: ext.azureDevExtensionId
         }

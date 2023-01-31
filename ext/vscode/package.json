@@ -411,6 +411,7 @@
     },
     "dependencies": {
         "@microsoft/vscode-azext-utils": "~0.4",
+        "@microsoft/vscode-azureresources-api": "~2",
         "dayjs": "~1.11",
         "dotenv": "~16.0",
         "rxjs": "~7.6.0"

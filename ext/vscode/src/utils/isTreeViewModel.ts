@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
-import { isWrapper, Wrapper } from '@microsoft/vscode-azext-utils';
+import { isWrapper, Wrapper } from '@microsoft/vscode-azureresources-api';
 import * as vscode from 'vscode';
 
 export type TreeViewModel = Wrapper;

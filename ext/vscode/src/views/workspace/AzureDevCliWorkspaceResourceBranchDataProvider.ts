@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
-import { BranchDataProvider, WorkspaceResource } from '@microsoft/vscode-azext-utils/hostapi.v2';
+import { BranchDataProvider, WorkspaceResource } from '@microsoft/vscode-azureresources-api';
 import * as vscode from 'vscode';
 import { ProviderResult, TreeItem } from 'vscode';
 import { AzureDevEnvListProvider, WorkspaceAzureDevEnvListProvider } from '../../services/AzureDevEnvListProvider';

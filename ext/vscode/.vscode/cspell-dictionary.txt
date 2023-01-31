@@ -3,3 +3,4 @@ pseudoterminal
 randomizer
 hostapi
 azureresourcegroups
+azureresources

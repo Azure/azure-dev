@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
-import { WorkspaceResource, WorkspaceResourceProvider } from '@microsoft/vscode-azext-utils/hostapi.v2';
+import { WorkspaceResource, WorkspaceResourceProvider } from '@microsoft/vscode-azureresources-api';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { Subscription } from 'rxjs';

@@ -14,7 +14,7 @@ type Lazy[T comparable] struct {
 	mutex       sync.Mutex
 }
 
-// Creates a new Layz[T]
+// Creates a new Lazy[T]
 func NewLazy[T comparable](initializerFn InitializerFn[T]) *Lazy[T] {
 	return &Lazy[T]{
 		initializer: initializerFn,
@@ -32,12 +32,9 @@ func (l *Lazy[T]) GetValue() (T, error) {
 	if !l.initialized {
 		value, err := l.initializer()
 		if err == nil {
-			l.value = value
-			l.error = nil
-			l.initialized = true
+			l.SetValue(value)
 		} else {
 			l.error = err
-			l.initialized = false
 		}
 	}
 

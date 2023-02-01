@@ -7,11 +7,12 @@ type InitializerFn[T comparable] func() (T, error)
 // A data structure that will lazily load an instance of the underlying type
 // from the specified initializer
 type Lazy[T comparable] struct {
-	initialized bool
-	initializer InitializerFn[T]
-	value       T
-	error       error
-	mutex       sync.Mutex
+	initialized  bool
+	initializer  InitializerFn[T]
+	value        T
+	error        error
+	getValueLock sync.Mutex
+	setValueLock sync.Mutex
 }
 
 // Creates a new Lazy[T]
@@ -26,8 +27,8 @@ func NewLazy[T comparable](initializerFn InitializerFn[T]) *Lazy[T] {
 func (l *Lazy[T]) GetValue() (T, error) {
 	// Only allow a single caller to get a value at one time.
 	// Additional calls will block until current call is complete
-	l.mutex.Lock()
-	defer l.mutex.Unlock()
+	l.getValueLock.Lock()
+	defer l.getValueLock.Unlock()
 
 	if !l.initialized {
 		value, err := l.initializer()
@@ -43,6 +44,11 @@ func (l *Lazy[T]) GetValue() (T, error) {
 
 // Sets a value on the lazy type
 func (l *Lazy[T]) SetValue(value T) {
+	// Only allow a single caller to get a value at one time.
+	// Additional calls will block until current call is complete
+	l.setValueLock.Lock()
+	defer l.setValueLock.Unlock()
+
 	l.value = value
 	l.error = nil
 	l.initialized = true

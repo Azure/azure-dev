@@ -33,6 +33,7 @@
         "onCommand:azure-dev.commands.cli.env-new",
         "onCommand:azure-dev.commands.cli.env-refresh",
         "onCommand:azure-dev.commands.cli.pipeline-config",
+        "onCommand:azure-dev.commands.cli.install",
         "onCommand:azure-dev.commands.getDotEnvFilePath",
         "onTaskType:dotenv"
     ],
@@ -102,6 +103,11 @@
                 "category": "%azure-dev.commands_category%",
                 "command": "azure-dev.commands.cli.pipeline-config",
                 "title": "%azure-dev.commands.cli.pipeline-config.title%"
+            },
+            {
+                "category": "%azure-dev.commands_category%",
+                "command": "azure-dev.commands.cli.install",
+                "title": "%azure-dev.commands.cli.install.title%"
             },
             {
                 "category": "%azure-dev.commands_category%",

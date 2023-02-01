@@ -100,6 +100,20 @@ ignoreWords:
     - preinline
     - precommand
     - predeploy
+    - postdeploy
+    - prerestore
+    - postrestore
+    - postpackage
+    - preprovision
+    - postprovision
+    - preinfracreate
+    - postinfracreate
+    - preinfradelete
+    - postinfradelete
+    - predown
+    - postdown
+    - preup
+    - postup
     - preinteractive
     - prealias
     - provs

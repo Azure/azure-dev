@@ -126,13 +126,19 @@ function normalize(env: NodeJS.ProcessEnv): Environment {
 }
 
 function azdNotInstalledMsg(): string {
-    return localize("azure-dev.utils.azd.notInstalled", "Azure Developer CLI is not installed. Visit {0} to get it.", AzdInstallationUrl);
+    return localize("azure-dev.utils.azd.notInstalled", "Azure Developer CLI is not installed. Would you like to install it?.");
 }
 
 function azdNotInstalledUserChoices(): AzExtErrorButton[] {
     const choices: AzExtErrorButton[] = [
         {
-            "title": localize("azure-dev.utils.azd.goToInstallUrl", "Go to {0}", AzdInstallationUrl),
+            "title": localize("azure-dev.utils.azd.installNow", "Install"),
+            "callback": async () => {
+                await vscode.commands.executeCommand("azure-dev.commands.cli.install", /* shouldPrompt: */ false);
+            }
+        },
+        {
+            "title": localize("azure-dev.utils.azd.goToInstallUrl", "Learn More"),
             "callback": async () => {
                 await vscode.env.openExternal(vscode.Uri.parse(AzdInstallationUrl));
             }

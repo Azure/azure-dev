@@ -97,11 +97,6 @@ func (m *monitorAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 		return nil, fmt.Errorf("loading environment: %w", err)
 	}
 
-	account, err := m.azCli.GetAccount(ctx, env.GetSubscriptionId())
-	if err != nil {
-		return nil, fmt.Errorf("getting tenant id for subscription: %w", err)
-	}
-
 	resourceManager := infra.NewAzureResourceManager(m.azCli)
 	resourceGroups, err := resourceManager.GetResourceGroupsForEnvironment(ctx, env)
 	if err != nil {
@@ -164,19 +159,19 @@ func (m *monitorAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 	for _, insightsResource := range insightsResources {
 		if m.flags.monitorLive {
 			openWithDefaultBrowser(
-				fmt.Sprintf("https://app.azure.com/%s%s/quickPulse", account.TenantId, insightsResource.Id),
+				fmt.Sprintf("https://app.azure.com/%s/quickPulse", insightsResource.Id),
 			)
 		}
 
 		if m.flags.monitorLogs {
-			openWithDefaultBrowser(fmt.Sprintf("https://app.azure.com/%s%s/logs", account.TenantId, insightsResource.Id))
+			openWithDefaultBrowser(fmt.Sprintf("https://app.azure.com/%s/logs", insightsResource.Id))
 		}
 	}
 
 	for _, portalResource := range portalResources {
 		if m.flags.monitorOverview {
 			openWithDefaultBrowser(
-				fmt.Sprintf("https://portal.azure.com/#@%s/dashboard/arm%s", account.TenantId, portalResource.Id),
+				fmt.Sprintf("https://portal.azure.com/#/dashboard/arm%s", portalResource.Id),
 			)
 		}
 	}

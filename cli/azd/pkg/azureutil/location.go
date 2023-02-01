@@ -43,7 +43,8 @@ func PromptLocationWithFilter(
 	azCli azcli.AzCli,
 	filter func(azcli.AzCliLocation) bool,
 ) (string, error) {
-	accountManager, err := account.NewManager(config.NewManager(), azCli)
+	//TODO: Update
+	accountManager, err := account.NewManager(config.NewManager(), azcli.NewSubscriptionsService(nil, nil))
 	if err != nil {
 		return "", fmt.Errorf("failed creating account manager: %w", err)
 	}

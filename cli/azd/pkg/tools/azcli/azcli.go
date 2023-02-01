@@ -39,8 +39,6 @@ type AzCli interface {
 
 	LoginAcr(ctx context.Context, commandRunner exec.CommandRunner, subscriptionId string, loginServer string) error
 	GetContainerRegistries(ctx context.Context, subscriptionId string) ([]*armcontainerregistry.Registry, error)
-	ListAccounts(ctx context.Context) ([]*AzCliSubscriptionInfo, error)
-	GetAccount(ctx context.Context, subscriptionId string) (*AzCliSubscriptionInfo, error)
 	GetSubscriptionDeployment(
 		ctx context.Context,
 		subscriptionId string,
@@ -125,8 +123,6 @@ type AzCli interface {
 		resourceGroupName string,
 		deploymentName string,
 	) ([]*armresources.DeploymentOperation, error)
-	// ListAccountLocations lists the physical locations in Azure.
-	ListAccountLocations(ctx context.Context, subscriptionId string) ([]AzCliLocation, error)
 	// CreateOrUpdateServicePrincipal creates a service principal using a given name and returns a JSON object which
 	// may be used by tools which understand the `AZURE_CREDENTIALS` format (i.e. the `sdk-auth` format). The service
 	// principal is assigned a given role. If an existing principal exists with the given name,
@@ -339,4 +335,10 @@ func (cli *azCli) createDefaultClientOptionsBuilder(ctx context.Context) *azsdk.
 	return azsdk.NewClientOptionsBuilder().
 		WithTransport(httputil.GetHttpClient(ctx)).
 		WithPerCallPolicy(azsdk.NewUserAgentPolicy(cli.UserAgent()))
+}
+
+func clientOptionsBuilder(httpClient httputil.HttpClient, userAgent string) *azsdk.ClientOptionsBuilder {
+	return azsdk.NewClientOptionsBuilder().
+		WithTransport(httpClient).
+		WithPerCallPolicy(azsdk.NewUserAgentPolicy(userAgent))
 }

@@ -290,7 +290,8 @@ func ensureEnvironmentInitialized(
 }
 
 func getSubscriptionOptions(ctx context.Context, azCli azcli.AzCli) ([]string, any, error) {
-	accountManager, err := account.NewManager(config.GetConfigManager(ctx), azCli)
+	//TODO: UPDATE
+	accountManager, err := account.NewManager(config.GetConfigManager(ctx), azcli.NewSubscriptionsService(nil, nil))
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed creating account manager: %w", err)
 	}

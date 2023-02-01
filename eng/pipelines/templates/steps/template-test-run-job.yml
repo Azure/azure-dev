@@ -35,7 +35,7 @@ steps:
     Write-Host "##vso[task.setvariable variable=EnvPrefixName]$envPrefixName"
 
     $SynchronousCleanup = 'true'
-    if ('$(Build.Reason)' -eq 'PullRequest') {
+    if ('$(Build.Reason)' -eq 'PullRequest' || $(CleanupHoursDelay) -ne '0') {
       $SynchronousCleanup = 'false'
     }
     Write-Host "##vso[task.setvariable variable=SynchronousCleanup]$SynchronousCleanup"

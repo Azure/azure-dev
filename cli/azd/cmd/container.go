@@ -28,24 +28,42 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// Registers a singleton action initializer for the specified action name
+// This returns a function that when called resolves the action
+// This is to ensure pre-conditions are met for composite actions like 'up'
+// This finds the action for a named instance and casts it to the correct type for injection
+func registerAction[T actions.Action](container *ioc.NestedContainer, actionName string) {
+	container.RegisterSingleton(func() (T, error) {
+		return resolveAction[T](container, actionName)
+	})
+}
+
 // Registers a singleton action for the specified action name
 // This finds the action for a named instance and casts it to the correct type for injection
-func registerAction[T any](container *ioc.NestedContainer, actionName string) {
-	container.RegisterSingleton(func() (T, error) {
-		var zero T
-		var action actions.Action
-		err := container.ResolveNamed(actionName, &action)
-		if err != nil {
-			return zero, err
+func registerActionInitializer[T actions.Action](container *ioc.NestedContainer, actionName string) {
+	container.RegisterSingleton(func() actions.ActionInitializer[T] {
+		return func() (T, error) {
+			return resolveAction[T](container, actionName)
 		}
-
-		instance, ok := action.(T)
-		if !ok {
-			return zero, fmt.Errorf("failed converting action to '%T'", zero)
-		}
-
-		return instance, nil
 	})
+}
+
+// Resolves the action instance for the specified action name
+// This finds the action for a named instance and casts it to the correct type for injection
+func resolveAction[T actions.Action](container *ioc.NestedContainer, actionName string) (T, error) {
+	var zero T
+	var action actions.Action
+	err := container.ResolveNamed(actionName, &action)
+	if err != nil {
+		return zero, err
+	}
+
+	instance, ok := action.(T)
+	if !ok {
+		return zero, fmt.Errorf("failed converting action to '%T'", zero)
+	}
+
+	return instance, nil
 }
 
 // Registers common Azd dependencies
@@ -191,13 +209,11 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	container.RegisterSingleton(auth.NewManager)
 	container.RegisterSingleton(account.NewManager)
 
-	container.RegisterSingleton(newInitAction)
-	container.RegisterSingleton(newDeployAction)
-	container.RegisterSingleton(newInfraCreateAction)
-
-	// Required for nested actions called from composite actions like 'up' and 'down'
-	registerAction[*initAction](container, "azd-init-action")
-	registerAction[*deployAction](container, "azd-deploy-action")
+	// Required for nested actions called from composite actions like 'up'
+	registerActionInitializer[*initAction](container, "azd-init-action")
+	registerActionInitializer[*deployAction](container, "azd-deploy-action")
+	registerActionInitializer[*infraCreateAction](container, "azd-infra-create-action")
+	// Required for alias actions like 'provision' and 'down'
 	registerAction[*infraCreateAction](container, "azd-infra-create-action")
 	registerAction[*infraDeleteAction](container, "azd-infra-delete-action")
 }

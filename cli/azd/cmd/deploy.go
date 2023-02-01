@@ -84,6 +84,7 @@ After the deployment is complete, the endpoint is printed. To start the service,
 
 type deployAction struct {
 	flags         *deployFlags
+	azdCtx        *azdcontext.AzdContext
 	azCli         azcli.AzCli
 	formatter     output.Formatter
 	writer        io.Writer
@@ -93,6 +94,7 @@ type deployAction struct {
 
 func newDeployAction(
 	flags *deployFlags,
+	azdCtx *azdcontext.AzdContext,
 	azCli azcli.AzCli,
 	commandRunner exec.CommandRunner,
 	console input.Console,
@@ -101,6 +103,7 @@ func newDeployAction(
 ) actions.Action {
 	return &deployAction{
 		flags:         flags,
+		azdCtx:        azdCtx,
 		azCli:         azCli,
 		formatter:     formatter,
 		writer:        writer,
@@ -115,16 +118,7 @@ type DeploymentResult struct {
 }
 
 func (d *deployAction) Run(ctx context.Context) (*actions.ActionResult, error) {
-	// We call `NewAzdContext` here instead of having the value injected because we want to delay the
-	// walk for the context until this command has started to execute (for example, in the case of `up`,
-	// the context is not created until the init action actually runs, which is after the infraCreateAction
-	// object is created.
-	azdCtx, err := azdcontext.NewAzdContext()
-	if err != nil {
-		return nil, err
-	}
-
-	env, err := loadOrInitEnvironment(ctx, &d.flags.environmentName, azdCtx, d.console, d.azCli)
+	env, err := loadOrInitEnvironment(ctx, &d.flags.environmentName, d.azdCtx, d.console, d.azCli)
 	if err != nil {
 		return nil, fmt.Errorf("loading environment: %w", err)
 	}
@@ -175,7 +169,7 @@ func (d *deployAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 
 		stepMessage := fmt.Sprintf("Deploying service %s", svc.Config.Name)
 		d.console.ShowSpinner(ctx, stepMessage, input.Step)
-		result, progress := svc.Deploy(ctx, azdCtx)
+		result, progress := svc.Deploy(ctx, d.azdCtx)
 
 		// Report any progress to logs only. Changes for the console are managed by the console object.
 		// This routine is required to drain all the string messages sent by the `progress`.

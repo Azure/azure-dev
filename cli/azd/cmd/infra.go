@@ -32,6 +32,8 @@ func infraActions(root *actions.ActionDescriptor) *actions.ActionDescriptor {
 			Command:        newInfraDeleteCmd(),
 			FlagsResolver:  newInfraDeleteFlags,
 			ActionResolver: newInfraDeleteAction,
+			OutputFormats:  []output.Format{output.JsonFormat, output.NoneFormat},
+			DefaultFormat:  output.NoneFormat,
 		}).
 		UseMiddleware("hooks", middleware.NewHooksMiddleware)
 

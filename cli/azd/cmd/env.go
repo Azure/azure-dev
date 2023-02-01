@@ -29,9 +29,9 @@ func envActions(root *actions.ActionDescriptor) *actions.ActionDescriptor {
 		//nolint:lll
 		Long: `Manage environments.
 
-With this command group, you can create a new environment or get, set, and list your application environments. An application can have multiple environments (for example, dev, test, prod), each with a different configuration (that is, connectivity information) for accessing Azure resources. 
+With this command group, you can create a new environment or get, set, and list your app environments. An app can have multiple environments (for example, dev, test, prod), each with a different configuration (that is, connectivity information) for accessing Azure resources.
 
-You can find all environment configurations under the *.azure\<environment-name>* folder. The environment name is stored as the AZURE_ENV_NAME environment variable in the *.azure\<environment-name>\folder\.env* file.`,
+You can find all environment configurations under the ` + output.WithBackticks(`.azure\<environment-name>`) + ` directories. The environment name is stored as the AZURE_ENV_NAME environment variable in the ` + output.WithBackticks(`.azure\<environment-name>\directory\.env`) + ` file.`,
 	}
 
 	group := root.Add("env", &actions.ActionDescriptorOptions{
@@ -182,7 +182,7 @@ func (e *envSelectAction) Run(ctx context.Context) (*actions.ActionResult, error
 func newEnvListCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:     "list",
-		Short:   "List environments",
+		Short:   "List environments.",
 		Aliases: []string{"ls"},
 	}
 }
@@ -374,7 +374,7 @@ func (ef *envRefreshAction) Run(ctx context.Context) (*actions.ActionResult, err
 		return nil, fmt.Errorf("loading environment: %w", err)
 	}
 
-	prj, err := project.LoadProjectConfig(ef.azdCtx.ProjectPath())
+	prj, err := project.GetCurrent()
 	if err != nil {
 		return nil, fmt.Errorf("loading project: %w", err)
 	}
@@ -411,9 +411,15 @@ func (ef *envRefreshAction) Run(ctx context.Context) (*actions.ActionResult, err
 	}
 
 	for _, svc := range prj.Services {
-		if err := svc.RaiseEvent(
-			ctx, project.EnvironmentUpdated,
-			map[string]any{"bicepOutput": getStateResult.State.Outputs}); err != nil {
+		eventArgs := project.ServiceLifecycleEventArgs{
+			Project: prj,
+			Service: svc,
+			Args: map[string]any{
+				"bicepOutput": getStateResult.State.Outputs,
+			},
+		}
+
+		if err := svc.RaiseEvent(ctx, project.ServiceEventEnvUpdated, eventArgs); err != nil {
 			return nil, err
 		}
 	}

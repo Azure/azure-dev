@@ -33,7 +33,7 @@ func (m *monitorFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommand
 		&m.monitorLive,
 		"live",
 		false,
-		"Open a browser to Application Insights Live Metrics. Live Metrics is currently not supported for Python applications.",
+		"Open a browser to Application Insights Live Metrics. Live Metrics is currently not supported for Python apps.",
 	)
 	local.BoolVar(&m.monitorLogs, "logs", false, "Open a browser to Application Insights Logs.")
 	local.BoolVar(&m.monitorOverview, "overview", false, "Open a browser to Application Insights Overview Dashboard.")
@@ -51,8 +51,8 @@ func newMonitorFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) 
 func newMonitorCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "monitor",
-		Short: "Monitor a deployed application.",
-		Long: `Monitor a deployed application.
+		Short: "Monitor a deployed app.",
+		Long: `Monitor a deployed app.
 
 Examples:
 

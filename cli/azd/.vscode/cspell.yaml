@@ -15,6 +15,7 @@ words:
   - Retryable
   - Canonicalize
   - devcontainers
+  - goversioninfo
 languageSettings:
   - languageId: go
     ignoreRegExpList:
@@ -34,6 +35,9 @@ overrides:
       - puichan
       - devx
       - azdevcli
+      - azdeveloper
+      - hannahhunter
+      - hhunter
   - filename: pkg/tools/python/python.go
     words:
       - venv

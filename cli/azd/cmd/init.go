@@ -40,9 +40,9 @@ func newInitFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *in
 func newInitCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "init",
-		Short: "Initialize a new application.",
+		Short: "Initialize a new app.",
 		//nolint:lll
-		Long: `Initialize a new application.
+		Long: `Initialize a new app.
 
 When no template is supplied, you can optionally select an Azure Developer CLI template for cloning. Otherwise, ` + output.WithBackticks("azd init") + ` initializes the current directory and creates resources so that your project is compatible with Azure Developer CLI.
 

@@ -15,11 +15,11 @@ func newProvisionFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions
 func newProvisionCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "provision",
-		Short: "Provision the Azure resources for an application.",
+		Short: "Provision the Azure resources for an app.",
 		//nolint:lll
-		Long: `Provision the Azure resources for an application.
+		Long: `Provision the Azure resources for an app.
 
-The command prompts you for the following:
+The command prompts you for the following values:
 - Environment name: The name of your environment.
 - Azure location: The Azure location where your resources will be deployed.
 - Azure subscription: The Azure subscription where your resources will be deployed.

@@ -67,9 +67,9 @@ func newDeployFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *
 func newDeployCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "deploy",
-		Short: "Deploy the application's code to Azure.",
+		Short: "Deploy the app's code to Azure.",
 		//nolint:lll
-		Long: `Deploy the application's code to Azure.
+		Long: `Deploy the app's code to Azure.
 When no ` + output.WithBackticks("--service") + ` value is specified, all services in the ` + output.WithBackticks("azure.yaml") + ` file (found in the root of your project) are deployed.
 
 Examples:
@@ -85,7 +85,6 @@ After the deployment is complete, the endpoint is printed. To start the service,
 type deployAction struct {
 	flags         *deployFlags
 	azCli         azcli.AzCli
-	azdCtx        *azdcontext.AzdContext
 	formatter     output.Formatter
 	writer        io.Writer
 	console       input.Console
@@ -96,7 +95,6 @@ func newDeployAction(
 	flags *deployFlags,
 	azCli azcli.AzCli,
 	commandRunner exec.CommandRunner,
-	azdCtx *azdcontext.AzdContext,
 	console input.Console,
 	formatter output.Formatter,
 	writer io.Writer,
@@ -104,7 +102,6 @@ func newDeployAction(
 	return &deployAction{
 		flags:         flags,
 		azCli:         azCli,
-		azdCtx:        azdCtx,
 		formatter:     formatter,
 		writer:        writer,
 		console:       console,
@@ -118,12 +115,21 @@ type DeploymentResult struct {
 }
 
 func (d *deployAction) Run(ctx context.Context) (*actions.ActionResult, error) {
-	env, err := loadOrInitEnvironment(ctx, &d.flags.environmentName, d.azdCtx, d.console, d.azCli)
+	// We call `NewAzdContext` here instead of having the value injected because we want to delay the
+	// walk for the context until this command has started to execute (for example, in the case of `up`,
+	// the context is not created until the init action actually runs, which is after the infraCreateAction
+	// object is created.
+	azdCtx, err := azdcontext.NewAzdContext()
+	if err != nil {
+		return nil, err
+	}
+
+	env, err := loadOrInitEnvironment(ctx, &d.flags.environmentName, azdCtx, d.console, d.azCli)
 	if err != nil {
 		return nil, fmt.Errorf("loading environment: %w", err)
 	}
 
-	projConfig, err := project.LoadProjectConfig(d.azdCtx.ProjectPath())
+	projConfig, err := project.GetCurrent()
 	if err != nil {
 		return nil, fmt.Errorf("loading project: %w", err)
 	}
@@ -169,7 +175,7 @@ func (d *deployAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 
 		stepMessage := fmt.Sprintf("Deploying service %s", svc.Config.Name)
 		d.console.ShowSpinner(ctx, stepMessage, input.Step)
-		result, progress := svc.Deploy(ctx, d.azdCtx)
+		result, progress := svc.Deploy(ctx, azdCtx)
 
 		// Report any progress to logs only. Changes for the console are managed by the console object.
 		// This routine is required to drain all the string messages sent by the `progress`.

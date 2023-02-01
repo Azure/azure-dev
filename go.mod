@@ -51,6 +51,11 @@ require (
 )
 
 require (
+	github.com/akavel/rsrc v0.10.2 // indirect
+	github.com/josephspurrier/goversioninfo v1.4.0 // indirect
+)
+
+require (
 	github.com/Azure/azure-sdk-for-go/sdk/internal v1.0.1 // indirect
 	github.com/Azure/azure-sdk-for-go/sdk/keyvault/internal v0.7.0 // indirect
 	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/apimanagement/armapimanagement v1.0.0

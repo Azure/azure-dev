@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/MakeNowJust/heredoc/v2"
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/cmd/middleware"
 
@@ -30,25 +31,37 @@ func NewRootCmd(staticHelp bool, middlewareChain []*actions.MiddlewareRegistrati
 	opts := &internal.GlobalCommandOptions{GenerateStaticHelp: staticHelp}
 	opts.EnableTelemetry = telemetry.IsTelemetryEnabled()
 
+	productName := "Azure Developer CLI"
+	if opts.GenerateStaticHelp {
+		productName = "Azure Developer CLI (`azd`)"
+	}
+
+	shortDescription := heredoc.Docf(`%s is a command-line interface for developers who build Azure solutions.`, productName)
+
+	synopsisHeading := shortDescription + "\n\n"
+	if opts.GenerateStaticHelp {
+		synopsisHeading = ""
+	}
+	//nolint:lll
+	longDescription := heredoc.Docf(`%sTo begin working with Azure Developer CLI, run the `+output.WithBackticks("azd up")+` command by supplying a sample template in an empty directory:
+
+		$ azd up –-template todo-nodejs-mongo
+
+	You can pick a template by running `+output.WithBackticks("azd template list")+` and then supplying the repo name as a value to `+output.WithBackticks("--template")+`.
+
+	The most common next commands are:
+
+		$ azd pipeline config
+		$ azd deploy
+		$ azd monitor --overview
+
+	For more information, visit the Azure Developer CLI Dev Hub: https://aka.ms/azure-dev/devhub.`, synopsisHeading)
+
 	rootCmd := &cobra.Command{
 		Use:   "azd",
-		Short: "Azure Developer CLI is a command-line interface for developers who build Azure solutions.",
+		Short: shortDescription,
 		//nolint:lll
-		Long: `Azure Developer CLI is a command-line interface for developers who build Azure solutions.
-
-To begin working with Azure Developer CLI, run the ` + output.WithBackticks("azd up") + ` command by supplying a sample template in an empty directory:
-
-	$ azd up –-template todo-nodejs-mongo
-
-You can pick a template by running ` + output.WithBackticks("azd template list") + `and then supplying the repo name as a value to ` + output.WithBackticks("--template") + `.
-
-The most common next commands are:
-
-	$ azd pipeline config
-	$ azd deploy
-	$ azd monitor --overview
-
-For more information, visit the Azure Developer CLI Dev Hub: https://aka.ms/azure-dev/devhub.`,
+		Long: longDescription,
 		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 			if opts.Cwd != "" {
 				current, err := os.Getwd()
@@ -142,11 +155,13 @@ For more information, visit the Azure Developer CLI Dev Hub: https://aka.ms/azur
 		DefaultFormat:  output.NoneFormat,
 	})
 
-	root.Add("restore", &actions.ActionDescriptorOptions{
-		Command:        restoreCmdDesign(),
-		FlagsResolver:  newRestoreFlags,
-		ActionResolver: newRestoreAction,
-	})
+	root.
+		Add("restore", &actions.ActionDescriptorOptions{
+			Command:        restoreCmdDesign(),
+			FlagsResolver:  newRestoreFlags,
+			ActionResolver: newRestoreAction,
+		}).
+		UseMiddleware("hooks", middleware.NewHooksMiddleware)
 
 	root.Add("login", &actions.ActionDescriptorOptions{
 		Command:        newLoginCmd(),
@@ -167,13 +182,15 @@ For more information, visit the Azure Developer CLI Dev Hub: https://aka.ms/azur
 		ActionResolver: newMonitorAction,
 	})
 
-	root.Add("down", &actions.ActionDescriptorOptions{
-		Command:        newDownCmd(),
-		FlagsResolver:  newDownFlags,
-		ActionResolver: newDownAction,
-		OutputFormats:  []output.Format{output.JsonFormat, output.NoneFormat},
-		DefaultFormat:  output.NoneFormat,
-	})
+	root.
+		Add("down", &actions.ActionDescriptorOptions{
+			Command:        newDownCmd(),
+			FlagsResolver:  newDownFlags,
+			ActionResolver: newDownAction,
+			OutputFormats:  []output.Format{output.JsonFormat, output.NoneFormat},
+			DefaultFormat:  output.NoneFormat,
+		}).
+		UseMiddleware("hooks", middleware.NewHooksMiddleware)
 
 	root.Add("init", &actions.ActionDescriptorOptions{
 		Command:        newInitCmd(),
@@ -181,29 +198,36 @@ For more information, visit the Azure Developer CLI Dev Hub: https://aka.ms/azur
 		ActionResolver: newInitAction,
 	}).AddFlagCompletion("template", templateNameCompletion)
 
-	root.Add("up", &actions.ActionDescriptorOptions{
-		Command:        newUpCmd(),
-		FlagsResolver:  newUpFlags,
-		ActionResolver: newUpAction,
-		OutputFormats:  []output.Format{output.JsonFormat, output.NoneFormat},
-		DefaultFormat:  output.NoneFormat,
-	}).AddFlagCompletion("template", templateNameCompletion)
+	root.
+		Add("up", &actions.ActionDescriptorOptions{
+			Command:        newUpCmd(),
+			FlagsResolver:  newUpFlags,
+			ActionResolver: newUpAction,
+			OutputFormats:  []output.Format{output.JsonFormat, output.NoneFormat},
+			DefaultFormat:  output.NoneFormat,
+		}).
+		AddFlagCompletion("template", templateNameCompletion).
+		UseMiddleware("hooks", middleware.NewHooksMiddleware)
 
-	root.Add("provision", &actions.ActionDescriptorOptions{
-		Command:        newProvisionCmd(),
-		FlagsResolver:  newProvisionFlags,
-		ActionResolver: newInfraCreateAction,
-		OutputFormats:  []output.Format{output.JsonFormat, output.NoneFormat},
-		DefaultFormat:  output.NoneFormat,
-	})
+	root.
+		Add("provision", &actions.ActionDescriptorOptions{
+			Command:        newProvisionCmd(),
+			FlagsResolver:  newProvisionFlags,
+			ActionResolver: newInfraCreateAction,
+			OutputFormats:  []output.Format{output.JsonFormat, output.NoneFormat},
+			DefaultFormat:  output.NoneFormat,
+		}).
+		UseMiddleware("hooks", middleware.NewHooksMiddleware)
 
-	root.Add("deploy", &actions.ActionDescriptorOptions{
-		Command:        newDeployCmd(),
-		FlagsResolver:  newDeployFlags,
-		ActionResolver: newDeployAction,
-		OutputFormats:  []output.Format{output.JsonFormat, output.NoneFormat},
-		DefaultFormat:  output.NoneFormat,
-	})
+	root.
+		Add("deploy", &actions.ActionDescriptorOptions{
+			Command:        newDeployCmd(),
+			FlagsResolver:  newDeployFlags,
+			ActionResolver: newDeployAction,
+			OutputFormats:  []output.Format{output.JsonFormat, output.NoneFormat},
+			DefaultFormat:  output.NoneFormat,
+		}).
+		UseMiddleware("hooks", middleware.NewHooksMiddleware)
 
 	// Register any global middleware defined by the caller
 	if len(middlewareChain) > 0 {

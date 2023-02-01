@@ -19,12 +19,13 @@ const (
 	AzureResourceTypeWebSite                 AzureResourceType = "Microsoft.Web/sites"
 	AzureResourceTypeStaticWebSite           AzureResourceType = "Microsoft.Web/staticSites"
 	AzureResourceTypeServicePlan             AzureResourceType = "Microsoft.Web/serverfarms"
-	AzureResourceTypeSqlDatabase             AzureResourceType = "Microsoft.Sql/servers"
+	AzureResourceTypeSqlServer               AzureResourceType = "Microsoft.Sql/servers"
 	AzureResourceTypeCosmosDb                AzureResourceType = "Microsoft.DocumentDB/databaseAccounts"
 	AzureResourceTypeContainerApp            AzureResourceType = "Microsoft.App/containerApps"
 	AzureResourceTypeContainerAppEnvironment AzureResourceType = "Microsoft.App/managedEnvironments"
 	AzureResourceTypeApim                    AzureResourceType = "Microsoft.ApiManagement/service"
 	AzureResourceTypeCacheForRedis           AzureResourceType = "Microsoft.Cache/redis"
+	AzureResourceTypePostgreSqlServer        AzureResourceType = "Microsoft.DBforPostgreSQL/flexibleServers"
 )
 
 const resourceLevelSeparator = "/"
@@ -64,8 +65,10 @@ func GetResourceTypeDisplayName(resourceType AzureResourceType) string {
 		return "Azure API Management"
 	case AzureResourceTypeCacheForRedis:
 		return "Cache for Redis"
-	case AzureResourceTypeSqlDatabase:
-		return "Azure SQL DB"
+	case AzureResourceTypeSqlServer:
+		return "Azure SQL Server"
+	case AzureResourceTypePostgreSqlServer:
+		return "Azure Database for PostgreSQL flexible server"
 	}
 
 	return ""

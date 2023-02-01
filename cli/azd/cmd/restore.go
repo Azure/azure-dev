@@ -48,11 +48,11 @@ func newRestoreFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) 
 func restoreCmdDesign() *cobra.Command {
 	return &cobra.Command{
 		Use:   "restore",
-		Short: "Restore application dependencies.",
+		Short: "Restore app dependencies.",
 		//nolint:lll
-		Long: `Restore application dependencies.
+		Long: `Restore app dependencies.
 
-Run this command to download and install all the required libraries so that you can build, run, and debug the application locally.
+Run this command to download and install all the required libraries so that you can build, run, and debug the app locally.
 
 For the best local run and debug experience, go to https://aka.ms/azure-dev/vscode to learn how to use the Visual Studio Code extension.`,
 	}
@@ -88,8 +88,7 @@ func (r *restoreAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 		return nil, fmt.Errorf("loading environment: %w", err)
 	}
 
-	proj, err := project.LoadProjectConfig(r.azdCtx.ProjectPath())
-
+	proj, err := project.GetCurrent()
 	if err != nil {
 		return nil, fmt.Errorf("loading project: %w", err)
 	}
@@ -106,11 +105,11 @@ func (r *restoreAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 	allTools := []tools.ExternalTool{}
 	for _, svc := range proj.Services {
 		if r.flags.serviceName == "" || r.flags.serviceName == svc.Name {
-			frameworkService, err := svc.GetFrameworkService(ctx, env, r.commandRunner)
+			requiredTools, err := svc.GetRequiredTools(ctx, env, r.commandRunner)
 			if err != nil {
-				return nil, fmt.Errorf("getting framework services: %w", err)
+				return nil, fmt.Errorf("failed getting required tools, %w", err)
 			}
-			requiredTools := (*frameworkService).RequiredExternalTools()
+
 			allTools = append(allTools, requiredTools...)
 		}
 	}
@@ -125,13 +124,10 @@ func (r *restoreAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 		}
 
 		installMsg := fmt.Sprintf("Installing dependencies for %s service...", svc.Name)
-		frameworkService, err := svc.GetFrameworkService(ctx, env, r.commandRunner)
-		if err != nil {
-			return nil, fmt.Errorf("getting framework services: %w", err)
-		}
-
 		spinner := spin.NewSpinner(r.console.Handles().Stdout, installMsg)
-		if err = spinner.Run(func() error { return (*frameworkService).InstallDependencies(ctx) }); err != nil {
+		if err = spinner.Run(func() error {
+			return svc.Restore(ctx, env, r.commandRunner)
+		}); err != nil {
 			return nil, err
 		}
 

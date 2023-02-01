@@ -184,9 +184,9 @@ func NewRootCmd(staticHelp bool, middlewareChain []*actions.MiddlewareRegistrati
 
 	root.
 		Add("provision", &actions.ActionDescriptorOptions{
-			Command:        newInfraCreateCmd("provision", "infra create"),
-			FlagsResolver:  newInfraCreateFlags,
-			ActionResolver: newInfraCreateAction,
+			Command:        newProvisionCmd(),
+			FlagsResolver:  newProvisionFlags,
+			ActionResolver: newProvisionAction,
 			OutputFormats:  []output.Format{output.JsonFormat, output.NoneFormat},
 			DefaultFormat:  output.NoneFormat,
 		}).
@@ -221,9 +221,9 @@ func NewRootCmd(staticHelp bool, middlewareChain []*actions.MiddlewareRegistrati
 
 	root.
 		Add("down", &actions.ActionDescriptorOptions{
-			Command:        newInfraDeleteCmd("down", "infra delete"),
-			FlagsResolver:  newInfraDeleteFlags,
-			ActionResolver: newInfraDeleteAction,
+			Command:        newDownCmd(),
+			FlagsResolver:  newDownFlags,
+			ActionResolver: newDownAction,
 			OutputFormats:  []output.Format{output.JsonFormat, output.NoneFormat},
 			DefaultFormat:  output.NoneFormat,
 		}).

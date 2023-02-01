@@ -10,7 +10,6 @@ param external bool = true
 param imageName string
 param keyVaultName string = ''
 param managedIdentity bool = !empty(keyVaultName)
-param secrets array = []
 param targetPort int = 80
 
 @description('CPU cores allocated to a single container instance, e.g. 0.5')
@@ -33,10 +32,12 @@ resource app 'Microsoft.App/containerApps@2022-03-01' = {
         targetPort: targetPort
         transport: 'auto'
       }
-      secrets: union(secrets, [{
+      secrets: [
+        {
           name: 'registry-password'
           value: containerRegistry.listCredentials().passwords[0].value
-        }])
+        }
+      ]
       registries: [
         {
           server: '${containerRegistry.name}.azurecr.io'

@@ -120,13 +120,24 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	container.RegisterSingleton(func() httputil.HttpClient { return &http.Client{} })
 
 	container.RegisterSingleton(auth.NewMultiTenantCredentialProvider)
-	// Register a default azcore.TokenCredential that is selected based on the environment.
+	// Register a default azcore.TokenCredential that is selected based on the environment's subscription.
 	container.RegisterSingleton(
 		func(
 			ctx context.Context,
 			env *environment.Environment,
 			accountSub *account.SubscriptionsManager,
+			authManager *auth.Manager,
 			credProvider auth.MultiTenantCredentialProvider) (azcore.TokenCredential, error) {
+			fixedTenant, err := authManager.IsLoginScopedToTenant()
+			if err != nil {
+				return nil, err
+			}
+
+			if fixedTenant {
+				// Use the default, fixed tenant
+				return credProvider.GetTokenCredential(ctx, "")
+			}
+
 			subscriptionId := env.GetSubscriptionId()
 			tenantId, err := accountSub.ResolveUserTenant(ctx, subscriptionId)
 			if err != nil {

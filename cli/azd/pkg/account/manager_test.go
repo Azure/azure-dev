@@ -44,9 +44,12 @@ func Test_GetAccountDefaults(t *testing.T) {
 
 		manager, err := NewManager(
 			mockConfig.WithConfig(expectedConfig),
-			azcli.NewSubscriptionsService(
-				&mocks.MockMultiTenantCredentialProvider{},
-				mockHttp,
+			NewSubscriptionsManager(
+				azcli.NewSubscriptionsService(
+					&mocks.MockMultiTenantCredentialProvider{},
+					mockHttp,
+				),
+				NewInMemorySubscriptionsCache(),
 			),
 		)
 		require.NoError(t, err)
@@ -66,9 +69,12 @@ func Test_GetAccountDefaults(t *testing.T) {
 
 		manager, err := NewManager(
 			mockConfig.WithConfig(emptyConfig),
-			azcli.NewSubscriptionsService(
-				&mocks.MockMultiTenantCredentialProvider{},
-				mockHttp,
+			NewSubscriptionsManager(
+				azcli.NewSubscriptionsService(
+					&mocks.MockMultiTenantCredentialProvider{},
+					mockHttp,
+				),
+				NewInMemorySubscriptionsCache(),
 			),
 		)
 		require.NoError(t, err)
@@ -97,9 +103,12 @@ func Test_GetAccountDefaults(t *testing.T) {
 
 		manager, err := NewManager(
 			mockConfig.WithConfig(emptyConfig),
-			azcli.NewSubscriptionsService(
-				&mocks.MockMultiTenantCredentialProvider{},
-				mockHttp,
+			NewSubscriptionsManager(
+				azcli.NewSubscriptionsService(
+					&mocks.MockMultiTenantCredentialProvider{},
+					mockHttp,
+				),
+				NewInMemorySubscriptionsCache(),
 			),
 		)
 		require.NoError(t, err)
@@ -124,9 +133,12 @@ func Test_GetAccountDefaults(t *testing.T) {
 
 		manager, err := NewManager(
 			mockConfig.WithConfig(emptyConfig),
-			azcli.NewSubscriptionsService(
-				&mocks.MockMultiTenantCredentialProvider{},
-				mockHttp,
+			NewSubscriptionsManager(
+				azcli.NewSubscriptionsService(
+					&mocks.MockMultiTenantCredentialProvider{},
+					mockHttp,
+				),
+				NewInMemorySubscriptionsCache(),
 			),
 		)
 		require.NoError(t, err)
@@ -143,10 +155,12 @@ func Test_GetSubscriptions(t *testing.T) {
 		mockHttp := mockhttp.NewMockHttpUtil()
 		setupAccountMocks(mockHttp)
 
-		manager, err := NewManager(mockConfig, azcli.NewSubscriptionsService(
-			&mocks.MockMultiTenantCredentialProvider{},
-			mockHttp,
-		))
+		manager, err := NewManager(mockConfig, NewSubscriptionsManager(
+			azcli.NewSubscriptionsService(
+				&mocks.MockMultiTenantCredentialProvider{},
+				mockHttp,
+			),
+			NewInMemorySubscriptionsCache()))
 		require.NoError(t, err)
 
 		subscriptions, err := manager.GetSubscriptions(context.Background())
@@ -176,16 +190,19 @@ func Test_GetSubscriptions(t *testing.T) {
 
 		manager, err := NewManager(
 			mockConfig.WithConfig(defaultConfig),
-			azcli.NewSubscriptionsService(
-				&mocks.MockMultiTenantCredentialProvider{},
-				mockHttp,
+			NewSubscriptionsManager(
+				azcli.NewSubscriptionsService(
+					&mocks.MockMultiTenantCredentialProvider{},
+					mockHttp,
+				),
+				NewInMemorySubscriptionsCache(),
 			),
 		)
 		require.NoError(t, err)
 
 		subscriptions, err := manager.GetSubscriptions(context.Background())
 
-		defaultIndex := slices.IndexFunc(subscriptions, func(sub azcli.AzCliSubscriptionInfo) bool {
+		defaultIndex := slices.IndexFunc(subscriptions, func(sub Subscription) bool {
 			return sub.IsDefault
 		})
 
@@ -202,9 +219,12 @@ func Test_GetSubscriptions(t *testing.T) {
 
 		manager, err := NewManager(
 			mockConfig,
-			azcli.NewSubscriptionsService(
-				&mocks.MockMultiTenantCredentialProvider{},
-				mockHttp,
+			NewSubscriptionsManager(
+				azcli.NewSubscriptionsService(
+					&mocks.MockMultiTenantCredentialProvider{},
+					mockHttp,
+				),
+				NewInMemorySubscriptionsCache(),
 			))
 		require.NoError(t, err)
 
@@ -237,9 +257,12 @@ func Test_GetLocations(t *testing.T) {
 
 		manager, err := NewManager(
 			mockConfig.WithConfig(defaultConfig),
-			azcli.NewSubscriptionsService(
-				&mocks.MockMultiTenantCredentialProvider{},
-				mockHttp,
+			NewSubscriptionsManager(
+				azcli.NewSubscriptionsService(
+					&mocks.MockMultiTenantCredentialProvider{},
+					mockHttp,
+				),
+				NewInMemorySubscriptionsCache(),
 			),
 		)
 		require.NoError(t, err)
@@ -255,10 +278,12 @@ func Test_GetLocations(t *testing.T) {
 		mockHttp := mockhttp.NewMockHttpUtil()
 		setupAccountErrorMocks(mockHttp)
 
-		manager, err := NewManager(mockConfig, azcli.NewSubscriptionsService(
-			&mocks.MockMultiTenantCredentialProvider{},
-			mockHttp,
-		))
+		manager, err := NewManager(mockConfig, NewSubscriptionsManager(
+			azcli.NewSubscriptionsService(
+				&mocks.MockMultiTenantCredentialProvider{},
+				mockHttp,
+			),
+			NewInMemorySubscriptionsCache()))
 		require.NoError(t, err)
 
 		locations, err := manager.GetLocations(context.Background(), subscription.Id)
@@ -273,10 +298,12 @@ func Test_GetLocations(t *testing.T) {
 		setupAccountErrorMocks(mockHttp)
 		setupGetSubscriptionMock(mockHttp, &subscription, nil)
 
-		manager, err := NewManager(mockConfig, azcli.NewSubscriptionsService(
-			&mocks.MockMultiTenantCredentialProvider{},
-			mockHttp,
-		))
+		manager, err := NewManager(mockConfig, NewSubscriptionsManager(
+			azcli.NewSubscriptionsService(
+				&mocks.MockMultiTenantCredentialProvider{},
+				mockHttp,
+			),
+			NewInMemorySubscriptionsCache()))
 		require.NoError(t, err)
 
 		locations, err := manager.GetLocations(context.Background(), subscription.Id)
@@ -299,10 +326,12 @@ func Test_SetDefaultSubscription(t *testing.T) {
 		setupAccountMocks(mockHttp)
 		setupGetSubscriptionMock(mockHttp, &expectedSubscription, nil)
 
-		manager, err := NewManager(mockConfig, azcli.NewSubscriptionsService(
-			&mocks.MockMultiTenantCredentialProvider{},
-			mockHttp,
-		))
+		manager, err := NewManager(mockConfig, NewSubscriptionsManager(
+			azcli.NewSubscriptionsService(
+				&mocks.MockMultiTenantCredentialProvider{},
+				mockHttp,
+			),
+			NewInMemorySubscriptionsCache()))
 		require.NoError(t, err)
 
 		actualSubscription, err := manager.SetDefaultSubscription(context.Background(), expectedSubscription.Id)
@@ -323,10 +352,12 @@ func Test_SetDefaultSubscription(t *testing.T) {
 		setupAccountMocks(mockHttp)
 		setupGetSubscriptionMock(mockHttp, &expectedSubscription, errors.New("Not found"))
 
-		manager, err := NewManager(mockConfig, azcli.NewSubscriptionsService(
-			&mocks.MockMultiTenantCredentialProvider{},
-			mockHttp,
-		))
+		manager, err := NewManager(mockConfig, NewSubscriptionsManager(
+			azcli.NewSubscriptionsService(
+				&mocks.MockMultiTenantCredentialProvider{},
+				mockHttp,
+			),
+			NewInMemorySubscriptionsCache()))
 		require.NoError(t, err)
 
 		actualSubscription, err := manager.SetDefaultSubscription(context.Background(), expectedSubscription.Id)
@@ -360,9 +391,12 @@ func Test_SetDefaultLocation(t *testing.T) {
 
 		manager, err := NewManager(
 			mockConfig.WithConfig(defaultConfig),
-			azcli.NewSubscriptionsService(
-				&mocks.MockMultiTenantCredentialProvider{},
-				mockHttp,
+			NewSubscriptionsManager(
+				azcli.NewSubscriptionsService(
+					&mocks.MockMultiTenantCredentialProvider{},
+					mockHttp,
+				),
+				NewInMemorySubscriptionsCache(),
 			),
 		)
 		require.NoError(t, err)
@@ -381,10 +415,12 @@ func Test_SetDefaultLocation(t *testing.T) {
 		setupAccountMocks(mockHttp)
 		setupGetSubscriptionMock(mockHttp, &subscription, nil)
 
-		manager, err := NewManager(mockConfig, azcli.NewSubscriptionsService(
-			&mocks.MockMultiTenantCredentialProvider{},
-			mockHttp,
-		))
+		manager, err := NewManager(mockConfig, NewSubscriptionsManager(
+			azcli.NewSubscriptionsService(
+				&mocks.MockMultiTenantCredentialProvider{},
+				mockHttp,
+			),
+			NewInMemorySubscriptionsCache()))
 		require.NoError(t, err)
 
 		location, err := manager.SetDefaultLocation(context.Background(), subscription.Id, expectedLocation)
@@ -406,10 +442,12 @@ func Test_Clear(t *testing.T) {
 	setupAccountMocks(mockHttp)
 	setupGetSubscriptionMock(mockHttp, &expectedSubscription, nil)
 
-	manager, err := NewManager(mockConfig, azcli.NewSubscriptionsService(
-		&mocks.MockMultiTenantCredentialProvider{},
-		mockHttp,
-	))
+	manager, err := NewManager(mockConfig, NewSubscriptionsManager(
+		azcli.NewSubscriptionsService(
+			&mocks.MockMultiTenantCredentialProvider{},
+			mockHttp,
+		),
+		NewInMemorySubscriptionsCache()))
 	require.NoError(t, err)
 
 	subscription, err := manager.SetDefaultSubscription(context.Background(), expectedSubscription.Id)
@@ -455,9 +493,12 @@ func Test_HasDefaults(t *testing.T) {
 
 		manager, err := NewManager(
 			mockConfig.WithConfig(azdConfig),
-			azcli.NewSubscriptionsService(
-				&mocks.MockMultiTenantCredentialProvider{},
-				mockHttp,
+			NewSubscriptionsManager(
+				azcli.NewSubscriptionsService(
+					&mocks.MockMultiTenantCredentialProvider{},
+					mockHttp,
+				),
+				NewInMemorySubscriptionsCache(),
 			),
 		)
 		require.NoError(t, err)
@@ -471,9 +512,12 @@ func Test_HasDefaults(t *testing.T) {
 
 		manager, err := NewManager(
 			mockConfig.WithConfig(azdConfig),
-			azcli.NewSubscriptionsService(
-				&mocks.MockMultiTenantCredentialProvider{},
-				mockHttp,
+			NewSubscriptionsManager(
+				azcli.NewSubscriptionsService(
+					&mocks.MockMultiTenantCredentialProvider{},
+					mockHttp,
+				),
+				NewInMemorySubscriptionsCache(),
 			),
 		)
 		require.NoError(t, err)
@@ -634,4 +678,23 @@ func setupAccountMocks(mockHttp *mockhttp.MockHttpClient) {
 			Body:       io.NopCloser(bytes.NewBuffer(jsonBytes)),
 		}, nil
 	})
+}
+
+type InMemorySubCache struct {
+	stored []Subscription
+}
+
+func (imc *InMemorySubCache) Load() ([]Subscription, error) {
+	return imc.stored, nil
+}
+
+func (imc *InMemorySubCache) Save(save []Subscription) error {
+	imc.stored = save
+	return nil
+}
+
+func NewInMemorySubscriptionsCache() *InMemorySubCache {
+	return &InMemorySubCache{
+		stored: []Subscription{},
+	}
 }

@@ -113,11 +113,6 @@ func (h *HooksRunner) GetScript(hookConfig *HookConfig) (tools.Script, error) {
 }
 
 func (h *HooksRunner) execHook(ctx context.Context, hookConfig *HookConfig) error {
-	// Delete any temporary inline scripts after execution
-	if hookConfig.location == ScriptLocationInline {
-		defer os.Remove(hookConfig.path)
-	}
-
 	script, err := h.GetScript(hookConfig)
 	if err != nil {
 		return err
@@ -163,6 +158,12 @@ func (h *HooksRunner) execHook(ctx context.Context, hookConfig *HookConfig) erro
 		} else {
 			return execErr
 		}
+	}
+
+	// Delete any temporary inline scripts after execution
+	// Removing temp scripts only on success to support better debugging with failing scripts.
+	if hookConfig.location == ScriptLocationInline {
+		defer os.Remove(hookConfig.path)
 	}
 
 	return nil

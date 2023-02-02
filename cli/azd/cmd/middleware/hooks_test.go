@@ -21,7 +21,7 @@ func Test_CommandHooks_Middleware_WithValidProjectAndMatchingCommand(t *testing.
 	azdContext := createAzdContext(t)
 
 	envName := "test"
-	runOptions := Options{Name: "command"}
+	runOptions := Options{CommandPath: "command"}
 
 	projectConfig := project.ProjectConfig{
 		Name: envName,
@@ -53,7 +53,7 @@ func Test_CommandHooks_Middleware_ValidProjectWithDifferentCommand(t *testing.T)
 	azdContext := createAzdContext(t)
 
 	envName := "test"
-	runOptions := Options{Name: "another command"}
+	runOptions := Options{CommandPath: "another command"}
 
 	projectConfig := project.ProjectConfig{
 		Name: envName,
@@ -85,7 +85,7 @@ func Test_CommandHooks_Middleware_ValidProjectWithNoHooks(t *testing.T) {
 	azdContext := createAzdContext(t)
 
 	envName := "test"
-	runOptions := Options{Name: "another command"}
+	runOptions := Options{CommandPath: "another command"}
 
 	projectConfig := project.ProjectConfig{
 		Name: envName,
@@ -111,7 +111,7 @@ func Test_CommandHooks_Middleware_PreHookWithError(t *testing.T) {
 	azdContext := createAzdContext(t)
 
 	envName := "test"
-	runOptions := Options{Name: "command"}
+	runOptions := Options{CommandPath: "command"}
 
 	projectConfig := project.ProjectConfig{
 		Name: envName,
@@ -146,7 +146,7 @@ func Test_CommandHooks_Middleware_PreHookWithErrorAndContinue(t *testing.T) {
 	azdContext := createAzdContext(t)
 
 	envName := "test"
-	runOptions := Options{Name: "command"}
+	runOptions := Options{CommandPath: "command"}
 
 	projectConfig := project.ProjectConfig{
 		Name: envName,
@@ -182,7 +182,7 @@ func Test_CommandHooks_Middleware_WithCmdAlias(t *testing.T) {
 	azdContext := createAzdContext(t)
 
 	envName := "test"
-	runOptions := Options{Name: "command", Aliases: []string{"alias"}}
+	runOptions := Options{CommandPath: "command", Aliases: []string{"alias"}}
 
 	projectConfig := project.ProjectConfig{
 		Name: envName,

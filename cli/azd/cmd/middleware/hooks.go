@@ -67,7 +67,7 @@ func (m *HooksMiddleware) registerCommandHooks(ctx context.Context, next NextFn)
 
 	var actionResult *actions.ActionResult
 
-	commandNames := []string{m.options.Name}
+	commandNames := []string{m.options.CommandPath}
 	commandNames = append(commandNames, m.options.Aliases...)
 
 	err := hooksRunner.Invoke(ctx, commandNames, func() error {
@@ -90,6 +90,11 @@ func (m *HooksMiddleware) registerCommandHooks(ctx context.Context, next NextFn)
 // Registers event handlers for all services within the project configuration
 // Runs hooks for each matching event handler
 func (m *HooksMiddleware) registerServiceHooks(ctx context.Context) error {
+	// Service level hooks have already been registered at the root command
+	if m.options.IsChildAction() {
+		return nil
+	}
+
 	for serviceName, service := range m.projectConfig.Services {
 		// If the service hasn't configured any hooks we can continue on.
 		if service.Hooks == nil || len(service.Hooks) == 0 {

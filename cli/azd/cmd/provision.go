@@ -4,7 +4,6 @@ import (
 	"context"
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
-	"github.com/azure/azure-dev/cli/azd/cmd/middleware"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/spf13/cobra"
 )
@@ -38,12 +37,10 @@ Depending on what Azure resources are created, running this command might take a
 }
 
 type provisionAction struct {
-	runner      middleware.MiddlewareContext
 	infraCreate *infraCreateAction
 }
 
 func newProvisionAction(
-	runner middleware.MiddlewareContext,
 	provisionFlags *provisionFlags,
 	infraCreate *infraCreateAction,
 ) actions.Action {
@@ -51,12 +48,10 @@ func newProvisionAction(
 	infraCreate.flags = &provisionFlags.infraCreateFlags
 
 	return &provisionAction{
-		runner:      runner,
 		infraCreate: infraCreate,
 	}
 }
 
 func (a *provisionAction) Run(ctx context.Context) (*actions.ActionResult, error) {
-	runOptions := &middleware.Options{Name: "infracreate"}
-	return a.runner.RunChildAction(ctx, runOptions, a.infraCreate)
+	return a.infraCreate.Run(ctx)
 }

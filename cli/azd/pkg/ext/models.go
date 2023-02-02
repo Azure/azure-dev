@@ -158,13 +158,8 @@ func createTempScript(hookConfig *HookConfig) (string, error) {
 		ext = "ps1"
 	}
 
-	directory, err := os.MkdirTemp(os.TempDir(), "azd-*")
-	if err != nil {
-		return "", fmt.Errorf("failed creating temp directory, %w", err)
-	}
-
-	// Write the temporary script file to .azure/hooks folder
-	file, err := os.CreateTemp(directory, fmt.Sprintf("%s-*.%s", hookConfig.Name, ext))
+	// Write the temporary script file to OS temp dir
+	file, err := os.CreateTemp(os.TempDir(), fmt.Sprintf("azd-%s-*.%s", hookConfig.Name, ext))
 	if err != nil {
 		return "", fmt.Errorf("failed creating hook file: %w", err)
 	}

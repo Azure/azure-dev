@@ -28,7 +28,8 @@ func NewSubscriptionsService(
 	}
 }
 
-func (ss *SubscriptionsService) createSubscriptionsClient(ctx context.Context, tenantId string) (*armsubscriptions.Client, error) {
+func (ss *SubscriptionsService) createSubscriptionsClient(
+	ctx context.Context, tenantId string) (*armsubscriptions.Client, error) {
 	options := clientOptionsBuilder(ss.httpClient, ss.userAgent).BuildArmClientOptions()
 	cred, err := ss.credentialProvider.GetTokenCredential(ctx, tenantId)
 	if err != nil {

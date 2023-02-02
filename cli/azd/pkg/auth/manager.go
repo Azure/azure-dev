@@ -139,17 +139,15 @@ func (m *Manager) CredentialForCurrentUser(
 		return nil, fmt.Errorf("fetching current user: %w", err)
 	}
 
-	if useLegacyAuth, has := cfg.Get(cUseAzCliAuthKey); has {
-		if use, err := strconv.ParseBool(useLegacyAuth.(string)); err == nil && use {
-			log.Printf("delegating auth to az since %s is set to true", cUseAzCliAuthKey)
-			cred, err := azidentity.NewAzureCLICredential(&azidentity.AzureCLICredentialOptions{
-				TenantID: options.TenantID,
-			})
-			if err != nil {
-				return nil, fmt.Errorf("failed to create credential: %v: %w", err, ErrNoCurrentUser)
-			}
-			return cred, nil
+	if shouldUseLegacyAuth(cfg) {
+		log.Printf("delegating auth to az since %s is set to true", cUseAzCliAuthKey)
+		cred, err := azidentity.NewAzureCLICredential(&azidentity.AzureCLICredentialOptions{
+			TenantID: options.TenantID,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("failed to create credential: %v: %w", err, ErrNoCurrentUser)
 		}
+		return cred, nil
 	}
 
 	currentUser, err := readUserProperties(cfg)
@@ -188,10 +186,11 @@ func (m *Manager) CredentialForCurrentUser(
 		}
 
 		// by default we used the stored tenant (i.e. the one provided with the tenant id parameter when a user ran
-		// `azd login`) but we allow an override using the options bag.
+		// `azd login`), but we allow an override using the options bag, when
+		// TenantID is non-empty and PreferFallbackTenant is not true.
 		tenantID := *currentUser.TenantID
 
-		if options.TenantID != "" {
+		if !options.PreferFallbackTenant && options.TenantID != "" {
 			tenantID = options.TenantID
 		}
 
@@ -205,6 +204,36 @@ func (m *Manager) CredentialForCurrentUser(
 	}
 
 	return nil, ErrNoCurrentUser
+}
+
+func shouldUseLegacyAuth(cfg config.Config) bool {
+	if useLegacyAuth, has := cfg.Get(cUseAzCliAuthKey); has {
+		if use, err := strconv.ParseBool(useLegacyAuth.(string)); err == nil && use {
+			return true
+		}
+	}
+
+	return false
+}
+
+// IsLoginScopedToTenant returns true if an explicit tenant ID was set during login, i.e. with --tenant-id.
+func (m *Manager) IsLoginScopedToTenant() (bool, error) {
+	cfg, err := m.configManager.Load()
+	if err != nil {
+		return false, fmt.Errorf("fetching current user: %w", err)
+	}
+
+	if shouldUseLegacyAuth(cfg) {
+		// we have no way of knowing if `az login --tenant-id` was performed
+		return false, err
+	}
+
+	currentUser, err := readUserProperties(cfg)
+	if err != nil {
+		return false, ErrNoCurrentUser
+	}
+
+	return currentUser.TenantID != nil, nil
 }
 
 func newCredentialFromClientSecret(tenantID string, clientID string, clientSecret string) (azcore.TokenCredential, error) {
@@ -549,6 +578,10 @@ func (m *Manager) saveSecret(tenantId, clientId string, ps *persistedSecret) err
 type CredentialForCurrentUserOptions struct {
 	// The tenant ID to use when constructing the credential, instead of the default tenant.
 	TenantID string
+
+	// If true, TenantID is only used if the tenant wasn't explicitly specified
+	// at the time of login.
+	PreferFallbackTenant bool
 }
 
 // persistedSecret is the model type for the value we store in the credential cache. It is logically a discriminated union

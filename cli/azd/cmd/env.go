@@ -471,6 +471,7 @@ func newEnvGetValuesAction(
 	return &envGetValuesAction{
 		azdCtx:    azdCtx,
 		console:   console,
+		env:       env,
 		formatter: formatter,
 		writer:    writer,
 		flags:     flags,

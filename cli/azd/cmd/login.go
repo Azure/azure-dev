@@ -8,12 +8,14 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"os"
 	"strings"
 
 	"github.com/MakeNowJust/heredoc/v2"
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 	"github.com/azure/azure-dev/cli/azd/pkg/contracts"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
@@ -132,26 +134,29 @@ func newLoginCmd() *cobra.Command {
 }
 
 type loginAction struct {
-	formatter   output.Formatter
-	writer      io.Writer
-	console     input.Console
-	authManager *auth.Manager
-	flags       *loginFlags
+	formatter         output.Formatter
+	writer            io.Writer
+	console           input.Console
+	authManager       *auth.Manager
+	accountSubManager *account.SubscriptionsManager
+	flags             *loginFlags
 }
 
 func newLoginAction(
 	formatter output.Formatter,
 	writer io.Writer,
 	authManager *auth.Manager,
+	accountSubManager *account.SubscriptionsManager,
 	flags *loginFlags,
 	console input.Console,
 ) actions.Action {
 	return &loginAction{
-		formatter:   formatter,
-		writer:      writer,
-		console:     console,
-		authManager: authManager,
-		flags:       flags,
+		formatter:         formatter,
+		writer:            writer,
+		console:           console,
+		authManager:       authManager,
+		accountSubManager: accountSubManager,
+		flags:             flags,
 	}
 }
 
@@ -290,12 +295,17 @@ func (la *loginAction) login(ctx context.Context) error {
 		if _, err := la.authManager.LoginWithDeviceCode(ctx, la.writer); err != nil {
 			return fmt.Errorf("logging in: %w", err)
 		}
-
-		// TODO: refresh sub access here
 	} else {
 		if _, err := la.authManager.LoginInteractive(ctx, la.flags.redirectPort); err != nil {
 			return fmt.Errorf("logging in: %w", err)
 		}
+	}
+
+	// This is currently an implicit action to increase responsiveness of listing subscriptions.
+	// If this fails, the subscriptions will still be loaded on-demand.
+	err := la.accountSubManager.RefreshSubscriptions(ctx)
+	if err != nil {
+		log.Println("failed to load subscriptions for the account: %w", err)
 	}
 
 	return nil

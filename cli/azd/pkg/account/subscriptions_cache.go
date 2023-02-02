@@ -2,9 +2,11 @@ package account
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
@@ -20,6 +22,7 @@ type SubscriptionsCache struct {
 	cachePath string
 
 	inMemoryCopy []Subscription
+	inMemoryLock sync.RWMutex
 }
 
 func NewSubscriptionsCache() (*SubscriptionsCache, error) {
@@ -39,10 +42,15 @@ func NewSubscriptionsCacheWithDir(cachePath string) (*SubscriptionsCache, error)
 
 // Load loads the subscriptions from cache.
 func (s *SubscriptionsCache) Load() ([]Subscription, error) {
+	s.inMemoryLock.RLock()
 	if s.inMemoryCopy != nil {
+		defer s.inMemoryLock.RUnlock()
 		return s.inMemoryCopy, nil
 	}
+	s.inMemoryLock.RUnlock()
 
+	s.inMemoryLock.Lock()
+	defer s.inMemoryLock.Unlock()
 	cacheFile, err := os.ReadFile(s.cachePath)
 	if err != nil {
 		return nil, err
@@ -60,6 +68,8 @@ func (s *SubscriptionsCache) Load() ([]Subscription, error) {
 
 // Save saves the subscriptions to cache.
 func (s *SubscriptionsCache) Save(subscriptions []Subscription) error {
+	s.inMemoryLock.Lock()
+	defer s.inMemoryLock.Unlock()
 	content, err := json.Marshal(subscriptions)
 	if err != nil {
 		return fmt.Errorf("failed to marshal subscriptions: %w", err)
@@ -72,4 +82,17 @@ func (s *SubscriptionsCache) Save(subscriptions []Subscription) error {
 
 	s.inMemoryCopy = subscriptions
 	return err
+}
+
+func (s *SubscriptionsCache) Clear() error {
+	s.inMemoryLock.Lock()
+	defer s.inMemoryLock.Unlock()
+
+	err := os.Remove(s.cachePath)
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+
+	s.inMemoryCopy = []Subscription{}
+	return nil
 }

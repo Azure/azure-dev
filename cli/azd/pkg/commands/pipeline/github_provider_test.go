@@ -101,7 +101,7 @@ func Test_gitHub_provider_preConfigure_check(t *testing.T) {
 
 		consoleLog := mockContext.Console.Output()
 		require.Len(t, consoleLog, 1)
-		require.Contains(t, consoleLog[0], "WARNING: Terraform provisioning does not support federated authentication")
+		require.Contains(t, consoleLog[0], "Warning: Terraform provisioning does not support federated authentication")
 	})
 }
 

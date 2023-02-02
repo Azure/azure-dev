@@ -117,7 +117,7 @@ func Test_azdo_scm_provider_preConfigureCheck(t *testing.T) {
 		require.Nil(t, e)
 		// PAT is not persisted to .env
 		require.EqualValues(t, "", provider.Env.Values[azdo.AzDoPatName])
-		require.False(t, updatedConfig)
+		require.True(t, updatedConfig)
 	})
 }
 
@@ -137,7 +137,7 @@ func Test_azdo_ci_provider_preConfigureCheck(t *testing.T) {
 
 		updatedConfig, err := provider.preConfigureCheck(ctx, testConsole, pipelineManagerArgs, provisioning.Options{})
 		require.NoError(t, err)
-		require.False(t, updatedConfig)
+		require.True(t, updatedConfig)
 	})
 
 	t.Run("fails if auth type is set to federated", func(t *testing.T) {

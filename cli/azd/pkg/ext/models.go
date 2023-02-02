@@ -6,6 +6,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 )
 
 type ShellType string
@@ -178,6 +180,11 @@ func createTempScript(hookConfig *HookConfig) (string, error) {
 	_, err = file.WriteString(scriptBuilder.String())
 	if err != nil {
 		return "", fmt.Errorf("failed writing hook file, %w", err)
+	}
+
+	// Update file permissions to grant exec permissions
+	if err := file.Chmod(osutil.PermissionExecutableFile); err != nil {
+		return "", fmt.Errorf("failed setting executable file permissions, %w", err)
 	}
 
 	return file.Name(), nil

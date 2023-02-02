@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"os"
 	"strings"
 
@@ -294,20 +295,17 @@ func (la *loginAction) login(ctx context.Context) error {
 		if _, err := la.authManager.LoginWithDeviceCode(ctx, la.writer); err != nil {
 			return fmt.Errorf("logging in: %w", err)
 		}
-
-		err := la.accountSubManager.RefreshSubscriptions(ctx)
-		if err != nil {
-			return fmt.Errorf("failed to load subscriptions for the account: %w", err)
-		}
 	} else {
 		if _, err := la.authManager.LoginInteractive(ctx, la.flags.redirectPort); err != nil {
 			return fmt.Errorf("logging in: %w", err)
 		}
+	}
 
-		err := la.accountSubManager.RefreshSubscriptions(ctx)
-		if err != nil {
-			return fmt.Errorf("failed to load subscriptions for the account: %w", err)
-		}
+	// This is currently an implicit action to increase responsiveness of listing subscriptions.
+	// If this fails, the subscriptions will still be loaded on-demand.
+	err := la.accountSubManager.RefreshSubscriptions(ctx)
+	if err != nil {
+		log.Println("failed to load subscriptions for the account: %w", err)
 	}
 
 	return nil

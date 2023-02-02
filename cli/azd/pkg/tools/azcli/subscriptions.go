@@ -15,6 +15,7 @@ type MultiTenantCredentialProvider interface {
 	GetTokenCredential(tenantId string) azcore.TokenCredential
 }
 
+// SubscriptionsService allows querying of subscriptions and tenants.
 type SubscriptionsService struct {
 	credentialProvider MultiTenantCredentialProvider
 	userAgent          string
@@ -31,19 +32,29 @@ func NewSubscriptionsService(
 	}
 }
 
-func (ss *SubscriptionsService) createSubscriptionsClient(
-	ctx context.Context, tenantId string) (*armsubscriptions.Client, error) {
+func (ss *SubscriptionsService) createSubscriptionsClient(tenantId string) (*armsubscriptions.Client, error) {
 	options := clientOptionsBuilder(ss.httpClient, ss.userAgent).BuildArmClientOptions()
 	client, err := armsubscriptions.NewClient(ss.credentialProvider.GetTokenCredential(tenantId), options)
 	if err != nil {
-		return nil, fmt.Errorf("creating Subscriptions client: %w", err)
+		return nil, fmt.Errorf("creating subscriptions client: %w", err)
+	}
+
+	return client, nil
+}
+
+func (ss *SubscriptionsService) createTenantsClient() (*armsubscriptions.TenantsClient, error) {
+	options := clientOptionsBuilder(ss.httpClient, ss.userAgent).BuildArmClientOptions()
+	// Use default home tenant, since tenants itself can be listed across tenants
+	client, err := armsubscriptions.NewTenantsClient(ss.credentialProvider.GetTokenCredential(""), options)
+	if err != nil {
+		return nil, fmt.Errorf("creating tenants client: %w", err)
 	}
 
 	return client, nil
 }
 
 func (s *SubscriptionsService) ListSubscriptions(ctx context.Context, tenantId string) ([]AzCliSubscriptionInfo, error) {
-	client, err := s.createSubscriptionsClient(ctx, tenantId)
+	client, err := s.createSubscriptionsClient(tenantId)
 	if err != nil {
 		return nil, err
 	}
@@ -76,7 +87,7 @@ func (s *SubscriptionsService) ListSubscriptions(ctx context.Context, tenantId s
 
 func (s *SubscriptionsService) GetSubscription(
 	ctx context.Context, subscriptionId string, tenantId string) (*AzCliSubscriptionInfo, error) {
-	client, err := s.createSubscriptionsClient(ctx, tenantId)
+	client, err := s.createSubscriptionsClient(tenantId)
 	if err != nil {
 		return nil, err
 	}
@@ -96,7 +107,7 @@ func (s *SubscriptionsService) GetSubscription(
 // ListSubscriptionLocations lists physical locations in Azure for the given subscription.
 func (s *SubscriptionsService) ListSubscriptionLocations(
 	ctx context.Context, subscriptionId string, tenantId string) ([]AzCliLocation, error) {
-	client, err := s.createSubscriptionsClient(ctx, tenantId)
+	client, err := s.createSubscriptionsClient(tenantId)
 	if err != nil {
 		return nil, err
 	}
@@ -129,4 +140,33 @@ func (s *SubscriptionsService) ListSubscriptionLocations(
 	})
 
 	return locations, nil
+}
+
+func (s *SubscriptionsService) ListTenants(ctx context.Context) ([]armsubscriptions.TenantIDDescription, error) {
+	client, err := s.createTenantsClient()
+	if err != nil {
+		return nil, err
+	}
+
+	tenants := []armsubscriptions.TenantIDDescription{}
+	pager := client.NewListPager(nil)
+
+	for pager.More() {
+		page, err := pager.NextPage(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed getting next page of tenants: %w", err)
+		}
+
+		for _, tenant := range page.TenantListResult.Value {
+			if tenant != nil {
+				tenants = append(tenants, *tenant)
+			}
+		}
+	}
+
+	sort.Slice(tenants, func(i, j int) bool {
+		return *tenants[i].DisplayName < *tenants[j].DisplayName
+	})
+
+	return tenants, nil
 }

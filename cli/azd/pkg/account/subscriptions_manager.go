@@ -76,7 +76,8 @@ func (m *SubscriptionsManager) ResolveUserTenant(ctx context.Context, subscripti
 	}
 
 	return "", fmt.Errorf(
-		"failed to resolve user access to subscription '%s'. Visit this subscription in an Azure Portal browser and try again.",
+		"failed to resolve user access to subscription '%s'. "+
+			"Visit this subscription in Azure Portal using the browser, then run `az login` again to reload subscriptions.",
 		subscriptionId)
 }
 
@@ -109,7 +110,6 @@ func (m *SubscriptionsManager) ListSubscriptions(ctx context.Context) ([]Subscri
 	}
 
 	allSubscriptions := []Subscription{}
-	mfaTenants := []string{}
 	errors := []error{}
 	oneSuccess := false
 
@@ -118,10 +118,19 @@ func (m *SubscriptionsManager) ListSubscriptions(ctx context.Context) ([]Subscri
 		subscriptions, err := m.service.ListSubscriptions(ctx, tenantId)
 		if err != nil {
 			errorMsg := err.Error()
+			displayName := *tenant.DisplayName
 			if strings.Contains(errorMsg, "AADSTS50076") {
-				mfaTenants = append(mfaTenants, tenantId)
+				errors = append(
+					errors,
+					fmt.Errorf(
+						"%s requires Multi-Factor Authentication (MFA). To authenticate, visit Azure Portal with "+
+							"%s selected as the current directory.",
+						displayName,
+						errorMsg))
 			} else {
-				errors = append(errors, fmt.Errorf("failed to load subscriptions from tenant %s: %s", tenantId, errorMsg))
+				errors = append(
+					errors,
+					fmt.Errorf("failed to load subscriptions from tenant '%s' : %s", displayName, errorMsg))
 			}
 
 			continue

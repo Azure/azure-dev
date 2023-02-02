@@ -119,14 +119,22 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	container.RegisterSingleton(azdcontext.NewAzdContext)
 	container.RegisterSingleton(func() httputil.HttpClient { return &http.Client{} })
 
-	// Register
-	container.RegisterSingleton(auth.NewDefaultTenantCredentialProvider)
-	container.RegisterSingleton(
-		func(ctx context.Context, credProvider *auth.DefaultTenantCredentialProvider) (azcore.TokenCredential, error) {
-			return credProvider.GetTokenCredential(ctx)
-		})
 	container.RegisterSingleton(auth.NewMultiTenantCredentialProvider)
+	// Register a default azcore.TokenCredential that is selected based on the environment.
+	container.RegisterSingleton(
+		func(
+			ctx context.Context,
+			env *environment.Environment,
+			accountSub *account.SubscriptionsManager,
+			credProvider auth.MultiTenantCredentialProvider) (azcore.TokenCredential, error) {
+			subscriptionId := env.GetSubscriptionId()
+			tenantId, err := accountSub.ResolveUserTenant(ctx, subscriptionId)
+			if err != nil {
+				return nil, err
+			}
 
+			return credProvider.GetTokenCredential(ctx, tenantId)
+		})
 	container.RegisterSingleton(func(mgr *auth.Manager) CredentialProviderFn {
 		return mgr.CredentialForCurrentUser
 	})
@@ -159,7 +167,12 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	})
 
 	container.RegisterSingleton(
-		func(azdContext *azdcontext.AzdContext, envFlags flagsWithEnv) (*environment.Environment, error) {
+		func(ctx context.Context,
+			azdContext *azdcontext.AzdContext,
+			envFlags flagsWithEnv,
+			console input.Console,
+			accountManager account.Manager,
+			userProfileService *azcli.UserProfileService) (*environment.Environment, error) {
 			if azdContext == nil {
 				return nil, azdcontext.ErrNoProject
 			}
@@ -167,18 +180,10 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 			environmentName := envFlags.EnvironmentName()
 			var err error
 
-			if environmentName == "" {
-				defaultEnvName, err := azdContext.GetDefaultEnvironmentName()
-				if err != nil {
-					return nil, err
-				}
-
-				environmentName = defaultEnvName
-			}
-
-			env, err := environment.GetEnvironment(azdContext, environmentName)
+			env, err := loadOrInitEnvironment(
+				ctx, &environmentName, azdContext, console, accountManager, userProfileService)
 			if err != nil {
-				return nil, err
+				return nil, fmt.Errorf("loading environment: %w", err)
 			}
 
 			return env, nil
@@ -205,10 +210,10 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	container.RegisterSingleton(config.NewManager)
 	container.RegisterSingleton(templates.NewTemplateManager)
 	container.RegisterSingleton(auth.NewManager)
-	container.RegisterSingleton(account.NewManager)
-
-	container.RegisterSingleton(account.NewSubscriptionsManager)
+	container.RegisterSingleton(azcli.NewUserProfileService)
 	container.RegisterSingleton(azcli.NewSubscriptionsService)
+	container.RegisterSingleton(account.NewManager)
+	container.RegisterSingleton(account.NewSubscriptionsManager)
 
 	// Required for nested actions called from composite actions like 'up'
 	registerActionInitializer[*initAction](container, "azd-init-action")

@@ -5,12 +5,12 @@ package cmd
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/commands/pipeline"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
@@ -100,6 +100,7 @@ type pipelineConfigAction struct {
 	manager       *pipeline.PipelineManager
 	azCli         azcli.AzCli
 	azdCtx        *azdcontext.AzdContext
+	env           *environment.Environment
 	console       input.Console
 	credential    azcore.TokenCredential
 	commandRunner exec.CommandRunner
@@ -109,6 +110,7 @@ func newPipelineConfigAction(
 	azCli azcli.AzCli,
 	credential azcore.TokenCredential,
 	azdCtx *azdcontext.AzdContext,
+	env *environment.Environment,
 	console input.Console,
 	flags *pipelineConfigFlags,
 	commandRunner exec.CommandRunner,
@@ -118,9 +120,10 @@ func newPipelineConfigAction(
 		azCli:      azCli,
 		credential: credential,
 		manager: pipeline.NewPipelineManager(
-			azCli, azdCtx, flags.global, commandRunner, console, flags.PipelineManagerArgs,
+			azCli, azdCtx, env, flags.global, commandRunner, console, flags.PipelineManagerArgs,
 		),
 		azdCtx:        azdCtx,
+		env:           env,
 		console:       console,
 		commandRunner: commandRunner,
 	}
@@ -130,23 +133,16 @@ func newPipelineConfigAction(
 
 // Run implements action interface
 func (p *pipelineConfigAction) Run(ctx context.Context) (*actions.ActionResult, error) {
-	env, err := loadOrInitEnvironment(ctx, &p.flags.environmentName, p.azdCtx, p.console, p.azCli)
-	if err != nil {
-		return nil, fmt.Errorf("loading environment: %w", err)
-	}
-
+	var err error
 	// Detect the SCM and CI providers based on the project directory
 	p.manager.ScmProvider,
 		p.manager.CiProvider,
 		err = pipeline.DetectProviders(
-		ctx, p.azdCtx, env, p.manager.PipelineProvider, p.console, p.credential, p.commandRunner,
+		ctx, p.azdCtx, p.env, p.manager.PipelineProvider, p.console, p.credential, p.commandRunner,
 	)
 	if err != nil {
 		return nil, err
 	}
-
-	// set context for manager
-	p.manager.Environment = env
 
 	return nil, p.manager.Configure(ctx)
 }

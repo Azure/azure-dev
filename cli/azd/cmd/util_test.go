@@ -12,15 +12,13 @@ import (
 	"testing"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armsubscriptions"
-	"github.com/azure/azure-dev/cli/azd/pkg/config"
+	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockaccount"
-	"github.com/azure/azure-dev/cli/azd/test/mocks/mockazcli"
 	"github.com/stretchr/testify/require"
 )
 
@@ -123,7 +121,18 @@ func Test_promptEnvironmentName(t *testing.T) {
 
 func Test_getSubscriptionOptions(t *testing.T) {
 	t.Run("no default config set", func(t *testing.T) {
-		subList, result, err := getSubscriptionOptions(context.Background(), &mockaccount.MockAccountManager{})
+		mockAccount := &mockaccount.MockAccountManager{
+			Subscriptions: []account.Subscription{
+				{
+					Id:                 "1",
+					Name:               "sub1",
+					TenantId:           "",
+					UserAccessTenantId: "",
+					IsDefault:          false,
+				},
+			},
+		}
+		subList, result, err := getSubscriptionOptions(context.Background(), mockAccount)
 
 		require.Nil(t, err)
 		require.EqualValues(t, 2, len(subList))
@@ -132,58 +141,37 @@ func Test_getSubscriptionOptions(t *testing.T) {
 
 	t.Run("default value set", func(t *testing.T) {
 		// mocked configk
-		configSubscriptionId := "theSubscriptionInTheConfig"
-		c := config.NewConfig(nil)
-		err := c.Set("defaults.location", "location")
-		require.Nil(t, err)
-		err = c.Set("defaults.subscription", configSubscriptionId)
-		require.Nil(t, err)
-
-		// mocks
-		mockContext := mocks.NewMockContext(context.Background())
-		mockContext.ConfigManager.WithConfig(c)
-
-		// Mock the account returned when a config is found
-		// the url path should contain the sub name from the config file
-		mockContext.HttpClient.When(func(request *http.Request) bool {
-			return request.URL.Path == ("/subscriptions/" + configSubscriptionId)
-		}).RespondFn(func(request *http.Request) (*http.Response, error) {
-			return mocks.CreateHttpResponseWithBody(request, 200, armsubscriptions.Subscription{
-				ID:             convert.RefOf("SUBSCRIPTION"),
-				SubscriptionID: convert.RefOf("SUBSCRIPTION_ID"),
-				DisplayName:    convert.RefOf("DISPLAY"),
-				TenantID:       convert.RefOf("TENANT"),
-			})
-		})
-		// Mock other subscriptions for the user, as azd will merge
-		// the default account with all others accessible
-		mockContext.HttpClient.When(func(request *http.Request) bool {
-			return request.URL.Path == "/subscriptions"
-		}).RespondFn(func(request *http.Request) (*http.Response, error) {
-			return mocks.CreateHttpResponseWithBody(request, 200, armsubscriptions.ClientListResponse{
-				SubscriptionListResult: armsubscriptions.SubscriptionListResult{
-					Value: []*armsubscriptions.Subscription{
-						{
-							ID:             convert.RefOf("SUBSCRIPTION"),
-							SubscriptionID: convert.RefOf("SUBSCRIPTION_ID"),
-							DisplayName:    convert.RefOf("DISPLAY"),
-							TenantID:       convert.RefOf("TENANT"),
-						},
-					},
+		defaultSubId := "SUBSCRIPTION_DEFAULT"
+		ctx := context.Background()
+		mockAccount := &mockaccount.MockAccountManager{
+			DefaultLocation:     "location",
+			DefaultSubscription: defaultSubId,
+			Subscriptions: []account.Subscription{
+				{
+					Id:                 defaultSubId,
+					Name:               "DISPLAY DEFAULT",
+					TenantId:           "TENANT",
+					UserAccessTenantId: "USER_TENANT",
+					IsDefault:          true,
 				},
-			})
-		})
+				{
+					Id:                 "SUBSCRIPTION_OTHER",
+					Name:               "DISPLAY OTHER",
+					TenantId:           "TENANT",
+					UserAccessTenantId: "USER_TENANT",
+					IsDefault:          false,
+				},
+			},
+			Locations: []azcli.AzCliLocation{},
+		}
 
-		azCli := mockazcli.NewAzCliFromMockContext(mockContext)
-
-		// finally invoking the test
-		subList, result, err := getSubscriptionOptions(*mockContext.Context, azCli)
+		subList, result, err := getSubscriptionOptions(ctx, mockAccount)
 
 		require.Nil(t, err)
-		require.EqualValues(t, 2, len(subList))
+		require.EqualValues(t, 3, len(subList))
 		require.NotNil(t, result)
 		defSub, ok := result.(string)
 		require.True(t, ok)
-		require.EqualValues(t, " 1. DISPLAY (SUBSCRIPTION_ID)", defSub)
+		require.EqualValues(t, " 1. DISPLAY DEFAULT (SUBSCRIPTION_DEFAULT)", defSub)
 	})
 }

@@ -74,7 +74,7 @@ func createAndInitEnvironment(
 	azdCtx *azdcontext.AzdContext,
 	console input.Console,
 	accountManager account.Manager,
-	azCli azcli.AzCli,
+	userProfileService *azcli.UserProfileService,
 ) (*environment.Environment, error) {
 	if envSpec.environmentName != "" && !environment.IsValidEnvironmentName(envSpec.environmentName) {
 		errMsg := invalidEnvironmentNameMsg(envSpec.environmentName)
@@ -96,7 +96,7 @@ func createAndInitEnvironment(
 		return nil, fmt.Errorf("environment '%s' already exists", envSpec.environmentName)
 	}
 
-	if err := ensureEnvironmentInitialized(ctx, *envSpec, env, console, accountManager, azCli); err != nil {
+	if err := ensureEnvironmentInitialized(ctx, *envSpec, env, console, accountManager, userProfileService); err != nil {
 		return nil, fmt.Errorf("initializing environment: %w", err)
 	}
 
@@ -110,7 +110,7 @@ func loadOrInitEnvironment(
 	azdCtx *azdcontext.AzdContext,
 	console input.Console,
 	accountManager account.Manager,
-	azCli azcli.AzCli,
+	userProfileService *azcli.UserProfileService,
 ) (*environment.Environment, error) {
 	loadOrCreateEnvironment := func() (*environment.Environment, bool, error) {
 		// If there's a default environment, use that
@@ -179,7 +179,7 @@ func loadOrInitEnvironment(
 		env,
 		console,
 		accountManager,
-		azCli); err != nil {
+		userProfileService); err != nil {
 		return nil, fmt.Errorf("initializing environment: %w", err)
 	}
 
@@ -204,7 +204,7 @@ func ensureEnvironmentInitialized(
 	env *environment.Environment,
 	console input.Console,
 	accountManager account.Manager,
-	azCli azcli.AzCli,
+	userProfileService *azcli.UserProfileService,
 ) error {
 	if env.Values == nil {
 		env.Values = make(map[string]string)
@@ -279,7 +279,7 @@ func ensureEnvironmentInitialized(
 	}
 
 	if !hasPrincipalID {
-		principalID, err := azureutil.GetCurrentPrincipalId(ctx, azCli)
+		principalID, err := azureutil.GetCurrentPrincipalId(ctx, userProfileService)
 		if err != nil {
 			return fmt.Errorf("fetching current user information: %w", err)
 		}

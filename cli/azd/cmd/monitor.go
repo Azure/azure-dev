@@ -11,6 +11,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
@@ -68,6 +69,7 @@ For more information, go to https://aka.ms/azure-dev/monitor.`,
 
 type monitorAction struct {
 	azdCtx  *azdcontext.AzdContext
+	env     *environment.Environment
 	azCli   azcli.AzCli
 	console input.Console
 	flags   *monitorFlags
@@ -75,12 +77,14 @@ type monitorAction struct {
 
 func newMonitorAction(
 	azdCtx *azdcontext.AzdContext,
+	env *environment.Environment,
 	azCli azcli.AzCli,
 	console input.Console,
 	flags *monitorFlags,
 ) actions.Action {
 	return &monitorAction{
 		azdCtx:  azdCtx,
+		env:     env,
 		azCli:   azCli,
 		console: console,
 		flags:   flags,
@@ -92,13 +96,8 @@ func (m *monitorAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 		m.flags.monitorOverview = true
 	}
 
-	env, err := loadOrInitEnvironment(ctx, &m.flags.environmentName, m.azdCtx, m.console, m.azCli)
-	if err != nil {
-		return nil, fmt.Errorf("loading environment: %w", err)
-	}
-
 	resourceManager := infra.NewAzureResourceManager(m.azCli)
-	resourceGroups, err := resourceManager.GetResourceGroupsForEnvironment(ctx, env)
+	resourceGroups, err := resourceManager.GetResourceGroupsForEnvironment(ctx, m.env)
 	if err != nil {
 		return nil, fmt.Errorf("discovering resource groups from deployment: %w", err)
 	}
@@ -107,7 +106,7 @@ func (m *monitorAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 	var portalResources []azcli.AzCliResource
 
 	for _, resourceGroup := range resourceGroups {
-		resources, err := m.azCli.ListResourceGroupResources(ctx, env.GetSubscriptionId(), resourceGroup.Name, nil)
+		resources, err := m.azCli.ListResourceGroupResources(ctx, m.env.GetSubscriptionId(), resourceGroup.Name, nil)
 		if err != nil {
 			return nil, fmt.Errorf("listing resources: %w", err)
 		}

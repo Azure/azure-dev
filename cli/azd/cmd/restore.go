@@ -9,6 +9,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
@@ -63,6 +64,7 @@ type restoreAction struct {
 	console       input.Console
 	azCli         azcli.AzCli
 	azdCtx        *azdcontext.AzdContext
+	env           *environment.Environment
 	commandRunner exec.CommandRunner
 }
 
@@ -71,6 +73,7 @@ func newRestoreAction(
 	azCli azcli.AzCli,
 	console input.Console,
 	azdCtx *azdcontext.AzdContext,
+	env *environment.Environment,
 	commandRunner exec.CommandRunner,
 ) actions.Action {
 	return &restoreAction{
@@ -78,16 +81,12 @@ func newRestoreAction(
 		console:       console,
 		azdCtx:        azdCtx,
 		azCli:         azCli,
+		env:           env,
 		commandRunner: commandRunner,
 	}
 }
 
 func (r *restoreAction) Run(ctx context.Context) (*actions.ActionResult, error) {
-	env, err := loadOrInitEnvironment(ctx, &r.flags.environmentName, r.azdCtx, r.console, r.azCli)
-	if err != nil {
-		return nil, fmt.Errorf("loading environment: %w", err)
-	}
-
 	proj, err := project.GetCurrent()
 	if err != nil {
 		return nil, fmt.Errorf("loading project: %w", err)
@@ -105,7 +104,7 @@ func (r *restoreAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 	allTools := []tools.ExternalTool{}
 	for _, svc := range proj.Services {
 		if r.flags.serviceName == "" || r.flags.serviceName == svc.Name {
-			requiredTools, err := svc.GetRequiredTools(ctx, env, r.commandRunner)
+			requiredTools, err := svc.GetRequiredTools(ctx, r.env, r.commandRunner)
 			if err != nil {
 				return nil, fmt.Errorf("failed getting required tools, %w", err)
 			}
@@ -126,7 +125,7 @@ func (r *restoreAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 		installMsg := fmt.Sprintf("Installing dependencies for %s service...", svc.Name)
 		spinner := spin.NewSpinner(r.console.Handles().Stdout, installMsg)
 		if err = spinner.Run(func() error {
-			return svc.Restore(ctx, env, r.commandRunner)
+			return svc.Restore(ctx, r.env, r.commandRunner)
 		}); err != nil {
 			return nil, err
 		}

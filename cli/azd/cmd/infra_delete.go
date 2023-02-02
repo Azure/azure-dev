@@ -6,6 +6,8 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/pkg/account"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
@@ -52,42 +54,43 @@ func newInfraDeleteCmd() *cobra.Command {
 }
 
 type infraDeleteAction struct {
-	flags         *infraDeleteFlags
-	azCli         azcli.AzCli
-	azdCtx        *azdcontext.AzdContext
-	console       input.Console
-	commandRunner exec.CommandRunner
+	flags          *infraDeleteFlags
+	accountManager account.Manager
+	azCli          azcli.AzCli
+	azdCtx         *azdcontext.AzdContext
+	env            *environment.Environment
+	console        input.Console
+	commandRunner  exec.CommandRunner
 }
 
 func newInfraDeleteAction(
 	flags *infraDeleteFlags,
+	accountManager account.Manager,
 	azCli azcli.AzCli,
 	azdCtx *azdcontext.AzdContext,
+	env *environment.Environment,
 	console input.Console,
 	commandRunner exec.CommandRunner,
 ) actions.Action {
 	return &infraDeleteAction{
-		flags:         flags,
-		azCli:         azCli,
-		azdCtx:        azdCtx,
-		console:       console,
-		commandRunner: commandRunner,
+		flags:          flags,
+		accountManager: accountManager,
+		azCli:          azCli,
+		azdCtx:         azdCtx,
+		env:            env,
+		console:        console,
+		commandRunner:  commandRunner,
 	}
 }
 
 func (a *infraDeleteAction) Run(ctx context.Context) (*actions.ActionResult, error) {
-	env, err := loadOrInitEnvironment(ctx, &a.flags.environmentName, a.azdCtx, a.console, a.azCli)
-	if err != nil {
-		return nil, fmt.Errorf("loading environment: %w", err)
-	}
-
 	prj, err := project.GetCurrent()
 	if err != nil {
 		return nil, fmt.Errorf("loading project: %w", err)
 	}
 
 	infraManager, err := provisioning.NewManager(
-		ctx, env, prj.Path, prj.Infra, a.console.IsUnformatted(), a.azCli, a.console, a.commandRunner,
+		ctx, a.env, prj.Path, prj.Infra, a.console.IsUnformatted(), a.azCli, a.console, a.commandRunner, a.accountManager,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("creating provisioning manager: %w", err)
@@ -107,10 +110,10 @@ func (a *infraDeleteAction) Run(ctx context.Context) (*actions.ActionResult, err
 	// Remove any outputs from the template from the environment since destroying the infrastructure
 	// invalidated them all.
 	for outputName := range destroyResult.Outputs {
-		delete(env.Values, outputName)
+		delete(a.env.Values, outputName)
 	}
 
-	if err := env.Save(); err != nil {
+	if err := a.env.Save(); err != nil {
 		return nil, fmt.Errorf("saving environment: %w", err)
 	}
 

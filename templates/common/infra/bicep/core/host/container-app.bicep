@@ -32,10 +32,12 @@ resource app 'Microsoft.App/containerApps@2022-03-01' = {
         targetPort: targetPort
         transport: 'auto'
       }
-      secrets: [{
+      secrets: [
+        {
           name: 'registry-password'
           value: containerRegistry.listCredentials().passwords[0].value
-        }]
+        }
+      ]
       registries: [
         {
           server: '${containerRegistry.name}.azurecr.io'

@@ -14,6 +14,7 @@ import (
 type subCache interface {
 	Load() ([]Subscription, error)
 	Save(save []Subscription) error
+	Clear() error
 }
 
 type SubscriptionsManager struct {
@@ -31,6 +32,16 @@ func NewSubscriptionsManager(service *azcli.SubscriptionsService) (*Subscription
 		service: service,
 		cache:   cache,
 	}, nil
+}
+
+// Clears stored cached subscriptions.
+func (m *SubscriptionsManager) ClearSubscriptions(ctx context.Context) error {
+	err := m.cache.Clear()
+	if err != nil {
+		return fmt.Errorf("clearing stored subscriptions: %w", err)
+	}
+
+	return nil
 }
 
 // Updates stored cached subscriptions.

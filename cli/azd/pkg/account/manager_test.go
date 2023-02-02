@@ -693,6 +693,11 @@ func (imc *InMemorySubCache) Save(save []Subscription) error {
 	return nil
 }
 
+func (imc *InMemorySubCache) Clear() error {
+	imc.stored = nil
+	return nil
+}
+
 func NewInMemorySubscriptionsCache() *InMemorySubCache {
 	return &InMemorySubCache{
 		stored: []Subscription{},

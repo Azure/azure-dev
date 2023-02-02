@@ -14,6 +14,7 @@ import (
 	"github.com/MakeNowJust/heredoc/v2"
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 	"github.com/azure/azure-dev/cli/azd/pkg/contracts"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
@@ -132,26 +133,29 @@ func newLoginCmd() *cobra.Command {
 }
 
 type loginAction struct {
-	formatter   output.Formatter
-	writer      io.Writer
-	console     input.Console
-	authManager *auth.Manager
-	flags       *loginFlags
+	formatter         output.Formatter
+	writer            io.Writer
+	console           input.Console
+	authManager       *auth.Manager
+	accountSubManager *account.SubscriptionsManager
+	flags             *loginFlags
 }
 
 func newLoginAction(
 	formatter output.Formatter,
 	writer io.Writer,
 	authManager *auth.Manager,
+	accountSubManager *account.SubscriptionsManager,
 	flags *loginFlags,
 	console input.Console,
 ) actions.Action {
 	return &loginAction{
-		formatter:   formatter,
-		writer:      writer,
-		console:     console,
-		authManager: authManager,
-		flags:       flags,
+		formatter:         formatter,
+		writer:            writer,
+		console:           console,
+		authManager:       authManager,
+		accountSubManager: accountSubManager,
+		flags:             flags,
 	}
 }
 
@@ -291,10 +295,18 @@ func (la *loginAction) login(ctx context.Context) error {
 			return fmt.Errorf("logging in: %w", err)
 		}
 
-		// TODO: refresh sub access here
+		err := la.accountSubManager.RefreshSubscriptions(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to load subscriptions for the account: %w", err)
+		}
 	} else {
 		if _, err := la.authManager.LoginInteractive(ctx, la.flags.redirectPort); err != nil {
 			return fmt.Errorf("logging in: %w", err)
+		}
+
+		err := la.accountSubManager.RefreshSubscriptions(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to load subscriptions for the account: %w", err)
 		}
 	}
 

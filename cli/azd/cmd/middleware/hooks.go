@@ -40,6 +40,11 @@ func NewHooksMiddleware(
 
 // Runs the Hooks middleware
 func (m *HooksMiddleware) Run(ctx context.Context, next NextFn) (*actions.ActionResult, error) {
+	if m.env == nil {
+		log.Println("azd environment is not available, skipping all hook registrations.")
+		return next(ctx)
+	}
+
 	if err := m.registerServiceHooks(ctx); err != nil {
 		return nil, fmt.Errorf("failed registering service hooks, %w", err)
 	}
@@ -50,8 +55,9 @@ func (m *HooksMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 // Register command level hooks for the executing cobra command & action
 // Invokes the middleware next function
 func (m *HooksMiddleware) registerCommandHooks(ctx context.Context, next NextFn) (*actions.ActionResult, error) {
-	if m.projectConfig.Hooks == nil || len(m.projectConfig.Hooks) == 0 {
-		log.Println("project does not contain any command hooks.")
+	if m.projectConfig == nil || m.projectConfig.Hooks == nil || len(m.projectConfig.Hooks) == 0 {
+		//nolint:lll
+		log.Println("azd project is not available or does not contain any command hooks, skipping command hook registrations.")
 		return next(ctx)
 	}
 

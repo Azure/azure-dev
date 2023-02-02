@@ -13,13 +13,13 @@ import (
 
 // SubscriptionsService allows querying of subscriptions and tenants.
 type SubscriptionsService struct {
-	credentialProvider auth.TenantCredentialProvider
+	credentialProvider auth.MultiTenantCredentialProvider
 	userAgent          string
 	httpClient         httputil.HttpClient
 }
 
 func NewSubscriptionsService(
-	credentialProvider auth.TenantCredentialProvider,
+	credentialProvider auth.MultiTenantCredentialProvider,
 	httpClient httputil.HttpClient) *SubscriptionsService {
 	return &SubscriptionsService{
 		userAgent:          azdinternal.MakeUserAgentString(""),

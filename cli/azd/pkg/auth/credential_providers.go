@@ -7,36 +7,16 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 )
 
-type DefaultTenantCredentialProvider struct {
-	auth *Manager
-}
-
-func NewDefaultTenantCredentialProvider(auth *Manager) *DefaultTenantCredentialProvider {
-	return &DefaultTenantCredentialProvider{
-		auth: auth,
-	}
-}
-
-// Gets an authenticated token credential
-func (c *DefaultTenantCredentialProvider) GetTokenCredential(ctx context.Context) (azcore.TokenCredential, error) {
-	credential, err := c.auth.CredentialForCurrentUser(ctx, nil)
-	if err != nil {
-		return nil, err
-	}
-
-	if _, err := EnsureLoggedInCredential(ctx, credential); err != nil {
-		return nil, err
-	}
-
-	return credential, nil
-}
-
-type TenantCredentialProvider interface {
+// MultiTenantCredentialProvider provides token credentials for different tenants.
+//
+// Only use this if you need to perform multi-tenant operations.
+// A default azcore.TokenCredential is registered in application that is scoped to the correct environment tenant.
+type MultiTenantCredentialProvider interface {
 	// Gets an authenticated token credential for the given tenant. If tenantId is empty, uses the default home tenant.
 	GetTokenCredential(ctx context.Context, tenantId string) (azcore.TokenCredential, error)
 }
 
-type MultiTenantCredentialProvider struct {
+type multiTenantCredentialProvider struct {
 	auth *Manager
 
 	// In-memory store for tenant credentials. Since azcore.TokenCredential is usually backed by a publicClient
@@ -45,14 +25,14 @@ type MultiTenantCredentialProvider struct {
 	tenantCredentials sync.Map
 }
 
-func NewMultiTenantCredentialProvider(auth *Manager) *MultiTenantCredentialProvider {
-	return &MultiTenantCredentialProvider{
+func NewMultiTenantCredentialProvider(auth *Manager) MultiTenantCredentialProvider {
+	return &multiTenantCredentialProvider{
 		auth: auth,
 	}
 }
 
 // Gets an authenticated token credential for the given tenant. If tenantId is empty, uses the default home tenant.
-func (t *MultiTenantCredentialProvider) GetTokenCredential(ctx context.Context, tenantId string) (azcore.TokenCredential, error) {
+func (t *multiTenantCredentialProvider) GetTokenCredential(ctx context.Context, tenantId string) (azcore.TokenCredential, error) {
 	if val, ok := t.tenantCredentials.Load(tenantId); ok {
 		return val.(azcore.TokenCredential), nil
 	}

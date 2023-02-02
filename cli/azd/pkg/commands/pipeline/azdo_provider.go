@@ -696,8 +696,12 @@ func (p *AzdoCiProvider) configurePipeline(
 		return nil, err
 	}
 	details.buildDefinition = buildDefinition
+
+	repoUrl := details.repoWebUrl
+	repoPrefix := strings.Split(repoUrl, "_git")[0]
+	pipelineUrl := fmt.Sprintf("%s_build?definitionId=%d", repoPrefix, *buildDefinition.Id)
 	return &CiPipeline{
 		name:   *buildDefinition.Name,
-		remote: *buildDefinition.Uri,
+		remote: pipelineUrl,
 	}, nil
 }

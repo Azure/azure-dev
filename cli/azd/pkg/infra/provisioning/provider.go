@@ -18,7 +18,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 )
 
-type LocationPromptFunc func(msg string, filter func(loc azcli.AzCliLocation) bool) (location string, err error)
+type LocationPromptFunc func(msg string, shouldDisplay func(loc azcli.AzCliLocation) bool) (location string, err error)
 
 // Prompters contains prompt functions that can be used for general scenarios.
 type Prompters struct {

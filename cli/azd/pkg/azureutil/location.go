@@ -41,7 +41,7 @@ func PromptLocationWithFilter(
 	help string,
 	console input.Console,
 	accountManager account.Manager,
-	filter func(azcli.AzCliLocation) bool,
+	shouldDisplay func(azcli.AzCliLocation) bool,
 ) (string, error) {
 	allLocations, err := accountManager.GetLocations(ctx, env.GetSubscriptionId())
 	if err != nil {
@@ -50,7 +50,7 @@ func PromptLocationWithFilter(
 
 	locations := make([]azcli.AzCliLocation, 0, len(allLocations))
 	for _, location := range allLocations {
-		if filter(location) {
+		if shouldDisplay(location) {
 			locations = append(locations, location)
 		}
 	}

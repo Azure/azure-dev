@@ -10,23 +10,26 @@ import (
 	"go.uber.org/multierr"
 )
 
-type Cache interface {
+type subCache interface {
 	Load() ([]Subscription, error)
-	Save([]Subscription) error
+	Save(save []Subscription) error
 }
 
 type SubscriptionsManager struct {
 	service *azcli.SubscriptionsService
-	cache   Cache
+	cache   subCache
 }
 
-func NewSubscriptionsManager(
-	service *azcli.SubscriptionsService,
-	cache Cache) *SubscriptionsManager {
+func NewSubscriptionsManager(service *azcli.SubscriptionsService) (*SubscriptionsManager, error) {
+	cache, err := NewSubscriptionsCache()
+	if err != nil {
+		return nil, err
+	}
+
 	return &SubscriptionsManager{
 		service: service,
 		cache:   cache,
-	}
+	}, nil
 }
 
 // Updates stored cached subscriptions.

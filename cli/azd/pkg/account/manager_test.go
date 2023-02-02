@@ -44,7 +44,7 @@ func Test_GetAccountDefaults(t *testing.T) {
 
 		manager, err := NewManager(
 			mockConfig.WithConfig(expectedConfig),
-			NewSubscriptionsManager(
+			NewSubscriptionsManagerWithCache(
 				azcli.NewSubscriptionsService(
 					&mocks.MockMultiTenantCredentialProvider{},
 					mockHttp,
@@ -69,7 +69,7 @@ func Test_GetAccountDefaults(t *testing.T) {
 
 		manager, err := NewManager(
 			mockConfig.WithConfig(emptyConfig),
-			NewSubscriptionsManager(
+			NewSubscriptionsManagerWithCache(
 				azcli.NewSubscriptionsService(
 					&mocks.MockMultiTenantCredentialProvider{},
 					mockHttp,
@@ -103,7 +103,7 @@ func Test_GetAccountDefaults(t *testing.T) {
 
 		manager, err := NewManager(
 			mockConfig.WithConfig(emptyConfig),
-			NewSubscriptionsManager(
+			NewSubscriptionsManagerWithCache(
 				azcli.NewSubscriptionsService(
 					&mocks.MockMultiTenantCredentialProvider{},
 					mockHttp,
@@ -133,7 +133,7 @@ func Test_GetAccountDefaults(t *testing.T) {
 
 		manager, err := NewManager(
 			mockConfig.WithConfig(emptyConfig),
-			NewSubscriptionsManager(
+			NewSubscriptionsManagerWithCache(
 				azcli.NewSubscriptionsService(
 					&mocks.MockMultiTenantCredentialProvider{},
 					mockHttp,
@@ -155,7 +155,7 @@ func Test_GetSubscriptions(t *testing.T) {
 		mockHttp := mockhttp.NewMockHttpUtil()
 		setupAccountMocks(mockHttp)
 
-		manager, err := NewManager(mockConfig, NewSubscriptionsManager(
+		manager, err := NewManager(mockConfig, NewSubscriptionsManagerWithCache(
 			azcli.NewSubscriptionsService(
 				&mocks.MockMultiTenantCredentialProvider{},
 				mockHttp,
@@ -190,7 +190,7 @@ func Test_GetSubscriptions(t *testing.T) {
 
 		manager, err := NewManager(
 			mockConfig.WithConfig(defaultConfig),
-			NewSubscriptionsManager(
+			NewSubscriptionsManagerWithCache(
 				azcli.NewSubscriptionsService(
 					&mocks.MockMultiTenantCredentialProvider{},
 					mockHttp,
@@ -219,7 +219,7 @@ func Test_GetSubscriptions(t *testing.T) {
 
 		manager, err := NewManager(
 			mockConfig,
-			NewSubscriptionsManager(
+			NewSubscriptionsManagerWithCache(
 				azcli.NewSubscriptionsService(
 					&mocks.MockMultiTenantCredentialProvider{},
 					mockHttp,
@@ -257,7 +257,7 @@ func Test_GetLocations(t *testing.T) {
 
 		manager, err := NewManager(
 			mockConfig.WithConfig(defaultConfig),
-			NewSubscriptionsManager(
+			NewSubscriptionsManagerWithCache(
 				azcli.NewSubscriptionsService(
 					&mocks.MockMultiTenantCredentialProvider{},
 					mockHttp,
@@ -278,7 +278,7 @@ func Test_GetLocations(t *testing.T) {
 		mockHttp := mockhttp.NewMockHttpUtil()
 		setupAccountErrorMocks(mockHttp)
 
-		manager, err := NewManager(mockConfig, NewSubscriptionsManager(
+		manager, err := NewManager(mockConfig, NewSubscriptionsManagerWithCache(
 			azcli.NewSubscriptionsService(
 				&mocks.MockMultiTenantCredentialProvider{},
 				mockHttp,
@@ -298,7 +298,7 @@ func Test_GetLocations(t *testing.T) {
 		setupAccountErrorMocks(mockHttp)
 		setupGetSubscriptionMock(mockHttp, &subscription, nil)
 
-		manager, err := NewManager(mockConfig, NewSubscriptionsManager(
+		manager, err := NewManager(mockConfig, NewSubscriptionsManagerWithCache(
 			azcli.NewSubscriptionsService(
 				&mocks.MockMultiTenantCredentialProvider{},
 				mockHttp,
@@ -326,7 +326,7 @@ func Test_SetDefaultSubscription(t *testing.T) {
 		setupAccountMocks(mockHttp)
 		setupGetSubscriptionMock(mockHttp, &expectedSubscription, nil)
 
-		manager, err := NewManager(mockConfig, NewSubscriptionsManager(
+		manager, err := NewManager(mockConfig, NewSubscriptionsManagerWithCache(
 			azcli.NewSubscriptionsService(
 				&mocks.MockMultiTenantCredentialProvider{},
 				mockHttp,
@@ -352,7 +352,7 @@ func Test_SetDefaultSubscription(t *testing.T) {
 		setupAccountMocks(mockHttp)
 		setupGetSubscriptionMock(mockHttp, &expectedSubscription, errors.New("Not found"))
 
-		manager, err := NewManager(mockConfig, NewSubscriptionsManager(
+		manager, err := NewManager(mockConfig, NewSubscriptionsManagerWithCache(
 			azcli.NewSubscriptionsService(
 				&mocks.MockMultiTenantCredentialProvider{},
 				mockHttp,
@@ -391,7 +391,7 @@ func Test_SetDefaultLocation(t *testing.T) {
 
 		manager, err := NewManager(
 			mockConfig.WithConfig(defaultConfig),
-			NewSubscriptionsManager(
+			NewSubscriptionsManagerWithCache(
 				azcli.NewSubscriptionsService(
 					&mocks.MockMultiTenantCredentialProvider{},
 					mockHttp,
@@ -415,7 +415,7 @@ func Test_SetDefaultLocation(t *testing.T) {
 		setupAccountMocks(mockHttp)
 		setupGetSubscriptionMock(mockHttp, &subscription, nil)
 
-		manager, err := NewManager(mockConfig, NewSubscriptionsManager(
+		manager, err := NewManager(mockConfig, NewSubscriptionsManagerWithCache(
 			azcli.NewSubscriptionsService(
 				&mocks.MockMultiTenantCredentialProvider{},
 				mockHttp,
@@ -442,7 +442,7 @@ func Test_Clear(t *testing.T) {
 	setupAccountMocks(mockHttp)
 	setupGetSubscriptionMock(mockHttp, &expectedSubscription, nil)
 
-	manager, err := NewManager(mockConfig, NewSubscriptionsManager(
+	manager, err := NewManager(mockConfig, NewSubscriptionsManagerWithCache(
 		azcli.NewSubscriptionsService(
 			&mocks.MockMultiTenantCredentialProvider{},
 			mockHttp,
@@ -493,7 +493,7 @@ func Test_HasDefaults(t *testing.T) {
 
 		manager, err := NewManager(
 			mockConfig.WithConfig(azdConfig),
-			NewSubscriptionsManager(
+			NewSubscriptionsManagerWithCache(
 				azcli.NewSubscriptionsService(
 					&mocks.MockMultiTenantCredentialProvider{},
 					mockHttp,
@@ -512,7 +512,7 @@ func Test_HasDefaults(t *testing.T) {
 
 		manager, err := NewManager(
 			mockConfig.WithConfig(azdConfig),
-			NewSubscriptionsManager(
+			NewSubscriptionsManagerWithCache(
 				azcli.NewSubscriptionsService(
 					&mocks.MockMultiTenantCredentialProvider{},
 					mockHttp,
@@ -696,5 +696,14 @@ func (imc *InMemorySubCache) Save(save []Subscription) error {
 func NewInMemorySubscriptionsCache() *InMemorySubCache {
 	return &InMemorySubCache{
 		stored: []Subscription{},
+	}
+}
+
+func NewSubscriptionsManagerWithCache(
+	service *azcli.SubscriptionsService,
+	cache subCache) *SubscriptionsManager {
+	return &SubscriptionsManager{
+		service: service,
+		cache:   cache,
 	}
 }

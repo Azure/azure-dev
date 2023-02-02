@@ -49,7 +49,8 @@ func (m *SubscriptionsManager) RefreshSubscriptions(ctx context.Context) error {
 
 // Resolve the tenant ID required by the current user account to access the given subscription.
 //
-// The resolution is first done by examining the local file cache, then by querying azure management services.
+// The resolution is first done by examining the cache, then by querying azure management services. See SubscriptionCache
+// for details about caching.
 func (m *SubscriptionsManager) ResolveUserTenant(ctx context.Context, subscriptionId string) (tenantId string, err error) {
 	subscriptions, err := m.GetSubscriptions(ctx)
 	if err != nil {
@@ -69,7 +70,7 @@ func (m *SubscriptionsManager) ResolveUserTenant(ctx context.Context, subscripti
 
 // GetSubscriptions retrieves subscriptions accessible by the current account with caching semantics.
 //
-// Unlike ListSubscriptions, GetSubscriptions first examines the local storage cache for subscriptions.
+// Unlike ListSubscriptions, GetSubscriptions first examines the subscriptions cache.
 // On cache miss, subscriptions are fetched, the cached is updated, before the result is returned.
 func (m *SubscriptionsManager) GetSubscriptions(ctx context.Context) ([]Subscription, error) {
 	subscriptions, err := m.cache.Load()

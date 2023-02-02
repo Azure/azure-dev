@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
@@ -16,6 +17,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
+	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
@@ -115,19 +117,15 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	})
 
 	container.RegisterSingleton(azdcontext.NewAzdContext)
+	container.RegisterSingleton(func() httputil.HttpClient { return &http.Client{} })
 
-	container.RegisterSingleton(func(ctx context.Context, authManager *auth.Manager) (azcore.TokenCredential, error) {
-		credential, err := authManager.CredentialForCurrentUser(ctx, nil)
-		if err != nil {
-			return nil, err
-		}
-
-		if _, err := auth.EnsureLoggedInCredential(ctx, credential); err != nil {
-			return nil, err
-		}
-
-		return credential, nil
-	})
+	// Register
+	container.RegisterSingleton(auth.NewDefaultTenantCredentialProvider)
+	container.RegisterSingleton(
+		func(ctx context.Context, credProvider *auth.DefaultTenantCredentialProvider) (azcore.TokenCredential, error) {
+			return credProvider.GetTokenCredential(ctx)
+		})
+	container.RegisterSingleton(auth.NewMultiTenantCredentialProvider)
 
 	container.RegisterSingleton(func(mgr *auth.Manager) CredentialProviderFn {
 		return mgr.CredentialForCurrentUser
@@ -208,6 +206,9 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	container.RegisterSingleton(templates.NewTemplateManager)
 	container.RegisterSingleton(auth.NewManager)
 	container.RegisterSingleton(account.NewManager)
+
+	container.RegisterSingleton(account.NewSubscriptionsManager)
+	container.RegisterSingleton(azcli.NewSubscriptionsService)
 
 	// Required for nested actions called from composite actions like 'up'
 	registerActionInitializer[*initAction](container, "azd-init-action")

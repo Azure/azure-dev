@@ -24,8 +24,22 @@ var defaultLocation Location = Location{
 	DisplayName: "(US) East US 2",
 }
 
+type SubscriptionsListing interface {
+	GetSubscriptions(ctx context.Context) ([]Subscription, error)
+	GetLocations(ctx context.Context, subscriptionId string) ([]azcli.AzCliLocation, error)
+}
+type Manager interface {
+	Clear(ctx context.Context) error
+	HasDefaults() bool
+	GetAccountDefaults(ctx context.Context) (*Account, error)
+	GetSubscriptions(ctx context.Context) ([]Subscription, error)
+	GetLocations(ctx context.Context, subscriptionId string) ([]azcli.AzCliLocation, error)
+	SetDefaultSubscription(ctx context.Context, subscriptionId string) (*Subscription, error)
+	SetDefaultLocation(ctx context.Context, subscriptionId string, location string) (*Location, error)
+}
+
 // Manages azd account configuration
-type Manager struct {
+type manager struct {
 	// Path to the local azd user configuration file
 	filePath      string
 	configManager config.Manager
@@ -36,7 +50,7 @@ type Manager struct {
 // Creates a new Account Manager instance
 func NewManager(
 	configManager config.Manager,
-	subManager *SubscriptionsManager) (*Manager, error) {
+	subManager *SubscriptionsManager) (Manager, error) {
 	filePath, err := config.GetUserConfigFilePath()
 	if err != nil {
 		return nil, err
@@ -52,7 +66,7 @@ func NewManager(
 		}
 	}
 
-	return &Manager{
+	return &manager{
 		filePath:      filePath,
 		subManager:    subManager,
 		configManager: configManager,
@@ -63,7 +77,7 @@ func NewManager(
 // Gets the default subscription for the logged in account.
 // 1. Returns AZD config defaults if exists
 // 2. Returns Coded location default if needed
-func (m *Manager) GetAccountDefaults(ctx context.Context) (*Account, error) {
+func (m *manager) GetAccountDefaults(ctx context.Context) (*Account, error) {
 	subscription, err := m.getDefaultSubscription(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed retrieving default subscription: %w", err)
@@ -88,7 +102,7 @@ func (m *Manager) GetAccountDefaults(ctx context.Context) (*Account, error) {
 
 // Gets the available Azure subscriptions for the current logged in account, across all tenants the user has access to.
 // Applies the default subscription on the matching account
-func (m *Manager) GetSubscriptions(ctx context.Context) ([]Subscription, error) {
+func (m *manager) GetSubscriptions(ctx context.Context) ([]Subscription, error) {
 	defaultSubscription, err := m.getDefaultSubscription(ctx)
 	if err != nil {
 		return nil, err
@@ -117,7 +131,7 @@ func (m *Manager) GetSubscriptions(ctx context.Context) ([]Subscription, error) 
 }
 
 // Gets the available Azure locations for the specified Azure subscription.
-func (m *Manager) GetLocations(ctx context.Context, subscriptionId string) ([]azcli.AzCliLocation, error) {
+func (m *manager) GetLocations(ctx context.Context, subscriptionId string) ([]azcli.AzCliLocation, error) {
 	locations, err := m.subManager.ListLocations(ctx, subscriptionId)
 	if err != nil {
 		return nil, fmt.Errorf("failed retrieving Azure location for account '%s': %w", subscriptionId, err)
@@ -127,7 +141,7 @@ func (m *Manager) GetLocations(ctx context.Context, subscriptionId string) ([]az
 }
 
 // Sets the default Azure subscription for the current logged in principal.
-func (m *Manager) SetDefaultSubscription(ctx context.Context, subscriptionId string) (*Subscription, error) {
+func (m *manager) SetDefaultSubscription(ctx context.Context, subscriptionId string) (*Subscription, error) {
 	subscription, err := m.subManager.GetSubscription(ctx, subscriptionId)
 	if err != nil {
 		return nil, fmt.Errorf("failed getting account for id '%s'", subscriptionId)
@@ -151,7 +165,7 @@ func (m *Manager) SetDefaultSubscription(ctx context.Context, subscriptionId str
 }
 
 // Sets the default Azure location for the current logged in principal.
-func (m *Manager) SetDefaultLocation(ctx context.Context, subscriptionId string, location string) (*Location, error) {
+func (m *manager) SetDefaultLocation(ctx context.Context, subscriptionId string, location string) (*Location, error) {
 	locations, err := m.subManager.ListLocations(ctx, subscriptionId)
 	if err != nil {
 		return nil, fmt.Errorf("failed retrieving locations: %w", err)
@@ -184,7 +198,7 @@ func (m *Manager) SetDefaultLocation(ctx context.Context, subscriptionId string,
 }
 
 // Checks whether account related defaults of subscription and location have previously been set
-func (m *Manager) HasDefaults() bool {
+func (m *manager) HasDefaults() bool {
 	_, hasDefaultSubscription := m.config.Get(defaultSubscriptionKeyPath)
 	_, hasDefaultLocation := m.config.Get(defaultLocationKeyPath)
 
@@ -192,7 +206,7 @@ func (m *Manager) HasDefaults() bool {
 }
 
 // Clears any persisted defaults in the AZD config
-func (m *Manager) Clear(ctx context.Context) error {
+func (m *manager) Clear(ctx context.Context) error {
 	err := m.config.Unset("defaults")
 	if err != nil {
 		return fmt.Errorf("failed clearing defaults: %w", err)
@@ -209,7 +223,7 @@ func (m *Manager) Clear(ctx context.Context) error {
 // Returns the default subscription for the current logged in principal
 // If set in config will return the configured subscription
 // otherwise will return the first subscription found.
-func (m *Manager) getDefaultSubscription(ctx context.Context) (*Subscription, error) {
+func (m *manager) getDefaultSubscription(ctx context.Context) (*Subscription, error) {
 	// Get the default subscription ID from azd configuration
 	configSubscriptionId, ok := m.config.Get(defaultSubscriptionKeyPath)
 
@@ -237,7 +251,7 @@ func (m *Manager) getDefaultSubscription(ctx context.Context) (*Subscription, er
 
 // Gets the default Azure location for the specified subscription
 // When specified in azd config, will return the location when valid, otherwise azd global default (eastus2)
-func (m *Manager) getDefaultLocation(ctx context.Context, subscriptionId string) (*Location, error) {
+func (m *manager) getDefaultLocation(ctx context.Context, subscriptionId string) (*Location, error) {
 	configLocation, ok := m.config.Get(defaultLocationKeyPath)
 	if !ok {
 		return &defaultLocation, nil

@@ -155,7 +155,7 @@ func (p *pipelineConfigAction) Run(ctx context.Context) (*actions.ActionResult, 
 	// set context for manager
 	p.manager.Environment = env
 
-	repoLink, pipelineLink, err := p.manager.Configure(ctx)
+	pipelineResult, err := p.manager.Configure(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -166,8 +166,8 @@ func (p *pipelineConfigAction) Run(ctx context.Context) (*actions.ActionResult, 
 			FollowUp: heredoc.Docf(`
 			Link to view your new repo: %s
 			Link to view your pipeline status: %s`,
-				output.WithLinkFormat("%s", repoLink),
-				output.WithLinkFormat("%s", pipelineLink)),
+				output.WithLinkFormat("%s", pipelineResult.RepositoryLink),
+				output.WithLinkFormat("%s", pipelineResult.PipelineLink)),
 		},
 	}, nil
 }

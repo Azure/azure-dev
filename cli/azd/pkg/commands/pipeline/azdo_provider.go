@@ -510,6 +510,7 @@ func (p *AzdoScmProvider) gitRepoDetails(ctx context.Context, remoteUrl string) 
 		owner:    p.repoDetails.orgName,
 		repoName: p.repoDetails.repoName,
 		details:  repoDetails,
+		remote:   repoDetails.repoWebUrl,
 	}, nil
 }
 

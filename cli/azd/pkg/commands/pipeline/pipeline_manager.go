@@ -135,7 +135,7 @@ func (i *PipelineManager) ensureRemote(
 
 	// each provider knows how to extract the Owner and repo name from a remoteUrl
 	gitRepoDetails, err := i.ScmProvider.gitRepoDetails(ctx, remoteUrl)
-	gitRepoDetails.remote = remoteUrl
+
 	if err != nil {
 		return nil, err
 	}

@@ -153,6 +153,7 @@ func (p *GitHubScmProvider) gitRepoDetails(ctx context.Context, remoteUrl string
 	return &gitRepositoryDetails{
 		owner:    slugParts[0],
 		repoName: slugParts[1],
+		remote:   remoteUrl,
 	}, nil
 }
 

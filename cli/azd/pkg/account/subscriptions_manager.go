@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"sort"
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
@@ -120,6 +121,10 @@ func (m *SubscriptionsManager) ListSubscriptions(ctx context.Context) ([]Subscri
 			allSubscriptions = append(allSubscriptions, convertSubscription(&subscription, tenantId))
 		}
 	}
+
+	sort.Slice(allSubscriptions, func(i, j int) bool {
+		return allSubscriptions[i].Name < allSubscriptions[j].Name
+	})
 
 	if !oneSuccess && len(tenants) > 0 {
 		return nil, multierr.Combine(errors...)

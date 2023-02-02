@@ -22,14 +22,15 @@ func newDownFlags(cmd *cobra.Command, infraDeleteFlags *infraDeleteFlags, global
 
 func newDownCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "down",
-		Short: "Delete Azure resources for an app.",
+		Use:     "down",
+		Short:   "Delete Azure resources for an app.",
+		Aliases: []string{"infra delete"},
 	}
 }
 
 type downAction struct {
 	runner      middleware.MiddlewareContext
-	infraDelete infraDeleteAction
+	infraDelete *infraDeleteAction
 }
 
 func newDownAction(
@@ -41,12 +42,12 @@ func newDownAction(
 	infraDelete.flags = &downFlags.infraDeleteFlags
 
 	return &downAction{
-		infraDelete: *infraDelete,
+		infraDelete: infraDelete,
 		runner:      runner,
 	}
 }
 
 func (a *downAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	runOptions := &middleware.Options{Name: "infradelete"}
-	return a.runner.RunChildAction(ctx, runOptions, &a.infraDelete)
+	return a.runner.RunChildAction(ctx, runOptions, a.infraDelete)
 }

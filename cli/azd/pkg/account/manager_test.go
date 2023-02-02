@@ -49,7 +49,7 @@ func Test_GetAccountDefaults(t *testing.T) {
 					&mocks.MockMultiTenantCredentialProvider{},
 					mockHttp,
 				),
-				NewInMemorySubscriptionsCache(),
+				NewBypassSubscriptionsCache(),
 			),
 		)
 		require.NoError(t, err)
@@ -74,7 +74,7 @@ func Test_GetAccountDefaults(t *testing.T) {
 					&mocks.MockMultiTenantCredentialProvider{},
 					mockHttp,
 				),
-				NewInMemorySubscriptionsCache(),
+				NewBypassSubscriptionsCache(),
 			),
 		)
 		require.NoError(t, err)
@@ -108,7 +108,7 @@ func Test_GetAccountDefaults(t *testing.T) {
 					&mocks.MockMultiTenantCredentialProvider{},
 					mockHttp,
 				),
-				NewInMemorySubscriptionsCache(),
+				NewBypassSubscriptionsCache(),
 			),
 		)
 		require.NoError(t, err)
@@ -138,7 +138,7 @@ func Test_GetAccountDefaults(t *testing.T) {
 					&mocks.MockMultiTenantCredentialProvider{},
 					mockHttp,
 				),
-				NewInMemorySubscriptionsCache(),
+				NewBypassSubscriptionsCache(),
 			),
 		)
 		require.NoError(t, err)
@@ -160,7 +160,7 @@ func Test_GetSubscriptions(t *testing.T) {
 				&mocks.MockMultiTenantCredentialProvider{},
 				mockHttp,
 			),
-			NewInMemorySubscriptionsCache()))
+			NewBypassSubscriptionsCache()))
 		require.NoError(t, err)
 
 		subscriptions, err := manager.GetSubscriptions(context.Background())
@@ -195,7 +195,7 @@ func Test_GetSubscriptions(t *testing.T) {
 					&mocks.MockMultiTenantCredentialProvider{},
 					mockHttp,
 				),
-				NewInMemorySubscriptionsCache(),
+				NewBypassSubscriptionsCache(),
 			),
 		)
 		require.NoError(t, err)
@@ -224,7 +224,7 @@ func Test_GetSubscriptions(t *testing.T) {
 					&mocks.MockMultiTenantCredentialProvider{},
 					mockHttp,
 				),
-				NewInMemorySubscriptionsCache(),
+				NewBypassSubscriptionsCache(),
 			))
 		require.NoError(t, err)
 
@@ -262,7 +262,7 @@ func Test_GetLocations(t *testing.T) {
 					&mocks.MockMultiTenantCredentialProvider{},
 					mockHttp,
 				),
-				NewInMemorySubscriptionsCache(),
+				NewBypassSubscriptionsCache(),
 			),
 		)
 		require.NoError(t, err)
@@ -283,7 +283,7 @@ func Test_GetLocations(t *testing.T) {
 				&mocks.MockMultiTenantCredentialProvider{},
 				mockHttp,
 			),
-			NewInMemorySubscriptionsCache()))
+			NewBypassSubscriptionsCache()))
 		require.NoError(t, err)
 
 		locations, err := manager.GetLocations(context.Background(), subscription.Id)
@@ -303,7 +303,7 @@ func Test_GetLocations(t *testing.T) {
 				&mocks.MockMultiTenantCredentialProvider{},
 				mockHttp,
 			),
-			NewInMemorySubscriptionsCache()))
+			NewBypassSubscriptionsCache()))
 		require.NoError(t, err)
 
 		locations, err := manager.GetLocations(context.Background(), subscription.Id)
@@ -331,7 +331,7 @@ func Test_SetDefaultSubscription(t *testing.T) {
 				&mocks.MockMultiTenantCredentialProvider{},
 				mockHttp,
 			),
-			NewInMemorySubscriptionsCache()))
+			NewBypassSubscriptionsCache()))
 		require.NoError(t, err)
 
 		actualSubscription, err := manager.SetDefaultSubscription(context.Background(), expectedSubscription.Id)
@@ -357,7 +357,7 @@ func Test_SetDefaultSubscription(t *testing.T) {
 				&mocks.MockMultiTenantCredentialProvider{},
 				mockHttp,
 			),
-			NewInMemorySubscriptionsCache()))
+			NewBypassSubscriptionsCache()))
 		require.NoError(t, err)
 
 		actualSubscription, err := manager.SetDefaultSubscription(context.Background(), expectedSubscription.Id)
@@ -396,7 +396,7 @@ func Test_SetDefaultLocation(t *testing.T) {
 					&mocks.MockMultiTenantCredentialProvider{},
 					mockHttp,
 				),
-				NewInMemorySubscriptionsCache(),
+				NewBypassSubscriptionsCache(),
 			),
 		)
 		require.NoError(t, err)
@@ -420,7 +420,7 @@ func Test_SetDefaultLocation(t *testing.T) {
 				&mocks.MockMultiTenantCredentialProvider{},
 				mockHttp,
 			),
-			NewInMemorySubscriptionsCache()))
+			NewBypassSubscriptionsCache()))
 		require.NoError(t, err)
 
 		location, err := manager.SetDefaultLocation(context.Background(), subscription.Id, expectedLocation)
@@ -447,7 +447,7 @@ func Test_Clear(t *testing.T) {
 			&mocks.MockMultiTenantCredentialProvider{},
 			mockHttp,
 		),
-		NewInMemorySubscriptionsCache()))
+		NewBypassSubscriptionsCache()))
 	require.NoError(t, err)
 
 	subscription, err := manager.SetDefaultSubscription(context.Background(), expectedSubscription.Id)
@@ -498,7 +498,7 @@ func Test_HasDefaults(t *testing.T) {
 					&mocks.MockMultiTenantCredentialProvider{},
 					mockHttp,
 				),
-				NewInMemorySubscriptionsCache(),
+				NewBypassSubscriptionsCache(),
 			),
 		)
 		require.NoError(t, err)
@@ -517,7 +517,7 @@ func Test_HasDefaults(t *testing.T) {
 					&mocks.MockMultiTenantCredentialProvider{},
 					mockHttp,
 				),
-				NewInMemorySubscriptionsCache(),
+				NewBypassSubscriptionsCache(),
 			),
 		)
 		require.NoError(t, err)
@@ -592,6 +592,17 @@ func setupAccountErrorMocks(mockHttp *mockhttp.MockHttpClient) {
 	})
 
 	mockHttp.When(func(request *http.Request) bool {
+		return request.Method == http.MethodGet && request.URL.Path == "/tenants"
+	}).RespondFn(func(request *http.Request) (*http.Response, error) {
+		return &http.Response{
+			Request:    request,
+			StatusCode: http.StatusUnauthorized,
+			Header:     http.Header{},
+			Body:       http.NoBody,
+		}, nil
+	})
+
+	mockHttp.When(func(request *http.Request) bool {
 		return request.Method == http.MethodGet && strings.Contains(request.URL.Path, "/locations")
 	}).RespondFn(func(request *http.Request) (*http.Response, error) {
 		return &http.Response{
@@ -610,6 +621,30 @@ func setupAccountMocks(mockHttp *mockhttp.MockHttpClient) {
 		res := armsubscriptions.ClientListResponse{
 			SubscriptionListResult: armsubscriptions.SubscriptionListResult{
 				Value: allTestSubscriptions,
+			},
+		}
+
+		jsonBytes, _ := json.Marshal(res)
+
+		return &http.Response{
+			Request:    request,
+			StatusCode: http.StatusOK,
+			Header:     http.Header{},
+			Body:       io.NopCloser(bytes.NewBuffer(jsonBytes)),
+		}, nil
+	})
+
+	mockHttp.When(func(request *http.Request) bool {
+		return request.Method == http.MethodGet && request.URL.Path == "/tenants"
+	}).RespondFn(func(request *http.Request) (*http.Response, error) {
+		res := armsubscriptions.TenantsClientListResponse{
+			TenantListResult: armsubscriptions.TenantListResult{
+				Value: []*armsubscriptions.TenantIDDescription{
+					{
+						DisplayName: convert.RefOf("TENANT"),
+						TenantID:    convert.RefOf("TENANT_ID"),
+					},
+				},
 			},
 		}
 
@@ -711,4 +746,23 @@ func NewSubscriptionsManagerWithCache(
 		service: service,
 		cache:   cache,
 	}
+}
+
+type BypassSubscriptionsCache struct {
+}
+
+func (b *BypassSubscriptionsCache) Load() ([]Subscription, error) {
+	return nil, errors.New("bypass cache")
+}
+
+func (b *BypassSubscriptionsCache) Save(save []Subscription) error {
+	return nil
+}
+
+func (b *BypassSubscriptionsCache) Clear() error {
+	return nil
+}
+
+func NewBypassSubscriptionsCache() *BypassSubscriptionsCache {
+	return &BypassSubscriptionsCache{}
 }

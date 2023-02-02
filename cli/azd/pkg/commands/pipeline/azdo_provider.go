@@ -533,10 +533,6 @@ func (p *AzdoScmProvider) postGitPush(
 	branchName string,
 	console input.Console) error {
 
-	if gitRepo.pushStatus {
-		console.Message(ctx, output.WithSuccessFormat(azdo.AzdoConfigSuccessMessage, p.repoDetails.repoWebUrl))
-	}
-
 	connection, err := p.getAzdoConnection(ctx)
 	if err != nil {
 		return err
@@ -669,20 +665,20 @@ func (p *AzdoCiProvider) configurePipeline(
 	ctx context.Context,
 	repoDetails *gitRepositoryDetails,
 	provisioningProvider provisioning.Options,
-) error {
+) (*CiPipeline, error) {
 	details := repoDetails.details.(*AzdoRepositoryDetails)
 
 	org, _, err := azdo.EnsureOrgNameExists(ctx, p.Env, p.console)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	pat, _, err := azdo.EnsurePatExists(ctx, p.Env, p.console)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	connection, err := azdo.GetConnection(ctx, org, pat)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	buildDefinition, err := azdo.CreatePipeline(
 		ctx,
@@ -696,8 +692,11 @@ func (p *AzdoCiProvider) configurePipeline(
 		provisioningProvider,
 	)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	details.buildDefinition = buildDefinition
-	return nil
+	return &CiPipeline{
+		name:   *buildDefinition.Name,
+		remote: *buildDefinition.Uri,
+	}, nil
 }

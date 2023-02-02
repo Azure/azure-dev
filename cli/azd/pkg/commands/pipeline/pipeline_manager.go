@@ -135,6 +135,7 @@ func (i *PipelineManager) ensureRemote(
 
 	// each provider knows how to extract the Owner and repo name from a remoteUrl
 	gitRepoDetails, err := i.ScmProvider.gitRepoDetails(ctx, remoteUrl)
+	gitRepoDetails.remote = remoteUrl
 	if err != nil {
 		return nil, err
 	}
@@ -333,7 +334,7 @@ func (manager *PipelineManager) Configure(ctx context.Context) (
 	}
 
 	// config pipeline handles setting or creating the provider pipeline to be used
-	err = manager.CiProvider.configurePipeline(ctx, gitRepoInfo, prj.Infra)
+	ciPipeline, err := manager.CiProvider.configurePipeline(ctx, gitRepoInfo, prj.Infra)
 	if err != nil {
 		return result, err
 	}
@@ -376,6 +377,15 @@ func (manager *PipelineManager) Configure(ctx context.Context) (
 			return result, fmt.Errorf("git push: %w", err)
 		}
 
+		// The spinner can't run during `pushing changes` because it would block the console IN/OUT and git might
+		// need to request credentials.
+		displayMsg := "Pushing changes"
+		manager.console.Message(ctx, "") // new line before the step
+		manager.console.ShowSpinner(ctx, displayMsg, input.Step)
+		manager.console.StopSpinner(ctx, displayMsg, input.GetStepResultFormat(err))
+
+		displayMsg = "Queuing pipeline"
+		manager.console.ShowSpinner(ctx, displayMsg, input.Step)
 		gitRepoInfo.pushStatus = true
 		err = manager.ScmProvider.postGitPush(
 			ctx,
@@ -383,6 +393,7 @@ func (manager *PipelineManager) Configure(ctx context.Context) (
 			manager.PipelineRemoteName,
 			currentBranch,
 			manager.console)
+		manager.console.StopSpinner(ctx, displayMsg, input.GetStepResultFormat(err))
 		if err != nil {
 			return result, fmt.Errorf("post git push hook: %w", err)
 		}
@@ -394,5 +405,8 @@ func (manager *PipelineManager) Configure(ctx context.Context) (
 				currentBranch))
 	}
 
-	return &PipelineConfigResult{}, nil
+	return &PipelineConfigResult{
+		RepositoryLink: gitRepoInfo.remote,
+		PipelineLink:   ciPipeline.remote,
+	}, nil
 }

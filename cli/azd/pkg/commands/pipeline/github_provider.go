@@ -455,7 +455,7 @@ func (p *GitHubCiProvider) configureConnection(
 		Lines: []string{
 			"",
 			"GitHub Action secrets are now configured. You can view GitHub action secrets that were created at this link:",
-			output.WithLinkFormat("https://github.com/%s/actions", repoSlug),
+			output.WithLinkFormat("https://github.com/%s/settings/secrets/actions", repoSlug),
 			""},
 	})
 
@@ -677,8 +677,11 @@ func (p *GitHubCiProvider) configurePipeline(
 	ctx context.Context,
 	repoDetails *gitRepositoryDetails,
 	provisioningProvider provisioning.Options,
-) error {
-	return nil
+) (*CiPipeline, error) {
+	return &CiPipeline{
+		name:   "actions",
+		remote: fmt.Sprintf("%s/actions", repoDetails.remote),
+	}, nil
 }
 
 // ensureGitHubLogin ensures the user is logged into the GitHub CLI. If not, it prompt the user

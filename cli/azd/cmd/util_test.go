@@ -19,6 +19,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
+	"github.com/azure/azure-dev/cli/azd/test/mocks/mockaccount"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockazcli"
 	"github.com/stretchr/testify/require"
 )
@@ -122,31 +123,7 @@ func Test_promptEnvironmentName(t *testing.T) {
 
 func Test_getSubscriptionOptions(t *testing.T) {
 	t.Run("no default config set", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
-		// set empty config as mock
-		mockContext.ConfigManager.WithConfig(config.NewConfig(nil))
-		mockContext.HttpClient.When(func(request *http.Request) bool {
-			return request.URL.Path == "/subscriptions"
-		}).RespondFn(func(request *http.Request) (*http.Response, error) {
-			return mocks.CreateHttpResponseWithBody(request, 200, armsubscriptions.ClientListResponse{
-				SubscriptionListResult: armsubscriptions.SubscriptionListResult{
-					Value: []*armsubscriptions.Subscription{
-						{
-							ID:             convert.RefOf("SUBSCRIPTION"),
-							SubscriptionID: convert.RefOf("SUBSCRIPTION_ID_OTHER"),
-							DisplayName:    convert.RefOf("DISPLAY"),
-							TenantID:       convert.RefOf("TENANT"),
-						},
-					},
-				},
-			})
-		})
-
-		azCli := azcli.NewAzCli(mockContext.Credentials, azcli.NewAzCliArgs{
-			HttpClient: mockContext.HttpClient,
-		})
-
-		subList, result, err := getSubscriptionOptions(*mockContext.Context, azCli)
+		subList, result, err := getSubscriptionOptions(context.Background(), &mockaccount.MockAccountManager{})
 
 		require.Nil(t, err)
 		require.EqualValues(t, 2, len(subList))
@@ -154,7 +131,7 @@ func Test_getSubscriptionOptions(t *testing.T) {
 	})
 
 	t.Run("default value set", func(t *testing.T) {
-		// mocked config
+		// mocked configk
 		configSubscriptionId := "theSubscriptionInTheConfig"
 		c := config.NewConfig(nil)
 		err := c.Set("defaults.location", "location")

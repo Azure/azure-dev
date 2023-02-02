@@ -27,11 +27,12 @@ type MockMultiTenantCredentialProvider struct {
 	TokenMap map[string]MockCredentials
 }
 
-func (c *MockMultiTenantCredentialProvider) GetTokenCredential(tenantId string) azcore.TokenCredential {
+func (c *MockMultiTenantCredentialProvider) GetTokenCredential(
+	ctx context.Context, tenantId string) (azcore.TokenCredential, error) {
 	if c.TokenMap != nil {
 		tokenCred := c.TokenMap[tenantId]
-		return &tokenCred
+		return &tokenCred, nil
 	}
 
-	return &MockCredentials{}
+	return &MockCredentials{}, nil
 }

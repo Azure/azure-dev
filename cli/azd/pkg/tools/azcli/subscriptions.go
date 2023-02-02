@@ -5,25 +5,21 @@ import (
 	"fmt"
 	"sort"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armsubscriptions"
 	azdinternal "github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
 )
 
-type MultiTenantCredentialProvider interface {
-	GetTokenCredential(tenantId string) azcore.TokenCredential
-}
-
 // SubscriptionsService allows querying of subscriptions and tenants.
 type SubscriptionsService struct {
-	credentialProvider MultiTenantCredentialProvider
+	credentialProvider auth.TenantCredentialProvider
 	userAgent          string
 	httpClient         httputil.HttpClient
 }
 
 func NewSubscriptionsService(
-	credentialProvider MultiTenantCredentialProvider,
+	credentialProvider auth.TenantCredentialProvider,
 	httpClient httputil.HttpClient) *SubscriptionsService {
 	return &SubscriptionsService{
 		userAgent:          azdinternal.MakeUserAgentString(""),
@@ -32,9 +28,14 @@ func NewSubscriptionsService(
 	}
 }
 
-func (ss *SubscriptionsService) createSubscriptionsClient(tenantId string) (*armsubscriptions.Client, error) {
+func (ss *SubscriptionsService) createSubscriptionsClient(ctx context.Context, tenantId string) (*armsubscriptions.Client, error) {
 	options := clientOptionsBuilder(ss.httpClient, ss.userAgent).BuildArmClientOptions()
-	client, err := armsubscriptions.NewClient(ss.credentialProvider.GetTokenCredential(tenantId), options)
+	cred, err := ss.credentialProvider.GetTokenCredential(ctx, tenantId)
+	if err != nil {
+		return nil, err
+	}
+
+	client, err := armsubscriptions.NewClient(cred, options)
 	if err != nil {
 		return nil, fmt.Errorf("creating subscriptions client: %w", err)
 	}
@@ -42,10 +43,14 @@ func (ss *SubscriptionsService) createSubscriptionsClient(tenantId string) (*arm
 	return client, nil
 }
 
-func (ss *SubscriptionsService) createTenantsClient() (*armsubscriptions.TenantsClient, error) {
+func (ss *SubscriptionsService) createTenantsClient(ctx context.Context) (*armsubscriptions.TenantsClient, error) {
 	options := clientOptionsBuilder(ss.httpClient, ss.userAgent).BuildArmClientOptions()
 	// Use default home tenant, since tenants itself can be listed across tenants
-	client, err := armsubscriptions.NewTenantsClient(ss.credentialProvider.GetTokenCredential(""), options)
+	cred, err := ss.credentialProvider.GetTokenCredential(ctx, "")
+	if err != nil {
+		return nil, err
+	}
+	client, err := armsubscriptions.NewTenantsClient(cred, options)
 	if err != nil {
 		return nil, fmt.Errorf("creating tenants client: %w", err)
 	}
@@ -54,7 +59,7 @@ func (ss *SubscriptionsService) createTenantsClient() (*armsubscriptions.Tenants
 }
 
 func (s *SubscriptionsService) ListSubscriptions(ctx context.Context, tenantId string) ([]AzCliSubscriptionInfo, error) {
-	client, err := s.createSubscriptionsClient(tenantId)
+	client, err := s.createSubscriptionsClient(ctx, tenantId)
 	if err != nil {
 		return nil, err
 	}
@@ -87,7 +92,7 @@ func (s *SubscriptionsService) ListSubscriptions(ctx context.Context, tenantId s
 
 func (s *SubscriptionsService) GetSubscription(
 	ctx context.Context, subscriptionId string, tenantId string) (*AzCliSubscriptionInfo, error) {
-	client, err := s.createSubscriptionsClient(tenantId)
+	client, err := s.createSubscriptionsClient(ctx, tenantId)
 	if err != nil {
 		return nil, err
 	}
@@ -107,7 +112,7 @@ func (s *SubscriptionsService) GetSubscription(
 // ListSubscriptionLocations lists physical locations in Azure for the given subscription.
 func (s *SubscriptionsService) ListSubscriptionLocations(
 	ctx context.Context, subscriptionId string, tenantId string) ([]AzCliLocation, error) {
-	client, err := s.createSubscriptionsClient(tenantId)
+	client, err := s.createSubscriptionsClient(ctx, tenantId)
 	if err != nil {
 		return nil, err
 	}
@@ -143,7 +148,7 @@ func (s *SubscriptionsService) ListSubscriptionLocations(
 }
 
 func (s *SubscriptionsService) ListTenants(ctx context.Context) ([]armsubscriptions.TenantIDDescription, error) {
-	client, err := s.createTenantsClient()
+	client, err := s.createTenantsClient(ctx)
 	if err != nil {
 		return nil, err
 	}

@@ -10,6 +10,7 @@ import (
 	"log"
 	"strings"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
@@ -26,13 +27,14 @@ import (
 )
 
 type containerAppTarget struct {
-	config        *ServiceConfig
-	env           *environment.Environment
-	resource      *environment.TargetResource
-	cli           azcli.AzCli
-	docker        *docker.Docker
-	console       input.Console
-	commandRunner exec.CommandRunner
+	config         *ServiceConfig
+	env            *environment.Environment
+	resource       *environment.TargetResource
+	cli            azcli.AzCli
+	docker         *docker.Docker
+	console        input.Console
+	commandRunner  exec.CommandRunner
+	accountManager account.Manager
 
 	// Standard time library clock, unless mocked in tests
 	clock clock.Clock
@@ -118,6 +120,7 @@ func (at *containerAppTarget) Deploy(
 			parentConsole: at.console,
 		}, // make provision output silence
 		at.commandRunner,
+		at.accountManager,
 	)
 	if err != nil {
 		return ServiceDeploymentResult{}, fmt.Errorf("creating provisioning manager: %w", err)
@@ -234,6 +237,7 @@ func NewContainerAppTarget(
 	docker *docker.Docker,
 	console input.Console,
 	commandRunner exec.CommandRunner,
+	accountManager account.Manager,
 ) (ServiceTarget, error) {
 	if resource.ResourceGroupName() == "" {
 		return nil, fmt.Errorf("missing resource group name: %s", resource.ResourceGroupName())
@@ -246,14 +250,15 @@ func NewContainerAppTarget(
 	}
 
 	return &containerAppTarget{
-		config:        config,
-		env:           env,
-		resource:      resource,
-		cli:           azCli,
-		docker:        docker,
-		console:       console,
-		commandRunner: commandRunner,
-		clock:         clock.New(),
+		config:         config,
+		env:            env,
+		resource:       resource,
+		accountManager: accountManager,
+		cli:            azCli,
+		docker:         docker,
+		console:        console,
+		commandRunner:  commandRunner,
+		clock:          clock.New(),
 	}, nil
 }
 

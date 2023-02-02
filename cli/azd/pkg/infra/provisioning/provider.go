@@ -18,6 +18,13 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 )
 
+type LocationPromptFunc func(msg string, filter func(loc azcli.AzCliLocation) bool) (location string, err error)
+
+// Prompters contains prompt functions that can be used for general scenarios.
+type Prompters struct {
+	Location LocationPromptFunc
+}
+
 type ProviderKind string
 
 type NewProviderFn func(
@@ -28,6 +35,7 @@ type NewProviderFn func(
 	console input.Console,
 	cli azcli.AzCli,
 	commandRunner exec.CommandRunner,
+	prompters Prompters,
 ) (Provider, error)
 
 var (
@@ -125,6 +133,7 @@ func NewProvider(
 	env *environment.Environment,
 	projectPath string,
 	infraOptions Options,
+	prompters Prompters,
 ) (Provider, error) {
 	var provider Provider
 
@@ -138,7 +147,7 @@ func NewProvider(
 		return nil, fmt.Errorf("provider '%s' is not supported", infraOptions.Provider)
 	}
 
-	provider, err := newProviderFn(ctx, env, projectPath, infraOptions, console, azCli, commandRunner)
+	provider, err := newProviderFn(ctx, env, projectPath, infraOptions, console, azCli, commandRunner, prompters)
 	if err != nil {
 		return nil, fmt.Errorf("error creating provider for type '%s' : %w", infraOptions.Provider, err)
 	}

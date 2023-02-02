@@ -7,7 +7,6 @@ import (
 	"strconv"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
-	"github.com/azure/azure-dev/cli/azd/pkg/azureutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
@@ -29,17 +28,16 @@ func (p *BicepProvider) promptForParameter(
 	var value any
 
 	if paramType == ParameterTypeString && azdMetadata.Type != nil && *azdMetadata.Type == "location" {
-		location, err := azureutil.PromptLocationWithFilter(
-			ctx, p.env, msg, help, p.console, p.azCli, func(loc azcli.AzCliLocation) bool {
-				if param.AllowedValues == nil {
-					return true
-				}
+		location, err := p.prompters.Location(msg, func(loc azcli.AzCliLocation) bool {
+			if param.AllowedValues == nil {
+				return true
+			}
 
-				return slices.IndexFunc(*param.AllowedValues, func(v any) bool {
-					s, ok := v.(string)
-					return ok && loc.Name == s
-				}) != -1
-			},
+			return slices.IndexFunc(*param.AllowedValues, func(v any) bool {
+				s, ok := v.(string)
+				return ok && loc.Name == s
+			}) != -1
+		},
 		)
 		if err != nil {
 			return nil, err

@@ -16,7 +16,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal/telemetry/fields"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/azureutil"
-	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
@@ -74,6 +73,7 @@ func createAndInitEnvironment(
 	envSpec *environmentSpec,
 	azdCtx *azdcontext.AzdContext,
 	console input.Console,
+	accountManager account.Manager,
 	azCli azcli.AzCli,
 ) (*environment.Environment, error) {
 	if envSpec.environmentName != "" && !environment.IsValidEnvironmentName(envSpec.environmentName) {
@@ -96,7 +96,7 @@ func createAndInitEnvironment(
 		return nil, fmt.Errorf("environment '%s' already exists", envSpec.environmentName)
 	}
 
-	if err := ensureEnvironmentInitialized(ctx, *envSpec, env, console, azCli); err != nil {
+	if err := ensureEnvironmentInitialized(ctx, *envSpec, env, console, accountManager, azCli); err != nil {
 		return nil, fmt.Errorf("initializing environment: %w", err)
 	}
 
@@ -109,6 +109,7 @@ func loadOrInitEnvironment(
 	environmentName *string,
 	azdCtx *azdcontext.AzdContext,
 	console input.Console,
+	accountManager account.Manager,
 	azCli azcli.AzCli,
 ) (*environment.Environment, error) {
 	loadOrCreateEnvironment := func() (*environment.Environment, bool, error) {
@@ -177,6 +178,7 @@ func loadOrInitEnvironment(
 		environmentSpec{environmentName: *environmentName},
 		env,
 		console,
+		accountManager,
 		azCli); err != nil {
 		return nil, fmt.Errorf("initializing environment: %w", err)
 	}
@@ -201,6 +203,7 @@ func ensureEnvironmentInitialized(
 	envSpec environmentSpec,
 	env *environment.Environment,
 	console input.Console,
+	accountManager account.Manager,
 	azCli azcli.AzCli,
 ) error {
 	if env.Values == nil {
@@ -228,7 +231,7 @@ func ensureEnvironmentInitialized(
 	if !hasSubID && envSpec.subscription != "" {
 		env.SetSubscriptionId(envSpec.subscription)
 	} else {
-		subscriptionOptions, defaultSubscription, err := getSubscriptionOptions(ctx, azCli)
+		subscriptionOptions, defaultSubscription, err := getSubscriptionOptions(ctx, accountManager)
 		if err != nil {
 			return err
 		}
@@ -267,7 +270,8 @@ func ensureEnvironmentInitialized(
 	if !hasLocation && envSpec.location != "" {
 		env.SetLocation(envSpec.location)
 	} else {
-		location, err := azureutil.PromptLocation(ctx, env, "Please select an Azure location to use:", "", console, azCli)
+		location, err := azureutil.PromptLocation(
+			ctx, env, "Please select an Azure location to use:", "", console, accountManager)
 		if err != nil {
 			return fmt.Errorf("prompting for location: %w", err)
 		}
@@ -289,14 +293,8 @@ func ensureEnvironmentInitialized(
 	return nil
 }
 
-func getSubscriptionOptions(ctx context.Context, azCli azcli.AzCli) ([]string, any, error) {
-	//TODO: UPDATE
-	accountManager, err := account.NewManager(config.GetConfigManager(ctx), azcli.NewSubscriptionsService(nil, nil))
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed creating account manager: %w", err)
-	}
-
-	subscriptionInfos, err := accountManager.GetSubscriptions(ctx)
+func getSubscriptionOptions(ctx context.Context, subscriptions account.Manager) ([]string, any, error) {
+	subscriptionInfos, err := subscriptions.GetSubscriptions(ctx)
 	if err != nil {
 		return nil, nil, fmt.Errorf("listing accounts: %w", err)
 	}

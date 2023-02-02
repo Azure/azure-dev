@@ -97,7 +97,7 @@ func (i *initFlags) setCommon(envFlag *envFlag) {
 
 type initAction struct {
 	azCli           azcli.AzCli
-	accountManager  *account.Manager
+	accountManager  account.Manager
 	console         input.Console
 	cmdRun          exec.CommandRunner
 	gitCli          git.GitCli
@@ -107,7 +107,7 @@ type initAction struct {
 
 func newInitAction(
 	azCli azcli.AzCli,
-	accountManager *account.Manager,
+	accountManager account.Manager,
 	cmdRun exec.CommandRunner,
 	console input.Console,
 	gitCli git.GitCli,
@@ -214,7 +214,7 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		subscription:    i.flags.subscription,
 		location:        i.flags.location,
 	}
-	env, err := createAndInitEnvironment(ctx, &envSpec, azdCtx, i.console, i.azCli)
+	env, err := createAndInitEnvironment(ctx, &envSpec, azdCtx, i.console, i.accountManager, i.azCli)
 	if err != nil {
 		return nil, fmt.Errorf("loading environment: %w", err)
 	}

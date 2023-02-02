@@ -264,7 +264,7 @@ func newCredentialFromClientAssertion(
 }
 
 func (m *Manager) LoginInteractive(ctx context.Context, redirectPort int) (azcore.TokenCredential, error) {
-	options := []public.InteractiveAuthOption{}
+	options := []public.AcquireInteractiveOption{}
 	if redirectPort > 0 {
 		options = append(options, public.WithRedirectURI(fmt.Sprintf("http://localhost:%d", redirectPort)))
 	}

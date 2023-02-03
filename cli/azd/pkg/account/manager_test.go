@@ -12,7 +12,6 @@ import (
 	"testing"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armsubscriptions"
-	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
@@ -744,13 +743,18 @@ func NewInMemorySubscriptionsCache() *InMemorySubCache {
 func NewSubscriptionsManagerWithCache(
 	service *azcli.SubscriptionsService,
 	cache subCache) *SubscriptionsManager {
-	authMan, _ := auth.NewManager(config.NewUserConfigManager())
 	return &SubscriptionsManager{
-		service:     service,
-		cache:       cache,
-		authManager: authMan,
-		msg:         &mockMessaging{},
+		service:       service,
+		cache:         cache,
+		principalInfo: &principalInfoProviderMock{},
+		msg:           &mockMessaging{},
 	}
+}
+
+type principalInfoProviderMock struct{}
+
+func (p *principalInfoProviderMock) GetLoggedInServicePrincipalTenantID() (*string, error) {
+	return nil, nil
 }
 
 type BypassSubscriptionsCache struct {

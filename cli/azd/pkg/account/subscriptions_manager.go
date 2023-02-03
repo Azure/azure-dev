@@ -20,6 +20,10 @@ type SubscriptionTenantResolver interface {
 	LookupTenant(ctx context.Context, subscriptionId string) (tenantId string, err error)
 }
 
+type principalInfoProvider interface {
+	GetLoggedInServicePrincipalTenantID() (*string, error)
+}
+
 type subCache interface {
 	Load() ([]Subscription, error)
 	Save(save []Subscription) error
@@ -32,10 +36,10 @@ type subCache interface {
 // To lookup access to a given subscription, LookupTenant can be used to lookup the
 // current account access to a given subscription.
 type SubscriptionsManager struct {
-	service     *azcli.SubscriptionsService
-	authManager *auth.Manager
-	cache       subCache
-	msg         input.Messaging
+	service       *azcli.SubscriptionsService
+	principalInfo principalInfoProvider
+	cache         subCache
+	msg           input.Messaging
 }
 
 func NewSubscriptionsManager(
@@ -48,10 +52,10 @@ func NewSubscriptionsManager(
 	}
 
 	return &SubscriptionsManager{
-		service:     service,
-		cache:       cache,
-		authManager: auth,
-		msg:         msg,
+		service:       service,
+		cache:         cache,
+		principalInfo: auth,
+		msg:           msg,
 	}, nil
 }
 
@@ -89,7 +93,7 @@ func (m *SubscriptionsManager) RefreshSubscriptions(ctx context.Context) error {
 //     See SubscriptionCache for details about caching. On cache miss, all tenants and subscriptions are queried from
 //     azure management services for the current account to build the mapping and populate the cache.
 func (m *SubscriptionsManager) LookupTenant(ctx context.Context, subscriptionId string) (tenantId string, err error) {
-	principalTenantId, err := m.authManager.GetLoggedInServicePrincipalTenantID()
+	principalTenantId, err := m.principalInfo.GetLoggedInServicePrincipalTenantID()
 	if err != nil {
 		return "", err
 	}
@@ -141,7 +145,7 @@ func (m *SubscriptionsManager) ListSubscriptions(ctx context.Context) ([]Subscri
 	stop := m.msg.ShowProgress(ctx, "Retrieving subscriptions...")
 	defer stop()
 
-	principalTenantId, err := m.authManager.GetLoggedInServicePrincipalTenantID()
+	principalTenantId, err := m.principalInfo.GetLoggedInServicePrincipalTenantID()
 	if err != nil {
 		return nil, err
 	}

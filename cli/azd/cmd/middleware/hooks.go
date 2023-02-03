@@ -40,6 +40,11 @@ func NewHooksMiddleware(
 
 // Runs the Hooks middleware
 func (m *HooksMiddleware) Run(ctx context.Context, next NextFn) (*actions.ActionResult, error) {
+	if m.env == nil {
+		log.Println("azd environment is not available, skipping all hook registrations.")
+		return next(ctx)
+	}
+
 	if err := m.registerServiceHooks(ctx); err != nil {
 		return nil, fmt.Errorf("failed registering service hooks, %w", err)
 	}
@@ -50,8 +55,9 @@ func (m *HooksMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 // Register command level hooks for the executing cobra command & action
 // Invokes the middleware next function
 func (m *HooksMiddleware) registerCommandHooks(ctx context.Context, next NextFn) (*actions.ActionResult, error) {
-	if m.projectConfig.Hooks == nil || len(m.projectConfig.Hooks) == 0 {
-		log.Println("project does not contain any command hooks.")
+	if m.projectConfig == nil || m.projectConfig.Hooks == nil || len(m.projectConfig.Hooks) == 0 {
+		//nolint:lll
+		log.Println("azd project is not available or does not contain any command hooks, skipping command hook registrations.")
 		return next(ctx)
 	}
 
@@ -67,7 +73,7 @@ func (m *HooksMiddleware) registerCommandHooks(ctx context.Context, next NextFn)
 
 	var actionResult *actions.ActionResult
 
-	commandNames := []string{m.options.Name}
+	commandNames := []string{m.options.CommandPath}
 	commandNames = append(commandNames, m.options.Aliases...)
 
 	err := hooksRunner.Invoke(ctx, commandNames, func() error {
@@ -90,6 +96,11 @@ func (m *HooksMiddleware) registerCommandHooks(ctx context.Context, next NextFn)
 // Registers event handlers for all services within the project configuration
 // Runs hooks for each matching event handler
 func (m *HooksMiddleware) registerServiceHooks(ctx context.Context) error {
+	// Service level hooks have already been registered at the root command
+	if m.options.IsChildAction() {
+		return nil
+	}
+
 	for serviceName, service := range m.projectConfig.Services {
 		// If the service hasn't configured any hooks we can continue on.
 		if service.Hooks == nil || len(service.Hooks) == 0 {

@@ -121,7 +121,14 @@ func (i *infraCreateAction) Run(ctx context.Context) (*actions.ActionResult, err
 	}
 
 	infraManager, err := provisioning.NewManager(
-		ctx, env, i.projectConfig.Path, i.projectConfig.Infra, i.console.IsUnformatted(), i.azCli, i.console, i.commandRunner,
+		ctx,
+		env,
+		i.projectConfig.Path,
+		i.projectConfig.Infra,
+		i.console.IsUnformatted(),
+		i.azCli,
+		i.console,
+		i.commandRunner,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("creating provisioning manager: %w", err)

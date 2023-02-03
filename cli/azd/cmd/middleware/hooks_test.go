@@ -3,6 +3,7 @@ package middleware
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
@@ -208,6 +209,65 @@ func Test_CommandHooks_Middleware_WithCmdAlias(t *testing.T) {
 	// Hook will run with matching alias command
 	require.True(t, *hookRan)
 	require.True(t, *actionRan)
+}
+
+func Test_ServiceHooks_Registered(t *testing.T) {
+	mockContext := mocks.NewMockContext(context.Background())
+	azdContext := createAzdContext(t)
+
+	envName := "test"
+	runOptions := Options{CommandPath: "deploy"}
+
+	projectConfig := project.ProjectConfig{
+		Name:     envName,
+		Services: map[string]*project.ServiceConfig{},
+	}
+
+	serviceConfig := &project.ServiceConfig{
+		EventDispatcher: ext.NewEventDispatcher[project.ServiceLifecycleEventArgs](project.ServiceEvents...),
+		Language:        "ts",
+		RelativePath:    "./src/api",
+		Host:            "appservice",
+		Hooks: map[string]*ext.HookConfig{
+			"predeploy": {
+				Shell: ext.ShellTypeBash,
+				Run:   "echo 'Hello'",
+			},
+		},
+	}
+
+	projectConfig.Services["api"] = serviceConfig
+
+	preDeployCount := 0
+
+	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
+		return strings.Contains(command, "bash") && strings.Contains(command, "predeploy")
+	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+		preDeployCount++
+		return exec.NewRunResult(0, "", ""), nil
+	})
+
+	err := ensureAzdValid(azdContext, envName, &projectConfig)
+	require.NoError(t, err)
+
+	projectConfig.Services["api"].Project = &projectConfig
+
+	nextFn := func(ctx context.Context) (*actions.ActionResult, error) {
+		err := serviceConfig.Invoke(ctx, project.ServiceEventDeploy, project.ServiceLifecycleEventArgs{
+			Project: &projectConfig,
+			Service: serviceConfig,
+		}, func() error {
+			return nil
+		})
+
+		return &actions.ActionResult{}, err
+	}
+
+	result, err := runMiddleware(mockContext, azdContext, envName, &projectConfig, &runOptions, nextFn)
+
+	require.NotNil(t, result)
+	require.NoError(t, err)
+	require.Equal(t, 1, preDeployCount)
 }
 
 func createAzdContext(t *testing.T) *azdcontext.AzdContext {

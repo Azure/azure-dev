@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
 	"strings"
 )
 
@@ -48,8 +47,7 @@ func (ed *EventDispatcher[T]) AddHandler(name Event, handler EventHandlerFn[T]) 
 		existingHandler := fmt.Sprintf("%v", ref)
 
 		if newHandler == existingHandler {
-			log.Printf("event handler '%s' has already been registered for '%s' event\n", existingHandler, name)
-			continue
+			return fmt.Errorf("event handler has already been registered for %s event", name)
 		}
 	}
 

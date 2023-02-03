@@ -6,6 +6,7 @@ import (
 	"log"
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
+	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/ext"
@@ -13,6 +14,10 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 )
+
+type contextKey string
+
+var serviceHooksRegisteredContextKey contextKey = "service-hooks-registered"
 
 type HooksMiddleware struct {
 	lazyEnv           *lazy.Lazy[*environment.Environment]
@@ -41,6 +46,8 @@ func NewHooksMiddleware(
 
 // Runs the Hooks middleware
 func (m *HooksMiddleware) Run(ctx context.Context, next NextFn) (*actions.ActionResult, error) {
+	ctx, _ = getServiceHooksRegistered(ctx)
+
 	env, err := m.lazyEnv.GetValue()
 	if err != nil {
 		log.Println("azd environment is not available, skipping all hook registrations.")
@@ -62,10 +69,17 @@ func (m *HooksMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 
 // Register command level hooks for the executing cobra command & action
 // Invokes the middleware next function
-func (m *HooksMiddleware) registerCommandHooks(ctx context.Context, env *environment.Environment, projectConfig *project.ProjectConfig, next NextFn) (*actions.ActionResult, error) {
+func (m *HooksMiddleware) registerCommandHooks(
+	ctx context.Context,
+	env *environment.Environment,
+	projectConfig *project.ProjectConfig,
+	next NextFn,
+) (*actions.ActionResult, error) {
 	if projectConfig.Hooks == nil || len(projectConfig.Hooks) == 0 {
 		//nolint:lll
-		log.Println("azd project is not available or does not contain any command hooks, skipping command hook registrations.")
+		log.Println(
+			"azd project is not available or does not contain any command hooks, skipping command hook registrations.",
+		)
 		return next(ctx)
 	}
 
@@ -103,7 +117,17 @@ func (m *HooksMiddleware) registerCommandHooks(ctx context.Context, env *environ
 
 // Registers event handlers for all services within the project configuration
 // Runs hooks for each matching event handler
-func (m *HooksMiddleware) registerServiceHooks(ctx context.Context, env *environment.Environment, projectConfig *project.ProjectConfig) error {
+func (m *HooksMiddleware) registerServiceHooks(
+	ctx context.Context,
+	env *environment.Environment,
+	projectConfig *project.ProjectConfig,
+) error {
+	// Check if service hooks have already been registered higher up the chain
+	ctx, serviceHooksRegistered := getServiceHooksRegistered(ctx)
+	if *serviceHooksRegistered {
+		return nil
+	}
+
 	for serviceName, service := range projectConfig.Services {
 		// If the service hasn't configured any hooks we can continue on.
 		if service.Hooks == nil || len(service.Hooks) == 0 {
@@ -146,6 +170,9 @@ func (m *HooksMiddleware) registerServiceHooks(ctx context.Context, env *environ
 		}
 	}
 
+	// Set context value that the service hooks have been registered
+	*serviceHooksRegistered = true
+
 	return nil
 }
 
@@ -172,4 +199,17 @@ func inferHookType(name string, config *ext.HookConfig) (ext.HookType, string, e
 	}
 
 	return "", "", fmt.Errorf("unable to infer hook '%s'", name)
+}
+
+// Gets a value that returns whether or not service hooks have already been registered
+// for the current project config
+// Optionally constructs a new go context that stores a pointer to this value
+func getServiceHooksRegistered(ctx context.Context) (context.Context, *bool) {
+	serviceHooksRegistered, ok := ctx.Value(serviceHooksRegisteredContextKey).(*bool)
+	if !ok {
+		serviceHooksRegistered = convert.RefOf(false)
+		ctx = context.WithValue(ctx, serviceHooksRegisteredContextKey, serviceHooksRegistered)
+	}
+
+	return ctx, serviceHooksRegistered
 }

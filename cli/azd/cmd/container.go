@@ -173,19 +173,21 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	container.RegisterSingleton(initEnvironment)
 
 	// Lazy loads the environment from the Azd Context when it becomes available
-	container.RegisterSingleton(func(lazyAzdContext *lazy.Lazy[*azdcontext.AzdContext], envFlags flagsWithEnv) *lazy.Lazy[*environment.Environment] {
-		return lazy.NewLazy(func() (*environment.Environment, error) {
-			_, err := lazyAzdContext.GetValue()
-			if err != nil {
-				return nil, err
-			}
+	container.RegisterSingleton(
+		func(lazyAzdContext *lazy.Lazy[*azdcontext.AzdContext], envFlags flagsWithEnv) *lazy.Lazy[*environment.Environment] {
+			return lazy.NewLazy(func() (*environment.Environment, error) {
+				_, err := lazyAzdContext.GetValue()
+				if err != nil {
+					return nil, err
+				}
 
-			var env *environment.Environment
-			err = container.Resolve(&env)
+				var env *environment.Environment
+				err = container.Resolve(&env)
 
-			return env, err
-		})
-	})
+				return env, err
+			})
+		},
+	)
 
 	// Project Config
 	container.RegisterSingleton(initProjectConfig)

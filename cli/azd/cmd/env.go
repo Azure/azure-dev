@@ -378,7 +378,14 @@ func (ef *envRefreshAction) Run(ctx context.Context) (*actions.ActionResult, err
 	}
 
 	infraManager, err := provisioning.NewManager(
-		ctx, env, ef.projectConfig.Path, ef.projectConfig.Infra, !ef.flags.global.NoPrompt, ef.azCli, ef.console, ef.commandRunner,
+		ctx,
+		env,
+		ef.projectConfig.Path,
+		ef.projectConfig.Infra,
+		!ef.flags.global.NoPrompt,
+		ef.azCli,
+		ef.console,
+		ef.commandRunner,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("creating provisioning manager: %w", err)

@@ -2,16 +2,15 @@ parameters:
   - name: AllowPrerelease
     type: boolean
     default: true
-    description: Allow prerelease versions to be published. Should be "false"
-      after GA.
+    displayName: Allow prerelease versions to be published. Should be "false" after GA.
   - name: CLiVersion
     type: string
     default: $(CLI_VERSION)
-    description: CLI version
+    displayName: CLI version
   - name: GitHubToken
     type: string
     default: $(azuresdk-github-pat)
-    description: GitHub token
+    displayName: GitHub token
 
 steps:
   - task: PowerShell@2

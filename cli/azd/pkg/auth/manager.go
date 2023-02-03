@@ -216,24 +216,27 @@ func shouldUseLegacyAuth(cfg config.Config) bool {
 	return false
 }
 
-// IsLoginScopedToTenant returns true if an explicit tenant ID was set during login, i.e. with --tenant-id.
-func (m *Manager) IsLoginScopedToTenant() (bool, error) {
+// LoggedInTenantId returns the explicit tenant ID set during login, i.e. with --tenant-id.
+//
+// When --tenant-id is passed, the application should behave as-if it operates under a single-tenant mode with the selected
+// tenant ID.
+func (m *Manager) LoggedInTenantId() (*string, error) {
 	cfg, err := m.configManager.Load()
 	if err != nil {
-		return false, fmt.Errorf("fetching current user: %w", err)
+		return nil, fmt.Errorf("fetching current user: %w", err)
 	}
 
 	if shouldUseLegacyAuth(cfg) {
-		// we have no way of knowing if `az login --tenant-id` was performed
-		return false, err
+		// we have no easy way of knowing if `az login --tenant-id` was performed
+		return nil, err
 	}
 
 	currentUser, err := readUserProperties(cfg)
 	if err != nil {
-		return false, ErrNoCurrentUser
+		return nil, ErrNoCurrentUser
 	}
 
-	return currentUser.TenantID != nil, nil
+	return currentUser.TenantID, nil
 }
 
 func newCredentialFromClientSecret(tenantID string, clientID string, clientSecret string) (azcore.TokenCredential, error) {

@@ -12,10 +12,11 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 )
 
-// The storage cache used for storing subscriptions accessible by the currently logged in user.
+// The file name of the cache used for storing subscriptions accessible by the currently logged in account.
 const cSubscriptionsCacheFile = "subscriptions.cache"
 
-// SubscriptionsCache caches subscriptions with the tenant required to access each subscription for the logged in account.
+// SubscriptionsCache caches a subscription to tenant access mapping
+// for the logged in account to access each subscription.
 //
 // The cache is backed by an in-memory copy, then by local file system storage.
 type SubscriptionsCache struct {

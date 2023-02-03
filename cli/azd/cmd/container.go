@@ -126,19 +126,18 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 			ctx context.Context,
 			env *environment.Environment,
 			accountSub *account.SubscriptionsManager,
-			authManager *auth.Manager,
 			credProvider auth.MultiTenantCredentialProvider) (azcore.TokenCredential, error) {
-			fixedTenant, err := authManager.IsLoginScopedToTenant()
-			if err != nil {
-				return nil, err
-			}
-
-			if fixedTenant {
-				// Use the default, fixed tenant
-				return credProvider.GetTokenCredential(ctx, "")
+			if env == nil {
+				return nil, fmt.Errorf("an environment wasn't selected")
 			}
 
 			subscriptionId := env.GetSubscriptionId()
+			if subscriptionId == "" {
+				return nil, fmt.Errorf(
+					"environment %s does not have %s set",
+					env.GetEnvName(), environment.SubscriptionIdEnvVarName)
+			}
+
 			tenantId, err := accountSub.ResolveUserTenant(ctx, subscriptionId)
 			if err != nil {
 				return nil, err

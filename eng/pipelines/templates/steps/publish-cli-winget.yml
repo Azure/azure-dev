@@ -48,7 +48,6 @@ steps:
         -GitHubToken ${{ parameters.GitHubToken }}
         -Submit:$$(SubmitWinGetPackage)
 
-  - publish:
+  - publish: winget
     artifact: WinGetManifest
     displayName: Upload updated WinGet manifest
-    path: winget

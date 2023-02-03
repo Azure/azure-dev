@@ -31,6 +31,7 @@ steps:
       if ('$(Skip.ReleaseWinGet)' -eq 'true') {
         $submitPackage = 'false'
       }
+      Write-Host "Setting SubmitWinGetPackage to $submitPackage"
       Write-Host "##vso[task.setvariable variable=SubmitWinGetPackage]$submitPackage"
     displayName: Set SubmitWinGetPackage
 

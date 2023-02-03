@@ -340,6 +340,7 @@ func newEnvRefreshCmd() *cobra.Command {
 
 type envRefreshAction struct {
 	azdCtx        *azdcontext.AzdContext
+	projectConfig *project.ProjectConfig
 	azCli         azcli.AzCli
 	flags         *envRefreshFlags
 	console       input.Console
@@ -350,6 +351,7 @@ type envRefreshAction struct {
 
 func newEnvRefreshAction(
 	azdCtx *azdcontext.AzdContext,
+	projectConfig *project.ProjectConfig,
 	azCli azcli.AzCli,
 	commandRunner exec.CommandRunner,
 	flags *envRefreshFlags,
@@ -359,6 +361,7 @@ func newEnvRefreshAction(
 ) actions.Action {
 	return &envRefreshAction{
 		azdCtx:        azdCtx,
+		projectConfig: projectConfig,
 		azCli:         azCli,
 		flags:         flags,
 		console:       console,
@@ -374,13 +377,15 @@ func (ef *envRefreshAction) Run(ctx context.Context) (*actions.ActionResult, err
 		return nil, fmt.Errorf("loading environment: %w", err)
 	}
 
-	prj, err := project.GetCurrent()
-	if err != nil {
-		return nil, fmt.Errorf("loading project: %w", err)
-	}
-
 	infraManager, err := provisioning.NewManager(
-		ctx, env, prj.Path, prj.Infra, !ef.flags.global.NoPrompt, ef.azCli, ef.console, ef.commandRunner,
+		ctx,
+		env,
+		ef.projectConfig.Path,
+		ef.projectConfig.Infra,
+		!ef.flags.global.NoPrompt,
+		ef.azCli,
+		ef.console,
+		ef.commandRunner,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("creating provisioning manager: %w", err)
@@ -406,13 +411,13 @@ func (ef *envRefreshAction) Run(ctx context.Context) (*actions.ActionResult, err
 		}
 	}
 
-	if err = prj.Initialize(ctx, env, ef.commandRunner); err != nil {
+	if err = ef.projectConfig.Initialize(ctx, env, ef.commandRunner); err != nil {
 		return nil, err
 	}
 
-	for _, svc := range prj.Services {
+	for _, svc := range ef.projectConfig.Services {
 		eventArgs := project.ServiceLifecycleEventArgs{
-			Project: prj,
+			Project: ef.projectConfig,
 			Service: svc,
 			Args: map[string]any{
 				"bicepOutput": getStateResult.State.Outputs,

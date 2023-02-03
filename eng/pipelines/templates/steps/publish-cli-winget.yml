@@ -1,0 +1,55 @@
+parameters:
+  - name: AllowPrerelease
+    type: boolean
+    default: true
+    description: Allow prerelease versions to be published. Should be "false"
+      after GA.
+  - name: CLiVersion
+    type: string
+    default: $(CLI_VERSION)
+    description: CLI version
+  - name: GitHubToken
+    type: string
+    default: $(azuresdk-github-pat)
+    description: GitHub token
+
+steps:
+  - task: PowerShell@2
+    displayName: Set WinGet Version
+    inputs:
+      pwsh: true
+      targetType: filePath
+      filePath: eng/scripts/Get-WinGetVersion.ps1
+      arguments: >-
+        -Version '${{ parameters.CliVersion }}'
+        -DevOpsOutput
+
+  - pwsh: |
+      $submitPackage = eng/scripts/Test-ShouldReleaseWinGet.ps1 `
+        -Version '$(WinGetVersion)' `
+        -AllowPrerelease:$${{ parameters.AllowPrerelease }}
+
+      if ('$(Skip.ReleaseWinGet)' -eq 'true') {
+        $submitPackage = 'false'
+      }
+      Write-Host "##vso[task.setvariable variable=SubmitWinGetPackage]$submitPackage"
+    displayName: Set SubmitWinGetPackage
+
+  - task: PowerShell@2
+    displayName: Update WinGet Manifest
+    inputs:
+      pwsh: true
+      targetType: filePath
+      filePath: eng/scripts/Update-WinGetManifest.ps1
+      # TODO: Use URL: https://github.com/Azure/azure-dev/releases/download/azure-dev-cli_${{ parameters.CliVersion }}/azd-windows-amd64.msi
+      arguments: >-
+        -PackageIdentifier Microsoft.Azd
+        -Version $(WinGetVersion)
+        -Url "https://djurekazd.blob.core.windows.net/azd-test/standalone/release/${{ parameters.CliVersion }}/azd-windows-amd64.msi"
+        -GitHubToken ${{ parameters.GitHubToken }}
+        -Submit:$$(SubmitWinGetPackage)
+
+  - publish:
+    artifact: WinGetManifest
+    displayName: Upload updated WinGet manifest
+    path: winget

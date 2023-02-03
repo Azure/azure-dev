@@ -20,7 +20,6 @@ function ensureValidParsedSemver($parsedVersion) {
     }
 }
 
-# TODO: Extract to common script
 # Convert given semver to parseable semver
 # 0.4.0-beta.2-pr.2021242 -> 0.4.0-beta.2
 # 0.4.0-beta.2-daily.2026027 -> 0.4.0-beta.2
@@ -45,16 +44,15 @@ function getSemverParsedVersion($version) {
 }
 
 $parsedVersion = getSemverParsedVersion $CliVersion
-
-$patch = ($parsedVersion.Patch + 1) * 100
+$prereleaseNumber = 0
 if ($parsedVersion.IsPrerelease -and $parsedVersion.HasValidPrereleaseLabel()) {
-    $patch = $parsedVersion.Patch * 100 + $parsedVersion.PrereleaseNumber
+    $prereleaseNumber = $parsedVersion.PrereleaseNumber
 }
 
-$outputVersion = "$($parsedVersion.Major).$($parsedVersion.Minor).$patch"
+$outputVersion = "$($parsedVersion.Major).$($parsedVersion.Minor).$($parsedVersion.Patch).$prereleaseNumber"
 
 if ($DevOpsOutput) {
-    Write-Host "##vso[task.setvariable variable=MSI_VERSION]$outputVersion"
+    Write-Host "##vso[task.setvariable variable=WINGET_VERSION]$outputVersion"
 }
 
 return $outputVersion

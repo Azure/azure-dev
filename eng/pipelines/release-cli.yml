@@ -563,27 +563,27 @@ stages:
         pool: azsdk-pool-mms-win-2022-general
         strategy:
           matrix:
-            PerUser: 
+            PerUser:
               PerMachine: $false
             AllUsers:
               PerMachine: $true
         steps:
           - checkout: self
-          
+
           - task: DownloadPipelineArtifact@2
             inputs:
               artifact: test-msi
               path: msi
-          
+
           - task: PowerShell@2
             inputs:
               pwsh: true
               targetType: filePath
               filePath: cli/installer/windows/test-win-msi.ps1
               arguments: >-
-                -PerMachine:$(PerMachine) 
+                -PerMachine:$(PerMachine)
                 -MsiPath msi/azd-windows-amd64.msi
-              # Do not exit on first Write-Error, write all messages and let the 
+              # Do not exit on first Write-Error, write all messages and let the
               # script handle exiting with an error status.
               errorActionPreference: continue
             displayName: Test MSI
@@ -831,16 +831,21 @@ stages:
                     filePath: eng/scripts/Set-CliVersionVariable.ps1
                   displayName: Set CLI_VERSION
 
+                # TODO: Revert parameters before merge
                 - template: /eng/pipelines/templates/steps/publish-cli.yml
                   parameters:
-                    CreateGitHubRelease: true
+                    CreateGitHubRelease: false
                     PublishUploadLocations: release/$(CLI_VERSION);release/latest
-                    PublishShield: true
+                    PublishShield: false
                     DockerImageTags: $(CLI_VERSION);latest
-                    ReleaseSyndicatedDockerContainer: true
-                    PublishUpdatedDocs: true
+                    ReleaseSyndicatedDockerContainer: false
+                    PublishUpdatedDocs: false
                     UploadMsi: true
-                    PublishBrewFormula: true
+                    PublishBrewFormula: false
+                    # TODO Revert to defaults before merge
+                    StorageAccountName: $(azdev-storage-account-name-test)
+                    StorageAccountKey: $(azdev-storage-account-key-test)
+                    StorageContainerName: azd-test
 
       - deployment: Publish_Choco
         dependsOn: Publish_Release
@@ -872,37 +877,68 @@ stages:
                     AllowPrerelease: true
                     CliVersion: $(CLI_VERSION)
 
-      - deployment: Increment_Version
+      - deployment: Publish_WinGet
+        dependsOn: Publish_Release
         condition: >-
           and(
             succeeded(),
-            ne('true', variables['Skip.IncrementVersion'])
+            ne('true', variables['Skip.Publish'])
           )
-        dependsOn: Publish_Release
         environment: azure-dev
 
         pool:
-          name: azsdk-pool-mms-ubuntu-2004-general
-          OSVmImage: MMSUbuntu20.04
+          name: azsdk-pool-mms-win-2022-general
 
         strategy:
           runOnce:
             deploy:
               steps:
                 - checkout: self
-
                 - task: PowerShell@2
                   inputs:
                     pwsh: true
                     targetType: filePath
-                    filePath: eng/scripts/Update-CliVersion.ps1
-                  displayName: Increment CLI version
+                    filePath: eng/scripts/Set-CliVersionVariable.ps1
+                  displayName: Set CLI_VERSION
 
-                - template: /eng/common/pipelines/templates/steps/create-pull-request.yml
+                - template: /eng/pipelines/templates/steps/publish-cli-winget.yml
                   parameters:
-                    PRBranchName: cli-version-increment-$(Build.BuildId)
-                    CommitMsg: Increment CLI version after release
-                    PRTitle: Increment CLI version after release
+                    # Set to false after GA (https://github.com/Azure/azure-dev/issues/1485)
+                    AllowPrerelease: true
+                    CliVersion: $(CLI_VERSION)
+
+      # TODO: Re-enable before merge
+      # - deployment: Increment_Version
+      #   condition: >-
+      #     and(
+      #       succeeded(),
+      #       ne('true', variables['Skip.IncrementVersion'])
+      #     )
+      #   dependsOn: Publish_Release
+      #   environment: azure-dev
+
+      #   pool:
+      #     name: azsdk-pool-mms-ubuntu-2004-general
+      #     OSVmImage: MMSUbuntu20.04
+
+      #   strategy:
+      #     runOnce:
+      #       deploy:
+      #         steps:
+      #           - checkout: self
+
+      #           - task: PowerShell@2
+      #             inputs:
+      #               pwsh: true
+      #               targetType: filePath
+      #               filePath: eng/scripts/Update-CliVersion.ps1
+      #             displayName: Increment CLI version
+
+      #           - template: /eng/common/pipelines/templates/steps/create-pull-request.yml
+      #             parameters:
+      #               PRBranchName: cli-version-increment-$(Build.BuildId)
+      #               CommitMsg: Increment CLI version after release
+      #               PRTitle: Increment CLI version after release
 
   - stage: PublishIntegration
     dependsOn: Sign
@@ -1033,7 +1069,7 @@ stages:
 
 
               #### Windows
-              
+
               PowerShell install
 
               ``````
@@ -1056,7 +1092,7 @@ stages:
                   * ARM64 - $macosReleaseUrlArm64
               * Windows - $windowsReleaseUrl
 
-              ### MSI 
+              ### MSI
 
               * $msiReleaseUrl
 

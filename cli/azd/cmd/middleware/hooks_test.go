@@ -3,6 +3,7 @@ package middleware
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
@@ -10,6 +11,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/ext"
+	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/ostest"
@@ -21,7 +23,7 @@ func Test_CommandHooks_Middleware_WithValidProjectAndMatchingCommand(t *testing.
 	azdContext := createAzdContext(t)
 
 	envName := "test"
-	runOptions := Options{Name: "command"}
+	runOptions := Options{CommandPath: "command"}
 
 	projectConfig := project.ProjectConfig{
 		Name: envName,
@@ -53,7 +55,7 @@ func Test_CommandHooks_Middleware_ValidProjectWithDifferentCommand(t *testing.T)
 	azdContext := createAzdContext(t)
 
 	envName := "test"
-	runOptions := Options{Name: "another command"}
+	runOptions := Options{CommandPath: "another command"}
 
 	projectConfig := project.ProjectConfig{
 		Name: envName,
@@ -85,7 +87,7 @@ func Test_CommandHooks_Middleware_ValidProjectWithNoHooks(t *testing.T) {
 	azdContext := createAzdContext(t)
 
 	envName := "test"
-	runOptions := Options{Name: "another command"}
+	runOptions := Options{CommandPath: "another command"}
 
 	projectConfig := project.ProjectConfig{
 		Name: envName,
@@ -111,7 +113,7 @@ func Test_CommandHooks_Middleware_PreHookWithError(t *testing.T) {
 	azdContext := createAzdContext(t)
 
 	envName := "test"
-	runOptions := Options{Name: "command"}
+	runOptions := Options{CommandPath: "command"}
 
 	projectConfig := project.ProjectConfig{
 		Name: envName,
@@ -146,7 +148,7 @@ func Test_CommandHooks_Middleware_PreHookWithErrorAndContinue(t *testing.T) {
 	azdContext := createAzdContext(t)
 
 	envName := "test"
-	runOptions := Options{Name: "command"}
+	runOptions := Options{CommandPath: "command"}
 
 	projectConfig := project.ProjectConfig{
 		Name: envName,
@@ -182,7 +184,7 @@ func Test_CommandHooks_Middleware_WithCmdAlias(t *testing.T) {
 	azdContext := createAzdContext(t)
 
 	envName := "test"
-	runOptions := Options{Name: "command", Aliases: []string{"alias"}}
+	runOptions := Options{CommandPath: "command", Aliases: []string{"alias"}}
 
 	projectConfig := project.ProjectConfig{
 		Name: envName,
@@ -207,6 +209,65 @@ func Test_CommandHooks_Middleware_WithCmdAlias(t *testing.T) {
 	// Hook will run with matching alias command
 	require.True(t, *hookRan)
 	require.True(t, *actionRan)
+}
+
+func Test_ServiceHooks_Registered(t *testing.T) {
+	mockContext := mocks.NewMockContext(context.Background())
+	azdContext := createAzdContext(t)
+
+	envName := "test"
+	runOptions := Options{CommandPath: "deploy"}
+
+	projectConfig := project.ProjectConfig{
+		Name:     envName,
+		Services: map[string]*project.ServiceConfig{},
+	}
+
+	serviceConfig := &project.ServiceConfig{
+		EventDispatcher: ext.NewEventDispatcher[project.ServiceLifecycleEventArgs](project.ServiceEvents...),
+		Language:        "ts",
+		RelativePath:    "./src/api",
+		Host:            "appservice",
+		Hooks: map[string]*ext.HookConfig{
+			"predeploy": {
+				Shell: ext.ShellTypeBash,
+				Run:   "echo 'Hello'",
+			},
+		},
+	}
+
+	projectConfig.Services["api"] = serviceConfig
+
+	preDeployCount := 0
+
+	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
+		return strings.Contains(command, "predeploy")
+	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+		preDeployCount++
+		return exec.NewRunResult(0, "", ""), nil
+	})
+
+	err := ensureAzdValid(azdContext, envName, &projectConfig)
+	require.NoError(t, err)
+
+	projectConfig.Services["api"].Project = &projectConfig
+
+	nextFn := func(ctx context.Context) (*actions.ActionResult, error) {
+		err := serviceConfig.Invoke(ctx, project.ServiceEventDeploy, project.ServiceLifecycleEventArgs{
+			Project: &projectConfig,
+			Service: serviceConfig,
+		}, func() error {
+			return nil
+		})
+
+		return &actions.ActionResult{}, err
+	}
+
+	result, err := runMiddleware(mockContext, azdContext, envName, &projectConfig, &runOptions, nextFn)
+
+	require.NotNil(t, result)
+	require.NoError(t, err)
+	require.Equal(t, 1, preDeployCount)
 }
 
 func createAzdContext(t *testing.T) *azdcontext.AzdContext {
@@ -260,9 +321,17 @@ func runMiddleware(
 ) (*actions.ActionResult, error) {
 	env := environment.EphemeralWithValues(envName, nil)
 
+	lazyEnv := lazy.NewLazy(func() (*environment.Environment, error) {
+		return env, nil
+	})
+
+	lazyProjectConfig := lazy.NewLazy(func() (*project.ProjectConfig, error) {
+		return projectConfig, nil
+	})
+
 	middleware := NewHooksMiddleware(
-		env,
-		projectConfig,
+		lazyEnv,
+		lazyProjectConfig,
 		mockContext.CommandRunner,
 		mockContext.Console,
 		runOptions,

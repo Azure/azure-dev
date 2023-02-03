@@ -86,6 +86,7 @@ After the deployment is complete, the endpoint is printed. To start the service,
 
 type deployAction struct {
 	flags          *deployFlags
+	projectConfig  *project.ProjectConfig
 	azdCtx         *azdcontext.AzdContext
 	env            *environment.Environment
 	accountManager account.Manager
@@ -98,6 +99,7 @@ type deployAction struct {
 
 func newDeployAction(
 	flags *deployFlags,
+	projectConfig *project.ProjectConfig,
 	azdCtx *azdcontext.AzdContext,
 	environment *environment.Environment,
 	accountManager account.Manager,
@@ -109,6 +111,7 @@ func newDeployAction(
 ) actions.Action {
 	return &deployAction{
 		flags:          flags,
+		projectConfig:  projectConfig,
 		azdCtx:         azdCtx,
 		env:            environment,
 		accountManager: accountManager,
@@ -126,16 +129,7 @@ type DeploymentResult struct {
 }
 
 func (d *deployAction) Run(ctx context.Context) (*actions.ActionResult, error) {
-	projConfig, err := project.GetCurrent()
-	if err != nil {
-		return nil, fmt.Errorf("loading project: %w", err)
-	}
-
-	if d.flags.serviceName != "" && !projConfig.HasService(d.flags.serviceName) {
-		return nil, fmt.Errorf("service name '%s' doesn't exist", d.flags.serviceName)
-	}
-
-	proj, err := projConfig.GetProject(ctx, d.env, d.console, d.azCli, d.commandRunner, d.accountManager)
+	proj, err := d.projectConfig.GetProject(ctx, d.env, d.console, d.azCli, d.commandRunner, d.accountManager)
 	if err != nil {
 		return nil, fmt.Errorf("creating project: %w", err)
 	}
@@ -213,7 +207,7 @@ func (d *deployAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	return &actions.ActionResult{
 		Message: &actions.ResultMessage{
 			Header:   "Your Azure app has been deployed!",
-			FollowUp: getResourceGroupFollowUp(ctx, d.formatter, d.azCli, projConfig, d.env),
+			FollowUp: getResourceGroupFollowUp(ctx, d.formatter, d.azCli, d.projectConfig, d.env),
 		},
 	}, nil
 }

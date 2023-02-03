@@ -61,6 +61,7 @@ type infraDeleteAction struct {
 	env            *environment.Environment
 	console        input.Console
 	commandRunner  exec.CommandRunner
+	projectConfig  *project.ProjectConfig
 }
 
 func newInfraDeleteAction(
@@ -69,6 +70,7 @@ func newInfraDeleteAction(
 	azCli azcli.AzCli,
 	azdCtx *azdcontext.AzdContext,
 	env *environment.Environment,
+	projectConfig *project.ProjectConfig,
 	console input.Console,
 	commandRunner exec.CommandRunner,
 ) actions.Action {
@@ -80,18 +82,23 @@ func newInfraDeleteAction(
 		env:            env,
 		console:        console,
 		commandRunner:  commandRunner,
+		projectConfig:  projectConfig,
 	}
 }
 
 func (a *infraDeleteAction) Run(ctx context.Context) (*actions.ActionResult, error) {
-	prj, err := project.GetCurrent()
-	if err != nil {
-		return nil, fmt.Errorf("loading project: %w", err)
-	}
-
 	infraManager, err := provisioning.NewManager(
-		ctx, a.env, prj.Path, prj.Infra, a.console.IsUnformatted(), a.azCli, a.console, a.commandRunner, a.accountManager,
+		ctx,
+		a.env,
+		a.projectConfig.Path,
+		a.projectConfig.Infra,
+		a.console.IsUnformatted(),
+		a.azCli,
+		a.console,
+		a.commandRunner,
+		a.accountManager,
 	)
+
 	if err != nil {
 		return nil, fmt.Errorf("creating provisioning manager: %w", err)
 	}

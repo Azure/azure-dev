@@ -20,6 +20,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
+	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/pkg/templates"
@@ -127,7 +128,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 		func(
 			ctx context.Context,
 			env *environment.Environment,
-			accountSub *account.SubscriptionsManager,
+			subResolver account.SubscriptionTenantResolver,
 			credProvider auth.MultiTenantCredentialProvider) (azcore.TokenCredential, error) {
 			if env == nil {
 				return nil, fmt.Errorf("an environment wasn't selected")
@@ -140,7 +141,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 					env.GetEnvName(), environment.SubscriptionIdEnvVarName)
 			}
 
-			tenantId, err := accountSub.LookupTenant(ctx, subscriptionId)
+			tenantId, err := subResolver.LookupTenant(ctx, subscriptionId)
 			if err != nil {
 				return nil, err
 			}
@@ -178,6 +179,16 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 		return flagsWithEnv
 	})
 
+	// Azd Context
+	container.RegisterSingleton(azdcontext.NewAzdContext)
+
+	// Lazy loads the Azd context after the azure.yaml file becomes available
+	container.RegisterSingleton(func() *lazy.Lazy[*azdcontext.AzdContext] {
+		return lazy.NewLazy(func() (*azdcontext.AzdContext, error) {
+			return azdcontext.NewAzdContext()
+		})
+	})
+
 	// Register an initialized environment based on the specified environment flag, or the default environment.
 	// Note that referencing an *environment.Environment in a command automatically triggers a UI prompt if the
 	// environment is uninitialized or a default environment doesn't yet exist.
@@ -205,20 +216,51 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 		},
 	)
 
+	// Lazy loads the environment from the Azd Context when it becomes available
 	container.RegisterSingleton(
-		func(azdContext *azdcontext.AzdContext) (*project.ProjectConfig, error) {
-			if azdContext == nil {
-				return nil, azdcontext.ErrNoProject
-			}
+		func(lazyAzdContext *lazy.Lazy[*azdcontext.AzdContext], envFlags flagsWithEnv) *lazy.Lazy[*environment.Environment] {
+			return lazy.NewLazy(func() (*environment.Environment, error) {
+				_, err := lazyAzdContext.GetValue()
+				if err != nil {
+					return nil, err
+				}
 
-			projectConfig, err := project.LoadProjectConfig(azdContext.ProjectPath())
+				var env *environment.Environment
+				err = container.Resolve(&env)
+
+				return env, err
+			})
+		},
+	)
+
+	// Project Config
+	container.RegisterSingleton(func(azdContext *azdcontext.AzdContext) (*project.ProjectConfig, error) {
+		if azdContext == nil {
+			return nil, azdcontext.ErrNoProject
+		}
+
+		projectConfig, err := project.LoadProjectConfig(azdContext.ProjectPath())
+		if err != nil {
+			return nil, err
+		}
+
+		return projectConfig, nil
+	})
+
+	// Lazy loads the project config from the Azd Context when it becomes available
+	container.RegisterSingleton(func(lazyAzdContext *lazy.Lazy[*azdcontext.AzdContext]) *lazy.Lazy[*project.ProjectConfig] {
+		return lazy.NewLazy(func() (*project.ProjectConfig, error) {
+			_, err := lazyAzdContext.GetValue()
 			if err != nil {
 				return nil, err
 			}
 
-			return projectConfig, nil
-		},
-	)
+			var projectConfig *project.ProjectConfig
+			err = container.Resolve(&projectConfig)
+
+			return projectConfig, err
+		})
+	})
 
 	container.RegisterSingleton(repository.NewInitializer)
 	container.RegisterSingleton(config.NewUserConfigManager)

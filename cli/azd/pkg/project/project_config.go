@@ -16,7 +16,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/ext"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
-	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
@@ -237,18 +236,5 @@ func LoadProjectConfig(projectPath string) (*ProjectConfig, error) {
 	}
 
 	projectConfig.Path = filepath.Dir(projectPath)
-	return projectConfig, nil
-}
-
-// Gets the current project config from the IoC container
-// This method ensures the same instance is returned that can be referenced from any component
-// ex) Can be referenced from within middleware as well as command actions
-// Returns and error when the project is not found
-func GetCurrent() (*ProjectConfig, error) {
-	var projectConfig *ProjectConfig
-	if err := ioc.Global.Resolve(&projectConfig); err != nil {
-		return nil, err
-	}
-
 	return projectConfig, nil
 }

@@ -65,6 +65,7 @@ type restoreAction struct {
 	azCli         azcli.AzCli
 	azdCtx        *azdcontext.AzdContext
 	env           *environment.Environment
+	projectConfig *project.ProjectConfig
 	commandRunner exec.CommandRunner
 }
 
@@ -74,12 +75,14 @@ func newRestoreAction(
 	console input.Console,
 	azdCtx *azdcontext.AzdContext,
 	env *environment.Environment,
+	projectConfig *project.ProjectConfig,
 	commandRunner exec.CommandRunner,
 ) actions.Action {
 	return &restoreAction{
 		flags:         flags,
 		console:       console,
 		azdCtx:        azdCtx,
+		projectConfig: projectConfig,
 		azCli:         azCli,
 		env:           env,
 		commandRunner: commandRunner,
@@ -87,12 +90,7 @@ func newRestoreAction(
 }
 
 func (r *restoreAction) Run(ctx context.Context) (*actions.ActionResult, error) {
-	proj, err := project.GetCurrent()
-	if err != nil {
-		return nil, fmt.Errorf("loading project: %w", err)
-	}
-
-	if r.flags.serviceName != "" && !proj.HasService(r.flags.serviceName) {
+	if r.flags.serviceName != "" && !r.projectConfig.HasService(r.flags.serviceName) {
 		return nil, fmt.Errorf("service name '%s' doesn't exist", r.flags.serviceName)
 	}
 
@@ -102,7 +100,7 @@ func (r *restoreAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 	// the are installed. When a single project is being deployed, we need just
 	// the tools for that project, otherwise we need the tools from all project.
 	allTools := []tools.ExternalTool{}
-	for _, svc := range proj.Services {
+	for _, svc := range r.projectConfig.Services {
 		if r.flags.serviceName == "" || r.flags.serviceName == svc.Name {
 			requiredTools, err := svc.GetRequiredTools(ctx, r.env, r.commandRunner)
 			if err != nil {
@@ -117,14 +115,14 @@ func (r *restoreAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 		return nil, err
 	}
 
-	for _, svc := range proj.Services {
+	for _, svc := range r.projectConfig.Services {
 		if r.flags.serviceName != "" && svc.Name != r.flags.serviceName {
 			continue
 		}
 
 		installMsg := fmt.Sprintf("Installing dependencies for %s service...", svc.Name)
 		spinner := spin.NewSpinner(r.console.Handles().Stdout, installMsg)
-		if err = spinner.Run(func() error {
+		if err := spinner.Run(func() error {
 			return svc.Restore(ctx, r.env, r.commandRunner)
 		}); err != nil {
 			return nil, err

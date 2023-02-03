@@ -140,7 +140,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 					env.GetEnvName(), environment.SubscriptionIdEnvVarName)
 			}
 
-			tenantId, err := accountSub.ResolveTenant(ctx, subscriptionId)
+			tenantId, err := accountSub.LookupTenant(ctx, subscriptionId)
 			if err != nil {
 				return nil, err
 			}

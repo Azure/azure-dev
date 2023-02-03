@@ -159,7 +159,7 @@ func (m *monitorAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 		}
 	}
 
-	tenantId, err := m.subResolver.ResolveTenant(ctx, m.env.GetSubscriptionId())
+	tenantId, err := m.subResolver.LookupTenant(ctx, m.env.GetSubscriptionId())
 	if err != nil {
 		return nil, err
 	}

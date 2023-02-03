@@ -13,9 +13,11 @@ import (
 	"go.uber.org/multierr"
 )
 
-// SubscriptionTenantResolver allows resolving tenant ID access to a given subscription for the current account.
+// SubscriptionTenantResolver allows resolving the correct tenant ID
+// that allows the current account access to a given subscription.
 type SubscriptionTenantResolver interface {
-	ResolveTenant(ctx context.Context, subscriptionId string) (tenantId string, err error)
+	// Resolve the tenant ID required by the current account to access the given subscription.
+	LookupTenant(ctx context.Context, subscriptionId string) (tenantId string, err error)
 }
 
 type subCache interface {
@@ -24,6 +26,11 @@ type subCache interface {
 	Clear() error
 }
 
+// SubscriptionsManager manages listing, storing and retrieving subscriptions for the current account.
+//
+// Since the application supports multi-tenancy, subscriptions can be accessed by the user through different tenants.
+// To lookup access to a given subscription, LookupTenant can be used to lookup the
+// current account access to a given subscription.
 type SubscriptionsManager struct {
 	service     *azcli.SubscriptionsService
 	authManager *auth.Manager
@@ -81,7 +88,7 @@ func (m *SubscriptionsManager) RefreshSubscriptions(ctx context.Context) error {
 //   - Otherwise, the tenant ID is resolved by examining the stored subscriptionID to tenantID cache.
 //     See SubscriptionCache for details about caching. On cache miss, all tenants and subscriptions are queried from
 //     azure management services for the current account to build the mapping and populate the cache.
-func (m *SubscriptionsManager) ResolveTenant(ctx context.Context, subscriptionId string) (tenantId string, err error) {
+func (m *SubscriptionsManager) LookupTenant(ctx context.Context, subscriptionId string) (tenantId string, err error) {
 	principalTenantId, err := m.authManager.GetLoggedInServicePrincipalTenantID()
 	if err != nil {
 		return "", err
@@ -208,7 +215,7 @@ func (m *SubscriptionsManager) ListSubscriptions(ctx context.Context) ([]Subscri
 }
 
 func (m *SubscriptionsManager) ListLocations(ctx context.Context, subscriptionId string) ([]azcli.AzCliLocation, error) {
-	tenantId, err := m.ResolveTenant(ctx, subscriptionId)
+	tenantId, err := m.LookupTenant(ctx, subscriptionId)
 	if err != nil {
 		return nil, err
 	}
@@ -216,7 +223,7 @@ func (m *SubscriptionsManager) ListLocations(ctx context.Context, subscriptionId
 }
 
 func (m *SubscriptionsManager) GetSubscription(ctx context.Context, subscriptionId string) (*Subscription, error) {
-	tenantId, err := m.ResolveTenant(ctx, subscriptionId)
+	tenantId, err := m.LookupTenant(ctx, subscriptionId)
 	if err != nil {
 		return nil, err
 	}

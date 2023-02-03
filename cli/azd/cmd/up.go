@@ -102,7 +102,7 @@ func (u *upAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	}
 
 	infraCreateAction.flags = &u.flags.infraCreateFlags
-	provisionOptions := &middleware.Options{Name: "infracreate", Aliases: []string{"provision"}}
+	provisionOptions := &middleware.Options{CommandPath: "infra create", Aliases: []string{"provision"}}
 	_, err = u.runner.RunChildAction(ctx, provisionOptions, infraCreateAction)
 	if err != nil {
 		return nil, err
@@ -117,7 +117,7 @@ func (u *upAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	}
 
 	deployAction.flags = &u.flags.deployFlags
-	deployOptions := &middleware.Options{Name: "deploy"}
+	deployOptions := &middleware.Options{CommandPath: "deploy"}
 	deployResult, err := u.runner.RunChildAction(ctx, deployOptions, deployAction)
 	if err != nil {
 		return nil, err
@@ -133,7 +133,7 @@ func (u *upAction) runInit(ctx context.Context) error {
 	}
 
 	initAction.flags = &u.flags.initFlags
-	initOptions := &middleware.Options{Name: "init"}
+	initOptions := &middleware.Options{CommandPath: "init"}
 	_, err = u.runner.RunChildAction(ctx, initOptions, initAction)
 	var envInitError *environment.EnvironmentInitError
 	if errors.As(err, &envInitError) {

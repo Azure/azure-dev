@@ -4,7 +4,6 @@ import (
 	"context"
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
-	"github.com/azure/azure-dev/cli/azd/cmd/middleware"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/spf13/cobra"
 )
@@ -29,12 +28,10 @@ func newDownCmd() *cobra.Command {
 }
 
 type downAction struct {
-	runner      middleware.MiddlewareContext
 	infraDelete *infraDeleteAction
 }
 
 func newDownAction(
-	runner middleware.MiddlewareContext,
 	downFlags *downFlags,
 	infraDelete *infraDeleteAction,
 ) actions.Action {
@@ -43,11 +40,9 @@ func newDownAction(
 
 	return &downAction{
 		infraDelete: infraDelete,
-		runner:      runner,
 	}
 }
 
 func (a *downAction) Run(ctx context.Context) (*actions.ActionResult, error) {
-	runOptions := &middleware.Options{Name: "infradelete"}
-	return a.runner.RunChildAction(ctx, runOptions, a.infraDelete)
+	return a.infraDelete.Run(ctx)
 }

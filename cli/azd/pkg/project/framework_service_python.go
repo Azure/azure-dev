@@ -45,7 +45,8 @@ func (pp *pythonProject) Package(_ context.Context, progress chan<- string) (str
 		publishSource,
 		publishRoot,
 		skipPatterns(
-			filepath.Join(publishSource, "__pycache__"), filepath.Join(publishSource, ".azure"))); err != nil {
+			filepath.Join(publishSource, "__pycache__"), filepath.Join(publishSource, ".venv"),
+			filepath.Join(publishSource, ".azure"))); err != nil {
 		return "", fmt.Errorf("publishing for %s: %w", pp.config.Name, err)
 	}
 

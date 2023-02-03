@@ -99,7 +99,11 @@ func (lf *loginFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandO
 		cFederatedCredentialProviderFlagName,
 		"",
 		"The provider to use to acquire a federated token to authenticate with.")
-	local.StringVar(&lf.tenantID, "tenant-id", "", "The tenant id for the service principal to authenticate with.")
+	local.StringVar(
+		&lf.tenantID,
+		"tenant-id",
+		"",
+		"The tenant id or domain name to authenticate with.")
 	local.IntVar(
 		&lf.redirectPort,
 		"redirect-port",
@@ -124,10 +128,11 @@ func newLoginCmd() *cobra.Command {
 		Log in to Azure.
 
 		When run without any arguments, log in interactively using a browser. To log in using a device code, pass
-		--use-device-code.
-
+		--use-device-code. To log in under a particular tenant, pass --tenant-id.
+		
 		To log in as a service principal, pass --client-id and --tenant-id as well as one of: --client-secret, 
-		--client-certificate, --federated-credential, or --federated-credential-provider.`),
+		--client-certificate, --federated-credential, or --federated-credential-provider.
+		`),
 	}
 
 	return cmd
@@ -184,6 +189,18 @@ func (la *loginAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		}
 	}
 
+	if !la.flags.onlyCheckStatus && la.flags.clientID == "" {
+		// Only do this if it's a user-based login
+		err := la.accountSubManager.RefreshSubscriptions(ctx)
+
+		if err != nil {
+			// This is currently an implicit action to increase responsiveness of listing subscriptions.
+			// If this fails, the subscriptions will still be loaded on-demand.
+			log.Printf("failed retrieving subscriptions: %s", err)
+		}
+	}
+
+	la.console.StopSpinner(ctx, "", input.StepDone)
 	if la.formatter.Kind() == output.NoneFormat {
 		if res.Status == contracts.LoginStatusSuccess {
 			fmt.Fprintln(la.console.Handles().Stdout, "Logged in to Azure.")
@@ -210,8 +227,8 @@ func countTrue(elms ...bool) int {
 }
 
 func (la *loginAction) login(ctx context.Context) error {
-	if la.flags.clientID != "" || la.flags.tenantID != "" {
-		if la.flags.clientID == "" || la.flags.tenantID == "" {
+	if la.flags.clientID != "" {
+		if la.flags.tenantID == "" {
 			return errors.New("must set both `client-id` and `tenant-id` for service principal login")
 		}
 
@@ -292,20 +309,13 @@ func (la *loginAction) login(ctx context.Context) error {
 	}
 
 	if la.flags.useDeviceCode {
-		if _, err := la.authManager.LoginWithDeviceCode(ctx, la.writer); err != nil {
+		if _, err := la.authManager.LoginWithDeviceCode(ctx, la.writer, la.flags.tenantID); err != nil {
 			return fmt.Errorf("logging in: %w", err)
 		}
 	} else {
-		if _, err := la.authManager.LoginInteractive(ctx, la.flags.redirectPort); err != nil {
+		if _, err := la.authManager.LoginInteractive(ctx, la.flags.redirectPort, la.flags.tenantID); err != nil {
 			return fmt.Errorf("logging in: %w", err)
 		}
-	}
-
-	// This is currently an implicit action to increase responsiveness of listing subscriptions.
-	// If this fails, the subscriptions will still be loaded on-demand.
-	err := la.accountSubManager.RefreshSubscriptions(ctx)
-	if err != nil {
-		log.Println("failed to load subscriptions for the account: %w", err)
 	}
 
 	return nil

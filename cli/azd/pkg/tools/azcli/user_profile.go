@@ -12,6 +12,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
 )
 
+// UserProfileService allows querying for user profile information.
 type UserProfileService struct {
 	credentialProvider auth.MultiTenantCredentialProvider
 	userAgent          string

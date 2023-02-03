@@ -50,6 +50,8 @@ type Console interface {
 	// Set lastMessage to empty string to clear the spinner message instead of a displaying a last message
 	// If there is no spinner running, this is a no-op function
 	StopSpinner(ctx context.Context, lastMessage string, format SpinnerUxType)
+	// Determines if there is a current spinner running.
+	IsSpinnerRunning(ctx context.Context) bool
 	// Prompts the user for a single value
 	Prompt(ctx context.Context, options ConsoleOptions) (string, error)
 	// Prompts the user to select from a set of values
@@ -247,6 +249,10 @@ func (c *AskerConsole) StopSpinner(ctx context.Context, lastMessage string, form
 	_ = c.spinner.Stop()
 }
 
+func (c *AskerConsole) IsSpinnerRunning(ctx context.Context) bool {
+	return c.spinner != nil && c.spinner.Status() != yacspin.SpinnerStopped
+}
+
 var donePrefix string = output.WithSuccessFormat("(✓) Done:")
 
 func (c *AskerConsole) getStopChar(format SpinnerUxType) string {
@@ -378,4 +384,50 @@ func (c *AskerConsole) doInteraction(fn func(c *AskerConsole) error) error {
 		return err
 	}
 	return nil
+}
+
+type ProgressStopper func()
+
+// A messaging system that displays messages. Use this for application logic components that shouldn't be interactive
+// or require any formatting, but needs simple messages to be displayed.
+//
+// Currently, this outputs to console.
+// For ShowProgress which renders a spinner, priority is given to higher-level components
+// that have a spinner already running.
+type Messaging interface {
+	// Prints out a message to the underlying console write
+	Message(ctx context.Context, message string)
+	// Displays a progress message. Returns a closer() func that stops the progress message display.
+	ShowProgress(ctx context.Context, message string) ProgressStopper
+}
+
+// A messaging system that displays messages to console.
+type consoleMessaging struct {
+	console Console
+}
+
+func NewConsoleMessaging(console Console) Messaging {
+	return &consoleMessaging{
+		console: console,
+	}
+}
+
+func (m *consoleMessaging) Message(ctx context.Context, message string) {
+	m.console.Message(ctx, message)
+}
+
+// ShowProgress displays a spinner on console, if one isn't already running.
+//
+// Note that it is still possible to override existing spinners in multi-thread or multi-goroutine scenarios.
+func (m *consoleMessaging) ShowProgress(ctx context.Context, message string) ProgressStopper {
+	// This should be lower priority than any running console spinners
+	if m.console.IsSpinnerRunning(ctx) {
+		log.Println(message)
+		return func() {}
+	}
+
+	m.console.ShowSpinner(ctx, message, Step)
+	return func() {
+		m.console.StopSpinner(ctx, "", StepDone)
+	}
 }

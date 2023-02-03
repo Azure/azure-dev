@@ -7,9 +7,18 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/auth"
+	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"go.uber.org/multierr"
 )
+
+// SubscriptionTenantResolver allows resolving the correct tenant ID
+// that allows the current account access to a given subscription.
+type SubscriptionTenantResolver interface {
+	// Resolve the tenant ID required by the current account to access the given subscription.
+	LookupTenant(ctx context.Context, subscriptionId string) (tenantId string, err error)
+}
 
 type subCache interface {
 	Load() ([]Subscription, error)
@@ -17,20 +26,32 @@ type subCache interface {
 	Clear() error
 }
 
+// SubscriptionsManager manages listing, storing and retrieving subscriptions for the current account.
+//
+// Since the application supports multi-tenancy, subscriptions can be accessed by the user through different tenants.
+// To lookup access to a given subscription, LookupTenant can be used to lookup the
+// current account access to a given subscription.
 type SubscriptionsManager struct {
-	service *azcli.SubscriptionsService
-	cache   subCache
+	service     *azcli.SubscriptionsService
+	authManager *auth.Manager
+	cache       subCache
+	msg         input.Messaging
 }
 
-func NewSubscriptionsManager(service *azcli.SubscriptionsService) (*SubscriptionsManager, error) {
+func NewSubscriptionsManager(
+	service *azcli.SubscriptionsService,
+	auth *auth.Manager,
+	msg input.Messaging) (*SubscriptionsManager, error) {
 	cache, err := NewSubscriptionsCache()
 	if err != nil {
 		return nil, err
 	}
 
 	return &SubscriptionsManager{
-		service: service,
-		cache:   cache,
+		service:     service,
+		cache:       cache,
+		authManager: auth,
+		msg:         msg,
 	}, nil
 }
 
@@ -59,11 +80,24 @@ func (m *SubscriptionsManager) RefreshSubscriptions(ctx context.Context) error {
 	return nil
 }
 
-// Resolve the tenant ID required by the current user account to access the given subscription.
+// Resolve the tenant ID required by the current account to access the given subscription.
 //
-// The resolution is first done by examining the cache, then by querying azure management services. See SubscriptionCache
-// for details about caching.
-func (m *SubscriptionsManager) ResolveUserTenant(ctx context.Context, subscriptionId string) (tenantId string, err error) {
+//   - If the account is logged in with a service principal specified, the service principal's tenant ID
+//     is immediately returned (single-tenant mode).
+//
+//   - Otherwise, the tenant ID is resolved by examining the stored subscriptionID to tenantID cache.
+//     See SubscriptionCache for details about caching. On cache miss, all tenants and subscriptions are queried from
+//     azure management services for the current account to build the mapping and populate the cache.
+func (m *SubscriptionsManager) LookupTenant(ctx context.Context, subscriptionId string) (tenantId string, err error) {
+	principalTenantId, err := m.authManager.GetLoggedInServicePrincipalTenantID()
+	if err != nil {
+		return "", err
+	}
+
+	if principalTenantId != nil {
+		return *principalTenantId, nil
+	}
+
 	subscriptions, err := m.GetSubscriptions(ctx)
 	if err != nil {
 		return "", fmt.Errorf("resolving user access to subscription '%s' : %w", subscriptionId, err)
@@ -77,7 +111,7 @@ func (m *SubscriptionsManager) ResolveUserTenant(ctx context.Context, subscripti
 
 	return "", fmt.Errorf(
 		"failed to resolve user access to subscription '%s'. "+
-			"Visit this subscription in Azure Portal using the browser, then run `az login` again to reload subscriptions.",
+			"Visit this subscription in Azure Portal using the browser, then run `az login` again to reload subscriptions. ",
 		subscriptionId)
 }
 
@@ -104,6 +138,28 @@ func (m *SubscriptionsManager) GetSubscriptions(ctx context.Context) ([]Subscrip
 
 // ListSubscription lists subscriptions accessible by the current account by calling azure management services.
 func (m *SubscriptionsManager) ListSubscriptions(ctx context.Context) ([]Subscription, error) {
+	stop := m.msg.ShowProgress(ctx, "Retrieving subscriptions...")
+	defer stop()
+
+	principalTenantId, err := m.authManager.GetLoggedInServicePrincipalTenantID()
+	if err != nil {
+		return nil, err
+	}
+
+	if principalTenantId != nil {
+		subscriptions, err := m.service.ListSubscriptions(ctx, *principalTenantId)
+		if err != nil {
+			return nil, err
+		}
+
+		tenantSubscriptions := []Subscription{}
+		for _, subscription := range subscriptions {
+			tenantSubscriptions = append(tenantSubscriptions, toSubscription(&subscription, *principalTenantId))
+		}
+
+		return tenantSubscriptions, nil
+	}
+
 	tenants, err := m.service.ListTenants(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("listing tenants: %w", err)
@@ -124,7 +180,7 @@ func (m *SubscriptionsManager) ListSubscriptions(ctx context.Context) ([]Subscri
 					errors,
 					fmt.Errorf(
 						"%s requires Multi-Factor Authentication (MFA). To authenticate, visit Azure Portal with "+
-							"%s selected as the current directory.",
+							"%s selected as the current directory. ",
 						displayName,
 						errorMsg))
 			} else {
@@ -138,7 +194,7 @@ func (m *SubscriptionsManager) ListSubscriptions(ctx context.Context) ([]Subscri
 
 		oneSuccess = true
 		for _, subscription := range subscriptions {
-			allSubscriptions = append(allSubscriptions, convertSubscription(&subscription, tenantId))
+			allSubscriptions = append(allSubscriptions, toSubscription(&subscription, tenantId))
 		}
 	}
 
@@ -159,7 +215,7 @@ func (m *SubscriptionsManager) ListSubscriptions(ctx context.Context) ([]Subscri
 }
 
 func (m *SubscriptionsManager) ListLocations(ctx context.Context, subscriptionId string) ([]azcli.AzCliLocation, error) {
-	tenantId, err := m.ResolveUserTenant(ctx, subscriptionId)
+	tenantId, err := m.LookupTenant(ctx, subscriptionId)
 	if err != nil {
 		return nil, err
 	}
@@ -167,7 +223,7 @@ func (m *SubscriptionsManager) ListLocations(ctx context.Context, subscriptionId
 }
 
 func (m *SubscriptionsManager) GetSubscription(ctx context.Context, subscriptionId string) (*Subscription, error) {
-	tenantId, err := m.ResolveUserTenant(ctx, subscriptionId)
+	tenantId, err := m.LookupTenant(ctx, subscriptionId)
 	if err != nil {
 		return nil, err
 	}
@@ -177,15 +233,15 @@ func (m *SubscriptionsManager) GetSubscription(ctx context.Context, subscription
 		return nil, err
 	}
 
-	sub := convertSubscription(azSub, tenantId)
+	sub := toSubscription(azSub, tenantId)
 	return &sub, nil
 }
 
-func convertSubscription(subscription *azcli.AzCliSubscriptionInfo, tenantId string) Subscription {
+func toSubscription(subscription *azcli.AzCliSubscriptionInfo, userAccessTenantId string) Subscription {
 	return Subscription{
 		Id:                 subscription.Id,
 		Name:               subscription.Name,
 		TenantId:           subscription.TenantId,
-		UserAccessTenantId: tenantId,
+		UserAccessTenantId: userAccessTenantId,
 	}
 }

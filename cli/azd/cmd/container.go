@@ -104,6 +104,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 			console.Handles().Stderr,
 		)
 	})
+	container.RegisterSingleton(input.NewConsoleMessaging)
 
 	// Tools
 	container.RegisterSingleton(git.NewGitCli)
@@ -120,26 +121,26 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	container.RegisterSingleton(func() httputil.HttpClient { return &http.Client{} })
 
 	container.RegisterSingleton(auth.NewMultiTenantCredentialProvider)
-	// Register a default azcore.TokenCredential that is selected based on the environment's subscription.
+	// Register a default azcore.TokenCredential that is scoped to the tenantID
+	// required to access the current environment's subscription.
 	container.RegisterSingleton(
 		func(
 			ctx context.Context,
 			env *environment.Environment,
 			accountSub *account.SubscriptionsManager,
-			authManager *auth.Manager,
 			credProvider auth.MultiTenantCredentialProvider) (azcore.TokenCredential, error) {
-			fixedTenant, err := authManager.IsLoginScopedToTenant()
-			if err != nil {
-				return nil, err
-			}
-
-			if fixedTenant {
-				// Use the default, fixed tenant
-				return credProvider.GetTokenCredential(ctx, "")
+			if env == nil {
+				return nil, fmt.Errorf("an environment wasn't selected")
 			}
 
 			subscriptionId := env.GetSubscriptionId()
-			tenantId, err := accountSub.ResolveUserTenant(ctx, subscriptionId)
+			if subscriptionId == "" {
+				return nil, fmt.Errorf(
+					"environment %s does not have %s set",
+					env.GetEnvName(), environment.SubscriptionIdEnvVarName)
+			}
+
+			tenantId, err := accountSub.LookupTenant(ctx, subscriptionId)
 			if err != nil {
 				return nil, err
 			}
@@ -177,6 +178,9 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 		return flagsWithEnv
 	})
 
+	// Register an initialized environment based on the specified environment flag, or the default environment.
+	// Note that referencing an *environment.Environment in a command automatically triggers a UI prompt if the
+	// environment is uninitialized or a default environment doesn't yet exist.
 	container.RegisterSingleton(
 		func(ctx context.Context,
 			azdContext *azdcontext.AzdContext,
@@ -225,6 +229,9 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	container.RegisterSingleton(azcli.NewSubscriptionsService)
 	container.RegisterSingleton(account.NewManager)
 	container.RegisterSingleton(account.NewSubscriptionsManager)
+	container.RegisterSingleton(func(subManager *account.SubscriptionsManager) account.SubscriptionTenantResolver {
+		return subManager
+	})
 
 	// Required for nested actions called from composite actions like 'up'
 	registerActionInitializer[*initAction](container, "azd-init-action")

@@ -12,10 +12,11 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 )
 
-// The storage cache used for storing subscriptions accessible by the currently logged in user.
+// The file name of the cache used for storing subscriptions accessible by the currently logged in account.
 const cSubscriptionsCacheFile = "subscriptions.cache"
 
-// SubscriptionsCache caches subscriptions with the tenant required to access each subscription for the logged in account.
+// SubscriptionsCache caches a subscription to tenant access mapping
+// for the logged in account to access each subscription.
 //
 // The cache is backed by an in-memory copy, then by local file system storage.
 type SubscriptionsCache struct {
@@ -40,7 +41,7 @@ func NewSubscriptionsCacheWithDir(cachePath string) (*SubscriptionsCache, error)
 	}, nil
 }
 
-// Load loads the subscriptions from cache.
+// Load loads the subscriptions from cache. Returns any error reading the cache.
 func (s *SubscriptionsCache) Load() ([]Subscription, error) {
 	s.inMemoryLock.RLock()
 	if s.inMemoryCopy != nil {
@@ -84,6 +85,7 @@ func (s *SubscriptionsCache) Save(subscriptions []Subscription) error {
 	return err
 }
 
+// Clear removes all stored cache information. Returns an error if a filesystem error other than ErrNotExist occurred.
 func (s *SubscriptionsCache) Clear() error {
 	s.inMemoryLock.Lock()
 	defer s.inMemoryLock.Unlock()

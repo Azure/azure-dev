@@ -216,18 +216,19 @@ func shouldUseLegacyAuth(cfg config.Config) bool {
 	return false
 }
 
-// LoggedInTenantId returns the explicit tenant ID set during login, i.e. with --tenant-id.
+// GetLoggedInServicePrincipalTenantID returns the stored service principal's tenant ID.
 //
-// When --tenant-id is passed, the application should behave as-if it operates under a single-tenant mode with the selected
-// tenant ID.
-func (m *Manager) LoggedInTenantId() (*string, error) {
+// Service principals are fixed to a particular tenant.
+// This can be used to determine if the tenant is fixed, and if so short circuit performance intensive tenant-switching
+// for service principals.
+func (m *Manager) GetLoggedInServicePrincipalTenantID() (*string, error) {
 	cfg, err := m.configManager.Load()
 	if err != nil {
 		return nil, fmt.Errorf("fetching current user: %w", err)
 	}
 
 	if shouldUseLegacyAuth(cfg) {
-		// we have no easy way of knowing if `az login --tenant-id` was performed
+		// When delegating to az, we have no way to determine what principal was used
 		return nil, err
 	}
 
@@ -295,11 +296,16 @@ func newCredentialFromClientAssertion(
 	return cred, nil
 }
 
-func (m *Manager) LoginInteractive(ctx context.Context, redirectPort int) (azcore.TokenCredential, error) {
+func (m *Manager) LoginInteractive(ctx context.Context, redirectPort int, tenantID string) (azcore.TokenCredential, error) {
 	options := []public.AcquireInteractiveOption{}
 	if redirectPort > 0 {
 		options = append(options, public.WithRedirectURI(fmt.Sprintf("http://localhost:%d", redirectPort)))
 	}
+
+	if tenantID != "" {
+		options = append(options, public.WithTenantID(tenantID))
+	}
+
 	res, err := m.publicClient.AcquireTokenInteractive(ctx, cLoginScopes, options...)
 	if err != nil {
 		return nil, err
@@ -312,8 +318,14 @@ func (m *Manager) LoginInteractive(ctx context.Context, redirectPort int) (azcor
 	return newAzdCredential(m.publicClient, &res.Account), nil
 }
 
-func (m *Manager) LoginWithDeviceCode(ctx context.Context, deviceCodeWriter io.Writer) (azcore.TokenCredential, error) {
-	code, err := m.publicClient.AcquireTokenByDeviceCode(ctx, cLoginScopes)
+func (m *Manager) LoginWithDeviceCode(
+	ctx context.Context, deviceCodeWriter io.Writer, tenantID string) (azcore.TokenCredential, error) {
+	options := []public.AcquireByDeviceCodeOption{}
+	if tenantID != "" {
+		options = append(options, public.WithTenantID(tenantID))
+	}
+
+	code, err := m.publicClient.AcquireTokenByDeviceCode(ctx, cLoginScopes, options...)
 	if err != nil {
 		return nil, err
 	}

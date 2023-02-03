@@ -12,8 +12,10 @@ import (
 	"testing"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armsubscriptions"
+	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
+	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockconfig"
@@ -114,8 +116,8 @@ func Test_GetAccountDefaults(t *testing.T) {
 		require.NoError(t, err)
 
 		accountDefaults, err := manager.GetAccountDefaults(context.Background())
-		require.Nil(t, accountDefaults)
-		require.Error(t, err)
+		require.Equal(t, &Account{DefaultSubscription: (*Subscription)(nil), DefaultLocation: (&defaultLocation)}, accountDefaults)
+		require.NoError(t, err)
 	})
 
 	t.Run("InvalidLocation", func(t *testing.T) {
@@ -742,9 +744,12 @@ func NewInMemorySubscriptionsCache() *InMemorySubCache {
 func NewSubscriptionsManagerWithCache(
 	service *azcli.SubscriptionsService,
 	cache subCache) *SubscriptionsManager {
+	authMan, _ := auth.NewManager(config.NewUserConfigManager())
 	return &SubscriptionsManager{
-		service: service,
-		cache:   cache,
+		service:     service,
+		cache:       cache,
+		authManager: authMan,
+		msg:         &mockMessaging{},
 	}
 }
 
@@ -765,4 +770,15 @@ func (b *BypassSubscriptionsCache) Clear() error {
 
 func NewBypassSubscriptionsCache() *BypassSubscriptionsCache {
 	return &BypassSubscriptionsCache{}
+}
+
+type mockMessaging struct {
+}
+
+func (m *mockMessaging) Message(ctx context.Context, message string) {
+}
+
+func (m *mockMessaging) ShowProgress(ctx context.Context, message string) input.ProgressStopper {
+	return func() {
+	}
 }

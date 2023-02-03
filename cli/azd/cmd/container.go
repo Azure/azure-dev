@@ -170,7 +170,30 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	})
 
 	// Environment
-	container.RegisterSingleton(initEnvironment)
+	container.RegisterSingleton(func(azdContext *azdcontext.AzdContext, envFlags flagsWithEnv) (*environment.Environment, error) {
+		if azdContext == nil {
+			return nil, azdcontext.ErrNoProject
+		}
+
+		environmentName := envFlags.EnvironmentName()
+		var err error
+
+		if environmentName == "" {
+			defaultEnvName, err := azdContext.GetDefaultEnvironmentName()
+			if err != nil {
+				return nil, err
+			}
+
+			environmentName = defaultEnvName
+		}
+
+		env, err := environment.GetEnvironment(azdContext, environmentName)
+		if err != nil {
+			return nil, err
+		}
+
+		return env, nil
+	})
 
 	// Lazy loads the environment from the Azd Context when it becomes available
 	container.RegisterSingleton(
@@ -190,7 +213,18 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	)
 
 	// Project Config
-	container.RegisterSingleton(initProjectConfig)
+	container.RegisterSingleton(func(azdContext *azdcontext.AzdContext) (*project.ProjectConfig, error) {
+		if azdContext == nil {
+			return nil, azdcontext.ErrNoProject
+		}
+
+		projectConfig, err := project.LoadProjectConfig(azdContext.ProjectPath())
+		if err != nil {
+			return nil, err
+		}
+
+		return projectConfig, nil
+	})
 
 	// Lazy loads the project config from the Azd Context when it becomes available
 	container.RegisterSingleton(func(lazyAzdContext *lazy.Lazy[*azdcontext.AzdContext]) *lazy.Lazy[*project.ProjectConfig] {
@@ -221,42 +255,4 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	// Required for alias actions like 'provision' and 'down'
 	registerAction[*infraCreateAction](container, "azd-infra-create-action")
 	registerAction[*infraDeleteAction](container, "azd-infra-delete-action")
-}
-
-func initEnvironment(azdContext *azdcontext.AzdContext, envFlags flagsWithEnv) (*environment.Environment, error) {
-	if azdContext == nil {
-		return nil, azdcontext.ErrNoProject
-	}
-
-	environmentName := envFlags.EnvironmentName()
-	var err error
-
-	if environmentName == "" {
-		defaultEnvName, err := azdContext.GetDefaultEnvironmentName()
-		if err != nil {
-			return nil, err
-		}
-
-		environmentName = defaultEnvName
-	}
-
-	env, err := environment.GetEnvironment(azdContext, environmentName)
-	if err != nil {
-		return nil, err
-	}
-
-	return env, nil
-}
-
-func initProjectConfig(azdContext *azdcontext.AzdContext) (*project.ProjectConfig, error) {
-	if azdContext == nil {
-		return nil, azdcontext.ErrNoProject
-	}
-
-	projectConfig, err := project.LoadProjectConfig(azdContext.ProjectPath())
-	if err != nil {
-		return nil, err
-	}
-
-	return projectConfig, nil
 }

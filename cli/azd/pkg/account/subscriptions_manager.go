@@ -13,6 +13,11 @@ import (
 	"go.uber.org/multierr"
 )
 
+// SubscriptionTenantResolver allows resolving tenant ID access to a given subscription for the current account.
+type SubscriptionTenantResolver interface {
+	ResolveTenant(ctx context.Context, subscriptionId string) (tenantId string, err error)
+}
+
 type subCache interface {
 	Load() ([]Subscription, error)
 	Save(save []Subscription) error
@@ -76,7 +81,7 @@ func (m *SubscriptionsManager) RefreshSubscriptions(ctx context.Context) error {
 //   - Otherwise, the tenant ID is resolved by examining the stored subscriptionID to tenantID cache.
 //     See SubscriptionCache for details about caching. On cache miss, all tenants and subscriptions are queried from
 //     azure management services for the current account to build the mapping and populate the cache.
-func (m *SubscriptionsManager) ResolveUserTenant(ctx context.Context, subscriptionId string) (tenantId string, err error) {
+func (m *SubscriptionsManager) ResolveTenant(ctx context.Context, subscriptionId string) (tenantId string, err error) {
 	principalTenantId, err := m.authManager.GetLoggedInServicePrincipalTenantID()
 	if err != nil {
 		return "", err
@@ -203,7 +208,7 @@ func (m *SubscriptionsManager) ListSubscriptions(ctx context.Context) ([]Subscri
 }
 
 func (m *SubscriptionsManager) ListLocations(ctx context.Context, subscriptionId string) ([]azcli.AzCliLocation, error) {
-	tenantId, err := m.ResolveUserTenant(ctx, subscriptionId)
+	tenantId, err := m.ResolveTenant(ctx, subscriptionId)
 	if err != nil {
 		return nil, err
 	}
@@ -211,7 +216,7 @@ func (m *SubscriptionsManager) ListLocations(ctx context.Context, subscriptionId
 }
 
 func (m *SubscriptionsManager) GetSubscription(ctx context.Context, subscriptionId string) (*Subscription, error) {
-	tenantId, err := m.ResolveUserTenant(ctx, subscriptionId)
+	tenantId, err := m.ResolveTenant(ctx, subscriptionId)
 	if err != nil {
 		return nil, err
 	}

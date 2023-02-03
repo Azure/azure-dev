@@ -11,6 +11,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
@@ -68,26 +69,29 @@ For more information, go to https://aka.ms/azure-dev/monitor.`,
 }
 
 type monitorAction struct {
-	azdCtx  *azdcontext.AzdContext
-	env     *environment.Environment
-	azCli   azcli.AzCli
-	console input.Console
-	flags   *monitorFlags
+	azdCtx      *azdcontext.AzdContext
+	env         *environment.Environment
+	subResolver account.SubscriptionTenantResolver
+	azCli       azcli.AzCli
+	console     input.Console
+	flags       *monitorFlags
 }
 
 func newMonitorAction(
 	azdCtx *azdcontext.AzdContext,
 	env *environment.Environment,
+	subResolver account.SubscriptionTenantResolver,
 	azCli azcli.AzCli,
 	console input.Console,
 	flags *monitorFlags,
 ) actions.Action {
 	return &monitorAction{
-		azdCtx:  azdCtx,
-		env:     env,
-		azCli:   azCli,
-		console: console,
-		flags:   flags,
+		azdCtx:      azdCtx,
+		env:         env,
+		azCli:       azCli,
+		console:     console,
+		flags:       flags,
+		subResolver: subResolver,
 	}
 }
 
@@ -155,22 +159,27 @@ func (m *monitorAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 		}
 	}
 
+	tenantId, err := m.subResolver.ResolveTenant(ctx, m.env.GetSubscriptionId())
+	if err != nil {
+		return nil, err
+	}
+
 	for _, insightsResource := range insightsResources {
 		if m.flags.monitorLive {
 			openWithDefaultBrowser(
-				fmt.Sprintf("https://app.azure.com/%s/quickPulse", insightsResource.Id),
+				fmt.Sprintf("https://app.azure.com/%s%s/quickPulse", tenantId, insightsResource.Id),
 			)
 		}
 
 		if m.flags.monitorLogs {
-			openWithDefaultBrowser(fmt.Sprintf("https://app.azure.com/%s/logs", insightsResource.Id))
+			openWithDefaultBrowser(fmt.Sprintf("https://app.azure.com/%s%s/logs", tenantId, insightsResource.Id))
 		}
 	}
 
 	for _, portalResource := range portalResources {
 		if m.flags.monitorOverview {
 			openWithDefaultBrowser(
-				fmt.Sprintf("https://portal.azure.com/#/dashboard/arm%s", portalResource.Id),
+				fmt.Sprintf("https://portal.azure.com/#@%s/dashboard/arm%s", tenantId, portalResource.Id),
 			)
 		}
 	}

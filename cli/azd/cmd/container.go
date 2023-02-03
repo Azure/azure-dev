@@ -139,7 +139,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 					env.GetEnvName(), environment.SubscriptionIdEnvVarName)
 			}
 
-			tenantId, err := accountSub.ResolveUserTenant(ctx, subscriptionId)
+			tenantId, err := accountSub.ResolveTenant(ctx, subscriptionId)
 			if err != nil {
 				return nil, err
 			}
@@ -225,6 +225,9 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	container.RegisterSingleton(azcli.NewSubscriptionsService)
 	container.RegisterSingleton(account.NewManager)
 	container.RegisterSingleton(account.NewSubscriptionsManager)
+	container.RegisterSingleton(func(subManager *account.SubscriptionsManager) account.SubscriptionTenantResolver {
+		return subManager
+	})
 
 	// Required for nested actions called from composite actions like 'up'
 	registerActionInitializer[*initAction](container, "azd-init-action")

@@ -41,7 +41,7 @@ func NewSubscriptionsCacheWithDir(cachePath string) (*SubscriptionsCache, error)
 	}, nil
 }
 
-// Load loads the subscriptions from cache.
+// Load loads the subscriptions from cache. Returns any error reading the cache.
 func (s *SubscriptionsCache) Load() ([]Subscription, error) {
 	s.inMemoryLock.RLock()
 	if s.inMemoryCopy != nil {
@@ -85,6 +85,7 @@ func (s *SubscriptionsCache) Save(subscriptions []Subscription) error {
 	return err
 }
 
+// Clear removes all stored cache information. Returns an error if a filesystem error other than ErrNotExist occurred.
 func (s *SubscriptionsCache) Clear() error {
 	s.inMemoryLock.Lock()
 	defer s.inMemoryLock.Unlock()

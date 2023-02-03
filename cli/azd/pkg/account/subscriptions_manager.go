@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/auth"
+	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"go.uber.org/multierr"
 )
@@ -22,9 +23,13 @@ type SubscriptionsManager struct {
 	service     *azcli.SubscriptionsService
 	authManager *auth.Manager
 	cache       subCache
+	msg         input.Messaging
 }
 
-func NewSubscriptionsManager(service *azcli.SubscriptionsService, auth *auth.Manager) (*SubscriptionsManager, error) {
+func NewSubscriptionsManager(
+	service *azcli.SubscriptionsService,
+	auth *auth.Manager,
+	msg input.Messaging) (*SubscriptionsManager, error) {
 	cache, err := NewSubscriptionsCache()
 	if err != nil {
 		return nil, err
@@ -34,6 +39,7 @@ func NewSubscriptionsManager(service *azcli.SubscriptionsService, auth *auth.Man
 		service:     service,
 		cache:       cache,
 		authManager: auth,
+		msg:         msg,
 	}, nil
 }
 
@@ -64,20 +70,20 @@ func (m *SubscriptionsManager) RefreshSubscriptions(ctx context.Context) error {
 
 // Resolve the tenant ID required by the current account to access the given subscription.
 //
-//   - If the account is logged in with a fixed --tenant-id specified, the specified tenant ID is immediately returned
-//     (single-tenant mode).
+//   - If the account is logged in with a service principal specified, the service principal's tenant ID
+//     is immediately returned (single-tenant mode).
 //
-//   - If no --tenant-id is specified, the tenant ID is resolved by examining the stored subscriptionID to tenantID cache.
-//     See SubscriptionCache for details about caching. On cache miss, all tenants and subscriptions are listed from
+//   - Otherwise, the tenant ID is resolved by examining the stored subscriptionID to tenantID cache.
+//     See SubscriptionCache for details about caching. On cache miss, all tenants and subscriptions are queried from
 //     azure management services for the current account to build the mapping and populate the cache.
 func (m *SubscriptionsManager) ResolveUserTenant(ctx context.Context, subscriptionId string) (tenantId string, err error) {
-	loggedInTenantId, err := m.authManager.LoggedInTenantId()
+	principalTenantId, err := m.authManager.GetLoggedInServicePrincipalTenantID()
 	if err != nil {
 		return "", err
 	}
 
-	if loggedInTenantId != nil {
-		return *loggedInTenantId, nil
+	if principalTenantId != nil {
+		return *principalTenantId, nil
 	}
 
 	subscriptions, err := m.GetSubscriptions(ctx)
@@ -120,20 +126,23 @@ func (m *SubscriptionsManager) GetSubscriptions(ctx context.Context) ([]Subscrip
 
 // ListSubscription lists subscriptions accessible by the current account by calling azure management services.
 func (m *SubscriptionsManager) ListSubscriptions(ctx context.Context) ([]Subscription, error) {
-	loggedInTenantId, err := m.authManager.LoggedInTenantId()
+	stop := m.msg.ShowProgress(ctx, "Retrieving subscriptions...")
+	defer stop()
+
+	principalTenantId, err := m.authManager.GetLoggedInServicePrincipalTenantID()
 	if err != nil {
 		return nil, err
 	}
 
-	if loggedInTenantId != nil {
-		subscriptions, err := m.service.ListSubscriptions(ctx, *loggedInTenantId)
+	if principalTenantId != nil {
+		subscriptions, err := m.service.ListSubscriptions(ctx, *principalTenantId)
 		if err != nil {
 			return nil, err
 		}
 
 		tenantSubscriptions := []Subscription{}
 		for _, subscription := range subscriptions {
-			tenantSubscriptions = append(tenantSubscriptions, toSubscription(&subscription, *loggedInTenantId))
+			tenantSubscriptions = append(tenantSubscriptions, toSubscription(&subscription, *principalTenantId))
 		}
 
 		return tenantSubscriptions, nil

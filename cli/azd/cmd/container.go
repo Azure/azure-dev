@@ -104,6 +104,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 			console.Handles().Stderr,
 		)
 	})
+	container.RegisterSingleton(input.NewConsoleMessaging)
 
 	// Tools
 	container.RegisterSingleton(git.NewGitCli)

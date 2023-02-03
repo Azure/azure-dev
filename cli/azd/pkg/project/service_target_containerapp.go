@@ -312,6 +312,10 @@ func (sc *mutedConsole) StopSpinner(ctx context.Context, lastMessage string, for
 	log.Printf("request to stop spinner on silent console with message: %s", lastMessage)
 }
 
+func (sc *mutedConsole) IsSpinnerRunning(ctx context.Context) bool {
+	return false
+}
+
 // Use parent console for input
 func (sc *mutedConsole) Prompt(ctx context.Context, options input.ConsoleOptions) (string, error) {
 	return sc.parentConsole.Prompt(ctx, options)

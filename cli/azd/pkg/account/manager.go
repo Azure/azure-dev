@@ -80,7 +80,9 @@ func NewManager(
 func (m *manager) GetAccountDefaults(ctx context.Context) (*Account, error) {
 	subscription, err := m.getDefaultSubscription(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed retrieving default subscription: %w", err)
+		// logging the error, but we don't want to fail, as this could only
+		// means an account change
+		log.Println(fmt.Errorf("failed retrieving default subscription: %w", err).Error())
 	}
 
 	var location *Location
@@ -105,7 +107,7 @@ func (m *manager) GetAccountDefaults(ctx context.Context) (*Account, error) {
 func (m *manager) GetSubscriptions(ctx context.Context) ([]Subscription, error) {
 	defaultSubscription, err := m.getDefaultSubscription(ctx)
 	if err != nil {
-		return nil, err
+		log.Println(fmt.Errorf("failed retrieving default subscription: %w", err).Error())
 	}
 
 	subscriptions, err := m.subManager.GetSubscriptions(ctx)

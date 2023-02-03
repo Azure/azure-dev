@@ -9,6 +9,7 @@ import (
 	"io"
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
+	"github.com/azure/azure-dev/cli/azd/cmd/middleware"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
@@ -55,7 +56,8 @@ You can find all environment configurations under the ` + output.WithBackticks(`
 		Command:        newEnvNewCmd(),
 		FlagsResolver:  newEnvNewFlags,
 		ActionResolver: newEnvNewAction,
-	})
+	}).
+		UseMiddleware("ensureLogin", middleware.NewEnsureLoginMiddleware)
 
 	group.Add("list", &actions.ActionDescriptorOptions{
 		Command:        newEnvListCmd(),

@@ -162,6 +162,8 @@ func newLoginAction(
 
 func (la *loginAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	if !la.flags.onlyCheckStatus {
+		la.console.ShowSpinner(ctx, "Logging in...", input.Step)
+		defer la.console.StopSpinner(ctx, "", input.StepDone)
 		if err := la.login(ctx); err != nil {
 			return nil, err
 		}
@@ -184,6 +186,18 @@ func (la *loginAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		}
 	}
 
+	if !la.flags.onlyCheckStatus && la.flags.tenantID != "" {
+		// Only do this if it's an actual login, and we're operating under multi-tenant mode (tenantId not specified).
+		err := la.accountSubManager.RefreshSubscriptions(ctx)
+
+		if err != nil {
+			// This is currently an implicit action to increase responsiveness of listing subscriptions.
+			// If this fails, the subscriptions will still be loaded on-demand.
+			log.Printf("failed refreshing subscriptions: %s", err)
+		}
+	}
+
+	la.console.StopSpinner(ctx, "", input.StepDone)
 	if la.formatter.Kind() == output.NoneFormat {
 		if res.Status == contracts.LoginStatusSuccess {
 			fmt.Fprintln(la.console.Handles().Stdout, "Logged in to Azure.")
@@ -299,13 +313,6 @@ func (la *loginAction) login(ctx context.Context) error {
 		if _, err := la.authManager.LoginInteractive(ctx, la.flags.redirectPort); err != nil {
 			return fmt.Errorf("logging in: %w", err)
 		}
-	}
-
-	// This is currently an implicit action to increase responsiveness of listing subscriptions.
-	// If this fails, the subscriptions will still be loaded on-demand.
-	err := la.accountSubManager.RefreshSubscriptions(ctx)
-	if err != nil {
-		log.Println("failed to load subscriptions for the account: %w", err)
 	}
 
 	return nil

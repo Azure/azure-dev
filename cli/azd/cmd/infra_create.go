@@ -74,6 +74,7 @@ Depending on what Azure resources are created, running this command might take a
 type infraCreateAction struct {
 	flags         *infraCreateFlags
 	azdCtx        *azdcontext.AzdContext
+	projectConfig *project.ProjectConfig
 	azCli         azcli.AzCli
 	formatter     output.Formatter
 	writer        io.Writer
@@ -84,6 +85,7 @@ type infraCreateAction struct {
 func newInfraCreateAction(
 	flags *infraCreateFlags,
 	azdCtx *azdcontext.AzdContext,
+	projectConfig *project.ProjectConfig,
 	azCli azcli.AzCli,
 	console input.Console,
 	formatter output.Formatter,
@@ -93,6 +95,7 @@ func newInfraCreateAction(
 	return &infraCreateAction{
 		flags:         flags,
 		azdCtx:        azdCtx,
+		projectConfig: projectConfig,
 		azCli:         azCli,
 		formatter:     formatter,
 		writer:        writer,
@@ -113,17 +116,12 @@ func (i *infraCreateAction) Run(ctx context.Context) (*actions.ActionResult, err
 		return nil, fmt.Errorf("loading environment: %w", err)
 	}
 
-	prj, err := project.GetCurrent()
-	if err != nil {
-		return nil, fmt.Errorf("loading project: %w", err)
-	}
-
-	if err = prj.Initialize(ctx, env, i.commandRunner); err != nil {
+	if err = i.projectConfig.Initialize(ctx, env, i.commandRunner); err != nil {
 		return nil, err
 	}
 
 	infraManager, err := provisioning.NewManager(
-		ctx, env, prj.Path, prj.Infra, i.console.IsUnformatted(), i.azCli, i.console, i.commandRunner,
+		ctx, env, i.projectConfig.Path, i.projectConfig.Infra, i.console.IsUnformatted(), i.azCli, i.console, i.commandRunner,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("creating provisioning manager: %w", err)
@@ -161,9 +159,9 @@ func (i *infraCreateAction) Run(ctx context.Context) (*actions.ActionResult, err
 		return nil, fmt.Errorf("deployment failed: %w", err)
 	}
 
-	for _, svc := range prj.Services {
+	for _, svc := range i.projectConfig.Services {
 		eventArgs := project.ServiceLifecycleEventArgs{
-			Project: prj,
+			Project: i.projectConfig,
 			Service: svc,
 			Args: map[string]any{
 				"bicepOutput": deployResult.Deployment.Outputs,
@@ -196,7 +194,7 @@ func (i *infraCreateAction) Run(ctx context.Context) (*actions.ActionResult, err
 	return &actions.ActionResult{
 		Message: &actions.ResultMessage{
 			Header:   "Your project has been provisioned!",
-			FollowUp: getResourceGroupFollowUp(ctx, i.formatter, i.azCli, prj, env),
+			FollowUp: getResourceGroupFollowUp(ctx, i.formatter, i.azCli, i.projectConfig, env),
 		},
 	}, nil
 }

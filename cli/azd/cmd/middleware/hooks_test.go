@@ -10,6 +10,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/ext"
+	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/ostest"
@@ -260,9 +261,17 @@ func runMiddleware(
 ) (*actions.ActionResult, error) {
 	env := environment.EphemeralWithValues(envName, nil)
 
+	lazyEnv := lazy.NewLazy(func() (*environment.Environment, error) {
+		return env, nil
+	})
+
+	lazyProjectConfig := lazy.NewLazy(func() (*project.ProjectConfig, error) {
+		return projectConfig, nil
+	})
+
 	middleware := NewHooksMiddleware(
-		env,
-		projectConfig,
+		lazyEnv,
+		lazyProjectConfig,
 		mockContext.CommandRunner,
 		mockContext.Console,
 		runOptions,

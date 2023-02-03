@@ -84,6 +84,7 @@ After the deployment is complete, the endpoint is printed. To start the service,
 
 type deployAction struct {
 	flags         *deployFlags
+	projectConfig *project.ProjectConfig
 	azdCtx        *azdcontext.AzdContext
 	azCli         azcli.AzCli
 	formatter     output.Formatter
@@ -94,6 +95,7 @@ type deployAction struct {
 
 func newDeployAction(
 	flags *deployFlags,
+	projectConfig *project.ProjectConfig,
 	azdCtx *azdcontext.AzdContext,
 	azCli azcli.AzCli,
 	commandRunner exec.CommandRunner,
@@ -103,6 +105,7 @@ func newDeployAction(
 ) actions.Action {
 	return &deployAction{
 		flags:         flags,
+		projectConfig: projectConfig,
 		azdCtx:        azdCtx,
 		azCli:         azCli,
 		formatter:     formatter,
@@ -123,16 +126,11 @@ func (d *deployAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		return nil, fmt.Errorf("loading environment: %w", err)
 	}
 
-	projConfig, err := project.GetCurrent()
-	if err != nil {
-		return nil, fmt.Errorf("loading project: %w", err)
-	}
-
-	if d.flags.serviceName != "" && !projConfig.HasService(d.flags.serviceName) {
+	if d.flags.serviceName != "" && !d.projectConfig.HasService(d.flags.serviceName) {
 		return nil, fmt.Errorf("service name '%s' doesn't exist", d.flags.serviceName)
 	}
 
-	proj, err := projConfig.GetProject(ctx, env, d.console, d.azCli, d.commandRunner)
+	proj, err := d.projectConfig.GetProject(ctx, env, d.console, d.azCli, d.commandRunner)
 	if err != nil {
 		return nil, fmt.Errorf("creating project: %w", err)
 	}
@@ -210,7 +208,7 @@ func (d *deployAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	return &actions.ActionResult{
 		Message: &actions.ResultMessage{
 			Header:   "Your Azure app has been deployed!",
-			FollowUp: getResourceGroupFollowUp(ctx, d.formatter, d.azCli, projConfig, env),
+			FollowUp: getResourceGroupFollowUp(ctx, d.formatter, d.azCli, d.projectConfig, env),
 		},
 	}, nil
 }

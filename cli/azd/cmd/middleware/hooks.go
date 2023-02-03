@@ -10,65 +10,73 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/ext"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 )
 
 type HooksMiddleware struct {
-	env           *environment.Environment
-	projectConfig *project.ProjectConfig
-	commandRunner exec.CommandRunner
-	console       input.Console
-	options       *Options
+	lazyEnv           *lazy.Lazy[*environment.Environment]
+	lazyProjectConfig *lazy.Lazy[*project.ProjectConfig]
+	commandRunner     exec.CommandRunner
+	console           input.Console
+	options           *Options
 }
 
 // Creates a new instance of the Hooks middleware
 func NewHooksMiddleware(
-	env *environment.Environment,
-	projectConfig *project.ProjectConfig,
+	env *lazy.Lazy[*environment.Environment],
+	projectConfig *lazy.Lazy[*project.ProjectConfig],
 	commandRunner exec.CommandRunner,
 	console input.Console,
 	options *Options,
 ) Middleware {
 	return &HooksMiddleware{
-		env:           env,
-		projectConfig: projectConfig,
-		commandRunner: commandRunner,
-		console:       console,
-		options:       options,
+		lazyEnv:           env,
+		lazyProjectConfig: projectConfig,
+		commandRunner:     commandRunner,
+		console:           console,
+		options:           options,
 	}
 }
 
 // Runs the Hooks middleware
 func (m *HooksMiddleware) Run(ctx context.Context, next NextFn) (*actions.ActionResult, error) {
-	if m.env == nil {
+	env, err := m.lazyEnv.GetValue()
+	if err != nil {
 		log.Println("azd environment is not available, skipping all hook registrations.")
 		return next(ctx)
 	}
 
-	if err := m.registerServiceHooks(ctx); err != nil {
+	projectConfig, err := m.lazyProjectConfig.GetValue()
+	if err != nil {
+		log.Println("azd project is not available, skipping all hook registrations.")
+		return next(ctx)
+	}
+
+	if err := m.registerServiceHooks(ctx, env, projectConfig); err != nil {
 		return nil, fmt.Errorf("failed registering service hooks, %w", err)
 	}
 
-	return m.registerCommandHooks(ctx, next)
+	return m.registerCommandHooks(ctx, env, projectConfig, next)
 }
 
 // Register command level hooks for the executing cobra command & action
 // Invokes the middleware next function
-func (m *HooksMiddleware) registerCommandHooks(ctx context.Context, next NextFn) (*actions.ActionResult, error) {
-	if m.projectConfig == nil || m.projectConfig.Hooks == nil || len(m.projectConfig.Hooks) == 0 {
+func (m *HooksMiddleware) registerCommandHooks(ctx context.Context, env *environment.Environment, projectConfig *project.ProjectConfig, next NextFn) (*actions.ActionResult, error) {
+	if projectConfig.Hooks == nil || len(projectConfig.Hooks) == 0 {
 		//nolint:lll
 		log.Println("azd project is not available or does not contain any command hooks, skipping command hook registrations.")
 		return next(ctx)
 	}
 
-	hooksManager := ext.NewHooksManager(m.projectConfig.Path)
+	hooksManager := ext.NewHooksManager(projectConfig.Path)
 	hooksRunner := ext.NewHooksRunner(
 		hooksManager,
 		m.commandRunner,
 		m.console,
-		m.projectConfig.Path,
-		m.projectConfig.Hooks,
-		m.env.Environ(),
+		projectConfig.Path,
+		projectConfig.Hooks,
+		env.Environ(),
 	)
 
 	var actionResult *actions.ActionResult
@@ -95,13 +103,8 @@ func (m *HooksMiddleware) registerCommandHooks(ctx context.Context, next NextFn)
 
 // Registers event handlers for all services within the project configuration
 // Runs hooks for each matching event handler
-func (m *HooksMiddleware) registerServiceHooks(ctx context.Context) error {
-	// Service level hooks have already been registered at the root command
-	if m.options.IsChildAction() {
-		return nil
-	}
-
-	for serviceName, service := range m.projectConfig.Services {
+func (m *HooksMiddleware) registerServiceHooks(ctx context.Context, env *environment.Environment, projectConfig *project.ProjectConfig) error {
+	for serviceName, service := range projectConfig.Services {
 		// If the service hasn't configured any hooks we can continue on.
 		if service.Hooks == nil || len(service.Hooks) == 0 {
 			log.Printf("service '%s' does not require any command hooks.\n", serviceName)
@@ -115,7 +118,7 @@ func (m *HooksMiddleware) registerServiceHooks(ctx context.Context) error {
 			m.console,
 			service.Path(),
 			service.Hooks,
-			m.env.Environ(),
+			env.Environ(),
 		)
 
 		for hookName, hookConfig := range service.Hooks {

@@ -241,7 +241,7 @@ func Test_ServiceHooks_Registered(t *testing.T) {
 	preDeployCount := 0
 
 	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
-		return strings.Contains(command, "bash") && strings.Contains(command, "predeploy")
+		return strings.Contains(command, "predeploy")
 	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
 		preDeployCount++
 		return exec.NewRunResult(0, "", ""), nil

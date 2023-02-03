@@ -44,7 +44,7 @@ steps:
       # TODO: Use URL: https://github.com/Azure/azure-dev/releases/download/azure-dev-cli_${{ parameters.CliVersion }}/azd-windows-amd64.msi
       arguments: >-
         -PackageIdentifier Microsoft.Azd
-        -Version $(WinGetVersion)
+        -Version '$(WinGetVersion)'
         -Url "https://djurekazd.blob.core.windows.net/azd-test/standalone/release/${{ parameters.CliVersion }}/azd-windows-amd64.msi"
         -GitHubToken ${{ parameters.GitHubToken }}
         -Submit:$$(SubmitWinGetPackage)

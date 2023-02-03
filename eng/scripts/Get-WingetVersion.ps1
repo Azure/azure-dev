@@ -52,7 +52,7 @@ if ($parsedVersion.IsPrerelease -and $parsedVersion.HasValidPrereleaseLabel()) {
 $outputVersion = "$($parsedVersion.Major).$($parsedVersion.Minor).$($parsedVersion.Patch).$prereleaseNumber"
 
 if ($DevOpsOutput) {
-    Write-Host "##vso[task.setvariable variable=WINGET_VERSION]$outputVersion"
+    Write-Host "##vso[task.setvariable variable=WinGetVersion]$outputVersion"
 }
 
 return $outputVersion

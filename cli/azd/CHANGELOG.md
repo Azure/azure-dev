@@ -1,16 +1,21 @@
 # Release History
 
-## 0.5.0-beta.4 (Unreleased)
+## 0.6.0-beta.0 (2023-02-08)
 
 ### Features Added
 
-### Breaking Changes
+- [[#1345]](https://github.com/Azure/azure-dev/pull/1345) Add ftpsState as a param to App Service module.
+- [[#1236]](https://github.com/Azure/azure-dev/pull/1236) Extensibility: Command Hooks lib components.
+- [[#1429]](https://github.com/Azure/azure-dev/pull/1429) Extensibility: Azd Hooks middleware.
+- [[#1407]](https://github.com/Azure/azure-dev/pull/1407) Add UX style for `azd pipeline config`.
+- [[#1478]](https://github.com/Azure/azure-dev/pull/1478) Multi tenant support.
 
 ### Bugs Fixed
 
-- [[#1406]](https://github.com/Azure/azure-dev/issues/1406) MSI Upgrades from pre-MSI versions fail in some cases (reported by @lechnerc77, fixed by @heaths)
+- [[#1406]](https://github.com/Azure/azure-dev/pull/1424) MSI Upgrades from pre-MSI versions fail in some cases (reported by @lechnerc77, fixed by @heaths)
+- [[#1418]](https://github.com/Azure/azure-dev/pull/1418) Display PostgreSQL server created in resource.
+- [[#1483]](https://github.com/Azure/azure-dev/pull/1483) Skip virtual environment for deploying python apps.
 
-### Other Changes
 
 ## 0.5.0-beta.3 (2023-01-13)
 

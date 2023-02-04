@@ -1,13 +1,13 @@
 AADSTS
+apimanagement
+apims
 appconfiguration
 appinsights
 appinsightsexporter
 appinsightsstorage
 appservice
-apimanagement
-apims
-armappconfiguration
 armapimanagement
+armappconfiguration
 AZCLI
 azcorelog
 azdcli
@@ -35,8 +35,8 @@ containerapp
 contoso
 csharpapp
 cupaloy
-devel
 deletedservices
+devel
 docf
 dockerproject
 dskip
@@ -57,6 +57,7 @@ javac
 jmes
 keychain
 ldflags
+lechnerc77
 mgmt
 mgutz
 mockarmresources

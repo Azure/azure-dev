@@ -220,7 +220,7 @@ func verifyExecutableFilePermissions(t *testing.T,
 			require.NoError(t, err)
 			mode := fi.Mode()
 			isExecutable := mode&0111 == 0111
-			require.True(t, isExecutable)
+			require.Truef(t, isExecutable, "file is not executable for all, fileMode: %s", mode)
 		}
 	}
 }

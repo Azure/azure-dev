@@ -66,7 +66,7 @@ type HookConfig struct {
 	// When running on windows use this override config
 	Windows *HookConfig `yaml:"windows,omitempty"`
 	// When running on linux/macos use this override config
-	Posix *HookConfig `yaml:"linux,omitempty"`
+	Posix *HookConfig `yaml:"posix,omitempty"`
 }
 
 // Validates and normalizes the hook configuration

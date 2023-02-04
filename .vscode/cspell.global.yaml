@@ -171,6 +171,11 @@ dictionaryDefinitions:
       description: Custom Notice Dictionary
       addWords: true
       scope: workspace
+    - name: schemas
+      path: ./cspell-schemas.txt
+      description: Custom Schema Dictionary
+      addWords: true
+      scope: workspace      
 dictionaries:
     - powershell
     - go

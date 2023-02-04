@@ -139,17 +139,15 @@ func (m *Manager) CredentialForCurrentUser(
 		return nil, fmt.Errorf("fetching current user: %w", err)
 	}
 
-	if useLegacyAuth, has := cfg.Get(cUseAzCliAuthKey); has {
-		if use, err := strconv.ParseBool(useLegacyAuth.(string)); err == nil && use {
-			log.Printf("delegating auth to az since %s is set to true", cUseAzCliAuthKey)
-			cred, err := azidentity.NewAzureCLICredential(&azidentity.AzureCLICredentialOptions{
-				TenantID: options.TenantID,
-			})
-			if err != nil {
-				return nil, fmt.Errorf("failed to create credential: %v: %w", err, ErrNoCurrentUser)
-			}
-			return cred, nil
+	if shouldUseLegacyAuth(cfg) {
+		log.Printf("delegating auth to az since %s is set to true", cUseAzCliAuthKey)
+		cred, err := azidentity.NewAzureCLICredential(&azidentity.AzureCLICredentialOptions{
+			TenantID: options.TenantID,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("failed to create credential: %v: %w", err, ErrNoCurrentUser)
 		}
+		return cred, nil
 	}
 
 	currentUser, err := readUserProperties(cfg)
@@ -188,10 +186,11 @@ func (m *Manager) CredentialForCurrentUser(
 		}
 
 		// by default we used the stored tenant (i.e. the one provided with the tenant id parameter when a user ran
-		// `azd login`) but we allow an override using the options bag.
+		// `azd login`), but we allow an override using the options bag, when
+		// TenantID is non-empty and PreferFallbackTenant is not true.
 		tenantID := *currentUser.TenantID
 
-		if options.TenantID != "" {
+		if !options.PreferFallbackTenant && options.TenantID != "" {
 			tenantID = options.TenantID
 		}
 
@@ -205,6 +204,40 @@ func (m *Manager) CredentialForCurrentUser(
 	}
 
 	return nil, ErrNoCurrentUser
+}
+
+func shouldUseLegacyAuth(cfg config.Config) bool {
+	if useLegacyAuth, has := cfg.Get(cUseAzCliAuthKey); has {
+		if use, err := strconv.ParseBool(useLegacyAuth.(string)); err == nil && use {
+			return true
+		}
+	}
+
+	return false
+}
+
+// GetLoggedInServicePrincipalTenantID returns the stored service principal's tenant ID.
+//
+// Service principals are fixed to a particular tenant.
+// This can be used to determine if the tenant is fixed, and if so short circuit performance intensive tenant-switching
+// for service principals.
+func (m *Manager) GetLoggedInServicePrincipalTenantID() (*string, error) {
+	cfg, err := m.configManager.Load()
+	if err != nil {
+		return nil, fmt.Errorf("fetching current user: %w", err)
+	}
+
+	if shouldUseLegacyAuth(cfg) {
+		// When delegating to az, we have no way to determine what principal was used
+		return nil, err
+	}
+
+	currentUser, err := readUserProperties(cfg)
+	if err != nil {
+		return nil, ErrNoCurrentUser
+	}
+
+	return currentUser.TenantID, nil
 }
 
 func newCredentialFromClientSecret(tenantID string, clientID string, clientSecret string) (azcore.TokenCredential, error) {
@@ -263,11 +296,16 @@ func newCredentialFromClientAssertion(
 	return cred, nil
 }
 
-func (m *Manager) LoginInteractive(ctx context.Context, redirectPort int) (azcore.TokenCredential, error) {
-	options := []public.InteractiveAuthOption{}
+func (m *Manager) LoginInteractive(ctx context.Context, redirectPort int, tenantID string) (azcore.TokenCredential, error) {
+	options := []public.AcquireInteractiveOption{}
 	if redirectPort > 0 {
 		options = append(options, public.WithRedirectURI(fmt.Sprintf("http://localhost:%d", redirectPort)))
 	}
+
+	if tenantID != "" {
+		options = append(options, public.WithTenantID(tenantID))
+	}
+
 	res, err := m.publicClient.AcquireTokenInteractive(ctx, cLoginScopes, options...)
 	if err != nil {
 		return nil, err
@@ -280,8 +318,14 @@ func (m *Manager) LoginInteractive(ctx context.Context, redirectPort int) (azcor
 	return newAzdCredential(m.publicClient, &res.Account), nil
 }
 
-func (m *Manager) LoginWithDeviceCode(ctx context.Context, deviceCodeWriter io.Writer) (azcore.TokenCredential, error) {
-	code, err := m.publicClient.AcquireTokenByDeviceCode(ctx, cLoginScopes)
+func (m *Manager) LoginWithDeviceCode(
+	ctx context.Context, deviceCodeWriter io.Writer, tenantID string) (azcore.TokenCredential, error) {
+	options := []public.AcquireByDeviceCodeOption{}
+	if tenantID != "" {
+		options = append(options, public.WithTenantID(tenantID))
+	}
+
+	code, err := m.publicClient.AcquireTokenByDeviceCode(ctx, cLoginScopes, options...)
 	if err != nil {
 		return nil, err
 	}
@@ -549,6 +593,10 @@ func (m *Manager) saveSecret(tenantId, clientId string, ps *persistedSecret) err
 type CredentialForCurrentUserOptions struct {
 	// The tenant ID to use when constructing the credential, instead of the default tenant.
 	TenantID string
+
+	// If true, TenantID is only used if the tenant wasn't explicitly specified
+	// at the time of login.
+	PreferFallbackTenant bool
 }
 
 // persistedSecret is the model type for the value we store in the credential cache. It is logically a discriminated union

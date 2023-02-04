@@ -12,6 +12,8 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/pkg/account"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
@@ -83,18 +85,24 @@ After the deployment is complete, the endpoint is printed. To start the service,
 }
 
 type deployAction struct {
-	flags         *deployFlags
-	azdCtx        *azdcontext.AzdContext
-	azCli         azcli.AzCli
-	formatter     output.Formatter
-	writer        io.Writer
-	console       input.Console
-	commandRunner exec.CommandRunner
+	flags          *deployFlags
+	projectConfig  *project.ProjectConfig
+	azdCtx         *azdcontext.AzdContext
+	env            *environment.Environment
+	accountManager account.Manager
+	azCli          azcli.AzCli
+	formatter      output.Formatter
+	writer         io.Writer
+	console        input.Console
+	commandRunner  exec.CommandRunner
 }
 
 func newDeployAction(
 	flags *deployFlags,
+	projectConfig *project.ProjectConfig,
 	azdCtx *azdcontext.AzdContext,
+	environment *environment.Environment,
+	accountManager account.Manager,
 	azCli azcli.AzCli,
 	commandRunner exec.CommandRunner,
 	console input.Console,
@@ -102,13 +110,16 @@ func newDeployAction(
 	writer io.Writer,
 ) actions.Action {
 	return &deployAction{
-		flags:         flags,
-		azdCtx:        azdCtx,
-		azCli:         azCli,
-		formatter:     formatter,
-		writer:        writer,
-		console:       console,
-		commandRunner: commandRunner,
+		flags:          flags,
+		projectConfig:  projectConfig,
+		azdCtx:         azdCtx,
+		env:            environment,
+		accountManager: accountManager,
+		azCli:          azCli,
+		formatter:      formatter,
+		writer:         writer,
+		console:        console,
+		commandRunner:  commandRunner,
 	}
 }
 
@@ -118,21 +129,7 @@ type DeploymentResult struct {
 }
 
 func (d *deployAction) Run(ctx context.Context) (*actions.ActionResult, error) {
-	env, err := loadOrInitEnvironment(ctx, &d.flags.environmentName, d.azdCtx, d.console, d.azCli)
-	if err != nil {
-		return nil, fmt.Errorf("loading environment: %w", err)
-	}
-
-	projConfig, err := project.GetCurrent()
-	if err != nil {
-		return nil, fmt.Errorf("loading project: %w", err)
-	}
-
-	if d.flags.serviceName != "" && !projConfig.HasService(d.flags.serviceName) {
-		return nil, fmt.Errorf("service name '%s' doesn't exist", d.flags.serviceName)
-	}
-
-	proj, err := projConfig.GetProject(ctx, env, d.console, d.azCli, d.commandRunner)
+	proj, err := d.projectConfig.GetProject(ctx, d.env, d.console, d.azCli, d.commandRunner, d.accountManager)
 	if err != nil {
 		return nil, fmt.Errorf("creating project: %w", err)
 	}
@@ -210,7 +207,7 @@ func (d *deployAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	return &actions.ActionResult{
 		Message: &actions.ResultMessage{
 			Header:   "Your Azure app has been deployed!",
-			FollowUp: getResourceGroupFollowUp(ctx, d.formatter, d.azCli, projConfig, env),
+			FollowUp: getResourceGroupFollowUp(ctx, d.formatter, d.azCli, d.projectConfig, d.env),
 		},
 	}, nil
 }

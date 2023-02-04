@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/azureutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
@@ -63,6 +64,7 @@ func (sc *ServiceConfig) GetService(
 	project *Project,
 	env *environment.Environment,
 	azCli azcli.AzCli,
+	accountManager account.Manager,
 	commandRunner exec.CommandRunner,
 	console input.Console,
 ) (*Service, error) {
@@ -83,7 +85,7 @@ func (sc *ServiceConfig) GetService(
 		azureResource.Type,
 	)
 
-	serviceTarget, err := sc.GetServiceTarget(ctx, env, targetResource, azCli, commandRunner, console)
+	serviceTarget, err := sc.GetServiceTarget(ctx, env, targetResource, azCli, commandRunner, console, accountManager)
 	if err != nil {
 		return nil, fmt.Errorf("creating service target: %w", err)
 	}
@@ -106,6 +108,7 @@ func (sc *ServiceConfig) GetServiceTarget(
 	azCli azcli.AzCli,
 	commandRunner exec.CommandRunner,
 	console input.Console,
+	accountManager account.Manager,
 ) (ServiceTarget, error) {
 	var target ServiceTarget
 	var err error
@@ -115,7 +118,7 @@ func (sc *ServiceConfig) GetServiceTarget(
 		target, err = NewAppServiceTarget(sc, env, resource, azCli)
 	case string(ContainerAppTarget):
 		target, err = NewContainerAppTarget(
-			sc, env, resource, azCli, docker.NewDocker(commandRunner), console, commandRunner,
+			sc, env, resource, azCli, docker.NewDocker(commandRunner), console, commandRunner, accountManager,
 		)
 	case string(AzureFunctionTarget):
 		target, err = NewFunctionAppTarget(sc, env, resource, azCli)

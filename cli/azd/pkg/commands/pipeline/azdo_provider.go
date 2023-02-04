@@ -18,6 +18,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
+	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/git"
 	"github.com/microsoft/azure-devops-go-api/azuredevops"
@@ -65,14 +66,14 @@ func (p *AzdoScmProvider) preConfigureCheck(
 	console input.Console,
 	pipelineManagerArgs PipelineManagerArgs,
 	infraOptions provisioning.Options,
-) error {
-	_, err := azdo.EnsurePatExists(ctx, p.Env, console)
+) (bool, error) {
+	_, updatedPat, err := azdo.EnsurePatExists(ctx, p.Env, console)
 	if err != nil {
-		return err
+		return updatedPat, err
 	}
 
-	_, err = azdo.EnsureOrgNameExists(ctx, p.Env, console)
-	return err
+	_, updatedOrg, err := azdo.EnsureOrgNameExists(ctx, p.Env, console)
+	return (updatedPat || updatedOrg), err
 }
 
 // helper function to save configuration values to .env file
@@ -205,7 +206,7 @@ func (p *AzdoScmProvider) getAzdoConnection(ctx context.Context) (*azuredevops.C
 		return p.azdoConnection, nil
 	}
 
-	org, err := azdo.EnsureOrgNameExists(ctx, p.Env, p.console)
+	org, _, err := azdo.EnsureOrgNameExists(ctx, p.Env, p.console)
 	if err != nil {
 		return nil, err
 	}
@@ -213,7 +214,7 @@ func (p *AzdoScmProvider) getAzdoConnection(ctx context.Context) (*azuredevops.C
 	repoDetails := p.getRepoDetails()
 	repoDetails.orgName = org
 
-	pat, err := azdo.EnsurePatExists(ctx, p.Env, p.console)
+	pat, _, err := azdo.EnsurePatExists(ctx, p.Env, p.console)
 	if err != nil {
 		return nil, err
 	}
@@ -232,7 +233,7 @@ func (p *AzdoScmProvider) ensureProjectExists(ctx context.Context, console input
 		return p.repoDetails.projectName, p.repoDetails.projectId, false, nil
 	}
 	idx, err := console.Select(ctx, input.ConsoleOptions{
-		Message: "How would you like to configure your project?",
+		Message: "How would you like to configure your git remote to Azure DevOps?",
 		Options: []string{
 			"Select an existing Azure DevOps project",
 			"Create a new Azure DevOps Project",
@@ -354,9 +355,6 @@ func (p *AzdoScmProvider) getDefaultRepoRemote(
 	if err != nil {
 		return "", err
 	}
-
-	message := fmt.Sprintf("using default repo (%s) in newly created project(%s)", *repo.Name, projectName)
-	console.Message(ctx, message)
 
 	return *repo.RemoteUrl, nil
 }
@@ -512,6 +510,7 @@ func (p *AzdoScmProvider) gitRepoDetails(ctx context.Context, remoteUrl string) 
 		owner:    p.repoDetails.orgName,
 		repoName: p.repoDetails.repoName,
 		details:  repoDetails,
+		remote:   repoDetails.repoWebUrl,
 	}, nil
 }
 
@@ -534,10 +533,6 @@ func (p *AzdoScmProvider) postGitPush(
 	remoteName string,
 	branchName string,
 	console input.Console) error {
-
-	if gitRepo.pushStatus {
-		console.Message(ctx, output.WithSuccessFormat(azdo.AzdoConfigSuccessMessage, p.repoDetails.repoWebUrl))
-	}
 
 	connection, err := p.getAzdoConnection(ctx)
 	if err != nil {
@@ -585,11 +580,11 @@ func (p *AzdoCiProvider) preConfigureCheck(
 	console input.Console,
 	pipelineManagerArgs PipelineManagerArgs,
 	infraOptions provisioning.Options,
-) error {
+) (bool, error) {
 	authType := PipelineAuthType(pipelineManagerArgs.PipelineAuthTypeName)
 
 	if authType == AuthTypeFederated {
-		return fmt.Errorf(
+		return false, fmt.Errorf(
 			//nolint:lll
 			"Azure DevOps does not support federated authentication. To explicitly use client credentials set the %s flag. %w",
 			output.WithBackticks("--auth-type client-credentials"),
@@ -597,13 +592,13 @@ func (p *AzdoCiProvider) preConfigureCheck(
 		)
 	}
 
-	_, err := azdo.EnsurePatExists(ctx, p.Env, console)
+	_, updatedPat, err := azdo.EnsurePatExists(ctx, p.Env, console)
 	if err != nil {
-		return err
+		return updatedPat, err
 	}
 
-	_, err = azdo.EnsureOrgNameExists(ctx, p.Env, console)
-	return err
+	_, updatedOrg, err := azdo.EnsureOrgNameExists(ctx, p.Env, console)
+	return (updatedPat || updatedOrg), err
 }
 
 // name returns the name of the provider.
@@ -631,11 +626,11 @@ func (p *AzdoCiProvider) configureConnection(
 
 	p.credentials = azureCredentials
 	details := repoDetails.details.(*AzdoRepositoryDetails)
-	org, err := azdo.EnsureOrgNameExists(ctx, p.Env, console)
+	org, _, err := azdo.EnsureOrgNameExists(ctx, p.Env, console)
 	if err != nil {
 		return err
 	}
-	pat, err := azdo.EnsurePatExists(ctx, p.Env, console)
+	pat, _, err := azdo.EnsurePatExists(ctx, p.Env, console)
 	if err != nil {
 		return err
 	}
@@ -647,6 +642,13 @@ func (p *AzdoCiProvider) configureConnection(
 	if err != nil {
 		return err
 	}
+
+	console.MessageUxItem(ctx, &ux.MultilineMessage{
+		Lines: []string{
+			"",
+			"Azure DevOps project and connection is now configured.",
+			""},
+	})
 	return nil
 }
 
@@ -664,20 +666,20 @@ func (p *AzdoCiProvider) configurePipeline(
 	ctx context.Context,
 	repoDetails *gitRepositoryDetails,
 	provisioningProvider provisioning.Options,
-) error {
+) (*CiPipeline, error) {
 	details := repoDetails.details.(*AzdoRepositoryDetails)
 
-	org, err := azdo.EnsureOrgNameExists(ctx, p.Env, p.console)
+	org, _, err := azdo.EnsureOrgNameExists(ctx, p.Env, p.console)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	pat, err := azdo.EnsurePatExists(ctx, p.Env, p.console)
+	pat, _, err := azdo.EnsurePatExists(ctx, p.Env, p.console)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	connection, err := azdo.GetConnection(ctx, org, pat)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	buildDefinition, err := azdo.CreatePipeline(
 		ctx,
@@ -691,8 +693,15 @@ func (p *AzdoCiProvider) configurePipeline(
 		provisioningProvider,
 	)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	details.buildDefinition = buildDefinition
-	return nil
+
+	repoUrl := details.repoWebUrl
+	repoPrefix := strings.Split(repoUrl, "_git")[0]
+	pipelineUrl := fmt.Sprintf("%s_build?definitionId=%d", repoPrefix, *buildDefinition.Id)
+	return &CiPipeline{
+		name:   *buildDefinition.Name,
+		remote: pipelineUrl,
+	}, nil
 }

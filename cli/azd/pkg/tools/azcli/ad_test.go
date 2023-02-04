@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
-	"strings"
 	"testing"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/authorization/armauthorization"
@@ -14,39 +13,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockgraphsdk"
 	"github.com/stretchr/testify/require"
 )
-
-func Test_GetSignedInUserId(t *testing.T) {
-	t.Run("Success", func(t *testing.T) {
-		mockUserProfile := graphsdk.UserProfile{
-			Id:                "user1",
-			GivenName:         "John",
-			Surname:           "Doe",
-			JobTitle:          "Software Engineer",
-			DisplayName:       "John Doe",
-			UserPrincipalName: "john.doe@contoso.com",
-		}
-
-		mockContext := mocks.NewMockContext(context.Background())
-		registerGetMeGraphMock(mockContext, http.StatusOK, &mockUserProfile)
-
-		azCli := newAzCliFromMockContext(mockContext)
-
-		userId, err := azCli.GetSignedInUserId(*mockContext.Context)
-		require.NoError(t, err)
-		require.Equal(t, mockUserProfile.Id, *userId)
-	})
-
-	t.Run("Error", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
-		registerGetMeGraphMock(mockContext, http.StatusBadRequest, nil)
-
-		azCli := newAzCliFromMockContext(mockContext)
-
-		userId, err := azCli.GetSignedInUserId(*mockContext.Context)
-		require.Error(t, err)
-		require.Nil(t, userId)
-	})
-}
 
 var expectedServicePrincipalCredential AzureCredentials = AzureCredentials{
 	ClientId:                   "CLIENT_ID",
@@ -216,16 +182,4 @@ func assertAzureCredentials(t *testing.T, message json.RawMessage) {
 	err = json.Unmarshal(jsonBytes, &actualCredentials)
 	require.NoError(t, err)
 	require.Equal(t, expectedServicePrincipalCredential, actualCredentials)
-}
-
-func registerGetMeGraphMock(mockContext *mocks.MockContext, statusCode int, userProfile *graphsdk.UserProfile) {
-	mockContext.HttpClient.When(func(request *http.Request) bool {
-		return request.Method == http.MethodGet && strings.Contains(request.URL.Path, "/me")
-	}).RespondFn(func(request *http.Request) (*http.Response, error) {
-		if userProfile == nil {
-			return mocks.CreateEmptyHttpResponse(request, statusCode)
-		}
-
-		return mocks.CreateHttpResponseWithBody(request, statusCode, userProfile)
-	})
 }

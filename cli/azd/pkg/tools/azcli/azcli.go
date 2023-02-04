@@ -159,9 +159,6 @@ type AzCli interface {
 		appName string,
 		environmentName string,
 	) (*AzCliStaticWebAppEnvironmentProperties, error)
-
-	GetSignedInUserId(ctx context.Context) (*string, error)
-
 	GetAccessToken(ctx context.Context) (*AzCliAccessToken, error)
 }
 

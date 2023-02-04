@@ -205,6 +205,7 @@ func init() {
 			console input.Console,
 			_ azcli.AzCli,
 			_ exec.CommandRunner,
+			_ Prompters,
 		) (Provider, error) {
 			return NewTestProvider(env, projectPath, console, options), nil
 		},

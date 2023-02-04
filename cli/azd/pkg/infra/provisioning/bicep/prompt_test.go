@@ -3,16 +3,14 @@ package bicep
 import (
 	"context"
 	"encoding/json"
-	"net/http"
 	"strings"
 	"testing"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armsubscriptions"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/stretchr/testify/require"
 )
@@ -261,50 +259,40 @@ func TestPromptForParametersLocation(t *testing.T) {
 		Stderr: "",
 	})
 
-	mockContext.HttpClient.When(func(request *http.Request) bool {
-		return request.URL.Path == "/subscriptions/SUBSCRIPTION_ID/locations"
-	}).RespondFn(func(request *http.Request) (*http.Response, error) {
-		return mocks.CreateHttpResponseWithBody(request, 200, armsubscriptions.LocationListResult{
-			Value: []*armsubscriptions.Location{
-				{
-					Name:                to.Ptr("eastus"),
-					DisplayName:         to.Ptr("East US"),
-					RegionalDisplayName: to.Ptr("(US) East US"),
-					Metadata: &armsubscriptions.LocationMetadata{
-						RegionType: to.Ptr(armsubscriptions.RegionType("Physical")),
-					},
-				},
-				{
-					Name:                to.Ptr("eastus2"),
-					DisplayName:         to.Ptr("East US 2"),
-					RegionalDisplayName: to.Ptr("(US) East US 2"),
-					Metadata: &armsubscriptions.LocationMetadata{
-						RegionType: to.Ptr(armsubscriptions.RegionType("Physical")),
-					},
-				},
-				{
-					Name:                to.Ptr("westus"),
-					DisplayName:         to.Ptr("West US"),
-					RegionalDisplayName: to.Ptr("(US) West US"),
-					Metadata: &armsubscriptions.LocationMetadata{
-						RegionType: to.Ptr(armsubscriptions.RegionType("Physical")),
-					},
-				},
-			},
-		})
-	})
-
-	mockContext.HttpClient.When(func(request *http.Request) bool {
-		return strings.HasPrefix(request.URL.Path, "/subscriptions/") && strings.Count(request.URL.Path, "/") == 2
-	}).RespondFn(func(request *http.Request) (*http.Response, error) {
-		return mocks.CreateHttpResponseWithBody(request, 200, armsubscriptions.Subscription{
-			SubscriptionID: to.Ptr("SUBSCRIPTION_ID"),
-			TenantID:       to.Ptr("TENANT_ID"),
-			DisplayName:    to.Ptr("A test subscription"),
-		})
-	})
+	locations := []azcli.AzCliLocation{
+		{
+			Name:                "eastus",
+			DisplayName:         "East US",
+			RegionalDisplayName: "(US) East US",
+		},
+		{
+			Name:                "eastus2",
+			DisplayName:         "East US 2",
+			RegionalDisplayName: "(US) East US 2",
+		},
+		{
+			Name:                "westus",
+			DisplayName:         "West US",
+			RegionalDisplayName: "(US) West US",
+		},
+	}
 
 	p := createBicepProvider(t, mockContext)
+	p.prompters.Location = func(msg string, shouldDisplay func(loc azcli.AzCliLocation) bool) (location string, err error) {
+		displayLocations := []string{}
+		for _, location := range locations {
+			if shouldDisplay(location) {
+				displayLocations = append(displayLocations, location.Name)
+			}
+		}
+
+		index, err := mockContext.Console.Select(*mockContext.Context, input.ConsoleOptions{
+			Message: msg,
+			Options: displayLocations,
+		})
+		require.NoError(t, err)
+		return displayLocations[index], nil
+	}
 
 	mockContext.Console.WhenSelect(func(options input.ConsoleOptions) bool {
 		return strings.Contains(options.Message, "'unfilteredLocation")

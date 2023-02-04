@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
@@ -16,6 +17,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
+	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
@@ -103,6 +105,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 			console.Handles().Stderr,
 		)
 	})
+	container.RegisterSingleton(input.NewConsoleMessaging)
 
 	// Tools
 	container.RegisterSingleton(git.NewGitCli)
@@ -115,19 +118,36 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 		})
 	})
 
-	container.RegisterSingleton(func(ctx context.Context, authManager *auth.Manager) (azcore.TokenCredential, error) {
-		credential, err := authManager.CredentialForCurrentUser(ctx, nil)
-		if err != nil {
-			return nil, err
-		}
+	container.RegisterSingleton(azdcontext.NewAzdContext)
+	container.RegisterSingleton(func() httputil.HttpClient { return &http.Client{} })
 
-		if _, err := auth.EnsureLoggedInCredential(ctx, credential); err != nil {
-			return nil, err
-		}
+	container.RegisterSingleton(auth.NewMultiTenantCredentialProvider)
+	// Register a default azcore.TokenCredential that is scoped to the tenantID
+	// required to access the current environment's subscription.
+	container.RegisterSingleton(
+		func(
+			ctx context.Context,
+			env *environment.Environment,
+			subResolver account.SubscriptionTenantResolver,
+			credProvider auth.MultiTenantCredentialProvider) (azcore.TokenCredential, error) {
+			if env == nil {
+				return nil, fmt.Errorf("an environment wasn't selected")
+			}
 
-		return credential, nil
-	})
+			subscriptionId := env.GetSubscriptionId()
+			if subscriptionId == "" {
+				return nil, fmt.Errorf(
+					"environment %s does not have %s set",
+					env.GetEnvName(), environment.SubscriptionIdEnvVarName)
+			}
 
+			tenantId, err := subResolver.LookupTenant(ctx, subscriptionId)
+			if err != nil {
+				return nil, err
+			}
+
+			return credProvider.GetTokenCredential(ctx, tenantId)
+		})
 	container.RegisterSingleton(func(mgr *auth.Manager) CredentialProviderFn {
 		return mgr.CredentialForCurrentUser
 	})
@@ -169,9 +189,16 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 		})
 	})
 
-	// Environment
+	// Register an initialized environment based on the specified environment flag, or the default environment.
+	// Note that referencing an *environment.Environment in a command automatically triggers a UI prompt if the
+	// environment is uninitialized or a default environment doesn't yet exist.
 	container.RegisterSingleton(
-		func(azdContext *azdcontext.AzdContext, envFlags flagsWithEnv) (*environment.Environment, error) {
+		func(ctx context.Context,
+			azdContext *azdcontext.AzdContext,
+			envFlags flagsWithEnv,
+			console input.Console,
+			accountManager account.Manager,
+			userProfileService *azcli.UserProfileService) (*environment.Environment, error) {
 			if azdContext == nil {
 				return nil, azdcontext.ErrNoProject
 			}
@@ -179,18 +206,10 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 			environmentName := envFlags.EnvironmentName()
 			var err error
 
-			if environmentName == "" {
-				defaultEnvName, err := azdContext.GetDefaultEnvironmentName()
-				if err != nil {
-					return nil, err
-				}
-
-				environmentName = defaultEnvName
-			}
-
-			env, err := environment.GetEnvironment(azdContext, environmentName)
+			env, err := loadOrInitEnvironment(
+				ctx, &environmentName, azdContext, console, accountManager, userProfileService)
 			if err != nil {
-				return nil, err
+				return nil, fmt.Errorf("loading environment: %w", err)
 			}
 
 			return env, nil
@@ -248,7 +267,13 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	container.RegisterSingleton(config.NewManager)
 	container.RegisterSingleton(templates.NewTemplateManager)
 	container.RegisterSingleton(auth.NewManager)
+	container.RegisterSingleton(azcli.NewUserProfileService)
+	container.RegisterSingleton(azcli.NewSubscriptionsService)
 	container.RegisterSingleton(account.NewManager)
+	container.RegisterSingleton(account.NewSubscriptionsManager)
+	container.RegisterSingleton(func(subManager *account.SubscriptionsManager) account.SubscriptionTenantResolver {
+		return subManager
+	})
 
 	// Required for nested actions called from composite actions like 'up'
 	registerActionInitializer[*initAction](container, "azd-init-action")

@@ -7,6 +7,8 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/pkg/account"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
@@ -72,35 +74,41 @@ Depending on what Azure resources are created, running this command might take a
 }
 
 type infraCreateAction struct {
-	flags         *infraCreateFlags
-	azdCtx        *azdcontext.AzdContext
-	projectConfig *project.ProjectConfig
-	azCli         azcli.AzCli
-	formatter     output.Formatter
-	writer        io.Writer
-	console       input.Console
-	commandRunner exec.CommandRunner
+	flags          *infraCreateFlags
+	accountManager account.Manager
+	azdCtx         *azdcontext.AzdContext
+	azCli          azcli.AzCli
+	env            *environment.Environment
+	formatter      output.Formatter
+	projectConfig  *project.ProjectConfig
+	writer         io.Writer
+	console        input.Console
+	commandRunner  exec.CommandRunner
 }
 
 func newInfraCreateAction(
 	flags *infraCreateFlags,
+	accountManager account.Manager,
 	azdCtx *azdcontext.AzdContext,
 	projectConfig *project.ProjectConfig,
 	azCli azcli.AzCli,
+	env *environment.Environment,
 	console input.Console,
 	formatter output.Formatter,
 	writer io.Writer,
 	commandRunner exec.CommandRunner,
 ) actions.Action {
 	return &infraCreateAction{
-		flags:         flags,
-		azdCtx:        azdCtx,
-		projectConfig: projectConfig,
-		azCli:         azCli,
-		formatter:     formatter,
-		writer:        writer,
-		console:       console,
-		commandRunner: commandRunner,
+		flags:          flags,
+		accountManager: accountManager,
+		azdCtx:         azdCtx,
+		azCli:          azCli,
+		env:            env,
+		formatter:      formatter,
+		projectConfig:  projectConfig,
+		writer:         writer,
+		console:        console,
+		commandRunner:  commandRunner,
 	}
 }
 
@@ -111,24 +119,20 @@ func (i *infraCreateAction) Run(ctx context.Context) (*actions.ActionResult, err
 		TitleNote: "Provisioning Azure resources can take some time"},
 	)
 
-	env, err := loadOrInitEnvironment(ctx, &i.flags.environmentName, i.azdCtx, i.console, i.azCli)
-	if err != nil {
-		return nil, fmt.Errorf("loading environment: %w", err)
-	}
-
-	if err = i.projectConfig.Initialize(ctx, env, i.commandRunner); err != nil {
+	if err := i.projectConfig.Initialize(ctx, i.env, i.commandRunner); err != nil {
 		return nil, err
 	}
 
 	infraManager, err := provisioning.NewManager(
 		ctx,
-		env,
+		i.env,
 		i.projectConfig.Path,
 		i.projectConfig.Infra,
 		i.console.IsUnformatted(),
 		i.azCli,
 		i.console,
 		i.commandRunner,
+		i.accountManager,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("creating provisioning manager: %w", err)
@@ -140,7 +144,7 @@ func (i *infraCreateAction) Run(ctx context.Context) (*actions.ActionResult, err
 	}
 
 	provisioningScope := infra.NewSubscriptionScope(
-		i.azCli, env.GetLocation(), env.GetSubscriptionId(), env.GetEnvName(),
+		i.azCli, i.env.GetLocation(), i.env.GetSubscriptionId(), i.env.GetEnvName(),
 	)
 	deployResult, err := infraManager.Deploy(ctx, deploymentPlan, provisioningScope)
 
@@ -201,7 +205,7 @@ func (i *infraCreateAction) Run(ctx context.Context) (*actions.ActionResult, err
 	return &actions.ActionResult{
 		Message: &actions.ResultMessage{
 			Header:   "Your project has been provisioned!",
-			FollowUp: getResourceGroupFollowUp(ctx, i.formatter, i.azCli, i.projectConfig, env),
+			FollowUp: getResourceGroupFollowUp(ctx, i.formatter, i.azCli, i.projectConfig, i.env),
 		},
 	}, nil
 }

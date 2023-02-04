@@ -65,6 +65,7 @@ type PipelineManager struct {
 func NewPipelineManager(
 	azCli azcli.AzCli,
 	azdCtx *azdcontext.AzdContext,
+	env *environment.Environment,
 	global *internal.GlobalCommandOptions,
 	commandRunner exec.CommandRunner,
 	console input.Console,
@@ -73,6 +74,7 @@ func NewPipelineManager(
 	return &PipelineManager{
 		AzdCtx:              azdCtx,
 		RootOptions:         global,
+		Environment:         env,
 		PipelineManagerArgs: args,
 		azCli:               azCli,
 		commandRunner:       commandRunner,

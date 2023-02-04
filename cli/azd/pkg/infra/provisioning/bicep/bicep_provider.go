@@ -61,6 +61,7 @@ type BicepProvider struct {
 	console     input.Console
 	bicepCli    bicep.BicepCli
 	azCli       azcli.AzCli
+	prompters   Prompters
 }
 
 // Name gets the name of the infra provider
@@ -1076,6 +1077,7 @@ func NewBicepProvider(
 	infraOptions Options,
 	commandRunner exec.CommandRunner,
 	console input.Console,
+	prompters Prompters,
 ) (*BicepProvider, error) {
 	bicepCli, err := bicep.NewBicepCli(ctx, console, commandRunner)
 	if err != nil {
@@ -1094,6 +1096,7 @@ func NewBicepProvider(
 		console:     console,
 		bicepCli:    bicepCli,
 		azCli:       azCli,
+		prompters:   prompters,
 	}, nil
 }
 
@@ -1108,8 +1111,9 @@ func init() {
 			console input.Console,
 			azCli azcli.AzCli,
 			commandRunner exec.CommandRunner,
+			prompters Prompters,
 		) (Provider, error) {
-			return NewBicepProvider(ctx, azCli, env, projectPath, options, commandRunner, console)
+			return NewBicepProvider(ctx, azCli, env, projectPath, options, commandRunner, console, prompters)
 		},
 	)
 

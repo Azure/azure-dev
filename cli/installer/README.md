@@ -74,7 +74,7 @@ powershell -ex AllSigned -c "Invoke-RestMethod 'https://aka.ms/install-azd.ps1' 
 
 ##### Uninstall or switch to another version
 
-To uninstall a daily version of `azd` or switch to another version you will need to first uninstall `Azure Developer CLI` using the "Add or remove programs" dialog. This is because daily builds often has a version number that supersedes the `latest` build.
+To uninstall a daily version of `azd` or switch to another version you will need to first uninstall "Azure Developer CLI" using the "Add or remove programs" dialog. This is because daily builds often has a version number that supersedes the `latest` build.
 
 
 #### Linux/MacOS

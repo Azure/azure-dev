@@ -9,6 +9,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
@@ -63,6 +64,8 @@ type restoreAction struct {
 	console       input.Console
 	azCli         azcli.AzCli
 	azdCtx        *azdcontext.AzdContext
+	env           *environment.Environment
+	projectConfig *project.ProjectConfig
 	commandRunner exec.CommandRunner
 }
 
@@ -71,30 +74,23 @@ func newRestoreAction(
 	azCli azcli.AzCli,
 	console input.Console,
 	azdCtx *azdcontext.AzdContext,
+	env *environment.Environment,
+	projectConfig *project.ProjectConfig,
 	commandRunner exec.CommandRunner,
 ) actions.Action {
 	return &restoreAction{
 		flags:         flags,
 		console:       console,
 		azdCtx:        azdCtx,
+		projectConfig: projectConfig,
 		azCli:         azCli,
+		env:           env,
 		commandRunner: commandRunner,
 	}
 }
 
 func (r *restoreAction) Run(ctx context.Context) (*actions.ActionResult, error) {
-	env, err := loadOrInitEnvironment(ctx, &r.flags.environmentName, r.azdCtx, r.console, r.azCli)
-	if err != nil {
-		return nil, fmt.Errorf("loading environment: %w", err)
-	}
-
-	proj, err := project.LoadProjectConfig(r.azdCtx.ProjectPath())
-
-	if err != nil {
-		return nil, fmt.Errorf("loading project: %w", err)
-	}
-
-	if r.flags.serviceName != "" && !proj.HasService(r.flags.serviceName) {
+	if r.flags.serviceName != "" && !r.projectConfig.HasService(r.flags.serviceName) {
 		return nil, fmt.Errorf("service name '%s' doesn't exist", r.flags.serviceName)
 	}
 
@@ -104,13 +100,13 @@ func (r *restoreAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 	// the are installed. When a single project is being deployed, we need just
 	// the tools for that project, otherwise we need the tools from all project.
 	allTools := []tools.ExternalTool{}
-	for _, svc := range proj.Services {
+	for _, svc := range r.projectConfig.Services {
 		if r.flags.serviceName == "" || r.flags.serviceName == svc.Name {
-			frameworkService, err := svc.GetFrameworkService(ctx, env, r.commandRunner)
+			requiredTools, err := svc.GetRequiredTools(ctx, r.env, r.commandRunner)
 			if err != nil {
-				return nil, fmt.Errorf("getting framework services: %w", err)
+				return nil, fmt.Errorf("failed getting required tools, %w", err)
 			}
-			requiredTools := (*frameworkService).RequiredExternalTools()
+
 			allTools = append(allTools, requiredTools...)
 		}
 	}
@@ -119,19 +115,16 @@ func (r *restoreAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 		return nil, err
 	}
 
-	for _, svc := range proj.Services {
+	for _, svc := range r.projectConfig.Services {
 		if r.flags.serviceName != "" && svc.Name != r.flags.serviceName {
 			continue
 		}
 
 		installMsg := fmt.Sprintf("Installing dependencies for %s service...", svc.Name)
-		frameworkService, err := svc.GetFrameworkService(ctx, env, r.commandRunner)
-		if err != nil {
-			return nil, fmt.Errorf("getting framework services: %w", err)
-		}
-
 		spinner := spin.NewSpinner(r.console.Handles().Stdout, installMsg)
-		if err = spinner.Run(func() error { return (*frameworkService).InstallDependencies(ctx) }); err != nil {
+		if err := spinner.Run(func() error {
+			return svc.Restore(ctx, r.env, r.commandRunner)
+		}); err != nil {
 			return nil, err
 		}
 

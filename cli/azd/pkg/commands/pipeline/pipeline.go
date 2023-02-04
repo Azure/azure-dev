@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"os"
 	"path"
 	"strings"
@@ -29,12 +30,14 @@ type subareaProvider interface {
 	// preConfigureCheck validates that the provider's state is ready to be used.
 	// a provider would typically use this method for checking if tools are logged in
 	// of checking if all expected input data is found.
+	// The returned configurationWasUpdated indicates if the current settings were updated during the check,
+	// for example, if Azdo prompt for a PAT or OrgName to the user and updated.
 	preConfigureCheck(
 		ctx context.Context,
 		console input.Console,
 		pipelineManagerArgs PipelineManagerArgs,
 		infraOptions provisioning.Options,
-	) error
+	) (bool, error)
 	// name returns the name of the provider
 	name() string
 }
@@ -50,6 +53,8 @@ type gitRepositoryDetails struct {
 	gitProjectPath string
 	//Indicates if the repo was successfully pushed a remote
 	pushStatus bool
+	// remote
+	remote string
 
 	details interface{}
 }
@@ -80,16 +85,21 @@ type ScmProvider interface {
 		console input.Console) error
 }
 
+type CiPipeline struct {
+	name   string
+	remote string
+}
+
 // CiProvider defines the base behavior for a continuous integration provider.
 type CiProvider interface {
 	// compose the behavior from subareaProvider
 	subareaProvider
-	// configurePipeline set up or create the CI pipeline.
+	// configurePipeline set up or create the CI pipeline and return information about it
 	configurePipeline(
 		ctx context.Context,
 		repoDetails *gitRepositoryDetails,
 		provisioningProvider provisioning.Options,
-	) error
+	) (*CiPipeline, error)
 	// configureConnection use the credential to set up the connection from the pipeline
 	// to Azure
 	configureConnection(
@@ -199,7 +209,7 @@ func DetectProviders(
 	if overrideWith == azdoLabel || hasAzDevOpsFolder && !hasGitHubFolder {
 		// Azdo only either by override or by finding only that folder
 		_ = savePipelineProviderToEnv(azdoLabel, env)
-		console.Message(ctx, fmt.Sprintf("Using pipeline provider: %s", output.WithHighLightFormat("Azure DevOps")))
+		log.Printf("Using pipeline provider: %s", output.WithHighLightFormat("Azure DevOps"))
 		scmProvider := createAzdoScmProvider(env, azdContext, commandRunner, console)
 		ciProvider := createAzdoCiProvider(env, azdContext, console)
 
@@ -209,7 +219,7 @@ func DetectProviders(
 	// Both folders exists and no override value. Default to GitHub
 	// Or override value is github and the folder is available
 	_ = savePipelineProviderToEnv(gitHubLabel, env)
-	console.Message(ctx, fmt.Sprintf("Using pipeline provider: %s", output.WithHighLightFormat("GitHub")))
+	log.Printf("Using pipeline provider: %s", output.WithHighLightFormat("GitHub"))
 	scmProvider := NewGitHubScmProvider(commandRunner)
 	ciProvider := NewGitHubCiProvider(credential, commandRunner)
 	return scmProvider, ciProvider, nil

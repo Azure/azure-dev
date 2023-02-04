@@ -80,7 +80,7 @@ func (dp *dotnetProject) Initialize(ctx context.Context) error {
 	handler := func(ctx context.Context, args ServiceLifecycleEventArgs) error {
 		return dp.setUserSecretsFromOutputs(ctx, args)
 	}
-	if err := dp.config.AddHandler(EnvironmentUpdated, handler); err != nil {
+	if err := dp.config.AddHandler(ServiceEventEnvUpdated, handler); err != nil {
 		return err
 	}
 

@@ -8,6 +8,8 @@
 
 ### Bugs Fixed
 
+- [[#1406]](https://github.com/Azure/azure-dev/issues/1406) MSI Upgrades from pre-MSI versions fail in some cases (reported by @lechnerc77, fixed by @heaths)
+
 ### Other Changes
 
 ## 0.5.0-beta.3 (2023-01-13)
@@ -120,7 +122,7 @@ We plan to improve this behavior with [[#1126]](https://github.com/Azure/azure-d
 
 - [[#979]](https://github.com/Azure/azure-dev/pull/979) Fix provisioning template with non string outputs.
 
-## 0.3.0-beta.4 (2022-10-25) **DEPRECATED**
+## 0.3.0-beta.4 (2022-10-25 **DEPRECATED**)
 
 ### Bugs Fixed
 

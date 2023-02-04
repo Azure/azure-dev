@@ -1,8 +1,11 @@
 {
-    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$schema": "https://json-schema.org/draft/2019-09/schema",
     "$id": "https://raw.githubusercontent.com/Azure/azure-dev/main/schemas/v1.0/azure.yaml.json",
     "type": "object",
-    "required": ["name", "services"],
+    "required": [
+        "name",
+        "services"
+    ],
     "additionalProperties": false,
     "properties": {
         "name": {
@@ -23,7 +26,9 @@
                 "template": {
                     "type": "string",
                     "title": "Identifier of the template from which the application was created. Optional.",
-                    "examples": ["todo-nodejs-mongo@0.0.1-beta"]
+                    "examples": [
+                        "todo-nodejs-mongo@0.0.1-beta"
+                    ]
                 }
             }
         },
@@ -33,7 +38,7 @@
             "description": "Optional. Provides additional configuration for Azure infrastructure provisioning.",
             "additionalProperties": true,
             "properties": {
-                "provider":{
+                "provider": {
                     "type": "string",
                     "title": "Type of infrastructure provisioning provider",
                     "description": "Optional. The infrastructure provisioning provider used to provision the Azure resources for the application. (Default: bicep)",
@@ -57,9 +62,13 @@
         "services": {
             "type": "object",
             "title": "Definition of services that comprise the application",
+            "minProperties": 1,
             "additionalProperties": {
                 "type": "object",
                 "additionalProperties": false,
+                "required": [
+                    "project"
+                ],
                 "properties": {
                     "resourceName": {
                         "type": "string",
@@ -135,9 +144,46 @@
                                 "description": "If omitted, a unique tag will be generated based on the format: {appName}/{serviceName}-{environmentName}:azdev-deploy-{unix time (seconds)}. Supports environment variable substitution. For example, to generate unique tags for a given release: myapp/myimage:${DOCKER_IMAGE_TAG}"
                             }
                         }
+                    },
+                    "hooks": {
+                        "type": "object",
+                        "title": "Service level hooks",
+                        "description": "Hooks should match `service` event names prefixed with `pre` or `post` depending on when the script should execute. When specifying paths they should be relative to the service path.",
+                        "additionalProperties": false,
+                        "properties": {
+                            "predeploy": {
+                                "title": "pre deploy hook",
+                                "description": "Runs before the service is deployed to Azure",
+                                "$ref": "#/definitions/hook"
+                            },
+                            "postdeploy": {
+                                "title": "post deploy hook",
+                                "description": "Runs after the service is deployed to Azure",
+                                "$ref": "#/definitions/hook"
+                            },
+                            "prerestore": {
+                                "title": "pre restore hook",
+                                "description": "Runs before the service dependencies are restored",
+                                "$ref": "#/definitions/hook"
+                            },
+                            "postrestore": {
+                                "title": "post restore hook",
+                                "description": "Runs after the service dependencies are restored",
+                                "$ref": "#/definitions/hook"
+                            },
+                            "prepackage": {
+                                "title": "pre package hook",
+                                "description": "Runs before the service is deployment package is created",
+                                "$ref": "#/definitions/hook"
+                            },
+                            "postpackage": {
+                                "title": "post package hook",
+                                "description": "Runs after the service is deployment package is created",
+                                "$ref": "#/definitions/hook"
+                            }
+                        }
                     }
                 },
-                "required": ["project"],
                 "allOf": [
                     {
                         "if": {
@@ -158,7 +204,9 @@
                     {
                         "if": {
                             "properties": {
-                                "language": { "const": "java" }
+                                "language": {
+                                    "const": "java"
+                                }
                             }
                         },
                         "then": {
@@ -185,7 +233,7 @@
             "type": "object",
             "title": "Definition of continuous integration pipeline",
             "properties": {
-                "provider":{
+                "provider": {
                     "type": "string",
                     "title": "Type of pipeline provider",
                     "description": "Optional. The pipeline provider to be used for continuous integration. (Default: github)",
@@ -193,6 +241,134 @@
                         "github",
                         "azdo"
                     ]
+                }
+            }
+        },
+        "hooks": {
+            "type": "object",
+            "title": "Command level hooks",
+            "description": "Hooks should match `azd` command names prefixed with `pre` or `post` depending on when the script should execute. When specifying paths they should be relative to the project path.",
+            "additionalProperties": false,
+            "properties": {
+                "preprovision": {
+                    "title": "pre provision hook",
+                    "description": "Runs before the `provision` command",
+                    "$ref": "#/definitions/hook"
+                },
+                "postprovision": {
+                    "title": "post provision hook",
+                    "description": "Runs after the `provision` command",
+                    "$ref": "#/definitions/hook"
+                },
+                "preinfracreate": {
+                    "title": "pre infra create hook",
+                    "description": "Runs before the `infra create` or `provision` commands",
+                    "$ref": "#/definitions/hook"
+                },
+                "postinfracreate": {
+                    "title": "post infra create hook",
+                    "description": "Runs after the `infra create` or `provision` commands",
+                    "$ref": "#/definitions/hook"
+                },
+                "preinfradelete": {
+                    "title": "pre infra delete hook",
+                    "description": "Runs before the `infra delete` or `down` commands",
+                    "$ref": "#/definitions/hook"
+                },
+                "postinfradelete": {
+                    "title": "post infra delete hook",
+                    "description": "Runs after the `infra delete` or `down` commands",
+                    "$ref": "#/definitions/hook"
+                },
+                "predown": {
+                    "title": "pre down hook",
+                    "description": "Runs before the `infra delete` or `down` commands",
+                    "$ref": "#/definitions/hook"
+                },
+                "postdown": {
+                    "title": "post down hook",
+                    "description": "Runs after the `infra delete` or `down` commands",
+                    "$ref": "#/definitions/hook"
+                },
+                "preup": {
+                    "title": "pre up hook",
+                    "description": "Runs before the `up` command",
+                    "$ref": "#/definitions/hook"
+                },
+                "postup": {
+                    "title": "post up hook",
+                    "description": "Runs after the `up` command",
+                    "$ref": "#/definitions/hook"
+                },
+                "predeploy": {
+                    "title": "pre deploy hook",
+                    "description": "Runs before the `deploy` command",
+                    "$ref": "#/definitions/hook"
+                },
+                "postdeploy": {
+                    "title": "post deploy hook",
+                    "description": "Runs after the `deploy` command",
+                    "$ref": "#/definitions/hook"
+                },
+                "prerestore": {
+                    "title": "pre restore hook",
+                    "description": "Runs before the `restore` command",
+                    "$ref": "#/definitions/hook"
+                },
+                "postrestore": {
+                    "title": "post restore hook",
+                    "description": "Runs after the `restore` command",
+                    "$ref": "#/definitions/hook"
+                }
+            }
+        }
+    },
+    "definitions": {
+        "hook": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+                "run"
+            ],
+            "properties": {
+                "shell": {
+                    "type": "string",
+                    "title": "Type of shell to execute scripts",
+                    "description": "Optional. The type of shell to use for the hook. (Default: sh)",
+                    "enum": [
+                        "sh",
+                        "pwsh"
+                    ],
+                    "default": "sh"
+                },
+                "run": {
+                    "type": "string",
+                    "title": "Required. The inline script or relative path of your scripts from the project or service path",
+                    "description": "When specifying an inline script you also must specify the `shell` to use. This is automatically inferred when using paths."
+                },
+                "continueOnError": {
+                    "type": "boolean",
+                    "default": false,
+                    "title": "Whether or not a script error will halt the azd command",
+                    "description": "Optional. When set to true will continue to run the command even after a script error has occurred. (Default: false)"
+                },
+                "interactive": {
+                    "type": "boolean",
+                    "default": false,
+                    "title": "Whether the script will run in interactive mode",
+                    "description": "Optional. When set to true will bind the script to stdin, stdout & stderr of the running console. (Default: false)"
+                },
+                "windows": {
+                    "title": "The hook configuration used for Windows environments",
+                    "description": "When specified overrides the hook configuration when executed in Windows environments",
+                    "default": null,
+                    "$ref": "#/definitions/hook"
+                },
+                "posix": {
+                    "title": "The hook configuration used for POSIX (Linux & MacOS) environments",
+                    "description": "When specified overrides the hook configuration when executed in POSIX environments",
+                    "default": null,
+                    "$ref": "#/definitions/hook"
                 }
             }
         }

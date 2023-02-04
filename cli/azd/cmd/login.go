@@ -8,12 +8,14 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"os"
 	"strings"
 
 	"github.com/MakeNowJust/heredoc/v2"
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 	"github.com/azure/azure-dev/cli/azd/pkg/contracts"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
@@ -97,7 +99,11 @@ func (lf *loginFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandO
 		cFederatedCredentialProviderFlagName,
 		"",
 		"The provider to use to acquire a federated token to authenticate with.")
-	local.StringVar(&lf.tenantID, "tenant-id", "", "The tenant id for the service principal to authenticate with.")
+	local.StringVar(
+		&lf.tenantID,
+		"tenant-id",
+		"",
+		"The tenant id or domain name to authenticate with.")
 	local.IntVar(
 		&lf.redirectPort,
 		"redirect-port",
@@ -122,36 +128,40 @@ func newLoginCmd() *cobra.Command {
 		Log in to Azure.
 
 		When run without any arguments, log in interactively using a browser. To log in using a device code, pass
-		--use-device-code.
-
+		--use-device-code. To log in under a particular tenant, pass --tenant-id.
+		
 		To log in as a service principal, pass --client-id and --tenant-id as well as one of: --client-secret, 
-		--client-certificate, --federated-credential, or --federated-credential-provider.`),
+		--client-certificate, --federated-credential, or --federated-credential-provider.
+		`),
 	}
 
 	return cmd
 }
 
 type loginAction struct {
-	formatter   output.Formatter
-	writer      io.Writer
-	console     input.Console
-	authManager *auth.Manager
-	flags       *loginFlags
+	formatter         output.Formatter
+	writer            io.Writer
+	console           input.Console
+	authManager       *auth.Manager
+	accountSubManager *account.SubscriptionsManager
+	flags             *loginFlags
 }
 
 func newLoginAction(
 	formatter output.Formatter,
 	writer io.Writer,
 	authManager *auth.Manager,
+	accountSubManager *account.SubscriptionsManager,
 	flags *loginFlags,
 	console input.Console,
 ) actions.Action {
 	return &loginAction{
-		formatter:   formatter,
-		writer:      writer,
-		console:     console,
-		authManager: authManager,
-		flags:       flags,
+		formatter:         formatter,
+		writer:            writer,
+		console:           console,
+		authManager:       authManager,
+		accountSubManager: accountSubManager,
+		flags:             flags,
 	}
 }
 
@@ -179,6 +189,26 @@ func (la *loginAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		}
 	}
 
+	if !la.flags.onlyCheckStatus {
+		// Rehydrate or clear the account's subscriptions cache.
+		// The caching is done to increase responsiveness of listing subscriptions,
+		// and to allow an implicit command for the user to refresh cached subscriptions.
+		if la.flags.clientID == "" {
+			err := la.accountSubManager.RefreshSubscriptions(ctx)
+			if err != nil {
+				// If this fails, the subscriptions will still be loaded on-demand.
+				log.Printf("failed retrieving subscriptions: %s", err)
+			}
+		} else {
+			// The cache isn't tied to a specified user account currently. Clear the cache.
+			err := la.accountSubManager.ClearSubscriptions(ctx)
+			if err != nil {
+				log.Printf("failed clearing subscriptions: %s", err)
+			}
+		}
+	}
+
+	la.console.StopSpinner(ctx, "", input.StepDone)
 	if la.formatter.Kind() == output.NoneFormat {
 		if res.Status == contracts.LoginStatusSuccess {
 			fmt.Fprintln(la.console.Handles().Stdout, "Logged in to Azure.")
@@ -205,8 +235,8 @@ func countTrue(elms ...bool) int {
 }
 
 func (la *loginAction) login(ctx context.Context) error {
-	if la.flags.clientID != "" || la.flags.tenantID != "" {
-		if la.flags.clientID == "" || la.flags.tenantID == "" {
+	if la.flags.clientID != "" {
+		if la.flags.tenantID == "" {
 			return errors.New("must set both `client-id` and `tenant-id` for service principal login")
 		}
 
@@ -287,11 +317,11 @@ func (la *loginAction) login(ctx context.Context) error {
 	}
 
 	if la.flags.useDeviceCode {
-		if _, err := la.authManager.LoginWithDeviceCode(ctx, la.writer); err != nil {
+		if _, err := la.authManager.LoginWithDeviceCode(ctx, la.writer, la.flags.tenantID); err != nil {
 			return fmt.Errorf("logging in: %w", err)
 		}
 	} else {
-		if _, err := la.authManager.LoginInteractive(ctx, la.flags.redirectPort); err != nil {
+		if _, err := la.authManager.LoginInteractive(ctx, la.flags.redirectPort, la.flags.tenantID); err != nil {
 			return fmt.Errorf("logging in: %w", err)
 		}
 	}

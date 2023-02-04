@@ -2,20 +2,21 @@ package project
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"log"
 	"os"
 	"path/filepath"
 	"sort"
-	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/internal/telemetry"
 	"github.com/azure/azure-dev/cli/azd/internal/telemetry/fields"
+	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
+	"github.com/azure/azure-dev/cli/azd/pkg/ext"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"gopkg.in/yaml.v3"
@@ -25,15 +26,16 @@ import (
 // When changing project structure, make sure to update the JSON schema file for azure.yaml (<workspace
 // root>/schemas/vN.M/azure.yaml.json).
 type ProjectConfig struct {
-	Name              string                    `yaml:"name"`
-	ResourceGroupName ExpandableString          `yaml:"resourceGroup,omitempty"`
-	Path              string                    `yaml:",omitempty"`
-	Metadata          *ProjectMetadata          `yaml:"metadata,omitempty"`
-	Services          map[string]*ServiceConfig `yaml:",omitempty"`
-	Infra             provisioning.Options      `yaml:"infra"`
-	Pipeline          PipelineOptions           `yaml:"pipeline"`
+	Name              string                     `yaml:"name"`
+	ResourceGroupName ExpandableString           `yaml:"resourceGroup,omitempty"`
+	Path              string                     `yaml:",omitempty"`
+	Metadata          *ProjectMetadata           `yaml:"metadata,omitempty"`
+	Services          map[string]*ServiceConfig  `yaml:",omitempty"`
+	Infra             provisioning.Options       `yaml:"infra"`
+	Pipeline          PipelineOptions            `yaml:"pipeline"`
+	Hooks             map[string]*ext.HookConfig `yaml:"hooks,omitempty"`
 
-	handlers map[Event][]ProjectLifecycleEventHandlerFn
+	*ext.EventDispatcher[ProjectLifecycleEventArgs] `yaml:",omitempty"`
 }
 
 // options supported in azure.yaml
@@ -41,28 +43,26 @@ type PipelineOptions struct {
 	Provider string `yaml:"provider"`
 }
 
-// Project lifecycle events
-type Event string
-
 const (
-	// Raised before project is initialized
-	Initializing Event = "initializing"
-	// Raised after project is initialized
-	Initialized Event = "initialized"
-	// Raised before project is provisioned
-	Provisioning Event = "provisioning"
-	// Raised after project is provisioned
-	Provisioned Event = "provisioned"
-	// Raised before project is deployed
-	Deploying Event = "deploying"
-	// Raised after project is deployed
-	Deployed Event = "deployed"
-	// Raised before project is destroyed
-	Destroying Event = "destroying"
-	// Raised after project is destroyed
-	Destroyed Event = "destroyed"
-	// Raised after environment is updated
-	EnvironmentUpdated Event = "environment updated"
+	ProjectEventDeploy     ext.Event = "deploy"
+	ProjectEventProvision  ext.Event = "provision"
+	ServiceEventEnvUpdated ext.Event = "environment updated"
+	ServiceEventRestore    ext.Event = "restore"
+	ServiceEventPackage    ext.Event = "package"
+	ServiceEventDeploy     ext.Event = "deploy"
+)
+
+var (
+	ProjectEvents []ext.Event = []ext.Event{
+		ProjectEventProvision,
+		ProjectEventDeploy,
+	}
+	ServiceEvents []ext.Event = []ext.Event{
+		ServiceEventEnvUpdated,
+		ServiceEventRestore,
+		ServiceEventPackage,
+		ServiceEventDeploy,
+	}
 )
 
 // Project lifecycle event arguments
@@ -100,6 +100,7 @@ func (pc *ProjectConfig) GetProject(
 	console input.Console,
 	azCli azcli.AzCli,
 	commandRunner exec.CommandRunner,
+	accountManager account.Manager,
 ) (*Project, error) {
 	serviceMap := map[string]*Service{}
 
@@ -117,7 +118,7 @@ func (pc *ProjectConfig) GetProject(
 	project.ResourceGroupName = resourceGroupName
 
 	for key, serviceConfig := range pc.Services {
-		service, err := serviceConfig.GetService(ctx, &project, env, azCli, commandRunner, console)
+		service, err := serviceConfig.GetService(ctx, &project, env, azCli, accountManager, commandRunner, console)
 
 		if err != nil {
 			return nil, fmt.Errorf("creating service %s: %w", key, err)
@@ -140,73 +141,19 @@ func (pc *ProjectConfig) GetProject(
 	return &project, nil
 }
 
-// Adds an event handler for the specified event name
-func (pc *ProjectConfig) AddHandler(name Event, handler ProjectLifecycleEventHandlerFn) error {
-	newHandler := fmt.Sprintf("%v", handler)
-	events := pc.handlers[name]
-
-	for _, ref := range events {
-		existingHandler := fmt.Sprintf("%v", ref)
-
-		if newHandler == existingHandler {
-			return fmt.Errorf("event handler has already been registered for %s event", name)
-		}
+// Saves the current instance back to the azure.yaml file
+func (p *ProjectConfig) Save(projectPath string) error {
+	projectBytes, err := yaml.Marshal(p)
+	if err != nil {
+		return fmt.Errorf("marshalling project yaml: %w", err)
 	}
 
-	events = append(events, handler)
-	pc.handlers[name] = events
-
-	return nil
-}
-
-// Removes the event handler for the specified event name
-func (pc *ProjectConfig) RemoveHandler(name Event, handler ProjectLifecycleEventHandlerFn) error {
-	newHandler := fmt.Sprintf("%v", handler)
-	events := pc.handlers[name]
-	for i, ref := range events {
-		existingHandler := fmt.Sprintf("%v", ref)
-
-		if newHandler == existingHandler {
-			pc.handlers[name] = append(events[:i], events[i+1:]...)
-			return nil
-		}
+	err = os.WriteFile(projectPath, projectBytes, osutil.PermissionFile)
+	if err != nil {
+		return fmt.Errorf("saving project file: %w", err)
 	}
 
-	return fmt.Errorf("specified handler was not found in %s event registrations", name)
-}
-
-// Raises the specified event and calls any registered event handlers
-func (pc *ProjectConfig) RaiseEvent(ctx context.Context, name Event, args map[string]any) error {
-	handlerErrors := []error{}
-
-	if args == nil {
-		args = make(map[string]any)
-	}
-
-	eventArgs := ProjectLifecycleEventArgs{
-		Args:    args,
-		Project: pc,
-	}
-
-	handlers := pc.handlers[name]
-
-	// TODO: Opportunity to dispatch these event handlers in parallel if needed
-	for _, handler := range handlers {
-		err := handler(ctx, eventArgs)
-		if err != nil {
-			handlerErrors = append(handlerErrors, err)
-		}
-	}
-
-	// Build final error string if their are any failures
-	if len(handlerErrors) > 0 {
-		lines := make([]string, len(handlerErrors))
-		for i, err := range handlerErrors {
-			lines[i] = err.Error()
-		}
-
-		return errors.New(strings.Join(lines, ","))
-	}
+	p.Path = projectPath
 
 	return nil
 }
@@ -223,12 +170,12 @@ func ParseProjectConfig(yamlContent string) (*ProjectConfig, error) {
 		)
 	}
 
-	projectFile.handlers = make(map[Event][]ProjectLifecycleEventHandlerFn)
+	projectFile.EventDispatcher = ext.NewEventDispatcher[ProjectLifecycleEventArgs](ProjectEvents...)
 
 	for key, svc := range projectFile.Services {
-		svc.handlers = make(map[Event][]ServiceLifecycleEventHandlerFn)
 		svc.Name = key
 		svc.Project = &projectFile
+		svc.EventDispatcher = ext.NewEventDispatcher[ServiceLifecycleEventArgs](ServiceEvents...)
 
 		// By convention, the name of the infrastructure module to use when doing an IaC based deployment is the friendly
 		// name of the service. This may be overridden by the `module` property of `azure.yaml`
@@ -253,11 +200,11 @@ func (p *ProjectConfig) Initialize(
 		if err != nil {
 			return fmt.Errorf("getting framework services: %w", err)
 		}
-		if err := (*frameworkService).Initialize(ctx); err != nil {
+		if err := frameworkService.Initialize(ctx); err != nil {
 			return err
 		}
 
-		requiredTools := (*frameworkService).RequiredExternalTools()
+		requiredTools := frameworkService.RequiredExternalTools()
 		allTools = append(allTools, requiredTools...)
 	}
 

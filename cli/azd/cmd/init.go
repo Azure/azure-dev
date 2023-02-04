@@ -96,31 +96,31 @@ func (i *initFlags) setCommon(envFlag *envFlag) {
 }
 
 type initAction struct {
-	azCli           azcli.AzCli
-	accountManager  *account.Manager
-	console         input.Console
-	cmdRun          exec.CommandRunner
-	gitCli          git.GitCli
-	flags           *initFlags
-	repoInitializer *repository.Initializer
+	accountManager     account.Manager
+	userProfileService *azcli.UserProfileService
+	console            input.Console
+	cmdRun             exec.CommandRunner
+	gitCli             git.GitCli
+	flags              *initFlags
+	repoInitializer    *repository.Initializer
 }
 
 func newInitAction(
-	azCli azcli.AzCli,
-	accountManager *account.Manager,
+	accountManager account.Manager,
+	userProfileService *azcli.UserProfileService,
 	cmdRun exec.CommandRunner,
 	console input.Console,
 	gitCli git.GitCli,
 	flags *initFlags,
 	repoInitializer *repository.Initializer) actions.Action {
 	return &initAction{
-		azCli:           azCli,
-		accountManager:  accountManager,
-		console:         console,
-		cmdRun:          cmdRun,
-		gitCli:          gitCli,
-		flags:           flags,
-		repoInitializer: repoInitializer,
+		accountManager:     accountManager,
+		console:            console,
+		cmdRun:             cmdRun,
+		gitCli:             gitCli,
+		flags:              flags,
+		userProfileService: userProfileService,
+		repoInitializer:    repoInitializer,
 	}
 }
 
@@ -216,7 +216,7 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		subscription:    i.flags.subscription,
 		location:        i.flags.location,
 	}
-	env, err := createAndInitEnvironment(ctx, &envSpec, azdCtx, i.console, i.azCli)
+	env, err := createAndInitEnvironment(ctx, &envSpec, azdCtx, i.console, i.accountManager, i.userProfileService)
 	if err != nil {
 		return nil, fmt.Errorf("loading environment: %w", err)
 	}

@@ -98,6 +98,14 @@ func (c *MockConsole) StopSpinner(ctx context.Context, lastMessage string, forma
 	})
 }
 
+func (c *MockConsole) IsSpinnerRunning(ctx context.Context) bool {
+	if len(c.spinnerOps) > 0 && c.spinnerOps[len(c.spinnerOps)-1].Op == SpinnerOpShow {
+		return true
+	}
+
+	return false
+}
+
 // Prints a confirmation message to the console for the user to confirm
 func (c *MockConsole) Confirm(ctx context.Context, options input.ConsoleOptions) (bool, error) {
 	c.log = append(c.log, options.Message)

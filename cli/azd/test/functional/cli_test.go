@@ -331,7 +331,7 @@ func Test_CLI_ProjectIsNeeded(t *testing.T) {
 		args          []string
 		errorToStdOut bool
 	}{
-		{command: "deploy", errorToStdOut: true},
+		{command: "deploy"},
 		{command: "down"},
 		{command: "env get-values"},
 		{command: "env list"},
@@ -339,11 +339,11 @@ func Test_CLI_ProjectIsNeeded(t *testing.T) {
 		{command: "env refresh"},
 		{command: "env select", args: []string{"testEnvironmentName"}},
 		{command: "env set", args: []string{"testKey", "testValue"}},
-		{command: "infra create", errorToStdOut: true},
+		{command: "infra create"},
 		{command: "infra delete"},
 		{command: "monitor"},
 		{command: "pipeline config"},
-		{command: "provision", errorToStdOut: true},
+		{command: "provision"},
 		{command: "restore"},
 	}
 

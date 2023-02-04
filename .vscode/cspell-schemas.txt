@@ -1,0 +1,14 @@
+postdeploy
+postdown
+postinfracreate
+postinfradelete
+postpackage
+postprovision
+postrestore
+postup
+predown
+preinfracreate
+preinfradelete
+preprovision
+prerestore
+preup

@@ -137,15 +137,14 @@ func (i *Initializer) promptForDuplicates(ctx context.Context, staging string, t
 	}
 
 	if len(duplicateFiles) > 0 {
-		lines := []string{output.WithWarningFormat(
-			"warning: the following files will be overwritten with the versions from the template:",
-		)}
+		i.console.StopSpinner(ctx, "", input.StepDone)
+		i.console.MessageUxItem(ctx, &ux.WarningMessage{
+			Description: "the following files will be overwritten with the versions from the template:",
+		})
 
 		for _, file := range duplicateFiles {
-			lines = append(lines, fmt.Sprintf(" * %s", file))
+			i.console.Message(ctx, fmt.Sprintf(" * %s", file))
 		}
-
-		i.console.MessageUxItem(ctx, &ux.MultilineMessage{Lines: lines})
 
 		overwrite, err := i.console.Confirm(ctx, input.ConsoleOptions{
 			Message:      "Overwrite files with versions from template?",

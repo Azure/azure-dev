@@ -200,7 +200,7 @@ func (cli *gitCli) Commit(ctx context.Context, repositoryPath string, message st
 
 func (cli *gitCli) PushUpstream(ctx context.Context, repositoryPath string, origin string, branch string) error {
 	runArgs := exec.
-		NewRunArgs("git", "-C", repositoryPath, "push", "--set-upstream", origin, branch).
+		NewRunArgs("git", "-C", repositoryPath, "push", "--set-upstream", "--quiet", origin, branch).
 		WithInteractive(true)
 
 	res, err := cli.commandRunner.Run(ctx, runArgs)

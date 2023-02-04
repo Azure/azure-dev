@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"os"
 	"sync"
 	"time"
 
@@ -99,6 +100,10 @@ func NewSpinner(writer io.Writer, title string) *Spinner {
 		Writer: writer,
 		// Do not set a StopMessage.
 		// The current LogMessage functionality depends on the StopMessage being empty.
+	}
+
+	if os.Getenv("AZD_DEBUG_FORCE_NO_TTY") == "1" {
+		config.TerminalMode = yacspin.ForceNoTTYMode | yacspin.ForceDumbTerminalMode
 	}
 
 	spinner, _ := yacspin.New(config)

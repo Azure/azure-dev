@@ -34,7 +34,7 @@ type subCache interface {
 //
 // Since the application supports multi-tenancy, subscriptions can be accessed by the user through different tenants.
 // To lookup access to a given subscription, LookupTenant can be used to lookup the
-// current account access to a given subscription.
+// current account's required tenantID to access a given subscription.
 type SubscriptionsManager struct {
 	service       *azcli.SubscriptionsService
 	principalInfo principalInfoProvider

@@ -15,8 +15,7 @@ import (
 // The file name of the cache used for storing subscriptions accessible by the currently logged in account.
 const cSubscriptionsCacheFile = "subscriptions.cache"
 
-// SubscriptionsCache caches a subscription to tenant access mapping
-// for the logged in account to access each subscription.
+// SubscriptionsCache caches the list of subscriptions accessible by the currently logged in account.
 //
 // The cache is backed by an in-memory copy, then by local file system storage.
 type SubscriptionsCache struct {

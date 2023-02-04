@@ -114,9 +114,10 @@ func (m *SubscriptionsManager) LookupTenant(ctx context.Context, subscriptionId 
 	}
 
 	return "", fmt.Errorf(
-		"failed to resolve user access to subscription '%s'. "+
-			"Visit this subscription in Azure Portal using the browser, "+
-			"then run `azd login` again to reload subscriptions. ",
+		"failed to resolve user access to subscription with ID '%s'. "+
+			"If you recently gained access to this subscription, run `azd login` again to reload subscriptions.\n"+
+			"Otherwise, visit this subscription in Azure Portal using the browser, "+
+			"then run `azd login` ",
 		subscriptionId)
 }
 

@@ -189,14 +189,22 @@ func (la *loginAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		}
 	}
 
-	if !la.flags.onlyCheckStatus && la.flags.clientID == "" {
-		// Only do this if it's a user-based login
-		err := la.accountSubManager.RefreshSubscriptions(ctx)
-
-		if err != nil {
-			// This is currently an implicit action to increase responsiveness of listing subscriptions.
-			// If this fails, the subscriptions will still be loaded on-demand.
-			log.Printf("failed retrieving subscriptions: %s", err)
+	if !la.flags.onlyCheckStatus {
+		// Rehydrate or clear the account's subscriptions cache.
+		// The caching is done to increase responsiveness of listing subscriptions,
+		// and to allow an implicit command for the user to refresh cached subscriptions.
+		if la.flags.clientID == "" {
+			err := la.accountSubManager.RefreshSubscriptions(ctx)
+			if err != nil {
+				// If this fails, the subscriptions will still be loaded on-demand.
+				log.Printf("failed retrieving subscriptions: %s", err)
+			}
+		} else {
+			// The cache isn't tied to a specified user account currently. Clear the cache.
+			err := la.accountSubManager.ClearSubscriptions(ctx)
+			if err != nil {
+				log.Printf("failed clearing subscriptions: %s", err)
+			}
 		}
 	}
 

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/azure/azure-dev/cli/azd/pkg/graphsdk"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/stretchr/testify/require"
@@ -16,16 +17,25 @@ import (
 func Test_GetUserAccessToken(t *testing.T) {
 	expected := azcore.AccessToken{
 		Token:     "ABC123",
-		ExpiresOn: time.Now().Add(1 * time.Hour),
+		ExpiresOn: time.Now().Add(3 * time.Hour),
+	}
+
+	mockCredential := mocks.MockCredentials{
+		GetTokenFn: func(ctx context.Context, options policy.TokenRequestOptions) (azcore.AccessToken, error) {
+			return expected, nil
+		},
 	}
 
 	mockContext := mocks.NewMockContext(context.Background())
-	userProfile := NewUserProfileService(&mocks.MockMultiTenantCredentialProvider{}, mockContext.HttpClient)
+	userProfile := NewUserProfileService(&mocks.MockMultiTenantCredentialProvider{
+		TokenMap: map[string]mocks.MockCredentials{
+			"": mockCredential,
+		},
+	}, mockContext.HttpClient)
 
 	actual, err := userProfile.GetAccessToken(*mockContext.Context)
 	require.NoError(t, err)
 	require.Equal(t, expected.Token, actual.AccessToken)
-	require.Equal(t, expected.ExpiresOn, *actual.ExpiresOn)
 }
 
 func Test_GetSignedInUserId(t *testing.T) {

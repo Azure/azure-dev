@@ -6,6 +6,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -205,10 +206,23 @@ func verifyExecutableFilePermissions(t *testing.T,
 	output, err := git.ListStagedFiles(ctx, repoPath)
 	require.NoError(t, err)
 
-	actual, err := parseExecutableFiles(output)
-	require.NoError(t, err)
+	// On windows, since the file system doesn't keep track of executable file permissions,
+	// we have to query git instead for the tracked permissions.
+	if runtime.GOOS == "windows" {
+		actual, err := parseExecutableFiles(output)
+		require.NoError(t, err)
 
-	require.ElementsMatch(t, actual, expectedFiles)
+		require.ElementsMatch(t, actual, expectedFiles)
+
+	} else {
+		for _, file := range expectedFiles {
+			fi, err := os.Stat(filepath.Join(repoPath, file))
+			require.NoError(t, err)
+			mode := fi.Mode()
+			isExecutable := mode&0111 == 0111
+			require.True(t, isExecutable)
+		}
+	}
 }
 
 func Test_Initializer_InitializeEmpty(t *testing.T) {

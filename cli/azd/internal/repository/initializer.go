@@ -212,15 +212,19 @@ func parseExecutableFiles(stagedFilesOutput string) ([]string, error) {
 	scanner := bufio.NewScanner(strings.NewReader(stagedFilesOutput))
 	executableFiles := []string{}
 	for scanner.Scan() {
-		// Format:
+		// Format for git ls --stage:
 		// <mode> <object> <stage>\t<file>
+		// In other words, space delimited for first three properties, tab delimited before filepath is present4ed
 
+		// Scan first word to obtain <mode>
 		advance, word, err := bufio.ScanWords(scanner.Bytes(), false)
 		if err != nil {
 			return nil, err
 		}
 
+		// 100755 is the only possible mode for git-tracked executable files
 		if string(word) == "100755" {
+			// Advance to past '\t', taking the remainder which is <file>
 			_, filepath, found := strings.Cut(scanner.Text()[advance:], "\t")
 			if !found {
 				return nil, errors.New("invalid staged files output format. Missing file path.")

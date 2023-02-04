@@ -115,7 +115,8 @@ func (m *SubscriptionsManager) LookupTenant(ctx context.Context, subscriptionId 
 
 	return "", fmt.Errorf(
 		"failed to resolve user access to subscription '%s'. "+
-			"Visit this subscription in Azure Portal using the browser, then run `az login` again to reload subscriptions. ",
+			"Visit this subscription in Azure Portal using the browser, "+
+			"then run `azd login` again to reload subscriptions. ",
 		subscriptionId)
 }
 
@@ -183,14 +184,14 @@ func (m *SubscriptionsManager) ListSubscriptions(ctx context.Context) ([]Subscri
 				errors = append(
 					errors,
 					fmt.Errorf(
-						"%s requires Multi-Factor Authentication (MFA). To authenticate, visit Azure Portal with "+
-							"%s selected as the current directory. ",
+						"%s requires Multi-Factor Authentication (MFA). "+
+							"To authenticate, login with `azd login --tenant-id %s`",
 						displayName,
-						errorMsg))
+						*tenant.DefaultDomain))
 			} else {
 				errors = append(
 					errors,
-					fmt.Errorf("failed to load subscriptions from tenant '%s' : %s", displayName, errorMsg))
+					fmt.Errorf("failed to load subscriptions from tenant '%s' : %w", displayName, err))
 			}
 
 			continue

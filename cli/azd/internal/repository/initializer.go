@@ -15,6 +15,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
+	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/git"
 	"github.com/otiai10/copy"
@@ -79,12 +80,9 @@ func (i *Initializer) Initialize(ctx context.Context,
 
 	if len(duplicateFiles) > 0 {
 		i.console.StopSpinner(ctx, "", input.StepDone)
-		i.console.Message(
-			ctx,
-			output.WithWarningFormat(
-				"warning: the following files will be overwritten with the versions from the template:",
-			),
-		)
+		i.console.MessageUxItem(ctx, &ux.WarningMessage{
+			Description: "the following files will be overwritten with the versions from the template:",
+		})
 		for _, file := range duplicateFiles {
 			i.console.Message(ctx, fmt.Sprintf(" * %s", file))
 		}

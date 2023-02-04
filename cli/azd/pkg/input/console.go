@@ -24,6 +24,7 @@ const (
 	Step SpinnerUxType = iota
 	StepDone
 	StepFailed
+	StepWarning
 )
 
 // A shim to allow a single Console construction in the application.
@@ -152,35 +153,25 @@ func (c *AskerConsole) ShowSpinner(ctx context.Context, title string, format Spi
 		return
 	}
 
-	// make sure spinner exists
-	if c.spinner == nil {
-		config := yacspin.Config{
-			Frequency:       200 * time.Millisecond,
-			Writer:          c.writer,
-			Suffix:          " ",
-			SuffixAutoColon: true,
-		}
-		if os.Getenv("AZD_DEBUG_FORCE_NO_TTY") == "1" {
-			config.TerminalMode = yacspin.ForceNoTTYMode | yacspin.ForceDumbTerminalMode
-		}
-		c.spinner, _ = yacspin.New(config)
+	// mutating an existing spinner brings issues on how the messages are formatted
+	// so, instead of mutating, we stop any current spinner and replaced it for a new one
+	if c.spinner != nil {
+		_ = c.spinner.Stop()
 	}
-
-	// If running, pause to apply style changes
-	if c.spinner.Status() == yacspin.SpinnerRunning {
-		_ = c.spinner.Pause()
+	spinnerConfig := yacspin.Config{
+		Frequency:       200 * time.Millisecond,
+		Writer:          c.writer,
+		Suffix:          " ",
+		SuffixAutoColon: true,
+		Message:         title,
+		CharSet:         c.getCharset(format),
 	}
-
-	// Update style according to MessageUxType
-	c.spinner.Message(title)
-	_ = c.spinner.CharSet(c.getCharset(format))
-
-	// unpause if Paused
-	if c.spinner.Status() == yacspin.SpinnerPaused {
-		_ = c.spinner.Unpause()
-	} else if c.spinner.Status() == yacspin.SpinnerStopped {
-		_ = c.spinner.Start()
+	if os.Getenv("AZD_DEBUG_FORCE_NO_TTY") == "1" {
+		spinnerConfig.TerminalMode = yacspin.ForceNoTTYMode | yacspin.ForceDumbTerminalMode
 	}
+	c.spinner, _ = yacspin.New(spinnerConfig)
+
+	_ = c.spinner.Start()
 }
 
 var customCharSet []string = []string{
@@ -212,6 +203,8 @@ func (c *AskerConsole) getIndent(format SpinnerUxType) string {
 	case StepDone:
 		requiredSize = 2
 	case StepFailed:
+		requiredSize = 2
+	case StepWarning:
 		requiredSize = 2
 	}
 	if requiredSize != len(c.currentIndent) {
@@ -256,6 +249,8 @@ func (c *AskerConsole) getStopChar(format SpinnerUxType) string {
 		stopChar = donePrefix
 	case StepFailed:
 		stopChar = output.WithErrorFormat("(x) Failed:")
+	case StepWarning:
+		stopChar = output.WithWarningFormat("(!) Warning:")
 	}
 	return fmt.Sprintf("%s%s", c.getIndent(format), stopChar)
 }

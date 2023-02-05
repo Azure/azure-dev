@@ -63,6 +63,16 @@ func Test_Initializer_Initialize(t *testing.T) {
 								ctx,
 								gitArgs.AppendParams("update-index", "--chmod=+x", file))
 							require.NoError(t, err)
+
+							// Mocks the correct behavior in *nix when the file lands on the filesystem.
+							// git would have automatically set the correct file executable permissions.
+							//
+							// Note that `git update-index --chmod=+x` simply updates the tracked permissions in git,
+							// but does not update the files directly, hence this is needed.
+							if runtime.GOOS != "windows" {
+								err = os.Chmod(filepath.Join(stagingDir, file), 0755)
+								require.NoError(t, err)
+							}
 						}
 
 						return exec.NewRunResult(0, "", ""), nil

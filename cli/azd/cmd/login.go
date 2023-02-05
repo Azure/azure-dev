@@ -174,7 +174,11 @@ func (la *loginAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 
 	res := contracts.LoginResult{}
 
-	if cred, err := la.authManager.CredentialForCurrentUser(ctx, nil); errors.Is(err, auth.ErrNoCurrentUser) {
+	credOptions := auth.CredentialForCurrentUserOptions{
+		TenantID: la.flags.tenantID,
+	}
+
+	if cred, err := la.authManager.CredentialForCurrentUser(ctx, &credOptions); errors.Is(err, auth.ErrNoCurrentUser) {
 		res.Status = contracts.LoginStatusUnauthenticated
 	} else if err != nil {
 		return nil, fmt.Errorf("checking auth status: %w", err)
@@ -189,10 +193,10 @@ func (la *loginAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		}
 	}
 
-	if !la.flags.onlyCheckStatus {
+	if !la.flags.onlyCheckStatus && res.Status == contracts.LoginStatusSuccess {
 		// Rehydrate or clear the account's subscriptions cache.
-		// The caching is done to increase responsiveness of listing subscriptions,
-		// and to allow an implicit command for the user to refresh cached subscriptions.
+		// The caching is done here to increase responsiveness of listing subscriptions (during azd init).
+		// It also allows an implicit command for the user to refresh cached subscriptions.
 		if la.flags.clientID == "" {
 			err := la.accountSubManager.RefreshSubscriptions(ctx)
 			if err != nil {
@@ -200,7 +204,8 @@ func (la *loginAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 				log.Printf("failed retrieving subscriptions: %s", err)
 			}
 		} else {
-			// The cache isn't tied to a specified user account currently. Clear the cache.
+			// Service principals do not typically require subscription caching (running in CI scenarios)
+			// We simply clear the cache, which is much faster than rehydrating.
 			err := la.accountSubManager.ClearSubscriptions(ctx)
 			if err != nil {
 				log.Printf("failed clearing subscriptions: %s", err)

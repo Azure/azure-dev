@@ -49,3 +49,15 @@ variable "node_version" {
   type        = string
   default     = "16-lts"
 }
+
+variable "always_on" {
+  description = "The always on setting for the app service."
+  type        = bool
+  default     = true
+}
+
+variable "use_32_bit_worker" {
+  description = "The use 32 bit worker setting for the app service."
+  type        = bool
+  default     = false
+}

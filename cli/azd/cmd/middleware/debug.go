@@ -35,9 +35,11 @@ func (m *DebugMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 	}
 
 	envName := "AZD_DEBUG"
-	// Use a different flag for telemetry commands. This avoids stopping the background upload process
-	// unless set by this different flag.
+
 	if strings.Contains(m.options.CommandPath, "telemetry") {
+		// Use a different flag for telemetry commands. This avoids stopping the background upload process
+		// unintentionally by default when debugging interactive commands.
+		// AZD_DEBUG_TELEMETRY can be used instead to debug background upload process.
 		envName = "AZD_DEBUG_TELEMETRY"
 	}
 

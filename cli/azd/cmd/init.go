@@ -194,9 +194,11 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 			return nil, fmt.Errorf("init from template repository: %w", err)
 		}
 	} else {
-		err = i.repoInitializer.InitializeEmpty(ctx, azdCtx)
-		if err != nil {
-			return nil, fmt.Errorf("init empty repository: %w", err)
+		if _, err := os.Stat(azdCtx.ProjectPath()); errors.Is(err, os.ErrNotExist) {
+			err = i.repoInitializer.InitializeEmpty(ctx, azdCtx)
+			if err != nil {
+				return nil, fmt.Errorf("init empty repository: %w", err)
+			}
 		}
 	}
 

@@ -213,7 +213,6 @@ func (la *loginAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		}
 	}
 
-	la.console.StopSpinner(ctx, "", input.StepDone)
 	if la.formatter.Kind() == output.NoneFormat {
 		if res.Status == contracts.LoginStatusSuccess {
 			fmt.Fprintln(la.console.Handles().Stdout, "Logged in to Azure.")

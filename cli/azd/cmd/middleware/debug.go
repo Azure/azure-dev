@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 	"strconv"
+	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
@@ -33,7 +34,14 @@ func (m *DebugMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 		return next(ctx)
 	}
 
-	debugStr := os.Getenv("AZD_DEBUG")
+	envName := "AZD_DEBUG"
+	// Use a different flag for telemetry commands. This avoids stopping the background upload process
+	// unless set by this different flag.
+	if strings.Contains(m.options.CommandPath, "telemetry") {
+		envName = "AZD_DEBUG_TELEMETRY"
+	}
+
+	debugStr := os.Getenv(envName)
 	if debugStr == "" {
 		return next(ctx)
 	}

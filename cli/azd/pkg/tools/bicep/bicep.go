@@ -165,8 +165,9 @@ func downloadBicep(ctx context.Context, transporter policy.Transporter, bicepVer
 
 	log.Printf("downloading bicep release %s -> %s", bicepReleaseUrl, name)
 
+	var err error
 	spanCtx, span := telemetry.GetTracer().Start(ctx, events.BicepInstallEvent)
-	defer span.End()
+	defer span.EndWithStatus(err)
 
 	req, err := http.NewRequestWithContext(spanCtx, "GET", bicepReleaseUrl, nil)
 	if err != nil {

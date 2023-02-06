@@ -9,6 +9,9 @@ import (
 	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armsubscriptions"
+	"github.com/azure/azure-dev/cli/azd/internal/telemetry"
+	"github.com/azure/azure-dev/cli/azd/internal/telemetry/events"
+	"github.com/azure/azure-dev/cli/azd/internal/telemetry/fields"
 	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
@@ -144,13 +147,17 @@ func (m *SubscriptionsManager) GetSubscriptions(ctx context.Context) ([]Subscrip
 	return subscriptions, nil
 }
 
-type listResult struct {
+type tenantSubsResult struct {
 	subs []Subscription
 	err  error
 }
 
 // ListSubscription lists subscriptions accessible by the current account by calling azure management services.
 func (m *SubscriptionsManager) ListSubscriptions(ctx context.Context) ([]Subscription, error) {
+	var err error
+	ctx, span := telemetry.GetTracer().Start(ctx, events.AccountSubscriptionsListEvent)
+	defer span.EndWithStatus(err)
+
 	stop := m.msg.ShowProgress(ctx, "Retrieving subscriptions...")
 	defer stop()
 
@@ -180,12 +187,11 @@ func (m *SubscriptionsManager) ListSubscriptions(ctx context.Context) ([]Subscri
 		return nil, fmt.Errorf("listing tenants: %w", err)
 	}
 
-	jobs := make(chan armsubscriptions.TenantIDDescription, len(tenants))
-	results := make(chan listResult, len(tenants))
+	span.SetAttributes(fields.AccountSubscriptionsListTenantsFound.Int(len(tenants)))
 
 	listForTenant := func(
 		jobs <-chan armsubscriptions.TenantIDDescription,
-		results chan<- listResult,
+		results chan<- tenantSubsResult,
 		service *azcli.SubscriptionsService) {
 		for tenant := range jobs {
 			azSubs, err := service.ListSubscriptions(ctx, *tenant.TenantID)
@@ -203,16 +209,19 @@ func (m *SubscriptionsManager) ListSubscriptions(ctx context.Context) ([]Subscri
 				}
 			}
 
-			results <- listResult{toSubscriptions(azSubs, *tenant.TenantID), err}
+			results <- tenantSubsResult{toSubscriptions(azSubs, *tenant.TenantID), err}
 		}
 	}
 
+	numJobs := len(tenants)
+	jobs := make(chan armsubscriptions.TenantIDDescription, numJobs)
+	results := make(chan tenantSubsResult, numJobs)
+	// Apply max number of concurrent workers at 50
 	numWorkers := int(math.Min(float64(len(tenants)), 50))
 	for i := 0; i < numWorkers; i++ {
 		go listForTenant(jobs, results, m.service)
 	}
 
-	numJobs := len(tenants)
 	for i := 0; i < numJobs; i++ {
 		jobs <- tenants[i]
 	}
@@ -235,6 +244,8 @@ func (m *SubscriptionsManager) ListSubscriptions(ctx context.Context) ([]Subscri
 	sort.Slice(allSubscriptions, func(i, j int) bool {
 		return allSubscriptions[i].Name < allSubscriptions[j].Name
 	})
+
+	span.SetAttributes(fields.AccountSubscriptionsListTenantsFailed.Int(len(errors)))
 
 	if !oneSuccess && len(tenants) > 0 {
 		return nil, multierr.Combine(errors...)
@@ -272,6 +283,10 @@ func (m *SubscriptionsManager) GetSubscription(ctx context.Context, subscription
 }
 
 func toSubscriptions(azSubs []azcli.AzCliSubscriptionInfo, userAccessTenantId string) []Subscription {
+	if azSubs == nil {
+		return nil
+	}
+
 	subs := make([]Subscription, 0, len(azSubs))
 	for _, azSub := range azSubs {
 		subs = append(subs, toSubscription(azSub, userAccessTenantId))

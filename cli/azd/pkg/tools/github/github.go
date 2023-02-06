@@ -8,10 +8,22 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"log"
+	"net/http"
+	"os"
+	"path/filepath"
 	"regexp"
+	"runtime"
 	"strings"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
+	"github.com/azure/azure-dev/cli/azd/internal/telemetry"
+	"github.com/azure/azure-dev/cli/azd/internal/telemetry/events"
+	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
+	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/blang/semver/v4"
 )
@@ -33,10 +45,73 @@ type GitHubCli interface {
 	GitHubActionsExists(ctx context.Context, repoSlug string) (bool, error)
 }
 
-func NewGitHubCli(commandRunner exec.CommandRunner) GitHubCli {
-	return &ghCli{
+func NewGitHubCli(ctx context.Context, console input.Console, commandRunner exec.CommandRunner) (GitHubCli, error) {
+	return newGitHubCliWithTransporter(ctx, console, commandRunner, http.DefaultClient)
+}
+
+// cGitHubCliVersion is the minimum version of GitHub cli that we require (and the one we fetch when we fetch bicep on
+// behalf of a user).
+var cGitHubCliVersion semver.Version = semver.MustParse("0.12.40")
+
+// newGitHubCliWithTransporter is like NewGitHubCli but allows providing a custom transport to use when downloading the
+// GitHub CLI, for testing purposes.
+func newGitHubCliWithTransporter(
+	ctx context.Context,
+	console input.Console,
+	commandRunner exec.CommandRunner,
+	transporter policy.Transporter,
+) (GitHubCli, error) {
+	if override := os.Getenv("AZD_GH_CLI_TOOL_PATH"); override != "" {
+		log.Printf("using external github cli tool: %s", override)
+
+		return &ghCli{
+			path:          override,
+			commandRunner: commandRunner,
+		}, nil
+	}
+
+	githubCliPath, err := azdGithubCliPath()
+	if err != nil {
+		return nil, fmt.Errorf("finding github cli: %w", err)
+	}
+
+	if _, err = os.Stat(githubCliPath); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return nil, fmt.Errorf("finding github cli: %w", err)
+	}
+	if errors.Is(err, os.ErrNotExist) {
+		if err := os.MkdirAll(filepath.Dir(githubCliPath), osutil.PermissionDirectory); err != nil {
+			return nil, fmt.Errorf("downloading github cli: %w", err)
+		}
+
+		msg := "Downloading Github cli"
+		console.ShowSpinner(ctx, msg, input.Step)
+		err = downloadGh(ctx, transporter, cGitHubCliVersion, githubCliPath)
+		console.StopSpinner(ctx, "", input.Step)
+		if err != nil {
+			return nil, fmt.Errorf("downloading github cli: %w", err)
+		}
+	}
+
+	cli := &ghCli{
+		path:          githubCliPath,
 		commandRunner: commandRunner,
 	}
+
+	return cli, nil
+}
+
+// azdGithubCliPath returns the path where we store our local copy of github cli ($AZD_CONFIG_DIR/bin).
+func azdGithubCliPath() (string, error) {
+	configDir, err := config.GetUserConfigDir()
+	if err != nil {
+		return "", err
+	}
+
+	if runtime.GOOS == "windows" {
+		return filepath.Join(configDir, "bin", "bicep.exe"), nil
+	}
+
+	return filepath.Join(configDir, "bin", "bicep"), nil
 }
 
 var (
@@ -54,6 +129,7 @@ var (
 
 type ghCli struct {
 	commandRunner exec.CommandRunner
+	path          string
 
 	// Override token-specific environment variables, in format of key=value.
 	//
@@ -322,4 +398,70 @@ func isEnvVarTokenSource(message string) bool {
 	}
 
 	return false
+}
+
+// downloadGh downloads a given version of GitHub cli from the release site.
+func downloadGh(ctx context.Context, transporter policy.Transporter, ghVersion semver.Version, path string) error {
+
+	// arm and x86 not supported (similar to bicep)
+	var releaseName string
+	switch runtime.GOOS {
+	case "windows":
+		releaseName = "gh_2.22.1_windows_amd64.zip"
+	case "darwin":
+		releaseName = "gh_2.22.1_macOS_amd64.tar.gz"
+	case "linux":
+		releaseName = "gh_2.22.1_linux_amd64.tar.gz"
+	default:
+		return fmt.Errorf("unsupported platform")
+	}
+
+	//https://github.com/cli/cli/releases/download/v2.22.1/gh_2.22.1_linux_arm64.rpm
+	ghReleaseUrl := fmt.Sprintf("https://github.com/cli/cli/releases/download/v%s/%s", ghVersion, releaseName)
+
+	log.Printf("downloading github cli release %s -> %s", ghReleaseUrl, releaseName)
+
+	spanCtx, span := telemetry.GetTracer().Start(ctx, events.GitHubCliInstallEvent)
+	defer span.End()
+
+	req, err := http.NewRequestWithContext(spanCtx, "GET", ghReleaseUrl, nil)
+	if err != nil {
+		return err
+	}
+
+	resp, err := transporter.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("http error %d", resp.StatusCode)
+	}
+
+	f, err := os.CreateTemp(filepath.Dir(path), fmt.Sprintf("%s.tmp*", filepath.Base(path)))
+	if err != nil {
+		return err
+	}
+	defer func() {
+		_ = f.Close()
+		_ = os.Remove(f.Name())
+	}()
+
+	if _, err := io.Copy(f, resp.Body); err != nil {
+		return err
+	}
+
+	if err := f.Chmod(osutil.PermissionExecutableFile); err != nil {
+		return err
+	}
+
+	if err := f.Close(); err != nil {
+		return err
+	}
+
+	if err := os.Rename(f.Name(), path); err != nil {
+		return err
+	}
+
+	return nil
 }

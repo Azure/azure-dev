@@ -14,3 +14,6 @@ const CommandEventPrefix = "cmd."
 
 // BicepInstallEvent is the name of the event which tracks the overall bicep install operation.
 const BicepInstallEvent = "tools.bicep.install"
+
+// GitHubCliInstallEvent is the name of the event which tracks the overall GitHub cli install operation.
+const GitHubCliInstallEvent = "tools.gh.install"

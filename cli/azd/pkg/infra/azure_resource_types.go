@@ -26,6 +26,7 @@ const (
 	AzureResourceTypeApim                    AzureResourceType = "Microsoft.ApiManagement/service"
 	AzureResourceTypeCacheForRedis           AzureResourceType = "Microsoft.Cache/redis"
 	AzureResourceTypePostgreSqlServer        AzureResourceType = "Microsoft.DBforPostgreSQL/flexibleServers"
+	AzureResourceTypeCDNProfile              AzureResourceType = "Microsoft.Cdn/profiles"
 )
 
 const resourceLevelSeparator = "/"
@@ -69,6 +70,8 @@ func GetResourceTypeDisplayName(resourceType AzureResourceType) string {
 		return "Azure SQL Server"
 	case AzureResourceTypePostgreSqlServer:
 		return "Azure Database for PostgreSQL flexible server"
+	case AzureResourceTypeCDNProfile:
+		return "Azure Front Door / CDN profile"
 	}
 
 	return ""

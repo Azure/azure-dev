@@ -34,17 +34,16 @@ steps:
           -DevOpsOutputFormat
       displayName: Verify and set GitHub Release Tag
 
-  # TODO: Re-enable before merge
-  # - pwsh: |
-  #     docker login `
-  #       -u '${{ parameters.AcrUsername }}' `
-  #       -p '${{ parameters.AcrPassword }}' `
-  #       ${{ parameters.AcrHost }}
-  #     docker login `
-  #       -u '${{ parameters.SyndicatedAcrUsername }}' `
-  #       -p '${{ parameters.SyndicatedAcrPassword }}' `
-  #       ${{ parameters.SyndicatedAcrHost }}
-  #   displayName: Authenticate for publishing
+  - pwsh: |
+      docker login `
+        -u '${{ parameters.AcrUsername }}' `
+        -p '${{ parameters.AcrPassword }}' `
+        ${{ parameters.AcrHost }}
+      docker login `
+        -u '${{ parameters.SyndicatedAcrUsername }}' `
+        -p '${{ parameters.SyndicatedAcrPassword }}' `
+        ${{ parameters.SyndicatedAcrHost }}
+    displayName: Authenticate for publishing
 
   # Download signed artifacts, prepare packaging
   - task: DownloadPipelineArtifact@2
@@ -118,54 +117,52 @@ steps:
       displayName: Copy install scripts to release (PR only)
 
   # Docker build
-  # TODO: Revert before merge
-  # - pwsh: |
-  #     # Move the binary to a folder where Docker can pick it up
-  #     New-Item -ItemType Directory -Path cli/bin
-  #     Copy-Item release-staging/azd-linux-amd64 cli/bin/
+  - pwsh: |
+      # Move the binary to a folder where Docker can pick it up
+      New-Item -ItemType Directory -Path cli/bin
+      Copy-Item release-staging/azd-linux-amd64 cli/bin/
 
-  #     docker build . -f cli/Dockerfile -t release
+      docker build . -f cli/Dockerfile -t release
 
-  #     $tags = "${{ parameters.DockerImageTags }}" -split ';'
-  #     foreach ($tag in $tags) {
-  #       Write-Host "docker tag release ${{ parameters.AcrHost }}/azure-dev:$tag"
-  #       docker tag release ${{ parameters.AcrHost }}/azure-dev:$tag
-  #     }
-  #   displayName: Docker build release container (latest)
+      $tags = "${{ parameters.DockerImageTags }}" -split ';'
+      foreach ($tag in $tags) {
+        Write-Host "docker tag release ${{ parameters.AcrHost }}/azure-dev:$tag"
+        docker tag release ${{ parameters.AcrHost }}/azure-dev:$tag
+      }
+    displayName: Docker build release container (latest)
 
-  # - ${{ if eq('true', parameters.ReleaseSyndicatedDockerContainer) }}:
-  #   # Syndicated release
-  #   - pwsh: |
-  #       $tags = "${{ parameters.DockerImageTags }}" -split ';'
-  #       foreach ($tag in $tags) {
-  #         Write-Host "docker tag release ${{ parameters.SyndicatedAcrHost }}/public/azure-dev-cli-apps:$tag"
-  #         docker tag release ${{ parameters.SyndicatedAcrHost }}/public/azure-dev-cli-apps:$tag
-  #       }
-  #     displayName: Build and tag release container (Release)
+  - ${{ if eq('true', parameters.ReleaseSyndicatedDockerContainer) }}:
+    # Syndicated release
+    - pwsh: |
+        $tags = "${{ parameters.DockerImageTags }}" -split ';'
+        foreach ($tag in $tags) {
+          Write-Host "docker tag release ${{ parameters.SyndicatedAcrHost }}/public/azure-dev-cli-apps:$tag"
+          docker tag release ${{ parameters.SyndicatedAcrHost }}/public/azure-dev-cli-apps:$tag
+        }
+      displayName: Build and tag release container (Release)
 
   # Create release
-  # TODO: Revert before merge
-  # - ${{ if eq('true', parameters.CreateGitHubRelease ) }}:
-  #   - task: PowerShell@2
-  #     inputs:
-  #       targetType: filePath
-  #       filePath: eng/scripts/New-ReleaseNotesFile.ps1
-  #       arguments: >-
-  #         -ChangeLogPath cli/azd/CHANGELOG.md
-  #         -Version $(CLI_VERSION)
-  #         -DevOpsOutputFormat
-  #     displayName: Set release changelog content
+  - ${{ if eq('true', parameters.CreateGitHubRelease ) }}:
+    - task: PowerShell@2
+      inputs:
+        targetType: filePath
+        filePath: eng/scripts/New-ReleaseNotesFile.ps1
+        arguments: >-
+          -ChangeLogPath cli/azd/CHANGELOG.md
+          -Version $(CLI_VERSION)
+          -DevOpsOutputFormat
+      displayName: Set release changelog content
 
-  #   - pwsh: |
-  #       gh release create `
-  #         "$(GH_RELEASE_TAG)" `
-  #         --title "$(GH_RELEASE_TAG)" `
-  #         --notes-file $(ReleaseChangeLogPath)
+    - pwsh: |
+        gh release create `
+          "$(GH_RELEASE_TAG)" `
+          --title "$(GH_RELEASE_TAG)" `
+          --notes-file $(ReleaseChangeLogPath)
 
-  #       gh release upload $(GH_RELEASE_TAG) release/*
-  #     displayName: Create GitHub Release and upload artifacts
-  #     env:
-  #       GH_TOKEN: $(azuresdk-github-pat)
+        gh release upload $(GH_RELEASE_TAG) release/*
+      displayName: Create GitHub Release and upload artifacts
+      env:
+        GH_TOKEN: $(azuresdk-github-pat)
 
   # Write a version.txt file into the `release` folder which we upload to blob storage. The CLI uses
   # this file to detect if there is a newer version to use
@@ -208,62 +205,61 @@ steps:
         StorageContainerName: ${{ parameters.StorageContainerName }}
         PublishDestination: standalone/latest
 
-  # TODO: Revert before merge
-  # - pwsh: |
-  #     docker push ${{ parameters.AcrHost }}/azure-dev --all-tags
-  #   displayName: Push container tags (latest)
+  - pwsh: |
+      docker push ${{ parameters.AcrHost }}/azure-dev --all-tags
+    displayName: Push container tags (latest)
 
-  # - ${{ if eq('true', parameters.ReleaseSyndicatedDockerContainer) }}:
-  #   - pwsh: |
-  #       docker push ${{ parameters.SyndicatedAcrHost }}/public/azure-dev-cli-apps --all-tags
-  #     displayName: Push container tags (syndicated release)
+  - ${{ if eq('true', parameters.ReleaseSyndicatedDockerContainer) }}:
+    - pwsh: |
+        docker push ${{ parameters.SyndicatedAcrHost }}/public/azure-dev-cli-apps --all-tags
+      displayName: Push container tags (syndicated release)
 
-  # - ${{ if eq('true', parameters.PublishBrewFormula) }}:
-  #   - pwsh: git clone https://github.com/Azure/homebrew-azd
-  #     displayName: Clone Azure/homebrew-azd
+  - ${{ if eq('true', parameters.PublishBrewFormula) }}:
+    - pwsh: git clone https://github.com/Azure/homebrew-azd
+      displayName: Clone Azure/homebrew-azd
 
-  #   - task: PowerShell@2
-  #     displayName: Update brew formula
-  #     inputs:
-  #       targetType: filePath
-  #       filePath: eng/scripts/Update-HomebrewFormula.ps1
-  #       arguments: >-
-  #         -ZipFilePath release/azd-darwin-amd64.zip
-  #         -Version $(CLI_VERSION)
-  #         -OutFile homebrew-azd/Formula/azd.rb
+    - task: PowerShell@2
+      displayName: Update brew formula
+      inputs:
+        targetType: filePath
+        filePath: eng/scripts/Update-HomebrewFormula.ps1
+        arguments: >-
+          -ZipFilePath release/azd-darwin-amd64.zip
+          -Version $(CLI_VERSION)
+          -OutFile homebrew-azd/Formula/azd.rb
 
-  #   - template: /eng/common/pipelines/templates/steps/git-push-changes.yml
-  #     parameters:
-  #       # The azure-sdk user has permission to push directly to main
-  #       BaseRepoBranch: main
-  #       BaseRepoOwner: Azure
-  #       CommitMsg: Update formula for azd release $(CLI_VERSION)
-  #       TargetRepoName: homebrew-azd
-  #       WorkingDirectory: homebrew-azd
+    - template: /eng/common/pipelines/templates/steps/git-push-changes.yml
+      parameters:
+        # The azure-sdk user has permission to push directly to main
+        BaseRepoBranch: main
+        BaseRepoOwner: Azure
+        CommitMsg: Update formula for azd release $(CLI_VERSION)
+        TargetRepoName: homebrew-azd
+        WorkingDirectory: homebrew-azd
 
 
-  # - ${{ if eq('true', parameters.PublishUpdatedDocs) }}:
-  #   - task: DownloadPipelineArtifact@2
-  #     displayName: Download docs
-  #     inputs:
-  #       artifact: docs
-  #       path: docs
+  - ${{ if eq('true', parameters.PublishUpdatedDocs) }}:
+    - task: DownloadPipelineArtifact@2
+      displayName: Download docs
+      inputs:
+        artifact: docs
+        path: docs
 
-  #   - template: /eng/pipelines/templates/steps/set-git-credentials.yml
+    - template: /eng/pipelines/templates/steps/set-git-credentials.yml
 
-  #   - pwsh: |
-  #       git clone https://github.com/azure-sdk/azure-dev-docs-pr/
-  #       Copy-Item docs/azd.md azure-dev-docs-pr/articles/azure-developer-cli/reference.md -Force
-  #     displayName: Clone azure-dev-docs-pr and update reference.md
+    - pwsh: |
+        git clone https://github.com/azure-sdk/azure-dev-docs-pr/
+        Copy-Item docs/azd.md azure-dev-docs-pr/articles/azure-developer-cli/reference.md -Force
+      displayName: Clone azure-dev-docs-pr and update reference.md
 
-  #   - template: /eng/common/pipelines/templates/steps/create-pull-request.yml
-  #     parameters:
-  #       # Use a unique branch name per-build and per-attempt to prevent
-  #       # collisions
-  #       PRBranchName: azure-dev-cli/$(CLI_VERSION)-$(Build.BuildId).$(System.JobAttempt)
-  #       CommitMsg: Update reference documents for Azure CLI @ $(CLI_VERSION)
-  #       PRTitle: Update reference documents for Azure CLI @ $(CLI_VERSION)
-  #       WorkingDirectory: $(System.DefaultWorkingDirectory)/azure-dev-docs-pr
-  #       RepoOwner: MicrosoftDocs
-  #       RepoName: azure-dev-docs-pr
-  #       BaseBranchName: main
+    - template: /eng/common/pipelines/templates/steps/create-pull-request.yml
+      parameters:
+        # Use a unique branch name per-build and per-attempt to prevent
+        # collisions
+        PRBranchName: azure-dev-cli/$(CLI_VERSION)-$(Build.BuildId).$(System.JobAttempt)
+        CommitMsg: Update reference documents for Azure CLI @ $(CLI_VERSION)
+        PRTitle: Update reference documents for Azure CLI @ $(CLI_VERSION)
+        WorkingDirectory: $(System.DefaultWorkingDirectory)/azure-dev-docs-pr
+        RepoOwner: MicrosoftDocs
+        RepoName: azure-dev-docs-pr
+        BaseBranchName: main

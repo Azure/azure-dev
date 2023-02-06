@@ -831,21 +831,16 @@ stages:
                     filePath: eng/scripts/Set-CliVersionVariable.ps1
                   displayName: Set CLI_VERSION
 
-                # TODO: Revert parameters before merge
                 - template: /eng/pipelines/templates/steps/publish-cli.yml
                   parameters:
-                    CreateGitHubRelease: false
+                    CreateGitHubRelease: true
                     PublishUploadLocations: release/$(CLI_VERSION);release/latest
-                    PublishShield: false
+                    PublishShield: true
                     DockerImageTags: $(CLI_VERSION);latest
-                    ReleaseSyndicatedDockerContainer: false
-                    PublishUpdatedDocs: false
+                    ReleaseSyndicatedDockerContainer: true
+                    PublishUpdatedDocs: true
                     UploadMsi: true
-                    PublishBrewFormula: false
-                    # TODO Revert to defaults before merge
-                    StorageAccountName: $(azdev-storage-account-name-test)
-                    StorageAccountKey: $(azdev-storage-account-key-test)
-                    StorageContainerName: azd-test
+                    PublishBrewFormula: true
 
       - deployment: Publish_Choco
         dependsOn: Publish_Release
@@ -907,38 +902,37 @@ stages:
                     AllowPrerelease: true
                     CliVersion: $(CLI_VERSION)
 
-      # TODO: Re-enable before merge
-      # - deployment: Increment_Version
-      #   condition: >-
-      #     and(
-      #       succeeded(),
-      #       ne('true', variables['Skip.IncrementVersion'])
-      #     )
-      #   dependsOn: Publish_Release
-      #   environment: azure-dev
+      - deployment: Increment_Version
+        condition: >-
+          and(
+            succeeded(),
+            ne('true', variables['Skip.IncrementVersion'])
+          )
+        dependsOn: Publish_Release
+        environment: azure-dev
 
-      #   pool:
-      #     name: azsdk-pool-mms-ubuntu-2004-general
-      #     OSVmImage: MMSUbuntu20.04
+        pool:
+          name: azsdk-pool-mms-ubuntu-2004-general
+          OSVmImage: MMSUbuntu20.04
 
-      #   strategy:
-      #     runOnce:
-      #       deploy:
-      #         steps:
-      #           - checkout: self
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - checkout: self
 
-      #           - task: PowerShell@2
-      #             inputs:
-      #               pwsh: true
-      #               targetType: filePath
-      #               filePath: eng/scripts/Update-CliVersion.ps1
-      #             displayName: Increment CLI version
+                - task: PowerShell@2
+                  inputs:
+                    pwsh: true
+                    targetType: filePath
+                    filePath: eng/scripts/Update-CliVersion.ps1
+                  displayName: Increment CLI version
 
-      #           - template: /eng/common/pipelines/templates/steps/create-pull-request.yml
-      #             parameters:
-      #               PRBranchName: cli-version-increment-$(Build.BuildId)
-      #               CommitMsg: Increment CLI version after release
-      #               PRTitle: Increment CLI version after release
+                - template: /eng/common/pipelines/templates/steps/create-pull-request.yml
+                  parameters:
+                    PRBranchName: cli-version-increment-$(Build.BuildId)
+                    CommitMsg: Increment CLI version after release
+                    PRTitle: Increment CLI version after release
 
   - stage: PublishIntegration
     dependsOn: Sign

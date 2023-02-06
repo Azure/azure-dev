@@ -1,14 +1,9 @@
 package account
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
-	"fmt"
-	"io"
 	"net/http"
-	"strings"
 	"testing"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armsubscriptions"
@@ -17,6 +12,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
+	"github.com/azure/azure-dev/cli/azd/test/mocks/mockarmresources"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockconfig"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockhttp"
 	"github.com/stretchr/testify/require"
@@ -550,61 +546,45 @@ var allTestSubscriptions []*armsubscriptions.Subscription = []*armsubscriptions.
 }
 
 func setupGetSubscriptionMock(mockHttp *mockhttp.MockHttpClient, subscription *Subscription, err error) {
-	mockHttp.When(func(request *http.Request) bool {
-		return request.Method == http.MethodGet && request.URL.Path == fmt.Sprintf("/subscriptions/%s", subscription.Id)
-	}).RespondFn(func(request *http.Request) (*http.Response, error) {
-		if err != nil {
-			return &http.Response{
-				Request:    request,
-				StatusCode: http.StatusNotFound,
-				Header:     http.Header{},
-				Body:       http.NoBody,
-			}, nil
+	if err != nil {
+		isSub := func(request *http.Request) bool {
+			return mockarmresources.IsGetSubscription(request, subscription.Id)
 		}
+		mockHttp.When(isSub).SetError(err)
+		return
+	}
 
-		res := armsubscriptions.Subscription{
-			ID:             convert.RefOf(subscription.Id),
-			SubscriptionID: convert.RefOf(subscription.Id),
-			DisplayName:    convert.RefOf(subscription.Name),
-			TenantID:       convert.RefOf(subscription.TenantId),
-		}
-
-		jsonBytes, _ := json.Marshal(res)
-
-		return &http.Response{
-			Request:    request,
-			StatusCode: http.StatusOK,
-			Header:     http.Header{},
-			Body:       io.NopCloser(bytes.NewBuffer(jsonBytes)),
-		}, nil
+	mockarmresources.MockGetSubscription(mockHttp, subscription.Id, armsubscriptions.Subscription{
+		ID:             convert.RefOf(subscription.Id),
+		SubscriptionID: convert.RefOf(subscription.Id),
+		DisplayName:    convert.RefOf(subscription.Name),
+		TenantID:       convert.RefOf(subscription.TenantId),
 	})
 }
 
 func setupAccountErrorMocks(mockHttp *mockhttp.MockHttpClient) {
-	mockHttp.When(func(request *http.Request) bool {
-		return request.Method == http.MethodGet && request.URL.Path == "/subscriptions"
-	}).RespondFn(func(request *http.Request) (*http.Response, error) {
-		return &http.Response{
-			Request:    request,
-			StatusCode: http.StatusUnauthorized,
-			Header:     http.Header{},
-			Body:       http.NoBody,
-		}, nil
-	})
+	mockHttp.When(mockarmresources.IsListSubscriptions).
+		RespondFn(func(request *http.Request) (*http.Response, error) {
+			return &http.Response{
+				Request:    request,
+				StatusCode: http.StatusUnauthorized,
+				Header:     http.Header{},
+				Body:       http.NoBody,
+			}, nil
+		})
+
+	mockHttp.When(mockarmresources.IsListTenants).
+		RespondFn(func(request *http.Request) (*http.Response, error) {
+			return &http.Response{
+				Request:    request,
+				StatusCode: http.StatusUnauthorized,
+				Header:     http.Header{},
+				Body:       http.NoBody,
+			}, nil
+		})
 
 	mockHttp.When(func(request *http.Request) bool {
-		return request.Method == http.MethodGet && request.URL.Path == "/tenants"
-	}).RespondFn(func(request *http.Request) (*http.Response, error) {
-		return &http.Response{
-			Request:    request,
-			StatusCode: http.StatusUnauthorized,
-			Header:     http.Header{},
-			Body:       http.NoBody,
-		}, nil
-	})
-
-	mockHttp.When(func(request *http.Request) bool {
-		return request.Method == http.MethodGet && strings.Contains(request.URL.Path, "/locations")
+		return mockarmresources.IsListLocations(request, "")
 	}).RespondFn(func(request *http.Request) (*http.Response, error) {
 		return &http.Response{
 			Request:    request,
@@ -616,54 +596,22 @@ func setupAccountErrorMocks(mockHttp *mockhttp.MockHttpClient) {
 }
 
 func setupAccountMocks(mockHttp *mockhttp.MockHttpClient) {
-	mockHttp.When(func(request *http.Request) bool {
-		return request.Method == http.MethodGet && request.URL.Path == "/subscriptions"
-	}).RespondFn(func(request *http.Request) (*http.Response, error) {
-		res := armsubscriptions.ClientListResponse{
-			SubscriptionListResult: armsubscriptions.SubscriptionListResult{
-				Value: allTestSubscriptions,
-			},
-		}
-
-		jsonBytes, _ := json.Marshal(res)
-
-		return &http.Response{
-			Request:    request,
-			StatusCode: http.StatusOK,
-			Header:     http.Header{},
-			Body:       io.NopCloser(bytes.NewBuffer(jsonBytes)),
-		}, nil
+	mockarmresources.MockListSubscriptions(mockHttp, armsubscriptions.SubscriptionListResult{
+		Value: allTestSubscriptions,
 	})
 
-	mockHttp.When(func(request *http.Request) bool {
-		return request.Method == http.MethodGet && request.URL.Path == "/tenants"
-	}).RespondFn(func(request *http.Request) (*http.Response, error) {
-		res := armsubscriptions.TenantsClientListResponse{
-			TenantListResult: armsubscriptions.TenantListResult{
-				Value: []*armsubscriptions.TenantIDDescription{
-					{
-						DisplayName: convert.RefOf("TENANT"),
-						TenantID:    convert.RefOf("TENANT_ID"),
-					},
-				},
+	mockarmresources.MockListTenants(mockHttp, armsubscriptions.TenantListResult{
+		Value: []*armsubscriptions.TenantIDDescription{
+			{
+				DisplayName: convert.RefOf("TENANT"),
+				TenantID:    convert.RefOf("TENANT_ID"),
 			},
-		}
-
-		jsonBytes, _ := json.Marshal(res)
-
-		return &http.Response{
-			Request:    request,
-			StatusCode: http.StatusOK,
-			Header:     http.Header{},
-			Body:       io.NopCloser(bytes.NewBuffer(jsonBytes)),
-		}, nil
+		},
 	})
 
-	mockHttp.When(func(request *http.Request) bool {
-		return request.Method == http.MethodGet && strings.Contains(request.URL.Path, "/locations")
-	}).RespondFn(func(request *http.Request) (*http.Response, error) {
-		res := armsubscriptions.ClientListLocationsResponse{
-			LocationListResult: armsubscriptions.LocationListResult{
+	for _, sub := range allTestSubscriptions {
+		mockarmresources.MockListLocations(mockHttp, *sub.SubscriptionID,
+			armsubscriptions.LocationListResult{
 				Value: []*armsubscriptions.Location{
 					{
 						ID:                  convert.RefOf("westus"),
@@ -702,18 +650,8 @@ func setupAccountMocks(mockHttp *mockhttp.MockHttpClient) {
 						},
 					},
 				},
-			},
-		}
-
-		jsonBytes, _ := json.Marshal(res)
-
-		return &http.Response{
-			Request:    request,
-			StatusCode: http.StatusOK,
-			Header:     http.Header{},
-			Body:       io.NopCloser(bytes.NewBuffer(jsonBytes)),
-		}, nil
-	})
+			})
+	}
 }
 
 type InMemorySubCache struct {
@@ -751,9 +689,15 @@ func NewSubscriptionsManagerWithCache(
 	}
 }
 
-type principalInfoProviderMock struct{}
+type principalInfoProviderMock struct {
+	GetLoggedInServicePrincipalTenantIDFunc func() (*string, error)
+}
 
 func (p *principalInfoProviderMock) GetLoggedInServicePrincipalTenantID() (*string, error) {
+	if p.GetLoggedInServicePrincipalTenantIDFunc != nil {
+		return p.GetLoggedInServicePrincipalTenantIDFunc()
+	}
+
 	return nil, nil
 }
 

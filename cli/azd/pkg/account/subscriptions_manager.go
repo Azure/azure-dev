@@ -4,9 +4,11 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"math"
 	"sort"
 	"strings"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armsubscriptions"
 	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
@@ -142,6 +144,11 @@ func (m *SubscriptionsManager) GetSubscriptions(ctx context.Context) ([]Subscrip
 	return subscriptions, nil
 }
 
+type listResult struct {
+	subs []Subscription
+	err  error
+}
+
 // ListSubscription lists subscriptions accessible by the current account by calling azure management services.
 func (m *SubscriptionsManager) ListSubscriptions(ctx context.Context) ([]Subscription, error) {
 	stop := m.msg.ShowProgress(ctx, "Retrieving subscriptions...")
@@ -162,7 +169,7 @@ func (m *SubscriptionsManager) ListSubscriptions(ctx context.Context) ([]Subscri
 
 		tenantSubscriptions := []Subscription{}
 		for _, subscription := range subscriptions {
-			tenantSubscriptions = append(tenantSubscriptions, toSubscription(&subscription, *principalTenantId))
+			tenantSubscriptions = append(tenantSubscriptions, toSubscription(subscription, *principalTenantId))
 		}
 
 		return tenantSubscriptions, nil
@@ -173,37 +180,56 @@ func (m *SubscriptionsManager) ListSubscriptions(ctx context.Context) ([]Subscri
 		return nil, fmt.Errorf("listing tenants: %w", err)
 	}
 
-	allSubscriptions := []Subscription{}
-	errors := []error{}
-	oneSuccess := false
+	jobs := make(chan armsubscriptions.TenantIDDescription, len(tenants))
+	results := make(chan listResult, len(tenants))
 
-	for _, tenant := range tenants {
-		tenantId := *tenant.TenantID
-		subscriptions, err := m.service.ListSubscriptions(ctx, tenantId)
-		if err != nil {
-			errorMsg := err.Error()
-			displayName := *tenant.DisplayName
-			if strings.Contains(errorMsg, "AADSTS50076") {
-				errors = append(
-					errors,
-					fmt.Errorf(
+	listForTenant := func(
+		jobs <-chan armsubscriptions.TenantIDDescription,
+		results chan<- listResult,
+		service *azcli.SubscriptionsService) {
+		for tenant := range jobs {
+			azSubs, err := service.ListSubscriptions(ctx, *tenant.TenantID)
+			if err != nil {
+				errorMsg := err.Error()
+				displayName := *tenant.DisplayName
+				if strings.Contains(errorMsg, "AADSTS50076") {
+					err = fmt.Errorf(
 						"%s requires Multi-Factor Authentication (MFA). "+
 							"To authenticate, login with `azd login --tenant-id %s`",
 						displayName,
-						*tenant.DefaultDomain))
-			} else {
-				errors = append(
-					errors,
-					fmt.Errorf("failed to load subscriptions from tenant '%s' : %w", displayName, err))
+						*tenant.DefaultDomain)
+				} else {
+					err = fmt.Errorf("failed to load subscriptions from tenant '%s' : %w", displayName, err)
+				}
 			}
 
+			results <- listResult{toSubscriptions(azSubs, *tenant.TenantID), err}
+		}
+	}
+
+	numWorkers := int(math.Min(float64(len(tenants)), 50))
+	for i := 0; i < numWorkers; i++ {
+		go listForTenant(jobs, results, m.service)
+	}
+
+	numJobs := len(tenants)
+	for i := 0; i < numJobs; i++ {
+		jobs <- tenants[i]
+	}
+	close(jobs)
+
+	allSubscriptions := []Subscription{}
+	errors := []error{}
+	oneSuccess := false
+	for i := 0; i < numJobs; i++ {
+		res := <-results
+		if res.err != nil {
+			errors = append(errors, res.err)
 			continue
 		}
 
 		oneSuccess = true
-		for _, subscription := range subscriptions {
-			allSubscriptions = append(allSubscriptions, toSubscription(&subscription, tenantId))
-		}
+		allSubscriptions = append(allSubscriptions, res.subs...)
 	}
 
 	sort.Slice(allSubscriptions, func(i, j int) bool {
@@ -241,11 +267,19 @@ func (m *SubscriptionsManager) GetSubscription(ctx context.Context, subscription
 		return nil, err
 	}
 
-	sub := toSubscription(azSub, tenantId)
+	sub := toSubscription(*azSub, tenantId)
 	return &sub, nil
 }
 
-func toSubscription(subscription *azcli.AzCliSubscriptionInfo, userAccessTenantId string) Subscription {
+func toSubscriptions(azSubs []azcli.AzCliSubscriptionInfo, userAccessTenantId string) []Subscription {
+	subs := make([]Subscription, 0, len(azSubs))
+	for _, azSub := range azSubs {
+		subs = append(subs, toSubscription(azSub, userAccessTenantId))
+	}
+	return subs
+}
+
+func toSubscription(subscription azcli.AzCliSubscriptionInfo, userAccessTenantId string) Subscription {
 	return Subscription{
 		Id:                 subscription.Id,
 		Name:               subscription.Name,

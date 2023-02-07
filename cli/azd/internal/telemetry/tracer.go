@@ -112,7 +112,7 @@ func (s *wrapperSpan) EndWithStatus(err error, options ...trace.SpanEndOption) {
 		s.span.SetStatus(codes.Ok, "")
 	}
 
-	s.End(options)
+	s.End(options...)
 }
 
 // IsRecording returns the recording state of the Span. It will return

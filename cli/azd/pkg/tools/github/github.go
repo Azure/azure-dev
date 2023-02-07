@@ -143,16 +143,6 @@ type ghCli struct {
 	overrideTokenEnv []string
 }
 
-func (cli *ghCli) versionInfo() tools.VersionInfo {
-	return tools.VersionInfo{
-		MinimumVersion: semver.Version{
-			Major: 2,
-			Minor: 4,
-			Patch: 0},
-		UpdateCommand: "Visit https://github.com/cli/cli/releases to upgrade",
-	}
-}
-
 func (cli *ghCli) CheckInstalled(ctx context.Context) (bool, error) {
 	return true, nil
 }

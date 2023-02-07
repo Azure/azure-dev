@@ -49,20 +49,22 @@ type GitHubCli interface {
 }
 
 func NewGitHubCli(ctx context.Context, console input.Console, commandRunner exec.CommandRunner) (GitHubCli, error) {
-	return newGitHubCliWithTransporter(ctx, console, commandRunner, http.DefaultClient)
+	return newGitHubCliImplementation(ctx, console, commandRunner, http.DefaultClient, downloadGh, extractGhCli)
 }
 
 // cGitHubCliVersion is the minimum version of GitHub cli that we require (and the one we fetch when we fetch bicep on
 // behalf of a user).
 var cGitHubCliVersion semver.Version = semver.MustParse("2.22.1")
 
-// newGitHubCliWithTransporter is like NewGitHubCli but allows providing a custom transport to use when downloading the
+// newGitHubCliImplementation is like NewGitHubCli but allows providing a custom transport to use when downloading the
 // GitHub CLI, for testing purposes.
-func newGitHubCliWithTransporter(
+func newGitHubCliImplementation(
 	ctx context.Context,
 	console input.Console,
 	commandRunner exec.CommandRunner,
 	transporter policy.Transporter,
+	acquireGitHubCliImpl GetGitHubCliImplementation,
+	extractImplementation ExtractGitHubCliFromFileImplementation,
 ) (GitHubCli, error) {
 	if override := os.Getenv("AZD_GH_CLI_TOOL_PATH"); override != "" {
 		log.Printf("using external github cli tool: %s", override)
@@ -88,7 +90,7 @@ func newGitHubCliWithTransporter(
 
 		msg := "Downloading Github cli"
 		console.ShowSpinner(ctx, msg, input.Step)
-		err = downloadGh(ctx, transporter, cGitHubCliVersion, githubCliPath)
+		err = acquireGitHubCliImpl(ctx, transporter, cGitHubCliVersion, extractImplementation, githubCliPath)
 		console.StopSpinner(ctx, "", input.Step)
 		if err != nil {
 			return nil, fmt.Errorf("downloading github cli: %w", err)
@@ -482,8 +484,25 @@ func extractGhCli(src, dst string) (string, error) {
 	return "nil", fmt.Errorf("Unknown format")
 }
 
+// GetGitHubCliImplementation defines the contract function to acquire the GitHub cli.
+// The `outputPath` is the destination where the github cli is place it.
+type GetGitHubCliImplementation func(
+	ctx context.Context,
+	transporter policy.Transporter,
+	ghVersion semver.Version,
+	extractImplementation ExtractGitHubCliFromFileImplementation,
+	outputPath string) error
+
+// ExtractGitHubCliFromFileImplementation defines how the cli is extracted
+type ExtractGitHubCliFromFileImplementation func(src, dst string) (string, error)
+
 // downloadGh downloads a given version of GitHub cli from the release site.
-func downloadGh(ctx context.Context, transporter policy.Transporter, ghVersion semver.Version, path string) error {
+func downloadGh(
+	ctx context.Context,
+	transporter policy.Transporter,
+	ghVersion semver.Version,
+	extractImplementation ExtractGitHubCliFromFileImplementation,
+	path string) error {
 
 	// arm and x86 not supported (similar to bicep)
 	var releaseName string
@@ -538,7 +557,7 @@ func downloadGh(ctx context.Context, transporter policy.Transporter, ghVersion s
 	}
 
 	// unzip downloaded file
-	ghCliTemporalPath, err := extractGhCli(compressedRelease.Name(), tmpPath)
+	ghCliTemporalPath, err := extractImplementation(compressedRelease.Name(), tmpPath)
 	if err != nil {
 		return err
 	}

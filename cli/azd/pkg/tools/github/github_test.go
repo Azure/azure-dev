@@ -38,8 +38,17 @@ func TestNewGitHubCli(t *testing.T) {
 		"",
 	))
 
-	cli, err := newGitHubCliWithTransporter(
-		*mockContext.Context, mockContext.Console, mockContext.CommandRunner, mockContext.HttpClient,
+	mockExtract := func(src, dst string) (string, error) {
+		return src, nil
+	}
+
+	cli, err := newGitHubCliImplementation(
+		*mockContext.Context,
+		mockContext.Console,
+		mockContext.CommandRunner,
+		mockContext.HttpClient,
+		downloadGh,
+		mockExtract,
 	)
 	require.NoError(t, err)
 	require.NotNil(t, cli)
@@ -52,10 +61,10 @@ func TestNewGitHubCli(t *testing.T) {
 		Format:  input.Step,
 	}, mockContext.Console.SpinnerOps()[0])
 
-	bicepPath, err := azdGithubCliPath()
+	gitHubCli, err := azdGithubCliPath()
 	require.NoError(t, err)
 
-	contents, err := os.ReadFile(bicepPath)
+	contents, err := os.ReadFile(gitHubCli)
 	require.NoError(t, err)
 
 	require.Equal(t, []byte("this is github cli"), contents)

@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Do not remove this test for UTF-8: if “Ω” doesn’t appear as greek uppercase omega letter enclosed in quotation marks, you should use an editor that supports UTF-8, not this one. -->
+<package xmlns="http://schemas.microsoft.com/packaging/2015/06/nuspec.xsd">
+  <metadata>
+    <id>azd</id>
+    <version>$VERSION$</version>
+    <title>Azure Developer CLI</title>
+    <authors>Microsoft</authors>
+    <owners>Microsoft</owners>
+    <requireLicenseAcceptance>false</requireLicenseAcceptance>
+    <projectUrl>https://github.com/Azure/azure-dev</projectUrl>
+    <tags>azd</tags>
+    <summary>A developer CLI that accelerates the time it takes for you to get started on Azure.</summary>
+    <description>
+      A developer CLI that accelerates the time it takes for you to get started
+      on Azure. The Azure Developer CLI (azd) provides a set of
+      developer-friendly commands that map to key stages in your workflow -
+      code, build, deploy, monitor, repeat.
+    </description>
+    <copyright>© Microsoft Corporation. All rights reserved.</copyright>
+    <docsUrl>https://learn.microsoft.com/en-us/azure/developer/azure-developer-cli/get-started</docsUrl>
+    <bugTrackerUrl>https://github.com/Azure/azure-dev/issues</bugTrackerUrl>
+    <licenseUrl>https://github.com/Azure/azure-dev/blob/main/LICENSE</licenseUrl>
+    <projectSourceUrl>https://github.com/Azure/azure-dev/tree/$TAG$</projectSourceUrl>
+    <packageSourceUrl>https://github.com/Azure/azure-dev/tree/$TAG$/cli/installer/choco</packageSourceUrl>
+    <releaseNotes>https://github.com/Azure/azure-dev/releases/tag/$TAG$</releaseNotes>
+  </metadata>
+  <files>
+    <file src="tools\**" target="tools" />
+    <file src="./azd-windows-amd64.msi" target="tools" />
+  </files>
+</package>

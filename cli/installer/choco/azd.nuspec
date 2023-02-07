@@ -27,6 +27,5 @@
   </metadata>
   <files>
     <file src="tools\**" target="tools" />
-    <file src="./azd-windows-amd64.msi" target="tools" />
   </files>
 </package>

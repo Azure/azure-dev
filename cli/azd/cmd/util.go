@@ -304,11 +304,7 @@ func getSubscriptionOptions(ctx context.Context, subscriptions account.Manager) 
 	// configured to use if the environment variable is unset.
 	defaultSubscriptionId := os.Getenv(environment.SubscriptionIdEnvVarName)
 	if defaultSubscriptionId == "" {
-		for _, info := range subscriptionInfos {
-			if info.IsDefault {
-				defaultSubscriptionId = info.Id
-			}
-		}
+		defaultSubscriptionId = subscriptions.GetDefaultSubscriptionID(ctx)
 	}
 
 	var subscriptionOptions = make([]string, len(subscriptionInfos)+1)

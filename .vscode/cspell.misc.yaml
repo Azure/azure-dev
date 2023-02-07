@@ -1,26 +1,19 @@
 # Copyright (c) Microsoft Corporation. All rights reserved.
 # Licensed under the MIT License.
 
-# cspell settings for top project (no cli)
+# cspell settings for miscellaneous files thats are not covered by other projects.
+# cspell root should be specified as the top-level repository directory.
 
 # Use global config
 import: cspell.global.yaml
 
 ignorePaths:
+    # Project changes here should be kept in-sync workflow cspell-misc.yml
     - cli # uses its own cspell config
-    - eng # not required
     - ext # uses its own cspell config
-    - "*.bicep" # no need to lint resource files
-    - mvnw # Maven wrapper asset used in Java templates -- external library code
-    - mvnw.cmd # Maven wrapper asset used in Java templates -- external library code
-dictionaryDefinitions:
-    - name: templatesDictionary
-      path: ./cspell-templates.txt
-      description: Custom Dictionary for templates
-      addWords: true
-      scope: workspace
-dictionaries:
-  - templatesDictionary
+    - templates # uses its own cspell config
+
+    - eng # not required
 overrides:
     - filename: ./SECURITY.md
       words:

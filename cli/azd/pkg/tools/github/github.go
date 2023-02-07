@@ -393,7 +393,9 @@ func extractFromZip(src, dst string) (string, error) {
 			if err != nil {
 				return extractedAt, err
 			}
-			filePath := filepath.Join(dst, file.Name)
+			fileNameParts := strings.Split(file.Name, "/")
+			fileName := fileNameParts[len(fileNameParts)-1]
+			filePath := filepath.Join(dst, fileName)
 			ghCliFile, err := os.OpenFile(filePath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, file.Mode())
 			if err != nil {
 				return extractedAt, err

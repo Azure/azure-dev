@@ -223,6 +223,9 @@ func (m *SubscriptionsManager) ListSubscriptions(ctx context.Context) ([]Subscri
 }
 
 func (m *SubscriptionsManager) ListLocations(ctx context.Context, subscriptionId string) ([]azcli.AzCliLocation, error) {
+	stop := m.msg.ShowProgress(ctx, "Retrieving locations...")
+	defer stop()
+
 	tenantId, err := m.LookupTenant(ctx, subscriptionId)
 	if err != nil {
 		return nil, err

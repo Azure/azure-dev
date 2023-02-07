@@ -9,7 +9,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
-	"github.com/azure/azure-dev/cli/azd/pkg/output"
+	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/microsoft/azure-devops-go-api/azuredevops"
 	"github.com/microsoft/azure-devops-go-api/azuredevops/build"
 	"github.com/microsoft/azure-devops-go-api/azuredevops/serviceendpoint"
@@ -103,10 +103,6 @@ func CreateServiceConnection(
 
 	// if a service connection exists, skip creating a new Service connection. But update the current connection only
 	if foundServiceConnection != nil {
-		console.Message(
-			ctx,
-			output.WithWarningFormat("Service Connection %s already exists. Updating endpoint", ServiceConnectionName),
-		)
 		// After updating the endpoint with credentials, we no longer need it
 		_, err := client.UpdateServiceEndpoint(ctx, serviceendpoint.UpdateServiceEndpointArgs{
 			Endpoint:   createServiceEndpointArgs.Endpoint,
@@ -116,6 +112,10 @@ func CreateServiceConnection(
 		if err != nil {
 			return fmt.Errorf("updating service connection: %w", err)
 		}
+		console.MessageUxItem(ctx, &ux.CreatedResource{
+			Type: "Azure DevOps",
+			Name: "Updated service connection",
+		})
 		return nil
 	}
 
@@ -124,6 +124,10 @@ func CreateServiceConnection(
 	if err != nil {
 		return fmt.Errorf("Creating new service connection: %w", err)
 	}
+	console.MessageUxItem(ctx, &ux.CreatedResource{
+		Type: "Azure DevOps",
+		Name: "Service connection",
+	})
 
 	err = authorizeServiceConnectionToAllPipelines(ctx, projectId, endpoint, connection)
 	if err != nil {

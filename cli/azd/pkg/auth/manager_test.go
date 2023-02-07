@@ -218,7 +218,7 @@ func TestLoginInteractive(t *testing.T) {
 		publicClient:  &mockPublicClient{},
 	}
 
-	cred, err := m.LoginInteractive(context.Background(), 0)
+	cred, err := m.LoginInteractive(context.Background(), 0, "")
 
 	require.NoError(t, err)
 	require.IsType(t, new(azdCredential), cred)
@@ -245,7 +245,7 @@ func TestLoginDeviceCode(t *testing.T) {
 
 	buf := bytes.Buffer{}
 
-	cred, err := m.LoginWithDeviceCode(context.Background(), &buf)
+	cred, err := m.LoginWithDeviceCode(context.Background(), &buf, "")
 
 	require.Regexp(t, "using the code 123-456", buf.String())
 
@@ -301,7 +301,7 @@ func (m *mockPublicClient) RemoveAccount(account public.Account) error {
 }
 
 func (m *mockPublicClient) AcquireTokenInteractive(
-	ctx context.Context, scopes []string, options ...public.InteractiveAuthOption,
+	ctx context.Context, scopes []string, options ...public.AcquireInteractiveOption,
 ) (public.AuthResult, error) {
 	return public.AuthResult{
 		Account: public.Account{
@@ -311,7 +311,7 @@ func (m *mockPublicClient) AcquireTokenInteractive(
 }
 
 func (m *mockPublicClient) AcquireTokenSilent(
-	ctx context.Context, scopes []string, options ...public.AcquireTokenSilentOption,
+	ctx context.Context, scopes []string, options ...public.AcquireSilentOption,
 ) (public.AuthResult, error) {
 	return public.AuthResult{
 		Account: public.Account{
@@ -320,7 +320,8 @@ func (m *mockPublicClient) AcquireTokenSilent(
 	}, nil
 }
 
-func (m *mockPublicClient) AcquireTokenByDeviceCode(ctx context.Context, scopes []string) (deviceCodeResult, error) {
+func (m *mockPublicClient) AcquireTokenByDeviceCode(
+	ctx context.Context, scopes []string, options ...public.AcquireByDeviceCodeOption) (deviceCodeResult, error) {
 	return &mockDeviceCode{}, nil
 }
 

@@ -11,7 +11,6 @@ import (
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
-	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
@@ -27,9 +26,10 @@ func (s Locs) Swap(i, j int) { s[i], s[j] = s[j], s[i] }
 
 // PromptLocation asks the user to select a location from a list of supported azure location
 func PromptLocation(
-	ctx context.Context, env *environment.Environment, message string, help string, console input.Console, azCli azcli.AzCli,
+	ctx context.Context, env *environment.Environment, message string, help string, console input.Console,
+	accountManager account.Manager,
 ) (string, error) {
-	return PromptLocationWithFilter(ctx, env, message, help, console, azCli, func(acl azcli.AzCliLocation) bool {
+	return PromptLocationWithFilter(ctx, env, message, help, console, accountManager, func(acl azcli.AzCliLocation) bool {
 		return true
 	})
 }
@@ -40,14 +40,9 @@ func PromptLocationWithFilter(
 	message string,
 	help string,
 	console input.Console,
-	azCli azcli.AzCli,
-	filter func(azcli.AzCliLocation) bool,
+	accountManager account.Manager,
+	shouldDisplay func(azcli.AzCliLocation) bool,
 ) (string, error) {
-	accountManager, err := account.NewManager(config.NewManager(), azCli)
-	if err != nil {
-		return "", fmt.Errorf("failed creating account manager: %w", err)
-	}
-
 	allLocations, err := accountManager.GetLocations(ctx, env.GetSubscriptionId())
 	if err != nil {
 		return "", fmt.Errorf("listing locations: %w", err)
@@ -55,7 +50,7 @@ func PromptLocationWithFilter(
 
 	locations := make([]azcli.AzCliLocation, 0, len(allLocations))
 	for _, location := range allLocations {
-		if filter(location) {
+		if shouldDisplay(location) {
 			locations = append(locations, location)
 		}
 	}

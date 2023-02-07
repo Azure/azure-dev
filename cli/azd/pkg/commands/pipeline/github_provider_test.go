@@ -47,13 +47,14 @@ func Test_gitHub_provider_preConfigure_check(t *testing.T) {
 		setupGithubAuthMock(mockContext)
 
 		provider := NewGitHubCiProvider(mockContext.Credentials, mockContext.CommandRunner)
-		err := provider.preConfigureCheck(
+		updatedConfig, err := provider.preConfigureCheck(
 			*mockContext.Context,
 			mockContext.Console,
 			PipelineManagerArgs{},
 			provisioning.Options{},
 		)
 		require.NoError(t, err)
+		require.False(t, updatedConfig)
 
 		// No warnings on console
 		consoleLog := mockContext.Console.Output()
@@ -73,8 +74,10 @@ func Test_gitHub_provider_preConfigure_check(t *testing.T) {
 		setupGithubAuthMock(mockContext)
 
 		provider := NewGitHubCiProvider(mockContext.Credentials, mockContext.CommandRunner)
-		err := provider.preConfigureCheck(*mockContext.Context, mockContext.Console, pipelineManagerArgs, infraOptions)
+		updatedConfig, err := provider.preConfigureCheck(
+			*mockContext.Context, mockContext.Console, pipelineManagerArgs, infraOptions)
 		require.Error(t, err)
+		require.False(t, updatedConfig)
 		require.True(t, errors.Is(err, ErrAuthNotSupported))
 	})
 
@@ -91,12 +94,14 @@ func Test_gitHub_provider_preConfigure_check(t *testing.T) {
 		setupGithubAuthMock(mockContext)
 
 		provider := NewGitHubCiProvider(mockContext.Credentials, mockContext.CommandRunner)
-		err := provider.preConfigureCheck(*mockContext.Context, mockContext.Console, pipelineManagerArgs, infraOptions)
+		updatedConfig, err := provider.preConfigureCheck(
+			*mockContext.Context, mockContext.Console, pipelineManagerArgs, infraOptions)
 		require.NoError(t, err)
+		require.False(t, updatedConfig)
 
 		consoleLog := mockContext.Console.Output()
 		require.Len(t, consoleLog, 1)
-		require.Contains(t, consoleLog[0], "WARNING: Terraform provisioning does not support federated authentication")
+		require.Contains(t, consoleLog[0], "Warning: Terraform provisioning does not support federated authentication")
 	})
 }
 

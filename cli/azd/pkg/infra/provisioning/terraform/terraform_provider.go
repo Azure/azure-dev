@@ -678,6 +678,7 @@ func init() {
 			console input.Console,
 			_ azcli.AzCli,
 			commandRunner exec.CommandRunner,
+			_ Prompters,
 		) (Provider, error) {
 			return NewTerraformProvider(ctx, env, projectPath, options, console, commandRunner), nil
 		},

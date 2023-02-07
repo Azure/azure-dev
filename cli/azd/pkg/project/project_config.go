@@ -10,12 +10,12 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/internal/telemetry"
 	"github.com/azure/azure-dev/cli/azd/internal/telemetry/fields"
+	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/ext"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
-	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
@@ -100,6 +100,7 @@ func (pc *ProjectConfig) GetProject(
 	console input.Console,
 	azCli azcli.AzCli,
 	commandRunner exec.CommandRunner,
+	accountManager account.Manager,
 ) (*Project, error) {
 	serviceMap := map[string]*Service{}
 
@@ -117,7 +118,7 @@ func (pc *ProjectConfig) GetProject(
 	project.ResourceGroupName = resourceGroupName
 
 	for key, serviceConfig := range pc.Services {
-		service, err := serviceConfig.GetService(ctx, &project, env, azCli, commandRunner, console)
+		service, err := serviceConfig.GetService(ctx, &project, env, azCli, accountManager, commandRunner, console)
 
 		if err != nil {
 			return nil, fmt.Errorf("creating service %s: %w", key, err)
@@ -235,18 +236,5 @@ func LoadProjectConfig(projectPath string) (*ProjectConfig, error) {
 	}
 
 	projectConfig.Path = filepath.Dir(projectPath)
-	return projectConfig, nil
-}
-
-// Gets the current project config from the IoC container
-// This method ensures the same instance is returned that can be referenced from any component
-// ex) Can be referenced from within middleware as well as command actions
-// Returns and error when the project is not found
-func GetCurrent() (*ProjectConfig, error) {
-	var projectConfig *ProjectConfig
-	if err := ioc.Global.Resolve(&projectConfig); err != nil {
-		return nil, err
-	}
-
 	return projectConfig, nil
 }

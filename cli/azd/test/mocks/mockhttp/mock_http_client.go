@@ -2,7 +2,6 @@ package mockhttp
 
 import (
 	"fmt"
-	"log"
 	"net/http"
 )
 
@@ -80,7 +79,5 @@ func (e *HttpExpression) SetError(err error) *MockHttpClient {
 
 func HasBearerToken(request *http.Request, bearerToken string) bool {
 	authHeader := request.Header["Authorization"]
-	isTrue := authHeader != nil && len(authHeader) == 1 && authHeader[0] == fmt.Sprintf("Bearer %s", bearerToken)
-	log.Printf("HasBearerToken(%s, %s) = %v\n", authHeader[0], bearerToken, isTrue)
-	return isTrue
+	return len(authHeader) == 1 && authHeader[0] == fmt.Sprintf("Bearer %s", bearerToken)
 }

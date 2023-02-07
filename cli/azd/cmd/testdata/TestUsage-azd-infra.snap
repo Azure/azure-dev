@@ -2,7 +2,7 @@ Usage:
   azd infra [command]
 
 Available Commands:
-  create      Create Azure resources for an app.
+  create      Provision the Azure resources for an app.
   delete      Delete Azure resources for an app.
 
 Flags:

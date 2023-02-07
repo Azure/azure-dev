@@ -98,6 +98,7 @@ teamcity
 testdata
 tracesdk
 tracetest
+Truef
 unmarshalling
 unsetenvs
 unsets

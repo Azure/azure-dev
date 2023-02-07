@@ -22,3 +22,17 @@ func (c *MockCredentials) GetToken(ctx context.Context, options policy.TokenRequ
 		ExpiresOn: time.Now().Add(time.Hour * 1),
 	}, nil
 }
+
+type MockMultiTenantCredentialProvider struct {
+	TokenMap map[string]MockCredentials
+}
+
+func (c *MockMultiTenantCredentialProvider) GetTokenCredential(
+	ctx context.Context, tenantId string) (azcore.TokenCredential, error) {
+	if c.TokenMap != nil {
+		tokenCred := c.TokenMap[tenantId]
+		return &tokenCred, nil
+	}
+
+	return &MockCredentials{}, nil
+}

@@ -10,6 +10,7 @@ import (
 	"log"
 	"strings"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/azureutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
@@ -25,6 +26,7 @@ import (
 type Manager struct {
 	azCli       azcli.AzCli
 	env         *environment.Environment
+	prompters   Prompters
 	provider    Provider
 	writer      io.Writer
 	console     input.Console
@@ -223,14 +225,11 @@ func (m *Manager) ensureLocation(ctx context.Context, deployment *Deployment) (s
 		// user on every deployment if they don't have a `location` parameter in their bicep file.
 		// When we store it, we should store it /per environment/ not as a property of the entire
 		// project.
-		selected, err := azureutil.PromptLocation(
-			ctx,
-			m.env,
+		selected, err := m.prompters.Location(
 			"Please select an Azure location to use to store deployment metadata:",
-			"",
-			m.console,
-			m.azCli,
-		)
+			func(_ azcli.AzCliLocation) bool {
+				return true
+			})
 		if err != nil {
 			return "", fmt.Errorf("prompting for deployment metadata region: %w", err)
 		}
@@ -295,8 +294,17 @@ func NewManager(
 	azCli azcli.AzCli,
 	console input.Console,
 	commandRunner exec.CommandRunner,
+	accountManager account.Manager,
 ) (*Manager, error) {
-	infraProvider, err := NewProvider(ctx, console, azCli, commandRunner, env, projectPath, infraOptions)
+	locationPrompt := func(msg string, filter func(loc azcli.AzCliLocation) bool) (location string, err error) {
+		return azureutil.PromptLocationWithFilter(ctx, env, msg, "", console, accountManager, filter)
+	}
+
+	prompters := Prompters{
+		Location: locationPrompt,
+	}
+
+	infraProvider, err := NewProvider(ctx, console, azCli, commandRunner, env, projectPath, infraOptions, prompters)
 	if err != nil {
 		return nil, fmt.Errorf("error creating infra provider: %w", err)
 	}
@@ -310,6 +318,7 @@ func NewManager(
 		azCli:       azCli,
 		env:         env,
 		provider:    infraProvider,
+		prompters:   prompters,
 		writer:      console.GetWriter(),
 		console:     console,
 		interactive: interactive,

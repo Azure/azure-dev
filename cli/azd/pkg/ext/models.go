@@ -6,6 +6,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 )
 
 type ShellType string
@@ -64,7 +66,7 @@ type HookConfig struct {
 	// When running on windows use this override config
 	Windows *HookConfig `yaml:"windows,omitempty"`
 	// When running on linux/macos use this override config
-	Posix *HookConfig `yaml:"linux,omitempty"`
+	Posix *HookConfig `yaml:"posix,omitempty"`
 }
 
 // Validates and normalizes the hook configuration
@@ -158,13 +160,8 @@ func createTempScript(hookConfig *HookConfig) (string, error) {
 		ext = "ps1"
 	}
 
-	directory, err := os.MkdirTemp(os.TempDir(), "azd-*")
-	if err != nil {
-		return "", fmt.Errorf("failed creating temp directory, %w", err)
-	}
-
-	// Write the temporary script file to .azure/hooks folder
-	file, err := os.CreateTemp(directory, fmt.Sprintf("%s-*.%s", hookConfig.Name, ext))
+	// Write the temporary script file to OS temp dir
+	file, err := os.CreateTemp(os.TempDir(), fmt.Sprintf("azd-%s-*.%s", hookConfig.Name, ext))
 	if err != nil {
 		return "", fmt.Errorf("failed creating hook file: %w", err)
 	}
@@ -183,6 +180,11 @@ func createTempScript(hookConfig *HookConfig) (string, error) {
 	_, err = file.WriteString(scriptBuilder.String())
 	if err != nil {
 		return "", fmt.Errorf("failed writing hook file, %w", err)
+	}
+
+	// Update file permissions to grant exec permissions
+	if err := file.Chmod(osutil.PermissionExecutableFile); err != nil {
+		return "", fmt.Errorf("failed setting executable file permissions, %w", err)
 	}
 
 	return file.Name(), nil

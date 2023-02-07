@@ -15,6 +15,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/docker"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
+	"github.com/azure/azure-dev/cli/azd/test/mocks/mockaccount"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockarmresources"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockazcli"
 	"github.com/stretchr/testify/require"
@@ -73,7 +74,9 @@ services:
 
 	projectConfig, err := ParseProjectConfig(testProj)
 	require.NoError(t, err)
-	prj, err := projectConfig.GetProject(*mockContext.Context, env, mockContext.Console, azCli, mockContext.CommandRunner)
+	prj, err := projectConfig.GetProject(
+		*mockContext.Context, env, mockContext.Console, azCli,
+		mockContext.CommandRunner, &mockaccount.MockAccountManager{})
 	require.NoError(t, err)
 
 	service := prj.Services[0]
@@ -164,7 +167,9 @@ services:
 	projectConfig, err := ParseProjectConfig(testProj)
 	require.NoError(t, err)
 
-	prj, err := projectConfig.GetProject(*mockContext.Context, env, mockContext.Console, azCli, mockContext.CommandRunner)
+	prj, err := projectConfig.GetProject(
+		*mockContext.Context, env, mockContext.Console,
+		azCli, mockContext.CommandRunner, &mockaccount.MockAccountManager{})
 	require.NoError(t, err)
 
 	service := prj.Services[0]

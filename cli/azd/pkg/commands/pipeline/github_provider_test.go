@@ -46,10 +46,9 @@ func Test_gitHub_provider_preConfigure_check(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
 		setupGithubAuthMock(mockContext)
 
-		provider := NewGitHubCiProvider(mockContext.Credentials, mockContext.CommandRunner)
+		provider := NewGitHubCiProvider(mockContext.Credentials, mockContext.CommandRunner, mockContext.Console)
 		updatedConfig, err := provider.preConfigureCheck(
 			*mockContext.Context,
-			mockContext.Console,
 			PipelineManagerArgs{},
 			provisioning.Options{},
 		)
@@ -73,9 +72,9 @@ func Test_gitHub_provider_preConfigure_check(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
 		setupGithubAuthMock(mockContext)
 
-		provider := NewGitHubCiProvider(mockContext.Credentials, mockContext.CommandRunner)
+		provider := NewGitHubCiProvider(mockContext.Credentials, mockContext.CommandRunner, mockContext.Console)
 		updatedConfig, err := provider.preConfigureCheck(
-			*mockContext.Context, mockContext.Console, pipelineManagerArgs, infraOptions)
+			*mockContext.Context, pipelineManagerArgs, infraOptions)
 		require.Error(t, err)
 		require.False(t, updatedConfig)
 		require.True(t, errors.Is(err, ErrAuthNotSupported))
@@ -93,9 +92,9 @@ func Test_gitHub_provider_preConfigure_check(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
 		setupGithubAuthMock(mockContext)
 
-		provider := NewGitHubCiProvider(mockContext.Credentials, mockContext.CommandRunner)
+		provider := NewGitHubCiProvider(mockContext.Credentials, mockContext.CommandRunner, mockContext.Console)
 		updatedConfig, err := provider.preConfigureCheck(
-			*mockContext.Context, mockContext.Console, pipelineManagerArgs, infraOptions)
+			*mockContext.Context, pipelineManagerArgs, infraOptions)
 		require.NoError(t, err)
 		require.False(t, updatedConfig)
 

@@ -29,10 +29,10 @@ steps:
         -DevOpsOutput
 
   - pwsh: |
-      # TODO: implement...
-      # $submitPackage = eng/scripts/Test-ShouldReleaseChoco.ps1 `
-      #   -Version '$(WinGetVersion)' `
-      #   -AllowPrerelease:$${{ parameters.AllowPrerelease }}
+      $submitPackage = eng/scripts/Test-ShouldReleasePackageVersion.ps1 `
+        -Version '$(MSI_VERSION)' `
+        -AllowPrerelease:$${{ parameters.AllowPrerelease }}
+
       if ('$(Skip.ReleaseWinGet)' -eq 'true') {
         $submitPackage = 'false'
       }
@@ -43,11 +43,16 @@ steps:
   - task: PowerShell@2
     displayName: Build Choco Package
     inputs:
+      pwsh: true
       targetType: filePath
       filePath: eng/scripts/New-ChocoPackage.ps1
       arguments: >-
         -Version $(MSI_VERSION)
         -MsiSha256
+
+  - publish: cli/installer/choco/azd.$(MSI_VERSION).nupkg
+    artifact: ChocoPackage
+    displayName: Publish Choco Package Artifact
 
   - pwsh: |
       Write-Host "Pushing Choco Package..."

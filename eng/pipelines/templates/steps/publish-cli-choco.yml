@@ -16,7 +16,7 @@ steps:
     inputs:
       artifactName: signed-win
       itemPattern: azd-windows-amd64.msi
-      targetPath: cli/installer/choco
+      targetPath: cli/installer/choco/tools
 
   - task: PowerShell@2
     displayName: Set Choco Package Version

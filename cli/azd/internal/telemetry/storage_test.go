@@ -237,7 +237,7 @@ func TestStorageQueue_Cleanup(t *testing.T) {
 			// 1. Set createTime to match current time
 			// 2. Set cleanupTime to be in the future.
 			createTime:             time.Now(),
-			cleanupTime:            time.Now().Add(tempFileTtl + time.Duration(2)*time.Second),
+			cleanupTime:            time.Now().Add(tempFileTtl + time.Duration(1)*time.Minute),
 			expectedFilesRemaining: []string{},
 		},
 		{

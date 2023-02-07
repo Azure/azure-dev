@@ -14,9 +14,11 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armsubscriptions"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
+	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
-	"github.com/azure/azure-dev/cli/azd/test/mocks/mockazcli"
+	"github.com/azure/azure-dev/cli/azd/test/mocks/mockconfig"
+	"github.com/azure/azure-dev/cli/azd/test/mocks/mockhttp"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/exp/slices"
 )
@@ -36,17 +38,24 @@ func Test_GetAccountDefaults(t *testing.T) {
 			},
 		})
 
-		mockContext := mocks.NewMockContext(context.Background())
-		setupAccountMocks(mockContext)
-		setupGetSubscriptionMock(mockContext, &defaultSubscription, nil)
+		mockConfig := mockconfig.NewMockConfigManager()
+		mockHttp := mockhttp.NewMockHttpUtil()
+		setupAccountMocks(mockHttp)
+		setupGetSubscriptionMock(mockHttp, &defaultSubscription, nil)
 
 		manager, err := NewManager(
-			mockContext.ConfigManager.WithConfig(expectedConfig),
-			mockazcli.NewAzCliFromMockContext(mockContext),
+			mockConfig.WithConfig(expectedConfig),
+			NewSubscriptionsManagerWithCache(
+				azcli.NewSubscriptionsService(
+					&mocks.MockMultiTenantCredentialProvider{},
+					mockHttp,
+				),
+				NewBypassSubscriptionsCache(),
+			),
 		)
 		require.NoError(t, err)
 
-		accountDefaults, err := manager.GetAccountDefaults(*mockContext.Context)
+		accountDefaults, err := manager.GetAccountDefaults(context.Background())
 		require.NoError(t, err)
 		require.Equal(t, "SUBSCRIPTION_01", accountDefaults.DefaultSubscription.Id)
 		require.Equal(t, "westus", accountDefaults.DefaultLocation.Name)
@@ -55,16 +64,23 @@ func Test_GetAccountDefaults(t *testing.T) {
 	t.Run("FromCodeDefaults", func(t *testing.T) {
 		emptyConfig := config.NewConfig(nil)
 
-		mockContext := mocks.NewMockContext(context.Background())
-		setupAccountMocks(mockContext)
+		mockConfig := mockconfig.NewMockConfigManager()
+		mockHttp := mockhttp.NewMockHttpUtil()
+		setupAccountMocks(mockHttp)
 
 		manager, err := NewManager(
-			mockContext.ConfigManager.WithConfig(emptyConfig),
-			mockazcli.NewAzCliFromMockContext(mockContext),
+			mockConfig.WithConfig(emptyConfig),
+			NewSubscriptionsManagerWithCache(
+				azcli.NewSubscriptionsService(
+					&mocks.MockMultiTenantCredentialProvider{},
+					mockHttp,
+				),
+				NewBypassSubscriptionsCache(),
+			),
 		)
 		require.NoError(t, err)
 
-		accountDefaults, err := manager.GetAccountDefaults(*mockContext.Context)
+		accountDefaults, err := manager.GetAccountDefaults(context.Background())
 		require.NoError(t, err)
 		require.Nil(t, accountDefaults.DefaultSubscription)
 		require.Equal(t, "eastus2", accountDefaults.DefaultLocation.Name)
@@ -81,19 +97,26 @@ func Test_GetAccountDefaults(t *testing.T) {
 			},
 		})
 
-		mockContext := mocks.NewMockContext(context.Background())
-		setupAccountMocks(mockContext)
-		setupGetSubscriptionMock(mockContext, &invalidSubscription, errors.New("subscription not found"))
+		mockConfig := mockconfig.NewMockConfigManager()
+		mockHttp := mockhttp.NewMockHttpUtil()
+		setupAccountMocks(mockHttp)
+		setupGetSubscriptionMock(mockHttp, &invalidSubscription, errors.New("subscription not found"))
 
 		manager, err := NewManager(
-			mockContext.ConfigManager.WithConfig(emptyConfig),
-			mockazcli.NewAzCliFromMockContext(mockContext),
+			mockConfig.WithConfig(emptyConfig),
+			NewSubscriptionsManagerWithCache(
+				azcli.NewSubscriptionsService(
+					&mocks.MockMultiTenantCredentialProvider{},
+					mockHttp,
+				),
+				NewBypassSubscriptionsCache(),
+			),
 		)
 		require.NoError(t, err)
 
-		accountDefaults, err := manager.GetAccountDefaults(*mockContext.Context)
-		require.Nil(t, accountDefaults)
-		require.Error(t, err)
+		accountDefaults, err := manager.GetAccountDefaults(context.Background())
+		require.Equal(t, &Account{DefaultSubscription: (*Subscription)(nil), DefaultLocation: (&defaultLocation)}, accountDefaults)
+		require.NoError(t, err)
 	})
 
 	t.Run("InvalidLocation", func(t *testing.T) {
@@ -104,17 +127,24 @@ func Test_GetAccountDefaults(t *testing.T) {
 			},
 		})
 
-		mockContext := mocks.NewMockContext(context.Background())
-		setupAccountMocks(mockContext)
-		setupGetSubscriptionMock(mockContext, &defaultSubscription, nil)
+		mockConfig := mockconfig.NewMockConfigManager()
+		mockHttp := mockhttp.NewMockHttpUtil()
+		setupAccountMocks(mockHttp)
+		setupGetSubscriptionMock(mockHttp, &defaultSubscription, nil)
 
 		manager, err := NewManager(
-			mockContext.ConfigManager.WithConfig(emptyConfig),
-			mockazcli.NewAzCliFromMockContext(mockContext),
+			mockConfig.WithConfig(emptyConfig),
+			NewSubscriptionsManagerWithCache(
+				azcli.NewSubscriptionsService(
+					&mocks.MockMultiTenantCredentialProvider{},
+					mockHttp,
+				),
+				NewBypassSubscriptionsCache(),
+			),
 		)
 		require.NoError(t, err)
 
-		accountDefaults, err := manager.GetAccountDefaults(*mockContext.Context)
+		accountDefaults, err := manager.GetAccountDefaults(context.Background())
 		require.Nil(t, accountDefaults)
 		require.Error(t, err)
 	})
@@ -122,13 +152,19 @@ func Test_GetAccountDefaults(t *testing.T) {
 
 func Test_GetSubscriptions(t *testing.T) {
 	t.Run("Success", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
-		setupAccountMocks(mockContext)
+		mockConfig := mockconfig.NewMockConfigManager()
+		mockHttp := mockhttp.NewMockHttpUtil()
+		setupAccountMocks(mockHttp)
 
-		manager, err := NewManager(mockContext.ConfigManager, mockazcli.NewAzCliFromMockContext(mockContext))
+		manager, err := NewManager(mockConfig, NewSubscriptionsManagerWithCache(
+			azcli.NewSubscriptionsService(
+				&mocks.MockMultiTenantCredentialProvider{},
+				mockHttp,
+			),
+			NewBypassSubscriptionsCache()))
 		require.NoError(t, err)
 
-		subscriptions, err := manager.GetSubscriptions(*mockContext.Context)
+		subscriptions, err := manager.GetSubscriptions(context.Background())
 
 		require.NoError(t, err)
 		require.Len(t, subscriptions, 3)
@@ -148,19 +184,26 @@ func Test_GetSubscriptions(t *testing.T) {
 			},
 		})
 
-		mockContext := mocks.NewMockContext(context.Background())
-		setupAccountMocks(mockContext)
-		setupGetSubscriptionMock(mockContext, &subscription, nil)
+		mockConfig := mockconfig.NewMockConfigManager()
+		mockHttp := mockhttp.NewMockHttpUtil()
+		setupAccountMocks(mockHttp)
+		setupGetSubscriptionMock(mockHttp, &subscription, nil)
 
 		manager, err := NewManager(
-			mockContext.ConfigManager.WithConfig(defaultConfig),
-			mockazcli.NewAzCliFromMockContext(mockContext),
+			mockConfig.WithConfig(defaultConfig),
+			NewSubscriptionsManagerWithCache(
+				azcli.NewSubscriptionsService(
+					&mocks.MockMultiTenantCredentialProvider{},
+					mockHttp,
+				),
+				NewBypassSubscriptionsCache(),
+			),
 		)
 		require.NoError(t, err)
 
-		subscriptions, err := manager.GetSubscriptions(*mockContext.Context)
+		subscriptions, err := manager.GetSubscriptions(context.Background())
 
-		defaultIndex := slices.IndexFunc(subscriptions, func(sub *azcli.AzCliSubscriptionInfo) bool {
+		defaultIndex := slices.IndexFunc(subscriptions, func(sub Subscription) bool {
 			return sub.IsDefault
 		})
 
@@ -171,13 +214,22 @@ func Test_GetSubscriptions(t *testing.T) {
 	})
 
 	t.Run("Error", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
-		setupAccountErrorMocks(mockContext)
+		mockConfig := mockconfig.NewMockConfigManager()
+		mockHttp := mockhttp.NewMockHttpUtil()
+		setupAccountErrorMocks(mockHttp)
 
-		manager, err := NewManager(mockContext.ConfigManager, mockazcli.NewAzCliFromMockContext(mockContext))
+		manager, err := NewManager(
+			mockConfig,
+			NewSubscriptionsManagerWithCache(
+				azcli.NewSubscriptionsService(
+					&mocks.MockMultiTenantCredentialProvider{},
+					mockHttp,
+				),
+				NewBypassSubscriptionsCache(),
+			))
 		require.NoError(t, err)
 
-		subscriptions, err := manager.GetSubscriptions(*mockContext.Context)
+		subscriptions, err := manager.GetSubscriptions(context.Background())
 
 		require.Error(t, err)
 		require.Nil(t, subscriptions)
@@ -199,44 +251,63 @@ func Test_GetLocations(t *testing.T) {
 	})
 
 	t.Run("Success", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
-		setupAccountMocks(mockContext)
-		setupGetSubscriptionMock(mockContext, &subscription, nil)
+		mockConfig := mockconfig.NewMockConfigManager()
+		mockHttp := mockhttp.NewMockHttpUtil()
+		setupAccountMocks(mockHttp)
+		setupGetSubscriptionMock(mockHttp, &subscription, nil)
 
 		manager, err := NewManager(
-			mockContext.ConfigManager.WithConfig(defaultConfig),
-			mockazcli.NewAzCliFromMockContext(mockContext),
+			mockConfig.WithConfig(defaultConfig),
+			NewSubscriptionsManagerWithCache(
+				azcli.NewSubscriptionsService(
+					&mocks.MockMultiTenantCredentialProvider{},
+					mockHttp,
+				),
+				NewBypassSubscriptionsCache(),
+			),
 		)
 		require.NoError(t, err)
 
-		locations, err := manager.GetLocations(*mockContext.Context, subscription.Id)
+		locations, err := manager.GetLocations(context.Background(), subscription.Id)
 
 		require.NoError(t, err)
 		require.Len(t, locations, 4)
 	})
 
 	t.Run("ErrorNoDefaultSubscription", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
-		setupAccountErrorMocks(mockContext)
+		mockConfig := mockconfig.NewMockConfigManager()
+		mockHttp := mockhttp.NewMockHttpUtil()
+		setupAccountErrorMocks(mockHttp)
 
-		manager, err := NewManager(mockContext.ConfigManager, mockazcli.NewAzCliFromMockContext(mockContext))
+		manager, err := NewManager(mockConfig, NewSubscriptionsManagerWithCache(
+			azcli.NewSubscriptionsService(
+				&mocks.MockMultiTenantCredentialProvider{},
+				mockHttp,
+			),
+			NewBypassSubscriptionsCache()))
 		require.NoError(t, err)
 
-		locations, err := manager.GetLocations(*mockContext.Context, subscription.Id)
+		locations, err := manager.GetLocations(context.Background(), subscription.Id)
 
 		require.Error(t, err)
 		require.Nil(t, locations)
 	})
 
 	t.Run("Error", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
-		setupAccountErrorMocks(mockContext)
-		setupGetSubscriptionMock(mockContext, &subscription, nil)
+		mockConfig := mockconfig.NewMockConfigManager()
+		mockHttp := mockhttp.NewMockHttpUtil()
+		setupAccountErrorMocks(mockHttp)
+		setupGetSubscriptionMock(mockHttp, &subscription, nil)
 
-		manager, err := NewManager(mockContext.ConfigManager, mockazcli.NewAzCliFromMockContext(mockContext))
+		manager, err := NewManager(mockConfig, NewSubscriptionsManagerWithCache(
+			azcli.NewSubscriptionsService(
+				&mocks.MockMultiTenantCredentialProvider{},
+				mockHttp,
+			),
+			NewBypassSubscriptionsCache()))
 		require.NoError(t, err)
 
-		locations, err := manager.GetLocations(*mockContext.Context, subscription.Id)
+		locations, err := manager.GetLocations(context.Background(), subscription.Id)
 
 		require.Error(t, err)
 		require.Nil(t, locations)
@@ -251,14 +322,20 @@ func Test_SetDefaultSubscription(t *testing.T) {
 			TenantId: "TENANT_ID",
 		}
 
-		mockContext := mocks.NewMockContext(context.Background())
-		setupAccountMocks(mockContext)
-		setupGetSubscriptionMock(mockContext, &expectedSubscription, nil)
+		mockConfig := mockconfig.NewMockConfigManager()
+		mockHttp := mockhttp.NewMockHttpUtil()
+		setupAccountMocks(mockHttp)
+		setupGetSubscriptionMock(mockHttp, &expectedSubscription, nil)
 
-		manager, err := NewManager(mockContext.ConfigManager, mockazcli.NewAzCliFromMockContext(mockContext))
+		manager, err := NewManager(mockConfig, NewSubscriptionsManagerWithCache(
+			azcli.NewSubscriptionsService(
+				&mocks.MockMultiTenantCredentialProvider{},
+				mockHttp,
+			),
+			NewBypassSubscriptionsCache()))
 		require.NoError(t, err)
 
-		actualSubscription, err := manager.SetDefaultSubscription(*mockContext.Context, expectedSubscription.Id)
+		actualSubscription, err := manager.SetDefaultSubscription(context.Background(), expectedSubscription.Id)
 
 		require.NoError(t, err)
 		require.Equal(t, expectedSubscription, *actualSubscription)
@@ -271,14 +348,20 @@ func Test_SetDefaultSubscription(t *testing.T) {
 			TenantId: "TENANT_ID",
 		}
 
-		mockContext := mocks.NewMockContext(context.Background())
-		setupAccountMocks(mockContext)
-		setupGetSubscriptionMock(mockContext, &expectedSubscription, errors.New("Not found"))
+		mockConfig := mockconfig.NewMockConfigManager()
+		mockHttp := mockhttp.NewMockHttpUtil()
+		setupAccountMocks(mockHttp)
+		setupGetSubscriptionMock(mockHttp, &expectedSubscription, errors.New("Not found"))
 
-		manager, err := NewManager(mockContext.ConfigManager, mockazcli.NewAzCliFromMockContext(mockContext))
+		manager, err := NewManager(mockConfig, NewSubscriptionsManagerWithCache(
+			azcli.NewSubscriptionsService(
+				&mocks.MockMultiTenantCredentialProvider{},
+				mockHttp,
+			),
+			NewBypassSubscriptionsCache()))
 		require.NoError(t, err)
 
-		actualSubscription, err := manager.SetDefaultSubscription(*mockContext.Context, expectedSubscription.Id)
+		actualSubscription, err := manager.SetDefaultSubscription(context.Background(), expectedSubscription.Id)
 
 		require.Error(t, err)
 		require.Nil(t, actualSubscription)
@@ -302,17 +385,24 @@ func Test_SetDefaultLocation(t *testing.T) {
 	t.Run("ValidLocation", func(t *testing.T) {
 		expectedLocation := "westus2"
 
-		mockContext := mocks.NewMockContext(context.Background())
-		setupAccountMocks(mockContext)
-		setupGetSubscriptionMock(mockContext, &subscription, nil)
+		mockConfig := mockconfig.NewMockConfigManager()
+		mockHttp := mockhttp.NewMockHttpUtil()
+		setupAccountMocks(mockHttp)
+		setupGetSubscriptionMock(mockHttp, &subscription, nil)
 
 		manager, err := NewManager(
-			mockContext.ConfigManager.WithConfig(defaultConfig),
-			mockazcli.NewAzCliFromMockContext(mockContext),
+			mockConfig.WithConfig(defaultConfig),
+			NewSubscriptionsManagerWithCache(
+				azcli.NewSubscriptionsService(
+					&mocks.MockMultiTenantCredentialProvider{},
+					mockHttp,
+				),
+				NewBypassSubscriptionsCache(),
+			),
 		)
 		require.NoError(t, err)
 
-		location, err := manager.SetDefaultLocation(*mockContext.Context, subscription.Id, expectedLocation)
+		location, err := manager.SetDefaultLocation(context.Background(), subscription.Id, expectedLocation)
 
 		require.NoError(t, err)
 		require.Equal(t, expectedLocation, location.Name)
@@ -321,14 +411,20 @@ func Test_SetDefaultLocation(t *testing.T) {
 	t.Run("InvalidLocation", func(t *testing.T) {
 		expectedLocation := "invalid"
 
-		mockContext := mocks.NewMockContext(context.Background())
-		setupAccountMocks(mockContext)
-		setupGetSubscriptionMock(mockContext, &subscription, nil)
+		mockConfig := mockconfig.NewMockConfigManager()
+		mockHttp := mockhttp.NewMockHttpUtil()
+		setupAccountMocks(mockHttp)
+		setupGetSubscriptionMock(mockHttp, &subscription, nil)
 
-		manager, err := NewManager(mockContext.ConfigManager, mockazcli.NewAzCliFromMockContext(mockContext))
+		manager, err := NewManager(mockConfig, NewSubscriptionsManagerWithCache(
+			azcli.NewSubscriptionsService(
+				&mocks.MockMultiTenantCredentialProvider{},
+				mockHttp,
+			),
+			NewBypassSubscriptionsCache()))
 		require.NoError(t, err)
 
-		location, err := manager.SetDefaultLocation(*mockContext.Context, subscription.Id, expectedLocation)
+		location, err := manager.SetDefaultLocation(context.Background(), subscription.Id, expectedLocation)
 
 		require.Error(t, err)
 		require.Nil(t, location)
@@ -342,20 +438,26 @@ func Test_Clear(t *testing.T) {
 		TenantId: "TENANT_ID",
 	}
 
-	mockContext := mocks.NewMockContext(context.Background())
-	setupAccountMocks(mockContext)
-	setupGetSubscriptionMock(mockContext, &expectedSubscription, nil)
+	mockConfig := mockconfig.NewMockConfigManager()
+	mockHttp := mockhttp.NewMockHttpUtil()
+	setupAccountMocks(mockHttp)
+	setupGetSubscriptionMock(mockHttp, &expectedSubscription, nil)
 
-	manager, err := NewManager(mockContext.ConfigManager, mockazcli.NewAzCliFromMockContext(mockContext))
+	manager, err := NewManager(mockConfig, NewSubscriptionsManagerWithCache(
+		azcli.NewSubscriptionsService(
+			&mocks.MockMultiTenantCredentialProvider{},
+			mockHttp,
+		),
+		NewBypassSubscriptionsCache()))
 	require.NoError(t, err)
 
-	subscription, err := manager.SetDefaultSubscription(*mockContext.Context, expectedSubscription.Id)
+	subscription, err := manager.SetDefaultSubscription(context.Background(), expectedSubscription.Id)
 	require.NoError(t, err)
 
-	location, err := manager.SetDefaultLocation(*mockContext.Context, subscription.Id, "westus2")
+	location, err := manager.SetDefaultLocation(context.Background(), subscription.Id, "westus2")
 	require.NoError(t, err)
 
-	updatedConfig, err := mockContext.ConfigManager.Load("PATH")
+	updatedConfig, err := mockConfig.Load("PATH")
 	require.NoError(t, err)
 
 	configSubscription, _ := updatedConfig.Get(defaultSubscriptionKeyPath)
@@ -364,10 +466,10 @@ func Test_Clear(t *testing.T) {
 	require.Equal(t, subscription.Id, configSubscription)
 	require.Equal(t, location.Name, configLocation)
 
-	err = manager.Clear(*mockContext.Context)
+	err = manager.Clear(context.Background())
 	require.NoError(t, err)
 
-	clearedConfig, err := mockContext.ConfigManager.Load("PATH")
+	clearedConfig, err := mockConfig.Load("PATH")
 	require.NotNil(t, clearedConfig)
 	require.NoError(t, err)
 
@@ -379,7 +481,8 @@ func Test_Clear(t *testing.T) {
 }
 
 func Test_HasDefaults(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockConfig := mockconfig.NewMockConfigManager()
+	mockHttp := mockhttp.NewMockHttpUtil()
 
 	t.Run("DefaultsSet", func(t *testing.T) {
 		azdConfig := config.NewConfig(map[string]any{
@@ -390,8 +493,14 @@ func Test_HasDefaults(t *testing.T) {
 		})
 
 		manager, err := NewManager(
-			mockContext.ConfigManager.WithConfig(azdConfig),
-			mockazcli.NewAzCliFromMockContext(mockContext),
+			mockConfig.WithConfig(azdConfig),
+			NewSubscriptionsManagerWithCache(
+				azcli.NewSubscriptionsService(
+					&mocks.MockMultiTenantCredentialProvider{},
+					mockHttp,
+				),
+				NewBypassSubscriptionsCache(),
+			),
 		)
 		require.NoError(t, err)
 
@@ -403,8 +512,14 @@ func Test_HasDefaults(t *testing.T) {
 		azdConfig := config.NewConfig(nil)
 
 		manager, err := NewManager(
-			mockContext.ConfigManager.WithConfig(azdConfig),
-			mockazcli.NewAzCliFromMockContext(mockContext),
+			mockConfig.WithConfig(azdConfig),
+			NewSubscriptionsManagerWithCache(
+				azcli.NewSubscriptionsService(
+					&mocks.MockMultiTenantCredentialProvider{},
+					mockHttp,
+				),
+				NewBypassSubscriptionsCache(),
+			),
 		)
 		require.NoError(t, err)
 
@@ -434,8 +549,8 @@ var allTestSubscriptions []*armsubscriptions.Subscription = []*armsubscriptions.
 	},
 }
 
-func setupGetSubscriptionMock(mockContext *mocks.MockContext, subscription *Subscription, err error) {
-	mockContext.HttpClient.When(func(request *http.Request) bool {
+func setupGetSubscriptionMock(mockHttp *mockhttp.MockHttpClient, subscription *Subscription, err error) {
+	mockHttp.When(func(request *http.Request) bool {
 		return request.Method == http.MethodGet && request.URL.Path == fmt.Sprintf("/subscriptions/%s", subscription.Id)
 	}).RespondFn(func(request *http.Request) (*http.Response, error) {
 		if err != nil {
@@ -465,8 +580,8 @@ func setupGetSubscriptionMock(mockContext *mocks.MockContext, subscription *Subs
 	})
 }
 
-func setupAccountErrorMocks(mockContext *mocks.MockContext) {
-	mockContext.HttpClient.When(func(request *http.Request) bool {
+func setupAccountErrorMocks(mockHttp *mockhttp.MockHttpClient) {
+	mockHttp.When(func(request *http.Request) bool {
 		return request.Method == http.MethodGet && request.URL.Path == "/subscriptions"
 	}).RespondFn(func(request *http.Request) (*http.Response, error) {
 		return &http.Response{
@@ -477,7 +592,18 @@ func setupAccountErrorMocks(mockContext *mocks.MockContext) {
 		}, nil
 	})
 
-	mockContext.HttpClient.When(func(request *http.Request) bool {
+	mockHttp.When(func(request *http.Request) bool {
+		return request.Method == http.MethodGet && request.URL.Path == "/tenants"
+	}).RespondFn(func(request *http.Request) (*http.Response, error) {
+		return &http.Response{
+			Request:    request,
+			StatusCode: http.StatusUnauthorized,
+			Header:     http.Header{},
+			Body:       http.NoBody,
+		}, nil
+	})
+
+	mockHttp.When(func(request *http.Request) bool {
 		return request.Method == http.MethodGet && strings.Contains(request.URL.Path, "/locations")
 	}).RespondFn(func(request *http.Request) (*http.Response, error) {
 		return &http.Response{
@@ -489,8 +615,8 @@ func setupAccountErrorMocks(mockContext *mocks.MockContext) {
 	})
 }
 
-func setupAccountMocks(mockContext *mocks.MockContext) {
-	mockContext.HttpClient.When(func(request *http.Request) bool {
+func setupAccountMocks(mockHttp *mockhttp.MockHttpClient) {
+	mockHttp.When(func(request *http.Request) bool {
 		return request.Method == http.MethodGet && request.URL.Path == "/subscriptions"
 	}).RespondFn(func(request *http.Request) (*http.Response, error) {
 		res := armsubscriptions.ClientListResponse{
@@ -509,7 +635,31 @@ func setupAccountMocks(mockContext *mocks.MockContext) {
 		}, nil
 	})
 
-	mockContext.HttpClient.When(func(request *http.Request) bool {
+	mockHttp.When(func(request *http.Request) bool {
+		return request.Method == http.MethodGet && request.URL.Path == "/tenants"
+	}).RespondFn(func(request *http.Request) (*http.Response, error) {
+		res := armsubscriptions.TenantsClientListResponse{
+			TenantListResult: armsubscriptions.TenantListResult{
+				Value: []*armsubscriptions.TenantIDDescription{
+					{
+						DisplayName: convert.RefOf("TENANT"),
+						TenantID:    convert.RefOf("TENANT_ID"),
+					},
+				},
+			},
+		}
+
+		jsonBytes, _ := json.Marshal(res)
+
+		return &http.Response{
+			Request:    request,
+			StatusCode: http.StatusOK,
+			Header:     http.Header{},
+			Body:       io.NopCloser(bytes.NewBuffer(jsonBytes)),
+		}, nil
+	})
+
+	mockHttp.When(func(request *http.Request) bool {
 		return request.Method == http.MethodGet && strings.Contains(request.URL.Path, "/locations")
 	}).RespondFn(func(request *http.Request) (*http.Response, error) {
 		res := armsubscriptions.ClientListLocationsResponse{
@@ -564,4 +714,75 @@ func setupAccountMocks(mockContext *mocks.MockContext) {
 			Body:       io.NopCloser(bytes.NewBuffer(jsonBytes)),
 		}, nil
 	})
+}
+
+type InMemorySubCache struct {
+	stored []Subscription
+}
+
+func (imc *InMemorySubCache) Load() ([]Subscription, error) {
+	return imc.stored, nil
+}
+
+func (imc *InMemorySubCache) Save(save []Subscription) error {
+	imc.stored = save
+	return nil
+}
+
+func (imc *InMemorySubCache) Clear() error {
+	imc.stored = nil
+	return nil
+}
+
+func NewInMemorySubscriptionsCache() *InMemorySubCache {
+	return &InMemorySubCache{
+		stored: []Subscription{},
+	}
+}
+
+func NewSubscriptionsManagerWithCache(
+	service *azcli.SubscriptionsService,
+	cache subCache) *SubscriptionsManager {
+	return &SubscriptionsManager{
+		service:       service,
+		cache:         cache,
+		principalInfo: &principalInfoProviderMock{},
+		msg:           &mockMessaging{},
+	}
+}
+
+type principalInfoProviderMock struct{}
+
+func (p *principalInfoProviderMock) GetLoggedInServicePrincipalTenantID() (*string, error) {
+	return nil, nil
+}
+
+type BypassSubscriptionsCache struct {
+}
+
+func (b *BypassSubscriptionsCache) Load() ([]Subscription, error) {
+	return nil, errors.New("bypass cache")
+}
+
+func (b *BypassSubscriptionsCache) Save(save []Subscription) error {
+	return nil
+}
+
+func (b *BypassSubscriptionsCache) Clear() error {
+	return nil
+}
+
+func NewBypassSubscriptionsCache() *BypassSubscriptionsCache {
+	return &BypassSubscriptionsCache{}
+}
+
+type mockMessaging struct {
+}
+
+func (m *mockMessaging) Message(ctx context.Context, message string) {
+}
+
+func (m *mockMessaging) ShowProgress(ctx context.Context, message string) input.ProgressStopper {
+	return func() {
+	}
 }

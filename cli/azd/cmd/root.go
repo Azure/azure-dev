@@ -43,11 +43,18 @@ func NewRootCmd(staticHelp bool, middlewareChain []*actions.MiddlewareRegistrati
 		synopsisHeading = ""
 	}
 	//nolint:lll
-	longDescription := heredoc.Docf(`%sTo begin working with Azure Developer CLI, run the `+output.WithBackticks("azd up")+` command by supplying a sample template in an empty directory:
+	longDescription := heredoc.Docf(
+		`%sTo begin working with Azure Developer CLI, run the `+output.WithBackticks(
+			"azd up",
+		)+` command by supplying a sample template in an empty directory:
 
 		$ azd up –-template todo-nodejs-mongo
 
-	You can pick a template by running `+output.WithBackticks("azd template list")+` and then supplying the repo name as a value to `+output.WithBackticks("--template")+`.
+	You can pick a template by running `+output.WithBackticks(
+			"azd template list",
+		)+` and then supplying the repo name as a value to `+output.WithBackticks(
+			"--template",
+		)+`.
 
 	The most common next commands are:
 
@@ -55,7 +62,9 @@ func NewRootCmd(staticHelp bool, middlewareChain []*actions.MiddlewareRegistrati
 		$ azd deploy
 		$ azd monitor --overview
 
-	For more information, visit the Azure Developer CLI Dev Hub: https://aka.ms/azure-dev/devhub.`, synopsisHeading)
+	For more information, visit the Azure Developer CLI Dev Hub: https://aka.ms/azure-dev/devhub.`,
+		synopsisHeading,
+	)
 
 	rootCmd := &cobra.Command{
 		Use:   "azd",
@@ -176,27 +185,32 @@ func NewRootCmd(staticHelp bool, middlewareChain []*actions.MiddlewareRegistrati
 		ActionResolver: newLogoutAction,
 	})
 
-	root.Add("monitor", &actions.ActionDescriptorOptions{
-		Command:        newMonitorCmd(),
-		FlagsResolver:  newMonitorFlags,
-		ActionResolver: newMonitorAction,
-	})
+	root.Add("init", &actions.ActionDescriptorOptions{
+		Command:        newInitCmd(),
+		FlagsResolver:  newInitFlags,
+		ActionResolver: newInitAction,
+	}).AddFlagCompletion("template", templateNameCompletion).
+		UseMiddleware("ensureLogin", middleware.NewEnsureLoginMiddleware)
 
 	root.
-		Add("down", &actions.ActionDescriptorOptions{
-			Command:        newDownCmd(),
-			FlagsResolver:  newDownFlags,
-			ActionResolver: newDownAction,
+		Add("provision", &actions.ActionDescriptorOptions{
+			Command:        newProvisionCmd(),
+			FlagsResolver:  newProvisionFlags,
+			ActionResolver: newProvisionAction,
 			OutputFormats:  []output.Format{output.JsonFormat, output.NoneFormat},
 			DefaultFormat:  output.NoneFormat,
 		}).
 		UseMiddleware("hooks", middleware.NewHooksMiddleware)
 
-	root.Add("init", &actions.ActionDescriptorOptions{
-		Command:        newInitCmd(),
-		FlagsResolver:  newInitFlags,
-		ActionResolver: newInitAction,
-	}).AddFlagCompletion("template", templateNameCompletion)
+	root.
+		Add("deploy", &actions.ActionDescriptorOptions{
+			Command:        newDeployCmd(),
+			FlagsResolver:  newDeployFlags,
+			ActionResolver: newDeployAction,
+			OutputFormats:  []output.Format{output.JsonFormat, output.NoneFormat},
+			DefaultFormat:  output.NoneFormat,
+		}).
+		UseMiddleware("hooks", middleware.NewHooksMiddleware)
 
 	root.
 		Add("up", &actions.ActionDescriptorOptions{
@@ -209,21 +223,17 @@ func NewRootCmd(staticHelp bool, middlewareChain []*actions.MiddlewareRegistrati
 		AddFlagCompletion("template", templateNameCompletion).
 		UseMiddleware("hooks", middleware.NewHooksMiddleware)
 
-	root.
-		Add("provision", &actions.ActionDescriptorOptions{
-			Command:        newProvisionCmd(),
-			FlagsResolver:  newProvisionFlags,
-			ActionResolver: newInfraCreateAction,
-			OutputFormats:  []output.Format{output.JsonFormat, output.NoneFormat},
-			DefaultFormat:  output.NoneFormat,
-		}).
-		UseMiddleware("hooks", middleware.NewHooksMiddleware)
+	root.Add("monitor", &actions.ActionDescriptorOptions{
+		Command:        newMonitorCmd(),
+		FlagsResolver:  newMonitorFlags,
+		ActionResolver: newMonitorAction,
+	})
 
 	root.
-		Add("deploy", &actions.ActionDescriptorOptions{
-			Command:        newDeployCmd(),
-			FlagsResolver:  newDeployFlags,
-			ActionResolver: newDeployAction,
+		Add("down", &actions.ActionDescriptorOptions{
+			Command:        newDownCmd(),
+			FlagsResolver:  newDownFlags,
+			ActionResolver: newDownAction,
 			OutputFormats:  []output.Format{output.JsonFormat, output.NoneFormat},
 			DefaultFormat:  output.NoneFormat,
 		}).

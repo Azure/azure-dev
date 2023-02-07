@@ -11,6 +11,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
+	"github.com/azure/azure-dev/cli/azd/test/mocks/mockaccount"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockarmresources"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockazcli"
 	"github.com/stretchr/testify/require"
@@ -128,7 +129,9 @@ services:
 	projectConfig, err := ParseProjectConfig(testProj)
 	require.Nil(t, err)
 
-	project, err := projectConfig.GetProject(*mockContext.Context, e, mockContext.Console, azCli, mockContext.CommandRunner)
+	project, err := projectConfig.GetProject(
+		*mockContext.Context, e, mockContext.Console,
+		azCli, mockContext.CommandRunner, &mockaccount.MockAccountManager{})
 	require.Nil(t, err)
 	require.NotNil(t, project)
 

@@ -5,7 +5,7 @@
 ### Features Added
 
 - [[#1236]](https://github.com/Azure/azure-dev/pull/1236) Support for command and service hooks
-- [[#1414](https://github.com/Azure/azure-dev/pull/1414)] Support for installation via Homebrew. Windows Package Manager, and Chocolatey are also now supported.
+- [[#1414]](https://github.com/Azure/azure-dev/pull/1414) Support for installation via Homebrew. Windows Package Manager, and Chocolatey are also now supported.
 - [[#1407]](https://github.com/Azure/azure-dev/pull/1407) Improve UX styling for `azd pipeline config`.
 - [[#1478]](https://github.com/Azure/azure-dev/pull/1478) Support for multiple Azure tenants.
 

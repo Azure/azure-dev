@@ -11,12 +11,7 @@
     <projectUrl>https://github.com/Azure/azure-dev</projectUrl>
     <tags>azd</tags>
     <summary>A developer CLI that accelerates the time it takes for you to get started on Azure.</summary>
-    <description>
-      A developer CLI that accelerates the time it takes for you to get started
-      on Azure. The Azure Developer CLI (azd) provides a set of
-      developer-friendly commands that map to key stages in your workflow -
-      code, build, deploy, monitor, repeat.
-    </description>
+    <description>A developer CLI that accelerates the time it takes for you to get started on Azure. The Azure Developer CLI (azd) provides a set of developer-friendly commands that map to key stages in your workflow - code, build, deploy, monitor, repeat.</description>
     <copyright>© Microsoft Corporation. All rights reserved.</copyright>
     <docsUrl>https://learn.microsoft.com/en-us/azure/developer/azure-developer-cli/get-started</docsUrl>
     <iconUrl>https://azure-dev.azureedge.net/azd/assets/azure-dev.svg</iconUrl>

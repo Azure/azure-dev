@@ -47,7 +47,7 @@ parameters:
   default: eastus2
 
 - name: CleanupHoursDelay
-  displayName: Delay of cleanup for Azure resources for debugging purposes
+  displayName: Delay, in hours, before cleaning up Azure resources. Useful for debugging purposes
   type: number
   default: 0
 

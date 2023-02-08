@@ -111,10 +111,6 @@ This template includes a GitHub Actions pipeline configuration file that will de
 
 Setting up this pipeline requires you to give GitHub permission to deploy to Azure on your behalf, which is done via a Service Principal stored in a GitHub secret named `AZURE_CREDENTIALS`. The `azd pipeline config` command will automatically create a service principal for you. The command also helps to create a private GitHub repository and pushes code to the newly created repo.
 
-Before you call the `azd pipeline config` command, you'll need to install the following:
-
-- [GitHub CLI (2.3+)](https://github.com/cli/cli)
-
 Run the following command to set up a GitHub Action:
 
 ```bash

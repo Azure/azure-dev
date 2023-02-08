@@ -4,6 +4,8 @@
 
 ### Features Added
 
+- [[#1515]](https://github.com/Azure/azure-dev/pull/1515) Remove gh-cli as external dependency for `azd pipeline config`.
+
 ### Breaking Changes
 
 ### Bugs Fixed

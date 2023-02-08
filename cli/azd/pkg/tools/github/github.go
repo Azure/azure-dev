@@ -467,12 +467,6 @@ func extractGhCli(src, dst string) (string, error) {
 	} else if strings.Contains(src, ".tar.gz") {
 		return extractFromTar(src, dst)
 	}
-
-	// exe rights for file
-	// if err := f.Chmod(osutil.PermissionExecutableFile); err != nil {
-	// 	return err
-	// }
-
 	return "nil", fmt.Errorf("Unknown format")
 }
 

@@ -4,18 +4,25 @@
 
 ### Features Added
 
-- [[#1345]](https://github.com/Azure/azure-dev/pull/1345) Add ftpsState as a param to App Service module.
-- [[#1236]](https://github.com/Azure/azure-dev/pull/1236) Extensibility: Command Hooks lib components.
-- [[#1429]](https://github.com/Azure/azure-dev/pull/1429) Extensibility: Azd Hooks middleware.
-- [[#1407]](https://github.com/Azure/azure-dev/pull/1407) Add UX style for `azd pipeline config`.
-- [[#1478]](https://github.com/Azure/azure-dev/pull/1478) Multi tenant support.
+- [[#1236]](https://github.com/Azure/azure-dev/pull/1236) Support for command and service hooks
+- [[#1414](https://github.com/Azure/azure-dev/pull/1414)] Support for installation via Homebrew. Windows Package Manager, and Chocolatey are also now supported.
+- [[#1407]](https://github.com/Azure/azure-dev/pull/1407) Improved UX for `azd pipeline config`.
+- [[#1478]](https://github.com/Azure/azure-dev/pull/1478) Support for multiple Azure tenants.
 
+- [[#1345]](https://github.com/Azure/azure-dev/pull/1345) Core bicep module `appservice.bicep` now supports `ftpsState` as a parameter to configure FTPS upload behavior.
+- [[#1497]](https://github.com/Azure/azure-dev/pull/1497) Core bicep module `appservice.bicep` now supports `healthCheckPath` as a parameter to configure the health-check endpoint.
+- [[#1403]](https://github.com/Azure/azure-dev/pull/1403) Core bicep module `apim-api.bicep` now links Web App or Function App instances. This allows users on the Azure Portal to navigate to the API management resource directly from the Web App or Function App.
+T
 ### Bugs Fixed
 
-- [[#1406]](https://github.com/Azure/azure-dev/pull/1424) MSI Upgrades from pre-MSI versions fail in some cases (reported by @lechnerc77, fixed by @heaths)
-- [[#1418]](https://github.com/Azure/azure-dev/pull/1418) Display PostgreSQL server created in resource.
-- [[#1483]](https://github.com/Azure/azure-dev/pull/1483) Skip virtual environment for deploying python apps.
+- [[#1406]](https://github.com/Azure/azure-dev/pull/1424) On Windows, fix MSI installation not updating `azd` in some cases (reported by @lechnerc77, fixed by @heaths)
+- [[#1418]](https://github.com/Azure/azure-dev/pull/1418) Display `provision` progress for PostgreSQL server resources.
+- [[#1483]](https://github.com/Azure/azure-dev/pull/1483) For Python projects, skip packaging of virtual environment (`.venv` folders)
+- [[#1495]](https://github.com/Azure/azure-dev/pull/1495) `init` now restores file executable permissions and initializes a `git` repository automatically.
+- [[#1470]](https://github.com/Azure/azure-dev/pull/1470) Improve performance of `azd` on Windows for domain-joined users.
+- [[#1503]](https://github.com/Azure/azure-dev/pull/1503) Fix display for Function App types in `provision` progress
 
+Thanks to community members: @pamelafox, @lechnerc77 for their contributions in this release.
 
 ## 0.5.0-beta.3 (2023-01-13)
 

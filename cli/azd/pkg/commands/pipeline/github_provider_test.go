@@ -106,7 +106,7 @@ func Test_gitHub_provider_preConfigure_check(t *testing.T) {
 
 func setupGithubAuthMock(mockContext *mocks.MockContext) {
 	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
-		return strings.Contains(command, "gh auth status")
+		return strings.Contains(command, "auth status")
 	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
 		return exec.NewRunResult(0, "", ""), nil
 	})

@@ -250,10 +250,10 @@ func Test_CLI_Up_Down_ContainerApp(t *testing.T) {
 			_, err = cli.RunCommandWithStdIn(ctx, stdinForTests(envName), "init")
 			require.NoError(t, err)
 
-			_, err = cli.RunCommand(ctx, "infra", "create")
+			_, err = cli.RunCommand(ctx, "infra", "create", "--output", "json")
 			require.NoError(t, err)
 
-			_, err = cli.RunCommand(ctx, "deploy")
+			_, err = cli.RunCommand(ctx, "deploy", "--output", "json")
 			require.NoError(t, err)
 
 			// The sample hosts a small application that just responds with a 200 OK with a body of "Hello, `azd`."
@@ -267,7 +267,7 @@ func Test_CLI_Up_Down_ContainerApp(t *testing.T) {
 			err = probeServiceHealth(t, ctx, url, expectedTestAppResponse)
 			require.NoError(t, err)
 
-			_, err = cli.RunCommand(ctx, "infra", "delete", "--force", "--purge")
+			_, err = cli.RunCommand(ctx, "infra", "delete", "--force", "--purge", "--output", "json")
 			require.NoError(t, err)
 		})
 	}

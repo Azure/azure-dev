@@ -12,7 +12,7 @@ import (
 )
 
 type WarningMessage struct {
-	Description string `json:"Description"`
+	Description string
 	HidePrefix  bool
 }
 
@@ -28,9 +28,12 @@ func (t *WarningMessage) MarshalJSON() ([]byte, error) {
 	// reusing the same envelope from console messages
 	return json.Marshal(
 		contracts.EventEnvelope{
-			Type:      contracts.Warning,
+			Type:      contracts.WarningEventDataType,
 			Timestamp: time.Now(),
-			Data:      t,
+			Data: contracts.WarningEventData{
+				Description: t.Description,
+				HidePrefix:  t.HidePrefix,
+			},
 		},
 	)
 }

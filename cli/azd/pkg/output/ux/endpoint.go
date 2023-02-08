@@ -13,7 +13,7 @@ import (
 )
 
 type Endpoint struct {
-	Endpoint string `json:"Endpoint"`
+	Endpoint string
 }
 
 func (e *Endpoint) ToString(currentIndentation string) string {
@@ -24,9 +24,11 @@ func (e *Endpoint) MarshalJSON() ([]byte, error) {
 	// reusing the same envelope from console messages
 	return json.Marshal(
 		contracts.EventEnvelope{
-			Type:      contracts.Endpoint,
+			Type:      contracts.EndpointEventDataType,
 			Timestamp: time.Now(),
-			Data:      e,
+			Data: contracts.EndpointEventData{
+				Endpoint: e.Endpoint,
+			},
 		},
 	)
 }

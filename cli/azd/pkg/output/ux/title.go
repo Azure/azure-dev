@@ -13,8 +13,8 @@ import (
 )
 
 type MessageTitle struct {
-	Title     string `json:"Title"`
-	TitleNote string `json:"Note"`
+	Title     string
+	TitleNote string
 }
 
 func (t *MessageTitle) ToString(currentIndentation string) string {
@@ -30,9 +30,12 @@ func (t *MessageTitle) MarshalJSON() ([]byte, error) {
 	// reusing the same envelope from console messages
 	return json.Marshal(
 		contracts.EventEnvelope{
-			Type:      contracts.OperationStart,
+			Type:      contracts.OperationStartEventDataType,
 			Timestamp: time.Now(),
-			Data:      t,
+			Data: contracts.OperationStartEventData{
+				Title: t.Title,
+				Note:  t.TitleNote,
+			},
 		},
 	)
 }

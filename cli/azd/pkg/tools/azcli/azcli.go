@@ -50,7 +50,12 @@ type AzCli interface {
 		resourceGroupName string,
 		deploymentName string,
 	) (*armresources.DeploymentExtended, error)
-	GetResource(ctx context.Context, subscriptionId string, resourceId string) (AzCliResourceExtended, error)
+	GetResource(
+		ctx context.Context,
+		subscriptionId string,
+		resourceId string,
+		apiVersion string,
+	) (AzCliResourceExtended, error)
 	GetKeyVault(
 		ctx context.Context,
 		subscriptionId string,

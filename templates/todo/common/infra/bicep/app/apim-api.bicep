@@ -1,6 +1,6 @@
 param name string
 
-@description('Resouce name to uniquely dentify this API within the API Management service instance')
+@description('Resource name to uniquely identify this API within the API Management service instance')
 @minLength(1)
 param apiName string
 
@@ -22,6 +22,9 @@ param webFrontendUrl string
 
 @description('Absolute URL of the backend service implementing this API.')
 param apiBackendUrl string
+
+@description('Resource name for backend Web App or Function App')
+param apiAppName string = ''
 
 var apiPolicyContent = replace(loadTextContent('../../../../../common/infra/shared/gateway/apim/apim-api-policy.xml'), '{origin}', webFrontendUrl)
 
@@ -93,6 +96,20 @@ resource apiDiagnostics 'Microsoft.ApiManagement/service/apis/diagnostics@2021-1
 
 resource apimService 'Microsoft.ApiManagement/service@2021-08-01' existing = {
   name: name
+}
+
+// Necessary due to https://github.com/Azure/bicep/issues/9594
+// placeholderName is never deployed, it is merely used to make the child name validation pass
+var appNameForBicep = !empty(apiAppName) ? apiAppName : 'placeholderName'
+
+resource apiAppProperties 'Microsoft.Web/sites/config@2022-03-01' = if (!empty(apiAppName)) {
+  name: '${appNameForBicep}/web'
+  kind: 'string'
+  properties: {
+      apiManagementConfig: {
+        id: '${apimService.id}/apis/${apiName}'
+      }
+  }
 }
 
 resource apimLogger 'Microsoft.ApiManagement/service/loggers@2021-12-01-preview' existing = {

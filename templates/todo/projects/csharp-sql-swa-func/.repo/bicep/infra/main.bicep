@@ -181,6 +181,7 @@ module apimApi '../../../../../common/infra/bicep/app/apim-api.bicep' = if (useA
     apiPath: 'todo'
     webFrontendUrl: web.outputs.SERVICE_WEB_URI
     apiBackendUrl: api.outputs.SERVICE_API_URI
+    apiAppName: api.outputs.SERVICE_API_NAME
   }
 }
 

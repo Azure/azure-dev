@@ -152,6 +152,8 @@ func (m *SubscriptionsManager) ListSubscriptions(ctx context.Context) ([]Subscri
 		return nil, err
 	}
 
+	// If account is a service principal, we can speed up listing by skipping subscription listing across tenants since a
+	// service principal is tied to a single tenant.
 	if principalTenantId != nil {
 		subscriptions, err := m.service.ListSubscriptions(ctx, *principalTenantId)
 		if err != nil {

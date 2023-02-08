@@ -23,8 +23,9 @@ steps:
 - template: /eng/pipelines/templates/steps/set-git-credentials.yml
 
 - pwsh: |
+    # Remove 'Azure-Samples/'
     $templateName = '$(TemplateName)'.Substring(14)
-    $scenario = $env:TEST_SCENARIO
+    $scenario = "$env:TEST_SCENARIO"
     $envPrefixName = "azd-template-test"
     if($scenario -ne '') {
       $envPrefixName += "-$scenario"
@@ -35,15 +36,17 @@ steps:
     Write-Host "##vso[task.setvariable variable=EnvPrefixName]$envPrefixName"
 
     $SynchronousCleanup = 'true'
-    if ('$(Build.Reason)' -eq 'PullRequest') {
+    if ('$(Build.Reason)' -eq 'PullRequest' || '$(CleanupHoursDelay)' -ne '0') {
       $SynchronousCleanup = 'false'
     }
+    Write-Host "SynchronousCleanup: $SynchronousCleanup"
     Write-Host "##vso[task.setvariable variable=SynchronousCleanup]$SynchronousCleanup"
 
     $CleanupImmediate = 'true'
-    if ($(CleanupHoursDelay) -ne '0') {
+    if ('$(CleanupHoursDelay)' -ne '0') {
       $CleanupImmediate = 'false'
     }
+    Write-Host "CleanupImmediate: $CleanupImmediate"
     Write-Host "##vso[task.setvariable variable=CleanupImmediate]$CleanupImmediate"
   displayName: Set test run parameters
 

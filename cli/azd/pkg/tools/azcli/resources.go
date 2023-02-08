@@ -8,13 +8,13 @@ import (
 )
 
 func (cli *azCli) GetResource(
-	ctx context.Context, subscriptionId string, resourceId string) (AzCliResourceExtended, error) {
+	ctx context.Context, subscriptionId string, resourceId string, apiVersion string) (AzCliResourceExtended, error) {
 	client, err := cli.createResourcesClient(ctx, subscriptionId)
 	if err != nil {
 		return AzCliResourceExtended{}, err
 	}
 
-	res, err := client.GetByID(ctx, resourceId, "", nil)
+	res, err := client.GetByID(ctx, resourceId, apiVersion, nil)
 	if err != nil {
 		return AzCliResourceExtended{}, fmt.Errorf("getting resource by id: %w", err)
 	}

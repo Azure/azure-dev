@@ -39,8 +39,7 @@ func (t *multiTenantCredentialProvider) GetTokenCredential(
 	}
 
 	credential, err := t.auth.CredentialForCurrentUser(ctx, &CredentialForCurrentUserOptions{
-		TenantID:             tenantId,
-		PreferFallbackTenant: true,
+		TenantID: tenantId,
 	})
 
 	if err != nil {

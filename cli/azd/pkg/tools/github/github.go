@@ -462,9 +462,9 @@ func extractFromTar(src, dst string) (string, error) {
 
 // extractGhCli gets the Github cli from either a zip or a tar.gz
 func extractGhCli(src, dst string) (string, error) {
-	if strings.Contains(src, ".zip") {
+	if strings.HasSuffix(src, ".zip") {
 		return extractFromZip(src, dst)
-	} else if strings.Contains(src, ".tar.gz") {
+	} else if strings.HasSuffix(src, ".tar.gz") {
 		return extractFromTar(src, dst)
 	}
 	return "nil", fmt.Errorf("Unknown format")
@@ -542,13 +542,18 @@ func downloadGh(
 		return err
 	}
 
-	// unzip downloaded file
-	ghCliTemporalPath, err := extractImplementation(compressedRelease.Name(), tmpPath)
-	if err != nil {
+	// change file name from temporal name to the final name, as the download has completed
+	compressedFileName := filepath.Join(tmpPath, releaseName)
+	if err := os.Rename(compressedRelease.Name(), compressedFileName); err != nil {
 		return err
 	}
+	defer func() {
+		_ = os.Remove(compressedFileName)
+	}()
 
-	if err := os.Rename(ghCliTemporalPath, path); err != nil {
+	// unzip downloaded file
+	_, err = extractImplementation(compressedFileName, tmpPath)
+	if err != nil {
 		return err
 	}
 

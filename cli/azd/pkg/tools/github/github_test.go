@@ -39,6 +39,8 @@ func TestNewGitHubCli(t *testing.T) {
 	))
 
 	mockExtract := func(src, dst string) (string, error) {
+		exp, _ := azdGithubCliPath()
+		_ = os.Rename(src, exp)
 		return src, nil
 	}
 

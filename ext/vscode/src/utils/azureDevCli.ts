@@ -1,6 +1,7 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
+import * as path from 'path';
 import * as vscode from 'vscode';
 import { CommonOptions } from "child_process";
 import { CommandLineBuilder } from "./commandLineBuilder";
@@ -9,6 +10,7 @@ import { execAsync } from './process';
 import { AsyncLazy } from './lazy';
 import { localize } from "../localize";
 import { AzExtErrorButton, IActionContext } from '@microsoft/vscode-azext-utils';
+import { isWindows } from './osUtils';
 
 // Twenty seconds: generous, but not infinite
 export const DefaultAzCliInvocationTimeout: number = 20 * 1000;
@@ -17,7 +19,7 @@ const AzdVersionCacheLifetime = 15 * 60 * 1000; // 15 minutes
 
 enum AzdVersionCheckFailure {
     NotInstalled = 1,
-    CannotDetermineVersion = 2 
+    CannotDetermineVersion = 2
 }
 let userWarnedAzdMissing: boolean = false;
 const azdVersionChecker = new AsyncLazy<string | AzdVersionCheckFailure>(getAzdVersion, AzdVersionCacheLifetime);
@@ -58,6 +60,10 @@ export function scheduleAzdInstalledCheck(): void {
     }, fiveSeconds);
 }
 
+export function resetAzdInstalledCheck(): void {
+    azdVersionChecker.clear();
+}
+
 function createCli(): AzureDevCli {
     const invocation = getAzDevInvocation();
     const builder = CommandLineBuilder.create(invocation[0], ...invocation.slice(1));
@@ -65,20 +71,35 @@ function createCli(): AzureDevCli {
         // eslint-disable-next-line @typescript-eslint/naming-convention
         'AZURE_DEV_USER_AGENT': ext.userAgent
     };
+
     if (!vscode.env.isTelemetryEnabled) {
         azDevCliEnv['AZURE_DEV_COLLECT_TELEMETRY'] = "no";
     }
-    const combinedEnv = { 
+
+    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+    let modifiedPath: string = process.env.PATH!;
+
+    // On Windows, if we don't see `Azure Dev CLI` in PATH, we'll pack it to avoid requiring a restart of VS Code
+    // if AZD is installed after the session starts
+    // This isn't necessary on Unix because `/usr/local/bin` is always in PATH
+    if (isWindows() && !process.env.AZURE_DEV_CLI_PATH && !/Azure Dev CLI/i.test(modifiedPath)) {
+        // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+        const defaultAzdInstallLocation = path.join(process.env.LOCALAPPDATA!, 'Programs', 'Azure Dev CLI');
+        modifiedPath += `;${defaultAzdInstallLocation}`;
+    }
+
+    const combinedEnv = {
         ...process.env,
-        ...azDevCliEnv
+        ...azDevCliEnv,
+        PATH: modifiedPath,
     };
 
     return {
         commandBuilder: builder,
         env: normalize(combinedEnv),
         spawnOptions: (cwd?: string) => {
-            return { 
-                timeout: DefaultAzCliInvocationTimeout, 
+            return {
+                timeout: DefaultAzCliInvocationTimeout,
                 cwd: cwd,
                 env: combinedEnv,
                 windowsHide: true
@@ -89,7 +110,7 @@ function createCli(): AzureDevCli {
 
 function getAzDevInvocation(): string[] {
     if (process.env.AZURE_DEV_CLI_PATH) {
-        return [process.env.AZURE_DEV_CLI_PATH]; 
+        return [process.env.AZURE_DEV_CLI_PATH];
     } else {
         return ['azd'];
     }

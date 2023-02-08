@@ -6,7 +6,7 @@
 
 - [[#1236]](https://github.com/Azure/azure-dev/pull/1236) Support for command and service hooks
 - [[#1414](https://github.com/Azure/azure-dev/pull/1414)] Support for installation via Homebrew. Windows Package Manager, and Chocolatey are also now supported.
-- [[#1407]](https://github.com/Azure/azure-dev/pull/1407) Improved UX for `azd pipeline config`.
+- [[#1407]](https://github.com/Azure/azure-dev/pull/1407) Improve UX styling for `azd pipeline config`.
 - [[#1478]](https://github.com/Azure/azure-dev/pull/1478) Support for multiple Azure tenants.
 
 - [[#1345]](https://github.com/Azure/azure-dev/pull/1345) Core bicep module `appservice.bicep` now supports `ftpsState` as a parameter to configure FTPS upload behavior.

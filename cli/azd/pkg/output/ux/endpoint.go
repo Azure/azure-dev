@@ -4,7 +4,6 @@
 package ux
 
 import (
-	"encoding/json"
 	"fmt"
 	"time"
 
@@ -20,13 +19,11 @@ func (e *Endpoint) ToString(currentIndentation string) string {
 	return fmt.Sprintf("%s- Endpoint: %s", currentIndentation, output.WithLinkFormat(e.Endpoint))
 }
 
-func (e *Endpoint) MarshalJSON() ([]byte, error) {
+func (e *Endpoint) Envelope() contracts.EventEnvelope {
 	// reusing the same envelope from console messages
-	return json.Marshal(
-		contracts.EventEnvelope{
-			Type:      contracts.Endpoint,
-			Timestamp: time.Now(),
-			Data:      e,
-		},
-	)
+	return contracts.EventEnvelope{
+		Type:      contracts.Endpoint,
+		Timestamp: time.Now(),
+		Data:      e,
+	}
 }

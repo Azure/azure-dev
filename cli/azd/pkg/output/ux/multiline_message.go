@@ -4,9 +4,9 @@
 package ux
 
 import (
-	"encoding/json"
 	"strings"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/contracts"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 )
 
@@ -24,7 +24,7 @@ func (mm *MultilineMessage) ToString(currentIndentation string) string {
 	return strings.Join(updatedLines, "\n")
 }
 
-func (mm *MultilineMessage) MarshalJSON() ([]byte, error) {
+func (mm *MultilineMessage) Envelope() contracts.EventEnvelope {
 	// reusing the same envelope from console messages
-	return json.Marshal(output.EventForMessage(strings.Join(mm.Lines, ",")))
+	return output.EventForMessage(strings.Join(mm.Lines, ","))
 }

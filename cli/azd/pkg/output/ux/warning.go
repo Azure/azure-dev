@@ -4,7 +4,6 @@
 package ux
 
 import (
-	"encoding/json"
 	"time"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/contracts"
@@ -24,13 +23,11 @@ func (t *WarningMessage) ToString(currentIndentation string) string {
 	return output.WithWarningFormat("%s%s%s", currentIndentation, prefix, t.Description)
 }
 
-func (t *WarningMessage) MarshalJSON() ([]byte, error) {
+func (t *WarningMessage) Envelope() contracts.EventEnvelope {
 	// reusing the same envelope from console messages
-	return json.Marshal(
-		contracts.EventEnvelope{
-			Type:      contracts.Warning,
-			Timestamp: time.Now(),
-			Data:      t,
-		},
-	)
+	return contracts.EventEnvelope{
+		Type:      contracts.Warning,
+		Timestamp: time.Now(),
+		Data:      t,
+	}
 }

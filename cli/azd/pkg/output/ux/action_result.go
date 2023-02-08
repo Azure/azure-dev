@@ -4,9 +4,9 @@
 package ux
 
 import (
-	"encoding/json"
 	"fmt"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/contracts"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 )
 
@@ -29,9 +29,9 @@ func (ar *ActionResult) ToString(currentIndentation string) (result string) {
 	return result
 }
 
-func (ar *ActionResult) MarshalJSON() ([]byte, error) {
+func (ar *ActionResult) Envelope() contracts.EventEnvelope {
 	if ar.Err != nil {
-		return json.Marshal(output.EventForMessage(ar.Err.Error()))
+		return output.EventForMessage(ar.Err.Error())
 	}
 	result := ""
 	if ar.SuccessMessage != "" {
@@ -40,5 +40,5 @@ func (ar *ActionResult) MarshalJSON() ([]byte, error) {
 	if ar.FollowUp != "" {
 		result += fmt.Sprintf(". FOLLOW UP: %s", ar.FollowUp)
 	}
-	return json.Marshal(output.EventForMessage(result))
+	return output.EventForMessage(result)
 }

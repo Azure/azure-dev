@@ -4,9 +4,9 @@
 package ux
 
 import (
-	"encoding/json"
 	"fmt"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/contracts"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 )
 
@@ -21,8 +21,7 @@ func (d *DoneMessage) ToString(currentIndentation string) string {
 	return fmt.Sprintf("%s%s %s", currentIndentation, donePrefix, d.Message)
 }
 
-func (d *DoneMessage) MarshalJSON() ([]byte, error) {
+func (d *DoneMessage) Envelope() contracts.EventEnvelope {
 	// reusing the same envelope from console messages
-	return json.Marshal(output.EventForMessage(
-		fmt.Sprintf("%s %s", donePrefix, d.Message)))
+	return output.EventForMessage(fmt.Sprintf("%s %s", donePrefix, d.Message))
 }

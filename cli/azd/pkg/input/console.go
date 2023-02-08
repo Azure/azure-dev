@@ -119,7 +119,8 @@ func (c *AskerConsole) Message(ctx context.Context, message string) {
 		// these objects be written on a single line.
 		jsonMessage, err := json.Marshal(output.EventForMessage(message))
 		if err != nil {
-			panic(fmt.Sprintf("Message: unexpected error during marshaling for a valid object: %v", err))
+			log.Printf("failed to marshal message into JSON output: %v\n", err)
+			return
 		}
 		fmt.Fprintln(c.writer, string(jsonMessage))
 	} else if c.formatter == nil || c.formatter.Kind() == output.NoneFormat {
@@ -133,8 +134,13 @@ func (c *AskerConsole) MessageUxItem(ctx context.Context, item ux.UxItem) {
 	if c.formatter != nil && c.formatter.Kind() == output.JsonFormat {
 		// no need to check the spinner for json format, as the spinner won't start when using json format
 		// instead, there would be a message about starting spinner
-		json, _ := json.Marshal(item)
-		fmt.Fprintln(c.writer, string(json))
+		envelope := item.Envelope()
+		text, err := json.Marshal(envelope)
+		if err != nil {
+			log.Printf("failed to marshal event into JSON output: %v\n", err)
+			return
+		}
+		fmt.Fprintln(c.writer, string(text))
 		return
 	}
 

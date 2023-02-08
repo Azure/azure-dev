@@ -4,9 +4,9 @@
 package ux
 
 import (
-	"encoding/json"
 	"fmt"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/contracts"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 )
 
@@ -18,8 +18,7 @@ func (cr *CreatedRepoSecret) ToString(currentIndentation string) string {
 	return fmt.Sprintf("%s%s Setting %s repo secret", currentIndentation, donePrefix, cr.Name)
 }
 
-func (cr *CreatedRepoSecret) MarshalJSON() ([]byte, error) {
+func (cr *CreatedRepoSecret) Envelope() contracts.EventEnvelope {
 	// reusing the same envelope from console messages
-	return json.Marshal(output.EventForMessage(
-		fmt.Sprintf("%s Setting %s repo secret", donePrefix, cr.Name)))
+	return output.EventForMessage(fmt.Sprintf("%s Setting %s repo secret", donePrefix, cr.Name))
 }

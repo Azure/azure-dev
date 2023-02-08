@@ -19,6 +19,7 @@
     </description>
     <copyright>© Microsoft Corporation. All rights reserved.</copyright>
     <docsUrl>https://learn.microsoft.com/en-us/azure/developer/azure-developer-cli/get-started</docsUrl>
+    <iconUrl>https://azure-dev.azureedge.net/azd/assets/azure-dev.svg</iconUrl>
     <bugTrackerUrl>https://github.com/Azure/azure-dev/issues</bugTrackerUrl>
     <licenseUrl>https://github.com/Azure/azure-dev/blob/main/LICENSE</licenseUrl>
     <projectSourceUrl>https://github.com/Azure/azure-dev/tree/$TAG$</projectSourceUrl>

@@ -48,7 +48,7 @@ steps:
       filePath: eng/scripts/New-ChocoPackage.ps1
       arguments: >-
         -Version $(MSI_VERSION)
-        -MsiSha256
+        -Tag "azure-dev-cli_${{ parameters.CliVersion }}"
 
   - publish: cli/installer/choco/azd.$(MSI_VERSION).nupkg
     artifact: ChocoPackage

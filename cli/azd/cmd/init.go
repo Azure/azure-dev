@@ -9,14 +9,13 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"path/filepath"
 	"sort"
 	"strings"
 
 	"github.com/MakeNowJust/heredoc/v2"
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
-	"github.com/azure/azure-dev/cli/azd/internal/apphint"
+	"github.com/azure/azure-dev/cli/azd/internal/appdetect"
 	"github.com/azure/azure-dev/cli/azd/internal/repository"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
@@ -193,11 +192,7 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 			}
 		}
 
-		appHint, err := apphint.Analyze(azdCtx.ProjectDirectory())
-		if err != nil || appHint == nil {
-			appHint, err = apphint.Analyze(filepath.Join(azdCtx.ProjectDirectory(), "src"))
-		}
-
+		appHint, err := appdetect.Detect(azdCtx.ProjectDirectory())
 		useOptions := repository.InfraUseOptions{}
 		if err == nil && appHint != nil {
 			i.flags.template = templates.Template{
@@ -207,7 +202,7 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 			// Pick one non-web language
 			for _, project := range appHint.Projects {
 				isWeb := true
-				if project.WebFrameworks == nil || len(project.WebFrameworks) == 0 {
+				if project.Frameworks == nil || len(project.Frameworks) == 0 {
 					useOptions.Language = project.Language
 					isWeb = false
 				}

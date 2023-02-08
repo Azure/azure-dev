@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"log"
 	"sort"
+	"strings"
 
+	"github.com/azure/azure-dev/cli/azd/internal/appdetect"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/resources"
 	"golang.org/x/exp/maps"
@@ -47,6 +49,39 @@ func (tm *TemplateManager) GetTemplate(templateName string) (Template, error) {
 
 func NewTemplateManager() *TemplateManager {
 	return &TemplateManager{}
+}
+
+func (tm *TemplateManager) MatchTemplate(app appdetect.Application) Template {
+	hasOneWebApp := false
+	var webLanguage string
+	apiLanguages := []string{}
+	for _, proj := range app.Projects {
+		if proj.Frameworks != nil && len(proj.Frameworks) > 0 {
+			for _, framework := range proj.Frameworks {
+				if framework.IsWebUIFramework() {
+					hasOneWebApp = true
+					webLanguage = framework.Display()
+				}
+			}
+		} else {
+			apiLanguages = append(apiLanguages, proj.Language)
+		}
+	}
+
+	template := Template{}
+
+	if len(app.Projects) == 1 && hasOneWebApp {
+		template.RepositoryPath = "web"
+		template.Name = fmt.Sprintf("Web Application (%s)", webLanguage)
+	} else if hasOneWebApp {
+		template.RepositoryPath = "api-web"
+		template.Name = fmt.Sprintf("Web Application (%s) with API (%s)", webLanguage, strings.Join(apiLanguages, ", "))
+	} else {
+		template.RepositoryPath = "api"
+		template.Name = fmt.Sprintf("Web API (%s)", strings.Join(apiLanguages, ", "))
+	}
+
+	return template
 }
 
 // PromptTemplate ask the user to select a template.

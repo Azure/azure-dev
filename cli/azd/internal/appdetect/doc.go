@@ -3,7 +3,7 @@
 
 // Package appdetect detects different projects within an application directory.
 //
-// A source directory (typically ./src) can contain multiple different projects of different languages or frameworks.
+// Projects are first looked under ./src. If no projects are found, projects
 // Languages and frameworks are determined individually based on file directory structure, file extension,
 // and a list of languages and frameworks are collected.
 //

@@ -9,6 +9,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"regexp"
 )
 
 type ApplicationType string
@@ -88,84 +89,119 @@ func (a *Application) String() string {
 	return a.DisplayName
 }
 
+type DetectFunc func(path string, entries []fs.DirEntry) (*Project, error)
+
 type ProjectDetector interface {
 	DisplayName() string
 	DetectProject(path string, entries []fs.DirEntry) (*Project, error)
 }
 
-func Detect(root string) (*Application, error) {
-	sourceDir := filepath.Join(root, "src")
-	if ent, err := os.Stat(sourceDir); err == nil && ent.IsDir() {
-		res, err := detect(sourceDir)
-		if err != nil {
-			return nil, err
-		}
+type DetectOptions struct {
+	// Include patterns for directories scanned. If unset, all directories are scanned by default.
+	IncludePatterns []string
+	// Exclude pattern for directories scanned.
+	ExcludePatterns []string
 
-		if res != nil {
-			return res, nil
-		}
-	}
-
-	return detect(root)
+	// Project types to be detected. If unset, all known project types are included.
+	IncludeProjectTypes []string
+	// Project types to be excluded from detection.
+	ExcludeProjectTypes []string
 }
 
-func detect(root string) (*Application, error) {
-	detectors := []ProjectDetector{
-		// Order here determines precedence when two projects are in the same directory.
-		// This case is very unlikely, but reordering could help to break the tie.
-		&PythonDetector{},
-		&NodeJsDetector{},
-		&JavaDetector{},
-		&DotNetDetector{},
+var detectors = []ProjectDetector{
+	// Order here determines precedence when two projects are in the same directory.
+	// This is unlikely to occur in practice, but reordering could help to break the tie in these cases.
+	&PythonDetector{},
+	&NodeJsDetector{},
+	&JavaDetector{},
+	&DotNetDetector{},
+}
+
+func Detect(root string, options DetectOptions) (*Application, error) {
+	detectFunc := func(path string, entries []fs.DirEntry) (*Project, error) {
+		return detectAny(detectors, path, entries)
 	}
 
 	app := Application{}
 
-	detectDirectory := func(path string, entries []fs.DirEntry) error {
-		isTestDir, err := filepath.Match("tests", path)
+	sourceDir := filepath.Join(root, "src")
+	if ent, err := os.Stat(sourceDir); err == nil && ent.IsDir() {
+		projects, err := detectUnder(sourceDir, detectFunc, options)
 		if err != nil {
-			return fmt.Errorf("determining test directory: %w", err)
+			return nil, err
 		}
 
-		isDotDir, err := filepath.Match(".*", path)
+		if projects != nil {
+			app.Projects = append(app.Projects, projects...)
+		}
+	}
+
+	if len(app.Projects) == 0 {
+		options.ExcludePatterns = append(options.ExcludePatterns, "*/src/")
+		detectUnder(root, detectFunc, options)
+	}
+
+	return &app, nil
+}
+
+// Detects if a path belongs to any projects.
+func detectAny(detectors []ProjectDetector, path string, entries []fs.DirEntry) (*Project, error) {
+	for _, detector := range detectors {
+		project, err := detector.DetectProject(path, entries)
 		if err != nil {
-			return fmt.Errorf("determining hidden directory: %w", err)
+			return nil, fmt.Errorf("detecting %s project: %w", detector.DisplayName(), err)
 		}
 
-		if isTestDir || isDotDir {
+		if project != nil {
+			// docker is an optional property of a project, and thus is different than other detectors
+			docker, err := DetectDockerProject(path, entries)
+			if err != nil {
+				return nil, fmt.Errorf("detecting docker project: %w", err)
+			}
+			project.Docker = docker
+
+			return project, nil
+		}
+	}
+
+	return nil, nil
+}
+
+func detectUnder(root string, detectFn DetectFunc, options DetectOptions) ([]Project, error) {
+	projects := []Project{}
+	walkFunc := func(path string, entries []fs.DirEntry) error {
+		if shouldSkip(filepath.Base(path)) {
 			return filepath.SkipDir
 		}
 
-		for _, detector := range detectors {
-			project, err := detector.DetectProject(path, entries)
-			if err != nil {
-				return fmt.Errorf("detecting %s project: %w", detector.DisplayName(), err)
-			}
+		project, err := detectFn(path, entries)
+		if err != nil {
+			return err
+		}
 
-			if project != nil {
-				// docker is an optional property of a project, and thus is different than other detectors
-				docker, err := DetectDockerProject(path, entries)
-				if err != nil {
-					return fmt.Errorf("detecting docker project: %w", err)
-				}
-				project.Docker = docker
-
-				app.Projects = append(app.Projects, *project)
-				// Once a project is detected, we do not consider other projects to be a possibility.
-				// We also do not consider other inner-projects under the directory, thus we return SkipDir.
-				return filepath.SkipDir
-			}
+		if project != nil {
+			// Once a project is detected, we skip possible inner projects.
+			projects = append(projects, *project)
+			return filepath.SkipDir
 		}
 
 		return nil
 	}
 
-	err := WalkDirectories(root, detectDirectory)
+	err := WalkDirectories(root, walkFunc)
 	if err != nil {
 		return nil, fmt.Errorf("scanning directories: %w", err)
 	}
 
-	return &app, nil
+	return projects, nil
+}
+
+// node_modules, bin, obj,
+// anything that is a gitignore candidate
+var shouldSkipRegex = regexp.MustCompile(`tests|^\..+`)
+
+func shouldSkip(dirName string) bool {
+	return shouldSkipRegex.MatchString(dirName)
 }
 
 // WalkDirFunc is the type of function that is called whenever a directory is visited by WalkDirectories.

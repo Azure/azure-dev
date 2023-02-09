@@ -22,6 +22,7 @@ enum AzdVersionCheckFailure {
     CannotDetermineVersion = 2
 }
 let userWarnedAzdMissing: boolean = false;
+let azdInstallAttempted: boolean = false;
 const azdVersionChecker = new AsyncLazy<string | AzdVersionCheckFailure>(getAzdVersion, AzdVersionCacheLifetime);
 
 export type Environment = { [key: string]: string };
@@ -52,7 +53,7 @@ export function scheduleAzdInstalledCheck(): void {
     setTimeout(async () => {
         const ver = await azdVersionChecker.getValue();
 
-        if (ver === AzdVersionCheckFailure.NotInstalled && !userWarnedAzdMissing) {
+        if (ver === AzdVersionCheckFailure.NotInstalled && !userWarnedAzdMissing && !azdInstallAttempted) {
             userWarnedAzdMissing = true;
             const response = await vscode.window.showWarningMessage(azdNotInstalledMsg(), {}, ...azdNotInstalledUserChoices());
             await response?.callback();
@@ -60,7 +61,10 @@ export function scheduleAzdInstalledCheck(): void {
     }, fiveSeconds);
 }
 
-export function resetAzdInstalledCheck(): void {
+export function onAzdInstallAttempted(): void {
+    azdInstallAttempted = true;
+
+    // Clear the install state so we'll check again at the next command
     azdVersionChecker.clear();
 }
 
@@ -79,10 +83,13 @@ function createCli(): AzureDevCli {
     // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
     let modifiedPath: string = process.env.PATH!;
 
-    // On Windows, if we don't see `Azure Dev CLI` in PATH, we'll pack it to avoid requiring a restart of VS Code
-    // if AZD is installed after the session starts
-    // This isn't necessary on Unix because `/usr/local/bin` is always in PATH
-    if (isWindows() && !process.env.AZURE_DEV_CLI_PATH && !/Azure Dev CLI/i.test(modifiedPath)) {
+    // On Unix, the CLI is installed to /usr/bin/local, which is always going to be in the PATH
+    // On Windows, the install location varies but is generally at %LOCALAPPDATA%\Programs\Azure Dev CLI, especially
+    // when installed the default way, which the extension does.
+    // To avoid needing to restart VSCode to get the updated PATH, we'll temporarily add the default install location,
+    // as long as it's Windows, AZURE_DEV_CLI_PATH is unset, "Azure Dev CLI" isn't already in the PATH (somewhere else?),
+    // and the user did try to install within this session
+    if (isWindows() && !process.env.AZURE_DEV_CLI_PATH && !/Azure Dev CLI/i.test(modifiedPath) && azdInstallAttempted) {
         // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
         const defaultAzdInstallLocation = path.join(process.env.LOCALAPPDATA!, 'Programs', 'Azure Dev CLI');
         modifiedPath += `;${defaultAzdInstallLocation}`;

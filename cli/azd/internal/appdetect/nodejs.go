@@ -18,8 +18,8 @@ type PackagesJson struct {
 type NodeJsDetector struct {
 }
 
-func (nd *NodeJsDetector) DisplayName() string {
-	return "nodejs"
+func (nd *NodeJsDetector) Type() ProjectType {
+	return NodeJs
 }
 
 func (nd *NodeJsDetector) DetectProject(path string, entries []fs.DirEntry) (*Project, error) {

@@ -9,8 +9,8 @@ import (
 type DotNetDetector struct {
 }
 
-func (dd *DotNetDetector) DisplayName() string {
-	return "dotnet"
+func (dd *DotNetDetector) Type() ProjectType {
+	return DotNet
 }
 
 func (dd *DotNetDetector) DetectProject(path string, entries []fs.DirEntry) (*Project, error) {

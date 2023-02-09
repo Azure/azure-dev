@@ -9,7 +9,8 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"regexp"
+
+	"github.com/bmatcuk/doublestar/v4"
 )
 
 type ApplicationType string
@@ -23,13 +24,13 @@ const (
 	ApiWeb ApplicationType = "api-web"
 )
 
-type Language string
+type ProjectType string
 
 const (
-	DotNet Language = "dotnet"
-	Java   Language = "java"
-	NodeJs Language = "nodejs"
-	Python Language = "python"
+	DotNet ProjectType = "dotnet"
+	Java   ProjectType = "java"
+	NodeJs ProjectType = "nodejs"
+	Python ProjectType = "python"
 )
 
 type Framework string
@@ -92,23 +93,11 @@ func (a *Application) String() string {
 type DetectFunc func(path string, entries []fs.DirEntry) (*Project, error)
 
 type ProjectDetector interface {
-	DisplayName() string
+	Type() ProjectType
 	DetectProject(path string, entries []fs.DirEntry) (*Project, error)
 }
 
-type DetectOptions struct {
-	// Include patterns for directories scanned. If unset, all directories are scanned by default.
-	IncludePatterns []string
-	// Exclude pattern for directories scanned.
-	ExcludePatterns []string
-
-	// Project types to be detected. If unset, all known project types are included.
-	IncludeProjectTypes []string
-	// Project types to be excluded from detection.
-	ExcludeProjectTypes []string
-}
-
-var detectors = []ProjectDetector{
+var allDetectors = []ProjectDetector{
 	// Order here determines precedence when two projects are in the same directory.
 	// This is unlikely to occur in practice, but reordering could help to break the tie in these cases.
 	&PythonDetector{},
@@ -117,16 +106,14 @@ var detectors = []ProjectDetector{
 	&DotNetDetector{},
 }
 
-func Detect(root string, options DetectOptions) (*Application, error) {
-	detectFunc := func(path string, entries []fs.DirEntry) (*Project, error) {
-		return detectAny(detectors, path, entries)
-	}
-
+// Detects projects located under an application repository.
+func Detect(repoRoot string, options ...DetectOption) (*Application, error) {
+	config := newConfig(options...)
 	app := Application{}
 
-	sourceDir := filepath.Join(root, "src")
+	sourceDir := filepath.Join(repoRoot, "src")
 	if ent, err := os.Stat(sourceDir); err == nil && ent.IsDir() {
-		projects, err := detectUnder(sourceDir, detectFunc, options)
+		projects, err := detectUnder(sourceDir, config)
 		if err != nil {
 			return nil, err
 		}
@@ -137,44 +124,64 @@ func Detect(root string, options DetectOptions) (*Application, error) {
 	}
 
 	if len(app.Projects) == 0 {
-		options.ExcludePatterns = append(options.ExcludePatterns, "*/src/")
-		detectUnder(root, detectFunc, options)
+		config.ExcludePatterns = append(config.ExcludePatterns, "*/src/")
+		projects, err := detectUnder(repoRoot, config)
+		if err != nil {
+			return nil, err
+		}
+
+		if projects != nil {
+			app.Projects = append(app.Projects, projects...)
+		}
 	}
 
 	return &app, nil
 }
 
-// Detects if a path belongs to any projects.
-func detectAny(detectors []ProjectDetector, path string, entries []fs.DirEntry) (*Project, error) {
-	for _, detector := range detectors {
-		project, err := detector.DetectProject(path, entries)
-		if err != nil {
-			return nil, fmt.Errorf("detecting %s project: %w", detector.DisplayName(), err)
-		}
-
-		if project != nil {
-			// docker is an optional property of a project, and thus is different than other detectors
-			docker, err := DetectDockerProject(path, entries)
-			if err != nil {
-				return nil, fmt.Errorf("detecting docker project: %w", err)
-			}
-			project.Docker = docker
-
-			return project, nil
-		}
-	}
-
-	return nil, nil
+// DetectUnder detects projects located under a directory.
+func DetectUnder(root string, options ...DetectOption) ([]Project, error) {
+	config := newConfig(options...)
+	return detectUnder(root, config)
 }
 
-func detectUnder(root string, detectFn DetectFunc, options DetectOptions) ([]Project, error) {
+// DetectDirectory detects the project located in a directory.
+func DetectDirectory(directory string, options ...DetectDirectoryOption) (*Project, error) {
+	config := newDirectoryConfig(options...)
+	entries, err := os.ReadDir(directory)
+	if err != nil {
+		return nil, fmt.Errorf("reading directory: %w", err)
+	}
+
+	return detectAny(config.detectors, directory, entries)
+}
+
+func detectUnder(root string, config detectConfig) ([]Project, error) {
 	projects := []Project{}
+
 	walkFunc := func(path string, entries []fs.DirEntry) error {
-		if shouldSkip(filepath.Base(path)) {
-			return filepath.SkipDir
+		for _, p := range config.IncludePatterns {
+			match, err := doublestar.Match(path, p)
+			if err != nil {
+				return err
+			}
+
+			if !match {
+				return filepath.SkipDir
+			}
 		}
 
-		project, err := detectFn(path, entries)
+		for _, p := range config.ExcludePatterns {
+			match, err := doublestar.Match(path, p)
+			if err != nil {
+				return err
+			}
+
+			if match {
+				return filepath.SkipDir
+			}
+		}
+
+		project, err := detectAny(config.detectors, path, entries)
 		if err != nil {
 			return err
 		}
@@ -196,12 +203,27 @@ func detectUnder(root string, detectFn DetectFunc, options DetectOptions) ([]Pro
 	return projects, nil
 }
 
-// node_modules, bin, obj,
-// anything that is a gitignore candidate
-var shouldSkipRegex = regexp.MustCompile(`tests|^\..+`)
+// Detects if a directory belongs to any projects.
+func detectAny(detectors []ProjectDetector, path string, entries []fs.DirEntry) (*Project, error) {
+	for _, detector := range detectors {
+		project, err := detector.DetectProject(path, entries)
+		if err != nil {
+			return nil, fmt.Errorf("detecting %s project: %w", string(detector.Type()), err)
+		}
 
-func shouldSkip(dirName string) bool {
-	return shouldSkipRegex.MatchString(dirName)
+		if project != nil {
+			// docker is an optional property of a project, and thus is different than other detectors
+			docker, err := DetectDockerProject(path, entries)
+			if err != nil {
+				return nil, fmt.Errorf("detecting docker project: %w", err)
+			}
+			project.Docker = docker
+
+			return project, nil
+		}
+	}
+
+	return nil, nil
 }
 
 // WalkDirFunc is the type of function that is called whenever a directory is visited by WalkDirectories.

@@ -7,8 +7,8 @@ import (
 type JavaDetector struct {
 }
 
-func (jd *JavaDetector) DisplayName() string {
-	return "java"
+func (jd *JavaDetector) Type() ProjectType {
+	return Java
 }
 
 func (jd *JavaDetector) DetectProject(path string, entries []fs.DirEntry) (*Project, error) {

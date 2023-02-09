@@ -7,8 +7,8 @@ import (
 type PythonDetector struct {
 }
 
-func (pd *PythonDetector) DisplayName() string {
-	return "python"
+func (pd *PythonDetector) Type() ProjectType {
+	return Python
 }
 
 func (pd *PythonDetector) DetectProject(path string, entries []fs.DirEntry) (*Project, error) {

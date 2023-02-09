@@ -50,6 +50,8 @@ require (
 
 )
 
+require github.com/bmatcuk/doublestar/v4 v4.6.0
+
 require (
 	github.com/Azure/azure-sdk-for-go/sdk/internal v1.0.1 // indirect
 	github.com/Azure/azure-sdk-for-go/sdk/keyvault/internal v0.7.0 // indirect

@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"sort"
 	"strings"
 
 	"github.com/MakeNowJust/heredoc/v2"
@@ -30,7 +29,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/git"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
-	"golang.org/x/exp/maps"
 )
 
 func newInitFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *initFlags {
@@ -215,22 +213,19 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 				return nil, err
 			}
 
-			if !useDetection {
-				useOptions, err = i.explicitPrompt(ctx, useOptions)
-				if err != nil {
-					return nil, err
-				}
-			} else {
+			if useDetection {
 				character := templates.Characteristics{}
 				extractCharacteristics(projects, &character, &useOptions)
 
-				templateFound := templates.MatchToOfficial(character)
-				if templateFound != nil {
-					i.flags.template = *templateFound
+				i.flags.template, err = templates.MatchOne(ctx, i.console, character)
+				if err != nil {
+					return nil, err
 				}
 			}
-		} else {
-			useOptions, err = i.explicitPrompt(ctx, useOptions)
+		}
+
+		if i.flags.template.RepositoryPath == "" {
+			useOptions, err = i.searchForTemplate(ctx, useOptions)
 			if err != nil {
 				return nil, err
 			}
@@ -381,30 +376,21 @@ func extractCharacteristics(
 	}
 }
 
-func (i *initAction) explicitPrompt(
+func (i *initAction) searchForTemplate(
 	ctx context.Context,
 	useOptions repository.InfraUseOptions) (repository.InfraUseOptions, error) {
-	template, err := templates.PromptInfraTemplate(ctx, i.console)
-	if err != nil {
-		return useOptions, err
-	}
-	i.flags.template = template
-
-	displayOptions := repository.LanguageDisplayOptions()
-	langSelection := maps.Keys(displayOptions)
-	sort.Strings(langSelection)
-	langIndex, err := i.console.Select(ctx, input.ConsoleOptions{
-		Message: "What language do you work on?",
-		Options: langSelection,
-	})
+	c := &templates.Characteristics{}
+	err := templates.PromptToFillCharacteristics(ctx, i.console, c)
+	useOptions.Language = c.LanguageTags[0]
 
 	if err != nil {
 		return useOptions, err
 	}
 
-	selectedDisplayOption := langSelection[langIndex]
-	useOptions.Language = displayOptions[selectedDisplayOption]
-
+	i.flags.template, err = templates.MatchOne(ctx, i.console, *c)
+	if err != nil {
+		return useOptions, err
+	}
 	return useOptions, err
 }
 

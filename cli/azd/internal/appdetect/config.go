@@ -198,26 +198,26 @@ func WithoutJava() ExcludeJava {
 	return ExcludeJava{}
 }
 
-type IncludeNodeJs struct {
+type IncludeJavaScript struct {
 }
 
-func (o *IncludeNodeJs) apply(c detectConfig) detectConfig {
-	c.IncludeProjectTypes = append(c.IncludeProjectTypes, NodeJs)
+func (o *IncludeJavaScript) apply(c detectConfig) detectConfig {
+	c.IncludeProjectTypes = append(c.IncludeProjectTypes, JavaScript)
 	return c
 }
 
-func WithNodeJs() IncludeNodeJs {
-	return IncludeNodeJs{}
+func WithNodeJs() IncludeJavaScript {
+	return IncludeJavaScript{}
 }
 
-type ExcludeNodeJs struct {
+type ExcludeJavaScript struct {
 }
 
-func (o *ExcludeNodeJs) apply(c detectConfig) detectConfig {
-	c.ExcludeProjectTypes = append(c.IncludeProjectTypes, NodeJs)
+func (o *ExcludeJavaScript) apply(c detectConfig) detectConfig {
+	c.ExcludeProjectTypes = append(c.IncludeProjectTypes, JavaScript)
 	return c
 }
 
-func WithoutNodeJs() ExcludeNodeJs {
-	return ExcludeNodeJs{}
+func WithoutNodeJs() ExcludeJavaScript {
+	return ExcludeJavaScript{}
 }

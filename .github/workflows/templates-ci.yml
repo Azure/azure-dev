@@ -22,8 +22,8 @@ jobs:
     steps:
       - uses: actions/checkout@v3
       - uses: actions/setup-node@v1
-        name: Run spell check for templates
         with:
           node-version: "16"
       - run: npm install -g cspell
-      - run: cspell lint '**/*' --config ./.vscode/cspell.yaml --relative --no-progress
+      - name: Spell check for templates
+        run: cspell lint '**/*' --config ./templates/cspell.yaml --root ./templates --no-progress

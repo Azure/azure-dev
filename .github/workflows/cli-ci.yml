@@ -34,11 +34,11 @@ jobs:
     steps:
       - uses: actions/checkout@v3
       - uses: actions/setup-node@v1
-        name: Run spell check for project and for azd
         with:
           node-version: "16"
       - run: npm install -g cspell
-      - run: cspell lint '**/*.go' --config ./cli/azd/.vscode/cspell.yaml --root ./cli/azd --no-progress
+      - name: Spell check for CLI source code
+        run: cspell lint '**/*.go' --config ./cli/azd/.vscode/cspell.yaml --root ./cli/azd --no-progress
 
   bicep-lint:
     uses: ./.github/workflows/lint-bicep.yml

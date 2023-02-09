@@ -226,8 +226,27 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 
 		if i.flags.template.RepositoryPath == "" {
 			useOptions, err = i.searchForTemplate(ctx, useOptions)
-			if err != nil {
+			if err != nil && !errors.Is(err, templates.ErrTemplateNotMatched) {
 				return nil, err
+			}
+
+			if err != nil && errors.Is(err, templates.ErrTemplateNotMatched) {
+				showTemplates, err := i.console.Confirm(
+					ctx,
+					input.ConsoleOptions{
+						//nolint:lll
+						Message: "Would you like to be shown list of project templates instead?",
+					})
+
+				if err != nil || !showTemplates {
+					return nil, err
+				}
+
+				i.flags.template, err = templates.PromptTemplate(ctx, "Select a project template:", i.console)
+
+				if err != nil {
+					return nil, err
+				}
 			}
 		}
 
@@ -366,6 +385,9 @@ func extractCharacteristics(
 			})
 		} else {
 			// HACK: Select first language found.
+			if project.Language == "nodejs" {
+
+			}
 			useOptions.Language = project.Language
 			useOptions.Projects = append(useOptions.Projects, repository.ProjectSpec{
 				Language: project.Language,

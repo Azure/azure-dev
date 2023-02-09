@@ -2,7 +2,7 @@ package templates
 
 import (
 	"context"
-	"fmt"
+	"errors"
 	"sort"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
@@ -50,6 +50,8 @@ func Match(c Characteristics) []Template {
 	return nil
 }
 
+var ErrTemplateNotMatched = errors.New("no matching template")
+
 // Attempts to match to a single template based on provided characteristics.
 func MatchOne(ctx context.Context, console input.Console, c Characteristics) (Template, error) {
 	matchedTemplates := Match(c)
@@ -57,7 +59,8 @@ func MatchOne(ctx context.Context, console input.Console, c Characteristics) (Te
 		console.Message(
 			ctx,
 			"We couldn't find a matching template. Visit https://azure.github.io/awesome-azd/ for more options.")
-		return Template{}, fmt.Errorf("no matching template")
+
+		return Template{}, ErrTemplateNotMatched
 	}
 
 	if len(matchedTemplates) == 1 {
@@ -106,7 +109,6 @@ func PromptToFillCharacteristics(ctx context.Context, console input.Console, c *
 
 		if appTypeIndex != len(options)-1 {
 			c.Type = appTypesDisplay[options[appTypeIndex]]
-			return nil
 		}
 	}
 

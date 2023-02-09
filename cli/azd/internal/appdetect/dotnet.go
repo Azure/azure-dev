@@ -34,9 +34,9 @@ func (dd *DotNetDetector) DetectProject(path string, entries []fs.DirEntry) (*Pr
 
 	if hasProjectFile && hasStartupFile {
 		return &Project{
-			Language:  string(DotNet),
-			Path:      path,
-			InferRule: "Inferred by presence of: " + fmt.Sprintf("%s, %s", projFileName, startUpFileName),
+			Language:      string(DotNet),
+			Path:          path,
+			DetectionRule: "Inferred by presence of: " + fmt.Sprintf("%s, %s", projFileName, startUpFileName),
 		}, nil
 	}
 

@@ -7,21 +7,11 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"log"
 	"os"
 	"path/filepath"
 
 	"github.com/bmatcuk/doublestar/v4"
-)
-
-type ApplicationType string
-
-const (
-	// A front-end SPA / static web app.
-	WebApp ApplicationType = "web"
-	// API only.
-	ApiApp ApplicationType = "api"
-	// Fullstack solution. Front-end SPA with back-end API.
-	ApiWeb ApplicationType = "api-web"
 )
 
 type ProjectType string
@@ -36,7 +26,6 @@ const (
 type Framework string
 
 const (
-	// Or just frontend?
 	React   Framework = "react"
 	Angular Framework = "angular"
 	VueJs   Framework = "vuejs"
@@ -72,25 +61,23 @@ type Project struct {
 	LanguageToolVersion string
 	Frameworks          []Framework
 	Path                string
-	InferRule           string
+	DetectionRule       string
 	Docker              *Docker
+}
+
+func (p *Project) HasWebUIFramework() bool {
+	for _, f := range p.Frameworks {
+		if f.IsWebUIFramework() {
+			return true
+		}
+	}
+
+	return false
 }
 
 type Docker struct {
 	Path string
 }
-
-type Application struct {
-	Type        ApplicationType
-	Projects    []Project
-	DisplayName string
-}
-
-func (a *Application) String() string {
-	return a.DisplayName
-}
-
-type DetectFunc func(path string, entries []fs.DirEntry) (*Project, error)
 
 type ProjectDetector interface {
 	Type() ProjectType
@@ -107,10 +94,9 @@ var allDetectors = []ProjectDetector{
 }
 
 // Detects projects located under an application repository.
-func Detect(repoRoot string, options ...DetectOption) (*Application, error) {
+func Detect(repoRoot string, options ...DetectOption) ([]Project, error) {
 	config := newConfig(options...)
-	app := Application{}
-
+	allProjects := []Project{}
 	sourceDir := filepath.Join(repoRoot, "src")
 	if ent, err := os.Stat(sourceDir); err == nil && ent.IsDir() {
 		projects, err := detectUnder(sourceDir, config)
@@ -119,11 +105,11 @@ func Detect(repoRoot string, options ...DetectOption) (*Application, error) {
 		}
 
 		if projects != nil {
-			app.Projects = append(app.Projects, projects...)
+			allProjects = append(allProjects, projects...)
 		}
 	}
 
-	if len(app.Projects) == 0 {
+	if len(allProjects) == 0 {
 		config.ExcludePatterns = append(config.ExcludePatterns, "*/src/")
 		projects, err := detectUnder(repoRoot, config)
 		if err != nil {
@@ -131,11 +117,11 @@ func Detect(repoRoot string, options ...DetectOption) (*Application, error) {
 		}
 
 		if projects != nil {
-			app.Projects = append(app.Projects, projects...)
+			allProjects = append(allProjects, projects...)
 		}
 	}
 
-	return &app, nil
+	return allProjects, nil
 }
 
 // DetectUnder detects projects located under a directory.
@@ -159,8 +145,13 @@ func detectUnder(root string, config detectConfig) ([]Project, error) {
 	projects := []Project{}
 
 	walkFunc := func(path string, entries []fs.DirEntry) error {
+		relativePath, err := filepath.Rel(root, path)
+		if err != nil {
+			return err
+		}
+
 		for _, p := range config.IncludePatterns {
-			match, err := doublestar.Match(path, p)
+			match, err := doublestar.Match(p, relativePath)
 			if err != nil {
 				return err
 			}
@@ -171,11 +162,10 @@ func detectUnder(root string, config detectConfig) ([]Project, error) {
 		}
 
 		for _, p := range config.ExcludePatterns {
-			match, err := doublestar.Match(path, p)
+			match, err := doublestar.Match(p, relativePath)
 			if err != nil {
 				return err
 			}
-
 			if match {
 				return filepath.SkipDir
 			}
@@ -205,6 +195,7 @@ func detectUnder(root string, config detectConfig) ([]Project, error) {
 
 // Detects if a directory belongs to any projects.
 func detectAny(detectors []ProjectDetector, path string, entries []fs.DirEntry) (*Project, error) {
+	log.Printf("Detecting projects in directory: %s", path)
 	for _, detector := range detectors {
 		project, err := detector.DetectProject(path, entries)
 		if err != nil {
@@ -212,6 +203,8 @@ func detectAny(detectors []ProjectDetector, path string, entries []fs.DirEntry) 
 		}
 
 		if project != nil {
+			log.Printf("Found project %s at %s", project.Language, path)
+
 			// docker is an optional property of a project, and thus is different than other detectors
 			docker, err := DetectDockerProject(path, entries)
 			if err != nil {

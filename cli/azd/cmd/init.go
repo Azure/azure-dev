@@ -151,6 +151,7 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	}
 
 	if _, err := os.Stat(azdCtx.ProjectPath()); err == nil {
+		i.console.Message(ctx, "Already initialized.")
 		return nil, nil
 	}
 
@@ -170,7 +171,8 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 
 	if existingApplication {
 		appLocationIndex, err := i.console.Select(ctx, input.ConsoleOptions{
-			Message: "Where is your existing application?",
+			Message: "The Azure Developer CLI can analyze your application and suggest cloud infrastructure. " +
+				"Where is your existing application?",
 			Options: []string{
 				"Under the current directory",
 				"On GitHub",
@@ -192,46 +194,39 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 			}
 		}
 
-		appHint, err := appdetect.Detect(azdCtx.ProjectDirectory())
+		projects, err := appdetect.Detect(azdCtx.ProjectDirectory())
 		useOptions := repository.InfraUseOptions{}
-		if err == nil && appHint != nil {
-			i.flags.template = templates.Template{
-				RepositoryPath: string(appHint.Type),
-			}
+		if err != nil {
+			log.Printf("error during detection: %v", err)
+		}
 
-			// Pick one non-web language
-			for _, project := range appHint.Projects {
-				isWeb := true
-				if project.Frameworks == nil || len(project.Frameworks) == 0 {
-					useOptions.Language = project.Language
-					isWeb = false
-				}
-
-				useOptions.Projects = append(useOptions.Projects, repository.ProjectSpec{
-					Language:  project.Language,
-					Host:      "appservice",
-					Path:      project.Path,
-					HackIsWeb: isWeb,
-				})
-			}
-
-			appHintConfirm, err := i.console.Confirm(
+		if err == nil && len(projects) > 0 {
+			useDetection, err := i.console.Confirm(
 				ctx,
 				input.ConsoleOptions{
 					//nolint:lll
-					Message: fmt.Sprintf(
-						"We found that your existing application is described by '%s'. Is that right?",
-						appHint.DisplayName),
+					Message: heredoc.Docf(
+						`We found that your existing application is described as follows:
+						%s
+						Is that right?`,
+						describe(projects)),
 				})
-
 			if err != nil {
 				return nil, err
 			}
 
-			if !appHintConfirm {
+			if !useDetection {
 				useOptions, err = i.explicitPrompt(ctx, useOptions)
 				if err != nil {
 					return nil, err
+				}
+			} else {
+				character := templates.Characteristics{}
+				extractCharacteristics(projects, &character, &useOptions)
+
+				templateFound := templates.MatchToOfficial(character)
+				if templateFound != nil {
+					i.flags.template = *templateFound
 				}
 			}
 		} else {
@@ -346,6 +341,46 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	}, nil
 }
 
+func extractCharacteristics(
+	projects []appdetect.Project,
+	character *templates.Characteristics,
+	useOptions *repository.InfraUseOptions) {
+	hasOneWeb := false
+	for _, project := range projects {
+		if project.HasWebUIFramework() {
+			hasOneWeb = true
+			break
+		}
+	}
+
+	if hasOneWeb && len(projects) == 1 {
+		character.Type = templates.WebApp
+	} else if hasOneWeb && len(projects) > 1 {
+		character.Type = templates.ApiWeb
+	} else {
+		character.Type = templates.ApiApp
+	}
+
+	for _, project := range projects {
+		if project.HasWebUIFramework() {
+			useOptions.Projects = append(useOptions.Projects, repository.ProjectSpec{
+				Language:  project.Language,
+				Host:      "appservice",
+				Path:      project.Path,
+				HackIsWeb: true,
+			})
+		} else {
+			// HACK: Select first language found.
+			useOptions.Language = project.Language
+			useOptions.Projects = append(useOptions.Projects, repository.ProjectSpec{
+				Language: project.Language,
+				Host:     "appservice",
+				Path:     project.Path,
+			})
+		}
+	}
+}
+
 func (i *initAction) explicitPrompt(
 	ctx context.Context,
 	useOptions repository.InfraUseOptions) (repository.InfraUseOptions, error) {
@@ -371,4 +406,35 @@ func (i *initAction) explicitPrompt(
 	useOptions.Language = displayOptions[selectedDisplayOption]
 
 	return useOptions, err
+}
+
+func describe(projects []appdetect.Project) string {
+	var b strings.Builder
+	for _, p := range projects {
+		hasWeb := p.HasWebUIFramework()
+		description := "Web API"
+		if hasWeb {
+			description = "Web App"
+		}
+
+		lang := p.Language
+		if p.Docker != nil {
+			lang += " using containers"
+		}
+
+		if hasWeb {
+			frameworks := []string{}
+			for _, f := range p.Frameworks {
+				if f.IsWebUIFramework() {
+					frameworks = append(frameworks, f.Display())
+				}
+			}
+
+			lang = strings.Join(frameworks, ", ")
+		}
+
+		b.WriteString(fmt.Sprintf("  - %s (%s) at %s\n", description, lang, p.Path))
+	}
+
+	return b.String()
 }

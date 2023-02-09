@@ -8,7 +8,7 @@ func newConfig(options ...DetectOption) detectConfig {
 			"**/[Dd]ist",
 			"**/[Bb]in",
 			"**/[oO]bj",
-			"**/.*",
+			"*/.*",
 		},
 	}
 

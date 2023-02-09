@@ -6,6 +6,7 @@ import * as os from 'os';
 import { localize } from '../localize';
 import { resetAzdInstalledCheck } from '../utils/azureDevCli';
 import { executeInTerminal } from '../utils/executeInTerminal';
+import { isLinux, isMac, isWindows } from '../utils/osUtils';
 import { getAzDevTerminalTitle } from './cmdUtil';
 
 const WindowsTerminalCommand = `powershell -ex AllSigned -c "Invoke-RestMethod 'https://aka.ms/install-azd.ps1' | Invoke-Expression"`;
@@ -21,11 +22,11 @@ export async function installCli(context: IActionContext, shouldPrompt: boolean 
 
     let terminalCommand: string;
 
-    if (os.platform() === 'win32') {
+    if (isWindows()) {
         terminalCommand = WindowsTerminalCommand;
-    } else if (os.platform() === 'linux') {
+    } else if (isLinux()) {
         terminalCommand = LinuxTerminalCommand;
-    } else if (os.platform() === 'darwin') {
+    } else if (isMac()) {
         terminalCommand = MacTerminalCommand;
     } else {
         context.errorHandling.suppressReportIssue = true;

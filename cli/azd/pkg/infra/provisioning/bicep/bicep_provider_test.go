@@ -430,10 +430,17 @@ func createBicepProvider(t *testing.T, mockContext *mocks.MockContext) *BicepPro
 		HttpClient: mockContext.HttpClient,
 	})
 
+	locationPrompter := func(msg string, filter func(loc azcli.AzCliLocation) bool) (location string, err error) {
+		return "", nil
+	}
+
 	provider, err := NewBicepProvider(
 		*mockContext.Context, azCli, env, projectDir, options,
 		mockContext.CommandRunner,
 		mockContext.Console,
+		Prompters{
+			Location: locationPrompter,
+		},
 	)
 
 	require.NoError(t, err)

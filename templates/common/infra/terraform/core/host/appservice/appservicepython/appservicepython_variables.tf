@@ -49,3 +49,9 @@ variable "python_version" {
   type        = string
   default     = "3.9"
 }
+
+variable "health_check_path" {
+  description = "The path to the health check endpoint"
+  type        = string
+  default     = ""
+}

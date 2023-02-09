@@ -96,11 +96,11 @@ func (cb *CobraBuilder) configureActionResolver(cmd *cobra.Command, descriptor *
 		ctx = tools.WithInstalledCheckCache(ctx)
 
 		// Registers the following to enable injection into actions that require them
-		ioc.RegisterInstance(ioc.Global, cb.runner)
-		ioc.RegisterInstance(ioc.Global, middleware.MiddlewareContext(cb.runner))
-		ioc.RegisterInstance(ioc.Global, ctx)
-		ioc.RegisterInstance(ioc.Global, cmd)
-		ioc.RegisterInstance(ioc.Global, args)
+		ioc.RegisterInstance(cb.container, cb.runner)
+		ioc.RegisterInstance(cb.container, middleware.MiddlewareContext(cb.runner))
+		ioc.RegisterInstance(cb.container, ctx)
+		ioc.RegisterInstance(cb.container, cmd)
+		ioc.RegisterInstance(cb.container, args)
 
 		if err := cb.registerMiddleware(descriptor); err != nil {
 			return err
@@ -135,7 +135,7 @@ func (cb *CobraBuilder) configureActionResolver(cmd *cobra.Command, descriptor *
 		cmd.SilenceErrors = true
 
 		// TODO: Consider refactoring to move the UX writing to a middleware
-		invokeErr := ioc.Global.Invoke(func(console input.Console) {
+		invokeErr := cb.container.Invoke(func(console input.Console) {
 			// It is valid for a command to return a nil action result and error.
 			// If we have a result or an error, display it, otherwise don't print anything.
 			if actionResult != nil || err != nil {

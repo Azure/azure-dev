@@ -12,6 +12,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/contracts"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
@@ -55,6 +56,7 @@ type showAction struct {
 	writer    io.Writer
 	azCli     azcli.AzCli
 	azdCtx    *azdcontext.AzdContext
+	env       *environment.Environment
 	flags     *showFlags
 }
 
@@ -64,6 +66,7 @@ func newShowAction(
 	writer io.Writer,
 	azCli azcli.AzCli,
 	azdCtx *azdcontext.AzdContext,
+	env *environment.Environment,
 	flags *showFlags,
 ) actions.Action {
 	return &showAction{
@@ -72,16 +75,12 @@ func newShowAction(
 		writer:    writer,
 		azCli:     azCli,
 		azdCtx:    azdCtx,
+		env:       env,
 		flags:     flags,
 	}
 }
 
 func (s *showAction) Run(ctx context.Context) (*actions.ActionResult, error) {
-	env, err := loadOrInitEnvironment(ctx, &s.flags.environmentName, s.azdCtx, s.console, s.azCli)
-	if err != nil {
-		return nil, fmt.Errorf("loading environment: %w", err)
-	}
-
 	prj, err := project.LoadProjectConfig(s.azdCtx.ProjectPath())
 	if err != nil {
 		return nil, fmt.Errorf("loading project: %w", err)
@@ -112,9 +111,9 @@ func (s *showAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	// not been deployed, for example, we'll just not include target information)
 	resourceManager := infra.NewAzureResourceManager(s.azCli)
 
-	if resourceGroupName, err := resourceManager.FindResourceGroupForEnvironment(ctx, env); err == nil {
+	if resourceGroupName, err := resourceManager.FindResourceGroupForEnvironment(ctx, s.env); err == nil {
 		for name, serviceConfig := range prj.Services {
-			if resources, err := serviceConfig.GetServiceResources(ctx, resourceGroupName, env, s.azCli); err == nil {
+			if resources, err := serviceConfig.GetServiceResources(ctx, resourceGroupName, s.env, s.azCli); err == nil {
 				resourceIds := make([]string, len(resources))
 				for idx, res := range resources {
 					resourceIds[idx] = res.Id
@@ -131,7 +130,7 @@ func (s *showAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		}
 	} else {
 		log.Printf("ignoring error determining resource group for environment %s, resource ids will not be available: %v",
-			env.GetEnvName(),
+			s.env.GetEnvName(),
 			err)
 	}
 
@@ -146,6 +145,8 @@ func showTypeFromLanguage(language string) contracts.ShowType {
 		return contracts.ShowTypePython
 	case "ts", "js":
 		return contracts.ShowTypeNode
+	case "java":
+		return contracts.ShowTypeJava
 	default:
 		panic(fmt.Sprintf("unknown language %s", language))
 	}

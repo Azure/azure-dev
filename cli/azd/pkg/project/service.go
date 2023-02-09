@@ -51,31 +51,60 @@ func (svc *Service) Deploy(
 	result := make(chan *ServiceDeploymentChannelResponse, 1)
 	progress := make(chan string)
 
+	serviceEventArgs := ServiceLifecycleEventArgs{
+		Project: svc.Config.Project,
+		Service: svc.Config,
+	}
+
 	go func() {
 		defer close(result)
 		defer close(progress)
 
-		log.Printf("packing service %s", svc.Config.Name)
+		var deploymentArtifact string
 
-		progress <- "Preparing packaging"
-		artifact, err := svc.Framework.Package(ctx, progress)
-		if err != nil {
-			result <- &ServiceDeploymentChannelResponse{
-				Error: fmt.Errorf("packaging service %s: %w", svc.Config.Name, err),
+		err := svc.Config.Invoke(ctx, ServiceEventPackage, serviceEventArgs, func() error {
+			log.Printf("packing service %s", svc.Config.Name)
+
+			progress <- "Preparing packaging"
+			artifact, err := svc.Framework.Package(ctx, progress)
+			if err != nil {
+				result <- &ServiceDeploymentChannelResponse{
+					Error: fmt.Errorf("packaging service %s: %w", svc.Config.Name, err),
+				}
 			}
 
+			deploymentArtifact = artifact
+			return nil
+		})
+
+		if err != nil {
+			result <- &ServiceDeploymentChannelResponse{
+				Error: err,
+			}
 			return
 		}
 
-		log.Printf("deploying service %s", svc.Config.Name)
+		var deployResult ServiceDeploymentResult
 
-		progress <- "Preparing for deployment"
-		res, err := svc.Target.Deploy(ctx, azdCtx, artifact, progress)
-		if err != nil {
-			result <- &ServiceDeploymentChannelResponse{
-				Error: fmt.Errorf("deploying service %s package: %w", svc.Config.Name, err),
+		err = svc.Config.Invoke(ctx, ServiceEventDeploy, serviceEventArgs, func() error {
+			log.Printf("deploying service %s", svc.Config.Name)
+
+			progress <- "Preparing for deployment"
+			res, err := svc.Target.Deploy(ctx, azdCtx, deploymentArtifact, progress)
+			if err != nil {
+				result <- &ServiceDeploymentChannelResponse{
+					Error: fmt.Errorf("deploying service %s package: %w", svc.Config.Name, err),
+				}
 			}
 
+			deployResult = res
+			return nil
+		})
+
+		if err != nil {
+			result <- &ServiceDeploymentChannelResponse{
+				Error: err,
+			}
 			return
 		}
 
@@ -83,14 +112,14 @@ func (svc *Service) Deploy(
 		// reverse proxies or DNS host names outside of the service target (and prefer that to be used instead).
 		overriddenEndpoints := svc.getOverriddenEndpoints()
 		if len(overriddenEndpoints) > 0 {
-			res.Endpoints = overriddenEndpoints
+			deployResult.Endpoints = overriddenEndpoints
 		}
 
 		log.Printf("deployed service %s", svc.Config.Name)
 		progress <- "Deployment completed"
 
 		result <- &ServiceDeploymentChannelResponse{
-			Result: &res,
+			Result: &deployResult,
 		}
 	}()
 

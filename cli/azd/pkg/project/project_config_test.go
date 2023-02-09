@@ -11,6 +11,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
+	"github.com/azure/azure-dev/cli/azd/test/mocks/mockaccount"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockarmresources"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockazcli"
 	"github.com/stretchr/testify/require"
@@ -128,7 +129,9 @@ services:
 	projectConfig, err := ParseProjectConfig(testProj)
 	require.Nil(t, err)
 
-	project, err := projectConfig.GetProject(*mockContext.Context, e, mockContext.Console, azCli, mockContext.CommandRunner)
+	project, err := projectConfig.GetProject(
+		*mockContext.Context, e, mockContext.Console,
+		azCli, mockContext.CommandRunner, &mockaccount.MockAccountManager{})
 	require.Nil(t, err)
 	require.NotNil(t, project)
 
@@ -204,14 +207,14 @@ func TestProjectConfigAddHandler(t *testing.T) {
 		return nil
 	}
 
-	err := project.AddHandler(Deployed, handler)
+	err := project.AddHandler(ServiceEventDeploy, handler)
 	require.Nil(t, err)
 
 	// Expected error if attempting to register the same handler more than 1 time
-	err = project.AddHandler(Deployed, handler)
+	err = project.AddHandler(ServiceEventDeploy, handler)
 	require.NotNil(t, err)
 
-	err = project.RaiseEvent(*mockContext.Context, Deployed, nil)
+	err = project.RaiseEvent(*mockContext.Context, ServiceEventDeploy, ProjectLifecycleEventArgs{Project: project})
 	require.Nil(t, err)
 	require.True(t, handlerCalled)
 }
@@ -233,18 +236,18 @@ func TestProjectConfigRemoveHandler(t *testing.T) {
 	}
 
 	// Only handler 1 was registered
-	err := project.AddHandler(Deployed, handler1)
+	err := project.AddHandler(ServiceEventDeploy, handler1)
 	require.Nil(t, err)
 
-	err = project.RemoveHandler(Deployed, handler1)
+	err = project.RemoveHandler(ServiceEventDeploy, handler1)
 	require.Nil(t, err)
 
 	// Handler 2 wasn't registered so should error on remove
-	err = project.RemoveHandler(Deployed, handler2)
+	err = project.RemoveHandler(ServiceEventDeploy, handler2)
 	require.NotNil(t, err)
 
 	// No events are registered at the time event was raised
-	err = project.RaiseEvent(*mockContext.Context, Deployed, nil)
+	err = project.RaiseEvent(*mockContext.Context, ServiceEventDeploy, ProjectLifecycleEventArgs{Project: project})
 	require.Nil(t, err)
 	require.False(t, handler1Called)
 	require.False(t, handler2Called)
@@ -268,12 +271,12 @@ func TestProjectConfigWithMultipleEventHandlers(t *testing.T) {
 		return nil
 	}
 
-	err := project.AddHandler(Deployed, handler1)
+	err := project.AddHandler(ServiceEventDeploy, handler1)
 	require.Nil(t, err)
-	err = project.AddHandler(Deployed, handler2)
+	err = project.AddHandler(ServiceEventDeploy, handler2)
 	require.Nil(t, err)
 
-	err = project.RaiseEvent(*mockContext.Context, Deployed, nil)
+	err = project.RaiseEvent(*mockContext.Context, ServiceEventDeploy, ProjectLifecycleEventArgs{Project: project})
 	require.Nil(t, err)
 	require.True(t, handlerCalled1)
 	require.True(t, handlerCalled2)
@@ -296,12 +299,12 @@ func TestProjectConfigWithMultipleEvents(t *testing.T) {
 		return nil
 	}
 
-	err := project.AddHandler(Provisioned, provisionHandler)
+	err := project.AddHandler(ProjectEventProvision, provisionHandler)
 	require.Nil(t, err)
-	err = project.AddHandler(Deployed, deployHandler)
+	err = project.AddHandler(ProjectEventDeploy, deployHandler)
 	require.Nil(t, err)
 
-	err = project.RaiseEvent(*mockContext.Context, Provisioned, nil)
+	err = project.RaiseEvent(*mockContext.Context, ProjectEventProvision, ProjectLifecycleEventArgs{Project: project})
 	require.Nil(t, err)
 
 	require.True(t, provisionHandlerCalled)
@@ -320,12 +323,12 @@ func TestProjectConfigWithEventHandlerErrors(t *testing.T) {
 		return errors.New("sample error 2")
 	}
 
-	err := project.AddHandler(Provisioned, handler1)
+	err := project.AddHandler(ProjectEventProvision, handler1)
 	require.Nil(t, err)
-	err = project.AddHandler(Provisioned, handler2)
+	err = project.AddHandler(ProjectEventProvision, handler2)
 	require.Nil(t, err)
 
-	err = project.RaiseEvent(*mockContext.Context, Provisioned, nil)
+	err = project.RaiseEvent(*mockContext.Context, ProjectEventProvision, ProjectLifecycleEventArgs{Project: project})
 	require.NotNil(t, err)
 	require.Contains(t, err.Error(), "sample error 1")
 	require.Contains(t, err.Error(), "sample error 2")
@@ -361,14 +364,14 @@ func TestProjectConfigRaiseEventWithoutArgs(t *testing.T) {
 		return nil
 	}
 
-	err := project.AddHandler(Deployed, handler)
+	err := project.AddHandler(ProjectEventDeploy, handler)
 	require.Nil(t, err)
 
 	// Expected error if attempting to register the same handler more than 1 time
-	err = project.AddHandler(Deployed, handler)
+	err = project.AddHandler(ProjectEventDeploy, handler)
 	require.NotNil(t, err)
 
-	err = project.RaiseEvent(ctx, Deployed, nil)
+	err = project.RaiseEvent(ctx, ProjectEventDeploy, ProjectLifecycleEventArgs{Project: project})
 	require.Nil(t, err)
 	require.True(t, handlerCalled)
 }
@@ -377,23 +380,25 @@ func TestProjectConfigRaiseEventWithArgs(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
 	project := getProjectConfig()
 	handlerCalled := false
-	eventArgs := make(map[string]any)
-	eventArgs["foo"] = "bar"
+	eventArgs := ProjectLifecycleEventArgs{
+		Project: project,
+		Args:    map[string]any{"foo": "bar"},
+	}
 
-	handler := func(ctx context.Context, args ProjectLifecycleEventArgs) error {
+	handler := func(ctx context.Context, eventArgs ProjectLifecycleEventArgs) error {
 		handlerCalled = true
-		require.Equal(t, args.Args["foo"], "bar")
+		require.Equal(t, eventArgs.Args["foo"], "bar")
 		return nil
 	}
 
-	err := project.AddHandler(Deployed, handler)
+	err := project.AddHandler(ProjectEventDeploy, handler)
 	require.Nil(t, err)
 
 	// Expected error if attempting to register the same handler more than 1 time
-	err = project.AddHandler(Deployed, handler)
+	err = project.AddHandler(ProjectEventDeploy, handler)
 	require.NotNil(t, err)
 
-	err = project.RaiseEvent(*mockContext.Context, Deployed, eventArgs)
+	err = project.RaiseEvent(*mockContext.Context, ProjectEventDeploy, eventArgs)
 	require.Nil(t, err)
 	require.True(t, handlerCalled)
 }

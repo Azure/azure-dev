@@ -17,10 +17,10 @@ import (
 type ProjectType string
 
 const (
-	DotNet ProjectType = "dotnet"
-	Java   ProjectType = "java"
-	NodeJs ProjectType = "nodejs"
-	Python ProjectType = "python"
+	DotNet     ProjectType = "dotnet"
+	Java       ProjectType = "java"
+	JavaScript ProjectType = "nodejs"
+	Python     ProjectType = "python"
 )
 
 type Framework string
@@ -88,7 +88,7 @@ var allDetectors = []ProjectDetector{
 	// Order here determines precedence when two projects are in the same directory.
 	// This is unlikely to occur in practice, but reordering could help to break the tie in these cases.
 	&PythonDetector{},
-	&NodeJsDetector{},
+	&JavaScriptDetector{},
 	&JavaDetector{},
 	&DotNetDetector{},
 }

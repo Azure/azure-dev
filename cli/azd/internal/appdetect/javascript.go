@@ -16,18 +16,18 @@ type PackagesJson struct {
 	//DevDependencies map[string]string `json:"devDependencies"`
 }
 
-type NodeJsDetector struct {
+type JavaScriptDetector struct {
 }
 
-func (nd *NodeJsDetector) Type() ProjectType {
-	return NodeJs
+func (nd *JavaScriptDetector) Type() ProjectType {
+	return JavaScript
 }
 
-func (nd *NodeJsDetector) DetectProject(path string, entries []fs.DirEntry) (*Project, error) {
+func (nd *JavaScriptDetector) DetectProject(path string, entries []fs.DirEntry) (*Project, error) {
 	for _, entry := range entries {
 		if entry.Name() == "package.json" {
 			project := &Project{
-				Language:      string(NodeJs),
+				Language:      string(JavaScript),
 				Path:          path,
 				DetectionRule: "Inferred by presence of: " + entry.Name(),
 			}
@@ -58,6 +58,29 @@ func (nd *NodeJsDetector) DetectProject(path string, entries []fs.DirEntry) (*Pr
 
 			project.Frameworks = maps.Keys(frameworks)
 			log.Printf("Frameworks found: %v\n", project.Frameworks)
+
+			tsFiles := 0
+			jsFiles := 0
+			filepath.WalkDir(path, func(path string, d fs.DirEntry, err error) error {
+				if d.IsDir() && d.Name() == "node_modules" {
+					return filepath.SkipDir
+				}
+
+				if !d.IsDir() {
+					switch filepath.Ext(path) {
+					case ".js":
+						jsFiles++
+					case ".ts":
+						tsFiles++
+					}
+				}
+
+				return nil
+			})
+
+			if tsFiles > jsFiles {
+				project.Language = "ts"
+			}
 
 			return project, nil
 		}

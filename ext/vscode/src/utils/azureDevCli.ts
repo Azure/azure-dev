@@ -83,7 +83,7 @@ function createCli(): AzureDevCli {
     // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
     let modifiedPath: string = process.env.PATH!;
 
-    // On Unix, the CLI is installed to /usr/bin/local, which is always going to be in the PATH
+    // On Unix, the CLI is installed to /usr/local/bin, which is always going to be in the PATH
     // On Windows, the install location varies but is generally at %LOCALAPPDATA%\Programs\Azure Dev CLI, especially
     // when installed the default way, which the extension does.
     // To avoid needing to restart VSCode to get the updated PATH, we'll temporarily add the default install location,

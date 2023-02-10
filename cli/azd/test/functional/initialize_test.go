@@ -19,7 +19,7 @@ import (
 )
 
 // Verifies every command and their corresponding actions can be initialized. Does not test the execution of `action.Run`.
-func Test_Initialization(t *testing.T) {
+func Test_CommandsAndActions_Initialize(t *testing.T) {
 	ctx, cancel := newTestContext(t)
 	defer cancel()
 

@@ -1,14 +1,11 @@
 # Release History
 
-## 0.6.0-beta.2 (Unreleased)
-
-### Features Added
-
-### Breaking Changes
+## 0.6.0-beta.2 (2023-02-10)
 
 ### Bugs Fixed
 
-### Other Changes
+- [[#1527]](https://github.com/Azure/azure-dev/pull/1527) Fix running specific commands with `--output json`  causing stack overflow errors to occur.
+- [[#1534]](https://github.com/Azure/azure-dev/pull/1534) Fix running commands with `-e <environment name>` flag or with `AZURE_ENV_NAME` set not being respected. When running in CI environments, this caused prompting to occur, and failing if `--no-prompt` is specified.
 
 ## 0.6.0-beta.1 (2023-02-08)
 

@@ -49,7 +49,7 @@ steps:
         -Tag "azure-dev-cli_${{ parameters.CliVersion }}"
 
   - publish: cli/installer/choco/azd.$(MSI_VERSION).nupkg
-    artifact: ChocoPackage
+    artifact: choco-package
     displayName: Publish Choco Package Artifact
 
   - pwsh: |

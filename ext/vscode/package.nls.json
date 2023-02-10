@@ -56,6 +56,8 @@
 
     "azure-dev.commands.cli.pipeline-config.title": "pipeline config (configure DevOps pipeline for your application)",
 
+    "azure-dev.commands.cli.install.title": "Install or Update Azure Developer CLI",
+
     "azure-dev.commands.getDotEnvFilePath.title": "Get Azure developer environment's .env file path",
     "azure-dev.commands.getDotEnvFilePath.noEnvironments": "No Azure developer environments found. You can create one by running 'azd env new' in the terminal.",
     "azure-dev.commands.getDotEnvFilePath.environmentNotFound": "Azure developer environment '{0}' was not found",

@@ -1,0 +1,22 @@
+# Copyright (c) Microsoft Corporation. All rights reserved.
+# Licensed under the MIT License.
+
+# cspell settings for azd templates
+
+ignorePaths:
+  - "*.bicep" # no need to lint resource files
+  - mvnw # Maven wrapper asset used in Java templates -- external library code
+  - mvnw.cmd # Maven wrapper asset used in Java templates -- external library code
+  - ./common/NOTICE.txt
+
+# Use global config
+import: ../.vscode/cspell.global.yaml
+
+dictionaryDefinitions:
+  - name: templatesDictionary
+    path: ./cspell-templates.txt
+    description: Custom Dictionary for templates
+    addWords: true
+    scope: workspace
+dictionaries:
+  - templatesDictionary

@@ -162,21 +162,14 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 		return writer
 	})
 
-	container.RegisterSingleton(func() flagsWithEnv {
+	container.RegisterSingleton(func(cmd *cobra.Command) envFlag {
 		// Get the current cmd flags for the executing command
-		var currentFlags flags
-		err := container.Resolve(&currentFlags)
+		envValue, err := cmd.Flags().GetString(environmentNameFlag)
 		if err != nil {
-			return &envFlag{}
+			return envFlag{}
 		}
 
-		// Attempt to cast to flags with env
-		flagsWithEnv, ok := currentFlags.(flagsWithEnv)
-		if !ok {
-			return &envFlag{}
-		}
-
-		return flagsWithEnv
+		return envFlag{environmentName: envValue}
 	})
 
 	// Azd Context
@@ -195,7 +188,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	container.RegisterSingleton(
 		func(ctx context.Context,
 			azdContext *azdcontext.AzdContext,
-			envFlags flagsWithEnv,
+			envFlags envFlag,
 			console input.Console,
 			accountManager account.Manager,
 			userProfileService *azcli.UserProfileService) (*environment.Environment, error) {
@@ -203,7 +196,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 				return nil, azdcontext.ErrNoProject
 			}
 
-			environmentName := envFlags.EnvironmentName()
+			environmentName := envFlags.environmentName
 			var err error
 
 			env, err := loadOrInitEnvironment(
@@ -218,7 +211,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 
 	// Lazy loads the environment from the Azd Context when it becomes available
 	container.RegisterSingleton(
-		func(lazyAzdContext *lazy.Lazy[*azdcontext.AzdContext], envFlags flagsWithEnv) *lazy.Lazy[*environment.Environment] {
+		func(lazyAzdContext *lazy.Lazy[*azdcontext.AzdContext], envFlags envFlag) *lazy.Lazy[*environment.Environment] {
 			return lazy.NewLazy(func() (*environment.Environment, error) {
 				_, err := lazyAzdContext.GetValue()
 				if err != nil {

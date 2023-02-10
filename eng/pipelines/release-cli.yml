@@ -729,17 +729,16 @@ stages:
                     filePath: eng/scripts/Set-CliVersionVariable.ps1
                   displayName: Set CLI_VERSION
 
-                # TODO: Uncomment before merge
-                # - template: /eng/pipelines/templates/steps/publish-cli.yml
-                #   parameters:
-                #     CreateGitHubRelease: true
-                #     PublishUploadLocations: release/$(CLI_VERSION);release/latest
-                #     PublishShield: true
-                #     DockerImageTags: $(CLI_VERSION);latest
-                #     ReleaseSyndicatedDockerContainer: true
-                #     PublishUpdatedDocs: true
-                #     UploadMsi: true
-                #     PublishBrewFormula: true
+                - template: /eng/pipelines/templates/steps/publish-cli.yml
+                  parameters:
+                    CreateGitHubRelease: true
+                    PublishUploadLocations: release/$(CLI_VERSION);release/latest
+                    PublishShield: true
+                    DockerImageTags: $(CLI_VERSION);latest
+                    ReleaseSyndicatedDockerContainer: true
+                    PublishUpdatedDocs: true
+                    UploadMsi: true
+                    PublishBrewFormula: true
 
       - deployment: Publish_Choco
         dependsOn: Publish_Release

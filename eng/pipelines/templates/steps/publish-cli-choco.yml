@@ -7,9 +7,7 @@ parameters:
     default: $(CLI_VERSION)
   - name: ChocoApiKey
     type: string
-    default: ''
-    # TODO: Ensure key is added to variable group
-    # default: $(azure-sdk-choco-api-key)
+    default: $(azure-sdk-choco-api-key)
 
 steps:
   - task: DownloadPipelineArtifact@2
@@ -56,10 +54,9 @@ steps:
 
   - pwsh: |
       Write-Host "Pushing Choco Package..."
-      # TODO: Make sure this is skipped
-      # choco push azd.$(MSI_VERSION).nupkg `
-      #   --source https://push.chocolatey.org/ `
-      #   --api-key ${{ parameters.ChocoApiKey }}
+      choco push azd.$(MSI_VERSION).nupkg `
+        --source https://push.chocolatey.org/ `
+        --api-key ${{ parameters.ChocoApiKey }}
     condition: eq(variables['SubmitChocoPackage'], 'true')
     displayName: Push Choco Package
     workingDirectory: cli/installer/choco

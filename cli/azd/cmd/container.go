@@ -163,9 +163,9 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	})
 
 	container.RegisterSingleton(func(cmd *cobra.Command) envFlag {
-		// Get the current cmd flags for the executing command
 		envValue, err := cmd.Flags().GetString(environmentNameFlag)
 		if err != nil {
+			// This is probably an error
 			return envFlag{}
 		}
 

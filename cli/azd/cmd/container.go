@@ -131,7 +131,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 			subResolver account.SubscriptionTenantResolver,
 			credProvider auth.MultiTenantCredentialProvider) (azcore.TokenCredential, error) {
 			if env == nil {
-				return nil, fmt.Errorf("an environment wasn't selected")
+				panic("command asked for azcore.TokenCredential, but environment.Environment was not registered.")
 			}
 
 			subscriptionId := env.GetSubscriptionId()
@@ -165,8 +165,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	container.RegisterSingleton(func(cmd *cobra.Command) envFlag {
 		envValue, err := cmd.Flags().GetString(environmentNameFlag)
 		if err != nil {
-			// This is probably an error
-			return envFlag{}
+			panic("command asked for envFlag, but envFlag was not included in cmd.Flags().")
 		}
 
 		return envFlag{environmentName: envValue}
@@ -211,7 +210,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 
 	// Lazy loads the environment from the Azd Context when it becomes available
 	container.RegisterSingleton(
-		func(lazyAzdContext *lazy.Lazy[*azdcontext.AzdContext], envFlags envFlag) *lazy.Lazy[*environment.Environment] {
+		func(lazyAzdContext *lazy.Lazy[*azdcontext.AzdContext]) *lazy.Lazy[*environment.Environment] {
 			return lazy.NewLazy(func() (*environment.Environment, error) {
 				_, err := lazyAzdContext.GetValue()
 				if err != nil {

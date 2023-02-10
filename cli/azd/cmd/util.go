@@ -326,6 +326,8 @@ func getSubscriptionOptions(ctx context.Context, subscriptions account.Manager) 
 	return subscriptionOptions, defaultSubscription, nil
 }
 
+const environmentNameFlag string = "environment"
+
 type envFlag struct {
 	environmentName string
 }
@@ -333,7 +335,7 @@ type envFlag struct {
 func (e *envFlag) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
 	local.StringVarP(
 		&e.environmentName,
-		"environment",
+		environmentNameFlag,
 		"e",
 		// Set the default value to AZURE_ENV_NAME value if available
 		os.Getenv(environment.EnvNameEnvVarName),
@@ -357,18 +359,4 @@ func getResourceGroupFollowUp(
 		}
 	}
 	return followUp
-}
-
-func (e *envFlag) EnvironmentName() string {
-	return e.environmentName
-}
-
-// Represent command flags that accept an environment name argument
-type flagsWithEnv interface {
-	EnvironmentName() string
-}
-
-// Represents and command flags
-type flags interface {
-	Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions)
 }

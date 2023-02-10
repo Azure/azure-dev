@@ -7,7 +7,7 @@ $originalLocation = Get-Location
 try {
     Set-Location "$PSScriptRoot../../../cli/installer/choco"
 
-    # Copy NOTICE.txt to tools directory
+    # Copy text files to tools directory for inclusion in the package
     Copy-Item -Path "$PSScriptRoot/../../NOTICE.txt" -Destination 'tools/NOTICE.txt'
     Copy-Item -Path "$PSSCriptRoot/../../LICENSE" -Destination 'tools/LICENSE.txt'
 

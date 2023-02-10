@@ -17,8 +17,8 @@
     <iconUrl>https://azure-dev.azureedge.net/azd/assets/azure-dev.svg</iconUrl>
     <bugTrackerUrl>https://github.com/Azure/azure-dev/issues</bugTrackerUrl>
     <licenseUrl>https://github.com/Azure/azure-dev/blob/main/LICENSE</licenseUrl>
-    <projectSourceUrl>https://github.com/Azure/azure-dev/tree/$TAG$</projectSourceUrl>
-    <packageSourceUrl>https://github.com/Azure/azure-dev/tree/$TAG$/cli/installer/choco</packageSourceUrl>
+    <projectSourceUrl>https://github.com/Azure/azure-dev/</projectSourceUrl>
+    <packageSourceUrl>https://github.com/Azure/azure-dev/</packageSourceUrl>
     <releaseNotes>https://github.com/Azure/azure-dev/releases/tag/$TAG$</releaseNotes>
   </metadata>
   <files>

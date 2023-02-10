@@ -9,6 +9,7 @@ try {
 
     # Copy NOTICE.txt to tools directory
     Copy-Item -Path "$PSScriptRoot/../../NOTICE.txt" -Destination 'tools/NOTICE.txt'
+    Copy-Item -Path "$PSSCriptRoot/../../LICENSE" -Destination 'tools/LICENSE.txt'
 
     choco pack .\azd.nuspec VERSION=$Version TAG=$Tag
 } finally {

@@ -4,30 +4,33 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
+	"github.com/drone/envsubst"
 )
 
 type KubectlCli interface {
 	tools.ExternalTool
 	Cwd(cwd string)
-	SetEnv(env ...string)
+	SetEnv(env map[string]string)
 	GetNodes(ctx context.Context, flags *KubeCliFlags) ([]Node, error)
-	ApplyFiles(ctx context.Context, path string, flags *KubeCliFlags) (*exec.RunResult, error)
+	ApplyFiles(ctx context.Context, path string, flags *KubeCliFlags) error
+	ApplyPipe(ctx context.Context, input string, flags *KubeCliFlags) (*exec.RunResult, error)
 	ApplyKustomize(ctx context.Context, path string, flags *KubeCliFlags) (*exec.RunResult, error)
 	ConfigView(ctx context.Context, merge bool, flatten bool, flags *KubeCliFlags) (*exec.RunResult, error)
 	ConfigUseContext(ctx context.Context, name string, flags *KubeCliFlags) (*exec.RunResult, error)
 	CreateNamespace(ctx context.Context, name string, flags *KubeCliFlags) (*exec.RunResult, error)
 	CreateSecretGenericFromLiterals(ctx context.Context, name string, secrets []string, flags *KubeCliFlags) (*exec.RunResult, error)
-	ApplyPipe(ctx context.Context, result exec.RunResult, flags *KubeCliFlags) (*exec.RunResult, error)
 }
 
 type kubectlCli struct {
 	tools.ExternalTool
 	commandRunner exec.CommandRunner
-	env           []string
+	env           map[string]string
 	cwd           string
 }
 
@@ -43,8 +46,8 @@ func (cli *kubectlCli) Name() string {
 	return "kubectl"
 }
 
-func (cli *kubectlCli) SetEnv(env ...string) {
-	cli.env = env
+func (cli *kubectlCli) SetEnv(envValues map[string]string) {
+	cli.env = envValues
 }
 
 func (cli *kubectlCli) Cwd(cwd string) {
@@ -76,7 +79,7 @@ func (cli *kubectlCli) ConfigView(ctx context.Context, merge bool, flatten bool,
 
 	runArgs := exec.NewRunArgs("kubectl", args...).
 		WithCwd(kubeConfigDir).
-		WithEnv(cli.env)
+		WithEnv(environ(cli.env))
 
 	res, err := cli.executeCommandWithArgs(ctx, runArgs, flags)
 	if err != nil {
@@ -112,10 +115,11 @@ func (cli *kubectlCli) GetNodes(ctx context.Context, flags *KubeCliFlags) ([]Nod
 	return nodes, nil
 }
 
-func (cli *kubectlCli) ApplyPipe(ctx context.Context, result exec.RunResult, flags *KubeCliFlags) (*exec.RunResult, error) {
+func (cli *kubectlCli) ApplyPipe(ctx context.Context, input string, flags *KubeCliFlags) (*exec.RunResult, error) {
 	runArgs := exec.
 		NewRunArgs("kubectl", "apply", "-f", "-").
-		WithStdIn(strings.NewReader(result.Stdout))
+		WithEnv(environ(cli.env)).
+		WithStdIn(strings.NewReader(input))
 
 	res, err := cli.executeCommandWithArgs(ctx, runArgs, flags)
 	if err != nil {
@@ -125,14 +129,47 @@ func (cli *kubectlCli) ApplyPipe(ctx context.Context, result exec.RunResult, fla
 	return &res, nil
 }
 
-func (cli *kubectlCli) ApplyFiles(ctx context.Context, path string, flags *KubeCliFlags) (*exec.RunResult, error) {
-
-	res, err := cli.executeCommand(ctx, flags, "apply", "-f", path)
+func (cli *kubectlCli) ApplyFiles(ctx context.Context, path string, flags *KubeCliFlags) error {
+	entries, err := os.ReadDir(path)
 	if err != nil {
-		return nil, fmt.Errorf("kubectl apply -f: %w", err)
+		return fmt.Errorf("failed reading files in path, '%s', %w", path, err)
 	}
 
-	return &res, nil
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+
+		ext := filepath.Ext(entry.Name())
+		if !(ext == ".yaml" || ext == ".yml") {
+			continue
+		}
+
+		filePath := filepath.Join(path, entry.Name())
+		fileBytes, err := os.ReadFile(filePath)
+		if err != nil {
+			return fmt.Errorf("failed reading manifest file '%s', %w", filePath, err)
+		}
+
+		yaml := string(fileBytes)
+		replaced, err := envsubst.Eval(yaml, func(name string) string {
+			if val, has := cli.env[name]; has {
+				return val
+			}
+			return os.Getenv(name)
+		})
+
+		if err != nil {
+			return fmt.Errorf("failed replacing env vars, %w", err)
+		}
+
+		_, err = cli.ApplyPipe(ctx, replaced, flags)
+		if err != nil {
+			return fmt.Errorf("failed applying manifest, %w", err)
+		}
+	}
+
+	return nil
 }
 
 func (cli *kubectlCli) ApplyKustomize(ctx context.Context, path string, flags *KubeCliFlags) (*exec.RunResult, error) {
@@ -208,4 +245,13 @@ func NewKubectl(commandRunner exec.CommandRunner) KubectlCli {
 	return &kubectlCli{
 		commandRunner: commandRunner,
 	}
+}
+
+func environ(values map[string]string) []string {
+	env := []string{}
+	for key, value := range values {
+		env = append(env, fmt.Sprintf("%s=%s", key, value))
+	}
+
+	return env
 }

@@ -28,6 +28,7 @@ const (
 	AzureResourceTypeContainerRegistry       AzureResourceType = "Microsoft.ContainerRegistry/registries"
 	AzureResourceTypeManagedCluster          AzureResourceType = "Microsoft.ContainerService/managedClusters"
 	AzureResourceTypeServicePlan             AzureResourceType = "Microsoft.Web/serverfarms"
+	AzureResourceTypeAgentPool               AzureResourceType = "Microsoft.ContainerService/managedClusters/agentPools"
 	AzureResourceTypeSqlServer               AzureResourceType = "Microsoft.Sql/servers"
 	AzureResourceTypeVirtualNetwork          AzureResourceType = "Microsoft.Network/virtualNetworks"
 	AzureResourceTypeWebSite                 AzureResourceType = "Microsoft.Web/sites"
@@ -84,6 +85,8 @@ func GetResourceTypeDisplayName(resourceType AzureResourceType) string {
 		return "Container Registry"
 	case AzureResourceTypeManagedCluster:
 		return "AKS Managed Cluster"
+	case AzureResourceTypeAgentPool:
+		return "AKS Agent Pool"
 	}
 
 	return ""

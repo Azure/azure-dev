@@ -391,6 +391,9 @@ param acrUntaggedRetentionPolicyEnabled bool = false
 @description('The number of days to retain untagged manifests for')
 param acrUntaggedRetentionPolicy int = 30
 
+@description('Enable admin user for ACR push/pull')
+param acrAdminUserEnabled bool = true
+
 var acrName = 'cr${replace(resourceName, '-', '')}${uniqueString(resourceGroup().id, resourceName)}'
 
 resource acr 'Microsoft.ContainerRegistry/registries@2021-06-01-preview' = if (!empty(registries_sku)) {
@@ -413,6 +416,7 @@ resource acr 'Microsoft.ContainerRegistry/registries@2021-06-01-preview' = if (!
     }
     publicNetworkAccess: privateLinks /* && empty(acrIPWhitelist)*/ ? 'Disabled' : 'Enabled'
     zoneRedundancy: acrZoneRedundancyEnabled
+    adminUserEnabled: acrAdminUserEnabled
     /*
     networkRuleSet: {
       defaultAction: 'Deny'

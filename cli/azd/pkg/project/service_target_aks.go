@@ -79,19 +79,18 @@ func (t *aksTarget) Deploy(ctx context.Context, azdCtx *azdcontext.AzdContext, p
 		return ServiceDeploymentResult{}, fmt.Errorf("failed creating kube namespace: %w", err)
 	}
 
-	_, err = t.kubectl.ApplyPipe(ctx, *namespaceResult, nil)
+	_, err = t.kubectl.ApplyPipe(ctx, *&namespaceResult.Stdout, nil)
 	if err != nil {
 		return ServiceDeploymentResult{}, fmt.Errorf("failed applying kube namespace: %w", err)
 	}
 
 	progress <- "Creating k8s secrets"
-	secrets := t.env.Environ()
-	secretResult, err := t.kubectl.CreateSecretGenericFromLiterals(ctx, "azd", secrets, &kubeFlags)
+	secretResult, err := t.kubectl.CreateSecretGenericFromLiterals(ctx, "azd", t.env.Environ(), &kubeFlags)
 	if err != nil {
 		return ServiceDeploymentResult{}, fmt.Errorf("failed setting kube secrets: %w", err)
 	}
 
-	_, err = t.kubectl.ApplyPipe(ctx, *secretResult, nil)
+	_, err = t.kubectl.ApplyPipe(ctx, *&secretResult.Stdout, nil)
 	if err != nil {
 		return ServiceDeploymentResult{}, fmt.Errorf("failed applying kube secrets: %w", err)
 	}
@@ -135,7 +134,8 @@ func (t *aksTarget) Deploy(ctx context.Context, azdCtx *azdcontext.AzdContext, p
 	}
 
 	progress <- "Applying k8s manifests"
-	_, err = t.kubectl.ApplyFiles(ctx, filepath.Join(t.config.RelativePath, "manifests"), &kubectl.KubeCliFlags{Namespace: namespace})
+	t.kubectl.SetEnv(t.env.Values)
+	err = t.kubectl.ApplyFiles(ctx, filepath.Join(t.config.RelativePath, "manifests"), &kubectl.KubeCliFlags{Namespace: namespace})
 	if err != nil {
 		return ServiceDeploymentResult{}, fmt.Errorf("failed applying kube manifests: %w", err)
 	}

@@ -51,7 +51,7 @@ func Test_CommandsAndActions_Initialize(t *testing.T) {
 	err = env.Save()
 	require.NoError(t, err)
 
-	// Also requires that the user is logged in
+	// Also requires that the user is logged in. This is automatically done in CI. Locally, `azd login` is required.
 
 	// Creates the azd root command with a "Skip" middleware that will skip the invocation
 	// of the underlying command / actions

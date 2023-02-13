@@ -4,6 +4,8 @@
 
 ### Features Added
 
+- [[#1558]](https://github.com/Azure/azure-dev/pull/1558) Upgrade bicep version to 0.14.46 and fetch ARM specific version on ARM platforms.
+
 ### Breaking Changes
 
 ### Bugs Fixed

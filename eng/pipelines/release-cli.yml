@@ -292,7 +292,9 @@ stages:
         steps: 
           - checkout: none 
 
-          - download: azd-linux-arm64
+          - task: DownloadPipelineArtifact@2
+            inputs:
+              artifact: azd-linux-arm64
 
           - bash: chmod +x ./azd-linux-arm64 && ./azd-linux-arm64 version
             displayName: azd version

@@ -211,6 +211,8 @@ stages:
             condition: and(succeeded(), eq(variables['BuildTestMsi'], 'true'))
             displayName: Upload test MSI
 
+      # This is separated today because Skip.LiveTest is a queue-time variable
+      # and cannot be set in a matrix entry. 
       - job: CrossBuildCLI
         strategy: 
           matrix: 
@@ -223,8 +225,8 @@ stages:
               GOOS: linux
               GOARCH: arm64
             MacARM64:
-              Pool: Azure Pipelines
-              OSVmImage: macOS-11
+              Pool: azsdk-pool-mms-ubuntu-2004-general
+              OSVmImage:  MMSUbuntu20.04
               BuildTarget: azd-darwin-arm64
               BuildOutputName: azd
               SetExecutableBit: true

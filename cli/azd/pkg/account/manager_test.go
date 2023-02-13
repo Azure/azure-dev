@@ -550,7 +550,7 @@ func setupGetSubscriptionMock(mockHttp *mockhttp.MockHttpClient, subscription *S
 		isSub := func(request *http.Request) bool {
 			return mockarmresources.IsGetSubscription(request, subscription.Id)
 		}
-		mockHttp.When(isSub).SetError(err)
+		mockHttp.When(isSub).SetNonRetriableError(err)
 		return
 	}
 

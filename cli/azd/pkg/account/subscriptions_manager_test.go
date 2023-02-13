@@ -111,7 +111,9 @@ func TestSubscriptionsManager_ListSubscriptions(t *testing.T) {
 		},
 	}
 	for _, tt := range tests {
+		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			ctx := context.Background()
 			mockHttp := mockhttp.NewMockHttpUtil()
 			mockarmresources.MockListTenants(mockHttp, armsubscriptions.TenantListResult{
@@ -127,13 +129,11 @@ func TestSubscriptionsManager_ListSubscriptions(t *testing.T) {
 
 				// If error is registered, use the error
 				if err, ok := tt.args.subscriptionErrors[tenant]; ok {
-					whenTenantRequest.SetError(err)
+					whenTenantRequest.SetNonRetriableError(err)
 					continue
 				}
 
-				mockHttp.When(func(request *http.Request) bool {
-					return mockarmresources.IsListSubscriptions(request) && mockhttp.HasBearerToken(request, tenantID)
-				}).RespondFn(func(request *http.Request) (*http.Response, error) {
+				whenTenantRequest.RespondFn(func(request *http.Request) (*http.Response, error) {
 					res := armsubscriptions.ClientListResponse{
 						SubscriptionListResult: armsubscriptions.SubscriptionListResult{
 							Value: subs,

@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"log"
 	"math"
+	"os"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armsubscriptions"
@@ -216,8 +218,14 @@ func (m *SubscriptionsManager) ListSubscriptions(ctx context.Context) ([]Subscri
 	numJobs := len(tenants)
 	jobs := make(chan armsubscriptions.TenantIDDescription, numJobs)
 	results := make(chan tenantSubsResult, numJobs)
-	// Apply max number of concurrent workers at 50
-	numWorkers := int(math.Min(float64(len(tenants)), 50))
+	maxWorkers := 25
+	if workerMax := os.Getenv("AZD_SUBSCRIPTIONS_FETCH_MAX_CONCURRENCY"); workerMax != "" {
+		if val, err := strconv.ParseInt(workerMax, 10, 0); err == nil {
+			maxWorkers = int(val)
+		}
+	}
+
+	numWorkers := int(math.Min(float64(len(tenants)), float64(maxWorkers)))
 	for i := 0; i < numWorkers; i++ {
 		go listForTenant(jobs, results, m.service)
 	}
@@ -240,6 +248,7 @@ func (m *SubscriptionsManager) ListSubscriptions(ctx context.Context) ([]Subscri
 		oneSuccess = true
 		allSubscriptions = append(allSubscriptions, res.subs...)
 	}
+	close(results)
 
 	sort.Slice(allSubscriptions, func(i, j int) bool {
 		return allSubscriptions[i].Name < allSubscriptions[j].Name

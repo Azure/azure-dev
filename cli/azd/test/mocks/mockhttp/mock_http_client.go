@@ -72,12 +72,28 @@ func (e *HttpExpression) RespondFn(responseFn RespondFn) *MockHttpClient {
 	return e.http
 }
 
-func (e *HttpExpression) SetError(err error) *MockHttpClient {
+func (e *HttpExpression) SetRetriableError(err error) *MockHttpClient {
+	// Default transport errors are retriable by azure-sdk-for-go RetryPolicy
 	e.error = err
+	return e.http
+}
+
+func (e *HttpExpression) SetNonRetriableError(err error) *MockHttpClient {
+	// Return pointer to satisfy NonRetriable interface
+	e.error = &nonRetryableError{err}
 	return e.http
 }
 
 func HasBearerToken(request *http.Request, bearerToken string) bool {
 	authHeader := request.Header["Authorization"]
 	return len(authHeader) == 1 && authHeader[0] == fmt.Sprintf("Bearer %s", bearerToken)
+}
+
+type nonRetryableError struct {
+	error
+}
+
+// NonRetriable indicates the request which provoked this error shouldn't be retried.
+func (nre *nonRetryableError) NonRetriable() {
+	// Satisfies NonRetriable interface in azure-sdk-for-go/sdk/internal/errorinfo/
 }

@@ -146,7 +146,7 @@ func Test_GetAccountDefaults(t *testing.T) {
 	})
 }
 
-func Test_GetSubscriptions(t *testing.T) {
+func Test_GetSubscriptionsWithDefaultSet(t *testing.T) {
 	t.Run("Success", func(t *testing.T) {
 		mockConfig := mockconfig.NewMockConfigManager()
 		mockHttp := mockhttp.NewMockHttpUtil()
@@ -160,7 +160,7 @@ func Test_GetSubscriptions(t *testing.T) {
 			NewBypassSubscriptionsCache()))
 		require.NoError(t, err)
 
-		subscriptions, err := manager.GetSubscriptions(context.Background())
+		subscriptions, err := manager.GetSubscriptionsWithDefaultSet(context.Background())
 
 		require.NoError(t, err)
 		require.Len(t, subscriptions, 3)
@@ -197,7 +197,7 @@ func Test_GetSubscriptions(t *testing.T) {
 		)
 		require.NoError(t, err)
 
-		subscriptions, err := manager.GetSubscriptions(context.Background())
+		subscriptions, err := manager.GetSubscriptionsWithDefaultSet(context.Background())
 
 		defaultIndex := slices.IndexFunc(subscriptions, func(sub Subscription) bool {
 			return sub.IsDefault
@@ -225,7 +225,7 @@ func Test_GetSubscriptions(t *testing.T) {
 			))
 		require.NoError(t, err)
 
-		subscriptions, err := manager.GetSubscriptions(context.Background())
+		subscriptions, err := manager.GetSubscriptionsWithDefaultSet(context.Background())
 
 		require.Error(t, err)
 		require.Nil(t, subscriptions)

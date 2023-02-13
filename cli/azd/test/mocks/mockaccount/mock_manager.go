@@ -37,8 +37,26 @@ func (a *MockAccountManager) GetAccountDefaults(ctx context.Context) (*account.A
 		DefaultLocation: &account.Location{},
 	}, nil
 }
+func (a *MockAccountManager) GetSubscriptionsWithDefaultSet(ctx context.Context) ([]account.Subscription, error) {
+	subscriptions := a.Subscriptions
+	for _, sub := range subscriptions {
+		if sub.Id == a.DefaultSubscription {
+			sub.IsDefault = true
+		}
+	}
+	return subscriptions, nil
+}
+
 func (a *MockAccountManager) GetSubscriptions(ctx context.Context) ([]account.Subscription, error) {
 	return a.Subscriptions, nil
+}
+
+func (a *MockAccountManager) GetDefaultLocationName(ctx context.Context) string {
+	return a.DefaultLocation
+}
+
+func (a *MockAccountManager) GetDefaultSubscriptionID(ctx context.Context) string {
+	return a.DefaultSubscription
 }
 
 func (a *MockAccountManager) GetLocations(ctx context.Context, subscriptionId string) ([]azcli.AzCliLocation, error) {

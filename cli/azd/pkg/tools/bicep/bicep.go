@@ -167,7 +167,7 @@ func downloadBicep(ctx context.Context, transporter policy.Transporter, bicepVer
 			if arch == "arm64" {
 				return fmt.Errorf("unsupported architecture: %s", runtime.GOARCH)
 			}
-			releaseName = fmt.Sprintf("bicep-linux-musl-x64")
+			releaseName = "bicep-linux-musl-x64"
 		} else {
 			releaseName = fmt.Sprintf("bicep-linux-%s", arch)
 		}

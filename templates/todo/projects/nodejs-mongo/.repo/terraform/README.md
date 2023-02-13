@@ -1,8 +1,27 @@
-# PLACEHOLDER_TITLE
+---
+# Schema: https://review.learn.microsoft.com/en-us/help/contribute/samples/process/onboarding?branch=main#supported-metadata-fields-for-readmemd
+page_type: sample
+languages:
+- azdeveloper
+- nodejs
+- terraform
+- typescript
+- html
+products:
+- azure
+- azure-cosmos-db
+- azure-app-service
+- azure-monitor
+- azure-pipelines
+urlFragment: todo-nodejs-mongo-terraform
+description: NodeJs ToDo application built, deployed, and monitored with Azure Developer CLI (azd).
+---
 
-[![Open in Remote - Containers](https://img.shields.io/static/v1?label=Remote%20-%20Containers&message=Open&color=blue&logo=visualstudiocode)](https://vscode.dev/redirect?url=vscode://ms-vscode-remote.remote-containers/cloneInVolume?url=https://github.com/azure-samples/todo-nodejs-mongo)
+# ToDo Application with a Node.js API and Azure Cosmos DB API for MongoDB on Azure App Service (Terraform)
 
-A complete ToDo application that includes everything you need to build, deploy, and monitor an Azure solution. This application uses the Azure Developer CLI (azd) to get you up and running on Azure quickly PLACEHOLDER_DESCRIPTION, React.js for the Web application, Node.js for the API, Azure Cosmos DB API for MongoDB for storage, and Azure Monitor for monitoring and logging. It includes application code, tools, and pipelines that serve as a foundation from which you can build upon and customize when creating your own solutions.
+[![Open in Remote - Containers](https://img.shields.io/static/v1?label=Remote%20-%20Containers&message=Open&color=blue&logo=visualstudiocode)](https://vscode.dev/redirect?url=vscode://ms-vscode-remote.remote-containers/cloneInVolume?url=https://github.com/azure-samples/todo-nodejs-mongo-terraform)
+
+A complete ToDo application that includes everything you need to build, deploy, and monitor an Azure solution. This application uses the Azure Developer CLI (azd) to get you up and running on Azure quickly using Terraform as the IaC provider, React.js for the Web application, Node.js for the API, Azure Cosmos DB API for MongoDB for storage, and Azure Monitor for monitoring and logging. It includes application code, tools, and pipelines that serve as a foundation from which you can build upon and customize when creating your own solutions.
 
 Let's jump in and get the ToDo app up and running in Azure. When you are finished, you will have a fully functional web app deployed on Azure. In later steps, you'll see how to setup a pipeline and monitor the application.
 
@@ -16,7 +35,7 @@ The following prerequisites are required to use this application. Please ensure 
 
 - [Azure Developer CLI](https://aka.ms/azd-install)
 - [Node.js with npm (16.13.1+)](https://nodejs.org/) - for API backend and Web frontend
-PLACEHOLDERIACTOOLS
+- [Terraform CLI](https://aka.ms/azure-dev/terraform-install)
 
 ### Quickstart
 
@@ -26,7 +45,7 @@ The fastest way for you to get this application up and running on Azure is to us
 1. Run the following command to initialize the project, provision Azure resources, and deploy the application code.
 
 ```bash
-azd up --template todo-nodejs-mongo
+azd up --template todo-nodejs-mongo-terraform
 ```
 
 You will be prompted for the following information:

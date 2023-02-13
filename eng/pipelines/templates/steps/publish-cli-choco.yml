@@ -46,14 +46,14 @@ steps:
       filePath: eng/scripts/New-ChocoPackage.ps1
       arguments: >-
         -Version $(MSI_VERSION)
-        -Tag "azure-dev-cli_${{ parameters.CliVersion }}"
+        -Tag 'azure-dev-cli_${{ parameters.CliVersion }}'
 
   - publish: cli/installer/choco/azd.$(MSI_VERSION).nupkg
     artifact: choco-package
     displayName: Publish Choco Package Artifact
 
   - pwsh: |
-      Write-Host "Pushing Choco Package..."
+      Write-Host 'Pushing Choco Package...'
       choco push azd.$(MSI_VERSION).nupkg `
         --source https://push.chocolatey.org/ `
         --api-key ${{ parameters.ChocoApiKey }}

@@ -295,6 +295,7 @@ stages:
           - task: DownloadPipelineArtifact@2
             inputs:
               artifact: azd-linux-arm64
+              targetPath: $(Build.SourcesDirectory)
 
           - bash: pwd && ls && chmod +x ./azd-linux-arm64 && ./azd-linux-arm64 version
             displayName: azd version

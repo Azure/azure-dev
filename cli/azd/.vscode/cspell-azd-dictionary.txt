@@ -44,6 +44,7 @@ eastus
 endregion
 envname
 errcheck
+errorinfo
 errorlint
 executil
 funcapp

@@ -4,9 +4,16 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"math"
+	"os"
 	"sort"
+	"strconv"
 	"strings"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armsubscriptions"
+	"github.com/azure/azure-dev/cli/azd/internal/telemetry"
+	"github.com/azure/azure-dev/cli/azd/internal/telemetry/events"
+	"github.com/azure/azure-dev/cli/azd/internal/telemetry/fields"
 	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
@@ -142,8 +149,17 @@ func (m *SubscriptionsManager) GetSubscriptions(ctx context.Context) ([]Subscrip
 	return subscriptions, nil
 }
 
+type tenantSubsResult struct {
+	subs []Subscription
+	err  error
+}
+
 // ListSubscription lists subscriptions accessible by the current account by calling azure management services.
 func (m *SubscriptionsManager) ListSubscriptions(ctx context.Context) ([]Subscription, error) {
+	var err error
+	ctx, span := telemetry.GetTracer().Start(ctx, events.AccountSubscriptionsListEvent)
+	defer span.EndWithStatus(err)
+
 	stop := m.msg.ShowProgress(ctx, "Retrieving subscriptions...")
 	defer stop()
 
@@ -162,7 +178,7 @@ func (m *SubscriptionsManager) ListSubscriptions(ctx context.Context) ([]Subscri
 
 		tenantSubscriptions := []Subscription{}
 		for _, subscription := range subscriptions {
-			tenantSubscriptions = append(tenantSubscriptions, toSubscription(&subscription, *principalTenantId))
+			tenantSubscriptions = append(tenantSubscriptions, toSubscription(subscription, *principalTenantId))
 		}
 
 		return tenantSubscriptions, nil
@@ -173,42 +189,72 @@ func (m *SubscriptionsManager) ListSubscriptions(ctx context.Context) ([]Subscri
 		return nil, fmt.Errorf("listing tenants: %w", err)
 	}
 
-	allSubscriptions := []Subscription{}
-	errors := []error{}
-	oneSuccess := false
+	span.SetAttributes(fields.AccountSubscriptionsListTenantsFound.Int(len(tenants)))
 
-	for _, tenant := range tenants {
-		tenantId := *tenant.TenantID
-		subscriptions, err := m.service.ListSubscriptions(ctx, tenantId)
-		if err != nil {
-			errorMsg := err.Error()
-			displayName := *tenant.DisplayName
-			if strings.Contains(errorMsg, "AADSTS50076") {
-				errors = append(
-					errors,
-					fmt.Errorf(
+	listForTenant := func(
+		jobs <-chan armsubscriptions.TenantIDDescription,
+		results chan<- tenantSubsResult,
+		service *azcli.SubscriptionsService) {
+		for tenant := range jobs {
+			azSubs, err := service.ListSubscriptions(ctx, *tenant.TenantID)
+			if err != nil {
+				errorMsg := err.Error()
+				displayName := *tenant.DisplayName
+				if strings.Contains(errorMsg, "AADSTS50076") {
+					err = fmt.Errorf(
 						"%s requires Multi-Factor Authentication (MFA). "+
 							"To authenticate, login with `azd login --tenant-id %s`",
 						displayName,
-						*tenant.DefaultDomain))
-			} else {
-				errors = append(
-					errors,
-					fmt.Errorf("failed to load subscriptions from tenant '%s' : %w", displayName, err))
+						*tenant.DefaultDomain)
+				} else {
+					err = fmt.Errorf("failed to load subscriptions from tenant '%s' : %w", displayName, err)
+				}
 			}
 
+			results <- tenantSubsResult{toSubscriptions(azSubs, *tenant.TenantID), err}
+		}
+	}
+
+	numJobs := len(tenants)
+	jobs := make(chan armsubscriptions.TenantIDDescription, numJobs)
+	results := make(chan tenantSubsResult, numJobs)
+	maxWorkers := 25
+	if workerMax := os.Getenv("AZD_SUBSCRIPTIONS_FETCH_MAX_CONCURRENCY"); workerMax != "" {
+		if val, err := strconv.ParseInt(workerMax, 10, 0); err == nil {
+			maxWorkers = int(val)
+		}
+	}
+
+	numWorkers := int(math.Min(float64(len(tenants)), float64(maxWorkers)))
+	for i := 0; i < numWorkers; i++ {
+		go listForTenant(jobs, results, m.service)
+	}
+
+	for i := 0; i < numJobs; i++ {
+		jobs <- tenants[i]
+	}
+	close(jobs)
+
+	allSubscriptions := []Subscription{}
+	errors := []error{}
+	oneSuccess := false
+	for i := 0; i < numJobs; i++ {
+		res := <-results
+		if res.err != nil {
+			errors = append(errors, res.err)
 			continue
 		}
 
 		oneSuccess = true
-		for _, subscription := range subscriptions {
-			allSubscriptions = append(allSubscriptions, toSubscription(&subscription, tenantId))
-		}
+		allSubscriptions = append(allSubscriptions, res.subs...)
 	}
+	close(results)
 
 	sort.Slice(allSubscriptions, func(i, j int) bool {
 		return allSubscriptions[i].Name < allSubscriptions[j].Name
 	})
+
+	span.SetAttributes(fields.AccountSubscriptionsListTenantsFailed.Int(len(errors)))
 
 	if !oneSuccess && len(tenants) > 0 {
 		return nil, multierr.Combine(errors...)
@@ -241,11 +287,23 @@ func (m *SubscriptionsManager) GetSubscription(ctx context.Context, subscription
 		return nil, err
 	}
 
-	sub := toSubscription(azSub, tenantId)
+	sub := toSubscription(*azSub, tenantId)
 	return &sub, nil
 }
 
-func toSubscription(subscription *azcli.AzCliSubscriptionInfo, userAccessTenantId string) Subscription {
+func toSubscriptions(azSubs []azcli.AzCliSubscriptionInfo, userAccessTenantId string) []Subscription {
+	if azSubs == nil {
+		return nil
+	}
+
+	subs := make([]Subscription, 0, len(azSubs))
+	for _, azSub := range azSubs {
+		subs = append(subs, toSubscription(azSub, userAccessTenantId))
+	}
+	return subs
+}
+
+func toSubscription(subscription azcli.AzCliSubscriptionInfo, userAccessTenantId string) Subscription {
 	return Subscription{
 		Id:                 subscription.Id,
 		Name:               subscription.Name,

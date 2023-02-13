@@ -55,6 +55,8 @@ const (
 	ObjectIdKey = attribute.Key(contracts.UserAuthUserId) // user_AuthenticatedId
 	// Tenant ID of the principal.
 	TenantIdKey = attribute.Key("ad.tenant.id")
+	// The type of account. See AccountTypeUser for all possible options.
+	AccountTypeKey = attribute.Key("ad.account.type")
 	// Currently selected Subscription ID.
 	SubscriptionIdKey = attribute.Key("ad.subscription.id")
 	// Currently selected Project Template ID.
@@ -88,5 +90,21 @@ const (
 	EnvCodespaces         = "GitHub Codespaces"
 )
 
+// All possible enumerations of AccountTypeKey
+const (
+	// A user.
+	AccountTypeUser = "User"
+	// A service principal, typically an application.
+	AccountTypeServicePrincipal = "Service Principal"
+)
+
 // The value used for ServiceNameKey
 const ServiceNameAzd = "azd"
+
+// Additional fields of events.AccountSubscriptionsListEvent
+const (
+	// Number of tenants found
+	AccountSubscriptionsListTenantsFound = attribute.Key("tenants.found")
+	// Number of tenants where listing of subscriptions failed
+	AccountSubscriptionsListTenantsFailed = attribute.Key("tenants.failed")
+)

@@ -1,5 +1,7 @@
 param(
+    [Parameter(Mandatory = $true)]
     [string] $Version,
+
     [string] $Tag = "azure-dev-cli_$Version"
 )
 

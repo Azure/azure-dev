@@ -220,7 +220,7 @@ stages:
               BuildTarget: azd-linux-arm64
               BuildOutputName: azd
               SetExecutableBit: true
-              RunAzdVersion: true
+              AptInstall: gcc-arm-linux-gnueabi
               GOOS: linux
               GOARCH: arm64
               CGO_ENABLED: 1
@@ -239,6 +239,12 @@ stages:
         timeoutInMinutes: 20
         steps: 
           - checkout: self
+
+          - bash: |
+              sudo apt update 
+              sudo apt install -y $(AptInstall)
+            condition: and(succeeded(), ne(variables['AptInstall'], ''))
+            displayName: Install additional dependencies
 
           - template: /eng/pipelines/templates/steps/setup-go.yml
             parameters:
@@ -263,6 +269,10 @@ stages:
                 -SourceVersion $(Build.SourceVersion)
               workingDirectory: cli/azd
             displayName: Build Go Binary (cross compile)
+
+          - pwsh: file azd
+            workingDirectory: cli/azd
+            displayName: Get file info
 
           - pwsh: Move-Item $(BuildOutputName) $(BuildTarget)
             workingDirectory: cli/azd

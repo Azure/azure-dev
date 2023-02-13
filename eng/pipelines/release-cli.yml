@@ -243,6 +243,7 @@ stages:
           - bash: |
               sudo apt update 
               sudo apt install -y $(AptInstall)
+              gcc --version
             condition: and(succeeded(), ne(variables['AptInstall'], ''))
             displayName: Install additional dependencies
 

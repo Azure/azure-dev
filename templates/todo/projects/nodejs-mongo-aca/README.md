@@ -1,5 +1,4 @@
 ---
-# Schema: https://review.learn.microsoft.com/en-us/help/contribute/samples/process/onboarding?branch=main#supported-metadata-fields-for-readmemd
 page_type: sample
 languages:
 - azdeveloper
@@ -17,6 +16,8 @@ products:
 urlFragment: todo-nodejs-mongo-aca
 description: NodeJs ToDo application built, deployed, and monitored with Azure Developer CLI (azd).
 ---
+<!-- YAML front-matter Schema: https://review.learn.microsoft.com/en-us/help/contribute/samples/process/onboarding?branch=main#supported-metadata-fields-for-readmemd
+page_type: sample -->
 
 # ToDo Application with a Node.js API and Azure Cosmos DB API for MongoDB on Azure Container Apps
 

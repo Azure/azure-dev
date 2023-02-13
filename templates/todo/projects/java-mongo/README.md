@@ -1,5 +1,4 @@
 ---
-# Schema: https://review.learn.microsoft.com/en-us/help/contribute/samples/process/onboarding?branch=main#supported-metadata-fields-for-readmemd
 page_type: sample
 languages:
 - azdeveloper
@@ -17,6 +16,8 @@ products:
 urlFragment: todo-java-mongo
 description: Java SpringBoot ToDo application built, deployed, and monitored with Azure Developer CLI (azd). Azure Cosmos DB API for MongoDB for storage.
 ---
+<!-- YAML front-matter Schema: https://review.learn.microsoft.com/en-us/help/contribute/samples/process/onboarding?branch=main#supported-metadata-fields-for-readmemd
+page_type: sample -->
 
 # ToDo Application with a Java API and Azure Cosmos DB API for MongoDB on Azure App Service
 

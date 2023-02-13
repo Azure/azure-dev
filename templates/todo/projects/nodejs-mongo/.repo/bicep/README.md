@@ -15,8 +15,7 @@ products:
 urlFragment: todo-nodejs-mongo
 description: NodeJs ToDo application built, deployed, and monitored with Azure Developer CLI (azd).
 ---
-<!-- YAML front-matter Schema: https://review.learn.microsoft.com/en-us/help/contribute/samples/process/onboarding?branch=main#supported-metadata-fields-for-readmemd
-page_type: sample -->
+<!-- YAML front-matter schema: https://review.learn.microsoft.com/en-us/help/contribute/samples/process/onboarding?branch=main#supported-metadata-fields-for-readmemd -->
 
 # ToDo Application with a Node.js API and Azure Cosmos DB API for MongoDB on Azure App Service
 

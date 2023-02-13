@@ -1,3 +1,24 @@
+---
+# Schema: https://review.learn.microsoft.com/en-us/help/contribute/samples/process/onboarding?branch=main#supported-metadata-fields-for-readmemd
+page_type: sample
+languages:
+- azdeveloper
+- aspx-csharp
+- csharp
+- bicep
+- typescript
+- html
+products:
+- azure
+- azure-sql-database
+- azure-app-service
+- azure-monitor
+- azure-pipelines
+- aspnet-core
+urlFragment: todo-csharp-sql
+description: Complete ToDo application built, deployed, and monitored with Azure Developer CLI (azd). This sample uses Azure SQL database for storage.
+---
+
 # ToDo Application with a C# API and Azure SQL Database
 
 [![Open in Remote - Containers](https://img.shields.io/static/v1?label=Remote%20-%20Containers&message=Open&color=blue&logo=visualstudiocode)](https://vscode.dev/redirect?url=vscode://ms-vscode-remote.remote-containers/cloneInVolume?url=https://github.com/azure-samples/todo-csharp-cosmos-sql)

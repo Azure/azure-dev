@@ -1,3 +1,24 @@
+---
+# Schema: https://review.learn.microsoft.com/en-us/help/contribute/samples/process/onboarding?branch=main#supported-metadata-fields-for-readmemd
+page_type: sample
+languages:
+- azdeveloper
+- java
+- bicep
+- typescript
+- html
+products:
+- azure
+- azure-cosmos-db
+- azure-container-apps
+- azure-container-registry
+- azure-monitor
+- azure-pipelines
+- ms-build-openjdk
+urlFragment: todo-java-mongo-aca
+description: Java SpringBoot ToDo application built, deployed, and monitored with Azure Developer CLI (azd).
+---
+
 # ToDo Application with a Java API and Azure Cosmos DB API for MongoDB on Azure Container Apps
 
 [![Open in Remote - Containers](https://img.shields.io/static/v1?label=Remote%20-%20Containers&message=Open&color=blue&logo=visualstudiocode)](https://vscode.dev/redirect?url=vscode://ms-vscode-remote.remote-containers/cloneInVolume?url=https://github.com/azure-samples/todo-java-mongo-aca)
@@ -15,7 +36,7 @@ Let's jump in and get the ToDo app up and running in Azure. When you are finishe
 The following prerequisites are required to use this application. Please ensure that you have them all installed locally.
 
 - [Azure Developer CLI](https://aka.ms/azd-install)
-- [Java 17 or later](https://jdk.java.net/) - for API backend
+- [Java 17 or later](https://learn.microsoft.com/en-us/java/openjdk/install) - for API backend
 - [Node.js with npm (16.13.1+)](https://nodejs.org/) - for the Web frontend
 - [Docker](https://docs.docker.com/get-docker/)
 

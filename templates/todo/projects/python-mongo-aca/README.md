@@ -1,3 +1,23 @@
+---
+# Schema: https://review.learn.microsoft.com/en-us/help/contribute/samples/process/onboarding?branch=main#supported-metadata-fields-for-readmemd
+page_type: sample
+languages:
+- azdeveloper
+- python
+- bicep
+- typescript
+- html
+products:
+- azure
+- azure-cosmos-db
+- azure-container-apps
+- azure-container-registry
+- azure-monitor
+- azure-pipelines
+urlFragment: todo-python-mongo-aca
+description: Python ToDo application built, deployed, and monitored with Azure Developer CLI (azd).
+---
+
 # ToDo Application with a Python API and Azure Cosmos DB API for MongoDB on Azure Container Apps
 
 [![Open in Remote - Containers](https://img.shields.io/static/v1?label=Remote%20-%20Containers&message=Open&color=blue&logo=visualstudiocode)](https://vscode.dev/redirect?url=vscode://ms-vscode-remote.remote-containers/cloneInVolume?url=https://github.com/azure-samples/todo-python-mongo-aca)

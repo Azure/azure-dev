@@ -4,8 +4,8 @@
 import { DialogResponses, IActionContext } from '@microsoft/vscode-azext-utils';
 import * as os from 'os';
 import { localize } from '../localize';
-import { onAzdInstallAttempted, onAzdInstallCompleted } from '../utils/azureDevCli';
-import { executeAsTask } from '../utils/executeAsTask';
+import { onAzdInstallAttempted } from '../utils/azureDevCli';
+import { executeInTerminal } from '../utils/executeInTerminal';
 import { isLinux, isMac, isWindows } from '../utils/osUtils';
 import { getAzDevTerminalTitle } from './cmdUtil';
 
@@ -14,9 +14,6 @@ const LinuxTerminalCommand = `curl -fsSL https://aka.ms/install-azd.sh | bash`;
 const MacTerminalCommand = LinuxTerminalCommand; // Same as Linux
 
 export async function installCli(context: IActionContext, shouldPrompt: boolean = true): Promise<void> {
-    // Immediately note that the user has attempted to install to avoid excess prompts
-    onAzdInstallAttempted();
-
     if (shouldPrompt) {
         const message = localize('azure-dev.commands.cli.install.prompt', 'This will install or update the Azure Developer CLI. Do you want to continue?');
         // Don't need to check the result, if the user chooses cancel a UserCancelledError will be thrown
@@ -36,8 +33,8 @@ export async function installCli(context: IActionContext, shouldPrompt: boolean 
         throw new Error(localize('azure-dev.commands.cli.install.unsupportedPlatform', 'Unsupported platform: {0}', os.platform()));
     }
 
-    void executeAsTask(terminalCommand, getAzDevTerminalTitle(), { focus: true, alwaysRunNew: true }).finally(() => {
-        // Reset the install state so that the next time the user tries to use the CLI, we'll check if it's installed
-        onAzdInstallCompleted();
-    });
+    onAzdInstallAttempted();
+
+    // The installation process will be started but not itself awaited, so we won't know the ultimate result
+    await executeInTerminal(terminalCommand, { name: getAzDevTerminalTitle() });
 }

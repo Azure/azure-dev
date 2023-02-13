@@ -63,9 +63,8 @@ export function scheduleAzdInstalledCheck(): void {
 
 export function onAzdInstallAttempted(): void {
     azdInstallAttempted = true;
-}
 
-export function onAzdInstallCompleted(): void {
+    // Clear the install state so we'll check again at the next command
     azdVersionChecker.clear();
 }
 

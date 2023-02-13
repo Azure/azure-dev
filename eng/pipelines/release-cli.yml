@@ -377,11 +377,11 @@ stages:
 
         - pwsh: |
             New-Item -ItemType Directory -Path mac
+            
             Compress-Archive `
             -Path mac-artifacts/azd-darwin-amd64 `
             -DestinationPath mac/azd-darwin-amd64.zip
 
-            New-Item -ItemType Directory -Path mac
             Compress-Archive `
             -Path mac-artifacts/azd-darwin-arm64 `
             -DestinationPath mac/azd-darwin-arm64.zip

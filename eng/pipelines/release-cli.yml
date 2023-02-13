@@ -220,10 +220,8 @@ stages:
               BuildTarget: azd-linux-arm64
               BuildOutputName: azd
               SetExecutableBit: true
-              AptInstall: gcc-arm-linux-gnueabi
               GOOS: linux
               GOARCH: arm64
-              CGO_ENABLED: 1
             MacARM64:
               Pool: Azure Pipelines
               OSVmImage: macOS-11
@@ -232,20 +230,12 @@ stages:
               SetExecutableBit: true
               GOOS: darwin
               GOARCH: arm64
-              CGO_ENABLED: 1
         pool: 
           name: $(Pool)
           vmImage: $(OSVmImage)
         timeoutInMinutes: 20
         steps: 
           - checkout: self
-
-          - bash: |
-              sudo apt update 
-              sudo apt install -y $(AptInstall)
-              gcc --version
-            condition: and(succeeded(), ne(variables['AptInstall'], ''))
-            displayName: Install additional dependencies
 
           - template: /eng/pipelines/templates/steps/setup-go.yml
             parameters:

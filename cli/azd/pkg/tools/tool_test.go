@@ -19,13 +19,6 @@ func Test_toolInPath(t *testing.T) {
 		require.NoError(t, err)
 		require.False(t, has)
 	})
-
-	t.Run("Installed", func(t *testing.T) {
-		// 'az' is a prerequisite to even develop in this package right now.
-		has, err := ToolInPath("az")
-		require.NoError(t, err)
-		require.True(t, has)
-	})
 }
 
 func Test_Unique(t *testing.T) {

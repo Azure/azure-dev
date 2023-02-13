@@ -296,7 +296,7 @@ stages:
             inputs:
               artifact: azd-linux-arm64
 
-          - bash: chmod +x ./azd-linux-arm64 && ./azd-linux-arm64 version
+          - bash: pwd && ls && chmod +x ./azd-linux-arm64 && ./azd-linux-arm64 version
             displayName: azd version
 
       - job: GenerateReleaseArtifacts

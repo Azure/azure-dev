@@ -44,6 +44,9 @@ export async function deleteEnvironment(context: IActionContext, selectedItem?: 
         } catch(err) {
             // Treated the same as no environments case
         }
+
+        // Filter out the default environment, it cannot be deleted without causing trouble
+        envData = envData.filter(e => !e.IsDefault);
         
         if (envData.length === 0) {
             void vscode.window.showInformationMessage(localize('azure-dev.commands.cli.env-delete.no-environments', 'There are no environments to delete.'));
@@ -70,15 +73,11 @@ export async function deleteEnvironment(context: IActionContext, selectedItem?: 
         const environmentDirectory = vscode.Uri.joinPath(folder.uri, '.azure', name);
         
         await vscode.workspace.fs.delete(environmentDirectory, { recursive: true, useTrash: false });
-        
-        // TODO: Update default environment, if necessary.
-        
+                
         // TODO: Use Azure Dev CLI to delete environment. https://github.com/Azure/azure-dev/issues/1554
         // const azureCli = await createAzureDevCli(context);
         // azureCli.commandBuilder.withArg('env').withArg('delete').withQuotedArg(name);
         // await spawnAsync(azureCli.commandBuilder.build(), azureCli.spawnOptions(cwd));
-        
-        // TODO: What happens if default environment is deleted?
         
         void vscode.window.showInformationMessage(
             localize('azure-dev.commands.cli.env-delete.environment-deleted', "'{0}' has been deleted.", name));

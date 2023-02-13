@@ -23,7 +23,11 @@ export class AzureDevCliEnvironment implements AzureDevCliModel {
 
         treeItem.contextValue = 'ms-azuretools.azure-dev.views.workspace.environment';
         treeItem.iconPath = new vscode.ThemeIcon('cloud');
-        treeItem.description = this.isDefault ? localize('views.workspace.AzureDevCliEnvironment.defaultLabel', '(default)') : undefined;
+
+        if (this.isDefault) {
+            treeItem.contextValue += ';default';
+            treeItem.description = localize('views.workspace.AzureDevCliEnvironment.defaultLabel', '(default)');
+        }
 
         return treeItem;
     }

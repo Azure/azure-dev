@@ -225,13 +225,15 @@ stages:
               GOOS: linux
               GOARCH: arm64
             MacARM64:
-              Pool: azsdk-pool-mms-ubuntu-2004-general
-              OSVmImage:  MMSUbuntu20.04
+              Pool: Azure Pipelines
+              OSVmImage: macOS-11
               BuildTarget: azd-darwin-arm64
               BuildOutputName: azd
               SetExecutableBit: true
               GOOS: darwin
               GOARCH: arm64
+              # CGO_SUPPORT is required on MacOS to cross-compile pkg/outil/osversion
+              CGO_SUPPORT: 1
         pool: 
           name: $(Pool)
           vmImage: $(OSVmImage)

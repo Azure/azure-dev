@@ -232,8 +232,8 @@ stages:
               SetExecutableBit: true
               GOOS: darwin
               GOARCH: arm64
-              # CGO_SUPPORT is required on MacOS to cross-compile pkg/outil/osversion
-              CGO_SUPPORT: 1
+              # CGO_ENABLED is required on MacOS to cross-compile pkg/outil/osversion
+              CGO_ENABLED: 1
         pool: 
           name: $(Pool)
           vmImage: $(OSVmImage)

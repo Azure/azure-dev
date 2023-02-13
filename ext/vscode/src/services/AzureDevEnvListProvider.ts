@@ -33,7 +33,9 @@ export class WorkspaceAzureDevEnvListProvider implements AzureDevEnvListProvider
             .withNamedArg('--output', 'json')
             .build();
 
-        const envListResultsJson = await withTimeout(execAsync(command), 30000);
+        const options = azureCli.spawnOptions(configurationFileDirectory);
+
+        const envListResultsJson = await withTimeout(execAsync(command, options), 30000);
 
         return JSON.parse(envListResultsJson.stdout) as AzDevEnvListResults;
     }

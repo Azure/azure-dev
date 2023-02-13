@@ -47,7 +47,9 @@ export class WorkspaceAzureDevShowProvider implements AzureDevShowProvider {
             .withNamedArg('--output', 'json')
             .build();
 
-        const showResultsJson = await withTimeout(execAsync(command), 30000);
+        const options = azureCli.spawnOptions(configurationFileDirectory);
+
+        const showResultsJson = await withTimeout(execAsync(command, options), 30000);
 
         return JSON.parse(showResultsJson.stdout) as AzDevShowResults;
     }

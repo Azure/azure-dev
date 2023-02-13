@@ -398,7 +398,10 @@ stages:
 
         - pwsh: |
             Expand-Archive -Path mac/azd-darwin-amd64.zip -DestinationPath mac/
+            Expand-Archive -Path mac/azd-darwin-arm64.zip -DestinationPath mac/
+
             Remove-Item mac/azd-darwin-amd64.zip
+            Remove-Item mac/azd-darwin-arm64.zip
           displayName: Extract azd-darwin-amd64 from zip and remove zip
 
         - pwsh: |
@@ -953,6 +956,7 @@ stages:
               UploadInstaller: true
               DockerImageTags: pr-$(PRNumber)
               UploadMsi: true
+              PublishArm64Binaries: true
 
           - pwsh: |
               $urlBase = "https://$(azdev-storage-account-name).blob.core.windows.net/azd/standalone/pr/$(PRNumber)"
@@ -968,7 +972,9 @@ stages:
           - pwsh: |
               $urlBase = "$(GenerateUrlBase.UrlBase)"
               $linuxReleaseUrl = "$urlBase/azd-linux-amd64.tar.gz"
+              $linuxReleaseUrlArm64 = "$urlBase/azd-linux-arm64.tar.gz"
               $macosReleaseUrl = "$urlBase/azd-darwin-amd64.zip"
+              $macosReleaseUrlArm64 = "$urlBase/azd-darwin-arm64.zip"
               $windowsReleaseUrl = "$urlBase/azd-windows-amd64.zip"
               $msiReleaseUrl = "$urlBase/azd-windows-amd64.msi"
 
@@ -1013,8 +1019,12 @@ stages:
 
               ### Standalone Binary
 
-              * Linux - $linuxReleaseUrl
-              * MacOS - $macosReleaseUrl
+              * Linux - 
+                  * x86_64 - $linuxReleaseUrl
+                  * ARM64 - $linuxReleaseUrlArm64
+              * MacOS - 
+                  * x86_64 - $macosReleaseUrl
+                  * ARM64 - $macosReleaseUrlArm64
               * Windows - $windowsReleaseUrl
 
               ### MSI 

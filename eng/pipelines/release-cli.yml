@@ -225,8 +225,8 @@ stages:
               GOARCH: arm64
               CGO_ENABLED: 1
             MacARM64:
-              Pool: azsdk-pool-mms-ubuntu-2004-general
-              OSVmImage:  MMSUbuntu20.04
+              Pool: Azure Pipelines
+              OSVmImage: macOS-11
               BuildTarget: azd-darwin-arm64
               BuildOutputName: azd
               SetExecutableBit: true

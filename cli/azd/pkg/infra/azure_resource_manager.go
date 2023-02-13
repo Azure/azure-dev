@@ -284,6 +284,10 @@ func (rm *AzureResourceManager) appendDeploymentResourcesRecursive(
 ) error {
 	operations, err := rm.azCli.ListResourceGroupDeploymentOperations(
 		ctx, subscriptionId, resourceGroupName, deploymentName)
+	if errors.Is(err, azcli.ErrDeploymentNotFound) {
+		// ignore appending operations if azd was unable to fetch them
+		return nil
+	}
 	if err != nil {
 		return fmt.Errorf("getting subscription deployment operations: %w", err)
 	}

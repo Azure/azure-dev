@@ -33,6 +33,7 @@ type loginFlags struct {
 	clientCertificate      string
 	federatedToken         stringPtr
 	federatedTokenProvider string
+	scopes                 []string
 	redirectPort           int
 	global                 *internal.GlobalCommandOptions
 }
@@ -104,6 +105,11 @@ func (lf *loginFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandO
 		"tenant-id",
 		"",
 		"The tenant id or domain name to authenticate with.")
+	local.StringArrayVar(
+		&lf.scopes,
+		"scope",
+		nil,
+		"The scope to acquire during login")
 	local.IntVar(
 		&lf.redirectPort,
 		"redirect-port",
@@ -183,7 +189,9 @@ func (la *loginAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	} else if err != nil {
 		return nil, fmt.Errorf("checking auth status: %w", err)
 	} else {
-		if token, err := auth.EnsureLoggedInCredential(ctx, cred); errors.Is(err, auth.ErrNoCurrentUser) {
+		token, err := auth.EnsureLoggedInCredential(ctx, cred, la.flags.scopes...)
+
+		if errors.Is(err, auth.ErrNoCurrentUser) {
 			res.Status = contracts.LoginStatusUnauthenticated
 		} else if err != nil {
 			return nil, fmt.Errorf("checking auth status: %w", err)
@@ -321,11 +329,13 @@ func (la *loginAction) login(ctx context.Context) error {
 	}
 
 	if la.flags.useDeviceCode {
-		if _, err := la.authManager.LoginWithDeviceCode(ctx, la.writer, la.flags.tenantID); err != nil {
+		if _, err := la.authManager.LoginWithDeviceCode(
+			ctx, la.flags.scopes, la.writer, la.flags.tenantID); err != nil {
 			return fmt.Errorf("logging in: %w", err)
 		}
 	} else {
-		if _, err := la.authManager.LoginInteractive(ctx, la.flags.redirectPort, la.flags.tenantID); err != nil {
+		if _, err := la.authManager.LoginInteractive(
+			ctx, la.flags.scopes, la.flags.redirectPort, la.flags.tenantID); err != nil {
 			return fmt.Errorf("logging in: %w", err)
 		}
 	}

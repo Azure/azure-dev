@@ -2,6 +2,8 @@ package auth
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"sync"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
@@ -47,6 +49,10 @@ func (t *multiTenantCredentialProvider) GetTokenCredential(
 	}
 
 	if _, err := EnsureLoggedInCredential(ctx, credential); err != nil {
+		if errors.Is(err, ErrNoCurrentUser) && tenantId != "" {
+			return nil, errors.New(fmt.Sprintf("not logged in, run `azd login --tenant-id %s` to login", tenantId))
+		}
+
 		return nil, err
 	}
 

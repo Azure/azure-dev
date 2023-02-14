@@ -218,7 +218,7 @@ func TestLoginInteractive(t *testing.T) {
 		publicClient:  &mockPublicClient{},
 	}
 
-	cred, err := m.LoginInteractive(context.Background(), 0, "")
+	cred, err := m.LoginInteractive(context.Background(), []string{}, 0, "")
 
 	require.NoError(t, err)
 	require.IsType(t, new(azdCredential), cred)
@@ -245,7 +245,7 @@ func TestLoginDeviceCode(t *testing.T) {
 
 	buf := bytes.Buffer{}
 
-	cred, err := m.LoginWithDeviceCode(context.Background(), &buf, "")
+	cred, err := m.LoginWithDeviceCode(context.Background(), []string{}, &buf, "")
 
 	require.Regexp(t, "using the code 123-456", buf.String())
 

@@ -19,6 +19,8 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/public"
+	"github.com/azure/azure-dev/cli/azd/internal/telemetry"
+	"github.com/azure/azure-dev/cli/azd/internal/telemetry/fields"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/github"
@@ -190,7 +192,7 @@ func (m *Manager) CredentialForCurrentUser(
 		// TenantID is non-empty and PreferFallbackTenant is not true.
 		tenantID := *currentUser.TenantID
 
-		if !options.PreferFallbackTenant && options.TenantID != "" {
+		if options.TenantID != "" {
 			tenantID = options.TenantID
 		}
 
@@ -235,6 +237,15 @@ func (m *Manager) GetLoggedInServicePrincipalTenantID() (*string, error) {
 	currentUser, err := readUserProperties(cfg)
 	if err != nil {
 		return nil, ErrNoCurrentUser
+	}
+
+	// Record type of account found
+	if currentUser.TenantID != nil {
+		telemetry.SetGlobalAttributes(fields.AccountTypeKey.String(fields.AccountTypeServicePrincipal))
+	}
+
+	if currentUser.HomeAccountID != nil {
+		telemetry.SetGlobalAttributes(fields.AccountTypeKey.String(fields.AccountTypeUser))
 	}
 
 	return currentUser.TenantID, nil
@@ -593,10 +604,6 @@ func (m *Manager) saveSecret(tenantId, clientId string, ps *persistedSecret) err
 type CredentialForCurrentUserOptions struct {
 	// The tenant ID to use when constructing the credential, instead of the default tenant.
 	TenantID string
-
-	// If true, TenantID is only used if the tenant wasn't explicitly specified
-	// at the time of login.
-	PreferFallbackTenant bool
 }
 
 // persistedSecret is the model type for the value we store in the credential cache. It is logically a discriminated union

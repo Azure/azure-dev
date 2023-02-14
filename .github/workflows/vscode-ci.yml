@@ -18,11 +18,11 @@ jobs:
     steps:
       - uses: actions/checkout@v3
       - uses: actions/setup-node@v1
-        name: Run spell check azd vscode extension
         with:
           node-version: "16"
       - run: npm install -g cspell
-      - run: cspell lint '**/*.ts' --config ./ext/vscode/.vscode/cspell.yaml --root ./ext/vscode --no-progress
+      - name: Spell check for vscode extension
+        run: cspell lint '**/*.ts' --config ./ext/vscode/.vscode/cspell.yaml --root ./ext/vscode --no-progress
 
   build-test:
     runs-on: ${{ matrix.os }}

@@ -36,6 +36,7 @@ resource "azurerm_linux_web_app" "web" {
     application_stack {
       python_version = var.python_version
     }
+    health_check_path = var.health_check_path
   }
 
   app_settings = var.app_settings

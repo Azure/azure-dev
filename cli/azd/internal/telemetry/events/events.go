@@ -14,3 +14,7 @@ const CommandEventPrefix = "cmd."
 
 // BicepInstallEvent is the name of the event which tracks the overall bicep install operation.
 const BicepInstallEvent = "tools.bicep.install"
+
+// AccountSubscriptionsListEvent is the name of the event which tracks listing of account subscriptions .
+// See fields.AccountSubscriptionsListTenantsFound for additional event fields.
+const AccountSubscriptionsListEvent = "account.subscriptions.list"

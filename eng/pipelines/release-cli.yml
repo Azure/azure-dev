@@ -211,6 +211,95 @@ stages:
             condition: and(succeeded(), eq(variables['BuildTestMsi'], 'true'))
             displayName: Upload test MSI
 
+      # This is separated today because Skip.LiveTest is a queue-time variable
+      # and cannot be set in a matrix entry. 
+      - job: CrossBuildCLI
+        strategy: 
+          matrix: 
+            LinuxARM64: 
+              Pool: azsdk-pool-mms-ubuntu-2004-general
+              OSVmImage:  MMSUbuntu20.04
+              BuildTarget: azd-linux-arm64
+              BuildOutputName: azd
+              SetExecutableBit: true
+              GOOS: linux
+              GOARCH: arm64
+            MacARM64:
+              Pool: Azure Pipelines
+              OSVmImage: macOS-11
+              BuildTarget: azd-darwin-arm64
+              BuildOutputName: azd
+              SetExecutableBit: true
+              GOOS: darwin
+              GOARCH: arm64
+              # CGO_ENABLED is required on MacOS to cross-compile pkg/outil/osversion
+              CGO_ENABLED: 1
+        pool: 
+          name: $(Pool)
+          vmImage: $(OSVmImage)
+        timeoutInMinutes: 20
+        steps: 
+          - checkout: self
+
+          - template: /eng/pipelines/templates/steps/setup-go.yml
+            parameters:
+              Condition: false
+
+          - template: /eng/pipelines/templates/steps/set-cli-version-cd.yml
+
+          - task: PowerShell@2
+            inputs:
+              pwsh: true
+              targetType: filePath
+              filePath: eng/scripts/Set-CliVersionVariable.ps1
+            displayName: Set CLI_VERSION
+
+          - task: PowerShell@2
+            inputs:
+              pwsh: true
+              targetType: filePath
+              filePath: cli/azd/ci-build.ps1
+              arguments: >-
+                -Version $(CLI_VERSION)
+                -SourceVersion $(Build.SourceVersion)
+              workingDirectory: cli/azd
+            displayName: Build Go Binary (cross compile)
+
+          - pwsh: file azd
+            workingDirectory: cli/azd
+            displayName: Get file info
+
+          - pwsh: Move-Item $(BuildOutputName) $(BuildTarget)
+            workingDirectory: cli/azd
+            displayName: Rename binaries
+
+          - bash: chmod +x $(BuildTarget)
+            condition: and(succeeded(), eq(variables['SetExecutableBit'], 'true'))
+            workingDirectory: cli/azd
+            displayName: Set executable bit for non-Windows binaries
+
+          - publish: cli/azd/$(BuildTarget)
+            artifact: $(BuildTarget)
+            condition: always()
+            displayName: Upload azd binary to artifact store
+
+      - job: ValidateCrossCompile
+        dependsOn: CrossBuildCLI
+        pool: 
+          name: azsdk-pool-mms-ubuntu-2004-arm
+          vmImage: MMSUbuntu20.04ARM64
+        timeoutInMinutes: 5
+        steps: 
+          - checkout: none 
+
+          - task: DownloadPipelineArtifact@2
+            inputs:
+              artifact: azd-linux-arm64
+              targetPath: $(Build.SourcesDirectory)
+
+          - bash: pwd && ls && chmod +x ./azd-linux-arm64 && ./azd-linux-arm64 version
+            displayName: azd version
+
       - job: GenerateReleaseArtifacts
         pool:
           name: azsdk-pool-mms-ubuntu-2004-general
@@ -281,11 +370,21 @@ stages:
             artifact: azd-darwin-amd64
             path: mac-artifacts
 
+        - task: DownloadPipelineArtifact@2
+          inputs:
+            artifact: azd-darwin-arm64
+            path: mac-artifacts
+
         - pwsh: |
             New-Item -ItemType Directory -Path mac
+            
             Compress-Archive `
             -Path mac-artifacts/azd-darwin-amd64 `
             -DestinationPath mac/azd-darwin-amd64.zip
+
+            Compress-Archive `
+            -Path mac-artifacts/azd-darwin-arm64 `
+            -DestinationPath mac/azd-darwin-arm64.zip
           displayName: Package mac binary for signing
 
         - ${{ if in(variables['Build.Reason'], 'IndividualCI', 'BatchedCI', 'Manual') }}:
@@ -299,7 +398,10 @@ stages:
 
         - pwsh: |
             Expand-Archive -Path mac/azd-darwin-amd64.zip -DestinationPath mac/
+            Expand-Archive -Path mac/azd-darwin-arm64.zip -DestinationPath mac/
+
             Remove-Item mac/azd-darwin-amd64.zip
+            Remove-Item mac/azd-darwin-arm64.zip
           displayName: Extract azd-darwin-amd64 from zip and remove zip
 
         - pwsh: |
@@ -854,6 +956,7 @@ stages:
               UploadInstaller: true
               DockerImageTags: pr-$(PRNumber)
               UploadMsi: true
+              PublishArm64Binaries: true
 
           - pwsh: |
               $urlBase = "https://$(azdev-storage-account-name).blob.core.windows.net/azd/standalone/pr/$(PRNumber)"
@@ -869,7 +972,9 @@ stages:
           - pwsh: |
               $urlBase = "$(GenerateUrlBase.UrlBase)"
               $linuxReleaseUrl = "$urlBase/azd-linux-amd64.tar.gz"
+              $linuxReleaseUrlArm64 = "$urlBase/azd-linux-arm64.tar.gz"
               $macosReleaseUrl = "$urlBase/azd-darwin-amd64.zip"
+              $macosReleaseUrlArm64 = "$urlBase/azd-darwin-arm64.zip"
               $windowsReleaseUrl = "$urlBase/azd-windows-amd64.zip"
               $msiReleaseUrl = "$urlBase/azd-windows-amd64.msi"
 
@@ -914,8 +1019,12 @@ stages:
 
               ### Standalone Binary
 
-              * Linux - $linuxReleaseUrl
-              * MacOS - $macosReleaseUrl
+              * Linux - 
+                  * x86_64 - $linuxReleaseUrl
+                  * ARM64 - $linuxReleaseUrlArm64
+              * MacOS - 
+                  * x86_64 - $macosReleaseUrl
+                  * ARM64 - $macosReleaseUrlArm64
               * Windows - $windowsReleaseUrl
 
               ### MSI 

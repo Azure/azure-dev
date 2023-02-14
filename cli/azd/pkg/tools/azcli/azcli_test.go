@@ -43,7 +43,7 @@ func TestAZCLIWithUserAgent(t *testing.T) {
 	azCli := newAzCliFromMockContext(mockContext)
 	// We don't care about the actual response or if an error occurred
 	// Any API call that leverages the Go SDK is fine
-	_, _ = azCli.GetResource(ctx, "SUBSCRIPTION_ID", "RESOURCE_ID")
+	_, _ = azCli.GetResource(ctx, "SUBSCRIPTION_ID", "RESOURCE_ID", "API_VERSION")
 
 	userAgent, ok := rawResponse.Request.Header["User-Agent"]
 	if !ok {
@@ -142,7 +142,7 @@ func Test_AzSdk_User_Agent_Policy(t *testing.T) {
 	azCli := newAzCliFromMockContext(mockContext)
 	// We don't care about the actual response or if an error occurred
 	// Any API call that leverages the Go SDK is fine
-	_, _ = azCli.GetResource(ctx, "SUBSCRIPTION_ID", "RESOURCE_ID")
+	_, _ = azCli.GetResource(ctx, "SUBSCRIPTION_ID", "RESOURCE_ID", "API_VERSION")
 
 	userAgent, ok := rawResponse.Request.Header["User-Agent"]
 	if !ok {

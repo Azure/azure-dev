@@ -159,6 +159,11 @@
                 },
                 {
                     "when": "resourceFilename =~ /azure.yaml/i",
+                    "command": "azure-dev.commands.cli.down",
+                    "group": "azure-dev"
+                },
+                {
+                    "when": "resourceFilename =~ /azure.yaml/i",
                     "command": "azure-dev.commands.cli.monitor",
                     "group": "azure-dev"
                 },

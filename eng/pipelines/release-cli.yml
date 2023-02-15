@@ -218,7 +218,7 @@ stages:
 
           - publish: cli/installer/fpm/artifact
             artifact: linux-packages
-            condition: and(succeeded(), eq(variables['BuildTestMsi'], 'true'))
+            condition: and(succeeded(), eq(variables['BuildLinuxPackages'], 'true'))
             displayName: Upload linux packages to artifact store
 
       # This is separated today because Skip.LiveTest is a queue-time variable

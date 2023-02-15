@@ -517,6 +517,50 @@ stages:
             artifactName: signed-win-FailedAttempt$(System.JobAttempt)
             path: signed-win/
 
+    - job: SignLinux
+      pool:
+        name: azsdk-pool-mms-win-2022-general
+        vmImage: MMS2022
+
+      steps:
+        # Checkout required to build MSI
+        - checkout: self
+
+        - task: DownloadPipelineArtifact@2
+          inputs:
+            artifact: linux-packages
+            path: linux
+
+        - ${{ if in(variables['Build.Reason'], 'IndividualCI', 'BatchedCI', 'Manual') }}:
+          - template: pipelines/steps/azd-cli-linux-signing.yml@azure-sdk-build-tools
+            parameters:
+              LinuxPath: linux
+
+        - ${{ else }}:
+          - pwsh: Write-Host "Skipping signing. Build reason - $(Build.Reason)"
+            displayName: Signing process skipped for non-release build
+
+        - pwsh: |
+            New-Item -ItemType Directory -Path signed-linux
+            Copy-Item linux/* signed-linux/ -Recurse
+          displayName: Copy signing outputs
+          condition: always()
+
+        - task: PublishPipelineArtifact@1
+          condition: succeeded()
+          displayName: Publish Signed Artifacts
+          inputs:
+            artifactName: signed-linux
+            path: signed-linux/
+
+        - task: PublishPipelineArtifact@1
+          condition: failed()
+          displayName: Publish failed Signed Artifacts
+          inputs:
+            artifactName: signed-linux-FailedAttempt$(System.JobAttempt)
+            path: signed-linux/
+      
+
   - stage: Verify_Installers
     condition: and(succeeded(), ne(variables['Skip.VerifyInstallers'], 'true'))
     dependsOn: BuildAndTest

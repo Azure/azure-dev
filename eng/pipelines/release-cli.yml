@@ -842,6 +842,35 @@ stages:
                     UploadMsi: true
                     PublishBrewFormula: true
 
+      - deployment: Publish_Choco
+        dependsOn: Publish_Release
+        condition: >-
+          and(
+            succeeded(),
+            ne('true', variables['Skip.Publish'])
+          )
+        environment: azure-dev
+
+        pool:
+          name: azsdk-pool-mms-win-2022-general
+
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - checkout: self
+                - task: PowerShell@2
+                  inputs:
+                    pwsh: true
+                    targetType: filePath
+                    filePath: eng/scripts/Set-CliVersionVariable.ps1
+                  displayName: Set CLI_VERSION
+
+                - template: /eng/pipelines/templates/steps/publish-cli-choco.yml
+                  parameters:
+                    # Set to false after GA (https://github.com/Azure/azure-dev/issues/1485)
+                    AllowPrerelease: true
+                    CliVersion: $(CLI_VERSION)
 
       - deployment: Increment_Version
         condition: >-

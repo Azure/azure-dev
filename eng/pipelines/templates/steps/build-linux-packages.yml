@@ -36,3 +36,4 @@ steps:
       Copy-Item *.deb artifact/
       Copy-Item *.rpm artifact/
     displayName: Place
+    workingDirectory: cli/installer/fpm

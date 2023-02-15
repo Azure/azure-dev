@@ -30,10 +30,11 @@ steps:
       workingDirectory: cli/installer/fpm
       filePath: eng/scripts/Test-LinuxPackages.ps1
 
-  # TODO: Use parameters to output to artifact/ instead of copying at the end
+  # TODO: Use parameters to output to artifact/ instead of copying at the end?
   - pwsh: |
       New-Item -ItemType directory -Path artifact
       Copy-Item *.deb artifact/
       Copy-Item *.rpm artifact/
-    displayName: Place
+      Get-ChildItem -Path artifact | Select-Object -Property Name,Size
+    displayName: Place linux packages in artifact folder
     workingDirectory: cli/installer/fpm

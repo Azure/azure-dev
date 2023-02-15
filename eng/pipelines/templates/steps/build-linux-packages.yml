@@ -3,7 +3,7 @@ parameters:
   Version: $(CLI_VERSION)
 
 steps: 
-  - pwsh: Copy-Item cli/azd/azd-linux-* cli/azd/installer/fpm
+  - pwsh: Copy-Item cli/azd/azd-linux-* cli/installer/fpm
     condition: ${{ parameters.Condition }}
     displayName: Copy binary to fpm working directory
 

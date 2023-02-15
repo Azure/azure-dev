@@ -1,0 +1,38 @@
+parameters:
+  Condition: and(succeeded(), eq(variables['BuildTestMsi'], 'true'))
+  Version: $(CLI_VERSION)
+
+steps: 
+  - pwsh: Copy-Item cli/azd/azd-linux-* cli/azd/installer/fpm
+    condition: ${{ parameters.Condition }}
+    displayName: Copy binary to fpm working directory
+
+  - pwsh: docker build . -f fpm.Dockerfile -t fpm
+    condition: ${{ parameters.Condition }}
+    workingDirectory: cli/installer/fpm
+    displayName: Build fpm container
+
+  - task: PowerShell@2
+    condition: ${{ parameters.Condition }}
+    displayName: Build Linux Packages
+    inputs: 
+      pwsh: true
+      workingDirectory: cli/installer/fpm
+      filePath: eng/scripts/New-LinuxPackages.ps1
+      arguments: -Version '${{ parameters.Version }}'
+
+  # TODO: run in Verify Installers instead of here
+  - task: PowerShell@2
+    condition: ${{ parameters.Condition }}
+    displayName: Verify Linux Packages
+    inputs: 
+      pwsh: true
+      workingDirectory: cli/installer/fpm
+      filePath: eng/scripts/Test-LinuxPackages.ps1
+
+  # TODO: Use parameters to output to artifact/ instead of copying at the end
+  - pwsh: |
+      New-Item -ItemType directory -Path artifact
+      Copy-Item *.deb artifact/
+      Copy-Item *.rpm artifact/
+    displayName: Place

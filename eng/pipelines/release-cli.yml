@@ -47,6 +47,7 @@ stages:
               SetExecutableBit: true
               SetShieldInfo: true
               GenerateCoverage: true
+              BuildLinuxPackages: true
               AZURE_DEV_CI_OS: lin
             Mac:
               Pool: Azure Pipelines
@@ -185,6 +186,10 @@ stages:
             workingDirectory: cli/azd
             displayName: Set executable bit for non-Windows binaries
 
+          - template: /eng/pipelines/templates/steps/build-linux-packages.yml
+            parameters:
+              Condition: and(succeeded(), eq(variables['BuildLinuxPackages'], 'true'))
+
           - task: PowerShell@2
             condition: and(succeeded(), eq(variables['SetShieldInfo'], 'true'))
             inputs:
@@ -210,6 +215,11 @@ stages:
             artifact: test-msi
             condition: and(succeeded(), eq(variables['BuildTestMsi'], 'true'))
             displayName: Upload test MSI
+
+          - publish: cli/installer/fpm/artifact
+            artifact: linux-packages
+            condition: and(succeeded(), eq(variables['BuildTestMsi'], 'true'))
+            displayName: Upload linux packages to artifact store
 
       # This is separated today because Skip.LiveTest is a queue-time variable
       # and cannot be set in a matrix entry. 

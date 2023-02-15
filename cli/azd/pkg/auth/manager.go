@@ -115,7 +115,7 @@ var ErrNoCurrentUser = errors.New("not logged in, run `azd login` to login")
 // nil, ErrNoCurrentUser is returned. On success, the token we fetched is returned.
 //
 // By default, a token with Azure management scope is fetched.
-// Additional scopes can be passed to verify access to specified scopes.
+// To override this, pass in the desired scopes.
 func EnsureLoggedInCredential(
 	ctx context.Context,
 	credential azcore.TokenCredential,

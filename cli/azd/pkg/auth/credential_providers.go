@@ -49,8 +49,18 @@ func (t *multiTenantCredentialProvider) GetTokenCredential(
 	}
 
 	if _, err := EnsureLoggedInCredential(ctx, credential); err != nil {
+		// Provide better error messages given the tenant requested
 		if errors.Is(err, ErrNoCurrentUser) && tenantId != "" {
-			return nil, errors.New(fmt.Sprintf("not logged in, run `azd login --tenant-id %s` to login", tenantId))
+			if pTenantID, err := t.auth.GetLoggedInServicePrincipalTenantID(); err == nil && pTenantID == nil {
+				return nil, fmt.Errorf("not logged in, run `azd login --tenant-id %s` to login", tenantId)
+			} else if err == nil && pTenantID != nil && tenantId != *pTenantID {
+				return nil,
+					fmt.Errorf(
+						"not authorized. service principal in tenant '%s' requested access to a different tenant '%s'",
+						*pTenantID,
+						tenantId,
+					)
+			}
 		}
 
 		return nil, err

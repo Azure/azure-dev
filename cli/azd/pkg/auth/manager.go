@@ -120,8 +120,11 @@ func EnsureLoggedInCredential(
 	ctx context.Context,
 	credential azcore.TokenCredential,
 	scopes ...string) (*azcore.AccessToken, error) {
+	if scopes == nil {
+		scopes = cLoginScopes
+	}
 	token, err := credential.GetToken(ctx, policy.TokenRequestOptions{
-		Scopes: append(cLoginScopes, scopes...),
+		Scopes: scopes,
 	})
 	if err != nil {
 		return &azcore.AccessToken{}, ErrNoCurrentUser
@@ -327,7 +330,11 @@ func (m *Manager) LoginInteractive(
 		options = append(options, public.WithTenantID(tenantID))
 	}
 
-	res, err := m.publicClient.AcquireTokenInteractive(ctx, append(cLoginScopes, scopes...), options...)
+	if scopes == nil {
+		scopes = cLoginScopes
+	}
+
+	res, err := m.publicClient.AcquireTokenInteractive(ctx, scopes, options...)
 	if err != nil {
 		return nil, err
 	}
@@ -346,7 +353,11 @@ func (m *Manager) LoginWithDeviceCode(
 		options = append(options, public.WithTenantID(tenantID))
 	}
 
-	code, err := m.publicClient.AcquireTokenByDeviceCode(ctx, append(cLoginScopes, scopes...), options...)
+	if scopes == nil {
+		scopes = cLoginScopes
+	}
+
+	code, err := m.publicClient.AcquireTokenByDeviceCode(ctx, scopes, options...)
 	if err != nil {
 		return nil, err
 	}

@@ -11,6 +11,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/public"
+	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 )
 
 type azdCredential struct {
@@ -32,11 +33,14 @@ func (c *azdCredential) GetToken(ctx context.Context, options policy.TokenReques
 		if strings.Contains(err.Error(), "AADSTS50158") {
 			loginCmd := "azd login"
 			for _, scope := range options.Scopes {
-				loginCmd += fmt.Sprintf(" --scope %s", scope)
+				// azure.ManagementScope is the default scope we would always use.
+				if scope != azure.ManagementScope {
+					loginCmd += fmt.Sprintf(" --scope %s", scope)
+				}
 			}
 
 			return azcore.AccessToken{},
-				fmt.Errorf("%w\nYou are required to reauthenticate. Run `%s`", err, loginCmd)
+				fmt.Errorf("%w\nre-authentication required, run `%s`", err, loginCmd)
 		}
 
 		return azcore.AccessToken{}, err

@@ -145,6 +145,8 @@ func showTypeFromLanguage(language string) contracts.ShowType {
 		return contracts.ShowTypePython
 	case "ts", "js":
 		return contracts.ShowTypeNode
+	case "java":
+		return contracts.ShowTypeJava
 	default:
 		panic(fmt.Sprintf("unknown language %s", language))
 	}

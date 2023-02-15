@@ -17,3 +17,7 @@ const BicepInstallEvent = "tools.bicep.install"
 
 // GitHubCliInstallEvent is the name of the event which tracks the overall GitHub cli install operation.
 const GitHubCliInstallEvent = "tools.gh.install"
+
+// AccountSubscriptionsListEvent is the name of the event which tracks listing of account subscriptions .
+// See fields.AccountSubscriptionsListTenantsFound for additional event fields.
+const AccountSubscriptionsListEvent = "account.subscriptions.list"

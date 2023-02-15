@@ -87,6 +87,9 @@ type redefinedSpan interface {
 // properly end the Span when the operation itself ends.
 type Span interface {
 	redefinedSpan
+
+	// EndWithStatus calls End, but also sets Status based on the value of err (nil mean success).
+	EndWithStatus(err error, options ...trace.SpanEndOption)
 }
 
 type wrapperSpan struct {
@@ -100,6 +103,16 @@ type wrapperSpan struct {
 func (s *wrapperSpan) End(options ...trace.SpanEndOption) {
 	s.span.SetAttributes(GetGlobalAttributes()...)
 	s.span.End(options...)
+}
+
+func (s *wrapperSpan) EndWithStatus(err error, options ...trace.SpanEndOption) {
+	if err != nil {
+		s.span.SetStatus(codes.Error, "UnknownError")
+	} else {
+		s.span.SetStatus(codes.Ok, "")
+	}
+
+	s.End(options...)
 }
 
 // IsRecording returns the recording state of the Span. It will return

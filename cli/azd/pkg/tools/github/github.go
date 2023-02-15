@@ -77,23 +77,23 @@ func newGitHubCliImplementation(
 
 	githubCliPath, err := azdGithubCliPath()
 	if err != nil {
-		return nil, fmt.Errorf("finding github cli: %w", err)
+		return nil, fmt.Errorf("getting github cli default path: %w", err)
 	}
 
 	if _, err = os.Stat(githubCliPath); err != nil && !errors.Is(err, os.ErrNotExist) {
-		return nil, fmt.Errorf("finding github cli: %w", err)
+		return nil, fmt.Errorf("getting file information from github cli default path: %w", err)
 	}
 	if errors.Is(err, os.ErrNotExist) {
 		if err := os.MkdirAll(filepath.Dir(githubCliPath), osutil.PermissionDirectory); err != nil {
-			return nil, fmt.Errorf("downloading github cli: %w", err)
+			return nil, fmt.Errorf("creating github cli default path: %w", err)
 		}
 
-		msg := "Downloading Github cli"
+		msg := "Setting up GitHub connection"
 		console.ShowSpinner(ctx, msg, input.Step)
 		err = acquireGitHubCliImpl(ctx, transporter, cGitHubCliVersion, extractImplementation, githubCliPath)
 		console.StopSpinner(ctx, "", input.Step)
 		if err != nil {
-			return nil, fmt.Errorf("downloading github cli: %w", err)
+			return nil, fmt.Errorf("Setting up GitHub connection: %w", err)
 		}
 	}
 

@@ -4,7 +4,6 @@ $PACKAGE_TYPES = 'deb', 'rpm'
 $originalLocation = Get-Location 
 try {
     Set-Location "$PSSCriptRoot/../../cli/installer/fpm"
-
     $currentPath = (Get-Location).Path
 
     foreach ($type in $PACKAGE_TYPES) { 

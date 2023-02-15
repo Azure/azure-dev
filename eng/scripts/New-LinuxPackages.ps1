@@ -8,6 +8,7 @@ $PACKAGE_TYPES = 'deb', 'rpm'
 $originalLocation = Get-Location
 try { 
     Set-Location "$PSScriptRoot/../../cli/installer/fpm"
+    $currentPath = (Get-Location).Path
 
     if (!(Test-Path "./azd-linux-amd64")) { 
         Write-Error "Cannot find azd-linux-amd64"
@@ -22,11 +23,11 @@ try {
     chmod +x azd-linux-amd64
 
     foreach ($type in $PACKAGE_TYPES) { 
-        fpm `
+        docker run -v "$($currentPath):/work" -t fpm `
+            --force `
             --output-type $type `
             --version $Version `
             --architecture amd64 `
-            --force `
             azd-linux-amd64=/opt/microsoft/azd/azd-linux-amd64 `
             azd=/usr/local/bin/azd `
             NOTICE.txt=/opt/microsoft/azd/NOTICE.txt `

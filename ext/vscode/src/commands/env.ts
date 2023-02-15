@@ -3,6 +3,7 @@
 
 import * as vscode from 'vscode';
 import { IActionContext, IAzureQuickPickItem, parseError } from '@microsoft/vscode-azext-utils';
+import ext from '../ext';
 import { localize } from '../localize';
 import { createAzureDevCli } from '../utils/azureDevCli';
 import { quickPickWorkspaceFolder } from '../utils/quickPickWorkspaceFolder';
@@ -43,6 +44,7 @@ export async function deleteEnvironment(context: IActionContext, selectedItem?: 
             envData = await getEnvironments(context, cwd);
         } catch(err) {
             // Treated the same as no environments case
+            ext.outputChannel.appendLog(localize('azure-dev.commands.cli.env-delete.environment-error', 'Error while getting environments: {0}', parseError(err).message));
         }
 
         // Filter out the default environment, it cannot be deleted without causing trouble

@@ -14,12 +14,12 @@ spec:
     spec:
       containers:
         - name: todo-api
-          image: crppnnadqdq7owqmxjqvwcid425o.azurecr.io/todo-nodejs-mongo-aks/api:latest
+          image: ${AZURE_CONTAINER_REGISTRY_ENDPOINT}/todo-nodejs-mongo-aks/api:latest
           ports:
             - containerPort: 3100
           env:
             - name: AZURE_CLIENT_ID
-              value: 8111defe-2f69-4893-b025-ffeaea359c4a
+              value: ${AZURE_PRINCIPAL_ID}
             - name: AZURE_KEY_VAULT_ENDPOINT
               valueFrom:
                 secretKeyRef:

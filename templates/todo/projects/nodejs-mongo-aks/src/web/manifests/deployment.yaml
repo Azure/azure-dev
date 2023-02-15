@@ -14,7 +14,7 @@ spec:
     spec:
       containers:
         - name: todo-web
-          image: crppnnadqdq7owqmxjqvwcid425o.azurecr.io/todo-nodejs-mongo-aks/web:latest
+          image: ${AZURE_CONTAINER_REGISTRY_ENDPOINT}/todo-nodejs-mongo-aks/web:latest
           ports:
             - containerPort: 3000
           env:

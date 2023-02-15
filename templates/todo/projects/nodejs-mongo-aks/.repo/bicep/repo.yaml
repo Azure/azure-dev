@@ -31,11 +31,6 @@ repo:
         patterns:
           - "**/*.bicep"
 
-      - from: ../../../../../common/infra/shared/gateway/apim
-        to: ./
-        patterns:
-          - apim-api.bicep
-
       # app service modules
       - from: ../../../../../../common/infra/bicep
         to: ../
@@ -101,18 +96,6 @@ repo:
     # Infra
     - from: ./infra/
       to: ./infra
-
-    - from: ../../../../common/infra/bicep/app/web-appservice.bicep
-      to: ./infra/app/web.bicep
-
-    - from: ../../../../common/infra/bicep/app/api-appservice-node.bicep
-      to: ./infra/app/api.bicep
-
-    - from: ../../../../common/infra/bicep/app/apim-api.bicep
-      to: ./infra/app/apim-api.bicep
-
-    - from: ../../../../../common/infra/shared/gateway/apim/apim-api-policy.xml
-      to: ./infra/app/apim-api-policy.xml
 
     - from: ../../../../common/infra/bicep/app/cosmos-mongo-db.bicep
       to: ./infra/app/db.bicep

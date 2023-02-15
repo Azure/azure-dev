@@ -15,10 +15,14 @@
         "ghcr.io/devcontainers/features/azure-cli:1": {
             "version": "2.38"
         }
-    }, 
-    "extensions": [
-        "redhat.vscode-yaml",
-        "streetsidesoftware.code-spell-checker",
-        "golang.go"
-    ]
+    },
+    "customizations": {
+        "vscode": {
+            "extensions": [
+                "redhat.vscode-yaml",
+                "streetsidesoftware.code-spell-checker",
+                "golang.go"
+            ]
+        }
+    }
 }

@@ -42,9 +42,10 @@ export async function deleteEnvironment(context: IActionContext, selectedItem?: 
         let envData: EnvironmentInfo[] = [];
         try {
             envData = await getEnvironments(context, cwd);
-        } catch(err) {
+        } catch (err) {
             // Treated the same as no environments case
-            ext.outputChannel.appendLog(localize('azure-dev.commands.cli.env-delete.environment-error', 'Error while getting environments: {0}', parseError(err).message));
+            const errorMsg = parseError(err).message;
+            ext.outputChannel.appendLog(localize('azure-dev.commands.cli.env-delete.environment-error', 'Error while getting environments: {0}', errorMsg));
         }
 
         // Filter out the default environment, it cannot be deleted without causing trouble
@@ -106,9 +107,10 @@ export async function selectEnvironment(context: IActionContext, selectedItem?: 
         let errorMsg: string | undefined = undefined;
         try {
             envData = await getEnvironments(context, cwd);
-        } catch(err) {
-            errorMsg = parseError(err).message;
+        } catch (err) {
             // Treated the same as no environments case
+            errorMsg = parseError(err).message;
+            ext.outputChannel.appendLog(localize('azure-dev.commands.cli.env-select.environment-error', 'Error while getting environments: {0}', errorMsg));
         }
         
         if (envData.length === 0) {

@@ -13,17 +13,17 @@ import { TelemetryId } from '../telemetry/telemetryId';
 import { AzureDevCliApplication } from '../views/workspace/AzureDevCliApplication';
 import { isTreeViewModel, TreeViewModel } from '../utils/isTreeViewModel';
 
-export async function up(context: IActionContext, selectedItem?: vscode.Uri | TreeViewModel): Promise<void> {
+export async function down(context: IActionContext, selectedItem?: vscode.Uri | TreeViewModel): Promise<void> {
     const selectedFile = isTreeViewModel(selectedItem) ? selectedItem.unwrap<AzureDevCliApplication>().context.configurationFile : selectedItem;
 
     let folder: vscode.WorkspaceFolder | undefined = (selectedFile ? vscode.workspace.getWorkspaceFolder(selectedFile) : undefined);
     if (!folder) {
-        folder = await quickPickWorkspaceFolder(context, localize('azure-dev.commands.cli.init.needWorkspaceFolder', "To run '{0}' command you must first open a folder or workspace in VS Code", 'up'));
+        folder = await quickPickWorkspaceFolder(context, localize('azure-dev.commands.cli.init.needWorkspaceFolder', "To run '{0}' command you must first open a folder or workspace in VS Code", 'down'));
     }
 
     const azureCli = await createAzureDevCli(context);
     let command = azureCli.commandBuilder
-        .withArg('up');
+        .withArg('down');
     let workingDir = folder.uri;
 
     const azureYamlFile = selectedFile ?? await pickAzureYamlFile(context);
@@ -35,13 +35,16 @@ export async function up(context: IActionContext, selectedItem?: vscode.Uri | Tr
         command = command.withNamedArg('-t', {value: templateUrl, quoting: vscode.ShellQuoting.Strong});
     }
 
+    // TODO: Prompt user to confirm deletion (as well as for Key Vaults?).
+    //       Add `--force` flag to skip prompt.
+    //       Separate option for `--purge` to skip prompt for soft-delete? (or just always use `--purge`?) (or --no-prompt?)
+
     // Don't wait
     void executeAsTask(command.build(), getAzDevTerminalTitle(), {
-        focus: true,
         alwaysRunNew: true,
         cwd: workingDir.fsPath,
         env: azureCli.env
-    }, TelemetryId.UpCli).then(() => {
+    }, TelemetryId.DownCli).then(() => {
         // Only show README if we are initializing a new workspace/application
         if (!azureYamlFile) {
             void showReadmeFile(workingDir);

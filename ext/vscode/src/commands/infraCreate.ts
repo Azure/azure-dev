@@ -10,16 +10,14 @@ import { isTreeViewModel, TreeViewModel } from '../utils/isTreeViewModel';
 import { AzureDevCliApplication } from '../views/workspace/AzureDevCliApplication';
 import { getAzDevTerminalTitle, getWorkingFolder } from './cmdUtil';
 
-export async function deploy(context: IActionContext, selectedItem?: vscode.Uri | TreeViewModel): Promise<void> {
+export async function infraCreate(context: IActionContext, selectedItem?: vscode.Uri | TreeViewModel): Promise<void> {
     const selectedFile = isTreeViewModel(selectedItem) ? selectedItem.unwrap<AzureDevCliApplication>().context.configurationFile : selectedItem;
 
     const workingFolder = await getWorkingFolder(context, selectedFile);
 
     const azureCli = await createAzureDevCli(context);
 
-    // Only supporting "deploy all" mode (no support for deploying individual services)
-    // until https://github.com/Azure/azure-dev/issues/696 is resolved.
-    const command = azureCli.commandBuilder.withArg('deploy').build();
+    const command = azureCli.commandBuilder.withArg('infra').withArg('create').build();
 
     void executeAsTask(command, getAzDevTerminalTitle(), {
         alwaysRunNew: true,

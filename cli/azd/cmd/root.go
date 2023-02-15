@@ -189,8 +189,7 @@ func NewRootCmd(staticHelp bool, middlewareChain []*actions.MiddlewareRegistrati
 		Command:        newInitCmd(),
 		FlagsResolver:  newInitFlags,
 		ActionResolver: newInitAction,
-	}).AddFlagCompletion("template", templateNameCompletion).
-		UseMiddleware("ensureLogin", middleware.NewEnsureLoginMiddleware)
+	}).AddFlagCompletion("template", templateNameCompletion)
 
 	root.
 		Add("provision", &actions.ActionDescriptorOptions{

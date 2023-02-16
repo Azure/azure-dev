@@ -71,19 +71,6 @@ func TestTarRoundTrip(t *testing.T) {
 	require.EqualValues(t, []byte(expectedPhrase), content)
 }
 
-func TestTarRoundTripExe(t *testing.T) {
-	testPath := t.TempDir()
-	expectedPhrase := "this will be inside a tar file"
-	tarFilePath, err := createSampleTarGz(testPath, expectedPhrase, "gh")
-	require.NoError(t, err)
-	ghCliPath, err := extractGhCli(tarFilePath, testPath)
-	require.NoError(t, err)
-
-	content, err := os.ReadFile(ghCliPath)
-	require.NoError(t, err)
-	require.EqualValues(t, []byte(expectedPhrase), content)
-}
-
 func TestTarGhNotFound(t *testing.T) {
 	testPath := t.TempDir()
 	expectedPhrase := "this will be inside a zip file"

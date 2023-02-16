@@ -88,12 +88,12 @@ func newGitHubCliImplementation(
 			return nil, fmt.Errorf("creating github cli default path: %w", err)
 		}
 
-		msg := "Setting up GitHub connection"
+		msg := "setting up github connection"
 		console.ShowSpinner(ctx, msg, input.Step)
 		err = acquireGitHubCliImpl(ctx, transporter, cGitHubCliVersion, extractImplementation, githubCliPath)
 		console.StopSpinner(ctx, "", input.Step)
 		if err != nil {
-			return nil, fmt.Errorf("Setting up GitHub connection: %w", err)
+			return nil, fmt.Errorf("setting up github connection: %w", err)
 		}
 	}
 

@@ -89,7 +89,7 @@ repo:
       - from: "$REPO_NAME"
         to: "todo-python-mongo-terraform"
         patterns:
-          - "READMD.md"
+          - "README.md"
 
       - from: "$PLACEHOLDER_DESCRIPTION"
         to: "using Terraform as the IaC provider"

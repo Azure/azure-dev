@@ -1,12 +1,16 @@
 package github
 
 import (
+	"archive/tar"
+	"archive/zip"
 	"bytes"
+	"compress/gzip"
 	"context"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -16,6 +20,88 @@ import (
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockinput"
 	"github.com/stretchr/testify/require"
 )
+
+func TestZipRoundTrip(t *testing.T) {
+	testPath := t.TempDir()
+	expectedPhrase := "this will be inside a zip file"
+	zipFilePath, err := createSampleZip(testPath, expectedPhrase, "bin/gh")
+	require.NoError(t, err)
+	ghCliPath, err := extractGhCli(zipFilePath, testPath)
+	require.NoError(t, err)
+
+	content, err := os.ReadFile(ghCliPath)
+	require.NoError(t, err)
+	require.EqualValues(t, []byte(expectedPhrase), content)
+}
+
+func TestZipRoundTripExe(t *testing.T) {
+	testPath := t.TempDir()
+	expectedPhrase := "this will be inside a zip file"
+	zipFilePath, err := createSampleZip(testPath, expectedPhrase, "bin/gh.exe")
+	require.NoError(t, err)
+	ghCliPath, err := extractGhCli(zipFilePath, testPath)
+	require.NoError(t, err)
+
+	content, err := os.ReadFile(ghCliPath)
+	require.NoError(t, err)
+	require.EqualValues(t, []byte(expectedPhrase), content)
+}
+
+func TestZipGhNotFound(t *testing.T) {
+	testPath := t.TempDir()
+	expectedPhrase := "this will be inside a zip file"
+	zipFilePath, err := createSampleZip(testPath, expectedPhrase, "bin/foo")
+	require.NoError(t, err)
+	ghCliPath, err := extractGhCli(zipFilePath, testPath)
+	require.Error(t, err)
+	require.EqualValues(t, "github cli binary was not found within the zip file", err.Error())
+	require.EqualValues(t, "", ghCliPath)
+}
+
+func TestTarRoundTrip(t *testing.T) {
+	testPath := t.TempDir()
+	expectedPhrase := "this will be inside a tar file"
+	tarFilePath, err := createSampleTarGz(testPath, expectedPhrase, "gh")
+	require.NoError(t, err)
+	ghCliPath, err := extractGhCli(tarFilePath, testPath)
+	require.NoError(t, err)
+
+	content, err := os.ReadFile(ghCliPath)
+	require.NoError(t, err)
+	require.EqualValues(t, []byte(expectedPhrase), content)
+}
+
+func TestTarRoundTripExe(t *testing.T) {
+	testPath := t.TempDir()
+	expectedPhrase := "this will be inside a tar file"
+	tarFilePath, err := createSampleTarGz(testPath, expectedPhrase, "gh")
+	require.NoError(t, err)
+	ghCliPath, err := extractGhCli(tarFilePath, testPath)
+	require.NoError(t, err)
+
+	content, err := os.ReadFile(ghCliPath)
+	require.NoError(t, err)
+	require.EqualValues(t, []byte(expectedPhrase), content)
+}
+
+func TestTarGhNotFound(t *testing.T) {
+	testPath := t.TempDir()
+	expectedPhrase := "this will be inside a zip file"
+	tarFilePath, err := createSampleTarGz(testPath, expectedPhrase, "foo")
+	require.NoError(t, err)
+	ghCliPath, err := extractGhCli(tarFilePath, testPath)
+	require.Error(t, err)
+	require.EqualValues(t, "did not find gh cli within tar file: EOF", err.Error())
+	require.EqualValues(t, "", ghCliPath)
+}
+
+func TestUnsupportedFormat(t *testing.T) {
+	filePath := "someFile.xyz"
+	githubCliPath, err := extractGhCli(filePath, "")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "Unknown format while trying to extract")
+	require.EqualValues(t, "", githubCliPath)
+}
 
 func TestNewGitHubCli(t *testing.T) {
 	configRoot := t.TempDir()
@@ -70,4 +156,77 @@ func TestNewGitHubCli(t *testing.T) {
 	require.NoError(t, err)
 
 	require.Equal(t, []byte("this is github cli"), contents)
+}
+
+func createSampleZip(path, content, file string) (string, error) {
+	filePath := filepath.Join(path, "zippedFile.zip")
+	zipFile, err := os.Create(filePath)
+	if err != nil {
+		return "", err
+	}
+	defer zipFile.Close()
+
+	contentReader := strings.NewReader(content)
+	zipWriter := zip.NewWriter(zipFile)
+
+	zipContent, err := zipWriter.Create(file)
+	if err != nil {
+		return "", err
+	}
+
+	if _, err := io.Copy(zipContent, contentReader); err != nil {
+		return "", err
+	}
+
+	zipWriter.Close()
+
+	return filePath, nil
+}
+
+func createSampleTarGz(path, content, file string) (string, error) {
+	filePath := filepath.Join(path, "zippedFile.tar.gz")
+	tarFile, err := os.Create(filePath)
+	if err != nil {
+		return "", err
+	}
+
+	gzWriter := gzip.NewWriter(tarFile)
+	defer gzWriter.Close()
+
+	tarWriter := tar.NewWriter(gzWriter)
+	defer tarWriter.Close()
+
+	// not sure how tar from memory. Let's create an extra file with content
+	fileContentPath := filepath.Join(path, file)
+	fileContent, err := os.Create(fileContentPath)
+	if err != nil {
+		return "", err
+	}
+	if _, err := fileContent.WriteString(content); err != nil {
+		return "", err
+	}
+	fileContent.Close()
+
+	// tar the file
+	fileInfo, err := os.Stat(fileContentPath)
+	if err != nil {
+		return "", err
+	}
+	tarHeader, err := tar.FileInfoHeader(fileInfo, fileInfo.Name())
+	if err != nil {
+		return "", err
+	}
+	if err := tarWriter.WriteHeader(tarHeader); err != nil {
+		return "", nil
+	}
+	fileContent, err = os.Open(fileContentPath)
+	defer fileContent.Close()
+	if err != nil {
+		return "", err
+	}
+	if _, err := io.Copy(tarWriter, fileContent); err != nil {
+		return "", err
+	}
+
+	return filePath, nil
 }

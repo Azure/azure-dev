@@ -63,8 +63,8 @@ func newGitHubCliImplementation(
 	console input.Console,
 	commandRunner exec.CommandRunner,
 	transporter policy.Transporter,
-	acquireGitHubCliImpl GetGitHubCliImplementation,
-	extractImplementation ExtractGitHubCliFromFileImplementation,
+	acquireGitHubCliImpl getGitHubCliImplementation,
+	extractImplementation extractGitHubCliFromFileImplementation,
 ) (GitHubCli, error) {
 	if override := os.Getenv("AZD_GH_CLI_TOOL_PATH"); override != "" {
 		log.Printf("using external github cli tool: %s", override)
@@ -409,7 +409,10 @@ func extractFromZip(src, dst string) (string, error) {
 			break
 		}
 	}
-	return extractedAt, nil
+	if extractedAt != "" {
+		return extractedAt, nil
+	}
+	return extractedAt, fmt.Errorf("github cli binary was not found within the zip file")
 }
 func extractFromTar(src, dst string) (string, error) {
 	gzFile, err := os.Open(src)
@@ -456,8 +459,10 @@ func extractFromTar(src, dst string) (string, error) {
 			break
 		}
 	}
-
-	return extractedAt, nil
+	if extractedAt != "" {
+		return extractedAt, nil
+	}
+	return extractedAt, fmt.Errorf("github cli binary was not found within the tar file")
 }
 
 // extractGhCli gets the Github cli from either a zip or a tar.gz
@@ -467,27 +472,27 @@ func extractGhCli(src, dst string) (string, error) {
 	} else if strings.HasSuffix(src, ".tar.gz") {
 		return extractFromTar(src, dst)
 	}
-	return "nil", fmt.Errorf("Unknown format")
+	return "", fmt.Errorf("Unknown format while trying to extract")
 }
 
-// GetGitHubCliImplementation defines the contract function to acquire the GitHub cli.
+// getGitHubCliImplementation defines the contract function to acquire the GitHub cli.
 // The `outputPath` is the destination where the github cli is place it.
-type GetGitHubCliImplementation func(
+type getGitHubCliImplementation func(
 	ctx context.Context,
 	transporter policy.Transporter,
 	ghVersion semver.Version,
-	extractImplementation ExtractGitHubCliFromFileImplementation,
+	extractImplementation extractGitHubCliFromFileImplementation,
 	outputPath string) error
 
-// ExtractGitHubCliFromFileImplementation defines how the cli is extracted
-type ExtractGitHubCliFromFileImplementation func(src, dst string) (string, error)
+// extractGitHubCliFromFileImplementation defines how the cli is extracted
+type extractGitHubCliFromFileImplementation func(src, dst string) (string, error)
 
 // downloadGh downloads a given version of GitHub cli from the release site.
 func downloadGh(
 	ctx context.Context,
 	transporter policy.Transporter,
 	ghVersion semver.Version,
-	extractImplementation ExtractGitHubCliFromFileImplementation,
+	extractImplementation extractGitHubCliFromFileImplementation,
 	path string) error {
 
 	// arm and x86 not supported (similar to bicep)

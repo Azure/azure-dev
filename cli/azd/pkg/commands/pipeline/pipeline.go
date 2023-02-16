@@ -26,7 +26,7 @@ import (
 // subareaProvider defines the base behavior from any pipeline provider
 type subareaProvider interface {
 	// requiredTools return the list of requires external tools required by the provider.
-	requiredTools(ctx context.Context) []tools.ExternalTool
+	requiredTools(ctx context.Context) ([]tools.ExternalTool, error)
 	// preConfigureCheck validates that the provider's state is ready to be used.
 	// a provider would typically use this method for checking if tools are logged in
 	// of checking if all expected input data is found.
@@ -34,7 +34,6 @@ type subareaProvider interface {
 	// for example, if Azdo prompt for a PAT or OrgName to the user and updated.
 	preConfigureCheck(
 		ctx context.Context,
-		console input.Console,
 		pipelineManagerArgs PipelineManagerArgs,
 		infraOptions provisioning.Options,
 	) (bool, error)
@@ -68,21 +67,19 @@ type ScmProvider interface {
 	// configureGitRemote makes sure that the remoteName is created and added to the git project.
 	// The provider can use the console to interact with the user and define how to get or create a remote url
 	// to set as the value for the remote name.
-	configureGitRemote(ctx context.Context, repoPath string, remoteName string, console input.Console) (string, error)
+	configureGitRemote(ctx context.Context, repoPath string, remoteName string) (string, error)
 	// preventGitPush is used as a mechanism to stop a push code petition from user in case something
 	// some scenario is found which indicates a failure triggering the CI pipeline.
 	preventGitPush(
 		ctx context.Context,
 		gitRepo *gitRepositoryDetails,
 		remoteName string,
-		branchName string,
-		console input.Console) (bool, error)
+		branchName string) (bool, error)
 	//Hook function to allow SCM providers to handle scenarios after the git push is complete
 	postGitPush(ctx context.Context,
 		gitRepo *gitRepositoryDetails,
 		remoteName string,
-		branchName string,
-		console input.Console) error
+		branchName string) error
 }
 
 type CiPipeline struct {
@@ -109,7 +106,6 @@ type CiProvider interface {
 		provisioningProvider provisioning.Options,
 		credential json.RawMessage,
 		authType PipelineAuthType,
-		console input.Console,
 	) error
 }
 
@@ -220,8 +216,8 @@ func DetectProviders(
 	// Or override value is github and the folder is available
 	_ = savePipelineProviderToEnv(gitHubLabel, env)
 	log.Printf("Using pipeline provider: %s", output.WithHighLightFormat("GitHub"))
-	scmProvider := NewGitHubScmProvider(commandRunner)
-	ciProvider := NewGitHubCiProvider(credential, commandRunner)
+	scmProvider := NewGitHubScmProvider(commandRunner, console)
+	ciProvider := NewGitHubCiProvider(credential, commandRunner, console)
 	return scmProvider, ciProvider, nil
 }
 

@@ -36,5 +36,6 @@ steps:
       Copy-Item *.deb artifact/
       Copy-Item *.rpm artifact/
       Get-ChildItem -Path artifact | Select-Object -Property Name,Size
+    condition: ${{ parameters.Condition }}
     displayName: Place linux packages in artifact folder
     workingDirectory: cli/installer/fpm

@@ -11,19 +11,21 @@ import { AsyncLazy } from './lazy';
 import { localize } from "../localize";
 import { AzExtErrorButton, IActionContext } from '@microsoft/vscode-azext-utils';
 import { isWindows } from './osUtils';
+import { setVsCodeContext } from './setVsCodeContext';
 
 // Twenty seconds: generous, but not infinite
 export const DefaultAzCliInvocationTimeout: number = 20 * 1000;
 const AzdInstallationUrl: string = 'https://aka.ms/azd-install';
-const AzdVersionCacheLifetime = 15 * 60 * 1000; // 15 minutes
+const AzdLoginCheckCacheLifetime = 15 * 60 * 1000; // 15 minutes
 
-enum AzdVersionCheckFailure {
-    NotInstalled = 1,
-    CannotDetermineVersion = 2
-}
 let userWarnedAzdMissing: boolean = false;
 let azdInstallAttempted: boolean = false;
-const azdVersionChecker = new AsyncLazy<string | AzdVersionCheckFailure>(getAzdVersion, AzdVersionCacheLifetime);
+const azdLoginChecker = new AsyncLazy<LoginStatus | undefined>(getAzdLoginStatus, AzdLoginCheckCacheLifetime);
+
+interface LoginStatus {
+    status: 'success' | 'unauthenticated' | string;
+    expiresOn?: string;
+}
 
 export type Environment = { [key: string]: string };
 export type AzureDevCli = {
@@ -33,27 +35,24 @@ export type AzureDevCli = {
 };
 
 export async function createAzureDevCli(context: IActionContext): Promise<AzureDevCli> {
-    const azdVersion = await azdVersionChecker.getValue();
-    if (azdVersion === AzdVersionCheckFailure.NotInstalled) {
+    const loginStatus = await azdLoginChecker.getValue();
+    if (!loginStatus) {
         context.errorHandling.suppressReportIssue = true;
         context.errorHandling.buttons = azdNotInstalledUserChoices();
         userWarnedAzdMissing = true;
         throw new Error(azdNotInstalledMsg());
     }
-    if (typeof azdVersion === 'string') {
-        context.telemetry.properties.azdVersion = azdVersion;
-    }
 
     return createCli();
 }
 
-export function scheduleAzdInstalledCheck(): void {
+export function scheduleAzdSignInCheck(): void {
     const fiveSeconds = 5 * 1000;
 
     setTimeout(async () => {
-        const ver = await azdVersionChecker.getValue();
+        const result = await azdLoginChecker.getValue();
 
-        if (ver === AzdVersionCheckFailure.NotInstalled && !userWarnedAzdMissing && !azdInstallAttempted) {
+        if (!result && !userWarnedAzdMissing && !azdInstallAttempted) {
             userWarnedAzdMissing = true;
             const response = await vscode.window.showWarningMessage(azdNotInstalledMsg(), {}, ...azdNotInstalledUserChoices());
             await response?.callback();
@@ -65,7 +64,7 @@ export function onAzdInstallAttempted(): void {
     azdInstallAttempted = true;
 
     // Clear the install state so we'll check again at the next command
-    azdVersionChecker.clear();
+    azdLoginChecker.clear();
 }
 
 function createCli(): AzureDevCli {
@@ -123,21 +122,25 @@ function getAzDevInvocation(): string[] {
     }
 }
 
-async function getAzdVersion(): Promise<string | AzdVersionCheckFailure> {
+async function getAzdLoginStatus(): Promise<LoginStatus | undefined> {
     const cli = createCli();
-    const command = cli.commandBuilder.withArgs(['version', '--output', 'json']).build();
-    let stdout: string;
+    const command = cli.commandBuilder.withArgs(['login', '--check-status', '--output', 'json']).build();
     try {
-        stdout = (await execAsync(command, cli.spawnOptions())).stdout;
-    } catch {
-        return AzdVersionCheckFailure.NotInstalled;
-    }
+        const stdout = (await execAsync(command, cli.spawnOptions())).stdout;
+        const result = JSON.parse(stdout) as LoginStatus;
 
-    try {
-        const versionSpec = JSON.parse(stdout) as { azd: { version: string } };
-        return versionSpec?.azd?.version || AzdVersionCheckFailure.CannotDetermineVersion;
+        // If we've reached this point, AZD is installed. We can set the VSCode context that the walk-through uses
+        await setVsCodeContext('hideAzdInstallStep', true);
+
+        // If the user is logged in, we can also set the login context
+        if (result?.status === 'success') {
+            await setVsCodeContext('hideAzdLoginStep', true);
+        }
+
+        return result;
     } catch {
-        return AzdVersionCheckFailure.CannotDetermineVersion;
+        // If AZD is not installed, return `undefined`
+        return undefined;
     }
 }
 

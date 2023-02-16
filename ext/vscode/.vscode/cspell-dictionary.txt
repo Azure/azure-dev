@@ -4,3 +4,4 @@ randomizer
 hostapi
 azureresourcegroups
 azureresources
+walkthroughs

@@ -21,7 +21,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestZipRoundTrip(t *testing.T) {
+func TestZipExtractContents(t *testing.T) {
 	testPath := t.TempDir()
 	expectedPhrase := "this will be inside a zip file"
 	zipFilePath, err := createSampleZip(testPath, expectedPhrase, "bin/gh")
@@ -34,7 +34,7 @@ func TestZipRoundTrip(t *testing.T) {
 	require.EqualValues(t, []byte(expectedPhrase), content)
 }
 
-func TestZipRoundTripExe(t *testing.T) {
+func TestZipExtractContentsExe(t *testing.T) {
 	testPath := t.TempDir()
 	expectedPhrase := "this will be inside a zip file"
 	zipFilePath, err := createSampleZip(testPath, expectedPhrase, "bin/gh.exe")
@@ -58,7 +58,7 @@ func TestZipGhNotFound(t *testing.T) {
 	require.EqualValues(t, "", ghCliPath)
 }
 
-func TestTarRoundTrip(t *testing.T) {
+func TestTarExtractContents(t *testing.T) {
 	testPath := t.TempDir()
 	expectedPhrase := "this will be inside a tar file"
 	tarFilePath, err := createSampleTarGz(testPath, expectedPhrase, "gh")

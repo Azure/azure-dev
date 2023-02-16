@@ -132,7 +132,7 @@ func TestNewGitHubCli(t *testing.T) {
 
 	require.Equal(t, mockinput.SpinnerOp{
 		Op:      mockinput.SpinnerOpShow,
-		Message: "Setting up GitHub connection",
+		Message: "setting up github connection",
 		Format:  input.Step,
 	}, mockContext.Console.SpinnerOps()[0])
 

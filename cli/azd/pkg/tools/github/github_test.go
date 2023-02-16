@@ -176,6 +176,7 @@ func createSampleTarGz(path, content, file string) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	defer tarFile.Close()
 
 	gzWriter := gzip.NewWriter(tarFile)
 	defer gzWriter.Close()

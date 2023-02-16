@@ -199,15 +199,24 @@ func (m *SubscriptionsManager) ListSubscriptions(ctx context.Context) ([]Subscri
 			azSubs, err := service.ListSubscriptions(ctx, *tenant.TenantID)
 			if err != nil {
 				errorMsg := err.Error()
-				displayName := *tenant.DisplayName
+				name := *tenant.TenantID
+				if tenant.DisplayName != nil {
+					name = *tenant.DisplayName
+				}
+
 				if strings.Contains(errorMsg, "AADSTS50076") {
+					idOrDomain := *tenant.TenantID
+					if tenant.DefaultDomain != nil {
+						idOrDomain = *tenant.DefaultDomain
+					}
+
 					err = fmt.Errorf(
 						"%s requires Multi-Factor Authentication (MFA). "+
 							"To authenticate, login with `azd login --tenant-id %s`",
-						displayName,
-						*tenant.DefaultDomain)
+						name,
+						idOrDomain)
 				} else {
-					err = fmt.Errorf("failed to load subscriptions from tenant '%s' : %w", displayName, err)
+					err = fmt.Errorf("failed to load subscriptions from tenant '%s' : %w", name, err)
 				}
 			}
 

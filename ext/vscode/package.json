@@ -22,7 +22,8 @@
         "url": "https://github.com/azure/azure-dev"
     },
     "activationEvents": [
-        "onTaskType:dotenv"
+        "onTaskType:dotenv",
+        "onWalkthrough:azd.start"
     ],
     "main": "./main.js",
     "contributes": {

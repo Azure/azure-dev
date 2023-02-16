@@ -420,7 +420,8 @@
                         "title": "%azure-dev.walkthroughs.start.steps.up.title%",
                         "description": "%azure-dev.walkthroughs.start.steps.up.description%",
                         "media": {
-                            "markdown": "resources/walkthrough/empty.md"
+                            "image": "resources/walkthrough/azdUp.png",
+                            "altText": "Using context menu on azure.yaml to run azd up"
                         },
                         "completionEvents": [
                             "onCommand:azure-dev.commands.cli.up",
@@ -434,7 +435,8 @@
                         "title": "%azure-dev.walkthroughs.start.steps.explore.title%",
                         "description": "%azure-dev.walkthroughs.start.steps.explore.description%",
                         "media": {
-                            "markdown": "resources/walkthrough/empty.md"
+                            "image": "resources/walkthrough/azdCommands.png",
+                            "altText": "Commands provided by the Azure Developer CLI extension"
                         }
                     }
                 ]

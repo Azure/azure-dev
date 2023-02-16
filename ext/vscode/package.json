@@ -383,7 +383,7 @@
                         "title": "%azure-dev.walkthroughs.start.steps.install.title%",
                         "description": "%azure-dev.walkthroughs.start.steps.install.description%",
                         "media": {
-                            "markdown": "resources/empty.md"
+                            "markdown": "resources/walkthrough/empty.md"
                         },
                         "completionEvents": [
                             "onContext:hideAzdInstallStep",
@@ -396,7 +396,7 @@
                         "title": "%azure-dev.walkthroughs.start.steps.login.title%",
                         "description": "%azure-dev.walkthroughs.start.steps.login.description%",
                         "media": {
-                            "markdown": "resources/empty.md"
+                            "markdown": "resources/walkthrough/empty.md"
                         },
                         "completionEvents": [
                             "onContext:hideAzdLoginStep",
@@ -409,7 +409,7 @@
                         "title": "%azure-dev.walkthroughs.start.steps.scaffold.title%",
                         "description": "%azure-dev.walkthroughs.start.steps.scaffold.description%",
                         "media": {
-                            "markdown": "resources/empty.md"
+                            "markdown": "resources/walkthrough/empty.md"
                         },
                         "completionEvents": [
                             "onCommand:azure-dev.commands.cli.init"
@@ -420,7 +420,7 @@
                         "title": "%azure-dev.walkthroughs.start.steps.up.title%",
                         "description": "%azure-dev.walkthroughs.start.steps.up.description%",
                         "media": {
-                            "markdown": "resources/empty.md"
+                            "markdown": "resources/walkthrough/empty.md"
                         },
                         "completionEvents": [
                             "onCommand:azure-dev.commands.cli.up",
@@ -434,7 +434,7 @@
                         "title": "%azure-dev.walkthroughs.start.steps.explore.title%",
                         "description": "%azure-dev.walkthroughs.start.steps.explore.description%",
                         "media": {
-                            "markdown": "resources/empty.md"
+                            "markdown": "resources/walkthrough/empty.md"
                         }
                     }
                 ]

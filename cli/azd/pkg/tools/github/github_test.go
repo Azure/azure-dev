@@ -220,7 +220,9 @@ func createSampleTarGz(path, content, file string) (string, error) {
 		return "", nil
 	}
 	fileContent, err = os.Open(fileContentPath)
-	defer fileContent.Close()
+	defer func() {
+		_ = fileContent.Close()
+	}()
 	if err != nil {
 		return "", err
 	}

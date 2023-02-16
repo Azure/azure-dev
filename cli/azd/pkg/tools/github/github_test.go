@@ -78,7 +78,7 @@ func TestTarGhNotFound(t *testing.T) {
 	require.NoError(t, err)
 	ghCliPath, err := extractGhCli(tarFilePath, testPath)
 	require.Error(t, err)
-	require.EqualValues(t, "did not find gh cli within tar file: EOF", err.Error())
+	require.EqualValues(t, "did not find gh cli within tar file", err.Error())
 	require.EqualValues(t, "", ghCliPath)
 }
 

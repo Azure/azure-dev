@@ -433,7 +433,7 @@ func extractFromTar(src, dst string) (string, error) {
 	for {
 		fileHeader, err := tarReader.Next()
 		if errors.Is(err, io.EOF) {
-			return extractedAt, fmt.Errorf("did not find gh cli within tar file: %w", err)
+			return extractedAt, fmt.Errorf("did not find gh cli within tar file")
 		}
 		if fileHeader == nil {
 			continue
@@ -462,7 +462,7 @@ func extractFromTar(src, dst string) (string, error) {
 	if extractedAt != "" {
 		return extractedAt, nil
 	}
-	return extractedAt, fmt.Errorf("github cli binary was not found within the tar file")
+	return extractedAt, fmt.Errorf("extract from tar error. Extraction ended in unexpected state.")
 }
 
 // extractGhCli gets the Github cli from either a zip or a tar.gz

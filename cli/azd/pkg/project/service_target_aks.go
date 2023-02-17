@@ -30,12 +30,20 @@ func (t *aksTarget) RequiredExternalTools() []tools.ExternalTool {
 	return []tools.ExternalTool{t.docker}
 }
 
-func (t *aksTarget) Deploy(ctx context.Context, azdCtx *azdcontext.AzdContext, path string, progress chan<- string) (ServiceDeploymentResult, error) {
+func (t *aksTarget) Deploy(
+	ctx context.Context,
+	azdCtx *azdcontext.AzdContext,
+	path string,
+	progress chan<- string,
+) (ServiceDeploymentResult, error) {
 	// Login to AKS cluster
 	namespace := t.config.Project.Name
 	clusterName, has := t.env.Values[environment.AksClusterEnvVarName]
 	if !has {
-		return ServiceDeploymentResult{}, fmt.Errorf("could not determine AKS cluster, ensure %s is set as an output of your infrastructure", environment.AksClusterEnvVarName)
+		return ServiceDeploymentResult{}, fmt.Errorf(
+			"could not determine AKS cluster, ensure %s is set as an output of your infrastructure",
+			environment.AksClusterEnvVarName,
+		)
 	}
 
 	log.Printf("getting AKS credentials %s\n", clusterName)
@@ -74,12 +82,16 @@ func (t *aksTarget) Deploy(ctx context.Context, azdCtx *azdcontext.AzdContext, p
 	}
 
 	progress <- "Creating k8s namespace"
-	namespaceResult, err := t.kubectl.CreateNamespace(ctx, namespace, &kubectl.KubeCliFlags{DryRun: "client", Output: "yaml"})
+	namespaceResult, err := t.kubectl.CreateNamespace(
+		ctx,
+		namespace,
+		&kubectl.KubeCliFlags{DryRun: "client", Output: "yaml"},
+	)
 	if err != nil {
 		return ServiceDeploymentResult{}, fmt.Errorf("failed creating kube namespace: %w", err)
 	}
 
-	_, err = t.kubectl.ApplyPipe(ctx, *&namespaceResult.Stdout, nil)
+	_, err = t.kubectl.ApplyPipe(ctx, namespaceResult.Stdout, nil)
 	if err != nil {
 		return ServiceDeploymentResult{}, fmt.Errorf("failed applying kube namespace: %w", err)
 	}
@@ -90,7 +102,7 @@ func (t *aksTarget) Deploy(ctx context.Context, azdCtx *azdcontext.AzdContext, p
 		return ServiceDeploymentResult{}, fmt.Errorf("failed setting kube secrets: %w", err)
 	}
 
-	_, err = t.kubectl.ApplyPipe(ctx, *&secretResult.Stdout, nil)
+	_, err = t.kubectl.ApplyPipe(ctx, secretResult.Stdout, nil)
 	if err != nil {
 		return ServiceDeploymentResult{}, fmt.Errorf("failed applying kube secrets: %w", err)
 	}
@@ -98,7 +110,10 @@ func (t *aksTarget) Deploy(ctx context.Context, azdCtx *azdcontext.AzdContext, p
 	// Login to container registry.
 	loginServer, has := t.env.Values[environment.ContainerRegistryEndpointEnvVarName]
 	if !has {
-		return ServiceDeploymentResult{}, fmt.Errorf("could not determine container registry endpoint, ensure %s is set as an output of your infrastructure", environment.ContainerRegistryEndpointEnvVarName)
+		return ServiceDeploymentResult{}, fmt.Errorf(
+			"could not determine container registry endpoint, ensure %s is set as an output of your infrastructure",
+			environment.ContainerRegistryEndpointEnvVarName,
+		)
 	}
 
 	log.Printf("logging into registry %s\n", loginServer)
@@ -135,7 +150,11 @@ func (t *aksTarget) Deploy(ctx context.Context, azdCtx *azdcontext.AzdContext, p
 
 	progress <- "Applying k8s manifests"
 	t.kubectl.SetEnv(t.env.Values)
-	err = t.kubectl.ApplyFiles(ctx, filepath.Join(t.config.RelativePath, "manifests"), &kubectl.KubeCliFlags{Namespace: namespace})
+	err = t.kubectl.ApplyFiles(
+		ctx,
+		filepath.Join(t.config.RelativePath, "manifests"),
+		&kubectl.KubeCliFlags{Namespace: namespace},
+	)
 	if err != nil {
 		return ServiceDeploymentResult{}, fmt.Errorf("failed applying kube manifests: %w", err)
 	}
@@ -146,25 +165,31 @@ func (t *aksTarget) Deploy(ctx context.Context, azdCtx *azdcontext.AzdContext, p
 	}
 
 	return ServiceDeploymentResult{
-		TargetResourceId: azure.ContainerAppRID(t.env.GetSubscriptionId(), t.scope.ResourceGroupName(), t.scope.ResourceName()),
-		Kind:             ContainerAppTarget,
-		Details:          nil,
-		Endpoints:        endpoints,
+		TargetResourceId: azure.ContainerAppRID(
+			t.env.GetSubscriptionId(),
+			t.scope.ResourceGroupName(),
+			t.scope.ResourceName(),
+		),
+		Kind:      ContainerAppTarget,
+		Details:   nil,
+		Endpoints: endpoints,
 	}, nil
 }
 
 func (t *aksTarget) Endpoints(ctx context.Context) ([]string, error) {
 	// TODO Update
 	return []string{"https://aks.azure.com/sample"}, nil
-	// containerAppProperties, err := t.cli.GetContainerAppProperties(ctx, t.env.GetSubscriptionId(), t.scope.ResourceGroupName(), t.scope.ResourceName())
-	// if err != nil {
-	// 	return nil, fmt.Errorf("fetching service properties: %w", err)
-	// }
-
-	// return []string{fmt.Sprintf("https://%s/", containerAppProperties.Properties.Configuration.Ingress.Fqdn)}, nil
 }
 
-func NewAksTarget(config *ServiceConfig, env *environment.Environment, scope *environment.TargetResource, azCli azcli.AzCli, containerService azcli.ContainerServiceClient, kubectlCli kubectl.KubectlCli, docker docker.Docker) ServiceTarget {
+func NewAksTarget(
+	config *ServiceConfig,
+	env *environment.Environment,
+	scope *environment.TargetResource,
+	azCli azcli.AzCli,
+	containerService azcli.ContainerServiceClient,
+	kubectlCli kubectl.KubectlCli,
+	docker docker.Docker,
+) ServiceTarget {
 	return &aksTarget{
 		config:           config,
 		env:              env,

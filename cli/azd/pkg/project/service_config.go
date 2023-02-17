@@ -130,7 +130,15 @@ func (sc *ServiceConfig) GetServiceTarget(
 		if err != nil {
 			return nil, err
 		}
-		target = NewAksTarget(sc, env, resource, azCli, containerService, kubectl.NewKubectl(commandRunner), docker.NewDocker(commandRunner))
+		target = NewAksTarget(
+			sc,
+			env,
+			resource,
+			azCli,
+			containerService,
+			kubectl.NewKubectl(commandRunner),
+			docker.NewDocker(commandRunner),
+		)
 	default:
 		return nil, fmt.Errorf("unsupported host '%s' for service '%s'", sc.Host, sc.Name)
 	}

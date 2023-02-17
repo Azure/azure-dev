@@ -24,7 +24,12 @@ type KubectlCli interface {
 	ConfigView(ctx context.Context, merge bool, flatten bool, flags *KubeCliFlags) (*exec.RunResult, error)
 	ConfigUseContext(ctx context.Context, name string, flags *KubeCliFlags) (*exec.RunResult, error)
 	CreateNamespace(ctx context.Context, name string, flags *KubeCliFlags) (*exec.RunResult, error)
-	CreateSecretGenericFromLiterals(ctx context.Context, name string, secrets []string, flags *KubeCliFlags) (*exec.RunResult, error)
+	CreateSecretGenericFromLiterals(
+		ctx context.Context,
+		name string,
+		secrets []string,
+		flags *KubeCliFlags,
+	) (*exec.RunResult, error)
 }
 
 type kubectlCli struct {
@@ -63,7 +68,12 @@ func (cli *kubectlCli) ConfigUseContext(ctx context.Context, name string, flags 
 	return &res, nil
 }
 
-func (cli *kubectlCli) ConfigView(ctx context.Context, merge bool, flatten bool, flags *KubeCliFlags) (*exec.RunResult, error) {
+func (cli *kubectlCli) ConfigView(
+	ctx context.Context,
+	merge bool,
+	flatten bool,
+	flags *KubeCliFlags,
+) (*exec.RunResult, error) {
 	kubeConfigDir, err := getKubeConfigDir()
 	if err != nil {
 		return nil, err
@@ -100,7 +110,7 @@ func (cli *kubectlCli) GetNodes(ctx context.Context, flags *KubeCliFlags) ([]Nod
 
 	var listResult ListResult
 	if err := json.Unmarshal([]byte(res.Stdout), &listResult); err != nil {
-		return nil, fmt.Errorf("unmarshaling json: %w", err)
+		return nil, fmt.Errorf("unmarshalling json: %w", err)
 	}
 
 	nodes := []Node{}
@@ -181,7 +191,12 @@ func (cli *kubectlCli) ApplyKustomize(ctx context.Context, path string, flags *K
 	return &res, nil
 }
 
-func (cli *kubectlCli) CreateSecretGenericFromLiterals(ctx context.Context, name string, secrets []string, flags *KubeCliFlags) (*exec.RunResult, error) {
+func (cli *kubectlCli) CreateSecretGenericFromLiterals(
+	ctx context.Context,
+	name string,
+	secrets []string,
+	flags *KubeCliFlags,
+) (*exec.RunResult, error) {
 	args := []string{"create", "secret", "generic", name}
 	for _, secret := range secrets {
 		args = append(args, fmt.Sprintf("--from-literal=%s", secret))
@@ -220,7 +235,11 @@ func (cli *kubectlCli) executeCommand(ctx context.Context, flags *KubeCliFlags, 
 	return cli.executeCommandWithArgs(ctx, runArgs, flags)
 }
 
-func (cli *kubectlCli) executeCommandWithArgs(ctx context.Context, args exec.RunArgs, flags *KubeCliFlags) (exec.RunResult, error) {
+func (cli *kubectlCli) executeCommandWithArgs(
+	ctx context.Context,
+	args exec.RunArgs,
+	flags *KubeCliFlags,
+) (exec.RunResult, error) {
 	args = args.WithEnrichError(true)
 	if cli.cwd != "" {
 		args = args.WithCwd(cli.cwd)

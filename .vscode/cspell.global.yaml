@@ -24,6 +24,7 @@ ignoreWords:
     - armauthorization
     - armappcontainers
     - armappservice
+    - armcontainerservice
     - armkeyvault
     - armresources
     - armruntime
@@ -48,6 +49,7 @@ ignoreWords:
     - configlist
     - conjunction
     - containerregistry
+    - containerservice
     - databricks
     - dedb
     - devcontainer
@@ -73,6 +75,9 @@ ignoreWords:
     - JOBOBJECT
     - kubernetes
     - kusto
+    - kubeconfig
+    - kubeconfigs
+    - kustomize
     - magefile
     - mainfic
     - menuid

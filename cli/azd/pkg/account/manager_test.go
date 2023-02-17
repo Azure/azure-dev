@@ -111,7 +111,11 @@ func Test_GetAccountDefaults(t *testing.T) {
 		require.NoError(t, err)
 
 		accountDefaults, err := manager.GetAccountDefaults(context.Background())
-		require.Equal(t, &Account{DefaultSubscription: (*Subscription)(nil), DefaultLocation: (&defaultLocation)}, accountDefaults)
+		require.Equal(
+			t,
+			&Account{DefaultSubscription: (*Subscription)(nil), DefaultLocation: (&defaultLocation)},
+			accountDefaults,
+		)
 		require.NoError(t, err)
 	})
 

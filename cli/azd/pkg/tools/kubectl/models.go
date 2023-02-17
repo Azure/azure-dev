@@ -9,6 +9,6 @@ type Node struct {
 
 type ListResult struct {
 	ApiVersion string           `json:"apiVersion"`
-	Kind       string           `json: "kind"`
+	Kind       string           `json:"kind"`
 	Items      []map[string]any `json:"items"`
 }

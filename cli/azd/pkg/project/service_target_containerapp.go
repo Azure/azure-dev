@@ -31,7 +31,7 @@ type containerAppTarget struct {
 	env            *environment.Environment
 	resource       *environment.TargetResource
 	cli            azcli.AzCli
-	docker        docker.Docker
+	docker         docker.Docker
 	console        input.Console
 	commandRunner  exec.CommandRunner
 	accountManager account.Manager

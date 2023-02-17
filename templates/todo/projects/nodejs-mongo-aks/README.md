@@ -1,4 +1,4 @@
-# ToDo Application with a Node.js API and Azure Cosmos DB API for MongoDB on Azure App Service
+# ToDo Application with a Node.js API and Azure Cosmos DB API for MongoDB on Azure Kubernetes Service (AKS)
 
 [![Open in Remote - Containers](https://img.shields.io/static/v1?label=Remote%20-%20Containers&message=Open&color=blue&logo=visualstudiocode)](https://vscode.dev/redirect?url=vscode://ms-vscode-remote.remote-containers/cloneInVolume?url=https://github.com/azure-samples/todo-nodejs-mongo)
 
@@ -26,7 +26,7 @@ The following prerequisites are required to use this application. Please ensure 
 - [Azure CLI (2.38.0+)](https://docs.microsoft.com/cli/azure/install-azure-cli)
 - [Node.js with npm (16.13.1+)](https://nodejs.org/) - for API backend and Web frontend
 - [Git (2.36.1+)](https://git-scm.com/)
-PLACEHOLDERIACTOOLS
+$PLACEHOLDERIACTOOLS
 
 ### Quickstart
 
@@ -36,7 +36,7 @@ The fastest way for you to get this application up and running on Azure is to us
 1. Run the following command to initialize the project, provision Azure resources, and deploy the application code.
 
 ```bash
-azd up --template todo-nodejs-mongo
+azd up --template todo-nodejs-mongo-aks
 ```
 
 You will be prompted for the following information:
@@ -67,7 +67,7 @@ Click the web application URL to launch the ToDo app. Create a new collection an
 
 This application utilizes the following Azure resources:
 
-- [**Azure App Services**](https://docs.microsoft.com/azure/app-service/) to host the Web frontend and API backend
+- [**Azure Kubernetes Service (AKS)**](https://docs.microsoft.com/azure/aks) to host the Web frontend and API backend
 - [**Azure Cosmos DB API for MongoDB**](https://docs.microsoft.com/azure/cosmos-db/mongodb/mongodb-introduction) for storage
 - [**Azure Monitor**](https://docs.microsoft.com/azure/azure-monitor/) for monitoring and logging
 - [**Azure Key Vault**](https://docs.microsoft.com/azure/key-vault/) for securing secrets

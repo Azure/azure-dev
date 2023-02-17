@@ -18,6 +18,7 @@ const (
 	AzureResourceTypeContainerAppEnvironment AzureResourceType = "Microsoft.App/managedEnvironments"
 	AzureResourceTypeDeployment              AzureResourceType = "Microsoft.Resources/deployments"
 	AzureResourceTypeKeyVault                AzureResourceType = "Microsoft.KeyVault/vaults"
+	AzureResourceTypeLoadTest                AzureResourceType = "Microsoft.LoadTestService/loadTests"
 	AzureResourceTypeLogAnalyticsWorkspace   AzureResourceType = "Microsoft.OperationalInsights/workspaces"
 	AzureResourceTypePortalDashboard         AzureResourceType = "Microsoft.Portal/dashboards"
 	AzureResourceTypePostgreSqlServer        AzureResourceType = "Microsoft.DBforPostgreSQL/flexibleServers"
@@ -26,6 +27,7 @@ const (
 	AzureResourceTypeStaticWebSite           AzureResourceType = "Microsoft.Web/staticSites"
 	AzureResourceTypeServicePlan             AzureResourceType = "Microsoft.Web/serverfarms"
 	AzureResourceTypeSqlServer               AzureResourceType = "Microsoft.Sql/servers"
+	AzureResourceTypeVirtualNetwork          AzureResourceType = "Microsoft.Network/virtualNetworks"
 	AzureResourceTypeWebSite                 AzureResourceType = "Microsoft.Web/sites"
 )
 
@@ -72,6 +74,10 @@ func GetResourceTypeDisplayName(resourceType AzureResourceType) string {
 		return "Azure Database for PostgreSQL flexible server"
 	case AzureResourceTypeCDNProfile:
 		return "Azure Front Door / CDN profile"
+	case AzureResourceTypeLoadTest:
+		return "Load Tests"
+	case AzureResourceTypeVirtualNetwork:
+		return "Virtual Network"
 	}
 
 	return ""

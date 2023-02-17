@@ -42,8 +42,8 @@ type Attribute struct {
 
 var Sha256Regex = regexp.MustCompile("^[A-Fa-f0-9]{64}$")
 
-// Verifies telemetry data generated when environments are created.
-func Test_CLI_Telemetry_Data_EnvCreate(t *testing.T) {
+// Verifies telemetry usage data generated when environments are created.
+func Test_CLI_Telemetry_Usage_Data_EnvCreate(t *testing.T) {
 	// CLI process and working directory are isolated
 	t.Parallel()
 	ctx, cancel := newTestContext(t)
@@ -92,8 +92,8 @@ func Test_CLI_Telemetry_Data_EnvCreate(t *testing.T) {
 	require.True(t, usageCmdFound)
 }
 
-// Verifies telemetry data generated when environments and projects are loaded.
-func Test_CLI_Telemetry_Data_EnvProjectLoad(t *testing.T) {
+// Verifies telemetry usage data generated when environments and projects are loaded.
+func Test_CLI_Telemetry_Usage_Data_EnvProjectLoad(t *testing.T) {
 	// CLI process and working directory are isolated
 	ctx, cancel := newTestContext(t)
 	defer cancel()

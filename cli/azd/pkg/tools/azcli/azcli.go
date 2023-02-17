@@ -348,20 +348,6 @@ func clientOptionsBuilder(httpClient httputil.HttpClient, userAgent string) *azs
 		WithPerCallPolicy(azsdk.NewUserAgentPolicy(userAgent))
 }
 
-func (cli *azCli) GetAksCredentials(ctx context.Context, resourceGroupName string, clusterName string) error {
-	// _, err := cli.runAzCommand(ctx,
-	// 	"aks", "get-credentials",
-	// 	"--resource-group", resourceGroupName,
-	// 	"--name", clusterName,
-	// )
-
-	// if err != nil {
-	// 	return fmt.Errorf("getting AKS credentials: %w", err)
-	// }
-
-	return nil
-}
-
 func (cli *azCli) ContainerService(ctx context.Context, subscriptionId string) (ContainerServiceClient, error) {
 	options := cli.createDefaultClientOptionsBuilder(ctx).BuildArmClientOptions()
 	return NewContainerServiceClient(subscriptionId, cli.credential, options)

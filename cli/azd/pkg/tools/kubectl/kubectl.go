@@ -2,7 +2,6 @@ package kubectl
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -17,10 +16,8 @@ type KubectlCli interface {
 	tools.ExternalTool
 	Cwd(cwd string)
 	SetEnv(env map[string]string)
-	GetNodes(ctx context.Context, flags *KubeCliFlags) ([]Node, error)
 	ApplyFiles(ctx context.Context, path string, flags *KubeCliFlags) error
 	ApplyPipe(ctx context.Context, input string, flags *KubeCliFlags) (*exec.RunResult, error)
-	ApplyKustomize(ctx context.Context, path string, flags *KubeCliFlags) (*exec.RunResult, error)
 	ConfigView(ctx context.Context, merge bool, flatten bool, flags *KubeCliFlags) (*exec.RunResult, error)
 	ConfigUseContext(ctx context.Context, name string, flags *KubeCliFlags) (*exec.RunResult, error)
 	CreateNamespace(ctx context.Context, name string, flags *KubeCliFlags) (*exec.RunResult, error)
@@ -99,32 +96,6 @@ func (cli *kubectlCli) ConfigView(
 	return &res, nil
 }
 
-func (cli *kubectlCli) GetNodes(ctx context.Context, flags *KubeCliFlags) ([]Node, error) {
-	res, err := cli.executeCommand(ctx, flags,
-		"get", "nodes",
-		"-o", "json",
-	)
-	if err != nil {
-		return nil, fmt.Errorf("kubectl get nodes: %w", err)
-	}
-
-	var listResult ListResult
-	if err := json.Unmarshal([]byte(res.Stdout), &listResult); err != nil {
-		return nil, fmt.Errorf("unmarshalling json: %w", err)
-	}
-
-	nodes := []Node{}
-	for _, item := range listResult.Items {
-		metadata := item["metadata"].(map[string]any)
-
-		nodes = append(nodes, Node{
-			Name: metadata["name"].(string),
-		})
-	}
-
-	return nodes, nil
-}
-
 func (cli *kubectlCli) ApplyPipe(ctx context.Context, input string, flags *KubeCliFlags) (*exec.RunResult, error) {
 	runArgs := exec.
 		NewRunArgs("kubectl", "apply", "-f", "-").
@@ -180,15 +151,6 @@ func (cli *kubectlCli) ApplyFiles(ctx context.Context, path string, flags *KubeC
 	}
 
 	return nil
-}
-
-func (cli *kubectlCli) ApplyKustomize(ctx context.Context, path string, flags *KubeCliFlags) (*exec.RunResult, error) {
-	res, err := cli.executeCommand(ctx, flags, "apply", "-k", path)
-	if err != nil {
-		return nil, fmt.Errorf("kubectl apply -k: %w", err)
-	}
-
-	return &res, nil
 }
 
 func (cli *kubectlCli) CreateSecretGenericFromLiterals(

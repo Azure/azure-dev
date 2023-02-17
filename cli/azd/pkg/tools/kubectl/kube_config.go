@@ -81,10 +81,18 @@ func (kcm *KubeConfigManager) SaveKubeConfig(ctx context.Context, configName str
 		return fmt.Errorf("failed marshalling KubeConfig to yaml: %w", err)
 	}
 
+	// Create .kube config folder if it doesn't already exist
+	_, err = os.Stat(kcm.configPath)
+	if err != nil {
+		if err := os.MkdirAll(kcm.configPath, osutil.PermissionDirectory); err != nil {
+			return fmt.Errorf("failed creating .kube config directory, %w", err)
+		}
+	}
+
 	outFilePath := filepath.Join(kcm.configPath, configName)
 	err = os.WriteFile(outFilePath, kubeConfigRaw, osutil.PermissionFile)
 	if err != nil {
-		return fmt.Errorf("failed write kube config file: %w", err)
+		return fmt.Errorf("failed writing kube config file: %w", err)
 	}
 
 	return nil

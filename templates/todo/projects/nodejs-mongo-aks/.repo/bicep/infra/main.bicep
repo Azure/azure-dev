@@ -49,6 +49,16 @@ module cluster '../../../../../../common/infra/bicep/core/host/aks/main.bicep' =
   }
 }
 
+// Give the AKS Cluster access to KeyVault
+module clusterKeyVaultAccess '../../../../../../common/infra/bicep/core/security/keyvault-access.bicep' = {
+  name: 'cluster-keyvault-access'
+  scope: rg
+  params: {
+    keyVaultName: keyVault.outputs.name
+    principalId: cluster.outputs.aksClusterIdentity.objectId
+  }
+}
+
 // The application database
 module cosmos '../../../../../common/infra/bicep/app/cosmos-mongo-db.bicep' = {
   name: 'cosmos'
@@ -98,6 +108,7 @@ output AZURE_KEY_VAULT_NAME string = keyVault.outputs.name
 output AZURE_LOCATION string = location
 output AZURE_TENANT_ID string = tenant().tenantId
 output AZURE_AKS_CLUSTER_NAME string = cluster.outputs.aksClusterName
+output AZURE_AKS_IDENTITY_CLIENT_ID string = cluster.outputs.aksClusterIdentity.clientId
 output AZURE_CONTAINER_REGISTRY_ENDPOINT string = '${cluster.outputs.containerRegistryName}.azurecr.io'
 output AZURE_CONTAINER_REGISTRY_NAME string = cluster.outputs.containerRegistryName
 output REACT_APP_API_BASE_URL string = ''

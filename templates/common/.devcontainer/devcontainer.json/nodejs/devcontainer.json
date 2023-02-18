@@ -3,7 +3,7 @@
     "build": {
         "dockerfile": "Dockerfile",
         "args": {
-            "VARIANT": "bullseye"
+            "IMAGE": "javascript-node:16"
         }
     },
     "features": {
@@ -12,10 +12,6 @@
         },
         "ghcr.io/devcontainers/features/github-cli:1": {
             "version": "2"
-        },
-        "ghcr.io/devcontainers/features/node:1": {
-            "version": "16",
-            "nodeGypDependencies": false
         }
     },
     "extensions": [

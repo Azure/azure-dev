@@ -34,5 +34,12 @@ func (c *MockMultiTenantCredentialProvider) GetTokenCredential(
 		return &tokenCred, nil
 	}
 
-	return &MockCredentials{}, nil
+	return &MockCredentials{
+		GetTokenFn: func(ctx context.Context, options policy.TokenRequestOptions) (azcore.AccessToken, error) {
+			return azcore.AccessToken{
+				Token:     tenantId,
+				ExpiresOn: time.Now().Add(time.Hour * 1),
+			}, nil
+		},
+	}, nil
 }

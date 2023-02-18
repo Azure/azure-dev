@@ -8,6 +8,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armsubscriptions"
 	azdinternal "github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/auth"
+	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
 )
 
@@ -164,14 +165,15 @@ func (s *SubscriptionsService) ListTenants(ctx context.Context) ([]armsubscripti
 		}
 
 		for _, tenant := range page.TenantListResult.Value {
-			if tenant != nil {
+			if tenant != nil && tenant.TenantID != nil {
 				tenants = append(tenants, *tenant)
 			}
 		}
 	}
 
 	sort.Slice(tenants, func(i, j int) bool {
-		return *tenants[i].DisplayName < *tenants[j].DisplayName
+		return convert.ToValueWithDefault(tenants[i].DisplayName, "") <
+			convert.ToValueWithDefault(tenants[j].DisplayName, "")
 	})
 
 	return tenants, nil

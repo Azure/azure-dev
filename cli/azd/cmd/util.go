@@ -228,54 +228,58 @@ func ensureEnvironmentInitialized(
 		env.SetEnvName(envSpec.environmentName)
 	}
 
-	if !hasSubID && envSpec.subscription != "" {
-		env.SetSubscriptionId(envSpec.subscription)
-	} else {
-		subscriptionOptions, defaultSubscription, err := getSubscriptionOptions(ctx, accountManager)
-		if err != nil {
-			return err
-		}
-
-		var subscriptionId = ""
-		for subscriptionId == "" {
-			subscriptionSelectionIndex, err := console.Select(ctx, input.ConsoleOptions{
-				Message:      "Please select an Azure Subscription to use:",
-				Options:      subscriptionOptions,
-				DefaultValue: defaultSubscription,
-			})
-
+	if !hasSubID {
+		if envSpec.subscription != "" {
+			env.SetSubscriptionId(envSpec.subscription)
+		} else {
+			subscriptionOptions, defaultSubscription, err := getSubscriptionOptions(ctx, accountManager)
 			if err != nil {
-				return fmt.Errorf("reading subscription id: %w", err)
+				return err
 			}
 
-			subscriptionSelection := subscriptionOptions[subscriptionSelectionIndex]
-
-			if subscriptionSelection == manualSubscriptionEntryOption {
-				subscriptionId, err = console.Prompt(ctx, input.ConsoleOptions{
-					Message: "Enter an Azure Subscription to use:",
+			var subscriptionId = ""
+			for subscriptionId == "" {
+				subscriptionSelectionIndex, err := console.Select(ctx, input.ConsoleOptions{
+					Message:      "Please select an Azure Subscription to use:",
+					Options:      subscriptionOptions,
+					DefaultValue: defaultSubscription,
 				})
 
 				if err != nil {
 					return fmt.Errorf("reading subscription id: %w", err)
 				}
-			} else {
-				subscriptionId = subscriptionSelection[len(subscriptionSelection)-
-					len("(00000000-0000-0000-0000-000000000000)")+1 : len(subscriptionSelection)-1]
-			}
-		}
 
-		env.SetSubscriptionId(strings.TrimSpace(subscriptionId))
+				subscriptionSelection := subscriptionOptions[subscriptionSelectionIndex]
+
+				if subscriptionSelection == manualSubscriptionEntryOption {
+					subscriptionId, err = console.Prompt(ctx, input.ConsoleOptions{
+						Message: "Enter an Azure Subscription to use:",
+					})
+
+					if err != nil {
+						return fmt.Errorf("reading subscription id: %w", err)
+					}
+				} else {
+					subscriptionId = subscriptionSelection[len(subscriptionSelection)-
+						len("(00000000-0000-0000-0000-000000000000)")+1 : len(subscriptionSelection)-1]
+				}
+			}
+
+			env.SetSubscriptionId(strings.TrimSpace(subscriptionId))
+		}
 	}
 
-	if !hasLocation && envSpec.location != "" {
-		env.SetLocation(envSpec.location)
-	} else {
-		location, err := azureutil.PromptLocation(
-			ctx, env, "Please select an Azure location to use:", "", console, accountManager)
-		if err != nil {
-			return fmt.Errorf("prompting for location: %w", err)
+	if !hasLocation {
+		if envSpec.location != "" {
+			env.SetLocation(envSpec.location)
+		} else {
+			location, err := azureutil.PromptLocation(
+				ctx, env, "Please select an Azure location to use:", "", console, accountManager)
+			if err != nil {
+				return fmt.Errorf("prompting for location: %w", err)
+			}
+			env.SetLocation(strings.TrimSpace(location))
 		}
-		env.SetLocation(strings.TrimSpace(location))
 	}
 
 	if !hasPrincipalID {
@@ -304,11 +308,7 @@ func getSubscriptionOptions(ctx context.Context, subscriptions account.Manager) 
 	// configured to use if the environment variable is unset.
 	defaultSubscriptionId := os.Getenv(environment.SubscriptionIdEnvVarName)
 	if defaultSubscriptionId == "" {
-		for _, info := range subscriptionInfos {
-			if info.IsDefault {
-				defaultSubscriptionId = info.Id
-			}
-		}
+		defaultSubscriptionId = subscriptions.GetDefaultSubscriptionID(ctx)
 	}
 
 	var subscriptionOptions = make([]string, len(subscriptionInfos)+1)
@@ -326,6 +326,8 @@ func getSubscriptionOptions(ctx context.Context, subscriptions account.Manager) 
 	return subscriptionOptions, defaultSubscription, nil
 }
 
+const environmentNameFlag string = "environment"
+
 type envFlag struct {
 	environmentName string
 }
@@ -333,7 +335,7 @@ type envFlag struct {
 func (e *envFlag) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
 	local.StringVarP(
 		&e.environmentName,
-		"environment",
+		environmentNameFlag,
 		"e",
 		// Set the default value to AZURE_ENV_NAME value if available
 		os.Getenv(environment.EnvNameEnvVarName),
@@ -357,18 +359,4 @@ func getResourceGroupFollowUp(
 		}
 	}
 	return followUp
-}
-
-func (e *envFlag) EnvironmentName() string {
-	return e.environmentName
-}
-
-// Represent command flags that accept an environment name argument
-type flagsWithEnv interface {
-	EnvironmentName() string
-}
-
-// Represents and command flags
-type flags interface {
-	Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions)
 }

@@ -25,14 +25,17 @@ var defaultLocation Location = Location{
 }
 
 type SubscriptionsListing interface {
-	GetSubscriptions(ctx context.Context) ([]Subscription, error)
+	GetSubscriptionsWithDefaultSet(ctx context.Context) ([]Subscription, error)
 	GetLocations(ctx context.Context, subscriptionId string) ([]azcli.AzCliLocation, error)
 }
 type Manager interface {
 	Clear(ctx context.Context) error
 	HasDefaults() bool
 	GetAccountDefaults(ctx context.Context) (*Account, error)
+	GetDefaultLocationName(ctx context.Context) string
+	GetDefaultSubscriptionID(ctx context.Context) string
 	GetSubscriptions(ctx context.Context) ([]Subscription, error)
+	GetSubscriptionsWithDefaultSet(ctx context.Context) ([]Subscription, error)
 	GetLocations(ctx context.Context, subscriptionId string) ([]azcli.AzCliLocation, error)
 	SetDefaultSubscription(ctx context.Context, subscriptionId string) (*Subscription, error)
 	SetDefaultLocation(ctx context.Context, subscriptionId string, location string) (*Location, error)
@@ -104,10 +107,10 @@ func (m *manager) GetAccountDefaults(ctx context.Context) (*Account, error) {
 
 // Gets the available Azure subscriptions for the current logged in account, across all tenants the user has access to.
 // Applies the default subscription on the matching account
-func (m *manager) GetSubscriptions(ctx context.Context) ([]Subscription, error) {
+func (m *manager) GetSubscriptionsWithDefaultSet(ctx context.Context) ([]Subscription, error) {
 	defaultSubscription, err := m.getDefaultSubscription(ctx)
 	if err != nil {
-		log.Println(fmt.Errorf("failed retrieving default subscription: %w", err).Error())
+		return nil, err
 	}
 
 	subscriptions, err := m.subManager.GetSubscriptions(ctx)
@@ -130,6 +133,11 @@ func (m *manager) GetSubscriptions(ctx context.Context) ([]Subscription, error) 
 	}
 
 	return results, nil
+}
+
+// Gets the available Azure subscriptions for the current logged in account, across all tenants the user has access to.
+func (m *manager) GetSubscriptions(ctx context.Context) ([]Subscription, error) {
+	return m.subManager.GetSubscriptions(ctx)
 }
 
 // Gets the available Azure locations for the specified Azure subscription.
@@ -222,9 +230,26 @@ func (m *manager) Clear(ctx context.Context) error {
 	return nil
 }
 
+// Returns the default subscription ID stored in configuration.
+// If configuration is not found or invalid, an empty string is returned.
+func (m *manager) GetDefaultSubscriptionID(ctx context.Context) string {
+	// Get the default subscription ID from azd configuration
+	configSubscriptionId, ok := m.config.Get(defaultSubscriptionKeyPath)
+	if !ok {
+		return ""
+	}
+
+	subId, ok := configSubscriptionId.(string)
+	if !ok {
+		return ""
+	}
+
+	return subId
+}
+
 // Returns the default subscription for the current logged in principal
 // If set in config will return the configured subscription
-// otherwise will return the first subscription found.
+// otherwise will return nil.
 func (m *manager) getDefaultSubscription(ctx context.Context) (*Subscription, error) {
 	// Get the default subscription ID from azd configuration
 	configSubscriptionId, ok := m.config.Get(defaultSubscriptionKeyPath)
@@ -251,7 +276,23 @@ func (m *manager) getDefaultSubscription(ctx context.Context) (*Subscription, er
 	}, nil
 }
 
-// Gets the default Azure location for the specified subscription
+// Gets the default Azure location name stored in configuration.
+// If configuration is not found or invalid, a default location (eastus2) is returned.
+func (m *manager) GetDefaultLocationName(ctx context.Context) string {
+	configLocation, ok := m.config.Get(defaultLocationKeyPath)
+	if !ok {
+		return defaultLocation.Name
+	}
+
+	location, ok := configLocation.(string)
+	if !ok {
+		return defaultLocation.Name
+	}
+
+	return location
+}
+
+// Gets the default Azure location stored in configuration
 // When specified in azd config, will return the location when valid, otherwise azd global default (eastus2)
 func (m *manager) getDefaultLocation(ctx context.Context, subscriptionId string) (*Location, error) {
 	configLocation, ok := m.config.Get(defaultLocationKeyPath)

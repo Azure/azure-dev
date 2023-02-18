@@ -40,7 +40,7 @@
         3100
     ],
     "postCreateCommand": "",
-    "remoteUser": "vscode",
+    "remoteUser": "node",
     "hostRequirements": {
         "memory": "8gb"
     }

@@ -3,7 +3,7 @@
     "build": {
         "dockerfile": "Dockerfile",
         "args": {
-            "IMAGE": "javascript-node"
+            "IMAGE": "javascript-node:16"
         }
     },
     "features": {

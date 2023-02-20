@@ -18,14 +18,14 @@ steps:
     inputs:
       pwsh: true
       targetType: filePath
-      filePath: eng/scripts/Get-WinGetVersion.ps1
+      filePath: eng/scripts/Get-MsiVersion.ps1
       arguments: >-
-        -Version '${{ parameters.CliVersion }}'
+        -CliVersion '${{ parameters.CliVersion }}'
         -DevOpsOutput
 
   - pwsh: |
-      $submitPackage = eng/scripts/Test-ShouldReleaseWinGet.ps1 `
-        -Version '$(WinGetVersion)' `
+      $submitPackage = eng/scripts/Test-ShouldReleasePackageVersion.ps1 `
+        -Version '$(MSI_VERSION)' `
         -AllowPrerelease:$${{ parameters.AllowPrerelease }}
 
       if ('$(Skip.ReleaseWinGet)' -eq 'true') {

@@ -1,7 +1,7 @@
 parameters:
   - name: AllowPrerelease
     type: boolean
-    default: true
+    default: false
     displayName: Allow prerelease versions to be published. Should be "false" after GA.
   - name: CLiVersion
     type: string

@@ -185,9 +185,9 @@ func verifyResource(t *testing.T, attributes []Attribute) {
 	require.Contains(t, m, fields.ExecutionEnvironmentKey)
 
 	if os.Getenv("BUILD_BUILDID") != "" {
-		require.Equal(t, m[fields.ServiceNameKey], fields.EnvAzurePipelines)
+		require.Equal(t, m[fields.ExecutionEnvironmentKey], fields.EnvAzurePipelines)
 	} else if os.Getenv("GITHUB_RUN_ID") != "" {
-		require.Equal(t, m[fields.ServiceNameKey], fields.EnvGitHubActions)
+		require.Equal(t, m[fields.ExecutionEnvironmentKey], fields.EnvGitHubActions)
 	}
 
 	require.Contains(t, m, fields.OSTypeKey)

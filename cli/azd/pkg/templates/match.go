@@ -5,6 +5,7 @@ import (
 	"errors"
 	"sort"
 
+	"github.com/AlecAivazis/survey/v2"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"golang.org/x/exp/maps"
 )
@@ -26,10 +27,21 @@ var appTypesDisplay = map[string]ApplicationType{
 	"Web Application":                  WebApp,
 }
 
+var noSqlDatabaseDisplay = map[string]string{
+	"Azure Cosmos DB with MongoDB API": "mongodb",
+	"Other":                            "other",
+}
+
+var sqlDatabaseDisplay = map[string]string{
+	"Azure Database for PostgreSQL": "azuredb-postgreSQL",
+	"Azure Database for MySQL":      "azuresql",
+}
+
 type Characteristics struct {
 	Type ApplicationType
 
 	LanguageTags       []string
+	DatabaseTags       []string
 	InfrastructureTags []string
 
 	// Capabilities specified in key OPERATOR value
@@ -101,7 +113,7 @@ func PromptToFillCharacteristics(ctx context.Context, console input.Console, c *
 		sort.Strings(options)
 		options = append(options, "None of the above")
 		appTypeIndex, err := console.Select(ctx, input.ConsoleOptions{
-			Message: "Which best describes your application?",
+			Message: "Which best describes your app?",
 			Options: options,
 		})
 
@@ -114,25 +126,71 @@ func PromptToFillCharacteristics(ctx context.Context, console input.Console, c *
 		}
 	}
 
-	langOptions := maps.Keys(languageDisplay)
-	sort.Strings(langOptions)
-	langOptions = append(langOptions, "Done")
+	if len(c.LanguageTags) == 0 {
+		langOptions := maps.Keys(languageDisplay)
+		sort.Strings(langOptions)
 
-	for {
-		answerIndex, err := console.Select(ctx, input.ConsoleOptions{
-			Message: "Which of the following languages does your application use? (Select 'Done' when done)",
+		answers := []string{}
+		prompt := &survey.MultiSelect{
+			Message: "Which of the following languages does your app use?",
 			Options: langOptions,
-		})
+		}
+
+		err := survey.AskOne(prompt, &answers)
 		if err != nil {
 			return err
 		}
 
-		c.LanguageTags = append(c.LanguageTags, langOptions[answerIndex])
-
-		if answerIndex == len(langOptions)-1 {
-			break
+		for _, ans := range answers {
+			c.LanguageTags = append(c.LanguageTags, languageDisplay[ans])
 		}
 	}
 
+	if len(c.DatabaseTags) == 0 {
+		promptDb(ctx, console, c)
+	}
+
+	return nil
+}
+
+func promptDb(ctx context.Context, console input.Console, c *Characteristics) error {
+	if needDb, err := console.Confirm(ctx, input.ConsoleOptions{
+		Message: "Do you need a database for your app?",
+	}); err != nil {
+		return err
+	} else if !needDb {
+		return nil
+	}
+
+	databases := []string{
+		"NoSQL Database",
+		"Relational SQL Database",
+	}
+	answerIndex, err := console.Select(ctx, input.ConsoleOptions{
+		Message:      "Which type of database would you like to use?",
+		Options:      databases,
+		DefaultValue: "NoSQL Database",
+	})
+	if err != nil {
+		return err
+	}
+
+	var dbOptions []string
+	if answerIndex == 0 {
+		dbOptions = maps.Keys(noSqlDatabaseDisplay)
+	} else {
+		dbOptions = maps.Keys(sqlDatabaseDisplay)
+	}
+	sort.Strings(dbOptions)
+
+	answerIndex, err = console.Select(ctx, input.ConsoleOptions{
+		Message: "Which database would you like to use?",
+		Options: dbOptions,
+	})
+	if err != nil {
+		return err
+	}
+
+	c.DatabaseTags = append(c.DatabaseTags, dbOptions[answerIndex])
 	return nil
 }

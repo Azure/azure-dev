@@ -158,8 +158,8 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		Title: "Initializing a new project (azd init)",
 	})
 
-	existingApplication, err := i.console.Confirm(ctx, input.ConsoleOptions{
-		Message:      "Do you have an existing application?",
+	existingApp, err := i.console.Confirm(ctx, input.ConsoleOptions{
+		Message:      "Do you have an existing app?",
 		DefaultValue: false,
 	})
 
@@ -167,10 +167,10 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		return nil, err
 	}
 
-	if existingApplication {
+	if existingApp {
 		appLocationIndex, err := i.console.Select(ctx, input.ConsoleOptions{
-			Message: "The Azure Developer CLI can analyze your application and suggest cloud infrastructure. " +
-				"Where is your existing application?",
+			Message: "The Azure Developer CLI can analyze your app and suggest cloud infrastructure. " +
+				"Where is your existing app?",
 			Options: []string{
 				"Under the current directory",
 				"On GitHub",
@@ -204,7 +204,7 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 				input.ConsoleOptions{
 					//nolint:lll
 					Message: heredoc.Docf(
-						`We found that your existing application is described as follows:
+						`Your existing app is described as follows:
 						%s
 						Is that right?`,
 						describe(projects)),
@@ -216,6 +216,10 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 			if useDetection {
 				character := templates.Characteristics{}
 				extractCharacteristics(projects, &character, &useOptions)
+				err := templates.PromptToFillCharacteristics(ctx, i.console, &character)
+				if err != nil {
+					return nil, err
+				}
 
 				i.flags.template, err = templates.MatchOne(ctx, i.console, character)
 				if err != nil {
@@ -376,6 +380,8 @@ func extractCharacteristics(
 	}
 
 	for _, project := range projects {
+		character.LanguageTags = append(character.LanguageTags, project.Language)
+
 		if project.HasWebUIFramework() {
 			spec := repository.ProjectSpec{
 				Language:  project.Language,
@@ -386,6 +392,8 @@ func extractCharacteristics(
 
 			if project.Frameworks[0] == appdetect.React {
 				spec.OutputPath = "build"
+			} else if project.Frameworks[0] == appdetect.VueJs || project.Frameworks[0] == appdetect.Angular {
+				spec.OutputPath = "dist"
 			}
 
 			useOptions.Projects = append(useOptions.Projects, spec)
@@ -409,13 +417,13 @@ func (i *initAction) searchForTemplate(
 	useOptions repository.InfraUseOptions) (repository.InfraUseOptions, error) {
 	c := &templates.Characteristics{}
 	err := templates.PromptToFillCharacteristics(ctx, i.console, c)
-	tag := c.LanguageTags[0]
-	splitTag := strings.Split(tag, ":")
-	useOptions.Language = splitTag[len(splitTag)-1]
-
 	if err != nil {
 		return useOptions, err
 	}
+
+	tag := c.LanguageTags[0]
+	splitTag := strings.Split(tag, ":")
+	useOptions.Language = splitTag[len(splitTag)-1]
 
 	i.flags.template, err = templates.MatchOne(ctx, i.console, *c)
 	if err != nil {

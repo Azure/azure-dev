@@ -68,9 +68,11 @@ func (i *Initializer) InitializeInfra(ctx context.Context,
 	templateBranch string,
 	useOptions InfraUseOptions) error {
 	var err error
-	stepMessage := fmt.Sprintf("Downloading template code to: %s", output.WithLinkFormat("%s", azdCtx.ProjectDirectory()))
+	stepMessage := fmt.Sprintf(
+		"Initializing infrastructure code in: %s",
+		output.WithLinkFormat("%s", filepath.Join(azdCtx.ProjectDirectory(), "infra")))
 	i.console.ShowSpinner(ctx, stepMessage, input.Step)
-	defer i.console.StopSpinner(ctx, stepMessage+"\n", input.GetStepResultFormat(err))
+	defer i.console.StopSpinner(ctx, "", input.GetStepResultFormat(err))
 
 	err = copyTemplateFS(resources.AppTypes, useOptions, templateUrl, azdCtx.ProjectDirectory())
 	if err != nil {
@@ -81,7 +83,10 @@ func (i *Initializer) InitializeInfra(ctx context.Context,
 	if err != nil {
 		return fmt.Errorf("copying core lib : %w", err)
 	}
+	i.console.StopSpinner(ctx, stepMessage, input.GetStepResultFormat(err))
 
+	stepMessage = fmt.Sprintf("Generating project file: %s", azdcontext.ProjectFileName)
+	i.console.ShowSpinner(ctx, stepMessage, input.Step)
 	prj := project.ProjectConfig{}
 	prj.Name = azdCtx.GetDefaultProjectName()
 	prj.Services = map[string]*project.ServiceConfig{}
@@ -107,6 +112,7 @@ func (i *Initializer) InitializeInfra(ctx context.Context,
 	if err != nil {
 		return fmt.Errorf("creating azure.yaml: %w", err)
 	}
+	i.console.StopSpinner(ctx, stepMessage, input.GetStepResultFormat(err))
 
 	return nil
 }

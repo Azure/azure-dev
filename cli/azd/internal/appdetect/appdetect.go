@@ -19,7 +19,7 @@ type ProjectType string
 const (
 	DotNet     ProjectType = "dotnet"
 	Java       ProjectType = "java"
-	JavaScript ProjectType = "nodejs"
+	JavaScript ProjectType = "js"
 	Python     ProjectType = "python"
 )
 

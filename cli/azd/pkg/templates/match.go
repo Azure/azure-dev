@@ -86,11 +86,13 @@ func MatchOne(ctx context.Context, console input.Console, c Characteristics) (Te
 }
 
 var languageDisplay = map[string]string{
-	"C#":                      "csharp",
-	"Python":                  "python",
-	"Java":                    "java",
-	"JavaScript / TypeScript": "web:ts",
-	"NodeJs":                  "js",
+	"C#":                     "csharp",
+	"Python":                 "python",
+	"Java":                   "java",
+	"JavaScript (Front-end)": "web:ts",
+	"TypeScript (Front-end)": "web:ts",
+	"JavaScript (Back-end)":  "js",
+	"TypeScript (Back-end)":  "ts",
 }
 
 func PromptToFillCharacteristics(ctx context.Context, console input.Console, c *Characteristics) error {

@@ -41,10 +41,11 @@ func NewInitializer(
 }
 
 type ProjectSpec struct {
-	Language  string
-	Host      string
-	Path      string
-	HackIsWeb bool
+	Language   string
+	Host       string
+	Path       string
+	OutputPath string
+	HackIsWeb  bool
 }
 
 type InfraUseOptions struct {
@@ -94,6 +95,7 @@ func (i *Initializer) InitializeInfra(ctx context.Context,
 		if err != nil {
 			return fmt.Errorf("creating azure.yaml: %w", err)
 		}
+
 		prj.Services[serviceName] = &project.ServiceConfig{
 			RelativePath: rel,
 			Host:         spec.Host,

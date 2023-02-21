@@ -377,12 +377,18 @@ func extractCharacteristics(
 
 	for _, project := range projects {
 		if project.HasWebUIFramework() {
-			useOptions.Projects = append(useOptions.Projects, repository.ProjectSpec{
+			spec := repository.ProjectSpec{
 				Language:  project.Language,
 				Host:      "appservice",
 				Path:      project.Path,
 				HackIsWeb: true,
-			})
+			}
+
+			if project.Frameworks[0] == appdetect.React {
+				spec.OutputPath = "build"
+			}
+
+			useOptions.Projects = append(useOptions.Projects, spec)
 		} else {
 			// HACK: Select first language found.
 			if project.Language == "nodejs" {
@@ -403,7 +409,9 @@ func (i *initAction) searchForTemplate(
 	useOptions repository.InfraUseOptions) (repository.InfraUseOptions, error) {
 	c := &templates.Characteristics{}
 	err := templates.PromptToFillCharacteristics(ctx, i.console, c)
-	useOptions.Language = c.LanguageTags[0]
+	tag := c.LanguageTags[0]
+	splitTag := strings.Split(tag, ":")
+	useOptions.Language = splitTag[len(splitTag)-1]
 
 	if err != nil {
 		return useOptions, err

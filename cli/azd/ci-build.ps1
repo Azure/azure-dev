@@ -39,6 +39,9 @@ if ($IsWindows) {
     Write-Host "go generate succeeded"
 }
 
+# Force DNS resolution to not use cgo
+$env:GODEBUG=netdns=go+1
+
 Write-Host "go build"
 go build -ldflags="-X 'github.com/azure/azure-dev/cli/azd/internal.Version=$Version (commit $SourceVersion)'"
 

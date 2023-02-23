@@ -13,6 +13,12 @@ param location string
 // "resourceGroupName": {
 //      "value": "myGroupName"
 // }
+@description('The resource name of the AKS cluster')
+param clusterName string = ''
+
+@description('The resource name of the Container Registry (ACR)')
+param containerRegistryName string = ''
+
 param applicationInsightsDashboardName string = ''
 param applicationInsightsName string = ''
 param cosmosAccountName string = ''
@@ -35,27 +41,17 @@ resource rg 'Microsoft.Resources/resourceGroups@2021-04-01' = {
   tags: tags
 }
 
-module cluster '../../../../../../common/infra/bicep/core/host/aks/main.bicep' = {
+// The AKS cluster to host applications
+module cluster '../../../../../../common/infra/bicep/core/host/aks.bicep' = {
   name: 'aks'
   scope: rg
   params: {
     location: location
-    resourceName: resourceToken
-    upgradeChannel: 'stable'
-    warIngressNginx: true
-    adminPrincipalId: principalId
-    acrPushRolePrincipalId: principalId
-    registries_sku: 'Standard'
-  }
-}
-
-// Give the AKS Cluster access to KeyVault
-module clusterKeyVaultAccess '../../../../../../common/infra/bicep/core/security/keyvault-access.bicep' = {
-  name: 'cluster-keyvault-access'
-  scope: rg
-  params: {
+    name: !empty(clusterName) ? clusterName : '${abbrs.containerServiceManagedClusters}${resourceToken}'
+    agentPoolType: 'Standard'
+    containerRegistryName: !empty(containerRegistryName) ? containerRegistryName : '${abbrs.containerRegistryRegistries}${resourceToken}'
+    logAnalyticsName: monitoring.outputs.logAnalyticsWorkspaceName
     keyVaultName: keyVault.outputs.name
-    principalId: cluster.outputs.aksClusterIdentity.objectId
   }
 }
 

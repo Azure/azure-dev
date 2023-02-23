@@ -53,7 +53,7 @@ func newMonitorFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) 
 func newMonitorCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "monitor",
-		Short: "Monitor a deployed app.",
+		Short: i18nGetText(i18nCmdMonitorShort),
 		Long: `Monitor a deployed app.
 
 Examples:

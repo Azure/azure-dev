@@ -49,7 +49,7 @@ func newRestoreFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) 
 func restoreCmdDesign() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "restore",
-		Short: "Restore app dependencies.",
+		Short: i18nGetText(i18nCmdRestoreShort),
 		//nolint:lll
 		Long: `Restore app dependencies.
 

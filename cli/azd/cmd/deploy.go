@@ -69,7 +69,7 @@ func newDeployFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *
 func newDeployCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "deploy",
-		Short: "Deploy the app's code to Azure.",
+		Short: i18nGetText(i18nCmdDeployShort),
 		//nolint:lll
 		Long: `Deploy the app's code to Azure.
 When no ` + output.WithBackticks("--service") + ` value is specified, all services in the ` + output.WithBackticks("azure.yaml") + ` file (found in the root of your project) are deployed.

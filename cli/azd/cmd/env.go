@@ -96,7 +96,7 @@ func newEnvSetFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *
 func newEnvSetCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "set <key> <value>",
-		Short: "Set a value in the environment.",
+		Short: i18nGetText(i18nCmdEnvShort),
 		Args:  cobra.ExactArgs(2),
 	}
 }

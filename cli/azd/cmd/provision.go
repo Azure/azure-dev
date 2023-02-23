@@ -23,7 +23,7 @@ func newProvisionCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "provision",
 		Aliases: []string{"infra create"},
-		Short:   "Provision the Azure resources for an app.",
+		Short:   i18nGetText(i18nCmdProvisionShort),
 		//nolint:lll
 		Long: `Provision the Azure resources for an app.
 

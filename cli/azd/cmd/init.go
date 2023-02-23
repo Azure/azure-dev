@@ -40,7 +40,7 @@ func newInitFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *in
 func newInitCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "init",
-		Short: "Initialize a new app.",
+		Short: i18nGetText(i18nCmdInitShort),
 		//nolint:lll
 		Long: `Initialize a new app.
 

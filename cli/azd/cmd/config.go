@@ -73,7 +73,7 @@ func configActions(root *actions.ActionDescriptor, rootOptions *internal.GlobalC
 
 	groupCmd := &cobra.Command{
 		Use:   "config",
-		Short: "Manage the Azure Developer CLI user configuration.",
+		Short: i18nGetText(i18nCmdConfigShort),
 		Long:  longDescription,
 	}
 	annotateGroupCmd(groupCmd, cmdGroupConfig)

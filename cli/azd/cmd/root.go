@@ -253,6 +253,9 @@ func NewRootCmd(staticHelp bool, middlewareChain []*actions.MiddlewareRegistrati
 
 	// once the command is created, let's finalize the help template
 	cmd.SetHelpTemplate(getRootCmdHelp(cmd))
+	if opts.GenerateStaticHelp {
+		cmd.Long = getRootCmdHelp(cmd)
+	}
 
 	return cmd
 }

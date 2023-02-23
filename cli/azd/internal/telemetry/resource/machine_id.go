@@ -67,11 +67,11 @@ func getMacAddress() (string, bool) {
 	for _, ift := range interfaces {
 		if len(ift.HardwareAddr) > 0 && ift.Flags&net.FlagLoopback == 0 {
 			hwAddr, err := net.ParseMAC(ift.HardwareAddr.String())
-			ipAddr, _ := ift.Addrs()
 			if err != nil {
 				continue
 			}
 
+			ipAddr, _ := ift.Addrs()
 			if len(ipAddr) == 0 {
 				continue
 			}

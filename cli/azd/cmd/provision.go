@@ -20,7 +20,7 @@ func newProvisionFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions
 }
 
 func newProvisionCmd() *cobra.Command {
-	return &cobra.Command{
+	cmd := &cobra.Command{
 		Use:     "provision",
 		Aliases: []string{"infra create"},
 		Short:   "Provision the Azure resources for an app.",
@@ -34,6 +34,8 @@ The command prompts you for the following values:
 
 Depending on what Azure resources are created, running this command might take a while. To view progress, go to the Azure portal and search for the resource group that contains your environment name.`,
 	}
+	annotateGroupCmd(cmd, cmdGroupManage)
+	return cmd
 }
 
 type provisionAction struct {

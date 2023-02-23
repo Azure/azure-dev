@@ -49,6 +49,8 @@ When no template is supplied, you can optionally select an Azure Developer CLI t
 When a template is provided, the sample code is cloned to the current directory.`,
 	}
 
+	annotateGroupCmd(cmd, cmdGroupConfig)
+
 	return cmd
 }
 

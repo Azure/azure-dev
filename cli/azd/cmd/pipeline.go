@@ -55,7 +55,7 @@ func (pc *pipelineConfigFlags) Bind(local *pflag.FlagSet, global *internal.Globa
 }
 
 func pipelineActions(root *actions.ActionDescriptor) *actions.ActionDescriptor {
-	infraCmd := &cobra.Command{
+	pipelineCmd := &cobra.Command{
 		Use:   "pipeline",
 		Short: "Manage GitHub Actions or Azure Pipelines.",
 		//nolint:lll
@@ -65,9 +65,9 @@ The Azure Developer CLI template includes a GitHub Actions and an Azure Pipeline
 
 For more information, go to https://aka.ms/azure-dev/pipeline.`,
 	}
-
+	annotateGroupCmd(pipelineCmd, cmdGroupMonitor)
 	group := root.Add("pipeline", &actions.ActionDescriptorOptions{
-		Command: infraCmd,
+		Command: pipelineCmd,
 	})
 
 	group.Add("config", &actions.ActionDescriptorOptions{

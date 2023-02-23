@@ -67,7 +67,7 @@ func newDeployFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *
 }
 
 func newDeployCmd() *cobra.Command {
-	return &cobra.Command{
+	cmd := &cobra.Command{
 		Use:   "deploy",
 		Short: "Deploy the app's code to Azure.",
 		//nolint:lll
@@ -82,6 +82,8 @@ Examples:
 	
 After the deployment is complete, the endpoint is printed. To start the service, select the endpoint or paste it in a browser.`,
 	}
+	annotateGroupCmd(cmd, cmdGroupManage)
+	return cmd
 }
 
 type deployAction struct {

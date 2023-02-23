@@ -59,7 +59,7 @@ When no template is supplied, you can optionally select an Azure Developer CLI t
 			"azd up",
 		) + ` initializes the current directory so that your project is compatible with Azure Developer CLI.`,
 	}
-
+	annotateGroupCmd(cmd, cmdGroupManage)
 	return cmd
 }
 

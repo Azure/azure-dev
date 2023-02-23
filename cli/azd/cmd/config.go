@@ -76,6 +76,7 @@ func configActions(root *actions.ActionDescriptor, rootOptions *internal.GlobalC
 		Short: "Manage the Azure Developer CLI user configuration.",
 		Long:  longDescription,
 	}
+	annotateGroupCmd(groupCmd, cmdGroupConfig)
 
 	group := root.Add("config", &actions.ActionDescriptorOptions{
 		Command: groupCmd,

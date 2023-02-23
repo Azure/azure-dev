@@ -6,8 +6,8 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"strings"
 
-	"github.com/MakeNowJust/heredoc/v2"
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/cmd/middleware"
 
@@ -23,6 +23,21 @@ import (
 	"github.com/spf13/cobra"
 )
 
+const (
+	cmdGrouper      string = "commandGrouper"
+	cmdGroupConfig  string = string(i18nCmdGroupTitleConfig)
+	cmdGroupManage  string = string(i18nCmdGroupTitleManage)
+	cmdGroupMonitor string = string(i18nCmdGroupTitleMonitor)
+	cmdGroupAbout   string = string(i18nCmdGroupTitleAbout)
+)
+
+func annotateGroupCmd(cmd *cobra.Command, group string) {
+	if cmd.Annotations == nil {
+		cmd.Annotations = make(map[string]string)
+	}
+	cmd.Annotations[cmdGrouper] = group
+}
+
 // Creates the root Cobra command for AZD.
 // staticHelp - False, except for running for doc generation
 // middlewareChain - nil, except for running unit tests
@@ -31,46 +46,15 @@ func NewRootCmd(staticHelp bool, middlewareChain []*actions.MiddlewareRegistrati
 	opts := &internal.GlobalCommandOptions{GenerateStaticHelp: staticHelp}
 	opts.EnableTelemetry = telemetry.IsTelemetryEnabled()
 
-	productName := "Azure Developer CLI"
+	//productName := "The Azure Developer CLI"
+	productName := i18nGetText(i18nProductName)
 	if opts.GenerateStaticHelp {
-		productName = "Azure Developer CLI (`azd`)"
+		productName = i18nGetText(i18nDocsProductName)
 	}
-
-	shortDescription := heredoc.Docf(`%s is a command-line interface for developers who build Azure solutions.`, productName)
-
-	synopsisHeading := shortDescription + "\n\n"
-	if opts.GenerateStaticHelp {
-		synopsisHeading = ""
-	}
-	//nolint:lll
-	longDescription := heredoc.Docf(
-		`%sTo begin working with Azure Developer CLI, run the `+output.WithBackticks(
-			"azd up",
-		)+` command by supplying a sample template in an empty directory:
-
-		$ azd up –-template todo-nodejs-mongo
-
-	You can pick a template by running `+output.WithBackticks(
-			"azd template list",
-		)+` and then supplying the repo name as a value to `+output.WithBackticks(
-			"--template",
-		)+`.
-
-	The most common next commands are:
-
-		$ azd pipeline config
-		$ azd deploy
-		$ azd monitor --overview
-
-	For more information, visit the Azure Developer CLI Dev Hub: https://aka.ms/azure-dev/devhub.`,
-		synopsisHeading,
-	)
 
 	rootCmd := &cobra.Command{
 		Use:   "azd",
-		Short: shortDescription,
-		//nolint:lll
-		Long: longDescription,
+		Short: fmt.Sprintf(`%s %s`, productName, i18nGetText(i18nAzdShortHelp)),
 		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 			if opts.Cwd != "" {
 				current, err := os.Getwd()
@@ -103,9 +87,6 @@ func NewRootCmd(staticHelp bool, middlewareChain []*actions.MiddlewareRegistrati
 	}
 
 	rootCmd.CompletionOptions.HiddenDefaultCmd = true
-	rootCmd.SetHelpTemplate(
-		fmt.Sprintf("%s\nPlease let us know how we are doing: https://aka.ms/azure-dev/hats\n", rootCmd.HelpTemplate()),
-	)
 
 	root := actions.NewActionDescriptor("azd", &actions.ActionDescriptorOptions{
 		Command: rootCmd,
@@ -145,10 +126,12 @@ func NewRootCmd(staticHelp bool, middlewareChain []*actions.MiddlewareRegistrati
 	templatesActions(root)
 	authActions(root)
 
+	versionCmd := &cobra.Command{
+		Short: "Print the version number of Azure Developer CLI.",
+	}
+	annotateGroupCmd(versionCmd, cmdGroupAbout)
 	root.Add("version", &actions.ActionDescriptorOptions{
-		Command: &cobra.Command{
-			Short: "Print the version number of Azure Developer CLI.",
-		},
+		Command:          versionCmd,
 		ActionResolver:   newVersionAction,
 		FlagsResolver:    newVersionFlags,
 		DisableTelemetry: true,
@@ -258,11 +241,75 @@ func NewRootCmd(staticHelp bool, middlewareChain []*actions.MiddlewareRegistrati
 
 	// Compose the hierarchy of action descriptions into cobra commands
 	cmd, err := cobraBuilder.BuildCommand(root)
+
 	if err != nil {
 		// If their is a container registration issue or similar we'll get an error at this point
 		// Error descriptions should be clear enough to resolve the issue
 		panic(err)
 	}
 
+	// once the command is created, let's finalize the help template
+	cmd.SetHelpTemplate(getRootCmdHelp(cmd))
+
 	return cmd
+}
+
+func getRootCmdHelp(cmd *cobra.Command) string {
+	// root command doesn't use `cmd.Long`. It use Short for both.
+	description := cmd.Short
+	usage := fmt.Sprintf("%s\n  %s\n",
+		output.WithBold(output.WithUnderline(i18nGetText(i18nUsage))), i18nGetText(i18nAzdUsage))
+	commands := fmt.Sprintf("%s\n",
+		output.WithBold(output.WithUnderline(i18nGetText(i18nCommands))))
+	commandsDetails := getCommandsDetails(cmd)
+	flags := fmt.Sprintf("%s\n",
+		output.WithBold(output.WithUnderline(i18nGetText(i18nFlags))))
+	return fmt.Sprintf("\n%s\n\n%s\n%s%s%s",
+		description,
+		usage,
+		commands,
+		commandsDetails,
+		flags)
+}
+
+func getCommandsDetails(cmd *cobra.Command) (result string) {
+	childrenCommands := cmd.Commands()
+	groups := []i18nTextId{
+		i18nCmdGroupTitleConfig, i18nCmdGroupTitleManage, i18nCmdGroupTitleMonitor, i18nCmdGroupTitleAbout}
+
+	var commandGroups = make(map[i18nTextId][]string, len(groups))
+	// Add hardcoded message for help, as there is not a command for it and we want it in the list
+	commandGroups[i18nCmdGroupTitleAbout] = append(commandGroups[i18nCmdGroupTitleAbout],
+		fmt.Sprintf("%s\t: %s", i18nGetText(i18nHelp), i18nGetText(i18nCmdHelp)))
+
+	for _, childCommand := range childrenCommands {
+		if childCommand.Annotations == nil {
+			continue
+		}
+		group, found := childCommand.Annotations[cmdGrouper]
+		if !found {
+			continue
+		}
+		groupType := i18nTextId(group)
+
+		// if the name of the command is les than 4 chars, we need an extra tab.
+		commandName := childCommand.Name()
+		tabs := "\t"
+		if len(commandName) < 4 {
+			tabs += "\t"
+		}
+
+		// newList := commandGroups[groupType]
+		// newList = append(newList, fmt.Sprintf("%s%s: %s", commandName, tabs, childCommand.Short))
+		// commandGroups[groupType] = newList
+		commandGroups[groupType] = append(commandGroups[groupType],
+			fmt.Sprintf("%s%s: %s", commandName, tabs, childCommand.Short))
+	}
+
+	for _, title := range groups {
+		result += fmt.Sprintf("  %s\n    %s\n\n",
+			output.WithBold(i18nGetText(title)),
+			strings.Join(commandGroups[title], "\n    "))
+	}
+	return result
 }

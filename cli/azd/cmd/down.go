@@ -20,11 +20,14 @@ func newDownFlags(cmd *cobra.Command, infraDeleteFlags *infraDeleteFlags, global
 }
 
 func newDownCmd() *cobra.Command {
-	return &cobra.Command{
-		Use:     "down",
-		Short:   "Delete Azure resources for an app.",
+	cmd := &cobra.Command{
+		Use:   "down",
+		Short: "Delete Azure resources for an app.",
+		//Long:    "Foo",
 		Aliases: []string{"infra delete"},
 	}
+	annotateGroupCmd(cmd, cmdGroupManage)
+	return cmd
 }
 
 type downAction struct {

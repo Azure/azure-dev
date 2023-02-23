@@ -11,10 +11,12 @@ import (
 )
 
 func infraActions(root *actions.ActionDescriptor) *actions.ActionDescriptor {
+	cmd := &cobra.Command{
+		Short: "Manage Azure resources.",
+	}
+	annotateGroupCmd(cmd, cmdGroupManage)
 	group := root.Add("infra", &actions.ActionDescriptorOptions{
-		Command: &cobra.Command{
-			Short: "Manage Azure resources.",
-		},
+		Command: cmd,
 	})
 
 	group.

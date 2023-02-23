@@ -64,7 +64,7 @@ Examples:
 
 For more information, go to https://aka.ms/azure-dev/monitor.`,
 	}
-
+	annotateGroupCmd(cmd, cmdGroupMonitor)
 	return cmd
 }
 

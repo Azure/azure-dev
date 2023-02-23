@@ -37,10 +37,13 @@ func templateNameCompletion(cmd *cobra.Command, args []string, toComplete string
 }
 
 func templatesActions(root *actions.ActionDescriptor) *actions.ActionDescriptor {
+	cmd := &cobra.Command{
+		Short: "Manage templates.",
+	}
+	annotateGroupCmd(cmd, cmdGroupConfig)
+
 	group := root.Add("template", &actions.ActionDescriptorOptions{
-		Command: &cobra.Command{
-			Short: "Manage templates.",
-		},
+		Command: cmd,
 	})
 
 	group.Add("list", &actions.ActionDescriptorOptions{

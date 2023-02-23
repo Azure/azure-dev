@@ -36,6 +36,7 @@ With this command group, you can create a new environment or get, set, and list 
 
 You can find all environment configurations under the ` + output.WithBackticks(`.azure\<environment-name>`) + ` directories. The environment name is stored as the AZURE_ENV_NAME environment variable in the ` + output.WithBackticks(`.azure\<environment-name>\directory\.env`) + ` file.`,
 	}
+	annotateGroupCmd(envCmd, cmdGroupManage)
 
 	group := root.Add("env", &actions.ActionDescriptorOptions{
 		Command: envCmd,

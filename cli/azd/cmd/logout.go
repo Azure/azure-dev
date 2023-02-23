@@ -15,11 +15,13 @@ import (
 )
 
 func newLogoutCmd() *cobra.Command {
-	return &cobra.Command{
+	cmd := &cobra.Command{
 		Use:   "logout",
 		Short: "Log out of Azure",
 		Long:  "Log out of Azure",
 	}
+	annotateGroupCmd(cmd, cmdGroupConfig)
+	return cmd
 }
 
 type logoutAction struct {

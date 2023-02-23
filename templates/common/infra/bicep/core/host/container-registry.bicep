@@ -15,6 +15,9 @@ param sku object = {
 }
 param zoneRedundancy string = 'Disabled'
 
+@description('The log analytics workspace id used for logging & monitoring')
+param workspaceId string = ''
+
 // 2022-02-01-preview needed for anonymousPullEnabled
 resource containerRegistry 'Microsoft.ContainerRegistry/registries@2022-02-01-preview' = {
   name: name
@@ -29,6 +32,32 @@ resource containerRegistry 'Microsoft.ContainerRegistry/registries@2022-02-01-pr
     networkRuleBypassOptions: networkRuleBypassOptions
     publicNetworkAccess: publicNetworkAccess
     zoneRedundancy: zoneRedundancy
+  }
+}
+
+resource diagnostics 'Microsoft.Insights/diagnosticSettings@2021-05-01-preview' = if (!empty(workspaceId)) {
+  name: 'registry-diagnostics'
+  tags: tags
+  scope: containerRegistry
+  properties: {
+    workspaceId: workspaceId
+    logs: [
+      {
+        category: 'ContainerRegistryRepositoryEvents'
+        enabled: true
+      }
+      {
+        category: 'ContainerRegistryLoginEvents'
+        enabled: true
+      }
+    ]
+    metrics: [
+      {
+        category: 'AllMetrics'
+        enabled: true
+        timeGrain: 'PT1M'
+      }
+    ]
   }
 }
 

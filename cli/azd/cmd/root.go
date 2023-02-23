@@ -300,7 +300,7 @@ func getRootCmdFooter(cmd *cobra.Command) string {
 }
 
 func getFlagsDetails(cmd *cobra.Command) (result string) {
-	persistedFlags := cmd.PersistentFlags()
+	persistedFlags := cmd.NonInheritedFlags()
 	var lines []string
 	max := 0
 	persistedFlags.VisitAll(func(flag *pflag.Flag) {

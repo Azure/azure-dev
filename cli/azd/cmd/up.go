@@ -169,17 +169,13 @@ func getCmdUpHelpDescription(*cobra.Command) string {
 }
 
 func getCmdUpHelpFooter(*cobra.Command) string {
-	return fmt.Sprintf("%s\n", i18nGetTextWithConfig(&i18n.LocalizeConfig{
-		MessageID: string(i18nCmdUpFooter),
-		TemplateData: struct {
-			Title      string
-			CodeSample string
-		}{
-			Title: output.WithBold(output.WithUnderline("%s", i18nGetText(i18nExamples))),
-			CodeSample: fmt.Sprintf("%s %s",
-				output.WithHighLightFormat("azd up --template"),
-				output.WithWarningFormat("[GitHub repo URL]"),
-			),
-		},
-	}))
+	var samples []string
+	samples = append(samples, getCmdHelpSample(
+		i18nGetText(i18nCmdUpFooterSample),
+		fmt.Sprintf("%s %s",
+			output.WithHighLightFormat("azd up --template"),
+			output.WithWarningFormat("[GitHub repo URL]"),
+		)),
+	)
+	return getCmdHelpSamplesBlock(samples)
 }

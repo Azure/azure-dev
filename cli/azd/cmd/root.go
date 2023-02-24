@@ -214,6 +214,16 @@ func NewRootCmd(staticHelp bool, middlewareChain []*actions.MiddlewareRegistrati
 			ActionResolver: newDownAction,
 			OutputFormats:  []output.Format{output.JsonFormat, output.NoneFormat},
 			DefaultFormat:  output.NoneFormat,
+			CommandHelpGenerator: func(c *cobra.Command) string {
+				return generateCmdHelp(
+					c,
+					getCmdDownHelpDescription,
+					getCmdHelpDefaultUsage,
+					getCmdHelpDefaultCommands,
+					getCmdHelpDefaultFlags,
+					getCmdDownHelpFooter,
+				)
+			},
 		}).
 		UseMiddleware("hooks", middleware.NewHooksMiddleware)
 

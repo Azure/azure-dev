@@ -5,6 +5,8 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/pkg/output"
+	"github.com/nicksnyder/go-i18n/v2/i18n"
 	"github.com/spf13/cobra"
 )
 
@@ -21,9 +23,8 @@ func newDownFlags(cmd *cobra.Command, infraDeleteFlags *infraDeleteFlags, global
 
 func newDownCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "down",
-		Short: i18nGetText(i18nCmdDownShort),
-		//Long:    "Foo",
+		Use:     "down",
+		Short:   i18nGetText(i18nCmdDownShort),
 		Aliases: []string{"infra delete"},
 	}
 	annotateGroupCmd(cmd, cmdGroupManage)
@@ -48,4 +49,34 @@ func newDownAction(
 
 func (a *downAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	return a.infraDelete.Run(ctx)
+}
+
+func getCmdDownHelpDescription(*cobra.Command) string {
+	title := i18nGetTextWithConfig(&i18n.LocalizeConfig{
+		MessageID: string(i18nCmdDownHelp),
+		TemplateData: struct {
+			AzdDown string
+		}{
+			AzdDown: output.WithHighLightFormat("azd down"),
+		},
+	})
+
+	return formatHelpDescription(title, nil)
+}
+
+func getCmdDownHelpFooter(*cobra.Command) string {
+	var samples []string
+	samples = append(samples, getCmdHelpSample(
+		i18nGetText(i18nCmdDownHelpSample),
+		output.WithHighLightFormat("azd down")),
+	)
+	samples = append(samples, getCmdHelpSample(
+		i18nGetText(i18nCmdDownHelpSampleForce),
+		output.WithHighLightFormat("azd down --force")),
+	)
+	samples = append(samples, getCmdHelpSample(
+		i18nGetText(i18nCmdDownHelpSamplePurge),
+		output.WithHighLightFormat("azd down --purge")),
+	)
+	return getCmdHelpSamplesBlock(samples)
 }

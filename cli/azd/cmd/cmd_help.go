@@ -242,3 +242,14 @@ func generateHelpFindFillBug() string {
 		i18nGetText(i18nCmdRootHelpFooterReportBug),
 		output.WithLinkFormat(i18nGetText(i18nAzdHats)))
 }
+
+func getCmdHelpSample(description, code string) string {
+	return fmt.Sprintf("  %s\n    %s", description, code)
+}
+
+func getCmdHelpSamplesBlock(samples []string) string {
+	return fmt.Sprintf("%s\n%s\n",
+		output.WithBold(output.WithUnderline("%s", i18nGetText(i18nExamples))),
+		strings.Join(samples, "\n\n"),
+	)
+}

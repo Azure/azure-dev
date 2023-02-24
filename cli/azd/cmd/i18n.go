@@ -85,7 +85,7 @@ const (
 	i18nCmdUpUsage                        i18nTextId = "cmdUpUsage"
 	i18nAvailableCommands                 i18nTextId = "availableCommands"
 	i18nGlobalFlags                       i18nTextId = "globalFlags"
-	i18nCmdUpFooter                       i18nTextId = "cmdUpFooter"
+	i18nCmdUpFooterSample                 i18nTextId = "cmdUpFooterSample"
 	i18nExamples                          i18nTextId = "examples"
 	i18nCmdTemplateShort                  i18nTextId = "cmdTemplateShort"
 	i18nCmdTemplateHelp                   i18nTextId = "cmdTemplateHelp"
@@ -95,4 +95,8 @@ const (
 	i18nCmdCommonFooter                   i18nTextId = "cmdCommonFooter"
 	i18nCmdTemplateListShort              i18nTextId = "cmdTemplateListShort"
 	i18nCmdTemplateShowShort              i18nTextId = "cmdTemplateShowShort"
+	i18nCmdDownHelp                       i18nTextId = "cmdDownHelp"
+	i18nCmdDownHelpSample                 i18nTextId = "cmdDownHelpSample"
+	i18nCmdDownHelpSampleForce            i18nTextId = "cmdDownHelpSampleForce"
+	i18nCmdDownHelpSamplePurge            i18nTextId = "cmdDownHelpSamplePurge"
 )

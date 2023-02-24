@@ -66,11 +66,11 @@ func templatesActions(root *actions.ActionDescriptor) *actions.ActionDescriptor 
 		CommandHelpGenerator: func() string {
 			return generateCmdHelp(
 				listCmd,
-				func(c *cobra.Command) string { return c.Short },                                                // desc
+				func(c *cobra.Command) string { return formatHelpDescription(c.Short, nil) },                    // desc
 				func(*cobra.Command) string { return getCmdHelpUsage(i18nCmdUpUsage) },                          // usage
 				func(cmd *cobra.Command) string { return getCmdHelpAvailableCommands(getCommandsDetails(cmd)) }, // commands
 				getCmdHelpFlags,
-				func(c *cobra.Command) string { return "" }, // footer
+				func(*cobra.Command) string { return generateHelpFindFillBug() }, // footer
 			)
 		},
 	})

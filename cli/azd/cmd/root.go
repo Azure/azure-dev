@@ -260,7 +260,7 @@ func NewRootCmd(staticHelp bool, middlewareChain []*actions.MiddlewareRegistrati
 }
 
 func getRootCmdFooter(cmd *cobra.Command) string {
-	return fmt.Sprintf("%s\n%s\n  %s %s %s %s\n  %s %s.\n    %s\n\n%s %s.\n",
+	return fmt.Sprintf("%s\n%s\n  %s %s %s %s\n  %s %s.\n    %s\n\n%s",
 		getCommonFooterNote(""),
 		output.WithBold(output.WithUnderline(i18nGetText(i18nCmdRootHelpFooterQuickStart))),
 		i18nGetText(i18nCmdRootHelpFooterQuickStartDetail),
@@ -270,8 +270,7 @@ func getRootCmdFooter(cmd *cobra.Command) string {
 		output.WithGrayFormat(i18nGetText(i18nCmdRootHelpFooterQuickStartNote)),
 		output.WithLinkFormat(i18nGetText(i18nAwesomeAzdUrl)),
 		output.WithHighLightFormat(i18nGetText(i18nAzdUpNodeJsMongo)),
-		i18nGetText(i18nCmdRootHelpFooterReportBug),
-		output.WithLinkFormat(i18nGetText(i18nAzdHats)),
+		generateHelpFindFillBug(),
 	)
 }
 

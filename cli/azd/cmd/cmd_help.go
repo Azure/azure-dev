@@ -192,13 +192,17 @@ func formatHelpNote(note string) string {
 }
 
 func getCommonFooterNote(command string) string {
+	addSpace := ""
+	if len(command) > 0 {
+		addSpace = " "
+	}
 	return fmt.Sprintf("%s\n", i18nGetTextWithConfig(&i18n.LocalizeConfig{
 		MessageID: string(i18nCmdCommonFooter),
 		TemplateData: struct {
 			AzdRun string
 		}{
 			AzdRun: fmt.Sprintf("%s %s %s",
-				output.WithHighLightFormat("azd %s", command),
+				output.WithHighLightFormat("azd%s%s", addSpace, command),
 				output.WithWarningFormat("[command]"),
 				output.WithHighLightFormat("--help"),
 			),
@@ -207,5 +211,15 @@ func getCommonFooterNote(command string) string {
 }
 
 func formatHelpDescription(title string, notes []string) string {
-	return fmt.Sprintf("%s\n\n%s\n\n", title, strings.Join(notes, "\n"))
+	var note string
+	if len(notes) > 0 {
+		note = fmt.Sprintf("%s\n\n", strings.Join(notes, "\n"))
+	}
+	return fmt.Sprintf("%s\n\n%s", title, note)
+}
+
+func generateHelpFindFillBug() string {
+	return fmt.Sprintf("%s %s.\n",
+		i18nGetText(i18nCmdRootHelpFooterReportBug),
+		output.WithLinkFormat(i18nGetText(i18nAzdHats)))
 }

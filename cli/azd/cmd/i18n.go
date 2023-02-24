@@ -123,4 +123,9 @@ const (
 	i18nCmdConfigHelpNoteDefault          i18nTextId = "cmdConfigHelpNoteDefault"
 	i18nCmdConfigHelpSample               i18nTextId = "cmdConfigHelpSample"
 	i18nCmdConfigHelpSampleLocation       i18nTextId = "cmdConfigHelpSampleLocation"
+	i18nCmdRestoreHelp                    i18nTextId = "cmdRestoreHelp"
+	i18nCmdRestoreHelpNote                i18nTextId = "cmdRestoreHelpNote"
+	i18nCmdRestoreHelpNoteGoto            i18nTextId = "cmdRestoreHelpNoteGoto"
+	i18nCmdRestoreHelpSample              i18nTextId = "cmdRestoreHelpSample"
+	i18nCmdRestoreHelpSampleService       i18nTextId = "cmdRestoreHelpSampleService"
 )

@@ -13,10 +13,12 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/pkg/spin"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
+	"github.com/nicksnyder/go-i18n/v2/i18n"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
@@ -50,12 +52,6 @@ func restoreCmdDesign() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "restore",
 		Short: i18nGetText(i18nCmdRestoreShort),
-		//nolint:lll
-		Long: `Restore app dependencies.
-
-Run this command to download and install all the required libraries so that you can build, run, and debug the app locally.
-
-For the best local run and debug experience, go to https://aka.ms/azure-dev/vscode to learn how to use the Visual Studio Code extension.`,
 	}
 	annotateGroupCmd(cmd, cmdGroupConfig)
 	return cmd
@@ -138,4 +134,31 @@ func (r *restoreAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 	}
 
 	return nil, nil
+}
+
+func getCmdRestoreHelpDescription(*cobra.Command) string {
+	return formatHelpDescription(
+		i18nGetText(i18nCmdRestoreHelp),
+		[]string{
+			formatHelpNote(i18nGetText(i18nCmdRestoreHelpNote)),
+			formatHelpNote(i18nGetTextWithConfig(&i18n.LocalizeConfig{
+				MessageID: string(i18nCmdRestoreHelpNoteGoto),
+				TemplateData: struct {
+					Url string
+				}{
+					Url: output.WithLinkFormat("https://aka.ms/azure-dev/vscode"),
+				},
+			})),
+		})
+}
+
+func getCmdRestoreHelpFooter(*cobra.Command) string {
+	return getCmdHelpSamplesBlock([]string{
+		getCmdHelpSample(i18nGetText(i18nCmdRestoreHelpSample),
+			output.WithHighLightFormat("azd restore")),
+		getCmdHelpSample(i18nGetText(i18nCmdRestoreHelpSampleService),
+			fmt.Sprintf("%s %s",
+				output.WithHighLightFormat("azd restore --service"),
+				output.WithWarningFormat("[Service name]"))),
+	})
 }

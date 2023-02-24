@@ -137,6 +137,10 @@ func NewRootCmd(staticHelp bool, middlewareChain []*actions.MiddlewareRegistrati
 			Command:        restoreCmdDesign(),
 			FlagsResolver:  newRestoreFlags,
 			ActionResolver: newRestoreAction,
+			HelpOptions: actions.ActionHelpOptions{
+				Description: getCmdRestoreHelpDescription,
+				Footer:      getCmdRestoreHelpFooter,
+			},
 		}).
 		UseMiddleware("hooks", middleware.NewHooksMiddleware)
 

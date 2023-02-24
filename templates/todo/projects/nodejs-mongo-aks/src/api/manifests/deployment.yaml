@@ -3,7 +3,7 @@ kind: Deployment
 metadata:
   name: todo-api
 spec:
-  replicas: 1
+  replicas: 2
   selector:
     matchLabels:
       app: todo-api
@@ -14,7 +14,7 @@ spec:
     spec:
       containers:
         - name: todo-api
-          image: ${AZURE_CONTAINER_REGISTRY_ENDPOINT}/todo-nodejs-mongo-aks/api:latest
+          image: ${SERVICE_API_IMAGE_NAME}
           ports:
             - containerPort: 3100
           env:

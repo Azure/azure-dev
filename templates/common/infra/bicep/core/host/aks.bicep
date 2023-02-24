@@ -96,7 +96,7 @@ resource logAnalytics 'Microsoft.OperationalInsights/workspaces@2021-12-01-previ
 var systemPoolSpec = !empty(systemPoolConfig) ? systemPoolConfig : nodePoolPresets[systemPoolType]
 
 // Create the primary AKS cluster resources and system node pool
-module managedCluster 'managed-cluster.bicep' = {
+module managedCluster 'aks-managed-cluster.bicep' = {
   name: 'managed-cluster'
   params: {
     name: name
@@ -116,10 +116,10 @@ var hasAgentPool = !empty(agentPoolConfig) || !empty(agentPoolType)
 var agentPoolSpec = hasAgentPool && !empty(agentPoolConfig) ? agentPoolConfig : nodePoolPresets[agentPoolType]
 
 // Create additional user agent pool when specified
-module agentPool 'agent-pool.bicep' = if (hasAgentPool) {
+module agentPool 'aks-agent-pool.bicep' = if (hasAgentPool) {
   name: 'aks-node-pool'
   params: {
-    clusterName: managedCluster.outputs.aksClusterName
+    clusterName: managedCluster.outputs.clusterName
     name: 'npuserpool'
     config: union({ name: 'npuser', mode: 'User' }, nodePoolBase, agentPoolSpec)
   }
@@ -141,7 +141,7 @@ module containerRegistryAccess '../security/registry-access.bicep' = {
   name: 'cluster-container-registry-access'
   params: {
     containerRegistryName: containerRegistry.outputs.name
-    principalId: managedCluster.outputs.aksClusterIdentity.objectId
+    principalId: managedCluster.outputs.clusterIdentity.objectId
   }
 }
 
@@ -150,7 +150,7 @@ module clusterKeyVaultAccess '../security/keyvault-access.bicep' = {
   name: 'cluster-keyvault-access'
   params: {
     keyVaultName: keyVaultName
-    principalId: managedCluster.outputs.aksClusterIdentity.objectId
+    principalId: managedCluster.outputs.clusterIdentity.objectId
   }
 }
 
@@ -201,10 +201,10 @@ var nodePoolPresets = {
 
 // Module outputs
 @description('The resource name of the AKS cluster')
-output aksClusterName string = managedCluster.outputs.aksClusterName
+output clusterName string = managedCluster.outputs.clusterName
 
 @description('The AKS cluster identity')
-output aksClusterIdentity object = managedCluster.outputs.aksClusterIdentity
+output clusterIdentity object = managedCluster.outputs.clusterIdentity
 
 @description('The resource name of the ACR')
 output containerRegistryName string = containerRegistry.outputs.name

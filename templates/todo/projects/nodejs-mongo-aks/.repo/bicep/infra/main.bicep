@@ -42,7 +42,7 @@ resource rg 'Microsoft.Resources/resourceGroups@2021-04-01' = {
 }
 
 // The AKS cluster to host applications
-module cluster '../../../../../../common/infra/bicep/core/host/aks.bicep' = {
+module aks '../../../../../../common/infra/bicep/core/host/aks.bicep' = {
   name: 'aks'
   scope: rg
   params: {
@@ -103,10 +103,10 @@ output AZURE_KEY_VAULT_ENDPOINT string = keyVault.outputs.endpoint
 output AZURE_KEY_VAULT_NAME string = keyVault.outputs.name
 output AZURE_LOCATION string = location
 output AZURE_TENANT_ID string = tenant().tenantId
-output AZURE_AKS_CLUSTER_NAME string = cluster.outputs.aksClusterName
-output AZURE_AKS_IDENTITY_CLIENT_ID string = cluster.outputs.aksClusterIdentity.clientId
-output AZURE_CONTAINER_REGISTRY_ENDPOINT string = cluster.outputs.containerRegistryLoginServer
-output AZURE_CONTAINER_REGISTRY_NAME string = cluster.outputs.containerRegistryName
+output AZURE_AKS_CLUSTER_NAME string = aks.outputs.clusterName
+output AZURE_AKS_IDENTITY_CLIENT_ID string = aks.outputs.clusterIdentity.clientId
+output AZURE_CONTAINER_REGISTRY_ENDPOINT string = aks.outputs.containerRegistryLoginServer
+output AZURE_CONTAINER_REGISTRY_NAME string = aks.outputs.containerRegistryName
 output REACT_APP_API_BASE_URL string = ''
 output REACT_APP_APPLICATIONINSIGHTS_CONNECTION_STRING string = monitoring.outputs.applicationInsightsConnectionString
 output REACT_APP_WEB_BASE_URL string = ''

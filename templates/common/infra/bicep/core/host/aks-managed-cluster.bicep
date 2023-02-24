@@ -124,10 +124,10 @@ resource diagnostics 'Microsoft.Insights/diagnosticSettings@2021-05-01-preview' 
 }
 
 @description('The resource name of the AKS cluster')
-output aksClusterName string = aks.name
+output clusterName string = aks.name
 
 @description('The AKS cluster identity')
-output aksClusterIdentity object = {
+output clusterIdentity object = {
   clientId: aks.properties.identityProfile.kubeletidentity.clientId
   objectId: aks.properties.identityProfile.kubeletidentity.objectId
   resourceId: aks.properties.identityProfile.kubeletidentity.resourceId

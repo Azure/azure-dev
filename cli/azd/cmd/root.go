@@ -157,6 +157,16 @@ func NewRootCmd(staticHelp bool, middlewareChain []*actions.MiddlewareRegistrati
 		Command:        newInitCmd(),
 		FlagsResolver:  newInitFlags,
 		ActionResolver: newInitAction,
+		CommandHelpGenerator: func(c *cobra.Command) string {
+			return generateCmdHelp(
+				c,
+				getCmdInitHelpDescription,
+				getCmdHelpDefaultUsage,
+				getCmdHelpDefaultCommands,
+				getCmdHelpDefaultFlags,
+				getCmdInitHelpFooter,
+			)
+		},
 	}).AddFlagCompletion("template", templateNameCompletion).
 		UseMiddleware("ensureLogin", middleware.NewEnsureLoginMiddleware)
 

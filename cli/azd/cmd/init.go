@@ -41,12 +41,6 @@ func newInitCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "init",
 		Short: i18nGetText(i18nCmdInitShort),
-		//nolint:lll
-		Long: `Initialize a new app.
-
-When no template is supplied, you can optionally select an Azure Developer CLI template for cloning. Otherwise, ` + output.WithBackticks("azd init") + ` initializes the current directory and creates resources so that your project is compatible with Azure Developer CLI.
-
-When a template is provided, the sample code is cloned to the current directory.`,
 	}
 
 	annotateGroupCmd(cmd, cmdGroupConfig)
@@ -253,4 +247,29 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 				output.WithLinkFormat("%s", azdTrustNotice)),
 		},
 	}, nil
+}
+
+func getCmdInitHelpDescription(*cobra.Command) string {
+	return formatHelpDescription(i18nGetText(i18nCmdInitHelp), getCmdHelpDefaultDescriptionNotes())
+}
+
+func getCmdInitHelpFooter(*cobra.Command) string {
+	var samples []string
+	samples = append(samples, getCmdHelpSample(
+		i18nGetText(i18nCmdInitHelpSample),
+		fmt.Sprintf("%s %s",
+			output.WithHighLightFormat("azd init --template"),
+			output.WithWarningFormat("[GitHub repo URL]"),
+		)),
+	)
+	samples = append(samples, getCmdHelpSample(
+		i18nGetText(i18nCmdInitHelpSampleBranch),
+		fmt.Sprintf("%s %s %s %s",
+			output.WithHighLightFormat("azd init --template"),
+			output.WithWarningFormat("[GitHub repo URL]"),
+			output.WithHighLightFormat("--branch"),
+			output.WithWarningFormat("[Branch name]"),
+		)),
+	)
+	return getCmdHelpSamplesBlock(samples)
 }

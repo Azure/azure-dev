@@ -99,4 +99,7 @@ const (
 	i18nCmdDownHelpSample                 i18nTextId = "cmdDownHelpSample"
 	i18nCmdDownHelpSampleForce            i18nTextId = "cmdDownHelpSampleForce"
 	i18nCmdDownHelpSamplePurge            i18nTextId = "cmdDownHelpSamplePurge"
+	i18nCmdInitHelp                       i18nTextId = "cmdInitHelp"
+	i18nCmdInitHelpSample                 i18nTextId = "cmdInitHelpSample"
+	i18nCmdInitHelpSampleBranch           i18nTextId = "cmdInitHelpSampleBranch"
 )

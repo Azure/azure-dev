@@ -146,26 +146,7 @@ func getCmdUpHelpDescription(*cobra.Command) string {
 			AzdDeploy:    output.WithHighLightFormat("azd deploy"),
 		},
 	})
-
-	var notes []string
-	notes = append(notes, formatHelpNote(i18nGetTextWithConfig(&i18n.LocalizeConfig{
-		MessageID: string(i18nCmdUpRunningNote),
-		TemplateData: struct {
-			AzdUp string
-		}{
-			AzdUp: output.WithHighLightFormat("azd up"),
-		},
-	})))
-	notes = append(notes, formatHelpNote(i18nGetTextWithConfig(&i18n.LocalizeConfig{
-		MessageID: string(i18CmdUpViewNote),
-		TemplateData: struct {
-			ViewUrl string
-		}{
-			ViewUrl: output.WithLinkFormat(i18nGetText(i18nAwesomeAzdUrl)),
-		},
-	})))
-
-	return formatHelpDescription(title, notes)
+	return formatHelpDescription(title, getCmdHelpDefaultDescriptionNotes())
 }
 
 func getCmdUpHelpFooter(*cobra.Command) string {

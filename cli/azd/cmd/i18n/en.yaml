@@ -52,3 +52,6 @@ cmdDownHelp: "Delete Azure resources for an application. Running {{.AzdDown}} wi
 cmdDownHelpSample: "Delete all resources for an application. You will be prompted to confirm your decision."
 cmdDownHelpSampleForce: "Forcibly delete all applications resources without confirmation."
 cmdDownHelpSamplePurge: "Permanently delete resources that are soft-deleted by default, without confirmation."
+cmdInitHelp: "Initialize a new application in your current directory."
+cmdInitHelpSample: "Initialize a template to your current local directory from a GitHub repo."
+cmdInitHelpSampleBranch: "Initialize a template to your current local directory from a branch other than main."

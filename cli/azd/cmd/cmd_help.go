@@ -127,6 +127,26 @@ func getCmdHelpDefaultFlags(cmd *cobra.Command) (result string) {
 	return result
 }
 
+func getCmdHelpDefaultDescriptionNotes() (notes []string) {
+	notes = append(notes, formatHelpNote(i18nGetTextWithConfig(&i18n.LocalizeConfig{
+		MessageID: string(i18nCmdUpRunningNote),
+		TemplateData: struct {
+			AzdUp string
+		}{
+			AzdUp: output.WithHighLightFormat("azd up"),
+		},
+	})))
+	notes = append(notes, formatHelpNote(i18nGetTextWithConfig(&i18n.LocalizeConfig{
+		MessageID: string(i18CmdUpViewNote),
+		TemplateData: struct {
+			ViewUrl string
+		}{
+			ViewUrl: output.WithLinkFormat(i18nGetText(i18nAwesomeAzdUrl)),
+		},
+	})))
+	return notes
+}
+
 func getFlagsDetails(flagSet *pflag.FlagSet) (result string) {
 	var lines []string
 	max := 0

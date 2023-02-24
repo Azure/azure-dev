@@ -9,7 +9,6 @@ ignorePaths:
     - ./go.mod
     - ./go.sum
     - ./NOTICE.txt
-    - ./templates/common/NOTICE.txt
 words:
     - opentelemetry
     - bson
@@ -171,8 +170,14 @@ dictionaryDefinitions:
       description: Custom Notice Dictionary
       addWords: true
       scope: workspace
+    - name: schemas
+      path: ./cspell-schemas.txt
+      description: Custom Schema Dictionary
+      addWords: true
+      scope: workspace      
 dictionaries:
     - powershell
     - go
     - gitHubUserAliases
     - noticeMd
+    - schemas

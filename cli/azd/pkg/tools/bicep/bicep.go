@@ -27,7 +27,7 @@ import (
 
 // cBicepVersion is the minimum version of bicep that we require (and the one we fetch when we fetch bicep on behalf of a
 // user).
-var cBicepVersion semver.Version = semver.MustParse("0.12.40")
+var cBicepVersion semver.Version = semver.MustParse("0.14.46")
 
 type BicepCli interface {
 	Build(ctx context.Context, file string) (string, error)
@@ -145,28 +145,43 @@ func azdBicepPath() (string, error) {
 
 // downloadBicep downloads a given version of bicep from the release site, writing the output to name.
 func downloadBicep(ctx context.Context, transporter policy.Transporter, bicepVersion semver.Version, name string) error {
+	var arch string
+	switch runtime.GOARCH {
+	case "amd64":
+		arch = "x64"
+	case "arm64":
+		arch = "arm64"
+	default:
+		return fmt.Errorf("unsupported architecture: %s", runtime.GOARCH)
+	}
+
 	var releaseName string
 	switch runtime.GOOS {
 	case "windows":
-		releaseName = "bicep-win-x64.exe"
+		releaseName = fmt.Sprintf("bicep-win-%s.exe", arch)
 	case "darwin":
-		releaseName = "bicep-osx-x64"
+		releaseName = fmt.Sprintf("bicep-osx-%s", arch)
 	case "linux":
 		if _, err := os.Stat("/lib/ld-musl-x86_64.so.1"); err == nil {
+			// As of 0.14.46, there is no version of for AM64 on musl based systems.
+			if arch == "arm64" {
+				return fmt.Errorf("unsupported architecture: %s", runtime.GOARCH)
+			}
 			releaseName = "bicep-linux-musl-x64"
 		} else {
-			releaseName = "bicep-linux-x64"
+			releaseName = fmt.Sprintf("bicep-linux-%s", arch)
 		}
 	default:
-		return fmt.Errorf("unsupported platform")
+		return fmt.Errorf("unsupported platform: %s", runtime.GOOS)
 	}
 
 	bicepReleaseUrl := fmt.Sprintf("https://downloads.bicep.azure.com/v%s/%s", bicepVersion, releaseName)
 
 	log.Printf("downloading bicep release %s -> %s", bicepReleaseUrl, name)
 
+	var err error
 	spanCtx, span := telemetry.GetTracer().Start(ctx, events.BicepInstallEvent)
-	defer span.End()
+	defer span.EndWithStatus(err)
 
 	req, err := http.NewRequestWithContext(spanCtx, "GET", bicepReleaseUrl, nil)
 	if err != nil {

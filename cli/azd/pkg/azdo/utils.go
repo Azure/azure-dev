@@ -28,7 +28,8 @@ func ensureConfigExists(ctx context.Context, env *environment.Environment, key s
 }
 
 // helper method to ensure an Azure DevOps PAT exists either in .env or system environment variables
-func EnsurePatExists(ctx context.Context, env *environment.Environment, console input.Console) (string, error) {
+func EnsurePatExists(ctx context.Context, env *environment.Environment, console input.Console) (
+	string, bool, error) {
 	value, err := ensureConfigExists(ctx, env, AzDoPatName, "azure devops personal access token")
 	if err != nil {
 		console.Message(ctx, fmt.Sprintf(
@@ -44,18 +45,19 @@ func EnsurePatExists(ctx context.Context, env *environment.Environment, console 
 			DefaultValue: "",
 		})
 		if err != nil {
-			return "", fmt.Errorf("asking for pat: %w", err)
+			return "", false, fmt.Errorf("asking for pat: %w", err)
 		}
 		// set the pat as an environment variable for this cmd run
 		// note: the scope of this env var is only this shell invocation and won't be available in the caller parent shell
 		os.Setenv(AzDoPatName, pat)
 		value = pat
 	}
-	return value, nil
+	return value, err != nil, nil
 }
 
 // helper method to ensure an Azure DevOps organization name exists either in .env or system environment variables
-func EnsureOrgNameExists(ctx context.Context, env *environment.Environment, console input.Console) (string, error) {
+func EnsureOrgNameExists(ctx context.Context, env *environment.Environment, console input.Console) (
+	string, bool, error) {
 	value, err := ensureConfigExists(ctx, env, AzDoEnvironmentOrgName, "azure devops organization name")
 	if err != nil {
 		orgName, err := console.Prompt(ctx, input.ConsoleOptions{
@@ -63,17 +65,17 @@ func EnsureOrgNameExists(ctx context.Context, env *environment.Environment, cons
 			DefaultValue: "",
 		})
 		if err != nil {
-			return "", fmt.Errorf("asking for new project name: %w", err)
+			return "", false, fmt.Errorf("asking for new project name: %w", err)
 		}
 
 		err = saveEnvironmentConfig(AzDoEnvironmentOrgName, orgName, env)
 		if err != nil {
-			return "", err
+			return "", false, err
 		}
 
 		value = orgName
 	}
-	return value, nil
+	return value, err != nil, nil
 }
 
 // helper function to save configuration values to .env file

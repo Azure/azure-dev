@@ -12,6 +12,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
+	"github.com/azure/azure-dev/cli/azd/test/mocks/mockaccount"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockarmresources"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockazcli"
 	"github.com/stretchr/testify/assert"
@@ -53,7 +54,9 @@ services:
 	projectConfig, err := ParseProjectConfig(testProj)
 	require.NoError(t, err)
 
-	project, err := projectConfig.GetProject(*mockContext.Context, e, mockContext.Console, azCli, mockContext.CommandRunner)
+	project, err := projectConfig.GetProject(
+		*mockContext.Context, e, mockContext.Console,
+		azCli, mockContext.CommandRunner, &mockaccount.MockAccountManager{})
 	require.NoError(t, err)
 
 	assertHasService(t,
@@ -100,7 +103,8 @@ services:
 	projectConfig, err := ParseProjectConfig(testProj)
 	require.NoError(t, err)
 
-	project, err := projectConfig.GetProject(*mockContext.Context, e, mockContext.Console, azCli, mockContext.CommandRunner)
+	project, err := projectConfig.GetProject(*mockContext.Context, e, mockContext.Console,
+		azCli, mockContext.CommandRunner, &mockaccount.MockAccountManager{})
 	require.NoError(t, err)
 
 	// Deployment resource name comes from the found tag on the graph query request
@@ -158,7 +162,8 @@ services:
 	projectConfig, err := ParseProjectConfig(testProj)
 	require.NoError(t, err)
 
-	project, err := projectConfig.GetProject(*mockContext.Context, e, mockContext.Console, azCli, mockContext.CommandRunner)
+	project, err := projectConfig.GetProject(*mockContext.Context, e, mockContext.Console,
+		azCli, mockContext.CommandRunner, &mockaccount.MockAccountManager{})
 	require.NoError(t, err)
 
 	assertHasService(t,
@@ -224,7 +229,8 @@ services:
 	projectConfig, err := ParseProjectConfig(testProj)
 	require.NoError(t, err)
 
-	project, err := projectConfig.GetProject(*mockContext.Context, e, mockContext.Console, azCli, mockContext.CommandRunner)
+	project, err := projectConfig.GetProject(*mockContext.Context, e, mockContext.Console,
+		azCli, mockContext.CommandRunner, &mockaccount.MockAccountManager{})
 	require.NoError(t, err)
 
 	assertHasService(t,

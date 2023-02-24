@@ -1,0 +1,24 @@
+name: misc
+
+on:
+  pull_request:
+    branches: [main]
+    paths-ignore:
+      # Changes here should be kept in-sync with projects listed in cspell.misc.yaml
+      - 'eng/**' # Not required
+      # Standalone projects that have their own cspell
+      - 'cli/**'
+      - 'ext/**'
+      - 'templates/**'
+
+jobs:
+  cspell-lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-node@v3
+        with:
+          node-version: "16"
+      - run: npm install -g cspell
+      - name: Spell check for general files
+        run: cspell lint '**/*' --config ./.vscode/cspell.misc.yaml --relative --no-progress

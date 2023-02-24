@@ -46,14 +46,14 @@ func Test_gitHub_provider_preConfigure_check(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
 		setupGithubAuthMock(mockContext)
 
-		provider := NewGitHubCiProvider(mockContext.Credentials, mockContext.CommandRunner)
-		err := provider.preConfigureCheck(
+		provider := NewGitHubCiProvider(mockContext.Credentials, mockContext.CommandRunner, mockContext.Console)
+		updatedConfig, err := provider.preConfigureCheck(
 			*mockContext.Context,
-			mockContext.Console,
 			PipelineManagerArgs{},
 			provisioning.Options{},
 		)
 		require.NoError(t, err)
+		require.False(t, updatedConfig)
 
 		// No warnings on console
 		consoleLog := mockContext.Console.Output()
@@ -72,9 +72,11 @@ func Test_gitHub_provider_preConfigure_check(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
 		setupGithubAuthMock(mockContext)
 
-		provider := NewGitHubCiProvider(mockContext.Credentials, mockContext.CommandRunner)
-		err := provider.preConfigureCheck(*mockContext.Context, mockContext.Console, pipelineManagerArgs, infraOptions)
+		provider := NewGitHubCiProvider(mockContext.Credentials, mockContext.CommandRunner, mockContext.Console)
+		updatedConfig, err := provider.preConfigureCheck(
+			*mockContext.Context, pipelineManagerArgs, infraOptions)
 		require.Error(t, err)
+		require.False(t, updatedConfig)
 		require.True(t, errors.Is(err, ErrAuthNotSupported))
 	})
 
@@ -90,19 +92,21 @@ func Test_gitHub_provider_preConfigure_check(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
 		setupGithubAuthMock(mockContext)
 
-		provider := NewGitHubCiProvider(mockContext.Credentials, mockContext.CommandRunner)
-		err := provider.preConfigureCheck(*mockContext.Context, mockContext.Console, pipelineManagerArgs, infraOptions)
+		provider := NewGitHubCiProvider(mockContext.Credentials, mockContext.CommandRunner, mockContext.Console)
+		updatedConfig, err := provider.preConfigureCheck(
+			*mockContext.Context, pipelineManagerArgs, infraOptions)
 		require.NoError(t, err)
+		require.False(t, updatedConfig)
 
 		consoleLog := mockContext.Console.Output()
 		require.Len(t, consoleLog, 1)
-		require.Contains(t, consoleLog[0], "WARNING: Terraform provisioning does not support federated authentication")
+		require.Contains(t, consoleLog[0], "Warning: Terraform provisioning does not support federated authentication")
 	})
 }
 
 func setupGithubAuthMock(mockContext *mocks.MockContext) {
 	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
-		return strings.Contains(command, "gh auth status")
+		return strings.Contains(command, "auth status")
 	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
 		return exec.NewRunResult(0, "", ""), nil
 	})

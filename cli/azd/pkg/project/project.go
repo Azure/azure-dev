@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
@@ -43,6 +44,7 @@ func ReadProject(
 	commandRunner exec.CommandRunner,
 	projectPath string,
 	env *environment.Environment,
+	accountManager account.Manager,
 ) (*Project, error) {
 	projectRootDir := filepath.Dir(projectPath)
 
@@ -53,7 +55,7 @@ func ReadProject(
 	}
 
 	// Evaluate project
-	project, err := projectConfig.GetProject(ctx, env, console, azCli, commandRunner)
+	project, err := projectConfig.GetProject(ctx, env, console, azCli, commandRunner, accountManager)
 	if err != nil {
 		return nil, fmt.Errorf("reading project: %w", err)
 	}

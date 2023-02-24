@@ -1,16 +1,48 @@
 # Release History
 
-## 0.5.0-beta.4 (Unreleased)
+## 0.6.0-beta.3 (Unreleased)
 
 ### Features Added
+
+- [[#1515]](https://github.com/Azure/azure-dev/pull/1515) Remove gh-cli as external dependency for `azd pipeline config`.
+- [[#1558]](https://github.com/Azure/azure-dev/pull/1558) Upgrade bicep version to 0.14.46 and fetch ARM specific version on ARM platforms.
 
 ### Breaking Changes
 
 ### Bugs Fixed
 
-- [[#1406]](https://github.com/Azure/azure-dev/issues/1406) MSI Upgrades from pre-MSI versions fail in some cases (reported by @lechnerc77, fixed by @heaths)
-
 ### Other Changes
+
+## 0.6.0-beta.2 (2023-02-10)
+
+### Bugs Fixed
+
+- [[#1527]](https://github.com/Azure/azure-dev/pull/1527) Fix running specific commands with `--output json`  causing stack overflow errors to occur.
+- [[#1534]](https://github.com/Azure/azure-dev/pull/1534) Fix running commands with `-e <environment name>` flag or with `AZURE_ENV_NAME` set not being respected. When running in CI environments, this caused prompting to occur, and failing if `--no-prompt` is specified.
+
+## 0.6.0-beta.1 (2023-02-08)
+
+### Features Added
+
+- [[#1236]](https://github.com/Azure/azure-dev/pull/1236) Support for command and service hooks
+- [[#1414]](https://github.com/Azure/azure-dev/pull/1414) Support for installation via Homebrew. Windows Package Manager, and Chocolatey are also now supported.
+- [[#1407]](https://github.com/Azure/azure-dev/pull/1407) Improve UX styling for `azd pipeline config`.
+- [[#1478]](https://github.com/Azure/azure-dev/pull/1478) Support for multiple Azure tenants.
+
+- [[#1345]](https://github.com/Azure/azure-dev/pull/1345) Core bicep module `appservice.bicep` now supports `ftpsState` as a parameter to configure FTPS upload behavior.
+- [[#1497]](https://github.com/Azure/azure-dev/pull/1497) Core bicep module `appservice.bicep` now supports `healthCheckPath` as a parameter to configure the health-check endpoint.
+- [[#1403]](https://github.com/Azure/azure-dev/pull/1403) Core bicep module `apim-api.bicep` now links Web App or Function App instances. This allows users on the Azure Portal to navigate to the API management resource directly from the Web App or Function App.
+
+### Bugs Fixed
+
+- [[#1406]](https://github.com/Azure/azure-dev/pull/1424) On Windows, fix MSI installation not updating `azd` in some cases (reported by @lechnerc77, fixed by @heaths)
+- [[#1418]](https://github.com/Azure/azure-dev/pull/1418) Display `provision` progress for PostgreSQL server resources.
+- [[#1483]](https://github.com/Azure/azure-dev/pull/1483) For Python projects, skip packaging of virtual environment (`.venv` folders)
+- [[#1495]](https://github.com/Azure/azure-dev/pull/1495) `init` now restores file executable permissions and initializes a `git` repository automatically.
+- [[#1470]](https://github.com/Azure/azure-dev/pull/1470) Improve performance of `azd --help` on Windows for domain-joined users.
+- [[#1503]](https://github.com/Azure/azure-dev/pull/1503) Fix display for Function App types in `provision` progress
+
+Thanks to community members: @pamelafox, @lechnerc77 for their contributions in this release.
 
 ## 0.5.0-beta.3 (2023-01-13)
 

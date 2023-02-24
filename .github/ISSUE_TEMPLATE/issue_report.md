@@ -12,9 +12,6 @@ assignees: ''
 **Output from `azd version`**
 Run `azd version` and copy and paste the output here:
 
-**Output from `az version`** 
-Run `az version` and copy and paste the output here (minimum required version is 2.38.0): 
-
 **Describe the bug**
 Description of issue you're seeing...
 

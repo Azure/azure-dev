@@ -18,6 +18,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
+	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/git"
 	"github.com/azure/azure-dev/cli/azd/resources"
@@ -244,11 +245,68 @@ func (i *Initializer) Initialize(ctx context.Context,
 
 	target := azdCtx.ProjectDirectory()
 
-	err = i.gitCli.FetchCode(ctx, templateUrl, templateBranch, staging)
+	filesWithExecPerms, err := i.fetchCode(ctx, templateUrl, templateBranch, staging)
 	if err != nil {
-		return fmt.Errorf("\nfetching template: %w", err)
+		return err
 	}
 
+	err = i.promptForDuplicates(ctx, staging, target)
+	if err != nil {
+		return err
+	}
+
+	isEmpty, err := isEmptyDir(target)
+	if err != nil {
+		return err
+	}
+
+	if err := copy.Copy(staging, target); err != nil {
+		return fmt.Errorf("copying template contents: %w", err)
+	}
+
+	err = i.writeAzdAssets(ctx, azdCtx)
+	if err != nil {
+		return err
+	}
+
+	err = i.gitInitialize(ctx, target, filesWithExecPerms, isEmpty)
+	if err != nil {
+		return err
+	}
+
+	i.console.StopSpinner(ctx, stepMessage+"\n", input.GetStepResultFormat(err))
+
+	return nil
+}
+
+func (i *Initializer) fetchCode(
+	ctx context.Context,
+	templateUrl string,
+	templateBranch string,
+	destination string) (executableFilePaths []string, err error) {
+	err = i.gitCli.ShallowClone(ctx, templateUrl, templateBranch, destination)
+	if err != nil {
+		return nil, fmt.Errorf("fetching template: %w", err)
+	}
+
+	stagedFilesOutput, err := i.gitCli.ListStagedFiles(ctx, destination)
+	if err != nil {
+		return nil, fmt.Errorf("listing files with permissions: %w", err)
+	}
+
+	executableFilePaths, err = parseExecutableFiles(stagedFilesOutput)
+	if err != nil {
+		return nil, fmt.Errorf("parsing file permissions output: %w", err)
+	}
+
+	if err := os.RemoveAll(filepath.Join(destination, ".git")); err != nil {
+		return nil, fmt.Errorf("removing .git folder after clone: %w", err)
+	}
+
+	return executableFilePaths, nil
+}
+
+func (i *Initializer) promptForDuplicates(ctx context.Context, staging string, target string) error {
 	log.Printf(
 		"template init, checking for duplicates. source: %s target: %s",
 		staging,
@@ -262,12 +320,10 @@ func (i *Initializer) Initialize(ctx context.Context,
 
 	if len(duplicateFiles) > 0 {
 		i.console.StopSpinner(ctx, "", input.StepDone)
-		i.console.Message(
-			ctx,
-			output.WithWarningFormat(
-				"warning: the following files will be overwritten with the versions from the template:",
-			),
-		)
+		i.console.MessageUxItem(ctx, &ux.WarningMessage{
+			Description: "the following files will be overwritten with the versions from the template:",
+		})
+
 		for _, file := range duplicateFiles {
 			i.console.Message(ctx, fmt.Sprintf(" * %s", file))
 		}
@@ -284,16 +340,107 @@ func (i *Initializer) Initialize(ctx context.Context,
 		if !overwrite {
 			return errors.New("confirmation declined")
 		}
-
-		i.console.ShowSpinner(ctx, stepMessage, input.Step)
 	}
 
-	if err := copy.Copy(staging, target); err != nil {
-		return fmt.Errorf("copying template contents: %w", err)
+	return nil
+}
+
+func (i *Initializer) gitInitialize(ctx context.Context,
+	target string,
+	executableFilesToRestore []string,
+	stageAllFiles bool) error {
+	err := i.ensureGitRepository(ctx, target)
+	if err != nil {
+		return err
 	}
 
-	i.console.StopSpinner(ctx, stepMessage+"\n", input.GetStepResultFormat(err))
+	// Set executable files
+	for _, executableFile := range executableFilesToRestore {
+		err = i.gitCli.AddFileExecPermission(ctx, target, executableFile)
+		if err != nil {
+			return fmt.Errorf("restoring file permissions: %w", err)
+		}
+	}
+
+	if stageAllFiles {
+		err = i.gitCli.AddFile(ctx, target, "*")
+		if err != nil {
+			return fmt.Errorf("staging newly fetched template files: %w", err)
+		}
+	}
+
+	return nil
+}
+
+func (i *Initializer) ensureGitRepository(ctx context.Context, repoPath string) error {
+	_, err := i.gitCli.GetCurrentBranch(ctx, repoPath)
+	if err != nil {
+		if !errors.Is(err, git.ErrNotRepository) {
+			return fmt.Errorf("determining current git repository state: %w", err)
+		}
+
+		err = i.gitCli.InitRepo(ctx, repoPath)
+		if err != nil {
+			return fmt.Errorf("initializing git repository: %w", err)
+		}
+
+		i.console.MessageUxItem(ctx, &ux.DoneMessage{Message: "Initialized git repository"})
+	}
+
+	return nil
+}
+
+func parseExecutableFiles(stagedFilesOutput string) ([]string, error) {
+	scanner := bufio.NewScanner(strings.NewReader(stagedFilesOutput))
+	executableFiles := []string{}
+	for scanner.Scan() {
+		// Format for git ls --stage:
+		// <mode> <object> <stage>\t<file>
+		// In other words, space delimited for first three properties, tab delimited before filepath is present4ed
+
+		// Scan first word to obtain <mode>
+		advance, word, err := bufio.ScanWords(scanner.Bytes(), false)
+		if err != nil {
+			return nil, err
+		}
+
+		// 100755 is the only possible mode for git-tracked executable files
+		if string(word) == "100755" {
+			// Advance to past '\t', taking the remainder which is <file>
+			_, filepath, found := strings.Cut(scanner.Text()[advance:], "\t")
+			if !found {
+				return nil, errors.New("invalid staged files output format. Missing file path.")
+			}
+
+			executableFiles = append(executableFiles, filepath)
+		}
+	}
+	return executableFiles, nil
+}
+
+// Initializes an empty (bare minimum) azd repository.
+func (i *Initializer) InitializeEmpty(ctx context.Context, azdCtx *azdcontext.AzdContext) error {
+	projectFormatted := output.WithLinkFormat("%s", azdCtx.ProjectDirectory())
+	var err error
+	i.console.ShowSpinner(ctx,
+		fmt.Sprintf("Creating minimal project files at: %s", projectFormatted),
+		input.Step)
+	defer i.console.StopSpinner(ctx,
+		fmt.Sprintf("Created minimal project files at: %s", projectFormatted)+"\n",
+		input.GetStepResultFormat(err))
+
+	projectDir := azdCtx.ProjectDirectory()
+	isEmpty, err := isEmptyDir(projectDir)
+	if err != nil {
+		return err
+	}
+
 	err = i.writeAzdAssets(ctx, azdCtx)
+	if err != nil {
+		return err
+	}
+
+	err = i.gitInitialize(ctx, projectDir, []string{}, isEmpty)
 	if err != nil {
 		return err
 	}
@@ -301,19 +448,12 @@ func (i *Initializer) Initialize(ctx context.Context,
 	return nil
 }
 
-// Initializes an empty (bare minimum) azd repository.
-func (i *Initializer) InitializeEmpty(ctx context.Context, azdCtx *azdcontext.AzdContext) error {
-	return i.writeAzdAssets(ctx, azdCtx)
-}
-
 func (i *Initializer) writeAzdAssets(ctx context.Context, azdCtx *azdcontext.AzdContext) error {
 	// Check to see if `azure.yaml` exists, and if it doesn't, create it.
 	if _, err := os.Stat(azdCtx.ProjectPath()); errors.Is(err, os.ErrNotExist) {
-		stepMessage := fmt.Sprintf("Creating a new %s file.", azdcontext.ProjectFileName)
-
-		i.console.ShowSpinner(ctx, stepMessage, input.Step)
 		_, err = project.NewProject(azdCtx.ProjectPath(), azdCtx.GetDefaultProjectName())
-		i.console.StopSpinner(ctx, stepMessage, input.GetStepResultFormat(err))
+		i.console.MessageUxItem(ctx,
+			&ux.DoneMessage{Message: fmt.Sprintf("Created a new %s file", azdcontext.ProjectFileName)})
 
 		if err != nil {
 			return fmt.Errorf("failed to create a project file: %w", err)
@@ -428,4 +568,13 @@ func determineDuplicates(source string, target string) ([]string, error) {
 		return nil, fmt.Errorf("enumerating template files: %w", err)
 	}
 	return duplicateFiles, nil
+}
+
+func isEmptyDir(dir string) (bool, error) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return false, fmt.Errorf("determining empty directory: %w", err)
+	}
+
+	return len(entries) == 0, nil
 }

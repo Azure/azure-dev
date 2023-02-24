@@ -9,7 +9,10 @@ import (
 	"io"
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
+	"github.com/azure/azure-dev/cli/azd/cmd/middleware"
 	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/pkg/account"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
@@ -53,7 +56,8 @@ You can find all environment configurations under the ` + output.WithBackticks(`
 		Command:        newEnvNewCmd(),
 		FlagsResolver:  newEnvNewFlags,
 		ActionResolver: newEnvNewAction,
-	})
+	}).
+		UseMiddleware("ensureLogin", middleware.NewEnsureLoginMiddleware)
 
 	group.Add("list", &actions.ActionDescriptorOptions{
 		Command:        newEnvListCmd(),
@@ -110,6 +114,7 @@ type envSetAction struct {
 	azCli   azcli.AzCli
 	console input.Console
 	azdCtx  *azdcontext.AzdContext
+	env     *environment.Environment
 	flags   *envSetFlags
 	args    []string
 }
@@ -117,6 +122,7 @@ type envSetAction struct {
 func newEnvSetAction(
 	azdCtx *azdcontext.AzdContext,
 	azCli azcli.AzCli,
+	env *environment.Environment,
 	console input.Console,
 	flags *envSetFlags,
 	args []string,
@@ -125,26 +131,16 @@ func newEnvSetAction(
 		azCli:   azCli,
 		console: console,
 		azdCtx:  azdCtx,
+		env:     env,
 		flags:   flags,
 		args:    args,
 	}
 }
 
 func (e *envSetAction) Run(ctx context.Context) (*actions.ActionResult, error) {
-	env, err := loadOrInitEnvironment(
-		ctx,
-		&e.flags.environmentName,
-		e.azdCtx,
-		e.console,
-		e.azCli,
-	)
-	if err != nil {
-		return nil, fmt.Errorf("loading environment: %w", err)
-	}
+	e.env.Values[e.args[0]] = e.args[1]
 
-	env.Values[e.args[0]] = e.args[1]
-
-	if err := env.Save(); err != nil {
+	if err := e.env.Save(); err != nil {
 		return nil, fmt.Errorf("saving environment: %w", err)
 	}
 
@@ -269,26 +265,29 @@ func newEnvNewCmd() *cobra.Command {
 }
 
 type envNewAction struct {
-	azdCtx  *azdcontext.AzdContext
-	azCli   azcli.AzCli
-	flags   *envNewFlags
-	args    []string
-	console input.Console
+	azdCtx             *azdcontext.AzdContext
+	userProfileService *azcli.UserProfileService
+	accountManager     account.Manager
+	flags              *envNewFlags
+	args               []string
+	console            input.Console
 }
 
 func newEnvNewAction(
 	azdCtx *azdcontext.AzdContext,
-	azcli azcli.AzCli,
+	userProfileService *azcli.UserProfileService,
+	accountManager account.Manager,
 	flags *envNewFlags,
 	args []string,
 	console input.Console,
 ) actions.Action {
 	return &envNewAction{
-		azdCtx:  azdCtx,
-		azCli:   azcli,
-		flags:   flags,
-		args:    args,
-		console: console,
+		azdCtx:             azdCtx,
+		accountManager:     accountManager,
+		userProfileService: userProfileService,
+		flags:              flags,
+		args:               args,
+		console:            console,
 	}
 }
 
@@ -303,7 +302,8 @@ func (en *envNewAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 		subscription:    en.flags.subscription,
 		location:        en.flags.location,
 	}
-	if _, err := createAndInitEnvironment(ctx, &envSpec, en.azdCtx, en.console, en.azCli); err != nil {
+	if _, err := createAndInitEnvironment(
+		ctx, &envSpec, en.azdCtx, en.console, en.accountManager, en.userProfileService); err != nil {
 		return nil, fmt.Errorf("creating new environment: %w", err)
 	}
 
@@ -339,18 +339,24 @@ func newEnvRefreshCmd() *cobra.Command {
 }
 
 type envRefreshAction struct {
-	azdCtx        *azdcontext.AzdContext
-	azCli         azcli.AzCli
-	flags         *envRefreshFlags
-	console       input.Console
-	formatter     output.Formatter
-	writer        io.Writer
-	commandRunner exec.CommandRunner
+	azdCtx         *azdcontext.AzdContext
+	projectConfig  *project.ProjectConfig
+	accountManager account.Manager
+	azCli          azcli.AzCli
+	env            *environment.Environment
+	flags          *envRefreshFlags
+	console        input.Console
+	formatter      output.Formatter
+	writer         io.Writer
+	commandRunner  exec.CommandRunner
 }
 
 func newEnvRefreshAction(
 	azdCtx *azdcontext.AzdContext,
+	projectConfig *project.ProjectConfig,
 	azCli azcli.AzCli,
+	accountManager account.Manager,
+	env *environment.Environment,
 	commandRunner exec.CommandRunner,
 	flags *envRefreshFlags,
 	console input.Console,
@@ -358,42 +364,43 @@ func newEnvRefreshAction(
 	writer io.Writer,
 ) actions.Action {
 	return &envRefreshAction{
-		azdCtx:        azdCtx,
-		azCli:         azCli,
-		flags:         flags,
-		console:       console,
-		formatter:     formatter,
-		writer:        writer,
-		commandRunner: commandRunner,
+		azdCtx:         azdCtx,
+		azCli:          azCli,
+		accountManager: accountManager,
+		env:            env,
+		flags:          flags,
+		console:        console,
+		formatter:      formatter,
+		projectConfig:  projectConfig,
+		writer:         writer,
+		commandRunner:  commandRunner,
 	}
 }
 
 func (ef *envRefreshAction) Run(ctx context.Context) (*actions.ActionResult, error) {
-	env, err := loadOrInitEnvironment(ctx, &ef.flags.environmentName, ef.azdCtx, ef.console, ef.azCli)
-	if err != nil {
-		return nil, fmt.Errorf("loading environment: %w", err)
-	}
-
-	prj, err := project.LoadProjectConfig(ef.azdCtx.ProjectPath())
-	if err != nil {
-		return nil, fmt.Errorf("loading project: %w", err)
-	}
-
 	infraManager, err := provisioning.NewManager(
-		ctx, env, prj.Path, prj.Infra, !ef.flags.global.NoPrompt, ef.azCli, ef.console, ef.commandRunner,
+		ctx,
+		ef.env,
+		ef.projectConfig.Path,
+		ef.projectConfig.Infra,
+		!ef.flags.global.NoPrompt,
+		ef.azCli,
+		ef.console,
+		ef.commandRunner,
+		ef.accountManager,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("creating provisioning manager: %w", err)
 	}
 
-	scope := infra.NewSubscriptionScope(ef.azCli, env.GetLocation(), env.GetSubscriptionId(), env.GetEnvName())
+	scope := infra.NewSubscriptionScope(ef.azCli, ef.env.GetLocation(), ef.env.GetSubscriptionId(), ef.env.GetEnvName())
 
 	getStateResult, err := infraManager.State(ctx, scope)
 	if err != nil {
 		return nil, fmt.Errorf("getting deployment: %w", err)
 	}
 
-	if err := provisioning.UpdateEnvironment(env, getStateResult.State.Outputs); err != nil {
+	if err := provisioning.UpdateEnvironment(ef.env, getStateResult.State.Outputs); err != nil {
 		return nil, err
 	}
 
@@ -406,14 +413,20 @@ func (ef *envRefreshAction) Run(ctx context.Context) (*actions.ActionResult, err
 		}
 	}
 
-	if err = prj.Initialize(ctx, env, ef.commandRunner); err != nil {
+	if err = ef.projectConfig.Initialize(ctx, ef.env, ef.commandRunner); err != nil {
 		return nil, err
 	}
 
-	for _, svc := range prj.Services {
-		if err := svc.RaiseEvent(
-			ctx, project.EnvironmentUpdated,
-			map[string]any{"bicepOutput": getStateResult.State.Outputs}); err != nil {
+	for _, svc := range ef.projectConfig.Services {
+		eventArgs := project.ServiceLifecycleEventArgs{
+			Project: ef.projectConfig,
+			Service: svc,
+			Args: map[string]any{
+				"bicepOutput": getStateResult.State.Outputs,
+			},
+		}
+
+		if err := svc.RaiseEvent(ctx, project.ServiceEventEnvUpdated, eventArgs); err != nil {
 			return nil, err
 		}
 	}
@@ -448,43 +461,32 @@ func (eg *envGetValuesFlags) Bind(local *pflag.FlagSet, global *internal.GlobalC
 type envGetValuesAction struct {
 	azdCtx    *azdcontext.AzdContext
 	console   input.Console
+	env       *environment.Environment
 	formatter output.Formatter
 	writer    io.Writer
-	azCli     azcli.AzCli
 	flags     *envGetValuesFlags
 }
 
 func newEnvGetValuesAction(
 	azdCtx *azdcontext.AzdContext,
+	env *environment.Environment,
 	console input.Console,
 	formatter output.Formatter,
 	writer io.Writer,
-	azCli azcli.AzCli,
 	flags *envGetValuesFlags,
 ) actions.Action {
 	return &envGetValuesAction{
 		azdCtx:    azdCtx,
 		console:   console,
+		env:       env,
 		formatter: formatter,
 		writer:    writer,
-		azCli:     azCli,
 		flags:     flags,
 	}
 }
 
 func (eg *envGetValuesAction) Run(ctx context.Context) (*actions.ActionResult, error) {
-	env, err := loadOrInitEnvironment(
-		ctx,
-		&eg.flags.environmentName,
-		eg.azdCtx,
-		eg.console,
-		eg.azCli,
-	)
-	if err != nil {
-		return nil, err
-	}
-
-	err = eg.formatter.Format(env.Values, eg.writer, nil)
+	err := eg.formatter.Format(eg.env.Values, eg.writer, nil)
 	if err != nil {
 		return nil, err
 	}

@@ -1,94 +1,27 @@
 {
     "azure-dev.commands_category": "Azure Developer",
 
-    "azure-dev.commands.util.terminalTitle": "az dev",
-    "azure-dev.commands.util.selectApplicationFolder": "Select application folder",
-    "azure-dev.commands.util.noAzureYamlFile": "The selected folder does not contain 'azure.yaml' file and cannot be used to run Azure Developer CLI commands",
-    "azure-dev.commands.util.selectAzureYamlFile": "Select configuration file ('azure.yaml') to use for running Azure developer CLI commands",
-    "azure-dev.commands.util.needWorkspaceFolder": "To run '{0}' command you must first open a folder or workspace in VS Code",
-    "azure-dev.commands.util.selectTemplate": "Select application template",
-    "azure-dev.commands.util.enterTemplateName": "Enter application template repository name ('{org or user}/{repo}')",
-    "azure-dev.commands.util.useAnotherTemplate": "Use another template...",
-    "azure-dev.commands.util.invocation-error": "Command '{0}' returned an error",
-
     "azure-dev.commands.cli.init.title": "init (initialize a new application)",
-
     "azure-dev.commands.cli.provision.title": "provision (provision Azure resources)",
-
     "azure-dev.commands.cli.deploy.title": "deploy (deploy the application's code to Azure)",
     "azure-dev.commands.cli.restore.title": "restore (restores application dependencies)",
-
     "azure-dev.commands.cli.infra-create.title": "infra create (create Azure resources for the application)",
-
     "azure-dev.commands.cli.infra-delete.title": "infra delete (delete Azure resources for the application)",
-    "azure-dev.commands.cli.infra-delete.confirm-prompt": "Are you sure to delete all application's Azure resources?",
-    "azure-dev.commands.cli.infra-delete.confirm-ack": "Delete resources",
-    "azure-dev.commands.cli.infra-delete.purge": "Permanently delete (purge)",
-    "azure-dev.commands.cli.infra-delete.no-purge": "Do not purge",
-    "azure-dev.commands.cli.infra-delete.purge-prompt": "Permanently delete resources with are soft-deleted by default (e.g. KeyVaults)?",
-
     "azure-dev.commands.cli.up.title": "up (initialize application, provision resources, and deploy)",
     "azure-dev.commands.cli.down.title": "down (delete deployed application and infrastructure)",
-
     "azure-dev.commands.cli.monitor.title": "monitor (monitor a deployed application)",
-    "azure-dev.commands.cli.monitor.open-live-metrics": "Application Insights Live Metrics",
-    "azure-dev.commands.cli.monitor.open-logs": "Application Insights Logs",
-    "azure-dev.commands.cli.monitor.open-overview": "Application Insights Overview Dashboard",
-    "azure-dev.commands.cli.monitor.choose-pages": "What monitoring page(s) do you want to open?",
-    "azure-dev.commands.cli.monitor.opening-pages": "Opening monitoring page(s)...",
-
     "azure-dev.commands.cli.env-delete.title": "env delete (delete an environment)",
-
     "azure-dev.commands.cli.env-edit.title": "Edit .env file",
-
     "azure-dev.commands.cli.env-select.title": "env select (set default environment)",
-    "azure-dev.commands.cli.env-select.no-environments": "There are no environments to select. Would you like to create one?",
-    "azure-dev.commands.cli.env-select.choose-environment": "What environment should be set as default?",
-    "azure-dev.commands.cli.env-select.environment-selected": "'{0}' is now the default environment",
-
     "azure-dev.commands.cli.env-new.title": "env new (create a new environment)",
-    "azure-dev.commands.cli.env-new.create-new-env": "Create a new environment",
-    "azure-dev.commands.cli.env-new.cancel": "Cancel",
-
     "azure-dev.commands.cli.env-refresh.title": "env refresh (refresh environment values from latest infra deployment)",
-    "azure-dev.commands.cli.env-refresh.refreshing": "Refreshing environment values...",
-    "azure-dev.commands.cli.env-refresh.failure": "Environment values could not be refreshed. Infrastructure might have never been provisioned in Azure, or there might be no environments. Would you like to create one?",
-
     "azure-dev.commands.cli.pipeline-config.title": "pipeline config (configure DevOps pipeline for your application)",
-
     "azure-dev.commands.cli.install.title": "Install or Update Azure Developer CLI",
-
-    "azure-dev.commands.getDotEnvFilePath.title": "Get Azure developer environment's .env file path",
-    "azure-dev.commands.getDotEnvFilePath.noEnvironments": "No Azure developer environments found. You can create one by running 'azd env new' in the terminal.",
-    "azure-dev.commands.getDotEnvFilePath.environmentNotFound": "Azure developer environment '{0}' was not found",
-    "azure-dev.commands.getDotEnvFilePath.noDefaultEnvironment": "There is no default Azure developer environment, cannot determine environment settings file path",
-    "azure-dev.commands.getDotEnvFilePath.noWorkingFolder": "Working directory could not be determined",
-
     "azure-dev.commands.azureWorkspace.revealAzureResource.title": "Show Azure Resource",
-
     "azure-dev.commands.azureWorkspace.revealAzureResourceGroup.title": "Show Azure Resource Group",
 
-    "azure-dev.utils.quickPickWorkspaceFolder.title": "Open Folder",
-    "azure-dev.utils.spawn.exited": "Process '{0}' exited with code {1}",
-    "azure-dev.utils.spawn.exitError": "\nError: {0}",
-    "azure-dev.utils.azd.notInstalled": "This extension depends on having the Azure Developer CLI (azd) installed on your computer. Visit {0} to install it.",
-    "azure-dev.utils.azd.goToInstallUrl": "Go to {0}",
-    "azure-dev.utils.azd.later": "Later",
+    "azure-dev.commands.getDotEnvFilePath.title": "Get Azure developer environment's .env file path",
 
     "azure-dev.tasks.dotenv.properties.file": "The .env file to use to populate the target task environment",
-    "azure-dev.tasks.dotenv.properties.targetTasks": "Name of the task(s) that will be launched with environment populated from the .env file",
-    "azure-dev.tasks.dotenv.envFileDoesNotExist": "Error: environment file '{0}' does not exist",
-    "azure-dev.tasks.dotenv.taskNotFound": "Error: target task '{0}' was not found",
-    "azure-dev.tasks.dotenv.cannotReferenceSelf": "Error: target task cannot be the same as the current task",
-    "azure-dev.tasks.dotenv.taskTypeNotSupported": "Error: target task '{0}' is of type that is not supported by dotenv task",
-    "azure-dev.tasks.dotenv.taskStarted": "Child task '{0}' started",
-    "azure-dev.tasks.dotenv.taskFailed": "Child task '{0}' failed, exit code was {1}",
-    "azure-dev.tasks.dotenv.taskSucceeded": "Child task '{0}' succeeded, took {1}",
-    "azure-dev.tasks.dotenv.allTasksSucceeded": "All tasks succeeded, exiting...",
-    "azure-dev.tasks.dotenv.taskCancelled": "The task was cancelled. Exiting...",
-
-    "azure-dev.surveys.surveyOne.prompt": "Can you please take 2 minutes to tell us how the Azure Developer CLI is working for you?",
-    "azure-dev.surveys.surveyOne.button.take": "Take survey",
-    "azure-dev.surveys.surveyOne.button.never": "Don't ask again",
-    "azure-dev.surveys.surveyOne.button.later": "Remind me later"
+    "azure-dev.tasks.dotenv.properties.targetTasks": "Name of the task(s) that will be launched with environment populated from the .env file"
 }

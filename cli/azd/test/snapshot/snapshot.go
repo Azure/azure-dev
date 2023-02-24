@@ -2,6 +2,8 @@
 // Licensed under the MIT License.
 
 // Package snapshot contains adapters that azd uses to create snapshot tests.
+// By default, snapshots are stored under testdata. To change this behavior, customize the config created by
+// snapshot.NewDefaultConfig or snapshot.NewConfig.
 //
 // Snapshot with default configuration
 //

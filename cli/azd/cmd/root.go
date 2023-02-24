@@ -246,13 +246,12 @@ func NewRootCmd(staticHelp bool, middlewareChain []*actions.MiddlewareRegistrati
 		panic(err)
 	}
 
-	// once the command is created, let's finalize the help template
-	//_ = getRootCmdHelp(cmd)
+	// The help template has to be set after calling `BuildCommand()` to ensure the command tree is built
 	cmd.SetHelpTemplate(generateCmdHelp(
 		cmd,
-		func(c *cobra.Command) string { return c.Short }, // description
-		func(*cobra.Command) string { return getCmdHelpUsage(i18nAzdUsage) },
-		func(c *cobra.Command) string { return getCmdHelpGroupedCommands(getRootCommandsDetails(c)) },
+		func(c *cobra.Command) string { return fmt.Sprintf("%s\n\n", c.Short) },                       // description
+		func(*cobra.Command) string { return getCmdHelpUsage(i18nAzdUsage) },                          // Usage
+		func(c *cobra.Command) string { return getCmdHelpGroupedCommands(getRootCommandsDetails(c)) }, // Commands
 		getCmdHelpFlags,
 		getRootCmdFooter,
 	))
@@ -261,12 +260,8 @@ func NewRootCmd(staticHelp bool, middlewareChain []*actions.MiddlewareRegistrati
 }
 
 func getRootCmdFooter(cmd *cobra.Command) string {
-	return fmt.Sprintf("%s %s %s %s %s\n\n%s\n  %s %s %s %s\n  %s %s.\n    %s\n\n%s %s.",
-		i18nGetText(i18nUse),
-		output.WithHighLightFormat(i18nGetText(i18nAzd)),
-		output.WithWarningFormat("[%s]", i18nGetText(i18nCommand)),
-		output.WithHighLightFormat("--%s", i18nGetText(i18nHelp)),
-		i18nGetText(i18nCmdRootHelpFooterTitle),
+	return fmt.Sprintf("%s\n%s\n  %s %s %s %s\n  %s %s.\n    %s\n\n%s %s.\n",
+		getCommonFooterNote(""),
 		output.WithBold(output.WithUnderline(i18nGetText(i18nCmdRootHelpFooterQuickStart))),
 		i18nGetText(i18nCmdRootHelpFooterQuickStartDetail),
 		output.WithHighLightFormat(i18nGetText(i18nAzdUpTemplate)),
@@ -288,7 +283,7 @@ func getRootCommandsDetails(cmd *cobra.Command) (result string) {
 	var commandGroups = make(map[i18nTextId][]string, len(groups))
 	// Add hardcoded message for help, as there is not a command for it and we want it in the list
 	commandGroups[i18nCmdGroupTitleAbout] = append(commandGroups[i18nCmdGroupTitleAbout],
-		fmt.Sprintf("%s%s%s", i18nGetText(i18nHelp), endOfTitleSentinel, i18nGetText(i18nCmdHelp)))
+		fmt.Sprintf("%s%s%s", "help", endOfTitleSentinel, i18nGetText(i18nCmdHelp)))
 
 	// stores the longes line len
 	max := 0
@@ -317,10 +312,11 @@ func getRootCommandsDetails(cmd *cobra.Command) (result string) {
 		alignTitles(commandGroups[id], max)
 	}
 
+	var paragraph []string
 	for _, title := range groups {
-		result += fmt.Sprintf("  %s\n    %s\n",
+		paragraph = append(paragraph, fmt.Sprintf("  %s\n    %s\n",
 			output.WithBold(i18nGetText(title)),
-			strings.Join(commandGroups[title], "\n    "))
+			strings.Join(commandGroups[title], "\n    ")))
 	}
-	return result
+	return strings.Join(paragraph, "\n")
 }

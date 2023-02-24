@@ -7,7 +7,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
@@ -40,7 +39,7 @@ func templateNameCompletion(cmd *cobra.Command, args []string, toComplete string
 
 func templatesActions(root *actions.ActionDescriptor) *actions.ActionDescriptor {
 	cmd := &cobra.Command{
-		Short: "Manage templates.",
+		Short: i18nGetText(i18nCmdTemplateShort),
 	}
 	annotateGroupCmd(cmd, cmdGroupConfig)
 
@@ -49,22 +48,31 @@ func templatesActions(root *actions.ActionDescriptor) *actions.ActionDescriptor 
 		CommandHelpGenerator: func() string {
 			return generateCmdHelp(
 				cmd,
-				getUpCmdDescription,
-				func(*cobra.Command) string { return getCmdHelpUsage(i18nCmdUpUsage) },
-				func(cmd *cobra.Command) string {
-					return getCmdHelpAvailableCommands(getCommandsDetails(cmd))
-				},
+				getTemplateCmdDescription,
+				func(*cobra.Command) string { return getCmdHelpUsage(i18nCmdUpUsage) },                          // usage
+				func(cmd *cobra.Command) string { return getCmdHelpAvailableCommands(getCommandsDetails(cmd)) }, // commands
 				getCmdHelpFlags,
-				getTemplateCmdFooter,
+				func(c *cobra.Command) string { return getCommonFooterNote(c.Name()) }, //footer
 			)
 		},
 	})
 
+	listCmd := newTemplateListCmd()
 	group.Add("list", &actions.ActionDescriptorOptions{
-		Command:        newTemplateListCmd(),
+		Command:        listCmd,
 		ActionResolver: newTemplatesListAction,
 		OutputFormats:  []output.Format{output.JsonFormat, output.TableFormat},
 		DefaultFormat:  output.TableFormat,
+		CommandHelpGenerator: func() string {
+			return generateCmdHelp(
+				listCmd,
+				func(c *cobra.Command) string { return c.Short },                                                // desc
+				func(*cobra.Command) string { return getCmdHelpUsage(i18nCmdUpUsage) },                          // usage
+				func(cmd *cobra.Command) string { return getCmdHelpAvailableCommands(getCommandsDetails(cmd)) }, // commands
+				getCmdHelpFlags,
+				func(c *cobra.Command) string { return "" }, // footer
+			)
+		},
 	})
 
 	group.Add("show", &actions.ActionDescriptorOptions{
@@ -80,7 +88,7 @@ func templatesActions(root *actions.ActionDescriptor) *actions.ActionDescriptor 
 func newTemplateListCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:     "list",
-		Short:   "List templates.",
+		Short:   i18nGetText(i18nCmdTemplateListShort),
 		Aliases: []string{"ls"},
 	}
 }
@@ -191,40 +199,35 @@ func formatTemplates(
 }
 
 func getTemplateCmdDescription(*cobra.Command) string {
-	title := i18nGetTextWithConfig(&i18n.LocalizeConfig{
-		MessageID: string(i18nCmdUpConsoleHelp),
-		TemplateData: struct {
-			AzdInit      string
-			AzdProvision string
-			AzdDeploy    string
-		}{
-			AzdInit:      output.WithHighLightFormat("azd up"),
-			AzdProvision: output.WithHighLightFormat("azd provision"),
-			AzdDeploy:    output.WithHighLightFormat("azd deploy"),
-		},
-	})
+	title := i18nGetText(i18nCmdTemplateHelp)
 
 	var notes []string
-	notes = append(notes, fmt.Sprintf("  • %s", i18nGetTextWithConfig(&i18n.LocalizeConfig{
-		MessageID: string(i18nCmdUpRunningNote),
+	notes = append(notes, formatHelpNote(i18nGetTextWithConfig(&i18n.LocalizeConfig{
+		MessageID: string(i18nCmdTemplateIncludeNote),
 		TemplateData: struct {
-			AzdUp string
+			AzdRun string
 		}{
-			AzdUp: output.WithHighLightFormat("azd up"),
+			AzdRun: output.WithHighLightFormat("azd template list"),
 		},
 	})))
-	notes = append(notes, fmt.Sprintf("  • %s", i18nGetTextWithConfig(&i18n.LocalizeConfig{
-		MessageID: string(i18CmdUpViewNote),
+	notes = append(notes, formatHelpNote(i18nGetTextWithConfig(&i18n.LocalizeConfig{
+		MessageID: string(i18nCmdTemplateViewNote),
 		TemplateData: struct {
-			ViewUrl string
+			Url string
 		}{
-			ViewUrl: output.WithLinkFormat(i18nGetText(i18nAwesomeAzdUrl)),
+			Url: output.WithLinkFormat(i18nGetText(i18nAwesomeAzdUrl)),
+		},
+	})))
+	notes = append(notes, formatHelpNote(i18nGetTextWithConfig(&i18n.LocalizeConfig{
+		MessageID: string(i18nCmdTemplateRunningNote),
+		TemplateData: struct {
+			AzUp    string
+			AzdInit string
+		}{
+			AzUp:    output.WithHighLightFormat("azd up"),
+			AzdInit: output.WithHighLightFormat("azd init"),
 		},
 	})))
 
-	return fmt.Sprintf("%s\n\n%s", title, strings.Join(notes, "\n"))
-}
-
-func getTemplateCmdFooter(*cobra.Command) string {
-	return "foo"
+	return formatHelpDescription(title, notes)
 }

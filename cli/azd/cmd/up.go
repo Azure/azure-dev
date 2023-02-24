@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/cmd/middleware"
@@ -136,7 +135,7 @@ func (u *upAction) runInit(ctx context.Context) error {
 
 func getUpCmdDescription(*cobra.Command) string {
 	title := i18nGetTextWithConfig(&i18n.LocalizeConfig{
-		MessageID: string(i18nCmdUpConsoleHelp),
+		MessageID: string(i18nCmdUpHelp),
 		TemplateData: struct {
 			AzdInit      string
 			AzdProvision string
@@ -149,7 +148,7 @@ func getUpCmdDescription(*cobra.Command) string {
 	})
 
 	var notes []string
-	notes = append(notes, fmt.Sprintf("  • %s", i18nGetTextWithConfig(&i18n.LocalizeConfig{
+	notes = append(notes, formatHelpNote(i18nGetTextWithConfig(&i18n.LocalizeConfig{
 		MessageID: string(i18nCmdUpRunningNote),
 		TemplateData: struct {
 			AzdUp string
@@ -157,7 +156,7 @@ func getUpCmdDescription(*cobra.Command) string {
 			AzdUp: output.WithHighLightFormat("azd up"),
 		},
 	})))
-	notes = append(notes, fmt.Sprintf("  • %s", i18nGetTextWithConfig(&i18n.LocalizeConfig{
+	notes = append(notes, formatHelpNote(i18nGetTextWithConfig(&i18n.LocalizeConfig{
 		MessageID: string(i18CmdUpViewNote),
 		TemplateData: struct {
 			ViewUrl string
@@ -166,9 +165,21 @@ func getUpCmdDescription(*cobra.Command) string {
 		},
 	})))
 
-	return fmt.Sprintf("%s\n\n%s", title, strings.Join(notes, "\n"))
+	return formatHelpDescription(title, notes)
 }
 
 func getUpCmdFooter(*cobra.Command) string {
-	return "foo"
+	return fmt.Sprintf("%s\n", i18nGetTextWithConfig(&i18n.LocalizeConfig{
+		MessageID: string(i18nCmdUpFooter),
+		TemplateData: struct {
+			Title      string
+			CodeSample string
+		}{
+			Title: output.WithBold(output.WithUnderline("%s", i18nGetText(i18nExamples))),
+			CodeSample: fmt.Sprintf("%s %s",
+				output.WithHighLightFormat("azd up --template"),
+				output.WithWarningFormat("[GitHub repo URL]"),
+			),
+		},
+	}))
 }

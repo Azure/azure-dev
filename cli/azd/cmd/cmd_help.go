@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
+	"github.com/nicksnyder/go-i18n/v2/i18n"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
@@ -31,6 +32,35 @@ func annotateGroupCmd(cmd *cobra.Command, group string) {
 
 type cmdHelpGenerator func(cmd *cobra.Command) string
 
+/*
+generateCmdHelp sets the base structure for displaying help documentation for a command in the console.
+The base structure is on the form of:
+
+**********************
+
+<description>
+
+<usage>
+<commands>
+<flags>
+<footer>
+
+**********************
+
+Where:
+  - description: Describes the command. It is usually linked to the cobra `Short or Long` fields.
+  - usage: Demonstrate how to call the command. The function `getCmdHelpUsage(i18nTextId)` can be used to easily set
+    text from an i18TextId.
+  - commands: The list of sub-commands supported. Use function `getRootCommandsDetails(cobraCommand)` to auto generate
+    the list of sub-commands from the cobra command. This section is optional and won't be displayed when there are not
+    sub-commands added for the command.
+  - flags: Similar to commands, use function `getCmdHelpFlags(cobraCommand)` to auto-generate the list of local and global
+    flags.
+  - footer: The last section is where commands can define quick-start, examples or extra notes.
+
+By using `cmdHelpGenerator` the implementation to format the content of the help can be changed, for example, to produce md
+files for static help.
+*/
 func generateCmdHelp(
 	cmd *cobra.Command,
 	description cmdHelpGenerator,
@@ -38,7 +68,7 @@ func generateCmdHelp(
 	commands cmdHelpGenerator,
 	flags cmdHelpGenerator,
 	footer cmdHelpGenerator) string {
-	return fmt.Sprintf("\n%s\n\n%s\n%s%s%s\n\n",
+	return fmt.Sprintf("\n%s%s%s%s%s\n",
 		description(cmd),
 		usage(cmd),
 		commands(cmd),
@@ -48,7 +78,7 @@ func generateCmdHelp(
 }
 
 func getCmdHelpUsage(usage i18nTextId) string {
-	return fmt.Sprintf("%s\n  %s\n",
+	return fmt.Sprintf("%s\n  %s\n\n",
 		output.WithBold(output.WithUnderline(i18nGetText(i18nUsage))), i18nGetText(usage))
 }
 
@@ -155,4 +185,27 @@ func getCommandsDetails(cmd *cobra.Command) (result string) {
 	// align all lines
 	alignTitles(lines, max)
 	return fmt.Sprintf("%s\n", strings.Join(lines, "\n"))
+}
+
+func formatHelpNote(note string) string {
+	return fmt.Sprintf("  • %s", note)
+}
+
+func getCommonFooterNote(command string) string {
+	return fmt.Sprintf("%s\n", i18nGetTextWithConfig(&i18n.LocalizeConfig{
+		MessageID: string(i18nCmdCommonFooter),
+		TemplateData: struct {
+			AzdRun string
+		}{
+			AzdRun: fmt.Sprintf("%s %s %s",
+				output.WithHighLightFormat("azd %s", command),
+				output.WithWarningFormat("[command]"),
+				output.WithHighLightFormat("--help"),
+			),
+		},
+	}))
+}
+
+func formatHelpDescription(title string, notes []string) string {
+	return fmt.Sprintf("%s\n\n%s\n\n", title, strings.Join(notes, "\n"))
 }

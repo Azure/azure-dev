@@ -43,3 +43,4 @@ cmdUpConsoleHelp: "Executes the {{.AzdInit}}, {{.AzdProvision}} and {{.AzdDeploy
 cmdUpRunningNote: "Running {{.AzdUp}} without a template will prompt you to start with an empty template or select from a curated list of presets."
 cmdUpViewNote: "To view all currently available sample templates visit: {{.ViewUrl}}."
 cmdUpUsage: "azd up [flags]"
+globalFlags: "Global Flags"

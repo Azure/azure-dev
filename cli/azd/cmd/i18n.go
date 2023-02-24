@@ -90,4 +90,5 @@ const (
 	i18CmdUpViewNote                      i18nTextId = "cmdUpViewNote"
 	i18nCmdUpUsage                        i18nTextId = "cmdUpUsage"
 	i18nAvailableCommands                 i18nTextId = "availableCommands"
+	i18nGlobalFlags                       i18nTextId = "globalFlags"
 )

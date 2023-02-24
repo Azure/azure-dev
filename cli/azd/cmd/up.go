@@ -50,14 +50,6 @@ func newUpCmd() *cobra.Command {
 		Short: i18nGetText(i18nCmdUpShort),
 	}
 	annotateGroupCmd(cmd, cmdGroupManage)
-	cmd.SetHelpTemplate(generateCmdHelp(
-		cmd,
-		getUpCmdDescription,
-		func(*cobra.Command) string { return getCmdHelpUsage(i18nCmdUpUsage) },
-		func(cmd *cobra.Command) string {
-			return getHelpCommands(i18nAvailableCommands, getCommandsDetails(cmd))
-		},
-	))
 	return cmd
 }
 
@@ -175,4 +167,8 @@ func getUpCmdDescription(*cobra.Command) string {
 	})))
 
 	return fmt.Sprintf("%s\n\n%s", title, strings.Join(notes, "\n"))
+}
+
+func getUpCmdFooter(*cobra.Command) string {
+	return "foo"
 }

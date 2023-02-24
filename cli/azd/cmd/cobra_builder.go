@@ -61,10 +61,6 @@ func (cb *CobraBuilder) BuildCommand(descriptor *actions.ActionDescriptor) (*cob
 		}
 	}
 
-	if descriptor.Options.CommandHelpGenerator != nil {
-		cmd.SetHelpTemplate(descriptor.Options.CommandHelpGenerator())
-	}
-
 	return cmd, nil
 }
 
@@ -217,6 +213,10 @@ func (cb *CobraBuilder) bindCommand(cmd *cobra.Command, descriptor *actions.Acti
 		if err := cb.bindCommand(childCmd, childDescriptor); err != nil {
 			return err
 		}
+	}
+
+	if descriptor.Options.CommandHelpGenerator != nil {
+		cmd.SetHelpTemplate(descriptor.Options.CommandHelpGenerator())
 	}
 
 	return nil

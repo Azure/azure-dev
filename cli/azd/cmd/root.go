@@ -21,25 +21,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal/telemetry"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/spf13/cobra"
-	"github.com/spf13/pflag"
 )
-
-const (
-	cmdGrouper      string = "commandGrouper"
-	cmdGroupConfig  string = string(i18nCmdGroupTitleConfig)
-	cmdGroupManage  string = string(i18nCmdGroupTitleManage)
-	cmdGroupMonitor string = string(i18nCmdGroupTitleMonitor)
-	cmdGroupAbout   string = string(i18nCmdGroupTitleAbout)
-	// this is used for aligning titles in the console.
-	endOfTitleSentinel string = "\x00"
-)
-
-func annotateGroupCmd(cmd *cobra.Command, group string) {
-	if cmd.Annotations == nil {
-		cmd.Annotations = make(map[string]string)
-	}
-	cmd.Annotations[cmdGrouper] = group
-}
 
 // Creates the root Cobra command for AZD.
 // staticHelp - False, except for running for doc generation
@@ -198,13 +180,26 @@ func NewRootCmd(staticHelp bool, middlewareChain []*actions.MiddlewareRegistrati
 		}).
 		UseMiddleware("hooks", middleware.NewHooksMiddleware)
 
+	upCommand := newUpCmd()
 	root.
 		Add("up", &actions.ActionDescriptorOptions{
-			Command:        newUpCmd(),
+			Command:        upCommand,
 			FlagsResolver:  newUpFlags,
 			ActionResolver: newUpAction,
 			OutputFormats:  []output.Format{output.JsonFormat, output.NoneFormat},
 			DefaultFormat:  output.NoneFormat,
+			CommandHelpGenerator: func() string {
+				return generateCmdHelp(
+					upCommand,
+					getUpCmdDescription,
+					func(*cobra.Command) string { return getCmdHelpUsage(i18nCmdUpUsage) },
+					func(cmd *cobra.Command) string {
+						return getCmdHelpAvailableCommands(getCommandsDetails(cmd))
+					},
+					getCmdHelpFlags,
+					getUpCmdFooter,
+				)
+			},
 		}).
 		AddFlagCompletion("template", templateNameCompletion).
 		UseMiddleware("hooks", middleware.NewHooksMiddleware)
@@ -252,65 +247,21 @@ func NewRootCmd(staticHelp bool, middlewareChain []*actions.MiddlewareRegistrati
 	}
 
 	// once the command is created, let's finalize the help template
-	_ = getRootCmdHelp(cmd)
+	//_ = getRootCmdHelp(cmd)
 	cmd.SetHelpTemplate(generateCmdHelp(
 		cmd,
 		func(c *cobra.Command) string { return c.Short }, // description
 		func(*cobra.Command) string { return getCmdHelpUsage(i18nAzdUsage) },
-		func(c *cobra.Command) string { return getHelpCommands(i18nCommands, getRootCommandsDetails(c)) },
+		func(c *cobra.Command) string { return getCmdHelpGroupedCommands(getRootCommandsDetails(c)) },
+		getCmdHelpFlags,
+		getRootCmdFooter,
 	))
 
 	return cmd
 }
 
-type cmdHelpGenerator func(cmd *cobra.Command) string
-
-func generateCmdHelp(
-	cmd *cobra.Command,
-	description cmdHelpGenerator,
-	usage cmdHelpGenerator,
-	commands cmdHelpGenerator) string {
-	return fmt.Sprintf("\n%s\n\n%s\n%s",
-		description(cmd),
-		usage(cmd),
-		commands(cmd),
-	)
-}
-
-func getCmdHelpUsage(usage i18nTextId) string {
-	return fmt.Sprintf("%s\n  %s\n",
-		output.WithBold(output.WithUnderline(i18nGetText(i18nUsage))), i18nGetText(usage))
-}
-
-func getHelpCommands(title i18nTextId, commands string) string {
-	if commands == "" {
-		return commands
-	}
-	return fmt.Sprintf("%s\n%s\n", output.WithBold(output.WithUnderline(i18nGetText(title))), commands)
-}
-
-func getRootCmdHelp(cmd *cobra.Command) string {
-	// root command doesn't use `cmd.Long`. It use Short for both.
-	description := cmd.Short
-	commands := fmt.Sprintf("%s\n",
-		output.WithBold(output.WithUnderline(i18nGetText(i18nCommands))))
-	commandsDetails := getRootCommandsDetails(cmd)
-	flags := fmt.Sprintf("%s\n",
-		output.WithBold(output.WithUnderline(i18nGetText(i18nFlags))))
-	flagsDetails := getRootCmdFlagsDetails(cmd)
-	footer := getRootCmdFooter(cmd)
-	return fmt.Sprintf("\n%s\n\n%s\n%s%s%s%s\n%s\n",
-		description,
-		getCmdHelpUsage(i18nAzdUsage),
-		commands,
-		commandsDetails,
-		flags,
-		flagsDetails,
-		footer)
-}
-
 func getRootCmdFooter(cmd *cobra.Command) string {
-	return fmt.Sprintf("%s %s %s %s %s\n\n%s\n  %s %s %s %s\n  %s %s.\n    %s\n\n%s %s.\n",
+	return fmt.Sprintf("%s %s %s %s %s\n\n%s\n  %s %s %s %s\n  %s %s.\n    %s\n\n%s %s.",
 		i18nGetText(i18nUse),
 		output.WithHighLightFormat(i18nGetText(i18nAzd)),
 		output.WithWarningFormat("[%s]", i18nGetText(i18nCommand)),
@@ -327,55 +278,6 @@ func getRootCmdFooter(cmd *cobra.Command) string {
 		i18nGetText(i18nCmdRootHelpFooterReportBug),
 		output.WithLinkFormat(i18nGetText(i18nAzdHats)),
 	)
-}
-
-func getRootCmdFlagsDetails(cmd *cobra.Command) (result string) {
-	persistedFlags := cmd.NonInheritedFlags()
-	var lines []string
-	max := 0
-	persistedFlags.VisitAll(func(flag *pflag.Flag) {
-		if flag.Hidden {
-			return
-		}
-
-		line := ""
-		if flag.Shorthand != "" && flag.ShorthandDeprecated == "" {
-			line = fmt.Sprintf("  -%s, --%s", flag.Shorthand, flag.Name)
-		} else {
-			line = fmt.Sprintf("      --%s", flag.Name)
-		}
-
-		varName, usage := pflag.UnquoteUsage(flag)
-		if varName != "" {
-			line += " " + varName
-		}
-
-		// insert a sentinel for the end of the flag titles. Lines are aligned based on the longest line.
-		line += endOfTitleSentinel
-		lineLen := len(line)
-		if lineLen > max {
-			// the max value is used later to fill all lines with same size
-			max = lineLen
-		}
-		line += usage
-		if len(flag.Deprecated) != 0 {
-			line += fmt.Sprintf(" (DEPRECATED: %s)", flag.Deprecated)
-		}
-
-		lines = append(lines, line)
-	})
-
-	alignTitles(lines, max)
-	return fmt.Sprintf("  %s\n", strings.Join(lines, "\n  "))
-}
-
-func alignTitles(lines []string, longestLineLen int) {
-	for i, line := range lines {
-		sentinelIndex := strings.Index(line, endOfTitleSentinel)
-		// calculate the difference between the longest line to each line ending. It's 0 for the longest
-		gapToFill := strings.Repeat(" ", longestLineLen-sentinelIndex)
-		lines[i] = fmt.Sprintf("%s%s\t: %s", line[:sentinelIndex], gapToFill, line[sentinelIndex+1:])
-	}
 }
 
 func getRootCommandsDetails(cmd *cobra.Command) (result string) {
@@ -421,27 +323,4 @@ func getRootCommandsDetails(cmd *cobra.Command) (result string) {
 			strings.Join(commandGroups[title], "\n    "))
 	}
 	return result
-}
-
-func getCommandsDetails(cmd *cobra.Command) (result string) {
-	childrenCommands := cmd.Commands()
-	if len(childrenCommands) == 0 {
-		return ""
-	}
-
-	// stores the longes line len
-	max := 0
-	var lines []string
-	for _, childCommand := range childrenCommands {
-		commandName := fmt.Sprintf("  %s", childCommand.Name())
-		commandNameLen := len(commandName)
-		if commandNameLen > max {
-			max = commandNameLen
-		}
-		lines = append(lines,
-			fmt.Sprintf("%s%s%s", commandName, endOfTitleSentinel, childCommand.Short))
-	}
-	// align all lines
-	alignTitles(lines, max)
-	return strings.Join(lines, "\n")
 }

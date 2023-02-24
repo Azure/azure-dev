@@ -52,8 +52,11 @@ func templatesActions(root *actions.ActionDescriptor) *actions.ActionDescriptor 
 				getUpCmdDescription,
 				func(*cobra.Command) string { return getCmdHelpUsage(i18nCmdUpUsage) },
 				func(cmd *cobra.Command) string {
-					return getHelpCommands(i18nAvailableCommands, getCommandsDetails(cmd))
-				})
+					return getCmdHelpAvailableCommands(getCommandsDetails(cmd))
+				},
+				getCmdHelpFlags,
+				getTemplateCmdFooter,
+			)
 		},
 	})
 
@@ -220,4 +223,8 @@ func getTemplateCmdDescription(*cobra.Command) string {
 	})))
 
 	return fmt.Sprintf("%s\n\n%s", title, strings.Join(notes, "\n"))
+}
+
+func getTemplateCmdFooter(*cobra.Command) string {
+	return "foo"
 }

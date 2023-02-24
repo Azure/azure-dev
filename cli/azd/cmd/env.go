@@ -21,6 +21,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
+	"github.com/nicksnyder/go-i18n/v2/i18n"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
@@ -29,17 +30,15 @@ func envActions(root *actions.ActionDescriptor) *actions.ActionDescriptor {
 	envCmd := &cobra.Command{
 		Use:   "env",
 		Short: "Manage environments.",
-		//nolint:lll
-		Long: `Manage environments.
-
-With this command group, you can create a new environment or get, set, and list your app environments. An app can have multiple environments (for example, dev, test, prod), each with a different configuration (that is, connectivity information) for accessing Azure resources.
-
-You can find all environment configurations under the ` + output.WithBackticks(`.azure\<environment-name>`) + ` directories. The environment name is stored as the AZURE_ENV_NAME environment variable in the ` + output.WithBackticks(`.azure\<environment-name>\directory\.env`) + ` file.`,
 	}
 	annotateGroupCmd(envCmd, cmdGroupManage)
 
 	group := root.Add("env", &actions.ActionDescriptorOptions{
 		Command: envCmd,
+		HelpOptions: actions.ActionHelpOptions{
+			Description: getCmdEnvHelpDescription,
+			Footer:      func(cmd *cobra.Command) string { return getCommonFooterNote(cmd.CommandPath()) },
+		},
 	})
 
 	group.Add("set", &actions.ActionDescriptorOptions{
@@ -493,4 +492,31 @@ func (eg *envGetValuesAction) Run(ctx context.Context) (*actions.ActionResult, e
 	}
 
 	return nil, nil
+}
+
+func getCmdEnvHelpDescription(*cobra.Command) string {
+	return formatHelpDescription(
+		i18nGetText(i18nCmdEnvHelp),
+		[]string{
+			formatHelpNote(i18nGetText(i18nCmdEnvHelpNoteMulti)),
+			formatHelpNote(i18nGetText(i18nCmdEnvHelpNoteEach)),
+			formatHelpNote(i18nGetTextWithConfig(&i18n.LocalizeConfig{
+				MessageID: string(i18nCmdEnvHelpNoteFind),
+				TemplateData: struct {
+					Path string
+				}{
+					Path: output.WithLinkFormat(".azure/<environment-name>"),
+				},
+			})),
+			formatHelpNote(i18nGetTextWithConfig(&i18n.LocalizeConfig{
+				MessageID: string(i18nCmdEnvHelpNoteName),
+				TemplateData: struct {
+					EnvName string
+					Path    string
+				}{
+					EnvName: output.WithHighLightFormat("AZURE_ENV_NAME"),
+					Path:    output.WithLinkFormat(".azure/<environment-name>/.env"),
+				},
+			})),
+		})
 }

@@ -267,7 +267,7 @@ func NewRootCmd(staticHelp bool, middlewareChain []*actions.MiddlewareRegistrati
 
 func getCmdRootHelpFooter(cmd *cobra.Command) string {
 	return fmt.Sprintf("%s\n%s\n  %s %s %s %s\n  %s %s.\n    %s\n\n%s",
-		getCommonFooterNote(""),
+		getCommonFooterNote(cmd.CommandPath()),
 		output.WithBold(output.WithUnderline(i18nGetText(i18nCmdRootHelpFooterQuickStart))),
 		i18nGetText(i18nCmdRootHelpFooterQuickStartDetail),
 		output.WithHighLightFormat(i18nGetText(i18nAzdUpTemplate)),

@@ -237,17 +237,13 @@ func formatHelpNote(note string) string {
 }
 
 func getCommonFooterNote(command string) string {
-	addSpace := ""
-	if len(command) > 0 {
-		addSpace = " "
-	}
 	return fmt.Sprintf("%s\n", i18nGetTextWithConfig(&i18n.LocalizeConfig{
 		MessageID: string(i18nCmdCommonFooter),
 		TemplateData: struct {
 			AzdRun string
 		}{
 			AzdRun: fmt.Sprintf("%s %s %s",
-				output.WithHighLightFormat("azd%s%s", addSpace, command),
+				output.WithHighLightFormat("%s", command),
 				output.WithWarningFormat("[command]"),
 				output.WithHighLightFormat("--help"),
 			),

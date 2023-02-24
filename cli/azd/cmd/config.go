@@ -12,6 +12,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
+	"github.com/nicksnyder/go-i18n/v2/i18n"
 	"github.com/spf13/cobra"
 )
 
@@ -80,6 +81,10 @@ func configActions(root *actions.ActionDescriptor, rootOptions *internal.GlobalC
 
 	group := root.Add("config", &actions.ActionDescriptorOptions{
 		Command: groupCmd,
+		HelpOptions: actions.ActionHelpOptions{
+			Description: getCmdConfigHelpDescription,
+			Footer:      getCmdConfigHelpFooter,
+		},
 	})
 
 	group.Add("list", &actions.ActionDescriptorOptions{
@@ -303,4 +308,48 @@ func newConfigResetAction(configManager config.UserConfigManager, args []string)
 func (a *configResetAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	emptyConfig := config.NewConfig(nil)
 	return nil, a.configManager.Save(emptyConfig)
+}
+
+func getCmdConfigHelpDescription(*cobra.Command) string {
+	return formatHelpDescription(
+		i18nGetText(i18nCmdConfigHelp),
+		[]string{
+			formatHelpNote(i18nGetTextWithConfig(&i18n.LocalizeConfig{
+				MessageID: string(i18nCmdConfigHelpNote),
+				TemplateData: struct {
+					Command string
+				}{
+					Command: output.WithHighLightFormat("azd init"),
+				},
+			})),
+			formatHelpNote(i18nGetTextWithConfig(&i18n.LocalizeConfig{
+				MessageID: string(i18nCmdConfigHelpNoteStore),
+				TemplateData: struct {
+					Store string
+				}{
+					Store: output.WithLinkFormat("%HOME/.azd/config.json"),
+				},
+			})),
+			formatHelpNote(i18nGetTextWithConfig(&i18n.LocalizeConfig{
+				MessageID: string(i18nCmdConfigHelpNoteDefault),
+				TemplateData: struct {
+					Path string
+				}{
+					Path: output.WithLinkFormat("%HOME/.azd"),
+				},
+			})),
+		})
+}
+
+func getCmdConfigHelpFooter(*cobra.Command) string {
+	return getCmdHelpSamplesBlock([]string{
+		getCmdHelpSample(i18nGetText(i18nCmdConfigHelpSample),
+			fmt.Sprintf("%s %s",
+				output.WithHighLightFormat("azd config set defaults.subscription"),
+				output.WithWarningFormat("<yourSubscriptionID>"))),
+		getCmdHelpSample(i18nGetText(i18nCmdConfigHelpSample),
+			fmt.Sprintf("%s %s",
+				output.WithHighLightFormat("azd config set defaults.location"),
+				output.WithWarningFormat("<location>"))),
+	})
 }

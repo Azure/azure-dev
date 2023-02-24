@@ -2,7 +2,6 @@
 // Licensed under the MIT License.
 
 import * as vscode from 'vscode';
-import { localize } from '../../localize';
 import { AzureDevCliModel, AzureDevCliModelContext } from './AzureDevCliModel';
 import { AzureDevCliService } from './AzureDevCliService';
 
@@ -17,7 +16,7 @@ export class AzureDevCliServices implements AzureDevCliModel {
     }
 
     getTreeItem(): vscode.TreeItem {
-        const treeItem = new vscode.TreeItem(localize('azure-dev.views.workspace.services.label', 'Services'), vscode.TreeItemCollapsibleState.Expanded);
+        const treeItem = new vscode.TreeItem(vscode.l10n.t('Services'), vscode.TreeItemCollapsibleState.Expanded);
 
         treeItem.contextValue = 'ms-azuretools.azure-dev.views.workspace.services';
 

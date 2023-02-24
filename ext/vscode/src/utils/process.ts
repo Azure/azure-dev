@@ -2,9 +2,8 @@
 // Licensed under the MIT License.
 
 import * as cp from 'child_process';
-import { CancellationToken, Disposable } from 'vscode';
+import * as vscode from 'vscode';
 import { UserCancelledError } from '@microsoft/vscode-azext-utils';
-import { localize } from '../localize';
 import { isMac } from './osUtils';
 
 const DEFAULT_BUFFER_SIZE = 1024 * 1024;
@@ -21,10 +20,10 @@ export async function spawnAsync(
     stdoutBuffer?: Buffer,
     onStderr?: Progress,
     stderrBuffer?: Buffer,
-    token?: CancellationToken): Promise<void> {
+    token?: vscode.CancellationToken): Promise<void> {
 
     return await new Promise((resolve, reject) => {
-        let cancellationListener: Disposable | undefined;
+        let cancellationListener: vscode.Disposable | undefined;
         let stdoutBytesWritten: number = 0;
         let stderrBytesWritten: number = 0;
 
@@ -55,10 +54,10 @@ export async function spawnAsync(
                 // If cancellation is requested we'll assume that's why it exited
                 return reject(new UserCancelledError());
             } else if (code) {
-                let errorMessage = localize('azure-dev.utils.spawn.exited', 'Process \'{0}\' exited with code {1}', command.length > 50 ? `${command.substring(0, 50)}...` : command, code);
+                let errorMessage = vscode.l10n.t('Process \'{0}\' exited with code {1}', command.length > 50 ? `${command.substring(0, 50)}...` : command, code);
 
                 if (stderrBuffer) {
-                    errorMessage += localize('azure-dev.utils.spawn.exitError', '\nError: {0}', bufferToString(stderrBuffer));
+                    errorMessage += vscode.l10n.t('\nError: {0}', bufferToString(stderrBuffer));
                 }
 
                 const error = <ExecError>new Error(errorMessage);
@@ -119,10 +118,10 @@ export async function spawnStreamAsync(
     options?: cp.SpawnOptions & { stdin?: string },
     onStdout?: (chunk: Buffer | string) => void,
     onStderr?: (chunk: Buffer | string) => void,
-    token?: CancellationToken): Promise<void> {
+    token?: vscode.CancellationToken): Promise<void> {
 
     return await new Promise((resolve, reject) => {
-        let cancellationListener: Disposable | undefined;
+        let cancellationListener: vscode.Disposable | undefined;
 
         // Without the shell option, it pukes on arguments
         options = options || {};
@@ -151,9 +150,9 @@ export async function spawnStreamAsync(
                 // If cancellation is requested we'll assume that's why it exited
                 return reject(new UserCancelledError());
             } else if (code) {
-                let errorMessage = localize('azure-dev.utils.spawn.exited', 'Process \'{0}\' exited with code {1}', command.length > 50 ? `${command.substring(0, 50)}...` : command, code);
+                let errorMessage = vscode.l10n.t('Process \'{0}\' exited with code {1}', command.length > 50 ? `${command.substring(0, 50)}...` : command, code);
 
-                errorMessage += localize('azure-dev.utils.spawn.exitError', '\nError: {0}', bufferToString(Buffer.concat(errorChunks)));
+                errorMessage += vscode.l10n.t('\nError: {0}', bufferToString(Buffer.concat(errorChunks)));
 
                 const error = <ExecError>new Error(errorMessage);
 
@@ -213,7 +212,7 @@ export async function execAsync(command: string, options?: cp.ExecOptions & { st
 export async function execStreamAsync(
     command: string,
     options?: cp.ExecOptions & { stdin?: string },
-    token?: CancellationToken): Promise<{ stdout: string, stderr: string }> {
+    token?: vscode.CancellationToken): Promise<{ stdout: string, stderr: string }> {
     const stdoutChunks: Buffer[] = [];
     const stderrChunks: Buffer[] = [];
 

@@ -5,7 +5,6 @@ import * as vscode from 'vscode';
 import * as path from 'path';
 import { createHash } from 'crypto';
 import { IActionContext, IAzureQuickPickItem, UserCancelledError } from '@microsoft/vscode-azext-utils';
-import { localize } from '../localize';
 import { createAzureDevCli } from "../utils/azureDevCli";
 import { execAsync } from "../utils/process";
 import { fileExists } from '../utils/fileUtils';
@@ -30,7 +29,7 @@ export async function getWorkingFolder(context: IActionContext, selectedFile?: v
             canSelectFiles: false,
             canSelectFolders: true,
             canSelectMany: false,
-            title: localize('azure-dev.commands.util.selectApplicationFolder', 'Select application folder')
+            title: vscode.l10n.t('Select application folder')
         });
 
         if (!localFolderUris || localFolderUris.length === 0) {
@@ -42,7 +41,7 @@ export async function getWorkingFolder(context: IActionContext, selectedFile?: v
 
         if (!await fileExists(azureYamlUri)) {
             context.errorHandling.suppressReportIssue = true;
-            throw new Error(localize('azure-dev.commands.util.noAzureYamlFile', "The selected folder does not contain 'azure.yaml' file and cannot be used to run Azure Developer CLI commands"));
+            throw new Error(vscode.l10n.t("The selected folder does not contain 'azure.yaml' file and cannot be used to run Azure Developer CLI commands"));
         }
 
         folderPath = folderUri.fsPath;
@@ -66,7 +65,7 @@ export async function pickAzureYamlFile(context: IActionContext): Promise<vscode
             const chosenFile = await context.ui.showQuickPick(choices, {
                 canPickMany: false,
                 suppressPersistence: true,
-                placeHolder: localize('azure-dev.commands.util.selectAzureYamlFile', "Select configuration file ('azure.yaml') to use for running Azure developer CLI commands")
+                placeHolder: vscode.l10n.t("Select configuration file ('azure.yaml') to use for running Azure developer CLI commands")
             });
 
             filePath = chosenFile.data;
@@ -79,7 +78,7 @@ export async function pickAzureYamlFile(context: IActionContext): Promise<vscode
 }
 
 export function getAzDevTerminalTitle(): string {
-    return localize('azure-dev.commands.util.terminalTitle', 'az dev');
+    return vscode.l10n.t('az dev');
 }
 
 const UseCustomTemplate: string = 'azure-dev:/template/custom';
@@ -95,16 +94,16 @@ export async function selectApplicationTemplate(context: IActionContext): Promis
     const result = await execAsync(command);
     const templates = JSON.parse(result.stdout) as { name: string, description: string, repositoryPath: string }[];
     const choices = templates.map(t => { return { label: t.name, detail: t.description, data: t.repositoryPath } as IAzureQuickPickItem<string>; });
-    choices.push({ label: localize('azure-dev.commands.util.useAnotherTemplate', 'Use another template...'), data: '', id: UseCustomTemplate });
+    choices.push({ label: vscode.l10n.t('Use another template...'), data: '', id: UseCustomTemplate });
 
     const template = await context.ui.showQuickPick(choices, {
         canPickMany: false,
-        title: localize('azure-dev.commands.util.selectTemplate', 'Select application template')
+        title: vscode.l10n.t('Select application template')
     });
 
     if (template.id === UseCustomTemplate) {
         templateUrl = await context.ui.showInputBox({
-            prompt: localize('azure-dev.commands.util.enterTemplateName', "Enter application template repository name ('{org or user}/{repo}')")
+            prompt: vscode.l10n.t("Enter application template repository name ('{org or user}/{repo}')")
         });
     } else {
         templateUrl = template.data;

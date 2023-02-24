@@ -3,7 +3,6 @@
 
 import * as vscode from 'vscode';
 import { callWithTelemetryAndErrorHandling } from '@microsoft/vscode-azext-utils';
-import { localize } from '../../localize';
 import { TelemetryId } from '../../telemetry/telemetryId';
 import { AzureDevCliEnvironment } from './AzureDevCliEnvironment';
 import { AzureDevCliModel, AzureDevCliModelContext, RefreshHandler } from "./AzureDevCliModel";
@@ -44,7 +43,7 @@ export class AzureDevCliEnvironments implements AzureDevCliModel {
     }
 
     getTreeItem(): vscode.TreeItem {
-        const treeItem = new vscode.TreeItem(localize('azure-dev.views.workspace.environments.label', 'Environments'), vscode.TreeItemCollapsibleState.Expanded);
+        const treeItem = new vscode.TreeItem(vscode.l10n.t('Environments'), vscode.TreeItemCollapsibleState.Expanded);
 
         treeItem.contextValue = 'ms-azuretools.azure-dev.views.workspace.environments';
 

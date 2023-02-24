@@ -2,7 +2,7 @@
 // Licensed under the MIT License.
 
 import { AzureWizard, IActionContext } from '@microsoft/vscode-azext-utils';
-import { localize } from '../../localize';
+import * as vscode from 'vscode';
 import { TreeViewModel } from '../../utils/isTreeViewModel';
 import { AzureDevCliApplication } from '../../views/workspace/AzureDevCliApplication';
 import { AzureDevCliEnvironment } from '../../views/workspace/AzureDevCliEnvironment';
@@ -22,7 +22,7 @@ export async function revealAzureResource(context: IActionContext, treeItem: Tre
 
     const wizard = new AzureWizard(context,
         {
-            title: localize('azure-dev.commands.azureWorkspace.revealAzureResource.title', 'Show Azure Resource'),
+            title: vscode.l10n.t('Show Azure Resource'),
             promptSteps: [
                 new PickEnvironmentStep(),
                 new PickResourceStep(),
@@ -51,7 +51,7 @@ export async function revealAzureResourceGroup(context: IActionContext, treeItem
 
     const wizard = new AzureWizard(context,
         {
-            title: localize('azure-dev.commands.azureWorkspace.revealAzureResourceGroup.title', 'Show Azure Resource Group'),
+            title: vscode.l10n.t('Show Azure Resource Group'),
             promptSteps: [
                 new PickEnvironmentStep(),
                 new PickResourceGroupStep(),

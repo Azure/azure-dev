@@ -4,30 +4,29 @@
 import * as vscode from 'vscode';
 import { IActionContext } from '@microsoft/vscode-azext-utils';
 import { getAzDevTerminalTitle, getWorkingFolder } from './cmdUtil';
-import { localize } from '../localize';
 import { executeAsTask } from '../utils/executeAsTask';
 import { createAzureDevCli } from '../utils/azureDevCli';
 import { TelemetryId } from '../telemetry/telemetryId';
 
 export async function infraDelete(context: IActionContext, selectedFile?: vscode.Uri): Promise<void> {
     const workingFolder = await getWorkingFolder(context, selectedFile);
-    const confirmPrompt = localize('azure-dev.commands.cli.infra-delete.confirm-prompt', "Are you sure to delete all application's Azure resources?");
-    const confirmAck = localize('azure-dev.commands.cli.infra-delete.confirm-ack', "Delete resources");
+    const confirmPrompt = vscode.l10n.t("Are you sure to delete all application's Azure resources?");
+    const confirmAck = vscode.l10n.t("Delete resources");
 
     await context.ui.showWarningMessage(confirmPrompt, { modal: true }, { title: confirmAck });
 
     const choices = [
         {
-            label: localize("azure-dev.commands.cli.infra-delete.no-purge", "Do not purge"),
+            label: vscode.l10n.t("Do not purge"),
             data: false
         },
         {
-            label: localize("azure-dev.commands.cli.infra-delete.purge", "Permanently delete (purge)"),
+            label: vscode.l10n.t("Permanently delete (purge)"),
             data: true
         }
     ];
     const purgeChoice = await context.ui.showQuickPick(choices, {
-        placeHolder: localize("azure-dev.commands.cli.infra-delete.purge-prompt", "Permanently delete resources with are soft-deleted by default (e.g. KeyVaults)?"), // Should this be title?
+        placeHolder: vscode.l10n.t("Permanently delete resources with are soft-deleted by default (e.g. KeyVaults)?"), // Should this be title?
         suppressPersistence: true,
         canPickMany: false,
     });

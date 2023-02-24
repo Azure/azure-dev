@@ -8,7 +8,6 @@ import { CommandLineBuilder } from "./commandLineBuilder";
 import ext from "../ext";
 import { execAsync } from './process';
 import { AsyncLazy } from './lazy';
-import { localize } from "../localize";
 import { AzExtErrorButton, IActionContext } from '@microsoft/vscode-azext-utils';
 import { isWindows } from './osUtils';
 
@@ -154,25 +153,25 @@ function normalize(env: NodeJS.ProcessEnv): Environment {
 }
 
 function azdNotInstalledMsg(): string {
-    return localize("azure-dev.utils.azd.notInstalled", "Azure Developer CLI is not installed. Would you like to install it?.");
+    return vscode.l10n.t("Azure Developer CLI is not installed. Would you like to install it?.");
 }
 
 function azdNotInstalledUserChoices(): AzExtErrorButton[] {
     const choices: AzExtErrorButton[] = [
         {
-            "title": localize("azure-dev.utils.azd.installNow", "Install"),
+            "title": vscode.l10n.t("Install"),
             "callback": async () => {
                 await vscode.commands.executeCommand("azure-dev.commands.cli.install", /* shouldPrompt: */ false);
             }
         },
         {
-            "title": localize("azure-dev.utils.azd.goToInstallUrl", "Learn More"),
+            "title": vscode.l10n.t("Learn More"),
             "callback": async () => {
                 await vscode.env.openExternal(vscode.Uri.parse(AzdInstallationUrl));
             }
         },
         {
-            "title": localize("azure-dev.utils.azd.later", "Later"),
+            "title": vscode.l10n.t("Later"),
             "callback": () => { return Promise.resolve(); /* no-op */ }
         }
     ];

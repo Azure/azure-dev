@@ -4,7 +4,6 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
 import { IActionContext } from "@microsoft/vscode-azext-utils";
-import { localize } from '../localize';
 import { quickPickWorkspaceFolder } from '../utils/quickPickWorkspaceFolder';
 import { getAzDevTerminalTitle, pickAzureYamlFile, selectApplicationTemplate, showReadmeFile } from './cmdUtil';
 import { createAzureDevCli } from '../utils/azureDevCli';
@@ -18,7 +17,7 @@ export async function down(context: IActionContext, selectedItem?: vscode.Uri | 
 
     let folder: vscode.WorkspaceFolder | undefined = (selectedFile ? vscode.workspace.getWorkspaceFolder(selectedFile) : undefined);
     if (!folder) {
-        folder = await quickPickWorkspaceFolder(context, localize('azure-dev.commands.cli.init.needWorkspaceFolder', "To run '{0}' command you must first open a folder or workspace in VS Code", 'down'));
+        folder = await quickPickWorkspaceFolder(context, vscode.l10n.t("To run '{0}' command you must first open a folder or workspace in VS Code", 'down'));
     }
 
     const azureCli = await createAzureDevCli(context);

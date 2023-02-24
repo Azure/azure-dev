@@ -3,7 +3,6 @@
 
 import * as vscode from 'vscode';
 import { IActionContext, UserCancelledError } from '@microsoft/vscode-azext-utils';
-import { localize } from '../localize';
 import { isMac } from './osUtils';
 
 export async function quickPickWorkspaceFolder(context: IActionContext, noWorkspacesMessage: string): Promise<vscode.WorkspaceFolder> {
@@ -27,7 +26,7 @@ export async function quickPickWorkspaceFolder(context: IActionContext, noWorksp
                         void vscode.commands.executeCommand('workbench.action.files.openFolder');
                     }
                 },
-                title: localize('azure-dev.utils.quickPickWorkspaceFolder.title', 'Open Folder'),
+                title: vscode.l10n.t('Open Folder'),
             }
         ];
         throw new Error(noWorkspacesMessage);

@@ -3,7 +3,6 @@
 
 import { IActionContext, IAzureQuickPickItem } from '@microsoft/vscode-azext-utils';
 import * as vscode from 'vscode';
-import { localize } from '../../../localize';
 import { AzureDevEnvListProvider, WorkspaceAzureDevEnvListProvider } from '../../../services/AzureDevEnvListProvider';
 import { SkipIfOneStep } from './SkipIfOneStep';
 
@@ -18,8 +17,8 @@ export class PickEnvironmentStep extends SkipIfOneStep<RevealWizardContext, stri
         private readonly azureDevEnvListProvider: AzureDevEnvListProvider = new WorkspaceAzureDevEnvListProvider(),
     ) {
         super(
-            localize('azure-dev.commands.azureWorkspace.pickEnvironmentStep.selectEnvironment', 'Select an environment'),
-            localize('azure-dev.commands.azureWorkspace.pickEnvironmentStep.noEnvironments', 'No environments found')
+            vscode.l10n.t('Select an environment'),
+            vscode.l10n.t('No environments found')
         );
     }
 
@@ -36,7 +35,7 @@ export class PickEnvironmentStep extends SkipIfOneStep<RevealWizardContext, stri
         return envListResults.map(env => {
             return {
                 label: env.Name,
-                detail: env.IsDefault ? localize('azure-dev.commands.azureWorkspace.pickEnvironmentStep.defaultEnvironment', 'Default') : undefined,
+                detail: env.IsDefault ? vscode.l10n.t('Default') : undefined,
                 data: env.Name,
             };
         });

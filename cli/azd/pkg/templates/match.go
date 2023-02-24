@@ -37,6 +37,7 @@ var sqlDatabaseDisplay = map[string]string{
 	"Azure Database for MySQL":      "azuresql",
 }
 
+// TODO: This should be derivable from a project config
 type Characteristics struct {
 	Type ApplicationType
 

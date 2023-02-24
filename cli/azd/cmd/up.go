@@ -11,6 +11,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
+	"github.com/nicksnyder/go-i18n/v2/i18n"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
@@ -60,6 +61,19 @@ When no template is supplied, you can optionally select an Azure Developer CLI t
 		) + ` initializes the current directory so that your project is compatible with Azure Developer CLI.`,
 	}
 	annotateGroupCmd(cmd, cmdGroupManage)
+	cmd.SetHelpTemplate(i18nGetTextWithConfig(&i18n.LocalizeConfig{
+		MessageID: string(i18nCmdUpConsoleHelp),
+		TemplateData: struct {
+			AzdInit      string
+			AzdProvision string
+			AzdDeploy    string
+			Notes        string
+		}{
+			AzdInit:      output.WithHighLightFormat("azd up"),
+			AzdProvision: output.WithHighLightFormat("azd provision"),
+			AzdDeploy:    output.WithHighLightFormat("azd deploy"),
+		},
+	}))
 	return cmd
 }
 

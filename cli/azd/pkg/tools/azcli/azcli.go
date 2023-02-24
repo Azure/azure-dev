@@ -94,8 +94,9 @@ type AzCli interface {
 		ctx context.Context, subscriptionId, deploymentName string,
 		armTemplate azure.RawArmTemplate,
 		parameters azure.ArmParameters,
-		location string) (
-		AzCliDeploymentResult, error)
+		location string,
+		tags map[string]*string,
+	) (AzCliDeploymentResult, error)
 	DeployToResourceGroup(
 		ctx context.Context,
 		subscriptionId,
@@ -103,6 +104,7 @@ type AzCli interface {
 		deploymentName string,
 		armTemplate azure.RawArmTemplate,
 		parameters azure.ArmParameters,
+		tags map[string]*string,
 	) (AzCliDeploymentResult, error)
 	DeleteSubscriptionDeployment(ctx context.Context, subscriptionId string, deploymentName string) error
 	DeleteResourceGroup(ctx context.Context, subscriptionId string, resourceGroupName string) error

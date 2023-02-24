@@ -25,16 +25,19 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/cmdsubst"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	. "github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
+	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/bicep"
@@ -43,6 +46,14 @@ import (
 	"golang.org/x/exp/maps"
 	"golang.org/x/exp/slices"
 )
+
+// cProjectNameDeploymentTagKey is the key name of the tag added to the deployment object that that holds the name of
+// of the azd project this deployment was created for (i.e. the name value from azure.yaml)
+const cProjectNameDeploymentTagKey = "azd-project-name"
+
+// cEnvironmentNameDeploymentTagKey is the key name of the tag added to the deployment object that that holds the name of
+// of the azd environment this deployment was created for.
+const cEnvironmentNameDeploymentTagKey = "azd-environment-name"
 
 type BicepDeploymentDetails struct {
 	// Template is the template to deploy during the deployment operation.
@@ -55,13 +66,14 @@ type BicepDeploymentDetails struct {
 
 // BicepProvider exposes infrastructure provisioning using Azure Bicep templates
 type BicepProvider struct {
-	env         *environment.Environment
-	projectPath string
-	options     Options
-	console     input.Console
-	bicepCli    bicep.BicepCli
-	azCli       azcli.AzCli
-	prompters   Prompters
+	env           *environment.Environment
+	projectConfig *project.ProjectConfig
+	projectPath   string
+	options       Options
+	console       input.Console
+	bicepCli      bicep.BicepCli
+	azCli         azcli.AzCli
+	prompters     Prompters
 }
 
 // Name gets the name of the infra provider
@@ -217,7 +229,14 @@ func (p *BicepProvider) Deploy(
 			p.console.ShowSpinner(ctx, "Creating/Updating resources", input.Step)
 			bicepDeploymentData := pd.Details.(BicepDeploymentDetails)
 
-			deployResult, err := p.deployModule(ctx, scope, bicepDeploymentData.Template, bicepDeploymentData.Parameters)
+			tags := map[string]*string{
+				cProjectNameDeploymentTagKey:     to.Ptr(p.projectConfig.Name),
+				cEnvironmentNameDeploymentTagKey: to.Ptr(p.env.GetEnvName()),
+			}
+
+			deployResult, err := p.deployModule(
+				ctx, scope, bicepDeploymentData.Template, bicepDeploymentData.Parameters, tags,
+			)
 			if err != nil {
 				asyncContext.SetError(err)
 				return
@@ -871,9 +890,10 @@ func (p *BicepProvider) deployModule(
 	scope infra.Scope,
 	armTemplate azure.RawArmTemplate,
 	armParameters azure.ArmParameters,
+	tags map[string]*string,
 ) (*armresources.DeploymentExtended, error) {
 
-	if err := scope.Deploy(ctx, armTemplate, armParameters); err != nil {
+	if err := scope.Deploy(ctx, armTemplate, armParameters, tags); err != nil {
 		return nil, fmt.Errorf("failed deploying: %w", err)
 	}
 
@@ -1084,19 +1104,25 @@ func NewBicepProvider(
 		return nil, err
 	}
 
+	projectConfig, err := project.LoadProjectConfig(filepath.Join(projectPath, azdcontext.ProjectFileName))
+	if err != nil {
+		return nil, err
+	}
+
 	// Default to a module named "main" if not specified.
 	if strings.TrimSpace(infraOptions.Module) == "" {
 		infraOptions.Module = "main"
 	}
 
 	return &BicepProvider{
-		env:         env,
-		projectPath: projectPath,
-		options:     infraOptions,
-		console:     console,
-		bicepCli:    bicepCli,
-		azCli:       azCli,
-		prompters:   prompters,
+		env:           env,
+		projectConfig: projectConfig,
+		projectPath:   projectPath,
+		options:       infraOptions,
+		console:       console,
+		bicepCli:      bicepCli,
+		azCli:         azCli,
+		prompters:     prompters,
 	}, nil
 }
 

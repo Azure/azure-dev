@@ -80,6 +80,7 @@ func (cli *azCli) DeployToSubscription(
 	armTemplate azure.RawArmTemplate,
 	parameters azure.ArmParameters,
 	location string,
+	tags map[string]*string,
 ) (AzCliDeploymentResult, error) {
 	deploymentClient, err := cli.createDeploymentsClient(ctx, subscriptionId)
 	if err != nil {
@@ -95,6 +96,7 @@ func (cli *azCli) DeployToSubscription(
 				Mode:       to.Ptr(armresources.DeploymentModeIncremental),
 			},
 			Location: to.Ptr(location),
+			Tags:     tags,
 		}, nil)
 	if err != nil {
 		return AzCliDeploymentResult{}, fmt.Errorf("starting deployment to subscription: %w", err)
@@ -122,6 +124,7 @@ func (cli *azCli) DeployToResourceGroup(
 	subscriptionId, resourceGroup, deploymentName string,
 	armTemplate azure.RawArmTemplate,
 	parameters azure.ArmParameters,
+	tags map[string]*string,
 ) (AzCliDeploymentResult, error) {
 	deploymentClient, err := cli.createDeploymentsClient(ctx, subscriptionId)
 	if err != nil {
@@ -136,6 +139,7 @@ func (cli *azCli) DeployToResourceGroup(
 				Parameters: parameters,
 				Mode:       to.Ptr(armresources.DeploymentModeIncremental),
 			},
+			Tags: tags,
 		}, nil)
 	if err != nil {
 		return AzCliDeploymentResult{}, fmt.Errorf("starting deployment to resource group: %w", err)

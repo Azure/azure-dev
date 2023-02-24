@@ -18,8 +18,8 @@ type Scope interface {
 	Name() string
 	// Gets the url to check deployment progress
 	DeploymentUrl() string
-	// Deploy a given template with a set of parameters.
-	Deploy(ctx context.Context, template azure.RawArmTemplate, parameters azure.ArmParameters) error
+	// Deploy a given template with a set of parameters
+	Deploy(ctx context.Context, template azure.RawArmTemplate, parameters azure.ArmParameters, tags map[string]*string) error
 	// GetDeployment fetches the result of the most recent deployment.
 	GetDeployment(ctx context.Context) (*armresources.DeploymentExtended, error)
 	// Gets the resource deployment operations for the current scope
@@ -49,9 +49,9 @@ func (s *ResourceGroupScope) ResourceGroup() string {
 }
 
 func (s *ResourceGroupScope) Deploy(
-	ctx context.Context, template azure.RawArmTemplate, parameters azure.ArmParameters,
+	ctx context.Context, template azure.RawArmTemplate, parameters azure.ArmParameters, tags map[string]*string,
 ) error {
-	_, err := s.azCli.DeployToResourceGroup(ctx, s.subscriptionId, s.resourceGroup, s.name, template, parameters)
+	_, err := s.azCli.DeployToResourceGroup(ctx, s.subscriptionId, s.resourceGroup, s.name, template, parameters, tags)
 	return err
 }
 
@@ -110,9 +110,9 @@ func (s *SubscriptionScope) Location() string {
 
 // Deploy a given template with a set of parameters.
 func (s *SubscriptionScope) Deploy(
-	ctx context.Context, template azure.RawArmTemplate, parameters azure.ArmParameters,
+	ctx context.Context, template azure.RawArmTemplate, parameters azure.ArmParameters, tags map[string]*string,
 ) error {
-	_, err := s.azCli.DeployToSubscription(ctx, s.subscriptionId, s.name, template, parameters, s.location)
+	_, err := s.azCli.DeployToSubscription(ctx, s.subscriptionId, s.name, template, parameters, s.location, tags)
 	return err
 }
 

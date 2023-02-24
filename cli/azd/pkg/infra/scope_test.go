@@ -134,7 +134,7 @@ func TestScopeDeploy(t *testing.T) {
 		scope := NewSubscriptionScope(azCli, "eastus2", "SUBSCRIPTION_ID", "DEPLOYMENT_NAME")
 
 		armTemplate := azure.RawArmTemplate(testArmTemplate)
-		err := scope.Deploy(*mockContext.Context, armTemplate, testArmParameters)
+		err := scope.Deploy(*mockContext.Context, armTemplate, testArmParameters, nil)
 		require.NoError(t, err)
 	})
 
@@ -161,7 +161,7 @@ func TestScopeDeploy(t *testing.T) {
 		scope := NewResourceGroupScope(azCli, "SUBSCRIPTION_ID", "RESOURCE_GROUP", "DEPLOYMENT_NAME")
 
 		armTemplate := azure.RawArmTemplate(testArmTemplate)
-		err := scope.Deploy(*mockContext.Context, armTemplate, testArmParameters)
+		err := scope.Deploy(*mockContext.Context, armTemplate, testArmParameters, nil)
 		require.NoError(t, err)
 	})
 }

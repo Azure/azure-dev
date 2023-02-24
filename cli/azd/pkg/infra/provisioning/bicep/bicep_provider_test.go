@@ -199,8 +199,31 @@ func TestBicepDeploy(t *testing.T) {
 	progressDone := make(chan bool)
 
 	mockContext := mocks.NewMockContext(context.Background())
+
+	var deploymentTags map[string]*string
+
 	preparePlanningMocks(mockContext)
 	prepareDeployShowMocks(mockContext.HttpClient)
+
+	// The deployment object we create should have a tags applied to it, and we'd like to validate that. This mock never
+	// matches a request (so that mock earlier in the chain registered by `preparePlanningMocks` can return the correct
+	// value) but does capture the value of the tags so we can inspect it later.
+	mockContext.HttpClient.When(func(request *http.Request) bool {
+		if request.Method == http.MethodPut && strings.Contains(
+			request.URL.Path,
+			"/subscriptions/SUBSCRIPTION_ID/providers/Microsoft.Resources/deployments",
+		) {
+			body, err := io.ReadAll(request.Body)
+			assert.NoError(t, err)
+			var deployment armresources.Deployment
+			err = json.Unmarshal(body, &deployment)
+			assert.NoError(t, err)
+			deploymentTags = deployment.Tags
+		}
+
+		return false
+	})
+
 	azCli := mockazcli.NewAzCliFromMockContext(mockContext)
 
 	infraProvider := createBicepProvider(t, mockContext)
@@ -239,6 +262,11 @@ func TestBicepDeploy(t *testing.T) {
 
 	require.Nil(t, err)
 	require.NotNil(t, deployResult)
+	require.NotNil(t, deploymentTags)
+	require.Contains(t, deploymentTags, cProjectNameDeploymentTagKey)
+	require.Contains(t, deploymentTags, cEnvironmentNameDeploymentTagKey)
+	require.Equal(t, *deploymentTags[cProjectNameDeploymentTagKey], "webapp")
+	require.Equal(t, *deploymentTags[cEnvironmentNameDeploymentTagKey], "test-env")
 	require.Equal(t, deployResult.Deployment.Outputs["WEBSITE_URL"].Value, expectedWebsiteUrl)
 }
 

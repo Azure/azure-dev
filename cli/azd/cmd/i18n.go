@@ -106,4 +106,10 @@ const (
 	i18nCmdProvisionHelpNoteEnv           i18nTextId = "cmdProvisionHelpNoteEnv"
 	i18nCmdProvisionHelpNoteLocation      i18nTextId = "cmdProvisionHelpNoteLocation"
 	i18nCmdProvisionHelpNoteSubscription  i18nTextId = "cmdProvisionHelpNoteSubscription"
+	i18nCmdDeployHelp                     i18nTextId = "cmdDeployHelp"
+	i18nCmdDeployHelpNoteWhen             i18nTextId = "cmdDeployHelpNoteWhen"
+	i18nCmdDeployHelpNoteAfter            i18nTextId = "cmdDeployHelpNoteAfter"
+	i18nCmdDeployHelpSample               i18nTextId = "cmdDeployHelpSample"
+	i18nCmdDeployHelpSampleApi            i18nTextId = "cmdDeployHelpSampleApi"
+	i18nCmdDeployHelpSampleWeb            i18nTextId = "cmdDeployHelpSampleWeb"
 )

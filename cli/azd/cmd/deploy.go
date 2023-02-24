@@ -206,29 +206,24 @@ func (d *deployAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 }
 
 func getCmdDeployHelpDescription(*cobra.Command) string {
-	title := i18nGetTextWithConfig(&i18n.LocalizeConfig{
-		MessageID: string(i18nCmdProvisionHelp),
-		TemplateData: struct {
-			Command string
-		}{
-			Command: output.WithHighLightFormat("azd provision"),
-		},
-	})
+	title := i18nGetText(i18nCmdDeployHelp)
 	return formatHelpDescription(title, []string{
-		formatHelpNote(i18nGetText(i18nCmdProvisionHelpNoteEnv)),
-		formatHelpNote(i18nGetText(i18nCmdProvisionHelpNoteLocation)),
-		formatHelpNote(i18nGetText(i18nCmdProvisionHelpNoteSubscription)),
+		formatHelpNote(i18nGetTextWithConfig(&i18n.LocalizeConfig{
+			MessageID: string(i18nCmdDeployHelpNoteWhen),
+			TemplateData: struct {
+				Service string
+			}{
+				Service: output.WithHighLightFormat("--service"),
+			},
+		})),
+		formatHelpNote(i18nGetText(i18nCmdDeployHelpNoteAfter)),
 	})
 }
 
 func getCmdDeployHelpFooter(*cobra.Command) string {
-	var samples []string
-	samples = append(samples, getCmdHelpSample(
-		i18nGetText(i18nCmdUpFooterSample),
-		fmt.Sprintf("%s %s",
-			output.WithHighLightFormat("azd up --template"),
-			output.WithWarningFormat("[GitHub repo URL]"),
-		)),
-	)
-	return getCmdHelpSamplesBlock(samples)
+	return getCmdHelpSamplesBlock([]string{
+		getCmdHelpSample(i18nGetText(i18nCmdDeployHelpSample), output.WithHighLightFormat("azd deploy")),
+		getCmdHelpSample(i18nGetText(i18nCmdDeployHelpSampleApi), output.WithHighLightFormat("azd deploy --service api")),
+		getCmdHelpSample(i18nGetText(i18nCmdDeployHelpSampleWeb), output.WithHighLightFormat("azd deploy --service web")),
+	})
 }

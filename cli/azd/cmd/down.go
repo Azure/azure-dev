@@ -65,18 +65,15 @@ func getCmdDownHelpDescription(*cobra.Command) string {
 }
 
 func getCmdDownHelpFooter(*cobra.Command) string {
-	var samples []string
-	samples = append(samples, getCmdHelpSample(
-		i18nGetText(i18nCmdDownHelpSample),
-		output.WithHighLightFormat("azd down")),
-	)
-	samples = append(samples, getCmdHelpSample(
-		i18nGetText(i18nCmdDownHelpSampleForce),
-		output.WithHighLightFormat("azd down --force")),
-	)
-	samples = append(samples, getCmdHelpSample(
-		i18nGetText(i18nCmdDownHelpSamplePurge),
-		output.WithHighLightFormat("azd down --purge")),
-	)
-	return getCmdHelpSamplesBlock(samples)
+	return getCmdHelpSamplesBlock([]string{
+		getCmdHelpSample(
+			i18nGetText(i18nCmdDownHelpSample),
+			output.WithHighLightFormat("azd down")),
+		getCmdHelpSample(
+			i18nGetText(i18nCmdDownHelpSampleForce),
+			output.WithHighLightFormat("azd down --force")),
+		getCmdHelpSample(
+			i18nGetText(i18nCmdDownHelpSamplePurge),
+			output.WithHighLightFormat("azd down --purge")),
+	})
 }

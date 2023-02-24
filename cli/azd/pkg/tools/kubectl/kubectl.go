@@ -27,6 +27,7 @@ type KubectlCli interface {
 		secrets []string,
 		flags *KubeCliFlags,
 	) (*exec.RunResult, error)
+	Exec(ctx context.Context, flags *KubeCliFlags, args ...string) (exec.RunResult, error)
 }
 
 type kubectlCli struct {
@@ -57,7 +58,7 @@ func (cli *kubectlCli) Cwd(cwd string) {
 }
 
 func (cli *kubectlCli) ConfigUseContext(ctx context.Context, name string, flags *KubeCliFlags) (*exec.RunResult, error) {
-	res, err := cli.executeCommand(ctx, flags, "config", "use-context", name)
+	res, err := cli.Exec(ctx, flags, "config", "use-context", name)
 	if err != nil {
 		return nil, fmt.Errorf("failed setting kubectl context: %w", err)
 	}
@@ -164,7 +165,7 @@ func (cli *kubectlCli) CreateSecretGenericFromLiterals(
 		args = append(args, fmt.Sprintf("--from-literal=%s", secret))
 	}
 
-	res, err := cli.executeCommand(ctx, flags, args...)
+	res, err := cli.Exec(ctx, flags, args...)
 	if err != nil {
 		return nil, fmt.Errorf("kubectl create secret generic --from-env-file: %w", err)
 	}
@@ -181,7 +182,7 @@ type KubeCliFlags struct {
 func (cli *kubectlCli) CreateNamespace(ctx context.Context, name string, flags *KubeCliFlags) (*exec.RunResult, error) {
 	args := []string{"create", "namespace", name}
 
-	res, err := cli.executeCommand(ctx, flags, args...)
+	res, err := cli.Exec(ctx, flags, args...)
 	if err != nil {
 		return nil, fmt.Errorf("kubectl create namespace: %w", err)
 	}
@@ -189,7 +190,7 @@ func (cli *kubectlCli) CreateNamespace(ctx context.Context, name string, flags *
 	return &res, nil
 }
 
-func (cli *kubectlCli) executeCommand(ctx context.Context, flags *KubeCliFlags, args ...string) (exec.RunResult, error) {
+func (cli *kubectlCli) Exec(ctx context.Context, flags *KubeCliFlags, args ...string) (exec.RunResult, error) {
 	runArgs := exec.
 		NewRunArgs("kubectl").
 		AppendParams(args...)

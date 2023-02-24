@@ -11,44 +11,6 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-type KubeConfig struct {
-	ApiVersion     string          `yaml:"apiVersion"`
-	Clusters       []*KubeCluster  `yaml:"clusters"`
-	Contexts       []*KubeContext  `yaml:"contexts"`
-	Users          []*KubeUser     `yaml:"users"`
-	Kind           string          `yaml:"kind"`
-	CurrentContext string          `yaml:"current-context"`
-	Preferences    KubePreferences `yaml:"preferences"`
-}
-
-type KubeCluster struct {
-	Name    string          `yaml:"name"`
-	Cluster KubeClusterData `yaml:"cluster"`
-}
-
-type KubeClusterData struct {
-	CertificateAuthorityData string `yaml:"certificate-authority-data"`
-	Server                   string `yaml:"server"`
-}
-
-type KubeContext struct {
-	Name    string          `yaml:"name"`
-	Context KubeContextData `yaml:"context"`
-}
-
-type KubeContextData struct {
-	Cluster string `yaml:"cluster"`
-	User    string `yaml:"user"`
-}
-
-type KubeUser struct {
-	Name         string       `yaml:"name"`
-	KubeUserData KubeUserData `yaml:"user"`
-}
-
-type KubeUserData map[string]any
-type KubePreferences map[string]any
-
 type KubeConfigManager struct {
 	cli        KubectlCli
 	configPath string

@@ -88,7 +88,8 @@
                             "appservice",
                             "containerapp",
                             "function",
-                            "staticwebapp"
+                            "staticwebapp",
+                            "aks"
                         ]
                     },
                     "language": {

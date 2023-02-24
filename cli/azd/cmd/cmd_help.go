@@ -78,15 +78,10 @@ func generateCmdHelp(
 }
 
 func getCmdHelpDefaultUsage(cmd *cobra.Command) string {
-	var useAs string
-	if cmd.Runnable() {
-		useAs = cmd.UseLine()
-	}
-	if cmd.HasAvailableSubCommands() {
-		useAs = fmt.Sprintf("%s [command]", cmd.CommandPath())
-	}
 	return fmt.Sprintf("%s\n  %s\n\n",
-		output.WithBold(output.WithUnderline(i18nGetText(i18nUsage))), useAs)
+		output.WithBold(output.WithUnderline(i18nGetText(i18nUsage))),
+		"{{if .Runnable}}{{.UseLine}}{{end}}{{if .HasAvailableSubCommands}}{{.CommandPath}} [command]{{end}}",
+	)
 }
 
 func getCmdHelpDefaultDescription(cmd *cobra.Command) string {

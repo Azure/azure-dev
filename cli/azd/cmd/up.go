@@ -133,7 +133,7 @@ func (u *upAction) runInit(ctx context.Context) error {
 	return err
 }
 
-func getUpCmdDescription(*cobra.Command) string {
+func getCmdUpHelpDescription(*cobra.Command) string {
 	title := i18nGetTextWithConfig(&i18n.LocalizeConfig{
 		MessageID: string(i18nCmdUpHelp),
 		TemplateData: struct {
@@ -168,7 +168,7 @@ func getUpCmdDescription(*cobra.Command) string {
 	return formatHelpDescription(title, notes)
 }
 
-func getUpCmdFooter(*cobra.Command) string {
+func getCmdUpHelpFooter(*cobra.Command) string {
 	return fmt.Sprintf("%s\n", i18nGetTextWithConfig(&i18n.LocalizeConfig{
 		MessageID: string(i18nCmdUpFooter),
 		TemplateData: struct {

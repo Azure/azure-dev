@@ -180,24 +180,21 @@ func NewRootCmd(staticHelp bool, middlewareChain []*actions.MiddlewareRegistrati
 		}).
 		UseMiddleware("hooks", middleware.NewHooksMiddleware)
 
-	upCommand := newUpCmd()
 	root.
 		Add("up", &actions.ActionDescriptorOptions{
-			Command:        upCommand,
+			Command:        newUpCmd(),
 			FlagsResolver:  newUpFlags,
 			ActionResolver: newUpAction,
 			OutputFormats:  []output.Format{output.JsonFormat, output.NoneFormat},
 			DefaultFormat:  output.NoneFormat,
-			CommandHelpGenerator: func() string {
+			CommandHelpGenerator: func(c *cobra.Command) string {
 				return generateCmdHelp(
-					upCommand,
-					getUpCmdDescription,
-					func(*cobra.Command) string { return getCmdHelpUsage(i18nCmdUpUsage) },
-					func(cmd *cobra.Command) string {
-						return getCmdHelpAvailableCommands(getCommandsDetails(cmd))
-					},
-					getCmdHelpFlags,
-					getUpCmdFooter,
+					c,
+					getCmdUpHelpDescription,
+					getCmdHelpDefaultUsage,
+					getCmdHelpDefaultCommands,
+					getCmdHelpDefaultFlags,
+					getCmdUpHelpFooter,
 				)
 			},
 		}).
@@ -249,17 +246,17 @@ func NewRootCmd(staticHelp bool, middlewareChain []*actions.MiddlewareRegistrati
 	// The help template has to be set after calling `BuildCommand()` to ensure the command tree is built
 	cmd.SetHelpTemplate(generateCmdHelp(
 		cmd,
-		func(c *cobra.Command) string { return fmt.Sprintf("%s\n\n", c.Short) },                       // description
-		func(*cobra.Command) string { return getCmdHelpUsage(i18nAzdUsage) },                          // Usage
-		func(c *cobra.Command) string { return getCmdHelpGroupedCommands(getRootCommandsDetails(c)) }, // Commands
-		getCmdHelpFlags,
-		getRootCmdFooter,
+		getCmdHelpDefaultDescription,
+		getCmdHelpDefaultUsage,
+		func(c *cobra.Command) string { return getCmdHelpGroupedCommands(getCmdRootHelpCommands(c)) },
+		getCmdHelpDefaultFlags,
+		getCmdRootHelpFooter,
 	))
 
 	return cmd
 }
 
-func getRootCmdFooter(cmd *cobra.Command) string {
+func getCmdRootHelpFooter(cmd *cobra.Command) string {
 	return fmt.Sprintf("%s\n%s\n  %s %s %s %s\n  %s %s.\n    %s\n\n%s",
 		getCommonFooterNote(""),
 		output.WithBold(output.WithUnderline(i18nGetText(i18nCmdRootHelpFooterQuickStart))),
@@ -274,7 +271,7 @@ func getRootCmdFooter(cmd *cobra.Command) string {
 	)
 }
 
-func getRootCommandsDetails(cmd *cobra.Command) (result string) {
+func getCmdRootHelpCommands(cmd *cobra.Command) (result string) {
 	childrenCommands := cmd.Commands()
 	groups := []i18nTextId{
 		i18nCmdGroupTitleConfig, i18nCmdGroupTitleManage, i18nCmdGroupTitleMonitor, i18nCmdGroupTitleAbout}

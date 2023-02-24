@@ -128,7 +128,7 @@ type ActionDescriptorOptions struct {
 	// Whether or not telemetry should be disabled for the current action
 	DisableTelemetry bool
 	// The logic that produces the command help
-	CommandHelpGenerator func() string
+	CommandHelpGenerator func(*cobra.Command) string
 }
 
 // Completion function used for cobra command flag completion

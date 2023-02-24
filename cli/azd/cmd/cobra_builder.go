@@ -216,7 +216,7 @@ func (cb *CobraBuilder) bindCommand(cmd *cobra.Command, descriptor *actions.Acti
 	}
 
 	if descriptor.Options.CommandHelpGenerator != nil {
-		cmd.SetHelpTemplate(descriptor.Options.CommandHelpGenerator())
+		cmd.SetHelpTemplate(descriptor.Options.CommandHelpGenerator(cmd))
 	}
 
 	return nil

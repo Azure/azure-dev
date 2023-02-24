@@ -49,7 +49,7 @@ The base structure is on the form of:
 
 Where:
   - description: Describes the command. It is usually linked to the cobra `Short or Long` fields.
-  - usage: Demonstrate how to call the command. The function `getCmdHelpUsage(i18nTextId)` can be used to easily set
+  - usage: Demonstrate how to call the command. The function `getCmdHelpUsage` can be used to easily set
     text from an i18TextId.
   - commands: The list of sub-commands supported. Use function `getRootCommandsDetails(cobraCommand)` to auto generate
     the list of sub-commands from the cobra command. This section is optional and won't be displayed when there are not
@@ -77,9 +77,28 @@ func generateCmdHelp(
 	)
 }
 
-func getCmdHelpUsage(usage i18nTextId) string {
+func getCmdHelpDefaultUsage(cmd *cobra.Command) string {
+	var useAs string
+	if cmd.Runnable() {
+		useAs = cmd.UseLine()
+	}
+	if cmd.HasAvailableSubCommands() {
+		useAs = fmt.Sprintf("%s [command]", cmd.CommandPath())
+	}
 	return fmt.Sprintf("%s\n  %s\n\n",
-		output.WithBold(output.WithUnderline(i18nGetText(i18nUsage))), i18nGetText(usage))
+		output.WithBold(output.WithUnderline(i18nGetText(i18nUsage))), useAs)
+}
+
+func getCmdHelpDefaultDescription(cmd *cobra.Command) string {
+	return formatHelpDescription(cmd.Short, nil)
+}
+
+func getCmdHelpDefaultCommands(cmd *cobra.Command) string {
+	return getCmdHelpAvailableCommands(getCommandsDetails(cmd))
+}
+
+func getCmdHelpDefaultFooter(*cobra.Command) string {
+	return generateHelpFindFillBug()
 }
 
 func getCmdHelpCommands(title i18nTextId, commands string) string {
@@ -97,7 +116,7 @@ func getCmdHelpAvailableCommands(commands string) string {
 	return getCmdHelpCommands(i18nAvailableCommands, commands)
 }
 
-func getCmdHelpFlags(cmd *cobra.Command) (result string) {
+func getCmdHelpDefaultFlags(cmd *cobra.Command) (result string) {
 	if cmd.HasAvailableLocalFlags() {
 		flags := getFlagsDetails(cmd.LocalFlags())
 		result = fmt.Sprintf("%s\n%s\n",

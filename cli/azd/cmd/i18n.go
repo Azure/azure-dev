@@ -49,7 +49,6 @@ const (
 	i18nDocsProductName                   i18nTextId = "docsProductName"
 	i18nAzdShortHelp                      i18nTextId = "azdShortHelp"
 	i18nUsage                             i18nTextId = "usage"
-	i18nAzdUsage                          i18nTextId = "azdUsage"
 	i18nCommands                          i18nTextId = "commands"
 	i18nCmdGroupTitleConfig               i18nTextId = "cmdGroupTitleConfig"
 	i18nCmdGroupTitleManage               i18nTextId = "cmdGroupTitleManage"
@@ -95,4 +94,5 @@ const (
 	i18nCmdTemplateRunningNote            i18nTextId = "cmdTemplateRunningNote"
 	i18nCmdCommonFooter                   i18nTextId = "cmdCommonFooter"
 	i18nCmdTemplateListShort              i18nTextId = "cmdTemplateListShort"
+	i18nCmdTemplateShowShort              i18nTextId = "cmdTemplateShowShort"
 )

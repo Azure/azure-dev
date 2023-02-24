@@ -45,32 +45,31 @@ func templatesActions(root *actions.ActionDescriptor) *actions.ActionDescriptor 
 
 	group := root.Add("template", &actions.ActionDescriptorOptions{
 		Command: cmd,
-		CommandHelpGenerator: func() string {
+		CommandHelpGenerator: func(c *cobra.Command) string {
 			return generateCmdHelp(
-				cmd,
-				getTemplateCmdDescription,
-				func(*cobra.Command) string { return getCmdHelpUsage(i18nCmdUpUsage) },                          // usage
-				func(cmd *cobra.Command) string { return getCmdHelpAvailableCommands(getCommandsDetails(cmd)) }, // commands
-				getCmdHelpFlags,
-				func(c *cobra.Command) string { return getCommonFooterNote(c.Name()) }, //footer
+				c,
+				getCmdTemplateHelpDescription,
+				getCmdHelpDefaultUsage,
+				getCmdHelpDefaultCommands,
+				getCmdHelpDefaultFlags,
+				getCmdHelpDefaultFooter,
 			)
 		},
 	})
 
-	listCmd := newTemplateListCmd()
 	group.Add("list", &actions.ActionDescriptorOptions{
-		Command:        listCmd,
+		Command:        newTemplateListCmd(),
 		ActionResolver: newTemplatesListAction,
 		OutputFormats:  []output.Format{output.JsonFormat, output.TableFormat},
 		DefaultFormat:  output.TableFormat,
-		CommandHelpGenerator: func() string {
+		CommandHelpGenerator: func(c *cobra.Command) string {
 			return generateCmdHelp(
-				listCmd,
-				func(c *cobra.Command) string { return formatHelpDescription(c.Short, nil) },                    // desc
-				func(*cobra.Command) string { return getCmdHelpUsage(i18nCmdUpUsage) },                          // usage
-				func(cmd *cobra.Command) string { return getCmdHelpAvailableCommands(getCommandsDetails(cmd)) }, // commands
-				getCmdHelpFlags,
-				func(*cobra.Command) string { return generateHelpFindFillBug() }, // footer
+				c,
+				getCmdHelpDefaultDescription,
+				getCmdHelpDefaultUsage,
+				getCmdHelpDefaultCommands,
+				getCmdHelpDefaultFlags,
+				getCmdHelpDefaultFooter,
 			)
 		},
 	})
@@ -80,6 +79,16 @@ func templatesActions(root *actions.ActionDescriptor) *actions.ActionDescriptor 
 		ActionResolver: newTemplatesShowAction,
 		OutputFormats:  []output.Format{output.JsonFormat, output.TableFormat},
 		DefaultFormat:  output.TableFormat,
+		CommandHelpGenerator: func(c *cobra.Command) string {
+			return generateCmdHelp(
+				c,
+				getCmdHelpDefaultDescription,
+				getCmdHelpDefaultUsage,
+				getCmdHelpDefaultCommands,
+				getCmdHelpDefaultFlags,
+				getCmdHelpDefaultFooter,
+			)
+		},
 	})
 
 	return group
@@ -160,7 +169,7 @@ func (a *templatesShowAction) Run(ctx context.Context) (*actions.ActionResult, e
 func newTemplateShowCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "show <template>",
-		Short: "Show the template details.",
+		Short: i18nGetText(i18nCmdTemplateShowShort),
 		Args:  cobra.ExactArgs(1),
 	}
 }
@@ -198,7 +207,7 @@ func formatTemplates(
 	return nil
 }
 
-func getTemplateCmdDescription(*cobra.Command) string {
+func getCmdTemplateHelpDescription(*cobra.Command) string {
 	title := i18nGetText(i18nCmdTemplateHelp)
 
 	var notes []string

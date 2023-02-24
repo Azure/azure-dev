@@ -86,4 +86,8 @@ const (
 	i18nCmdUpShort                        i18nTextId = "cmdUpShort"
 	i18nCmdPipelineShort                  i18nTextId = "cmdPipelineShort"
 	i18nCmdUpConsoleHelp                  i18nTextId = "cmdUpConsoleHelp"
+	i18nCmdUpRunningNote                  i18nTextId = "cmdUpRunningNote"
+	i18CmdUpViewNote                      i18nTextId = "cmdUpViewNote"
+	i18nCmdUpUsage                        i18nTextId = "cmdUpUsage"
+	i18nAvailableCommands                 i18nTextId = "availableCommands"
 )

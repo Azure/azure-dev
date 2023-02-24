@@ -7,10 +7,12 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/templates"
+	"github.com/nicksnyder/go-i18n/v2/i18n"
 	"github.com/spf13/cobra"
 	"golang.org/x/exp/maps"
 	"golang.org/x/exp/slices"
@@ -44,6 +46,15 @@ func templatesActions(root *actions.ActionDescriptor) *actions.ActionDescriptor 
 
 	group := root.Add("template", &actions.ActionDescriptorOptions{
 		Command: cmd,
+		CommandHelpGenerator: func() string {
+			return generateCmdHelp(
+				cmd,
+				getUpCmdDescription,
+				func(*cobra.Command) string { return getCmdHelpUsage(i18nCmdUpUsage) },
+				func(cmd *cobra.Command) string {
+					return getHelpCommands(i18nAvailableCommands, getCommandsDetails(cmd))
+				})
+		},
 	})
 
 	group.Add("list", &actions.ActionDescriptorOptions{
@@ -174,4 +185,39 @@ func formatTemplates(
 	}
 
 	return nil
+}
+
+func getTemplateCmdDescription(*cobra.Command) string {
+	title := i18nGetTextWithConfig(&i18n.LocalizeConfig{
+		MessageID: string(i18nCmdUpConsoleHelp),
+		TemplateData: struct {
+			AzdInit      string
+			AzdProvision string
+			AzdDeploy    string
+		}{
+			AzdInit:      output.WithHighLightFormat("azd up"),
+			AzdProvision: output.WithHighLightFormat("azd provision"),
+			AzdDeploy:    output.WithHighLightFormat("azd deploy"),
+		},
+	})
+
+	var notes []string
+	notes = append(notes, fmt.Sprintf("  • %s", i18nGetTextWithConfig(&i18n.LocalizeConfig{
+		MessageID: string(i18nCmdUpRunningNote),
+		TemplateData: struct {
+			AzdUp string
+		}{
+			AzdUp: output.WithHighLightFormat("azd up"),
+		},
+	})))
+	notes = append(notes, fmt.Sprintf("  • %s", i18nGetTextWithConfig(&i18n.LocalizeConfig{
+		MessageID: string(i18CmdUpViewNote),
+		TemplateData: struct {
+			ViewUrl string
+		}{
+			ViewUrl: output.WithLinkFormat(i18nGetText(i18nAwesomeAzdUrl)),
+		},
+	})))
+
+	return fmt.Sprintf("%s\n\n%s", title, strings.Join(notes, "\n"))
 }

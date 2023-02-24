@@ -83,6 +83,7 @@ Examples:
 After the deployment is complete, the endpoint is printed. To start the service, select the endpoint or paste it in a browser.`,
 	}
 	annotateGroupCmd(cmd, cmdGroupManage)
+	cmd.SetHelpTemplate("")
 	return cmd
 }
 

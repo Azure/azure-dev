@@ -252,26 +252,56 @@ func NewRootCmd(staticHelp bool, middlewareChain []*actions.MiddlewareRegistrati
 	}
 
 	// once the command is created, let's finalize the help template
-	cmd.SetHelpTemplate(getRootCmdHelp(cmd))
+	_ = getRootCmdHelp(cmd)
+	cmd.SetHelpTemplate(generateCmdHelp(
+		cmd,
+		func(c *cobra.Command) string { return c.Short }, // description
+		func(*cobra.Command) string { return getCmdHelpUsage(i18nAzdUsage) },
+		func(c *cobra.Command) string { return getHelpCommands(i18nCommands, getRootCommandsDetails(c)) },
+	))
 
 	return cmd
+}
+
+type cmdHelpGenerator func(cmd *cobra.Command) string
+
+func generateCmdHelp(
+	cmd *cobra.Command,
+	description cmdHelpGenerator,
+	usage cmdHelpGenerator,
+	commands cmdHelpGenerator) string {
+	return fmt.Sprintf("\n%s\n\n%s\n%s",
+		description(cmd),
+		usage(cmd),
+		commands(cmd),
+	)
+}
+
+func getCmdHelpUsage(usage i18nTextId) string {
+	return fmt.Sprintf("%s\n  %s\n",
+		output.WithBold(output.WithUnderline(i18nGetText(i18nUsage))), i18nGetText(usage))
+}
+
+func getHelpCommands(title i18nTextId, commands string) string {
+	if commands == "" {
+		return commands
+	}
+	return fmt.Sprintf("%s\n%s\n", output.WithBold(output.WithUnderline(i18nGetText(title))), commands)
 }
 
 func getRootCmdHelp(cmd *cobra.Command) string {
 	// root command doesn't use `cmd.Long`. It use Short for both.
 	description := cmd.Short
-	usage := fmt.Sprintf("%s\n  %s\n",
-		output.WithBold(output.WithUnderline(i18nGetText(i18nUsage))), i18nGetText(i18nAzdUsage))
 	commands := fmt.Sprintf("%s\n",
 		output.WithBold(output.WithUnderline(i18nGetText(i18nCommands))))
 	commandsDetails := getRootCommandsDetails(cmd)
 	flags := fmt.Sprintf("%s\n",
 		output.WithBold(output.WithUnderline(i18nGetText(i18nFlags))))
-	flagsDetails := getFlagsDetails(cmd)
+	flagsDetails := getRootCmdFlagsDetails(cmd)
 	footer := getRootCmdFooter(cmd)
 	return fmt.Sprintf("\n%s\n\n%s\n%s%s%s%s\n%s\n",
 		description,
-		usage,
+		getCmdHelpUsage(i18nAzdUsage),
 		commands,
 		commandsDetails,
 		flags,
@@ -299,7 +329,7 @@ func getRootCmdFooter(cmd *cobra.Command) string {
 	)
 }
 
-func getFlagsDetails(cmd *cobra.Command) (result string) {
+func getRootCmdFlagsDetails(cmd *cobra.Command) (result string) {
 	persistedFlags := cmd.NonInheritedFlags()
 	var lines []string
 	max := 0
@@ -386,9 +416,32 @@ func getRootCommandsDetails(cmd *cobra.Command) (result string) {
 	}
 
 	for _, title := range groups {
-		result += fmt.Sprintf("  %s\n    %s\n\n",
+		result += fmt.Sprintf("  %s\n    %s\n",
 			output.WithBold(i18nGetText(title)),
 			strings.Join(commandGroups[title], "\n    "))
 	}
 	return result
+}
+
+func getCommandsDetails(cmd *cobra.Command) (result string) {
+	childrenCommands := cmd.Commands()
+	if len(childrenCommands) == 0 {
+		return ""
+	}
+
+	// stores the longes line len
+	max := 0
+	var lines []string
+	for _, childCommand := range childrenCommands {
+		commandName := fmt.Sprintf("  %s", childCommand.Name())
+		commandNameLen := len(commandName)
+		if commandNameLen > max {
+			max = commandNameLen
+		}
+		lines = append(lines,
+			fmt.Sprintf("%s%s%s", commandName, endOfTitleSentinel, childCommand.Short))
+	}
+	// align all lines
+	alignTitles(lines, max)
+	return strings.Join(lines, "\n")
 }

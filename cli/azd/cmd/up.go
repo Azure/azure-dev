@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/cmd/middleware"
@@ -47,33 +48,16 @@ func newUpCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "up",
 		Short: i18nGetText(i18nCmdUpShort),
-		//nolint:lll
-		Long: `Initialize the project (if the project folder has not been initialized or cloned from a template), provision Azure resources, and deploy your project with a single command.
-
-This command executes the following in one step:
-
-	$ azd init
-	$ azd provision
-	$ azd deploy
-
-When no template is supplied, you can optionally select an Azure Developer CLI template for cloning. Otherwise, running ` + output.WithBackticks(
-			"azd up",
-		) + ` initializes the current directory so that your project is compatible with Azure Developer CLI.`,
 	}
 	annotateGroupCmd(cmd, cmdGroupManage)
-	cmd.SetHelpTemplate(i18nGetTextWithConfig(&i18n.LocalizeConfig{
-		MessageID: string(i18nCmdUpConsoleHelp),
-		TemplateData: struct {
-			AzdInit      string
-			AzdProvision string
-			AzdDeploy    string
-			Notes        string
-		}{
-			AzdInit:      output.WithHighLightFormat("azd up"),
-			AzdProvision: output.WithHighLightFormat("azd provision"),
-			AzdDeploy:    output.WithHighLightFormat("azd deploy"),
+	cmd.SetHelpTemplate(generateCmdHelp(
+		cmd,
+		getUpCmdDescription,
+		func(*cobra.Command) string { return getCmdHelpUsage(i18nCmdUpUsage) },
+		func(cmd *cobra.Command) string {
+			return getHelpCommands(i18nAvailableCommands, getCommandsDetails(cmd))
 		},
-	}))
+	))
 	return cmd
 }
 
@@ -156,4 +140,39 @@ func (u *upAction) runInit(ctx context.Context) error {
 	}
 
 	return err
+}
+
+func getUpCmdDescription(*cobra.Command) string {
+	title := i18nGetTextWithConfig(&i18n.LocalizeConfig{
+		MessageID: string(i18nCmdUpConsoleHelp),
+		TemplateData: struct {
+			AzdInit      string
+			AzdProvision string
+			AzdDeploy    string
+		}{
+			AzdInit:      output.WithHighLightFormat("azd up"),
+			AzdProvision: output.WithHighLightFormat("azd provision"),
+			AzdDeploy:    output.WithHighLightFormat("azd deploy"),
+		},
+	})
+
+	var notes []string
+	notes = append(notes, fmt.Sprintf("  • %s", i18nGetTextWithConfig(&i18n.LocalizeConfig{
+		MessageID: string(i18nCmdUpRunningNote),
+		TemplateData: struct {
+			AzdUp string
+		}{
+			AzdUp: output.WithHighLightFormat("azd up"),
+		},
+	})))
+	notes = append(notes, fmt.Sprintf("  • %s", i18nGetTextWithConfig(&i18n.LocalizeConfig{
+		MessageID: string(i18CmdUpViewNote),
+		TemplateData: struct {
+			ViewUrl string
+		}{
+			ViewUrl: output.WithLinkFormat(i18nGetText(i18nAwesomeAzdUrl)),
+		},
+	})))
+
+	return fmt.Sprintf("%s\n\n%s", title, strings.Join(notes, "\n"))
 }

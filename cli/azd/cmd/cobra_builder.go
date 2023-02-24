@@ -61,6 +61,10 @@ func (cb *CobraBuilder) BuildCommand(descriptor *actions.ActionDescriptor) (*cob
 		}
 	}
 
+	if descriptor.Options.CommandHelpGenerator != nil {
+		cmd.SetHelpTemplate(descriptor.Options.CommandHelpGenerator())
+	}
+
 	return cmd, nil
 }
 

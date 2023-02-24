@@ -29,11 +29,15 @@ func loadLocalizer() {
 }
 
 func i18nGetText(id i18nTextId) string {
-	if localizer == nil {
-		loadLocalizer()
-	}
 	config := &i18n.LocalizeConfig{
 		MessageID: string(id),
+	}
+	return i18nGetTextWithConfig(config)
+}
+
+func i18nGetTextWithConfig(config *i18n.LocalizeConfig) string {
+	if localizer == nil {
+		loadLocalizer()
 	}
 	return localizer.MustLocalize(config)
 }

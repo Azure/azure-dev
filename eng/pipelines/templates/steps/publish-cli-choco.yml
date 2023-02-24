@@ -23,7 +23,7 @@ steps:
       targetType: filePath
       filePath: eng/scripts/Get-MsiVersion.ps1
       arguments: >-
-        -Version '${{ parameters.CliVersion }}'
+        -CliVersion '${{ parameters.CliVersion }}'
         -DevOpsOutput
 
   - pwsh: |

@@ -31,6 +31,13 @@ func annotateGroupCmd(cmd *cobra.Command, group string) {
 }
 
 type cmdHelpGenerator func(cmd *cobra.Command) string
+type generateCmdHelpOptions struct {
+	Description cmdHelpGenerator
+	Usage       cmdHelpGenerator
+	Commands    cmdHelpGenerator
+	Flags       cmdHelpGenerator
+	Footer      cmdHelpGenerator
+}
 
 /*
 generateCmdHelp sets the base structure for displaying help documentation for a command in the console.
@@ -63,17 +70,21 @@ files for static help.
 */
 func generateCmdHelp(
 	cmd *cobra.Command,
-	description cmdHelpGenerator,
-	usage cmdHelpGenerator,
-	commands cmdHelpGenerator,
-	flags cmdHelpGenerator,
-	footer cmdHelpGenerator) string {
+	options generateCmdHelpOptions) string {
+
+	getGeneratorOrDefault := func(option, defaultOption cmdHelpGenerator) cmdHelpGenerator {
+		if option != nil {
+			return option
+		}
+		return defaultOption
+	}
+
 	return fmt.Sprintf("\n%s%s%s%s%s\n",
-		description(cmd),
-		usage(cmd),
-		commands(cmd),
-		flags(cmd),
-		footer(cmd),
+		getGeneratorOrDefault(options.Description, getCmdHelpDefaultDescription)(cmd),
+		getGeneratorOrDefault(options.Usage, getCmdHelpDefaultUsage)(cmd),
+		getGeneratorOrDefault(options.Commands, getCmdHelpDefaultCommands)(cmd),
+		getGeneratorOrDefault(options.Flags, getCmdHelpDefaultFlags)(cmd),
+		getGeneratorOrDefault(options.Footer, getCmdHelpDefaultFooter)(cmd),
 	)
 }
 

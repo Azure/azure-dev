@@ -215,9 +215,13 @@ func (cb *CobraBuilder) bindCommand(cmd *cobra.Command, descriptor *actions.Acti
 		}
 	}
 
-	if descriptor.Options.CommandHelpGenerator != nil {
-		cmd.SetHelpTemplate(descriptor.Options.CommandHelpGenerator(cmd))
-	}
+	cmd.SetHelpTemplate(generateCmdHelp(cmd, generateCmdHelpOptions{
+		Description: cmdHelpGenerator(descriptor.Options.HelpOptions.Description),
+		Usage:       cmdHelpGenerator(descriptor.Options.HelpOptions.Usage),
+		Commands:    cmdHelpGenerator(descriptor.Options.HelpOptions.Commands),
+		Flags:       cmdHelpGenerator(descriptor.Options.HelpOptions.Flags),
+		Footer:      cmdHelpGenerator(descriptor.Options.HelpOptions.Footer),
+	}))
 
 	return nil
 }

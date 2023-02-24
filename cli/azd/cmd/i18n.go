@@ -102,4 +102,8 @@ const (
 	i18nCmdInitHelp                       i18nTextId = "cmdInitHelp"
 	i18nCmdInitHelpSample                 i18nTextId = "cmdInitHelpSample"
 	i18nCmdInitHelpSampleBranch           i18nTextId = "cmdInitHelpSampleBranch"
+	i18nCmdProvisionHelp                  i18nTextId = "cmdProvisionHelp"
+	i18nCmdProvisionHelpNoteEnv           i18nTextId = "cmdProvisionHelpNoteEnv"
+	i18nCmdProvisionHelpNoteLocation      i18nTextId = "cmdProvisionHelpNoteLocation"
+	i18nCmdProvisionHelpNoteSubscription  i18nTextId = "cmdProvisionHelpNoteSubscription"
 )

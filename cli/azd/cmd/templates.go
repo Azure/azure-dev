@@ -45,15 +45,8 @@ func templatesActions(root *actions.ActionDescriptor) *actions.ActionDescriptor 
 
 	group := root.Add("template", &actions.ActionDescriptorOptions{
 		Command: cmd,
-		CommandHelpGenerator: func(c *cobra.Command) string {
-			return generateCmdHelp(
-				c,
-				getCmdTemplateHelpDescription,
-				getCmdHelpDefaultUsage,
-				getCmdHelpDefaultCommands,
-				getCmdHelpDefaultFlags,
-				getCmdHelpDefaultFooter,
-			)
+		HelpOptions: actions.ActionHelpOptions{
+			Description: getCmdTemplateHelpDescription,
 		},
 	})
 
@@ -62,16 +55,6 @@ func templatesActions(root *actions.ActionDescriptor) *actions.ActionDescriptor 
 		ActionResolver: newTemplatesListAction,
 		OutputFormats:  []output.Format{output.JsonFormat, output.TableFormat},
 		DefaultFormat:  output.TableFormat,
-		CommandHelpGenerator: func(c *cobra.Command) string {
-			return generateCmdHelp(
-				c,
-				getCmdHelpDefaultDescription,
-				getCmdHelpDefaultUsage,
-				getCmdHelpDefaultCommands,
-				getCmdHelpDefaultFlags,
-				getCmdHelpDefaultFooter,
-			)
-		},
 	})
 
 	group.Add("show", &actions.ActionDescriptorOptions{
@@ -79,16 +62,6 @@ func templatesActions(root *actions.ActionDescriptor) *actions.ActionDescriptor 
 		ActionResolver: newTemplatesShowAction,
 		OutputFormats:  []output.Format{output.JsonFormat, output.TableFormat},
 		DefaultFormat:  output.TableFormat,
-		CommandHelpGenerator: func(c *cobra.Command) string {
-			return generateCmdHelp(
-				c,
-				getCmdHelpDefaultDescription,
-				getCmdHelpDefaultUsage,
-				getCmdHelpDefaultCommands,
-				getCmdHelpDefaultFlags,
-				getCmdHelpDefaultFooter,
-			)
-		},
 	})
 
 	return group

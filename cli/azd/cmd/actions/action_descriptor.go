@@ -113,6 +113,15 @@ func (ad *ActionDescriptor) AddFlagCompletion(flagName string, flagCompletionFn 
 // Predicate function used to evaluate middleware registrations
 type UseMiddlewareWhenPredicate func(descriptor *ActionDescriptor) bool
 
+type ActionHelpGenerator func(cmd *cobra.Command) string
+type ActionHelpOptions struct {
+	Description ActionHelpGenerator
+	Usage       ActionHelpGenerator
+	Commands    ActionHelpGenerator
+	Flags       ActionHelpGenerator
+	Footer      ActionHelpGenerator
+}
+
 // ActionDescriptionOptions specifies all options for a given azd command and action
 type ActionDescriptorOptions struct {
 	// Cobra command configuration
@@ -128,7 +137,7 @@ type ActionDescriptorOptions struct {
 	// Whether or not telemetry should be disabled for the current action
 	DisableTelemetry bool
 	// The logic that produces the command help
-	CommandHelpGenerator func(*cobra.Command) string
+	HelpOptions ActionHelpOptions
 }
 
 // Completion function used for cobra command flag completion

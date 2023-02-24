@@ -5,6 +5,8 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/pkg/output"
+	"github.com/nicksnyder/go-i18n/v2/i18n"
 	"github.com/spf13/cobra"
 )
 
@@ -24,15 +26,6 @@ func newProvisionCmd() *cobra.Command {
 		Use:     "provision",
 		Aliases: []string{"infra create"},
 		Short:   i18nGetText(i18nCmdProvisionShort),
-		//nolint:lll
-		Long: `Provision the Azure resources for an app.
-
-The command prompts you for the following values:
-- Environment name: The name of your environment.
-- Azure location: The Azure location where your resources will be deployed.
-- Azure subscription: The Azure subscription where your resources will be deployed.
-
-Depending on what Azure resources are created, running this command might take a while. To view progress, go to the Azure portal and search for the resource group that contains your environment name.`,
 	}
 	annotateGroupCmd(cmd, cmdGroupManage)
 	return cmd
@@ -56,4 +49,20 @@ func newProvisionAction(
 
 func (a *provisionAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	return a.infraCreate.Run(ctx)
+}
+
+func getCmdProvisionHelpDescription(*cobra.Command) string {
+	title := i18nGetTextWithConfig(&i18n.LocalizeConfig{
+		MessageID: string(i18nCmdProvisionHelp),
+		TemplateData: struct {
+			Command string
+		}{
+			Command: output.WithHighLightFormat("azd provision"),
+		},
+	})
+	return formatHelpDescription(title, []string{
+		formatHelpNote(i18nGetText(i18nCmdProvisionHelpNoteEnv)),
+		formatHelpNote(i18nGetText(i18nCmdProvisionHelpNoteLocation)),
+		formatHelpNote(i18nGetText(i18nCmdProvisionHelpNoteSubscription)),
+	})
 }

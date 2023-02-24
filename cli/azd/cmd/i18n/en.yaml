@@ -55,3 +55,7 @@ cmdDownHelpSamplePurge: "Permanently delete resources that are soft-deleted by d
 cmdInitHelp: "Initialize a new application in your current directory."
 cmdInitHelpSample: "Initialize a template to your current local directory from a GitHub repo."
 cmdInitHelpSampleBranch: "Initialize a template to your current local directory from a branch other than main."
+cmdProvisionHelp: "Provision the Azure resources for an application This step may take a while depending on the resources provisioned. You should run {{.Command}} any time you update your Bicep or Terraform file.\n\nThis Command prompts you to input the following:"
+cmdProvisionHelpNoteEnv: "Environment name: The name of your environment (ex: dev, test, prod)."
+cmdProvisionHelpNoteLocation: "Azure location: The Azure location where your resources will be deployed."
+cmdProvisionHelpNoteSubscription: "Azure subscription: The Azure subscription where your resources will be deployed."

@@ -157,15 +157,9 @@ func NewRootCmd(staticHelp bool, middlewareChain []*actions.MiddlewareRegistrati
 		Command:        newInitCmd(),
 		FlagsResolver:  newInitFlags,
 		ActionResolver: newInitAction,
-		CommandHelpGenerator: func(c *cobra.Command) string {
-			return generateCmdHelp(
-				c,
-				getCmdInitHelpDescription,
-				getCmdHelpDefaultUsage,
-				getCmdHelpDefaultCommands,
-				getCmdHelpDefaultFlags,
-				getCmdInitHelpFooter,
-			)
+		HelpOptions: actions.ActionHelpOptions{
+			Description: getCmdInitHelpDescription,
+			Footer:      getCmdInitHelpFooter,
 		},
 	}).AddFlagCompletion("template", templateNameCompletion).
 		UseMiddleware("ensureLogin", middleware.NewEnsureLoginMiddleware)
@@ -177,6 +171,10 @@ func NewRootCmd(staticHelp bool, middlewareChain []*actions.MiddlewareRegistrati
 			ActionResolver: newProvisionAction,
 			OutputFormats:  []output.Format{output.JsonFormat, output.NoneFormat},
 			DefaultFormat:  output.NoneFormat,
+			HelpOptions: actions.ActionHelpOptions{
+				Description: getCmdProvisionHelpDescription,
+				Footer:      getCmdHelpDefaultFooter,
+			},
 		}).
 		UseMiddleware("hooks", middleware.NewHooksMiddleware)
 
@@ -187,6 +185,10 @@ func NewRootCmd(staticHelp bool, middlewareChain []*actions.MiddlewareRegistrati
 			ActionResolver: newDeployAction,
 			OutputFormats:  []output.Format{output.JsonFormat, output.NoneFormat},
 			DefaultFormat:  output.NoneFormat,
+			HelpOptions: actions.ActionHelpOptions{
+				Description: getCmdDeployHelpDescription,
+				Footer:      getCmdDeployHelpFooter,
+			},
 		}).
 		UseMiddleware("hooks", middleware.NewHooksMiddleware)
 
@@ -197,15 +199,9 @@ func NewRootCmd(staticHelp bool, middlewareChain []*actions.MiddlewareRegistrati
 			ActionResolver: newUpAction,
 			OutputFormats:  []output.Format{output.JsonFormat, output.NoneFormat},
 			DefaultFormat:  output.NoneFormat,
-			CommandHelpGenerator: func(c *cobra.Command) string {
-				return generateCmdHelp(
-					c,
-					getCmdUpHelpDescription,
-					getCmdHelpDefaultUsage,
-					getCmdHelpDefaultCommands,
-					getCmdHelpDefaultFlags,
-					getCmdUpHelpFooter,
-				)
+			HelpOptions: actions.ActionHelpOptions{
+				Description: getCmdUpHelpDescription,
+				Footer:      getCmdUpHelpFooter,
 			},
 		}).
 		AddFlagCompletion("template", templateNameCompletion).
@@ -224,15 +220,9 @@ func NewRootCmd(staticHelp bool, middlewareChain []*actions.MiddlewareRegistrati
 			ActionResolver: newDownAction,
 			OutputFormats:  []output.Format{output.JsonFormat, output.NoneFormat},
 			DefaultFormat:  output.NoneFormat,
-			CommandHelpGenerator: func(c *cobra.Command) string {
-				return generateCmdHelp(
-					c,
-					getCmdDownHelpDescription,
-					getCmdHelpDefaultUsage,
-					getCmdHelpDefaultCommands,
-					getCmdHelpDefaultFlags,
-					getCmdDownHelpFooter,
-				)
+			HelpOptions: actions.ActionHelpOptions{
+				Description: getCmdDownHelpDescription,
+				Footer:      getCmdDownHelpFooter,
 			},
 		}).
 		UseMiddleware("hooks", middleware.NewHooksMiddleware)
@@ -266,12 +256,11 @@ func NewRootCmd(staticHelp bool, middlewareChain []*actions.MiddlewareRegistrati
 	// The help template has to be set after calling `BuildCommand()` to ensure the command tree is built
 	cmd.SetHelpTemplate(generateCmdHelp(
 		cmd,
-		getCmdHelpDefaultDescription,
-		getCmdHelpDefaultUsage,
-		func(c *cobra.Command) string { return getCmdHelpGroupedCommands(getCmdRootHelpCommands(c)) },
-		getCmdHelpDefaultFlags,
-		getCmdRootHelpFooter,
-	))
+		generateCmdHelpOptions{
+			Description: getCmdHelpDefaultDescription,
+			Commands:    func(c *cobra.Command) string { return getCmdHelpGroupedCommands(getCmdRootHelpCommands(c)) },
+			Footer:      getCmdRootHelpFooter,
+		}))
 
 	return cmd
 }

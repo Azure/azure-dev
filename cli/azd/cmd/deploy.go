@@ -22,6 +22,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
+	"github.com/nicksnyder/go-i18n/v2/i18n"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
@@ -70,17 +71,6 @@ func newDeployCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "deploy",
 		Short: i18nGetText(i18nCmdDeployShort),
-		//nolint:lll
-		Long: `Deploy the app's code to Azure.
-When no ` + output.WithBackticks("--service") + ` value is specified, all services in the ` + output.WithBackticks("azure.yaml") + ` file (found in the root of your project) are deployed.
-
-Examples:
-
-	$ azd deploy
-	$ azd deploy --service api
-	$ azd deploy --service web
-	
-After the deployment is complete, the endpoint is printed. To start the service, select the endpoint or paste it in a browser.`,
 	}
 	annotateGroupCmd(cmd, cmdGroupManage)
 	cmd.SetHelpTemplate("")
@@ -213,4 +203,32 @@ func (d *deployAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 			FollowUp: getResourceGroupFollowUp(ctx, d.formatter, d.azCli, d.projectConfig, d.env),
 		},
 	}, nil
+}
+
+func getCmdDeployHelpDescription(*cobra.Command) string {
+	title := i18nGetTextWithConfig(&i18n.LocalizeConfig{
+		MessageID: string(i18nCmdProvisionHelp),
+		TemplateData: struct {
+			Command string
+		}{
+			Command: output.WithHighLightFormat("azd provision"),
+		},
+	})
+	return formatHelpDescription(title, []string{
+		formatHelpNote(i18nGetText(i18nCmdProvisionHelpNoteEnv)),
+		formatHelpNote(i18nGetText(i18nCmdProvisionHelpNoteLocation)),
+		formatHelpNote(i18nGetText(i18nCmdProvisionHelpNoteSubscription)),
+	})
+}
+
+func getCmdDeployHelpFooter(*cobra.Command) string {
+	var samples []string
+	samples = append(samples, getCmdHelpSample(
+		i18nGetText(i18nCmdUpFooterSample),
+		fmt.Sprintf("%s %s",
+			output.WithHighLightFormat("azd up --template"),
+			output.WithWarningFormat("[GitHub repo URL]"),
+		)),
+	)
+	return getCmdHelpSamplesBlock(samples)
 }

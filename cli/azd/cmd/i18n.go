@@ -85,4 +85,5 @@ const (
 	i18nCmdProvisionShort                 i18nTextId = "cmdProvisionShort"
 	i18nCmdUpShort                        i18nTextId = "cmdUpShort"
 	i18nCmdPipelineShort                  i18nTextId = "cmdPipelineShort"
+	i18nCmdUpConsoleHelp                  i18nTextId = "cmdUpConsoleHelp"
 )

@@ -100,7 +100,7 @@ func createAndInitEnvironment(
 		return nil, fmt.Errorf("initializing environment: %w", err)
 	}
 
-	telemetry.SetGlobalAttributes(fields.StringHashed(fields.SubscriptionIdKey, env.GetSubscriptionId()))
+	telemetry.SetGlobalAttributes(fields.SubscriptionIdKey.String(env.GetSubscriptionId()))
 	return env, nil
 }
 
@@ -189,7 +189,7 @@ func loadOrInitEnvironment(
 		}
 	}
 
-	telemetry.SetGlobalAttributes(fields.StringHashed(fields.SubscriptionIdKey, env.GetSubscriptionId()))
+	telemetry.SetGlobalAttributes(fields.SubscriptionIdKey.String(env.GetSubscriptionId()))
 
 	return env, nil
 }

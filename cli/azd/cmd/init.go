@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/MakeNowJust/heredoc/v2"
@@ -57,6 +58,7 @@ type initFlags struct {
 	template       templates.Template
 	templateBranch string
 	subscription   string
+	scaffold       bool
 	location       string
 	global         *internal.GlobalCommandOptions
 	*envFlag
@@ -148,166 +150,143 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		return nil, err
 	}
 
-	if _, err := os.Stat(azdCtx.ProjectPath()); err == nil {
-		i.console.Message(ctx, "Already initialized.")
-		return nil, nil
-	}
-
 	// Command title
 	i.console.MessageUxItem(ctx, &ux.MessageTitle{
 		Title: "Initializing a new project (azd init)",
 	})
 
-	existingApp, err := i.console.Confirm(ctx, input.ConsoleOptions{
-		Message:      "Do you have an existing app?",
-		DefaultValue: false,
-	})
-
-	if err != nil {
-		return nil, err
-	}
-
-	if existingApp {
-		appLocationIndex, err := i.console.Select(ctx, input.ConsoleOptions{
-			Message: "The Azure Developer CLI can analyze your app and suggest cloud infrastructure. " +
-				"Where is your existing app?",
+	if i.flags.template.Name != "" {
+		// Explicit template specified, always initialize
+		err = i.initializeFromTemplate(ctx, azdCtx, &i.flags.template, i.flags.templateBranch)
+		if err != nil {
+			return nil, err
+		}
+	} else if _, err := os.Stat(azdCtx.ProjectPath()); errors.Is(err, os.ErrNotExist) {
+		// Only prompt if azure.yaml is not present
+		choice, err := i.console.Select(ctx, input.ConsoleOptions{
+			Message: "How would you like to initialize your app?",
 			Options: []string{
-				"Under the current directory",
-				"On GitHub",
+				"Select an official template",
+				"Enter a template URL",
+				"Scaffold my existing app",
 			},
-			DefaultValue: "Under the current directory",
 		})
-
 		if err != nil {
 			return nil, err
 		}
 
-		if appLocationIndex == 1 {
-			_, err := i.console.Prompt(ctx, input.ConsoleOptions{
-				Message: "Please enter a GitHub URL:",
-			})
-
+		if choice == 0 {
+			i.flags.template, err = templates.PromptTemplate(ctx, "Select a project template:", i.console)
 			if err != nil {
 				return nil, err
 			}
-		}
-
-		projects, err := appdetect.Detect(azdCtx.ProjectDirectory())
-		useOptions := repository.InfraUseOptions{}
-		if err != nil {
-			log.Printf("error during detection: %v", err)
-		}
-
-		if err == nil && len(projects) > 0 {
-			useDetection, err := i.console.Confirm(
-				ctx,
-				input.ConsoleOptions{
-					//nolint:lll
-					Message: heredoc.Docf(
-						`Your existing app is described as follows:
-						%s
-						Is that right?`,
-						describe(projects)),
-				})
-			if err != nil {
-				return nil, err
-			}
-
-			if useDetection {
-				character := templates.Characteristics{}
-				extractCharacteristics(projects, &character, &useOptions)
-				err := templates.PromptToFillCharacteristics(ctx, i.console, &character)
-				if err != nil {
-					return nil, err
-				}
-
-				i.flags.template, err = templates.MatchOne(ctx, i.console, character)
-				if err != nil {
-					return nil, err
-				}
-			}
-		}
-
-		if i.flags.template.RepositoryPath == "" {
-			useOptions, err = i.searchForTemplate(ctx, useOptions)
-			if err != nil && !errors.Is(err, templates.ErrTemplateNotMatched) {
-				return nil, err
-			}
-
-			if err != nil && errors.Is(err, templates.ErrTemplateNotMatched) {
-				showTemplates, err := i.console.Confirm(
-					ctx,
-					input.ConsoleOptions{
-						//nolint:lll
-						Message: "Would you like to be shown list of project templates instead?",
-					})
-
-				if err != nil || !showTemplates {
-					return nil, err
-				}
-
-				i.flags.template, err = templates.PromptTemplate(ctx, "Select a project template:", i.console)
-
-				if err != nil {
-					return nil, err
-				}
-			}
-		}
-
-		err = i.repoInitializer.InitializeInfra(ctx, azdCtx, i.flags.template.RepositoryPath, "", useOptions)
-		if err != nil {
-			return nil, fmt.Errorf("initializing infrastructure from template: %w", err)
-		}
-	} else {
-		// Project not initialized and no template specified
-		// NOTE: Adding `azure.yaml` to a folder removes the option from selecting a template
-		if _, err := os.Stat(azdCtx.ProjectPath()); err != nil && errors.Is(err, os.ErrNotExist) {
 
 			if i.flags.template.Name == "" {
-				i.flags.template, err = templates.PromptTemplate(ctx, "Select a project template:", i.console)
-
-				if err != nil {
-					return nil, err
-				}
-			}
-		}
-
-		if i.flags.template.Name != "" {
-			var templateUrl string
-
-			if i.flags.template.RepositoryPath == "" {
-				// using template name directly from command line
-				i.flags.template.RepositoryPath = i.flags.template.Name
-			}
-
-			// treat names that start with http or git as full URLs and don't change them
-			if strings.HasPrefix(i.flags.template.RepositoryPath, "git") ||
-				strings.HasPrefix(i.flags.template.RepositoryPath, "http") {
-				templateUrl = i.flags.template.RepositoryPath
-			} else {
-				switch strings.Count(i.flags.template.RepositoryPath, "/") {
-				case 0:
-					templateUrl = fmt.Sprintf("https://github.com/Azure-Samples/%s", i.flags.template.RepositoryPath)
-				case 1:
-					templateUrl = fmt.Sprintf("https://github.com/%s", i.flags.template.RepositoryPath)
-				default:
-					return nil, fmt.Errorf(
-						"template '%s' should be either <repository> or <repo>/<repository>", i.flags.template.RepositoryPath)
-				}
-			}
-
-			err = i.repoInitializer.Initialize(ctx, azdCtx, templateUrl, i.flags.templateBranch)
-			if err != nil {
-				return nil, fmt.Errorf("init from template repository: %w", err)
-			}
-		} else {
-			if _, err := os.Stat(azdCtx.ProjectPath()); errors.Is(err, os.ErrNotExist) {
 				err = i.repoInitializer.InitializeEmpty(ctx, azdCtx)
 				if err != nil {
 					return nil, fmt.Errorf("init empty repository: %w", err)
 				}
+			} else {
+				err = i.initializeFromTemplate(ctx, azdCtx, &i.flags.template, i.flags.templateBranch)
+				if err != nil {
+					return nil, err
+				}
 			}
+		} else if choice == 1 {
+			i.console.Message(
+				ctx,
+				"Template URL formats: <owner>/<repository> for a GitHub repository, or a full git URL.")
+			answer, err := i.console.Prompt(ctx, input.ConsoleOptions{
+				Message: "Enter a template URL",
+			})
+			if err != nil {
+				return nil, err
+			}
+
+			i.flags.template.Name = answer
+			err = i.initializeFromTemplate(ctx, azdCtx, &i.flags.template, i.flags.templateBranch)
+			if err != nil {
+				return nil, err
+			}
+		} else {
+			i.console.ShowSpinner(ctx, "Analyzing app in current directory...", input.Step)
+
+			projects, err := appdetect.Detect(azdCtx.ProjectDirectory())
+			if err != nil {
+				return nil, fmt.Errorf("failed app detection: %w", err)
+			}
+			msg, err := describe(projects, azdCtx)
+			if err != nil {
+				return nil, err
+			}
+
+			i.console.StopSpinner(
+				ctx, "Analyzed app in current directory. Found:\n"+msg, input.StepDone)
+
+			useOptions := repository.InfraUseOptions{}
+			c := templates.Characteristics{}
+			extractCharacteristics(projects, &c, &useOptions)
+			err = i.repoInitializer.ScaffoldProject(ctx, "azure.draft.yaml", azdCtx, useOptions.Projects)
+			if err != nil {
+				return nil, err
+			}
+
+			if len(projects) == 0 {
+				i.console.Message(ctx, "Could not find any projects under the current directory.")
+				//nolint:lll
+				i.console.Message(ctx, fmt.Sprintf("Generated an empty %s in the current directory", output.WithLinkFormat("azure.draft.yaml")))
+			} else {
+				//nolint:lll
+				i.console.Message(ctx, fmt.Sprintf("Generated %s in the current directory", output.WithLinkFormat("azure.draft.yaml")))
+			}
+
+			for {
+				confirm, err := i.console.Prompt(ctx, input.ConsoleOptions{
+					Message: fmt.Sprintf(
+						"Please confirm or make changes to %s, then press 'c' to proceed or 'x' to exit",
+						output.WithLinkFormat("azure.draft.yaml"))})
+				if err != nil {
+					return nil, err
+				}
+
+				if confirm == "x" {
+					return nil, nil
+				}
+
+				if confirm == "c" {
+					break
+				}
+			}
+			i.console.MessageUxItem(ctx, &ux.DoneMessage{Message: "Renaming to " + output.WithLinkFormat("azure.yaml")})
+
+			err = os.Rename(filepath.Join(azdCtx.ProjectDirectory(), "azure.draft.yaml"), azdCtx.ProjectPath())
+			if err != nil {
+				return nil, err
+			}
+
+			i.flags.template, err = templates.MatchOne(ctx, i.console, c)
+			if err != nil {
+				return nil, err
+			}
+
+			err = i.repoInitializer.InitializeInfra(ctx, azdCtx, i.flags.template.RepositoryPath, "", useOptions)
+			if err != nil {
+				return nil, fmt.Errorf("generating infrastructure: %w", err)
+			}
+
+			return &actions.ActionResult{
+				Message: &actions.ResultMessage{
+					Header: "New project initialized!",
+					FollowUp: heredoc.Docf(`
+						Make changes to infrastructure-as-code (IaC) files under the %s folder as needed.
+						To deploy your app to Azure, run 'azd up'
+					`,
+						output.WithLinkFormat("infra")),
+				},
+			}, nil
 		}
+	} else if err != nil {
+		return nil, err
 	}
 
 	envName, err := azdCtx.GetDefaultEnvironmentName()
@@ -414,6 +393,42 @@ func extractCharacteristics(
 	}
 }
 
+func (i *initAction) initializeFromTemplate(
+	ctx context.Context,
+	azdCtx *azdcontext.AzdContext,
+	template *templates.Template,
+	templateBranch string) error {
+	var templateUrl string
+
+	if template.RepositoryPath == "" {
+		// using template name directly from command line
+		template.RepositoryPath = template.Name
+	}
+
+	// treat names that start with http or git as full URLs and don't change them
+	if strings.HasPrefix(template.RepositoryPath, "git") ||
+		strings.HasPrefix(template.RepositoryPath, "http") {
+		templateUrl = template.RepositoryPath
+	} else {
+		switch strings.Count(template.RepositoryPath, "/") {
+		case 0:
+			templateUrl = fmt.Sprintf("https://github.com/Azure-Samples/%s", template.RepositoryPath)
+		case 1:
+			templateUrl = fmt.Sprintf("https://github.com/%s", template.RepositoryPath)
+		default:
+			return fmt.Errorf(
+				"template '%s' should be either <repository> or <repo>/<repository>", template.RepositoryPath)
+		}
+	}
+
+	err := i.repoInitializer.Initialize(ctx, azdCtx, templateUrl, templateBranch)
+	if err != nil {
+		return fmt.Errorf("init from template repository: %w", err)
+	}
+
+	return nil
+}
+
 func (i *initAction) searchForTemplate(
 	ctx context.Context,
 	useOptions repository.InfraUseOptions) (repository.InfraUseOptions, error) {
@@ -434,16 +449,37 @@ func (i *initAction) searchForTemplate(
 	return useOptions, err
 }
 
-func describe(projects []appdetect.Project) string {
+func describeSimply(projects []appdetect.Project) string {
+	descriptions := make([]string, 0, len(projects))
+	for _, p := range projects {
+		hasWeb := p.HasWebUIFramework()
+		lang := p.Language
+		if hasWeb {
+			frameworks := []string{}
+			for _, f := range p.Frameworks {
+				if f.IsWebUIFramework() {
+					frameworks = append(frameworks, f.Display())
+				}
+			}
+
+			lang += "(" + strings.Join(frameworks, ", ") + ")"
+		}
+
+		if p.Docker != nil {
+			lang += " using containers"
+		}
+
+		descriptions = append(descriptions, lang)
+	}
+
+	return strings.Join(descriptions, ", ")
+}
+
+func describe(projects []appdetect.Project, azdCtx *azdcontext.AzdContext) (string, error) {
 	var b strings.Builder
 	for _, p := range projects {
 		hasWeb := p.HasWebUIFramework()
-		description := "Web API"
-		if hasWeb {
-			description = "Web App"
-		}
-
-		lang := p.Language
+		lang := strings.Title(p.Language)
 		if p.Docker != nil {
 			lang += " using containers"
 		}
@@ -459,8 +495,27 @@ func describe(projects []appdetect.Project) string {
 			lang = strings.Join(frameworks, ", ")
 		}
 
-		b.WriteString(fmt.Sprintf("  - %s (%s) at %s\n", description, lang, p.Path))
+		rel, err := filepath.Rel(azdCtx.ProjectPath(), p.Path)
+		if rel == "." || rel == ".." {
+			rel = "current directory"
+		}
+
+		if err != nil {
+			return "", err
+		}
+		b.WriteString(fmt.Sprintf("  - %s project at %s\n", lang, rel))
 	}
 
-	return b.String()
+	return b.String(), nil
+}
+
+func exists(path string) (bool, error) {
+	_, err := os.Stat(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return false, nil
+	} else if err != nil {
+		return false, err
+	}
+
+	return true, nil
 }

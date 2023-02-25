@@ -63,6 +63,41 @@ func LanguageDisplayOptions() map[string]string {
 	}
 }
 
+func (i *Initializer) ScaffoldProject(
+	ctx context.Context,
+	name string,
+	azdCtx *azdcontext.AzdContext,
+	projects []ProjectSpec) error {
+	prj := project.ProjectConfig{}
+	prj.Name = azdCtx.GetDefaultProjectName()
+	prj.Services = map[string]*project.ServiceConfig{}
+	for _, spec := range projects {
+		// TODO: This is a hack while prompts are not yet supported.
+		serviceName := "api"
+		if spec.HackIsWeb {
+			serviceName = "web"
+		}
+		rel, err := filepath.Rel(azdCtx.ProjectDirectory(), spec.Path)
+		if err != nil {
+			return fmt.Errorf("creating %s: %w", name, err)
+		}
+
+		prj.Services[serviceName] = &project.ServiceConfig{
+			RelativePath: rel,
+			OutputPath:   spec.OutputPath,
+			// TODO: should default based on project
+			Host:     spec.Host,
+			Language: spec.Language,
+		}
+	}
+
+	err := project.Save(filepath.Join(azdCtx.ProjectDirectory(), name), prj)
+	if err != nil {
+		return fmt.Errorf("creating %s: %w", name, err)
+	}
+	return nil
+}
+
 func (i *Initializer) InitializeInfra(ctx context.Context,
 	azdCtx *azdcontext.AzdContext,
 	templateUrl string,
@@ -70,8 +105,8 @@ func (i *Initializer) InitializeInfra(ctx context.Context,
 	useOptions InfraUseOptions) error {
 	var err error
 	stepMessage := fmt.Sprintf(
-		"Initializing infrastructure code in: %s",
-		output.WithLinkFormat("%s", filepath.Join(azdCtx.ProjectDirectory(), "infra")))
+		"Generating infrastructure-as-code (IaC) files under the %s folder",
+		output.WithLinkFormat("infra"))
 	i.console.ShowSpinner(ctx, stepMessage, input.Step)
 	defer i.console.StopSpinner(ctx, "", input.GetStepResultFormat(err))
 
@@ -86,34 +121,10 @@ func (i *Initializer) InitializeInfra(ctx context.Context,
 	}
 	i.console.StopSpinner(ctx, stepMessage, input.GetStepResultFormat(err))
 
-	stepMessage = fmt.Sprintf("Generating project file: %s", azdcontext.ProjectFileName)
-	i.console.ShowSpinner(ctx, stepMessage, input.Step)
-	prj := project.ProjectConfig{}
-	prj.Name = azdCtx.GetDefaultProjectName()
-	prj.Services = map[string]*project.ServiceConfig{}
-	for _, spec := range useOptions.Projects {
-		// TODO: This is a hack while prompts are not yet supported.
-		serviceName := "api"
-		if spec.HackIsWeb {
-			serviceName = "web"
-		}
-		rel, err := filepath.Rel(azdCtx.ProjectDirectory(), spec.Path)
-		if err != nil {
-			return fmt.Errorf("creating azure.yaml: %w", err)
-		}
-
-		prj.Services[serviceName] = &project.ServiceConfig{
-			RelativePath: rel,
-			Host:         spec.Host,
-			Language:     spec.Language,
-		}
-	}
-
-	err = project.Save(azdCtx.ProjectPath(), prj)
+	err = i.writeAzdAssets(ctx, azdCtx)
 	if err != nil {
-		return fmt.Errorf("creating azure.yaml: %w", err)
+		return err
 	}
-	i.console.StopSpinner(ctx, stepMessage, input.GetStepResultFormat(err))
 
 	return nil
 }

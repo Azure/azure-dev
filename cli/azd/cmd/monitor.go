@@ -16,8 +16,10 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/cli/browser"
+	"github.com/nicksnyder/go-i18n/v2/i18n"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
@@ -54,15 +56,6 @@ func newMonitorCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "monitor",
 		Short: i18nGetText(i18nCmdMonitorShort),
-		Long: `Monitor a deployed app.
-
-Examples:
-
-	$ azd monitor --overview
-	$ azd monitor -–live
-	$ azd monitor --logs
-
-For more information, go to https://aka.ms/azure-dev/monitor.`,
 	}
 	annotateGroupCmd(cmd, cmdGroupMonitor)
 	return cmd
@@ -185,4 +178,26 @@ func (m *monitorAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 	}
 
 	return nil, nil
+}
+
+func getCmdMonitorHelpDescription(*cobra.Command) string {
+	return formatHelpDescription(i18nGetTextWithConfig(&i18n.LocalizeConfig{
+		MessageID: string(i18nCmdMonitorHelp),
+		TemplateData: struct {
+			Url string
+		}{
+			Url: output.WithLinkFormat("https://aka.ms/azure-dev/monitor"),
+		},
+	}), nil)
+}
+
+func getCmdMonitorHelpFooter(c *cobra.Command) string {
+	return getCmdHelpSamplesBlock([]string{
+		getCmdHelpSample(i18nGetText(i18nCmdMonitorHelpSample),
+			output.WithHighLightFormat("azd monitor --overview")),
+		getCmdHelpSample(i18nGetText(i18nCmdMonitorHelpSample),
+			output.WithHighLightFormat("azd monitor --live")),
+		getCmdHelpSample(i18nGetText(i18nCmdMonitorHelpSample),
+			output.WithHighLightFormat("azd monitor --logs")),
+	})
 }

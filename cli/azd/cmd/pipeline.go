@@ -5,6 +5,7 @@ package cmd
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/MakeNowJust/heredoc/v2"
@@ -18,6 +19,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
+	"github.com/nicksnyder/go-i18n/v2/i18n"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
@@ -57,17 +59,15 @@ func (pc *pipelineConfigFlags) Bind(local *pflag.FlagSet, global *internal.Globa
 func pipelineActions(root *actions.ActionDescriptor) *actions.ActionDescriptor {
 	pipelineCmd := &cobra.Command{
 		Use:   "pipeline",
-		Short: "Manage GitHub Actions or Azure Pipelines.",
-		//nolint:lll
-		Long: `Manage GitHub Actions or Azure Pipelines.
-
-The Azure Developer CLI template includes a GitHub Actions and an Azure Pipeline configuration file in the ` + output.WithBackticks(`.github/workflows`) + ` and ` + output.WithBackticks(`.azdo/pipelines`) + ` directories respectively. The configuration file deploys your app whenever code is pushed to the main branch.
-
-For more information, go to https://aka.ms/azure-dev/pipeline.`,
+		Short: i18nGetText(i18nCmdPipelineShort),
 	}
 	annotateGroupCmd(pipelineCmd, cmdGroupMonitor)
 	group := root.Add("pipeline", &actions.ActionDescriptorOptions{
 		Command: pipelineCmd,
+		HelpOptions: actions.ActionHelpOptions{
+			Description: getCmdPipelineHelpDescription,
+			Footer:      getCmdPipelineHelpFooter,
+		},
 	})
 
 	group.Add("config", &actions.ActionDescriptorOptions{
@@ -89,7 +89,7 @@ func newPipelineConfigFlags(cmd *cobra.Command, global *internal.GlobalCommandOp
 func newPipelineConfigCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "config",
-		Short: i18nGetText(i18nCmdPipelineShort),
+		Short: i18nGetText(i18nCmdPipelineConfigShort),
 		Long: `Create and configure your deployment pipeline by using GitHub Actions or Azure Pipelines.
 
 For more information, go to https://aka.ms/azure-dev/pipeline.`,
@@ -166,4 +166,37 @@ func (p *pipelineConfigAction) Run(ctx context.Context) (*actions.ActionResult, 
 				output.WithLinkFormat("%s", pipelineResult.PipelineLink)),
 		},
 	}, nil
+}
+
+func getCmdPipelineHelpDescription(*cobra.Command) string {
+	return formatHelpDescription(
+		i18nGetText(i18nCmdPipelineHelp),
+		[]string{
+			formatHelpNote(i18nGetTextWithConfig(&i18n.LocalizeConfig{
+				MessageID: string(i18nCmdPipelineHelpNote),
+				TemplateData: struct {
+					Path string
+				}{
+					Path: output.WithLinkFormat(".github/workflows"),
+				},
+			})),
+			formatHelpNote(i18nGetTextWithConfig(&i18n.LocalizeConfig{
+				MessageID: string(i18nCmdPipelineHelpNoteGoto),
+				TemplateData: struct {
+					Url string
+				}{
+					Url: output.WithLinkFormat("https://aka.ms/azure-dev/pipeline"),
+				},
+			})),
+		})
+}
+
+func getCmdPipelineHelpFooter(c *cobra.Command) string {
+	return fmt.Sprintf("%s\n%s",
+		getCommonFooterNote(c.CommandPath()),
+		getCmdHelpSamplesBlock([]string{
+			getCmdHelpSample(i18nGetText(i18nCmdPipelineHelpSample),
+				output.WithHighLightFormat("azd pipeline config")),
+		}),
+	)
 }

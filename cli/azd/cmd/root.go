@@ -215,6 +215,10 @@ func NewRootCmd(staticHelp bool, middlewareChain []*actions.MiddlewareRegistrati
 		Command:        newMonitorCmd(),
 		FlagsResolver:  newMonitorFlags,
 		ActionResolver: newMonitorAction,
+		HelpOptions: actions.ActionHelpOptions{
+			Description: getCmdMonitorHelpDescription,
+			Footer:      getCmdMonitorHelpFooter,
+		},
 	})
 
 	root.

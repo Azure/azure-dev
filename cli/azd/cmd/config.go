@@ -341,15 +341,17 @@ func getCmdConfigHelpDescription(*cobra.Command) string {
 		})
 }
 
-func getCmdConfigHelpFooter(*cobra.Command) string {
-	return getCmdHelpSamplesBlock([]string{
-		getCmdHelpSample(i18nGetText(i18nCmdConfigHelpSample),
-			fmt.Sprintf("%s %s",
-				output.WithHighLightFormat("azd config set defaults.subscription"),
-				output.WithWarningFormat("<yourSubscriptionID>"))),
-		getCmdHelpSample(i18nGetText(i18nCmdConfigHelpSample),
-			fmt.Sprintf("%s %s",
-				output.WithHighLightFormat("azd config set defaults.location"),
-				output.WithWarningFormat("<location>"))),
-	})
+func getCmdConfigHelpFooter(c *cobra.Command) string {
+	return fmt.Sprintf("%s\n%s",
+		getCommonFooterNote(c.CommandPath()),
+		getCmdHelpSamplesBlock([]string{
+			getCmdHelpSample(i18nGetText(i18nCmdConfigHelpSample),
+				fmt.Sprintf("%s %s",
+					output.WithHighLightFormat("azd config set defaults.subscription"),
+					output.WithWarningFormat("<yourSubscriptionID>"))),
+			getCmdHelpSample(i18nGetText(i18nCmdConfigHelpSample),
+				fmt.Sprintf("%s %s",
+					output.WithHighLightFormat("azd config set defaults.location"),
+					output.WithWarningFormat("<location>"))),
+		}))
 }

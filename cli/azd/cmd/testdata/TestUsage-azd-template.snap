@@ -2,8 +2,8 @@ Usage:
   azd template [command]
 
 Available Commands:
-  list        List templates.
-  show        Show the template details.
+  list        Show list of sample azd templates.
+  show        Show details for a given template.
 
 Flags:
   -h, --help   Gets help for template.

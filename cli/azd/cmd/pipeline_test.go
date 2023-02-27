@@ -16,7 +16,7 @@ func TestPipelineCmd(t *testing.T) {
 	root := actions.NewActionDescriptor("azd", &actions.ActionDescriptorOptions{})
 	group := pipelineActions(root)
 	assert.EqualValues(t, "pipeline", group.Options.Command.Use)
-	assert.EqualValues(t, "Manage GitHub Actions or Azure Pipelines.", group.Options.Command.Short)
+	assert.EqualValues(t, "Manage and configure your deployment pipelines.", group.Options.Command.Short)
 
 	childCommands := group.Children()
 	assert.EqualValues(t, 1, len(childCommands))
@@ -25,7 +25,7 @@ func TestPipelineCmd(t *testing.T) {
 func TestPipelineConfigCmd(t *testing.T) {
 	command := newPipelineConfigCmd()
 	assert.EqualValues(t, "config", command.Use)
-	assert.EqualValues(t, "Create and configure your deployment pipeline by using GitHub Actions or Azure Pipelines.",
+	assert.EqualValues(t, "Create and configure your deployment pipeline by using GitHub or Azdo Actions.",
 		command.Short)
 
 	childCommands := command.Commands()

@@ -2,20 +2,20 @@ Usage:
   azd [command]
 
 Available Commands:
-  config      Manage the Azure Developer CLI user configuration.
-  deploy      Deploy the app's code to Azure.
-  down        Delete Azure resources for an app.
+  config      Manage azd configurations (ex: default Azure subscription, location).
+  deploy      Deploy the application's code to Azure.
+  down        Delete Azure resources for an application.
   env         Manage environments.
-  infra       Manage Azure resources.
-  init        Initialize a new app.
+  infra       Manage your Azure infrastructure.
+  init        Initialize a new application.
   login       Log in to Azure.
-  logout      Log out of Azure
-  monitor     Monitor a deployed app.
-  pipeline    Manage GitHub Actions or Azure Pipelines.
-  provision   Provision the Azure resources for an app.
-  restore     Restore app dependencies.
-  template    Manage templates.
-  up          Initialize the app, provision Azure resources, and deploy your project with a single command.
+  logout      Log out of Azure.
+  monitor     Monitor a deployed application.
+  pipeline    Manage and configure your deployment pipelines.
+  provision   Provision the Azure resources for an application.
+  restore     Restore application dependencies.
+  template    Find and view template details.
+  up          Initialize application, provision Azure resources, and deploy your project with a single command.
   version     Print the version number of Azure Developer CLI.
 
 Flags:

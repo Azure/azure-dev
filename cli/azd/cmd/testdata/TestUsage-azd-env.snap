@@ -7,7 +7,7 @@ Available Commands:
   new         Create a new environment.
   refresh     Refresh environment settings by using information from a previous infrastructure provision.
   select      Set the default environment.
-  set         Set a value in the environment.
+  set         Manage your environment settings.
 
 Flags:
   -h, --help   Gets help for env.

@@ -35,6 +35,9 @@ resource containerRegistry 'Microsoft.ContainerRegistry/registries@2022-02-01-pr
   }
 }
 
+// TODO: Update diagnostics to be its own module
+// Blocking issue: https://github.com/Azure/bicep/issues/622
+// Unable to pass in a `resource` scope or unable to use string interpolation in resource types
 resource diagnostics 'Microsoft.Insights/diagnosticSettings@2021-05-01-preview' = if (!empty(workspaceId)) {
   name: 'registry-diagnostics'
   tags: tags

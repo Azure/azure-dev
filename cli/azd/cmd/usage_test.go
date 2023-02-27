@@ -22,7 +22,7 @@ func TestUsage(t *testing.T) {
 
 func usageSnapshot(t *testing.T, cmd *cobra.Command) {
 	t.Run(cmd.Name(), func(t *testing.T) {
-		snapshot.SnapshotT(t, cmd.UsageString())
+		snapshot.SnapshotT(t, cmd.HelpTemplate())
 
 		for _, c := range cmd.Commands() {
 			if !c.IsAvailableCommand() || c.IsAdditionalHelpTopicCommand() {

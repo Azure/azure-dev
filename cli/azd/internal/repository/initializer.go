@@ -143,14 +143,15 @@ func copyTemplateFS(templateFs embed.FS, useOptions InfraUseOptions, template st
 		return err
 	}
 
+	useLang := mapLanguage(useOptions.Language)
 	possibleLanguages := maps.Values(LanguageDisplayOptions())
 	unmatchedLanguageSuffixes := []string{}
 	for _, lang := range possibleLanguages {
-		if lang != useOptions.Language {
+		if lang != useLang {
 			unmatchedLanguageSuffixes = append(unmatchedLanguageSuffixes, fmt.Sprintf("-%s.bicep", lang))
 		}
 	}
-	langSpecificSuffix := fmt.Sprintf("-%s.bicep", useOptions.Language)
+	langSpecificSuffix := fmt.Sprintf("-%s.bicep", useLang)
 
 	return fs.WalkDir(templateFs, infraRoot, func(name string, d fs.DirEntry, err error) error {
 		// If there was some error that was preventing is from walking into the directory, just fail now,
@@ -188,14 +189,15 @@ func copyTemplateFS(templateFs embed.FS, useOptions InfraUseOptions, template st
 func copyCoreFS(templateFs embed.FS, useOptions InfraUseOptions, target string) error {
 	root := path.Join("app-types", "core")
 
+	useLang := mapLanguage(useOptions.Language)
 	possibleLanguages := maps.Values(LanguageDisplayOptions())
 	unmatchedLanguageSuffixes := []string{}
 	for _, lang := range possibleLanguages {
-		if lang != useOptions.Language {
+		if lang != useLang {
 			unmatchedLanguageSuffixes = append(unmatchedLanguageSuffixes, fmt.Sprintf("-%s.bicep", lang))
 		}
 	}
-	langSpecificSuffix := fmt.Sprintf("-%s.bicep", useOptions.Language)
+	langSpecificSuffix := fmt.Sprintf("-%s.bicep", useLang)
 
 	return fs.WalkDir(templateFs, root, func(name string, d fs.DirEntry, err error) error {
 		// If there was some error that was preventing is from walking into the directory, just fail now,
@@ -228,6 +230,20 @@ func copyCoreFS(templateFs embed.FS, useOptions InfraUseOptions, target string) 
 		}
 		return os.WriteFile(targetPath, contents, osutil.PermissionFile)
 	})
+}
+func mapLanguage(lang string) string {
+	switch lang {
+	case "dotnet", "csharp", "fsharp", "":
+		return "dotnet"
+	case "py", "python":
+		return "python"
+	case "js", "ts":
+		return "node"
+	case "java":
+		return "java"
+	}
+
+	return ""
 }
 
 // Initializes a local repository in the project directory from a remote repository.

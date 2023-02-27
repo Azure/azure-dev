@@ -31,13 +31,12 @@ func envActions(root *actions.ActionDescriptor) *actions.ActionDescriptor {
 		Use:   "env",
 		Short: "Manage environments.",
 	}
-	annotateGroupCmd(envCmd, cmdGroupManage)
+	setGroupCommandAnnotation(envCmd, cmdGroupManage)
 
 	group := root.Add("env", &actions.ActionDescriptorOptions{
 		Command: envCmd,
 		HelpOptions: actions.ActionHelpOptions{
 			Description: getCmdEnvHelpDescription,
-			Footer:      func(cmd *cobra.Command) string { return getCommonFooterNote(cmd.CommandPath()) },
 		},
 	})
 
@@ -495,7 +494,7 @@ func (eg *envGetValuesAction) Run(ctx context.Context) (*actions.ActionResult, e
 }
 
 func getCmdEnvHelpDescription(*cobra.Command) string {
-	return formatHelpDescription(
+	return generateCmdHelpDescription(
 		i18nGetText(i18nCmdEnvHelp),
 		[]string{
 			formatHelpNote(i18nGetText(i18nCmdEnvHelpNoteMulti)),

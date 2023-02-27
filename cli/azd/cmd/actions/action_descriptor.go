@@ -15,7 +15,7 @@ type MiddlewareRegistration struct {
 	Predicate UseMiddlewareWhenPredicate
 }
 
-// Action descriptors consolidates the registration for a cobra command and related flags & actions
+// Action descriptors consolidates the registration for a cobra command and related flags, actions and help messages.
 type ActionDescriptor struct {
 	// Name of the descriptor (also used for command name if not specified in options)
 	Name string
@@ -113,7 +113,10 @@ func (ad *ActionDescriptor) AddFlagCompletion(flagName string, flagCompletionFn 
 // Predicate function used to evaluate middleware registrations
 type UseMiddlewareWhenPredicate func(descriptor *ActionDescriptor) bool
 
+// ActionHelpGenerator defines the signature for using a custom help text block for a command.
 type ActionHelpGenerator func(cmd *cobra.Command) string
+
+// ActionHelpOptions changes the default text that is displayed for command's help.
 type ActionHelpOptions struct {
 	Description ActionHelpGenerator
 	Usage       ActionHelpGenerator

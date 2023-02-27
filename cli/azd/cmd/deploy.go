@@ -72,7 +72,7 @@ func newDeployCmd() *cobra.Command {
 		Use:   "deploy",
 		Short: i18nGetText(i18nCmdDeployShort),
 	}
-	annotateGroupCmd(cmd, cmdGroupManage)
+	setGroupCommandAnnotation(cmd, cmdGroupManage)
 	cmd.SetHelpTemplate("")
 	return cmd
 }
@@ -207,7 +207,7 @@ func (d *deployAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 
 func getCmdDeployHelpDescription(*cobra.Command) string {
 	title := i18nGetText(i18nCmdDeployHelp)
-	return formatHelpDescription(title, []string{
+	return generateCmdHelpDescription(title, []string{
 		formatHelpNote(i18nGetTextWithConfig(&i18n.LocalizeConfig{
 			MessageID: string(i18nCmdDeployHelpNoteWhen),
 			TemplateData: struct {
@@ -221,9 +221,9 @@ func getCmdDeployHelpDescription(*cobra.Command) string {
 }
 
 func getCmdDeployHelpFooter(*cobra.Command) string {
-	return getCmdHelpSamplesBlock([]string{
-		getCmdHelpSample(i18nGetText(i18nCmdDeployHelpSample), output.WithHighLightFormat("azd deploy")),
-		getCmdHelpSample(i18nGetText(i18nCmdDeployHelpSampleApi), output.WithHighLightFormat("azd deploy --service api")),
-		getCmdHelpSample(i18nGetText(i18nCmdDeployHelpSampleWeb), output.WithHighLightFormat("azd deploy --service web")),
+	return generateCmdHelpSamplesBlock(map[string]string{
+		i18nGetText(i18nCmdDeployHelpSample):    output.WithHighLightFormat("azd deploy"),
+		i18nGetText(i18nCmdDeployHelpSampleApi): output.WithHighLightFormat("azd deploy --service api"),
+		i18nGetText(i18nCmdDeployHelpSampleWeb): output.WithHighLightFormat("azd deploy --service web"),
 	})
 }

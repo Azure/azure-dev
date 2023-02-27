@@ -114,7 +114,7 @@ func NewRootCmd(staticHelp bool, middlewareChain []*actions.MiddlewareRegistrati
 	versionCmd := &cobra.Command{
 		Short: "Print the version number of Azure Developer CLI.",
 	}
-	annotateGroupCmd(versionCmd, cmdGroupAbout)
+	setGroupCommandAnnotation(versionCmd, cmdGroupAbout)
 	root.Add("version", &actions.ActionDescriptorOptions{
 		Command:          versionCmd,
 		ActionResolver:   newVersionAction,
@@ -274,8 +274,7 @@ func NewRootCmd(staticHelp bool, middlewareChain []*actions.MiddlewareRegistrati
 }
 
 func getCmdRootHelpFooter(cmd *cobra.Command) string {
-	return fmt.Sprintf("%s\n%s\n  %s %s %s %s\n  %s %s.\n    %s\n\n%s",
-		getCommonFooterNote(cmd.CommandPath()),
+	return fmt.Sprintf("%s\n  %s %s %s %s\n  %s %s.\n    %s\n\n%s",
 		output.WithBold(output.WithUnderline(i18nGetText(i18nCmdRootHelpFooterQuickStart))),
 		i18nGetText(i18nCmdRootHelpFooterQuickStartDetail),
 		output.WithHighLightFormat(i18nGetText(i18nAzdUpTemplate)),
@@ -284,7 +283,7 @@ func getCmdRootHelpFooter(cmd *cobra.Command) string {
 		output.WithGrayFormat(i18nGetText(i18nCmdRootHelpFooterQuickStartNote)),
 		output.WithLinkFormat(i18nGetText(i18nAwesomeAzdUrl)),
 		output.WithHighLightFormat(i18nGetText(i18nAzdUpNodeJsMongo)),
-		generateHelpFindFillBug(),
+		getCmdHelpDefaultFooter(cmd),
 	)
 }
 
@@ -306,12 +305,10 @@ func getCmdRootHelpCommands(cmd *cobra.Command) (result string) {
 		if childCommand.Annotations == nil {
 			continue
 		}
-		group, found := childCommand.Annotations[cmdGrouper]
+		groupType, found := getGroupCommandAnnotation(childCommand)
 		if !found {
 			continue
 		}
-		groupType := i18nTextId(group)
-
 		commandName := childCommand.Name()
 		commandNameLen := len(commandName)
 		if commandNameLen > max {

@@ -13,24 +13,47 @@ import (
 	"github.com/spf13/pflag"
 )
 
+// Defines the type used for annotating a command as part of a group.
+type CommandGroupAnnotationKey string
+
+// Defines the type used as values to annotate command with a group.
+type CommandGroupAnnotationValue string
+
 const (
-	cmdGrouper      string = "commandGrouper"
-	cmdGroupConfig  string = string(i18nCmdGroupTitleConfig)
-	cmdGroupManage  string = string(i18nCmdGroupTitleManage)
-	cmdGroupMonitor string = string(i18nCmdGroupTitleMonitor)
-	cmdGroupAbout   string = string(i18nCmdGroupTitleAbout)
+	// cmdGrouperKey is an annotation key that is added as part of a cobra annotations for assigning commands to a group.
+	cmdGrouperKey CommandGroupAnnotationKey = "commandGrouper"
+	// cmdGroupConfig defines a group of commands for Configuration.
+	cmdGroupConfig CommandGroupAnnotationValue = CommandGroupAnnotationValue(i18nCmdGroupTitleConfig)
+	// cmdGroupConfig defines a group of commands for Managing.
+	cmdGroupManage CommandGroupAnnotationValue = CommandGroupAnnotationValue(i18nCmdGroupTitleManage)
+	// cmdGroupConfig defines a group of commands for Monitoring.
+	cmdGroupMonitor CommandGroupAnnotationValue = CommandGroupAnnotationValue(i18nCmdGroupTitleMonitor)
+	// cmdGroupConfig defines a group of commands for Help and About.
+	cmdGroupAbout CommandGroupAnnotationValue = CommandGroupAnnotationValue(i18nCmdGroupTitleAbout)
 	// this is used for aligning titles in the console.
 	endOfTitleSentinel string = "\x00"
 )
 
-func annotateGroupCmd(cmd *cobra.Command, group string) {
+// setGroupCommandAnnotation adds a grouping annotation to the command.
+func setGroupCommandAnnotation(cmd *cobra.Command, group CommandGroupAnnotationValue) {
 	if cmd.Annotations == nil {
 		cmd.Annotations = make(map[string]string)
 	}
-	cmd.Annotations[cmdGrouper] = group
+	cmd.Annotations[string(cmdGrouperKey)] = string(group)
 }
 
+// getGroupCommandAnnotation check if there is a grouping annotation for the command. Returns the annotation value as an
+// i18nTextId (so it can be used directly to resolve a string) if the annotation is found. Otherwise, returns `"", false` to
+// indicate the command has no grouping annotation.
+func getGroupCommandAnnotation(cmd *cobra.Command) (i18nTextId, bool) {
+	annotationValue, found := cmd.Annotations[string(cmdGrouperKey)]
+	return i18nTextId(annotationValue), found
+}
+
+// cmdHelpGenerator defines the required signature to implement and produce help description for commands.
 type cmdHelpGenerator func(cmd *cobra.Command) string
+
+// generateCmdHelpOptions defines settings to control the text description for displaying the commands' help.
 type generateCmdHelpOptions struct {
 	Description cmdHelpGenerator
 	Usage       cmdHelpGenerator
@@ -55,18 +78,12 @@ The base structure is on the form of:
 **********************
 
 Where:
-  - description: Describes the command. It is usually linked to the cobra `Short or Long` fields.
-  - usage: Demonstrate how to call the command. The function `getCmdHelpUsage` can be used to easily set
-    text from an i18TextId.
-  - commands: The list of sub-commands supported. Use function `getRootCommandsDetails(cobraCommand)` to auto generate
-    the list of sub-commands from the cobra command. This section is optional and won't be displayed when there are not
-    sub-commands added for the command.
-  - flags: Similar to commands, use function `getCmdHelpFlags(cobraCommand)` to auto-generate the list of local and global
-    flags.
-  - footer: The last section is where commands can define quick-start, examples or extra notes.
-
-By using `cmdHelpGenerator` the implementation to format the content of the help can be changed, for example, to produce md
-files for static help.
+  - description: Main information for the command. Default to cobra's `Short` field.
+  - usage: Demonstrate how to call the command. Default to cobra's `Use` filed.
+  - commands: The list of sub-commands supported. Default to list cobra's sub-commands in the form of `cmd : short-notes`.
+  - flags: List of supported flags. Default to `Flags + Global flags` and each flag as `-F, --flag [type] : description`.
+  - footer: The last section is where commands can define quick-start, examples or extra notes. Default to display notes
+    about how to report bugs or comments.
 */
 func generateCmdHelp(
 	cmd *cobra.Command,
@@ -79,15 +96,22 @@ func generateCmdHelp(
 		return defaultOption
 	}
 
-	return fmt.Sprintf("\n%s%s%s%s%s\n",
+	return fmt.Sprintf("\n%s%s%s%s%s%s\n",
 		getGeneratorOrDefault(options.Description, getCmdHelpDefaultDescription)(cmd),
 		getGeneratorOrDefault(options.Usage, getCmdHelpDefaultUsage)(cmd),
 		getGeneratorOrDefault(options.Commands, getCmdHelpDefaultCommands)(cmd),
 		getGeneratorOrDefault(options.Flags, getCmdHelpDefaultFlags)(cmd),
+		getPreFooter(cmd),
 		getGeneratorOrDefault(options.Footer, getCmdHelpDefaultFooter)(cmd),
 	)
 }
 
+// getCmdHelpDefaultDescription provides the default implementation for displaying the help description section.
+func getCmdHelpDefaultDescription(cmd *cobra.Command) string {
+	return generateCmdHelpDescription(cmd.Short, nil)
+}
+
+// getCmdHelpDefaultUsage provides the default implementation for displaying the help usage section.
 func getCmdHelpDefaultUsage(cmd *cobra.Command) string {
 	return fmt.Sprintf("%s\n  %s\n\n",
 		output.WithBold(output.WithUnderline(i18nGetText(i18nUsage))),
@@ -95,33 +119,12 @@ func getCmdHelpDefaultUsage(cmd *cobra.Command) string {
 	)
 }
 
-func getCmdHelpDefaultDescription(cmd *cobra.Command) string {
-	return formatHelpDescription(cmd.Short, nil)
-}
-
+// getCmdHelpDefaultCommands provides the default implementation for displaying the help commands section.
 func getCmdHelpDefaultCommands(cmd *cobra.Command) string {
 	return getCmdHelpAvailableCommands(getCommandsDetails(cmd))
 }
 
-func getCmdHelpDefaultFooter(*cobra.Command) string {
-	return generateHelpFindFillBug()
-}
-
-func getCmdHelpCommands(title i18nTextId, commands string) string {
-	if commands == "" {
-		return commands
-	}
-	return fmt.Sprintf("%s\n%s\n", output.WithBold(output.WithUnderline(i18nGetText(title))), commands)
-}
-
-func getCmdHelpGroupedCommands(commands string) string {
-	return getCmdHelpCommands(i18nCommands, commands)
-}
-
-func getCmdHelpAvailableCommands(commands string) string {
-	return getCmdHelpCommands(i18nAvailableCommands, commands)
-}
-
+// getCmdHelpDefaultFlags provides the default implementation for displaying the help flags section.
 func getCmdHelpDefaultFlags(cmd *cobra.Command) (result string) {
 	if cmd.HasAvailableLocalFlags() {
 		flags := getFlagsDetails(cmd.LocalFlags())
@@ -138,13 +141,48 @@ func getCmdHelpDefaultFlags(cmd *cobra.Command) (result string) {
 	return result
 }
 
-func getCmdHelpDefaultDescriptionNotes() (notes []string) {
+// getCmdHelpDefaultFooter provides the default implementation for displaying the help footer section.
+func getCmdHelpDefaultFooter(*cobra.Command) string {
+	return fmt.Sprintf("%s %s.\n",
+		i18nGetText(i18nCmdRootHelpFooterReportBug),
+		output.WithLinkFormat(i18nGetText(i18nAzdHats)))
+}
+
+/*
+	getCmdHelpCommands defines the base structure for the commands section within the help as:
+
+*******************
+Commands:
+
+{{ commands - description }}
+
+*******************
+*/
+func getCmdHelpCommands(title i18nTextId, commands string) string {
+	if commands == "" {
+		return commands
+	}
+	return fmt.Sprintf("%s\n%s\n", output.WithBold(output.WithUnderline(i18nGetText(title))), commands)
+}
+
+// getCmdHelpGroupedCommands generates {{ commands - description }} where sub-commands are grouped.
+func getCmdHelpGroupedCommands(commands string) string {
+	return getCmdHelpCommands(i18nCommands, commands)
+}
+
+// getCmdHelpAvailableCommands generates {{ commands - description }} for all sub-commands.
+func getCmdHelpAvailableCommands(commands string) string {
+	return getCmdHelpCommands(i18nAvailableCommands, commands)
+}
+
+// getCmdHelpDescriptionNoteForInit produces help - description - notes for commands which initialize azd (i.e. up, init)
+func getCmdHelpDescriptionNoteForInit(c *cobra.Command) (notes []string) {
 	notes = append(notes, formatHelpNote(i18nGetTextWithConfig(&i18n.LocalizeConfig{
 		MessageID: string(i18nCmdUpRunningNote),
 		TemplateData: struct {
 			AzdUp string
 		}{
-			AzdUp: output.WithHighLightFormat("azd up"),
+			AzdUp: output.WithHighLightFormat(c.CommandPath()),
 		},
 	})))
 	notes = append(notes, formatHelpNote(i18nGetTextWithConfig(&i18n.LocalizeConfig{
@@ -158,6 +196,7 @@ func getCmdHelpDefaultDescriptionNotes() (notes []string) {
 	return notes
 }
 
+// getFlagsDetails produces the command - flags - details in the form of `-F, --flag [type] : description`
 func getFlagsDetails(flagSet *pflag.FlagSet) (result string) {
 	var lines []string
 	max := 0
@@ -200,6 +239,24 @@ func getFlagsDetails(flagSet *pflag.FlagSet) (result string) {
 	return fmt.Sprintf("  %s\n", strings.Join(lines, "\n  "))
 }
 
+// alignTitles update all the input lines to be the same len by adding white spaces. Then it produces the `title : note`
+// output.
+// Note: alignTitles depends on all lines containing the `endOfTitleSentinel` which indicates the end of the title and where
+// the colon is expected to be added after the aligning.
+// Example:
+/*
+   input: [
+		"title:foo",
+		"titleTwo:foo",
+		"titleTree:foo",
+   ]
+    result: [
+		"title     : foo",
+		"titleTwo  : foo",
+		"titleTree : foo",
+   ]
+
+*/
 func alignTitles(lines []string, longestLineLen int) {
 	for i, line := range lines {
 		sentinelIndex := strings.Index(line, endOfTitleSentinel)
@@ -209,6 +266,7 @@ func alignTitles(lines []string, longestLineLen int) {
 	}
 }
 
+// getCommandsDetails produces the default help - commands - description for any command in the form of `cmd : notes`.
 func getCommandsDetails(cmd *cobra.Command) (result string) {
 	childrenCommands := cmd.Commands()
 	if len(childrenCommands) == 0 {
@@ -227,23 +285,28 @@ func getCommandsDetails(cmd *cobra.Command) (result string) {
 		lines = append(lines,
 			fmt.Sprintf("%s%s%s", commandName, endOfTitleSentinel, childCommand.Short))
 	}
-	// align all lines
 	alignTitles(lines, max)
 	return fmt.Sprintf("%s\n", strings.Join(lines, "\n"))
 }
 
+// formatHelpNote provides the expected format in description notes using `•`.
 func formatHelpNote(note string) string {
 	return fmt.Sprintf("  • %s", note)
 }
 
-func getCommonFooterNote(command string) string {
-	return fmt.Sprintf("%s\n", i18nGetTextWithConfig(&i18n.LocalizeConfig{
+// getPreFooter automatically adds a message to any command containing sub-commands about how to get help for subcommands.
+func getPreFooter(c *cobra.Command) string {
+	if !c.HasSubCommands() {
+		return ""
+	}
+
+	return fmt.Sprintf("%s\n\n", i18nGetTextWithConfig(&i18n.LocalizeConfig{
 		MessageID: string(i18nCmdCommonFooter),
 		TemplateData: struct {
 			AzdRun string
 		}{
 			AzdRun: fmt.Sprintf("%s %s %s",
-				output.WithHighLightFormat("%s", command),
+				output.WithHighLightFormat("%s", c.CommandPath()),
 				output.WithWarningFormat("[command]"),
 				output.WithHighLightFormat("--help"),
 			),
@@ -251,7 +314,8 @@ func getCommonFooterNote(command string) string {
 	}))
 }
 
-func formatHelpDescription(title string, notes []string) string {
+// generateCmdHelpDescription construct a help text block from a title and description notes.
+func generateCmdHelpDescription(title string, notes []string) string {
 	var note string
 	if len(notes) > 0 {
 		note = fmt.Sprintf("%s\n\n", strings.Join(notes, "\n"))
@@ -259,19 +323,20 @@ func formatHelpDescription(title string, notes []string) string {
 	return fmt.Sprintf("%s\n\n%s", title, note)
 }
 
-func generateHelpFindFillBug() string {
-	return fmt.Sprintf("%s %s.\n",
-		i18nGetText(i18nCmdRootHelpFooterReportBug),
-		output.WithLinkFormat(i18nGetText(i18nAzdHats)))
-}
+// generateCmdHelpSamplesBlock converts the samples within the input `samples` to a help text block describing each sample
+// title and the command to run it.
+func generateCmdHelpSamplesBlock(samples map[string]string) string {
+	SamplesCount := len(samples)
+	if SamplesCount == 0 {
+		return ""
+	}
+	var lines []string
+	for title, command := range samples {
+		lines = append(lines, fmt.Sprintf("  %s\n    %s", title, command))
+	}
 
-func getCmdHelpSample(description, code string) string {
-	return fmt.Sprintf("  %s\n    %s", description, code)
-}
-
-func getCmdHelpSamplesBlock(samples []string) string {
 	return fmt.Sprintf("%s\n%s\n",
 		output.WithBold(output.WithUnderline("%s", i18nGetText(i18nExamples))),
-		strings.Join(samples, "\n\n"),
+		strings.Join(lines, "\n\n"),
 	)
 }

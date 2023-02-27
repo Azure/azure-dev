@@ -27,7 +27,7 @@ func newDownCmd() *cobra.Command {
 		Short:   i18nGetText(i18nCmdDownShort),
 		Aliases: []string{"infra delete"},
 	}
-	annotateGroupCmd(cmd, cmdGroupManage)
+	setGroupCommandAnnotation(cmd, cmdGroupManage)
 	return cmd
 }
 
@@ -61,19 +61,13 @@ func getCmdDownHelpDescription(*cobra.Command) string {
 		},
 	})
 
-	return formatHelpDescription(title, nil)
+	return generateCmdHelpDescription(title, nil)
 }
 
 func getCmdDownHelpFooter(*cobra.Command) string {
-	return getCmdHelpSamplesBlock([]string{
-		getCmdHelpSample(
-			i18nGetText(i18nCmdDownHelpSample),
-			output.WithHighLightFormat("azd down")),
-		getCmdHelpSample(
-			i18nGetText(i18nCmdDownHelpSampleForce),
-			output.WithHighLightFormat("azd down --force")),
-		getCmdHelpSample(
-			i18nGetText(i18nCmdDownHelpSamplePurge),
-			output.WithHighLightFormat("azd down --purge")),
+	return generateCmdHelpSamplesBlock(map[string]string{
+		i18nGetText(i18nCmdDownHelpSample):      output.WithHighLightFormat("azd down"),
+		i18nGetText(i18nCmdDownHelpSampleForce): output.WithHighLightFormat("azd down --force"),
+		i18nGetText(i18nCmdDownHelpSamplePurge): output.WithHighLightFormat("azd down --purge"),
 	})
 }

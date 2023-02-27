@@ -57,7 +57,7 @@ func newMonitorCmd() *cobra.Command {
 		Use:   "monitor",
 		Short: i18nGetText(i18nCmdMonitorShort),
 	}
-	annotateGroupCmd(cmd, cmdGroupMonitor)
+	setGroupCommandAnnotation(cmd, cmdGroupMonitor)
 	return cmd
 }
 
@@ -181,7 +181,7 @@ func (m *monitorAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 }
 
 func getCmdMonitorHelpDescription(*cobra.Command) string {
-	return formatHelpDescription(i18nGetTextWithConfig(&i18n.LocalizeConfig{
+	return generateCmdHelpDescription(i18nGetTextWithConfig(&i18n.LocalizeConfig{
 		MessageID: string(i18nCmdMonitorHelp),
 		TemplateData: struct {
 			Url string
@@ -192,12 +192,9 @@ func getCmdMonitorHelpDescription(*cobra.Command) string {
 }
 
 func getCmdMonitorHelpFooter(c *cobra.Command) string {
-	return getCmdHelpSamplesBlock([]string{
-		getCmdHelpSample(i18nGetText(i18nCmdMonitorHelpSample),
-			output.WithHighLightFormat("azd monitor --overview")),
-		getCmdHelpSample(i18nGetText(i18nCmdMonitorHelpSample),
-			output.WithHighLightFormat("azd monitor --live")),
-		getCmdHelpSample(i18nGetText(i18nCmdMonitorHelpSample),
-			output.WithHighLightFormat("azd monitor --logs")),
+	return generateCmdHelpSamplesBlock(map[string]string{
+		i18nGetText(i18nCmdMonitorHelpSample): output.WithHighLightFormat("azd monitor --overview"),
+		i18nGetText(i18nCmdMonitorHelpSample): output.WithHighLightFormat("azd monitor --live"),
+		i18nGetText(i18nCmdMonitorHelpSample): output.WithHighLightFormat("azd monitor --logs"),
 	})
 }

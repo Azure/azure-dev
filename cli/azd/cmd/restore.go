@@ -53,7 +53,7 @@ func restoreCmdDesign() *cobra.Command {
 		Use:   "restore",
 		Short: i18nGetText(i18nCmdRestoreShort),
 	}
-	annotateGroupCmd(cmd, cmdGroupConfig)
+	setGroupCommandAnnotation(cmd, cmdGroupConfig)
 	return cmd
 }
 
@@ -137,7 +137,7 @@ func (r *restoreAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 }
 
 func getCmdRestoreHelpDescription(*cobra.Command) string {
-	return formatHelpDescription(
+	return generateCmdHelpDescription(
 		i18nGetText(i18nCmdRestoreHelp),
 		[]string{
 			formatHelpNote(i18nGetText(i18nCmdRestoreHelpNote)),
@@ -153,12 +153,10 @@ func getCmdRestoreHelpDescription(*cobra.Command) string {
 }
 
 func getCmdRestoreHelpFooter(*cobra.Command) string {
-	return getCmdHelpSamplesBlock([]string{
-		getCmdHelpSample(i18nGetText(i18nCmdRestoreHelpSample),
-			output.WithHighLightFormat("azd restore")),
-		getCmdHelpSample(i18nGetText(i18nCmdRestoreHelpSampleService),
-			fmt.Sprintf("%s %s",
-				output.WithHighLightFormat("azd restore --service"),
-				output.WithWarningFormat("[Service name]"))),
+	return generateCmdHelpSamplesBlock(map[string]string{
+		i18nGetText(i18nCmdRestoreHelpSample): output.WithHighLightFormat("azd restore"),
+		i18nGetText(i18nCmdRestoreHelpSampleService): fmt.Sprintf("%s %s",
+			output.WithHighLightFormat("azd restore --service"),
+			output.WithWarningFormat("[Service name]")),
 	})
 }

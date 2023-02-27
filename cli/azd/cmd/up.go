@@ -48,7 +48,7 @@ func newUpCmd() *cobra.Command {
 		Use:   "up",
 		Short: i18nGetText(i18nCmdUpShort),
 	}
-	annotateGroupCmd(cmd, cmdGroupManage)
+	setGroupCommandAnnotation(cmd, cmdGroupManage)
 	return cmd
 }
 
@@ -133,7 +133,7 @@ func (u *upAction) runInit(ctx context.Context) error {
 	return err
 }
 
-func getCmdUpHelpDescription(*cobra.Command) string {
+func getCmdUpHelpDescription(c *cobra.Command) string {
 	title := i18nGetTextWithConfig(&i18n.LocalizeConfig{
 		MessageID: string(i18nCmdUpHelp),
 		TemplateData: struct {
@@ -146,17 +146,14 @@ func getCmdUpHelpDescription(*cobra.Command) string {
 			AzdDeploy:    output.WithHighLightFormat("azd deploy"),
 		},
 	})
-	return formatHelpDescription(title, getCmdHelpDefaultDescriptionNotes())
+	return generateCmdHelpDescription(title, getCmdHelpDescriptionNoteForInit(c))
 }
 
 func getCmdUpHelpFooter(*cobra.Command) string {
-	var samples []string
-	samples = append(samples, getCmdHelpSample(
-		i18nGetText(i18nCmdUpFooterSample),
-		fmt.Sprintf("%s %s",
+	return generateCmdHelpSamplesBlock(map[string]string{
+		i18nGetText(i18nCmdUpFooterSample): fmt.Sprintf("%s %s",
 			output.WithHighLightFormat("azd up --template"),
 			output.WithWarningFormat("[GitHub repo URL]"),
-		)),
-	)
-	return getCmdHelpSamplesBlock(samples)
+		),
+	})
 }

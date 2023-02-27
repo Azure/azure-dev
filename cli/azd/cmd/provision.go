@@ -27,7 +27,7 @@ func newProvisionCmd() *cobra.Command {
 		Aliases: []string{"infra create"},
 		Short:   i18nGetText(i18nCmdProvisionShort),
 	}
-	annotateGroupCmd(cmd, cmdGroupManage)
+	setGroupCommandAnnotation(cmd, cmdGroupManage)
 	return cmd
 }
 
@@ -60,7 +60,7 @@ func getCmdProvisionHelpDescription(*cobra.Command) string {
 			Command: output.WithHighLightFormat("azd provision"),
 		},
 	})
-	return formatHelpDescription(title, []string{
+	return generateCmdHelpDescription(title, []string{
 		formatHelpNote(i18nGetText(i18nCmdProvisionHelpNoteEnv)),
 		formatHelpNote(i18nGetText(i18nCmdProvisionHelpNoteLocation)),
 		formatHelpNote(i18nGetText(i18nCmdProvisionHelpNoteSubscription)),

@@ -134,7 +134,7 @@ func newLoginCmd() *cobra.Command {
 		--client-certificate, --federated-credential, or --federated-credential-provider.
 		`),
 	}
-	annotateGroupCmd(cmd, cmdGroupConfig)
+	setGroupCommandAnnotation(cmd, cmdGroupConfig)
 	return cmd
 }
 

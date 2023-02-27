@@ -41,7 +41,7 @@ func templatesActions(root *actions.ActionDescriptor) *actions.ActionDescriptor 
 	cmd := &cobra.Command{
 		Short: i18nGetText(i18nCmdTemplateShort),
 	}
-	annotateGroupCmd(cmd, cmdGroupConfig)
+	setGroupCommandAnnotation(cmd, cmdGroupConfig)
 
 	group := root.Add("template", &actions.ActionDescriptorOptions{
 		Command: cmd,
@@ -211,5 +211,5 @@ func getCmdTemplateHelpDescription(*cobra.Command) string {
 		},
 	})))
 
-	return formatHelpDescription(title, notes)
+	return generateCmdHelpDescription(title, notes)
 }

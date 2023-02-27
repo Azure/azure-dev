@@ -43,7 +43,7 @@ func newInitCmd() *cobra.Command {
 		Short: i18nGetText(i18nCmdInitShort),
 	}
 
-	annotateGroupCmd(cmd, cmdGroupConfig)
+	setGroupCommandAnnotation(cmd, cmdGroupConfig)
 
 	return cmd
 }
@@ -249,27 +249,21 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	}, nil
 }
 
-func getCmdInitHelpDescription(*cobra.Command) string {
-	return formatHelpDescription(i18nGetText(i18nCmdInitHelp), getCmdHelpDefaultDescriptionNotes())
+func getCmdInitHelpDescription(c *cobra.Command) string {
+	return generateCmdHelpDescription(i18nGetText(i18nCmdInitHelp), getCmdHelpDescriptionNoteForInit(c))
 }
 
 func getCmdInitHelpFooter(*cobra.Command) string {
-	var samples []string
-	samples = append(samples, getCmdHelpSample(
-		i18nGetText(i18nCmdInitHelpSample),
-		fmt.Sprintf("%s %s",
+	return generateCmdHelpSamplesBlock(map[string]string{
+		i18nGetText(i18nCmdInitHelpSample): fmt.Sprintf("%s %s",
 			output.WithHighLightFormat("azd init --template"),
 			output.WithWarningFormat("[GitHub repo URL]"),
-		)),
-	)
-	samples = append(samples, getCmdHelpSample(
-		i18nGetText(i18nCmdInitHelpSampleBranch),
-		fmt.Sprintf("%s %s %s %s",
+		),
+		i18nGetText(i18nCmdInitHelpSampleBranch): fmt.Sprintf("%s %s %s %s",
 			output.WithHighLightFormat("azd init --template"),
 			output.WithWarningFormat("[GitHub repo URL]"),
 			output.WithHighLightFormat("--branch"),
 			output.WithWarningFormat("[Branch name]"),
-		)),
-	)
-	return getCmdHelpSamplesBlock(samples)
+		),
+	})
 }

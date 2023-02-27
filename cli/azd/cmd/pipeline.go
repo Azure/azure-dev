@@ -5,7 +5,6 @@ package cmd
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/MakeNowJust/heredoc/v2"
@@ -61,7 +60,7 @@ func pipelineActions(root *actions.ActionDescriptor) *actions.ActionDescriptor {
 		Use:   "pipeline",
 		Short: i18nGetText(i18nCmdPipelineShort),
 	}
-	annotateGroupCmd(pipelineCmd, cmdGroupMonitor)
+	setGroupCommandAnnotation(pipelineCmd, cmdGroupMonitor)
 	group := root.Add("pipeline", &actions.ActionDescriptorOptions{
 		Command: pipelineCmd,
 		HelpOptions: actions.ActionHelpOptions{
@@ -169,7 +168,7 @@ func (p *pipelineConfigAction) Run(ctx context.Context) (*actions.ActionResult, 
 }
 
 func getCmdPipelineHelpDescription(*cobra.Command) string {
-	return formatHelpDescription(
+	return generateCmdHelpDescription(
 		i18nGetText(i18nCmdPipelineHelp),
 		[]string{
 			formatHelpNote(i18nGetTextWithConfig(&i18n.LocalizeConfig{
@@ -192,11 +191,7 @@ func getCmdPipelineHelpDescription(*cobra.Command) string {
 }
 
 func getCmdPipelineHelpFooter(c *cobra.Command) string {
-	return fmt.Sprintf("%s\n%s",
-		getCommonFooterNote(c.CommandPath()),
-		getCmdHelpSamplesBlock([]string{
-			getCmdHelpSample(i18nGetText(i18nCmdPipelineHelpSample),
-				output.WithHighLightFormat("azd pipeline config")),
-		}),
-	)
+	return generateCmdHelpSamplesBlock(map[string]string{
+		i18nGetText(i18nCmdPipelineHelpSample): output.WithHighLightFormat("azd pipeline config"),
+	})
 }

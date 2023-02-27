@@ -77,7 +77,7 @@ func configActions(root *actions.ActionDescriptor, rootOptions *internal.GlobalC
 		Short: i18nGetText(i18nCmdConfigShort),
 		Long:  longDescription,
 	}
-	annotateGroupCmd(groupCmd, cmdGroupConfig)
+	setGroupCommandAnnotation(groupCmd, cmdGroupConfig)
 
 	group := root.Add("config", &actions.ActionDescriptorOptions{
 		Command: groupCmd,
@@ -311,7 +311,7 @@ func (a *configResetAction) Run(ctx context.Context) (*actions.ActionResult, err
 }
 
 func getCmdConfigHelpDescription(*cobra.Command) string {
-	return formatHelpDescription(
+	return generateCmdHelpDescription(
 		i18nGetText(i18nCmdConfigHelp),
 		[]string{
 			formatHelpNote(i18nGetTextWithConfig(&i18n.LocalizeConfig{
@@ -342,16 +342,12 @@ func getCmdConfigHelpDescription(*cobra.Command) string {
 }
 
 func getCmdConfigHelpFooter(c *cobra.Command) string {
-	return fmt.Sprintf("%s\n%s",
-		getCommonFooterNote(c.CommandPath()),
-		getCmdHelpSamplesBlock([]string{
-			getCmdHelpSample(i18nGetText(i18nCmdConfigHelpSample),
-				fmt.Sprintf("%s %s",
-					output.WithHighLightFormat("azd config set defaults.subscription"),
-					output.WithWarningFormat("<yourSubscriptionID>"))),
-			getCmdHelpSample(i18nGetText(i18nCmdConfigHelpSample),
-				fmt.Sprintf("%s %s",
-					output.WithHighLightFormat("azd config set defaults.location"),
-					output.WithWarningFormat("<location>"))),
-		}))
+	return generateCmdHelpSamplesBlock(map[string]string{
+		i18nGetText(i18nCmdConfigHelpSample): fmt.Sprintf("%s %s",
+			output.WithHighLightFormat("azd config set defaults.subscription"),
+			output.WithWarningFormat("<yourSubscriptionID>")),
+		i18nGetText(i18nCmdConfigHelpSample): fmt.Sprintf("%s %s",
+			output.WithHighLightFormat("azd config set defaults.location"),
+			output.WithWarningFormat("<location>")),
+	})
 }

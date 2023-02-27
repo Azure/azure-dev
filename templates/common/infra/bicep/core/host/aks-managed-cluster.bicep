@@ -58,6 +58,9 @@ param workspaceId string = ''
 @description('The node pool configuration for the System agent pool')
 param systemPoolConfig object
 
+@description('The DNS prefix to associate with the AKS cluster')
+param dnsPrefix string = ''
+
 resource aks 'Microsoft.ContainerService/managedClusters@2022-11-02-preview' = {
   name: name
   location: location
@@ -72,7 +75,7 @@ resource aks 'Microsoft.ContainerService/managedClusters@2022-11-02-preview' = {
   properties: {
     nodeResourceGroup: !empty(nodeResourceGroupName) ? nodeResourceGroupName : 'rg-mc-${name}'
     kubernetesVersion: kubernetesVersion
-    dnsPrefix: '${name}-dns'
+    dnsPrefix: empty(dnsPrefix) ? '${name}-dns' : dnsPrefix
     enableRBAC: enableRbac
     aadProfile: enableAad ? {
       managed: true

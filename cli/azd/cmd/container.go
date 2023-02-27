@@ -132,9 +132,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 			credProvider auth.MultiTenantCredentialProvider) (azcore.TokenCredential, error) {
 			if env == nil {
 				//nolint:lll
-				panic(
-					"command asked for azcore.TokenCredential, but prerequisite dependency environment.Environment was not registered.",
-				)
+				panic("command asked for azcore.TokenCredential, but prerequisite dependency environment. Environment was not registered.")
 			}
 
 			subscriptionId := env.GetSubscriptionId()

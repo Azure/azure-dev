@@ -17,8 +17,6 @@ param apiServiceName string = ''
 param applicationInsightsDashboardName string = ''
 param applicationInsightsName string = ''
 param appServicePlanName string = ''
-param cosmosAccountName string = ''
-param cosmosDatabaseName string = ''
 param keyVaultName string = ''
 param logAnalyticsName string = ''
 param resourceGroupName string = ''
@@ -63,11 +61,6 @@ module api './app/api.bicep' = {
     appServicePlanId: appServicePlan.outputs.id
     keyVaultName: keyVault.outputs.name
     allowedOrigins: [ web.outputs.SERVICE_WEB_URI ]
-    appSettings: {
-      AZURE_COSMOS_CONNECTION_STRING_KEY: cosmos.outputs.connectionStringKey
-      AZURE_COSMOS_DATABASE_NAME: cosmos.outputs.databaseName
-      AZURE_COSMOS_ENDPOINT: cosmos.outputs.endpoint
-    }
   }
 }
 
@@ -78,19 +71,6 @@ module apiKeyVaultAccess './core/security/keyvault-access.bicep' = {
   params: {
     keyVaultName: keyVault.outputs.name
     principalId: api.outputs.SERVICE_API_IDENTITY_PRINCIPAL_ID
-  }
-}
-
-// The application database
-module cosmos './app/db.bicep' = {
-  name: 'cosmos'
-  scope: rg
-  params: {
-    accountName: !empty(cosmosAccountName) ? cosmosAccountName : '${abbrs.documentDBDatabaseAccounts}${resourceToken}'
-    databaseName: cosmosDatabaseName
-    location: location
-    tags: tags
-    keyVaultName: keyVault.outputs.name
   }
 }
 
@@ -132,10 +112,6 @@ module monitoring './core/monitor/monitoring.bicep' = {
     applicationInsightsDashboardName: !empty(applicationInsightsDashboardName) ? applicationInsightsDashboardName : '${abbrs.portalDashboards}${resourceToken}'
   }
 }
-
-// Data outputs
-output AZURE_COSMOS_CONNECTION_STRING_KEY string = cosmos.outputs.connectionStringKey
-output AZURE_COSMOS_DATABASE_NAME string = cosmos.outputs.databaseName
 
 // App outputs
 output APPLICATIONINSIGHTS_CONNECTION_STRING string = monitoring.outputs.applicationInsightsConnectionString

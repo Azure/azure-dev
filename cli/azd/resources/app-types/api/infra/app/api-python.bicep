@@ -3,7 +3,7 @@ param location string = resourceGroup().location
 param tags object = {}
 
 param allowedOrigins array = []
-param appCommandLine string = 'gunicorn --workers 4 --threads 2 --timeout 60 --access-logfile "-" --error-logfile "-" --bind=0.0.0.0:8000 -k uvicorn.workers.UvicornWorker todo.app:app'
+param appCommandLine string = ''
 param applicationInsightsName string = ''
 param appServicePlanId string
 param appSettings object = {}

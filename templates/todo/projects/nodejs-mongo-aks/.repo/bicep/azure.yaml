@@ -5,11 +5,14 @@ metadata:
   template: todo-nodejs-mongo-aks@0.0.1-beta
 services:
   web:
-    project: ../../web/react-fluent
+    project: ./src/web
     dist: build
     language: js
     host: aks
   api:
-    project: ../../api/js
+    project: ./src/api
     language: js
     host: aks
+    k8s:
+      ingress:
+        relativePath: api

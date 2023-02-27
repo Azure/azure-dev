@@ -215,6 +215,8 @@ func (cb *CobraBuilder) bindCommand(cmd *cobra.Command, descriptor *actions.Acti
 		}
 	}
 
+	// `generateCmdHelp` sets a default help section when `descriptor.Options.HelpOptions` is nil.
+	// This call ensures all commands gets the same help formatting.
 	cmd.SetHelpTemplate(generateCmdHelp(cmd, generateCmdHelpOptions{
 		Description: cmdHelpGenerator(descriptor.Options.HelpOptions.Description),
 		Usage:       cmdHelpGenerator(descriptor.Options.HelpOptions.Usage),

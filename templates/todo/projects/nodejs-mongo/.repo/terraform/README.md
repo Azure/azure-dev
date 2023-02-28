@@ -13,7 +13,8 @@ products:
 - azure-monitor
 - azure-pipelines
 urlFragment: todo-nodejs-mongo-terraform
-description: NodeJs ToDo application built, deployed, and monitored with Azure Developer CLI (azd).
+name: Web Application with a Node.js API and Azure Cosmos DB API for MongoDB on Azure App Service (Terraform)
+description: A complete ToDo app on Azure App Service with Node.js API and Azure Cosmos API for MongoDB for storage. Uses Azure Developer CLI (azd) to build, deploy, and monitor
 ---
 <!-- YAML front-matter schema: https://review.learn.microsoft.com/en-us/help/contribute/samples/process/onboarding?branch=main#supported-metadata-fields-for-readmemd -->
 

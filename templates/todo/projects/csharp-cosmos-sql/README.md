@@ -15,7 +15,8 @@ products:
 - azure-pipelines
 - aspnet-core
 urlFragment: todo-csharp-cosmos-sql
-description: Complete C# ToDo application built, deployed, and monitored with Azure Developer CLI (azd). This sample uses Azure Cosmos DB SQL API for storage.
+name: Web Application with a C# API and Azure Cosmos DB SQL API
+description: A complete ToDo app with C# API and Azure Cosmos DB SQL API for storage. Uses Azure Developer CLI (azd) to build, deploy, and monitor
 ---
 <!-- YAML front-matter schema: https://review.learn.microsoft.com/en-us/help/contribute/samples/process/onboarding?branch=main#supported-metadata-fields-for-readmemd -->
 

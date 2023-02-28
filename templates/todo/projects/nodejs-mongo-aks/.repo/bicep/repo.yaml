@@ -8,10 +8,10 @@ repo:
   includeProjectAssets: false
 
   remotes:
-    - name: wbreza-main
-      url: git@github.com:wbreza/todo-nodejs-mongo-aks.git
-    - name: wbreza-staging
-      url: git@github.com:wbreza/todo-nodejs-mongo-aks.git
+    - name: azure-samples-main
+      url: git@github.com:Azure-Samples/todo-nodejs-mongo-aks.git
+    - name: azure-samples-staging
+      url: git@github.com:Azure-Samples/todo-nodejs-mongo-aks.git
       branch: staging
 
   rewrite:

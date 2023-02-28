@@ -30,7 +30,10 @@ import (
 
 func Test_NewAksTarget(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
-	serviceTarget, serviceConfig, err := createServiceTarget(mockContext, "")
+	serviceConfig := createServiceConfig("")
+	env := createEnv()
+
+	serviceTarget, err := createServiceTarget(mockContext, serviceConfig, env)
 
 	require.NoError(t, err)
 	require.NotNil(t, serviceTarget)
@@ -45,7 +48,10 @@ func Test_Deploy_HappyPath(t *testing.T) {
 	err := setupMocks(mockContext)
 	require.NoError(t, err)
 
-	serviceTarget, serviceConfig, err := createServiceTarget(mockContext, tempDir)
+	serviceConfig := createServiceConfig(tempDir)
+	env := createEnv()
+
+	serviceTarget, err := createServiceTarget(mockContext, serviceConfig, env)
 	require.NoError(t, err)
 
 	err = setupK8sManifests(t, serviceConfig)
@@ -64,9 +70,101 @@ func Test_Deploy_HappyPath(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	require.Equal(t, AksTarget, result.Kind)
+	require.NotNil(t, env.Values["SERVICE_SVC_IMAGE_NAME"])
+	require.IsType(t, new(kubectl.Deployment), result.Details)
+	require.Greater(t, len(result.Endpoints), 0)
+}
 
-	// TODO:
-	// 1. env var for container is set.
+func Test_Deploy_No_Cluster_Name(t *testing.T) {
+	tempDir := t.TempDir()
+	ostest.Chdir(t, tempDir)
+
+	mockContext := mocks.NewMockContext(context.Background())
+	err := setupMocks(mockContext)
+	require.NoError(t, err)
+
+	serviceConfig := createServiceConfig(tempDir)
+	env := createEnv()
+
+	// Simulate AKS cluster name not found in env file
+	delete(env.Values, environment.AksClusterEnvVarName)
+
+	serviceTarget, err := createServiceTarget(mockContext, serviceConfig, env)
+	require.NoError(t, err)
+
+	azdContext := azdcontext.NewAzdContextWithDirectory(tempDir)
+	progressChan := make(chan (string))
+
+	go func() {
+		for value := range progressChan {
+			log.Println(value)
+		}
+	}()
+
+	result, err := serviceTarget.Deploy(*mockContext.Context, azdContext, "", progressChan)
+	require.Error(t, err)
+	require.ErrorContains(t, err, "could not determine AKS cluster")
+	require.Equal(t, ServiceDeploymentResult{}, result)
+}
+
+func Test_Deploy_No_Container_Registry(t *testing.T) {
+	tempDir := t.TempDir()
+	ostest.Chdir(t, tempDir)
+
+	mockContext := mocks.NewMockContext(context.Background())
+	err := setupMocks(mockContext)
+	require.NoError(t, err)
+
+	serviceConfig := createServiceConfig(tempDir)
+	env := createEnv()
+
+	// Simulate container registry endpoint not found in env file
+	delete(env.Values, environment.ContainerRegistryEndpointEnvVarName)
+
+	serviceTarget, err := createServiceTarget(mockContext, serviceConfig, env)
+	require.NoError(t, err)
+
+	azdContext := azdcontext.NewAzdContextWithDirectory(tempDir)
+	progressChan := make(chan (string))
+
+	result, err := serviceTarget.Deploy(*mockContext.Context, azdContext, "", progressChan)
+	require.Error(t, err)
+	require.ErrorContains(t, err, "could not determine container registry endpoint")
+	require.Equal(t, ServiceDeploymentResult{}, result)
+}
+
+func Test_Deploy_No_Admin_Credentials(t *testing.T) {
+	tempDir := t.TempDir()
+	ostest.Chdir(t, tempDir)
+
+	mockContext := mocks.NewMockContext(context.Background())
+	err := setupMocks(mockContext)
+	require.NoError(t, err)
+
+	// Simulate list credentials fail.
+	// For more secure clusters getting admin credentials can fail
+	err = setupListClusterAdminCredentialsMock(mockContext, http.StatusUnauthorized)
+	require.NoError(t, err)
+
+	serviceConfig := createServiceConfig(tempDir)
+	env := createEnv()
+
+	serviceTarget, err := createServiceTarget(mockContext, serviceConfig, env)
+	require.NoError(t, err)
+
+	azdContext := azdcontext.NewAzdContextWithDirectory(tempDir)
+	progressChan := make(chan (string))
+
+	go func() {
+		for value := range progressChan {
+			log.Println(value)
+		}
+	}()
+
+	result, err := serviceTarget.Deploy(*mockContext.Context, azdContext, "", progressChan)
+	require.Error(t, err)
+	require.ErrorContains(t, err, "failed retrieving cluster admin credentials")
+	require.Equal(t, ServiceDeploymentResult{}, result)
 }
 
 func setupK8sManifests(t *testing.T, serviceConfig *ServiceConfig) error {
@@ -84,7 +182,7 @@ func setupK8sManifests(t *testing.T, serviceConfig *ServiceConfig) error {
 	return nil
 }
 
-func setupMocks(mockContext *mocks.MockContext) error {
+func setupListClusterAdminCredentialsMock(mockContext *mocks.MockContext, statusCode int) error {
 	kubeConfig := createTestCluster("cluster1", "user1")
 	kubeConfigBytes, err := yaml.Marshal(kubeConfig)
 	if err != nil {
@@ -104,8 +202,21 @@ func setupMocks(mockContext *mocks.MockContext) error {
 			},
 		}
 
-		return mocks.CreateHttpResponseWithBody(request, http.StatusOK, creds)
+		if statusCode == http.StatusOK {
+			return mocks.CreateHttpResponseWithBody(request, statusCode, creds)
+		} else {
+			return mocks.CreateEmptyHttpResponse(request, statusCode)
+		}
 	})
+
+	return nil
+}
+
+func setupMocks(mockContext *mocks.MockContext) error {
+	err := setupListClusterAdminCredentialsMock(mockContext, http.StatusOK)
+	if err != nil {
+		return err
+	}
 
 	// Config view
 	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
@@ -184,7 +295,7 @@ func setupMocks(mockContext *mocks.MockContext) error {
 		return mocks.CreateHttpResponseWithBody(request, http.StatusOK, result)
 	})
 
-	// Docker Tag
+	// Docker login
 	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 		return strings.Contains(command, "docker login")
 	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
@@ -330,8 +441,8 @@ func createK8sResourceList[T any](resource T) *kubectl.List[T] {
 	}
 }
 
-func createServiceTarget(mockContext *mocks.MockContext, projectDirectory string) (ServiceTarget, *ServiceConfig, error) {
-	serviceConfig := ServiceConfig{
+func createServiceConfig(projectDirectory string) *ServiceConfig {
+	return &ServiceConfig{
 		Project: &ProjectConfig{
 			Name: "project",
 			Path: projectDirectory,
@@ -341,8 +452,10 @@ func createServiceTarget(mockContext *mocks.MockContext, projectDirectory string
 		Host:         string(AksTarget),
 		Language:     "js",
 	}
+}
 
-	env := environment.EphemeralWithValues("test", map[string]string{
+func createEnv() *environment.Environment {
+	return environment.EphemeralWithValues("test", map[string]string{
 		environment.TenantIdEnvVarName:                  "TENANT_ID",
 		environment.SubscriptionIdEnvVarName:            "SUBSCRIPTION_ID",
 		environment.LocationEnvVarName:                  "LOCATION",
@@ -350,18 +463,25 @@ func createServiceTarget(mockContext *mocks.MockContext, projectDirectory string
 		environment.AksClusterEnvVarName:                "AKS_CLUSTER",
 		environment.ContainerRegistryEndpointEnvVarName: "REGISTRY.azcurecr.io",
 	})
+}
+
+func createServiceTarget(
+	mockContext *mocks.MockContext,
+	serviceConfig *ServiceConfig,
+	env *environment.Environment,
+) (ServiceTarget, error) {
 	scope := environment.NewTargetResource("SUB_ID", "RG_ID", "CLUSTER_NAME", string(infra.AzureResourceTypeManagedCluster))
 	azCli := azcli.NewAzCli(mockContext.Credentials, azcli.NewAzCliArgs{})
 	containerServiceClient, err := azCli.ContainerService(*mockContext.Context, env.GetSubscriptionId())
 
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
 	kubeCtl := kubectl.NewKubectl(mockContext.CommandRunner)
 	docker := docker.NewDocker(mockContext.CommandRunner)
 
-	return NewAksTarget(&serviceConfig, env, scope, azCli, containerServiceClient, kubeCtl, docker), &serviceConfig, nil
+	return NewAksTarget(serviceConfig, env, scope, azCli, containerServiceClient, kubeCtl, docker), nil
 }
 
 func createTestCluster(clusterName, username string) *kubectl.KubeConfig {

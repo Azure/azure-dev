@@ -70,11 +70,20 @@ func (t *aksTarget) Deploy(
 		)
 	}
 
+	// Login to container registry.
+	loginServer, has := t.env.Values[environment.ContainerRegistryEndpointEnvVarName]
+	if !has {
+		return ServiceDeploymentResult{}, fmt.Errorf(
+			"could not determine container registry endpoint, ensure %s is set as an output of your infrastructure",
+			environment.ContainerRegistryEndpointEnvVarName,
+		)
+	}
+
 	log.Printf("getting AKS credentials %s\n", clusterName)
 	progress <- "Getting AKS credentials"
 	credentials, err := t.containerService.GetAdminCredentials(ctx, t.scope.ResourceGroupName(), clusterName)
 	if err != nil {
-		return ServiceDeploymentResult{}, err
+		return ServiceDeploymentResult{}, fmt.Errorf("failed retrieving cluster admin credentials, %w", err)
 	}
 
 	kubeConfigManager, err := kubectl.NewKubeConfigManager(t.kubectl)
@@ -131,25 +140,16 @@ func (t *aksTarget) Deploy(
 		return ServiceDeploymentResult{}, fmt.Errorf("failed applying kube secrets: %w", err)
 	}
 
-	// Login to container registry.
-	loginServer, has := t.env.Values[environment.ContainerRegistryEndpointEnvVarName]
-	if !has {
-		return ServiceDeploymentResult{}, fmt.Errorf(
-			"could not determine container registry endpoint, ensure %s is set as an output of your infrastructure",
-			environment.ContainerRegistryEndpointEnvVarName,
-		)
-	}
-
 	log.Printf("logging into registry %s\n", loginServer)
 
 	progress <- "Logging into container registry"
 	if err := t.az.LoginAcr(ctx, t.docker, t.env.GetSubscriptionId(), loginServer); err != nil {
-		return ServiceDeploymentResult{}, fmt.Errorf("logging into registry '%s': %w", loginServer, err)
+		return ServiceDeploymentResult{}, fmt.Errorf("failed logging into registry '%s': %w", loginServer, err)
 	}
 
 	imageTag, err := t.generateImageTag()
 	if err != nil {
-		return ServiceDeploymentResult{}, fmt.Errorf("generating image tag: %w", err)
+		return ServiceDeploymentResult{}, fmt.Errorf("failed generating image tag: %w", err)
 	}
 
 	fullTag := fmt.Sprintf(
@@ -162,7 +162,7 @@ func (t *aksTarget) Deploy(
 	log.Printf("tagging image %s as %s", path, fullTag)
 	progress <- "Tagging image"
 	if err := t.docker.Tag(ctx, t.config.Path(), path, fullTag); err != nil {
-		return ServiceDeploymentResult{}, fmt.Errorf("tagging image: %w", err)
+		return ServiceDeploymentResult{}, fmt.Errorf("failed tagging image: %w", err)
 	}
 
 	log.Printf("pushing %s to registry", fullTag)
@@ -170,7 +170,7 @@ func (t *aksTarget) Deploy(
 	// Push image.
 	progress <- "Pushing container image"
 	if err := t.docker.Push(ctx, t.config.Path(), fullTag); err != nil {
-		return ServiceDeploymentResult{}, fmt.Errorf("pushing image: %w", err)
+		return ServiceDeploymentResult{}, fmt.Errorf("failed pushing image: %w", err)
 	}
 
 	// Save the name of the image we pushed into the environment with a well known key.

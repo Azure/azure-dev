@@ -207,4 +207,5 @@ func (ai *actionImplementation) Run(ctx context.Context) (*actions.ActionResult,
 ```
 In the previous example, azd will automatically add the message `SUCCESS: Your command completed successfully!` in color green (for supported color terminals). And the follow up note is added below. Like:
 
-<!-- <image to be added here> -->
+![image](https://user-images.githubusercontent.com/24213737/221761188-42354aac-c1d1-4d07-8f68-57587d1f046a.png)
+

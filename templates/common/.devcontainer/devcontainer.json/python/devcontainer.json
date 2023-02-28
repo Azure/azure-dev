@@ -21,14 +21,18 @@
             "version": "os-provided"
         }
     },
-    "extensions": [
-        "ms-azuretools.azure-dev",
-        "ms-azuretools.vscode-bicep",
-        "ms-azuretools.vscode-docker",
-        "ms-vscode.vscode-node-azure-pack",
-        "ms-python.python",
-        "ms-azuretools.vscode-azurefunctions"
-    ],
+    "customizations": {
+        "vscode": {
+            "extensions": [
+                "ms-azuretools.azure-dev",
+                "ms-azuretools.vscode-bicep",
+                "ms-azuretools.vscode-docker",
+                "ms-vscode.vscode-node-azure-pack",
+                "ms-python.python",
+                "ms-azuretools.vscode-azurefunctions"
+            ]
+        }
+    },
     "forwardPorts": [
         3000,
         3100

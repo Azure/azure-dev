@@ -31,6 +31,31 @@ repo:
         patterns:
           - "**/azure.@(yml|yaml)"
 
+      - from: "$PLACEHOLDERIACTOOLS"
+        to: ""
+        patterns:
+          - "README.md"
+
+      - from: "$PLACEHOLDER_TITLE"
+        to: "ToDo Application with a Python API and Azure Cosmos DB API for MongoDB on Azure App Service"
+        patterns:
+          - "README.md"
+
+      - from: "$REPO_ID"
+        to: "429965571"
+        patterns:
+          - "README.md"
+
+      - from: "$REPO_NAME"
+        to: "todo-python-mongo"
+        patterns:
+          - "README.md"
+
+      - from: "$PLACEHOLDER_DESCRIPTION"
+        to: "using Bicep as the IaC provider"
+        patterns:
+          - "README.md"
+
       - from: ../../../../../common/infra/bicep/core
         to: ../core
         patterns:

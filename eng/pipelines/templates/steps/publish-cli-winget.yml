@@ -1,0 +1,53 @@
+parameters:
+  - name: AllowPrerelease
+    type: boolean
+    default: false
+    displayName: Allow prerelease versions to be published. Should be "false" after GA.
+  - name: CLiVersion
+    type: string
+    default: $(CLI_VERSION)
+    displayName: CLI version
+  - name: GitHubToken
+    type: string
+    default: $(azuresdk-github-pat)
+    displayName: GitHub token
+
+steps:
+  - task: PowerShell@2
+    displayName: Set WinGet Version
+    inputs:
+      pwsh: true
+      targetType: filePath
+      filePath: eng/scripts/Get-MsiVersion.ps1
+      arguments: >-
+        -CliVersion '${{ parameters.CliVersion }}'
+        -DevOpsOutput
+
+  - pwsh: |
+      $submitPackage = eng/scripts/Test-ShouldReleasePackageVersion.ps1 `
+        -Version '$(MSI_VERSION)' `
+        -AllowPrerelease:$${{ parameters.AllowPrerelease }}
+
+      if ('$(Skip.ReleaseWinGet)' -eq 'true') {
+        $submitPackage = 'false'
+      }
+      Write-Host "Setting SubmitWinGetPackage to $submitPackage"
+      Write-Host "##vso[task.setvariable variable=SubmitWinGetPackage]$submitPackage"
+    displayName: Set SubmitWinGetPackage
+
+  - task: PowerShell@2
+    displayName: Update WinGet Manifest
+    inputs:
+      pwsh: true
+      targetType: filePath
+      filePath: eng/scripts/Update-WinGetManifest.ps1
+      arguments: >-
+        -PackageIdentifier Microsoft.Azd
+        -Version '$(WinGetVersion)'
+        -Url "https://github.com/Azure/azure-dev/releases/download/azure-dev-cli_${{ parameters.CliVersion }}/azd-windows-amd64.msi"
+        -GitHubToken ${{ parameters.GitHubToken }}
+        -Submit:$$(SubmitWinGetPackage)
+
+  - publish: winget
+    artifact: WinGetManifest
+    displayName: Upload updated WinGet manifest

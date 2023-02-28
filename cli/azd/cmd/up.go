@@ -139,7 +139,7 @@ func getCmdUpHelpDescription(c *cobra.Command) string {
 			AzdProvision string
 			AzdDeploy    string
 		}{
-			AzdInit:      output.WithHighLightFormat("azd up"),
+			AzdInit:      output.WithHighLightFormat("azd init"),
 			AzdProvision: output.WithHighLightFormat("azd provision"),
 			AzdDeploy:    output.WithHighLightFormat("azd deploy"),
 		},

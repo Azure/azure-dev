@@ -2,7 +2,7 @@
 Log out of Azure.
 
 Usage
-  {{if .Runnable}}{{.UseLine}}{{end}}{{if .HasAvailableSubCommands}}{{.CommandPath}} [command]{{end}}
+  azd logout [flags]
 
 Flags
     -h, --help 	: Gets help for logout.

@@ -2,7 +2,7 @@
 Refresh environment settings by using information from a previous infrastructure provision.
 
 Usage
-  {{if .Runnable}}{{.UseLine}}{{end}}{{if .HasAvailableSubCommands}}{{.CommandPath}} [command]{{end}}
+  azd env refresh [flags]
 
 Flags
     -e, --environment string 	: The name of the environment to use.

@@ -2,7 +2,7 @@
 Set the default environment.
 
 Usage
-  {{if .Runnable}}{{.UseLine}}{{end}}{{if .HasAvailableSubCommands}}{{.CommandPath}} [command]{{end}}
+  azd env select <environment> [flags]
 
 Flags
     -h, --help 	: Gets help for select.

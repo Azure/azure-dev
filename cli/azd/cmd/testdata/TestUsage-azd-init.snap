@@ -5,7 +5,7 @@ Initialize a new application in your current directory.
   • To view all currently available sample templates visit: https://azure.github.io/awesome-azd.
 
 Usage
-  {{if .Runnable}}{{.UseLine}}{{end}}{{if .HasAvailableSubCommands}}{{.CommandPath}} [command]{{end}}
+  azd init [flags]
 
 Flags
     -b, --branch string       	: The template branch to initialize from.

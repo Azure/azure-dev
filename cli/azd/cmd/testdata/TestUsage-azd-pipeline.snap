@@ -5,7 +5,7 @@ Manage integrating your application with build pipelines.
   • For more information, go to: https://aka.ms/azure-dev/pipeline.
 
 Usage
-  {{if .Runnable}}{{.UseLine}}{{end}}{{if .HasAvailableSubCommands}}{{.CommandPath}} [command]{{end}}
+  azd pipeline [command]
 
 Available Commands
   config	: Create and configure your deployment pipeline by using GitHub or Azdo Actions.

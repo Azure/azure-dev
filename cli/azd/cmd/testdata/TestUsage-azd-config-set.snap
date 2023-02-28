@@ -2,7 +2,7 @@
 Sets a configuration
 
 Usage
-  {{if .Runnable}}{{.UseLine}}{{end}}{{if .HasAvailableSubCommands}}{{.CommandPath}} [command]{{end}}
+  azd config set <path> <value> [flags]
 
 Flags
     -h, --help 	: Gets help for set.

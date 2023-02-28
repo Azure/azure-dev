@@ -2,7 +2,7 @@
 Show details for a given template.
 
 Usage
-  {{if .Runnable}}{{.UseLine}}{{end}}{{if .HasAvailableSubCommands}}{{.CommandPath}} [command]{{end}}
+  azd template show <template> [flags]
 
 Flags
     -h, --help          	: Gets help for show.

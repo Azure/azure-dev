@@ -5,7 +5,7 @@ Deploy application to Azure.
   • After the deployment is complete, the endpoint is printed. To start the service, select the endpoint or paste it in a browser.
 
 Usage
-  {{if .Runnable}}{{.UseLine}}{{end}}{{if .HasAvailableSubCommands}}{{.CommandPath}} [command]{{end}}
+  azd deploy [flags]
 
 Flags
     -e, --environment string 	: The name of the environment to use.
@@ -19,13 +19,13 @@ Global Flags
         --no-prompt  	: Accepts the default value instead of prompting, or it fails if there is no default.
 
 Examples
-  Reviews all code and services in your azure.yaml file and deploys to Azure.
-    azd deploy
-
   Deploy all application API services to Azure.
     azd deploy --service api
 
   Deploy all application web services to Azure.
     azd deploy --service web
+
+  Reviews all code and services in your azure.yaml file and deploys to Azure.
+    azd deploy
 
 

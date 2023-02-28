@@ -2,7 +2,7 @@
 Log in to Azure.
 
 Usage
-  {{if .Runnable}}{{.UseLine}}{{end}}{{if .HasAvailableSubCommands}}{{.CommandPath}} [command]{{end}}
+  azd login [flags]
 
 Flags
         --check-status                         	: Checks the log-in status instead of logging in.

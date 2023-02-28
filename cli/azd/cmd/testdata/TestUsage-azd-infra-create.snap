@@ -2,7 +2,7 @@
 Provision the Azure resources for an app.
 
 Usage
-  {{if .Runnable}}{{.UseLine}}{{end}}{{if .HasAvailableSubCommands}}{{.CommandPath}} [command]{{end}}
+  azd infra create [flags]
 
 Flags
     -e, --environment string 	: The name of the environment to use.

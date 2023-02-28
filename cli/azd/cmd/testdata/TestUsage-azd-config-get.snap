@@ -2,7 +2,7 @@
 Gets a configuration
 
 Usage
-  {{if .Runnable}}{{.UseLine}}{{end}}{{if .HasAvailableSubCommands}}{{.CommandPath}} [command]{{end}}
+  azd config get <path> [flags]
 
 Flags
     -h, --help          	: Gets help for get.

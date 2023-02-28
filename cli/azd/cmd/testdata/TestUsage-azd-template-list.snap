@@ -2,7 +2,7 @@
 Show list of sample azd templates.
 
 Usage
-  {{if .Runnable}}{{.UseLine}}{{end}}{{if .HasAvailableSubCommands}}{{.CommandPath}} [command]{{end}}
+  azd template list [flags]
 
 Flags
     -h, --help          	: Gets help for list.

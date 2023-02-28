@@ -2,7 +2,7 @@
 Create a new environment.
 
 Usage
-  {{if .Runnable}}{{.UseLine}}{{end}}{{if .HasAvailableSubCommands}}{{.CommandPath}} [command]{{end}}
+  azd env new <environment> [flags]
 
 Flags
     -h, --help                	: Gets help for new.

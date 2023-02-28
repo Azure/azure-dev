@@ -8,7 +8,7 @@ This Command prompts you to input the following:
   • Azure subscription: The Azure subscription where your resources will be deployed.
 
 Usage
-  {{if .Runnable}}{{.UseLine}}{{end}}{{if .HasAvailableSubCommands}}{{.CommandPath}} [command]{{end}}
+  azd provision [flags]
 
 Flags
     -e, --environment string 	: The name of the environment to use.

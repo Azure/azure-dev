@@ -2,7 +2,7 @@
 Get all environment values.
 
 Usage
-  {{if .Runnable}}{{.UseLine}}{{end}}{{if .HasAvailableSubCommands}}{{.CommandPath}} [command]{{end}}
+  azd env get-values [flags]
 
 Flags
     -e, --environment string 	: The name of the environment to use.

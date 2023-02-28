@@ -11,6 +11,7 @@ import (
 	"github.com/nicksnyder/go-i18n/v2/i18n"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
+	"golang.org/x/exp/slices"
 )
 
 const (
@@ -329,7 +330,8 @@ func generateCmdHelpSamplesBlock(samples map[string]string) string {
 	for title, command := range samples {
 		lines = append(lines, fmt.Sprintf("  %s\n    %s", title, command))
 	}
-
+	// sorting lines to keep a deterministic output, as map[string]string is not ordered
+	slices.Sort(lines)
 	return fmt.Sprintf("%s\n%s\n",
 		output.WithBold(output.WithUnderline("%s", i18nGetText(i18nExamples))),
 		strings.Join(lines, "\n\n"),

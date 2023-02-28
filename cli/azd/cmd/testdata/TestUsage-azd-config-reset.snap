@@ -2,7 +2,7 @@
 Resets configuration to default
 
 Usage
-  {{if .Runnable}}{{.UseLine}}{{end}}{{if .HasAvailableSubCommands}}{{.CommandPath}} [command]{{end}}
+  azd config reset [flags]
 
 Flags
     -h, --help 	: Gets help for reset.

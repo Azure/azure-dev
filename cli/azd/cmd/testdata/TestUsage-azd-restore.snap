@@ -5,7 +5,7 @@ Restore application dependencies.
   • For the best local rn and debug experience, go to https://aka.ms/azure-dev/vscode to learn how to use the Visual Studio Code extension.
 
 Usage
-  {{if .Runnable}}{{.UseLine}}{{end}}{{if .HasAvailableSubCommands}}{{.CommandPath}} [command]{{end}}
+  azd restore [flags]
 
 Flags
     -e, --environment string 	: The name of the environment to use.
@@ -18,10 +18,10 @@ Global Flags
         --no-prompt  	: Accepts the default value instead of prompting, or it fails if there is no default.
 
 Examples
-  Downloads and installs all application dependencies.
-    azd restore
-
   Downloads and installs a specific application service dependency, Individual services are listed in your azure.yaml file.
     azd restore --service [Service name]
+
+  Downloads and installs all application dependencies.
+    azd restore
 
 

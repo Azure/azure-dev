@@ -2,7 +2,7 @@
 Manage your environment settings.
 
 Usage
-  {{if .Runnable}}{{.UseLine}}{{end}}{{if .HasAvailableSubCommands}}{{.CommandPath}} [command]{{end}}
+  azd env set <key> <value> [flags]
 
 Flags
     -e, --environment string 	: The name of the environment to use.

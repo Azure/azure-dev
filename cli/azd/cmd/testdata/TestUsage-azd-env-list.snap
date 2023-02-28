@@ -2,7 +2,7 @@
 List environments.
 
 Usage
-  {{if .Runnable}}{{.UseLine}}{{end}}{{if .HasAvailableSubCommands}}{{.CommandPath}} [command]{{end}}
+  azd env list [flags]
 
 Flags
     -h, --help          	: Gets help for list.

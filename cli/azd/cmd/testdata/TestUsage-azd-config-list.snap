@@ -2,7 +2,7 @@
 Lists all configuration values
 
 Usage
-  {{if .Runnable}}{{.UseLine}}{{end}}{{if .HasAvailableSubCommands}}{{.CommandPath}} [command]{{end}}
+  azd config list [flags]
 
 Flags
     -h, --help          	: Gets help for list.

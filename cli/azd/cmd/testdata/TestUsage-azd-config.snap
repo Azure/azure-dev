@@ -6,7 +6,7 @@ Manage the Azure Developer CLI user configuration, which includes your default A
   • The default configuration path is: %HOME/.azd.
 
 Usage
-  {{if .Runnable}}{{.UseLine}}{{end}}{{if .HasAvailableSubCommands}}{{.CommandPath}} [command]{{end}}
+  azd config [command]
 
 Available Commands
   get  	: Gets a configuration

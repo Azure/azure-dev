@@ -2,7 +2,7 @@
 Manage your Azure infrastructure.
 
 Usage
-  {{if .Runnable}}{{.UseLine}}{{end}}{{if .HasAvailableSubCommands}}{{.CommandPath}} [command]{{end}}
+  azd infra [command]
 
 Available Commands
   create	: Provision the Azure resources for an app.

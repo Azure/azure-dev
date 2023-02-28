@@ -2,7 +2,7 @@
 Delete Azure resources for an app.
 
 Usage
-  {{if .Runnable}}{{.UseLine}}{{end}}{{if .HasAvailableSubCommands}}{{.CommandPath}} [command]{{end}}
+  azd infra delete [flags]
 
 Flags
     -e, --environment string 	: The name of the environment to use.

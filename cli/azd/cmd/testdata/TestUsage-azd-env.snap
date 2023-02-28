@@ -7,7 +7,7 @@ Manage your application environments. With this command group, you can create a 
   • The environment name is stored as the AZURE_ENV_NAME environment variable in the .azure/<environment-name>/.env file.
 
 Usage
-  {{if .Runnable}}{{.UseLine}}{{end}}{{if .HasAvailableSubCommands}}{{.CommandPath}} [command]{{end}}
+  azd env [command]
 
 Available Commands
   get-values	: Get all environment values.

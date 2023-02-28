@@ -2,7 +2,7 @@
 Delete Azure resources for an application. Running azd down will not delete application files on your local machine.
 
 Usage
-  {{if .Runnable}}{{.UseLine}}{{end}}{{if .HasAvailableSubCommands}}{{.CommandPath}} [command]{{end}}
+  azd down [flags]
 
 Flags
     -e, --environment string 	: The name of the environment to use.

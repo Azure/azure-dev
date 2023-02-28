@@ -68,13 +68,10 @@ func newDeployFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *
 }
 
 func newDeployCmd() *cobra.Command {
-	cmd := &cobra.Command{
+	return &cobra.Command{
 		Use:   "deploy",
 		Short: i18nGetText(i18nCmdDeployShort),
 	}
-	setGroupCommandAnnotation(cmd, cmdGroupManage)
-	cmd.SetHelpTemplate("")
-	return cmd
 }
 
 type deployAction struct {

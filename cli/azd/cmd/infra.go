@@ -11,12 +11,13 @@ import (
 )
 
 func infraActions(root *actions.ActionDescriptor) *actions.ActionDescriptor {
-	cmd := &cobra.Command{
-		Short: i18nGetText(i18nCmdInfraShort),
-	}
-	setGroupCommandAnnotation(cmd, cmdGroupManage)
 	group := root.Add("infra", &actions.ActionDescriptorOptions{
-		Command: cmd,
+		Command: &cobra.Command{
+			Short: i18nGetText(i18nCmdInfraShort),
+		},
+		GroupingOptions: actions.CommandGroupOptions{
+			RootLevelHelp: actions.CmdGroupManage,
+		},
 	})
 
 	group.

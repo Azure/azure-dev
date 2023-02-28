@@ -49,12 +49,10 @@ func newRestoreFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) 
 }
 
 func restoreCmdDesign() *cobra.Command {
-	cmd := &cobra.Command{
+	return &cobra.Command{
 		Use:   "restore",
 		Short: i18nGetText(i18nCmdRestoreShort),
 	}
-	setGroupCommandAnnotation(cmd, cmdGroupConfig)
-	return cmd
 }
 
 type restoreAction struct {

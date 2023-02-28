@@ -56,16 +56,17 @@ func (pc *pipelineConfigFlags) Bind(local *pflag.FlagSet, global *internal.Globa
 }
 
 func pipelineActions(root *actions.ActionDescriptor) *actions.ActionDescriptor {
-	pipelineCmd := &cobra.Command{
-		Use:   "pipeline",
-		Short: i18nGetText(i18nCmdPipelineShort),
-	}
-	setGroupCommandAnnotation(pipelineCmd, cmdGroupMonitor)
 	group := root.Add("pipeline", &actions.ActionDescriptorOptions{
-		Command: pipelineCmd,
+		Command: &cobra.Command{
+			Use:   "pipeline",
+			Short: i18nGetText(i18nCmdPipelineShort),
+		},
 		HelpOptions: actions.ActionHelpOptions{
 			Description: getCmdPipelineHelpDescription,
 			Footer:      getCmdPipelineHelpFooter,
+		},
+		GroupingOptions: actions.CommandGroupOptions{
+			RootLevelHelp: actions.CmdGroupMonitor,
 		},
 	})
 

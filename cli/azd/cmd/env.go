@@ -27,16 +27,16 @@ import (
 )
 
 func envActions(root *actions.ActionDescriptor) *actions.ActionDescriptor {
-	envCmd := &cobra.Command{
-		Use:   "env",
-		Short: "Manage environments.",
-	}
-	setGroupCommandAnnotation(envCmd, cmdGroupManage)
-
 	group := root.Add("env", &actions.ActionDescriptorOptions{
-		Command: envCmd,
+		Command: &cobra.Command{
+			Use:   "env",
+			Short: "Manage environments.",
+		},
 		HelpOptions: actions.ActionHelpOptions{
 			Description: getCmdEnvHelpDescription,
+		},
+		GroupingOptions: actions.CommandGroupOptions{
+			RootLevelHelp: actions.CmdGroupManage,
 		},
 	})
 

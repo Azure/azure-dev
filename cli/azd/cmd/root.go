@@ -111,17 +111,18 @@ func NewRootCmd(staticHelp bool, middlewareChain []*actions.MiddlewareRegistrati
 	templatesActions(root)
 	authActions(root)
 
-	versionCmd := &cobra.Command{
-		Short: "Print the version number of Azure Developer CLI.",
-	}
-	setGroupCommandAnnotation(versionCmd, cmdGroupAbout)
 	root.Add("version", &actions.ActionDescriptorOptions{
-		Command:          versionCmd,
+		Command: &cobra.Command{
+			Short: "Print the version number of Azure Developer CLI.",
+		},
 		ActionResolver:   newVersionAction,
 		FlagsResolver:    newVersionFlags,
 		DisableTelemetry: true,
 		OutputFormats:    []output.Format{output.JsonFormat, output.NoneFormat},
 		DefaultFormat:    output.NoneFormat,
+		GroupingOptions: actions.CommandGroupOptions{
+			RootLevelHelp: actions.CmdGroupAbout,
+		},
 	})
 
 	root.Add("show", &actions.ActionDescriptorOptions{
@@ -141,6 +142,9 @@ func NewRootCmd(staticHelp bool, middlewareChain []*actions.MiddlewareRegistrati
 				Description: getCmdRestoreHelpDescription,
 				Footer:      getCmdRestoreHelpFooter,
 			},
+			GroupingOptions: actions.CommandGroupOptions{
+				RootLevelHelp: actions.CmdGroupConfig,
+			},
 		}).
 		UseMiddleware("hooks", middleware.NewHooksMiddleware)
 
@@ -150,11 +154,17 @@ func NewRootCmd(staticHelp bool, middlewareChain []*actions.MiddlewareRegistrati
 		ActionResolver: newLoginAction,
 		OutputFormats:  []output.Format{output.JsonFormat, output.NoneFormat},
 		DefaultFormat:  output.NoneFormat,
+		GroupingOptions: actions.CommandGroupOptions{
+			RootLevelHelp: actions.CmdGroupConfig,
+		},
 	})
 
 	root.Add("logout", &actions.ActionDescriptorOptions{
 		Command:        newLogoutCmd(),
 		ActionResolver: newLogoutAction,
+		GroupingOptions: actions.CommandGroupOptions{
+			RootLevelHelp: actions.CmdGroupConfig,
+		},
 	})
 
 	root.Add("init", &actions.ActionDescriptorOptions{
@@ -164,6 +174,9 @@ func NewRootCmd(staticHelp bool, middlewareChain []*actions.MiddlewareRegistrati
 		HelpOptions: actions.ActionHelpOptions{
 			Description: getCmdInitHelpDescription,
 			Footer:      getCmdInitHelpFooter,
+		},
+		GroupingOptions: actions.CommandGroupOptions{
+			RootLevelHelp: actions.CmdGroupConfig,
 		},
 	}).AddFlagCompletion("template", templateNameCompletion).
 		UseMiddleware("ensureLogin", middleware.NewEnsureLoginMiddleware)
@@ -179,6 +192,9 @@ func NewRootCmd(staticHelp bool, middlewareChain []*actions.MiddlewareRegistrati
 				Description: getCmdProvisionHelpDescription,
 				Footer:      getCmdHelpDefaultFooter,
 			},
+			GroupingOptions: actions.CommandGroupOptions{
+				RootLevelHelp: actions.CmdGroupManage,
+			},
 		}).
 		UseMiddleware("hooks", middleware.NewHooksMiddleware)
 
@@ -192,6 +208,9 @@ func NewRootCmd(staticHelp bool, middlewareChain []*actions.MiddlewareRegistrati
 			HelpOptions: actions.ActionHelpOptions{
 				Description: getCmdDeployHelpDescription,
 				Footer:      getCmdDeployHelpFooter,
+			},
+			GroupingOptions: actions.CommandGroupOptions{
+				RootLevelHelp: actions.CmdGroupManage,
 			},
 		}).
 		UseMiddleware("hooks", middleware.NewHooksMiddleware)
@@ -207,6 +226,9 @@ func NewRootCmd(staticHelp bool, middlewareChain []*actions.MiddlewareRegistrati
 				Description: getCmdUpHelpDescription,
 				Footer:      getCmdUpHelpFooter,
 			},
+			GroupingOptions: actions.CommandGroupOptions{
+				RootLevelHelp: actions.CmdGroupManage,
+			},
 		}).
 		AddFlagCompletion("template", templateNameCompletion).
 		UseMiddleware("hooks", middleware.NewHooksMiddleware)
@@ -218,6 +240,9 @@ func NewRootCmd(staticHelp bool, middlewareChain []*actions.MiddlewareRegistrati
 		HelpOptions: actions.ActionHelpOptions{
 			Description: getCmdMonitorHelpDescription,
 			Footer:      getCmdMonitorHelpFooter,
+		},
+		GroupingOptions: actions.CommandGroupOptions{
+			RootLevelHelp: actions.CmdGroupMonitor,
 		},
 	})
 
@@ -231,6 +256,9 @@ func NewRootCmd(staticHelp bool, middlewareChain []*actions.MiddlewareRegistrati
 			HelpOptions: actions.ActionHelpOptions{
 				Description: getCmdDownHelpDescription,
 				Footer:      getCmdDownHelpFooter,
+			},
+			GroupingOptions: actions.CommandGroupOptions{
+				RootLevelHelp: actions.CmdGroupManage,
 			},
 		}).
 		UseMiddleware("hooks", middleware.NewHooksMiddleware)

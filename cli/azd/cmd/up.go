@@ -44,12 +44,10 @@ func newUpFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *upFl
 }
 
 func newUpCmd() *cobra.Command {
-	cmd := &cobra.Command{
+	return &cobra.Command{
 		Use:   "up",
 		Short: i18nGetText(i18nCmdUpShort),
 	}
-	setGroupCommandAnnotation(cmd, cmdGroupManage)
-	return cmd
 }
 
 type upAction struct {

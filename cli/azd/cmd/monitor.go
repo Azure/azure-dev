@@ -53,12 +53,10 @@ func newMonitorFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) 
 }
 
 func newMonitorCmd() *cobra.Command {
-	cmd := &cobra.Command{
+	return &cobra.Command{
 		Use:   "monitor",
 		Short: i18nGetText(i18nCmdMonitorShort),
 	}
-	setGroupCommandAnnotation(cmd, cmdGroupMonitor)
-	return cmd
 }
 
 type monitorAction struct {

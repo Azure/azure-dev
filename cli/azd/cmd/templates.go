@@ -38,15 +38,15 @@ func templateNameCompletion(cmd *cobra.Command, args []string, toComplete string
 }
 
 func templatesActions(root *actions.ActionDescriptor) *actions.ActionDescriptor {
-	cmd := &cobra.Command{
-		Short: i18nGetText(i18nCmdTemplateShort),
-	}
-	setGroupCommandAnnotation(cmd, cmdGroupConfig)
-
 	group := root.Add("template", &actions.ActionDescriptorOptions{
-		Command: cmd,
+		Command: &cobra.Command{
+			Short: i18nGetText(i18nCmdTemplateShort),
+		},
 		HelpOptions: actions.ActionHelpOptions{
 			Description: getCmdTemplateHelpDescription,
+		},
+		GroupingOptions: actions.CommandGroupOptions{
+			RootLevelHelp: actions.CmdGroupConfig,
 		},
 	})
 

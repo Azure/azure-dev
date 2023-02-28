@@ -38,14 +38,10 @@ func newInitFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *in
 }
 
 func newInitCmd() *cobra.Command {
-	cmd := &cobra.Command{
+	return &cobra.Command{
 		Use:   "init",
 		Short: i18nGetText(i18nCmdInitShort),
 	}
-
-	setGroupCommandAnnotation(cmd, cmdGroupConfig)
-
-	return cmd
 }
 
 type initFlags struct {

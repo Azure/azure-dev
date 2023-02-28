@@ -22,13 +22,11 @@ func newDownFlags(cmd *cobra.Command, infraDeleteFlags *infraDeleteFlags, global
 }
 
 func newDownCmd() *cobra.Command {
-	cmd := &cobra.Command{
+	return &cobra.Command{
 		Use:     "down",
 		Short:   i18nGetText(i18nCmdDownShort),
 		Aliases: []string{"infra delete"},
 	}
-	setGroupCommandAnnotation(cmd, cmdGroupManage)
-	return cmd
 }
 
 type downAction struct {

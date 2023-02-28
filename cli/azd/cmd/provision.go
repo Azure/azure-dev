@@ -22,13 +22,11 @@ func newProvisionFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions
 }
 
 func newProvisionCmd() *cobra.Command {
-	cmd := &cobra.Command{
+	return &cobra.Command{
 		Use:     "provision",
 		Aliases: []string{"infra create"},
 		Short:   i18nGetText(i18nCmdProvisionShort),
 	}
-	setGroupCommandAnnotation(cmd, cmdGroupManage)
-	return cmd
 }
 
 type provisionAction struct {

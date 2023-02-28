@@ -125,6 +125,23 @@ type ActionHelpOptions struct {
 	Footer      ActionHelpGenerator
 }
 
+// CommandGroupAnnotationValue describe a group where the command belongs. The types are later used by cmd package to
+// annotate the command.
+type RootLevelHelpOption string
+
+const (
+	CmdGroupNone    RootLevelHelpOption = ""
+	CmdGroupConfig  RootLevelHelpOption = "config"
+	CmdGroupManage  RootLevelHelpOption = "manage"
+	CmdGroupMonitor RootLevelHelpOption = "monitor"
+	CmdGroupAbout   RootLevelHelpOption = "about"
+)
+
+// CommandGroupOptions contains the grouping information that is set when building the command.
+type CommandGroupOptions struct {
+	RootLevelHelp RootLevelHelpOption
+}
+
 // ActionDescriptionOptions specifies all options for a given azd command and action
 type ActionDescriptorOptions struct {
 	// Cobra command configuration
@@ -141,6 +158,8 @@ type ActionDescriptorOptions struct {
 	DisableTelemetry bool
 	// The logic that produces the command help
 	HelpOptions ActionHelpOptions
+	// Defines grouping options for the command
+	GroupingOptions CommandGroupOptions
 }
 
 // Completion function used for cobra command flag completion

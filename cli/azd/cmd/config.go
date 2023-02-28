@@ -72,18 +72,18 @@ func configActions(root *actions.ActionDescriptor, rootOptions *internal.GlobalC
 		The configuration directory can be overridden by specifying a path in the AZD_CONFIG_DIR environment variable.`,
 		helpConfigPaths)
 
-	groupCmd := &cobra.Command{
-		Use:   "config",
-		Short: i18nGetText(i18nCmdConfigShort),
-		Long:  longDescription,
-	}
-	setGroupCommandAnnotation(groupCmd, cmdGroupConfig)
-
 	group := root.Add("config", &actions.ActionDescriptorOptions{
-		Command: groupCmd,
+		Command: &cobra.Command{
+			Use:   "config",
+			Short: i18nGetText(i18nCmdConfigShort),
+			Long:  longDescription,
+		},
 		HelpOptions: actions.ActionHelpOptions{
 			Description: getCmdConfigHelpDescription,
 			Footer:      getCmdConfigHelpFooter,
+		},
+		GroupingOptions: actions.CommandGroupOptions{
+			RootLevelHelp: actions.CmdGroupConfig,
 		},
 	})
 

@@ -121,7 +121,7 @@ func newLoginFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *l
 }
 
 func newLoginCmd() *cobra.Command {
-	cmd := &cobra.Command{
+	return &cobra.Command{
 		Use:   "login",
 		Short: i18nGetText(i18nCmdLoginShort),
 		Long: heredoc.Doc(`
@@ -134,8 +134,6 @@ func newLoginCmd() *cobra.Command {
 		--client-certificate, --federated-credential, or --federated-credential-provider.
 		`),
 	}
-	setGroupCommandAnnotation(cmd, cmdGroupConfig)
-	return cmd
 }
 
 type loginAction struct {

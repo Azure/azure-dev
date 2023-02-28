@@ -13,34 +13,29 @@ import (
 	"github.com/spf13/pflag"
 )
 
-// Defines the type used for annotating a command as part of a group.
-type CommandGroupAnnotationKey string
-
-// Defines the type used as values to annotate command with a group.
-type CommandGroupAnnotationValue string
-
 const (
-	// cmdGrouperKey is an annotation key that is added as part of a cobra annotations for assigning commands to a group.
-	cmdGrouperKey CommandGroupAnnotationKey = "commandGrouper"
-	// cmdGroupConfig defines a group of commands for Configuration.
-	cmdGroupConfig CommandGroupAnnotationValue = CommandGroupAnnotationValue(i18nCmdGroupTitleConfig)
-	// cmdGroupConfig defines a group of commands for Managing.
-	cmdGroupManage CommandGroupAnnotationValue = CommandGroupAnnotationValue(i18nCmdGroupTitleManage)
-	// cmdGroupConfig defines a group of commands for Monitoring.
-	cmdGroupMonitor CommandGroupAnnotationValue = CommandGroupAnnotationValue(i18nCmdGroupTitleMonitor)
-	// cmdGroupConfig defines a group of commands for Help and About.
-	cmdGroupAbout CommandGroupAnnotationValue = CommandGroupAnnotationValue(i18nCmdGroupTitleAbout)
 	// this is used for aligning titles in the console.
 	endOfTitleSentinel string = "\x00"
 )
 
-// setGroupCommandAnnotation adds a grouping annotation to the command.
-func setGroupCommandAnnotation(cmd *cobra.Command, group CommandGroupAnnotationValue) {
-	if cmd.Annotations == nil {
-		cmd.Annotations = make(map[string]string)
-	}
-	cmd.Annotations[string(cmdGrouperKey)] = string(group)
-}
+// Defines the type used for annotating a command as part of a group.
+type commandGroupAnnotationKey string
+
+// Defines the type used as values to annotate command with a group.
+type commandGroupAnnotationValue string
+
+const (
+	// cmdGrouperKey is an annotation key that is added as part of a cobra annotations for assigning commands to a group.
+	cmdGrouperKey commandGroupAnnotationKey = "commandGrouper"
+	// cmdGroupConfig defines a group of commands for Configuration.
+	cmdGroupConfig commandGroupAnnotationValue = commandGroupAnnotationValue(i18nCmdGroupTitleConfig)
+	// cmdGroupConfig defines a group of commands for Managing.
+	cmdGroupManage commandGroupAnnotationValue = commandGroupAnnotationValue(i18nCmdGroupTitleManage)
+	// cmdGroupConfig defines a group of commands for Monitoring.
+	cmdGroupMonitor commandGroupAnnotationValue = commandGroupAnnotationValue(i18nCmdGroupTitleMonitor)
+	// cmdGroupConfig defines a group of commands for Help and About.
+	cmdGroupAbout commandGroupAnnotationValue = commandGroupAnnotationValue(i18nCmdGroupTitleAbout)
+)
 
 // getGroupCommandAnnotation check if there is a grouping annotation for the command. Returns the annotation value as an
 // i18nTextId (so it can be used directly to resolve a string) if the annotation is found. Otherwise, returns `"", false` to

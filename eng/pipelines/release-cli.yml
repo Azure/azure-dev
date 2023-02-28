@@ -3,7 +3,7 @@ resources:
     - repository: azure-sdk-build-tools
       type: git
       name: internal/azure-sdk-build-tools
-      ref: refs/tags/azure-sdk-build-tools_20230112.1
+      ref: refs/tags/azure-sdk-build-tools_20230221.2
 
 # Continuous deployment trigger
 trigger:
@@ -563,27 +563,27 @@ stages:
         pool: azsdk-pool-mms-win-2022-general
         strategy:
           matrix:
-            PerUser: 
+            PerUser:
               PerMachine: $false
             AllUsers:
               PerMachine: $true
         steps:
           - checkout: self
-          
+
           - task: DownloadPipelineArtifact@2
             inputs:
               artifact: test-msi
               path: msi
-          
+
           - task: PowerShell@2
             inputs:
               pwsh: true
               targetType: filePath
               filePath: cli/installer/windows/test-win-msi.ps1
               arguments: >-
-                -PerMachine:$(PerMachine) 
+                -PerMachine:$(PerMachine)
                 -MsiPath msi/azd-windows-amd64.msi
-              # Do not exit on first Write-Error, write all messages and let the 
+              # Do not exit on first Write-Error, write all messages and let the
               # script handle exiting with an error status.
               errorActionPreference: continue
             displayName: Test MSI
@@ -872,6 +872,36 @@ stages:
                     AllowPrerelease: true
                     CliVersion: $(CLI_VERSION)
 
+      - deployment: Publish_WinGet
+        dependsOn: Publish_Release
+        condition: >-
+          and(
+            succeeded(),
+            ne('true', variables['Skip.Publish'])
+          )
+        environment: azure-dev
+
+        pool:
+          name: azsdk-pool-mms-win-2022-general
+
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - checkout: self
+                - task: PowerShell@2
+                  inputs:
+                    pwsh: true
+                    targetType: filePath
+                    filePath: eng/scripts/Set-CliVersionVariable.ps1
+                  displayName: Set CLI_VERSION
+
+                - template: /eng/pipelines/templates/steps/publish-cli-winget.yml
+                  parameters:
+                    # Set to false after GA (https://github.com/Azure/azure-dev/issues/1485)
+                    AllowPrerelease: true
+                    CliVersion: $(CLI_VERSION)
+
       - deployment: Increment_Version
         condition: >-
           and(
@@ -1033,7 +1063,7 @@ stages:
 
 
               #### Windows
-              
+
               PowerShell install
 
               ``````
@@ -1056,7 +1086,7 @@ stages:
                   * ARM64 - $macosReleaseUrlArm64
               * Windows - $windowsReleaseUrl
 
-              ### MSI 
+              ### MSI
 
               * $msiReleaseUrl
 

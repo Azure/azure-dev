@@ -35,6 +35,7 @@ ignoreWords:
     - Azdo
     - aztfmod
     - azurecaf
+    - azurecr
     - azuredevops
     - azurerm
     - armcontainerregistry

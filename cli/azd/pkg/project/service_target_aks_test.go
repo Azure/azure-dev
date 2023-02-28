@@ -269,7 +269,7 @@ func setupMocks(mockContext *mocks.MockContext) error {
 					Location: convert.RefOf("eastus2"),
 					Name:     convert.RefOf("REGISTRY"),
 					Properties: &armcontainerregistry.RegistryProperties{
-						LoginServer: convert.RefOf("REGISTRY.azcurecr.io"),
+						LoginServer: convert.RefOf("REGISTRY.azurecr.io"),
 					},
 				},
 			},
@@ -392,7 +392,7 @@ func setupMocks(mockContext *mocks.MockContext) error {
 				},
 			},
 			Spec: kubectl.IngressSpec{
-				IngressClassName: "ingressclass",
+				IngressClassName: "webapprouting.kubernetes.azure.com",
 				Rules: []kubectl.IngressRule{
 					{
 						Http: kubectl.IngressRuleHttp{
@@ -461,7 +461,7 @@ func createEnv() *environment.Environment {
 		environment.LocationEnvVarName:                  "LOCATION",
 		environment.ResourceGroupEnvVarName:             "RESOURCE_GROUP",
 		environment.AksClusterEnvVarName:                "AKS_CLUSTER",
-		environment.ContainerRegistryEndpointEnvVarName: "REGISTRY.azcurecr.io",
+		environment.ContainerRegistryEndpointEnvVarName: "REGISTRY.azurecr.io",
 	})
 }
 

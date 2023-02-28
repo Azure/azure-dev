@@ -2,7 +2,7 @@
 Monitor a deployed application. For more information, go to: https://aka.ms/azure-dev/monitor.
 
 Usage
-  {{if .Runnable}}{{.UseLine}}{{end}}{{if .HasAvailableSubCommands}}{{.CommandPath}} [command]{{end}}
+  azd monitor [flags]
 
 Flags
     -e, --environment string 	: The name of the environment to use.

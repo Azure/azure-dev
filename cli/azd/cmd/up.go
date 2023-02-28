@@ -11,7 +11,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
-	"github.com/nicksnyder/go-i18n/v2/i18n"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
@@ -46,7 +45,7 @@ func newUpFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *upFl
 func newUpCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "up",
-		Short: i18nGetText(i18nCmdUpShort),
+		Short: "Initialize application, provision Azure resources, and deploy your project with a single command.",
 	}
 }
 
@@ -132,24 +131,17 @@ func (u *upAction) runInit(ctx context.Context) error {
 }
 
 func getCmdUpHelpDescription(c *cobra.Command) string {
-	title := i18nGetTextWithConfig(&i18n.LocalizeConfig{
-		MessageID: string(i18nCmdUpHelp),
-		TemplateData: struct {
-			AzdInit      string
-			AzdProvision string
-			AzdDeploy    string
-		}{
-			AzdInit:      output.WithHighLightFormat("azd init"),
-			AzdProvision: output.WithHighLightFormat("azd provision"),
-			AzdDeploy:    output.WithHighLightFormat("azd deploy"),
-		},
-	})
-	return generateCmdHelpDescription(title, getCmdHelpDescriptionNoteForInit(c))
+
+	return generateCmdHelpDescription(
+		fmt.Sprintf("Executes the %s, %s and %s commands in a single step.",
+			output.WithHighLightFormat("azd init"),
+			output.WithHighLightFormat("azd provision"),
+			output.WithHighLightFormat("azd deploy")), getCmdHelpDescriptionNoteForInit(c))
 }
 
 func getCmdUpHelpFooter(*cobra.Command) string {
 	return generateCmdHelpSamplesBlock(map[string]string{
-		i18nGetText(i18nCmdUpFooterSample): fmt.Sprintf("%s %s",
+		"Initialize, provision and deploy a template to Azure from a GitHub repo.": fmt.Sprintf("%s %s",
 			output.WithHighLightFormat("azd up --template"),
 			output.WithWarningFormat("[GitHub repo URL]"),
 		),

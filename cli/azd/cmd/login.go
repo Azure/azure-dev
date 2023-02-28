@@ -123,7 +123,7 @@ func newLoginFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *l
 func newLoginCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "login",
-		Short: i18nGetText(i18nCmdLoginShort),
+		Short: "Log in to Azure.",
 		Long: heredoc.Doc(`
 		Log in to Azure.
 

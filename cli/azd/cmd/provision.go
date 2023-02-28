@@ -2,11 +2,11 @@ package cmd
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
-	"github.com/nicksnyder/go-i18n/v2/i18n"
 	"github.com/spf13/cobra"
 )
 
@@ -25,7 +25,7 @@ func newProvisionCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:     "provision",
 		Aliases: []string{"infra create"},
-		Short:   i18nGetText(i18nCmdProvisionShort),
+		Short:   "Provision the Azure resources for an application.",
 	}
 }
 
@@ -49,18 +49,15 @@ func (a *provisionAction) Run(ctx context.Context) (*actions.ActionResult, error
 	return a.infraCreate.Run(ctx)
 }
 
-func getCmdProvisionHelpDescription(*cobra.Command) string {
-	title := i18nGetTextWithConfig(&i18n.LocalizeConfig{
-		MessageID: string(i18nCmdProvisionHelp),
-		TemplateData: struct {
-			Command string
-		}{
-			Command: output.WithHighLightFormat("azd provision"),
-		},
-	})
-	return generateCmdHelpDescription(title, []string{
-		formatHelpNote(i18nGetText(i18nCmdProvisionHelpNoteEnv)),
-		formatHelpNote(i18nGetText(i18nCmdProvisionHelpNoteLocation)),
-		formatHelpNote(i18nGetText(i18nCmdProvisionHelpNoteSubscription)),
+func getCmdProvisionHelpDescription(c *cobra.Command) string {
+	return generateCmdHelpDescription(fmt.Sprintf(
+		"Provision the Azure resources for an application."+
+			" This step may take a while depending on the resources provisioned."+
+			" You should run %s any time you update your Bicep or Terraform file."+
+			"\n\nThis command prompts you to input the following:",
+		output.WithHighLightFormat(c.CommandPath())), []string{
+		formatHelpNote("Environment name: The name of your environment (ex: dev, test, prod)."),
+		formatHelpNote("Azure location: The Azure location where your resources will be deployed."),
+		formatHelpNote("Azure subscription: The Azure subscription where your resources will be deployed."),
 	})
 }

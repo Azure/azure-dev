@@ -19,7 +19,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/cli/browser"
-	"github.com/nicksnyder/go-i18n/v2/i18n"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
@@ -55,7 +54,7 @@ func newMonitorFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) 
 func newMonitorCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "monitor",
-		Short: i18nGetText(i18nCmdMonitorShort),
+		Short: "Monitor a deployed application.",
 	}
 }
 
@@ -179,20 +178,14 @@ func (m *monitorAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 }
 
 func getCmdMonitorHelpDescription(*cobra.Command) string {
-	return generateCmdHelpDescription(i18nGetTextWithConfig(&i18n.LocalizeConfig{
-		MessageID: string(i18nCmdMonitorHelp),
-		TemplateData: struct {
-			Url string
-		}{
-			Url: output.WithLinkFormat("https://aka.ms/azure-dev/monitor"),
-		},
-	}), nil)
+	return generateCmdHelpDescription(fmt.Sprintf("Monitor a deployed application. For more information, go to: %s.",
+		output.WithLinkFormat("https://aka.ms/azure-dev/monitor")), nil)
 }
 
 func getCmdMonitorHelpFooter(c *cobra.Command) string {
 	return generateCmdHelpSamplesBlock(map[string]string{
-		i18nGetText(i18nCmdMonitorHelpSample): output.WithHighLightFormat("azd monitor --overview"),
-		i18nGetText(i18nCmdMonitorHelpSample): output.WithHighLightFormat("azd monitor --live"),
-		i18nGetText(i18nCmdMonitorHelpSample): output.WithHighLightFormat("azd monitor --logs"),
+		"Open Application Insights Overview Dashboard.": output.WithHighLightFormat("azd monitor --overview"),
+		"Open Application Insights Live Metrics.":       output.WithHighLightFormat("azd monitor --live"),
+		"Open Application Insights Logs.":               output.WithHighLightFormat("azd monitor --logs"),
 	})
 }

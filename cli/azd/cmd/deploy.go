@@ -22,7 +22,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
-	"github.com/nicksnyder/go-i18n/v2/i18n"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
@@ -70,7 +69,7 @@ func newDeployFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *
 func newDeployCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "deploy",
-		Short: i18nGetText(i18nCmdDeployShort),
+		Short: "Deploy the application's code to Azure.",
 	}
 }
 
@@ -203,24 +202,19 @@ func (d *deployAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 }
 
 func getCmdDeployHelpDescription(*cobra.Command) string {
-	title := i18nGetText(i18nCmdDeployHelp)
-	return generateCmdHelpDescription(title, []string{
-		formatHelpNote(i18nGetTextWithConfig(&i18n.LocalizeConfig{
-			MessageID: string(i18nCmdDeployHelpNoteWhen),
-			TemplateData: struct {
-				Service string
-			}{
-				Service: output.WithHighLightFormat("--service"),
-			},
-		})),
-		formatHelpNote(i18nGetText(i18nCmdDeployHelpNoteAfter)),
+	return generateCmdHelpDescription("Deploy application to Azure.", []string{
+		formatHelpNote(fmt.Sprintf("When no %s value is specified, all services in the 'azure.yaml'"+
+			" file (found in the root of your project) are deployed.", output.WithHighLightFormat("--service"))),
+		formatHelpNote("After the deployment is complete, the endpoint is printed. To start the service, select" +
+			" the endpoint or paste it in a browser."),
 	})
 }
 
 func getCmdDeployHelpFooter(*cobra.Command) string {
 	return generateCmdHelpSamplesBlock(map[string]string{
-		i18nGetText(i18nCmdDeployHelpSample):    output.WithHighLightFormat("azd deploy"),
-		i18nGetText(i18nCmdDeployHelpSampleApi): output.WithHighLightFormat("azd deploy --service api"),
-		i18nGetText(i18nCmdDeployHelpSampleWeb): output.WithHighLightFormat("azd deploy --service web"),
+		"Reviews all code and services in your azure.yaml file and deploys to Azure.": output.WithHighLightFormat(
+			"azd deploy"),
+		"Deploy all application API services to Azure.": output.WithHighLightFormat("azd deploy --service api"),
+		"Deploy all application web services to Azure.": output.WithHighLightFormat("azd deploy --service web"),
 	})
 }

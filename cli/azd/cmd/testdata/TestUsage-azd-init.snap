@@ -2,7 +2,7 @@
 Initialize a new application in your current directory.
 
   • Running azd init without a template will prompt you to start with an empty template or select from a curated list of presets.
-  • To view all currently available sample templates visit: https://azure.github.io/awesome-azd.
+  • To view all currently available sample templates visit: azd init.
 
 Usage
   azd init [flags]

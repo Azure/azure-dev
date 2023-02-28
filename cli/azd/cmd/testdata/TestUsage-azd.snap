@@ -26,7 +26,6 @@ Commands
     pipeline 	: Manage and configure your deployment pipelines.
 
   About, help and upgrade
-    help     	: Help for any command.
     version  	: Print the version number of Azure Developer CLI.
 
 Flags

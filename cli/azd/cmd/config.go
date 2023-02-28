@@ -12,7 +12,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
-	"github.com/nicksnyder/go-i18n/v2/i18n"
 	"github.com/spf13/cobra"
 )
 
@@ -75,7 +74,7 @@ func configActions(root *actions.ActionDescriptor, rootOptions *internal.GlobalC
 	group := root.Add("config", &actions.ActionDescriptorOptions{
 		Command: &cobra.Command{
 			Use:   "config",
-			Short: i18nGetText(i18nCmdConfigShort),
+			Short: "Manage azd configurations (ex: default Azure subscription, location).",
 			Long:  longDescription,
 		},
 		HelpOptions: actions.ActionHelpOptions{
@@ -312,41 +311,26 @@ func (a *configResetAction) Run(ctx context.Context) (*actions.ActionResult, err
 
 func getCmdConfigHelpDescription(*cobra.Command) string {
 	return generateCmdHelpDescription(
-		i18nGetText(i18nCmdConfigHelp),
+		"Manage the Azure Developer CLI user configuration, which includes your default Azure subscription and location.",
 		[]string{
-			formatHelpNote(i18nGetTextWithConfig(&i18n.LocalizeConfig{
-				MessageID: string(i18nCmdConfigHelpNote),
-				TemplateData: struct {
-					Command string
-				}{
-					Command: output.WithHighLightFormat("azd init"),
-				},
-			})),
-			formatHelpNote(i18nGetTextWithConfig(&i18n.LocalizeConfig{
-				MessageID: string(i18nCmdConfigHelpNoteStore),
-				TemplateData: struct {
-					Store string
-				}{
-					Store: output.WithLinkFormat("%HOME/.azd/config.json"),
-				},
-			})),
-			formatHelpNote(i18nGetTextWithConfig(&i18n.LocalizeConfig{
-				MessageID: string(i18nCmdConfigHelpNoteDefault),
-				TemplateData: struct {
-					Path string
-				}{
-					Path: output.WithLinkFormat("%HOME/.azd"),
-				},
-			})),
+			formatHelpNote(fmt.Sprintf("Applications are initially configures when you run %s.",
+				output.WithHighLightFormat("azd init"),
+			)),
+			formatHelpNote(fmt.Sprintf("The subscription and location you select will be stored at: %s.",
+				output.WithLinkFormat("%HOME/.azd/config.json"),
+			)),
+			formatHelpNote(fmt.Sprintf("The default configuration path is: %s.",
+				output.WithLinkFormat("%HOME/.azd"),
+			)),
 		})
 }
 
 func getCmdConfigHelpFooter(c *cobra.Command) string {
 	return generateCmdHelpSamplesBlock(map[string]string{
-		i18nGetText(i18nCmdConfigHelpSample): fmt.Sprintf("%s %s",
+		"Set the default Azure subscription.": fmt.Sprintf("%s %s",
 			output.WithHighLightFormat("azd config set defaults.subscription"),
 			output.WithWarningFormat("<yourSubscriptionID>")),
-		i18nGetText(i18nCmdConfigHelpSample): fmt.Sprintf("%s %s",
+		"Set the default Azure deployment location.": fmt.Sprintf("%s %s",
 			output.WithHighLightFormat("azd config set defaults.location"),
 			output.WithWarningFormat("<location>")),
 	})

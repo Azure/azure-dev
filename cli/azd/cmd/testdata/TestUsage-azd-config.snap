@@ -26,7 +26,10 @@ Global Flags
 Use azd config [command] --help to view examples and more information about a specific command.
 
 Examples
-  Set the default Azure subscription.
+  Set the default Azure deployment location.
     azd config set defaults.location <location>
+
+  Set the default Azure subscription.
+    azd config set defaults.subscription <yourSubscriptionID>
 
 

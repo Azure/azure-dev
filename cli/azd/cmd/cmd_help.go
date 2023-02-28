@@ -8,7 +8,6 @@ import (
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
-	"github.com/nicksnyder/go-i18n/v2/i18n"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 	"golang.org/x/exp/slices"
@@ -29,21 +28,21 @@ const (
 	// cmdGrouperKey is an annotation key that is added as part of a cobra annotations for assigning commands to a group.
 	cmdGrouperKey commandGroupAnnotationKey = "commandGrouper"
 	// cmdGroupConfig defines a group of commands for Configuration.
-	cmdGroupConfig commandGroupAnnotationValue = commandGroupAnnotationValue(i18nCmdGroupTitleConfig)
+	cmdGroupConfig commandGroupAnnotationValue = "Configure and develop your app"
 	// cmdGroupConfig defines a group of commands for Managing.
-	cmdGroupManage commandGroupAnnotationValue = commandGroupAnnotationValue(i18nCmdGroupTitleManage)
+	cmdGroupManage commandGroupAnnotationValue = "Manage Azure resources and app deployments"
 	// cmdGroupConfig defines a group of commands for Monitoring.
-	cmdGroupMonitor commandGroupAnnotationValue = commandGroupAnnotationValue(i18nCmdGroupTitleMonitor)
+	cmdGroupMonitor commandGroupAnnotationValue = "Monitor, test and release your app"
 	// cmdGroupConfig defines a group of commands for Help and About.
-	cmdGroupAbout commandGroupAnnotationValue = commandGroupAnnotationValue(i18nCmdGroupTitleAbout)
+	cmdGroupAbout commandGroupAnnotationValue = "About, help and upgrade"
 )
 
 // getGroupCommandAnnotation check if there is a grouping annotation for the command. Returns the annotation value as an
 // i18nTextId (so it can be used directly to resolve a string) if the annotation is found. Otherwise, returns `"", false` to
 // indicate the command has no grouping annotation.
-func getGroupCommandAnnotation(cmd *cobra.Command) (i18nTextId, bool) {
+func getGroupCommandAnnotation(cmd *cobra.Command) (string, bool) {
 	annotationValue, found := cmd.Annotations[string(cmdGrouperKey)]
-	return i18nTextId(annotationValue), found
+	return annotationValue, found
 }
 
 // cmdHelpGenerator defines the required signature to implement and produce help description for commands.
@@ -110,7 +109,7 @@ func getCmdHelpDefaultDescription(cmd *cobra.Command) string {
 // getCmdHelpDefaultUsage provides the default implementation for displaying the help usage section.
 func getCmdHelpDefaultUsage(cmd *cobra.Command) string {
 	return fmt.Sprintf("%s\n  %s\n\n",
-		output.WithBold(output.WithUnderline(i18nGetText(i18nUsage))),
+		output.WithBold(output.WithUnderline("Usage")),
 		"{{if .Runnable}}{{.UseLine}}{{end}}{{if .HasAvailableSubCommands}}{{.CommandPath}} [command]{{end}}",
 	)
 }
@@ -125,13 +124,13 @@ func getCmdHelpDefaultFlags(cmd *cobra.Command) (result string) {
 	if cmd.HasAvailableLocalFlags() {
 		flags := getFlagsDetails(cmd.LocalFlags())
 		result = fmt.Sprintf("%s\n%s\n",
-			output.WithBold(output.WithUnderline(i18nGetText(i18nFlags))),
+			output.WithBold(output.WithUnderline("Flags")),
 			flags)
 	}
 	if cmd.HasAvailableInheritedFlags() {
 		globalFlags := getFlagsDetails(cmd.InheritedFlags())
 		result += fmt.Sprintf("%s\n%s\n",
-			output.WithBold(output.WithUnderline(i18nGetText(i18nGlobalFlags))),
+			output.WithBold(output.WithUnderline("Global Flags")),
 			globalFlags)
 	}
 	return result
@@ -139,14 +138,12 @@ func getCmdHelpDefaultFlags(cmd *cobra.Command) (result string) {
 
 // getCmdHelpDefaultFooter provides the default implementation for displaying the help footer section.
 func getCmdHelpDefaultFooter(*cobra.Command) string {
-	return fmt.Sprintf("%s %s.\n",
-		i18nGetText(i18nCmdRootHelpFooterReportBug),
-		output.WithLinkFormat(i18nGetText(i18nAzdHats)))
+	return fmt.Sprintf("Find a bug? Want to let us know how we're doing? Fill out this brief survey: %s.\n",
+		output.WithLinkFormat("https://aka.ms/azure-dev/hats"))
 }
 
 /*
-	getCmdHelpCommands defines the base structure for the commands section within the help as:
-
+getCmdHelpCommands defines the base structure for the commands section within the help as:
 *******************
 Commands:
 
@@ -154,41 +151,34 @@ Commands:
 
 *******************
 */
-func getCmdHelpCommands(title i18nTextId, commands string) string {
+func getCmdHelpCommands(title string, commands string) string {
 	if commands == "" {
 		return commands
 	}
-	return fmt.Sprintf("%s\n%s\n", output.WithBold(output.WithUnderline(i18nGetText(title))), commands)
+	return fmt.Sprintf("%s\n%s\n", output.WithBold(output.WithUnderline(title)), commands)
 }
 
 // getCmdHelpGroupedCommands generates {{ commands - description }} where sub-commands are grouped.
 func getCmdHelpGroupedCommands(commands string) string {
-	return getCmdHelpCommands(i18nCommands, commands)
+	return getCmdHelpCommands("Commands", commands)
 }
 
 // getCmdHelpAvailableCommands generates {{ commands - description }} for all sub-commands.
 func getCmdHelpAvailableCommands(commands string) string {
-	return getCmdHelpCommands(i18nAvailableCommands, commands)
+	return getCmdHelpCommands("Available Commands", commands)
 }
 
 // getCmdHelpDescriptionNoteForInit produces help - description - notes for commands which initialize azd (i.e. up, init)
 func getCmdHelpDescriptionNoteForInit(c *cobra.Command) (notes []string) {
-	notes = append(notes, formatHelpNote(i18nGetTextWithConfig(&i18n.LocalizeConfig{
-		MessageID: string(i18nCmdUpRunningNote),
-		TemplateData: struct {
-			AzdUp string
-		}{
-			AzdUp: output.WithHighLightFormat(c.CommandPath()),
-		},
-	})))
-	notes = append(notes, formatHelpNote(i18nGetTextWithConfig(&i18n.LocalizeConfig{
-		MessageID: string(i18CmdUpViewNote),
-		TemplateData: struct {
-			ViewUrl string
-		}{
-			ViewUrl: output.WithLinkFormat(i18nGetText(i18nAwesomeAzdUrl)),
-		},
-	})))
+	notes = append(notes, formatHelpNote(
+		fmt.Sprintf("Running %s without a template will prompt "+
+			"you to start with an empty template or select from a curated list of presets.",
+			output.WithHighLightFormat(c.CommandPath()),
+		)))
+	notes = append(notes, formatHelpNote(
+		fmt.Sprintf("To view all currently available sample templates visit: %s.",
+			output.WithHighLightFormat(c.CommandPath()),
+		)))
 	return notes
 }
 
@@ -296,18 +286,12 @@ func getPreFooter(c *cobra.Command) string {
 		return ""
 	}
 
-	return fmt.Sprintf("%s\n\n", i18nGetTextWithConfig(&i18n.LocalizeConfig{
-		MessageID: string(i18nCmdCommonFooter),
-		TemplateData: struct {
-			AzdRun string
-		}{
-			AzdRun: fmt.Sprintf("%s %s %s",
-				output.WithHighLightFormat("%s", c.CommandPath()),
-				output.WithWarningFormat("[command]"),
-				output.WithHighLightFormat("--help"),
-			),
-		},
-	}))
+	return fmt.Sprintf("Use %s to view examples and more information about a specific command.\n\n",
+		fmt.Sprintf("%s %s %s",
+			output.WithHighLightFormat("%s", c.CommandPath()),
+			output.WithWarningFormat("[command]"),
+			output.WithHighLightFormat("--help"),
+		))
 }
 
 // generateCmdHelpDescription construct a help text block from a title and description notes.
@@ -333,7 +317,7 @@ func generateCmdHelpSamplesBlock(samples map[string]string) string {
 	// sorting lines to keep a deterministic output, as map[string]string is not ordered
 	slices.Sort(lines)
 	return fmt.Sprintf("%s\n%s\n",
-		output.WithBold(output.WithUnderline("%s", i18nGetText(i18nExamples))),
+		output.WithBold(output.WithUnderline("Examples")),
 		strings.Join(lines, "\n\n"),
 	)
 }

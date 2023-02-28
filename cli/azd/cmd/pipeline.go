@@ -5,6 +5,7 @@ package cmd
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/MakeNowJust/heredoc/v2"
@@ -18,7 +19,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
-	"github.com/nicksnyder/go-i18n/v2/i18n"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
@@ -59,7 +59,7 @@ func pipelineActions(root *actions.ActionDescriptor) *actions.ActionDescriptor {
 	group := root.Add("pipeline", &actions.ActionDescriptorOptions{
 		Command: &cobra.Command{
 			Use:   "pipeline",
-			Short: i18nGetText(i18nCmdPipelineShort),
+			Short: "Manage and configure your deployment pipelines.",
 		},
 		HelpOptions: actions.ActionHelpOptions{
 			Description: getCmdPipelineHelpDescription,
@@ -89,10 +89,7 @@ func newPipelineConfigFlags(cmd *cobra.Command, global *internal.GlobalCommandOp
 func newPipelineConfigCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "config",
-		Short: i18nGetText(i18nCmdPipelineConfigShort),
-		Long: `Create and configure your deployment pipeline by using GitHub Actions or Azure Pipelines.
-
-For more information, go to https://aka.ms/azure-dev/pipeline.`,
+		Short: "Create and configure your deployment pipeline by using GitHub or Azdo Actions.",
 	}
 }
 
@@ -170,29 +167,19 @@ func (p *pipelineConfigAction) Run(ctx context.Context) (*actions.ActionResult, 
 
 func getCmdPipelineHelpDescription(*cobra.Command) string {
 	return generateCmdHelpDescription(
-		i18nGetText(i18nCmdPipelineHelp),
+		"Manage integrating your application with build pipelines.",
 		[]string{
-			formatHelpNote(i18nGetTextWithConfig(&i18n.LocalizeConfig{
-				MessageID: string(i18nCmdPipelineHelpNote),
-				TemplateData: struct {
-					Path string
-				}{
-					Path: output.WithLinkFormat(".github/workflows"),
-				},
-			})),
-			formatHelpNote(i18nGetTextWithConfig(&i18n.LocalizeConfig{
-				MessageID: string(i18nCmdPipelineHelpNoteGoto),
-				TemplateData: struct {
-					Url string
-				}{
-					Url: output.WithLinkFormat("https://aka.ms/azure-dev/pipeline"),
-				},
-			})),
+			formatHelpNote(fmt.Sprintf("The Azure Developer CLI template includes a GitHub Actions pipeline"+
+				" configuration file (in the %s folder) that deploys your application whenever code is pushed"+
+				" to the main branch.", output.WithLinkFormat(".github/workflows"))),
+			formatHelpNote(fmt.Sprintf("For more information, go to: %s.",
+				output.WithLinkFormat("https://aka.ms/azure-dev/pipeline"))),
 		})
 }
 
 func getCmdPipelineHelpFooter(c *cobra.Command) string {
 	return generateCmdHelpSamplesBlock(map[string]string{
-		i18nGetText(i18nCmdPipelineHelpSample): output.WithHighLightFormat("azd pipeline config"),
+		"Walk through the steps required " +
+			"to set up your deployment pipeline.": output.WithHighLightFormat("azd pipeline config"),
 	})
 }

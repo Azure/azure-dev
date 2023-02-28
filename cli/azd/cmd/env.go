@@ -21,7 +21,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
-	"github.com/nicksnyder/go-i18n/v2/i18n"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
@@ -94,7 +93,7 @@ func newEnvSetFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *
 func newEnvSetCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "set <key> <value>",
-		Short: i18nGetText(i18nCmdEnvShort),
+		Short: "Manage your environment settings.",
 		Args:  cobra.ExactArgs(2),
 	}
 }
@@ -495,27 +494,16 @@ func (eg *envGetValuesAction) Run(ctx context.Context) (*actions.ActionResult, e
 
 func getCmdEnvHelpDescription(*cobra.Command) string {
 	return generateCmdHelpDescription(
-		i18nGetText(i18nCmdEnvHelp),
+		"Manage your application environments. With this command group, you can create a new environment or get, set,"+
+			" and list your application environments.",
 		[]string{
-			formatHelpNote(i18nGetText(i18nCmdEnvHelpNoteMulti)),
-			formatHelpNote(i18nGetText(i18nCmdEnvHelpNoteEach)),
-			formatHelpNote(i18nGetTextWithConfig(&i18n.LocalizeConfig{
-				MessageID: string(i18nCmdEnvHelpNoteFind),
-				TemplateData: struct {
-					Path string
-				}{
-					Path: output.WithLinkFormat(".azure/<environment-name>"),
-				},
-			})),
-			formatHelpNote(i18nGetTextWithConfig(&i18n.LocalizeConfig{
-				MessageID: string(i18nCmdEnvHelpNoteName),
-				TemplateData: struct {
-					EnvName string
-					Path    string
-				}{
-					EnvName: output.WithHighLightFormat("AZURE_ENV_NAME"),
-					Path:    output.WithLinkFormat(".azure/<environment-name>/.env"),
-				},
-			})),
+			formatHelpNote("An Application can have multiple environments (ex: dev, test, prod)."),
+			formatHelpNote("Each environment may have a different configuration (that is, connectivity information)" +
+				" for accessing Azure resources."),
+			formatHelpNote(fmt.Sprintf("You can find all environment configuration under the %s folder.",
+				output.WithLinkFormat(".azure/<environment-name>"))),
+			formatHelpNote(fmt.Sprintf("The environment name is stored as the %s environment variable in the %s file.",
+				output.WithHighLightFormat("AZURE_ENV_NAME"),
+				output.WithLinkFormat(".azure/<environment-name>/.env"))),
 		})
 }

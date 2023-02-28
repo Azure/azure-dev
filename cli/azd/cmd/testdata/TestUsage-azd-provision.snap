@@ -1,7 +1,7 @@
 
-Provision the Azure resources for an application This step may take a while depending on the resources provisioned. You should run azd provision any time you update your Bicep or Terraform file.
+Provision the Azure resources for an application. This step may take a while depending on the resources provisioned. You should run azd provision any time you update your Bicep or Terraform file.
 
-This Command prompts you to input the following:
+This command prompts you to input the following:
 
   • Environment name: The name of your environment (ex: dev, test, prod).
   • Azure location: The Azure location where your resources will be deployed.

@@ -11,7 +11,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/templates"
-	"github.com/nicksnyder/go-i18n/v2/i18n"
 	"github.com/spf13/cobra"
 	"golang.org/x/exp/maps"
 	"golang.org/x/exp/slices"
@@ -40,7 +39,7 @@ func templateNameCompletion(cmd *cobra.Command, args []string, toComplete string
 func templatesActions(root *actions.ActionDescriptor) *actions.ActionDescriptor {
 	group := root.Add("template", &actions.ActionDescriptorOptions{
 		Command: &cobra.Command{
-			Short: i18nGetText(i18nCmdTemplateShort),
+			Short: "Find and view template details.",
 		},
 		HelpOptions: actions.ActionHelpOptions{
 			Description: getCmdTemplateHelpDescription,
@@ -70,7 +69,7 @@ func templatesActions(root *actions.ActionDescriptor) *actions.ActionDescriptor 
 func newTemplateListCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:     "list",
-		Short:   i18nGetText(i18nCmdTemplateListShort),
+		Short:   "Show list of sample azd templates.",
 		Aliases: []string{"ls"},
 	}
 }
@@ -142,7 +141,7 @@ func (a *templatesShowAction) Run(ctx context.Context) (*actions.ActionResult, e
 func newTemplateShowCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "show <template>",
-		Short: i18nGetText(i18nCmdTemplateShowShort),
+		Short: "Show details for a given template.",
 		Args:  cobra.ExactArgs(1),
 	}
 }
@@ -181,35 +180,16 @@ func formatTemplates(
 }
 
 func getCmdTemplateHelpDescription(*cobra.Command) string {
-	title := i18nGetText(i18nCmdTemplateHelp)
-
-	var notes []string
-	notes = append(notes, formatHelpNote(i18nGetTextWithConfig(&i18n.LocalizeConfig{
-		MessageID: string(i18nCmdTemplateIncludeNote),
-		TemplateData: struct {
-			AzdRun string
-		}{
-			AzdRun: output.WithHighLightFormat("azd template list"),
-		},
-	})))
-	notes = append(notes, formatHelpNote(i18nGetTextWithConfig(&i18n.LocalizeConfig{
-		MessageID: string(i18nCmdTemplateViewNote),
-		TemplateData: struct {
-			Url string
-		}{
-			Url: output.WithLinkFormat(i18nGetText(i18nAwesomeAzdUrl)),
-		},
-	})))
-	notes = append(notes, formatHelpNote(i18nGetTextWithConfig(&i18n.LocalizeConfig{
-		MessageID: string(i18nCmdTemplateRunningNote),
-		TemplateData: struct {
-			AzUp    string
-			AzdInit string
-		}{
-			AzUp:    output.WithHighLightFormat("azd up"),
-			AzdInit: output.WithHighLightFormat("azd init"),
-		},
-	})))
-
-	return generateCmdHelpDescription(title, notes)
+	return generateCmdHelpDescription("View details of your current template or browse a list of curated sample templates.",
+		[]string{
+			formatHelpNote(fmt.Sprintf("The azd CLI includes a curated list of sample templates viewable by running %s.",
+				output.WithHighLightFormat("azd template list"))),
+			formatHelpNote(fmt.Sprintf("To view all available sample templates, including those submitted by the azd"+
+				" community visit: %s.",
+				output.WithLinkFormat("https://azure.github.io/awesome-azd"))),
+			formatHelpNote(fmt.Sprintf("Running %s or %s without a template will prompt you to start with an empty"+
+				" template or select from our curated list of samples.",
+				output.WithHighLightFormat("azd up"),
+				output.WithHighLightFormat("azd init"))),
+		})
 }

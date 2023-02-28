@@ -18,7 +18,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/spin"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
-	"github.com/nicksnyder/go-i18n/v2/i18n"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
@@ -51,7 +50,7 @@ func newRestoreFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) 
 func restoreCmdDesign() *cobra.Command {
 	return &cobra.Command{
 		Use:   "restore",
-		Short: i18nGetText(i18nCmdRestoreShort),
+		Short: "Restore application dependencies.",
 	}
 }
 
@@ -136,24 +135,22 @@ func (r *restoreAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 
 func getCmdRestoreHelpDescription(*cobra.Command) string {
 	return generateCmdHelpDescription(
-		i18nGetText(i18nCmdRestoreHelp),
+		"Restore application dependencies.",
 		[]string{
-			formatHelpNote(i18nGetText(i18nCmdRestoreHelpNote)),
-			formatHelpNote(i18nGetTextWithConfig(&i18n.LocalizeConfig{
-				MessageID: string(i18nCmdRestoreHelpNoteGoto),
-				TemplateData: struct {
-					Url string
-				}{
-					Url: output.WithLinkFormat("https://aka.ms/azure-dev/vscode"),
-				},
-			})),
+			formatHelpNote("Run this command to download and install all required dependencies so that you can build," +
+				" run, and debug the application locally."),
+			formatHelpNote(fmt.Sprintf("For the best local rn and debug experience, go to %s to learn how "+
+				"to use the Visual Studio Code extension.",
+				output.WithLinkFormat("https://aka.ms/azure-dev/vscode"),
+			)),
 		})
 }
 
 func getCmdRestoreHelpFooter(*cobra.Command) string {
 	return generateCmdHelpSamplesBlock(map[string]string{
-		i18nGetText(i18nCmdRestoreHelpSample): output.WithHighLightFormat("azd restore"),
-		i18nGetText(i18nCmdRestoreHelpSampleService): fmt.Sprintf("%s %s",
+		"Downloads and installs all application dependencies.": output.WithHighLightFormat("azd restore"),
+		"Downloads and installs a specific application service " +
+			"dependency, Individual services are listed in your azure.yaml file.": fmt.Sprintf("%s %s",
 			output.WithHighLightFormat("azd restore --service"),
 			output.WithWarningFormat("[Service name]")),
 	})

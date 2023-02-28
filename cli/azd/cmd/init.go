@@ -40,7 +40,7 @@ func newInitFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *in
 func newInitCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "init",
-		Short: i18nGetText(i18nCmdInitShort),
+		Short: "Initialize a new application.",
 	}
 }
 
@@ -246,16 +246,17 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 }
 
 func getCmdInitHelpDescription(c *cobra.Command) string {
-	return generateCmdHelpDescription(i18nGetText(i18nCmdInitHelp), getCmdHelpDescriptionNoteForInit(c))
+	return generateCmdHelpDescription("Initialize a new application in your current directory.",
+		getCmdHelpDescriptionNoteForInit(c))
 }
 
 func getCmdInitHelpFooter(*cobra.Command) string {
 	return generateCmdHelpSamplesBlock(map[string]string{
-		i18nGetText(i18nCmdInitHelpSample): fmt.Sprintf("%s %s",
+		"Initialize a template to your current local directory from a GitHub repo.": fmt.Sprintf("%s %s",
 			output.WithHighLightFormat("azd init --template"),
 			output.WithWarningFormat("[GitHub repo URL]"),
 		),
-		i18nGetText(i18nCmdInitHelpSampleBranch): fmt.Sprintf("%s %s %s %s",
+		"Initialize a template to your current local directory from a branch other than main.": fmt.Sprintf("%s %s %s %s",
 			output.WithHighLightFormat("azd init --template"),
 			output.WithWarningFormat("[GitHub repo URL]"),
 			output.WithHighLightFormat("--branch"),

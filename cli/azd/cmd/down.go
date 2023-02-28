@@ -2,11 +2,11 @@ package cmd
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
-	"github.com/nicksnyder/go-i18n/v2/i18n"
 	"github.com/spf13/cobra"
 )
 
@@ -24,7 +24,7 @@ func newDownFlags(cmd *cobra.Command, infraDeleteFlags *infraDeleteFlags, global
 func newDownCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:     "down",
-		Short:   i18nGetText(i18nCmdDownShort),
+		Short:   "Delete Azure resources for an application.",
 		Aliases: []string{"infra delete"},
 	}
 }
@@ -50,22 +50,17 @@ func (a *downAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 }
 
 func getCmdDownHelpDescription(*cobra.Command) string {
-	title := i18nGetTextWithConfig(&i18n.LocalizeConfig{
-		MessageID: string(i18nCmdDownHelp),
-		TemplateData: struct {
-			AzdDown string
-		}{
-			AzdDown: output.WithHighLightFormat("azd down"),
-		},
-	})
-
-	return generateCmdHelpDescription(title, nil)
+	return generateCmdHelpDescription(fmt.Sprintf(
+		"Delete Azure resources for an application. Running %s will not delete application"+
+			" files on your local machine.", output.WithHighLightFormat("azd down")), nil)
 }
 
 func getCmdDownHelpFooter(*cobra.Command) string {
 	return generateCmdHelpSamplesBlock(map[string]string{
-		i18nGetText(i18nCmdDownHelpSample):      output.WithHighLightFormat("azd down"),
-		i18nGetText(i18nCmdDownHelpSampleForce): output.WithHighLightFormat("azd down --force"),
-		i18nGetText(i18nCmdDownHelpSamplePurge): output.WithHighLightFormat("azd down --purge"),
+		"Delete all resources for an application." +
+			" You will be prompted to confirm your decision.": output.WithHighLightFormat("azd down"),
+		"Forcibly delete all applications resources without confirmation.": output.WithHighLightFormat("azd down --force"),
+		"Permanently delete resources that are soft-deleted by default," +
+			" without confirmation.": output.WithHighLightFormat("azd down --purge"),
 	})
 }

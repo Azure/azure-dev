@@ -32,14 +32,15 @@ func NewRootCmd(staticHelp bool, middlewareChain []*actions.MiddlewareRegistrati
 	opts.EnableTelemetry = telemetry.IsTelemetryEnabled()
 
 	//productName := "The Azure Developer CLI"
-	productName := i18nGetText(i18nProductName)
+	productName := "The Azure Developer CLI"
 	if opts.GenerateStaticHelp {
-		productName = i18nGetText(i18nDocsProductName)
+		productName = "The Azure Developer CLI (`azd`)"
 	}
 
 	rootCmd := &cobra.Command{
-		Use:   "azd",
-		Short: fmt.Sprintf(`%s %s`, productName, i18nGetText(i18nAzdShortHelp)),
+		Use: "azd",
+		Short: fmt.Sprintf("%s is an open-source tool that accelerates the process of getting your application onto"+
+			" Azure and helps you manage it once it's there.", productName),
 		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 			if opts.Cwd != "" {
 				current, err := os.Getwd()
@@ -303,28 +304,24 @@ func NewRootCmd(staticHelp bool, middlewareChain []*actions.MiddlewareRegistrati
 
 func getCmdRootHelpFooter(cmd *cobra.Command) string {
 	return fmt.Sprintf("%s\n  %s %s %s %s\n  %s %s.\n    %s\n\n%s",
-		output.WithBold(output.WithUnderline(i18nGetText(i18nCmdRootHelpFooterQuickStart))),
-		i18nGetText(i18nCmdRootHelpFooterQuickStartDetail),
-		output.WithHighLightFormat(i18nGetText(i18nAzdUpTemplate)),
-		output.WithWarningFormat("[%s]", i18nGetText(i18nTemplateName)),
-		i18nGetText(i18nCmdRootHelpFooterQuickStartLast),
-		output.WithGrayFormat(i18nGetText(i18nCmdRootHelpFooterQuickStartNote)),
-		output.WithLinkFormat(i18nGetText(i18nAwesomeAzdUrl)),
-		output.WithHighLightFormat(i18nGetText(i18nAzdUpNodeJsMongo)),
+		output.WithBold(output.WithUnderline("Quick start: Deploying a sample application")),
+		"Initialize, provision, and deploy a template application by running the",
+		output.WithHighLightFormat("azd up --template"),
+		output.WithWarningFormat("[%s]", "template name"),
+		"command in an empty directory.",
+		output.WithGrayFormat("To view available templates run `azd template list` or visit:"),
+		output.WithLinkFormat("https://azure.github.io/awesome-azd"),
+		output.WithHighLightFormat("azd up --template todo-nodejs-mongo"),
 		getCmdHelpDefaultFooter(cmd),
 	)
 }
 
 func getCmdRootHelpCommands(cmd *cobra.Command) (result string) {
 	childrenCommands := cmd.Commands()
-	groups := []i18nTextId{
-		i18nCmdGroupTitleConfig, i18nCmdGroupTitleManage, i18nCmdGroupTitleMonitor, i18nCmdGroupTitleAbout}
+	groups := []commandGroupAnnotationValue{
+		cmdGroupConfig, cmdGroupManage, cmdGroupMonitor, cmdGroupAbout}
 
-	var commandGroups = make(map[i18nTextId][]string, len(groups))
-	// Add hardcoded message for help, as there is not a command for it and we want it in the list
-	commandGroups[i18nCmdGroupTitleAbout] = append(commandGroups[i18nCmdGroupTitleAbout],
-		fmt.Sprintf("%s%s%s", "help", endOfTitleSentinel, i18nGetText(i18nCmdHelp)))
-
+	var commandGroups = make(map[string][]string, len(groups))
 	// stores the longes line len
 	max := 0
 
@@ -353,8 +350,8 @@ func getCmdRootHelpCommands(cmd *cobra.Command) (result string) {
 	var paragraph []string
 	for _, title := range groups {
 		paragraph = append(paragraph, fmt.Sprintf("  %s\n    %s\n",
-			output.WithBold(i18nGetText(title)),
-			strings.Join(commandGroups[title], "\n    ")))
+			output.WithBold(string(title)),
+			strings.Join(commandGroups[string(title)], "\n    ")))
 	}
 	return strings.Join(paragraph, "\n")
 }

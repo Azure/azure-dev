@@ -17,7 +17,13 @@ Global Flags
         --no-prompt  	: Accepts the default value instead of prompting, or it fails if there is no default.
 
 Examples
-  Open Application Insights Overview Dashboard.
+  Open Application Insights Live Metrics.
+    azd monitor --live
+
+  Open Application Insights Logs.
     azd monitor --logs
+
+  Open Application Insights Overview Dashboard.
+    azd monitor --overview
 
 

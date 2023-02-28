@@ -16,7 +16,6 @@ import (
 	"time"
 
 	azd "github.com/azure/azure-dev/cli/azd/cmd"
-	"github.com/mattn/go-colorable"
 	"github.com/spf13/cobra"
 )
 
@@ -200,13 +199,7 @@ func genMarkdownCustom(cmd *cobra.Command, w io.Writer, linkHandler func(string)
 	buf.WriteString(cmd.Short + "\n\n")
 	if len(cmd.Long) > 0 {
 		buf.WriteString("### Synopsis\n\n")
-
-		var tBuf bytes.Buffer
-		if _, err := io.Copy(colorable.NewNonColorable(&tBuf), strings.NewReader(cmd.Long)); err != nil {
-			panic(fmt.Sprintf("consoleMessageForMessage: did not expect error from io.Copy but got: %v", err))
-		}
-		text := strings.ReplaceAll(tBuf.String(), "\n", "<br>")
-		buf.WriteString(convertLinksToMarkdown(addCodeFencesToSampleCommands(text)) + "\n\n")
+		buf.WriteString(convertLinksToMarkdown(addCodeFencesToSampleCommands(cmd.Long)) + "\n\n")
 	}
 
 	if cmd.Runnable() {

@@ -134,7 +134,7 @@ HelpOptions: actions.ActionHelpOptions{
 During run-time, `azd` will use the `cmdHelpGenerator` to create the command help instead of the default. The help message in the console, for the previous example, would look like:
 
 ```
-$ azd newCommand
+$ azd newCommand --help
 newCommand is my new command
 
 <default help blocks for usage/commands/flags/footer>

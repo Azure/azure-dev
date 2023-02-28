@@ -6,11 +6,11 @@ Read this if you are planning to add or update a console command to azd.
 
 Azd uses the [go cobra library](https://github.com/spf13/cobra) to describe the commands it support. However, with the introduction of azd-hooks, azd required to create links and properties which are beyond cobra's command regular expectations.
 
-The [cmd](https://github.com/Azure/azure-dev/blob/main/cli/azd/cmd/root.go#L4) package in `azd` uses a higher order component called [ActionDescriptor](https://github.com/Azure/azure-dev/blob/main/cli/azd/cmd/actions/action_descriptor.go). This component defines a command beyond the cobra's command scope. It describes options, flags, middleware, and relations between other actions. After creating a `tree` of actions, the root node can be used to generate a cobra command `tree` our of it.
+The [cmd](https://github.com/Azure/azure-dev/blob/main/cli/azd/cmd/root.go#L4) package in `azd` uses a higher order component called [ActionDescriptor](https://github.com/Azure/azure-dev/blob/main/cli/azd/cmd/actions/action_descriptor.go). This component defines a command beyond the cobra's command scope. It describes options, flags, middleware, and relations between other actions. After creating a `tree` of actions, the root node can be used to generate a cobra command `tree` from it.
 
 ## Adding top level command
 
-The `root action descriptor` from azd is called `root`. It is created as part of the `NewRootCmd()` implementation, as the starting phase of creating the cobra command hierarchy. In order to add a new top level command, you need to `add` a child *action descriptor* to `root` like:
+The `top level action descriptor` from azd is called `root`. It is created as part of the `NewRootCmd()` implementation. It is the starting phase of creating the cobra command hierarchy. In order to add a new top level command, you need to `add` a child *action descriptor* to `root` like:
 
 ```golang
 root.Add("command-name", &actions.ActionDescriptorOptions{
@@ -21,6 +21,7 @@ root.Add("command-name", &actions.ActionDescriptorOptions{
     OutputFormats:    []output.Format,
     DefaultFormat:    output.Format,
     HelpOptions:      ActionHelpOptions,
+    GroupingOptions:  CommandGroupOptions
 })
 ```
 
@@ -34,20 +35,20 @@ Command: &cobra.Command{
 }
 ```
 
-- **ActionResolver**: This is a reference to a `callback` function that produces an **actions.Action**. This function defines all the dependencies required by the action. Example:
+- **ActionResolver**: This is a `callback` function that produces an **actions.Action** component. This function defines all the dependencies required by the action. It also defines what the command will execute. Example:
 
 ```golang
 ActionResolver: func newCommandNameAction(
         dependencyFoo DependencyTypeFoo,
         dependencyBar BarType,
     ) actions.Action {
-        return &actionImplementation{
+        return &actionImplementation{  // implements actions.Action
             foo: dependencyFoo,
             bar: dependencyBar,
         }
     }
 ```
-In previous examples `actionImplementation` implements the `actions.Action` interface. As a command author, you need to set the action dependencies, but you must create an implementation for the Action interface to be returned by the `ActionResolver`.
+In the previous example, the `actionImplementation` component implements the `actions.Action` interface. As a command author, you need to set the action dependencies, but you must create an implementation for the Action interface to be returned by the `ActionResolver`. 
 
 
 - **FlagsResolver**: You will need to provide this field if your command will register and support flags. Before registering the `actionResolver`, **azd** will invoke this flag resolver callback. Use this resolver to `bind` command flags to your actionImplementation dependencies. Examples:
@@ -139,6 +140,17 @@ newCommand is my new command
 <default help blocks for usage/commands/flags/footer>
 ```
 
+- **GroupingOptions**: Use this options to assign grouping information to the command. For example:
+
+```golang
+// Adding top level help grouping information
+GroupingOptions: actions.CommandGroupOptions{
+    RootLevelHelp: actions.CmdGroupConfig,
+},
+```
+
+The previous example set the `RootLevelHelp` group to `Config`. When azd displays the top level help (`azd help`), the command will appear within the `configure and develop` group of commands.
+
 ## Adding inner level command
 
 Follow the same steps from adding a command to the top level, but instead of adding the action descriptor to the `root` descriptor, select the parent descriptor where the command will be added. For example:
@@ -150,6 +162,49 @@ envActionDescriptor.Add("myEnvSubCommand", &actions.ActionDescriptorOptions{
 })
 ```
 
-## Adding the command to a command's group
+## Implementing the Action interface
 
-In the top level help (`azd help`), azd uses a grouping classification to display all available sub-commands. If you need to add a command to a group, use the function `setGroupCommandAnnotation()
+Once you have completed the previous steps for creating the action descriptor and adding it to either the root node or as a sub-command, the next step is to implement the `actions.Action` interface. This is the application logic of a CLI command.
+For example:
+
+```golang
+// this is the component returned by the ActionResolver
+type actionImplementation struct {
+	Foo string
+}
+
+// Implement Run method
+func (ai *actionImplementation) Run(ctx context.Context) (*actions.ActionResult, error) {
+    log.Printf("hello %s", ai.Foo) // using component state
+    return nil, nil
+}
+
+```
+
+The previous example shows an easy way to implement the `Action` interface with a hello message to the logs.
+
+
+### Creating the Action Result
+
+As you noticed in previous step, the `Action` interface returns an `ActionResult`. Azd use this model to produce an standard output across commands which contains a `Header` and an optional `Follow up` note. For example:
+
+```golang
+// Generating an Action Result
+func (ai *actionImplementation) Run(ctx context.Context) (*actions.ActionResult, error) {
+    ai.Foo, err = someFunction()
+    if err != nil {
+        // do not create Action Result for errors. Azd automatically handle printing errors.
+		return nil, err
+	}
+
+    return &actions.ActionResult{
+		Message: &actions.ResultMessage{
+			Header: "Your command completed successfully!",
+			FollowUp: "This follow up line is optional.",
+		},
+	}, nil
+}
+```
+In the previous example, azd will automatically add the message `SUCCESS: Your command completed successfully!` in color green (for supported color terminals). And the follow up note is added below. Like:
+
+<!-- <image to be added here> -->

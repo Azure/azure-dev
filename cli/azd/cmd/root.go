@@ -303,8 +303,8 @@ func NewRootCmd(staticHelp bool, middlewareChain []*actions.MiddlewareRegistrati
 }
 
 func getCmdRootHelpFooter(cmd *cobra.Command) string {
-	return fmt.Sprintf("%s\n  %s %s %s %s\n  %s %s.\n    %s\n\n%s",
-		output.WithBold(output.WithUnderline("Quick start: Deploying a sample application")),
+	return fmt.Sprintf("%s\n%s %s %s %s\n%s %s.\n    %s\n\n%s",
+		output.WithBold(output.WithUnderline("Deploying a sample application")),
 		"Initialize, provision, and deploy a template application by running the",
 		output.WithHighLightFormat("azd up --template"),
 		output.WithWarningFormat("[%s]", "template name"),

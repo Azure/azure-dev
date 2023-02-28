@@ -118,7 +118,7 @@ func WaitForResource[T comparable](
 			})
 
 			if err != nil {
-				return fmt.Errorf("failed waiting for deployment, %w", err)
+				return fmt.Errorf("failed waiting for resource, %w", err)
 			}
 
 			for _, r := range result.Items {
@@ -141,7 +141,7 @@ func WaitForResource[T comparable](
 	)
 
 	if err != nil {
-		return zero, fmt.Errorf("failed waiting for deployment, %w", err)
+		return zero, fmt.Errorf("failed waiting for resource, %w", err)
 	}
 
 	return resource, nil

@@ -209,12 +209,12 @@ func (t *aksTarget) Deploy(
 	}
 
 	return ServiceDeploymentResult{
-		TargetResourceId: azure.ContainerAppRID(
+		TargetResourceId: azure.KubernetesServiceRID(
 			t.env.GetSubscriptionId(),
 			t.scope.ResourceGroupName(),
 			t.scope.ResourceName(),
 		),
-		Kind:      ContainerAppTarget,
+		Kind:      AksTarget,
 		Details:   deployment,
 		Endpoints: endpoints,
 	}, nil

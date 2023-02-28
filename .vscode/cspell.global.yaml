@@ -162,6 +162,7 @@ ignoreWords:
     - menuid
     - PLACEHOLDERIACTOOLS
     - LOGANALYTICS
+    - webapprouting
     - zipdeploy
     - appinsights
 useGitignore: true

@@ -58,7 +58,14 @@ func (r *commandRunner) Run(ctx context.Context, args RunArgs) (RunResult, error
 
 	cmd.Dir = args.Cwd
 
-	var stdin, stdout, stderr bytes.Buffer
+	var stdin io.Reader
+	if args.StdIn != nil {
+		stdin = args.StdIn
+	} else {
+		stdin = new(bytes.Buffer)
+	}
+
+	var stdout, stderr bytes.Buffer
 
 	cmd.Env = appendEnv(args.Env)
 
@@ -67,7 +74,7 @@ func (r *commandRunner) Run(ctx context.Context, args RunArgs) (RunResult, error
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
 	} else {
-		cmd.Stdin = &stdin
+		cmd.Stdin = stdin
 		cmd.Stdout = &stdout
 		cmd.Stderr = &stderr
 

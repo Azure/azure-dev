@@ -1,0 +1,5 @@
+steps:
+  - task: KubectlInstaller@0
+    displayName: Kubectl installer
+    inputs:
+      kubectlVersion: latest

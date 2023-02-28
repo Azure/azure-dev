@@ -16,8 +16,8 @@ import (
 	azdinternal "github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/azsdk"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
-	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/docker"
 )
 
 var (
@@ -37,7 +37,7 @@ type AzCli interface {
 	// UserAgent gets the currently configured user agent
 	UserAgent() string
 
-	LoginAcr(ctx context.Context, commandRunner exec.CommandRunner, subscriptionId string, loginServer string) error
+	LoginAcr(ctx context.Context, dockerCli docker.Docker, subscriptionId string, loginServer string) error
 	GetContainerRegistries(ctx context.Context, subscriptionId string) ([]*armcontainerregistry.Registry, error)
 	GetSubscriptionDeployment(
 		ctx context.Context,
@@ -165,6 +165,9 @@ type AzCli interface {
 		environmentName string,
 	) (*AzCliStaticWebAppEnvironmentProperties, error)
 	GetAccessToken(ctx context.Context) (*AzCliAccessToken, error)
+
+	// AKS
+	ContainerService(ctx context.Context, subscriptionId string) (ContainerServiceClient, error)
 }
 
 type AzCliDeployment struct {
@@ -343,4 +346,9 @@ func clientOptionsBuilder(httpClient httputil.HttpClient, userAgent string) *azs
 	return azsdk.NewClientOptionsBuilder().
 		WithTransport(httpClient).
 		WithPerCallPolicy(azsdk.NewUserAgentPolicy(userAgent))
+}
+
+func (cli *azCli) ContainerService(ctx context.Context, subscriptionId string) (ContainerServiceClient, error) {
+	options := cli.createDefaultClientOptionsBuilder(ctx).BuildArmClientOptions()
+	return NewContainerServiceClient(subscriptionId, cli.credential, options)
 }

@@ -51,15 +51,6 @@ func WebsiteRID(subscriptionId, resourceGroupName, websiteName string) string {
 	return returnValue
 }
 
-func AksRID(subscriptionId, resourceGroupName, clusterName string) string {
-	returnValue := fmt.Sprintf(
-		"%s/providers/Microsoft.ContainerService/managedClusters/%s",
-		ResourceGroupRID(subscriptionId, resourceGroupName),
-		clusterName,
-	)
-	return returnValue
-}
-
 func ContainerAppRID(subscriptionId, resourceGroupName, containerAppName string) string {
 	returnValue := fmt.Sprintf(
 		"%s/providers/Microsoft.App/containerApps/%s",

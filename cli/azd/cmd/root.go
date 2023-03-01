@@ -1,6 +1,8 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
+// Modify a file so cli-cl.yml is triggered
+
 package cmd
 
 import (

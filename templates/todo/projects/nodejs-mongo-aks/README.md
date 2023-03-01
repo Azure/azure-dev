@@ -7,7 +7,7 @@ A complete ToDo application that includes everything you need to build, deploy, 
 
 Let's jump in and get the ToDo app up and running in Azure. When you are finished, you will have a fully functional web app deployed on Azure. In later steps, you'll see how to setup a pipeline and monitor the application.
 
-<img src="assets/web.png" width="75%" alt="Screenshot of deployed ToDo app">
+<img src="assets/resources.png" width="75%" alt="Screenshot of deployed ToDo app">
 
 <sup>Screenshot of the deployed ToDo app</sup>
 
@@ -27,6 +27,7 @@ The following prerequisites are required to use this application. Please ensure 
 - [Azure CLI (2.38.0+)](https://docs.microsoft.com/cli/azure/install-azure-cli)
 - [Node.js with npm (16.13.1+)](https://nodejs.org/) - for API backend and Web frontend
 - [Git (2.36.1+)](https://git-scm.com/)
+- [Kubernetes CLI (kubectl)](https://kubernetes.io/docs/tasks/tools/)
 $PLACEHOLDERIACTOOLS
 
 ### Quickstart
@@ -88,6 +89,7 @@ The repo is structured to follow the [Azure Developer CLI](https://aka.ms/azure-
 - **Azure Developer Configuration**: An `azure.yaml` file located in the root that ties the application source code to the Azure services defined in your "infrastructure as code" files.
 - **GitHub Actions**: A sample GitHub action file is located in the `.github/workflows` folder.
 - **VS Code Configuration**: All VS Code configuration to run and debug the application is located in the `.vscode` folder.
+- **K8s Deployment Manifests**: All k8s manifest files to for deployment, services and ingress within the `manifests` folder or each service
 
 ### Azure Subscription
 

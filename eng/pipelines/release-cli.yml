@@ -854,7 +854,7 @@ stages:
           - task: DownloadPipelineArtifact@2
             inputs:
               artifact: linux-packages
-              path: cli/installer/fpm/artifact
+              path: cli/installer/fpm
 
           - task: PowerShell@2
             displayName: Verify Linux Packages

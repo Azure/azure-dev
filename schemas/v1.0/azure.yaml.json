@@ -407,8 +407,9 @@
             "properties": {
                 "deploymentPath": {
                     "type": "string",
-                    "title": "Optional. The relative path from the service path to the k8s deployment manifests. (Default: ./manifests)",
-                    "description": "When set will override the default deployment path location for k8s deployment manifests."
+                    "title": "Optional. The relative path from the service path to the k8s deployment manifests. (Default: manifests)",
+                    "description": "When set will override the default deployment path location for k8s deployment manifests.",
+                    "default": "manifests"
                 },
                 "namespace": {
                     "type": "string",

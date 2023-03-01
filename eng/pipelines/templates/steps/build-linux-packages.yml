@@ -1,5 +1,5 @@
 parameters:
-  Condition: and(succeeded(), eq(variables['BuildTestMsi'], 'true'))
+  Condition: and(succeeded(), eq(variables['BuildLinuxPackages'], 'true'))
   Version: $(CLI_VERSION)
 
 steps: 

@@ -373,7 +373,7 @@
         },
         "docker": {
             "type": "object",
-            "description": "This is only applicable when `host` is `containerapp`",
+            "description": "This is only applicable when `host` is `containerapp` or `aks`",
             "additionalProperties": false,
             "properties": {
                 "path": {

@@ -1,10 +1,12 @@
 APPLICATIONINSIGHTS
 appservice
 asgi
+aspnet
 ASPNETCORE
 asyncio
 autouse
 azdo
+azdeveloper
 borderless
 browserslist
 codegen

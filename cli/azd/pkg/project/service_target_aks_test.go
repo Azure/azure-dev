@@ -168,7 +168,7 @@ func Test_Deploy_No_Admin_Credentials(t *testing.T) {
 }
 
 func setupK8sManifests(t *testing.T, serviceConfig *ServiceConfig) error {
-	manifestsDir := filepath.Join(serviceConfig.RelativePath, "manifests")
+	manifestsDir := filepath.Join(serviceConfig.RelativePath, defaultDeploymentPath)
 	err := os.MkdirAll(manifestsDir, osutil.PermissionDirectory)
 	require.NoError(t, err)
 

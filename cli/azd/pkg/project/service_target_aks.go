@@ -19,11 +19,16 @@ import (
 	"github.com/benbjohnson/clock"
 )
 
+const (
+	defaultDeploymentPath = "manifests"
+)
+
 type AksOptions struct {
-	Namespace  string               `yaml:"namespace"`
-	Ingress    AksIngressOptions    `yaml:"ingress"`
-	Deployment AksDeploymentOptions `yaml:"deployment"`
-	Service    AksServiceOptions    `yaml:"service"`
+	Namespace      string               `yaml:"namespace"`
+	DeploymentPath string               `yaml:"deploymentPath"`
+	Ingress        AksIngressOptions    `yaml:"ingress"`
+	Deployment     AksDeploymentOptions `yaml:"deployment"`
+	Service        AksServiceOptions    `yaml:"service"`
 }
 
 type AksIngressOptions struct {
@@ -182,9 +187,14 @@ func (t *aksTarget) Deploy(
 
 	progress <- "Applying k8s manifests"
 	t.kubectl.SetEnv(t.env.Values)
+	deploymentPath := t.config.K8s.DeploymentPath
+	if deploymentPath == "" {
+		deploymentPath = defaultDeploymentPath
+	}
+
 	err = t.kubectl.ApplyFiles(
 		ctx,
-		filepath.Join(t.config.RelativePath, "manifests"),
+		filepath.Join(t.config.RelativePath, deploymentPath),
 		&kubectl.KubeCliFlags{Namespace: namespace},
 	)
 	if err != nil {

@@ -1,9 +1,7 @@
 param(
-    $Version = $env:CLI_VERSION
+    $Version = $env:CLI_VERSION,
+    $PackageTypes = @('deb', 'rpm')
 )
-
-# Iterate over entire item
-$PACKAGE_TYPES = 'deb', 'rpm'
 
 $originalLocation = Get-Location
 try { 
@@ -22,7 +20,7 @@ try {
     chmod +x azd
     chmod +x azd-linux-amd64
 
-    foreach ($type in $PACKAGE_TYPES) { 
+    foreach ($type in $PackageTypes) { 
         docker run -v "$($currentPath):/work" -t fpm `
             --force `
             --output-type $type `

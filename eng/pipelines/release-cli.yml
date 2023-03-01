@@ -523,9 +523,6 @@ stages:
         vmImage: MMS2022
 
       steps:
-        # Checkout required to build MSI
-        - checkout: self
-
         - task: DownloadPipelineArtifact@2
           inputs:
             artifact: linux-packages
@@ -845,6 +842,28 @@ stages:
               script: $(TestInstallCommand)
               workingDirectory: cli/installer/
             displayName: Test install script (cmd)
+
+      - job: Verify_LinuxPackages
+
+        pool:
+          name: azsdk-pool-mms-ubuntu-2004-general
+
+        steps: 
+          - checkout: self
+
+          - task: DownloadPipelineArtifact@2
+            inputs:
+              artifact: linux-packages
+              path: cli/installer/fpm/artifact
+
+          - task: PowerShell@2
+            condition: ${{ parameters.Condition }}
+            displayName: Verify Linux Packages
+            inputs: 
+              pwsh: true
+              workingDirectory: cli/installer/fpm
+              filePath: eng/scripts/Test-LinuxPackages.ps1
+
 
   - stage: PublishCLI
     dependsOn: Sign

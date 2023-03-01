@@ -21,16 +21,6 @@ steps:
       filePath: eng/scripts/New-LinuxPackages.ps1
       arguments: -Version '${{ parameters.Version }}'
 
-  # TODO: run in Verify Installers instead of here
-  - task: PowerShell@2
-    condition: ${{ parameters.Condition }}
-    displayName: Verify Linux Packages
-    inputs: 
-      pwsh: true
-      workingDirectory: cli/installer/fpm
-      filePath: eng/scripts/Test-LinuxPackages.ps1
-
-  # TODO: Use parameters to output to artifact/ instead of copying at the end?
   - pwsh: |
       New-Item -ItemType directory -Path artifact
       Copy-Item *.deb artifact/

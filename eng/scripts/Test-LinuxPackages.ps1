@@ -1,12 +1,13 @@
-# TODO: Parameterize?
-$PACKAGE_TYPES = 'deb', 'rpm'
+param(
+    $PackageTypes = @('deb', 'rpm')
+)
 
 $originalLocation = Get-Location 
 try {
     Set-Location "$PSSCriptRoot/../../cli/installer/fpm"
     $currentPath = (Get-Location).Path
 
-    foreach ($type in $PACKAGE_TYPES) { 
+    foreach ($type in $PackageTypes) { 
         docker build . -f "test-$type.Dockerfile" -t test-linux-package
         if ($LASTEXITCODE) { 
             Write-Host "Error building test container for type: $type"

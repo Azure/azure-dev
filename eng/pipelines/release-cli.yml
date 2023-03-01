@@ -857,7 +857,6 @@ stages:
               path: cli/installer/fpm/artifact
 
           - task: PowerShell@2
-            condition: ${{ parameters.Condition }}
             displayName: Verify Linux Packages
             inputs: 
               pwsh: true

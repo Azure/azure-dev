@@ -112,7 +112,6 @@ var aksDiagCategories = [
 // Unable to pass in a `resource` scope or unable to use string interpolation in resource types
 resource diagnostics 'Microsoft.Insights/diagnosticSettings@2021-05-01-preview' = if (!empty(workspaceId)) {
   name: 'aks-diagnostics'
-  tags: tags
   scope: aks
   properties: {
     workspaceId: workspaceId

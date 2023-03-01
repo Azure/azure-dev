@@ -56,7 +56,7 @@ type aksTarget struct {
 }
 
 func (t *aksTarget) RequiredExternalTools() []tools.ExternalTool {
-	return []tools.ExternalTool{t.docker}
+	return []tools.ExternalTool{t.docker, t.kubectl}
 }
 
 func (t *aksTarget) Deploy(

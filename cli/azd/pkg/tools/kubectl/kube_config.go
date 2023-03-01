@@ -48,11 +48,8 @@ func (kcm *KubeConfigManager) SaveKubeConfig(ctx context.Context, configName str
 	}
 
 	// Create .kube config folder if it doesn't already exist
-	_, err = os.Stat(kcm.configPath)
-	if err != nil {
-		if err := os.MkdirAll(kcm.configPath, osutil.PermissionDirectory); err != nil {
-			return fmt.Errorf("failed creating .kube config directory, %w", err)
-		}
+	if err := os.MkdirAll(kcm.configPath, osutil.PermissionDirectory); err != nil {
+		return fmt.Errorf("failed creating .kube config directory, %w", err)
 	}
 
 	outFilePath := filepath.Join(kcm.configPath, configName)

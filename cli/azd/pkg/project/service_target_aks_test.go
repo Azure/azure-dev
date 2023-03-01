@@ -40,6 +40,26 @@ func Test_NewAksTarget(t *testing.T) {
 	require.NotNil(t, serviceConfig)
 }
 
+func Test_Required_Tools(t *testing.T) {
+	tempDir := t.TempDir()
+	ostest.Chdir(t, tempDir)
+
+	mockContext := mocks.NewMockContext(context.Background())
+	err := setupMocks(mockContext)
+	require.NoError(t, err)
+
+	serviceConfig := createServiceConfig(tempDir)
+	env := createEnv()
+
+	serviceTarget, err := createServiceTarget(mockContext, serviceConfig, env)
+	require.NoError(t, err)
+
+	requiredTools := serviceTarget.RequiredExternalTools()
+	require.Len(t, requiredTools, 2)
+	require.Implements(t, new(docker.Docker), requiredTools[0])
+	require.Implements(t, new(kubectl.KubectlCli), requiredTools[1])
+}
+
 func Test_Deploy_HappyPath(t *testing.T) {
 	tempDir := t.TempDir()
 	ostest.Chdir(t, tempDir)

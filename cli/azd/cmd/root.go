@@ -38,9 +38,8 @@ func NewRootCmd(staticHelp bool, middlewareChain []*actions.MiddlewareRegistrati
 	}
 
 	rootCmd := &cobra.Command{
-		Use: "azd",
-		Short: fmt.Sprintf("%s is an open-source tool that accelerates the process of getting your application onto"+
-			" Azure and helps you manage it once it's there.", productName),
+		Use:   "azd",
+		Short: fmt.Sprintf("%s is an open-source tool that helps onboard and manage your application on Azure", productName),
 		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 			if opts.Cwd != "" {
 				current, err := os.Getwd()

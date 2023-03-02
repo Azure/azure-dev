@@ -263,7 +263,7 @@ func (t *aksTarget) Endpoints(ctx context.Context) ([]string, error) {
 }
 
 // Finds a deployment using the specified deploymentNameFilter string
-// Waits until the deployment rollout is complete nad all replicas are accessible
+// Waits until the deployment rollout is complete and all replicas are accessible
 func (t *aksTarget) waitForDeployment(
 	ctx context.Context,
 	namespace string,

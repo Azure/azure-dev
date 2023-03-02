@@ -23,23 +23,32 @@ const (
 	defaultDeploymentPath = "manifests"
 )
 
+// The AKS configuration options
 type AksOptions struct {
-	Namespace      string               `yaml:"namespace"`
-	DeploymentPath string               `yaml:"deploymentPath"`
-	Ingress        AksIngressOptions    `yaml:"ingress"`
-	Deployment     AksDeploymentOptions `yaml:"deployment"`
-	Service        AksServiceOptions    `yaml:"service"`
+	// The namespace used for deploying k8s resources. Defaults to the project name
+	Namespace string `yaml:"namespace"`
+	// The relative folder path from the service that contains the k8s deployment manifests. Defaults to 'manifests'
+	DeploymentPath string `yaml:"deploymentPath"`
+	// The services ingress configuration options
+	Ingress AksIngressOptions `yaml:"ingress"`
+	// The services deployment configuration options
+	Deployment AksDeploymentOptions `yaml:"deployment"`
+	// The services service configuration options
+	Service AksServiceOptions `yaml:"service"`
 }
 
+// The AKS ingress options
 type AksIngressOptions struct {
 	Name         string `yaml:"name"`
 	RelativePath string `yaml:"relativePath"`
 }
 
+// The AKS deployment options
 type AksDeploymentOptions struct {
 	Name string `yaml:"name"`
 }
 
+// The AKS service configuration options
 type AksServiceOptions struct {
 	Name string `yaml:"name"`
 }
@@ -55,10 +64,34 @@ type aksTarget struct {
 	clock            clock.Clock
 }
 
+// Creates a new instance of the AKS service target
+func NewAksTarget(
+	config *ServiceConfig,
+	env *environment.Environment,
+	scope *environment.TargetResource,
+	azCli azcli.AzCli,
+	containerService azcli.ContainerServiceClient,
+	kubectlCli kubectl.KubectlCli,
+	docker docker.Docker,
+) ServiceTarget {
+	return &aksTarget{
+		config:           config,
+		env:              env,
+		scope:            scope,
+		az:               azCli,
+		containerService: containerService,
+		docker:           docker,
+		kubectl:          kubectlCli,
+		clock:            clock.New(),
+	}
+}
+
+// Gets the required external tools when using AKS service target
 func (t *aksTarget) RequiredExternalTools() []tools.ExternalTool {
 	return []tools.ExternalTool{t.docker, t.kubectl}
 }
 
+// Deploys service container images to ACR and AKS resources to the AKS cluster
 func (t *aksTarget) Deploy(
 	ctx context.Context,
 	azdCtx *azdcontext.AzdContext,
@@ -66,13 +99,19 @@ func (t *aksTarget) Deploy(
 	progress chan<- string,
 ) (ServiceDeploymentResult, error) {
 	// Login to AKS cluster
-	namespace := t.getK8sNamespace()
 	clusterName, has := t.env.Values[environment.AksClusterEnvVarName]
 	if !has {
 		return ServiceDeploymentResult{}, fmt.Errorf(
 			"could not determine AKS cluster, ensure %s is set as an output of your infrastructure",
 			environment.AksClusterEnvVarName,
 		)
+	}
+
+	log.Printf("getting AKS credentials for cluster '%s'\n", clusterName)
+	progress <- "Getting AKS credentials"
+	clusterCreds, err := t.containerService.GetAdminCredentials(ctx, t.scope.ResourceGroupName(), clusterName)
+	if err != nil {
+		return ServiceDeploymentResult{}, fmt.Errorf("failed retrieving cluster admin credentials, %w", err)
 	}
 
 	// Login to container registry.
@@ -84,11 +123,11 @@ func (t *aksTarget) Deploy(
 		)
 	}
 
-	log.Printf("getting AKS credentials %s\n", clusterName)
-	progress <- "Getting AKS credentials"
-	credentials, err := t.containerService.GetAdminCredentials(ctx, t.scope.ResourceGroupName(), clusterName)
-	if err != nil {
-		return ServiceDeploymentResult{}, fmt.Errorf("failed retrieving cluster admin credentials, %w", err)
+	log.Printf("logging into container registry '%s'\n", loginServer)
+
+	progress <- "Logging into container registry"
+	if err := t.az.LoginAcr(ctx, t.docker, t.env.GetSubscriptionId(), loginServer); err != nil {
+		return ServiceDeploymentResult{}, fmt.Errorf("failed logging into registry '%s': %w", loginServer, err)
 	}
 
 	kubeConfigManager, err := kubectl.NewKubeConfigManager(t.kubectl)
@@ -96,7 +135,8 @@ func (t *aksTarget) Deploy(
 		return ServiceDeploymentResult{}, err
 	}
 
-	kubeConfig, err := kubectl.ParseKubeConfig(ctx, credentials.Kubeconfigs[0].Value)
+	progress <- "Configuring k8s config context"
+	kubeConfig, err := kubectl.ParseKubeConfig(ctx, clusterCreds.Kubeconfigs[0].Value)
 	if err != nil {
 		return ServiceDeploymentResult{}, fmt.Errorf("failed parsing kube config: %w", err)
 	}
@@ -113,6 +153,7 @@ func (t *aksTarget) Deploy(
 		return ServiceDeploymentResult{}, fmt.Errorf("failed using kube context '%s', %w", clusterName, err)
 	}
 
+	namespace := t.getK8sNamespace()
 	kubeFlags := kubectl.KubeCliFlags{
 		Namespace: namespace,
 		DryRun:    "client",
@@ -143,13 +184,6 @@ func (t *aksTarget) Deploy(
 	_, err = t.kubectl.ApplyPipe(ctx, secretResult.Stdout, nil)
 	if err != nil {
 		return ServiceDeploymentResult{}, fmt.Errorf("failed applying kube secrets: %w", err)
-	}
-
-	log.Printf("logging into registry %s\n", loginServer)
-
-	progress <- "Logging into container registry"
-	if err := t.az.LoginAcr(ctx, t.docker, t.env.GetSubscriptionId(), loginServer); err != nil {
-		return ServiceDeploymentResult{}, fmt.Errorf("failed logging into registry '%s': %w", loginServer, err)
 	}
 
 	imageTag, err := t.generateImageTag()
@@ -230,6 +264,7 @@ func (t *aksTarget) Deploy(
 	}, nil
 }
 
+// Gets the service endpoints for the AKS service target
 func (t *aksTarget) Endpoints(ctx context.Context) ([]string, error) {
 	namespace := t.getK8sNamespace()
 
@@ -420,25 +455,4 @@ func (t *aksTarget) getK8sNamespace() string {
 	}
 
 	return namespace
-}
-
-func NewAksTarget(
-	config *ServiceConfig,
-	env *environment.Environment,
-	scope *environment.TargetResource,
-	azCli azcli.AzCli,
-	containerService azcli.ContainerServiceClient,
-	kubectlCli kubectl.KubectlCli,
-	docker docker.Docker,
-) ServiceTarget {
-	return &aksTarget{
-		config:           config,
-		env:              env,
-		scope:            scope,
-		az:               azCli,
-		containerService: containerService,
-		docker:           docker,
-		kubectl:          kubectlCli,
-		clock:            clock.New(),
-	}
 }

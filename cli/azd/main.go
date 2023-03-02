@@ -269,7 +269,6 @@ type updateCacheFile struct {
 // value.
 func isDebugEnabled() bool {
 	debug := false
-	help := false
 	flags := pflag.NewFlagSet("", pflag.ContinueOnError)
 
 	// Since we are running this parse logic on the full command line, there may be additional flags
@@ -280,11 +279,9 @@ func isDebugEnabled() bool {
 	flags.ParseErrorsWhitelist.UnknownFlags = true
 	flags.BoolVar(&debug, "debug", false, "")
 
-	// pflag treats "help" as special and if you don't define a help flag returns `ErrHelp` from
-	// Parse when `--help` is on the command line. Add an explicit help parameter (which we ignore)
-	// so pflag doesn't fail in this case.  If `--help` is passed, the help for `azd` will be shown later
-	// when `cmd.Execute` is run
-	flags.BoolVarP(&help, "help", "h", false, "")
+	// if flag `-h` of `--help` is within the command, the usage is automatically shown.
+	// Setting `Usage` to a no-op will hide this extra unwanted output.
+	flags.Usage = func() {}
 
 	if err := flags.Parse(os.Args[1:]); err != nil {
 		log.Printf("could not parse flags: %v", err)

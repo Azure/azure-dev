@@ -1,0 +1,1 @@
+      AZURE_SQL_CONNECTION_STRING_KEY: sqlServer.outputs.connectionStringKey

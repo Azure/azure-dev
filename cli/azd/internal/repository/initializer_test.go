@@ -16,6 +16,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/git"
+	"github.com/azure/azure-dev/cli/azd/resources"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockexec"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockinput"
 	"github.com/stretchr/testify/assert"
@@ -468,4 +469,15 @@ func Test_parseExecutableFiles(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestCopyTemplate(t *testing.T) {
+	temp := t.TempDir()
+	err := copyTemplateFS(resources.AppTypes, InfraUseOptions{
+		Language:     "dotnet",
+		DatabaseName: "coolDB",
+		Database:     DatabaseCosmos,
+		Projects:     []ProjectSpec{},
+	}, "api-db", temp)
+	require.NoError(t, err)
 }

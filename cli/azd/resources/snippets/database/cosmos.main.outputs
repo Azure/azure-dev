@@ -1,0 +1,4 @@
+// Database outputs
+// The key of the secret stored in KeyVault that contains the connection string
+output AZURE_COSMOS_CONNECTION_STRING_KEY string = cosmos.outputs.connectionStringKey
+output AZURE_COSMOS_DATABASE_NAME string = cosmos.outputs.databaseName

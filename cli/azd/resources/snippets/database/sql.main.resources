@@ -1,0 +1,13 @@
+// The application database
+module sqlServer './app/db.bicep' = {
+  name: 'sql'
+  scope: rg
+  params: {
+    name: !empty(sqlServerName) ? sqlServerName : '${abbrs.sqlServers}${resourceToken}'
+    location: location
+    tags: tags
+    sqlAdminPassword: sqlAdminPassword
+    appUserPassword: appUserPassword
+    keyVaultName: keyVault.outputs.name
+  }
+}

@@ -2,24 +2,27 @@ param accountName string
 param location string = resourceGroup().location
 param tags object = {}
 
-param collections array = [
-  // ToDo!: Define Cosmos DB collections
-  // {
-  //   name: 'TodoList'
-  //   id: 'TodoList'
-  //   shardKey: 'Hash'
-  //   indexKey: '_id'
-  // }
-  // {
-  //   name: 'TodoItem'
-  //   id: 'TodoItem'
-  //   shardKey: 'Hash'
-  //   indexKey: '_id'
-  // }
-]
-
-param databaseName string
+// By default, no tables/collections are created.
+// If you like to create collections as part of infrastructure provisioning,
+// here's an example:
+// [{
+//   name: 'TodoList'
+//   id: 'TodoList'
+//   shardKey: 'Hash'
+//   indexKey: '_id'
+// },
+// {
+//   name: 'TodoItem'
+//   id: 'TodoItem'
+//   shardKey: 'Hash'
+//   indexKey: '_id'
+// }]
+//
+// The example defines a TodoList and TodoItem, uses hash(id) as the partition key, id as the default index.
+param collections array = []
 param keyVaultName string
+
+var databaseName = '{{.DatabaseName}}'
 
 module cosmos '../core/database/cosmos/mongo/cosmos-mongo-db.bicep' = {
   name: 'cosmos-mongo'

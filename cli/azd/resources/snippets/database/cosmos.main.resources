@@ -1,0 +1,10 @@
+module cosmos './app/db.bicep' = {
+  name: 'cosmos'
+  scope: rg
+  params: {
+    accountName: !empty(cosmosAccountName) ? cosmosAccountName : '${abbrs.documentDBDatabaseAccounts}${resourceToken}'
+    location: location
+    tags: tags
+    keyVaultName: keyVault.outputs.name
+  }
+}

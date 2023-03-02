@@ -3,6 +3,7 @@ package repository
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"embed"
 	"errors"
@@ -13,6 +14,7 @@ import (
 	"path"
 	"path/filepath"
 	"strings"
+	"text/template"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
@@ -23,8 +25,28 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/git"
 	"github.com/azure/azure-dev/cli/azd/resources"
 	"github.com/otiai10/copy"
-	"golang.org/x/exp/maps"
 )
+
+type DatabaseOption string
+
+const (
+	DatabaseNone   DatabaseOption = "none"
+	DatabaseCosmos DatabaseOption = "cosmos"
+	DatabaseSql    DatabaseOption = "sql"
+)
+
+func DatabaseDisplayOptions() map[string]DatabaseOption {
+	return map[string]DatabaseOption{
+		"Azure Cosmos DB (MongoDB API)":   DatabaseCosmos,
+		"Azure SQL DB":                    DatabaseSql,
+		"No, I would not like a database": DatabaseNone,
+	}
+}
+
+type ScaffoldContext struct {
+	DatabaseName string
+	Database     map[string]string
+}
 
 // Initializer handles the initialization of a local repository.
 type Initializer struct {
@@ -50,8 +72,10 @@ type ProjectSpec struct {
 }
 
 type InfraUseOptions struct {
-	Language string
-	Projects []ProjectSpec
+	Language     string
+	DatabaseName string
+	Database     DatabaseOption
+	Projects     []ProjectSpec
 }
 
 func LanguageDisplayOptions() map[string]string {
@@ -61,6 +85,35 @@ func LanguageDisplayOptions() map[string]string {
 		"NodeJS":         "node",
 		"Java":           "java",
 	}
+}
+
+type TemplateRules struct {
+	Includes []string
+	Excludes []string
+	Rewrites map[string]string
+}
+
+func getRules(appType string, useOptions InfraUseOptions) TemplateRules {
+	switch appType {
+	case "api-db":
+		return TemplateRules{
+			Includes: []string{
+				fmt.Sprintf("app/api-%s.bicep", mapLanguage(useOptions.Language)),
+				fmt.Sprintf("app/db-%s.bicep.template", string(useOptions.Database)),
+			},
+			Excludes: []string{
+				"app/api-*.bicep",
+				"app/db-*.bicep.template",
+			},
+			Rewrites: map[string]string{
+				fmt.Sprintf("app/api-%s.bicep", mapLanguage(useOptions.Language)):    "app/api.bicep",
+				fmt.Sprintf("app/db-%s.bicep.template", string(useOptions.Database)): "app/db.bicep",
+				"main.bicep.template": "main.bicep",
+			},
+		}
+	}
+
+	return TemplateRules{}
 }
 
 func (i *Initializer) ScaffoldProject(
@@ -130,8 +183,8 @@ func (i *Initializer) InitializeInfra(ctx context.Context,
 }
 
 // copyTemplate copies the given infrastructure template.
-func copyTemplateFS(templateFs embed.FS, useOptions InfraUseOptions, template string, target string) error {
-	root := path.Join("app-types", template)
+func copyTemplateFS(templateFs embed.FS, useOptions InfraUseOptions, appType string, target string) error {
+	root := path.Join("app-types", appType)
 	infraRoot := path.Join(root, "infra")
 	projectContent, err := templateFs.ReadFile(path.Join(root, azdcontext.ProjectFileName))
 	if err != nil {
@@ -143,15 +196,32 @@ func copyTemplateFS(templateFs embed.FS, useOptions InfraUseOptions, template st
 		return err
 	}
 
-	useLang := mapLanguage(useOptions.Language)
-	possibleLanguages := maps.Values(LanguageDisplayOptions())
-	unmatchedLanguageSuffixes := []string{}
-	for _, lang := range possibleLanguages {
-		if lang != useLang {
-			unmatchedLanguageSuffixes = append(unmatchedLanguageSuffixes, fmt.Sprintf("-%s.bicep", lang))
+	rules := getRules(appType, useOptions)
+
+	scaffoldCtx := ScaffoldContext{
+		DatabaseName: useOptions.DatabaseName,
+		Database:     map[string]string{},
+	}
+
+	if useOptions.Database != DatabaseNone {
+		directory := path.Join("snippets", "database")
+		snippets, err := resources.Snippets.ReadDir(directory)
+		if err != nil {
+			return fmt.Errorf("reading database snippets: %w", err)
+		}
+
+		for _, snippet := range snippets {
+			prefix := string(useOptions.Database) + ".main."
+			if strings.HasPrefix(snippet.Name(), prefix) {
+				contents, err := resources.Snippets.ReadFile(path.Join(directory, snippet.Name()))
+				if err != nil {
+					return fmt.Errorf("reading file snippet: %w", err)
+				}
+				resource := strings.TrimPrefix(snippet.Name(), prefix)
+				scaffoldCtx.Database[resource] = string(contents)
+			}
 		}
 	}
-	langSpecificSuffix := fmt.Sprintf("-%s.bicep", useLang)
 
 	return fs.WalkDir(templateFs, infraRoot, func(name string, d fs.DirEntry, err error) error {
 		// If there was some error that was preventing is from walking into the directory, just fail now,
@@ -159,23 +229,61 @@ func copyTemplateFS(templateFs embed.FS, useOptions InfraUseOptions, template st
 		if err != nil {
 			return err
 		}
-		targetPath := filepath.Join(target, "infra", name[len(infraRoot):])
+		relToInfra := strings.TrimPrefix(name[len(infraRoot):], "/")
+		relPath := filepath.Join("infra", name[len(infraRoot):])
+		targetPath := filepath.Join(target, relPath)
 
 		if d.IsDir() {
 			return os.MkdirAll(targetPath, osutil.PermissionDirectory)
 		}
 
-		// TODO: This currently does not read the project Config to figure out this option
-		languageMatched := strings.HasSuffix(name, langSpecificSuffix)
-		if languageMatched {
-			targetPath = strings.TrimSuffix(targetPath, langSpecificSuffix) + ".bicep"
+		alwaysInclude := false
+		for _, pattern := range rules.Includes {
+			if matched, err := filepath.Match(pattern, relToInfra); err != nil {
+				return err
+			} else if matched {
+				alwaysInclude = true
+			}
 		}
 
-		// An unmatched language, do not copy
-		for _, langSuffix := range unmatchedLanguageSuffixes {
-			if strings.HasSuffix(name, langSuffix) {
-				return nil
+		if !alwaysInclude {
+			for _, pattern := range rules.Excludes {
+				if matched, err := filepath.Match(pattern, relToInfra); err != nil {
+					return err
+				} else if matched {
+					// An exclude pattern was matched. The file is excluded.
+					return nil
+				}
 			}
+		}
+
+		for pattern, rewrite := range rules.Rewrites {
+			if matched, err := filepath.Match(pattern, relToInfra); err != nil {
+				return err
+			} else if matched {
+				newName := filepath.Join("infra", rewrite)
+				targetPath = filepath.Join(target, newName)
+			}
+		}
+
+		if filepath.Ext(name) == ".template" {
+			contents, err := fs.ReadFile(templateFs, name)
+			if err != nil {
+				return fmt.Errorf("reading sample file: %w", err)
+			}
+
+			t, err := template.New(relPath).Option("missingkey=zero").Parse(string(contents))
+			if err != nil {
+				return fmt.Errorf("parsing template: %w", err)
+			}
+
+			buf := bytes.NewBufferString("")
+			err = t.Execute(buf, scaffoldCtx)
+			if err != nil {
+				return fmt.Errorf("executing template: %w", err)
+			}
+
+			return os.WriteFile(targetPath, buf.Bytes(), osutil.PermissionFile)
 		}
 
 		contents, err := fs.ReadFile(templateFs, name)
@@ -188,20 +296,7 @@ func copyTemplateFS(templateFs embed.FS, useOptions InfraUseOptions, template st
 
 func copyCoreFS(templateFs embed.FS, useOptions InfraUseOptions, target string) error {
 	root := path.Join("app-types", "core")
-
-	useLang := mapLanguage(useOptions.Language)
-	possibleLanguages := maps.Values(LanguageDisplayOptions())
-	unmatchedLanguageSuffixes := []string{}
-	for _, lang := range possibleLanguages {
-		if lang != useLang {
-			unmatchedLanguageSuffixes = append(unmatchedLanguageSuffixes, fmt.Sprintf("-%s.bicep", lang))
-		}
-	}
-	langSpecificSuffix := fmt.Sprintf("-%s.bicep", useLang)
-
 	return fs.WalkDir(templateFs, root, func(name string, d fs.DirEntry, err error) error {
-		// If there was some error that was preventing is from walking into the directory, just fail now,
-		// not much we can do to recover.
 		if err != nil {
 			return err
 		}
@@ -209,19 +304,6 @@ func copyCoreFS(templateFs embed.FS, useOptions InfraUseOptions, target string) 
 
 		if d.IsDir() {
 			return os.MkdirAll(targetPath, osutil.PermissionDirectory)
-		}
-
-		// TODO: This currently does not read the project Config to figure out this option
-		languageMatched := strings.HasSuffix(name, langSpecificSuffix)
-		if languageMatched {
-			targetPath = strings.TrimSuffix(targetPath, langSpecificSuffix) + ".bicep"
-		}
-
-		// An unmatched language, do not copy
-		for _, langSuffix := range unmatchedLanguageSuffixes {
-			if strings.HasSuffix(name, langSuffix) {
-				return nil
-			}
 		}
 
 		contents, err := fs.ReadFile(templateFs, name)

@@ -405,7 +405,7 @@ func (t *aksTarget) generateImageTag() (string, error) {
 		return configuredTag, nil
 	}
 
-	return fmt.Sprintf("%s/%s-%s:azdev-deploy-%d",
+	return fmt.Sprintf("%s/%s-%s:azd-deploy-%d",
 		strings.ToLower(t.config.Project.Name),
 		strings.ToLower(t.config.Name),
 		strings.ToLower(t.env.GetEnvName()),

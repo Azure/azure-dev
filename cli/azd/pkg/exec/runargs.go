@@ -85,6 +85,7 @@ func (b RunArgs) WithDebug(debug bool) RunArgs {
 	return b
 }
 
+// Updates the stdin reader that will be used while invoking the command
 func (b RunArgs) WithStdIn(stdIn io.Reader) RunArgs {
 	b.StdIn = stdIn
 	return b

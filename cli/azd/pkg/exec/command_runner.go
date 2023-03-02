@@ -21,6 +21,8 @@ type CommandRunner interface {
 }
 
 // Creates a new default instance of the CommandRunner
+// stdin, stdout & stderr will be used by default during interactive commands
+// unless specifically overridden within the command run arguments.
 func NewCommandRunner(stdin io.Reader, stdout io.Writer, stderr io.Writer) CommandRunner {
 	return &commandRunner{
 		stdin:  stdin,
@@ -70,9 +72,9 @@ func (r *commandRunner) Run(ctx context.Context, args RunArgs) (RunResult, error
 	cmd.Env = appendEnv(args.Env)
 
 	if args.Interactive {
-		cmd.Stdin = os.Stdin
-		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
+		cmd.Stdin = r.stdin
+		cmd.Stdout = r.stdout
+		cmd.Stderr = r.stderr
 	} else {
 		cmd.Stdin = stdin
 		cmd.Stdout = &stdout

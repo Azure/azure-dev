@@ -217,7 +217,7 @@ func (at *containerAppTarget) generateImageTag() (string, error) {
 		return configuredTag, nil
 	}
 
-	return fmt.Sprintf("%s/%s-%s:azdev-deploy-%d",
+	return fmt.Sprintf("%s/%s-%s:azd-deploy-%d",
 		strings.ToLower(at.config.Project.Name),
 		strings.ToLower(at.config.Name),
 		strings.ToLower(at.env.GetEnvName()),

@@ -396,7 +396,7 @@
                 "tag": {
                     "type": "string",
                     "title": "The tag that will be applied to the built container image.",
-                    "description": "If omitted, a unique tag will be generated based on the format: {appName}/{serviceName}-{environmentName}:azdev-deploy-{unix time (seconds)}. Supports environment variable substitution. For example, to generate unique tags for a given release: myapp/myimage:${DOCKER_IMAGE_TAG}"
+                    "description": "If omitted, a unique tag will be generated based on the format: {appName}/{serviceName}-{environmentName}:azd-deploy-{unix time (seconds)}. Supports environment variable substitution. For example, to generate unique tags for a given release: myapp/myimage:${DOCKER_IMAGE_TAG}"
                 }
             }
         },
@@ -408,7 +408,7 @@
                 "deploymentPath": {
                     "type": "string",
                     "title": "Optional. The relative path from the service path to the k8s deployment manifests. (Default: manifests)",
-                    "description": "When set will override the default deployment path location for k8s deployment manifests.",
+                    "description": "When set it will override the default deployment path location for k8s deployment manifests.",
                     "default": "manifests"
                 },
                 "namespace": {

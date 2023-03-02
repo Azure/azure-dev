@@ -413,6 +413,7 @@
                             "altText": "Choosing a template to initialize a new project with the Azure Dev CLI"
                         },
                         "completionEvents": [
+                            "onContext:hideAzdScaffoldStep",
                             "onCommand:azure-dev.commands.cli.init"
                         ],
                         "when": "hideAzdScaffoldStep != true"

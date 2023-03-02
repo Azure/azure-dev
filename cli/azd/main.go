@@ -13,7 +13,6 @@ import (
 	"io"
 	"io/fs"
 	"log"
-	"math/rand"
 	"net/http"
 	"os"
 	"os/exec"
@@ -39,9 +38,6 @@ func main() {
 
 	restoreColorMode := colorable.EnableColorsStdout(nil)
 	defer restoreColorMode()
-
-	// Ensure random numbers from default random number generator are unpredictable
-	rand.Seed(time.Now().UTC().UnixNano())
 
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
 

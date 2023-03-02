@@ -3,7 +3,7 @@ resources:
     - repository: azure-sdk-build-tools
       type: git
       name: internal/azure-sdk-build-tools
-      ref: refs/tags/azure-sdk-build-tools_20230112.1
+      ref: refs/tags/azure-sdk-build-tools_20230221.2
 
 # Continuous deployment trigger
 trigger:
@@ -47,6 +47,7 @@ stages:
               SetExecutableBit: true
               SetShieldInfo: true
               GenerateCoverage: true
+              BuildLinuxPackages: true
               AZURE_DEV_CI_OS: lin
             Mac:
               Pool: Azure Pipelines
@@ -185,6 +186,10 @@ stages:
             workingDirectory: cli/azd
             displayName: Set executable bit for non-Windows binaries
 
+          - template: /eng/pipelines/templates/steps/build-linux-packages.yml
+            parameters:
+              Condition: and(succeeded(), eq(variables['BuildLinuxPackages'], 'true'))
+
           - task: PowerShell@2
             condition: and(succeeded(), eq(variables['SetShieldInfo'], 'true'))
             inputs:
@@ -210,6 +215,11 @@ stages:
             artifact: test-msi
             condition: and(succeeded(), eq(variables['BuildTestMsi'], 'true'))
             displayName: Upload test MSI
+
+          - publish: cli/installer/fpm/artifact
+            artifact: linux-packages
+            condition: and(succeeded(), eq(variables['BuildLinuxPackages'], 'true'))
+            displayName: Upload linux packages to artifact store
 
       # This is separated today because Skip.LiveTest is a queue-time variable
       # and cannot be set in a matrix entry. 
@@ -507,6 +517,47 @@ stages:
             artifactName: signed-win-FailedAttempt$(System.JobAttempt)
             path: signed-win/
 
+    - job: SignLinux
+      pool:
+        name: azsdk-pool-mms-win-2022-general
+        vmImage: MMS2022
+
+      steps:
+        - task: DownloadPipelineArtifact@2
+          inputs:
+            artifact: linux-packages
+            path: linux
+
+        - ${{ if in(variables['Build.Reason'], 'IndividualCI', 'BatchedCI', 'Manual') }}:
+          - template: pipelines/steps/azd-cli-linux-signing.yml@azure-sdk-build-tools
+            parameters:
+              LinuxPath: linux
+
+        - ${{ else }}:
+          - pwsh: Write-Host "Skipping signing. Build reason - $(Build.Reason)"
+            displayName: Signing process skipped for non-release build
+
+        - pwsh: |
+            New-Item -ItemType Directory -Path signed-linux
+            Copy-Item linux/* signed-linux/ -Recurse
+          displayName: Copy signing outputs
+          condition: always()
+
+        - task: PublishPipelineArtifact@1
+          condition: succeeded()
+          displayName: Publish Signed Artifacts
+          inputs:
+            artifactName: signed-linux
+            path: signed-linux/
+
+        - task: PublishPipelineArtifact@1
+          condition: failed()
+          displayName: Publish failed Signed Artifacts
+          inputs:
+            artifactName: signed-linux-FailedAttempt$(System.JobAttempt)
+            path: signed-linux/
+      
+
   - stage: Verify_Installers
     condition: and(succeeded(), ne(variables['Skip.VerifyInstallers'], 'true'))
     dependsOn: BuildAndTest
@@ -563,27 +614,27 @@ stages:
         pool: azsdk-pool-mms-win-2022-general
         strategy:
           matrix:
-            PerUser: 
+            PerUser:
               PerMachine: $false
             AllUsers:
               PerMachine: $true
         steps:
           - checkout: self
-          
+
           - task: DownloadPipelineArtifact@2
             inputs:
               artifact: test-msi
               path: msi
-          
+
           - task: PowerShell@2
             inputs:
               pwsh: true
               targetType: filePath
               filePath: cli/installer/windows/test-win-msi.ps1
               arguments: >-
-                -PerMachine:$(PerMachine) 
+                -PerMachine:$(PerMachine)
                 -MsiPath msi/azd-windows-amd64.msi
-              # Do not exit on first Write-Error, write all messages and let the 
+              # Do not exit on first Write-Error, write all messages and let the
               # script handle exiting with an error status.
               errorActionPreference: continue
             displayName: Test MSI
@@ -792,6 +843,27 @@ stages:
               workingDirectory: cli/installer/
             displayName: Test install script (cmd)
 
+      - job: Verify_LinuxPackages
+
+        pool:
+          name: azsdk-pool-mms-ubuntu-2004-general
+
+        steps: 
+          - checkout: self
+
+          - task: DownloadPipelineArtifact@2
+            inputs:
+              artifact: linux-packages
+              path: cli/installer/fpm
+
+          - task: PowerShell@2
+            displayName: Verify Linux Packages
+            inputs: 
+              pwsh: true
+              workingDirectory: cli/installer/fpm
+              filePath: eng/scripts/Test-LinuxPackages.ps1
+
+
   - stage: PublishCLI
     dependsOn: Sign
     condition: >-
@@ -867,6 +939,36 @@ stages:
                   displayName: Set CLI_VERSION
 
                 - template: /eng/pipelines/templates/steps/publish-cli-choco.yml
+                  parameters:
+                    # Set to false after GA (https://github.com/Azure/azure-dev/issues/1485)
+                    AllowPrerelease: true
+                    CliVersion: $(CLI_VERSION)
+
+      - deployment: Publish_WinGet
+        dependsOn: Publish_Release
+        condition: >-
+          and(
+            succeeded(),
+            ne('true', variables['Skip.Publish'])
+          )
+        environment: azure-dev
+
+        pool:
+          name: azsdk-pool-mms-win-2022-general
+
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - checkout: self
+                - task: PowerShell@2
+                  inputs:
+                    pwsh: true
+                    targetType: filePath
+                    filePath: eng/scripts/Set-CliVersionVariable.ps1
+                  displayName: Set CLI_VERSION
+
+                - template: /eng/pipelines/templates/steps/publish-cli-winget.yml
                   parameters:
                     # Set to false after GA (https://github.com/Azure/azure-dev/issues/1485)
                     AllowPrerelease: true
@@ -1033,7 +1135,7 @@ stages:
 
 
               #### Windows
-              
+
               PowerShell install
 
               ``````
@@ -1056,7 +1158,7 @@ stages:
                   * ARM64 - $macosReleaseUrlArm64
               * Windows - $windowsReleaseUrl
 
-              ### MSI 
+              ### MSI
 
               * $msiReleaseUrl
 

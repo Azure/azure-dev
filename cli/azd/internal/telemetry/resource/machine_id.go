@@ -71,6 +71,11 @@ func getMacAddress() (string, bool) {
 				continue
 			}
 
+			ipAddr, _ := ift.Addrs()
+			if len(ipAddr) == 0 {
+				continue
+			}
+
 			mac := hwAddr.String()
 			if isValidMacAddress(mac) {
 				return mac, true

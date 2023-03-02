@@ -409,7 +409,8 @@
                         "title": "%azure-dev.walkthroughs.start.steps.scaffold.title%",
                         "description": "%azure-dev.walkthroughs.start.steps.scaffold.description%",
                         "media": {
-                            "markdown": "resources/walkthrough/empty.md"
+                            "svg": "resources/walkthrough/azdScaffold.svg",
+                            "altText": "Choosing a template to initialize a new project with the Azure Dev CLI"
                         },
                         "completionEvents": [
                             "onCommand:azure-dev.commands.cli.init"
@@ -420,7 +421,7 @@
                         "title": "%azure-dev.walkthroughs.start.steps.up.title%",
                         "description": "%azure-dev.walkthroughs.start.steps.up.description%",
                         "media": {
-                            "image": "resources/walkthrough/azdUp.png",
+                            "svg": "resources/walkthrough/azdUp.svg",
                             "altText": "Using context menu on azure.yaml to run azd up"
                         },
                         "completionEvents": [
@@ -435,7 +436,7 @@
                         "title": "%azure-dev.walkthroughs.start.steps.explore.title%",
                         "description": "%azure-dev.walkthroughs.start.steps.explore.description%",
                         "media": {
-                            "image": "resources/walkthrough/azdCommands.png",
+                            "svg": "resources/walkthrough/azdCommands.svg",
                             "altText": "Commands provided by the Azure Developer CLI extension"
                         }
                     }

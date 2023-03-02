@@ -94,21 +94,21 @@
     "azure-dev.surveys.surveyOne.button.never": "Don't ask again",
     "azure-dev.surveys.surveyOne.button.later": "Remind me later",
 
-    "azure-dev.walkthroughs.start.title": "Deploy Your App with the Azure Developer CLI",
-    "azure-dev.walkthroughs.start.description": "Your quick guide to set up, provision, and deploy a new app with the azd CLI",
+    "azure-dev.walkthroughs.start.title": "Deploy your App with the Azure Developer CLI",
+    "azure-dev.walkthroughs.start.description": "Your quick guide to set up, provision, and deploy a new app with the AZD CLI.",
 
     "azure-dev.walkthroughs.start.steps.install.title": "Install Azure Developer CLI",
-    "azure-dev.walkthroughs.start.steps.install.description": "Install the Azure Developer CLI (azd) to get started with Azure development",
+    "azure-dev.walkthroughs.start.steps.install.description": "Install the Azure Developer CLI (**azd**) to get started with Azure development.\n[Install](command:azure-dev.commands.cli.install)",
 
-    "azure-dev.walkthroughs.start.steps.login.title": "Sign in to your Azure account",
-    "azure-dev.walkthroughs.start.steps.login.description": "Sign in or create an Azure account to run azd commands\n[Sign In](command:azure-dev.commands.cli.login)",
+    "azure-dev.walkthroughs.start.steps.login.title": "Sign In to your Azure Account",
+    "azure-dev.walkthroughs.start.steps.login.description": "Sign in or create an Azure account to successfully run **azd** commands.\n[Sign In](command:azure-dev.commands.cli.login)\nTip: Clicking the **Sign In** button may open a new browser window with a prompt to input your Azure credentials.",
 
-    "azure-dev.walkthroughs.start.steps.scaffold.title": "Scaffold the code",
-    "azure-dev.walkthroughs.start.steps.scaffold.description": "View our [template gallery](https://azure.github.io/awesome-azd/about/) to find a project with the infrastructure that's right for you\n[Initialize Your Project](command:azure-dev.commands.cli.init)",
+    "azure-dev.walkthroughs.start.steps.scaffold.title": "Scaffold the Code",
+    "azure-dev.walkthroughs.start.steps.scaffold.description": "View the [Awesome azd template gallery](https://azure.github.io/awesome-azd/) to find a project with the infrastructure that's right for you, or select a template directly from the Command Palette (``azd init``).\n[Select a template and initialize your project](command:azure-dev.commands.cli.init)\nTip: To use a template from the Awesome azd site, copy its GitHub repo URL and enter it when prompted during ``azd init``.",
 
-    "azure-dev.walkthroughs.start.steps.up.title": "Get your app up and running in Azure",
-    "azure-dev.walkthroughs.start.steps.up.description": "Provision and deploy your app (with azd up) from the command palette, azure.yaml file context menu, or Azure workspace view\n[One-Click Provision and Deploy](command:azure-dev.commands.cli.up)",
+    "azure-dev.walkthroughs.start.steps.up.title": "Get your App Up and Running in Azure",
+    "azure-dev.walkthroughs.start.steps.up.description": "Provision and deploy your app to Azure (``azd up``) by right-clicking your azure.yaml file and selecting **up** from the context menu (pictured), by clicking the button below.\n[One-click provision + deploy](command:azure-dev.commands.cli.up)\nTip: You can also run the ``azd up`` command in the [Command Palette](command:workbench.action.quickOpen?%5B%22%3E%20Azure%20Developer%3A%20up%22%5D) or your terminal to provision and deploy your app.",
 
-    "azure-dev.walkthroughs.start.steps.explore.title": "Explore more resources",
-    "azure-dev.walkthroughs.start.steps.explore.description": "- View everything available with azd by searching [\"Azure Developer\" in the command palette](command:workbench.action.quickOpen?%5B%22%3E%20Azure%20Developer%3A%20%22%5D)\n- Check out our [blog](https://devblogs.microsoft.com/azure-sdk/introducing-the-azure-developer-cli-a-faster-way-to-build-apps-for-the-cloud/), [release notes](https://github.com/Azure/azure-dev/releases), or [GitHub repository](https://github.com/Azure/azure-dev) to learn more about our newest features and to contribute to the development of our tool!\n[Learn More](https://learn.microsoft.com/en-us/azure/developer/azure-developer-cli/overview)"
+    "azure-dev.walkthroughs.start.steps.explore.title": "Explore More Resources",
+    "azure-dev.walkthroughs.start.steps.explore.description": "- View all available azd commands by searching \"Azure Developer\" in the [Command Palette](command:workbench.action.quickOpen?%5B%22%3E%20Azure%20Developer%3A%20%22%5D).\n- Check out our [blog](https://devblogs.microsoft.com/azure-sdk/introducing-the-azure-developer-cli-a-faster-way-to-build-apps-for-the-cloud/), [release notes](https://github.com/Azure/azure-dev/releases), or [GitHub](https://github.com/Azure/azure-dev) to learn more about our newest features and to contribute to the development of our tool!\n- Explore the latest azd-compatible templates at [Awesome azd](https://azure.github.io/awesome-azd/)."
 }

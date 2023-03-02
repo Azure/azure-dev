@@ -20,7 +20,7 @@ resource endpoint 'Microsoft.Cdn/profiles/endpoints@2022-05-01-preview' = {
   tags: tags
   properties: {
     originHostHeader: originUrl
-    isHttpAllowed: true
+    isHttpAllowed: false
     isHttpsAllowed: true
     queryStringCachingBehavior: 'UseQueryString'
     optimizationType: 'GeneralWebDelivery'

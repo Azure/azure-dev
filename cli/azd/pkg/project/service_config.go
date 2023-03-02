@@ -14,11 +14,13 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/ext"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/docker"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/kubectl"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/swa"
+	"github.com/benbjohnson/clock"
 )
 
 type ServiceConfig struct {
@@ -120,26 +122,45 @@ func (sc *ServiceConfig) GetServiceTarget(
 	case "", string(AppServiceTarget):
 		target, err = NewAppServiceTarget(sc, env, resource, azCli)
 	case string(ContainerAppTarget):
+		// Using IoC container directly here is a work around till we can expose a
+		// dynamic service location to resolve these configuration based dependencies
+		var containerRegistryService azcli.ContainerRegistryService
+		err := ioc.Global.Resolve(&containerRegistryService)
+		if err != nil {
+			return nil, err
+		}
+
 		target, err = NewContainerAppTarget(
-			sc, env, resource, azCli, docker.NewDocker(commandRunner), console, commandRunner, accountManager,
+			sc, env, resource, containerRegistryService, azCli, docker.NewDocker(commandRunner), console, commandRunner, accountManager,
 		)
 	case string(AzureFunctionTarget):
 		target, err = NewFunctionAppTarget(sc, env, resource, azCli)
 	case string(StaticWebAppTarget):
 		target, err = NewStaticWebAppTarget(sc, env, resource, azCli, swa.NewSwaCli(commandRunner))
 	case string(AksTarget):
-		containerService, err := azCli.ContainerService(ctx, env.GetSubscriptionId())
+		// Using IoC container directly here is a work around till we can expose a
+		// dynamic service location to resolve these configuration based dependencies
+		var managedClustersService azcli.ManagedClustersService
+		err := ioc.Global.Resolve(&managedClustersService)
 		if err != nil {
 			return nil, err
 		}
+
+		var containerRegistryService azcli.ContainerRegistryService
+		err = ioc.Global.Resolve(&containerRegistryService)
+		if err != nil {
+			return nil, err
+		}
+
 		target = NewAksTarget(
 			sc,
 			env,
 			resource,
-			azCli,
-			containerService,
+			managedClustersService,
+			containerRegistryService,
 			kubectl.NewKubectl(commandRunner),
 			docker.NewDocker(commandRunner),
+			clock.New(),
 		)
 	default:
 		return nil, fmt.Errorf("unsupported host '%s' for service '%s'", sc.Host, sc.Name)

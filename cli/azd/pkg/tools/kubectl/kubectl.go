@@ -40,14 +40,31 @@ type KubectlCli interface {
 	Exec(ctx context.Context, flags *KubeCliFlags, args ...string) (exec.RunResult, error)
 }
 
+type OutputType string
+
+const (
+	OutputTypeJson OutputType = "json"
+	OutputTypeYaml OutputType = "yaml"
+)
+
+type DryRunType string
+
+const (
+	DryRunTypeNone DryRunType = "none"
+	// If client strategy, only print the object that would be sent
+	DryRunTypeClient DryRunType = "client"
+	// If server strategy, submit server-side request without persisting the resource.
+	DryRunTypeServer DryRunType = "server"
+)
+
 // K8s CLI Fags
 type KubeCliFlags struct {
 	// The namespace to filter the command or create resources
 	Namespace string
 	// The dry-run type, defaults to empty
-	DryRun string
+	DryRun DryRunType
 	// The expected output, typically JSON or YAML
-	Output string
+	Output OutputType
 }
 
 type kubectlCli struct {
@@ -248,7 +265,7 @@ func (cli *kubectlCli) executeCommandWithArgs(
 			args = args.AppendParams("-n", flags.Namespace)
 		}
 		if flags.Output != "" {
-			args = args.AppendParams("-o", flags.Output)
+			args = args.AppendParams("-o", string(flags.Output))
 		}
 	}
 

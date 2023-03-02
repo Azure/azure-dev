@@ -27,14 +27,15 @@ import (
 )
 
 type containerAppTarget struct {
-	config         *ServiceConfig
-	env            *environment.Environment
-	resource       *environment.TargetResource
-	cli            azcli.AzCli
-	docker         docker.Docker
-	console        input.Console
-	commandRunner  exec.CommandRunner
-	accountManager account.Manager
+	config                   *ServiceConfig
+	env                      *environment.Environment
+	resource                 *environment.TargetResource
+	cli                      azcli.AzCli
+	containerRegistryService azcli.ContainerRegistryService
+	docker                   docker.Docker
+	console                  input.Console
+	commandRunner            exec.CommandRunner
+	accountManager           account.Manager
 
 	// Standard time library clock, unless mocked in tests
 	clock clock.Clock
@@ -70,7 +71,7 @@ func (at *containerAppTarget) Deploy(
 	log.Printf("logging into registry %s", loginServer)
 
 	progress <- "Logging into container registry"
-	if err := at.cli.LoginAcr(ctx, at.docker, at.env.GetSubscriptionId(), loginServer); err != nil {
+	if err := at.containerRegistryService.LoginAcr(ctx, at.env.GetSubscriptionId(), loginServer); err != nil {
 		return ServiceDeploymentResult{}, fmt.Errorf("logging into registry '%s': %w", loginServer, err)
 	}
 
@@ -233,6 +234,7 @@ func NewContainerAppTarget(
 	config *ServiceConfig,
 	env *environment.Environment,
 	resource *environment.TargetResource,
+	containerRegistryService azcli.ContainerRegistryService,
 	azCli azcli.AzCli,
 	docker docker.Docker,
 	console input.Console,

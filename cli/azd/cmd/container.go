@@ -25,6 +25,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/pkg/templates"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/docker"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/git"
 	"github.com/mattn/go-colorable"
 	"github.com/mattn/go-isatty"
@@ -266,6 +267,10 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	container.RegisterSingleton(azcli.NewSubscriptionsService)
 	container.RegisterSingleton(account.NewManager)
 	container.RegisterSingleton(account.NewSubscriptionsManager)
+	container.RegisterSingleton(azcli.NewManagedClustersService)
+	container.RegisterSingleton(azcli.NewContainerRegistryService)
+	container.RegisterSingleton(docker.NewDocker)
+
 	container.RegisterSingleton(func(subManager *account.SubscriptionsManager) account.SubscriptionTenantResolver {
 		return subManager
 	})

@@ -28,6 +28,7 @@ func TestNewContainerAppTargetTypeValidation(t *testing.T) {
 			nil,
 			nil,
 			nil,
+			nil,
 		)
 
 		require.NoError(t, err)
@@ -45,6 +46,7 @@ func TestNewContainerAppTargetTypeValidation(t *testing.T) {
 			nil,
 			nil,
 			nil,
+			nil,
 		)
 
 		require.NoError(t, err)
@@ -55,6 +57,7 @@ func TestNewContainerAppTargetTypeValidation(t *testing.T) {
 			nil,
 			nil,
 			environment.NewTargetResource("SUB_ID", "RG_ID", "res", "BadType"),
+			nil,
 			nil,
 			nil,
 			nil,

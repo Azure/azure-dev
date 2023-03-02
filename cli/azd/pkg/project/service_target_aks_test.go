@@ -24,6 +24,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/kubectl"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/ostest"
+	"github.com/benbjohnson/clock"
 	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v3"
 )
@@ -78,13 +79,7 @@ func Test_Deploy_HappyPath(t *testing.T) {
 	require.NoError(t, err)
 
 	azdContext := azdcontext.NewAzdContextWithDirectory(tempDir)
-	progressChan := make(chan (string))
-
-	go func() {
-		for value := range progressChan {
-			log.Println(value)
-		}
-	}()
+	progressChan := createAndLogProgress()
 
 	result, err := serviceTarget.Deploy(*mockContext.Context, azdContext, "", progressChan)
 	require.NoError(t, err)
@@ -113,13 +108,7 @@ func Test_Deploy_No_Cluster_Name(t *testing.T) {
 	require.NoError(t, err)
 
 	azdContext := azdcontext.NewAzdContextWithDirectory(tempDir)
-	progressChan := make(chan (string))
-
-	go func() {
-		for value := range progressChan {
-			log.Println(value)
-		}
-	}()
+	progressChan := createAndLogProgress()
 
 	result, err := serviceTarget.Deploy(*mockContext.Context, azdContext, "", progressChan)
 	require.Error(t, err)
@@ -145,7 +134,7 @@ func Test_Deploy_No_Container_Registry(t *testing.T) {
 	require.NoError(t, err)
 
 	azdContext := azdcontext.NewAzdContextWithDirectory(tempDir)
-	progressChan := make(chan (string))
+	progressChan := createAndLogProgress()
 
 	result, err := serviceTarget.Deploy(*mockContext.Context, azdContext, "", progressChan)
 	require.Error(t, err)
@@ -173,13 +162,7 @@ func Test_Deploy_No_Admin_Credentials(t *testing.T) {
 	require.NoError(t, err)
 
 	azdContext := azdcontext.NewAzdContextWithDirectory(tempDir)
-	progressChan := make(chan (string))
-
-	go func() {
-		for value := range progressChan {
-			log.Println(value)
-		}
-	}()
+	progressChan := createAndLogProgress()
 
 	result, err := serviceTarget.Deploy(*mockContext.Context, azdContext, "", progressChan)
 	require.Error(t, err)
@@ -491,17 +474,21 @@ func createServiceTarget(
 	env *environment.Environment,
 ) (ServiceTarget, error) {
 	scope := environment.NewTargetResource("SUB_ID", "RG_ID", "CLUSTER_NAME", string(infra.AzureResourceTypeManagedCluster))
-	azCli := azcli.NewAzCli(mockContext.Credentials, azcli.NewAzCliArgs{})
-	containerServiceClient, err := azCli.ContainerService(*mockContext.Context, env.GetSubscriptionId())
-
-	if err != nil {
-		return nil, err
-	}
-
 	kubeCtl := kubectl.NewKubectl(mockContext.CommandRunner)
-	docker := docker.NewDocker(mockContext.CommandRunner)
+	dockerCli := docker.NewDocker(mockContext.CommandRunner)
+	managedClustersService := azcli.NewManagedClustersService(mockContext.Credentials, mockContext.HttpClient)
+	containerRegistryService := azcli.NewContainerRegistryService(mockContext.Credentials, mockContext.HttpClient, dockerCli)
 
-	return NewAksTarget(serviceConfig, env, scope, azCli, containerServiceClient, kubeCtl, docker), nil
+	return NewAksTarget(
+		serviceConfig,
+		env,
+		scope,
+		managedClustersService,
+		containerRegistryService,
+		kubeCtl,
+		dockerCli,
+		clock.New(),
+	), nil
 }
 
 func createTestCluster(clusterName, username string) *kubectl.KubeConfig {
@@ -533,4 +520,16 @@ func createTestCluster(clusterName, username string) *kubectl.KubeConfig {
 			},
 		},
 	}
+}
+
+func createAndLogProgress() chan (string) {
+	progressChan := make(chan (string))
+
+	go func() {
+		for value := range progressChan {
+			log.Println(value)
+		}
+	}()
+
+	return progressChan
 }

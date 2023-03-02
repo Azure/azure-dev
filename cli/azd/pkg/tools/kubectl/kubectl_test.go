@@ -98,8 +98,8 @@ func Test_Command_Args(t *testing.T) {
 			expectedArgs:         []string{"create", "namespace", "namespace-name", "--dry-run=client", "-o", "yaml"},
 			testFn: func() error {
 				_, err := cli.CreateNamespace(*mockContext.Context, "namespace-name", &KubeCliFlags{
-					DryRun: "client",
-					Output: "yaml",
+					DryRun: DryRunTypeClient,
+					Output: OutputTypeYaml,
 				})
 
 				return err

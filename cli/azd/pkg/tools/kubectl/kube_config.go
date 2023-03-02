@@ -73,7 +73,7 @@ func (kcm *KubeConfigManager) DeleteKubeConfig(ctx context.Context, configName s
 }
 
 // Merges the specified kube configs into the kube config
-// This power the use of the kubectl config set of command that allow developers to switch between different
+// This powers the use of the kubectl config set of commands that allow developers to switch between different
 // k8s cluster contexts
 func (kcm *KubeConfigManager) MergeConfigs(ctx context.Context, newConfigName string, path ...string) error {
 	fullConfigPaths := []string{}

@@ -136,7 +136,7 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		return nil, errors.New("template name required when specifying a branch name")
 	}
 
-	// init now requires git all the time, as even for empty template, azd initialize a local git project
+	// init now requires git all the time, even for empty template, azd initializes a local git project
 	if err := tools.EnsureInstalled(ctx, []tools.ExternalTool{i.gitCli}...); err != nil {
 		return nil, err
 	}

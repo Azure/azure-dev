@@ -47,7 +47,7 @@ export async function createAzureDevCli(context: IActionContext): Promise<AzureD
 }
 
 export function scheduleAzdSignInCheck(): void {
-    const fiveSeconds = 5 * 1000;
+    const oneSecond = 1 * 1000;
 
     setTimeout(async () => {
         const result = await azdLoginChecker.getValue();
@@ -57,7 +57,21 @@ export function scheduleAzdSignInCheck(): void {
             const response = await vscode.window.showWarningMessage(azdNotInstalledMsg(), {}, ...azdNotInstalledUserChoices());
             await response?.callback();
         }
-    }, fiveSeconds);
+    }, oneSecond);
+}
+
+export function scheduleAzdYamlCheck(): void {
+    const oneSecond = 1 * 1000;
+
+    setTimeout(async () => {
+        // Look for at most one file named azure.yml or azure.yaml, only at the root, to avoid perf issues
+        // If one exists, the scaffold step will be hidden from the walkthrough
+        const fileResults = await vscode.workspace.findFiles('azure.{yml,yaml}', undefined, 1);
+
+        if (fileResults?.length) {
+            await setVsCodeContext('hideAzdScaffoldStep', true);
+        }
+    }, oneSecond);
 }
 
 export function onAzdInstallAttempted(): void {

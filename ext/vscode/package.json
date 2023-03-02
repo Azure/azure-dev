@@ -414,7 +414,8 @@
                         },
                         "completionEvents": [
                             "onCommand:azure-dev.commands.cli.init"
-                        ]
+                        ],
+                        "when": "hideAzdScaffoldStep != true"
                     },
                     {
                         "id": "azd.up",

@@ -1,5 +1,5 @@
 
-The Azure Developer CLI is an open-source tool that accelerates the process of getting your application onto Azure and helps you manage it once it's there.
+The Azure Developer CLI is an open-source tool that helps onboard and manage your application on Azure
 
 Usage
   azd [command]

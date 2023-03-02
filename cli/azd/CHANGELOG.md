@@ -12,6 +12,8 @@
 
 ### Bugs Fixed
 
+- [[#1631]](https://github.com/Azure/azure-dev/pull/1631) Fail fast during `azd init` when `git` is not installed.
+
 ### Other Changes
 
 ## 0.6.0-beta.2 (2023-02-10)

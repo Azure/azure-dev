@@ -19,12 +19,13 @@ param applicationInsightsName string = ''
 param appServicePlanName string = ''
 param keyVaultName string = ''
 param logAnalyticsName string = ''
+{{ .Database.inputs }}
 param resourceGroupName string = ''
 param webServiceName string = ''
 
 @description('Id of the user or app to assign application roles')
 param principalId string = ''
-
+{{.Database.longInputs}}
 var abbrs = loadJsonContent('./abbreviations.json')
 var resourceToken = toLower(uniqueString(subscription().id, environmentName, location))
 var tags = { 'azd-env-name': environmentName }
@@ -61,6 +62,9 @@ module api './app/api.bicep' = {
     appServicePlanId: appServicePlan.outputs.id
     keyVaultName: keyVault.outputs.name
     allowedOrigins: [ web.outputs.SERVICE_WEB_URI ]
+    appSettings: [
+{{.Database.appsettings}}
+    ]
   }
 }
 
@@ -73,7 +77,7 @@ module apiKeyVaultAccess './core/security/keyvault-access.bicep' = {
     principalId: api.outputs.SERVICE_API_IDENTITY_PRINCIPAL_ID
   }
 }
-
+{{.Database.resources}}
 // Create an App Service Plan to group applications under the same payment plan and SKU
 module appServicePlan './core/host/appserviceplan.bicep' = {
   name: 'appserviceplan'
@@ -113,6 +117,7 @@ module monitoring './core/monitor/monitoring.bicep' = {
   }
 }
 
+{{.Database.outputs}}
 // App outputs
 output APPLICATIONINSIGHTS_CONNECTION_STRING string = monitoring.outputs.applicationInsightsConnectionString
 output AZURE_KEY_VAULT_ENDPOINT string = keyVault.outputs.endpoint

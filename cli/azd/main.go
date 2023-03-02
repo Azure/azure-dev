@@ -283,10 +283,7 @@ func isDebugEnabled() bool {
 	// Setting `Usage` to a no-op will hide this extra unwanted output.
 	flags.Usage = func() {}
 
-	if err := flags.Parse(os.Args[1:]); err != nil {
-		log.Printf("could not parse flags: %v", err)
-	}
-
+	_ = flags.Parse(os.Args[1:])
 	return debug
 }
 
@@ -307,9 +304,7 @@ func isJsonOutput() bool {
 	// Setting `Usage` to a no-op will hide this extra unwanted output.
 	flags.Usage = func() {}
 
-	if err := flags.Parse(os.Args[1:]); err != nil {
-		log.Printf("could not parse flags: %v", err)
-	}
+	_ = flags.Parse(os.Args[1:])
 
 	return output == "json"
 }

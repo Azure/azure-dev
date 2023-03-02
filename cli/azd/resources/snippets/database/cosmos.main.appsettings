@@ -1,3 +1,1 @@
-      // AZURE_COSMOS_CONNECTION_STRING stores the connection string to the database.
-      // This can be renamed if 
-      AZURE_COSMOS_CONNECTION_STRING: keyVault.getSecret(cosmos.outputs.connectionStringKey)
+      AZURE_COSMOS_CONNECTION_STRING_KEY: cosmos.outputs.connectionStringKey

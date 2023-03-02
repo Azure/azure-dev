@@ -61,7 +61,7 @@ func ContainerAppRID(subscriptionId, resourceGroupName, containerAppName string)
 }
 
 func KubernetesServiceRID(subscriptionId, resourceGroupName, clusterName string) string {
-	return  fmt.Sprintf(
+	return fmt.Sprintf(
 		"%s/providers/Microsoft.ContainerService/managedClusters/%s",
 		ResourceGroupRID(subscriptionId, resourceGroupName),
 		clusterName,

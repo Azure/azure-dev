@@ -252,15 +252,16 @@ func NewContainerAppTarget(
 	}
 
 	return &containerAppTarget{
-		config:         config,
-		env:            env,
-		resource:       resource,
-		accountManager: accountManager,
-		cli:            azCli,
-		docker:         docker,
-		console:        console,
-		commandRunner:  commandRunner,
-		clock:          clock.New(),
+		config:                   config,
+		env:                      env,
+		resource:                 resource,
+		accountManager:           accountManager,
+		cli:                      azCli,
+		containerRegistryService: containerRegistryService,
+		docker:                   docker,
+		console:                  console,
+		commandRunner:            commandRunner,
+		clock:                    clock.New(),
 	}, nil
 }
 

@@ -95,7 +95,7 @@
     "azure-dev.surveys.surveyOne.button.later": "Remind me later",
 
     "azure-dev.walkthroughs.start.title": "Deploy your App with the Azure Developer CLI",
-    "azure-dev.walkthroughs.start.description": "Your quick guide to set up, provision, and deploy a new app with the AZD CLI.",
+    "azure-dev.walkthroughs.start.description": "Your quick guide to set up, provision, and deploy a new app with the azd CLI.",
 
     "azure-dev.walkthroughs.start.steps.install.title": "Install Azure Developer CLI",
     "azure-dev.walkthroughs.start.steps.install.description": "Install the Azure Developer CLI (**azd**) to get started with Azure development.\n[Install](command:azure-dev.commands.cli.install)",
@@ -104,7 +104,7 @@
     "azure-dev.walkthroughs.start.steps.login.description": "Sign in or create an Azure account to successfully run **azd** commands.\n[Sign In](command:azure-dev.commands.cli.login)\nTip: Clicking the **Sign In** button may open a new browser window with a prompt to input your Azure credentials.",
 
     "azure-dev.walkthroughs.start.steps.scaffold.title": "Scaffold the Code",
-    "azure-dev.walkthroughs.start.steps.scaffold.description": "View the [Awesome azd template gallery](https://azure.github.io/awesome-azd/) to find a project with the infrastructure that's right for you, or select a template directly from the Command Palette (``azd init``).\n[Select a template and initialize your project](command:azure-dev.commands.cli.init)\nTip: To use a template from the Awesome azd site, copy its GitHub repo URL and enter it when prompted during ``azd init``.",
+    "azure-dev.walkthroughs.start.steps.scaffold.description": "View the [Awesome azd template gallery](https://azure.github.io/awesome-azd/) to find a template with the infrastructure that's right for your app, or select a template directly from the Command Palette (``azd init``).\n[Select a template and initialize your project](command:azure-dev.commands.cli.init)\nTip: To use a template from the Awesome azd site, copy its GitHub repo URL and enter it when prompted during ``azd init``.",
 
     "azure-dev.walkthroughs.start.steps.up.title": "Get your App Up and Running in Azure",
     "azure-dev.walkthroughs.start.steps.up.description": "Provision and deploy your app to Azure (``azd up``) by right-clicking your azure.yaml file and selecting **up** from the context menu (pictured), by clicking the button below.\n[One-click provision + deploy](command:azure-dev.commands.cli.up)\nTip: You can also run the ``azd up`` command in the [Command Palette](command:workbench.action.quickOpen?%5B%22%3E%20Azure%20Developer%3A%20up%22%5D) or your terminal to provision and deploy your app.",

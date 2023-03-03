@@ -89,7 +89,7 @@ func newPipelineConfigFlags(cmd *cobra.Command, global *internal.GlobalCommandOp
 func newPipelineConfigCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "config",
-		Short: "Create and configure your deployment pipeline by using GitHub or Azdo Actions.",
+		Short: "Create and configure your deployment pipeline by using GitHub or Azure Pipelines.",
 	}
 }
 

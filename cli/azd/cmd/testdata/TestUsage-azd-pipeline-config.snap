@@ -1,5 +1,5 @@
 
-Create and configure your deployment pipeline by using GitHub or Azdo Actions.
+Create and configure your deployment pipeline by using GitHub or Azure Pipelines.
 
 Usage
   azd pipeline config [flags]

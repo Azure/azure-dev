@@ -25,7 +25,7 @@ func TestPipelineCmd(t *testing.T) {
 func TestPipelineConfigCmd(t *testing.T) {
 	command := newPipelineConfigCmd()
 	assert.EqualValues(t, "config", command.Use)
-	assert.EqualValues(t, "Create and configure your deployment pipeline by using GitHub or Azdo Actions.",
+	assert.EqualValues(t, "Create and configure your deployment pipeline by using GitHub or Azure Pipelines.",
 		command.Short)
 
 	childCommands := command.Commands()

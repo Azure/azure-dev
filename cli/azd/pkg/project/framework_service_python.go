@@ -28,7 +28,7 @@ func (pp *pythonProject) RequiredExternalTools() []tools.ExternalTool {
 	return []tools.ExternalTool{pp.cli}
 }
 
-func (pp *pythonProject) Package(_ context.Context, progress chan<- string) (string, error) {
+func (pp *pythonProject) Build(_ context.Context, progress chan<- string) (string, error) {
 	publishRoot, err := os.MkdirTemp("", "azd")
 	if err != nil {
 		return "", fmt.Errorf("creating package directory for %s: %w", pp.config.Name, err)
@@ -53,7 +53,7 @@ func (pp *pythonProject) Package(_ context.Context, progress chan<- string) (str
 	return publishRoot, nil
 }
 
-func (pp *pythonProject) InstallDependencies(ctx context.Context) error {
+func (pp *pythonProject) Restore(ctx context.Context) error {
 	vEnvName := pp.getVenvName()
 	vEnvPath := path.Join(pp.config.Path(), vEnvName)
 

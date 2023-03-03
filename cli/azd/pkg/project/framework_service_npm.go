@@ -26,7 +26,7 @@ func (np *npmProject) RequiredExternalTools() []tools.ExternalTool {
 	return []tools.ExternalTool{np.cli}
 }
 
-func (np *npmProject) Package(ctx context.Context, progress chan<- string) (string, error) {
+func (np *npmProject) Build(ctx context.Context, progress chan<- string) (string, error) {
 	publishRoot, err := os.MkdirTemp("", "azd")
 	if err != nil {
 		return "", fmt.Errorf("creating package directory for %s: %w", np.config.Name, err)
@@ -65,7 +65,7 @@ func (np *npmProject) Package(ctx context.Context, progress chan<- string) (stri
 	return publishRoot, nil
 }
 
-func (np *npmProject) InstallDependencies(ctx context.Context) error {
+func (np *npmProject) Restore(ctx context.Context) error {
 	if err := np.cli.Install(ctx, np.config.Path(), false); err != nil {
 		return err
 	}

@@ -10,8 +10,8 @@ import (
 )
 
 type FrameworkService interface {
-	RequiredExternalTools() []tools.ExternalTool
-	Package(ctx context.Context, progress chan<- string) (string, error)
-	InstallDependencies(ctx context.Context) error
 	Initialize(ctx context.Context) error
+	RequiredExternalTools() []tools.ExternalTool
+	Restore(ctx context.Context) error
+	Build(ctx context.Context, progress chan<- string) (string, error)
 }

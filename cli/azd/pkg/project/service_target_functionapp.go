@@ -31,7 +31,11 @@ func (f *functionAppTarget) RequiredExternalTools() []tools.ExternalTool {
 	return []tools.ExternalTool{}
 }
 
-func (f *functionAppTarget) Deploy(
+func (f *functionAppTarget) Package(ctx context.Context) error {
+	return nil
+}
+
+func (f *functionAppTarget) Publish(
 	ctx context.Context,
 	_ *azdcontext.AzdContext,
 	path string,

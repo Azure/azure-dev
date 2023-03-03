@@ -101,7 +101,7 @@ services:
 	}()
 
 	framework := NewDockerProject(service.Config, env, docker, internalFramework)
-	res, err := framework.Package(*mockContext.Context, progress)
+	res, err := framework.Build(*mockContext.Context, progress)
 	close(progress)
 	<-done
 
@@ -194,7 +194,7 @@ services:
 	}()
 
 	framework := NewDockerProject(service.Config, env, docker, internalFramework)
-	res, err := framework.Package(*mockContext.Context, progress)
+	res, err := framework.Build(*mockContext.Context, progress)
 	close(progress)
 	<-done
 

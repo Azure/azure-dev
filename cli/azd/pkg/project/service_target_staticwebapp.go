@@ -35,7 +35,11 @@ func (at *staticWebAppTarget) RequiredExternalTools() []tools.ExternalTool {
 	return []tools.ExternalTool{at.swa}
 }
 
-func (at *staticWebAppTarget) Deploy(
+func (at *staticWebAppTarget) Package(ctx context.Context) error {
+	return nil
+}
+
+func (at *staticWebAppTarget) Publish(
 	ctx context.Context,
 	azdCtx *azdcontext.AzdContext,
 	path string,

@@ -32,7 +32,7 @@ func (m *mavenProject) RequiredExternalTools() []tools.ExternalTool {
 	}
 }
 
-func (m *mavenProject) Package(ctx context.Context, progress chan<- string) (string, error) {
+func (m *mavenProject) Build(ctx context.Context, progress chan<- string) (string, error) {
 	publishRoot, err := os.MkdirTemp("", "azd")
 	if err != nil {
 		return "", fmt.Errorf("creating staging directory: %w", err)
@@ -87,7 +87,7 @@ func (m *mavenProject) Package(ctx context.Context, progress chan<- string) (str
 	return publishRoot, nil
 }
 
-func (m *mavenProject) InstallDependencies(ctx context.Context) error {
+func (m *mavenProject) Restore(ctx context.Context) error {
 	if err := m.mavenCli.ResolveDependencies(ctx, m.config.Path()); err != nil {
 		return fmt.Errorf("resolving maven dependencies: %w", err)
 	}

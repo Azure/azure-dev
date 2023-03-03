@@ -363,7 +363,7 @@ func (sc *ServiceConfig) Restore(ctx context.Context, env *environment.Environme
 			return fmt.Errorf("getting framework services: %w", err)
 		}
 
-		if err := frameworkService.InstallDependencies(ctx); err != nil {
+		if err := frameworkService.Restore(ctx); err != nil {
 			return fmt.Errorf("failed installing dependencies, %w", err)
 		}
 

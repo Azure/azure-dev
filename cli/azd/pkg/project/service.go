@@ -44,6 +44,24 @@ func (svc *Service) RequiredExternalTools() []tools.ExternalTool {
 	return requiredTools
 }
 
+func (svc *Service) Restore(ctx context.Context) error {
+	return svc.Framework.Restore(ctx)
+}
+
+func (svc *Service) Build(ctx context.Context) error {
+	//return svc.Framework.Build(ctx)
+	return nil
+}
+
+func (svc *Service) Package(ctx context.Context) error {
+	return svc.Target.Package(ctx)
+}
+
+func (svc *Service) Publish(ctx context.Context) error {
+	//return svc.Target.Publish()
+	return nil
+}
+
 func (svc *Service) Deploy(
 	ctx context.Context,
 	azdCtx *azdcontext.AzdContext,
@@ -66,7 +84,7 @@ func (svc *Service) Deploy(
 			log.Printf("packing service %s", svc.Config.Name)
 
 			progress <- "Preparing packaging"
-			artifact, err := svc.Framework.Package(ctx, progress)
+			artifact, err := svc.Framework.Build(ctx, progress)
 			if err != nil {
 				result <- &ServiceDeploymentChannelResponse{
 					Error: fmt.Errorf("packaging service %s: %w", svc.Config.Name, err),
@@ -90,7 +108,7 @@ func (svc *Service) Deploy(
 			log.Printf("deploying service %s", svc.Config.Name)
 
 			progress <- "Preparing for deployment"
-			res, err := svc.Target.Deploy(ctx, azdCtx, deploymentArtifact, progress)
+			res, err := svc.Target.Publish(ctx, azdCtx, deploymentArtifact, progress)
 			if err != nil {
 				result <- &ServiceDeploymentChannelResponse{
 					Error: fmt.Errorf("deploying service %s package: %w", svc.Config.Name, err),

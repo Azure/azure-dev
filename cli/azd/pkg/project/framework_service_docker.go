@@ -31,7 +31,7 @@ func (p *dockerProject) RequiredExternalTools() []tools.ExternalTool {
 	return []tools.ExternalTool{p.docker}
 }
 
-func (p *dockerProject) Package(ctx context.Context, progress chan<- string) (string, error) {
+func (p *dockerProject) Build(ctx context.Context, progress chan<- string) (string, error) {
 	dockerOptions := getDockerOptionsWithDefaults(p.config.Docker)
 
 	log.Printf(
@@ -53,10 +53,10 @@ func (p *dockerProject) Package(ctx context.Context, progress chan<- string) (st
 	return imageId, nil
 }
 
-func (p *dockerProject) InstallDependencies(ctx context.Context) error {
+func (p *dockerProject) Restore(ctx context.Context) error {
 	// When the program runs the restore actions for the underlying project (containerapp),
 	// the dependencies are installed locally
-	return p.framework.InstallDependencies(ctx)
+	return p.framework.Restore(ctx)
 }
 
 func (p *dockerProject) Initialize(ctx context.Context) error {

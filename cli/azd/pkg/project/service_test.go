@@ -45,12 +45,16 @@ func (st *mockFrameworkService) RequiredExternalTools() []tools.ExternalTool {
 	return []tools.ExternalTool{}
 }
 
-func (st *mockFrameworkService) Package(ctx context.Context, progress chan<- string) (string, error) {
+func (st *mockFrameworkService) Build(ctx context.Context) error {
+	return nil
+}
+
+func (st *mockFrameworkService) Publish(ctx context.Context, progress chan<- string) (string, error) {
 	progress <- "mock package progress"
 	return "", nil
 }
 
-func (st *mockFrameworkService) InstallDependencies(ctx context.Context) error {
+func (st *mockFrameworkService) Restore(ctx context.Context) error {
 	return nil
 }
 
@@ -65,7 +69,11 @@ func (st *mockServiceTarget) RequiredExternalTools() []tools.ExternalTool {
 	return []tools.ExternalTool{}
 }
 
-func (st *mockServiceTarget) Deploy(
+func (st *mockServiceTarget) Package(ctx context.Context) error {
+	return nil
+}
+
+func (st *mockServiceTarget) Publish(
 	_ context.Context,
 	_ *azdcontext.AzdContext,
 	_ string,

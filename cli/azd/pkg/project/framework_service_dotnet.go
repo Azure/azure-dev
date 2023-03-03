@@ -28,7 +28,7 @@ func (dp *dotnetProject) RequiredExternalTools() []tools.ExternalTool {
 	return []tools.ExternalTool{dp.dotnetCli}
 }
 
-func (dp *dotnetProject) Package(ctx context.Context, progress chan<- string) (string, error) {
+func (dp *dotnetProject) Build(ctx context.Context, progress chan<- string) (string, error) {
 	publishRoot, err := os.MkdirTemp("", "azd")
 	if err != nil {
 		return "", fmt.Errorf("creating package directory for %s: %w", dp.config.Name, err)
@@ -46,7 +46,7 @@ func (dp *dotnetProject) Package(ctx context.Context, progress chan<- string) (s
 	return publishRoot, nil
 }
 
-func (dp *dotnetProject) InstallDependencies(ctx context.Context) error {
+func (dp *dotnetProject) Restore(ctx context.Context) error {
 	if err := dp.dotnetCli.Restore(ctx, dp.config.Path()); err != nil {
 		return err
 	}

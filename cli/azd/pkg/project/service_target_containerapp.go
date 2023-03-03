@@ -45,7 +45,11 @@ func (at *containerAppTarget) RequiredExternalTools() []tools.ExternalTool {
 	return []tools.ExternalTool{at.docker}
 }
 
-func (at *containerAppTarget) Deploy(
+func (at *containerAppTarget) Package(ctx context.Context) error {
+	return nil
+}
+
+func (at *containerAppTarget) Publish(
 	ctx context.Context,
 	azdCtx *azdcontext.AzdContext,
 	path string,

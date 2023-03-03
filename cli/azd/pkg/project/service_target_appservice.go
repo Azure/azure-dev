@@ -29,7 +29,11 @@ func (st *appServiceTarget) RequiredExternalTools() []tools.ExternalTool {
 	return []tools.ExternalTool{}
 }
 
-func (st *appServiceTarget) Deploy(
+func (st *appServiceTarget) Package(ctx context.Context) error {
+	return nil
+}
+
+func (st *appServiceTarget) Publish(
 	ctx context.Context,
 	_ *azdcontext.AzdContext,
 	path string,

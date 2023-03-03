@@ -37,8 +37,9 @@ type ServiceTarget interface {
 	// RequiredExternalTools are the tools needed to run the deploy operation for this
 	// target.
 	RequiredExternalTools() []tools.ExternalTool
-	// Deploy deploys the given deployment artifact to the target resource
-	Deploy(
+	Package(ctx context.Context) error
+	// Publish deploys the given deployment artifact to the target resource
+	Publish(
 		ctx context.Context,
 		azdCtx *azdcontext.AzdContext,
 		path string,

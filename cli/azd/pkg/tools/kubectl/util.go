@@ -28,31 +28,29 @@ func GetResource[T any](
 	}
 
 	if flags.Output == "" {
-		flags.Output = "json"
-	}
-
-	var zero T
-
-	res, err := cli.Exec(ctx, flags, "get", string(resourceType), resourceName)
-	if err != nil {
-		return zero, fmt.Errorf("failed getting resources, %w", err)
+		flags.Output = OutputTypeJson
 	}
 
 	var resource T
 
+	res, err := cli.Exec(ctx, flags, "get", string(resourceType), resourceName)
+	if err != nil {
+		return resource, fmt.Errorf("failed getting resources, %w", err)
+	}
+
 	switch flags.Output {
-	case "json":
+	case OutputTypeJson:
 		err = json.Unmarshal([]byte(res.Stdout), &resource)
 		if err != nil {
-			return zero, fmt.Errorf("failed unmarshalling resources JSON, %w", err)
+			return resource, fmt.Errorf("failed unmarshalling resources JSON, %w", err)
 		}
-	case "yaml":
+	case OutputTypeYaml:
 		err = yaml.Unmarshal([]byte(res.Stdout), &resource)
 		if err != nil {
-			return zero, fmt.Errorf("failed unmarshalling resources YAML, %w", err)
+			return resource, fmt.Errorf("failed unmarshalling resources YAML, %w", err)
 		}
 	default:
-		return zero, fmt.Errorf("failed unmarshalling resources. Output format '%s' is not supported", flags.Output)
+		return resource, fmt.Errorf("failed unmarshalling resources. Output format '%s' is not supported", flags.Output)
 	}
 
 	return resource, nil
@@ -69,7 +67,7 @@ func GetResources[T any](
 	}
 
 	if flags.Output == "" {
-		flags.Output = "json"
+		flags.Output = OutputTypeJson
 	}
 
 	res, err := cli.Exec(ctx, flags, "get", string(resourceType))
@@ -80,12 +78,12 @@ func GetResources[T any](
 	var list List[T]
 
 	switch flags.Output {
-	case "json":
+	case OutputTypeJson:
 		err = json.Unmarshal([]byte(res.Stdout), &list)
 		if err != nil {
 			return nil, fmt.Errorf("failed unmarshalling resources JSON, %w", err)
 		}
-	case "yaml":
+	case OutputTypeYaml:
 		err = yaml.Unmarshal([]byte(res.Stdout), &list)
 		if err != nil {
 			return nil, fmt.Errorf("failed unmarshalling resources YAML, %w", err)

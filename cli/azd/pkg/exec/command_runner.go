@@ -234,7 +234,12 @@ func redactSensitiveData(msg string) string {
 		"password": {
 			regexp.MustCompile(`--password \S+`),
 			"--password <redacted>",
-		}}
+		},
+		"kubectl-from-literal": {
+			regexp.MustCompile(`--from-literal=([^=]+)=(\S+)`),
+			"--from-literal=$1=<redacted>",
+		},
+	}
 
 	for _, redactRule := range regexpRedactRules {
 		regMatchString := redactRule.matchString

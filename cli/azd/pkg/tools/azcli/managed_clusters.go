@@ -56,7 +56,10 @@ func (cs *managedClustersService) GetAdminCredentials(
 	return &credResult.CredentialResults, nil
 }
 
-func (cs *managedClustersService) createManagedClusterClient(ctx context.Context, subscriptionId string) (*armcontainerservice.ManagedClustersClient, error) {
+func (cs *managedClustersService) createManagedClusterClient(
+	ctx context.Context,
+	subscriptionId string,
+) (*armcontainerservice.ManagedClustersClient, error) {
 	options := clientOptionsBuilder(cs.httpClient, cs.userAgent).BuildArmClientOptions()
 
 	client, err := armcontainerservice.NewManagedClustersClient(subscriptionId, cs.credential, options)

@@ -488,7 +488,7 @@ func createServiceTarget(
 		kubeCtl,
 		dockerCli,
 		clock.New(),
-	), nil
+	)
 }
 
 func createTestCluster(clusterName, username string) *kubectl.KubeConfig {

@@ -7,7 +7,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
@@ -91,4 +93,16 @@ func resourceTypeMismatchError(
 // and thus returns true.
 func (st ServiceTargetKind) SupportsDelayedProvisioning() bool {
 	return st == ContainerAppTarget || st == AksTarget
+}
+
+func checkResourceType(resource *environment.TargetResource, expectedResourceType infra.AzureResourceType) error {
+	if !strings.EqualFold(resource.ResourceType(), string(expectedResourceType)) {
+		return resourceTypeMismatchError(
+			resource.ResourceName(),
+			resource.ResourceType(),
+			expectedResourceType,
+		)
+	}
+
+	return nil
 }

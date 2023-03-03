@@ -36,7 +36,7 @@ func Test_ApplyFiles(t *testing.T) {
 	err := os.WriteFile("test.yaml", []byte("yaml"), osutil.PermissionFile)
 	require.NoError(t, err)
 
-	err = cli.ApplyFiles(*mockContext.Context, tempDir, &KubeCliFlags{
+	err = cli.Apply(*mockContext.Context, tempDir, &KubeCliFlags{
 		Namespace: "test-namespace",
 	})
 	require.NoError(t, err)
@@ -65,7 +65,7 @@ func Test_Command_Args(t *testing.T) {
 			expectedCmd:          "kubectl",
 			expectedArgs:         []string{"apply", "-f", "-", "-n", "test-namespace"},
 			testFn: func() error {
-				_, err := cli.ApplyPipe(*mockContext.Context, "input", &KubeCliFlags{
+				_, err := cli.ApplyWithInput(*mockContext.Context, "input", &KubeCliFlags{
 					Namespace: "test-namespace",
 				})
 
@@ -137,7 +137,7 @@ func Test_Command_Args(t *testing.T) {
 			testFn: func() error {
 				_, err := cli.Exec(*mockContext.Context, &KubeCliFlags{
 					Namespace: "test-namespace",
-					Output:    "json",
+					Output:    OutputTypeJson,
 				}, "get", "deployment")
 
 				return err

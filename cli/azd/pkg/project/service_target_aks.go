@@ -57,7 +57,7 @@ type AksServiceOptions struct {
 type aksTarget struct {
 	config                   *ServiceConfig
 	env                      *environment.Environment
-	scope                    *environment.TargetResource
+	resource                 *environment.TargetResource
 	managedClustersService   azcli.ManagedClustersService
 	containerRegistryService azcli.ContainerRegistryService
 	docker                   docker.Docker
@@ -69,23 +69,27 @@ type aksTarget struct {
 func NewAksTarget(
 	config *ServiceConfig,
 	env *environment.Environment,
-	scope *environment.TargetResource,
+	resource *environment.TargetResource,
 	managedClustersService azcli.ManagedClustersService,
 	containerRegistryService azcli.ContainerRegistryService,
 	kubectlCli kubectl.KubectlCli,
 	docker docker.Docker,
 	clock clock.Clock,
-) ServiceTarget {
+) (ServiceTarget, error) {
+	if resource.ResourceGroupName() == "" {
+		return nil, fmt.Errorf("missing resource group name: %s", resource.ResourceGroupName())
+	}
+
 	return &aksTarget{
 		config:                   config,
 		env:                      env,
-		scope:                    scope,
+		resource:                 resource,
 		managedClustersService:   managedClustersService,
 		containerRegistryService: containerRegistryService,
 		docker:                   docker,
 		kubectl:                  kubectlCli,
 		clock:                    clock,
-	}
+	}, nil
 }
 
 // Gets the required external tools when using AKS service target
@@ -111,7 +115,12 @@ func (t *aksTarget) Deploy(
 
 	log.Printf("getting AKS credentials for cluster '%s'\n", clusterName)
 	progress <- "Getting AKS credentials"
-	clusterCreds, err := t.managedClustersService.GetAdminCredentials(ctx, t.env.GetSubscriptionId(), t.scope.ResourceGroupName(), clusterName)
+	clusterCreds, err := t.managedClustersService.GetAdminCredentials(
+		ctx,
+		t.env.GetSubscriptionId(),
+		t.resource.ResourceGroupName(),
+		clusterName,
+	)
 	if err != nil {
 		return ServiceDeploymentResult{}, fmt.Errorf(
 			"failed retrieving cluster admin credentials. Ensure your cluster has been configured to support admin credentials, %w",
@@ -165,7 +174,7 @@ func (t *aksTarget) Deploy(
 		return ServiceDeploymentResult{}, fmt.Errorf("failed creating kube namespace: %w", err)
 	}
 
-	_, err = t.kubectl.ApplyPipe(ctx, namespaceResult.Stdout, nil)
+	_, err = t.kubectl.ApplyWithInput(ctx, namespaceResult.Stdout, nil)
 	if err != nil {
 		return ServiceDeploymentResult{}, fmt.Errorf("failed applying kube namespace: %w", err)
 	}
@@ -185,7 +194,7 @@ func (t *aksTarget) Deploy(
 		return ServiceDeploymentResult{}, fmt.Errorf("failed setting kube secrets: %w", err)
 	}
 
-	_, err = t.kubectl.ApplyPipe(ctx, secretResult.Stdout, nil)
+	_, err = t.kubectl.ApplyWithInput(ctx, secretResult.Stdout, nil)
 	if err != nil {
 		return ServiceDeploymentResult{}, fmt.Errorf("failed applying kube secrets: %w", err)
 	}
@@ -230,7 +239,7 @@ func (t *aksTarget) Deploy(
 		deploymentPath = defaultDeploymentPath
 	}
 
-	err = t.kubectl.ApplyFiles(
+	err = t.kubectl.Apply(
 		ctx,
 		filepath.Join(t.config.RelativePath, deploymentPath),
 		&kubectl.KubeCliFlags{Namespace: namespace},
@@ -259,8 +268,8 @@ func (t *aksTarget) Deploy(
 	return ServiceDeploymentResult{
 		TargetResourceId: azure.KubernetesServiceRID(
 			t.env.GetSubscriptionId(),
-			t.scope.ResourceGroupName(),
-			t.scope.ResourceName(),
+			t.resource.ResourceGroupName(),
+			t.resource.ResourceName(),
 		),
 		Kind:      AksTarget,
 		Details:   deployment,
@@ -301,7 +310,11 @@ func (t *aksTarget) Endpoints(ctx context.Context) ([]string, error) {
 	return endpoints, nil
 }
 
-func (t *aksTarget) configureK8sContext(ctx context.Context, clusterName string, credentialResult *armcontainerservice.CredentialResult) error {
+func (t *aksTarget) configureK8sContext(
+	ctx context.Context,
+	clusterName string,
+	credentialResult *armcontainerservice.CredentialResult,
+) error {
 	kubeConfigManager, err := kubectl.NewKubeConfigManager(t.kubectl)
 	if err != nil {
 		return err

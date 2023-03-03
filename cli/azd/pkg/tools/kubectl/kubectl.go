@@ -20,9 +20,9 @@ type KubectlCli interface {
 	// Sets the env vars available to the CLI
 	SetEnv(env map[string]string)
 	// Applies one or more files from the specified path
-	ApplyFiles(ctx context.Context, path string, flags *KubeCliFlags) error
+	Apply(ctx context.Context, path string, flags *KubeCliFlags) error
 	// Applies manifests from the specified input
-	ApplyPipe(ctx context.Context, input string, flags *KubeCliFlags) (*exec.RunResult, error)
+	ApplyWithInput(ctx context.Context, input string, flags *KubeCliFlags) (*exec.RunResult, error)
 	// Views the current k8s configuration including available clusters, contexts & users
 	ConfigView(ctx context.Context, merge bool, flatten bool, flags *KubeCliFlags) (*exec.RunResult, error)
 	// Sets the k8s context to use for future CLI commands
@@ -148,7 +148,7 @@ func (cli *kubectlCli) ConfigView(
 	return &res, nil
 }
 
-func (cli *kubectlCli) ApplyPipe(ctx context.Context, input string, flags *KubeCliFlags) (*exec.RunResult, error) {
+func (cli *kubectlCli) ApplyWithInput(ctx context.Context, input string, flags *KubeCliFlags) (*exec.RunResult, error) {
 	runArgs := exec.
 		NewRunArgs("kubectl", "apply", "-f", "-").
 		WithEnv(environ(cli.env)).
@@ -163,44 +163,9 @@ func (cli *kubectlCli) ApplyPipe(ctx context.Context, input string, flags *KubeC
 }
 
 // Applies manifests from the specified input
-func (cli *kubectlCli) ApplyFiles(ctx context.Context, path string, flags *KubeCliFlags) error {
-	entries, err := os.ReadDir(path)
-	if err != nil {
-		return fmt.Errorf("failed reading files in path, '%s', %w", path, err)
-	}
-
-	for _, entry := range entries {
-		if entry.IsDir() {
-			continue
-		}
-
-		ext := filepath.Ext(entry.Name())
-		if !(ext == ".yaml" || ext == ".yml") {
-			continue
-		}
-
-		filePath := filepath.Join(path, entry.Name())
-		fileBytes, err := os.ReadFile(filePath)
-		if err != nil {
-			return fmt.Errorf("failed reading manifest file '%s', %w", filePath, err)
-		}
-
-		yaml := string(fileBytes)
-		replaced, err := envsubst.Eval(yaml, func(name string) string {
-			if val, has := cli.env[name]; has {
-				return val
-			}
-			return os.Getenv(name)
-		})
-
-		if err != nil {
-			return fmt.Errorf("failed replacing env vars, %w", err)
-		}
-
-		_, err = cli.ApplyPipe(ctx, replaced, flags)
-		if err != nil {
-			return fmt.Errorf("failed applying manifest, %w", err)
-		}
+func (cli *kubectlCli) Apply(ctx context.Context, path string, flags *KubeCliFlags) error {
+	if err := cli.applyTemplates(ctx, path, flags); err != nil {
+		return fmt.Errorf("failed process templates, %w", err)
 	}
 
 	return nil
@@ -220,7 +185,7 @@ func (cli *kubectlCli) CreateSecretGenericFromLiterals(
 
 	res, err := cli.Exec(ctx, flags, args...)
 	if err != nil {
-		return nil, fmt.Errorf("kubectl create secret generic --from-env-file: %w", err)
+		return nil, fmt.Errorf("kubectl create secret generic --from-literal: %w", err)
 	}
 
 	return &res, nil
@@ -245,6 +210,62 @@ func (cli *kubectlCli) Exec(ctx context.Context, flags *KubeCliFlags, args ...st
 		AppendParams(args...)
 
 	return cli.executeCommandWithArgs(ctx, runArgs, flags)
+}
+
+func (cli *kubectlCli) applyTemplate(ctx context.Context, filePath string, flags *KubeCliFlags) error {
+	fileBytes, err := os.ReadFile(filePath)
+	if err != nil {
+		return fmt.Errorf("failed reading manifest file '%s', %w", filePath, err)
+	}
+
+	yaml := string(fileBytes)
+	replaced, err := envsubst.Eval(yaml, func(name string) string {
+		if val, has := cli.env[name]; has {
+			return val
+		}
+		return os.Getenv(name)
+	})
+
+	if err != nil {
+		return fmt.Errorf("failed replacing env vars, %w", err)
+	}
+
+	_, err = cli.ApplyWithInput(ctx, replaced, flags)
+	if err != nil {
+		return fmt.Errorf("failed applying file '%s', %w", filePath, err)
+	}
+
+	return nil
+}
+
+func (cli *kubectlCli) applyTemplates(ctx context.Context, directoryPath string, flags *KubeCliFlags) error {
+	entries, err := os.ReadDir(directoryPath)
+	if err != nil {
+		return fmt.Errorf("failed reading files in path, '%s', %w", directoryPath, err)
+	}
+
+	for _, entry := range entries {
+		entryPath := filepath.Join(directoryPath, entry.Name())
+
+		if entry.IsDir() {
+			if err := cli.applyTemplates(ctx, entryPath, flags); err != nil {
+				return fmt.Errorf("failed applying templates at '%s', %w", entryPath, err)
+			}
+
+			continue
+		}
+
+		ext := filepath.Ext(entry.Name())
+		if !(ext == ".yaml" || ext == ".yml") {
+			continue
+		}
+
+		if err := cli.applyTemplate(ctx, entryPath, flags); err != nil {
+			return fmt.Errorf("failed applying template '%s', %w", entryPath, err)
+		}
+	}
+
+	return nil
 }
 
 func (cli *kubectlCli) executeCommandWithArgs(

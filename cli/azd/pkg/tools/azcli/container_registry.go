@@ -30,7 +30,11 @@ type containerRegistryService struct {
 }
 
 // Creates a new instance of the ContainerRegistryService
-func NewContainerRegistryService(credential azcore.TokenCredential, httpClient httputil.HttpClient, docker docker.Docker) ContainerRegistryService {
+func NewContainerRegistryService(
+	credential azcore.TokenCredential,
+	httpClient httputil.HttpClient,
+	docker docker.Docker,
+) ContainerRegistryService {
 	return &containerRegistryService{
 		credential: credential,
 		httpClient: httpClient,

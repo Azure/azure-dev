@@ -125,13 +125,20 @@ func (sc *ServiceConfig) GetServiceTarget(
 		// Using IoC container directly here is a work around till we can expose a
 		// dynamic service location to resolve these configuration based dependencies
 		var containerRegistryService azcli.ContainerRegistryService
-		err := ioc.Global.Resolve(&containerRegistryService)
-		if err != nil {
+		if err := ioc.Global.Resolve(&containerRegistryService); err != nil {
 			return nil, err
 		}
 
 		target, err = NewContainerAppTarget(
-			sc, env, resource, containerRegistryService, azCli, docker.NewDocker(commandRunner), console, commandRunner, accountManager,
+			sc,
+			env,
+			resource,
+			containerRegistryService,
+			azCli,
+			docker.NewDocker(commandRunner),
+			console,
+			commandRunner,
+			accountManager,
 		)
 	case string(AzureFunctionTarget):
 		target, err = NewFunctionAppTarget(sc, env, resource, azCli)
@@ -141,18 +148,16 @@ func (sc *ServiceConfig) GetServiceTarget(
 		// Using IoC container directly here is a work around till we can expose a
 		// dynamic service location to resolve these configuration based dependencies
 		var managedClustersService azcli.ManagedClustersService
-		err := ioc.Global.Resolve(&managedClustersService)
-		if err != nil {
+		if err := ioc.Global.Resolve(&managedClustersService); err != nil {
 			return nil, err
 		}
 
 		var containerRegistryService azcli.ContainerRegistryService
-		err = ioc.Global.Resolve(&containerRegistryService)
-		if err != nil {
+		if err := ioc.Global.Resolve(&containerRegistryService); err != nil {
 			return nil, err
 		}
 
-		target = NewAksTarget(
+		target, err = NewAksTarget(
 			sc,
 			env,
 			resource,

@@ -168,7 +168,7 @@ func (at *containerAppTarget) Deploy(
 			targetResource.Type,
 		)
 
-		if err := checkResourceType(at.resource); err != nil {
+		if err := checkResourceType(at.resource, infra.AzureResourceTypeContainerApp); err != nil {
 			return ServiceDeploymentResult{}, err
 		}
 	}
@@ -246,7 +246,7 @@ func NewContainerAppTarget(
 	}
 
 	if resource.ResourceType() != "" {
-		if err := checkResourceType(resource); err != nil {
+		if err := checkResourceType(resource, infra.AzureResourceTypeContainerApp); err != nil {
 			return nil, err
 		}
 	}
@@ -262,18 +262,6 @@ func NewContainerAppTarget(
 		commandRunner:  commandRunner,
 		clock:          clock.New(),
 	}, nil
-}
-
-func checkResourceType(resource *environment.TargetResource) error {
-	if !strings.EqualFold(resource.ResourceType(), string(infra.AzureResourceTypeContainerApp)) {
-		return resourceTypeMismatchError(
-			resource.ResourceName(),
-			resource.ResourceType(),
-			infra.AzureResourceTypeContainerApp,
-		)
-	}
-
-	return nil
 }
 
 // A console implementation which output goes only to logs

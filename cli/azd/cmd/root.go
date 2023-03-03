@@ -31,7 +31,6 @@ func NewRootCmd(staticHelp bool, middlewareChain []*actions.MiddlewareRegistrati
 	opts := &internal.GlobalCommandOptions{GenerateStaticHelp: staticHelp}
 	opts.EnableTelemetry = telemetry.IsTelemetryEnabled()
 
-	//productName := "The Azure Developer CLI"
 	productName := "The Azure Developer CLI"
 	if opts.GenerateStaticHelp {
 		productName = "The Azure Developer CLI (`azd`)"

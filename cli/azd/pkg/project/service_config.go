@@ -122,6 +122,7 @@ func (sc *ServiceConfig) GetServiceTarget(
 	case "", string(AppServiceTarget):
 		target, err = NewAppServiceTarget(sc, env, resource, azCli)
 	case string(ContainerAppTarget):
+		// TODO: (azure/azure-dev#1657)
 		// Using IoC container directly here is a work around till we can expose a
 		// dynamic service location to resolve these configuration based dependencies
 		var containerRegistryService azcli.ContainerRegistryService
@@ -145,6 +146,7 @@ func (sc *ServiceConfig) GetServiceTarget(
 	case string(StaticWebAppTarget):
 		target, err = NewStaticWebAppTarget(sc, env, resource, azCli, swa.NewSwaCli(commandRunner))
 	case string(AksTarget):
+		// TODO: (azure/azure-dev#1657)
 		// Using IoC container directly here is a work around till we can expose a
 		// dynamic service location to resolve these configuration based dependencies
 		var managedClustersService azcli.ManagedClustersService

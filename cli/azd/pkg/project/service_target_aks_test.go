@@ -348,6 +348,13 @@ func setupMocks(mockContext *mocks.MockContext) error {
 		return exec.NewRunResult(0, string(jsonBytes), ""), nil
 	})
 
+	// Rollout status
+	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
+		return strings.Contains(command, "kubectl rollout status")
+	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+		return exec.NewRunResult(0, "", ""), nil
+	})
+
 	// Get services
 	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 		return strings.Contains(command, "kubectl get svc")

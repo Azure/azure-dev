@@ -38,26 +38,6 @@ func NewAzureResourceManager(azCli azcli.AzCli) *AzureResourceManager {
 	}
 }
 
-var hasTargetResourceData = func(operation *armresources.DeploymentOperation) bool {
-	return operation.Properties.TargetResource != nil
-}
-
-var isDeploymentType = func(operation *armresources.DeploymentOperation) bool {
-	return *operation.Properties.TargetResource.ResourceType == string(AzureResourceTypeDeployment)
-}
-
-var hasResourceType = func(operation *armresources.DeploymentOperation) bool {
-	return strings.TrimSpace(*operation.Properties.TargetResource.ResourceType) != ""
-}
-
-var isCreateOperation = func(operation *armresources.DeploymentOperation) bool {
-	return *operation.Properties.ProvisioningOperation == armresources.ProvisioningOperationCreate
-}
-
-var hasTimeStamp = func(operation *armresources.DeploymentOperation) bool {
-	return operation.Properties.Timestamp != nil
-}
-
 func (rm *AzureResourceManager) GetDeploymentResourceOperations(
 	ctx context.Context,
 	scope Scope,
@@ -92,31 +72,28 @@ func (rm *AzureResourceManager) GetDeploymentResourceOperations(
 	}
 
 	allLevelsDeploymentOperations := []*armresources.DeploymentOperation{}
-
 	resourceIdPrefix := fmt.Sprintf("/subscriptions/%s/resourceGroups/%s", subscriptionId, resourceGroupName)
-	isWithinResourceGroup := func(operation *armresources.DeploymentOperation) bool {
-		return strings.HasPrefix(*operation.Properties.TargetResource.ID, resourceIdPrefix)
-	}
 
 	// Find all resource group deployments within the subscription operations
 	// Recursively append any resource group deployments that are found
 	innerLevelDeploymentOperations := make(map[string]*armresources.DeploymentOperation)
 	for _, operation := range topLevelDeploymentOperations {
-		if !hasTargetResourceData(operation) {
+		if operation.Properties.TargetResource == nil {
 			// Operations w/o target data can't be resolved. Ignoring them
 			continue
 		}
-		if !isWithinResourceGroup(operation) {
+		if !strings.HasPrefix(*operation.Properties.TargetResource.ID, resourceIdPrefix) {
 			// topLevelDeploymentOperations might include deployments NOT within the resource group which we don't want to
 			// resolve
 			continue
 		}
-		if !isDeploymentType(operation) {
+		if *operation.Properties.TargetResource.ResourceType != string(AzureResourceTypeDeployment) {
 			// non-deploy ops can be part of the final result, we don't need to resolve inner level operations
 			allLevelsDeploymentOperations = append(allLevelsDeploymentOperations, operation)
 			continue
 		}
-		if isDeploymentType(operation) && isCreateOperation(operation) {
+		if *operation.Properties.TargetResource.ResourceType == string(AzureResourceTypeDeployment) &&
+			*operation.Properties.ProvisioningOperation == armresources.ProvisioningOperationCreate {
 			// for deploy/create ops, we want to traverse all inner operations to fetch resources.
 			err = rm.appendDeploymentResourcesRecursive(
 				ctx,
@@ -331,11 +308,11 @@ func (rm *AzureResourceManager) appendDeploymentResourcesRecursive(
 	}
 
 	for _, operation := range operations {
-		if !hasTargetResourceData(operation) {
+		if operation.Properties.TargetResource == nil {
 			// Operations w/o target data can't be resolved. Ignoring them
 			continue
 		}
-		if isDeploymentType(operation) {
+		if *operation.Properties.TargetResource.ResourceType == string(AzureResourceTypeDeployment) {
 			// go to inner levels to resolve resources
 			err := rm.appendDeploymentResourcesRecursive(
 				ctx,
@@ -350,19 +327,19 @@ func (rm *AzureResourceManager) appendDeploymentResourcesRecursive(
 			}
 			continue
 		}
-		if !hasTimeStamp(operation) {
+		if operation.Properties.Timestamp == nil {
 			// The time stamp is used to filter only records after the queryStart.
 			// We ignore the resource if we can't know when it was created
 			continue
 		}
-		if !hasResourceType(operation) {
+		if strings.TrimSpace(*operation.Properties.TargetResource.ResourceType) == "" {
 			// The resource type is required to resolve the name of the resource.
 			// If the dep-op is missing this, we can't resolve it.
 			continue
 		}
 		_, alreadyAdded := (*resourceOperations)[*operation.OperationID]
 		if !alreadyAdded &&
-			isCreateOperation(operation) &&
+			*operation.Properties.ProvisioningOperation == armresources.ProvisioningOperationCreate &&
 			operation.Properties.Timestamp.After(*queryStart) {
 			(*resourceOperations)[*operation.OperationID] = operation
 		}

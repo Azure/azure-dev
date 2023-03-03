@@ -206,7 +206,11 @@ func (cli *kubectlCli) CreateNamespace(ctx context.Context, name string, flags *
 }
 
 // Gets the deployment rollout status
-func (cli *kubectlCli) RolloutStatus(ctx context.Context, deploymentName string, flags *KubeCliFlags) (*exec.RunResult, error) {
+func (cli *kubectlCli) RolloutStatus(
+	ctx context.Context,
+	deploymentName string,
+	flags *KubeCliFlags,
+) (*exec.RunResult, error) {
 	res, err := cli.Exec(ctx, flags, "rollout", "status", fmt.Sprintf("deployment/%s", deploymentName))
 	if err != nil {
 		return nil, fmt.Errorf("deployment rollout failed, %w", err)

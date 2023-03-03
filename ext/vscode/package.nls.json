@@ -17,12 +17,9 @@
     "azure-dev.commands.cli.env-refresh.title": "env refresh (refresh environment values from latest infra deployment)",
     "azure-dev.commands.cli.pipeline-config.title": "pipeline config (configure DevOps pipeline for your application)",
     "azure-dev.commands.cli.install.title": "Install or Update Azure Developer CLI",
-
     "azure-dev.commands.cli.login.title": "Sign in with Azure Developer CLI",
-
     "azure-dev.commands.azureWorkspace.revealAzureResource.title": "Show Azure Resource",
     "azure-dev.commands.azureWorkspace.revealAzureResourceGroup.title": "Show Azure Resource Group",
-
     "azure-dev.commands.getDotEnvFilePath.title": "Get Azure developer environment's .env file path",
 
     "azure-dev.tasks.dotenv.properties.file": "The .env file to use to populate the target task environment",

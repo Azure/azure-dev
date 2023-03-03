@@ -60,7 +60,7 @@ func Test_Command_Args(t *testing.T) {
 	cli := NewKubectl(mockContext.CommandRunner)
 
 	tests := map[string]*kubeCliTestConfig{
-		"apply-pipe": {
+		"apply-with-input": {
 			mockCommandPredicate: "kubectl apply -f -",
 			expectedCmd:          "kubectl",
 			expectedArgs:         []string{"apply", "-f", "-", "-n", "test-namespace"},
@@ -126,6 +126,18 @@ func Test_Command_Args(t *testing.T) {
 						Namespace: "test-namespace",
 					},
 				)
+
+				return err
+			},
+		},
+		"rollout-status": {
+			mockCommandPredicate: "kubectl rollout status",
+			expectedCmd:          "kubectl",
+			expectedArgs:         []string{"rollout", "status", "deployment/deployment-name", "-n", "test-namespace"},
+			testFn: func() error {
+				_, err := cli.RolloutStatus(*mockContext.Context, "deployment-name", &KubeCliFlags{
+					Namespace: "test-namespace",
+				})
 
 				return err
 			},

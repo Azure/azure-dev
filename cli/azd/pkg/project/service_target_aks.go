@@ -354,12 +354,15 @@ func (t *aksTarget) configureK8sContext(
 
 // Finds a deployment using the specified deploymentNameFilter string
 // Waits until the deployment rollout is complete and all replicas are accessible
+// Additionally confirms rollout is complete by checking the rollout status
 func (t *aksTarget) waitForDeployment(
 	ctx context.Context,
 	namespace string,
 	deploymentNameFilter string,
 ) (*kubectl.Deployment, error) {
-	return kubectl.WaitForResource(
+	// The deployment can appear like it has succeeded when a previous deployment
+	// was already in place.
+	deployment, err := kubectl.WaitForResource(
 		ctx, t.kubectl, namespace, kubectl.ResourceTypeDeployment,
 		func(deployment *kubectl.Deployment) bool {
 			return strings.Contains(deployment.Metadata.Name, deploymentNameFilter)
@@ -368,6 +371,21 @@ func (t *aksTarget) waitForDeployment(
 			return deployment.Status.AvailableReplicas == deployment.Spec.Replicas
 		},
 	)
+
+	if err != nil {
+		return nil, err
+	}
+
+	// Check the rollout status
+	// This can be a long operation when the deployment is in a failed state such as an ImagePullBackOff loop
+	_, err = t.kubectl.RolloutStatus(ctx, deployment.Metadata.Name, &kubectl.KubeCliFlags{
+		Namespace: namespace,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return deployment, nil
 }
 
 // Finds an ingress using the specified ingressNameFilter string

@@ -38,6 +38,8 @@ type KubectlCli interface {
 	) (*exec.RunResult, error)
 	// Executes a k8s CLI command from the specified arguments and flags
 	Exec(ctx context.Context, flags *KubeCliFlags, args ...string) (exec.RunResult, error)
+	// Gets the deployment rollout status
+	RolloutStatus(ctx context.Context, deploymentName string, flags *KubeCliFlags) (*exec.RunResult, error)
 }
 
 type OutputType string
@@ -198,6 +200,16 @@ func (cli *kubectlCli) CreateNamespace(ctx context.Context, name string, flags *
 	res, err := cli.Exec(ctx, flags, args...)
 	if err != nil {
 		return nil, fmt.Errorf("kubectl create namespace: %w", err)
+	}
+
+	return &res, nil
+}
+
+// Gets the deployment rollout status
+func (cli *kubectlCli) RolloutStatus(ctx context.Context, deploymentName string, flags *KubeCliFlags) (*exec.RunResult, error) {
+	res, err := cli.Exec(ctx, flags, "rollout", "status", fmt.Sprintf("deployment/%s", deploymentName))
+	if err != nil {
+		return nil, fmt.Errorf("deployment rollout failed, %w", err)
 	}
 
 	return &res, nil

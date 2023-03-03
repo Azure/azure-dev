@@ -22,7 +22,8 @@
         "url": "https://github.com/azure/azure-dev"
     },
     "activationEvents": [
-        "onTaskType:dotenv"
+        "onTaskType:dotenv",
+        "onWalkthrough:azd.start"
     ],
     "main": "./main.js",
     "contributes": {
@@ -110,6 +111,11 @@
                 "category": "%azure-dev.commands_category%",
                 "command": "azure-dev.commands.cli.install",
                 "title": "%azure-dev.commands.cli.install.title%"
+            },
+            {
+                "category": "%azure-dev.commands_category%",
+                "command": "azure-dev.commands.cli.login",
+                "title": "%azure-dev.commands.cli.login.title%"
             },
             {
                 "category": "%azure-dev.commands_category%",
@@ -364,7 +370,81 @@
                     }
                 ]
             }
-        }
+        },
+        "walkthroughs": [
+            {
+                "id": "azd.start",
+                "title": "%azure-dev.walkthroughs.start.title%",
+                "description": "%azure-dev.walkthroughs.start.description%",
+                "featuredFor": ["azure.yaml", "azure.yml"],
+                "steps": [
+                    {
+                        "id": "azd.install",
+                        "title": "%azure-dev.walkthroughs.start.steps.install.title%",
+                        "description": "%azure-dev.walkthroughs.start.steps.install.description%",
+                        "media": {
+                            "markdown": "resources/walkthrough/empty.md"
+                        },
+                        "completionEvents": [
+                            "onContext:hideAzdInstallStep",
+                            "onCommand:azure-dev.commands.cli.install"
+                        ],
+                        "when": "hideAzdInstallStep != true"
+                    },
+                    {
+                        "id": "azd.login",
+                        "title": "%azure-dev.walkthroughs.start.steps.login.title%",
+                        "description": "%azure-dev.walkthroughs.start.steps.login.description%",
+                        "media": {
+                            "markdown": "resources/walkthrough/empty.md"
+                        },
+                        "completionEvents": [
+                            "onContext:hideAzdLoginStep",
+                            "onCommand:azure-dev.commands.cli.login"
+                        ],
+                        "when": "hideAzdLoginStep != true"
+                    },
+                    {
+                        "id": "azd.scaffold",
+                        "title": "%azure-dev.walkthroughs.start.steps.scaffold.title%",
+                        "description": "%azure-dev.walkthroughs.start.steps.scaffold.description%",
+                        "media": {
+                            "svg": "resources/walkthrough/azdScaffold.svg",
+                            "altText": "Choosing a template to initialize a new project with the Azure Dev CLI"
+                        },
+                        "completionEvents": [
+                            "onContext:hideAzdScaffoldStep",
+                            "onCommand:azure-dev.commands.cli.init"
+                        ],
+                        "when": "hideAzdScaffoldStep != true"
+                    },
+                    {
+                        "id": "azd.up",
+                        "title": "%azure-dev.walkthroughs.start.steps.up.title%",
+                        "description": "%azure-dev.walkthroughs.start.steps.up.description%",
+                        "media": {
+                            "svg": "resources/walkthrough/azdUp.svg",
+                            "altText": "Using context menu on azure.yaml to run azd up"
+                        },
+                        "completionEvents": [
+                            "onCommand:azure-dev.commands.cli.up",
+                            "onCommand:azure-dev.commands.cli.provision",
+                            "onCommand:azure-dev.commands.cli.deploy",
+                            "onCommand:azure-dev.commands.cli.infra-create"
+                        ]
+                    },
+                    {
+                        "id": "azd.explore",
+                        "title": "%azure-dev.walkthroughs.start.steps.explore.title%",
+                        "description": "%azure-dev.walkthroughs.start.steps.explore.description%",
+                        "media": {
+                            "svg": "resources/walkthrough/azdCommands.svg",
+                            "altText": "Commands provided by the Azure Developer CLI extension"
+                        }
+                    }
+                ]
+            }
+        ]
     },
     "scripts": {
         "vscode:prepublish": "npm run build",

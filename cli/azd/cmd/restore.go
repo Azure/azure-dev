@@ -13,6 +13,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/pkg/spin"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
@@ -49,13 +50,7 @@ func newRestoreFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) 
 func restoreCmdDesign() *cobra.Command {
 	return &cobra.Command{
 		Use:   "restore",
-		Short: "Restore app dependencies.",
-		//nolint:lll
-		Long: `Restore app dependencies.
-
-Run this command to download and install all the required libraries so that you can build, run, and debug the app locally.
-
-For the best local run and debug experience, go to https://aka.ms/azure-dev/vscode to learn how to use the Visual Studio Code extension.`,
+		Short: "Restore application dependencies.",
 	}
 }
 
@@ -136,4 +131,27 @@ func (r *restoreAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 	}
 
 	return nil, nil
+}
+
+func getCmdRestoreHelpDescription(*cobra.Command) string {
+	return generateCmdHelpDescription(
+		"Restore application dependencies.",
+		[]string{
+			formatHelpNote("Run this command to download and install all required dependencies so that you can build," +
+				" run, and debug the application locally."),
+			formatHelpNote(fmt.Sprintf("For the best local rn and debug experience, go to %s to learn how "+
+				"to use the Visual Studio Code extension.",
+				output.WithLinkFormat("https://aka.ms/azure-dev/vscode"),
+			)),
+		})
+}
+
+func getCmdRestoreHelpFooter(*cobra.Command) string {
+	return generateCmdHelpSamplesBlock(map[string]string{
+		"Downloads and installs all application dependencies.": output.WithHighLightFormat("azd restore"),
+		"Downloads and installs a specific application service " +
+			"dependency, Individual services are listed in your azure.yaml file.": fmt.Sprintf("%s %s",
+			output.WithHighLightFormat("azd restore --service"),
+			output.WithWarningFormat("[Service name]")),
+	})
 }

@@ -187,12 +187,17 @@ func requireIsDefault(t *testing.T, list []contracts.EnvListEnvironment, envName
 	require.Fail(t, "%#v does not contain env with name %#v", list, envName)
 }
 
-func envNew(ctx context.Context, t *testing.T, cli *azdcli.CLI, envName string, usePrompt bool) {
+func envNew(ctx context.Context, t *testing.T, cli *azdcli.CLI, envName string, usePrompt bool, args ...string) {
+	defaultArgs := []string{"env", "new"}
+
 	if usePrompt {
-		_, err := cli.RunCommandWithStdIn(ctx, stdinForTests(envName), "env", "new")
+		runArgs := append(defaultArgs, args...)
+		_, err := cli.RunCommandWithStdIn(ctx, stdinForTests(envName), runArgs...)
 		require.NoError(t, err)
 	} else {
-		_, err := cli.RunCommand(ctx, "env", "new", envName, "--subscription", testSubscriptionId, "-l", defaultLocation)
+		runArgs := append(defaultArgs, envName, "--subscription", testSubscriptionId, "-l", defaultLocation)
+		runArgs = append(runArgs, args...)
+		_, err := cli.RunCommand(ctx, runArgs...)
 		require.NoError(t, err)
 	}
 }

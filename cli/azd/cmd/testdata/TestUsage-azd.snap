@@ -1,28 +1,46 @@
-Usage:
+
+The Azure Developer CLI is an open-source tool that helps onboard and manage your application on Azure
+
+Usage
   azd [command]
 
-Available Commands:
-  config      Manage the Azure Developer CLI user configuration.
-  deploy      Deploy the app's code to Azure.
-  down        Delete Azure resources for an app.
-  env         Manage environments.
-  infra       Manage Azure resources.
-  init        Initialize a new app.
-  login       Log in to Azure.
-  logout      Log out of Azure
-  monitor     Monitor a deployed app.
-  pipeline    Manage GitHub Actions or Azure Pipelines.
-  provision   Provision the Azure resources for an app.
-  restore     Restore app dependencies.
-  template    Manage templates.
-  up          Initialize the app, provision Azure resources, and deploy your project with a single command.
-  version     Print the version number of Azure Developer CLI.
+Commands
+  Configure and develop your app
+    config   	: Manage azd configurations (ex: default Azure subscription, location).
+    init     	: Initialize a new application.
+    login    	: Log in to Azure.
+    logout   	: Log out of Azure.
+    restore  	: Restore application dependencies.
+    template 	: Find and view template details.
 
-Flags:
-  -C, --cwd string   Sets the current working directory.
-      --debug        Enables debugging and diagnostics logging.
-  -h, --help         Gets help for azd.
-      --no-prompt    Accepts the default value instead of prompting, or it fails if there is no default.
+  Manage Azure resources and app deployments
+    deploy   	: Deploy the application's code to Azure.
+    down     	: Delete Azure resources for an application.
+    env      	: Manage environments.
+    infra    	: Manage your Azure infrastructure.
+    provision	: Provision the Azure resources for an application.
+    up       	: Initialize application, provision Azure resources, and deploy your project with a single command.
 
-Use "azd [command] --help" for more information about a command.
+  Monitor, test and release your app
+    monitor  	: Monitor a deployed application.
+    pipeline 	: Manage and configure your deployment pipelines.
+
+  About, help and upgrade
+    version  	: Print the version number of Azure Developer CLI.
+
+Flags
+    -C, --cwd string 	: Sets the current working directory.
+        --debug      	: Enables debugging and diagnostics logging.
+    -h, --help       	: Gets help for azd.
+        --no-prompt  	: Accepts the default value instead of prompting, or it fails if there is no default.
+
+Use azd [command] --help to view examples and more information about a specific command.
+
+Deploying a sample application
+Initialize, provision, and deploy a template application by running the azd up --template [template name] command in an empty directory.
+To view available templates run `azd template list` or visit: https://azure.github.io/awesome-azd.
+    azd up --template todo-nodejs-mongo
+
+Find a bug? Want to let us know how we're doing? Fill out this brief survey: https://aka.ms/azure-dev/hats.
+
 

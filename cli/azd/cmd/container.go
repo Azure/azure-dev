@@ -122,7 +122,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	container.RegisterSingleton(func() httputil.HttpClient { return &http.Client{} })
 
 	// Auth
-	container.RegisterSingleton(auth.NewEnsureLoginGuard)
+	container.RegisterSingleton(auth.NewLoggedInGuard)
 	container.RegisterSingleton(auth.NewMultiTenantCredentialProvider)
 	// Register a default azcore.TokenCredential that is scoped to the tenantID
 	// required to access the current environment's subscription.

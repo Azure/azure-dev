@@ -275,7 +275,7 @@ type envNewAction struct {
 func newEnvNewAction(
 	azdCtx *azdcontext.AzdContext,
 	userProfileService *azcli.UserProfileService,
-	_ auth.EnsureLoginGuard,
+	_ auth.LoggedInGuard,
 	accountManager account.Manager,
 	flags *envNewFlags,
 	args []string,

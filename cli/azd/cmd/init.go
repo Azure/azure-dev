@@ -109,7 +109,7 @@ type initAction struct {
 func newInitAction(
 	accountManager account.Manager,
 	userProfileService *azcli.UserProfileService,
-	_ auth.EnsureLoginGuard,
+	_ auth.LoggedInGuard,
 	cmdRun exec.CommandRunner,
 	console input.Console,
 	gitCli git.GitCli,

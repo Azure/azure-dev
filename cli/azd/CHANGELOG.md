@@ -6,6 +6,7 @@
 
 - [[#1515]](https://github.com/Azure/azure-dev/pull/1515) Remove gh-cli as external dependency for `azd pipeline config`.
 - [[#1558]](https://github.com/Azure/azure-dev/pull/1558) Upgrade bicep version to 0.14.46 and fetch ARM specific version on ARM platforms.
+- [[#1611]](https://github.com/Azure/azure-dev/pull/1611) Updated formatting for displaying command's help.
 
 ### Breaking Changes
 

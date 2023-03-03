@@ -43,24 +43,10 @@ func newUpFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *upFl
 }
 
 func newUpCmd() *cobra.Command {
-	cmd := &cobra.Command{
+	return &cobra.Command{
 		Use:   "up",
-		Short: "Initialize the app, provision Azure resources, and deploy your project with a single command.",
-		//nolint:lll
-		Long: `Initialize the project (if the project folder has not been initialized or cloned from a template), provision Azure resources, and deploy your project with a single command.
-
-This command executes the following in one step:
-
-	$ azd init
-	$ azd provision
-	$ azd deploy
-
-When no template is supplied, you can optionally select an Azure Developer CLI template for cloning. Otherwise, running ` + output.WithBackticks(
-			"azd up",
-		) + ` initializes the current directory so that your project is compatible with Azure Developer CLI.`,
+		Short: "Initialize application, provision Azure resources, and deploy your project with a single command.",
 	}
-
-	return cmd
 }
 
 type upAction struct {
@@ -142,4 +128,22 @@ func (u *upAction) runInit(ctx context.Context) error {
 	}
 
 	return err
+}
+
+func getCmdUpHelpDescription(c *cobra.Command) string {
+
+	return generateCmdHelpDescription(
+		fmt.Sprintf("Executes the %s, %s and %s commands in a single step.",
+			output.WithHighLightFormat("azd init"),
+			output.WithHighLightFormat("azd provision"),
+			output.WithHighLightFormat("azd deploy")), getCmdHelpDescriptionNoteForInit(c))
+}
+
+func getCmdUpHelpFooter(*cobra.Command) string {
+	return generateCmdHelpSamplesBlock(map[string]string{
+		"Initialize, provision and deploy a template to Azure from a GitHub repo.": fmt.Sprintf("%s %s",
+			output.WithHighLightFormat("azd up --template"),
+			output.WithWarningFormat("[GitHub repo URL]"),
+		),
+	})
 }

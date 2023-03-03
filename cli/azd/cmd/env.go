@@ -26,19 +26,17 @@ import (
 )
 
 func envActions(root *actions.ActionDescriptor) *actions.ActionDescriptor {
-	envCmd := &cobra.Command{
-		Use:   "env",
-		Short: "Manage environments.",
-		//nolint:lll
-		Long: `Manage environments.
-
-With this command group, you can create a new environment or get, set, and list your app environments. An app can have multiple environments (for example, dev, test, prod), each with a different configuration (that is, connectivity information) for accessing Azure resources.
-
-You can find all environment configurations under the ` + output.WithBackticks(`.azure\<environment-name>`) + ` directories. The environment name is stored as the AZURE_ENV_NAME environment variable in the ` + output.WithBackticks(`.azure\<environment-name>\directory\.env`) + ` file.`,
-	}
-
 	group := root.Add("env", &actions.ActionDescriptorOptions{
-		Command: envCmd,
+		Command: &cobra.Command{
+			Use:   "env",
+			Short: "Manage environments.",
+		},
+		HelpOptions: actions.ActionHelpOptions{
+			Description: getCmdEnvHelpDescription,
+		},
+		GroupingOptions: actions.CommandGroupOptions{
+			RootLevelHelp: actions.CmdGroupManage,
+		},
 	})
 
 	group.Add("set", &actions.ActionDescriptorOptions{
@@ -95,7 +93,7 @@ func newEnvSetFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *
 func newEnvSetCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "set <key> <value>",
-		Short: "Set a value in the environment.",
+		Short: "Manage your environment settings.",
 		Args:  cobra.ExactArgs(2),
 	}
 }
@@ -492,4 +490,20 @@ func (eg *envGetValuesAction) Run(ctx context.Context) (*actions.ActionResult, e
 	}
 
 	return nil, nil
+}
+
+func getCmdEnvHelpDescription(*cobra.Command) string {
+	return generateCmdHelpDescription(
+		"Manage your application environments. With this command group, you can create a new environment or get, set,"+
+			" and list your application environments.",
+		[]string{
+			formatHelpNote("An Application can have multiple environments (ex: dev, test, prod)."),
+			formatHelpNote("Each environment may have a different configuration (that is, connectivity information)" +
+				" for accessing Azure resources."),
+			formatHelpNote(fmt.Sprintf("You can find all environment configuration under the %s folder.",
+				output.WithLinkFormat(".azure/<environment-name>"))),
+			formatHelpNote(fmt.Sprintf("The environment name is stored as the %s environment variable in the %s file.",
+				output.WithHighLightFormat("AZURE_ENV_NAME"),
+				output.WithLinkFormat(".azure/<environment-name>/.env"))),
+		})
 }

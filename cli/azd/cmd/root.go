@@ -317,8 +317,7 @@ func getCmdRootHelpFooter(cmd *cobra.Command) string {
 
 func getCmdRootHelpCommands(cmd *cobra.Command) (result string) {
 	childrenCommands := cmd.Commands()
-	groups := []commandGroupAnnotationValue{
-		cmdGroupConfig, cmdGroupManage, cmdGroupMonitor, cmdGroupAbout}
+	groups := actions.GetGroupAnnotations()
 
 	var commandGroups = make(map[string][]string, len(groups))
 	// stores the longes line len
@@ -329,7 +328,7 @@ func getCmdRootHelpCommands(cmd *cobra.Command) (result string) {
 		if childCommand.Annotations == nil {
 			continue
 		}
-		groupType, found := getGroupCommandAnnotation(childCommand)
+		groupType, found := actions.GetGroupCommandAnnotation(childCommand)
 		if !found {
 			continue
 		}

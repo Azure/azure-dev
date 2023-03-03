@@ -18,33 +18,6 @@ const (
 	endOfTitleSentinel string = "\x00"
 )
 
-// Defines the type used for annotating a command as part of a group.
-type commandGroupAnnotationKey string
-
-// Defines the type used as values to annotate command with a group.
-type commandGroupAnnotationValue string
-
-const (
-	// cmdGrouperKey is an annotation key that is added as part of a cobra annotations for assigning commands to a group.
-	cmdGrouperKey commandGroupAnnotationKey = "commandGrouper"
-	// cmdGroupConfig defines a group of commands for Configuration.
-	cmdGroupConfig commandGroupAnnotationValue = "Configure and develop your app"
-	// cmdGroupConfig defines a group of commands for Managing.
-	cmdGroupManage commandGroupAnnotationValue = "Manage Azure resources and app deployments"
-	// cmdGroupConfig defines a group of commands for Monitoring.
-	cmdGroupMonitor commandGroupAnnotationValue = "Monitor, test and release your app"
-	// cmdGroupConfig defines a group of commands for Help and About.
-	cmdGroupAbout commandGroupAnnotationValue = "About, help and upgrade"
-)
-
-// getGroupCommandAnnotation check if there is a grouping annotation for the command. Returns the annotation value as an
-// i18nTextId (so it can be used directly to resolve a string) if the annotation is found. Otherwise, returns `"", false` to
-// indicate the command has no grouping annotation.
-func getGroupCommandAnnotation(cmd *cobra.Command) (string, bool) {
-	annotationValue, found := cmd.Annotations[string(cmdGrouperKey)]
-	return annotationValue, found
-}
-
 // cmdHelpGenerator defines the required signature to implement and produce help description for commands.
 type cmdHelpGenerator func(cmd *cobra.Command) string
 

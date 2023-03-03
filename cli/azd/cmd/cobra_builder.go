@@ -219,16 +219,7 @@ func (cb *CobraBuilder) bindCommand(cmd *cobra.Command, descriptor *actions.Acti
 		if cmd.Annotations == nil {
 			cmd.Annotations = make(map[string]string)
 		}
-		switch descriptor.Options.GroupingOptions.RootLevelHelp {
-		case actions.CmdGroupConfig:
-			cmd.Annotations[string(cmdGrouperKey)] = string(cmdGroupConfig)
-		case actions.CmdGroupManage:
-			cmd.Annotations[string(cmdGrouperKey)] = string(cmdGroupManage)
-		case actions.CmdGroupAbout:
-			cmd.Annotations[string(cmdGrouperKey)] = string(cmdGroupAbout)
-		case actions.CmdGroupMonitor:
-			cmd.Annotations[string(cmdGrouperKey)] = string(cmdGroupMonitor)
-		}
+		actions.SetGroupCommandAnnotation(cmd, descriptor.Options.GroupingOptions.RootLevelHelp)
 	}
 
 	// `generateCmdHelp` sets a default help section when `descriptor.Options.HelpOptions` is nil.

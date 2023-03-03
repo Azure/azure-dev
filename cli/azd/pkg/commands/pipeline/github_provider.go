@@ -37,11 +37,13 @@ import (
 type GitHubScmProvider struct {
 	newGitHubRepoCreated bool
 	commandRunner        exec.CommandRunner
+	console              input.Console
 }
 
-func NewGitHubScmProvider(commandRunner exec.CommandRunner) *GitHubScmProvider {
+func NewGitHubScmProvider(commandRunner exec.CommandRunner, console input.Console) *GitHubScmProvider {
 	return &GitHubScmProvider{
 		commandRunner: commandRunner,
+		console:       console,
 	}
 }
 
@@ -49,19 +51,26 @@ func NewGitHubScmProvider(commandRunner exec.CommandRunner) *GitHubScmProvider {
 
 // requiredTools return the list of external tools required by
 // GitHub provider during its execution.
-func (p *GitHubScmProvider) requiredTools(ctx context.Context) []tools.ExternalTool {
-	return []tools.ExternalTool{github.NewGitHubCli(p.commandRunner)}
+func (p *GitHubScmProvider) requiredTools(ctx context.Context) ([]tools.ExternalTool, error) {
+	ghCli, err := github.NewGitHubCli(ctx, p.console, p.commandRunner)
+	if err != nil {
+		return nil, err
+	}
+	return []tools.ExternalTool{ghCli}, nil
 }
 
 // preConfigureCheck check the current state of external tools and any
 // other dependency to be as expected for execution.
 func (p *GitHubScmProvider) preConfigureCheck(
 	ctx context.Context,
-	console input.Console,
 	pipelineManagerArgs PipelineManagerArgs,
 	infraOptions provisioning.Options,
 ) (bool, error) {
-	return ensureGitHubLogin(ctx, github.NewGitHubCli(p.commandRunner), github.GitHubHostName, console)
+	ghCli, err := github.NewGitHubCli(ctx, p.console, p.commandRunner)
+	if err != nil {
+		return false, err
+	}
+	return ensureGitHubLogin(ctx, ghCli, github.GitHubHostName, p.console)
 }
 
 // name returns the name of the provider
@@ -77,13 +86,12 @@ func (p *GitHubScmProvider) configureGitRemote(
 	ctx context.Context,
 	repoPath string,
 	remoteName string,
-	console input.Console,
 ) (string, error) {
 	// used to detect when the GitHub has created a new repo
 	p.newGitHubRepoCreated = false
 
 	// There are a few ways to configure the remote so offer a choice to the user.
-	idx, err := console.Select(ctx, input.ConsoleOptions{
+	idx, err := p.console.Select(ctx, input.ConsoleOptions{
 		Message: "How would you like to configure your git remote to GitHub?",
 		Options: []string{
 			"Select an existing GitHub project",
@@ -98,25 +106,28 @@ func (p *GitHubScmProvider) configureGitRemote(
 	}
 
 	var remoteUrl string
-	ghCli := github.NewGitHubCli(p.commandRunner)
+	ghCli, err := github.NewGitHubCli(ctx, p.console, p.commandRunner)
+	if err != nil {
+		return "", err
+	}
 
 	switch idx {
 	// Select from an existing GitHub project
 	case 0:
-		remoteUrl, err = getRemoteUrlFromExisting(ctx, ghCli, console)
+		remoteUrl, err = getRemoteUrlFromExisting(ctx, ghCli, p.console)
 		if err != nil {
 			return "", fmt.Errorf("getting remote from existing repository: %w", err)
 		}
 	// Create a new project
 	case 1:
-		remoteUrl, err = getRemoteUrlFromNewRepository(ctx, ghCli, repoPath, console)
+		remoteUrl, err = getRemoteUrlFromNewRepository(ctx, ghCli, repoPath, p.console)
 		if err != nil {
 			return "", fmt.Errorf("getting remote from new repository: %w", err)
 		}
 		p.newGitHubRepoCreated = true
 	// Enter a URL directly.
 	case 2:
-		remoteUrl, err = getRemoteUrlFromPrompt(ctx, remoteName, console)
+		remoteUrl, err = getRemoteUrlFromPrompt(ctx, remoteName, p.console)
 		if err != nil {
 			return "", fmt.Errorf("getting remote from prompt: %w", err)
 		}
@@ -163,14 +174,13 @@ func (p *GitHubScmProvider) preventGitPush(
 	ctx context.Context,
 	gitRepo *gitRepositoryDetails,
 	remoteName string,
-	branchName string,
-	console input.Console) (bool, error) {
+	branchName string) (bool, error) {
 	// Don't need to check for preventing push on new created repos
 	// Only check when using an existing repo in case github actions are disabled
 	if !p.newGitHubRepoCreated {
 		slug := gitRepo.owner + "/" + gitRepo.repoName
 		return notifyWhenGitHubActionsAreDisabled(
-			ctx, gitRepo.gitProjectPath, slug, remoteName, branchName, console, p.commandRunner,
+			ctx, gitRepo.gitProjectPath, slug, remoteName, branchName, p.console, p.commandRunner,
 		)
 	}
 	return false, nil
@@ -180,8 +190,7 @@ func (p *GitHubScmProvider) postGitPush(
 	ctx context.Context,
 	gitRepo *gitRepositoryDetails,
 	remoteName string,
-	branchName string,
-	console input.Console) error {
+	branchName string) error {
 	return nil
 }
 
@@ -217,7 +226,10 @@ func notifyWhenGitHubActionsAreDisabled(
 	console input.Console,
 	commandRunner exec.CommandRunner,
 ) (bool, error) {
-	ghCli := github.NewGitHubCli(commandRunner)
+	ghCli, err := github.NewGitHubCli(ctx, console, commandRunner)
+	if err != nil {
+		return false, err
+	}
 	gitCli := git.NewGitCli(commandRunner)
 
 	ghActionsInUpstreamRepo, err := ghCli.GitHubActionsExists(ctx, repoSlug)
@@ -307,31 +319,41 @@ func notifyWhenGitHubActionsAreDisabled(
 type GitHubCiProvider struct {
 	credential    azcore.TokenCredential
 	commandRunner exec.CommandRunner
+	console       input.Console
 }
 
-func NewGitHubCiProvider(credential azcore.TokenCredential, commandRunner exec.CommandRunner) *GitHubCiProvider {
+func NewGitHubCiProvider(
+	credential azcore.TokenCredential, commandRunner exec.CommandRunner, console input.Console) *GitHubCiProvider {
 	return &GitHubCiProvider{
 		credential:    credential,
 		commandRunner: commandRunner,
+		console:       console,
 	}
 }
 
 // ***  subareaProvider implementation ******
 
 // requiredTools defines the requires tools for GitHub to be used as CI manager
-func (p *GitHubCiProvider) requiredTools(ctx context.Context) []tools.ExternalTool {
-	return []tools.ExternalTool{github.NewGitHubCli(p.commandRunner)}
+func (p *GitHubCiProvider) requiredTools(ctx context.Context) ([]tools.ExternalTool, error) {
+	ghCli, err := github.NewGitHubCli(ctx, p.console, p.commandRunner)
+	if err != nil {
+		return nil, err
+	}
+	return []tools.ExternalTool{ghCli}, nil
 }
 
 // preConfigureCheck validates that current state of tools and GitHub is as expected to
 // execute.
 func (p *GitHubCiProvider) preConfigureCheck(
 	ctx context.Context,
-	console input.Console,
 	pipelineManagerArgs PipelineManagerArgs,
 	infraOptions provisioning.Options,
 ) (bool, error) {
-	updated, err := ensureGitHubLogin(ctx, github.NewGitHubCli(p.commandRunner), github.GitHubHostName, console)
+	ghCli, err := github.NewGitHubCli(ctx, p.console, p.commandRunner)
+	if err != nil {
+		return false, err
+	}
+	updated, err := ensureGitHubLogin(ctx, ghCli, github.GitHubHostName, p.console)
 	if err != nil {
 		return updated, err
 	}
@@ -350,7 +372,7 @@ func (p *GitHubCiProvider) preConfigureCheck(
 			)
 		} else if authType == "" {
 			// If not explicitly set, show warning
-			console.MessageUxItem(
+			p.console.MessageUxItem(
 				ctx,
 				&ux.WarningMessage{
 					//nolint:lll
@@ -375,7 +397,6 @@ func (p *GitHubCiProvider) name() string {
 func (p *GitHubCiProvider) ensureAuthorizedForRepoSecrets(
 	ctx context.Context,
 	ghCli github.GitHubCli,
-	console input.Console,
 	repoSlug string) error {
 	// The actual scope for repository-level secrets is simply the `repo` scope in GitHub.
 	// Thus, listing secrets has the same access level permissions as writing secrets
@@ -400,7 +421,7 @@ func (p *GitHubCiProvider) ensureAuthorizedForRepoSecrets(
 
 			// Since repository-level secrets only requires `repo` scope, and `gh auth login` always grants `repo` scope,
 			//  we can run `gh auth login`` without needing `gh auth refresh` with additional scopes
-			_, err = ensureGitHubLogin(ctx, ghCli, github.GitHubHostName, console)
+			_, err = ensureGitHubLogin(ctx, ghCli, github.GitHubHostName, p.console)
 			if err != nil {
 				return fmt.Errorf("logging in: %w", err)
 			}
@@ -423,12 +444,14 @@ func (p *GitHubCiProvider) configureConnection(
 	infraOptions provisioning.Options,
 	credentials json.RawMessage,
 	authType PipelineAuthType,
-	console input.Console,
 ) error {
 
 	repoSlug := repoDetails.owner + "/" + repoDetails.repoName
-	ghCli := github.NewGitHubCli(p.commandRunner)
-	if err := p.ensureAuthorizedForRepoSecrets(ctx, ghCli, console, repoSlug); err != nil {
+	ghCli, err := github.NewGitHubCli(ctx, p.console, p.commandRunner)
+	if err != nil {
+		return err
+	}
+	if err := p.ensureAuthorizedForRepoSecrets(ctx, ghCli, repoSlug); err != nil {
 		return fmt.Errorf("ensuring authorization: %w", err)
 	}
 
@@ -441,10 +464,10 @@ func (p *GitHubCiProvider) configureConnection(
 
 	switch authType {
 	case AuthTypeClientCredentials:
-		authErr = p.configureClientCredentialsAuth(ctx, azdEnvironment, infraOptions, repoSlug, credentials, console)
+		authErr = p.configureClientCredentialsAuth(ctx, azdEnvironment, infraOptions, repoSlug, credentials)
 	default:
 		authErr = p.configureFederatedAuth(
-			ctx, azdEnvironment, infraOptions, repoSlug, credentials, console, p.credential,
+			ctx, azdEnvironment, infraOptions, repoSlug, credentials, p.credential,
 		)
 	}
 
@@ -452,7 +475,7 @@ func (p *GitHubCiProvider) configureConnection(
 		return fmt.Errorf("failed configuring authentication: %w", authErr)
 	}
 
-	console.MessageUxItem(ctx, &ux.MultilineMessage{
+	p.console.MessageUxItem(ctx, &ux.MultilineMessage{
 		Lines: []string{
 			"",
 			"GitHub Action secrets are now configured. You can view GitHub action secrets that were created at this link:",
@@ -470,16 +493,18 @@ func (p *GitHubCiProvider) configureClientCredentialsAuth(
 	infraOptions provisioning.Options,
 	repoSlug string,
 	credentials json.RawMessage,
-	console input.Console,
 ) error {
-	ghCli := github.NewGitHubCli(p.commandRunner)
+	ghCli, err := github.NewGitHubCli(ctx, p.console, p.commandRunner)
+	if err != nil {
+		return err
+	}
 
 	// set azure credential for pipelines can log in to Azure
 	secretName := "AZURE_CREDENTIALS"
 	if err := ghCli.SetSecret(ctx, repoSlug, secretName, string(credentials)); err != nil {
 		return fmt.Errorf("failed setting %s secret: %w", secretName, err)
 	}
-	console.MessageUxItem(ctx, &ux.CreatedRepoSecret{
+	p.console.MessageUxItem(ctx, &ux.CreatedRepoSecret{
 		Name: secretName,
 	})
 
@@ -499,7 +524,7 @@ func (p *GitHubCiProvider) configureClientCredentialsAuth(
 		if err := ghCli.SetSecret(ctx, repoSlug, secretName, values.Tenant); err != nil {
 			return fmt.Errorf("setting terraform env var credentials:: %w", err)
 		}
-		console.MessageUxItem(ctx, &ux.CreatedRepoSecret{
+		p.console.MessageUxItem(ctx, &ux.CreatedRepoSecret{
 			Name: secretName,
 		})
 
@@ -507,7 +532,7 @@ func (p *GitHubCiProvider) configureClientCredentialsAuth(
 		if err := ghCli.SetSecret(ctx, repoSlug, secretName, values.ClientId); err != nil {
 			return fmt.Errorf("setting terraform env var credentials:: %w", err)
 		}
-		console.MessageUxItem(ctx, &ux.CreatedRepoSecret{
+		p.console.MessageUxItem(ctx, &ux.CreatedRepoSecret{
 			Name: secretName,
 		})
 
@@ -515,7 +540,7 @@ func (p *GitHubCiProvider) configureClientCredentialsAuth(
 		if err := ghCli.SetSecret(ctx, repoSlug, secretName, values.ClientSecret); err != nil {
 			return fmt.Errorf("setting terraform env var credentials:: %w", err)
 		}
-		console.MessageUxItem(ctx, &ux.CreatedRepoSecret{
+		p.console.MessageUxItem(ctx, &ux.CreatedRepoSecret{
 			Name: secretName,
 		})
 
@@ -524,26 +549,26 @@ func (p *GitHubCiProvider) configureClientCredentialsAuth(
 		for _, key := range remoteStateKeys {
 			value, ok := azdEnvironment.Values[key]
 			if !ok || strings.TrimSpace(value) == "" {
-				console.StopSpinner(ctx, "Configuring terraform", input.StepWarning)
-				console.MessageUxItem(ctx, &ux.WarningMessage{
+				p.console.StopSpinner(ctx, "Configuring terraform", input.StepWarning)
+				p.console.MessageUxItem(ctx, &ux.WarningMessage{
 					Description: "Terraform Remote State configuration is invalid",
 					HidePrefix:  true,
 				})
-				console.Message(
+				p.console.Message(
 					ctx,
 					fmt.Sprintf(
 						"Visit %s for more information on configuring Terraform remote state",
 						output.WithLinkFormat("https://aka.ms/azure-dev/terraform"),
 					),
 				)
-				console.Message(ctx, "")
+				p.console.Message(ctx, "")
 				return errors.New("terraform remote state is not correctly configured")
 			}
 			// env var was found
 			if err := ghCli.SetSecret(ctx, repoSlug, key, value); err != nil {
 				return fmt.Errorf("setting terraform remote state variables: %w", err)
 			}
-			console.MessageUxItem(ctx, &ux.CreatedRepoSecret{
+			p.console.MessageUxItem(ctx, &ux.CreatedRepoSecret{
 				Name: key,
 			})
 		}
@@ -557,7 +582,7 @@ func (p *GitHubCiProvider) configureClientCredentialsAuth(
 		if err := ghCli.SetSecret(ctx, repoSlug, envName, azdEnvironment.Values[envName]); err != nil {
 			return fmt.Errorf("failed setting %s secret: %w", envName, err)
 		}
-		console.MessageUxItem(ctx, &ux.CreatedRepoSecret{
+		p.console.MessageUxItem(ctx, &ux.CreatedRepoSecret{
 			Name: envName,
 		})
 	}
@@ -572,17 +597,19 @@ func (p *GitHubCiProvider) configureFederatedAuth(
 	infraOptions provisioning.Options,
 	repoSlug string,
 	credentials json.RawMessage,
-	console input.Console,
 	credential azcore.TokenCredential,
 ) error {
-	ghCli := github.NewGitHubCli(p.commandRunner)
+	ghCli, err := github.NewGitHubCli(ctx, p.console, p.commandRunner)
+	if err != nil {
+		return err
+	}
 
 	var azureCredentials azcli.AzureCredentials
 	if err := json.Unmarshal(credentials, &azureCredentials); err != nil {
 		return fmt.Errorf("failed unmarshalling azure credentials: %w", err)
 	}
 
-	err := applyFederatedCredentials(ctx, repoSlug, &azureCredentials, console, credential)
+	err = applyFederatedCredentials(ctx, repoSlug, &azureCredentials, p.console, credential)
 	if err != nil {
 		return err
 	}
@@ -599,7 +626,7 @@ func (p *GitHubCiProvider) configureFederatedAuth(
 		if err := ghCli.SetSecret(ctx, repoSlug, key, value); err != nil {
 			return fmt.Errorf("failed setting github secret '%s':  %w", key, err)
 		}
-		console.MessageUxItem(ctx, &ux.CreatedRepoSecret{
+		p.console.MessageUxItem(ctx, &ux.CreatedRepoSecret{
 			Name: key,
 		})
 	}

@@ -19,6 +19,8 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/public"
+	"github.com/azure/azure-dev/cli/azd/internal/telemetry"
+	"github.com/azure/azure-dev/cli/azd/internal/telemetry/fields"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/github"
@@ -145,7 +147,7 @@ func (m *Manager) CredentialForCurrentUser(
 			TenantID: options.TenantID,
 		})
 		if err != nil {
-			return nil, fmt.Errorf("failed to create credential: %v: %w", err, ErrNoCurrentUser)
+			return nil, fmt.Errorf("failed to create credential: %w: %w", err, ErrNoCurrentUser)
 		}
 		return cred, nil
 	}
@@ -182,7 +184,7 @@ func (m *Manager) CredentialForCurrentUser(
 	} else if currentUser.TenantID != nil && currentUser.ClientID != nil {
 		ps, err := m.loadSecret(*currentUser.TenantID, *currentUser.ClientID)
 		if err != nil {
-			return nil, fmt.Errorf("loading secret: %v: %w", err, ErrNoCurrentUser)
+			return nil, fmt.Errorf("loading secret: %w: %w", err, ErrNoCurrentUser)
 		}
 
 		// by default we used the stored tenant (i.e. the one provided with the tenant id parameter when a user ran
@@ -237,13 +239,22 @@ func (m *Manager) GetLoggedInServicePrincipalTenantID() (*string, error) {
 		return nil, ErrNoCurrentUser
 	}
 
+	// Record type of account found
+	if currentUser.TenantID != nil {
+		telemetry.SetGlobalAttributes(fields.AccountTypeKey.String(fields.AccountTypeServicePrincipal))
+	}
+
+	if currentUser.HomeAccountID != nil {
+		telemetry.SetGlobalAttributes(fields.AccountTypeKey.String(fields.AccountTypeUser))
+	}
+
 	return currentUser.TenantID, nil
 }
 
 func newCredentialFromClientSecret(tenantID string, clientID string, clientSecret string) (azcore.TokenCredential, error) {
 	cred, err := azidentity.NewClientSecretCredential(tenantID, clientID, clientSecret, nil)
 	if err != nil {
-		return nil, fmt.Errorf("creating credential: %v: %w", err, ErrNoCurrentUser)
+		return nil, fmt.Errorf("creating credential: %w: %w", err, ErrNoCurrentUser)
 	}
 
 	return cred, nil
@@ -256,12 +267,12 @@ func newCredentialFromClientCertificate(
 ) (azcore.TokenCredential, error) {
 	certData, err := base64.StdEncoding.DecodeString(clientCertificate)
 	if err != nil {
-		return nil, fmt.Errorf("decoding certificate: %v: %w", err, ErrNoCurrentUser)
+		return nil, fmt.Errorf("decoding certificate: %w: %w", err, ErrNoCurrentUser)
 	}
 
 	certs, key, err := azidentity.ParseCertificates(certData, nil)
 	if err != nil {
-		return nil, fmt.Errorf("parsing certificate: %v: %w", err, ErrNoCurrentUser)
+		return nil, fmt.Errorf("parsing certificate: %w: %w", err, ErrNoCurrentUser)
 	}
 
 	cred, err := azidentity.NewClientCertificateCredential(
@@ -269,7 +280,7 @@ func newCredentialFromClientCertificate(
 	)
 
 	if err != nil {
-		return nil, fmt.Errorf("creating credential: %v: %w", err, ErrNoCurrentUser)
+		return nil, fmt.Errorf("creating credential: %w: %w", err, ErrNoCurrentUser)
 	}
 
 	return cred, nil
@@ -290,7 +301,7 @@ func newCredentialFromClientAssertion(
 	)
 
 	if err != nil {
-		return nil, fmt.Errorf("creating credential: %v: %w", err, ErrNoCurrentUser)
+		return nil, fmt.Errorf("creating credential: %w: %w", err, ErrNoCurrentUser)
 	}
 
 	return cred, nil

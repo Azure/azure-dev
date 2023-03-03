@@ -3,7 +3,7 @@ resources:
     - repository: azure-sdk-build-tools
       type: git
       name: internal/azure-sdk-build-tools
-      ref: refs/tags/azure-sdk-build-tools_20230112.1
+      ref: refs/tags/azure-sdk-build-tools_20230221.2
 
 # Continuous deployment trigger
 trigger:
@@ -47,6 +47,7 @@ stages:
               SetExecutableBit: true
               SetShieldInfo: true
               GenerateCoverage: true
+              BuildLinuxPackages: true
               AZURE_DEV_CI_OS: lin
             Mac:
               Pool: Azure Pipelines
@@ -185,6 +186,10 @@ stages:
             workingDirectory: cli/azd
             displayName: Set executable bit for non-Windows binaries
 
+          - template: /eng/pipelines/templates/steps/build-linux-packages.yml
+            parameters:
+              Condition: and(succeeded(), eq(variables['BuildLinuxPackages'], 'true'))
+
           - task: PowerShell@2
             condition: and(succeeded(), eq(variables['SetShieldInfo'], 'true'))
             inputs:
@@ -210,6 +215,100 @@ stages:
             artifact: test-msi
             condition: and(succeeded(), eq(variables['BuildTestMsi'], 'true'))
             displayName: Upload test MSI
+
+          - publish: cli/installer/fpm/artifact
+            artifact: linux-packages
+            condition: and(succeeded(), eq(variables['BuildLinuxPackages'], 'true'))
+            displayName: Upload linux packages to artifact store
+
+      # This is separated today because Skip.LiveTest is a queue-time variable
+      # and cannot be set in a matrix entry. 
+      - job: CrossBuildCLI
+        strategy: 
+          matrix: 
+            LinuxARM64: 
+              Pool: azsdk-pool-mms-ubuntu-2004-general
+              OSVmImage:  MMSUbuntu20.04
+              BuildTarget: azd-linux-arm64
+              BuildOutputName: azd
+              SetExecutableBit: true
+              GOOS: linux
+              GOARCH: arm64
+            MacARM64:
+              Pool: Azure Pipelines
+              OSVmImage: macOS-11
+              BuildTarget: azd-darwin-arm64
+              BuildOutputName: azd
+              SetExecutableBit: true
+              GOOS: darwin
+              GOARCH: arm64
+              # CGO_ENABLED is required on MacOS to cross-compile pkg/outil/osversion
+              CGO_ENABLED: 1
+        pool: 
+          name: $(Pool)
+          vmImage: $(OSVmImage)
+        timeoutInMinutes: 20
+        steps: 
+          - checkout: self
+
+          - template: /eng/pipelines/templates/steps/setup-go.yml
+            parameters:
+              Condition: false
+
+          - template: /eng/pipelines/templates/steps/set-cli-version-cd.yml
+
+          - task: PowerShell@2
+            inputs:
+              pwsh: true
+              targetType: filePath
+              filePath: eng/scripts/Set-CliVersionVariable.ps1
+            displayName: Set CLI_VERSION
+
+          - task: PowerShell@2
+            inputs:
+              pwsh: true
+              targetType: filePath
+              filePath: cli/azd/ci-build.ps1
+              arguments: >-
+                -Version $(CLI_VERSION)
+                -SourceVersion $(Build.SourceVersion)
+              workingDirectory: cli/azd
+            displayName: Build Go Binary (cross compile)
+
+          - pwsh: file azd
+            workingDirectory: cli/azd
+            displayName: Get file info
+
+          - pwsh: Move-Item $(BuildOutputName) $(BuildTarget)
+            workingDirectory: cli/azd
+            displayName: Rename binaries
+
+          - bash: chmod +x $(BuildTarget)
+            condition: and(succeeded(), eq(variables['SetExecutableBit'], 'true'))
+            workingDirectory: cli/azd
+            displayName: Set executable bit for non-Windows binaries
+
+          - publish: cli/azd/$(BuildTarget)
+            artifact: $(BuildTarget)
+            condition: always()
+            displayName: Upload azd binary to artifact store
+
+      - job: ValidateCrossCompile
+        dependsOn: CrossBuildCLI
+        pool: 
+          name: azsdk-pool-mms-ubuntu-2004-arm
+          vmImage: MMSUbuntu20.04ARM64
+        timeoutInMinutes: 5
+        steps: 
+          - checkout: none 
+
+          - task: DownloadPipelineArtifact@2
+            inputs:
+              artifact: azd-linux-arm64
+              targetPath: $(Build.SourcesDirectory)
+
+          - bash: pwd && ls && chmod +x ./azd-linux-arm64 && ./azd-linux-arm64 version
+            displayName: azd version
 
       - job: GenerateReleaseArtifacts
         pool:
@@ -281,11 +380,21 @@ stages:
             artifact: azd-darwin-amd64
             path: mac-artifacts
 
+        - task: DownloadPipelineArtifact@2
+          inputs:
+            artifact: azd-darwin-arm64
+            path: mac-artifacts
+
         - pwsh: |
             New-Item -ItemType Directory -Path mac
+            
             Compress-Archive `
             -Path mac-artifacts/azd-darwin-amd64 `
             -DestinationPath mac/azd-darwin-amd64.zip
+
+            Compress-Archive `
+            -Path mac-artifacts/azd-darwin-arm64 `
+            -DestinationPath mac/azd-darwin-arm64.zip
           displayName: Package mac binary for signing
 
         - ${{ if in(variables['Build.Reason'], 'IndividualCI', 'BatchedCI', 'Manual') }}:
@@ -299,7 +408,10 @@ stages:
 
         - pwsh: |
             Expand-Archive -Path mac/azd-darwin-amd64.zip -DestinationPath mac/
+            Expand-Archive -Path mac/azd-darwin-arm64.zip -DestinationPath mac/
+
             Remove-Item mac/azd-darwin-amd64.zip
+            Remove-Item mac/azd-darwin-arm64.zip
           displayName: Extract azd-darwin-amd64 from zip and remove zip
 
         - pwsh: |
@@ -405,6 +517,47 @@ stages:
             artifactName: signed-win-FailedAttempt$(System.JobAttempt)
             path: signed-win/
 
+    - job: SignLinux
+      pool:
+        name: azsdk-pool-mms-win-2022-general
+        vmImage: MMS2022
+
+      steps:
+        - task: DownloadPipelineArtifact@2
+          inputs:
+            artifact: linux-packages
+            path: linux
+
+        - ${{ if in(variables['Build.Reason'], 'IndividualCI', 'BatchedCI', 'Manual') }}:
+          - template: pipelines/steps/azd-cli-linux-signing.yml@azure-sdk-build-tools
+            parameters:
+              LinuxPath: linux
+
+        - ${{ else }}:
+          - pwsh: Write-Host "Skipping signing. Build reason - $(Build.Reason)"
+            displayName: Signing process skipped for non-release build
+
+        - pwsh: |
+            New-Item -ItemType Directory -Path signed-linux
+            Copy-Item linux/* signed-linux/ -Recurse
+          displayName: Copy signing outputs
+          condition: always()
+
+        - task: PublishPipelineArtifact@1
+          condition: succeeded()
+          displayName: Publish Signed Artifacts
+          inputs:
+            artifactName: signed-linux
+            path: signed-linux/
+
+        - task: PublishPipelineArtifact@1
+          condition: failed()
+          displayName: Publish failed Signed Artifacts
+          inputs:
+            artifactName: signed-linux-FailedAttempt$(System.JobAttempt)
+            path: signed-linux/
+      
+
   - stage: Verify_Installers
     condition: and(succeeded(), ne(variables['Skip.VerifyInstallers'], 'true'))
     dependsOn: BuildAndTest
@@ -461,27 +614,27 @@ stages:
         pool: azsdk-pool-mms-win-2022-general
         strategy:
           matrix:
-            PerUser: 
+            PerUser:
               PerMachine: $false
             AllUsers:
               PerMachine: $true
         steps:
           - checkout: self
-          
+
           - task: DownloadPipelineArtifact@2
             inputs:
               artifact: test-msi
               path: msi
-          
+
           - task: PowerShell@2
             inputs:
               pwsh: true
               targetType: filePath
               filePath: cli/installer/windows/test-win-msi.ps1
               arguments: >-
-                -PerMachine:$(PerMachine) 
+                -PerMachine:$(PerMachine)
                 -MsiPath msi/azd-windows-amd64.msi
-              # Do not exit on first Write-Error, write all messages and let the 
+              # Do not exit on first Write-Error, write all messages and let the
               # script handle exiting with an error status.
               errorActionPreference: continue
             displayName: Test MSI
@@ -690,6 +843,27 @@ stages:
               workingDirectory: cli/installer/
             displayName: Test install script (cmd)
 
+      - job: Verify_LinuxPackages
+
+        pool:
+          name: azsdk-pool-mms-ubuntu-2004-general
+
+        steps: 
+          - checkout: self
+
+          - task: DownloadPipelineArtifact@2
+            inputs:
+              artifact: linux-packages
+              path: cli/installer/fpm
+
+          - task: PowerShell@2
+            displayName: Verify Linux Packages
+            inputs: 
+              pwsh: true
+              workingDirectory: cli/installer/fpm
+              filePath: eng/scripts/Test-LinuxPackages.ps1
+
+
   - stage: PublishCLI
     dependsOn: Sign
     condition: >-
@@ -740,6 +914,65 @@ stages:
                     UploadMsi: true
                     PublishBrewFormula: true
 
+      - deployment: Publish_Choco
+        dependsOn: Publish_Release
+        condition: >-
+          and(
+            succeeded(),
+            ne('true', variables['Skip.Publish'])
+          )
+        environment: azure-dev
+
+        pool:
+          name: azsdk-pool-mms-win-2022-general
+
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - checkout: self
+                - task: PowerShell@2
+                  inputs:
+                    pwsh: true
+                    targetType: filePath
+                    filePath: eng/scripts/Set-CliVersionVariable.ps1
+                  displayName: Set CLI_VERSION
+
+                - template: /eng/pipelines/templates/steps/publish-cli-choco.yml
+                  parameters:
+                    # Set to false after GA (https://github.com/Azure/azure-dev/issues/1485)
+                    AllowPrerelease: true
+                    CliVersion: $(CLI_VERSION)
+
+      - deployment: Publish_WinGet
+        dependsOn: Publish_Release
+        condition: >-
+          and(
+            succeeded(),
+            ne('true', variables['Skip.Publish'])
+          )
+        environment: azure-dev
+
+        pool:
+          name: azsdk-pool-mms-win-2022-general
+
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - checkout: self
+                - task: PowerShell@2
+                  inputs:
+                    pwsh: true
+                    targetType: filePath
+                    filePath: eng/scripts/Set-CliVersionVariable.ps1
+                  displayName: Set CLI_VERSION
+
+                - template: /eng/pipelines/templates/steps/publish-cli-winget.yml
+                  parameters:
+                    # Set to false after GA (https://github.com/Azure/azure-dev/issues/1485)
+                    AllowPrerelease: true
+                    CliVersion: $(CLI_VERSION)
 
       - deployment: Increment_Version
         condition: >-
@@ -854,6 +1087,7 @@ stages:
               UploadInstaller: true
               DockerImageTags: pr-$(PRNumber)
               UploadMsi: true
+              PublishArm64Binaries: true
 
           - pwsh: |
               $urlBase = "https://$(azdev-storage-account-name).blob.core.windows.net/azd/standalone/pr/$(PRNumber)"
@@ -869,7 +1103,9 @@ stages:
           - pwsh: |
               $urlBase = "$(GenerateUrlBase.UrlBase)"
               $linuxReleaseUrl = "$urlBase/azd-linux-amd64.tar.gz"
+              $linuxReleaseUrlArm64 = "$urlBase/azd-linux-arm64.tar.gz"
               $macosReleaseUrl = "$urlBase/azd-darwin-amd64.zip"
+              $macosReleaseUrlArm64 = "$urlBase/azd-darwin-arm64.zip"
               $windowsReleaseUrl = "$urlBase/azd-windows-amd64.zip"
               $msiReleaseUrl = "$urlBase/azd-windows-amd64.msi"
 
@@ -899,7 +1135,7 @@ stages:
 
 
               #### Windows
-              
+
               PowerShell install
 
               ``````
@@ -914,11 +1150,15 @@ stages:
 
               ### Standalone Binary
 
-              * Linux - $linuxReleaseUrl
-              * MacOS - $macosReleaseUrl
+              * Linux - 
+                  * x86_64 - $linuxReleaseUrl
+                  * ARM64 - $linuxReleaseUrlArm64
+              * MacOS - 
+                  * x86_64 - $macosReleaseUrl
+                  * ARM64 - $macosReleaseUrlArm64
               * Windows - $windowsReleaseUrl
 
-              ### MSI 
+              ### MSI
 
               * $msiReleaseUrl
 

@@ -201,7 +201,11 @@ func (p *BicepProvider) Deploy(
 					case <-timer.C:
 						if progressReport, err := progressDisplay.ReportProgress(ctx, &queryStartTime); err == nil {
 							asyncContext.SetProgress(progressReport)
+						} else {
+							// We don't want to fail the whole deployment if a progress reporting error occurs
+							log.Printf("error while reporting progress: %s", err.Error())
 						}
+
 						timer.Reset(regularDelay)
 					}
 				}

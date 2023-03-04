@@ -28,7 +28,6 @@ The following prerequisites are required to use this application. Please ensure 
 - [Node.js with npm (16.13.1+)](https://nodejs.org/) - for API backend and Web frontend
 - [Git (2.36.1+)](https://git-scm.com/)
 - [Kubernetes CLI (kubectl)](https://kubernetes.io/docs/tasks/tools/)
-$PLACEHOLDERIACTOOLS
 
 ### Quickstart
 

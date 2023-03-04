@@ -70,21 +70,6 @@ repo:
         patterns:
           - "**/main.bicep"
 
-      - from: "$PLACEHOLDERIACTOOLS"
-        to: ""
-        patterns:
-          - "README.md"
-
-      - from: "$PLACEHOLDER_TITLE"
-        to: "ToDo Application with a Node.js API and Azure Cosmos DB API for MongoDB on Azure App Service"
-        patterns:
-          - "README.md"
-
-      - from: "$PLACEHOLDER_DESCRIPTION"
-        to: "using Bicep as the IaC provider"
-        patterns:
-          - "README.md"
-
       - from: ../../../../api/common/openapi.yaml
         to: ../../src/api/openapi.yaml
         patterns:

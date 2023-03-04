@@ -15,18 +15,8 @@ Let's jump in and get the ToDo app up and running in Azure. When you are finishe
 
 The following prerequisites are required to use this application. Please ensure that you have them all installed locally.
 
-- [Azure Developer CLI](https://aka.ms/azure-dev/install)
-  - Windows:
-    ```powershell
-    powershell -ex AllSigned -c "Invoke-RestMethod 'https://aka.ms/install-azd.ps1' | Invoke-Expression"
-    ```
-  - Linux/MacOS:
-    ```
-    curl -fsSL https://aka.ms/install-azd.sh | bash
-    ```
-- [Azure CLI (2.38.0+)](https://docs.microsoft.com/cli/azure/install-azure-cli)
+- [Azure Developer CLI](https://aka.ms/azd-install)
 - [Node.js with npm (16.13.1+)](https://nodejs.org/) - for API backend and Web frontend
-- [Git (2.36.1+)](https://git-scm.com/)
 - [Kubernetes CLI (kubectl)](https://kubernetes.io/docs/tasks/tools/)
 
 ### Quickstart

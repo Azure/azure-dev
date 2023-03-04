@@ -6,12 +6,13 @@ package project
 import (
 	"context"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 )
 
 type FrameworkService interface {
-	Initialize(ctx context.Context) error
-	RequiredExternalTools() []tools.ExternalTool
-	Restore(ctx context.Context) error
-	Build(ctx context.Context, progress chan<- string) (string, error)
+	Initialize(ctx context.Context, serviceConfig *ServiceConfig) error
+	RequiredExternalTools(ctx context.Context, serviceConfig *ServiceConfig) []tools.ExternalTool
+	Restore(ctx context.Context, serviceConfig *ServiceConfig) error
+	Build(ctx context.Context, serviceConfig *ServiceConfig) *async.TaskWithProgress[*ServiceBuildResult, ServiceProgress]
 }

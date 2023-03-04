@@ -2,16 +2,9 @@ package project
 
 import (
 	"context"
-	"fmt"
-	"sort"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/account"
-	"github.com/azure/azure-dev/cli/azd/pkg/environment"
-	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/ext"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
-	"github.com/azure/azure-dev/cli/azd/pkg/input"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 )
 
 // ProjectConfig is the top level object serialized into an azure.yaml file.
@@ -82,71 +75,4 @@ func (p *ProjectConfig) HasService(name string) bool {
 	}
 
 	return false
-}
-
-// GetProject constructs a Project from the project configuration
-// This also performs project validation
-func (pc *ProjectConfig) GetProject(
-	ctx context.Context,
-	env *environment.Environment,
-	console input.Console,
-	azCli azcli.AzCli,
-	commandRunner exec.CommandRunner,
-	accountManager account.Manager,
-) (*Project, error) {
-	serviceMap := map[string]*Service{}
-
-	project := Project{
-		Name:     pc.Name,
-		Metadata: pc.Metadata,
-		Config:   pc,
-		Services: make([]*Service, 0),
-	}
-
-	resourceGroupName, err := GetResourceGroupName(ctx, azCli, pc, env)
-	if err != nil {
-		return nil, err
-	}
-	project.ResourceGroupName = resourceGroupName
-
-	for key, serviceConfig := range pc.Services {
-		service, err := serviceConfig.GetService(ctx, &project, env, azCli, accountManager, commandRunner, console)
-
-		if err != nil {
-			return nil, fmt.Errorf("creating service %s: %w", key, err)
-		}
-
-		serviceMap[key] = service
-	}
-
-	// Sort services by friendly name an then collect them into a list. This provides a stable ordering of services.
-	serviceKeys := make([]string, 0, len(serviceMap))
-	for k := range serviceMap {
-		serviceKeys = append(serviceKeys, k)
-	}
-	sort.Strings(serviceKeys)
-
-	for _, key := range serviceKeys {
-		project.Services = append(project.Services, serviceMap[key])
-	}
-
-	return &project, nil
-}
-
-// Saves the current instance back to the azure.yaml file
-func (p *ProjectConfig) Save(projectPath string) error {
-}
-
-// ParseProjectConfig will parse a project from a yaml string and return the project configuration
-func ParseProjectConfig(yamlContent string) (*ProjectConfig, error) {
-}
-
-func (p *ProjectConfig) Initialize(
-	ctx context.Context, env *environment.Environment, commandRunner exec.CommandRunner,
-) error {
-}
-
-// LoadProjectConfig loads the azure.yaml configuring into an viewable structure
-// This does not evaluate any tooling
-func LoadProjectConfig(projectPath string) (*ProjectConfig, error) {
 }

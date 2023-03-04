@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/docker"
@@ -21,7 +22,6 @@ type DockerProjectOptions struct {
 }
 
 type dockerProject struct {
-	config    *ServiceConfig
 	env       *environment.Environment
 	docker    docker.Docker
 	framework FrameworkService
@@ -31,7 +31,7 @@ func (p *dockerProject) RequiredExternalTools() []tools.ExternalTool {
 	return []tools.ExternalTool{p.docker}
 }
 
-func (p *dockerProject) Build(ctx context.Context, progress chan<- string) (string, error) {
+func (p *dockerProject) Build(ctx context.Context) *async.TaskWithProgress[*ServiceBuildResult, ServiceProgress] {
 	dockerOptions := getDockerOptionsWithDefaults(p.config.Docker)
 
 	log.Printf(

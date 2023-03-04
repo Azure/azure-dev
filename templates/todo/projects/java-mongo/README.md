@@ -1,3 +1,24 @@
+---
+page_type: sample
+languages:
+- azdeveloper
+- java
+- bicep
+- typescript
+- html
+products:
+- azure
+- azure-cosmos-db
+- azure-app-service
+- azure-monitor
+- azure-pipelines
+- ms-build-openjdk
+urlFragment: todo-java-mongo
+name: Web Application with a Java API and Azure Cosmos DB API for MongoDB on Azure App Service
+description: A complete ToDo app with Java API and Azure Cosmos for MongoDB for storage. Uses Azure Developer CLI (azd) to build, deploy, and monitor
+---
+<!-- YAML front-matter schema: https://review.learn.microsoft.com/en-us/help/contribute/samples/process/onboarding?branch=main#supported-metadata-fields-for-readmemd -->
+
 # ToDo Application with a Java API and Azure Cosmos DB API for MongoDB on Azure App Service
 
 [![Open in GitHub Codespaces](https://img.shields.io/static/v1?style=for-the-badge&label=GitHub+Codespaces&message=Open&color=brightgreen&logo=github)](https://github.com/codespaces/new?hide_repo_select=true&ref=main&repo=452042919&machine=standardLinux32gb&devcontainer_path=.devcontainer%2Fdevcontainer.json&location=WestUs2)
@@ -16,7 +37,7 @@ Let's jump in and get the ToDo app up and running in Azure. When you are finishe
 The following prerequisites are required to use this application. Please ensure that you have them all installed locally.
 
 - [Azure Developer CLI](https://aka.ms/azd-install)
-- [Java 17 or later](https://jdk.java.net/) - for API backend
+- [Java 17 or later](https://learn.microsoft.com/en-us/java/openjdk/install) - for API backend
 - [Node.js with npm (16.13.1+)](https://nodejs.org/) - for Web frontend
 
 ### Quickstart

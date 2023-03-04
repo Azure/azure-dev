@@ -60,6 +60,14 @@ func ContainerAppRID(subscriptionId, resourceGroupName, containerAppName string)
 	return returnValue
 }
 
+func KubernetesServiceRID(subscriptionId, resourceGroupName, clusterName string) string {
+	return fmt.Sprintf(
+		"%s/providers/Microsoft.ContainerService/managedClusters/%s",
+		ResourceGroupRID(subscriptionId, resourceGroupName),
+		clusterName,
+	)
+}
+
 func StaticWebAppRID(subscriptionId, resourceGroupName, staticSiteName string) string {
 	returnValue := fmt.Sprintf(
 		"%s/providers/Microsoft.Web/staticSites/%s",

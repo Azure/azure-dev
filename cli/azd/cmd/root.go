@@ -6,8 +6,8 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"strings"
 
-	"github.com/MakeNowJust/heredoc/v2"
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/cmd/middleware"
 
@@ -31,46 +31,14 @@ func NewRootCmd(staticHelp bool, middlewareChain []*actions.MiddlewareRegistrati
 	opts := &internal.GlobalCommandOptions{GenerateStaticHelp: staticHelp}
 	opts.EnableTelemetry = telemetry.IsTelemetryEnabled()
 
-	productName := "Azure Developer CLI"
+	productName := "The Azure Developer CLI"
 	if opts.GenerateStaticHelp {
-		productName = "Azure Developer CLI (`azd`)"
+		productName = "The Azure Developer CLI (`azd`)"
 	}
-
-	shortDescription := heredoc.Docf(`%s is a command-line interface for developers who build Azure solutions.`, productName)
-
-	synopsisHeading := shortDescription + "\n\n"
-	if opts.GenerateStaticHelp {
-		synopsisHeading = ""
-	}
-	//nolint:lll
-	longDescription := heredoc.Docf(
-		`%sTo begin working with Azure Developer CLI, run the `+output.WithBackticks(
-			"azd up",
-		)+` command by supplying a sample template in an empty directory:
-
-		$ azd up –-template todo-nodejs-mongo
-
-	You can pick a template by running `+output.WithBackticks(
-			"azd template list",
-		)+` and then supplying the repo name as a value to `+output.WithBackticks(
-			"--template",
-		)+`.
-
-	The most common next commands are:
-
-		$ azd pipeline config
-		$ azd deploy
-		$ azd monitor --overview
-
-	For more information, visit the Azure Developer CLI Dev Hub: https://aka.ms/azure-dev/devhub.`,
-		synopsisHeading,
-	)
 
 	rootCmd := &cobra.Command{
 		Use:   "azd",
-		Short: shortDescription,
-		//nolint:lll
-		Long: longDescription,
+		Short: fmt.Sprintf("%s is an open-source tool that helps onboard and manage your application on Azure", productName),
 		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 			if opts.Cwd != "" {
 				current, err := os.Getwd()
@@ -103,9 +71,6 @@ func NewRootCmd(staticHelp bool, middlewareChain []*actions.MiddlewareRegistrati
 	}
 
 	rootCmd.CompletionOptions.HiddenDefaultCmd = true
-	rootCmd.SetHelpTemplate(
-		fmt.Sprintf("%s\nPlease let us know how we are doing: https://aka.ms/azure-dev/hats\n", rootCmd.HelpTemplate()),
-	)
 
 	root := actions.NewActionDescriptor("azd", &actions.ActionDescriptorOptions{
 		Command: rootCmd,
@@ -154,6 +119,9 @@ func NewRootCmd(staticHelp bool, middlewareChain []*actions.MiddlewareRegistrati
 		DisableTelemetry: true,
 		OutputFormats:    []output.Format{output.JsonFormat, output.NoneFormat},
 		DefaultFormat:    output.NoneFormat,
+		GroupingOptions: actions.CommandGroupOptions{
+			RootLevelHelp: actions.CmdGroupAbout,
+		},
 	})
 
 	root.Add("show", &actions.ActionDescriptorOptions{
@@ -169,6 +137,13 @@ func NewRootCmd(staticHelp bool, middlewareChain []*actions.MiddlewareRegistrati
 			Command:        restoreCmdDesign(),
 			FlagsResolver:  newRestoreFlags,
 			ActionResolver: newRestoreAction,
+			HelpOptions: actions.ActionHelpOptions{
+				Description: getCmdRestoreHelpDescription,
+				Footer:      getCmdRestoreHelpFooter,
+			},
+			GroupingOptions: actions.CommandGroupOptions{
+				RootLevelHelp: actions.CmdGroupConfig,
+			},
 		}).
 		UseMiddleware("hooks", middleware.NewHooksMiddleware)
 
@@ -178,17 +153,30 @@ func NewRootCmd(staticHelp bool, middlewareChain []*actions.MiddlewareRegistrati
 		ActionResolver: newLoginAction,
 		OutputFormats:  []output.Format{output.JsonFormat, output.NoneFormat},
 		DefaultFormat:  output.NoneFormat,
+		GroupingOptions: actions.CommandGroupOptions{
+			RootLevelHelp: actions.CmdGroupConfig,
+		},
 	})
 
 	root.Add("logout", &actions.ActionDescriptorOptions{
 		Command:        newLogoutCmd(),
 		ActionResolver: newLogoutAction,
+		GroupingOptions: actions.CommandGroupOptions{
+			RootLevelHelp: actions.CmdGroupConfig,
+		},
 	})
 
 	root.Add("init", &actions.ActionDescriptorOptions{
 		Command:        newInitCmd(),
 		FlagsResolver:  newInitFlags,
 		ActionResolver: newInitAction,
+		HelpOptions: actions.ActionHelpOptions{
+			Description: getCmdInitHelpDescription,
+			Footer:      getCmdInitHelpFooter,
+		},
+		GroupingOptions: actions.CommandGroupOptions{
+			RootLevelHelp: actions.CmdGroupConfig,
+		},
 	}).AddFlagCompletion("template", templateNameCompletion)
 
 	root.
@@ -198,6 +186,13 @@ func NewRootCmd(staticHelp bool, middlewareChain []*actions.MiddlewareRegistrati
 			ActionResolver: newProvisionAction,
 			OutputFormats:  []output.Format{output.JsonFormat, output.NoneFormat},
 			DefaultFormat:  output.NoneFormat,
+			HelpOptions: actions.ActionHelpOptions{
+				Description: getCmdProvisionHelpDescription,
+				Footer:      getCmdHelpDefaultFooter,
+			},
+			GroupingOptions: actions.CommandGroupOptions{
+				RootLevelHelp: actions.CmdGroupManage,
+			},
 		}).
 		UseMiddleware("hooks", middleware.NewHooksMiddleware)
 
@@ -208,6 +203,13 @@ func NewRootCmd(staticHelp bool, middlewareChain []*actions.MiddlewareRegistrati
 			ActionResolver: newDeployAction,
 			OutputFormats:  []output.Format{output.JsonFormat, output.NoneFormat},
 			DefaultFormat:  output.NoneFormat,
+			HelpOptions: actions.ActionHelpOptions{
+				Description: getCmdDeployHelpDescription,
+				Footer:      getCmdDeployHelpFooter,
+			},
+			GroupingOptions: actions.CommandGroupOptions{
+				RootLevelHelp: actions.CmdGroupManage,
+			},
 		}).
 		UseMiddleware("hooks", middleware.NewHooksMiddleware)
 
@@ -218,6 +220,13 @@ func NewRootCmd(staticHelp bool, middlewareChain []*actions.MiddlewareRegistrati
 			ActionResolver: newUpAction,
 			OutputFormats:  []output.Format{output.JsonFormat, output.NoneFormat},
 			DefaultFormat:  output.NoneFormat,
+			HelpOptions: actions.ActionHelpOptions{
+				Description: getCmdUpHelpDescription,
+				Footer:      getCmdUpHelpFooter,
+			},
+			GroupingOptions: actions.CommandGroupOptions{
+				RootLevelHelp: actions.CmdGroupManage,
+			},
 		}).
 		AddFlagCompletion("template", templateNameCompletion).
 		UseMiddleware("hooks", middleware.NewHooksMiddleware)
@@ -226,6 +235,13 @@ func NewRootCmd(staticHelp bool, middlewareChain []*actions.MiddlewareRegistrati
 		Command:        newMonitorCmd(),
 		FlagsResolver:  newMonitorFlags,
 		ActionResolver: newMonitorAction,
+		HelpOptions: actions.ActionHelpOptions{
+			Description: getCmdMonitorHelpDescription,
+			Footer:      getCmdMonitorHelpFooter,
+		},
+		GroupingOptions: actions.CommandGroupOptions{
+			RootLevelHelp: actions.CmdGroupMonitor,
+		},
 	})
 
 	root.
@@ -235,6 +251,13 @@ func NewRootCmd(staticHelp bool, middlewareChain []*actions.MiddlewareRegistrati
 			ActionResolver: newDownAction,
 			OutputFormats:  []output.Format{output.JsonFormat, output.NoneFormat},
 			DefaultFormat:  output.NoneFormat,
+			HelpOptions: actions.ActionHelpOptions{
+				Description: getCmdDownHelpDescription,
+				Footer:      getCmdDownHelpFooter,
+			},
+			GroupingOptions: actions.CommandGroupOptions{
+				RootLevelHelp: actions.CmdGroupManage,
+			},
 		}).
 		UseMiddleware("hooks", middleware.NewHooksMiddleware)
 
@@ -257,11 +280,74 @@ func NewRootCmd(staticHelp bool, middlewareChain []*actions.MiddlewareRegistrati
 
 	// Compose the hierarchy of action descriptions into cobra commands
 	cmd, err := cobraBuilder.BuildCommand(root)
+
 	if err != nil {
 		// If their is a container registration issue or similar we'll get an error at this point
 		// Error descriptions should be clear enough to resolve the issue
 		panic(err)
 	}
 
+	// The help template has to be set after calling `BuildCommand()` to ensure the command tree is built
+	cmd.SetHelpTemplate(generateCmdHelp(
+		cmd,
+		generateCmdHelpOptions{
+			Description: getCmdHelpDefaultDescription,
+			Commands:    func(c *cobra.Command) string { return getCmdHelpGroupedCommands(getCmdRootHelpCommands(c)) },
+			Footer:      getCmdRootHelpFooter,
+		}))
+
 	return cmd
+}
+
+func getCmdRootHelpFooter(cmd *cobra.Command) string {
+	return fmt.Sprintf("%s\n%s %s %s %s\n%s %s.\n    %s\n\n%s",
+		output.WithBold(output.WithUnderline("Deploying a sample application")),
+		"Initialize, provision, and deploy a template application by running the",
+		output.WithHighLightFormat("azd up --template"),
+		output.WithWarningFormat("[%s]", "template name"),
+		"command in an empty directory.",
+		output.WithGrayFormat("To view available templates run `azd template list` or visit:"),
+		output.WithLinkFormat("https://azure.github.io/awesome-azd"),
+		output.WithHighLightFormat("azd up --template todo-nodejs-mongo"),
+		getCmdHelpDefaultFooter(cmd),
+	)
+}
+
+func getCmdRootHelpCommands(cmd *cobra.Command) (result string) {
+	childrenCommands := cmd.Commands()
+	groups := actions.GetGroupAnnotations()
+
+	var commandGroups = make(map[string][]string, len(groups))
+	// stores the longes line len
+	max := 0
+
+	for _, childCommand := range childrenCommands {
+		// we rely on commands annotations for command grouping. Commands w/o annotation are ignored.
+		if childCommand.Annotations == nil {
+			continue
+		}
+		groupType, found := actions.GetGroupCommandAnnotation(childCommand)
+		if !found {
+			continue
+		}
+		commandName := childCommand.Name()
+		commandNameLen := len(commandName)
+		if commandNameLen > max {
+			max = commandNameLen
+		}
+		commandGroups[groupType] = append(commandGroups[groupType],
+			fmt.Sprintf("%s%s%s", commandName, endOfTitleSentinel, childCommand.Short))
+	}
+	// align all lines
+	for id := range commandGroups {
+		alignTitles(commandGroups[id], max)
+	}
+
+	var paragraph []string
+	for _, title := range groups {
+		paragraph = append(paragraph, fmt.Sprintf("  %s\n    %s\n",
+			output.WithBold(string(title)),
+			strings.Join(commandGroups[string(title)], "\n    ")))
+	}
+	return strings.Join(paragraph, "\n")
 }

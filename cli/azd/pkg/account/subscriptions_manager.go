@@ -66,7 +66,7 @@ func NewSubscriptionsManager(
 	}, nil
 }
 
-// Clears stored cached subscriptions.
+// Clears stored cached subscriptions. This can only return an error is a filesystem error other than ErrNotExist occurred.
 func (m *SubscriptionsManager) ClearSubscriptions(ctx context.Context) error {
 	err := m.cache.Clear()
 	if err != nil {

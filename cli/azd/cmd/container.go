@@ -122,6 +122,8 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	container.RegisterSingleton(azdcontext.NewAzdContext)
 	container.RegisterSingleton(func() httputil.HttpClient { return &http.Client{} })
 
+	// Auth
+	container.RegisterSingleton(auth.NewLoggedInGuard)
 	container.RegisterSingleton(auth.NewMultiTenantCredentialProvider)
 	// Register a default azcore.TokenCredential that is scoped to the tenantID
 	// required to access the current environment's subscription.
@@ -212,17 +214,28 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 		},
 	)
 
-	// Lazy loads the environment from the Azd Context when it becomes available
+	// Lazy loads an existing environment, erroring out if not available
+	// One can repeatedly call GetValue to wait until the environment is available.
 	container.RegisterSingleton(
-		func(lazyAzdContext *lazy.Lazy[*azdcontext.AzdContext]) *lazy.Lazy[*environment.Environment] {
+		func(lazyAzdContext *lazy.Lazy[*azdcontext.AzdContext], envFlags envFlag) *lazy.Lazy[*environment.Environment] {
 			return lazy.NewLazy(func() (*environment.Environment, error) {
-				_, err := lazyAzdContext.GetValue()
+				azdCtx, err := lazyAzdContext.GetValue()
 				if err != nil {
 					return nil, err
 				}
 
-				var env *environment.Environment
-				err = container.Resolve(&env)
+				environmentName := envFlags.environmentName
+				if environmentName == "" {
+					environmentName, err = azdCtx.GetDefaultEnvironmentName()
+					if err != nil {
+						return nil, err
+					}
+				}
+
+				env, err := environment.GetEnvironment(azdCtx, environmentName)
+				if err != nil {
+					return nil, err
+				}
 
 				return env, err
 			})

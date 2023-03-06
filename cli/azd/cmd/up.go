@@ -79,7 +79,7 @@ func newUpAction(
 func (u *upAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	err := u.runInit(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("running init: %w", err)
+		return nil, err
 	}
 
 	infraCreateAction, err := u.infraCreateActionInitializer()

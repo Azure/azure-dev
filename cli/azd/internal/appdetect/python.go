@@ -15,7 +15,7 @@ func (pd *PythonDetector) DetectProject(path string, entries []fs.DirEntry) (*Pr
 	for _, entry := range entries {
 		if entry.Name() == "pyproject.toml" || entry.Name() == "requirements.txt" {
 			return &Project{
-				Language:      string(Python),
+				Language:      Python,
 				Path:          path,
 				DetectionRule: "Inferred by presence of: " + entry.Name(),
 			}, nil

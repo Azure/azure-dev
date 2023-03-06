@@ -733,13 +733,13 @@ func (p *BicepProvider) deleteDeployment(
 
 func (p *BicepProvider) mapBicepTypeToInterfaceType(s string) ParameterType {
 	switch s {
-	case "String", "string", "secureString":
+	case "String", "string", "secureString", "securestring":
 		return ParameterTypeString
 	case "Bool", "bool":
 		return ParameterTypeBoolean
 	case "Int", "int":
 		return ParameterTypeNumber
-	case "Object", "object", "secureObject":
+	case "Object", "object", "secureObject", "secureobject":
 		return ParameterTypeObject
 	case "Array", "array":
 		return ParameterTypeArray

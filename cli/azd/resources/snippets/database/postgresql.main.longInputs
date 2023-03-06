@@ -1,0 +1,7 @@
+@secure()
+@description('PostgreSQL administrator password')
+param sqlAdminPassword string
+
+@secure()
+@description('Application user password')
+param appUserPassword string

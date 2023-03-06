@@ -30,16 +30,18 @@ import (
 type DatabaseOption string
 
 const (
-	DatabaseNone   DatabaseOption = "none"
-	DatabaseCosmos DatabaseOption = "cosmos"
-	DatabaseSql    DatabaseOption = "sql"
+	DatabaseNone       DatabaseOption = "none"
+	DatabaseCosmos     DatabaseOption = "cosmos"
+	DatabaseSql        DatabaseOption = "sql"
+	DatabasePostgreSql DatabaseOption = "postgresql"
 )
 
 func DatabaseDisplayOptions() map[string]DatabaseOption {
 	return map[string]DatabaseOption{
-		"Azure Cosmos DB (MongoDB API)":   DatabaseCosmos,
-		"Azure SQL DB":                    DatabaseSql,
-		"No, I would not like a database": DatabaseNone,
+		"Azure Cosmos DB (MongoDB API)":                    DatabaseCosmos,
+		"Azure SQL DB":                                     DatabaseSql,
+		"Azure Database for PostgreSQL (Flexible servers)": DatabasePostgreSql,
+		"No, I would not like a database":                  DatabaseNone,
 	}
 }
 
@@ -72,10 +74,11 @@ type ProjectSpec struct {
 }
 
 type InfraUseOptions struct {
-	Language     string
-	DatabaseName string
-	Database     DatabaseOption
-	Projects     []ProjectSpec
+	Language            string
+	DatabaseName        string
+	ConnectionStringKey string
+	Database            DatabaseOption
+	Projects            []ProjectSpec
 }
 
 func LanguageDisplayOptions() map[string]string {
@@ -95,7 +98,7 @@ type TemplateRules struct {
 
 func getRules(appType string, useOptions InfraUseOptions) TemplateRules {
 	switch appType {
-	case "api-db":
+	case "api", "api-web":
 		return TemplateRules{
 			Includes: []string{
 				fmt.Sprintf("app/api-%s.bicep", mapLanguage(useOptions.Language)),
@@ -108,7 +111,6 @@ func getRules(appType string, useOptions InfraUseOptions) TemplateRules {
 			Rewrites: map[string]string{
 				fmt.Sprintf("app/api-%s.bicep", mapLanguage(useOptions.Language)):    "app/api.bicep",
 				fmt.Sprintf("app/db-%s.bicep.template", string(useOptions.Database)): "app/db.bicep",
-				"main.bicep.template": "main.bicep",
 			},
 		}
 	}
@@ -138,9 +140,8 @@ func (i *Initializer) ScaffoldProject(
 		prj.Services[serviceName] = &project.ServiceConfig{
 			RelativePath: rel,
 			OutputPath:   spec.OutputPath,
-			// TODO: should default based on project
-			Host:     spec.Host,
-			Language: spec.Language,
+			Host:         spec.Host,
+			Language:     spec.Language,
 		}
 	}
 
@@ -186,16 +187,7 @@ func (i *Initializer) InitializeInfra(ctx context.Context,
 func copyTemplateFS(templateFs embed.FS, useOptions InfraUseOptions, appType string, target string) error {
 	root := path.Join("app-types", appType)
 	infraRoot := path.Join(root, "infra")
-	projectContent, err := templateFs.ReadFile(path.Join(root, azdcontext.ProjectFileName))
-	if err != nil {
-		return fmt.Errorf("missing azure.yaml, %w", err)
-	}
-
-	_, err = project.ParseProjectConfig(string(projectContent))
-	if err != nil {
-		return err
-	}
-
+	target = path.Join(target, "infra")
 	rules := getRules(appType, useOptions)
 
 	scaffoldCtx := ScaffoldContext{
@@ -229,17 +221,21 @@ func copyTemplateFS(templateFs embed.FS, useOptions InfraUseOptions, appType str
 		if err != nil {
 			return err
 		}
-		relToInfra := strings.TrimPrefix(name[len(infraRoot):], "/")
-		relPath := filepath.Join("infra", name[len(infraRoot):])
-		targetPath := filepath.Join(target, relPath)
+		rel := strings.TrimPrefix(name[len(infraRoot):], "/")
+		targetPath := filepath.Join(target, rel)
 
 		if d.IsDir() {
 			return os.MkdirAll(targetPath, osutil.PermissionDirectory)
 		}
 
+		// A text template. Trim template from the resulting name.
+		if filepath.Ext(name) == ".template" {
+			targetPath = filepath.Join(target, strings.TrimSuffix(rel, ".template"))
+		}
+
 		alwaysInclude := false
 		for _, pattern := range rules.Includes {
-			if matched, err := filepath.Match(pattern, relToInfra); err != nil {
+			if matched, err := filepath.Match(pattern, rel); err != nil {
 				return err
 			} else if matched {
 				alwaysInclude = true
@@ -248,31 +244,30 @@ func copyTemplateFS(templateFs embed.FS, useOptions InfraUseOptions, appType str
 
 		if !alwaysInclude {
 			for _, pattern := range rules.Excludes {
-				if matched, err := filepath.Match(pattern, relToInfra); err != nil {
+				if matched, err := filepath.Match(pattern, rel); err != nil {
 					return err
 				} else if matched {
-					// An exclude pattern was matched. The file is excluded.
+					// An exclude pattern was matched. Exclude the file from copy.
 					return nil
 				}
 			}
 		}
 
 		for pattern, rewrite := range rules.Rewrites {
-			if matched, err := filepath.Match(pattern, relToInfra); err != nil {
+			if matched, err := filepath.Match(pattern, rel); err != nil {
 				return err
 			} else if matched {
-				newName := filepath.Join("infra", rewrite)
-				targetPath = filepath.Join(target, newName)
+				targetPath = filepath.Join(target, rewrite)
 			}
 		}
 
-		if filepath.Ext(name) == ".template" {
-			contents, err := fs.ReadFile(templateFs, name)
-			if err != nil {
-				return fmt.Errorf("reading sample file: %w", err)
-			}
+		contents, err := fs.ReadFile(templateFs, name)
+		if err != nil {
+			return fmt.Errorf("reading sample file: %w", err)
+		}
 
-			t, err := template.New(relPath).Option("missingkey=zero").Parse(string(contents))
+		if filepath.Ext(name) == ".template" {
+			t, err := template.New(rel).Option("missingkey=zero").Parse(string(contents))
 			if err != nil {
 				return fmt.Errorf("parsing template: %w", err)
 			}
@@ -283,13 +278,9 @@ func copyTemplateFS(templateFs embed.FS, useOptions InfraUseOptions, appType str
 				return fmt.Errorf("executing template: %w", err)
 			}
 
-			return os.WriteFile(targetPath, buf.Bytes(), osutil.PermissionFile)
+			contents = buf.Bytes()
 		}
 
-		contents, err := fs.ReadFile(templateFs, name)
-		if err != nil {
-			return fmt.Errorf("reading sample file: %w", err)
-		}
 		return os.WriteFile(targetPath, contents, osutil.PermissionFile)
 	})
 }

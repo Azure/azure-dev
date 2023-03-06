@@ -30,6 +30,8 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/git"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
+	"golang.org/x/exp/maps"
+	"golang.org/x/exp/slices"
 )
 
 func newInitFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *initFlags {
@@ -209,57 +211,66 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 				return nil, err
 			}
 		} else {
-			i.console.ShowSpinner(ctx, "Analyzing app in current directory...", input.Step)
+			if _, err := os.Stat(filepath.Join(azdCtx.ProjectDirectory(), "azure.draft.yaml")); err == nil {
+				i.console.Message(ctx, "Resuming scaffolding from azure.draft.yaml")
+				err = os.Rename(filepath.Join(azdCtx.ProjectDirectory(), "azure.draft.yaml"), azdCtx.ProjectPath())
+				if err != nil {
+					return nil, err
+				}
+				i.console.MessageUxItem(ctx, &ux.DoneMessage{Message: "Renaming to " + output.WithLinkFormat("azure.yaml")})
+			}
+
+			i.console.ShowSpinner(ctx, "Analyzing code under current directory...", input.Step)
 
 			projects, err := appdetect.Detect(azdCtx.ProjectDirectory())
 			if err != nil {
 				return nil, fmt.Errorf("failed app detection: %w", err)
 			}
-			msg, err := describe(projects, azdCtx)
-			if err != nil {
-				return nil, err
-			}
 
 			i.console.StopSpinner(
-				ctx, "Analyzed app in current directory. Found:\n"+msg, input.StepDone)
+				ctx, "Analyzed code under current directory.", input.StepDone)
 
 			useOptions := repository.InfraUseOptions{}
 			c := templates.Characteristics{}
-			extractCharacteristics(projects, &c, &useOptions)
-			err = i.repoInitializer.ScaffoldProject(ctx, "azure.draft.yaml", azdCtx, useOptions.Projects)
-			if err != nil {
-				return nil, err
-			}
 
-			if len(projects) == 0 {
-				i.console.Message(ctx, "Could not find any projects under the current directory.")
-				//nolint:lll
-				i.console.Message(ctx, fmt.Sprintf("Generated an empty %s in the current directory", output.WithLinkFormat("azure.draft.yaml")))
-			} else {
-				//nolint:lll
-				i.console.Message(ctx, fmt.Sprintf("Generated %s in the current directory", output.WithLinkFormat("azure.draft.yaml")))
-			}
+			if len(projects) > 0 {
+				extractCharacteristics(projects, &c, &useOptions)
 
-			for {
-				confirm, err := i.console.Prompt(ctx, input.ConsoleOptions{
-					Message: fmt.Sprintf(
-						"Please confirm or make changes to %s, then press 'c' to proceed or 'x' to exit",
-						output.WithLinkFormat("azure.draft.yaml"))})
+				i.console.Message(ctx, "The following languages were detected:")
+				msg, err := describe(projects, c.Type, azdCtx)
+				if err != nil {
+					return nil, err
+				}
+				i.console.Message(ctx, msg)
+
+				confirm, err := i.console.Confirm(ctx, input.ConsoleOptions{Message: "Is this correct?"})
 				if err != nil {
 					return nil, err
 				}
 
-				if confirm == "x" {
+				if !confirm {
+					err = i.repoInitializer.ScaffoldProject(ctx, "azure.draft.yaml", azdCtx, useOptions.Projects)
+					i.console.Message(
+						ctx,
+						//nolint:lll
+						"Saved draft as azure.draft.yaml. Make edits to this file, and rerun `azd init`. For more information, visit https://aka.ms/azd")
 					return nil, nil
 				}
-
-				if confirm == "c" {
-					break
+			} else if len(projects) == 0 {
+				i.console.Message(ctx, "Could not find any projects under the current directory.")
+				i.console.Message(
+					ctx,
+					//nolint:lll
+					"Saved draft as azure.draft.yaml. Make edits to this file, and rerun `azd init`. For more information, visit https://aka.ms/azd")
+				err = i.repoInitializer.ScaffoldProject(ctx, "azure.draft.yaml", azdCtx, useOptions.Projects)
+				if err != nil {
+					return nil, err
 				}
-			}
-			i.console.MessageUxItem(ctx, &ux.DoneMessage{Message: "Renaming to " + output.WithLinkFormat("azure.yaml")})
 
-			err = os.Rename(filepath.Join(azdCtx.ProjectDirectory(), "azure.draft.yaml"), azdCtx.ProjectPath())
+				return nil, nil
+			}
+
+			err = i.repoInitializer.ScaffoldProject(ctx, "azure.yaml", azdCtx, useOptions.Projects)
 			if err != nil {
 				return nil, err
 			}
@@ -267,6 +278,32 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 			i.flags.template, err = templates.MatchOne(ctx, i.console, c)
 			if err != nil {
 				return nil, err
+			}
+
+			if i.flags.template.RepositoryPath == string(templates.ApiApp) {
+				options := repository.DatabaseDisplayOptions()
+				display := maps.Keys(options)
+				slices.Sort(display)
+				sel, err := i.console.Select(ctx, input.ConsoleOptions{
+					Message: "Would you like to create a database for your app?",
+					Options: display,
+				})
+				if err != nil {
+					return nil, fmt.Errorf("prompting for database: %w", err)
+				}
+
+				useOptions.Database = options[display[sel]]
+
+				if useOptions.Database != repository.DatabaseNone {
+					ans, err := i.console.Prompt(ctx, input.ConsoleOptions{
+						Message: "Enter a name for your database",
+					})
+					if err != nil {
+						return nil, fmt.Errorf("prompting for database name: %w", err)
+					}
+
+					useOptions.DatabaseName = ans
+				}
 			}
 
 			err = i.repoInitializer.InitializeInfra(ctx, azdCtx, i.flags.template.RepositoryPath, "", useOptions)
@@ -361,11 +398,11 @@ func extractCharacteristics(
 	}
 
 	for _, project := range projects {
-		character.LanguageTags = append(character.LanguageTags, project.Language)
+		character.LanguageTags = append(character.LanguageTags, string(project.Language))
 
 		if project.HasWebUIFramework() {
 			spec := repository.ProjectSpec{
-				Language:  project.Language,
+				Language:  string(project.Language),
 				Host:      "appservice",
 				Path:      project.Path,
 				HackIsWeb: true,
@@ -383,9 +420,9 @@ func extractCharacteristics(
 			if project.Language == "nodejs" {
 
 			}
-			useOptions.Language = project.Language
+			useOptions.Language = string(project.Language)
 			useOptions.Projects = append(useOptions.Projects, repository.ProjectSpec{
-				Language: project.Language,
+				Language: string(project.Language),
 				Host:     "appservice",
 				Path:     project.Path,
 			})
@@ -449,37 +486,14 @@ func (i *initAction) searchForTemplate(
 	return useOptions, err
 }
 
-func describeSimply(projects []appdetect.Project) string {
-	descriptions := make([]string, 0, len(projects))
-	for _, p := range projects {
-		hasWeb := p.HasWebUIFramework()
-		lang := p.Language
-		if hasWeb {
-			frameworks := []string{}
-			for _, f := range p.Frameworks {
-				if f.IsWebUIFramework() {
-					frameworks = append(frameworks, f.Display())
-				}
-			}
-
-			lang += "(" + strings.Join(frameworks, ", ") + ")"
-		}
-
-		if p.Docker != nil {
-			lang += " using containers"
-		}
-
-		descriptions = append(descriptions, lang)
-	}
-
-	return strings.Join(descriptions, ", ")
-}
-
-func describe(projects []appdetect.Project, azdCtx *azdcontext.AzdContext) (string, error) {
+func describe(
+	projects []appdetect.Project,
+	appType templates.ApplicationType,
+	azdCtx *azdcontext.AzdContext) (string, error) {
 	var b strings.Builder
 	for _, p := range projects {
 		hasWeb := p.HasWebUIFramework()
-		lang := strings.Title(p.Language)
+		lang := p.Language.Display()
 		if p.Docker != nil {
 			lang += " using containers"
 		}
@@ -503,7 +517,16 @@ func describe(projects []appdetect.Project, azdCtx *azdcontext.AzdContext) (stri
 		if err != nil {
 			return "", err
 		}
-		b.WriteString(fmt.Sprintf("  - %s project at %s\n", lang, rel))
+
+		b.WriteString(fmt.Sprintf("  - %s", output.WithBold(lang)))
+
+		if appType == templates.ApiWeb {
+			if hasWeb {
+				b.WriteString(" (Web App)\n")
+			} else {
+				b.WriteString(" (Web API)\n")
+			}
+		}
 	}
 
 	return b.String(), nil

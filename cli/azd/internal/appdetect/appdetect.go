@@ -20,8 +20,26 @@ const (
 	DotNet     ProjectType = "dotnet"
 	Java       ProjectType = "java"
 	JavaScript ProjectType = "js"
+	TypeScript ProjectType = "ts"
 	Python     ProjectType = "python"
 )
+
+func (pt ProjectType) Display() string {
+	switch pt {
+	case DotNet:
+		return ".NET"
+	case Java:
+		return "Java"
+	case JavaScript:
+		return "JavaScript"
+	case TypeScript:
+		return "TypeScript"
+	case Python:
+		return "Python"
+	}
+
+	return ""
+}
 
 type Framework string
 
@@ -57,7 +75,7 @@ func (f Framework) IsWebUIFramework() bool {
 }
 
 type Project struct {
-	Language            string
+	Language            ProjectType
 	LanguageToolVersion string
 	Frameworks          []Framework
 	Path                string

@@ -27,7 +27,7 @@ func (nd *JavaScriptDetector) DetectProject(path string, entries []fs.DirEntry) 
 	for _, entry := range entries {
 		if entry.Name() == "package.json" {
 			project := &Project{
-				Language:      string(JavaScript),
+				Language:      JavaScript,
 				Path:          path,
 				DetectionRule: "Inferred by presence of: " + entry.Name(),
 			}
@@ -79,7 +79,7 @@ func (nd *JavaScriptDetector) DetectProject(path string, entries []fs.DirEntry) 
 			})
 
 			if tsFiles > jsFiles {
-				project.Language = "ts"
+				project.Language = TypeScript
 			}
 
 			return project, nil

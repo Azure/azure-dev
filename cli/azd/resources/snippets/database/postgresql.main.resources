@@ -1,0 +1,11 @@
+// The application database
+module postgresql './app/db.bicep' = {
+  name: 'postgresql'
+  scope: rg
+  params: {
+    serverName: !empty(postgresqlServerName) ? postgresqlServerName : '${abbrs.dBforPostgreSQLServers}${resourceToken}'
+    location: location
+    tags: tags
+    administratorLoginPassword: sqlAdminPassword
+  }
+}

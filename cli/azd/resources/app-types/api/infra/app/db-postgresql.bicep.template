@@ -1,0 +1,34 @@
+param serverName string
+param location string = resourceGroup().location
+param tags object = {}
+
+param administratorLogin string = 'pqadmin'
+@secure()
+param administratorLoginPassword string
+param databaseName string = '{{.DatabaseName}}'
+
+module postgres '../core/database/postgresql/flexibleserver.bicep' = {
+  name: 'postgres'
+  params: {
+    name: serverName
+    // PostgreSQL version
+    version: '12'
+    sku: {
+      name: 'Standard_B1ms'
+      tier: 'Burstable'
+    }
+    databaseNames: [ databaseName ]
+    administratorLogin: administratorLogin
+    administratorLoginPassword: administratorLoginPassword
+    storage: {
+      storageSizeGB: 128
+    }
+    allowAzureIPsFirewall: true
+    allowAllIPsFirewall: true
+    location: location
+    tags: tags
+  }
+}
+
+output databaseName string = databaseName
+output serverName string = serverName

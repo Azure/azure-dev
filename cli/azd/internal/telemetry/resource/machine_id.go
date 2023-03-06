@@ -72,7 +72,7 @@ func getMacAddress() (string, bool) {
 			}
 
 			ipAddr, _ := ift.Addrs()
-			if len(ipAddr) == 0 {
+			if len(ipAddr) == 0 || ift.Flags&net.FlagUp == 0 {
 				continue
 			}
 

@@ -53,7 +53,6 @@ type initFlags struct {
 	template       templates.Template
 	templateBranch string
 	subscription   string
-	scaffold       bool
 	location       string
 	global         *internal.GlobalCommandOptions
 	*envFlag
@@ -238,6 +237,9 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 
 				if !confirm {
 					err = i.repoInitializer.ScaffoldProject(ctx, "azure.draft.yaml", azdCtx, useOptions.Projects)
+					if err != nil {
+						return nil, err
+					}
 					i.console.Message(
 						ctx,
 						//nolint:lll
@@ -404,10 +406,6 @@ func extractCharacteristics(
 
 			useOptions.Projects = append(useOptions.Projects, spec)
 		} else {
-			// HACK: Select first language found.
-			if project.Language == "nodejs" {
-
-			}
 			useOptions.Language = string(project.Language)
 			useOptions.Projects = append(useOptions.Projects, repository.ProjectSpec{
 				Language: string(project.Language),
@@ -453,27 +451,6 @@ func (i *initAction) initializeFromTemplate(
 
 	return nil
 }
-
-func (i *initAction) searchForTemplate(
-	ctx context.Context,
-	useOptions repository.InfraUseOptions) (repository.InfraUseOptions, error) {
-	c := &templates.Characteristics{}
-	err := templates.PromptToFillCharacteristics(ctx, i.console, c)
-	if err != nil {
-		return useOptions, err
-	}
-
-	tag := c.LanguageTags[0]
-	splitTag := strings.Split(tag, ":")
-	useOptions.Language = splitTag[len(splitTag)-1]
-
-	i.flags.template, err = templates.MatchOne(ctx, i.console, *c)
-	if err != nil {
-		return useOptions, err
-	}
-	return useOptions, err
-}
-
 func describe(
 	projects []appdetect.Project,
 	appType templates.ApplicationType,
@@ -495,15 +472,6 @@ func describe(
 			}
 
 			lang = strings.Join(frameworks, ", ")
-		}
-
-		rel, err := filepath.Rel(azdCtx.ProjectPath(), p.Path)
-		if rel == "." || rel == ".." {
-			rel = "current directory"
-		}
-
-		if err != nil {
-			return "", err
 		}
 
 		b.WriteString(fmt.Sprintf("  - %s", output.WithBold(lang)))

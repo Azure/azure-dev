@@ -61,7 +61,7 @@ func (nd *JavaScriptDetector) DetectProject(path string, entries []fs.DirEntry) 
 
 			tsFiles := 0
 			jsFiles := 0
-			filepath.WalkDir(path, func(path string, d fs.DirEntry, err error) error {
+			err = filepath.WalkDir(path, func(path string, d fs.DirEntry, err error) error {
 				if d.IsDir() && d.Name() == "node_modules" {
 					return filepath.SkipDir
 				}
@@ -77,6 +77,10 @@ func (nd *JavaScriptDetector) DetectProject(path string, entries []fs.DirEntry) 
 
 				return nil
 			})
+
+			if err != nil {
+				return nil, err
+			}
 
 			if tsFiles > jsFiles {
 				project.Language = TypeScript

@@ -148,7 +148,9 @@ func PromptToFillCharacteristics(ctx context.Context, console input.Console, c *
 	}
 
 	if len(c.DatabaseTags) == 0 {
-		promptDb(ctx, console, c)
+		if err := promptDb(ctx, console, c); err != nil {
+			return err
+		}
 	}
 
 	return nil

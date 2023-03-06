@@ -55,7 +55,7 @@ func setDetectors(c *projectTypeConfig) {
 
 	c.detectors = []ProjectDetector{}
 	for _, d := range allDetectors {
-		if types[d.Type()] == true {
+		if types[d.Type()] {
 			c.detectors = append(c.detectors, d)
 		}
 	}

@@ -33,12 +33,13 @@ param numberOfWorkers int = -1
 param scmDoBuildDuringDeployment bool = false
 param use32BitWorkerProcess bool = false
 param ftpsState string = 'FtpsOnly'
+param httpLoggingEnabled bool = false
 param healthCheckPath string = ''
 
 resource appService 'Microsoft.Web/sites@2022-03-01' = {
   name: name
   location: location
-  tags: tags
+  tags: union(tags, { 'azd-service-name': 'web' })
   kind: kind
   properties: {
     serverFarmId: appServicePlanId
@@ -46,6 +47,7 @@ resource appService 'Microsoft.Web/sites@2022-03-01' = {
       linuxFxVersion: linuxFxVersion
       alwaysOn: alwaysOn
       ftpsState: ftpsState
+      httpLoggingEnabled: httpLoggingEnabled
       appCommandLine: appCommandLine
       numberOfWorkers: numberOfWorkers != -1 ? numberOfWorkers : null
       minimumElasticInstanceCount: minimumElasticInstanceCount != -1 ? minimumElasticInstanceCount : null

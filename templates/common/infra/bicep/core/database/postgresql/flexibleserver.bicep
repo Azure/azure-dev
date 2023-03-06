@@ -7,6 +7,7 @@ param storage object
 param administratorLogin string
 @secure()
 param administratorLoginPassword string
+param activeDirectoryAuth string = 'Disabled'
 param databaseNames array = []
 param allowAzureIPsFirewall bool = false
 param allowAllIPsFirewall bool = false
@@ -28,6 +29,20 @@ resource postgresServer 'Microsoft.DBforPostgreSQL/flexibleServers@2022-12-01' =
     storage: storage
     highAvailability: {
       mode: 'Disabled'
+    }
+    authConfig: {
+      activeDirectoryAuth: activeDirectoryAuth
+      passwordAuth: (administratorLoginPassword == null) ? 'Disabled' : 'Enabled'
+    }
+    backup: {
+      backupRetentionDays: 7
+      geoRedundantBackup: 'Disabled'
+    }
+    maintenanceWindow: {
+      customWindow: 'Disabled'
+      dayOfWeek: 0
+      startHour: 0
+      startMinute: 0
     }
   }
 

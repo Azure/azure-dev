@@ -169,6 +169,8 @@ The Azure Developer CLI includes many other commands to help with your Azure dev
 
 ## Troubleshooting/Known issues
 
+> This template does NOT currently support Azure API Management (APIM)
+
 Sometimes, things go awry. If you happen to run into issues, then please review our ["Known Issues"](https://aka.ms/azure-dev/knownissues) page for help. If you continue to have issues, then please file an issue in our main [Azure Dev](https://aka.ms/azure-dev/issues) repository.
 
 ## Security

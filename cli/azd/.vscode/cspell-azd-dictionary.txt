@@ -2,6 +2,7 @@ AADSTS
 apimanagement
 apims
 appconfiguration
+appdetect
 appinsights
 appinsightsexporter
 appinsightsstorage
@@ -21,7 +22,9 @@ azdtempl
 azdtest
 azsdk
 AZURECLI
+azuredb
 azurestaticapps
+azuresql
 azuretools
 azureutil
 azureyaml
@@ -41,6 +44,7 @@ deletedservices
 devel
 docf
 dockerproject
+doublestar
 dskip
 eastus
 endregion
@@ -57,6 +61,7 @@ godotenv
 golangci
 ineffassign
 javac
+jquery
 jmes
 keychain
 ldflags
@@ -80,9 +85,11 @@ otlp
 otlpconfig
 otlptrace
 otlptracehttp
+missingkey
 pflag
 pulumi
 pyapp
+pyproject
 restoreapp
 retriable
 rzip
@@ -109,6 +116,7 @@ unmarshalling
 unsetenvs
 unsets
 utsname
+vuejs
 westus2
 wireinject
 yacspin

@@ -126,7 +126,7 @@ repo:
       to: ./infra
 
     # .devcontainer common (devcontainer.json)
-    - from: ../../../../../common/.devcontainer/devcontainer.json/nodejs/devcontainer.json
+    - from: ../../../../../common/.devcontainer/devcontainer.json/aks/nodejs/devcontainer.json
       to: ./.devcontainer/devcontainer.json
 
     # .devcontainer common (Dockerfile)

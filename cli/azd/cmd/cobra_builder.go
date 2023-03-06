@@ -215,6 +215,23 @@ func (cb *CobraBuilder) bindCommand(cmd *cobra.Command, descriptor *actions.Acti
 		}
 	}
 
+	if descriptor.Options.GroupingOptions.RootLevelHelp != actions.CmdGroupNone {
+		if cmd.Annotations == nil {
+			cmd.Annotations = make(map[string]string)
+		}
+		actions.SetGroupCommandAnnotation(cmd, descriptor.Options.GroupingOptions.RootLevelHelp)
+	}
+
+	// `generateCmdHelp` sets a default help section when `descriptor.Options.HelpOptions` is nil.
+	// This call ensures all commands gets the same help formatting.
+	cmd.SetHelpTemplate(generateCmdHelp(cmd, generateCmdHelpOptions{
+		Description: cmdHelpGenerator(descriptor.Options.HelpOptions.Description),
+		Usage:       cmdHelpGenerator(descriptor.Options.HelpOptions.Usage),
+		Commands:    cmdHelpGenerator(descriptor.Options.HelpOptions.Commands),
+		Flags:       cmdHelpGenerator(descriptor.Options.HelpOptions.Flags),
+		Footer:      cmdHelpGenerator(descriptor.Options.HelpOptions.Footer),
+	}))
+
 	return nil
 }
 

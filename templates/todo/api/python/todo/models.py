@@ -6,7 +6,6 @@ from azure.identity import DefaultAzureCredential, ChainedTokenCredential
 from azure.keyvault.secrets import SecretClient
 from beanie import Document, PydanticObjectId
 from pydantic import BaseModel, BaseSettings
-from .azureDeveloperCliCredential import AzureDeveloperCliCredential
 
 def keyvault_name_as_attr(name: str) -> str:
     return name.replace("-", "_").upper()
@@ -18,7 +17,7 @@ class Settings(BaseSettings):
 
         # Load secrets from keyvault
         if self.AZURE_KEY_VAULT_ENDPOINT:
-            credential = ChainedTokenCredential(AzureDeveloperCliCredential(), DefaultAzureCredential())
+            credential = DefaultAzureCredential()
             keyvault_client = SecretClient(self.AZURE_KEY_VAULT_ENDPOINT, credential)
             for secret in keyvault_client.list_properties_of_secrets():
                 setattr(

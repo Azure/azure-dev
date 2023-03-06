@@ -21,6 +21,8 @@ type CommandRunner interface {
 }
 
 // Creates a new default instance of the CommandRunner
+// stdin, stdout & stderr will be used by default during interactive commands
+// unless specifically overridden within the command run arguments.
 func NewCommandRunner(stdin io.Reader, stdout io.Writer, stderr io.Writer) CommandRunner {
 	return &commandRunner{
 		stdin:  stdin,
@@ -58,16 +60,23 @@ func (r *commandRunner) Run(ctx context.Context, args RunArgs) (RunResult, error
 
 	cmd.Dir = args.Cwd
 
-	var stdin, stdout, stderr bytes.Buffer
+	var stdin io.Reader
+	if args.StdIn != nil {
+		stdin = args.StdIn
+	} else {
+		stdin = new(bytes.Buffer)
+	}
+
+	var stdout, stderr bytes.Buffer
 
 	cmd.Env = appendEnv(args.Env)
 
 	if args.Interactive {
-		cmd.Stdin = os.Stdin
-		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
+		cmd.Stdin = r.stdin
+		cmd.Stdout = r.stdout
+		cmd.Stderr = r.stderr
 	} else {
-		cmd.Stdin = &stdin
+		cmd.Stdin = stdin
 		cmd.Stdout = &stdout
 		cmd.Stderr = &stderr
 
@@ -225,7 +234,12 @@ func redactSensitiveData(msg string) string {
 		"password": {
 			regexp.MustCompile(`--password \S+`),
 			"--password <redacted>",
-		}}
+		},
+		"kubectl-from-literal": {
+			regexp.MustCompile(`--from-literal=([^=]+)=(\S+)`),
+			"--from-literal=$1=<redacted>",
+		},
+	}
 
 	for _, redactRule := range regexpRedactRules {
 		regMatchString := redactRule.matchString

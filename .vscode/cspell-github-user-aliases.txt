@@ -1,6 +1,8 @@
 AlecAivazis
 alexandair
+benbjohnson
 blang
+bradleyjkemp
 briandowns
 ellismg
 envsubst
@@ -11,10 +13,9 @@ joho
 karolz
 mattn
 multierr
+nicksnyder
 otiai10
 pbnj
 sethvargo
 stretchr
 theckman
-benbjohnson
-bradleyjkemp

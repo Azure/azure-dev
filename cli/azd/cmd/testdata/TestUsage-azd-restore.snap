@@ -1,13 +1,27 @@
-Usage:
+
+Restore application dependencies.
+
+  • Run this command to download and install all required dependencies so that you can build, run, and debug the application locally.
+  • For the best local rn and debug experience, go to https://aka.ms/azure-dev/vscode to learn how to use the Visual Studio Code extension.
+
+Usage
   azd restore [flags]
 
-Flags:
-  -e, --environment string   The name of the environment to use.
-  -h, --help                 Gets help for restore.
-      --service string       Restores a specific service (when the string is unspecified, all services that are listed in the azure.yaml file are restored).
+Flags
+    -e, --environment string 	: The name of the environment to use.
+    -h, --help               	: Gets help for restore.
+        --service string     	: Restores a specific service (when the string is unspecified, all services that are listed in the azure.yaml file are restored).
 
-Global Flags:
-  -C, --cwd string   Sets the current working directory.
-      --debug        Enables debugging and diagnostics logging.
-      --no-prompt    Accepts the default value instead of prompting, or it fails if there is no default.
+Global Flags
+    -C, --cwd string 	: Sets the current working directory.
+        --debug      	: Enables debugging and diagnostics logging.
+        --no-prompt  	: Accepts the default value instead of prompting, or it fails if there is no default.
+
+Examples
+  Downloads and installs a specific application service dependency, Individual services are listed in your azure.yaml file.
+    azd restore --service [Service name]
+
+  Downloads and installs all application dependencies.
+    azd restore
+
 

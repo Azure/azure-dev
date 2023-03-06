@@ -7,7 +7,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
@@ -20,6 +22,7 @@ const (
 	ContainerAppTarget  ServiceTargetKind = "containerapp"
 	AzureFunctionTarget ServiceTargetKind = "function"
 	StaticWebAppTarget  ServiceTargetKind = "staticwebapp"
+	AksTarget           ServiceTargetKind = "aks"
 )
 
 type ServiceDeploymentResult struct {
@@ -89,10 +92,17 @@ func resourceTypeMismatchError(
 // As an example, ContainerAppTarget is able to provision the container app as part of deployment,
 // and thus returns true.
 func (st ServiceTargetKind) SupportsDelayedProvisioning() bool {
-	return st == ContainerAppTarget
+	return st == ContainerAppTarget || st == AksTarget
 }
 
-var _ ServiceTarget = &appServiceTarget{}
-var _ ServiceTarget = &containerAppTarget{}
-var _ ServiceTarget = &functionAppTarget{}
-var _ ServiceTarget = &staticWebAppTarget{}
+func checkResourceType(resource *environment.TargetResource, expectedResourceType infra.AzureResourceType) error {
+	if !strings.EqualFold(resource.ResourceType(), string(expectedResourceType)) {
+		return resourceTypeMismatchError(
+			resource.ResourceName(),
+			resource.ResourceType(),
+			expectedResourceType,
+		)
+	}
+
+	return nil
+}

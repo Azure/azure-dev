@@ -15,6 +15,7 @@ import { monitor } from './monitor';
 import { selectEnvironment, newEnvironment, refreshEnvironment, editEnvironment, deleteEnvironment } from './env';
 import { pipelineConfig } from './pipeline';
 import { installCli } from './installCli';
+import { loginCli } from './loginCli';
 import { getDotEnvFilePath } from './getDotEnvFilePath';
 import { revealAzureResource, revealAzureResourceGroup } from './azureWorkspace/reveal';
 import ext from '../ext';
@@ -36,6 +37,7 @@ export function registerCommands(): void {
     registerActivityCommand('azure-dev.commands.cli.env-refresh', refreshEnvironment);
     registerActivityCommand('azure-dev.commands.cli.pipeline-config', pipelineConfig);
     registerActivityCommand('azure-dev.commands.cli.install', installCli);
+    registerActivityCommand('azure-dev.commands.cli.login', loginCli);
 
     registerActivityCommand('azure-dev.commands.azureWorkspace.revealAzureResource', revealAzureResource);
     registerActivityCommand('azure-dev.commands.azureWorkspace.revealAzureResourceGroup', revealAzureResourceGroup);

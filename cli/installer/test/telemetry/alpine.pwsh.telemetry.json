@@ -1,5 +1,0 @@
-{
-    "os": "alpine",
-    "isWsl": "false",
-    "terminal": "pwsh"
-}

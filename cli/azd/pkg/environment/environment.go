@@ -75,13 +75,8 @@ func FromRoot(root string) (*Environment, error) {
 		Root: root,
 	}
 
-	envPath := filepath.Join(root, azdcontext.DotEnvFileName)
-	if e, err := godotenv.Read(envPath); errors.Is(err, os.ErrNotExist) {
-		env.Values = make(map[string]string)
-	} else if err != nil {
-		return EmptyWithRoot(root), fmt.Errorf("loading .env: %w", err)
-	} else {
-		env.Values = e
+	if err := env.Reload(); err != nil {
+		return EmptyWithRoot(root), err
 	}
 
 	cfgPath := filepath.Join(root, azdcontext.ConfigFileName)
@@ -144,11 +139,36 @@ func (e *Environment) Getenv(key string) string {
 	return os.Getenv(key)
 }
 
+// Reloads environment variables from .env file
+func (e *Environment) Reload() error {
+	envPath := filepath.Join(e.Root, azdcontext.DotEnvFileName)
+	if envMap, err := godotenv.Read(envPath); errors.Is(err, os.ErrNotExist) {
+		e.Values = make(map[string]string)
+	} else if err != nil {
+		return fmt.Errorf("loading .env: %w", err)
+	} else {
+		e.Values = envMap
+	}
+
+	return nil
+}
+
 // If `Root` is set, Save writes the current contents of the environment to
 // the given directory, creating it and any intermediate directories as needed.
 func (e *Environment) Save() error {
 	if e.Root == "" {
 		return nil
+	}
+
+	// Cache current values & reload to get any new env vars
+	currentValues := e.Values
+	if err := e.Reload(); err != nil {
+		return fmt.Errorf("failed reloading env vars, %w", err)
+	}
+
+	// Overlay current values before saving
+	for key, value := range currentValues {
+		e.Values[key] = value
 	}
 
 	err := os.MkdirAll(e.Root, osutil.PermissionDirectory)

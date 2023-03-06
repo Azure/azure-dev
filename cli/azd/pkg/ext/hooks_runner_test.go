@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
@@ -18,10 +19,13 @@ func Test_Hooks_Execute(t *testing.T) {
 	cwd := t.TempDir()
 	ostest.Chdir(t, cwd)
 
-	env := []string{
-		"a=apple",
-		"b=banana",
-	}
+	env := environment.EphemeralWithValues(
+		"test",
+		map[string]string{
+			"a": "apple",
+			"b": "banana",
+		},
+	)
 
 	hooks := map[string]*HookConfig{
 		"preinline": {
@@ -200,10 +204,13 @@ func Test_Hooks_GetScript(t *testing.T) {
 	cwd := t.TempDir()
 	ostest.Chdir(t, cwd)
 
-	env := []string{
-		"a=apple",
-		"b=banana",
-	}
+	env := environment.EphemeralWithValues(
+		"test",
+		map[string]string{
+			"a": "apple",
+			"b": "banana",
+		},
+	)
 
 	hooks := map[string]*HookConfig{
 		"bash": {
@@ -286,7 +293,7 @@ func Test_GetScript_Validation(t *testing.T) {
 	err := os.WriteFile("my-script.ps1", nil, osutil.PermissionFile)
 	require.NoError(t, err)
 
-	env := []string{}
+	env := environment.Ephemeral()
 
 	mockContext := mocks.NewMockContext(context.Background())
 	hooksManager := NewHooksManager(tempDir)

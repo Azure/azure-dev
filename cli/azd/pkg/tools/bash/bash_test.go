@@ -6,6 +6,7 @@ import (
 	"runtime"
 	"testing"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/stretchr/testify/require"
@@ -14,10 +15,13 @@ import (
 func Test_Bash_Execute(t *testing.T) {
 	workingDir := "cwd"
 	scriptPath := "path/script.sh"
-	env := []string{
-		"a=apple",
-		"b=banana",
-	}
+	env := environment.EphemeralWithValues(
+		"test",
+		map[string]string{
+			"a": "apple",
+			"b": "banana",
+		},
+	)
 
 	t.Run("Success", func(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())

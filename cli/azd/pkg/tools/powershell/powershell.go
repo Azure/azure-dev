@@ -3,23 +3,24 @@ package powershell
 import (
 	"context"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 )
 
 // Creates a new PowershellScript command runner
-func NewPowershellScript(commandRunner exec.CommandRunner, cwd string, envVars []string) tools.Script {
+func NewPowershellScript(commandRunner exec.CommandRunner, cwd string, env *environment.Environment) tools.Script {
 	return &powershellScript{
 		commandRunner: commandRunner,
 		cwd:           cwd,
-		envVars:       envVars,
+		env:           env,
 	}
 }
 
 type powershellScript struct {
 	commandRunner exec.CommandRunner
 	cwd           string
-	envVars       []string
+	env           *environment.Environment
 }
 
 // Executes the specified powershell script
@@ -27,7 +28,7 @@ type powershellScript struct {
 func (bs *powershellScript) Execute(ctx context.Context, path string, interactive bool) (exec.RunResult, error) {
 	runArgs := exec.NewRunArgs("pwsh", path).
 		WithCwd(bs.cwd).
-		WithEnv(bs.envVars).
+		WithEnv(bs.env.Environ()).
 		WithInteractive(interactive).
 		WithShell(true)
 

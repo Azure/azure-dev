@@ -5,23 +5,24 @@ import (
 	"runtime"
 	"strings"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 )
 
 // Creates a new BashScript command runner
-func NewBashScript(commandRunner exec.CommandRunner, cwd string, envVars []string) tools.Script {
+func NewBashScript(commandRunner exec.CommandRunner, cwd string, env *environment.Environment) tools.Script {
 	return &bashScript{
 		commandRunner: commandRunner,
 		cwd:           cwd,
-		envVars:       envVars,
+		env:           env,
 	}
 }
 
 type bashScript struct {
 	commandRunner exec.CommandRunner
 	cwd           string
-	envVars       []string
+	env           *environment.Environment
 }
 
 // Executes the specified bash script
@@ -39,7 +40,7 @@ func (bs *bashScript) Execute(ctx context.Context, path string, interactive bool
 
 	runArgs = runArgs.
 		WithCwd(bs.cwd).
-		WithEnv(bs.envVars).
+		WithEnv(bs.env.Environ()).
 		WithInteractive(interactive).
 		WithShell(true)
 

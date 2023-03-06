@@ -67,7 +67,7 @@ steps:
           subFolder: "$(Build.SourcesDirectory)/temp"
           runCmd: |
               # Install azd
-              curl -fsSL https://aka.ms/install-azd.sh | bash -s -- $(AzdVersion) --verbose
+              curl -fsSL https://aka.ms/install-azd.sh | bash -s -- --verbose $(AzdVersion)
 
               # Check azd version
               azd version

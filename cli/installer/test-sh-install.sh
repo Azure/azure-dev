@@ -10,12 +10,12 @@ say() {
 }
 
 # Test install when folder does not exist
-install_folder_error=$(cat ./install-azd.sh | "$1" -s -- --verbose --base-url "$2" --version "$3" --install-folder "/install/folder/does/not/exist" --no_telemetry 2>&1)
+install_folder_error=$(cat ./install-azd.sh | "$1" -s -- --no-telemetry --verbose --base-url "$2" --version "$3" --install-folder "/install/folder/does/not/exist" 2>&1)
 
 if [ ! $? ]; then
     say_error "Install should have failed on folder not existing"
     exit 1
-fi  
+fi
 
 if [[ "$install_folder_error" != *"Install folder does not exist"* ]]; then
     say_error "Install should have notified the user that the folder does not exist"

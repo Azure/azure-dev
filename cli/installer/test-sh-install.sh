@@ -9,6 +9,21 @@ say() {
     printf "test-sh-install: %b\n" "$1"
 }
 
+# Test install when folder does not exist
+install_folder_error=$(cat ./install-azd.sh | "$1" -s -- --verbose --base-url "$2" --version "$3" --install-folder "/install/folder/does/not/exist" 2>&1)
+
+if [ ! $? ]; then
+    say_error "Install should have failed on folder not existing"
+    exit 1
+fi  
+
+if [[ "$install_folder_error" != *"Install folder does not exist"* ]]; then
+    say_error "Install should have notified the user that the folder does not exist"
+    exit 1
+fi
+
+
+# Normal install scenario
 if ! cat ./install-azd.sh | "$1" -s -- --verbose --base-url "$2" --version "$3"; then
     say_error "Install failed"
     exit 1

@@ -130,6 +130,7 @@ func Test_SaveAndReload(t *testing.T) {
 	require.NotNil(t, envMap)
 	require.NoError(t, err)
 
+	// This entry does not exist in the current env state but is added as part of the reload process
 	envMap["SERVICE_API_ENDPOINT_URL"] = "http://api.example.com"
 	err = godotenv.Write(envMap, envPath)
 	require.NoError(t, err)
@@ -140,6 +141,7 @@ func Test_SaveAndReload(t *testing.T) {
 	require.NoError(t, err)
 
 	// Verify all values exist with expected values
+	// All values now exist whether or not they were in the env state to start with
 	require.Equal(t, env.Values["SERVICE_WEB_ENDPOINT_URL"], "http://web.example.com")
 	require.Equal(t, env.Values["SERVICE_API_ENDPOINT_URL"], "http://api.example.com")
 	require.Equal(t, "SUBSCRIPTION_ID", env.GetSubscriptionId())

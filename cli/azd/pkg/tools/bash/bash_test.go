@@ -37,7 +37,7 @@ func Test_Bash_Execute(t *testing.T) {
 
 			require.Equal(t, workingDir, args.Cwd)
 			require.Equal(t, scriptPath, args.Args[0])
-			require.Equal(t, env, args.Env)
+			require.Equal(t, env.Environ(), args.Env)
 
 			return exec.NewRunResult(0, "", ""), nil
 		})

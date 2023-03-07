@@ -178,23 +178,6 @@ func (e *Environment) Save() error {
 		e.Values[key] = value
 	}
 
-	// Update configuration
-	cfgMgr := config.NewManager()
-	if err := cfgMgr.Save(e.Config, filepath.Join(e.Root, azdcontext.ConfigFileName)); err != nil {
-		return fmt.Errorf("saving config: %w", err)
-	}
-
-	// Cache current values & reload to get any new env vars
-	currentValues := e.Values
-	if err := e.Reload(); err != nil {
-		return fmt.Errorf("failed reloading env vars, %w", err)
-	}
-
-	// Overlay current values before saving
-	for key, value := range currentValues {
-		e.Values[key] = value
-	}
-
 	err := os.MkdirAll(e.Root, osutil.PermissionDirectory)
 	if err != nil {
 		return fmt.Errorf("failed to create a directory: %w", err)

@@ -8,7 +8,10 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
+	"github.com/azure/azure-dev/cli/azd/test/ostest"
+	"github.com/joho/godotenv"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -105,4 +108,39 @@ func TestFromRoot(t *testing.T) {
 		require.Equal(t, "yes", e.Values["TEST"])
 		require.True(t, e.Config.IsEmpty())
 	})
+}
+
+func Test_SaveAndReload(t *testing.T) {
+	tempDir := t.TempDir()
+	ostest.Chdir(t, tempDir)
+
+	env, err := FromRoot(tempDir)
+	require.NotNil(t, env)
+	require.NoError(t, err)
+
+	env.SetLocation("eastus2")
+	env.SetSubscriptionId("SUBSCRIPTION_ID")
+
+	err = env.Save()
+	require.NoError(t, err)
+
+	// Simulate another process updating the .env file
+	envPath := filepath.Join(tempDir, azdcontext.DotEnvFileName)
+	envMap, err := godotenv.Read(envPath)
+	require.NotNil(t, envMap)
+	require.NoError(t, err)
+
+	envMap["SERVICE_API_ENDPOINT_URL"] = "http://api.example.com"
+	godotenv.Write(envMap, envPath)
+
+	// Set a new property in the env
+	env.SetServiceProperty("web", "ENDPOINT_URL", "http://web.example.com")
+	env.Save()
+	require.NoError(t, err)
+
+	// Verify all values exist with expected values
+	require.Equal(t, env.Values["SERVICE_WEB_ENDPOINT_URL"], "http://web.example.com")
+	require.Equal(t, env.Values["SERVICE_API_ENDPOINT_URL"], "http://api.example.com")
+	require.Equal(t, "SUBSCRIPTION_ID", env.GetSubscriptionId())
+	require.Equal(t, "eastus2", env.GetLocation())
 }

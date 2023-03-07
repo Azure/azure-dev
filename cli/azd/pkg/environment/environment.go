@@ -161,6 +161,12 @@ func (e *Environment) Save() error {
 		return nil
 	}
 
+	// Update configuration
+	cfgMgr := config.NewManager()
+	if err := cfgMgr.Save(e.Config, filepath.Join(e.Root, azdcontext.ConfigFileName)); err != nil {
+		return fmt.Errorf("saving config: %w", err)
+	}
+
 	// Cache current values & reload to get any new env vars
 	currentValues := e.Values
 	if err := e.Reload(); err != nil {

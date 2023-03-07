@@ -79,17 +79,6 @@ func FromRoot(root string) (*Environment, error) {
 		return EmptyWithRoot(root), err
 	}
 
-	cfgPath := filepath.Join(root, azdcontext.ConfigFileName)
-
-	cfgMgr := config.NewManager()
-	if cfg, err := cfgMgr.Load(cfgPath); errors.Is(err, os.ErrNotExist) {
-		env.Config = config.NewConfig(nil)
-	} else if err != nil {
-		return EmptyWithRoot(root), fmt.Errorf("loading config: %w", err)
-	} else {
-		env.Config = cfg
-	}
-
 	return env, nil
 }
 
@@ -139,8 +128,9 @@ func (e *Environment) Getenv(key string) string {
 	return os.Getenv(key)
 }
 
-// Reloads environment variables from .env file
+// Reloads environment variables and configuration
 func (e *Environment) Reload() error {
+	// Reload env values
 	envPath := filepath.Join(e.Root, azdcontext.DotEnvFileName)
 	if envMap, err := godotenv.Read(envPath); errors.Is(err, os.ErrNotExist) {
 		e.Values = make(map[string]string)
@@ -148,6 +138,17 @@ func (e *Environment) Reload() error {
 		return fmt.Errorf("loading .env: %w", err)
 	} else {
 		e.Values = envMap
+	}
+
+	// Reload env config
+	cfgPath := filepath.Join(e.Root, azdcontext.ConfigFileName)
+	cfgMgr := config.NewManager()
+	if cfg, err := cfgMgr.Load(cfgPath); errors.Is(err, os.ErrNotExist) {
+		e.Config = config.NewConfig(nil)
+	} else if err != nil {
+		return fmt.Errorf("loading config: %w", err)
+	} else {
+		e.Config = cfg
 	}
 
 	return nil
@@ -158,6 +159,12 @@ func (e *Environment) Reload() error {
 func (e *Environment) Save() error {
 	if e.Root == "" {
 		return nil
+	}
+
+	// Update configuration
+	cfgMgr := config.NewManager()
+	if err := cfgMgr.Save(e.Config, filepath.Join(e.Root, azdcontext.ConfigFileName)); err != nil {
+		return fmt.Errorf("saving config: %w", err)
 	}
 
 	// Cache current values & reload to get any new env vars
@@ -179,13 +186,6 @@ func (e *Environment) Save() error {
 	err = godotenv.Write(e.Values, filepath.Join(e.Root, azdcontext.DotEnvFileName))
 	if err != nil {
 		return fmt.Errorf("saving .env: %w", err)
-	}
-
-	cfgMgr := config.NewManager()
-
-	err = cfgMgr.Save(e.Config, filepath.Join(e.Root, azdcontext.ConfigFileName))
-	if err != nil {
-		return fmt.Errorf("saving config: %w", err)
 	}
 
 	return nil

@@ -107,9 +107,9 @@ func (h *HooksRunner) GetScript(hookConfig *HookConfig) (tools.Script, error) {
 
 	switch hookConfig.Shell {
 	case ShellTypeBash:
-		return bash.NewBashScript(h.commandRunner, h.cwd, h.env), nil
+		return bash.NewBashScript(h.commandRunner, h.cwd, h.env.Environ()), nil
 	case ShellTypePowershell:
-		return powershell.NewPowershellScript(h.commandRunner, h.cwd, h.env), nil
+		return powershell.NewPowershellScript(h.commandRunner, h.cwd, h.env.Environ()), nil
 	default:
 		return nil, fmt.Errorf(
 			"shell type '%s' is not a valid option. Only 'sh' and 'pwsh' are supported",

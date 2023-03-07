@@ -131,11 +131,12 @@ func Test_SaveAndReload(t *testing.T) {
 	require.NoError(t, err)
 
 	envMap["SERVICE_API_ENDPOINT_URL"] = "http://api.example.com"
-	godotenv.Write(envMap, envPath)
+	err = godotenv.Write(envMap, envPath)
+	require.NoError(t, err)
 
 	// Set a new property in the env
 	env.SetServiceProperty("web", "ENDPOINT_URL", "http://web.example.com")
-	env.Save()
+	err = env.Save()
 	require.NoError(t, err)
 
 	// Verify all values exist with expected values

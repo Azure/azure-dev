@@ -60,7 +60,7 @@ func Test_Hooks_Execute(t *testing.T) {
 			ranPreHook = true
 			require.Equal(t, "scripts/precommand.sh", args.Args[0])
 			require.Equal(t, cwd, args.Cwd)
-			require.Equal(t, env, args.Env)
+			require.Equal(t, env.Environ(), args.Env)
 			require.Equal(t, false, args.Interactive)
 
 			return exec.NewRunResult(0, "", ""), nil
@@ -86,7 +86,7 @@ func Test_Hooks_Execute(t *testing.T) {
 			ranPostHook = true
 			require.Equal(t, "scripts/postcommand.sh", args.Args[0])
 			require.Equal(t, cwd, args.Cwd)
-			require.Equal(t, env, args.Env)
+			require.Equal(t, env.Environ(), args.Env)
 			require.Equal(t, false, args.Interactive)
 
 			return exec.NewRunResult(0, "", ""), nil
@@ -112,7 +112,7 @@ func Test_Hooks_Execute(t *testing.T) {
 			ranPostHook = true
 			require.Equal(t, "scripts/preinteractive.sh", args.Args[0])
 			require.Equal(t, cwd, args.Cwd)
-			require.Equal(t, env, args.Env)
+			require.Equal(t, env.Environ(), args.Env)
 			require.Equal(t, true, args.Interactive)
 
 			return exec.NewRunResult(0, "", ""), nil

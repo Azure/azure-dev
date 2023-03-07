@@ -14,6 +14,7 @@
 
 - [[#1631]](https://github.com/Azure/azure-dev/pull/1631) Fail fast during `azd init` when `git` is not installed.
 - [[#1559]](https://github.com/Azure/azure-dev/pull/1559) No feedback output during provisioning some templates.
+- [[#1683]](https://github.com/Azure/azure-dev/pull/1683) Fix `azd pipeline config` to honor provider from `azure.yaml`.
 
 ### Other Changes
 

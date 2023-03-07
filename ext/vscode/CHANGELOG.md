@@ -1,14 +1,13 @@
 # Release History
 
-## 0.4.0-alpha.1 (Unreleased)
-
+## 0.4.0 (2023-03-08)
 ### Added
-
-### Fixed
+- [[#853]](https://github.com/Azure/azure-dev/pull/853) Integration with the Azure Resources extension's workspace view. Requires version 0.6.1 of the [Azure Resources](https://marketplace.visualstudio.com/items?itemName=ms-azuretools.vscode-azureresourcegroups) extension.
+- [[#1644]](https://github.com/Azure/azure-dev/pull/1644) Added a walkthrough experience for using the extension.
 
 ## 0.3.0 (2022-09-14)
 ### Added
-- [[#493]](https://github.com/Azure/azure-dev/pull/493)  Show README file after successful init/up.
+- [[#493]](https://github.com/Azure/azure-dev/pull/493) Show README file after successful init/up.
 
 ### Fixed
 - [[#498]](https://github.com/Azure/azure-dev/pull/498) Use `azd template list` to populate template list in VS Code (now always consistent with the CLI).

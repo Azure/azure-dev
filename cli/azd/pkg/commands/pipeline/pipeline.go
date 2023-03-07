@@ -142,8 +142,9 @@ func resolveProvider(env *environment.Environment, projectPath string) (string, 
 		return lastUsedProvider, nil
 	}
 
-	// 3) No config on azure.yaml or from previous run. Return default -> GitHub
-	return gitHubLabel, nil
+	// 3) No config on azure.yaml or from previous run. The provider will be set after
+	// inspecting the existing project folders.
+	return "", nil
 }
 
 // DetectProviders get azd context from the context and pulls the project directory from it.

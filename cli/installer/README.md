@@ -30,10 +30,29 @@ Windows installations of the Azure Developer CLI now use MSI. The PowerShell scr
 
 See [MSI configuration](#msi-configuration) for advanced install scenarios.
 
+### MacOS
 
-### Linux/MacOS
+#### Homebrew (recommended)
 
+```bash
+brew tap azure/azd && brew install azd
 ```
+
+The `brew tap azure/azd` command only needs to be run once to configure the tap in `brew`.
+
+If using `brew` to upgrade `azd` from a version not installed using `brew`, remove the existing version of `azd` using the uninstall script (if installed to the default location) or by deleting the `azd` binary manually.
+
+#### Script
+
+The install script can be used to install `azd` at the machine scope.
+
+```bash
+curl -fsSL https://aka.ms/install-azd.sh | bash
+```
+
+### Linux
+
+```bash
 curl -fsSL https://aka.ms/install-azd.sh | bash
 ```
 

@@ -49,11 +49,7 @@ powershell -ex AllSigned -c "Invoke-RestMethod 'https://aka.ms/install-azd.ps1' 
 brew tap azure/azd && brew install azd
 ```
 
-#### Install script (useful when you don't have `brew`)
-
-```
-curl -fsSL https://aka.ms/install-azd.sh | bash
-```
+If using `brew` to upgrade `azd` from a version not installed using `brew`, remove the existing version of `azd` using the uninstall script (if installed to the default location) or by deleting the `azd` binary manually.
 
 ### Linux
 

@@ -32,3 +32,7 @@ module cdnEndpoint 'cdn-endpoint.bicep' = {
 }
 
 output uri string = cdnEndpoint.outputs.uri
+output profileName string = cdnProfile.outputs.name
+output profileId string = cdnProfile.outputs.id
+output endpointName string = cdnEndpoint.outputs.name
+output endpointId string = cdnEndpoint.outputs.id

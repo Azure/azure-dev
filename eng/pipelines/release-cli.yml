@@ -683,7 +683,8 @@ stages:
               TestShell: bash
               TestInstallCommand: >
                 ./test-sh-install.sh "bash" "$BASEURL" "" &&
-                ./test-telemetry-functions.sh "telemetry/linux.sh.telemetry.csv"
+                ./test-telemetry-functions.sh "telemetry/linux.sh.telemetry.csv" &&
+                ./test-sh-install-errors.sh "bash" "$BASEURL" ""
             LinuxPwsh:
               Pool: azsdk-pool-mms-ubuntu-2004-general
               OSVmImage:  MMSUbuntu20.04
@@ -698,14 +699,16 @@ stages:
               TestShell: bash
               TestInstallCommand: >
                 ./test-sh-install.sh "bash" "$BASEURL" "" &&
-                ./test-telemetry-functions.sh "telemetry/macos11.sh.telemetry.csv"
+                ./test-telemetry-functions.sh "telemetry/macos11.sh.telemetry.csv" &&
+                ./test-sh-install-errors.sh "bash" "$BASEURL" ""
             Mac12Sh:
               Pool: Azure Pipelines
               OSVmImage: macOS-12
               TestShell: bash
               TestInstallCommand: >
                 ./test-sh-install.sh "bash" "$BASEURL" "" &&
-                ./test-telemetry-functions.sh "telemetry/macos12.sh.telemetry.csv"
+                ./test-telemetry-functions.sh "telemetry/macos12.sh.telemetry.csv" &&
+                ./test-sh-install-errors.sh "bash" "$BASEURL" ""
             Mac12Pwsh:
               Pool: Azure Pipelines
               OSVmImage: macOS-12

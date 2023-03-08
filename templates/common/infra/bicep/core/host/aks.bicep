@@ -61,7 +61,7 @@ param systemPoolType string = 'CostOptimised'
   'HighSpec'
   'Custom'
 ])
-@description('The System Pool Preset sizing')
+@description('The User Pool Preset sizing')
 param agentPoolType string = ''
 
 // Configure system / user agent pools

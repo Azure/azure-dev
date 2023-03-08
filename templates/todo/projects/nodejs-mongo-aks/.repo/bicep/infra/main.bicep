@@ -48,7 +48,6 @@ module aks '../../../../../../common/infra/bicep/core/host/aks.bicep' = {
   params: {
     location: location
     name: !empty(clusterName) ? clusterName : '${abbrs.containerServiceManagedClusters}${resourceToken}'
-    agentPoolType: 'Standard'
     containerRegistryName: !empty(containerRegistryName) ? containerRegistryName : '${abbrs.containerRegistryRegistries}${resourceToken}'
     logAnalyticsName: monitoring.outputs.logAnalyticsWorkspaceName
     keyVaultName: keyVault.outputs.name

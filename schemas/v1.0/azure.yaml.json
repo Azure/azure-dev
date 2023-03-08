@@ -43,6 +43,7 @@
                     "title": "Type of infrastructure provisioning provider",
                     "description": "Optional. The infrastructure provisioning provider used to provision the Azure resources for the application. (Default: bicep)",
                     "enum": [
+                        "arm",
                         "bicep",
                         "terraform",
                         "arm"

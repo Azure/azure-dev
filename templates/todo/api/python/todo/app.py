@@ -7,11 +7,17 @@ from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 from opentelemetry.sdk.resources import SERVICE_NAME, Resource
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
+import os
 
 # CORS origins
-origins = [
-    "*",
-]
+apiUrl = os.environ(['REACT_APP_WEB_BASE_URL'])
+if apiUrl != "":
+    origins = ["https://portal.azure.com",
+               "https://ms.portal.azure.com",
+               apiUrl]
+else:
+    origins = ["*"]
+    print("error: could get environment variable REACT_APP_WEB_BASE_URL");
 
 from .models import Settings, __beanie_models__
 

@@ -11,8 +11,8 @@ public class WebConfiguration implements WebMvcConfigurer {
 
     @Override
     public void addFormatters(FormatterRegistry registry) {
-        // spring can not convert string "todo" to enum `TodoState.TODO` by itself without
-        // this converter.
+        // spring can not convert string "todo" to enum `TodoState.TODO` by itself
+        // without this converter.
         registry.addConverter(new StringToTodoStateConverter());
     }
 
@@ -21,7 +21,17 @@ public class WebConfiguration implements WebMvcConfigurer {
         return new WebMvcConfigurer() {
             @Override
             public void addCorsMappings(CorsRegistry registry) {
-                registry.addMapping("/**").allowedOrigins("*").allowedMethods("*").allowedHeaders("*");
+                var apiUrl = System.getProperty("REACT_APP_WEB_BASE_URL");
+
+                if (apiUrl != "") {
+                    registry.addMapping("/**").allowedOrigins("https://portal.azure.com",
+                            "https://ms.portal.azure.com",
+                            apiUrl).allowedMethods("*").allowedHeaders("*");
+                } else {
+                    registry.addMapping("/**").allowedOrigins("*").allowedMethods("*").allowedHeaders("*");
+                    System.out.println("error: could get environment variable REACT_APP_WEB_BASE_URL");
+                }
+
             }
         };
     }

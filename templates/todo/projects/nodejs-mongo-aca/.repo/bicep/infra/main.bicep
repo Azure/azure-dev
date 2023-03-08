@@ -93,6 +93,7 @@ module api '../../../../../common/infra/bicep/app/api-container-app.bicep' = {
     containerAppsEnvironmentName: containerApps.outputs.environmentName
     containerRegistryName: containerApps.outputs.registryName
     keyVaultName: keyVault.outputs.name
+    corsACAURL: join(['https://${abbrs.appContainerApps}api-${resourceToken}-',containerApps.outputs.defaultDomain],'')
   }
 }
 

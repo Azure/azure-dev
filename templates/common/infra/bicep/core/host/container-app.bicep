@@ -75,3 +75,4 @@ output identityPrincipalId string = managedIdentity ? app.identity.principalId :
 output imageName string = imageName
 output name string = app.name
 output uri string = 'https://${app.properties.configuration.ingress.fqdn}'
+output defaultDomain string = containerAppsEnvironment.properties.defaultDomain

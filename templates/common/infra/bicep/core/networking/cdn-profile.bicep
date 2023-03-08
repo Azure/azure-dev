@@ -29,4 +29,5 @@ resource profile 'Microsoft.Cdn/profiles@2022-05-01-preview' = {
   }
 }
 
-output name string  = profile.name
+output id string = profile.id
+output name string = profile.name

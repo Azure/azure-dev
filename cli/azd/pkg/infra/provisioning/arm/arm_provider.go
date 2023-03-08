@@ -17,7 +17,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io/ioutil"
 	"log"
 	"math"
 	"os"
@@ -822,7 +821,7 @@ func (p *ArmProvider) readArmTemplate(
 	ctx context.Context, modulePath string,
 ) (azure.RawArmTemplate, azure.ArmTemplate, error) {
 
-	compiled, err := ioutil.ReadFile(modulePath)
+	compiled, err := os.ReadFile(modulePath)
 	if err != nil {
 		return nil, azure.ArmTemplate{}, fmt.Errorf("failed to compile arm template: %w", err)
 	}

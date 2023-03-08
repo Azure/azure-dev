@@ -4,6 +4,22 @@
 
 ### Windows
 
+#### Windows Package Manager (winget)
+
+```powershell
+winget install microsoft.azd
+```
+
+#### Chocolatey
+
+```powershell
+choco install azd
+```
+
+#### Install script
+
+The install script downloads and installs the MSI package on the machine with default parameters.
+
 ```powershell
 powershell -ex AllSigned -c "Invoke-RestMethod 'https://aka.ms/install-azd.ps1' | Invoke-Expression"
 ```
@@ -59,6 +75,26 @@ When installing using the MSI directly (instead of the install script) the MSI b
 | -------- | ----- |
 | `ALLUSERS` | `2`: Default. Install for current user (no privilege elevation required). <br/> `1`: Install for _all_ users (may require privilege elevation). |
 | `INSTALLDIR` | Installation path. <br/> `"%LOCALAPPDATA%\Programs\Azure Dev CLI"`: Default. <br/> `"%PROGRAMFILES%\Azure Dev CLI"`: Default all users. |
+
+### Custom install location 
+
+#### Windows 
+
+The installer script can specify a custom location to the MSI installation: 
+
+```powershell
+powershell -ex AllSigned -c "Invoke-RestMethod 'https://aka.ms/install-azd.ps1' -OutFile 'install-azd.ps1'; ./install-azd.ps1 -InstallFolder 'C:\utils\azd'"
+```
+
+#### Linux/MacOS
+
+Specify the `--install-folder` when running the script. For example: 
+
+```bash 
+curl -fsSL https://aka.ms/install-azd.sh | bash -s -- --install-folder "~/mybin"`
+```
+
+The `--install-folder` parameter places the `azd` binary in the specified location. If the current user has write access to that location the install script will not attempt to elevate permissions using `sudo`. If the specified install folder does not exist the install will fail.
 
 ### Download from daily builds 
 
@@ -127,3 +163,30 @@ To download and install the "daily" version of azd (most recent build)
 ```bash
 ./install-azd.sh --version daily
 ```
+
+## Uninstall
+
+The Azure Developer CLI will write files to `~/.azd/` that are specific to the application's usage. Since this is user data uninstall processes do not alter or remove this data.
+
+### Windows 
+ For versions released after `0.5.0-beta.1` use the following procedure to remove `azd`: 
+
+1. Search for `Add or remove programs` in Windows
+2. Locate `Azure Developer CLI` 
+3. Select `Uninstall`
+
+Uninstall script for version s released before `0.5.0-beta.1` (does not work on versions `0.5.0-beta.1` and later): 
+
+```powershell
+powershell -ex AllSigned -c "Invoke-RestMethod 'https://aka.ms/uninstall-azd.ps1' | Invoke-Expression"
+```
+
+### Linux/MacOS
+
+If installed to the default location using the installation script `azd` can be removed using the uninstall script.
+
+```bash
+curl -fsSL https://aka.ms/uninstall-azd.sh | bash 
+```
+
+If installed to a custom location, remove `azd` by deleting the `azd` executable at the custom install location.

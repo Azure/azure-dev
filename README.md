@@ -24,11 +24,38 @@ For advanced install scenarios see [Azure Developer CLI Installer Scripts](cli/i
 
 ### Windows
 
+#### Windows Package Manager (winget)
+
+```powershell
+winget install microsoft.azd
+```
+
+#### Chocolatey
+
+```powershell
+choco install azd
+```
+
+#### Install script
+
 ```powershell
 powershell -ex AllSigned -c "Invoke-RestMethod 'https://aka.ms/install-azd.ps1' | Invoke-Expression"
 ```
+### MacOS
 
-### Linux/MacOS
+#### Homebrew
+
+```bash
+brew tap azure/azd && brew install azd
+```
+
+#### Install script (useful when you don't have `brew`)
+
+```
+curl -fsSL https://aka.ms/install-azd.sh | bash
+```
+
+### Linux
 
 ```
 curl -fsSL https://aka.ms/install-azd.sh | bash

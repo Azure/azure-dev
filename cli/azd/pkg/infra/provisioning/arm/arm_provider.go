@@ -20,6 +20,7 @@ import (
 	"io/ioutil"
 	"log"
 	"math"
+	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -28,6 +29,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
+	"github.com/azure/azure-dev/cli/azd/pkg/cmdsubst"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
@@ -36,6 +38,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
+	"github.com/drone/envsubst"
 	"github.com/sethvargo/go-retry"
 	"golang.org/x/exp/maps"
 	"golang.org/x/exp/slices"
@@ -44,6 +47,8 @@ import (
 type ArmDeploymentDetails struct {
 	// Template is the template to deploy during the deployment operation.
 	Template azure.RawArmTemplate
+	// Parameters are the values to provide to the template during the deployment operation.
+	Parameters azure.ArmParameters
 	// TemplateOutputs are the outputs as specified by the template.
 	TemplateOutputs azure.ArmTemplateOutputs
 }
@@ -122,11 +127,23 @@ func (p *ArmProvider) Plan(
 				&DeploymentPlanningProgress{Message: "Generating Arm parameters file", Timestamp: time.Now()},
 			)
 
+			parameters, err := p.loadParameters(ctx, asyncContext)
+			if err != nil {
+				asyncContext.SetError(fmt.Errorf("creating parameters file: %w", err))
+				return
+			}
+
 			modulePath := p.modulePath()
 			asyncContext.SetProgress(&DeploymentPlanningProgress{Message: "Compiling Arm template", Timestamp: time.Now()})
 			rawTemplate, template, err := p.readArmTemplate(ctx, modulePath)
 			if err != nil {
 				asyncContext.SetError(fmt.Errorf("creating template: %w", err))
+				return
+			}
+
+			configuredParameters, err := p.ensureParameters(ctx, asyncContext, template, parameters)
+			if err != nil {
+				asyncContext.SetError(err)
 				return
 			}
 
@@ -141,6 +158,7 @@ func (p *ArmProvider) Plan(
 				Details: ArmDeploymentDetails{
 					Template:        rawTemplate,
 					TemplateOutputs: template.Outputs,
+					Parameters:      configuredParameters,
 				},
 			}
 			// remove the spinner with no message as no message is expected
@@ -198,7 +216,7 @@ func (p *ArmProvider) Deploy(
 			p.console.ShowSpinner(ctx, "Creating/Updating resources", input.Step)
 			armDeploymentData := pd.Details.(ArmDeploymentDetails)
 
-			deployResult, err := p.deployModule(ctx, scope, armDeploymentData.Template)
+			deployResult, err := p.deployModule(ctx, scope, armDeploymentData.Template, armDeploymentData.Parameters)
 			if err != nil {
 				asyncContext.SetError(err)
 				return
@@ -761,6 +779,45 @@ func (p *ArmProvider) createOutputParameters(
 	return outputParams
 }
 
+// loadParameters reads the parameters file template for environment/module specified by Options,
+// doing environment and command substitutions, and returns the values.
+func (p *ArmProvider) loadParameters(
+	ctx context.Context,
+	asyncContext *async.InteractiveTaskContextWithProgress[*DeploymentPlan, *DeploymentPlanningProgress],
+) (map[string]azure.ArmParameterValue, error) {
+	parametersTemplateFilePath := p.parametersTemplateFilePath()
+	log.Printf("Reading parameters template file from: %s", parametersTemplateFilePath)
+	parametersBytes, err := os.ReadFile(parametersTemplateFilePath)
+	if err != nil {
+		return nil, fmt.Errorf("reading parameter file template: %w", err)
+	}
+
+	replaced, err := envsubst.Eval(string(parametersBytes), func(name string) string {
+		if val, has := p.env.Values[name]; has {
+			return val
+		}
+		return os.Getenv(name)
+	})
+	if err != nil {
+		return nil, fmt.Errorf("substituting environment variables inside parameter file: %w", err)
+	}
+
+	if cmdsubst.ContainsCommandInvocation(replaced, cmdsubst.SecretOrRandomPasswordCommandName) {
+		cmdExecutor := cmdsubst.NewSecretOrRandomPasswordExecutor(p.azCli)
+		replaced, err = cmdsubst.Eval(ctx, replaced, cmdExecutor)
+		if err != nil {
+			return nil, fmt.Errorf("substituting command output inside parameter file: %w", err)
+		}
+	}
+
+	var armParameters azure.ArmParameterFile
+	if err := json.Unmarshal([]byte(replaced), &armParameters); err != nil {
+		return nil, fmt.Errorf("error unmarshalling Bicep template parameters: %w", err)
+	}
+
+	return armParameters.Parameters, nil
+}
+
 func (p *ArmProvider) readArmTemplate(
 	ctx context.Context, modulePath string,
 ) (azure.RawArmTemplate, azure.ArmTemplate, error) {
@@ -770,11 +827,11 @@ func (p *ArmProvider) readArmTemplate(
 		return nil, azure.ArmTemplate{}, fmt.Errorf("failed to compile arm template: %w", err)
 	}
 
-	rawTemplate := azure.RawArmTemplate(compiled)
+	rawTemplate := azure.RawArmTemplate(string(compiled))
 
 	var template azure.ArmTemplate
 	if err := json.Unmarshal(rawTemplate, &template); err != nil {
-		log.Printf("failed unmarshalling compiled arm template to JSON (err: %v), template contents:\n%s", err, compiled)
+		log.Printf("failed unmarshalling compiled arm template to JSON (err: %v), template contents:\n%s", err, string(compiled))
 		return nil, azure.ArmTemplate{}, fmt.Errorf("failed unmarshalling arm template from json: %w", err)
 	}
 
@@ -812,7 +869,12 @@ func (p *ArmProvider) deployModule(
 	ctx context.Context,
 	scope infra.Scope,
 	armTemplate azure.RawArmTemplate,
+	armParameters azure.ArmParameters,
 ) (*armresources.DeploymentExtended, error) {
+
+	if err := scope.Deploy(ctx, armTemplate, armParameters); err != nil {
+		return nil, fmt.Errorf("failed deploying: %w", err)
+	}
 
 	// We've seen issues where `Deploy` completes but for a short while after, fetching the deployment fails with a
 	// `DeploymentNotFound` error.

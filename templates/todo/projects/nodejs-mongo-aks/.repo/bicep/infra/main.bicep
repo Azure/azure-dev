@@ -106,7 +106,4 @@ output AZURE_AKS_CLUSTER_NAME string = aks.outputs.clusterName
 output AZURE_AKS_IDENTITY_CLIENT_ID string = aks.outputs.clusterIdentity.clientId
 output AZURE_CONTAINER_REGISTRY_ENDPOINT string = aks.outputs.containerRegistryLoginServer
 output AZURE_CONTAINER_REGISTRY_NAME string = aks.outputs.containerRegistryName
-output REACT_APP_API_BASE_URL string = ''
 output REACT_APP_APPLICATIONINSIGHTS_CONNECTION_STRING string = monitoring.outputs.applicationInsightsConnectionString
-output REACT_APP_WEB_BASE_URL string = ''
-output SERVICE_API_ENDPOINTS array = []

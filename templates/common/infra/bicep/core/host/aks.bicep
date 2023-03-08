@@ -113,7 +113,7 @@ module managedCluster 'aks-managed-cluster.bicep' = {
 }
 
 var hasAgentPool = !empty(agentPoolConfig) || !empty(agentPoolType)
-var agentPoolSpec = hasAgentPool && !empty(agentPoolConfig) ? agentPoolConfig : nodePoolPresets[agentPoolType]
+var agentPoolSpec = hasAgentPool && !empty(agentPoolConfig) ? agentPoolConfig : empty(agentPoolType) ? {} : nodePoolPresets[agentPoolType]
 
 // Create additional user agent pool when specified
 module agentPool 'aks-agent-pool.bicep' = if (hasAgentPool) {

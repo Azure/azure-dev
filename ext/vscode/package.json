@@ -2,7 +2,7 @@
     "name": "azure-dev",
     "displayName": "Azure Developer CLI",
     "description": "Makes it easy to run, provision, and deploy Azure applications using the Azure Developer CLI",
-    "version": "0.4.0",
+    "version": "0.5.0-alpha.1",
     "license": "MIT",
     "icon": "resources/icon.png",
     "preview": true,
@@ -376,7 +376,10 @@
                 "id": "azd.start",
                 "title": "%azure-dev.walkthroughs.start.title%",
                 "description": "%azure-dev.walkthroughs.start.description%",
-                "featuredFor": ["azure.yaml", "azure.yml"],
+                "featuredFor": [
+                    "azure.yaml",
+                    "azure.yml"
+                ],
                 "steps": [
                     {
                         "id": "azd.install",

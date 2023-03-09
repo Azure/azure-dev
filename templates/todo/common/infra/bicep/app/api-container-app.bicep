@@ -8,7 +8,7 @@ param containerRegistryName string
 param imageName string = ''
 param keyVaultName string
 param serviceName string = 'api'
-param corsACAURL string
+param corsAcaUrl string
 
 module app '../../../../../common/infra/bicep/core/host/container-app.bicep' = {
   name: '${serviceName}-container-app-module'

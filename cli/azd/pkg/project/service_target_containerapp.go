@@ -27,14 +27,15 @@ import (
 )
 
 type containerAppTarget struct {
-	config         *ServiceConfig
-	env            *environment.Environment
-	resource       *environment.TargetResource
-	cli            azcli.AzCli
-	docker         *docker.Docker
-	console        input.Console
-	commandRunner  exec.CommandRunner
-	accountManager account.Manager
+	config                   *ServiceConfig
+	env                      *environment.Environment
+	resource                 *environment.TargetResource
+	cli                      azcli.AzCli
+	containerRegistryService azcli.ContainerRegistryService
+	docker                   docker.Docker
+	console                  input.Console
+	commandRunner            exec.CommandRunner
+	accountManager           account.Manager
 
 	// Standard time library clock, unless mocked in tests
 	clock clock.Clock
@@ -70,7 +71,7 @@ func (at *containerAppTarget) Deploy(
 	log.Printf("logging into registry %s", loginServer)
 
 	progress <- "Logging into container registry"
-	if err := at.cli.LoginAcr(ctx, at.commandRunner, at.env.GetSubscriptionId(), loginServer); err != nil {
+	if err := at.containerRegistryService.LoginAcr(ctx, at.env.GetSubscriptionId(), loginServer); err != nil {
 		return ServiceDeploymentResult{}, fmt.Errorf("logging into registry '%s': %w", loginServer, err)
 	}
 
@@ -167,7 +168,7 @@ func (at *containerAppTarget) Deploy(
 			targetResource.Type,
 		)
 
-		if err := checkResourceType(at.resource); err != nil {
+		if err := checkResourceType(at.resource, infra.AzureResourceTypeContainerApp); err != nil {
 			return ServiceDeploymentResult{}, err
 		}
 	}
@@ -217,7 +218,7 @@ func (at *containerAppTarget) generateImageTag() (string, error) {
 		return configuredTag, nil
 	}
 
-	return fmt.Sprintf("%s/%s-%s:azdev-deploy-%d",
+	return fmt.Sprintf("%s/%s-%s:azd-deploy-%d",
 		strings.ToLower(at.config.Project.Name),
 		strings.ToLower(at.config.Name),
 		strings.ToLower(at.env.GetEnvName()),
@@ -233,8 +234,9 @@ func NewContainerAppTarget(
 	config *ServiceConfig,
 	env *environment.Environment,
 	resource *environment.TargetResource,
+	containerRegistryService azcli.ContainerRegistryService,
 	azCli azcli.AzCli,
-	docker *docker.Docker,
+	docker docker.Docker,
 	console input.Console,
 	commandRunner exec.CommandRunner,
 	accountManager account.Manager,
@@ -244,34 +246,23 @@ func NewContainerAppTarget(
 	}
 
 	if resource.ResourceType() != "" {
-		if err := checkResourceType(resource); err != nil {
+		if err := checkResourceType(resource, infra.AzureResourceTypeContainerApp); err != nil {
 			return nil, err
 		}
 	}
 
 	return &containerAppTarget{
-		config:         config,
-		env:            env,
-		resource:       resource,
-		accountManager: accountManager,
-		cli:            azCli,
-		docker:         docker,
-		console:        console,
-		commandRunner:  commandRunner,
-		clock:          clock.New(),
+		config:                   config,
+		env:                      env,
+		resource:                 resource,
+		accountManager:           accountManager,
+		cli:                      azCli,
+		containerRegistryService: containerRegistryService,
+		docker:                   docker,
+		console:                  console,
+		commandRunner:            commandRunner,
+		clock:                    clock.New(),
 	}, nil
-}
-
-func checkResourceType(resource *environment.TargetResource) error {
-	if !strings.EqualFold(resource.ResourceType(), string(infra.AzureResourceTypeContainerApp)) {
-		return resourceTypeMismatchError(
-			resource.ResourceName(),
-			resource.ResourceType(),
-			infra.AzureResourceTypeContainerApp,
-		)
-	}
-
-	return nil
 }
 
 // A console implementation which output goes only to logs

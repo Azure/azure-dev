@@ -86,6 +86,8 @@ pyapp
 restoreapp
 retriable
 rzip
+securestring
+secureobject
 semconv
 serverfarms
 setenvs

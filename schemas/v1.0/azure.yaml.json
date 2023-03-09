@@ -89,7 +89,8 @@
                             "appservice",
                             "containerapp",
                             "function",
-                            "staticwebapp"
+                            "staticwebapp",
+                            "aks"
                         ]
                     },
                     "language": {
@@ -118,33 +119,10 @@
                         "title": "Relative path to service deployment artifacts"
                     },
                     "docker": {
-                        "type": "object",
-                        "description": "This is only applicable when `host` is `containerapp`",
-                        "additionalProperties": false,
-                        "properties": {
-                            "path": {
-                                "type": "string",
-                                "title": "The path to the Dockerfile",
-                                "description": "Path to the Dockerfile is relative to your service",
-                                "default": "./Dockerfile"
-                            },
-                            "context": {
-                                "type": "string",
-                                "title": "The docker build context",
-                                "description": "When specified overrides the default context",
-                                "default": "."
-                            },
-                            "platform": {
-                                "type": "string",
-                                "title": "The platform target",
-                                "default": "amd64"
-                            },
-                            "tag": {
-                                "type": "string",
-                                "title": "The tag that will be applied to the built container image.",
-                                "description": "If omitted, a unique tag will be generated based on the format: {appName}/{serviceName}-{environmentName}:azdev-deploy-{unix time (seconds)}. Supports environment variable substitution. For example, to generate unique tags for a given release: myapp/myimage:${DOCKER_IMAGE_TAG}"
-                            }
-                        }
+                        "$ref": "#/definitions/docker"
+                    },
+                    "k8s": {
+                        "$ref": "#/definitions/aksOptions"
                     },
                     "hooks": {
                         "type": "object",
@@ -191,7 +169,10 @@
                             "not": {
                                 "properties": {
                                     "host": {
-                                        "const": "containerapp"
+                                        "enum": [
+                                            "containerapp",
+                                            "aks"
+                                        ]
                                     }
                                 }
                             }
@@ -199,6 +180,24 @@
                         "then": {
                             "properties": {
                                 "docker": false
+                            }
+                        }
+                    },
+                    {
+                        "if": {
+                            "not": {
+                                "properties": {
+                                    "host": {
+                                        "enum": [
+                                            "aks"
+                                        ]
+                                    }
+                                }
+                            }
+                        },
+                        "then": {
+                            "properties": {
+                                "k8s": false
                             }
                         }
                     },
@@ -370,6 +369,94 @@
                     "description": "When specified overrides the hook configuration when executed in POSIX environments",
                     "default": null,
                     "$ref": "#/definitions/hook"
+                }
+            }
+        },
+        "docker": {
+            "type": "object",
+            "description": "This is only applicable when `host` is `containerapp` or `aks`",
+            "additionalProperties": false,
+            "properties": {
+                "path": {
+                    "type": "string",
+                    "title": "The path to the Dockerfile",
+                    "description": "Path to the Dockerfile is relative to your service",
+                    "default": "./Dockerfile"
+                },
+                "context": {
+                    "type": "string",
+                    "title": "The docker build context",
+                    "description": "When specified overrides the default context",
+                    "default": "."
+                },
+                "platform": {
+                    "type": "string",
+                    "title": "The platform target",
+                    "default": "amd64"
+                },
+                "tag": {
+                    "type": "string",
+                    "title": "The tag that will be applied to the built container image.",
+                    "description": "If omitted, a unique tag will be generated based on the format: {appName}/{serviceName}-{environmentName}:azd-deploy-{unix time (seconds)}. Supports environment variable substitution. For example, to generate unique tags for a given release: myapp/myimage:${DOCKER_IMAGE_TAG}"
+                }
+            }
+        },
+        "aksOptions": {
+            "type": "object",
+            "title": "Optional. The Azure Kubernetes Service (AKS) configuration options",
+            "additionalProperties": false,
+            "properties": {
+                "deploymentPath": {
+                    "type": "string",
+                    "title": "Optional. The relative path from the service path to the k8s deployment manifests. (Default: manifests)",
+                    "description": "When set it will override the default deployment path location for k8s deployment manifests.",
+                    "default": "manifests"
+                },
+                "namespace": {
+                    "type": "string",
+                    "title": "Optional. The k8s namespace of the deployed resources. (Default: Project name)",
+                    "description": "When specified a new k8s namespace will be created if it does not already exist"
+                },
+                "deployment": {
+                    "type": "object",
+                    "title": "Optional. The k8s deployment configuration",
+                    "additionalProperties": false,
+                    "properties": {
+                        "name": {
+                            "type": "string",
+                            "title": "Optional. The name of the k8s deployment resource to use during deployment. (Default: Service name)",
+                            "description": "Used during deployment to ensure if the k8s deployment rollout has been completed. If not set will search for a deployment resource in the same namespace that contains the service name."
+                        }
+                    }
+                },
+                "service": {
+                    "type": "object",
+                    "title": "Optional. The k8s service configuration",
+                    "additionalProperties": false,
+                    "properties": {
+                        "name": {
+                            "type": "string",
+                            "title": "Optional. The name of the k8s service resource to use as the default service endpoint. (Default: Service name)",
+                            "description": "Used when determining endpoints for the default service resource. If not set will search for a deployment resource in the same namespace that contains the service name."
+                        }
+                    }
+                },
+                "ingress": {
+                    "type": "object",
+                    "title": "Optional. The k8s ingress configuration",
+                    "additionalProperties": false,
+                    "properties": {
+                        "name": {
+                            "type": "string",
+                            "title": "Optional. The name of the k8s ingress resource to use as the default service endpoint. (Default: Service name)",
+                            "description": "Used when determining endpoints for the default ingress resource. If not set will search for a deployment resource in the same namespace that contains the service name."
+                        },
+                        "relativePath": {
+                            "type": "string",
+                            "title": "Optional. The relative path to the service from the root of your ingress controller.",
+                            "description": "When set will be appended to the root of your ingress resource path."
+                        }
+                    }
                 }
             }
         }

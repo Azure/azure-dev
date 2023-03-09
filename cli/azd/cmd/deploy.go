@@ -69,18 +69,7 @@ func newDeployFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *
 func newDeployCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "deploy",
-		Short: "Deploy the app's code to Azure.",
-		//nolint:lll
-		Long: `Deploy the app's code to Azure.
-When no ` + output.WithBackticks("--service") + ` value is specified, all services in the ` + output.WithBackticks("azure.yaml") + ` file (found in the root of your project) are deployed.
-
-Examples:
-
-	$ azd deploy
-	$ azd deploy --service api
-	$ azd deploy --service web
-	
-After the deployment is complete, the endpoint is printed. To start the service, select the endpoint or paste it in a browser.`,
+		Short: "Deploy the application's code to Azure.",
 	}
 }
 
@@ -210,4 +199,22 @@ func (d *deployAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 			FollowUp: getResourceGroupFollowUp(ctx, d.formatter, d.azCli, d.projectConfig, d.env),
 		},
 	}, nil
+}
+
+func getCmdDeployHelpDescription(*cobra.Command) string {
+	return generateCmdHelpDescription("Deploy application to Azure.", []string{
+		formatHelpNote(fmt.Sprintf("When no %s value is specified, all services in the 'azure.yaml'"+
+			" file (found in the root of your project) are deployed.", output.WithHighLightFormat("--service"))),
+		formatHelpNote("After the deployment is complete, the endpoint is printed. To start the service, select" +
+			" the endpoint or paste it in a browser."),
+	})
+}
+
+func getCmdDeployHelpFooter(*cobra.Command) string {
+	return generateCmdHelpSamplesBlock(map[string]string{
+		"Reviews all code and services in your azure.yaml file and deploys to Azure.": output.WithHighLightFormat(
+			"azd deploy"),
+		"Deploy all application API services to Azure.": output.WithHighLightFormat("azd deploy --service api"),
+		"Deploy all application web services to Azure.": output.WithHighLightFormat("azd deploy --service web"),
+	})
 }

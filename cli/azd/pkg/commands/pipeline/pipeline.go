@@ -124,6 +124,29 @@ const (
 	envPersistedKey string = "AZD_PIPELINE_PROVIDER"
 )
 
+func resolveProvider(env *environment.Environment, projectPath string) (string, error) {
+	// 1) if provider is set on azure.yaml, it should override the `lastUsedProvider`, as it can be changed by customer
+	// at any moment.
+	prj, err := project.LoadProjectConfig(projectPath)
+	if err != nil {
+		return "", fmt.Errorf("finding pipeline provider: %w", err)
+	}
+	if prj.Pipeline.Provider != "" {
+		return prj.Pipeline.Provider, nil
+	}
+
+	// 2) check if there is a persisted value from a previous run in env
+	if lastUsedProvider, configExists := env.Values[envPersistedKey]; configExists {
+		// Setting override value based on last run. This will force detector to use the same
+		// configuration.
+		return lastUsedProvider, nil
+	}
+
+	// 3) No config on azure.yaml or from previous run. The provider will be set after
+	// inspecting the existing project folders.
+	return "", nil
+}
+
 // DetectProviders get azd context from the context and pulls the project directory from it.
 // Depending on the project directory, returns pipeline scm and ci providers based on:
 //   - if .github folder is found and .azdo folder is missing: GitHub scm and ci as provider
@@ -167,22 +190,11 @@ func DetectProviders(
 	// we can re-assign it based on a previous run (persisted data)
 	// or based on the azure.yaml
 	if overrideWith == "" {
-		// check if there is a persisted value from a previous run in env
-		lastUsedProvider, configExists := env.Values[envPersistedKey]
-		if configExists {
-			// Setting override value based on last run. This will force detector to use the same
-			// configuration.
-			overrideWith = lastUsedProvider
-		}
-		// Figure out what is the expected provider to use for provisioning
-		prj, err := project.LoadProjectConfig(azdContext.ProjectPath())
+		resolved, err := resolveProvider(env, azdContext.ProjectPath())
 		if err != nil {
-			return nil, nil, fmt.Errorf("finding pipeline provider: %w", err)
+			return nil, nil, fmt.Errorf("resolving provider when no provider arg was used: %w", err)
 		}
-		if prj.Pipeline.Provider != "" {
-			overrideWith = prj.Pipeline.Provider
-		}
-
+		overrideWith = resolved
 	}
 
 	// Check override errors for missing folder

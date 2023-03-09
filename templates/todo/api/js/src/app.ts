@@ -28,7 +28,7 @@ export const createApp = async (): Promise<Express> => {
     }
     else{
         app.use(cors());
-        console.log("error: could get environment variable REACT_APP_WEB_BASE_URL");
+        console.log("Setting CORS = * (allow all origins) because env var REACT_APP_WEB_BASE_URL has not a value or is not set.");
     }
 
     // API Routes

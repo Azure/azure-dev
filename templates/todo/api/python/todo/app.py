@@ -17,7 +17,7 @@ if apiUrl != "":
                apiUrl]
 else:
     origins = ["*"]
-    print("error: could get environment variable REACT_APP_WEB_BASE_URL");
+    print("Setting CORS = * (allow all origins) because env var REACT_APP_WEB_BASE_URL has not a value or is not set.")
 
 from .models import Settings, __beanie_models__
 

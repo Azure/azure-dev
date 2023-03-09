@@ -1,5 +1,15 @@
 # Release History
 
+## 0.5.0-alpha.1 (Unreleased)
+
+### Features Added
+
+### Breaking Changes
+
+### Bugs Fixed
+
+### Other Changes
+
 ## 0.4.0 (2023-03-08)
 ### Added
 - [[#853]](https://github.com/Azure/azure-dev/pull/853) Integration with the Azure Resources extension's workspace view. Requires version 0.6.1 of the [Azure Resources](https://marketplace.visualstudio.com/items?itemName=ms-azuretools.vscode-azureresourcegroups) extension.

@@ -14,10 +14,13 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/ext"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/docker"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/kubectl"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/swa"
+	"github.com/benbjohnson/clock"
 )
 
 type ServiceConfig struct {
@@ -39,6 +42,8 @@ type ServiceConfig struct {
 	Module string `yaml:"module"`
 	// The optional docker options
 	Docker DockerProjectOptions `yaml:"docker"`
+	// The optional K8S / AKS options
+	K8s AksOptions `yaml:"k8s"`
 	// The infrastructure provisioning configuration
 	Infra provisioning.Options `yaml:"infra"`
 	// Hook configuration for service
@@ -117,13 +122,53 @@ func (sc *ServiceConfig) GetServiceTarget(
 	case "", string(AppServiceTarget):
 		target, err = NewAppServiceTarget(sc, env, resource, azCli)
 	case string(ContainerAppTarget):
+		// TODO: (azure/azure-dev#1657)
+		// Using IoC container directly here is a work around till we can expose a
+		// dynamic service location to resolve these configuration based dependencies
+		var containerRegistryService azcli.ContainerRegistryService
+		if err := ioc.Global.Resolve(&containerRegistryService); err != nil {
+			return nil, err
+		}
+
 		target, err = NewContainerAppTarget(
-			sc, env, resource, azCli, docker.NewDocker(commandRunner), console, commandRunner, accountManager,
+			sc,
+			env,
+			resource,
+			containerRegistryService,
+			azCli,
+			docker.NewDocker(commandRunner),
+			console,
+			commandRunner,
+			accountManager,
 		)
 	case string(AzureFunctionTarget):
 		target, err = NewFunctionAppTarget(sc, env, resource, azCli)
 	case string(StaticWebAppTarget):
 		target, err = NewStaticWebAppTarget(sc, env, resource, azCli, swa.NewSwaCli(commandRunner))
+	case string(AksTarget):
+		// TODO: (azure/azure-dev#1657)
+		// Using IoC container directly here is a work around till we can expose a
+		// dynamic service location to resolve these configuration based dependencies
+		var managedClustersService azcli.ManagedClustersService
+		if err := ioc.Global.Resolve(&managedClustersService); err != nil {
+			return nil, err
+		}
+
+		var containerRegistryService azcli.ContainerRegistryService
+		if err := ioc.Global.Resolve(&containerRegistryService); err != nil {
+			return nil, err
+		}
+
+		target, err = NewAksTarget(
+			sc,
+			env,
+			resource,
+			managedClustersService,
+			containerRegistryService,
+			kubectl.NewKubectl(commandRunner),
+			docker.NewDocker(commandRunner),
+			clock.New(),
+		)
 	default:
 		return nil, fmt.Errorf("unsupported host '%s' for service '%s'", sc.Host, sc.Name)
 	}
@@ -154,7 +199,7 @@ func (sc *ServiceConfig) GetFrameworkService(
 	}
 
 	// For containerized applications we use a nested framework service
-	if sc.Host == string(ContainerAppTarget) {
+	if sc.Host == string(ContainerAppTarget) || sc.Host == string(AksTarget) {
 		sourceFramework := frameworkService
 		frameworkService = NewDockerProject(sc, env, docker.NewDocker(commandRunner), sourceFramework)
 	}

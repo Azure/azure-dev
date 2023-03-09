@@ -66,10 +66,16 @@ The `daily` feed is periodically updated with builds from the latest source code
 
 #### Windows
 
+##### Install
 
 ```pwsh
 powershell -ex AllSigned -c "Invoke-RestMethod 'https://aka.ms/install-azd.ps1' -OutFile 'install-azd.ps1'; ./install-azd.ps1 -Version 'daily'"
 ```
+
+##### Uninstall or switch to another version
+
+To uninstall a daily version of `azd` or switch to another version you will need to first uninstall "Azure Developer CLI" using the "Add or remove programs" dialog. This is because daily builds often has a version number that supersedes the `latest` build.
+
 
 #### Linux/MacOS
 

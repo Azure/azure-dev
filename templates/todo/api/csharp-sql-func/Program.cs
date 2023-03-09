@@ -9,7 +9,7 @@ class Program
 {
     static async Task Main(string[] args)
     {
-        var credential = new ChainedTokenCredential(new AzureDeveloperCliCredential(), new DefaultAzureCredential());
+        var credential = new DefaultAzureCredential();
         var host = new HostBuilder()
             .ConfigureFunctionsWorkerDefaults()
             .ConfigureAppConfiguration(config => 

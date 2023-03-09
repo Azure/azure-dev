@@ -1,13 +1,13 @@
-# $PLACEHOLDER_TITLE
+# ToDo Application with a Node.js API and Azure Cosmos DB API for MongoDB on Azure Kubernetes Service (AKS)
 
-[![Open in GitHub Codespaces](https://img.shields.io/static/v1?style=for-the-badge&label=GitHub+Codespaces&message=Open&color=brightgreen&logo=github)](https://github.com/codespaces/new?hide_repo_select=true&ref=main&repo=$REPO_ID&machine=standardLinux32gb&devcontainer_path=.devcontainer%2Fdevcontainer.json&location=WestUs2)
-[![Open in Remote - Containers](https://img.shields.io/static/v1?style=for-the-badge&label=Remote%20-%20Containers&message=Open&color=blue&logo=visualstudiocode)](https://vscode.dev/redirect?url=vscode://ms-vscode-remote.remote-containers/cloneInVolume?url=https://github.com/azure-samples/$REPO_NAME)
+[![Open in GitHub Codespaces](https://img.shields.io/static/v1?style=for-the-badge&label=GitHub+Codespaces&message=Open&color=brightgreen&logo=github)](https://github.com/codespaces/new?hide_repo_select=true&ref=main&repo=607810498&machine=standardLinux32gb&devcontainer_path=.devcontainer%2Fdevcontainer.json&location=WestUs2)
+[![Open in Remote - Containers](https://img.shields.io/static/v1?style=for-the-badge&label=Remote%20-%20Containers&message=Open&color=blue&logo=visualstudiocode)](https://vscode.dev/redirect?url=vscode://ms-vscode-remote.remote-containers/cloneInVolume?url=https://github.com/azure-samples/todo-nodejs-mongo-aks)
 
-A complete ToDo application that includes everything you need to build, deploy, and monitor an Azure solution. This application uses the Azure Developer CLI (azd) to get you up and running on Azure quickly $PLACEHOLDER_DESCRIPTION, React.js for the Web application, Python (FastAPI) for the API, Azure Cosmos DB API for MongoDB for storage, and Azure Monitor for monitoring and logging. It includes application code, tools, and pipelines that serve as a foundation from which you can build upon and customize when creating your own solutions.
+A complete ToDo application that includes everything you need to build, deploy, and monitor an Azure solution. This application uses the Azure Developer CLI (azd) to get you up and running on Azure quickly, React.js for the Web application, Node.js for the API, Azure Cosmos DB API for MongoDB for storage, and Azure Monitor for monitoring and logging. It includes application code, tools, and pipelines that serve as a foundation from which you can build upon and customize when creating your own solutions.
 
 Let's jump in and get the ToDo app up and running in Azure. When you are finished, you will have a fully functional web app deployed on Azure. In later steps, you'll see how to setup a pipeline and monitor the application.
 
-<img src="assets/web.png" width="75%" alt="Screenshot of deployed ToDo app">
+<img src="assets/resources.png" width="75%" alt="Screenshot of deployed ToDo app">
 
 <sup>Screenshot of the deployed ToDo app</sup>
 
@@ -16,20 +16,18 @@ Let's jump in and get the ToDo app up and running in Azure. When you are finishe
 The following prerequisites are required to use this application. Please ensure that you have them all installed locally.
 
 - [Azure Developer CLI](https://aka.ms/azd-install)
-- [Python (3.8+)](https://www.python.org/downloads/) - for the API backend
-- [Node.js with npm (16.13.1+)](https://nodejs.org/) - for the Web frontend
-$PLACEHOLDERIACTOOLS
+- [Node.js with npm (16.13.1+)](https://nodejs.org/) - for API backend and Web frontend
+- [Kubernetes CLI (kubectl)](https://kubernetes.io/docs/tasks/tools/)
 
 ### Quickstart
 
 The fastest way for you to get this application up and running on Azure is to use the `azd up` command. This single command will create and configure all necessary Azure resources - including access policies and roles for your account and service-to-service communication with Managed Identities.
 
 1. Open a terminal, create a new empty folder, and change into it.
-1. Create a new [Python virtual environment](https://docs.python.org/3/library/venv.html).
 1. Run the following command to initialize the project, provision Azure resources, and deploy the application code.
 
 ```bash
-azd up --template $REPO_NAME
+azd up --template todo-nodejs-mongo-aks
 ```
 
 You will be prompted for the following information:
@@ -60,7 +58,7 @@ Click the web application URL to launch the ToDo app. Create a new collection an
 
 This application utilizes the following Azure resources:
 
-- [**Azure App Services**](https://docs.microsoft.com/azure/app-service/) to host the Web frontend and API backend
+- [**Azure Kubernetes Service (AKS)**](https://docs.microsoft.com/azure/aks) to host the Web frontend and API backend
 - [**Azure Cosmos DB API for MongoDB**](https://docs.microsoft.com/azure/cosmos-db/mongodb/mongodb-introduction) for storage
 - [**Azure Monitor**](https://docs.microsoft.com/azure/azure-monitor/) for monitoring and logging
 - [**Azure Key Vault**](https://docs.microsoft.com/azure/key-vault/) for securing secrets
@@ -80,10 +78,11 @@ The repo is structured to follow the [Azure Developer CLI](https://aka.ms/azure-
 - **Azure Developer Configuration**: An `azure.yaml` file located in the root that ties the application source code to the Azure services defined in your "infrastructure as code" files.
 - **GitHub Actions**: A sample GitHub action file is located in the `.github/workflows` folder.
 - **VS Code Configuration**: All VS Code configuration to run and debug the application is located in the `.vscode` folder.
+- **K8s Deployment Manifests**: All k8s manifest files to for deployment, services and ingress within the `manifests` folder or each service
 
 ### Azure Subscription
 
-This template will create infrastructure and deploy code to Azure. If you don't have an Azure Subscription, you can sign up for a [free account here](https://azure.microsoft.com/free/). Make sure you have contributor role to the Azure subscription.
+This template will create infrastructure and deploy code to Azure. If you don't have an Azure Subscription, you can sign up for a [free account here](https://azure.microsoft.com/free/).
 
 ### Azure Developer CLI - VS Code Extension
 
@@ -113,6 +112,10 @@ At this point, you have a complete application deployed on Azure. But there is m
 This template includes a GitHub Actions pipeline configuration file that will deploy your application whenever code is pushed to the main branch. You can find that pipeline file here: `.github/workflows`.
 
 Setting up this pipeline requires you to give GitHub permission to deploy to Azure on your behalf, which is done via a Service Principal stored in a GitHub secret named `AZURE_CREDENTIALS`. The `azd pipeline config` command will automatically create a service principal for you. The command also helps to create a private GitHub repository and pushes code to the newly created repo.
+
+Before you call the `azd pipeline config` command, you'll need to install the following:
+
+- [GitHub CLI (2.3+)](https://github.com/cli/cli)
 
 Run the following command to set up a GitHub Action:
 
@@ -160,38 +163,13 @@ When you are done, you can delete all the Azure resources created with this temp
 azd down
 ```
 
-### Enable Additional Features
-
-#### Enable [Azure API Management](https://learn.microsoft.com/azure/api-management/)
-
-This template is prepared to use Azure API Management (aka APIM) for backend API protection and observability. APIM supports the complete API lifecycle and abstract backend complexity from API consumers.
-
-To use APIM on this template you just need to set the environment variable with the following command:
-
-```bash
-azd env set USE_APIM true
-```
-And then execute `azd up` to provision and deploy. No worries if you already did `azd up`! You can set the `USE_APIM` environment variable at anytime and then just repeat the `azd up` command to run the incremental deployment.
-
-Here's the high level architecture diagram when APIM is used:
-
-<img src="assets/resources-with-apim.png" width="60%" alt="Application architecture diagram with APIM"/>
-
-The frontend will be configured to make API requests through APIM instead of calling the backend directly, so that the following flow gets executed:
-
-1. APIM receives the frontend request, applies the configured policy to enable CORS, validates content and limits concurrency. Follow this [guide](https://learn.microsoft.com/azure/api-management/api-management-howto-policies) to understand how to customize the policy.  
-1. If there are no errors, the request is forwarded to the backend and then the backend response is sent back to the frontend.
-1. APIM emits logs, metrics, and traces for monitoring, reporting, and troubleshooting on every execution. Follow this [guide](https://learn.microsoft.com/azure/api-management/api-management-howto-use-azure-monitor) to visualize, query, and take actions on the metrics or logs coming from APIM.
-
-> NOTE:
->
-> By default, this template uses the Consumption tier that is a lightweight and serverless version of API Management service, billed per execution. Please check the [pricing page](https://azure.microsoft.com/pricing/details/api-management/) for more details.
-
 ### Additional azd commands
 
 The Azure Developer CLI includes many other commands to help with your Azure development experience. You can view these commands at the terminal by running `azd help`. You can also view the full list of commands on our [Azure Developer CLI command](https://aka.ms/azure-dev/ref) page.
 
 ## Troubleshooting/Known issues
+
+> This template does NOT currently support Azure API Management (APIM)
 
 Sometimes, things go awry. If you happen to run into issues, then please review our ["Known Issues"](https://aka.ms/azure-dev/knownissues) page for help. If you continue to have issues, then please file an issue in our main [Azure Dev](https://aka.ms/azure-dev/issues) repository.
 
@@ -199,7 +177,7 @@ Sometimes, things go awry. If you happen to run into issues, then please review 
 
 ### Roles
 
-This template creates a [managed identity](https://docs.microsoft.com/azure/active-directory/managed-identities-azure-resources/overview) for your app inside your Azure Active Directory tenant, and it is used to authenticate your app with Azure and other services that support Azure AD authentication like Key Vault via access policies. You will see principalId referenced in the infrastructure as code files, that refers to the id of the currently logged in Azure Developer CLI user, which will be granted access policies and permissions to run the application locally. To view your managed identity in the Azure Portal, follow these [steps](https://docs.microsoft.com/azure/active-directory/managed-identities-azure-resources/how-to-view-managed-identity-service-principal-portal).
+This template creates a [managed identity](https://docs.microsoft.com/azure/active-directory/managed-identities-azure-resources/overview) for your app inside your Azure Active Directory tenant, and it is used to authenticate your app with Azure and other services that support Azure AD authentication like Key Vault via access policies. You will see principalId referenced in the infrastructure as code files, that refers to the id of the currently logged in Azure CLI user, which will be granted access policies and permissions to run the application locally. To view your managed identity in the Azure Portal, follow these [steps](https://docs.microsoft.com/azure/active-directory/managed-identities-azure-resources/how-to-view-managed-identity-service-principal-portal).
 
 ### Key Vault
 
@@ -207,7 +185,19 @@ This template uses [Azure Key Vault](https://docs.microsoft.com/azure/key-vault/
 
 ## Uninstall
 
-To remove the Azure Developer CLI, refer to [uninstall Azure Developer CLI](https://aka.ms/azd-install?tabs=baremetal%2Cwindows#uninstall-azd).
+To uninstall the Azure Developer CLI:
+
+Windows:
+
+```
+powershell -ex AllSigned -c "Invoke-RestMethod 'https://aka.ms/uninstall-azd.ps1' | Invoke-Expression"
+```
+
+Linux/MacOS:
+
+```
+curl -fsSL https://aka.ms/uninstall-azd.sh | bash
+```
 
 ## Reporting Issues and Feedback
 

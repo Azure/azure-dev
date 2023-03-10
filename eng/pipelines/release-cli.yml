@@ -137,42 +137,42 @@ stages:
           #     ARM_CLIENT_SECRET: $(arm-client-secret)
           #     ARM_TENANT_ID: $(arm-tenant-id)
 
-          - task: PublishTestResults@2
-            inputs:
-              testResultsFormat: JUnit
-              testResultsFiles: '**/junitTestReport.xml'
-              testRunTitle: $(Agent.JobName)
-              searchFolder: cli/azd
-              publishRunAttachments: true
-            displayName: Publish test results
-            condition: succeededOrFailed()
+          # - task: PublishTestResults@2
+          #   inputs:
+          #     testResultsFormat: JUnit
+          #     testResultsFiles: '**/junitTestReport.xml'
+          #     testRunTitle: $(Agent.JobName)
+          #     searchFolder: cli/azd
+          #     publishRunAttachments: true
+          #   displayName: Publish test results
+          #   condition: succeededOrFailed()
 
-          - pwsh: |
-              go install github.com/axw/gocov/gocov@latest
-              if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-              go install github.com/AlekSi/gocov-xml@latest
-              if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-              ~/go/bin/gocov convert cover.out | ~/go/bin/gocov-xml > coverage.xml
-            workingDirectory: cli/azd
-            condition: >-
-              and(
-                succeeded(),
-                eq(variables['GenerateCoverage'], 'true'),
-                ne(variables['Skip.LiveTest'], 'true')
-              )
-            displayName: Generate coverage
+          # - pwsh: |
+          #     go install github.com/axw/gocov/gocov@latest
+          #     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          #     go install github.com/AlekSi/gocov-xml@latest
+          #     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          #     ~/go/bin/gocov convert cover.out | ~/go/bin/gocov-xml > coverage.xml
+          #   workingDirectory: cli/azd
+          #   condition: >-
+          #     and(
+          #       succeeded(),
+          #       eq(variables['GenerateCoverage'], 'true'),
+          #       ne(variables['Skip.LiveTest'], 'true')
+          #     )
+          #   displayName: Generate coverage
 
-          - task: PublishCodeCoverageResults@1
-            condition: >-
-              and(
-                succeeded(),
-                eq(variables['GenerateCoverage'], 'true'),
-                ne(variables['Skip.LiveTest'], 'true')
-              )
-            inputs:
-              codeCoverageTool: Cobertura
-              summaryFileLocation: '$(Build.SourcesDirectory)/**/coverage.xml'
-            displayName: Publish Code Coverage to DevOps
+          # - task: PublishCodeCoverageResults@1
+          #   condition: >-
+          #     and(
+          #       succeeded(),
+          #       eq(variables['GenerateCoverage'], 'true'),
+          #       ne(variables['Skip.LiveTest'], 'true')
+          #     )
+          #   inputs:
+          #     codeCoverageTool: Cobertura
+          #     summaryFileLocation: '$(Build.SourcesDirectory)/**/coverage.xml'
+          #   displayName: Publish Code Coverage to DevOps
 
           - pwsh: Move-Item $(BuildOutputName) $(BuildTarget)
             workingDirectory: cli/azd

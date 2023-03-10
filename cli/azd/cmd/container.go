@@ -274,6 +274,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 		})
 	})
 
+	container.RegisterSingleton(project.NewResourceManager)
 	container.RegisterSingleton(project.NewProjectManager)
 	container.RegisterSingleton(project.NewServiceManager)
 	container.RegisterSingleton(repository.NewInitializer)

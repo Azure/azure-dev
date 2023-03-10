@@ -48,10 +48,13 @@ func (at *staticWebAppTarget) RequiredExternalTools(context.Context) []tools.Ext
 func (at *staticWebAppTarget) Package(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
+	buildOutput *ServiceBuildResult,
 ) *async.TaskWithProgress[*ServicePackageResult, ServiceProgress] {
 	return async.RunTaskWithProgress(
 		func(task *async.TaskContextWithProgress[*ServicePackageResult, ServiceProgress]) {
-			task.SetResult(&ServicePackageResult{})
+			task.SetResult(&ServicePackageResult{
+				Build: buildOutput,
+			})
 		},
 	)
 }
@@ -59,7 +62,7 @@ func (at *staticWebAppTarget) Package(
 func (at *staticWebAppTarget) Publish(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
-	servicePackage ServicePackageResult,
+	servicePackage *ServicePackageResult,
 	targetResource *environment.TargetResource,
 ) *async.TaskWithProgress[*ServicePublishResult, ServiceProgress] {
 	return async.RunTaskWithProgress(
@@ -131,6 +134,7 @@ func (at *staticWebAppTarget) Publish(
 				res,
 				endpoints,
 			)
+			sdr.Package = servicePackage
 
 			task.SetResult(sdr)
 		},

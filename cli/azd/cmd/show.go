@@ -51,15 +51,15 @@ func newShowCmd() *cobra.Command {
 }
 
 type showAction struct {
-	projectConfig  *project.ProjectConfig
-	serviceManager project.ServiceManager
-	console        input.Console
-	formatter      output.Formatter
-	writer         io.Writer
-	azCli          azcli.AzCli
-	azdCtx         *azdcontext.AzdContext
-	env            *environment.Environment
-	flags          *showFlags
+	projectConfig   *project.ProjectConfig
+	resourceManager project.ResourceManager
+	console         input.Console
+	formatter       output.Formatter
+	writer          io.Writer
+	azCli           azcli.AzCli
+	azdCtx          *azdcontext.AzdContext
+	env             *environment.Environment
+	flags           *showFlags
 }
 
 func newShowAction(
@@ -68,21 +68,21 @@ func newShowAction(
 	writer io.Writer,
 	azCli azcli.AzCli,
 	projectConfig *project.ProjectConfig,
-	serviceManager project.ServiceManager,
+	resourceManager project.ResourceManager,
 	azdCtx *azdcontext.AzdContext,
 	env *environment.Environment,
 	flags *showFlags,
 ) actions.Action {
 	return &showAction{
-		projectConfig:  projectConfig,
-		serviceManager: serviceManager,
-		console:        console,
-		formatter:      formatter,
-		writer:         writer,
-		azCli:          azCli,
-		azdCtx:         azdCtx,
-		env:            env,
-		flags:          flags,
+		projectConfig:   projectConfig,
+		resourceManager: resourceManager,
+		console:         console,
+		formatter:       formatter,
+		writer:          writer,
+		azCli:           azCli,
+		azdCtx:          azdCtx,
+		env:             env,
+		flags:           flags,
 	}
 }
 
@@ -114,7 +114,7 @@ func (s *showAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 
 	if resourceGroupName, err := resourceManager.FindResourceGroupForEnvironment(ctx, s.env); err == nil {
 		for name, serviceConfig := range s.projectConfig.Services {
-			if resources, err := s.serviceManager.GetServiceResources(ctx, serviceConfig, resourceGroupName); err == nil {
+			if resources, err := s.resourceManager.GetServiceResources(ctx, serviceConfig, resourceGroupName); err == nil {
 				resourceIds := make([]string, len(resources))
 				for idx, res := range resources {
 					resourceIds[idx] = res.Id

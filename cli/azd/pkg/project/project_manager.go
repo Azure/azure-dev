@@ -7,7 +7,6 @@ import (
 	"log"
 	"os"
 	"path/filepath"
-	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/internal/telemetry"
 	"github.com/azure/azure-dev/cli/azd/internal/telemetry/fields"
@@ -16,7 +15,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/ext"
-	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
@@ -45,7 +43,6 @@ type ProjectManager interface {
 	Parse(ctx context.Context, yamlContent string) (*ProjectConfig, error)
 	Load(ctx context.Context, projectPath string) (*ProjectConfig, error)
 	Save(ctx context.Context, projectConfig *ProjectConfig, projectFilePath string) error
-	GetResourceGroupName(ctx context.Context, projectConfig *ProjectConfig) (string, error)
 
 	// TODO: Add lifecycle functions to perform action on all services.
 	// Restore, build, package & publish
@@ -195,38 +192,4 @@ func (pm *projectManager) Save(ctx context.Context, projectConfig *ProjectConfig
 	projectConfig.Path = projectFilePath
 
 	return nil
-}
-
-// GetResourceGroupName gets the resource group name for the project.
-//
-// The resource group name is resolved in the following order:
-//   - The user defined value in `azure.yaml`
-//   - The user defined environment value `AZURE_RESOURCE_GROUP`
-//
-// - Resource group discovery by querying Azure Resources
-// (see `resourceManager.FindResourceGroupForEnvironment` for more
-// details)
-func (pm *projectManager) GetResourceGroupName(ctx context.Context, projectConfig *ProjectConfig) (string, error) {
-
-	name, err := projectConfig.ResourceGroupName.Envsubst(pm.env.Getenv)
-	if err != nil {
-		return "", err
-	}
-
-	if strings.TrimSpace(name) != "" {
-		return name, nil
-	}
-
-	envResourceGroupName := environment.GetResourceGroupNameFromEnvVar(pm.env)
-	if envResourceGroupName != "" {
-		return envResourceGroupName, nil
-	}
-
-	resourceManager := infra.NewAzureResourceManager(pm.azCli)
-	resourceGroupName, err := resourceManager.FindResourceGroupForEnvironment(ctx, pm.env)
-	if err != nil {
-		return "", err
-	}
-
-	return resourceGroupName, nil
 }

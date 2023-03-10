@@ -17,5 +17,9 @@ type FrameworkService interface {
 		ctx context.Context,
 		serviceConfig *ServiceConfig,
 	) *async.TaskWithProgress[*ServiceRestoreResult, ServiceProgress]
-	Build(ctx context.Context, serviceConfig *ServiceConfig) *async.TaskWithProgress[*ServiceBuildResult, ServiceProgress]
+	Build(
+		ctx context.Context,
+		serviceConfig *ServiceConfig,
+		restoreOutput *ServiceRestoreResult,
+	) *async.TaskWithProgress[*ServiceBuildResult, ServiceProgress]
 }

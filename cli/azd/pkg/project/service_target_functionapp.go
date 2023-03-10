@@ -42,10 +42,13 @@ func (f *functionAppTarget) RequiredExternalTools(context.Context) []tools.Exter
 func (f *functionAppTarget) Package(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
+	buildOutput *ServiceBuildResult,
 ) *async.TaskWithProgress[*ServicePackageResult, ServiceProgress] {
 	return async.RunTaskWithProgress(
 		func(task *async.TaskContextWithProgress[*ServicePackageResult, ServiceProgress]) {
-			task.SetResult(&ServicePackageResult{})
+			task.SetResult(&ServicePackageResult{
+				Build: buildOutput,
+			})
 		},
 	)
 }
@@ -53,7 +56,7 @@ func (f *functionAppTarget) Package(
 func (f *functionAppTarget) Publish(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
-	servicePackage ServicePackageResult,
+	servicePackage *ServicePackageResult,
 	targetResource *environment.TargetResource,
 ) *async.TaskWithProgress[*ServicePublishResult, ServiceProgress] {
 	return async.RunTaskWithProgress(
@@ -113,6 +116,7 @@ func (f *functionAppTarget) Publish(
 				*res,
 				endpoints,
 			)
+			sdr.Package = servicePackage
 
 			task.SetResult(sdr)
 		},

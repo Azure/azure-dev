@@ -60,6 +60,7 @@ func (p *dockerProject) Restore(
 func (p *dockerProject) Build(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
+	restoreOutput *ServiceRestoreResult,
 ) *async.TaskWithProgress[*ServiceBuildResult, ServiceProgress] {
 	return async.RunTaskWithProgress(
 		func(task *async.TaskContextWithProgress[*ServiceBuildResult, ServiceProgress]) {
@@ -89,6 +90,7 @@ func (p *dockerProject) Build(
 
 			log.Printf("built image %s for %s", imageId, serviceConfig.Name)
 			task.SetResult(&ServiceBuildResult{
+				Restore:         restoreOutput,
 				BuildOutputPath: imageId,
 			})
 		},

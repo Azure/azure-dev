@@ -35,6 +35,7 @@ type containerAppTarget struct {
 	commandRunner            exec.CommandRunner
 	accountManager           account.Manager
 	serviceManager           ServiceManager
+	resourceManager          ResourceManager
 
 	// Standard time library clock, unless mocked in tests
 	clock clock.Clock
@@ -52,10 +53,14 @@ func NewContainerAppTarget(
 	console input.Console,
 	commandRunner exec.CommandRunner,
 	accountManager account.Manager,
+	serviceManager ServiceManager,
+	resourceManager ResourceManager,
 ) (ServiceTarget, error) {
 	return &containerAppTarget{
 		env:                      env,
 		accountManager:           accountManager,
+		serviceManager:           serviceManager,
+		resourceManager:          resourceManager,
 		cli:                      azCli,
 		containerRegistryService: containerRegistryService,
 		docker:                   docker,
@@ -72,10 +77,14 @@ func (at *containerAppTarget) RequiredExternalTools(context.Context) []tools.Ext
 func (at *containerAppTarget) Package(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
+	buildOutput *ServiceBuildResult,
 ) *async.TaskWithProgress[*ServicePackageResult, ServiceProgress] {
 	return async.RunTaskWithProgress(
 		func(task *async.TaskContextWithProgress[*ServicePackageResult, ServiceProgress]) {
-			task.SetResult(&ServicePackageResult{})
+			task.SetResult(&ServicePackageResult{
+				Build:       buildOutput,
+				PackagePath: buildOutput.BuildOutputPath,
+			})
 		},
 	)
 }
@@ -83,7 +92,7 @@ func (at *containerAppTarget) Package(
 func (at *containerAppTarget) Publish(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
-	servicePackage ServicePackageResult,
+	servicePackage *ServicePackageResult,
 	targetResource *environment.TargetResource,
 ) *async.TaskWithProgress[*ServicePublishResult, ServiceProgress] {
 	return async.RunTaskWithProgress(
@@ -214,7 +223,7 @@ func (at *containerAppTarget) Publish(
 			}
 
 			if targetResource.ResourceName() == "" {
-				azureResource, err := at.serviceManager.GetServiceResource(
+				azureResource, err := at.resourceManager.GetServiceResource(
 					ctx,
 					serviceConfig,
 					targetResource.ResourceGroupName(),
@@ -247,6 +256,7 @@ func (at *containerAppTarget) Publish(
 			}
 
 			task.SetResult(&ServicePublishResult{
+				Package: servicePackage,
 				TargetResourceId: azure.ContainerAppRID(
 					at.env.GetSubscriptionId(),
 					targetResource.ResourceGroupName(),

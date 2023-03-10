@@ -124,7 +124,12 @@ const (
 	envPersistedKey string = "AZD_PIPELINE_PROVIDER"
 )
 
-func resolveProvider(ctx context.Context, env *environment.Environment, projectManager project.ProjectManager, projectPath string) (string, error) {
+func resolveProvider(
+	ctx context.Context,
+	env *environment.Environment,
+	projectManager project.ProjectManager,
+	projectPath string,
+) (string, error) {
 	// 1) if provider is set on azure.yaml, it should override the `lastUsedProvider`, as it can be changed by customer
 	// at any moment.
 	prj, err := projectManager.Load(ctx, projectPath)

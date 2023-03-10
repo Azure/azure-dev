@@ -42,10 +42,13 @@ func (st *appServiceTarget) RequiredExternalTools(context.Context) []tools.Exter
 func (st *appServiceTarget) Package(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
+	buildOutput *ServiceBuildResult,
 ) *async.TaskWithProgress[*ServicePackageResult, ServiceProgress] {
 	return async.RunTaskWithProgress(
 		func(task *async.TaskContextWithProgress[*ServicePackageResult, ServiceProgress]) {
-			task.SetResult(&ServicePackageResult{})
+			task.SetResult(&ServicePackageResult{
+				Build: buildOutput,
+			})
 		},
 	)
 }
@@ -53,7 +56,7 @@ func (st *appServiceTarget) Package(
 func (st *appServiceTarget) Publish(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
-	servicePackage ServicePackageResult,
+	packageOutput *ServicePackageResult,
 	targetResource *environment.TargetResource,
 ) *async.TaskWithProgress[*ServicePublishResult, ServiceProgress] {
 	return async.RunTaskWithProgress(
@@ -69,7 +72,7 @@ func (st *appServiceTarget) Publish(
 
 			task.SetProgress(NewServiceProgress("Publishing deployment package"))
 
-			zipFilePath, err := internal.CreateDeployableZip(st.config.Name, servicePackage.PackagePath)
+			zipFilePath, err := internal.CreateDeployableZip(st.config.Name, packageOutput.PackagePath)
 			if err != nil {
 				task.SetError(err)
 				return
@@ -114,6 +117,7 @@ func (st *appServiceTarget) Publish(
 				*res,
 				endpoints,
 			)
+			sdr.Package = packageOutput
 
 			task.SetResult(sdr)
 		},

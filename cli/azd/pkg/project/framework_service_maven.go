@@ -64,6 +64,7 @@ func (m *mavenProject) Restore(
 func (m *mavenProject) Build(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
+	restoreOutput *ServiceRestoreResult,
 ) *async.TaskWithProgress[*ServiceBuildResult, ServiceProgress] {
 	return async.RunTaskWithProgress(
 		func(task *async.TaskContextWithProgress[*ServiceBuildResult, ServiceProgress]) {
@@ -125,6 +126,7 @@ func (m *mavenProject) Build(
 			}
 
 			task.SetResult(&ServiceBuildResult{
+				Restore:         restoreOutput,
 				BuildOutputPath: publishRoot,
 			})
 		},

@@ -70,6 +70,7 @@ func (dp *dotnetProject) Restore(
 func (dp *dotnetProject) Build(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
+	restoreOutput *ServiceRestoreResult,
 ) *async.TaskWithProgress[*ServiceBuildResult, ServiceProgress] {
 	return async.RunTaskWithProgress(
 		func(task *async.TaskContextWithProgress[*ServiceBuildResult, ServiceProgress]) {
@@ -90,6 +91,7 @@ func (dp *dotnetProject) Build(
 			}
 
 			task.SetResult(&ServiceBuildResult{
+				Restore:         restoreOutput,
 				BuildOutputPath: publishRoot,
 			})
 		},

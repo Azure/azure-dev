@@ -7,7 +7,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"log"
 	"time"
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
@@ -74,25 +73,27 @@ func newDeployCmd() *cobra.Command {
 }
 
 type deployAction struct {
-	flags          *deployFlags
-	projectConfig  *project.ProjectConfig
-	azdCtx         *azdcontext.AzdContext
-	env            *environment.Environment
-	serviceManager project.ServiceManager
-	projectManager project.ProjectManager
-	accountManager account.Manager
-	azCli          azcli.AzCli
-	formatter      output.Formatter
-	writer         io.Writer
-	console        input.Console
-	commandRunner  exec.CommandRunner
+	flags           *deployFlags
+	projectConfig   *project.ProjectConfig
+	azdCtx          *azdcontext.AzdContext
+	env             *environment.Environment
+	projectManager  project.ProjectManager
+	serviceManager  project.ServiceManager
+	resourceManager project.ResourceManager
+	accountManager  account.Manager
+	azCli           azcli.AzCli
+	formatter       output.Formatter
+	writer          io.Writer
+	console         input.Console
+	commandRunner   exec.CommandRunner
 }
 
 func newDeployAction(
 	flags *deployFlags,
 	projectConfig *project.ProjectConfig,
-	serviceManager project.ServiceManager,
 	projectManager project.ProjectManager,
+	serviceManager project.ServiceManager,
+	resourceManager project.ResourceManager,
 	azdCtx *azdcontext.AzdContext,
 	environment *environment.Environment,
 	accountManager account.Manager,
@@ -103,18 +104,19 @@ func newDeployAction(
 	writer io.Writer,
 ) actions.Action {
 	return &deployAction{
-		flags:          flags,
-		projectConfig:  projectConfig,
-		azdCtx:         azdCtx,
-		env:            environment,
-		serviceManager: serviceManager,
-		projectManager: projectManager,
-		accountManager: accountManager,
-		azCli:          azCli,
-		formatter:      formatter,
-		writer:         writer,
-		console:        console,
-		commandRunner:  commandRunner,
+		flags:           flags,
+		projectConfig:   projectConfig,
+		azdCtx:          azdCtx,
+		env:             environment,
+		projectManager:  projectManager,
+		serviceManager:  serviceManager,
+		resourceManager: resourceManager,
+		accountManager:  accountManager,
+		azCli:           azCli,
+		formatter:       formatter,
+		writer:          writer,
+		console:         console,
+		commandRunner:   commandRunner,
 	}
 }
 
@@ -163,11 +165,10 @@ func (d *deployAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 
 		deployTask := d.serviceManager.Deploy(ctx, svc)
 
-		// Report any progress to logs only. Changes for the console are managed by the console object.
-		// This routine is required to drain all the string messages sent by the `progress`.
 		go func() {
-			for message := range deployTask.Progress() {
-				log.Printf("- %s...", message)
+			for progress := range deployTask.Progress() {
+				updatedMessage := fmt.Sprintf("Deploying service %s (%s)", svc.Name, progress.Message)
+				d.console.ShowSpinner(ctx, updatedMessage, input.Step)
 			}
 		}()
 
@@ -201,7 +202,7 @@ func (d *deployAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	return &actions.ActionResult{
 		Message: &actions.ResultMessage{
 			Header:   "Your Azure app has been deployed!",
-			FollowUp: getResourceGroupFollowUp(ctx, d.formatter, d.azCli, d.projectConfig, d.projectManager, d.env),
+			FollowUp: getResourceGroupFollowUp(ctx, d.formatter, d.azCli, d.projectConfig, d.resourceManager, d.env),
 		},
 	}, nil
 }

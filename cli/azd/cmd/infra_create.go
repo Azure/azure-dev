@@ -74,23 +74,25 @@ Depending on what Azure resources are created, running this command might take a
 }
 
 type infraCreateAction struct {
-	flags          *infraCreateFlags
-	accountManager account.Manager
-	projectManager project.ProjectManager
-	azdCtx         *azdcontext.AzdContext
-	azCli          azcli.AzCli
-	env            *environment.Environment
-	formatter      output.Formatter
-	projectConfig  *project.ProjectConfig
-	writer         io.Writer
-	console        input.Console
-	commandRunner  exec.CommandRunner
+	flags           *infraCreateFlags
+	accountManager  account.Manager
+	projectManager  project.ProjectManager
+	resourceManager project.ResourceManager
+	azdCtx          *azdcontext.AzdContext
+	azCli           azcli.AzCli
+	env             *environment.Environment
+	formatter       output.Formatter
+	projectConfig   *project.ProjectConfig
+	writer          io.Writer
+	console         input.Console
+	commandRunner   exec.CommandRunner
 }
 
 func newInfraCreateAction(
 	flags *infraCreateFlags,
 	accountManager account.Manager,
 	projectManager project.ProjectManager,
+	resourceManager project.ResourceManager,
 	azdCtx *azdcontext.AzdContext,
 	projectConfig *project.ProjectConfig,
 	azCli azcli.AzCli,
@@ -101,17 +103,18 @@ func newInfraCreateAction(
 	commandRunner exec.CommandRunner,
 ) actions.Action {
 	return &infraCreateAction{
-		flags:          flags,
-		accountManager: accountManager,
-		projectManager: projectManager,
-		azdCtx:         azdCtx,
-		azCli:          azCli,
-		env:            env,
-		formatter:      formatter,
-		projectConfig:  projectConfig,
-		writer:         writer,
-		console:        console,
-		commandRunner:  commandRunner,
+		flags:           flags,
+		accountManager:  accountManager,
+		projectManager:  projectManager,
+		resourceManager: resourceManager,
+		azdCtx:          azdCtx,
+		azCli:           azCli,
+		env:             env,
+		formatter:       formatter,
+		projectConfig:   projectConfig,
+		writer:          writer,
+		console:         console,
+		commandRunner:   commandRunner,
 	}
 }
 
@@ -208,7 +211,7 @@ func (i *infraCreateAction) Run(ctx context.Context) (*actions.ActionResult, err
 	return &actions.ActionResult{
 		Message: &actions.ResultMessage{
 			Header:   "Your project has been provisioned!",
-			FollowUp: getResourceGroupFollowUp(ctx, i.formatter, i.azCli, i.projectConfig, i.projectManager, i.env),
+			FollowUp: getResourceGroupFollowUp(ctx, i.formatter, i.azCli, i.projectConfig, i.resourceManager, i.env),
 		},
 	}, nil
 }

@@ -43,6 +43,8 @@ func (np *npmProject) Restore(
 ) *async.TaskWithProgress[*ServiceRestoreResult, ServiceProgress] {
 	return async.RunTaskWithProgress(
 		func(task *async.TaskContextWithProgress[*ServiceRestoreResult, ServiceProgress]) {
+			// Run NPM install
+			task.SetProgress(NewServiceProgress("Installing dependencies"))
 			if err := np.cli.Install(ctx, serviceConfig.Path(), false); err != nil {
 				task.SetError(err)
 				return
@@ -63,13 +65,6 @@ func (np *npmProject) Build(
 			publishRoot, err := os.MkdirTemp("", "azd")
 			if err != nil {
 				task.SetError(fmt.Errorf("creating package directory for %s: %w", serviceConfig.Name, err))
-				return
-			}
-
-			// Run NPM install
-			task.SetProgress(NewServiceProgress("Installing dependencies"))
-			if err := np.cli.Install(ctx, serviceConfig.Path(), false); err != nil {
-				task.SetError(err)
 				return
 			}
 

@@ -5,6 +5,7 @@ package project
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -41,6 +42,11 @@ type containerAppTarget struct {
 	clock clock.Clock
 }
 
+type containerAppPackageResult struct {
+	ImageTag    string
+	LoginServer string
+}
+
 // NewContainerAppTarget creates the container app service target.
 //
 // The target resource can be partially filled with only ResourceGroupName, since container apps
@@ -55,7 +61,7 @@ func NewContainerAppTarget(
 	accountManager account.Manager,
 	serviceManager ServiceManager,
 	resourceManager ResourceManager,
-) (ServiceTarget, error) {
+) ServiceTarget {
 	return &containerAppTarget{
 		env:                      env,
 		accountManager:           accountManager,
@@ -67,11 +73,15 @@ func NewContainerAppTarget(
 		console:                  console,
 		commandRunner:            commandRunner,
 		clock:                    clock.New(),
-	}, nil
+	}
 }
 
 func (at *containerAppTarget) RequiredExternalTools(context.Context) []tools.ExternalTool {
 	return []tools.ExternalTool{at.docker}
+}
+
+func (at *containerAppTarget) Initialize(ctx context.Context, serviceConfig *ServiceConfig) error {
+	return nil
 }
 
 func (at *containerAppTarget) Package(
@@ -81,9 +91,52 @@ func (at *containerAppTarget) Package(
 ) *async.TaskWithProgress[*ServicePackageResult, ServiceProgress] {
 	return async.RunTaskWithProgress(
 		func(task *async.TaskContextWithProgress[*ServicePackageResult, ServiceProgress]) {
+			// Login to container registry.
+			loginServer, has := at.env.Values[environment.ContainerRegistryEndpointEnvVarName]
+			if !has {
+				task.SetError(fmt.Errorf(
+					"could not determine container registry endpoint, ensure %s is set as an output of your infrastructure",
+					environment.ContainerRegistryEndpointEnvVarName,
+				))
+				return
+			}
+
+			imageId := buildOutput.BuildOutputPath
+			imageTag, err := at.generateImageTag(serviceConfig)
+			if err != nil {
+				task.SetError(fmt.Errorf("generating image tag: %w", err))
+				return
+			}
+
+			fullTag := fmt.Sprintf(
+				"%s/%s",
+				loginServer,
+				imageTag,
+			)
+
+			// Tag image.
+			log.Printf("tagging image %s as %s", imageId, fullTag)
+			task.SetProgress(NewServiceProgress("Tagging image"))
+			if err := at.docker.Tag(ctx, serviceConfig.Path(), imageId, fullTag); err != nil {
+				task.SetError(fmt.Errorf("tagging image: %w", err))
+				return
+			}
+
+			// Save the name of the image we pushed into the environment with a well known key.
+			log.Printf("writing image name to environment")
+			at.env.SetServiceProperty(serviceConfig.Name, "IMAGE_NAME", fullTag)
+
+			if err := at.env.Save(); err != nil {
+				task.SetError(fmt.Errorf("saving image name to environment: %w", err))
+				return
+			}
+
 			task.SetResult(&ServicePackageResult{
-				Build:       buildOutput,
-				PackagePath: buildOutput.BuildOutputPath,
+				Build: buildOutput,
+				Details: containerAppPackageResult{
+					ImageTag:    fullTag,
+					LoginServer: loginServer,
+				},
 			})
 		},
 	)
@@ -92,7 +145,7 @@ func (at *containerAppTarget) Package(
 func (at *containerAppTarget) Publish(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
-	servicePackage *ServicePackageResult,
+	packageOutput *ServicePackageResult,
 	targetResource *environment.TargetResource,
 ) *async.TaskWithProgress[*ServicePublishResult, ServiceProgress] {
 	return async.RunTaskWithProgress(
@@ -117,60 +170,24 @@ func (at *containerAppTarget) Publish(
 				serviceConfig.Infra.Module = serviceConfig.Name
 			}
 
-			// Login to container registry.
-			loginServer, has := at.env.Values[environment.ContainerRegistryEndpointEnvVarName]
-			if !has {
-				task.SetError(fmt.Errorf(
-					"could not determine container registry endpoint, ensure %s is set as an output of your infrastructure",
-					environment.ContainerRegistryEndpointEnvVarName,
-				))
+			packageDetails, ok := packageOutput.Details.(containerAppPackageResult)
+			if !ok {
+				task.SetError(errors.New("failed retrieving package result details"))
 				return
 			}
 
-			log.Printf("logging into registry %s", loginServer)
-
+			log.Printf("logging into registry %s", packageDetails.LoginServer)
 			task.SetProgress(NewServiceProgress("Logging into container registry"))
-			if err := at.containerRegistryService.LoginAcr(ctx, at.env.GetSubscriptionId(), loginServer); err != nil {
-				task.SetError(fmt.Errorf("logging into registry '%s': %w", loginServer, err))
+			if err := at.containerRegistryService.LoginAcr(ctx, at.env.GetSubscriptionId(), packageDetails.LoginServer); err != nil {
+				task.SetError(fmt.Errorf("logging into registry '%s': %w", packageDetails.LoginServer, err))
 				return
 			}
-
-			imageTag, err := at.generateImageTag(serviceConfig)
-			if err != nil {
-				task.SetError(fmt.Errorf("generating image tag: %w", err))
-				return
-			}
-
-			fullTag := fmt.Sprintf(
-				"%s/%s",
-				loginServer,
-				imageTag,
-			)
-
-			// Tag image.
-			log.Printf("tagging image %s as %s", servicePackage.PackagePath, fullTag)
-			task.SetProgress(NewServiceProgress("Tagging image"))
-			if err := at.docker.Tag(ctx, serviceConfig.Path(), servicePackage.PackagePath, fullTag); err != nil {
-				task.SetError(fmt.Errorf("tagging image: %w", err))
-				return
-			}
-
-			log.Printf("pushing %s to registry", fullTag)
 
 			// Push image.
+			log.Printf("pushing %s to registry", packageDetails.ImageTag)
 			task.SetProgress(NewServiceProgress("Pushing image"))
-			if err := at.docker.Push(ctx, serviceConfig.Path(), fullTag); err != nil {
+			if err := at.docker.Push(ctx, serviceConfig.Path(), packageDetails.ImageTag); err != nil {
 				task.SetError(fmt.Errorf("pushing image: %w", err))
-				return
-			}
-
-			log.Printf("writing image name to environment")
-
-			// Save the name of the image we pushed into the environment with a well known key.
-			at.env.SetServiceProperty(serviceConfig.Name, "IMAGE_NAME", fullTag)
-
-			if err := at.env.Save(); err != nil {
-				task.SetError(fmt.Errorf("saving image name to environment: %w", err))
 				return
 			}
 
@@ -256,7 +273,7 @@ func (at *containerAppTarget) Publish(
 			}
 
 			task.SetResult(&ServicePublishResult{
-				Package: servicePackage,
+				Package: packageOutput,
 				TargetResourceId: azure.ContainerAppRID(
 					at.env.GetSubscriptionId(),
 					targetResource.ResourceGroupName(),

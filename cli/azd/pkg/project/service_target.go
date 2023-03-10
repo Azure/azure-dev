@@ -26,6 +26,7 @@ const (
 )
 
 type ServiceTarget interface {
+	Initialize(ctx context.Context, serviceConfig *ServiceConfig) error
 	// RequiredExternalTools are the tools needed to run the deploy operation for this
 	// target.
 	RequiredExternalTools(ctx context.Context) []tools.ExternalTool

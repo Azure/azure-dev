@@ -366,7 +366,6 @@ func (sm *serviceManager) Deploy(
 // GetServiceTarget constructs a ServiceTarget from the underlying service configuration
 func (sm *serviceManager) GetServiceTarget(ctx context.Context, serviceConfig *ServiceConfig) (ServiceTarget, error) {
 	var target ServiceTarget
-	var err error
 
 	switch serviceConfig.Host {
 	case "", string(AppServiceTarget):
@@ -380,7 +379,7 @@ func (sm *serviceManager) GetServiceTarget(ctx context.Context, serviceConfig *S
 			return nil, err
 		}
 
-		target, err = NewContainerAppTarget(
+		target = NewContainerAppTarget(
 			sm.env,
 			containerRegistryService,
 			sm.azCli,
@@ -405,7 +404,7 @@ func (sm *serviceManager) GetServiceTarget(ctx context.Context, serviceConfig *S
 			return nil, err
 		}
 
-		target, err = NewAksTarget(
+		target = NewAksTarget(
 			sm.env,
 			managedClustersService,
 			containerRegistryService,
@@ -421,8 +420,8 @@ func (sm *serviceManager) GetServiceTarget(ctx context.Context, serviceConfig *S
 		return nil, fmt.Errorf("unsupported host '%s' for service '%s'", serviceConfig.Host, serviceConfig.Name)
 	}
 
-	if err != nil {
-		return nil, fmt.Errorf("failed validation for host '%s': %w", serviceConfig.Host, err)
+	if err := target.Initialize(ctx, serviceConfig); err != nil {
+		return nil, fmt.Errorf("failed initializing service target for '%s': %w", serviceConfig.Name, err)
 	}
 
 	return target, nil
@@ -449,6 +448,10 @@ func (sm *serviceManager) GetFrameworkService(ctx context.Context, serviceConfig
 	if serviceConfig.Host == string(ContainerAppTarget) || serviceConfig.Host == string(AksTarget) {
 		sourceFramework := frameworkService
 		frameworkService = NewDockerProject(serviceConfig, sm.env, docker.NewDocker(sm.commandRunner), sourceFramework)
+	}
+
+	if err := frameworkService.Initialize(ctx, serviceConfig); err != nil {
+		return nil, fmt.Errorf("failed initializing framework service for '%s': %w", serviceConfig.Name, err)
 	}
 
 	return frameworkService, nil

@@ -45,6 +45,10 @@ func (at *staticWebAppTarget) RequiredExternalTools(context.Context) []tools.Ext
 	return []tools.ExternalTool{at.swa}
 }
 
+func (at *staticWebAppTarget) Initialize(ctx context.Context, serviceConfig *ServiceConfig) error {
+	return nil
+}
+
 func (at *staticWebAppTarget) Package(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
@@ -52,8 +56,13 @@ func (at *staticWebAppTarget) Package(
 ) *async.TaskWithProgress[*ServicePackageResult, ServiceProgress] {
 	return async.RunTaskWithProgress(
 		func(task *async.TaskContextWithProgress[*ServicePackageResult, ServiceProgress]) {
+			if strings.TrimSpace(serviceConfig.OutputPath) == "" {
+				serviceConfig.OutputPath = "build"
+			}
+
 			task.SetResult(&ServicePackageResult{
-				Build: buildOutput,
+				Build:       buildOutput,
+				PackagePath: serviceConfig.OutputPath,
 			})
 		},
 	)
@@ -62,7 +71,7 @@ func (at *staticWebAppTarget) Package(
 func (at *staticWebAppTarget) Publish(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
-	servicePackage *ServicePackageResult,
+	packageOutput *ServicePackageResult,
 	targetResource *environment.TargetResource,
 ) *async.TaskWithProgress[*ServicePublishResult, ServiceProgress] {
 	return async.RunTaskWithProgress(
@@ -74,10 +83,6 @@ func (at *staticWebAppTarget) Publish(
 					infra.AzureResourceTypeStaticWebSite,
 				))
 				return
-			}
-
-			if strings.TrimSpace(serviceConfig.OutputPath) == "" {
-				serviceConfig.OutputPath = "build"
 			}
 
 			// Get the static webapp deployment token
@@ -102,7 +107,7 @@ func (at *staticWebAppTarget) Publish(
 				targetResource.ResourceGroupName(),
 				targetResource.ResourceName(),
 				serviceConfig.RelativePath,
-				serviceConfig.OutputPath,
+				packageOutput.PackagePath,
 				DefaultStaticWebAppEnvironmentName,
 				*deploymentToken)
 
@@ -134,7 +139,7 @@ func (at *staticWebAppTarget) Publish(
 				res,
 				endpoints,
 			)
-			sdr.Package = servicePackage
+			sdr.Package = packageOutput
 
 			task.SetResult(sdr)
 		},

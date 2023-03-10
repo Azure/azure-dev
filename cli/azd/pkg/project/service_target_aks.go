@@ -76,7 +76,7 @@ func NewAksTarget(
 	kubectlCli kubectl.KubectlCli,
 	docker docker.Docker,
 	clock clock.Clock,
-) (ServiceTarget, error) {
+) ServiceTarget {
 	return &aksTarget{
 		env:                      env,
 		managedClustersService:   managedClustersService,
@@ -84,12 +84,16 @@ func NewAksTarget(
 		docker:                   docker,
 		kubectl:                  kubectlCli,
 		clock:                    clock,
-	}, nil
+	}
 }
 
 // Gets the required external tools when using AKS service target
 func (t *aksTarget) RequiredExternalTools(context.Context) []tools.ExternalTool {
 	return []tools.ExternalTool{t.docker, t.kubectl}
+}
+
+func (t *aksTarget) Initialize(ctx context.Context, serviceConfig *ServiceConfig) error {
+	return nil
 }
 
 func (t *aksTarget) Package(
@@ -126,6 +130,14 @@ func (t *aksTarget) Package(
 			task.SetProgress(NewServiceProgress("Tagging image"))
 			if err := t.docker.Tag(ctx, serviceConfig.Path(), imageId, fullTag); err != nil {
 				task.SetError(fmt.Errorf("failed tagging image: %w", err))
+				return
+			}
+
+			// Save the name of the image we pushed into the environment with a well known key.
+			t.env.SetServiceProperty(serviceConfig.Name, "IMAGE_NAME", fullTag)
+
+			if err := t.env.Save(); err != nil {
+				task.SetError(fmt.Errorf("saving image name to environment: %w", err))
 				return
 			}
 
@@ -264,14 +276,6 @@ func (t *aksTarget) Publish(
 				return
 			}
 
-			// Save the name of the image we pushed into the environment with a well known key.
-			t.env.SetServiceProperty(serviceConfig.Name, "IMAGE_NAME", packageDetails.ImageTag)
-
-			if err := t.env.Save(); err != nil {
-				task.SetError(fmt.Errorf("saving image name to environment: %w", err))
-				return
-			}
-
 			task.SetProgress(NewServiceProgress("Applying k8s manifests"))
 			t.kubectl.SetEnv(t.env.Values)
 			deploymentPath := serviceConfig.K8s.DeploymentPath
@@ -303,7 +307,7 @@ func (t *aksTarget) Publish(
 				return
 			}
 
-			task.SetProgress(NewServiceProgress("Retrieving service endpoints"))
+			task.SetProgress(NewServiceProgress("Fetching endpoints for AKS service"))
 			endpoints, err := t.Endpoints(ctx, serviceConfig, targetResource)
 			if err != nil {
 				task.SetError(err)

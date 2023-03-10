@@ -39,6 +39,10 @@ func (f *functionAppTarget) RequiredExternalTools(context.Context) []tools.Exter
 	return []tools.ExternalTool{}
 }
 
+func (f *functionAppTarget) Initialize(ctx context.Context, serviceConfig *ServiceConfig) error {
+	return nil
+}
+
 func (f *functionAppTarget) Package(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
@@ -46,8 +50,16 @@ func (f *functionAppTarget) Package(
 ) *async.TaskWithProgress[*ServicePackageResult, ServiceProgress] {
 	return async.RunTaskWithProgress(
 		func(task *async.TaskContextWithProgress[*ServicePackageResult, ServiceProgress]) {
+			task.SetProgress(NewServiceProgress("Compressing deployment artifacts"))
+			zipFilePath, err := internal.CreateDeployableZip(serviceConfig.Name, buildOutput.BuildOutputPath)
+			if err != nil {
+				task.SetError(err)
+				return
+			}
+
 			task.SetResult(&ServicePackageResult{
-				Build: buildOutput,
+				Build:       buildOutput,
+				PackagePath: zipFilePath,
 			})
 		},
 	)
@@ -56,7 +68,7 @@ func (f *functionAppTarget) Package(
 func (f *functionAppTarget) Publish(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
-	servicePackage *ServicePackageResult,
+	packageOutput *ServicePackageResult,
 	targetResource *environment.TargetResource,
 ) *async.TaskWithProgress[*ServicePublishResult, ServiceProgress] {
 	return async.RunTaskWithProgress(
@@ -70,20 +82,13 @@ func (f *functionAppTarget) Publish(
 				return
 			}
 
-			task.SetProgress(NewServiceProgress("Compressing deployment artifacts"))
-			zipFilePath, err := internal.CreateDeployableZip(serviceConfig.Name, servicePackage.PackagePath)
-			if err != nil {
-				task.SetError(err)
-				return
-			}
-
-			zipFile, err := os.Open(zipFilePath)
+			zipFile, err := os.Open(packageOutput.PackagePath)
 			if err != nil {
 				task.SetError(fmt.Errorf("failed reading deployment zip file: %w", err))
 				return
 			}
 
-			defer os.Remove(zipFilePath)
+			defer os.Remove(packageOutput.PackagePath)
 			defer zipFile.Close()
 
 			task.SetProgress(NewServiceProgress("Publishing deployment package"))
@@ -116,7 +121,7 @@ func (f *functionAppTarget) Publish(
 				*res,
 				endpoints,
 			)
-			sdr.Package = servicePackage
+			sdr.Package = packageOutput
 
 			task.SetResult(sdr)
 		},

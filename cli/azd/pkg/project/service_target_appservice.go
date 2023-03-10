@@ -39,6 +39,10 @@ func (st *appServiceTarget) RequiredExternalTools(context.Context) []tools.Exter
 	return []tools.ExternalTool{}
 }
 
+func (st *appServiceTarget) Initialize(ctx context.Context, serviceConfig *ServiceConfig) error {
+	return nil
+}
+
 func (st *appServiceTarget) Package(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
@@ -46,8 +50,16 @@ func (st *appServiceTarget) Package(
 ) *async.TaskWithProgress[*ServicePackageResult, ServiceProgress] {
 	return async.RunTaskWithProgress(
 		func(task *async.TaskContextWithProgress[*ServicePackageResult, ServiceProgress]) {
+			task.SetProgress(NewServiceProgress("Compressing deployment artifacts"))
+			zipFilePath, err := internal.CreateDeployableZip(st.config.Name, buildOutput.BuildOutputPath)
+			if err != nil {
+				task.SetError(err)
+				return
+			}
+
 			task.SetResult(&ServicePackageResult{
-				Build: buildOutput,
+				Build:       buildOutput,
+				PackagePath: zipFilePath,
 			})
 		},
 	)
@@ -70,21 +82,13 @@ func (st *appServiceTarget) Publish(
 				return
 			}
 
-			task.SetProgress(NewServiceProgress("Publishing deployment package"))
-
-			zipFilePath, err := internal.CreateDeployableZip(st.config.Name, packageOutput.PackagePath)
-			if err != nil {
-				task.SetError(err)
-				return
-			}
-
-			zipFile, err := os.Open(zipFilePath)
+			zipFile, err := os.Open(packageOutput.PackagePath)
 			if err != nil {
 				task.SetError(fmt.Errorf("failed reading deployment zip file: %w", err))
 				return
 			}
 
-			defer os.Remove(zipFilePath)
+			defer os.Remove(packageOutput.PackagePath)
 			defer zipFile.Close()
 
 			task.SetProgress(NewServiceProgress("Publishing deployment package"))

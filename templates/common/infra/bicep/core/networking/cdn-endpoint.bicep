@@ -46,6 +46,6 @@ resource cdnProfile 'Microsoft.Cdn/profiles@2022-05-01-preview' existing = {
   name: cdnProfileName
 }
 
-output uri string = 'https://${endpoint.properties.hostName}'
 output id string = endpoint.id
 output name string = endpoint.name
+output uri string = 'https://${endpoint.properties.hostName}'

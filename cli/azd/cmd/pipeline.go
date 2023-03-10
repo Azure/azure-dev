@@ -18,6 +18,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
+	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
@@ -97,14 +98,15 @@ func newPipelineConfigCmd() *cobra.Command {
 
 // pipelineConfigAction defines the action for pipeline config command
 type pipelineConfigAction struct {
-	flags         *pipelineConfigFlags
-	manager       *pipeline.PipelineManager
-	azCli         azcli.AzCli
-	azdCtx        *azdcontext.AzdContext
-	env           *environment.Environment
-	console       input.Console
-	credential    azcore.TokenCredential
-	commandRunner exec.CommandRunner
+	flags          *pipelineConfigFlags
+	manager        *pipeline.PipelineManager
+	azCli          azcli.AzCli
+	azdCtx         *azdcontext.AzdContext
+	env            *environment.Environment
+	console        input.Console
+	credential     azcore.TokenCredential
+	commandRunner  exec.CommandRunner
+	projectManager project.ProjectManager
 }
 
 func newPipelineConfigAction(
@@ -115,18 +117,20 @@ func newPipelineConfigAction(
 	console input.Console,
 	flags *pipelineConfigFlags,
 	commandRunner exec.CommandRunner,
+	projectManager project.ProjectManager,
 ) actions.Action {
 	pca := &pipelineConfigAction{
 		flags:      flags,
 		azCli:      azCli,
 		credential: credential,
 		manager: pipeline.NewPipelineManager(
-			azCli, azdCtx, env, flags.global, commandRunner, console, flags.PipelineManagerArgs,
+			azCli, azdCtx, env, flags.global, commandRunner, console, projectManager, flags.PipelineManagerArgs,
 		),
-		azdCtx:        azdCtx,
-		env:           env,
-		console:       console,
-		commandRunner: commandRunner,
+		azdCtx:         azdCtx,
+		env:            env,
+		console:        console,
+		commandRunner:  commandRunner,
+		projectManager: projectManager,
 	}
 
 	return pca
@@ -144,7 +148,7 @@ func (p *pipelineConfigAction) Run(ctx context.Context) (*actions.ActionResult, 
 	p.manager.ScmProvider,
 		p.manager.CiProvider,
 		err = pipeline.DetectProviders(
-		ctx, p.azdCtx, p.env, p.manager.PipelineProvider, p.console, p.credential, p.commandRunner,
+		ctx, p.azdCtx, p.env, p.manager.PipelineProvider, p.console, p.credential, p.commandRunner, p.projectManager,
 	)
 	if err != nil {
 		return nil, err

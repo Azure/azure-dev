@@ -26,10 +26,14 @@ type ServiceConfig struct {
 	Module string `yaml:"module"`
 	// The optional docker options
 	Docker DockerProjectOptions `yaml:"docker"`
+	// The optional K8S / AKS options
+	K8s AksOptions `yaml:"k8s"`
 	// The infrastructure provisioning configuration
 	Infra provisioning.Options `yaml:"infra"`
 	// Hook configuration for service
 	Hooks map[string]*ext.HookConfig `yaml:"hooks,omitempty"`
+
+	*ext.EventDispatcher[ServiceLifecycleEventArgs] `yaml:",omitempty"`
 }
 
 // Path returns the fully qualified path to the project

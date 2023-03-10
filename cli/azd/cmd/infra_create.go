@@ -76,6 +76,7 @@ Depending on what Azure resources are created, running this command might take a
 type infraCreateAction struct {
 	flags          *infraCreateFlags
 	accountManager account.Manager
+	projectManager project.ProjectManager
 	azdCtx         *azdcontext.AzdContext
 	azCli          azcli.AzCli
 	env            *environment.Environment
@@ -89,6 +90,7 @@ type infraCreateAction struct {
 func newInfraCreateAction(
 	flags *infraCreateFlags,
 	accountManager account.Manager,
+	projectManager project.ProjectManager,
 	azdCtx *azdcontext.AzdContext,
 	projectConfig *project.ProjectConfig,
 	azCli azcli.AzCli,
@@ -101,6 +103,7 @@ func newInfraCreateAction(
 	return &infraCreateAction{
 		flags:          flags,
 		accountManager: accountManager,
+		projectManager: projectManager,
 		azdCtx:         azdCtx,
 		azCli:          azCli,
 		env:            env,
@@ -119,7 +122,7 @@ func (i *infraCreateAction) Run(ctx context.Context) (*actions.ActionResult, err
 		TitleNote: "Provisioning Azure resources can take some time"},
 	)
 
-	if err := i.projectConfig.Initialize(ctx, i.env, i.commandRunner); err != nil {
+	if err := i.projectManager.Initialize(ctx, i.projectConfig); err != nil {
 		return nil, err
 	}
 
@@ -205,7 +208,7 @@ func (i *infraCreateAction) Run(ctx context.Context) (*actions.ActionResult, err
 	return &actions.ActionResult{
 		Message: &actions.ResultMessage{
 			Header:   "Your project has been provisioned!",
-			FollowUp: getResourceGroupFollowUp(ctx, i.formatter, i.azCli, i.projectConfig, i.env),
+			FollowUp: getResourceGroupFollowUp(ctx, i.formatter, i.azCli, i.projectConfig, i.projectManager, i.env),
 		},
 	}, nil
 }

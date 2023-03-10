@@ -27,42 +27,6 @@ type dockerProject struct {
 	framework FrameworkService
 }
 
-func (p *dockerProject) RequiredExternalTools() []tools.ExternalTool {
-	return []tools.ExternalTool{p.docker}
-}
-
-func (p *dockerProject) Build(ctx context.Context) *async.TaskWithProgress[*ServiceBuildResult, ServiceProgress] {
-	dockerOptions := getDockerOptionsWithDefaults(p.config.Docker)
-
-	log.Printf(
-		"building image for service %s, cwd: %s, path: %s, context: %s)",
-		p.config.Name,
-		p.config.Path(),
-		dockerOptions.Path,
-		dockerOptions.Context,
-	)
-
-	// Build the container
-	progress <- "Building docker image"
-	imageId, err := p.docker.Build(ctx, p.config.Path(), dockerOptions.Path, dockerOptions.Platform, dockerOptions.Context)
-	if err != nil {
-		return "", fmt.Errorf("building container: %s at %s: %w", p.config.Name, dockerOptions.Context, err)
-	}
-
-	log.Printf("built image %s for %s", imageId, p.config.Name)
-	return imageId, nil
-}
-
-func (p *dockerProject) Restore(ctx context.Context) error {
-	// When the program runs the restore actions for the underlying project (containerapp),
-	// the dependencies are installed locally
-	return p.framework.Restore(ctx)
-}
-
-func (p *dockerProject) Initialize(ctx context.Context) error {
-	return nil
-}
-
 func NewDockerProject(
 	config *ServiceConfig,
 	env *environment.Environment,
@@ -70,11 +34,65 @@ func NewDockerProject(
 	framework FrameworkService,
 ) FrameworkService {
 	return &dockerProject{
-		config:    config,
 		env:       env,
 		docker:    docker,
 		framework: framework,
 	}
+}
+
+func (p *dockerProject) RequiredExternalTools(context.Context) []tools.ExternalTool {
+	return []tools.ExternalTool{p.docker}
+}
+
+func (p *dockerProject) Initialize(ctx context.Context, serviceConfig *ServiceConfig) error {
+	return nil
+}
+
+func (p *dockerProject) Restore(
+	ctx context.Context,
+	serviceConfig *ServiceConfig,
+) *async.TaskWithProgress[*ServiceRestoreResult, ServiceProgress] {
+	// When the program runs the restore actions for the underlying project (containerapp),
+	// the dependencies are installed locally
+	return p.framework.Restore(ctx, serviceConfig)
+}
+
+func (p *dockerProject) Build(
+	ctx context.Context,
+	serviceConfig *ServiceConfig,
+) *async.TaskWithProgress[*ServiceBuildResult, ServiceProgress] {
+	return async.RunTaskWithProgress(
+		func(task *async.TaskContextWithProgress[*ServiceBuildResult, ServiceProgress]) {
+			dockerOptions := getDockerOptionsWithDefaults(serviceConfig.Docker)
+
+			log.Printf(
+				"building image for service %s, cwd: %s, path: %s, context: %s)",
+				serviceConfig.Name,
+				serviceConfig.Path(),
+				dockerOptions.Path,
+				dockerOptions.Context,
+			)
+
+			// Build the container
+			task.SetProgress(NewServiceProgress("Building docker image"))
+			imageId, err := p.docker.Build(
+				ctx,
+				serviceConfig.Path(),
+				dockerOptions.Path,
+				dockerOptions.Platform,
+				dockerOptions.Context,
+			)
+			if err != nil {
+				task.SetError(fmt.Errorf("building container: %s at %s: %w", serviceConfig.Name, dockerOptions.Context, err))
+				return
+			}
+
+			log.Printf("built image %s for %s", imageId, serviceConfig.Name)
+			task.SetResult(&ServiceBuildResult{
+				BuildOutputPath: imageId,
+			})
+		},
+	)
 }
 
 func getDockerOptionsWithDefaults(options DockerProjectOptions) DockerProjectOptions {

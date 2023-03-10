@@ -362,10 +362,11 @@ func getResourceGroupFollowUp(
 	formatter output.Formatter,
 	azCli azcli.AzCli,
 	projectConfig *project.ProjectConfig,
+	projectManager project.ProjectManager,
 	env *environment.Environment,
 ) (followUp string) {
 	if formatter.Kind() != output.JsonFormat {
-		if resourceGroupName, err := project.GetResourceGroupName(ctx, azCli, projectConfig, env); err == nil {
+		if resourceGroupName, err := projectManager.GetResourceGroupName(ctx, projectConfig); err == nil {
 			followUp = fmt.Sprintf("You can view the resources created under the resource group %s in Azure Portal:\n%s",
 				resourceGroupName, output.WithLinkFormat(fmt.Sprintf(
 					"https://portal.azure.com/#@/resource/subscriptions/%s/resourceGroups/%s/overview",

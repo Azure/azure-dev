@@ -55,13 +55,14 @@ func restoreCmdDesign() *cobra.Command {
 }
 
 type restoreAction struct {
-	flags         *restoreFlags
-	console       input.Console
-	azCli         azcli.AzCli
-	azdCtx        *azdcontext.AzdContext
-	env           *environment.Environment
-	projectConfig *project.ProjectConfig
-	commandRunner exec.CommandRunner
+	flags          *restoreFlags
+	console        input.Console
+	azCli          azcli.AzCli
+	azdCtx         *azdcontext.AzdContext
+	env            *environment.Environment
+	projectConfig  *project.ProjectConfig
+	serviceManager project.ServiceManager
+	commandRunner  exec.CommandRunner
 }
 
 func newRestoreAction(
@@ -71,16 +72,18 @@ func newRestoreAction(
 	azdCtx *azdcontext.AzdContext,
 	env *environment.Environment,
 	projectConfig *project.ProjectConfig,
+	serviceManager project.ServiceManager,
 	commandRunner exec.CommandRunner,
 ) actions.Action {
 	return &restoreAction{
-		flags:         flags,
-		console:       console,
-		azdCtx:        azdCtx,
-		projectConfig: projectConfig,
-		azCli:         azCli,
-		env:           env,
-		commandRunner: commandRunner,
+		flags:          flags,
+		console:        console,
+		azdCtx:         azdCtx,
+		projectConfig:  projectConfig,
+		serviceManager: serviceManager,
+		azCli:          azCli,
+		env:            env,
+		commandRunner:  commandRunner,
 	}
 }
 
@@ -97,7 +100,7 @@ func (r *restoreAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 	allTools := []tools.ExternalTool{}
 	for _, svc := range r.projectConfig.Services {
 		if r.flags.serviceName == "" || r.flags.serviceName == svc.Name {
-			requiredTools, err := svc.GetRequiredTools(ctx, r.env, r.commandRunner)
+			requiredTools, err := r.serviceManager.GetRequiredTools(ctx, svc)
 			if err != nil {
 				return nil, fmt.Errorf("failed getting required tools, %w", err)
 			}
@@ -118,7 +121,12 @@ func (r *restoreAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 		installMsg := fmt.Sprintf("Installing dependencies for %s service...", svc.Name)
 		spinner := spin.NewSpinner(r.console.Handles().Stdout, installMsg)
 		if err := spinner.Run(func() error {
-			return svc.Restore(ctx, r.env, r.commandRunner)
+			restoreTask := r.serviceManager.Restore(ctx, svc)
+			_, err := restoreTask.Await()
+			if err != nil {
+				return err
+			}
+			return nil
 		}); err != nil {
 			return nil, err
 		}

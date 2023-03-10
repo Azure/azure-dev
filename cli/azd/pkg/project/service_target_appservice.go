@@ -9,9 +9,9 @@ import (
 	"os"
 	"strings"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
-	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/project/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
@@ -19,78 +19,117 @@ import (
 )
 
 type appServiceTarget struct {
-	config   *ServiceConfig
-	env      *environment.Environment
-	resource *environment.TargetResource
-	cli      azcli.AzCli
+	config *ServiceConfig
+	env    *environment.Environment
+	cli    azcli.AzCli
 }
 
-func (st *appServiceTarget) RequiredExternalTools() []tools.ExternalTool {
+func NewAppServiceTarget(
+	env *environment.Environment,
+	azCli azcli.AzCli,
+) ServiceTarget {
+
+	return &appServiceTarget{
+		env: env,
+		cli: azCli,
+	}
+}
+
+func (st *appServiceTarget) RequiredExternalTools(context.Context) []tools.ExternalTool {
 	return []tools.ExternalTool{}
 }
 
-func (st *appServiceTarget) Package(ctx context.Context) error {
-	return nil
+func (st *appServiceTarget) Package(
+	ctx context.Context,
+	serviceConfig *ServiceConfig,
+) *async.TaskWithProgress[*ServicePackageResult, ServiceProgress] {
+	return async.RunTaskWithProgress(
+		func(task *async.TaskContextWithProgress[*ServicePackageResult, ServiceProgress]) {
+			task.SetResult(&ServicePackageResult{})
+		},
+	)
 }
 
 func (st *appServiceTarget) Publish(
 	ctx context.Context,
-	_ *azdcontext.AzdContext,
-	path string,
-	progress chan<- string,
-) (ServiceDeploymentResult, error) {
-	progress <- "Compressing deployment artifacts"
+	serviceConfig *ServiceConfig,
+	servicePackage ServicePackageResult,
+	targetResource *environment.TargetResource,
+) *async.TaskWithProgress[*ServicePublishResult, ServiceProgress] {
+	return async.RunTaskWithProgress(
+		func(task *async.TaskContextWithProgress[*ServicePublishResult, ServiceProgress]) {
+			if !strings.EqualFold(targetResource.ResourceType(), string(infra.AzureResourceTypeWebSite)) {
+				task.SetError(resourceTypeMismatchError(
+					targetResource.ResourceName(),
+					targetResource.ResourceType(),
+					infra.AzureResourceTypeWebSite,
+				))
+				return
+			}
 
-	zipFilePath, err := internal.CreateDeployableZip(st.config.Name, path)
-	if err != nil {
-		return ServiceDeploymentResult{}, err
-	}
+			task.SetProgress(NewServiceProgress("Publishing deployment package"))
 
-	zipFile, err := os.Open(zipFilePath)
-	if err != nil {
-		return ServiceDeploymentResult{}, fmt.Errorf("failed reading deployment zip file: %w", err)
-	}
+			zipFilePath, err := internal.CreateDeployableZip(st.config.Name, servicePackage.PackagePath)
+			if err != nil {
+				task.SetError(err)
+				return
+			}
 
-	defer os.Remove(zipFilePath)
-	defer zipFile.Close()
+			zipFile, err := os.Open(zipFilePath)
+			if err != nil {
+				task.SetError(fmt.Errorf("failed reading deployment zip file: %w", err))
+				return
+			}
 
-	progress <- "Publishing deployment package"
-	res, err := st.cli.DeployAppServiceZip(
-		ctx,
-		st.env.GetSubscriptionId(),
-		st.resource.ResourceGroupName(),
-		st.resource.ResourceName(),
-		zipFile,
+			defer os.Remove(zipFilePath)
+			defer zipFile.Close()
+
+			task.SetProgress(NewServiceProgress("Publishing deployment package"))
+			res, err := st.cli.DeployAppServiceZip(
+				ctx,
+				st.env.GetSubscriptionId(),
+				targetResource.ResourceGroupName(),
+				targetResource.ResourceName(),
+				zipFile,
+			)
+			if err != nil {
+				task.SetError(fmt.Errorf("deploying service %s: %w", st.config.Name, err))
+				return
+			}
+
+			task.SetProgress(NewServiceProgress("Fetching endpoints for app service"))
+			endpoints, err := st.Endpoints(ctx, serviceConfig, targetResource)
+			if err != nil {
+				task.SetError(err)
+				return
+			}
+
+			sdr := NewServicePublishResult(
+				azure.WebsiteRID(
+					st.env.GetSubscriptionId(),
+					targetResource.ResourceGroupName(),
+					targetResource.ResourceName(),
+				),
+				AppServiceTarget,
+				*res,
+				endpoints,
+			)
+
+			task.SetResult(sdr)
+		},
 	)
-	if err != nil {
-		return ServiceDeploymentResult{}, fmt.Errorf("deploying service %s: %w", st.config.Name, err)
-	}
-
-	progress <- "Fetching endpoints for app service"
-	endpoints, err := st.Endpoints(ctx)
-	if err != nil {
-		return ServiceDeploymentResult{}, err
-	}
-
-	sdr := NewServiceDeploymentResult(
-		azure.WebsiteRID(
-			st.env.GetSubscriptionId(),
-			st.resource.ResourceGroupName(),
-			st.resource.ResourceName(),
-		),
-		AppServiceTarget,
-		*res,
-		endpoints,
-	)
-	return sdr, nil
 }
 
-func (st *appServiceTarget) Endpoints(ctx context.Context) ([]string, error) {
+func (st *appServiceTarget) Endpoints(
+	ctx context.Context,
+	serviceConfig *ServiceConfig,
+	targetResource *environment.TargetResource,
+) ([]string, error) {
 	appServiceProperties, err := st.cli.GetAppServiceProperties(
 		ctx,
 		st.env.GetSubscriptionId(),
-		st.resource.ResourceGroupName(),
-		st.resource.ResourceName(),
+		targetResource.ResourceGroupName(),
+		targetResource.ResourceName(),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("fetching service properties: %w", err)
@@ -102,26 +141,4 @@ func (st *appServiceTarget) Endpoints(ctx context.Context) ([]string, error) {
 	}
 
 	return endpoints, nil
-}
-
-func NewAppServiceTarget(
-	config *ServiceConfig,
-	env *environment.Environment,
-	resource *environment.TargetResource,
-	azCli azcli.AzCli,
-) (ServiceTarget, error) {
-	if !strings.EqualFold(resource.ResourceType(), string(infra.AzureResourceTypeWebSite)) {
-		return nil, resourceTypeMismatchError(
-			resource.ResourceName(),
-			resource.ResourceType(),
-			infra.AzureResourceTypeWebSite,
-		)
-	}
-
-	return &appServiceTarget{
-		config:   config,
-		env:      env,
-		resource: resource,
-		cli:      azCli,
-	}, nil
 }

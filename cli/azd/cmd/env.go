@@ -342,6 +342,7 @@ func newEnvRefreshCmd() *cobra.Command {
 type envRefreshAction struct {
 	azdCtx         *azdcontext.AzdContext
 	projectConfig  *project.ProjectConfig
+	projectManager project.ProjectManager
 	accountManager account.Manager
 	azCli          azcli.AzCli
 	env            *environment.Environment
@@ -357,6 +358,7 @@ func newEnvRefreshAction(
 	projectConfig *project.ProjectConfig,
 	azCli azcli.AzCli,
 	accountManager account.Manager,
+	projectManager project.ProjectManager,
 	env *environment.Environment,
 	commandRunner exec.CommandRunner,
 	flags *envRefreshFlags,
@@ -368,6 +370,7 @@ func newEnvRefreshAction(
 		azdCtx:         azdCtx,
 		azCli:          azCli,
 		accountManager: accountManager,
+		projectManager: projectManager,
 		env:            env,
 		flags:          flags,
 		console:        console,
@@ -414,7 +417,7 @@ func (ef *envRefreshAction) Run(ctx context.Context) (*actions.ActionResult, err
 		}
 	}
 
-	if err = ef.projectConfig.Initialize(ctx, ef.env, ef.commandRunner); err != nil {
+	if err = ef.projectManager.Initialize(ctx, ef.projectConfig); err != nil {
 		return nil, err
 	}
 

@@ -10,25 +10,45 @@ import (
 	"time"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
+	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/azureutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/ext"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/docker"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/kubectl"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/swa"
+	"github.com/benbjohnson/clock"
 )
 
 const (
 	defaultServiceTag = "azd-service-name"
+
+	ServiceEventEnvUpdated ext.Event = "environment updated"
+	ServiceEventRestore    ext.Event = "restore"
+	ServiceEventBuild      ext.Event = "build"
+	ServiceEventPackage    ext.Event = "package"
+	ServiceEventPublish    ext.Event = "publish"
+	ServiceEventDeploy     ext.Event = "deploy"
+)
+
+var (
+	ServiceEvents []ext.Event = []ext.Event{
+		ServiceEventEnvUpdated,
+		ServiceEventRestore,
+		ServiceEventPackage,
+		ServiceEventDeploy,
+	}
 )
 
 type ServiceDeploymentChannelResponse struct {
 	// The result of a service deploy operation
-	Result *ServiceDeploymentResult
+	Result *ServicePublishResult
 	// The error that may have occurred during a deploy operation
 	Error error
 }
@@ -54,7 +74,7 @@ type ServiceRestoreResult struct {
 }
 
 type ServiceBuildResult struct {
-	OutputPath string
+	BuildOutputPath string
 }
 
 type ServicePackageResult struct {
@@ -62,35 +82,83 @@ type ServicePackageResult struct {
 }
 
 type ServicePublishResult struct {
+	// Related Azure resource ID
+	TargetResourceId string            `json:"targetResourceId"`
+	Kind             ServiceTargetKind `json:"kind"`
+	Details          interface{}       `json:"details"`
+	Endpoints        []string          `json:"endpoints"`
 }
 
 type ServiceDeployResult struct {
+	*ServiceRestoreResult
+	*ServiceBuildResult
+	*ServicePackageResult
+	*ServicePublishResult
 }
 
 type ServiceManager interface {
 	GetRequiredTools(ctx context.Context, serviceConfig *ServiceConfig) ([]tools.ExternalTool, error)
 
-	Restore(ctx context.Context, serviceConfig *ServiceConfig) (*ServiceRestoreResult, error)
-	Build(ctx context.Context, serviceConfig *ServiceConfig) (*ServiceBuildResult, error)
-	Package(ctx context.Context, serviceConfig *ServiceConfig) (*ServicePackageResult, error)
-	Publish(ctx context.Context, serviceConfig *ServiceConfig) (*ServicePublishResult, error)
-	Deploy(ctx context.Context, serviceConfig *ServiceConfig) (*ServiceDeployResult, error)
+	Restore(
+		ctx context.Context,
+		serviceConfig *ServiceConfig,
+	) *async.TaskWithProgress[*ServiceRestoreResult, ServiceProgress]
+	Build(ctx context.Context, serviceConfig *ServiceConfig) *async.TaskWithProgress[*ServiceBuildResult, ServiceProgress]
+	Package(
+		ctx context.Context,
+		serviceConfig *ServiceConfig,
+	) *async.TaskWithProgress[*ServicePackageResult, ServiceProgress]
+	Publish(
+		ctx context.Context,
+		serviceConfig *ServiceConfig,
+		servicePackage ServicePackageResult,
+	) *async.TaskWithProgress[*ServicePublishResult, ServiceProgress]
+	Deploy(ctx context.Context, serviceConfig *ServiceConfig) *async.TaskWithProgress[*ServiceDeployResult, ServiceProgress]
 
 	GetFrameworkService(ctx context.Context, serviceConfig *ServiceConfig) (FrameworkService, error)
-	GetServiceTarget(ctx context.Context, serviceConfig *ServiceConfig, resource *environment.TargetResource) (ServiceTarget, error)
-	GetServiceResources(ctx context.Context, serviceConfig *ServiceConfig, resourceGroupName string) ([]azcli.AzCliResource, error)
-	GetServiceResource(ctx context.Context, serviceConfig *ServiceConfig, resourceGroupName string, rerunCommand string) (azcli.AzCliResource, error)
+	GetServiceTarget(
+		ctx context.Context,
+		serviceConfig *ServiceConfig,
+		resource *environment.TargetResource,
+	) (ServiceTarget, error)
+	GetServiceResources(
+		ctx context.Context,
+		serviceConfig *ServiceConfig,
+		resourceGroupName string,
+	) ([]azcli.AzCliResource, error)
+	GetServiceResource(
+		ctx context.Context,
+		serviceConfig *ServiceConfig,
+		resourceGroupName string,
+		rerunCommand string,
+	) (azcli.AzCliResource, error)
 }
 
 type serviceManager struct {
-	*ext.EventDispatcher[ServiceLifecycleEventArgs]
-
 	azdContext     *azdcontext.AzdContext
 	env            *environment.Environment
 	commandRunner  exec.CommandRunner
 	azCli          azcli.AzCli
 	console        input.Console
 	accountManager account.Manager
+}
+
+func NewServiceManager(
+	azdContext *azdcontext.AzdContext,
+	env *environment.Environment,
+	commandRunner exec.CommandRunner,
+	azCli azcli.AzCli,
+	console input.Console,
+	accountManager account.Manager,
+) ServiceManager {
+	return &serviceManager{
+		azdContext:     azdContext,
+		env:            env,
+		commandRunner:  commandRunner,
+		azCli:          azCli,
+		console:        console,
+		accountManager: accountManager,
+	}
 }
 
 // Gets a list of required tools for the current service
@@ -111,185 +179,262 @@ func (sm *serviceManager) GetRequiredTools(ctx context.Context, serviceConfig *S
 	}
 
 	requiredTools := []tools.ExternalTool{}
-	requiredTools = append(requiredTools, frameworkService.RequiredExternalTools()...)
-	requiredTools = append(requiredTools, serviceTarget.RequiredExternalTools()...)
+	requiredTools = append(requiredTools, frameworkService.RequiredExternalTools(ctx)...)
+	requiredTools = append(requiredTools, serviceTarget.RequiredExternalTools(ctx)...)
 
 	return requiredTools, nil
 }
 
-func (sm *serviceManager) Restore(ctx context.Context, serviceConfig *ServiceConfig) (*ServiceRestoreResult, error) {
-	eventArgs := ServiceLifecycleEventArgs{
-		Project: serviceConfig.Project,
-		Service: serviceConfig,
-	}
-
-	err := sm.Invoke(ctx, ServiceEventRestore, eventArgs, func() error {
+func (sm *serviceManager) Restore(
+	ctx context.Context,
+	serviceConfig *ServiceConfig,
+) *async.TaskWithProgress[*ServiceRestoreResult, ServiceProgress] {
+	return async.RunTaskWithProgress(func(task *async.TaskContextWithProgress[*ServiceRestoreResult, ServiceProgress]) {
 		frameworkService, err := sm.GetFrameworkService(ctx, serviceConfig)
 		if err != nil {
-			return fmt.Errorf("getting framework services: %w", err)
+			task.SetError(fmt.Errorf("getting framework services: %w", err))
+			return
 		}
 
-		if err := frameworkService.Restore(ctx); err != nil {
-			return fmt.Errorf("failed installing dependencies, %w", err)
+		restoreResult, err := runCommand(
+			ctx,
+			task,
+			ServiceEventRestore,
+			serviceConfig,
+			func() *async.TaskWithProgress[*ServiceRestoreResult, ServiceProgress] {
+				return frameworkService.Restore(ctx, serviceConfig)
+			},
+		)
+
+		if err != nil {
+			task.SetError(fmt.Errorf("failed restoring service '%s': %w", serviceConfig.Name, err))
+			return
 		}
 
-		return nil
+		task.SetResult(restoreResult)
 	})
-
-	if err != nil {
-		return nil, err
-	}
-
-	return &ServiceRestoreResult{}, nil
 }
 
-func (sm *serviceManager) Build(ctx context.Context, serviceConfig *ServiceConfig) (*ServiceBuildResult, error) {
-	// frameworkService, err := sm.GetFrameworkService(ctx, serviceConfig)
-	// if err != nil {
-	// 	return nil, err
-	// }
+func (sm *serviceManager) Build(
+	ctx context.Context,
+	serviceConfig *ServiceConfig,
+) *async.TaskWithProgress[*ServiceBuildResult, ServiceProgress] {
+	return async.RunTaskWithProgress(func(task *async.TaskContextWithProgress[*ServiceBuildResult, ServiceProgress]) {
+		frameworkService, err := sm.GetFrameworkService(ctx, serviceConfig)
+		if err != nil {
+			task.SetError(fmt.Errorf("getting framework services: %w", err))
+			return
+		}
 
-	// _, err := frameworkService.Build(ctx)
-	// if err != nil {
-	// 	return nil, err
-	// }
+		buildResult, err := runCommand(
+			ctx,
+			task,
+			ServiceEventBuild,
+			serviceConfig,
+			func() *async.TaskWithProgress[*ServiceBuildResult, ServiceProgress] {
+				return frameworkService.Build(ctx, serviceConfig)
+			},
+		)
 
-	return &ServiceBuildResult{}, nil
+		if err != nil {
+			task.SetError(fmt.Errorf("failed building service '%s': %w", serviceConfig.Name, err))
+			return
+		}
+
+		task.SetResult(buildResult)
+	})
 }
 
-func (sm *serviceManager) Package(ctx context.Context, serviceConfig *ServiceConfig) (*ServicePackageResult, error) {
-	targetResource, err := sm.getTargetResource(ctx, serviceConfig)
-	if err != nil {
-		return nil, err
-	}
+func (sm *serviceManager) Package(
+	ctx context.Context,
+	serviceConfig *ServiceConfig,
+) *async.TaskWithProgress[*ServicePackageResult, ServiceProgress] {
+	return async.RunTaskWithProgress(func(task *async.TaskContextWithProgress[*ServicePackageResult, ServiceProgress]) {
+		targetResource, err := sm.getTargetResource(ctx, serviceConfig)
+		if err != nil {
+			task.SetError(fmt.Errorf("getting target resource: %w", err))
+			return
+		}
 
-	serviceTarget, err := sm.GetServiceTarget(ctx, serviceConfig, targetResource)
-	if err != nil {
-		return nil, err
-	}
+		serviceTarget, err := sm.GetServiceTarget(ctx, serviceConfig, targetResource)
+		if err != nil {
+			task.SetError(fmt.Errorf("getting service target: %w", err))
+			return
+		}
 
-	if err := serviceTarget.Package(ctx); err != nil {
-		return nil, err
-	}
+		packageResult, err := runCommand(
+			ctx,
+			task,
+			ServiceEventPackage,
+			serviceConfig,
+			func() *async.TaskWithProgress[*ServicePackageResult, ServiceProgress] {
+				return serviceTarget.Package(ctx, serviceConfig)
+			},
+		)
 
-	return &ServicePackageResult{}, nil
+		if err != nil {
+			task.SetError(fmt.Errorf("failed packaging service '%s': %w", serviceConfig.Name, err))
+			return
+		}
+
+		task.SetResult(packageResult)
+	})
 }
 
-func (sm *serviceManager) Publish(ctx context.Context, serviceConfig *ServiceConfig) (*ServicePublishResult, error) {
-	// targetResource, err := sm.getTargetResource(ctx, serviceConfig)
-	// if err != nil {
-	// 	return nil, err
-	// }
+func (sm *serviceManager) Publish(
+	ctx context.Context,
+	serviceConfig *ServiceConfig,
+	servicePackage ServicePackageResult,
+) *async.TaskWithProgress[*ServicePublishResult, ServiceProgress] {
+	return async.RunTaskWithProgress(func(task *async.TaskContextWithProgress[*ServicePublishResult, ServiceProgress]) {
+		targetResource, err := sm.getTargetResource(ctx, serviceConfig)
+		if err != nil {
+			task.SetError(fmt.Errorf("getting target resource: %w", err))
+			return
+		}
 
-	// serviceTarget, err := sm.GetServiceTarget(ctx, serviceConfig, targetResource)
-	// if err != nil {
-	// 	return nil, err
-	// }
+		serviceTarget, err := sm.GetServiceTarget(ctx, serviceConfig, targetResource)
+		if err != nil {
+			task.SetError(fmt.Errorf("getting service target: %w", err))
+			return
+		}
 
-	//return serviceTarget.Publish(ctx)
-	return &ServicePublishResult{}, nil
+		publishResult, err := runCommand(
+			ctx,
+			task,
+			ServiceEventPublish,
+			serviceConfig,
+			func() *async.TaskWithProgress[*ServicePublishResult, ServiceProgress] {
+				return serviceTarget.Publish(ctx, serviceConfig, servicePackage, targetResource)
+			},
+		)
+
+		if err != nil {
+			task.SetError(fmt.Errorf("failed publishing service '%s': %w", serviceConfig.Name, err))
+			return
+		}
+
+		task.SetResult(publishResult)
+	})
 }
 
-func (sm *serviceManager) Deploy(ctx context.Context, serviceConfig *ServiceConfig) (*ServiceDeployResult, error) {
-	return nil, nil
-}
+func (sm *serviceManager) Deploy(
+	ctx context.Context,
+	serviceConfig *ServiceConfig,
+) *async.TaskWithProgress[*ServiceDeployResult, ServiceProgress] {
+	return async.RunTaskWithProgress(func(task *async.TaskContextWithProgress[*ServiceDeployResult, ServiceProgress]) {
+		var result *ServiceDeployResult
 
-func (sm *serviceManager) DeployLegacy(ctx context.Context, serviceConfig *ServiceConfig) (<-chan *ServiceDeploymentChannelResponse, <-chan string) {
-	result := make(chan *ServiceDeploymentChannelResponse, 1)
-	progress := make(chan string)
+		serviceEventArgs := ServiceLifecycleEventArgs{
+			Project: serviceConfig.Project,
+			Service: serviceConfig,
+		}
 
-	serviceEventArgs := ServiceLifecycleEventArgs{
-		Project: serviceConfig.Project,
-		Service: serviceConfig,
-	}
-
-	go func() {
-		defer close(result)
-		defer close(progress)
-
-		//var deploymentArtifact string
-
-		err := sm.Invoke(ctx, ServiceEventPackage, serviceEventArgs, func() error {
-			log.Printf("packing service %s", serviceConfig.Name)
-
-			progress <- "Preparing packaging"
-			_, err := sm.Build(ctx, serviceConfig)
+		err := serviceConfig.Invoke(ctx, ServiceEventDeploy, serviceEventArgs, func() error {
+			restoreTask := sm.Restore(ctx, serviceConfig)
+			go syncProgress(task, restoreTask.Progress())
+			restoreResult, err := restoreTask.Await()
 			if err != nil {
-				result <- &ServiceDeploymentChannelResponse{
-					Error: fmt.Errorf("packaging service %s: %w", serviceConfig.Name, err),
-				}
+				return err
 			}
 
-			//deploymentArtifact = buildResult.OutputPath
+			buildTask := sm.Build(ctx, serviceConfig)
+			go syncProgress(task, buildTask.Progress())
+			buildResult, err := buildTask.Await()
+			if err != nil {
+				return err
+			}
+
+			packageTask := sm.Package(ctx, serviceConfig)
+			go syncProgress(task, packageTask.Progress())
+			packageResult, err := packageTask.Await()
+			if err != nil {
+				return err
+			}
+
+			publishTask := sm.Publish(ctx, serviceConfig, *packageResult)
+			go syncProgress(task, publishTask.Progress())
+			publishResult, err := publishTask.Await()
+			if err != nil {
+				return err
+			}
+
+			result = &ServiceDeployResult{
+				ServiceRestoreResult: restoreResult,
+				ServiceBuildResult:   buildResult,
+				ServicePackageResult: packageResult,
+				ServicePublishResult: publishResult,
+			}
+
 			return nil
 		})
 
 		if err != nil {
-			result <- &ServiceDeploymentChannelResponse{
-				Error: err,
-			}
+			task.SetError(fmt.Errorf("failed deploying service '%s': %w", serviceConfig.Name, err))
 			return
 		}
 
-		var deployResult ServiceDeploymentResult
-
-		err = sm.Invoke(ctx, ServiceEventDeploy, serviceEventArgs, func() error {
-			log.Printf("deploying service %s", serviceConfig.Name)
-
-			progress <- "Preparing for deployment"
-			//res, err := sm.Publish(ctx, sm.azdContext, deploymentArtifact, progress)
-			_, err := sm.Publish(ctx, serviceConfig)
-			if err != nil {
-				result <- &ServiceDeploymentChannelResponse{
-					Error: fmt.Errorf("deploying service %s package: %w", serviceConfig.Name, err),
-				}
-			}
-
-			// deployResult = res
-			return nil
-		})
-
-		if err != nil {
-			result <- &ServiceDeploymentChannelResponse{
-				Error: err,
-			}
-			return
-		}
-
-		// Allow users to specify their own endpoints, in cases where they've configured their own front-end load balancers,
-		// reverse proxies or DNS host names outside of the service target (and prefer that to be used instead).
-		overriddenEndpoints := sm.getOverriddenEndpoints(ctx, serviceConfig)
-		if len(overriddenEndpoints) > 0 {
-			deployResult.Endpoints = overriddenEndpoints
-		}
-
-		log.Printf("deployed service %s", serviceConfig.Name)
-		progress <- "Deployment completed"
-
-		result <- &ServiceDeploymentChannelResponse{
-			Result: &deployResult,
-		}
-	}()
-
-	return result, progress
+		task.SetProgress(NewServiceProgress("Deployment completed"))
+		task.SetResult(result)
+	})
 }
 
 // GetServiceTarget constructs a ServiceTarget from the underlying service configuration
-func (sm *serviceManager) GetServiceTarget(ctx context.Context, serviceConfig *ServiceConfig, resource *environment.TargetResource) (ServiceTarget, error) {
+func (sm *serviceManager) GetServiceTarget(
+	ctx context.Context,
+	serviceConfig *ServiceConfig,
+	resource *environment.TargetResource,
+) (ServiceTarget, error) {
 	var target ServiceTarget
 	var err error
 
 	switch serviceConfig.Host {
 	case "", string(AppServiceTarget):
-		target, err = NewAppServiceTarget(serviceConfig, sm.env, resource, sm.azCli)
+		target = NewAppServiceTarget(sm.env, sm.azCli)
 	case string(ContainerAppTarget):
+		// TODO: (azure/azure-dev#1657)
+		// Using IoC container directly here is a work around till we can expose a
+		// dynamic service location to resolve these configuration based dependencies
+		var containerRegistryService azcli.ContainerRegistryService
+		if err := ioc.Global.Resolve(&containerRegistryService); err != nil {
+			return nil, err
+		}
+
 		target, err = NewContainerAppTarget(
-			serviceConfig, sm.env, resource, sm.azCli, docker.NewDocker(sm.commandRunner), sm.console, sm.commandRunner, sm.accountManager,
+			sm.env,
+			containerRegistryService,
+			sm.azCli,
+			docker.NewDocker(sm.commandRunner),
+			sm.console,
+			sm.commandRunner,
+			sm.accountManager,
+		)
+	case string(AksTarget):
+		// TODO: (azure/azure-dev#1657)
+		// Using IoC container directly here is a work around till we can expose a
+		// dynamic service location to resolve these configuration based dependencies
+		var managedClustersService azcli.ManagedClustersService
+		if err := ioc.Global.Resolve(&managedClustersService); err != nil {
+			return nil, err
+		}
+
+		var containerRegistryService azcli.ContainerRegistryService
+		if err := ioc.Global.Resolve(&containerRegistryService); err != nil {
+			return nil, err
+		}
+
+		target, err = NewAksTarget(
+			sm.env,
+			managedClustersService,
+			containerRegistryService,
+			kubectl.NewKubectl(sm.commandRunner),
+			docker.NewDocker(sm.commandRunner),
+			clock.New(),
 		)
 	case string(AzureFunctionTarget):
-		target, err = NewFunctionAppTarget(serviceConfig, sm.env, resource, sm.azCli)
+		target = NewFunctionAppTarget(sm.env, sm.azCli)
 	case string(StaticWebAppTarget):
-		target, err = NewStaticWebAppTarget(serviceConfig, sm.env, resource, sm.azCli, swa.NewSwaCli(sm.commandRunner))
+		target = NewStaticWebAppTarget(sm.env, sm.azCli, swa.NewSwaCli(sm.commandRunner))
 	default:
 		return nil, fmt.Errorf("unsupported host '%s' for service '%s'", serviceConfig.Host, serviceConfig.Name)
 	}
@@ -307,13 +452,13 @@ func (sm *serviceManager) GetFrameworkService(ctx context.Context, serviceConfig
 
 	switch serviceConfig.Language {
 	case "", "dotnet", "csharp", "fsharp":
-		frameworkService = NewDotNetProject(sm.commandRunner, serviceConfig, sm.env)
+		frameworkService = NewDotNetProject(sm.commandRunner, sm.env)
 	case "py", "python":
-		frameworkService = NewPythonProject(sm.commandRunner, serviceConfig, sm.env)
+		frameworkService = NewPythonProject(sm.commandRunner, sm.env)
 	case "js", "ts":
-		frameworkService = NewNpmProject(sm.commandRunner, serviceConfig, sm.env)
+		frameworkService = NewNpmProject(sm.commandRunner, sm.env)
 	case "java":
-		frameworkService = NewMavenProject(sm.commandRunner, serviceConfig, sm.env)
+		frameworkService = NewMavenProject(sm.commandRunner, sm.env)
 	default:
 		return nil, fmt.Errorf("unsupported language '%s' for service '%s'", serviceConfig.Language, serviceConfig.Name)
 	}
@@ -327,7 +472,10 @@ func (sm *serviceManager) GetFrameworkService(ctx context.Context, serviceConfig
 	return frameworkService, nil
 }
 
-func (sm *serviceManager) getTargetResource(ctx context.Context, serviceConfig *ServiceConfig) (*environment.TargetResource, error) {
+func (sm *serviceManager) getTargetResource(
+	ctx context.Context,
+	serviceConfig *ServiceConfig,
+) (*environment.TargetResource, error) {
 	resourceGroupName, err := serviceConfig.Project.ResourceGroupName.Envsubst(sm.env.Getenv)
 	if err != nil {
 		return nil, err
@@ -350,7 +498,11 @@ func (sm *serviceManager) getTargetResource(ctx context.Context, serviceConfig *
 //
 // If an explicit `ResourceName` is specified in `azure.yaml`, a resource with that name is searched for.
 // Otherwise, searches for resources with 'azd-service-name' tag set to the service key.
-func (sm *serviceManager) GetServiceResources(ctx context.Context, serviceConfig *ServiceConfig, resourceGroupName string) ([]azcli.AzCliResource, error) {
+func (sm *serviceManager) GetServiceResources(
+	ctx context.Context,
+	serviceConfig *ServiceConfig,
+	resourceGroupName string,
+) ([]azcli.AzCliResource, error) {
 	filter := fmt.Sprintf("tagName eq '%s' and tagValue eq '%s'", defaultServiceTag, serviceConfig.Name)
 
 	subst, err := serviceConfig.ResourceName.Envsubst(sm.env.Getenv)
@@ -376,8 +528,12 @@ func (sm *serviceManager) GetServiceResources(ctx context.Context, serviceConfig
 //
 // rerunCommand specifies the command that users should rerun in case of misconfiguration.
 // This is included in the error message if applicable
-func (sm *serviceManager) GetServiceResource(ctx context.Context, serviceConfig *ServiceConfig, resourceGroupName string, rerunCommand string) (azcli.AzCliResource, error) {
-
+func (sm *serviceManager) GetServiceResource(
+	ctx context.Context,
+	serviceConfig *ServiceConfig,
+	resourceGroupName string,
+	rerunCommand string,
+) (azcli.AzCliResource, error) {
 	expandedResourceName, err := serviceConfig.ResourceName.Envsubst(sm.env.Getenv)
 	if err != nil {
 		return azcli.AzCliResource{}, fmt.Errorf("expanding name: %w", err)
@@ -435,7 +591,12 @@ func (sm *serviceManager) GetServiceResource(ctx context.Context, serviceConfig 
 }
 
 // resolveServiceResource resolves the service resource during service construction
-func (sm *serviceManager) resolveServiceResource(ctx context.Context, serviceConfig *ServiceConfig, resourceGroupName string, rerunCommand string) (azcli.AzCliResource, error) {
+func (sm *serviceManager) resolveServiceResource(
+	ctx context.Context,
+	serviceConfig *ServiceConfig,
+	resourceGroupName string,
+	rerunCommand string,
+) (azcli.AzCliResource, error) {
 	azureResource, err := sm.GetServiceResource(ctx, serviceConfig, resourceGroupName, rerunCommand)
 
 	// If the service target supports delayed provisioning, the resource isn't expected to be found yet.
@@ -472,4 +633,44 @@ func (sm *serviceManager) getOverriddenEndpoints(ctx context.Context, serviceCon
 	}
 
 	return nil
+}
+
+func runCommand[T comparable, P comparable](
+	ctx context.Context,
+	task *async.TaskContextWithProgress[T, P],
+	eventName ext.Event,
+	serviceConfig *ServiceConfig,
+	taskFunc func() *async.TaskWithProgress[T, P],
+) (T, error) {
+	eventArgs := ServiceLifecycleEventArgs{
+		Project: serviceConfig.Project,
+		Service: serviceConfig,
+	}
+
+	var result T
+
+	err := serviceConfig.Invoke(ctx, eventName, eventArgs, func() error {
+		serviceTask := taskFunc()
+		go syncProgress(task, serviceTask.Progress())
+
+		taskResult, err := serviceTask.Await()
+		if err != nil {
+			return err
+		}
+
+		result = taskResult
+		return nil
+	})
+
+	if err != nil {
+		return result, err
+	}
+
+	return result, nil
+}
+
+func syncProgress[T comparable, P comparable](task *async.TaskContextWithProgress[T, P], progressChannel <-chan P) {
+	for progress := range progressChannel {
+		task.SetProgress(progress)
+	}
 }

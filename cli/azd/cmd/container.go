@@ -244,18 +244,20 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	)
 
 	// Project Config
-	container.RegisterSingleton(func(azdContext *azdcontext.AzdContext) (*project.ProjectConfig, error) {
-		if azdContext == nil {
-			return nil, azdcontext.ErrNoProject
-		}
+	container.RegisterSingleton(
+		func(ctx context.Context, azdContext *azdcontext.AzdContext, projectManager project.ProjectManager) (*project.ProjectConfig, error) {
+			if azdContext == nil {
+				return nil, azdcontext.ErrNoProject
+			}
 
-		projectConfig, err := project.LoadProjectConfig(azdContext.ProjectPath())
-		if err != nil {
-			return nil, err
-		}
+			projectConfig, err := projectManager.Load(ctx, azdContext.ProjectPath())
+			if err != nil {
+				return nil, err
+			}
 
-		return projectConfig, nil
-	})
+			return projectConfig, nil
+		},
+	)
 
 	// Lazy loads the project config from the Azd Context when it becomes available
 	container.RegisterSingleton(func(lazyAzdContext *lazy.Lazy[*azdcontext.AzdContext]) *lazy.Lazy[*project.ProjectConfig] {
@@ -272,6 +274,8 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 		})
 	})
 
+	container.RegisterSingleton(project.NewProjectManager)
+	container.RegisterSingleton(project.NewServiceManager)
 	container.RegisterSingleton(repository.NewInitializer)
 	container.RegisterSingleton(config.NewUserConfigManager)
 	container.RegisterSingleton(config.NewManager)

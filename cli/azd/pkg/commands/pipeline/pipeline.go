@@ -124,10 +124,10 @@ const (
 	envPersistedKey string = "AZD_PIPELINE_PROVIDER"
 )
 
-func resolveProvider(env *environment.Environment, projectPath string) (string, error) {
+func resolveProvider(ctx context.Context, env *environment.Environment, projectManager project.ProjectManager, projectPath string) (string, error) {
 	// 1) if provider is set on azure.yaml, it should override the `lastUsedProvider`, as it can be changed by customer
 	// at any moment.
-	prj, err := project.LoadProjectConfig(projectPath)
+	prj, err := projectManager.Load(ctx, projectPath)
 	if err != nil {
 		return "", fmt.Errorf("finding pipeline provider: %w", err)
 	}
@@ -168,6 +168,7 @@ func DetectProviders(
 	console input.Console,
 	credential azcore.TokenCredential,
 	commandRunner exec.CommandRunner,
+	projectManager project.ProjectManager,
 ) (ScmProvider, CiProvider, error) {
 	projectDir := azdContext.ProjectDirectory()
 
@@ -190,7 +191,8 @@ func DetectProviders(
 	// we can re-assign it based on a previous run (persisted data)
 	// or based on the azure.yaml
 	if overrideWith == "" {
-		resolved, err := resolveProvider(env, azdContext.ProjectPath())
+		resolved, err := resolveProvider(ctx, env, projectManager, azdContext.ProjectPath())
+		_, err = projectManager.Load(ctx, azdContext.ProjectPath())
 		if err != nil {
 			return nil, nil, fmt.Errorf("resolving provider when no provider arg was used: %w", err)
 		}

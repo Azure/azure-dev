@@ -28,28 +28,6 @@ type PipelineOptions struct {
 	Provider string `yaml:"provider"`
 }
 
-const (
-	ProjectEventDeploy     ext.Event = "deploy"
-	ProjectEventProvision  ext.Event = "provision"
-	ServiceEventEnvUpdated ext.Event = "environment updated"
-	ServiceEventRestore    ext.Event = "restore"
-	ServiceEventPackage    ext.Event = "package"
-	ServiceEventDeploy     ext.Event = "deploy"
-)
-
-var (
-	ProjectEvents []ext.Event = []ext.Event{
-		ProjectEventProvision,
-		ProjectEventDeploy,
-	}
-	ServiceEvents []ext.Event = []ext.Event{
-		ServiceEventEnvUpdated,
-		ServiceEventRestore,
-		ServiceEventPackage,
-		ServiceEventDeploy,
-	}
-)
-
 // Project lifecycle event arguments
 type ProjectLifecycleEventArgs struct {
 	Project *ProjectConfig

@@ -24,16 +24,19 @@ import (
 
 // Initializer handles the initialization of a local repository.
 type Initializer struct {
-	console input.Console
-	gitCli  git.GitCli
+	console        input.Console
+	gitCli         git.GitCli
+	projectManager project.ProjectManager
 }
 
 func NewInitializer(
 	console input.Console,
-	gitCli git.GitCli) *Initializer {
+	gitCli git.GitCli,
+	projectManager project.ProjectManager) *Initializer {
 	return &Initializer{
-		console: console,
-		gitCli:  gitCli,
+		console:        console,
+		gitCli:         gitCli,
+		projectManager: projectManager,
 	}
 }
 
@@ -269,7 +272,7 @@ func (i *Initializer) InitializeEmpty(ctx context.Context, azdCtx *azdcontext.Az
 func (i *Initializer) writeAzdAssets(ctx context.Context, azdCtx *azdcontext.AzdContext) error {
 	// Check to see if `azure.yaml` exists, and if it doesn't, create it.
 	if _, err := os.Stat(azdCtx.ProjectPath()); errors.Is(err, os.ErrNotExist) {
-		_, err = project.NewProject(azdCtx.ProjectPath(), azdCtx.GetDefaultProjectName())
+		_, err = i.projectManager.New(ctx, azdCtx.ProjectPath(), azdCtx.GetDefaultProjectName())
 		i.console.MessageUxItem(ctx,
 			&ux.DoneMessage{Message: fmt.Sprintf("Created a new %s file", azdcontext.ProjectFileName)})
 

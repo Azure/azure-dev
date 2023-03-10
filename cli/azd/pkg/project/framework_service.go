@@ -11,8 +11,11 @@ import (
 )
 
 type FrameworkService interface {
+	RequiredExternalTools(ctx context.Context) []tools.ExternalTool
 	Initialize(ctx context.Context, serviceConfig *ServiceConfig) error
-	RequiredExternalTools(ctx context.Context, serviceConfig *ServiceConfig) []tools.ExternalTool
-	Restore(ctx context.Context, serviceConfig *ServiceConfig) error
+	Restore(
+		ctx context.Context,
+		serviceConfig *ServiceConfig,
+	) *async.TaskWithProgress[*ServiceRestoreResult, ServiceProgress]
 	Build(ctx context.Context, serviceConfig *ServiceConfig) *async.TaskWithProgress[*ServiceBuildResult, ServiceProgress]
 }

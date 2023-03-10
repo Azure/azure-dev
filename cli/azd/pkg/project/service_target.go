@@ -9,8 +9,8 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
-	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 )
@@ -25,37 +25,37 @@ const (
 	AksTarget           ServiceTargetKind = "aks"
 )
 
-type ServiceDeploymentResult struct {
-	// Related Azure resource ID
-	TargetResourceId string            `json:"targetResourceId"`
-	Kind             ServiceTargetKind `json:"kind"`
-	Details          interface{}       `json:"details"`
-	Endpoints        []string          `json:"endpoints"`
-}
-
 type ServiceTarget interface {
 	// RequiredExternalTools are the tools needed to run the deploy operation for this
 	// target.
-	RequiredExternalTools() []tools.ExternalTool
-	Package(ctx context.Context) error
+	RequiredExternalTools(ctx context.Context) []tools.ExternalTool
+	// Package prepares artifacts for publishing
+	Package(
+		ctx context.Context,
+		serviceConfig *ServiceConfig,
+	) *async.TaskWithProgress[*ServicePackageResult, ServiceProgress]
 	// Publish deploys the given deployment artifact to the target resource
 	Publish(
 		ctx context.Context,
-		azdCtx *azdcontext.AzdContext,
-		path string,
-		progress chan<- string,
-	) (ServiceDeploymentResult, error)
+		serviceConfig *ServiceConfig,
+		servicePackage ServicePackageResult,
+		targetResource *environment.TargetResource,
+	) *async.TaskWithProgress[*ServicePublishResult, ServiceProgress]
 	// Endpoints gets the endpoints a service exposes.
-	Endpoints(ctx context.Context) ([]string, error)
+	Endpoints(
+		ctx context.Context,
+		serviceConfig *ServiceConfig,
+		targetResource *environment.TargetResource,
+	) ([]string, error)
 }
 
-func NewServiceDeploymentResult(
+func NewServicePublishResult(
 	relatedResourceId string,
 	kind ServiceTargetKind,
 	rawResult string,
 	endpoints []string,
-) ServiceDeploymentResult {
-	returnValue := ServiceDeploymentResult{
+) *ServicePublishResult {
+	returnValue := &ServicePublishResult{
 		TargetResourceId: relatedResourceId,
 		Kind:             kind,
 		Endpoints:        endpoints,

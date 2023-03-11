@@ -197,7 +197,6 @@ func DetectProviders(
 	// or based on the azure.yaml
 	if overrideWith == "" {
 		resolved, err := resolveProvider(ctx, env, projectManager, azdContext.ProjectPath())
-		_, err = projectManager.Load(ctx, azdContext.ProjectPath())
 		if err != nil {
 			return nil, nil, fmt.Errorf("resolving provider when no provider arg was used: %w", err)
 		}

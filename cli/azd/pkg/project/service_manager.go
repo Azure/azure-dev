@@ -18,9 +18,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/docker"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/kubectl"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/swa"
-	"github.com/benbjohnson/clock"
 )
 
 const (
@@ -135,6 +132,7 @@ type serviceManager struct {
 	console         input.Console
 	accountManager  account.Manager
 	resourceManager ResourceManager
+	serviceLocator  ioc.ServiceLocator
 }
 
 func NewServiceManager(
@@ -145,6 +143,7 @@ func NewServiceManager(
 	console input.Console,
 	accountManager account.Manager,
 	resourceManager ResourceManager,
+	serviceLocator ioc.ServiceLocator,
 ) ServiceManager {
 	return &serviceManager{
 		azdContext:      azdContext,
@@ -154,6 +153,7 @@ func NewServiceManager(
 		console:         console,
 		accountManager:  accountManager,
 		resourceManager: resourceManager,
+		serviceLocator:  serviceLocator,
 	}
 }
 
@@ -301,6 +301,13 @@ func (sm *serviceManager) Publish(
 			return
 		}
 
+		// Allow users to specify their own endpoints, in cases where they've configured their own front-end load balancers,
+		// reverse proxies or DNS host names outside of the service target (and prefer that to be used instead).
+		overriddenEndpoints := sm.getOverriddenEndpoints(ctx, serviceConfig)
+		if len(overriddenEndpoints) > 0 {
+			publishResult.Endpoints = overriddenEndpoints
+		}
+
 		task.SetResult(publishResult)
 	})
 }
@@ -366,58 +373,8 @@ func (sm *serviceManager) Deploy(
 // GetServiceTarget constructs a ServiceTarget from the underlying service configuration
 func (sm *serviceManager) GetServiceTarget(ctx context.Context, serviceConfig *ServiceConfig) (ServiceTarget, error) {
 	var target ServiceTarget
-
-	switch serviceConfig.Host {
-	case "", string(AppServiceTarget):
-		target = NewAppServiceTarget(sm.env, sm.azCli)
-	case string(ContainerAppTarget):
-		// TODO: (azure/azure-dev#1657)
-		// Using IoC container directly here is a work around till we can expose a
-		// dynamic service location to resolve these configuration based dependencies
-		var containerRegistryService azcli.ContainerRegistryService
-		if err := ioc.Global.Resolve(&containerRegistryService); err != nil {
-			return nil, err
-		}
-
-		target = NewContainerAppTarget(
-			sm.env,
-			containerRegistryService,
-			sm.azCli,
-			docker.NewDocker(sm.commandRunner),
-			sm.console,
-			sm.commandRunner,
-			sm.accountManager,
-			sm,
-			sm.resourceManager,
-		)
-	case string(AksTarget):
-		// TODO: (azure/azure-dev#1657)
-		// Using IoC container directly here is a work around till we can expose a
-		// dynamic service location to resolve these configuration based dependencies
-		var managedClustersService azcli.ManagedClustersService
-		if err := ioc.Global.Resolve(&managedClustersService); err != nil {
-			return nil, err
-		}
-
-		var containerRegistryService azcli.ContainerRegistryService
-		if err := ioc.Global.Resolve(&containerRegistryService); err != nil {
-			return nil, err
-		}
-
-		target = NewAksTarget(
-			sm.env,
-			managedClustersService,
-			containerRegistryService,
-			kubectl.NewKubectl(sm.commandRunner),
-			docker.NewDocker(sm.commandRunner),
-			clock.New(),
-		)
-	case string(AzureFunctionTarget):
-		target = NewFunctionAppTarget(sm.env, sm.azCli)
-	case string(StaticWebAppTarget):
-		target = NewStaticWebAppTarget(sm.env, sm.azCli, swa.NewSwaCli(sm.commandRunner))
-	default:
-		return nil, fmt.Errorf("unsupported host '%s' for service '%s'", serviceConfig.Host, serviceConfig.Name)
+	if err := sm.serviceLocator.ResolveNamed(serviceConfig.Host, &target); err != nil {
+		return nil, fmt.Errorf("failed resolving service target for '%s', host '%s': %w", serviceConfig.Name, serviceConfig.Host, err)
 	}
 
 	if err := target.Initialize(ctx, serviceConfig); err != nil {
@@ -430,18 +387,8 @@ func (sm *serviceManager) GetServiceTarget(ctx context.Context, serviceConfig *S
 // GetFrameworkService constructs a framework service from the underlying service configuration
 func (sm *serviceManager) GetFrameworkService(ctx context.Context, serviceConfig *ServiceConfig) (FrameworkService, error) {
 	var frameworkService FrameworkService
-
-	switch serviceConfig.Language {
-	case "", "dotnet", "csharp", "fsharp":
-		frameworkService = NewDotNetProject(sm.commandRunner, sm.env)
-	case "py", "python":
-		frameworkService = NewPythonProject(sm.commandRunner, sm.env)
-	case "js", "ts":
-		frameworkService = NewNpmProject(sm.commandRunner, sm.env)
-	case "java":
-		frameworkService = NewMavenProject(sm.commandRunner, sm.env)
-	default:
-		return nil, fmt.Errorf("unsupported language '%s' for service '%s'", serviceConfig.Language, serviceConfig.Name)
+	if err := sm.serviceLocator.ResolveNamed(serviceConfig.Language, &frameworkService); err != nil {
+		return nil, fmt.Errorf("failed resolving framework service for '%s', language '%s': %w", serviceConfig.Name, serviceConfig.Language, err)
 	}
 
 	// For containerized applications we use a nested framework service

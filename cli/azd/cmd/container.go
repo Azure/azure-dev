@@ -331,14 +331,14 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 
 	// Languages
 	container.RegisterNamedSingleton("", project.NewDotNetProject)
-	container.RegisterNamedSingleton("dotnet", project.NewDotNetProject)
-	container.RegisterNamedSingleton("csharp", project.NewDotNetProject)
-	container.RegisterNamedSingleton("fsharp", project.NewDotNetProject)
-	container.RegisterNamedSingleton("python", project.NewPythonProject)
-	container.RegisterNamedSingleton("py", project.NewPythonProject)
-	container.RegisterNamedSingleton("js", project.NewNpmProject)
-	container.RegisterNamedSingleton("ts", project.NewNpmProject)
-	container.RegisterNamedSingleton("java", project.NewMavenProject)
+	container.RegisterNamedSingleton(string(project.ServiceLanguageDotNet), project.NewDotNetProject)
+	container.RegisterNamedSingleton(string(project.ServiceLanguageCsharp), project.NewDotNetProject)
+	container.RegisterNamedSingleton(string(project.ServiceLanguageFsharp), project.NewDotNetProject)
+	container.RegisterNamedSingleton(string(project.ServiceLanguagePython), project.NewPythonProject)
+	container.RegisterNamedSingleton(string(project.ServiceLanguagePy), project.NewPythonProject)
+	container.RegisterNamedSingleton(string(project.ServiceLanguageJavaScript), project.NewNpmProject)
+	container.RegisterNamedSingleton(string(project.ServiceLanguageTypeScript), project.NewNpmProject)
+	container.RegisterNamedSingleton(string(project.ServiceLanguageJava), project.NewMavenProject)
 
 	// Required for nested actions called from composite actions like 'up'
 	registerActionInitializer[*initAction](container, "azd-init-action")

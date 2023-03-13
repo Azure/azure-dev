@@ -6,6 +6,7 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"log"
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
@@ -123,6 +124,11 @@ func (r *restoreAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 		if err := spinner.Run(func() error {
 			restoreTask := r.serviceManager.Restore(ctx, svc)
 			_, err := restoreTask.Await()
+			go func() {
+				for progress := range restoreTask.Progress() {
+					log.Printf("Restore progress: %s\n", progress.Message)
+				}
+			}()
 			if err != nil {
 				return err
 			}

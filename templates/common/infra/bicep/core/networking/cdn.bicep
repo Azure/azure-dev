@@ -1,8 +1,12 @@
 // Module to create a CDN profile with a single endpoint
-param cdnProfileName string
-param cdnEndpointName string
 param location string = resourceGroup().location
 param tags object = {}
+
+@description('Name of the CDN endpoint resource')
+param cdnEndpointName string
+
+@description('Name of the CDN profile resource')
+param cdnProfileName string
 
 @description('Delivery policy rules')
 param deliveryPolicyRules array = []

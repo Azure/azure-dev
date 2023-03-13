@@ -67,5 +67,5 @@ Discussion warranted:
         "command": "npm run start"
     }
   ```
-- Should `azd deploy` deploy only the current service, when the working directory is under a service directory? I personally think this is what users might expect, but I can see an argument against it since `azd deploy --all`
+- Should `azd deploy` deploy only the current service, when the working directory is under a service directory? I personally think this is what users might expect, but I can see an argument against it since it may be implicit behavior.
 - Should `azd deploy --service <service>` be moved to `azd deploy <service>`? I personally feel better about the latter design. We can still allow parsing for `--service`, but remove it in deprecated stage.  If in the future, `azd` supports deploying other things besides services, it could look like: `azd deploy --notAService <notAService name>`.

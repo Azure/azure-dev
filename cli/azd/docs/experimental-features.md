@@ -1,4 +1,4 @@
-# Feature Toggle
+# Experimental Features
 
 The Azure Developer CLI includes a `feature toggle` which allows the cli to ship `in-preview` ( _a.k.a. experimental_ ). This document provides the feature design for it.
 

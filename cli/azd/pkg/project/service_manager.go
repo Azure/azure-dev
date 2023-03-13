@@ -394,7 +394,7 @@ func (sm *serviceManager) GetFrameworkService(ctx context.Context, serviceConfig
 	// For containerized applications we use a nested framework service
 	if serviceConfig.Host == string(ContainerAppTarget) || serviceConfig.Host == string(AksTarget) {
 		sourceFramework := frameworkService
-		frameworkService = NewDockerProject(serviceConfig, sm.env, docker.NewDocker(sm.commandRunner), sourceFramework)
+		frameworkService = NewDockerProject(sm.env, docker.NewDocker(sm.commandRunner), sourceFramework)
 	}
 
 	if err := frameworkService.Initialize(ctx, serviceConfig); err != nil {

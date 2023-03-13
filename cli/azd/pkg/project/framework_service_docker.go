@@ -28,7 +28,6 @@ type dockerProject struct {
 }
 
 func NewDockerProject(
-	config *ServiceConfig,
 	env *environment.Environment,
 	docker docker.Docker,
 	framework FrameworkService,

@@ -35,7 +35,7 @@ func Test_CommandHooks_Middleware_WithValidProjectAndMatchingCommand(t *testing.
 		},
 	}
 
-	err := ensureAzdValid(azdContext, envName, &projectConfig)
+	err := ensureAzdValid(*mockContext.Context, azdContext, envName, &projectConfig)
 	require.NoError(t, err)
 
 	nextFn, actionRan := createNextFn()
@@ -67,7 +67,7 @@ func Test_CommandHooks_Middleware_ValidProjectWithDifferentCommand(t *testing.T)
 		},
 	}
 
-	err := ensureAzdValid(azdContext, envName, &projectConfig)
+	err := ensureAzdValid(*mockContext.Context, azdContext, envName, &projectConfig)
 	require.NoError(t, err)
 
 	nextFn, actionRan := createNextFn()
@@ -93,7 +93,7 @@ func Test_CommandHooks_Middleware_ValidProjectWithNoHooks(t *testing.T) {
 		Name: envName,
 	}
 
-	err := ensureAzdValid(azdContext, envName, &projectConfig)
+	err := ensureAzdValid(*mockContext.Context, azdContext, envName, &projectConfig)
 	require.NoError(t, err)
 
 	nextFn, actionRan := createNextFn()
@@ -125,7 +125,7 @@ func Test_CommandHooks_Middleware_PreHookWithError(t *testing.T) {
 		},
 	}
 
-	err := ensureAzdValid(azdContext, envName, &projectConfig)
+	err := ensureAzdValid(*mockContext.Context, azdContext, envName, &projectConfig)
 	require.NoError(t, err)
 
 	nextFn, actionRan := createNextFn()
@@ -161,7 +161,7 @@ func Test_CommandHooks_Middleware_PreHookWithErrorAndContinue(t *testing.T) {
 		},
 	}
 
-	err := ensureAzdValid(azdContext, envName, &projectConfig)
+	err := ensureAzdValid(*mockContext.Context, azdContext, envName, &projectConfig)
 	require.NoError(t, err)
 
 	nextFn, actionRan := createNextFn()
@@ -196,7 +196,7 @@ func Test_CommandHooks_Middleware_WithCmdAlias(t *testing.T) {
 		},
 	}
 
-	err := ensureAzdValid(azdContext, envName, &projectConfig)
+	err := ensureAzdValid(*mockContext.Context, azdContext, envName, &projectConfig)
 	require.NoError(t, err)
 
 	nextFn, actionRan := createNextFn()
@@ -247,7 +247,7 @@ func Test_ServiceHooks_Registered(t *testing.T) {
 		return exec.NewRunResult(0, "", ""), nil
 	})
 
-	err := ensureAzdValid(azdContext, envName, &projectConfig)
+	err := ensureAzdValid(*mockContext.Context, azdContext, envName, &projectConfig)
 	require.NoError(t, err)
 
 	projectConfig.Services["api"].Project = &projectConfig
@@ -344,19 +344,13 @@ func runMiddleware(
 
 // Helper functions below
 
-func ensureAzdValid(azdContext *azdcontext.AzdContext, envName string, projectConfig *project.ProjectConfig) error {
+func ensureAzdValid(ctx context.Context, azdContext *azdcontext.AzdContext, envName string, projectConfig *project.ProjectConfig) error {
 	err := ensureAzdEnv(azdContext, envName)
 	if err != nil {
 		return err
 	}
 
-	err = ensureAzdProject(azdContext, projectConfig)
-	if err != nil {
-		return err
-	}
-
-	err = projectConfig.Save(azdContext.ProjectPath())
-	if err != nil {
+	if err := ensureAzdProject(ctx, azdContext, projectConfig); err != nil {
 		return err
 	}
 
@@ -380,9 +374,9 @@ func ensureAzdEnv(azdContext *azdcontext.AzdContext, envName string) error {
 	return nil
 }
 
-func ensureAzdProject(azdContext *azdcontext.AzdContext, projectConfig *project.ProjectConfig) error {
-	err := projectConfig.Save(azdContext.ProjectPath())
-	if err != nil {
+func ensureAzdProject(ctx context.Context, azdContext *azdcontext.AzdContext, projectConfig *project.ProjectConfig) error {
+	projectManager := project.NewProjectManager(azdContext, nil, nil, nil, nil, nil, nil)
+	if err := projectManager.Save(ctx, projectConfig, azdContext.ProjectPath()); err != nil {
 		return err
 	}
 

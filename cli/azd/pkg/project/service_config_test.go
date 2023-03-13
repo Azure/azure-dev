@@ -5,6 +5,8 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/stretchr/testify/require"
 )
 
@@ -164,7 +166,9 @@ services:
     module: ./api/api
 `
 
-	projectConfig, _ := ParseProjectConfig(testProj)
+	mockContext := mocks.NewMockContext(context.Background())
+	projectManager := createProjectManager(mockContext, environment.Ephemeral())
+	projectConfig, _ := projectManager.Parse(*mockContext.Context, testProj)
 
 	return projectConfig.Services["api"]
 }

@@ -68,6 +68,18 @@ func (at *staticWebAppTarget) Package(
 	)
 }
 
+func (at *staticWebAppTarget) ValidateTargetResource(ctx context.Context, serviceConfig *ServiceConfig, targetResource *environment.TargetResource) error {
+	if !strings.EqualFold(targetResource.ResourceType(), string(infra.AzureResourceTypeStaticWebSite)) {
+		return resourceTypeMismatchError(
+			targetResource.ResourceName(),
+			targetResource.ResourceType(),
+			infra.AzureResourceTypeStaticWebSite,
+		)
+	}
+
+	return nil
+}
+
 func (at *staticWebAppTarget) Publish(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
@@ -76,12 +88,8 @@ func (at *staticWebAppTarget) Publish(
 ) *async.TaskWithProgress[*ServicePublishResult, ServiceProgress] {
 	return async.RunTaskWithProgress(
 		func(task *async.TaskContextWithProgress[*ServicePublishResult, ServiceProgress]) {
-			if !strings.EqualFold(targetResource.ResourceType(), string(infra.AzureResourceTypeStaticWebSite)) {
-				task.SetError(resourceTypeMismatchError(
-					targetResource.ResourceName(),
-					targetResource.ResourceType(),
-					infra.AzureResourceTypeStaticWebSite,
-				))
+			if err := at.ValidateTargetResource(ctx, serviceConfig, targetResource); err != nil {
+				task.SetError(fmt.Errorf("validating target resource: %w", err))
 				return
 			}
 

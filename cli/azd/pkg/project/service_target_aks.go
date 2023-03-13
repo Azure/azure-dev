@@ -152,6 +152,14 @@ func (t *aksTarget) Package(
 	)
 }
 
+func (t *aksTarget) ValidateTargetResource(ctx context.Context, serviceConfig *ServiceConfig, targetResource *environment.TargetResource) error {
+	if targetResource.ResourceGroupName() == "" {
+		return fmt.Errorf("missing resource group name: %s", targetResource.ResourceGroupName())
+	}
+
+	return nil
+}
+
 // Deploys service container images to ACR and AKS resources to the AKS cluster
 func (t *aksTarget) Publish(
 	ctx context.Context,
@@ -161,8 +169,8 @@ func (t *aksTarget) Publish(
 ) *async.TaskWithProgress[*ServicePublishResult, ServiceProgress] {
 	return async.RunTaskWithProgress(
 		func(task *async.TaskContextWithProgress[*ServicePublishResult, ServiceProgress]) {
-			if targetResource.ResourceGroupName() == "" {
-				task.SetError(fmt.Errorf("missing resource group name: %s", targetResource.ResourceGroupName()))
+			if err := t.ValidateTargetResource(ctx, serviceConfig, targetResource); err != nil {
+				task.SetError(fmt.Errorf("validating target resource: %w", err))
 				return
 			}
 

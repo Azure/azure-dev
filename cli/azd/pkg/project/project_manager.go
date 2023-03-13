@@ -10,7 +10,6 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/internal/telemetry"
 	"github.com/azure/azure-dev/cli/azd/internal/telemetry/fields"
-	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
@@ -54,7 +53,6 @@ type projectManager struct {
 	commandRunner  exec.CommandRunner
 	azCli          azcli.AzCli
 	console        input.Console
-	accountManager account.Manager
 	serviceManager ServiceManager
 }
 
@@ -64,7 +62,6 @@ func NewProjectManager(
 	commandRunner exec.CommandRunner,
 	azCli azcli.AzCli,
 	console input.Console,
-	accountManager account.Manager,
 	serviceManager ServiceManager,
 ) ProjectManager {
 	return &projectManager{
@@ -73,7 +70,6 @@ func NewProjectManager(
 		commandRunner:  commandRunner,
 		azCli:          azCli,
 		console:        console,
-		accountManager: accountManager,
 		serviceManager: serviceManager,
 	}
 }
@@ -114,7 +110,7 @@ func (pm *projectManager) Initialize(ctx context.Context, projectConfig *Project
 	return nil
 }
 
-// ParseProjectConfig will parse a project from a yaml string and return the project configuration
+// Parse will parse a project from a yaml string and return the project configuration
 func (pm *projectManager) Parse(ctx context.Context, yamlContent string) (*ProjectConfig, error) {
 	var projectConfig ProjectConfig
 

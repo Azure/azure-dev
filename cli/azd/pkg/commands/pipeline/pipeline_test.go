@@ -12,9 +12,22 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
+	"github.com/azure/azure-dev/cli/azd/pkg/project"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/stretchr/testify/assert"
 )
+
+func createProjectManager(mockContext *mocks.MockContext, azdContext *azdcontext.AzdContext, env *environment.Environment) project.ProjectManager {
+	return project.NewProjectManager(
+		azdContext,
+		env,
+		mockContext.CommandRunner,
+		azcli.NewAzCli(mockContext.Credentials, azcli.NewAzCliArgs{}),
+		mockContext.Console,
+		nil,
+	)
+}
 
 func Test_detectProviders(t *testing.T) {
 	tempDir := t.TempDir()
@@ -33,6 +46,7 @@ func Test_detectProviders(t *testing.T) {
 			mockContext.Console,
 			mockContext.Credentials,
 			mockContext.CommandRunner,
+			createProjectManager(mockContext, azdContext, environment.Ephemeral()),
 		)
 		assert.Nil(t, scmProvider)
 		assert.Nil(t, ciProvider)
@@ -56,6 +70,7 @@ func Test_detectProviders(t *testing.T) {
 			mockContext.Console,
 			mockContext.Credentials,
 			mockContext.CommandRunner,
+			createProjectManager(mockContext, azdContext, environment.Ephemeral()),
 		)
 		assert.Nil(t, scmProvider)
 		assert.Nil(t, ciProvider)
@@ -88,6 +103,7 @@ func Test_detectProviders(t *testing.T) {
 			mockContext.Console,
 			mockContext.Credentials,
 			mockContext.CommandRunner,
+			createProjectManager(mockContext, azdContext, env),
 		)
 		assert.Nil(t, scmProvider)
 		assert.Nil(t, ciProvider)
@@ -114,6 +130,7 @@ func Test_detectProviders(t *testing.T) {
 			mockContext.Console,
 			mockContext.Credentials,
 			mockContext.CommandRunner,
+			createProjectManager(mockContext, azdContext, env),
 		)
 		assert.IsType(t, &AzdoScmProvider{}, scmProvider)
 		assert.IsType(t, &AzdoCiProvider{}, ciProvider)
@@ -138,6 +155,7 @@ func Test_detectProviders(t *testing.T) {
 			mockContext.Console,
 			mockContext.Credentials,
 			mockContext.CommandRunner,
+			createProjectManager(mockContext, azdContext, env),
 		)
 		assert.Nil(t, scmProvider)
 		assert.Nil(t, ciProvider)
@@ -163,6 +181,7 @@ func Test_detectProviders(t *testing.T) {
 			mockContext.Console,
 			mockContext.Credentials,
 			mockContext.CommandRunner,
+			createProjectManager(mockContext, azdContext, env),
 		)
 		assert.IsType(t, &GitHubScmProvider{}, scmProvider)
 		assert.IsType(t, &GitHubCiProvider{}, ciProvider)
@@ -176,14 +195,17 @@ func Test_detectProviders(t *testing.T) {
 		err := os.Mkdir(ghFolder, osutil.PermissionDirectory)
 		assert.NoError(t, err)
 
+		env := &environment.Environment{Values: map[string]string{}}
+
 		scmProvider, ciProvider, err := DetectProviders(
 			ctx,
 			azdContext,
-			&environment.Environment{Values: map[string]string{}},
+			env,
 			"other",
 			mockContext.Console,
 			mockContext.Credentials,
 			mockContext.CommandRunner,
+			createProjectManager(mockContext, azdContext, env),
 		)
 		assert.Nil(t, scmProvider)
 		assert.Nil(t, ciProvider)
@@ -210,6 +232,7 @@ func Test_detectProviders(t *testing.T) {
 			mockContext.Console,
 			mockContext.Credentials,
 			mockContext.CommandRunner,
+			createProjectManager(mockContext, azdContext, env),
 		)
 		assert.Nil(t, scmProvider)
 		assert.Nil(t, ciProvider)
@@ -233,6 +256,7 @@ func Test_detectProviders(t *testing.T) {
 			"", mockContext.Console,
 			mockContext.Credentials,
 			mockContext.CommandRunner,
+			createProjectManager(mockContext, azdContext, environment.Ephemeral()),
 		)
 		assert.Nil(t, scmProvider)
 		assert.Nil(t, ciProvider)
@@ -266,6 +290,7 @@ func Test_detectProviders(t *testing.T) {
 			mockContext.Console,
 			mockContext.Credentials,
 			mockContext.CommandRunner,
+			createProjectManager(mockContext, azdContext, env),
 		)
 		assert.Nil(t, scmProvider)
 		assert.Nil(t, ciProvider)
@@ -300,6 +325,7 @@ func Test_detectProviders(t *testing.T) {
 			mockContext.Console,
 			mockContext.Credentials,
 			mockContext.CommandRunner,
+			createProjectManager(mockContext, azdContext, env),
 		)
 		assert.Nil(t, scmProvider)
 		assert.Nil(t, ciProvider)
@@ -317,14 +343,17 @@ func Test_detectProviders(t *testing.T) {
 		err := os.Mkdir(ghFolder, osutil.PermissionDirectory)
 		assert.NoError(t, err)
 
+		env := &environment.Environment{Values: map[string]string{}}
+
 		scmProvider, ciProvider, err := DetectProviders(
 			ctx,
 			azdContext,
-			&environment.Environment{Values: map[string]string{}},
+			env,
 			"",
 			mockContext.Console,
 			mockContext.Credentials,
 			mockContext.CommandRunner,
+			createProjectManager(mockContext, azdContext, env),
 		)
 		assert.IsType(t, &GitHubScmProvider{}, scmProvider)
 		assert.IsType(t, &GitHubCiProvider{}, ciProvider)
@@ -337,14 +366,17 @@ func Test_detectProviders(t *testing.T) {
 		err := os.Mkdir(azdoFolder, osutil.PermissionDirectory)
 		assert.NoError(t, err)
 
+		env := &environment.Environment{Values: map[string]string{}}
+
 		scmProvider, ciProvider, err := DetectProviders(
 			ctx,
 			azdContext,
-			&environment.Environment{Values: map[string]string{}},
+			env,
 			"",
 			mockContext.Console,
 			mockContext.Credentials,
 			mockContext.CommandRunner,
+			createProjectManager(mockContext, azdContext, env),
 		)
 		assert.IsType(t, &AzdoScmProvider{}, scmProvider)
 		assert.IsType(t, &AzdoCiProvider{}, ciProvider)
@@ -360,14 +392,17 @@ func Test_detectProviders(t *testing.T) {
 		err = os.Mkdir(azdoFolder, osutil.PermissionDirectory)
 		assert.NoError(t, err)
 
+		env := &environment.Environment{Values: map[string]string{}}
+
 		scmProvider, ciProvider, err := DetectProviders(
 			ctx,
 			azdContext,
-			&environment.Environment{Values: map[string]string{}},
+			env,
 			"",
 			mockContext.Console,
 			mockContext.Credentials,
 			mockContext.CommandRunner,
+			createProjectManager(mockContext, azdContext, env),
 		)
 		assert.IsType(t, &GitHubScmProvider{}, scmProvider)
 		assert.IsType(t, &GitHubCiProvider{}, ciProvider)
@@ -391,6 +426,7 @@ func Test_detectProviders(t *testing.T) {
 			mockContext.Console,
 			mockContext.Credentials,
 			mockContext.CommandRunner,
+			createProjectManager(mockContext, azdContext, env),
 		)
 		assert.IsType(t, &AzdoScmProvider{}, scmProvider)
 		assert.IsType(t, &AzdoCiProvider{}, ciProvider)
@@ -408,6 +444,7 @@ func Test_detectProviders(t *testing.T) {
 			mockContext.Console,
 			mockContext.Credentials,
 			mockContext.CommandRunner,
+			createProjectManager(mockContext, azdContext, env),
 		)
 		assert.IsType(t, &AzdoScmProvider{}, scmProvider)
 		assert.IsType(t, &AzdoCiProvider{}, ciProvider)
@@ -433,6 +470,7 @@ func Test_detectProviders(t *testing.T) {
 			mockContext.Console,
 			mockContext.Credentials,
 			mockContext.CommandRunner,
+			createProjectManager(mockContext, azdContext, env),
 		)
 		assert.IsType(t, &AzdoScmProvider{}, scmProvider)
 		assert.IsType(t, &AzdoCiProvider{}, ciProvider)
@@ -446,6 +484,7 @@ func Test_detectProviders(t *testing.T) {
 			mockContext.Console,
 			mockContext.Credentials,
 			mockContext.CommandRunner,
+			createProjectManager(mockContext, azdContext, env),
 		)
 		assert.IsType(t, &AzdoScmProvider{}, scmProvider)
 		assert.IsType(t, &AzdoCiProvider{}, ciProvider)
@@ -464,6 +503,7 @@ func Test_detectProviders(t *testing.T) {
 			mockContext.Console,
 			mockContext.Credentials,
 			mockContext.CommandRunner,
+			createProjectManager(mockContext, azdContext, env),
 		)
 		assert.IsType(t, &GitHubScmProvider{}, scmProvider)
 		assert.IsType(t, &GitHubCiProvider{}, ciProvider)
@@ -482,6 +522,7 @@ func Test_detectProviders(t *testing.T) {
 			mockContext.Console,
 			mockContext.Credentials,
 			mockContext.CommandRunner,
+			createProjectManager(mockContext, azdContext, env),
 		)
 		assert.IsType(t, &GitHubScmProvider{}, scmProvider)
 		assert.IsType(t, &GitHubCiProvider{}, ciProvider)
@@ -496,6 +537,7 @@ func Test_detectProviders(t *testing.T) {
 			mockContext.Console,
 			mockContext.Credentials,
 			mockContext.CommandRunner,
+			createProjectManager(mockContext, azdContext, env),
 		)
 		assert.IsType(t, &AzdoScmProvider{}, scmProvider)
 		assert.IsType(t, &AzdoCiProvider{}, ciProvider)
@@ -515,6 +557,7 @@ func Test_detectProviders(t *testing.T) {
 			mockContext.Console,
 			mockContext.Credentials,
 			mockContext.CommandRunner,
+			createProjectManager(mockContext, azdContext, env),
 		)
 		assert.IsType(t, &GitHubScmProvider{}, scmProvider)
 		assert.IsType(t, &GitHubCiProvider{}, ciProvider)
@@ -527,5 +570,4 @@ func Test_detectProviders(t *testing.T) {
 		os.Remove(azdoFolder)
 		os.Remove(ghFolder)
 	})
-
 }

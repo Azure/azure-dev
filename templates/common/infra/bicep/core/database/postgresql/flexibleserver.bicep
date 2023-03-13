@@ -14,6 +14,7 @@ param allowAllIPsFirewall bool = false
 param allowedSingleIPs array = []
 
 param highAvailabilityMode string = 'Disabled'
+
 param backupRetentionDays int = 7
 param geoRedundantBackup string = 'Disabled'
 

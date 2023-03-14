@@ -7,17 +7,12 @@ import (
 	"log"
 	"time"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
-	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/ext"
-	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/docker"
 )
 
 const (
@@ -125,33 +120,19 @@ type ServiceManager interface {
 }
 
 type serviceManager struct {
-	azdContext      *azdcontext.AzdContext
 	env             *environment.Environment
-	commandRunner   exec.CommandRunner
-	azCli           azcli.AzCli
-	console         input.Console
-	accountManager  account.Manager
 	resourceManager ResourceManager
 	serviceLocator  ioc.ServiceLocator
 }
 
 func NewServiceManager(
-	azdContext *azdcontext.AzdContext,
 	env *environment.Environment,
 	commandRunner exec.CommandRunner,
-	azCli azcli.AzCli,
-	console input.Console,
-	accountManager account.Manager,
 	resourceManager ResourceManager,
 	serviceLocator ioc.ServiceLocator,
 ) ServiceManager {
 	return &serviceManager{
-		azdContext:      azdContext,
 		env:             env,
-		commandRunner:   commandRunner,
-		azCli:           azCli,
-		console:         console,
-		accountManager:  accountManager,
 		resourceManager: resourceManager,
 		serviceLocator:  serviceLocator,
 	}
@@ -374,7 +355,12 @@ func (sm *serviceManager) Deploy(
 func (sm *serviceManager) GetServiceTarget(ctx context.Context, serviceConfig *ServiceConfig) (ServiceTarget, error) {
 	var target ServiceTarget
 	if err := sm.serviceLocator.ResolveNamed(serviceConfig.Host, &target); err != nil {
-		return nil, fmt.Errorf("failed resolving service target for '%s', host '%s': %w", serviceConfig.Name, serviceConfig.Host, err)
+		return nil, fmt.Errorf(
+			"failed resolving service target for '%s', host '%s': %w",
+			serviceConfig.Name,
+			serviceConfig.Host,
+			err,
+		)
 	}
 
 	if err := target.Initialize(ctx, serviceConfig); err != nil {
@@ -388,13 +374,31 @@ func (sm *serviceManager) GetServiceTarget(ctx context.Context, serviceConfig *S
 func (sm *serviceManager) GetFrameworkService(ctx context.Context, serviceConfig *ServiceConfig) (FrameworkService, error) {
 	var frameworkService FrameworkService
 	if err := sm.serviceLocator.ResolveNamed(serviceConfig.Language, &frameworkService); err != nil {
-		return nil, fmt.Errorf("failed resolving framework service for '%s', language '%s': %w", serviceConfig.Name, serviceConfig.Language, err)
+		return nil, fmt.Errorf(
+			"failed resolving framework service for '%s', language '%s': %w",
+			serviceConfig.Name,
+			serviceConfig.Language,
+			err,
+		)
 	}
 
-	// For containerized applications we use a nested framework service
+	// For containerized applications we use a composite framework service
 	if serviceConfig.Host == string(ContainerAppTarget) || serviceConfig.Host == string(AksTarget) {
-		sourceFramework := frameworkService
-		frameworkService = NewDockerProject(sm.env, docker.NewDocker(sm.commandRunner), sourceFramework)
+		var compositeFramework CompositeFrameworkService
+		if err := sm.serviceLocator.ResolveNamed(string(ServiceLanguageDocker), &compositeFramework); err != nil {
+			return nil, fmt.Errorf(
+				"failed resolving composite framework service for '%s', language '%s': %w",
+				serviceConfig.Name,
+				serviceConfig.Language,
+				err,
+			)
+		}
+
+		if err := compositeFramework.SetSource(ctx, frameworkService); err != nil {
+			return nil, fmt.Errorf("failed setting source framework service")
+		}
+
+		frameworkService = compositeFramework
 	}
 
 	if err := frameworkService.Initialize(ctx, serviceConfig); err != nil {

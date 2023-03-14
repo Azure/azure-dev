@@ -33,7 +33,7 @@ services:
 	})
 
 	mockContext := mocks.NewMockContext(context.Background())
-	projectManager := createProjectManager(mockContext, environment.EmptyWithRoot(""))
+	projectManager := NewProjectManager(nil)
 	projectConfig, err := projectManager.Parse(*mockContext.Context, testProj)
 	require.Nil(t, err)
 	require.NotNil(t, projectConfig)
@@ -68,7 +68,7 @@ services:
 `
 
 	mockContext := mocks.NewMockContext(context.Background())
-	projectManager := createProjectManager(mockContext, environment.EmptyWithRoot(""))
+	projectManager := NewProjectManager(nil)
 	projectConfig, err := projectManager.Parse(*mockContext.Context, testProj)
 	require.Nil(t, err)
 
@@ -94,7 +94,7 @@ services:
 `
 
 	mockContext := mocks.NewMockContext(context.Background())
-	projectManager := createProjectManager(mockContext, environment.EmptyWithRoot(""))
+	projectManager := NewProjectManager(nil)
 	projectConfig, err := projectManager.Parse(*mockContext.Context, testProj)
 
 	require.NotNil(t, projectConfig)
@@ -121,7 +121,7 @@ services:
 `
 
 	mockContext := mocks.NewMockContext(context.Background())
-	projectManager := createProjectManager(mockContext, environment.EmptyWithRoot(""))
+	projectManager := NewProjectManager(nil)
 	projectConfig, err := projectManager.Parse(*mockContext.Context, testProj)
 
 	require.NotNil(t, projectConfig)
@@ -284,7 +284,7 @@ services:
 `
 
 	mockContext := mocks.NewMockContext(context.Background())
-	projectManager := createProjectManager(mockContext, environment.EmptyWithRoot(""))
+	projectManager := NewProjectManager(nil)
 	projectConfig, _ := projectManager.Parse(*mockContext.Context, testProj)
 
 	return projectConfig
@@ -356,7 +356,7 @@ services:
     `
 
 	mockContext := mocks.NewMockContext(context.Background())
-	projectManager := createProjectManager(mockContext, environment.EmptyWithRoot(""))
+	projectManager := NewProjectManager(nil)
 	projectConfig, err := projectManager.Parse(*mockContext.Context, testProj)
 	require.NoError(t, err)
 

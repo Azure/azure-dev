@@ -19,12 +19,20 @@ func TestNewStaticWebAppTargetTypeValidation(t *testing.T) {
 
 	tests := map[string]*serviceTargetValidationTest{
 		"ValidateTypeSuccess": {
-			targetResource: environment.NewTargetResource("SUB_ID", "RG_ID", "res", string(infra.AzureResourceTypeStaticWebSite)),
-			expectError:    false,
+			targetResource: environment.NewTargetResource(
+				"SUB_ID",
+				"RG_ID",
+				"res",
+				string(infra.AzureResourceTypeStaticWebSite),
+			),
+			expectError: false,
 		},
 		"ValidateTypeLowerCaseSuccess": {
-			environment.NewTargetResource(
-				"SUB_ID", "RG_ID", "res", strings.ToLower(string(infra.AzureResourceTypeStaticWebSite)),
+			targetResource: environment.NewTargetResource(
+				"SUB_ID",
+				"RG_ID",
+				"res",
+				strings.ToLower(string(infra.AzureResourceTypeStaticWebSite)),
 			),
 			expectError: false,
 		},

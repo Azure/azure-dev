@@ -43,7 +43,11 @@ type ServiceTarget interface {
 		servicePackage *ServicePackageResult,
 		targetResource *environment.TargetResource,
 	) *async.TaskWithProgress[*ServicePublishResult, ServiceProgress]
-	ValidateTargetResource(ctx context.Context, serviceConfig *ServiceConfig, targetResource *environment.TargetResource) error
+	ValidateTargetResource(
+		ctx context.Context,
+		serviceConfig *ServiceConfig,
+		targetResource *environment.TargetResource,
+	) error
 	// Endpoints gets the endpoints a service exposes.
 	Endpoints(
 		ctx context.Context,

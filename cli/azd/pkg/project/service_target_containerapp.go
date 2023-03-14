@@ -142,7 +142,11 @@ func (at *containerAppTarget) Package(
 	)
 }
 
-func (at *containerAppTarget) ValidateTargetResource(ctx context.Context, serviceConfig *ServiceConfig, targetResource *environment.TargetResource) error {
+func (at *containerAppTarget) ValidateTargetResource(
+	ctx context.Context,
+	serviceConfig *ServiceConfig,
+	targetResource *environment.TargetResource,
+) error {
 	if targetResource.ResourceGroupName() == "" {
 		return fmt.Errorf("missing resource group name: %s", targetResource.ResourceGroupName())
 	}

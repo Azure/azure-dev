@@ -344,7 +344,12 @@ func runMiddleware(
 
 // Helper functions below
 
-func ensureAzdValid(ctx context.Context, azdContext *azdcontext.AzdContext, envName string, projectConfig *project.ProjectConfig) error {
+func ensureAzdValid(
+	ctx context.Context,
+	azdContext *azdcontext.AzdContext,
+	envName string,
+	projectConfig *project.ProjectConfig,
+) error {
 	err := ensureAzdEnv(azdContext, envName)
 	if err != nil {
 		return err
@@ -375,7 +380,7 @@ func ensureAzdEnv(azdContext *azdcontext.AzdContext, envName string) error {
 }
 
 func ensureAzdProject(ctx context.Context, azdContext *azdcontext.AzdContext, projectConfig *project.ProjectConfig) error {
-	projectManager := project.NewProjectManager(azdContext, nil, nil, nil, nil, nil, nil)
+	projectManager := project.NewProjectManager(nil)
 	if err := projectManager.Save(ctx, projectConfig, azdContext.ProjectPath()); err != nil {
 		return err
 	}

@@ -115,7 +115,12 @@ func (dp *dotnetProject) setUserSecretsFromOutputs(
 	}
 
 	for key, val := range bicepOutput {
-		if err := dp.dotnetCli.SetSecret(ctx, normalizeDotNetSecret(key), fmt.Sprint(val.Value), serviceConfig.Path()); err != nil {
+		if err := dp.dotnetCli.SetSecret(
+			ctx,
+			normalizeDotNetSecret(key),
+			fmt.Sprint(val.Value),
+			serviceConfig.Path(),
+		); err != nil {
 			return err
 		}
 	}

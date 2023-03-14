@@ -14,9 +14,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockarmresources"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockazcli"
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"golang.org/x/exp/slices"
 )
 
 // Specifying resource name in the project file should override the default
@@ -51,7 +49,7 @@ services:
 		environment.SubscriptionIdEnvVarName: "SUBSCRIPTION_ID",
 	})
 
-	projectMangaer := createProjectManager(mockContext, env)
+	projectMangaer := NewProjectManager(nil)
 	projectConfig, err := projectMangaer.Parse(*mockContext.Context, testProj)
 	require.NoError(t, err)
 
@@ -97,7 +95,7 @@ services:
 	env := environment.EphemeralWithValues("envA", map[string]string{
 		environment.SubscriptionIdEnvVarName: "SUBSCRIPTION_ID",
 	})
-	projectMangaer := createProjectManager(mockContext, env)
+	projectMangaer := NewProjectManager(nil)
 	projectConfig, err := projectMangaer.Parse(*mockContext.Context, testProj)
 	require.NoError(t, err)
 
@@ -105,7 +103,7 @@ services:
 	targetResource, err := resourceManager.GetTargetResource(*mockContext.Context, projectConfig.Services["api"])
 	require.NoError(t, err)
 	require.NotNil(t, targetResource)
-	require.Equal(t, "resourceName", targetResource.ResourceName())
+	require.Equal(t, resourceName, targetResource.ResourceName())
 }
 
 func TestResourceGroupOverrideFromProjectFile(t *testing.T) {
@@ -153,7 +151,7 @@ services:
 		environment.SubscriptionIdEnvVarName: "SUBSCRIPTION_ID",
 	})
 
-	projectMangaer := createProjectManager(mockContext, env)
+	projectMangaer := NewProjectManager(nil)
 	projectConfig, err := projectMangaer.Parse(*mockContext.Context, testProj)
 	require.NoError(t, err)
 
@@ -214,7 +212,7 @@ services:
 		environment.SubscriptionIdEnvVarName: "SUBSCRIPTION_ID",
 	})
 
-	projectMangaer := createProjectManager(mockContext, env)
+	projectMangaer := NewProjectManager(nil)
 	projectConfig, err := projectMangaer.Parse(*mockContext.Context, testProj)
 	require.NoError(t, err)
 
@@ -229,9 +227,4 @@ services:
 		require.NotNil(t, targetResource)
 		require.Equal(t, expectedResourceGroupName, targetResource.ResourceGroupName())
 	}
-}
-
-func assertHasService(t *testing.T, ss []*ServiceConfig, match func(*ServiceConfig) bool, msgAndArgs ...interface{}) {
-	i := slices.IndexFunc(ss, match)
-	assert.GreaterOrEqual(t, i, 0, msgAndArgs)
 }

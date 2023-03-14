@@ -10,14 +10,9 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/internal/telemetry"
 	"github.com/azure/azure-dev/cli/azd/internal/telemetry/fields"
-	"github.com/azure/azure-dev/cli/azd/pkg/environment"
-	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
-	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/ext"
-	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"gopkg.in/yaml.v3"
 )
 
@@ -48,28 +43,13 @@ type ProjectManager interface {
 }
 
 type projectManager struct {
-	azdContext     *azdcontext.AzdContext
-	env            *environment.Environment
-	commandRunner  exec.CommandRunner
-	azCli          azcli.AzCli
-	console        input.Console
 	serviceManager ServiceManager
 }
 
 func NewProjectManager(
-	azdContext *azdcontext.AzdContext,
-	env *environment.Environment,
-	commandRunner exec.CommandRunner,
-	azCli azcli.AzCli,
-	console input.Console,
 	serviceManager ServiceManager,
 ) ProjectManager {
 	return &projectManager{
-		azdContext:     azdContext,
-		env:            env,
-		commandRunner:  commandRunner,
-		azCli:          azCli,
-		console:        console,
 		serviceManager: serviceManager,
 	}
 }

@@ -61,7 +61,9 @@ func (pp *pythonProject) Restore(
 						return
 					}
 				} else {
-					task.SetError(fmt.Errorf("python virtual environment for project '%s' is not accessible: %w", serviceConfig.Path(), err))
+					task.SetError(
+						fmt.Errorf("python virtual environment for project '%s' is not accessible: %w", serviceConfig.Path(), err),
+					)
 					return
 				}
 			}

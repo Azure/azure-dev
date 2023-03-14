@@ -68,7 +68,11 @@ func (at *staticWebAppTarget) Package(
 	)
 }
 
-func (at *staticWebAppTarget) ValidateTargetResource(ctx context.Context, serviceConfig *ServiceConfig, targetResource *environment.TargetResource) error {
+func (at *staticWebAppTarget) ValidateTargetResource(
+	ctx context.Context,
+	serviceConfig *ServiceConfig,
+	targetResource *environment.TargetResource,
+) error {
 	if !strings.EqualFold(targetResource.ResourceType(), string(infra.AzureResourceTypeStaticWebSite)) {
 		return resourceTypeMismatchError(
 			targetResource.ResourceName(),

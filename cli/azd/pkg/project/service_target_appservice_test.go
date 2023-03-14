@@ -29,8 +29,13 @@ func TestNewAppServiceTargetTypeValidation(t *testing.T) {
 			expectError:    false,
 		},
 		"ValidateTypeLowerCaseSuccess": {
-			targetResource: environment.NewTargetResource("SUB_ID", "RG_ID", "res", strings.ToLower(string(infra.AzureResourceTypeWebSite))),
-			expectError:    false,
+			targetResource: environment.NewTargetResource(
+				"SUB_ID",
+				"RG_ID",
+				"res",
+				strings.ToLower(string(infra.AzureResourceTypeWebSite)),
+			),
+			expectError: false,
 		},
 		"ValidateTypeFail": {
 			targetResource: environment.NewTargetResource("SUB_ID", "RG_ID", "res", "BadType"),

@@ -13,14 +13,15 @@ import (
 type ServiceLanguageKind string
 
 const (
-	ServiceLanguageDotNet     ServiceLanguageKind = "csharp"
-	ServiceLanguageCsharp     ServiceLanguageKind = "fsharp"
+	ServiceLanguageDotNet     ServiceLanguageKind = "dotnet"
+	ServiceLanguageCsharp     ServiceLanguageKind = "csharp"
 	ServiceLanguageFsharp     ServiceLanguageKind = "fsharp"
 	ServiceLanguageJavaScript ServiceLanguageKind = "js"
 	ServiceLanguageTypeScript ServiceLanguageKind = "ts"
 	ServiceLanguagePython     ServiceLanguageKind = "python"
 	ServiceLanguagePy         ServiceLanguageKind = "py"
 	ServiceLanguageJava       ServiceLanguageKind = "java"
+	ServiceLanguageDocker     ServiceLanguageKind = "docker"
 )
 
 type FrameworkService interface {
@@ -35,4 +36,9 @@ type FrameworkService interface {
 		serviceConfig *ServiceConfig,
 		restoreOutput *ServiceRestoreResult,
 	) *async.TaskWithProgress[*ServiceBuildResult, ServiceProgress]
+}
+
+type CompositeFrameworkService interface {
+	FrameworkService
+	SetSource(ctx context.Context, inner FrameworkService) error
 }

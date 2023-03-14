@@ -65,7 +65,11 @@ func (st *appServiceTarget) Package(
 	)
 }
 
-func (st *appServiceTarget) ValidateTargetResource(ctx context.Context, serviceConfig *ServiceConfig, targetResource *environment.TargetResource) error {
+func (st *appServiceTarget) ValidateTargetResource(
+	ctx context.Context,
+	serviceConfig *ServiceConfig,
+	targetResource *environment.TargetResource,
+) error {
 	if !strings.EqualFold(targetResource.ResourceType(), string(infra.AzureResourceTypeWebSite)) {
 		return resourceTypeMismatchError(
 			targetResource.ResourceName(),

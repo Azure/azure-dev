@@ -30,12 +30,10 @@ type dockerProject struct {
 func NewDockerProject(
 	env *environment.Environment,
 	docker docker.Docker,
-	framework FrameworkService,
-) FrameworkService {
+) CompositeFrameworkService {
 	return &dockerProject{
-		env:       env,
-		docker:    docker,
-		framework: framework,
+		env:    env,
+		docker: docker,
 	}
 }
 
@@ -44,6 +42,11 @@ func (p *dockerProject) RequiredExternalTools(context.Context) []tools.ExternalT
 }
 
 func (p *dockerProject) Initialize(ctx context.Context, serviceConfig *ServiceConfig) error {
+	return nil
+}
+
+func (p *dockerProject) SetSource(ctx context.Context, inner FrameworkService) error {
+	p.framework = inner
 	return nil
 }
 

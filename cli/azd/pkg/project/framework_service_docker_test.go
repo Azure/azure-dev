@@ -11,10 +11,8 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
-	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/docker"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockarmresources"
@@ -72,7 +70,7 @@ services:
 		}, nil
 	})
 
-	projectManager := createProjectManager(mockContext, env)
+	projectManager := NewProjectManager(nil)
 	projectConfig, err := projectManager.Parse(*mockContext.Context, testProj)
 	require.NoError(t, err)
 	service := projectConfig.Services["web"]
@@ -84,7 +82,10 @@ services:
 	internalFramework := NewNpmProject(mockContext.CommandRunner, env)
 	progressMessages := []string{}
 
-	framework := NewDockerProject(env, docker, internalFramework)
+	framework := NewDockerProject(env, docker)
+	err = framework.SetSource(*mockContext.Context, internalFramework)
+	require.NoError(t, err)
+
 	buildTask := framework.Build(*mockContext.Context, service, nil)
 	go func() {
 		for value := range buildTask.Progress() {
@@ -159,7 +160,7 @@ services:
 
 	docker := docker.NewDocker(mockContext.CommandRunner)
 
-	projectManager := createProjectManager(mockContext, env)
+	projectManager := NewProjectManager(nil)
 	projectConfig, err := projectManager.Parse(*mockContext.Context, testProj)
 	require.NoError(t, err)
 
@@ -170,7 +171,10 @@ services:
 	internalFramework := NewNpmProject(mockContext.CommandRunner, env)
 	status := ""
 
-	framework := NewDockerProject(env, docker, internalFramework)
+	framework := NewDockerProject(env, docker)
+	err = framework.SetSource(*mockContext.Context, internalFramework)
+	require.NoError(t, err)
+
 	buildTask := framework.Build(*mockContext.Context, service, nil)
 	go func() {
 		for value := range buildTask.Progress() {
@@ -186,15 +190,4 @@ services:
 	require.Nil(t, err)
 	require.Equal(t, "Building docker image", status)
 	require.Equal(t, true, ran)
-}
-
-func createProjectManager(mockContext *mocks.MockContext, env *environment.Environment) ProjectManager {
-	return NewProjectManager(
-		azdcontext.NewAzdContextWithDirectory(""),
-		env,
-		mockContext.CommandRunner,
-		azcli.NewAzCli(mockContext.Credentials, azcli.NewAzCliArgs{}),
-		mockContext.Console,
-		nil,
-	)
 }

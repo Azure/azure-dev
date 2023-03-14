@@ -152,7 +152,11 @@ func (t *aksTarget) Package(
 	)
 }
 
-func (t *aksTarget) ValidateTargetResource(ctx context.Context, serviceConfig *ServiceConfig, targetResource *environment.TargetResource) error {
+func (t *aksTarget) ValidateTargetResource(
+	ctx context.Context,
+	serviceConfig *ServiceConfig,
+	targetResource *environment.TargetResource,
+) error {
 	if targetResource.ResourceGroupName() == "" {
 		return fmt.Errorf("missing resource group name: %s", targetResource.ResourceGroupName())
 	}

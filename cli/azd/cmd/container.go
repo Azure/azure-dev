@@ -245,7 +245,11 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 
 	// Project Config
 	container.RegisterSingleton(
-		func(ctx context.Context, azdContext *azdcontext.AzdContext, projectManager project.ProjectManager) (*project.ProjectConfig, error) {
+		func(
+			ctx context.Context,
+			azdContext *azdcontext.AzdContext,
+			projectManager project.ProjectManager,
+		) (*project.ProjectConfig, error) {
 			if azdContext == nil {
 				return nil, azdcontext.ErrNoProject
 			}
@@ -322,23 +326,40 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	container.RegisterSingleton(clock.New)
 
 	// Service Targets
-	container.RegisterNamedSingleton("", project.NewAppServiceTarget)
-	container.RegisterNamedSingleton(string(project.AppServiceTarget), project.NewAppServiceTarget)
-	container.RegisterNamedSingleton(string(project.AzureFunctionTarget), project.NewFunctionAppTarget)
-	container.RegisterNamedSingleton(string(project.ContainerAppTarget), project.NewContainerAppTarget)
-	container.RegisterNamedSingleton(string(project.StaticWebAppTarget), project.NewStaticWebAppTarget)
-	container.RegisterNamedSingleton(string(project.AksTarget), project.NewAksTarget)
+	serviceTargetMap := map[project.ServiceTargetKind]any{
+		"":                          project.NewAppServiceTarget,
+		project.AppServiceTarget:    project.NewAppServiceTarget,
+		project.AzureFunctionTarget: project.NewFunctionAppTarget,
+		project.ContainerAppTarget:  project.NewContainerAppTarget,
+		project.StaticWebAppTarget:  project.NewStaticWebAppTarget,
+		project.AksTarget:           project.NewAksTarget,
+	}
+
+	for target, constructor := range serviceTargetMap {
+		if err := container.RegisterNamedSingleton(string(target), constructor); err != nil {
+			panic(fmt.Errorf("registering service target %s: %w", target, err))
+		}
+	}
 
 	// Languages
-	container.RegisterNamedSingleton("", project.NewDotNetProject)
-	container.RegisterNamedSingleton(string(project.ServiceLanguageDotNet), project.NewDotNetProject)
-	container.RegisterNamedSingleton(string(project.ServiceLanguageCsharp), project.NewDotNetProject)
-	container.RegisterNamedSingleton(string(project.ServiceLanguageFsharp), project.NewDotNetProject)
-	container.RegisterNamedSingleton(string(project.ServiceLanguagePython), project.NewPythonProject)
-	container.RegisterNamedSingleton(string(project.ServiceLanguagePy), project.NewPythonProject)
-	container.RegisterNamedSingleton(string(project.ServiceLanguageJavaScript), project.NewNpmProject)
-	container.RegisterNamedSingleton(string(project.ServiceLanguageTypeScript), project.NewNpmProject)
-	container.RegisterNamedSingleton(string(project.ServiceLanguageJava), project.NewMavenProject)
+	frameworkServiceMap := map[project.ServiceLanguageKind]any{
+		"":                                project.NewDotNetProject,
+		project.ServiceLanguageDotNet:     project.NewDotNetProject,
+		project.ServiceLanguageCsharp:     project.NewDotNetProject,
+		project.ServiceLanguageFsharp:     project.NewDotNetProject,
+		project.ServiceLanguagePython:     project.NewPythonProject,
+		project.ServiceLanguagePy:         project.NewPythonProject,
+		project.ServiceLanguageJavaScript: project.NewNpmProject,
+		project.ServiceLanguageTypeScript: project.NewNpmProject,
+		project.ServiceLanguageJava:       project.NewMavenProject,
+		project.ServiceLanguageDocker:     project.NewDockerProject,
+	}
+
+	for language, constructor := range frameworkServiceMap {
+		if err := container.RegisterNamedSingleton(string(language), constructor); err != nil {
+			panic(fmt.Errorf("registering framework service %s: %w", language, err))
+		}
+	}
 
 	// Required for nested actions called from composite actions like 'up'
 	registerActionInitializer[*initAction](container, "azd-init-action")

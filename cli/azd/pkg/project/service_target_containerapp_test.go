@@ -23,12 +23,22 @@ func TestNewContainerAppTargetTypeValidation(t *testing.T) {
 
 	tests := map[string]*serviceTargetValidationTest{
 		"ValidateTypeSuccess": {
-			targetResource: environment.NewTargetResource("SUB_ID", "RG_ID", "res", string(infra.AzureResourceTypeContainerApp)),
-			expectError:    false,
+			targetResource: environment.NewTargetResource(
+				"SUB_ID",
+				"RG_ID",
+				"res",
+				string(infra.AzureResourceTypeContainerApp),
+			),
+			expectError: false,
 		},
 		"ValidateTypeLowerCaseSuccess": {
-			targetResource: environment.NewTargetResource("SUB_ID", "RG_ID", "res", strings.ToLower(string(infra.AzureResourceTypeContainerApp))),
-			expectError:    false,
+			targetResource: environment.NewTargetResource(
+				"SUB_ID",
+				"RG_ID",
+				"res",
+				strings.ToLower(string(infra.AzureResourceTypeContainerApp)),
+			),
+			expectError: false,
 		},
 		"ValidateTypeFail": {
 			targetResource: environment.NewTargetResource("SUB_ID", "RG_ID", "res", "BadType"),
@@ -39,7 +49,17 @@ func TestNewContainerAppTargetTypeValidation(t *testing.T) {
 	for test, data := range tests {
 		t.Run(test, func(t *testing.T) {
 			mockContext := mocks.NewMockContext(context.Background())
-			serviceTarget := NewContainerAppTarget(environment.Ephemeral(), nil, mockazcli.NewAzCliFromMockContext(mockContext), nil, nil, nil, nil, nil, nil)
+			serviceTarget := NewContainerAppTarget(
+				environment.Ephemeral(),
+				nil,
+				mockazcli.NewAzCliFromMockContext(mockContext),
+				nil,
+				nil,
+				nil,
+				nil,
+				nil,
+				nil,
+			)
 			serviceConfig := &ServiceConfig{}
 
 			err := serviceTarget.ValidateTargetResource(*mockContext.Context, serviceConfig, data.targetResource)

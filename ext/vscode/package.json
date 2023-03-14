@@ -480,7 +480,7 @@
         "node-loader": "~2.0",
         "ts-loader": "~9.3",
         "typescript": "~4.8",
-        "webpack": "~5.74",
+        "webpack": "~5.76",
         "webpack-bundle-analyzer": "~4.6",
         "webpack-cli": "~4.10"
     },

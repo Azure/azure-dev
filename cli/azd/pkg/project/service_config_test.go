@@ -166,8 +166,7 @@ services:
 `
 
 	mockContext := mocks.NewMockContext(context.Background())
-	projectManager := NewProjectManager(nil)
-	projectConfig, _ := projectManager.Parse(*mockContext.Context, testProj)
+	projectConfig, _ := Parse(*mockContext.Context, testProj)
 
 	return projectConfig.Services["api"]
 }

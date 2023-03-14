@@ -33,8 +33,7 @@ services:
 	})
 
 	mockContext := mocks.NewMockContext(context.Background())
-	projectManager := NewProjectManager(nil)
-	projectConfig, err := projectManager.Parse(*mockContext.Context, testProj)
+	projectConfig, err := Parse(*mockContext.Context, testProj)
 	require.Nil(t, err)
 	require.NotNil(t, projectConfig)
 
@@ -68,8 +67,7 @@ services:
 `
 
 	mockContext := mocks.NewMockContext(context.Background())
-	projectManager := NewProjectManager(nil)
-	projectConfig, err := projectManager.Parse(*mockContext.Context, testProj)
+	projectConfig, err := Parse(*mockContext.Context, testProj)
 	require.Nil(t, err)
 
 	require.True(t, projectConfig.HasService("web"))
@@ -94,8 +92,7 @@ services:
 `
 
 	mockContext := mocks.NewMockContext(context.Background())
-	projectManager := NewProjectManager(nil)
-	projectConfig, err := projectManager.Parse(*mockContext.Context, testProj)
+	projectConfig, err := Parse(*mockContext.Context, testProj)
 
 	require.NotNil(t, projectConfig)
 	require.Nil(t, err)
@@ -121,8 +118,7 @@ services:
 `
 
 	mockContext := mocks.NewMockContext(context.Background())
-	projectManager := NewProjectManager(nil)
-	projectConfig, err := projectManager.Parse(*mockContext.Context, testProj)
+	projectConfig, err := Parse(*mockContext.Context, testProj)
 
 	require.NotNil(t, projectConfig)
 	require.Nil(t, err)
@@ -284,8 +280,7 @@ services:
 `
 
 	mockContext := mocks.NewMockContext(context.Background())
-	projectManager := NewProjectManager(nil)
-	projectConfig, _ := projectManager.Parse(*mockContext.Context, testProj)
+	projectConfig, _ := Parse(*mockContext.Context, testProj)
 
 	return projectConfig
 }
@@ -356,8 +351,7 @@ services:
     `
 
 	mockContext := mocks.NewMockContext(context.Background())
-	projectManager := NewProjectManager(nil)
-	projectConfig, err := projectManager.Parse(*mockContext.Context, testProj)
+	projectConfig, err := Parse(*mockContext.Context, testProj)
 	require.NoError(t, err)
 
 	env := environment.EphemeralWithValues("", map[string]string{

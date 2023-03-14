@@ -380,8 +380,7 @@ func ensureAzdEnv(azdContext *azdcontext.AzdContext, envName string) error {
 }
 
 func ensureAzdProject(ctx context.Context, azdContext *azdcontext.AzdContext, projectConfig *project.ProjectConfig) error {
-	projectManager := project.NewProjectManager(nil)
-	if err := projectManager.Save(ctx, projectConfig, azdContext.ProjectPath()); err != nil {
+	if err := project.Save(ctx, projectConfig, azdContext.ProjectPath()); err != nil {
 		return err
 	}
 

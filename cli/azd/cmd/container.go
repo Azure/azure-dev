@@ -119,7 +119,6 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	})
 	container.RegisterSingleton(input.NewConsoleMessaging)
 
-	container.RegisterSingleton(azdcontext.NewAzdContext)
 	container.RegisterSingleton(func() httputil.HttpClient { return &http.Client{} })
 
 	// Auth
@@ -245,16 +244,12 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 
 	// Project Config
 	container.RegisterSingleton(
-		func(
-			ctx context.Context,
-			azdContext *azdcontext.AzdContext,
-			projectManager project.ProjectManager,
-		) (*project.ProjectConfig, error) {
+		func(ctx context.Context, azdContext *azdcontext.AzdContext) (*project.ProjectConfig, error) {
 			if azdContext == nil {
 				return nil, azdcontext.ErrNoProject
 			}
 
-			projectConfig, err := projectManager.Load(ctx, azdContext.ProjectPath())
+			projectConfig, err := project.Load(ctx, azdContext.ProjectPath())
 			if err != nil {
 				return nil, err
 			}

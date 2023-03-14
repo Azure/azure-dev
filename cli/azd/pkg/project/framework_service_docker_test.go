@@ -70,8 +70,7 @@ services:
 		}, nil
 	})
 
-	projectManager := NewProjectManager(nil)
-	projectConfig, err := projectManager.Parse(*mockContext.Context, testProj)
+	projectConfig, err := Parse(*mockContext.Context, testProj)
 	require.NoError(t, err)
 	service := projectConfig.Services["web"]
 
@@ -160,8 +159,7 @@ services:
 
 	docker := docker.NewDocker(mockContext.CommandRunner)
 
-	projectManager := NewProjectManager(nil)
-	projectConfig, err := projectManager.Parse(*mockContext.Context, testProj)
+	projectConfig, err := Parse(*mockContext.Context, testProj)
 	require.NoError(t, err)
 
 	service := projectConfig.Services["web"]

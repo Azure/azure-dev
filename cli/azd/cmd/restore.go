@@ -123,12 +123,12 @@ func (r *restoreAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 		spinner := spin.NewSpinner(r.console.Handles().Stdout, installMsg)
 		if err := spinner.Run(func() error {
 			restoreTask := r.serviceManager.Restore(ctx, svc)
-			_, err := restoreTask.Await()
 			go func() {
 				for progress := range restoreTask.Progress() {
 					log.Printf("Restore progress: %s\n", progress.Message)
 				}
 			}()
+			_, err := restoreTask.Await()
 			if err != nil {
 				return err
 			}

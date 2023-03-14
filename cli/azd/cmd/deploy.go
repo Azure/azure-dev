@@ -152,6 +152,10 @@ func (d *deployAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	var svcDeploymentResult *project.ServiceDeployResult
 	var deploymentResults []*project.ServiceDeployResult
 
+	if err := d.projectManager.Initialize(ctx, d.projectConfig); err != nil {
+		return nil, err
+	}
+
 	for _, svc := range d.projectConfig.Services {
 		// Skip this service if both cases are true:
 		// 1. The user specified a service name

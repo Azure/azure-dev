@@ -49,8 +49,7 @@ services:
 		environment.SubscriptionIdEnvVarName: "SUBSCRIPTION_ID",
 	})
 
-	projectManager := NewProjectManager(nil)
-	projectConfig, err := projectManager.Parse(*mockContext.Context, testProj)
+	projectConfig, err := Parse(*mockContext.Context, testProj)
 	require.NoError(t, err)
 
 	resourceManager := NewResourceManager(env, azCli)
@@ -95,8 +94,7 @@ services:
 	env := environment.EphemeralWithValues("envA", map[string]string{
 		environment.SubscriptionIdEnvVarName: "SUBSCRIPTION_ID",
 	})
-	projectManager := NewProjectManager(nil)
-	projectConfig, err := projectManager.Parse(*mockContext.Context, testProj)
+	projectConfig, err := Parse(*mockContext.Context, testProj)
 	require.NoError(t, err)
 
 	resourceManager := NewResourceManager(env, azCli)
@@ -151,8 +149,7 @@ services:
 		environment.SubscriptionIdEnvVarName: "SUBSCRIPTION_ID",
 	})
 
-	projectManager := NewProjectManager(nil)
-	projectConfig, err := projectManager.Parse(*mockContext.Context, testProj)
+	projectConfig, err := Parse(*mockContext.Context, testProj)
 	require.NoError(t, err)
 
 	resourceManager := NewResourceManager(env, azCli)
@@ -212,8 +209,7 @@ services:
 		environment.SubscriptionIdEnvVarName: "SUBSCRIPTION_ID",
 	})
 
-	projectManager := NewProjectManager(nil)
-	projectConfig, err := projectManager.Parse(*mockContext.Context, testProj)
+	projectConfig, err := Parse(*mockContext.Context, testProj)
 	require.NoError(t, err)
 
 	resourceManager := NewResourceManager(env, azCli)

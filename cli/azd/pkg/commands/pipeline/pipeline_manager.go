@@ -57,10 +57,9 @@ type PipelineManager struct {
 	RootOptions *internal.GlobalCommandOptions
 	Environment *environment.Environment
 	PipelineManagerArgs
-	azCli          azcli.AzCli
-	commandRunner  exec.CommandRunner
-	console        input.Console
-	projectManager project.ProjectManager
+	azCli         azcli.AzCli
+	commandRunner exec.CommandRunner
+	console       input.Console
 }
 
 func NewPipelineManager(
@@ -70,7 +69,6 @@ func NewPipelineManager(
 	global *internal.GlobalCommandOptions,
 	commandRunner exec.CommandRunner,
 	console input.Console,
-	projectManager project.ProjectManager,
 	args PipelineManagerArgs,
 ) *PipelineManager {
 	return &PipelineManager{
@@ -81,7 +79,6 @@ func NewPipelineManager(
 		azCli:               azCli,
 		commandRunner:       commandRunner,
 		console:             console,
-		projectManager:      projectManager,
 	}
 }
 
@@ -290,7 +287,7 @@ func (manager *PipelineManager) Configure(ctx context.Context) (
 	}
 
 	// Figure out what is the expected provider to use for provisioning
-	prj, err := manager.projectManager.Load(ctx, manager.AzdCtx.ProjectPath())
+	prj, err := project.Load(ctx, manager.AzdCtx.ProjectPath())
 	if err != nil {
 		return result, fmt.Errorf("finding provisioning provider: %w", err)
 	}

@@ -81,7 +81,7 @@ func Test_Initializer_Initialize(t *testing.T) {
 					return realRunner.Run(ctx, args)
 				})
 
-			i := NewInitializer(console, git.NewGitCli(mockRunner), project.NewProjectManager(nil))
+			i := NewInitializer(console, git.NewGitCli(mockRunner))
 			err := i.Initialize(ctx, azdCtx, "local", "")
 			require.NoError(t, err)
 
@@ -133,8 +133,7 @@ func Test_Initializer_InitializeWithOverwritePrompt(t *testing.T) {
 					return realRunner.Run(context.Background(), args)
 				})
 
-			projectManager := project.NewProjectManager(nil)
-			i := NewInitializer(console, git.NewGitCli(mockRunner), projectManager)
+			i := NewInitializer(console, git.NewGitCli(mockRunner))
 			err := i.Initialize(context.Background(), azdCtx, "local", "")
 
 			if !tt.confirmOverwrite {
@@ -291,7 +290,7 @@ func Test_Initializer_InitializeEmpty(t *testing.T) {
 
 			console := mockinput.NewMockConsole()
 			realRunner := exec.NewCommandRunner(os.Stdin, os.Stdout, os.Stderr)
-			i := NewInitializer(console, git.NewGitCli(realRunner), project.NewProjectManager(nil))
+			i := NewInitializer(console, git.NewGitCli(realRunner))
 			err := i.InitializeEmpty(context.Background(), azdCtx)
 			require.NoError(t, err)
 
@@ -354,8 +353,7 @@ func verifyProjectFile(t *testing.T, azdCtx *azdcontext.AzdContext, content stri
 	content = strings.Replace(content, "<project>", azdCtx.GetDefaultProjectName(), 1)
 	verifyFileContent(t, azdCtx.ProjectPath(), content)
 
-	projectManager := project.NewProjectManager(nil)
-	_, err := projectManager.Load(context.Background(), azdCtx.ProjectPath())
+	_, err := project.Load(context.Background(), azdCtx.ProjectPath())
 	require.NoError(t, err)
 }
 

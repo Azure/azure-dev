@@ -9,7 +9,6 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
-	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/ext"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
@@ -127,7 +126,6 @@ type serviceManager struct {
 
 func NewServiceManager(
 	env *environment.Environment,
-	commandRunner exec.CommandRunner,
 	resourceManager ResourceManager,
 	serviceLocator ioc.ServiceLocator,
 ) ServiceManager {
@@ -142,7 +140,7 @@ func NewServiceManager(
 func (sm *serviceManager) GetRequiredTools(ctx context.Context, serviceConfig *ServiceConfig) ([]tools.ExternalTool, error) {
 	frameworkService, err := sm.GetFrameworkService(ctx, serviceConfig)
 	if err != nil {
-		return nil, fmt.Errorf("getting framework services: %w", err)
+		return nil, fmt.Errorf("getting framework service: %w", err)
 	}
 
 	serviceTarget, err := sm.GetServiceTarget(ctx, serviceConfig)

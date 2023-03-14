@@ -1,14 +1,8 @@
 # Release History
 
-## 0.5.0-alpha.1 (Unreleased)
-
-### Features Added
-
-### Breaking Changes
-
+## 0.4.1 (2023-03-14)
 ### Bugs Fixed
-
-### Other Changes
+- [[#1724]](https://github.com/Azure/azure-dev/pull/1724) Make the notification to install the CLI less aggressive.
 
 ## 0.4.0 (2023-03-08)
 ### Added

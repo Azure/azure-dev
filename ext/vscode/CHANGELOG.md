@@ -1,5 +1,15 @@
 # Release History
 
+## 0.5.0-alpha.1 (Unreleased)
+
+### Features Added
+
+### Breaking Changes
+
+### Bugs Fixed
+
+### Other Changes
+
 ## 0.4.1 (2023-03-14)
 ### Bugs Fixed
 - [[#1724]](https://github.com/Azure/azure-dev/pull/1724) Refine conditions for displaying the prompt to install the CLI.

@@ -118,61 +118,61 @@ stages:
             parameters:
               AzdDirectory: cli/azd
 
-          # - task: PowerShell@2
-          #   condition: and(succeeded(), ne(variables['Skip.LiveTest'], 'true'))
-          #   inputs:
-          #     pwsh: true
-          #     targetType: filePath
-          #     filePath: cli/azd/ci-test.ps1
-          #     workingDirectory: cli/azd
-          #   displayName: Test Go Binary
-          #   env:
-          #     # Set GITHUB_RUN_NUMBER because cli_test.go is coupled to that
-          #     # environment variable.
-          #     GITHUB_RUN_NUMBER: $(Build.BuildId)
-          #     # Generate junit report to publish results
-          #     GOTESTSUM_JUNITFILE: junitTestReport.xml
-          #     # Required for Terraform service principal authentication
-          #     ARM_CLIENT_ID: $(arm-client-id)
-          #     ARM_CLIENT_SECRET: $(arm-client-secret)
-          #     ARM_TENANT_ID: $(arm-tenant-id)
+          - task: PowerShell@2
+            condition: and(succeeded(), ne(variables['Skip.LiveTest'], 'true'))
+            inputs:
+              pwsh: true
+              targetType: filePath
+              filePath: cli/azd/ci-test.ps1
+              workingDirectory: cli/azd
+            displayName: Test Go Binary
+            env:
+              # Set GITHUB_RUN_NUMBER because cli_test.go is coupled to that
+              # environment variable.
+              GITHUB_RUN_NUMBER: $(Build.BuildId)
+              # Generate junit report to publish results
+              GOTESTSUM_JUNITFILE: junitTestReport.xml
+              # Required for Terraform service principal authentication
+              ARM_CLIENT_ID: $(arm-client-id)
+              ARM_CLIENT_SECRET: $(arm-client-secret)
+              ARM_TENANT_ID: $(arm-tenant-id)
 
-          # - task: PublishTestResults@2
-          #   inputs:
-          #     testResultsFormat: JUnit
-          #     testResultsFiles: '**/junitTestReport.xml'
-          #     testRunTitle: $(Agent.JobName)
-          #     searchFolder: cli/azd
-          #     publishRunAttachments: true
-          #   displayName: Publish test results
-          #   condition: succeededOrFailed()
+          - task: PublishTestResults@2
+            inputs:
+              testResultsFormat: JUnit
+              testResultsFiles: '**/junitTestReport.xml'
+              testRunTitle: $(Agent.JobName)
+              searchFolder: cli/azd
+              publishRunAttachments: true
+            displayName: Publish test results
+            condition: succeededOrFailed()
 
-          # - pwsh: |
-          #     go install github.com/axw/gocov/gocov@latest
-          #     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          #     go install github.com/AlekSi/gocov-xml@latest
-          #     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          #     ~/go/bin/gocov convert cover.out | ~/go/bin/gocov-xml > coverage.xml
-          #   workingDirectory: cli/azd
-          #   condition: >-
-          #     and(
-          #       succeeded(),
-          #       eq(variables['GenerateCoverage'], 'true'),
-          #       ne(variables['Skip.LiveTest'], 'true')
-          #     )
-          #   displayName: Generate coverage
+          - pwsh: |
+              go install github.com/axw/gocov/gocov@latest
+              if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+              go install github.com/AlekSi/gocov-xml@latest
+              if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+              ~/go/bin/gocov convert cover.out | ~/go/bin/gocov-xml > coverage.xml
+            workingDirectory: cli/azd
+            condition: >-
+              and(
+                succeeded(),
+                eq(variables['GenerateCoverage'], 'true'),
+                ne(variables['Skip.LiveTest'], 'true')
+              )
+            displayName: Generate coverage
 
-          # - task: PublishCodeCoverageResults@1
-          #   condition: >-
-          #     and(
-          #       succeeded(),
-          #       eq(variables['GenerateCoverage'], 'true'),
-          #       ne(variables['Skip.LiveTest'], 'true')
-          #     )
-          #   inputs:
-          #     codeCoverageTool: Cobertura
-          #     summaryFileLocation: '$(Build.SourcesDirectory)/**/coverage.xml'
-          #   displayName: Publish Code Coverage to DevOps
+          - task: PublishCodeCoverageResults@1
+            condition: >-
+              and(
+                succeeded(),
+                eq(variables['GenerateCoverage'], 'true'),
+                ne(variables['Skip.LiveTest'], 'true')
+              )
+            inputs:
+              codeCoverageTool: Cobertura
+              summaryFileLocation: '$(Build.SourcesDirectory)/**/coverage.xml'
+            displayName: Publish Code Coverage to DevOps
 
           - pwsh: Move-Item $(BuildOutputName) $(BuildTarget)
             workingDirectory: cli/azd

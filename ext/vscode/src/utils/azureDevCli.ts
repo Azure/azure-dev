@@ -164,7 +164,7 @@ function normalize(env: NodeJS.ProcessEnv): Environment {
 }
 
 function azdNotInstalledMsg(): string {
-    return localize("azure-dev.utils.azd.notInstalled", "Azure Developer CLI is not installed. [Learn More](https://aka.ms/azd-install). Would you like to install it?");
+    return localize("azure-dev.utils.azd.notInstalled", "Azure Developer CLI is not installed. Would you like to install it? [Learn More](https://aka.ms/azd-install)");
 }
 
 function azdNotInstalledUserChoices(): AzExtErrorButton[] {

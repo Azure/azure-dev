@@ -22,6 +22,9 @@
     },
     "keyVaultName": {
       "value": "${AZURE_KEY_VAULT_NAME}"
+    },
+    "corsAcaUrl": { 
+      "value": "${API_CORS_ACA_URL}" 
     }
   }
 }

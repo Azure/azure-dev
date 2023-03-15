@@ -352,11 +352,14 @@ func (sm *serviceManager) Deploy(
 // GetServiceTarget constructs a ServiceTarget from the underlying service configuration
 func (sm *serviceManager) GetServiceTarget(ctx context.Context, serviceConfig *ServiceConfig) (ServiceTarget, error) {
 	var target ServiceTarget
+
+	// If we fail resolving the service target here this is most likely due the user
+	// specifying a host value outside the bounds of our supported values.
 	if err := sm.serviceLocator.ResolveNamed(serviceConfig.Host, &target); err != nil {
 		return nil, fmt.Errorf(
-			"failed resolving service target for '%s', host '%s': %w",
-			serviceConfig.Name,
+			"unsupported service host '%s' for service '%s', %w",
 			serviceConfig.Host,
+			serviceConfig.Name,
 			err,
 		)
 	}
@@ -371,11 +374,14 @@ func (sm *serviceManager) GetServiceTarget(ctx context.Context, serviceConfig *S
 // GetFrameworkService constructs a framework service from the underlying service configuration
 func (sm *serviceManager) GetFrameworkService(ctx context.Context, serviceConfig *ServiceConfig) (FrameworkService, error) {
 	var frameworkService FrameworkService
+
+	// If we fail resolving the service target here this is most likely due the user
+	// specifying a language value outside the bounds of our supported values.
 	if err := sm.serviceLocator.ResolveNamed(serviceConfig.Language, &frameworkService); err != nil {
 		return nil, fmt.Errorf(
-			"failed resolving framework service for '%s', language '%s': %w",
-			serviceConfig.Name,
+			"unsupported language '%s' for service '%s', %w",
 			serviceConfig.Language,
+			serviceConfig.Name,
 			err,
 		)
 	}
@@ -384,12 +390,12 @@ func (sm *serviceManager) GetFrameworkService(ctx context.Context, serviceConfig
 	if serviceConfig.Host == string(ContainerAppTarget) || serviceConfig.Host == string(AksTarget) {
 		var compositeFramework CompositeFrameworkService
 		if err := sm.serviceLocator.ResolveNamed(string(ServiceLanguageDocker), &compositeFramework); err != nil {
-			return nil, fmt.Errorf(
+			panic(fmt.Errorf(
 				"failed resolving composite framework service for '%s', language '%s': %w",
 				serviceConfig.Name,
 				serviceConfig.Language,
 				err,
-			)
+			))
 		}
 
 		if err := compositeFramework.SetSource(ctx, frameworkService); err != nil {

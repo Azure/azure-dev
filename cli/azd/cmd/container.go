@@ -297,11 +297,11 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 
 	// Tools
 	container.RegisterSingleton(func(rootOptions *internal.GlobalCommandOptions,
-		credential azcore.TokenCredential) azcli.AzCli {
+		credential azcore.TokenCredential, httpClient httputil.HttpClient) azcli.AzCli {
 		return azcli.NewAzCli(credential, azcli.NewAzCliArgs{
 			EnableDebug:     rootOptions.EnableDebugLogging,
 			EnableTelemetry: rootOptions.EnableTelemetry,
-			HttpClient:      nil,
+			HttpClient:      httpClient,
 		})
 	})
 	container.RegisterSingleton(bicep.NewBicepCli)

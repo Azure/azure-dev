@@ -18,6 +18,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
+	"github.com/azure/azure-dev/cli/azd/pkg/graphsdk"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
@@ -229,5 +230,74 @@ func Test_createAndInitEnvironment(t *testing.T) {
 			fmt.Sprintf("environment '%s' already exists",
 				validName))
 	})
+	t.Run("ensure Initialized", func(t *testing.T) {
+		mockContext := mocks.NewMockContext(context.Background())
+		tempDir := t.TempDir()
+		validName := "azdEnv"
+		azdContext := azdcontext.NewAzdContextWithDirectory(tempDir)
 
+		mockContext.Console.WhenSelect(func(options input.ConsoleOptions) bool {
+			return strings.Contains(options.Message, "Please select an Azure Subscription to use")
+		}).RespondFn(func(options input.ConsoleOptions) (any, error) {
+			// Select the first from the list
+			return 0, nil
+		})
+		mockContext.Console.WhenSelect(func(options input.ConsoleOptions) bool {
+			return strings.Contains(options.Message, "Please select an Azure location")
+		}).RespondFn(func(options input.ConsoleOptions) (any, error) {
+			// Select the first from the list
+			return 0, nil
+		})
+
+		expectedPrincipalId := "oid"
+		mockContext.HttpClient.When(func(request *http.Request) bool {
+			return request.Method == http.MethodGet && strings.Contains(
+				request.URL.Path,
+				"/me",
+			)
+		}).RespondFn(func(request *http.Request) (*http.Response, error) {
+			return mocks.CreateHttpResponseWithBody(request, 200, graphsdk.UserProfile{
+				Id:                expectedPrincipalId,
+				GivenName:         "John",
+				Surname:           "Doe",
+				JobTitle:          "Software Engineer",
+				DisplayName:       "John Doe",
+				UserPrincipalName: "john.doe@contoso.com",
+			})
+		})
+
+		expectedSub := "00000000-0000-0000-0000-000000000000"
+		expectedLocation := "location"
+		createdEnv, err := createAndInitEnvironment(
+			*mockContext.Context,
+			&environmentSpec{
+				environmentName: validName,
+			},
+			azdContext,
+			mockContext.Console,
+			&mockaccount.MockAccountManager{
+				Subscriptions: []account.Subscription{{Id: expectedSub}},
+				Locations:     []azcli.AzCliLocation{{DisplayName: "west", Name: expectedLocation}},
+			},
+			azcli.NewUserProfileService(
+				&mocks.MockMultiTenantCredentialProvider{},
+				mockContext.HttpClient,
+			),
+			&mockSubscriptionTenantResolver{},
+		)
+		require.NoError(t, err)
+
+		require.Equal(t, createdEnv.GetEnvName(), validName)
+		require.Equal(t, createdEnv.GetPrincipalId(), expectedPrincipalId)
+		require.Equal(t, createdEnv.GetSubscriptionId(), expectedSub)
+		require.Equal(t, createdEnv.GetLocation(), expectedLocation)
+	})
+}
+
+type mockSubscriptionTenantResolver struct {
+}
+
+func (m *mockSubscriptionTenantResolver) LookupTenant(
+	ctx context.Context, subscriptionId string) (tenantId string, err error) {
+	return "00000000-0000-0000-0000-000000000000", nil
 }

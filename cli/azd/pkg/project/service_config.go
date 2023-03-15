@@ -34,6 +34,8 @@ type ServiceConfig struct {
 	Hooks map[string]*ext.HookConfig `yaml:"hooks,omitempty"`
 
 	*ext.EventDispatcher[ServiceLifecycleEventArgs] `yaml:",omitempty"`
+
+	initialized bool
 }
 
 // Path returns the fully qualified path to the project

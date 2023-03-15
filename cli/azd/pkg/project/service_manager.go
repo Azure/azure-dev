@@ -90,6 +90,7 @@ type ServiceDeployResult struct {
 type ServiceManager interface {
 	GetRequiredTools(ctx context.Context, serviceConfig *ServiceConfig) ([]tools.ExternalTool, error)
 
+	Initialize(ctx context.Context, serviceConfig *ServiceConfig) error
 	Restore(
 		ctx context.Context,
 		serviceConfig *ServiceConfig,
@@ -153,6 +154,34 @@ func (sm *serviceManager) GetRequiredTools(ctx context.Context, serviceConfig *S
 	requiredTools = append(requiredTools, serviceTarget.RequiredExternalTools(ctx)...)
 
 	return requiredTools, nil
+}
+
+func (sm *serviceManager) Initialize(ctx context.Context, serviceConfig *ServiceConfig) error {
+	if serviceConfig.initialized {
+		return nil
+	}
+
+	frameworkService, err := sm.GetFrameworkService(ctx, serviceConfig)
+	if err != nil {
+		return fmt.Errorf("getting framework service: %w", err)
+	}
+
+	serviceTarget, err := sm.GetServiceTarget(ctx, serviceConfig)
+	if err != nil {
+		return fmt.Errorf("getting service target: %w", err)
+	}
+
+	if err := frameworkService.Initialize(ctx, serviceConfig); err != nil {
+		return err
+	}
+
+	if err := serviceTarget.Initialize(ctx, serviceConfig); err != nil {
+		return err
+	}
+
+	serviceConfig.initialized = true
+
+	return nil
 }
 
 func (sm *serviceManager) Restore(
@@ -364,10 +393,6 @@ func (sm *serviceManager) GetServiceTarget(ctx context.Context, serviceConfig *S
 		)
 	}
 
-	if err := target.Initialize(ctx, serviceConfig); err != nil {
-		return nil, fmt.Errorf("failed initializing service target for '%s': %w", serviceConfig.Name, err)
-	}
-
 	return target, nil
 }
 
@@ -403,10 +428,6 @@ func (sm *serviceManager) GetFrameworkService(ctx context.Context, serviceConfig
 		}
 
 		frameworkService = compositeFramework
-	}
-
-	if err := frameworkService.Initialize(ctx, serviceConfig); err != nil {
-		return nil, fmt.Errorf("failed initializing framework service for '%s': %w", serviceConfig.Name, err)
 	}
 
 	return frameworkService, nil

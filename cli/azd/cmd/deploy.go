@@ -192,6 +192,10 @@ func (d *deployAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		}
 	}
 
+	if d.flags.serviceName != "" && len(deploymentResults) == 0 {
+		return nil, fmt.Errorf("no services were deployed. Check the specified service name and try again.")
+	}
+
 	if d.formatter.Kind() == output.JsonFormat {
 		aggregateDeploymentResult := DeploymentResult{
 			Timestamp: time.Now(),

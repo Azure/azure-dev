@@ -43,6 +43,10 @@ func (pm *projectManager) Initialize(ctx context.Context, projectConfig *Project
 	var projectTools []tools.ExternalTool
 
 	for _, svc := range projectConfig.Services {
+		if err := pm.serviceManager.Initialize(ctx, svc); err != nil {
+			return fmt.Errorf("initializing service '%s', %w", svc.Name, err)
+		}
+
 		svcTools, err := pm.serviceManager.GetRequiredTools(ctx, svc)
 		if err != nil {
 			return fmt.Errorf("getting service required tools: %w", err)

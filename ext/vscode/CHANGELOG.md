@@ -2,7 +2,7 @@
 
 ## 0.4.2 (2023-03-15)
 ### Bugs Fixed
-- [[#1735]](https://github.com/Azure/azure-dev/pull/1735) Fixed an issue with the login command.
+- [[#1735]](https://github.com/Azure/azure-dev/pull/1735) Fixed an issue with the login command not working immediately after install.
 
 ## 0.4.1 (2023-03-14)
 ### Bugs Fixed

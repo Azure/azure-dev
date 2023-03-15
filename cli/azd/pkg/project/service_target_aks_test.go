@@ -74,9 +74,14 @@ func Test_Deploy_HappyPath(t *testing.T) {
 	err = setupK8sManifests(t, serviceConfig)
 	require.NoError(t, err)
 
+	packageTask := serviceTarget.Package(*mockContext.Context, serviceConfig, &ServiceBuildResult{BuildOutputPath: "IMAGE_ID"})
+	logProgress(packageTask)
+	packageResult, err := packageTask.Await()
+	require.NoError(t, err)
+
 	scope := environment.NewTargetResource("SUB_ID", "RG_ID", "CLUSTER_NAME", string(infra.AzureResourceTypeManagedCluster))
-	publishTask := serviceTarget.Publish(*mockContext.Context, serviceConfig, nil, scope)
-	logProgress[*ServicePublishResult, ServiceProgress](publishTask)
+	publishTask := serviceTarget.Publish(*mockContext.Context, serviceConfig, packageResult, scope)
+	logProgress(publishTask)
 
 	publishResult, err := publishTask.Await()
 	require.NoError(t, err)
@@ -104,7 +109,7 @@ func Test_Deploy_No_Cluster_Name(t *testing.T) {
 	serviceTarget := createServiceTarget(mockContext, serviceConfig, env)
 	scope := environment.NewTargetResource("SUB_ID", "RG_ID", "CLUSTER_NAME", string(infra.AzureResourceTypeManagedCluster))
 	publishTask := serviceTarget.Publish(*mockContext.Context, serviceConfig, nil, scope)
-	logProgress[*ServicePublishResult, ServiceProgress](publishTask)
+	logProgress(publishTask)
 
 	publishResult, err := publishTask.Await()
 	require.Error(t, err)
@@ -129,7 +134,7 @@ func Test_Deploy_No_Container_Registry(t *testing.T) {
 	serviceTarget := createServiceTarget(mockContext, serviceConfig, env)
 	scope := environment.NewTargetResource("SUB_ID", "RG_ID", "CLUSTER_NAME", string(infra.AzureResourceTypeManagedCluster))
 	publishTask := serviceTarget.Publish(*mockContext.Context, serviceConfig, nil, scope)
-	logProgress[*ServicePublishResult, ServiceProgress](publishTask)
+	logProgress(publishTask)
 
 	publishResult, err := publishTask.Await()
 	require.Error(t, err)
@@ -156,7 +161,7 @@ func Test_Deploy_No_Admin_Credentials(t *testing.T) {
 	serviceTarget := createServiceTarget(mockContext, serviceConfig, env)
 	scope := environment.NewTargetResource("SUB_ID", "RG_ID", "CLUSTER_NAME", string(infra.AzureResourceTypeManagedCluster))
 	publishTask := serviceTarget.Publish(*mockContext.Context, serviceConfig, nil, scope)
-	logProgress[*ServicePublishResult, ServiceProgress](publishTask)
+	logProgress(publishTask)
 	publishResult, err := publishTask.Await()
 
 	require.Error(t, err)

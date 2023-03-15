@@ -10,6 +10,10 @@
 
 ### Other Changes
 
+## 0.4.1 (2023-03-14)
+### Bugs Fixed
+- [[#1724]](https://github.com/Azure/azure-dev/pull/1724) Refine conditions for displaying the prompt to install the CLI.
+
 ## 0.4.0 (2023-03-08)
 ### Added
 - [[#853]](https://github.com/Azure/azure-dev/pull/853) Integration with the Azure Resources extension's workspace view. Requires version 0.6.1 of the [Azure Resources](https://marketplace.visualstudio.com/items?itemName=ms-azuretools.vscode-azureresourcegroups) extension.

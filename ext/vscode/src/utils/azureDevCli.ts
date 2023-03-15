@@ -15,10 +15,8 @@ import { setVsCodeContext } from './setVsCodeContext';
 
 // Twenty seconds: generous, but not infinite
 export const DefaultAzCliInvocationTimeout: number = 20 * 1000;
-const AzdInstallationUrl: string = 'https://aka.ms/azd-install';
 const AzdLoginCheckCacheLifetime = 15 * 60 * 1000; // 15 minutes
 
-let userWarnedAzdMissing: boolean = false;
 let azdInstallAttempted: boolean = false;
 const azdLoginChecker = new AsyncLazy<LoginStatus | undefined>(getAzdLoginStatus, AzdLoginCheckCacheLifetime);
 
@@ -39,7 +37,6 @@ export async function createAzureDevCli(context: IActionContext): Promise<AzureD
     if (!loginStatus) {
         context.errorHandling.suppressReportIssue = true;
         context.errorHandling.buttons = azdNotInstalledUserChoices();
-        userWarnedAzdMissing = true;
         throw new Error(azdNotInstalledMsg());
     }
 
@@ -52,10 +49,14 @@ export function scheduleAzdSignInCheck(): void {
     setTimeout(async () => {
         const result = await azdLoginChecker.getValue();
 
-        if (!result && !userWarnedAzdMissing && !azdInstallAttempted) {
-            userWarnedAzdMissing = true;
-            const response = await vscode.window.showWarningMessage(azdNotInstalledMsg(), {}, ...azdNotInstalledUserChoices());
-            await response?.callback();
+        if (result !== undefined) {
+            // If we've reached this point, AZD is installed. We can set the VSCode context that the walk-through uses
+            await setVsCodeContext('hideAzdInstallStep', true);
+
+            // If the user is logged in, we can also set the login context
+            if (result.status === 'success') {
+                await setVsCodeContext('hideAzdLoginStep', true);
+            }
         }
     }, oneSecond);
 }
@@ -143,14 +144,6 @@ async function getAzdLoginStatus(): Promise<LoginStatus | undefined> {
         const stdout = (await execAsync(command, cli.spawnOptions())).stdout;
         const result = JSON.parse(stdout) as LoginStatus;
 
-        // If we've reached this point, AZD is installed. We can set the VSCode context that the walk-through uses
-        await setVsCodeContext('hideAzdInstallStep', true);
-
-        // If the user is logged in, we can also set the login context
-        if (result?.status === 'success') {
-            await setVsCodeContext('hideAzdLoginStep', true);
-        }
-
         return result;
     } catch {
         // If AZD is not installed, return `undefined`
@@ -171,26 +164,20 @@ function normalize(env: NodeJS.ProcessEnv): Environment {
 }
 
 function azdNotInstalledMsg(): string {
-    return localize("azure-dev.utils.azd.notInstalled", "Azure Developer CLI is not installed. Would you like to install it?.");
+    return localize("azure-dev.utils.azd.notInstalled", "Azure Developer CLI is not installed. Would you like to install it? [Learn More](https://aka.ms/azd-install)");
 }
 
 function azdNotInstalledUserChoices(): AzExtErrorButton[] {
     const choices: AzExtErrorButton[] = [
         {
-            "title": localize("azure-dev.utils.azd.installNow", "Install"),
-            "callback": async () => {
+            title: localize("azure-dev.utils.azd.installNow", "Install"),
+            callback: async () => {
                 await vscode.commands.executeCommand("azure-dev.commands.cli.install", /* shouldPrompt: */ false);
             }
         },
         {
-            "title": localize("azure-dev.utils.azd.goToInstallUrl", "Learn More"),
-            "callback": async () => {
-                await vscode.env.openExternal(vscode.Uri.parse(AzdInstallationUrl));
-            }
-        },
-        {
-            "title": localize("azure-dev.utils.azd.later", "Later"),
-            "callback": () => { return Promise.resolve(); /* no-op */ }
+            title: localize("azure-dev.utils.azd.later", "Later"),
+            callback: () => { return Promise.resolve(); /* no-op */ }
         }
     ];
     return choices;

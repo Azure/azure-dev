@@ -5,8 +5,11 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
+	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"testing"
@@ -14,6 +17,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
@@ -173,5 +177,55 @@ func Test_getSubscriptionOptions(t *testing.T) {
 		defSub, ok := result.(string)
 		require.True(t, ok)
 		require.EqualValues(t, " 1. DISPLAY DEFAULT (SUBSCRIPTION_DEFAULT)", defSub)
+	})
+}
+
+func Test_createAndInitEnvironment(t *testing.T) {
+	t.Run("invalid name", func(t *testing.T) {
+		mockContext := mocks.NewMockContext(context.Background())
+		tempDir := t.TempDir()
+		azdContext := azdcontext.NewAzdContextWithDirectory(tempDir)
+		invalidEnvName := "*!33"
+		_, err := createAndInitEnvironment(
+			*mockContext.Context,
+			&environmentSpec{
+				environmentName: invalidEnvName,
+			},
+			azdContext,
+			mockContext.Console,
+			&mockaccount.MockAccountManager{},
+			&azcli.UserProfileService{},
+			&account.SubscriptionsManager{},
+		)
+		require.ErrorContains(
+			t,
+			err,
+			fmt.Sprintf("environment name '%s' is invalid (it should contain only alphanumeric characters and hyphens)\n",
+				invalidEnvName))
+	})
+
+	t.Run("env already exists", func(t *testing.T) {
+		mockContext := mocks.NewMockContext(context.Background())
+		tempDir := t.TempDir()
+		validName := "azdEnv"
+		os.MkdirAll(filepath.Join(tempDir, ".azure", validName), 0755)
+		azdContext := azdcontext.NewAzdContextWithDirectory(tempDir)
+
+		_, err := createAndInitEnvironment(
+			*mockContext.Context,
+			&environmentSpec{
+				environmentName: validName,
+			},
+			azdContext,
+			mockContext.Console,
+			&mockaccount.MockAccountManager{},
+			&azcli.UserProfileService{},
+			&account.SubscriptionsManager{},
+		)
+		require.ErrorContains(
+			t,
+			err,
+			fmt.Sprintf("environment '%s' already exists",
+				validName))
 	})
 }

@@ -102,6 +102,11 @@ func (at *containerAppTarget) Package(
 			}
 
 			imageId := buildOutput.BuildOutputPath
+			if imageId == "" {
+				task.SetError(errors.New("missing container image id from build output"))
+				return
+			}
+
 			imageTag, err := at.generateImageTag(serviceConfig)
 			if err != nil {
 				task.SetError(fmt.Errorf("generating image tag: %w", err))
@@ -133,7 +138,7 @@ func (at *containerAppTarget) Package(
 
 			task.SetResult(&ServicePackageResult{
 				Build: buildOutput,
-				Details: containerAppPackageResult{
+				Details: &containerAppPackageResult{
 					ImageTag:    fullTag,
 					LoginServer: loginServer,
 				},
@@ -163,7 +168,7 @@ func (at *containerAppTarget) Publish(
 				serviceConfig.Infra.Module = serviceConfig.Name
 			}
 
-			packageDetails, ok := packageOutput.Details.(containerAppPackageResult)
+			packageDetails, ok := packageOutput.Details.(*containerAppPackageResult)
 			if !ok {
 				task.SetError(errors.New("failed retrieving package result details"))
 				return

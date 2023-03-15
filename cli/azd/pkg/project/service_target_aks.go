@@ -113,6 +113,11 @@ func (t *aksTarget) Package(
 			}
 
 			imageId := buildOutput.BuildOutputPath
+			if imageId == "" {
+				task.SetError(errors.New("missing container image id from build output"))
+				return
+			}
+
 			imageTag, err := t.generateImageTag(serviceConfig)
 			if err != nil {
 				task.SetError(fmt.Errorf("failed generating image tag: %w", err))
@@ -142,7 +147,7 @@ func (t *aksTarget) Package(
 			}
 
 			task.SetResult(&ServicePackageResult{
-				Details: aksPackageResult{
+				Details: &aksPackageResult{
 					ImageTag:    fullTag,
 					LoginServer: loginServer,
 				},
@@ -150,18 +155,6 @@ func (t *aksTarget) Package(
 			})
 		},
 	)
-}
-
-func (t *aksTarget) ValidateTargetResource(
-	ctx context.Context,
-	serviceConfig *ServiceConfig,
-	targetResource *environment.TargetResource,
-) error {
-	if targetResource.ResourceGroupName() == "" {
-		return fmt.Errorf("missing resource group name: %s", targetResource.ResourceGroupName())
-	}
-
-	return nil
 }
 
 // Deploys service container images to ACR and AKS resources to the AKS cluster
@@ -173,8 +166,13 @@ func (t *aksTarget) Publish(
 ) *async.TaskWithProgress[*ServicePublishResult, ServiceProgress] {
 	return async.RunTaskWithProgress(
 		func(task *async.TaskContextWithProgress[*ServicePublishResult, ServiceProgress]) {
-			if err := t.ValidateTargetResource(ctx, serviceConfig, targetResource); err != nil {
+			if err := t.validateTargetResource(ctx, serviceConfig, targetResource); err != nil {
 				task.SetError(fmt.Errorf("validating target resource: %w", err))
+				return
+			}
+
+			if packageOutput == nil {
+				task.SetError(errors.New("missing package output"))
 				return
 			}
 
@@ -212,7 +210,7 @@ func (t *aksTarget) Publish(
 				return
 			}
 
-			packageDetails, ok := packageOutput.Details.(aksPackageResult)
+			packageDetails, ok := packageOutput.Details.(*aksPackageResult)
 			if !ok {
 				task.SetError(errors.New("failed retrieving package result details"))
 				return
@@ -387,6 +385,18 @@ func (t *aksTarget) Endpoints(
 	endpoints := append(serviceEndpoints, ingressEndpoints...)
 
 	return endpoints, nil
+}
+
+func (t *aksTarget) validateTargetResource(
+	ctx context.Context,
+	serviceConfig *ServiceConfig,
+	targetResource *environment.TargetResource,
+) error {
+	if targetResource.ResourceGroupName() == "" {
+		return fmt.Errorf("missing resource group name: %s", targetResource.ResourceGroupName())
+	}
+
+	return nil
 }
 
 func (t *aksTarget) configureK8sContext(

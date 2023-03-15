@@ -59,7 +59,7 @@ func Test_Required_Tools(t *testing.T) {
 	require.Implements(t, new(kubectl.KubectlCli), requiredTools[1])
 }
 
-func Test_Deploy_HappyPath(t *testing.T) {
+func Test_Package_Publish_HappyPath(t *testing.T) {
 	tempDir := t.TempDir()
 	ostest.Chdir(t, tempDir)
 
@@ -74,25 +74,33 @@ func Test_Deploy_HappyPath(t *testing.T) {
 	err = setupK8sManifests(t, serviceConfig)
 	require.NoError(t, err)
 
-	packageTask := serviceTarget.Package(*mockContext.Context, serviceConfig, &ServiceBuildResult{BuildOutputPath: "IMAGE_ID"})
+	packageTask := serviceTarget.Package(
+		*mockContext.Context,
+		serviceConfig,
+		&ServiceBuildResult{BuildOutputPath: "IMAGE_ID"},
+	)
 	logProgress(packageTask)
 	packageResult, err := packageTask.Await()
+
 	require.NoError(t, err)
+	require.NotNil(t, packageResult)
+	require.NotNil(t, env.Values["SERVICE_SVC_IMAGE_NAME"])
+	require.Equal(t, packageResult.PackagePath, env.Values["SERVICE_SVC_IMAGE_NAME"])
+	require.IsType(t, new(aksPackageResult), packageResult.Details)
 
 	scope := environment.NewTargetResource("SUB_ID", "RG_ID", "CLUSTER_NAME", string(infra.AzureResourceTypeManagedCluster))
 	publishTask := serviceTarget.Publish(*mockContext.Context, serviceConfig, packageResult, scope)
 	logProgress(publishTask)
-
 	publishResult, err := publishTask.Await()
+
 	require.NoError(t, err)
 	require.NotNil(t, publishResult)
 	require.Equal(t, AksTarget, publishResult.Kind)
-	require.NotNil(t, env.Values["SERVICE_SVC_IMAGE_NAME"])
 	require.IsType(t, new(kubectl.Deployment), publishResult.Details)
 	require.Greater(t, len(publishResult.Endpoints), 0)
 }
 
-func Test_Deploy_No_Cluster_Name(t *testing.T) {
+func Test_Publish_No_Cluster_Name(t *testing.T) {
 	tempDir := t.TempDir()
 	ostest.Chdir(t, tempDir)
 
@@ -108,7 +116,15 @@ func Test_Deploy_No_Cluster_Name(t *testing.T) {
 
 	serviceTarget := createServiceTarget(mockContext, serviceConfig, env)
 	scope := environment.NewTargetResource("SUB_ID", "RG_ID", "CLUSTER_NAME", string(infra.AzureResourceTypeManagedCluster))
-	publishTask := serviceTarget.Publish(*mockContext.Context, serviceConfig, nil, scope)
+	packageOutput := &ServicePackageResult{
+		Build: &ServiceBuildResult{BuildOutputPath: "IMAGE_ID"},
+		Details: &aksPackageResult{
+			ImageTag:    "IMAGE_TAG",
+			LoginServer: env.Values[environment.ContainerRegistryEndpointEnvVarName],
+		},
+	}
+
+	publishTask := serviceTarget.Publish(*mockContext.Context, serviceConfig, packageOutput, scope)
 	logProgress(publishTask)
 
 	publishResult, err := publishTask.Await()
@@ -117,7 +133,7 @@ func Test_Deploy_No_Cluster_Name(t *testing.T) {
 	require.Nil(t, publishResult)
 }
 
-func Test_Deploy_No_Container_Registry(t *testing.T) {
+func Test_Package_No_Container_Registry(t *testing.T) {
 	tempDir := t.TempDir()
 	ostest.Chdir(t, tempDir)
 
@@ -132,17 +148,21 @@ func Test_Deploy_No_Container_Registry(t *testing.T) {
 	delete(env.Values, environment.ContainerRegistryEndpointEnvVarName)
 
 	serviceTarget := createServiceTarget(mockContext, serviceConfig, env)
-	scope := environment.NewTargetResource("SUB_ID", "RG_ID", "CLUSTER_NAME", string(infra.AzureResourceTypeManagedCluster))
-	publishTask := serviceTarget.Publish(*mockContext.Context, serviceConfig, nil, scope)
-	logProgress(publishTask)
 
-	publishResult, err := publishTask.Await()
+	packageTask := serviceTarget.Package(
+		*mockContext.Context,
+		serviceConfig,
+		&ServiceBuildResult{BuildOutputPath: "IMAGE_ID"},
+	)
+	logProgress(packageTask)
+	packageResult, err := packageTask.Await()
+
 	require.Error(t, err)
 	require.ErrorContains(t, err, "could not determine container registry endpoint")
-	require.Nil(t, publishResult)
+	require.Nil(t, packageResult)
 }
 
-func Test_Deploy_No_Admin_Credentials(t *testing.T) {
+func Test_Publish_No_Admin_Credentials(t *testing.T) {
 	tempDir := t.TempDir()
 	ostest.Chdir(t, tempDir)
 
@@ -160,7 +180,15 @@ func Test_Deploy_No_Admin_Credentials(t *testing.T) {
 
 	serviceTarget := createServiceTarget(mockContext, serviceConfig, env)
 	scope := environment.NewTargetResource("SUB_ID", "RG_ID", "CLUSTER_NAME", string(infra.AzureResourceTypeManagedCluster))
-	publishTask := serviceTarget.Publish(*mockContext.Context, serviceConfig, nil, scope)
+	packageOutput := &ServicePackageResult{
+		Build: &ServiceBuildResult{BuildOutputPath: "IMAGE_ID"},
+		Details: &aksPackageResult{
+			ImageTag:    "IMAGE_TAG",
+			LoginServer: env.Values[environment.ContainerRegistryEndpointEnvVarName],
+		},
+	}
+
+	publishTask := serviceTarget.Publish(*mockContext.Context, serviceConfig, packageOutput, scope)
 	logProgress(publishTask)
 	publishResult, err := publishTask.Await()
 

@@ -208,10 +208,11 @@ func Test_createAndInitEnvironment(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
 		tempDir := t.TempDir()
 		validName := "azdEnv"
-		os.MkdirAll(filepath.Join(tempDir, ".azure", validName), 0755)
+		err := os.MkdirAll(filepath.Join(tempDir, ".azure", validName), 0755)
+		require.NoError(t, err)
 		azdContext := azdcontext.NewAzdContextWithDirectory(tempDir)
 
-		_, err := createAndInitEnvironment(
+		_, err = createAndInitEnvironment(
 			*mockContext.Context,
 			&environmentSpec{
 				environmentName: validName,
@@ -228,4 +229,5 @@ func Test_createAndInitEnvironment(t *testing.T) {
 			fmt.Sprintf("environment '%s' already exists",
 				validName))
 	})
+
 }

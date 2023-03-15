@@ -28,6 +28,9 @@ export enum TelemetryId {
     // Extra data captured: whether the "purge" option was used.
     InfraDeleteCli = 'azure-dev.commands.cli.infra-delete.task',
 
+    // Reported when 'login' CLI command is invoked.
+    LoginCli = 'azure-dev.commands.cli.login-cli.task',
+
     // Reported when 'pipeline config' CLI command is invoked.
     PipelineConfigCli = 'azure-dev.commands.cli.pipeline-config.task',
 

@@ -17,11 +17,21 @@ param intTagValue int
 @description('Test parameter for bool-typed values.')
 param boolTagValue bool
 
+@description('Test parameter for secureString-typed values.')
+@secure()
+param secureValue string
+
+@description('Test parameter for secureObject-typed values.')
+@secure()
+param secureObject object = {}
+
 var tags = {
   'azd-env-name': environmentName
   DeleteAfter: deleteAfterTime
   IntTag: string(intTagValue)
   BoolTag: string(boolTagValue)
+  SecureTag: secureValue
+  SecureObjectTag: string(secureObject)
 }
 
 resource rg 'Microsoft.Resources/resourceGroups@2021-04-01' = {

@@ -28,6 +28,7 @@ func TestNewContainerAppTargetTypeValidation(t *testing.T) {
 			nil,
 			nil,
 			nil,
+			nil,
 		)
 
 		require.NoError(t, err)
@@ -45,6 +46,7 @@ func TestNewContainerAppTargetTypeValidation(t *testing.T) {
 			nil,
 			nil,
 			nil,
+			nil,
 		)
 
 		require.NoError(t, err)
@@ -55,6 +57,7 @@ func TestNewContainerAppTargetTypeValidation(t *testing.T) {
 			nil,
 			nil,
 			environment.NewTargetResource("SUB_ID", "RG_ID", "res", "BadType"),
+			nil,
 			nil,
 			nil,
 			nil,
@@ -79,7 +82,7 @@ func Test_containerAppTarget_generateImageTag(t *testing.T) {
 	}{
 		{"Default",
 			DockerProjectOptions{},
-			fmt.Sprintf("%s:azdev-deploy-%d", defaultImageName, mockClock.Now().Unix())},
+			fmt.Sprintf("%s:azd-deploy-%d", defaultImageName, mockClock.Now().Unix())},
 		{"ImageTagSpecified",
 			DockerProjectOptions{
 				Tag: NewExpandableString("contoso/contoso-image:latest"),

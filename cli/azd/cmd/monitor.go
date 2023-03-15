@@ -16,6 +16,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/cli/browser"
 	"github.com/spf13/cobra"
@@ -51,21 +52,10 @@ func newMonitorFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) 
 }
 
 func newMonitorCmd() *cobra.Command {
-	cmd := &cobra.Command{
+	return &cobra.Command{
 		Use:   "monitor",
-		Short: "Monitor a deployed app.",
-		Long: `Monitor a deployed app.
-
-Examples:
-
-	$ azd monitor --overview
-	$ azd monitor -–live
-	$ azd monitor --logs
-
-For more information, go to https://aka.ms/azure-dev/monitor.`,
+		Short: "Monitor a deployed application.",
 	}
-
-	return cmd
 }
 
 type monitorAction struct {
@@ -185,4 +175,17 @@ func (m *monitorAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 	}
 
 	return nil, nil
+}
+
+func getCmdMonitorHelpDescription(*cobra.Command) string {
+	return generateCmdHelpDescription(fmt.Sprintf("Monitor a deployed application. For more information, go to: %s.",
+		output.WithLinkFormat("https://aka.ms/azure-dev/monitor")), nil)
+}
+
+func getCmdMonitorHelpFooter(c *cobra.Command) string {
+	return generateCmdHelpSamplesBlock(map[string]string{
+		"Open Application Insights Overview Dashboard.": output.WithHighLightFormat("azd monitor --overview"),
+		"Open Application Insights Live Metrics.":       output.WithHighLightFormat("azd monitor --live"),
+		"Open Application Insights Logs.":               output.WithHighLightFormat("azd monitor --logs"),
+	})
 }

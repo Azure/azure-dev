@@ -16,6 +16,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/repository"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
+	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
@@ -38,18 +39,10 @@ func newInitFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *in
 }
 
 func newInitCmd() *cobra.Command {
-	cmd := &cobra.Command{
+	return &cobra.Command{
 		Use:   "init",
-		Short: "Initialize a new app.",
-		//nolint:lll
-		Long: `Initialize a new app.
-
-When no template is supplied, you can optionally select an Azure Developer CLI template for cloning. Otherwise, ` + output.WithBackticks("azd init") + ` initializes the current directory and creates resources so that your project is compatible with Azure Developer CLI.
-
-When a template is provided, the sample code is cloned to the current directory.`,
+		Short: "Initialize a new application.",
 	}
-
-	return cmd
 }
 
 type initFlags struct {
@@ -108,6 +101,7 @@ type initAction struct {
 func newInitAction(
 	accountManager account.Manager,
 	userProfileService *azcli.UserProfileService,
+	_ auth.LoggedInGuard,
 	cmdRun exec.CommandRunner,
 	console input.Console,
 	gitCli git.GitCli,
@@ -136,14 +130,8 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		return nil, errors.New("template name required when specifying a branch name")
 	}
 
-	requiredTools := []tools.ExternalTool{}
-
-	// When using a template, we also require `git`, to acquire the template.
-	if i.flags.template.Name != "" {
-		requiredTools = append(requiredTools, i.gitCli)
-	}
-
-	if err := tools.EnsureInstalled(ctx, requiredTools...); err != nil {
+	// init now requires git all the time, even for empty template, azd initializes a local git project
+	if err := tools.EnsureInstalled(ctx, []tools.ExternalTool{i.gitCli}...); err != nil {
 		return nil, err
 	}
 
@@ -251,4 +239,24 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 				output.WithLinkFormat("%s", azdTrustNotice)),
 		},
 	}, nil
+}
+
+func getCmdInitHelpDescription(c *cobra.Command) string {
+	return generateCmdHelpDescription("Initialize a new application in your current directory.",
+		getCmdHelpDescriptionNoteForInit(c))
+}
+
+func getCmdInitHelpFooter(*cobra.Command) string {
+	return generateCmdHelpSamplesBlock(map[string]string{
+		"Initialize a template to your current local directory from a GitHub repo.": fmt.Sprintf("%s %s",
+			output.WithHighLightFormat("azd init --template"),
+			output.WithWarningFormat("[GitHub repo URL]"),
+		),
+		"Initialize a template to your current local directory from a branch other than main.": fmt.Sprintf("%s %s %s %s",
+			output.WithHighLightFormat("azd init --template"),
+			output.WithWarningFormat("[GitHub repo URL]"),
+			output.WithHighLightFormat("--branch"),
+			output.WithWarningFormat("[Branch name]"),
+		),
+	})
 }

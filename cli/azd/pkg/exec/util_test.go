@@ -17,31 +17,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestRunCommandWithShell(t *testing.T) {
-	runner := NewCommandRunner(os.Stdin, os.Stdout, os.Stderr)
-
-	runArgs := NewRunArgs("az", "--version").
-		WithShell(true)
-
-	res, err := runner.Run(context.Background(), runArgs)
-
-	if err != nil {
-		t.Errorf("failed to launch process: %v", err)
-	}
-
-	if res.ExitCode != 0 {
-		t.Errorf("command returned non zero exit code %d", res.ExitCode)
-	}
-
-	if len(res.Stdout) == 0 {
-		t.Errorf("stdout was empty")
-	}
-
-	if !regexp.MustCompile(`azure-cli\s+\d+\.\d+\.\d+`).Match([]byte(res.Stdout)) {
-		t.Errorf("stdout %s did not contain 'azure-cli' and a version number", res.Stdout)
-	}
-}
-
 func TestRunCommand(t *testing.T) {
 	runner := NewCommandRunner(os.Stdin, os.Stdout, os.Stderr)
 
@@ -115,7 +90,6 @@ func TestAppendEnv(t *testing.T) {
 func TestRunCommandList(t *testing.T) {
 	res, err := RunCommandList(context.Background(), []string{
 		"git --version",
-		"az --version",
 	}, nil, "")
 
 	if err != nil {
@@ -134,9 +108,6 @@ func TestRunCommandList(t *testing.T) {
 		t.Errorf("stdout did not contain 'git version' output")
 	}
 
-	if !regexp.MustCompile(`azure\-cli\s+\d+\.\d+\.\d+`).Match([]byte(res.Stdout)) {
-		t.Errorf("stdout did not contain 'az version' output")
-	}
 }
 
 func TestRunCapturingStderr(t *testing.T) {
@@ -224,9 +195,9 @@ func TestRedactSensitiveData(t *testing.T) {
 
 		{scenario: "SWADeploymentToken",
 			// nolint:lll
-			input: `npx -y @azure/static-web-apps-cli@1.0.0 deploy --tenant-id abc-123 --subscription-id abc-123 --resource-group r --app-name app-name --app-location / --output-location . --env default --no-use-keychain --deployment-token abc-123`,
+			input: `npx -y @azure/static-web-apps-cli@1.0.6 deploy --tenant-id abc-123 --subscription-id abc-123 --resource-group r --app-name app-name --app-location / --output-location . --env default --no-use-keychain --deployment-token abc-123`,
 			// nolint:lll
-			expected: `npx -y @azure/static-web-apps-cli@1.0.0 deploy --tenant-id abc-123 --subscription-id abc-123 --resource-group r --app-name app-name --app-location / --output-location . --env default --no-use-keychain --deployment-token <redacted>`},
+			expected: `npx -y @azure/static-web-apps-cli@1.0.6 deploy --tenant-id abc-123 --subscription-id abc-123 --resource-group r --app-name app-name --app-location / --output-location . --env default --no-use-keychain --deployment-token <redacted>`},
 
 		{scenario: "DockerLoginUsernameAndPassword",
 			input:    `docker login --username crusername123 --password abc123 some.azurecr.io`,

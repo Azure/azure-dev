@@ -75,6 +75,7 @@ func createAndInitEnvironment(
 	console input.Console,
 	accountManager account.Manager,
 	userProfileService *azcli.UserProfileService,
+	subResolver account.SubscriptionTenantResolver,
 ) (*environment.Environment, error) {
 	if envSpec.environmentName != "" && !environment.IsValidEnvironmentName(envSpec.environmentName) {
 		errMsg := invalidEnvironmentNameMsg(envSpec.environmentName)
@@ -96,7 +97,8 @@ func createAndInitEnvironment(
 		return nil, fmt.Errorf("environment '%s' already exists", envSpec.environmentName)
 	}
 
-	if err := ensureEnvironmentInitialized(ctx, *envSpec, env, console, accountManager, userProfileService); err != nil {
+	if err := ensureEnvironmentInitialized(
+		ctx, *envSpec, env, console, accountManager, userProfileService, subResolver); err != nil {
 		return nil, fmt.Errorf("initializing environment: %w", err)
 	}
 
@@ -111,6 +113,7 @@ func loadOrInitEnvironment(
 	console input.Console,
 	accountManager account.Manager,
 	userProfileService *azcli.UserProfileService,
+	subResolver account.SubscriptionTenantResolver,
 ) (*environment.Environment, error) {
 	loadOrCreateEnvironment := func() (*environment.Environment, bool, error) {
 		// If there's a default environment, use that
@@ -179,7 +182,8 @@ func loadOrInitEnvironment(
 		env,
 		console,
 		accountManager,
-		userProfileService); err != nil {
+		userProfileService,
+		subResolver); err != nil {
 		return nil, fmt.Errorf("initializing environment: %w", err)
 	}
 
@@ -205,6 +209,7 @@ func ensureEnvironmentInitialized(
 	console input.Console,
 	accountManager account.Manager,
 	userProfileService *azcli.UserProfileService,
+	subResolver account.SubscriptionTenantResolver,
 ) error {
 	if env.Values == nil {
 		env.Values = make(map[string]string)
@@ -283,7 +288,16 @@ func ensureEnvironmentInitialized(
 	}
 
 	if !hasPrincipalID {
-		principalID, err := azureutil.GetCurrentPrincipalId(ctx, userProfileService)
+		subscriptionId, found := env.Values[environment.SubscriptionIdEnvVarName]
+		if !found {
+			return fmt.Errorf("tried to get principal id without a subscription id selected")
+		}
+		tenantId, err := subResolver.LookupTenant(ctx, subscriptionId)
+		if err != nil {
+			return fmt.Errorf("getting tenant id for subscription %s. Error: %w", subscriptionId, err)
+		}
+
+		principalID, err := azureutil.GetCurrentPrincipalId(ctx, userProfileService, tenantId)
 		if err != nil {
 			return fmt.Errorf("fetching current user information: %w", err)
 		}

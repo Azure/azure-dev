@@ -12,7 +12,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
-	"github.com/azure/azure-dev/cli/azd/test/mocks/mockazcli"
 	"github.com/benbjohnson/clock"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -49,20 +48,10 @@ func TestNewContainerAppTargetTypeValidation(t *testing.T) {
 	for test, data := range tests {
 		t.Run(test, func(t *testing.T) {
 			mockContext := mocks.NewMockContext(context.Background())
-			serviceTarget := NewContainerAppTarget(
-				environment.Ephemeral(),
-				nil,
-				mockazcli.NewAzCliFromMockContext(mockContext),
-				nil,
-				nil,
-				nil,
-				nil,
-				nil,
-				nil,
-			)
+			serviceTarget := &containerAppTarget{}
 			serviceConfig := &ServiceConfig{}
 
-			err := serviceTarget.ValidateTargetResource(*mockContext.Context, serviceConfig, data.targetResource)
+			err := serviceTarget.validateTargetResource(*mockContext.Context, serviceConfig, data.targetResource)
 			if data.expectError {
 				require.Error(t, err)
 			} else {

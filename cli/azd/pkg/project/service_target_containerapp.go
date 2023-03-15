@@ -142,24 +142,6 @@ func (at *containerAppTarget) Package(
 	)
 }
 
-func (at *containerAppTarget) ValidateTargetResource(
-	ctx context.Context,
-	serviceConfig *ServiceConfig,
-	targetResource *environment.TargetResource,
-) error {
-	if targetResource.ResourceGroupName() == "" {
-		return fmt.Errorf("missing resource group name: %s", targetResource.ResourceGroupName())
-	}
-
-	if targetResource.ResourceType() != "" {
-		if err := checkResourceType(targetResource, infra.AzureResourceTypeContainerApp); err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
-
 func (at *containerAppTarget) Publish(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
@@ -168,7 +150,7 @@ func (at *containerAppTarget) Publish(
 ) *async.TaskWithProgress[*ServicePublishResult, ServiceProgress] {
 	return async.RunTaskWithProgress(
 		func(task *async.TaskContextWithProgress[*ServicePublishResult, ServiceProgress]) {
-			if err := at.ValidateTargetResource(ctx, serviceConfig, targetResource); err != nil {
+			if err := at.validateTargetResource(ctx, serviceConfig, targetResource); err != nil {
 				task.SetError(fmt.Errorf("validating target resource: %w", err))
 				return
 			}
@@ -317,6 +299,24 @@ func (at *containerAppTarget) Endpoints(
 
 		return endpoints, nil
 	}
+}
+
+func (at *containerAppTarget) validateTargetResource(
+	ctx context.Context,
+	serviceConfig *ServiceConfig,
+	targetResource *environment.TargetResource,
+) error {
+	if targetResource.ResourceGroupName() == "" {
+		return fmt.Errorf("missing resource group name: %s", targetResource.ResourceGroupName())
+	}
+
+	if targetResource.ResourceType() != "" {
+		if err := checkResourceType(targetResource, infra.AzureResourceTypeContainerApp); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 func (at *containerAppTarget) generateImageTag(serviceConfig *ServiceConfig) (string, error) {

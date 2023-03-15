@@ -19,9 +19,8 @@ import (
 )
 
 type appServiceTarget struct {
-	config *ServiceConfig
-	env    *environment.Environment
-	cli    azcli.AzCli
+	env *environment.Environment
+	cli azcli.AzCli
 }
 
 func NewAppServiceTarget(
@@ -51,7 +50,7 @@ func (st *appServiceTarget) Package(
 	return async.RunTaskWithProgress(
 		func(task *async.TaskContextWithProgress[*ServicePackageResult, ServiceProgress]) {
 			task.SetProgress(NewServiceProgress("Compressing deployment artifacts"))
-			zipFilePath, err := internal.CreateDeployableZip(st.config.Name, buildOutput.BuildOutputPath)
+			zipFilePath, err := internal.CreateDeployableZip(serviceConfig.Name, buildOutput.BuildOutputPath)
 			if err != nil {
 				task.SetError(err)
 				return
@@ -65,22 +64,6 @@ func (st *appServiceTarget) Package(
 	)
 }
 
-func (st *appServiceTarget) ValidateTargetResource(
-	ctx context.Context,
-	serviceConfig *ServiceConfig,
-	targetResource *environment.TargetResource,
-) error {
-	if !strings.EqualFold(targetResource.ResourceType(), string(infra.AzureResourceTypeWebSite)) {
-		return resourceTypeMismatchError(
-			targetResource.ResourceName(),
-			targetResource.ResourceType(),
-			infra.AzureResourceTypeWebSite,
-		)
-	}
-
-	return nil
-}
-
 func (st *appServiceTarget) Publish(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
@@ -89,7 +72,7 @@ func (st *appServiceTarget) Publish(
 ) *async.TaskWithProgress[*ServicePublishResult, ServiceProgress] {
 	return async.RunTaskWithProgress(
 		func(task *async.TaskContextWithProgress[*ServicePublishResult, ServiceProgress]) {
-			if err := st.ValidateTargetResource(ctx, serviceConfig, targetResource); err != nil {
+			if err := st.validateTargetResource(ctx, serviceConfig, targetResource); err != nil {
 				task.SetError(fmt.Errorf("validating target resource: %w", err))
 				return
 			}
@@ -112,7 +95,7 @@ func (st *appServiceTarget) Publish(
 				zipFile,
 			)
 			if err != nil {
-				task.SetError(fmt.Errorf("deploying service %s: %w", st.config.Name, err))
+				task.SetError(fmt.Errorf("deploying service %s: %w", serviceConfig.Name, err))
 				return
 			}
 
@@ -161,4 +144,20 @@ func (st *appServiceTarget) Endpoints(
 	}
 
 	return endpoints, nil
+}
+
+func (st *appServiceTarget) validateTargetResource(
+	ctx context.Context,
+	serviceConfig *ServiceConfig,
+	targetResource *environment.TargetResource,
+) error {
+	if !strings.EqualFold(targetResource.ResourceType(), string(infra.AzureResourceTypeWebSite)) {
+		return resourceTypeMismatchError(
+			targetResource.ResourceName(),
+			targetResource.ResourceType(),
+			infra.AzureResourceTypeWebSite,
+		)
+	}
+
+	return nil
 }

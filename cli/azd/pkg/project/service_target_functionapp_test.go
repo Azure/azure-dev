@@ -40,7 +40,7 @@ func TestNewFunctionAppTargetTypeValidation(t *testing.T) {
 			serviceTarget := &functionAppTarget{}
 			serviceConfig := &ServiceConfig{}
 
-			err := serviceTarget.ValidateTargetResource(*mockContext.Context, serviceConfig, data.targetResource)
+			err := serviceTarget.validateTargetResource(*mockContext.Context, serviceConfig, data.targetResource)
 			if data.expectError {
 				require.Error(t, err)
 			} else {

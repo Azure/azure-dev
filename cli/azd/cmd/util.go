@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"os"
 	"strings"
 
@@ -288,9 +289,9 @@ func ensureEnvironmentInitialized(
 	}
 
 	if !hasPrincipalID {
-		subscriptionId, found := env.Values[environment.SubscriptionIdEnvVarName]
-		if !found {
-			return fmt.Errorf("tried to get principal id without a subscription id selected")
+		subscriptionId := env.GetSubscriptionId()
+		if subscriptionId == "" {
+			log.Panic("tried to get principal id without a subscription id selected")
 		}
 		tenantId, err := subResolver.LookupTenant(ctx, subscriptionId)
 		if err != nil {
